@@ -135,7 +135,7 @@ func cloneBuffer(buffer av.Buffer) av.Buffer {
 func validateRecipeEncode(spec codec.CodecSpec, operation string, node string) error {
 	if spec.Auto {
 		return &BuildError{
-			Code:      "encode_auto_unresolved",
+			Code:      CodeEncodeAutoUnresolved,
 			Operation: operation,
 			Node:      node,
 			Reason:    "automatic codec selection is not implemented for stream recipes yet",
@@ -156,7 +156,7 @@ func validateRecipeEncode(spec codec.CodecSpec, operation string, node string) e
 		return validateRecipeEncodeValues(spec, operation, node)
 	case av.CodecH264, av.CodecAV1:
 		return &BuildError{
-			Code:      "encode_work_in_progress",
+			Code:      CodeEncodeWorkInProgress,
 			Operation: operation,
 			Node:      node,
 			Reason:    string(spec.ID) + " recipe encoding is work in progress; recipe encode branches currently support opus, vp8, and vp9",
@@ -176,7 +176,7 @@ func validateRecipeEncodeValues(spec codec.CodecSpec, operation string, node str
 	switch {
 	case spec.Settings.Bitrate < 0:
 		return &BuildError{
-			Code:      "encode_parameter_invalid",
+			Code:      CodeEncodeParameterInvalid,
 			Operation: operation,
 			Node:      node,
 			Reason:    "encode bitrate must be non-negative",
@@ -191,7 +191,7 @@ func validateRecipeEncodeValues(spec codec.CodecSpec, operation string, node str
 		}
 	case spec.Settings.Framerate.Value < 0 || spec.Settings.Framerate.Base.Num < 0 || spec.Settings.Framerate.Base.Den < 0:
 		return &BuildError{
-			Code:      "encode_parameter_invalid",
+			Code:      CodeEncodeParameterInvalid,
 			Operation: operation,
 			Node:      node,
 			Reason:    "encode FPS must be positive",
@@ -206,7 +206,7 @@ func validateRecipeEncodeValues(spec codec.CodecSpec, operation string, node str
 		}
 	case spec.Settings.KeyframeInterval < 0:
 		return &BuildError{
-			Code:      "encode_parameter_invalid",
+			Code:      CodeEncodeParameterInvalid,
 			Operation: operation,
 			Node:      node,
 			Reason:    "encode keyframe interval must be non-negative",
@@ -221,7 +221,7 @@ func validateRecipeEncodeValues(spec codec.CodecSpec, operation string, node str
 		}
 	case spec.Settings.SampleRateSet && spec.Parameters.SampleRate <= 0:
 		return &BuildError{
-			Code:      "encode_parameter_invalid",
+			Code:      CodeEncodeParameterInvalid,
 			Operation: operation,
 			Node:      node,
 			Reason:    "explicit encode sample rate must be positive",
@@ -236,7 +236,7 @@ func validateRecipeEncodeValues(spec codec.CodecSpec, operation string, node str
 		}
 	case spec.Settings.ChannelsSet && spec.Parameters.Channels <= 0:
 		return &BuildError{
-			Code:      "encode_parameter_invalid",
+			Code:      CodeEncodeParameterInvalid,
 			Operation: operation,
 			Node:      node,
 			Reason:    "explicit encode channel count must be positive",
@@ -259,7 +259,7 @@ func validateCodecChangePolicy(operation string, node string, policy CodecChange
 		return nil
 	}
 	return &BuildError{
-		Code:      "codec_change_policy_unsupported",
+		Code:      CodeCodecChangePolicyUnsupported,
 		Operation: operation,
 		Node:      node,
 		Reason:    "custom codec-change policies are not implemented yet",

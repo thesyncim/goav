@@ -202,11 +202,19 @@ func chainStepsFromChainOperations(operations []OperationSpec) []chainStep {
 
 func validateBranchCompositionIntentShape(operation string, intent Intent) error {
 	if len(intent.Inputs) == 0 {
-		return &BuildError{Code: "input_missing", Operation: operation, Reason: "no input is configured", Cause: ErrUnsupportedBuild}
+		return &BuildError{
+			Code:      CodeInputMissing,
+			Operation: operation,
+			Reason:    "no input is configured",
+			Suggestions: []string{
+				"start the recipe from an input: goav.From(goav.FileInput(\"in.webm\", reader))",
+			},
+			Cause: ErrUnsupportedBuild,
+		}
 	}
 	if len(intent.Inputs) > 1 {
 		return &BuildError{
-			Code:      "input_count_unsupported",
+			Code:      CodeInputCountUnsupported,
 			Operation: operation,
 			Reason:    "transcode recipes currently take one input",
 			Details: []string{
@@ -355,7 +363,7 @@ func branchDestinationLabelSet(namedOutputs []namedDestinationSpec) map[string]s
 
 func branchStreamMissingError() error {
 	return &BuildError{
-		Code:      "stream_missing",
+		Code:      CodeStreamMissing,
 		Operation: branchCompositionOperation,
 		Reason:    "no audio or video branches are configured",
 		Suggestions: []string{
@@ -368,7 +376,7 @@ func branchStreamMissingError() error {
 
 func branchEncodeMissingError(stream streamIntent) error {
 	return &BuildError{
-		Code:      "encode_missing",
+		Code:      CodeEncodeMissing,
 		Operation: branchCompositionOperation,
 		Node:      stream.Name,
 		Reason:    "branch needs an encoder before writing to a muxed destination",
@@ -386,7 +394,7 @@ func branchEncodeMissingError(stream streamIntent) error {
 
 func branchCopyUnsupportedError(stream streamIntent) error {
 	return &BuildError{
-		Code:      "copy_unsupported",
+		Code:      CodeCopyUnsupported,
 		Operation: branchCompositionOperation,
 		Node:      branchIntentName(stream),
 		Reason:    "copy branches require a packet-domain stream point",
@@ -402,7 +410,7 @@ func branchCopyUnsupportedError(stream streamIntent) error {
 func branchIntentDestinationMissingError(stream streamIntent) error {
 	selector := streamIntentSelector(stream)
 	return &BuildError{
-		Code:      "destination_missing",
+		Code:      CodeDestinationMissing,
 		Operation: branchCompositionOperation,
 		Node:      firstNonEmpty(stream.Name, string(selector.Type), "stream"),
 		Reason:    "branch has no destination",
@@ -416,7 +424,7 @@ func branchIntentDestinationMissingError(stream streamIntent) error {
 
 func branchDestinationReferenceMissingError(stream streamIntent, label string) error {
 	return &BuildError{
-		Code:      "destination_missing",
+		Code:      CodeDestinationMissing,
 		Operation: branchCompositionOperation,
 		Node:      stream.Name,
 		Reason:    "destination " + label + " is referenced but not defined",
@@ -430,7 +438,7 @@ func branchDestinationReferenceMissingError(stream streamIntent, label string) e
 
 func transcodeUnsupportedLiveInputError() error {
 	return &BuildError{
-		Code:      "unsupported_input",
+		Code:      CodeUnsupportedInput,
 		Operation: branchCompositionOperation,
 		Reason:    "live provider transcode recipes are not supported by the transcode recipe compiler yet",
 		Suggestions: []string{
@@ -443,7 +451,7 @@ func transcodeUnsupportedLiveInputError() error {
 
 func branchDestinationNameEmptyError(stream streamBuild, index int) error {
 	return &BuildError{
-		Code:      "destination_invalid",
+		Code:      CodeDestinationInvalid,
 		Operation: branchCompositionOperation,
 		Node:      firstNonEmpty(stream.name, string(stream.selector.Type), "stream"),
 		Reason:    "branch destinations must be non-empty",
@@ -460,7 +468,7 @@ func branchDestinationNameEmptyError(stream streamBuild, index int) error {
 
 func branchDestinationDuplicateError(name string) error {
 	return &BuildError{
-		Code:      "destination_duplicate",
+		Code:      CodeDestinationDuplicate,
 		Operation: branchCompositionOperation,
 		Node:      name,
 		Reason:    fmt.Sprintf("destination %q is defined more than once with different destination handles", name),
@@ -474,7 +482,7 @@ func branchDestinationDuplicateError(name string) error {
 
 func branchIntentDuplicateError(name string, firstIndex int, secondIndex int) error {
 	return &BuildError{
-		Code:      "stream_duplicate",
+		Code:      CodeStreamDuplicate,
 		Operation: branchCompositionOperation,
 		Node:      name,
 		Reason:    fmt.Sprintf("branch name %q is defined more than once", name),
@@ -493,7 +501,7 @@ func branchIntentDuplicateError(name string, firstIndex int, secondIndex int) er
 
 func branchIntentNameMissingError(index int, stream streamIntent) error {
 	return &BuildError{
-		Code:      "stream_name_missing",
+		Code:      CodeStreamNameMissing,
 		Operation: branchCompositionOperation,
 		Node:      fmt.Sprintf("branch-%d", index),
 		Reason:    "branches need stable names",
@@ -522,7 +530,7 @@ func validateBranchDestinations(stream streamIntent) error {
 
 func duplicateBranchDestinationError(stream streamIntent, target string, firstIndex int, secondIndex int) error {
 	return &BuildError{
-		Code:      "destination_duplicate",
+		Code:      CodeDestinationDuplicate,
 		Operation: branchCompositionOperation,
 		Node:      branchIntentName(stream),
 		Reason:    fmt.Sprintf("branch routes to destination %q more than once", target),
@@ -549,11 +557,12 @@ func validateBranchTransforms(stream streamIntent) error {
 		switch {
 		case transform.Resize != nil && transform.Resample != nil:
 			return &BuildError{
-				Code:      "transform_invalid",
-				Operation: branchCompositionOperation,
-				Node:      branchIntentName(stream),
-				Reason:    "one transform cannot be both resize and resample",
-				Cause:     ErrUnsupportedBuild,
+				Code:        CodeTransformInvalid,
+				Operation:   branchCompositionOperation,
+				Node:        branchIntentName(stream),
+				Reason:      "one transform cannot be both resize and resample",
+				Suggestions: []string{"declare two separate steps instead: .Resize(width, height).Resample(rate, channels)"},
+				Cause:       ErrUnsupportedBuild,
 			}
 		case transform.Resize != nil:
 			if stream.Select.Type == av.MediaAudio {
@@ -565,7 +574,7 @@ func validateBranchTransforms(stream streamIntent) error {
 			}
 		default:
 			return &BuildError{
-				Code:      "transform_invalid",
+				Code:      CodeTransformInvalid,
 				Operation: branchCompositionOperation,
 				Node:      branchIntentName(stream),
 				Reason:    "empty stream transform",
@@ -601,7 +610,7 @@ func transformSpecsFromOperationSpecs(operations []OperationSpec) []TransformSpe
 
 func branchTransformMediaError(stream streamIntent, transform string, expected av.MediaType, actual av.MediaType) error {
 	return &BuildError{
-		Code:      "transform_media_mismatch",
+		Code:      CodeTransformMediaMismatch,
 		Operation: branchCompositionOperation,
 		Node:      branchIntentName(stream),
 		Reason:    transform + " applies to " + string(expected) + " branches",

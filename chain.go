@@ -17,7 +17,7 @@ func validateRecipeStreamSelector(operation string, node string, selector av.Str
 		return nil
 	}
 	return &BuildError{
-		Code:      "stream_selector_invalid",
+		Code:      CodeStreamSelectorInvalid,
 		Operation: operation,
 		Node:      node,
 		Reason:    "stream index must be non-negative",
@@ -38,7 +38,7 @@ func codecIntentSet(spec codec.CodecSpec) bool {
 
 func chainStepAfterEncodeError(operation string, node string, step string, encode codec.CodecSpec) error {
 	return &BuildError{
-		Code:      "stream_step_after_encode",
+		Code:      CodeStreamStepAfterEncode,
 		Operation: operation,
 		Node:      node,
 		Reason:    "stream processing steps must be declared before the encoder",
@@ -56,7 +56,7 @@ func chainStepAfterEncodeError(operation string, node string, step string, encod
 
 func duplicateStreamEncodeError(operation string, node string, first codec.CodecSpec, second codec.CodecSpec) error {
 	return &BuildError{
-		Code:      "encode_duplicate",
+		Code:      CodeEncodeDuplicate,
 		Operation: operation,
 		Node:      node,
 		Reason:    "stream recipes allow one terminal encoder",
@@ -219,7 +219,7 @@ func (b *jobStreamBuilder) ensureFrameSourceShapeOperation() {
 
 func frameSourceDecodeError(operation string, node string) error {
 	return &BuildError{
-		Code:      "source_shape_mismatch",
+		Code:      CodeSourceShapeMismatch,
 		Operation: operation,
 		Node:      node,
 		Reason:    "frame-domain custom sources are already decoded frames",
@@ -237,7 +237,7 @@ func frameSourceDecodeError(operation string, node string) error {
 
 func frameSourceCopyError(operation string, node string) error {
 	return &BuildError{
-		Code:      "source_shape_mismatch",
+		Code:      CodeSourceShapeMismatch,
 		Operation: operation,
 		Node:      node,
 		Reason:    "frame-domain custom sources cannot use packet copy",
@@ -325,7 +325,7 @@ func (b *jobStreamBuilder) Tap(tap TapRef) *jobStreamBuilder {
 	stream := b.current()
 	if tap.name == "" {
 		b.job.setErr(&BuildError{
-			Code:      "tap_invalid",
+			Code:      CodeTapInvalid,
 			Operation: "build stream",
 			Node:      jobStreamName(stream),
 			Reason:    "tap name is empty",

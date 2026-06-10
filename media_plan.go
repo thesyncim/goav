@@ -240,7 +240,7 @@ func planCopyBranches(state *recipeCompileState, outputs []planOutput) ([]planBr
 		}
 		operations := planInputOperationsForShape(input, spec)
 		decision := planDecision{
-			Code:    "packet_copy",
+			Code:    string(CodePacketCopy),
 			Branch:  name,
 			Message: "no decode, transform, or encode requested; packets are copied to outputs",
 		}
@@ -252,7 +252,7 @@ func planCopyBranches(state *recipeCompileState, outputs []planOutput) ([]planBr
 				Shape:     spec,
 			})
 			decision = planDecision{
-				Code:    "event_source",
+				Code:    string(CodeEventSource),
 				Branch:  name,
 				Message: "source produces events for sink destinations",
 			}
@@ -293,7 +293,7 @@ func planOperationSpecs(input inputIntent, stream streamIntent, branchName strin
 	var decisions []planDecision
 	if initial.Domain == shape.DomainFrame {
 		decisions = append(decisions, planDecision{
-			Code:    "frame_source",
+			Code:    string(CodeFrameSource),
 			Branch:  branchName,
 			Message: "source already produces decoded frames",
 		})
@@ -305,7 +305,7 @@ func planOperationSpecs(input inputIntent, stream streamIntent, branchName strin
 		Detail:    "no frame operation requested",
 	})
 	decisions = append(decisions, planDecision{
-		Code:    "packet_copy",
+		Code:    string(CodePacketCopy),
 		Branch:  branchName,
 		Message: "stream can remain packet encoded",
 	})
@@ -321,20 +321,20 @@ func planStreamIntentOperations(stream streamIntent, branchName string) ([]planO
 	}
 	if operationSpecKindPresent(stream.Operations, info.OpDecode) {
 		decisions = append(decisions, planDecision{
-			Code:    "decode_required",
+			Code:    string(CodeDecodeRequired),
 			Branch:  branchName,
 			Message: "operation specs require decoded frames",
 		})
 	} else if operationSpecKindPresent(stream.Operations, info.OpCopy) {
 		decisions = append(decisions, planDecision{
-			Code:    "packet_copy",
+			Code:    string(CodePacketCopy),
 			Branch:  branchName,
 			Message: "stream can remain packet encoded",
 		})
 	}
 	if operationSpecKindPresent(stream.Operations, info.OpEncode) {
 		decisions = append(decisions, planDecision{
-			Code:    "encode_required",
+			Code:    string(CodeEncodeRequired),
 			Branch:  branchName,
 			Message: "muxed stream output requires encoded packets",
 		})

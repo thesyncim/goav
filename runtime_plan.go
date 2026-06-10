@@ -87,7 +87,7 @@ func (b *builder) planExplicitGraph(spec pipeline.Spec) (pipeline.Spec, error) {
 
 func explicitGraphMissingSourceError() error {
 	return &BuildError{
-		Code:      "explicit_graph_source_missing",
+		Code:      CodeExplicitGraphSourceMissing,
 		Operation: "build explicit graph",
 		Reason:    "explicit graph has no source node",
 		Suggestions: []string{

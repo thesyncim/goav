@@ -10,7 +10,7 @@ import (
 )
 
 type muxCompatibilityIssue struct {
-	Code        string
+	Code        ErrorCode
 	Destination string
 	Format      av.FormatID
 	Reason      string
@@ -365,7 +365,7 @@ func checkSingleVideoMuxCompatibility(output workDestination, streams []plannedM
 
 func newMuxCompatibilityIssue(output workDestination, streams []plannedMuxStream, reason string) muxCompatibilityIssue {
 	return muxCompatibilityIssue{
-		Code:        "destination_mux_incompatible",
+		Code:        CodeDestinationMuxIncompatible,
 		Destination: output.Name,
 		Format:      output.Format,
 		Reason:      reason,
@@ -433,7 +433,7 @@ func muxCompatibilityDiagnostics(issues []muxCompatibilityIssue) []info.Diagnost
 	diagnostics := make([]info.Diagnostic, 0, len(issues))
 	for i := range issues {
 		diagnostics = append(diagnostics, info.Diagnostic{
-			Code:        issues[i].Code,
+			Code:        string(issues[i].Code),
 			Node:        issues[i].Destination,
 			Message:     issues[i].Reason,
 			Details:     append([]string(nil), issues[i].Details...),

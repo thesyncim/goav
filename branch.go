@@ -381,7 +381,7 @@ func (b *branchBuilder) Tap(tap TapRef) *branchBuilder {
 	}
 	if tap.name == "" {
 		b.setErr(&BuildError{
-			Code:      "tap_invalid",
+			Code:      CodeTapInvalid,
 			Operation: "build branch",
 			Node:      firstNonEmpty(b.spec.name, "branch"),
 			Reason:    "tap name is empty",
@@ -767,7 +767,7 @@ func chainStepsThroughTap(steps []chainStep, tap string) ([]chainStep, bool) {
 
 func branchCopyParentOperationError(node string) error {
 	return &BuildError{
-		Code:      "copy_branch_source_invalid",
+		Code:      CodeCopyBranchSourceInvalid,
 		Operation: "build branches",
 		Node:      node,
 		Reason:    "packet-copy branches must start from a packet-domain stream point",
@@ -782,7 +782,7 @@ func branchCopyParentOperationError(node string) error {
 
 func branchEncodeParentOperationError(node string, encode codec.CodecSpec) error {
 	return &BuildError{
-		Code:      "encode_branch_source_invalid",
+		Code:      CodeEncodeBranchSourceInvalid,
 		Operation: "build branches",
 		Node:      node,
 		Reason:    "stream encoders are terminal for planned branches",
@@ -800,7 +800,7 @@ func branchEncodeParentOperationError(node string, encode codec.CodecSpec) error
 
 func plannedBranchNodeSourceError(name string, source string) error {
 	return &BuildError{
-		Code:      "branch_source_invalid",
+		Code:      CodeBranchSourceInvalid,
 		Operation: "build branches",
 		Node:      firstNonEmpty(name, "branch"),
 		Reason:    "planned branches do not anchor from graph handles",
@@ -818,7 +818,7 @@ func plannedBranchNodeSourceError(name string, source string) error {
 
 func plannedBranchTapMissingError(stream string, branch string, tap string) error {
 	return &BuildError{
-		Code:      "branch_tap_missing",
+		Code:      CodeBranchTapMissing,
 		Operation: "build branches",
 		Node:      firstNonEmpty(branch, "branch"),
 		Reason:    "branch tap is not declared on the parent stream",
@@ -837,7 +837,7 @@ func plannedBranchTapMissingError(stream string, branch string, tap string) erro
 
 func plannedBranchPostEncodeTapError(branch string, tap string) error {
 	return &BuildError{
-		Code:      "branch_tap_domain_unsupported",
+		Code:      CodeBranchTapDomainUnsupported,
 		Operation: "build branches",
 		Node:      firstNonEmpty(branch, "branch"),
 		Reason:    "post-encode taps are runtime attachment anchors for planned branches",
@@ -855,7 +855,7 @@ func plannedBranchPostEncodeTapError(branch string, tap string) error {
 
 func duplicateBranchDecodeError(node string) error {
 	return &BuildError{
-		Code:      "branch_decode_duplicate",
+		Code:      CodeBranchDecodeDuplicate,
 		Operation: "build branch",
 		Node:      node,
 		Reason:    "branch already decodes its input packets",
@@ -869,7 +869,7 @@ func duplicateBranchDecodeError(node string) error {
 
 func branchDecodeOrderError(node string) error {
 	return &BuildError{
-		Code:      "branch_decode_order_invalid",
+		Code:      CodeBranchDecodeOrderInvalid,
 		Operation: "build branch",
 		Node:      node,
 		Reason:    "decode must be the first branch operation",
@@ -883,7 +883,7 @@ func branchDecodeOrderError(node string) error {
 
 func branchDecodeDomainError(node string) error {
 	return &BuildError{
-		Code:      "branch_decode_domain_mismatch",
+		Code:      CodeBranchDecodeDomainMismatch,
 		Operation: "build branches",
 		Node:      node,
 		Reason:    "branch decoding requires a packet-domain stream point",
@@ -898,7 +898,7 @@ func branchDecodeDomainError(node string) error {
 
 func branchDecodeCopyError(node string) error {
 	return &BuildError{
-		Code:      "branch_decode_copy_invalid",
+		Code:      CodeBranchDecodeCopyInvalid,
 		Operation: "build branch",
 		Node:      node,
 		Reason:    "a branch cannot decode packets and then copy the original packet payload",
@@ -913,7 +913,7 @@ func branchDecodeCopyError(node string) error {
 
 func branchPacketEncodeUnsupportedError(stream streamIntent, encode codec.CodecSpec) error {
 	return &BuildError{
-		Code:      "packet_branch_encode_unsupported",
+		Code:      CodePacketBranchEncodeUnsupported,
 		Operation: "build branches",
 		Node:      branchIntentName(stream),
 		Reason:    "packet-domain planned branches cannot encode without decoding first",
@@ -931,7 +931,7 @@ func branchPacketEncodeUnsupportedError(stream streamIntent, encode codec.CodecS
 
 func branchPacketTransformUnsupportedError(stream streamIntent) error {
 	return &BuildError{
-		Code:      "packet_branch_transform_unsupported",
+		Code:      CodePacketBranchTransformUnsupported,
 		Operation: "build branches",
 		Node:      branchIntentName(stream),
 		Reason:    "packet-domain planned branches cannot resize or resample without decoding first",
@@ -978,7 +978,7 @@ func cloneDestinationSpec(dest destinationSpec) destinationSpec {
 
 func branchMissingError(node string) error {
 	return &BuildError{
-		Code:      "branch_missing",
+		Code:      CodeBranchMissing,
 		Operation: "build branches",
 		Node:      node,
 		Reason:    "Branches requires at least one encoded branch",
@@ -992,7 +992,7 @@ func branchMissingError(node string) error {
 
 func nilBranchError() error {
 	return &BuildError{
-		Code:      "branch_invalid",
+		Code:      CodeBranchInvalid,
 		Operation: "build branch",
 		Reason:    "branch is nil",
 		Suggestions: []string{
@@ -1004,7 +1004,7 @@ func nilBranchError() error {
 
 func branchDestinationMissingError(name string) error {
 	return &BuildError{
-		Code:      "destination_missing",
+		Code:      CodeDestinationMissing,
 		Operation: "build branch",
 		Node:      firstNonEmpty(name, "branch"),
 		Reason:    "branch has no destination",
@@ -1030,7 +1030,7 @@ func jobDestinationInvalidError(name string, reason string) error {
 
 func destinationInvalidError(operation string, node string, reason string) error {
 	return &BuildError{
-		Code:      "destination_invalid",
+		Code:      CodeDestinationInvalid,
 		Operation: operation,
 		Node:      node,
 		Reason:    reason,
@@ -1044,7 +1044,7 @@ func destinationInvalidError(operation string, node string, reason string) error
 
 func destinationNameMissingError(dest destinationSpec) error {
 	return &BuildError{
-		Code:      "destination_invalid",
+		Code:      CodeDestinationInvalid,
 		Operation: "build destination",
 		Node:      dest.label("destination"),
 		Reason:    "destination name is empty",

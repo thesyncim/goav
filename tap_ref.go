@@ -51,7 +51,7 @@ func validateTapDomain(operation string, node string, tap TapRef, actual shape.M
 		return nil
 	}
 	return &BuildError{
-		Code:      "tap_domain_mismatch",
+		Code:      CodeTapDomainMismatch,
 		Operation: operation,
 		Node:      firstNonEmpty(node, "tap"),
 		Reason:    "typed tap domain does not match this chain point",
@@ -70,7 +70,7 @@ func validateTapDomain(operation string, node string, tap TapRef, actual shape.M
 
 func branchSourceInvalidError(node string) error {
 	return &BuildError{
-		Code:      "branch_source_invalid",
+		Code:      CodeBranchSourceInvalid,
 		Operation: "build branch",
 		Node:      firstNonEmpty(node, "branch"),
 		Reason:    "branch source must be a typed tap or expert graph handle",

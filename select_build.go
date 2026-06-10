@@ -100,4 +100,8 @@ var selectJoinProfile = joinProfile{
 		return stream
 	},
 	sinkOnlyReason: "select to a non-Sink destination is not supported yet",
+	sinkOnlySuggestions: []string{
+		"deliver the selected stream with .To(goav.Sink(sink))",
+		"fan the selected stream out with .Branches(...) when it must reach muxed destinations",
+	},
 }

@@ -148,9 +148,10 @@ func (c recipeIntentCompiler) Compile(state recipeCompileState) (recipeResolved,
 		pass := c.passes[i]
 		if pass == nil {
 			return recipeResolved{}, &BuildError{
-				Code:      "compiler_pass_invalid",
+				Code:      CodeCompilerPassInvalid,
 				Operation: state.operation,
 				Reason:    fmt.Sprintf("recipe compiler pass %d is nil", i),
+				Details:   []string{"internal invariant: the recipe compiler was assembled with a nil pass"},
 				Cause:     ErrUnsupportedBuild,
 			}
 		}
@@ -186,7 +187,7 @@ func compilerPassError(operation string, pass string, err error) error {
 		return err
 	}
 	return &BuildError{
-		Code:      "compiler_pass_failed",
+		Code:      CodeCompilerPassFailed,
 		Operation: firstNonEmpty(buildErr.Operation, operation),
 		Reason:    "recipe compiler pass failed without a diagnostic",
 		Details: []string{
@@ -363,15 +364,10 @@ func compileJobJoinRecipeWithOptions(job *Job, options recipeCompileOptions) (re
 func validateJoinRecipePass() recipeCompilePass {
 	return recipeCompilePassFunc{name: "validate join recipe", fn: func(state *recipeCompileState) error {
 		if state.joinAttachment == nil {
-			return &BuildError{
-				Code:      "job_invalid",
-				Operation: state.operation,
-				Reason:    "nil join",
-				Cause:     ErrUnsupportedBuild,
-			}
+			return nilRecipeError(state.operation, "nil join")
 		}
 		if state.runtime == nil {
-			return &BuildError{Code: "runtime_missing", Operation: state.operation, Reason: "no runtime is configured", Cause: ErrUnsupportedBuild}
+			return runtimeMissingError(state.operation)
 		}
 		if state.recipeErr != nil {
 			return state.recipeErr
@@ -438,18 +434,39 @@ func compileBranchCompositionRecipeWithOptions(job *branchCompositionJob, option
 	}}.Compile(state)
 }
 
+// nilRecipeError marks a recipe compile invoked without its job/join
+// attachment — an internal invariant, not a user-fixable refusal.
+func nilRecipeError(operation string, reason string) error {
+	return &BuildError{
+		Code:      CodeJobInvalid,
+		Operation: operation,
+		Reason:    reason,
+		Details:   []string{"internal invariant: the compiler was invoked without its recipe attachment (recipes are constructed with goav.From(...))"},
+		Cause:     ErrUnsupportedBuild,
+	}
+}
+
+// runtimeMissingError is the no-runtime refusal shared by every recipe form.
+func runtimeMissingError(operation string) error {
+	return &BuildError{
+		Code:      CodeRuntimeMissing,
+		Operation: operation,
+		Reason:    "no runtime is configured",
+		Suggestions: []string{
+			"keep the default: goav.From(...) recipes start with goav.Default()",
+			"pass a non-nil runtime with .UseRuntime(goav.New(goav.WithDefaults()))",
+		},
+		Cause: ErrUnsupportedBuild,
+	}
+}
+
 func validateJobRecipePass() recipeCompilePass {
 	return recipeCompilePassFunc{name: "validate job recipe", fn: func(state *recipeCompileState) error {
 		if !state.jobPresent {
-			return &BuildError{
-				Code:      "job_invalid",
-				Operation: state.operation,
-				Reason:    "nil job",
-				Cause:     ErrUnsupportedBuild,
-			}
+			return nilRecipeError(state.operation, "nil job")
 		}
 		if state.runtime == nil {
-			return &BuildError{Code: "runtime_missing", Operation: state.operation, Reason: "no runtime is configured", Cause: ErrUnsupportedBuild}
+			return runtimeMissingError(state.operation)
 		}
 		if state.recipeErr != nil {
 			return state.recipeErr
@@ -475,11 +492,28 @@ func validateJobIntentShapePass() recipeCompilePass {
 
 func validateJobIntentShape(operation string, intent Intent, jobOutputCount int) error {
 	if len(intent.Inputs) == 0 {
-		return &BuildError{Code: "input_missing", Operation: operation, Reason: "no input is configured", Cause: ErrUnsupportedBuild}
+		return &BuildError{
+			Code:      CodeInputMissing,
+			Operation: operation,
+			Reason:    "no input is configured",
+			Suggestions: []string{
+				"start the recipe from an input: goav.From(goav.FileInput(\"in.webm\", reader))",
+			},
+			Cause: ErrUnsupportedBuild,
+		}
 	}
 	stream, hasStream := jobIntentStream(intent)
 	if len(intent.Destinations) == 0 {
-		return &BuildError{Code: "output_missing", Operation: operation, Reason: "no output is configured", Cause: ErrUnsupportedBuild}
+		return &BuildError{
+			Code:      CodeOutputMissing,
+			Operation: operation,
+			Reason:    "no output is configured",
+			Suggestions: []string{
+				"route the job to a destination: .To(goav.File(\"out.webm\", writer))",
+				"deliver frames to code with .To(goav.Sink(sink))",
+			},
+			Cause: ErrUnsupportedBuild,
+		}
 	}
 	if len(intent.Streams) > 1 {
 		return validateMultiStreamJobIntentShape(operation, intent, jobOutputCount)
@@ -514,7 +548,7 @@ func validateMultiStreamJobIntentShape(operation string, intent Intent, jobOutpu
 
 func jobStreamDestinationMissingError(operation string, stream streamIntent) error {
 	return &BuildError{
-		Code:      "output_missing",
+		Code:      CodeOutputMissing,
 		Operation: operation,
 		Node:      jobStreamIntentName(stream),
 		Reason:    "stream chain has no destination",
@@ -538,7 +572,7 @@ func validateJobIntentOutputScope(operation string, intent Intent, jobOutputCoun
 
 func jobOutputScopeMixedError(operation string, stream streamIntent) error {
 	return &BuildError{
-		Code:      "output_scope_mixed",
+		Code:      CodeOutputScopeMixed,
 		Operation: operation,
 		Node:      jobStreamIntentName(stream),
 		Reason:    "stream recipes use stream-local outputs",
@@ -553,7 +587,7 @@ func jobOutputScopeMixedError(operation string, stream streamIntent) error {
 
 func jobDestinationReferenceMissingError(operation string, stream streamIntent, label string) error {
 	return &BuildError{
-		Code:      "output_missing",
+		Code:      CodeOutputMissing,
 		Operation: operation,
 		Node:      jobStreamIntentName(stream),
 		Reason:    "stream route output " + label + " is not attached",
@@ -596,11 +630,12 @@ func validateJobStreamTransformIntentShape(operation string, stream streamIntent
 		switch {
 		case transform.Resize != nil && transform.Resample != nil:
 			return &BuildError{
-				Code:      "transform_invalid",
-				Operation: operation,
-				Node:      node,
-				Reason:    "one stream transform cannot be both resize and resample",
-				Cause:     ErrUnsupportedBuild,
+				Code:        CodeTransformInvalid,
+				Operation:   operation,
+				Node:        node,
+				Reason:      "one stream transform cannot be both resize and resample",
+				Suggestions: []string{"declare two separate steps instead: .Resize(width, height).Resample(rate, channels)"},
+				Cause:       ErrUnsupportedBuild,
 			}
 		case transform.Resize != nil:
 			if selector.Type == av.MediaAudio {
@@ -612,7 +647,7 @@ func validateJobStreamTransformIntentShape(operation string, stream streamIntent
 			}
 		default:
 			return &BuildError{
-				Code:      "transform_invalid",
+				Code:      CodeTransformInvalid,
 				Operation: operation,
 				Node:      node,
 				Reason:    "empty stream transform",
@@ -629,7 +664,7 @@ func validateJobStreamTransformIntentShape(operation string, stream streamIntent
 
 func operationSpecMissingError(operation string, node string) error {
 	return &BuildError{
-		Code:      "stream_operation_missing",
+		Code:      CodeStreamOperationMissing,
 		Operation: operation,
 		Node:      node,
 		Reason:    "the stream was selected but no decode, processing stage, or encoder was requested",
@@ -749,15 +784,10 @@ func jobStreamDestinationSubset(state *recipeCompileState, stream streamIntent) 
 func validateBranchCompositionRecipePass() recipeCompilePass {
 	return recipeCompilePassFunc{name: "validate transcode recipe", fn: func(state *recipeCompileState) error {
 		if !state.branchCompositionPresent {
-			return &BuildError{
-				Code:      "job_invalid",
-				Operation: state.operation,
-				Reason:    "nil transcode job",
-				Cause:     ErrUnsupportedBuild,
-			}
+			return nilRecipeError(state.operation, "nil transcode job")
 		}
 		if state.runtime == nil {
-			return &BuildError{Code: "runtime_missing", Operation: state.operation, Reason: "no runtime is configured", Cause: ErrUnsupportedBuild}
+			return runtimeMissingError(state.operation)
 		}
 		if state.recipeErr != nil {
 			return state.recipeErr
@@ -875,7 +905,7 @@ func validateRecipeAttachmentConsistencyPass() recipeCompilePass {
 
 func recipeAttachmentMismatchError(operation string, kind string, intentCount int, attachmentCount int) error {
 	return &BuildError{
-		Code:      "recipe_attachment_mismatch",
+		Code:      CodeRecipeAttachmentMismatch,
 		Operation: operation,
 		Reason:    kind + " intent and concrete attachments disagree",
 		Details: []string{
@@ -1191,7 +1221,7 @@ func validateRecipeDestinationShape(operation string, node string, destinationNa
 func destinationShapeMismatchError(operation string, node string, destinationName string, destination destinationSpec, spec shape.Spec) error {
 	label := firstNonEmpty(destinationName, destination.label("destination"))
 	return &BuildError{
-		Code:      "destination_shape_mismatch",
+		Code:      CodeDestinationShapeMismatch,
 		Operation: operation,
 		Node:      firstNonEmpty(node, label, "destination"),
 		Reason:    "byte or mux destination requires packet-domain media",
@@ -1255,7 +1285,7 @@ func shapeRequirementUnmetError(operation string, node string, index int, step O
 		required = *step.Require
 	}
 	return &BuildError{
-		Code:      "shape_requirement_unmet",
+		Code:      CodeShapeRequirementUnmet,
 		Operation: operation,
 		Node:      node,
 		Reason: fmt.Sprintf(".Require(...) is not satisfied: the stream is %s, required %s",
@@ -1286,7 +1316,7 @@ func operationSpecOutputShape(input shape.Spec, operation OperationSpec) shape.S
 func operationShapeMismatchError(operation string, node string, index int, step OperationSpec, expected shape.Set, actual shape.Spec) error {
 	component := firstNonEmpty(step.Component, operationSpecComponent(step), string(step.Kind), "operation")
 	return &BuildError{
-		Code:      "operation_shape_mismatch",
+		Code:      CodeOperationShapeMismatch,
 		Operation: operation,
 		Node:      node,
 		Reason:    component + " cannot consume the current media shape",
@@ -1392,7 +1422,7 @@ func recipeGraphUnsupportedError(operation string, intent Intent) error {
 		fmt.Sprintf("destinations: %d", len(intent.Destinations)),
 	}
 	return &BuildError{
-		Code:      "recipe_graph_unsupported",
+		Code:      CodeRecipeGraphUnsupported,
 		Operation: operation,
 		Reason:    "recipe intent did not match a supported graph plan",
 		Details:   details,

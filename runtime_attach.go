@@ -337,7 +337,7 @@ func validateRuntimeBranchGroupDestinations(specs []BranchSpec, destinations [][
 					}
 				}
 				return group, &BuildError{
-					Code:      "destination_duplicate",
+					Code:      CodeDestinationDuplicate,
 					Operation: "attach runtime branches",
 					Node:      firstNonEmpty(specs[i].name, "branch"),
 					Reason:    "runtime branch group reuses one destination name",
@@ -1418,11 +1418,12 @@ func runtimeBranchTransform(branchName string, stream av.Stream, spec TransformS
 	switch {
 	case spec.Resize != nil && spec.Resample != nil:
 		return mediaTransform{}, &BuildError{
-			Code:      "transform_invalid",
-			Operation: "attach runtime branch",
-			Node:      base,
-			Reason:    "one runtime branch transform cannot be both resize and resample",
-			Cause:     ErrUnsupportedBuild,
+			Code:        CodeTransformInvalid,
+			Operation:   "attach runtime branch",
+			Node:        base,
+			Reason:      "one runtime branch transform cannot be both resize and resample",
+			Suggestions: []string{"declare two separate steps instead: .Resize(width, height).Resample(rate, channels)"},
+			Cause:       ErrUnsupportedBuild,
 		}
 	case spec.Resize != nil:
 		if stream.Type != av.MediaVideo && stream.Codec.Type != av.MediaVideo {
@@ -1446,7 +1447,7 @@ func runtimeBranchTransform(branchName string, stream av.Stream, spec TransformS
 		}, nil
 	default:
 		return mediaTransform{}, &BuildError{
-			Code:      "transform_invalid",
+			Code:      CodeTransformInvalid,
 			Operation: "attach runtime branch",
 			Node:      base,
 			Reason:    "empty runtime branch transform",
@@ -1628,7 +1629,7 @@ func specHasNode(spec pipeline.Spec, name string) bool {
 
 func runtimeBranchInvalidError(reason string, suggestion string) error {
 	return &BuildError{
-		Code:      "runtime_branch_invalid",
+		Code:      CodeRuntimeBranchInvalid,
 		Operation: "attach runtime branch",
 		Reason:    reason,
 		Suggestions: []string{
@@ -1640,7 +1641,7 @@ func runtimeBranchInvalidError(reason string, suggestion string) error {
 
 func runtimeBranchAnchorMissingError(node string) error {
 	return &BuildError{
-		Code:      "runtime_branch_anchor_missing",
+		Code:      CodeRuntimeBranchAnchorMissing,
 		Operation: "attach runtime branch",
 		Node:      node,
 		Reason:    "branch source node does not exist in the running task graph",
@@ -1659,7 +1660,7 @@ func runtimeBranchTapMissingError(name string, taps []info.Tap) error {
 		details = append(details, taps[i].Name+": "+string(taps[i].Domain)+" "+string(taps[i].MediaKind))
 	}
 	return &BuildError{
-		Code:      "runtime_branch_tap_missing",
+		Code:      CodeRuntimeBranchTapMissing,
 		Operation: "attach runtime branch",
 		Node:      name,
 		Reason:    "branch source tap does not exist in the running task",
@@ -1675,7 +1676,7 @@ func runtimeBranchTapMissingError(name string, taps []info.Tap) error {
 
 func runtimeBranchNodeDuplicateError(node string) error {
 	return &BuildError{
-		Code:      "runtime_branch_node_duplicate",
+		Code:      CodeRuntimeBranchNodeDuplicate,
 		Operation: "attach runtime branch",
 		Node:      node,
 		Reason:    "branch node name already exists in the task graph",
@@ -1689,7 +1690,7 @@ func runtimeBranchNodeDuplicateError(node string) error {
 
 func duplicateRuntimeBranchDestinationRefError(branch string, label string, firstIndex int, secondIndex int) error {
 	return &BuildError{
-		Code:      "destination_duplicate",
+		Code:      CodeDestinationDuplicate,
 		Operation: "attach runtime branch",
 		Node:      firstNonEmpty(branch, "branch"),
 		Reason:    fmt.Sprintf("branch routes to destination %q more than once", label),
@@ -1708,7 +1709,7 @@ func duplicateRuntimeBranchDestinationRefError(branch string, label string, firs
 
 func runtimeBranchTapDuplicateError(name string) error {
 	return &BuildError{
-		Code:      "runtime_branch_tap_duplicate",
+		Code:      CodeRuntimeBranchTapDuplicate,
 		Operation: "attach runtime branch",
 		Node:      name,
 		Reason:    "branch tap name already exists in the task",
@@ -1722,7 +1723,7 @@ func runtimeBranchTapDuplicateError(name string) error {
 
 func runtimeBranchTransformMediaError(branch string, transform string, media string) error {
 	return &BuildError{
-		Code:      "runtime_branch_transform_media_mismatch",
+		Code:      CodeRuntimeBranchTransformMediaMismatch,
 		Operation: "attach runtime branch",
 		Node:      branch,
 		Reason:    transform + " applies to " + media + " frame taps",
@@ -1740,7 +1741,7 @@ func runtimeBranchTransformError(node string, cause error) error {
 		return nil
 	}
 	return &BuildError{
-		Code:      "runtime_branch_transform_error",
+		Code:      CodeRuntimeBranchTransformError,
 		Operation: "attach runtime branch",
 		Node:      node,
 		Reason:    "runtime branch transform could not be opened",
@@ -1755,7 +1756,7 @@ func runtimeBranchTransformError(node string, cause error) error {
 
 func runtimeBranchEncodeMissingError(branch string) error {
 	return &BuildError{
-		Code:      "runtime_branch_encode_missing",
+		Code:      CodeRuntimeBranchEncodeMissing,
 		Operation: "attach runtime branch",
 		Node:      firstNonEmpty(branch, "branch"),
 		Reason:    "muxed runtime branches need packet copy or an encoder",
@@ -1770,7 +1771,7 @@ func runtimeBranchEncodeMissingError(branch string) error {
 
 func runtimeBranchEncodeDomainError(branch string, shape shape.Spec) error {
 	return &BuildError{
-		Code:      "runtime_branch_encode_domain_mismatch",
+		Code:      CodeRuntimeBranchEncodeDomainMismatch,
 		Operation: "attach runtime branch",
 		Node:      firstNonEmpty(branch, "branch"),
 		Reason:    "runtime branch encoding requires a frame tap",
@@ -1786,7 +1787,7 @@ func runtimeBranchEncodeDomainError(branch string, shape shape.Spec) error {
 
 func runtimeBranchDecodeDomainError(branch string, shape shape.Spec) error {
 	return &BuildError{
-		Code:      "runtime_branch_decode_domain_mismatch",
+		Code:      CodeRuntimeBranchDecodeDomainMismatch,
 		Operation: "attach runtime branch",
 		Node:      firstNonEmpty(branch, "branch"),
 		Reason:    "runtime branch decoding requires a packet tap",
@@ -1802,7 +1803,7 @@ func runtimeBranchDecodeDomainError(branch string, shape shape.Spec) error {
 
 func runtimeBranchDecodeCodecMissingError(branch string, shape shape.Spec) error {
 	return &BuildError{
-		Code:      "runtime_branch_decode_codec_missing",
+		Code:      CodeRuntimeBranchDecodeCodecMissing,
 		Operation: "attach runtime branch",
 		Node:      firstNonEmpty(branch, "branch"),
 		Reason:    "runtime branch decode needs packet codec metadata",
@@ -1818,7 +1819,7 @@ func runtimeBranchDecodeCodecMissingError(branch string, shape shape.Spec) error
 
 func runtimeBranchCopyDomainError(branch string, shape shape.Spec) error {
 	return &BuildError{
-		Code:      "runtime_branch_copy_domain_mismatch",
+		Code:      CodeRuntimeBranchCopyDomainMismatch,
 		Operation: "attach runtime branch",
 		Node:      firstNonEmpty(branch, "branch"),
 		Reason:    "runtime branch packet copy requires a packet tap",
@@ -1834,7 +1835,7 @@ func runtimeBranchCopyDomainError(branch string, shape shape.Spec) error {
 
 func runtimeBranchMuxCodecMissingError(branch string, shape shape.Spec) error {
 	return &BuildError{
-		Code:      "runtime_branch_mux_codec_missing",
+		Code:      CodeRuntimeBranchMuxCodecMissing,
 		Operation: "attach runtime branch",
 		Node:      firstNonEmpty(branch, "branch"),
 		Reason:    "runtime branch mux destination needs codec metadata",
@@ -1864,7 +1865,7 @@ func runtimeBranchShapeDetails(shape shape.Spec) []string {
 
 func runtimeBranchGraphError(operation string, node string, cause error) error {
 	return &BuildError{
-		Code:      "runtime_branch_graph_error",
+		Code:      CodeRuntimeBranchGraphError,
 		Operation: operation,
 		Node:      node,
 		Reason:    "runtime graph rejected the branch attachment",

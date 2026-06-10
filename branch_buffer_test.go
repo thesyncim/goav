@@ -64,7 +64,7 @@ func TestBranchBufferRejectsInvalidPolicies(t *testing.T) {
 	tests := []struct {
 		name   string
 		buffer flow.BranchBuffer
-		code   string
+		code   ErrorCode
 	}{
 		{name: "zero capacity", buffer: flow.DropOldest(0), code: "branch_buffer_invalid"},
 		{name: "negative copy bounds", buffer: flow.Blocking(1, flow.BufferCopyBounds(-1, 0)), code: "branch_buffer_invalid"},

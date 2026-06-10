@@ -118,7 +118,8 @@ func (a *joinTapAnchors) resolve(name string) (joinTapAnchor, bool) {
 // the arm's stream is the tapped stream re-stamped under the tap name.
 func planJoinTapArm(name string, kind string, profile joinProfile, tap TapRef, anchors *joinTapAnchors) (joinArmPlan, error) {
 	if tap.name == "" {
-		return joinArmPlan{}, joinArmError(name, name, "tap arm has no name; use goav.Tap/FrameTap/PacketTap with a stable name")
+		return joinArmPlan{}, joinArmError(name, name, "tap arm has no name",
+			"use a named typed tap ref: goav.FrameTap(\"voice.decoded\") or goav.PacketTap(\"cam.packets\")")
 	}
 	anchor, ok := anchors.resolve(tap.name)
 	if !ok {
@@ -129,7 +130,8 @@ func planJoinTapArm(name string, kind string, profile joinProfile, tap TapRef, a
 	}
 	if profile.media != "" && anchor.stream.Type != profile.media {
 		return joinArmPlan{}, joinArmError(name, tap.name,
-			fmt.Sprintf("%s tap arm %q carries %s, want %s", kind, tap.name, anchor.stream.Type, profile.media))
+			fmt.Sprintf("%s tap arm %q carries %s, want %s", kind, tap.name, anchor.stream.Type, profile.media),
+			"reference a tap declared on a "+string(profile.media)+" arm chain")
 	}
 	stream := anchor.stream
 	stream.ID = av.StreamID(tap.name)
@@ -163,8 +165,10 @@ func validateJoinArmOperations(join string, arm string, operations []OperationSp
 		case info.OpDecode, info.OpTap:
 		default:
 			return joinArmError(join, firstNonEmpty(arm, join), fmt.Sprintf(
-				"%s arm chains support .Decode() and .Tap(...) only (%s is not lowered on an arm); transform or encode the JOINED stream after the join, or use a nested join arm",
-				join, string(operations[i].Kind)))
+				"%s arm chains support .Decode() and .Tap(...) only (%s is not lowered on an arm)",
+				join, string(operations[i].Kind)),
+				"transform or encode the JOINED stream after the join: goav.Mix(a, b).Encode(...) / .Branches(...)",
+				"use a nested join arm when one arm needs its own convergence")
 		}
 	}
 	return nil
@@ -247,7 +251,7 @@ func joinTapArmMissingError(join string, tap TapRef, declared []string) error {
 		details = append(details, "declared taps: none")
 	}
 	return &BuildError{
-		Code:      join + "_tap_arm",
+		Code:      joinErrorCode(join, "tap_arm"),
 		Operation: "build " + join,
 		Node:      firstNonEmpty(tap.name, join),
 		Reason:    "tap arm references a tap that no earlier arm declares",

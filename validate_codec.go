@@ -168,10 +168,10 @@ func liveDecodeCodec(inputs []inputIntent, stream streamIntent) (av.CodecID, boo
 }
 
 func recipeDecodeAdapterError(operation string, stream streamIntent, codecID av.CodecID, registry *codec.SimpleRegistry, cause error) error {
-	code := "decode_adapter_missing"
+	code := CodeDecodeAdapterMissing
 	reason := "no decoder adapter is registered for " + string(codecID)
 	if errors.Is(cause, codec.ErrUnavailable) {
-		code = "decode_adapter_unavailable"
+		code = CodeDecodeAdapterUnavailable
 		reason = string(codecID) + " decoder adapter is descriptor-only in this build"
 	}
 	details := []string{"codec=" + string(codecID)}
@@ -243,7 +243,7 @@ func decodeAdapterIncompatibleError(operation string, stream streamIntent, reque
 		details = append(details, "supported_pixel_formats="+strings.Join(pixelFormats, ","))
 	}
 	return &BuildError{
-		Code:      "decode_adapter_incompatible",
+		Code:      CodeDecodeAdapterIncompatible,
 		Operation: operation,
 		Node:      jobStreamIntentName(stream),
 		Reason:    string(request.Codec) + " decoder adapter does not support the requested " + label,
@@ -376,7 +376,7 @@ func encodeAdapterIncompatibleError(operation string, stream streamIntent, reque
 		details = append(details, "supported_pixel_formats="+strings.Join(pixelFormats, ","))
 	}
 	return &BuildError{
-		Code:      "encode_adapter_incompatible",
+		Code:      CodeEncodeAdapterIncompatible,
 		Operation: operation,
 		Node:      jobStreamIntentName(stream),
 		Reason:    string(request.Codec) + " encoder adapter does not support the requested " + label,
@@ -496,10 +496,10 @@ func mergeStringList(existing []string, next []string) []string {
 
 func recipeEncodeAdapterError(operation string, stream streamIntent, registry *codec.SimpleRegistry, cause error) error {
 	codecID := chainEncodeSpec(stream.Operations).ID
-	code := "encode_adapter_missing"
+	code := CodeEncodeAdapterMissing
 	reason := "no encoder adapter is registered for " + string(codecID)
 	if errors.Is(cause, codec.ErrUnavailable) {
-		code = "encode_adapter_unavailable"
+		code = CodeEncodeAdapterUnavailable
 		reason = string(codecID) + " encoder adapter is descriptor-only in this build"
 	}
 	details := []string{"codec=" + string(codecID)}

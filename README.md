@@ -149,6 +149,13 @@ shapes, and concrete fixes — encode before a byte destination, copy from a
 packet-domain point, or end in a sink. `Shape(...)` annotates the current media
 point; it is not an escape hatch around operation contracts.
 
+That structure is the contract for EVERY goav error, not just shape refusals:
+each `BuildError` carries a typed `goav.ErrorCode` from the catalog in
+`errors.go`, the failing operation and node, machine-readable details, and at
+least one concrete fix when the refusal is user-fixable. Match codes with
+`errors.As` and sentinels (`goav.ErrUnsupportedBuild`, ...) with `errors.Is` —
+see [docs/ERRORS.md](docs/ERRORS.md).
+
 Format mismatches a conversion would fix can be solved instead of refused:
 `.Auto(...)` opts the chain into the shape solver with an explicit policy. When
 a downstream operation pins format facts the current media does not satisfy —

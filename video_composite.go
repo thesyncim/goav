@@ -166,13 +166,13 @@ func compositeI420Frames(frames []*av.Frame, layout []compositeLayout, floorW, f
 	for i := range frames {
 		f := frames[i]
 		if f.Video == nil {
-			return nil, fmt.Errorf("goav: video composite input has no video frame")
+			return nil, fmt.Errorf("goav: composite arm %q delivered a frame with no video plane", f.StreamID)
 		}
 		if f.Video.PixelFormat != av.PixelFormatI420 {
-			return nil, fmt.Errorf("goav: video composite requires %s, got %q", av.PixelFormatI420, f.Video.PixelFormat)
+			return nil, fmt.Errorf("goav: video composite requires %s, got %q on arm %q", av.PixelFormatI420, f.Video.PixelFormat, f.StreamID)
 		}
 		if len(f.Planes) < 3 {
-			return nil, fmt.Errorf("goav: video composite I420 input needs 3 planes, got %d", len(f.Planes))
+			return nil, fmt.Errorf("goav: video composite I420 arm %q needs 3 planes, got %d", f.StreamID, len(f.Planes))
 		}
 		canvasW = max(canvasW, layout[i].X+f.Video.Width)
 		canvasH = max(canvasH, layout[i].Y+f.Video.Height)

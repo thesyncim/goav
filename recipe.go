@@ -12,8 +12,14 @@ import (
 	"github.com/thesyncim/goav/shape"
 )
 
+// BuildError is the one structured refusal goav raises from build,
+// validation, attach, and explain paths. Code identifies the refusal class
+// (see errors.go for the catalog), Operation/Node say where, Reason says why,
+// Details carry machine-readable facts (key=value lines), and Suggestions
+// carry concrete fixes. Cause is a sentinel (ErrUnsupportedBuild, ErrNilSink,
+// ...) reachable through errors.Is.
 type BuildError struct {
-	Code        string
+	Code        ErrorCode
 	Operation   string
 	Node        string
 	Reason      string

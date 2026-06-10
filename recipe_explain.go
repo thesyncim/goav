@@ -328,7 +328,7 @@ func appendBranchOperationRequirements(requirements []info.AdapterRequirement, r
 			codecID, ok := operationDecodeCodec(resolved, stream, streamOK, operation)
 			if !ok || codecID == "" {
 				warnings = append(warnings, info.Diagnostic{
-					Code:    "decode_codec_deferred",
+					Code:    string(CodeDecodeCodecDeferred),
 					Node:    requiredBy,
 					Message: "decode codec will be resolved when the input opens",
 					Suggestions: []string{
@@ -587,13 +587,13 @@ func annotatePlanReportError(report *info.Plan, err error) {
 	var buildErr *BuildError
 	if !errors.As(err, &buildErr) || buildErr == nil {
 		report.Warnings = appendPlanDiagnostics(report.Warnings, info.Diagnostic{
-			Code:    "explain_preflight_error",
+			Code:    string(CodeExplainPreflightError),
 			Message: err.Error(),
 		})
 		return
 	}
 	report.Warnings = appendPlanDiagnostics(report.Warnings, info.Diagnostic{
-		Code:        buildErr.Code,
+		Code:        string(buildErr.Code),
 		Node:        buildErr.Node,
 		Message:     buildErr.Reason,
 		Details:     append([]string(nil), buildErr.Details...),
@@ -601,11 +601,11 @@ func annotatePlanReportError(report *info.Plan, err error) {
 	})
 	requirement, ok := adapterRequirementFromBuildError(buildErr)
 	if !ok {
-		if buildErr.Code == "destination_mux_incompatible" {
+		if buildErr.Code == CodeDestinationMuxIncompatible {
 			return
 		}
 		report.Missing = append(report.Missing, info.Requirement{
-			Kind:       firstNonEmpty(buildErr.Code, "requirement"),
+			Kind:       firstNonEmpty(string(buildErr.Code), "requirement"),
 			Name:       firstNonEmpty(buildErr.Node, buildErr.Reason),
 			RequiredBy: buildErr.Node,
 			Status:     "failed",
@@ -626,7 +626,7 @@ func adapterRequirementFromBuildError(err *BuildError) (info.AdapterRequirement,
 	status := adapterRequirementStatus(err.Code)
 	requiredBy := firstNonEmpty(err.Node, err.Operation)
 	switch err.Code {
-	case "input_demuxer_missing":
+	case CodeInputDemuxerMissing:
 		formatID := av.FormatID(details["format"])
 		return info.AdapterRequirement{
 			Kind:       "demuxer",
@@ -635,7 +635,7 @@ func adapterRequirementFromBuildError(err *BuildError) (info.AdapterRequirement,
 			RequiredBy: requiredBy,
 			Status:     status,
 		}, formatID != ""
-	case "output_muxer_missing", "destination_muxer_missing":
+	case CodeOutputMuxerMissing, CodeDestinationMuxerMissing:
 		formatID := av.FormatID(details["format"])
 		return info.AdapterRequirement{
 			Kind:       "muxer",
@@ -644,7 +644,7 @@ func adapterRequirementFromBuildError(err *BuildError) (info.AdapterRequirement,
 			RequiredBy: requiredBy,
 			Status:     status,
 		}, formatID != ""
-	case "decode_adapter_missing", "decode_adapter_unavailable", "decode_adapter_incompatible":
+	case CodeDecodeAdapterMissing, CodeDecodeAdapterUnavailable, CodeDecodeAdapterIncompatible:
 		codecID := av.CodecID(details["codec"])
 		requirement := info.AdapterRequirement{
 			Kind:       "decoder",
@@ -655,7 +655,7 @@ func adapterRequirementFromBuildError(err *BuildError) (info.AdapterRequirement,
 		}
 		applyCodecDetailsFromBuildError(&requirement, details)
 		return requirement, codecID != ""
-	case "encode_adapter_missing", "encode_adapter_unavailable", "encode_adapter_incompatible":
+	case CodeEncodeAdapterMissing, CodeEncodeAdapterUnavailable, CodeEncodeAdapterIncompatible:
 		codecID := av.CodecID(details["codec"])
 		requirement := info.AdapterRequirement{
 			Kind:       "encoder",
@@ -666,7 +666,7 @@ func adapterRequirementFromBuildError(err *BuildError) (info.AdapterRequirement,
 		}
 		applyCodecDetailsFromBuildError(&requirement, details)
 		return requirement, codecID != ""
-	case "transform_adapter_missing", "transform_adapter_incompatible":
+	case CodeTransformAdapterMissing, CodeTransformAdapterIncompatible:
 		name := details["transform"]
 		requirement := filterAdapterRequirement(nil, name, requiredBy)
 		requirement.Status = status
@@ -687,7 +687,7 @@ func adapterRequirementFromBuildError(err *BuildError) (info.AdapterRequirement,
 		}
 		return requirement, name != ""
 	default:
-		if strings.HasSuffix(err.Code, "_format_unknown") {
+		if strings.HasSuffix(string(err.Code), "_format_unknown") {
 			return info.AdapterRequirement{
 				Kind:       "format-prober",
 				Name:       firstNonEmpty(err.Node, "format"),
@@ -734,13 +734,13 @@ func cloneMetadata(metadata av.Metadata) av.Metadata {
 	return cloned
 }
 
-func adapterRequirementStatus(code string) string {
+func adapterRequirementStatus(code ErrorCode) string {
 	switch {
-	case strings.HasSuffix(code, "_incompatible"):
+	case strings.HasSuffix(string(code), "_incompatible"):
 		return "incompatible"
-	case strings.HasSuffix(code, "_unavailable"):
+	case strings.HasSuffix(string(code), "_unavailable"):
 		return "unavailable"
-	case strings.HasSuffix(code, "_unknown"):
+	case strings.HasSuffix(string(code), "_unknown"):
 		return "unknown"
 	default:
 		return "missing"

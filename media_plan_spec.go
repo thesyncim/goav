@@ -154,7 +154,7 @@ func graphPlanOperationDestinationsRequired(kind info.OperationKind) bool {
 
 func graphPlanInvalidError(reason string, details []string) error {
 	return &BuildError{
-		Code:      "graph_plan_invalid",
+		Code:      CodeGraphPlanInvalid,
 		Operation: "build graph plan",
 		Reason:    reason,
 		Details:   append([]string(nil), details...),

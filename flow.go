@@ -441,7 +441,7 @@ func (b *chainBuilder) tap(tap TapRef) {
 	}
 	if tap.name == "" {
 		b.setErr(&BuildError{
-			Code:      "tap_invalid",
+			Code:      CodeTapInvalid,
 			Operation: "build flow",
 			Node:      firstNonEmpty(b.spec.name, "flow"),
 			Reason:    "tap name is empty",
@@ -570,7 +570,7 @@ func duplicateFlowEncodeError(name string, first codec.CodecSpec, second codec.C
 
 func duplicateFlowDecodeError(node string) error {
 	return &BuildError{
-		Code:      "flow_decode_duplicate",
+		Code:      CodeFlowDecodeDuplicate,
 		Operation: "build flow",
 		Node:      node,
 		Reason:    "flow already decodes its input packets",
@@ -584,7 +584,7 @@ func duplicateFlowDecodeError(node string) error {
 
 func flowDecodeOrderError(node string) error {
 	return &BuildError{
-		Code:      "flow_decode_order_invalid",
+		Code:      CodeFlowDecodeOrderInvalid,
 		Operation: "build flow",
 		Node:      node,
 		Reason:    "decode must be the first flow operation",
@@ -598,7 +598,7 @@ func flowDecodeOrderError(node string) error {
 
 func flowDecodeDomainError(operation string, node string) error {
 	return &BuildError{
-		Code:      "flow_decode_domain_mismatch",
+		Code:      CodeFlowDecodeDomainMismatch,
 		Operation: operation,
 		Node:      firstNonEmpty(node, "flow"),
 		Reason:    "flow decoding requires a packet-domain stream point",
@@ -613,7 +613,7 @@ func flowDecodeDomainError(operation string, node string) error {
 
 func flowCopyDomainError(operation string, node string) error {
 	return &BuildError{
-		Code:      "flow_copy_domain_mismatch",
+		Code:      CodeFlowCopyDomainMismatch,
 		Operation: operation,
 		Node:      firstNonEmpty(node, "flow"),
 		Reason:    "flow copying requires a packet-domain stream point",
@@ -628,7 +628,7 @@ func flowCopyDomainError(operation string, node string) error {
 
 func nilFlowError() error {
 	return &BuildError{
-		Code:      "flow_invalid",
+		Code:      CodeFlowInvalid,
 		Operation: "build flow",
 		Reason:    "flow is nil",
 		Suggestions: []string{
@@ -643,7 +643,7 @@ func validateChainMedia(operation string, node string, selected av.MediaType, sp
 		return nil
 	}
 	return &BuildError{
-		Code:      "flow_media_mismatch",
+		Code:      CodeFlowMediaMismatch,
 		Operation: operation,
 		Node:      firstNonEmpty(spec.name, node, "flow"),
 		Reason:    string(spec.media) + " flow cannot be applied to " + string(selected) + " stream",
@@ -657,7 +657,7 @@ func validateChainMedia(operation string, node string, selected av.MediaType, sp
 
 func branchInputCountError(node string, count int) error {
 	return &BuildError{
-		Code:      "input_count_unsupported",
+		Code:      CodeInputCountUnsupported,
 		Operation: "build branches",
 		Node:      node,
 		Reason:    "branches currently compose from one input",
@@ -674,7 +674,7 @@ func branchInputCountError(node string, count int) error {
 
 func branchOutputScopeError(node string) error {
 	return &BuildError{
-		Code:      "output_scope_mixed",
+		Code:      CodeOutputScopeMixed,
 		Operation: "build branches",
 		Node:      node,
 		Reason:    "branch destinations are declared inside Branch(...).To(...)",

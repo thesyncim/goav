@@ -225,7 +225,7 @@ func explainStreamRules(rules []streamRule) []info.Decision {
 			destinations = append(destinations, branchDestinationNames(rules[i].branches[j].destinations)...)
 		}
 		out = append(out, info.Decision{
-			Code:   "stream_rule",
+			Code:   string(CodeStreamRule),
 			Branch: strings.Join(names, "+"),
 			Message: fmt.Sprintf("on discovered stream (%s): attach %s to %s per matched stream",
 				rules[i].match.description(), strings.Join(names, ", "), strings.Join(destinations, ", ")),
@@ -253,7 +253,7 @@ func (s InputSpec) sourceEventDomain() shape.MediaDomain {
 
 func streamRuleInvalidError(node string, reason string, suggestion string) error {
 	return &BuildError{
-		Code:      "stream_rule_invalid",
+		Code:      CodeStreamRuleInvalid,
 		Operation: "build stream rule",
 		Node:      firstNonEmpty(node, "rule"),
 		Reason:    reason,

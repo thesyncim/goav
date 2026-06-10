@@ -1000,7 +1000,7 @@ func TestJobIntentShapePassRejectsInvalidPublicShape(t *testing.T) {
 	tests := []struct {
 		name  string
 		state recipeCompileState
-		code  string
+		code  ErrorCode
 		want  string
 	}{
 		{
@@ -1379,7 +1379,7 @@ func TestInputFormatAdapterPassesRejectMissingDemuxers(t *testing.T) {
 		name  string
 		pass  recipeCompilePass
 		state recipeCompileState
-		code  string
+		code  ErrorCode
 		want  []string
 	}{
 		{
@@ -1504,7 +1504,7 @@ func TestKnownInputStreamSelectionPassRejectsProbedAmbiguousAndMissingStreams(t 
 	tests := []struct {
 		name   string
 		stream streamIntent
-		code   string
+		code   ErrorCode
 		want   []string
 	}{
 		{
@@ -1559,7 +1559,7 @@ func TestLiveStreamSelectionPassRejectsAmbiguousAndMissingStreams(t *testing.T) 
 	tests := []struct {
 		name   string
 		intent Intent
-		code   string
+		code   ErrorCode
 		want   []string
 	}{
 		{
@@ -1652,7 +1652,7 @@ func TestDecodeAdapterPassRejectsKnownLiveMissingDecoders(t *testing.T) {
 	tests := []struct {
 		name  string
 		state recipeCompileState
-		code  string
+		code  ErrorCode
 		cause error
 		want  []string
 	}{
@@ -1765,7 +1765,7 @@ func TestKnownInputDecodeAdapterPassesRejectMissingDecoders(t *testing.T) {
 		name  string
 		pass  recipeCompilePass
 		state recipeCompileState
-		code  string
+		code  ErrorCode
 		cause error
 		want  []string
 	}{
@@ -2030,7 +2030,7 @@ func TestEncodeAdapterPassesRejectMissingEncoders(t *testing.T) {
 		name  string
 		pass  recipeCompilePass
 		state recipeCompileState
-		code  string
+		code  ErrorCode
 		cause error
 		want  []string
 	}{
@@ -2376,7 +2376,7 @@ func TestJobStreamOutputKindsPassRejectsInvalidOutputShapes(t *testing.T) {
 		name    string
 		stream  streamIntent
 		outputs []destinationSpec
-		code    string
+		code    ErrorCode
 		want    []string
 	}{
 		{
@@ -2454,7 +2454,7 @@ func TestShapeErrorsReportExpectedAndActualShape(t *testing.T) {
 		name  string
 		pass  recipeCompilePass
 		state recipeCompileState
-		code  string
+		code  ErrorCode
 		want  []string
 	}{
 		{
@@ -2516,7 +2516,7 @@ func TestRecipeOperationShapePassRejectsInvalidOrderedOperations(t *testing.T) {
 	tests := []struct {
 		name   string
 		stream streamIntent
-		code   string
+		code   ErrorCode
 		want   []string
 	}{
 		{
@@ -2757,7 +2757,7 @@ func TestJobIntentShapePassRejectsOperationTransforms(t *testing.T) {
 	tests := []struct {
 		name   string
 		stream streamIntent
-		code   string
+		code   ErrorCode
 		want   string
 	}{
 		{
@@ -2842,7 +2842,7 @@ func TestTranscodeIntentShapePassRejectsInvalidPublicShape(t *testing.T) {
 	tests := []struct {
 		name  string
 		state recipeCompileState
-		code  string
+		code  ErrorCode
 		want  string
 	}{
 		{
@@ -2959,7 +2959,7 @@ func TestTranscodeAttachmentsPassRejectsInvalidConcreteAttachments(t *testing.T)
 	tests := []struct {
 		name  string
 		state recipeCompileState
-		code  string
+		code  ErrorCode
 		want  string
 	}{
 		{

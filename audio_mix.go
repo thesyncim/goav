@@ -125,20 +125,20 @@ func (s *audioMixStage) drain(ctx context.Context, emitter pipeline.Emitter) err
 func mixS16Frames(frames []*av.Frame, out av.StreamID) (*av.Frame, error) {
 	base := frames[0]
 	if base.Audio == nil || len(base.Planes) == 0 {
-		return nil, fmt.Errorf("goav: mix input has no audio plane")
+		return nil, fmt.Errorf("goav: mix arm %q delivered a frame with no audio plane", base.StreamID)
 	}
 	n := len(base.Planes[0].Buffer.Bytes)
 	for i := range frames {
 		f := frames[i]
 		if f.Audio == nil || len(f.Planes) == 0 {
-			return nil, fmt.Errorf("goav: mix input has no audio plane")
+			return nil, fmt.Errorf("goav: mix arm %q delivered a frame with no audio plane", f.StreamID)
 		}
 		if f.Audio.SampleFormat != av.SampleFormatS16 {
-			return nil, fmt.Errorf("goav: audio mix requires %s, got %s", av.SampleFormatS16, f.Audio.SampleFormat)
+			return nil, fmt.Errorf("goav: audio mix requires %s, got %s on arm %q", av.SampleFormatS16, f.Audio.SampleFormat, f.StreamID)
 		}
 		if f.Audio.Channels != base.Audio.Channels || f.Audio.SampleRate != base.Audio.SampleRate {
-			return nil, fmt.Errorf("goav: audio mix inputs differ (%d ch/%d Hz vs %d ch/%d Hz)",
-				f.Audio.Channels, f.Audio.SampleRate, base.Audio.Channels, base.Audio.SampleRate)
+			return nil, fmt.Errorf("goav: audio mix arms differ (arm %q is %d ch/%d Hz, arm %q is %d ch/%d Hz)",
+				f.StreamID, f.Audio.Channels, f.Audio.SampleRate, base.StreamID, base.Audio.Channels, base.Audio.SampleRate)
 		}
 		if l := len(f.Planes[0].Buffer.Bytes); l < n {
 			n = l
@@ -305,4 +305,8 @@ var mixJoinProfile = joinProfile{
 		}
 	},
 	sinkOnlyReason: "mix to a non-Sink destination requires .Encode(...)",
+	sinkOnlySuggestions: []string{
+		"encode the mixed audio first: goav.Mix(a, b).Encode(codec.Opus(codec.Bitrate(96_000))).To(out)",
+		"deliver raw mixed frames with .To(goav.Sink(sink)) instead",
+	},
 }

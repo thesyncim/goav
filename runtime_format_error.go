@@ -13,7 +13,7 @@ func inputFormatProbeError(input format.Input, cause error) error {
 		return cause
 	}
 	return &BuildError{
-		Code:      "input_format_unknown",
+		Code:      CodeInputFormatUnknown,
 		Operation: "open input",
 		Node:      demuxNodeName(input),
 		Reason:    "input format could not be detected",
@@ -32,7 +32,7 @@ func inputDemuxerMissingError(input format.Input, id av.FormatID, cause error) e
 		return cause
 	}
 	return &BuildError{
-		Code:      "input_demuxer_missing",
+		Code:      CodeInputDemuxerMissing,
 		Operation: "open input",
 		Node:      demuxNodeName(input),
 		Reason:    "format " + quoteFormat(id) + " was detected but no demuxer is registered",
@@ -51,7 +51,7 @@ func outputFormatProbeError(output format.Output, index int, cause error) error 
 		return cause
 	}
 	return &BuildError{
-		Code:      "output_format_unknown",
+		Code:      CodeOutputFormatUnknown,
 		Operation: "open output",
 		Node:      muxNodeName(output, index),
 		Reason:    "output format could not be detected",
@@ -70,7 +70,7 @@ func outputMuxerMissingError(output format.Output, index int, id av.FormatID, ca
 		return cause
 	}
 	return &BuildError{
-		Code:      "output_muxer_missing",
+		Code:      CodeOutputMuxerMissing,
 		Operation: "open output",
 		Node:      muxNodeName(output, index),
 		Reason:    "format " + quoteFormat(id) + " was selected but no muxer is registered",
@@ -89,7 +89,7 @@ func destinationFormatProbeError(node string, output format.Output, cause error)
 		return cause
 	}
 	return &BuildError{
-		Code:      "destination_format_unknown",
+		Code:      CodeDestinationFormatUnknown,
 		Operation: "open destination",
 		Node:      node,
 		Reason:    "destination format could not be detected",
@@ -108,7 +108,7 @@ func destinationMuxerMissingError(node string, output format.Output, id av.Forma
 		return cause
 	}
 	return &BuildError{
-		Code:      "destination_muxer_missing",
+		Code:      CodeDestinationMuxerMissing,
 		Operation: "open destination",
 		Node:      node,
 		Reason:    "format " + quoteFormat(id) + " was selected for destination but no muxer is registered",

@@ -135,4 +135,8 @@ var compositeJoinProfile = joinProfile{
 		}
 	},
 	sinkOnlyReason: "composite to a non-Sink destination requires .Encode(...)",
+	sinkOnlySuggestions: []string{
+		"encode the composited video first: goav.Composite(a, b).Encode(codec.VP8(codec.Bitrate(1_000_000))).To(out)",
+		"deliver raw composited frames with .To(goav.Sink(sink)) instead",
+	},
 }

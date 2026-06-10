@@ -476,7 +476,7 @@ func jobStreamOutputNames(stream *jobStreamBuild) []string {
 
 func streamStageMissingError(stream streamIntent) error {
 	return &BuildError{
-		Code:      "stage_missing",
+		Code:      CodeStageMissing,
 		Operation: "build stream",
 		Node:      jobStreamIntentName(stream),
 		Reason:    "custom stream stage is nil",
@@ -502,7 +502,7 @@ func validateJobStreamOutputKinds(operation string, stream streamIntent, outputs
 
 func mixedStreamOutputError(operation string, stream streamIntent) error {
 	return &BuildError{
-		Code:      "output_kind_mixed",
+		Code:      CodeOutputKindMixed,
 		Operation: operation,
 		Node:      jobStreamIntentName(stream),
 		Reason:    "stream recipes cannot mix sinks and muxed outputs",
@@ -517,7 +517,7 @@ func mixedStreamOutputError(operation string, stream streamIntent) error {
 
 func streamEncodeMissingError(operation string, stream streamIntent) error {
 	return &BuildError{
-		Code:      "encode_missing",
+		Code:      CodeEncodeMissing,
 		Operation: operation,
 		Node:      jobStreamIntentName(stream),
 		Reason:    "decoded frames cannot be written to a muxed output without an encoder",
@@ -536,7 +536,7 @@ func streamEncodeMissingError(operation string, stream streamIntent) error {
 
 func recipeRuntimeUnsupportedError(operation string) error {
 	return &BuildError{
-		Code:      "runtime_unsupported",
+		Code:      CodeRuntimeUnsupported,
 		Operation: operation,
 		Reason:    "recipe compilation requires a goav runtime",
 		Suggestions: []string{
@@ -561,7 +561,7 @@ func jobStreamName(stream *jobStreamBuild) string {
 
 func duplicateJobStreamError(existing *jobStreamBuild, next *jobStreamBuild) error {
 	return &BuildError{
-		Code:      "stream_duplicate",
+		Code:      CodeStreamDuplicate,
 		Operation: "build job",
 		Node:      jobStreamName(next),
 		Reason:    "ordinary stream recipes select one audio or video stream",

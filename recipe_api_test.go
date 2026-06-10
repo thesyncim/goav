@@ -4737,7 +4737,7 @@ func TestStreamRecipeRejectsUnresolvedEncodeIntents(t *testing.T) {
 	tests := []struct {
 		name string
 		spec codec.CodecSpec
-		code string
+		code goav.ErrorCode
 	}{
 		{name: "auto", spec: codec.Auto(), code: "encode_auto_unresolved"},
 	}

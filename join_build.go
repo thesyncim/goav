@@ -102,8 +102,9 @@ type joinProfile struct {
 	// that taps, branches, and the optional encoder all compose against.
 	joinedStream func(p *joinPlan) av.Stream
 	// sinkOnlyReason is the destination error when dest is not a frame Sink and
-	// no encode applies.
-	sinkOnlyReason string
+	// no encode applies; sinkOnlySuggestions carry the kind's concrete fixes.
+	sinkOnlyReason      string
+	sinkOnlySuggestions []string
 }
 
 // joinProfiles is the single per-kind table; each entry lives next to its
@@ -120,7 +121,7 @@ func newJoinJob(kind joinKind, spec joinSpec) *Job {
 	name := string(kind)
 	job := &Job{name: name, runtime: Default()}
 	if len(spec.arms) < 2 {
-		job.setErr(&BuildError{Code: name + "_inputs", Operation: "build " + name, Node: name, Reason: name + " requires at least two source arms", Cause: ErrUnsupportedBuild})
+		job.setErr(joinInputsError(name, name))
 		return job
 	}
 	spec.kind = kind
@@ -230,8 +231,44 @@ type joinPlan struct {
 	branchTargets []branchComposeTargetRoute
 }
 
-func joinArmError(name string, node string, reason string) error {
-	return &BuildError{Code: name + "_arm", Operation: "build " + name, Node: node, Reason: reason, Cause: ErrUnsupportedBuild}
+func joinArmError(name string, node string, reason string, suggestions ...string) error {
+	return &BuildError{
+		Code:        joinErrorCode(name, "arm"),
+		Operation:   "build " + name,
+		Node:        node,
+		Reason:      reason,
+		Suggestions: suggestions,
+		Cause:       ErrUnsupportedBuild,
+	}
+}
+
+// joinInputsError is the too-few-arms refusal, raised by the public sugar and
+// again by the planner for nested joins.
+func joinInputsError(kind string, node string) error {
+	return &BuildError{
+		Code:      joinErrorCode(kind, "inputs"),
+		Operation: "build " + kind,
+		Node:      node,
+		Reason:    kind + " requires at least two source arms",
+		Suggestions: []string{
+			"pass at least two arms: " + joinTwoArmExample(kind),
+			"route the single chain directly when nothing converges",
+		},
+		Cause: ErrUnsupportedBuild,
+	}
+}
+
+// joinTwoArmExample renders the minimal two-arm call for a join kind, used in
+// suggestions.
+func joinTwoArmExample(kind string) string {
+	switch joinKind(kind) {
+	case joinMix:
+		return "goav.Mix(goav.From(a).Audio(), goav.From(b).Audio())"
+	case joinComposite:
+		return "goav.Composite(goav.From(a).Video(), goav.From(b).Video())"
+	default:
+		return "goav.Select(goav.From(a).Video(), goav.From(b).Video())"
+	}
 }
 
 // newJoinPlan plans a joinSpec from the compile state: the join tree is
@@ -268,7 +305,14 @@ func newJoinPlan(rt *runtime, state *recipeCompileState) (*joinPlan, error) {
 		p.destination = spec.dest.spec
 	default:
 		if spec.dest.spec.sink == nil {
-			return nil, &BuildError{Code: name + "_destination", Operation: "build " + name, Node: name, Reason: profile.sinkOnlyReason, Cause: ErrUnsupportedBuild}
+			return nil, &BuildError{
+				Code:        joinErrorCode(name, "destination"),
+				Operation:   "build " + name,
+				Node:        name,
+				Reason:      profile.sinkOnlyReason,
+				Suggestions: append([]string(nil), profile.sinkOnlySuggestions...),
+				Cause:       ErrUnsupportedBuild,
+			}
 		}
 		p.destination = spec.dest.spec
 	}
@@ -288,12 +332,19 @@ func planJoinTree(rt *runtime, state *recipeCompileState, spec *joinSpec, sets [
 	kind := string(spec.kind)
 	profile, ok := joinProfiles[spec.kind]
 	if !ok {
-		return nil, 0, &BuildError{Code: kind + "_kind", Operation: "build " + kind, Node: kind, Reason: "unknown join kind", Cause: ErrUnsupportedBuild}
+		return nil, 0, &BuildError{
+			Code:      joinErrorCode(kind, "kind"),
+			Operation: "build " + kind,
+			Node:      kind,
+			Reason:    "unknown join kind",
+			Details:   []string{"declared join kinds: mix, composite, select"},
+			Cause:     ErrUnsupportedBuild,
+		}
 	}
 	name := claimJoinName(used, kind)
 	p := &joinPlan{runtime: rt, join: spec, profile: profile, name: name}
 	if len(spec.arms) < 2 {
-		return nil, 0, &BuildError{Code: kind + "_inputs", Operation: "build " + kind, Node: name, Reason: kind + " requires at least two source arms", Cause: ErrUnsupportedBuild}
+		return nil, 0, joinInputsError(kind, name)
 	}
 	seen := make(map[av.StreamID]struct{}, len(spec.arms))
 	for i := range spec.arms {
@@ -316,7 +367,8 @@ func planJoinTree(rt *runtime, state *recipeCompileState, spec *joinSpec, sets [
 			cursor = next
 			if profile.media != "" && sub.joined.Type != profile.media {
 				return nil, 0, joinArmError(name, sub.name,
-					fmt.Sprintf("%s arm %q produces %s, want %s", kind, sub.name, sub.joined.Type, profile.media))
+					fmt.Sprintf("%s arm %q produces %s, want %s", kind, sub.name, sub.joined.Type, profile.media),
+					"feed the "+kind+" arms that produce "+string(profile.media)+" media (mix joins audio, composite joins video)")
 			}
 			armPlan = joinArmPlan{sub: sub, inputName: sub.name, stream: sub.joined, domain: sub.joinedDomain}
 		case armSpec.tap != nil:
@@ -356,10 +408,13 @@ func planJoinTree(rt *runtime, state *recipeCompileState, spec *joinSpec, sets [
 			armPlan.taps = taps
 			cursor++
 		default:
-			return nil, 0, joinArmError(name, name, "each "+kind+" arm must be a single-input source chain, a tap declared by an earlier arm, or a nested join")
+			return nil, 0, joinArmError(name, name,
+				"each "+kind+" arm must be a single-input source chain, a tap declared by an earlier arm, or a nested join",
+				"pass goav.From(input).Audio()/.Video() chains, goav.FrameTap/PacketTap refs, or nested goav.Mix/Composite/Select joins as arms")
 		}
 		if _, dup := seen[armPlan.stream.ID]; dup {
-			return nil, 0, joinArmError(name, string(armPlan.stream.ID), kind+" arms must have distinct stream ids")
+			return nil, 0, joinArmError(name, string(armPlan.stream.ID), kind+" arms must have distinct stream ids",
+				"give each arm a distinct stream id: name inputs/taps differently so no two arms publish the same id")
 		}
 		seen[armPlan.stream.ID] = struct{}{}
 		// Packet-domain arms decode to frames before the join (auto-inserted —
@@ -439,7 +494,8 @@ func claimJoinName(used map[string]struct{}, kind string) string {
 func validateNestedJoinArm(outer string, sub *joinSpec) error {
 	if sub.encode != nil {
 		return joinArmError(outer, string(sub.kind),
-			"a nested "+string(sub.kind)+" arm cannot carry .Encode(...); encode the outer join instead")
+			"a nested "+string(sub.kind)+" arm cannot carry .Encode(...); encode the outer join instead",
+			"move .Encode(...) to the outer "+outer+": encode once after the final convergence")
 	}
 	return nil
 }
@@ -555,10 +611,11 @@ func (p *joinPlan) solveArmConversion(rt *runtime, stream av.Stream, armName str
 	}
 	if !planned || !p.profile.armPolicy.Covers(plan.needed) {
 		return nil, joinArmError(p.name, firstNonEmpty(armName, string(stream.ID)),
-			fmt.Sprintf("%s arm %q cannot be converted to the join format (%s -> %s)", p.name, firstNonEmpty(armName, string(stream.ID)), humanizeShape(actual), humanizeShape(expected)))
+			fmt.Sprintf("%s arm %q cannot be converted to the join format (%s -> %s)", p.name, firstNonEmpty(armName, string(stream.ID)), humanizeShape(actual), humanizeShape(expected)),
+			"feed the arm "+humanizeShape(expected)+" media, or align its source format with the first arm (the join's format reference)")
 	}
 	p.diagnostics = append(p.diagnostics, info.Diagnostic{
-		Code: "shape_conversion_inserted",
+		Code: string(CodeShapeConversionInserted),
 		Node: firstNonEmpty(armName, string(stream.ID)),
 		Message: fmt.Sprintf("inserted %s on %s arm %q (join arm policy)",
 			plan.detail, p.name, firstNonEmpty(armName, string(stream.ID))),
@@ -713,7 +770,7 @@ func joinPlanTaps(spec *joinSpec, name string, joined av.Stream, domain shape.Me
 	for _, tap := range spec.taps {
 		if tap.name == "" {
 			return nil, &BuildError{
-				Code:      "tap_invalid",
+				Code:      CodeTapInvalid,
 				Operation: "build " + name,
 				Node:      name,
 				Reason:    "tap name is empty",
@@ -986,7 +1043,8 @@ func (p *joinPlan) lowerJoinTree(ctx context.Context, graph pipeline.Graph, serv
 				return "", err
 			}
 			if _, dup := seen[stream.ID]; dup {
-				return "", joinArmError(p.name, string(stream.ID), p.name+" arms must have distinct stream ids")
+				return "", joinArmError(p.name, string(stream.ID), p.name+" arms must have distinct stream ids",
+					"give each arm a distinct stream id: name inputs/taps differently so no two arms publish the same id")
 			}
 			upstream = string(subRef)
 		case arm.tapArm != nil:
@@ -994,7 +1052,8 @@ func (p *joinPlan) lowerJoinTree(ctx context.Context, graph pipeline.Graph, serv
 			// declaring arm lowered it earlier in the same depth-first order —
 			// and republishes the tapped media under the tap name.
 			if _, dup := seen[stream.ID]; dup {
-				return "", joinArmError(p.name, string(stream.ID), p.name+" arms must have distinct stream ids")
+				return "", joinArmError(p.name, string(stream.ID), p.name+" arms must have distinct stream ids",
+					"give each arm a distinct stream id: name inputs/taps differently so no two arms publish the same id")
 			}
 			ref, err := graph.AddStage(newTapArmStage(arm.tapArm.node, av.StreamID(arm.tapArm.tap.name)), rt.buffer)
 			if err != nil {
@@ -1016,7 +1075,8 @@ func (p *joinPlan) lowerJoinTree(ctx context.Context, graph pipeline.Graph, serv
 			}
 			if _, dup := seen[stream.ID]; dup {
 				source.Close()
-				return "", joinArmError(p.name, string(stream.ID), p.name+" arms must have distinct stream ids")
+				return "", joinArmError(p.name, string(stream.ID), p.name+" arms must have distinct stream ids",
+					"give each arm a distinct stream id: name inputs/taps differently so no two arms publish the same id")
 			}
 			srcRef, err := graph.AddSource(source, rt.buffer)
 			if err != nil {

@@ -483,7 +483,7 @@ func shapeSolverAdapterError(operation string, node string, index int, step Oper
 	}
 	if selection.cause == errShapeAdapterAmbiguous {
 		return &BuildError{
-			Code:      "shape_adapter_ambiguous",
+			Code:      CodeShapeAdapterAmbiguous,
 			Operation: operation,
 			Node:      node,
 			Reason: fmt.Sprintf("several registered filters can perform the %s conversion before %s: %s",
@@ -498,7 +498,7 @@ func shapeSolverAdapterError(operation string, node string, index int, step Oper
 		}
 	}
 	return &BuildError{
-		Code:      "shape_adapter_missing",
+		Code:      CodeShapeAdapterMissing,
 		Operation: operation,
 		Node:      node,
 		Reason: fmt.Sprintf("no registered filter can perform the %s conversion before %s",
@@ -518,7 +518,7 @@ func shapeSolverAdapterError(operation string, node string, index int, step Oper
 func shapeConversionRefusedError(operation string, node string, index int, step OperationSpec, allowed shape.Policy, plan shapeConversionPlan, actual shape.Spec, expected shape.Spec) error {
 	missing := allowed.Missing(plan.needed)
 	return &BuildError{
-		Code:      "shape_conversion_refused",
+		Code:      CodeShapeConversionRefused,
 		Operation: operation,
 		Node:      node,
 		Reason: fmt.Sprintf("%s needs %s but the chain policy (%s) does not allow it",
@@ -585,7 +585,7 @@ func shapePreferenceAppliedDiagnostic(node string, pref shape.Spec, plan shapeCo
 		effects = append(effects, "resolved the adapter choice")
 	}
 	return info.Diagnostic{
-		Code:    "shape_preference_applied",
+		Code:    string(CodeShapePreferenceApplied),
 		Node:    node,
 		Message: fmt.Sprintf("preference (%s) %s: %s", pref.String(), strings.Join(effects, " and "), plan.detail),
 		Details: []string{
@@ -599,7 +599,7 @@ func shapePreferenceAppliedDiagnostic(node string, pref shape.Spec, plan shapeCo
 // honor — soft by definition, the plain plan proceeds untouched.
 func shapePreferenceIgnoredDiagnostic(node string, pref shape.Spec, reason string) info.Diagnostic {
 	return info.Diagnostic{
-		Code:    "shape_preference_ignored",
+		Code:    string(CodeShapePreferenceIgnored),
 		Node:    node,
 		Message: fmt.Sprintf("preference (%s) ignored: %s", pref.String(), reason),
 		Details: []string{"preference=" + pref.String()},
@@ -610,7 +610,7 @@ func shapePreferenceIgnoredDiagnostic(node string, pref shape.Spec, reason strin
 // "inserted resample 44.1kHz→48kHz before encode-opus (AllowResample)".
 func shapeConversionDiagnostic(node string, plan shapeConversionPlan, step OperationSpec, actual shape.Spec, expected shape.Spec) info.Diagnostic {
 	return info.Diagnostic{
-		Code:    "shape_conversion_inserted",
+		Code:    string(CodeShapeConversionInserted),
 		Node:    node,
 		Message: fmt.Sprintf("inserted %s before %s (%s)", plan.detail, operationSpecLabel(step), shapePolicyLabel(plan.needed)),
 		Details: []string{

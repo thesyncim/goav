@@ -68,7 +68,19 @@ func (s *selectorStage) SetActive(id av.StreamID) error {
 			return nil
 		}
 	}
-	return fmt.Errorf("goav: selector %q has no input %q", s.name, id)
+	return fmt.Errorf("goav: selector %q has no input %q (inputs: %s); switch with goav.SelectActive to one of the configured arm ids", s.name, id, joinStreamIDs(s.inputs))
+}
+
+// joinStreamIDs renders the configured arm ids for the SetActive refusal.
+func joinStreamIDs(ids []av.StreamID) string {
+	out := ""
+	for i := range ids {
+		if i > 0 {
+			out += ", "
+		}
+		out += string(ids[i])
+	}
+	return out
 }
 
 // activeID returns the currently active input id (empty if none configured).
