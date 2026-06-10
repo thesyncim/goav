@@ -131,6 +131,44 @@ small custom hooks can participate without implementing full graph types.
 Operation transforms such as `Audio().Resample(...)` and `Video().Resize(...)`
 lower through the same filter registry as branch transforms.
 
+## Package layering
+
+What the compiler enforces today: the sibling packages (`av`, `codes`, `plan`,
+`shape`, `flow`, `pipeline`, `codec`, `format`, `filter`, `container`,
+`lifecycle`, `snapshot`, `rtpav`, `webrtcav`, `adapters`, `graphrender`) are
+leaves — none of them imports the root `goav` package. Root depends on leaves,
+never the reverse.
+
+What is convention only: inside the root package, the grammar → plan → build
+boundaries (recipe/branch grammar, `mediaPlan`/`WorkPlan` planning,
+graph/attach lowering) are file-naming conventions, not import-checked. The
+root package is deliberately one compilation unit.
+
+Why the planner internals cannot move to `internal/` packages (measured on the
+type-checked cross-file reference graph, 2026-06): the ~20 root files with no
+exported API (`media_plan*`, `recipe_compile`, `branch_compose_*`, `work_*`,
+`shape_solver`/`shape_glue`, `join_build`, `runtime_attach`/`_decode`/
+`_encode`/`_demux`, `mux_destination`, `multi_input`, ~14.8k lines) reference
+identifiers defined in 31 grammar files — including unexported fields of the
+public types (`Branch.operations`, `Branch.dest`, `Runtime` and `Recipe`
+internals). The coupling is bidirectional at field granularity: grammar files
+equally read unexported fields of planner structs (`recipe.go`, `source.go`,
+`stream_rule.go` into `recipe_compile.go` state; `audio_mix.go`,
+`video_composite_build.go`, `select_build.go` into 46 `join_build.go`
+identifiers). Computing the largest file set closed under intra-package
+dependencies leaves only `join_sync.go` (+`tap.go` at best) movable — no
+boundary worth a package.
+
+What it would take to enforce the layering: either relocate the grammar types
+(`Branch`/`BranchSpec`, `Recipe`, `Runtime`, `Destination`, `InputSpec`,
+`OperationSpec`, `joinSpec`) into a shared package re-exported by root —
+public-API churn (type identity and `reflect.Type.PkgPath` change even under
+aliases) — or introduce a data-transfer seam so the planner consumes and
+returns plain plan data instead of reading and mutating grammar object fields.
+Both are larger restructurings than the boundary is currently worth; the
+intended cut, if ever, is the second one, with the shared data types living in
+`plan`/`shape`.
+
 ## Core media model
 
 The `av` package owns transport-neutral vocabulary: `Stream`,
