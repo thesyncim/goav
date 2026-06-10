@@ -590,6 +590,15 @@ return goav.From(camera, mic).
 When a selector is ambiguous, the build error lists candidates and suggests the
 `InputName`, `StreamID`, `StreamName`, or `StreamIndex` narrowing to use.
 
+Two selection vocabularies, two tenses. The selector options — `goav.InputName`,
+`goav.StreamID`, `goav.StreamName`, `goav.StreamIndex` — narrow streams the
+inputs are already known to have when the chain is built, as in
+`.Audio(goav.InputName("mic"))` above. The match predicates — `goav.MatchMedia`,
+`goav.MatchCodec`, `goav.MatchStreamID`, `goav.MatchStream(fn)` — describe
+streams that may not exist yet and match them as they appear at runtime, as in
+`.OnStream(goav.MatchMedia(av.MediaAudio), ...)` under
+[Dynamic Stream Discovery](#dynamic-stream-discovery).
+
 ## Mix, Composite, Select
 
 Convergence is the dual of `Branches`: N source chains join into one stream.

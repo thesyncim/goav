@@ -72,13 +72,16 @@ executable truth; Explain/Describe/Build/Attach/Snapshot all read from them.
 - **Branch isolation/ownership** (§8): lock-free isolation, independent fanout
   backpressure, per-branch atomic stats, MaxLatency/MaxBytes shedding, Blocking —
   **DONE (data plane)**. TODO: public CopyMode contract surfacing.
-- **Events/Snapshot/Watch** (§9): typed EventFilter Watch; richer Snapshot. **partial.**
+- **Events/Snapshot/Watch** (§9): typed EventFilter Watch **DONE**; Snapshot with
+  typed states/stats/drop visibility **DONE**. TODO: dedicated
+  attach/detach/commit lifecycle events.
 - **Dynamic streams** (§11): `OnStream(match, branches...)` rules on the job;
   sources announce via `av.EventStreamAdded` (typed `Event.Stream` payload);
   late branches attach through the one planner anchored source+stream
   (RouteByStream), solver included; removal detaches with drain; failures
-  surface as `av.EventAttachError`. **DONE.** TODO: `When` conditions beyond
-  stream identity; ambiguity candidate listing.
+  surface as `av.EventAttachError`. **DONE** (ambiguous selection lists its
+  candidates with narrowing fixes). TODO: `When` conditions beyond stream
+  identity.
 - **Multi-input/Join** (§12): Mix/Composite/Select grammars **DONE** over lock-free
   stages + `task.Control` live switch; variadic `From(a, b...)` with `InputName`
   narrowing and one shared Destination **DONE**; JoinSpec lowering through ONE join
@@ -109,8 +112,13 @@ executable truth; Explain/Describe/Build/Attach/Snapshot all read from them.
 
 ## Acceptance tests (definition of done) — `[x]` holds · `[~]` partial · `[ ]` todo
 
-Grammar: 1[~] README clean · 2[x] direct chain ≡ Branch("main") (both naming paths,
-hard guards) · 3[ ] Flow no destinations/To · 4[~] Destination reuse groups by handle.
+Grammar: 1[x] README clean (TestReadmeUsesBranchDestinationVocabulary + the
+TestReadme* guard battery pin grammar, vocabulary, and recipe size) · 2[x] direct
+chain ≡ Branch("main") (both naming paths, hard guards) · 3[x] Flow no
+destinations/To (TestNorthStarFlowExposesNoDestinations) · 4[x] Destination reuse
+groups by handle (TestFromMultiInputPlanDedupesSharedDestination: one handle =
+one mux group; TestFromMultiInputRejectsConflictingDestinationHandles: same-name
+distinct handles refuse instead of merging).
 Planner: 5[x] Build+Attach share the canonical operation lowering · 6[x] Attach emits
 WorkPatch only downstream of taps · 7[x] Explain from WorkPlan · 8[x] Snapshot =
 WorkPlan+patches · 9[x] no
@@ -121,23 +129,59 @@ Shape: 11[x] Resize requires video frame · 12[x] Resample requires audio frame 
 13[x] frame→File w/o Encode fails · 14[x] packet→File w/ Copy ok · 15[x] Decode→frame
 Sink ok · 16[x] errors include branch/op/actual/expected/fix · 17[x] auto-insert only
 when enabled.
-Branches: 18[~] two branches share one decoder · 19[x] slow Latest/DropOldest doesn't
-stall archive · 20[x] Blocking backpressures · 21[x] per-branch drop counts · 22[~]
-mutable frame branch can't corrupt sibling.
-Runtime: 23[~] Attach opens destinations before mutation · 24[~] Attach failure rolls
-back+aborts · 25[~] Detach+drain commits · 26[~] Detach+abort aborts · 27[x] Rebranch
-starts replacement before detach · 28[x] Rebranch failure leaves old intact · 29[x]
-Pause/Resume only that branch.
-Events/Control: 30[~] events: attach/detach/shape-change/backpressure/commit · 31[~]
-Snapshot full · 32[~] RequestKeyframe reaches adapter or fails clearly · 33[ ]
-SetBitrate reaches encoder or fails clearly.
-Source: 34[~] custom packet source Copy→File · 35[~] custom frame source encode→File ·
-36[x] push reports drops/backpressure · 37[~] Source EOS commits destinations.
-Dynamic: 38[ ] late stream attach · 39[~] ambiguous selection lists candidates ·
-40[ ] stream removal detaches by policy.
-Multi/Join: 41[x] From(a,v) one shared Destination · 42[~] multi-input mux validates
-timebase · 43[x] Join mixes two audio branches · 44[x] Join shape mismatch
-auto-resamples or fails before mutation.
+Branches: 18[x] two branches share one decoder
+(TestNorthStarBranchesAfterDecodeShareOneDecoder: one decode node fans out to
+both planned branches, ONE decoder instance opens, each packet decodes once,
+and a runtime branch attached at the tap shares it too) · 19[x] slow
+Latest/DropOldest doesn't stall archive · 20[x] Blocking backpressures · 21[x]
+per-branch drop counts · 22[x] mutable frame branch can't corrupt sibling
+(TestCopyContractMutableFanoutBranchCannotCorruptSibling).
+Runtime: 23[x] Attach opens destinations before mutation
+(TestOnStreamAttachFailureSurfacesEventAndRollsBack: the destination opens
+first; TestTaskAttachClosesPreparedComponentsWhenRuntimeNodeNameExists: opened
+muxer/filter precede the rejected mutation) · 24[x] Attach failure rolls
+back+aborts (same OnStream test: destination aborted, node count and branches
+unchanged; TestTaskAttachRuntimeBranchGroupRollsBackOnLaterFailure) · 25[~]
+Detach+drain commits — drain-commit pinned where exposed: rebranch
+DrainOldBranch (TestRebranchOldBranchDispositionReportsDestinationStates) and
+stream removal (TestOnStreamAttachesLateBranchAndDetachesOnRemoval); plain
+task.Detach has no drain option yet · 26[~] Detach+abort aborts —
+AbortOldBranch and failed-run abort pinned (same rebranch test +
+TestTaskSnapshotReportsFailedTaskAndAbortedDestination); no detach-with-abort
+verb yet · 27[x] Rebranch starts replacement before detach · 28[x] Rebranch
+failure leaves old intact · 29[x] Pause/Resume only that branch.
+Events/Control: 30[~] events — typed Watch filters and
+stream-added/removed/attach-error/backpressure events pinned; dedicated
+attach/detach/commit lifecycle events still missing · 31[x] Snapshot full —
+typed task/branch/destination states, spec, taps, stats incl. drop reasons
+(TestTaskSnapshotReportsTypedTaskLifecycle,
+TestTaskSnapshotReportsCommittedDestinationAfterRun,
+TestFrontDoorDropReasonsReadableWithoutPipeline) · 32[x] RequestKeyframe
+reaches adapter or fails clearly (TestTaskControlKeyframeBroadcastsWithoutTarget
+rides the data path, TestEncoderStageConsumesInputEvents lands it on the
+encoder, TestTaskControlRejectsUnknownAndDirectGraph fails clearly) · 33[x]
+SetBitrate reaches encoder or fails clearly
+(TestTaskControlSetBitrateBroadcastsBitrateEvent takes the same encoder event
+path; TestTaskControlSetBitrateRejectsNonPositiveRate refuses at the seam).
+Source: 34[x] custom packet source Copy→File
+(TestNorthStarCustomPacketSourceCopiesToFile) · 35[x] custom frame source
+encode→File (TestNorthStarCustomFrameSourceEncodesToFile) · 36[x] push reports
+drops/backpressure · 37[x] Source EOS commits destinations
+(TestTaskSnapshotReportsCommittedDestinationAfterRun: push EOS →
+DestinationCommitted; the OnStream removal test commits the transactional
+writer).
+Dynamic: 38[x] late stream attach (TestOnStreamAttachesLateBranchAndDetachesOnRemoval,
+TestOnStreamLateBranchReceivesFramesFromFrameSource,
+TestOnStreamRTPLateStreamAttachesBranch) · 39[x] ambiguous selection lists
+candidates (TestFromMultiInputAmbiguousSelectionListsCandidates,
+TestStreamRecipeReportsAmbiguousLiveSelectionBeforeDecoderAdapter,
+TestStreamRecipeReportsProbedFileSelectionBeforeOpeningInput) · 40[~] stream
+removal detaches — drain detach+commit on removal is pinned (the same OnStream
+removal test); a per-branch removal DetachPolicy choice is not exposed yet.
+Multi/Join: 41[x] From(a,v) one shared Destination · 42[~] multi-input mux
+validates codec/format per group (TestBuildRejectsIncompatibleAnnexBMuxGroup);
+no timebase validation yet · 43[x] Join mixes two audio branches · 44[x] Join
+shape mismatch auto-resamples or fails before mutation.
 
 ## Attack plan (2026-06-09, decided): internal path unity
 
@@ -191,6 +235,8 @@ Work residue-by-residue, one deletion per slice, each slice green. Done:
 gone), shape solving, dynamic streams, and the unreachable per-workflow builder
 compilers deleted (the expert builder keeps only explicit graphs). Naming
 unification for single-branch compositions (direct chain ≡ named branch encode
-nodes) is a maintainer design call recorded in git history. Remaining: fold the
-`streamIntent` normalization layer into `OperationSpec` readers, SwitchAt*
-policies, TimeShape.
+nodes) is a maintainer design call recorded in git history. The planner
+internals deliberately stay one root compilation unit — moving them under
+`internal/` packages was measured and rejected; see "Package layering" in
+docs/ARCHITECTURE.md. Remaining: fold the `streamIntent` normalization layer
+into `OperationSpec` readers, SwitchAt* policies, TimeShape.
