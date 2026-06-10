@@ -134,7 +134,9 @@ func knownProbeDecodeCodec(probes []format.ProbeResult, stream streamIntent) (av
 }
 
 func streamNeedsDecode(stream streamIntent) bool {
-	return stream.Decode || len(streamIntentTransformSpecs(stream)) != 0 || stream.Encode.ID != ""
+	return chainHasDecode(stream.Operations) ||
+		len(streamIntentTransformSpecs(stream)) != 0 ||
+		chainEncodeSpec(stream.Operations).ID != ""
 }
 
 func liveDecodeAdapterRequest(inputs []inputIntent, stream streamIntent) (codecAdapterRequest, bool) {
@@ -262,7 +264,7 @@ func validateRecipeEncodeAdapters(operation string, rt Runtime, streams []stream
 	}
 	for i := range streams {
 		stream := streams[i]
-		codecID := stream.Encode.ID
+		codecID := chainEncodeSpec(stream.Operations).ID
 		if codecID == "" {
 			continue
 		}
@@ -285,11 +287,12 @@ type codecAdapterRequest struct {
 }
 
 func encodeAdapterRequestFromStreamIntent(stream streamIntent) codecAdapterRequest {
+	encode := chainEncodeSpec(stream.Operations)
 	return codecAdapterRequest{
-		Codec:        stream.Encode.ID,
-		Media:        firstNonEmptyMedia(stream.Encode.Type, stream.Encode.Parameters.Type, stream.Select.Type, codecMedia(stream.Encode.ID)),
-		SampleFormat: firstNonEmpty(stream.Encode.Parameters.SampleFormat, streamIntentSampleFormat(stream)),
-		PixelFormat:  firstNonEmpty(stream.Encode.Parameters.PixelFormat, streamIntentPixelFormat(stream)),
+		Codec:        encode.ID,
+		Media:        firstNonEmptyMedia(encode.Type, encode.Parameters.Type, stream.Select.Type, codecMedia(encode.ID)),
+		SampleFormat: firstNonEmpty(encode.Parameters.SampleFormat, streamIntentSampleFormat(stream)),
+		PixelFormat:  firstNonEmpty(encode.Parameters.PixelFormat, streamIntentPixelFormat(stream)),
 	}
 }
 
@@ -492,15 +495,16 @@ func mergeStringList(existing []string, next []string) []string {
 }
 
 func recipeEncodeAdapterError(operation string, stream streamIntent, registry *codec.SimpleRegistry, cause error) error {
+	codecID := chainEncodeSpec(stream.Operations).ID
 	code := "encode_adapter_missing"
-	reason := "no encoder adapter is registered for " + string(stream.Encode.ID)
+	reason := "no encoder adapter is registered for " + string(codecID)
 	if errors.Is(cause, codec.ErrUnavailable) {
 		code = "encode_adapter_unavailable"
-		reason = string(stream.Encode.ID) + " encoder adapter is descriptor-only in this build"
+		reason = string(codecID) + " encoder adapter is descriptor-only in this build"
 	}
-	details := []string{"codec=" + string(stream.Encode.ID)}
+	details := []string{"codec=" + string(codecID)}
 	if registry != nil {
-		descriptors, err := registry.Find(stream.Encode.ID, codec.ModeEncode)
+		descriptors, err := registry.Find(codecID, codec.ModeEncode)
 		if err == nil {
 			details = append(details, codecDescriptorDetails(descriptors)...)
 		}
@@ -512,7 +516,7 @@ func recipeEncodeAdapterError(operation string, stream streamIntent, registry *c
 		Reason:    reason,
 		Details:   details,
 		Suggestions: []string{
-			"register a codec adapter that provides a " + string(stream.Encode.ID) + " encoder",
+			"register a codec adapter that provides a " + string(codecID) + " encoder",
 			"use .To(goav.Sink(...)) to receive decoded frames without encoding",
 			"use .Copy().To(output) for packet-preserving output when re-encoding is not needed",
 		},

@@ -119,9 +119,9 @@ func explainStreams(streams []streamIntent) []info.Stream {
 		reports = append(reports, info.Stream{
 			Name:         stream.Name,
 			Select:       stream.Select,
-			Decode:       stream.Decode,
+			Decode:       chainHasDecode(stream.Operations),
 			Operations:   explainOperationSpecs(stream.Operations),
-			Encode:       stream.Encode,
+			Encode:       chainEncodeSpec(stream.Operations),
 			Destinations: append([]string(nil), stream.Destinations...),
 		})
 	}
@@ -386,8 +386,8 @@ func operationDecodeCodec(resolved recipeResolved, stream streamIntent, streamOK
 }
 
 func operationEncodeCodec(stream streamIntent, streamOK bool, operation info.Operation) av.CodecID {
-	if streamOK && stream.Encode.ID != "" {
-		return stream.Encode.ID
+	if encode := chainEncodeSpec(stream.Operations); streamOK && encode.ID != "" {
+		return encode.ID
 	}
 	codecID := av.CodecID(operation.Component)
 	if codecID == "" || codecID == "encoder" {

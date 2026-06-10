@@ -19,6 +19,21 @@ import (
 	"github.com/thesyncim/goav/shape"
 )
 
+// decodeIntentOperations / encodeIntentOperations / decodeEncodeIntentOperations
+// build streamIntent fixtures the way the builders do: decode, copy, and encode
+// requests are operations on the chain's operation list, not parallel fields.
+func decodeIntentOperations() []OperationSpec {
+	return []OperationSpec{operationSpecForDecode(codec.CodecSpec{}, "")}
+}
+
+func encodeIntentOperations(spec codec.CodecSpec) []OperationSpec {
+	return []OperationSpec{operationSpecForEncode(spec)}
+}
+
+func decodeEncodeIntentOperations(spec codec.CodecSpec) []OperationSpec {
+	return append(decodeIntentOperations(), operationSpecForEncode(spec))
+}
+
 type stubRuntime struct{}
 
 func (stubRuntime) Probe(context.Context, format.ProbeRequest) (format.ProbeResult, error) {
@@ -530,6 +545,35 @@ func TestReusableRecipeAndBranchChainsStoreOperationSpecsOnly(t *testing.T) {
 	if !strings.Contains(runtimeText, "range spec.operations") {
 		t.Fatal("runtime attach planning should walk the canonical BranchSpec operation list")
 	}
+
+	intentBody, err := os.ReadFile("intent.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	intentText := string(intentBody)
+	intentStart := strings.Index(intentText, "type streamIntent struct")
+	if intentStart < 0 {
+		t.Fatal("could not locate streamIntent boundary")
+	}
+	intentEnd := strings.Index(intentText[intentStart:], "\n}")
+	if intentEnd < 0 {
+		t.Fatal("could not locate streamIntent boundary")
+	}
+	intentBlock := intentText[intentStart : intentStart+intentEnd]
+	// streamIntent stores only Name/Select/From/Operations/CodecChange plus the
+	// stream→destination routing labels: decode, encode, and tap facts live on
+	// the operation list (chainHasDecode/chainDecodeCodec/chainEncodeSpec/
+	// operationSpecTaps), never on parallel mirror fields.
+	for _, forbidden := range []string{
+		"Decode ",
+		"DecodeCodec",
+		"Encode ",
+		"Taps ",
+	} {
+		if strings.Contains(intentBlock, forbidden) {
+			t.Fatalf("streamIntent should derive %q from its operation list, not mirror it", strings.TrimSpace(forbidden))
+		}
+	}
 }
 
 func TestStoredOperationListsMirrorFlowBranchAndDirectStreamWork(t *testing.T) {
@@ -977,8 +1021,8 @@ func TestJobIntentShapePassRejectsInvalidPublicShape(t *testing.T) {
 				intent: Intent{
 					Inputs: []inputIntent{{Name: "input.ivf"}},
 					Streams: []streamIntent{
-						{Name: "audio", Decode: true, Destinations: []string{"audio"}},
-						{Name: "video", Decode: true},
+						{Name: "audio", Operations: decodeIntentOperations(), Destinations: []string{"audio"}},
+						{Name: "video", Operations: decodeIntentOperations()},
 					},
 					Destinations: []destinationIntent{{Name: "audio"}, {Name: "video"}},
 				},
@@ -995,7 +1039,7 @@ func TestJobIntentShapePassRejectsInvalidPublicShape(t *testing.T) {
 					Inputs: []inputIntent{{Name: "input.ivf"}},
 					Streams: []streamIntent{{
 						Name:         "audio",
-						Decode:       true,
+						Operations:   decodeIntentOperations(),
 						Destinations: []string{"frames"},
 					}},
 					Destinations: []destinationIntent{{Name: "archive.ivf"}, {Name: "frames"}},
@@ -1043,7 +1087,7 @@ func TestJobOutputBindingsPassRejectsUndefinedStreamRoutes(t *testing.T) {
 			Inputs: []inputIntent{{Name: "input.ogg"}},
 			Streams: []streamIntent{{
 				Name:         "audio",
-				Decode:       true,
+				Operations:   decodeIntentOperations(),
 				Destinations: []string{"missing"},
 			}},
 			Destinations: []destinationIntent{{Name: "archive.ogg"}},
@@ -1276,7 +1320,7 @@ func TestResolvedTranscodeOutputFormatsEnterPlan(t *testing.T) {
 			Streams: []streamIntent{{
 				Name:         "audio",
 				Select:       info.StreamSelect{Type: av.MediaAudio},
-				Encode:       codec.Opus(codec.Bitrate(96_000)),
+				Operations:   encodeIntentOperations(codec.Opus(codec.Bitrate(96_000))),
 				Destinations: []string{"archive"},
 			}},
 			Destinations: []destinationIntent{{Name: "archive"}},
@@ -1466,9 +1510,9 @@ func TestKnownInputStreamSelectionPassRejectsProbedAmbiguousAndMissingStreams(t 
 		{
 			name: "ambiguous probed audio",
 			stream: streamIntent{
-				Name:   "audio",
-				Select: info.StreamSelect{Type: av.MediaAudio},
-				Decode: true,
+				Name:       "audio",
+				Select:     info.StreamSelect{Type: av.MediaAudio},
+				Operations: decodeIntentOperations(),
 			},
 			code: "stream_ambiguous",
 			want: []string{"multiple streams match type=audio", "id=eng", "id=spa", `.Audio(goav.StreamID("eng"))`, ".Audio(goav.StreamIndex(0))"},
@@ -1476,9 +1520,9 @@ func TestKnownInputStreamSelectionPassRejectsProbedAmbiguousAndMissingStreams(t 
 		{
 			name: "missing probed video",
 			stream: streamIntent{
-				Name:   "video",
-				Select: info.StreamSelect{Type: av.MediaVideo},
-				Decode: true,
+				Name:       "video",
+				Select:     info.StreamSelect{Type: av.MediaVideo},
+				Operations: decodeIntentOperations(),
 			},
 			code: "stream_missing",
 			want: []string{"no stream matches type=video", "audio[0]", "id=eng", "codec=opus"},
@@ -1526,9 +1570,9 @@ func TestLiveStreamSelectionPassRejectsAmbiguousAndMissingStreams(t *testing.T) 
 					{Name: "screen", Protocol: av.ProtocolRTP, Codec: codec.VP8(), Realtime: true},
 				},
 				Streams: []streamIntent{{
-					Name:   "video",
-					Select: info.StreamSelect{Type: av.MediaVideo},
-					Decode: true,
+					Name:       "video",
+					Select:     info.StreamSelect{Type: av.MediaVideo},
+					Operations: decodeIntentOperations(),
 				}},
 			},
 			code: "stream_ambiguous",
@@ -1541,9 +1585,9 @@ func TestLiveStreamSelectionPassRejectsAmbiguousAndMissingStreams(t *testing.T) 
 					{Name: "camera", Protocol: av.ProtocolRTP, Codec: codec.VP8(), Realtime: true},
 				},
 				Streams: []streamIntent{{
-					Name:   "audio",
-					Select: info.StreamSelect{Type: av.MediaAudio},
-					Decode: true,
+					Name:       "audio",
+					Select:     info.StreamSelect{Type: av.MediaAudio},
+					Operations: decodeIntentOperations(),
 				}},
 			},
 			code: "stream_missing",
@@ -1626,9 +1670,9 @@ func TestDecodeAdapterPassRejectsKnownLiveMissingDecoders(t *testing.T) {
 						Realtime: true,
 					}},
 					Streams: []streamIntent{{
-						Name:   "audio",
-						Select: info.StreamSelect{Type: av.MediaAudio},
-						Decode: true,
+						Name:       "audio",
+						Select:     info.StreamSelect{Type: av.MediaAudio},
+						Operations: decodeIntentOperations(),
 					}},
 				},
 			},
@@ -1650,9 +1694,9 @@ func TestDecodeAdapterPassRejectsKnownLiveMissingDecoders(t *testing.T) {
 						Realtime: true,
 					}},
 					Streams: []streamIntent{{
-						Name:   "video",
-						Select: info.StreamSelect{Type: av.MediaVideo},
-						Decode: true,
+						Name:       "video",
+						Select:     info.StreamSelect{Type: av.MediaVideo},
+						Operations: decodeIntentOperations(),
 					}},
 				},
 			},
@@ -1688,9 +1732,9 @@ func TestDecodeAdapterPassDefersAmbiguousLiveSelection(t *testing.T) {
 				{Name: "screen", Protocol: av.ProtocolRTP, Codec: codec.H264(), Realtime: true},
 			},
 			Streams: []streamIntent{{
-				Name:   "video",
-				Select: info.StreamSelect{Type: av.MediaVideo},
-				Decode: true,
+				Name:       "video",
+				Select:     info.StreamSelect{Type: av.MediaVideo},
+				Operations: decodeIntentOperations(),
 			}},
 		},
 	}
@@ -1733,9 +1777,9 @@ func TestKnownInputDecodeAdapterPassesRejectMissingDecoders(t *testing.T) {
 				options:   recipeCompileOptions{preflightDecodeAdapters: true},
 				runtime:   New(),
 				intent: Intent{Streams: []streamIntent{{
-					Name:   "audio",
-					Select: info.StreamSelect{Type: av.MediaAudio},
-					Decode: true,
+					Name:       "audio",
+					Select:     info.StreamSelect{Type: av.MediaAudio},
+					Operations: decodeIntentOperations(),
 				}}},
 				inputProbes: []format.ProbeResult{{
 					Format: av.FormatOgg,
@@ -1759,9 +1803,9 @@ func TestKnownInputDecodeAdapterPassesRejectMissingDecoders(t *testing.T) {
 				options:   recipeCompileOptions{preflightDecodeAdapters: true},
 				runtime:   descriptorRuntime,
 				intent: Intent{Streams: []streamIntent{{
-					Name:   "video",
-					Select: info.StreamSelect{Type: av.MediaVideo},
-					Decode: true,
+					Name:       "video",
+					Select:     info.StreamSelect{Type: av.MediaVideo},
+					Operations: decodeIntentOperations(),
 				}}},
 				inputProbes: []format.ProbeResult{{
 					Format: av.FormatMatroska,
@@ -1787,7 +1831,7 @@ func TestKnownInputDecodeAdapterPassesRejectMissingDecoders(t *testing.T) {
 				intent: Intent{Streams: []streamIntent{{
 					Name:         "360p",
 					Select:       info.StreamSelect{Type: av.MediaVideo},
-					Encode:       codec.VP9(codec.Bitrate(600_000)),
+					Operations:   encodeIntentOperations(codec.VP9(codec.Bitrate(600_000))),
 					Destinations: []string{"web"},
 				}}},
 				branchInputProbeReady: true,
@@ -1828,9 +1872,9 @@ func TestKnownInputDecodeAdapterPassDefersAmbiguousSelection(t *testing.T) {
 		options:   recipeCompileOptions{preflightDecodeAdapters: true},
 		runtime:   New(),
 		intent: Intent{Streams: []streamIntent{{
-			Name:   "audio",
-			Select: info.StreamSelect{Type: av.MediaAudio},
-			Decode: true,
+			Name:       "audio",
+			Select:     info.StreamSelect{Type: av.MediaAudio},
+			Operations: decodeIntentOperations(),
 		}}},
 		inputProbes: []format.ProbeResult{{
 			Format: av.FormatOgg,
@@ -1872,9 +1916,9 @@ func TestDecodeAdapterPassesRejectIncompatibleDescriptors(t *testing.T) {
 						Realtime: true,
 					}},
 					Streams: []streamIntent{{
-						Name:   "audio",
-						Select: info.StreamSelect{Type: av.MediaAudio},
-						Decode: true,
+						Name:       "audio",
+						Select:     info.StreamSelect{Type: av.MediaAudio},
+						Operations: decodeIntentOperations(),
 					}},
 				},
 			},
@@ -1894,9 +1938,9 @@ func TestDecodeAdapterPassesRejectIncompatibleDescriptors(t *testing.T) {
 					},
 				}, &decodeTestDecoderFactory{decoder: &decodeTestDecoder{}}))),
 				intent: Intent{Streams: []streamIntent{{
-					Name:   "audio",
-					Select: info.StreamSelect{Type: av.MediaAudio},
-					Decode: true,
+					Name:       "audio",
+					Select:     info.StreamSelect{Type: av.MediaAudio},
+					Operations: decodeIntentOperations(),
 				}}},
 				inputProbes: []format.ProbeResult{{
 					Format: av.FormatOgg,
@@ -1930,7 +1974,7 @@ func TestDecodeAdapterPassesRejectIncompatibleDescriptors(t *testing.T) {
 				intent: Intent{Streams: []streamIntent{{
 					Name:         "preview",
 					Select:       info.StreamSelect{Type: av.MediaVideo},
-					Encode:       codec.VP9(codec.Bitrate(600_000)),
+					Operations:   encodeIntentOperations(codec.VP9(codec.Bitrate(600_000))),
 					Destinations: []string{"web"},
 				}}},
 				branchInputProbeReady: true,
@@ -1998,8 +2042,8 @@ func TestEncodeAdapterPassesRejectMissingEncoders(t *testing.T) {
 				options:   recipeCompileOptions{preflightEncodeAdapters: true},
 				runtime:   New(),
 				intent: Intent{Streams: []streamIntent{{
-					Name:   "audio",
-					Encode: codec.Opus(codec.Bitrate(96_000)),
+					Name:       "audio",
+					Operations: encodeIntentOperations(codec.Opus(codec.Bitrate(96_000))),
 				}}},
 			},
 			code:  "encode_adapter_missing",
@@ -2014,8 +2058,8 @@ func TestEncodeAdapterPassesRejectMissingEncoders(t *testing.T) {
 				options:   recipeCompileOptions{preflightEncodeAdapters: true},
 				runtime:   descriptorRuntime,
 				intent: Intent{Streams: []streamIntent{{
-					Name:   "360p",
-					Encode: codec.VP9(codec.Bitrate(600_000)),
+					Name:       "360p",
+					Operations: encodeIntentOperations(codec.VP9(codec.Bitrate(600_000))),
 				}}},
 			},
 			code:  "encode_adapter_unavailable",
@@ -2059,9 +2103,9 @@ func TestEncodeAdapterPassesRejectIncompatibleDescriptors(t *testing.T) {
 					Type: av.MediaVideo,
 				}, &encodeTestEncoderFactory{}))),
 				intent: Intent{Streams: []streamIntent{{
-					Name:   "audio",
-					Select: info.StreamSelect{Type: av.MediaAudio},
-					Encode: codec.Codec(audioCodec, av.MediaAudio),
+					Name:       "audio",
+					Select:     info.StreamSelect{Type: av.MediaAudio},
+					Operations: encodeIntentOperations(codec.Codec(audioCodec, av.MediaAudio)),
 				}}},
 			},
 			want: []string{"encoder adapter does not support the requested media", "codec=x_audio", "field=media", "requested=audio", "supported=video"},
@@ -2082,11 +2126,11 @@ func TestEncodeAdapterPassesRejectIncompatibleDescriptors(t *testing.T) {
 				intent: Intent{Streams: []streamIntent{{
 					Name:   "voice",
 					Select: info.StreamSelect{Type: av.MediaAudio},
-					Encode: codec.CodecSpec{ID: audioCodec, Type: av.MediaAudio, Parameters: av.CodecParameters{
+					Operations: encodeIntentOperations(codec.CodecSpec{ID: audioCodec, Type: av.MediaAudio, Parameters: av.CodecParameters{
 						ID:           audioCodec,
 						Type:         av.MediaAudio,
 						SampleFormat: av.SampleFormatF32,
-					}},
+					}}),
 				}}},
 			},
 			want: []string{"encoder adapter does not support the requested sample format", "field=sample_format", "requested=f32", "supported=s16"},
@@ -2107,14 +2151,13 @@ func TestEncodeAdapterPassesRejectIncompatibleDescriptors(t *testing.T) {
 				intent: Intent{Streams: []streamIntent{{
 					Name:   "preview",
 					Select: info.StreamSelect{Type: av.MediaVideo},
-					Operations: []OperationSpec{operationSpecForTransform(TransformSpec{
+					Operations: append([]OperationSpec{operationSpecForTransform(TransformSpec{
 						Resize: &filter.ResizeConfig{
 							Width:       640,
 							Height:      360,
 							PixelFormat: av.PixelFormatYUV420P,
 						},
-					})},
-					Encode: codec.Codec(videoCodec, av.MediaVideo),
+					})}, operationSpecForEncode(codec.Codec(videoCodec, av.MediaVideo))),
 				}}},
 			},
 			want: []string{"encoder adapter does not support the requested pixel format", "field=pixel_format", "requested=yuv420p", "supported=i420"},
@@ -2340,7 +2383,7 @@ func TestJobStreamOutputKindsPassRejectsInvalidOutputShapes(t *testing.T) {
 			name: "mixed frame and mux outputs",
 			stream: streamIntent{
 				Name:         "audio",
-				Decode:       true,
+				Operations:   decodeIntentOperations(),
 				Destinations: []string{"frames", "archive.ogg"},
 			},
 			outputs: []destinationSpec{frameSink, fileOutput},
@@ -2351,7 +2394,7 @@ func TestJobStreamOutputKindsPassRejectsInvalidOutputShapes(t *testing.T) {
 			name: "mux output without encoder",
 			stream: streamIntent{
 				Name:         "audio",
-				Decode:       true,
+				Operations:   decodeIntentOperations(),
 				Destinations: []string{"archive.ogg"},
 			},
 			outputs: []destinationSpec{fileOutput},
@@ -2394,8 +2437,7 @@ func TestJobStreamOutputKindsPassAllowsEncodedPacketFanout(t *testing.T) {
 			Inputs: []inputIntent{{Name: "input.ogg"}},
 			Streams: []streamIntent{{
 				Name:         "audio",
-				Decode:       true,
-				Encode:       codec.Opus(codec.Bitrate(96_000)),
+				Operations:   decodeEncodeIntentOperations(codec.Opus(codec.Bitrate(96_000))),
 				Destinations: []string{"packets", "archive.ogg"},
 			}},
 			Destinations: []destinationIntent{{Name: "packets"}, {Name: "archive.ogg"}},
@@ -2425,8 +2467,7 @@ func TestShapeErrorsReportExpectedAndActualShape(t *testing.T) {
 					Streams: []streamIntent{{
 						Name:         "audio",
 						Select:       info.StreamSelect{Type: av.MediaAudio},
-						Decode:       true,
-						Operations:   []OperationSpec{operationSpecForTransform(Resize(320, 180))},
+						Operations:   append(decodeIntentOperations(), operationSpecForTransform(Resize(320, 180))),
 						Destinations: []string{"frames"},
 					}},
 					Destinations: []destinationIntent{{Name: "frames"}},
@@ -2445,8 +2486,7 @@ func TestShapeErrorsReportExpectedAndActualShape(t *testing.T) {
 					Streams: []streamIntent{{
 						Name:         "video",
 						Select:       info.StreamSelect{Type: av.MediaVideo},
-						Operations:   []OperationSpec{operationSpecForTransform(Resample(48_000, codec.Stereo))},
-						Encode:       codec.VP9(codec.Bitrate(2_000_000)),
+						Operations:   append([]OperationSpec{operationSpecForTransform(Resample(48_000, codec.Stereo))}, operationSpecForEncode(codec.VP9(codec.Bitrate(2_000_000)))),
 						Destinations: []string{"web"},
 					}},
 					Destinations: []destinationIntent{{Name: "web"}},
@@ -2725,8 +2765,7 @@ func TestJobIntentShapePassRejectsOperationTransforms(t *testing.T) {
 			stream: streamIntent{
 				Name:         "video",
 				Select:       info.StreamSelect{Type: av.MediaVideo},
-				Decode:       true,
-				Operations:   []OperationSpec{operationSpecForTransform(Resize(0, 720))},
+				Operations:   append(decodeIntentOperations(), operationSpecForTransform(Resize(0, 720))),
 				Destinations: []string{"frames"},
 			},
 			code: "transform_invalid",
@@ -2737,8 +2776,7 @@ func TestJobIntentShapePassRejectsOperationTransforms(t *testing.T) {
 			stream: streamIntent{
 				Name:         "audio",
 				Select:       info.StreamSelect{Type: av.MediaAudio},
-				Decode:       true,
-				Operations:   []OperationSpec{operationSpecForTransform(Resize(320, 180))},
+				Operations:   append(decodeIntentOperations(), operationSpecForTransform(Resize(320, 180))),
 				Destinations: []string{"frames"},
 			},
 			code: "transform_media_mismatch",
@@ -2749,8 +2787,7 @@ func TestJobIntentShapePassRejectsOperationTransforms(t *testing.T) {
 			stream: streamIntent{
 				Name:         "video",
 				Select:       info.StreamSelect{Type: av.MediaVideo},
-				Decode:       true,
-				Operations:   []OperationSpec{operationSpecForTransform(TransformSpec{})},
+				Operations:   append(decodeIntentOperations(), operationSpecForTransform(TransformSpec{})),
 				Destinations: []string{"frames"},
 			},
 			code: "transform_invalid",
@@ -2816,7 +2853,7 @@ func TestTranscodeIntentShapePassRejectsInvalidPublicShape(t *testing.T) {
 					Streams: []streamIntent{{
 						Name:         "360p",
 						Select:       info.StreamSelect{Type: av.MediaVideo},
-						Encode:       codec.VP9(codec.Bitrate(600_000)),
+						Operations:   encodeIntentOperations(codec.VP9(codec.Bitrate(600_000))),
 						Destinations: []string{"web"},
 					}},
 				},
@@ -2843,7 +2880,7 @@ func TestTranscodeIntentShapePassRejectsInvalidPublicShape(t *testing.T) {
 					Inputs: []inputIntent{{Name: "input.ivf"}},
 					Streams: []streamIntent{{
 						Select:       info.StreamSelect{Type: av.MediaVideo},
-						Encode:       codec.VP9(codec.Bitrate(600_000)),
+						Operations:   encodeIntentOperations(codec.VP9(codec.Bitrate(600_000))),
 						Destinations: []string{"web"},
 					}},
 				},
@@ -2860,8 +2897,7 @@ func TestTranscodeIntentShapePassRejectsInvalidPublicShape(t *testing.T) {
 					Streams: []streamIntent{{
 						Name:         "360p",
 						Select:       info.StreamSelect{Type: av.MediaVideo},
-						Decode:       true,
-						Encode:       codec.Copy(),
+						Operations:   decodeEncodeIntentOperations(codec.Copy()),
 						Destinations: []string{"web"},
 					}},
 				},
@@ -2878,7 +2914,7 @@ func TestTranscodeIntentShapePassRejectsInvalidPublicShape(t *testing.T) {
 					Streams: []streamIntent{{
 						Name:         "360p",
 						Select:       info.StreamSelect{Type: av.MediaVideo},
-						Encode:       codec.Auto(),
+						Operations:   encodeIntentOperations(codec.Auto()),
 						Destinations: []string{"web"},
 					}},
 				},
@@ -2895,7 +2931,7 @@ func TestTranscodeIntentShapePassRejectsInvalidPublicShape(t *testing.T) {
 					Streams: []streamIntent{{
 						Name:         "360p",
 						Select:       info.StreamSelect{Type: av.MediaVideo},
-						Encode:       codec.VP9(codec.Bitrate(600_000)),
+						Operations:   encodeIntentOperations(codec.VP9(codec.Bitrate(600_000))),
 						Destinations: []string{"web", "web"},
 					}},
 				},
@@ -2974,7 +3010,7 @@ func TestTranscodeBranchTargetKindsPassAllowsCopyMuxBranches(t *testing.T) {
 			Streams: []streamIntent{{
 				Name:         "archive",
 				Select:       info.StreamSelect{Type: av.MediaVideo},
-				Encode:       codec.Copy(),
+				Operations:   encodeIntentOperations(codec.Copy()),
 				Destinations: []string{"web"},
 			}},
 		},
@@ -3049,7 +3085,7 @@ func TestTranscodeOutputBindingsPassRejectsUndefinedRoutes(t *testing.T) {
 			Streams: []streamIntent{{
 				Name:         "360p",
 				Select:       info.StreamSelect{Type: av.MediaVideo},
-				Encode:       codec.VP9(codec.Bitrate(600_000)),
+				Operations:   encodeIntentOperations(codec.VP9(codec.Bitrate(600_000))),
 				Destinations: []string{"missing"},
 			}},
 			Destinations: []destinationIntent{{Name: "web.ivf"}},
@@ -3091,7 +3127,7 @@ func TestTranscodeKnownInputStreamSelectionPassRejectsProbedBranchAmbiguity(t *t
 		intent: Intent{Streams: []streamIntent{{
 			Name:         "720p",
 			Select:       info.StreamSelect{Type: av.MediaVideo},
-			Encode:       codec.VP9(codec.Bitrate(2_000_000)),
+			Operations:   encodeIntentOperations(codec.VP9(codec.Bitrate(2_000_000))),
 			Destinations: []string{"web"},
 		}}},
 		branchInputProbeReady: true,

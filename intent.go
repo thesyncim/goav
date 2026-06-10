@@ -27,15 +27,22 @@ type inputIntent struct {
 	Realtime bool
 }
 
+// streamIntent is one stream chain of the normalized build intent. Operations
+// is the single source of truth for the chain's work: decode facts live on the
+// info.OpDecode operation, encode/copy facts on the terminal info.OpEncode/
+// info.OpCopy operation, and taps on info.OpTap operations — read them through
+// chainHasDecode, chainDecodeCodec, chainEncodeSpec, and operationSpecTaps
+// instead of keeping parallel fields.
+//
+// Destinations is not derived from Operations: it is the stream→destination
+// routing, naming the Intent.Destinations entries this chain feeds. The flow is
+// one-directional — builders write the labels here, and the plan derives its
+// destination/<label> handle IDs from them (planBranchDestinations).
 type streamIntent struct {
 	Name         string
 	Select       info.StreamSelect
 	From         TapRef
-	Decode       bool
-	DecodeCodec  codec.CodecSpec
 	Operations   []OperationSpec
-	Taps         []tapIntent
-	Encode       codec.CodecSpec
 	CodecChange  CodecChangePolicy
 	Destinations []string
 }
@@ -273,33 +280,23 @@ func jobStreamIntent(stream *jobStreamBuild) streamIntent {
 	if stream == nil {
 		return streamIntent{}
 	}
-	operations := jobOperationSpecs(stream)
 	selected := streamSelectFromAV(stream.selector)
 	selected.Input = stream.input
 	return streamIntent{
 		Name:         stream.name,
 		Select:       selected,
-		Decode:       chainHasDecode(operations),
-		DecodeCodec:  cloneCodecSpec(chainDecodeCodec(operations)),
-		Operations:   operations,
-		Taps:         operationSpecTaps(operations, stream.selector.Type),
-		Encode:       cloneCodecSpec(chainEncodeSpec(operations)),
+		Operations:   jobOperationSpecs(stream),
 		CodecChange:  stream.codecChange,
 		Destinations: destinationNamesWithOverrides(stream.outputs, stream.outputNames),
 	}
 }
 
 func branchStreamIntent(stream streamBuild) streamIntent {
-	operations := streamBuildOperationSpecs(stream)
 	return streamIntent{
 		Name:         stream.name,
 		Select:       streamSelectFromAV(stream.selector),
 		From:         stream.from,
-		Decode:       stream.decode,
-		DecodeCodec:  cloneCodecSpec(stream.decodeCodec),
-		Operations:   operations,
-		Taps:         operationSpecTaps(operations, stream.selector.Type),
-		Encode:       cloneCodecSpec(chainEncodeSpec(operations)),
+		Operations:   streamBuildOperationSpecs(stream),
 		Destinations: append([]string(nil), stream.destinationNames...),
 	}
 }
@@ -493,10 +490,11 @@ func streamStageMissingError(stream streamIntent) error {
 }
 
 func validateJobStreamOutputKinds(operation string, stream streamIntent, outputs []destinationSpec) error {
-	if outputsContainSinkDestination(outputs) && outputsContainMuxDestination(outputs) && !codecIntentSet(stream.Encode) {
+	encode := chainEncodeSpec(stream.Operations)
+	if outputsContainSinkDestination(outputs) && outputsContainMuxDestination(outputs) && !codecIntentSet(encode) {
 		return mixedStreamOutputError(operation, stream)
 	}
-	if stream.Encode.ID == "" && !stream.Encode.Copy && outputsContainMuxDestination(outputs) {
+	if encode.ID == "" && !encode.Copy && outputsContainMuxDestination(outputs) {
 		return streamEncodeMissingError(operation, stream)
 	}
 	return nil
@@ -581,13 +579,11 @@ func duplicateJobStreamError(existing *jobStreamBuild, next *jobStreamBuild) err
 }
 
 func streamIntentHasOperation(stream streamIntent) bool {
-	if stream.Decode || stream.Encode.ID != "" || stream.Encode.Auto || stream.Encode.Copy {
-		return true
-	}
 	for i := range stream.Operations {
 		// Annotation carriers (.Auto/.Require/.Prefer) opt into solving or
 		// assert shapes but do no work; a chain holding only annotations still
-		// has no operation.
+		// has no operation. Decode, copy, and encode are ordinary operations
+		// (info.OpDecode/info.OpCopy/info.OpEncode) on the same list.
 		if !operationSpecIsAnnotation(stream.Operations[i]) {
 			return true
 		}

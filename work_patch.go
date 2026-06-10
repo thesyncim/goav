@@ -336,7 +336,7 @@ func (t *task) planAttachEncode(ctx context.Context, branchName string, encode c
 		return nil, av.Stream{}, err
 	}
 	if _, err := t.runtime.codecs.EncoderFactory(encode.ID); err != nil {
-		stream := streamIntent{Name: branchName, Encode: encode}
+		stream := streamIntent{Name: branchName, Operations: []OperationSpec{operationSpecForEncode(encode)}}
 		return nil, av.Stream{}, recipeEncodeAdapterError("attach runtime branch", stream, t.runtime.codecs, err)
 	}
 	request := runtimeBranchEncodeRequest(branchName, encode, currentStream)
@@ -344,7 +344,11 @@ func (t *task) planAttachEncode(ctx context.Context, branchName string, encode c
 	if err != nil {
 		return nil, av.Stream{}, err
 	}
-	stream := streamIntent{Name: branchName, Select: info.StreamSelect{Type: currentStream.Type}, Encode: encode}
+	stream := streamIntent{
+		Name:       branchName,
+		Select:     info.StreamSelect{Type: currentStream.Type},
+		Operations: []OperationSpec{operationSpecForEncode(encode)},
+	}
 	if err := validateEncodeAdapterDescriptors("attach runtime branch", stream, t.runtime.codecs, encodeAdapterRequestFromPreparedStream(encode, encodedStream)); err != nil {
 		return nil, av.Stream{}, err
 	}

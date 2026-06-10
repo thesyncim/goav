@@ -575,7 +575,7 @@ func validateJobStreamIntentShape(operation string, stream streamIntent) error {
 	if err := validateRecipeStreamSelector(operation, node, selector); err != nil {
 		return err
 	}
-	if err := validateRecipeEncode(stream.Encode, operation, stream.Name); err != nil {
+	if err := validateRecipeEncode(chainEncodeSpec(stream.Operations), operation, stream.Name); err != nil {
 		return err
 	}
 	if err := validateCodecChangePolicy(operation, node, stream.CodecChange); err != nil {

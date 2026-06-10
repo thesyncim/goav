@@ -288,69 +288,27 @@ func planOperationSpecs(input inputIntent, stream streamIntent, branchName strin
 		operations = append(operations, operationSpecs...)
 		return operations, decisions
 	}
+	// No operations were declared, so there is nothing to decode, transform,
+	// encode, or tap: frame sources flow through, packet sources stay copied.
 	var decisions []planDecision
 	if initial.Domain == shape.DomainFrame {
-		operations = append(operations, planProcessingOperations(stream)...)
-		if stream.Encode.ID != "" {
-			operations = append(operations, planOperation{
-				Kind:      info.OpEncode,
-				Component: string(stream.Encode.ID),
-				Detail:    "frames to packets",
-				Shape:     mediaShapeFromCodecSpec(stream.Encode, shape.DomainPacket),
-			})
-			decisions = append(decisions, planDecision{
-				Code:    "encode_required",
-				Branch:  branchName,
-				Message: "muxed stream output requires encoded packets",
-			})
-		} else {
-			decisions = append(decisions, planDecision{
-				Code:    "frame_source",
-				Branch:  branchName,
-				Message: "source already produces decoded frames",
-			})
-		}
-		operations = append(operations, planPostEncodeTapOperations(stream)...)
+		decisions = append(decisions, planDecision{
+			Code:    "frame_source",
+			Branch:  branchName,
+			Message: "source already produces decoded frames",
+		})
 		return operations, decisions
 	}
-	if streamNeedsDecode(stream) {
-		operations = append(operations, planOperation{
-			Kind:      info.OpDecode,
-			Component: codecComponent(stream.Select.Codec),
-			Detail:    "packets to frames",
-		})
-		decisions = append(decisions, planDecision{
-			Code:    "decode_required",
-			Branch:  branchName,
-			Message: "operation specs require decoded frames",
-		})
-	} else {
-		operations = append(operations, planOperation{
-			Kind:      info.OpCopy,
-			Component: "packet-copy",
-			Detail:    "no frame operation requested",
-		})
-		decisions = append(decisions, planDecision{
-			Code:    "packet_copy",
-			Branch:  branchName,
-			Message: "stream can remain packet encoded",
-		})
-	}
-	operations = append(operations, planProcessingOperations(stream)...)
-	if stream.Encode.ID != "" {
-		operations = append(operations, planOperation{
-			Kind:      info.OpEncode,
-			Component: string(stream.Encode.ID),
-			Detail:    "frames to packets",
-			Shape:     mediaShapeFromCodecSpec(stream.Encode, shape.DomainPacket),
-		})
-		decisions = append(decisions, planDecision{
-			Code:    "encode_required",
-			Branch:  branchName,
-			Message: "muxed stream output requires encoded packets",
-		})
-	}
-	operations = append(operations, planPostEncodeTapOperations(stream)...)
+	operations = append(operations, planOperation{
+		Kind:      info.OpCopy,
+		Component: "packet-copy",
+		Detail:    "no frame operation requested",
+	})
+	decisions = append(decisions, planDecision{
+		Code:    "packet_copy",
+		Branch:  branchName,
+		Message: "stream can remain packet encoded",
+	})
 	return operations, decisions
 }
 
@@ -484,21 +442,6 @@ func planInputOperationsForShape(input inputIntent, spec shape.Spec) []planOpera
 	}
 }
 
-func planProcessingOperations(stream streamIntent) []planOperation {
-	transforms := streamIntentTransformSpecs(stream)
-	operations := make([]planOperation, 0, len(transforms)+len(stream.Taps))
-	for i := range transforms {
-		operations = append(operations, planTransformOperation(transforms[i]))
-	}
-	for i := range stream.Taps {
-		if stream.Taps[i].After != "" {
-			continue
-		}
-		operations = append(operations, planTapOperation(stream.Taps[i]))
-	}
-	return operations
-}
-
 func planTransformOperation(transform TransformSpec) planOperation {
 	name := transformFactoryName(transform)
 	return planOperation{
@@ -516,17 +459,6 @@ func planTapOperation(tap tapIntent) planOperation {
 		Detail:    "named media outlet",
 		After:     tap.After,
 	}
-}
-
-func planPostEncodeTapOperations(stream streamIntent) []planOperation {
-	operations := make([]planOperation, 0)
-	for i := range stream.Taps {
-		if stream.Taps[i].After != info.OpEncode {
-			continue
-		}
-		operations = append(operations, planTapOperation(stream.Taps[i]))
-	}
-	return operations
 }
 
 func planTaps(branches []planBranch) []workTap {
@@ -651,7 +583,7 @@ func normalizePlanBranchShape(spec shape.Spec, stream streamIntent, input inputI
 		spec.Domain = shape.DomainPacket
 	}
 	if spec.MediaKind == "" {
-		spec.MediaKind = firstNonEmptyMedia(stream.Select.Type, stream.Encode.Type, input.Codec.Type)
+		spec.MediaKind = firstNonEmptyMedia(stream.Select.Type, chainEncodeSpec(stream.Operations).Type, input.Codec.Type)
 	}
 	if spec.StreamID == "" {
 		spec.StreamID = stream.Select.ID

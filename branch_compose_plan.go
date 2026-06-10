@@ -102,17 +102,18 @@ func planBranchCompositionRecipe(intent Intent, input InputSpec, namedOutputs []
 		} else {
 			sharedOperations, privateOperations = splitOperationSpecsByShared(operations)
 		}
+		encode := chainEncodeSpec(operations)
 		branch := branchComposeBranch{
 			Name:              branchName,
 			Selector:          selector,
 			Input:             stream.Select.Input,
-			Copy:              stream.Encode.Copy,
+			Copy:              encode.Copy,
 			Operations:        cloneOperationSpecs(operations),
 			SharedOperations:  sharedOperations,
 			PrivateOperations: privateOperations,
-			DecodeConfig:      cloneCodecSpec(stream.DecodeCodec),
+			DecodeConfig:      cloneCodecSpec(chainDecodeCodec(operations)),
 			CodecChange:       stream.CodecChange,
-			Encode:            encodeConfigFromSpec(stream.Encode),
+			Encode:            encodeConfigFromSpec(encode),
 			Labels:            append([]string(nil), stream.Destinations...),
 		}
 		for _, label := range stream.Destinations {
@@ -248,14 +249,15 @@ func validateBranchIntentShape(stream streamIntent, index int) error {
 	if err := validateRecipeStreamSelector(branchCompositionOperation, branchIntentName(stream), selector); err != nil {
 		return err
 	}
-	if codecIntentSet(stream.Encode) {
-		if stream.Encode.Copy && stream.Decode {
+	encode := chainEncodeSpec(stream.Operations)
+	if codecIntentSet(encode) {
+		if encode.Copy && chainHasDecode(stream.Operations) {
 			return branchCopyUnsupportedError(stream)
 		}
-		if stream.Encode.Copy && len(streamIntentTransformSpecs(stream)) != 0 {
+		if encode.Copy && len(streamIntentTransformSpecs(stream)) != 0 {
 			return branchPacketTransformUnsupportedError(stream)
 		}
-		if err := validateRecipeEncode(stream.Encode, branchCompositionOperation, stream.Name); err != nil {
+		if err := validateRecipeEncode(encode, branchCompositionOperation, stream.Name); err != nil {
 			return err
 		}
 	}
@@ -303,7 +305,7 @@ func validateBranchDestinationKinds(intent Intent, namedOutputs []namedDestinati
 				break
 			}
 		}
-		if hasMuxDestination && !codecIntentSet(stream.Encode) {
+		if hasMuxDestination && !codecIntentSet(chainEncodeSpec(stream.Operations)) {
 			return branchEncodeMissingError(stream)
 		}
 	}

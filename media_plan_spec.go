@@ -302,11 +302,9 @@ func mediaPlanPacketCopyIntentStream(jobPresent bool, intent Intent) (streamInte
 }
 
 func streamIntentPacketCopyOnly(stream streamIntent) bool {
-	if !stream.Encode.Copy || stream.Decode || stream.Encode.ID != "" || stream.Encode.Auto {
+	encode := chainEncodeSpec(stream.Operations)
+	if !encode.Copy || chainHasDecode(stream.Operations) || encode.ID != "" || encode.Auto {
 		return false
-	}
-	if len(stream.Operations) == 0 {
-		return true
 	}
 	hasCopy := false
 	for i := range stream.Operations {
@@ -356,13 +354,14 @@ func mediaPlanDecodeStreamShape(stream streamIntent, outputs []destinationSpec, 
 func mediaPlanSinkDestinationShape(stream streamIntent, outputs []destinationSpec, frameSource bool) bool {
 	return len(outputs) == 1 &&
 		outputs[0].sink != nil &&
-		(stream.Decode || frameSource) &&
+		(chainHasDecode(stream.Operations) || frameSource) &&
 		len(stream.Destinations) == 1 &&
-		!stream.Encode.Copy
+		!chainEncodeSpec(stream.Operations).Copy
 }
 
 func mediaPlanEncodeShape(stream streamIntent, outputs []destinationSpec, frameSource bool) bool {
-	if (!stream.Decode && !frameSource) || !codecIntentSet(stream.Encode) || stream.Encode.Copy || len(outputs) == 0 {
+	encode := chainEncodeSpec(stream.Operations)
+	if (!chainHasDecode(stream.Operations) && !frameSource) || !codecIntentSet(encode) || encode.Copy || len(outputs) == 0 {
 		return false
 	}
 	return len(stream.Destinations) == len(outputs)

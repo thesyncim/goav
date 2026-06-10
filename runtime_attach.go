@@ -1385,13 +1385,16 @@ func (t *task) prepareRuntimeBranchDecode(ctx context.Context, branchName string
 	}
 	request := runtimeBranchDecodeRequest(branchName, currentStream, spec)
 	if _, err := t.runtime.codecs.DecoderFactory(currentStream.Codec.ID); err != nil {
-		stream := streamIntent{Name: branchName, Decode: true}
+		stream := streamIntent{
+			Name:       branchName,
+			Operations: []OperationSpec{operationSpecForDecode(spec, string(currentStream.Codec.ID))},
+		}
 		return nil, recipeDecodeAdapterError("attach runtime branch", stream, currentStream.Codec.ID, t.runtime.codecs, err)
 	}
 	stream := streamIntent{
-		Name:   branchName,
-		Select: streamSelectFromAV(request.selector),
-		Decode: true,
+		Name:       branchName,
+		Select:     streamSelectFromAV(request.selector),
+		Operations: []OperationSpec{operationSpecForDecode(spec, string(currentStream.Codec.ID))},
 	}
 	if err := validateDecodeAdapterDescriptors("attach runtime branch", stream, t.runtime.codecs, decodeAdapterRequestFromStream(currentStream, stream)); err != nil {
 		return nil, err

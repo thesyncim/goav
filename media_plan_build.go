@@ -125,7 +125,7 @@ func newMediaPlanDecodeStreamGraph(rt Runtime, inputs []InputSpec, outputs []des
 		decode: decodeRequest{
 			selector:    selector,
 			codecChange: stream.CodecChange,
-			config:      cloneCodecSpec(stream.DecodeCodec),
+			config:      cloneCodecSpec(chainDecodeCodec(stream.Operations)),
 		},
 	}
 	filters, err := mediaPlanStreamFilters(stream)
@@ -133,10 +133,10 @@ func newMediaPlanDecodeStreamGraph(rt Runtime, inputs []InputSpec, outputs []des
 		return mediaPlanStreamGraph{}, false, err
 	}
 	plan.filters = filters
-	if codecIntentSet(stream.Encode) && !stream.Encode.Copy {
+	if encode := chainEncodeSpec(stream.Operations); codecIntentSet(encode) && !encode.Copy {
 		request := encodeRequest{
 			selector: selector,
-			config:   encodeConfigFromSpec(stream.Encode),
+			config:   encodeConfigFromSpec(encode),
 		}
 		plan.encode = &request
 	}

@@ -134,9 +134,9 @@ func muxStreamForBranch(
 		if !ok || operation.Kind != info.OpEncode {
 			continue
 		}
-		if streamOK && stream.Encode.ID != "" {
-			out.Codec = stream.Encode.ID
-			out.Media = firstNonEmptyMedia(stream.Encode.Type, stream.Encode.Parameters.Type, codecMedia(stream.Encode.ID), stream.Select.Type)
+		if encode := chainEncodeSpec(stream.Operations); streamOK && encode.ID != "" {
+			out.Codec = encode.ID
+			out.Media = firstNonEmptyMedia(encode.Type, encode.Parameters.Type, codecMedia(encode.ID), stream.Select.Type)
 			return out
 		}
 		out.Codec = av.CodecID(operation.Component)
