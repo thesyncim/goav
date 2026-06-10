@@ -6,22 +6,44 @@ import (
 	"github.com/thesyncim/goav/pipeline"
 )
 
-// Composite overlays N synchronized video source-chains into one stream delivered
-// to a Sink — the video dual of Mix (N→1) and the convergent dual of Branches.
-// Each arm is a source chain such as From(frameSource).Video(); arms must have
-// distinct stream ids and I420 video format, and each may declare its canvas
-// position with .Region(x, y). This reuses the existing Job, so .To/Build/Run are
-// unchanged. (First slice: frame sources to a Sink; decode/encode arms build on
-// the same info.OpJoin mechanism as Mix — see docs/MULTI_INPUT.md.)
-func Composite(arms ...*jobStreamBuilder) *compositeStream {
+// Composite overlays N synchronized video arms into one stream delivered to a
+// Sink — the video dual of Mix (N→1) and the convergent dual of Branches.
+// Each arm is a source chain such as From(frameSource).Video() or another
+// video-producing join — Composite(Composite(a, b), logo) paints a sub-canvas
+// like any arm. Arms must have distinct stream ids and I420 video format, and
+// each may declare its canvas position with .Region(x, y). This reuses the
+// existing Job, so .To/Build/Run are unchanged (see docs/MULTI_INPUT.md).
+func Composite(arms ...JoinArm) *compositeStream {
 	return &compositeStream{arms: arms}
 }
 
 type compositeStream struct {
-	arms   []*jobStreamBuilder
+	arms   []JoinArm
 	encode *codec.CodecSpec
 	taps   []TapRef
 	sync   joinSyncMode
+	region *compositeRegion
+}
+
+// joinArm lets a Composite stand as an arm of an outer join: the outer join
+// consumes the COMPOSITED canvas under the sub-composite's output id, placed
+// at this composite's .Region(x, y) (top-left by default). A nested composite
+// may not carry .Encode(...) — encode belongs to the outer join or its chain.
+func (c *compositeStream) joinArm() joinArmSpec {
+	if c == nil {
+		return joinArmSpec{}
+	}
+	return joinArmSpec{
+		join:   &joinSpec{kind: joinComposite, arms: c.arms, encode: c.encode, taps: c.taps, sync: c.sync},
+		region: c.region,
+	}
+}
+
+// Region places this composite's canvas at (x, y) when the composite is used
+// as an arm of an outer Composite. It has no effect on a top-level composite.
+func (c *compositeStream) Region(x, y int) *compositeStream {
+	c.region = &compositeRegion{x: x, y: y}
+	return c
 }
 
 // SyncByPTS aligns the arms by presentation timestamp instead of arrival
@@ -82,9 +104,10 @@ func (c *compositeStream) To(dest Destination) *Job {
 var compositeJoinProfile = joinProfile{
 	media:      av.MediaVideo,
 	decodeArms: true,
-	// Each arm places its frame on the canvas at its declared Region; an arm
-	// without one defaults to the top-left corner {0,0}.
-	planArm: func(p *joinPlan, arm *jobStreamBuilder, _ av.Stream) (*joinArmStagePlan, error) {
+	// Each arm places its frame on the canvas at its declared Region — a chain
+	// arm's .Region(x, y) or a nested composite's — defaulting to the top-left
+	// corner {0,0}.
+	planArm: func(p *joinPlan, arm joinArmSpec, _ av.Stream) (*joinArmStagePlan, error) {
 		layout := compositeLayout{}
 		if arm.region != nil {
 			layout = compositeLayout{X: arm.region.x, Y: arm.region.y}
@@ -93,12 +116,15 @@ var compositeJoinProfile = joinProfile{
 		return nil, nil
 	},
 	newStage: func(p *joinPlan, armIDs []av.StreamID) (pipeline.Stage, *pipeline.BufferPolicy) {
-		return newVideoCompositeStage("composite", armIDs, av.StreamID("composite"), p.layouts, p.join.sync), nil
+		return newVideoCompositeStage(p.name, armIDs, av.StreamID(p.name), p.layouts, p.join.sync), nil
 	},
+	// The output id is the join's planned node name (composite, or composite-2
+	// when nested); the format facts come from the first arm — a leaf's
+	// declared source shape or a sub-join's joined stream.
 	joinedStream: func(p *joinPlan) av.Stream {
-		shape, _ := customSourceShape(p.join.arms[0].job.inputs[0])
+		shape := p.firstArmSourceShape()
 		return av.Stream{
-			ID:   av.StreamID("composite"),
+			ID:   av.StreamID(p.name),
 			Type: av.MediaVideo,
 			Codec: av.CodecParameters{
 				Type:        av.MediaVideo,

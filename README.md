@@ -583,6 +583,31 @@ Packet arms decode automatically before the join; mismatched audio arms
 resample to the first arm's format. The join output is a normal stream point: it
 takes `.Tap(...)`, `.Branches(...)`, and `.Encode(...).To(...)` like any chain.
 
+Joins nest — a join is an arm like any source chain. Sub-mix two microphones,
+then mix the result with a third; the sub-mix output is resampled to the outer
+target like any arm, and clamping applies at each mix stage:
+
+```go
+return goav.Mix(
+    goav.Mix(goav.From(mic1).Audio(), goav.From(mic2).Audio()),
+    goav.From(mic3).Audio(),
+).Encode(codec.Opus(codec.Bitrate(96_000))).
+    To(goav.File("mix.webm", out)).
+    Run(ctx)
+```
+
+`Select` switches between whole joins the same way — the arm ids are the
+sub-joins' output ids (`mix`, `mix-2`):
+
+```go
+task, err := goav.Select(
+    goav.Mix(goav.From(a).Audio(), goav.From(b).Audio()),
+    goav.Mix(goav.From(c).Audio(), goav.From(d).Audio()),
+).To(monitor).Build(ctx)
+// ... while running:
+err = task.Control(ctx, goav.SelectActive("mix-2"))
+```
+
 Arms pair by arrival order by default — right for live sources on one clock.
 `.SyncByPTS()` aligns them by timestamp instead (files starting at different
 offsets, a `Seek` on one arm, drift): the earliest head frame sets each step,

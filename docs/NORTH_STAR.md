@@ -74,7 +74,11 @@ executable truth; Explain/Describe/Build/Attach/Snapshot all read from them.
   builder (profile tables, `Job.join` single route) **DONE**; join outputs compose
   (`.Tap`/`.Branches` via the shared chain lowering) **DONE**; planned `OpJoin`
   node in the IR — joins compile through the one recipe compile, `Describe()` ≡
-  `Build()` guarded, the `buildJoin` graph-assembly route deleted **DONE**.
+  `Build()` guarded, the `buildJoin` graph-assembly route deleted **DONE**;
+  nested joins **DONE** — a join is a `JoinArm` (`Mix(Mix(a, b), c)`,
+  `Select(Mix(a, b), Mix(c, d))`, composites of composites), `joinPlan`
+  recurses through the one compile, nested output ids auto-disambiguate
+  (mix, mix-2), arm conversions apply to a sub-join's output via the solver.
 - **Time/sync** (§13): join sync policy **DONE** — `Mix/Composite(...).SyncByPTS()`
   aligns arms on a common ns clock (min-head step, tolerance = half a frame;
   ahead arms gap as silence/unpainted, stale frames drop to catch up, an arm

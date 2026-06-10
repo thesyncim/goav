@@ -98,6 +98,13 @@ func (s *videoCompositeStage) Handle(ctx context.Context, msg *pipeline.Message,
 			out.StreamID = s.out
 			return emitter.Emit(ctx, &pipeline.Message{Kind: pipeline.MessageEvent, Event: &out})
 		}
+		if msg.Event.Reason == selectorActiveReason {
+			// Control-plane events ride the data path through joins UNCHANGED:
+			// a SelectActive heading for a selector downstream of this join
+			// carries its target arm in Event.StreamID and is consumed by the
+			// selector — re-stamping it here would erase the target.
+			return emitter.Emit(ctx, msg)
+		}
 		return nil
 	default:
 		return nil
@@ -194,10 +201,13 @@ func compositeI420Frames(frames []*av.Frame, layout []compositeLayout, floorW, f
 		PTS:      base.PTS,
 		Duration: base.Duration,
 		Video:    &av.VideoFrame{Width: canvasW, Height: canvasH, PixelFormat: av.PixelFormatI420},
+		// The canvas planes are freshly allocated per step and never written
+		// again — published immutable, so a buffered graph (a Select over
+		// sub-composites) may queue them by reference.
 		Planes: []av.Plane{
-			{Buffer: av.Buffer{Bytes: yPlane, Ownership: av.BufferOwned}, Stride: canvasW},
-			{Buffer: av.Buffer{Bytes: uPlane, Ownership: av.BufferOwned}, Stride: chromaW},
-			{Buffer: av.Buffer{Bytes: vPlane, Ownership: av.BufferOwned}, Stride: chromaW},
+			{Buffer: av.Buffer{Bytes: yPlane, Ownership: av.BufferImmutable}, Stride: canvasW},
+			{Buffer: av.Buffer{Bytes: uPlane, Ownership: av.BufferImmutable}, Stride: chromaW},
+			{Buffer: av.Buffer{Bytes: vPlane, Ownership: av.BufferImmutable}, Stride: chromaW},
 		},
 	}, nil
 }

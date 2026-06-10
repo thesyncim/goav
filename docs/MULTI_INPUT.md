@@ -30,6 +30,18 @@ worker, so join stages need no internal locking — lock-free by design holds.
 All three plan through the ONE recipe compile: the joinSpec normalizes into the
 compile state, `joinPlan` plans N arm sub-chains converging into an `OpJoin`
 node (workPlan edges carry the N-to-1), and `Describe()` ≡ `Build()` is
-guard-tested per kind. Per-kind behavior lives only in the joinProfiles table.
-Remaining: move join arm shape-solving into the central solver; joins as arms
-of joins (nesting) needs an arm-shaped join handle.
+guard-tested per kind (nested case included). Per-kind behavior lives only in
+the joinProfiles table. Arm shape-solving goes through the central solver
+(`armExpected`/`armPolicy`).
+
+Joins nest: an arm is a `JoinArm` — a source chain or another join — so
+`Mix(Mix(a, b), c)` sub-mixes two arms and mixes the result with a third,
+`Select(Mix(a, b), Mix(c, d))` switches between two live mixes (arm ids are
+the sub-joins' output ids: mix, mix-2), and composites nest as sub-canvases
+(placed with the nested composite's `.Region(x, y)`). A nested join
+contributes its JOINED output stream; `joinPlan` recurses through the one
+compile, the solver converts a sub-join's output like any arm (an outer mix
+resamples a 24kHz sub-mix to its 48kHz target), `.SyncByPTS()` on a nested
+join scopes to ITS arms, mix clamping applies independently at each stage,
+and a nested join may not carry `.Encode/.To/.Branches` (it is an arm, not a
+terminal — `mix_arm`-family errors / not expressible).

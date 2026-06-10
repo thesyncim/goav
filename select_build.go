@@ -5,14 +5,17 @@ import (
 	"github.com/thesyncim/goav/pipeline"
 )
 
-// Select switches one of N live source-chains through to a single destination —
-// the runtime is a passthrough one-of-N switch (active-speaker camera, simulcast
-// layer, failover). Unlike Mix/Composite it does NOT decode/encode/resample: the
-// active arm's frames or packets are forwarded as-is, only the StreamID rewritten
-// to the output. Arms must have distinct stream ids; the first arm is active by
-// default and SelectActive switches live through the control plane. This reuses
-// the existing Job, so .To/Build/Run are unchanged. (First slice: arms to a Sink.)
-func Select(arms ...*jobStreamBuilder) *selectorStream {
+// Select switches one of N live arms through to a single destination — the
+// runtime is a passthrough one-of-N switch (active-speaker camera, simulcast
+// layer, failover). Each arm is a source chain or another join:
+// Select(Mix(a, b), Mix(c, d)) switches between two live mixes, where each
+// sub-mix contributes its joined output under its output id (mix, mix-2).
+// Unlike Mix/Composite it does NOT decode/encode/resample: the active arm's
+// frames or packets are forwarded as-is, only the StreamID rewritten to the
+// output. Arms must have distinct stream ids; the first arm is active by
+// default and SelectActive switches live through the control plane. This
+// reuses the existing Job, so .To/Build/Run are unchanged.
+func Select(arms ...JoinArm) *selectorStream {
 	return &selectorStream{arms: arms}
 }
 
@@ -22,8 +25,17 @@ func Select(arms ...*jobStreamBuilder) *selectorStream {
 const selectBufferCapacity = 32
 
 type selectorStream struct {
-	arms []*jobStreamBuilder
+	arms []JoinArm
 	taps []TapRef
+}
+
+// joinArm lets a Select stand as an arm of an outer join: the outer join
+// consumes the SWITCHED output stream under the selector's output id.
+func (s *selectorStream) joinArm() joinArmSpec {
+	if s == nil {
+		return joinArmSpec{}
+	}
+	return joinArmSpec{join: &joinSpec{kind: joinSelect, arms: s.arms, taps: s.taps}}
 }
 
 // Tap names the switched stream as a stable attach point — the same tap a
@@ -75,15 +87,16 @@ var selectJoinProfile = joinProfile{
 		// control before the worker applies it. The pinned non-lossy DropBlock
 		// queue backpressures instead, so the switch is always delivered (the
 		// DropBlock control-plane lesson).
-		return newSelectorStage("select", armIDs, av.StreamID("select")),
+		return newSelectorStage(p.name, armIDs, av.StreamID(p.name)),
 			&pipeline.BufferPolicy{Capacity: selectBufferCapacity, Drop: pipeline.DropBlock}
 	},
 	// The switched output is the first arm's stream forwarded as-is under the
-	// selector's output id — Select is passthrough, so the arm's codec and
-	// format facts describe the joined stream.
+	// selector's output id (its planned node name) — Select is passthrough, so
+	// the arm's codec and format facts describe the joined stream. A nested
+	// join arm contributes its joined stream the same way.
 	joinedStream: func(p *joinPlan) av.Stream {
 		stream := p.arms[0].stream
-		stream.ID = av.StreamID("select")
+		stream.ID = av.StreamID(p.name)
 		return stream
 	},
 	sinkOnlyReason: "select to a non-Sink destination is not supported yet",

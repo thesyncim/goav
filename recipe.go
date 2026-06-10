@@ -3110,6 +3110,16 @@ func (b *jobStreamBuilder) Region(x, y int) *jobStreamBuilder {
 	return b
 }
 
+// joinArm lets a source chain stand as one arm of a join (Mix, Composite,
+// Select) — the original arm shape, kept compiling unchanged behind the
+// sealed JoinArm interface.
+func (b *jobStreamBuilder) joinArm() joinArmSpec {
+	if b == nil {
+		return joinArmSpec{}
+	}
+	return joinArmSpec{chain: b, region: b.region}
+}
+
 func (b *jobStreamBuilder) sourceStartsFrameDomain() bool {
 	spec, ok := b.sourceFrameShape()
 	return ok && spec.Domain == shape.DomainFrame

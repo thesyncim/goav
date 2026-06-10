@@ -80,6 +80,14 @@ func (s *audioMixStage) Handle(ctx context.Context, msg *pipeline.Message, emitt
 			out.StreamID = s.out
 			return emitter.Emit(ctx, &pipeline.Message{Kind: pipeline.MessageEvent, Event: &out})
 		}
+		if msg.Event.Reason == selectorActiveReason {
+			// Control-plane events ride the data path through joins UNCHANGED:
+			// a SelectActive heading for a selector downstream of this join
+			// (Select(Mix(a, b), Mix(c, d))) carries its target arm in
+			// Event.StreamID and is consumed by the selector — re-stamping it
+			// to the mix output would erase the target.
+			return emitter.Emit(ctx, msg)
+		}
 		return nil
 	default:
 		return nil
@@ -153,7 +161,10 @@ func mixS16Frames(frames []*av.Frame, out av.StreamID) (*av.Frame, error) {
 		PTS:      base.PTS,
 		Duration: base.Duration,
 		Audio:    &audio,
-		Planes:   []av.Plane{{Buffer: av.Buffer{Bytes: mixed, Ownership: av.BufferOwned}}},
+		// The mixed buffer is freshly allocated per step and never written
+		// again — published immutable, so a buffered graph (a Select over
+		// sub-mixes) may queue it by reference.
+		Planes: []av.Plane{{Buffer: av.Buffer{Bytes: mixed, Ownership: av.BufferImmutable}}},
 	}, nil
 }
 
@@ -174,22 +185,32 @@ func cloneMixFrame(frame *av.Frame) *av.Frame {
 	return &clone
 }
 
-// Mix sums N synchronized audio source-chains into one stream delivered to a
-// Sink — the convergent dual of Branches (N→1). Each arm is a source chain such
-// as From(frameSource).Audio(); arms must have distinct stream ids and matching
-// S16 audio format. This is the thinnest multi-input entry: one symbol that
-// reuses the existing Job, so .To/Build/Run are unchanged. (First slice: frame
-// sources to a Sink; decode/encode arms and Composite build on the same info.OpJoin
-// mechanism next — see docs/MULTI_INPUT.md.)
-func Mix(arms ...*jobStreamBuilder) *mixStream {
+// Mix sums N synchronized audio arms into one stream delivered to a Sink —
+// the convergent dual of Branches (N→1). Each arm is a source chain such as
+// From(frameSource).Audio() or another audio-producing join — Mix(Mix(a, b), c)
+// sub-mixes two arms and mixes the result with a third. Arms must have
+// distinct stream ids; mismatched formats resample to the first arm's format
+// through the implicit arm policy. This reuses the existing Job, so
+// .To/Build/Run are unchanged (see docs/MULTI_INPUT.md).
+func Mix(arms ...JoinArm) *mixStream {
 	return &mixStream{arms: arms}
 }
 
 type mixStream struct {
-	arms   []*jobStreamBuilder
+	arms   []JoinArm
 	encode *codec.CodecSpec
 	taps   []TapRef
 	sync   joinSyncMode
+}
+
+// joinArm lets a Mix stand as an arm of an outer join: the outer join consumes
+// the MIXED output stream under the sub-mix's output id. A nested mix may not
+// carry .Encode(...) — encode belongs to the outer join or its chain.
+func (m *mixStream) joinArm() joinArmSpec {
+	if m == nil {
+		return joinArmSpec{}
+	}
+	return joinArmSpec{join: &joinSpec{kind: joinMix, arms: m.arms, encode: m.encode, taps: m.taps, sync: m.sync}}
 }
 
 // SyncByPTS aligns the arms by presentation timestamp instead of arrival
@@ -259,12 +280,15 @@ var mixJoinProfile = joinProfile{
 	},
 	armPolicy: shape.AllowResample().Union(shape.AllowConvert()),
 	newStage: func(p *joinPlan, armIDs []av.StreamID) (pipeline.Stage, *pipeline.BufferPolicy) {
-		return newAudioMixStage("mix", armIDs, av.StreamID("mix"), p.join.sync), nil
+		return newAudioMixStage(p.name, armIDs, av.StreamID(p.name), p.join.sync), nil
 	},
+	// The output id is the join's planned node name (mix, or mix-2 when
+	// nested under another mix); the format facts come from the first arm —
+	// a leaf's declared source shape or a sub-join's joined stream.
 	joinedStream: func(p *joinPlan) av.Stream {
-		shape, _ := customSourceShape(p.join.arms[0].job.inputs[0])
+		shape := p.firstArmSourceShape()
 		return av.Stream{
-			ID:   av.StreamID("mix"),
+			ID:   av.StreamID(p.name),
 			Type: av.MediaAudio,
 			Codec: av.CodecParameters{
 				Type:         av.MediaAudio,
