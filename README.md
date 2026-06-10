@@ -611,6 +611,36 @@ Packet arms decode automatically before the join; mismatched audio arms
 resample to the first arm's format. The join output is a normal stream point: it
 takes `.Tap(...)`, `.Branches(...)`, and `.Encode(...).To(...)` like any chain.
 
+Arm chains keep their declared `.Decode()` and `.Tap(...)` — the tap installs
+on the task mid-graph, so one decode feeds the join AND any other consumer.
+Decode a file once, tap the decoded point, and mix it with a live mic in one
+task — runtime branches attach to the pre-mix music from the same tap:
+
+```go
+task, err := goav.Mix(
+    goav.From(song).Audio().Decode().Tap(goav.FrameTap("music")),
+    goav.From(mic).Audio(),
+).To(goav.Sink(speakers)).Build(ctx)
+// later, while running: monitor the decoded music BEFORE the mix
+attachment, err := task.Attach(ctx, goav.Branch("monitor").
+    From(goav.FrameTap("music")).
+    To(monitorSink))
+```
+
+A tap is also a join arm: a `TapRef` converges an already-flowing point again
+— the join-side dual of `Branch().From(tap)` — re-stamped under the tap name,
+with no source re-opened. Paint the same decoded camera at two canvas regions:
+
+```go
+return goav.Composite(
+    goav.From(cam).Video().Decode().Tap(goav.FrameTap("cam")).Region(0, 0),
+    goav.FrameTap("cam").Region(640, 0), // the SAME decoded frames, decoded once
+).To(goav.Sink(preview)).Run(ctx)
+```
+
+A tap arm must follow the arm that declares its tap; an unknown tap ref fails
+the build with the declared taps listed.
+
 Joins nest — a join is an arm like any source chain. Sub-mix two microphones,
 then mix the result with a third; the sub-mix output is resampled to the outer
 target like any arm, and clamping applies at each mix stage:

@@ -37,7 +37,21 @@ guard-tested per kind (nested case included). Per-kind behavior lives only in
 the joinProfiles table. Arm shape-solving goes through the central solver
 (`armExpected`/`armPolicy`).
 
-Joins nest: an arm is a `JoinArm` — a source chain or another join — so
+Taps converge mid-graph: an arm chain keeps its declared `.Decode()`/`.Tap(...)`
+— the tap installs on the task anchored at the arm's decode (or source) node,
+so one decode feeds the join AND any other consumer (runtime attach, a later
+arm). A `TapRef` is itself a `JoinArm`: it anchors on a tap declared by an
+EARLIER arm of the same join expression (no source re-opened) and re-stamps
+the tapped media under the tap name as the arm's id (`<join>-tap-<name>`
+restamp node — join stages identify arms by stream id). Composite tap arms
+place with `goav.FrameTap("cam").Region(x, y)`. Unresolvable refs fail before
+any source opens, listing the declared taps; arm ordering (declare before
+reference) makes cycles unrepresentable. Other arm-chain operations
+(transform/encode/copy/stages) are rejected with the supported alternatives —
+they used to be silently dropped.
+
+Joins nest: an arm is a `JoinArm` — a source chain, a declared tap, or another
+join — so
 `Mix(Mix(a, b), c)` sub-mixes two arms and mixes the result with a third,
 `Select(Mix(a, b), Mix(c, d))` switches between two live mixes (arm ids are
 the sub-joins' output ids: mix, mix-2), and composites nest as sub-canvases

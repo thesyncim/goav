@@ -89,7 +89,11 @@ executable truth; Explain/Describe/Build/Attach/Snapshot all read from them.
   nested joins **DONE** — a join is a `JoinArm` (`Mix(Mix(a, b), c)`,
   `Select(Mix(a, b), Mix(c, d))`, composites of composites), `joinPlan`
   recurses through the one compile, nested output ids auto-disambiguate
-  (mix, mix-2), arm conversions apply to a sub-join's output via the solver.
+  (mix, mix-2), arm conversions apply to a sub-join's output via the solver;
+  mid-graph convergence **DONE** — arm chains keep their `.Decode()/.Tap(...)`
+  (taps install on the task, one decode feeds the join and runtime attaches)
+  and a `TapRef` is a `JoinArm` (the dual of `Branch().From(tap)`): it anchors
+  on an earlier arm's tap, re-stamped under the tap name, no source re-opened.
 - **Time/sync** (§13): join sync policy **DONE** — `Mix/Composite(...).SyncByPTS()`
   aligns arms on a common ns clock (min-head step, tolerance = half a frame;
   ahead arms gap as silence/unpainted, stale frames drop to catch up, an arm
