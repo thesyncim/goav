@@ -75,7 +75,12 @@ executable truth; Explain/Describe/Build/Attach/Snapshot all read from them.
   (`.Tap`/`.Branches` via the shared chain lowering) **DONE**; planned `OpJoin`
   node in the IR — joins compile through the one recipe compile, `Describe()` ≡
   `Build()` guarded, the `buildJoin` graph-assembly route deleted **DONE**.
-- **Time/sync** (§13): minimal TimeShape (TimeBase/Clock/Live/Latency) + Sync/Attach-at policies. **TODO.**
+- **Time/sync** (§13): join sync policy **DONE** — `Mix/Composite(...).SyncByPTS()`
+  aligns arms on a common ns clock (min-head step, tolerance = half a frame;
+  ahead arms gap as silence/unpainted, stale frames drop to catch up, an arm
+  discontinuity flushes+re-syncs and forwards, an ended arm stops gating).
+  Remaining: minimal TimeShape (TimeBase/Clock/Live/Latency), pipeline clock +
+  pull scheduling, Attach-at policies. **TODO.**
 - **Source backpressure** (§14): result-aware `push.X(...) (PushResult, error)` —
   Accepted/Dropped per push, sheds stay nil-error. **DONE.**
 

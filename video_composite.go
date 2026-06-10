@@ -17,35 +17,49 @@ type compositeLayout struct {
 
 // videoCompositeStage overlays N synchronized video inputs into one output frame
 // — the video dual of audioMixStage. Each input arm is identified by its frame
-// StreamID and buffered until every arm has a frame, then one composite step
-// advances. It is a normal pipeline.Stage: the buffered runner calls Handle
+// StreamID. It is a normal pipeline.Stage: the buffered runner calls Handle
 // serially per node, so the per-input queues need no locking (lock-free by
 // design — the hot path takes no mutex).
 //
-// First-slice contract: inputs are I420 (YUV 4:2:0) and frame-aligned (one frame
-// per arm advances one composite step). PTS/Duration come from the first input.
-// A non-I420 frame fails the composite step.
+// Contract: inputs are I420 (YUV 4:2:0); a non-I420 frame fails the composite
+// step. Arm alignment follows the joinSyncState mode: arrival (default — one
+// frame per arm per step) or PTS (SyncByPTS — arms join the step their head
+// timestamp matches; an arm whose head is newer is simply not painted that
+// step, and the canvas keeps covering its last-known extent so the output
+// geometry stays stable across gap steps). An arm that ends keeps the others
+// compositing without it. PTS/Duration come from the step's timing reference
+// (arrival: the first input, exactly as before).
 type videoCompositeStage struct {
-	name    string
-	inputs  []av.StreamID
-	out     av.StreamID
-	layout  []compositeLayout
-	pending map[av.StreamID][]*av.Frame
-	eos     map[av.StreamID]struct{}
+	name   string
+	out    av.StreamID
+	layout []compositeLayout
+	// sizes remembers each arm's most recent frame dimensions, so absent arms
+	// (gap or ended) still reserve their canvas region.
+	sizes map[av.StreamID]compositeArmSize
+	sync  joinSyncState
 }
 
-func newVideoCompositeStage(name string, inputs []av.StreamID, out av.StreamID, layout []compositeLayout) *videoCompositeStage {
+type compositeArmSize struct {
+	w, h int
+}
+
+func newVideoCompositeStage(name string, inputs []av.StreamID, out av.StreamID, layout []compositeLayout, mode joinSyncMode) *videoCompositeStage {
 	return &videoCompositeStage{
-		name:    name,
-		inputs:  append([]av.StreamID(nil), inputs...),
-		out:     out,
-		layout:  append([]compositeLayout(nil), layout...),
-		pending: make(map[av.StreamID][]*av.Frame, len(inputs)),
-		eos:     make(map[av.StreamID]struct{}, len(inputs)),
+		name:   name,
+		out:    out,
+		layout: append([]compositeLayout(nil), layout...),
+		sizes:  make(map[av.StreamID]compositeArmSize, len(inputs)),
+		sync:   newJoinSyncState(mode, inputs),
 	}
 }
 
 func (s *videoCompositeStage) Name() string { return s.name }
+
+// DescribeNode reports the same detail the join planner records on the planned
+// node, keeping Describe() ≡ Build() when SyncByPTS annotates the join.
+func (s *videoCompositeStage) DescribeNode() pipeline.NodeSpec {
+	return pipeline.NodeSpec{Name: s.name, Kind: pipeline.NodeStage, Detail: joinSyncNodeDetail(s.sync.mode)}
+}
 
 func (s *videoCompositeStage) Handle(ctx context.Context, msg *pipeline.Message, emitter pipeline.Emitter) error {
 	switch msg.Kind {
@@ -53,16 +67,36 @@ func (s *videoCompositeStage) Handle(ctx context.Context, msg *pipeline.Message,
 		if msg.Frame == nil || msg.Frame.Video == nil {
 			return nil
 		}
-		id := msg.Frame.StreamID
-		s.pending[id] = append(s.pending[id], cloneCompositeFrame(msg.Frame))
+		s.sizes[msg.Frame.StreamID] = compositeArmSize{w: msg.Frame.Video.Width, h: msg.Frame.Video.Height}
+		s.sync.buffer(cloneCompositeFrame(msg.Frame))
 		return s.drain(ctx, emitter)
 	case pipeline.MessageEvent:
-		if msg.Event != nil && msg.Event.Type == av.EventEndOfStream {
-			s.eos[msg.Event.StreamID] = struct{}{}
-			if len(s.eos) >= len(s.inputs) {
+		if msg.Event == nil {
+			return nil
+		}
+		switch msg.Event.Type {
+		case av.EventEndOfStream:
+			ended := s.sync.markEOS(msg.Event.StreamID)
+			// The ended arm stops gating: drain what the remaining arms can
+			// paint before (possibly) ending the joined stream.
+			if err := s.drain(ctx, emitter); err != nil {
+				return err
+			}
+			if ended {
 				out := av.Event{Type: av.EventEndOfStream, StreamID: s.out}
 				return emitter.Emit(ctx, &pipeline.Message{Kind: pipeline.MessageEvent, Event: &out})
 			}
+			return nil
+		case av.EventDiscontinuity:
+			if !s.sync.discontinuity(msg.Event.StreamID) {
+				return nil
+			}
+			// The joined timeline jumps with the repositioned arm: forward one
+			// discontinuity re-stamped to the join output, the same signal a
+			// seeked single-source chain delivers to its sink.
+			out := *msg.Event
+			out.StreamID = s.out
+			return emitter.Emit(ctx, &pipeline.Message{Kind: pipeline.MessageEvent, Event: &out})
 		}
 		return nil
 	default:
@@ -72,42 +106,51 @@ func (s *videoCompositeStage) Handle(ctx context.Context, msg *pipeline.Message,
 
 func (s *videoCompositeStage) Close() error { return nil }
 
-// ready reports whether every input arm has at least one buffered frame.
-func (s *videoCompositeStage) ready() bool {
-	for i := range s.inputs {
-		if len(s.pending[s.inputs[i]]) == 0 {
-			return false
-		}
-	}
-	return true
-}
-
 func (s *videoCompositeStage) drain(ctx context.Context, emitter pipeline.Emitter) error {
-	for s.ready() {
-		frames := make([]*av.Frame, len(s.inputs))
-		for i := range s.inputs {
-			id := s.inputs[i]
-			frames[i] = s.pending[id][0]
-			s.pending[id] = s.pending[id][1:]
+	for {
+		frames, ref, ok := s.sync.step()
+		if !ok {
+			return nil
 		}
-		composited, err := compositeI420Frames(frames, s.layout, s.out)
+		present := make([]*av.Frame, 0, len(frames))
+		layouts := make([]compositeLayout, 0, len(frames))
+		floorW, floorH := 0, 0
+		for i := range frames {
+			if frames[i] != nil {
+				present = append(present, frames[i])
+				layouts = append(layouts, s.layout[i])
+				continue
+			}
+			// Absent arm (gap or ended): keep the canvas covering its
+			// last-known extent so geometry stays stable across gap steps.
+			if size, known := s.sizes[s.sync.inputs[i]]; known {
+				floorW = max(floorW, s.layout[i].X+size.w)
+				floorH = max(floorH, s.layout[i].Y+size.h)
+			}
+		}
+		composited, err := compositeI420Frames(present, layouts, floorW, floorH, s.out)
 		if err != nil {
 			return err
 		}
+		// The step's timing reference stamps the output (in arrival mode this
+		// is the first arm, exactly as before).
+		composited.PTS = frames[ref].PTS
+		composited.Duration = frames[ref].Duration
 		if err := emitter.Emit(ctx, &pipeline.Message{Kind: pipeline.MessageFrame, Frame: composited}); err != nil {
 			return err
 		}
 	}
-	return nil
 }
 
 // compositeI420Frames overlays each input's I420 frame onto a black canvas at its
-// layout offset. The canvas is the bounding box of all placed inputs; planes are
-// zero-filled (black: Y=0, and U/V=0 is greenish but fine for a first version).
-func compositeI420Frames(frames []*av.Frame, layout []compositeLayout, out av.StreamID) (*av.Frame, error) {
+// layout offset. The canvas is the bounding box of all placed inputs, never
+// smaller than the (floorW, floorH) reserved for arms absent this step; planes
+// are zero-filled (black: Y=0, and U/V=0 is greenish but fine for a first
+// version).
+func compositeI420Frames(frames []*av.Frame, layout []compositeLayout, floorW, floorH int, out av.StreamID) (*av.Frame, error) {
 	base := frames[0]
 	// Bounding-box canvas over all inputs.
-	canvasW, canvasH := 0, 0
+	canvasW, canvasH := floorW, floorH
 	for i := range frames {
 		f := frames[i]
 		if f.Video == nil {

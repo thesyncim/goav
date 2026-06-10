@@ -583,6 +583,16 @@ Packet arms decode automatically before the join; mismatched audio arms
 resample to the first arm's format. The join output is a normal stream point: it
 takes `.Tap(...)`, `.Branches(...)`, and `.Encode(...).To(...)` like any chain.
 
+Arms pair by arrival order by default — right for live sources on one clock.
+`.SyncByPTS()` aligns them by timestamp instead (files starting at different
+offsets, a `Seek` on one arm, drift): the earliest head frame sets each step,
+arms whose head is newer sit the step out, and stale frames are dropped to
+catch up.
+
+```go
+goav.Mix(goav.From(songA).Audio(), goav.From(songB).Audio()).SyncByPTS().To(out)
+```
+
 `Select` switches live through the control plane — no node names:
 
 ```go

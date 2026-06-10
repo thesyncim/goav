@@ -17,30 +17,32 @@ import (
 // serially per node, so the per-input queues need no locking (lock-free by
 // design — the hot path takes no mutex).
 //
-// Contract: inputs are same-format S16 interleaved and frame-aligned (one frame
-// per arm advances one mix step). The shape solver plans per-arm conversions at
-// compile time (joinProfile.armExpected under the implicit arm policy), so
-// mismatched arms are resampled before they reach this stage; a residual
-// format mismatch still fails the first mismatched frame defensively.
+// Contract: inputs are same-format S16 interleaved. Arm alignment follows the
+// joinSyncState mode: arrival (default — one frame per arm per step) or PTS
+// (SyncByPTS — arms join the step their head timestamp matches; arms whose
+// head is newer sit the step out, which IS the silence contribution since
+// silence is the summing identity). An arm that ends keeps the others mixing
+// without it. The shape solver plans per-arm conversions at compile time
+// (joinProfile.armExpected under the implicit arm policy), so mismatched arms
+// are resampled before they reach this stage; a residual format mismatch still
+// fails the first mismatched frame defensively.
 type audioMixStage struct {
-	name    string
-	inputs  []av.StreamID
-	out     av.StreamID
-	pending map[av.StreamID][]*av.Frame
-	eos     map[av.StreamID]struct{}
+	name string
+	out  av.StreamID
+	sync joinSyncState
 }
 
-func newAudioMixStage(name string, inputs []av.StreamID, out av.StreamID) *audioMixStage {
-	return &audioMixStage{
-		name:    name,
-		inputs:  append([]av.StreamID(nil), inputs...),
-		out:     out,
-		pending: make(map[av.StreamID][]*av.Frame, len(inputs)),
-		eos:     make(map[av.StreamID]struct{}, len(inputs)),
-	}
+func newAudioMixStage(name string, inputs []av.StreamID, out av.StreamID, mode joinSyncMode) *audioMixStage {
+	return &audioMixStage{name: name, out: out, sync: newJoinSyncState(mode, inputs)}
 }
 
 func (s *audioMixStage) Name() string { return s.name }
+
+// DescribeNode reports the same detail the join planner records on the planned
+// node, keeping Describe() ≡ Build() when SyncByPTS annotates the join.
+func (s *audioMixStage) DescribeNode() pipeline.NodeSpec {
+	return pipeline.NodeSpec{Name: s.name, Kind: pipeline.NodeStage, Detail: joinSyncNodeDetail(s.sync.mode)}
+}
 
 func (s *audioMixStage) Handle(ctx context.Context, msg *pipeline.Message, emitter pipeline.Emitter) error {
 	switch msg.Kind {
@@ -48,16 +50,35 @@ func (s *audioMixStage) Handle(ctx context.Context, msg *pipeline.Message, emitt
 		if msg.Frame == nil || msg.Frame.Audio == nil {
 			return nil
 		}
-		id := msg.Frame.StreamID
-		s.pending[id] = append(s.pending[id], cloneMixFrame(msg.Frame))
+		s.sync.buffer(cloneMixFrame(msg.Frame))
 		return s.drain(ctx, emitter)
 	case pipeline.MessageEvent:
-		if msg.Event != nil && msg.Event.Type == av.EventEndOfStream {
-			s.eos[msg.Event.StreamID] = struct{}{}
-			if len(s.eos) >= len(s.inputs) {
+		if msg.Event == nil {
+			return nil
+		}
+		switch msg.Event.Type {
+		case av.EventEndOfStream:
+			ended := s.sync.markEOS(msg.Event.StreamID)
+			// The ended arm stops gating: drain what the remaining arms can
+			// mix before (possibly) ending the joined stream.
+			if err := s.drain(ctx, emitter); err != nil {
+				return err
+			}
+			if ended {
 				out := av.Event{Type: av.EventEndOfStream, StreamID: s.out}
 				return emitter.Emit(ctx, &pipeline.Message{Kind: pipeline.MessageEvent, Event: &out})
 			}
+			return nil
+		case av.EventDiscontinuity:
+			if !s.sync.discontinuity(msg.Event.StreamID) {
+				return nil
+			}
+			// The joined timeline jumps with the repositioned arm: forward one
+			// discontinuity re-stamped to the join output, the same signal a
+			// seeked single-source chain delivers to its sink.
+			out := *msg.Event
+			out.StreamID = s.out
+			return emitter.Emit(ctx, &pipeline.Message{Kind: pipeline.MessageEvent, Event: &out})
 		}
 		return nil
 	default:
@@ -67,33 +88,24 @@ func (s *audioMixStage) Handle(ctx context.Context, msg *pipeline.Message, emitt
 
 func (s *audioMixStage) Close() error { return nil }
 
-// ready reports whether every input arm has at least one buffered frame.
-func (s *audioMixStage) ready() bool {
-	for i := range s.inputs {
-		if len(s.pending[s.inputs[i]]) == 0 {
-			return false
-		}
-	}
-	return true
-}
-
 func (s *audioMixStage) drain(ctx context.Context, emitter pipeline.Emitter) error {
-	for s.ready() {
-		frames := make([]*av.Frame, len(s.inputs))
-		for i := range s.inputs {
-			id := s.inputs[i]
-			frames[i] = s.pending[id][0]
-			s.pending[id] = s.pending[id][1:]
+	for {
+		frames, ref, ok := s.sync.step()
+		if !ok {
+			return nil
 		}
-		mixed, err := mixS16Frames(frames, s.out)
+		mixed, err := mixS16Frames(compactJoinFrames(frames), s.out)
 		if err != nil {
 			return err
 		}
+		// The step's timing reference stamps the output (in arrival mode this
+		// is the first arm, exactly as before).
+		mixed.PTS = frames[ref].PTS
+		mixed.Duration = frames[ref].Duration
 		if err := emitter.Emit(ctx, &pipeline.Message{Kind: pipeline.MessageFrame, Frame: mixed}); err != nil {
 			return err
 		}
 	}
-	return nil
 }
 
 // mixS16Frames sums S16-interleaved audio frames sample-by-sample with clamping.
@@ -177,6 +189,21 @@ type mixStream struct {
 	arms   []*jobStreamBuilder
 	encode *codec.CodecSpec
 	taps   []TapRef
+	sync   joinSyncMode
+}
+
+// SyncByPTS aligns the arms by presentation timestamp instead of arrival
+// order. Per step the earliest head frame across the arms (on a common
+// nanosecond clock) sets the step time; arms within tolerance (half a frame
+// duration) join it, arms whose head is newer contribute silence for the step,
+// and frames left behind the already-mixed timeline are dropped to catch up. A
+// discontinuity on one arm (Seek/Segment) flushes that arm's buffer and
+// re-syncs at its new position. Use it when arms are files starting at
+// different offsets, after a Seek on one arm, or under drift; the arrival
+// default pairs frames one-per-arm and is right for live same-clock sources.
+func (m *mixStream) SyncByPTS() *mixStream {
+	m.sync = joinSyncPTS
+	return m
 }
 
 // Encode encodes the mixed stream before the destination, so a Mix can record to
@@ -199,14 +226,14 @@ func (m *mixStream) Tap(tap TapRef) *mixStream {
 // accepts after decode. The mix output is a normal stream point: branches may
 // transform, encode, tap, and deliver independently.
 func (m *mixStream) Branches(branches ...BranchSpec) *Job {
-	return newJoinBranchesJob(joinMix, joinSpec{arms: m.arms, encode: m.encode, taps: m.taps}, branches)
+	return newJoinBranchesJob(joinMix, joinSpec{arms: m.arms, encode: m.encode, taps: m.taps, sync: m.sync}, branches)
 }
 
 // To delivers the mixed stream to a destination and returns a Job, so the mix
 // runs through the same Build/Run as every other recipe. It lowers to the one
 // joinSpec shared by every convergence builder.
 func (m *mixStream) To(dest Destination) *Job {
-	return newJoinJob(joinMix, joinSpec{arms: m.arms, dest: dest, encode: m.encode, taps: m.taps})
+	return newJoinJob(joinMix, joinSpec{arms: m.arms, dest: dest, encode: m.encode, taps: m.taps, sync: m.sync})
 }
 
 // mixJoinProfile is Mix's entry in the join table: audio arms, auto-decode for
@@ -232,7 +259,7 @@ var mixJoinProfile = joinProfile{
 	},
 	armPolicy: shape.AllowResample().Union(shape.AllowConvert()),
 	newStage: func(p *joinPlan, armIDs []av.StreamID) (pipeline.Stage, *pipeline.BufferPolicy) {
-		return newAudioMixStage("mix", armIDs, av.StreamID("mix")), nil
+		return newAudioMixStage("mix", armIDs, av.StreamID("mix"), p.join.sync), nil
 	},
 	joinedStream: func(p *joinPlan) av.Stream {
 		shape, _ := customSourceShape(p.join.arms[0].job.inputs[0])

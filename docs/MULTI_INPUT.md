@@ -7,6 +7,13 @@ GoAV was structurally a tree (one input fanning out via `Branches`); convergence
   one output EOS after all arms end). Packet arms auto-decode; mismatched rates
   auto-resample to the first arm's format.
 - `Composite(arms...)` — paints video arms onto a canvas at `.Region(x, y)` offsets.
+- `.SyncByPTS()` on Mix/Composite — opt-in timestamp alignment (default stays
+  arrival order): per step the minimum head PTS on a common ns clock leads,
+  arms within half a frame join it, ahead arms sit the step out (silence /
+  unpainted, canvas keeps the absent arm's extent), stale frames drop to catch
+  up, an arm discontinuity (Seek/Segment) flushes that arm and re-syncs, and an
+  ended arm stops gating so the rest keep joining (both modes). Drop counts are
+  internal-only for now — no join stats surface yet.
 - `Select(arms...)` — passthrough one-of-N switch (no decode/encode); the first
   arm is active by default and `task.Control(ctx, goav.SelectActive(id))`
   switches live through the control plane.

@@ -38,6 +38,10 @@ type joinSpec struct {
 	// branches fan the joined stream out to planned branch chains, each carrying
 	// its own destinations; when set, dest/encode are unused.
 	branches []BranchSpec
+	// sync selects arm alignment for the convergence stage (Mix/Composite):
+	// arrival order by default, PTS alignment via .SyncByPTS(). Select needs no
+	// sync — it forwards exactly one live arm.
+	sync joinSyncMode
 }
 
 // joinProfile is the per-kind configuration consulted by the join planner.
@@ -533,7 +537,7 @@ func (p *joinPlan) spec() (pipeline.Spec, error) {
 		}
 		spec.Edges = append(spec.Edges, pipeline.EdgeSpec{From: upstream, To: joinRef, Policy: pipeline.RouteAll})
 	}
-	if err := addPlannedNode(nodes, &spec, p.name, pipeline.NodeStage, joinRef); err != nil {
+	if err := addPlannedNode(nodes, &spec, p.name, pipeline.NodeStage, joinRef, joinSyncNodeDetail(p.join.sync)); err != nil {
 		return pipeline.Spec{}, err
 	}
 	switch {
@@ -817,6 +821,10 @@ func (p *joinPlan) joinWorkBranches(ids map[string]string, outputs []planOutput)
 // destination operation.
 func (p *joinPlan) joinedWorkBranch(ids map[string]string, outputs []planOutput, armShape shape.Spec, joinedShape shape.Spec, branchIndex int) ([]workOperation, workBranch) {
 	branchName := p.name
+	joinDetail := "converge " + strconv.Itoa(len(p.arms)) + " arms"
+	if p.join.sync == joinSyncPTS {
+		joinDetail += " by pts"
+	}
 	operations := []workOperation{{
 		ID:        workOperationIDForKind(branchName, 0, info.OpJoin),
 		Name:      p.name,
@@ -824,7 +832,7 @@ func (p *joinPlan) joinedWorkBranch(ids map[string]string, outputs []planOutput,
 		Branch:    branchName,
 		Node:      pipeline.NodeRef(p.name),
 		Component: p.name,
-		Detail:    "converge " + strconv.Itoa(len(p.arms)) + " arms",
+		Detail:    joinDetail,
 		ShapeIn:   armShape,
 		ShapeOut:  joinedShape,
 	}}

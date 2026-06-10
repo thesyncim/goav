@@ -53,7 +53,7 @@ func (c *mixTestEmitter) Emit(_ context.Context, m *pipeline.Message) error {
 }
 
 func TestAudioMixStageSumsAlignedS16(t *testing.T) {
-	mix := newAudioMixStage("mix", []av.StreamID{"a", "b"}, "mix")
+	mix := newAudioMixStage("mix", []av.StreamID{"a", "b"}, "mix", joinSyncArrival)
 	emit := &mixTestEmitter{}
 	ctx := context.Background()
 
@@ -79,7 +79,7 @@ func TestAudioMixStageSumsAlignedS16(t *testing.T) {
 }
 
 func TestAudioMixStageClampsOverflow(t *testing.T) {
-	mix := newAudioMixStage("mix", []av.StreamID{"a", "b"}, "mix")
+	mix := newAudioMixStage("mix", []av.StreamID{"a", "b"}, "mix", joinSyncArrival)
 	emit := &mixTestEmitter{}
 	ctx := context.Background()
 	_ = mix.Handle(ctx, &pipeline.Message{Kind: pipeline.MessageFrame, Frame: mixTestS16Frame("a", 30000, -30000)}, emit)
@@ -90,7 +90,7 @@ func TestAudioMixStageClampsOverflow(t *testing.T) {
 }
 
 func TestAudioMixStageEmitsEOSWhenAllInputsEnd(t *testing.T) {
-	mix := newAudioMixStage("mix", []av.StreamID{"a", "b"}, "mix")
+	mix := newAudioMixStage("mix", []av.StreamID{"a", "b"}, "mix", joinSyncArrival)
 	emit := &mixTestEmitter{}
 	ctx := context.Background()
 	eos := func(id av.StreamID) *pipeline.Message {

@@ -21,6 +21,22 @@ type compositeStream struct {
 	arms   []*jobStreamBuilder
 	encode *codec.CodecSpec
 	taps   []TapRef
+	sync   joinSyncMode
+}
+
+// SyncByPTS aligns the arms by presentation timestamp instead of arrival
+// order. Per step the earliest head frame across the arms (on a common
+// nanosecond clock) sets the step time; arms within tolerance (half a frame
+// duration) are painted, an arm whose head is newer is left out of the step
+// (the canvas keeps covering its last-known extent so geometry stays stable),
+// and frames left behind the already-composited timeline are dropped to catch
+// up. A discontinuity on one arm (Seek/Segment) flushes that arm's buffer and
+// re-syncs at its new position. Use it when arms are files starting at
+// different offsets, after a Seek on one arm, or under drift; the arrival
+// default pairs frames one-per-arm and is right for live same-clock sources.
+func (c *compositeStream) SyncByPTS() *compositeStream {
+	c.sync = joinSyncPTS
+	return c
 }
 
 // compositeRegion is an arm's top-left placement on the composite canvas. It is
@@ -49,14 +65,14 @@ func (c *compositeStream) Tap(tap TapRef) *compositeStream {
 // its own destinations — the same goav.Branch specs an ordinary stream chain
 // accepts after decode.
 func (c *compositeStream) Branches(branches ...BranchSpec) *Job {
-	return newJoinBranchesJob(joinComposite, joinSpec{arms: c.arms, encode: c.encode, taps: c.taps}, branches)
+	return newJoinBranchesJob(joinComposite, joinSpec{arms: c.arms, encode: c.encode, taps: c.taps, sync: c.sync}, branches)
 }
 
 // To delivers the composited stream to a destination and returns a Job, so the
 // composite runs through the same Build/Run as every other recipe. It lowers to
 // the one joinSpec shared by every convergence builder.
 func (c *compositeStream) To(dest Destination) *Job {
-	return newJoinJob(joinComposite, joinSpec{arms: c.arms, dest: dest, encode: c.encode, taps: c.taps})
+	return newJoinJob(joinComposite, joinSpec{arms: c.arms, dest: dest, encode: c.encode, taps: c.taps, sync: c.sync})
 }
 
 // compositeJoinProfile is Composite's entry in the join table: video arms,
@@ -77,7 +93,7 @@ var compositeJoinProfile = joinProfile{
 		return nil, nil
 	},
 	newStage: func(p *joinPlan, armIDs []av.StreamID) (pipeline.Stage, *pipeline.BufferPolicy) {
-		return newVideoCompositeStage("composite", armIDs, av.StreamID("composite"), p.layouts), nil
+		return newVideoCompositeStage("composite", armIDs, av.StreamID("composite"), p.layouts, p.join.sync), nil
 	},
 	joinedStream: func(p *joinPlan) av.Stream {
 		shape, _ := customSourceShape(p.join.arms[0].job.inputs[0])

@@ -45,7 +45,7 @@ func compositeTestYAt(frame *av.Frame, x, y int) byte {
 
 func TestVideoCompositeOverlaysTwoI420Frames(t *testing.T) {
 	stage := newVideoCompositeStage("composite", []av.StreamID{"a", "b"}, "out",
-		[]compositeLayout{{X: 0, Y: 0}, {X: 4, Y: 0}})
+		[]compositeLayout{{X: 0, Y: 0}, {X: 4, Y: 0}}, joinSyncArrival)
 	emit := &mixTestEmitter{}
 	ctx := context.Background()
 
@@ -109,7 +109,7 @@ func TestVideoCompositeOverlaysTwoI420Frames(t *testing.T) {
 
 func TestVideoCompositeRejectsNonI420(t *testing.T) {
 	stage := newVideoCompositeStage("composite", []av.StreamID{"a", "b"}, "out",
-		[]compositeLayout{{X: 0, Y: 0}, {X: 4, Y: 0}})
+		[]compositeLayout{{X: 0, Y: 0}, {X: 4, Y: 0}}, joinSyncArrival)
 	emit := &mixTestEmitter{}
 	ctx := context.Background()
 
@@ -127,7 +127,7 @@ func TestVideoCompositeRejectsNonI420(t *testing.T) {
 
 func TestVideoCompositeEmitsEOSWhenAllInputsEnd(t *testing.T) {
 	stage := newVideoCompositeStage("composite", []av.StreamID{"a", "b"}, "out",
-		[]compositeLayout{{X: 0, Y: 0}, {X: 4, Y: 0}})
+		[]compositeLayout{{X: 0, Y: 0}, {X: 4, Y: 0}}, joinSyncArrival)
 	emit := &mixTestEmitter{}
 	ctx := context.Background()
 	eos := func(id av.StreamID) *pipeline.Message {
