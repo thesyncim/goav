@@ -140,8 +140,11 @@ Stages (each green, in dependency order):
 6. **Shape solver** — **DONE.** Validation became solving in the one compile
    walk; the mix arm-resample hook and the branch-compose inline resize/
    resample synthesis are absorbed (deleted) into it.
-7. Remaining: SwitchAt* policies; time/clock/seek (theme C — pull scheduling
-   is the keystone).
+7. Remaining: SwitchAt* policies; time/clock (theme C — pull scheduling is the
+   keystone). The time-axis CONTROLS exist on the source-control seam
+   (`Seek`/`Rate`/`Segment` → `pipeline.ControllableSource`); what remains is
+   making sources honour them without custom code: clock/sync scheduling and a
+   seekable `format.Demuxer` hook for the container demuxers.
 
 ## Execution order (condensed)
 

@@ -3,8 +3,8 @@ package pipeline
 import "context"
 
 // ControllableSource is an optional capability of a Source: a source whose
-// running Start loop can be steered by out-of-band control messages (a seek)
-// delivered through a graph's SourceInjector.
+// running Start loop can be steered by out-of-band control messages (a seek,
+// a rate change, a segment) delivered through a graph's SourceInjector.
 //
 // Concurrency contract: Control is called synchronously from the controlling
 // goroutine while Start runs concurrently (or before Start has begun).
@@ -12,10 +12,21 @@ import "context"
 // atomic or send it on a channel the Start loop reads; do not touch
 // Start-loop-local state directly and do not block waiting for the loop.
 //
-// Repositioning contract: a source that repositions (av.EventSeek) must emit
-// av.EventDiscontinuity from its Start loop before the first message at the
-// new position, so downstream decoders reset their reference state. The graph
-// adds no flush machinery on a seek.
+// Repositioning contract: a source that repositions (av.EventSeek, or
+// av.EventSegment's jump to its start bound) must emit av.EventDiscontinuity
+// from its Start loop before the first message at the new position, so
+// downstream decoders reset their reference state. The graph adds no flush
+// machinery on a seek.
+//
+// Time-axis contract: a rate change (av.EventRate, rate via
+// av.EventRateValue) is pure pacing — the source keeps delivering from its
+// current position at the new rate and must NOT emit a discontinuity unless
+// applying the rate makes it reposition. A segment (av.EventSegment, start on
+// Event.Timestamp, exclusive end via av.EventSegmentEnd) behaves like a seek
+// to start followed by a natural end at end: the source emits
+// av.EventEndOfStream and returns from Start when the window completes,
+// exactly as at the end of the media. A source that cannot honour a control
+// returns an error from Control instead of ignoring it.
 type ControllableSource interface {
 	Source
 	Control(ctx context.Context, msg *Message) error

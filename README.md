@@ -698,13 +698,25 @@ err = task.Control(ctx, goav.SelectActive("cam2"))
 
 // Sources reposition to a media position.
 err = task.Control(ctx, goav.Seek(30*time.Second))
+
+// Sources change playback pace (positive rates only; pure pacing, no
+// discontinuity).
+err = task.Control(ctx, goav.Rate(2.0))
+
+// Sources play one [start, end) window, then end naturally — trim-to-file
+// segment export: the destination commits when the window completes.
+err = task.Control(ctx, goav.Segment(10*time.Second, 20*time.Second))
 ```
 
-`goav.Seek` broadcasts to every source. A source implementing
-`pipeline.ControllableSource` repositions and emits `av.EventDiscontinuity`
-before the first message at the new position — the signal downstream decoders
-already reset on. A source that cannot seek reports a clear per-source error
-without stopping a seekable sibling.
+`goav.Seek`, `goav.Rate`, and `goav.Segment` are the time-axis controls; all
+three broadcast to every source. A source implementing
+`pipeline.ControllableSource` honours them: a seek (and a segment's jump to its
+start) emits `av.EventDiscontinuity` before the first message at the new
+position — the signal downstream decoders already reset on; a rate change is a
+pure pacing change and never discontinues; a segment plays `[start, end)` and
+then ends the stream exactly as at the end of the media, so destinations
+finalize naturally. A source that cannot honour a control reports a clear
+per-source error without stopping a capable sibling.
 
 `.AtTap(name)` narrows any control to one tap's point in the graph —
 `goav.Keyframe("video").AtTap("video.720p.frames")` — and `goav.Deliver(event)`
@@ -792,7 +804,8 @@ Implemented now:
 - Boundary-gated `Rebranch` (`SwitchAt` next frame or keyframe, drain/abort
   dispositions) plus per-branch `Pause`/`Resume`.
 - Live task control riding the data path: `Keyframe`, `SetBitrate`,
-  `SelectActive`, `Seek`, and verbatim `Deliver`, narrowed with `.AtTap`.
+  `SelectActive`, the time-axis `Seek`/`Rate`/`Segment`, and verbatim
+  `Deliver`, narrowed with `.AtTap`.
 - Filtered event watching (`Watch`) with per-watcher isolation, plus snapshots
   with typed task/branch/destination lifecycle states and scoped stats.
 - The branch buffer ownership contract: `CopyIfMutable` by default, with

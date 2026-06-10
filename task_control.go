@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"time"
 
 	"github.com/thesyncim/goav/av"
@@ -42,6 +43,16 @@ const (
 	// sources have no inbound queue — they run a Start loop. Untargeted, it
 	// broadcasts to every source node.
 	ControlSeek ControlType = "seek"
+	// ControlRate asks the task's sources to change playback rate. It rides
+	// the same source-control seam as ControlSeek (each source's Control
+	// method, as an av.EventRate) and broadcasts to every source node when
+	// untargeted.
+	ControlRate ControlType = "rate"
+	// ControlSegment asks the task's sources to play one [start, end) window
+	// and then end naturally. It rides the same source-control seam as
+	// ControlSeek (each source's Control method, as an av.EventSegment) and
+	// broadcasts to every source node when untargeted.
+	ControlSegment ControlType = "segment"
 )
 
 var (
@@ -83,9 +94,16 @@ type Control struct {
 	// Event is the verbatim event delivered when Type is ControlEvent. Ignored
 	// otherwise.
 	Event av.Event
-	// Position is the target media position for ControlSeek, measured from the
-	// start of the media. Ignored otherwise.
+	// Position is the target media position for ControlSeek, or the inclusive
+	// window start for ControlSegment, measured from the start of the media.
+	// Ignored otherwise.
 	Position time.Duration
+	// End is the exclusive window end for ControlSegment, measured from the
+	// start of the media. Ignored otherwise.
+	End time.Duration
+	// Rate is the requested playback rate for ControlRate (1 = realtime).
+	// Ignored otherwise.
+	Rate float64
 	// Bitrate is the requested encoder rate in bits per second for
 	// ControlBitrate. Ignored otherwise.
 	Bitrate int
@@ -151,9 +169,53 @@ func Deliver(event av.Event) Control {
 // After repositioning, the source emits av.EventDiscontinuity before the first
 // message at the new position (the ControllableSource contract), which is the
 // signal downstream decoders already reset on — Seek adds no flush machinery.
-// This is the foundation rate/segment/trick-mode controls build on.
+// Rate and Segment ride the same source-control seam.
 func Seek(pos time.Duration) Control {
 	return Control{Type: ControlSeek, Position: pos}
+}
+
+// Rate builds a control that asks the task's sources to change playback rate:
+// 1.0 is realtime, 2.0 double speed, 0.5 half speed. Only positive rates are
+// valid — reverse playback is out of scope — and Task.Control rejects r <= 0
+// (or a non-finite rate) with a clear error before delivering anything. It
+// rides the seam Seek established: untargeted, it broadcasts to every source
+// node; each source implementing pipeline.ControllableSource has its Control
+// method called with an av.EventRate whose rate rides Event.Metadata under
+// av.MetadataRate (read it with av.EventRateValue). Errors are collected per
+// source, so a source that cannot change rate (it does not implement live
+// control) reports clearly without stopping an adjustable sibling. Narrow it
+// to one source with At (expert).
+//
+// Contract: a rate change is a pacing change, not a reposition. The source
+// keeps delivering from its current position at the new pace and emits
+// av.EventDiscontinuity only if applying the rate makes it reposition — a pure
+// pacing change does NOT discontinue, so downstream decoder state stays valid.
+func Rate(r float64) Control {
+	return Control{Type: ControlRate, Rate: r}
+}
+
+// Segment builds a control that asks the task's sources to play the window
+// [start, end) — start inclusive, end exclusive, both measured from the start
+// of the media — and then end naturally. Task.Control rejects windows that are
+// not 0 <= start < end with a clear error before delivering anything. It rides
+// the seam Seek established: untargeted, it broadcasts to every source node;
+// each source implementing pipeline.ControllableSource has its Control method
+// called with an av.EventSegment whose start rides Event.Timestamp (like Seek)
+// and whose end rides Event.Metadata under av.MetadataSegmentEnd (read it with
+// av.EventSegmentEnd). Errors are collected per source, so a source that
+// cannot play a window reports clearly without stopping a capable sibling.
+// Narrow it to one source with At (expert).
+//
+// Contract: a segment behaves like a Seek to start followed by natural end of
+// stream at end. The source emits av.EventDiscontinuity before the first
+// message at start (the repositioning half of the ControllableSource contract)
+// and, on reaching end, ends exactly as at the end of the media — it emits
+// av.EventEndOfStream and its Start loop returns — so destinations finalize
+// the same way they do on a natural end of input. That is what makes
+// trim-to-file segment export work: a From(file) task given Segment(a, b)
+// plays the window and commits its destinations when the window completes.
+func Segment(start, end time.Duration) Control {
+	return Control{Type: ControlSegment, Position: start, End: end}
 }
 
 // message lowers the control into the pipeline message delivered to the node.
@@ -188,6 +250,27 @@ func (c Control) message() (*pipeline.Message, error) {
 			Reason:    c.Reason,
 			Timestamp: av.Timestamp{Value: int64(c.Position), Base: av.TimeBase{Num: 1, Den: int64(time.Second)}},
 		}}, nil
+	case ControlRate:
+		if !(c.Rate > 0) || math.IsInf(c.Rate, 1) {
+			return nil, fmt.Errorf("goav: Rate needs a positive, finite playback rate (reverse playback is not supported), got %v", c.Rate)
+		}
+		return &pipeline.Message{Kind: pipeline.MessageEvent, Event: &av.Event{
+			Type:     av.EventRate,
+			StreamID: c.StreamID,
+			Reason:   c.Reason,
+			Metadata: av.RateMetadata(c.Rate),
+		}}, nil
+	case ControlSegment:
+		if c.Position < 0 || c.End <= c.Position {
+			return nil, fmt.Errorf("goav: Segment needs 0 <= start < end, got [%v, %v)", c.Position, c.End)
+		}
+		return &pipeline.Message{Kind: pipeline.MessageEvent, Event: &av.Event{
+			Type:      av.EventSegment,
+			StreamID:  c.StreamID,
+			Reason:    c.Reason,
+			Timestamp: av.Timestamp{Value: int64(c.Position), Base: av.TimeBase{Num: 1, Den: int64(time.Second)}},
+			Metadata:  av.SegmentEndMetadata(c.End),
+		}}, nil
 	case ControlEvent:
 		event := c.Event
 		return &pipeline.Message{Kind: pipeline.MessageEvent, Event: &event}, nil
@@ -196,18 +279,32 @@ func (c Control) message() (*pipeline.Message, error) {
 	}
 }
 
+// targetsSources reports whether the control is delivered to SOURCE nodes
+// through their Control method (pipeline.ControllableSource) instead of riding
+// a stage queue: the time-axis controls (seek, rate, segment) steer a source's
+// Start loop, and sources have no inbound queue.
+func (c Control) targetsSources() bool {
+	switch c.Type {
+	case ControlSeek, ControlRate, ControlSegment:
+		return true
+	default:
+		return false
+	}
+}
+
 // Control injects an out-of-band control into the running task's graph, delivering
 // it to the node named by control.Node on that node's serial worker. It is safe to
 // call concurrently with Run: the control rides the target node's normal queue, so
 // the node's Handle still sees one message at a time and needs no extra locking —
-// the injection is race-safe by construction. A ControlSeek is the exception:
-// sources have no queue, so it is handed to each source's Control method
+// the injection is race-safe by construction. The time-axis controls
+// (ControlSeek, ControlRate, ControlSegment) are the exception: sources have no
+// queue, so they are handed to each source's Control method
 // (pipeline.ControllableSource) synchronously instead.
 //
 // Control returns ErrControlUnsupported when the task graph has no per-node worker
-// to deliver on (a direct, non-buffered graph — except ControlSeek, which a direct
-// graph delivers too), ErrControlNotRunning before Run has started a node worker,
-// and pipeline.ErrUnknownNode for an unknown target.
+// to deliver on (a direct, non-buffered graph — except the time-axis controls,
+// which a direct graph delivers too), ErrControlNotRunning before Run has started
+// a node worker, and pipeline.ErrUnknownNode for an unknown target.
 func (t *task) Control(ctx context.Context, control Control) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -233,7 +330,7 @@ func (t *task) Control(ctx context.Context, control Control) error {
 			if errors.Is(err, pipeline.ErrDynamicGraphUnsupported) {
 				return ErrControlNotRunning
 			}
-			if control.Type == ControlSeek && errors.Is(err, pipeline.ErrInvalidLink) {
+			if control.targetsSources() && errors.Is(err, pipeline.ErrInvalidLink) {
 				errs = append(errs, fmt.Errorf("goav: control to %q: source does not accept live control (implement pipeline.ControllableSource): %w", node, err))
 				continue
 			}
@@ -243,13 +340,13 @@ func (t *task) Control(ctx context.Context, control Control) error {
 	return errors.Join(errs...)
 }
 
-// controlDeliver picks the delivery seam for a control. A seek targets SOURCE
-// nodes, which have no queue or serial worker, so it goes through the graph's
-// SourceInjector (the source's Control method, called synchronously — see
-// pipeline.ControllableSource for the contract). Everything else rides the
-// target node's queue through NodeInjector.
+// controlDeliver picks the delivery seam for a control. The time-axis controls
+// (seek, rate, segment) target SOURCE nodes, which have no queue or serial
+// worker, so they go through the graph's SourceInjector (the source's Control
+// method, called synchronously — see pipeline.ControllableSource for the
+// contract). Everything else rides the target node's queue through NodeInjector.
 func (t *task) controlDeliver(control Control) (func(context.Context, pipeline.NodeRef, *pipeline.Message) error, error) {
-	if control.Type == ControlSeek {
+	if control.targetsSources() {
 		injector, ok := t.graph.(pipeline.SourceInjector)
 		if !ok {
 			return nil, ErrControlUnsupported
@@ -267,8 +364,9 @@ func (t *task) controlDeliver(control Control) (func(context.Context, pipeline.N
 // an explicit node wins; a tap name resolves through Taps(); an untargeted
 // keyframe or bitrate retarget broadcasts to the graph's entry row (the nodes
 // fed directly by sources) so it rides the data path to every downstream
-// encoder; an untargeted seek broadcasts to every source node. Anything else
-// untargeted is an error — the caller must say where.
+// encoder; an untargeted time-axis control (seek, rate, segment) broadcasts to
+// every source node. Anything else untargeted is an error — the caller must
+// say where.
 func (t *task) controlTargets(control Control) ([]pipeline.NodeRef, error) {
 	if control.Node != "" {
 		return []pipeline.NodeRef{control.Node}, nil
@@ -288,7 +386,7 @@ func (t *task) controlTargets(control Control) ([]pipeline.NodeRef, error) {
 		}
 		return targets, nil
 	}
-	if control.Type == ControlSeek {
+	if control.targetsSources() {
 		targets := t.controlSourceNodes()
 		if len(targets) == 0 {
 			return nil, pipeline.ErrUnknownNode
@@ -299,8 +397,8 @@ func (t *task) controlTargets(control Control) ([]pipeline.NodeRef, error) {
 }
 
 // controlSourceNodes returns every source node in the graph, in spec order.
-// These are the targets a seek broadcasts to — controls for sources are handed
-// to the source implementation itself, not enqueued.
+// These are the targets the time-axis controls broadcast to — controls for
+// sources are handed to the source implementation itself, not enqueued.
 func (t *task) controlSourceNodes() []pipeline.NodeRef {
 	spec := t.Describe()
 	var targets []pipeline.NodeRef

@@ -440,6 +440,23 @@ const (
 	// acknowledges by emitting EventDiscontinuity before the first message at
 	// the new position.
 	EventSeek EventType = "seek"
+	// EventRate asks a source to change its playback rate (1 = realtime,
+	// 2 = double speed, 0.5 = half; positive only). The rate rides
+	// Event.Metadata under MetadataRate — build it with RateMetadata, read it
+	// with EventRateValue. Like EventSeek it is delivered to a source's
+	// control seam, not routed downstream. A rate change is pure pacing: the
+	// source keeps delivering from its current position and must NOT emit
+	// EventDiscontinuity unless applying the rate makes it reposition.
+	EventRate EventType = "rate"
+	// EventSegment asks a source to play one window [start, end) and then end
+	// its stream naturally. The start rides Event.Timestamp exactly like
+	// EventSeek; the exclusive end rides Event.Metadata under
+	// MetadataSegmentEnd — build it with SegmentEndMetadata, read it with
+	// EventSegmentEnd. The source acknowledges like a seek to start
+	// (EventDiscontinuity before the first message at start) and, on reaching
+	// end, ends exactly as at the end of the media (EventEndOfStream, Start
+	// loop returns) so downstream destinations finalize naturally.
+	EventSegment EventType = "segment"
 	// EventBitrateChanged asks the encoders on its path to retarget their
 	// bitrate without restarting the stream. The requested rate rides
 	// Event.Metadata under MetadataBitrate as a decimal string in bits per
