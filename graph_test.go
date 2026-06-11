@@ -3,11 +3,13 @@ package goav
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"reflect"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -1085,7 +1087,7 @@ func TestTaskAttachBufferedBranchAfterRuntimeResizeTapWhileRunning(t *testing.T)
 }
 
 func TestTaskDetachBufferedRuntimeResizeTapSubtreeStopsFutureMessages(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	resizer := &transcodeTestFilter{}
 	resizeFactory := &transcodeTestFilterFactory{filter: resizer}
@@ -1153,6 +1155,7 @@ func TestTaskDetachBufferedRuntimeResizeTapSubtreeStopsFutureMessages(t *testing
 	case <-ctx.Done():
 		t.Fatal(ctx.Err())
 	}
+	waitDelivered(t, ctx, base)
 	parent, err := mediaTask.Attach(ctx, Branch("thumb").
 		From(FrameTap("video.frames")).
 		Buffer(flow.Blocking(2)).
@@ -1189,6 +1192,7 @@ func TestTaskDetachBufferedRuntimeResizeTapSubtreeStopsFutureMessages(t *testing
 	case <-ctx.Done():
 		t.Fatal(ctx.Err())
 	}
+	waitDelivered(t, ctx, base)
 	if err := mediaTask.Detach(ctx, parent); err != nil {
 		t.Fatal(err)
 	}
@@ -1220,7 +1224,7 @@ func TestTaskDetachBufferedRuntimeResizeTapSubtreeStopsFutureMessages(t *testing
 }
 
 func TestTaskDetachBufferedRuntimeResampleTapSubtreeStopsFutureMessages(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	resampler := &transcodeTestFilter{}
 	resampleFactory := &transcodeTestFilterFactory{filter: resampler}
@@ -1289,6 +1293,7 @@ func TestTaskDetachBufferedRuntimeResampleTapSubtreeStopsFutureMessages(t *testi
 	case <-ctx.Done():
 		t.Fatal(ctx.Err())
 	}
+	waitDelivered(t, ctx, base)
 	parent, err := mediaTask.Attach(ctx, Branch("voice").
 		From(FrameTap("audio.frames")).
 		Buffer(flow.Blocking(2)).
@@ -1326,6 +1331,7 @@ func TestTaskDetachBufferedRuntimeResampleTapSubtreeStopsFutureMessages(t *testi
 	case <-ctx.Done():
 		t.Fatal(ctx.Err())
 	}
+	waitDelivered(t, ctx, base)
 	if err := mediaTask.Detach(ctx, parent); err != nil {
 		t.Fatal(err)
 	}
@@ -1912,7 +1918,7 @@ func TestTaskAttachBranchesWhileBufferedGraphRuns(t *testing.T) {
 }
 
 func TestTaskDetachBufferedBranchStopsFutureMessagesAndKeepsStats(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	packets := []av.Packet{
 		{StreamID: "video", Payload: av.Buffer{Bytes: []byte{1}, Ownership: av.BufferImmutable}},
@@ -1957,6 +1963,7 @@ func TestTaskDetachBufferedBranchStopsFutureMessagesAndKeepsStats(t *testing.T) 
 	case <-ctx.Done():
 		t.Fatal(ctx.Err())
 	}
+	waitDelivered(t, ctx, base)
 	attachment, err := task.Attach(ctx,
 		Branch("late").
 			From(src).
@@ -1972,6 +1979,7 @@ func TestTaskDetachBufferedBranchStopsFutureMessagesAndKeepsStats(t *testing.T) 
 	case <-ctx.Done():
 		t.Fatal(ctx.Err())
 	}
+	waitDelivered(t, ctx, base)
 	if err := task.Detach(ctx, attachment); err != nil {
 		t.Fatal(err)
 	}
@@ -1997,6 +2005,70 @@ func TestTaskDetachBufferedBranchStopsFutureMessagesAndKeepsStats(t *testing.T) 
 	}
 	if branchStats.Delivered != 1 || branchStats.Dropped != 0 {
 		t.Fatalf("branch stats = %+v", branchStats)
+	}
+}
+
+// TestTaskAttachDetachBufferedBranchStress hammers the live attach -> traffic ->
+// detach window on the buffered runner: a free-running source keeps emitting
+// while a branch is attached and detached 100 times, so emits holding a routing
+// snapshot from before a detach race the branch teardown on every iteration.
+// It pins that the race never tears the pipeline down, never delivers to a
+// branch sink after its Close, and never loses a message on the DropBlock base
+// path.
+func TestTaskAttachDetachBufferedBranchStress(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	packet := av.Packet{StreamID: "video", Payload: av.Buffer{Bytes: []byte{1}, Ownership: av.BufferImmutable}}
+	source := &runtimeFloodSource{
+		name: "source",
+		msg:  pipeline.Message{Kind: pipeline.MessagePacket, Packet: &packet},
+		stop: make(chan struct{}),
+	}
+	base := newRuntimeObservedSink("base", 1)
+
+	graph := Expert(New(WithBufferPolicy(pipeline.BufferPolicy{Capacity: 2, Drop: pipeline.DropBlock}))).Graph()
+	src := graph.Source("source", source)
+	graph.Connect(src.Out(), graph.Sink("base", base).In())
+	task, err := graph.Build(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer task.Close()
+
+	runErr := make(chan error, 1)
+	go func() {
+		runErr <- task.Run(ctx)
+	}()
+	for i := 0; i < 100; i++ {
+		late := &runtimeStressSink{name: "late", received: make(chan struct{}, 1)}
+		attachment, err := task.Attach(ctx, Branch(fmt.Sprintf("late-%d", i)).
+			From(src).
+			Buffer(flow.Blocking(2)).
+			To(Sink(late)))
+		if err != nil {
+			t.Fatalf("iteration %d: attach: %v", i, err)
+		}
+		select {
+		case <-late.received:
+		case <-ctx.Done():
+			t.Fatal(ctx.Err())
+		}
+		if err := task.Detach(ctx, attachment); err != nil {
+			t.Fatalf("iteration %d: detach: %v", i, err)
+		}
+		if !late.closed.Load() {
+			t.Fatalf("iteration %d: late sink was not closed by detach", i)
+		}
+		if got := late.afterClosed.Load(); got != 0 {
+			t.Fatalf("iteration %d: deliveries after close = %d, want 0", i, got)
+		}
+	}
+	close(source.stop)
+	if err := <-runErr; err != nil {
+		t.Fatal(err)
+	}
+	if got, want := base.countValue(), source.emitted; got != want {
+		t.Fatalf("base count = %d, want %d (DropBlock base path must stay lossless across attach/detach)", got, want)
 	}
 }
 
@@ -2487,7 +2559,7 @@ func TestTaskAttachBufferedBranchPublishesPostEncodeTapWhileRunning(t *testing.T
 }
 
 func TestTaskDetachBufferedPostEncodeTapSubtreeStopsFutureMessages(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	encoder := &encodeTestEncoder{}
 	encoderFactory := &encodeTestEncoderFactory{encoder: encoder}
@@ -2553,6 +2625,7 @@ func TestTaskDetachBufferedPostEncodeTapSubtreeStopsFutureMessages(t *testing.T)
 	case <-ctx.Done():
 		t.Fatal(ctx.Err())
 	}
+	waitDelivered(t, ctx, base)
 	parent, err := builtTask.Attach(ctx, Branch("archive").
 		From(FrameTap("audio.frames")).
 		Buffer(flow.Blocking(2, flow.BufferCopyBounds(1, 0))).
@@ -2581,6 +2654,7 @@ func TestTaskDetachBufferedPostEncodeTapSubtreeStopsFutureMessages(t *testing.T)
 	case <-ctx.Done():
 		t.Fatal(ctx.Err())
 	}
+	waitDelivered(t, ctx, base)
 	if err := builtTask.Detach(ctx, parent); err != nil {
 		t.Fatal(err)
 	}
@@ -2612,7 +2686,7 @@ func TestTaskDetachBufferedPostEncodeTapSubtreeStopsFutureMessages(t *testing.T)
 }
 
 func TestTaskDetachBufferedCustomStageTapSubtreeStopsFutureMessages(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	frames := []av.Frame{
 		{StreamID: "audio", Type: av.MediaAudio},
@@ -2674,6 +2748,7 @@ func TestTaskDetachBufferedCustomStageTapSubtreeStopsFutureMessages(t *testing.T
 	case <-ctx.Done():
 		t.Fatal(ctx.Err())
 	}
+	waitDelivered(t, ctx, base)
 	parent, err := builtTask.Attach(ctx, Branch("analysis").
 		From(FrameTap("audio.frames")).
 		Buffer(flow.Blocking(2)).
@@ -2701,6 +2776,7 @@ func TestTaskDetachBufferedCustomStageTapSubtreeStopsFutureMessages(t *testing.T
 	case <-ctx.Done():
 		t.Fatal(ctx.Err())
 	}
+	waitDelivered(t, ctx, base)
 	if err := builtTask.Detach(ctx, parent); err != nil {
 		t.Fatal(err)
 	}
@@ -2926,6 +3002,21 @@ func (s *runtimeObservedSink) closedValue() bool {
 	return s.closed
 }
 
+// waitDelivered blocks until sink has handled one more message. Stepped tests
+// on a buffered graph must call it once per emitted message before resuming
+// the source: the sink's queue is drained by an independent worker, so without
+// this wait a late-scheduled worker can leave a capacity-bounded DropNever
+// queue full at the next emit, which surfaces ErrBackpressure and tears the
+// pipeline down.
+func waitDelivered(t *testing.T, ctx context.Context, sink *runtimeObservedSink) {
+	t.Helper()
+	select {
+	case <-sink.received:
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+}
+
 type runtimeBranchStepSource struct {
 	name     string
 	messages []pipeline.Message
@@ -2981,5 +3072,68 @@ func (s *runtimeBranchWaitingSource) Start(ctx context.Context, emitter pipeline
 }
 
 func (s *runtimeBranchWaitingSource) Close() error {
+	return nil
+}
+
+// runtimeFloodSource emits the same message in a tight loop until stop closes,
+// pacing only on downstream backpressure, and counts its successful emits.
+type runtimeFloodSource struct {
+	name    string
+	msg     pipeline.Message
+	stop    chan struct{}
+	emitted int
+}
+
+func (s *runtimeFloodSource) Name() string {
+	return s.name
+}
+
+func (s *runtimeFloodSource) Start(ctx context.Context, emitter pipeline.Emitter) error {
+	for {
+		select {
+		case <-s.stop:
+			return nil
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+		if err := emitter.Emit(ctx, &s.msg); err != nil {
+			return err
+		}
+		s.emitted++
+	}
+}
+
+func (s *runtimeFloodSource) Close() error {
+	return nil
+}
+
+// runtimeStressSink is a sink double for attach/detach stress: it signals the
+// first delivery and counts any delivery that arrives after Close, which the
+// detach contract forbids.
+type runtimeStressSink struct {
+	name        string
+	received    chan struct{}
+	closed      atomic.Bool
+	afterClosed atomic.Int64
+}
+
+func (s *runtimeStressSink) Name() string {
+	return s.name
+}
+
+func (s *runtimeStressSink) Handle(context.Context, *pipeline.Message) error {
+	if s.closed.Load() {
+		s.afterClosed.Add(1)
+	}
+	select {
+	case s.received <- struct{}{}:
+	default:
+	}
+	return nil
+}
+
+func (s *runtimeStressSink) Close() error {
+	s.closed.Store(true)
 	return nil
 }

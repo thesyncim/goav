@@ -3,6 +3,8 @@ package pipeline
 import (
 	"context"
 	"errors"
+	"fmt"
+	"runtime"
 	"sync"
 	"testing"
 	"time"
@@ -1119,4 +1121,73 @@ func equalBytes(a []byte, b []byte) bool {
 		}
 	}
 	return true
+}
+
+// TestGraphBufferedRemoveDrainsInFlightDeliveries is the buffered sibling of
+// the direct runner's live-remove pin: removing a sink while a source floods
+// the graph must close the sink's queue without erroring the producer, drain
+// the sink's worker before Close (no Handle after Close), and leave the rest
+// of the graph delivering. The add -> connect -> traffic -> remove cycle is
+// repeated so producers holding a routing snapshot from before the removal —
+// including ones inside the blocking DropBlock enqueue while the queue is torn
+// down — race the teardown on every iteration.
+func TestGraphBufferedRemoveDrainsInFlightDeliveries(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	graph, err := NewGraph(GraphConfig{Name: "buffered-live-remove", Buffer: BufferPolicy{Capacity: 2, Drop: DropBlock}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer graph.Close()
+
+	packet := &av.Packet{StreamID: "live", Payload: av.Buffer{Bytes: []byte{1}, Ownership: av.BufferImmutable}}
+	stop := make(chan struct{})
+	source := &directLoopSource{name: "src", packet: packet, stop: stop}
+	sourceRef, err := graph.AddSource(source, BufferPolicy{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	base := &removableTestSink{name: "base"}
+	baseRef, err := graph.AddSink(base, BufferPolicy{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := graph.Connect(Route{From: sourceRef.String(), To: []string{baseRef.String()}, Policy: RouteAll}); err != nil {
+		t.Fatal(err)
+	}
+
+	runErr := make(chan error, 1)
+	go func() { runErr <- graph.Run(ctx) }()
+	for i := 0; i < 100; i++ {
+		sink := &removableTestSink{name: fmt.Sprintf("tap-%d", i)}
+		ref, err := graph.AddSink(sink, BufferPolicy{Capacity: 1, Drop: DropBlock})
+		if err != nil {
+			t.Fatalf("iteration %d: add: %v", i, err)
+		}
+		if err := graph.Connect(Route{From: sourceRef.String(), To: []string{ref.String()}, Policy: RouteAll}); err != nil {
+			t.Fatalf("iteration %d: connect: %v", i, err)
+		}
+		for sink.delivered.Load() == 0 {
+			if err := ctx.Err(); err != nil {
+				t.Fatalf("iteration %d: %v", i, err)
+			}
+			runtime.Gosched()
+		}
+		if err := graph.Remove(ref); err != nil {
+			t.Fatalf("iteration %d: remove: %v", i, err)
+		}
+		if got := sink.afterClosed.Load(); got != 0 {
+			t.Fatalf("iteration %d: deliveries after close = %d, want 0 (remove must drain the worker before close)", i, got)
+		}
+		if !sink.closed.Load() {
+			t.Fatalf("iteration %d: removed sink was not closed", i)
+		}
+	}
+	close(stop)
+	if err := <-runErr; err != nil {
+		t.Fatal(err)
+	}
+	if base.delivered.Load() == 0 {
+		t.Fatal("base sink received nothing, want continuous delivery across removals")
+	}
 }
