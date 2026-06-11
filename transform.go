@@ -17,11 +17,18 @@ type resizeOption func(*filter.ResizeConfig)
 
 type audioOption func(*filter.ResampleConfig)
 
+// TransformSpec is one declared frame transform — exactly one of Resize or
+// Resample is set. Chains create these through the Resize/Resample methods;
+// the spec exists as a value so flows and tests can describe transforms
+// without a chain.
 type TransformSpec struct {
 	Resize   *filter.ResizeConfig
 	Resample *filter.ResampleConfig
 }
 
+// Resize declares a video geometry conversion to width x height (exact mode
+// unless an option changes it), performed by the runtime's registered resize
+// filter.
 func Resize(width int, height int, options ...resizeOption) TransformSpec {
 	config := filter.ResizeConfig{Width: width, Height: height, Mode: filter.ResizeExact}
 	for i := range options {
@@ -32,6 +39,8 @@ func Resize(width int, height int, options ...resizeOption) TransformSpec {
 	return TransformSpec{Resize: &config}
 }
 
+// Resample declares an audio conversion to the given sample rate and channel
+// count, performed by the runtime's registered resample filter.
 func Resample(sampleRate int, channels int, options ...audioOption) TransformSpec {
 	config := filter.ResampleConfig{SampleRate: sampleRate, Channels: channels}
 	for i := range options {

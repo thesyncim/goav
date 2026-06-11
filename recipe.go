@@ -29,6 +29,8 @@ type BuildError struct {
 	Cause       error
 }
 
+// Error renders the one goav error shape: "goav: cannot <operation> for
+// <node>: <reason>" followed by Details and Suggestions lines.
 func (e *BuildError) Error() string {
 	if e == nil {
 		return ""
@@ -66,6 +68,8 @@ func (e *BuildError) Error() string {
 	return out.String()
 }
 
+// Unwrap exposes the sentinel Cause (ErrUnsupportedBuild, ErrNilSink, ...)
+// to errors.Is.
 func (e *BuildError) Unwrap() error {
 	if e == nil {
 		return nil
@@ -73,6 +77,10 @@ func (e *BuildError) Unwrap() error {
 	return e.Cause
 }
 
+// Job is a recipe under construction: the inputs, stream chains, branches,
+// joins, and destinations declared so far. A Job is inert until Describe,
+// Explain, Build, or Run compiles it; construction errors are deferred and
+// surface on those calls as structured BuildErrors.
 type Job struct {
 	name               string
 	runtime            Runtime
@@ -114,6 +122,9 @@ func From(inputs ...InputSpec) *Job {
 	return job
 }
 
+// Copy declares packet-preserving passthrough for a whole-job shortcut such
+// as From(input).Copy().To(out): packets flow to the destinations without
+// decode. On a selected stream, use the stream chain's Copy instead.
 func (j *Job) Copy() *Job {
 	return j
 }
@@ -122,6 +133,9 @@ func newJob(name string) *Job {
 	return &Job{name: name, runtime: Default()}
 }
 
+// UseRuntime compiles the job against the given runtime instead of the
+// standard Default() runtime — the seam for custom registries, offline
+// pacing, or injected clocks.
 func (j *Job) UseRuntime(runtime Runtime) *Job {
 	if j != nil {
 		j.runtime = runtime
@@ -135,6 +149,9 @@ func (j *Job) setErr(err error) {
 	}
 }
 
+// To routes the whole job to one or more destinations (a fanout when several
+// are given). It applies to direct whole-job chains; once Branches are
+// declared, destinations belong to the branches.
 func (j *Job) To(destinations ...Destination) *Job {
 	if len(j.branchStreams) != 0 || (j.join != nil && len(j.join.branches) != 0) {
 		j.setErr(branchOutputScopeError("branches"))
@@ -186,19 +203,29 @@ func (j *Job) addBranchDestinations(destinations ...destinationRef) error {
 	return nil
 }
 
+// And appends more inputs to the job, equivalent to listing them in From.
 func (j *Job) And(inputs ...InputSpec) *Job {
 	j.inputs = append(j.inputs, inputs...)
 	return j
 }
 
+// Audio starts a chain on the job's audio stream. With several candidates the
+// selector options (InputName, StreamID, StreamName, StreamIndex) narrow the
+// match; an ambiguous selection fails the build listing the candidates.
 func (j *Job) Audio(options ...streamOption) *jobStreamBuilder {
 	return j.streamBuilder("audio", av.MediaAudio, options...)
 }
 
+// Video starts a chain on the job's video stream. With several candidates the
+// selector options (InputName, StreamID, StreamName, StreamIndex) narrow the
+// match; an ambiguous selection fails the build listing the candidates.
 func (j *Job) Video(options ...streamOption) *jobStreamBuilder {
 	return j.streamBuilder("video", av.MediaVideo, options...)
 }
 
+// Stream starts a chain on any media type — useful when the input carries one
+// stream whose kind the recipe does not care about. Selector options narrow
+// the match exactly as for Audio and Video.
 func (j *Job) Stream(options ...streamOption) *jobStreamBuilder {
 	return j.streamBuilder("stream", "", options...)
 }
@@ -327,6 +354,9 @@ func (j *Job) plan() Intent {
 	return intent
 }
 
+// Describe compiles the job and returns the planned graph spec — node for
+// node what Build will create — without opening any resource. Rendering
+// lives outside core (see graphrender).
 func (j *Job) Describe() (pipeline.Spec, error) {
 	resolved, err := compileJobRecipe(j)
 	if err != nil {
@@ -335,6 +365,10 @@ func (j *Job) Describe() (pipeline.Spec, error) {
 	return resolved.Describe()
 }
 
+// Build compiles and materializes the job into a runnable Task: sources
+// resolve, the graph is wired, and OnStream rules install. The task does not
+// flow until Run. Build a task (instead of calling Run directly) when the
+// application needs inspection, events, live control, or late attachment.
 func (j *Job) Build(ctx context.Context) (Task, error) {
 	resolved, err := compileJobRecipeForBuildContext(ctx, j)
 	if err != nil {
@@ -367,6 +401,9 @@ func (j *Job) installStreamRules(built Task) {
 	)
 }
 
+// Run is the one-shot shortcut: Build, Run to completion, then Close. It
+// returns the first build refusal or runtime error; destinations commit on
+// success and abort on failure.
 func (j *Job) Run(ctx context.Context) error {
 	task, err := j.Build(ctx)
 	if err != nil {

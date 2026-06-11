@@ -6,14 +6,20 @@ import (
 	"github.com/thesyncim/goav/av"
 )
 
+// ErrNotFound reports a codec id (or id+mode) with no registered descriptor.
 var ErrNotFound = errors.New("codec: not found")
 
+// SimpleRegistry is the per-runtime codec registry: descriptors for
+// capability checks plus decoder/encoder factories keyed by codec id.
+// Registration is last-wins, so layering options can override defaults. It is
+// populated at runtime construction and read-only afterwards.
 type SimpleRegistry struct {
 	descriptors []Descriptor
 	decoders    map[av.CodecID]DecoderFactory
 	encoders    map[av.CodecID]EncoderFactory
 }
 
+// NewRegistry returns an empty codec registry.
 func NewRegistry() *SimpleRegistry {
 	return &SimpleRegistry{
 		decoders: make(map[av.CodecID]DecoderFactory),
@@ -21,10 +27,14 @@ func NewRegistry() *SimpleRegistry {
 	}
 }
 
+// RegisterDescriptor records a codec's capabilities without an
+// implementation, so validation recognizes the codec.
 func (r *SimpleRegistry) RegisterDescriptor(desc Descriptor) {
 	r.upsertDescriptor(desc)
 }
 
+// RegisterDecoder records the descriptor (decode mode added) and the decoder
+// factory for its codec id; last registration wins.
 func (r *SimpleRegistry) RegisterDecoder(desc Descriptor, factory DecoderFactory) {
 	desc.Modes = mergeModes(desc.Modes, []Mode{ModeDecode})
 	r.upsertDescriptor(desc)
@@ -33,6 +43,8 @@ func (r *SimpleRegistry) RegisterDecoder(desc Descriptor, factory DecoderFactory
 	}
 }
 
+// RegisterEncoder records the descriptor (encode mode added) and the encoder
+// factory for its codec id; last registration wins.
 func (r *SimpleRegistry) RegisterEncoder(desc Descriptor, factory EncoderFactory) {
 	desc.Modes = mergeModes(desc.Modes, []Mode{ModeEncode})
 	r.upsertDescriptor(desc)
@@ -41,6 +53,7 @@ func (r *SimpleRegistry) RegisterEncoder(desc Descriptor, factory EncoderFactory
 	}
 }
 
+// Descriptors returns a copy of every registered descriptor.
 func (r *SimpleRegistry) Descriptors() []Descriptor {
 	out := make([]Descriptor, len(r.descriptors))
 	for i := range r.descriptors {
@@ -49,6 +62,8 @@ func (r *SimpleRegistry) Descriptors() []Descriptor {
 	return out
 }
 
+// Find returns the descriptors matching the codec id (empty matches all)
+// that support mode, or ErrNotFound when none do.
 func (r *SimpleRegistry) Find(id av.CodecID, mode Mode) ([]Descriptor, error) {
 	var out []Descriptor
 	for i := range r.descriptors {
@@ -67,6 +82,8 @@ func (r *SimpleRegistry) Find(id av.CodecID, mode Mode) ([]Descriptor, error) {
 	return out, nil
 }
 
+// DecoderFactory returns the decoder factory for a codec id: ErrUnavailable
+// when only the descriptor is registered, ErrNotFound when nothing is.
 func (r *SimpleRegistry) DecoderFactory(id av.CodecID) (DecoderFactory, error) {
 	factory, ok := r.decoders[id]
 	if !ok {
@@ -78,6 +95,8 @@ func (r *SimpleRegistry) DecoderFactory(id av.CodecID) (DecoderFactory, error) {
 	return factory, nil
 }
 
+// EncoderFactory returns the encoder factory for a codec id: ErrUnavailable
+// when only the descriptor is registered, ErrNotFound when nothing is.
 func (r *SimpleRegistry) EncoderFactory(id av.CodecID) (EncoderFactory, error) {
 	factory, ok := r.encoders[id]
 	if !ok {
@@ -105,6 +124,7 @@ func (r *SimpleRegistry) hasDescriptor(id av.CodecID, mode Mode) bool {
 	return false
 }
 
+// Supports reports whether the descriptor lists the given mode.
 func (d Descriptor) Supports(mode Mode) bool {
 	for _, candidate := range d.Modes {
 		if candidate == mode {

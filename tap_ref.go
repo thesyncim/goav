@@ -34,10 +34,13 @@ func PacketTap(name string) TapRef {
 	return TapRef{name: name, domain: shape.DomainPacket}
 }
 
+// Name returns the tap's stable name, the key Task.Taps and Branch.From use.
 func (t TapRef) Name() string {
 	return t.name
 }
 
+// Domain returns the asserted media domain: frame, packet, or empty when the
+// tap infers its domain from the chain point.
 func (t TapRef) Domain() shape.MediaDomain {
 	return t.domain
 }

@@ -9,11 +9,14 @@ import (
 	"github.com/thesyncim/goav/av"
 )
 
+// Magic is one byte signature a probe rule matches at a fixed offset.
 type Magic struct {
 	Offset int
 	Bytes  []byte
 }
 
+// ProbeRule maps name extensions, MIME types, protocols, and byte signatures
+// to one format with a confidence score.
 type ProbeRule struct {
 	Format     av.FormatID
 	Protocol   av.ProtocolID
@@ -24,14 +27,19 @@ type ProbeRule struct {
 	Reason     string
 }
 
+// StaticProber detects formats from a fixed rule table — the default content
+// sniffing every runtime starts with.
 type StaticProber struct {
 	rules []ProbeRule
 }
 
+// NewStaticProber builds a prober over the given rules.
 func NewStaticProber(rules ...ProbeRule) StaticProber {
 	return StaticProber{rules: rules}
 }
 
+// DefaultProbeRules returns the built-in detection table: Ogg, IVF, FLV,
+// Annex B, Matroska/WebM, and the other well-known formats.
 func DefaultProbeRules() []ProbeRule {
 	return []ProbeRule{
 		{
@@ -97,10 +105,14 @@ func DefaultProbeRules() []ProbeRule {
 	}
 }
 
+// DefaultProber returns a StaticProber over DefaultProbeRules — the content
+// sniffing every runtime registers at construction.
 func DefaultProber() StaticProber {
 	return NewStaticProber(DefaultProbeRules()...)
 }
 
+// Probe matches the request against the rule table and returns the best
+// match, or ErrNotFound when nothing matches.
 func (p StaticProber) Probe(ctx context.Context, request ProbeRequest) (ProbeResult, error) {
 	if err := ctx.Err(); err != nil {
 		return ProbeResult{}, err

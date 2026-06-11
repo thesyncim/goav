@@ -11,17 +11,22 @@ import (
 const defaultVideoClockRate = 90000
 const defaultMaxVideoFrameSize = 4 << 20
 
+// VideoDepacketizerOption configures a video depacketizer constructor.
 type VideoDepacketizerOption func(*videoDepacketizerConfig)
 
 type videoDepacketizerConfig struct {
 	maxFrameSize int
 }
 
+// VP8Depacketizer reassembles VP8 RTP payloads into whole-frame av.Packets,
+// detecting keyframes and dropping fragments interrupted by loss.
 type VP8Depacketizer struct {
 	packet    pioncodecs.VP8Packet
 	assembler videoFrameAssembler
 }
 
+// VP9Depacketizer reassembles VP9 RTP payloads into whole-frame av.Packets,
+// detecting keyframes and dropping fragments interrupted by loss.
 type VP9Depacketizer struct {
 	packet    pioncodecs.VP9Packet
 	assembler videoFrameAssembler
@@ -41,28 +46,35 @@ type videoFrameAssembler struct {
 	timestamp     uint32
 }
 
+// WithMaxVideoFrameSize caps the bytes one reassembled video frame may
+// reach; larger frames are refused with ErrFrameTooLarge.
 func WithMaxVideoFrameSize(size int) VideoDepacketizerOption {
 	return func(config *videoDepacketizerConfig) {
 		config.maxFrameSize = size
 	}
 }
 
+// NewVP8Depacketizer builds a VP8 depacketizer for the given stream.
 func NewVP8Depacketizer(stream av.Stream, options ...VideoDepacketizerOption) *VP8Depacketizer {
 	return &VP8Depacketizer{
 		assembler: newVideoFrameAssembler(stream, av.CodecVP8, options...),
 	}
 }
 
+// NewVP9Depacketizer builds a VP9 depacketizer for the given stream.
 func NewVP9Depacketizer(stream av.Stream, options ...VideoDepacketizerOption) *VP9Depacketizer {
 	return &VP9Depacketizer{
 		assembler: newVideoFrameAssembler(stream, av.CodecVP9, options...),
 	}
 }
 
+// Codec reports the codec this depacketizer reassembles.
 func (d *VP8Depacketizer) Codec() av.CodecID {
 	return av.CodecVP8
 }
 
+// PushInto consumes one RTP packet, appending a completed VP8 frame to out
+// when the packet finishes one.
 func (d *VP8Depacketizer) PushInto(ctx context.Context, pkt *rtp.Packet, payload PayloadCodec, out *DepacketizeResult) error {
 	frame, err := d.packet.Unmarshal(pkt.Payload)
 	if err != nil {
@@ -73,19 +85,24 @@ func (d *VP8Depacketizer) PushInto(ctx context.Context, pkt *rtp.Packet, payload
 	return d.assembler.push(ctx, pkt, payload, frame, start, pkt.Marker, keyframe, out)
 }
 
+// FlushInto discards any partial frame at end of stream.
 func (d *VP8Depacketizer) FlushInto(context.Context, *DepacketizeResult) error {
 	d.assembler.resetPartial()
 	return nil
 }
 
+// HandleEvent resets reassembly state on discontinuities.
 func (d *VP8Depacketizer) HandleEvent(ctx context.Context, event *av.Event) error {
 	return d.assembler.handleEvent(ctx, event)
 }
 
+// Codec reports the codec this depacketizer reassembles.
 func (d *VP9Depacketizer) Codec() av.CodecID {
 	return av.CodecVP9
 }
 
+// PushInto consumes one RTP packet, appending a completed VP9 frame to out
+// when the packet finishes one.
 func (d *VP9Depacketizer) PushInto(ctx context.Context, pkt *rtp.Packet, payload PayloadCodec, out *DepacketizeResult) error {
 	d.resetPacket()
 	frame, err := d.packet.Unmarshal(pkt.Payload)
@@ -97,11 +114,13 @@ func (d *VP9Depacketizer) PushInto(ctx context.Context, pkt *rtp.Packet, payload
 	return d.assembler.push(ctx, pkt, payload, frame, d.packet.B, end, keyframe, out)
 }
 
+// FlushInto discards any partial frame at end of stream.
 func (d *VP9Depacketizer) FlushInto(context.Context, *DepacketizeResult) error {
 	d.assembler.resetPartial()
 	return nil
 }
 
+// HandleEvent resets reassembly state on discontinuities.
 func (d *VP9Depacketizer) HandleEvent(ctx context.Context, event *av.Event) error {
 	return d.assembler.handleEvent(ctx, event)
 }

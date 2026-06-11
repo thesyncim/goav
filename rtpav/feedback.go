@@ -2,6 +2,9 @@ package rtpav
 
 import "github.com/pion/rtcp"
 
+// FeedbackResult is a caller-owned, allocation-free builder for outgoing
+// RTCP feedback: AddNACK/AddPLI/AddFIR append into preallocated capacity and
+// Packets is what a FeedbackWriter sends.
 type FeedbackResult struct {
 	Packets    []rtcp.Packet
 	NACKPairs  []rtcp.NackPair
@@ -12,6 +15,7 @@ type FeedbackResult struct {
 	fir  rtcp.FullIntraRequest
 }
 
+// Reset clears the result for reuse, keeping allocated capacity.
 func (r *FeedbackResult) Reset() {
 	for i := range r.Packets {
 		r.Packets[i] = nil
@@ -30,6 +34,8 @@ func (r *FeedbackResult) Reset() {
 	r.fir = rtcp.FullIntraRequest{}
 }
 
+// AddNACK appends one transport-layer NACK covering the missing sequence
+// numbers (compressed into NACK pairs).
 func (r *FeedbackResult) AddNACK(senderSSRC uint32, mediaSSRC uint32, missing []uint16) error {
 	if len(missing) == 0 {
 		return nil
@@ -62,6 +68,8 @@ func (r *FeedbackResult) AddNACK(senderSSRC uint32, mediaSSRC uint32, missing []
 	return r.appendPacket(&r.nack)
 }
 
+// AddPLI appends one picture-loss indication asking the sender for a new
+// keyframe.
 func (r *FeedbackResult) AddPLI(senderSSRC uint32, mediaSSRC uint32) error {
 	r.pli = rtcp.PictureLossIndication{
 		SenderSSRC: senderSSRC,
@@ -70,6 +78,7 @@ func (r *FeedbackResult) AddPLI(senderSSRC uint32, mediaSSRC uint32) error {
 	return r.appendPacket(&r.pli)
 }
 
+// AddFIR appends one full-intra request with the given FIR sequence number.
 func (r *FeedbackResult) AddFIR(senderSSRC uint32, mediaSSRC uint32, sequenceNumber uint8) error {
 	if len(r.FIREntries) == cap(r.FIREntries) {
 		return ErrResultFull

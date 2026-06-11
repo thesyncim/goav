@@ -15,6 +15,10 @@ import (
 	"github.com/thesyncim/goav/shape"
 )
 
+// Explain reports the planned workflow before any resource opens: inputs,
+// branches, destinations, taps, stream and operation shapes, adapter
+// requirements, decisions, and warnings. On a refusal it returns both the
+// structured BuildError and a partial report naming what is missing.
 func (j *Job) Explain(ctx context.Context) (plan.Report, error) {
 	resolved, err := compileJobRecipeForBuildContext(ctx, j)
 	if err == nil {

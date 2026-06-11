@@ -7,10 +7,15 @@ import (
 	"github.com/thesyncim/goav/av"
 )
 
+// JitterConfig sizes a JitterRing: Capacity is the reorder window in
+// packets.
 type JitterConfig struct {
 	Capacity int
 }
 
+// JitterRing is a fixed-capacity, allocation-free JitterBuffer: packets slot
+// by sequence number and release in order, with loss and reordering surfaced
+// as events and stats.
 type JitterRing struct {
 	slots       []jitterSlot
 	initialized bool
@@ -25,6 +30,7 @@ type jitterSlot struct {
 	full   bool
 }
 
+// NewJitterRing builds a ring with the configured reorder window.
 func NewJitterRing(config JitterConfig) (*JitterRing, error) {
 	if config.Capacity <= 0 {
 		return nil, ErrInvalidJitterCapacity
@@ -34,6 +40,7 @@ func NewJitterRing(config JitterConfig) (*JitterRing, error) {
 	}, nil
 }
 
+// Reset clears the ring for reuse with a new stream.
 func (b *JitterRing) Reset() {
 	for i := range b.slots {
 		b.slots[i] = jitterSlot{}
@@ -44,6 +51,8 @@ func (b *JitterRing) Reset() {
 	b.stats = JitterStats{}
 }
 
+// PushInto admits one packet and appends whatever became in-order to out,
+// recording loss, lateness, and SSRC resets along the way.
 func (b *JitterRing) PushInto(ctx context.Context, pkt *rtp.Packet, out *JitterResult) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -101,6 +110,8 @@ func (b *JitterRing) PushInto(ctx context.Context, pkt *rtp.Packet, out *JitterR
 	return nil
 }
 
+// PopInto drains one ready in-order packet into pkt, reporting whether one
+// was available.
 func (b *JitterRing) PopInto(ctx context.Context, pkt *rtp.Packet) (bool, error) {
 	if err := ctx.Err(); err != nil {
 		return false, err
@@ -121,6 +132,7 @@ func (b *JitterRing) PopInto(ctx context.Context, pkt *rtp.Packet) (bool, error)
 	return true, nil
 }
 
+// FlushInto drains every buffered packet in sequence order at end of stream.
 func (b *JitterRing) FlushInto(ctx context.Context, out *JitterResult) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -140,6 +152,7 @@ func (b *JitterRing) FlushInto(ctx context.Context, out *JitterResult) error {
 	return nil
 }
 
+// Stats reports the ring's current counters.
 func (b *JitterRing) Stats() JitterStats {
 	stats := b.stats
 	stats.SSRC = b.ssrc

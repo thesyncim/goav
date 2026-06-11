@@ -115,18 +115,24 @@ type streamBuild struct {
 	destinationNames []string
 }
 
+// StreamID narrows a stream selection to the stream with the given id, as
+// probed or declared by the input.
 func StreamID(id av.StreamID) streamOption {
 	return func(config *streamSelectConfig) {
 		config.selector.ID = id
 	}
 }
 
+// StreamName narrows a stream selection to the stream with the given
+// container-declared name.
 func StreamName(name string) streamOption {
 	return func(config *streamSelectConfig) {
 		config.selector.Name = name
 	}
 }
 
+// StreamIndex narrows a stream selection to the stream at the given probe
+// index (0-based).
 func StreamIndex(index int) streamOption {
 	return func(config *streamSelectConfig) {
 		config.selector.Index = index

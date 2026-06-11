@@ -31,20 +31,26 @@ func (e ExpertTools) Graph() GraphBuilder {
 	return &graphBuilder{builder: standard.New()}
 }
 
+// GraphNode is an expert-graph handle to one added source, stage, or sink;
+// its outlets and inlets wire Connect routes.
 type GraphNode struct {
 	name string
 }
 
+// GraphOutlet selects which messages leave a node on a route: everything
+// (Out), one stream (Stream), or one event type (Event).
 type GraphOutlet struct {
 	name   string
 	policy pipeline.RoutePolicy
 	label  string
 }
 
+// GraphInlet is the receiving end of a Connect route.
 type GraphInlet struct {
 	name string
 }
 
+// Name returns the node's graph-unique name.
 func (n GraphNode) Name() string {
 	return n.name
 }
@@ -53,18 +59,22 @@ func (n GraphNode) branchSource() branchSourceBinding {
 	return branchSourceBinding{from: n.name, policy: pipeline.RouteAll}
 }
 
+// In returns the node's inlet for Connect.
 func (n GraphNode) In() GraphInlet {
 	return GraphInlet(n)
 }
 
+// Out returns an outlet routing every message the node emits.
 func (n GraphNode) Out() GraphOutlet {
 	return GraphOutlet{name: n.name, policy: pipeline.RouteAll}
 }
 
+// Stream returns an outlet routing only the given stream's messages.
 func (n GraphNode) Stream(stream av.StreamID) GraphOutlet {
 	return GraphOutlet{name: n.name, policy: pipeline.RouteByStream, label: string(stream)}
 }
 
+// Event returns an outlet routing only the given event type.
 func (n GraphNode) Event(event av.EventType) GraphOutlet {
 	return GraphOutlet{name: n.name, policy: pipeline.RouteByEvent, label: string(event)}
 }

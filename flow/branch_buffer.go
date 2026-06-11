@@ -15,11 +15,16 @@ import (
 type BranchBufferMode string
 
 const (
-	BufferBlocking   BranchBufferMode = "blocking"
+	// BufferBlocking preserves every message: a full queue paces the producer.
+	BufferBlocking BranchBufferMode = "blocking"
+	// BufferDropOldest sheds the oldest queued message to admit the new one.
 	BufferDropOldest BranchBufferMode = "drop_oldest"
+	// BufferDropNewest sheds the incoming message when the queue is full.
 	BufferDropNewest BranchBufferMode = "drop_newest"
-	BufferLatest     BranchBufferMode = "latest"
-	BufferUnbounded  BranchBufferMode = "unbounded"
+	// BufferLatest keeps only the most recent message.
+	BufferLatest BranchBufferMode = "latest"
+	// BufferUnbounded queues without limit; memory is the only bound.
+	BufferUnbounded BranchBufferMode = "unbounded"
 )
 
 // CopyMode declares when a branch buffer copies a queued message's payload
@@ -186,6 +191,8 @@ func (b BranchBuffer) PipelinePolicy() pipeline.BufferPolicy {
 	return policy
 }
 
+// String renders the buffer declaration (mode plus capacity) for plans and
+// diagnostics.
 func (b BranchBuffer) String() string {
 	mode := b.Mode
 	if mode == "" {

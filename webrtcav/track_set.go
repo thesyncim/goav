@@ -7,13 +7,19 @@ import (
 	"github.com/thesyncim/goav/av"
 )
 
+// TrackUpdateKind says what an accepted track did to the set.
 type TrackUpdateKind string
 
+// The track update kinds: a brand-new reader, or a live replacement of an
+// existing reader's underlying track.
 const (
 	TrackAdded    TrackUpdateKind = "added"
 	TrackReplaced TrackUpdateKind = "replaced"
 )
 
+// TrackSetConfig configures a TrackSet: the session to accept from and the
+// adapter that turns remote tracks into readers (defaulting to
+// TrackRemoteAdapter).
 type TrackSetConfig struct {
 	Session Session
 	Adapter TrackAdapter
@@ -40,6 +46,7 @@ type TrackSet struct {
 	closed  bool
 }
 
+// NewTrackSet builds a track set over the session; the session is required.
 func NewTrackSet(config TrackSetConfig) (*TrackSet, error) {
 	if config.Session == nil {
 		return nil, ErrNilSession
@@ -116,6 +123,7 @@ func (s *TrackSet) AcceptRemote(ctx context.Context, remote RemoteTrack) (TrackU
 	return TrackUpdate{Kind: TrackAdded, Reader: reader, Stream: stream}, nil
 }
 
+// Reader returns the long-lived reader for a stream id, if one exists.
 func (s *TrackSet) Reader(id av.StreamID) (TrackReader, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -123,6 +131,7 @@ func (s *TrackSet) Reader(id av.StreamID) (TrackReader, bool) {
 	return reader, ok
 }
 
+// Readers lists every reader in acceptance order.
 func (s *TrackSet) Readers() []TrackReader {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -135,6 +144,7 @@ func (s *TrackSet) Readers() []TrackReader {
 	return readers
 }
 
+// Close closes every reader; the session stays caller-owned.
 func (s *TrackSet) Close() error {
 	s.mu.Lock()
 	if s.closed {

@@ -7,14 +7,25 @@ import (
 	"github.com/thesyncim/goav/av"
 )
 
+// Format sentinels, matched with errors.Is.
 var (
-	ErrNotFound   = errors.New("format: not found")
+	// ErrNotFound reports a format with no registered adapter, or a probe with
+	// no matching rule.
+	ErrNotFound = errors.New("format: not found")
+	// ErrNilDemuxer reports a nil demuxer where one is required.
 	ErrNilDemuxer = errors.New("format: nil demuxer")
-	ErrNilMuxer   = errors.New("format: nil muxer")
-	ErrNilPacket  = errors.New("format: nil packet")
+	// ErrNilMuxer reports a nil muxer where one is required.
+	ErrNilMuxer = errors.New("format: nil muxer")
+	// ErrNilPacket reports a nil packet handed to a mux write.
+	ErrNilPacket = errors.New("format: nil packet")
+	// ErrResultFull reports a result buffer at capacity (AddEvent).
 	ErrResultFull = errors.New("format: result capacity full")
 )
 
+// SimpleRegistry is the per-runtime format registry: probers for detection
+// plus demuxer/muxer factories and capability descriptors keyed by format id.
+// Registration is last-wins; it is populated at runtime construction and
+// read-only afterwards.
 type SimpleRegistry struct {
 	probers            []Prober
 	demuxers           map[av.FormatID]DemuxerFactory
@@ -23,6 +34,7 @@ type SimpleRegistry struct {
 	muxerDescriptors   map[av.FormatID]Descriptor
 }
 
+// NewRegistry returns an empty format registry.
 func NewRegistry() *SimpleRegistry {
 	return &SimpleRegistry{
 		demuxers:           make(map[av.FormatID]DemuxerFactory),
@@ -32,18 +44,23 @@ func NewRegistry() *SimpleRegistry {
 	}
 }
 
+// RegisterProber adds a format prober; Probe consults every registered one.
 func (r *SimpleRegistry) RegisterProber(prober Prober) {
 	if prober != nil {
 		r.probers = append(r.probers, prober)
 	}
 }
 
+// RegisterDemuxer records a demuxer factory for a format id; last
+// registration wins.
 func (r *SimpleRegistry) RegisterDemuxer(format av.FormatID, factory DemuxerFactory) {
 	if factory != nil {
 		r.RegisterDemuxerDescriptor(Descriptor{Format: format}, factory)
 	}
 }
 
+// RegisterDemuxerDescriptor records a demuxer factory together with the
+// capability descriptor validation reads.
 func (r *SimpleRegistry) RegisterDemuxerDescriptor(desc Descriptor, factory DemuxerFactory) {
 	if factory != nil && desc.Format != "" {
 		r.demuxers[desc.Format] = factory
@@ -51,12 +68,16 @@ func (r *SimpleRegistry) RegisterDemuxerDescriptor(desc Descriptor, factory Demu
 	}
 }
 
+// RegisterMuxer records a muxer factory for a format id; last registration
+// wins.
 func (r *SimpleRegistry) RegisterMuxer(format av.FormatID, factory MuxerFactory) {
 	if factory != nil {
 		r.RegisterMuxerDescriptor(Descriptor{Format: format}, factory)
 	}
 }
 
+// RegisterMuxerDescriptor records a muxer factory together with the
+// capability descriptor destination validation reads.
 func (r *SimpleRegistry) RegisterMuxerDescriptor(desc Descriptor, factory MuxerFactory) {
 	if factory != nil && desc.Format != "" {
 		r.muxers[desc.Format] = factory
@@ -64,6 +85,8 @@ func (r *SimpleRegistry) RegisterMuxerDescriptor(desc Descriptor, factory MuxerF
 	}
 }
 
+// Probe runs every registered prober and returns the highest-scoring result,
+// or ErrNotFound when none match.
 func (r *SimpleRegistry) Probe(ctx context.Context, request ProbeRequest) (ProbeResult, error) {
 	var best ProbeResult
 	var found bool
@@ -90,6 +113,8 @@ func (r *SimpleRegistry) Probe(ctx context.Context, request ProbeRequest) (Probe
 	return ProbeResult{}, ErrNotFound
 }
 
+// DemuxerFactory returns the demuxer factory registered for a format id, or
+// ErrNotFound.
 func (r *SimpleRegistry) DemuxerFactory(format av.FormatID) (DemuxerFactory, error) {
 	factory, ok := r.demuxers[format]
 	if !ok {
@@ -98,6 +123,8 @@ func (r *SimpleRegistry) DemuxerFactory(format av.FormatID) (DemuxerFactory, err
 	return factory, nil
 }
 
+// DemuxerDescriptor returns the capability descriptor registered for a
+// format's demuxer, or ErrNotFound.
 func (r *SimpleRegistry) DemuxerDescriptor(format av.FormatID) (Descriptor, error) {
 	desc, ok := r.demuxerDescriptors[format]
 	if !ok {
@@ -106,6 +133,8 @@ func (r *SimpleRegistry) DemuxerDescriptor(format av.FormatID) (Descriptor, erro
 	return cloneDescriptor(desc), nil
 }
 
+// MuxerFactory returns the muxer factory registered for a format id, or
+// ErrNotFound.
 func (r *SimpleRegistry) MuxerFactory(format av.FormatID) (MuxerFactory, error) {
 	factory, ok := r.muxers[format]
 	if !ok {
@@ -114,6 +143,8 @@ func (r *SimpleRegistry) MuxerFactory(format av.FormatID) (MuxerFactory, error) 
 	return factory, nil
 }
 
+// MuxerDescriptor returns the capability descriptor registered for a
+// format's muxer, or ErrNotFound.
 func (r *SimpleRegistry) MuxerDescriptor(format av.FormatID) (Descriptor, error) {
 	desc, ok := r.muxerDescriptors[format]
 	if !ok {

@@ -7,6 +7,8 @@ import (
 	"github.com/thesyncim/goav/pipeline"
 )
 
+// StageConfig configures a Stage: the opened filter and the caller-owned
+// result scratch bounding per-message output.
 type StageConfig struct {
 	Name string
 	// Detail is optional graph-rendering context for humans.
@@ -18,6 +20,9 @@ type StageConfig struct {
 	Result Result
 }
 
+// Stage adapts a FrameFilter into a pipeline.Stage: frames are converted
+// through caller-owned results, events reach the filter before continuing
+// downstream.
 type Stage struct {
 	name    string
 	detail  string
@@ -30,6 +35,7 @@ type Stage struct {
 var _ pipeline.Stage = (*Stage)(nil)
 var _ pipeline.NodeDescriber = (*Stage)(nil)
 
+// NewStage wraps an opened filter as a stage; the filter is required.
 func NewStage(config StageConfig) (*Stage, error) {
 	if config.Filter == nil {
 		return nil, ErrNilFilter
@@ -49,14 +55,18 @@ func NewStage(config StageConfig) (*Stage, error) {
 	}, nil
 }
 
+// Name returns the stage's node name.
 func (s *Stage) Name() string {
 	return s.name
 }
 
+// DescribeNode reports the stage's spec entry for Describe.
 func (s *Stage) DescribeNode() pipeline.NodeSpec {
 	return pipeline.NodeSpec{Name: s.name, Kind: pipeline.NodeStage, Detail: s.detail}
 }
 
+// Handle filters one frame message (events pass to the filter first),
+// emitting converted frames downstream.
 func (s *Stage) Handle(ctx context.Context, msg *pipeline.Message, emitter pipeline.Emitter) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -86,6 +96,7 @@ func (s *Stage) Handle(ctx context.Context, msg *pipeline.Message, emitter pipel
 	}
 }
 
+// Close closes the wrapped filter once.
 func (s *Stage) Close() error {
 	if s.closed {
 		return nil

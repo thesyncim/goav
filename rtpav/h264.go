@@ -36,10 +36,13 @@ func NewH264Depacketizer(stream av.Stream, options ...VideoDepacketizerOption) *
 	}
 }
 
+// Codec reports the codec this depacketizer reassembles.
 func (d *H264Depacketizer) Codec() av.CodecID {
 	return av.CodecH264
 }
 
+// PushInto consumes one RTP packet (single NALU, STAP-A, or FU-A), appending
+// a completed Annex B access unit to out when the packet finishes one.
 func (d *H264Depacketizer) PushInto(ctx context.Context, pkt *rtp.Packet, payload PayloadCodec, out *DepacketizeResult) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -94,6 +97,7 @@ func (d *H264Depacketizer) PushInto(ctx context.Context, pkt *rtp.Packet, payloa
 	return d.assembler.emitPacket(pkt.Timestamp, payloadClockRate(payload, d.assembler.stream), frame, d.keyframe, out)
 }
 
+// FlushInto discards any partial access unit at end of stream.
 func (d *H264Depacketizer) FlushInto(context.Context, *DepacketizeResult) error {
 	d.assembler.resetPartial()
 	d.keyframe = false
@@ -101,6 +105,7 @@ func (d *H264Depacketizer) FlushInto(context.Context, *DepacketizeResult) error 
 	return nil
 }
 
+// HandleEvent resets reassembly state on discontinuities.
 func (d *H264Depacketizer) HandleEvent(ctx context.Context, event *av.Event) error {
 	affected := eventAffectsCodecStream(d.assembler.stream, d.Codec(), event)
 	if err := d.assembler.handleEvent(ctx, event); err != nil {

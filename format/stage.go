@@ -12,6 +12,8 @@ import (
 	"github.com/thesyncim/goav/pipeline"
 )
 
+// DemuxSourceConfig configures a DemuxSource: the opened demuxer, the
+// caller-owned read scratch, and the pacing mode/clock.
 type DemuxSourceConfig struct {
 	Name string
 	// Detail is optional graph-rendering context for humans.
@@ -31,6 +33,8 @@ type DemuxSourceConfig struct {
 	Clock av.Clock
 }
 
+// MuxStageConfig configures a MuxStage: the opened muxer and the
+// caller-owned write scratch.
 type MuxStageConfig struct {
 	Name string
 	// Detail is optional graph-rendering context for humans.
@@ -41,6 +45,9 @@ type MuxStageConfig struct {
 	Result WriteResult
 }
 
+// DemuxSource adapts a Demuxer into a pipeline.Source: it pumps ReadInto
+// results downstream, paces realtime playback on the configured clock, and —
+// when the demuxer implements Seeker — honours Seek/Segment time controls.
 type DemuxSource struct {
 	name    string
 	detail  string
@@ -76,6 +83,8 @@ type demuxWindow struct {
 	done   []av.StreamID
 }
 
+// MuxStage adapts a Muxer into a pipeline.Stage: packet messages are written
+// to the container in delivery order; events pass through.
 type MuxStage struct {
 	name    string
 	detail  string
@@ -190,6 +199,7 @@ func (s *controllableDemuxSource) Control(_ context.Context, msg *pipeline.Messa
 	}
 }
 
+// NewMuxStage wraps an opened muxer as a stage; the muxer is required.
 func NewMuxStage(config MuxStageConfig) (*MuxStage, error) {
 	if config.Muxer == nil {
 		return nil, ErrNilMuxer
@@ -206,22 +216,29 @@ func NewMuxStage(config MuxStageConfig) (*MuxStage, error) {
 	}, nil
 }
 
+// Name returns the source's node name.
 func (s *DemuxSource) Name() string {
 	return s.name
 }
 
+// Name returns the stage's node name.
 func (s *MuxStage) Name() string {
 	return s.name
 }
 
+// DescribeNode reports the source's spec entry for Describe.
 func (s *DemuxSource) DescribeNode() pipeline.NodeSpec {
 	return pipeline.NodeSpec{Name: s.name, Kind: pipeline.NodeSource, Detail: s.detail}
 }
 
+// DescribeNode reports the stage's spec entry for Describe.
 func (s *MuxStage) DescribeNode() pipeline.NodeSpec {
 	return pipeline.NodeSpec{Name: s.name, Kind: pipeline.NodeStage, Detail: s.detail}
 }
 
+// Start announces the demuxer's streams, then pumps packets and events until
+// end of media, applying recorded time controls between reads and pacing
+// delivery when realtime.
 func (s *DemuxSource) Start(ctx context.Context, emitter pipeline.Emitter) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -384,6 +401,7 @@ func (s *DemuxSource) windowFinished() bool {
 	return true
 }
 
+// Handle writes one packet message to the muxer; events pass downstream.
 func (s *MuxStage) Handle(ctx context.Context, msg *pipeline.Message, emitter pipeline.Emitter) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -416,6 +434,7 @@ func (s *MuxStage) Handle(ctx context.Context, msg *pipeline.Message, emitter pi
 	}
 }
 
+// Close closes the wrapped demuxer once.
 func (s *DemuxSource) Close() error {
 	if s.closed {
 		return nil
@@ -424,6 +443,7 @@ func (s *DemuxSource) Close() error {
 	return s.demuxer.Close()
 }
 
+// Close closes the wrapped muxer once, finalizing the container.
 func (s *MuxStage) Close() error {
 	if s.closed {
 		return nil
@@ -432,6 +452,8 @@ func (s *MuxStage) Close() error {
 	return s.muxer.Close()
 }
 
+// MarkFailed tells a transactional muxer the run failed, so its Close aborts
+// instead of committing.
 func (s *MuxStage) MarkFailed() {
 	if marker, ok := s.muxer.(interface{ MarkFailed() }); ok {
 		marker.MarkFailed()

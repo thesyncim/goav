@@ -7,6 +7,9 @@ import (
 	"github.com/thesyncim/goav/pipeline"
 )
 
+// DecoderStageConfig configures a DecoderStage: the opened decoder, the
+// caller-owned result scratch bounding per-message output, and event
+// behavior.
 type DecoderStageConfig struct {
 	Name string
 	// Detail is optional graph-rendering context for humans.
@@ -24,6 +27,9 @@ type DecoderStageConfig struct {
 	DropInputEvents bool
 }
 
+// EncoderStageConfig configures an EncoderStage: the opened encoder, the
+// caller-owned result scratch bounding per-message output, and output stream
+// stamping.
 type EncoderStageConfig struct {
 	Name string
 	// Detail is optional graph-rendering context for humans.
@@ -45,6 +51,9 @@ type EncoderStageConfig struct {
 	StampOutputStream bool
 }
 
+// DecoderStage adapts a Decoder into a pipeline.Stage: packets decode into
+// frames, events reach the decoder (codec changes are validated against the
+// opened stream), and decoder control requests surface as events.
 type DecoderStage struct {
 	name         string
 	detail       string
@@ -57,6 +66,9 @@ type DecoderStage struct {
 	closed       bool
 }
 
+// EncoderStage adapts an Encoder into a pipeline.Stage: frames encode into
+// packets (optionally restamped to the encoded output stream) and events
+// reach the encoder before continuing downstream.
 type EncoderStage struct {
 	name              string
 	detail            string
@@ -74,6 +86,8 @@ var _ pipeline.Stage = (*EncoderStage)(nil)
 var _ pipeline.NodeDescriber = (*DecoderStage)(nil)
 var _ pipeline.NodeDescriber = (*EncoderStage)(nil)
 
+// NewDecoderStage wraps an opened decoder as a stage; the decoder is
+// required.
 func NewDecoderStage(config DecoderStageConfig) (*DecoderStage, error) {
 	if config.Decoder == nil {
 		return nil, ErrNilDecoder
@@ -92,6 +106,8 @@ func NewDecoderStage(config DecoderStageConfig) (*DecoderStage, error) {
 	}, nil
 }
 
+// NewEncoderStage wraps an opened encoder as a stage; the encoder is
+// required.
 func NewEncoderStage(config EncoderStageConfig) (*EncoderStage, error) {
 	if config.Encoder == nil {
 		return nil, ErrNilEncoder
@@ -111,22 +127,28 @@ func NewEncoderStage(config EncoderStageConfig) (*EncoderStage, error) {
 	}, nil
 }
 
+// Name returns the stage's node name.
 func (s *DecoderStage) Name() string {
 	return s.name
 }
 
+// Name returns the stage's node name.
 func (s *EncoderStage) Name() string {
 	return s.name
 }
 
+// DescribeNode reports the stage's spec entry for Describe.
 func (s *DecoderStage) DescribeNode() pipeline.NodeSpec {
 	return pipeline.NodeSpec{Name: s.name, Kind: pipeline.NodeStage, Detail: s.detail}
 }
 
+// DescribeNode reports the stage's spec entry for Describe.
 func (s *EncoderStage) DescribeNode() pipeline.NodeSpec {
 	return pipeline.NodeSpec{Name: s.name, Kind: pipeline.NodeStage, Detail: s.detail}
 }
 
+// Handle decodes one packet message into frames (events pass to the decoder
+// first), emitting results downstream.
 func (s *DecoderStage) Handle(ctx context.Context, msg *pipeline.Message, emitter pipeline.Emitter) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -156,6 +178,8 @@ func (s *DecoderStage) Handle(ctx context.Context, msg *pipeline.Message, emitte
 	}
 }
 
+// Handle encodes one frame message into packets (events pass to the encoder
+// first), emitting results downstream.
 func (s *EncoderStage) Handle(ctx context.Context, msg *pipeline.Message, emitter pipeline.Emitter) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -185,6 +209,7 @@ func (s *EncoderStage) Handle(ctx context.Context, msg *pipeline.Message, emitte
 	}
 }
 
+// Close closes the wrapped decoder once.
 func (s *DecoderStage) Close() error {
 	if s.closed {
 		return nil
@@ -193,6 +218,7 @@ func (s *DecoderStage) Close() error {
 	return s.decoder.Close()
 }
 
+// Close closes the wrapped encoder once.
 func (s *EncoderStage) Close() error {
 	if s.closed {
 		return nil

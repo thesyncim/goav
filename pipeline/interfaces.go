@@ -7,14 +7,18 @@ import (
 	"github.com/thesyncim/goav/av"
 )
 
+// MessageKind says which payload field of a Message is set.
 type MessageKind string
 
+// The message kinds: exactly one payload per message.
 const (
 	MessagePacket MessageKind = "packet"
 	MessageFrame  MessageKind = "frame"
 	MessageEvent  MessageKind = "event"
 )
 
+// Message is the one unit that flows between nodes: a packet, a frame, or an
+// event, tagged by Kind. Exactly one payload pointer is non-nil.
 type Message struct {
 	Kind   MessageKind
 	Packet *av.Packet
@@ -22,6 +26,7 @@ type Message struct {
 	Event  *av.Event
 }
 
+// Reset clears the message for reuse.
 func (m *Message) Reset() {
 	m.Kind = ""
 	m.Packet = nil
@@ -29,11 +34,14 @@ func (m *Message) Reset() {
 	m.Event = nil
 }
 
+// Scratch is reusable per-worker working memory for nodes that assemble
+// messages and event bursts without allocating on the hot path.
 type Scratch struct {
 	Message Message
 	Events  []av.Event
 }
 
+// Reset clears the scratch for reuse, keeping allocated capacity.
 func (s *Scratch) Reset() {
 	s.Message.Reset()
 	for i := range s.Events {
@@ -42,13 +50,24 @@ func (s *Scratch) Reset() {
 	s.Events = s.Events[:0]
 }
 
+// DropPolicy says what a full node queue does with new messages — and doubles
+// as the recorded reason on drop counters (Stats DropReasons).
 type DropPolicy string
 
 const (
-	DropNever       DropPolicy = "never"
-	DropOldest      DropPolicy = "oldest"
-	DropNewest      DropPolicy = "newest"
-	DropUntilSync   DropPolicy = "until_sync"
+	// DropNever refuses to shed: a full queue fails the emit with
+	// ErrBackpressure instead of dropping.
+	DropNever DropPolicy = "never"
+	// DropOldest sheds the oldest queued message to admit the new one —
+	// keep-latest semantics for realtime previews.
+	DropOldest DropPolicy = "oldest"
+	// DropNewest sheds the incoming message when the queue is full.
+	DropNewest DropPolicy = "newest"
+	// DropUntilSync sheds until a sync point (keyframe) arrives, so a consumer
+	// resumes on decodable media.
+	DropUntilSync DropPolicy = "until_sync"
+	// DropNonKeyVideo sheds non-keyframe video first, preserving sync points
+	// and non-video media.
 	DropNonKeyVideo DropPolicy = "non_key_video"
 	// DropBlock never drops: a full queue blocks the producer until the consumer
 	// drains (true backpressure), instead of erroring. Source paces to the
@@ -78,6 +97,10 @@ type DropReporter interface {
 	DroppedMessages() uint64
 }
 
+// BufferPolicy configures one node's queue: capacity, overflow behavior
+// (Drop), staleness and byte budgets, and the copy bounds buffered execution
+// uses to keep branch payloads isolated. The zero value means direct
+// (unbuffered) execution.
 type BufferPolicy struct {
 	Capacity   int
 	Drop       DropPolicy
@@ -101,50 +124,73 @@ type BufferPolicy struct {
 	CopyAlways bool
 }
 
+// IsDirect reports whether the policy means unbuffered execution: no
+// capacity and no dropping mode.
 func (p BufferPolicy) IsDirect() bool {
 	return p.Capacity == 0 && (p.Drop == "" || p.Drop == DropNever)
 }
 
+// Emitter is how a source or stage hands a message downstream. Emit returns
+// ErrBackpressure when a strict queue is full and ErrClosed once the graph
+// has shut down.
 type Emitter interface {
 	Emit(context.Context, *Message) error
 }
 
+// Source is a graph entry node: Start runs the producing loop, emitting
+// until the media ends or the context is cancelled. Optional capabilities
+// (ControllableSource, NodeDescriber, DropReporter) are discovered by type
+// assertion.
 type Source interface {
 	Name() string
 	Start(context.Context, Emitter) error
 	Close() error
 }
 
+// Stage is a graph interior node: Handle processes one message and emits any
+// output downstream. A stage is called serially per node — no internal
+// locking is needed for per-message state.
 type Stage interface {
 	Name() string
 	Handle(context.Context, *Message, Emitter) error
 	Close() error
 }
 
+// Sink is a graph terminal node: Handle consumes one delivered message.
+// Returning an error fails the task.
 type Sink interface {
 	Name() string
 	Handle(context.Context, *Message) error
 	Close() error
 }
 
+// NodeDescriber is an optional node capability: a node that can describe
+// itself contributes its details (component, codec, format) to Spec.
 type NodeDescriber interface {
 	DescribeNode() NodeSpec
 }
 
+// NodeRef is the graph-unique name of an added node, used to connect routes
+// and look up stats.
 type NodeRef string
 
+// String returns the node name.
 func (r NodeRef) String() string {
 	return string(r)
 }
 
+// RoutePolicy says which messages a route forwards.
 type RoutePolicy string
 
+// The route policies: everything, one stream's messages, or one event type.
 const (
 	RouteAll      RoutePolicy = "all"
 	RouteByStream RoutePolicy = "by_stream"
 	RouteByEvent  RoutePolicy = "by_event"
 )
 
+// Route is one edge declaration: messages leaving From reach every To node,
+// filtered by Policy (Label carries the stream id or event type).
 type Route struct {
 	From   string
 	To     []string
@@ -152,12 +198,14 @@ type Route struct {
 	Label  string
 }
 
+// ByStream narrows the route to one stream's messages.
 func (r Route) ByStream(stream av.StreamID) Route {
 	r.Policy = RouteByStream
 	r.Label = string(stream)
 	return r
 }
 
+// ByEvent narrows the route to one event type.
 func (r Route) ByEvent(event av.EventType) Route {
 	r.Policy = RouteByEvent
 	r.Label = string(event)
@@ -171,6 +219,10 @@ type NodePauser interface {
 	SetNodePaused(ref NodeRef, paused bool) error
 }
 
+// Graph is the executable node graph: add nodes, connect routes, run, and
+// inspect. Mutations (Connect/Disconnect/Remove) are atomic with respect to
+// the running data plane — the runtime swaps routing snapshots, never locks
+// the message path.
 type Graph interface {
 	AddSource(Source, BufferPolicy) (NodeRef, error)
 	AddStage(Stage, BufferPolicy) (NodeRef, error)
@@ -185,6 +237,9 @@ type Graph interface {
 	Close() error
 }
 
+// GraphStats is a point-in-time counter snapshot for the whole graph, with
+// per-node detail under Nodes. Dropped counts deliberate sheds, keyed by
+// reason in DropReasons.
 type GraphStats struct {
 	Messages         uint64
 	Packets          uint64
@@ -199,6 +254,8 @@ type GraphStats struct {
 	Nodes            map[string]NodeStats
 }
 
+// NodeStats is one node's counter snapshot: messages in and out by kind,
+// drops by reason, and the last event seen.
 type NodeStats struct {
 	InMessages       uint64
 	InPackets        uint64
@@ -214,6 +271,8 @@ type NodeStats struct {
 	LastEventPresent bool
 }
 
+// GraphConfig configures a new graph: its name, realtime pacing, the default
+// node buffer policy, and the event channel capacity.
 type GraphConfig struct {
 	Name          string
 	Realtime      bool

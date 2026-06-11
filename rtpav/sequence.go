@@ -2,6 +2,8 @@ package rtpav
 
 import "github.com/pion/rtp"
 
+// SequenceDetector tracks RTP sequence numbers across wraparound, reporting
+// loss, reordering, and SSRC changes per pushed packet.
 type SequenceDetector struct {
 	initialized bool
 	ssrc        uint32
@@ -9,6 +11,7 @@ type SequenceDetector struct {
 	expected    uint16
 }
 
+// Reset clears the detector for a new stream.
 func (d *SequenceDetector) Reset() {
 	d.initialized = false
 	d.ssrc = 0
@@ -16,6 +19,8 @@ func (d *SequenceDetector) Reset() {
 	d.expected = 0
 }
 
+// Push advances the detector with one packet, filling missing (capacity
+// permitting) and returning the observed sequence state.
 func (d *SequenceDetector) Push(pkt *rtp.Packet, missing []uint16) SequenceState {
 	missing = missing[:0]
 	state := SequenceState{

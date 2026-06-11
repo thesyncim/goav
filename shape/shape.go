@@ -16,6 +16,7 @@ import (
 // out-of-band events.
 type MediaDomain string
 
+// The media domains: encoded packets, decoded frames, or event-only flow.
 const (
 	DomainPacket MediaDomain = "packet"
 	DomainFrame  MediaDomain = "frame"

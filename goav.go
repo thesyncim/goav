@@ -1,5 +1,19 @@
-// Package goav exposes the top-level runtime contracts for composing media
-// inputs, chains, taps, branches, destinations, and tasks.
+// Package goav is a pure-Go realtime media runtime: describe the media work
+// once, then compile it into an inspectable, controllable graph.
+//
+// The grammar is small. From(input) selects streams (.Audio(), .Video());
+// operations are methods on the chain (.Decode(), .Copy(), .Resize(),
+// .Encode(codec.VP9(...))); .To(destination) ends a chain at a File, URI,
+// Writer, Object, or Sink. Branches fan one stream point out, Mix, Composite,
+// and Select converge N arms into one, Tap names attach points, Flow reuses
+// operation lists, and Build(ctx) returns a Task — a running graph with
+// events, snapshots, runtime Attach/Detach, and live Control.
+//
+// Default(opts...) builds a runtime with the standard pure-Go adapters
+// registered; per-runtime registries accept external codecs, formats, and
+// filters through the same With* options. Errors are structured: every
+// refusal is a *BuildError carrying a codes.Code, the failing operation, and
+// concrete fixes.
 package goav
 
 import (
@@ -12,10 +26,18 @@ import (
 	"github.com/thesyncim/goav/snapshot"
 )
 
-type Packet = av.Packet
-type Frame = av.Frame
-type Event = av.Event
-type Stream = av.Stream
+// Media vocabulary aliases, re-exported so simple recipes and custom
+// components (PacketFunc, FrameFunc, SinkFunc) need no av import.
+type (
+	// Packet is one encoded media unit (av.Packet).
+	Packet = av.Packet
+	// Frame is one decoded media unit (av.Frame).
+	Frame = av.Frame
+	// Event is an out-of-band signal riding the data path (av.Event).
+	Event = av.Event
+	// Stream identifies one media stream an input carries (av.Stream).
+	Stream = av.Stream
+)
 
 // Runtime is the composition root for applications embedding goav.
 type Runtime interface {

@@ -15,12 +15,21 @@ import (
 	"github.com/thesyncim/goav/snapshot"
 )
 
+// Build-refusal sentinels. Every BuildError wraps one of these as its Cause,
+// so errors.Is classifies a refusal while errors.As + the Code field identify
+// it precisely.
 var (
+	// ErrUnsupportedBuild is the cause behind every build-shape refusal: the
+	// declared recipe or graph cannot be lowered as written.
 	ErrUnsupportedBuild = errors.New("goav: unsupported builder graph")
-	ErrNilSource        = errors.New("goav: nil source")
-	ErrNilStage         = errors.New("goav: nil stage")
-	ErrNilSink          = errors.New("goav: nil sink")
-	ErrNilWriter        = errors.New("goav: nil writer")
+	// ErrNilSource reports a nil source handed to a builder or constructor.
+	ErrNilSource = errors.New("goav: nil source")
+	// ErrNilStage reports a nil stage handed to a builder or .Do(...).
+	ErrNilStage = errors.New("goav: nil stage")
+	// ErrNilSink reports a nil sink handed to a builder or goav.Sink(...).
+	ErrNilSink = errors.New("goav: nil sink")
+	// ErrNilWriter reports a nil writer handed to a byte destination.
+	ErrNilWriter = errors.New("goav: nil writer")
 )
 
 // Runtime flow-control sentinels, surfaced on the front door so a SourceFunc,
@@ -39,8 +48,16 @@ var (
 	ErrClosed = pipeline.ErrClosed
 )
 
+// Option configures a runtime under construction: registries (codecs,
+// formats, filters), pacing (WithRealtime, WithClock), and graph policy
+// (WithBufferPolicy, WithEventCapacity). Registration is last-wins, so an
+// option layered over Default() can override a standard adapter.
 type Option func(*runtime)
 
+// New builds a bare runtime: per-runtime registries with no adapters beyond
+// content sniffing, realtime pacing on. Use Default(opts...) for a runtime
+// with the standard adapters already registered; use New when the application
+// controls every codec, format, and filter explicitly.
 func New(options ...Option) Runtime {
 	formats := format.NewRegistry()
 	formats.RegisterProber(format.DefaultProber())
@@ -56,6 +73,9 @@ func New(options ...Option) Runtime {
 	return runtime
 }
 
+// WithCodecAdapter registers a whole codec bundle at once: the callback
+// receives the runtime's codec registry. Use WithDecoder/WithEncoder for the
+// direct single-value form.
 func WithCodecAdapter(register func(*codec.SimpleRegistry)) Option {
 	return func(runtime *runtime) {
 		if register != nil {
@@ -64,18 +84,27 @@ func WithCodecAdapter(register func(*codec.SimpleRegistry)) Option {
 	}
 }
 
+// WithCodecDescriptor registers a codec descriptor without an implementation,
+// so capability checks (Explain, validation) recognize the codec even when
+// encode/decode factories come from elsewhere.
 func WithCodecDescriptor(desc codec.Descriptor) Option {
 	return WithCodecAdapter(func(registry *codec.SimpleRegistry) {
 		registry.RegisterDescriptor(desc)
 	})
 }
 
+// WithDecoder adds one decoder factory by descriptor — pass the
+// implementation directly, no registry callback. The descriptor's
+// capabilities drive compatibility checks before anything opens.
 func WithDecoder(desc codec.Descriptor, factory codec.DecoderFactory) Option {
 	return WithCodecAdapter(func(registry *codec.SimpleRegistry) {
 		registry.RegisterDecoder(desc, factory)
 	})
 }
 
+// WithEncoder adds one encoder factory by descriptor — pass the
+// implementation directly, no registry callback. The descriptor's
+// capabilities drive compatibility checks before anything opens.
 func WithEncoder(desc codec.Descriptor, factory codec.EncoderFactory) Option {
 	return WithCodecAdapter(func(registry *codec.SimpleRegistry) {
 		registry.RegisterEncoder(desc, factory)
@@ -115,6 +144,9 @@ func WithProber(prober format.Prober) Option {
 	})
 }
 
+// WithFormatAdapter registers a whole container-format bundle at once: the
+// callback receives the runtime's format registry. Use
+// WithMuxer/WithDemuxer/WithProber for the direct single-value form.
 func WithFormatAdapter(register func(*format.SimpleRegistry)) Option {
 	return func(runtime *runtime) {
 		if register != nil {
@@ -123,6 +155,9 @@ func WithFormatAdapter(register func(*format.SimpleRegistry)) Option {
 	}
 }
 
+// WithFilterAdapter registers a whole filter bundle at once: the callback
+// receives the runtime's filter registry. Use WithFilter for the direct
+// single-value form.
 func WithFilterAdapter(register func(*filter.SimpleRegistry)) Option {
 	return func(runtime *runtime) {
 		if register != nil {
@@ -131,18 +166,28 @@ func WithFilterAdapter(register func(*filter.SimpleRegistry)) Option {
 	}
 }
 
+// WithBufferPolicy sets the default node buffer policy for graphs this
+// runtime builds — the queue depth and overflow behavior between nodes.
+// Branch-local .Buffer(flow....) declarations override it per branch.
 func WithBufferPolicy(policy pipeline.BufferPolicy) Option {
 	return func(runtime *runtime) {
 		runtime.buffer = policy
 	}
 }
 
+// WithEventCapacity sets the buffered capacity of the task event stream (and
+// of each Watch subscriber's channel). A watcher that falls behind by more
+// than this sheds events for itself only.
 func WithEventCapacity(capacity int) Option {
 	return func(runtime *runtime) {
 		runtime.eventCapacity = capacity
 	}
 }
 
+// WithRealtime selects pacing: true (the default) delivers file media when
+// its media time is due on the runtime clock, so Rate works as a live pacing
+// multiplier; false pumps at full speed (offline transcode) and rejects Rate
+// with format.ErrRateUnsupported.
 func WithRealtime(realtime bool) Option {
 	return func(runtime *runtime) {
 		runtime.realtime = realtime

@@ -35,10 +35,13 @@ func NewAV1Depacketizer(stream av.Stream, options ...VideoDepacketizerOption) *A
 	}
 }
 
+// Codec reports the codec this depacketizer reassembles.
 func (d *AV1Depacketizer) Codec() av.CodecID {
 	return av.CodecAV1
 }
 
+// PushInto consumes one RTP packet of AV1 aggregation elements, appending a
+// completed temporal-unit packet to out when the packet finishes one.
 func (d *AV1Depacketizer) PushInto(ctx context.Context, pkt *rtp.Packet, payload PayloadCodec, out *DepacketizeResult) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -99,6 +102,7 @@ func (d *AV1Depacketizer) PushInto(ctx context.Context, pkt *rtp.Packet, payload
 	return d.assembler.emitPacket(pkt.Timestamp, payloadClockRate(payload, d.assembler.stream), frame, d.keyframe, out)
 }
 
+// FlushInto discards any partial temporal unit at end of stream.
 func (d *AV1Depacketizer) FlushInto(context.Context, *DepacketizeResult) error {
 	d.assembler.resetPartial()
 	d.fragment = d.fragment[:0]
@@ -106,6 +110,7 @@ func (d *AV1Depacketizer) FlushInto(context.Context, *DepacketizeResult) error {
 	return nil
 }
 
+// HandleEvent resets reassembly state on discontinuities.
 func (d *AV1Depacketizer) HandleEvent(ctx context.Context, event *av.Event) error {
 	affected := eventAffectsCodecStream(d.assembler.stream, d.Codec(), event)
 	if err := d.assembler.handleEvent(ctx, event); err != nil {

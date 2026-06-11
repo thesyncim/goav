@@ -14,6 +14,9 @@ import (
 	"github.com/thesyncim/goav/shape"
 )
 
+// InputSpec is one declared job input: a file, URI, custom source, or source
+// provider, plus the optional name, MIME, and codec facts the planner uses
+// before opening it. Construct one with FileInput, URI, Source, or Input.
 type InputSpec struct {
 	input    format.Input
 	provider SourceProvider
@@ -24,6 +27,8 @@ type InputSpec struct {
 	err      error
 }
 
+// FileInput declares a file-like input read from reader; name carries the
+// extension format probing uses (a .ivf name selects the IVF demuxer).
 func FileInput(name string, reader io.Reader) InputSpec {
 	return InputSpec{
 		input: format.Input{
@@ -35,6 +40,7 @@ func FileInput(name string, reader io.Reader) InputSpec {
 	}
 }
 
+// URI declares an input opened by a registered format adapter from a URI.
 func URI(uri string) InputSpec {
 	return InputSpec{
 		input: format.Input{
@@ -45,17 +51,23 @@ func URI(uri string) InputSpec {
 	}
 }
 
+// Name overrides the input's name — the label selector narrowing
+// (InputName), errors, and Explain use.
 func (s InputSpec) Name(name string) InputSpec {
 	s.name = name
 	s.input.Name = name
 	return s
 }
 
+// MIME sets the input's MIME type, which drives format probing when the name
+// carries no extension.
 func (s InputSpec) MIME(mimeType string) InputSpec {
 	s.input.MIMEType = mimeType
 	return s
 }
 
+// Codec declares the input's codec when probing cannot discover it — typical
+// for live receives where the transport negotiated the codec out of band.
 func (s InputSpec) Codec(codec codec.CodecSpec) InputSpec {
 	s.codec = cloneCodecSpec(codec)
 	return s

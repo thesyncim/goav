@@ -7,6 +7,9 @@ import (
 	"github.com/thesyncim/goav/pipeline"
 )
 
+// Message is what a SinkFunc receives: one packet, frame, or event
+// (pipeline.Message). Exactly one of Packet, Frame, or Event is set,
+// according to Kind.
 type Message = pipeline.Message
 
 // Emit is how a custom stage (PacketFunc/FrameFunc/EventFunc) forwards output
@@ -20,6 +23,7 @@ type Emit struct {
 	message pipeline.Message
 }
 
+// Packet forwards one packet downstream; nil is a no-op.
 func (e *Emit) Packet(packet *av.Packet) error {
 	if packet == nil {
 		return nil
@@ -27,6 +31,7 @@ func (e *Emit) Packet(packet *av.Packet) error {
 	return e.emitter.Emit(e.ctx, e.packetMessage(packet))
 }
 
+// Frame forwards one frame downstream; nil is a no-op.
 func (e *Emit) Frame(frame *av.Frame) error {
 	if frame == nil {
 		return nil
@@ -34,6 +39,7 @@ func (e *Emit) Frame(frame *av.Frame) error {
 	return e.emitter.Emit(e.ctx, e.frameMessage(frame))
 }
 
+// Event forwards one out-of-band event downstream.
 func (e *Emit) Event(event av.Event) error {
 	return e.emitter.Emit(e.ctx, e.eventMessage(event))
 }
@@ -87,6 +93,8 @@ func (e *Emit) emitDelivery(msg *pipeline.Message) (PushResult, error) {
 	return PushResult{Accepted: err == nil}, err
 }
 
+// EOS emits end-of-stream for the given streams (or unscoped when none are
+// listed), letting downstream nodes flush and finalize.
 func (e *Emit) EOS(streams ...av.StreamID) error {
 	if len(streams) == 0 {
 		return e.Event(av.Event{Type: av.EventEndOfStream})
@@ -99,6 +107,9 @@ func (e *Emit) EOS(streams ...av.StreamID) error {
 	return nil
 }
 
+// PacketFunc wraps a function as a packet-processing stage for .Do(...):
+// fn observes or transforms each packet and forwards output through emit.
+// Frames and events pass through untouched.
 func PacketFunc(name string, fn func(context.Context, *av.Packet, Emit) error) pipeline.Stage {
 	if fn == nil {
 		return nil
@@ -106,6 +117,9 @@ func PacketFunc(name string, fn func(context.Context, *av.Packet, Emit) error) p
 	return mediaFuncStage{name: name, packet: fn}
 }
 
+// FrameFunc wraps a function as a frame-processing stage for .Do(...): fn
+// observes or transforms each frame and forwards output through emit. Packets
+// and events pass through untouched.
 func FrameFunc(name string, fn func(context.Context, *av.Frame, Emit) error) pipeline.Stage {
 	if fn == nil {
 		return nil
@@ -113,6 +127,9 @@ func FrameFunc(name string, fn func(context.Context, *av.Frame, Emit) error) pip
 	return mediaFuncStage{name: name, frame: fn}
 }
 
+// EventFunc wraps a function as an event-observing stage for .Do(...): fn
+// sees each event, and every message (the event included) continues
+// downstream.
 func EventFunc(name string, fn func(context.Context, av.Event) error) pipeline.Stage {
 	if fn == nil {
 		return nil
@@ -120,6 +137,8 @@ func EventFunc(name string, fn func(context.Context, av.Event) error) pipeline.S
 	return mediaFuncStage{name: name, event: fn}
 }
 
+// SinkFunc wraps a function as a terminal sink for goav.Sink(...): fn
+// receives every delivered message. Returning an error fails the task.
 func SinkFunc(name string, fn func(context.Context, Message) error) pipeline.Sink {
 	if fn == nil {
 		return nil

@@ -90,6 +90,9 @@ func sinkDestination(sink pipeline.Sink) destinationSpec {
 	return destinationSpec{id: destinationSpecSeq.Add(1), sink: sink, name: name}
 }
 
+// Custom wraps a reusable DestinationProvider as a destination value: the
+// provider owns naming, contract, and opening, while the returned Destination
+// stays the stable routing handle branches share.
 func Custom(name string, provider DestinationProvider, opts ...DestinationOption) Destination {
 	spec := customDestination(name, provider)
 	for i := range opts {
@@ -129,6 +132,9 @@ func customDestination(name string, provider DestinationProvider) destinationSpe
 	return spec
 }
 
+// Writer creates a byte destination opened on demand: the callback runs after
+// goav has selected the format and streams, so the writer sees the final
+// destination metadata (DestinationInfo). The writer closes exactly once.
 func Writer(name string, open WriterOpenFunc, opts ...DestinationOption) Destination {
 	spec := destinationSpec{
 		id:     destinationSpecSeq.Add(1),
@@ -147,6 +153,8 @@ func Writer(name string, open WriterOpenFunc, opts ...DestinationOption) Destina
 	return Destination{spec: spec}
 }
 
+// WriteCloser wraps an already-open io.WriteCloser as a byte destination;
+// goav closes it exactly once when the chain finishes.
 func WriteCloser(name string, writer io.WriteCloser, opts ...DestinationOption) Destination {
 	return Writer(name, func(context.Context, DestinationInfo) (io.WriteCloser, error) {
 		if writer == nil {
@@ -156,6 +164,9 @@ func WriteCloser(name string, writer io.WriteCloser, opts ...DestinationOption) 
 	}, opts...)
 }
 
+// Object creates a transactional byte destination for writers with explicit
+// commit/abort semantics, such as a multipart object-store upload: Commit
+// runs after a successful run or drained detach, Abort on failure.
 func Object(name string, open ObjectOpenFunc, opts ...DestinationOption) Destination {
 	return Writer(name, func(ctx context.Context, info DestinationInfo) (io.WriteCloser, error) {
 		if open == nil {
@@ -203,6 +214,8 @@ func (w nopDestinationWriter) Close() error {
 	return nil
 }
 
+// MIME sets the destination's MIME type, which drives output format probing
+// when the name carries no extension and is reported to destination openers.
 func MIME(mimeType string) DestinationOption {
 	return func(spec *destinationSpec) {
 		if spec != nil {
@@ -211,6 +224,8 @@ func MIME(mimeType string) DestinationOption {
 	}
 }
 
+// Format pins the destination's container format explicitly instead of
+// probing it from the name or MIME type.
 func Format(format av.FormatID) DestinationOption {
 	return func(spec *destinationSpec) {
 		if spec != nil {
@@ -219,6 +234,8 @@ func Format(format av.FormatID) DestinationOption {
 	}
 }
 
+// Metadata attaches caller metadata to the destination; openers receive it on
+// DestinationInfo (an uploader can store it as object metadata).
 func Metadata(metadata av.Metadata) DestinationOption {
 	return func(spec *destinationSpec) {
 		if spec != nil {

@@ -11,6 +11,9 @@ import (
 	"github.com/thesyncim/goav/shape"
 )
 
+// SourceFunc is the body of a custom source: push packets, frames, or events
+// until the media ends (push.EOS) or the context is cancelled. The returned
+// error stops the task; a clean EOS return ends the stream naturally.
 type SourceFunc func(context.Context, SourcePush) error
 
 // PushResult reports what happened to one push across its matching downstream
@@ -60,6 +63,8 @@ func (p *SourcePush) Packet(packet *av.Packet) (PushResult, error) {
 	return p.emit.packetDelivery(packet)
 }
 
+// Frame delivers one decoded frame. See SourcePush for the PushResult and
+// ErrBackpressure/ErrClosed flow-control contract.
 func (p *SourcePush) Frame(frame *av.Frame) (PushResult, error) {
 	if frame == nil {
 		return PushResult{}, nil
@@ -89,6 +94,8 @@ func (p *SourcePush) Event(event av.Event) (PushResult, error) {
 	return p.emit.eventDelivery(event)
 }
 
+// EOS ends the given streams (or the source's declared stream when none are
+// listed): downstream nodes flush and destinations finalize naturally.
 func (p *SourcePush) EOS(streams ...av.StreamID) error {
 	if len(streams) == 0 && p.stream != "" {
 		streams = []av.StreamID{p.stream}
@@ -101,6 +108,12 @@ type sourceInputSpec struct {
 	fn    SourceFunc
 }
 
+// Source declares a custom input the application pushes media into: spec
+// states the media facts the planner needs before the source opens
+// (shape.Packet, shape.Frame, or shape.Event plus format facts), and fn runs
+// on the task pushing through the SourcePush. Custom sources participate in
+// streams, branches, taps, explain, and runtime attach exactly like built-in
+// inputs.
 func Source(name string, spec shape.Spec, fn SourceFunc) InputSpec {
 	spec = normalizeCustomSourceShape(name, spec)
 	return InputSpec{

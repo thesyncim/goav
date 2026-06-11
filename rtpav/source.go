@@ -12,6 +12,9 @@ import (
 	"github.com/thesyncim/goav/pipeline"
 )
 
+// SourceConfig assembles an RTP Source: the transport reader, optional
+// feedback writer and jitter buffer, the depacketizers per codec, and the
+// per-read output bounds.
 type SourceConfig struct {
 	Name          string
 	Detail        string
@@ -30,6 +33,10 @@ type SourceConfig struct {
 	MaxPackets  int
 }
 
+// Source adapts a PacketReader into a pipeline.Source: RTP is read,
+// optionally reordered, depacketized into av.Packets, stamped with media
+// timestamps, and emitted with loss/discontinuity events; RTCP feedback flows
+// back through the FeedbackWriter.
 type Source struct {
 	name          string
 	detail        string
@@ -59,6 +66,8 @@ type sourceTimestampState struct {
 var _ pipeline.Source = (*Source)(nil)
 var _ pipeline.NodeDescriber = (*Source)(nil)
 
+// NewSource builds an RTP source; the receiver is required and unset bounds
+// take small defaults.
 func NewSource(config SourceConfig) (*Source, error) {
 	if config.Receiver == nil {
 		return nil, ErrNilReceiver
@@ -96,14 +105,18 @@ func NewSource(config SourceConfig) (*Source, error) {
 	}, nil
 }
 
+// Name returns the source's node name.
 func (s *Source) Name() string {
 	return s.name
 }
 
+// DescribeNode reports the source's spec entry for Describe.
 func (s *Source) DescribeNode() pipeline.NodeSpec {
 	return pipeline.NodeSpec{Name: s.name, Kind: pipeline.NodeSource, Detail: s.detail}
 }
 
+// Start announces the declared streams, then reads, reorders, and
+// depacketizes RTP until io.EOF, flushing partial state at end of stream.
 func (s *Source) Start(ctx context.Context, emitter pipeline.Emitter) error {
 	if s.closed {
 		return ErrClosed
@@ -129,6 +142,7 @@ func (s *Source) Start(ctx context.Context, emitter pipeline.Emitter) error {
 	}
 }
 
+// Close closes the wrapped receiver once.
 func (s *Source) Close() error {
 	if s.closed {
 		return nil

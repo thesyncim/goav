@@ -2,11 +2,15 @@ package filter
 
 import "sort"
 
+// SimpleRegistry is the per-runtime filter registry: factories and
+// capability descriptors keyed by filter name. Registration is last-wins; it
+// is populated at runtime construction and read-only afterwards.
 type SimpleRegistry struct {
 	factories   map[string]Factory
 	descriptors map[string]Descriptor
 }
 
+// NewRegistry returns an empty filter registry.
 func NewRegistry() *SimpleRegistry {
 	return &SimpleRegistry{
 		factories:   make(map[string]Factory),
@@ -14,6 +18,8 @@ func NewRegistry() *SimpleRegistry {
 	}
 }
 
+// RegisterFactory records a filter factory under its descriptor's name; last
+// registration wins.
 func (r *SimpleRegistry) RegisterFactory(desc Descriptor, factory Factory) {
 	if factory != nil {
 		r.factories[desc.Name] = factory
@@ -21,6 +27,7 @@ func (r *SimpleRegistry) RegisterFactory(desc Descriptor, factory Factory) {
 	}
 }
 
+// Factory returns the factory registered under name, or ErrNotFound.
 func (r *SimpleRegistry) Factory(name string) (Factory, error) {
 	factory, ok := r.factories[name]
 	if !ok {
@@ -40,6 +47,8 @@ func (r *SimpleRegistry) Descriptors() []Descriptor {
 	return out
 }
 
+// Descriptor returns the capability descriptor registered under name, or
+// ErrNotFound.
 func (r *SimpleRegistry) Descriptor(name string) (Descriptor, error) {
 	desc, ok := r.descriptors[name]
 	if !ok {

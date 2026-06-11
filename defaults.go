@@ -13,6 +13,8 @@ import (
 	webmadapter "github.com/thesyncim/goav/container/webm"
 )
 
+// WithDefaults registers the full standard adapter set — formats, codecs,
+// and filters — in one option; Default(opts...) is the usual entry point.
 func WithDefaults() Option {
 	return func(runtime *runtime) {
 		WithStdFormats()(runtime)
@@ -21,6 +23,8 @@ func WithDefaults() Option {
 	}
 }
 
+// WithStdFormats registers the standard container adapters: IVF, Annex B,
+// Matroska, and WebM.
 func WithStdFormats() Option {
 	return func(runtime *runtime) {
 		ivfadapter.Register(runtime.formats)
@@ -30,6 +34,8 @@ func WithStdFormats() Option {
 	}
 }
 
+// WithStdCodecs registers the standard pure-Go codec adapters: Opus, VP8/VP9,
+// AV1, and H264.
 func WithStdCodecs() Option {
 	return func(runtime *runtime) {
 		gopusadapter.Register(runtime.codecs)
@@ -39,6 +45,7 @@ func WithStdCodecs() Option {
 	}
 }
 
+// WithStdFilters registers the standard frame filters: resample and resize.
 func WithStdFilters() Option {
 	return func(runtime *runtime) {
 		resampleadapter.Register(runtime.filters)

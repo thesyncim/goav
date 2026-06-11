@@ -11,6 +11,10 @@ import (
 	"github.com/thesyncim/goav/shape"
 )
 
+// Intent is the normalized build plan derived from a Job before graph
+// compilation: inputs, stream chains with their ordered operations, and
+// deduplicated destinations. It is a read-only projection used by planning
+// and tests; applications normally read plan.Report from Explain instead.
 type Intent struct {
 	Name         string
 	Inputs       []inputIntent
@@ -48,6 +52,11 @@ type streamIntent struct {
 	Destinations []string
 }
 
+// OperationSpec is one chain operation in normalized form — the single
+// representation every chain (stream, branch, flow, join arm) lowers to.
+// Kind says which fields apply: Decode/Encode carry codec specs, Transform a
+// resize/resample, Stage a custom stage, Tap an attach point, and Shape the
+// annotation/solver fields (Shape, Auto, Require, Prefer).
 type OperationSpec struct {
 	Kind      plan.OperationKind
 	Component string
@@ -86,6 +95,11 @@ type policyIntent struct {
 	Realtime bool
 }
 
+// CodecChangePolicy says how a decoding chain reacts when a live source
+// renegotiates its codec mid-stream: whether a compatible decoder is rebound
+// in place, whether a keyframe is requested after the switch, whether media
+// is dropped until a sync point, and whether a different codec fails the
+// chain instead of rebinding.
 type CodecChangePolicy struct {
 	RebindCompatible     bool
 	RequestKeyframe      bool
@@ -93,6 +107,9 @@ type CodecChangePolicy struct {
 	FailOnDifferentCodec bool
 }
 
+// RealtimeCodecChangePolicy is the live-receive default: rebind compatible
+// decoders, request a keyframe, drop until sync, and fail on a genuinely
+// different codec.
 func RealtimeCodecChangePolicy() CodecChangePolicy {
 	return CodecChangePolicy{
 		RebindCompatible:     true,

@@ -47,6 +47,9 @@ func codecSpecOutputShapes(spec codec.CodecSpec, input shape.Spec) shape.Set {
 	return shape.Set{out}
 }
 
+// InputShapes reports the media shapes the transform can consume (its
+// shape.Contract input side): video frames for a resize, audio frames for a
+// resample.
 func (spec TransformSpec) InputShapes() shape.Set {
 	switch {
 	case spec.Resize != nil:
@@ -58,6 +61,8 @@ func (spec TransformSpec) InputShapes() shape.Set {
 	}
 }
 
+// OutputShapes reports the shape the transform produces for the given input:
+// the input shape with the resized geometry or resampled audio layout applied.
 func (spec TransformSpec) OutputShapes(input shape.Spec) shape.Set {
 	out := input
 	switch {
@@ -81,6 +86,8 @@ func (spec TransformSpec) OutputShapes(input shape.Spec) shape.Set {
 	return shape.Set{out}
 }
 
+// InputShapes reports the media shapes the operation can consume (its
+// shape.Contract input side); nil means the operation accepts anything.
 func (operation OperationSpec) InputShapes() shape.Set {
 	switch operation.Kind {
 	case plan.OpDecode:
@@ -111,6 +118,8 @@ func (operation OperationSpec) InputShapes() shape.Set {
 	}
 }
 
+// OutputShapes reports the shapes the operation produces for the given input
+// — the shape-propagation step the chain validator and solver walk.
 func (operation OperationSpec) OutputShapes(input shape.Spec) shape.Set {
 	switch operation.Kind {
 	case plan.OpDecode:

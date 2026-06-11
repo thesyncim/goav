@@ -47,6 +47,10 @@ type TransactionalDestinationWriter interface {
 	Abort(context.Context) error
 }
 
+// DestinationContract declares what a destination can accept before it
+// opens: whether it consumes muxed bytes (ByteStream) or media messages, and
+// the formats, MIME types, protocol, and realtime/seek capabilities the
+// planner may rely on when selecting the output format.
 type DestinationContract struct {
 	ByteStream bool
 	Seekable   bool
@@ -67,10 +71,17 @@ type DestinationInfo struct {
 	Realtime bool
 }
 
+// DestinationOption configures a destination constructor: Format pins the
+// container, MIME sets the type, Metadata attaches caller metadata.
 type DestinationOption func(*destinationSpec)
 
+// WriterOpenFunc opens the byte writer behind a goav.Writer destination once
+// goav has resolved the output format and streams (the DestinationInfo).
 type WriterOpenFunc func(context.Context, DestinationInfo) (io.WriteCloser, error)
 
+// ObjectOpenFunc opens the transactional writer behind a goav.Object
+// destination: Commit runs after success, Abort after failure, Close exactly
+// once either way.
 type ObjectOpenFunc func(context.Context, DestinationInfo) (TransactionalDestinationWriter, error)
 
 type destinationBinding struct {
@@ -143,6 +154,10 @@ func destinationSpecEmpty(dest destinationSpec) bool {
 		dest.err == nil
 }
 
+// BranchSpec is one finished branch declaration: the operations and
+// destinations a Branch(...) builder accumulated, ready for .Branches(...) on
+// a stream chain or Task.Attach at runtime. Values are immutable snapshots —
+// reusing a builder cannot mutate a spec already passed along.
 type BranchSpec struct {
 	name         string
 	media        av.MediaType
@@ -177,6 +192,10 @@ type branchSource interface {
 	branchSource() branchSourceBinding
 }
 
+// Branch starts a named downstream branch: operations chain onto it exactly
+// like a stream chain (.Decode, .Resize, .Encode, .Do, ...), .From(tap)
+// anchors it at an earlier point, and .To(destinations...) finishes it into a
+// BranchSpec. Names must be unique within one Branches or Attach call.
 func Branch(name string) *branchBuilder {
 	return &branchBuilder{spec: BranchSpec{name: name}}
 }

@@ -16,24 +16,40 @@ import (
 	"github.com/thesyncim/goav/rtpav"
 )
 
+// WebRTC sentinels, matched with errors.Is.
 var (
-	ErrClosed             = errors.New("webrtcav: closed")
+	// ErrClosed reports a call on a closed session, reader, or track set.
+	ErrClosed = errors.New("webrtcav: closed")
+	// ErrInvalidCodecUpdate reports a codec update missing the facts a live
+	// reader needs to adopt it.
 	ErrInvalidCodecUpdate = errors.New("webrtcav: invalid codec update")
-	ErrNilTrack           = errors.New("webrtcav: nil track")
-	ErrNilSession         = errors.New("webrtcav: nil session")
-	ErrStreamExists       = errors.New("webrtcav: stream already exists")
-	ErrTrackQueueFull     = errors.New("webrtcav: track queue full")
-	ErrUnknownStream      = errors.New("webrtcav: unknown stream")
+	// ErrNilTrack reports a remote track without a Pion track handle.
+	ErrNilTrack = errors.New("webrtcav: nil track")
+	// ErrNilSession reports a nil session handed to a constructor.
+	ErrNilSession = errors.New("webrtcav: nil session")
+	// ErrStreamExists reports a second track claiming an existing stream id
+	// where a replacement was not requested.
+	ErrStreamExists = errors.New("webrtcav: stream already exists")
+	// ErrTrackQueueFull reports an accepted track arriving faster than the
+	// session consumer drains them.
+	ErrTrackQueueFull = errors.New("webrtcav: track queue full")
+	// ErrUnknownStream reports an update naming a stream no reader owns.
+	ErrUnknownStream = errors.New("webrtcav: unknown stream")
 )
 
 const defaultTrackEventBuffer = 4
 
+// TrackRemoteAdapter is the default TrackAdapter: it reads RTP straight from
+// the Pion remote track, deriving the stream identity from the track.
 type TrackRemoteAdapter struct{}
 
+// NewTrackRemoteAdapter returns the default adapter.
 func NewTrackRemoteAdapter() TrackRemoteAdapter {
 	return TrackRemoteAdapter{}
 }
 
+// AdaptTrack wraps the remote track in a TrackReader, filling codec and
+// stream identity from the track when undeclared.
 func (TrackRemoteAdapter) AdaptTrack(ctx context.Context, remote RemoteTrack) (TrackReader, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
