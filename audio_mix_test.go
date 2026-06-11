@@ -370,9 +370,20 @@ func TestMixResamplesMismatchedArms(t *testing.T) {
 	rt := New(WithStdFilters())
 
 	var frames int
+	var peak int16
 	sink := Sink(SinkFunc("out", func(_ context.Context, m Message) error {
 		if m.Kind == pipeline.MessageFrame && m.Frame != nil && m.Frame.Audio != nil {
 			frames++
+			if got := m.Frame.Audio.SampleRate; got != 48000 {
+				t.Errorf("mixed frame sample rate = %d, want 48000 (the 24kHz arm must be resampled before mixing)", got)
+			}
+			for _, plane := range m.Frame.Planes {
+				for i := 0; i+1 < len(plane.Buffer.Bytes); i += 2 {
+					if v := int16(binary.LittleEndian.Uint16(plane.Buffer.Bytes[i:])); v > peak {
+						peak = v
+					}
+				}
+			}
 		}
 		return nil
 	}))
@@ -391,6 +402,11 @@ func TestMixResamplesMismatchedArms(t *testing.T) {
 	}
 	if frames < 1 {
 		t.Fatalf("mixed frames at sink = %d, want >=1 (24kHz arm auto-resampled to 48kHz, then mixed)", frames)
+	}
+	// Both arms carry a constant 100: where they overlap the mix sums to ~200,
+	// so a peak well above one arm's level proves both actually contributed.
+	if peak < 150 {
+		t.Fatalf("peak mixed amplitude = %d, want >=150 (both constant-100 arms summed)", peak)
 	}
 }
 

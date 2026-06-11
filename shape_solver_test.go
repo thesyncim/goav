@@ -182,6 +182,36 @@ func TestAutoEmptyPolicyRefusesConversion(t *testing.T) {
 	}
 }
 
+// TestAutoInsufficientPolicyRefusesStageConversion pins the refusal on the
+// hard-contract path: a stage whose InputShapes pin a different sample rate
+// needs a resample, the chain's .Auto(...) is active but allows only resize,
+// so the solver must refuse instead of inserting the disallowed conversion.
+func TestAutoInsufficientPolicyRefusesStageConversion(t *testing.T) {
+	stage := &shapeContractTestStage{
+		name:   "voice",
+		inputs: shape.Set{shape.Frame(av.MediaAudio, shape.Audio(48_000, codec.Stereo, ""))},
+	}
+	_, err := From(solverTestAudioSource("mic", 44_100, codec.Stereo, av.SampleFormatS16)).
+		Audio().
+		Auto(shape.AllowResize()).
+		Do(stage).
+		To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))).
+		UseRuntime(New(WithStdFilters())).
+		Build(context.Background())
+	var buildErr *BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "shape_conversion_refused" || !errors.Is(err, ErrUnsupportedBuild) {
+		t.Fatalf("err = %v, want shape_conversion_refused wrapping ErrUnsupportedBuild", err)
+	}
+	for _, want := range []string{
+		"stage-voice needs resample 44.1kHz→48kHz",
+		"add .Auto(shape.AllowResample()) to the chain",
+	} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("err = %v, want %q", err, want)
+		}
+	}
+}
+
 // TestShapeMismatchSuggestsExactAutoFix pins the solver-aware mismatch error:
 // without any .Auto(...) the chain still fails validation, but when a
 // conversion would fix it the error names the exact policy to add.

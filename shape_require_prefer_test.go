@@ -31,6 +31,19 @@ func TestRequireMetIsNoOp(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Describe(): %v", err)
 	}
+	// No-op means no-op: a satisfied requirement must not insert anything.
+	if strings.Contains(specText(planned), "resample") {
+		t.Fatalf("satisfied .Require(...) inserted a conversion:\n%s", specText(planned))
+	}
+	report, err := job.Explain(ctx)
+	if err != nil {
+		t.Fatalf("Explain(): %v", err)
+	}
+	for _, warning := range report.Warnings {
+		if warning.Code == "shape_conversion_inserted" {
+			t.Fatalf("satisfied .Require(...) reported an insertion: %+v", warning)
+		}
+	}
 	task, err := job.Build(ctx)
 	if err != nil {
 		t.Fatalf("Build(): %v", err)

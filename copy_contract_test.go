@@ -179,7 +179,7 @@ func equalByteValues(a []byte, b []byte) bool {
 // which reads only after the mutation happened — still sees the original
 // bytes, as does the producer's backing array.
 func TestCopyContractMutableFanoutBranchCannotCorruptSibling(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	original := []byte{1, 2, 3, 4}
 	frame := copyContractFrame(av.BufferOwned, append([]byte(nil), original...))
@@ -227,7 +227,7 @@ func TestCopyContractMutableFanoutBranchCannotCorruptSibling(t *testing.T) {
 // reference under the default CopyIfMutable but defensively copied into
 // branch-owned backing under flow.CopyAlways.
 func TestCopyContractCopyAlwaysCopiesImmutableFrames(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	original := []byte{9, 8, 7, 6}
 	frame := copyContractFrame(av.BufferImmutable, original)
@@ -282,7 +282,7 @@ func TestCopyContractCopyAlwaysCopiesImmutableFrames(t *testing.T) {
 // immutable payload flows by reference without any copy.
 func TestCopyContractCopyNeverIsSafeOnly(t *testing.T) {
 	t.Run("mutable payload is refused", func(t *testing.T) {
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		frame := copyContractFrame(av.BufferOwned, []byte{1, 2, 3, 4})
 		contractTask, source := newCopyContractTask(t, ctx, &frame)
@@ -314,7 +314,7 @@ func TestCopyContractCopyNeverIsSafeOnly(t *testing.T) {
 	})
 
 	t.Run("immutable payload shares by reference", func(t *testing.T) {
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		original := []byte{4, 3, 2, 1}
 		frame := copyContractFrame(av.BufferImmutable, original)

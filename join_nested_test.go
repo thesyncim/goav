@@ -269,6 +269,9 @@ func TestMixResamplesNestedMixOutput(t *testing.T) {
 	sink := Sink(SinkFunc("out", func(_ context.Context, m Message) error {
 		if m.Kind == pipeline.MessageFrame && m.Frame != nil && m.Frame.Audio != nil {
 			frames++
+			if got := m.Frame.Audio.SampleRate; got != 48000 {
+				t.Errorf("mixed frame sample rate = %d, want 48000 (the 24kHz sub-mix output must be resampled)", got)
+			}
 		}
 		return nil
 	}))

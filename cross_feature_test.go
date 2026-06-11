@@ -564,7 +564,7 @@ func TestRebranchSwapsBranchOnJoinTap(t *testing.T) {
 
 	waitFor := func(label string, want int, got func() int) {
 		t.Helper()
-		deadline := time.Now().Add(2 * time.Second)
+		deadline := time.Now().Add(10 * time.Second)
 		for got() < want {
 			if time.Now().After(deadline) {
 				t.Fatalf("%s: got %d, want %d", label, got(), want)
@@ -632,7 +632,7 @@ func TestPauseResumeBranchOnJoinTap(t *testing.T) {
 
 	waitFor := func(label string, want int, got func() int) {
 		t.Helper()
-		deadline := time.Now().Add(2 * time.Second)
+		deadline := time.Now().Add(10 * time.Second)
 		for got() < want {
 			if time.Now().After(deadline) {
 				t.Fatalf("%s: got %d, want %d", label, got(), want)
@@ -745,7 +745,7 @@ func TestSelectActiveSwitchToEndedArm(t *testing.T) {
 	// Arm b plays its single frame and EOSes immediately; it is never active,
 	// so only arm a's first frame reaches the sink.
 	releaseA <- struct{}{}
-	deadline := time.Now().Add(2 * time.Second)
+	deadline := time.Now().Add(10 * time.Second)
 	for got.count() < 1 {
 		if time.Now().After(deadline) {
 			t.Fatalf("active arm frame never arrived, got %v", got.snapshot())

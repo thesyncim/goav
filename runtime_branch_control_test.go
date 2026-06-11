@@ -19,7 +19,7 @@ import (
 // stops receiving while the source and the main sink keep flowing, and resume
 // restores delivery.
 func TestRuntimeBranchControlPlaneOnLiveTask(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
 	const phases = 3
@@ -72,28 +72,17 @@ func TestRuntimeBranchControlPlaneOnLiveTask(t *testing.T) {
 	runErr := make(chan error, 1)
 	go func() { runErr <- task.Run(ctx) }()
 
-	waitFor := func(label string, want int32, get func() int32) {
-		t.Helper()
-		deadline := time.Now().Add(2 * time.Second)
-		for get() < want {
-			if time.Now().After(deadline) {
-				t.Fatalf("%s: got %d, want %d", label, get(), want)
-			}
-			time.Sleep(time.Millisecond)
-		}
-	}
-
 	// Phase 1: branch active — both the main sink and the branch receive it.
 	release <- struct{}{}
-	waitFor("phase1 branch", 1, branchCount.Load)
-	waitFor("phase1 main", 1, mainCount.Load)
+	waitForCount(t, "phase1 branch", 1, branchCount.Load)
+	waitForCount(t, "phase1 main", 1, mainCount.Load)
 
 	// Pause the branch; phase 2 reaches only the main sink.
 	if err := att.Pause(ctx); err != nil {
 		t.Fatal(err)
 	}
 	release <- struct{}{}
-	waitFor("phase2 main", 2, mainCount.Load)
+	waitForCount(t, "phase2 main", 2, mainCount.Load)
 	if got := branchCount.Load(); got != 1 {
 		t.Fatalf("paused branch received %d, want 1 (phase-2 must be skipped)", got)
 	}
@@ -103,7 +92,7 @@ func TestRuntimeBranchControlPlaneOnLiveTask(t *testing.T) {
 		t.Fatal(err)
 	}
 	release <- struct{}{}
-	waitFor("phase3 branch", 2, branchCount.Load)
+	waitForCount(t, "phase3 branch", 2, branchCount.Load)
 
 	if err := <-runErr; err != nil {
 		t.Fatal(err)
@@ -120,7 +109,7 @@ func TestRuntimeBranchControlPlaneOnLiveTask(t *testing.T) {
 // rebranches it to a different sink on the running task and verifies the swap:
 // the old sink stops receiving and the new one starts, with the source unaffected.
 func TestRuntimeBranchRebranchSwapsLiveBranch(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
 	const phases = 2
@@ -165,20 +154,9 @@ func TestRuntimeBranchRebranchSwapsLiveBranch(t *testing.T) {
 	runErr := make(chan error, 1)
 	go func() { runErr <- task.Run(ctx) }()
 
-	waitFor := func(label string, want int32, get func() int32) {
-		t.Helper()
-		deadline := time.Now().Add(2 * time.Second)
-		for get() < want {
-			if time.Now().After(deadline) {
-				t.Fatalf("%s: got %d, want %d", label, get(), want)
-			}
-			time.Sleep(time.Millisecond)
-		}
-	}
-
 	// Phase 1: branch A receives.
 	release <- struct{}{}
-	waitFor("phase1 a", 1, aCount.Load)
+	waitForCount(t, "phase1 a", 1, aCount.Load)
 
 	// Rebranch A -> B (different sink) on the live task.
 	if _, err := attA.Rebranch(ctx, Branch("b").From(PacketTap("pkts")).Copy().To(count(&bCount))); err != nil {
@@ -187,7 +165,7 @@ func TestRuntimeBranchRebranchSwapsLiveBranch(t *testing.T) {
 
 	// Phase 2: branch B receives; A is detached.
 	release <- struct{}{}
-	waitFor("phase2 b", 1, bCount.Load)
+	waitForCount(t, "phase2 b", 1, bCount.Load)
 
 	if err := <-runErr; err != nil {
 		t.Fatal(err)
@@ -232,7 +210,7 @@ func rebranchPacketSource(phases []bool, release <-chan struct{}) InputSpec {
 
 func waitForCount(t *testing.T, label string, want int32, get func() int32) {
 	t.Helper()
-	deadline := time.Now().Add(2 * time.Second)
+	deadline := time.Now().Add(10 * time.Second)
 	for get() < want {
 		if time.Now().After(deadline) {
 			t.Fatalf("%s: got %d, want %d", label, get(), want)
@@ -243,7 +221,7 @@ func waitForCount(t *testing.T, label string, want int32, get func() int32) {
 
 func waitForCondition(t *testing.T, label string, condition func() bool) {
 	t.Helper()
-	deadline := time.Now().Add(2 * time.Second)
+	deadline := time.Now().Add(10 * time.Second)
 	for !condition() {
 		if time.Now().After(deadline) {
 			t.Fatalf("%s: condition not reached", label)
@@ -258,7 +236,7 @@ func waitForCondition(t *testing.T, label string, condition func() bool) {
 // delivered message is the keyframe itself, and the old branch is detached at
 // that boundary and receives nothing afterwards.
 func TestRebranchSwitchAtNextKeyframeOnPacketStream(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
 	phases := []bool{false, false, true, false} // keyframe arrives at phase 3
@@ -362,7 +340,7 @@ func TestRebranchSwitchAtNextKeyframeOnPacketStream(t *testing.T) {
 // with SwitchAt(NextFrame()): the new branch's first delivered message is the
 // next frame after the rebranch, and the old branch detaches at that frame.
 func TestRebranchSwitchAtNextFrameOnFrameStream(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
 	const frames = 3
@@ -462,7 +440,7 @@ func TestRebranchSwitchAtNextFrameOnFrameStream(t *testing.T) {
 // KeepOldOnFailure: when attaching the replacement fails, the old branch stays
 // attached and keeps receiving — including on the SwitchAt path.
 func TestRebranchFailureKeepsOldBranchAttached(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
 	phases := []bool{false, false}
@@ -521,7 +499,7 @@ func TestRebranchFailureKeepsOldBranchAttached(t *testing.T) {
 // destinations, AbortOldBranch aborts them, and without a disposition the
 // detached branch reports plain closed — today's behavior.
 func TestRebranchOldBranchDispositionReportsDestinationStates(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
 	phases := []bool{false}

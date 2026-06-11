@@ -3,8 +3,10 @@ package pipeline
 import (
 	"context"
 	"errors"
+	"runtime"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/thesyncim/goav/av"
 )
@@ -444,7 +446,12 @@ func TestGraphDirectRemoveDrainsInFlightDeliveries(t *testing.T) {
 
 	runErr := make(chan error, 1)
 	go func() { runErr <- graph.Run(ctx) }()
+	deadline := time.Now().Add(10 * time.Second)
 	for sink.delivered.Load() == 0 {
+		if time.Now().After(deadline) {
+			t.Fatal("sink received nothing before the deadline")
+		}
+		runtime.Gosched()
 	}
 	if err := graph.Remove(sinkRef); err != nil {
 		t.Fatal(err)

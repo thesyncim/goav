@@ -211,6 +211,50 @@ func TestWatchAfterDistributorDoneIsClosed(t *testing.T) {
 	}
 }
 
+// TestWatchSubscribePublishDistributeConcurrently stresses the distributor's
+// three concurrent entry points — graph events flowing through distribute,
+// task-originated publish, and live Watch subscription — against each other.
+// Bounded iterations, run under -race in the gate. Every watcher channel must
+// still close on shutdown (no torn watcher list, no leaked goroutine).
+func TestWatchSubscribePublishDistributeConcurrently(t *testing.T) {
+	graph := newWatchTestGraph(64)
+	task := newTask(graph, nil)
+
+	const events = 100
+	const watchers = 20
+	channels := make(chan (<-chan av.Event), watchers+1)
+	channels <- task.Watch() // start the distributor before the stress
+
+	var wg sync.WaitGroup
+	wg.Add(3)
+	go func() {
+		defer wg.Done()
+		for i := 0; i < watchers; i++ {
+			channels <- task.Watch(WatchTypes(av.EventStats))
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		for i := 0; i < events; i++ {
+			graph.events <- av.Event{Type: av.EventStats, Reason: strconv.Itoa(i)}
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		for i := 0; i < events; i++ {
+			task.watch.publish(av.Event{Type: av.EventEndOfStream, Reason: strconv.Itoa(i)})
+		}
+	}()
+	wg.Wait()
+	close(channels)
+	if err := task.Close(); err != nil {
+		t.Fatal(err)
+	}
+	for watch := range channels {
+		collectUntilClosed(t, watch)
+	}
+}
+
 func TestEventsReturnsUnderlyingGraphChannel(t *testing.T) {
 	graph := newWatchTestGraph(1)
 	task := newTask(graph, nil)
