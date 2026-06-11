@@ -291,6 +291,12 @@ const (
 	// BranchBufferUnsupported fires when an unbounded branch buffer is
 	// requested; the runtime does not support it yet.
 	BranchBufferUnsupported Code = "branch_buffer_unsupported"
+	// BufferPayloadUnsafe fires when buffered execution receives a mutable
+	// payload that the configured copy policy refuses to copy.
+	BufferPayloadUnsafe Code = "buffer_payload_unsafe"
+	// BufferPayloadTooLarge fires when buffered execution receives a payload
+	// larger than the configured copy bounds.
+	BufferPayloadTooLarge Code = "buffer_payload_too_large"
 	// CopyBranchSourceInvalid fires when a packet-copy branch starts from
 	// a point that is not packet-domain.
 	CopyBranchSourceInvalid Code = "copy_branch_source_invalid"
@@ -448,6 +454,9 @@ const (
 	// GraphPlanInvalid fires when a media graph plan is internally
 	// inconsistent; an internal invariant.
 	GraphPlanInvalid Code = "graph_plan_invalid"
+	// BufferBudgetMissing fires when a recipe needs a buffered graph but the
+	// propagated stream facts cannot size graph-owned packet/frame copies.
+	BufferBudgetMissing Code = "buffer_budget_missing"
 )
 
 // Diagnostic and decision codes: these never fail a build. They appear in

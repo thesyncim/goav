@@ -27,13 +27,42 @@ import (
 // are resampled before they reach this stage; a residual format mismatch still
 // fails the first mismatched frame defensively.
 type audioMixStage struct {
-	name string
-	out  av.StreamID
-	sync *joinSyncState
+	name    string
+	out     av.StreamID
+	sync    *joinSyncState
+	free    map[av.StreamID][]*av.Frame
+	output  av.Frame
+	audio   av.AudioFrame
+	message pipeline.Message
 }
 
 func newAudioMixStage(name string, inputs []av.StreamID, out av.StreamID, mode joinSyncMode) *audioMixStage {
-	return &audioMixStage{name: name, out: out, sync: newJoinSyncState(mode, inputs)}
+	return newAudioMixStageWithPrealloc(name, inputs, out, mode, 1)
+}
+
+func newAudioMixStageWithPrealloc(name string, inputs []av.StreamID, out av.StreamID, mode joinSyncMode, preallocDepth int) *audioMixStage {
+	if preallocDepth < 1 {
+		preallocDepth = 1
+	}
+	stage := &audioMixStage{
+		name: name,
+		out:  out,
+		sync: newJoinSyncStateWithPendingCap(mode, inputs, preallocDepth),
+		free: make(map[av.StreamID][]*av.Frame, len(inputs)),
+	}
+	stage.output.Planes = make([]av.Plane, 1)
+	stage.sync.recycle = stage.recycleMixFrame
+	for i := range inputs {
+		free := make([]*av.Frame, 0, preallocDepth)
+		for j := 0; j < preallocDepth; j++ {
+			free = append(free, &av.Frame{
+				Audio:  &av.AudioFrame{},
+				Planes: make([]av.Plane, 1),
+			})
+		}
+		stage.free[inputs[i]] = free
+	}
+	return stage
 }
 
 func (s *audioMixStage) Name() string { return s.name }
@@ -55,7 +84,7 @@ func (s *audioMixStage) Handle(ctx context.Context, msg *pipeline.Message, emitt
 		if msg.Frame == nil || msg.Frame.Audio == nil {
 			return nil
 		}
-		s.sync.buffer(cloneMixFrame(msg.Frame))
+		s.sync.buffer(s.cloneMixFrame(msg.Frame))
 		return s.drain(ctx, emitter)
 	case pipeline.MessageEvent:
 		if msg.Event == nil {
@@ -107,29 +136,41 @@ func (s *audioMixStage) drain(ctx context.Context, emitter pipeline.Emitter) err
 		if !ok {
 			return nil
 		}
-		mixed, err := mixS16Frames(compactJoinFrames(frames), s.out)
+		mixed, err := mixS16FramesInto(frames, s.out, &s.output, &s.audio)
 		if err != nil {
+			s.recycleStepFrames(frames)
 			return err
 		}
 		// The step's timing reference stamps the output (in arrival mode this
 		// is the first arm, exactly as before).
 		mixed.PTS = frames[ref].PTS
 		mixed.Duration = frames[ref].Duration
-		if err := emitter.Emit(ctx, &pipeline.Message{Kind: pipeline.MessageFrame, Frame: mixed}); err != nil {
+		s.recycleStepFrames(frames)
+		s.message.Kind = pipeline.MessageFrame
+		s.message.Packet = nil
+		s.message.Frame = mixed
+		s.message.Event = nil
+		if err := emitter.Emit(ctx, &s.message); err != nil {
 			return err
 		}
 	}
 }
 
 // mixS16Frames sums S16-interleaved audio frames sample-by-sample with clamping.
-func mixS16Frames(frames []*av.Frame, out av.StreamID) (*av.Frame, error) {
-	base := frames[0]
+func mixS16FramesInto(frames []*av.Frame, out av.StreamID, dst *av.Frame, audio *av.AudioFrame) (*av.Frame, error) {
+	base := firstMixFrame(frames)
+	if base == nil {
+		return nil, fmt.Errorf("goav: audio mix has no participating frames")
+	}
 	if base.Audio == nil || len(base.Planes) == 0 {
 		return nil, fmt.Errorf("goav: mix arm %q delivered a frame with no audio plane", base.StreamID)
 	}
 	n := len(base.Planes[0].Buffer.Bytes)
 	for i := range frames {
 		f := frames[i]
+		if f == nil {
+			continue
+		}
 		if f.Audio == nil || len(f.Planes) == 0 {
 			return nil, fmt.Errorf("goav: mix arm %q delivered a frame with no audio plane", f.StreamID)
 		}
@@ -145,10 +186,22 @@ func mixS16Frames(frames []*av.Frame, out av.StreamID) (*av.Frame, error) {
 		}
 	}
 	n -= n % 2 // whole int16 samples
-	mixed := make([]byte, n)
+	if cap(dst.Planes) < 1 {
+		dst.Planes = make([]av.Plane, 1)
+	}
+	dst.Planes = dst.Planes[:1]
+	mixed := dst.Planes[0].Buffer.Bytes
+	if cap(mixed) < n {
+		mixed = make([]byte, n)
+	} else {
+		mixed = mixed[:n]
+	}
 	for off := 0; off < n; off += 2 {
 		var sum int32
 		for i := range frames {
+			if frames[i] == nil {
+				continue
+			}
 			sum += int32(int16(binary.LittleEndian.Uint16(frames[i].Planes[0].Buffer.Bytes[off:])))
 		}
 		if sum > 32767 {
@@ -158,36 +211,93 @@ func mixS16Frames(frames []*av.Frame, out av.StreamID) (*av.Frame, error) {
 		}
 		binary.LittleEndian.PutUint16(mixed[off:], uint16(int16(sum)))
 	}
-	audio := *base.Audio
+	*audio = *base.Audio
 	audio.Samples = n / 2 / maxInt(base.Audio.Channels, 1)
-	return &av.Frame{
-		StreamID: out,
-		Type:     av.MediaAudio,
-		PTS:      base.PTS,
-		Duration: base.Duration,
-		Audio:    &audio,
-		// The mixed buffer is freshly allocated per step and never written
-		// again — published immutable, so a buffered graph (a Select over
-		// sub-mixes) may queue it by reference.
-		Planes: []av.Plane{{Buffer: av.Buffer{Bytes: mixed, Ownership: av.BufferImmutable}}},
-	}, nil
+	dst.StreamID = out
+	dst.Type = av.MediaAudio
+	dst.PTS = base.PTS
+	dst.Duration = base.Duration
+	dst.Audio = audio
+	dst.Video = nil
+	dst.Metadata = nil
+	dst.Planes[0] = av.Plane{
+		Buffer: av.Buffer{Bytes: mixed, Ownership: av.BufferBorrowed},
+		Stride: base.Planes[0].Stride,
+		Offset: base.Planes[0].Offset,
+	}
+	return dst, nil
 }
 
-func cloneMixFrame(frame *av.Frame) *av.Frame {
-	clone := *frame
-	if frame.Audio != nil {
-		audio := *frame.Audio
-		clone.Audio = &audio
+func firstMixFrame(frames []*av.Frame) *av.Frame {
+	for i := range frames {
+		if frames[i] != nil {
+			return frames[i]
+		}
 	}
-	clone.Planes = make([]av.Plane, len(frame.Planes))
+	return nil
+}
+
+func (s *audioMixStage) cloneMixFrame(frame *av.Frame) *av.Frame {
+	clone := s.takeMixFrame(frame.StreamID)
+	planes := clone.Planes
+	audio := clone.Audio
+	*clone = *frame
+	if frame.Audio != nil {
+		if audio == nil {
+			audio = &av.AudioFrame{}
+		}
+		*audio = *frame.Audio
+	}
+	clone.Audio = audio
+	clone.Video = nil
+	clone.Planes = planes
+	if cap(clone.Planes) < len(frame.Planes) {
+		clone.Planes = make([]av.Plane, len(frame.Planes))
+	}
+	clone.Planes = clone.Planes[:len(frame.Planes)]
 	for i := range frame.Planes {
+		bytes := clone.Planes[i].Buffer.Bytes
 		clone.Planes[i] = frame.Planes[i]
 		src := frame.Planes[i].Buffer.Bytes
-		bytes := make([]byte, len(src))
+		if frame.Planes[i].Buffer.Ownership == av.BufferImmutable {
+			continue
+		}
+		if cap(bytes) < len(src) {
+			bytes = make([]byte, len(src))
+		} else {
+			bytes = bytes[:len(src)]
+		}
 		copy(bytes, src)
 		clone.Planes[i].Buffer = av.Buffer{Bytes: bytes, Ownership: av.BufferOwned}
 	}
-	return &clone
+	return clone
+}
+
+func (s *audioMixStage) takeMixFrame(id av.StreamID) *av.Frame {
+	free := s.free[id]
+	if len(free) == 0 {
+		return &av.Frame{}
+	}
+	index := len(free) - 1
+	frame := free[index]
+	free[index] = nil
+	s.free[id] = free[:index]
+	return frame
+}
+
+func (s *audioMixStage) recycleStepFrames(frames []*av.Frame) {
+	for i := range frames {
+		s.recycleMixFrame(frames[i])
+		frames[i] = nil
+	}
+}
+
+func (s *audioMixStage) recycleMixFrame(frame *av.Frame) {
+	if frame == nil {
+		return
+	}
+	id := frame.StreamID
+	s.free[id] = append(s.free[id], frame)
 }
 
 // Mix sums N synchronized audio arms into one stream delivered to its
@@ -202,10 +312,11 @@ func Mix(arms ...JoinArm) *mixStream {
 }
 
 type mixStream struct {
-	arms   []JoinArm
-	encode *codec.CodecSpec
-	taps   []TapRef
-	sync   joinSyncMode
+	arms       []JoinArm
+	encode     *codec.CodecSpec
+	taps       []TapRef
+	operations []operationSpec
+	sync       joinSyncMode
 }
 
 // joinArm lets a Mix stand as an arm of an outer join: the outer join consumes
@@ -215,7 +326,7 @@ func (m *mixStream) joinArm() joinArmSpec {
 	if m == nil {
 		return joinArmSpec{}
 	}
-	return joinArmSpec{join: &joinSpec{kind: joinMix, arms: m.arms, encode: m.encode, taps: m.taps, sync: m.sync}}
+	return joinArmSpec{join: &joinSpec{kind: joinMix, arms: m.arms, encode: m.encode, operations: cloneOperationSpecs(m.operations), taps: m.taps, sync: m.sync}}
 }
 
 // SyncByPTS aligns the arms by presentation timestamp instead of arrival
@@ -229,6 +340,27 @@ func (m *mixStream) joinArm() joinArmSpec {
 // default pairs frames one-per-arm and is right for live same-clock sources.
 func (m *mixStream) SyncByPTS() *mixStream {
 	m.sync = joinSyncPTS
+	return m
+}
+
+// Auto lets the planner insert format conversions on the mixed output before a
+// terminal .Encode(...) or planned branches, using the same shape solver as a
+// normal stream chain.
+func (m *mixStream) Auto(policies ...shape.Policy) *mixStream {
+	m.operations = append(m.operations, operationSpecForAutoPolicy(policies))
+	return m
+}
+
+// Require asserts shape facts on the mixed output before the terminal encode or
+// planned branches.
+func (m *mixStream) Require(spec shape.Spec) *mixStream {
+	m.operations = append(m.operations, operationSpecForRequire(spec))
+	return m
+}
+
+// Prefer biases automatic conversion adapter selection on the mixed output.
+func (m *mixStream) Prefer(spec shape.Spec) *mixStream {
+	m.operations = append(m.operations, operationSpecForPreference(spec))
 	return m
 }
 
@@ -252,7 +384,7 @@ func (m *mixStream) Tap(tap TapRef) *mixStream {
 // accepts after decode. The mix output is a normal stream point: branches may
 // transform, encode, tap, and deliver independently.
 func (m *mixStream) Branches(branches ...BranchSpec) *Job {
-	return newJoinBranchesJob(joinMix, joinSpec{arms: m.arms, encode: m.encode, taps: m.taps, sync: m.sync}, branches)
+	return newJoinBranchesJob(joinMix, joinSpec{arms: m.arms, encode: m.encode, operations: cloneOperationSpecs(m.operations), taps: m.taps, sync: m.sync}, branches)
 }
 
 // To delivers the mixed stream to one or more destinations (a fanout when
@@ -261,7 +393,7 @@ func (m *mixStream) Branches(branches ...BranchSpec) *Job {
 // through the same Build/Run as every other recipe. It lowers to the one
 // joinSpec shared by every convergence builder.
 func (m *mixStream) To(destinations ...Destination) *Job {
-	return newJoinJob(joinMix, joinSpec{arms: m.arms, dests: destinations, encode: m.encode, taps: m.taps, sync: m.sync})
+	return newJoinJob(joinMix, joinSpec{arms: m.arms, dests: destinations, encode: m.encode, operations: cloneOperationSpecs(m.operations), taps: m.taps, sync: m.sync})
 }
 
 // mixJoinProfile is Mix's entry in the join table: audio arms, auto-decode for
@@ -272,6 +404,11 @@ func (m *mixStream) To(destinations ...Destination) *Job {
 var mixJoinProfile = joinProfile{
 	media:      av.MediaAudio,
 	decodeArms: true,
+	graphBuffer: &pipeline.BufferPolicy{
+		Capacity: realtimeRecipeBufferCapacity,
+		Drop:     pipeline.DropBlock,
+	},
+	graphBufferRealtimeOnly: true,
 	// The first arm's audio format is the mix target; later arms that differ
 	// get a conversion planned by the shape solver under the arm policy.
 	armExpected: func(p *joinPlan, stream av.Stream) shape.Spec {
@@ -287,7 +424,7 @@ var mixJoinProfile = joinProfile{
 	},
 	armPolicy: shape.AllowResample().Union(shape.AllowConvert()),
 	newStage: func(p *joinPlan, armIDs []av.StreamID) (pipeline.Stage, *pipeline.BufferPolicy) {
-		return newAudioMixStage(p.name, armIDs, av.StreamID(p.name), p.join.sync), nil
+		return newAudioMixStageWithPrealloc(p.name, armIDs, av.StreamID(p.name), p.join.sync, joinStagePreallocDepth(p.runtime)), nil
 	},
 	// The output id is the join's planned node name (mix, or mix-2 when
 	// nested under another mix); the format facts come from the first arm —

@@ -25,8 +25,8 @@ reusing one handle groups branches into one mux/sink group
 ## v0 STABLE
 
 Stable means: pinned against silent change, documented, and test-enforced —
-not "frozen forever". The governed surface is 314 approved identifiers
-(`api_surface_pin_test.go` + `testdata/api_surface.txt`: 124 root, 142
+not "frozen forever". The governed surface is 319 approved identifiers
+(`api_surface_pin_test.go` + `testdata/api_surface.txt`: 124 root, 147
 `errcode`, 28 `plan`, 13 `lifecycle`, 4 `snapshot`, 3 `graphrender`), every
 exported symbol documented (`doc_pin_test.go`), tiered in
 `docs/API_SURFACE.md`:
@@ -60,9 +60,6 @@ stable contracts.
 Exists and is tested, but numbers or semantics are expected to move
 (`docs/PERFORMANCE.md` "Experimental" is the performance side of this list):
 
-- **Mix join step cost** — ceiling-pinned at 16 allocs/step
-  (`TestAudioMixStepAllocCeiling`); slot reuse should lower it. Composite
-  shares the join machinery.
 - **Buffered copy-mode fanout cost** — per-target copy of borrowed payloads
   (`pipeline` `BenchmarkBufferedFanout/copy`); refcounted zero-copy fanout
   would remove it.
@@ -76,35 +73,6 @@ Exists and is tested, but numbers or semantics are expected to move
   (`join_nested_test.go`, `TestJoinDescribeEqualsBuildNestedMix`); deeper
   nesting compiles through the same recursion but has no dedicated proof or
   cost model.
-
-### Known gaps (core review)
-
-- **Live (blocking) join arms need an explicitly buffered runtime** — the
-  direct runner starts sources sequentially and delivers inline, so a
-  Mix/Composite arm that blocks in `Start` (any live source) starves later
-  arms on the default runtime. Workaround, pinned by
-  `TestMixSyncByPTSSeekArmMidRun`: `WithBufferPolicy` (non-lossy `DropBlock`;
-  add `CopyPacketBytes`/`CopyFrameBytes` budgets when an arm decodes, since
-  decoder output buffers are mutable and refuse to queue by reference).
-  Select already pins a buffered graph for control delivery; doing the same
-  for Mix/Composite needs an answer for decode-arm copy budgets first.
-- **`Keyframe`/`SetBitrate` need an explicitly buffered runtime** — untargeted
-  encoder controls ride node queues (`pipeline.NodeInjector`), which only the
-  buffered runner implements, so on the default direct graph `task.Control`
-  returns `ErrControlUnsupported` for them (the time-axis controls reach
-  sources through `InjectSource` and work everywhere). `Select` pins a
-  buffered graph for exactly this, so `SelectActive` works out of the box;
-  plain encode chains need `WithBufferPolicy` plus copy budgets, same as the
-  join-arm entry above. Fix direction: pin a buffered graph whenever the
-  recipe declares encoders, once decode-output copy budgets have an answer.
-- **No shape solving downstream of a join** — the solver runs per ARM
-  (`solveArmConversion`: arms converge on the first arm's format), but the
-  joined stream's own `.Encode(...)` and `.Branches(...)` paths lower without
-  it: a 44.1kHz mix into `codec.Opus()` (48kHz) plans no conversion and no
-  refusal, and a join branch's `.Auto(...)` is silently inert. Joins whose
-  arms already match the target format are unaffected. Fix direction: run the
-  branch/encode operation list through the same chain solver the stream path
-  uses, seeded with the joined stream's shape.
 
 ## Descriptor-only and deferred
 
@@ -121,9 +89,6 @@ Exists and is tested, but numbers or semantics are expected to move
 - **Internal-package layering** — measured on the cross-file reference graph
   and rejected: no boundary worth a package today (`docs/ARCHITECTURE.md`
   "Package layering"). Revisit only with a data-transfer seam.
-- **`goav.Intent` / `goav.OperationSpec` leakage** — frozen by the surface
-  pin so the list only shrinks; needs a design call (`docs/API_SURFACE.md`
-  tier D).
 - **Plain `task.Detach` drain/abort verbs** and **dedicated
   attach/detach/commit lifecycle events** — drain-commit is pinned where
   exposed (rebranch dispositions, stream removal); the standalone verbs and

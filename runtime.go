@@ -3,10 +3,12 @@ package goav
 import (
 	"context"
 	"errors"
+	"strings"
 	"sync"
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
+	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/filter"
 	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/lifecycle"
@@ -15,9 +17,10 @@ import (
 	"github.com/thesyncim/goav/snapshot"
 )
 
-// Build-refusal sentinels. Every BuildError wraps one of these as its Cause,
-// so errors.Is classifies a refusal while errors.As + the Code field identify
-// it precisely.
+// Build-refusal sentinels. Build-time BuildErrors wrap one of these as their
+// Cause, so errors.Is classifies a refusal while errors.As + the Code field
+// identify it precisely. Runtime safety wrappers may instead carry a pipeline
+// sentinel when preserving low-level errors.Is compatibility matters.
 var (
 	// ErrUnsupportedBuild is the cause behind every build-shape refusal: the
 	// declared recipe or graph cannot be lowered as written.
@@ -490,13 +493,76 @@ func (t *task) Run(ctx context.Context) error {
 	t.lifecycleMu.Lock()
 	t.started = true
 	t.lifecycleMu.Unlock()
-	err := t.graph.Run(ctx)
+	err := t.structuredRunError(t.graph.Run(ctx))
 	t.finishDestinations(err == nil)
 	t.lifecycleMu.Lock()
 	t.finished = true
 	t.runErr = err
 	t.lifecycleMu.Unlock()
 	return err
+}
+
+func (t *task) structuredRunError(err error) error {
+	if err == nil {
+		return nil
+	}
+	switch {
+	case errors.Is(err, pipeline.ErrBufferedMessageUnsafe):
+		return t.bufferedPayloadRunError(err, errcode.BufferPayloadUnsafe,
+			"a buffered edge refused a mutable payload that cannot be shared safely")
+	case errors.Is(err, pipeline.ErrMessageTooLarge):
+		return t.bufferedPayloadRunError(err, errcode.BufferPayloadTooLarge,
+			"a buffered edge received a payload larger than its copy bounds")
+	default:
+		return err
+	}
+}
+
+func (t *task) bufferedPayloadRunError(cause error, code errcode.Code, reason string) error {
+	details := []string{"cause=" + bufferedPayloadCauseName(cause)}
+	if branches := t.copyNeverBranchNames(); len(branches) != 0 {
+		details = append(details, "copy_never_branches="+strings.Join(branches, ","))
+	}
+	return &BuildError{
+		Code:      code,
+		Operation: "run task",
+		Node:      "buffered graph",
+		Reason:    reason,
+		Details:   details,
+		Suggestions: []string{
+			"for branch buffers, use flow.BufferCopyBounds(packetBytes, frameBytes) with bounds large enough for the payload",
+			"when using flow.CopyNever, emit av.BufferImmutable payloads only or switch to flow.CopyIfMutable/flow.CopyAlways",
+			"for runtime-level buffers, set goav.WithBufferPolicy(pipeline.BufferPolicy{Capacity: ..., Drop: pipeline.DropBlock, CopyPacketBytes: ..., CopyFrameBytes: ...})",
+		},
+		Cause: cause,
+	}
+}
+
+func bufferedPayloadCauseName(err error) string {
+	switch {
+	case errors.Is(err, pipeline.ErrBufferedMessageUnsafe):
+		return "pipeline.ErrBufferedMessageUnsafe"
+	case errors.Is(err, pipeline.ErrMessageTooLarge):
+		return "pipeline.ErrMessageTooLarge"
+	default:
+		return err.Error()
+	}
+}
+
+func (t *task) copyNeverBranchNames() []string {
+	if t == nil {
+		return nil
+	}
+	t.attachMu.Lock()
+	defer t.attachMu.Unlock()
+	var out []string
+	for attachment := range t.attachments {
+		if attachment == nil || attachment.stopped {
+			continue
+		}
+		out = append(out, attachment.copyNever...)
+	}
+	return uniqueStrings(out)
 }
 
 func (t *task) Events() <-chan av.Event {

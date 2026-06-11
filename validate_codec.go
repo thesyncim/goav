@@ -12,7 +12,7 @@ import (
 	"github.com/thesyncim/goav/format"
 )
 
-func validateRecipeDecodeAdapters(operation string, rt Runtime, intent Intent) error {
+func validateRecipeDecodeAdapters(operation string, rt Runtime, intent intent) error {
 	standard, ok := rt.(*runtime)
 	if !ok || standard == nil {
 		return nil

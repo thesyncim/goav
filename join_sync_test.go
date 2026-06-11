@@ -34,6 +34,63 @@ func eventMsg(eventType av.EventType, id av.StreamID) *pipeline.Message {
 	return &pipeline.Message{Kind: pipeline.MessageEvent, Event: &av.Event{Type: eventType, StreamID: id}}
 }
 
+func requireJoinTaskGraph(t *testing.T, built Task, runner string) {
+	t.Helper()
+	internal, ok := built.(*task)
+	if !ok {
+		t.Fatalf("task type = %T, want *task", built)
+	}
+	got := reflect.TypeOf(internal.graph).String()
+	if !strings.Contains(got, runner) {
+		t.Fatalf("graph runner = %s, want %s", got, runner)
+	}
+}
+
+func TestRealtimeJoinsDefaultBufferedOfflineJoinsStayDirect(t *testing.T) {
+	ctx := context.Background()
+	sink := Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))
+
+	realtimeMix, err := Mix(
+		From(mixSyncTestSource("a", []int64{0}, [][]int16{{1}})).Audio(),
+		From(mixSyncTestSource("b", []int64{0}, [][]int16{{2}})).Audio(),
+	).To(sink).Build(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer realtimeMix.Close()
+	requireJoinTaskGraph(t, realtimeMix, "bufferedRunner")
+
+	offlineMix, err := Mix(
+		From(mixSyncTestSource("a", []int64{0}, [][]int16{{1}})).Audio(),
+		From(mixSyncTestSource("b", []int64{0}, [][]int16{{2}})).Audio(),
+	).To(sink).UseRuntime(New(WithRealtime(false))).Build(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer offlineMix.Close()
+	requireJoinTaskGraph(t, offlineMix, "directRunner")
+
+	realtimeComposite, err := Composite(
+		From(compositeTestVideoSource("a", 4, 4, 100, 10, 20)).Video().Region(0, 0),
+		From(compositeTestVideoSource("b", 4, 4, 200, 30, 40)).Video().Region(4, 0),
+	).To(sink).Build(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer realtimeComposite.Close()
+	requireJoinTaskGraph(t, realtimeComposite, "bufferedRunner")
+
+	offlineComposite, err := Composite(
+		From(compositeTestVideoSource("a", 4, 4, 100, 10, 20)).Video().Region(0, 0),
+		From(compositeTestVideoSource("b", 4, 4, 200, 30, 40)).Video().Region(4, 0),
+	).To(sink).UseRuntime(New(WithRealtime(false))).Build(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer offlineComposite.Close()
+	requireJoinTaskGraph(t, offlineComposite, "directRunner")
+}
+
 // TestAudioMixSyncByPTSAlignsOffsetArms: arm b starts one frame later than arm
 // a. Under SyncByPTS the leading region plays a alone (b's silence is the
 // summing identity), then the PTS-matched pairs sum — never a[i]+b[i+1] as

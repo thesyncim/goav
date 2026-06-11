@@ -30,11 +30,11 @@ model; no workflow dispatch; no string routing; no graph handles for normal work
 
 ```
 type BranchSpec struct { Name string; Source BranchSource; Media av.MediaType;
-    Operations []OperationSpec; Destinations []Destination; Buffer BranchBuffer;
+    Operations []operationSpec; Destinations []Destination; Buffer BranchBuffer;
     Detach DetachPolicy; Err error }
-type FlowSpec struct { Name string; Media av.MediaType; Operations []OperationSpec; Err error }
+type FlowSpec struct { Name string; Media av.MediaType; Operations []operationSpec; Err error }
 ```
-Every fluent method appends exactly one `OperationSpec`: Decode→OpDecode, Copy→OpCopy,
+Every fluent method appends exactly one internal `operationSpec`: Decode→OpDecode, Copy→OpCopy,
 Shape→OpShape, Resize/Resample→OpTransform, Do→OpStage, Encode→OpEncode, Tap→OpTap.
 
 `WorkPlan{Inputs,Operations,Taps,Branches,Destinations,Edges,Diagnostics}` /
@@ -49,7 +49,7 @@ executable truth; Explain/Describe/Build/Attach/Snapshot all read from them.
   builder compilers (remux / decode-to-sink / decode-encode-to-output) are
   deleted: the expert builder only assembles explicit Source/Stage/Sink graphs
   and every media job lowers through the one recipe compile. **Remaining:**
-  fold the `streamIntent` normalization layer into `OperationSpec` readers;
+  fold the `streamIntent` normalization layer into `operationSpec` readers;
   `branchComposePlan` stays, deliberately, as the recipe→lowering hand-off
   (`branch_compose_build.go`).
 - **Shape solving** (§3,4): validation upgraded to SOLVING — the one compile walk
@@ -61,7 +61,9 @@ executable truth; Explain/Describe/Build/Attach/Snapshot all read from them.
   `.Require(spec)` hard assertions (fail with actual/required/fix, solvable
   under an active policy) on chains/branches/flows and `.Prefer(spec)` soft
   preferences (fill open conversion-target facts, tie-break ambiguous adapter
-  selection; never fail — dropped with a diagnostic). **DONE.** TODO:
+  selection; never fail — dropped with a diagnostic); join outputs feed the same
+  solver before terminal `.Encode(...)` and planned `.Branches(...)` (branch
+  `.Auto(...)` and Mix/Composite output `.Auto(...)` are both honored). **DONE.** TODO:
   contracts on Source/Sink/Destination/Flow.
 - **Tap** (§5): carry name/domain/kind/shape/producing-op/branch-owner/attach-policy/timebase. **partial.**
 - **Branch control plane** (§6,7,10): pause/resume/stop/rebranch **DONE** (lock-free,
@@ -96,7 +98,10 @@ executable truth; Explain/Describe/Build/Attach/Snapshot all read from them.
   mid-graph convergence **DONE** — arm chains keep their `.Decode()/.Tap(...)`
   (taps install on the task, one decode feeds the join and runtime attaches)
   and a `TapRef` is a `JoinArm` (the dual of `Branch().From(tap)`): it anchors
-  on an earlier arm's tap, re-stamped under the tap name, no source re-opened.
+  on an earlier arm's tap, re-stamped under the tap name, no source re-opened;
+  joined-output solving **DONE** — Mix/Composite output `.Auto(...)` solves
+  terminal encode paths and planned branches, and branch-local `.Auto(...)`
+  solves after the join's select node.
 - **Time/sync** (§13): join sync policy **DONE** — `Mix/Composite(...).SyncByPTS()`
   aligns arms on a common ns clock (min-head step, tolerance = half a frame;
   ahead arms gap as silence/unpainted, stale frames drop to catch up, an arm
@@ -161,8 +166,10 @@ reaches adapter or fails clearly (TestTaskControlKeyframeBroadcastsWithoutTarget
 rides the data path, TestEncoderStageConsumesInputEvents lands it on the
 encoder, TestTaskControlRejectsUnknownAndDirectGraph fails clearly) · 33[x]
 SetBitrate reaches encoder or fails clearly
-(TestTaskControlSetBitrateBroadcastsBitrateEvent takes the same encoder event
-path; TestTaskControlSetBitrateRejectsNonPositiveRate refuses at the seam).
+(TestDefaultRealtimeEncodeRecipeSupportsLiveEncoderControls pins the
+default-built realtime encoder path; TestTaskControlSetBitrateBroadcastsBitrateEvent
+takes the same encoder event path; TestTaskControlSetBitrateRejectsNonPositiveRate
+refuses at the seam).
 Source: 34[x] custom packet source Copy→File
 (TestNorthStarCustomPacketSourceCopiesToFile) · 35[x] custom frame source
 encode→File (TestNorthStarCustomFrameSourceEncodesToFile) · 36[x] push reports
@@ -200,7 +207,7 @@ Stages (each green, in dependency order):
 2. **Typed lifecycle states** — TaskState/BranchState/DestinationState in
    Snapshot. **DONE.**
 3. **runtimeBranch → WorkPatch** — **DONE.** The attach-side parallel IR is
-   deleted; Attach walks the same canonical OperationSpec chain as Build
+   deleted; Attach walks the same canonical operationSpec chain as Build
    (shared shape algebra + stage/destination constructors) and emits the
    workPatch as THE plan; snapshots render from it.
 4. **mediaPlan → WorkPlan-primary** — **DONE.** The `mediaPlan` aggregate is
@@ -239,4 +246,5 @@ nodes) is a maintainer design call recorded in git history. The planner
 internals deliberately stay one root compilation unit — moving them under
 `internal/` packages was measured and rejected; see "Package layering" in
 docs/ARCHITECTURE.md. Remaining: fold the `streamIntent` normalization layer
-into `OperationSpec` readers, SwitchAt* policies, TimeShape.
+into `operationSpec` readers, keep tap/branch/control anchors on one internal
+stream-point model, SwitchAt* policies, TimeShape.

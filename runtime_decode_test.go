@@ -173,10 +173,11 @@ func TestDecodeUsesFactoryStateProvider(t *testing.T) {
 		ID:   "video",
 		Type: av.MediaVideo,
 		Codec: av.CodecParameters{
-			ID:     av.CodecVP8,
-			Type:   av.MediaVideo,
-			Width:  16,
-			Height: 16,
+			ID:          av.CodecVP8,
+			Type:        av.MediaVideo,
+			Width:       16,
+			Height:      16,
+			PixelFormat: av.PixelFormatI420,
 		},
 	}}
 	demuxer := &decodeTestDemuxer{

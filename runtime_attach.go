@@ -12,6 +12,7 @@ import (
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/errcode"
+	"github.com/thesyncim/goav/flow"
 	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/lifecycle"
 	"github.com/thesyncim/goav/pipeline"
@@ -46,9 +47,10 @@ type runtimeAttachGroup struct {
 }
 
 type runtimeSharedSinkDestination struct {
-	name string
-	sink pipeline.Sink
-	ref  pipeline.NodeRef
+	name   string
+	sink   pipeline.Sink
+	ref    pipeline.NodeRef
+	buffer pipeline.BufferPolicy
 }
 
 type runtimeSharedMuxDestination struct {
@@ -63,13 +65,14 @@ type runtimeSharedMuxDestination struct {
 }
 
 type runtimeGraphPatch struct {
-	nodes       []pipeline.NodeRef
-	routes      []pipeline.Route
-	taps        []snapshot.Tap
-	anchorTaps  []string
-	anchorNodes []string
-	stages      []pipeline.Stage
-	work        workPatch
+	nodes             []pipeline.NodeRef
+	routes            []pipeline.Route
+	taps              []snapshot.Tap
+	anchorTaps        []string
+	anchorNodes       []string
+	stages            []pipeline.Stage
+	copyNeverBranches []string
+	work              workPatch
 }
 
 func (p *runtimeGraphPatch) addAnchor(tap string, from string) {
@@ -118,6 +121,7 @@ func (p runtimeGraphPatch) attachment(owner *task, name string) *runtimeAttachme
 		routes:      append([]pipeline.Route(nil), p.routes...),
 		taps:        append([]snapshot.Tap(nil), p.taps...),
 		stages:      append([]pipeline.Stage(nil), p.stages...),
+		copyNever:   uniqueStrings(p.copyNeverBranches),
 		work:        cloneWorkPatch(p.work),
 	}
 }
@@ -207,6 +211,12 @@ func (t *task) Attach(ctx context.Context, specs ...BranchSpec) (Attachment, err
 		if err := t.validateAttachBranchTapsLocked(steps, patch.taps); err != nil {
 			return rollback(err)
 		}
+		if err := t.configureAttachBranchBuffer(&ap.branches[index], specs[i], steps); err != nil {
+			return rollback(err)
+		}
+		if specs[i].branchBuffer.CopyMode == flow.CopyNever {
+			patch.copyNeverBranches = append(patch.copyNeverBranches, firstNonEmpty(specs[i].name, "branch"))
+		}
 		if err := ap.finalizeBranch(index, specs[i], destinations[i], anchor, graphSpec, group, steps); err != nil {
 			return rollback(err)
 		}
@@ -239,6 +249,36 @@ func (t *task) Attach(ctx context.Context, specs ...BranchSpec) (Attachment, err
 	t.trackAttachmentLocked(attachment)
 	t.addAttachmentTapsLocked(patch.taps)
 	return attachment, nil
+}
+
+func (t *task) configureAttachBranchBuffer(branch *attachPlanBranch, spec BranchSpec, steps []attachStep) error {
+	if branch == nil {
+		return nil
+	}
+	if _, ok := t.graph.(pipeline.NodeInjector); !ok {
+		return nil
+	}
+	if spec.branchBuffer.CopyMode == flow.CopyNever {
+		return nil
+	}
+	policy := branch.buffer
+	var runtimeBuffer pipeline.BufferPolicy
+	if t.runtime != nil {
+		runtimeBuffer = t.runtime.buffer
+	}
+	if policy.IsDirect() {
+		policy = realtimeRecipeBufferPolicy(runtimeBuffer)
+	}
+	if policy.IsDirect() {
+		return nil
+	}
+	var err error
+	policy, err = bufferPolicyWithShapeBudgetsForSteps(policy, steps)
+	if err != nil {
+		return err
+	}
+	branch.buffer = policy
+	return nil
 }
 
 // attachmentStages binds the applied nodes back to their prepared stages so a
@@ -422,11 +462,12 @@ func (g *runtimeAttachGroup) reserveNode(spec pipeline.Spec, name string) error 
 	return nil
 }
 
-func (g *runtimeAttachGroup) reserveSharedSink(spec pipeline.Spec, key string, destName string, sink pipeline.Sink) error {
+func (g *runtimeAttachGroup) reserveSharedSink(spec pipeline.Spec, key string, destName string, sink pipeline.Sink, buffer pipeline.BufferPolicy) error {
 	if g == nil || !g.isSharedSink(key) {
 		return nil
 	}
-	if _, ok := g.sharedSinks[key]; ok {
+	if target, ok := g.sharedSinks[key]; ok {
+		target.buffer = mergeBufferCopyBounds(target.buffer, buffer)
 		return nil
 	}
 	name := destName
@@ -437,11 +478,11 @@ func (g *runtimeAttachGroup) reserveSharedSink(spec pipeline.Spec, key string, d
 	if err := g.reserveNode(spec, name); err != nil {
 		return err
 	}
-	g.sharedSinks[key] = &runtimeSharedSinkDestination{name: name, sink: sink}
+	g.sharedSinks[key] = &runtimeSharedSinkDestination{name: name, sink: sink, buffer: buffer}
 	return nil
 }
 
-func (g *runtimeAttachGroup) sharedSinkRef(graph pipeline.Graph, key string, buffer pipeline.BufferPolicy) (pipeline.NodeRef, bool, error) {
+func (g *runtimeAttachGroup) sharedSinkRef(graph pipeline.Graph, key string) (pipeline.NodeRef, bool, error) {
 	if g == nil || !g.isSharedSink(key) {
 		return "", false, runtimeBranchInvalidError("shared sink destination is not registered", "reuse one goav.Sink(sink) destination value inside one Task.Attach call")
 	}
@@ -452,7 +493,7 @@ func (g *runtimeAttachGroup) sharedSinkRef(graph pipeline.Graph, key string, buf
 	if target.ref != "" {
 		return target.ref, false, nil
 	}
-	ref, err := graph.AddSink(namedSink{name: target.name, sink: target.sink}, buffer)
+	ref, err := graph.AddSink(namedSink{name: target.name, sink: target.sink}, target.buffer)
 	if err != nil {
 		return "", false, runtimeBranchGraphError("add sink", target.name, err)
 	}
@@ -477,6 +518,8 @@ func (g *runtimeAttachGroup) reserveSharedMux(spec pipeline.Spec, branchName str
 		}
 		g.sharedMuxes[key] = target
 		g.muxOrder = append(g.muxOrder, key)
+	} else {
+		target.buffer = mergeBufferCopyBounds(target.buffer, buffer)
 	}
 	target.streams = append(target.streams, stream)
 	target.branches = append(target.branches, firstNonEmpty(branchName, "branch"))
@@ -823,7 +866,7 @@ func (t *task) applyAttachBranch(ap *attachPlan, branch attachPlanBranch, group 
 			continue
 		}
 		if key, ok := group.sharedSinkKeyForNode(operation.Node); ok {
-			ref, added, err := group.sharedSinkRef(t.graph, key, branch.buffer)
+			ref, added, err := group.sharedSinkRef(t.graph, key)
 			if err != nil {
 				return refs, routes, taps, err
 			}
@@ -1057,6 +1100,7 @@ type runtimeAttachment struct {
 	routes      []pipeline.Route
 	taps        []snapshot.Tap
 	stages      []pipeline.Stage
+	copyNever   []string
 	work        workPatch
 	stopMu      sync.Mutex
 	stopped     bool
@@ -1394,14 +1438,14 @@ func (t *task) prepareRuntimeBranchDecode(ctx context.Context, branchName string
 	if _, err := t.runtime.codecs.DecoderFactory(currentStream.Codec.ID); err != nil {
 		stream := streamIntent{
 			Name:       branchName,
-			Operations: []OperationSpec{operationSpecForDecode(spec, string(currentStream.Codec.ID))},
+			Operations: []operationSpec{operationSpecForDecode(spec, string(currentStream.Codec.ID))},
 		}
 		return nil, recipeDecodeAdapterError("attach runtime branch", stream, currentStream.Codec.ID, t.runtime.codecs, err)
 	}
 	stream := streamIntent{
 		Name:       branchName,
 		Select:     streamSelectFromAV(request.selector),
-		Operations: []OperationSpec{operationSpecForDecode(spec, string(currentStream.Codec.ID))},
+		Operations: []operationSpec{operationSpecForDecode(spec, string(currentStream.Codec.ID))},
 	}
 	if err := validateDecodeAdapterDescriptors("attach runtime branch", stream, t.runtime.codecs, decodeAdapterRequestFromStream(currentStream, stream)); err != nil {
 		return nil, err

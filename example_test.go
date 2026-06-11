@@ -232,10 +232,15 @@ func ExampleMix_syncByPTS() {
 // offsets: a 4x4 camera at the origin and a second 4x4 camera 4 pixels right
 // produce one 8x4 frame.
 func ExampleComposite() {
-	var canvas *av.Frame
+	var canvasW, canvasH int
+	var leftLuma, rightLuma byte
 	preview := goav.Sink(goav.SinkFunc("preview", func(_ context.Context, msg goav.Message) error {
-		if msg.Frame != nil {
-			canvas = msg.Frame
+		if msg.Frame != nil && msg.Frame.Video != nil && len(msg.Frame.Planes) != 0 {
+			canvasW = msg.Frame.Video.Width
+			canvasH = msg.Frame.Video.Height
+			luma := msg.Frame.Planes[0].Buffer.Bytes
+			leftLuma = luma[0]
+			rightLuma = luma[4]
 		}
 		return nil
 	}))
@@ -249,9 +254,8 @@ func ExampleComposite() {
 		return
 	}
 
-	fmt.Printf("canvas %dx%d\n", canvas.Video.Width, canvas.Video.Height)
-	luma := canvas.Planes[0].Buffer.Bytes
-	fmt.Println("left luma:", luma[0], "right luma:", luma[4])
+	fmt.Printf("canvas %dx%d\n", canvasW, canvasH)
+	fmt.Println("left luma:", leftLuma, "right luma:", rightLuma)
 	// Output:
 	// canvas 8x4
 	// left luma: 100 right luma: 200

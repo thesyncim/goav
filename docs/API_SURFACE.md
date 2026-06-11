@@ -150,17 +150,9 @@ Handle-based graph work, deliberately off the grammar:
 
 ## D. Leakage
 
-Open items; the surface pin freezes them so the list only shrinks:
-
-- `goav.Intent` — the normalized pre-compilation projection. No exported
-  producer exists (`Job.Plan` is test-only via `export_test.go`) and its
-  fields are unexported types. Migration: unexport once the recipe tests
-  assert normalization through `plan.Report`/test-only aliases, or export a
-  producer if it should be a real read surface. Needs a design call, not
-  mechanical — deferred.
-- `goav.OperationSpec` — the normalized chain operation; reachable only as a
-  field type inside `Intent`'s unexported stream entries. Same migration and
-  deferral as `Intent`.
+No current root-package tier-D leakage is approved. The internal `intent` and
+`operationSpec` records are unexported; external callers use `Explain`/`plan.Report`
+for inspection, and tests reach normalization through test-only helpers.
 
 Not leakage, by decision: builder funcs returning unexported types
 (`Branch`, `Flow`, `Mix`, `Composite`, `Select`, stream/transform options) —

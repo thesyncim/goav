@@ -369,10 +369,13 @@ func TestStreamRecipeReportsAmbiguousStreams(t *testing.T) {
 
 func TestStreamRecipeSelectsFirstStreamByIndex(t *testing.T) {
 	ctx := context.Background()
-	streams := []av.Stream{
-		{ID: "audio-main", Index: 0, Type: av.MediaAudio, Codec: av.CodecParameters{ID: av.CodecOpus, Type: av.MediaAudio}},
-		{ID: "audio-alt", Index: 1, Type: av.MediaAudio, Codec: av.CodecParameters{ID: av.CodecOpus, Type: av.MediaAudio}},
-	}
+	main := audioOpusTestStream()
+	main.ID = "audio-main"
+	main.Index = 0
+	alt := audioOpusTestStream()
+	alt.ID = "audio-alt"
+	alt.Index = 1
+	streams := []av.Stream{main, alt}
 	demuxer := &decodeTestDemuxer{
 		streams: streams,
 		packets: []av.Packet{{
@@ -3604,6 +3607,9 @@ type recipePCMDecoderFactory struct {
 func (f recipePCMDecoderFactory) NewDecoder(_ context.Context, config codec.DecodeConfig) (codec.Decoder, error) {
 	if f.config != nil {
 		*f.config = config
+	}
+	if f.decoder == nil {
+		return &recipePCMDecoder{}, nil
 	}
 	return f.decoder, nil
 }

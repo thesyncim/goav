@@ -181,12 +181,8 @@ func operationKinds(operations []plan.Operation) []plan.OperationKind {
 	return kinds
 }
 
-func operationSpecKinds(operations []goav.OperationSpec) []plan.OperationKind {
-	kinds := make([]plan.OperationKind, 0, len(operations))
-	for i := range operations {
-		kinds = append(kinds, operations[i].Kind)
-	}
-	return kinds
+func operationSpecKinds(operations any) []plan.OperationKind {
+	return goav.OperationSpecKindsForTest(operations)
 }
 
 func equalOperationKinds(a []plan.OperationKind, b []plan.OperationKind) bool {
@@ -201,14 +197,8 @@ func equalOperationKinds(a []plan.OperationKind, b []plan.OperationKind) bool {
 	return true
 }
 
-func transformOperationsForTest(operations []goav.OperationSpec) []goav.TransformSpec {
-	transforms := make([]goav.TransformSpec, 0)
-	for i := range operations {
-		if operations[i].Kind == plan.OpTransform {
-			transforms = append(transforms, operations[i].Transform)
-		}
-	}
-	return transforms
+func transformOperationsForTest(operations any) []goav.TransformSpec {
+	return goav.TransformOperationsForTest(operations)
 }
 
 func equalStrings(a []string, b []string) bool {
@@ -262,7 +252,7 @@ func TestMediaShapePublicContract(t *testing.T) {
 		t.Fatalf("resized shape=%+v, want 1280x720 video frame", resized)
 	}
 
-	var copyContract shape.Contract = goav.OperationSpec{Kind: plan.OpCopy, Encode: codec.Copy()}
+	copyContract := goav.CopyOperationContractForTest()
 	if !copyContract.InputShapes().Accepts(packet) {
 		t.Fatalf("copy input shapes=%+v, want packet domain", copyContract.InputShapes())
 	}
@@ -271,7 +261,7 @@ func TestMediaShapePublicContract(t *testing.T) {
 		t.Fatalf("copied shape=%+v, want preserved packet %+v", copied, packet)
 	}
 
-	var operationContract shape.Contract = goav.OperationSpec{Kind: plan.OpTransform, Transform: goav.Resample(16_000, codec.Mono)}
+	operationContract := goav.TransformOperationContractForTest(goav.Resample(16_000, codec.Mono))
 	resampled := operationContract.OutputShapes(shape.Frame(
 		av.MediaAudio,
 		shape.Audio(48_000, codec.Stereo, av.SampleFormatS16),
@@ -469,10 +459,6 @@ func (j *testBranchJob) materialize() *goav.Job {
 		job = stream.Branches(builder.To(destinations...))
 	}
 	return job
-}
-
-func (j *testBranchJob) Plan() goav.Intent {
-	return goav.JobPlanForTest(j.materialize())
 }
 
 func (j *testBranchJob) Explain(ctx context.Context) (plan.Report, error) {
@@ -2270,12 +2256,11 @@ func TestRootAPIUsesFromCompositionInsteadOfWorkflowHelpers(t *testing.T) {
 	}
 }
 
-func TestPublicIntentAndReportsUseDestinations(t *testing.T) {
+func TestReportsUseDestinations(t *testing.T) {
 	for _, tt := range []struct {
 		name string
 		typ  reflect.Type
 	}{
-		{name: "Intent", typ: reflect.TypeOf(goav.Intent{})},
 		{name: "plan.Report", typ: reflect.TypeOf(plan.Report{})},
 		{name: "plan.Branch", typ: reflect.TypeOf(plan.Branch{})},
 	} {
@@ -2879,7 +2864,7 @@ func TestFlowAppliesToTranscodeBranch(t *testing.T) {
 		Apply(preview).
 		To(web)
 
-	intent := job.Plan()
+	intent := goav.JobPlanForTest(job.materialize())
 	if len(intent.Streams) != 1 || intent.Streams[0].Name != "preview" ||
 		len(transformOperationsForTest(intent.Streams[0].Operations)) != 1 ||
 		transformOperationsForTest(intent.Streams[0].Operations)[0].Resize.Width != 640 ||
@@ -4636,7 +4621,7 @@ func TestReadmeTranscodeLadderRecipeIsSmall(t *testing.T) {
 		strings.Contains(text, "encode-360p -> web.webm") {
 		t.Fatalf("branch labels leaked:\n%s", text)
 	}
-	intent := job.Plan()
+	intent := goav.JobPlanForTest(job.materialize())
 	if len(intent.Streams) != 2 || !goav.StreamHasDecodeForTest(intent.Streams[0]) || !goav.StreamHasDecodeForTest(intent.Streams[1]) {
 		t.Fatalf("intent: %+v", intent)
 	}
@@ -4669,7 +4654,7 @@ func TestBranchRecipeComposesAudioAndVideoIntoSharedOutput(t *testing.T) {
 		strings.Contains(text, "decode-audio -> resize-v360") {
 		t.Fatalf("audio/video decode paths crossed:\n%s", text)
 	}
-	intent := job.Plan()
+	intent := goav.JobPlanForTest(job.materialize())
 	if len(intent.Streams) != 2 ||
 		len(intent.Streams[0].Destinations) != 1 || intent.Streams[0].Destinations[0] != "out.webm" ||
 		len(intent.Streams[1].Destinations) != 1 || intent.Streams[1].Destinations[0] != "out.webm" ||
@@ -4692,7 +4677,7 @@ func TestBranchRecipeSingleBranchUsesDestination(t *testing.T) {
 	if !strings.Contains(text, "encode-360p -> preview.webm") {
 		t.Fatalf("spec:\n%s", text)
 	}
-	intent := job.Plan()
+	intent := goav.JobPlanForTest(job.materialize())
 	if len(intent.Streams) != 1 || len(intent.Streams[0].Destinations) != 1 || len(intent.Destinations) != 1 {
 		t.Fatalf("intent: %+v", intent)
 	}

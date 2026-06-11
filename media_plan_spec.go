@@ -39,14 +39,14 @@ func (p graphPlan) ready() bool {
 
 func (p graphPlan) Describe() (pipeline.Spec, error) {
 	if !p.ready() {
-		return pipeline.Spec{}, recipeGraphUnsupportedError("describe graph plan", Intent{})
+		return pipeline.Spec{}, recipeGraphUnsupportedError("describe graph plan", intent{})
 	}
 	return p.spec(), nil
 }
 
 func (p graphPlan) Build(ctx context.Context) (Task, error) {
 	if !p.ready() {
-		return nil, recipeGraphUnsupportedError("build graph plan", Intent{})
+		return nil, recipeGraphUnsupportedError("build graph plan", intent{})
 	}
 	return buildGraphPlanTask(ctx, p)
 }
@@ -286,7 +286,7 @@ func mediaPlanPacketCopyStream(state *recipeCompileState) (streamIntent, bool, b
 	return mediaPlanPacketCopyIntentStream(state.jobPresent, state.intent)
 }
 
-func mediaPlanPacketCopyIntentStream(jobPresent bool, intent Intent) (streamIntent, bool, bool) {
+func mediaPlanPacketCopyIntentStream(jobPresent bool, intent intent) (streamIntent, bool, bool) {
 	if !jobPresent {
 		return streamIntent{}, false, false
 	}

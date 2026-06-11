@@ -131,7 +131,7 @@ func TestSelectOfMixesSwitchesLive(t *testing.T) {
 func joinNestedTestFrameSink(name string, into *[]*av.Frame) Destination {
 	return Sink(SinkFunc(name, func(_ context.Context, m Message) error {
 		if m.Kind == pipeline.MessageFrame && m.Frame != nil && m.Frame.Video != nil {
-			*into = append(*into, m.Frame)
+			*into = append(*into, cloneMixTestFrame(m.Frame))
 		}
 		return nil
 	}))

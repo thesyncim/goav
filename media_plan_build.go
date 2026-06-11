@@ -52,19 +52,29 @@ type mediaPlanCompiledSources struct {
 // policy (a join names its graph after the kind and may require a buffered
 // graph for control-plane injection).
 type graphPlanGraphConfigurer interface {
-	graphConfig() pipeline.GraphConfig
+	graphConfig(graphPlan) (pipeline.GraphConfig, error)
 }
 
 func buildGraphPlanTask(ctx context.Context, gp graphPlan) (Task, error) {
 	runtime := gp.runtime
 	if runtime == nil {
-		return nil, recipeGraphUnsupportedError("build recipe", Intent{})
+		return nil, recipeGraphUnsupportedError("build recipe", intent{})
+	}
+	if err := validateGraphPlanLowering(gp); err != nil {
+		return nil, err
 	}
 	service := &builder{runtime: runtime, requireRunOK: true}
 	var graph pipeline.Graph
 	var err error
 	if configurer, ok := gp.lowerer.(graphPlanGraphConfigurer); ok {
-		graph, err = pipeline.NewGraph(configurer.graphConfig())
+		config, configErr := configurer.graphConfig(gp)
+		if configErr != nil {
+			return nil, configErr
+		}
+		runtime = runtimeWithBuffer(runtime, config.Buffer)
+		gp = graphPlanWithRuntime(gp, runtime)
+		service.runtime = runtime
+		graph, err = pipeline.NewGraph(config)
 	} else {
 		graph, err = service.newGraph(ctx)
 	}
@@ -76,6 +86,45 @@ func buildGraphPlanTask(ctx context.Context, gp graphPlan) (Task, error) {
 		return nil, err
 	}
 	return newTask(graph, runtime, service.destinationTxs...), nil
+}
+
+func runtimeWithBuffer(rt *runtime, buffer pipeline.BufferPolicy) *runtime {
+	if rt == nil {
+		return nil
+	}
+	clone := *rt
+	clone.buffer = buffer
+	return &clone
+}
+
+func graphPlanWithRuntime(gp graphPlan, rt *runtime) graphPlan {
+	gp.runtime = rt
+	switch lowerer := gp.lowerer.(type) {
+	case mediaPlanStreamGraph:
+		lowerer.runtime = rt
+		gp.lowerer = lowerer
+	case mediaPlanBranchComposeGraph:
+		lowerer.runtime = rt
+		gp.lowerer = lowerer
+	case *joinPlan:
+		gp.lowerer = joinPlanWithRuntime(lowerer, rt)
+	}
+	return gp
+}
+
+func joinPlanWithRuntime(plan *joinPlan, rt *runtime) *joinPlan {
+	if plan == nil {
+		return nil
+	}
+	clone := *plan
+	clone.runtime = rt
+	if len(plan.arms) != 0 {
+		clone.arms = append([]joinArmPlan(nil), plan.arms...)
+		for i := range clone.arms {
+			clone.arms[i].sub = joinPlanWithRuntime(plan.arms[i].sub, rt)
+		}
+	}
+	return &clone
 }
 
 func (p mediaPlanStreamGraph) spec() (pipeline.Spec, error) {
@@ -90,6 +139,23 @@ func (p mediaPlanStreamGraph) spec() (pipeline.Spec, error) {
 
 func (p mediaPlanStreamGraph) runtimeRef() *runtime {
 	return p.runtime
+}
+
+func (p mediaPlanStreamGraph) graphConfig(gp graphPlan) (pipeline.GraphConfig, error) {
+	if !p.copyPackets {
+		if _, err := p.prepareFrameOperationSpecLowering(gp); err != nil {
+			return pipeline.GraphConfig{}, err
+		}
+	}
+	buffered := p.needsRealtimeBufferedGraph()
+	return recipeGraphConfig(p.runtime, gp.name, gp.work, buffered)
+}
+
+func (p mediaPlanStreamGraph) needsRealtimeBufferedGraph() bool {
+	if p.runtime == nil || !p.runtime.realtime || p.copyPackets {
+		return false
+	}
+	return p.encode != nil || p.sourceDomain == shape.DomainPacket
 }
 
 func (p mediaPlanStreamGraph) lower(ctx context.Context, gp graphPlan, graph pipeline.Graph, service *builder) error {
@@ -209,7 +275,7 @@ func (p mediaPlanStreamGraph) packetCopySpec() (pipeline.Spec, error) {
 		return pipeline.Spec{}, err
 	}
 	if !ok {
-		return pipeline.Spec{}, recipeGraphUnsupportedError("describe job", Intent{Streams: []streamIntent{p.stream}})
+		return pipeline.Spec{}, recipeGraphUnsupportedError("describe job", intent{Streams: []streamIntent{p.stream}})
 	}
 	if p.selectedStream {
 		branches, outputs := p.selectedPacketCopyBranchComposeRoutes()
@@ -316,7 +382,7 @@ func (p mediaPlanBranchComposeGraph) spec() (pipeline.Spec, error) {
 		return pipeline.Spec{}, err
 	}
 	if !ok {
-		return pipeline.Spec{}, recipeGraphUnsupportedError("describe branch composition", Intent{Name: p.plan.Name})
+		return pipeline.Spec{}, recipeGraphUnsupportedError("describe branch composition", intent{Name: p.plan.Name})
 	}
 	return planBranchComposeRoutes(spec, nodes, sourceRefs, p.branches, p.destinations)
 }
@@ -329,12 +395,31 @@ func (p mediaPlanBranchComposeGraph) runtimeRef() *runtime {
 	return p.runtime
 }
 
+func (p mediaPlanBranchComposeGraph) graphConfig(gp graphPlan) (pipeline.GraphConfig, error) {
+	if _, err := p.prepareBranchComposeOperationLowering(gp); err != nil {
+		return pipeline.GraphConfig{}, err
+	}
+	return recipeGraphConfig(p.runtime, gp.name, gp.work, p.needsRealtimeBufferedGraph())
+}
+
+func (p mediaPlanBranchComposeGraph) needsRealtimeBufferedGraph() bool {
+	if p.runtime == nil || !p.runtime.realtime {
+		return false
+	}
+	for i := range p.branches {
+		if branchComposeRouteNeedsDecode(p.branches[i]) || branchComposeRouteNeedsEncode(p.branches[i]) {
+			return true
+		}
+	}
+	return false
+}
+
 func (p mediaPlanBranchComposeGraph) lower(ctx context.Context, gp graphPlan, graph pipeline.Graph, service *builder) error {
 	lowering, err := p.prepareBranchComposeOperationLowering(gp)
 	if err != nil {
 		return err
 	}
-	sources, err := compileMediaPlanSources(ctx, p.runtime, graph, p.inputs, "build branch composition", Intent{Name: p.plan.Name})
+	sources, err := compileMediaPlanSources(ctx, p.runtime, graph, p.inputs, "build branch composition", intent{Name: p.plan.Name})
 	if err != nil {
 		return err
 	}
@@ -872,7 +957,7 @@ func (p mediaPlanStreamGraph) lowerPacketCopy(ctx context.Context, gp graphPlan,
 	if p.selectedStream {
 		return p.compileSelectedPacketCopyBranchCompose(ctx, graph, service, selectOperation, destinations)
 	}
-	sources, err := compileMediaPlanSources(ctx, p.runtime, graph, p.inputs, "build job", Intent{Streams: []streamIntent{p.stream}})
+	sources, err := compileMediaPlanSources(ctx, p.runtime, graph, p.inputs, "build job", intent{Streams: []streamIntent{p.stream}})
 	if err != nil {
 		return err
 	}
@@ -880,7 +965,7 @@ func (p mediaPlanStreamGraph) lowerPacketCopy(ctx context.Context, gp graphPlan,
 }
 
 func (p mediaPlanStreamGraph) compileSelectedPacketCopyBranchCompose(ctx context.Context, graph pipeline.Graph, service *builder, selectOperation workOperation, destinations []graphPlanDestinationOperation) error {
-	sources, err := compileMediaPlanSources(ctx, p.runtime, graph, p.inputs, "build packet copy", Intent{Streams: []streamIntent{p.stream}})
+	sources, err := compileMediaPlanSources(ctx, p.runtime, graph, p.inputs, "build packet copy", intent{Streams: []streamIntent{p.stream}})
 	if err != nil {
 		return err
 	}
@@ -1415,7 +1500,7 @@ func (p mediaPlanStreamGraph) sinkDestinationSpec() (pipeline.Spec, error) {
 
 func (p mediaPlanStreamGraph) encodeOutputSpec() (pipeline.Spec, error) {
 	if p.encode == nil {
-		return pipeline.Spec{}, recipeGraphUnsupportedError("describe job", Intent{Streams: []streamIntent{p.stream}})
+		return pipeline.Spec{}, recipeGraphUnsupportedError("describe job", intent{Streams: []streamIntent{p.stream}})
 	}
 	return p.frameStreamBranchComposeSpec()
 }
@@ -1497,13 +1582,13 @@ func (p mediaPlanStreamGraph) specWithSources() (pipeline.Spec, []pipeline.NodeR
 		return pipeline.Spec{}, nil, nil, err
 	}
 	if !ok {
-		return pipeline.Spec{}, nil, nil, recipeGraphUnsupportedError("describe job", Intent{Streams: []streamIntent{p.stream}})
+		return pipeline.Spec{}, nil, nil, recipeGraphUnsupportedError("describe job", intent{Streams: []streamIntent{p.stream}})
 	}
 	return spec, sourceRefs, nodes, nil
 }
 
-func mediaPlanFilterRouteOperations(filters []filterRequest) ([]OperationSpec, error) {
-	operations := make([]OperationSpec, 0, len(filters))
+func mediaPlanFilterRouteOperations(filters []filterRequest) ([]operationSpec, error) {
+	operations := make([]operationSpec, 0, len(filters))
 	for i := range filters {
 		filter := filters[i]
 		switch {
@@ -1526,7 +1611,7 @@ func mediaPlanFilterRouteOperations(filters []filterRequest) ([]OperationSpec, e
 // solver-selected adapter when the operation's component differs from the
 // standard factory: the component is both the node-name prefix and the filter
 // registry key, so the planned spec and the built graph stay identical.
-func applyTransformComponentOverride(transform mediaTransform, operation OperationSpec) mediaTransform {
+func applyTransformComponentOverride(transform mediaTransform, operation operationSpec) mediaTransform {
 	factory := operation.Component
 	if operation.Kind != plan.OpTransform || factory == "" || factory == transform.factory {
 		return transform
@@ -1550,7 +1635,7 @@ func transformSpecFromMediaTransform(transform mediaTransform) TransformSpec {
 }
 
 func (p mediaPlanStreamGraph) compileFrameStreamBranchCompose(ctx context.Context, graph pipeline.Graph, service *builder, lowering graphPlanFrameStreamLowering) error {
-	sources, err := compileMediaPlanSources(ctx, p.runtime, graph, p.inputs, "build job", Intent{Streams: []streamIntent{p.stream}})
+	sources, err := compileMediaPlanSources(ctx, p.runtime, graph, p.inputs, "build job", intent{Streams: []streamIntent{p.stream}})
 	if err != nil {
 		return err
 	}
@@ -1603,7 +1688,7 @@ func compileMediaPlanSources(
 	graph pipeline.Graph,
 	inputs []InputSpec,
 	operation string,
-	intent Intent,
+	intent intent,
 ) (mediaPlanCompiledSources, error) {
 	if runtime == nil {
 		return mediaPlanCompiledSources{}, recipeGraphUnsupportedError(operation, intent)

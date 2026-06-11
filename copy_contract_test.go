@@ -11,10 +11,12 @@ package goav
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/thesyncim/goav/av"
+	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/flow"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/shape"
@@ -277,9 +279,10 @@ func TestCopyContractCopyAlwaysCopiesImmutableFrames(t *testing.T) {
 }
 
 // TestCopyContractCopyNeverIsSafeOnly pins both halves of the CopyNever
-// contract: a mutable payload meeting a CopyNever branch is refused with
-// pipeline.ErrBufferedMessageUnsafe (never silently shared), while an
-// immutable payload flows by reference without any copy.
+// contract: a mutable payload meeting a CopyNever branch is refused with a
+// goav-structured error that still wraps pipeline.ErrBufferedMessageUnsafe
+// (never silently shared), while an immutable payload flows by reference
+// without any copy.
 func TestCopyContractCopyNeverIsSafeOnly(t *testing.T) {
 	t.Run("mutable payload is refused", func(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -305,8 +308,20 @@ func TestCopyContractCopyNeverIsSafeOnly(t *testing.T) {
 			t.Fatal(err)
 		}
 		close(source.resume)
-		if err := <-runErr; !errors.Is(err, pipeline.ErrBufferedMessageUnsafe) {
-			t.Fatalf("run err = %v, want ErrBufferedMessageUnsafe: CopyNever must refuse mutable payloads", err)
+		err := <-runErr
+		var buildErr *BuildError
+		if !errors.As(err, &buildErr) || buildErr.Code != errcode.BufferPayloadUnsafe || !errors.Is(err, pipeline.ErrBufferedMessageUnsafe) {
+			t.Fatalf("run err = %v, want buffer_payload_unsafe wrapping ErrBufferedMessageUnsafe", err)
+		}
+		for _, want := range []string{
+			"copy_never_branches=readonly",
+			"flow.BufferCopyBounds(packetBytes, frameBytes)",
+			"flow.CopyNever",
+			"av.BufferImmutable",
+		} {
+			if !strings.Contains(err.Error(), want) {
+				t.Fatalf("run err = %v, want %q", err, want)
+			}
 		}
 		if readonly.seen {
 			t.Fatal("CopyNever branch received a mutable payload it should have refused")
@@ -348,4 +363,47 @@ func TestCopyContractCopyNeverIsSafeOnly(t *testing.T) {
 			t.Fatalf("CopyNever branch bytes = %v, want %v", readonly.bytes, original)
 		}
 	})
+}
+
+func TestCopyContractTooSmallBoundsAreStructured(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	frame := copyContractFrame(av.BufferOwned, []byte{1, 2, 3, 4})
+	contractTask, source := newCopyContractTask(t, ctx, &frame)
+	defer contractTask.Close()
+
+	readonly := &copyContractAliasSink{name: "tiny", original: frame.Planes[0].Buffer.Bytes}
+	runErr := make(chan error, 1)
+	go func() {
+		runErr <- contractTask.Run(ctx)
+	}()
+	select {
+	case <-source.ready:
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+	if _, err := contractTask.Attach(ctx, Branch("tiny").
+		From(FrameTap("video.frames")).
+		Buffer(flow.Latest(flow.BufferCopyBounds(0, 1))).
+		To(Sink(readonly))); err != nil {
+		t.Fatal(err)
+	}
+	close(source.resume)
+	err := <-runErr
+	var buildErr *BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != errcode.BufferPayloadTooLarge || !errors.Is(err, pipeline.ErrMessageTooLarge) {
+		t.Fatalf("run err = %v, want buffer_payload_too_large wrapping ErrMessageTooLarge", err)
+	}
+	for _, want := range []string{
+		"pipeline.ErrMessageTooLarge",
+		"flow.BufferCopyBounds(packetBytes, frameBytes)",
+		"CopyFrameBytes",
+	} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("run err = %v, want %q", err, want)
+		}
+	}
+	if readonly.seen {
+		t.Fatal("branch received a payload larger than its copy bounds")
+	}
 }

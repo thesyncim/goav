@@ -55,8 +55,8 @@ func destinationIdentity(destination namedDestinationSpec) string {
 
 const branchCompositionOperation = "build branch composition"
 
-func (j *branchCompositionJob) plan() Intent {
-	intent := Intent{
+func (j *branchCompositionJob) plan() intent {
+	intent := intent{
 		Name:   firstNonEmpty(j.name, "branch-composition"),
 		Inputs: []inputIntent{j.input.intent()},
 	}
@@ -79,7 +79,7 @@ func (j *branchCompositionJob) composePlan() (branchComposePlan, error) {
 	return planBranchCompositionRecipe(j.plan(), j.input, j.outputs, j.streams)
 }
 
-func planBranchCompositionRecipe(intent Intent, input InputSpec, namedOutputs []namedDestinationSpec, branchBuilds []streamBuild) (branchComposePlan, error) {
+func planBranchCompositionRecipe(intent intent, input InputSpec, namedOutputs []namedDestinationSpec, branchBuilds []streamBuild) (branchComposePlan, error) {
 	streams := intent.Streams
 	outputs, outputOrder := branchDestinationAttachmentSet(namedOutputs)
 
@@ -93,8 +93,8 @@ func planBranchCompositionRecipe(intent Intent, input InputSpec, namedOutputs []
 		branchName := stream.Name
 		selector := streamIntentSelector(stream)
 		operations := cloneOperationSpecs(stream.Operations)
-		var sharedOperations []OperationSpec
-		var privateOperations []OperationSpec
+		var sharedOperations []operationSpec
+		var privateOperations []operationSpec
 		if i < len(branchBuilds) {
 			branchBuild := branchBuilds[i]
 			operations = streamBuildOperationSpecs(branchBuild)
@@ -155,12 +155,12 @@ func branchComposePlanReady(composePlan branchComposePlan) bool {
 	return len(composePlan.Branches) != 0 || len(composePlan.Destinations) != 0
 }
 
-func splitOperationSpecsByShared(operations []OperationSpec) ([]OperationSpec, []OperationSpec) {
+func splitOperationSpecsByShared(operations []operationSpec) ([]operationSpec, []operationSpec) {
 	if len(operations) == 0 {
 		return nil, nil
 	}
-	shared := make([]OperationSpec, 0)
-	private := make([]OperationSpec, 0, len(operations))
+	shared := make([]operationSpec, 0)
+	private := make([]operationSpec, 0, len(operations))
 	for i := range operations {
 		operation := operations[i]
 		if operation.Shared {
@@ -172,7 +172,7 @@ func splitOperationSpecsByShared(operations []OperationSpec) ([]OperationSpec, [
 	return cloneOperationSpecs(shared), cloneOperationSpecs(private)
 }
 
-func chainStepsFromChainOperations(operations []OperationSpec) []chainStep {
+func chainStepsFromChainOperations(operations []operationSpec) []chainStep {
 	if len(operations) == 0 {
 		return nil
 	}
@@ -201,7 +201,7 @@ func chainStepsFromChainOperations(operations []OperationSpec) []chainStep {
 	return steps
 }
 
-func validateBranchCompositionIntentShape(operation string, intent Intent) error {
+func validateBranchCompositionIntentShape(operation string, intent intent) error {
 	if len(intent.Inputs) == 0 {
 		return &BuildError{
 			Code:      errcode.InputMissing,
@@ -299,7 +299,7 @@ func validateBranchCompositionAttachments(input InputSpec, namedOutputs []namedD
 	return nil
 }
 
-func validateBranchDestinationKinds(intent Intent, namedOutputs []namedDestinationSpec) error {
+func validateBranchDestinationKinds(intent intent, namedOutputs []namedDestinationSpec) error {
 	outputs := branchDestinationSet(namedOutputs)
 	for i := range intent.Streams {
 		stream := intent.Streams[i]
@@ -321,7 +321,7 @@ func validateBranchDestinationKinds(intent Intent, namedOutputs []namedDestinati
 	return nil
 }
 
-func validateBranchDestinationBindings(intent Intent, namedOutputs []namedDestinationSpec) error {
+func validateBranchDestinationBindings(intent intent, namedOutputs []namedDestinationSpec) error {
 	outputs := branchDestinationLabelSet(namedOutputs)
 	for i := range intent.Streams {
 		stream := intent.Streams[i]
@@ -594,7 +594,7 @@ func streamIntentTransformSpecs(stream streamIntent) []TransformSpec {
 	return transformSpecsFromOperationSpecs(stream.Operations)
 }
 
-func transformSpecsFromOperationSpecs(operations []OperationSpec) []TransformSpec {
+func transformSpecsFromOperationSpecs(operations []operationSpec) []TransformSpec {
 	if len(operations) == 0 {
 		return nil
 	}

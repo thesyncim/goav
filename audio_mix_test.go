@@ -47,11 +47,35 @@ type mixTestEmitter struct {
 func (c *mixTestEmitter) Emit(_ context.Context, m *pipeline.Message) error {
 	switch m.Kind {
 	case pipeline.MessageFrame:
-		c.frames = append(c.frames, m.Frame)
+		c.frames = append(c.frames, cloneMixTestFrame(m.Frame))
 	case pipeline.MessageEvent:
 		c.events = append(c.events, m.Event)
 	}
 	return nil
+}
+
+func cloneMixTestFrame(frame *av.Frame) *av.Frame {
+	if frame == nil {
+		return nil
+	}
+	clone := *frame
+	if frame.Audio != nil {
+		audio := *frame.Audio
+		clone.Audio = &audio
+	}
+	if frame.Video != nil {
+		video := *frame.Video
+		clone.Video = &video
+	}
+	clone.Planes = make([]av.Plane, len(frame.Planes))
+	for i := range frame.Planes {
+		clone.Planes[i] = frame.Planes[i]
+		payload := frame.Planes[i].Buffer.Bytes
+		bytes := make([]byte, len(payload))
+		copy(bytes, payload)
+		clone.Planes[i].Buffer = av.Buffer{Bytes: bytes, Ownership: av.BufferOwned}
+	}
+	return &clone
 }
 
 func TestAudioMixStageSumsAlignedS16(t *testing.T) {
@@ -173,7 +197,7 @@ func TestMixDecodesPacketArmsBeforeMixing(t *testing.T) {
 	ctx := context.Background()
 	pcm := av.CodecID("x_pcm_s16")
 	desc := codec.Descriptor{ID: pcm, Name: "PCM", Type: av.MediaAudio, Capabilities: codec.Capabilities{SampleFormats: []string{av.SampleFormatS16}}}
-	rt := New(WithDecoder(desc, recipePCMDecoderFactory{decoder: &recipePCMDecoder{}}))
+	rt := New(WithDecoder(desc, recipePCMDecoderFactory{}))
 
 	packetSrc := func(id av.StreamID) InputSpec {
 		return Source(string(id),

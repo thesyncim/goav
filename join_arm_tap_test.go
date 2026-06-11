@@ -272,7 +272,7 @@ func TestCompositeTapArmPaintsTappedStreamTwice(t *testing.T) {
 	var got []*av.Frame
 	sink := Sink(SinkFunc("out", func(_ context.Context, m Message) error {
 		if m.Kind == pipeline.MessageFrame && m.Frame != nil && m.Frame.Video != nil {
-			got = append(got, m.Frame)
+			got = append(got, cloneMixTestFrame(m.Frame))
 		}
 		return nil
 	}))

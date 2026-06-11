@@ -724,12 +724,16 @@ err = task.Control(ctx, goav.Segment(10*time.Second, 20*time.Second))
 ```
 
 The encoder-path controls (`Keyframe`, `SetBitrate`, `SelectActive`) ride
-per-node queues, so they need a buffered task graph. `Select` builds its graph
-buffered for exactly this reason — `SelectActive` works out of the box — and
-plain chains opt in with `goav.WithBufferPolicy(...)` on the runtime; on the
-default unbuffered graph `Control` refuses them with
-`goav.ErrControlUnsupported` instead of dropping them silently. The time-axis
-controls reach sources directly and work on every graph.
+per-node queues. Realtime recipes that decode or encode build those queues by
+default, as `Select` already does, so the common live-control path works without
+an explicit buffer policy. Offline recipes (`WithRealtime(false)`) keep the
+direct runner for transcode speed unless the runtime opts in with
+`goav.WithBufferPolicy(...)`; on a direct graph these controls return
+`goav.ErrControlUnsupported` instead of disappearing. Buffered recipe graphs
+derive their packet/frame copy bounds from planned stream shapes, and fail
+`Build` with a structured `buffer_budget_missing` error when a required shape
+fact is unsupported. The time-axis controls reach sources directly and work on
+every graph.
 
 `goav.Seek`, `goav.Rate`, and `goav.Segment` are the time-axis controls; all
 three broadcast to every source, and a source implementing

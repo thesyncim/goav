@@ -16,7 +16,7 @@ import (
 )
 
 type recipeResolved struct {
-	intent                Intent
+	intent                intent
 	runtime               Runtime
 	spec                  pipeline.Spec
 	specReady             bool
@@ -35,7 +35,7 @@ type recipeResolved struct {
 
 type recipeCompileState struct {
 	operation string
-	intent    Intent
+	intent    intent
 	runtime   Runtime
 	options   recipeCompileOptions
 
@@ -492,7 +492,7 @@ func validateJobIntentShapePass() recipeCompilePass {
 	}}
 }
 
-func validateJobIntentShape(operation string, intent Intent, jobOutputCount int) error {
+func validateJobIntentShape(operation string, intent intent, jobOutputCount int) error {
 	if len(intent.Inputs) == 0 {
 		return &BuildError{
 			Code:      errcode.InputMissing,
@@ -532,7 +532,7 @@ func validateJobIntentShape(operation string, intent Intent, jobOutputCount int)
 // validateMultiStreamJobIntentShape checks a job with several stream chains:
 // every chain carries its own operations and stream-local destinations, and
 // the job-level output scope stays empty (the chains own the routing).
-func validateMultiStreamJobIntentShape(operation string, intent Intent, jobOutputCount int) error {
+func validateMultiStreamJobIntentShape(operation string, intent intent, jobOutputCount int) error {
 	if jobOutputCount != 0 {
 		return jobOutputScopeMixedError(operation, intent.Streams[0])
 	}
@@ -562,7 +562,7 @@ func jobStreamDestinationMissingError(operation string, stream streamIntent) err
 	}
 }
 
-func validateJobIntentOutputScope(operation string, intent Intent, jobOutputCount int, stream streamIntent, hasStream bool) error {
+func validateJobIntentOutputScope(operation string, intent intent, jobOutputCount int, stream streamIntent, hasStream bool) error {
 	if !hasStream {
 		return nil
 	}
@@ -916,7 +916,7 @@ func recipeAttachmentMismatchError(operation string, kind string, intentCount in
 		},
 		Suggestions: []string{
 			"build recipes through goav.From(input)",
-			"keep custom compiler passes aligned with the public Intent and captured attachments",
+			"keep custom compiler passes aligned with the public intent and captured attachments",
 		},
 		Cause: ErrUnsupportedBuild,
 	}
@@ -1117,7 +1117,7 @@ func validateRecipeOperationShapesPass() recipeCompilePass {
 // patchBranchComposeOperations re-points a pre-planned branch composition at
 // the solved operation list, so the Build-side lowerer executes exactly the
 // operations the solver planned (Describe ≡ Build).
-func (s *recipeCompileState) patchBranchComposeOperations(name string, solved []OperationSpec) {
+func (s *recipeCompileState) patchBranchComposeOperations(name string, solved []operationSpec) {
 	if s == nil || !branchComposePlanReady(s.plan) {
 		return
 	}
@@ -1270,7 +1270,7 @@ func validateOperationSpecShapes(operation string, stream streamIntent, initial 
 // operationShapeFailureError dispatches a failed shape contract to its
 // surface: a .Require(...) assertion gets the requirement-specific refusal,
 // every other operation keeps the established mismatch error.
-func operationShapeFailureError(operation string, node string, index int, step OperationSpec, expected shape.Set, actual shape.Spec) error {
+func operationShapeFailureError(operation string, node string, index int, step operationSpec, expected shape.Set, actual shape.Spec) error {
 	if step.Kind == plan.OpShape && step.Require != nil {
 		return shapeRequirementUnmetError(operation, node, index, step, expected, actual)
 	}
@@ -1281,7 +1281,7 @@ func operationShapeFailureError(operation string, node string, index int, step O
 // this chain position does not satisfy the asserted shape. It carries the
 // actual and required shapes in the established refusal format; the solver
 // appends the exact .Auto(...) fix when a conversion could satisfy it.
-func shapeRequirementUnmetError(operation string, node string, index int, step OperationSpec, expected shape.Set, actual shape.Spec) error {
+func shapeRequirementUnmetError(operation string, node string, index int, step operationSpec, expected shape.Set, actual shape.Spec) error {
 	required := shape.Spec{}
 	if step.Require != nil {
 		required = *step.Require
@@ -1307,7 +1307,7 @@ func shapeRequirementUnmetError(operation string, node string, index int, step O
 	}
 }
 
-func operationSpecOutputShape(input shape.Spec, operation OperationSpec) shape.Spec {
+func operationSpecOutputShape(input shape.Spec, operation operationSpec) shape.Spec {
 	out := operation.OutputShapes(input)
 	if len(out) == 0 {
 		return input
@@ -1315,7 +1315,7 @@ func operationSpecOutputShape(input shape.Spec, operation OperationSpec) shape.S
 	return out[0]
 }
 
-func operationShapeMismatchError(operation string, node string, index int, step OperationSpec, expected shape.Set, actual shape.Spec) error {
+func operationShapeMismatchError(operation string, node string, index int, step operationSpec, expected shape.Set, actual shape.Spec) error {
 	component := firstNonEmpty(step.Component, operationSpecComponent(step), string(step.Kind), "operation")
 	return &BuildError{
 		Code:      errcode.OperationShapeMismatch,
@@ -1333,7 +1333,7 @@ func operationShapeMismatchError(operation string, node string, index int, step 
 	}
 }
 
-func operationSpecComponent(operation OperationSpec) string {
+func operationSpecComponent(operation operationSpec) string {
 	switch operation.Kind {
 	case plan.OpDecode:
 		return firstNonEmpty(string(operation.Decode.ID), operation.Component, "decode")
@@ -1359,7 +1359,7 @@ func shapeSetString(shapes shape.Set) string {
 	return strings.Join(parts, " | ")
 }
 
-func operationShapeMismatchSuggestions(operation OperationSpec) []string {
+func operationShapeMismatchSuggestions(operation operationSpec) []string {
 	switch operation.Kind {
 	case plan.OpDecode:
 		return []string{
@@ -1417,7 +1417,7 @@ func planBranchCompositionIntentPass() recipeCompilePass {
 	}}
 }
 
-func recipeGraphUnsupportedError(operation string, intent Intent) error {
+func recipeGraphUnsupportedError(operation string, intent intent) error {
 	details := []string{
 		fmt.Sprintf("recipe: %s", firstNonEmpty(intent.Name, "unnamed")),
 		fmt.Sprintf("inputs: %d", len(intent.Inputs)),

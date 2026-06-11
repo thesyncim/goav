@@ -453,6 +453,49 @@ func TestGraphBufferedCopiesBorrowedFramePlane(t *testing.T) {
 	}
 }
 
+func TestBufferedMessageOwnsFrameHeaders(t *testing.T) {
+	var slot bufferedMessage
+	slot.init(BufferPolicy{CopyFrameBytes: 4})
+
+	audio := &av.AudioFrame{SampleRate: 48000, Channels: 2, SampleFormat: "s16", Samples: 2}
+	video := &av.VideoFrame{Width: 2, Height: 2, PixelFormat: "i420"}
+	frame := &av.Frame{
+		Type:  av.MediaAudio,
+		Audio: audio,
+		Video: video,
+		Planes: []av.Plane{{
+			Buffer: av.Buffer{Bytes: []byte{1, 2, 3, 4}, Ownership: av.BufferBorrowed},
+			Stride: 4,
+		}},
+	}
+	msg := Message{Kind: MessageFrame, Frame: frame}
+	if err := slot.bind(&msg, BufferPolicy{CopyFrameBytes: 4}); err != nil {
+		t.Fatal(err)
+	}
+	audio.SampleRate = 44100
+	audio.Channels = 1
+	video.Width = 9
+	frame.Planes[0].Stride = 99
+	frame.Planes[0].Buffer.Bytes[0] = 9
+
+	got := slot.message.Frame
+	if got.Audio == audio || got.Video == video {
+		t.Fatal("buffered frame aliases producer audio/video header pointers")
+	}
+	if got.Audio.SampleRate != 48000 || got.Audio.Channels != 2 {
+		t.Fatalf("audio header = %+v, want copied 48kHz stereo", got.Audio)
+	}
+	if got.Video.Width != 2 {
+		t.Fatalf("video header = %+v, want copied width 2", got.Video)
+	}
+	if got.Planes[0].Stride != 4 {
+		t.Fatalf("plane stride = %d, want copied stride 4", got.Planes[0].Stride)
+	}
+	if got.Planes[0].Buffer.Bytes[0] != 1 {
+		t.Fatalf("plane byte = %d, want copied payload byte 1", got.Planes[0].Buffer.Bytes[0])
+	}
+}
+
 // TestGraphBufferedCopyAlwaysCopiesImmutablePacketPayload proves CopyAlways is
 // defensive: even a payload declared av.BufferImmutable is copied into
 // graph-owned backing, so a producer that lies about immutability and mutates

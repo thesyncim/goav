@@ -28,11 +28,14 @@ import (
 // selectorActiveReason names the target input in Event.StreamID, calls SetActive,
 // and is consumed (not forwarded). SelectActive builds that control.
 type selectorStage struct {
-	name   string
-	inputs []av.StreamID
-	out    av.StreamID
-	active atomic.Pointer[av.StreamID]
-	eos    map[av.StreamID]struct{}
+	name        string
+	inputs      []av.StreamID
+	out         av.StreamID
+	activeIndex atomic.Int32
+	eos         map[av.StreamID]struct{}
+	frame       av.Frame
+	packet      av.Packet
+	message     pipeline.Message
 }
 
 // selectorActiveReason marks an injected control event as a live switch request:
@@ -41,17 +44,12 @@ type selectorStage struct {
 const selectorActiveReason = "select.active"
 
 func newSelectorStage(name string, inputs []av.StreamID, out av.StreamID) *selectorStage {
-	s := &selectorStage{
+	return &selectorStage{
 		name:   name,
 		inputs: append([]av.StreamID(nil), inputs...),
 		out:    out,
 		eos:    make(map[av.StreamID]struct{}, len(inputs)),
 	}
-	if len(s.inputs) > 0 {
-		id := s.inputs[0]
-		s.active.Store(&id)
-	}
-	return s
 }
 
 func (s *selectorStage) Name() string { return s.name }
@@ -63,8 +61,7 @@ func (s *selectorStage) Name() string { return s.name }
 func (s *selectorStage) SetActive(id av.StreamID) error {
 	for i := range s.inputs {
 		if s.inputs[i] == id {
-			set := id
-			s.active.Store(&set)
+			s.activeIndex.Store(int32(i))
 			return nil
 		}
 	}
@@ -85,10 +82,14 @@ func joinStreamIDs(ids []av.StreamID) string {
 
 // activeID returns the currently active input id (empty if none configured).
 func (s *selectorStage) activeID() av.StreamID {
-	if p := s.active.Load(); p != nil {
-		return *p
+	if len(s.inputs) == 0 {
+		return ""
 	}
-	return ""
+	index := int(s.activeIndex.Load())
+	if index < 0 || index >= len(s.inputs) {
+		return ""
+	}
+	return s.inputs[index]
 }
 
 func (s *selectorStage) Handle(ctx context.Context, msg *pipeline.Message, emitter pipeline.Emitter) error {
@@ -101,16 +102,24 @@ func (s *selectorStage) Handle(ctx context.Context, msg *pipeline.Message, emitt
 		// Rewrite the StreamID on a shallow header copy — the payload buffer may
 		// be borrowed/shared, so mutating the original frame's id could corrupt
 		// another consumer.
-		clone := *msg.Frame
-		clone.StreamID = s.out
-		return emitter.Emit(ctx, &pipeline.Message{Kind: pipeline.MessageFrame, Frame: &clone})
+		s.frame = *msg.Frame
+		s.frame.StreamID = s.out
+		s.message.Kind = pipeline.MessageFrame
+		s.message.Packet = nil
+		s.message.Frame = &s.frame
+		s.message.Event = nil
+		return emitter.Emit(ctx, &s.message)
 	case pipeline.MessagePacket:
 		if msg.Packet == nil || msg.Packet.StreamID != active {
 			return nil
 		}
-		clone := *msg.Packet
-		clone.StreamID = s.out
-		return emitter.Emit(ctx, &pipeline.Message{Kind: pipeline.MessagePacket, Packet: &clone})
+		s.packet = *msg.Packet
+		s.packet.StreamID = s.out
+		s.message.Kind = pipeline.MessagePacket
+		s.message.Packet = &s.packet
+		s.message.Frame = nil
+		s.message.Event = nil
+		return emitter.Emit(ctx, &s.message)
 	case pipeline.MessageEvent:
 		if msg.Event == nil {
 			return nil

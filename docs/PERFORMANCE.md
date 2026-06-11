@@ -53,7 +53,9 @@ silently growing.
 | Message/scratch resets | `pipeline.TestMessageAndScratchResetAllocs`, `av.TestCoreResetAllocs`, `av.TestTimeBaseHelpersAllocs` | 0 |
 | `SourcePush.Packet` / `SourcePush.Frame` delivery | `goav.TestSourcePushDeliveryAllocs` | 0 |
 | `goav.SinkFunc` (collector-free) sink delivery | `goav.TestSinkFuncDeliveryAllocs` | 0 |
-| Audio mix join, per step (2 arms) | `goav.TestAudioMixStepAllocCeiling` | ceiling: 16 allocs/step (the stage deep-clones arm frames and allocates its output frame today — measured honestly, pinned as a ceiling, not claimed zero) |
+| Select active-arm passthrough (frame/packet) | `goav.TestSelectorPassthroughAllocs` | 0 |
+| Audio mix join, per step (2 and 8 arms) | `goav.TestAudioMixStepAllocs` | 0 |
+| Video composite join, per step (2 I420 arms) | `goav.TestVideoCompositeStepAllocs` | 0 |
 | Codec decode/encode stages | `codec.TestDecoderStageAllocs`, `codec.TestEncoderStageAllocs` | 0 |
 | Format demux/mux stages | `format.TestDemuxSourceAllocs`, `format.TestMuxStageAllocs`, `format.TestFormatResultResetAllocs` | 0 |
 | Filter stage (resize/resample) | `filter.TestStageAllocs`, `adapters/resize.TestFilterAllocs`, `adapters/resample.TestFilterAllocs` | 0 |
@@ -85,17 +87,17 @@ faked.
 
 | Benchmark | Workload |
 |---|---|
-| `BenchmarkRecordPackets` | RTP-style record: packet source → Copy → fake-container file |
-| `BenchmarkRemuxPackets` | file→file packet remux (demux → Copy → mux) |
-| `BenchmarkDecodeToFrameSink` | packets → decode (fake) → frame sink |
-| `BenchmarkDecodeEncode` | decode → re-encode (fake) → sink |
+| `BenchmarkRecordPackets` | RTP-style record: packet source → Copy → fake-container file (0 allocs/op measured) |
+| `BenchmarkRemuxPackets` | file→file packet remux (demux → Copy → mux, 0 allocs/op measured) |
+| `BenchmarkDecodeToFrameSink` | packets → decode (fake) → frame sink (0 allocs/op measured) |
+| `BenchmarkDecodeEncode` | decode → re-encode (fake) → sink (0 allocs/op measured) |
 | `BenchmarkResample` | real std filter, 44.1kHz stereo → 48kHz mono (0 allocs/op measured) |
 | `BenchmarkResize` | real std filter, 320x180 → 160x90 I420 (0 allocs/op measured) |
-| `BenchmarkBranchFanout/branches=2,8` | one decode, N planned branches to sinks |
-| `BenchmarkSharedMuxGroup` | audio+video chains sharing one mux destination |
-| `BenchmarkMix/arms=2,8` | N-arm audio mix on a blocking buffered graph |
-| `BenchmarkComposite` | 2-arm video composite |
-| `BenchmarkSelectPassthrough` | one-of-N selector forwarding the active arm |
+| `BenchmarkBranchFanout/branches=2,8` | one decode, N planned branches to sinks (0 allocs/op measured) |
+| `BenchmarkSharedMuxGroup` | audio+video chains sharing one mux destination (0 allocs/op measured) |
+| `BenchmarkMix/arms=2,8` | N-arm audio mix on a blocking buffered graph (0 allocs/op measured) |
+| `BenchmarkComposite` | 2-arm video composite (0 allocs/op measured) |
+| `BenchmarkSelectPassthrough` | one-of-N selector forwarding the active arm (0 allocs/op measured) |
 | `BenchmarkAttachDetachUnderLoad` | runtime branch attach+detach per op while live traffic flows (a cold-path control operation, measured against load) |
 | `BenchmarkSourcePush/dropping,blocking` | the flow-control hot path: SourcePush into a DropOldest vs Blocking queue (0 allocs/op measured for both) |
 
@@ -111,9 +113,6 @@ not installed).
 Performance characteristics that exist but are expected to change; treat the
 current numbers as snapshots, not contracts:
 
-- **Join step cost**: the audio mix allocates per step (ceiling-pinned at 16
-  allocs by `TestAudioMixStepAllocCeiling`); slot reuse in the join sync state
-  should lower the ceiling. Composite shares the same join machinery.
 - **Buffered copy-mode fanout**: borrowed payloads are copied into each
   target's slot (`BenchmarkBufferedFanout/copy` measures the per-target cost);
   a refcounted zero-copy fanout would remove it.

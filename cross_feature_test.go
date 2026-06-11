@@ -165,11 +165,9 @@ func (d *crossPCMDecoder) Close() error                                         
 // discontinuity reaches the joined stream, and an untargeted Seek reports
 // the non-seekable sibling arm by name without blocking the seekable one.
 //
-// The runtime is explicitly buffered with copy budgets: an arm that BLOCKS
-// mid-run (any live source) needs per-node workers — the default direct graph
-// starts sources sequentially, so a blocking arm starves its siblings (the
-// documented live-join gap, docs/ROADMAP.md) — and the decode arm's mutable
-// frames need a copy budget to ride buffered queues.
+// The runtime is explicitly buffered with copy budgets so the decode arm's
+// mutable frames can ride buffered queues while the test also exercises the
+// same per-node worker shape realtime joins now choose by default.
 func TestMixSyncByPTSSeekArmMidRun(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -497,9 +495,8 @@ func crossGatedFrameSource(id av.StreamID, release chan struct{}, frames ...[]in
 		})
 }
 
-// crossLiveJoinRuntime is the explicitly buffered runtime live (gated) join
-// arms need: per-node workers so concurrently blocking arms cannot starve
-// each other on the direct runner's sequential source starts.
+// crossLiveJoinRuntime returns the buffered runtime these gated tests use to
+// pin per-node workers while keeping direct copy-policy control local.
 func crossLiveJoinRuntime() Runtime {
 	return New(WithBufferPolicy(pipeline.BufferPolicy{Capacity: 8, Drop: pipeline.DropBlock}))
 }
@@ -831,29 +828,115 @@ func TestFromMultiInputChainsKeepIndependentAutoPolicies(t *testing.T) {
 	}
 }
 
-// TestMixBranchesSolverGapIsDocumented records the known gap (docs/ROADMAP.md
-// "Known gaps"): the shape solver does not run downstream of a join, so a
-// 44.1kHz mix feeding an Opus-encoding branch plans NO conversion and NO
-// refusal even under the branch's .Auto(AllowResample). When the gap is
-// closed this test fails so the pin flips to the solved behavior (a planned
-// resample on the branch path, mirroring TestAutoInsertsResampleBeforeEncode).
-func TestMixBranchesSolverGapIsDocumented(t *testing.T) {
+func TestMixBranchesAutoSolvesJoinedOutput(t *testing.T) {
 	rt := solverTestOpusRuntime(WithStdFilters())
+	var packets int
 	job := Mix(
 		From(mixTestAudioSourceRate("a", 44_100)).Audio(),
 		From(mixTestAudioSourceRate("b", 44_100)).Audio(),
 	).Branches(
 		Branch("enc").
 			Auto(shape.AllowResample()).
-			Encode(codec.Opus(codec.Bitrate(96_000))).
-			To(Sink(SinkFunc("enc", func(context.Context, Message) error { return nil }))),
+			Encode(codec.Opus(codec.Bitrate(96_000), codec.SampleRate(48_000), codec.Channels(codec.Mono))).
+			To(Sink(SinkFunc("enc", func(_ context.Context, m Message) error {
+				if m.Kind == pipeline.MessagePacket && m.Packet != nil {
+					packets++
+				}
+				return nil
+			}))),
 	).UseRuntime(rt)
 
 	planned, err := job.Describe()
 	if err != nil {
 		t.Fatalf("Describe(): %v", err)
 	}
-	if strings.Contains(specText(planned), "[resample") {
-		t.Fatalf("the join-branch solver gap is closed: a conversion is now planned — flip this test to assert the solved behavior and drop the docs/ROADMAP.md known-gap entry:\n%s", specText(planned))
+	text := specText(planned)
+	if !strings.Contains(text, "stage resample-enc [resample") ||
+		!strings.Contains(text, "select-audio -> resample-enc") ||
+		!strings.Contains(text, "resample-enc -> encode-enc") {
+		t.Fatalf("joined branch output was not solved before encode:\n%s", text)
+	}
+	task, err := job.Build(context.Background())
+	if err != nil {
+		t.Fatalf("Build(): %v", err)
+	}
+	defer task.Close()
+	if built := specText(task.Describe()); built != text {
+		t.Fatalf("Describe() != Build():\nplanned:\n%s\nbuilt:\n%s", text, built)
+	}
+	if err := task.Run(context.Background()); err != nil {
+		t.Fatalf("Run(): %v", err)
+	}
+	if packets == 0 {
+		t.Fatal("encoded branch packets = 0, want joined output to run through resample -> encode")
+	}
+}
+
+func TestMixEncodeRequiresAutoForJoinedOutput(t *testing.T) {
+	_, err := Mix(
+		From(mixTestAudioSourceRate("a", 44_100)).Audio(),
+		From(mixTestAudioSourceRate("b", 44_100)).Audio(),
+	).
+		Encode(codec.Opus(codec.Bitrate(96_000), codec.SampleRate(48_000), codec.Channels(codec.Mono))).
+		To(Sink(SinkFunc("enc", func(context.Context, Message) error { return nil }))).
+		UseRuntime(solverTestOpusRuntime(WithStdFilters())).
+		Build(context.Background())
+
+	var buildErr *BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "operation_shape_mismatch" || !errors.Is(err, ErrUnsupportedBuild) {
+		t.Fatalf("err = %v, want operation_shape_mismatch wrapping ErrUnsupportedBuild", err)
+	}
+	for _, want := range []string{
+		"opus cannot consume the current media shape",
+		"actual_shape=",
+		"expected_shape=",
+		"add .Auto(shape.AllowResample()) to the chain",
+	} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("err = %v, want %q", err, want)
+		}
+	}
+}
+
+func TestMixEncodeAutoSolvesJoinedOutput(t *testing.T) {
+	rt := solverTestOpusRuntime(WithStdFilters())
+	var packets int
+	job := Mix(
+		From(mixTestAudioSourceRate("a", 44_100)).Audio(),
+		From(mixTestAudioSourceRate("b", 44_100)).Audio(),
+	).
+		Auto(shape.AllowResample()).
+		Encode(codec.Opus(codec.Bitrate(96_000), codec.SampleRate(48_000), codec.Channels(codec.Mono))).
+		To(Sink(SinkFunc("enc", func(_ context.Context, m Message) error {
+			if m.Kind == pipeline.MessagePacket && m.Packet != nil {
+				packets++
+			}
+			return nil
+		}))).
+		UseRuntime(rt)
+
+	planned, err := job.Describe()
+	if err != nil {
+		t.Fatalf("Describe(): %v", err)
+	}
+	text := specText(planned)
+	if !strings.Contains(text, "stage resample-mix [resample") ||
+		!strings.Contains(text, "mix -> resample-mix") ||
+		!strings.Contains(text, "resample-mix -> encode-mix") {
+		t.Fatalf("joined terminal encode was not solved before encode:\n%s", text)
+	}
+	task, err := job.Build(context.Background())
+	if err != nil {
+		t.Fatalf("Build(): %v", err)
+	}
+	defer task.Close()
+	if built := specText(task.Describe()); built != text {
+		t.Fatalf("Describe() != Build():\nplanned:\n%s\nbuilt:\n%s", text, built)
+	}
+	if err := task.Run(context.Background()); err != nil {
+		t.Fatalf("Run(): %v", err)
+	}
+	if packets == 0 {
+		t.Fatal("encoded packets = 0, want joined output to run through resample -> encode")
 	}
 }

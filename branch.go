@@ -94,7 +94,7 @@ func destinationSpecEmpty(dest destinationSpec) bool {
 type BranchSpec struct {
 	name         string
 	media        av.MediaType
-	operations   []OperationSpec
+	operations   []operationSpec
 	destinations []destinationRef
 
 	source       branchSourceBinding
@@ -598,7 +598,7 @@ func branchSpecChainSteps(spec BranchSpec) []chainStep {
 	return branchChainStepsFromOperationSpecs(spec.operations)
 }
 
-func branchOperationSpecsContainStep(operations []OperationSpec) bool {
+func branchOperationSpecsContainStep(operations []operationSpec) bool {
 	for i := range operations {
 		switch operations[i].Kind {
 		case plan.OpStage, plan.OpTransform:
@@ -618,7 +618,7 @@ func branchOperationSpecsContainStep(operations []OperationSpec) bool {
 	return false
 }
 
-func branchChainStepsFromOperationSpecs(operations []OperationSpec) []chainStep {
+func branchChainStepsFromOperationSpecs(operations []operationSpec) []chainStep {
 	if len(operations) == 0 {
 		return nil
 	}
@@ -647,7 +647,7 @@ func branchChainStepsFromOperationSpecs(operations []OperationSpec) []chainStep 
 	return steps
 }
 
-func operationSpecTapIsTerminalPacket(operation OperationSpec) bool {
+func operationSpecTapIsTerminalPacket(operation operationSpec) bool {
 	if operation.Kind != plan.OpTap {
 		return false
 	}

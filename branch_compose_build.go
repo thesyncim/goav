@@ -36,9 +36,9 @@ type branchComposeBranch struct {
 	// (goav.InputName); empty means select across all inputs.
 	Input             string
 	Copy              bool
-	Operations        []OperationSpec
-	SharedOperations  []OperationSpec
-	PrivateOperations []OperationSpec
+	Operations        []operationSpec
+	SharedOperations  []operationSpec
+	PrivateOperations []operationSpec
 	DecodeConfig      codec.CodecSpec
 	CodecChange       CodecChangePolicy
 	Encode            codec.EncodeConfig
@@ -77,8 +77,8 @@ type branchComposeRoute struct {
 	codecChange       CodecChangePolicy
 	dropDecodeEvents  bool
 	sourceDomain      shape.MediaDomain
-	sharedOperations  []OperationSpec
-	privateOperations []OperationSpec
+	sharedOperations  []operationSpec
+	privateOperations []operationSpec
 	request           encodeRequest
 }
 
@@ -112,7 +112,7 @@ type branchComposeStreamGroup struct {
 }
 
 type branchComposeSharedStepGroup struct {
-	operations []OperationSpec
+	operations []operationSpec
 	branches   []int
 }
 
@@ -811,7 +811,7 @@ func branchComposeRoutes(composePlan branchComposePlan) ([]branchComposeRoute, e
 	return branches, nil
 }
 
-func branchComposeSharedRouteOperations(branch branchComposeBranch) []OperationSpec {
+func branchComposeSharedRouteOperations(branch branchComposeBranch) []operationSpec {
 	return cloneOperationSpecs(branch.SharedOperations)
 }
 
@@ -972,11 +972,11 @@ func branchComposeDuplicateBranchError(name string, index int) error {
 // canonical operation list is the only source of branch transforms; the legacy
 // ad-hoc resize/resample synthesis from parallel plan fields is gone (the
 // shape solver inserts conversions as real operations upstream).
-func branchComposeRouteOperations(branch branchComposeBranch) []OperationSpec {
+func branchComposeRouteOperations(branch branchComposeBranch) []operationSpec {
 	return cloneOperationSpecs(branch.PrivateOperations)
 }
 
-func branchComposeRouteOperationTransformsForName(name string, operations []OperationSpec) ([]mediaTransform, error) {
+func branchComposeRouteOperationTransformsForName(name string, operations []operationSpec) ([]mediaTransform, error) {
 	out := make([]mediaTransform, 0, len(operations))
 	transformIndex := 0
 	for i := range operations {
@@ -994,7 +994,7 @@ func branchComposeRouteOperationTransformsForName(name string, operations []Oper
 	return out, nil
 }
 
-func branchComposeRouteOperationTransform(branchName string, transformIndex int, operation OperationSpec) (mediaTransform, error) {
+func branchComposeRouteOperationTransform(branchName string, transformIndex int, operation operationSpec) (mediaTransform, error) {
 	suffix := ""
 	if transformIndex > 0 {
 		suffix = "-" + strconv.Itoa(transformIndex+1)
@@ -1044,7 +1044,7 @@ func mediaTransformEmpty(transform mediaTransform) bool {
 		transform.audio == nil
 }
 
-func branchComposeRouteStageOperationCount(operations []OperationSpec) int {
+func branchComposeRouteStageOperationCount(operations []operationSpec) int {
 	count := 0
 	for i := range operations {
 		switch operations[i].Kind {
@@ -1061,11 +1061,11 @@ func branchComposeRouteStageOperationCount(operations []OperationSpec) int {
 	return count
 }
 
-func branchComposeRouteStageOperations(operations []OperationSpec) []OperationSpec {
+func branchComposeRouteStageOperations(operations []operationSpec) []operationSpec {
 	if len(operations) == 0 {
 		return nil
 	}
-	out := make([]OperationSpec, 0, len(operations))
+	out := make([]operationSpec, 0, len(operations))
 	for i := range operations {
 		operation := operations[i]
 		switch operation.Kind {
@@ -1082,11 +1082,11 @@ func branchComposeRouteStageOperations(operations []OperationSpec) []OperationSp
 	return cloneOperationSpecs(out)
 }
 
-func branchComposeRouteOperationsKey(operations []OperationSpec) string {
+func branchComposeRouteOperationsKey(operations []operationSpec) string {
 	return mediaTransformsKeyFromOperations(branchComposeRouteStageOperations(operations))
 }
 
-func mediaTransformsKeyFromOperations(operations []OperationSpec) string {
+func mediaTransformsKeyFromOperations(operations []operationSpec) string {
 	if len(operations) == 0 {
 		return ""
 	}

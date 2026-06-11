@@ -1,4 +1,4 @@
-// The normalized build intent: intent types, OperationSpec construction, and intent derivation from job streams.
+// The normalized build intent: intent types, operationSpec construction, and intent derivation from job streams.
 
 package goav
 
@@ -11,11 +11,11 @@ import (
 	"github.com/thesyncim/goav/shape"
 )
 
-// Intent is the normalized build plan derived from a Job before graph
+// intent is the normalized build plan derived from a Job before graph
 // compilation: inputs, stream chains with their ordered operations, and
 // deduplicated destinations. It is a read-only projection used by planning
 // and tests; applications normally read plan.Report from Explain instead.
-type Intent struct {
+type intent struct {
 	Name         string
 	Inputs       []inputIntent
 	Streams      []streamIntent
@@ -40,24 +40,24 @@ type inputIntent struct {
 // instead of keeping parallel fields.
 //
 // Destinations is not derived from Operations: it is the stream→destination
-// routing, naming the Intent.Destinations entries this chain feeds. The flow is
+// routing, naming the intent.Destinations entries this chain feeds. The flow is
 // one-directional — builders write the labels here, and the plan derives its
 // destination/<label> handle IDs from them (planBranchDestinations).
 type streamIntent struct {
 	Name         string
 	Select       plan.StreamSelect
 	From         TapRef
-	Operations   []OperationSpec
+	Operations   []operationSpec
 	CodecChange  CodecChangePolicy
 	Destinations []string
 }
 
-// OperationSpec is one chain operation in normalized form — the single
+// operationSpec is one chain operation in normalized form — the single
 // representation every chain (stream, branch, flow, join arm) lowers to.
 // Kind says which fields apply: Decode/Encode carry codec specs, Transform a
 // resize/resample, Stage a custom stage, Tap an attach point, and Shape the
 // annotation/solver fields (Shape, Auto, Require, Prefer).
-type OperationSpec struct {
+type operationSpec struct {
 	Kind      plan.OperationKind
 	Component string
 	Stage     pipeline.Stage
@@ -119,64 +119,64 @@ func RealtimeCodecChangePolicy() CodecChangePolicy {
 	}
 }
 
-func operationSpecForDecode(codec codec.CodecSpec, component string) OperationSpec {
-	return OperationSpec{Kind: plan.OpDecode, Component: component, Decode: cloneCodecSpec(codec)}
+func operationSpecForDecode(codec codec.CodecSpec, component string) operationSpec {
+	return operationSpec{Kind: plan.OpDecode, Component: component, Decode: cloneCodecSpec(codec)}
 }
 
-func operationSpecForCopy(codec codec.CodecSpec) OperationSpec {
-	return OperationSpec{Kind: plan.OpCopy, Component: "packet-copy", Encode: cloneCodecSpec(codec)}
+func operationSpecForCopy(codec codec.CodecSpec) operationSpec {
+	return operationSpec{Kind: plan.OpCopy, Component: "packet-copy", Encode: cloneCodecSpec(codec)}
 }
 
-func operationSpecForEncode(codec codec.CodecSpec) OperationSpec {
+func operationSpecForEncode(codec codec.CodecSpec) operationSpec {
 	if codec.Copy {
 		return operationSpecForCopy(codec)
 	}
-	return OperationSpec{Kind: plan.OpEncode, Component: string(codec.ID), Encode: cloneCodecSpec(codec)}
+	return operationSpec{Kind: plan.OpEncode, Component: string(codec.ID), Encode: cloneCodecSpec(codec)}
 }
 
-func operationSpecForStage(stage pipeline.Stage) OperationSpec {
+func operationSpecForStage(stage pipeline.Stage) operationSpec {
 	name := ""
 	if stage != nil {
 		name = stage.Name()
 	}
-	return OperationSpec{Kind: plan.OpStage, Component: name, Stage: stage}
+	return operationSpec{Kind: plan.OpStage, Component: name, Stage: stage}
 }
 
-func operationSpecForShape(shape shape.Spec) OperationSpec {
-	return OperationSpec{Kind: plan.OpShape, Component: "shape", Shape: shape}
+func operationSpecForShape(shape shape.Spec) operationSpec {
+	return operationSpec{Kind: plan.OpShape, Component: "shape", Shape: shape}
 }
 
 // operationSpecForAutoPolicy is the policy-carrying operation .Auto(...)
 // appends: an plan.OpShape annotation with no shape facts (it never changes the
 // media) whose Auto field opts the chain into shape solving.
-func operationSpecForAutoPolicy(policies []shape.Policy) OperationSpec {
+func operationSpecForAutoPolicy(policies []shape.Policy) operationSpec {
 	var policy shape.Policy
 	for i := range policies {
 		policy = policy.Union(policies[i])
 	}
-	return OperationSpec{Kind: plan.OpShape, Component: "auto", Auto: &policy}
+	return operationSpec{Kind: plan.OpShape, Component: "auto", Auto: &policy}
 }
 
 // operationSpecForRequire is the assertion-carrying operation .Require(...)
 // appends: an plan.OpShape annotation with no shape facts of its own (it never
 // changes the media and lowers to no runtime node) whose Require field the
 // shape walk enforces as a hard constraint at this chain position.
-func operationSpecForRequire(spec shape.Spec) OperationSpec {
-	return OperationSpec{Kind: plan.OpShape, Component: "require", Require: &spec}
+func operationSpecForRequire(spec shape.Spec) operationSpec {
+	return operationSpec{Kind: plan.OpShape, Component: "require", Require: &spec}
 }
 
 // operationSpecForPreference is the preference-carrying operation .Prefer(...)
 // appends: an plan.OpShape annotation with no shape facts (it never changes
 // the media and lowers to no runtime node) whose Prefer field biases the shape
 // solver's otherwise-open choices.
-func operationSpecForPreference(spec shape.Spec) OperationSpec {
-	return OperationSpec{Kind: plan.OpShape, Component: "prefer", Prefer: &spec}
+func operationSpecForPreference(spec shape.Spec) operationSpec {
+	return operationSpec{Kind: plan.OpShape, Component: "prefer", Prefer: &spec}
 }
 
 // chainAutoPolicy unions the chain's .Auto(...) policies. The second result
 // reports whether any policy operation is present — an empty .Auto() activates
 // solving while allowing nothing, so refusals name the exact policy to add.
-func chainAutoPolicy(operations []OperationSpec) (shape.Policy, bool) {
+func chainAutoPolicy(operations []operationSpec) (shape.Policy, bool) {
 	var policy shape.Policy
 	active := false
 	for i := range operations {
@@ -192,26 +192,26 @@ func chainAutoPolicy(operations []OperationSpec) (shape.Policy, bool) {
 // operationSpecIsAnnotation reports whether the operation is a pure annotation
 // carrier — an .Auto(...) policy, a .Require(...) assertion, or a .Prefer(...)
 // preference — that lowers to no runtime node and does no work.
-func operationSpecIsAnnotation(operation OperationSpec) bool {
+func operationSpecIsAnnotation(operation operationSpec) bool {
 	return operation.Kind == plan.OpShape && mediaShapeEmpty(operation.Shape) &&
 		(operation.Auto != nil || operation.Require != nil || operation.Prefer != nil)
 }
 
-func operationSpecForTransform(transform TransformSpec) OperationSpec {
-	return OperationSpec{
+func operationSpecForTransform(transform TransformSpec) operationSpec {
+	return operationSpec{
 		Kind:      plan.OpTransform,
 		Component: transformFactoryName(transform),
 		Transform: cloneTransformSpec(transform),
 	}
 }
 
-func operationSpecForTap(tap TapRef, media av.MediaType, after plan.OperationKind) OperationSpec {
+func operationSpecForTap(tap TapRef, media av.MediaType, after plan.OperationKind) operationSpec {
 	domain := tap.domain
 	if domain == "" {
 		domain = tapDomainForAfter(after)
 	}
 	intent := tapIntent{Name: tap.name, MediaKind: media, Domain: domain, After: after}
-	return OperationSpec{Kind: plan.OpTap, Component: tap.name, Tap: intent}
+	return operationSpec{Kind: plan.OpTap, Component: tap.name, Tap: intent}
 }
 
 // tapDomainForAfter infers a domain-less tap's media domain from the operation it
@@ -225,7 +225,7 @@ func tapDomainForAfter(after plan.OperationKind) shape.MediaDomain {
 	}
 }
 
-func operationSpecAfter(operations []OperationSpec, fallback plan.OperationKind) plan.OperationKind {
+func operationSpecAfter(operations []operationSpec, fallback plan.OperationKind) plan.OperationKind {
 	after := fallback
 	for i := range operations {
 		switch operations[i].Kind {
@@ -238,7 +238,7 @@ func operationSpecAfter(operations []OperationSpec, fallback plan.OperationKind)
 	return after
 }
 
-func operationSpecsContainKind(operations []OperationSpec, kind plan.OperationKind) bool {
+func operationSpecsContainKind(operations []operationSpec, kind plan.OperationKind) bool {
 	for i := range operations {
 		if operations[i].Kind == kind {
 			return true
@@ -247,7 +247,7 @@ func operationSpecsContainKind(operations []OperationSpec, kind plan.OperationKi
 	return false
 }
 
-func operationSpecsContainChainStep(operations []OperationSpec) bool {
+func operationSpecsContainChainStep(operations []operationSpec) bool {
 	for i := range operations {
 		switch operations[i].Kind {
 		case plan.OpStage, plan.OpTransform:
@@ -284,10 +284,10 @@ func ensureJobStreamDecodeOperation(stream *jobStreamBuild) {
 	// Reached only when no decode op exists yet (so no codec options were given);
 	// an explicit Decode(opts) always appends its own plan.OpDecode.
 	operation := operationSpecForDecode(codec.CodecSpec{}, string(stream.selector.Codec))
-	stream.operations = append([]OperationSpec{operation}, stream.operations...)
+	stream.operations = append([]operationSpec{operation}, stream.operations...)
 }
 
-func jobIntentStream(intent Intent) (streamIntent, bool) {
+func jobIntentStream(intent intent) (streamIntent, bool) {
 	if len(intent.Streams) == 0 {
 		return streamIntent{}, false
 	}
@@ -319,7 +319,7 @@ func branchStreamIntent(stream streamBuild) streamIntent {
 	}
 }
 
-func jobOperationSpecs(stream *jobStreamBuild) []OperationSpec {
+func jobOperationSpecs(stream *jobStreamBuild) []operationSpec {
 	if stream == nil {
 		return nil
 	}
@@ -329,16 +329,16 @@ func jobOperationSpecs(stream *jobStreamBuild) []OperationSpec {
 	return cloneOperationSpecs(stream.operations)
 }
 
-func streamBuildOperationSpecs(stream streamBuild) []OperationSpec {
+func streamBuildOperationSpecs(stream streamBuild) []operationSpec {
 	if len(stream.sharedOps) != 0 || len(stream.privateOps) != 0 {
 		return streamBuildSplitOperationSpecs(stream)
 	}
 	if len(stream.operations) != 0 {
 		return cloneOperationSpecs(stream.operations)
 	}
-	operations := make([]OperationSpec, 0, 2)
+	operations := make([]operationSpec, 0, 2)
 	if stream.decode {
-		operations = append(operations, OperationSpec{
+		operations = append(operations, operationSpec{
 			Kind:      plan.OpDecode,
 			Component: string(stream.selector.Codec),
 			Decode:    cloneCodecSpec(stream.decodeCodec),
@@ -351,21 +351,21 @@ func streamBuildOperationSpecs(stream streamBuild) []OperationSpec {
 	return operations
 }
 
-func streamBuildSplitOperationSpecs(stream streamBuild) []OperationSpec {
-	operations := make([]OperationSpec, 0, len(stream.sharedOps)+len(stream.privateOps)+2)
+func streamBuildSplitOperationSpecs(stream streamBuild) []operationSpec {
+	operations := make([]operationSpec, 0, len(stream.sharedOps)+len(stream.privateOps)+2)
 	operations = append(operations, cloneOperationSpecs(stream.sharedOps)...)
 	operations = append(operations, cloneOperationSpecs(stream.privateOps)...)
 	if stream.decode && !operationSpecsContainKind(operations, plan.OpDecode) {
 		operation := operationSpecForDecode(stream.decodeCodec, string(stream.selector.Codec))
 		operation.Shared = stream.from.Domain() == shape.DomainFrame && len(stream.sharedOps) != 0
-		operations = append([]OperationSpec{operation}, operations...)
+		operations = append([]operationSpec{operation}, operations...)
 	}
 	// The encode op (plan.OpEncode/plan.OpCopy) is always already in sharedOps/privateOps,
 	// so there is nothing to re-add.
 	return operations
 }
 
-func plannedBranchSharedOperationSpecs(stream *jobStreamBuild, spec BranchSpec, parentPacket bool) []OperationSpec {
+func plannedBranchSharedOperationSpecs(stream *jobStreamBuild, spec BranchSpec, parentPacket bool) []operationSpec {
 	if stream == nil || parentPacket {
 		return nil
 	}
@@ -383,12 +383,12 @@ func plannedBranchSharedOperationSpecs(stream *jobStreamBuild, spec BranchSpec, 
 		if prefix, ok := operationSpecsThroughKind(parentOperations, plan.OpDecode); ok {
 			return sharedOperationSpecs(prefix)
 		}
-		return sharedOperationSpecs([]OperationSpec{operationSpecForDecode(chainDecodeCodec(parentOperations), string(stream.selector.Codec))})
+		return sharedOperationSpecs([]operationSpec{operationSpecForDecode(chainDecodeCodec(parentOperations), string(stream.selector.Codec))})
 	}
 	return nil
 }
 
-func plannedBranchPrivateOperationSpecs(stream *jobStreamBuild, spec BranchSpec, parentPacket bool) []OperationSpec {
+func plannedBranchPrivateOperationSpecs(stream *jobStreamBuild, spec BranchSpec, parentPacket bool) []operationSpec {
 	if !parentPacket || chainHasDecode(spec.operations) || codecIntentSet(chainEncodeSpec(spec.operations)) {
 		return cloneOperationSpecs(spec.operations)
 	}
@@ -404,7 +404,7 @@ func plannedBranchPrivateOperationSpecs(stream *jobStreamBuild, spec BranchSpec,
 			out = append(out, cloneOperationSpecs(spec.operations)...)
 			return out
 		}
-		out := []OperationSpec{operationSpecForCopy(codec.Copy())}
+		out := []operationSpec{operationSpecForCopy(codec.Copy())}
 		out = append(out, cloneOperationSpecs(spec.operations)...)
 		return out
 	}
@@ -416,7 +416,7 @@ func plannedBranchPrivateOperationSpecs(stream *jobStreamBuild, spec BranchSpec,
 	return cloneOperationSpecs(stream.operations)
 }
 
-func sharedOperationSpecs(operations []OperationSpec) []OperationSpec {
+func sharedOperationSpecs(operations []operationSpec) []operationSpec {
 	if len(operations) == 0 {
 		return nil
 	}
@@ -427,7 +427,7 @@ func sharedOperationSpecs(operations []OperationSpec) []OperationSpec {
 	return out
 }
 
-func operationSpecsThroughKind(operations []OperationSpec, kind plan.OperationKind) ([]OperationSpec, bool) {
+func operationSpecsThroughKind(operations []operationSpec, kind plan.OperationKind) ([]operationSpec, bool) {
 	for i := range operations {
 		if operations[i].Kind == kind {
 			return cloneOperationSpecs(operations[:i+1]), true
@@ -436,7 +436,7 @@ func operationSpecsThroughKind(operations []OperationSpec, kind plan.OperationKi
 	return nil, false
 }
 
-func operationSpecsThroughTap(operations []OperationSpec, tap string) ([]OperationSpec, bool) {
+func operationSpecsThroughTap(operations []operationSpec, tap string) ([]operationSpec, bool) {
 	if tap == "" {
 		return nil, false
 	}
@@ -456,7 +456,7 @@ func operationSpecsThroughTap(operations []OperationSpec, tap string) ([]Operati
 // the single source of truth — instead of the parallel chain-step-tap and
 // post-encode-tap projections. Each plan.OpTap already carries the resolved tap
 // (name/domain/media/after) from operationSpecForTap.
-func operationSpecTaps(operations []OperationSpec, media av.MediaType) []tapIntent {
+func operationSpecTaps(operations []operationSpec, media av.MediaType) []tapIntent {
 	taps := make([]tapIntent, 0, len(operations))
 	for i := range operations {
 		if operations[i].Kind != plan.OpTap {

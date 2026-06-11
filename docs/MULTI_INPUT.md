@@ -31,18 +31,25 @@ is variadic with chain semantics: each destination receives the joined stream
 (Mix/Composite mux fanout after `.Encode`, Select fans out to several sinks),
 and one handle listed twice raises the same duplicate refusal a chain does. The pipeline already
 supported N input edges per node, and each buffered node has a single serial
-worker, so join stages need no internal locking — lock-free by design holds.
-Lock-free is not allocation-free here: the mix step allocates today (arm frame
-clones plus the output frame), measured and pinned as a ceiling by
-`TestAudioMixStepAllocCeiling` and benchmarked by `BenchmarkMix` — see
-`docs/PERFORMANCE.md`.
+worker, so join stages need no internal locking. Select always defaults a
+direct runtime to a non-lossy buffered graph so `SelectActive` can be injected;
+realtime Mix/Composite do the same so live arms start concurrently, while
+offline (`WithRealtime(false)`) Mix/Composite keep direct-runner speed unless
+the runtime explicitly opts into a buffer. Select pins active-arm passthrough
+at zero allocations (`TestSelectorPassthroughAllocs`), and Mix and Composite
+pin their two-arm per-step hot paths at zero allocations
+(`TestAudioMixStepAllocs`, `TestVideoCompositeStepAllocs`).
 
 All three plan through the ONE recipe compile: the joinSpec normalizes into the
 compile state, `joinPlan` plans N arm sub-chains converging into an `OpJoin`
 node (workPlan edges carry the N-to-1), and `Describe()` ≡ `Build()` is
 guard-tested per kind (nested case included). Per-kind behavior lives only in
 the joinProfiles table. Arm shape-solving goes through the central solver
-(`armExpected`/`armPolicy`).
+(`armExpected`/`armPolicy`). The joined output runs through that same solver
+before terminal `.Encode(...)` and before planned `.Branches(...)`, seeded with
+the joined stream's shape: branch-local `.Auto(...)` can insert conversions on
+that branch, and `.Auto(...)` on the Mix/Composite output applies to the
+terminal encode path or to every planned branch.
 
 Taps converge mid-graph: an arm chain keeps its declared `.Decode()`/`.Tap(...)`
 — the tap installs on the task anchored at the arm's decode (or source) node,

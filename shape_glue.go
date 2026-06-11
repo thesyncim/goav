@@ -88,7 +88,7 @@ func (spec TransformSpec) OutputShapes(input shape.Spec) shape.Set {
 
 // InputShapes reports the media shapes the operation can consume (its
 // shape.Contract input side); nil means the operation accepts anything.
-func (operation OperationSpec) InputShapes() shape.Set {
+func (operation operationSpec) InputShapes() shape.Set {
 	switch operation.Kind {
 	case plan.OpDecode:
 		codecID := firstNonEmptyCodec(operation.Decode.ID, av.CodecID(operation.Component))
@@ -120,7 +120,7 @@ func (operation OperationSpec) InputShapes() shape.Set {
 
 // OutputShapes reports the shapes the operation produces for the given input
 // — the shape-propagation step the chain validator and solver walk.
-func (operation OperationSpec) OutputShapes(input shape.Spec) shape.Set {
+func (operation operationSpec) OutputShapes(input shape.Spec) shape.Set {
 	switch operation.Kind {
 	case plan.OpDecode:
 		input.Domain = shape.DomainFrame

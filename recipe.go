@@ -18,7 +18,7 @@ import (
 // (see the errcode package for the catalog), Operation/Node say where, Reason says why,
 // Details carry machine-readable facts (key=value lines), and Suggestions
 // carry concrete fixes. Cause is a sentinel (ErrUnsupportedBuild, ErrNilSink,
-// ...) reachable through errors.Is.
+// pipeline.ErrBufferedMessageUnsafe, ...) reachable through errors.Is.
 type BuildError struct {
 	Code        errcode.Code
 	Operation   string
@@ -99,7 +99,7 @@ type jobStreamBuild struct {
 	name        string
 	selector    av.StreamSelector
 	input       string
-	operations  []OperationSpec
+	operations  []operationSpec
 	codecChange CodecChangePolicy
 	outputs     []destinationSpec
 	outputNames []string
@@ -276,8 +276,8 @@ func (j *Job) checkSharedStreamDestination(current *jobStreamBuild, output desti
 	return nil
 }
 
-func (j *Job) plan() Intent {
-	intent := Intent{Name: j.name}
+func (j *Job) plan() intent {
+	intent := intent{Name: j.name}
 	if runtime, ok := j.runtime.(*runtime); ok {
 		intent.Policies.Realtime = runtime.realtime
 	}

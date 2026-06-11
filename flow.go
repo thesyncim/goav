@@ -27,7 +27,7 @@ type Chain interface {
 type chainSpec struct {
 	name       string
 	media      av.MediaType
-	operations []OperationSpec
+	operations []operationSpec
 	err        error
 }
 
@@ -629,11 +629,11 @@ func chainSpecFrom(flow Chain) (chainSpec, error) {
 // encode state — the operations are the single source of truth (one operation
 // list). The plan.OpDecode operation carries the decode codec; the terminal
 // plan.OpEncode/plan.OpCopy carries the encode codec.
-func chainHasDecode(operations []OperationSpec) bool {
+func chainHasDecode(operations []operationSpec) bool {
 	return operationSpecsContainKind(operations, plan.OpDecode)
 }
 
-func chainDecodeCodec(operations []OperationSpec) codec.CodecSpec {
+func chainDecodeCodec(operations []operationSpec) codec.CodecSpec {
 	for i := range operations {
 		if operations[i].Kind == plan.OpDecode {
 			return operations[i].Decode
@@ -642,7 +642,7 @@ func chainDecodeCodec(operations []OperationSpec) codec.CodecSpec {
 	return codec.CodecSpec{}
 }
 
-func chainEncodeSpec(operations []OperationSpec) codec.CodecSpec {
+func chainEncodeSpec(operations []operationSpec) codec.CodecSpec {
 	for i := range operations {
 		if operations[i].Kind == plan.OpEncode || operations[i].Kind == plan.OpCopy {
 			return operations[i].Encode

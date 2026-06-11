@@ -106,6 +106,8 @@ func (e *passthroughEncoder) Close() error { return nil }
 type passthroughDecoder struct {
 	desc   codec.Descriptor
 	stream av.Stream
+	audio  av.AudioFrame
+	video  av.VideoFrame
 }
 
 func (d *passthroughDecoder) Descriptor() codec.Descriptor { return d.desc }
@@ -130,8 +132,8 @@ func (d *passthroughDecoder) DecodeInto(_ context.Context, packet *av.Packet, ou
 	index := len(out.Frames)
 	out.Frames = out.Frames[:index+1]
 	frame := &out.Frames[index]
-	frame.Reset()
-	if !parseFramePayload(packet.Payload.Bytes, frame) {
+	if !parseFramePayload(packet.Payload.Bytes, frame, &d.audio, &d.video) {
+		frame.Reset()
 		if err := fallbackFrame(packet, d.stream, frame); err != nil {
 			out.Frames = out.Frames[:index]
 			return err
@@ -195,28 +197,43 @@ func appendFramePayload(b []byte, frame *av.Frame) []byte {
 // parseFramePayload restores a frame serialized by appendFramePayload into
 // frame (reusing its plane capacity), reporting false when the payload was
 // not produced by the passthrough encoder.
-func parseFramePayload(payload []byte, frame *av.Frame) bool {
+func parseFramePayload(payload []byte, frame *av.Frame, audioScratch *av.AudioFrame, videoScratch *av.VideoFrame) bool {
 	if len(payload) < len(framePayloadMagic) || string(payload[:len(framePayloadMagic)]) != framePayloadMagic {
 		return false
 	}
+	audio, video := resetFrameForPayload(frame)
 	r := newWireReader(payload[len(framePayloadMagic):])
 	switch r.u8() {
 	case frameKindAudio:
-		frame.Type = av.MediaAudio
-		frame.Audio = &av.AudioFrame{
+		if audio == nil {
+			audio = audioScratch
+		}
+		if audio == nil {
+			audio = &av.AudioFrame{}
+		}
+		*audio = av.AudioFrame{
 			SampleRate:    int(r.u32()),
 			Channels:      int(r.u32()),
-			ChannelLayout: r.str(),
-			SampleFormat:  r.str(),
+			ChannelLayout: r.internedString(),
+			SampleFormat:  r.internedString(),
 			Samples:       int(r.u32()),
 		}
+		frame.Type = av.MediaAudio
+		frame.Audio = audio
 	case frameKindVideo:
-		frame.Type = av.MediaVideo
-		frame.Video = &av.VideoFrame{
+		if video == nil {
+			video = videoScratch
+		}
+		if video == nil {
+			video = &av.VideoFrame{}
+		}
+		*video = av.VideoFrame{
 			Width:       int(r.u32()),
 			Height:      int(r.u32()),
-			PixelFormat: r.str(),
+			PixelFormat: r.internedString(),
 		}
+		frame.Type = av.MediaVideo
+		frame.Video = video
 	default:
 		return false
 	}
@@ -235,6 +252,24 @@ func parseFramePayload(payload []byte, frame *av.Frame) bool {
 		return false
 	}
 	return true
+}
+
+func resetFrameForPayload(frame *av.Frame) (*av.AudioFrame, *av.VideoFrame) {
+	audio := frame.Audio
+	video := frame.Video
+	frame.StreamID = ""
+	frame.CodecEpoch = 0
+	frame.Type = ""
+	frame.PTS = av.Timestamp{}
+	frame.Duration = av.Duration{}
+	frame.Audio = nil
+	frame.Video = nil
+	for i := range frame.Planes {
+		frame.Planes[i].Reset()
+	}
+	frame.Planes = frame.Planes[:0]
+	frame.Metadata = nil
+	return audio, video
 }
 
 func resizePlanes(planes []av.Plane, n int) []av.Plane {

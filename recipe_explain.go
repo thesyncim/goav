@@ -133,7 +133,7 @@ func explainStreams(streams []streamIntent) []plan.Stream {
 	return reports
 }
 
-func explainOperationSpecs(operations []OperationSpec) []plan.Operation {
+func explainOperationSpecs(operations []operationSpec) []plan.Operation {
 	reports := make([]plan.Operation, 0, len(operations))
 	for i := range operations {
 		reports = append(reports, plan.Operation{
@@ -147,7 +147,7 @@ func explainOperationSpecs(operations []OperationSpec) []plan.Operation {
 	return reports
 }
 
-func operationSpecShape(operation OperationSpec) shape.Spec {
+func operationSpecShape(operation operationSpec) shape.Spec {
 	switch operation.Kind {
 	case plan.OpTransform:
 		return mediaShapeFromTransform(operation.Transform)
@@ -163,7 +163,7 @@ func operationSpecShape(operation OperationSpec) shape.Spec {
 	}
 }
 
-func operationSpecDetail(operation OperationSpec) string {
+func operationSpecDetail(operation operationSpec) string {
 	switch operation.Kind {
 	case plan.OpTransform:
 		return firstNonEmpty(transformFactoryName(operation.Transform), "transform frames")
@@ -855,11 +855,11 @@ func explainSummary(intentName string, report plan.Report) string {
 	return fmt.Sprintf("%s %s through %d stream branch(es) to %s", name, input, len(report.Streams), target)
 }
 
-func cloneOperationSpecs(operations []OperationSpec) []OperationSpec {
+func cloneOperationSpecs(operations []operationSpec) []operationSpec {
 	if len(operations) == 0 {
 		return nil
 	}
-	out := make([]OperationSpec, 0, len(operations))
+	out := make([]operationSpec, 0, len(operations))
 	for i := range operations {
 		operation := operations[i]
 		operation.Transform = cloneTransformSpec(operation.Transform)

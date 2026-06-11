@@ -5,7 +5,11 @@
 
 package goavtest
 
-import "encoding/binary"
+import (
+	"encoding/binary"
+
+	"github.com/thesyncim/goav/av"
+)
 
 func appendU8(b []byte, v byte) []byte {
 	return append(b, v)
@@ -37,8 +41,8 @@ type wireReader struct {
 	ok  bool
 }
 
-func newWireReader(b []byte) *wireReader {
-	return &wireReader{b: b, ok: true}
+func newWireReader(b []byte) wireReader {
+	return wireReader{b: b, ok: true}
 }
 
 func (r *wireReader) take(n int) []byte {
@@ -79,6 +83,55 @@ func (r *wireReader) str() string {
 	return string(r.take(int(r.u32())))
 }
 
+func (r *wireReader) internedString() string {
+	return internWireString(r.take(int(r.u32())))
+}
+
 func (r *wireReader) blob() []byte {
 	return r.take(int(r.u32()))
+}
+
+func internWireString(b []byte) string {
+	switch {
+	case len(b) == 0:
+		return ""
+	case bytesEqualString(b, string(av.MediaAudio)):
+		return string(av.MediaAudio)
+	case bytesEqualString(b, string(av.MediaVideo)):
+		return string(av.MediaVideo)
+	case bytesEqualString(b, string(av.MediaSubtitle)):
+		return string(av.MediaSubtitle)
+	case bytesEqualString(b, string(av.SampleFormatS16)):
+		return av.SampleFormatS16
+	case bytesEqualString(b, string(av.SampleFormatF32)):
+		return av.SampleFormatF32
+	case bytesEqualString(b, string(av.PixelFormatGray8)):
+		return av.PixelFormatGray8
+	case bytesEqualString(b, string(av.PixelFormatI420)):
+		return av.PixelFormatI420
+	case bytesEqualString(b, string(av.PixelFormatYUV420P)):
+		return av.PixelFormatYUV420P
+	case bytesEqualString(b, string(av.PixelFormatI422)):
+		return av.PixelFormatI422
+	case bytesEqualString(b, string(av.PixelFormatYUV422P)):
+		return av.PixelFormatYUV422P
+	case bytesEqualString(b, string(av.PixelFormatI444)):
+		return av.PixelFormatI444
+	case bytesEqualString(b, string(av.PixelFormatYUV444P)):
+		return av.PixelFormatYUV444P
+	default:
+		return string(b)
+	}
+}
+
+func bytesEqualString(b []byte, s string) bool {
+	if len(b) != len(s) {
+		return false
+	}
+	for i := range b {
+		if b[i] != s[i] {
+			return false
+		}
+	}
+	return true
 }

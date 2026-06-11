@@ -42,8 +42,11 @@ func liveVideoVP8Provider(name string) *liveTestProvider {
 			ID:   "video",
 			Type: av.MediaVideo,
 			Codec: av.CodecParameters{
-				ID:   av.CodecVP8,
-				Type: av.MediaVideo,
+				ID:          av.CodecVP8,
+				Type:        av.MediaVideo,
+				Width:       16,
+				Height:      16,
+				PixelFormat: av.PixelFormatI420,
 			},
 		}},
 	}
@@ -56,6 +59,11 @@ func (p *liveTestProvider) OpenSource(context.Context) (pipeline.Source, []av.St
 }
 
 func (p *liveTestProvider) SourceShape() shape.Spec {
+	if len(p.streams) != 0 {
+		spec := shape.FromStream(p.streams[0], shape.DomainPacket)
+		spec.Realtime = true
+		return spec
+	}
 	return shape.Spec{
 		Domain:    shape.DomainPacket,
 		MediaKind: p.media,

@@ -21,8 +21,8 @@ pin test (`errors_pin_test.go`):
   calls: `add .Auto(shape.AllowResample())`, `insert .Resample(48000, 2)
   explicitly`, `encode the mixed audio first:
   goav.Mix(a, b).Encode(codec.Opus(...))`.
-- **Cause** — a sentinel (`goav.ErrUnsupportedBuild`, `goav.ErrNilSink`, ...)
-  reachable through `errors.Is`.
+- **Cause** — a sentinel (`goav.ErrUnsupportedBuild`, `goav.ErrNilSink`,
+  `pipeline.ErrBufferedMessageUnsafe`, ...) reachable through `errors.Is`.
 
 One renderer produces one shape:
 
@@ -67,7 +67,12 @@ collected as `goav: control to "node": ...`. Attach/Rebranch refusals are full
 `BuildError` values (the `runtime_branch_*` codes). Failed stream-rule
 reactions surface as `av.EventAttachError` events carrying the stream id,
 branch name, and cause. Join stages name the offending arm (`goav: audio mix
-requires s16, got f32 on arm "b"`).
+requires s16, got f32 on arm "b"`). Buffered payload safety backstops are also
+structured at the task boundary: a mutable payload reaching `flow.CopyNever`
+returns `errcode.BufferPayloadUnsafe` with the `CopyNever` branch names and
+still matches `pipeline.ErrBufferedMessageUnsafe`; a payload larger than the
+configured copy bounds returns `errcode.BufferPayloadTooLarge` and still
+matches `pipeline.ErrMessageTooLarge`.
 
 ## Diagnostics
 

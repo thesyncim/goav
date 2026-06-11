@@ -222,7 +222,7 @@ func gatedBranchSpecs(specs []BranchSpec, group *switchGroup) []BranchSpec {
 	out := make([]BranchSpec, len(specs))
 	for i := range specs {
 		out[i] = specs[i]
-		operations := make([]OperationSpec, 0, len(specs[i].operations)+1)
+		operations := make([]operationSpec, 0, len(specs[i].operations)+1)
 		operations = append(operations, operationSpecForStage(group.gate()))
 		operations = append(operations, cloneOperationSpecs(specs[i].operations)...)
 		out[i].operations = operations

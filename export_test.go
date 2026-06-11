@@ -1,11 +1,15 @@
 package goav
 
-import "github.com/thesyncim/goav/codec"
+import (
+	"github.com/thesyncim/goav/codec"
+	"github.com/thesyncim/goav/plan"
+	"github.com/thesyncim/goav/shape"
+)
 
 // JobPlanForTest exposes the unexported intent normalization to the external
-// API tests. The production surface does not export Job.Plan: the Intent it
+// API tests. The production surface does not export Job.Plan: the intent it
 // returns is the compiler's input, not a caller-facing report (Explain is).
-func JobPlanForTest(j *Job) Intent {
+func JobPlanForTest(j *Job) intent {
 	return j.plan()
 }
 
@@ -23,6 +27,40 @@ func StreamEncodeForTest(stream streamIntent) codec.CodecSpec {
 
 func StreamTapsForTest(stream streamIntent) []tapIntent {
 	return operationSpecTaps(stream.Operations, stream.Select.Type)
+}
+
+func OperationSpecKindsForTest(operations any) []plan.OperationKind {
+	ops, ok := operations.([]operationSpec)
+	if !ok {
+		return nil
+	}
+	kinds := make([]plan.OperationKind, 0, len(ops))
+	for i := range ops {
+		kinds = append(kinds, ops[i].Kind)
+	}
+	return kinds
+}
+
+func TransformOperationsForTest(operations any) []TransformSpec {
+	ops, ok := operations.([]operationSpec)
+	if !ok {
+		return nil
+	}
+	transforms := make([]TransformSpec, 0)
+	for i := range ops {
+		if ops[i].Kind == plan.OpTransform {
+			transforms = append(transforms, ops[i].Transform)
+		}
+	}
+	return transforms
+}
+
+func CopyOperationContractForTest() shape.Contract {
+	return operationSpecForCopy(codec.Copy())
+}
+
+func TransformOperationContractForTest(transform TransformSpec) shape.Contract {
+	return operationSpecForTransform(transform)
 }
 
 // expertGraph opens the internal fluent graph builder the expert package

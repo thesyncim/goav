@@ -100,6 +100,14 @@ frame taps, copy or decode packet taps, and expose their own typed taps for
 later attachments. Detaching a parent removes dependent branches anchored from
 its taps. H264 and AV1 recipe encoding remain work in progress.
 
+Design direction: a tap is not a second data path. It is a named stream point
+that later consumers can bind to. Planned branches, runtime branches, join-arm
+`TapRef`s, and `Control.AtTap` should keep sharing that one internal anchor
+model: `.Tap(...)` declares the point, `.From(tap)` consumes it, and the
+planner owns the node/domain/shape facts. That gives the useful part of "tap
+at any point" while preserving the small public grammar and avoiding a second
+branch API.
+
 Typed task control rides the same graph: untargeted controls (keyframe
 requests) enter at the source boundary and follow the data path to capable
 nodes; `.AtTap(name)` narrows to a tap's point; node-targeted `.At(...)` is
@@ -162,15 +170,15 @@ identifiers). Computing the largest file set closed under intra-package
 dependencies leaves only `join_sync.go` (+`tap.go` at best) movable — no
 boundary worth a package.
 
-What it would take to enforce the layering: either relocate the grammar types
+What it would take to enforce the layering: either relocate the grammar records
 (`Branch`/`BranchSpec`, `Recipe`, `Runtime`, `Destination`, `InputSpec`,
-`OperationSpec`, `joinSpec`) into a shared package re-exported by root —
-public-API churn (type identity and `reflect.Type.PkgPath` change even under
-aliases) — or introduce a data-transfer seam so the planner consumes and
-returns plain plan data instead of reading and mutating grammar object fields.
-Both are larger restructurings than the boundary is currently worth; the
-intended cut, if ever, is the second one, with the shared data types living in
-`plan`/`shape`.
+`operationSpec`, `joinSpec`) into a shared package and alias the exported ones
+back through root — public-API churn (type identity and `reflect.Type.PkgPath`
+change even under aliases), while the planner records stay unexported — or
+introduce a data-transfer seam so the planner consumes and returns plain plan
+data instead of reading and mutating grammar object fields. Both are larger
+restructurings than the boundary is currently worth; the intended cut, if ever,
+is the second one, with the shared data types living in `plan`/`shape`.
 
 ## Core media model
 

@@ -21,6 +21,9 @@ errcode.BranchOperationChainUnsupported
 errcode.BranchSourceInvalid
 errcode.BranchTapMissing
 errcode.BranchTransformMediaMismatch
+errcode.BufferBudgetMissing
+errcode.BufferPayloadTooLarge
+errcode.BufferPayloadUnsafe
 errcode.Code
 errcode.CodecChangePolicyUnsupported
 errcode.CompilerPassFailed
@@ -199,7 +202,6 @@ goav.Input
 goav.InputName
 goav.InputOption
 goav.InputSpec
-goav.Intent
 goav.Job
 goav.Join
 goav.JoinArm
@@ -218,7 +220,6 @@ goav.Name
 goav.New
 goav.NextFrame
 goav.NextKeyframe
-goav.OperationSpec
 goav.Option
 goav.Packet
 goav.PacketFunc

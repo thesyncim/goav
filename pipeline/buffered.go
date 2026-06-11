@@ -81,6 +81,8 @@ type bufferedMessage struct {
 	packet        av.Packet
 	frame         av.Frame
 	event         av.Event
+	audio         av.AudioFrame
+	video         av.VideoFrame
 	planes        [bufferedMaxFramePlanes]av.Plane
 	packetBacking []byte
 	frameBacking  []byte
@@ -1038,6 +1040,14 @@ func (m *bufferedMessage) bind(src *Message, policy BufferPolicy) error {
 		}
 		frameBacking := m.frameBacking
 		m.frame = *src.Frame
+		if src.Frame.Audio != nil {
+			m.audio = *src.Frame.Audio
+			m.frame.Audio = &m.audio
+		}
+		if src.Frame.Video != nil {
+			m.video = *src.Frame.Video
+			m.frame.Video = &m.video
+		}
 		offset := 0
 		for i := range src.Frame.Planes {
 			plane := src.Frame.Planes[i]
@@ -1077,6 +1087,8 @@ func (m *bufferedMessage) Reset() {
 	m.packet.Reset()
 	m.frame.Reset()
 	m.event.Reset()
+	m.audio = av.AudioFrame{}
+	m.video = av.VideoFrame{}
 	for i := range m.planes {
 		m.planes[i].Reset()
 	}

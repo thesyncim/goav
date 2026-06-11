@@ -38,8 +38,8 @@ contract (the proven/measured/not-proven map is `docs/PERFORMANCE.md`):
 
 - `av`: `TestCoreResetAllocs`, `TestTimeBaseHelpersAllocs`
 - `goav` (root): `TestSourcePushDeliveryAllocs`, `TestSinkFuncDeliveryAllocs`,
-  `TestAudioMixStepAllocCeiling` (a pinned ceiling — the mix step allocates
-  today; see `docs/PERFORMANCE.md`)
+  `TestSelectorPassthroughAllocs`, `TestAudioMixStepAllocs`,
+  `TestVideoCompositeStepAllocs`
 - `pipeline`: `TestMessageAndScratchResetAllocs`, `TestGraphDirectRunAllocs`,
   `TestGraphBufferedSteadyEmitAllocs`, `TestDropControllerDecideAllocs`
 - `rtpav`: `TestSourceStartAllocs`, `TestSequenceDetectorAllocs`,

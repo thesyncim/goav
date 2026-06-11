@@ -24,7 +24,7 @@ import (
 // transform operation, the registry adapter that performs it, the conversion
 // classes it needed, and the human delta for errors and diagnostics.
 type shapeConversionPlan struct {
-	operation OperationSpec
+	operation operationSpec
 	factory   string
 	needed    shape.Policy
 	detail    string
@@ -33,7 +33,7 @@ type shapeConversionPlan struct {
 // solveOperationSpecShapes walks one stream chain's operations with the shape
 // solver. It returns the solved operation list (nil when nothing was inserted)
 // and one diagnostic per insertion.
-func solveOperationSpecShapes(operation string, rt *runtime, stream streamIntent, initial shape.Spec) ([]OperationSpec, []plan.Diagnostic, error) {
+func solveOperationSpecShapes(operation string, rt *runtime, stream streamIntent, initial shape.Spec) ([]operationSpec, []plan.Diagnostic, error) {
 	if rt == nil {
 		// No standard runtime (expert or test states): keep the validate-only walk.
 		return nil, nil, validateOperationSpecShapes(operation, stream, initial)
@@ -48,7 +48,7 @@ func solveOperationSpecShapes(operation string, rt *runtime, stream streamIntent
 	node := firstNonEmpty(stream.Name, string(stream.Select.ID), string(stream.Select.Type), "stream")
 	policy, policyActive := chainAutoPolicy(stream.Operations)
 	preference, preferenceActive := chainPreference(stream.Operations)
-	solved := make([]OperationSpec, 0, len(stream.Operations)+1)
+	solved := make([]operationSpec, 0, len(stream.Operations)+1)
 	var diagnostics []plan.Diagnostic
 	inserted := false
 	for i := range stream.Operations {
@@ -124,7 +124,7 @@ func solveOperationSpecShapes(operation string, rt *runtime, stream streamIntent
 
 // chainPreference merges the chain's .Prefer(...) specs (later facts win) and
 // reports whether any preference operation is present.
-func chainPreference(operations []OperationSpec) (shape.Spec, bool) {
+func chainPreference(operations []operationSpec) (shape.Spec, bool) {
 	var preference shape.Spec
 	active := false
 	for i := range operations {
@@ -141,7 +141,7 @@ func chainPreference(operations []OperationSpec) (shape.Spec, bool) {
 // input beyond its hard domain/media contract: an encoder's configured output
 // caps are the shape its input frames must already have. Operations without
 // pinned facts return the zero Spec.
-func operationSoftInputShape(operation OperationSpec) shape.Spec {
+func operationSoftInputShape(operation operationSpec) shape.Spec {
 	if operation.Kind != plan.OpEncode || operation.Encode.Copy || operation.Encode.ID == "" {
 		return shape.Spec{}
 	}
@@ -468,7 +468,7 @@ func narrowAdaptersByPreference(matched []filter.Descriptor, media av.MediaType,
 // shapeSolverAdapterError renders adapter-selection failures with the chain
 // context: which operation needed the conversion, the source and expected
 // shapes, and the registration (or disambiguation) that fixes it.
-func shapeSolverAdapterError(operation string, node string, index int, step OperationSpec, actual shape.Spec, expected shape.Spec, err error) error {
+func shapeSolverAdapterError(operation string, node string, index int, step operationSpec, actual shape.Spec, expected shape.Spec, err error) error {
 	selection, ok := err.(*shapeAdapterSelectionError)
 	if !ok {
 		return err
@@ -516,7 +516,7 @@ func shapeSolverAdapterError(operation string, node string, index int, step Oper
 // shapeConversionRefusedError is the solver's refusal: a conversion would fix
 // the chain, but the active .Auto(...) policy does not allow it. The error
 // carries the source shape, the expected shape, and the exact policy to add.
-func shapeConversionRefusedError(operation string, node string, index int, step OperationSpec, allowed shape.Policy, conversion shapeConversionPlan, actual shape.Spec, expected shape.Spec) error {
+func shapeConversionRefusedError(operation string, node string, index int, step operationSpec, allowed shape.Policy, conversion shapeConversionPlan, actual shape.Spec, expected shape.Spec) error {
 	missing := allowed.Missing(conversion.needed)
 	return &BuildError{
 		Code:      errcode.ShapeConversionRefused,
@@ -544,7 +544,7 @@ func shapeConversionRefusedError(operation string, node string, index int, step 
 // appendAutoFixSuggestions upgrades the plain shape mismatch error with the
 // exact fix when a conversion could solve it: the .Auto(...) policy to add and
 // the explicit operation to write instead.
-func appendAutoFixSuggestions(err error, actual shape.Spec, expected shape.Spec, step OperationSpec) error {
+func appendAutoFixSuggestions(err error, actual shape.Spec, expected shape.Spec, step operationSpec) error {
 	buildErr, ok := err.(*BuildError)
 	if !ok || buildErr == nil {
 		return err
@@ -559,7 +559,7 @@ func appendAutoFixSuggestions(err error, actual shape.Spec, expected shape.Spec,
 	return buildErr
 }
 
-func explicitConversionSuggestion(transform TransformSpec, step OperationSpec) []string {
+func explicitConversionSuggestion(transform TransformSpec, step operationSpec) []string {
 	target := ""
 	if step.Kind != "" {
 		target = " before " + operationSpecLabel(step)
@@ -609,7 +609,7 @@ func shapePreferenceIgnoredDiagnostic(node string, pref shape.Spec, reason strin
 
 // shapeConversionDiagnostic records one insertion on the plan, e.g.
 // "inserted resample 44.1kHz→48kHz before encode-opus (AllowResample)".
-func shapeConversionDiagnostic(node string, conversion shapeConversionPlan, step OperationSpec, actual shape.Spec, expected shape.Spec) plan.Diagnostic {
+func shapeConversionDiagnostic(node string, conversion shapeConversionPlan, step operationSpec, actual shape.Spec, expected shape.Spec) plan.Diagnostic {
 	return plan.Diagnostic{
 		Code:    string(errcode.ShapeConversionInserted),
 		Node:    node,
@@ -638,7 +638,7 @@ func shapePolicyLabel(policy shape.Policy) string {
 
 // operationSpecLabel names an operation for solver errors and diagnostics:
 // "encode-opus", "decode-vp8", "stage-visualizer", "resample".
-func operationSpecLabel(operation OperationSpec) string {
+func operationSpecLabel(operation operationSpec) string {
 	switch operation.Kind {
 	case plan.OpEncode:
 		return "encode-" + firstNonEmpty(string(operation.Encode.ID), operation.Component, "encoder")

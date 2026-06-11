@@ -136,9 +136,9 @@ type streamBuild struct {
 	from             TapRef
 	decode           bool
 	decodeCodec      codec.CodecSpec
-	operations       []OperationSpec
-	sharedOps        []OperationSpec
-	privateOps       []OperationSpec
+	operations       []operationSpec
+	sharedOps        []operationSpec
+	privateOps       []operationSpec
 	destinationNames []string
 }
 

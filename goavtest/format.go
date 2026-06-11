@@ -58,6 +58,7 @@ type containerMuxer struct {
 	id     av.FormatID
 	writer io.Writer
 	buf    []byte
+	record []byte
 }
 
 func (m *containerMuxer) Format() av.FormatID { return m.id }
@@ -97,8 +98,8 @@ func (m *containerMuxer) Write(_ context.Context, packet *av.Packet, _ *format.W
 	body = appendContainerTime(body, packet.Duration.Value, packet.Duration.Base)
 	body = appendWireBytes(body, packet.Payload.Bytes)
 	m.buf = body
-	record := appendWireBytes(nil, body)
-	_, err := m.writer.Write(record)
+	m.record = appendWireBytes(m.record[:0], body)
+	_, err := m.writer.Write(m.record)
 	return err
 }
 
@@ -111,6 +112,8 @@ type containerDemuxer struct {
 	id      av.FormatID
 	reader  *bufio.Reader
 	streams []av.Stream
+	buf     []byte
+	prefix  [4]byte
 }
 
 func (d *containerDemuxer) Format() av.FormatID { return d.id }
@@ -149,7 +152,7 @@ func (d *containerDemuxer) Open(_ context.Context, input format.Input, _ format.
 	}
 	d.streams = make([]av.Stream, 0, count)
 	for i := 0; i < count; i++ {
-		d.streams = append(d.streams, parseContainerStream(r))
+		d.streams = append(d.streams, parseContainerStream(&r))
 	}
 	if !r.ok {
 		return errors.New("goavtest: corrupt container stream table")
@@ -172,12 +175,12 @@ func (d *containerDemuxer) ReadInto(_ context.Context, out *format.ReadResult) e
 	r := newWireReader(body)
 	packet := out.Packet
 	packet.Reset()
-	packet.StreamID = av.StreamID(r.str())
-	packet.Type = av.MediaType(r.str())
+	packet.StreamID = d.streamIDFromWire(r.blob())
+	packet.Type = av.MediaType(internWireString(r.blob()))
 	packet.Keyframe = r.u8()&1 != 0
-	packet.PTS.Value, packet.PTS.Base = parseContainerTime(r)
-	packet.DTS.Value, packet.DTS.Base = parseContainerTime(r)
-	duration, durationBase := parseContainerTime(r)
+	packet.PTS.Value, packet.PTS.Base = parseContainerTime(&r)
+	packet.DTS.Value, packet.DTS.Base = parseContainerTime(&r)
+	duration, durationBase := parseContainerTime(&r)
 	packet.Duration = av.Duration{Value: duration, Base: durationBase}
 	packet.Payload.Bytes = append(packet.Payload.Bytes[:0], r.blob()...)
 	if !r.ok {
@@ -187,21 +190,32 @@ func (d *containerDemuxer) ReadInto(_ context.Context, out *format.ReadResult) e
 	return nil
 }
 
+func (d *containerDemuxer) streamIDFromWire(id []byte) av.StreamID {
+	for i := range d.streams {
+		if bytesEqualString(id, string(d.streams[i].ID)) {
+			return d.streams[i].ID
+		}
+	}
+	return av.StreamID(string(id))
+}
+
 // Close is a no-op: the reader belongs to the input's owner.
 func (d *containerDemuxer) Close() error { return nil }
 
 // readBlock reads one u32-length-prefixed block; a clean end of input is
 // io.EOF, a torn block is io.ErrUnexpectedEOF.
 func (d *containerDemuxer) readBlock() ([]byte, error) {
-	var prefix [4]byte
-	if _, err := io.ReadFull(d.reader, prefix[:]); err != nil {
+	if _, err := io.ReadFull(d.reader, d.prefix[:]); err != nil {
 		if errors.Is(err, io.ErrUnexpectedEOF) {
 			return nil, io.ErrUnexpectedEOF
 		}
 		return nil, err
 	}
-	length := int(uint32(prefix[0]) | uint32(prefix[1])<<8 | uint32(prefix[2])<<16 | uint32(prefix[3])<<24)
-	body := make([]byte, length)
+	length := int(uint32(d.prefix[0]) | uint32(d.prefix[1])<<8 | uint32(d.prefix[2])<<16 | uint32(d.prefix[3])<<24)
+	if cap(d.buf) < length {
+		d.buf = make([]byte, length)
+	}
+	body := d.buf[:length]
 	if _, err := io.ReadFull(d.reader, body); err != nil {
 		return nil, io.ErrUnexpectedEOF
 	}

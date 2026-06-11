@@ -343,7 +343,7 @@ func planStreamIntentOperations(stream streamIntent, branchName string) ([]planO
 	return operations, decisions
 }
 
-func planOperationFromOperationSpec(operation OperationSpec) planOperation {
+func planOperationFromOperationSpec(operation operationSpec) planOperation {
 	switch operation.Kind {
 	case plan.OpTransform:
 		op := planTransformOperation(operation.Transform)
@@ -411,7 +411,7 @@ func planOperationFromOperationSpec(operation OperationSpec) planOperation {
 	}
 }
 
-func operationSpecKindPresent(operations []OperationSpec, kind plan.OperationKind) bool {
+func operationSpecKindPresent(operations []operationSpec, kind plan.OperationKind) bool {
 	for i := range operations {
 		if operations[i].Kind == kind {
 			return true

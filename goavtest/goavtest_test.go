@@ -151,7 +151,7 @@ func TestCodecRoundTripIsByteFaithful(t *testing.T) {
 		packets = append(packets, *packet)
 	}
 	decoded := goavtest.NewCollector()
-	err = goav.From(goavtest.Packets(av.CodecOpus, packets...)).
+	err = goav.From(goavtest.Packets(av.CodecOpus, packets...).With(goav.Codec(codec.Opus(codec.Channels(1))))).
 		Audio().Decode().
 		To(decoded.Sink()).
 		UseRuntime(goavtest.Runtime()).
@@ -187,7 +187,7 @@ func TestFormatRoundTripThroughFile(t *testing.T) {
 	err = goav.From(goav.FileInput("roundtrip.ogg", bytes.NewReader(file.Bytes()))).
 		Audio().Decode().
 		To(out.Sink()).
-		UseRuntime(goavtest.Runtime()).
+		UseRuntime(goavtest.Runtime(goav.WithRealtime(false))).
 		Run(ctx)
 	if err != nil {
 		t.Fatal(err)

@@ -51,6 +51,8 @@ type joinSyncState struct {
 	inputs  []av.StreamID
 	pending map[av.StreamID][]*av.Frame
 	eos     map[av.StreamID]struct{}
+	frames  []*av.Frame
+	recycle func(*av.Frame)
 
 	// nextNS is the expected start of the next PTS step — the end of the last
 	// emitted step on the common nanosecond clock.
@@ -65,12 +67,20 @@ type joinSyncState struct {
 	dropped atomic.Uint64
 }
 
-func newJoinSyncState(mode joinSyncMode, inputs []av.StreamID) *joinSyncState {
+func newJoinSyncStateWithPendingCap(mode joinSyncMode, inputs []av.StreamID, pendingCap int) *joinSyncState {
+	if pendingCap < 1 {
+		pendingCap = 1
+	}
+	pending := make(map[av.StreamID][]*av.Frame, len(inputs))
+	for i := range inputs {
+		pending[inputs[i]] = make([]*av.Frame, 0, pendingCap)
+	}
 	return &joinSyncState{
 		mode:    mode,
 		inputs:  append([]av.StreamID(nil), inputs...),
-		pending: make(map[av.StreamID][]*av.Frame, len(inputs)),
+		pending: pending,
 		eos:     make(map[av.StreamID]struct{}, len(inputs)),
+		frames:  make([]*av.Frame, len(inputs)),
 		nextNS:  joinSyncNSUnset,
 	}
 }
@@ -99,8 +109,13 @@ func (s *joinSyncState) discontinuity(id av.StreamID) bool {
 		if id != "" && arm != id {
 			continue
 		}
-		s.dropped.Add(uint64(len(s.pending[arm])))
-		s.pending[arm] = nil
+		queue := s.pending[arm]
+		for i := range queue {
+			s.recycleFrame(queue[i])
+			queue[i] = nil
+		}
+		s.dropped.Add(uint64(len(queue)))
+		s.pending[arm] = queue[:0]
 	}
 	s.nextNS = joinSyncNSUnset
 	return true
@@ -141,7 +156,7 @@ func (s *joinSyncState) step() (frames []*av.Frame, ref int, ok bool) {
 	if !s.ready() {
 		return nil, 0, false
 	}
-	frames = make([]*av.Frame, len(s.inputs))
+	frames = s.stepFrames()
 	if s.mode == joinSyncPTS {
 		ref = s.selectPTS(frames)
 	} else {
@@ -149,10 +164,21 @@ func (s *joinSyncState) step() (frames []*av.Frame, ref int, ok bool) {
 	}
 	for i, id := range s.inputs {
 		if frames[i] != nil {
-			s.pending[id] = s.pending[id][1:]
+			s.pending[id], _ = popJoinFrame(s.pending[id])
 		}
 	}
 	return frames, ref, true
+}
+
+func (s *joinSyncState) stepFrames() []*av.Frame {
+	if cap(s.frames) < len(s.inputs) {
+		s.frames = make([]*av.Frame, len(s.inputs))
+	}
+	frames := s.frames[:len(s.inputs)]
+	for i := range frames {
+		frames[i] = nil
+	}
+	return frames
 }
 
 // selectArrival fills every pending head into its slot (the arrival step).
@@ -221,28 +247,35 @@ func (s *joinSyncState) dropStale() {
 			if !usable || ns >= s.nextNS-frameDurationNS(queue[0])/2 {
 				break
 			}
-			queue = queue[1:]
+			var dropped *av.Frame
+			queue, dropped = popJoinFrame(queue)
+			s.recycleFrame(dropped)
 			s.dropped.Add(1)
 		}
 		s.pending[id] = queue
 	}
 }
 
+func (s *joinSyncState) recycleFrame(frame *av.Frame) {
+	if s.recycle != nil && frame != nil {
+		s.recycle(frame)
+	}
+}
+
+func popJoinFrame(queue []*av.Frame) ([]*av.Frame, *av.Frame) {
+	if len(queue) == 0 {
+		return queue, nil
+	}
+	frame := queue[0]
+	copy(queue, queue[1:])
+	queue[len(queue)-1] = nil
+	return queue[:len(queue)-1], frame
+}
+
 // droppedFrames reports the running catch-up drop total — the value the join
 // stages expose through pipeline.DropReporter. Safe concurrently with Handle.
 func (s *joinSyncState) droppedFrames() uint64 {
 	return s.dropped.Load()
-}
-
-// compactJoinFrames returns the participating frames in input order.
-func compactJoinFrames(frames []*av.Frame) []*av.Frame {
-	out := make([]*av.Frame, 0, len(frames))
-	for i := range frames {
-		if frames[i] != nil {
-			out = append(out, frames[i])
-		}
-	}
-	return out
 }
 
 // framePTSNS rescales a frame's PTS to the common nanosecond clock. ok=false

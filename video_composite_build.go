@@ -4,6 +4,7 @@ import (
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/pipeline"
+	"github.com/thesyncim/goav/shape"
 )
 
 // Composite overlays N synchronized video arms into one stream delivered to
@@ -19,11 +20,12 @@ func Composite(arms ...JoinArm) *compositeStream {
 }
 
 type compositeStream struct {
-	arms   []JoinArm
-	encode *codec.CodecSpec
-	taps   []TapRef
-	sync   joinSyncMode
-	region *compositeRegion
+	arms       []JoinArm
+	encode     *codec.CodecSpec
+	taps       []TapRef
+	operations []operationSpec
+	sync       joinSyncMode
+	region     *compositeRegion
 }
 
 // joinArm lets a Composite stand as an arm of an outer join: the outer join
@@ -35,7 +37,7 @@ func (c *compositeStream) joinArm() joinArmSpec {
 		return joinArmSpec{}
 	}
 	return joinArmSpec{
-		join:   &joinSpec{kind: joinComposite, arms: c.arms, encode: c.encode, taps: c.taps, sync: c.sync},
+		join:   &joinSpec{kind: joinComposite, arms: c.arms, encode: c.encode, operations: cloneOperationSpecs(c.operations), taps: c.taps, sync: c.sync},
 		region: c.region,
 	}
 }
@@ -59,6 +61,27 @@ func (c *compositeStream) Region(x, y int) *compositeStream {
 // default pairs frames one-per-arm and is right for live same-clock sources.
 func (c *compositeStream) SyncByPTS() *compositeStream {
 	c.sync = joinSyncPTS
+	return c
+}
+
+// Auto lets the planner insert format conversions on the composited output
+// before a terminal .Encode(...) or planned branches, using the same shape
+// solver as a normal stream chain.
+func (c *compositeStream) Auto(policies ...shape.Policy) *compositeStream {
+	c.operations = append(c.operations, operationSpecForAutoPolicy(policies))
+	return c
+}
+
+// Require asserts shape facts on the composited output before the terminal
+// encode or planned branches.
+func (c *compositeStream) Require(spec shape.Spec) *compositeStream {
+	c.operations = append(c.operations, operationSpecForRequire(spec))
+	return c
+}
+
+// Prefer biases automatic conversion adapter selection on the composited output.
+func (c *compositeStream) Prefer(spec shape.Spec) *compositeStream {
+	c.operations = append(c.operations, operationSpecForPreference(spec))
 	return c
 }
 
@@ -88,7 +111,7 @@ func (c *compositeStream) Tap(tap TapRef) *compositeStream {
 // its own destinations — the same goav.Branch specs an ordinary stream chain
 // accepts after decode.
 func (c *compositeStream) Branches(branches ...BranchSpec) *Job {
-	return newJoinBranchesJob(joinComposite, joinSpec{arms: c.arms, encode: c.encode, taps: c.taps, sync: c.sync}, branches)
+	return newJoinBranchesJob(joinComposite, joinSpec{arms: c.arms, encode: c.encode, operations: cloneOperationSpecs(c.operations), taps: c.taps, sync: c.sync}, branches)
 }
 
 // To delivers the composited stream to one or more destinations (a fanout
@@ -97,16 +120,21 @@ func (c *compositeStream) Branches(branches ...BranchSpec) *Job {
 // composite runs through the same Build/Run as every other recipe. It lowers
 // to the one joinSpec shared by every convergence builder.
 func (c *compositeStream) To(destinations ...Destination) *Job {
-	return newJoinJob(joinComposite, joinSpec{arms: c.arms, dests: destinations, encode: c.encode, taps: c.taps, sync: c.sync})
+	return newJoinJob(joinComposite, joinSpec{arms: c.arms, dests: destinations, encode: c.encode, operations: cloneOperationSpecs(c.operations), taps: c.taps, sync: c.sync})
 }
 
 // compositeJoinProfile is Composite's entry in the join table: video arms,
 // auto-decode for packet arms, per-arm Region layout collection,
 // videoCompositeStage convergence, and an encodable output stream derived from
-// the first arm's shape.
+// the Region bounding box over every arm's frame shape.
 var compositeJoinProfile = joinProfile{
 	media:      av.MediaVideo,
 	decodeArms: true,
+	graphBuffer: &pipeline.BufferPolicy{
+		Capacity: realtimeRecipeBufferCapacity,
+		Drop:     pipeline.DropBlock,
+	},
+	graphBufferRealtimeOnly: true,
 	// Each arm places its frame on the canvas at its declared Region — a chain
 	// arm's .Region(x, y) or a nested composite's — defaulting to the top-left
 	// corner {0,0}.
@@ -119,21 +147,21 @@ var compositeJoinProfile = joinProfile{
 		return nil, nil
 	},
 	newStage: func(p *joinPlan, armIDs []av.StreamID) (pipeline.Stage, *pipeline.BufferPolicy) {
-		return newVideoCompositeStage(p.name, armIDs, av.StreamID(p.name), p.layouts, p.join.sync), nil
+		return newVideoCompositeStageWithPrealloc(p.name, armIDs, av.StreamID(p.name), p.layouts, p.join.sync, joinStagePreallocDepth(p.runtime)), nil
 	},
 	// The output id is the join's planned node name (composite, or composite-2
-	// when nested); the format facts come from the first arm — a leaf's
-	// declared source shape or a sub-join's joined stream.
+	// when nested); the geometry facts are the full Region bounding box over
+	// all arms, not the first arm's tile.
 	joinedStream: func(p *joinPlan) av.Stream {
-		shape := p.firstArmSourceShape()
+		spec := compositeJoinedOutputShape(p)
 		return av.Stream{
 			ID:   av.StreamID(p.name),
 			Type: av.MediaVideo,
 			Codec: av.CodecParameters{
 				Type:        av.MediaVideo,
-				Width:       shape.Width,
-				Height:      shape.Height,
-				PixelFormat: shape.PixelFormat,
+				Width:       spec.Width,
+				Height:      spec.Height,
+				PixelFormat: spec.PixelFormat,
 			},
 		}
 	},
@@ -142,4 +170,61 @@ var compositeJoinProfile = joinProfile{
 		"encode the composited video first: goav.Composite(a, b).Encode(codec.VP8(codec.Bitrate(1_000_000))).To(out)",
 		"deliver raw composited frames with .To(goav.Sink(sink)) instead",
 	},
+}
+
+func compositeJoinedOutputShape(p *joinPlan) shape.Spec {
+	if p == nil || len(p.arms) == 0 {
+		return shape.Frame(av.MediaVideo)
+	}
+	spec := shape.Frame(av.MediaVideo, shape.Stream(av.StreamID(p.name)))
+	canvasW, canvasH := 0, 0
+	missingGeometry := false
+	missingPixelFormat := false
+	unsupportedPixelFormat := ""
+	for i := range p.arms {
+		arm := compositeArmFrameShape(p.arms[i])
+		if arm.Width <= 0 || arm.Height <= 0 {
+			missingGeometry = true
+		} else {
+			layout := compositeArmLayout(p, i)
+			canvasW = max(canvasW, layout.X+arm.Width)
+			canvasH = max(canvasH, layout.Y+arm.Height)
+		}
+		switch arm.PixelFormat {
+		case "":
+			missingPixelFormat = true
+		case av.PixelFormatI420:
+		default:
+			if unsupportedPixelFormat == "" {
+				unsupportedPixelFormat = arm.PixelFormat
+			}
+		}
+	}
+	if !missingGeometry {
+		spec.Width = canvasW
+		spec.Height = canvasH
+	}
+	switch {
+	case missingPixelFormat:
+		spec.PixelFormat = ""
+	case unsupportedPixelFormat != "":
+		spec.PixelFormat = unsupportedPixelFormat
+	default:
+		spec.PixelFormat = av.PixelFormatI420
+	}
+	return spec
+}
+
+func compositeArmFrameShape(arm joinArmPlan) shape.Spec {
+	if arm.sub != nil {
+		return shape.FromStream(arm.sub.joined, arm.sub.joinedDomain)
+	}
+	return shape.FromStream(arm.stream, shape.DomainFrame)
+}
+
+func compositeArmLayout(p *joinPlan, index int) compositeLayout {
+	if p == nil || index < 0 || index >= len(p.layouts) {
+		return compositeLayout{}
+	}
+	return p.layouts[index]
 }

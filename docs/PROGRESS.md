@@ -46,7 +46,7 @@ From(input) -> Chain -> operations -> Tap -> Branch -> Destination -> Task
 ```
 
 - direct streams are syntax sugar for an implicit `Branch("main")`;
-- every fluent operation appends exactly one `OperationSpec`; direct streams,
+- every fluent operation appends exactly one internal `operationSpec`; direct streams,
   planned branches, runtime branches, and flows share one ordered list;
 - `Destination` is the routing handle: reusing the same `Destination` value
   groups branches into one sink or mux destination;

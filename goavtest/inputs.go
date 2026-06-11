@@ -105,7 +105,7 @@ func Packets(codecID av.CodecID, packets ...av.Packet) goav.InputSpec {
 	name := nextName("packets")
 	media := packetsMedia(codecID, packets)
 	return goav.Source(name,
-		shape.Packet(media, codecID),
+		packetSourceShape(codecID, media),
 		func(_ context.Context, push goav.SourcePush) error {
 			for i := range packets {
 				packet := packets[i]
@@ -119,6 +119,15 @@ func Packets(codecID av.CodecID, packets ...av.Packet) goav.InputSpec {
 			}
 			return push.EOS()
 		})
+}
+
+func packetSourceShape(codecID av.CodecID, media av.MediaType) shape.Spec {
+	switch codecID {
+	case av.CodecOpus:
+		return shape.Packet(media, codecID, shape.Audio(0, 0, av.SampleFormatS16))
+	default:
+		return shape.Packet(media, codecID)
+	}
 }
 
 // packetsMedia resolves the declared media kind of a Packets source: the

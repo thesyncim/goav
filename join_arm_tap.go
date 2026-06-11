@@ -148,7 +148,7 @@ func planJoinTapArm(name string, kind string, profile joinProfile, tap TapRef, a
 }
 
 // chainArmOperations reads a chain arm's declared operation list.
-func chainArmOperations(chain *jobStreamBuilder) []OperationSpec {
+func chainArmOperations(chain *jobStreamBuilder) []operationSpec {
 	if chain == nil || chain.stream == nil {
 		return nil
 	}
@@ -159,7 +159,7 @@ func chainArmOperations(chain *jobStreamBuilder) []OperationSpec {
 // .Decode() and .Tap(...) before the join — everything else (transforms,
 // stages, encoders, copies, shape steps) was silently dropped before and is
 // now rejected with the supported alternatives.
-func validateJoinArmOperations(join string, arm string, operations []OperationSpec) error {
+func validateJoinArmOperations(join string, arm string, operations []operationSpec) error {
 	for i := range operations {
 		switch operations[i].Kind {
 		case plan.OpDecode, plan.OpTap:
@@ -177,7 +177,7 @@ func validateJoinArmOperations(join string, arm string, operations []OperationSp
 // joinChainArmTaps validates and collects the taps a chain arm declared. Arm
 // taps live at the arm's decoded point (or directly on a frame-domain
 // source), so they are frame-domain by construction.
-func joinChainArmTaps(join string, arm string, operations []OperationSpec) ([]joinArmTap, error) {
+func joinChainArmTaps(join string, arm string, operations []operationSpec) ([]joinArmTap, error) {
 	var taps []joinArmTap
 	for i := range operations {
 		if operations[i].Kind != plan.OpTap {

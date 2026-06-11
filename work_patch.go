@@ -16,7 +16,7 @@ import (
 // workPatch is the plan for a runtime attach: the operations, taps, branches,
 // destinations, edges, and rollback steps the apply step executes against the
 // running graph. It is produced by the attach planner from BranchSpec values
-// through the same OperationSpec chain walk the build path lowers, and
+// through the same operationSpec chain walk the build path lowers, and
 // snapshots render from it.
 type workPatch struct {
 	Name         string
@@ -121,7 +121,7 @@ func (p *attachPlan) closeOwned() {
 }
 
 // planAttachBranchSteps lowers one BranchSpec into ordered attach steps by
-// walking the canonical operation list once — the same OperationSpec chain the
+// walking the canonical operation list once — the same operationSpec chain the
 // build path compiles — opening the stages and destinations each step needs
 // against the live anchor shape. Destinations open before any graph mutation;
 // on failure every stage the walk owned is closed.
@@ -212,7 +212,7 @@ func (t *task) planAttachBranchSteps(ctx context.Context, spec BranchSpec, desti
 			branchIntent := streamIntent{
 				Name:       branchName,
 				Select:     plan.StreamSelect{Type: currentStream.Type},
-				Operations: []OperationSpec{operation},
+				Operations: []operationSpec{operation},
 			}
 			if _, err := t.runtime.filters.Factory(transformName); err != nil {
 				return fail(recipeTransformAdapterError("attach runtime branch", branchIntent, transformName, err))
@@ -338,7 +338,7 @@ func (t *task) planAttachEncode(ctx context.Context, branchName string, encode c
 		return nil, av.Stream{}, err
 	}
 	if _, err := t.runtime.codecs.EncoderFactory(encode.ID); err != nil {
-		stream := streamIntent{Name: branchName, Operations: []OperationSpec{operationSpecForEncode(encode)}}
+		stream := streamIntent{Name: branchName, Operations: []operationSpec{operationSpecForEncode(encode)}}
 		return nil, av.Stream{}, recipeEncodeAdapterError("attach runtime branch", stream, t.runtime.codecs, err)
 	}
 	request := runtimeBranchEncodeRequest(branchName, encode, currentStream)
@@ -349,7 +349,7 @@ func (t *task) planAttachEncode(ctx context.Context, branchName string, encode c
 	stream := streamIntent{
 		Name:       branchName,
 		Select:     plan.StreamSelect{Type: currentStream.Type},
-		Operations: []OperationSpec{operationSpecForEncode(encode)},
+		Operations: []operationSpec{operationSpecForEncode(encode)},
 	}
 	if err := validateEncodeAdapterDescriptors("attach runtime branch", stream, t.runtime.codecs, encodeAdapterRequestFromPreparedStream(encode, encodedStream)); err != nil {
 		return nil, av.Stream{}, err
@@ -489,7 +489,7 @@ func (p *attachPlan) finalizeBranch(index int, spec BranchSpec, destinations []a
 			addsNode := false
 			switch {
 			case group.isSharedSink(step.destination.shareKey):
-				if err := group.reserveSharedSink(graphSpec, step.destination.shareKey, step.destination.name, step.destination.sink); err != nil {
+				if err := group.reserveSharedSink(graphSpec, step.destination.shareKey, step.destination.name, step.destination.sink, branch.buffer); err != nil {
 					return err
 				}
 				node = pipeline.NodeRef(group.sharedSinks[step.destination.shareKey].name)
@@ -607,7 +607,7 @@ func attachOperationDetail(kind plan.OperationKind) string {
 	}
 }
 
-func attachOperationComponent(operation OperationSpec, stage pipeline.Stage) string {
+func attachOperationComponent(operation operationSpec, stage pipeline.Stage) string {
 	if component := firstNonEmpty(operationSpecComponent(operation), operation.Component); component != "" {
 		return component
 	}
