@@ -1,73 +1,166 @@
-# Roadmap
+# Roadmap — stability tiers and the road to v1
 
-`PROGRESS.md` is the compact current-state tracker; `NORTH_STAR.md` is the
-canonical direction. This roadmap keeps the priority view.
+goav is pre-v1. This document states what is stable now, what is
+experimental, what is deliberately deferred, what is planned, what is a
+non-goal, and exactly what must hold before a v1 tag. Every claim cites the
+test, benchmark, or document that backs it, or is marked **roadmap**.
+`docs/NORTH_STAR.md` keeps the evidence-cited acceptance scoreboard;
+`docs/PROGRESS.md` is the compact tracker; how goav relates to GStreamer is
+`docs/GSTREAMER_ALTERNATIVE.md`.
 
-GoAV should not become a GStreamer clone. The remaining work is the Go-native
-work-planning layer: stable destinations, one ordered operation model, formal
-media shapes, branch-local buffering, branch-based observation from typed taps,
-task/branch/destination lifecycle, custom sources, and one planner for build and
-runtime attach. Public vocabulary stays `Input`, `Stream`, `Tap`, `Branch`,
-`Destination`, `Flow`, and `Task`; operations are chain methods.
+## The settled model
 
-## Priorities
+The declarative grammar is the only normal composer:
+`input -> stream -> operations -> tap -> branch -> destination` lowers into
+`WorkPlan -> pipeline.Graph -> Task`.
+Make runtime attachment a patch of the same plan model:
+`Task.Attach` compiles the same branch grammar into `WorkPatch`, validates
+before graph mutation, and rolls back fully on failure
+(`TestTaskAttachRuntimeBranchGroupRollsBackOnLaterFailure`).
+Collapse `Target` into `Destination` is done: `File`, `URI`, `Writer`,
+`Sink`, and `Custom` return stable goav-owned destination handles, and
+reusing one handle groups branches into one mux/sink group
+(`TestFromMultiInputPlanDedupesSharedDestination`).
 
-1. Make the declarative grammar the only normal composer:
-   `input -> stream -> operations -> tap -> branch -> destination` lowers into
-   `WorkPlan -> pipeline.Graph -> Task`. Runtime attach lowers the same branch
-   model into `WorkPatch`. The planner owns operations, taps, branches,
-   destinations, edges, decisions, and diagnostics; the executor instantiates
-   the plan instead of dispatching by workflow kind.
-2. Collapse `Target` into `Destination`. `File`, `URI`, `Writer`,
-   `Sink`, and `Custom` return stable goav-owned destination handles. Reusing a
-   handle groups branches into one sink or mux destination; a different handle
-   with the same name is a planning error. Custom behavior is provided through
-   destination providers. *(Public surface done; string-routing residue inside
-   the planner remains.)*
-3. Treat direct streams as implicit branches: copy-to-file, decode-to-sink,
-   encode-to-destination, branch composition, and mixed audio/video destinations
-   are branch plans over one ordered operation list, not workflow modes.
-4. Make runtime attachment a patch of the same plan model. `Task.Attach`
-   compiles `Branch(...)` plus existing `snapshot.Tap` into `WorkPatch`, validates
-   before graph mutation, allocates only downstream nodes, reuses upstream work
-   from taps, and detaches only branch-owned nodes.
-5. Upgrade shape validation to shape solving: `shape.Spec` contracts for
-   streams, codecs, filters, containers, flows, taps, branches, sinks,
-   destinations, and custom sources, with expected-vs-actual diagnostics and
-   opt-in auto-insertion of safe conversions.
-6. Keep observation as branch composition: diagnostic work is
-   `Branch(...).From(tap).Do(...).To(Sink(...))`; `Snapshot` reports task state,
-   branches, taps, destinations, lifecycle, and scoped stats.
-7. Time/clock/seek (north-star theme C): TimeShape, sync policies, and pull
-   scheduling — the remaining feature frontier after graph shape and the
-   control plane.
-8. Remove old workflow residue from normal composition — done for `transcode`
-   imports, string output refs, `destinationNames` bridge fields,
-   `runtimeBranch`, and the workflow-kind builder compilers (all deleted);
-   `branchComposePlan` stays as the recipe→lowering hand-off.
-9. Keep first-page examples executable with `goav.Default()`, or clearly label
-   adapter requirements; treat adapter coverage as product surface after the
-   planner can absorb it.
-10. Prepare v0.1 only after README examples compile/run or name their adapter
-    requirements, default and tagged tests pass, core stays cgo-free, hot-path
-    allocation guards stay green, and one public RTP/WebRTC record branch plus
-    one public file transcode branch work end to end. Confirm `go 1.26` in
-    `go.mod` is intentional before tagging.
+## v0 STABLE
 
-## Phase status
+Stable means: pinned against silent change, documented, and test-enforced —
+not "frozen forever". The governed surface is 326 approved identifiers
+(`api_surface_pin_test.go` + `testdata/api_surface.txt`: 138 root, 143
+`codes`, 28 `plan`, 13 `lifecycle`, 4 `snapshot`), every exported symbol
+documented (`doc_pin_test.go`), tiered in `docs/API_SURFACE.md`:
 
-- Phase 0 (API sketch): core media types, codec/format/pipeline/RTP contracts — done.
-- Phase 1 (realtime receive): WebRTC track adapter, RTP loss surface, Opus
-  depacketize/decode — done.
-- Phase 2 (video receive): VP8/VP9 depacketize + govpx decode/encode active;
-  Opus/VP8/VP9 are the full encode/decode verticals; H264/AV1 stay
-  receive/decode-first until their encode adapters are equally solid.
-- Phase 3 (recording/remux): IVF and Annex B packet recording, WebRTC receive to
-  file, multi-destination fanout — active.
-- Phase 3b (transcode ladders): shared decode, per-branch encoders, resize and
-  resample adapters, multi-mux destinations — active.
-- Phase 4 (H264/AV1 decode): depacketization, descriptor-only availability,
-  build-tagged decoders, allocation/lifecycle hardening — active.
-- Phase 5 (high-level planner): fluent recipes, `MediaPlan` IR, reusable flows,
-  runtime stage/sink attachments with rollback, detail-aware introspection —
-  active; richer stats and tracing remain future work.
+- **Tier A — the grammar.** `From`/stream selection/operations
+  (`Decode`/`Copy`/`Resize`/`Resample`/`Do`/`Encode`)/`Shape`/`Auto`/
+  `Require`/`Prefer`/`Tap`/`Branches`/`To`/`OnStream`; `Mix`/`Composite`/
+  `Select`; `Flow`; `Task` verbs (`Run`/`Events`/`Watch`/`Snapshot`/`Stats`/
+  `Attach`/`Detach`/`Rebranch`/`Control`); `Default`/`New`/`UseRuntime`;
+  structured `BuildError` + the `codes` catalog; the `plan`, `snapshot`,
+  `lifecycle`, `shape`, `flow`, and `av` vocabulary packages.
+- **Tier B — extension seams.** `SourceProvider` and `Source(fn)` push
+  sources; `DestinationProvider`/`Writer`/`Sink` destinations;
+  `EventFunc`/`FrameFunc`/`PacketFunc`/`SinkFunc` hooks; codec/format/filter
+  factory interfaces with per-runtime `With*` registration; `goavtest`.
+  Every seam has an external toy implementation run end to end
+  (`adapterproof/adapter_compat_test.go`, guide `docs/ADAPTER_AUTHORING.md`).
+- **Tier C — expert.** `Expert(runtime).Graph()` handles, `pipeline` graph
+  machinery, prebuilt codec/format/filter stages — off the grammar, still
+  governed.
+
+The error contract (`errors_pin_test.go`, `error_acceptance_test.go`,
+`docs/ERRORS.md`) and the runtime invariants — close idempotency, close
+during run, race-safe snapshots under attach/detach, commit-failure
+propagation (`task_invariants_test.go`), watcher isolation (`watch_test.go`),
+drop observability (`TestFrontDoorDropReasonsReadableWithoutPipeline`) — are
+stable contracts.
+
+## EXPERIMENTAL
+
+Exists and is tested, but numbers or semantics are expected to move
+(`docs/PERFORMANCE.md` "Experimental" is the performance side of this list):
+
+- **Mix join step cost** — ceiling-pinned at 16 allocs/step
+  (`TestAudioMixStepAllocCeiling`); slot reuse should lower it. Composite
+  shares the join machinery.
+- **Buffered copy-mode fanout cost** — per-target copy of borrowed payloads
+  (`pipeline` `BenchmarkBufferedFanout/copy`); refcounted zero-copy fanout
+  would remove it.
+- **Attach-under-load cost** — `BenchmarkAttachDetachUnderLoad` measures a
+  cold-path control operation dominated by planning; not a data-plane figure.
+- **OnStream rule breadth** — identity matches only (`MatchMedia`/
+  `MatchCodec`/`MatchStreamID`/`MatchStream(fn)`); conditions beyond stream
+  identity and a per-rule removal detach policy are roadmap
+  (`docs/NORTH_STAR.md` §11, scoreboard item 40).
+- **Join nesting depth** — nested joins are proven at the tested depths
+  (`join_nested_test.go`, `TestJoinDescribeEqualsBuildNestedMix`); deeper
+  nesting compiles through the same recursion but has no dedicated proof or
+  cost model.
+
+## Descriptor-only and deferred
+
+- **H264/AV1 recipe encode** — descriptor-only: registry descriptors are
+  discoverable while factory lookup returns `codec.ErrUnavailable`
+  (`docs/ARCHITECTURE.md` "Codec backends"); decode/receive verticals are
+  active.
+- **A/V sink sync, pipeline-wide clock service, pull scheduling** — the
+  theme-C endgame; pull scheduling is the keystone. The time-axis controls
+  (`Seek`/`Rate`/`Segment`) and clock-paced realtime file playback already
+  ship (`task_seek_test.go`, `task_time_control_test.go`); the rest is
+  analysed in `docs/NORTH_STAR.md` ("Time/sync", attack-plan stage 7).
+  Roadmap.
+- **Internal-package layering** — measured on the cross-file reference graph
+  and rejected: no boundary worth a package today (`docs/ARCHITECTURE.md`
+  "Package layering"). Revisit only with a data-transfer seam.
+- **`goav.Intent` / `goav.OperationSpec` leakage** — frozen by the surface
+  pin so the list only shrinks; needs a design call (`docs/API_SURFACE.md`
+  tier D).
+- **Plain `task.Detach` drain/abort verbs** and **dedicated
+  attach/detach/commit lifecycle events** — drain-commit is pinned where
+  exposed (rebranch dispositions, stream removal); the standalone verbs and
+  events are roadmap (`docs/NORTH_STAR.md` scoreboard items 25, 26, 30).
+- **`streamIntent` normalization fold** — internal debt tracked in
+  `docs/NORTH_STAR.md` "Execution order".
+
+## Planned
+
+- **Playout/SRT/NDI providers** through the `SourceProvider` seam — by
+  design zero core changes (seam proven by
+  `adapterproof/adapter_compat_test.go`). Roadmap.
+- **Tail-latency benchmarking** — p50/p95/p99 need a histogram harness;
+  ns/op is an average (`docs/PERFORMANCE.md` "Not proven"). Roadmap.
+- **PGO workflow** — profile capture over the canonical suite
+  (`scripts/bench/run.sh` is the entry point) feeding default-on
+  profile-guided builds. Roadmap.
+- **Additional `SwitchAt` boundaries** beyond `NextFrame`/`NextKeyframe`
+  (`rebranch_policy.go`). Roadmap.
+- **Mux-group timebase validation** (`docs/NORTH_STAR.md` scoreboard item
+  42). Roadmap.
+
+## NON-GOALS
+
+- **GStreamer plugin parity.** goav is not a general multimedia framework;
+  matching element-for-element would reproduce the surface the grammar
+  exists to avoid (`docs/GSTREAMER_ALTERNATIVE.md`).
+- **Hardware codec backends in core.** Core stays pure Go — pinned by
+  `TestNoCGOImports` (`hygiene_test.go`); acceleration belongs in external
+  adapters behind the `codec` seams, where cgo is the adapter's choice.
+- **cgo in core.** Same pin; single-binary `CGO_ENABLED=0` deployment is a
+  headline property (`.github/workflows/ci.yml` builds with it).
+- **Global registries.** Registries are per-runtime; two runtimes in one
+  process must never see each other's adapters (`docs/ARCHITECTURE.md`:
+  `goav.New` is the composition root).
+- **JIT / runtime code generation.** The planner emits a static graph;
+  per-message dispatch stays direct calls. The win would belong to codecs
+  (external anyway) and the cost is un-debuggable, un-pinnable hot paths.
+
+## V1 freeze criteria
+
+The checklist that gates the tag; each item names its current evidence.
+
+- [x] **Approved API surface** — `api_surface_pin_test.go` +
+  `testdata/api_surface.txt` (326 identifiers, both-direction pin).
+- [x] **Compile-tested examples** — 13 `Example*` functions run under
+  `go test` (`example_test.go`); the `examples/webrtc-runtime-ladder` module
+  builds and tests in CI.
+- [x] **Structured errors enforced** — `errors_pin_test.go` (catalog-code
+  pin) + 10 acceptance snippets (`error_acceptance_test.go`).
+- [x] **Benchmarks present** — 16 measured workloads (`bench_test.go`) +
+  pipeline/container suites; bench smoke runs in CI; methodology in
+  `docs/PERFORMANCE.md`.
+- [x] **Adapter guide** — `docs/ADAPTER_AUTHORING.md` with the executable
+  five-seam proof (`adapterproof/adapter_compat_test.go`).
+- [x] **Race tests pass** — CI runs `go test -race` on root, `pipeline`,
+  `goavtest`, `format` (`.github/workflows/ci.yml`).
+- [x] **Container fuzz/corpus** — `FuzzDemuxerMalformedInputs` with seed
+  corpora (`container/matroska`, `container/webm` `fuzz_test.go` +
+  `testdata/fuzz`) plus external field-corpus tests
+  (`TestExternalMatroskaFieldCorpus`, `TestExternalWebMFieldCorpus`).
+- [x] **No global state** — registries live on the runtime
+  (`docs/ARCHITECTURE.md`); audited 2026-06: remaining package-level vars
+  are error sentinels, immutable profile tables, and atomic ID counters.
+  No pin test exists for this — the audit is repeated at review.
+- [x] **No undocumented exported symbols** — `doc_pin_test.go` across every
+  public package.
+- [ ] **Release decision** — confirm the `go 1.26.2` directive in `go.mod`
+  is the intended minimum supported Go, write the tag's compatibility note,
+  and cut v1. Not done; the only open item is a maintainer call, not code.

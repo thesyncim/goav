@@ -108,6 +108,51 @@ Not leakage, by decision: builder funcs returning unexported types
 the methods on those builders are the grammar; the types stay unexported so
 the pinned package-level surface is the contract.
 
+## Naming vocabulary
+
+Near-miss names are deliberate distinctions, one line each (each verified
+against the constructors in `input.go`/`provider.go`/`source.go`,
+`destination.go`, `tap_ref.go`, `flow.go`/`branch.go`, `chain.go`,
+`watch.go`, `task_control.go`, `graph.go`):
+
+- **Input vs Source vs SourceProvider** — `FileInput`/`URIInput` are value
+  inputs over media you already hold; `Source(name, shape, fn)` is the
+  custom-push input where the application produces media through
+  `SourcePush`; `SourceProvider` is the transport seam (`OpenSource`) that
+  `Input(provider)` turns into a recipe input — value, custom push, and
+  transport are three doors into one `InputSpec`.
+- **Destination vs Sink vs Writer vs File** — `Destination` is the routing
+  handle every constructor returns (reuse = mux/sink group); `File` wraps an
+  `io.Writer` you already opened; `Writer` lets goav open the writer on
+  demand with final `DestinationInfo` (and transactional commit/abort);
+  `Sink` ends the branch in frames/packets instead of muxed bytes.
+- **Tap vs FrameTap vs PacketTap** — `Tap` infers its domain from the chain
+  point; `FrameTap`/`PacketTap` assert it, and a mismatch is a build error
+  naming the typed constructor to use.
+- **Flow vs Branch** — a `Flow` is a reusable operation list and owns no
+  destination (`TestNorthStarFlowExposesNoDestinations`); a `Branch` routes
+  fanout and owns its destinations.
+- **Shape vs Require vs Auto vs Prefer** — `Shape` states a fact about the
+  current media point; `Require` asserts a contract that fails the build
+  when unmet; `Auto` grants the solver permission to insert conversions;
+  `Prefer` hints an open solver choice and never fails.
+- **Copy vs Encode(codec.Copy())** — `.Copy()` is the grammar verb for
+  packet-preserving passthrough; `codec.Copy()` is the `CodecSpec` value it
+  lowers to (branch and flow `.Copy()` literally delegate to
+  `.Encode(codec.Copy())`). Same operation, two spellings: write the verb;
+  the spec value exists for code that builds `CodecSpec` values
+  programmatically.
+- **Events vs Watch** — `Events()` is the single raw firehose channel;
+  `Watch(filters...)` gives each consumer an independent filtered
+  subscription that sheds for itself only.
+- **Control vs Deliver** — `Control` verbs are typed intents (`Keyframe`,
+  `SetBitrate`, `Seek`, `Rate`, `Segment`, `SelectActive`);
+  `Deliver(event)` is the escape hatch handing a verbatim event to a stage
+  that interprets it itself.
+- **recipe vs Expert** — the recipe grammar (tier A) is the normal surface;
+  `Expert(runtime)` opens the handle-based graph layer (tier C) for
+  compositions the grammar cannot express.
+
 ## Enforcement
 
 - `api_surface_pin_test.go` / `testdata/api_surface.txt` — exported

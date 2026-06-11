@@ -26,6 +26,13 @@ attachment, and live control.
 Operations are not a separate noun: they are methods on the chain —
 `.Decode()`, `.Copy()`, `.Resize()`, `.Resample()`, `.Do(stage)`, `.Encode(codec)`.
 
+Every near-miss name is a deliberate distinction — `Input` vs `Source` vs
+`SourceProvider`, `Tap` vs `FrameTap`/`PacketTap`, `Events` vs `Watch` — and
+the full naming contract lives in [docs/API_SURFACE.md](docs/API_SURFACE.md)
+alongside the pinned surface. Stability tiers and the road to v1 are
+[docs/ROADMAP.md](docs/ROADMAP.md); how goav relates to GStreamer, stated
+honestly, is [docs/GSTREAMER_ALTERNATIVE.md](docs/GSTREAMER_ALTERNATIVE.md).
+
 ## 30-Second Examples
 
 Packet-preserving RTP/WebRTC record:
