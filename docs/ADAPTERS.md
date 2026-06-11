@@ -5,6 +5,11 @@ import graph. Core packages (`av`, `codec`, `format`, `filter`, `pipeline`,
 `rtpav`, `webrtcav`) do not import sibling codec modules; concrete integrations
 live under `adapters/...` and `container/...`.
 
+This file catalogs what exists. **How to write one** — the per-seam
+interfaces, lifecycle, error and ownership contracts, and required tests —
+is `docs/ADAPTER_AUTHORING.md`; the executable proof that every seam works
+from outside core is `adapterproof/adapter_compat_test.go`.
+
 ## Rules
 
 - Implement `codec.DecoderFactory`, `codec.EncoderFactory`,
