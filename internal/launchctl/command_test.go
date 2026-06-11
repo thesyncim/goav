@@ -418,6 +418,64 @@ func TestPipelineParserHelpersCoverCommonFormsAndErrors(t *testing.T) {
 	}
 }
 
+func TestBranchPipelineLexingSupportsQuotedValues(t *testing.T) {
+	steps, err := splitPipeline(`meter label="left ! right" note='two words' raw="a=b" ! filesink location="/tmp/a b=1.ogg" title="say \"hi\"" format=ogg`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(steps) != 2 {
+		t.Fatalf("steps = %v", steps)
+	}
+
+	fields, err := pipelineFields(steps[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(fields, []string{"meter", "label=left ! right", "note=two words", "raw=a=b"}) {
+		t.Fatalf("fields[0] = %v", fields)
+	}
+
+	fields, err = pipelineFields(steps[1])
+	if err != nil {
+		t.Fatal(err)
+	}
+	args := stepArgs(fields[1:])
+	if fields[0] != "filesink" ||
+		args["location"] != "/tmp/a b=1.ogg" ||
+		args["title"] != `say "hi"` ||
+		args["format"] != "ogg" {
+		t.Fatalf("fields[1]=%v args=%v", fields, args)
+	}
+
+	for _, tc := range []struct {
+		name string
+		run  func() error
+	}{
+		{name: "split quote", run: func() error {
+			_, err := splitPipeline(`copy ! filesink location="unterminated`)
+			return err
+		}},
+		{name: "field quote", run: func() error {
+			_, err := pipelineFields(`meter label="unterminated`)
+			return err
+		}},
+		{name: "field escape", run: func() error {
+			_, err := pipelineFields(`meter label="dangling\`)
+			return err
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := tc.run()
+			var structured *Error
+			if !errors.As(err, &structured) ||
+				structured.Code != "invalid_value" ||
+				!detailsContain(structured.Details, "offset=") {
+				t.Fatalf("err = %+v, want invalid_value with offset", err)
+			}
+		})
+	}
+}
+
 func TestPipelineStepNamesIncludeCustomAliases(t *testing.T) {
 	names := pipelineStepNames(PipelineRegistry{
 		Steps: []BranchPipelineStepSpec{{
@@ -790,6 +848,54 @@ func TestServerSupportsCustomEncoderSettings(t *testing.T) {
 	}
 }
 
+func TestServerHelpListsCustomPipelineRegistry(t *testing.T) {
+	server := &Server{
+		Task: newFakeTask(),
+		Pipeline: PipelineRegistry{
+			Steps: []BranchPipelineStepSpec{{
+				Name:    "meter",
+				Aliases: []string{"levelmeter"},
+				Summary: "observe samples before encoding",
+				Usage:   "[window=<duration>]",
+			}},
+			Encoders: []EncoderSpec{{
+				Name:    "acmeenc",
+				Aliases: []string{"acme"},
+				Summary: "ACME native audio encoder",
+				Usage:   "bitrate=<bps> quality=<name> lookahead=<mode>",
+			}},
+		},
+	}
+
+	for _, topic := range []string{"attach", "rebranch"} {
+		response := server.Handle(context.Background(), Request{
+			Op:   "help",
+			Args: map[string]string{"topic": topic},
+		})
+		text, ok := response.Result.(string)
+		if !response.OK || response.Error != nil || !ok {
+			t.Fatalf("%s response = %+v", topic, response)
+		}
+		for _, fragment := range []string{
+			"Built-in steps:",
+			"encode codec=<id>",
+			"Custom steps:",
+			"meter [window=<duration>]",
+			"(aliases: levelmeter)",
+			"observe samples before encoding",
+			"Custom encoders:",
+			"acmeenc bitrate=<bps> quality=<name> lookahead=<mode>",
+			"(aliases: acme)",
+			"ACME native audio encoder",
+			"StepArgs",
+		} {
+			if !strings.Contains(text, fragment) {
+				t.Fatalf("%s help missing %q:\n%s", topic, fragment, text)
+			}
+		}
+	}
+}
+
 func TestServerGenericEncodeStepCarriesCommonCodecOptions(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
@@ -928,7 +1034,7 @@ func TestHelpRendersRootStaticAndCustomControlTopics(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(attach, "application-specific steps and encoders") {
+	if !strings.Contains(attach, "Built-in steps:") || !strings.Contains(attach, "encode codec=<id>") {
 		t.Fatalf("attach help:\n%s", attach)
 	}
 
@@ -990,6 +1096,9 @@ func TestReflectionConfinedToLaunchctlProductionFiles(t *testing.T) {
 		}
 		slash := filepath.ToSlash(path)
 		if strings.Contains(slash, "internal/launchctl/") {
+			return nil
+		}
+		if strings.Contains(slash, "/examples/") || strings.HasPrefix(slash, "../../examples/") {
 			return nil
 		}
 		data, err := os.ReadFile(path)

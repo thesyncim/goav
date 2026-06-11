@@ -14,6 +14,7 @@ import (
 	"time"
 
 	goav "github.com/thesyncim/goav"
+	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/ctl"
 	"github.com/thesyncim/goav/goavtest"
 )
@@ -63,6 +64,66 @@ func TestCLIInvokesCustomControlCommand(t *testing.T) {
 	}
 }
 
+func TestCLIHelpListsCustomPipelineRegistry(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	task, err := goav.From(goavtest.Audio(48000, 1, []int16{1})).
+		Audio().
+		To(goavtest.NewCollector().Sink()).
+		UseRuntime(goavtest.Runtime()).
+		Build(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer task.Close()
+
+	registry := ctl.PipelineRegistry{
+		Steps: []ctl.BranchPipelineStepSpec{{
+			Name:    "meter",
+			Aliases: []string{"levelmeter"},
+			Summary: "custom level meter",
+			Usage:   "[window=<duration>]",
+		}},
+		Encoders: []ctl.EncoderSpec{{
+			Name:    "acmeenc",
+			Aliases: []string{"acme"},
+			Summary: "ACME native encoder",
+			Usage:   "bitrate=<bps> quality=<name>",
+		}},
+	}
+
+	socket := filepath.Join(os.TempDir(), fmt.Sprintf("goav-cli-help-%d.sock", time.Now().UnixNano()))
+	t.Cleanup(func() { _ = os.Remove(socket) })
+	errC := make(chan error, 1)
+	go func() {
+		errC <- ctl.ServeUnixWithOptions(ctx, task, "unix://"+socket, ctl.WithPipelineRegistry(registry))
+	}()
+	waitForCLISocket(t, socket, errC)
+
+	cmd := exec.Command("go", "run", ".", "ctl", "--control", "unix://"+socket, "help", "attach")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("goav ctl help attach failed: %v\n%s", err, output)
+	}
+	text := string(output)
+	for _, fragment := range []string{
+		"Built-in steps:",
+		"Custom steps:",
+		"meter [window=<duration>]",
+		"(aliases: levelmeter)",
+		"custom level meter",
+		"Custom encoders:",
+		"acmeenc bitrate=<bps> quality=<name>",
+		"(aliases: acme)",
+		"ACME native encoder",
+	} {
+		if !strings.Contains(text, fragment) {
+			t.Fatalf("help missing %q:\n%s", fragment, text)
+		}
+	}
+}
+
 func TestCLIPrintsGraphAsRawText(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -93,6 +154,85 @@ func TestCLIPrintsGraphAsRawText(t *testing.T) {
 	text := string(output)
 	if !strings.HasPrefix(text, "flowchart LR\n") || strings.HasPrefix(text, `"`) {
 		t.Fatalf("graph output = %q", text)
+	}
+}
+
+func TestCLIAttachRebranchDetachAndDotGraph(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	packet := av.Packet{Payload: av.Buffer{Bytes: []byte{1}, Ownership: av.BufferImmutable}}
+	task, err := goav.From(goavtest.Packets(av.CodecOpus, packet)).
+		Audio().Copy().Tap(goav.PacketTap("pkts")).
+		To(goavtest.NewCollector().Sink()).
+		UseRuntime(goavtest.Runtime()).
+		Build(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer task.Close()
+
+	socket := filepath.Join(os.TempDir(), fmt.Sprintf("goav-cli-mutate-%d.sock", time.Now().UnixNano()))
+	t.Cleanup(func() { _ = os.Remove(socket) })
+	errC := make(chan error, 1)
+	go func() {
+		errC <- ctl.ServeUnixWithOptions(ctx, task, "unix://"+socket)
+	}()
+	waitForCLISocket(t, socket, errC)
+
+	first := filepath.Join(t.TempDir(), "first output.ogg")
+	output := runCLI(t, "--control", "unix://"+socket, "attach", "pkts", "as", "cli",
+		fmt.Sprintf("copy ! filesink location=%q format=ogg", first))
+	if !strings.Contains(output, `"Name":"cli"`) {
+		t.Fatalf("attach output = %s", output)
+	}
+
+	dot := runCLI(t, "--control", "unix://"+socket, "graph", "format=dot")
+	if !strings.HasPrefix(dot, "digraph") || !strings.Contains(dot, "cli") {
+		t.Fatalf("dot graph = %s", dot)
+	}
+
+	second := filepath.Join(t.TempDir(), "second output.ogg")
+	output = runCLI(t, "--control", "unix://"+socket, "rebranch", "cli",
+		"--switch", "next_frame",
+		"--keep-old-on-failure",
+		fmt.Sprintf("copy ! filesink location=%q format=ogg", second))
+	if !strings.Contains(output, `"Name":"cli"`) {
+		t.Fatalf("rebranch output = %s", output)
+	}
+
+	output = runCLI(t, "--control", "unix://"+socket, "detach", "cli")
+	if !strings.Contains(output, `"Name":"cli"`) {
+		t.Fatalf("detach output = %s", output)
+	}
+}
+
+func TestCLIWatchFollowPrintsStreamingResponses(t *testing.T) {
+	socket := filepath.Join(os.TempDir(), fmt.Sprintf("goav-cli-watch-%d.sock", time.Now().UnixNano()))
+	t.Cleanup(func() { _ = os.Remove(socket) })
+	errC := serveOneShot(t, socket, func(conn net.Conn) error {
+		var request ctl.Request
+		if err := json.NewDecoder(conn).Decode(&request); err != nil {
+			return err
+		}
+		if request.Op != "watch" || request.Args["follow"] != "true" || request.Args["type"] != "stats" {
+			return fmt.Errorf("request = %+v", request)
+		}
+		encoder := json.NewEncoder(conn)
+		for i := 0; i < 2; i++ {
+			if err := encoder.Encode(ctl.SuccessResponse(map[string]string{"type": "stats"})); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+
+	output := runCLI(t, "--control", "unix://"+socket, "watch", "type=stats", "--follow")
+	if got := strings.Count(output, `{"type":"stats"}`); got != 2 {
+		t.Fatalf("output = %q, want two streamed events", output)
+	}
+	if err := <-errC; err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -240,6 +380,17 @@ func serveOneShot(t *testing.T, socket string, handle func(net.Conn) error) <-ch
 		errC <- handle(conn)
 	}()
 	return errC
+}
+
+func runCLI(t *testing.T, args ...string) string {
+	t.Helper()
+	cmdArgs := append([]string{"run", ".", "ctl"}, args...)
+	cmd := exec.Command("go", cmdArgs...)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("goav ctl %v failed: %v\n%s", args, err, output)
+	}
+	return string(output)
 }
 
 func waitForCLISocket(t *testing.T, socket string, errC <-chan error) {

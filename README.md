@@ -708,12 +708,15 @@ branch-pipeline steps, custom codec names, and custom encoder settings:
 
 ```sh
 goav ctl --control unix:///tmp/goav-live.sock control bitrate stream=video value=1200k
+goav ctl --control unix:///tmp/goav-live.sock help attach
 goav ctl --control unix:///tmp/goav-live.sock attach frames as archive \
   'meter ! acmeenc bitrate=128000 quality=voice lookahead=deep ! filesink location=/tmp/archive.ogg format=ogg'
 goav ctl --control unix:///tmp/goav-live.sock graph
 ```
 
-The bootstrap guide, including an executable host example, lives in
+`help attach` and `help rebranch` list the built-in branch grammar plus custom
+steps and encoders registered by that host. The bootstrap guide, including
+`go run ./examples/control-plane-host`, lives in
 [`docs/CONTROL_PLANE.md`](docs/CONTROL_PLANE.md).
 
 ## Live Control

@@ -9,10 +9,10 @@ jobs:
   gate:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 50
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
           cache: true
@@ -33,7 +33,7 @@ jobs:
         run: CGO_ENABLED=0 go test -count=1 ./...
 
       - name: Race
-        run: CGO_ENABLED=1 go test -race -count=1 . ./pipeline ./goavtest ./format
+        run: CGO_ENABLED=1 go test -race -count=1 . ./pipeline ./goavtest ./format ./cmd/goav ./ctl ./internal/launchctl ./graphrender
 
       # One iteration per benchmark: catches bench bit-rot (compile/run errors)
       # without asserting timing, which would flake on shared runners.
@@ -45,7 +45,7 @@ jobs:
 
       - name: Staticcheck
         run: |
-          go install honnef.co/go/tools/cmd/staticcheck@latest
+          go install honnef.co/go/tools/cmd/staticcheck@v0.7.0
           staticcheck ./...
 
       - name: Gofmt

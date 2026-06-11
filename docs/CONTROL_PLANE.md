@@ -38,6 +38,16 @@ renders a flowchart from the live task. Run it with:
 go test ./ctl -run Example_bootstrapControlPlaneHost -count=1
 ```
 
+For a long-running host process that you can keep open in one terminal while
+driving it from another, run:
+
+```sh
+go run ./examples/control-plane-host --control unix:///tmp/goav-control-plane-host.sock
+```
+
+That example uses the same extension points as the snippets below and includes
+copyable commands in `examples/control-plane-host/README.md`.
+
 ```go
 ctx := context.Background()
 const customCodec = av.CodecID("x_acme_audio")
@@ -101,6 +111,7 @@ registry := ctl.PipelineRegistry{
     Steps: []ctl.BranchPipelineStepSpec{{
         Name:    "meter",
         Summary: "observe frames before encoding",
+        Usage:   "[window=<duration>]",
         Apply: func(branch *ctl.BranchPipeline, _ ctl.StepArgs) error {
             branch.Do(goav.FrameFunc("meter", func(ctx context.Context, frame *av.Frame, emit goav.Emit) error {
                 recordLevel(frame)
@@ -112,6 +123,7 @@ registry := ctl.PipelineRegistry{
     Encoders: []ctl.EncoderSpec{{
         Name:    "acmeenc",
         Summary: "ACME audio encoder with native settings",
+        Usage:   "bitrate=<bps> quality=<profile> lookahead=<mode>",
         Apply: func(args ctl.StepArgs) (codec.CodecSpec, error) {
             bitrate, err := strconv.Atoi(args["bitrate"])
             if err != nil {
@@ -146,6 +158,7 @@ Operate it from the CLI:
 ```sh
 goav ctl --control unix:///tmp/goav-live.sock help
 goav ctl --control unix:///tmp/goav-live.sock help control vendor.rate
+goav ctl --control unix:///tmp/goav-live.sock help attach
 goav ctl --control unix:///tmp/goav-live.sock taps
 goav ctl --control unix:///tmp/goav-live.sock control vendor.rate value=0.5 source=fixture
 goav ctl --control unix:///tmp/goav-live.sock attach frames as archive \
@@ -155,6 +168,20 @@ goav ctl --control unix:///tmp/goav-live.sock graph format=dot
 goav ctl --control unix:///tmp/goav-live.sock rebranch archive \
   'meter ! acmeenc bitrate=96000 quality=voice lookahead=shallow ! filesink location=/tmp/archive-low.ogg format=ogg'
 goav ctl --control unix:///tmp/goav-live.sock detach archive
+```
+
+`help attach` and `help rebranch` are server-aware: the response includes the
+built-in branch-pipeline grammar plus every `BranchPipelineStepSpec` and
+`EncoderSpec` registered on that server, including aliases, summaries, and
+`Usage` strings. That makes app-owned branch components discoverable from the
+same CLI surface that invokes them.
+
+Branch-pipeline values can be quoted with single or double quotes. Use quotes
+for paths or custom settings that contain spaces, `!`, or `=`:
+
+```sh
+goav ctl --control unix:///tmp/goav-live.sock attach frames as archive \
+  'meter label="left ! right" ! filesink location="/tmp/archive copy.ogg" format=ogg'
 ```
 
 Render a live flowchart from the same running task:
@@ -251,7 +278,9 @@ Custom branch steps can add external stages, sinks, or compound branch grammar:
 
 ```go
 ctl.BranchPipelineStepSpec{
-    Name: "meter",
+    Name:    "meter",
+    Summary: "observe frames before encoding",
+    Usage:   "[window=<duration>]",
     Apply: func(branch *ctl.BranchPipeline, args ctl.StepArgs) error {
         branch.Do(goav.FrameFunc("meter", func(ctx context.Context, frame *av.Frame, emit goav.Emit) error {
             recordLevel(frame)
