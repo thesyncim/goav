@@ -96,6 +96,86 @@ func TestCLIPrintsGraphAsRawText(t *testing.T) {
 	}
 }
 
+func TestParseCtlArgs(t *testing.T) {
+	control, args, err := parseCtlArgs([]string{"--control", "unix:///tmp/live.sock", "graph", "format=dot"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if control != "unix:///tmp/live.sock" || strings.Join(args, " ") != "graph format=dot" {
+		t.Fatalf("control=%q args=%v", control, args)
+	}
+
+	control, args, err = parseCtlArgs([]string{"--control=unix:///tmp/live.sock", "help", "graph"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if control != "unix:///tmp/live.sock" || strings.Join(args, " ") != "help graph" {
+		t.Fatalf("control=%q args=%v", control, args)
+	}
+
+	if _, _, err := parseCtlArgs([]string{"--control"}); err == nil {
+		t.Fatal("expected missing control value error")
+	}
+}
+
+func TestRawTextRequests(t *testing.T) {
+	for _, op := range []string{"help", "graph", "flowchart"} {
+		if !rawText(ctl.Request{Op: op}) {
+			t.Fatalf("%s should be raw text", op)
+		}
+	}
+	if rawText(ctl.Request{Op: "control"}) {
+		t.Fatal("control response should stay JSON encoded")
+	}
+}
+
+func TestSendRejectsUnsupportedAddress(t *testing.T) {
+	err := send("tcp://127.0.0.1:9", ctl.Request{Op: "graph"})
+	if err == nil || !strings.Contains(err.Error(), "expected unix://PATH") {
+		t.Fatalf("send error = %v", err)
+	}
+}
+
+func TestSendReturnsStructuredError(t *testing.T) {
+	socket := filepath.Join(os.TempDir(), fmt.Sprintf("goav-error-%d.sock", time.Now().UnixNano()))
+	t.Cleanup(func() { _ = os.Remove(socket) })
+	errC := serveOneShot(t, socket, func(conn net.Conn) error {
+		var request ctl.Request
+		if err := json.NewDecoder(conn).Decode(&request); err != nil {
+			return err
+		}
+		return json.NewEncoder(conn).Encode(ctl.ErrorResponse(request.Op, fmt.Errorf("boom")))
+	})
+
+	err := send("unix://"+socket, ctl.Request{Op: "graph"})
+	if err == nil || !strings.Contains(err.Error(), "boom") {
+		t.Fatalf("send error = %v", err)
+	}
+	if err := <-errC; err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestSendRawTextRejectsNonStringResult(t *testing.T) {
+	socket := filepath.Join(os.TempDir(), fmt.Sprintf("goav-raw-type-%d.sock", time.Now().UnixNano()))
+	t.Cleanup(func() { _ = os.Remove(socket) })
+	errC := serveOneShot(t, socket, func(conn net.Conn) error {
+		var request ctl.Request
+		if err := json.NewDecoder(conn).Decode(&request); err != nil {
+			return err
+		}
+		return json.NewEncoder(conn).Encode(ctl.SuccessResponse(12))
+	})
+
+	err := send("unix://"+socket, ctl.Request{Op: "graph"})
+	if err == nil || !strings.Contains(err.Error(), "want text") {
+		t.Fatalf("send error = %v", err)
+	}
+	if err := <-errC; err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestSendFollowReturnsDecodeError(t *testing.T) {
 	socket := filepath.Join(os.TempDir(), fmt.Sprintf("goav-follow-%d.sock", time.Now().UnixNano()))
 	t.Cleanup(func() { _ = os.Remove(socket) })
@@ -140,6 +220,26 @@ func TestSendFollowReturnsDecodeError(t *testing.T) {
 	if err := <-errC; err != nil {
 		t.Fatal(err)
 	}
+}
+
+func serveOneShot(t *testing.T, socket string, handle func(net.Conn) error) <-chan error {
+	t.Helper()
+	listener, err := net.Listen("unix", socket)
+	if err != nil {
+		t.Fatal(err)
+	}
+	errC := make(chan error, 1)
+	go func() {
+		defer listener.Close()
+		conn, err := listener.Accept()
+		if err != nil {
+			errC <- err
+			return
+		}
+		defer conn.Close()
+		errC <- handle(conn)
+	}()
+	return errC
 }
 
 func waitForCLISocket(t *testing.T, socket string, errC <-chan error) {
