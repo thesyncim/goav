@@ -616,6 +616,49 @@ func TestServerSupportsCustomEncoderSettings(t *testing.T) {
 	}
 }
 
+func TestServerGenericEncodeStepCarriesCommonCodecOptions(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	const customCodec = av.CodecID("vendor_generic_audio")
+	factory := &recordingEncoderFactory{descriptor: codec.Descriptor{ID: customCodec, Type: av.MediaAudio}}
+	task, err := goav.From(goavtest.Audio(48000, 1, []int16{1})).
+		Audio().Tap(goav.FrameTap("frames")).
+		To(goavtest.NewCollector().Sink()).
+		UseRuntime(goavtest.Runtime(goav.WithEncoder(factory.descriptor, factory))).
+		Build(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer task.Close()
+
+	out := filepath.Join(t.TempDir(), "generic.ogg")
+	response := (&Server{Task: task}).Handle(ctx, Request{
+		Op:     "attach",
+		Tap:    "frames",
+		Branch: "generic",
+		Pipeline: "encode codec=vendor_generic_audio media=audio bitrate=64k profile=voice level=1 sample_rate=16000 channels=1 clock_rate=48000 keyframe_interval=20 fps=30" +
+			" ! filesink location=" + out + " format=ogg",
+	})
+	if !response.OK || response.Error != nil {
+		t.Fatalf("attach response = %+v", response)
+	}
+	settings := factory.config.Settings
+	if settings.Bitrate != 64000 ||
+		settings.Profile != "voice" ||
+		settings.Level != "1" ||
+		settings.SampleRate != 16000 ||
+		!settings.SampleRateSet ||
+		settings.Channels != 1 ||
+		!settings.ChannelsSet ||
+		settings.ClockRate != 48000 ||
+		settings.KeyframeInterval != 20 ||
+		settings.Framerate.Value != 1 ||
+		settings.Framerate.Base.Den != 30 {
+		t.Fatalf("encoder settings = %+v", settings)
+	}
+}
+
 func TestExecuteControlAgainstRealControllableTestSource(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
