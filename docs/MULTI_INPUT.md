@@ -57,6 +57,21 @@ reference) makes cycles unrepresentable. Other arm-chain operations
 (transform/encode/copy/stages) are rejected with the supported alternatives —
 they used to be silently dropped.
 
+Joins are an extension seam: `goav.Join(name, stage, arms...)` lowers a
+caller-supplied convergence stage through the same joinSpec/joinProfile
+machinery, so a third party ships `Crossfade(arms...)` without core changes.
+The per-kind behaviors the profile table carries are derived from the stage's
+`shape.Contract` (frame-domain inputs → decode arms like Mix; packet/any →
+passthrough like Select; one fact-carrying input shape → solver-planned arm
+conversions; declared output → the joined stream, else first-arm facts) and
+from the join's snake-safe name (node name, joined output stream id,
+`<name>_*` error-code family). A custom join is a full citizen — `.Tap`,
+`.Branches`, `.To`, itself a `JoinArm`, `Describe() ≡ Build()` — proven from
+outside the core in `adapterproof/join_proof_test.go`, including a
+re-expression of Select's passthrough semantics. The stage contract is
+documented on `goav.Join`; `audioMixStage` (audio_mix.go) is the reference
+implementation.
+
 Joins nest: an arm is a `JoinArm` — a source chain, a declared tap, or another
 join — so
 `Mix(Mix(a, b), c)` sub-mixes two arms and mixes the result with a third,

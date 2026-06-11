@@ -136,6 +136,14 @@ Exists and is tested, but numbers or semantics are expected to move
 - **Playout/SRT/NDI providers** through the `provider.Source` seam — by
   design zero core changes (seam proven by
   `adapterproof/adapter_compat_test.go`). Roadmap.
+- **Extension closure: done for the current grammar.** Everything the
+  grammar accepts is implementable externally — adapters (five-seam proof),
+  custom joins (`goav.Join`, symmetry proof in
+  `adapterproof/join_proof_test.go`), input decoration (`goav.WrapSource`),
+  custom controls (`Deliver`+`AtTap`). The recorded boundary: new solver
+  delta classes beyond resample/resize/convert remain core work
+  (`docs/API_SURFACE.md` "Extension closure"). New grammar verbs reopen the
+  question and must ship with their seam.
 - **Tail-latency benchmarking** — p50/p95/p99 need a histogram harness;
   ns/op is an average (`docs/PERFORMANCE.md` "Not proven"). Roadmap.
 - **PGO workflow** — profile capture over the canonical suite

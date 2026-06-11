@@ -44,6 +44,10 @@ type joinSpec struct {
 	// arrival order by default, PTS alignment via .SyncByPTS(). Select needs no
 	// sync — it forwards exactly one live arm.
 	sync joinSyncMode
+	// custom carries a caller-supplied convergence stage (goav.Join); its
+	// joinProfile is derived from the stage's declared shape.Contract instead
+	// of the built-in table, and kind is the join's validated name.
+	custom *customJoinSpec
 }
 
 // JoinArm is one source arm of a join: an ordinary source chain such as
@@ -114,6 +118,29 @@ var joinProfiles = map[joinKind]joinProfile{
 	joinMix:       mixJoinProfile,
 	joinComposite: compositeJoinProfile,
 	joinSelect:    selectJoinProfile,
+}
+
+// resolveJoinProfile resolves one join spec's per-kind profile: the built-in
+// table for Mix/Composite/Select, the contract-derived profile for a custom
+// goav.Join (join_custom.go). The unknown-kind refusal guards the internal
+// invariant that every non-custom spec was constructed by a built-in builder.
+func resolveJoinProfile(spec *joinSpec) (joinProfile, error) {
+	if spec.custom != nil {
+		return customJoinProfile(spec.custom)
+	}
+	profile, ok := joinProfiles[spec.kind]
+	if !ok {
+		kind := string(spec.kind)
+		return joinProfile{}, &BuildError{
+			Code:      joinErrorCode(kind, "kind"),
+			Operation: "build " + kind,
+			Node:      kind,
+			Reason:    "unknown join kind",
+			Details:   []string{"declared join kinds: mix, composite, select; custom kinds go through goav.Join"},
+			Cause:     ErrUnsupportedBuild,
+		}
+	}
+	return profile, nil
 }
 
 // newJoinJob lowers public convergence sugar into the one joinSpec carried by
@@ -269,8 +296,10 @@ func joinTwoArmExample(kind string) string {
 		return "goav.Mix(goav.From(a).Audio(), goav.From(b).Audio())"
 	case joinComposite:
 		return "goav.Composite(goav.From(a).Video(), goav.From(b).Video())"
-	default:
+	case joinSelect:
 		return "goav.Select(goav.From(a).Video(), goav.From(b).Video())"
+	default:
+		return "goav.Join(" + strconv.Quote(kind) + ", stage, goav.From(a).Audio(), goav.From(b).Audio())"
 	}
 }
 
@@ -371,18 +400,14 @@ func resolveJoinDestinations(name string, spec *joinSpec) ([]destinationSpec, er
 // unrepresentable by construction.
 func planJoinTree(rt *runtime, state *recipeCompileState, spec *joinSpec, sets []inputStreamSet, cursor int, used map[string]struct{}, anchors *joinTapAnchors) (*joinPlan, int, error) {
 	kind := string(spec.kind)
-	profile, ok := joinProfiles[spec.kind]
-	if !ok {
-		return nil, 0, &BuildError{
-			Code:      joinErrorCode(kind, "kind"),
-			Operation: "build " + kind,
-			Node:      kind,
-			Reason:    "unknown join kind",
-			Details:   []string{"declared join kinds: mix, composite, select"},
-			Cause:     ErrUnsupportedBuild,
-		}
+	profile, err := resolveJoinProfile(spec)
+	if err != nil {
+		return nil, 0, err
 	}
 	name := claimJoinName(used, kind)
+	if spec.custom != nil && name != kind {
+		return nil, 0, customJoinNameCollisionError(kind, name)
+	}
 	p := &joinPlan{runtime: rt, join: spec, profile: profile, name: name}
 	if len(spec.arms) < 2 {
 		return nil, 0, joinInputsError(kind, name)
@@ -698,10 +723,25 @@ func joinArmTransformStream(stream av.Stream, media av.MediaType) av.Stream {
 	}
 }
 
+// joinNodeDetail renders the join node's planned graph detail: built-in kinds
+// share joinSyncNodeDetail with their stages' DescribeNode; a custom join's
+// planned node carries whatever the caller's stage describes, so Describe() ≡
+// Build() holds for external convergence stages too.
+func (p *joinPlan) joinNodeDetail() string {
+	if p.join.custom != nil {
+		return describedNodeDetail(p.join.custom.stage)
+	}
+	return joinSyncNodeDetail(p.join.sync)
+}
+
 // deriveJoinedDomain reports the media domain of the join's output: kinds that
 // decode their arms always converge frames; passthrough kinds forward the first
-// arm's domain unchanged (frames when the arm chain declared .Decode()).
+// arm's domain unchanged (frames when the arm chain declared .Decode()). A
+// custom join whose stage contract declares an output domain wins outright.
 func (p *joinPlan) deriveJoinedDomain() shape.MediaDomain {
+	if domain := p.customJoinedOutputDomain(); domain != "" {
+		return domain
+	}
 	if p.profile.decodeArms {
 		return shape.DomainFrame
 	}
@@ -993,7 +1033,7 @@ func (p *joinPlan) planJoinTreeSpec(spec *pipeline.Spec, nodes map[string]planne
 		}
 		armRefs = append(armRefs, upstream)
 	}
-	if err := addPlannedNode(nodes, spec, p.name, pipeline.NodeStage, joinRef, joinSyncNodeDetail(p.join.sync)); err != nil {
+	if err := addPlannedNode(nodes, spec, p.name, pipeline.NodeStage, joinRef, p.joinNodeDetail()); err != nil {
 		return err
 	}
 	// The N-to-1 convergence edges come after every arm's chain, exactly the

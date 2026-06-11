@@ -320,10 +320,22 @@ const (
 	TapDomainMismatch Code = "tap_domain_mismatch"
 )
 
-// Join codes (Mix, Composite, Select). Each join kind raises its own
-// per-kind code, derived as <kind>_<family> by the goav root joinErrorCode
-// helper; the full enumeration for the built-in kinds is declared here.
+// Join codes (Mix, Composite, Select, and custom goav.Join kinds). Each join
+// kind raises its own per-kind code, derived as <kind>_<family> by the goav
+// root joinErrorCode helper; the full enumeration for the built-in kinds is
+// declared here. A custom join named "crossfade" raises the same families
+// under its own name (crossfade_inputs, crossfade_arm, crossfade_destination,
+// crossfade_tap_arm) — the snake-safe name requirement (JoinNameInvalid)
+// keeps those derived codes well-formed.
 const (
+	// JoinNameInvalid fires when a custom join (goav.Join) declares an
+	// unusable name: empty, not snake-safe ([a-z][a-z0-9_]*), reserved by a
+	// built-in kind (mix, composite, select), or colliding with another join
+	// node in the same join tree.
+	JoinNameInvalid Code = "join_name_invalid"
+	// JoinStageInvalid fires when a custom join's convergence stage is nil
+	// or reports a Name() different from the join's name.
+	JoinStageInvalid Code = "join_stage_invalid"
 	// MixInputs fires when Mix is given fewer than two arms.
 	MixInputs Code = "mix_inputs"
 	// MixArm fires when a Mix arm is invalid: wrong media, duplicate

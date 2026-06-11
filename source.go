@@ -278,8 +278,20 @@ type graphSourceBuild struct {
 // streams + media domain + realtime + optional decode bounds through here, so
 // callers never branch on the input kind. The node name is resolved by the caller
 // (graphSourceNodeNames) so repeated provider names stay disambiguated. Returning
-// all streams keeps it composable — the caller selects what it needs.
+// all streams keeps it composable — the caller selects what it needs. WrapSource
+// decorators apply here, after the open, so they see every input kind uniformly.
 func (s InputSpec) openGraphSourceBuild(ctx context.Context, service *builder, name string) (graphSourceBuild, error) {
+	build, err := s.openGraphSourceBuildKind(ctx, service, name)
+	if err != nil {
+		return graphSourceBuild{}, err
+	}
+	build.source = s.applySourceWraps(build.source)
+	return build, nil
+}
+
+// openGraphSourceBuildKind opens the input by kind; openGraphSourceBuild
+// layers the WrapSource decoration on top.
+func (s InputSpec) openGraphSourceBuildKind(ctx context.Context, service *builder, name string) (graphSourceBuild, error) {
 	switch {
 	case s.source != nil:
 		source, streams, err := newCustomSource(s)
@@ -308,6 +320,28 @@ func (s InputSpec) openGraphSourceBuild(ctx context.Context, service *builder, n
 			realtime: input.Realtime,
 		}, nil
 	}
+}
+
+// applySourceWraps decorates an opened source with the input's WrapSource
+// chain, then re-pins the node's name and described detail to the opened
+// source's values so Describe() ≡ Build() holds no matter what the decorator
+// reports. A decorator that delegates Name() and DescribeNode passes through
+// untouched, keeping every optional capability it implements visible.
+func (s InputSpec) applySourceWraps(source pipeline.Source) pipeline.Source {
+	if len(s.wraps) == 0 || source == nil {
+		return source
+	}
+	name, detail := source.Name(), describedNodeDetail(source)
+	wrapped := source
+	for _, wrap := range s.wraps {
+		if wrap == nil {
+			continue
+		}
+		if next := wrap(wrapped); next != nil {
+			wrapped = next
+		}
+	}
+	return resolvedProviderSource(wrapped, name, detail)
 }
 
 // openGraphSource keeps the streams/domain 4-tuple shape used by the Mix and

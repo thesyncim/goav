@@ -22,7 +22,7 @@ goav.From(input)                          inputs: FileInput, URIInput, Input(pro
   .Branches(goav.Branch("x")...To(dst))   fan out; BranchSpec also drives Task.Attach
   .To(File|URI|Writer|Custom|Sink)        destinations; reuse one value = mux/sink group
   .OnStream(MatchMedia|MatchCodec|...)    dynamic-stream rules
-goav.Mix(arms) / Composite(arms) / Select(arms)   N arms -> one stream (JoinArm)
+goav.Mix/Composite/Select(arms) / Join(name, stage, arms)   N arms -> one stream (JoinArm)
 goav.Flow("name")                         reusable operation list (Chain)
 job.Describe() / Explain() -> plan.Report; job.Build(ctx) -> Task; job.Run(ctx)
 Task: Run, Events, Watch(EventFilter), Snapshot -> snapshot.*, Stats,
@@ -53,6 +53,27 @@ first-class. See docs/ADAPTERS.md and docs/COMPONENTS.md.
   `SourceFunc`/`SourcePush`/`PushResult`; transports build on it:
   `rtpav.Receive` (PacketReader, Depacketizer, JitterBuffer, FeedbackWriter,
   PayloadMap seams), `webrtcav.Track`/`Session` (TrackReader, TrackAdapter).
+  `goav.WrapSource(spec, wrap)` is the decoration seam: every input kind
+  opens through one internal seam into a running `pipeline.Source`, and wrap
+  intercepts it there, so externals decorate BUILT-IN inputs (count, mirror,
+  transform the message stream) without reimplementing them. Node identity is
+  pinned after wrapping (Describe ≡ Build); a `provider.Source`-level wrap
+  was rejected because file/URI inputs have no provider view before the
+  runtime opens them. Destinations need no analog: every destination
+  constructor takes a caller-held value (io.Writer for `File`,
+  `provider.Destination` for `Custom`/`Writer`, `pipeline.Sink` for `Sink`)
+  that callers wrap before passing.
+- **Joins** — `goav.Join(name, stage, arms...)`: N→1 convergence with a
+  caller-supplied `pipeline.Stage` as the convergence node. Mix, Composite,
+  and Select are profiles over this same machinery; the per-kind behaviors
+  the internal profile table carries are derived for externals from the
+  stage's `shape.Contract` (frame-domain inputs → decode arms like Mix,
+  packet/any → passthrough like Select; a single fact-carrying input shape →
+  solver-planned per-arm conversions; the contract's output → the joined
+  stream, falling back to first-arm facts) and from the join's snake-safe
+  name (node name, output stream id, `<name>_*` error-code family). The
+  result is a full citizen: `.Tap/.Branches/.To`, itself a `JoinArm`
+  (nesting), `Describe() ≡ Build()`.
 - **Destinations** — `provider.Destination` + `provider.Contract`/
   `provider.Info`, `goav.Writer` (`provider.OpenFunc`), transactional uploads
   via `provider.TransactionalWriter`, frame/packet sinks via `goav.Sink` +
@@ -74,6 +95,38 @@ first-class. See docs/ADAPTERS.md and docs/COMPONENTS.md.
 - **Testing** — `goavtest`: deterministic sources (`Audio`, `Video`,
   `Packets`, `LiveAudio`), `Collector`, `Clock`, passthrough `Codec`/`Format`,
   one-liner `Runtime()`. Helpers return real grammar values.
+
+### Extension closure
+
+The precise statement of what the grammar accepts versus what externals can
+implement, with the executable evidence:
+
+- **Fully external.** Everything the grammar composes is implementable
+  outside the repo, with built-ins as unprivileged users of the same seams:
+  codecs, containers, probers, filters, source providers, transactional
+  destinations (`adapterproof/adapter_compat_test.go` — the five-seam proof),
+  custom `.Do` stages, custom push sources, AND custom joins
+  (`adapterproof/join_proof_test.go` — an external interleaver runs with
+  planner-inserted decode arms, taps, branches, and nested inside Mix, and
+  Select's passthrough semantics are re-expressed through `goav.Join`,
+  proving the built-ins hold no private power). Input decoration is closed by
+  `goav.WrapSource`; destination decoration was already closed by value
+  passing.
+- **The solver's conversion-class boundary.** External filters are selectable
+  by the shape solver within the declared delta classes — sample-rate/channel
+  (resample), width/height (resize), pixel/sample-format (convert), the
+  vocabulary of `shape.Conversions` — by registering under the std factory
+  names (`filter.FactoryResample`, ...; adapterproof's toy upsampler IS the
+  std resample slot). A NEW delta class (say colorspace or channel-layout as
+  a distinct class) is core work: `shape.Conversions` and `shape.Policy`
+  enumerate the classes, and externals cannot extend that enumeration.
+- **Controls.** The typed verbs (`Keyframe`, `Seek`, `Rate`, `SetBitrate`,
+  `SelectActive`, ...) are core vocabulary, but the control plane is closed
+  for externals: `Deliver(event)` hands a verbatim event to any stage that
+  interprets it itself, and `.AtTap(name)` targets it without graph handles —
+  Deliver+AtTap is the external form of a custom control verb (untargeted
+  Deliver broadcasts at the source boundary and rides the data path, exactly
+  like the built-in verbs).
 
 ## C. Expert tier
 

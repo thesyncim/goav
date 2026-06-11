@@ -11,6 +11,7 @@ import (
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/format"
+	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/provider"
 	"github.com/thesyncim/goav/shape"
 )
@@ -18,7 +19,8 @@ import (
 // InputSpec is one declared job input: a file, URI, custom source, or source
 // provider, plus the optional name, MIME, and codec facts the planner uses
 // before opening it. Construct one with FileInput, URIInput, Source, or
-// Input; configure it with options (Name, MIME, Metadata, Codec).
+// Input; configure it with options (Name, MIME, Metadata, Codec) and decorate
+// the opened source with WrapSource.
 type InputSpec struct {
 	input    format.Input
 	provider provider.Source
@@ -26,7 +28,43 @@ type InputSpec struct {
 	codec    codec.CodecSpec
 	name     string
 	realtime bool
-	err      error
+	// wraps decorate the opened pipeline source (WrapSource), applied in
+	// declaration order after the input opens through the one source seam.
+	wraps []func(pipeline.Source) pipeline.Source
+	err   error
+}
+
+// WrapSource returns a copy of the input whose opened source is decorated by
+// wrap — the decoration seam for inputs. Every input kind (file, URI, source
+// provider, custom Source) opens through one internal seam into a running
+// pipeline.Source; wrap intercepts that value right after it opens, so an
+// external decorator can observe or transform the message stream of any
+// built-in input without reimplementing it: delegate Name/Close, wrap Start,
+// and interpose on the pipeline.Emitter it is started with. Several wraps
+// compose in declaration order — the last one added is outermost (closest to
+// the graph). Planning is untouched: the input keeps its identity, probes,
+// declared shape, and codec intent, so stream selection and Describe() see
+// the original input.
+//
+// Node identity is pinned: after wrapping, the source's Name() and described
+// node detail are forced back to the opened source's values, so Describe() ≡
+// Build() holds no matter what the decorator reports — decorators decorate
+// behavior, not identity. Optional node capabilities (pipeline.
+// ControllableSource, DropReporter, ...) are visible only when the decorator
+// implements them by delegation; a decorator that hides ControllableSource
+// detaches the input from source controls such as Seek.
+//
+// Destinations need no analog: every destination constructor takes a
+// caller-held value (an io.Writer for File, a provider.Destination for
+// Custom, a pipeline.Sink for Sink) that can be wrapped before it is passed.
+func WrapSource(spec InputSpec, wrap func(pipeline.Source) pipeline.Source) InputSpec {
+	if wrap == nil {
+		return spec
+	}
+	wraps := make([]func(pipeline.Source) pipeline.Source, 0, len(spec.wraps)+1)
+	wraps = append(wraps, spec.wraps...)
+	spec.wraps = append(wraps, wrap)
+	return spec
 }
 
 // InputOption configures an input value (FileInput, URIInput, Source, Input,

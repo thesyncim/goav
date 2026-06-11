@@ -76,6 +76,8 @@ errcode.InputInvalid
 errcode.InputMissing
 errcode.InputUnknown
 errcode.JobInvalid
+errcode.JoinNameInvalid
+errcode.JoinStageInvalid
 errcode.MixArm
 errcode.MixDestination
 errcode.MixInputs
@@ -199,6 +201,7 @@ goav.InputOption
 goav.InputSpec
 goav.Intent
 goav.Job
+goav.Join
 goav.JoinArm
 goav.KeepOldOnFailure
 goav.Keyframe
@@ -270,6 +273,7 @@ goav.WithRealtime
 goav.WithStdCodecs
 goav.WithStdFilters
 goav.WithStdFormats
+goav.WrapSource
 goav.Writer
 graphrender.ErrUnsupportedFormat
 graphrender.ErrUnsupportedURI
