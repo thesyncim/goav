@@ -318,6 +318,17 @@ func (s *runtimeTestSink) Handle(_ context.Context, msg *pipeline.Message) error
 		s.frames++
 		if msg.Frame != nil {
 			s.lastFrame = *msg.Frame
+			if msg.Frame.Video != nil {
+				video := *msg.Frame.Video
+				s.lastFrame.Video = &video
+			}
+			if msg.Frame.Audio != nil {
+				audio := *msg.Frame.Audio
+				s.lastFrame.Audio = &audio
+			}
+			if len(msg.Frame.Planes) != 0 {
+				s.lastFrame.Planes = append([]av.Plane(nil), msg.Frame.Planes...)
+			}
 		}
 	}
 	return nil

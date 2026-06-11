@@ -580,6 +580,9 @@ func normalizeTapShape(spec shape.Spec) shape.Spec {
 }
 
 func normalizePlanBranchShape(spec shape.Spec, stream streamIntent, input inputIntent) shape.Spec {
+	inputShape := mediaShapeFromCodecSpec(input.Codec, firstNonEmptyDomain(spec.Domain, shape.DomainPacket))
+	inputShape.Realtime = input.Realtime
+	spec = shape.Merge(inputShape, spec)
 	if spec.Domain == "" {
 		spec.Domain = shape.DomainPacket
 	}

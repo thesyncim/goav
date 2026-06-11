@@ -25,11 +25,12 @@ func TestRecipeRTPDecodeUsesProviderDecodeBounds(t *testing.T) {
 		Type:     av.MediaVideo,
 		TimeBase: av.RTPTimeBase(90000),
 		Codec: av.CodecParameters{
-			ID:        av.CodecVP8,
-			Type:      av.MediaVideo,
-			ClockRate: 90000,
-			Width:     640,
-			Height:    360,
+			ID:          av.CodecVP8,
+			Type:        av.MediaVideo,
+			ClockRate:   90000,
+			Width:       640,
+			Height:      360,
+			PixelFormat: av.PixelFormatI420,
 		},
 	}
 	requested := codec.DecodeBounds{
@@ -111,21 +112,23 @@ func TestRecipeRTPDecodeRejectsDifferentCodecSwitch(t *testing.T) {
 		Epoch:    1,
 		TimeBase: av.RTPTimeBase(90000),
 		Codec: av.CodecParameters{
-			ID:        av.CodecVP8,
-			Type:      av.MediaVideo,
-			ClockRate: 90000,
-			Width:     640,
-			Height:    360,
+			ID:          av.CodecVP8,
+			Type:        av.MediaVideo,
+			ClockRate:   90000,
+			Width:       640,
+			Height:      360,
+			PixelFormat: av.PixelFormatI420,
 		},
 	}
 	updated := initial
 	updated.Epoch = 2
 	updated.Codec = av.CodecParameters{
-		ID:        av.CodecH264,
-		Type:      av.MediaVideo,
-		ClockRate: 90000,
-		Width:     640,
-		Height:    360,
+		ID:          av.CodecH264,
+		Type:        av.MediaVideo,
+		ClockRate:   90000,
+		Width:       640,
+		Height:      360,
+		PixelFormat: av.PixelFormatI420,
 	}
 	receiver := newRuntimeRTPSwitchReceiver(initial, updated, []*rtp.Packet{
 		{

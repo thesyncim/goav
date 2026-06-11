@@ -73,11 +73,12 @@ func inputTestVP8Stream() av.Stream {
 		Type:     av.MediaVideo,
 		TimeBase: av.RTPTimeBase(90000),
 		Codec: av.CodecParameters{
-			ID:        av.CodecVP8,
-			Type:      av.MediaVideo,
-			ClockRate: 90000,
-			Width:     640,
-			Height:    360,
+			ID:          av.CodecVP8,
+			Type:        av.MediaVideo,
+			ClockRate:   90000,
+			Width:       640,
+			Height:      360,
+			PixelFormat: av.PixelFormatI420,
 		},
 	}
 }
@@ -326,6 +327,32 @@ func TestReceiveSourceShape(t *testing.T) {
 	}
 	if spec != want {
 		t.Fatalf("shape = %+v, want %+v", spec, want)
+	}
+
+	video := inputTestVP8Stream()
+	depacketized := Receive(&inputTestReceiver{}, WithDepacketizers(NewVP8Depacketizer(video))).SourceShape()
+	want = shape.Spec{
+		Domain:      shape.DomainPacket,
+		MediaKind:   av.MediaVideo,
+		StreamID:    video.ID,
+		Codec:       av.CodecVP8,
+		Width:       640,
+		Height:      360,
+		PixelFormat: av.PixelFormatI420,
+		Realtime:    true,
+	}
+	if depacketized != want {
+		t.Fatalf("shape = %+v, want %+v", depacketized, want)
+	}
+
+	h264 := video
+	h264.Codec.ID = av.CodecH264
+	multi := Receive(&inputTestReceiver{},
+		WithDepacketizers(NewVP8Depacketizer(video), NewH264Depacketizer(h264)),
+	).SourceShape()
+	want.Codec = ""
+	if multi != want {
+		t.Fatalf("shape = %+v, want %+v", multi, want)
 	}
 }
 

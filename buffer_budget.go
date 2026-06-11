@@ -191,21 +191,31 @@ func videoFrameCopyBudget(spec shape.Spec) (int, error) {
 	if spec.PixelFormat == "" {
 		return 0, fmt.Errorf("missing pixel_format")
 	}
+	width := alignedVideoCopyDimension(spec.Width)
+	height := alignedVideoCopyDimension(spec.Height)
 	switch spec.PixelFormat {
 	case av.PixelFormatI420, av.PixelFormatYUV420P:
-		chromaWidth := (spec.Width + 1) / 2
-		chromaHeight := (spec.Height + 1) / 2
-		return spec.Width*spec.Height + 2*chromaWidth*chromaHeight, nil
+		chromaWidth := alignedVideoCopyDimension((spec.Width + 1) / 2)
+		chromaHeight := alignedVideoCopyDimension((spec.Height + 1) / 2)
+		return width*height + 2*chromaWidth*chromaHeight, nil
 	case av.PixelFormatGray8:
-		return spec.Width * spec.Height, nil
+		return width * height, nil
 	case av.PixelFormatI422, av.PixelFormatYUV422P:
-		chromaWidth := (spec.Width + 1) / 2
-		return spec.Width*spec.Height + 2*chromaWidth*spec.Height, nil
+		chromaWidth := alignedVideoCopyDimension((spec.Width + 1) / 2)
+		return width*height + 2*chromaWidth*height, nil
 	case av.PixelFormatI444, av.PixelFormatYUV444P:
-		return spec.Width * spec.Height * 3, nil
+		return width * height * 3, nil
 	default:
 		return 0, fmt.Errorf("unsupported pixel_format %q", spec.PixelFormat)
 	}
+}
+
+func alignedVideoCopyDimension(value int) int {
+	const alignment = 64
+	if value <= 0 {
+		return 0
+	}
+	return ((value + alignment - 1) / alignment) * alignment
 }
 
 func audioFrameCopyBudget(spec shape.Spec) (int, error) {
