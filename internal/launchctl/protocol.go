@@ -1,0 +1,349 @@
+package launchctl
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"strings"
+
+	goav "github.com/thesyncim/goav"
+	"github.com/thesyncim/goav/av"
+	"github.com/thesyncim/goav/pipeline"
+)
+
+// Request is the JSON request shape spoken over a goav ctl control socket.
+type Request struct {
+	Op               string            `json:"op"`
+	Verb             string            `json:"verb,omitempty"`
+	Args             map[string]string `json:"args,omitempty"`
+	Control          json.RawMessage   `json:"control,omitempty"`
+	Event            json.RawMessage   `json:"event,omitempty"`
+	Tap              string            `json:"tap,omitempty"`
+	Branch           string            `json:"branch,omitempty"`
+	Pipeline         string            `json:"pipeline,omitempty"`
+	Switch           string            `json:"switch,omitempty"`
+	KeepOldOnFailure bool              `json:"keep_old_on_failure,omitempty"`
+}
+
+// Response is the standard envelope for a goav ctl control socket response.
+type Response struct {
+	OK     bool   `json:"ok"`
+	Result any    `json:"result,omitempty"`
+	Error  *Error `json:"error,omitempty"`
+}
+
+func SuccessResponse(result any) Response {
+	return Response{OK: true, Result: result}
+}
+
+func ErrorResponse(operation string, err error) Response {
+	return Response{OK: false, Error: structuredError(operation, err)}
+}
+
+// RequestFromCLI converts canonical goav ctl arguments into the socket
+// protocol request. It does not execute anything locally.
+func RequestFromCLI(argv []string) (Request, error) {
+	if len(argv) == 0 {
+		return Request{}, commandError("missing_command", "ctl", "", "missing ctl command", nil, []string{"use `goav ctl help`"}, nil)
+	}
+	switch argv[0] {
+	case "control":
+		return controlRequestFromCLI(argv[1:])
+	case "attach":
+		return attachRequestFromCLI(argv[1:])
+	case "rebranch":
+		return rebranchRequestFromCLI(argv[1:])
+	case "detach":
+		if len(argv) != 2 {
+			return Request{}, commandError("invalid_argument", "detach", "", "detach needs exactly one branch name", nil, []string{"use `goav ctl detach <branch-name>`"}, nil)
+		}
+		return Request{Op: "detach", Branch: argv[1]}, nil
+	case "inspect", "snapshot", "stats", "taps", "streams", "branches", "destinations", "events", "watch", "stop":
+		return Request{Op: argv[0], Args: argsMap(argv[1:])}, nil
+	default:
+		return Request{}, commandError("unknown_command", "ctl", argv[0], fmt.Sprintf("unknown ctl command %q", argv[0]), nil, []string{"use `goav ctl help`"}, nil)
+	}
+}
+
+func controlRequestFromCLI(argv []string) (Request, error) {
+	if len(argv) == 0 {
+		return Request{}, commandError("missing_command", "control", "", "missing control verb", nil, []string{"use `goav ctl help control`"}, nil)
+	}
+	if argv[0] == "--json" {
+		if len(argv) != 2 {
+			return Request{}, commandError("invalid_argument", "control --json", "", "control --json needs exactly one JSON object", nil, []string{`use goav ctl control --json '{"type":"bitrate","stream_id":"video","bitrate":1200000}'`}, nil)
+		}
+		return Request{Op: "control_raw", Control: json.RawMessage(argv[1])}, nil
+	}
+	verb := argv[0]
+	if verb == "deliver" && len(argv) >= 3 && argv[1] == "--json" {
+		return Request{Op: "control", Verb: "deliver", Event: json.RawMessage(argv[2]), Args: argsMap(argv[3:])}, nil
+	}
+	return Request{Op: "control", Verb: verb, Args: argsMap(argv[1:])}, nil
+}
+
+func attachRequestFromCLI(argv []string) (Request, error) {
+	if len(argv) != 4 || argv[1] != "as" {
+		return Request{}, commandError("invalid_argument", "attach", "", "attach needs: <tap-name> as <branch-name> '<branch-pipeline>'", nil, []string{"use `goav ctl help attach`"}, nil)
+	}
+	return Request{Op: "attach", Tap: argv[0], Branch: argv[2], Pipeline: argv[3]}, nil
+}
+
+func rebranchRequestFromCLI(argv []string) (Request, error) {
+	if len(argv) < 2 {
+		return Request{}, commandError("invalid_argument", "rebranch", "", "rebranch needs a branch name and pipeline", nil, []string{"use `goav ctl help rebranch`"}, nil)
+	}
+	req := Request{Op: "rebranch", Branch: argv[0]}
+	args := argv[1:]
+	for len(args) > 0 {
+		switch args[0] {
+		case "--switch":
+			if len(args) < 2 {
+				return Request{}, commandError("invalid_argument", "rebranch", "--switch", "--switch needs next_frame or next_keyframe", nil, nil, nil)
+			}
+			req.Switch = args[1]
+			args = args[2:]
+		case "--keep-old-on-failure":
+			req.KeepOldOnFailure = true
+			args = args[1:]
+		default:
+			if req.Pipeline != "" {
+				return Request{}, commandError("invalid_argument", "rebranch", args[0], "rebranch accepts exactly one branch pipeline", nil, nil, nil)
+			}
+			req.Pipeline = args[0]
+			args = args[1:]
+		}
+	}
+	if req.Pipeline == "" {
+		return Request{}, commandError("invalid_argument", "rebranch", "", "rebranch needs a branch pipeline", nil, []string{"use `goav ctl help rebranch`"}, nil)
+	}
+	return req, nil
+}
+
+func argsMap(argv []string) map[string]string {
+	if len(argv) == 0 {
+		return nil
+	}
+	out := make(map[string]string)
+	for _, arg := range argv {
+		if strings.HasPrefix(arg, "--") {
+			out[strings.TrimPrefix(arg, "--")] = "true"
+			continue
+		}
+		key, value, ok := strings.Cut(arg, "=")
+		if !ok {
+			out[arg] = ""
+			continue
+		}
+		out[key] = value
+	}
+	return out
+}
+
+// Execute applies one ctl command directly to a Task. It is the in-process
+// equivalent of what a control server does after decoding Request.
+func Execute(ctx context.Context, task goav.Task, argv []string) (ControlResponse, error) {
+	if len(argv) == 0 {
+		return ControlResponse{}, commandError("missing_command", "ctl", "", "missing ctl command", nil, []string{"use `goav ctl help`"}, nil)
+	}
+	switch argv[0] {
+	case "help":
+		text, err := Help(argv[1:])
+		if err != nil {
+			return ControlResponse{}, err
+		}
+		return ControlResponse{Operation: "help", Result: text}, nil
+	case "control":
+		return executeControl(ctx, task, argv[1:])
+	case "inspect":
+		return ControlResponse{Operation: "inspect", Result: task.Describe()}, nil
+	case "snapshot":
+		return ControlResponse{Operation: "snapshot", Result: task.Snapshot()}, nil
+	case "stats":
+		return ControlResponse{Operation: "stats", Result: task.Stats()}, nil
+	case "taps":
+		return ControlResponse{Operation: "taps", Result: task.Taps()}, nil
+	case "streams":
+		return ControlResponse{Operation: "streams", Result: streamsFromTask(task)}, nil
+	case "branches":
+		return ControlResponse{Operation: "branches", Result: task.Snapshot().Branches}, nil
+	case "destinations":
+		return ControlResponse{Operation: "destinations", Result: task.Snapshot().Destinations}, nil
+	case "events", "watch":
+		return executeWatch(task, argv[0], argv[1:])
+	case "stop":
+		if err := task.Close(); err != nil {
+			return ControlResponse{}, structuredError("stop", err)
+		}
+		return ControlResponse{Operation: "stop", Result: "closed"}, nil
+	case "attach":
+		return ControlResponse{}, unsupportedGraphMutation("attach")
+	case "rebranch":
+		return executeUnsupportedRebranch(task, argv[1:])
+	case "detach":
+		return executeUnsupportedDetach(task, argv[1:])
+	default:
+		return ControlResponse{}, commandError("unknown_command", "ctl", argv[0], fmt.Sprintf("unknown ctl command %q", argv[0]), nil, []string{"use `goav ctl help`"}, nil)
+	}
+}
+
+func executeControl(ctx context.Context, task goav.Task, argv []string) (ControlResponse, error) {
+	if len(argv) == 0 {
+		return ControlResponse{}, commandError("missing_command", "control", "", "missing control verb", nil, []string{"use `goav ctl help control`"}, nil)
+	}
+	if argv[0] == "--json" {
+		if len(argv) != 2 {
+			return ControlResponse{}, commandError("invalid_argument", "control --json", "", "control --json needs exactly one JSON object", nil, nil, nil)
+		}
+		return executeRawControl(ctx, task, []byte(argv[1]))
+	}
+	verb := argv[0]
+	if verb == "deliver" && len(argv) >= 3 && argv[1] == "--json" {
+		return executeRawEvent(ctx, task, []byte(argv[2]), argv[3:])
+	}
+	spec, ok := LookupControlCommand(verb)
+	if !ok {
+		return ControlResponse{}, commandError("unknown_command", "control", verb, fmt.Sprintf("unknown control command %q", verb), nil, []string{"use one of: " + strings.Join(controlCommandNames(), ", ")}, nil)
+	}
+	return Invoke(ctx, task, spec, argv[1:])
+}
+
+func executeWatch(task goav.Task, operation string, args []string) (ControlResponse, error) {
+	argValues := argsMap(args)
+	if argValues["follow"] == "true" {
+		return ControlResponse{}, commandError(
+			"unsupported_streaming_response",
+			operation,
+			"",
+			"watch/event streaming requires a control server streaming response",
+			nil,
+			[]string{"use task.Watch(...) in-process", "use a goav control server that supports streaming event responses"},
+			nil,
+		)
+	}
+	var filters []goav.EventFilter
+	if typ := argValues["type"]; typ != "" {
+		filters = append(filters, goav.WatchTypes(av.EventType(typ)))
+	}
+	if stream := argValues["stream"]; stream != "" {
+		filters = append(filters, goav.WatchStream(av.StreamID(stream)))
+	}
+	ch := task.Watch(filters...)
+	var events []av.Event
+	for {
+		select {
+		case event, ok := <-ch:
+			if !ok {
+				return ControlResponse{Operation: operation, Result: events}, nil
+			}
+			events = append(events, event)
+		default:
+			return ControlResponse{Operation: operation, Result: events}, nil
+		}
+	}
+}
+
+func executeUnsupportedDetach(task goav.Task, args []string) (ControlResponse, error) {
+	if len(args) != 1 {
+		return ControlResponse{}, commandError("invalid_argument", "detach", "", "detach needs exactly one branch name", nil, []string{"use `goav ctl detach <branch-name>`"}, nil)
+	}
+	name := args[0]
+	branches := task.Snapshot().Branches
+	for _, branch := range branches {
+		if branch.Name == name {
+			return ControlResponse{}, commandError(
+				"unsupported",
+				"detach",
+				name,
+				"detaching by branch name requires a control server handle table for goav.Attachment",
+				nil,
+				[]string{"keep the goav.Attachment returned by Task.Attach and call task.Detach(ctx, attachment)", "run `goav ctl branches` to inspect branch state"},
+				nil,
+			)
+		}
+	}
+	available := branchNames(branches)
+	suggestions := []string{"run `goav ctl branches`"}
+	if nearest := closest(name, available); nearest != "" {
+		suggestions = append([]string{"use " + nearest}, suggestions...)
+	}
+	return ControlResponse{}, commandError("unknown_branch", "detach", name, fmt.Sprintf("unknown branch %q", name), []string{"available_branches=" + strings.Join(available, ",")}, suggestions, nil)
+}
+
+func executeUnsupportedRebranch(task goav.Task, args []string) (ControlResponse, error) {
+	if len(args) == 0 {
+		return ControlResponse{}, commandError("invalid_argument", "rebranch", "", "rebranch needs a branch name", nil, []string{"use `goav ctl help rebranch`"}, nil)
+	}
+	name := args[0]
+	branches := task.Snapshot().Branches
+	for _, branch := range branches {
+		if branch.Name == name {
+			return ControlResponse{}, unsupportedGraphMutation("rebranch")
+		}
+	}
+	available := branchNames(branches)
+	suggestions := []string{"run `goav ctl branches`"}
+	if nearest := closest(name, available); nearest != "" {
+		suggestions = append([]string{"use " + nearest}, suggestions...)
+	}
+	return ControlResponse{}, commandError("unknown_branch", "rebranch", name, fmt.Sprintf("unknown branch %q", name), []string{"available_branches=" + strings.Join(available, ",")}, suggestions, nil)
+}
+
+func unsupportedGraphMutation(operation string) error {
+	switch operation {
+	case "attach":
+		return commandError(
+			"unsupported",
+			"attach",
+			"",
+			"branch-pipeline string parsing is not present in the current goav API",
+			nil,
+			[]string{"use typed Task.Attach(ctx, goav.Branch(name).From(tap)...To(destination))", "add a launch pipeline parser before enabling `goav ctl attach`"},
+			nil,
+		)
+	case "rebranch":
+		return commandError(
+			"unsupported",
+			"rebranch",
+			"",
+			"rebranch by name and branch-pipeline string parsing require a control server attachment table",
+			nil,
+			[]string{"use typed attachment.Rebranch(ctx, goav.Branch(...), goav.SwitchAt(...))", "add a launch pipeline parser and attachment handle table before enabling `goav ctl rebranch`"},
+			nil,
+		)
+	default:
+		return commandError("unsupported", operation, "", "unsupported graph mutation", nil, nil, nil)
+	}
+}
+
+type StreamInfo struct {
+	ID       av.StreamID       `json:"id,omitempty"`
+	Media    av.MediaType      `json:"media,omitempty"`
+	Domain   string            `json:"domain,omitempty"`
+	Source   string            `json:"source,omitempty"`
+	Tap      string            `json:"tap,omitempty"`
+	Node     pipeline.NodeRef  `json:"node,omitempty"`
+	Metadata map[string]string `json:"metadata,omitempty"`
+}
+
+func streamsFromTask(task goav.Task) []StreamInfo {
+	var out []StreamInfo
+	seen := make(map[av.StreamID]struct{})
+	for _, tap := range task.Taps() {
+		if tap.Shape.StreamID == "" {
+			continue
+		}
+		if _, ok := seen[tap.Shape.StreamID]; ok {
+			continue
+		}
+		seen[tap.Shape.StreamID] = struct{}{}
+		out = append(out, StreamInfo{
+			ID:     tap.Shape.StreamID,
+			Media:  tap.MediaKind,
+			Domain: string(tap.Domain),
+			Tap:    tap.Name,
+			Node:   tap.Node,
+		})
+	}
+	return out
+}

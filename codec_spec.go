@@ -3,6 +3,7 @@
 package goav
 
 import (
+	"bytes"
 	"fmt"
 	"strings"
 
@@ -28,6 +29,77 @@ func cloneCodecSpec(spec codec.CodecSpec) codec.CodecSpec {
 	spec.Parameters.ExtraData = cloneBuffer(spec.Parameters.ExtraData)
 	spec.Settings = cloneCodecSettings(spec.Settings)
 	return spec
+}
+
+func codecSpecEqual(a, b codec.CodecSpec) bool {
+	return a.ID == b.ID &&
+		a.Type == b.Type &&
+		codecParametersEqual(a.Parameters, b.Parameters) &&
+		codecSettingsEqual(a.Settings, b.Settings) &&
+		a.Copy == b.Copy &&
+		a.Auto == b.Auto
+}
+
+func codecParametersEqual(a, b av.CodecParameters) bool {
+	return a.ID == b.ID &&
+		a.Type == b.Type &&
+		a.Profile == b.Profile &&
+		a.Level == b.Level &&
+		a.ClockRate == b.ClockRate &&
+		a.SampleRate == b.SampleRate &&
+		a.Channels == b.Channels &&
+		a.ChannelLayout == b.ChannelLayout &&
+		a.Width == b.Width &&
+		a.Height == b.Height &&
+		a.PixelFormat == b.PixelFormat &&
+		a.SampleFormat == b.SampleFormat &&
+		bufferEqual(a.ExtraData, b.ExtraData) &&
+		metadataEqual(a.Attributes, b.Attributes)
+}
+
+func codecSettingsEqual(a, b codec.CodecSettings) bool {
+	return a.Bitrate == b.Bitrate &&
+		a.Framerate == b.Framerate &&
+		a.KeyframeInterval == b.KeyframeInterval &&
+		a.Profile == b.Profile &&
+		a.Level == b.Level &&
+		a.Channels == b.Channels &&
+		a.SampleRate == b.SampleRate &&
+		a.ClockRate == b.ClockRate &&
+		a.ChannelLayout == b.ChannelLayout &&
+		a.ChannelsSet == b.ChannelsSet &&
+		a.SampleRateSet == b.SampleRateSet &&
+		a.Control == nil &&
+		b.Control == nil
+}
+
+func bufferEqual(a, b av.Buffer) bool {
+	return a.Ownership == b.Ownership &&
+		a.Owner == nil &&
+		b.Owner == nil &&
+		bytesEqual(a.Bytes, b.Bytes)
+}
+
+func bytesEqual(a, b []byte) bool {
+	if (a == nil) != (b == nil) {
+		return false
+	}
+	return bytes.Equal(a, b)
+}
+
+func metadataEqual(a, b av.Metadata) bool {
+	if (a == nil) != (b == nil) {
+		return false
+	}
+	if len(a) != len(b) {
+		return false
+	}
+	for key, value := range a {
+		if b[key] != value {
+			return false
+		}
+	}
+	return true
 }
 
 func cloneCodecSettings(settings codec.CodecSettings) codec.CodecSettings {
