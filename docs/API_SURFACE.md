@@ -38,7 +38,9 @@ Vocabulary read by applications, all tier A:
 - `plan` — everything `Explain` reports back.
 - `snapshot` — point-in-time task/branch/destination/tap views.
 - `lifecycle` — task/branch/destination states.
-- `shape` — shape specs and `.Auto` policies (`AllowResample`, ...).
+- `shape` — shape specs and `.Auto` policies (`AllowResample`, ...);
+  `shape.Format` pins open-ended container or transport ids for custom
+  adapters.
 - `flow` — branch buffer policies (`Blocking`, `DropOldest`, ...) and the
   `DropReason*` keys for reading drop counters.
 - `av` identifiers — media/codec/format/protocol ids, event types, metadata.

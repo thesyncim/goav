@@ -119,6 +119,16 @@ func Codec(codec av.CodecID) Option {
 	}
 }
 
+// Format pins the container or transport framing format (av.FormatRTP, ...);
+// unset matches any format.
+func Format(format av.FormatID) Option {
+	return func(spec *Spec) {
+		if spec != nil {
+			spec.Format = format
+		}
+	}
+}
+
 // Video states the video layout facts: geometry and pixel format. Zero or
 // empty fields stay unconstrained — Video(0, 0, "i420") pins only the pixel
 // format, which is how a Prefer steers an otherwise open solver choice.
