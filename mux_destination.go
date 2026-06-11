@@ -2,6 +2,7 @@ package goav
 
 import (
 	"context"
+	"io"
 	"strconv"
 
 	"github.com/thesyncim/goav/av"
@@ -33,7 +34,16 @@ func (b *builder) openDestinationOutput(ctx context.Context, destination destina
 		}
 		formatID = outputProbe.Format
 	}
-	if output.Writer != nil || destination.custom == nil {
+	if output.Writer != nil {
+		// goav.File close contract: a writer that also implements io.Closer is
+		// closed exactly once when the destination finalizes; a plain writer
+		// stays the caller's to close.
+		if closer, ok := output.Writer.(io.WriteCloser); ok {
+			return output, closer, nil
+		}
+		return output, nil, nil
+	}
+	if destination.custom == nil {
 		return output, nil, nil
 	}
 	info := DestinationInfo{

@@ -254,7 +254,7 @@ func frameSourceCopyError(operation string, node string) error {
 		},
 		Suggestions: []string{
 			"send frame-domain media to goav.Sink(...)",
-			"encode frames before writing to file, URI, writer, or object destinations",
+			"encode frames before writing to file, URI, or writer destinations",
 		},
 		Cause: ErrUnsupportedBuild,
 	}
@@ -396,18 +396,20 @@ func lastStreamTapRef(stream *jobStreamBuild) TapRef {
 	return TapRef{}
 }
 
-func (b *jobStreamBuilder) Do(stage pipeline.Stage) *jobStreamBuilder {
+func (b *jobStreamBuilder) Do(stages ...pipeline.Stage) *jobStreamBuilder {
 	stream := b.current()
-	if codecIntentSet(chainEncodeSpec(stream.operations)) {
-		b.job.setErr(chainStepAfterEncodeError("build stream", jobStreamName(stream), "custom stage", chainEncodeSpec(stream.operations)))
-		return b
+	for i := range stages {
+		if codecIntentSet(chainEncodeSpec(stream.operations)) {
+			b.job.setErr(chainStepAfterEncodeError("build stream", jobStreamName(stream), "custom stage", chainEncodeSpec(stream.operations)))
+			return b
+		}
+		if stages[i] == nil {
+			b.job.setErr(streamStageMissingError(streamIntent{Name: jobStreamName(stream)}))
+			return b
+		}
+		b.ensureDecodeOperation()
+		stream.operations = append(stream.operations, operationSpecForStage(stages[i]))
 	}
-	if stage == nil {
-		b.job.setErr(streamStageMissingError(streamIntent{Name: jobStreamName(stream)}))
-		return b
-	}
-	b.ensureDecodeOperation()
-	stream.operations = append(stream.operations, operationSpecForStage(stage))
 	return b
 }
 

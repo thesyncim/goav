@@ -668,7 +668,11 @@ func TestRecordRecipeCopyToCustomWriterDestinationRuns(t *testing.T) {
 	}
 }
 
-func TestRecordRecipeCopyToCustomObjectDestinationRuns(t *testing.T) {
+// TestRecordRecipeCopyToTransactionalWriterDestinationRuns pins the object-store
+// capability through the one Writer constructor: an opened writer that
+// implements TransactionalDestinationWriter commits after success and closes
+// exactly once.
+func TestRecordRecipeCopyToTransactionalWriterDestinationRuns(t *testing.T) {
 	ctx := context.Background()
 	stream := audioOpusTestStream()
 	receiver := &runtimeRTPReceiver{
@@ -692,7 +696,7 @@ func TestRecordRecipeCopyToCustomObjectDestinationRuns(t *testing.T) {
 		testFormatMuxer(av.FormatOgg, writerDestinationMuxerFactory{muxer: muxer}),
 	))
 	metadata := av.Metadata{"storage": "hot"}
-	target := Object("s3://bucket/object.ogg", func(_ context.Context, info DestinationInfo) (TransactionalDestinationWriter, error) {
+	target := Writer("s3://bucket/object.ogg", func(_ context.Context, info DestinationInfo) (io.WriteCloser, error) {
 		state.opens++
 		state.info = info
 		return &writerDestinationWriteCloser{state: state}, nil
@@ -728,6 +732,70 @@ func TestRecordRecipeCopyToCustomObjectDestinationRuns(t *testing.T) {
 	if state.closes != 1 || state.commits != 1 || state.aborts != 0 {
 		t.Fatalf("closes=%d commits=%d aborts=%d, want one close and commit", state.closes, state.commits, state.aborts)
 	}
+}
+
+// TestFileDestinationClosesCloserWriterOnce pins the goav.File close contract:
+// a writer that also implements io.Closer is closed exactly once when the
+// destination finalizes, while plain writers stay the caller's to close.
+func TestFileDestinationClosesCloserWriterOnce(t *testing.T) {
+	ctx := context.Background()
+	stream := audioOpusTestStream()
+	receiver := &runtimeRTPReceiver{
+		streams: []av.Stream{stream},
+		payload: rtpav.NewStaticPayloadMap(0, []rtpav.PayloadCodec{{
+			PayloadType: 111,
+			Parameters:  stream.Codec,
+			MIMEType:    rtpav.MIMEOpus,
+			ClockRate:   48000,
+			Channels:    codec.Stereo,
+		}}),
+		packets: []*rtp.Packet{{
+			Header:  rtp.Header{PayloadType: 111, Timestamp: 960},
+			Payload: []byte{4, 5, 6},
+		}},
+		events: make(chan av.Event),
+	}
+	muxer := &writerDestinationMuxer{}
+	runtime := New(withTestFormats(
+		testFormatMuxer(av.FormatOgg, writerDestinationMuxerFactory{muxer: muxer}),
+	))
+	writer := &fileDestinationWriteCloser{}
+
+	task, err := From(
+		Input(rtpav.Receive(receiver, rtpav.WithName("audio"), rtpav.WithCodec(codec.Opus()), rtpav.WithBufferLimits(rtpav.BufferLimits{MaxPackets: 2}))),
+	).Copy().To(File("call.ogg", writer, Format(av.FormatOgg))).UseRuntime(runtime).Build(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := task.Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if writer.closes != 0 {
+		t.Fatalf("writer closed before task close: %d", writer.closes)
+	}
+	if err := task.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(writer.bytes.Bytes(), []byte{4, 5, 6}) {
+		t.Fatalf("written bytes = %v", writer.bytes.Bytes())
+	}
+	if writer.closes != 1 {
+		t.Fatalf("writer closes = %d, want exactly one close", writer.closes)
+	}
+}
+
+type fileDestinationWriteCloser struct {
+	bytes  bytes.Buffer
+	closes int
+}
+
+func (w *fileDestinationWriteCloser) Write(p []byte) (int, error) {
+	return w.bytes.Write(p)
+}
+
+func (w *fileDestinationWriteCloser) Close() error {
+	w.closes++
+	return nil
 }
 
 func TestRecordRecipeCustomWriterDestinationAbortsOnRunError(t *testing.T) {

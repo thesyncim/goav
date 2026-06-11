@@ -209,6 +209,55 @@ func TestNestedCompositeRegionPlacesSubCanvas(t *testing.T) {
 	}
 }
 
+// TestSelectRegionPlacesSwitchedArmOnComposite pins Select's .Region(x, y):
+// a one-of-N switch standing as a Composite arm — the active-speaker tile —
+// lands at its declared canvas position, mirroring .Region on source chains
+// and nested composites. The switch forwards its first arm by default. The
+// Select forces a buffered graph that recycles frames after delivery, so the
+// sink copies the canvas facts instead of retaining the frame.
+func TestSelectRegionPlacesSwitchedArmOnComposite(t *testing.T) {
+	ctx := context.Background()
+	type canvas struct {
+		width, height int
+		yPlane        []byte
+	}
+	var got []canvas
+	sink := Sink(SinkFunc("out", func(_ context.Context, m Message) error {
+		if m.Kind == pipeline.MessageFrame && m.Frame != nil && m.Frame.Video != nil {
+			got = append(got, canvas{
+				width:  m.Frame.Video.Width,
+				height: m.Frame.Video.Height,
+				yPlane: append([]byte(nil), m.Frame.Planes[0].Buffer.Bytes...),
+			})
+		}
+		return nil
+	}))
+	task, err := Composite(
+		From(compositeTestVideoSource("c", 4, 4, 50, 10, 20)).Video().Region(0, 0),
+		Select(
+			From(compositeTestVideoSource("a", 4, 4, 100, 10, 20)).Video(),
+			From(compositeTestVideoSource("b", 4, 4, 200, 30, 40)).Video(),
+		).Region(0, 4),
+	).To(sink).Build(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer task.Close()
+	if err := task.Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0].width != 4 || got[0].height != 8 {
+		t.Fatalf("canvas = %+v, want one 4x8 frame", got)
+	}
+	out := got[0]
+	if y := out.yPlane[0*out.width+0]; y != 50 {
+		t.Fatalf("Y at (0,0) = %d, want 50 (leaf c)", y)
+	}
+	if y := out.yPlane[4*out.width+0]; y != 100 {
+		t.Fatalf("Y at (0,4) = %d, want 100 (switched arm a at the Select Region)", y)
+	}
+}
+
 // TestMixResamplesNestedMixOutput pins the solver path for nested arms: the
 // outer mix's first arm sets a 48kHz target, and the 24kHz sub-mix OUTPUT is
 // auto-resampled through the same armPolicy solver path as any leaf arm.

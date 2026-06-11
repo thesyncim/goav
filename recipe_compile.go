@@ -1233,7 +1233,7 @@ func destinationShapeMismatchError(operation string, node string, destinationNam
 			"actual_shape=" + spec.String(),
 		},
 		Suggestions: []string{
-			"call .Encode(codec.Opus(...)), .Encode(codec.VP8(...)), or .Encode(codec.VP9(...)) before writing to file, URI, writer, or object destinations",
+			"call .Encode(codec.Opus(...)), .Encode(codec.VP8(...)), or .Encode(codec.VP9(...)) before writing to file, URI, or writer destinations",
 			"use .Copy() from a packet-domain stream point for packet-preserving output",
 			"send frame-domain media to goav.Sink(...) instead of a byte destination",
 		},

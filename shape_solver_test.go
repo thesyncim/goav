@@ -399,6 +399,36 @@ func TestAutoSolvesBranchChains(t *testing.T) {
 	}
 }
 
+// TestAutoWorksInFlows covers the flow chains' .Auto(...): a conversion policy
+// declared on a reusable Flow enables the solver wherever the flow is applied,
+// so the chain gets the needed conversion inserted as a real planned operation.
+func TestAutoWorksInFlows(t *testing.T) {
+	normalize := Flow("normalize").Audio().
+		Auto(shape.AllowResample()).
+		Encode(codec.Opus(codec.Bitrate(96_000)))
+	job := From(solverTestAudioSource("mic", 44_100, codec.Stereo, av.SampleFormatS16)).
+		Audio().
+		Apply(normalize).
+		To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))).
+		UseRuntime(solverTestOpusRuntime(WithStdFilters()))
+
+	planned, err := job.Describe()
+	if err != nil {
+		t.Fatalf("Describe(): %v", err)
+	}
+	if !strings.Contains(specText(planned), "resample-audio") {
+		t.Fatalf("planned spec should show the flow-enabled resample node:\n%s", specText(planned))
+	}
+	task, err := job.Build(context.Background())
+	if err != nil {
+		t.Fatalf("Build(): %v", err)
+	}
+	defer task.Close()
+	if specText(task.Describe()) != specText(planned) {
+		t.Fatalf("Describe() != Build():\nplanned:\n%s\nbuilt:\n%s", specText(planned), specText(task.Describe()))
+	}
+}
+
 // TestReadmeAutoResampleExampleBuilds verifies the README Shape Solving
 // example against the default runtime: the inserted resample shows up in the
 // plan and the planned spec equals the built graph.

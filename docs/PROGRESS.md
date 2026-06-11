@@ -22,7 +22,7 @@ in git, not here.
   `TaskState`/`BranchState`/`DestinationState`.
 - Extensibility: per-runtime registries, layered `Default(opts...)` (last-wins),
   direct `WithDecoder/WithEncoder/WithFilter/WithMuxer/WithDemuxer/WithProber`,
-  custom source/`Do`/`Sink`/`Writer`/`Object` components, generic `Codec` specs.
+  custom source/`Do`/`Sink`/`Writer` components, generic `Codec` specs.
 - Codec settings: one owner (`codec.CodecSettings` via `codec` options); tier-2
   `codec.Control` raw callback; Opus/VP8/VP9 full verticals, H264/AV1 decode-first.
 - Adapters: IVF, Annex B, Matroska/WebM, gopus, govpx, goav1, goh264 (tagged),
@@ -71,7 +71,7 @@ runtime state, or lifecycle policy.
 
 | Gate | Evidence | State |
 | --- | --- | --- |
-| Simple high-level API | `From`, stream selection, ordered operations, typed taps, branches, direct `File`/`URIOut`/`Sink` destinations, custom `Writer` destinations with `DestinationInfo`, stable destination handles for shared mux/sink groups, flows, runtime attach, custom sources, `Explain(ctx)` | active |
+| Simple high-level API | `From`, stream selection, ordered operations, typed taps, branches, direct `File`/`URI`/`Sink` destinations, custom `Writer` destinations with `DestinationInfo`, stable destination handles for shared mux/sink groups, flows, runtime attach, custom sources, `Explain(ctx)` | active |
 | One grammar, one engine | one planner emits `WorkPlan` for build and `WorkPatch` for attach; the internal IR collapse is the open work (NORTH_STAR attack plan) | in progress |
 | Allocation-guarded hot paths | `testing.AllocsPerRun` guards across core/RTP/codec/format/adapters; no cgo (`hygiene_test.go`) | active |
 | Validation gates | `go test ./...`, adapter tag builds, allocation and lifecycle tests | active |

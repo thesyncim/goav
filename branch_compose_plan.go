@@ -430,7 +430,7 @@ func branchDestinationReferenceMissingError(stream streamIntent, label string) e
 		Node:      stream.Name,
 		Reason:    "destination " + label + " is referenced but not defined",
 		Suggestions: []string{
-			"pass a named goav.File(...), goav.URIOut(...), or goav.Sink(...) destination to the branch .To(...) call",
+			"pass a named goav.File(...), goav.URI(...), or goav.Sink(...) destination to the branch .To(...) call",
 			"reuse destination values instead of repeating string destination names",
 		},
 		Cause: ErrUnsupportedBuild,

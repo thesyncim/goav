@@ -1877,7 +1877,7 @@ func TestReadmeShowsCustomDestinations(t *testing.T) {
 		"goav.Writer(",
 		"goav.Custom(",
 		"goav.DestinationInfo",
-		"goav.Object(",
+		"goav.TransactionalDestinationWriter",
 		"goav.Format(",
 		"goav.MIME(",
 		"goav.Metadata(",
@@ -2121,7 +2121,9 @@ func TestArchitectureDocsUseSmallCompositionVocabulary(t *testing.T) {
 		"From(node)",
 		"node names from `Task.Describe()`",
 		"`Target`, destination constructors",
-		"`File`, `URIOut`, and `Sink` destination constructors",
+		"URIOut",
+		"WriteCloser(",
+		"`Object`",
 		"TargetRef",
 		"Recipes: From, chains, taps, branches, destinations",
 		"Intent graph: inputs, selected media, chain operations, destinations, policies",
@@ -2140,7 +2142,7 @@ func TestArchitectureDocsUseSmallCompositionVocabulary(t *testing.T) {
 		"Simple high-level API | `From`, stream selection, ordered operations",
 		"surface is small: `From`, stream selection, ordered operations",
 		"`Branch`, `Destination`, and operation composition",
-		"direct `File`/`URIOut`/`Sink` destinations",
+		"direct `File`/`URI`/`Sink` destinations",
 		"custom `Writer` destinations with `DestinationInfo`",
 		"stable destination handles for shared mux/sink groups",
 		"stable goav-owned destination handles",
@@ -2320,7 +2322,6 @@ func TestReadmeUsesDestinationOptions(t *testing.T) {
 	for _, required := range []string{
 		"goav.File(\"\", out, goav.Format(av.FormatIVF))",
 		"goav.Writer(",
-		"goav.Object(",
 		"goav.Format(",
 		"goav.MIME(",
 	} {
@@ -2828,12 +2829,10 @@ func TestDuplicateDestinationNameRequiresSameHandle(t *testing.T) {
 func TestDestinationConstructorsReturnDestination(t *testing.T) {
 	destinationType := reflect.TypeOf((*goav.Destination)(nil)).Elem()
 	for name, fn := range map[string]any{
-		"Custom":      goav.Custom,
-		"File":        goav.File,
-		"Object":      goav.Object,
-		"URIOut":      goav.URIOut,
-		"Writer":      goav.Writer,
-		"WriteCloser": goav.WriteCloser,
+		"Custom": goav.Custom,
+		"File":   goav.File,
+		"URI":    goav.URI,
+		"Writer": goav.Writer,
 	} {
 		fnType := reflect.TypeOf(fn)
 		if fnType.NumOut() != 1 || fnType.Out(0) != destinationType {
@@ -3891,7 +3890,7 @@ func TestRecordRecipeRejectsUnnamedFileWithoutFormat(t *testing.T) {
 func TestRecordRecipeRejectsFormatOnlyDestination(t *testing.T) {
 	_, err := recordJob(
 		goav.FileInput("input.ivf", strings.NewReader("")),
-		goav.URIOut("", goav.Format(av.FormatIVF)),
+		goav.URI("", goav.Format(av.FormatIVF)),
 	).Build(context.Background())
 
 	var buildErr *goav.BuildError

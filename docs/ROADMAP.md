@@ -18,7 +18,7 @@ runtime attach. Public vocabulary stays `Input`, `Stream`, `Tap`, `Branch`,
    model into `WorkPatch`. The planner owns operations, taps, branches,
    destinations, edges, decisions, and diagnostics; the executor instantiates
    the plan instead of dispatching by workflow kind.
-2. Collapse `Target` into `Destination`. `File`, `URIOut`, `Writer`, `Object`,
+2. Collapse `Target` into `Destination`. `File`, `URI`, `Writer`,
    `Sink`, and `Custom` return stable goav-owned destination handles. Reusing a
    handle groups branches into one sink or mux destination; a different handle
    with the same name is a planning error. Custom behavior is provided through

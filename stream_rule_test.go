@@ -33,7 +33,7 @@ type syncObjectState struct {
 	aborts  int
 }
 
-func (s *syncObjectState) open(_ context.Context, info DestinationInfo) (TransactionalDestinationWriter, error) {
+func (s *syncObjectState) open(_ context.Context, info DestinationInfo) (io.WriteCloser, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.opens++
@@ -200,7 +200,7 @@ func TestOnStreamAttachesLateBranchAndDetachesOnRemoval(t *testing.T) {
 
 	state := &syncObjectState{}
 	rt := New(withTestFormats(testFormatMuxer(av.FormatOgg, &syncTestMuxer{})))
-	record := Object("s3://bucket/late.ogg", state.open, Format(av.FormatOgg), MIME("audio/ogg"))
+	record := Writer("s3://bucket/late.ogg", state.open, Format(av.FormatOgg), MIME("audio/ogg"))
 
 	var mainCount atomic.Int32
 	mainSink := Sink(SinkFunc("main", func(_ context.Context, msg Message) error {
@@ -508,7 +508,7 @@ func TestOnStreamAttachFailureSurfacesEventAndRollsBack(t *testing.T) {
 	// opens first and must be aborted by the rollback.
 	rt := New(withTestFormats())
 	state := &syncObjectState{}
-	bad := Object("late.ogg", state.open, Format(av.FormatOgg))
+	bad := Writer("late.ogg", state.open, Format(av.FormatOgg))
 
 	task, err := From(input).
 		OnStream(MatchMedia(av.MediaAudio), Branch("bad").Copy().To(bad)).

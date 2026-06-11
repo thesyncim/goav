@@ -18,7 +18,8 @@ attachment, and live control.
 - `Stream`: which media stream is selected (`.Audio()`, `.Video()`).
 - `Tap`: a named attach point (`Tap`, or `FrameTap`/`PacketTap` to assert the domain).
 - `Branch`: downstream operations from a stream point or tap.
-- `Destination`: a file, URI, writer, object upload, media sink, or shared mux/sink group.
+- `Destination`: a file, URI, writer (including transactional object uploads),
+  media sink, or shared mux/sink group.
 - `Flow`: a reusable operation sequence.
 - `Task`: a running graph with attach/detach, events, snapshots, and live control.
 
@@ -531,19 +532,34 @@ per-stream decode bounds) are discovered by type assertion.
 
 ## Custom Destinations
 
-Write muxed bytes anywhere that can provide an `io.WriteCloser` with
-`goav.Writer(...)`. Use `goav.Object(...)` when the writer has explicit commit
-and abort semantics, such as a multipart object-store upload. The destination
-opens after goav has selected the format and streams, so uploaders see the final
-destination metadata. Transactional writers commit after successful runs or
-detach, abort on failure, and close exactly once. Normal application
-workflows should be expressible through declarative recipes. Use `goav.Custom(name, provider)`
-when a package owns a reusable destination provider; the returned destination
-value is still the stable routing handle.
+One decision path covers every byte destination:
+
+- `goav.File(name, writer)` — you already hold an open `io.Writer`. When the
+  writer also implements `io.Closer` it is closed exactly once when the
+  destination finalizes; a plain writer stays yours to close.
+- `goav.URI(uri)` — a registered format adapter opens the destination.
+- `goav.Writer(name, open)` — goav opens the writer on demand: the callback
+  runs after the format and streams are selected, so uploaders see the final
+  destination metadata (`goav.DestinationInfo`). The writer closes exactly
+  once. Return a `goav.TransactionalDestinationWriter` when the upload has an
+  explicit commit boundary, such as a multipart object-store upload: it
+  commits after successful runs or drained detach and aborts on failure.
+- `goav.Custom(name, provider)` — a package owns a reusable destination
+  provider (naming, contract, opening); the returned destination value is
+  still the stable routing handle.
+
+(`goav.Sink(...)` is the separate door for decoded frames or packets rather
+than muxed bytes.)
+
+Normal application workflows should be expressible through declarative recipes;
+these constructors exist so any store or transport plugs in without leaving
+them.
 
 ```go
-s3 := goav.Object("s3://bucket/call.ivf",
-    func(ctx context.Context, info goav.DestinationInfo) (goav.TransactionalDestinationWriter, error) {
+s3 := goav.Writer("s3://bucket/call.ivf",
+    func(ctx context.Context, info goav.DestinationInfo) (io.WriteCloser, error) {
+        // The returned writer implements goav.TransactionalDestinationWriter,
+        // so the upload commits on success and aborts on failure.
         return uploader.Create(ctx, info.Name,
             uploader.ContentType(info.MIMEType),
             uploader.Metadata(info.Metadata),

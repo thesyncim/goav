@@ -18,8 +18,8 @@ import (
 var destinationRefSeq atomic.Uint64
 var destinationSpecSeq atomic.Uint64
 
-// Destination is an opaque handle for a file, URI, object writer, media sink,
-// or shared mux/sink group. Built-in constructors and Custom return destination
+// Destination is an opaque handle for a file, URI, writer, media sink, or
+// shared mux/sink group. Built-in constructors and Custom return destination
 // values with goav-owned routing identity.
 type Destination struct {
 	spec destinationSpec
@@ -76,13 +76,10 @@ type DestinationInfo struct {
 type DestinationOption func(*destinationSpec)
 
 // WriterOpenFunc opens the byte writer behind a goav.Writer destination once
-// goav has resolved the output format and streams (the DestinationInfo).
+// goav has resolved the output format and streams (the DestinationInfo). A
+// returned writer that also implements TransactionalDestinationWriter gets
+// Commit after success, Abort after failure, Close exactly once either way.
 type WriterOpenFunc func(context.Context, DestinationInfo) (io.WriteCloser, error)
-
-// ObjectOpenFunc opens the transactional writer behind a goav.Object
-// destination: Commit runs after success, Abort after failure, Close exactly
-// once either way.
-type ObjectOpenFunc func(context.Context, DestinationInfo) (TransactionalDestinationWriter, error)
 
 type destinationBinding struct {
 	dest      destinationSpec
@@ -1055,7 +1052,7 @@ func destinationInvalidError(operation string, node string, reason string) error
 		Node:      node,
 		Reason:    reason,
 		Suggestions: []string{
-			"reuse one goav.File(...), goav.URIOut(...), or goav.Sink(...) value for mux/sink groups",
+			"reuse one goav.File(...), goav.URI(...), or goav.Sink(...) value for mux/sink groups",
 			"use distinct destination values for independent outputs",
 		},
 		Cause: ErrUnsupportedBuild,

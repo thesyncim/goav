@@ -16,7 +16,7 @@ import (
 
 // InputSpec is one declared job input: a file, URI, custom source, or source
 // provider, plus the optional name, MIME, and codec facts the planner uses
-// before opening it. Construct one with FileInput, URI, Source, or Input.
+// before opening it. Construct one with FileInput, URIInput, Source, or Input.
 type InputSpec struct {
 	input    format.Input
 	provider SourceProvider
@@ -40,8 +40,9 @@ func FileInput(name string, reader io.Reader) InputSpec {
 	}
 }
 
-// URI declares an input opened by a registered format adapter from a URI.
-func URI(uri string) InputSpec {
+// URIInput declares an input opened by a registered format adapter from a
+// URI.
+func URIInput(uri string) InputSpec {
 	return InputSpec{
 		input: format.Input{
 			Name: uri,
@@ -169,7 +170,7 @@ func (s InputSpec) validatePlainInput() error {
 		Reason:    "empty input spec",
 		Suggestions: []string{
 			"use goav.FileInput(name, reader) for file-like input",
-			"use goav.URI(uri) for URI-backed input",
+			"use goav.URIInput(uri) for URI-backed input",
 			"use goav.Source(name, shape, fn) for application-pushed packets",
 			"use goav.Input(provider) for realtime receive through a source provider",
 		},

@@ -154,11 +154,13 @@ func (b *audioChain) Resample(sampleRate int, channels int, options ...audioOpti
 	return b
 }
 
-func (b *audioChain) Do(stage pipeline.Stage) *audioChain {
+func (b *audioChain) Do(stages ...pipeline.Stage) *audioChain {
 	if b == nil {
 		return b
 	}
-	b.chainBuilder.stage(stage)
+	for i := range stages {
+		b.chainBuilder.stage(stages[i])
+	}
 	return b
 }
 
@@ -167,6 +169,19 @@ func (b *audioChain) Shape(shape shape.Spec) *audioChain {
 		return b
 	}
 	b.chainBuilder.shape(shape)
+	return b
+}
+
+// Auto opts chains the flow is applied to into shape solving with the given
+// conversion policies — the flow-side twin of the stream chain's .Auto(...):
+// needed conversions an active policy allows are inserted from the runtime's
+// filter registry as real planned operations; everything else is refused with
+// the exact policy to add.
+func (b *audioChain) Auto(policies ...shape.Policy) *audioChain {
+	if b == nil {
+		return b
+	}
+	b.chainBuilder.auto(policies)
 	return b
 }
 
@@ -235,11 +250,13 @@ func (b *videoChain) Resize(width int, height int, options ...resizeOption) *vid
 	return b
 }
 
-func (b *videoChain) Do(stage pipeline.Stage) *videoChain {
+func (b *videoChain) Do(stages ...pipeline.Stage) *videoChain {
 	if b == nil {
 		return b
 	}
-	b.chainBuilder.stage(stage)
+	for i := range stages {
+		b.chainBuilder.stage(stages[i])
+	}
 	return b
 }
 
@@ -248,6 +265,19 @@ func (b *videoChain) Shape(shape shape.Spec) *videoChain {
 		return b
 	}
 	b.chainBuilder.shape(shape)
+	return b
+}
+
+// Auto opts chains the flow is applied to into shape solving with the given
+// conversion policies — the flow-side twin of the stream chain's .Auto(...):
+// needed conversions an active policy allows are inserted from the runtime's
+// filter registry as real planned operations; everything else is refused with
+// the exact policy to add.
+func (b *videoChain) Auto(policies ...shape.Policy) *videoChain {
+	if b == nil {
+		return b
+	}
+	b.chainBuilder.auto(policies)
 	return b
 }
 
@@ -419,9 +449,17 @@ func (b *chainBuilder) shape(shape shape.Spec) {
 	b.spec.operations = append(b.spec.operations, operationSpecForShape(shape))
 }
 
-// require and prefer append annotation carriers; they lower to no runtime node
-// and assert/bias only, so — unlike .Shape(...) — they are valid after encode
-// (a post-encode .Require asserts the packet-domain output shape).
+// auto, require, and prefer append annotation carriers; they lower to no
+// runtime node and solve/assert/bias only, so — unlike .Shape(...) — they are
+// valid after encode (a post-encode .Require asserts the packet-domain output
+// shape).
+func (b *chainBuilder) auto(policies []shape.Policy) {
+	if b == nil {
+		return
+	}
+	b.spec.operations = append(b.spec.operations, operationSpecForAutoPolicy(policies))
+}
+
 func (b *chainBuilder) require(spec shape.Spec) {
 	if b == nil {
 		return

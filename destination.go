@@ -29,7 +29,10 @@ func destinationHandle(spec destinationSpec) Destination {
 	return Destination{spec: spec}
 }
 
-// File creates a writer-backed destination.
+// File creates a writer-backed destination from an already-open writer. When
+// the writer also implements io.Closer it is closed exactly once when the
+// destination finalizes (run end, drained detach, or failure); a plain writer
+// is left open for the caller.
 func File(name string, writer io.Writer, opts ...DestinationOption) Destination {
 	spec := fileDestination(name, writer)
 	for i := range opts {
@@ -52,8 +55,8 @@ func fileDestination(name string, writer io.Writer) destinationSpec {
 	}
 }
 
-// URIOut creates a URI destination opened by a registered format adapter.
-func URIOut(uri string, opts ...DestinationOption) Destination {
+// URI creates a URI destination opened by a registered format adapter.
+func URI(uri string, opts ...DestinationOption) Destination {
 	spec := uriDestination(uri)
 	for i := range opts {
 		if opts[i] != nil {
@@ -135,6 +138,10 @@ func customDestination(name string, provider DestinationProvider) destinationSpe
 // Writer creates a byte destination opened on demand: the callback runs after
 // goav has selected the format and streams, so the writer sees the final
 // destination metadata (DestinationInfo). The writer closes exactly once.
+// When the returned writer also implements TransactionalDestinationWriter,
+// Commit runs after a successful run or drained detach and Abort runs on
+// failure — the seam for object-store uploads with an explicit commit
+// boundary.
 func Writer(name string, open WriterOpenFunc, opts ...DestinationOption) Destination {
 	spec := destinationSpec{
 		id:     destinationSpecSeq.Add(1),
@@ -151,29 +158,6 @@ func Writer(name string, open WriterOpenFunc, opts ...DestinationOption) Destina
 		}
 	}
 	return Destination{spec: spec}
-}
-
-// WriteCloser wraps an already-open io.WriteCloser as a byte destination;
-// goav closes it exactly once when the chain finishes.
-func WriteCloser(name string, writer io.WriteCloser, opts ...DestinationOption) Destination {
-	return Writer(name, func(context.Context, DestinationInfo) (io.WriteCloser, error) {
-		if writer == nil {
-			return nil, ErrNilWriter
-		}
-		return writer, nil
-	}, opts...)
-}
-
-// Object creates a transactional byte destination for writers with explicit
-// commit/abort semantics, such as a multipart object-store upload: Commit
-// runs after a successful run or drained detach, Abort on failure.
-func Object(name string, open ObjectOpenFunc, opts ...DestinationOption) Destination {
-	return Writer(name, func(ctx context.Context, info DestinationInfo) (io.WriteCloser, error) {
-		if open == nil {
-			return nil, ErrNilWriter
-		}
-		return open(ctx, info)
-	}, opts...)
 }
 
 type writerDestination struct {
@@ -308,6 +292,9 @@ func (s destinationSpec) Open(ctx context.Context, info DestinationInfo) (Destin
 		return s.custom.Open(ctx, info)
 	}
 	if s.output.Writer != nil {
+		if closer, ok := s.output.Writer.(io.WriteCloser); ok {
+			return closer, nil
+		}
 		return nopDestinationWriter{Writer: s.output.Writer}, nil
 	}
 	return nil, destinationInvalidError("open destination", firstNonEmpty(info.Name, s.name, "destination"), "destination does not provide a writer")
@@ -323,7 +310,7 @@ func (s destinationSpec) validate(operation string, fallback string) error {
 			Reason:    s.err.Error(),
 			Suggestions: []string{
 				"pass a non-nil sink to goav.Sink(...)",
-				"use goav.File(...) or goav.URIOut(...) for muxed output",
+				"use goav.File(...) or goav.URI(...) for muxed output",
 			},
 			Cause: s.err,
 		}
@@ -352,7 +339,7 @@ func (s destinationSpec) validate(operation string, fallback string) error {
 			Reason:    "file output has no writer",
 			Suggestions: []string{
 				"pass a non-nil io.Writer to goav.File(name, writer)",
-				"use goav.URIOut(uri) when the output is opened by an adapter",
+				"use goav.URI(uri) when the output is opened by an adapter",
 			},
 			Cause: ErrUnsupportedBuild,
 		}
@@ -378,7 +365,7 @@ func (s destinationSpec) validate(operation string, fallback string) error {
 			Reason:    "output has no URI, writer, or sink",
 			Suggestions: []string{
 				"use goav.File(name, writer) for writer-backed output",
-				"use goav.URIOut(uri) for URI-backed output",
+				"use goav.URI(uri) for URI-backed output",
 			},
 			Cause: ErrUnsupportedBuild,
 		}

@@ -25,8 +25,9 @@ func Select(arms ...JoinArm) *selectorStream {
 const selectBufferCapacity = 32
 
 type selectorStream struct {
-	arms []JoinArm
-	taps []TapRef
+	arms   []JoinArm
+	taps   []TapRef
+	region *compositeRegion
 }
 
 // joinArm lets a Select stand as an arm of an outer join: the outer join
@@ -35,7 +36,16 @@ func (s *selectorStream) joinArm() joinArmSpec {
 	if s == nil {
 		return joinArmSpec{}
 	}
-	return joinArmSpec{join: &joinSpec{kind: joinSelect, arms: s.arms, taps: s.taps}}
+	return joinArmSpec{join: &joinSpec{kind: joinSelect, arms: s.arms, taps: s.taps}, region: s.region}
+}
+
+// Region places the switched stream at (x, y) when the Select stands as an
+// arm of an outer Composite — an active-speaker switch as one canvas tile,
+// mirroring .Region on source chains and nested composites. It has no effect
+// outside a Composite.
+func (s *selectorStream) Region(x, y int) *selectorStream {
+	s.region = &compositeRegion{x: x, y: y}
+	return s
 }
 
 // Tap names the switched stream as a stable attach point — the same tap a
