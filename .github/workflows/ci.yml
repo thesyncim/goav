@@ -10,10 +10,21 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 50
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
           cache: true
+
+      # Commit messages are part of the project's surface: no tool/AI credits,
+      # no internal runtime paths. Scans the recent history on every push.
+      - name: Commit hygiene
+        run: |
+          if git log -50 --format='%H %s%n%b' | grep -iE 'claude|anthropic|co-authored-by'; then
+            echo 'forbidden commit-message content found'; exit 1
+          fi
+          echo clean
 
       - name: Build (pure Go)
         run: CGO_ENABLED=0 go build ./...
