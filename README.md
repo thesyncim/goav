@@ -412,6 +412,7 @@ shape (`shape.Packet`, `shape.Frame`, or `shape.Event`) and push through
 ```go
 input := goav.Source("generated",
     shape.Packet(av.MediaAudio, av.CodecOpus,
+        shape.Format(av.FormatRTP),
         shape.Audio(48_000, codec.Stereo, av.SampleFormatS16),
     ),
     func(ctx context.Context, push goav.SourcePush) error {
@@ -430,6 +431,11 @@ return goav.From(input).
     To(goav.Sink(packetSink)).
     Run(ctx)
 ```
+
+For external adapters, `shape.Format(av.FormatID("vendor.format"))` is the
+same open-string contract as custom codec ids: declare it when the source or
+provider knows the packet/container framing and downstream validation should
+see it.
 
 Every push returns a `PushResult`: `Accepted` means a downstream target queued
 the message, `Dropped` means a dropping buffer policy deliberately shed it —

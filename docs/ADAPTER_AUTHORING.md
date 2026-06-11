@@ -196,10 +196,13 @@ identically via `goav.From(goav.Input(provider))`.
 
 Lifecycle (from `provider/provider.go`, `provider.go`, `source.go`):
 `SourceShape()` is read BEFORE
-opening — declare domain/media/codec/realtime honestly (`shape.Packet(media,
-codecID, shape.Audio(...), shape.Realtime(true))`); the planner selects
-streams and decoders from it. `OpenSource` runs once per build; the returned
-streams must carry full `av.Stream.Codec` parameters. The returned
+opening — declare domain/media/codec/format/realtime honestly, for example
+`shape.Packet(media, codecID, shape.Audio(...),
+shape.Format(av.FormatID("vendor.format")), shape.Realtime(true))`. The
+planner selects streams and decoders from it. Use `shape.Format` when an
+external source has custom framing that downstream validation should see.
+`OpenSource` runs once per build; the returned streams must carry full
+`av.Stream.Codec` parameters. The returned
 `pipeline.Source.Start(ctx, emitter)` runs on the task: emit
 `av.EventStreamAdded` announces, then media, then `av.EventEndOfStream`;
 return cleanly on `ctx` cancellation or `pipeline.ErrClosed`, slow down on
