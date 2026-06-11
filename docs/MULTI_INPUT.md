@@ -32,6 +32,10 @@ is variadic with chain semantics: each destination receives the joined stream
 and one handle listed twice raises the same duplicate refusal a chain does. The pipeline already
 supported N input edges per node, and each buffered node has a single serial
 worker, so join stages need no internal locking — lock-free by design holds.
+Lock-free is not allocation-free here: the mix step allocates today (arm frame
+clones plus the output frame), measured and pinned as a ceiling by
+`TestAudioMixStepAllocCeiling` and benchmarked by `BenchmarkMix` — see
+`docs/PERFORMANCE.md`.
 
 All three plan through the ONE recipe compile: the joinSpec normalizes into the
 compile state, `joinPlan` plans N arm sub-chains converging into an `OpJoin`

@@ -24,6 +24,11 @@ jobs:
       - name: Race
         run: CGO_ENABLED=1 go test -race -count=1 . ./pipeline ./goavtest ./format
 
+      # One iteration per benchmark: catches bench bit-rot (compile/run errors)
+      # without asserting timing, which would flake on shared runners.
+      - name: Bench smoke
+        run: CGO_ENABLED=0 go test -run '^$' -bench . -benchtime=1x ./...
+
       - name: Vet
         run: CGO_ENABLED=0 go vet ./...
 

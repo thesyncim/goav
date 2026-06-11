@@ -34,11 +34,14 @@ safety; and the scratch/result objects callers reuse.
 ## Allocation Proofs
 
 Hot-path allocation guards live next to the domain packages that own the
-contract:
+contract (the proven/measured/not-proven map is `docs/PERFORMANCE.md`):
 
 - `av`: `TestCoreResetAllocs`, `TestTimeBaseHelpersAllocs`
+- `goav` (root): `TestSourcePushDeliveryAllocs`, `TestSinkFuncDeliveryAllocs`,
+  `TestAudioMixStepAllocCeiling` (a pinned ceiling — the mix step allocates
+  today; see `docs/PERFORMANCE.md`)
 - `pipeline`: `TestMessageAndScratchResetAllocs`, `TestGraphDirectRunAllocs`,
-  `TestDropControllerDecideAllocs`
+  `TestGraphBufferedSteadyEmitAllocs`, `TestDropControllerDecideAllocs`
 - `rtpav`: `TestSourceStartAllocs`, `TestSequenceDetectorAllocs`,
   `TestOpusDepacketizerAllocs`, `TestVP8DepacketizerAllocs`,
   `TestVP9DepacketizerAllocs`, `TestH264DepacketizerAllocs`,

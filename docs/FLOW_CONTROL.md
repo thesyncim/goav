@@ -21,5 +21,9 @@ What holds today (all `-race` clean, with tests):
   `(PushResult, error)` where deliberate sheds are `Dropped` with a nil error
   and `ErrBackpressure` keeps its flow-control meaning.
 
+The producer-side cost of both paths is measured by `BenchmarkSourcePush`
+(dropping vs blocking) and the steady buffered path is allocation-pinned by
+`pipeline.TestGraphBufferedSteadyEmitAllocs` — see `docs/PERFORMANCE.md`.
+
 Remaining design choice: whether the bare buffered default should also block
 rather than error on full (currently: only explicit `Blocking` blocks).

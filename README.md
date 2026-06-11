@@ -981,5 +981,10 @@ Implemented now:
   registration.
 - Structured `Explain(ctx)` reports and `Describe()` graph specs.
 
+Performance claims follow one rule: benchmarks beat claims. What is proven by
+allocation pins, what the benchmark suite measures (and how to run and compare
+it), and what is explicitly *not* proven live in
+[`docs/PERFORMANCE.md`](docs/PERFORMANCE.md).
+
 Advanced notes live in `docs/`. An expert graph layer exists beneath the grammar
 for compositions the recipe language cannot express; normal work never needs it.

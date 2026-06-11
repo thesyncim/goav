@@ -5,3 +5,4 @@ dist/
 coverage.out
 *.test
 .claude/
+bench-results/

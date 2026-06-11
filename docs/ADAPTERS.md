@@ -46,6 +46,12 @@ same as built-ins.
 | `adapters/resample` | Interleaved S16 PCM sample-rate (linear) and mono/stereo channel conversion; descriptor metadata for `Explain(ctx)`; caller-owned output; zero-alloc hot path. |
 | `adapters/resize` | Planar 8-bit 4:2:0 (`i420`/`yuv420p`) exact/fit/fill/passthrough nearest-neighbor resize; descriptor metadata; caller-owned planes; zero-alloc hot path. |
 
+Every "zero-alloc" entry above is test-enforced, not aspirational: each
+adapter carries a `testing.AllocsPerRun` guard (`TestMuxerWriteAllocs`,
+`TestDemuxerReadIntoAllocs`, `TestFilterAllocs`, decoder/encoder `*Allocs`
+tests) that fails the suite if the hot path starts allocating. The repo-wide
+proven/not-proven map is `docs/PERFORMANCE.md`.
+
 All adapters are intentionally narrow; richer features (SVC controls, color
 metadata, high bit depth, floating-point PCM, higher-quality scalers, H264
 parsing/demux/encode) are future slices.

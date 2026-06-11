@@ -216,7 +216,10 @@ controller for backpressure/drop behavior, shared immutable media buffers, and
 preallocated copy slots for borrowed payloads under explicit byte bounds.
 Borrowed media without a copy bound fails early. The data plane is lock-free by
 design: per-node atomic stats and atomically-swapped routing snapshots, with
-mutexes only on cold paths.
+mutexes only on cold paths. The allocation side of that contract is
+test-enforced (`TestGraphDirectRunAllocs`, `TestGraphBufferedSteadyEmitAllocs`)
+and measured by the fanout benchmarks — see `docs/PERFORMANCE.md` for what is
+proven versus not proven.
 
 Builders and graphs produce a `pipeline.Spec`: structured nodes and edges with
 short workflow details (`rtp receive`, `packets -> frames`, `resize`, `mux`)
