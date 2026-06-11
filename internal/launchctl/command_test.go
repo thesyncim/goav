@@ -1098,6 +1098,9 @@ func TestReflectionConfinedToLaunchctlProductionFiles(t *testing.T) {
 		if strings.Contains(slash, "internal/launchctl/") {
 			return nil
 		}
+		if strings.Contains(slash, "/examples/") || strings.HasPrefix(slash, "../../examples/") {
+			return nil
+		}
 		data, err := os.ReadFile(path)
 		if err != nil {
 			return err

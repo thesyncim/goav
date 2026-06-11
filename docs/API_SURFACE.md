@@ -260,6 +260,9 @@ boundary:
   dynamic package walk correctly stops at their `go.mod`.
 - **`examples/webrtc-runtime-ladder`** — a nested module for runnable
   examples, free to depend on anything.
+- **`examples/control-plane-host`** — a root-module runnable CLI host example
+  for `goav ctl`; it stays dependency-light and is doc-pinned by the root
+  package walk.
 
 ## Compatibility
 

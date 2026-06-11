@@ -38,6 +38,16 @@ renders a flowchart from the live task. Run it with:
 go test ./ctl -run Example_bootstrapControlPlaneHost -count=1
 ```
 
+For a long-running host process that you can keep open in one terminal while
+driving it from another, run:
+
+```sh
+go run ./examples/control-plane-host --control unix:///tmp/goav-control-plane-host.sock
+```
+
+That example uses the same extension points as the snippets below and includes
+copyable commands in `examples/control-plane-host/README.md`.
+
 ```go
 ctx := context.Background()
 const customCodec = av.CodecID("x_acme_audio")

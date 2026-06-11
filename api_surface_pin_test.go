@@ -43,6 +43,7 @@ var surfaceSeamPackages = []string{
 	"cmd/goav",
 	"codec",
 	"ctl",
+	"examples/control-plane-host",
 	"expert",
 	"filter",
 	"flow",

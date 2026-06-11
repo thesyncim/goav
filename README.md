@@ -715,8 +715,8 @@ goav ctl --control unix:///tmp/goav-live.sock graph
 ```
 
 `help attach` and `help rebranch` list the built-in branch grammar plus custom
-steps and encoders registered by that host. The bootstrap guide, including an
-executable host example, lives in
+steps and encoders registered by that host. The bootstrap guide, including
+`go run ./examples/control-plane-host`, lives in
 [`docs/CONTROL_PLANE.md`](docs/CONTROL_PLANE.md).
 
 ## Live Control
