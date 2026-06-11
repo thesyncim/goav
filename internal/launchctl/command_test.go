@@ -193,6 +193,74 @@ func TestExecuteRequestAppliesControlRequest(t *testing.T) {
 	}
 }
 
+func TestExecuteRequestAppliesHelpRequest(t *testing.T) {
+	response := ExecuteRequest(context.Background(), newFakeTask(), Request{
+		Op:   "help",
+		Args: map[string]string{"topic": "control", "command": "bitrate"},
+	})
+	text, ok := response.Result.(string)
+	if !response.OK || response.Error != nil || !ok || !strings.Contains(text, "control bitrate") {
+		t.Fatalf("help response = %+v", response)
+	}
+}
+
+func TestExecuteRequestAppliesAttachRequest(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	packet := av.Packet{Payload: av.Buffer{Bytes: []byte{1}, Ownership: av.BufferImmutable}}
+	task, err := goav.From(goavtest.Packets(av.CodecOpus, packet)).
+		Audio().Copy().Tap(goav.PacketTap("pkts")).
+		To(goavtest.NewCollector().Sink()).
+		UseRuntime(goavtest.Runtime()).
+		Build(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer task.Close()
+
+	out := filepath.Join(t.TempDir(), "direct.ogg")
+	response := ExecuteRequest(ctx, task, Request{
+		Op:       "attach",
+		Tap:      "pkts",
+		Branch:   "direct",
+		Pipeline: "copy ! filesink location=" + out + " format=ogg",
+	})
+	if !response.OK || response.Error != nil {
+		t.Fatalf("attach response = %+v", response)
+	}
+	branch, ok := response.Result.(snapshot.Branch)
+	if !ok || branch.Name != "direct" {
+		t.Fatalf("attach result = %#v", response.Result)
+	}
+}
+
+func TestExecuteAppliesAttachCommand(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	packet := av.Packet{Payload: av.Buffer{Bytes: []byte{1}, Ownership: av.BufferImmutable}}
+	task, err := goav.From(goavtest.Packets(av.CodecOpus, packet)).
+		Audio().Copy().Tap(goav.PacketTap("pkts")).
+		To(goavtest.NewCollector().Sink()).
+		UseRuntime(goavtest.Runtime()).
+		Build(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer task.Close()
+
+	out := filepath.Join(t.TempDir(), "direct.ogg")
+	response, err := Execute(ctx, task, []string{"attach", "pkts", "as", "direct", "copy ! filesink location=" + out + " format=ogg"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	branch, ok := response.Result.(snapshot.Branch)
+	if response.Operation != "attach" || !ok || branch.Name != "direct" {
+		t.Fatalf("attach response = %+v", response)
+	}
+}
+
 func TestCanonicalControlCommandsApplySupportedVerbs(t *testing.T) {
 	ctx := context.Background()
 	task := newFakeTask()

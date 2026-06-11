@@ -53,6 +53,12 @@ func ExecuteRequest(ctx context.Context, task goav.Task, request Request) Respon
 
 func executeRequest(ctx context.Context, task goav.Task, request Request) (ControlResponse, error) {
 	switch request.Op {
+	case "help":
+		text, err := Help(helpArgsFromRequest(request))
+		if err != nil {
+			return ControlResponse{}, err
+		}
+		return ControlResponse{Operation: "help", Result: text}, nil
 	case "control_raw":
 		return executeRawControl(ctx, task, request.Control)
 	case "control":
@@ -66,7 +72,7 @@ func executeRequest(ctx context.Context, task goav.Task, request Request) (Contr
 	case "inspect", "snapshot", "stats", "taps", "streams", "branches", "destinations", "events", "watch", "stop":
 		return Execute(ctx, task, append([]string{request.Op}, argsFromMap(request.Args)...))
 	case "attach":
-		return Execute(ctx, task, []string{"attach"})
+		return executeAttachRequest(ctx, task, request, PipelineRegistry{})
 	case "rebranch":
 		argv := []string{"rebranch"}
 		if request.Branch != "" {
@@ -87,6 +93,34 @@ func executeRequest(ctx context.Context, task goav.Task, request Request) (Contr
 	default:
 		return ControlResponse{}, commandError("unknown_command", "ctl", request.Op, fmt.Sprintf("unknown request op %q", request.Op), nil, []string{"use op=control"}, nil)
 	}
+}
+
+func executeAttachRequest(ctx context.Context, task goav.Task, request Request, registry PipelineRegistry) (ControlResponse, error) {
+	response, _, err := attachRequest(ctx, task, request, registry)
+	return response, err
+}
+
+func attachRequest(ctx context.Context, task goav.Task, request Request, registry PipelineRegistry) (ControlResponse, goav.Attachment, error) {
+	spec, err := parseBranchPipelineWithRegistry(task, request.Tap, request.Branch, request.Pipeline, registry)
+	if err != nil {
+		return ControlResponse{}, nil, err
+	}
+	attachment, err := task.Attach(ctx, spec)
+	if err != nil {
+		return ControlResponse{}, nil, structuredError("attach", err)
+	}
+	return ControlResponse{Operation: "attach", Result: attachment.Snapshot()}, attachment, nil
+}
+
+func helpArgsFromRequest(request Request) []string {
+	var args []string
+	if topic := request.Args["topic"]; topic != "" {
+		args = append(args, topic)
+	}
+	if command := request.Args["command"]; command != "" {
+		args = append(args, command)
+	}
+	return args
 }
 
 // RequestFromCLI converts canonical goav ctl arguments into the socket
@@ -268,7 +302,11 @@ func Execute(ctx context.Context, task goav.Task, argv []string) (ControlRespons
 		}
 		return ControlResponse{Operation: "stop", Result: "closed"}, nil
 	case "attach":
-		return ControlResponse{}, unsupportedGraphMutation("attach")
+		request, err := attachRequestFromCLI(argv[1:])
+		if err != nil {
+			return ControlResponse{}, err
+		}
+		return executeAttachRequest(ctx, task, request, PipelineRegistry{})
 	case "rebranch":
 		return executeUnsupportedRebranch(task, argv[1:])
 	case "detach":
@@ -382,16 +420,6 @@ func executeUnsupportedRebranch(task goav.Task, args []string) (ControlResponse,
 
 func unsupportedGraphMutation(operation string) error {
 	switch operation {
-	case "attach":
-		return commandError(
-			"unsupported",
-			"attach",
-			"",
-			"branch-pipeline string parsing is not present in the current goav API",
-			nil,
-			[]string{"use typed Task.Attach(ctx, goav.Branch(name).From(tap)...To(destination))", "add a launch pipeline parser before enabling `goav ctl attach`"},
-			nil,
-		)
 	case "rebranch":
 		return commandError(
 			"unsupported",

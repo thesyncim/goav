@@ -73,14 +73,7 @@ func (s *Server) execute(ctx context.Context, request Request) (ControlResponse,
 }
 
 func (s *Server) help(request Request) (ControlResponse, error) {
-	var args []string
-	if topic := request.Args["topic"]; topic != "" {
-		args = append(args, topic)
-	}
-	if command := request.Args["command"]; command != "" {
-		args = append(args, command)
-	}
-	text, err := HelpWithCommands(args, s.commandManifest())
+	text, err := HelpWithCommands(helpArgsFromRequest(request), s.commandManifest())
 	if err != nil {
 		return ControlResponse{}, err
 	}
@@ -110,16 +103,12 @@ func (s *Server) commandManifest() []CommandSpec {
 }
 
 func (s *Server) attach(ctx context.Context, request Request) (ControlResponse, error) {
-	spec, err := parseBranchPipelineWithRegistry(s.Task, request.Tap, request.Branch, request.Pipeline, s.Pipeline)
+	response, attachment, err := attachRequest(ctx, s.Task, request, s.Pipeline)
 	if err != nil {
 		return ControlResponse{}, err
 	}
-	attachment, err := s.Task.Attach(ctx, spec)
-	if err != nil {
-		return ControlResponse{}, structuredError("attach", err)
-	}
 	s.storeAttachment(attachment)
-	return ControlResponse{Operation: "attach", Result: attachment.Snapshot()}, nil
+	return response, nil
 }
 
 func (s *Server) rebranch(ctx context.Context, request Request) (ControlResponse, error) {

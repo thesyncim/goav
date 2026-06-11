@@ -3,7 +3,9 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"strings"
@@ -87,7 +89,14 @@ func send(address string, request ctl.Request) error {
 	var response ctl.Response
 	if follows(request) {
 		decoder := json.NewDecoder(conn)
-		for decoder.Decode(&response) == nil {
+		for {
+			err := decoder.Decode(&response)
+			if errors.Is(err, io.EOF) {
+				return nil
+			}
+			if err != nil {
+				return err
+			}
 			if !response.OK {
 				if response.Error != nil {
 					return response.Error
@@ -98,7 +107,6 @@ func send(address string, request ctl.Request) error {
 				return err
 			}
 		}
-		return nil
 	}
 	if err := json.NewDecoder(conn).Decode(&response); err != nil {
 		return err

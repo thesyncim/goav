@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net"
 	"os"
@@ -59,6 +60,52 @@ func TestCLIInvokesCustomControlCommand(t *testing.T) {
 	}
 	if applied != "via-cli" || !strings.Contains(string(output), `"via-cli"`) {
 		t.Fatalf("applied=%q output=%s", applied, output)
+	}
+}
+
+func TestSendFollowReturnsDecodeError(t *testing.T) {
+	socket := filepath.Join(os.TempDir(), fmt.Sprintf("goav-follow-%d.sock", time.Now().UnixNano()))
+	t.Cleanup(func() { _ = os.Remove(socket) })
+	listener, err := net.Listen("unix", socket)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+
+	errC := make(chan error, 1)
+	go func() {
+		conn, err := listener.Accept()
+		if err != nil {
+			errC <- err
+			return
+		}
+		defer conn.Close()
+		var request ctl.Request
+		if err := json.NewDecoder(conn).Decode(&request); err != nil {
+			errC <- err
+			return
+		}
+		if request.Op != "watch" || request.Args["follow"] != "true" {
+			errC <- fmt.Errorf("request = %+v", request)
+			return
+		}
+		if _, err := fmt.Fprintln(conn, `{"ok":true,"result":{"type":"stats"}}`); err != nil {
+			errC <- err
+			return
+		}
+		if _, err := fmt.Fprint(conn, `{"ok":`); err != nil {
+			errC <- err
+			return
+		}
+		errC <- nil
+	}()
+
+	err = send("unix://"+socket, ctl.Request{Op: "watch", Args: map[string]string{"follow": "true"}})
+	if err == nil || !strings.Contains(err.Error(), "unexpected EOF") {
+		t.Fatalf("send error = %v, want unexpected EOF", err)
+	}
+	if err := <-errC; err != nil {
+		t.Fatal(err)
 	}
 }
 
