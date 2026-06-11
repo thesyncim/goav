@@ -1754,9 +1754,11 @@ func TestReadmeKeepsAdvancedRuntimeKnobsOutOfFrontDoor(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := string(body)
+	// UseRuntime is deliberately absent from this list: the "Testing Your
+	// Pipeline" section front-doors it as the seam that injects the
+	// deterministic goavtest.Runtime() into a job under test.
 	for _, advanced := range []string{
 		"WithFormatAdapter",
-		"UseRuntime",
 		"RTPBuffer",
 		"MaxTimestampGap",
 		"Runtime.Graph",

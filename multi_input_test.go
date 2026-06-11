@@ -119,30 +119,9 @@ func TestFromMultiInputHeadlineDecodeShape(t *testing.T) {
 	}
 }
 
-func TestFromMultiInputAmbiguousSelectionListsCandidates(t *testing.T) {
-	_, err := From(
-		mixTestAudioSource("mic-a", 1),
-		mixTestAudioSource("mic-b", 1),
-	).
-		Audio().
-		To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))).
-		Build(context.Background())
-
-	var buildErr *BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "stream_ambiguous" || !errors.Is(err, ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want stream_ambiguous wrapping ErrUnsupportedBuild", err)
-	}
-	msg := err.Error()
-	if !strings.Contains(msg, "input=mic-a") || !strings.Contains(msg, "input=mic-b") {
-		t.Fatalf("err = %v, want candidates listed with their inputs", err)
-	}
-	if !strings.Contains(msg, `.Audio(goav.InputName("mic-a"))`) {
-		t.Fatalf("err = %v, want InputName narrowing suggestion", err)
-	}
-	if !strings.Contains(msg, "goav.StreamID(") {
-		t.Fatalf("err = %v, want StreamID narrowing suggestion", err)
-	}
-}
+// TestFromMultiInputAmbiguousSelectionListsCandidates moved to
+// goavtest_dogfood_test.go: it is now the consumer-side multi-input ambiguity
+// acceptance test written against goavtest.
 
 func TestFromMultiInputUnknownInputNameListsInputs(t *testing.T) {
 	_, err := From(

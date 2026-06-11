@@ -126,31 +126,8 @@ func mixTestAudioSource(id av.StreamID, samples ...int16) InputSpec {
 		})
 }
 
-func TestMixRunsTwoAudioSourcesIntoSink(t *testing.T) {
-	ctx := context.Background()
-	var got [][]int16
-	sink := Sink(SinkFunc("out", func(_ context.Context, m Message) error {
-		if m.Kind == pipeline.MessageFrame && m.Frame != nil && m.Frame.Audio != nil {
-			got = append(got, mixTestReadS16(m.Frame))
-		}
-		return nil
-	}))
-
-	task, err := Mix(
-		From(mixTestAudioSource("a", 100, 200)).Audio(),
-		From(mixTestAudioSource("b", 50, -50)).Audio(),
-	).To(sink).Build(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer task.Close()
-	if err := task.Run(ctx); err != nil {
-		t.Fatal(err)
-	}
-	if len(got) != 1 || !reflect.DeepEqual(got[0], []int16{150, 150}) {
-		t.Fatalf("mixed=%v, want [[150 150]]", got)
-	}
-}
+// TestMixRunsTwoAudioSourcesIntoSink moved to goavtest_dogfood_test.go: it is
+// now the consumer-side Mix acceptance test written against goavtest.
 
 func TestMixDescribeShowsConvergentJoin(t *testing.T) {
 	spec, err := Mix(

@@ -21,6 +21,7 @@ var docPinPackages = []string{
 	"filter",
 	"flow",
 	"format",
+	"goavtest",
 	"lifecycle",
 	"pipeline",
 	"plan",

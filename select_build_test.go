@@ -97,51 +97,8 @@ func TestSelectForwardsDefaultArmToSink(t *testing.T) {
 	}
 }
 
-func TestSelectSwitchesActiveArmMidRun(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
-
-	sink := newSelectSwitchSink("out")
-	tk, err := Select(
-		From(selectTestLiveSource("a", 100)).Audio(),
-		From(selectTestLiveSource("b", 200)).Audio(),
-	).To(Sink(sink)).Build(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = tk.Close() })
-
-	runErr := make(chan error, 1)
-	go func() { runErr <- tk.Run(ctx) }()
-
-	// Default active is the first arm "a" (sample 100): it must reach the sink first.
-	if err := sink.waitFor(ctx, 100); err != nil {
-		t.Fatalf("default arm a frame never forwarded: %v", err)
-	}
-
-	// Switch live to arm "b" (sample 200) through the control plane.
-	sink.resetSeen()
-	if err := controlUntilAccepted(ctx, tk.(*task), SelectActive("b")); err != nil {
-		t.Fatalf("SelectActive to b: %v", err)
-	}
-	if err := sink.waitFor(ctx, 200); err != nil {
-		t.Fatalf("after switch, arm b frame never forwarded: %v", err)
-	}
-
-	// Switch back to "a" to prove the control plane drives the switch both ways.
-	sink.resetSeen()
-	if err := tk.Control(ctx, SelectActive("a")); err != nil {
-		t.Fatalf("SelectActive back to a: %v", err)
-	}
-	if err := sink.waitFor(ctx, 100); err != nil {
-		t.Fatalf("after switch back, arm a frame never forwarded: %v", err)
-	}
-
-	cancel()
-	if err := <-runErr; err != nil && !errors.Is(err, context.Canceled) {
-		t.Fatalf("Run err = %v", err)
-	}
-}
+// TestSelectSwitchesActiveArmMidRun moved to goavtest_dogfood_test.go: it is
+// now the consumer-side live-switch acceptance test written against goavtest.
 
 func TestSelectRequiresTwoArms(t *testing.T) {
 	_, err := Select(From(selectTestOneShotSource("a", 1)).Audio()).

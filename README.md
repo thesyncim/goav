@@ -925,6 +925,31 @@ operations are methods on the chain, not a separate vocabulary.
 The reusable component catalog and allocation proof map live in
 [`docs/COMPONENTS.md`](docs/COMPONENTS.md).
 
+## Testing Your Pipeline
+
+`goavtest` is httptest for pipelines: pure sources and recorders with no
+`*testing.T` coupling and no assertion DSL — every helper returns a real
+grammar value, so test code is pipeline code.
+
+```go
+out := goavtest.NewCollector()
+task, _ := goav.Mix(
+    goav.From(goavtest.Audio(48000, 1, []int16{100}, []int16{200})).Audio(),
+    goav.From(goavtest.Audio(48000, 1, []int16{50}, []int16{-50})).Audio(),
+).To(out.Sink()).UseRuntime(goavtest.Runtime()).Build(ctx)
+_ = task.Run(ctx)
+// out.S16() == [[150] [150]]
+```
+
+`Audio`, `Video`, and `Packets` are deterministic PTS-stamped inputs;
+`LiveAudio` never ends, for control-plane tests (`SelectActive`, `Rebranch`)
+paired with the collector's `Wait(ctx, cond)`. `goavtest.Runtime()` is the
+deterministic runtime: standard filters, a byte-faithful passthrough codec for
+every well-known codec id, a fake container for every well-known format id,
+and a fake clock (`goavtest.NewClock`) so realtime pacing records its sleeps
+instead of sleeping. `Codec(id)`/`Format(id)` register the fakes individually,
+and extra options are last-wins overrides.
+
 ## Current Shape
 
 Implemented now:
