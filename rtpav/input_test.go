@@ -88,7 +88,7 @@ func inputTestOpusReceiver(stream av.Stream, packets ...*rtp.Packet) *inputTestR
 		payload: NewStaticPayloadMap(0, []PayloadCodec{{
 			PayloadType: 111,
 			Parameters:  stream.Codec,
-			MIMEType:    MIMEOpus,
+			MIMEType:    av.MIMEOpus,
 			ClockRate:   48000,
 			Channels:    2,
 		}}),
@@ -181,7 +181,7 @@ func TestReceiveCodecIntentDerivesDepacketizerForNamedStream(t *testing.T) {
 		payload: NewStaticPayloadMap(0, []PayloadCodec{{
 			PayloadType: 96,
 			Parameters:  video.Codec,
-			MIMEType:    MIMEVP8,
+			MIMEType:    av.MIMEVP8,
 			ClockRate:   90000,
 		}}),
 		packets: []*rtp.Packet{{

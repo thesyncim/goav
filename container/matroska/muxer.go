@@ -8,9 +8,7 @@ import (
 	"math"
 	"sort"
 
-	bzip2 "git.quad4.io/Go-Libs/bzip2/pkg/bzip2"
 	"github.com/thesyncim/goav/container/ebml"
-	"github.com/woozymasta/lzo"
 )
 
 type Muxer struct {
@@ -50,7 +48,6 @@ type Muxer struct {
 	encryptionPayload      bytes.Buffer
 	lacePayload            []byte
 	zlibWriter             *zlib.Writer
-	bzip2Writer            *bzip2.Writer
 	contentEncryptionIV    [contentEncryptionIVSize]byte
 	contentEncryptionIVSet bool
 }
@@ -3205,9 +3202,7 @@ func blockPayloadSize(track Track, data []byte) (int, error) {
 		case blockContentTransformZlib:
 			return 0, ErrInvalidData
 		case blockContentTransformBzlib:
-			return 0, ErrInvalidData
-		case blockContentTransformLZO1X:
-			return 0, ErrInvalidData
+			return 0, ErrBzip2ContentEncodingWrite
 		default:
 			return 0, ErrUnsupportedContentEncoding
 		}
@@ -3252,9 +3247,7 @@ func (m *Muxer) muxedBlockPayload(track Track, data []byte, partitions []uint32)
 	case blockContentTransformZlib:
 		payload, err = m.zlibCompressBlockPayload(payload)
 	case blockContentTransformBzlib:
-		payload, err = m.bzip2CompressBlockPayload(payload)
-	case blockContentTransformLZO1X:
-		payload, err = m.lzoCompressBlockPayload(payload)
+		return nil, ErrBzip2ContentEncodingWrite
 	default:
 		return nil, ErrUnsupportedContentEncoding
 	}
@@ -3306,36 +3299,6 @@ func (m *Muxer) zlibCompressBlockPayload(data []byte) ([]byte, error) {
 		return nil, err
 	}
 	return m.blockPayload.Bytes(), nil
-}
-
-func (m *Muxer) bzip2CompressBlockPayload(data []byte) ([]byte, error) {
-	const level = 6
-
-	m.blockPayload.Reset()
-	if m.bzip2Writer == nil {
-		writer, err := bzip2.NewWriter(&m.blockPayload, level)
-		if err != nil {
-			return nil, err
-		}
-		m.bzip2Writer = writer
-	} else if err := m.bzip2Writer.Reset(&m.blockPayload); err != nil {
-		m.bzip2Writer = nil
-		return nil, err
-	}
-	if _, err := m.bzip2Writer.Write(data); err != nil {
-		_ = m.bzip2Writer.Close()
-		m.bzip2Writer = nil
-		return nil, err
-	}
-	if err := m.bzip2Writer.Close(); err != nil {
-		m.bzip2Writer = nil
-		return nil, err
-	}
-	return m.blockPayload.Bytes(), nil
-}
-
-func (m *Muxer) lzoCompressBlockPayload(data []byte) ([]byte, error) {
-	return lzo.Compress(data, nil)
 }
 
 func (m *Muxer) prepareLacedBlockPayload(frames [][]byte, track Track, sizes []int) ([]byte, error) {
@@ -4521,8 +4484,14 @@ func validateContentEncodings(encodings []ContentEncoding) error {
 }
 
 func validateWritableBlockContentEncodings(track Track) error {
-	_, err := blockContentEncoding(track)
-	return err
+	encoding, err := blockContentEncoding(track)
+	if err != nil {
+		return err
+	}
+	if encoding.compression == blockContentTransformBzlib {
+		return ErrBzip2ContentEncodingWrite
+	}
+	return nil
 }
 
 type blockContentTransform uint8
@@ -4531,7 +4500,6 @@ const (
 	blockContentTransformNone blockContentTransform = iota
 	blockContentTransformZlib
 	blockContentTransformBzlib
-	blockContentTransformLZO1X
 )
 
 type blockContentEncodingInfo struct {
@@ -4584,14 +4552,7 @@ func blockContentEncoding(track Track) (blockContentEncodingInfo, error) {
 				out.compression = blockContentTransformBzlib
 				out.compressionOrder = encoding.Order
 			case ContentCompAlgoLZO1X:
-				if len(encoding.Compression.Settings) != 0 {
-					return blockContentEncodingInfo{}, ErrUnsupportedContentEncoding
-				}
-				if out.compression != blockContentTransformNone {
-					return blockContentEncodingInfo{}, ErrUnsupportedContentEncoding
-				}
-				out.compression = blockContentTransformLZO1X
-				out.compressionOrder = encoding.Order
+				return blockContentEncodingInfo{}, ErrLZOContentEncoding
 			default:
 				return blockContentEncodingInfo{}, ErrUnsupportedContentEncoding
 			}

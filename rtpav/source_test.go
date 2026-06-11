@@ -173,7 +173,7 @@ func TestSourceDepacketizesRTPIntoPipelinePackets(t *testing.T) {
 		payloads: NewStaticPayloadMap(2, []PayloadCodec{{
 			PayloadType: 111,
 			Parameters:  stream.Codec,
-			MIMEType:    MIMEOpus,
+			MIMEType:    av.MIMEOpus,
 			ClockRate:   48000,
 		}}),
 		packets: []*rtp.Packet{
@@ -299,7 +299,7 @@ func TestSourceCodecChangedUpdatesDestinedStreamInMultiStreamSource(t *testing.T
 		payloads: NewStaticPayloadMap(1, []PayloadCodec{{
 			PayloadType: 96,
 			Parameters:  initial.Codec,
-			MIMEType:    MIMEVP8,
+			MIMEType:    av.MIMEVP8,
 			ClockRate:   90000,
 		}}),
 		packets: []*rtp.Packet{{
@@ -320,7 +320,7 @@ func TestSourceCodecChangedUpdatesDestinedStreamInMultiStreamSource(t *testing.T
 	receiver.payloads = NewStaticPayloadMap(2, []PayloadCodec{{
 		PayloadType: 97,
 		Parameters:  updated.Codec,
-		MIMEType:    MIMEVP8,
+		MIMEType:    av.MIMEVP8,
 		ClockRate:   90000,
 	}})
 
@@ -373,7 +373,7 @@ func TestSourceCodecChangedCanSwitchDepacketizerCodec(t *testing.T) {
 		payloads: NewStaticPayloadMap(1, []PayloadCodec{{
 			PayloadType: 96,
 			Parameters:  initial.Codec,
-			MIMEType:    MIMEVP8,
+			MIMEType:    av.MIMEVP8,
 			ClockRate:   90000,
 		}}),
 		packets: []*rtp.Packet{{
@@ -397,7 +397,7 @@ func TestSourceCodecChangedCanSwitchDepacketizerCodec(t *testing.T) {
 	receiver.payloads = NewStaticPayloadMap(2, []PayloadCodec{{
 		PayloadType: 97,
 		Parameters:  updated.Codec,
-		MIMEType:    MIMEH264,
+		MIMEType:    av.MIMEH264,
 		ClockRate:   90000,
 	}})
 
@@ -437,7 +437,7 @@ func TestSourceEmitsTimestampDiscontinuityOnBackwardPTS(t *testing.T) {
 		payloads: NewStaticPayloadMap(1, []PayloadCodec{{
 			PayloadType: 111,
 			Parameters:  stream.Codec,
-			MIMEType:    MIMEOpus,
+			MIMEType:    av.MIMEOpus,
 			ClockRate:   48000,
 		}}),
 		packets: []*rtp.Packet{
@@ -498,7 +498,7 @@ func TestSourceEmitsTimestampDiscontinuityOnLargeGap(t *testing.T) {
 		payloads: NewStaticPayloadMap(1, []PayloadCodec{{
 			PayloadType: 111,
 			Parameters:  stream.Codec,
-			MIMEType:    MIMEOpus,
+			MIMEType:    av.MIMEOpus,
 			ClockRate:   48000,
 		}}),
 		packets: []*rtp.Packet{
@@ -551,7 +551,7 @@ func TestSourceJitterOrdersPackets(t *testing.T) {
 		payloads: NewStaticPayloadMap(1, []PayloadCodec{{
 			PayloadType: 111,
 			Parameters:  stream.Codec,
-			MIMEType:    MIMEOpus,
+			MIMEType:    av.MIMEOpus,
 			ClockRate:   48000,
 		}}),
 		packets: []*rtp.Packet{
@@ -610,7 +610,7 @@ func TestSourceRoutesFeedbackToExplicitWriter(t *testing.T) {
 		payloads: NewStaticPayloadMap(1, []PayloadCodec{{
 			PayloadType: 111,
 			Parameters:  av.CodecParameters{ID: av.CodecOpus},
-			MIMEType:    MIMEOpus,
+			MIMEType:    av.MIMEOpus,
 			ClockRate:   48000,
 		}}),
 		packets: []*rtp.Packet{{Header: rtp.Header{PayloadType: 111}}},
@@ -648,7 +648,7 @@ func TestSourceForwardsEventsToDepacketizers(t *testing.T) {
 		payloads: NewStaticPayloadMap(1, []PayloadCodec{{
 			PayloadType: 111,
 			Parameters:  av.CodecParameters{ID: av.CodecOpus},
-			MIMEType:    MIMEOpus,
+			MIMEType:    av.MIMEOpus,
 			ClockRate:   48000,
 		}}),
 		events: events,
@@ -727,7 +727,7 @@ func TestSourceCodecChangedRefreshesPayloadMapAndEpoch(t *testing.T) {
 		payloads: NewStaticPayloadMap(1, []PayloadCodec{{
 			PayloadType: 111,
 			Parameters:  initial.Codec,
-			MIMEType:    MIMEOpus,
+			MIMEType:    av.MIMEOpus,
 			ClockRate:   48000,
 		}}),
 		packets: []*rtp.Packet{{
@@ -747,7 +747,7 @@ func TestSourceCodecChangedRefreshesPayloadMapAndEpoch(t *testing.T) {
 	receiver.payloads = NewStaticPayloadMap(2, []PayloadCodec{{
 		PayloadType: 112,
 		Parameters:  updated.Codec,
-		MIMEType:    MIMEOpus,
+		MIMEType:    av.MIMEOpus,
 		ClockRate:   48000,
 	}})
 	var packets []av.Packet
@@ -806,7 +806,7 @@ func TestSourceStartAllocs(t *testing.T) {
 		payloads: NewStaticPayloadMap(1, []PayloadCodec{{
 			PayloadType: 111,
 			Parameters:  stream.Codec,
-			MIMEType:    MIMEOpus,
+			MIMEType:    av.MIMEOpus,
 			ClockRate:   48000,
 		}}),
 		packets: []*rtp.Packet{
@@ -854,8 +854,8 @@ func TestSourceStreamAddedDerivesLateStreamDepacketizer(t *testing.T) {
 	events <- av.Event{Type: av.EventStreamAdded, StreamID: video.ID, Stream: &video}
 	receiver := &fakeReceiver{
 		payloads: NewStaticPayloadMap(1, []PayloadCodec{
-			{PayloadType: 111, Parameters: audio.Codec, MIMEType: MIMEOpus, ClockRate: 48000},
-			{PayloadType: 96, Parameters: video.Codec, MIMEType: MIMEVP8, ClockRate: 90000},
+			{PayloadType: 111, Parameters: audio.Codec, MIMEType: av.MIMEOpus, ClockRate: 48000},
+			{PayloadType: 96, Parameters: video.Codec, MIMEType: av.MIMEVP8, ClockRate: 90000},
 		}),
 		packets: []*rtp.Packet{
 			{Header: rtp.Header{PayloadType: 111, Timestamp: 960}, Payload: []byte{1, 2, 3}},

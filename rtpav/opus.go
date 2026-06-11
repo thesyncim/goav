@@ -7,16 +7,6 @@ import (
 	"github.com/thesyncim/goav/av"
 )
 
-// The negotiated MIME type names payload maps and SDP carry for the
-// supported codecs.
-const (
-	MIMEOpus = "audio/opus"
-	MIMEVP8  = "video/vp8"
-	MIMEVP9  = "video/vp9"
-	MIMEH264 = "video/h264"
-	MIMEAV1  = "video/av1"
-)
-
 // OpusDepacketizer turns Opus RTP payloads into av.Packets — one packet per
 // RTP payload, stamped with the stream's clock-rate timing.
 type OpusDepacketizer struct {

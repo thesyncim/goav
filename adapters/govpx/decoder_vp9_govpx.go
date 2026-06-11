@@ -37,7 +37,7 @@ type VP9Decoder struct {
 }
 
 func (d *VP9Decoder) Descriptor() codec.Descriptor {
-	return activeVP9Descriptor(descriptor(av.CodecVP9, "VP9", []string{av.PixelFormatI420}, []string{"video/vp9"}))
+	return activeVP9Descriptor(descriptor(av.CodecVP9, "VP9", []string{av.PixelFormatI420}, []string{av.MIMEVP9}))
 }
 
 func (d *VP9Decoder) Open(ctx context.Context, config codec.DecodeConfig) error {

@@ -38,7 +38,7 @@ type VP8Encoder struct {
 }
 
 func (e *VP8Encoder) Descriptor() codec.Descriptor {
-	return activeVP8Descriptor(descriptor(av.CodecVP8, "VP8", []string{av.PixelFormatI420}, []string{"video/vp8"}))
+	return activeVP8Descriptor(descriptor(av.CodecVP8, "VP8", []string{av.PixelFormatI420}, []string{av.MIMEVP8}))
 }
 
 func (e *VP8Encoder) Open(ctx context.Context, config codec.EncodeConfig) error {

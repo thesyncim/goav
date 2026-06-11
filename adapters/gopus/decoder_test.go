@@ -6,10 +6,8 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/pion/rtp"
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
-	"github.com/thesyncim/goav/rtpav"
 )
 
 func TestDescriptor(t *testing.T) {
@@ -137,20 +135,24 @@ func TestDecodePacketLossConcealmentIntoPreallocatedFrame(t *testing.T) {
 	}
 }
 
-func TestDecodeRTPDepacketizedOpusIntoPreallocatedFrame(t *testing.T) {
+// TestDecodeOpusPacketIntoPreallocatedFrame decodes one depacketized Opus
+// packet — the av.Packet shape an RTP depacketizer produces (payload bytes
+// plus clock-rate timing) — into a caller-owned frame. The live
+// depacketizer-to-decoder integration runs in the rtpav module's
+// integration tests.
+func TestDecodeOpusPacketIntoPreallocatedFrame(t *testing.T) {
 	ctx := context.Background()
 	decoder, result := newTestDecoder(t)
-	depacketizer := rtpav.NewOpusDepacketizer(opusTestStream())
-	depacketized := rtpav.DepacketizeResult{Packets: make([]av.Packet, 0, 1)}
-	rtpPacket := rtp.Packet{
-		Header:  rtp.Header{Timestamp: 960},
-		Payload: testCELTPacket(),
+	stream := opusTestStream()
+	packet := av.Packet{
+		StreamID:   stream.ID,
+		Type:       av.MediaAudio,
+		CodecEpoch: stream.Epoch,
+		Payload:    av.Buffer{Bytes: testCELTPacket(), Ownership: av.BufferBorrowed},
+		PTS:        av.Timestamp{Value: 960, Base: av.RTPTimeBase(48000)},
 	}
 
-	if err := depacketizer.PushInto(ctx, &rtpPacket, rtpav.PayloadCodec{ClockRate: 48000}, &depacketized); err != nil {
-		t.Fatal(err)
-	}
-	if err := decoder.DecodeInto(ctx, &depacketized.Packets[0], &result); err != nil {
+	if err := decoder.DecodeInto(ctx, &packet, &result); err != nil {
 		t.Fatal(err)
 	}
 	if len(result.Frames) != 1 || result.Frames[0].Audio == nil {

@@ -14,6 +14,8 @@ var (
 	ErrUnsupportedCodec           = errors.New("matroska: unsupported codec")
 	ErrUnsupportedElement         = errors.New("matroska: unsupported element")
 	ErrUnsupportedContentEncoding = errors.New("matroska: content encoding is not supported")
+	ErrLZOContentEncoding         = errors.New("matroska: LZO content encoding is not supported")
+	ErrBzip2ContentEncodingWrite  = errors.New("matroska: writing bzip2 content encoding is not supported (read-only)")
 	ErrUnsupportedLacing          = errors.New("matroska: lacing is not supported")
 	ErrLaceTooLarge               = errors.New("matroska: laced block exceeds configured bounds")
 	ErrInvalidData                = errors.New("matroska: invalid data")

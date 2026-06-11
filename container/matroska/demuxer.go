@@ -13,7 +13,6 @@ import (
 	"sort"
 
 	"github.com/thesyncim/goav/container/ebml"
-	"github.com/woozymasta/lzo"
 )
 
 type Demuxer struct {
@@ -6075,8 +6074,6 @@ func (d *Demuxer) decodeContentEncodedBlockFrame(track Track, frame []byte, enco
 		decoded, err = zlibDecompressInto(dst.Data[:0], payload)
 	case blockContentTransformBzlib:
 		decoded, err = bzip2DecompressInto(dst.Data[:0], payload)
-	case blockContentTransformLZO1X:
-		decoded, err = lzoDecompressInto(dst.Data[:0], payload)
 	default:
 		return ErrUnsupportedContentEncoding
 	}
@@ -6160,20 +6157,6 @@ func zlibDecompressInto(dst []byte, compressed []byte) ([]byte, error) {
 
 func bzip2DecompressInto(dst []byte, compressed []byte) ([]byte, error) {
 	return readCompressedInto(dst, bzip2.NewReader(bytes.NewReader(compressed)), nil)
-}
-
-func lzoDecompressInto(dst []byte, compressed []byte) ([]byte, error) {
-	out, read, err := lzo.DecompressNInto(compressed, dst[:cap(dst)])
-	if err != nil {
-		if errors.Is(err, lzo.ErrOutputOverrun) {
-			return nil, ErrPayloadTooSmall
-		}
-		return nil, ErrInvalidData
-	}
-	if read != len(compressed) {
-		return nil, ErrInvalidData
-	}
-	return out, nil
 }
 
 func readCompressedInto(dst []byte, reader io.Reader, close func() error) ([]byte, error) {
@@ -6500,8 +6483,7 @@ func (d *Demuxer) nextLacedPacket(dst *Packet) error {
 	frameData := d.laceBuffer[frame.offset : frame.offset+frame.size]
 	if d.laceContent.encryptionSet ||
 		d.laceContent.compression == blockContentTransformZlib ||
-		d.laceContent.compression == blockContentTransformBzlib ||
-		d.laceContent.compression == blockContentTransformLZO1X {
+		d.laceContent.compression == blockContentTransformBzlib {
 		track, ok := d.track(d.laceTrackID)
 		if !ok {
 			return ErrUnknownTrack

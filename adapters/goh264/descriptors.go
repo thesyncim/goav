@@ -15,7 +15,7 @@ func Descriptor() codec.Descriptor {
 		Experimental: true,
 		Capabilities: codec.Capabilities{
 			PixelFormats: []string{"yuv420p"},
-			RTPPayloads:  []string{"video/h264"},
+			RTPPayloads:  []string{av.MIMEH264},
 			BuildTags:    []string{"goav_goh264"},
 		},
 		Backend: codec.Backend{

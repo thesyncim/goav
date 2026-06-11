@@ -580,15 +580,15 @@ func (s *Source) depacketizerFor(payload PayloadCodec) Depacketizer {
 
 func codecIDFromMIME(mimeType string) av.CodecID {
 	switch {
-	case strings.EqualFold(mimeType, MIMEOpus):
+	case strings.EqualFold(mimeType, av.MIMEOpus):
 		return av.CodecOpus
-	case strings.EqualFold(mimeType, MIMEVP8):
+	case strings.EqualFold(mimeType, av.MIMEVP8):
 		return av.CodecVP8
-	case strings.EqualFold(mimeType, MIMEVP9):
+	case strings.EqualFold(mimeType, av.MIMEVP9):
 		return av.CodecVP9
-	case strings.EqualFold(mimeType, MIMEH264):
+	case strings.EqualFold(mimeType, av.MIMEH264):
 		return av.CodecH264
-	case strings.EqualFold(mimeType, MIMEAV1):
+	case strings.EqualFold(mimeType, av.MIMEAV1):
 		return av.CodecAV1
 	default:
 		return av.CodecUnknown

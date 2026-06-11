@@ -1,4 +1,4 @@
-package goav
+package integration
 
 import (
 	"bytes"
@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/pion/rtp"
+	"github.com/thesyncim/goav"
 	annexbadapter "github.com/thesyncim/goav/adapters/annexb"
 	ivfadapter "github.com/thesyncim/goav/adapters/ivf"
 	"github.com/thesyncim/goav/av"
@@ -16,111 +17,6 @@ import (
 	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/rtpav"
 )
-
-type runtimeRTPReceiver struct {
-	streams []av.Stream
-	payload rtpav.PayloadMap
-	packets []*rtp.Packet
-	events  chan av.Event
-	index   int
-	closed  bool
-}
-
-func (r *runtimeRTPReceiver) Streams(context.Context) ([]av.Stream, error) {
-	streams := make([]av.Stream, len(r.streams))
-	copy(streams, r.streams)
-	return streams, nil
-}
-
-func (r *runtimeRTPReceiver) PayloadMap() rtpav.PayloadMap {
-	return r.payload
-}
-
-func (r *runtimeRTPReceiver) ReadRTP(context.Context) (*rtp.Packet, error) {
-	if r.index >= len(r.packets) {
-		return nil, io.EOF
-	}
-	packet := r.packets[r.index]
-	r.index++
-	return packet, nil
-}
-
-func (r *runtimeRTPReceiver) Events() <-chan av.Event {
-	return r.events
-}
-
-func (r *runtimeRTPReceiver) Close() error {
-	r.closed = true
-	return nil
-}
-
-type runtimeRTPSwitchReceiver struct {
-	initial  av.Stream
-	updated  av.Stream
-	payload  rtpav.PayloadMap
-	packets  []*rtp.Packet
-	events   chan av.Event
-	index    int
-	switched bool
-	closed   bool
-}
-
-func newRuntimeRTPSwitchReceiver(initial av.Stream, updated av.Stream, packets []*rtp.Packet) *runtimeRTPSwitchReceiver {
-	return &runtimeRTPSwitchReceiver{
-		initial: initial,
-		updated: updated,
-		payload: rtpav.NewStaticPayloadMap(1, []rtpav.PayloadCodec{{
-			PayloadType: 96,
-			Parameters:  initial.Codec,
-			MIMEType:    rtpav.MIMEVP8,
-			ClockRate:   90000,
-		}}),
-		packets: packets,
-		events:  make(chan av.Event, 1),
-	}
-}
-
-func (r *runtimeRTPSwitchReceiver) Streams(context.Context) ([]av.Stream, error) {
-	return []av.Stream{r.initial}, nil
-}
-
-func (r *runtimeRTPSwitchReceiver) PayloadMap() rtpav.PayloadMap {
-	return r.payload
-}
-
-func (r *runtimeRTPSwitchReceiver) ReadRTP(context.Context) (*rtp.Packet, error) {
-	if r.index >= len(r.packets) {
-		return nil, io.EOF
-	}
-	packet := r.packets[r.index]
-	r.index++
-	if r.index == 1 && !r.switched {
-		r.payload = rtpav.NewStaticPayloadMap(2, []rtpav.PayloadCodec{{
-			PayloadType: 97,
-			Parameters:  r.updated.Codec,
-			MIMEType:    rtpav.MIMEH264,
-			ClockRate:   90000,
-		}})
-		r.events <- av.Event{
-			Type:     av.EventCodecChanged,
-			StreamID: r.initial.ID,
-			Epoch:    r.updated.Epoch,
-			Stream:   &r.updated,
-			Codec:    &r.updated.Codec,
-		}
-		r.switched = true
-	}
-	return packet, nil
-}
-
-func (r *runtimeRTPSwitchReceiver) Events() <-chan av.Event {
-	return r.events
-}
-
-func (r *runtimeRTPSwitchReceiver) Close() error {
-	r.closed = true
-	return nil
-}
 
 func TestRecipeRTPDecodeUsesProviderDecodeBounds(t *testing.T) {
 	ctx := context.Background()
@@ -150,7 +46,7 @@ func TestRecipeRTPDecodeUsesProviderDecodeBounds(t *testing.T) {
 		payload: rtpav.NewStaticPayloadMap(0, []rtpav.PayloadCodec{{
 			PayloadType: 96,
 			Parameters:  stream.Codec,
-			MIMEType:    rtpav.MIMEVP8,
+			MIMEType:    av.MIMEVP8,
 			ClockRate:   90000,
 		}}),
 		packets: []*rtp.Packet{{
@@ -164,14 +60,14 @@ func TestRecipeRTPDecodeUsesProviderDecodeBounds(t *testing.T) {
 	codecs := withTestCodecs(testCodecDecoder(codec.Descriptor{ID: av.CodecVP8, Type: av.MediaVideo}, decoderFactory))
 	sink := &runtimeTestSink{name: "frames"}
 
-	job := From(Input(rtpav.Receive(receiver,
+	job := goav.From(goav.Input(rtpav.Receive(receiver,
 		rtpav.WithName("video-rtp"),
 		rtpav.WithDepacketizers(rtpav.NewVP8Depacketizer(stream, rtpav.WithMaxVideoFrameSize(4096))),
 		rtpav.WithDecodeBounds(requested),
 	))).
-		UseRuntime(New(codecs)).
+		UseRuntime(goav.New(codecs)).
 		Video().
-		To(Sink(sink))
+		To(goav.Sink(sink))
 	planned, err := job.Describe()
 	if err != nil {
 		t.Fatal(err)
@@ -204,25 +100,6 @@ func TestRecipeRTPDecodeUsesProviderDecodeBounds(t *testing.T) {
 	}
 	if !receiver.closed || !decoder.closed || !sink.closed {
 		t.Fatalf("closed receiver=%v decoder=%v sink=%v", receiver.closed, decoder.closed, sink.closed)
-	}
-}
-
-// testBoundsProvider is a minimal decode-bounds capability fixture: per-stream
-// bounds keyed by stream id, like rtpav.Input.DecodeBounds after OpenSource.
-type testBoundsProvider map[av.StreamID]codec.DecodeBounds
-
-func (p testBoundsProvider) DecodeBounds(id av.StreamID) codec.DecodeBounds {
-	return p[id]
-}
-
-func TestProviderDecodeBoundsForStreamUsesMatchingInput(t *testing.T) {
-	video := av.Stream{ID: "video", Type: av.MediaVideo, Codec: av.CodecParameters{ID: av.CodecVP8, Type: av.MediaVideo}}
-	bounds := providerDecodeBoundsForStream(video, []decodeBoundsProvider{
-		testBoundsProvider{"audio": {MaxPayloadBytes: 1024}},
-		testBoundsProvider{"video": {MaxFramesPerInput: 2, MaxPayloadBytes: 4096}},
-	})
-	if bounds.MaxFramesPerInput != 2 || bounds.MaxPayloadBytes != 4096 {
-		t.Fatalf("bounds = %+v", bounds)
 	}
 }
 
@@ -264,7 +141,7 @@ func TestRecipeRTPDecodeRejectsDifferentCodecSwitch(t *testing.T) {
 	codecs := withTestCodecs(testCodecDecoder(codec.Descriptor{ID: av.CodecVP8, Type: av.MediaVideo}, &decodeTestDecoderFactory{decoder: decoder}))
 	sink := &runtimeTestSink{name: "frames"}
 
-	task, err := From(Input(rtpav.Receive(receiver,
+	task, err := goav.From(goav.Input(rtpav.Receive(receiver,
 		rtpav.WithName("video-rtp"),
 		rtpav.WithDepacketizers(
 			rtpav.NewVP8Depacketizer(initial, rtpav.WithMaxVideoFrameSize(16)),
@@ -272,9 +149,9 @@ func TestRecipeRTPDecodeRejectsDifferentCodecSwitch(t *testing.T) {
 		),
 		rtpav.WithBufferLimits(rtpav.BufferLimits{MaxPackets: 1, MaxEvents: 2}),
 	))).
-		UseRuntime(New(codecs)).
+		UseRuntime(goav.New(codecs)).
 		Video().
-		To(Sink(sink)).
+		To(goav.Sink(sink)).
 		Build(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -312,7 +189,7 @@ func TestRecipeRTPAV1RecordIVF(t *testing.T) {
 		payload: rtpav.NewStaticPayloadMap(0, []rtpav.PayloadCodec{{
 			PayloadType: 96,
 			Parameters:  stream.Codec,
-			MIMEType:    rtpav.MIMEAV1,
+			MIMEType:    av.MIMEAV1,
 			ClockRate:   90000,
 		}}),
 		packets: []*rtp.Packet{{
@@ -323,10 +200,10 @@ func TestRecipeRTPAV1RecordIVF(t *testing.T) {
 	}
 	var recording bytes.Buffer
 
-	task, err := From(Input(rtpav.Receive(receiver, rtpav.WithDepacketizers(rtpav.NewAV1Depacketizer(stream))))).
-		UseRuntime(New(WithFormatAdapter(ivfadapter.Register))).
+	task, err := goav.From(goav.Input(rtpav.Receive(receiver, rtpav.WithDepacketizers(rtpav.NewAV1Depacketizer(stream))))).
+		UseRuntime(goav.New(goav.WithFormatAdapter(ivfadapter.Register))).
 		Copy().
-		To(File("recording.ivf", &recording)).
+		To(goav.File("recording.ivf", &recording)).
 		Build(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -378,7 +255,7 @@ func TestRecipeRTPH264RecordAnnexB(t *testing.T) {
 		payload: rtpav.NewStaticPayloadMap(0, []rtpav.PayloadCodec{{
 			PayloadType: 96,
 			Parameters:  stream.Codec,
-			MIMEType:    rtpav.MIMEH264,
+			MIMEType:    av.MIMEH264,
 			ClockRate:   90000,
 		}}),
 		packets: []*rtp.Packet{{
@@ -389,10 +266,10 @@ func TestRecipeRTPH264RecordAnnexB(t *testing.T) {
 	}
 	var recording bytes.Buffer
 
-	task, err := From(Input(rtpav.Receive(receiver, rtpav.WithDepacketizers(rtpav.NewH264Depacketizer(stream))))).
-		UseRuntime(New(WithFormatAdapter(annexbadapter.Register))).
+	task, err := goav.From(goav.Input(rtpav.Receive(receiver, rtpav.WithDepacketizers(rtpav.NewH264Depacketizer(stream))))).
+		UseRuntime(goav.New(goav.WithFormatAdapter(annexbadapter.Register))).
 		Copy().
-		To(File("recording.h264", &recording)).
+		To(goav.File("recording.h264", &recording)).
 		Build(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -408,38 +285,4 @@ func TestRecipeRTPH264RecordAnnexB(t *testing.T) {
 	if !bytes.Equal(recording.Bytes(), want) {
 		t.Fatalf("recording = %v, want %v", recording.Bytes(), want)
 	}
-}
-
-func drainTaskEvents(task Task) []av.Event {
-	var events []av.Event
-	for {
-		select {
-		case event := <-task.Events():
-			events = append(events, event)
-		default:
-			return events
-		}
-	}
-}
-
-func streamIDsEqual(got []av.StreamID, want []av.StreamID) bool {
-	if len(got) != len(want) {
-		return false
-	}
-	for i := range got {
-		if got[i] != want[i] {
-			return false
-		}
-	}
-	return true
-}
-
-func countEventsForStream(events []av.Event, eventType av.EventType, stream av.StreamID) int {
-	count := 0
-	for i := range events {
-		if events[i].Type == eventType && events[i].StreamID == stream {
-			count++
-		}
-	}
-	return count
 }

@@ -14,7 +14,6 @@ import (
 	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/pipeline"
-	"github.com/thesyncim/goav/rtpav"
 	"github.com/thesyncim/goav/shape"
 )
 
@@ -407,21 +406,5 @@ func TestMixResamplesMismatchedArms(t *testing.T) {
 	// so a peak well above one arm's level proves both actually contributed.
 	if peak < 150 {
 		t.Fatalf("peak mixed amplitude = %d, want >=150 (both constant-100 arms summed)", peak)
-	}
-}
-
-func TestMixAcceptsRTPArmsViaUnifiedOpener(t *testing.T) {
-	// RTP now resolves through the same source opener as custom/file — it must not
-	// be special-rejected as an unsupported source kind (it may still fail later
-	// for fixture reasons, which is fine; the point is it is no longer a special
-	// case in the opener).
-	_, err := Mix(
-		From(mixTestAudioSource("a", 1)).Audio(),
-		From(Input(rtpav.Receive(&runtimeRTPReceiver{streams: []av.Stream{{ID: "rtp-b", Type: av.MediaAudio}}}))).Audio(),
-	).To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))).
-		Build(context.Background())
-	var buildErr *BuildError
-	if errorsAsMix(err, &buildErr) && buildErr.Code == "source_unsupported" {
-		t.Fatalf("RTP arm still special-rejected by the opener: %v", err)
 	}
 }

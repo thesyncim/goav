@@ -444,7 +444,9 @@ and runtime graph path as built-in inputs.
 
 Transports are not special-cased. `rtpav.Receive` and `webrtcav.Track` are
 implementations of the one source seam, and an SRT, NDI, or proprietary ingest
-package plugs in the same way — with zero goav changes:
+package plugs in the same way — with zero goav changes. RTP and WebRTC ship
+as nested modules (`github.com/thesyncim/goav/rtpav`, `.../webrtcav` — import
+paths unchanged) so the core module stays free of third-party dependencies:
 
 ```go
 package provider

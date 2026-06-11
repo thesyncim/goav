@@ -34,6 +34,10 @@ var surfacePinPackages = []struct {
 // codecs, events, options), so freezing them would turn every capability into
 // surface churn. They still cannot regress silently — every exported symbol
 // must be documented (TestExportedSymbolsAreDocumented).
+//
+// rtpav and webrtcav are nested modules now (their own go.mod, their own
+// pion dependencies); they govern themselves with their own doc pins and are
+// outside this module's walk by construction.
 var surfaceSeamPackages = []string{
 	"av",
 	"codec",
@@ -44,9 +48,7 @@ var surfaceSeamPackages = []string{
 	"goavtest",
 	"pipeline",
 	"provider",
-	"rtpav",
 	"shape",
-	"webrtcav",
 }
 
 // TestEveryPublicPackageIsGoverned closes the governance gap hardcoded lists

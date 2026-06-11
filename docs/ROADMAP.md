@@ -203,6 +203,13 @@ The checklist that gates the tag; each item names its current evidence.
   discovered public package (dynamic module walk; `adapters/*` and
   `container/*` sit behind the codec/format seams and are excluded by the
   decision recorded in `docs/API_SURFACE.md`).
+- [x] **Dependency purity** — the root module requires only
+  `github.com/thesyncim/*` modules and the standard library
+  (`TestRootModuleDependencyPurity`); the pion ecosystem lives in the nested
+  `rtpav` and `webrtcav` modules. Nested modules tag independently with
+  prefixed tags (`rtpav/vX.Y.Z`, `webrtcav/vX.Y.Z`), so a root v1 does not
+  freeze the transport modules and vice versa; webrtcav requires rtpav
+  requires the root, so tag the root first, then rtpav, then webrtcav.
 - [ ] **Release decision** — confirm the `go 1.26.2` directive in `go.mod`
   is the intended minimum supported Go, write the tag's compatibility note,
   and cut v1. Not done; the only open item is a maintainer call, not code.

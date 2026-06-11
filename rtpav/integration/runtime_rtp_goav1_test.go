@@ -1,4 +1,4 @@
-package goav
+package integration
 
 import (
 	"context"
@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/pion/rtp"
+	"github.com/thesyncim/goav"
 	goav1adapter "github.com/thesyncim/goav/adapters/goav1"
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/pipeline"
@@ -34,7 +35,7 @@ func TestRecipeRTPAV1DecodeSink(t *testing.T) {
 		payload: rtpav.NewStaticPayloadMap(0, []rtpav.PayloadCodec{{
 			PayloadType: 96,
 			Parameters:  stream.Codec,
-			MIMEType:    rtpav.MIMEAV1,
+			MIMEType:    av.MIMEAV1,
 			ClockRate:   90000,
 		}}),
 		packets: []*rtp.Packet{{
@@ -45,13 +46,13 @@ func TestRecipeRTPAV1DecodeSink(t *testing.T) {
 	}
 	sink := &runtimeTestSink{name: "frames"}
 
-	job := From(Input(rtpav.Receive(receiver,
+	job := goav.From(goav.Input(rtpav.Receive(receiver,
 		rtpav.WithName("av1-rtp"),
 		rtpav.WithDepacketizers(rtpav.NewAV1Depacketizer(stream, rtpav.WithMaxVideoFrameSize(128))),
 	))).
-		UseRuntime(New(WithCodecAdapter(goav1adapter.Register))).
+		UseRuntime(goav.New(goav.WithCodecAdapter(goav1adapter.Register))).
 		Video().
-		To(Sink(sink))
+		To(goav.Sink(sink))
 	planned, err := job.Describe()
 	if err != nil {
 		t.Fatal(err)
@@ -117,7 +118,7 @@ func testRecipeRTPAV1DecodeSink420(t *testing.T, pixelFormat string) {
 		payload: rtpav.NewStaticPayloadMap(0, []rtpav.PayloadCodec{{
 			PayloadType: 96,
 			Parameters:  stream.Codec,
-			MIMEType:    rtpav.MIMEAV1,
+			MIMEType:    av.MIMEAV1,
 			ClockRate:   90000,
 		}}),
 		packets: []*rtp.Packet{{
@@ -128,13 +129,13 @@ func testRecipeRTPAV1DecodeSink420(t *testing.T, pixelFormat string) {
 	}
 	sink := &runtimeAV1SinkDestination{name: "frames"}
 
-	task, err := From(Input(rtpav.Receive(receiver,
+	task, err := goav.From(goav.Input(rtpav.Receive(receiver,
 		rtpav.WithName("av1-rtp"),
 		rtpav.WithDepacketizers(rtpav.NewAV1Depacketizer(stream, rtpav.WithMaxVideoFrameSize(128))),
 	))).
-		UseRuntime(New(WithCodecAdapter(goav1adapter.Register))).
+		UseRuntime(goav.New(goav.WithCodecAdapter(goav1adapter.Register))).
 		Video().
-		To(Sink(sink)).
+		To(goav.Sink(sink)).
 		Build(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -195,14 +196,14 @@ func TestRecipeRTPAV1CodecChangedDropsUntilSync(t *testing.T) {
 	})
 	sink := &runtimeTestSink{name: "frames"}
 
-	task, err := From(Input(rtpav.Receive(receiver,
+	task, err := goav.From(goav.Input(rtpav.Receive(receiver,
 		rtpav.WithName("av1-rtp"),
 		rtpav.WithDepacketizers(rtpav.NewAV1Depacketizer(initial, rtpav.WithMaxVideoFrameSize(128))),
 		rtpav.WithBufferLimits(rtpav.BufferLimits{MaxPackets: 1, MaxEvents: 2}),
 	))).
-		UseRuntime(New(WithCodecAdapter(goav1adapter.Register))).
+		UseRuntime(goav.New(goav.WithCodecAdapter(goav1adapter.Register))).
 		Video().
-		To(Sink(sink)).
+		To(goav.Sink(sink)).
 		Build(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -283,14 +284,14 @@ func testRecipeRTPAV1CodecChangedReplacementStream(t *testing.T, oldIDTarget boo
 	})
 	sink := &runtimeTestSink{name: "frames"}
 
-	task, err := From(Input(rtpav.Receive(receiver,
+	task, err := goav.From(goav.Input(rtpav.Receive(receiver,
 		rtpav.WithName("av1-rtp"),
 		rtpav.WithDepacketizers(rtpav.NewAV1Depacketizer(initial, rtpav.WithMaxVideoFrameSize(128))),
 		rtpav.WithBufferLimits(rtpav.BufferLimits{MaxPackets: 1, MaxEvents: 2}),
 	))).
-		UseRuntime(New(WithCodecAdapter(goav1adapter.Register))).
+		UseRuntime(goav.New(goav.WithCodecAdapter(goav1adapter.Register))).
 		Video().
-		To(Sink(sink)).
+		To(goav.Sink(sink)).
 		Build(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -425,7 +426,7 @@ func runtimeAV1PayloadMap(epoch av.Epoch, payloadType uint8, stream av.Stream) r
 	return rtpav.NewStaticPayloadMap(epoch, []rtpav.PayloadCodec{{
 		PayloadType: payloadType,
 		Parameters:  stream.Codec,
-		MIMEType:    rtpav.MIMEAV1,
+		MIMEType:    av.MIMEAV1,
 		ClockRate:   90000,
 	}})
 }

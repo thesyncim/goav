@@ -6,7 +6,6 @@ import (
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
-	"github.com/thesyncim/goav/rtpav"
 	gopuslib "github.com/thesyncim/gopus"
 )
 
@@ -27,7 +26,7 @@ func Descriptor() codec.Descriptor {
 		Realtime: true,
 		Capabilities: codec.Capabilities{
 			SampleFormats: []string{av.SampleFormatS16},
-			RTPPayloads:   []string{rtpav.MIMEOpus},
+			RTPPayloads:   []string{av.MIMEOpus},
 		},
 		Backend: codec.Backend{
 			Name:    backendName,

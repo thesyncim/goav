@@ -23,7 +23,7 @@ func Descriptor() codec.Descriptor {
 				av.PixelFormatYUV444P,
 				av.PixelFormatGray8,
 			},
-			RTPPayloads: []string{"video/av1"},
+			RTPPayloads: []string{av.MIMEAV1},
 		},
 		Backend: codec.Backend{
 			Name:    "goav1",

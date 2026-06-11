@@ -238,6 +238,25 @@ seams (registered by `Default()`/`WithStd*`), outside the core import graph
 and not part of the governed surface — an explicit, asserted exclusion
 (`docPinImplementationSubtrees`), not a forgotten one.
 
+## Module boundaries
+
+The repository is four Go modules, and the module boundary is the dependency
+boundary:
+
+- **root (`github.com/thesyncim/goav`)** — the grammar, the seams, and the
+  pure-Go implementations. May require only `github.com/thesyncim/*` modules
+  and the standard library; `TestRootModuleDependencyPurity` pins this (no
+  third-party requires, no `replace` directives).
+- **`rtpav`, `webrtcav`** — nested modules carrying the pion ecosystem. They
+  require the root module (never the reverse), so importing goav pulls in no
+  transport dependencies. Import paths are unchanged
+  (`github.com/thesyncim/goav/rtpav`, `.../webrtcav`). Each runs its own doc
+  pin (`doc_pin_test.go` per module) and its RTP/WebRTC-flavored integration
+  tests (`rtpav/integration`, `webrtcav/integration`); the root module's
+  dynamic package walk correctly stops at their `go.mod`.
+- **`examples/webrtc-runtime-ladder`** — a nested module for runnable
+  examples, free to depend on anything.
+
 ## Compatibility
 
 Pre-v1, breaking renames land without aliases. The surface-hygiene wave moved

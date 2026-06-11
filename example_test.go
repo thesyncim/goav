@@ -9,12 +9,10 @@ import (
 	"io"
 	"time"
 
-	"github.com/pion/rtp"
 	"github.com/thesyncim/goav"
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/errcode"
-	"github.com/thesyncim/goav/rtpav"
 	"github.com/thesyncim/goav/shape"
 )
 
@@ -100,22 +98,6 @@ func opusTestPacket() []byte {
 	}
 	return data
 }
-
-// staticRTPReader is a minimal rtpav.PacketReader: one declared Opus stream
-// and an immediately ended packet feed.
-type staticRTPReader struct{}
-
-func (staticRTPReader) Streams(context.Context) ([]av.Stream, error) {
-	return []av.Stream{{ID: "audio", Type: av.MediaAudio, Codec: av.CodecParameters{ID: av.CodecOpus, Type: av.MediaAudio}}}, nil
-}
-
-func (staticRTPReader) PayloadMap() rtpav.PayloadMap { return nil }
-
-func (staticRTPReader) ReadRTP(context.Context) (*rtp.Packet, error) { return nil, io.EOF }
-
-func (staticRTPReader) Events() <-chan av.Event { return nil }
-
-func (staticRTPReader) Close() error { return nil }
 
 // ExampleFrom is the direct chain: a custom source feeding decode, encode, and
 // a typed destination — the front door of the recipe grammar.
@@ -446,26 +428,6 @@ func ExampleTask_watch() {
 	}
 	fmt.Println("end of stream:", ended)
 	// Output: end of stream: true
-}
-
-// ExampleInput opens media through the provider.Source seam: rtpav.Receive
-// adapts any RTP packet reader, and SRT, NDI, or proprietary ingest packages
-// plug into the same seam with zero goav changes.
-func ExampleInput() {
-	mic := goav.Input(rtpav.Receive(staticRTPReader{}, rtpav.WithName("mic"), rtpav.WithCodec(codec.Opus())))
-
-	report, err := goav.From(mic).
-		Audio().
-		Copy().
-		To(goav.File("mic.webm", io.Discard)).
-		Explain(context.Background())
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
-	in := report.Inputs[0]
-	fmt.Printf("input=%s codec=%s realtime=%t\n", in.Name, in.Codec, in.Realtime)
-	// Output: input=mic codec=opus realtime=true
 }
 
 // ExampleBuildError matches a structured refusal: every failed build carries a

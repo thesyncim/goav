@@ -5,6 +5,11 @@ import graph. Core packages (`av`, `codec`, `format`, `filter`, `pipeline`,
 `rtpav`, `webrtcav`) do not import sibling codec modules; concrete integrations
 live under `adapters/...` and `container/...`.
 
+The root module depends only on `github.com/thesyncim/*` modules and the
+standard library (`TestRootModuleDependencyPurity`). `rtpav` and `webrtcav`
+are nested modules with their own `go.mod` — they carry the pion dependency
+tree, and importing goav alone never pulls it in. Import paths are unchanged.
+
 This file catalogs what exists. **How to write one** — the per-seam
 interfaces, lifecycle, error and ownership contracts, and required tests —
 is `docs/ADAPTER_AUTHORING.md`; the executable proof that every seam works
