@@ -9,6 +9,7 @@ import (
 
 	goav "github.com/thesyncim/goav"
 	"github.com/thesyncim/goav/av"
+	"github.com/thesyncim/goav/graphrender"
 	"github.com/thesyncim/goav/pipeline"
 )
 
@@ -71,6 +72,8 @@ func executeRequest(ctx context.Context, task goav.Task, request Request) (Contr
 		return executeControl(ctx, task, append([]string{request.Verb}, argsFromMap(request.Args)...))
 	case "inspect", "snapshot", "stats", "taps", "streams", "branches", "destinations", "events", "watch", "stop":
 		return Execute(ctx, task, append([]string{request.Op}, argsFromMap(request.Args)...))
+	case "graph", "flowchart":
+		return executeGraph(task, request.Args)
 	case "attach":
 		return executeAttachRequest(ctx, task, request, PipelineRegistry{})
 	case "rebranch":
@@ -143,11 +146,24 @@ func RequestFromCLI(argv []string) (Request, error) {
 			return Request{}, commandError("invalid_argument", "detach", "", "detach needs exactly one branch name", nil, []string{"use `goav ctl detach <branch-name>`"}, nil)
 		}
 		return Request{Op: "detach", Branch: argv[1]}, nil
+	case "graph", "flowchart":
+		return graphRequestFromCLI(argv[0], argv[1:])
 	case "inspect", "snapshot", "stats", "taps", "streams", "branches", "destinations", "events", "watch", "stop":
 		return Request{Op: argv[0], Args: argsMap(argv[1:])}, nil
 	default:
 		return Request{}, commandError("unknown_command", "ctl", argv[0], fmt.Sprintf("unknown ctl command %q", argv[0]), nil, []string{"use `goav ctl help`"}, nil)
 	}
+}
+
+func graphRequestFromCLI(op string, argv []string) (Request, error) {
+	args := argsMap(argv)
+	if len(argv) == 1 && !strings.Contains(argv[0], "=") && !strings.HasPrefix(argv[0], "--") {
+		args = map[string]string{"format": argv[0]}
+	}
+	if len(argv) > 1 {
+		return Request{}, commandError("invalid_argument", op, "", "graph accepts at most one format argument", nil, []string{"use `goav ctl graph`", "use `goav ctl graph format=dot`"}, nil)
+	}
+	return Request{Op: op, Args: args}, nil
 }
 
 func helpRequestFromCLI(argv []string) Request {
@@ -294,6 +310,12 @@ func Execute(ctx context.Context, task goav.Task, argv []string) (ControlRespons
 		return ControlResponse{Operation: "branches", Result: task.Snapshot().Branches}, nil
 	case "destinations":
 		return ControlResponse{Operation: "destinations", Result: task.Snapshot().Destinations}, nil
+	case "graph", "flowchart":
+		request, err := graphRequestFromCLI(argv[0], argv[1:])
+		if err != nil {
+			return ControlResponse{}, err
+		}
+		return executeGraph(task, request.Args)
 	case "events", "watch":
 		return executeWatch(task, argv[0], argv[1:])
 	case "stop":
@@ -335,6 +357,36 @@ func executeControl(ctx context.Context, task goav.Task, argv []string) (Control
 		return ControlResponse{}, commandError("unknown_command", "control", verb, fmt.Sprintf("unknown control command %q", verb), nil, []string{"use one of: " + strings.Join(controlCommandNames(), ", ")}, nil)
 	}
 	return Invoke(ctx, task, spec, argv[1:])
+}
+
+func executeGraph(task goav.Task, args map[string]string) (ControlResponse, error) {
+	for key := range args {
+		if key != "format" {
+			return ControlResponse{}, commandError("unknown_field", "graph", key, fmt.Sprintf("unknown graph field %q", key), nil, []string{"use format=mermaid", "use format=dot", "use format=text"}, nil)
+		}
+	}
+	target, err := graphRenderTarget(args["format"])
+	if err != nil {
+		return ControlResponse{}, err
+	}
+	out, err := graphrender.RenderTaskURI(task, target)
+	if err != nil {
+		return ControlResponse{}, structuredError("graph", err)
+	}
+	return ControlResponse{Operation: "graph", Result: out}, nil
+}
+
+func graphRenderTarget(format string) (string, error) {
+	switch strings.ToLower(format) {
+	case "", "mermaid", "flowchart":
+		return "goav:graph?format=mermaid", nil
+	case "dot":
+		return "goav://graph/dot", nil
+	case "text":
+		return "goav:graph", nil
+	default:
+		return "", commandError("invalid_value", "graph", "format", "format must be mermaid, dot, or text", []string{"value=" + format}, []string{"use format=mermaid", "use format=dot", "use format=text"}, nil)
+	}
 }
 
 func executeWatch(task goav.Task, operation string, args []string) (ControlResponse, error) {

@@ -32,6 +32,8 @@ func HelpWithCommands(args []string, manifest []CommandSpec) (string, error) {
 		return staticHelp("rebranch", "goav ctl --control unix://PATH rebranch <branch-name> [--switch next_frame|next_keyframe] [--keep-old-on-failure] '<branch-pipeline>'", "Replaces an attachment created through this control server, using the same allowlisted branch-pipeline grammar as attach."), nil
 	case "detach":
 		return staticHelp("detach", "goav ctl --control unix://PATH detach <branch-name>", "Detaches an attachment created through this control server."), nil
+	case "graph", "flowchart":
+		return staticHelp("graph", "goav ctl --control unix://PATH graph [format=mermaid|dot|text]", "Renders the running task snapshot as Mermaid, Graphviz DOT, or text. The default format is Mermaid and runtime branch-owned nodes are annotated by branch name and lifecycle state."), nil
 	default:
 		return "", commandError("unknown_command", "help", args[0], fmt.Sprintf("unknown help topic %q", args[0]), nil, []string{"use `goav ctl help control`"}, nil)
 	}
@@ -50,6 +52,7 @@ func rootHelp() string {
 	out.WriteString("  streams\n")
 	out.WriteString("  branches\n")
 	out.WriteString("  destinations\n")
+	out.WriteString("  graph [format=mermaid|dot|text]\n")
 	out.WriteString("  events --follow\n")
 	out.WriteString("  watch [type=<event-type>] [stream=<stream-id>] --follow\n")
 	out.WriteString("  stop\n")

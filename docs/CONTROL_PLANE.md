@@ -150,12 +150,22 @@ goav ctl --control unix:///tmp/goav-live.sock taps
 goav ctl --control unix:///tmp/goav-live.sock control vendor.rate value=0.5 source=fixture
 goav ctl --control unix:///tmp/goav-live.sock attach frames as archive \
   'meter ! acmeenc bitrate=128000 quality=voice lookahead=deep ! filesink location=/tmp/archive.ogg format=ogg'
+goav ctl --control unix:///tmp/goav-live.sock graph
+goav ctl --control unix:///tmp/goav-live.sock graph format=dot
 goav ctl --control unix:///tmp/goav-live.sock rebranch archive \
   'meter ! acmeenc bitrate=96000 quality=voice lookahead=shallow ! filesink location=/tmp/archive-low.ogg format=ogg'
 goav ctl --control unix:///tmp/goav-live.sock detach archive
 ```
 
 Render a live flowchart from the same running task:
+
+```sh
+goav ctl --control unix:///tmp/goav-live.sock graph
+goav ctl --control unix:///tmp/goav-live.sock graph format=dot
+goav ctl --control unix:///tmp/goav-live.sock graph format=text
+```
+
+Or from host code:
 
 ```go
 flowchart, err := graphrender.RenderTaskFlowchart(task)
@@ -198,6 +208,7 @@ Supported built-ins include:
 - `control --json '<goav.Control JSON>'`
 - `inspect`, `snapshot`, `stats`, `taps`, `streams`, `branches`,
   `destinations`
+- `graph [format=mermaid|dot|text]` and `flowchart [format=mermaid|dot|text]`
 - `events --follow`, `watch [type=<event-type>] [stream=<stream-id>] --follow`
 - `attach`, `rebranch`, `detach`, `stop`
 

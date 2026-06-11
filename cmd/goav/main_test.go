@@ -63,6 +63,39 @@ func TestCLIInvokesCustomControlCommand(t *testing.T) {
 	}
 }
 
+func TestCLIPrintsGraphAsRawText(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	task, err := goav.From(goavtest.Audio(48000, 1, []int16{1})).
+		Audio().
+		To(goavtest.NewCollector().Sink()).
+		UseRuntime(goavtest.Runtime()).
+		Build(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer task.Close()
+
+	socket := filepath.Join(os.TempDir(), fmt.Sprintf("goav-cli-graph-%d.sock", time.Now().UnixNano()))
+	t.Cleanup(func() { _ = os.Remove(socket) })
+	errC := make(chan error, 1)
+	go func() {
+		errC <- ctl.ServeUnixWithOptions(ctx, task, "unix://"+socket)
+	}()
+	waitForCLISocket(t, socket, errC)
+
+	cmd := exec.Command("go", "run", ".", "ctl", "--control", "unix://"+socket, "graph")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("goav ctl graph failed: %v\n%s", err, output)
+	}
+	text := string(output)
+	if !strings.HasPrefix(text, "flowchart LR\n") || strings.HasPrefix(text, `"`) {
+		t.Fatalf("graph output = %q", text)
+	}
+}
+
 func TestSendFollowReturnsDecodeError(t *testing.T) {
 	socket := filepath.Join(os.TempDir(), fmt.Sprintf("goav-follow-%d.sock", time.Now().UnixNano()))
 	t.Cleanup(func() { _ = os.Remove(socket) })

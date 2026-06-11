@@ -90,6 +90,8 @@ first-class. See docs/ADAPTERS.md and docs/COMPONENTS.md.
   custom branch-pipeline steps and encoder names, and `ServeUnixWithOptions`
   to put those hooks behind a socket. Generic branch pipelines can also encode
   runtime-registered custom codecs with `encode codec=<id> media=<kind> ...`.
+  The same socket renders live graph diagnostics through `goav ctl graph`
+  (`format=mermaid|dot|text`).
 - **Containers** — `format` Prober/Demuxer/Muxer/factories, Seeker for
   seekable inputs, `WithDemuxer`/`WithMuxer`/`WithFormatAdapter`/`WithProber`.
 - **Filters** — `filter` FrameFilter/Factory/Descriptor,

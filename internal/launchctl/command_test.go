@@ -204,6 +204,64 @@ func TestExecuteRequestAppliesHelpRequest(t *testing.T) {
 	}
 }
 
+func TestRequestFromCLIParsesGraphCommand(t *testing.T) {
+	request, err := RequestFromCLI([]string{"graph", "format=dot"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if request.Op != "graph" || request.Args["format"] != "dot" {
+		t.Fatalf("request = %+v", request)
+	}
+
+	shorthand, err := RequestFromCLI([]string{"flowchart", "mermaid"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if shorthand.Op != "flowchart" || shorthand.Args["format"] != "mermaid" {
+		t.Fatalf("shorthand = %+v", shorthand)
+	}
+}
+
+func TestExecuteRequestRendersTaskGraph(t *testing.T) {
+	response := ExecuteRequest(context.Background(), newFakeTask(), Request{Op: "graph"})
+	text, ok := response.Result.(string)
+	if !response.OK || response.Error != nil || !ok {
+		t.Fatalf("graph response = %+v", response)
+	}
+	if !strings.Contains(text, "flowchart LR") || !strings.Contains(text, "source") {
+		t.Fatalf("graph:\n%s", text)
+	}
+
+	response = ExecuteRequest(context.Background(), newFakeTask(), Request{
+		Op:   "graph",
+		Args: map[string]string{"format": "dot"},
+	})
+	text, ok = response.Result.(string)
+	if !response.OK || response.Error != nil || !ok || !strings.Contains(text, "digraph") {
+		t.Fatalf("dot graph response = %+v text=%q", response, text)
+	}
+
+	direct, err := Execute(context.Background(), newFakeTask(), []string{"graph", "text"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	text, ok = direct.Result.(string)
+	if direct.Operation != "graph" || !ok || !strings.Contains(text, "pipeline fake") {
+		t.Fatalf("direct graph = %+v text=%q", direct, text)
+	}
+}
+
+func TestExecuteGraphRejectsInvalidFormat(t *testing.T) {
+	_, err := Execute(context.Background(), newFakeTask(), []string{"graph", "format=json"})
+	if err == nil {
+		t.Fatal("expected invalid graph format")
+	}
+	var structured *Error
+	if !errors.As(err, &structured) || structured.Code != "invalid_value" {
+		t.Fatalf("err = %v", err)
+	}
+}
+
 func TestExecuteRequestAppliesAttachRequest(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()

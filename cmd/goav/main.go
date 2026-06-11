@@ -117,6 +117,14 @@ func send(address string, request ctl.Request) error {
 		}
 		return fmt.Errorf("control request failed")
 	}
+	if rawText(request) {
+		text, ok := response.Result.(string)
+		if !ok {
+			return fmt.Errorf("control request returned %T, want text", response.Result)
+		}
+		fmt.Print(text)
+		return nil
+	}
 	return json.NewEncoder(os.Stdout).Encode(response.Result)
 }
 
@@ -124,6 +132,15 @@ func follows(request ctl.Request) bool {
 	switch request.Op {
 	case "events", "watch":
 		return request.Args["follow"] == "true"
+	default:
+		return false
+	}
+}
+
+func rawText(request ctl.Request) bool {
+	switch request.Op {
+	case "help", "graph", "flowchart":
+		return true
 	default:
 		return false
 	}
