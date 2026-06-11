@@ -173,6 +173,7 @@ func (d *Demuxer) ReadInto(ctx context.Context, out *format.ReadResult) error {
 
 	packet := out.Packet
 	packet.StreamID = d.stream.ID
+	packet.Type = d.stream.Type
 	packet.Payload.Bytes = packet.Payload.Bytes[:payloadSize]
 	packet.Payload.Ownership = av.BufferOwned
 	packet.PTS = av.Timestamp{

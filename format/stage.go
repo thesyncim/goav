@@ -269,6 +269,7 @@ func (s *DemuxSource) Start(ctx context.Context, emitter pipeline.Emitter) error
 		}
 		s.reanchorOnDiscontinuity(s.result.Events)
 		if s.result.PacketReady {
+			s.stampPacketType(s.result.Packet)
 			emit, finished := s.windowAdmits(s.result.Packet)
 			if finished {
 				return s.emitEndOfStream(ctx, emitter)
@@ -493,6 +494,22 @@ func (s *DemuxSource) emitEvents(ctx context.Context, emitter pipeline.Emitter, 
 		}
 	}
 	return nil
+}
+
+// stampPacketType backfills the packet's media kind from the declared stream
+// when the demuxer left it empty: av.Packet.Type is the typed hot-path field
+// consumers route on ("producers should set it"), and the pump owns the
+// stream table, so every adapter gets the contract for free.
+func (s *DemuxSource) stampPacketType(packet *av.Packet) {
+	if packet == nil || packet.Type != "" {
+		return
+	}
+	for i := range s.streams {
+		if s.streams[i].ID == packet.StreamID {
+			packet.Type = s.streams[i].Type
+			return
+		}
+	}
 }
 
 func (s *DemuxSource) emitPacket(ctx context.Context, emitter pipeline.Emitter, packet *av.Packet) error {

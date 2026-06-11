@@ -89,6 +89,10 @@ func (d *Demuxer) UnknownTracksElements() []UnknownElement {
 	return d.inner.UnknownTracksElements()
 }
 
+// ReadPacket reads the next packet into dst and validates WebM packet timing.
+// It keeps the matroska zero-allocation contract: the payload is written into
+// dst.Data's existing capacity, and a payload that does not fit is refused
+// with matroska.ErrPayloadTooSmall instead of growing the buffer.
 func (d *Demuxer) ReadPacket(dst *Packet) error {
 	if err := d.inner.ReadPacket(dst); err != nil {
 		return err

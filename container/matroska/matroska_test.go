@@ -12962,6 +12962,9 @@ func TestFormatMuxerDemuxerRoundTrip(t *testing.T) {
 		!bytes.Equal(result.Packet.Payload.Bytes, []byte{1, 2, 3}) {
 		t.Fatalf("result = %+v packet=%+v", result, result.Packet)
 	}
+	if result.Packet.Type != av.MediaVideo {
+		t.Fatalf("packet type = %q, want %q (producers must stamp the media kind)", result.Packet.Type, av.MediaVideo)
+	}
 }
 
 func TestFormatMuxerDemuxerSupportsVorbis(t *testing.T) {

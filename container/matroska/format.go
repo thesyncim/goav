@@ -37,6 +37,7 @@ type FormatDemuxer struct {
 type formatTrack struct {
 	streamID av.StreamID
 	trackID  uint32
+	media    av.MediaType
 }
 
 func Register(registry *format.SimpleRegistry) {
@@ -193,7 +194,7 @@ func (d *FormatDemuxer) Open(ctx context.Context, input format.Input, _ format.O
 	for i := range tracks {
 		stream := streamFromTrack(tracks[i], i)
 		d.streams = append(d.streams, stream)
-		d.tracks = append(d.tracks, formatTrack{streamID: stream.ID, trackID: tracks[i].ID})
+		d.tracks = append(d.tracks, formatTrack{streamID: stream.ID, trackID: tracks[i].ID, media: stream.Type})
 	}
 	d.closed = false
 	return nil
@@ -234,12 +235,13 @@ func (d *FormatDemuxer) ReadInto(ctx context.Context, out *format.ReadResult) er
 	if err := d.demuxer.ReadPacket(&packet); err != nil {
 		return err
 	}
-	streamID, ok := d.streamID(packet.TrackID)
+	track, ok := d.track(packet.TrackID)
 	if !ok {
 		return ErrUnknownTrack
 	}
 	out.Packet.Reset()
-	out.Packet.StreamID = streamID
+	out.Packet.StreamID = track.streamID
+	out.Packet.Type = track.media
 	out.Packet.Payload.Bytes = packet.Data
 	out.Packet.Payload.Ownership = av.BufferOwned
 	out.Packet.PTS = av.Timestamp{Value: packet.TimeNS, Base: av.TimeBase{Num: 1, Den: timeNS}}
@@ -289,13 +291,13 @@ func (d *FormatDemuxer) Close() error {
 	return nil
 }
 
-func (d *FormatDemuxer) streamID(trackID uint32) (av.StreamID, bool) {
+func (d *FormatDemuxer) track(trackID uint32) (formatTrack, bool) {
 	for i := range d.tracks {
 		if d.tracks[i].trackID == trackID {
-			return d.tracks[i].streamID, true
+			return d.tracks[i], true
 		}
 	}
-	return "", false
+	return formatTrack{}, false
 }
 
 func trackFromAVStream(stream av.Stream, fallbackID uint32) (Track, error) {

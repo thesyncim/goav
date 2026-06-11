@@ -2010,6 +2010,12 @@ func (d *Demuxer) SeekEntries() []SeekEntry {
 	return entries
 }
 
+// ReadPacket reads the next packet into dst. The read is zero-allocation by
+// contract: the payload is written into dst.Data's existing capacity (Reset
+// keeps the backing array), so the caller sizes dst.Data once — for example
+// make([]byte, 0, maxPacketSize) — and a payload that does not fit is refused
+// with ErrPayloadTooSmall instead of growing the buffer. io.EOF reports the
+// end of the media.
 func (d *Demuxer) ReadPacket(dst *Packet) error {
 	if d == nil || d.reader == nil {
 		return ErrNilReader

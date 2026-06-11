@@ -721,6 +721,14 @@ err = task.Control(ctx, goav.Rate(2.0))            // pace change (positive rate
 err = task.Control(ctx, goav.Segment(10*time.Second, 20*time.Second))
 ```
 
+The encoder-path controls (`Keyframe`, `SetBitrate`, `SelectActive`) ride
+per-node queues, so they need a buffered task graph. `Select` builds its graph
+buffered for exactly this reason — `SelectActive` works out of the box — and
+plain chains opt in with `goav.WithBufferPolicy(...)` on the runtime; on the
+default unbuffered graph `Control` refuses them with
+`goav.ErrControlUnsupported` instead of dropping them silently. The time-axis
+controls reach sources directly and work on every graph.
+
 `goav.Seek`, `goav.Rate`, and `goav.Segment` are the time-axis controls; all
 three broadcast to every source, and a source implementing
 `pipeline.ControllableSource` honours them. A seek emits `av.EventDiscontinuity`

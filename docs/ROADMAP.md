@@ -88,6 +88,15 @@ Exists and is tested, but numbers or semantics are expected to move
   decoder output buffers are mutable and refuse to queue by reference).
   Select already pins a buffered graph for control delivery; doing the same
   for Mix/Composite needs an answer for decode-arm copy budgets first.
+- **`Keyframe`/`SetBitrate` need an explicitly buffered runtime** — untargeted
+  encoder controls ride node queues (`pipeline.NodeInjector`), which only the
+  buffered runner implements, so on the default direct graph `task.Control`
+  returns `ErrControlUnsupported` for them (the time-axis controls reach
+  sources through `InjectSource` and work everywhere). `Select` pins a
+  buffered graph for exactly this, so `SelectActive` works out of the box;
+  plain encode chains need `WithBufferPolicy` plus copy budgets, same as the
+  join-arm entry above. Fix direction: pin a buffered graph whenever the
+  recipe declares encoders, once decode-output copy budgets have an answer.
 - **No shape solving downstream of a join** — the solver runs per ARM
   (`solveArmConversion`: arms converge on the first arm's format), but the
   joined stream's own `.Encode(...)` and `.Branches(...)` paths lower without
