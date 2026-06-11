@@ -21,7 +21,7 @@ Recipes: From, stream selection, operations, taps, branches, destinations
   |
 Intent graph: inputs, selected streams, ordered operations, destinations, policies
   |
-MediaPlan planner passes
+Work-plan planner passes
   |
 Pipeline graph
   |
@@ -43,12 +43,12 @@ One media work planner validates, probes, resolves streams and formats/codecs,
 chooses packet-copy or decode branches, inserts demux or depacketize
 boundaries, inserts select/decode/transform/stage/tap/encode operations, groups
 branches by destinations, assigns routes and buffer policy, then emits the
-`pipeline.Spec` used to build the runnable graph. `MediaPlan` is the
-planner/report IR; `WorkPlan` is the executable cold-path boundary that owns
-planned nodes, edges, ordered operations, report inputs, streams, taps,
-branches, destinations, decisions, diagnostics, plus the work-plan lowerers
-used to build the runtime graph. Described graphs and execution graphs must
-stay equivalent across work-plan lowerers.
+`pipeline.Spec` used to build the runnable graph. `WorkPlan` is the executable
+cold-path boundary — the one planner/report IR — owning planned nodes, edges,
+ordered operations, report inputs, streams, taps, branches, destinations,
+decisions, diagnostics, plus the work-plan lowerers used to build the runtime
+graph. Described graphs and execution graphs must stay equivalent across
+work-plan lowerers.
 
 The GoAV-native planning layer is:
 
@@ -63,10 +63,10 @@ owns ordered operations, shape transitions, taps, destinations, branch buffer
 policy, detach policy, and lifecycle expectations. `WorkPatch` uses the same
 branch plan as initial build, anchored downstream of existing typed taps. This
 keeps special workflow compilers out of normal composition and keeps runtime
-attach from becoming a separate graph language. `runtimeBranch` and `mediaPlan`
-are collapsed onto the work-plan model and the per-workflow builder compilers
-are deleted; the remaining internal debt (the `streamIntent` normalization
-layer) is tracked in `docs/NORTH_STAR.md`.
+attach from becoming a separate graph language. The `runtimeBranch` and
+`mediaPlan` parallel IRs are deleted — collapsed onto the work-plan model —
+along with the per-workflow builder compilers; the remaining internal debt
+(the `streamIntent` normalization layer) is tracked in `docs/NORTH_STAR.md`.
 
 Inputs and destinations open through one seam per side: every input kind
 (file, URI, RTP, WebRTC, custom source) resolves through one source opener, and
@@ -237,7 +237,7 @@ depacketizers, loss/timestamp tracking, and stream-scoped EOS.
 
 ## Multi-output media planning
 
-Branch composition lowers into one `MediaPlan` branch shape: input ref, stream
+Branch composition lowers into one work-plan branch shape: input ref, stream
 selector, operation sequence, destinations, and mux groups. Branches selecting
 the same stream share upstream demux, selection, and decode; operations
 declared before `.Branches(...)` form a shared prefix. Naming a point with

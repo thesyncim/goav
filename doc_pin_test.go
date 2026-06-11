@@ -4,44 +4,100 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"io/fs"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 )
 
-// docPinPackages are the public packages whose exported surface must stay
-// documented. Adapter and container packages are implementation details and
-// are not pinned here.
-var docPinPackages = []string{
-	".",
-	"av",
-	"codec",
-	"errcode",
-	"expert",
-	"filter",
-	"flow",
-	"format",
-	"goavtest",
-	"graphrender",
-	"lifecycle",
-	"pipeline",
-	"plan",
-	"provider",
-	"rtpav",
-	"shape",
-	"snapshot",
-	"webrtcav",
+// docPinImplementationSubtrees are the only public package subtrees outside
+// the documentation pin: concrete codec/container implementations behind the
+// codec/format seams, registered by Default()/WithStd* and explicitly outside
+// the governed surface (docs/API_SURFACE.md). Everything else the module
+// discovery finds is doc-pinned automatically — there is no package list to
+// forget to extend.
+var docPinImplementationSubtrees = []string{"adapters", "container"}
+
+// docPinGoverned reports whether a discovered package directory falls under
+// the documentation pin (true for everything outside the implementation
+// subtrees).
+func docPinGoverned(dir string) bool {
+	for _, subtree := range docPinImplementationSubtrees {
+		if dir == subtree || strings.HasPrefix(dir, subtree+"/") {
+			return false
+		}
+	}
+	return true
+}
+
+// modulePublicPackages discovers every Go package directory in this module by
+// walking from the module root: hidden directories, testdata, internal trees,
+// and nested modules (their own go.mod — examples/) are skipped, test-only
+// directories (no non-test .go files — adapterproof) drop out naturally, and
+// every remaining directory with Go sources is returned. The doc and surface
+// pins iterate this list instead of a hardcoded one, so a package added
+// tomorrow is governed the day it lands — a manual list once shipped
+// graphrender ungoverned and failed silently.
+func modulePublicPackages(t *testing.T) []string {
+	t.Helper()
+	if _, err := os.Stat("go.mod"); err != nil {
+		t.Fatalf("package discovery must run from the module root: %v", err)
+	}
+	var dirs []string
+	err := filepath.WalkDir(".", func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if !d.IsDir() {
+			return nil
+		}
+		if path != "." {
+			name := d.Name()
+			if strings.HasPrefix(name, ".") || name == "testdata" || name == "internal" {
+				return fs.SkipDir
+			}
+			if _, err := os.Stat(filepath.Join(path, "go.mod")); err == nil {
+				return fs.SkipDir // a nested module governs itself
+			}
+		}
+		entries, err := os.ReadDir(path)
+		if err != nil {
+			return err
+		}
+		for _, entry := range entries {
+			name := entry.Name()
+			if entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+				continue
+			}
+			dirs = append(dirs, filepath.ToSlash(path))
+			break
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sort.Strings(dirs)
+	if len(dirs) == 0 || dirs[0] != "." {
+		t.Fatalf("package discovery is broken: root package not found in %v", dirs)
+	}
+	return dirs
 }
 
 // TestExportedSymbolsAreDocumented enforces godoc completeness at the source
-// level: every public package carries a package comment, and every exported
-// package-level symbol — types, funcs, methods on exported types, consts, and
-// vars — carries a doc comment (its own, its spec group's, or its
+// level: every discovered public package carries a package comment, and every
+// exported package-level symbol — types, funcs, methods on exported types,
+// consts, and vars — carries a doc comment (its own, its spec group's, or its
 // declaration group's). The contract is what makes the pkg.go.dev surface
-// complete; this pin makes silent regressions impossible.
+// complete; dynamic discovery makes silent regressions impossible even for
+// packages added later.
 func TestExportedSymbolsAreDocumented(t *testing.T) {
-	for _, dir := range docPinPackages {
+	for _, dir := range modulePublicPackages(t) {
+		if !docPinGoverned(dir) {
+			continue
+		}
 		files := parsePackageDir(t, dir)
 		if len(files) == 0 {
 			t.Errorf("%s: no Go source files found", dir)

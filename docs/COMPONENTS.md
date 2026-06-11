@@ -63,9 +63,9 @@ reuse structs instead of allocating.
 Pipeline — stable: `pipeline.Message`, `Source`, `Stage`, `Sink`, `Emitter`,
 `Route` (optional stream/event scoping), and one-to-many fanout routing.
 Experimental: dynamic graph mutation (closed graphs reject additions with
-`pipeline.ErrClosed`), `MediaPlan` (recipe intent → composable branch IR with
-ordered-operation shape validation), `plan.Report` (`Job.Explain(ctx)` structured
-explanation), runtime attach (grouped `Task.Attach` from typed taps with
+`pipeline.ErrClosed`), the work-plan compile (recipe intent → one composable
+branch IR with ordered-operation shape validation), `plan.Report`
+(`Job.Explain(ctx)` structured explanation), runtime attach (grouped `Task.Attach` from typed taps with
 preflight, rollback, branch-owned stats, and subtree detach; `Task.Taps()` lists
 stable outlets), buffer policy, and graph stats (`Task.Stats()`,
 `Task.Snapshot()` with spec, stats, taps, and runtime branch states).

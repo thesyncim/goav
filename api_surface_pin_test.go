@@ -12,10 +12,11 @@ import (
 // surfacePinPackages are the packages whose exported package-level identifiers
 // are governed by testdata/api_surface.txt: the root grammar plus the
 // near-frozen vocabulary packages (errcode, lifecycle, plan, snapshot) and the
-// diagnostics renderer (graphrender). The extension-seam packages (av, codec,
-// format, filter, pipeline, flow, shape, rtpav, webrtcav, goavtest) grow with
-// capabilities and are governed by the doc pin instead. See
-// docs/API_SURFACE.md for the contract.
+// diagnostics renderer (graphrender). The extension-seam packages grow with
+// capabilities and are governed by the doc pin instead
+// (surfaceSeamPackages); TestEveryPublicPackageIsGoverned asserts the two
+// lists cover everything the module discovery finds. See docs/API_SURFACE.md
+// for the contract.
 var surfacePinPackages = []struct {
 	dir    string
 	prefix string
@@ -26,6 +27,69 @@ var surfacePinPackages = []struct {
 	{dir: "lifecycle", prefix: "lifecycle"},
 	{dir: "plan", prefix: "plan"},
 	{dir: "snapshot", prefix: "snapshot"},
+}
+
+// surfaceSeamPackages are the extension-seam packages governed by the doc pin
+// instead of the approved list: their surfaces grow with capabilities (new
+// codecs, events, options), so freezing them would turn every capability into
+// surface churn. They still cannot regress silently — every exported symbol
+// must be documented (TestExportedSymbolsAreDocumented).
+var surfaceSeamPackages = []string{
+	"av",
+	"codec",
+	"expert",
+	"filter",
+	"flow",
+	"format",
+	"goavtest",
+	"pipeline",
+	"provider",
+	"rtpav",
+	"shape",
+	"webrtcav",
+}
+
+// TestEveryPublicPackageIsGoverned closes the governance gap hardcoded lists
+// leave open: it discovers every package in the module dynamically
+// (modulePublicPackages) and requires each one to be classified — frozen
+// surface (surfacePinPackages, also doc-pinned), extension seam
+// (surfaceSeamPackages, doc-pinned), or implementation subtree behind the
+// codec/format seams (docPinImplementationSubtrees). A package added tomorrow
+// fails this test until a reviewer places it; a classified package that
+// disappears fails until the stale entry is removed.
+func TestEveryPublicPackageIsGoverned(t *testing.T) {
+	frozen := make(map[string]bool, len(surfacePinPackages))
+	for _, pin := range surfacePinPackages {
+		frozen[pin.dir] = true
+	}
+	seam := make(map[string]bool, len(surfaceSeamPackages))
+	for _, dir := range surfaceSeamPackages {
+		seam[dir] = true
+	}
+	discovered := make(map[string]bool)
+	for _, dir := range modulePublicPackages(t) {
+		discovered[dir] = true
+		switch {
+		case !docPinGoverned(dir):
+			if frozen[dir] || seam[dir] {
+				t.Errorf("%s is an implementation subtree package and must not also be surface-classified", dir)
+			}
+		case frozen[dir] && seam[dir]:
+			t.Errorf("%s is classified both frozen and seam; pick one", dir)
+		case !frozen[dir] && !seam[dir]:
+			t.Errorf("%s is a public package with no governance: add it to surfacePinPackages (frozen, approved-list pinned) or surfaceSeamPackages (doc-pin governed)", dir)
+		}
+	}
+	for _, pin := range surfacePinPackages {
+		if !discovered[pin.dir] {
+			t.Errorf("surfacePinPackages lists %s but no such package exists; remove the stale entry", pin.dir)
+		}
+	}
+	for _, dir := range surfaceSeamPackages {
+		if !discovered[dir] {
+			t.Errorf("surfaceSeamPackages lists %s but no such package exists; remove the stale entry", dir)
+		}
+	}
 }
 
 // TestPublicSurfaceIsApproved makes silent API growth impossible: it extracts

@@ -25,10 +25,11 @@ reusing one handle groups branches into one mux/sink group
 ## v0 STABLE
 
 Stable means: pinned against silent change, documented, and test-enforced —
-not "frozen forever". The governed surface is 312 approved identifiers
-(`api_surface_pin_test.go` + `testdata/api_surface.txt`: 124 root, 143
-`errcode`, 28 `plan`, 13 `lifecycle`, 4 `snapshot`), every exported symbol
-documented (`doc_pin_test.go`), tiered in `docs/API_SURFACE.md`:
+not "frozen forever". The governed surface is 314 approved identifiers
+(`api_surface_pin_test.go` + `testdata/api_surface.txt`: 124 root, 142
+`errcode`, 28 `plan`, 13 `lifecycle`, 4 `snapshot`, 3 `graphrender`), every
+exported symbol documented (`doc_pin_test.go`), tiered in
+`docs/API_SURFACE.md`:
 
 - **Tier A — the grammar.** `From`/stream selection/operations
   (`Decode`/`Copy`/`Resize`/`Resample`/`Do`/`Encode`)/`Shape`/`Auto`/
@@ -158,7 +159,9 @@ Exists and is tested, but numbers or semantics are expected to move
 The checklist that gates the tag; each item names its current evidence.
 
 - [x] **Approved API surface** — `api_surface_pin_test.go` +
-  `testdata/api_surface.txt` (326 identifiers, both-direction pin).
+  `testdata/api_surface.txt` (both-direction pin), with dynamic package
+  discovery asserting every module package is governed
+  (`TestEveryPublicPackageIsGoverned`).
 - [x] **Compile-tested examples** — 13 `Example*` functions run under
   `go test` (`example_test.go`); the `examples/webrtc-runtime-ladder` module
   builds and tests in CI.
@@ -180,7 +183,9 @@ The checklist that gates the tag; each item names its current evidence.
   are error sentinels, immutable profile tables, and atomic ID counters.
   No pin test exists for this — the audit is repeated at review.
 - [x] **No undocumented exported symbols** — `doc_pin_test.go` across every
-  public package.
+  discovered public package (dynamic module walk; `adapters/*` and
+  `container/*` sit behind the codec/format seams and are excluded by the
+  decision recorded in `docs/API_SURFACE.md`).
 - [ ] **Release decision** — confirm the `go 1.26.2` directive in `go.mod`
   is the intended minimum supported Go, write the tag's compatibility note,
   and cut v1. Not done; the only open item is a maintainer call, not code.

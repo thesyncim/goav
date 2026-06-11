@@ -1,37 +1,34 @@
 # goav
 
-`goav` is a pure-Go realtime media runtime. The public contract is small:
+`goav` is a realtime media runtime in pure Go. Describe the media work once —
+streams, operations, branches, destinations — and compile it into an
+inspectable, controllable graph. No cgo, no FFmpeg or GStreamer process:
+`CGO_ENABLED=0` builds one static binary.
 
-```text
-describe the media work once, then compile it into an inspectable graph
+```go
+return goav.From(input).
+    Video().
+    Decode().
+    Resize(1280, 720).
+    Encode(codec.VP9(codec.Bitrate(2_000_000))).
+    To(goav.File("preview.ivf", preview)).
+    Run(ctx)
 ```
 
-The front door is `From(input)`. Simple jobs stay simple; complex jobs are built
-from the same few concepts — and a running task stays open to inspection, late
-attachment, and live control.
+Every job reads this way: `From(input)` starts the chain, `.Audio()`/`.Video()`
+select streams, operations are chain methods, `.To(destination)` ends it. The
+same grammar scales to
+fanout, N-to-1 mixing, attaching to a running task, and live control — and
+every chain is validated before any resource opens, so a refusal is a
+structured error naming the failing operation and the exact fix.
 
-## Vocabulary
+```sh
+go get github.com/thesyncim/goav
+```
 
-- `Input`: where media comes from (file, URI, custom source, or any source
-  provider via `goav.Input(...)` — `rtpav.Receive` for RTP, `webrtcav.Track`
-  for WebRTC, or an external transport package).
-- `Stream`: which media stream is selected (`.Audio()`, `.Video()`).
-- `Tap`: a named attach point (`Tap`, or `FrameTap`/`PacketTap` to assert the domain).
-- `Branch`: downstream operations from a stream point or tap.
-- `Destination`: a file, URI, writer (including transactional object uploads),
-  media sink, or shared mux/sink group.
-- `Flow`: a reusable operation sequence.
-- `Task`: a running graph with attach/detach, events, snapshots, and live control.
-
-Operations are not a separate noun: they are methods on the chain —
-`.Decode()`, `.Copy()`, `.Resize()`, `.Resample()`, `.Do(stage)`, `.Encode(codec)`.
-
-Every near-miss name is a deliberate distinction — `Input` vs `Source` vs
-`provider.Source`, `Tap` vs `FrameTap`/`PacketTap`, `Events` vs `Watch` — and
-the full naming contract lives in [docs/API_SURFACE.md](docs/API_SURFACE.md)
-alongside the pinned surface. Stability tiers and the road to v1 are
-[docs/ROADMAP.md](docs/ROADMAP.md); how goav relates to GStreamer, stated
-honestly, is [docs/GSTREAMER_ALTERNATIVE.md](docs/GSTREAMER_ALTERNATIVE.md).
+How goav relates to GStreamer, stated honestly, is
+[docs/GSTREAMER_ALTERNATIVE.md](docs/GSTREAMER_ALTERNATIVE.md); stability
+tiers and the road to v1 are [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ## 30-Second Examples
 
@@ -56,9 +53,6 @@ return goav.From(goav.FileInput("input.ivf", in)).
     Run(ctx)
 ```
 
-Reuse the same destination value when several branches should feed one mux or
-sink group.
-
 Decode one WebRTC audio track to frames:
 
 ```go
@@ -69,56 +63,40 @@ return goav.From(goav.Input(webrtcav.Track(track))).
     Run(ctx)
 ```
 
-Resize and encode one video stream:
-
-```go
-return goav.From(input).
-    Video().
-    Decode().
-    Resize(1280, 720).
-    Encode(codec.VP9(codec.Bitrate(2_000_000))).
-    To(goav.File("preview.ivf", preview)).
-    Run(ctx)
-```
-
 `goav.Default()` bundles the standard adapters: IVF, Annex B, Matroska, and WebM
 containers; Opus, VP8, VP9, AV1, and H264 codec adapters; resize and resample
 filters. Other containers need a registered adapter.
+
+## Vocabulary
+
+Seven nouns cover everything:
+
+- `Input`: where media comes from — file, URI, custom source, or any transport
+  provider via `goav.Input(...)` (`rtpav.Receive`, `webrtcav.Track`, or an
+  external package).
+- `Stream`: which media stream is selected (`.Audio()`, `.Video()`).
+- `Tap`: a named attach point (`Tap`, or `FrameTap`/`PacketTap` to assert the domain).
+- `Branch`: downstream operations from a stream point or tap.
+- `Destination`: a file, URI, writer (including transactional object uploads),
+  media sink, or shared mux/sink group.
+- `Flow`: a reusable operation sequence.
+- `Task`: a running graph with attach/detach, events, snapshots, and live control.
+
+Operations are not a separate noun: they are methods on the chain —
+`.Decode()`, `.Copy()`, `.Resize()`, `.Resample()`, `.Do(stage)`, `.Encode(codec)`.
+Every near-miss name is a deliberate distinction — `Input` vs `Source` vs
+`provider.Source`, `Events` vs `Watch` — and the full naming contract lives in
+[docs/API_SURFACE.md](docs/API_SURFACE.md) alongside the pinned surface.
 
 ## Composition Patterns
 
 ### Branches And Destinations
 
 Use branches when one selected stream should become multiple downstream
-destinations. Destinations are typed values, so normal recipes do not route by
-string labels. Reusing one destination value creates a mux group or sink group.
-
-```go
-decoded := goav.Tap("video.decoded") // domain inferred; FrameTap/PacketTap assert it
-
-archive := goav.File("archive.ivf", archiveFile)
-preview := goav.File("preview.ivf", previewFile)
-
-return goav.From(input).
-    Video().
-    Decode().
-    Tap(decoded).
-    Branches(
-        goav.Branch("archive").
-            Resize(1920, 1080).
-            Encode(codec.VP9(codec.Bitrate(4_000_000))).
-            To(archive),
-        goav.Branch("preview").
-            Resize(640, 360).
-            Do(frameMeter).
-            Encode(codec.VP8(codec.Bitrate(600_000))).
-            To(preview),
-    ).
-    Run(ctx)
-```
-
-Several branches sharing one destination form a mux group — the natural WebM
-shape:
+destinations. Destinations are typed values, so recipes never route by string
+labels — and reusing one value is what groups branches into a shared mux or
+sink group. Reuse the same destination value across branches — even across an
+audio and a video chain — and they feed one container, the natural WebM shape:
 
 ```go
 web := goav.File("web.webm", webFile)
@@ -143,7 +121,9 @@ return goav.From(goav.FileInput("source.webm", in)).
     Run(ctx)
 ```
 
-A branch ending in a sink stays in frame domain — no encode required.
+Distinct destination values keep branches independent — one decode fanning out
+to several files, previews, or sinks. A branch ending in a sink stays in frame
+domain — no encode required.
 
 ### Shape Errors
 
@@ -154,47 +134,18 @@ consume packet-domain media; use `goav.Sink(...)` when a branch should end as
 frames. A violation fails `Explain`, `Build`, and `Attach` alike with a
 structured `BuildError` carrying the failing operation, the expected and actual
 shapes, and concrete fixes — encode before a byte destination, copy from a
-packet-domain point, or end in a sink. `Shape(...)` annotates the current media
-point; it is not an escape hatch around operation contracts.
+packet-domain point, or end in a sink.
 
 That structure is the contract for EVERY goav error, not just shape refusals:
-each `BuildError` carries a typed `errcode.Code` from the catalog in the
-`errcode` package, the failing operation and node, machine-readable details, and at
-least one concrete fix when the refusal is user-fixable. Match codes with
-`errors.As` and sentinels (`goav.ErrUnsupportedBuild`, ...) with `errors.Is` —
-see [docs/ERRORS.md](docs/ERRORS.md).
+each `BuildError` carries a typed `errcode.Code` from the `errcode` catalog,
+the failing operation and node, machine-readable details, and at least one
+concrete fix when the refusal is user-fixable. Match codes with `errors.As`
+and sentinels (`goav.ErrUnsupportedBuild`, ...) with `errors.Is` — see
+[docs/ERRORS.md](docs/ERRORS.md).
 
 Format mismatches a conversion would fix can be solved instead of refused:
-`.Auto(...)` opts the chain into the shape solver with an explicit policy. When
-a downstream operation pins format facts the current media does not satisfy —
-an Opus encoder wants 48kHz but the source is 44.1kHz — the planner inserts the
-matching conversion from the runtime's filter registry as a real planned
-operation, visible in `Describe` and reported by `Explain` as a diagnostic such
-as `inserted resample 44.1kHz→48kHz before encode-opus (AllowResample)`:
-
-```go
-return goav.From(mic).
-    Audio().
-    Auto(shape.AllowResample()).
-    Encode(codec.Opus(codec.Bitrate(96_000))).
-    To(goav.File("voice.webm", out)).
-    Run(ctx)
-```
-
-Nothing is inserted without a policy: `shape.AllowResample()` permits
-sample-rate and channel conversion, `shape.AllowResize()` video geometry, and
-`shape.AllowConvert()` pixel/sample formats. A needed conversion the policy
-does not allow fails before any resource opens with the exact policy to add,
-and join arms (Mix) keep their implicit always-on arm policy — mismatched arms
-auto-resample with zero opt-in.
-
-`.Require(...)` makes the contract explicit at a chosen point: the stream MUST
-satisfy the given shape there, or the build fails with
-`shape_requirement_unmet` carrying the actual and required shapes and the
-exact fix — including the `.Auto(...)` policy to add when a conversion could
-satisfy it. Under an active policy that covers the delta, the planner inserts
-the conversion before the assertion and the requirement holds by construction.
-It works on stream chains, branches, and flows, and lowers to no runtime node:
+`.Auto(...)` opts the chain into the shape solver with an explicit policy, and
+`.Require(...)` asserts the resulting contract at a chosen point:
 
 ```go
 return goav.From(mic).
@@ -206,15 +157,27 @@ return goav.From(mic).
     Run(ctx)
 ```
 
-`.Prefer(...)` is the soft twin: where the solver has a genuinely open choice —
-a conversion-target fact the downstream operation leaves unpinned, or several
-registered adapters that could perform the conversion — the preference biases
-it. `.Prefer(shape.New(shape.Audio(0, 0, "f32")))` steers an open sample
-format; `.Prefer(shape.New(shape.Realtime(true)))` resolves an otherwise
-ambiguous adapter choice toward the realtime-capable candidate. A preference
-never fails a build: one the policy cannot cover or no adapter can perform is
-dropped, and `Explain` reports both outcomes as `shape_preference_applied` /
-`shape_preference_ignored` diagnostics.
+When a downstream operation pins format facts the current media does not
+satisfy — the Opus encoder wants 48kHz but the mic is 44.1kHz — the planner
+inserts the conversion as a real planned operation, visible in `Describe` and
+reported by `Explain` (`inserted resample 44.1kHz→48kHz before encode-opus
+(AllowResample)`). Nothing is inserted without a policy — `shape.AllowResample()`
+permits sample-rate and channel conversion, `shape.AllowResize()` video
+geometry, `shape.AllowConvert()` pixel/sample formats — and a needed conversion
+the policy does not allow fails before any resource opens, naming the exact
+policy to add. `.Require(...)` makes the contract explicit: the stream MUST
+satisfy the given shape there, or the build fails with `shape_requirement_unmet`
+carrying the actual and required shapes and the fix; it works on chains,
+branches, and flows, and lowers to no runtime node. (`Shape(...)` merely
+annotates the current media point; it is not an escape hatch around operation
+contracts.)
+
+`.Prefer(...)` is the soft twin: where the solver has a genuinely open choice,
+the preference biases it — `.Prefer(shape.New(shape.Audio(0, 0, "f32")))`
+steers an open sample format, `.Prefer(shape.New(shape.Realtime(true)))` picks
+the realtime-capable adapter. A preference never fails a build: one that cannot
+be honored is dropped, and `Explain` reports both outcomes
+(`shape_preference_applied` / `shape_preference_ignored`).
 
 ### Typed Taps
 
@@ -303,10 +266,6 @@ task, err := goav.From(input).
             To(web),
     ).
     Build(ctx)
-if err != nil {
-    return err
-}
-
 go func() { _ = task.Run(ctx) }()
 
 shots, err := task.Attach(ctx,
@@ -315,9 +274,7 @@ shots, err := task.Attach(ctx,
         Resize(320, 180).
         To(goav.Sink(goav.SinkFunc("screenshots", collectScreenshot))),
 )
-if err != nil {
-    return err
-}
+// ... later:
 return task.Detach(ctx, shots)
 ```
 
@@ -336,12 +293,10 @@ group, err := task.Attach(ctx,
 ```
 
 `Task.Taps()` lists available attach points. One `Attach` call adds several
-runtime branches atomically; later branches in the call can use taps published
-by earlier ones, and branches can share one typed sink or mux destination value.
-Reuse the same destination value inside a grouped attach to form one late
-recording or diagnostic group. A grouped attach rolls back fully if any branch
-fails; detaching a parent also removes dependent branches anchored from its
-taps.
+runtime branches atomically: later branches in the call can use taps published
+by earlier ones, branches can share one destination value (one late recording
+or diagnostic group), and a failure rolls the whole group back. Detaching a
+parent also removes dependent branches anchored from its taps.
 
 ### Live Rebranch
 
@@ -365,20 +320,18 @@ Until the next keyframe the old branch keeps delivering and the replacement
 sheds media (events still pass), so the new destination starts at a decodable
 sync point and the old branch detaches at that exact boundary. `DrainOldBranch`
 and `AbortOldBranch` choose whether the replaced branch's destinations commit
-or abort on detach; when attaching the replacements fails, the old branch stays
-intact (`KeepOldOnFailure` spells the default). `Pause`/`Resume` stop and
-restore delivery to one branch without touching the source or its siblings.
+or abort; on attach failure the old branch stays intact (`KeepOldOnFailure`
+spells the default). `Pause`/`Resume` stop and restore delivery to one branch
+without touching the source or its siblings.
 
 ### Dynamic Stream Discovery
 
 A source that discovers a stream mid-run announces it with
-`av.EventStreamAdded` carrying the full `av.Stream` on the event's typed
-`Stream` field (custom sources just push the event; RTP/WebRTC receivers
-forward it from their receiver). `OnStream` declares the reaction in the
-recipe: when a matching stream appears, the branches attach to it at runtime —
-anchored on the source node, routed by the discovered stream's id — through
-the same planner, atomic apply, and rollback as `Task.Attach`, with no source
-rebuild:
+`av.EventStreamAdded` carrying the full `av.Stream` (custom sources just push
+the event; RTP/WebRTC receivers forward it). `OnStream` declares the reaction
+in the recipe: when a matching stream appears, the branches attach to it at
+runtime through the same planner, atomic apply, and rollback as `Task.Attach`,
+with no source rebuild:
 
 ```go
 task, err := goav.From(input).
@@ -389,20 +342,16 @@ task, err := goav.From(input).
     Build(ctx)
 ```
 
-Branch names are templated per matched stream (`record-<stream id>`), so
-repeated discoveries stay unique. `MatchMedia`, `MatchCodec`, `MatchStreamID`,
-and `MatchStream(fn)` select streams; several rules may match one stream and
-each attaches independently. On `av.EventStreamRemoved` the rule's branches
-for that stream detach with drain semantics — their destinations commit (a
-transactional destination's `Commit` runs) while the task keeps running.
-Rules are visible in `Explain` as `stream_rule` decisions before any stream
-appears, and `.Auto(shape.Allow...)` policies on rule branches solve
-conversions at attach time exactly like planned chains. Failures are never
+`MatchMedia`, `MatchCodec`, `MatchStreamID`, and `MatchStream(fn)` select
+streams; several rules may match one stream and each attaches independently,
+with branch names templated per matched stream (`record-<stream id>`). On
+`av.EventStreamRemoved` the rule's branches detach with drain semantics — their
+destinations commit — while the task keeps running. Rules appear in `Explain`
+as `stream_rule` decisions before any stream exists, and `.Auto(shape.Allow...)`
+policies on rule branches solve conversions at attach time. Failures are never
 silent: a late branch that cannot attach rolls back fully and surfaces
-`av.EventAttachError` on `Watch`/`Events`. A discovered stream matching no
-rule just surfaces its event. Because the task watches its own events,
-`Events()` on a rule-bearing task returns an independent subscription per
-call (the documented remedy once `Watch` is in use).
+`av.EventAttachError` on `Watch`/`Events`; a discovered stream matching no rule
+just surfaces its event.
 
 ## Flows
 
@@ -423,17 +372,6 @@ archiveOut := goav.File("archive.ogg", archiveFile)
 
 return goav.From(goav.Input(webrtcav.Track(audio))).
     Audio().
-    Apply(voice).
-    To(voiceOut).
-    Run(ctx)
-```
-
-Use a direct stream when one reusable flow feeds one destination. Branch when the
-same media point needs several downstream operation sequences:
-
-```go
-return goav.From(goav.Input(webrtcav.Track(audio))).
-    Audio().
     Decode().
     Branches(
         goav.Branch("voice").Apply(voice).To(voiceOut),
@@ -442,7 +380,10 @@ return goav.From(goav.Input(webrtcav.Track(audio))).
     Run(ctx)
 ```
 
-Flows also apply to runtime branches attached from taps.
+Use a direct stream when one reusable flow feeds one destination
+(`.Audio().Apply(voice).To(voiceOut)`); branch when the same media point needs
+several downstream operation sequences. Flows also apply to runtime branches
+attached from taps.
 
 ## Custom Components
 
@@ -466,11 +407,7 @@ return goav.From(input).
 
 Use `Source` when your application already owns media production. Declare the
 shape (`shape.Packet`, `shape.Frame`, or `shape.Event`) and push through
-`goav.SourcePush`. Every push returns a `PushResult`: `Accepted` means a
-downstream target queued the message, `Dropped` means a dropping buffer policy
-deliberately shed it — normal realtime behavior reported with a nil error, so
-every push is accounted for. The error keeps its meaning: flow control
-(`ErrBackpressure`) or fatal.
+`goav.SourcePush`:
 
 ```go
 input := goav.Source("generated",
@@ -494,27 +431,14 @@ return goav.From(input).
     Run(ctx)
 ```
 
-Frame sources use the same constructor with `shape.Frame` and skip decode:
-
-```go
-frames := goav.Source("pcm",
-    shape.Frame(av.MediaAudio,
-        shape.Audio(48_000, codec.Stereo, av.SampleFormatS16),
-    ),
-    func(ctx context.Context, push goav.SourcePush) error {
-        for frame := range decoded {
-            if _, err := push.Frame(&frame); err != nil {
-                return err
-            }
-        }
-        return push.EOS()
-    },
-)
-```
-
-Event-only sources use `shape.Event()` and `push.Event(...)`, routing directly
-to sinks. Custom sources participate in the same stream, branch, destination,
-explain, and runtime graph path as built-in inputs.
+Every push returns a `PushResult`: `Accepted` means a downstream target queued
+the message, `Dropped` means a dropping buffer policy deliberately shed it —
+normal realtime behavior with a nil error, so every push is accounted for; the
+error keeps its meaning, flow control (`ErrBackpressure`) or fatal. Frame
+sources use `shape.Frame` and `push.Frame(...)` and skip decode; event-only
+sources use `shape.Event()` and `push.Event(...)`, routing directly to sinks.
+Custom sources participate in the same stream, branch, destination, explain,
+and runtime graph path as built-in inputs.
 
 ## Source Providers
 
@@ -543,16 +467,15 @@ per-stream decode bounds) are discovered by type assertion.
 
 One decision path covers every byte destination:
 
-- `goav.File(name, writer)` — you already hold an open `io.Writer`. When the
-  writer also implements `io.Closer` it is closed exactly once when the
-  destination finalizes; a plain writer stays yours to close.
+- `goav.File(name, writer)` — you already hold an open `io.Writer` (closed
+  exactly once iff it implements `io.Closer`).
 - `goav.URI(uri)` — a registered format adapter opens the destination.
-- `goav.Writer(name, open)` — goav opens the writer on demand: the callback
-  runs after the format and streams are selected, so uploaders see the final
-  destination metadata (`provider.Info`). The writer closes exactly
-  once. Return a `provider.TransactionalWriter` when the upload has an
-  explicit commit boundary, such as a multipart object-store upload: it
-  commits after successful runs or drained detach and aborts on failure.
+- `goav.Writer(name, open)` — goav opens the writer on demand, after format
+  and streams are selected, so uploaders see the final destination metadata
+  (`provider.Info`); it closes exactly once. Return a
+  `provider.TransactionalWriter` when the upload has an explicit commit
+  boundary (a multipart object-store upload): it commits after successful runs
+  or drained detach and aborts on failure.
 - `goav.Custom(name, provider)` — a package owns a reusable destination
   provider (naming, contract, opening); the returned destination value is
   still the stable routing handle.
@@ -587,13 +510,9 @@ return goav.From(input).
 ```
 
 Reuse one destination value when multiple branches should feed one mux or sink
-group. The same destination option style works for built-in destinations:
-
-```go
-return goav.From(input).
-    Copy().
-    To(goav.File("", out, goav.Format(av.FormatIVF)))
-```
+group. The same destination option style works for built-in destinations —
+`goav.File("", out, goav.Format(av.FormatIVF))` pins the container when there
+is no name to probe.
 
 ## Multi-Input
 
@@ -612,16 +531,12 @@ return goav.From(camera, mic).
     Run(ctx)
 ```
 
-When a selector is ambiguous, the build error lists candidates and suggests the
-`InputName`, `StreamID`, `StreamName`, or `StreamIndex` narrowing to use.
-
-Two selection vocabularies, two tenses. The selector options — `goav.InputName`,
-`goav.StreamID`, `goav.StreamName`, `goav.StreamIndex` — narrow streams the
-inputs are already known to have when the chain is built, as in
-`.Audio(goav.InputName("mic"))` above. The match predicates — `goav.MatchMedia`,
-`goav.MatchCodec`, `goav.MatchStreamID`, `goav.MatchStream(fn)` — describe
-streams that may not exist yet and match them as they appear at runtime, as in
-`.OnStream(goav.MatchMedia(av.MediaAudio), ...)` under
+When a selector is ambiguous, the build error lists candidates and suggests
+the narrowing to use. Two selection vocabularies, two tenses: selector options
+(`goav.InputName`, `goav.StreamID`, `goav.StreamName`, `goav.StreamIndex`)
+narrow streams the inputs already have at build time; match predicates
+(`MatchMedia`, `MatchCodec`, `MatchStreamID`, `MatchStream(fn)`) describe
+streams that may not exist yet, under
 [Dynamic Stream Discovery](#dynamic-stream-discovery).
 
 ## Mix, Composite, Select
@@ -639,85 +554,10 @@ return goav.Mix(
     Run(ctx)
 ```
 
-```go
-return goav.Composite(
-    goav.From(cam).Video().Region(0, 0),
-    goav.From(screen).Video().Region(640, 0),
-).Encode(codec.VP9(codec.Bitrate(2_000_000))).
-    To(goav.File("stage.webm", out)).
-    Run(ctx)
-```
-
 Packet arms decode automatically before the join; mismatched audio arms
-resample to the first arm's format. The join output is a normal stream point: it
-takes `.Tap(...)`, `.Branches(...)`, and `.Encode(...).To(...)` like any chain.
-
-Arm chains keep their declared `.Decode()` and `.Tap(...)` — the tap installs
-on the task mid-graph, so one decode feeds the join AND any other consumer.
-Decode a file once, tap the decoded point, and mix it with a live mic in one
-task — runtime branches attach to the pre-mix music from the same tap:
-
-```go
-task, err := goav.Mix(
-    goav.From(song).Audio().Decode().Tap(goav.FrameTap("music")),
-    goav.From(mic).Audio(),
-).To(goav.Sink(speakers)).Build(ctx)
-// later, while running: monitor the decoded music BEFORE the mix
-attachment, err := task.Attach(ctx, goav.Branch("monitor").
-    From(goav.FrameTap("music")).
-    To(monitorSink))
-```
-
-A tap is also a join arm: a `TapRef` converges an already-flowing point again
-— the join-side dual of `Branch().From(tap)` — re-stamped under the tap name,
-with no source re-opened. Paint the same decoded camera at two canvas regions:
-
-```go
-return goav.Composite(
-    goav.From(cam).Video().Decode().Tap(goav.FrameTap("cam")).Region(0, 0),
-    goav.FrameTap("cam").Region(640, 0), // the SAME decoded frames, decoded once
-).To(goav.Sink(preview)).Run(ctx)
-```
-
-A tap arm must follow the arm that declares its tap; an unknown tap ref fails
-the build with the declared taps listed.
-
-Joins nest — a join is an arm like any source chain. Sub-mix two microphones,
-then mix the result with a third; the sub-mix output is resampled to the outer
-target like any arm, and clamping applies at each mix stage:
-
-```go
-return goav.Mix(
-    goav.Mix(goav.From(mic1).Audio(), goav.From(mic2).Audio()),
-    goav.From(mic3).Audio(),
-).Encode(codec.Opus(codec.Bitrate(96_000))).
-    To(goav.File("mix.webm", out)).
-    Run(ctx)
-```
-
-`Select` switches between whole joins the same way — the arm ids are the
-sub-joins' output ids (`mix`, `mix-2`):
-
-```go
-task, err := goav.Select(
-    goav.Mix(goav.From(a).Audio(), goav.From(b).Audio()),
-    goav.Mix(goav.From(c).Audio(), goav.From(d).Audio()),
-).To(monitor).Build(ctx)
-// ... while running:
-err = task.Control(ctx, goav.SelectActive("mix-2"))
-```
-
-Arms pair by arrival order by default — right for live sources on one clock.
-`.SyncByPTS()` aligns them by timestamp instead (files starting at different
-offsets, a `Seek` on one arm, drift): the earliest head frame sets each step,
-arms whose head is newer sit the step out, and stale frames are dropped to
-catch up. Catch-up drops are never silent: they surface on the join node's
-counters — `task.Stats().Nodes["mix"].Dropped` under the `"sync"` reason, and
-in `task.Snapshot()`.
-
-```go
-goav.Mix(goav.From(songA).Audio(), goav.From(songB).Audio()).SyncByPTS().To(out)
-```
+resample to the first arm's format with zero opt-in (the join's implicit arm
+policy). The join output is a normal stream point: it takes `.Tap(...)`,
+`.Branches(...)`, and `.Encode(...).To(...)` like any chain.
 
 `Select` switches live through the control plane — no node names:
 
@@ -729,6 +569,63 @@ task, err := goav.Select(
 // ... while running:
 err = task.Control(ctx, goav.SelectActive("cam2"))
 ```
+
+Arm chains keep their declared `.Decode()` and `.Tap(...)` — the tap installs
+on the task mid-graph, so one decode feeds the join AND any other consumer
+(a runtime branch attached from the tap monitors the pre-mix media). A tap is
+also a join arm: a `TapRef` converges an already-flowing point again — the
+join-side dual of `Branch().From(tap)` — re-stamped under the tap name, with
+no source re-opened. Paint the same decoded camera at two `Composite` canvas
+regions:
+
+```go
+return goav.Composite(
+    goav.From(cam).Video().Decode().Tap(goav.FrameTap("cam")).Region(0, 0),
+    goav.FrameTap("cam").Region(640, 0), // the SAME decoded frames, decoded once
+).To(goav.Sink(preview)).Run(ctx)
+```
+
+A tap arm must follow the arm that declares its tap; an unknown tap ref fails
+the build with the declared taps listed.
+
+Joins nest — a join is an arm like any source chain: `Mix(Mix(a, b), c)`
+sub-mixes two microphones and mixes the result with a third, and
+`Select(Mix(a, b), Mix(c, d))` switches between two live mixes. A nested
+join's output id is its arm id (`mix`, `mix-2`), its output is converted to
+the outer target like any arm, and mix clamping applies at each stage.
+
+Arms pair by arrival order by default — right for live sources on one clock.
+`Mix(...).SyncByPTS()` aligns them by timestamp instead (files starting at
+different offsets, a `Seek` on one arm, drift): the earliest head frame sets
+each step, arms whose head is newer sit the step out, and stale frames are
+dropped to catch up. Catch-up drops are never silent: they surface on the join
+node's counters — `task.Stats().Nodes["mix"].Dropped` under the `"sync"`
+reason, and in `task.Snapshot()`.
+
+## Testing Your Pipeline
+
+`goavtest` is httptest for pipelines: pure sources and recorders with no
+`*testing.T` coupling and no assertion DSL — every helper returns a real
+grammar value, so test code is pipeline code.
+
+```go
+out := goavtest.NewCollector()
+task, _ := goav.Mix(
+    goav.From(goavtest.Audio(48000, 1, []int16{100}, []int16{200})).Audio(),
+    goav.From(goavtest.Audio(48000, 1, []int16{50}, []int16{-50})).Audio(),
+).To(out.Sink()).UseRuntime(goavtest.Runtime()).Build(ctx)
+_ = task.Run(ctx)
+// out.S16() == [[150] [150]]
+```
+
+`Audio`, `Video`, and `Packets` are deterministic PTS-stamped inputs;
+`LiveAudio` never ends, for control-plane tests (`SelectActive`, `Rebranch`)
+paired with the collector's `Wait(ctx, cond)`. `goavtest.Runtime()` is the
+deterministic runtime: standard filters, a byte-faithful passthrough codec for
+every well-known codec id, a fake container for every well-known format id,
+and a fake clock (`goavtest.NewClock`) so realtime pacing records its sleeps
+instead of sleeping. `Codec(id)`/`Format(id)` register the fakes individually,
+and extra options are last-wins overrides.
 
 ## Debug And Diagnostics
 
@@ -745,28 +642,14 @@ job := goav.From(goav.Input(webrtcav.Track(audio))).
     Tap(decoded).
     To(goav.Sink(playback))
 
-report, err := job.Explain(ctx)
-if err != nil {
-    return err
-}
+report, err := job.Explain(ctx) // plan, decisions, warnings — nothing opened yet
 for _, warning := range report.Warnings {
     log.Printf("goav plan warning code=%s node=%s msg=%s",
         warning.Code, warning.Node, warning.Message)
 }
 
 task, err := job.Build(ctx)
-if err != nil {
-    return err
-}
 defer task.Close()
-
-go func() {
-    for event := range task.Events() {
-        log.Printf("goav event type=%s stream=%s reason=%s",
-            event.Type, event.StreamID, event.Reason)
-    }
-}()
-
 go func() { _ = task.Run(ctx) }()
 
 levels, err := task.Attach(ctx,
@@ -776,13 +659,8 @@ levels, err := task.Attach(ctx,
             observeRMS(frame)
             return emit.Frame(frame)
         })).
-        To(goav.Sink(goav.SinkFunc("levels", func(context.Context, goav.Message) error {
-            return nil
-        }))),
+        To(goav.Sink(goav.SinkFunc("levels", func(context.Context, goav.Message) error { return nil }))),
 )
-if err != nil {
-    return err
-}
 defer levels.Close(ctx)
 
 state := task.Snapshot()
@@ -791,15 +669,13 @@ for _, branch := range state.Branches {
         log.Printf("goav levels frames=%d", branch.Stats.Frames)
     }
 }
-log.Printf("goav stats packets=%d frames=%d dropped=%d",
-    state.Stats.Packets, state.Stats.Frames, state.Stats.Dropped)
 ```
 
 `Task.Snapshot()` returns one point-in-time view with typed lifecycle states
-(`lifecycle.TaskState`, `lifecycle.BranchState`, `lifecycle.DestinationState`), graph stats,
-stable taps, and active runtime branches. `Attachment.Snapshot()` reports the
-branch-owned view. This works the same for video probes, screenshot collectors,
-packet loss diagnostics, late recording branches, and temporary preview sinks.
+(`lifecycle.TaskState`, `lifecycle.BranchState`, `lifecycle.DestinationState`),
+graph stats, stable taps, and active runtime branches. `Attachment.Snapshot()`
+reports the branch-owned view. This works the same for video probes, screenshot
+collectors, packet loss diagnostics, late recordings, and temporary previews.
 
 `task.Events()` is the single firehose; `task.Watch(filters...)` gives each
 consumer an independent, filtered subscription instead:
@@ -815,6 +691,13 @@ it — and watcher channels close when the task closes. Once `Watch` is in use,
 subscribe every consumer through it (an unfiltered `task.Watch()` is the
 `Events` equivalent).
 
+Joins plan the same way as chains: `Describe()` of a `Mix`/`Composite`/`Select`
+job shows every arm converging into the join node — including auto-inserted
+per-arm decode and resample stages — and the planned spec equals the built
+graph node for node. `Describe()` returns the structured graph spec; rendering
+lives outside core (`graphrender.RenderURI(spec, "goav:graph")` for text, DOT,
+or Mermaid).
+
 ## Live Control
 
 `task.Control(ctx, ...)` drives a running task without naming graph nodes.
@@ -829,15 +712,9 @@ err := task.Control(ctx, goav.Keyframe("video"))
 // frame); a backend that cannot reports an error instead of ignoring it.
 err = task.Control(ctx, goav.SetBitrate("video", 900_000))
 
-// A running Select switches arms.
-err = task.Control(ctx, goav.SelectActive("cam2"))
-
-// Sources reposition to a media position.
-err = task.Control(ctx, goav.Seek(30*time.Second))
-
-// Sources change playback pace (positive rates only; pure pacing, no
-// discontinuity).
-err = task.Control(ctx, goav.Rate(2.0))
+err = task.Control(ctx, goav.SelectActive("cam2")) // a running Select switches arms
+err = task.Control(ctx, goav.Seek(30*time.Second)) // sources reposition
+err = task.Control(ctx, goav.Rate(2.0))            // pace change (positive rates; pure pacing)
 
 // Sources play one [start, end) window, then end naturally — trim-to-file
 // segment export: the destination commits when the window completes.
@@ -845,47 +722,27 @@ err = task.Control(ctx, goav.Segment(10*time.Second, 20*time.Second))
 ```
 
 `goav.Seek`, `goav.Rate`, and `goav.Segment` are the time-axis controls; all
-three broadcast to every source. A source implementing
-`pipeline.ControllableSource` honours them: a seek (and a segment's jump to its
-start) emits `av.EventDiscontinuity` before the first message at the new
-position — the signal downstream decoders already reset on; a rate change is a
-pure pacing change and never discontinues; a segment plays `[start, end)` and
-then ends the stream exactly as at the end of the media, so destinations
-finalize naturally. A source that cannot honour a control reports a clear
-per-source error without stopping a capable sibling. File inputs honour Seek
-and Segment out of the box when the container demuxer implements
-`format.Seeker` — the Matroska and WebM demuxers do, repositioning through
-Cues (with a cluster-index fallback for cue-less files) to the keyframe at or
-before the target; a reader that cannot seek reports `format.ErrNotSeekable`.
+three broadcast to every source, and a source implementing
+`pipeline.ControllableSource` honours them. A seek emits `av.EventDiscontinuity`
+before the first message at the new position — the signal decoders already
+reset on; a segment ends the stream exactly as at the end of the media, so
+destinations finalize naturally; a source that cannot honour a control reports
+a per-source error without stopping a capable sibling. File inputs honour Seek
+and Segment when the container demuxer implements `format.Seeker` — the
+Matroska and WebM demuxers do, repositioning through Cues to the keyframe at
+or before the target; a reader that cannot seek reports `format.ErrNotSeekable`.
+
 Realtime tasks (the default) pace file playback on a clock — each packet is
 delivered when its media time is due — so Rate works on files as a live pacing
 multiplier and composes with Seek/Segment; offline tasks (`WithRealtime(false)`)
-pump at full speed and reject Rate with `format.ErrRateUnsupported`. The pacing
-clock is injectable per runtime (`goav.WithClock`, default monotonic), so tests
-and simulations never sleep for real.
+pump at full speed and reject Rate with `format.ErrRateUnsupported`. The clock
+is injectable per runtime (`goav.WithClock`, default monotonic), so tests never
+sleep for real.
 
 `.AtTap(name)` narrows any control to one tap's point in the graph —
 `goav.Keyframe("video").AtTap("video.720p.frames")` — and `goav.Deliver(event)`
 hands a verbatim event to a stage that interprets it itself. A node-targeted
 form exists for expert graphs only.
-
-## Explain And Inspect
-
-`job.Explain(ctx)` reports the workflow before resources open: inputs, branches,
-destinations, taps, stream shapes, operation output shapes, adapter requirements,
-warnings, and the planned graph. Joins plan the same way: `Describe()` of a
-`Mix`/`Composite`/`Select` job shows every arm converging into the join node —
-including auto-inserted per-arm decode and resample stages — and the planned
-spec equals the built graph node for node. `Describe()` returns the structured
-graph spec; rendering lives outside core:
-
-```go
-spec, err := job.Describe()
-if err != nil {
-    return err
-}
-uri, err := graphrender.RenderURI(spec, "goav:graph")
-```
 
 ## Runtimes And Custom Codecs
 
@@ -934,66 +791,14 @@ operations are methods on the chain, not a separate vocabulary.
 The reusable component catalog and allocation proof map live in
 [`docs/COMPONENTS.md`](docs/COMPONENTS.md).
 
-## Testing Your Pipeline
+## Status
 
-`goavtest` is httptest for pipelines: pure sources and recorders with no
-`*testing.T` coupling and no assertion DSL — every helper returns a real
-grammar value, so test code is pipeline code.
-
-```go
-out := goavtest.NewCollector()
-task, _ := goav.Mix(
-    goav.From(goavtest.Audio(48000, 1, []int16{100}, []int16{200})).Audio(),
-    goav.From(goavtest.Audio(48000, 1, []int16{50}, []int16{-50})).Audio(),
-).To(out.Sink()).UseRuntime(goavtest.Runtime()).Build(ctx)
-_ = task.Run(ctx)
-// out.S16() == [[150] [150]]
-```
-
-`Audio`, `Video`, and `Packets` are deterministic PTS-stamped inputs;
-`LiveAudio` never ends, for control-plane tests (`SelectActive`, `Rebranch`)
-paired with the collector's `Wait(ctx, cond)`. `goavtest.Runtime()` is the
-deterministic runtime: standard filters, a byte-faithful passthrough codec for
-every well-known codec id, a fake container for every well-known format id,
-and a fake clock (`goavtest.NewClock`) so realtime pacing records its sleeps
-instead of sleeping. `Codec(id)`/`Format(id)` register the fakes individually,
-and extra options are last-wins overrides.
-
-## Current Shape
-
-Implemented now:
-
-- Variadic `From(inputs...)` composition with `InputName` narrowing and shared
-  multi-input destinations.
-- Packet-preserving `Copy().To(...)` and packet-copy `Branches(...)`.
-- Stream-scoped decode, custom stages, resize/resample, Opus/VP8/VP9 encode, and
-  operation-by-operation shape solving with structured build errors,
-  `.Require(...)` hard assertions, and `.Prefer(...)` soft solver preferences.
-- `Mix`/`Composite`/`Select` convergence with composable join outputs, planned
-  join graphs, and a live `SelectActive` switch.
-- Typed taps, branches, destinations, flows, and runtime branch attachment with
-  atomic grouped attach/rollback and dependent-branch detach.
-- Boundary-gated `Rebranch` (`SwitchAt` next frame or keyframe, drain/abort
-  dispositions) plus per-branch `Pause`/`Resume`.
-- Live task control riding the data path: `Keyframe`, `SetBitrate`,
-  `SelectActive`, the time-axis `Seek`/`Rate`/`Segment`, and verbatim
-  `Deliver`, narrowed with `.AtTap`.
-- Filtered event watching (`Watch`) with per-watcher isolation, plus snapshots
-  with typed task/branch/destination lifecycle states and scoped stats.
-- The branch buffer ownership contract: `CopyIfMutable` by default, with
-  `CopyAlways` and safe-only `CopyNever` opt-ins.
-- The `provider.Source` transport seam, with Pion-based RTP/WebRTC providers;
-  pure-Go adapters for IVF, Annex B, Matroska/WebM, Opus, VP8/VP9, AV1, H264,
-  resize, and resample.
-- Per-runtime registries with layered `Default(opts...)` and direct
-  `WithDecoder`/`WithEncoder`/`WithFilter`/`WithMuxer`/`WithDemuxer`/`WithProber`
-  registration.
-- Structured `Explain(ctx)` reports and `Describe()` graph specs.
-
-Performance claims follow one rule: benchmarks beat claims. What is proven by
-allocation pins, what the benchmark suite measures (and how to run and compare
-it), and what is explicitly *not* proven live in
-[`docs/PERFORMANCE.md`](docs/PERFORMANCE.md).
+goav is pre-v1. What is stable, experimental, deliberately deferred, and what
+gates the v1 tag live in [docs/ROADMAP.md](docs/ROADMAP.md); the design spec
+and evidence scoreboard are [docs/NORTH_STAR.md](docs/NORTH_STAR.md).
+Performance claims follow one rule: benchmarks beat claims — what is proven by
+allocation pins, what the benchmark suite measures, and what is explicitly
+*not* proven live in [`docs/PERFORMANCE.md`](docs/PERFORMANCE.md).
 
 Advanced notes live in `docs/`. An expert graph layer exists beneath the grammar
 for compositions the recipe language cannot express; normal work never needs it.

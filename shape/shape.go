@@ -82,7 +82,8 @@ func Event(options ...Option) Spec {
 	return New(options...)
 }
 
-// Domain sets the Spec domain.
+// Domain pins which representation the Spec describes: packets, frames, or
+// events. The Frame/Packet/Event constructors set it for you.
 func Domain(domain MediaDomain) Option {
 	return func(spec *Spec) {
 		if spec != nil {
@@ -91,7 +92,7 @@ func Domain(domain MediaDomain) Option {
 	}
 }
 
-// Media sets the Spec media kind.
+// Media pins the media kind (audio, video); unset matches any kind.
 func Media(media av.MediaType) Option {
 	return func(spec *Spec) {
 		if spec != nil {
@@ -100,7 +101,7 @@ func Media(media av.MediaType) Option {
 	}
 }
 
-// Stream sets the Spec stream identifier.
+// Stream pins the Spec to one stream id; unset matches any stream.
 func Stream(stream av.StreamID) Option {
 	return func(spec *Spec) {
 		if spec != nil {
@@ -109,7 +110,7 @@ func Stream(stream av.StreamID) Option {
 	}
 }
 
-// Codec sets the Spec codec.
+// Codec pins the codec id (av.CodecOpus, ...); unset matches any codec.
 func Codec(codec av.CodecID) Option {
 	return func(spec *Spec) {
 		if spec != nil {
@@ -118,7 +119,9 @@ func Codec(codec av.CodecID) Option {
 	}
 }
 
-// Video sets the Spec to a video layout.
+// Video states the video layout facts: geometry and pixel format. Zero or
+// empty fields stay unconstrained — Video(0, 0, "i420") pins only the pixel
+// format, which is how a Prefer steers an otherwise open solver choice.
 func Video(width int, height int, pixelFormat string) Option {
 	return func(spec *Spec) {
 		if spec == nil {
@@ -131,7 +134,10 @@ func Video(width int, height int, pixelFormat string) Option {
 	}
 }
 
-// Audio sets the Spec to an audio layout.
+// Audio states the audio layout facts: sample rate, channel count, and
+// sample format. Zero or empty fields stay unconstrained — Audio(0, 0,
+// "f32") pins only the sample format, which is how a Prefer steers an
+// otherwise open solver choice.
 func Audio(sampleRate int, channels int, sampleFormat string) Option {
 	return func(spec *Spec) {
 		if spec == nil {

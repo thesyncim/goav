@@ -161,12 +161,20 @@ against the constructors in `input.go`/`provider.go`/`source.go`,
 
 ## Enforcement
 
+Package discovery is dynamic: the pins walk the module (skipping hidden
+directories, `testdata`, `internal`, nested modules, and test-only
+directories) instead of trusting a hardcoded list, so a package added
+tomorrow is governed the day it lands.
+
 - `api_surface_pin_test.go` / `testdata/api_surface.txt` — exported
   package-level identifiers of root + `errcode`/`graphrender`/`lifecycle`/
   `plan`/`snapshot` must match the approved list exactly (both directions,
   sorted, no dups).
-- `doc_pin_test.go` — every exported symbol in every public package carries a
-  doc comment.
+- `TestEveryPublicPackageIsGoverned` — every discovered package must be
+  classified: frozen surface, doc-pin-governed extension seam, or
+  implementation subtree. An unclassified package fails the build.
+- `doc_pin_test.go` — every exported symbol in every discovered public
+  package carries a doc comment.
 - `errors_pin_test.go` — every `BuildError` uses a catalog `errcode.Code`.
 - README front door — first five examples stay on the grammar
   (`TestReadmeFirstScreenAvoidsGraphInternals`); advanced knobs stay out of
@@ -174,7 +182,8 @@ against the constructors in `input.go`/`provider.go`/`source.go`,
 
 `adapters/*` and `container/*` are implementations behind the `codec`/`format`
 seams (registered by `Default()`/`WithStd*`), outside the core import graph
-and not part of the governed surface.
+and not part of the governed surface — an explicit, asserted exclusion
+(`docPinImplementationSubtrees`), not a forgotten one.
 
 ## Compatibility
 

@@ -43,7 +43,9 @@ const defaultTrackEventBuffer = 4
 // the Pion remote track, deriving the stream identity from the track.
 type TrackRemoteAdapter struct{}
 
-// NewTrackRemoteAdapter returns the default adapter.
+// NewTrackRemoteAdapter returns the stateless default TrackAdapter used when
+// a session declares no custom one; provide your own TrackAdapter to wrap or
+// replace how remote tracks become TrackReaders.
 func NewTrackRemoteAdapter() TrackRemoteAdapter {
 	return TrackRemoteAdapter{}
 }

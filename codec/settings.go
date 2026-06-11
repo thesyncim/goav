@@ -38,12 +38,16 @@ func KeyframeInterval(frames int) Option {
 	return func(s *CodecSettings) { s.KeyframeInterval = frames }
 }
 
-// Profile requests an encoder profile.
+// Profile requests a codec profile by its codec-specific name (VP9 "0",
+// H264 "baseline"); the adapter validates it at open and fails on values its
+// backend cannot honor. Empty leaves the adapter default.
 func Profile(profile string) Option {
 	return func(s *CodecSettings) { s.Profile = profile }
 }
 
-// Level requests an encoder level.
+// Level requests a codec conformance level by its codec-specific name
+// (H264 "3.1"); the adapter validates it at open and fails on values its
+// backend cannot honor. Empty leaves the adapter default.
 func Level(level string) Option {
 	return func(s *CodecSettings) { s.Level = level }
 }

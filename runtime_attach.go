@@ -124,9 +124,14 @@ func (p runtimeGraphPatch) attachment(owner *task, name string) *runtimeAttachme
 
 // Attachment is a live runtime branch attached to a task.
 type Attachment interface {
+	// ID is the task-unique attachment identifier; Name is the branch name
+	// the BranchSpec declared (a name may be reused across attachments).
 	ID() string
 	Name() string
+	// Spec returns the branch's private graph patch as a structured spec.
 	Spec() pipeline.Spec
+	// Stats returns branch-scoped counters; Snapshot returns the branch-owned
+	// point-in-time view (lifecycle state, stats, published taps).
 	Stats() pipeline.GraphStats
 	Snapshot() snapshot.Branch
 	// Pause stops delivery to this branch without touching the source or its
@@ -144,6 +149,8 @@ type Attachment interface {
 	// select whether this branch's destinations commit or abort on detach.
 	// Without options the switch is immediate, exactly like Detach after Attach.
 	Rebranch(context.Context, ...RebranchOption) (Attachment, error)
+	// Close detaches this branch and any dependent branches anchored on its
+	// taps; equivalent to Task.Detach.
 	Close(context.Context) error
 }
 
