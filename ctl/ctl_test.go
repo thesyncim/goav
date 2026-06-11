@@ -179,6 +179,162 @@ func TestExternalHostCustomEncoderSpecCanMapArbitrarySettings(t *testing.T) {
 	}
 }
 
+func TestPublicWrapperHelpersDelegateToControlSurface(t *testing.T) {
+	success := ctl.SuccessResponse("done")
+	if !success.OK || success.Result != "done" || success.Error != nil {
+		t.Fatalf("success = %+v", success)
+	}
+	failed := ctl.ErrorResponse("test", fmt.Errorf("boom"))
+	if failed.OK || failed.Error == nil || !strings.Contains(failed.Error.Message, "boom") {
+		t.Fatalf("error = %+v", failed)
+	}
+
+	manifest := ctl.ControlManifest()
+	bitrate, ok := ctl.LookupControlCommand("bitrate")
+	if !ok {
+		t.Fatal("missing bitrate command")
+	}
+	if found, ok := ctl.LookupCommand(manifest, "bitrate"); !ok || found.Name != bitrate.Name {
+		t.Fatalf("lookup = %+v ok=%v", found, ok)
+	}
+	if usage := ctl.CommandUsage(bitrate); !strings.Contains(usage, "value=<rate>") {
+		t.Fatalf("usage = %s", usage)
+	}
+	if help := ctl.CommandHelp(bitrate); !strings.Contains(help, "bits per second") {
+		t.Fatalf("help = %s", help)
+	}
+
+	args, err := ctl.BindArgs(bitrate, []string{"stream=video", "value=1200k"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(fmt.Sprintf("%+v", args), "1200000") {
+		t.Fatalf("args = %+v", args)
+	}
+	args, err = ctl.BindJSON(bitrate, []byte(`{"stream":"video","value":"900k"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(fmt.Sprintf("%+v", args), "900000") {
+		t.Fatalf("json args = %+v", args)
+	}
+
+	control, err := ctl.DecodeRawControl([]byte(`{"type":"bitrate","stream_id":"video","bitrate":1200000}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if control.Bitrate != 1_200_000 {
+		t.Fatalf("control = %+v", control)
+	}
+	event, err := ctl.DecodeRawEvent([]byte(`{"type":"vendor.force_idr","stream_id":"video"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if event.Type != "vendor.force_idr" || event.StreamID != "video" {
+		t.Fatalf("event = %+v", event)
+	}
+
+	rootHelp, err := ctl.Help([]string{"graph"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(rootHelp, "Mermaid") {
+		t.Fatalf("root help = %s", rootHelp)
+	}
+
+	type wrapperCommand struct {
+		Value string `goavctl:"value,required" usage:"value=<text>" help:"wrapper value"`
+	}
+	var applied string
+	custom := ctl.CommandSpec{
+		Name:     "wrapper",
+		Summary:  "wrapper command",
+		ArgsType: reflect.TypeOf(wrapperCommand{}),
+		Apply: func(_ context.Context, _ goav.Task, args any) (ctl.ControlResponse, error) {
+			applied = args.(wrapperCommand).Value
+			return ctl.ControlResponse{Operation: "control wrapper", Result: applied}, nil
+		},
+	}
+	customHelp, err := ctl.HelpWithCommands([]string{"control", "wrapper"}, []ctl.CommandSpec{custom})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(customHelp, "wrapper command") {
+		t.Fatalf("custom help = %s", customHelp)
+	}
+	registryHelp, err := ctl.HelpWithRegistry([]string{"attach"}, nil, ctl.PipelineRegistry{
+		Steps: []ctl.BranchPipelineStepSpec{{
+			Name:    "meter",
+			Summary: "wrapper meter",
+			Usage:   "[label=<text>]",
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(registryHelp, "meter [label=<text>]") {
+		t.Fatalf("registry help = %s", registryHelp)
+	}
+
+	response, err := ctl.Invoke(context.Background(), nil, custom, []string{"value=called"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if applied != "called" || response.Result != "called" {
+		t.Fatalf("applied=%q response=%+v", applied, response)
+	}
+}
+
+func TestPublicExecuteAndServeUnixWrappers(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	task := newExternalTask(t, goavtest.Runtime())
+	defer task.Close()
+
+	response := ctl.ExecuteRequest(ctx, task, ctl.Request{
+		Op:   "help",
+		Args: map[string]string{"topic": "graph"},
+	})
+	text, ok := response.Result.(string)
+	if !response.OK || response.Error != nil || !ok || !strings.Contains(text, "Mermaid") {
+		t.Fatalf("execute request = %+v", response)
+	}
+	direct, err := ctl.Execute(ctx, task, []string{"help", "attach"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	text, ok = direct.Result.(string)
+	if direct.Operation != "help" || !ok || !strings.Contains(text, "Built-in steps") {
+		t.Fatalf("direct = %+v", direct)
+	}
+
+	socket := filepath.Join(os.TempDir(), fmt.Sprintf("goav-serve-unix-%d.sock", time.Now().UnixNano()))
+	t.Cleanup(func() { _ = os.Remove(socket) })
+	errC := make(chan error, 1)
+	go func() {
+		errC <- ctl.ServeUnix(ctx, task, "unix://"+socket)
+	}()
+	waitForSocket(t, socket, errC)
+
+	served := sendRequest(t, socket, ctl.Request{
+		Op:   "help",
+		Args: map[string]string{"topic": "graph"},
+	})
+	text, ok = served.Result.(string)
+	if !served.OK || served.Error != nil || !ok || !strings.Contains(text, "Mermaid") {
+		t.Fatalf("served = %+v", served)
+	}
+	cancel()
+	select {
+	case err := <-errC:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("ServeUnix did not stop")
+	}
+}
+
 func newExternalTask(t *testing.T, runtime goav.Runtime) goav.Task {
 	t.Helper()
 	task, err := goav.From(goavtest.Audio(48000, 2, []int16{1, 2, 3, 4})).

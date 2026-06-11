@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
 	"net"
 	"os"
@@ -11,6 +13,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/thesyncim/goav/av"
+	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/ctl"
 )
 
@@ -62,6 +66,111 @@ func TestRunHostServesCustomHelpAndAttach(t *testing.T) {
 		}
 	case <-time.After(3 * time.Second):
 		t.Fatal("host did not stop")
+	}
+}
+
+func TestDemoHostHelpers(t *testing.T) {
+	for _, tc := range []struct {
+		value string
+		want  int
+	}{
+		{value: "64000", want: 64000},
+		{value: "64k", want: 64000},
+		{value: "2M", want: 2_000_000},
+	} {
+		got, err := parseDemoRate(tc.value)
+		if err != nil {
+			t.Fatalf("parseDemoRate(%q): %v", tc.value, err)
+		}
+		if got != tc.want {
+			t.Fatalf("parseDemoRate(%q) = %d, want %d", tc.value, got, tc.want)
+		}
+	}
+	for _, value := range []string{"", "0", "nope"} {
+		if got, err := parseDemoRate(value); err == nil || got != 0 {
+			t.Fatalf("parseDemoRate(%q) = %d, %v; want error", value, got, err)
+		}
+	}
+	if got := firstNonEmpty("", "fallback"); got != "fallback" {
+		t.Fatalf("firstNonEmpty = %q", got)
+	}
+	if got := firstNonEmpty("", ""); got != "" {
+		t.Fatalf("firstNonEmpty empty = %q", got)
+	}
+
+	factory := &demoEncoderFactory{
+		descriptor: codec.Descriptor{ID: demoCodec, Type: av.MediaAudio},
+	}
+	var nativeSeen bool
+	settings := codec.CodecSettings{}
+	codec.Control(func(native any) error {
+		_, nativeSeen = native.(*demoNativeOptions)
+		return nil
+	})(&settings)
+	encoder, err := factory.NewEncoder(context.Background(), codec.EncodeConfig{Settings: settings})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !nativeSeen {
+		t.Fatal("native options callback was not called")
+	}
+	if encoder.Descriptor().ID != demoCodec {
+		t.Fatalf("descriptor = %+v", encoder.Descriptor())
+	}
+	if err := encoder.Open(context.Background(), codec.EncodeConfig{}); err != nil {
+		t.Fatal(err)
+	}
+	result := codec.EncodeResult{Packets: make([]av.Packet, 0, 1)}
+	err = encoder.EncodeInto(context.Background(), &av.Frame{StreamID: "audio", Type: av.MediaAudio}, &result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Packets) != 1 || result.Packets[0].StreamID != "audio" || result.Packets[0].Type != av.MediaAudio {
+		t.Fatalf("packets = %+v", result.Packets)
+	}
+	full := codec.EncodeResult{Packets: make([]av.Packet, 1)}
+	if err := encoder.EncodeInto(context.Background(), nil, &full); err != nil {
+		t.Fatal(err)
+	}
+	if err := encoder.EncodeInto(context.Background(), &av.Frame{StreamID: "audio", Type: av.MediaAudio}, &full); err != nil {
+		t.Fatal(err)
+	}
+	if err := encoder.FlushInto(context.Background(), &result); err != nil {
+		t.Fatal(err)
+	}
+	if err := encoder.HandleEvent(context.Background(), &av.Event{Type: av.EventStats}); err != nil {
+		t.Fatal(err)
+	}
+	if err := encoder.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestDemoHostShutdownHelpers(t *testing.T) {
+	boom := fmt.Errorf("boom")
+	errC := make(chan error, 1)
+	errC <- boom
+	if err := waitForHostSocket(context.Background(), "unix:///tmp/goav-missing.sock", errC); err != boom {
+		t.Fatalf("waitForHostSocket error = %v, want boom", err)
+	}
+
+	canceled, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := waitForHostSocket(canceled, "unix:///tmp/goav-missing.sock", make(chan error)); !errors.Is(err, context.Canceled) {
+		t.Fatalf("waitForHostSocket canceled = %v", err)
+	}
+
+	drainC := make(chan error, 2)
+	drainC <- nil
+	drainC <- boom
+	if err := drainHost(context.Background(), drainC); err != boom {
+		t.Fatalf("drainHost error = %v, want boom", err)
+	}
+
+	timeout, stop := context.WithTimeout(context.Background(), time.Nanosecond)
+	defer stop()
+	if err := drainHost(timeout, make(chan error)); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("drainHost timeout = %v", err)
 	}
 }
 
