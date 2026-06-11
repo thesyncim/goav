@@ -114,9 +114,9 @@ type sourceInputSpec struct {
 // on the task pushing through the SourcePush. Custom sources participate in
 // streams, branches, taps, explain, and runtime attach exactly like built-in
 // inputs.
-func Source(name string, spec shape.Spec, fn SourceFunc) InputSpec {
+func Source(name string, spec shape.Spec, fn SourceFunc, opts ...InputOption) InputSpec {
 	spec = normalizeCustomSourceShape(name, spec)
-	return InputSpec{
+	return applyInputOptions(InputSpec{
 		input: format.Input{
 			Name:     name,
 			Protocol: av.ProtocolCustom,
@@ -125,7 +125,7 @@ func Source(name string, spec shape.Spec, fn SourceFunc) InputSpec {
 		source: &sourceInputSpec{shape: spec, fn: fn},
 		codec:  codecSpecFromSourceShape(spec),
 		name:   name,
-	}
+	}, opts)
 }
 
 func normalizeCustomSourceShape(name string, spec shape.Spec) shape.Spec {

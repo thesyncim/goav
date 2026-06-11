@@ -1255,7 +1255,7 @@ func TestRecordRecipeInputMIMEDrivesFormatProbe(t *testing.T) {
 		testFormatMuxer(av.FormatOgg, muxers),
 	))
 	job := From(
-		FileInput("", strings.NewReader("")).MIME("audio/ogg"),
+		FileInput("", strings.NewReader(""), MIME("audio/ogg")),
 	).Copy().To(File("recording.ogg", io.Discard)).UseRuntime(runtime)
 	intent := job.plan()
 	if len(intent.Inputs) != 1 || intent.Inputs[0].MIMEType != "audio/ogg" {

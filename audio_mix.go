@@ -190,8 +190,8 @@ func cloneMixFrame(frame *av.Frame) *av.Frame {
 	return &clone
 }
 
-// Mix sums N synchronized audio arms into one stream delivered to a Sink —
-// the convergent dual of Branches (N→1). Each arm is a source chain such as
+// Mix sums N synchronized audio arms into one stream delivered to its
+// destinations — the convergent dual of Branches (N→1). Each arm is a source chain such as
 // From(frameSource).Audio() or another audio-producing join — Mix(Mix(a, b), c)
 // sub-mixes two arms and mixes the result with a third. Arms must have
 // distinct stream ids; mismatched formats resample to the first arm's format
@@ -255,11 +255,13 @@ func (m *mixStream) Branches(branches ...BranchSpec) *Job {
 	return newJoinBranchesJob(joinMix, joinSpec{arms: m.arms, encode: m.encode, taps: m.taps, sync: m.sync}, branches)
 }
 
-// To delivers the mixed stream to a destination and returns a Job, so the mix
-// runs through the same Build/Run as every other recipe. It lowers to the one
+// To delivers the mixed stream to one or more destinations (a fanout when
+// several are given — each destination receives the joined stream, exactly
+// like a chain's multi-destination .To) and returns a Job, so the mix runs
+// through the same Build/Run as every other recipe. It lowers to the one
 // joinSpec shared by every convergence builder.
-func (m *mixStream) To(dest Destination) *Job {
-	return newJoinJob(joinMix, joinSpec{arms: m.arms, dest: dest, encode: m.encode, taps: m.taps, sync: m.sync})
+func (m *mixStream) To(destinations ...Destination) *Job {
+	return newJoinJob(joinMix, joinSpec{arms: m.arms, dests: destinations, encode: m.encode, taps: m.taps, sync: m.sync})
 }
 
 // mixJoinProfile is Mix's entry in the join table: audio arms, auto-decode for

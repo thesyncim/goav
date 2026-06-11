@@ -100,6 +100,41 @@ func TestSelectForwardsDefaultArmToSink(t *testing.T) {
 // TestSelectSwitchesActiveArmMidRun moved to goavtest_dogfood_test.go: it is
 // now the consumer-side live-switch acceptance test written against goavtest.
 
+func TestSelectFansOutToMultipleSinks(t *testing.T) {
+	ctx := context.Background()
+	var first, second [][]int16
+	firstSink := Sink(SinkFunc("first", func(_ context.Context, m Message) error {
+		if m.Kind == pipeline.MessageFrame && m.Frame != nil && m.Frame.Audio != nil {
+			first = append(first, mixTestReadS16(m.Frame))
+		}
+		return nil
+	}))
+	secondSink := Sink(SinkFunc("second", func(_ context.Context, m Message) error {
+		if m.Kind == pipeline.MessageFrame && m.Frame != nil && m.Frame.Audio != nil {
+			second = append(second, mixTestReadS16(m.Frame))
+		}
+		return nil
+	}))
+
+	task, err := Select(
+		From(selectTestOneShotSource("a", 100)).Audio(),
+		From(selectTestOneShotSource("b", 200)).Audio(),
+	).To(firstSink, secondSink).Build(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer task.Close()
+	if err := task.Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	// Both sinks receive the switched stream: only the default arm "a" forwards,
+	// and each destination sees the same frames.
+	if !reflect.DeepEqual(first, [][]int16{{100}}) || !reflect.DeepEqual(second, [][]int16{{100}}) {
+		t.Fatalf("first=%v second=%v, want [[100]] at both sinks", first, second)
+	}
+}
+
 func TestSelectRequiresTwoArms(t *testing.T) {
 	_, err := Select(From(selectTestOneShotSource("a", 1)).Audio()).
 		To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))).

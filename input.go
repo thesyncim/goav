@@ -16,7 +16,8 @@ import (
 
 // InputSpec is one declared job input: a file, URI, custom source, or source
 // provider, plus the optional name, MIME, and codec facts the planner uses
-// before opening it. Construct one with FileInput, URIInput, Source, or Input.
+// before opening it. Construct one with FileInput, URIInput, Source, or
+// Input; configure it with options (Name, MIME, Metadata, Codec).
 type InputSpec struct {
 	input    format.Input
 	provider SourceProvider
@@ -27,51 +28,72 @@ type InputSpec struct {
 	err      error
 }
 
+// InputOption configures an input value (FileInput, URIInput, Source, Input,
+// or InputSpec.With): Codec declares the stream's codec, and the
+// direction-agnostic MediaOptions (Name, MIME, Metadata) satisfy it too. It
+// is sealed — only goav option constructors implement it.
+type InputOption interface {
+	applyInput(*InputSpec)
+}
+
+// inputOption is the concrete input-only option (Codec).
+type inputOption func(*InputSpec)
+
+func (o inputOption) applyInput(spec *InputSpec) {
+	if spec != nil && o != nil {
+		o(spec)
+	}
+}
+
+// Codec declares the input's codec when probing cannot discover it — typical
+// for live receives where the transport negotiated the codec out of band. It
+// is input-only: destinations carry container facts (Format, MIME), never a
+// stream codec.
+func Codec(spec codec.CodecSpec) InputOption {
+	return inputOption(func(input *InputSpec) {
+		input.codec = cloneCodecSpec(spec)
+	})
+}
+
+// With returns a copy of the input with the options applied — the same option
+// vocabulary the constructors take, for layering config onto an
+// already-constructed value (renaming a generated test input, say).
+func (s InputSpec) With(opts ...InputOption) InputSpec {
+	return applyInputOptions(s, opts)
+}
+
+func applyInputOptions(spec InputSpec, opts []InputOption) InputSpec {
+	for i := range opts {
+		if opts[i] != nil {
+			opts[i].applyInput(&spec)
+		}
+	}
+	return spec
+}
+
 // FileInput declares a file-like input read from reader; name carries the
 // extension format probing uses (a .ivf name selects the IVF demuxer).
-func FileInput(name string, reader io.Reader) InputSpec {
-	return InputSpec{
+func FileInput(name string, reader io.Reader, opts ...InputOption) InputSpec {
+	return applyInputOptions(InputSpec{
 		input: format.Input{
 			Name:     name,
 			Protocol: av.ProtocolFile,
 			Reader:   reader,
 		},
 		name: name,
-	}
+	}, opts)
 }
 
 // URIInput declares an input opened by a registered format adapter from a
 // URI.
-func URIInput(uri string) InputSpec {
-	return InputSpec{
+func URIInput(uri string, opts ...InputOption) InputSpec {
+	return applyInputOptions(InputSpec{
 		input: format.Input{
 			Name: uri,
 			URI:  uri,
 		},
 		name: uri,
-	}
-}
-
-// Name overrides the input's name — the label selector narrowing
-// (InputName), errors, and Explain use.
-func (s InputSpec) Name(name string) InputSpec {
-	s.name = name
-	s.input.Name = name
-	return s
-}
-
-// MIME sets the input's MIME type, which drives format probing when the name
-// carries no extension.
-func (s InputSpec) MIME(mimeType string) InputSpec {
-	s.input.MIMEType = mimeType
-	return s
-}
-
-// Codec declares the input's codec when probing cannot discover it — typical
-// for live receives where the transport negotiated the codec out of band.
-func (s InputSpec) Codec(codec codec.CodecSpec) InputSpec {
-	s.codec = cloneCodecSpec(codec)
-	return s
+	}, opts)
 }
 
 func (s InputSpec) formatInput() format.Input {
@@ -262,7 +284,7 @@ func duplicateInputNameError(name string, firstIndex int, secondIndex int) error
 			fmt.Sprintf("second input index: %d", secondIndex),
 		},
 		Suggestions: []string{
-			"give each repeated realtime input a distinct .Name(...)",
+			"give each repeated realtime input a distinct goav.Name(...) option",
 			"use stable names such as \"audio\" and \"video\" for separate live streams",
 		},
 		Cause: ErrUnsupportedBuild,

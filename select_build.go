@@ -64,11 +64,14 @@ func (s *selectorStream) Branches(branches ...BranchSpec) *Job {
 	return newJoinBranchesJob(joinSelect, joinSpec{arms: s.arms, taps: s.taps}, branches)
 }
 
-// To delivers the switched stream to a destination and returns a Job, so the
-// select runs through the same Build/Run as every other recipe. It lowers to the
+// To delivers the switched stream to one or more sink destinations (a fanout
+// when several are given — each sink receives the switched stream) and
+// returns a Job, so the select runs through the same Build/Run as every other
+// recipe. Select stays sink-only: it forwards the active arm as-is, so muxed
+// destinations need .Branches(...) with an encoding branch. It lowers to the
 // one joinSpec shared by every convergence builder.
-func (s *selectorStream) To(dest Destination) *Job {
-	return newJoinJob(joinSelect, joinSpec{arms: s.arms, dest: dest, taps: s.taps})
+func (s *selectorStream) To(destinations ...Destination) *Job {
+	return newJoinJob(joinSelect, joinSpec{arms: s.arms, dests: destinations, taps: s.taps})
 }
 
 // SelectActive switches a running Select to forward the arm identified by id —

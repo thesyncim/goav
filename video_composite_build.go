@@ -6,8 +6,9 @@ import (
 	"github.com/thesyncim/goav/pipeline"
 )
 
-// Composite overlays N synchronized video arms into one stream delivered to a
-// Sink — the video dual of Mix (N→1) and the convergent dual of Branches.
+// Composite overlays N synchronized video arms into one stream delivered to
+// its destinations — the video dual of Mix (N→1) and the convergent dual of
+// Branches.
 // Each arm is a source chain such as From(frameSource).Video() or another
 // video-producing join — Composite(Composite(a, b), logo) paints a sub-canvas
 // like any arm. Arms must have distinct stream ids and I420 video format, and
@@ -90,11 +91,13 @@ func (c *compositeStream) Branches(branches ...BranchSpec) *Job {
 	return newJoinBranchesJob(joinComposite, joinSpec{arms: c.arms, encode: c.encode, taps: c.taps, sync: c.sync}, branches)
 }
 
-// To delivers the composited stream to a destination and returns a Job, so the
-// composite runs through the same Build/Run as every other recipe. It lowers to
-// the one joinSpec shared by every convergence builder.
-func (c *compositeStream) To(dest Destination) *Job {
-	return newJoinJob(joinComposite, joinSpec{arms: c.arms, dest: dest, encode: c.encode, taps: c.taps, sync: c.sync})
+// To delivers the composited stream to one or more destinations (a fanout
+// when several are given — each destination receives the joined stream,
+// exactly like a chain's multi-destination .To) and returns a Job, so the
+// composite runs through the same Build/Run as every other recipe. It lowers
+// to the one joinSpec shared by every convergence builder.
+func (c *compositeStream) To(destinations ...Destination) *Job {
+	return newJoinJob(joinComposite, joinSpec{arms: c.arms, dests: destinations, encode: c.encode, taps: c.taps, sync: c.sync})
 }
 
 // compositeJoinProfile is Composite's entry in the join table: video arms,

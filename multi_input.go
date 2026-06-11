@@ -249,7 +249,7 @@ func multiInputSelectionSuggestions(selector av.StreamSelector, candidates []inp
 		}
 	}
 	if len(suggestions) == 0 {
-		suggestions = append(suggestions, "give each input a stable name with goav.Source(name, ...) or .Name(...)")
+		suggestions = append(suggestions, "give each input a stable name with goav.Source(name, ...) or the goav.Name(...) option")
 	}
 	return suggestions
 }
@@ -267,7 +267,7 @@ func unknownInputNameError(selector av.StreamSelector, inputName string, sets []
 		Details:   details,
 		Suggestions: []string{
 			"use one of the listed input names with goav.InputName(...)",
-			"name inputs with goav.Source(name, ...), goav.FileInput(name, ...), or .Name(...)",
+			"name inputs with goav.Source(name, ...), goav.FileInput(name, ...), or the goav.Name(...) option",
 		},
 		Cause: ErrUnsupportedBuild,
 	}

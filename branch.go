@@ -71,9 +71,13 @@ type DestinationInfo struct {
 	Realtime bool
 }
 
-// DestinationOption configures a destination constructor: Format pins the
-// container, MIME sets the type, Metadata attaches caller metadata.
-type DestinationOption func(*destinationSpec)
+// DestinationOption configures a destination value (File, URI, Writer,
+// Custom, or Destination.With): Format pins the container, and the
+// direction-agnostic MediaOptions (Name, MIME, Metadata) satisfy it too. It
+// is sealed — only goav option constructors implement it.
+type DestinationOption interface {
+	applyDestination(*destinationSpec)
+}
 
 // WriterOpenFunc opens the byte writer behind a goav.Writer destination once
 // goav has resolved the output format and streams (the DestinationInfo). A

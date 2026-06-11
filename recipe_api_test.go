@@ -3297,6 +3297,70 @@ func TestBranchCustomStageUsesOrderedOperations(t *testing.T) {
 	}
 }
 
+func TestFlowAppliesFlowAtDeclarationPosition(t *testing.T) {
+	meter := goav.FrameFunc("meter", func(ctx context.Context, frame *goav.Frame, emit goav.Emit) error {
+		return emit.Frame(frame)
+	})
+	inner := goav.Flow("inner").Audio().
+		Do(meter).
+		Tap(goav.FrameTap("audio.inner-meter")).
+		Require(shape.Frame(av.MediaAudio)).
+		Auto(shape.AllowResample())
+	outer := goav.Flow("outer").Audio().
+		Apply(inner).
+		Resample(16_000, codec.Mono).
+		Encode(codec.Opus(codec.Bitrate(32_000), codec.Channels(codec.Mono)))
+
+	job := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
+		Audio().
+		Apply(outer).
+		To(goav.File("voice.ogg", io.Discard))
+
+	intent := goav.JobPlanForTest(job)
+	if len(intent.Streams) != 1 {
+		t.Fatalf("intent: %+v", intent)
+	}
+	// The inner flow's operations splice at its Apply position inside the
+	// outer flow, in declaration order: decode (auto-inserted), the inner
+	// stage/tap/require/auto, then the outer resample and encoder.
+	operations := intent.Streams[0].Operations
+	if len(operations) != 7 ||
+		operations[0].Kind != plan.OpDecode ||
+		operations[1].Kind != plan.OpStage || operations[1].Component != "meter" ||
+		operations[2].Kind != plan.OpTap || operations[2].Tap.Name != "audio.inner-meter" ||
+		operations[3].Kind != plan.OpShape || operations[3].Require == nil ||
+		operations[4].Kind != plan.OpShape || operations[4].Auto == nil ||
+		operations[5].Kind != plan.OpTransform || operations[5].Transform.Resample == nil ||
+		operations[6].Kind != plan.OpEncode || operations[6].Encode.ID != av.CodecOpus {
+		t.Fatalf("operations: %+v", operations)
+	}
+	taps := goav.StreamTapsForTest(intent.Streams[0])
+	if len(taps) != 1 || taps[0].Name != "audio.inner-meter" {
+		t.Fatalf("taps: %+v, want the nested flow's tap to survive the splice", taps)
+	}
+}
+
+func TestFlowApplyMediaMismatchIsActionable(t *testing.T) {
+	video := goav.Flow("thumbs").Video().Resize(320, 180)
+	composed := goav.Flow("voice").Audio().Apply(video)
+
+	_, err := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
+		Audio().
+		Apply(composed).
+		To(goav.File("voice.ogg", io.Discard)).
+		Describe()
+
+	var buildErr *goav.BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "flow_media_mismatch" || !errors.Is(err, goav.ErrUnsupportedBuild) {
+		t.Fatalf("err = %v, want flow_media_mismatch wrapping ErrUnsupportedBuild", err)
+	}
+	if !strings.Contains(err.Error(), "video flow cannot be applied to audio stream") ||
+		!strings.Contains(err.Error(), "Flow(name).Audio") ||
+		!strings.Contains(err.Error(), "Flow(name).Video") {
+		t.Fatalf("err = %v, want flow-on-flow media guidance", err)
+	}
+}
+
 func TestFlowMediaMismatchIsActionable(t *testing.T) {
 	_, err := goav.From(goav.FileInput("input.webm", strings.NewReader(""))).
 		Video().
@@ -3756,8 +3820,53 @@ func TestRecipeAndRejectsDuplicateRealtimeInputNames(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), `realtime input name "media"`) ||
 		!strings.Contains(err.Error(), "second input index: 1") ||
-		!strings.Contains(err.Error(), "distinct .Name") {
+		!strings.Contains(err.Error(), "distinct goav.Name") {
 		t.Fatalf("err = %v, want duplicate input guidance", err)
+	}
+}
+
+// TestMediaOptionsConfigureBothDirections pins the direction-agnostic option
+// vocabulary: the SAME goav.MIME / goav.Name / goav.Metadata values configure
+// input and destination constructors, Codec stays input-typed, and Format
+// stays destination-typed.
+func TestMediaOptionsConfigureBothDirections(t *testing.T) {
+	job := goav.From(goav.FileInput("in", strings.NewReader(""),
+		goav.Name("mic"),
+		goav.MIME("audio/ogg"),
+		goav.Metadata(av.Metadata{"session": "demo"}),
+		goav.Codec(codec.Opus()),
+	)).Copy().To(goav.File("out", io.Discard,
+		goav.Name("recording.ogg"),
+		goav.MIME("audio/ogg"),
+		goav.Metadata(av.Metadata{"session": "demo"}),
+		goav.Format(av.FormatOgg),
+	))
+
+	intent := goav.JobPlanForTest(job)
+	if len(intent.Inputs) != 1 || len(intent.Destinations) != 1 {
+		t.Fatalf("intent: %+v", intent)
+	}
+	if intent.Inputs[0].Name != "mic" || intent.Inputs[0].MIMEType != "audio/ogg" || intent.Inputs[0].Codec.ID != av.CodecOpus {
+		t.Fatalf("input intent: %+v", intent.Inputs[0])
+	}
+	if intent.Destinations[0].Name != "recording.ogg" || intent.Destinations[0].MIMEType != "audio/ogg" || intent.Destinations[0].Format != av.FormatOgg {
+		t.Fatalf("destination intent: %+v", intent.Destinations[0])
+	}
+}
+
+// TestWithLayersOptionsOntoConstructedValues pins the late-config seam: With
+// applies the same option vocabulary to an already-constructed input or
+// destination value and returns a configured copy.
+func TestWithLayersOptionsOntoConstructedValues(t *testing.T) {
+	input := goav.FileInput("in.ogg", strings.NewReader("")).With(goav.Name("mic"))
+	output := goav.File("out.ogg", io.Discard).With(goav.MIME("audio/ogg"))
+
+	intent := goav.JobPlanForTest(goav.From(input).Copy().To(output))
+	if len(intent.Inputs) != 1 || intent.Inputs[0].Name != "mic" {
+		t.Fatalf("input intent: %+v", intent.Inputs)
+	}
+	if len(intent.Destinations) != 1 || intent.Destinations[0].MIMEType != "audio/ogg" {
+		t.Fatalf("destination intent: %+v", intent.Destinations)
 	}
 }
 

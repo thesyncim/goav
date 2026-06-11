@@ -54,17 +54,17 @@ type (
 //
 //	goav.From(goav.Input(rtpav.Receive(reader, rtpav.WithCodec(codec.Opus())))).
 //		Copy().To(out)
-func Input(provider SourceProvider) InputSpec {
+func Input(provider SourceProvider, opts ...InputOption) InputSpec {
 	if provider == nil {
 		return InputSpec{err: ErrNilSource}
 	}
 	spec := provider.SourceShape()
-	return InputSpec{
+	return applyInputOptions(InputSpec{
 		input:    format.Input{Realtime: spec.Realtime},
 		provider: provider,
 		codec:    codecSpecFromSourceShape(spec),
 		realtime: spec.Realtime,
-	}
+	}, opts)
 }
 
 // providerNodeName returns the provider's node name capability, defaulting to

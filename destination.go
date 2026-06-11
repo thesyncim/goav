@@ -37,7 +37,7 @@ func File(name string, writer io.Writer, opts ...DestinationOption) Destination 
 	spec := fileDestination(name, writer)
 	for i := range opts {
 		if opts[i] != nil {
-			opts[i](&spec)
+			opts[i].applyDestination(&spec)
 		}
 	}
 	return Destination{spec: spec}
@@ -60,7 +60,7 @@ func URI(uri string, opts ...DestinationOption) Destination {
 	spec := uriDestination(uri)
 	for i := range opts {
 		if opts[i] != nil {
-			opts[i](&spec)
+			opts[i].applyDestination(&spec)
 		}
 	}
 	return Destination{spec: spec}
@@ -100,7 +100,7 @@ func Custom(name string, provider DestinationProvider, opts ...DestinationOption
 	spec := customDestination(name, provider)
 	for i := range opts {
 		if opts[i] != nil {
-			opts[i](&spec)
+			opts[i].applyDestination(&spec)
 		}
 	}
 	return Destination{spec: spec}
@@ -154,7 +154,7 @@ func Writer(name string, open WriterOpenFunc, opts ...DestinationOption) Destina
 	}
 	for i := range opts {
 		if opts[i] != nil {
-			opts[i](&spec)
+			opts[i].applyDestination(&spec)
 		}
 	}
 	return Destination{spec: spec}
@@ -198,34 +198,107 @@ func (w nopDestinationWriter) Close() error {
 	return nil
 }
 
-// MIME sets the destination's MIME type, which drives output format probing
-// when the name carries no extension and is reported to destination openers.
-func MIME(mimeType string) DestinationOption {
-	return func(spec *destinationSpec) {
-		if spec != nil {
+// MediaOption is a direction-agnostic option accepted by both input and
+// destination constructors: Name, MIME, and Metadata state the same fact
+// about either end of a recipe, so goav.FileInput(name, r, goav.MIME(...))
+// and goav.File(name, w, goav.MIME(...)) share one vocabulary. It is sealed —
+// only goav option constructors implement it.
+type MediaOption interface {
+	InputOption
+	DestinationOption
+}
+
+// mediaOption is the concrete direction-agnostic option: one apply function
+// per direction, each acting on that direction's spec.
+type mediaOption struct {
+	input       func(*InputSpec)
+	destination func(*destinationSpec)
+}
+
+func (o mediaOption) applyInput(spec *InputSpec) {
+	if spec != nil && o.input != nil {
+		o.input(spec)
+	}
+}
+
+func (o mediaOption) applyDestination(spec *destinationSpec) {
+	if spec != nil && o.destination != nil {
+		o.destination(spec)
+	}
+}
+
+// destinationOption is the concrete destination-only option (Format).
+type destinationOption func(*destinationSpec)
+
+func (o destinationOption) applyDestination(spec *destinationSpec) {
+	if spec != nil && o != nil {
+		o(spec)
+	}
+}
+
+// Name overrides the value's label. On an input it is the name selector
+// narrowing (InputName), errors, and Explain use; on a destination it is the
+// label outputs group and dedupe by.
+func Name(name string) MediaOption {
+	return mediaOption{
+		input: func(spec *InputSpec) {
+			spec.name = name
+			spec.input.Name = name
+		},
+		destination: func(spec *destinationSpec) {
+			*spec = spec.withName(name)
+		},
+	}
+}
+
+// MIME sets the value's MIME type, which drives format probing when the name
+// carries no extension: input MIME selects the demuxer, destination MIME
+// selects the output format and is reported to destination openers.
+func MIME(mimeType string) MediaOption {
+	return mediaOption{
+		input: func(spec *InputSpec) {
+			spec.input.MIMEType = mimeType
+		},
+		destination: func(spec *destinationSpec) {
 			*spec = spec.withMIME(mimeType)
-		}
+		},
+	}
+}
+
+// Metadata attaches caller metadata to the value: input metadata rides
+// format.Input to the opening adapter, destination metadata reaches openers
+// on DestinationInfo (an uploader can store it as object metadata).
+func Metadata(metadata av.Metadata) MediaOption {
+	return mediaOption{
+		input: func(spec *InputSpec) {
+			spec.input.Metadata = cloneMetadata(metadata)
+		},
+		destination: func(spec *destinationSpec) {
+			spec.output.Metadata = cloneMetadata(metadata)
+		},
 	}
 }
 
 // Format pins the destination's container format explicitly instead of
-// probing it from the name or MIME type.
+// probing it from the name or MIME type. It is destination-only: input
+// containers are always probed from the name, MIME type, or leading bytes.
 func Format(format av.FormatID) DestinationOption {
-	return func(spec *destinationSpec) {
-		if spec != nil {
-			*spec = spec.withFormat(format)
-		}
-	}
+	return destinationOption(func(spec *destinationSpec) {
+		*spec = spec.withFormat(format)
+	})
 }
 
-// Metadata attaches caller metadata to the destination; openers receive it on
-// DestinationInfo (an uploader can store it as object metadata).
-func Metadata(metadata av.Metadata) DestinationOption {
-	return func(spec *destinationSpec) {
-		if spec != nil {
-			spec.output.Metadata = cloneMetadata(metadata)
+// With returns a copy of the destination with the options applied — the same
+// option vocabulary the constructors take, for layering config onto an
+// already-constructed value. The copy keeps the original's routing identity.
+func (d Destination) With(opts ...DestinationOption) Destination {
+	spec := cloneDestinationSpec(d.spec)
+	for i := range opts {
+		if opts[i] != nil {
+			opts[i].applyDestination(&spec)
 		}
 	}
+	return Destination{spec: spec}
 }
 
 func (s destinationSpec) withName(name string) destinationSpec {
@@ -455,7 +528,7 @@ func duplicateOutputError(operation string, name string) error {
 		Suggestions: []string{
 			"use a unique output name for each output in the recipe",
 			"remove repeated outputs when one output should receive the stream once",
-			"call .Name(...) on outputs or choose distinct sink names when labels should differ",
+			"pass goav.Name(...) to outputs or choose distinct sink names when labels should differ",
 		},
 		Cause: ErrUnsupportedBuild,
 	}

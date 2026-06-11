@@ -143,7 +143,7 @@ func StreamIndex(index int) streamOption {
 // InputName narrows a stream selection to the named input of a multi-input
 // job: goav.From(camera, mic).Video(goav.InputName("camera")). Names come from
 // the input constructors (goav.Source(name, ...), goav.FileInput(name, ...))
-// or InputSpec.Name(...).
+// or the goav.Name(...) option.
 func InputName(name string) streamOption {
 	return func(config *streamSelectConfig) {
 		config.input = name

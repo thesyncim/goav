@@ -80,6 +80,37 @@ func TestJoinDescribeEqualsBuildMix(t *testing.T) {
 
 // TestJoinDescribeEqualsBuildComposite covers a composite with per-arm regions
 // delivered to a frame sink.
+// TestJoinDescribeEqualsBuildMixMultiDestination pins the variadic-join-To
+// contract: the planned spec keeps the encoded join fanning out to every
+// destination and equals the built graph.
+func TestJoinDescribeEqualsBuildMixMultiDestination(t *testing.T) {
+	rt := New(
+		WithEncoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &encodeTestEncoderFactory{encoder: &encodeTestEncoder{}}),
+		withTestFormats(testFormatMuxer(av.FormatOgg, &remuxTestMuxerFactory{})),
+	)
+
+	job := Mix(
+		From(mixTestAudioSource("a", 100)).Audio(),
+		From(mixTestAudioSource("b", 50)).Audio(),
+	).Encode(codec.Opus()).
+		To(
+			File("first.ogg", io.Discard, Format(av.FormatOgg)),
+			File("second.ogg", io.Discard, Format(av.FormatOgg)),
+		).
+		UseRuntime(rt)
+
+	planned := joinPlanGuard(t, job)
+	text := specText(planned)
+	for _, want := range []string{
+		"encode-mix-encode -> first.ogg",
+		"encode-mix-encode -> second.ogg",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("planned mix spec missing %q:\n%s", want, text)
+		}
+	}
+}
+
 func TestJoinDescribeEqualsBuildComposite(t *testing.T) {
 	job := Composite(
 		From(compositeTestVideoSource("a", 4, 4, 100, 10, 20)).Video().Region(0, 0),

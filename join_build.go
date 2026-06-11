@@ -26,13 +26,13 @@ const (
 )
 
 // joinSpec is the one internal N→1 model behind Mix/Composite/Select: N arms
-// converge into one stage and continue like any other stream point — to a
-// single destination (optionally through an encoder), out to planned branches,
+// converge into one stage and continue like any other stream point — to one or
+// more destinations (optionally through an encoder), out to planned branches,
 // and past named taps on the joined stream.
 type joinSpec struct {
 	kind   joinKind
 	arms   []JoinArm
-	dest   Destination
+	dests  []Destination
 	encode *codec.CodecSpec // mix/composite only; nil delivers the raw join output
 	// taps name the joined stream as stable attach points, installed on the task
 	// exactly like chain taps (visible in task.Taps(), runtime-attachable).
@@ -221,11 +221,13 @@ type joinPlan struct {
 	// composite: per-arm canvas placement collected by its planArm hook.
 	layouts []compositeLayout
 
-	// single-destination delivery (optionally through one encoder).
+	// direct destination delivery (optionally through one encoder): each
+	// destination receives the joined stream, exactly like a chain's
+	// multi-destination .To(...) fanout.
 	encode        *encodeRequest
 	encodeConfig  codec.EncodeConfig
 	encodedStream av.Stream
-	destination   destinationSpec
+	destinations  []destinationSpec
 
 	// planned branch fanout off the joined stream.
 	branchRoutes  []branchComposeRoute
@@ -303,21 +305,59 @@ func newJoinPlan(rt *runtime, state *recipeCompileState) (*joinPlan, error) {
 		p.encode = &request
 		p.encodeConfig = config
 		p.encodedStream = encodedStream
-		p.destination = spec.dest.spec
+		destinations, err := resolveJoinDestinations(name, spec)
+		if err != nil {
+			return nil, err
+		}
+		p.destinations = destinations
 	default:
-		if spec.dest.spec.sink == nil {
-			return nil, &BuildError{
-				Code:        joinErrorCode(name, "destination"),
-				Operation:   "build " + name,
-				Node:        name,
-				Reason:      profile.sinkOnlyReason,
-				Suggestions: append([]string(nil), profile.sinkOnlySuggestions...),
-				Cause:       ErrUnsupportedBuild,
+		destinations, err := resolveJoinDestinations(name, spec)
+		if err != nil {
+			return nil, err
+		}
+		for i := range destinations {
+			if destinations[i].sink == nil {
+				return nil, &BuildError{
+					Code:        joinErrorCode(name, "destination"),
+					Operation:   "build " + name,
+					Node:        name,
+					Reason:      profile.sinkOnlyReason,
+					Suggestions: append([]string(nil), profile.sinkOnlySuggestions...),
+					Cause:       ErrUnsupportedBuild,
+				}
 			}
 		}
-		p.destination = spec.dest.spec
+		p.destinations = destinations
 	}
 	return p, nil
+}
+
+// resolveJoinDestinations resolves a join's .To(...) destinations into specs
+// with the chain rules: at least one destination, and the same duplicate
+// detection multi-destination chain fanout applies (one handle listed twice is
+// the same refusal).
+func resolveJoinDestinations(name string, spec *joinSpec) ([]destinationSpec, error) {
+	if len(spec.dests) == 0 {
+		return nil, &BuildError{
+			Code:      codes.OutputMissing,
+			Operation: "build " + name,
+			Node:      name,
+			Reason:    "no output is configured",
+			Suggestions: []string{
+				"route the join to one or more destinations: .To(goav.Sink(sink))",
+				"fan the joined stream out with .Branches(...) when branches need their own chains",
+			},
+			Cause: ErrUnsupportedBuild,
+		}
+	}
+	outputs := make([]destinationSpec, 0, len(spec.dests))
+	for i := range spec.dests {
+		outputs = append(outputs, cloneDestinationSpec(spec.dests[i].spec))
+	}
+	if err := validateDestinationSpecs("build "+name, outputs); err != nil {
+		return nil, err
+	}
+	return outputs, nil
 }
 
 // planJoinTree plans one join node and its arms, recursing when an arm is
@@ -860,18 +900,22 @@ func (p *joinPlan) spec() (pipeline.Spec, error) {
 			return pipeline.Spec{}, err
 		}
 		spec.Edges = append(spec.Edges, pipeline.EdgeSpec{From: joinRef, To: pipeline.NodeRef(encodeName), Policy: pipeline.RouteAll})
-		destRef, err := p.planDestinationNode(&spec, nodes)
+		destRefs, err := p.planDestinationNodes(&spec, nodes)
 		if err != nil {
 			return pipeline.Spec{}, err
 		}
-		spec.Edges = append(spec.Edges, pipeline.EdgeSpec{From: pipeline.NodeRef(encodeName), To: destRef, Policy: pipeline.RouteAll})
+		for i := range destRefs {
+			spec.Edges = append(spec.Edges, pipeline.EdgeSpec{From: pipeline.NodeRef(encodeName), To: destRefs[i], Policy: pipeline.RouteAll})
+		}
 		return groupSpecEdgesByNode(spec), nil
 	default:
-		destRef, err := p.planDestinationNode(&spec, nodes)
+		destRefs, err := p.planDestinationNodes(&spec, nodes)
 		if err != nil {
 			return pipeline.Spec{}, err
 		}
-		spec.Edges = append(spec.Edges, pipeline.EdgeSpec{From: joinRef, To: destRef, Policy: pipeline.RouteAll})
+		for i := range destRefs {
+			spec.Edges = append(spec.Edges, pipeline.EdgeSpec{From: joinRef, To: destRefs[i], Policy: pipeline.RouteAll})
+		}
 		return groupSpecEdgesByNode(spec), nil
 	}
 }
@@ -962,29 +1006,36 @@ func (p *joinPlan) planJoinTreeSpec(spec *pipeline.Spec, nodes map[string]planne
 	return nil
 }
 
-// joinDestinationNodeName names the single-destination node exactly as the
-// lowering does: sinks keep their own name, mux destinations use muxNodeName.
-func (p *joinPlan) joinDestinationNodeName() string {
-	if p.destination.sink != nil {
-		return firstNonEmpty(p.destination.sink.Name(), p.destination.label("sink"))
+// joinDestinationNodeName names one destination node exactly as the lowering
+// does: sinks keep their own name, mux destinations use muxNodeName with their
+// .To(...) position.
+func (p *joinPlan) joinDestinationNodeName(index int) string {
+	destination := p.destinations[index]
+	if destination.sink != nil {
+		return firstNonEmpty(destination.sink.Name(), destination.label("sink"))
 	}
-	return muxNodeName(p.destination.output, 0)
+	return muxNodeName(destination.output, index)
 }
 
-func (p *joinPlan) planDestinationNode(spec *pipeline.Spec, nodes map[string]plannedNode) (pipeline.NodeRef, error) {
-	name := p.joinDestinationNodeName()
-	ref := pipeline.NodeRef(name)
-	if p.destination.sink != nil {
-		if err := addPlannedNode(nodes, spec, name, pipeline.NodeSink, ref, describedNodeDetail(p.destination.sink)); err != nil {
-			return "", err
+func (p *joinPlan) planDestinationNodes(spec *pipeline.Spec, nodes map[string]plannedNode) ([]pipeline.NodeRef, error) {
+	refs := make([]pipeline.NodeRef, 0, len(p.destinations))
+	for i := range p.destinations {
+		name := p.joinDestinationNodeName(i)
+		ref := pipeline.NodeRef(name)
+		if p.destinations[i].sink != nil {
+			if err := addPlannedNode(nodes, spec, name, pipeline.NodeSink, ref, describedNodeDetail(p.destinations[i].sink)); err != nil {
+				return nil, err
+			}
+			refs = append(refs, ref)
+			continue
 		}
-		return ref, nil
+		detail := outputNodeDetailWithFormat(p.destinations[i].output, destinationGraphFormat(p.destinations[i]))
+		if err := addPlannedNode(nodes, spec, name, pipeline.NodeStage, ref, detail); err != nil {
+			return nil, err
+		}
+		refs = append(refs, ref)
 	}
-	detail := outputNodeDetailWithFormat(p.destination.output, destinationGraphFormat(p.destination))
-	if err := addPlannedNode(nodes, spec, name, pipeline.NodeStage, ref, detail); err != nil {
-		return "", err
-	}
-	return ref, nil
+	return refs, nil
 }
 
 // lower executes the planned join against the graph: the join tree is lowered
@@ -1012,14 +1063,20 @@ func (p *joinPlan) lower(ctx context.Context, _ graphPlan, graph pipeline.Graph,
 	case p.encode != nil:
 		// openMuxDestinationStage records the destination transaction (file
 		// commit/abort) on service; buildGraphPlanTask carries it to the task so
-		// the file finalizes.
-		return compileEncodeDestinationPath(ctx, service, graph, joinRef, *p.encode, p.encodeConfig, p.encodedStream, []destinationSpec{p.destination})
+		// the file finalizes. Every destination receives the encoded packets —
+		// the same fanout a chain's multi-destination .To(...) lowers to.
+		return compileEncodeDestinationPath(ctx, service, graph, joinRef, *p.encode, p.encodeConfig, p.encodedStream, p.destinations)
 	default:
-		sinkRef, err := graph.AddSink(p.destination.sink, rt.buffer)
-		if err != nil {
-			return err
+		for i := range p.destinations {
+			sinkRef, err := graph.AddSink(p.destinations[i].sink, rt.buffer)
+			if err != nil {
+				return err
+			}
+			if err := graph.Connect(pipeline.Route{From: string(joinRef), To: []string{string(sinkRef)}, Policy: pipeline.RouteAll}); err != nil {
+				return err
+			}
 		}
-		return graph.Connect(pipeline.Route{From: string(joinRef), To: []string{string(sinkRef)}, Policy: pipeline.RouteAll})
+		return nil
 	}
 }
 
@@ -1347,9 +1404,9 @@ func (p *joinPlan) joinedWorkBranch(ids map[string]string, outputs []planOutput,
 			index++
 			current = encoded
 		}
-		if len(outputs) != 0 {
-			output := outputs[0]
-			node := pipeline.NodeRef(p.joinDestinationNodeName())
+		for i := range outputs {
+			output := outputs[i]
+			node := pipeline.NodeRef(p.joinDestinationNodeName(i))
 			operations = append(operations, workOperation{
 				ID:           workOperationIDForKind(branchName, index, output.Operation),
 				Name:         workOperationName(node, output.Component, "destination", index),
@@ -1362,6 +1419,7 @@ func (p *joinPlan) joinedWorkBranch(ids map[string]string, outputs []planOutput,
 				ShapeOut:     current,
 				Destinations: []string{workDestinationIDForName(ids, output.Name)},
 			})
+			index++
 			branch.Destinations = append(branch.Destinations, workDestinationIDForName(ids, output.Name))
 		}
 	}
@@ -1547,7 +1605,9 @@ func joinIntent(job *Job) Intent {
 		}
 		return intent
 	}
-	intent.Destinations = append(intent.Destinations, spec.dest.spec.intentWithName(""))
+	for i := range spec.dests {
+		intent.Destinations = append(intent.Destinations, spec.dests[i].spec.intentWithName(""))
+	}
 	return intent
 }
 
@@ -1593,7 +1653,13 @@ func joinLeafInputSpecs(spec *joinSpec) []InputSpec {
 // compile state (format resolution); newJoinPlan re-validates them.
 func joinOutputAttachments(spec *joinSpec) ([]destinationSpec, []string) {
 	if len(spec.branches) == 0 {
-		return []destinationSpec{spec.dest.spec}, []string{""}
+		outputs := make([]destinationSpec, 0, len(spec.dests))
+		names := make([]string, 0, len(spec.dests))
+		for i := range spec.dests {
+			outputs = append(outputs, spec.dests[i].spec)
+			names = append(names, "")
+		}
+		return outputs, names
 	}
 	named, _ := joinBranchNamedDestinations(string(spec.kind), spec.branches)
 	outputs := make([]destinationSpec, 0, len(named))

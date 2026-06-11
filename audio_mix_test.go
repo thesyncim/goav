@@ -1,6 +1,7 @@
 package goav
 
 import (
+	"bytes"
 	"context"
 	"encoding/binary"
 	"errors"
@@ -10,6 +11,8 @@ import (
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
+	"github.com/thesyncim/goav/codes"
+	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/rtpav"
 	"github.com/thesyncim/goav/shape"
@@ -257,6 +260,88 @@ func TestMixEncodesToFile(t *testing.T) {
 	}
 	if len(muxers.muxers) != 1 || muxers.muxers[0].writes < 1 {
 		t.Fatalf("muxer writes = %+v, want one mux with >=1 write (mix -> encode -> file)", muxers.muxers)
+	}
+}
+
+// writerTestMuxerFactory builds muxers that copy packet payloads straight to
+// the destination's writer, so fanout tests can compare the bytes each
+// destination received.
+type writerTestMuxerFactory struct{}
+
+func (writerTestMuxerFactory) NewMuxer(context.Context, av.FormatID) (format.Muxer, error) {
+	return &writerTestMuxer{}, nil
+}
+
+type writerTestMuxer struct {
+	writer io.Writer
+}
+
+func (m *writerTestMuxer) Format() av.FormatID {
+	return av.FormatOgg
+}
+
+func (m *writerTestMuxer) Open(_ context.Context, output format.Output, _ []av.Stream, _ format.OpenOptions) error {
+	m.writer = output.Writer
+	return nil
+}
+
+func (m *writerTestMuxer) Write(_ context.Context, packet *av.Packet, _ *format.WriteResult) error {
+	if m.writer == nil || len(packet.Payload.Bytes) == 0 {
+		return nil
+	}
+	_, err := m.writer.Write(packet.Payload.Bytes)
+	return err
+}
+
+func (m *writerTestMuxer) Close() error { return nil }
+
+func TestMixEncodesToMultipleFileDestinations(t *testing.T) {
+	ctx := context.Background()
+	rt := New(
+		withTestFormats(testFormatMuxer(av.FormatOgg, writerTestMuxerFactory{})),
+		WithEncoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &encodeTestEncoderFactory{encoder: &encodeTestEncoder{}}),
+	)
+
+	var first, second bytes.Buffer
+	task, err := Mix(
+		From(mixTestAudioSource("a", 100, 200)).Audio(),
+		From(mixTestAudioSource("b", 50, -50)).Audio(),
+	).Encode(codec.Opus()).To(
+		File("first.ogg", &first, Format(av.FormatOgg)),
+		File("second.ogg", &second, Format(av.FormatOgg)),
+	).UseRuntime(rt).Build(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer task.Close()
+	if err := task.Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if first.Len() == 0 {
+		t.Fatal("first destination received no bytes (mix -> encode -> two files)")
+	}
+	if !bytes.Equal(first.Bytes(), second.Bytes()) {
+		t.Fatalf("destinations diverge: first=%v second=%v, want byte-equal fanout", first.Bytes(), second.Bytes())
+	}
+}
+
+func TestMixRejectsSameDestinationHandleTwice(t *testing.T) {
+	rt := New(
+		withTestFormats(testFormatMuxer(av.FormatOgg, writerTestMuxerFactory{})),
+		WithEncoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &encodeTestEncoderFactory{encoder: &encodeTestEncoder{}}),
+	)
+	out := File("mix.ogg", io.Discard, Format(av.FormatOgg))
+
+	_, err := Mix(
+		From(mixTestAudioSource("a", 100)).Audio(),
+		From(mixTestAudioSource("b", 50)).Audio(),
+	).Encode(codec.Opus()).To(out, out).UseRuntime(rt).Build(context.Background())
+
+	// One handle listed twice is the same refusal a chain's .To(out, out)
+	// raises: the joined stream reaches each destination once.
+	var buildErr *BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != codes.OutputDuplicate {
+		t.Fatalf("err = %v, want %s", err, codes.OutputDuplicate)
 	}
 }
 

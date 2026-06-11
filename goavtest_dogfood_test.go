@@ -116,14 +116,45 @@ func controlWhenRunning(ctx context.Context, task goav.Task, control goav.Contro
 	}
 }
 
+// TestFlowInFlowRunsEndToEnd is the flow-composition acceptance test,
+// consumer side: a flow applies another flow, the composed flow applies to an
+// ordinary chain, and the spliced stage really runs.
+func TestFlowInFlowRunsEndToEnd(t *testing.T) {
+	ctx := context.Background()
+	var metered int
+	meter := goav.FrameFunc("meter", func(ctx context.Context, frame *goav.Frame, emit goav.Emit) error {
+		metered++
+		return emit.Frame(frame)
+	})
+	inner := goav.Flow("inner").Audio().Do(meter)
+	outer := goav.Flow("outer").Audio().Apply(inner)
+
+	out := goavtest.NewCollector()
+	err := goav.From(goavtest.Audio(48000, 1, []int16{100, 200})).
+		Audio().
+		Apply(outer).
+		To(out.Sink()).
+		UseRuntime(goavtest.Runtime()).
+		Run(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if metered != 1 {
+		t.Fatalf("metered frames = %d, want 1 (nested flow stage ran)", metered)
+	}
+	if got, want := out.S16(), [][]int16{{100, 200}}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("collected = %v, want %v", got, want)
+	}
+}
+
 // TestFromMultiInputAmbiguousSelectionListsCandidates is the multi-input
 // ambiguity acceptance test, consumer side: two named goavtest inputs, one
 // unnarrowed .Audio() chain, and the refusal lists every candidate with its
 // input plus concrete narrowing suggestions.
 func TestFromMultiInputAmbiguousSelectionListsCandidates(t *testing.T) {
 	_, err := goav.From(
-		goavtest.Audio(48000, 1, []int16{1}).Name("mic-a"),
-		goavtest.Audio(48000, 1, []int16{1}).Name("mic-b"),
+		goavtest.Audio(48000, 1, []int16{1}).With(goav.Name("mic-a")),
+		goavtest.Audio(48000, 1, []int16{1}).With(goav.Name("mic-b")),
 	).
 		Audio().
 		To(goavtest.NewCollector().Sink()).

@@ -26,7 +26,10 @@ GoAV was structurally a tree (one input fanning out via `Branches`); convergence
 Design properties: joins are entry points parallel to `From` (single-input
 chains are untouched); the join output is a normal stream point (`.Tap`,
 `.Branches`, `.Encode().To(...)`, runtime attach from join taps); all three are
-thin faces over one join operation with N input arms. The pipeline already
+thin faces over one join operation with N input arms. `.To(destinations...)`
+is variadic with chain semantics: each destination receives the joined stream
+(Mix/Composite mux fanout after `.Encode`, Select fans out to several sinks),
+and one handle listed twice raises the same duplicate refusal a chain does. The pipeline already
 supported N input edges per node, and each buffered node has a single serial
 worker, so join stages need no internal locking — lock-free by design holds.
 

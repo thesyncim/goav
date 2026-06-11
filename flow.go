@@ -207,6 +207,21 @@ func (b *audioChain) Prefer(spec shape.Spec) *audioChain {
 	return b
 }
 
+// Apply splices another flow's operations into this flow at the declaration
+// position — the flow-side twin of a chain's .Apply(flow): flows compose
+// exactly like chains apply flows. The applied flow must carry the same media
+// kind, and its decode/encode terminals obey the same ordering rules as
+// directly declared operations. Apply copies the other flow's operation list
+// by value at call time, so cycles are unrepresentable — a flow applied to
+// itself only splices its operations as declared so far.
+func (b *audioChain) Apply(flow Chain) *audioChain {
+	if b == nil {
+		return b
+	}
+	b.chainBuilder.apply(flow)
+	return b
+}
+
 func (b *audioChain) Tap(tap TapRef) *audioChain {
 	if b == nil {
 		return b
@@ -300,6 +315,21 @@ func (b *videoChain) Prefer(spec shape.Spec) *videoChain {
 		return b
 	}
 	b.chainBuilder.prefer(spec)
+	return b
+}
+
+// Apply splices another flow's operations into this flow at the declaration
+// position — the flow-side twin of a chain's .Apply(flow): flows compose
+// exactly like chains apply flows. The applied flow must carry the same media
+// kind, and its decode/encode terminals obey the same ordering rules as
+// directly declared operations. Apply copies the other flow's operation list
+// by value at call time, so cycles are unrepresentable — a flow applied to
+// itself only splices its operations as declared so far.
+func (b *videoChain) Apply(flow Chain) *videoChain {
+	if b == nil {
+		return b
+	}
+	b.chainBuilder.apply(flow)
 	return b
 }
 
@@ -472,6 +502,48 @@ func (b *chainBuilder) prefer(spec shape.Spec) {
 		return
 	}
 	b.spec.operations = append(b.spec.operations, operationSpecForPreference(spec))
+}
+
+// apply splices another flow's snapshotted operations onto this builder with
+// the same ordering rules declaration-side operations obey: nothing splices
+// after a terminal encoder, an applied decode must be the flow's first
+// operation, and an applied packet copy refuses frame-domain prefixes. The
+// applied operations are cloned values, so later mutation of either flow
+// cannot reach the other (and self-application cannot recurse).
+func (b *chainBuilder) apply(flow Chain) {
+	if b == nil {
+		return
+	}
+	spec, err := chainSpecFrom(flow)
+	if err != nil {
+		b.setErr(err)
+		return
+	}
+	node := firstNonEmpty(b.spec.name, "flow")
+	if err := validateChainMedia("build flow", node, b.spec.media, spec); err != nil {
+		b.setErr(err)
+		return
+	}
+	specSteps := chainStepsFromChainOperations(spec.operations)
+	if codecIntentSet(chainEncodeSpec(b.spec.operations)) && (chainHasDecode(spec.operations) || len(specSteps) != 0 || codecIntentSet(chainEncodeSpec(spec.operations))) {
+		b.setErr(chainStepAfterEncodeError("build flow", node, "flow", chainEncodeSpec(b.spec.operations)))
+		return
+	}
+	if chainHasDecode(spec.operations) {
+		if chainHasDecode(b.spec.operations) {
+			b.setErr(duplicateFlowDecodeError(node))
+			return
+		}
+		if operationSpecsContainChainStep(b.spec.operations) {
+			b.setErr(flowDecodeOrderError(node))
+			return
+		}
+	}
+	if chainEncodeSpec(spec.operations).Copy && (chainHasDecode(b.spec.operations) || operationSpecsContainChainStep(b.spec.operations)) {
+		b.setErr(flowCopyDomainError("build flow", firstNonEmpty(spec.name, node)))
+		return
+	}
+	b.spec.operations = append(b.spec.operations, cloneOperationSpecs(spec.operations)...)
 }
 
 func (b *chainBuilder) tap(tap TapRef) {
