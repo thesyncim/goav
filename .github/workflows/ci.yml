@@ -1,0 +1,42 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build (pure Go)
+        run: CGO_ENABLED=0 go build ./...
+
+      - name: Test
+        run: CGO_ENABLED=0 go test -count=1 ./...
+
+      - name: Race
+        run: CGO_ENABLED=1 go test -race -count=1 . ./pipeline ./goavtest ./format
+
+      - name: Vet
+        run: CGO_ENABLED=0 go vet ./...
+
+      - name: Staticcheck
+        run: |
+          go install honnef.co/go/tools/cmd/staticcheck@latest
+          staticcheck ./...
+
+      - name: Gofmt
+        run: test -z "$(gofmt -l .)"
+
+      - name: Examples module
+        working-directory: examples/webrtc-runtime-ladder
+        run: |
+          CGO_ENABLED=0 go build ./...
+          CGO_ENABLED=0 go test -count=1 ./...
