@@ -11,6 +11,7 @@ import (
 	goav "github.com/thesyncim/goav"
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
+	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/shape"
 )
 
@@ -50,6 +51,7 @@ type BranchPipeline struct {
 	decodeFn      func()
 	resizeFn      func(int, int)
 	resampleFn    func(int, int)
+	doFn          func(...pipeline.Stage)
 	encodeFn      func(codec.CodecSpec)
 	destinationFn func(goav.Destination)
 	finishFn      func() goav.BranchSpec
@@ -79,6 +81,13 @@ func (p *BranchPipeline) Resample(sampleRate, channels int) {
 	}
 }
 
+// Do appends external stages to the branch pipeline.
+func (p *BranchPipeline) Do(stages ...pipeline.Stage) {
+	if p != nil && p.doFn != nil {
+		p.doFn(stages...)
+	}
+}
+
 func (p *BranchPipeline) Encode(spec codec.CodecSpec) {
 	if p != nil && p.encodeFn != nil {
 		p.encodeFn(spec)
@@ -98,11 +107,7 @@ func (p *BranchPipeline) finish() goav.BranchSpec {
 	return p.finishFn()
 }
 
-func parseBranchPipeline(task goav.Task, tapName string, branchName string, pipeline string) (goav.BranchSpec, error) {
-	return parseBranchPipelineWithRegistry(task, tapName, branchName, pipeline, PipelineRegistry{})
-}
-
-func parseBranchPipelineWithRegistry(task goav.Task, tapName string, branchName string, pipeline string, registry PipelineRegistry) (goav.BranchSpec, error) {
+func parseBranchPipelineWithRegistry(task goav.Task, tapName string, branchName string, pipelineText string, registry PipelineRegistry) (goav.BranchSpec, error) {
 	if branchName == "" {
 		return goav.BranchSpec{}, commandError("missing_required", "attach", "branch", "branch name is required", nil, []string{"use attach <tap-name> as <branch-name> '<branch-pipeline>'"}, nil)
 	}
@@ -110,7 +115,7 @@ func parseBranchPipelineWithRegistry(task goav.Task, tapName string, branchName 
 	if err != nil {
 		return goav.BranchSpec{}, err
 	}
-	steps, err := splitPipeline(pipeline)
+	steps, err := splitPipeline(pipelineText)
 	if err != nil {
 		return goav.BranchSpec{}, err
 	}
@@ -121,6 +126,7 @@ func parseBranchPipelineWithRegistry(task goav.Task, tapName string, branchName 
 		decodeFn:   func() { builder = builder.Decode() },
 		resizeFn:   func(width int, height int) { builder = builder.Resize(width, height) },
 		resampleFn: func(sampleRate int, channels int) { builder = builder.Resample(sampleRate, channels) },
+		doFn:       func(stages ...pipeline.Stage) { builder = builder.Do(stages...) },
 		encodeFn:   func(spec codec.CodecSpec) { builder = builder.Encode(spec) },
 		destinationFn: func(dest goav.Destination) {
 			destinations = append(destinations, dest)
@@ -156,31 +162,39 @@ func parseBranchPipelineWithRegistry(task goav.Task, tapName string, branchName 
 			}
 			branch.Resample(rate, channels)
 		case "vp8enc", "vp8":
-			enc, err := parseEncoder(av.CodecVP8, args)
+			enc, err := parseEncoder(av.CodecVP8, av.MediaVideo, args)
 			if err != nil {
 				return goav.BranchSpec{}, err
 			}
 			branch.Encode(enc)
 		case "vp9enc", "vp9":
-			enc, err := parseEncoder(av.CodecVP9, args)
+			enc, err := parseEncoder(av.CodecVP9, av.MediaVideo, args)
 			if err != nil {
 				return goav.BranchSpec{}, err
 			}
 			branch.Encode(enc)
 		case "h264enc", "h264":
-			enc, err := parseEncoder(av.CodecH264, args)
+			enc, err := parseEncoder(av.CodecH264, av.MediaVideo, args)
 			if err != nil {
 				return goav.BranchSpec{}, err
 			}
 			branch.Encode(enc)
 		case "av1enc", "av1":
-			enc, err := parseEncoder(av.CodecAV1, args)
+			enc, err := parseEncoder(av.CodecAV1, av.MediaVideo, args)
 			if err != nil {
 				return goav.BranchSpec{}, err
 			}
 			branch.Encode(enc)
 		case "opusenc", "opus":
-			enc, err := parseEncoder(av.CodecOpus, args)
+			enc, err := parseEncoder(av.CodecOpus, av.MediaAudio, args)
+			if err != nil {
+				return goav.BranchSpec{}, err
+			}
+			branch.Encode(enc)
+		case "encode", "encoder":
+			id := av.CodecID(firstNonEmpty(args["codec"], args["id"]))
+			media := av.MediaType(firstNonEmpty(args["media"], args["type"]))
+			enc, err := parseEncoder(id, media, args)
 			if err != nil {
 				return goav.BranchSpec{}, err
 			}
@@ -262,6 +276,8 @@ func pipelineStepNames(registry PipelineRegistry) []string {
 		"decode":   {},
 		"resize":   {},
 		"resample": {},
+		"encode":   {},
+		"encoder":  {},
 		"vp8enc":   {},
 		"vp9enc":   {},
 		"h264enc":  {},
@@ -392,23 +408,16 @@ func parsePositiveIntArg(args map[string]string, keys ...string) (int, bool) {
 	return 0, false
 }
 
-func parseEncoder(id av.CodecID, args map[string]string) (codec.CodecSpec, error) {
-	var options []codec.Option
-	if bitrateText := firstNonEmpty(args["bitrate"], args["bitrate_bps"]); bitrateText != "" {
-		bitrate, err := parseRate(bitrateText)
-		if err != nil {
-			return codec.CodecSpec{}, commandError("invalid_value", "parse branch pipeline", string(id), "encoder bitrate must be like 300k, 2M, or integer bits per second", []string{"value=" + bitrateText}, []string{"use bitrate=900k"}, err)
-		}
-		options = append(options, codec.Bitrate(bitrate))
+func parseEncoder(id av.CodecID, media av.MediaType, args map[string]string) (codec.CodecSpec, error) {
+	if id == "" {
+		return codec.CodecSpec{}, commandError("missing_required", "parse branch pipeline", "codec", "encode needs codec=<codec-id>", nil, []string{"use `encode codec=x_pcm_s16 media=audio`"}, nil)
+	}
+	options, err := parseCodecOptions(args)
+	if err != nil {
+		return codec.CodecSpec{}, err
 	}
 	switch id {
 	case av.CodecOpus:
-		if rate, ok := parsePositiveIntArg(args, "rate", "sample_rate"); ok {
-			options = append(options, codec.SampleRate(rate))
-		}
-		if channels, ok := parsePositiveIntArg(args, "channels", "ch"); ok {
-			options = append(options, codec.Channels(channels))
-		}
 		return codec.Opus(options...), nil
 	case av.CodecVP8:
 		return codec.VP8(options...), nil
@@ -419,8 +428,78 @@ func parseEncoder(id av.CodecID, args map[string]string) (codec.CodecSpec, error
 	case av.CodecAV1:
 		return codec.AV1(options...), nil
 	default:
-		return codec.CodecSpec{}, commandError("unsupported_codec", "parse branch pipeline", string(id), fmt.Sprintf("unsupported encoder codec %q", id), nil, nil, nil)
+		if media == "" {
+			return codec.CodecSpec{}, commandError("missing_required", "parse branch pipeline", "media", "custom encode needs media=audio, media=video, or media=subtitle", []string{"codec=" + string(id)}, []string{"use `encode codec=" + string(id) + " media=audio`"}, nil)
+		}
+		return codec.Codec(id, media, options...), nil
 	}
+}
+
+func parseCodecOptions(args map[string]string) ([]codec.Option, error) {
+	var options []codec.Option
+	if bitrateText := firstNonEmpty(args["bitrate"], args["bitrate_bps"]); bitrateText != "" {
+		bitrate, err := parseRate(bitrateText)
+		if err != nil {
+			return nil, commandError("invalid_value", "parse branch pipeline", "bitrate", "encoder bitrate must be like 300k, 2M, or integer bits per second", []string{"value=" + bitrateText}, []string{"use bitrate=900k"}, err)
+		}
+		options = append(options, codec.Bitrate(bitrate))
+	}
+	if profile := args["profile"]; profile != "" {
+		options = append(options, codec.Profile(profile))
+	}
+	if level := args["level"]; level != "" {
+		options = append(options, codec.Level(level))
+	}
+	if rate, ok := parsePositiveIntArg(args, "rate", "sample_rate"); ok {
+		options = append(options, codec.SampleRate(rate))
+	}
+	if channels, ok := parsePositiveIntArg(args, "channels", "ch"); ok {
+		options = append(options, codec.Channels(channels))
+	}
+	if clockRate, ok := parsePositiveUint32Arg(args, "clock_rate"); ok {
+		options = append(options, codec.ClockRate(clockRate))
+	}
+	if keyframes, ok := parsePositiveIntArg(args, "keyframe_interval", "keyint", "gop"); ok {
+		options = append(options, codec.KeyframeInterval(keyframes))
+	}
+	if fps := args["fps"]; fps != "" {
+		num, den, err := parseFPS(fps)
+		if err != nil {
+			return nil, err
+		}
+		options = append(options, codec.FPS(num, den))
+	}
+	return options, nil
+}
+
+func parsePositiveUint32Arg(args map[string]string, keys ...string) (uint32, bool) {
+	for _, key := range keys {
+		value, ok := args[key]
+		if !ok || value == "" {
+			continue
+		}
+		parsed, err := strconv.ParseUint(value, 10, 32)
+		if err == nil && parsed > 0 {
+			return uint32(parsed), true
+		}
+	}
+	return 0, false
+}
+
+func parseFPS(value string) (int, int, error) {
+	numText, denText, hasDen := strings.Cut(value, "/")
+	num, err := strconv.Atoi(numText)
+	if err != nil || num <= 0 {
+		return 0, 0, commandError("invalid_value", "parse branch pipeline", "fps", "fps must be a positive integer or fraction", []string{"value=" + value}, []string{"use fps=30", "use fps=30000/1001"}, err)
+	}
+	if !hasDen {
+		return num, 1, nil
+	}
+	den, err := strconv.Atoi(denText)
+	if err != nil || den <= 0 {
+		return 0, 0, commandError("invalid_value", "parse branch pipeline", "fps", "fps denominator must be positive", []string{"value=" + value}, []string{"use fps=30000/1001"}, err)
+	}
+	return num, den, nil
 }
 
 func parseFileSink(args map[string]string) (goav.Destination, error) {

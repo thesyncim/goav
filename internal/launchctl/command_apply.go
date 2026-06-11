@@ -14,7 +14,6 @@ import (
 
 	goav "github.com/thesyncim/goav"
 	"github.com/thesyncim/goav/av"
-	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/snapshot"
 )
@@ -746,8 +745,4 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
-}
-
-func errcodeString(code errcode.Code) string {
-	return string(code)
 }

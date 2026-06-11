@@ -83,6 +83,13 @@ first-class. See docs/ADAPTERS.md and docs/COMPONENTS.md.
   Emitter, Message, Scratch, capability interfaces).
 - **Codecs** — `codec` Descriptor/Decoder/Encoder/factories, caller-owned
   results, `WithDecoder`/`WithEncoder`/`WithCodecAdapter`/`WithCodecDescriptor`.
+- **Control hosts** — `ctl` is the supported package for applications that
+  run a task and expose it to `goav ctl --control unix://...`. It reuses the
+  same allowlisted command framework as the bundled command: external hosts
+  pass `CommandSpec` for app-specific control verbs, `PipelineRegistry` for
+  custom branch-pipeline steps and encoder names, and `ServeUnixWithOptions`
+  to put those hooks behind a socket. Generic branch pipelines can also encode
+  runtime-registered custom codecs with `encode codec=<id> media=<kind> ...`.
 - **Containers** — `format` Prober/Demuxer/Muxer/factories, Seeker for
   seekable inputs, `WithDemuxer`/`WithMuxer`/`WithFormatAdapter`/`WithProber`.
 - **Filters** — `filter` FrameFilter/Factory/Descriptor,
@@ -122,11 +129,11 @@ implement, with the executable evidence:
   enumerate the classes, and externals cannot extend that enumeration.
 - **Controls.** The typed verbs (`Keyframe`, `Seek`, `Rate`, `SetBitrate`,
   `SelectActive`, ...) are core vocabulary, but the control plane is closed
-  for externals: `Deliver(event)` hands a verbatim event to any stage that
-  interprets it itself, and `.AtTap(name)` targets it without graph handles —
-  Deliver+AtTap is the external form of a custom control verb (untargeted
-  Deliver broadcasts at the source boundary and rides the data path, exactly
-  like the built-in verbs).
+  for externals in two directions. In-process stages still use
+  `Deliver(event).AtTap(name)` to receive arbitrary custom events. Hosts that
+  need CLI access import `ctl`, add explicit `CommandSpec` rows for new verbs,
+  and add `PipelineRegistry` rows for custom runtime branch components. There
+  is no global registry and no arbitrary method invocation.
 
 ## C. Expert tier
 

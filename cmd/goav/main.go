@@ -8,7 +8,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/thesyncim/goav/internal/launchctl"
+	"github.com/thesyncim/goav/ctl"
 )
 
 func main() {
@@ -26,7 +26,7 @@ func main() {
 		if len(topic) != 0 {
 			topic = topic[1:]
 		}
-		text, err := launchctl.Help(topic)
+		text, err := ctl.Help(topic)
 		if err != nil {
 			printErr(err)
 			os.Exit(2)
@@ -34,7 +34,7 @@ func main() {
 		fmt.Print(text)
 		return
 	}
-	request, err := launchctl.RequestFromCLI(args)
+	request, err := ctl.RequestFromCLI(args)
 	if err != nil {
 		printErr(err)
 		os.Exit(2)
@@ -70,7 +70,7 @@ func parseCtlArgs(argv []string) (string, []string, error) {
 	return control, args, nil
 }
 
-func send(address string, request launchctl.Request) error {
+func send(address string, request ctl.Request) error {
 	path, ok := strings.CutPrefix(address, "unix://")
 	if !ok || path == "" {
 		return fmt.Errorf("unsupported control address %q: expected unix://PATH", address)
@@ -84,7 +84,7 @@ func send(address string, request launchctl.Request) error {
 	if err := encoder.Encode(request); err != nil {
 		return err
 	}
-	var response launchctl.Response
+	var response ctl.Response
 	if follows(request) {
 		decoder := json.NewDecoder(conn)
 		for decoder.Decode(&response) == nil {
@@ -112,7 +112,7 @@ func send(address string, request launchctl.Request) error {
 	return json.NewEncoder(os.Stdout).Encode(response.Result)
 }
 
-func follows(request launchctl.Request) bool {
+func follows(request ctl.Request) bool {
 	switch request.Op {
 	case "events", "watch":
 		return request.Args["follow"] == "true"

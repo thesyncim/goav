@@ -42,6 +42,7 @@ var surfaceSeamPackages = []string{
 	"av",
 	"cmd/goav",
 	"codec",
+	"ctl",
 	"expert",
 	"filter",
 	"flow",
