@@ -124,6 +124,26 @@ func TestBindArgsUnknownFieldSuggestsKnownField(t *testing.T) {
 	}
 }
 
+func TestBindJSONParsesBoolFields(t *testing.T) {
+	type boolCommand struct {
+		Enabled bool `goavctl:"enabled,required" usage:"enabled=<bool>" help:"feature flag"`
+	}
+	spec := CommandSpec{Name: "vendor.bool", ArgsType: reflect.TypeOf(boolCommand{})}
+	args, err := BindJSON(spec, []byte(`{"enabled":true}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !args.(boolCommand).Enabled {
+		t.Fatalf("args = %+v", args)
+	}
+
+	_, err = BindJSON(spec, []byte(`{"enabled":"yes"}`))
+	var structured *Error
+	if !errors.As(err, &structured) || structured.Code != "invalid_value" {
+		t.Fatalf("err = %v, want invalid_value", err)
+	}
+}
+
 func TestExecuteRawControlCallsTaskControl(t *testing.T) {
 	task := newFakeTask()
 	_, err := Execute(context.Background(), task, []string{"control", "--json", `{"type":"bitrate","stream_id":"video","bitrate":1200000,"tap":"main_encoded"}`})
@@ -136,6 +156,38 @@ func TestExecuteRawControlCallsTaskControl(t *testing.T) {
 	control := task.controls[0]
 	if control.Type != goav.ControlBitrate || control.StreamID != "video" || control.Bitrate != 1_200_000 || control.Tap != "main_encoded" {
 		t.Fatalf("control = %+v", control)
+	}
+}
+
+func TestDecodeRawControlParsesFloatAndDurationFields(t *testing.T) {
+	rate, err := DecodeRawControl([]byte(`{"type":"rate","rate":"1.5","node":"source"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rate.Type != goav.ControlRate || rate.Rate != 1.5 || rate.Node != "source" {
+		t.Fatalf("rate = %+v", rate)
+	}
+
+	seek, err := DecodeRawControl([]byte(`{"type":"seek","position":"250ms"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if seek.Type != goav.ControlSeek || seek.Position != 250*time.Millisecond {
+		t.Fatalf("seek = %+v", seek)
+	}
+
+	segment, err := DecodeRawControl([]byte(`{"type":"segment","start":1000000,"end":"2ms"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if segment.Type != goav.ControlSegment || segment.Position != time.Millisecond || segment.End != 2*time.Millisecond {
+		t.Fatalf("segment = %+v", segment)
+	}
+
+	_, err = DecodeRawControl([]byte(`{"type":"seek","position":{"bad":true}}`))
+	var structured *Error
+	if !errors.As(err, &structured) || structured.Code != "invalid_value" {
+		t.Fatalf("err = %v, want invalid_value", err)
 	}
 }
 
@@ -222,6 +274,16 @@ func TestRequestFromCLIParsesGraphCommand(t *testing.T) {
 	}
 }
 
+func TestRequestFromCLIParsesHelpTopicAndCommand(t *testing.T) {
+	request, err := RequestFromCLI([]string{"help", "control", "bitrate"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if request.Op != "help" || request.Args["topic"] != "control" || request.Args["command"] != "bitrate" {
+		t.Fatalf("request = %+v", request)
+	}
+}
+
 func TestRequestFromCLIParsesRebranchCommand(t *testing.T) {
 	request, err := RequestFromCLI([]string{
 		"rebranch",
@@ -289,6 +351,64 @@ func TestExecuteGraphRejectsInvalidFormat(t *testing.T) {
 	var structured *Error
 	if !errors.As(err, &structured) || structured.Code != "invalid_value" {
 		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestExecuteStreamsAndWatchCommands(t *testing.T) {
+	task := newFakeTask()
+	task.events = []av.Event{
+		{Type: av.EventStats, StreamID: "video"},
+		{Type: av.EventBitrateChanged, StreamID: "audio"},
+	}
+
+	streams, err := Execute(context.Background(), task, []string{"streams"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	infos, ok := streams.Result.([]StreamInfo)
+	if streams.Operation != "streams" || !ok || len(infos) != 1 || infos[0].ID != "video" || infos[0].Tap != "raw_video" {
+		t.Fatalf("streams = %+v", streams)
+	}
+
+	watch, err := Execute(context.Background(), task, []string{"watch", "type=stats", "stream=video"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	events, ok := watch.Result.([]av.Event)
+	if watch.Operation != "watch" || !ok || len(events) != 1 || events[0].Type != av.EventStats {
+		t.Fatalf("watch = %+v", watch)
+	}
+
+	all, err := Execute(context.Background(), task, []string{"events"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	allEvents, ok := all.Result.([]av.Event)
+	if all.Operation != "events" || !ok || len(allEvents) != 2 {
+		t.Fatalf("events = %+v", all)
+	}
+
+	_, err = Execute(context.Background(), task, []string{"watch", "--follow"})
+	var structured *Error
+	if !errors.As(err, &structured) || structured.Code != "unsupported_streaming_response" {
+		t.Fatalf("err = %v, want unsupported_streaming_response", err)
+	}
+}
+
+func TestExecuteUnsupportedRebranchReportsKnownBranches(t *testing.T) {
+	task := newFakeTask()
+	_, err := Execute(context.Background(), task, []string{"rebranch", "preview"})
+	var structured *Error
+	if !errors.As(err, &structured) || structured.Code != "unsupported" {
+		t.Fatalf("err = %v, want unsupported", err)
+	}
+
+	_, err = Execute(context.Background(), task, []string{"rebranch", "preveiw"})
+	if !errors.As(err, &structured) ||
+		structured.Code != "unknown_branch" ||
+		!detailsContain(structured.Details, "preview") ||
+		!suggestionsContain(structured.Suggestions, "preview") {
+		t.Fatalf("err = %+v", structured)
 	}
 }
 
@@ -588,6 +708,23 @@ func TestArgsFromMapPreservesTrueValues(t *testing.T) {
 	})
 	if !reflect.DeepEqual(args, []string{"--follow", "metadata.ok=true"}) {
 		t.Fatalf("args = %v", args)
+	}
+}
+
+func TestUnknownControlHelpListsAvailableCommands(t *testing.T) {
+	_, err := Execute(context.Background(), newFakeTask(), []string{"control", "bogus"})
+	var structured *Error
+	if !errors.As(err, &structured) ||
+		structured.Code != "unknown_command" ||
+		!suggestionsContain(structured.Suggestions, "bitrate") {
+		t.Fatalf("err = %+v", structured)
+	}
+
+	_, err = HelpWithCommands([]string{"control", "bogus"}, ControlManifest())
+	if !errors.As(err, &structured) ||
+		structured.Code != "unknown_command" ||
+		!suggestionsContain(structured.Suggestions, "bitrate") {
+		t.Fatalf("help err = %+v", structured)
 	}
 }
 
@@ -896,6 +1033,27 @@ func TestServerHelpListsCustomPipelineRegistry(t *testing.T) {
 	}
 }
 
+func TestServerOptionsAndUnknownBranchErrors(t *testing.T) {
+	server := &Server{Task: newFakeTask()}
+	WithPipelineRegistry(PipelineRegistry{
+		Steps: []BranchPipelineStepSpec{{Name: "meter"}},
+	})(server)
+	if len(server.Pipeline.Steps) != 1 || server.Pipeline.Steps[0].Name != "meter" {
+		t.Fatalf("pipeline registry = %+v", server.Pipeline)
+	}
+
+	response := server.Handle(context.Background(), Request{Op: "detach", Branch: "preveiw"})
+	if response.OK || response.Error == nil ||
+		response.Error.Code != "unknown_branch" ||
+		!detailsContain(response.Error.Details, "preview") ||
+		!suggestionsContain(response.Error.Suggestions, "preview") {
+		t.Fatalf("response = %+v", response)
+	}
+	if got := firstAnchorTap(nil); got != "" {
+		t.Fatalf("firstAnchorTap(nil) = %q", got)
+	}
+}
+
 func TestServerGenericEncodeStepCarriesCommonCodecOptions(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
@@ -1074,6 +1232,24 @@ func TestHelpRendersRootStaticAndCustomControlTopics(t *testing.T) {
 	var structured *Error
 	if !errors.As(err, &structured) || structured.Code != "unknown_command" {
 		t.Fatalf("err = %v, want unknown_command", err)
+	}
+}
+
+func TestStructuredErrorFormattingAndUnwrap(t *testing.T) {
+	cause := fmt.Errorf("root cause")
+	err := commandError("bad", "op", "node", "", []string{"detail"}, []string{"suggestion"}, cause)
+	if err.Error() == "" ||
+		!strings.Contains(err.Error(), "bad") ||
+		!strings.Contains(err.Error(), "detail") ||
+		!strings.Contains(err.Error(), "suggestion") {
+		t.Fatalf("error text = %q", err.Error())
+	}
+	if !errors.Is(err, cause) {
+		t.Fatalf("unwrap failed for %+v", err)
+	}
+	var nilErr *Error
+	if nilErr.Error() != "" || nilErr.Unwrap() != nil {
+		t.Fatalf("nil error behavior changed")
 	}
 }
 
