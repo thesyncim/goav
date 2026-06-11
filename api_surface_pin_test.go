@@ -40,7 +40,9 @@ var surfacePinPackages = []struct {
 // outside this module's walk by construction.
 var surfaceSeamPackages = []string{
 	"av",
+	"cmd/goav",
 	"codec",
+	"ctl",
 	"expert",
 	"filter",
 	"flow",

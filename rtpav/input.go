@@ -158,7 +158,7 @@ func (in *Input) SourceShape() shape.Spec {
 	if id == "" {
 		id = parameters.ID
 	}
-	return shape.Spec{
+	declared := shape.Spec{
 		Domain:       shape.DomainPacket,
 		MediaKind:    media,
 		Codec:        id,
@@ -170,6 +170,10 @@ func (in *Input) SourceShape() shape.Spec {
 		SampleFormat: parameters.SampleFormat,
 		Realtime:     true,
 	}
+	if depacketized, ok := in.depacketizerShape(); ok {
+		return shape.Merge(depacketized, declared)
+	}
+	return declared
 }
 
 // DecodeBounds returns the configured decode bounds when the stream belongs
@@ -228,6 +232,75 @@ func (in *Input) depacketizersFor(streams []av.Stream) []Depacketizer {
 		return append(depacketizers, depacketizer)
 	}
 	return depacketizers
+}
+
+func (in *Input) depacketizerShape() (shape.Spec, bool) {
+	var out shape.Spec
+	found := false
+	for i := range in.depacketizers {
+		stream, ok := depacketizerStream(in.depacketizers[i])
+		if !ok {
+			continue
+		}
+		spec := shape.FromStream(stream, shape.DomainPacket)
+		spec.Realtime = true
+		if !found {
+			out = spec
+			found = true
+			continue
+		}
+		out = commonDepacketizerShape(out, spec)
+	}
+	return out, found
+}
+
+func commonDepacketizerShape(a shape.Spec, b shape.Spec) shape.Spec {
+	out := shape.Spec{Domain: shape.DomainPacket, Realtime: a.Realtime || b.Realtime}
+	if a.MediaKind == b.MediaKind {
+		out.MediaKind = a.MediaKind
+	}
+	if a.StreamID == b.StreamID {
+		out.StreamID = a.StreamID
+	}
+	if a.Codec == b.Codec {
+		out.Codec = a.Codec
+	}
+	if a.Width == b.Width {
+		out.Width = a.Width
+	}
+	if a.Height == b.Height {
+		out.Height = a.Height
+	}
+	if a.PixelFormat == b.PixelFormat {
+		out.PixelFormat = a.PixelFormat
+	}
+	if a.SampleRate == b.SampleRate {
+		out.SampleRate = a.SampleRate
+	}
+	if a.Channels == b.Channels {
+		out.Channels = a.Channels
+	}
+	if a.SampleFormat == b.SampleFormat {
+		out.SampleFormat = a.SampleFormat
+	}
+	return out
+}
+
+func depacketizerStream(depacketizer Depacketizer) (av.Stream, bool) {
+	switch d := depacketizer.(type) {
+	case *OpusDepacketizer:
+		return d.stream, true
+	case *VP8Depacketizer:
+		return d.assembler.stream, true
+	case *VP9Depacketizer:
+		return d.assembler.stream, true
+	case *H264Depacketizer:
+		return d.assembler.stream, true
+	case *AV1Depacketizer:
+		return d.assembler.stream, true
+	default:
+		return av.Stream{}, false
+	}
 }
 
 // defaultDepacketizerFor derives the built-in depacketizer for a codec, bound

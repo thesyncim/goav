@@ -698,7 +698,23 @@ job shows every arm converging into the join node — including auto-inserted
 per-arm decode and resample stages — and the planned spec equals the built
 graph node for node. `Describe()` returns the structured graph spec; rendering
 lives outside core (`graphrender.RenderURI(spec, "goav:graph")` for text, DOT,
-or Mermaid).
+or Mermaid). Running tasks can render the current snapshot directly:
+`graphrender.RenderTaskFlowchart(task)`.
+
+Applications that want a CLI control surface expose a Unix socket with package
+`ctl`; the bundled command then drives the same task APIs over structured JSON.
+The socket can host built-in controls plus explicit app-owned commands, custom
+branch-pipeline steps, custom codec names, and custom encoder settings:
+
+```sh
+goav ctl --control unix:///tmp/goav-live.sock control bitrate stream=video value=1200k
+goav ctl --control unix:///tmp/goav-live.sock attach frames as archive \
+  'meter ! acmeenc bitrate=128000 quality=voice lookahead=deep ! filesink location=/tmp/archive.ogg format=ogg'
+goav ctl --control unix:///tmp/goav-live.sock graph
+```
+
+The bootstrap guide, including an executable host example, lives in
+[`docs/CONTROL_PLANE.md`](docs/CONTROL_PLANE.md).
 
 ## Live Control
 

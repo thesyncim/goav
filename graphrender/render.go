@@ -9,16 +9,19 @@
 //	out, err := graphrender.RenderURI(spec, "goav:graph")          // text
 //	out, err := graphrender.RenderURI(spec, "goav://graph/dot")    // DOT
 //	out, err := graphrender.RenderURI(spec, "goav://graph?format=mermaid")
+//	flow, err := graphrender.RenderTaskFlowchart(task)             // live task
 package graphrender
 
 import (
 	"errors"
 	"io"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 
 	"github.com/thesyncim/goav/pipeline"
+	"github.com/thesyncim/goav/snapshot"
 )
 
 // ErrUnsupportedFormat reports a goav:graph URI naming a format other than
@@ -47,6 +50,23 @@ func RenderURI(spec pipeline.Spec, target string) (string, error) {
 		return "", err
 	}
 	return out.String(), nil
+}
+
+// RenderTaskFlowchart renders the current snapshot of a running task-like
+// value as a Mermaid flowchart. Runtime branch-owned nodes are annotated with
+// branch names and lifecycle state.
+func RenderTaskFlowchart(task interface{ Snapshot() snapshot.Task }) (string, error) {
+	return RenderTaskURI(task, "goav:graph?format=mermaid")
+}
+
+// RenderTaskURI renders the current snapshot of a running task-like value in
+// the format selected by target. The task only needs to expose Snapshot, so
+// this package stays outside the core import graph.
+func RenderTaskURI(task interface{ Snapshot() snapshot.Task }, target string) (string, error) {
+	if task == nil {
+		return RenderURI(pipeline.Spec{}, target)
+	}
+	return RenderURI(specFromSnapshot(task.Snapshot()), target)
 }
 
 func write(w io.Writer, spec pipeline.Spec, format format) error {
@@ -307,4 +327,110 @@ func routedEdgeLabel(kind string, label string) string {
 		return kind
 	}
 	return kind + "=" + label
+}
+
+func specFromSnapshot(snap snapshot.Task) pipeline.Spec {
+	spec := cloneSpec(snap.Spec)
+	labels := branchLabelsByNode(snap.Branches)
+	if len(labels) == 0 {
+		return spec
+	}
+	for i := range spec.Nodes {
+		nodeLabels := labels[spec.Nodes[i].Name]
+		if len(nodeLabels) == 0 {
+			continue
+		}
+		spec.Nodes[i].Detail = appendNodeDetail(spec.Nodes[i].Detail, strings.Join(nodeLabels, ", "))
+	}
+	return spec
+}
+
+func cloneSpec(spec pipeline.Spec) pipeline.Spec {
+	spec.Nodes = append([]pipeline.NodeSpec(nil), spec.Nodes...)
+	spec.Edges = append([]pipeline.EdgeSpec(nil), spec.Edges...)
+	return spec
+}
+
+func branchLabelsByNode(branches []snapshot.Branch) map[string][]string {
+	labels := make(map[string][]string)
+	sorted := append([]snapshot.Branch(nil), branches...)
+	sort.Slice(sorted, func(i, j int) bool {
+		return branchSortKey(sorted[i]) < branchSortKey(sorted[j])
+	})
+	for i := range sorted {
+		branch := &sorted[i]
+		label := branchRenderLabel(branch)
+		if label == "" {
+			continue
+		}
+		for _, node := range branchNodeNames(branch) {
+			labels[node] = append(labels[node], label)
+		}
+	}
+	return labels
+}
+
+func branchSortKey(branch snapshot.Branch) string {
+	if branch.Name != "" {
+		return branch.Name
+	}
+	return branch.ID
+}
+
+func branchRenderLabel(branch *snapshot.Branch) string {
+	if branch == nil {
+		return ""
+	}
+	name := branch.Name
+	if name == "" {
+		name = branch.ID
+	}
+	if name == "" {
+		return ""
+	}
+	if branch.State == "" {
+		return "branch=" + name
+	}
+	return "branch=" + name + " (" + string(branch.State) + ")"
+}
+
+func branchNodeNames(branch *snapshot.Branch) []string {
+	if branch == nil {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(branch.Nodes)+len(branch.Spec.Nodes))
+	var out []string
+	for i := range branch.Nodes {
+		name := branch.Nodes[i].String()
+		if name == "" {
+			continue
+		}
+		if _, ok := seen[name]; ok {
+			continue
+		}
+		seen[name] = struct{}{}
+		out = append(out, name)
+	}
+	for i := range branch.Spec.Nodes {
+		name := branch.Spec.Nodes[i].Name
+		if name == "" {
+			continue
+		}
+		if _, ok := seen[name]; ok {
+			continue
+		}
+		seen[name] = struct{}{}
+		out = append(out, name)
+	}
+	return out
+}
+
+func appendNodeDetail(detail string, annotation string) string {
+	if annotation == "" {
+		return detail
+	}
+	if detail == "" {
+		return annotation
+	}
+	return detail + "\n" + annotation
 }

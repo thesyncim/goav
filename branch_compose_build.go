@@ -3,7 +3,6 @@ package goav
 import (
 	"context"
 	"fmt"
-	"reflect"
 	"strconv"
 	"strings"
 
@@ -857,7 +856,7 @@ func branchComposeGroupDecodeConfig(indices []int, branches []branchComposeRoute
 			haveConfig = true
 			continue
 		}
-		if !reflect.DeepEqual(config, candidate) {
+		if !codecSpecEqual(config, candidate) {
 			return codec.CodecSpec{}, branchComposeDecodeConfigConflictError(owner, branches[index].name)
 		}
 	}
