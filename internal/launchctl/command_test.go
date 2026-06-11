@@ -222,6 +222,36 @@ func TestRequestFromCLIParsesGraphCommand(t *testing.T) {
 	}
 }
 
+func TestRequestFromCLIParsesRebranchCommand(t *testing.T) {
+	request, err := RequestFromCLI([]string{
+		"rebranch",
+		"preview",
+		"--switch", "next_keyframe",
+		"--keep-old-on-failure",
+		"copy ! filesink location=preview.webm",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if request.Op != "rebranch" ||
+		request.Branch != "preview" ||
+		request.Switch != "next_keyframe" ||
+		!request.KeepOldOnFailure ||
+		request.Pipeline != "copy ! filesink location=preview.webm" {
+		t.Fatalf("request = %+v", request)
+	}
+
+	for _, argv := range [][]string{
+		{"rebranch", "preview"},
+		{"rebranch", "preview", "--switch"},
+		{"rebranch", "preview", "copy ! filesink location=a.webm", "copy ! filesink location=b.webm"},
+	} {
+		if _, err := RequestFromCLI(argv); err == nil {
+			t.Fatalf("RequestFromCLI(%v) succeeded, want error", argv)
+		}
+	}
+}
+
 func TestExecuteRequestRendersTaskGraph(t *testing.T) {
 	response := ExecuteRequest(context.Background(), newFakeTask(), Request{Op: "graph"})
 	text, ok := response.Result.(string)
@@ -259,6 +289,150 @@ func TestExecuteGraphRejectsInvalidFormat(t *testing.T) {
 	var structured *Error
 	if !errors.As(err, &structured) || structured.Code != "invalid_value" {
 		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestBranchPipelineExtensionHandleCallsConfiguredHooks(t *testing.T) {
+	var calls []string
+	handle := &BranchPipeline{
+		copyFn:   func() { calls = append(calls, "copy") },
+		decodeFn: func() { calls = append(calls, "decode") },
+		resizeFn: func(width int, height int) { calls = append(calls, fmt.Sprintf("resize:%dx%d", width, height)) },
+		resampleFn: func(sampleRate int, channels int) {
+			calls = append(calls, fmt.Sprintf("resample:%d:%d", sampleRate, channels))
+		},
+		doFn: func(...pipeline.Stage) { calls = append(calls, "do") },
+		encodeFn: func(spec codec.CodecSpec) {
+			calls = append(calls, "encode:"+string(spec.ID))
+		},
+		destinationFn: func(goav.Destination) { calls = append(calls, "destination") },
+		finishFn: func() goav.BranchSpec {
+			calls = append(calls, "finish")
+			return goav.Branch("custom").To()
+		},
+	}
+
+	handle.Copy()
+	handle.Decode()
+	handle.Resize(320, 180)
+	handle.Resample(16000, 1)
+	handle.Do()
+	handle.Encode(codec.Opus())
+	handle.Destination(goav.Destination{})
+	_ = handle.finish()
+
+	want := []string{
+		"copy",
+		"decode",
+		"resize:320x180",
+		"resample:16000:1",
+		"do",
+		"encode:opus",
+		"destination",
+		"finish",
+	}
+	if !reflect.DeepEqual(calls, want) {
+		t.Fatalf("calls = %v, want %v", calls, want)
+	}
+
+	var nilHandle *BranchPipeline
+	nilHandle.Copy()
+	nilHandle.Decode()
+	nilHandle.Resize(1, 1)
+	nilHandle.Resample(1, 1)
+	nilHandle.Do()
+	nilHandle.Encode(codec.CodecSpec{})
+	nilHandle.Destination(goav.Destination{})
+	_ = nilHandle.finish()
+}
+
+func TestPipelineParserHelpersCoverCommonFormsAndErrors(t *testing.T) {
+	width, height, err := parseResizeArgs([]string{"854x480"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if width != 854 || height != 480 {
+		t.Fatalf("resize = %dx%d", width, height)
+	}
+
+	width, height, err = parseResizeArgs(nil, map[string]string{"w": "320", "height": "180"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if width != 320 || height != 180 {
+		t.Fatalf("resize args = %dx%d", width, height)
+	}
+
+	rate, channels, err := parseResampleArgs([]string{"48000", "2"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rate != 48000 || channels != 2 {
+		t.Fatalf("resample = %d/%d", rate, channels)
+	}
+
+	rate, channels, err = parseResampleArgs(nil, map[string]string{"sample_rate": "16000", "ch": "1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rate != 16000 || channels != 1 {
+		t.Fatalf("resample args = %d/%d", rate, channels)
+	}
+
+	num, den, err := parseFPS("30000/1001")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if num != 30000 || den != 1001 {
+		t.Fatalf("fps = %d/%d", num, den)
+	}
+
+	for _, tc := range []struct {
+		name string
+		run  func() error
+	}{
+		{name: "resize", run: func() error {
+			_, _, err := parseResizeArgs([]string{"0x480"}, nil)
+			return err
+		}},
+		{name: "resample", run: func() error {
+			_, _, err := parseResampleArgs([]string{"48000", "0"}, nil)
+			return err
+		}},
+		{name: "fps numerator", run: func() error {
+			_, _, err := parseFPS("0")
+			return err
+		}},
+		{name: "fps denominator", run: func() error {
+			_, _, err := parseFPS("30/0")
+			return err
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := tc.run()
+			var structured *Error
+			if !errors.As(err, &structured) || structured.Code != "invalid_value" {
+				t.Fatalf("err = %v, want invalid_value", err)
+			}
+		})
+	}
+}
+
+func TestPipelineStepNamesIncludeCustomAliases(t *testing.T) {
+	names := pipelineStepNames(PipelineRegistry{
+		Steps: []BranchPipelineStepSpec{{
+			Name:    "VendorFilter",
+			Aliases: []string{"vf"},
+		}},
+		Encoders: []EncoderSpec{{
+			Name:    "VendorEnc",
+			Aliases: []string{"venc"},
+		}},
+	})
+	for _, want := range []string{"copy", "encode", "vendorfilter", "vf", "vendorenc", "venc"} {
+		if !stringSliceContains(names, want) {
+			t.Fatalf("names = %v, want %q", names, want)
+		}
 	}
 }
 
@@ -739,6 +913,64 @@ func TestHelpGeneratedFromManifestMetadata(t *testing.T) {
 	}
 }
 
+func TestHelpRendersRootStaticAndCustomControlTopics(t *testing.T) {
+	root, err := Help(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, fragment := range []string{"goav ctl", "graph [format=mermaid|dot|text]", "rebranch <branch-name>"} {
+		if !strings.Contains(root, fragment) {
+			t.Fatalf("root help missing %q:\n%s", fragment, root)
+		}
+	}
+
+	attach, err := Help([]string{"attach"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(attach, "application-specific steps and encoders") {
+		t.Fatalf("attach help:\n%s", attach)
+	}
+
+	graph, err := Help([]string{"graph"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(graph, "Mermaid") || !strings.Contains(graph, "Graphviz DOT") {
+		t.Fatalf("graph help:\n%s", graph)
+	}
+
+	type vendorCommand struct {
+		Value string `goavctl:"value,required" usage:"value=<text>" help:"custom value"`
+	}
+	manifest := []CommandSpec{{
+		Name:     "vendor.tune",
+		Summary:  "custom tuning command",
+		ArgsType: reflect.TypeOf(vendorCommand{}),
+	}}
+	control, err := HelpWithCommands([]string{"control"}, manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(control, "vendor.tune") || !strings.Contains(control, "custom tuning command") {
+		t.Fatalf("control help:\n%s", control)
+	}
+
+	specific, err := HelpWithCommands([]string{"control", "vendor.tune"}, manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(specific, "goav ctl --control unix://PATH control vendor.tune value=<text>") {
+		t.Fatalf("specific help:\n%s", specific)
+	}
+
+	_, err = Help([]string{"missing"})
+	var structured *Error
+	if !errors.As(err, &structured) || structured.Code != "unknown_command" {
+		t.Fatalf("err = %v, want unknown_command", err)
+	}
+}
+
 func TestReflectionConfinedToLaunchctlProductionFiles(t *testing.T) {
 	root := filepath.Clean(filepath.Join("..", ".."))
 	var offenders []string
@@ -815,6 +1047,15 @@ func suggestionsContain(suggestions []string, fragment string) bool {
 func detailsContain(details []string, fragment string) bool {
 	for _, detail := range details {
 		if strings.Contains(detail, fragment) {
+			return true
+		}
+	}
+	return false
+}
+
+func stringSliceContains(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
 			return true
 		}
 	}
