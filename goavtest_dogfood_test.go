@@ -13,6 +13,8 @@ import (
 	"time"
 
 	"github.com/thesyncim/goav"
+	"github.com/thesyncim/goav/av"
+	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/goavtest"
 )
 
@@ -111,6 +113,40 @@ func controlWhenRunning(ctx context.Context, task goav.Task, control goav.Contro
 			return ctx.Err()
 		case <-time.After(time.Millisecond):
 		}
+	}
+}
+
+// TestFakeDecodeFeedsRealResample pins the goavtest/std-filter seam: the
+// passthrough codec's fabricated decode frame (a foreign opus packet becomes
+// the deterministic 48kHz silent frame shaped by the declared stream) is a
+// well-formed av.Frame the REAL std resample filter converts — fake codec,
+// real conversion, one chain.
+func TestFakeDecodeFeedsRealResample(t *testing.T) {
+	ctx := context.Background()
+	out := goavtest.NewCollector()
+	input := goavtest.Packets(av.CodecOpus, av.Packet{Payload: av.Buffer{Bytes: []byte{1, 2, 3}, Ownership: av.BufferImmutable}}).
+		With(goav.Codec(codec.Opus()))
+	err := goav.From(input).
+		Audio().Decode().
+		Resample(44_100, 1).
+		To(out.Sink()).
+		UseRuntime(goavtest.Runtime()).
+		Run(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	frames := out.Frames()
+	if len(frames) != 1 || frames[0].Audio == nil {
+		t.Fatalf("frames = %d, want exactly one audio frame", len(frames))
+	}
+	audio := frames[0].Audio
+	if audio.SampleRate != 44_100 || audio.Channels != 1 {
+		t.Fatalf("resampled frame = %d Hz %d ch, want 44100 Hz 1 ch", audio.SampleRate, audio.Channels)
+	}
+	// The fake decode frame carries 480 samples of 48kHz silence; the real
+	// resampler converts the duration, not the count: ~441 samples at 44.1kHz.
+	if audio.Samples < 400 || audio.Samples > 480 {
+		t.Fatalf("resampled samples = %d, want ≈441 (10ms at 44.1kHz)", audio.Samples)
 	}
 }
 

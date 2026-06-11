@@ -1146,7 +1146,12 @@ func (p *joinPlan) lowerJoinTree(ctx context.Context, graph pipeline.Graph, serv
 		seen[stream.ID] = struct{}{}
 		if arm.decodeNode != "" {
 			request := decodeRequest{selector: av.StreamSelector{Type: stream.Type}}
-			decodeStage, err := service.newDecodeStageNamed(ctx, arm.decodeNode, request, stream, rt.realtime, true, codec.DecodeBounds{})
+			// Arm events MUST flow through decode (dropInputEvents=false): the
+			// join stage's per-arm EOS bookkeeping (an ended arm stops gating,
+			// the joined EOS fires when every arm ended) and the PTS re-sync on
+			// discontinuity both read the arm's events. The join consumes them
+			// — only the joined stream's own events continue downstream.
+			decodeStage, err := service.newDecodeStageNamed(ctx, arm.decodeNode, request, stream, rt.realtime, false, codec.DecodeBounds{})
 			if err != nil {
 				return "", err
 			}

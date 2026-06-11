@@ -31,22 +31,16 @@ type DestinationOption interface {
 	applyDestination(*destinationSpec)
 }
 
-type destinationBinding struct {
-	dest      destinationSpec
-	hasDirect bool
-}
-
 type destinationRef struct {
 	name string
 	dest destinationSpec
 	id   uint64
-	err  error
 }
 
+// newDirectDestinationRef names a destination handle for branch routing.
+// Callers derive name through destinationSpec.label with a non-empty
+// fallback, so a ref always carries a routing name.
 func newDirectDestinationRef(name string, dest destinationSpec) destinationRef {
-	if name == "" {
-		return destinationRef{dest: dest, err: destinationNameMissingError(dest)}
-	}
 	id := dest.id
 	if id == 0 {
 		id = destinationRefSeq.Add(1)
@@ -70,14 +64,6 @@ func branchDestinationNames(destinations []destinationRef) []string {
 		names[i] = destinations[i].name
 	}
 	return names
-}
-
-func destinationBindingFromDestination(dest Destination) (destinationBinding, error) {
-	direct, err := destinationSpecFromDestination(dest)
-	if err != nil {
-		return destinationBinding{}, err
-	}
-	return destinationBinding{dest: direct, hasDirect: true}, nil
 }
 
 func destinationSpecFromDestination(dest Destination) (destinationSpec, error) {
@@ -428,16 +414,12 @@ func (b *branchBuilder) To(destinations ...Destination) BranchSpec {
 		return spec
 	}
 	for i := range destinations {
-		destination := destinations[i]
-		binding, err := destinationBindingFromDestination(destination)
+		direct, err := destinationSpecFromDestination(destinations[i])
 		if err != nil {
 			spec.err = branchDestinationInvalidError(spec.name, err.Error())
 			return spec
 		}
-		if err := appendDestination(&spec, binding, i); err != nil {
-			spec.err = err
-			return spec
-		}
+		appendDestination(&spec, direct, i)
 	}
 	return spec
 }
@@ -455,20 +437,11 @@ func (b *branchBuilder) setErr(err error) {
 	}
 }
 
-func appendDestination(spec *BranchSpec, destination destinationBinding, index int) error {
-	switch {
-	case destination.hasDirect:
-		destination := destination.dest
-		destinationName := destination.label(fmt.Sprintf("%s-%d", firstNonEmpty(spec.name, "branch"), index+1))
-		ref := newDirectDestinationRef(destinationName, destination)
-		if ref.err != nil {
-			return ref.err
-		}
-		spec.destinations = append(spec.destinations, ref)
-		return nil
-	default:
-		return branchDestinationInvalidError(spec.name, "unsupported branch destination")
-	}
+// appendDestination resolves the destination's routing name — its declared
+// name, URI, or a branch-indexed fallback, never empty — and appends the ref.
+func appendDestination(spec *BranchSpec, destination destinationSpec, index int) {
+	destinationName := destination.label(fmt.Sprintf("%s-%d", firstNonEmpty(spec.name, "branch"), index+1))
+	spec.destinations = append(spec.destinations, newDirectDestinationRef(destinationName, destination))
 }
 
 func (b *jobStreamBuilder) Branches(branches ...BranchSpec) *Job {
@@ -717,13 +690,8 @@ func plannedBranchAnchor(stream *jobStreamBuild, spec BranchSpec, parentPacket b
 		}
 		return steps, tapWithDomain(from, shape.DomainFrame), nil
 	}
-	if tapIsPostEncodeAnchor(stream, spec.source.tap) {
-		from := TapRef{name: spec.source.tap, domain: spec.source.tapDomain}
-		if err := validateTapDomain("build branches", firstNonEmpty(spec.name, "branch"), from, shape.DomainPacket); err != nil {
-			return nil, TapRef{}, err
-		}
-		return nil, TapRef{}, plannedBranchPostEncodeTapError(spec.name, spec.source.tap)
-	}
+	// Post-encode taps cannot occur here: Branches already refused encoding
+	// parents, and a .Copy() parent reaches the packet-anchor path above.
 	return nil, TapRef{}, plannedBranchTapMissingError(jobStreamName(stream), spec.name, spec.source.tap)
 }
 
@@ -823,24 +791,6 @@ func plannedBranchTapMissingError(stream string, branch string, tap string) erro
 			"add .Tap(goav.FrameTap(\"" + tap + "\")) before .Branches(...) on the selected stream",
 			"use .From(goav.FrameTap(\"audio.decoded\")) or .From(goav.FrameTap(\"video.decoded\")) after .Decode() when branching from decoded frames",
 			"omit .From(...) to branch from the current stream point",
-		},
-		Cause: ErrUnsupportedBuild,
-	}
-}
-
-func plannedBranchPostEncodeTapError(branch string, tap string) error {
-	return &BuildError{
-		Code:      errcode.BranchTapDomainUnsupported,
-		Operation: "build branches",
-		Node:      firstNonEmpty(branch, "branch"),
-		Reason:    "post-encode taps are runtime attachment anchors for planned branches",
-		Details: []string{
-			"tap: " + tap,
-		},
-		Suggestions: []string{
-			"attach this branch at runtime with Task.Attach(ctx, goav.Branch(name).From(goav.PacketTap(\"" + tap + "\"))...)",
-			"move .Branches(...) before the encoder when the split should be planned",
-			"use .Copy().Branches(...) for packet-preserving planned branches",
 		},
 		Cause: ErrUnsupportedBuild,
 	}
@@ -1030,20 +980,6 @@ func destinationInvalidError(operation string, node string, reason string) error
 		Suggestions: []string{
 			"reuse one goav.File(...), goav.URI(...), or goav.Sink(...) value for mux/sink groups",
 			"use distinct destination values for independent outputs",
-		},
-		Cause: ErrUnsupportedBuild,
-	}
-}
-
-func destinationNameMissingError(dest destinationSpec) error {
-	return &BuildError{
-		Code:      errcode.DestinationInvalid,
-		Operation: "build destination",
-		Node:      dest.label("destination"),
-		Reason:    "destination name is empty",
-		Suggestions: []string{
-			"pass a named destination such as goav.File(\"web.ivf\", writer)",
-			"pass goav.Sink(goav.SinkFunc(name, fn)) for sink destinations",
 		},
 		Cause: ErrUnsupportedBuild,
 	}

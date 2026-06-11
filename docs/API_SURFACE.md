@@ -90,6 +90,10 @@ Handle-based graph work, deliberately off the grammar:
 - Prebuilt graph components — `codec.DecoderStage`/`EncoderStage`,
   `format.DemuxSource`/`MuxStage`, `filter.Stage` (what the compiler itself
   assembles; usable directly under `expert.Graph`).
+- `graphrender` — diagnostics over `pipeline.Spec`: `RenderURI` renders any
+  described graph as text, DOT, or Mermaid via a `goav:graph` URI
+  (`ErrUnsupportedFormat`, `ErrUnsupportedURI`). A leaf outside the core
+  import graph, surface-pinned like the vocabulary packages.
 
 ## D. Leakage
 
@@ -158,8 +162,9 @@ against the constructors in `input.go`/`provider.go`/`source.go`,
 ## Enforcement
 
 - `api_surface_pin_test.go` / `testdata/api_surface.txt` — exported
-  package-level identifiers of root + `errcode`/`lifecycle`/`plan`/`snapshot`
-  must match the approved list exactly (both directions, sorted, no dups).
+  package-level identifiers of root + `errcode`/`graphrender`/`lifecycle`/
+  `plan`/`snapshot` must match the approved list exactly (both directions,
+  sorted, no dups).
 - `doc_pin_test.go` — every exported symbol in every public package carries a
   doc comment.
 - `errors_pin_test.go` — every `BuildError` uses a catalog `errcode.Code`.

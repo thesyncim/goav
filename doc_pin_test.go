@@ -23,6 +23,7 @@ var docPinPackages = []string{
 	"flow",
 	"format",
 	"goavtest",
+	"graphrender",
 	"lifecycle",
 	"pipeline",
 	"plan",

@@ -274,9 +274,6 @@ func attachBranchDestinations(spec BranchSpec) ([]attachDestination, error) {
 	destinations := make([]attachDestination, 0, len(spec.destinations))
 	for i := range spec.destinations {
 		ref := cloneDestinationRef(spec.destinations[i])
-		if ref.err != nil {
-			return nil, ref.err
-		}
 		destination := cloneDestinationSpec(ref.dest)
 		name := firstNonEmpty(ref.name, spec.name, "branch")
 		if err := destination.validate("attach runtime branch", name); err != nil {

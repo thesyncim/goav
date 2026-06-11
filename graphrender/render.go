@@ -1,3 +1,14 @@
+// Package graphrender renders a pipeline.Spec — the graph Describe returns
+// for planned and built jobs — as human-readable text, Graphviz DOT, or
+// Mermaid. It is a diagnostics leaf outside the goav core: the root package
+// never imports it, and it reads only the public Spec vocabulary, so any
+// graph a recipe or expert builder describes can be rendered.
+//
+// The format is selected by a goav:graph URI:
+//
+//	out, err := graphrender.RenderURI(spec, "goav:graph")          // text
+//	out, err := graphrender.RenderURI(spec, "goav://graph/dot")    // DOT
+//	out, err := graphrender.RenderURI(spec, "goav://graph?format=mermaid")
 package graphrender
 
 import (
@@ -10,7 +21,11 @@ import (
 	"github.com/thesyncim/goav/pipeline"
 )
 
+// ErrUnsupportedFormat reports a goav:graph URI naming a format other than
+// text, dot, or mermaid.
 var ErrUnsupportedFormat = errors.New("graphrender: unsupported format")
+
+// ErrUnsupportedURI reports a render target that is not a goav:graph URI.
 var ErrUnsupportedURI = errors.New("graphrender: unsupported uri")
 
 type format string
@@ -21,6 +36,11 @@ const (
 	mermaidFormat format = "mermaid"
 )
 
+// RenderURI renders spec in the format the goav:graph target URI selects:
+// "goav:graph" (or an empty target) renders text, "goav://graph/dot" and
+// "goav://graph/mermaid" select by path, and a format query parameter
+// ("goav://graph?format=dot") wins over the path. Unknown formats return
+// ErrUnsupportedFormat; non-goav:graph targets return ErrUnsupportedURI.
 func RenderURI(spec pipeline.Spec, target string) (string, error) {
 	var out strings.Builder
 	if err := writeURI(&out, spec, target); err != nil {

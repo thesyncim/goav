@@ -339,6 +339,88 @@ func TestPreferUnsatisfiableIgnoredWithDiagnostic(t *testing.T) {
 	}
 }
 
+// TestPreferWorksInBranches pins the branch surface of .Prefer(...): inside a
+// planned branch the same two-adapter ambiguity is a hard refusal without a
+// preference, and the branch's .Prefer(realtime) narrows the choice — the
+// preferred adapter shows up in the planned spec and Explain records the
+// resolution against the branch.
+func TestPreferWorksInBranches(t *testing.T) {
+	pcm := av.CodecID("x_pcm_s16")
+	source := func() InputSpec {
+		return Source("mic",
+			shape.Packet(av.MediaAudio, pcm, shape.Audio(44_100, codec.Stereo, av.SampleFormatS16), shape.Stream("mic")),
+			func(_ context.Context, push SourcePush) error {
+				if _, err := push.Packet(&av.Packet{StreamID: "mic", Type: av.MediaAudio, Payload: av.Buffer{Bytes: []byte{0, 0}, Ownership: av.BufferImmutable}}); err != nil {
+					return err
+				}
+				return push.EOS()
+			})
+	}
+	desc := filter.Descriptor{Input: av.MediaAudio, Output: av.MediaAudio, Stateless: true}
+	rtCapable := desc
+	rtCapable.Name = "conv-rt"
+	rtCapable.Realtime = true
+	offline := desc
+	offline.Name = "conv-offline"
+	rt := solverTestOpusRuntime(
+		WithRealtime(false),
+		WithFilter(rtCapable, &shapeSolverTestFilterFactory{}),
+		WithFilter(offline, &shapeSolverTestFilterFactory{}),
+		WithDecoder(codec.Descriptor{ID: pcm, Name: "PCM", Type: av.MediaAudio, Capabilities: codec.Capabilities{SampleFormats: []string{av.SampleFormatS16}}}, recipePCMDecoderFactory{decoder: &recipePCMDecoder{}}),
+	)
+	branch := func(prefer bool) BranchSpec {
+		b := Branch("voice").Auto(shape.AllowResample())
+		if prefer {
+			b = b.Prefer(shape.New(shape.Realtime(true)))
+		}
+		return b.Encode(codec.Opus(codec.Bitrate(96_000))).
+			To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil })))
+	}
+
+	// Without the preference the adapter choice is ambiguous and refused.
+	_, err := From(source()).Audio().Decode().
+		Branches(branch(false)).
+		UseRuntime(rt).
+		Build(context.Background())
+	var buildErr *BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "shape_adapter_ambiguous" {
+		t.Fatalf("err = %v, want shape_adapter_ambiguous without a preference", err)
+	}
+
+	// The branch's .Prefer(realtime) resolves it to conv-rt.
+	job := From(source()).Audio().Decode().
+		Branches(branch(true)).
+		UseRuntime(rt)
+	planned, err := job.Describe()
+	if err != nil {
+		t.Fatalf("Describe(): %v", err)
+	}
+	if !strings.Contains(specText(planned), "conv-rt") {
+		t.Fatalf("planned spec should show the preferred adapter on the branch:\n%s", specText(planned))
+	}
+	report, err := job.Explain(context.Background())
+	if err != nil {
+		t.Fatalf("Explain(): %v", err)
+	}
+	found := false
+	for _, warning := range report.Warnings {
+		if warning.Code == "shape_preference_applied" && strings.Contains(warning.Message, "resolved the adapter choice") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("Explain should record the branch preference resolution, warnings = %+v", report.Warnings)
+	}
+	task, err := job.Build(context.Background())
+	if err != nil {
+		t.Fatalf("Build(): %v", err)
+	}
+	defer task.Close()
+	if specText(task.Describe()) != specText(planned) {
+		t.Fatalf("Describe() != Build():\nplanned:\n%s\nbuilt:\n%s", specText(planned), specText(task.Describe()))
+	}
+}
+
 // TestReadmeRequireExampleBuilds verifies the README Shape Errors example:
 // .Require(...) under .Auto(shape.AllowResample()) builds against the default
 // runtime with the conversion inserted before the assertion.

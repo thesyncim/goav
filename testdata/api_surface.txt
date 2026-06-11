@@ -1,6 +1,6 @@
 # The approved public surface: every exported package-level identifier of the
 # governed packages (goav root plus the near-frozen vocabulary packages errcode,
-# lifecycle, plan, snapshot), one per line, sorted. api_surface_pin_test.go
+# graphrender, lifecycle, plan, snapshot), one per line, sorted. api_surface_pin_test.go
 # fails when the packages export a symbol this list does not approve, and when
 # the list approves a symbol that no longer exists. Exporting a symbol is a
 # deliberate act: add it here in sorted position and say why in the commit.
@@ -19,7 +19,6 @@ errcode.BranchInvalid
 errcode.BranchMissing
 errcode.BranchOperationChainUnsupported
 errcode.BranchSourceInvalid
-errcode.BranchTapDomainUnsupported
 errcode.BranchTapMissing
 errcode.BranchTransformMediaMismatch
 errcode.Code
@@ -272,6 +271,9 @@ goav.WithStdCodecs
 goav.WithStdFilters
 goav.WithStdFormats
 goav.Writer
+graphrender.ErrUnsupportedFormat
+graphrender.ErrUnsupportedURI
+graphrender.RenderURI
 lifecycle.BranchAttached
 lifecycle.BranchDetached
 lifecycle.BranchState

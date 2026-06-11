@@ -126,6 +126,7 @@ func planBranchComposeRoutes(
 	groups := branchComposeSelectorGroups(branches)
 	branchInputs := make([]pipeline.NodeRef, len(branches))
 	groupNodeOrder := make([]pipeline.NodeRef, 0, len(groups))
+	selectNodeOrder := make([]pipeline.NodeRef, 0, len(groups))
 	sourceEdges := make([]pipeline.EdgeSpec, 0, len(groups)*len(sourceRefs))
 	groupEdges := make(map[pipeline.NodeRef][]pipeline.EdgeSpec, len(groups))
 	for i := range groups {
@@ -134,14 +135,8 @@ func planBranchComposeRoutes(
 		if err := addPlannedNode(nodes, &spec, selectName, pipeline.NodeStage, selectRef, selectNodeDetail(groups[i].selector)); err != nil {
 			return pipeline.Spec{}, err
 		}
-		for _, sourceRef := range sourceRefs {
-			sourceEdges = append(sourceEdges, pipeline.EdgeSpec{
-				From:   sourceRef,
-				To:     selectRef,
-				Policy: pipeline.RouteAll,
-			})
-		}
 		groupNodeOrder = append(groupNodeOrder, selectRef)
+		selectNodeOrder = append(selectNodeOrder, selectRef)
 		decodedBranches := branchComposeDecodedBranchIndices(groups[i].branches, branches)
 		for _, branchIndex := range groups[i].branches {
 			if !branchComposeRouteNeedsDecode(branches[branchIndex]) {
@@ -269,6 +264,19 @@ func planBranchComposeRoutes(
 			outgoing[branchRef] = append(outgoing[branchRef], pipeline.EdgeSpec{
 				From:   branchRef,
 				To:     outputRef,
+				Policy: pipeline.RouteAll,
+			})
+		}
+	}
+	// Source edges are emitted source-major (every source's fanout grouped
+	// together) because the built graph's Spec() lists edges per from-node in
+	// node insertion order — the planned and built specs must stay
+	// byte-identical for multi-input jobs too.
+	for _, sourceRef := range sourceRefs {
+		for _, selectRef := range selectNodeOrder {
+			sourceEdges = append(sourceEdges, pipeline.EdgeSpec{
+				From:   sourceRef,
+				To:     selectRef,
 				Policy: pipeline.RouteAll,
 			})
 		}

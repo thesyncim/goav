@@ -192,7 +192,7 @@ func customSourceProbeResult(input InputSpec) format.ProbeResult {
 
 func customSourceStream(input InputSpec) av.Stream {
 	shape := normalizeCustomSourceShape(input.inputName("source"), input.source.shape)
-	return av.Stream{
+	stream := av.Stream{
 		ID:   shape.StreamID,
 		Type: shape.MediaKind,
 		Codec: av.CodecParameters{
@@ -207,6 +207,57 @@ func customSourceStream(input InputSpec) av.Stream {
 		},
 		Name: string(shape.StreamID),
 	}
+	fillStreamCodecParameters(&stream, input.codec)
+	return stream
+}
+
+// fillStreamCodecParameters overlays a goav.Codec(...) input declaration onto
+// a custom source's stream facts: the declared shape stays authoritative, the
+// codec spec's parameters fill only the facts the shape left open — so
+// goav.Codec(codec.Opus()) gives a codec-only fixture its 48kHz/stereo facts
+// instead of being silently ignored.
+func fillStreamCodecParameters(stream *av.Stream, spec codec.CodecSpec) {
+	if spec.ID != "" && stream.Codec.ID != "" && spec.ID != stream.Codec.ID {
+		return
+	}
+	params := spec.Parameters
+	if stream.Codec.ID == "" {
+		stream.Codec.ID = firstCodecID(spec.ID, params.ID)
+	}
+	if stream.Codec.SampleRate == 0 {
+		stream.Codec.SampleRate = params.SampleRate
+	}
+	if stream.Codec.Channels == 0 {
+		stream.Codec.Channels = params.Channels
+	}
+	if stream.Codec.SampleFormat == "" {
+		stream.Codec.SampleFormat = params.SampleFormat
+	}
+	if stream.Codec.ChannelLayout == "" {
+		stream.Codec.ChannelLayout = params.ChannelLayout
+	}
+	if stream.Codec.Width == 0 {
+		stream.Codec.Width = params.Width
+	}
+	if stream.Codec.Height == 0 {
+		stream.Codec.Height = params.Height
+	}
+	if stream.Codec.PixelFormat == "" {
+		stream.Codec.PixelFormat = params.PixelFormat
+	}
+	if stream.Codec.ClockRate == 0 {
+		stream.Codec.ClockRate = params.ClockRate
+	}
+}
+
+// firstCodecID returns the first non-empty codec id.
+func firstCodecID(ids ...av.CodecID) av.CodecID {
+	for _, id := range ids {
+		if id != "" {
+			return id
+		}
+	}
+	return ""
 }
 
 // graphSourceBuild is the unified result of opening one input as a graph source:

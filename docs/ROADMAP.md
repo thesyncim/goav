@@ -76,6 +76,26 @@ Exists and is tested, but numbers or semantics are expected to move
   nesting compiles through the same recursion but has no dedicated proof or
   cost model.
 
+### Known gaps (core review)
+
+- **Live (blocking) join arms need an explicitly buffered runtime** — the
+  direct runner starts sources sequentially and delivers inline, so a
+  Mix/Composite arm that blocks in `Start` (any live source) starves later
+  arms on the default runtime. Workaround, pinned by
+  `TestMixSyncByPTSSeekArmMidRun`: `WithBufferPolicy` (non-lossy `DropBlock`;
+  add `CopyPacketBytes`/`CopyFrameBytes` budgets when an arm decodes, since
+  decoder output buffers are mutable and refuse to queue by reference).
+  Select already pins a buffered graph for control delivery; doing the same
+  for Mix/Composite needs an answer for decode-arm copy budgets first.
+- **No shape solving downstream of a join** — the solver runs per ARM
+  (`solveArmConversion`: arms converge on the first arm's format), but the
+  joined stream's own `.Encode(...)` and `.Branches(...)` paths lower without
+  it: a 44.1kHz mix into `codec.Opus()` (48kHz) plans no conversion and no
+  refusal, and a join branch's `.Auto(...)` is silently inert. Joins whose
+  arms already match the target format are unaffected. Fix direction: run the
+  branch/encode operation list through the same chain solver the stream path
+  uses, seeded with the joined stream's shape.
+
 ## Descriptor-only and deferred
 
 - **H264/AV1 recipe encode** — descriptor-only: registry descriptors are

@@ -11,16 +11,18 @@ import (
 
 // surfacePinPackages are the packages whose exported package-level identifiers
 // are governed by testdata/api_surface.txt: the root grammar plus the
-// near-frozen vocabulary packages (errcode, lifecycle, plan, snapshot). The
-// extension-seam packages (av, codec, format, filter, pipeline, flow, shape,
-// rtpav, webrtcav, goavtest) grow with capabilities and are governed by the
-// doc pin instead. See docs/API_SURFACE.md for the contract.
+// near-frozen vocabulary packages (errcode, lifecycle, plan, snapshot) and the
+// diagnostics renderer (graphrender). The extension-seam packages (av, codec,
+// format, filter, pipeline, flow, shape, rtpav, webrtcav, goavtest) grow with
+// capabilities and are governed by the doc pin instead. See
+// docs/API_SURFACE.md for the contract.
 var surfacePinPackages = []struct {
 	dir    string
 	prefix string
 }{
 	{dir: ".", prefix: "goav"},
 	{dir: "errcode", prefix: "errcode"},
+	{dir: "graphrender", prefix: "graphrender"},
 	{dir: "lifecycle", prefix: "lifecycle"},
 	{dir: "plan", prefix: "plan"},
 	{dir: "snapshot", prefix: "snapshot"},

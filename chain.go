@@ -532,23 +532,17 @@ func (b *jobStreamBuilder) To(destinations ...Destination) *Job {
 	stream := b.current()
 	outputs := make([]destinationSpec, 0, len(destinations))
 	for i := range destinations {
-		destination := destinations[i]
-		binding, err := destinationBindingFromDestination(destination)
+		output, err := destinationSpecFromDestination(destinations[i])
 		if err != nil {
 			b.job.setErr(streamDestinationInvalidError(jobStreamName(stream), err.Error()))
 			return b.job
 		}
-		output, name, err := destinationFromBinding("build stream", jobStreamName(stream), binding, i)
-		if err != nil {
-			b.job.setErr(err)
-			return b.job
-		}
-		if err := b.job.checkSharedStreamDestination(stream, output, name); err != nil {
+		if err := b.job.checkSharedStreamDestination(stream, output, ""); err != nil {
 			b.job.setErr(err)
 			return b.job
 		}
 		stream.outputs = append(stream.outputs, output)
-		stream.outputNames = append(stream.outputNames, name)
+		stream.outputNames = append(stream.outputNames, "")
 		outputs = append(outputs, output)
 	}
 	if outputsContainSinkDestination(outputs) && !codecIntentSet(chainEncodeSpec(stream.operations)) {
@@ -559,15 +553,6 @@ func (b *jobStreamBuilder) To(destinations ...Destination) *Job {
 		}
 	}
 	return b.job
-}
-
-func destinationFromBinding(operation string, node string, destination destinationBinding, index int) (destinationSpec, string, error) {
-	switch {
-	case destination.hasDirect:
-		return cloneDestinationSpec(destination.dest), "", nil
-	default:
-		return destinationSpec{}, "", destinationInvalidError(operation, node, "unsupported destination")
-	}
 }
 
 func (b *jobStreamBuilder) current() *jobStreamBuild {

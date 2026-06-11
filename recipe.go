@@ -158,19 +158,13 @@ func (j *Job) To(destinations ...Destination) *Job {
 		return j
 	}
 	for i := range destinations {
-		destination := destinations[i]
-		binding, err := destinationBindingFromDestination(destination)
+		output, err := destinationSpecFromDestination(destinations[i])
 		if err != nil {
 			j.setErr(jobDestinationInvalidError("job", err.Error()))
 			return j
 		}
-		output, name, err := destinationFromBinding("build job", "job", binding, i)
-		if err != nil {
-			j.setErr(err)
-			return j
-		}
 		j.outputs = append(j.outputs, output)
-		j.outputNames = append(j.outputNames, name)
+		j.outputNames = append(j.outputNames, "")
 	}
 	return j
 }
@@ -182,12 +176,6 @@ func (j *Job) addBranchDestinations(destinations ...destinationRef) error {
 	}
 	for i := range destinations {
 		destination := cloneDestinationRef(destinations[i])
-		if destination.err != nil {
-			return destination.err
-		}
-		if destination.name == "" {
-			return destinationNameMissingError(destination.dest)
-		}
 		destination.dest = destination.dest.withName(firstNonEmpty(destination.dest.name, destination.name))
 		named := namedDestinationSpec{name: destination.name, output: destination.dest}
 		identity := destinationIdentity(named)

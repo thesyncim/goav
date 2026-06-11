@@ -259,9 +259,6 @@ const (
 	// BranchTapMissing fires when a branch's .From(...) tap is not
 	// declared on the parent stream.
 	BranchTapMissing Code = "branch_tap_missing"
-	// BranchTapDomainUnsupported fires when a planned branch anchors on a
-	// post-encode tap; those anchor runtime attachments only.
-	BranchTapDomainUnsupported Code = "branch_tap_domain_unsupported"
 	// BranchDecodeDuplicate fires when a branch decodes an already-decoded
 	// input.
 	BranchDecodeDuplicate Code = "branch_decode_duplicate"
