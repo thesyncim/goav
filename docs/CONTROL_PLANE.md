@@ -1,62 +1,207 @@
 # Control plane
 
-`goav ctl` speaks to a running task over a Unix socket:
+`goav ctl` is the cold-path control surface for a running task. The
+application owns the task and exposes a Unix socket with package `ctl`; operators
+or automation talk to that socket with structured requests.
 
 ```sh
 goav ctl --control unix:///tmp/goav-live.sock control bitrate stream=video value=1200k
 goav ctl --control unix:///tmp/goav-live.sock watch type=stats --follow
 goav ctl --control unix:///tmp/goav-live.sock attach frames as archive \
-  'encode codec=x_pcm_s16 media=audio bitrate=128k ! filesink location=archive.ogg format=ogg'
+  'encode codec=opus media=audio bitrate=128k ! filesink location=archive.ogg format=ogg'
 ```
 
-The host application owns the task and the socket. Use package `ctl` to expose
-the safe command surface:
+The control layer is allowlisted and lowers into the same task APIs normal Go
+code uses: `Task.Control`, `Task.Attach`, `Attachment.Rebranch`, `Task.Detach`,
+`Snapshot`, `Stats`, `Watch`, and `Close`. There is no global registry and no
+user-provided method name dispatch.
 
-```go
-err := ctl.ServeUnixWithOptions(ctx, task, "unix:///tmp/goav-live.sock")
+## Bootstrap Host
+
+This is the smallest production shape:
+
+1. Build a normal task and name stable taps with `FrameTap` or `PacketTap`.
+2. Add explicit control verbs with `ctl.CommandSpec`.
+3. Add custom branch-pipeline steps and encoder names with
+   `ctl.PipelineRegistry`.
+4. Start `ctl.ServeUnixWithOptions`.
+5. Use `goav ctl --control unix://...` to inspect, control, attach, rebranch,
+   detach, and render diagnostics from the same running graph.
+
+The executable local harness is
+`Example_bootstrapControlPlaneHost` in `ctl/example_test.go`. It builds a live
+fixture task, starts `Run` in the background, calls a custom control, attaches a
+custom branch step plus custom encoder settings into a temp filesink, and
+renders a flowchart from the live task. Run it with:
+
+```sh
+go test ./ctl -run Example_bootstrapControlPlaneHost -count=1
 ```
 
-The control layer is cold-path only. It is allowlisted, structured, and lowers
-into the same task APIs normal Go code uses: `Task.Control`, `Task.Attach`,
-`Attachment.Rebranch`, `Task.Detach`, `Snapshot`, `Stats`, `Watch`, and `Close`.
-There is no global registry and no user-provided method name dispatch.
-
-## Custom control verbs
-
-Add one command struct, one handler, and one explicit server option:
-
 ```go
-type ForceKeyframe struct {
-    Stream av.StreamID `goavctl:"stream,required" usage:"stream=<stream-id>" help:"stream to refresh"`
-}
+ctx := context.Background()
+const customCodec = av.CodecID("x_acme_audio")
 
-command := ctl.CommandSpec{
-    Name:     "vendor.force_keyframe",
-    Summary:  "vendor keyframe request",
-    ArgsType: reflect.TypeOf(ForceKeyframe{}),
-    Apply: func(ctx context.Context, task goav.Task, args any) (ctl.ControlResponse, error) {
-        cmd := args.(ForceKeyframe)
-        if err := task.Control(ctx, goav.Keyframe(cmd.Stream)); err != nil {
-            return ctl.ControlResponse{}, err
-        }
-        return ctl.ControlResponse{
-            Operation: "control vendor.force_keyframe",
-            Result:    map[string]any{"stream": cmd.Stream},
-        }, nil
+encoderFactory := &acmeEncoderFactory{
+    Descriptor: codec.Descriptor{
+        ID:   customCodec,
+        Name: "ACME audio",
+        Type: av.MediaAudio,
     },
 }
 
-err := ctl.ServeUnixWithOptions(ctx, task, socket, ctl.WithCommands(command))
+task, err := goav.From(liveInput).
+    Audio().Decode().Tap(goav.FrameTap("frames")).
+    To(primaryDestination).
+    UseRuntime(goav.New(
+        goav.WithStdFilters(),
+        goav.WithEncoder(encoderFactory.Descriptor, encoderFactory),
+    )).
+    Build(ctx)
+if err != nil {
+    return err
+}
+defer task.Close()
 ```
 
-Then operators can call it with the same protocol as built-ins:
+Add a custom command by declaring the argument struct and handler. The struct
+tags drive CLI parsing, JSON binding, validation, and generated help.
+
+```go
+type SetRate struct {
+    Value  float64 `goavctl:"value,required" usage:"value=<float>" help:"playback rate"`
+    Source string  `goavctl:"source,required" usage:"source=<source-name>" help:"source node to retime"`
+}
+
+rateCommand := ctl.CommandSpec{
+    Name:     "vendor.rate",
+    Summary:  "vendor playback-rate control",
+    ArgsType: reflect.TypeOf(SetRate{}),
+    Apply: func(ctx context.Context, task goav.Task, args any) (ctl.ControlResponse, error) {
+        cmd := args.(SetRate)
+        ctrl := goav.Rate(cmd.Value).At(pipeline.NodeRef(cmd.Source))
+        if err := task.Control(ctx, ctrl); err != nil {
+            return ctl.ControlResponse{}, err
+        }
+        return ctl.ControlResponse{
+            Operation: "control vendor.rate",
+            Result:    map[string]any{"value": cmd.Value, "source": cmd.Source},
+        }, nil
+    },
+}
+```
+
+Expose custom branch components and custom encoder settings through an explicit
+pipeline registry. Every `key=value` token on the CLI arrives in `StepArgs`; the
+host maps those strings to normal Go values and returns the real
+`codec.CodecSpec` the runtime already understands.
+
+```go
+registry := ctl.PipelineRegistry{
+    Steps: []ctl.BranchPipelineStepSpec{{
+        Name:    "meter",
+        Summary: "observe frames before encoding",
+        Apply: func(branch *ctl.BranchPipeline, _ ctl.StepArgs) error {
+            branch.Do(goav.FrameFunc("meter", func(ctx context.Context, frame *av.Frame, emit goav.Emit) error {
+                recordLevel(frame)
+                return emit.Frame(frame)
+            }))
+            return nil
+        },
+    }},
+    Encoders: []ctl.EncoderSpec{{
+        Name:    "acmeenc",
+        Summary: "ACME audio encoder with native settings",
+        Apply: func(args ctl.StepArgs) (codec.CodecSpec, error) {
+            bitrate, err := strconv.Atoi(args["bitrate"])
+            if err != nil {
+                return codec.CodecSpec{}, err
+            }
+            return codec.Codec(customCodec, av.MediaAudio,
+                codec.Bitrate(bitrate),
+                codec.Profile(args["quality"]),
+                codec.Control(func(native any) error {
+                    options := native.(*acme.Options)
+                    options.Lookahead = args["lookahead"]
+                    return nil
+                }),
+            ), nil
+        },
+    }},
+}
+```
+
+Start the socket after the task is built. The same options apply whether the
+socket is used by humans, scripts, supervisors, or tests.
+
+```go
+err = ctl.ServeUnixWithOptions(ctx, task, "unix:///tmp/goav-live.sock",
+    ctl.WithCommands(rateCommand),
+    ctl.WithPipelineRegistry(registry),
+)
+```
+
+Operate it from the CLI:
 
 ```sh
-goav ctl --control unix:///tmp/goav-live.sock control vendor.force_keyframe stream=video
-goav ctl --control unix:///tmp/goav-live.sock help control vendor.force_keyframe
+goav ctl --control unix:///tmp/goav-live.sock help
+goav ctl --control unix:///tmp/goav-live.sock help control vendor.rate
+goav ctl --control unix:///tmp/goav-live.sock taps
+goav ctl --control unix:///tmp/goav-live.sock control vendor.rate value=0.5 source=fixture
+goav ctl --control unix:///tmp/goav-live.sock attach frames as archive \
+  'meter ! acmeenc bitrate=128000 quality=voice lookahead=deep ! filesink location=/tmp/archive.ogg format=ogg'
+goav ctl --control unix:///tmp/goav-live.sock rebranch archive \
+  'meter ! acmeenc bitrate=96000 quality=voice lookahead=shallow ! filesink location=/tmp/archive-low.ogg format=ogg'
+goav ctl --control unix:///tmp/goav-live.sock detach archive
 ```
 
-## Custom codecs
+Render a live flowchart from the same running task:
+
+```go
+flowchart, err := graphrender.RenderTaskFlowchart(task)
+if err != nil {
+    return err
+}
+fmt.Println(flowchart)
+```
+
+`RenderTaskFlowchart` reads only public `Snapshot()` data. Runtime branch-owned
+nodes are annotated with the branch name and lifecycle state, for example
+`branch=archive (attached)`. Use `graphrender.RenderTaskURI(task,
+"goav://graph/dot")` or `RenderTaskURI(task, "goav:graph")` when DOT or text
+is easier to feed into other tooling.
+
+## Built-In Requests
+
+The socket protocol is JSON. The CLI is the normal entry point, but hosts and
+tests can use the same request shape directly:
+
+```go
+request, err := ctl.RequestFromCLI([]string{
+    "control", "bitrate", "stream=video", "value=1200k", "at=encoded",
+})
+if err != nil {
+    return err
+}
+response := server.Handle(ctx, request)
+```
+
+Supported built-ins include:
+
+- `control keyframe stream=<stream-id> [at=<tap>]`
+- `control bitrate stream=<stream-id> value=<rate> [at=<tap>]`
+- `control seek position=<duration> [source=<source>|node=<node>]`
+- `control rate value=<float> [source=<source>|node=<node>]`
+- `control segment start=<duration> end=<duration> [source=<source>|node=<node>]`
+- `control select active=<arm-or-stream-id> [selector=<name>|at=<tap>]`
+- `control deliver ...` and `control deliver --json '<av.Event JSON>'`
+- `control --json '<goav.Control JSON>'`
+- `inspect`, `snapshot`, `stats`, `taps`, `streams`, `branches`,
+  `destinations`
+- `events --follow`, `watch [type=<event-type>] [stream=<stream-id>] --follow`
+- `attach`, `rebranch`, `detach`, `stop`
+
+## Custom Codecs
 
 Register the codec implementation on the runtime, then call it in an attach or
 rebranch pipeline with the generic `encode` step:
@@ -80,53 +225,29 @@ The generic encoder step supports the common codec options: `bitrate`,
 `profile`, `level`, `sample_rate`, `channels`, `clock_rate`,
 `keyframe_interval`, and `fps`.
 
-## Custom encoder options
-
-If an encoder exposes native settings beyond the common codec options, expose a
-named encoder step. The step receives every `key=value` token and returns the
-real `codec.CodecSpec` the runtime already understands:
-
-```go
-registry := ctl.PipelineRegistry{
-    Encoders: []ctl.EncoderSpec{{
-        Name: "acmeenc",
-        Apply: func(args ctl.StepArgs) (codec.CodecSpec, error) {
-            return codec.Codec(av.CodecID("x_acme_audio"), av.MediaAudio,
-                codec.Profile(args["profile"]),
-                codec.Control(func(native any) error {
-                    opts := native.(*acme.Options)
-                    opts.Lookahead = args["lookahead"]
-                    return nil
-                }),
-            ), nil
-        },
-    }},
-}
-
-err := ctl.ServeUnixWithOptions(ctx, task, socket, ctl.WithPipelineRegistry(registry))
-```
+When an encoder exposes native settings beyond those common options, expose a
+named encoder step with `ctl.EncoderSpec`. The CLI spelling stays short and the
+host keeps full control over validation and native adapter calls:
 
 ```sh
 goav ctl --control unix:///tmp/goav-live.sock attach frames as archive \
-  'acmeenc profile=cinema lookahead=deep ! filesink location=archive.ogg format=ogg'
+  'acmeenc bitrate=128000 quality=cinema lookahead=deep ! filesink location=archive.ogg format=ogg'
 ```
 
-## Custom branch components
+## Custom Branch Components
 
-Custom branch steps can add external stages:
+Custom branch steps can add external stages, sinks, or compound branch grammar:
 
 ```go
-registry := ctl.PipelineRegistry{
-    Steps: []ctl.BranchPipelineStepSpec{{
-        Name: "meter",
-        Apply: func(branch *ctl.BranchPipeline, args ctl.StepArgs) error {
-            branch.Do(goav.FrameFunc("meter", func(ctx context.Context, frame *av.Frame, emit goav.Emit) error {
-                recordLevel(frame)
-                return emit.Frame(frame)
-            }))
-            return nil
-        },
-    }},
+ctl.BranchPipelineStepSpec{
+    Name: "meter",
+    Apply: func(branch *ctl.BranchPipeline, args ctl.StepArgs) error {
+        branch.Do(goav.FrameFunc("meter", func(ctx context.Context, frame *av.Frame, emit goav.Emit) error {
+            recordLevel(frame)
+            return emit.Frame(frame)
+        }))
+        return nil
+    },
 }
 ```
 
@@ -137,3 +258,17 @@ goav ctl --control unix:///tmp/goav-live.sock attach frames as monitored \
 
 Unknown commands, fields, taps, branches, nodes, and pipeline steps return
 structured errors with available names and suggestions.
+
+## Safety Model
+
+- Reflection is confined to argument binding, validation, and help generation.
+- No arbitrary method names, unexported internals, or global registries are
+  exposed.
+- Commands lower into existing task/control APIs.
+- Raw JSON fallback decodes into the real `goav.Control` or `av.Event` shapes
+  instead of introducing a second control model.
+- Custom controls, custom branch steps, custom codec names, and custom encoder
+  names are per-server allowlists.
+- Branch-pipeline strings are parsed by the allowlisted cold-path parser; custom
+  behavior is callable only through explicit `PipelineRegistry` entries chosen
+  by the host application.
