@@ -8,13 +8,13 @@ require (
 	github.com/thesyncim/goav v0.0.0
 )
 
-require github.com/thesyncim/goav1 v0.0.0-20260605233508-19454059211a
+require github.com/thesyncim/goav1 v0.0.0-20260611170949-792a1f774da1
 
 require (
 	github.com/pion/randutil v0.1.0 // indirect
 	github.com/thesyncim/goh264 v0.0.0-20260605215817-c3ebee4f35c3 // indirect
 	github.com/thesyncim/gopus v0.1.1 // indirect
-	github.com/thesyncim/govpx v0.0.0-20260606015758-d64581a69a6f // indirect
+	github.com/thesyncim/govpx v0.0.0-20260609183451-3d804d8c8f89 // indirect
 )
 
 replace github.com/thesyncim/goav => ../

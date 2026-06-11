@@ -26,10 +26,10 @@ require (
 	github.com/pion/stun/v3 v3.1.4 // indirect
 	github.com/pion/transport/v4 v4.0.2 // indirect
 	github.com/pion/turn/v5 v5.0.7 // indirect
-	github.com/thesyncim/goav1 v0.0.0-20260605233508-19454059211a // indirect
+	github.com/thesyncim/goav1 v0.0.0-20260611170949-792a1f774da1 // indirect
 	github.com/thesyncim/goh264 v0.0.0-20260605215817-c3ebee4f35c3 // indirect
 	github.com/thesyncim/gopus v0.1.1 // indirect
-	github.com/thesyncim/govpx v0.0.0-20260606015758-d64581a69a6f // indirect
+	github.com/thesyncim/govpx v0.0.0-20260609183451-3d804d8c8f89 // indirect
 	github.com/wlynxg/anet v0.0.5 // indirect
 	golang.org/x/crypto v0.48.0 // indirect
 	golang.org/x/net v0.50.0 // indirect
