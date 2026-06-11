@@ -1,11 +1,18 @@
 package graphrender
 
 import (
+	"context"
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
+	goav "github.com/thesyncim/goav"
+	"github.com/thesyncim/goav/av"
+	"github.com/thesyncim/goav/goavtest"
+	"github.com/thesyncim/goav/lifecycle"
 	"github.com/thesyncim/goav/pipeline"
+	"github.com/thesyncim/goav/snapshot"
 )
 
 func TestRenderURITextDOTAndMermaid(t *testing.T) {
@@ -107,4 +114,93 @@ func TestRenderURI(t *testing.T) {
 	if _, err := RenderURI(spec, "goav:graph?format=json"); !errors.Is(err, ErrUnsupportedFormat) {
 		t.Fatalf("err = %v, want ErrUnsupportedFormat", err)
 	}
+}
+
+func TestRenderTaskFlowchartAnnotatesRuntimeBranches(t *testing.T) {
+	task := snapshotTask{
+		snap: snapshot.Task{
+			Spec: pipeline.Spec{
+				Name: "live",
+				Nodes: []pipeline.NodeSpec{
+					{Name: "source", Kind: pipeline.NodeSource},
+					{Name: "tap", Kind: pipeline.NodeStage, Detail: "packets"},
+					{Name: "preview-copy", Kind: pipeline.NodeStage, Detail: "copy"},
+					{Name: "preview-sink", Kind: pipeline.NodeSink},
+				},
+				Edges: []pipeline.EdgeSpec{
+					{From: "source", To: "tap"},
+					{From: "tap", To: "preview-copy"},
+					{From: "preview-copy", To: "preview-sink"},
+				},
+			},
+			Branches: []snapshot.Branch{{
+				Name:  "preview",
+				State: lifecycle.BranchAttached,
+				Nodes: []pipeline.NodeRef{
+					"preview-copy",
+					"preview-sink",
+				},
+			}},
+		},
+	}
+
+	flowchart, err := RenderTaskFlowchart(task)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(flowchart, "flowchart LR") ||
+		!strings.Contains(flowchart, "branch=preview (attached)") ||
+		!strings.Contains(flowchart, "preview-copy") {
+		t.Fatalf("flowchart:\n%s", flowchart)
+	}
+
+	text, err := RenderTaskURI(task, "goav:graph")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(text, "stage preview-copy [copy\nbranch=preview (attached)]") {
+		t.Fatalf("text:\n%s", text)
+	}
+}
+
+func TestRenderTaskFlowchartReadsLiveTaskSnapshot(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	packet := av.Packet{Payload: av.Buffer{Bytes: []byte{1}, Ownership: av.BufferImmutable}}
+	task, err := goav.From(goavtest.Packets(av.CodecOpus, packet)).
+		Audio().Copy().Tap(goav.PacketTap("pkts")).
+		To(goavtest.NewCollector().Sink()).
+		UseRuntime(goavtest.Runtime()).
+		Build(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer task.Close()
+
+	attachment, err := task.Attach(ctx, goav.Branch("preview").
+		From(goav.PacketTap("pkts")).
+		Copy().
+		To(goavtest.NewCollector().Sink()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer attachment.Close(ctx)
+
+	flowchart, err := RenderTaskFlowchart(task)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(flowchart, "flowchart LR") ||
+		!strings.Contains(flowchart, "branch=preview (attached)") {
+		t.Fatalf("flowchart:\n%s", flowchart)
+	}
+}
+
+type snapshotTask struct {
+	snap snapshot.Task
+}
+
+func (t snapshotTask) Snapshot() snapshot.Task {
+	return t.snap
 }

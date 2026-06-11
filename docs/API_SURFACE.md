@@ -150,10 +150,13 @@ Handle-based graph work, deliberately off the grammar:
 - Prebuilt graph components — `codec.DecoderStage`/`EncoderStage`,
   `format.DemuxSource`/`MuxStage`, `filter.Stage` (what the compiler itself
   assembles; usable directly under `expert.Graph`).
-- `graphrender` — diagnostics over `pipeline.Spec`: `RenderURI` renders any
-  described graph as text, DOT, or Mermaid via a `goav:graph` URI
-  (`ErrUnsupportedFormat`, `ErrUnsupportedURI`). A leaf outside the core
-  import graph, surface-pinned like the vocabulary packages.
+- `graphrender` — diagnostics over `pipeline.Spec` and live task snapshots:
+  `RenderURI` renders any described graph as text, DOT, or Mermaid via a
+  `goav:graph` URI; `RenderTaskFlowchart(task)` renders a running task-like
+  value's current snapshot as a Mermaid flowchart, with runtime branch-owned
+  nodes annotated by branch name/state; `RenderTaskURI` keeps the same URI
+  format selection for live tasks. A leaf outside the core import graph,
+  surface-pinned like the vocabulary packages.
 
 ## D. Leakage
 

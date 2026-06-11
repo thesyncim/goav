@@ -278,6 +278,8 @@ goav.WrapSource
 goav.Writer
 graphrender.ErrUnsupportedFormat
 graphrender.ErrUnsupportedURI
+graphrender.RenderTaskFlowchart
+graphrender.RenderTaskURI
 graphrender.RenderURI
 lifecycle.BranchAttached
 lifecycle.BranchDetached
