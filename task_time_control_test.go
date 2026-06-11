@@ -425,7 +425,7 @@ func (s *segmentPacketSource) Control(_ context.Context, msg *pipeline.Message) 
 func (s *segmentPacketSource) Close() error { return nil }
 
 // segmentProvider plugs the controllable packet source into the recipe grammar
-// through the SourceProvider seam, so Segment is proven against a grammar-built
+// through the provider.Source seam, so Segment is proven against a grammar-built
 // task, not just raw graphs.
 type segmentProvider struct {
 	source *segmentPacketSource

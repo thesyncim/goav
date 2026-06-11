@@ -5,7 +5,7 @@ import (
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
-	"github.com/thesyncim/goav/codes"
+	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/plan"
 	"github.com/thesyncim/goav/shape"
@@ -552,7 +552,7 @@ func (b *chainBuilder) tap(tap TapRef) {
 	}
 	if tap.name == "" {
 		b.setErr(&BuildError{
-			Code:      codes.TapInvalid,
+			Code:      errcode.TapInvalid,
 			Operation: "build flow",
 			Node:      firstNonEmpty(b.spec.name, "flow"),
 			Reason:    "tap name is empty",
@@ -681,7 +681,7 @@ func duplicateFlowEncodeError(name string, first codec.CodecSpec, second codec.C
 
 func duplicateFlowDecodeError(node string) error {
 	return &BuildError{
-		Code:      codes.FlowDecodeDuplicate,
+		Code:      errcode.FlowDecodeDuplicate,
 		Operation: "build flow",
 		Node:      node,
 		Reason:    "flow already decodes its input packets",
@@ -695,7 +695,7 @@ func duplicateFlowDecodeError(node string) error {
 
 func flowDecodeOrderError(node string) error {
 	return &BuildError{
-		Code:      codes.FlowDecodeOrderInvalid,
+		Code:      errcode.FlowDecodeOrderInvalid,
 		Operation: "build flow",
 		Node:      node,
 		Reason:    "decode must be the first flow operation",
@@ -709,7 +709,7 @@ func flowDecodeOrderError(node string) error {
 
 func flowDecodeDomainError(operation string, node string) error {
 	return &BuildError{
-		Code:      codes.FlowDecodeDomainMismatch,
+		Code:      errcode.FlowDecodeDomainMismatch,
 		Operation: operation,
 		Node:      firstNonEmpty(node, "flow"),
 		Reason:    "flow decoding requires a packet-domain stream point",
@@ -724,7 +724,7 @@ func flowDecodeDomainError(operation string, node string) error {
 
 func flowCopyDomainError(operation string, node string) error {
 	return &BuildError{
-		Code:      codes.FlowCopyDomainMismatch,
+		Code:      errcode.FlowCopyDomainMismatch,
 		Operation: operation,
 		Node:      firstNonEmpty(node, "flow"),
 		Reason:    "flow copying requires a packet-domain stream point",
@@ -739,7 +739,7 @@ func flowCopyDomainError(operation string, node string) error {
 
 func nilFlowError() error {
 	return &BuildError{
-		Code:      codes.FlowInvalid,
+		Code:      errcode.FlowInvalid,
 		Operation: "build flow",
 		Reason:    "flow is nil",
 		Suggestions: []string{
@@ -754,7 +754,7 @@ func validateChainMedia(operation string, node string, selected av.MediaType, sp
 		return nil
 	}
 	return &BuildError{
-		Code:      codes.FlowMediaMismatch,
+		Code:      errcode.FlowMediaMismatch,
 		Operation: operation,
 		Node:      firstNonEmpty(spec.name, node, "flow"),
 		Reason:    string(spec.media) + " flow cannot be applied to " + string(selected) + " stream",
@@ -768,7 +768,7 @@ func validateChainMedia(operation string, node string, selected av.MediaType, sp
 
 func branchInputCountError(node string, count int) error {
 	return &BuildError{
-		Code:      codes.InputCountUnsupported,
+		Code:      errcode.InputCountUnsupported,
 		Operation: "build branches",
 		Node:      node,
 		Reason:    "branches currently compose from one input",
@@ -785,7 +785,7 @@ func branchInputCountError(node string, count int) error {
 
 func branchOutputScopeError(node string) error {
 	return &BuildError{
-		Code:      codes.OutputScopeMixed,
+		Code:      errcode.OutputScopeMixed,
 		Operation: "build branches",
 		Node:      node,
 		Reason:    "branch destinations are declared inside Branch(...).To(...)",

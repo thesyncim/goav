@@ -9,7 +9,7 @@ import (
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
-	"github.com/thesyncim/goav/codes"
+	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/filter"
 	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/pipeline"
@@ -602,7 +602,7 @@ func branchComposePlanEmptyError(kind string) error {
 	}
 	reason := "branch composition has no " + kind
 	return &BuildError{
-		Code:        codes.BranchComposePlanEmpty,
+		Code:        errcode.BranchComposePlanEmpty,
 		Operation:   "build branch composition",
 		Node:        kind,
 		Reason:      reason,
@@ -658,7 +658,7 @@ func resolveBranchComposeStreamGroupsForInputs(sources mediaPlanCompiledSources,
 				return nil, selectErr
 			}
 			if !ok {
-				return nil, streamSelectionError(codes.StreamMissing, branches[i].branch.Selector, sources.streams)
+				return nil, streamSelectionError(errcode.StreamMissing, branches[i].branch.Selector, sources.streams)
 			}
 			stream = selected.stream
 		} else {
@@ -910,7 +910,7 @@ func codecSpecHasDecodeIntent(spec codec.CodecSpec) bool {
 
 func branchComposeDecodeConfigConflictError(first string, second string) error {
 	return &BuildError{
-		Code:      codes.DecodeConfigConflict,
+		Code:      errcode.DecodeConfigConflict,
 		Operation: "build branch composition",
 		Node:      second,
 		Reason:    "branches that share one decoder declared different decode configs",
@@ -927,7 +927,7 @@ func branchComposeDecodeConfigConflictError(first string, second string) error {
 
 func branchComposeCodecChangeConflictError(first string, second string) error {
 	return &BuildError{
-		Code:      codes.DecodePolicyConflict,
+		Code:      errcode.DecodePolicyConflict,
 		Operation: "build branch composition",
 		Node:      second,
 		Reason:    "branches that share one decoder declared different codec-change policies",
@@ -945,7 +945,7 @@ func branchComposeCodecChangeConflictError(first string, second string) error {
 
 func branchComposeDuplicateBranchError(name string, index int) error {
 	return &BuildError{
-		Code:      codes.BranchDuplicate,
+		Code:      errcode.BranchDuplicate,
 		Operation: "build branch composition",
 		Node:      name,
 		Reason:    "branch name is defined more than once",
@@ -1106,7 +1106,7 @@ func branchComposePrivateOperationTransforms(branch branchComposeRoute) ([]media
 
 func branchChainStepError(name string, reason string) error {
 	return &BuildError{
-		Code:      codes.BranchOperationChainUnsupported,
+		Code:      errcode.BranchOperationChainUnsupported,
 		Operation: "build branch composition",
 		Node:      name,
 		Reason:    reason,
@@ -1245,7 +1245,7 @@ func mediaTransformMismatchError(transform mediaTransform, stream av.Stream, ope
 		"codec type: " + string(stream.Codec.Type),
 	}
 	return &BuildError{
-		Code:      codes.BranchTransformMediaMismatch,
+		Code:      errcode.BranchTransformMediaMismatch,
 		Operation: "build branch composition",
 		Node:      transform.name,
 		Reason:    operation + " applies to " + media + " streams",
@@ -1308,7 +1308,7 @@ func branchComposeTargetUnmatchedError(output branchComposeTarget, destination f
 		details = append(details, "requested: "+strings.Join(output.Branches, ", "))
 	}
 	return &BuildError{
-		Code:      codes.BranchDestinationUnmatched,
+		Code:      errcode.BranchDestinationUnmatched,
 		Operation: "build branch composition",
 		Node:      node,
 		Reason:    "destination selects no branches",
@@ -1324,7 +1324,7 @@ func branchComposeTargetUnmatchedError(output branchComposeTarget, destination f
 
 func branchComposeTargetDestinationInvalidError(output branchComposeTarget, reason string) error {
 	return &BuildError{
-		Code:      codes.BranchDestinationInvalid,
+		Code:      errcode.BranchDestinationInvalid,
 		Operation: "build branch composition",
 		Node:      branchComposeTargetNodeName(output, "output"),
 		Reason:    reason,
@@ -1338,7 +1338,7 @@ func branchComposeTargetDestinationInvalidError(output branchComposeTarget, reas
 
 func branchComposeTargetEncodeMissingError(output branchComposeTarget, destination format.Output, branch branchComposeRoute) error {
 	return &BuildError{
-		Code:      codes.EncodeMissing,
+		Code:      errcode.EncodeMissing,
 		Operation: "build branch composition",
 		Node:      firstNonEmpty(branch.name, branch.branch.Name, branchComposeTargetNodeName(output, "output")),
 		Reason:    "muxed destinations require encoded branches",
@@ -1503,7 +1503,7 @@ func transcodeResizeConfigError(stream av.Stream, mode filter.ResizeMode, config
 		node += "-" + string(stream.ID)
 	}
 	return &BuildError{
-		Code:      codes.TranscodeResizeInvalid,
+		Code:      errcode.TranscodeResizeInvalid,
 		Operation: "build transcode",
 		Node:      node,
 		Reason:    reason,

@@ -5,7 +5,7 @@ import (
 	"strconv"
 
 	"github.com/thesyncim/goav/av"
-	"github.com/thesyncim/goav/codes"
+	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/plan"
 	"github.com/thesyncim/goav/shape"
@@ -155,7 +155,7 @@ func graphPlanOperationDestinationsRequired(kind plan.OperationKind) bool {
 
 func graphPlanInvalidError(reason string, details []string) error {
 	return &BuildError{
-		Code:      codes.GraphPlanInvalid,
+		Code:      errcode.GraphPlanInvalid,
 		Operation: "build graph plan",
 		Reason:    reason,
 		Details:   append([]string(nil), details...),

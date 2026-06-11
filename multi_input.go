@@ -5,7 +5,7 @@ import (
 	"strconv"
 
 	"github.com/thesyncim/goav/av"
-	"github.com/thesyncim/goav/codes"
+	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/shape"
 )
@@ -161,11 +161,11 @@ func selectStreamAcrossInputSets(sets []inputStreamSet, selector av.StreamSelect
 		}
 		return selected, true, nil
 	case len(matches) > 1:
-		return inputBoundStream{}, false, multiInputStreamSelectionError(codes.StreamAmbiguous, selector, inputName, matches, sets)
+		return inputBoundStream{}, false, multiInputStreamSelectionError(errcode.StreamAmbiguous, selector, inputName, matches, sets)
 	case unknown:
 		return inputBoundStream{}, false, nil
 	default:
-		return inputBoundStream{}, false, multiInputStreamSelectionError(codes.StreamMissing, selector, inputName, allInputBoundStreams(sets), sets)
+		return inputBoundStream{}, false, multiInputStreamSelectionError(errcode.StreamMissing, selector, inputName, allInputBoundStreams(sets), sets)
 	}
 }
 
@@ -193,9 +193,9 @@ func allInputBoundStreams(sets []inputStreamSet) []inputBoundStream {
 	return out
 }
 
-func multiInputStreamSelectionError(code codes.Code, selector av.StreamSelector, inputName string, candidates []inputBoundStream, sets []inputStreamSet) error {
+func multiInputStreamSelectionError(code errcode.Code, selector av.StreamSelector, inputName string, candidates []inputBoundStream, sets []inputStreamSet) error {
 	reason := "no stream across the inputs matches " + readableSelector(selector)
-	if code == codes.StreamAmbiguous {
+	if code == errcode.StreamAmbiguous {
 		reason = "multiple streams across the inputs match " + readableSelector(selector)
 	}
 	if inputName != "" {
@@ -260,7 +260,7 @@ func unknownInputNameError(selector av.StreamSelector, inputName string, sets []
 		details = append(details, "input="+sets[i].name)
 	}
 	return &BuildError{
-		Code:      codes.InputUnknown,
+		Code:      errcode.InputUnknown,
 		Operation: "select stream",
 		Node:      selectorDetail(selector),
 		Reason:    "no job input is named " + strconv.Quote(inputName),

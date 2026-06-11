@@ -25,9 +25,9 @@ reusing one handle groups branches into one mux/sink group
 ## v0 STABLE
 
 Stable means: pinned against silent change, documented, and test-enforced —
-not "frozen forever". The governed surface is 326 approved identifiers
-(`api_surface_pin_test.go` + `testdata/api_surface.txt`: 138 root, 143
-`codes`, 28 `plan`, 13 `lifecycle`, 4 `snapshot`), every exported symbol
+not "frozen forever". The governed surface is 312 approved identifiers
+(`api_surface_pin_test.go` + `testdata/api_surface.txt`: 124 root, 143
+`errcode`, 28 `plan`, 13 `lifecycle`, 4 `snapshot`), every exported symbol
 documented (`doc_pin_test.go`), tiered in `docs/API_SURFACE.md`:
 
 - **Tier A — the grammar.** `From`/stream selection/operations
@@ -35,15 +35,15 @@ documented (`doc_pin_test.go`), tiered in `docs/API_SURFACE.md`:
   `Require`/`Prefer`/`Tap`/`Branches`/`To`/`OnStream`; `Mix`/`Composite`/
   `Select`; `Flow`; `Task` verbs (`Run`/`Events`/`Watch`/`Snapshot`/`Stats`/
   `Attach`/`Detach`/`Rebranch`/`Control`); `Default`/`New`/`UseRuntime`;
-  structured `BuildError` + the `codes` catalog; the `plan`, `snapshot`,
+  structured `BuildError` + the `errcode` catalog; the `plan`, `snapshot`,
   `lifecycle`, `shape`, `flow`, and `av` vocabulary packages.
-- **Tier B — extension seams.** `SourceProvider` and `Source(fn)` push
-  sources; `DestinationProvider`/`Writer`/`Sink` destinations;
+- **Tier B — extension seams.** `provider.Source` and `Source(fn)` push
+  sources; `provider.Destination`/`Writer`/`Sink` destinations;
   `EventFunc`/`FrameFunc`/`PacketFunc`/`SinkFunc` hooks; codec/format/filter
   factory interfaces with per-runtime `With*` registration; `goavtest`.
   Every seam has an external toy implementation run end to end
   (`adapterproof/adapter_compat_test.go`, guide `docs/ADAPTER_AUTHORING.md`).
-- **Tier C — expert.** `Expert(runtime).Graph()` handles, `pipeline` graph
+- **Tier C — expert.** `expert.Graph(runtime)` handles, `pipeline` graph
   machinery, prebuilt codec/format/filter stages — off the grammar, still
   governed.
 
@@ -103,7 +103,7 @@ Exists and is tested, but numbers or semantics are expected to move
 
 ## Planned
 
-- **Playout/SRT/NDI providers** through the `SourceProvider` seam — by
+- **Playout/SRT/NDI providers** through the `provider.Source` seam — by
   design zero core changes (seam proven by
   `adapterproof/adapter_compat_test.go`). Roadmap.
 - **Tail-latency benchmarking** — p50/p95/p99 need a histogram harness;

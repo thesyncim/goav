@@ -5,7 +5,7 @@ package goav
 import (
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
-	"github.com/thesyncim/goav/codes"
+	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/plan"
 	"github.com/thesyncim/goav/shape"
@@ -494,7 +494,7 @@ func jobStreamOutputNames(stream *jobStreamBuild) []string {
 
 func streamStageMissingError(stream streamIntent) error {
 	return &BuildError{
-		Code:      codes.StageMissing,
+		Code:      errcode.StageMissing,
 		Operation: "build stream",
 		Node:      jobStreamIntentName(stream),
 		Reason:    "custom stream stage is nil",
@@ -520,7 +520,7 @@ func validateJobStreamOutputKinds(operation string, stream streamIntent, outputs
 
 func mixedStreamOutputError(operation string, stream streamIntent) error {
 	return &BuildError{
-		Code:      codes.OutputKindMixed,
+		Code:      errcode.OutputKindMixed,
 		Operation: operation,
 		Node:      jobStreamIntentName(stream),
 		Reason:    "stream recipes cannot mix sinks and muxed outputs",
@@ -535,7 +535,7 @@ func mixedStreamOutputError(operation string, stream streamIntent) error {
 
 func streamEncodeMissingError(operation string, stream streamIntent) error {
 	return &BuildError{
-		Code:      codes.EncodeMissing,
+		Code:      errcode.EncodeMissing,
 		Operation: operation,
 		Node:      jobStreamIntentName(stream),
 		Reason:    "decoded frames cannot be written to a muxed output without an encoder",
@@ -554,13 +554,13 @@ func streamEncodeMissingError(operation string, stream streamIntent) error {
 
 func recipeRuntimeUnsupportedError(operation string) error {
 	return &BuildError{
-		Code:      codes.RuntimeUnsupported,
+		Code:      errcode.RuntimeUnsupported,
 		Operation: operation,
 		Reason:    "recipe compilation requires a goav runtime",
 		Suggestions: []string{
 			"use goav.Default() for the standard recipe runtime",
 			"use goav.New(...) when customizing adapters",
-			"use goav.Expert(runtime).Graph() for explicit graph wiring with a goav runtime",
+			"use expert.Graph(runtime) for explicit graph wiring with a goav runtime",
 		},
 		Cause: ErrUnsupportedBuild,
 	}
@@ -579,7 +579,7 @@ func jobStreamName(stream *jobStreamBuild) string {
 
 func duplicateJobStreamError(existing *jobStreamBuild, next *jobStreamBuild) error {
 	return &BuildError{
-		Code:      codes.StreamDuplicate,
+		Code:      errcode.StreamDuplicate,
 		Operation: "build job",
 		Node:      jobStreamName(next),
 		Reason:    "ordinary stream recipes select one audio or video stream",

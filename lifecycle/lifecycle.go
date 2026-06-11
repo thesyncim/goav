@@ -4,7 +4,7 @@
 // progress and introduce no new lifecycle machinery.
 //
 // These states are also the contract external destination implementations
-// are reported through: a custom TransactionalDestinationWriter surfaces as
+// are reported through: a custom provider.TransactionalWriter surfaces as
 // DestinationOpen while accepting media, DestinationCommitted after a run
 // that completed without error (Commit), DestinationAborted after a failed
 // run (Abort), and DestinationClosed when closed without a run outcome.

@@ -8,36 +8,11 @@ import (
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/pipeline"
+	"github.com/thesyncim/goav/provider"
 	"github.com/thesyncim/goav/shape"
 )
 
-// SourceProvider is the universal transport extension point: any package that
-// can open a running pipeline source plugs into goav through this one seam,
-// with zero goav changes. The provider owns the transport vocabulary (readers,
-// jitter buffers, depacketizers, adaptation) and hands the runtime a running
-// source plus the streams it carries; SourceShape declares the media facts the
-// planner needs before the source is opened (domain, media kind, codec,
-// realtime). rtpav.Receive and webrtcav.Track are providers; an SRT, NDI, or
-// proprietary ingest package plugs in the same way.
-//
-// Optional capabilities are discovered by type assertion:
-//
-//   - Name() string — the source node name used in Describe output. Repeated
-//     names across the inputs of one job are disambiguated with an index
-//     suffix ("rtp", "rtp-1", ...).
-//   - Detail() string — the human-readable node detail for Describe output.
-//   - DecodeBounds(av.StreamID) codec.DecodeBounds — per-stream decode bounds
-//     seeded into decoders fed by this input, resolved after OpenSource.
-type SourceProvider interface {
-	// OpenSource opens the running pipeline source and resolves the streams it
-	// carries. It is called once per build, after which the source's Start
-	// loop delivers the media.
-	OpenSource(ctx context.Context) (pipeline.Source, []av.Stream, error)
-	// SourceShape declares the shape of the media this provider produces.
-	SourceShape() shape.Spec
-}
-
-// Optional SourceProvider capabilities, discovered by type assertion.
+// Optional provider.Source capabilities, discovered by type assertion.
 type (
 	sourceProviderNamer    interface{ Name() string }
 	sourceProviderDetailer interface{ Detail() string }
@@ -48,20 +23,20 @@ type (
 	}
 )
 
-// Input adapts a SourceProvider into a recipe input. The provider's declared
+// Input adapts a provider.Source into a recipe input. The provider's declared
 // shape seeds the input's codec intent and realtime policy, so the recipe
 // planner can select streams and pick decoders before the source is opened:
 //
 //	goav.From(goav.Input(rtpav.Receive(reader, rtpav.WithCodec(codec.Opus())))).
 //		Copy().To(out)
-func Input(provider SourceProvider, opts ...InputOption) InputSpec {
-	if provider == nil {
+func Input(src provider.Source, opts ...InputOption) InputSpec {
+	if src == nil {
 		return InputSpec{err: ErrNilSource}
 	}
-	spec := provider.SourceShape()
+	spec := src.SourceShape()
 	return applyInputOptions(InputSpec{
 		input:    format.Input{Realtime: spec.Realtime},
-		provider: provider,
+		provider: src,
 		codec:    codecSpecFromSourceShape(spec),
 		realtime: spec.Realtime,
 	}, opts)
@@ -69,8 +44,8 @@ func Input(provider SourceProvider, opts ...InputOption) InputSpec {
 
 // providerNodeName returns the provider's node name capability, defaulting to
 // "source".
-func providerNodeName(provider SourceProvider) string {
-	if named, ok := provider.(sourceProviderNamer); ok {
+func providerNodeName(src provider.Source) string {
+	if named, ok := src.(sourceProviderNamer); ok {
 		if name := named.Name(); name != "" {
 			return name
 		}
@@ -80,8 +55,8 @@ func providerNodeName(provider SourceProvider) string {
 
 // providerNodeDetail returns the provider's node detail capability; providers
 // without one get an empty detail so planned and built graphs agree.
-func providerNodeDetail(provider SourceProvider) string {
-	if detailed, ok := provider.(sourceProviderDetailer); ok {
+func providerNodeDetail(src provider.Source) string {
+	if detailed, ok := src.(sourceProviderDetailer); ok {
 		return detailed.Detail()
 	}
 	return ""
@@ -102,26 +77,26 @@ func disambiguateSourceNodeName(seen map[string]struct{}, name string, provider 
 // the running source (renamed to the resolved node name when disambiguation or
 // a job-level name applies), its streams, the declared shape domain and
 // realtime policy, and the optional decode-bounds capability.
-func openProviderSource(ctx context.Context, provider SourceProvider, name string) (graphSourceBuild, error) {
-	if provider == nil {
+func openProviderSource(ctx context.Context, src provider.Source, name string) (graphSourceBuild, error) {
+	if src == nil {
 		return graphSourceBuild{}, ErrNilSource
 	}
-	source, streams, err := provider.OpenSource(ctx)
+	source, streams, err := src.OpenSource(ctx)
 	if err != nil {
 		return graphSourceBuild{}, err
 	}
-	spec := provider.SourceShape()
+	spec := src.SourceShape()
 	domain := spec.Domain
 	if domain == "" {
 		domain = shape.DomainPacket
 	}
 	build := graphSourceBuild{
-		source:   resolvedProviderSource(source, name, providerNodeDetail(provider)),
+		source:   resolvedProviderSource(source, name, providerNodeDetail(src)),
 		streams:  streams,
 		domain:   domain,
 		realtime: spec.Realtime,
 	}
-	if bounds, ok := provider.(decodeBoundsProvider); ok {
+	if bounds, ok := src.(decodeBoundsProvider); ok {
 		build.bounds = bounds
 	}
 	return build, nil

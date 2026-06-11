@@ -5,13 +5,13 @@ import (
 	"strings"
 
 	"github.com/thesyncim/goav/av"
-	"github.com/thesyncim/goav/codes"
+	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/plan"
 )
 
 type muxCompatibilityIssue struct {
-	Code        codes.Code
+	Code        errcode.Code
 	Destination string
 	Format      av.FormatID
 	Reason      string
@@ -366,7 +366,7 @@ func checkSingleVideoMuxCompatibility(output workDestination, streams []plannedM
 
 func newMuxCompatibilityIssue(output workDestination, streams []plannedMuxStream, reason string) muxCompatibilityIssue {
 	return muxCompatibilityIssue{
-		Code:        codes.DestinationMuxIncompatible,
+		Code:        errcode.DestinationMuxIncompatible,
 		Destination: output.Name,
 		Format:      output.Format,
 		Reason:      reason,

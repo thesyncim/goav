@@ -8,7 +8,7 @@ import (
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
-	"github.com/thesyncim/goav/codes"
+	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/filter"
 	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/plan"
@@ -333,7 +333,7 @@ func appendBranchOperationRequirements(requirements []plan.AdapterRequirement, r
 			codecID, ok := operationDecodeCodec(resolved, stream, streamOK, operation)
 			if !ok || codecID == "" {
 				warnings = append(warnings, plan.Diagnostic{
-					Code:    string(codes.DecodeCodecDeferred),
+					Code:    string(errcode.DecodeCodecDeferred),
 					Node:    requiredBy,
 					Message: "decode codec will be resolved when the input opens",
 					Suggestions: []string{
@@ -592,7 +592,7 @@ func annotatePlanReportError(report *plan.Report, err error) {
 	var buildErr *BuildError
 	if !errors.As(err, &buildErr) || buildErr == nil {
 		report.Warnings = appendPlanDiagnostics(report.Warnings, plan.Diagnostic{
-			Code:    string(codes.ExplainPreflightError),
+			Code:    string(errcode.ExplainPreflightError),
 			Message: err.Error(),
 		})
 		return
@@ -606,7 +606,7 @@ func annotatePlanReportError(report *plan.Report, err error) {
 	})
 	requirement, ok := adapterRequirementFromBuildError(buildErr)
 	if !ok {
-		if buildErr.Code == codes.DestinationMuxIncompatible {
+		if buildErr.Code == errcode.DestinationMuxIncompatible {
 			return
 		}
 		report.Missing = append(report.Missing, plan.Requirement{
@@ -631,7 +631,7 @@ func adapterRequirementFromBuildError(err *BuildError) (plan.AdapterRequirement,
 	status := adapterRequirementStatus(err.Code)
 	requiredBy := firstNonEmpty(err.Node, err.Operation)
 	switch err.Code {
-	case codes.InputDemuxerMissing:
+	case errcode.InputDemuxerMissing:
 		formatID := av.FormatID(details["format"])
 		return plan.AdapterRequirement{
 			Kind:       "demuxer",
@@ -640,7 +640,7 @@ func adapterRequirementFromBuildError(err *BuildError) (plan.AdapterRequirement,
 			RequiredBy: requiredBy,
 			Status:     status,
 		}, formatID != ""
-	case codes.OutputMuxerMissing, codes.DestinationMuxerMissing:
+	case errcode.OutputMuxerMissing, errcode.DestinationMuxerMissing:
 		formatID := av.FormatID(details["format"])
 		return plan.AdapterRequirement{
 			Kind:       "muxer",
@@ -649,7 +649,7 @@ func adapterRequirementFromBuildError(err *BuildError) (plan.AdapterRequirement,
 			RequiredBy: requiredBy,
 			Status:     status,
 		}, formatID != ""
-	case codes.DecodeAdapterMissing, codes.DecodeAdapterUnavailable, codes.DecodeAdapterIncompatible:
+	case errcode.DecodeAdapterMissing, errcode.DecodeAdapterUnavailable, errcode.DecodeAdapterIncompatible:
 		codecID := av.CodecID(details["codec"])
 		requirement := plan.AdapterRequirement{
 			Kind:       "decoder",
@@ -660,7 +660,7 @@ func adapterRequirementFromBuildError(err *BuildError) (plan.AdapterRequirement,
 		}
 		applyCodecDetailsFromBuildError(&requirement, details)
 		return requirement, codecID != ""
-	case codes.EncodeAdapterMissing, codes.EncodeAdapterUnavailable, codes.EncodeAdapterIncompatible:
+	case errcode.EncodeAdapterMissing, errcode.EncodeAdapterUnavailable, errcode.EncodeAdapterIncompatible:
 		codecID := av.CodecID(details["codec"])
 		requirement := plan.AdapterRequirement{
 			Kind:       "encoder",
@@ -671,7 +671,7 @@ func adapterRequirementFromBuildError(err *BuildError) (plan.AdapterRequirement,
 		}
 		applyCodecDetailsFromBuildError(&requirement, details)
 		return requirement, codecID != ""
-	case codes.TransformAdapterMissing, codes.TransformAdapterIncompatible:
+	case errcode.TransformAdapterMissing, errcode.TransformAdapterIncompatible:
 		name := details["transform"]
 		requirement := filterAdapterRequirement(nil, name, requiredBy)
 		requirement.Status = status
@@ -739,7 +739,7 @@ func cloneMetadata(metadata av.Metadata) av.Metadata {
 	return cloned
 }
 
-func adapterRequirementStatus(code codes.Code) string {
+func adapterRequirementStatus(code errcode.Code) string {
 	switch {
 	case strings.HasSuffix(string(code), "_incompatible"):
 		return "incompatible"

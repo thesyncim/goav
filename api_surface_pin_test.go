@@ -11,7 +11,7 @@ import (
 
 // surfacePinPackages are the packages whose exported package-level identifiers
 // are governed by testdata/api_surface.txt: the root grammar plus the
-// near-frozen vocabulary packages (codes, lifecycle, plan, snapshot). The
+// near-frozen vocabulary packages (errcode, lifecycle, plan, snapshot). The
 // extension-seam packages (av, codec, format, filter, pipeline, flow, shape,
 // rtpav, webrtcav, goavtest) grow with capabilities and are governed by the
 // doc pin instead. See docs/API_SURFACE.md for the contract.
@@ -20,7 +20,7 @@ var surfacePinPackages = []struct {
 	prefix string
 }{
 	{dir: ".", prefix: "goav"},
-	{dir: "codes", prefix: "codes"},
+	{dir: "errcode", prefix: "errcode"},
 	{dir: "lifecycle", prefix: "lifecycle"},
 	{dir: "plan", prefix: "plan"},
 	{dir: "snapshot", prefix: "snapshot"},
@@ -153,6 +153,7 @@ func TestReadmeFirstScreenAvoidsGraphInternals(t *testing.T) {
 		"av.Buffer",
 		"BufferOwner",
 		"Expert(",
+		"expert.Graph",
 		"GraphBuilder",
 		"GraphNode",
 		"GraphInlet",

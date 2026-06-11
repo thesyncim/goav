@@ -106,7 +106,7 @@ default builds), `adapters/resample`, `adapters/resize`.
 ## Manual Graph Patterns
 
 These are the component shapes recipes compile toward, and the shapes advanced
-users wire manually with `goav.Expert(runtime).Graph()`. Direct component tests
+users wire manually with `expert.Graph(runtime)`. Direct component tests
 capture `pipeline.Spec` before execution and compare it after `Run`, so the
 graph users inspect is the graph that ran.
 

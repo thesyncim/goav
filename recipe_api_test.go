@@ -18,12 +18,14 @@ import (
 	"github.com/thesyncim/goav"
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
-	"github.com/thesyncim/goav/codes"
+	"github.com/thesyncim/goav/errcode"
+	"github.com/thesyncim/goav/expert"
 	"github.com/thesyncim/goav/filter"
 	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/graphrender"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/plan"
+	"github.com/thesyncim/goav/provider"
 	"github.com/thesyncim/goav/rtpav"
 	"github.com/thesyncim/goav/shape"
 	"github.com/thesyncim/goav/webrtcav"
@@ -106,15 +108,15 @@ func (recipeAPICustomDestination) Name() string {
 	return "custom"
 }
 
-func (recipeAPICustomDestination) Contract() goav.DestinationContract {
-	return goav.DestinationContract{
+func (recipeAPICustomDestination) Contract() provider.Contract {
+	return provider.Contract{
 		ByteStream: true,
 		Formats:    []av.FormatID{av.FormatIVF},
 		MIMETypes:  []string{"video/ivf"},
 	}
 }
 
-func (recipeAPICustomDestination) Open(context.Context, goav.DestinationInfo) (goav.DestinationWriter, error) {
+func (recipeAPICustomDestination) Open(context.Context, provider.Info) (provider.Writer, error) {
 	return recipeAPICustomWriter{}, nil
 }
 
@@ -592,23 +594,23 @@ func TestRuntimeInterfaceKeepsLegacyBuilderOutOfFrontDoor(t *testing.T) {
 		t.Fatalf("Runtime methods = %d, want only Probe", runtimeType.NumMethod())
 	}
 	if _, ok := runtimeType.MethodByName("New"); ok {
-		t.Fatal("Runtime exposes legacy New builder; use Expert(runtime).Graph for expert graph wiring")
+		t.Fatal("Runtime exposes legacy New builder; use expert.Graph(runtime) for expert graph wiring")
 	}
 	if _, ok := runtimeType.MethodByName("Graph"); ok {
-		t.Fatal("Runtime exposes Graph; use Expert(runtime).Graph for expert graph wiring")
+		t.Fatal("Runtime exposes Graph; use expert.Graph(runtime) for expert graph wiring")
 	}
-	if reflect.TypeOf(goav.Expert).Kind() != reflect.Func {
-		t.Fatal("goav.Expert should expose the expert graph entry point")
+	if reflect.TypeOf(expert.Graph).Kind() != reflect.Func {
+		t.Fatal("expert.Graph should expose the expert graph entry point")
 	}
 }
 
 func TestExpertGraphRequiresStandardRuntime(t *testing.T) {
-	graph := goav.Expert(recipeAPIRuntimeWithoutBuilder{}).Graph()
-	if _, err := graph.Describe(); !errors.Is(err, goav.ErrExpertRuntimeRequired) {
-		t.Fatalf("Describe err = %v, want ErrExpertRuntimeRequired", err)
+	graph := expert.Graph(recipeAPIRuntimeWithoutBuilder{})
+	if _, err := graph.Describe(); !errors.Is(err, expert.ErrRuntimeRequired) {
+		t.Fatalf("Describe err = %v, want ErrRuntimeRequired", err)
 	}
-	if _, err := graph.Build(context.Background()); !errors.Is(err, goav.ErrExpertRuntimeRequired) {
-		t.Fatalf("Build err = %v, want ErrExpertRuntimeRequired", err)
+	if _, err := graph.Build(context.Background()); !errors.Is(err, expert.ErrRuntimeRequired) {
+		t.Fatalf("Build err = %v, want ErrRuntimeRequired", err)
 	}
 }
 
@@ -1636,7 +1638,7 @@ func TestBranchesIsTheOnlyPublicPlannedSplitVerb(t *testing.T) {
 }
 
 func TestRuntimeBranchTapAnchorIsPublicAPI(t *testing.T) {
-	graph := goav.Expert(goav.Default()).Graph()
+	graph := expert.Graph(goav.Default())
 	source := graph.Source("source", recipeAPISource{name: "source"})
 	decode := graph.Stage("decode-audio", goav.PacketFunc("decode-audio", func(ctx context.Context, packet *goav.Packet, emit goav.Emit) error {
 		return emit.Packet(packet)
@@ -1763,6 +1765,7 @@ func TestReadmeKeepsAdvancedRuntimeKnobsOutOfFrontDoor(t *testing.T) {
 		"MaxTimestampGap",
 		"Runtime.Graph",
 		"Expert(",
+		"expert.Graph",
 		"GraphBuilder",
 		"graph.Source",
 		"graph.Connect",
@@ -1878,8 +1881,8 @@ func TestReadmeShowsCustomDestinations(t *testing.T) {
 		"## Custom Destinations",
 		"goav.Writer(",
 		"goav.Custom(",
-		"goav.DestinationInfo",
-		"goav.TransactionalDestinationWriter",
+		"provider.Info",
+		"provider.TransactionalWriter",
 		"goav.Format(",
 		"goav.MIME(",
 		"goav.Metadata(",
@@ -2014,7 +2017,7 @@ func TestDocsShowCodecControlsAndDeclarativePerformanceGoal(t *testing.T) {
 		"direct streams are syntax sugar for an implicit `Branch(\"main\")`",
 		"`Destination` is",
 		"the routing handle: reusing the same `Destination` value",
-		"DestinationProvider` is the extension point",
+		"provider.Destination` is the extension point",
 		"Direct `.To(...)` streams are only ergonomic syntax",
 		"`branchComposePlan`, `runtimeBranch`, `destinationNames`",
 		"normal composition does not import `goav/transcode`",
@@ -2145,7 +2148,7 @@ func TestArchitectureDocsUseSmallCompositionVocabulary(t *testing.T) {
 		"surface is small: `From`, stream selection, ordered operations",
 		"`Branch`, `Destination`, and operation composition",
 		"direct `File`/`URI`/`Sink` destinations",
-		"custom `Writer` destinations with `DestinationInfo`",
+		"custom `Writer` destinations with `provider.Info`",
 		"stable destination handles for shared mux/sink groups",
 		"stable goav-owned destination handles",
 	} {
@@ -2177,7 +2180,7 @@ func TestBranchFromUsesTypedSources(t *testing.T) {
 	}
 
 	_ = goav.Branch("tap").From(goav.FrameTap("audio.decoded"))
-	graph := goav.Expert(goav.Default()).Graph()
+	graph := expert.Graph(goav.Default())
 	node := graph.Source("source", recipeAPISource{name: "source"})
 	_ = goav.Branch("node").From(node)
 	_ = goav.Branch("stream").From(node.Stream("audio"))
@@ -2869,17 +2872,17 @@ func TestExternalCustomDestinationCanBeDestined(t *testing.T) {
 }
 
 func TestDestinationProviderIsWrappedByCustomHandle(t *testing.T) {
-	providerType := reflect.TypeOf((*goav.DestinationProvider)(nil)).Elem()
-	provider := reflect.TypeOf(recipeAPICustomDestination{})
-	if !provider.Implements(providerType) {
-		t.Fatalf("%v should implement DestinationProvider", provider)
+	providerType := reflect.TypeOf((*provider.Destination)(nil)).Elem()
+	impl := reflect.TypeOf(recipeAPICustomDestination{})
+	if !impl.Implements(providerType) {
+		t.Fatalf("%v should implement provider.Destination", impl)
 	}
 	destinationType := reflect.TypeOf(goav.Custom("custom", recipeAPICustomDestination{}))
 	if destinationType.Name() != "Destination" || destinationType.Kind() != reflect.Struct {
 		t.Fatalf("Custom return type = %v, want concrete Destination handle", destinationType)
 	}
-	if provider.AssignableTo(destinationType) {
-		t.Fatalf("provider %v should not be assignable to Destination handle %v", provider, destinationType)
+	if impl.AssignableTo(destinationType) {
+		t.Fatalf("provider %v should not be assignable to Destination handle %v", impl, destinationType)
 	}
 }
 
@@ -4848,7 +4851,7 @@ func TestStreamRecipeRejectsUnresolvedEncodeIntents(t *testing.T) {
 	tests := []struct {
 		name string
 		spec codec.CodecSpec
-		code codes.Code
+		code errcode.Code
 	}{
 		{name: "auto", spec: codec.Auto(), code: "encode_auto_unresolved"},
 	}
@@ -5415,7 +5418,7 @@ func TestBranchCompositionRejectsMissingPlannedTap(t *testing.T) {
 }
 
 func TestBranchCompositionRejectsGraphNodeSource(t *testing.T) {
-	graphNode := goav.Expert(goav.Default()).Graph().Stage("decode-video", goav.PacketFunc("decode-video", func(ctx context.Context, packet *goav.Packet, emit goav.Emit) error {
+	graphNode := expert.Graph(goav.Default()).Stage("decode-video", goav.PacketFunc("decode-video", func(ctx context.Context, packet *goav.Packet, emit goav.Emit) error {
 		return emit.Packet(packet)
 	}))
 	_, err := goav.From(goav.FileInput("input.webm", strings.NewReader(""))).

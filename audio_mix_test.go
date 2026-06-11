@@ -11,7 +11,7 @@ import (
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
-	"github.com/thesyncim/goav/codes"
+	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/rtpav"
@@ -340,8 +340,8 @@ func TestMixRejectsSameDestinationHandleTwice(t *testing.T) {
 	// One handle listed twice is the same refusal a chain's .To(out, out)
 	// raises: the joined stream reaches each destination once.
 	var buildErr *BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != codes.OutputDuplicate {
-		t.Fatalf("err = %v, want %s", err, codes.OutputDuplicate)
+	if !errors.As(err, &buildErr) || buildErr.Code != errcode.OutputDuplicate {
+		t.Fatalf("err = %v, want %s", err, errcode.OutputDuplicate)
 	}
 }
 

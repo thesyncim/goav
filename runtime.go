@@ -219,7 +219,7 @@ func (r *runtime) Probe(ctx context.Context, request format.ProbeRequest) (forma
 	return r.formats.Probe(ctx, request)
 }
 
-// New returns the explicit-graph builder behind Expert(runtime).Graph(). The
+// New returns the explicit-graph builder behind expert.Graph(runtime). The
 // recipe compiler lowers high-level jobs straight onto pipeline graphs; the
 // builder only assembles caller-provided Source/Stage/Sink nodes and routes.
 func (r *runtime) New() *builder {

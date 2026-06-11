@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	"github.com/thesyncim/goav/av"
-	"github.com/thesyncim/goav/codes"
+	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/filter"
 	"github.com/thesyncim/goav/shape"
 )
@@ -161,7 +161,7 @@ func transformAdapterExpectedMedia(name string) (av.MediaType, av.MediaType) {
 
 func transformAdapterIncompatibleError(operation string, stream streamIntent, name string, desc filter.Descriptor, expectedInput av.MediaType, expectedOutput av.MediaType) error {
 	return &BuildError{
-		Code:      codes.TransformAdapterIncompatible,
+		Code:      errcode.TransformAdapterIncompatible,
 		Operation: operation,
 		Node:      jobStreamIntentName(stream),
 		Reason:    name + " filter adapter declares incompatible media",
@@ -183,7 +183,7 @@ func transformAdapterIncompatibleError(operation string, stream streamIntent, na
 
 func transformAdapterCapabilityError(operation string, stream streamIntent, name string, field string, requested string, supported []string) error {
 	return &BuildError{
-		Code:      codes.TransformAdapterIncompatible,
+		Code:      errcode.TransformAdapterIncompatible,
 		Operation: operation,
 		Node:      jobStreamIntentName(stream),
 		Reason:    name + " filter adapter does not support the requested " + strings.ReplaceAll(field, "_", " "),
@@ -207,7 +207,7 @@ func recipeTransformAdapterError(operation string, stream streamIntent, name str
 		return cause
 	}
 	return &BuildError{
-		Code:      codes.TransformAdapterMissing,
+		Code:      errcode.TransformAdapterMissing,
 		Operation: operation,
 		Node:      jobStreamIntentName(stream),
 		Reason:    "no " + name + " filter adapter is registered",
@@ -246,7 +246,7 @@ func streamTransform(streamName string, selector av.StreamSelector, spec Transfo
 	switch {
 	case spec.Resize != nil && spec.Resample != nil:
 		return mediaTransform{}, &BuildError{
-			Code:        codes.TransformInvalid,
+			Code:        errcode.TransformInvalid,
 			Operation:   "build stream",
 			Node:        base,
 			Reason:      "one stream transform cannot be both resize and resample",
@@ -274,7 +274,7 @@ func streamTransform(streamName string, selector av.StreamSelector, spec Transfo
 		}, nil
 	default:
 		return mediaTransform{}, &BuildError{
-			Code:      codes.TransformInvalid,
+			Code:      errcode.TransformInvalid,
 			Operation: "build stream",
 			Node:      base,
 			Reason:    "empty stream transform",
@@ -295,7 +295,7 @@ func validateTransformSpec(operation string, node string, spec TransformSpec) er
 			return nil
 		}
 		return &BuildError{
-			Code:      codes.TransformInvalid,
+			Code:      errcode.TransformInvalid,
 			Operation: operation,
 			Node:      node,
 			Reason:    "resize requires positive width and height",
@@ -314,7 +314,7 @@ func validateTransformSpec(operation string, node string, spec TransformSpec) er
 			return nil
 		}
 		return &BuildError{
-			Code:      codes.TransformInvalid,
+			Code:      errcode.TransformInvalid,
 			Operation: operation,
 			Node:      node,
 			Reason:    "resample requires positive sample rate and channels",
@@ -335,7 +335,7 @@ func validateTransformSpec(operation string, node string, spec TransformSpec) er
 
 func transformMediaError(stream string, transform string, expected av.MediaType, actual av.MediaType) error {
 	return &BuildError{
-		Code:      codes.TransformMediaMismatch,
+		Code:      errcode.TransformMediaMismatch,
 		Operation: "build stream",
 		Node:      stream,
 		Reason:    transform + " applies to " + string(expected) + " streams",

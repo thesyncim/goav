@@ -1,85 +1,66 @@
+// The internal handle-based graph layer behind the expert package: a fluent
+// builder over caller-provided pipeline nodes plus the string-based bridge
+// methods the expert package reaches through (*runtime).ExpertGraph.
+
 package goav
 
 import (
 	"context"
-	"errors"
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/pipeline"
 )
 
-// ErrExpertRuntimeRequired reports attempts to use expert graph wiring with a
-// runtime that was not created by goav.New or goav.Default.
-var ErrExpertRuntimeRequired = errors.New("goav: expert graph requires goav runtime")
-
-// ExpertTools exposes advanced APIs that are intentionally kept off Runtime.
-type ExpertTools struct {
-	runtime Runtime
-}
-
-// Expert returns the explicit advanced entry point for manual graph wiring.
-func Expert(runtime Runtime) ExpertTools {
-	return ExpertTools{runtime: runtime}
-}
-
-// Graph creates a handle-based graph builder for advanced/manual compositions.
-func (e ExpertTools) Graph() GraphBuilder {
-	standard, ok := e.runtime.(*runtime)
-	if !ok || standard == nil {
-		return &graphBuilder{err: ErrExpertRuntimeRequired}
-	}
-	return &graphBuilder{builder: standard.New()}
-}
-
-// GraphNode is an expert-graph handle to one added source, stage, or sink;
-// its outlets and inlets wire Connect routes.
-type GraphNode struct {
+// graphNode is the internal handle to one added source, stage, or sink; its
+// outlets and inlets wire Connect routes. The expert package exposes the
+// public twin (expert.GraphNode).
+type graphNode struct {
 	name string
 }
 
-// GraphOutlet selects which messages leave a node on a route: everything
+// graphOutlet selects which messages leave a node on a route: everything
 // (Out), one stream (Stream), or one event type (Event).
-type GraphOutlet struct {
+type graphOutlet struct {
 	name   string
 	policy pipeline.RoutePolicy
 	label  string
 }
 
-// GraphInlet is the receiving end of a Connect route.
-type GraphInlet struct {
+// graphInlet is the receiving end of a Connect route.
+type graphInlet struct {
 	name string
 }
 
 // Name returns the node's graph-unique name.
-func (n GraphNode) Name() string {
+func (n graphNode) Name() string {
 	return n.name
 }
 
-func (n GraphNode) branchSource() branchSourceBinding {
+func (n graphNode) branchSource() branchSourceBinding {
 	return branchSourceBinding{from: n.name, policy: pipeline.RouteAll}
 }
 
 // In returns the node's inlet for Connect.
-func (n GraphNode) In() GraphInlet {
-	return GraphInlet(n)
+func (n graphNode) In() graphInlet {
+	return graphInlet(n)
 }
 
 // Out returns an outlet routing every message the node emits.
-func (n GraphNode) Out() GraphOutlet {
-	return GraphOutlet{name: n.name, policy: pipeline.RouteAll}
+func (n graphNode) Out() graphOutlet {
+	return graphOutlet{name: n.name, policy: pipeline.RouteAll}
 }
 
 // Stream returns an outlet routing only the given stream's messages.
-func (n GraphNode) Stream(stream av.StreamID) GraphOutlet {
-	return GraphOutlet{name: n.name, policy: pipeline.RouteByStream, label: string(stream)}
+func (n graphNode) Stream(stream av.StreamID) graphOutlet {
+	return graphOutlet{name: n.name, policy: pipeline.RouteByStream, label: string(stream)}
 }
 
 // Event returns an outlet routing only the given event type.
-func (n GraphNode) Event(event av.EventType) GraphOutlet {
-	return GraphOutlet{name: n.name, policy: pipeline.RouteByEvent, label: string(event)}
+func (n graphNode) Event(event av.EventType) graphOutlet {
+	return graphOutlet{name: n.name, policy: pipeline.RouteByEvent, label: string(event)}
 }
 
-func (o GraphOutlet) branchSource() branchSourceBinding {
+func (o graphOutlet) branchSource() branchSourceBinding {
 	policy := o.policy
 	if policy == "" {
 		policy = pipeline.RouteAll
@@ -87,42 +68,62 @@ func (o GraphOutlet) branchSource() branchSourceBinding {
 	return branchSourceBinding{from: o.name, policy: policy, label: o.label}
 }
 
+// Name returns the name of the node the outlet routes from.
+func (o graphOutlet) Name() string {
+	return o.name
+}
+
+// newExpertGraph returns the fluent handle builder over a goav runtime; the
+// expert package reaches it through the (*runtime).ExpertGraph bridge, which
+// guarantees the concrete runtime type.
+func newExpertGraph(r *runtime) *graphBuilder {
+	return &graphBuilder{builder: r.New()}
+}
+
+// ExpertGraph is the structural bridge behind expert.Graph: it returns the
+// graph core the expert package asserts against its own leaf-typed interface,
+// keeping expert types out of the root package. The any return is what makes
+// the assertion possible without an import in either direction.
+func (r *runtime) ExpertGraph() any {
+	return newExpertGraph(r)
+}
+
 type graphBuilder struct {
 	builder *builder
 	err     error
 }
 
-func (g *graphBuilder) Source(name string, source pipeline.Source) GraphNode {
+func (g *graphBuilder) Source(name string, source pipeline.Source) graphNode {
 	if source == nil {
 		g.setErr(ErrNilSource)
-		return GraphNode{name: name}
+		return graphNode{name: name}
 	}
 	node := namedSource{name: firstNonEmpty(name, source.Name()), source: source}
 	g.builder = g.builder.Source(node)
-	return GraphNode{name: node.Name()}
+	return graphNode{name: node.Name()}
 }
 
-func (g *graphBuilder) Stage(name string, stage pipeline.Stage) GraphNode {
+func (g *graphBuilder) Stage(name string, stage pipeline.Stage) graphNode {
 	if stage == nil {
 		g.setErr(ErrNilStage)
-		return GraphNode{name: name}
+		return graphNode{name: name}
 	}
 	node := namedStage{name: firstNonEmpty(name, stage.Name()), stage: stage}
 	g.builder = g.builder.Stage(node)
-	return GraphNode{name: node.Name()}
+	return graphNode{name: node.Name()}
 }
 
-func (g *graphBuilder) Sink(name string, sink pipeline.Sink) GraphNode {
+func (g *graphBuilder) Sink(name string, sink pipeline.Sink) graphNode {
 	if sink == nil {
 		g.setErr(ErrNilSink)
-		return GraphNode{name: name}
+		return graphNode{name: name}
 	}
 	node := namedSink{name: firstNonEmpty(name, sink.Name()), sink: sink}
 	g.builder = g.builder.Sink(node)
-	return GraphNode{name: node.Name()}
+	return graphNode{name: node.Name()}
 }
 
-func (g *graphBuilder) Connect(from GraphOutlet, to ...GraphInlet) GraphBuilder {
+func (g *graphBuilder) Connect(from graphOutlet, to ...graphInlet) *graphBuilder {
 	if len(to) == 0 {
 		g.setErr(pipeline.ErrInvalidLink)
 		return g
@@ -170,6 +171,36 @@ func (g *graphBuilder) setErr(err error) {
 	if g.err == nil {
 		g.err = err
 	}
+}
+
+// AddSource registers a source under the resolved node name (the given name,
+// or the source's own when empty) and reports it — the string-based bridge
+// behind expert.GraphBuilder.Source. A nil source latches ErrNilSource.
+func (g *graphBuilder) AddSource(name string, source pipeline.Source) string {
+	return g.Source(name, source).name
+}
+
+// AddStage registers a stage under the resolved node name and reports it —
+// the bridge behind expert.GraphBuilder.Stage. A nil stage latches
+// ErrNilStage.
+func (g *graphBuilder) AddStage(name string, stage pipeline.Stage) string {
+	return g.Stage(name, stage).name
+}
+
+// AddSink registers a sink under the resolved node name and reports it — the
+// bridge behind expert.GraphBuilder.Sink. A nil sink latches ErrNilSink.
+func (g *graphBuilder) AddSink(name string, sink pipeline.Sink) string {
+	return g.Sink(name, sink).name
+}
+
+// AddRoute connects one outlet (node, policy, label) to the named inlets —
+// the bridge behind expert.GraphBuilder.Connect, with the same validation.
+func (g *graphBuilder) AddRoute(from string, policy pipeline.RoutePolicy, label string, to ...string) {
+	inlets := make([]graphInlet, len(to))
+	for i := range to {
+		inlets[i] = graphInlet{name: to[i]}
+	}
+	g.Connect(graphOutlet{name: from, policy: policy, label: label}, inlets...)
 }
 
 type namedSource struct {

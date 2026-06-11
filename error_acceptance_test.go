@@ -1,6 +1,6 @@
 // The error-acceptance checklist: nine invalid constructions a user will
 // actually write, each pinned to the full refusal contract — the error is a
-// *goav.BuildError (errors.As), carries the right codes.Code, names the
+// *goav.BuildError (errors.As), carries the right errcode.Code, names the
 // failing operation and node, and at least one Suggestion contains the exact
 // user fix. This file is the living spec of error quality, consumer side:
 // everything goes through the public grammar and goavtest. Deeper pins for
@@ -20,14 +20,14 @@ import (
 	"github.com/thesyncim/goav"
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
-	"github.com/thesyncim/goav/codes"
+	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/goavtest"
 )
 
 // requireBuildError enforces the four acceptance bars on one refusal: typed
 // *BuildError, the expected code, the expected operation and node, and one
 // Suggestion containing each decisive fix fragment.
-func requireBuildError(t *testing.T, err error, code codes.Code, operation string, node string, fixes ...string) *goav.BuildError {
+func requireBuildError(t *testing.T, err error, code errcode.Code, operation string, node string, fixes ...string) *goav.BuildError {
 	t.Helper()
 	var buildErr *goav.BuildError
 	if !errors.As(err, &buildErr) {
@@ -81,7 +81,7 @@ func TestErrorAcceptanceCopyAfterDecode(t *testing.T) {
 		To(goav.File("out.ogg", io.Discard)).
 		UseRuntime(goavtest.Runtime()).
 		Build(context.Background())
-	buildErr := requireBuildError(t, err, codes.OperationShapeMismatch, "build job", "audio",
+	buildErr := requireBuildError(t, err, errcode.OperationShapeMismatch, "build job", "audio",
 		"copy only consumes packet-domain media",
 		"move .Copy() before decode",
 		"use .Encode(codec...) instead of .Copy()",
@@ -100,7 +100,7 @@ func TestErrorAcceptanceFramesIntoContainerWithoutEncode(t *testing.T) {
 		To(goav.File("out.ogg", io.Discard)).
 		UseRuntime(goavtest.Runtime()).
 		Build(context.Background())
-	requireBuildError(t, err, codes.EncodeMissing, "build job", "audio",
+	requireBuildError(t, err, errcode.EncodeMissing, "build job", "audio",
 		".Encode(codec.Opus(...))",
 		"goav.Sink(...)",
 	)
@@ -115,7 +115,7 @@ func TestErrorAcceptanceTransformAfterCopy(t *testing.T) {
 		To(goav.File("out.ivf", io.Discard)).
 		UseRuntime(goavtest.Runtime()).
 		Build(context.Background())
-	buildErr := requireBuildError(t, err, codes.OperationShapeMismatch, "build stream", "video",
+	buildErr := requireBuildError(t, err, errcode.OperationShapeMismatch, "build stream", "video",
 		"call .Decode() before .Resize(...)",
 	)
 	if !strings.Contains(buildErr.Reason, ".Copy() keeps the stream packet-encoded") {
@@ -132,7 +132,7 @@ func TestErrorAcceptanceDestinationFormatUnknown(t *testing.T) {
 		To(goav.File("out.weird", io.Discard)).
 		UseRuntime(goavtest.Runtime()).
 		Build(context.Background())
-	requireBuildError(t, err, codes.DestinationFormatUnknown, "open destination", "out.weird",
+	requireBuildError(t, err, errcode.DestinationFormatUnknown, "open destination", "out.weird",
 		"pass goav.Format(...)",
 	)
 }
@@ -146,7 +146,7 @@ func TestErrorAcceptanceDestinationMuxerMissing(t *testing.T) {
 		To(goav.File("out.ogg", io.Discard)).
 		UseRuntime(goav.New(goav.WithStdFilters(), goavtest.Codec(av.CodecOpus))).
 		Build(context.Background())
-	requireBuildError(t, err, codes.DestinationMuxerMissing, "open destination", "out.ogg",
+	requireBuildError(t, err, errcode.DestinationMuxerMissing, "open destination", "out.ogg",
 		"goav.WithMuxer(...)",
 	)
 }
@@ -164,7 +164,7 @@ func TestErrorAcceptanceAmbiguousStreamSelectionListsCandidates(t *testing.T) {
 		Build(context.Background())
 
 	var buildErr *goav.BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != codes.StreamAmbiguous || !errors.Is(err, goav.ErrUnsupportedBuild) {
+	if !errors.As(err, &buildErr) || buildErr.Code != errcode.StreamAmbiguous || !errors.Is(err, goav.ErrUnsupportedBuild) {
 		t.Fatalf("err = %v, want stream_ambiguous wrapping ErrUnsupportedBuild", err)
 	}
 	msg := err.Error()
@@ -196,7 +196,7 @@ func TestErrorAcceptanceAttachUnknownTapListsDeclaredTaps(t *testing.T) {
 	defer task.Close()
 
 	_, err = task.Attach(ctx, goav.Branch("late").From(goav.FrameTap("nope")).To(goavtest.NewCollector().Sink()))
-	buildErr := requireBuildError(t, err, codes.RuntimeBranchTapMissing, "attach runtime branch", "nope",
+	buildErr := requireBuildError(t, err, errcode.RuntimeBranchTapMissing, "attach runtime branch", "nope",
 		`add .Tap(goav.FrameTap("nope"))`,
 		"call task.Taps() before attaching",
 	)
@@ -214,7 +214,7 @@ func TestErrorAcceptanceTypedTapAtWrongDomain(t *testing.T) {
 		To(goav.File("out.ogg", io.Discard)).
 		UseRuntime(goavtest.Runtime()).
 		Build(context.Background())
-	buildErr := requireBuildError(t, err, codes.TapDomainMismatch, "build stream", "audio",
+	buildErr := requireBuildError(t, err, errcode.TapDomainMismatch, "build stream", "audio",
 		"use goav.PacketTap(name) after .Copy() or an encoder",
 		"use goav.FrameTap(name) after decode",
 	)
@@ -232,7 +232,7 @@ func TestErrorAcceptanceEncoderAdapterMissing(t *testing.T) {
 		To(goav.File("out.ogg", io.Discard)).
 		UseRuntime(goavtest.Runtime()).
 		Build(context.Background())
-	buildErr := requireBuildError(t, err, codes.EncodeAdapterMissing, "build job", "audio",
+	buildErr := requireBuildError(t, err, errcode.EncodeAdapterMissing, "build job", "audio",
 		"goav.WithEncoder(...)",
 	)
 	if !strings.Contains(buildErr.Reason, "weird") || !detailsContain(buildErr.Details, "codec=weird") {
@@ -251,7 +251,7 @@ func TestErrorAcceptanceShapeConversionRefused(t *testing.T) {
 		To(goavtest.NewCollector().Sink()).
 		UseRuntime(goavtest.Runtime()).
 		Build(context.Background())
-	requireBuildError(t, err, codes.ShapeConversionRefused, "build job", "audio",
+	requireBuildError(t, err, errcode.ShapeConversionRefused, "build job", "audio",
 		"add .Auto(shape.AllowResample())",
 		"insert .Resample(48000, 2) explicitly",
 	)

@@ -9,8 +9,9 @@ import (
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
-	"github.com/thesyncim/goav/codes"
+	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/format"
+	"github.com/thesyncim/goav/provider"
 	"github.com/thesyncim/goav/shape"
 )
 
@@ -20,7 +21,7 @@ import (
 // Input; configure it with options (Name, MIME, Metadata, Codec).
 type InputSpec struct {
 	input    format.Input
-	provider SourceProvider
+	provider provider.Source
 	source   *sourceInputSpec
 	codec    codec.CodecSpec
 	name     string
@@ -105,7 +106,7 @@ func (s InputSpec) formatInput() format.Input {
 func (s InputSpec) validate() error {
 	if s.err != nil {
 		return &BuildError{
-			Code:      codes.InputInvalid,
+			Code:      errcode.InputInvalid,
 			Operation: "build input",
 			Node:      firstNonEmpty(s.name, s.input.Name, s.input.URI, "input"),
 			Reason:    s.err.Error(),
@@ -129,7 +130,7 @@ func (s InputSpec) validateCustomSource() error {
 	node := firstNonEmpty(s.name, s.input.Name, "source")
 	if s.source.fn == nil {
 		return &BuildError{
-			Code:      codes.SourceCallbackMissing,
+			Code:      errcode.SourceCallbackMissing,
 			Operation: "build input",
 			Node:      node,
 			Reason:    "custom source has no push callback",
@@ -143,7 +144,7 @@ func (s InputSpec) validateCustomSource() error {
 	spec := normalizeCustomSourceShape(node, s.source.shape)
 	if spec.Domain != shape.DomainPacket && spec.Domain != shape.DomainFrame && spec.Domain != shape.DomainEvent {
 		return &BuildError{
-			Code:      codes.SourceShapeUnsupported,
+			Code:      errcode.SourceShapeUnsupported,
 			Operation: "build input",
 			Node:      node,
 			Reason:    "custom recipe sources currently produce packet-domain, frame-domain, or event-domain media",
@@ -161,7 +162,7 @@ func (s InputSpec) validateCustomSource() error {
 	}
 	if spec.Domain != shape.DomainEvent && spec.MediaKind == "" {
 		return &BuildError{
-			Code:      codes.SourceShapeInvalid,
+			Code:      errcode.SourceShapeInvalid,
 			Operation: "build input",
 			Node:      node,
 			Reason:    "custom source shape needs a media kind",
@@ -186,7 +187,7 @@ func (s InputSpec) validatePlainInput() error {
 		return nil
 	}
 	return &BuildError{
-		Code:      codes.InputInvalid,
+		Code:      errcode.InputInvalid,
 		Operation: "build input",
 		Node:      "input",
 		Reason:    "empty input spec",
@@ -241,7 +242,7 @@ func validateJobInputs(inputs []InputSpec) error {
 			continue
 		}
 		return &BuildError{
-			Code:      codes.MultiInputUnsupported,
+			Code:      errcode.MultiInputUnsupported,
 			Operation: "build job",
 			Node:      firstNonEmpty(inputs[i].name, inputs[i].input.Name, inputs[i].input.URI, fmt.Sprintf("input-%d", i)),
 			Reason:    "multiple recipe inputs currently require realtime source providers or custom sources",
@@ -275,7 +276,7 @@ func validateRealtimeInputNames(inputs []InputSpec) error {
 
 func duplicateInputNameError(name string, firstIndex int, secondIndex int) error {
 	return &BuildError{
-		Code:      codes.InputDuplicate,
+		Code:      errcode.InputDuplicate,
 		Operation: "build job",
 		Node:      name,
 		Reason:    fmt.Sprintf("realtime input name %q is defined more than once", name),

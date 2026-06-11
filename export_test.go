@@ -24,3 +24,10 @@ func StreamEncodeForTest(stream streamIntent) codec.CodecSpec {
 func StreamTapsForTest(stream streamIntent) []tapIntent {
 	return operationSpecTaps(stream.Operations, stream.Select.Type)
 }
+
+// expertGraph opens the internal fluent graph builder the expert package
+// wraps — in-package tests cannot import expert (cycle), so they pin the
+// graph semantics through this seam.
+func expertGraph(rt Runtime) *graphBuilder {
+	return newExpertGraph(rt.(*runtime))
+}

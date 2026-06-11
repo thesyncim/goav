@@ -8,6 +8,7 @@ import (
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/pipeline"
+	"github.com/thesyncim/goav/provider"
 )
 
 func (b *builder) openMuxDestinationStage(ctx context.Context, destination destinationSpec, index int, streams []av.Stream, formatID av.FormatID, detailFormat av.FormatID) (*format.MuxStage, error) {
@@ -25,7 +26,7 @@ func (b *builder) openMuxDestinationStage(ctx context.Context, destination desti
 	return stage, nil
 }
 
-func (b *builder) openDestinationOutput(ctx context.Context, destination destinationSpec, streams []av.Stream, formatID av.FormatID) (format.Output, DestinationWriter, error) {
+func (b *builder) openDestinationOutput(ctx context.Context, destination destinationSpec, streams []av.Stream, formatID av.FormatID) (format.Output, provider.Writer, error) {
 	output := destination.output
 	if formatID == "" {
 		outputProbe, err := b.runtime.formats.Probe(ctx, outputProbeRequest(output))
@@ -46,7 +47,7 @@ func (b *builder) openDestinationOutput(ctx context.Context, destination destina
 	if destination.custom == nil {
 		return output, nil, nil
 	}
-	info := DestinationInfo{
+	info := provider.Info{
 		Name:     firstNonEmpty(destination.name, output.Name, output.URI),
 		Format:   formatID,
 		MIMEType: output.MIMEType,
@@ -65,7 +66,7 @@ func (b *builder) openDestinationOutput(ctx context.Context, destination destina
 	return output, writer, nil
 }
 
-func (b *builder) openMuxStage(ctx context.Context, output format.Output, index int, streams []av.Stream, formatID av.FormatID, detailFormat av.FormatID, writer DestinationWriter) (*format.MuxStage, error) {
+func (b *builder) openMuxStage(ctx context.Context, output format.Output, index int, streams []av.Stream, formatID av.FormatID, detailFormat av.FormatID, writer provider.Writer) (*format.MuxStage, error) {
 	if formatID == "" {
 		outputProbe, err := b.runtime.formats.Probe(ctx, outputProbeRequest(output))
 		if err != nil {
@@ -112,7 +113,7 @@ func (b *builder) openMuxStage(ctx context.Context, output format.Output, index 
 
 type destinationWriterMuxer struct {
 	format.Muxer
-	writer      DestinationWriter
+	writer      provider.Writer
 	transaction *destinationTransaction
 	failed      bool
 }
@@ -136,7 +137,7 @@ func (m *destinationWriterMuxer) Close() error {
 		m.MarkFailed()
 	}
 	transactionErr := error(nil)
-	if transactional, ok := m.writer.(TransactionalDestinationWriter); ok {
+	if transactional, ok := m.writer.(provider.TransactionalWriter); ok {
 		if m.failed || m.transaction.ShouldAbort() {
 			transactionErr = transactional.Abort(context.Background())
 		} else {
@@ -153,11 +154,11 @@ func (m *destinationWriterMuxer) Close() error {
 	return writerErr
 }
 
-func closeDestinationWriterAfterFailure(writer DestinationWriter) {
+func closeDestinationWriterAfterFailure(writer provider.Writer) {
 	if writer == nil {
 		return
 	}
-	if transactional, ok := writer.(TransactionalDestinationWriter); ok {
+	if transactional, ok := writer.(provider.TransactionalWriter); ok {
 		_ = transactional.Abort(context.Background())
 	}
 	_ = writer.Close()

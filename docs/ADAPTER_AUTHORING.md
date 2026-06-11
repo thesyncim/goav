@@ -33,8 +33,8 @@ magic/extension probe rules.
   worker — per-message state needs no locking. Factories may serve several
   builds; keep them stateless or guard shared state.
 - **Errors**: build-time refusals reach users as `*goav.BuildError` with a
-  `codes.Code` — preflight checks descriptors and registries before anything
-  opens (`codes.DecodeAdapterMissing`, `EncodeAdapterIncompatible`,
+  `errcode.Code` — preflight checks descriptors and registries before anything
+  opens (`errcode.DecodeAdapterMissing`, `EncodeAdapterIncompatible`,
   `TransformAdapterMissing`, `InputDemuxerMissing`, `OutputMuxerMissing`, ...).
   Return typed sentinels for unsupported config at open
   (`codec.ErrUnsupportedFormat`, ...). Any non-nil error from a hot-path
@@ -69,7 +69,7 @@ Lifecycle (from `codec/stage.go` + `runtime_decode.go`/`runtime_encode.go`):
 
 1. Build-time preflight reads your `Descriptor` (ID, Type, Modes, capability
    lists; empty list = unconstrained) and refuses incompatible plans before
-   anything opens. Descriptor-only → `codes.*AdapterUnavailable`.
+   anything opens. Descriptor-only → `errcode.*AdapterUnavailable`.
 2. `New{Decoder,Encoder}(ctx, config)` is called once per stream per build
    (cold) and must return a READY instance — call your own `Open` inside the
    factory; the runtime never calls `Open` separately. Optional
@@ -171,16 +171,18 @@ per stage (cold) with `Config.Stream` plus exactly one of
 `Open`). Then `FilterInto` per frame, `HandleEvent` before each forwarded
 event, `FlushInto` on `av.EventEndOfStream`, `Close` once. Build-time
 validation checks `Descriptor.Input/Output` media and the capability lists
-(empty = unconstrained) → `codes.TransformAdapterIncompatible`. Results:
+(empty = unconstrained) → `errcode.TransformAdapterIncompatible`. Results:
 caller-owned `filter.Result`; sentinels `filter.ErrResultFull`,
 `filter.ErrOutputBufferTooSmall`, `filter.ErrUnsupportedFormat`.
 
 Register: `goav.WithFilter(desc, factory)` or `goav.WithFilterAdapter(...)`.
 
-## Source provider (`goav` package)
+## Source provider (`provider` package)
 
 ```go
-type SourceProvider interface {
+package provider
+
+type Source interface {
     OpenSource(ctx context.Context) (pipeline.Source, []av.Stream, error)
     SourceShape() shape.Spec
 }
@@ -192,7 +194,8 @@ name in Describe; duplicates get "-1" suffixes), `Detail() string`, and
 scratch). `rtpav.Receive` and `webrtcav.Track` are providers; yours plugs in
 identically via `goav.From(goav.Input(provider))`.
 
-Lifecycle (from `provider.go`, `source.go`): `SourceShape()` is read BEFORE
+Lifecycle (from `provider/provider.go`, `provider.go`, `source.go`):
+`SourceShape()` is read BEFORE
 opening — declare domain/media/codec/realtime honestly (`shape.Packet(media,
 codecID, shape.Audio(...), shape.Realtime(true))`); the planner selects
 streams and decoders from it. `OpenSource` runs once per build; the returned
@@ -204,17 +207,19 @@ return cleanly on `ctx` cancellation or `pipeline.ErrClosed`, slow down on
 seek/rate controls (record the request; apply it from the Start loop). A
 single-stream push source needs no provider: `goav.Source(name, shape, fn)`.
 
-## Destination provider (`goav` package)
+## Destination provider (`provider` package)
 
 ```go
-type DestinationProvider interface {
+package provider
+
+type Destination interface {
     Name() string
-    Contract() DestinationContract
-    Open(context.Context, DestinationInfo) (DestinationWriter, error)
+    Contract() Contract
+    Open(context.Context, Info) (Writer, error)
 }
-type DestinationWriter interface { io.Writer; Close() error }
-type TransactionalDestinationWriter interface {
-    DestinationWriter
+type Writer interface { io.Writer; Close() error }
+type TransactionalWriter interface {
+    Writer
     Commit(context.Context) error
     Abort(context.Context) error
 }
@@ -223,13 +228,13 @@ type TransactionalDestinationWriter interface {
 Lifecycle (from `mux_destination.go`): `Contract()` is read during planning
 (keep it pure; `Formats[0]` pins the container, skipping output probing).
 `Open` runs once per build, after format and stream resolution —
-`DestinationInfo` carries the final format, streams, metadata, and realtime
+`provider.Info` carries the final format, streams, metadata, and realtime
 flag. The writer receives muxed bytes on the mux hot path. Teardown: the
 muxer finalizes, then `Commit` (run succeeded or drained detach) or `Abort`
 (run failed, mux write/close error, or build teardown), then `Close` — each
 exactly once. `goav.Writer(name, openFn)` is the contract-free shortcut;
 `goav.File` wraps an open writer (closed once iff it implements `io.Closer`).
-Use via `.To(goav.Custom(name, provider))` — the `Destination` value is the
+Use via `.To(goav.Custom(name, p))` — the `Destination` value is the
 routing handle branches share.
 
 ## Checklist

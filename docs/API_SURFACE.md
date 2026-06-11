@@ -29,12 +29,12 @@ Task: Run, Events, Watch(EventFilter), Snapshot -> snapshot.*, Stats,
       Attach/Detach/Rebranch (SwitchAt, Drain/AbortOldBranch, KeepOldOnFailure),
       Control(Keyframe|Seek|Segment|Rate|SetBitrate|SelectActive|Deliver, .AtTap)
 goav.Default(opts...) / goav.New(opts...) -> Runtime; job.UseRuntime(rt)
-errors: *goav.BuildError{Code: codes.X, ...} matched with errors.As/Is
+errors: *goav.BuildError{Code: errcode.X, ...} matched with errors.As/Is
 ```
 
 Vocabulary read by applications, all tier A:
 
-- `codes` — the error-code catalog (one `Code` per refusal class).
+- `errcode` — the error-code catalog (one `Code` per refusal class).
 - `plan` — everything `Explain` reports back.
 - `snapshot` — point-in-time task/branch/destination/tap views.
 - `lifecycle` — task/branch/destination states.
@@ -49,13 +49,13 @@ Everything pluggable goes through an exported interface plus a value-typed
 `With*` option on a per-runtime registry — external implementations are
 first-class. See docs/ADAPTERS.md and docs/COMPONENTS.md.
 
-- **Sources** — `goav.SourceProvider` (`OpenSource`), `goav.Source(fn)` with
+- **Sources** — `provider.Source` (`OpenSource`), `goav.Source(fn)` with
   `SourceFunc`/`SourcePush`/`PushResult`; transports build on it:
   `rtpav.Receive` (PacketReader, Depacketizer, JitterBuffer, FeedbackWriter,
   PayloadMap seams), `webrtcav.Track`/`Session` (TrackReader, TrackAdapter).
-- **Destinations** — `goav.DestinationProvider` + `DestinationContract`/
-  `DestinationInfo`, `goav.Writer` (`WriterOpenFunc`), transactional uploads
-  via `TransactionalDestinationWriter`, frame/packet sinks via `goav.Sink` +
+- **Destinations** — `provider.Destination` + `provider.Contract`/
+  `provider.Info`, `goav.Writer` (`provider.OpenFunc`), transactional uploads
+  via `provider.TransactionalWriter`, frame/packet sinks via `goav.Sink` +
   `SinkFunc`.
 - **Custom stages** — `EventFunc`/`FrameFunc`/`PacketFunc` (+`Emit`) for
   `.Do(...)`; the node contracts live in `pipeline` (Source/Stage/Sink,
@@ -79,15 +79,17 @@ first-class. See docs/ADAPTERS.md and docs/COMPONENTS.md.
 
 Handle-based graph work, deliberately off the grammar:
 
-- `goav.Expert(runtime).Graph()` → `GraphBuilder`/`GraphNode`/`GraphInlet`/
-  `GraphOutlet`; `ErrExpertRuntimeRequired`.
+- `expert.Graph(runtime)` → `expert.GraphBuilder`/`GraphNode`/`GraphInlet`/
+  `GraphOutlet`; `expert.ErrRuntimeRequired`. The package reaches the runtime
+  through a structural bridge, and graph handles anchor runtime branches via
+  their `Route` capability — the root imports nothing from `expert`.
 - `Control.At(pipeline.NodeRef)` — node-targeted controls (grammar callers use
   `.AtTap`).
 - `pipeline` graph machinery — `NewGraph`, `Graph`, `Spec`/`NodeSpec`/
   `EdgeSpec`/`Route`, `GraphStats`/`NodeStats`, node/route kind enums.
 - Prebuilt graph components — `codec.DecoderStage`/`EncoderStage`,
   `format.DemuxSource`/`MuxStage`, `filter.Stage` (what the compiler itself
-  assembles; usable directly under `Expert`).
+  assembles; usable directly under `expert.Graph`).
 
 ## D. Leakage
 
@@ -113,18 +115,18 @@ the pinned package-level surface is the contract.
 Near-miss names are deliberate distinctions, one line each (each verified
 against the constructors in `input.go`/`provider.go`/`source.go`,
 `destination.go`, `tap_ref.go`, `flow.go`/`branch.go`, `chain.go`,
-`watch.go`, `task_control.go`, `graph.go`):
+`watch.go`, `task_control.go`, `expert/expert.go`):
 
-- **Input vs Source vs SourceProvider** — `FileInput`/`URIInput` are value
+- **Input vs Source vs provider.Source** — `FileInput`/`URIInput` are value
   inputs over media you already hold; `Source(name, shape, fn)` is the
   custom-push input where the application produces media through
-  `SourcePush`; `SourceProvider` is the transport seam (`OpenSource`) that
-  `Input(provider)` turns into a recipe input — value, custom push, and
-  transport are three doors into one `InputSpec`.
+  `SourcePush`; `provider.Source` is the transport seam (`OpenSource`) that
+  `Input(p)` turns into a recipe input — value, custom push, and transport
+  are three doors into one `InputSpec`.
 - **Destination vs Sink vs Writer vs File** — `Destination` is the routing
   handle every constructor returns (reuse = mux/sink group); `File` wraps an
   `io.Writer` you already opened; `Writer` lets goav open the writer on
-  demand with final `DestinationInfo` (and transactional commit/abort);
+  demand with final `provider.Info` (and transactional commit/abort);
   `Sink` ends the branch in frames/packets instead of muxed bytes.
 - **Tap vs FrameTap vs PacketTap** — `Tap` infers its domain from the chain
   point; `FrameTap`/`PacketTap` assert it, and a mismatch is a build error
@@ -149,18 +151,18 @@ against the constructors in `input.go`/`provider.go`/`source.go`,
   `SetBitrate`, `Seek`, `Rate`, `Segment`, `SelectActive`);
   `Deliver(event)` is the escape hatch handing a verbatim event to a stage
   that interprets it itself.
-- **recipe vs Expert** — the recipe grammar (tier A) is the normal surface;
-  `Expert(runtime)` opens the handle-based graph layer (tier C) for
+- **recipe vs expert** — the recipe grammar (tier A) is the normal surface;
+  `expert.Graph(runtime)` opens the handle-based graph layer (tier C) for
   compositions the grammar cannot express.
 
 ## Enforcement
 
 - `api_surface_pin_test.go` / `testdata/api_surface.txt` — exported
-  package-level identifiers of root + `codes`/`lifecycle`/`plan`/`snapshot`
+  package-level identifiers of root + `errcode`/`lifecycle`/`plan`/`snapshot`
   must match the approved list exactly (both directions, sorted, no dups).
 - `doc_pin_test.go` — every exported symbol in every public package carries a
   doc comment.
-- `errors_pin_test.go` — every `BuildError` uses a catalog `codes.Code`.
+- `errors_pin_test.go` — every `BuildError` uses a catalog `errcode.Code`.
 - README front door — first five examples stay on the grammar
   (`TestReadmeFirstScreenAvoidsGraphInternals`); advanced knobs stay out of
   the guide (`TestReadmeKeepsAdvancedRuntimeKnobsOutOfFrontDoor`).
@@ -171,7 +173,11 @@ and not part of the governed surface.
 
 ## Compatibility
 
-This audit changed no exported symbol; it added the approved-list pin, this
-contract document, and the README first-screen guard. New exported symbols in
-governed packages now require a matching `testdata/api_surface.txt` entry in
-the same change.
+Pre-v1, breaking renames land without aliases. The surface-hygiene wave moved
+three clusters off the root: the error catalog is `errcode` (renamed from
+`codes`), the source/destination extension contracts are `provider`
+(`Source`, `Destination`, `Writer`, `TransactionalWriter`, `Contract`,
+`Info`, `OpenFunc`), and the expert graph layer is `expert` (`Graph`,
+`GraphBuilder`, handles, `ErrRuntimeRequired`) bridged structurally so the
+root imports neither. New exported symbols in governed packages require a
+matching `testdata/api_surface.txt` entry in the same change.

@@ -13,7 +13,7 @@ import (
 	"github.com/thesyncim/goav"
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
-	"github.com/thesyncim/goav/codes"
+	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/rtpav"
 	"github.com/thesyncim/goav/shape"
 )
@@ -448,7 +448,7 @@ func ExampleTask_watch() {
 	// Output: end of stream: true
 }
 
-// ExampleInput opens media through the SourceProvider seam: rtpav.Receive
+// ExampleInput opens media through the provider.Source seam: rtpav.Receive
 // adapts any RTP packet reader, and SRT, NDI, or proprietary ingest packages
 // plug into the same seam with zero goav changes.
 func ExampleInput() {
@@ -483,7 +483,7 @@ func ExampleBuildError() {
 	var buildErr *goav.BuildError
 	if errors.As(err, &buildErr) {
 		fmt.Println("code:", buildErr.Code)
-		fmt.Println("catalog match:", buildErr.Code == codes.EncodeMissing)
+		fmt.Println("catalog match:", buildErr.Code == errcode.EncodeMissing)
 		fmt.Println("has fixes:", len(buildErr.Suggestions) > 0)
 	}
 	fmt.Println("build refusal:", errors.Is(err, goav.ErrUnsupportedBuild))

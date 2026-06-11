@@ -11,7 +11,7 @@ import (
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
-	"github.com/thesyncim/goav/codes"
+	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/filter"
 	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/pipeline"
@@ -1001,7 +1001,7 @@ func TestJobIntentShapePassRejectsInvalidPublicShape(t *testing.T) {
 	tests := []struct {
 		name  string
 		state recipeCompileState
-		code  codes.Code
+		code  errcode.Code
 		want  string
 	}{
 		{
@@ -1380,7 +1380,7 @@ func TestInputFormatAdapterPassesRejectMissingDemuxers(t *testing.T) {
 		name  string
 		pass  recipeCompilePass
 		state recipeCompileState
-		code  codes.Code
+		code  errcode.Code
 		want  []string
 	}{
 		{
@@ -1505,7 +1505,7 @@ func TestKnownInputStreamSelectionPassRejectsProbedAmbiguousAndMissingStreams(t 
 	tests := []struct {
 		name   string
 		stream streamIntent
-		code   codes.Code
+		code   errcode.Code
 		want   []string
 	}{
 		{
@@ -1560,7 +1560,7 @@ func TestLiveStreamSelectionPassRejectsAmbiguousAndMissingStreams(t *testing.T) 
 	tests := []struct {
 		name   string
 		intent Intent
-		code   codes.Code
+		code   errcode.Code
 		want   []string
 	}{
 		{
@@ -1653,7 +1653,7 @@ func TestDecodeAdapterPassRejectsKnownLiveMissingDecoders(t *testing.T) {
 	tests := []struct {
 		name  string
 		state recipeCompileState
-		code  codes.Code
+		code  errcode.Code
 		cause error
 		want  []string
 	}{
@@ -1766,7 +1766,7 @@ func TestKnownInputDecodeAdapterPassesRejectMissingDecoders(t *testing.T) {
 		name  string
 		pass  recipeCompilePass
 		state recipeCompileState
-		code  codes.Code
+		code  errcode.Code
 		cause error
 		want  []string
 	}{
@@ -2031,7 +2031,7 @@ func TestEncodeAdapterPassesRejectMissingEncoders(t *testing.T) {
 		name  string
 		pass  recipeCompilePass
 		state recipeCompileState
-		code  codes.Code
+		code  errcode.Code
 		cause error
 		want  []string
 	}{
@@ -2377,7 +2377,7 @@ func TestJobStreamOutputKindsPassRejectsInvalidOutputShapes(t *testing.T) {
 		name    string
 		stream  streamIntent
 		outputs []destinationSpec
-		code    codes.Code
+		code    errcode.Code
 		want    []string
 	}{
 		{
@@ -2455,7 +2455,7 @@ func TestShapeErrorsReportExpectedAndActualShape(t *testing.T) {
 		name  string
 		pass  recipeCompilePass
 		state recipeCompileState
-		code  codes.Code
+		code  errcode.Code
 		want  []string
 	}{
 		{
@@ -2517,7 +2517,7 @@ func TestRecipeOperationShapePassRejectsInvalidOrderedOperations(t *testing.T) {
 	tests := []struct {
 		name   string
 		stream streamIntent
-		code   codes.Code
+		code   errcode.Code
 		want   []string
 	}{
 		{
@@ -2701,7 +2701,7 @@ func TestRecipeRuntimePassRejectsCustomRuntime(t *testing.T) {
 	if !errors.As(err, &buildErr) || buildErr.Code != "runtime_unsupported" || !errors.Is(err, ErrUnsupportedBuild) {
 		t.Fatalf("err = %v, want runtime_unsupported wrapping ErrUnsupportedBuild", err)
 	}
-	for _, want := range []string{"recipe compilation requires a goav runtime", "goav.Default", "goav.New", "goav.Expert"} {
+	for _, want := range []string{"recipe compilation requires a goav runtime", "goav.Default", "goav.New", "expert.Graph"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Fatalf("err = %v, want %q", err, want)
 		}
@@ -2758,7 +2758,7 @@ func TestJobIntentShapePassRejectsOperationTransforms(t *testing.T) {
 	tests := []struct {
 		name   string
 		stream streamIntent
-		code   codes.Code
+		code   errcode.Code
 		want   string
 	}{
 		{
@@ -2843,7 +2843,7 @@ func TestTranscodeIntentShapePassRejectsInvalidPublicShape(t *testing.T) {
 	tests := []struct {
 		name  string
 		state recipeCompileState
-		code  codes.Code
+		code  errcode.Code
 		want  string
 	}{
 		{
@@ -2960,7 +2960,7 @@ func TestTranscodeAttachmentsPassRejectsInvalidConcreteAttachments(t *testing.T)
 	tests := []struct {
 		name  string
 		state recipeCompileState
-		code  codes.Code
+		code  errcode.Code
 		want  string
 	}{
 		{

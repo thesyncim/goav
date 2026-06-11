@@ -11,7 +11,7 @@ import (
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
-	"github.com/thesyncim/goav/codes"
+	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/lifecycle"
 	"github.com/thesyncim/goav/pipeline"
@@ -340,7 +340,7 @@ func validateRuntimeBranchGroupDestinations(specs []BranchSpec, destinations [][
 					}
 				}
 				return group, &BuildError{
-					Code:      codes.DestinationDuplicate,
+					Code:      errcode.DestinationDuplicate,
 					Operation: "attach runtime branches",
 					Node:      firstNonEmpty(specs[i].name, "branch"),
 					Reason:    "runtime branch group reuses one destination name",
@@ -1421,7 +1421,7 @@ func runtimeBranchTransform(branchName string, stream av.Stream, spec TransformS
 	switch {
 	case spec.Resize != nil && spec.Resample != nil:
 		return mediaTransform{}, &BuildError{
-			Code:        codes.TransformInvalid,
+			Code:        errcode.TransformInvalid,
 			Operation:   "attach runtime branch",
 			Node:        base,
 			Reason:      "one runtime branch transform cannot be both resize and resample",
@@ -1450,7 +1450,7 @@ func runtimeBranchTransform(branchName string, stream av.Stream, spec TransformS
 		}, nil
 	default:
 		return mediaTransform{}, &BuildError{
-			Code:      codes.TransformInvalid,
+			Code:      errcode.TransformInvalid,
 			Operation: "attach runtime branch",
 			Node:      base,
 			Reason:    "empty runtime branch transform",
@@ -1632,7 +1632,7 @@ func specHasNode(spec pipeline.Spec, name string) bool {
 
 func runtimeBranchInvalidError(reason string, suggestion string) error {
 	return &BuildError{
-		Code:      codes.RuntimeBranchInvalid,
+		Code:      errcode.RuntimeBranchInvalid,
 		Operation: "attach runtime branch",
 		Reason:    reason,
 		Suggestions: []string{
@@ -1644,13 +1644,13 @@ func runtimeBranchInvalidError(reason string, suggestion string) error {
 
 func runtimeBranchAnchorMissingError(node string) error {
 	return &BuildError{
-		Code:      codes.RuntimeBranchAnchorMissing,
+		Code:      errcode.RuntimeBranchAnchorMissing,
 		Operation: "attach runtime branch",
 		Node:      node,
 		Reason:    "branch source node does not exist in the running task graph",
 		Suggestions: []string{
 			"call task.Taps() and use .From(goav.FrameTap(name)) or .From(goav.PacketTap(name)) for stable media outlets",
-			"keep the GraphNode returned by goav.Expert(runtime).Graph().Source/Stage/Sink for expert graph attachments",
+			"keep the GraphNode returned by expert.Graph(runtime).Source/Stage/Sink for expert graph attachments",
 			"attach from a stable decoded-frame tap when the branch needs raw frames",
 		},
 		Cause: pipeline.ErrUnknownNode,
@@ -1663,7 +1663,7 @@ func runtimeBranchTapMissingError(name string, taps []snapshot.Tap) error {
 		details = append(details, taps[i].Name+": "+string(taps[i].Domain)+" "+string(taps[i].MediaKind))
 	}
 	return &BuildError{
-		Code:      codes.RuntimeBranchTapMissing,
+		Code:      errcode.RuntimeBranchTapMissing,
 		Operation: "attach runtime branch",
 		Node:      name,
 		Reason:    "branch source tap does not exist in the running task",
@@ -1679,7 +1679,7 @@ func runtimeBranchTapMissingError(name string, taps []snapshot.Tap) error {
 
 func runtimeBranchNodeDuplicateError(node string) error {
 	return &BuildError{
-		Code:      codes.RuntimeBranchNodeDuplicate,
+		Code:      errcode.RuntimeBranchNodeDuplicate,
 		Operation: "attach runtime branch",
 		Node:      node,
 		Reason:    "branch node name already exists in the task graph",
@@ -1693,7 +1693,7 @@ func runtimeBranchNodeDuplicateError(node string) error {
 
 func duplicateRuntimeBranchDestinationRefError(branch string, label string, firstIndex int, secondIndex int) error {
 	return &BuildError{
-		Code:      codes.DestinationDuplicate,
+		Code:      errcode.DestinationDuplicate,
 		Operation: "attach runtime branch",
 		Node:      firstNonEmpty(branch, "branch"),
 		Reason:    fmt.Sprintf("branch routes to destination %q more than once", label),
@@ -1712,7 +1712,7 @@ func duplicateRuntimeBranchDestinationRefError(branch string, label string, firs
 
 func runtimeBranchTapDuplicateError(name string) error {
 	return &BuildError{
-		Code:      codes.RuntimeBranchTapDuplicate,
+		Code:      errcode.RuntimeBranchTapDuplicate,
 		Operation: "attach runtime branch",
 		Node:      name,
 		Reason:    "branch tap name already exists in the task",
@@ -1726,7 +1726,7 @@ func runtimeBranchTapDuplicateError(name string) error {
 
 func runtimeBranchTransformMediaError(branch string, transform string, media string) error {
 	return &BuildError{
-		Code:      codes.RuntimeBranchTransformMediaMismatch,
+		Code:      errcode.RuntimeBranchTransformMediaMismatch,
 		Operation: "attach runtime branch",
 		Node:      branch,
 		Reason:    transform + " applies to " + media + " frame taps",
@@ -1744,7 +1744,7 @@ func runtimeBranchTransformError(node string, cause error) error {
 		return nil
 	}
 	return &BuildError{
-		Code:      codes.RuntimeBranchTransformError,
+		Code:      errcode.RuntimeBranchTransformError,
 		Operation: "attach runtime branch",
 		Node:      node,
 		Reason:    "runtime branch transform could not be opened",
@@ -1759,7 +1759,7 @@ func runtimeBranchTransformError(node string, cause error) error {
 
 func runtimeBranchEncodeMissingError(branch string) error {
 	return &BuildError{
-		Code:      codes.RuntimeBranchEncodeMissing,
+		Code:      errcode.RuntimeBranchEncodeMissing,
 		Operation: "attach runtime branch",
 		Node:      firstNonEmpty(branch, "branch"),
 		Reason:    "muxed runtime branches need packet copy or an encoder",
@@ -1774,7 +1774,7 @@ func runtimeBranchEncodeMissingError(branch string) error {
 
 func runtimeBranchEncodeDomainError(branch string, shape shape.Spec) error {
 	return &BuildError{
-		Code:      codes.RuntimeBranchEncodeDomainMismatch,
+		Code:      errcode.RuntimeBranchEncodeDomainMismatch,
 		Operation: "attach runtime branch",
 		Node:      firstNonEmpty(branch, "branch"),
 		Reason:    "runtime branch encoding requires a frame tap",
@@ -1790,7 +1790,7 @@ func runtimeBranchEncodeDomainError(branch string, shape shape.Spec) error {
 
 func runtimeBranchDecodeDomainError(branch string, shape shape.Spec) error {
 	return &BuildError{
-		Code:      codes.RuntimeBranchDecodeDomainMismatch,
+		Code:      errcode.RuntimeBranchDecodeDomainMismatch,
 		Operation: "attach runtime branch",
 		Node:      firstNonEmpty(branch, "branch"),
 		Reason:    "runtime branch decoding requires a packet tap",
@@ -1806,7 +1806,7 @@ func runtimeBranchDecodeDomainError(branch string, shape shape.Spec) error {
 
 func runtimeBranchDecodeCodecMissingError(branch string, shape shape.Spec) error {
 	return &BuildError{
-		Code:      codes.RuntimeBranchDecodeCodecMissing,
+		Code:      errcode.RuntimeBranchDecodeCodecMissing,
 		Operation: "attach runtime branch",
 		Node:      firstNonEmpty(branch, "branch"),
 		Reason:    "runtime branch decode needs packet codec metadata",
@@ -1822,7 +1822,7 @@ func runtimeBranchDecodeCodecMissingError(branch string, shape shape.Spec) error
 
 func runtimeBranchCopyDomainError(branch string, shape shape.Spec) error {
 	return &BuildError{
-		Code:      codes.RuntimeBranchCopyDomainMismatch,
+		Code:      errcode.RuntimeBranchCopyDomainMismatch,
 		Operation: "attach runtime branch",
 		Node:      firstNonEmpty(branch, "branch"),
 		Reason:    "runtime branch packet copy requires a packet tap",
@@ -1838,7 +1838,7 @@ func runtimeBranchCopyDomainError(branch string, shape shape.Spec) error {
 
 func runtimeBranchMuxCodecMissingError(branch string, shape shape.Spec) error {
 	return &BuildError{
-		Code:      codes.RuntimeBranchMuxCodecMissing,
+		Code:      errcode.RuntimeBranchMuxCodecMissing,
 		Operation: "attach runtime branch",
 		Node:      firstNonEmpty(branch, "branch"),
 		Reason:    "runtime branch mux destination needs codec metadata",
@@ -1868,7 +1868,7 @@ func runtimeBranchShapeDetails(shape shape.Spec) []string {
 
 func runtimeBranchGraphError(operation string, node string, cause error) error {
 	return &BuildError{
-		Code:      codes.RuntimeBranchGraphError,
+		Code:      errcode.RuntimeBranchGraphError,
 		Operation: operation,
 		Node:      node,
 		Reason:    "runtime graph rejected the branch attachment",

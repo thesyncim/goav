@@ -46,7 +46,7 @@ func newCopyContractTask(t *testing.T, ctx context.Context, frame *av.Frame) (Ta
 		msg:    pipeline.Message{Kind: pipeline.MessageFrame, Frame: frame},
 	}
 	base := &runtimeTestSink{name: "base"}
-	graph := Expert(New(WithBufferPolicy(pipeline.BufferPolicy{Capacity: 2, CopyFrameBytes: 64}))).Graph()
+	graph := expertGraph(New(WithBufferPolicy(pipeline.BufferPolicy{Capacity: 2, CopyFrameBytes: 64})))
 	src := graph.Source("source", source)
 	graph.Connect(src.Out(), graph.Sink("base", base).In())
 	builtTask, err := graph.Build(ctx)

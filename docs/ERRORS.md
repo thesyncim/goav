@@ -4,8 +4,8 @@ goav raises one structured error from every build, validation, attach, and
 explain path: `goav.BuildError`. The contract, enforced by a source-scanning
 pin test (`errors_pin_test.go`):
 
-- **Code** — a typed `codes.Code` identifying the refusal class. Every
-  code is an exported constant in the `codes` package (the catalog), grouped
+- **Code** — a typed `errcode.Code` identifying the refusal class. Every
+  code is an exported constant in the `errcode` package (the catalog), grouped
   by area with a one-line comment saying when it fires. Codes are stable;
   rendered text may improve. The type is an open string: external components
   emit their own vendor-prefixed codes through the same `BuildError` shape.
@@ -42,9 +42,9 @@ if err != nil {
     var buildErr *goav.BuildError
     if errors.As(err, &buildErr) {
         switch buildErr.Code {
-        case codes.EncodeAdapterMissing:
+        case errcode.EncodeAdapterMissing:
             // register an adapter, or fall back to Copy()
-        case codes.ShapeConversionRefused:
+        case errcode.ShapeConversionRefused:
             // widen the .Auto(...) policy
         }
     }
@@ -54,8 +54,8 @@ if err != nil {
 }
 ```
 
-The full code list lives in [`codes/codes.go`](../codes/codes.go) — stable,
-autocompletable (`codes....`), and greppable by value (`rg encode_missing`).
+The full code list lives in [`errcode/errcode.go`](../errcode/errcode.go) — stable,
+autocompletable (`errcode....`), and greppable by value (`rg encode_missing`).
 
 ## Runtime errors
 

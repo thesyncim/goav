@@ -16,6 +16,7 @@ import (
 	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/lifecycle"
 	"github.com/thesyncim/goav/pipeline"
+	"github.com/thesyncim/goav/provider"
 	"github.com/thesyncim/goav/rtpav"
 	"github.com/thesyncim/goav/shape"
 )
@@ -26,14 +27,14 @@ import (
 type syncObjectState struct {
 	mu      sync.Mutex
 	bytes   []byte
-	info    DestinationInfo
+	info    provider.Info
 	opens   int
 	closes  int
 	commits int
 	aborts  int
 }
 
-func (s *syncObjectState) open(_ context.Context, info DestinationInfo) (io.WriteCloser, error) {
+func (s *syncObjectState) open(_ context.Context, info provider.Info) (io.WriteCloser, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.opens++
@@ -41,7 +42,7 @@ func (s *syncObjectState) open(_ context.Context, info DestinationInfo) (io.Writ
 	return &syncObjectWriter{state: s}, nil
 }
 
-func (s *syncObjectState) snapshot() (opens, closes, commits, aborts int, data []byte, info DestinationInfo) {
+func (s *syncObjectState) snapshot() (opens, closes, commits, aborts int, data []byte, info provider.Info) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.opens, s.closes, s.commits, s.aborts, append([]byte(nil), s.bytes...), s.info

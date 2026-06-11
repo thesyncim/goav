@@ -8,7 +8,7 @@ import (
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
-	"github.com/thesyncim/goav/codes"
+	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/plan"
 	"github.com/thesyncim/goav/shape"
@@ -339,7 +339,7 @@ func newJoinPlan(rt *runtime, state *recipeCompileState) (*joinPlan, error) {
 func resolveJoinDestinations(name string, spec *joinSpec) ([]destinationSpec, error) {
 	if len(spec.dests) == 0 {
 		return nil, &BuildError{
-			Code:      codes.OutputMissing,
+			Code:      errcode.OutputMissing,
 			Operation: "build " + name,
 			Node:      name,
 			Reason:    "no output is configured",
@@ -656,7 +656,7 @@ func (p *joinPlan) solveArmConversion(rt *runtime, stream av.Stream, armName str
 			"feed the arm "+humanizeShape(expected)+" media, or align its source format with the first arm (the join's format reference)")
 	}
 	p.diagnostics = append(p.diagnostics, plan.Diagnostic{
-		Code: string(codes.ShapeConversionInserted),
+		Code: string(errcode.ShapeConversionInserted),
 		Node: firstNonEmpty(armName, string(stream.ID)),
 		Message: fmt.Sprintf("inserted %s on %s arm %q (join arm policy)",
 			conversion.detail, p.name, firstNonEmpty(armName, string(stream.ID))),
@@ -811,7 +811,7 @@ func joinPlanTaps(spec *joinSpec, name string, joined av.Stream, domain shape.Me
 	for _, tap := range spec.taps {
 		if tap.name == "" {
 			return nil, &BuildError{
-				Code:      codes.TapInvalid,
+				Code:      errcode.TapInvalid,
 				Operation: "build " + name,
 				Node:      name,
 				Reason:    "tap name is empty",
@@ -1684,10 +1684,10 @@ func joinBranchNamedDestinations(name string, branches []BranchSpec) ([]namedDes
 }
 
 // joinErrorCode derives a join refusal code from the join kind and family:
-// joinErrorCode("mix", "arm") == codes.MixArm. The values for the built-in
-// kinds (mix, composite, select) are enumerated in the codes catalog; nested
+// joinErrorCode("mix", "arm") == errcode.MixArm. The values for the built-in
+// kinds (mix, composite, select) are enumerated in the errcode catalog; nested
 // joins of a repeated kind carry their claimed node name (mix-2_arm), and the
 // "kind" family marks the internal unknown-join-kind invariant.
-func joinErrorCode(kind string, family string) codes.Code {
-	return codes.Code(kind + "_" + family)
+func joinErrorCode(kind string, family string) errcode.Code {
+	return errcode.Code(kind + "_" + family)
 }

@@ -7,7 +7,7 @@ import (
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
-	"github.com/thesyncim/goav/codes"
+	"github.com/thesyncim/goav/errcode"
 )
 
 const (
@@ -106,14 +106,14 @@ func selectStreamWithCodecRequirement(streams []av.Stream, selector av.StreamSel
 		matched = append(matched, streams[i])
 	}
 	if matches == 0 {
-		return av.Stream{}, streamSelectionError(codes.StreamMissing, selector, streams)
+		return av.Stream{}, streamSelectionError(errcode.StreamMissing, selector, streams)
 	}
 	if matches > 1 {
-		return av.Stream{}, streamSelectionError(codes.StreamAmbiguous, selector, matched)
+		return av.Stream{}, streamSelectionError(errcode.StreamAmbiguous, selector, matched)
 	}
 	if requireCodec && selected.Codec.ID == "" {
 		return av.Stream{}, &BuildError{
-			Code:      codes.StreamCodecMissing,
+			Code:      errcode.StreamCodecMissing,
 			Operation: "select stream",
 			Node:      selectorDetail(selector),
 			Reason:    "selected stream has no codec id",
@@ -151,11 +151,11 @@ func selectorHasIndex(selector av.StreamSelector) bool {
 	return selector.UseIndex || selector.Index != 0
 }
 
-func streamSelectionError(code codes.Code, selector av.StreamSelector, streams []av.Stream) error {
+func streamSelectionError(code errcode.Code, selector av.StreamSelector, streams []av.Stream) error {
 	operation := "select stream"
 	node := selectorDetail(selector)
 	reason := "no stream matches " + readableSelector(selector)
-	if code == codes.StreamAmbiguous {
+	if code == errcode.StreamAmbiguous {
 		reason = "multiple streams match " + readableSelector(selector)
 	}
 	return &BuildError{
@@ -169,7 +169,7 @@ func streamSelectionError(code codes.Code, selector av.StreamSelector, streams [
 	}
 }
 
-func streamRequestMismatchError(code codes.Code, operation string, node string, selector av.StreamSelector, stream av.Stream, suggestions []string) error {
+func streamRequestMismatchError(code errcode.Code, operation string, node string, selector av.StreamSelector, stream av.Stream, suggestions []string) error {
 	return &BuildError{
 		Code:      code,
 		Operation: operation,

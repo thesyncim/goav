@@ -17,6 +17,7 @@ import (
 	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/plan"
+	"github.com/thesyncim/goav/provider"
 	"github.com/thesyncim/goav/rtpav"
 	"github.com/thesyncim/goav/shape"
 	"github.com/thesyncim/goav/snapshot"
@@ -625,7 +626,7 @@ func TestRecordRecipeCopyToCustomWriterDestinationRuns(t *testing.T) {
 	runtime := New(withTestFormats(
 		testFormatMuxer(av.FormatOgg, writerDestinationMuxerFactory{muxer: muxer}),
 	))
-	target := Writer("s3://bucket/call.ogg", func(_ context.Context, info DestinationInfo) (io.WriteCloser, error) {
+	target := Writer("s3://bucket/call.ogg", func(_ context.Context, info provider.Info) (io.WriteCloser, error) {
 		state.opens++
 		state.info = info
 		return &writerDestinationWriteCloser{state: state}, nil
@@ -670,7 +671,7 @@ func TestRecordRecipeCopyToCustomWriterDestinationRuns(t *testing.T) {
 
 // TestRecordRecipeCopyToTransactionalWriterDestinationRuns pins the object-store
 // capability through the one Writer constructor: an opened writer that
-// implements TransactionalDestinationWriter commits after success and closes
+// implements provider.TransactionalWriter commits after success and closes
 // exactly once.
 func TestRecordRecipeCopyToTransactionalWriterDestinationRuns(t *testing.T) {
 	ctx := context.Background()
@@ -696,7 +697,7 @@ func TestRecordRecipeCopyToTransactionalWriterDestinationRuns(t *testing.T) {
 		testFormatMuxer(av.FormatOgg, writerDestinationMuxerFactory{muxer: muxer}),
 	))
 	metadata := av.Metadata{"storage": "hot"}
-	target := Writer("s3://bucket/object.ogg", func(_ context.Context, info DestinationInfo) (io.WriteCloser, error) {
+	target := Writer("s3://bucket/object.ogg", func(_ context.Context, info provider.Info) (io.WriteCloser, error) {
 		state.opens++
 		state.info = info
 		return &writerDestinationWriteCloser{state: state}, nil
@@ -842,7 +843,7 @@ func TestRecordRecipeCustomWriterDestinationAbortsOnRunError(t *testing.T) {
 		Input(rtpav.Receive(receiver, rtpav.WithName("audio"), rtpav.WithCodec(codec.Opus()), rtpav.WithBufferLimits(rtpav.BufferLimits{MaxPackets: 2}))),
 	).Copy().To(Writer(
 		"s3://bucket/call.ogg",
-		func(context.Context, DestinationInfo) (io.WriteCloser, error) {
+		func(context.Context, provider.Info) (io.WriteCloser, error) {
 			state.opens++
 			return &writerDestinationWriteCloser{state: state}, nil
 		},
@@ -913,7 +914,7 @@ func TestTaskAttachCustomWriterDestinationRuns(t *testing.T) {
 	}
 	writer := Writer(
 		"s3://bucket/late.ogg",
-		func(_ context.Context, info DestinationInfo) (io.WriteCloser, error) {
+		func(_ context.Context, info provider.Info) (io.WriteCloser, error) {
 			state.opens++
 			state.info = info
 			return &writerDestinationWriteCloser{state: state}, nil
@@ -1007,7 +1008,7 @@ func TestTaskAttachCustomWriterDestinationAbortsOnPatchFailure(t *testing.T) {
 
 	writer := Writer(
 		"s3://bucket/late.ogg",
-		func(context.Context, DestinationInfo) (io.WriteCloser, error) {
+		func(context.Context, provider.Info) (io.WriteCloser, error) {
 			state.opens++
 			return &writerDestinationWriteCloser{state: state}, nil
 		},
@@ -1046,7 +1047,7 @@ func TestTaskAttachCustomWriterDestinationAbortsOnPatchFailure(t *testing.T) {
 
 type writerDestinationState struct {
 	bytes   bytes.Buffer
-	info    DestinationInfo
+	info    provider.Info
 	opens   int
 	closes  int
 	commits int
@@ -3566,7 +3567,7 @@ func TestTaskAttachesRuntimePacketCopyMuxBranch(t *testing.T) {
 		name:    "source",
 		message: pipeline.Message{Kind: pipeline.MessagePacket, Packet: &packet},
 	}
-	graph := Expert(New(formats)).Graph()
+	graph := expertGraph(New(formats))
 	src := graph.Source("source", source)
 	graph.Connect(src.Out(), graph.Sink("base", &runtimeTestSink{name: "base"}).In())
 	builtTask, err := graph.Build(ctx)
@@ -3626,7 +3627,7 @@ func TestTaskAttachRejectsDuplicateRuntimeBranchDestinationsBeforeMutation(t *te
 		name:    "source",
 		message: pipeline.Message{Kind: pipeline.MessageFrame, Frame: &frame},
 	}
-	graph := Expert(New(formats, codecs)).Graph()
+	graph := expertGraph(New(formats, codecs))
 	src := graph.Source("source", source)
 	graph.Connect(src.Out(), graph.Sink("base", &runtimeTestSink{name: "base"}).In())
 	builtTask, err := graph.Build(ctx)
@@ -3696,7 +3697,7 @@ func TestTaskAttachRuntimeMuxBranchRequiresCopyOrEncode(t *testing.T) {
 		name:    "source",
 		message: pipeline.Message{Kind: pipeline.MessageFrame, Frame: &frame},
 	}
-	graph := Expert(New(formats)).Graph()
+	graph := expertGraph(New(formats))
 	src := graph.Source("source", source)
 	graph.Connect(src.Out(), graph.Sink("base", &runtimeTestSink{name: "base"}).In())
 	builtTask, err := graph.Build(ctx)
@@ -3747,7 +3748,7 @@ func TestTaskAttachRuntimeEncodeMuxBranchKeepsH264AV1WIPGuard(t *testing.T) {
 		name:    "source",
 		message: pipeline.Message{Kind: pipeline.MessageFrame, Frame: &frame},
 	}
-	graph := Expert(New(formats)).Graph()
+	graph := expertGraph(New(formats))
 	src := graph.Source("source", source)
 	graph.Connect(src.Out(), graph.Sink("base", &runtimeTestSink{name: "base"}).In())
 	builtTask, err := graph.Build(ctx)
@@ -3823,7 +3824,7 @@ func TestTaskAttachRejectsRuntimeEncodeDescriptorBeforeMutation(t *testing.T) {
 		message: pipeline.Message{Kind: pipeline.MessageFrame, Frame: &frame},
 	}
 	base := &runtimeTestSink{name: "base"}
-	graph := Expert(New(codecs)).Graph()
+	graph := expertGraph(New(codecs))
 	src := graph.Source("source", source)
 	graph.Connect(src.Out(), graph.Sink("base", base).In())
 	builtTask, err := graph.Build(ctx)
@@ -3899,7 +3900,7 @@ func TestTaskAttachRuntimeCustomEncodeMuxBranch(t *testing.T) {
 		message: pipeline.Message{Kind: pipeline.MessageFrame, Frame: &frame},
 	}
 	base := &runtimeTestSink{name: "base"}
-	graph := Expert(New(formats, codecs)).Graph()
+	graph := expertGraph(New(formats, codecs))
 	src := graph.Source("source", source)
 	graph.Connect(src.Out(), graph.Sink("base", base).In())
 	builtTask, err := graph.Build(ctx)
@@ -3970,7 +3971,7 @@ func TestTaskAttachRuntimeDecodeBranchFromPacketTap(t *testing.T) {
 		message: pipeline.Message{Kind: pipeline.MessagePacket, Packet: &packet},
 	}
 	base := &runtimeTestSink{name: "base"}
-	graph := Expert(New(codecs)).Graph()
+	graph := expertGraph(New(codecs))
 	src := graph.Source("source", source)
 	graph.Connect(src.Out(), graph.Sink("base", base).In())
 	builtTask, err := graph.Build(ctx)
@@ -4058,7 +4059,7 @@ func TestTaskAttachRuntimeFlowDecodeBranchFromPacketTap(t *testing.T) {
 		message: pipeline.Message{Kind: pipeline.MessagePacket, Packet: &packet},
 	}
 	base := &runtimeTestSink{name: "base"}
-	graph := Expert(New(codecs)).Graph()
+	graph := expertGraph(New(codecs))
 	src := graph.Source("source", source)
 	graph.Connect(src.Out(), graph.Sink("base", base).In())
 	builtTask, err := graph.Build(ctx)
@@ -4141,7 +4142,7 @@ func TestTaskAttachRuntimeFlowMediaMismatchBeforeMutation(t *testing.T) {
 		message: pipeline.Message{Kind: pipeline.MessageFrame, Frame: &frame},
 	}
 	base := &runtimeTestSink{name: "base"}
-	graph := Expert(New()).Graph()
+	graph := expertGraph(New())
 	src := graph.Source("source", source)
 	graph.Connect(src.Out(), graph.Sink("base", base).In())
 	builtTask, err := graph.Build(ctx)
@@ -4223,7 +4224,7 @@ func TestTaskAttachRuntimeDecodeResampleEncodeMuxBranchFromPacketTap(t *testing.
 		message: pipeline.Message{Kind: pipeline.MessagePacket, Packet: &packet},
 	}
 	base := &runtimeTestSink{name: "base"}
-	graph := Expert(New(formats, codecs, filters)).Graph()
+	graph := expertGraph(New(formats, codecs, filters))
 	src := graph.Source("source", source)
 	graph.Connect(src.Out(), graph.Sink("base", base).In())
 	builtTask, err := graph.Build(ctx)
@@ -4352,7 +4353,7 @@ func TestTaskAttachRuntimeFlowCustomEncodeMuxBranch(t *testing.T) {
 		message: pipeline.Message{Kind: pipeline.MessageFrame, Frame: &frame},
 	}
 	base := &runtimeTestSink{name: "base"}
-	graph := Expert(New(formats, codecs)).Graph()
+	graph := expertGraph(New(formats, codecs))
 	src := graph.Source("source", source)
 	graph.Connect(src.Out(), graph.Sink("base", base).In())
 	builtTask, err := graph.Build(ctx)
@@ -4470,7 +4471,7 @@ func TestTaskAttachRuntimeEncodeBranchFansOutToDestinations(t *testing.T) {
 		message: pipeline.Message{Kind: pipeline.MessageFrame, Frame: &frame},
 	}
 	base := &runtimeTestSink{name: "base"}
-	graph := Expert(New(formats, codecs)).Graph()
+	graph := expertGraph(New(formats, codecs))
 	src := graph.Source("source", source)
 	graph.Connect(src.Out(), graph.Sink("base", base).In())
 	builtTask, err := graph.Build(ctx)

@@ -12,7 +12,7 @@
 // Default(opts...) builds a runtime with the standard pure-Go adapters
 // registered; per-runtime registries accept external codecs, formats, and
 // filters through the same With* options. Errors are structured: every
-// refusal is a *BuildError carrying a codes.Code, the failing operation, and
+// refusal is a *BuildError carrying an errcode.Code, the failing operation, and
 // concrete fixes.
 package goav
 
@@ -42,17 +42,6 @@ type (
 // Runtime is the composition root for applications embedding goav.
 type Runtime interface {
 	Probe(context.Context, format.ProbeRequest) (format.ProbeResult, error)
-}
-
-// GraphBuilder is the handle-based expert graph layer. Most applications should
-// start with From and compose chains, taps, branches, destinations, and tasks.
-type GraphBuilder interface {
-	Source(string, pipeline.Source) GraphNode
-	Stage(string, pipeline.Stage) GraphNode
-	Sink(string, pipeline.Sink) GraphNode
-	Connect(GraphOutlet, ...GraphInlet) GraphBuilder
-	Describe() (pipeline.Spec, error)
-	Build(context.Context) (Task, error)
 }
 
 // Task is a runnable media composition.

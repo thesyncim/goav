@@ -1,7 +1,7 @@
 package goav
 
 import (
-	"github.com/thesyncim/goav/codes"
+	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/shape"
 )
 
@@ -57,7 +57,7 @@ func validateTapDomain(operation string, node string, tap TapRef, actual shape.M
 		return nil
 	}
 	return &BuildError{
-		Code:      codes.TapDomainMismatch,
+		Code:      errcode.TapDomainMismatch,
 		Operation: operation,
 		Node:      firstNonEmpty(node, "tap"),
 		Reason:    "typed tap domain does not match this chain point",
@@ -76,7 +76,7 @@ func validateTapDomain(operation string, node string, tap TapRef, actual shape.M
 
 func branchSourceInvalidError(node string) error {
 	return &BuildError{
-		Code:      codes.BranchSourceInvalid,
+		Code:      errcode.BranchSourceInvalid,
 		Operation: "build branch",
 		Node:      firstNonEmpty(node, "branch"),
 		Reason:    "branch source must be a typed tap or expert graph handle",

@@ -8,9 +8,10 @@ import (
 	"io"
 
 	"github.com/thesyncim/goav/av"
-	"github.com/thesyncim/goav/codes"
+	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/pipeline"
+	"github.com/thesyncim/goav/provider"
 )
 
 // destinationSpec describes a concrete file, URI, writer, or sink destination.
@@ -18,7 +19,7 @@ type destinationSpec struct {
 	id             uint64
 	output         format.Output
 	sink           pipeline.Sink
-	custom         DestinationProvider
+	custom         provider.Destination
 	format         av.FormatID
 	resolvedFormat av.FormatID
 	name           string
@@ -29,18 +30,23 @@ func destinationHandle(spec destinationSpec) Destination {
 	return Destination{spec: spec}
 }
 
-// File creates a writer-backed destination from an already-open writer. When
-// the writer also implements io.Closer it is closed exactly once when the
-// destination finalizes (run end, drained detach, or failure); a plain writer
-// is left open for the caller.
-func File(name string, writer io.Writer, opts ...DestinationOption) Destination {
-	spec := fileDestination(name, writer)
+// applyDestinationOptions is the destination twin of applyInputOptions: one
+// option-application path shared by every constructor and Destination.With.
+func applyDestinationOptions(spec destinationSpec, opts []DestinationOption) destinationSpec {
 	for i := range opts {
 		if opts[i] != nil {
 			opts[i].applyDestination(&spec)
 		}
 	}
-	return Destination{spec: spec}
+	return spec
+}
+
+// File creates a writer-backed destination from an already-open writer. When
+// the writer also implements io.Closer it is closed exactly once when the
+// destination finalizes (run end, drained detach, or failure); a plain writer
+// is left open for the caller.
+func File(name string, writer io.Writer, opts ...DestinationOption) Destination {
+	return Destination{spec: applyDestinationOptions(fileDestination(name, writer), opts)}
 }
 
 func fileDestination(name string, writer io.Writer) destinationSpec {
@@ -57,13 +63,7 @@ func fileDestination(name string, writer io.Writer) destinationSpec {
 
 // URI creates a URI destination opened by a registered format adapter.
 func URI(uri string, opts ...DestinationOption) Destination {
-	spec := uriDestination(uri)
-	for i := range opts {
-		if opts[i] != nil {
-			opts[i].applyDestination(&spec)
-		}
-	}
-	return Destination{spec: spec}
+	return Destination{spec: applyDestinationOptions(uriDestination(uri), opts)}
 }
 
 func uriDestination(uri string) destinationSpec {
@@ -78,8 +78,11 @@ func uriDestination(uri string) destinationSpec {
 }
 
 // Sink creates a media-message destination for decoded frames or packets.
-func Sink(sink pipeline.Sink) Destination {
-	return Destination{spec: sinkDestination(sink)}
+// Like every destination constructor it accepts options; Name overrides the
+// label outputs group and dedupe by (byte-stream options such as Format and
+// MIME state nothing about a sink).
+func Sink(sink pipeline.Sink, opts ...DestinationOption) Destination {
+	return Destination{spec: applyDestinationOptions(sinkDestination(sink), opts)}
 }
 
 func sinkDestination(sink pipeline.Sink) destinationSpec {
@@ -93,34 +96,28 @@ func sinkDestination(sink pipeline.Sink) destinationSpec {
 	return destinationSpec{id: destinationSpecSeq.Add(1), sink: sink, name: name}
 }
 
-// Custom wraps a reusable DestinationProvider as a destination value: the
+// Custom wraps a reusable provider.Destination as a destination value: the
 // provider owns naming, contract, and opening, while the returned Destination
 // stays the stable routing handle branches share.
-func Custom(name string, provider DestinationProvider, opts ...DestinationOption) Destination {
-	spec := customDestination(name, provider)
-	for i := range opts {
-		if opts[i] != nil {
-			opts[i].applyDestination(&spec)
-		}
-	}
-	return Destination{spec: spec}
+func Custom(name string, dest provider.Destination, opts ...DestinationOption) Destination {
+	return Destination{spec: applyDestinationOptions(customDestination(name, dest), opts)}
 }
 
-func customDestination(name string, provider DestinationProvider) destinationSpec {
-	if provider == nil {
+func customDestination(name string, dest provider.Destination) destinationSpec {
+	if dest == nil {
 		return destinationSpec{id: destinationSpecSeq.Add(1), err: ErrNilWriter}
 	}
-	contract := provider.Contract()
+	contract := dest.Contract()
 	spec := destinationSpec{
 		id:     destinationSpecSeq.Add(1),
-		custom: provider,
+		custom: dest,
 		output: format.Output{
 			Name:     name,
 			URI:      name,
 			Protocol: contract.Protocol,
 			Realtime: contract.Realtime,
 		},
-		name: firstNonEmpty(name, provider.Name()),
+		name: firstNonEmpty(name, dest.Name()),
 	}
 	if spec.output.Name == "" {
 		spec.output.Name = spec.name
@@ -137,12 +134,11 @@ func customDestination(name string, provider DestinationProvider) destinationSpe
 
 // Writer creates a byte destination opened on demand: the callback runs after
 // goav has selected the format and streams, so the writer sees the final
-// destination metadata (DestinationInfo). The writer closes exactly once.
-// When the returned writer also implements TransactionalDestinationWriter,
-// Commit runs after a successful run or drained detach and Abort runs on
-// failure — the seam for object-store uploads with an explicit commit
-// boundary.
-func Writer(name string, open WriterOpenFunc, opts ...DestinationOption) Destination {
+// destination metadata (provider.Info). The writer closes exactly once. When
+// the returned writer also implements provider.TransactionalWriter, Commit
+// runs after a successful run or drained detach and Abort runs on failure —
+// the seam for object-store uploads with an explicit commit boundary.
+func Writer(name string, open provider.OpenFunc, opts ...DestinationOption) Destination {
 	spec := destinationSpec{
 		id:     destinationSpecSeq.Add(1),
 		custom: writerDestination{name: name, open: open},
@@ -152,31 +148,26 @@ func Writer(name string, open WriterOpenFunc, opts ...DestinationOption) Destina
 		},
 		name: name,
 	}
-	for i := range opts {
-		if opts[i] != nil {
-			opts[i].applyDestination(&spec)
-		}
-	}
-	return Destination{spec: spec}
+	return Destination{spec: applyDestinationOptions(spec, opts)}
 }
 
 type writerDestination struct {
 	name     string
-	open     WriterOpenFunc
-	contract DestinationContract
+	open     provider.OpenFunc
+	contract provider.Contract
 }
 
 func (d writerDestination) Name() string {
 	return d.name
 }
 
-func (d writerDestination) Contract() DestinationContract {
+func (d writerDestination) Contract() provider.Contract {
 	contract := d.contract
 	contract.ByteStream = true
 	return contract
 }
 
-func (d writerDestination) Open(ctx context.Context, info DestinationInfo) (DestinationWriter, error) {
+func (d writerDestination) Open(ctx context.Context, info provider.Info) (provider.Writer, error) {
 	if d.open == nil {
 		return nil, ErrNilWriter
 	}
@@ -267,7 +258,7 @@ func MIME(mimeType string) MediaOption {
 
 // Metadata attaches caller metadata to the value: input metadata rides
 // format.Input to the opening adapter, destination metadata reaches openers
-// on DestinationInfo (an uploader can store it as object metadata).
+// on provider.Info (an uploader can store it as object metadata).
 func Metadata(metadata av.Metadata) MediaOption {
 	return mediaOption{
 		input: func(spec *InputSpec) {
@@ -292,13 +283,7 @@ func Format(format av.FormatID) DestinationOption {
 // option vocabulary the constructors take, for layering config onto an
 // already-constructed value. The copy keeps the original's routing identity.
 func (d Destination) With(opts ...DestinationOption) Destination {
-	spec := cloneDestinationSpec(d.spec)
-	for i := range opts {
-		if opts[i] != nil {
-			opts[i].applyDestination(&spec)
-		}
-	}
-	return Destination{spec: spec}
+	return Destination{spec: applyDestinationOptions(cloneDestinationSpec(d.spec), opts)}
 }
 
 func (s destinationSpec) withName(name string) destinationSpec {
@@ -328,8 +313,8 @@ func (s destinationSpec) Name() string {
 	return s.name
 }
 
-func (s destinationSpec) Contract() DestinationContract {
-	contract := DestinationContract{
+func (s destinationSpec) Contract() provider.Contract {
+	contract := provider.Contract{
 		ByteStream: s.sink == nil,
 		Protocol:   s.output.Protocol,
 		Realtime:   s.output.Realtime,
@@ -360,7 +345,7 @@ func (s destinationSpec) Contract() DestinationContract {
 	return contract
 }
 
-func (s destinationSpec) Open(ctx context.Context, info DestinationInfo) (DestinationWriter, error) {
+func (s destinationSpec) Open(ctx context.Context, info provider.Info) (provider.Writer, error) {
 	if s.custom != nil {
 		return s.custom.Open(ctx, info)
 	}
@@ -377,7 +362,7 @@ func (s destinationSpec) validate(operation string, fallback string) error {
 	node := s.label(fallback)
 	if s.err != nil {
 		return &BuildError{
-			Code:      codes.OutputInvalid,
+			Code:      errcode.OutputInvalid,
 			Operation: operation,
 			Node:      node,
 			Reason:    s.err.Error(),
@@ -393,7 +378,7 @@ func (s destinationSpec) validate(operation string, fallback string) error {
 	}
 	if s.output.Name == "" && s.output.URI == "" && s.output.Protocol == "" && s.output.MIMEType == "" && s.output.Writer == nil && s.custom == nil && s.format == "" {
 		return &BuildError{
-			Code:      codes.OutputInvalid,
+			Code:      errcode.OutputInvalid,
 			Operation: operation,
 			Node:      node,
 			Reason:    "empty destination",
@@ -406,7 +391,7 @@ func (s destinationSpec) validate(operation string, fallback string) error {
 	}
 	if s.output.Protocol == av.ProtocolFile && s.output.Writer == nil && s.custom == nil {
 		return &BuildError{
-			Code:      codes.OutputWriterMissing,
+			Code:      errcode.OutputWriterMissing,
 			Operation: operation,
 			Node:      node,
 			Reason:    "file output has no writer",
@@ -419,7 +404,7 @@ func (s destinationSpec) validate(operation string, fallback string) error {
 	}
 	if s.output.Protocol == av.ProtocolFile && s.output.Writer != nil && s.output.Name == "" && s.output.URI == "" && s.output.MIMEType == "" && s.format == "" {
 		return &BuildError{
-			Code:      codes.OutputFormatMissing,
+			Code:      errcode.OutputFormatMissing,
 			Operation: operation,
 			Node:      node,
 			Reason:    "writer-backed file output has no name, URI, MIME type, or explicit format",
@@ -432,7 +417,7 @@ func (s destinationSpec) validate(operation string, fallback string) error {
 	}
 	if s.output.URI == "" && s.output.Protocol != av.ProtocolFile && s.output.Writer == nil && s.custom == nil {
 		return &BuildError{
-			Code:      codes.OutputDestinationMissing,
+			Code:      errcode.OutputDestinationMissing,
 			Operation: operation,
 			Node:      node,
 			Reason:    "output has no URI, writer, or sink",
@@ -521,7 +506,7 @@ func destinationNodeName(output format.Output, index int, destinationNames []str
 
 func duplicateOutputError(operation string, name string) error {
 	return &BuildError{
-		Code:      codes.OutputDuplicate,
+		Code:      errcode.OutputDuplicate,
 		Operation: operation,
 		Node:      name,
 		Reason:    fmt.Sprintf("output name %q is defined more than once", name),
@@ -536,7 +521,7 @@ func duplicateOutputError(operation string, name string) error {
 
 func duplicateDestinationHandleError(operation string, name string) error {
 	return &BuildError{
-		Code:      codes.DestinationDuplicate,
+		Code:      errcode.DestinationDuplicate,
 		Operation: operation,
 		Node:      name,
 		Reason:    fmt.Sprintf("destination %q is attached more than once", name),

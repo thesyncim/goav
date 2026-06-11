@@ -21,6 +21,7 @@ import (
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/goavtest"
+	"github.com/thesyncim/goav/provider"
 )
 
 // countingWriteCloser counts Close calls so tests can pin the
@@ -32,7 +33,7 @@ type countingWriteCloser struct {
 func (w *countingWriteCloser) Write(p []byte) (int, error) { return len(p), nil }
 func (w *countingWriteCloser) Close() error                { w.closes++; return nil }
 
-// transactionalTestWriter is a TransactionalDestinationWriter whose Commit
+// transactionalTestWriter is a provider.TransactionalWriter whose Commit
 // can fail, for pinning where finalize errors surface.
 type transactionalTestWriter struct {
 	commitErr error
@@ -47,7 +48,7 @@ func (w *transactionalTestWriter) Commit(context.Context) error { w.commits++; r
 func (w *transactionalTestWriter) Abort(context.Context) error  { w.aborts++; return nil }
 
 func transactionalWriterDestination(writer *transactionalTestWriter) goav.Destination {
-	return goav.Writer("mem://upload.ogg", func(context.Context, goav.DestinationInfo) (io.WriteCloser, error) {
+	return goav.Writer("mem://upload.ogg", func(context.Context, provider.Info) (io.WriteCloser, error) {
 		return writer, nil
 	}, goav.Format(av.FormatOgg))
 }

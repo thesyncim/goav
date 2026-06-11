@@ -6,7 +6,7 @@ import (
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
-	"github.com/thesyncim/goav/codes"
+	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/pipeline"
 )
 
@@ -153,7 +153,7 @@ func prepareEncodeConfig(input av.Stream, request encodeRequest, realtime bool) 
 
 func encodeStreamMismatchError(request encodeRequest, stream av.Stream) error {
 	return streamRequestMismatchError(
-		codes.EncodeStreamMismatch,
+		errcode.EncodeStreamMismatch,
 		"configure encode",
 		encodeNodeName(request),
 		request.selector,
@@ -168,7 +168,7 @@ func encodeStreamMismatchError(request encodeRequest, stream av.Stream) error {
 
 func encodeTargetMissingError(request encodeRequest, stream av.Stream) error {
 	return &BuildError{
-		Code:      codes.EncodeDestinationMissing,
+		Code:      errcode.EncodeDestinationMissing,
 		Operation: "configure encode",
 		Node:      encodeNodeName(request),
 		Reason:    "no target codec was provided",

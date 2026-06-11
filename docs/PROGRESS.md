@@ -50,7 +50,7 @@ From(input) -> Chain -> operations -> Tap -> Branch -> Destination -> Task
   planned branches, runtime branches, and flows share one ordered list;
 - `Destination` is the routing handle: reusing the same `Destination` value
   groups branches into one sink or mux destination;
-- `DestinationProvider` is the extension point for custom byte/object/sink
+- `provider.Destination` is the extension point for custom byte/object/sink
   behavior; goav owns destination identity so shared groups are reliable;
 - Direct `.To(...)` streams are only ergonomic syntax for the same branch model;
 - normal workflows lower from `input -> stream -> operations -> tap -> branch -> destination` into `WorkPlan -> pipeline.Graph -> Task`;
@@ -71,7 +71,7 @@ runtime state, or lifecycle policy.
 
 | Gate | Evidence | State |
 | --- | --- | --- |
-| Simple high-level API | `From`, stream selection, ordered operations, typed taps, branches, direct `File`/`URI`/`Sink` destinations, custom `Writer` destinations with `DestinationInfo`, stable destination handles for shared mux/sink groups, flows, runtime attach, custom sources, `Explain(ctx)` | active |
+| Simple high-level API | `From`, stream selection, ordered operations, typed taps, branches, direct `File`/`URI`/`Sink` destinations, custom `Writer` destinations with `provider.Info`, stable destination handles for shared mux/sink groups, flows, runtime attach, custom sources, `Explain(ctx)` | active |
 | One grammar, one engine | one planner emits `WorkPlan` for build and `WorkPatch` for attach; the internal IR collapse is the open work (NORTH_STAR attack plan) | in progress |
 | Allocation-guarded hot paths | `testing.AllocsPerRun` guards across core/RTP/codec/format/adapters; no cgo (`hygiene_test.go`) | active |
 | Validation gates | `go test ./...`, adapter tag builds, allocation and lifecycle tests | active |

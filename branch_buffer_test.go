@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/thesyncim/goav/codes"
+	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/flow"
 	"github.com/thesyncim/goav/pipeline"
 )
@@ -65,7 +65,7 @@ func TestBranchBufferRejectsInvalidPolicies(t *testing.T) {
 	tests := []struct {
 		name   string
 		buffer flow.BranchBuffer
-		code   codes.Code
+		code   errcode.Code
 	}{
 		{name: "zero capacity", buffer: flow.DropOldest(0), code: "branch_buffer_invalid"},
 		{name: "negative copy bounds", buffer: flow.Blocking(1, flow.BufferCopyBounds(-1, 0)), code: "branch_buffer_invalid"},

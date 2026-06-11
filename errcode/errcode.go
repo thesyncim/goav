@@ -1,10 +1,10 @@
-// Package codes is the error-code catalog: every refusal a build, attach,
+// Package errcode is the error-code catalog: every refusal a build, attach,
 // or control path can raise carries exactly one Code from this package. The
 // constants are the stable, greppable contract — match them with
 // errors.As(err, *goav.BuildError) and a Code comparison; the rendered text
 // may improve over time, the codes do not. See docs/ERRORS.md for the
 // contract and matching recipes.
-package codes
+package errcode
 
 // Code identifies one class of refusal or diagnostic. Every BuildError
 // carries one; Explain diagnostics and plan decisions reuse the same
@@ -13,10 +13,10 @@ package codes
 // Code is an open string, not a closed enum: external components emit their
 // own vendor-prefixed codes through the same BuildError shape, and they flow
 // through matching and rendering unchanged. The catalog below is goav's own
-// vocabulary, not the universe of valid codes.
+// vocabulary, not the universe of valid errcode.
 type Code string
 
-// Input and source codes.
+// Input and source errcode.
 const (
 	// InputInvalid fires when an input spec is empty or carries a
 	// construction error (a nil reader, a failed provider option).
@@ -58,7 +58,7 @@ const (
 	ExplicitGraphSourceMissing Code = "explicit_graph_source_missing"
 )
 
-// Stream selection codes.
+// Stream selection errcode.
 const (
 	// StreamMissing fires when no stream matches the chain's selector.
 	StreamMissing Code = "stream_missing"
@@ -107,7 +107,7 @@ const (
 	FlowCopyDomainMismatch Code = "flow_copy_domain_mismatch"
 )
 
-// Transform and shape codes.
+// Transform and shape errcode.
 const (
 	// TransformInvalid fires when a transform is empty, conflicting, or
 	// malformed (one transform declaring both resize and resample).
@@ -166,7 +166,7 @@ const (
 	CodecChangePolicyUnsupported Code = "codec_change_policy_unsupported"
 )
 
-// Encode codes.
+// Encode errcode.
 const (
 	// EncodeMissing fires when decoded frames are routed to a muxed
 	// destination without an encoder.
@@ -194,7 +194,7 @@ const (
 	EncodeBranchSourceInvalid Code = "encode_branch_source_invalid"
 )
 
-// Destination and output codes.
+// Destination and output errcode.
 const (
 	// OutputInvalid fires when a destination is empty or carries a
 	// construction error (a nil sink or writer).
@@ -314,7 +314,7 @@ const (
 	DecodePolicyConflict Code = "decode_policy_conflict"
 )
 
-// Tap codes.
+// Tap errcode.
 const (
 	// TapInvalid fires when a tap name is empty.
 	TapInvalid Code = "tap_invalid"
@@ -413,7 +413,7 @@ const (
 	StreamRuleInvalid Code = "stream_rule_invalid"
 )
 
-// Job and compiler codes.
+// Job and compiler errcode.
 const (
 	// JobInvalid fires when a nil job or join reaches the recipe compiler;
 	// an internal invariant.

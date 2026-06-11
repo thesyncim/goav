@@ -5,7 +5,7 @@ import (
 	"strconv"
 
 	"github.com/thesyncim/goav/av"
-	"github.com/thesyncim/goav/codes"
+	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/format"
 )
 
@@ -14,7 +14,7 @@ func inputFormatProbeError(input format.Input, cause error) error {
 		return cause
 	}
 	return &BuildError{
-		Code:      codes.InputFormatUnknown,
+		Code:      errcode.InputFormatUnknown,
 		Operation: "open input",
 		Node:      demuxNodeName(input),
 		Reason:    "input format could not be detected",
@@ -33,7 +33,7 @@ func inputDemuxerMissingError(input format.Input, id av.FormatID, cause error) e
 		return cause
 	}
 	return &BuildError{
-		Code:      codes.InputDemuxerMissing,
+		Code:      errcode.InputDemuxerMissing,
 		Operation: "open input",
 		Node:      demuxNodeName(input),
 		Reason:    "format " + quoteFormat(id) + " was detected but no demuxer is registered",
@@ -52,7 +52,7 @@ func outputFormatProbeError(output format.Output, index int, cause error) error 
 		return cause
 	}
 	return &BuildError{
-		Code:      codes.OutputFormatUnknown,
+		Code:      errcode.OutputFormatUnknown,
 		Operation: "open output",
 		Node:      muxNodeName(output, index),
 		Reason:    "output format could not be detected",
@@ -71,7 +71,7 @@ func outputMuxerMissingError(output format.Output, index int, id av.FormatID, ca
 		return cause
 	}
 	return &BuildError{
-		Code:      codes.OutputMuxerMissing,
+		Code:      errcode.OutputMuxerMissing,
 		Operation: "open output",
 		Node:      muxNodeName(output, index),
 		Reason:    "format " + quoteFormat(id) + " was selected but no muxer is registered",
@@ -90,7 +90,7 @@ func destinationFormatProbeError(node string, output format.Output, cause error)
 		return cause
 	}
 	return &BuildError{
-		Code:      codes.DestinationFormatUnknown,
+		Code:      errcode.DestinationFormatUnknown,
 		Operation: "open destination",
 		Node:      node,
 		Reason:    "destination format could not be detected",
@@ -109,7 +109,7 @@ func destinationMuxerMissingError(node string, output format.Output, id av.Forma
 		return cause
 	}
 	return &BuildError{
-		Code:      codes.DestinationMuxerMissing,
+		Code:      errcode.DestinationMuxerMissing,
 		Operation: "open destination",
 		Node:      node,
 		Reason:    "format " + quoteFormat(id) + " was selected for destination but no muxer is registered",

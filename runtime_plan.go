@@ -1,7 +1,7 @@
 package goav
 
 import (
-	"github.com/thesyncim/goav/codes"
+	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/pipeline"
 )
 
@@ -90,12 +90,12 @@ func (b *builder) planExplicitGraph(spec pipeline.Spec) (pipeline.Spec, error) {
 
 func explicitGraphMissingSourceError() error {
 	return &BuildError{
-		Code:      codes.ExplicitGraphSourceMissing,
+		Code:      errcode.ExplicitGraphSourceMissing,
 		Operation: "build explicit graph",
 		Reason:    "explicit graph has no source node",
 		Suggestions: []string{
 			"add at least one Source(...) before Stage(...) or Sink(...)",
-			"use goav.From(input).Audio()/Video()/codec.Copy() when you want recipe lowering instead of explicit graph wiring",
+			"use the goav.From(input) grammar (.Audio()/.Video(), .Copy(), .To(...)) when you want recipe lowering instead of explicit graph wiring",
 		},
 		Cause: ErrUnsupportedBuild,
 	}

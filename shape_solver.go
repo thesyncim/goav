@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	"github.com/thesyncim/goav/av"
-	"github.com/thesyncim/goav/codes"
+	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/filter"
 	"github.com/thesyncim/goav/plan"
 	"github.com/thesyncim/goav/shape"
@@ -484,7 +484,7 @@ func shapeSolverAdapterError(operation string, node string, index int, step Oper
 	}
 	if selection.cause == errShapeAdapterAmbiguous {
 		return &BuildError{
-			Code:      codes.ShapeAdapterAmbiguous,
+			Code:      errcode.ShapeAdapterAmbiguous,
 			Operation: operation,
 			Node:      node,
 			Reason: fmt.Sprintf("several registered filters can perform the %s conversion before %s: %s",
@@ -499,7 +499,7 @@ func shapeSolverAdapterError(operation string, node string, index int, step Oper
 		}
 	}
 	return &BuildError{
-		Code:      codes.ShapeAdapterMissing,
+		Code:      errcode.ShapeAdapterMissing,
 		Operation: operation,
 		Node:      node,
 		Reason: fmt.Sprintf("no registered filter can perform the %s conversion before %s",
@@ -519,7 +519,7 @@ func shapeSolverAdapterError(operation string, node string, index int, step Oper
 func shapeConversionRefusedError(operation string, node string, index int, step OperationSpec, allowed shape.Policy, conversion shapeConversionPlan, actual shape.Spec, expected shape.Spec) error {
 	missing := allowed.Missing(conversion.needed)
 	return &BuildError{
-		Code:      codes.ShapeConversionRefused,
+		Code:      errcode.ShapeConversionRefused,
 		Operation: operation,
 		Node:      node,
 		Reason: fmt.Sprintf("%s needs %s but the chain policy (%s) does not allow it",
@@ -586,7 +586,7 @@ func shapePreferenceAppliedDiagnostic(node string, pref shape.Spec, conversion s
 		effects = append(effects, "resolved the adapter choice")
 	}
 	return plan.Diagnostic{
-		Code:    string(codes.ShapePreferenceApplied),
+		Code:    string(errcode.ShapePreferenceApplied),
 		Node:    node,
 		Message: fmt.Sprintf("preference (%s) %s: %s", pref.String(), strings.Join(effects, " and "), conversion.detail),
 		Details: []string{
@@ -600,7 +600,7 @@ func shapePreferenceAppliedDiagnostic(node string, pref shape.Spec, conversion s
 // honor — soft by definition, the plain plan proceeds untouched.
 func shapePreferenceIgnoredDiagnostic(node string, pref shape.Spec, reason string) plan.Diagnostic {
 	return plan.Diagnostic{
-		Code:    string(codes.ShapePreferenceIgnored),
+		Code:    string(errcode.ShapePreferenceIgnored),
 		Node:    node,
 		Message: fmt.Sprintf("preference (%s) ignored: %s", pref.String(), reason),
 		Details: []string{"preference=" + pref.String()},
@@ -611,7 +611,7 @@ func shapePreferenceIgnoredDiagnostic(node string, pref shape.Spec, reason strin
 // "inserted resample 44.1kHz→48kHz before encode-opus (AllowResample)".
 func shapeConversionDiagnostic(node string, conversion shapeConversionPlan, step OperationSpec, actual shape.Spec, expected shape.Spec) plan.Diagnostic {
 	return plan.Diagnostic{
-		Code:    string(codes.ShapeConversionInserted),
+		Code:    string(errcode.ShapeConversionInserted),
 		Node:    node,
 		Message: fmt.Sprintf("inserted %s before %s (%s)", conversion.detail, operationSpecLabel(step), shapePolicyLabel(conversion.needed)),
 		Details: []string{

@@ -7,7 +7,7 @@ import (
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
-	"github.com/thesyncim/goav/codes"
+	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/plan"
 	"github.com/thesyncim/goav/shape"
@@ -18,7 +18,7 @@ func validateRecipeStreamSelector(operation string, node string, selector av.Str
 		return nil
 	}
 	return &BuildError{
-		Code:      codes.StreamSelectorInvalid,
+		Code:      errcode.StreamSelectorInvalid,
 		Operation: operation,
 		Node:      node,
 		Reason:    "stream index must be non-negative",
@@ -42,7 +42,7 @@ func chainStepAfterEncodeError(operation string, node string, step string, encod
 		return chainStepOnPacketCopyError(operation, node, step)
 	}
 	return &BuildError{
-		Code:      codes.StreamStepAfterEncode,
+		Code:      errcode.StreamStepAfterEncode,
 		Operation: operation,
 		Node:      node,
 		Reason:    "stream processing steps must be declared before the encoder",
@@ -64,7 +64,7 @@ func chainStepAfterEncodeError(operation string, node string, step string, encod
 // first, or keep the chain a pure packet copy.
 func chainStepOnPacketCopyError(operation string, node string, step string) error {
 	return &BuildError{
-		Code:      codes.OperationShapeMismatch,
+		Code:      errcode.OperationShapeMismatch,
 		Operation: operation,
 		Node:      node,
 		Reason:    step + " needs decoded frames, but .Copy() keeps the stream packet-encoded",
@@ -84,7 +84,7 @@ func chainStepOnPacketCopyError(operation string, node string, step string) erro
 
 func duplicateStreamEncodeError(operation string, node string, first codec.CodecSpec, second codec.CodecSpec) error {
 	return &BuildError{
-		Code:      codes.EncodeDuplicate,
+		Code:      errcode.EncodeDuplicate,
 		Operation: operation,
 		Node:      node,
 		Reason:    "stream recipes allow one terminal encoder",
@@ -253,7 +253,7 @@ func (b *jobStreamBuilder) ensureFrameSourceShapeOperation() {
 
 func frameSourceDecodeError(operation string, node string) error {
 	return &BuildError{
-		Code:      codes.SourceShapeMismatch,
+		Code:      errcode.SourceShapeMismatch,
 		Operation: operation,
 		Node:      node,
 		Reason:    "frame-domain custom sources are already decoded frames",
@@ -271,7 +271,7 @@ func frameSourceDecodeError(operation string, node string) error {
 
 func frameSourceCopyError(operation string, node string) error {
 	return &BuildError{
-		Code:      codes.SourceShapeMismatch,
+		Code:      errcode.SourceShapeMismatch,
 		Operation: operation,
 		Node:      node,
 		Reason:    "frame-domain custom sources cannot use packet copy",
@@ -359,7 +359,7 @@ func (b *jobStreamBuilder) Tap(tap TapRef) *jobStreamBuilder {
 	stream := b.current()
 	if tap.name == "" {
 		b.job.setErr(&BuildError{
-			Code:      codes.TapInvalid,
+			Code:      errcode.TapInvalid,
 			Operation: "build stream",
 			Node:      jobStreamName(stream),
 			Reason:    "tap name is empty",

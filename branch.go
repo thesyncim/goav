@@ -1,14 +1,12 @@
 package goav
 
 import (
-	"context"
 	"fmt"
-	"io"
 	"sync/atomic"
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
-	"github.com/thesyncim/goav/codes"
+	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/flow"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/plan"
@@ -25,52 +23,6 @@ type Destination struct {
 	spec destinationSpec
 }
 
-// DestinationProvider opens a custom destination behind a goav-owned
-// Destination handle.
-type DestinationProvider interface {
-	Name() string
-	Contract() DestinationContract
-	Open(context.Context, DestinationInfo) (DestinationWriter, error)
-}
-
-// DestinationWriter is the byte writer returned by custom byte destinations.
-type DestinationWriter interface {
-	io.Writer
-	Close() error
-}
-
-// TransactionalDestinationWriter may be returned by destinations that need an
-// explicit upload commit or abort boundary.
-type TransactionalDestinationWriter interface {
-	DestinationWriter
-	Commit(context.Context) error
-	Abort(context.Context) error
-}
-
-// DestinationContract declares what a destination can accept before it
-// opens: whether it consumes muxed bytes (ByteStream) or media messages, and
-// the formats, MIME types, protocol, and realtime/seek capabilities the
-// planner may rely on when selecting the output format.
-type DestinationContract struct {
-	ByteStream bool
-	Seekable   bool
-	Realtime   bool
-	Protocol   av.ProtocolID
-	Formats    []av.FormatID
-	MIMETypes  []string
-}
-
-// DestinationInfo describes the resolved output context passed to custom
-// destination open functions.
-type DestinationInfo struct {
-	Name     string
-	Format   av.FormatID
-	MIMEType string
-	Streams  []av.Stream
-	Metadata av.Metadata
-	Realtime bool
-}
-
 // DestinationOption configures a destination value (File, URI, Writer,
 // Custom, or Destination.With): Format pins the container, and the
 // direction-agnostic MediaOptions (Name, MIME, Metadata) satisfy it too. It
@@ -78,12 +30,6 @@ type DestinationInfo struct {
 type DestinationOption interface {
 	applyDestination(*destinationSpec)
 }
-
-// WriterOpenFunc opens the byte writer behind a goav.Writer destination once
-// goav has resolved the output format and streams (the DestinationInfo). A
-// returned writer that also implements TransactionalDestinationWriter gets
-// Commit after success, Abort after failure, Close exactly once either way.
-type WriterOpenFunc func(context.Context, DestinationInfo) (io.WriteCloser, error)
 
 type destinationBinding struct {
 	dest      destinationSpec
@@ -189,7 +135,25 @@ type branchSourceBinding struct {
 	streamDomain shape.MediaDomain
 }
 
+// branchSource is the anchor a branch hangs from: a TapRef names a stable
+// tap, and an expert graph handle (expert.GraphNode, expert.GraphOutlet)
+// names a graph node through its Route capability. The bound is structural —
+// From validates the anchor and refuses values that are neither.
 type branchSource interface {
+	// Name reports the anchor's name: the tap name or the graph node name.
+	Name() string
+}
+
+// graphRouteAnchor is the capability expert graph handles expose: the route
+// (node, policy, label) a branch anchored on them reads from. Asserted
+// structurally so the root never imports the expert package.
+type graphRouteAnchor interface {
+	Route() pipeline.Route
+}
+
+// tapAnchor is the sealed capability TapRef and the internal graph handles
+// implement directly.
+type tapAnchor interface {
 	branchSource() branchSourceBinding
 }
 
@@ -205,11 +169,19 @@ func (b *branchBuilder) From(source branchSource) *branchBuilder {
 	if b == nil {
 		return b
 	}
-	if source == nil {
+	switch anchor := source.(type) {
+	case tapAnchor:
+		b.spec.source = anchor.branchSource()
+	case graphRouteAnchor:
+		route := anchor.Route()
+		policy := route.Policy
+		if policy == "" {
+			policy = pipeline.RouteAll
+		}
+		b.spec.source = branchSourceBinding{from: route.From, policy: policy, label: route.Label}
+	default:
 		b.setErr(branchSourceInvalidError(firstNonEmpty(b.spec.name, "branch")))
-		return b
 	}
-	b.spec.source = source.branchSource()
 	return b
 }
 
@@ -402,7 +374,7 @@ func (b *branchBuilder) Tap(tap TapRef) *branchBuilder {
 	}
 	if tap.name == "" {
 		b.setErr(&BuildError{
-			Code:      codes.TapInvalid,
+			Code:      errcode.TapInvalid,
 			Operation: "build branch",
 			Node:      firstNonEmpty(b.spec.name, "branch"),
 			Reason:    "tap name is empty",
@@ -788,7 +760,7 @@ func chainStepsThroughTap(steps []chainStep, tap string) ([]chainStep, bool) {
 
 func branchCopyParentOperationError(node string) error {
 	return &BuildError{
-		Code:      codes.CopyBranchSourceInvalid,
+		Code:      errcode.CopyBranchSourceInvalid,
 		Operation: "build branches",
 		Node:      node,
 		Reason:    "packet-copy branches must start from a packet-domain stream point",
@@ -803,7 +775,7 @@ func branchCopyParentOperationError(node string) error {
 
 func branchEncodeParentOperationError(node string, encode codec.CodecSpec) error {
 	return &BuildError{
-		Code:      codes.EncodeBranchSourceInvalid,
+		Code:      errcode.EncodeBranchSourceInvalid,
 		Operation: "build branches",
 		Node:      node,
 		Reason:    "stream encoders are terminal for planned branches",
@@ -821,7 +793,7 @@ func branchEncodeParentOperationError(node string, encode codec.CodecSpec) error
 
 func plannedBranchNodeSourceError(name string, source string) error {
 	return &BuildError{
-		Code:      codes.BranchSourceInvalid,
+		Code:      errcode.BranchSourceInvalid,
 		Operation: "build branches",
 		Node:      firstNonEmpty(name, "branch"),
 		Reason:    "planned branches do not anchor from graph handles",
@@ -839,7 +811,7 @@ func plannedBranchNodeSourceError(name string, source string) error {
 
 func plannedBranchTapMissingError(stream string, branch string, tap string) error {
 	return &BuildError{
-		Code:      codes.BranchTapMissing,
+		Code:      errcode.BranchTapMissing,
 		Operation: "build branches",
 		Node:      firstNonEmpty(branch, "branch"),
 		Reason:    "branch tap is not declared on the parent stream",
@@ -858,7 +830,7 @@ func plannedBranchTapMissingError(stream string, branch string, tap string) erro
 
 func plannedBranchPostEncodeTapError(branch string, tap string) error {
 	return &BuildError{
-		Code:      codes.BranchTapDomainUnsupported,
+		Code:      errcode.BranchTapDomainUnsupported,
 		Operation: "build branches",
 		Node:      firstNonEmpty(branch, "branch"),
 		Reason:    "post-encode taps are runtime attachment anchors for planned branches",
@@ -876,7 +848,7 @@ func plannedBranchPostEncodeTapError(branch string, tap string) error {
 
 func duplicateBranchDecodeError(node string) error {
 	return &BuildError{
-		Code:      codes.BranchDecodeDuplicate,
+		Code:      errcode.BranchDecodeDuplicate,
 		Operation: "build branch",
 		Node:      node,
 		Reason:    "branch already decodes its input packets",
@@ -890,7 +862,7 @@ func duplicateBranchDecodeError(node string) error {
 
 func branchDecodeOrderError(node string) error {
 	return &BuildError{
-		Code:      codes.BranchDecodeOrderInvalid,
+		Code:      errcode.BranchDecodeOrderInvalid,
 		Operation: "build branch",
 		Node:      node,
 		Reason:    "decode must be the first branch operation",
@@ -904,7 +876,7 @@ func branchDecodeOrderError(node string) error {
 
 func branchDecodeDomainError(node string) error {
 	return &BuildError{
-		Code:      codes.BranchDecodeDomainMismatch,
+		Code:      errcode.BranchDecodeDomainMismatch,
 		Operation: "build branches",
 		Node:      node,
 		Reason:    "branch decoding requires a packet-domain stream point",
@@ -919,7 +891,7 @@ func branchDecodeDomainError(node string) error {
 
 func branchDecodeCopyError(node string) error {
 	return &BuildError{
-		Code:      codes.BranchDecodeCopyInvalid,
+		Code:      errcode.BranchDecodeCopyInvalid,
 		Operation: "build branch",
 		Node:      node,
 		Reason:    "a branch cannot decode packets and then copy the original packet payload",
@@ -934,7 +906,7 @@ func branchDecodeCopyError(node string) error {
 
 func branchPacketEncodeUnsupportedError(stream streamIntent, encode codec.CodecSpec) error {
 	return &BuildError{
-		Code:      codes.PacketBranchEncodeUnsupported,
+		Code:      errcode.PacketBranchEncodeUnsupported,
 		Operation: "build branches",
 		Node:      branchIntentName(stream),
 		Reason:    "packet-domain planned branches cannot encode without decoding first",
@@ -952,7 +924,7 @@ func branchPacketEncodeUnsupportedError(stream streamIntent, encode codec.CodecS
 
 func branchPacketTransformUnsupportedError(stream streamIntent) error {
 	return &BuildError{
-		Code:      codes.PacketBranchTransformUnsupported,
+		Code:      errcode.PacketBranchTransformUnsupported,
 		Operation: "build branches",
 		Node:      branchIntentName(stream),
 		Reason:    "packet-domain planned branches cannot resize or resample without decoding first",
@@ -999,7 +971,7 @@ func cloneDestinationSpec(dest destinationSpec) destinationSpec {
 
 func branchMissingError(node string) error {
 	return &BuildError{
-		Code:      codes.BranchMissing,
+		Code:      errcode.BranchMissing,
 		Operation: "build branches",
 		Node:      node,
 		Reason:    "Branches requires at least one encoded branch",
@@ -1013,7 +985,7 @@ func branchMissingError(node string) error {
 
 func nilBranchError() error {
 	return &BuildError{
-		Code:      codes.BranchInvalid,
+		Code:      errcode.BranchInvalid,
 		Operation: "build branch",
 		Reason:    "branch is nil",
 		Suggestions: []string{
@@ -1025,7 +997,7 @@ func nilBranchError() error {
 
 func branchDestinationMissingError(name string) error {
 	return &BuildError{
-		Code:      codes.DestinationMissing,
+		Code:      errcode.DestinationMissing,
 		Operation: "build branch",
 		Node:      firstNonEmpty(name, "branch"),
 		Reason:    "branch has no destination",
@@ -1051,7 +1023,7 @@ func jobDestinationInvalidError(name string, reason string) error {
 
 func destinationInvalidError(operation string, node string, reason string) error {
 	return &BuildError{
-		Code:      codes.DestinationInvalid,
+		Code:      errcode.DestinationInvalid,
 		Operation: operation,
 		Node:      node,
 		Reason:    reason,
@@ -1065,7 +1037,7 @@ func destinationInvalidError(operation string, node string, reason string) error
 
 func destinationNameMissingError(dest destinationSpec) error {
 	return &BuildError{
-		Code:      codes.DestinationInvalid,
+		Code:      errcode.DestinationInvalid,
 		Operation: "build destination",
 		Node:      dest.label("destination"),
 		Reason:    "destination name is empty",

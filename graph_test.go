@@ -34,7 +34,7 @@ func TestRuntimeGraphHandleRoutes(t *testing.T) {
 	left := &runtimeTestSink{name: "raw-left"}
 	right := &runtimeTestSink{name: "raw-right"}
 
-	graph := Expert(New()).Graph()
+	graph := expertGraph(New())
 	src := graph.Source("source", source)
 	dec := graph.Stage("decode", stage)
 	record := graph.Sink("record", left)
@@ -77,7 +77,7 @@ func TestRuntimeGraphHandleEventRoute(t *testing.T) {
 	stats := &runtimeTestSink{name: "stats"}
 	loss := &runtimeTestSink{name: "loss"}
 
-	graph := Expert(New()).Graph()
+	graph := expertGraph(New())
 	src := graph.Source("source", source)
 	statsNode := graph.Sink("stats", stats)
 	lossNode := graph.Sink("loss", loss)
@@ -105,7 +105,7 @@ func TestRuntimeGraphHandleEventRoute(t *testing.T) {
 }
 
 func TestRuntimeGraphHandlesRejectNilNode(t *testing.T) {
-	graph := Expert(New()).Graph()
+	graph := expertGraph(New())
 	graph.Source("source", nil)
 	if _, err := graph.Build(context.Background()); !errors.Is(err, ErrNilSource) {
 		t.Fatalf("err = %v, want ErrNilSource", err)
@@ -136,7 +136,7 @@ func TestTaskAttachBranchesAndStopsWhileDirectGraphRuns(t *testing.T) {
 	stage := &runtimeTestStage{name: "sample"}
 	late := &runtimeTestSink{name: "out"}
 
-	graph := Expert(New()).Graph()
+	graph := expertGraph(New())
 	src := graph.Source("source", source)
 	baseNode := graph.Sink("base", base)
 	graph.Connect(src.Out(), baseNode.In())
@@ -248,7 +248,7 @@ func TestTaskDetachClosesRuntimeBranches(t *testing.T) {
 	rightStage := &runtimeTestStage{name: "right-stage"}
 	rightSink := &runtimeTestSink{name: "right-sink"}
 
-	graph := Expert(New()).Graph()
+	graph := expertGraph(New())
 	src := graph.Source("source", source)
 	graph.Connect(src.Out(), graph.Sink("base", base).In())
 	task, err := graph.Build(ctx)
@@ -317,7 +317,7 @@ func TestTaskAttachRuntimeBranchGroup(t *testing.T) {
 	rightStage := &runtimeTestStage{name: "right-stage"}
 	rightSink := &runtimeTestSink{name: "right-sink"}
 
-	graph := Expert(New()).Graph()
+	graph := expertGraph(New())
 	src := graph.Source("source", source)
 	graph.Connect(src.Out(), graph.Sink("base", base).In())
 	builtTask, err := graph.Build(ctx)
@@ -379,7 +379,7 @@ func TestTaskAttachRuntimeBranchGroupCanUsePendingTap(t *testing.T) {
 	parentSink := &runtimeTestSink{name: "sampled"}
 	childSink := &runtimeTestSink{name: "shots"}
 
-	graph := Expert(New()).Graph()
+	graph := expertGraph(New())
 	src := graph.Source("source", source)
 	graph.Connect(src.Out(), graph.Sink("base", base).In())
 	builtTask, err := graph.Build(ctx)
@@ -530,8 +530,8 @@ func TestTaskAttachRuntimeBranchGroupRollsBackOnLaterFailure(t *testing.T) {
 	right := &runtimeTestSink{name: "right-sink"}
 
 	_, err := task.Attach(ctx,
-		Branch("left").From(GraphNode{name: "source"}).To(Sink(left)),
-		Branch("right").From(GraphNode{name: "source"}).To(Sink(right)),
+		Branch("left").From(graphNode{name: "source"}).To(Sink(left)),
+		Branch("right").From(graphNode{name: "source"}).To(Sink(right)),
 	)
 	if !errors.Is(err, errRuntimeRollbackConnect) {
 		t.Fatalf("err = %v, want rollback connect failure", err)
@@ -555,7 +555,7 @@ func TestTaskAttachRuntimeBranchGroupRollsBackOnLaterFailure(t *testing.T) {
 
 func TestTaskAttachRuntimeBranchGroupSharesSinkDestination(t *testing.T) {
 	ctx := context.Background()
-	graph := Expert(New()).Graph()
+	graph := expertGraph(New())
 	src := graph.Source("source", &runtimeTestSource{name: "source"})
 	graph.Connect(src.Out(), graph.Sink("base", &runtimeTestSink{name: "base"}).In())
 	task, err := graph.Build(ctx)
@@ -611,7 +611,7 @@ func TestTaskAttachRuntimeBranchGroupSharesSinkDestination(t *testing.T) {
 
 func TestTaskAttachRuntimeBranchGroupRejectsDuplicateSinkDestinationNames(t *testing.T) {
 	ctx := context.Background()
-	graph := Expert(New()).Graph()
+	graph := expertGraph(New())
 	src := graph.Source("source", &runtimeTestSource{name: "source"})
 	graph.Connect(src.Out(), graph.Sink("base", &runtimeTestSink{name: "base"}).In())
 	task, err := graph.Build(ctx)
@@ -646,7 +646,7 @@ func TestTaskAttachRuntimeBranchGroupRejectsDuplicateSinkDestinationNames(t *tes
 
 func TestTaskAttachRuntimeBranchGroupRejectsDuplicateMuxDestinations(t *testing.T) {
 	ctx := context.Background()
-	graph := Expert(New()).Graph()
+	graph := expertGraph(New())
 	src := graph.Source("source", &runtimeTestSource{name: "source"})
 	graph.Connect(src.Out(), graph.Sink("base", &runtimeTestSink{name: "base"}).In())
 	task, err := graph.Build(ctx)
@@ -690,7 +690,7 @@ func TestTaskAttachRuntimeBranchGroupSharesMuxDestination(t *testing.T) {
 	}
 	audioBase := &runtimeTestSink{name: "audio-base"}
 	videoBase := &runtimeTestSink{name: "video-base"}
-	graph := Expert(New(formats)).Graph()
+	graph := expertGraph(New(formats))
 	audioSource := graph.Source("audio-source", &runtimeTestSource{name: "audio-source", message: pipeline.Message{Kind: pipeline.MessagePacket, Packet: &audioPacket}})
 	videoSource := graph.Source("video-source", &runtimeTestSource{name: "video-source", message: pipeline.Message{Kind: pipeline.MessagePacket, Packet: &videoPacket}})
 	graph.Connect(audioSource.Out(), graph.Sink("audio-base", audioBase).In())
@@ -777,7 +777,7 @@ func TestTaskAttachRuntimeBranchGroupSharesMuxDestination(t *testing.T) {
 
 func TestTaskAttachRuntimeBranchGroupRequiresBranch(t *testing.T) {
 	ctx := context.Background()
-	graph := Expert(New()).Graph()
+	graph := expertGraph(New())
 	src := graph.Source("source", &runtimeTestSource{name: "source"})
 	graph.Connect(src.Out(), graph.Sink("base", &runtimeTestSink{name: "base"}).In())
 	task, err := graph.Build(ctx)
@@ -798,7 +798,7 @@ func TestTaskAttachRuntimeBranchGroupRequiresBranch(t *testing.T) {
 }
 
 func TestTaskCloseStopsRuntimeAttachments(t *testing.T) {
-	graph := Expert(New()).Graph()
+	graph := expertGraph(New())
 	source := graph.Source("source", &runtimeTestSource{name: "source"})
 	graph.Connect(source.Out(), graph.Sink("base", &runtimeTestSink{name: "base"}).In())
 	task, err := graph.Build(context.Background())
@@ -834,7 +834,7 @@ func TestTaskAttachRuntimeBranchExposesNestedTap(t *testing.T) {
 	parentSink := &runtimeTestSink{name: "sampled"}
 	childSink := &runtimeTestSink{name: "shots"}
 
-	graph := Expert(New()).Graph()
+	graph := expertGraph(New())
 	src := graph.Source("source", source)
 	graph.Connect(src.Out(), graph.Sink("base", base).In())
 	task, err := graph.Build(ctx)
@@ -886,7 +886,7 @@ func TestTaskAttachRuntimeBranchExposesNestedTap(t *testing.T) {
 
 func TestTaskAttachRejectsDuplicateRuntimeTap(t *testing.T) {
 	ctx := context.Background()
-	graph := Expert(New()).Graph()
+	graph := expertGraph(New())
 	src := graph.Source("source", &runtimeTestSource{name: "source"})
 	graph.Connect(src.Out(), graph.Sink("base", &runtimeTestSink{name: "base"}).In())
 	task, err := graph.Build(ctx)
@@ -940,7 +940,7 @@ func TestTaskAttachRuntimeResizeBranchRunsFromFrameTap(t *testing.T) {
 	base := &runtimeTestSink{name: "base"}
 	resized := &runtimeTestSink{name: "resized"}
 
-	graph := Expert(New(filters)).Graph()
+	graph := expertGraph(New(filters))
 	src := graph.Source("source", source)
 	graph.Connect(src.Out(), graph.Sink("base", base).In())
 	mediaTask, err := graph.Build(ctx)
@@ -1007,7 +1007,7 @@ func TestTaskAttachBufferedBranchAfterRuntimeResizeTapWhileRunning(t *testing.T)
 	thumbs := &runtimeTestSink{name: "thumbs"}
 	inspect := &runtimeTestSink{name: "inspect"}
 
-	graph := Expert(New(filters, WithBufferPolicy(pipeline.BufferPolicy{Capacity: 2}))).Graph()
+	graph := expertGraph(New(filters, WithBufferPolicy(pipeline.BufferPolicy{Capacity: 2})))
 	src := graph.Source("source", source)
 	graph.Connect(src.Out(), graph.Sink("base", base).In())
 	mediaTask, err := graph.Build(ctx)
@@ -1122,7 +1122,7 @@ func TestTaskDetachBufferedRuntimeResizeTapSubtreeStopsFutureMessages(t *testing
 	thumbs := newRuntimeObservedSink("thumbs", 1)
 	inspect := newRuntimeObservedSink("inspect", 1)
 
-	graph := Expert(New(filters, WithBufferPolicy(pipeline.BufferPolicy{Capacity: 2}))).Graph()
+	graph := expertGraph(New(filters, WithBufferPolicy(pipeline.BufferPolicy{Capacity: 2})))
 	src := graph.Source("source", source)
 	graph.Connect(src.Out(), graph.Sink("base", base).In())
 	mediaTask, err := graph.Build(ctx)
@@ -1259,7 +1259,7 @@ func TestTaskDetachBufferedRuntimeResampleTapSubtreeStopsFutureMessages(t *testi
 	voice := newRuntimeObservedSink("voice", 1)
 	monitor := newRuntimeObservedSink("monitor", 1)
 
-	graph := Expert(New(filters, WithBufferPolicy(pipeline.BufferPolicy{Capacity: 2}))).Graph()
+	graph := expertGraph(New(filters, WithBufferPolicy(pipeline.BufferPolicy{Capacity: 2})))
 	src := graph.Source("source", source)
 	graph.Connect(src.Out(), graph.Sink("base", base).In())
 	mediaTask, err := graph.Build(ctx)
@@ -1379,7 +1379,7 @@ func TestTaskAttachRejectsDuplicateTapAfterRuntimeFilterOpenAndClosesFilter(t *t
 			Audio:    &av.AudioFrame{SampleRate: 48000, Channels: codec.Stereo, SampleFormat: av.SampleFormatS16},
 		}},
 	}
-	graph := Expert(New(filters)).Graph()
+	graph := expertGraph(New(filters))
 	src := graph.Source("source", source)
 	graph.Connect(src.Out(), graph.Sink("base", &runtimeTestSink{name: "base"}).In())
 	mediaTask, err := graph.Build(ctx)
@@ -1701,7 +1701,7 @@ func TestTaskAttachAfterCloseClosesPreparedRuntimeComponents(t *testing.T) {
 		withTestCodecs(testCodecEncoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, encoderFactory)),
 		withTestFormats(testFormatMuxer(av.FormatOgg, muxers)),
 	)
-	graph := Expert(rt).Graph()
+	graph := expertGraph(rt)
 	src := graph.Source("source", &runtimeTestSource{name: "source"})
 	graph.Connect(src.Out(), graph.Sink("base", &runtimeTestSink{name: "base"}).In())
 	builtTask, err := graph.Build(ctx)
@@ -1787,7 +1787,7 @@ func TestTaskAttachClosesPreparedComponentsWhenRuntimeNodeNameExists(t *testing.
 		withTestCodecs(testCodecEncoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, encoderFactory)),
 		withTestFormats(testFormatMuxer(av.FormatOgg, muxers)),
 	)
-	graph := Expert(rt).Graph()
+	graph := expertGraph(rt)
 	graph.Source("source", &runtimeTestSource{name: "source"})
 	graph.Stage("archive/archive.ogg", &runtimeTestStage{name: "existing-target"})
 	builtTask, err := graph.Build(ctx)
@@ -1856,14 +1856,14 @@ func TestTaskAttachClosesPreparedComponentsWhenRuntimeNodeNameExists(t *testing.
 }
 
 func TestTaskAttachRejectsUnknownAnchor(t *testing.T) {
-	graph := Expert(New()).Graph()
+	graph := expertGraph(New())
 	graph.Source("source", &runtimeTestSource{name: "source"})
 	graph.Sink("sink", &runtimeTestSink{name: "sink"})
 	task, err := graph.Build(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = task.Attach(context.Background(), Branch("late").From(GraphNode{name: "missing"}).To(Sink(&runtimeTestSink{name: "late"})))
+	_, err = task.Attach(context.Background(), Branch("late").From(graphNode{name: "missing"}).To(Sink(&runtimeTestSink{name: "late"})))
 	var buildErr *BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "runtime_branch_anchor_missing" || !errors.Is(err, pipeline.ErrUnknownNode) {
 		t.Fatalf("err = %v, want runtime_branch_anchor_missing wrapping ErrUnknownNode", err)
@@ -1881,7 +1881,7 @@ func TestTaskAttachBranchesWhileBufferedGraphRuns(t *testing.T) {
 	}
 	base := &runtimeTestSink{name: "sink"}
 	late := &runtimeTestSink{name: "late"}
-	graph := Expert(New(WithBufferPolicy(pipeline.BufferPolicy{Capacity: 1}))).Graph()
+	graph := expertGraph(New(WithBufferPolicy(pipeline.BufferPolicy{Capacity: 1})))
 	src := graph.Source("source", source)
 	sink := graph.Sink("sink", base)
 	graph.Connect(src.Out(), sink.In())
@@ -1945,7 +1945,7 @@ func TestTaskDetachBufferedBranchStopsFutureMessagesAndKeepsStats(t *testing.T) 
 	base := newRuntimeObservedSink("base", 3)
 	late := newRuntimeObservedSink("late", 2)
 
-	graph := Expert(New(WithBufferPolicy(pipeline.BufferPolicy{Capacity: 2, CopyPacketBytes: 1}))).Graph()
+	graph := expertGraph(New(WithBufferPolicy(pipeline.BufferPolicy{Capacity: 2, CopyPacketBytes: 1})))
 	src := graph.Source("source", source)
 	graph.Connect(src.Out(), graph.Sink("base", base).In())
 	task, err := graph.Build(ctx)
@@ -2026,7 +2026,7 @@ func TestTaskAttachDetachBufferedBranchStress(t *testing.T) {
 	}
 	base := newRuntimeObservedSink("base", 1)
 
-	graph := Expert(New(WithBufferPolicy(pipeline.BufferPolicy{Capacity: 2, Drop: pipeline.DropBlock}))).Graph()
+	graph := expertGraph(New(WithBufferPolicy(pipeline.BufferPolicy{Capacity: 2, Drop: pipeline.DropBlock})))
 	src := graph.Source("source", source)
 	graph.Connect(src.Out(), graph.Sink("base", base).In())
 	task, err := graph.Build(ctx)
@@ -2091,7 +2091,7 @@ func TestTaskAttachBufferedPacketCopyMuxBranchWhileRunning(t *testing.T) {
 		msg:    pipeline.Message{Kind: pipeline.MessagePacket, Packet: &packet},
 	}
 	base := &runtimeTestSink{name: "base"}
-	graph := Expert(New(formats, WithBufferPolicy(pipeline.BufferPolicy{Capacity: 2}))).Graph()
+	graph := expertGraph(New(formats, WithBufferPolicy(pipeline.BufferPolicy{Capacity: 2})))
 	src := graph.Source("source", source)
 	graph.Connect(src.Out(), graph.Sink("base", base).In())
 	builtTask, err := graph.Build(ctx)
@@ -2174,7 +2174,7 @@ func TestTaskAttachBufferedCopyBranchPublishesPacketTapWhileRunning(t *testing.T
 	}
 	base := &runtimeTestSink{name: "base"}
 	copied := &runtimeTestSink{name: "copied"}
-	graph := Expert(New(formats, WithBufferPolicy(pipeline.BufferPolicy{Capacity: 2}))).Graph()
+	graph := expertGraph(New(formats, WithBufferPolicy(pipeline.BufferPolicy{Capacity: 2})))
 	src := graph.Source("source", source)
 	graph.Connect(src.Out(), graph.Sink("base", base).In())
 	builtTask, err := graph.Build(ctx)
@@ -2279,7 +2279,7 @@ func TestTaskAttachBufferedEncodeMuxBranchWhileRunning(t *testing.T) {
 		msg:    pipeline.Message{Kind: pipeline.MessageFrame, Frame: &frame},
 	}
 	base := &runtimeTestSink{name: "base"}
-	graph := Expert(New(formats, codecs, WithBufferPolicy(pipeline.BufferPolicy{Capacity: 2}))).Graph()
+	graph := expertGraph(New(formats, codecs, WithBufferPolicy(pipeline.BufferPolicy{Capacity: 2})))
 	src := graph.Source("source", source)
 	graph.Connect(src.Out(), graph.Sink("base", base).In())
 	builtTask, err := graph.Build(ctx)
@@ -2378,7 +2378,7 @@ func TestTaskAttachBufferedFlowEncodeMuxBranchWhileRunning(t *testing.T) {
 		msg:    pipeline.Message{Kind: pipeline.MessageFrame, Frame: &frame},
 	}
 	base := &runtimeTestSink{name: "base"}
-	graph := Expert(New(formats, codecs, WithBufferPolicy(pipeline.BufferPolicy{Capacity: 2}))).Graph()
+	graph := expertGraph(New(formats, codecs, WithBufferPolicy(pipeline.BufferPolicy{Capacity: 2})))
 	src := graph.Source("source", source)
 	graph.Connect(src.Out(), graph.Sink("base", base).In())
 	builtTask, err := graph.Build(ctx)
@@ -2477,7 +2477,7 @@ func TestTaskAttachBufferedBranchPublishesPostEncodeTapWhileRunning(t *testing.T
 	}
 	base := &runtimeTestSink{name: "base"}
 	encoded := &runtimeTestSink{name: "encoded"}
-	graph := Expert(New(formats, codecs, WithBufferPolicy(pipeline.BufferPolicy{Capacity: 2}))).Graph()
+	graph := expertGraph(New(formats, codecs, WithBufferPolicy(pipeline.BufferPolicy{Capacity: 2})))
 	src := graph.Source("source", source)
 	graph.Connect(src.Out(), graph.Sink("base", base).In())
 	builtTask, err := graph.Build(ctx)
@@ -2592,7 +2592,7 @@ func TestTaskDetachBufferedPostEncodeTapSubtreeStopsFutureMessages(t *testing.T)
 	encoded := newRuntimeObservedSink("encoded", 1)
 	copied := newRuntimeObservedSink("copied", 1)
 
-	graph := Expert(New(codecs, WithBufferPolicy(pipeline.BufferPolicy{Capacity: 2}))).Graph()
+	graph := expertGraph(New(codecs, WithBufferPolicy(pipeline.BufferPolicy{Capacity: 2})))
 	src := graph.Source("source", source)
 	graph.Connect(src.Out(), graph.Sink("base", base).In())
 	builtTask, err := graph.Build(ctx)
@@ -2715,7 +2715,7 @@ func TestTaskDetachBufferedCustomStageTapSubtreeStopsFutureMessages(t *testing.T
 	dependent := newRuntimeObservedSink("dependent", 1)
 	meter := &runtimeTestStage{name: "meter"}
 
-	graph := Expert(New(WithBufferPolicy(pipeline.BufferPolicy{Capacity: 2}))).Graph()
+	graph := expertGraph(New(WithBufferPolicy(pipeline.BufferPolicy{Capacity: 2})))
 	src := graph.Source("source", source)
 	graph.Connect(src.Out(), graph.Sink("base", base).In())
 	builtTask, err := graph.Build(ctx)
@@ -2812,7 +2812,7 @@ func TestRuntimeBranchTapAnchorsUseStableNames(t *testing.T) {
 	if audio.source.tap != "audio.decoded" || audio.source.from != "" {
 		t.Fatalf("audio anchor tap=%q from=%q, want tap only", audio.source.tap, audio.source.from)
 	}
-	expert := Branch("expert").From(GraphNode{name: "decode-audio"}).To(Sink(&runtimeTestSink{name: "expert"}))
+	expert := Branch("expert").From(graphNode{name: "decode-audio"}).To(Sink(&runtimeTestSink{name: "expert"}))
 	if expert.source.from != "decode-audio" || expert.source.tap != "" {
 		t.Fatalf("expert anchor tap=%q from=%q, want node only", expert.source.tap, expert.source.from)
 	}

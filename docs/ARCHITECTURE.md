@@ -80,7 +80,7 @@ plan keeps concrete destination openers cold until stream list, format, MIME,
 metadata, and realtime policy are known.
 
 The handle-based graph builder remains available only as the explicit advanced
-layer through `goav.Expert(runtime).Graph()`; it is not on the public `Runtime`
+layer through `expert.Graph(runtime)`; it is not on the public `Runtime`
 interface. Recipe `Explain(ctx)` returns structured workflow-report data,
 branch operations, planner decisions, and the same `pipeline.Spec`; rendering
 lives outside core in `graphrender`. Branch operation reports mark shared
@@ -133,11 +133,14 @@ lower through the same filter registry as branch transforms.
 
 ## Package layering
 
-What the compiler enforces today: the sibling packages (`av`, `codes`, `plan`,
-`shape`, `flow`, `pipeline`, `codec`, `format`, `filter`, `container`,
-`lifecycle`, `snapshot`, `rtpav`, `webrtcav`, `adapters`, `graphrender`) are
-leaves — none of them imports the root `goav` package. Root depends on leaves,
-never the reverse.
+What the compiler enforces today: the sibling packages (`av`, `errcode`, `plan`,
+`shape`, `flow`, `provider`, `pipeline`, `codec`, `format`, `filter`,
+`container`, `lifecycle`, `snapshot`, `rtpav`, `webrtcav`, `adapters`,
+`graphrender`) are leaves — none of them imports the root `goav` package. Root
+depends on leaves, never the reverse. The one exception is `expert`: it sits
+ABOVE root (it imports `goav` to return `Task`), and root reaches back only
+through structural interfaces (`ExpertGraph() any`, the branch-anchor `Route`
+capability) — never an import.
 
 What is convention only: inside the root package, the grammar → plan → build
 boundaries (recipe/branch grammar, `mediaPlan`/`WorkPlan` planning,

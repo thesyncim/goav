@@ -27,7 +27,7 @@ Operations are not a separate noun: they are methods on the chain —
 `.Decode()`, `.Copy()`, `.Resize()`, `.Resample()`, `.Do(stage)`, `.Encode(codec)`.
 
 Every near-miss name is a deliberate distinction — `Input` vs `Source` vs
-`SourceProvider`, `Tap` vs `FrameTap`/`PacketTap`, `Events` vs `Watch` — and
+`provider.Source`, `Tap` vs `FrameTap`/`PacketTap`, `Events` vs `Watch` — and
 the full naming contract lives in [docs/API_SURFACE.md](docs/API_SURFACE.md)
 alongside the pinned surface. Stability tiers and the road to v1 are
 [docs/ROADMAP.md](docs/ROADMAP.md); how goav relates to GStreamer, stated
@@ -158,8 +158,8 @@ packet-domain point, or end in a sink. `Shape(...)` annotates the current media
 point; it is not an escape hatch around operation contracts.
 
 That structure is the contract for EVERY goav error, not just shape refusals:
-each `BuildError` carries a typed `codes.Code` from the catalog in the
-`codes` package, the failing operation and node, machine-readable details, and at
+each `BuildError` carries a typed `errcode.Code` from the catalog in the
+`errcode` package, the failing operation and node, machine-readable details, and at
 least one concrete fix when the refusal is user-fixable. Match codes with
 `errors.As` and sentinels (`goav.ErrUnsupportedBuild`, ...) with `errors.Is` —
 see [docs/ERRORS.md](docs/ERRORS.md).
@@ -523,7 +523,9 @@ implementations of the one source seam, and an SRT, NDI, or proprietary ingest
 package plugs in the same way — with zero goav changes:
 
 ```go
-type SourceProvider interface {
+package provider
+
+type Source interface {
     // OpenSource opens the running source and resolves the streams it carries.
     OpenSource(ctx context.Context) (pipeline.Source, []av.Stream, error)
     // SourceShape declares the media facts the planner needs before opening.
@@ -547,8 +549,8 @@ One decision path covers every byte destination:
 - `goav.URI(uri)` — a registered format adapter opens the destination.
 - `goav.Writer(name, open)` — goav opens the writer on demand: the callback
   runs after the format and streams are selected, so uploaders see the final
-  destination metadata (`goav.DestinationInfo`). The writer closes exactly
-  once. Return a `goav.TransactionalDestinationWriter` when the upload has an
+  destination metadata (`provider.Info`). The writer closes exactly
+  once. Return a `provider.TransactionalWriter` when the upload has an
   explicit commit boundary, such as a multipart object-store upload: it
   commits after successful runs or drained detach and aborts on failure.
 - `goav.Custom(name, provider)` — a package owns a reusable destination
@@ -564,8 +566,8 @@ them.
 
 ```go
 s3 := goav.Writer("s3://bucket/call.ivf",
-    func(ctx context.Context, info goav.DestinationInfo) (io.WriteCloser, error) {
-        // The returned writer implements goav.TransactionalDestinationWriter,
+    func(ctx context.Context, info provider.Info) (io.WriteCloser, error) {
+        // The returned writer implements provider.TransactionalWriter,
         // so the upload commits on success and aborts on failure.
         return uploader.Create(ctx, info.Name,
             uploader.ContentType(info.MIMEType),
@@ -980,7 +982,7 @@ Implemented now:
   with typed task/branch/destination lifecycle states and scoped stats.
 - The branch buffer ownership contract: `CopyIfMutable` by default, with
   `CopyAlways` and safe-only `CopyNever` opt-ins.
-- The `SourceProvider` transport seam, with Pion-based RTP/WebRTC providers;
+- The `provider.Source` transport seam, with Pion-based RTP/WebRTC providers;
   pure-Go adapters for IVF, Annex B, Matroska/WebM, Opus, VP8/VP9, AV1, H264,
   resize, and resample.
 - Per-runtime registries with layered `Default(opts...)` and direct

@@ -30,6 +30,7 @@ import (
 	"github.com/thesyncim/goav/filter"
 	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/pipeline"
+	"github.com/thesyncim/goav/provider"
 	"github.com/thesyncim/goav/shape"
 )
 
@@ -480,7 +481,7 @@ func (f *toyUpsampler) Close() error { return nil }
 
 // --- toy source provider ----------------------------------------------------
 //
-// A goav.SourceProvider with the optional Name/Detail/DecodeBounds
+// A provider.Source with the optional Name/Detail/DecodeBounds
 // capabilities: it declares its shape up front and opens a pipeline.Source
 // that announces its stream, pushes toy-codec packets, and ends with EOS.
 
@@ -573,7 +574,7 @@ func (s *toyProviderSource) Close() error { return nil }
 
 // --- toy transactional destination ------------------------------------------
 //
-// A goav.DestinationProvider whose writer stages bytes and publishes them
+// A provider.Destination whose writer stages bytes and publishes them
 // only on Commit — the object-store upload pattern. Abort discards.
 
 type toyDestination struct {
@@ -581,19 +582,19 @@ type toyDestination struct {
 	committed []byte
 	commits   int
 	aborts    int
-	info      goav.DestinationInfo
+	info      provider.Info
 }
 
 func (d *toyDestination) Name() string { return "toydest" }
 
-func (d *toyDestination) Contract() goav.DestinationContract {
-	return goav.DestinationContract{
+func (d *toyDestination) Contract() provider.Contract {
+	return provider.Contract{
 		ByteStream: true,
 		Formats:    []av.FormatID{toyFormatID},
 	}
 }
 
-func (d *toyDestination) Open(_ context.Context, info goav.DestinationInfo) (goav.DestinationWriter, error) {
+func (d *toyDestination) Open(_ context.Context, info provider.Info) (provider.Writer, error) {
 	d.mu.Lock()
 	d.info = info
 	d.mu.Unlock()
@@ -624,9 +625,9 @@ func (w *toyDestinationWriter) Abort(context.Context) error {
 	return nil
 }
 
-var _ goav.SourceProvider = (*toyProvider)(nil)
-var _ goav.DestinationProvider = (*toyDestination)(nil)
-var _ goav.TransactionalDestinationWriter = (*toyDestinationWriter)(nil)
+var _ provider.Source = (*toyProvider)(nil)
+var _ provider.Destination = (*toyDestination)(nil)
+var _ provider.TransactionalWriter = (*toyDestinationWriter)(nil)
 var _ codec.EncoderFactory = toyCodecFactory{}
 var _ codec.DecoderFactory = toyCodecFactory{}
 var _ format.MuxerFactory = toyContainerFactory{}

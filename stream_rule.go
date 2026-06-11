@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	"github.com/thesyncim/goav/av"
-	"github.com/thesyncim/goav/codes"
+	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/plan"
 	"github.com/thesyncim/goav/shape"
@@ -226,7 +226,7 @@ func explainStreamRules(rules []streamRule) []plan.Decision {
 			destinations = append(destinations, branchDestinationNames(rules[i].branches[j].destinations)...)
 		}
 		out = append(out, plan.Decision{
-			Code:   string(codes.StreamRule),
+			Code:   string(errcode.StreamRule),
 			Branch: strings.Join(names, "+"),
 			Message: fmt.Sprintf("on discovered stream (%s): attach %s to %s per matched stream",
 				rules[i].match.description(), strings.Join(names, ", "), strings.Join(destinations, ", ")),
@@ -254,7 +254,7 @@ func (s InputSpec) sourceEventDomain() shape.MediaDomain {
 
 func streamRuleInvalidError(node string, reason string, suggestion string) error {
 	return &BuildError{
-		Code:      codes.StreamRuleInvalid,
+		Code:      errcode.StreamRuleInvalid,
 		Operation: "build stream rule",
 		Node:      firstNonEmpty(node, "rule"),
 		Reason:    reason,
