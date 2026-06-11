@@ -2,7 +2,10 @@ package launchctl
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -12,6 +15,7 @@ import (
 
 	goav "github.com/thesyncim/goav"
 	"github.com/thesyncim/goav/av"
+	"github.com/thesyncim/goav/goavtest"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/plan"
 	"github.com/thesyncim/goav/shape"
@@ -146,6 +150,123 @@ func TestExecuteRawEventCallsTaskControlDeliver(t *testing.T) {
 	}
 }
 
+func TestRequestFromCLIUsesCanonicalControlProtocol(t *testing.T) {
+	request, err := RequestFromCLI([]string{"control", "bitrate", "stream=video", "value=1200k", "at=main_encoded"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if request.Op != "control" || request.Verb != "bitrate" ||
+		request.Args["stream"] != "video" || request.Args["value"] != "1200k" || request.Args["at"] != "main_encoded" {
+		t.Fatalf("request = %+v", request)
+	}
+
+	raw, err := RequestFromCLI([]string{"control", "--json", `{"type":"keyframe","stream_id":"video"}`})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw.Op != "control_raw" || string(raw.Control) != `{"type":"keyframe","stream_id":"video"}` {
+		t.Fatalf("raw request = %+v", raw)
+	}
+}
+
+func TestExecuteRequestAppliesControlRequest(t *testing.T) {
+	task := newFakeTask()
+	response := ExecuteRequest(context.Background(), task, Request{
+		Op:   "control",
+		Verb: "bitrate",
+		Args: map[string]string{"stream": "video", "value": "1200k", "at": "main_encoded"},
+	})
+	if !response.OK || response.Error != nil {
+		t.Fatalf("response = %+v", response)
+	}
+	if len(task.controls) != 1 || task.controls[0].Type != goav.ControlBitrate || task.controls[0].Bitrate != 1_200_000 {
+		t.Fatalf("controls = %+v", task.controls)
+	}
+}
+
+func TestServeUnixHandlesOneControlRequest(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	task := newFakeTask()
+	socket := filepath.Join(os.TempDir(), fmt.Sprintf("goavctl-%d.sock", time.Now().UnixNano()))
+	t.Cleanup(func() { _ = os.Remove(socket) })
+	errC := make(chan error, 1)
+	go func() {
+		errC <- ServeUnix(ctx, task, "unix://"+socket)
+	}()
+	waitForSocket(t, socket, errC)
+
+	conn, err := net.Dial("unix", socket)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := Request{
+		Op:    "control",
+		Verb:  "deliver",
+		Event: json.RawMessage(`{"type":"vendor.force_idr","stream_id":"video"}`),
+		Args:  map[string]string{"at": "raw_video"},
+	}
+	if err := json.NewEncoder(conn).Encode(request); err != nil {
+		t.Fatal(err)
+	}
+	var response Response
+	if err := json.NewDecoder(conn).Decode(&response); err != nil {
+		t.Fatal(err)
+	}
+	_ = conn.Close()
+	if !response.OK || response.Error != nil {
+		t.Fatalf("response = %+v", response)
+	}
+	if len(task.controls) != 1 || task.controls[0].Type != goav.ControlEvent || task.controls[0].Tap != "raw_video" {
+		t.Fatalf("controls = %+v", task.controls)
+	}
+	cancel()
+	if err := <-errC; err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestExecuteControlAgainstRealControllableTestSource(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	source := goavtest.NewTestSource("fixture",
+		shape.Packet(av.MediaAudio, av.CodecOpus, shape.Audio(48000, 1, av.SampleFormatS16)),
+	)
+	task, err := goav.From(source.Input()).
+		Audio().Copy().
+		To(goavtest.NewCollector().Sink()).
+		UseRuntime(goavtest.Runtime()).
+		Build(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer task.Close()
+
+	if _, err := Execute(ctx, task, []string{"control", "rate", "value=0.5", "source=fixture"}); err != nil {
+		t.Fatal(err)
+	}
+	event, err := source.WaitControl(ctx, av.EventRate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rate, ok := av.EventRateValue(&event); !ok || rate != 0.5 {
+		t.Fatalf("rate event = %+v, parsed=%v ok=%v", event, rate, ok)
+	}
+
+	if _, err := Execute(ctx, task, []string{"control", "seek", "position=12.5s", "source=fixture"}); err != nil {
+		t.Fatal(err)
+	}
+	event, err = source.WaitControl(ctx, av.EventSeek)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if position, ok := event.Timestamp.ToDuration(); !ok || position != 12500*time.Millisecond {
+		t.Fatalf("seek event = %+v, parsed=%v ok=%v", event, position, ok)
+	}
+}
+
 func TestUnknownTapErrorListsAvailableTaps(t *testing.T) {
 	task := newFakeTask()
 	_, err := Execute(context.Background(), task, []string{"control", "deliver", "type=vendor.force_idr", "at=raw_vdieo"})
@@ -266,6 +387,25 @@ func detailsContain(details []string, fragment string) bool {
 		}
 	}
 	return false
+}
+
+func waitForSocket(t *testing.T, socket string, errC <-chan error) {
+	t.Helper()
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		if _, err := os.Stat(socket); err == nil {
+			return
+		}
+		select {
+		case err := <-errC:
+			t.Fatalf("server stopped before creating socket: %v", err)
+		default:
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("socket %s was not created", socket)
+		}
+		time.Sleep(time.Millisecond)
+	}
 }
 
 type fakeTask struct {

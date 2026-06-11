@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 
 	goav "github.com/thesyncim/goav"
@@ -38,6 +39,54 @@ func SuccessResponse(result any) Response {
 
 func ErrorResponse(operation string, err error) Response {
 	return Response{OK: false, Error: structuredError(operation, err)}
+}
+
+// ExecuteRequest applies a decoded socket request to a Task and wraps the
+// result in the standard response envelope.
+func ExecuteRequest(ctx context.Context, task goav.Task, request Request) Response {
+	response, err := executeRequest(ctx, task, request)
+	if err != nil {
+		return ErrorResponse(request.Op, err)
+	}
+	return SuccessResponse(response.Result)
+}
+
+func executeRequest(ctx context.Context, task goav.Task, request Request) (ControlResponse, error) {
+	switch request.Op {
+	case "control_raw":
+		return executeRawControl(ctx, task, request.Control)
+	case "control":
+		if request.Verb == "deliver" && len(request.Event) != 0 {
+			return executeRawEvent(ctx, task, request.Event, argsFromMap(request.Args))
+		}
+		if request.Verb == "" {
+			return ControlResponse{}, commandError("missing_command", "control", "", "missing control verb", nil, []string{"use verb=bitrate"}, nil)
+		}
+		return executeControl(ctx, task, append([]string{request.Verb}, argsFromMap(request.Args)...))
+	case "inspect", "snapshot", "stats", "taps", "streams", "branches", "destinations", "events", "watch", "stop":
+		return Execute(ctx, task, append([]string{request.Op}, argsFromMap(request.Args)...))
+	case "attach":
+		return Execute(ctx, task, []string{"attach"})
+	case "rebranch":
+		argv := []string{"rebranch"}
+		if request.Branch != "" {
+			argv = append(argv, request.Branch)
+		}
+		if request.Switch != "" {
+			argv = append(argv, "--switch", request.Switch)
+		}
+		if request.KeepOldOnFailure {
+			argv = append(argv, "--keep-old-on-failure")
+		}
+		if request.Pipeline != "" {
+			argv = append(argv, request.Pipeline)
+		}
+		return Execute(ctx, task, argv)
+	case "detach":
+		return Execute(ctx, task, []string{"detach", request.Branch})
+	default:
+		return ControlResponse{}, commandError("unknown_command", "ctl", request.Op, fmt.Sprintf("unknown request op %q", request.Op), nil, []string{"use op=control"}, nil)
+	}
 }
 
 // RequestFromCLI converts canonical goav ctl arguments into the socket
@@ -138,6 +187,26 @@ func argsMap(argv []string) map[string]string {
 		out[key] = value
 	}
 	return out
+}
+
+func argsFromMap(values map[string]string) []string {
+	if len(values) == 0 {
+		return nil
+	}
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	args := make([]string, 0, len(keys))
+	for _, key := range keys {
+		if values[key] == "true" {
+			args = append(args, "--"+key)
+			continue
+		}
+		args = append(args, key+"="+values[key])
+	}
+	return args
 }
 
 // Execute applies one ctl command directly to a Task. It is the in-process
