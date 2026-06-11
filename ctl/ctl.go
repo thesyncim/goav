@@ -114,6 +114,12 @@ func HelpWithCommands(args []string, manifest []CommandSpec) (string, error) {
 	return launchctl.HelpWithCommands(args, manifest)
 }
 
+// HelpWithRegistry renders generated help for caller-supplied commands and
+// branch-pipeline extension points.
+func HelpWithRegistry(args []string, manifest []CommandSpec, registry PipelineRegistry) (string, error) {
+	return launchctl.HelpWithRegistry(args, manifest, registry)
+}
+
 // CommandUsage renders the canonical usage line for one command.
 func CommandUsage(spec CommandSpec) string {
 	return launchctl.CommandUsage(spec)

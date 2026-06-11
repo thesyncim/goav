@@ -63,6 +63,66 @@ func TestCLIInvokesCustomControlCommand(t *testing.T) {
 	}
 }
 
+func TestCLIHelpListsCustomPipelineRegistry(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	task, err := goav.From(goavtest.Audio(48000, 1, []int16{1})).
+		Audio().
+		To(goavtest.NewCollector().Sink()).
+		UseRuntime(goavtest.Runtime()).
+		Build(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer task.Close()
+
+	registry := ctl.PipelineRegistry{
+		Steps: []ctl.BranchPipelineStepSpec{{
+			Name:    "meter",
+			Aliases: []string{"levelmeter"},
+			Summary: "custom level meter",
+			Usage:   "[window=<duration>]",
+		}},
+		Encoders: []ctl.EncoderSpec{{
+			Name:    "acmeenc",
+			Aliases: []string{"acme"},
+			Summary: "ACME native encoder",
+			Usage:   "bitrate=<bps> quality=<name>",
+		}},
+	}
+
+	socket := filepath.Join(os.TempDir(), fmt.Sprintf("goav-cli-help-%d.sock", time.Now().UnixNano()))
+	t.Cleanup(func() { _ = os.Remove(socket) })
+	errC := make(chan error, 1)
+	go func() {
+		errC <- ctl.ServeUnixWithOptions(ctx, task, "unix://"+socket, ctl.WithPipelineRegistry(registry))
+	}()
+	waitForCLISocket(t, socket, errC)
+
+	cmd := exec.Command("go", "run", ".", "ctl", "--control", "unix://"+socket, "help", "attach")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("goav ctl help attach failed: %v\n%s", err, output)
+	}
+	text := string(output)
+	for _, fragment := range []string{
+		"Built-in steps:",
+		"Custom steps:",
+		"meter [window=<duration>]",
+		"(aliases: levelmeter)",
+		"custom level meter",
+		"Custom encoders:",
+		"acmeenc bitrate=<bps> quality=<name>",
+		"(aliases: acme)",
+		"ACME native encoder",
+	} {
+		if !strings.Contains(text, fragment) {
+			t.Fatalf("help missing %q:\n%s", fragment, text)
+		}
+	}
+}
+
 func TestCLIPrintsGraphAsRawText(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

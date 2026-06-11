@@ -790,6 +790,54 @@ func TestServerSupportsCustomEncoderSettings(t *testing.T) {
 	}
 }
 
+func TestServerHelpListsCustomPipelineRegistry(t *testing.T) {
+	server := &Server{
+		Task: newFakeTask(),
+		Pipeline: PipelineRegistry{
+			Steps: []BranchPipelineStepSpec{{
+				Name:    "meter",
+				Aliases: []string{"levelmeter"},
+				Summary: "observe samples before encoding",
+				Usage:   "[window=<duration>]",
+			}},
+			Encoders: []EncoderSpec{{
+				Name:    "acmeenc",
+				Aliases: []string{"acme"},
+				Summary: "ACME native audio encoder",
+				Usage:   "bitrate=<bps> quality=<name> lookahead=<mode>",
+			}},
+		},
+	}
+
+	for _, topic := range []string{"attach", "rebranch"} {
+		response := server.Handle(context.Background(), Request{
+			Op:   "help",
+			Args: map[string]string{"topic": topic},
+		})
+		text, ok := response.Result.(string)
+		if !response.OK || response.Error != nil || !ok {
+			t.Fatalf("%s response = %+v", topic, response)
+		}
+		for _, fragment := range []string{
+			"Built-in steps:",
+			"encode codec=<id>",
+			"Custom steps:",
+			"meter [window=<duration>]",
+			"(aliases: levelmeter)",
+			"observe samples before encoding",
+			"Custom encoders:",
+			"acmeenc bitrate=<bps> quality=<name> lookahead=<mode>",
+			"(aliases: acme)",
+			"ACME native audio encoder",
+			"StepArgs",
+		} {
+			if !strings.Contains(text, fragment) {
+				t.Fatalf("%s help missing %q:\n%s", topic, fragment, text)
+			}
+		}
+	}
+}
+
 func TestServerGenericEncodeStepCarriesCommonCodecOptions(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
@@ -928,7 +976,7 @@ func TestHelpRendersRootStaticAndCustomControlTopics(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(attach, "application-specific steps and encoders") {
+	if !strings.Contains(attach, "Built-in steps:") || !strings.Contains(attach, "encode codec=<id>") {
 		t.Fatalf("attach help:\n%s", attach)
 	}
 

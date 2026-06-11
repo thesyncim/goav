@@ -83,6 +83,7 @@ func Example_bootstrapControlPlaneHost() {
 		Steps: []ctl.BranchPipelineStepSpec{{
 			Name:    "meter",
 			Summary: "observe frames before encoding",
+			Usage:   "[window=<duration>]",
 			Apply: func(branch *ctl.BranchPipeline, _ ctl.StepArgs) error {
 				branch.Do(goav.FrameFunc("meter", func(_ context.Context, frame *av.Frame, emit goav.Emit) error {
 					return emit.Frame(frame)
@@ -93,6 +94,7 @@ func Example_bootstrapControlPlaneHost() {
 		Encoders: []ctl.EncoderSpec{{
 			Name:    "acmeenc",
 			Summary: "ACME audio encoder with native settings",
+			Usage:   "bitrate=<bps> quality=<profile> lookahead=<mode>",
 			Apply: func(args ctl.StepArgs) (codec.CodecSpec, error) {
 				bitrate, err := strconv.Atoi(args["bitrate"])
 				if err != nil {
@@ -149,7 +151,8 @@ func ExampleWithPipelineRegistry_customEncoder() {
 	const customCodec = av.CodecID("x_acme_audio")
 	registry := ctl.PipelineRegistry{
 		Encoders: []ctl.EncoderSpec{{
-			Name: "acmeenc",
+			Name:  "acmeenc",
+			Usage: "profile=<name>",
 			Apply: func(args ctl.StepArgs) (codec.CodecSpec, error) {
 				return codec.Codec(customCodec, av.MediaAudio,
 					codec.Profile(args["profile"]),

@@ -25,6 +25,7 @@ type BranchPipelineStepSpec struct {
 	Name    string
 	Aliases []string
 	Summary string
+	Usage   string
 	Apply   func(*BranchPipeline, StepArgs) error
 }
 
@@ -35,6 +36,7 @@ type EncoderSpec struct {
 	Name    string
 	Aliases []string
 	Summary string
+	Usage   string
 	Apply   func(StepArgs) (codec.CodecSpec, error)
 }
 
