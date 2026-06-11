@@ -96,6 +96,8 @@ func RequestFromCLI(argv []string) (Request, error) {
 		return Request{}, commandError("missing_command", "ctl", "", "missing ctl command", nil, []string{"use `goav ctl help`"}, nil)
 	}
 	switch argv[0] {
+	case "help":
+		return helpRequestFromCLI(argv[1:]), nil
 	case "control":
 		return controlRequestFromCLI(argv[1:])
 	case "attach":
@@ -112,6 +114,17 @@ func RequestFromCLI(argv []string) (Request, error) {
 	default:
 		return Request{}, commandError("unknown_command", "ctl", argv[0], fmt.Sprintf("unknown ctl command %q", argv[0]), nil, []string{"use `goav ctl help`"}, nil)
 	}
+}
+
+func helpRequestFromCLI(argv []string) Request {
+	args := make(map[string]string)
+	if len(argv) > 0 {
+		args["topic"] = argv[0]
+	}
+	if len(argv) > 1 {
+		args["command"] = argv[1]
+	}
+	return Request{Op: "help", Args: args}
 }
 
 func controlRequestFromCLI(argv []string) (Request, error) {
@@ -200,13 +213,22 @@ func argsFromMap(values map[string]string) []string {
 	sort.Strings(keys)
 	args := make([]string, 0, len(keys))
 	for _, key := range keys {
-		if values[key] == "true" {
+		if flagArg(key, values[key]) {
 			args = append(args, "--"+key)
 			continue
 		}
 		args = append(args, key+"="+values[key])
 	}
 	return args
+}
+
+func flagArg(key string, value string) bool {
+	switch key {
+	case "follow":
+		return value == "true"
+	default:
+		return false
+	}
 }
 
 // Execute applies one ctl command directly to a Task. It is the in-process

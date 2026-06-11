@@ -140,7 +140,7 @@ type SegmentCommand struct {
 // SelectCommand is the args struct for control select.
 type SelectCommand struct {
 	Active   av.StreamID `goavctl:"active,required" usage:"active=<arm-or-stream-id>" help:"arm or stream id to make active"`
-	Selector string      `goavctl:"selector" usage:"[selector=<selector-name>]" help:"selector-specific targeting is not available in the current goav API"`
+	Selector string      `goavctl:"selector" usage:"[selector=<selector-name>]" help:"selector node/name reported by inspect"`
 	At       string      `goavctl:"at" usage:"[at=<tap>]" help:"tap name reported by goav ctl taps"`
 }
 
@@ -227,28 +227,33 @@ func applySegment(ctx context.Context, task goav.Task, args any) (ControlRespons
 
 func applySelect(ctx context.Context, task goav.Task, args any) (ControlResponse, error) {
 	cmd := args.(SelectCommand)
-	if cmd.Selector != "" {
+	if cmd.Selector != "" && cmd.At != "" {
 		return ControlResponse{}, commandError(
-			"unsupported_target",
+			"target_conflict",
 			"control select",
-			cmd.Selector,
-			"selector-specific addressing is not supported by the current goav Task.Control API",
-			[]string{"supported_select_target=active"},
-			[]string{"omit selector= and use active=<arm-or-stream-id>", "use at=<tap> only when a tap targets the desired selector path"},
+			cmd.Selector+","+cmd.At,
+			"selector and at are mutually exclusive",
+			nil,
+			[]string{"use selector=<selector-name> or at=<tap-name>, not both"},
 			nil,
 		)
 	}
-	if err := ensureTap(task, "control select", cmd.At); err != nil {
-		return ControlResponse{}, err
-	}
 	ctrl := goav.SelectActive(cmd.Active)
-	if cmd.At != "" {
+	if cmd.Selector != "" {
+		if err := ensureNode(task, "control select", cmd.Selector); err != nil {
+			return ControlResponse{}, err
+		}
+		ctrl = ctrl.At(pipeline.NodeRef(cmd.Selector))
+	} else if cmd.At != "" {
+		if err := ensureTap(task, "control select", cmd.At); err != nil {
+			return ControlResponse{}, err
+		}
 		ctrl = ctrl.AtTap(cmd.At)
 	}
 	if err := task.Control(ctx, ctrl); err != nil {
 		return ControlResponse{}, structuredError("control select", err)
 	}
-	return ControlResponse{Operation: "control select", Result: map[string]any{"active": cmd.Active, "at": cmd.At}}, nil
+	return ControlResponse{Operation: "control select", Result: map[string]any{"active": cmd.Active, "selector": cmd.Selector, "at": cmd.At}}, nil
 }
 
 func applyDeliver(ctx context.Context, task goav.Task, args any) (ControlResponse, error) {

@@ -21,7 +21,7 @@ func main() {
 		printErr(err)
 		os.Exit(2)
 	}
-	if len(args) == 0 || args[0] == "help" {
+	if len(args) == 0 || (args[0] == "help" && control == "") {
 		topic := args
 		if len(topic) != 0 {
 			topic = topic[1:]
@@ -85,6 +85,21 @@ func send(address string, request launchctl.Request) error {
 		return err
 	}
 	var response launchctl.Response
+	if follows(request) {
+		decoder := json.NewDecoder(conn)
+		for decoder.Decode(&response) == nil {
+			if !response.OK {
+				if response.Error != nil {
+					return response.Error
+				}
+				return fmt.Errorf("control request failed")
+			}
+			if err := json.NewEncoder(os.Stdout).Encode(response.Result); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
 	if err := json.NewDecoder(conn).Decode(&response); err != nil {
 		return err
 	}
@@ -95,6 +110,15 @@ func send(address string, request launchctl.Request) error {
 		return fmt.Errorf("control request failed")
 	}
 	return json.NewEncoder(os.Stdout).Encode(response.Result)
+}
+
+func follows(request launchctl.Request) bool {
+	switch request.Op {
+	case "events", "watch":
+		return request.Args["follow"] == "true"
+	default:
+		return false
+	}
 }
 
 func printErr(err error) {

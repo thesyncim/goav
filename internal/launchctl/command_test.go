@@ -15,6 +15,7 @@ import (
 
 	goav "github.com/thesyncim/goav"
 	"github.com/thesyncim/goav/av"
+	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/goavtest"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/plan"
@@ -66,6 +67,14 @@ func TestBindArgsParsesControlFields(t *testing.T) {
 	segment := segmentArgs.(SegmentCommand)
 	if segment.Start != 10*time.Second || segment.End != 20*time.Second {
 		t.Fatalf("segment = %+v", segment)
+	}
+	segmentArgs, err = BindArgs(segmentSpec, []string{"10s..20s"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	segment = segmentArgs.(SegmentCommand)
+	if segment.Start != 10*time.Second || segment.End != 20*time.Second {
+		t.Fatalf("range segment = %+v", segment)
 	}
 
 	selectSpec, _ := LookupControlCommand("select")
@@ -184,6 +193,46 @@ func TestExecuteRequestAppliesControlRequest(t *testing.T) {
 	}
 }
 
+func TestCanonicalControlCommandsApplySupportedVerbs(t *testing.T) {
+	ctx := context.Background()
+	task := newFakeTask()
+	commands := [][]string{
+		{"control", "keyframe", "stream=video"},
+		{"control", "bitrate", "stream=video", "value=1200k"},
+		{"control", "seek", "position=12.5s"},
+		{"control", "rate", "value=0.5"},
+		{"control", "segment", "start=10s", "end=20s"},
+		{"control", "select", "active=camera_b", "selector=program"},
+		{"control", "deliver", "type=vendor.force_idr", "stream=video", "at=raw_video", "reason=manual"},
+	}
+	for _, command := range commands {
+		if _, err := Execute(ctx, task, command); err != nil {
+			t.Fatalf("%v: %v", command, err)
+		}
+	}
+	if got, want := len(task.controls), len(commands); got != want {
+		t.Fatalf("controls = %d, want %d: %+v", got, want, task.controls)
+	}
+	control := task.controls[5]
+	if control.Type != goav.ControlSelect || control.StreamID != "camera_b" || control.Node != "program" {
+		t.Fatalf("select control = %+v", control)
+	}
+	control = task.controls[6]
+	if control.Type != goav.ControlEvent || control.Event.Metadata != nil || control.Event.Reason != "manual" {
+		t.Fatalf("deliver control = %+v", control)
+	}
+}
+
+func TestArgsFromMapPreservesTrueValues(t *testing.T) {
+	args := argsFromMap(map[string]string{
+		"follow":      "true",
+		"metadata.ok": "true",
+	})
+	if !reflect.DeepEqual(args, []string{"--follow", "metadata.ok=true"}) {
+		t.Fatalf("args = %v", args)
+	}
+}
+
 func TestServeUnixHandlesOneControlRequest(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -224,6 +273,220 @@ func TestServeUnixHandlesOneControlRequest(t *testing.T) {
 	cancel()
 	if err := <-errC; err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestServeUnixWithOptionsHandlesCustomCommand(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	type socketCommand struct {
+		Value string `goavctl:"value,required" usage:"value=<text>" help:"socket value"`
+	}
+	var applied string
+	spec := CommandSpec{
+		Name:     "vendor.socket",
+		Summary:  "socket custom command",
+		ArgsType: reflect.TypeOf(socketCommand{}),
+		Apply: func(_ context.Context, _ goav.Task, args any) (ControlResponse, error) {
+			applied = args.(socketCommand).Value
+			return ControlResponse{Operation: "control vendor.socket", Result: applied}, nil
+		},
+	}
+
+	socket := filepath.Join(os.TempDir(), fmt.Sprintf("goavctl-custom-%d.sock", time.Now().UnixNano()))
+	t.Cleanup(func() { _ = os.Remove(socket) })
+	errC := make(chan error, 1)
+	go func() {
+		errC <- ServeUnixWithOptions(ctx, newFakeTask(), "unix://"+socket, WithCommands(spec))
+	}()
+	waitForSocket(t, socket, errC)
+
+	conn, err := net.Dial("unix", socket)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := Request{Op: "control", Verb: "vendor.socket", Args: map[string]string{"value": "socket-called"}}
+	if err := json.NewEncoder(conn).Encode(request); err != nil {
+		t.Fatal(err)
+	}
+	var response Response
+	if err := json.NewDecoder(conn).Decode(&response); err != nil {
+		t.Fatal(err)
+	}
+	_ = conn.Close()
+	if !response.OK || response.Error != nil || applied != "socket-called" {
+		t.Fatalf("response=%+v applied=%q", response, applied)
+	}
+	cancel()
+	if err := <-errC; err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestServerStreamsWatchFollowResponses(t *testing.T) {
+	task := newFakeTask()
+	task.events = []av.Event{
+		{Type: av.EventStats, StreamID: "video"},
+		{Type: av.EventBitrateChanged, StreamID: "video"},
+	}
+	server := &Server{Task: task}
+	client, serverConn := net.Pipe()
+	defer client.Close()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		server.handleConn(context.Background(), serverConn)
+	}()
+	request := Request{Op: "watch", Args: map[string]string{"follow": "true", "type": string(av.EventStats)}}
+	if err := json.NewEncoder(client).Encode(request); err != nil {
+		t.Fatal(err)
+	}
+	var response struct {
+		OK     bool     `json:"ok"`
+		Result av.Event `json:"result"`
+		Error  *Error   `json:"error,omitempty"`
+	}
+	if err := json.NewDecoder(client).Decode(&response); err != nil {
+		t.Fatal(err)
+	}
+	if !response.OK || response.Error != nil || response.Result.Type != av.EventStats {
+		t.Fatalf("response = %+v", response)
+	}
+	<-done
+}
+
+func TestServerAttachRebranchDetachUsesAttachmentTable(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	packet := av.Packet{Payload: av.Buffer{Bytes: []byte{1}, Ownership: av.BufferImmutable}}
+	task, err := goav.From(goavtest.Packets(av.CodecOpus, packet)).
+		Audio().Copy().Tap(goav.PacketTap("pkts")).
+		To(goavtest.NewCollector().Sink()).
+		UseRuntime(goavtest.Runtime()).
+		Build(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer task.Close()
+
+	server := &Server{Task: task}
+	first := filepath.Join(t.TempDir(), "first.ogg")
+	response := server.Handle(ctx, Request{
+		Op:       "attach",
+		Tap:      "pkts",
+		Branch:   "preview",
+		Pipeline: "copy ! filesink location=" + first + " format=ogg",
+	})
+	if !response.OK || response.Error != nil {
+		t.Fatalf("attach response = %+v", response)
+	}
+
+	second := filepath.Join(t.TempDir(), "second.ogg")
+	response = server.Handle(ctx, Request{
+		Op:       "rebranch",
+		Branch:   "preview",
+		Pipeline: "copy ! filesink location=" + second + " format=ogg",
+	})
+	if !response.OK || response.Error != nil {
+		t.Fatalf("rebranch response = %+v", response)
+	}
+
+	response = server.Handle(ctx, Request{Op: "detach", Branch: "preview"})
+	if !response.OK || response.Error != nil {
+		t.Fatalf("detach response = %+v", response)
+	}
+}
+
+func TestServerSupportsCustomControlCommand(t *testing.T) {
+	type vendorCommand struct {
+		Value string `goavctl:"value,required" usage:"value=<text>" help:"custom value"`
+	}
+	var applied string
+	server := &Server{
+		Task: newFakeTask(),
+		Commands: []CommandSpec{{
+			Name:     "vendor.custom",
+			Summary:  "custom vendor command",
+			ArgsType: reflect.TypeOf(vendorCommand{}),
+			Apply: func(_ context.Context, _ goav.Task, args any) (ControlResponse, error) {
+				applied = args.(vendorCommand).Value
+				return ControlResponse{Operation: "control vendor.custom", Result: applied}, nil
+			},
+		}},
+	}
+	response := server.Handle(context.Background(), Request{
+		Op:   "control",
+		Verb: "vendor.custom",
+		Args: map[string]string{"value": "called"},
+	})
+	if !response.OK || response.Error != nil || applied != "called" {
+		t.Fatalf("response=%+v applied=%q", response, applied)
+	}
+	help := server.Handle(context.Background(), Request{
+		Op:   "help",
+		Args: map[string]string{"topic": "control", "command": "vendor.custom"},
+	})
+	if !help.OK || !strings.Contains(help.Result.(string), "custom vendor command") {
+		t.Fatalf("help = %+v", help)
+	}
+}
+
+func TestServerSupportsCustomEncoderSettings(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	const customCodec = av.CodecID("vendor_audio")
+	factory := &recordingEncoderFactory{descriptor: codec.Descriptor{ID: customCodec, Type: av.MediaAudio}}
+	task, err := goav.From(goavtest.Audio(48000, 1, []int16{1})).
+		Audio().Tap(goav.FrameTap("frames")).
+		To(goavtest.NewCollector().Sink()).
+		UseRuntime(goavtest.Runtime(goav.WithEncoder(factory.descriptor, factory))).
+		Build(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer task.Close()
+
+	var controlSeen bool
+	server := &Server{
+		Task: task,
+		Pipeline: PipelineRegistry{
+			Encoders: []EncoderSpec{{
+				Name: "fancyenc",
+				Apply: func(args StepArgs) (codec.CodecSpec, error) {
+					bitrate, err := parseRate(args["bitrate"])
+					if err != nil {
+						return codec.CodecSpec{}, err
+					}
+					return codec.Codec(customCodec, av.MediaAudio,
+						codec.Bitrate(bitrate),
+						codec.Profile(args["quality"]),
+						codec.Control(func(any) error {
+							controlSeen = true
+							return nil
+						}),
+					), nil
+				},
+			}},
+		},
+	}
+	out := filepath.Join(t.TempDir(), "custom.ogg")
+	response := server.Handle(ctx, Request{
+		Op:       "attach",
+		Tap:      "frames",
+		Branch:   "custom",
+		Pipeline: "fancyenc bitrate=123k quality=cinema ! filesink location=" + out + " format=ogg",
+	})
+	if !response.OK || response.Error != nil {
+		t.Fatalf("attach response = %+v", response)
+	}
+	if factory.config.Settings.Bitrate != 123000 || factory.config.Settings.Profile != "cinema" || factory.config.Settings.Control == nil {
+		t.Fatalf("encoder config = %+v", factory.config.Settings)
+	}
+	if err := factory.config.Settings.Control(nil); err != nil || !controlSeen {
+		t.Fatalf("custom control callback err=%v seen=%v", err, controlSeen)
 	}
 }
 
@@ -428,6 +691,7 @@ func newFakeTask() *fakeTask {
 			{Name: "source", Kind: pipeline.NodeSource},
 			{Name: "raw-node", Kind: pipeline.NodeStage},
 			{Name: "enc-node", Kind: pipeline.NodeStage},
+			{Name: "program", Kind: pipeline.NodeStage},
 			{Name: "sink", Kind: pipeline.NodeSink},
 		},
 		Edges: []pipeline.EdgeSpec{
@@ -505,3 +769,37 @@ func eventMatches(event av.Event, filters []goav.EventFilter) bool {
 	}
 	return true
 }
+
+type recordingEncoderFactory struct {
+	descriptor codec.Descriptor
+	config     codec.EncodeConfig
+}
+
+func (f *recordingEncoderFactory) NewEncoder(_ context.Context, config codec.EncodeConfig) (codec.Encoder, error) {
+	f.config = config
+	return recordingEncoder{descriptor: f.descriptor}, nil
+}
+
+type recordingEncoder struct {
+	descriptor codec.Descriptor
+}
+
+func (e recordingEncoder) Descriptor() codec.Descriptor { return e.descriptor }
+func (e recordingEncoder) Open(context.Context, codec.EncodeConfig) error {
+	return nil
+}
+func (e recordingEncoder) EncodeInto(_ context.Context, frame *av.Frame, out *codec.EncodeResult) error {
+	if frame == nil || len(out.Packets) == cap(out.Packets) {
+		return nil
+	}
+	index := len(out.Packets)
+	out.Packets = out.Packets[:index+1]
+	out.Packets[index].Reset()
+	out.Packets[index].StreamID = frame.StreamID
+	out.Packets[index].Type = frame.Type
+	out.Packets[index].Payload = av.Buffer{Bytes: []byte{1}, Ownership: av.BufferImmutable}
+	return nil
+}
+func (e recordingEncoder) FlushInto(context.Context, *codec.EncodeResult) error { return nil }
+func (e recordingEncoder) HandleEvent(context.Context, *av.Event) error         { return nil }
+func (e recordingEncoder) Close() error                                         { return nil }

@@ -3,6 +3,7 @@ package launchctl
 import (
 	"context"
 	"reflect"
+	"sort"
 
 	goav "github.com/thesyncim/goav"
 )
@@ -76,7 +77,12 @@ func ControlManifest() []CommandSpec {
 
 // LookupControlCommand finds a manifest command by name or alias.
 func LookupControlCommand(name string) (CommandSpec, bool) {
-	for _, spec := range ControlManifest() {
+	return LookupCommand(ControlManifest(), name)
+}
+
+// LookupCommand finds a command in an explicit manifest by name or alias.
+func LookupCommand(manifest []CommandSpec, name string) (CommandSpec, bool) {
+	for _, spec := range manifest {
 		if spec.Name == name {
 			return spec, true
 		}
@@ -90,10 +96,14 @@ func LookupControlCommand(name string) (CommandSpec, bool) {
 }
 
 func controlCommandNames() []string {
-	manifest := ControlManifest()
+	return commandNames(ControlManifest())
+}
+
+func commandNames(manifest []CommandSpec) []string {
 	names := make([]string, 0, len(manifest))
 	for _, spec := range manifest {
 		names = append(names, spec.Name)
 	}
+	sort.Strings(names)
 	return names
 }

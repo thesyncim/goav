@@ -7,25 +7,31 @@ import (
 
 // Help renders generated help from the same manifest and tags used by parsing.
 func Help(args []string) (string, error) {
+	return HelpWithCommands(args, ControlManifest())
+}
+
+// HelpWithCommands renders help using the provided allowlisted command
+// manifest. Servers use this to include application-specific controls.
+func HelpWithCommands(args []string, manifest []CommandSpec) (string, error) {
 	if len(args) == 0 {
 		return rootHelp(), nil
 	}
 	switch args[0] {
 	case "control":
 		if len(args) == 1 {
-			return controlHelp(), nil
+			return controlHelp(manifest), nil
 		}
-		spec, ok := LookupControlCommand(args[1])
+		spec, ok := LookupCommand(manifest, args[1])
 		if !ok {
-			return "", commandError("unknown_command", "help control", args[1], fmt.Sprintf("unknown control command %q", args[1]), nil, []string{"use one of: " + strings.Join(controlCommandNames(), ", ")}, nil)
+			return "", commandError("unknown_command", "help control", args[1], fmt.Sprintf("unknown control command %q", args[1]), nil, []string{"use one of: " + strings.Join(commandNames(manifest), ", ")}, nil)
 		}
 		return CommandHelp(spec), nil
 	case "attach":
-		return staticHelp("attach", "goav ctl --control unix://PATH attach <tap-name> as <branch-name> '<branch-pipeline>'", "The current library exposes typed Task.Attach(ctx, goav.Branch(...)); launch-pipeline string parsing is not present in this checkout."), nil
+		return staticHelp("attach", "goav ctl --control unix://PATH attach <tap-name> as <branch-name> '<branch-pipeline>'", "Builds an allowlisted branch pipeline from a named tap. Built-ins include copy, decode, resize, resample, vp8enc, vp9enc, h264enc, av1enc, opusenc, and filesink. Servers can add application-specific steps and encoders explicitly."), nil
 	case "rebranch":
-		return staticHelp("rebranch", "goav ctl --control unix://PATH rebranch <branch-name> [--switch next_frame|next_keyframe] [--keep-old-on-failure] '<branch-pipeline>'", "The current library exposes typed Attachment.Rebranch(ctx, goav.Branch(...), goav.SwitchAt(...)); resolving an attachment by branch name requires a control server handle table."), nil
+		return staticHelp("rebranch", "goav ctl --control unix://PATH rebranch <branch-name> [--switch next_frame|next_keyframe] [--keep-old-on-failure] '<branch-pipeline>'", "Replaces an attachment created through this control server, using the same allowlisted branch-pipeline grammar as attach."), nil
 	case "detach":
-		return staticHelp("detach", "goav ctl --control unix://PATH detach <branch-name>", "The current library exposes typed Task.Detach(ctx, attachment); resolving an attachment by branch name requires a control server handle table."), nil
+		return staticHelp("detach", "goav ctl --control unix://PATH detach <branch-name>", "Detaches an attachment created through this control server."), nil
 	default:
 		return "", commandError("unknown_command", "help", args[0], fmt.Sprintf("unknown help topic %q", args[0]), nil, []string{"use `goav ctl help control`"}, nil)
 	}
@@ -54,14 +60,14 @@ func rootHelp() string {
 	return out.String()
 }
 
-func controlHelp() string {
+func controlHelp(manifest []CommandSpec) string {
 	var out strings.Builder
 	out.WriteString("control\n\n")
 	out.WriteString("Usage:\n")
 	out.WriteString("  goav ctl --control unix://PATH control <verb> [field=value...]\n")
 	out.WriteString("  goav ctl --control unix://PATH control --json '<json-goav-control>'\n\n")
 	out.WriteString("Verbs:\n")
-	for _, spec := range ControlManifest() {
+	for _, spec := range manifest {
 		out.WriteString("  ")
 		out.WriteString(spec.Name)
 		if spec.Summary != "" {
