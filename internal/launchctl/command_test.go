@@ -418,6 +418,64 @@ func TestPipelineParserHelpersCoverCommonFormsAndErrors(t *testing.T) {
 	}
 }
 
+func TestBranchPipelineLexingSupportsQuotedValues(t *testing.T) {
+	steps, err := splitPipeline(`meter label="left ! right" note='two words' raw="a=b" ! filesink location="/tmp/a b=1.ogg" title="say \"hi\"" format=ogg`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(steps) != 2 {
+		t.Fatalf("steps = %v", steps)
+	}
+
+	fields, err := pipelineFields(steps[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(fields, []string{"meter", "label=left ! right", "note=two words", "raw=a=b"}) {
+		t.Fatalf("fields[0] = %v", fields)
+	}
+
+	fields, err = pipelineFields(steps[1])
+	if err != nil {
+		t.Fatal(err)
+	}
+	args := stepArgs(fields[1:])
+	if fields[0] != "filesink" ||
+		args["location"] != "/tmp/a b=1.ogg" ||
+		args["title"] != `say "hi"` ||
+		args["format"] != "ogg" {
+		t.Fatalf("fields[1]=%v args=%v", fields, args)
+	}
+
+	for _, tc := range []struct {
+		name string
+		run  func() error
+	}{
+		{name: "split quote", run: func() error {
+			_, err := splitPipeline(`copy ! filesink location="unterminated`)
+			return err
+		}},
+		{name: "field quote", run: func() error {
+			_, err := pipelineFields(`meter label="unterminated`)
+			return err
+		}},
+		{name: "field escape", run: func() error {
+			_, err := pipelineFields(`meter label="dangling\`)
+			return err
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := tc.run()
+			var structured *Error
+			if !errors.As(err, &structured) ||
+				structured.Code != "invalid_value" ||
+				!detailsContain(structured.Details, "offset=") {
+				t.Fatalf("err = %+v, want invalid_value with offset", err)
+			}
+		})
+	}
+}
+
 func TestPipelineStepNamesIncludeCustomAliases(t *testing.T) {
 	names := pipelineStepNames(PipelineRegistry{
 		Steps: []BranchPipelineStepSpec{{

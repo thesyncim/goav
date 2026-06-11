@@ -180,9 +180,9 @@ func TestCLIAttachRebranchDetachAndDotGraph(t *testing.T) {
 	}()
 	waitForCLISocket(t, socket, errC)
 
-	first := filepath.Join(t.TempDir(), "first.ogg")
+	first := filepath.Join(t.TempDir(), "first output.ogg")
 	output := runCLI(t, "--control", "unix://"+socket, "attach", "pkts", "as", "cli",
-		"copy ! filesink location="+first+" format=ogg")
+		fmt.Sprintf("copy ! filesink location=%q format=ogg", first))
 	if !strings.Contains(output, `"Name":"cli"`) {
 		t.Fatalf("attach output = %s", output)
 	}
@@ -192,11 +192,11 @@ func TestCLIAttachRebranchDetachAndDotGraph(t *testing.T) {
 		t.Fatalf("dot graph = %s", dot)
 	}
 
-	second := filepath.Join(t.TempDir(), "second.ogg")
+	second := filepath.Join(t.TempDir(), "second output.ogg")
 	output = runCLI(t, "--control", "unix://"+socket, "rebranch", "cli",
 		"--switch", "next_frame",
 		"--keep-old-on-failure",
-		"copy ! filesink location="+second+" format=ogg")
+		fmt.Sprintf("copy ! filesink location=%q format=ogg", second))
 	if !strings.Contains(output, `"Name":"cli"`) {
 		t.Fatalf("rebranch output = %s", output)
 	}

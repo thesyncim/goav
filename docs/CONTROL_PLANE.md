@@ -166,6 +166,14 @@ built-in branch-pipeline grammar plus every `BranchPipelineStepSpec` and
 `Usage` strings. That makes app-owned branch components discoverable from the
 same CLI surface that invokes them.
 
+Branch-pipeline values can be quoted with single or double quotes. Use quotes
+for paths or custom settings that contain spaces, `!`, or `=`:
+
+```sh
+goav ctl --control unix:///tmp/goav-live.sock attach frames as archive \
+  'meter label="left ! right" ! filesink location="/tmp/archive copy.ogg" format=ogg'
+```
+
 Render a live flowchart from the same running task:
 
 ```sh
