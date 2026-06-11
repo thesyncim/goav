@@ -14,14 +14,18 @@ import (
 )
 
 func main() {
-	if len(os.Args) < 2 || os.Args[1] != "ctl" {
-		fmt.Fprintln(os.Stderr, "usage: goav ctl [--control unix://PATH] <command>")
-		os.Exit(2)
+	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
+}
+
+func run(argv []string, stdout io.Writer, stderr io.Writer) int {
+	if len(argv) < 1 || argv[0] != "ctl" {
+		fmt.Fprintln(stderr, "usage: goav ctl [--control unix://PATH] <command>")
+		return 2
 	}
-	control, args, err := parseCtlArgs(os.Args[2:])
+	control, args, err := parseCtlArgs(argv[1:])
 	if err != nil {
-		printErr(err)
-		os.Exit(2)
+		printErr(stderr, err)
+		return 2
 	}
 	if len(args) == 0 || (args[0] == "help" && control == "") {
 		topic := args
@@ -30,25 +34,26 @@ func main() {
 		}
 		text, err := ctl.Help(topic)
 		if err != nil {
-			printErr(err)
-			os.Exit(2)
+			printErr(stderr, err)
+			return 2
 		}
-		fmt.Print(text)
-		return
+		fmt.Fprint(stdout, text)
+		return 0
 	}
 	request, err := ctl.RequestFromCLI(args)
 	if err != nil {
-		printErr(err)
-		os.Exit(2)
+		printErr(stderr, err)
+		return 2
 	}
 	if control == "" {
-		printErr(fmt.Errorf("missing --control unix://PATH"))
-		os.Exit(2)
+		printErr(stderr, fmt.Errorf("missing --control unix://PATH"))
+		return 2
 	}
-	if err := send(control, request); err != nil {
-		printErr(err)
-		os.Exit(1)
+	if err := sendWithOutput(control, request, stdout); err != nil {
+		printErr(stderr, err)
+		return 1
 	}
+	return 0
 }
 
 func parseCtlArgs(argv []string) (string, []string, error) {
@@ -73,6 +78,10 @@ func parseCtlArgs(argv []string) (string, []string, error) {
 }
 
 func send(address string, request ctl.Request) error {
+	return sendWithOutput(address, request, os.Stdout)
+}
+
+func sendWithOutput(address string, request ctl.Request, stdout io.Writer) error {
 	path, ok := strings.CutPrefix(address, "unix://")
 	if !ok || path == "" {
 		return fmt.Errorf("unsupported control address %q: expected unix://PATH", address)
@@ -103,7 +112,7 @@ func send(address string, request ctl.Request) error {
 				}
 				return fmt.Errorf("control request failed")
 			}
-			if err := json.NewEncoder(os.Stdout).Encode(response.Result); err != nil {
+			if err := json.NewEncoder(stdout).Encode(response.Result); err != nil {
 				return err
 			}
 		}
@@ -122,10 +131,10 @@ func send(address string, request ctl.Request) error {
 		if !ok {
 			return fmt.Errorf("control request returned %T, want text", response.Result)
 		}
-		fmt.Print(text)
+		fmt.Fprint(stdout, text)
 		return nil
 	}
-	return json.NewEncoder(os.Stdout).Encode(response.Result)
+	return json.NewEncoder(stdout).Encode(response.Result)
 }
 
 func follows(request ctl.Request) bool {
@@ -146,6 +155,6 @@ func rawText(request ctl.Request) bool {
 	}
 }
 
-func printErr(err error) {
-	fmt.Fprintln(os.Stderr, err)
+func printErr(stderr io.Writer, err error) {
+	fmt.Fprintln(stderr, err)
 }

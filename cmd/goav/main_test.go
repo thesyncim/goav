@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -255,6 +256,67 @@ func TestParseCtlArgs(t *testing.T) {
 
 	if _, _, err := parseCtlArgs([]string{"--control"}); err == nil {
 		t.Fatal("expected missing control value error")
+	}
+}
+
+func TestRunPrintsLocalHelp(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := run([]string{"ctl", "help", "graph"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("code = %d stderr=%q", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "Mermaid") || stderr.Len() != 0 {
+		t.Fatalf("stdout=%q stderr=%q", stdout.String(), stderr.String())
+	}
+}
+
+func TestRunReportsUsageErrors(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		argv []string
+		want string
+		code int
+	}{
+		{name: "missing ctl", argv: nil, want: "usage: goav ctl", code: 2},
+		{name: "wrong command", argv: []string{"probe"}, want: "usage: goav ctl", code: 2},
+		{name: "missing control value", argv: []string{"ctl", "--control"}, want: "--control needs unix://PATH", code: 2},
+		{name: "unknown local help", argv: []string{"ctl", "help", "nope"}, want: "unknown help topic", code: 2},
+		{name: "missing remote control", argv: []string{"ctl", "graph"}, want: "missing --control", code: 2},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var stdout bytes.Buffer
+			var stderr bytes.Buffer
+			code := run(tc.argv, &stdout, &stderr)
+			if code != tc.code || !strings.Contains(stderr.String(), tc.want) || stdout.Len() != 0 {
+				t.Fatalf("code=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+			}
+		})
+	}
+}
+
+func TestRunSendsRawTextRequest(t *testing.T) {
+	socket := filepath.Join(os.TempDir(), fmt.Sprintf("goav-run-graph-%d.sock", time.Now().UnixNano()))
+	t.Cleanup(func() { _ = os.Remove(socket) })
+	errC := serveOneShot(t, socket, func(conn net.Conn) error {
+		var request ctl.Request
+		if err := json.NewDecoder(conn).Decode(&request); err != nil {
+			return err
+		}
+		if request.Op != "graph" {
+			return fmt.Errorf("request = %+v", request)
+		}
+		return json.NewEncoder(conn).Encode(ctl.SuccessResponse("flowchart LR\n"))
+	})
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := run([]string{"ctl", "--control", "unix://" + socket, "graph"}, &stdout, &stderr)
+	if code != 0 || stdout.String() != "flowchart LR\n" || stderr.Len() != 0 {
+		t.Fatalf("code=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+	if err := <-errC; err != nil {
+		t.Fatal(err)
 	}
 }
 
