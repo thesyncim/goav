@@ -128,7 +128,7 @@ func TestDemoHostHelpers(t *testing.T) {
 	if len(result.Packets) != 1 || result.Packets[0].StreamID != "audio" || result.Packets[0].Type != av.MediaAudio {
 		t.Fatalf("packets = %+v", result.Packets)
 	}
-	full := codec.EncodeResult{Packets: make([]av.Packet, 1, 1)}
+	full := codec.EncodeResult{Packets: make([]av.Packet, 1)}
 	if err := encoder.EncodeInto(context.Background(), nil, &full); err != nil {
 		t.Fatal(err)
 	}
