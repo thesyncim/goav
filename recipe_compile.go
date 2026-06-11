@@ -1383,6 +1383,7 @@ func operationShapeMismatchSuggestions(operation OperationSpec) []string {
 		return []string{
 			"copy only consumes packet-domain media",
 			"move .Copy() before decode or start from goav.PacketTap(name)",
+			"use .Encode(codec...) instead of .Copy() to turn decoded frames back into packets",
 			"use a sink destination when the branch should remain decoded",
 		}
 	default:

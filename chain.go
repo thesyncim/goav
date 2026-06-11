@@ -38,6 +38,9 @@ func codecIntentSet(spec codec.CodecSpec) bool {
 }
 
 func chainStepAfterEncodeError(operation string, node string, step string, encode codec.CodecSpec) error {
+	if encode.Copy && step != "decode" {
+		return chainStepOnPacketCopyError(operation, node, step)
+	}
 	return &BuildError{
 		Code:      codes.StreamStepAfterEncode,
 		Operation: operation,
@@ -50,6 +53,30 @@ func chainStepAfterEncodeError(operation string, node string, step string, encod
 		Suggestions: []string{
 			"place .Do(...), .Resize(...), or .Resample(...) before .Encode(...)",
 			"call .To(...) after the encoder to attach outputs",
+		},
+		Cause: ErrUnsupportedBuild,
+	}
+}
+
+// chainStepOnPacketCopyError is the packet-domain transform refusal: .Copy()
+// keeps the stream packet-encoded, so frame operations declared after it have
+// no decoded frames to consume. The fix is the domain rule itself: decode
+// first, or keep the chain a pure packet copy.
+func chainStepOnPacketCopyError(operation string, node string, step string) error {
+	return &BuildError{
+		Code:      codes.OperationShapeMismatch,
+		Operation: operation,
+		Node:      node,
+		Reason:    step + " needs decoded frames, but .Copy() keeps the stream packet-encoded",
+		Details: []string{
+			"step: " + step,
+			"actual_shape=" + shape.New(shape.Domain(shape.DomainPacket)).String(),
+			"expected_shape=" + shape.New(shape.Domain(shape.DomainFrame)).String(),
+		},
+		Suggestions: []string{
+			"call .Decode() before .Resize(...), .Resample(...), or .Do(...) — transforms run on decoded frames",
+			"remove the processing step to keep a pure packet copy",
+			"use .Branches(...) when one input needs both a packet copy and a processed branch",
 		},
 		Cause: ErrUnsupportedBuild,
 	}

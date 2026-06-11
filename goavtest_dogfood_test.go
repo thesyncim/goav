@@ -9,12 +9,10 @@ import (
 	"context"
 	"errors"
 	"reflect"
-	"strings"
 	"testing"
 	"time"
 
 	"github.com/thesyncim/goav"
-	"github.com/thesyncim/goav/codes"
 	"github.com/thesyncim/goav/goavtest"
 )
 
@@ -147,31 +145,6 @@ func TestFlowInFlowRunsEndToEnd(t *testing.T) {
 	}
 }
 
-// TestFromMultiInputAmbiguousSelectionListsCandidates is the multi-input
-// ambiguity acceptance test, consumer side: two named goavtest inputs, one
-// unnarrowed .Audio() chain, and the refusal lists every candidate with its
-// input plus concrete narrowing suggestions.
-func TestFromMultiInputAmbiguousSelectionListsCandidates(t *testing.T) {
-	_, err := goav.From(
-		goavtest.Audio(48000, 1, []int16{1}).With(goav.Name("mic-a")),
-		goavtest.Audio(48000, 1, []int16{1}).With(goav.Name("mic-b")),
-	).
-		Audio().
-		To(goavtest.NewCollector().Sink()).
-		Build(context.Background())
-
-	var buildErr *goav.BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != codes.StreamAmbiguous || !errors.Is(err, goav.ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want stream_ambiguous wrapping ErrUnsupportedBuild", err)
-	}
-	msg := err.Error()
-	if !strings.Contains(msg, "input=mic-a") || !strings.Contains(msg, "input=mic-b") {
-		t.Fatalf("err = %v, want candidates listed with their inputs", err)
-	}
-	if !strings.Contains(msg, `.Audio(goav.InputName("mic-a"))`) {
-		t.Fatalf("err = %v, want InputName narrowing suggestion", err)
-	}
-	if !strings.Contains(msg, "goav.StreamID(") {
-		t.Fatalf("err = %v, want StreamID narrowing suggestion", err)
-	}
-}
+// The multi-input ambiguity acceptance test moved to error_acceptance_test.go
+// (TestErrorAcceptanceAmbiguousStreamSelectionListsCandidates), the
+// error-quality checklist this consumer-side suite feeds.

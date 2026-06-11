@@ -459,6 +459,13 @@ func (g *directRunner) Close() error {
 	}
 	g.mu.Unlock()
 
+	// New emits stop at the nil routing snapshot, but a delivery already in
+	// flight loaded the previous one: drain every node's gate before closing,
+	// so Close never runs under a concurrent Handle — the same contract a
+	// live Remove keeps.
+	for i := range nodes {
+		waitNodeGateDrained(nodes[i].gate)
+	}
 	var first error
 	for i := range nodes {
 		err := closeDirectNode(&nodes[i])
