@@ -133,6 +133,18 @@ func TestRunHostServesCustomHelpAndAttach(t *testing.T) {
 		t.Fatalf("generic custom encoder attach = %+v", generic)
 	}
 
+	genericFileOut := filepath.Join(t.TempDir(), "acme generic.webm")
+	genericFile := sendDemoRequest(t, socket, ctl.Request{
+		Op:     "attach",
+		Tap:    "frames",
+		Branch: "acme-file",
+		Pipeline: `thumbnail every=6 label=file ! encode codec=x_acme_video media=video bitrate=320k profile=file fps=2 keyframe_interval=1 ! filesink location="` +
+			genericFileOut + `" format=webm`,
+	})
+	if !genericFile.OK || genericFile.Error != nil {
+		t.Fatalf("generic custom encoder file attach = %+v", genericFile)
+	}
+
 	custom := sendDemoRequest(t, socket, ctl.Request{
 		Op:       "attach",
 		Tap:      "frames",
@@ -164,10 +176,12 @@ func TestRunHostServesCustomHelpAndAttach(t *testing.T) {
 		"branch=thumbnails (attached)",
 		"branch=memory (attached)",
 		"branch=acme-generic (attached)",
+		"branch=acme-file (attached)",
 		"branch=acme-preview (attached)",
 		"demo-left ! right",
 		"demo-thumbnail-preview",
 		"demo-thumbnail-generic",
+		"demo-thumbnail-file",
 	} {
 		if !strings.Contains(flowchart, fragment) {
 			t.Fatalf("flowchart missing %q:\n%s", fragment, flowchart)
@@ -183,7 +197,7 @@ func TestRunHostServesCustomHelpAndAttach(t *testing.T) {
 		t.Fatalf("rebranch = %+v", rebranch)
 	}
 
-	for _, branch := range []string{"archive", "thumbnails", "memory", "acme-generic", "acme-preview"} {
+	for _, branch := range []string{"archive", "thumbnails", "memory", "acme-generic", "acme-file", "acme-preview"} {
 		detach := sendDemoRequest(t, socket, ctl.Request{Op: "detach", Branch: branch})
 		if !detach.OK || detach.Error != nil {
 			t.Fatalf("detach %s = %+v", branch, detach)
@@ -244,14 +258,18 @@ func TestRunHostAcceptsDocumentedCLICommands(t *testing.T) {
 	}
 	runDemoCLI(t, socket, "attach", "frames", "as", "memory", `thumbnail every=3 label=preview ! memorysink name=preview`)
 	runDemoCLI(t, socket, "attach", "frames", "as", "acme-generic", `thumbnail every=4 label=generic ! encode codec=x_acme_video media=video bitrate=220k profile=preview fps=2 keyframe_interval=1 ! memorysink name=acme-generic`)
+	acmeFileOut := filepath.Join(t.TempDir(), "acme cli.webm")
+	runDemoCLI(t, socket, "attach", "frames", "as", "acme-file", `thumbnail every=6 label=file ! encode codec=x_acme_video media=video bitrate=320k profile=file fps=2 keyframe_interval=1 ! filesink location="`+acmeFileOut+`" format=webm`)
 	graph := runDemoCLI(t, socket, "graph")
 	if !strings.Contains(graph, "flowchart LR") ||
 		!strings.Contains(graph, "branch=memory (attached)") ||
-		!strings.Contains(graph, "branch=acme-generic (attached)") {
+		!strings.Contains(graph, "branch=acme-generic (attached)") ||
+		!strings.Contains(graph, "branch=acme-file (attached)") {
 		t.Fatalf("graph CLI output:\n%s", graph)
 	}
 	runDemoCLI(t, socket, "detach", "memory")
 	runDemoCLI(t, socket, "detach", "acme-generic")
+	runDemoCLI(t, socket, "detach", "acme-file")
 
 	cancel()
 	select {
@@ -286,7 +304,9 @@ func TestPrintUsageIncludesCompleteBootstrapLoop(t *testing.T) {
 		"thumbnail every=5",
 		"memorysink name=preview",
 		"encode codec=x_acme_video media=video",
+		"filesink location=\"/tmp/goav acme.webm\"",
 		"detach acme-generic",
+		"detach acme-file",
 		"acmeenc bitrate=250k",
 		"graph format=text",
 		"rebranch memory",
