@@ -33,10 +33,7 @@ func helpWithRuntime(args []string, manifest []CommandSpec, registry PipelineReg
 }
 
 func helpWithRegistry(args []string, manifest []CommandSpec, registry PipelineRegistry, caps runtimeBranchCapabilities) (string, error) {
-	if err := validateCommandManifest(manifest); err != nil {
-		return "", err
-	}
-	if err := validatePipelineRegistry(registry); err != nil {
+	if err := validateControlRegistry(manifest, registry); err != nil {
 		return "", err
 	}
 	if len(args) == 0 {

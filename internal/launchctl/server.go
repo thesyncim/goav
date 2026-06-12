@@ -89,10 +89,7 @@ func (s *Server) commandManifest() []CommandSpec {
 }
 
 func (s *Server) validateConfig(manifest []CommandSpec) error {
-	if err := validateCommandManifest(manifest); err != nil {
-		return err
-	}
-	return validatePipelineRegistry(s.Pipeline)
+	return validateControlRegistry(manifest, s.Pipeline)
 }
 
 func (s *Server) attach(ctx context.Context, request Request) (ControlResponse, error) {
