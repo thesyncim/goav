@@ -328,16 +328,30 @@ func executeRawEvent(ctx context.Context, task goav.Task, data []byte, args []st
 	if err != nil {
 		return ControlResponse{}, err
 	}
-	spec, _ := LookupControlCommand("deliver")
-	bound, err := BindArgs(spec, append([]string{"type=" + string(event.Type), "stream=" + string(event.StreamID), "reason=" + event.Reason}, args...))
+	argValues, err := argsMap("control deliver --json", args)
 	if err != nil {
 		return ControlResponse{}, err
 	}
-	cmd := bound.(DeliverCommand)
-	cmd.Type = event.Type
-	cmd.Stream = event.StreamID
-	cmd.Reason = event.Reason
-	cmd.Metadata = event.Metadata
+	for key := range argValues {
+		if key != "at" {
+			return ControlResponse{}, commandError(
+				"unknown_field",
+				"control deliver --json",
+				key,
+				fmt.Sprintf("unknown raw event target field %q", key),
+				[]string{"known_fields=at"},
+				[]string{"use at=<tap-name>", "put event fields inside the JSON object"},
+				nil,
+			)
+		}
+	}
+	cmd := DeliverCommand{
+		Type:     event.Type,
+		Stream:   event.StreamID,
+		Reason:   event.Reason,
+		At:       argValues["at"],
+		Metadata: event.Metadata,
+	}
 	return applyDeliver(ctx, task, cmd)
 }
 

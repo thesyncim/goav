@@ -67,6 +67,9 @@ func bindKnownStruct(ctx bindContext, args []string) (any, error) {
 			if !ok || field.typ.Kind() != reflect.Bool {
 				return nil, unknownFieldError(ctx, name, fields)
 			}
+			if _, ok := seen[field.name]; ok {
+				return nil, duplicateFieldError(ctx, field.name)
+			}
 			target.Field(field.index).SetBool(true)
 			seen[field.name] = struct{}{}
 			continue
@@ -94,13 +97,25 @@ func bindKnownStruct(ctx bindContext, args []string) (any, error) {
 			if !ok || field.typ != metadataType {
 				return nil, unknownFieldError(ctx, key, fields)
 			}
-			setMetadata(target.Field(field.index), strings.TrimPrefix(key, "metadata."), value)
+			metadataKey := strings.TrimPrefix(key, "metadata.")
+			if metadataKey == "" {
+				return nil, commandError("invalid_argument", ctx.operation, key, "metadata key cannot be empty", nil, []string{"use metadata.<key>=<value>"}, nil)
+			}
+			seenKey := "metadata." + metadataKey
+			if _, ok := seen[seenKey]; ok {
+				return nil, duplicateFieldError(ctx, seenKey)
+			}
+			setMetadata(target.Field(field.index), metadataKey, value)
+			seen[seenKey] = struct{}{}
 			seen[field.name] = struct{}{}
 			continue
 		}
 		field, ok := fields[key]
 		if !ok {
 			return nil, unknownFieldError(ctx, key, fields)
+		}
+		if _, ok := seen[field.name]; ok {
+			return nil, duplicateFieldError(ctx, field.name)
 		}
 		if err := setFieldValue(target.Field(field.index), field, value, ctx); err != nil {
 			return nil, err
@@ -296,6 +311,12 @@ func bindRange(ctx bindContext, target reflect.Value, fields map[string]fieldSpe
 	if !okStart || !okEnd {
 		return commandError("invalid_argument", ctx.operation, arg, "range syntax is only supported by segment", nil, []string{"use start=10s end=20s"}, nil)
 	}
+	if _, ok := seen[start.name]; ok {
+		return duplicateFieldError(ctx, start.name)
+	}
+	if _, ok := seen[end.name]; ok {
+		return duplicateFieldError(ctx, end.name)
+	}
 	if err := setFieldValue(target.Field(start.index), start, startText, ctx); err != nil {
 		return err
 	}
@@ -305,6 +326,18 @@ func bindRange(ctx bindContext, target reflect.Value, fields map[string]fieldSpe
 	seen["start"] = struct{}{}
 	seen["end"] = struct{}{}
 	return nil
+}
+
+func duplicateFieldError(ctx bindContext, name string) error {
+	return commandError(
+		"invalid_argument",
+		ctx.operation,
+		name,
+		fmt.Sprintf("%s field %s was provided more than once", ctx.name, name),
+		nil,
+		append([]string{"keep only one " + name + "=... value"}, ctx.suggestions...),
+		nil,
+	)
 }
 
 func setMetadata(field reflect.Value, key string, value string) {

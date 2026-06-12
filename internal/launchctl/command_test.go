@@ -199,6 +199,39 @@ func TestBindArgsUnknownFieldSuggestsKnownField(t *testing.T) {
 	}
 }
 
+func TestBindArgsRejectsDuplicateFields(t *testing.T) {
+	bitrateSpec, _ := LookupControlCommand("bitrate")
+	segmentSpec, _ := LookupControlCommand("segment")
+	deliverSpec, _ := LookupControlCommand("deliver")
+	type boolCommand struct {
+		Enabled bool `goavctl:"enabled" usage:"[enabled=<bool>]" help:"feature flag"`
+	}
+	boolSpec := CommandSpec{Name: "vendor.bool", ArgsType: reflect.TypeOf(boolCommand{})}
+	for _, tc := range []struct {
+		name string
+		spec CommandSpec
+		args []string
+		node string
+	}{
+		{name: "canonical", spec: bitrateSpec, args: []string{"stream=video", "value=1200k", "value=900k"}, node: "value"},
+		{name: "bool flag", spec: boolSpec, args: []string{"--enabled", "enabled=false"}, node: "enabled"},
+		{name: "metadata key", spec: deliverSpec, args: []string{"type=vendor.force_idr", "metadata.foo=bar", "metadata.foo=baz"}, node: "metadata.foo"},
+		{name: "metadata empty key", spec: deliverSpec, args: []string{"type=vendor.force_idr", "metadata.=bar"}, node: "metadata."},
+		{name: "range then field", spec: segmentSpec, args: []string{"10s..20s", "start=11s"}, node: "start"},
+		{name: "field then range", spec: segmentSpec, args: []string{"start=10s", "11s..20s"}, node: "start"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := BindArgs(tc.spec, tc.args)
+			var structured *Error
+			if !errors.As(err, &structured) ||
+				structured.Code != "invalid_argument" ||
+				structured.Node != tc.node {
+				t.Fatalf("err = %+v, want invalid_argument node=%s", structured, tc.node)
+			}
+		})
+	}
+}
+
 func TestBindJSONParsesBoolFields(t *testing.T) {
 	type boolCommand struct {
 		Enabled bool `goavctl:"enabled,required" usage:"enabled=<bool>" help:"feature flag"`
@@ -429,6 +462,14 @@ func TestExecuteRawEventCallsTaskControlDeliver(t *testing.T) {
 		event.Metadata["source"] != "cli" || event.Metadata["count"] != "2" || event.Metadata["ok"] != "true" {
 		t.Fatalf("event = %+v", event)
 	}
+
+	_, err = Execute(context.Background(), task, []string{"control", "deliver", "--json", `{"type":"vendor.force_idr","stream_id":"video"}`, "reason=ignored", "at=raw_video"})
+	var structured *Error
+	if !errors.As(err, &structured) ||
+		structured.Code != "unknown_field" ||
+		structured.Node != "reason" {
+		t.Fatalf("raw event extra field err = %+v", structured)
+	}
 }
 
 func TestControlTargetingVariantsAndRefusals(t *testing.T) {
@@ -502,6 +543,9 @@ func TestRequestFromCLIRejectsMalformedCommands(t *testing.T) {
 		{name: "empty", argv: nil, code: "missing_command"},
 		{name: "missing control verb", argv: []string{"control"}, code: "missing_command"},
 		{name: "raw too many args", argv: []string{"control", "--json", `{}`, `{}`}, code: "invalid_argument"},
+		{name: "duplicate control arg", argv: []string{"control", "bitrate", "stream=video", "stream=audio", "value=1200k"}, code: "invalid_argument"},
+		{name: "duplicate raw event arg", argv: []string{"control", "deliver", "--json", `{"type":"vendor.force_idr"}`, "at=raw_video", "at=frames"}, code: "invalid_argument"},
+		{name: "duplicate watch arg", argv: []string{"watch", "--follow", "follow=false"}, code: "invalid_argument"},
 		{name: "bad graph args", argv: []string{"graph", "mermaid", "dot"}, code: "invalid_argument"},
 		{name: "bad attach", argv: []string{"attach", "tap", "branch", "copy"}, code: "invalid_argument"},
 		{name: "bad detach", argv: []string{"detach"}, code: "invalid_argument"},
@@ -759,6 +803,11 @@ func TestExecuteStreamsAndWatchCommands(t *testing.T) {
 	var structured *Error
 	if !errors.As(err, &structured) || structured.Code != "unsupported_streaming_response" {
 		t.Fatalf("err = %v, want unsupported_streaming_response", err)
+	}
+
+	_, err = Execute(context.Background(), task, []string{"watch", "type=stats", "type=bitrate_changed"})
+	if !errors.As(err, &structured) || structured.Code != "invalid_argument" || structured.Node != "type" {
+		t.Fatalf("err = %+v, want duplicate type", structured)
 	}
 }
 

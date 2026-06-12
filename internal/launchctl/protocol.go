@@ -168,19 +168,26 @@ func RequestFromCLI(argv []string) (Request, error) {
 	case "graph", "flowchart":
 		return graphRequestFromCLI(argv[0], argv[1:])
 	case "inspect", "snapshot", "stats", "taps", "streams", "branches", "destinations", "events", "watch", "stop":
-		return Request{Op: argv[0], Args: argsMap(argv[1:])}, nil
+		args, err := argsMap(argv[0], argv[1:])
+		if err != nil {
+			return Request{}, err
+		}
+		return Request{Op: argv[0], Args: args}, nil
 	default:
 		return Request{}, commandError("unknown_command", "ctl", argv[0], fmt.Sprintf("unknown ctl command %q", argv[0]), nil, []string{"use `goav ctl help`"}, nil)
 	}
 }
 
 func graphRequestFromCLI(op string, argv []string) (Request, error) {
-	args := argsMap(argv)
 	if len(argv) == 1 && !strings.Contains(argv[0], "=") && !strings.HasPrefix(argv[0], "--") {
-		args = map[string]string{"format": argv[0]}
+		return Request{Op: op, Args: map[string]string{"format": argv[0]}}, nil
 	}
 	if len(argv) > 1 {
 		return Request{}, commandError("invalid_argument", op, "", "graph accepts at most one format argument", nil, []string{"use `goav ctl graph`", "use `goav ctl graph format=dot`"}, nil)
+	}
+	args, err := argsMap(op, argv)
+	if err != nil {
+		return Request{}, err
 	}
 	return Request{Op: op, Args: args}, nil
 }
@@ -208,9 +215,17 @@ func controlRequestFromCLI(argv []string) (Request, error) {
 	}
 	verb := argv[0]
 	if verb == "deliver" && len(argv) >= 3 && argv[1] == "--json" {
-		return Request{Op: "control", Verb: "deliver", Event: json.RawMessage(argv[2]), Args: argsMap(argv[3:])}, nil
+		args, err := argsMap("control deliver --json", argv[3:])
+		if err != nil {
+			return Request{}, err
+		}
+		return Request{Op: "control", Verb: "deliver", Event: json.RawMessage(argv[2]), Args: args}, nil
 	}
-	return Request{Op: "control", Verb: verb, Args: argsMap(argv[1:])}, nil
+	args, err := argsMap("control "+verb, argv[1:])
+	if err != nil {
+		return Request{}, err
+	}
+	return Request{Op: "control", Verb: verb, Args: args}, nil
 }
 
 func attachRequestFromCLI(argv []string) (Request, error) {
@@ -251,24 +266,34 @@ func rebranchRequestFromCLI(argv []string) (Request, error) {
 	return req, nil
 }
 
-func argsMap(argv []string) map[string]string {
+func argsMap(operation string, argv []string) (map[string]string, error) {
 	if len(argv) == 0 {
-		return nil
+		return nil, nil
 	}
 	out := make(map[string]string)
 	for _, arg := range argv {
+		var key, value string
 		if strings.HasPrefix(arg, "--") {
-			out[strings.TrimPrefix(arg, "--")] = "true"
-			continue
+			key = strings.TrimPrefix(arg, "--")
+			value = "true"
+		} else {
+			var ok bool
+			key, value, ok = strings.Cut(arg, "=")
+			if !ok {
+				key = arg
+				value = ""
+			}
 		}
-		key, value, ok := strings.Cut(arg, "=")
-		if !ok {
-			out[arg] = ""
-			continue
+		key = strings.TrimSpace(key)
+		if key == "" {
+			return nil, commandError("invalid_argument", operation, "argument", "argument name cannot be empty", []string{"value=" + arg}, []string{"use key=value"}, nil)
+		}
+		if _, exists := out[key]; exists {
+			return nil, commandError("invalid_argument", operation, key, "argument "+key+" was provided more than once", nil, []string{"keep only one " + key + "=... value"}, nil)
 		}
 		out[key] = value
 	}
-	return out
+	return out, nil
 }
 
 func argsFromMap(values map[string]string) []string {
@@ -415,7 +440,10 @@ func graphRenderTarget(format string) (string, error) {
 }
 
 func executeWatch(task goav.Task, operation string, args []string) (ControlResponse, error) {
-	argValues := argsMap(args)
+	argValues, err := argsMap(operation, args)
+	if err != nil {
+		return ControlResponse{}, err
+	}
 	if argValues["follow"] == "true" {
 		return ControlResponse{}, commandError(
 			"unsupported_streaming_response",
