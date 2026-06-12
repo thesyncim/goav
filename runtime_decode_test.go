@@ -35,6 +35,35 @@ func (f *decodeStateTestFactory) NewDecodeState(_ context.Context, config codec.
 	return f.state, nil
 }
 
+type decodeStageStateFactory struct {
+	decoder      codec.Decoder
+	decoderErr   error
+	state        any
+	stateErr     error
+	stateCalls   int
+	decoderCalls int
+	stateConfig  codec.DecodeConfig
+	config       codec.DecodeConfig
+}
+
+func (f *decodeStageStateFactory) NewDecodeState(_ context.Context, config codec.DecodeConfig) (any, error) {
+	f.stateCalls++
+	f.stateConfig = config
+	if f.stateErr != nil {
+		return nil, f.stateErr
+	}
+	return f.state, nil
+}
+
+func (f *decodeStageStateFactory) NewDecoder(_ context.Context, config codec.DecodeConfig) (codec.Decoder, error) {
+	f.decoderCalls++
+	f.config = config
+	if f.decoderErr != nil {
+		return nil, f.decoderErr
+	}
+	return f.decoder, nil
+}
+
 type decodeTestDecoder struct {
 	decodes int
 	flushes int
@@ -217,6 +246,111 @@ func TestDecodeUsesFactoryStateProvider(t *testing.T) {
 	}
 	if err := task.Close(); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestNewDecodeStageNamedPassesCustomDecoderSettings(t *testing.T) {
+	factory := &decodeTestDecoderFactory{decoder: &decodeTestDecoder{}}
+	rt := New(withTestCodecs(testCodecDecoder(codec.Descriptor{ID: av.CodecPCM, Type: av.MediaAudio}, factory))).(*runtime)
+	control := func(any) error { return nil }
+	request := decodeRequest{
+		selector: testSelectAudio(),
+		config: codec.CodecSpec{
+			Settings: codec.CodecSettings{
+				Bitrate: 48_000,
+				Profile: "analysis",
+				Control: control,
+			},
+		},
+	}
+	stream := av.Stream{
+		ID:   "voice",
+		Type: av.MediaAudio,
+		Codec: av.CodecParameters{
+			ID:         av.CodecPCM,
+			Type:       av.MediaAudio,
+			SampleRate: 16_000,
+			Channels:   1,
+		},
+	}
+	bounds := codec.DecodeBounds{
+		MaxFramesPerInput:   3,
+		MaxEventsPerInput:   2,
+		MaxRequestsPerInput: 4,
+		MaxPayloadBytes:     99,
+		MaxRetainedBytes:    100,
+	}
+
+	stage, err := (&builder{runtime: rt}).newDecodeStageNamed(context.Background(), "decode-custom", request, stream, false, true, bounds)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stage.Close()
+	if stage.Name() != "decode-custom" {
+		t.Fatalf("stage name = %q, want decode-custom", stage.Name())
+	}
+	if detail := stage.DescribeNode().Detail; !strings.Contains(detail, "packets -> frames") || !strings.Contains(detail, "audio") {
+		t.Fatalf("stage detail = %q, want decode detail", detail)
+	}
+	config := factory.config
+	if config.Stream.ID != "voice" || config.Stream.Codec.ID != av.CodecPCM {
+		t.Fatalf("decode stream config = %+v", config.Stream)
+	}
+	if config.Realtime || config.LowLatency {
+		t.Fatalf("decode realtime flags = realtime:%v low_latency:%v, want false", config.Realtime, config.LowLatency)
+	}
+	if !config.Resilience.AcceptLoss || !config.Resilience.ConcealAudio ||
+		config.Resilience.DropDamagedVideo || config.Resilience.RequestKeyframes {
+		t.Fatalf("audio resilience = %+v", config.Resilience)
+	}
+	if config.Bounds.MaxFramesPerInput != 3 ||
+		config.Bounds.MaxEventsPerInput != 2 ||
+		config.Bounds.MaxRequestsPerInput != 4 ||
+		config.Bounds.MaxPayloadBytes != 99 ||
+		config.Bounds.MaxRetainedBytes != 100 {
+		t.Fatalf("decode bounds = %+v", config.Bounds)
+	}
+	if config.Settings.Bitrate != 48_000 ||
+		config.Settings.Profile != "analysis" ||
+		config.Settings.Control == nil {
+		t.Fatalf("decode settings = %+v", config.Settings)
+	}
+}
+
+func TestNewDecodeStageNamedCustomDecoderErrorContracts(t *testing.T) {
+	stream := av.Stream{
+		ID:   "voice",
+		Type: av.MediaAudio,
+		Codec: av.CodecParameters{
+			ID:   av.CodecPCM,
+			Type: av.MediaAudio,
+		},
+	}
+	request := decodeRequest{selector: testSelectAudio()}
+	newRuntime := func(factory codec.DecoderFactory) *runtime {
+		return New(withTestCodecs(testCodecDecoder(codec.Descriptor{ID: av.CodecPCM, Type: av.MediaAudio}, factory))).(*runtime)
+	}
+
+	stateErr := errors.New("state failed")
+	stateFactory := &decodeStageStateFactory{stateErr: stateErr}
+	_, err := (&builder{runtime: newRuntime(stateFactory)}).newDecodeStageNamed(context.Background(), "decode-custom", request, stream, true, false, codec.DecodeBounds{})
+	if !errors.Is(err, stateErr) || stateFactory.decoderCalls != 0 {
+		t.Fatalf("state error = %v decoder calls=%d, want state failure before decoder", err, stateFactory.decoderCalls)
+	}
+
+	decoderErr := errors.New("decoder failed")
+	state := &closeDecodeStateRecorder{}
+	factory := &decodeStageStateFactory{state: state, decoderErr: decoderErr}
+	_, err = (&builder{runtime: newRuntime(factory)}).newDecodeStageNamed(context.Background(), "decode-custom", request, stream, true, false, codec.DecodeBounds{})
+	if !errors.Is(err, decoderErr) || !state.closed {
+		t.Fatalf("decoder error = %v state.closed=%v, want decoder failure with closed state", err, state.closed)
+	}
+
+	state = &closeDecodeStateRecorder{}
+	factory = &decodeStageStateFactory{state: state}
+	_, err = (&builder{runtime: newRuntime(factory)}).newDecodeStageNamed(context.Background(), "decode-custom", request, stream, true, false, codec.DecodeBounds{})
+	if !errors.Is(err, codec.ErrNilDecoder) || !state.closed {
+		t.Fatalf("nil decoder error = %v state.closed=%v, want ErrNilDecoder with closed state", err, state.closed)
 	}
 }
 
