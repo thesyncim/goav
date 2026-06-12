@@ -125,9 +125,28 @@ registry := ctl.PipelineRegistry{
         Summary: "ACME audio encoder with native settings",
         Usage:   "bitrate=<bps> quality=<profile> lookahead=<mode>",
         Apply: func(args ctl.StepArgs) (codec.CodecSpec, error) {
+            if args["bitrate"] == "" {
+                return codec.CodecSpec{}, ctl.NewError(
+                    "missing_required",
+                    "parse branch pipeline",
+                    "bitrate",
+                    "acmeenc needs bitrate=<bps>",
+                    nil,
+                    []string{"use acmeenc bitrate=128000"},
+                    nil,
+                )
+            }
             bitrate, err := strconv.Atoi(args["bitrate"])
             if err != nil {
-                return codec.CodecSpec{}, err
+                return codec.CodecSpec{}, ctl.NewError(
+                    "invalid_value",
+                    "parse branch pipeline",
+                    "bitrate",
+                    "acmeenc bitrate must be a positive integer",
+                    []string{"value=" + args["bitrate"]},
+                    []string{"use acmeenc bitrate=128000"},
+                    err,
+                )
             }
             return codec.Codec(customCodec, av.MediaAudio,
                 codec.Bitrate(bitrate),
@@ -142,6 +161,10 @@ registry := ctl.PipelineRegistry{
     }},
 }
 ```
+
+Use `ctl.NewError` from custom command, step, or encoder callbacks when a
+custom `StepArgs` value is missing or invalid. The structured code, node,
+details, suggestions, and cause are preserved in the CLI/socket response.
 
 Start the socket after the task is built. The same options apply whether the
 socket is used by humans, scripts, supervisors, or tests.

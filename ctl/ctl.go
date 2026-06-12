@@ -63,6 +63,13 @@ func ErrorResponse(operation string, err error) Response {
 	return launchctl.ErrorResponse(operation, err)
 }
 
+// NewError builds a structured refusal for custom command, branch-step, and
+// encoder handlers. Returning this from an Apply callback preserves field-level
+// codes, details, suggestions, and causes in CLI/socket responses.
+func NewError(code, operation, node, message string, details, suggestions []string, cause error) *Error {
+	return launchctl.NewError(code, operation, node, message, details, suggestions, cause)
+}
+
 // ControlManifest returns the built-in control command allowlist.
 func ControlManifest() []CommandSpec {
 	return launchctl.ControlManifest()
