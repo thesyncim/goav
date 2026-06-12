@@ -95,12 +95,21 @@ $CTL attach frames as memory \
 ```
 
 Attach the runtime-registered custom encoder through the default generic encode
-step. This needs no custom CLI encoder registry entry; common settings are
-mapped into the `codec.CodecSpec` that the runtime already understands:
+step to an in-process sink. This needs no custom CLI encoder registry entry;
+common settings are mapped into the `codec.CodecSpec` that the runtime already
+understands:
 
 ```sh
 $CTL attach frames as acme-generic \
   'thumbnail every=4 label=generic ! encode codec=x_acme_video media=video bitrate=220k profile=preview fps=2 keyframe_interval=1 ! memorysink name=acme-generic'
+```
+
+Attach the same runtime-registered custom encoder to a file through a
+runtime-registered muxer:
+
+```sh
+$CTL attach frames as acme-file \
+  'thumbnail every=6 label=file ! encode codec=x_acme_video media=video bitrate=320k profile=file fps=2 keyframe_interval=1 ! filesink location="/tmp/goav acme.webm" format=webm'
 ```
 
 Attach a custom encoder spelling only when native settings need host code. The
@@ -133,6 +142,7 @@ $CTL detach archive
 $CTL detach thumbnails
 $CTL detach memory
 $CTL detach acme-generic
+$CTL detach acme-file
 $CTL detach acme-preview
 ```
 
