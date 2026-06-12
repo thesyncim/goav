@@ -298,9 +298,32 @@ ctl.BranchPipelineStepSpec{
 }
 ```
 
+Custom destination steps call `branch.Destination(...)`. This is the pattern for
+object stores, upload services, analytics queues, or any app-owned sink that is
+not a local file:
+
+```go
+ctl.BranchPipelineStepSpec{
+    Name:    "objectsink",
+    Summary: "upload branch messages to object storage",
+    Usage:   "bucket=<name> key=<path>",
+    Apply: func(branch *ctl.BranchPipeline, args ctl.StepArgs) error {
+        writer := objectStoreWriter(args["bucket"], args["key"])
+        branch.Destination(goav.Writer(writer,
+            goav.Name("object:"+args["key"]),
+            goav.Format(av.FormatID("ogg")),
+        ))
+        return nil
+    },
+}
+```
+
 ```sh
 goav ctl --control unix:///tmp/goav-live.sock attach frames as monitored \
   'meter ! encode codec=x_pcm_s16 media=audio ! filesink location=monitored.ogg format=ogg'
+
+goav ctl --control unix:///tmp/goav-live.sock attach frames as upload \
+  'meter ! acmeenc bitrate=128000 quality=voice lookahead=deep ! objectsink bucket=archive key=session-001.ogg'
 ```
 
 Unknown commands, fields, taps, branches, nodes, and pipeline steps return

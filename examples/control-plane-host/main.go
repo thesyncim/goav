@@ -151,19 +151,34 @@ func newDemoHost(ctx context.Context) (*demoHost, error) {
 	}
 
 	registry := ctl.PipelineRegistry{
-		Steps: []ctl.BranchPipelineStepSpec{{
-			Name:    "meter",
-			Aliases: []string{"levelmeter"},
-			Summary: "pass frames through a demo metering stage",
-			Usage:   `[label=<text>]`,
-			Apply: func(branch *ctl.BranchPipeline, args ctl.StepArgs) error {
-				label := firstNonEmpty(args["label"], "meter")
-				branch.Do(goav.FrameFunc("demo-"+label, func(_ context.Context, frame *av.Frame, emit goav.Emit) error {
-					return emit.Frame(frame)
-				}))
-				return nil
+		Steps: []ctl.BranchPipelineStepSpec{
+			{
+				Name:    "meter",
+				Aliases: []string{"levelmeter"},
+				Summary: "pass frames through a demo metering stage",
+				Usage:   `[label=<text>]`,
+				Apply: func(branch *ctl.BranchPipeline, args ctl.StepArgs) error {
+					label := firstNonEmpty(args["label"], "meter")
+					branch.Do(goav.FrameFunc("demo-"+label, func(_ context.Context, frame *av.Frame, emit goav.Emit) error {
+						return emit.Frame(frame)
+					}))
+					return nil
+				},
 			},
-		}},
+			{
+				Name:    "memorysink",
+				Aliases: []string{"memsink"},
+				Summary: "send messages to a demo in-process sink",
+				Usage:   `[name=<text>]`,
+				Apply: func(branch *ctl.BranchPipeline, args ctl.StepArgs) error {
+					name := firstNonEmpty(args["name"], "memory")
+					branch.Destination(goav.Sink(goav.SinkFunc("demo-"+name, func(context.Context, goav.Message) error {
+						return nil
+					})))
+					return nil
+				},
+			},
+		},
 		Encoders: []ctl.EncoderSpec{{
 			Name:    "acmeenc",
 			Aliases: []string{"acme"},
@@ -195,9 +210,16 @@ func newDemoHost(ctx context.Context) (*demoHost, error) {
 func printUsage(out io.Writer, address string) {
 	fmt.Fprintf(out, "control=%s\n", address)
 	fmt.Fprintf(out, "goav ctl --control %s help attach\n", address)
+	fmt.Fprintf(out, "goav ctl --control %s help control vendor.rate\n", address)
+	fmt.Fprintf(out, "goav ctl --control %s taps\n", address)
 	fmt.Fprintf(out, "goav ctl --control %s control vendor.rate value=0.5 source=fixture\n", address)
 	fmt.Fprintf(out, "goav ctl --control %s attach frames as archive 'meter label=\"left ! right\" ! acmeenc bitrate=128000 quality=voice lookahead=deep ! filesink location=\"/tmp/goav archive.ogg\" format=ogg'\n", address)
+	fmt.Fprintf(out, "goav ctl --control %s attach frames as memory 'meter ! acmeenc bitrate=64000 quality=preview lookahead=shallow ! memorysink name=preview'\n", address)
 	fmt.Fprintf(out, "goav ctl --control %s graph\n", address)
+	fmt.Fprintf(out, "goav ctl --control %s graph format=text\n", address)
+	fmt.Fprintf(out, "goav ctl --control %s rebranch archive 'meter ! acmeenc bitrate=96000 quality=voice lookahead=shallow ! filesink location=\"/tmp/goav archive-low.ogg\" format=ogg'\n", address)
+	fmt.Fprintf(out, "goav ctl --control %s detach archive\n", address)
+	fmt.Fprintf(out, "goav ctl --control %s detach memory\n", address)
 }
 
 func waitForHostSocket(ctx context.Context, address string, errC <-chan error) error {
