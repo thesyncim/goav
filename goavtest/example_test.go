@@ -5,7 +5,10 @@ import (
 	"fmt"
 
 	"github.com/thesyncim/goav"
+	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/goavtest"
+	"github.com/thesyncim/goav/pipeline"
+	"github.com/thesyncim/goav/shape"
 )
 
 // ExampleAudio runs the smallest possible pipeline test: a deterministic
@@ -46,4 +49,62 @@ func ExampleCollector() {
 	}
 	fmt.Println(out.S16())
 	// Output: [[150] [150]]
+}
+
+// ExampleTestSourceScript shows a provider-shaped fixture with a mixed script:
+// frame data plus an in-band event, both delivered through the source seam.
+func ExampleTestSourceScript() {
+	ctx := context.Background()
+	frame := &av.Frame{
+		Type: av.MediaAudio,
+		Audio: &av.AudioFrame{
+			SampleRate:   8000,
+			Channels:     1,
+			SampleFormat: av.SampleFormatS16,
+			Samples:      1,
+		},
+		Planes: []av.Plane{{
+			Buffer: av.Buffer{Bytes: []byte{7, 0}, Ownership: av.BufferImmutable},
+		}},
+	}
+	source := goavtest.NewTestSource("fixture",
+		shape.Frame(av.MediaAudio, shape.Audio(8000, 1, av.SampleFormatS16), shape.Codec(av.CodecPCM)),
+		goavtest.TestSourceScript(
+			goavtest.TestSourceFrame(frame),
+			goavtest.TestSourceEvent(av.Event{Type: av.EventStats, Reason: "ready"}),
+		),
+	)
+	opened, _, err := source.OpenSource(ctx)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	emitter := &exampleScriptEmitter{}
+	err = opened.Start(ctx, emitter)
+	fmt.Println("err:", err)
+	fmt.Println("frames:", emitter.frames)
+	fmt.Println("events:", emitter.events, emitter.firstReason)
+	// Output:
+	// err: <nil>
+	// frames: 1
+	// events: 2 ready
+}
+
+type exampleScriptEmitter struct {
+	frames      int
+	events      int
+	firstReason string
+}
+
+func (e *exampleScriptEmitter) Emit(_ context.Context, msg *pipeline.Message) error {
+	if msg.Frame != nil {
+		e.frames++
+	}
+	if msg.Event != nil {
+		e.events++
+		if e.firstReason == "" {
+			e.firstReason = msg.Event.Reason
+		}
+	}
+	return nil
 }

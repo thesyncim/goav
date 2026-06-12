@@ -15,14 +15,14 @@
 //	_ = task.Run(ctx)
 //	// out.S16() == [[150] [150]]
 //
-// The sources (Audio, Video, Packets, LiveAudio) are PTS-stamped with
-// coherent durations and declare their shape, so the planner solves
-// conversions exactly as it would for production inputs. The Collector
-// records safe copies of everything a destination receives. Runtime is the
-// one-liner deterministic runtime: standard filters, a passthrough codec for
-// every well-known codec id, a byte-faithful container for every well-known
-// container format id, and a fake clock so realtime pacing never sleeps for
-// real.
+// The sources (Audio, Video, Packets, LiveAudio, NewTestSource with
+// TestSourceScript) are PTS-stamped with coherent durations and declare their
+// shape, so the planner solves conversions exactly as it would for production
+// inputs. The Collector records safe copies of everything a destination
+// receives. Runtime is the one-liner deterministic runtime: standard filters,
+// a passthrough codec for every well-known codec id, a byte-faithful container
+// for every well-known container format id, and a fake clock so realtime
+// pacing never sleeps for real.
 package goavtest
 
 import (

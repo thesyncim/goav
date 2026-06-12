@@ -37,6 +37,13 @@ type testSourceMessage struct {
 	event  *av.Event
 }
 
+// TestSourceMessage is one scripted emission for TestSource. Build values with
+// TestSourceFrame, TestSourcePacket, or TestSourceEvent so caller-owned media
+// is cloned before the source starts.
+type TestSourceMessage struct {
+	message testSourceMessage
+}
+
 // TestSourceOption configures a TestSource.
 type TestSourceOption func(*TestSource)
 
@@ -83,6 +90,41 @@ func TestSourceLive() TestSourceOption {
 	}
 }
 
+// TestSourceFrame builds a scripted frame emission.
+func TestSourceFrame(frame *av.Frame) TestSourceMessage {
+	return TestSourceMessage{message: testSourceMessage{frame: cloneFramePtr(frame)}}
+}
+
+// TestSourcePacket builds a scripted packet emission.
+func TestSourcePacket(packet *av.Packet) TestSourceMessage {
+	return TestSourceMessage{message: testSourceMessage{packet: clonePacketPtr(packet)}}
+}
+
+// TestSourceEvent builds a scripted event emission.
+func TestSourceEvent(event av.Event) TestSourceMessage {
+	return TestSourceMessage{message: testSourceMessage{event: cloneEventPtr(&event)}}
+}
+
+// TestSourceScript replaces the source script with a mixed sequence of frames,
+// packets, and events. Each message is cloned when the option is applied, and
+// Start clones again on delivery, so tests can mutate inputs and collected
+// outputs without corrupting future runs.
+func TestSourceScript(messages ...TestSourceMessage) TestSourceOption {
+	return func(source *TestSource) {
+		source.script = source.script[:0]
+		source.appendScript(messages...)
+	}
+}
+
+// TestSourceAppend appends mixed frame, packet, and event emissions to the
+// current script. It composes with TestSourceScript, TestSourceFrames,
+// TestSourcePackets, and TestSourceEvents in option order.
+func TestSourceAppend(messages ...TestSourceMessage) TestSourceOption {
+	return func(source *TestSource) {
+		source.appendScript(messages...)
+	}
+}
+
 // TestSourceFrames sets the frame script emitted by the source.
 func TestSourceFrames(frames ...*av.Frame) TestSourceOption {
 	return func(source *TestSource) {
@@ -117,6 +159,15 @@ func TestSourceEvents(events ...av.Event) TestSourceOption {
 			clone := cloneEvent(event)
 			source.script = append(source.script, testSourceMessage{event: &clone})
 		}
+	}
+}
+
+func (s *TestSource) appendScript(messages ...TestSourceMessage) {
+	for _, message := range messages {
+		if message.message.frame == nil && message.message.packet == nil && message.message.event == nil {
+			continue
+		}
+		s.script = append(s.script, cloneTestSourceMessage(message.message))
 	}
 }
 

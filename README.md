@@ -636,12 +636,17 @@ instead of sleeping. `Codec(id)`/`Format(id)` register the fakes individually,
 and extra options are last-wins overrides.
 
 Use `NewTestSource` when you need a provider-shaped fixture that records source
-controls and can emit custom frames, packets, or events:
+controls and can emit custom frames, packets, events, or a mixed script:
 
 ```go
+packet := &av.Packet{Payload: av.Buffer{Bytes: []byte{1}, Ownership: av.BufferImmutable}}
 source := goavtest.NewTestSource("fixture",
     shape.Packet(av.MediaAudio, av.CodecOpus, shape.Audio(48_000, 1, av.SampleFormatS16)),
     goavtest.TestSourceLive(),
+    goavtest.TestSourceScript(
+        goavtest.TestSourcePacket(packet),
+        goavtest.TestSourceEvent(av.Event{Type: av.EventStats, Reason: "ready"}),
+    ),
 )
 task, _ := goav.From(source.Input()).Audio().Copy().
     To(goavtest.NewCollector().Sink()).
@@ -657,7 +662,8 @@ CI: `ExampleSource_pushAccounting` shows `SourcePush` delivery accounting,
 `ExampleWithEncoder_customSettings` shows typed codec settings plus
 `codec.Control` for native encoder options, and `ExampleTask_flowchart`
 renders a live task with an attached branch through
-`graphrender.RenderTaskFlowchart(task)`.
+`graphrender.RenderTaskFlowchart(task)`. `ExampleTestSourceScript` shows a
+provider-shaped source fixture with mixed frame/event scripting.
 
 ## Debug And Diagnostics
 
