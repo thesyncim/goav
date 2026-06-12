@@ -42,9 +42,11 @@ $CTL taps
 ```
 
 `help attach` lists the custom branch steps, custom encoder spellings, and the
-encoders discovered from the running task runtime. The ACME encoder is available
-immediately through the generic `encode codec=x_acme_video media=video ...`
-step because the host registered it with `goav.WithEncoder`.
+encoders and muxers discovered from the running task runtime. The ACME encoder
+is available immediately through the generic
+`encode codec=x_acme_video media=video ...` step because the host registered it
+with `goav.WithEncoder`; registered muxers are available through
+`filesink location=<path> format=<id>`.
 
 Control the fake source. These are normal built-in source controls targeting
 the `fixture` source node:

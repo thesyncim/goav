@@ -1726,6 +1726,9 @@ func TestServerGenericEncodeStepCarriesCommonCodecOptions(t *testing.T) {
 		"encode codec=vendor_generic_audio media=audio",
 		"Vendor generic audio",
 		"Any encoder registered on the task runtime is callable",
+		"Runtime muxers:",
+		"filesink location=<path> format=ogg",
+		"Any muxer registered on the task runtime is callable",
 	} {
 		if !strings.Contains(helpText, fragment) {
 			t.Fatalf("help missing %q:\n%s", fragment, helpText)

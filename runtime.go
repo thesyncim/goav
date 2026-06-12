@@ -510,6 +510,14 @@ func (t *task) EncoderDescriptors() []codec.Descriptor {
 	return out
 }
 
+// MuxerDescriptors lists muxer factories registered on the task runtime.
+func (t *task) MuxerDescriptors() []format.Descriptor {
+	if t == nil || t.runtime == nil || t.runtime.formats == nil {
+		return nil
+	}
+	return t.runtime.formats.MuxerDescriptors()
+}
+
 // planTapRows projects live task taps onto the plan report's tap rows.
 func planTapRows(taps []snapshot.Tap) []plan.Tap {
 	rows := make([]plan.Tap, 0, len(taps))
