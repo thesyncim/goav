@@ -369,19 +369,25 @@ func DecodeRawControl(data []byte) (goav.Control, error) {
 	var ctrl goav.Control
 	switch typ {
 	case goav.ControlKeyframe:
-		stream := av.StreamID(firstNonEmpty(fieldString(obj, "stream_id"), fieldString(obj, "stream")))
+		if err := validateRawFields("control --json", obj, "type", "stream_id", "tap", "node", "reason"); err != nil {
+			return goav.Control{}, err
+		}
+		stream := av.StreamID(fieldString(obj, "stream_id"))
 		ctrl = goav.Keyframe(stream)
 	case goav.ControlBitrate:
-		stream := av.StreamID(firstNonEmpty(fieldString(obj, "stream_id"), fieldString(obj, "stream")))
-		bitrate, ok := fieldInt(obj, "bitrate")
-		if !ok {
-			bitrate, ok = fieldInt(obj, "value")
+		if err := validateRawFields("control --json", obj, "type", "stream_id", "bitrate", "tap", "node", "reason"); err != nil {
+			return goav.Control{}, err
 		}
+		stream := av.StreamID(fieldString(obj, "stream_id"))
+		bitrate, ok := fieldInt(obj, "bitrate")
 		if !ok {
 			return goav.Control{}, commandError("missing_required", "control --json", "bitrate", "raw bitrate control needs bitrate", nil, []string{`include "bitrate":1200000`}, nil)
 		}
 		ctrl = goav.SetBitrate(stream, bitrate)
 	case goav.ControlSeek:
+		if err := validateRawFields("control --json", obj, "type", "position", "tap", "node", "reason"); err != nil {
+			return goav.Control{}, err
+		}
 		position, ok, err := fieldDuration(obj, "position")
 		if err != nil {
 			return goav.Control{}, err
@@ -391,24 +397,21 @@ func DecodeRawControl(data []byte) (goav.Control, error) {
 		}
 		ctrl = goav.Seek(position)
 	case goav.ControlRate:
-		rate, ok := fieldFloat(obj, "rate")
-		if !ok {
-			rate, ok = fieldFloat(obj, "value")
+		if err := validateRawFields("control --json", obj, "type", "rate", "tap", "node", "reason"); err != nil {
+			return goav.Control{}, err
 		}
+		rate, ok := fieldFloat(obj, "rate")
 		if !ok {
 			return goav.Control{}, commandError("missing_required", "control --json", "rate", "raw rate control needs rate", nil, []string{`include "rate":0.5`}, nil)
 		}
 		ctrl = goav.Rate(rate)
 	case goav.ControlSegment:
+		if err := validateRawFields("control --json", obj, "type", "start", "end", "tap", "node", "reason"); err != nil {
+			return goav.Control{}, err
+		}
 		start, ok, err := fieldDuration(obj, "start")
 		if err != nil {
 			return goav.Control{}, err
-		}
-		if !ok {
-			start, ok, err = fieldDuration(obj, "position")
-			if err != nil {
-				return goav.Control{}, err
-			}
 		}
 		end, endOK, err := fieldDuration(obj, "end")
 		if err != nil {
@@ -419,9 +422,15 @@ func DecodeRawControl(data []byte) (goav.Control, error) {
 		}
 		ctrl = goav.Segment(start, end)
 	case goav.ControlSelect:
-		active := av.StreamID(firstNonEmpty(fieldString(obj, "active"), fieldString(obj, "stream_id"), fieldString(obj, "stream")))
+		if err := validateRawFields("control --json", obj, "type", "active", "tap", "node", "reason"); err != nil {
+			return goav.Control{}, err
+		}
+		active := av.StreamID(fieldString(obj, "active"))
 		ctrl = goav.SelectActive(active)
-	case goav.ControlEvent, "deliver":
+	case goav.ControlEvent:
+		if err := validateRawFields("control --json", obj, "type", "event", "tap", "node", "reason"); err != nil {
+			return goav.Control{}, err
+		}
 		raw, ok := obj["event"]
 		if !ok {
 			return goav.Control{}, commandError("missing_required", "control --json", "event", "raw event control needs event object", nil, []string{`use goav ctl control deliver --json '{"type":"vendor.force_idr"}' at=<tap>`}, nil)
@@ -436,7 +445,7 @@ func DecodeRawControl(data []byte) (goav.Control, error) {
 		}
 		ctrl = goav.Deliver(event)
 	default:
-		return goav.Control{}, commandError("invalid_value", "control --json", "type", fmt.Sprintf("unknown raw control type %q", typ), nil, []string{"use one of: " + strings.Join(controlCommandNames(), ", ")}, nil)
+		return goav.Control{}, commandError("invalid_value", "control --json", "type", fmt.Sprintf("unknown raw control type %q", typ), nil, []string{"use one of: " + strings.Join(rawControlTypeNames(), ", "), `use goav ctl control deliver --json '{"type":"vendor.force_idr"}' at=<tap>`}, nil)
 	}
 	ctrl.Reason = firstNonEmpty(fieldString(obj, "reason"), ctrl.Reason)
 	if tap := fieldString(obj, "tap"); tap != "" {
@@ -459,9 +468,12 @@ func DecodeRawEvent(data []byte) (av.Event, error) {
 	if typ == "" {
 		return av.Event{}, commandError("missing_required", "control deliver --json", "type", "raw event JSON needs type", nil, []string{`include "type":"vendor.force_idr"`}, nil)
 	}
+	if err := validateRawFields("control deliver --json", obj, "type", "stream_id", "reason", "metadata"); err != nil {
+		return av.Event{}, err
+	}
 	event := av.Event{
 		Type:     typ,
-		StreamID: av.StreamID(firstNonEmpty(fieldString(obj, "stream_id"), fieldString(obj, "stream"))),
+		StreamID: av.StreamID(fieldString(obj, "stream_id")),
 		Reason:   fieldString(obj, "reason"),
 	}
 	if rawMetadata, ok := obj["metadata"]; ok {
@@ -477,17 +489,129 @@ func DecodeRawEvent(data []byte) (av.Event, error) {
 func decodeObject(data []byte) (map[string]any, error) {
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.UseNumber()
-	var obj map[string]any
-	if err := decoder.Decode(&obj); err != nil {
+	value, err := decodeJSONValue(decoder)
+	if err != nil {
 		return nil, err
 	}
-	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+	if _, err := decoder.Token(); err != io.EOF {
+		if err != nil {
+			return nil, err
+		}
 		return nil, fmt.Errorf("raw JSON must contain one object")
 	}
-	if obj == nil {
+	obj, ok := value.(map[string]any)
+	if !ok || obj == nil {
 		return nil, fmt.Errorf("raw JSON must contain an object")
 	}
 	return obj, nil
+}
+
+func decodeJSONValue(decoder *json.Decoder) (any, error) {
+	token, err := decoder.Token()
+	if err != nil {
+		return nil, err
+	}
+	delimiter, ok := token.(json.Delim)
+	if !ok {
+		return token, nil
+	}
+	switch delimiter {
+	case '{':
+		return decodeJSONObject(decoder)
+	case '[':
+		return decodeJSONArray(decoder)
+	default:
+		return nil, fmt.Errorf("unexpected JSON delimiter %q", delimiter)
+	}
+}
+
+func decodeJSONObject(decoder *json.Decoder) (map[string]any, error) {
+	obj := make(map[string]any)
+	for decoder.More() {
+		token, err := decoder.Token()
+		if err != nil {
+			return nil, err
+		}
+		key, ok := token.(string)
+		if !ok {
+			return nil, fmt.Errorf("raw JSON object key must be a string")
+		}
+		if _, exists := obj[key]; exists {
+			return nil, fmt.Errorf("duplicate JSON field %q", key)
+		}
+		value, err := decodeJSONValue(decoder)
+		if err != nil {
+			return nil, err
+		}
+		obj[key] = value
+	}
+	end, err := decoder.Token()
+	if err != nil {
+		return nil, err
+	}
+	if delimiter, ok := end.(json.Delim); !ok || delimiter != '}' {
+		return nil, fmt.Errorf("raw JSON object is not closed")
+	}
+	return obj, nil
+}
+
+func decodeJSONArray(decoder *json.Decoder) ([]any, error) {
+	var values []any
+	for decoder.More() {
+		value, err := decodeJSONValue(decoder)
+		if err != nil {
+			return nil, err
+		}
+		values = append(values, value)
+	}
+	end, err := decoder.Token()
+	if err != nil {
+		return nil, err
+	}
+	if delimiter, ok := end.(json.Delim); !ok || delimiter != ']' {
+		return nil, fmt.Errorf("raw JSON array is not closed")
+	}
+	return values, nil
+}
+
+func validateRawFields(operation string, obj map[string]any, allowed ...string) error {
+	known := make(map[string]struct{}, len(allowed))
+	for _, name := range allowed {
+		known[name] = struct{}{}
+	}
+	for name := range obj {
+		if _, ok := known[name]; ok {
+			continue
+		}
+		suggestions := []string{"use canonical raw JSON fields only"}
+		if nearest := closest(name, allowed); nearest != "" {
+			suggestions = append([]string{"use " + nearest}, suggestions...)
+		}
+		return commandError(
+			"unknown_field",
+			operation,
+			name,
+			fmt.Sprintf("unknown raw JSON field %q", name),
+			[]string{"known_fields=" + strings.Join(allowed, ",")},
+			suggestions,
+			nil,
+		)
+	}
+	return nil
+}
+
+func rawControlTypeNames() []string {
+	names := []string{
+		string(goav.ControlBitrate),
+		string(goav.ControlEvent),
+		string(goav.ControlKeyframe),
+		string(goav.ControlRate),
+		string(goav.ControlSeek),
+		string(goav.ControlSegment),
+		string(goav.ControlSelect),
+	}
+	sort.Strings(names)
+	return names
 }
 
 func fieldString(obj map[string]any, name string) string {

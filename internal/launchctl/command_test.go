@@ -290,6 +290,16 @@ func TestBindJSONParsesNumericFieldsAndMetadata(t *testing.T) {
 	if !errors.As(err, &structured) || structured.Code != "invalid_json" {
 		t.Fatalf("err = %v, want invalid_json", err)
 	}
+
+	_, err = BindJSON(rateSpec, []byte(`{"value":0.5,"value":1}`))
+	if !errors.As(err, &structured) || structured.Code != "invalid_json" {
+		t.Fatalf("duplicate field err = %v, want invalid_json", err)
+	}
+
+	_, err = BindJSON(deliverSpec, []byte(`{"type":"vendor.force_idr","metadata":{"source":"a","source":"b"}}`))
+	if !errors.As(err, &structured) || structured.Code != "invalid_json" {
+		t.Fatalf("duplicate metadata err = %v, want invalid_json", err)
+	}
 }
 
 func TestExecuteRawControlCallsTaskControl(t *testing.T) {
@@ -319,8 +329,8 @@ func TestExecuteRawControlCallsTaskControl(t *testing.T) {
 	}
 }
 
-func TestDecodeRawControlAliasesAndRefusals(t *testing.T) {
-	keyframe, err := DecodeRawControl([]byte(`{"type":"keyframe","stream":"video","tap":"raw_video"}`))
+func TestDecodeRawControlCanonicalFieldsAndRefusals(t *testing.T) {
+	keyframe, err := DecodeRawControl([]byte(`{"type":"keyframe","stream_id":"video","tap":"raw_video"}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -328,7 +338,7 @@ func TestDecodeRawControlAliasesAndRefusals(t *testing.T) {
 		t.Fatalf("keyframe = %+v", keyframe)
 	}
 
-	bitrate, err := DecodeRawControl([]byte(`{"type":"bitrate","stream":"audio","value":"2M"}`))
+	bitrate, err := DecodeRawControl([]byte(`{"type":"bitrate","stream_id":"audio","bitrate":"2M"}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -336,7 +346,7 @@ func TestDecodeRawControlAliasesAndRefusals(t *testing.T) {
 		t.Fatalf("bitrate = %+v", bitrate)
 	}
 
-	segment, err := DecodeRawControl([]byte(`{"type":"segment","position":"10s","end":"20s"}`))
+	segment, err := DecodeRawControl([]byte(`{"type":"segment","start":"10s","end":"20s"}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -352,7 +362,7 @@ func TestDecodeRawControlAliasesAndRefusals(t *testing.T) {
 		t.Fatalf("select = %+v", selectControl)
 	}
 
-	deliver, err := DecodeRawControl([]byte(`{"type":"deliver","event":{"type":"vendor.force_idr","stream":"video","metadata":{"source":null}},"tap":"raw_video","reason":"manual"}`))
+	deliver, err := DecodeRawControl([]byte(`{"type":"event","event":{"type":"vendor.force_idr","stream_id":"video","metadata":{"source":null}},"tap":"raw_video","reason":"manual"}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -372,12 +382,19 @@ func TestDecodeRawControlAliasesAndRefusals(t *testing.T) {
 		node string
 	}{
 		{name: "missing type", json: `{}`, code: "missing_required", node: "type"},
-		{name: "missing bitrate", json: `{"type":"bitrate","stream":"video"}`, code: "missing_required", node: "bitrate"},
+		{name: "missing bitrate", json: `{"type":"bitrate","stream_id":"video"}`, code: "missing_required", node: "bitrate"},
 		{name: "missing seek", json: `{"type":"seek"}`, code: "missing_required", node: "position"},
 		{name: "missing rate", json: `{"type":"rate"}`, code: "missing_required", node: "rate"},
 		{name: "missing segment end", json: `{"type":"segment","start":"10s"}`, code: "missing_required", node: "segment"},
-		{name: "missing event object", json: `{"type":"deliver"}`, code: "missing_required", node: "event"},
+		{name: "missing event object", json: `{"type":"event"}`, code: "missing_required", node: "event"},
+		{name: "deliver control type", json: `{"type":"deliver","event":{"type":"vendor.force_idr"}}`, code: "invalid_value", node: "type"},
 		{name: "unknown type", json: `{"type":"warp"}`, code: "invalid_value", node: "type"},
+		{name: "stream alias", json: `{"type":"keyframe","stream":"video"}`, code: "unknown_field", node: "stream"},
+		{name: "value alias", json: `{"type":"bitrate","stream_id":"audio","value":"2M"}`, code: "unknown_field", node: "value"},
+		{name: "position alias", json: `{"type":"segment","position":"10s","end":"20s"}`, code: "unknown_field", node: "position"},
+		{name: "event stream alias", json: `{"type":"event","event":{"type":"vendor.force_idr","stream":"video"}}`, code: "unknown_field", node: "stream"},
+		{name: "duplicate raw field", json: `{"type":"rate","rate":0.5,"rate":1}`, code: "invalid_json"},
+		{name: "duplicate nested field", json: `{"type":"event","event":{"type":"vendor.force_idr","stream_id":"video","stream_id":"audio"}}`, code: "invalid_json"},
 		{name: "extra object", json: `{"type":"keyframe"} {"type":"rate"}`, code: "invalid_json"},
 		{name: "null object", json: `null`, code: "invalid_json"},
 	} {
@@ -433,6 +450,9 @@ func TestRawEventRejectsLossyMetadata(t *testing.T) {
 		{name: "metadata array", json: `{"type":"vendor.force_idr","metadata":[]}`, code: "invalid_value", node: "metadata"},
 		{name: "nested metadata", json: `{"type":"vendor.force_idr","metadata":{"nested":{"bad":true}}}`, code: "invalid_value", node: "metadata.nested"},
 		{name: "missing type", json: `{"metadata":{"source":"cli"}}`, code: "missing_required", node: "type"},
+		{name: "stream alias", json: `{"type":"vendor.force_idr","stream":"video"}`, code: "unknown_field", node: "stream"},
+		{name: "duplicate stream", json: `{"type":"vendor.force_idr","stream_id":"video","stream_id":"audio"}`, code: "invalid_json"},
+		{name: "duplicate metadata", json: `{"type":"vendor.force_idr","metadata":{"source":"a","source":"b"}}`, code: "invalid_json"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			_, err := DecodeRawEvent([]byte(tc.json))

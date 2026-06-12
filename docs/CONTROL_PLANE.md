@@ -276,7 +276,10 @@ Raw JSON is for automation that already has the protocol object. `control
 --json` decodes into the real `goav.Control` representation; `control deliver
 --json` decodes into `av.Event` and then lowers to `goav.Deliver(event)`. Nested
 event metadata is rejected instead of being stringified silently, so a caller
-must choose the exact conversion before sending the request.
+must choose the exact conversion before sending the request. Raw JSON uses the
+documented canonical field names and rejects unknown or duplicate fields before
+anything is applied; use `stream_id`, `bitrate`, `rate`, `start`, `end`, and
+`active` rather than CLI-only field names such as `stream` or `value`.
 
 Render a live flowchart from the same running task:
 
