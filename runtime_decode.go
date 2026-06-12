@@ -72,7 +72,11 @@ func (b *builder) newDecodeStageNamed(ctx context.Context, name string, request 
 		DropInputEvents: dropInputEvents,
 	})
 	if err != nil {
-		decoder.Close()
+		if decoder != nil {
+			decoder.Close()
+		} else if stateFromFactory {
+			closeDecodeState(config.OpaqueState)
+		}
 		return nil, err
 	}
 	return stage, nil
