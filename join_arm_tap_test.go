@@ -10,6 +10,7 @@ import (
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/pipeline"
+	"github.com/thesyncim/goav/plan"
 	"github.com/thesyncim/goav/shape"
 )
 
@@ -393,4 +394,165 @@ func TestMixArmChainErrorSurfaces(t *testing.T) {
 	if !errors.As(err, &buildErr) || buildErr.Code != "tap_invalid" {
 		t.Fatalf("err = %v, want tap_invalid surfaced from the arm chain", err)
 	}
+}
+
+func TestJoinTapAnchorHelperContracts(t *testing.T) {
+	owner := &joinPlan{name: "mix"}
+	anchor := joinTapAnchor{
+		owner:  owner,
+		arm:    -1,
+		domain: shape.DomainFrame,
+		stream: av.Stream{ID: "audio", Type: av.MediaAudio},
+	}
+	anchors := newJoinTapAnchors([]string{"dry"})
+	anchors.declare("", anchor)
+	if len(anchors.entries) != 0 {
+		t.Fatalf("empty tap declaration changed entries: %+v", anchors.entries)
+	}
+	anchors.declare("dry", anchor)
+	anchors.declare("dry", joinTapAnchor{owner: owner, arm: -1, domain: shape.DomainFrame, stream: av.Stream{Type: av.MediaVideo}})
+	resolved, ok := anchors.resolve("dry")
+	if !ok || resolved.stream.Type != av.MediaAudio || resolved.node() != "mix" {
+		t.Fatalf("resolved anchor = %+v, %v; want first audio anchor on mix", resolved, ok)
+	}
+	if _, ok := anchors.resolve("missing"); ok {
+		t.Fatal("resolve unexpectedly found missing tap")
+	}
+
+	_, err := planJoinTapArm("mix", "mix", joinProfile{media: av.MediaAudio}, TapRef{}, anchors)
+	var buildErr *BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "mix_arm" || !strings.Contains(buildErr.Reason, "tap arm has no name") {
+		t.Fatalf("empty tap arm err = %v", err)
+	}
+
+	_, err = planJoinTapArm("mix", "mix", joinProfile{media: av.MediaVideo}, FrameTap("dry"), anchors)
+	if !errors.As(err, &buildErr) || buildErr.Code != "mix_arm" || !strings.Contains(buildErr.Reason, "carries audio, want video") {
+		t.Fatalf("media mismatch err = %v", err)
+	}
+}
+
+func TestJoinTapHelperCollectionContracts(t *testing.T) {
+	if got := chainArmOperations(nil); got != nil {
+		t.Fatalf("nil chain operations = %+v, want nil", got)
+	}
+	if got := chainArmOperations(&jobStreamBuilder{}); got != nil {
+		t.Fatalf("empty chain operations = %+v, want nil", got)
+	}
+
+	_, err := joinChainArmTaps("mix", "arm", []operationSpec{{
+		Kind: plan.OpTap,
+		Tap:  tapIntent{Name: "packets", Domain: shape.DomainPacket},
+	}})
+	var buildErr *BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "tap_domain_mismatch" {
+		t.Fatalf("packet tap collection err = %v, want tap_domain_mismatch", err)
+	}
+
+	root := Mix(
+		nil,
+		&jobStreamBuilder{stream: &jobStreamBuild{operations: []operationSpec{{Kind: plan.OpTap, Tap: tapIntent{Name: ""}}}}},
+		From(mixTestAudioSource("a", 1)).Audio().Tap(FrameTap("dry")),
+		From(mixTestAudioSource("b", 1)).Audio().Tap(FrameTap("dry")),
+		Mix(
+			From(mixTestAudioSource("c", 1)).Audio(),
+			From(mixTestAudioSource("d", 1)).Audio(),
+		).Tap(FrameTap("sub")),
+	).Tap(FrameTap("root")).joinArm().join
+	names := declaredJoinTapNames(root)
+	if !reflect.DeepEqual(names, []string{"dry", "sub"}) {
+		t.Fatalf("declared tap names = %v, want [dry sub] without root duplicate", names)
+	}
+
+	err = joinTapArmMissingError("mix", FrameTap("ghost"), nil)
+	if !errors.As(err, &buildErr) || buildErr.Code != "mix_tap_arm" || !strings.Contains(err.Error(), "declared taps: none") {
+		t.Fatalf("missing tap no candidates err = %v", err)
+	}
+}
+
+func TestTapArmStageRestampContracts(t *testing.T) {
+	stage := newTapArmStage("mix-tap-dry", "dry")
+	if stage.Name() != "mix-tap-dry" {
+		t.Fatalf("Name() = %q", stage.Name())
+	}
+	if spec := stage.DescribeNode(); spec.Name != "mix-tap-dry" || spec.Kind != pipeline.NodeStage || !strings.Contains(spec.Detail, "tap=dry") {
+		t.Fatalf("DescribeNode() = %+v", spec)
+	}
+	emit := &tapArmStageTestEmitter{}
+	ctx := context.Background()
+
+	for _, msg := range []*pipeline.Message{
+		{Kind: pipeline.MessageFrame},
+		{Kind: pipeline.MessagePacket},
+		{Kind: pipeline.MessageEvent},
+	} {
+		if err := stage.Handle(ctx, msg, emit); err != nil {
+			t.Fatalf("Handle(%+v) error = %v", msg, err)
+		}
+	}
+	if len(emit.messages) != 0 {
+		t.Fatalf("nil payload messages emitted: %+v", emit.messages)
+	}
+
+	frame := &av.Frame{StreamID: "camera", Type: av.MediaVideo, Video: &av.VideoFrame{Width: 1, Height: 1}}
+	if err := stage.Handle(ctx, &pipeline.Message{Kind: pipeline.MessageFrame, Frame: frame}, emit); err != nil {
+		t.Fatalf("frame error = %v", err)
+	}
+	if got := emit.frames[len(emit.frames)-1]; got.StreamID != "dry" || frame.StreamID != "camera" {
+		t.Fatalf("restamped frame = %+v, original = %+v", got, frame)
+	}
+
+	packet := &av.Packet{StreamID: "camera", Type: av.MediaVideo}
+	if err := stage.Handle(ctx, &pipeline.Message{Kind: pipeline.MessagePacket, Packet: packet}, emit); err != nil {
+		t.Fatalf("packet error = %v", err)
+	}
+	if got := emit.packets[len(emit.packets)-1]; got.StreamID != "dry" || packet.StreamID != "camera" {
+		t.Fatalf("restamped packet = %+v, original = %+v", got, packet)
+	}
+
+	selectorEvent := &av.Event{Type: av.EventStats, StreamID: "camera_b", Reason: selectorActiveReason}
+	if err := stage.Handle(ctx, &pipeline.Message{Kind: pipeline.MessageEvent, Event: selectorEvent}, emit); err != nil {
+		t.Fatalf("selector event error = %v", err)
+	}
+	if got := emit.events[len(emit.events)-1]; got.StreamID != "camera_b" || got.Reason != selectorActiveReason {
+		t.Fatalf("selector event = %+v, want unchanged target", got)
+	}
+
+	ordinary := &av.Event{Type: av.EventEndOfStream, StreamID: "camera"}
+	if err := stage.Handle(ctx, &pipeline.Message{Kind: pipeline.MessageEvent, Event: ordinary}, emit); err != nil {
+		t.Fatalf("ordinary event error = %v", err)
+	}
+	if got := emit.events[len(emit.events)-1]; got.StreamID != "dry" || ordinary.StreamID != "camera" {
+		t.Fatalf("ordinary event = %+v, original = %+v", got, ordinary)
+	}
+
+	custom := &pipeline.Message{Kind: pipeline.MessageKind("sideband")}
+	if err := stage.Handle(ctx, custom, emit); err != nil {
+		t.Fatalf("sideband error = %v", err)
+	}
+	if emit.messages[len(emit.messages)-1] != custom {
+		t.Fatal("sideband message was not forwarded unchanged")
+	}
+	if err := stage.Close(); err != nil {
+		t.Fatalf("Close error = %v", err)
+	}
+}
+
+type tapArmStageTestEmitter struct {
+	messages []*pipeline.Message
+	frames   []*av.Frame
+	packets  []*av.Packet
+	events   []*av.Event
+}
+
+func (e *tapArmStageTestEmitter) Emit(_ context.Context, msg *pipeline.Message) error {
+	e.messages = append(e.messages, msg)
+	switch msg.Kind {
+	case pipeline.MessageFrame:
+		e.frames = append(e.frames, msg.Frame)
+	case pipeline.MessagePacket:
+		e.packets = append(e.packets, msg.Packet)
+	case pipeline.MessageEvent:
+		e.events = append(e.events, msg.Event)
+	}
+	return nil
 }
