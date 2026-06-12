@@ -16,6 +16,7 @@ import (
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/ctl"
+	"github.com/thesyncim/goav/pipeline"
 )
 
 func TestRunHostServesCustomHelpAndAttach(t *testing.T) {
@@ -159,6 +160,18 @@ func TestDemoHostShutdownHelpers(t *testing.T) {
 	if err := waitForHostSocket(canceled, "unix:///tmp/goav-missing.sock", make(chan error)); !errors.Is(err, context.Canceled) {
 		t.Fatalf("waitForHostSocket canceled = %v", err)
 	}
+	readySocket := filepath.Join(t.TempDir(), "ready.sock")
+	if err := os.WriteFile(readySocket, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := waitForHostSocket(canceled, "unix://"+readySocket, make(chan error)); err != nil {
+		t.Fatalf("waitForHostSocket canceled after socket exists = %v", err)
+	}
+	stoppedAfterReady := make(chan error, 1)
+	stoppedAfterReady <- context.Canceled
+	if err := waitForHostSocket(context.Background(), "unix://"+readySocket, stoppedAfterReady); err != nil {
+		t.Fatalf("waitForHostSocket stopped after socket exists = %v", err)
+	}
 
 	drainC := make(chan error, 2)
 	drainC <- nil
@@ -171,6 +184,55 @@ func TestDemoHostShutdownHelpers(t *testing.T) {
 	defer stop()
 	if err := drainHost(timeout, make(chan error)); !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("drainHost timeout = %v", err)
+	}
+
+	if !expectedHostShutdownError(errors.New(context.Canceled.Error())) {
+		t.Fatal("context-canceled string should be accepted during shutdown")
+	}
+}
+
+func TestStartReadySourcePreservesControl(t *testing.T) {
+	ready := make(chan struct{})
+	base := &demoReadyControlSource{name: "fixture"}
+	wrapped := newStartReadySource(base, ready)
+	controllable, ok := wrapped.(pipeline.ControllableSource)
+	if !ok {
+		t.Fatalf("wrapped source = %T, want ControllableSource", wrapped)
+	}
+	if wrapped.Name() != "fixture" {
+		t.Fatalf("name = %q, want fixture", wrapped.Name())
+	}
+	if node := wrapped.(interface{ DescribeNode() pipeline.NodeSpec }).DescribeNode(); node.Detail != "ready source" {
+		t.Fatalf("node = %+v", node)
+	}
+	if err := controllable.Control(context.Background(), &pipeline.Message{Kind: pipeline.MessageEvent, Event: &av.Event{Type: av.EventStats}}); err != nil {
+		t.Fatal(err)
+	}
+	if !base.controlled {
+		t.Fatal("control was not delegated")
+	}
+	if err := wrapped.Start(context.Background(), nil); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-ready:
+	default:
+		t.Fatal("ready channel was not closed")
+	}
+	if err := wrapped.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if !base.closed {
+		t.Fatal("close was not delegated")
+	}
+
+	plainReady := make(chan struct{})
+	plain := newStartReadySource(demoPlainSource{name: "plain"}, plainReady)
+	if _, ok := plain.(pipeline.ControllableSource); ok {
+		t.Fatalf("plain wrapped source = %T, should not be controllable", plain)
+	}
+	if node := plain.(interface{ DescribeNode() pipeline.NodeSpec }).DescribeNode(); node.Name != "plain" {
+		t.Fatalf("plain node = %+v", node)
 	}
 }
 
@@ -190,3 +252,37 @@ func sendDemoRequest(t *testing.T, socket string, request ctl.Request) ctl.Respo
 	}
 	return response
 }
+
+type demoReadyControlSource struct {
+	name       string
+	controlled bool
+	closed     bool
+}
+
+func (s *demoReadyControlSource) Name() string { return s.name }
+
+func (s *demoReadyControlSource) DescribeNode() pipeline.NodeSpec {
+	return pipeline.NodeSpec{Name: s.name, Kind: pipeline.NodeSource, Detail: "ready source"}
+}
+
+func (s *demoReadyControlSource) Start(context.Context, pipeline.Emitter) error { return nil }
+
+func (s *demoReadyControlSource) Control(context.Context, *pipeline.Message) error {
+	s.controlled = true
+	return nil
+}
+
+func (s *demoReadyControlSource) Close() error {
+	s.closed = true
+	return nil
+}
+
+type demoPlainSource struct {
+	name string
+}
+
+func (s demoPlainSource) Name() string { return s.name }
+
+func (s demoPlainSource) Start(context.Context, pipeline.Emitter) error { return nil }
+
+func (s demoPlainSource) Close() error { return nil }
