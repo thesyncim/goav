@@ -11,20 +11,26 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 	"unicode"
 
 	goav "github.com/thesyncim/goav"
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
+	"github.com/thesyncim/goav/ctl"
 	"github.com/thesyncim/goav/goavtest"
+	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/shape"
 )
 
-const defaultRunPipeline = "testsrc video width=1280 height=720 fps=30 duration=3s realtime=true ! av1enc bitrate=1200k fps=30 keyframe_interval=60 ! filesink location=/tmp/goav-av1.ivf format=ivf"
+const defaultRunPipeline = "testsrc video width=1280 height=720 fps=30 duration=3s realtime=true ! av1enc bitrate=1200k fps=30 keyframe_interval=60 ! filesink location=/tmp/goav-av1.mkv format=matroska"
+
+const generatedRawVideoCodec = av.CodecID("goav_raw_video")
 
 type runPipelineConfig struct {
 	runtime  string
+	control  string
 	pipeline string
 }
 
@@ -52,6 +58,7 @@ type fpsValue struct {
 
 type runOperation struct {
 	kind   string
+	name   string
 	width  int
 	height int
 	codec  codec.CodecSpec
@@ -71,6 +78,7 @@ type runPipelineResult struct {
 	Codec       string `json:"codec,omitempty"`
 	Output      string `json:"output"`
 	Format      string `json:"format,omitempty"`
+	Control     string `json:"control,omitempty"`
 	Description string `json:"description"`
 }
 
@@ -89,7 +97,7 @@ func runPipelineCommand(argv []string, stdout io.Writer, stderr io.Writer) int {
 		printErr(stderr, err)
 		return 2
 	}
-	result, err := executeRunPipeline(context.Background(), config.runtime, plan)
+	result, err := executeRunPipeline(context.Background(), config.runtime, config.control, plan)
 	if err != nil {
 		printErr(stderr, err)
 		return 1
@@ -117,6 +125,14 @@ func parseRunPipelineArgs(argv []string) (runPipelineConfig, error) {
 			i++
 		case strings.HasPrefix(arg, "--runtime="):
 			config.runtime = strings.ToLower(strings.TrimPrefix(arg, "--runtime="))
+		case arg == "--control":
+			if i+1 >= len(argv) {
+				return config, fmt.Errorf("--control needs unix://PATH")
+			}
+			config.control = argv[i+1]
+			i++
+		case strings.HasPrefix(arg, "--control="):
+			config.control = strings.TrimPrefix(arg, "--control=")
 		default:
 			parts = append(parts, arg)
 		}
@@ -126,13 +142,20 @@ func parseRunPipelineArgs(argv []string) (runPipelineConfig, error) {
 }
 
 func runPipelineHelp() string {
-	return "usage: goav run [--runtime demo|default|test] '<pipeline>'\n\n" +
+	return "usage: goav run [--runtime demo|default|test] [--control unix://PATH] '<pipeline>'\n\n" +
 		"example:\n  goav run '" + defaultRunPipeline + "'\n\n" +
 		"pipeline steps:\n" +
 		"  testsrc video width=<px> height=<px> fps=<n[/d]> frames=<n>|duration=<d> realtime=<bool>\n" +
+		"  tap name=<tap-name>\n" +
 		"  resize width=<px> height=<px>\n" +
 		"  av1enc|vp9enc|vp8enc|h264enc|encode codec=<id> media=<video|audio> bitrate=<rate> fps=<n[/d]> keyframe_interval=<n> [native_key=value...]\n" +
-		"  filesink location=<path> format=<container>\n"
+		"  filesink location=<path> format=<container>\n\n" +
+		"control example:\n" +
+		"  goav run --control unix:///tmp/goav-live.sock 'testsrc video name=fixture width=1280 height=720 fps=30 duration=30s realtime=true pattern=bars ! tap name=frames ! av1enc bitrate=1200k fps=30 keyframe_interval=60 ! filesink location=/tmp/goav-av1.mkv format=matroska'\n" +
+		"  goav ctl --control unix:///tmp/goav-live.sock graph\n" +
+		"  goav ctl --control unix:///tmp/goav-live.sock control rate value=0.5 source=fixture\n" +
+		"  goav ctl --control unix:///tmp/goav-live.sock attach frames as preview 'resize 320x180 ! av1enc bitrate=300k fps=2 keyframe_interval=1 ! filesink location=/tmp/goav-preview.mkv format=matroska'\n" +
+		"  goav ctl --control unix:///tmp/goav-live.sock stop\n"
 }
 
 func parseRunPipeline(text string) (runPipelinePlan, error) {
@@ -181,8 +204,7 @@ func parseRunPipeline(text string) (runPipelinePlan, error) {
 	return plan, nil
 }
 
-func executeRunPipeline(ctx context.Context, runtimeName string, plan runPipelinePlan) (runPipelineResult, error) {
-	source := plan.source.input()
+func executeRunPipeline(ctx context.Context, runtimeName string, control string, plan runPipelinePlan) (runPipelineResult, error) {
 	file, err := openOutputFile(plan.destination.location)
 	if err != nil {
 		return runPipelineResult{}, err
@@ -194,25 +216,20 @@ func executeRunPipeline(ctx context.Context, runtimeName string, plan runPipelin
 		destOpts = append(destOpts, goav.Format(plan.destination.format))
 	}
 	dest := goav.File(plan.destination.location, file, destOpts...)
-	job := goav.From(source)
-	stream := job.Video(goav.InputName(plan.source.name))
-	var encoded codec.CodecSpec
-	for _, op := range plan.ops {
-		switch op.kind {
-		case "resize":
-			stream = stream.Resize(op.width, op.height)
-		case "encode":
-			encoded = op.codec
-			stream = stream.Encode(op.codec)
-		default:
-			return runPipelineResult{}, fmt.Errorf("goav run: unsupported operation %q", op.kind)
-		}
-	}
 	runtime, runtimeLabel, err := runtimeForRun(runtimeName, plan)
 	if err != nil {
 		return runPipelineResult{}, err
 	}
-	if err := stream.To(dest).UseRuntime(runtime).Run(ctx); err != nil {
+	task, encoded, err := buildRunPipelineTask(ctx, runtime, plan, dest)
+	if err != nil {
+		return runPipelineResult{}, err
+	}
+	defer task.Close()
+	if control != "" {
+		if err := runPipelineTaskWithControl(ctx, task, control); err != nil {
+			return runPipelineResult{}, err
+		}
+	} else if err := task.Run(ctx); err != nil {
 		return runPipelineResult{}, err
 	}
 	return runPipelineResult{
@@ -224,8 +241,69 @@ func executeRunPipeline(ctx context.Context, runtimeName string, plan runPipelin
 		Codec:       string(encoded.ID),
 		Output:      plan.destination.location,
 		Format:      string(plan.destination.format),
+		Control:     control,
 		Description: "generated video source encoded and written successfully",
 	}, nil
+}
+
+func buildRunPipelineTask(ctx context.Context, runtime goav.Runtime, plan runPipelinePlan, dest goav.Destination) (goav.Task, codec.CodecSpec, error) {
+	source := plan.source.input()
+	job := goav.From(source)
+	stream := job.Video(goav.InputName(plan.source.name))
+	var encoded codec.CodecSpec
+	for _, op := range plan.ops {
+		switch op.kind {
+		case "tap":
+			stream = stream.Tap(goav.FrameTap(op.name))
+		case "resize":
+			stream = stream.Resize(op.width, op.height)
+		case "encode":
+			encoded = op.codec
+			stream = stream.Encode(op.codec)
+		default:
+			return nil, codec.CodecSpec{}, fmt.Errorf("goav run: unsupported operation %q", op.kind)
+		}
+	}
+	task, err := stream.To(dest).UseRuntime(runtime).Build(ctx)
+	if err != nil {
+		return nil, codec.CodecSpec{}, err
+	}
+	return task, encoded, nil
+}
+
+func runPipelineTaskWithControl(ctx context.Context, task goav.Task, control string) error {
+	runCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	errC := make(chan error, 2)
+	go func() {
+		errC <- task.Run(runCtx)
+	}()
+	go func() {
+		errC <- ctl.ServeUnix(runCtx, task, control)
+	}()
+	var first error
+	for i := 0; i < 2; i++ {
+		err := <-errC
+		if expectedRunShutdownError(err) {
+			err = nil
+		}
+		if err != nil && first == nil {
+			first = err
+			cancel()
+			_ = task.Close()
+		}
+		if i == 0 {
+			cancel()
+		}
+	}
+	return first
+}
+
+func expectedRunShutdownError(err error) bool {
+	return err == nil ||
+		errors.Is(err, context.Canceled) ||
+		errors.Is(err, goav.ErrClosed) ||
+		errors.Is(err, pipeline.ErrClosed)
 }
 
 func runtimeForRun(name string, plan runPipelinePlan) (goav.Runtime, string, error) {
@@ -289,25 +367,258 @@ func openOutputFile(location string) (*os.File, error) {
 }
 
 func (s generatedVideoSource) input() goav.InputSpec {
-	spec := shape.Frame(av.MediaVideo,
+	return goav.Input(generatedVideoProvider{source: s})
+}
+
+func (s generatedVideoSource) shape() shape.Spec {
+	return shape.Frame(av.MediaVideo,
 		shape.Video(s.width, s.height, s.pixelFormat),
 		shape.Stream(av.StreamID(s.name)),
+		shape.Codec(generatedRawVideoCodec),
 		shape.Realtime(s.realtime),
 	)
-	return goav.Source(s.name, spec, func(ctx context.Context, push goav.SourcePush) error {
-		for n := 0; n < s.frames; n++ {
-			if err := ctx.Err(); err != nil {
-				return err
-			}
-			if _, err := push.Frame(s.frame(n)); err != nil {
-				if errors.Is(err, goav.ErrClosed) {
-					return nil
-				}
+}
+
+func (s generatedVideoSource) stream() av.Stream {
+	base := av.TimeBase{Num: int64(s.fps.den), Den: int64(s.fps.num)}
+	return av.Stream{
+		ID:       av.StreamID(s.name),
+		Type:     av.MediaVideo,
+		TimeBase: base,
+		Codec: av.CodecParameters{
+			ID:          generatedRawVideoCodec,
+			Type:        av.MediaVideo,
+			Width:       s.width,
+			Height:      s.height,
+			PixelFormat: s.pixelFormat,
+			ClockRate:   uint32(s.fps.num / max(s.fps.den, 1)),
+		},
+		Name: s.name,
+	}
+}
+
+type generatedVideoProvider struct {
+	source generatedVideoSource
+}
+
+func (p generatedVideoProvider) Name() string {
+	return p.source.name
+}
+
+func (p generatedVideoProvider) Detail() string {
+	return "generated test video source"
+}
+
+func (p generatedVideoProvider) SourceShape() shape.Spec {
+	return p.source.shape()
+}
+
+func (p generatedVideoProvider) OpenSource(context.Context) (pipeline.Source, []av.Stream, error) {
+	return newGeneratedVideoPipelineSource(p.source), []av.Stream{p.source.stream()}, nil
+}
+
+type generatedVideoPipelineSource struct {
+	source generatedVideoSource
+	mu     sync.Mutex
+
+	next          int
+	segmentEnd    int
+	rate          float64
+	discontinuity bool
+	closed        bool
+}
+
+var _ pipeline.ControllableSource = (*generatedVideoPipelineSource)(nil)
+
+func newGeneratedVideoPipelineSource(source generatedVideoSource) *generatedVideoPipelineSource {
+	return &generatedVideoPipelineSource{
+		source:     source,
+		segmentEnd: source.frames,
+		rate:       1,
+	}
+}
+
+func (s *generatedVideoPipelineSource) Name() string {
+	if s == nil {
+		return ""
+	}
+	return s.source.name
+}
+
+func (s *generatedVideoPipelineSource) DescribeNode() pipeline.NodeSpec {
+	return pipeline.NodeSpec{Name: s.Name(), Kind: pipeline.NodeSource, Detail: "generated test video source"}
+}
+
+func (s *generatedVideoPipelineSource) Start(ctx context.Context, emitter pipeline.Emitter) error {
+	if s == nil {
+		return nil
+	}
+	for {
+		index, discontinuity, rate, done := s.nextFrame()
+		if done {
+			return s.emitEOS(ctx, emitter)
+		}
+		if discontinuity {
+			event := av.Event{Type: av.EventDiscontinuity, StreamID: av.StreamID(s.source.name), Reason: "source control repositioned generated test video"}
+			if err := s.emit(ctx, emitter, pipeline.Message{Kind: pipeline.MessageEvent, Event: &event}); err != nil {
 				return err
 			}
 		}
-		return push.EOS()
-	})
+		frame := s.source.frame(index)
+		if err := s.emit(ctx, emitter, pipeline.Message{Kind: pipeline.MessageFrame, Frame: frame}); err != nil {
+			return err
+		}
+		if s.source.realtime {
+			if err := waitGeneratedFrame(ctx, s.source.frameDuration(rate)); err != nil {
+				return nil
+			}
+		}
+	}
+}
+
+func (s *generatedVideoPipelineSource) Control(_ context.Context, msg *pipeline.Message) error {
+	if s == nil {
+		return nil
+	}
+	if msg == nil || msg.Kind != pipeline.MessageEvent || msg.Event == nil {
+		return fmt.Errorf("goav run: generated source control expects an event message")
+	}
+	event := *msg.Event
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	switch event.Type {
+	case av.EventRate:
+		rate, ok := av.EventRateValue(&event)
+		if !ok {
+			return fmt.Errorf("goav run: malformed rate control")
+		}
+		s.rate = rate
+	case av.EventSeek:
+		position, ok := event.Timestamp.ToDuration()
+		if !ok {
+			return fmt.Errorf("goav run: malformed seek control")
+		}
+		s.next = s.source.frameIndex(position, false)
+		s.segmentEnd = s.source.frames
+		s.discontinuity = true
+	case av.EventSegment:
+		start, ok := event.Timestamp.ToDuration()
+		if !ok {
+			return fmt.Errorf("goav run: malformed segment start")
+		}
+		end, ok := av.EventSegmentEnd(&event)
+		if !ok || end <= start {
+			return fmt.Errorf("goav run: malformed segment end")
+		}
+		s.next = s.source.frameIndex(start, false)
+		s.segmentEnd = s.source.frameIndex(end, true)
+		if s.segmentEnd <= s.next {
+			s.segmentEnd = min(s.next+1, s.source.frames)
+		}
+		s.discontinuity = true
+	default:
+		return fmt.Errorf("goav run: generated source cannot apply control %q", event.Type)
+	}
+	return nil
+}
+
+func (s *generatedVideoPipelineSource) Close() error {
+	if s != nil {
+		s.mu.Lock()
+		s.closed = true
+		s.mu.Unlock()
+	}
+	return nil
+}
+
+func (s *generatedVideoPipelineSource) nextFrame() (int, bool, float64, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closed {
+		return 0, false, 1, true
+	}
+	if s.rate <= 0 || math.IsInf(s.rate, 1) || math.IsNaN(s.rate) {
+		s.rate = 1
+	}
+	end := s.segmentEnd
+	if end <= 0 || end > s.source.frames {
+		end = s.source.frames
+		s.segmentEnd = end
+	}
+	if s.next >= end {
+		return 0, false, s.rate, true
+	}
+	index := s.next
+	s.next++
+	discontinuity := s.discontinuity
+	s.discontinuity = false
+	return index, discontinuity, s.rate, false
+}
+
+func (s *generatedVideoPipelineSource) emitEOS(ctx context.Context, emitter pipeline.Emitter) error {
+	event := av.Event{Type: av.EventEndOfStream, StreamID: av.StreamID(s.source.name)}
+	return s.emit(ctx, emitter, pipeline.Message{Kind: pipeline.MessageEvent, Event: &event})
+}
+
+func (s *generatedVideoPipelineSource) emit(ctx context.Context, emitter pipeline.Emitter, msg pipeline.Message) error {
+	for {
+		err := emitter.Emit(ctx, &msg)
+		if err == nil {
+			return nil
+		}
+		if errors.Is(err, pipeline.ErrBackpressure) {
+			if ctx.Err() != nil {
+				return nil
+			}
+			continue
+		}
+		if errors.Is(err, pipeline.ErrClosed) {
+			return nil
+		}
+		return err
+	}
+}
+
+func waitGeneratedFrame(ctx context.Context, duration time.Duration) error {
+	if duration <= 0 {
+		return nil
+	}
+	timer := time.NewTimer(duration)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
+}
+
+func (s generatedVideoSource) frameDuration(rate float64) time.Duration {
+	if rate <= 0 || math.IsInf(rate, 1) || math.IsNaN(rate) || s.fps.num <= 0 {
+		rate = 1
+	}
+	seconds := float64(s.fps.den) / float64(s.fps.num) / rate
+	return time.Duration(seconds * float64(time.Second))
+}
+
+func (s generatedVideoSource) frameIndex(position time.Duration, ceil bool) int {
+	if position <= 0 || s.fps.num <= 0 || s.fps.den <= 0 {
+		return 0
+	}
+	exact := position.Seconds() * float64(s.fps.num) / float64(s.fps.den)
+	var index int
+	if ceil {
+		index = int(math.Ceil(exact))
+	} else {
+		index = int(math.Floor(exact))
+	}
+	if index < 0 {
+		return 0
+	}
+	if index > s.frames {
+		return s.frames
+	}
+	return index
 }
 
 func (s generatedVideoSource) frame(n int) *av.Frame {
@@ -432,6 +743,8 @@ func parseRunOperation(tokens []string) (runOperation, error) {
 	}
 	name := strings.ToLower(tokens[0])
 	switch name {
+	case "tap":
+		return parseTapStep(tokens[1:])
 	case "resize", "scale":
 		return parseResizeStep(tokens[1:])
 	case "encode", "enc", "av1enc", "vp9enc", "vp8enc", "h264enc", "opusenc":
@@ -439,6 +752,33 @@ func parseRunOperation(tokens []string) (runOperation, error) {
 	default:
 		return runOperation{}, fmt.Errorf("goav run: unsupported step %q", tokens[0])
 	}
+}
+
+func parseTapStep(tokens []string) (runOperation, error) {
+	positionals, options, err := parseKeyValuesOrdered(tokens)
+	if err != nil {
+		return runOperation{}, err
+	}
+	op := runOperation{kind: "tap"}
+	for _, positional := range positionals {
+		if op.name == "" {
+			op.name = positional
+			continue
+		}
+		return runOperation{}, fmt.Errorf("goav run: unsupported tap argument %q", positional)
+	}
+	for _, option := range options {
+		switch option.key {
+		case "name", "id":
+			op.name = option.value
+		default:
+			return runOperation{}, fmt.Errorf("goav run: unknown tap option %q", option.key)
+		}
+	}
+	if strings.TrimSpace(op.name) == "" {
+		return runOperation{}, fmt.Errorf("goav run: tap needs name=<tap-name>")
+	}
+	return op, nil
 }
 
 func parseResizeStep(tokens []string) (runOperation, error) {

@@ -18,6 +18,39 @@ path to bind known command structs, validate fields, parse JSON, and generate
 help from tags. There is no global registry and no user-provided method name
 dispatch.
 
+## No-Code Generated Source
+
+For a self-contained control-plane playground, `goav run --control` can host a
+generated source and a real encoder directly from one string. Start a live AV1
+pipeline:
+
+```sh
+goav run --control unix:///tmp/goav-live.sock \
+  'testsrc video name=fixture width=1280 height=720 fps=30 duration=30s realtime=true pattern=bars ! tap name=frames ! av1enc bitrate=1200k fps=30 keyframe_interval=60 min_qindex=20 max_qindex=180 tune=zerolatency ! filesink location=/tmp/goav-av1.mkv format=matroska'
+```
+
+Then drive the running graph from another shell:
+
+```sh
+goav ctl --control unix:///tmp/goav-live.sock taps
+goav ctl --control unix:///tmp/goav-live.sock graph
+goav ctl --control unix:///tmp/goav-live.sock control rate value=0.5 source=fixture
+goav ctl --control unix:///tmp/goav-live.sock control seek position=2s source=fixture
+goav ctl --control unix:///tmp/goav-live.sock attach frames as preview \
+  'resize 320x180 ! av1enc bitrate=300k fps=2 keyframe_interval=1 ! filesink location=/tmp/goav-preview.ivf format=ivf'
+goav ctl --control unix:///tmp/goav-live.sock graph format=text
+goav ctl --control unix:///tmp/goav-live.sock detach preview
+goav ctl --control unix:///tmp/goav-live.sock stop
+```
+
+That flow needs no application code. The same string launcher can create a short
+decoder-readable AV1 IVF file:
+
+```sh
+goav run \
+  'testsrc video width=1280 height=720 fps=30 duration=3s realtime=true pattern=bars ! av1enc bitrate=1200k fps=30 keyframe_interval=60 min_qindex=20 max_qindex=180 tune=zerolatency ! filesink location=/tmp/goav-av1.ivf format=ivf'
+```
+
 ## Bootstrap Host
 
 This is the smallest production shape:

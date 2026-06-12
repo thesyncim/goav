@@ -237,6 +237,45 @@ func TestRenderTaskFlowchartAnnotatesRuntimeBranches(t *testing.T) {
 	}
 }
 
+func TestRenderSnapshotFlowchartAnnotatesTaps(t *testing.T) {
+	snap := snapshot.Task{
+		Spec: pipeline.Spec{
+			Name: "live",
+			Nodes: []pipeline.NodeSpec{
+				{Name: "source", Kind: pipeline.NodeSource},
+				{Name: "select-video", Kind: pipeline.NodeStage, Detail: "select video"},
+				{Name: "encode-video", Kind: pipeline.NodeStage},
+			},
+			Edges: []pipeline.EdgeSpec{
+				{From: "source", To: "select-video"},
+				{From: "select-video", To: "encode-video"},
+			},
+		},
+		Taps: []snapshot.Tap{{
+			Name:      "frames",
+			Node:      "select-video",
+			Domain:    "frame",
+			MediaKind: "video",
+		}},
+	}
+
+	flowchart, err := RenderSnapshotFlowchart(snap)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(flowchart, "tap=frames (frame video)") {
+		t.Fatalf("flowchart:\n%s", flowchart)
+	}
+
+	text, err := RenderSnapshotURI(snap, "goav:graph")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(text, "stage select-video [select video\ntap=frames (frame video)]") {
+		t.Fatalf("text:\n%s", text)
+	}
+}
+
 func TestRenderTaskURIHandlesNilAndSnapshotBranchDetails(t *testing.T) {
 	text, err := RenderTaskURI(nil, "goav:graph")
 	if err != nil {

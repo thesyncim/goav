@@ -360,7 +360,7 @@ func routedEdgeLabel(kind string, label string) string {
 
 func specFromSnapshot(snap snapshot.Task) pipeline.Spec {
 	spec := cloneSpec(snap.Spec)
-	labels := branchLabelsByNode(snap.Branches)
+	labels := labelsByNode(snap)
 	if len(labels) == 0 {
 		return spec
 	}
@@ -381,6 +381,7 @@ func specFromBranchSnapshot(branch snapshot.Branch) pipeline.Spec {
 	}
 	return specFromSnapshot(snapshot.Task{
 		Spec:     spec,
+		Taps:     branch.Taps,
 		Branches: []snapshot.Branch{branch},
 	})
 }
@@ -408,6 +409,63 @@ func branchLabelsByNode(branches []snapshot.Branch) map[string][]string {
 		}
 	}
 	return labels
+}
+
+func labelsByNode(snap snapshot.Task) map[string][]string {
+	labels := tapLabelsByNode(snap)
+	for node, branchLabels := range branchLabelsByNode(snap.Branches) {
+		labels[node] = append(labels[node], branchLabels...)
+	}
+	return labels
+}
+
+func tapLabelsByNode(snap snapshot.Task) map[string][]string {
+	labels := make(map[string][]string)
+	taps := append([]snapshot.Tap(nil), snap.Taps...)
+	for i := range snap.Branches {
+		taps = append(taps, snap.Branches[i].Taps...)
+	}
+	sort.Slice(taps, func(i, j int) bool {
+		left := tapSortKey(taps[i])
+		right := tapSortKey(taps[j])
+		return left < right
+	})
+	seen := make(map[string]struct{}, len(taps))
+	for i := range taps {
+		label := tapRenderLabel(taps[i])
+		node := taps[i].Node.String()
+		if label == "" || node == "" {
+			continue
+		}
+		key := node + "\x00" + label
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		labels[node] = append(labels[node], label)
+	}
+	return labels
+}
+
+func tapSortKey(tap snapshot.Tap) string {
+	return tap.Node.String() + "\x00" + tap.Name + "\x00" + string(tap.Domain) + "\x00" + string(tap.MediaKind)
+}
+
+func tapRenderLabel(tap snapshot.Tap) string {
+	if tap.Name == "" {
+		return ""
+	}
+	var attrs []string
+	if tap.Domain != "" {
+		attrs = append(attrs, string(tap.Domain))
+	}
+	if tap.MediaKind != "" {
+		attrs = append(attrs, string(tap.MediaKind))
+	}
+	if len(attrs) == 0 {
+		return "tap=" + tap.Name
+	}
+	return "tap=" + tap.Name + " (" + strings.Join(attrs, " ") + ")"
 }
 
 func branchSortKey(branch snapshot.Branch) string {

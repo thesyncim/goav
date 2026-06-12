@@ -210,7 +210,7 @@ func (b *jobStreamBuilder) sourceFrameShape() (shape.Spec, bool) {
 		return shape.Spec{}, false
 	}
 	if len(b.job.inputs) == 1 {
-		spec, ok := customSourceShape(b.job.inputs[0])
+		spec, ok := declaredSourceShape(b.job.inputs[0])
 		if !ok || spec.Domain != shape.DomainFrame {
 			return shape.Spec{}, false
 		}
@@ -225,7 +225,7 @@ func (b *jobStreamBuilder) sourceFrameShape() (shape.Spec, bool) {
 	if !ok {
 		return shape.Spec{}, false
 	}
-	spec, ok := customSourceShape(b.job.inputs[index])
+	spec, ok := declaredSourceShape(b.job.inputs[index])
 	if !ok || spec.Domain != shape.DomainFrame {
 		return shape.Spec{}, false
 	}
@@ -239,16 +239,28 @@ func (b *jobStreamBuilder) ensureDecodeOperation() {
 	ensureJobStreamDecodeOperation(b.current())
 }
 
-func (b *jobStreamBuilder) ensureFrameSourceShapeOperation() {
-	stream := b.current()
-	if stream == nil || len(stream.operations) != 0 {
+func (b *jobStreamBuilder) ensureFrameInputOperation() {
+	if b.sourceStartsFrameDomain() {
+		b.ensureFrameSourceShapeOperation()
 		return
 	}
-	shape, ok := b.sourceFrameShape()
+	ensureJobStreamDecodeOperation(b.current())
+}
+
+func (b *jobStreamBuilder) ensureFrameSourceShapeOperation() {
+	stream := b.current()
+	if stream == nil {
+		return
+	}
+	shapeSpec, ok := b.sourceFrameShape()
 	if !ok {
 		return
 	}
-	stream.operations = append(stream.operations, operationSpecForShape(shape))
+	operation := operationSpecForShape(shapeSpec)
+	if len(stream.operations) != 0 && stream.operations[0].Kind == plan.OpShape && stream.operations[0].Shape == shapeSpec {
+		return
+	}
+	stream.operations = append([]operationSpec{operation}, stream.operations...)
 }
 
 func frameSourceDecodeError(operation string, node string) error {
@@ -315,10 +327,10 @@ func (b *jobStreamBuilder) Apply(flow Chain) *jobStreamBuilder {
 		// The flow's plan.OpDecode is appended below with the rest of spec.operations.
 	}
 	if len(specSteps) != 0 && !chainHasDecode(spec.operations) {
-		b.ensureDecodeOperation()
+		b.ensureFrameInputOperation()
 	}
 	if codecIntentSet(chainEncodeSpec(spec.operations)) && !chainEncodeSpec(spec.operations).Copy && !chainHasDecode(spec.operations) {
-		b.ensureDecodeOperation()
+		b.ensureFrameInputOperation()
 	}
 	stream.operations = append(stream.operations, cloneOperationSpecs(spec.operations)...)
 	if codecIntentSet(chainEncodeSpec(spec.operations)) && chainEncodeSpec(spec.operations).Copy {
@@ -434,7 +446,7 @@ func (b *jobStreamBuilder) Do(stages ...pipeline.Stage) *jobStreamBuilder {
 			b.job.setErr(streamStageMissingError(streamIntent{Name: jobStreamName(stream)}))
 			return b
 		}
-		b.ensureDecodeOperation()
+		b.ensureFrameInputOperation()
 		stream.operations = append(stream.operations, operationSpecForStage(stages[i]))
 	}
 	return b
@@ -493,7 +505,7 @@ func (b *jobStreamBuilder) Resize(width int, height int, options ...resizeOption
 		b.job.setErr(chainStepAfterEncodeError("build stream", jobStreamName(stream), "resize", chainEncodeSpec(stream.operations)))
 		return b
 	}
-	b.ensureDecodeOperation()
+	b.ensureFrameInputOperation()
 	transform := Resize(width, height, options...)
 	stream.operations = append(stream.operations, operationSpecForTransform(transform))
 	return b
@@ -505,7 +517,7 @@ func (b *jobStreamBuilder) Resample(sampleRate int, channels int, options ...aud
 		b.job.setErr(chainStepAfterEncodeError("build stream", jobStreamName(stream), "resample", chainEncodeSpec(stream.operations)))
 		return b
 	}
-	b.ensureDecodeOperation()
+	b.ensureFrameInputOperation()
 	transform := Resample(sampleRate, channels, options...)
 	stream.operations = append(stream.operations, operationSpecForTransform(transform))
 	return b
@@ -517,7 +529,7 @@ func (b *jobStreamBuilder) Encode(codec codec.CodecSpec) *jobStreamBuilder {
 		b.job.setErr(duplicateStreamEncodeError("build stream", jobStreamName(stream), chainEncodeSpec(stream.operations), codec))
 		return b
 	}
-	b.ensureDecodeOperation()
+	b.ensureFrameInputOperation()
 	stream.operations = append(stream.operations, operationSpecForEncode(cloneCodecSpec(codec)))
 	return b
 }

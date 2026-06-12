@@ -211,7 +211,7 @@ func newMediaPlanDecodeStreamGraph(rt Runtime, inputs []InputSpec, outputs []des
 
 func mediaPlanInputDomain(inputs []InputSpec) shape.MediaDomain {
 	if len(inputs) == 1 {
-		if shape, ok := customSourceShape(inputs[0]); ok && shape.Domain != "" {
+		if shape, ok := declaredSourceShape(inputs[0]); ok && shape.Domain != "" {
 			return shape.Domain
 		}
 	}
@@ -219,8 +219,8 @@ func mediaPlanInputDomain(inputs []InputSpec) shape.MediaDomain {
 }
 
 // mediaPlanStreamInputDomain resolves the media domain feeding one stream
-// chain: the single input's domain (legacy) or, with several inputs, the
-// domain of the input the chain's selector binds to.
+// chain: the single input's domain, or with several inputs, the domain of the
+// input the chain's selector binds to.
 func mediaPlanStreamInputDomain(inputs []InputSpec, stream streamIntent) shape.MediaDomain {
 	if len(inputs) <= 1 {
 		return mediaPlanInputDomain(inputs)
@@ -303,7 +303,7 @@ func (p mediaPlanStreamGraph) packetCopySpec() (pipeline.Spec, error) {
 
 func mediaPlanInputsContainDomain(inputs []InputSpec, domain shape.MediaDomain) bool {
 	for i := range inputs {
-		if shape, ok := customSourceShape(inputs[i]); ok && shape.Domain == domain {
+		if shape, ok := declaredSourceShape(inputs[i]); ok && shape.Domain == domain {
 			return true
 		}
 	}

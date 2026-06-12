@@ -5,7 +5,9 @@ import (
 	"context"
 	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"os/exec"
@@ -18,6 +20,7 @@ import (
 	av1adapter "github.com/thesyncim/goav/adapters/goav1"
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
+	matroskaadapter "github.com/thesyncim/goav/container/matroska"
 	"github.com/thesyncim/goav/ctl"
 	"github.com/thesyncim/goav/goavtest"
 )
@@ -300,6 +303,32 @@ func TestRunPrintsLocalHelp(t *testing.T) {
 }
 
 func TestRunGeneratedVideoAV1RealtimeString(t *testing.T) {
+	out := filepath.Join(t.TempDir(), "generated av1.mkv")
+	pipeline := fmt.Sprintf(
+		`testsrc video name=fixture width=32 height=18 fps=30 frames=2 realtime=true pattern=bars ! resize width=16 height=16 ! av1enc bitrate=400k fps=30 keyframe_interval=1 min_qindex=20 max_qindex=180 tune=zerolatency ! filesink location=%q format=matroska`,
+		out,
+	)
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := run([]string{"run", pipeline}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("code=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+	var result runPipelineResult
+	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+		t.Fatalf("result JSON: %v\n%s", err, stdout.String())
+	}
+	if result.Runtime != "demo" || result.Codec != "av1" || result.Frames != 2 || !result.Realtime || result.Output != out || result.Format != string(av.FormatMatroska) {
+		t.Fatalf("result = %+v", result)
+	}
+	data, err := os.ReadFile(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertDecodableAV1Matroska(t, data)
+}
+
+func TestRunGeneratedVideoAV1IVFString(t *testing.T) {
 	out := filepath.Join(t.TempDir(), "generated av1.ivf")
 	pipeline := fmt.Sprintf(
 		`testsrc video name=fixture width=32 height=18 fps=30 frames=2 realtime=true pattern=bars ! resize width=16 height=16 ! av1enc bitrate=400k fps=30 keyframe_interval=1 min_qindex=20 max_qindex=180 tune=zerolatency ! filesink location=%q format=ivf`,
@@ -334,6 +363,123 @@ func TestRunGeneratedVideoAV1RealtimeString(t *testing.T) {
 	assertDecodableAV1IVF(t, header)
 }
 
+func TestRunGeneratedVideoWithControlSocket(t *testing.T) {
+	socket := filepath.Join(os.TempDir(), fmt.Sprintf("goav-run-control-%d.sock", time.Now().UnixNano()))
+	t.Cleanup(func() { _ = os.Remove(socket) })
+	out := filepath.Join(t.TempDir(), "controlled.ivf")
+	pipeline := fmt.Sprintf(
+		`testsrc video name=fixture width=32 height=18 fps=30 frames=900 realtime=true pattern=bars ! tap name=frames ! av1enc bitrate=200k fps=30 keyframe_interval=1 ! filesink location=%q format=ivf`,
+		out,
+	)
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	done := make(chan int, 1)
+	go func() {
+		done <- run([]string{"run", "--runtime", "test", "--control", "unix://" + socket, pipeline}, &stdout, &stderr)
+	}()
+	waitForRunSocket(t, socket, done, &stdout, &stderr)
+
+	taps := runLocalCtl(t, socket, "taps")
+	if !strings.Contains(taps, `"Name":"frames"`) {
+		t.Fatalf("taps output = %s", taps)
+	}
+	graph := runLocalCtl(t, socket, "graph")
+	if !strings.Contains(graph, "flowchart LR") || !strings.Contains(graph, "frames") {
+		t.Fatalf("graph output = %s", graph)
+	}
+	runLocalCtl(t, socket, "control", "rate", "value=0.5", "source=fixture")
+	runLocalCtl(t, socket, "control", "seek", "position=100ms", "source=fixture")
+
+	branchOut := filepath.Join(t.TempDir(), "preview.ivf")
+	attach := runLocalCtl(t, socket, "attach", "frames", "as", "preview",
+		fmt.Sprintf(`resize 16x16 ! av1enc bitrate=120k fps=30 keyframe_interval=1 ! filesink location=%q format=ivf`, branchOut))
+	if !strings.Contains(attach, `"Name":"preview"`) {
+		t.Fatalf("attach output = %s", attach)
+	}
+	graph = runLocalCtl(t, socket, "graph")
+	if !strings.Contains(graph, "branch=preview (attached)") {
+		t.Fatalf("graph after attach = %s", graph)
+	}
+	runLocalCtl(t, socket, "detach", "preview")
+	runLocalCtl(t, socket, "stop")
+
+	select {
+	case code := <-done:
+		if code != 0 {
+			t.Fatalf("goav run code=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatalf("goav run did not stop; stdout=%q stderr=%q", stdout.String(), stderr.String())
+	}
+	var result runPipelineResult
+	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+		t.Fatalf("run result JSON: %v\nstdout=%s\nstderr=%s", err, stdout.String(), stderr.String())
+	}
+	if result.Control != "unix://"+socket || result.Runtime != "test" || result.Codec != "av1" {
+		t.Fatalf("run result = %+v", result)
+	}
+}
+
+func assertDecodableAV1Matroska(t *testing.T, data []byte) {
+	t.Helper()
+	if len(data) < 4 || !bytes.Equal(data[:4], []byte{0x1a, 0x45, 0xdf, 0xa3}) {
+		t.Fatalf("not a Matroska EBML file")
+	}
+	demuxer, err := matroskaadapter.NewDemuxer(bytes.NewReader(data), matroskaadapter.DemuxerOptions{})
+	if err != nil {
+		t.Fatalf("matroska demuxer: %v", err)
+	}
+	tracks := demuxer.Tracks()
+	if len(tracks) != 1 {
+		t.Fatalf("tracks = %d, want 1", len(tracks))
+	}
+	track := tracks[0]
+	if track.Codec != matroskaadapter.CodecAV1 || track.Type != matroskaadapter.TrackVideo || track.Video.Width != 16 || track.Video.Height != 16 {
+		t.Fatalf("track = %+v, want 16x16 AV1 video", track)
+	}
+
+	stream := av.Stream{
+		ID:       "fixture",
+		Type:     av.MediaVideo,
+		TimeBase: av.TimeBase{Num: 1, Den: int64(time.Second)},
+		Codec: av.CodecParameters{
+			ID:          av.CodecAV1,
+			Type:        av.MediaVideo,
+			Width:       track.Video.Width,
+			Height:      track.Video.Height,
+			PixelFormat: av.PixelFormatI420,
+			ClockRate:   uint32(time.Second),
+		},
+	}
+	decoder := newAV1TestDecoder(t, stream, len(data))
+	defer decoder.Close()
+
+	packet := matroskaadapter.Packet{Data: make([]byte, 0, len(data))}
+	var frames int
+	for {
+		packet.Data = packet.Data[:0]
+		err := demuxer.ReadPacket(&packet)
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			t.Fatalf("read matroska packet: %v", err)
+		}
+		frames += decodeAV1TestPacket(t, decoder, av.Packet{
+			StreamID: "fixture",
+			Type:     av.MediaVideo,
+			Payload:  av.Buffer{Bytes: packet.Data, Ownership: av.BufferBorrowed},
+			PTS:      av.Timestamp{Value: packet.TimeNS, Base: stream.TimeBase},
+			Duration: av.Duration{Value: packet.DurationNS, Base: stream.TimeBase},
+			Keyframe: packet.Keyframe,
+		})
+	}
+	if frames == 0 {
+		t.Fatal("decoded zero AV1 frames from generated Matroska")
+	}
+}
+
 func assertDecodableAV1IVF(t *testing.T, data []byte) {
 	t.Helper()
 	if len(data) < 32 || string(data[:4]) != "DKIF" || string(data[8:12]) != "AV01" {
@@ -358,39 +504,9 @@ func assertDecodableAV1IVF(t *testing.T, data []byte) {
 			ClockRate:   uint32(timebase.Den),
 		},
 	}
-	factory := av1adapter.NewDecoderFactory()
-	state, err := factory.NewDecodeState(context.Background(), codec.DecodeConfig{
-		Stream: stream,
-		Bounds: codec.DecodeBounds{
-			MaxFramesPerInput:   2,
-			MaxEventsPerInput:   2,
-			MaxRequestsPerInput: 2,
-			MaxPayloadBytes:     len(data),
-			MaxWidth:            width,
-			MaxHeight:           height,
-		},
-	})
-	if err != nil {
-		t.Fatalf("decode state: %v", err)
-	}
-	decoder, err := factory.NewDecoder(context.Background(), codec.DecodeConfig{
-		Stream:      stream,
-		OpaqueState: state,
-	})
-	if err != nil {
-		t.Fatalf("decoder: %v", err)
-	}
+	decoder := newAV1TestDecoder(t, stream, len(data))
 	defer decoder.Close()
 
-	frameScratch := make([]av.Frame, 2)
-	for i := range frameScratch {
-		frameScratch[i].Planes = make([]av.Plane, 0, 3)
-	}
-	decoded := codec.DecodeResult{
-		Frames:   frameScratch[:0],
-		Events:   make([]av.Event, 0, 2),
-		Requests: make([]codec.ControlRequest, 0, 2),
-	}
 	var frames int
 	for offset := 32; offset < len(data); {
 		if offset+12 > len(data) {
@@ -410,16 +526,56 @@ func assertDecodableAV1IVF(t *testing.T, data []byte) {
 			Duration: av.Duration{Value: 1, Base: timebase},
 			Keyframe: frames == 0,
 		}
-		decoded.Reset()
-		if err := decoder.DecodeInto(context.Background(), &packet, &decoded); err != nil {
-			t.Fatalf("decode IVF frame at offset %d: %v", offset, err)
-		}
-		frames += len(decoded.Frames)
+		frames += decodeAV1TestPacket(t, decoder, packet)
 		offset += size
 	}
 	if frames == 0 {
 		t.Fatal("decoded zero AV1 frames from generated IVF")
 	}
+}
+
+func newAV1TestDecoder(t *testing.T, stream av.Stream, maxPayloadBytes int) codec.Decoder {
+	t.Helper()
+	factory := av1adapter.NewDecoderFactory()
+	state, err := factory.NewDecodeState(context.Background(), codec.DecodeConfig{
+		Stream: stream,
+		Bounds: codec.DecodeBounds{
+			MaxFramesPerInput:   2,
+			MaxEventsPerInput:   2,
+			MaxRequestsPerInput: 2,
+			MaxPayloadBytes:     maxPayloadBytes,
+			MaxWidth:            stream.Codec.Width,
+			MaxHeight:           stream.Codec.Height,
+		},
+	})
+	if err != nil {
+		t.Fatalf("decode state: %v", err)
+	}
+	decoder, err := factory.NewDecoder(context.Background(), codec.DecodeConfig{
+		Stream:      stream,
+		OpaqueState: state,
+	})
+	if err != nil {
+		t.Fatalf("decoder: %v", err)
+	}
+	return decoder
+}
+
+func decodeAV1TestPacket(t *testing.T, decoder codec.Decoder, packet av.Packet) int {
+	t.Helper()
+	frameScratch := make([]av.Frame, 2)
+	for i := range frameScratch {
+		frameScratch[i].Planes = make([]av.Plane, 0, 3)
+	}
+	decoded := codec.DecodeResult{
+		Frames:   frameScratch[:0],
+		Events:   make([]av.Event, 0, 2),
+		Requests: make([]codec.ControlRequest, 0, 2),
+	}
+	if err := decoder.DecodeInto(context.Background(), &packet, &decoded); err != nil {
+		t.Fatalf("decode AV1 packet: %v", err)
+	}
+	return len(decoded.Frames)
 }
 
 func TestRunPipelineParserCarriesCustomEncoderSettings(t *testing.T) {
@@ -621,6 +777,39 @@ func runCLI(t *testing.T, args ...string) string {
 		t.Fatalf("goav ctl %v failed: %v\n%s", args, err, output)
 	}
 	return string(output)
+}
+
+func runLocalCtl(t *testing.T, socket string, args ...string) string {
+	t.Helper()
+	argv := append([]string{"ctl", "--control", "unix://" + socket}, args...)
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := run(argv, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("goav %v failed with code %d\nstdout=%s\nstderr=%s", argv, code, stdout.String(), stderr.String())
+	}
+	return stdout.String()
+}
+
+func waitForRunSocket(t *testing.T, socket string, done <-chan int, stdout *bytes.Buffer, stderr *bytes.Buffer) {
+	t.Helper()
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		conn, err := net.Dial("unix", socket)
+		if err == nil {
+			_ = conn.Close()
+			return
+		}
+		select {
+		case code := <-done:
+			t.Fatalf("goav run stopped before creating socket with code %d\nstdout=%s\nstderr=%s", code, stdout.String(), stderr.String())
+		default:
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("socket %s was not ready\nstdout=%s\nstderr=%s", socket, stdout.String(), stderr.String())
+		}
+		time.Sleep(time.Millisecond)
+	}
 }
 
 func waitForCLISocket(t *testing.T, socket string, errC <-chan error) {

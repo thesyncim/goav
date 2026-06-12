@@ -34,10 +34,10 @@ func jobInputStreamSets(inputs []inputIntent, attachments []InputSpec, probes []
 			domain: shape.DomainPacket,
 		}
 		switch {
-		case i < len(attachments) && attachments[i].source != nil:
-			spec, _ := customSourceShape(attachments[i])
+		case i < len(attachments) && (attachments[i].source != nil || attachments[i].provider != nil):
+			spec, _ := declaredSourceShape(attachments[i])
 			set.domain = spec.Domain
-			set.streams = customSourceStreams(attachments[i])
+			set.streams = declaredSourceStreams(attachments[i])
 			set.known = true
 		case i < len(probes) && len(probes[i].Streams) != 0:
 			set.streams = append([]av.Stream(nil), probes[i].Streams...)

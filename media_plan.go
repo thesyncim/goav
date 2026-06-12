@@ -205,7 +205,7 @@ func planSelectedStream(state *recipeCompileState, stream streamIntent) (av.Stre
 			return selected, true
 		}
 	}
-	// Custom sources declare their stream shape statically. Compiles without
+	// Declared sources expose their stream shape statically. Compiles without
 	// preflight probes (Describe-time) resolve from the declaration, so the
 	// shape solver sees the same facts in Describe and Build.
 	attachments := state.inputAttachments
@@ -213,7 +213,7 @@ func planSelectedStream(state *recipeCompileState, stream streamIntent) (av.Stre
 		attachments = []InputSpec{state.branchInputAttachment}
 	}
 	for i := range attachments {
-		declared := customSourceStreams(attachments[i])
+		declared := declaredSourceStreams(attachments[i])
 		if len(declared) == 0 {
 			continue
 		}
@@ -235,7 +235,7 @@ func planCopyBranches(state *recipeCompileState, outputs []planOutput) ([]planBr
 		name := firstNonEmpty(input.Name, input.URI, fmt.Sprintf("input-%d", i))
 		spec := mediaShapeFromInputIntent(input, shape.DomainPacket)
 		if i < len(state.inputAttachments) {
-			if sourceShape, ok := customSourceShape(state.inputAttachments[i]); ok {
+			if sourceShape, ok := declaredSourceShape(state.inputAttachments[i]); ok {
 				spec = shape.Merge(spec, sourceShape)
 			}
 		}
@@ -422,6 +422,9 @@ func operationSpecKindPresent(operations []operationSpec, kind plan.OperationKin
 
 func planInputOperationsForShape(input inputIntent, spec shape.Spec) []planOperation {
 	if input.Protocol == av.ProtocolCustom {
+		return nil
+	}
+	if spec.Domain == shape.DomainFrame || spec.Domain == shape.DomainEvent {
 		return nil
 	}
 	switch {

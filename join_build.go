@@ -784,7 +784,7 @@ func (p *joinPlan) firstArmSourceShape() shape.Spec {
 	if arm.tapArm != nil {
 		return shape.FromStream(arm.stream, arm.domain)
 	}
-	spec, _ := customSourceShape(arm.input)
+	spec, _ := declaredSourceShape(arm.input)
 	return spec
 }
 

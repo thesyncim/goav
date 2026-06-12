@@ -746,21 +746,21 @@ For no-code smoke tests, demos, and adapter bootstrap work, the bundled CLI can
 build and run a generated-source pipeline from one string:
 
 ```sh
-goav run 'testsrc video width=1280 height=720 fps=30 duration=3s realtime=true pattern=bars ! av1enc bitrate=1200k fps=30 keyframe_interval=60 ! filesink location=/tmp/goav-av1.ivf format=ivf'
+goav run 'testsrc video width=1280 height=720 fps=30 duration=3s realtime=true pattern=bars ! av1enc bitrate=1200k fps=30 keyframe_interval=60 ! filesink location=/tmp/goav-av1.mkv format=matroska'
 ```
 
 That command creates an I420 video test source, marks it realtime, encodes it as
-AV1 through the selected runtime, and writes an IVF file. The default
+AV1 through the selected runtime, and writes a Matroska file. The default
 `--runtime=demo` mode uses the standard containers, filters, and codecs with a
-test clock, so generated AV1 IVF output is real decoder-readable media. Use
-`--runtime=default` to run against the standard runtime clock; use
+test clock, so generated AV1 Matroska output is real decoder-readable media.
+Use `--runtime=default` to run against the standard runtime clock; use
 `--runtime=test` when you intentionally want deterministic fake codecs and fake
 containers for arbitrary codec/container ids.
 
 The string grammar is intentionally close to the recipe grammar:
 
 ```sh
-goav run 'testsrc video name=fixture size=1920x1080 fps=30000/1001 frames=90 realtime=true ! resize size=640x360 ! encode codec=av1 media=video bitrate=1.8M fps=30000/1001 keyframe_interval=60 min_qindex=20 max_qindex=180 temporal_layers=2 tune=zerolatency ! filesink location=/tmp/thumbs.ivf format=ivf'
+goav run 'testsrc video name=fixture size=1920x1080 fps=30000/1001 frames=90 realtime=true ! resize size=640x360 ! encode codec=av1 media=video bitrate=1.8M fps=30000/1001 keyframe_interval=60 min_qindex=20 max_qindex=180 temporal_layers=2 tune=zerolatency ! filesink location=/tmp/thumbs.mkv format=matroska'
 ```
 
 Known encoder options (`bitrate`, `fps`, `keyframe_interval`, `profile`,
@@ -780,6 +780,15 @@ typed `ctl.CapabilitySet`, and the running server can report that full manifest
 with `goav ctl capabilities`:
 
 ```sh
+goav run --control unix:///tmp/goav-live.sock \
+  'testsrc video name=fixture width=1280 height=720 fps=30 duration=30s realtime=true pattern=bars ! tap name=frames ! av1enc bitrate=1200k fps=30 keyframe_interval=60 ! filesink location=/tmp/goav-av1.mkv format=matroska'
+goav ctl --control unix:///tmp/goav-live.sock graph
+goav ctl --control unix:///tmp/goav-live.sock control rate value=0.5 source=fixture
+goav ctl --control unix:///tmp/goav-live.sock control seek position=2s source=fixture
+goav ctl --control unix:///tmp/goav-live.sock attach frames as preview \
+  'resize 320x180 ! av1enc bitrate=300k fps=2 keyframe_interval=1 ! filesink location=/tmp/goav-preview.mkv format=matroska'
+goav ctl --control unix:///tmp/goav-live.sock stop
+
 goav ctl --control unix:///tmp/goav-live.sock control bitrate stream=video value=1200k
 goav ctl --control unix:///tmp/goav-live.sock control --json '{"type":"rate","rate":0.75,"node":"fixture"}'
 goav ctl --control unix:///tmp/goav-live.sock help attach
