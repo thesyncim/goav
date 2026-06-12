@@ -68,14 +68,6 @@ func (s *Server) Handle(ctx context.Context, request Request) Response {
 
 func (s *Server) execute(ctx context.Context, request Request) (ControlResponse, error) {
 	switch request.Op {
-	case "help":
-		return s.help(request)
-	case "capabilities":
-		return s.capabilities()
-	case "control":
-		return s.control(ctx, request)
-	case "control_raw":
-		return executeRawControl(ctx, s.Task, request.Control)
 	case "attach":
 		return s.attach(ctx, request)
 	case "rebranch":
@@ -83,38 +75,8 @@ func (s *Server) execute(ctx context.Context, request Request) (ControlResponse,
 	case "detach":
 		return s.detach(ctx, request.Branch)
 	default:
-		return executeRequest(ctx, s.Task, request)
+		return executeRequestWithRegistry(ctx, s.Task, request, s.commandManifest(), s.Pipeline)
 	}
-}
-
-func (s *Server) capabilities() (ControlResponse, error) {
-	report, err := capabilityReport(s.commandManifest(), s.Pipeline, s.Task)
-	if err != nil {
-		return ControlResponse{}, err
-	}
-	return ControlResponse{Operation: "capabilities", Result: report}, nil
-}
-
-func (s *Server) help(request Request) (ControlResponse, error) {
-	text, err := helpWithRuntime(helpArgsFromRequest(request), s.commandManifest(), s.Pipeline, s.Task)
-	if err != nil {
-		return ControlResponse{}, err
-	}
-	return ControlResponse{Operation: "help", Result: text}, nil
-}
-
-func (s *Server) control(ctx context.Context, request Request) (ControlResponse, error) {
-	if request.Verb == "deliver" && len(request.Event) != 0 {
-		return executeRawEvent(ctx, s.Task, request.Event, argsFromMap(request.Args))
-	}
-	if request.Verb == "" {
-		return ControlResponse{}, commandError("missing_command", "control", "", "missing control verb", nil, []string{"use verb=bitrate"}, nil)
-	}
-	spec, ok := LookupCommand(s.commandManifest(), request.Verb)
-	if !ok {
-		return ControlResponse{}, commandError("unknown_command", "control", request.Verb, "unknown control command "+strconvQuote(request.Verb), nil, []string{"use one of: " + strings.Join(commandNames(s.commandManifest()), ", ")}, nil)
-	}
-	return Invoke(ctx, s.Task, spec, argsFromMap(request.Args))
 }
 
 func (s *Server) commandManifest() []CommandSpec {
