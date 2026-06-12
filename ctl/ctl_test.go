@@ -391,7 +391,9 @@ func waitForSocket(t *testing.T, socket string, errC <-chan error) {
 	t.Helper()
 	deadline := time.Now().Add(3 * time.Second)
 	for {
-		if _, err := os.Stat(socket); err == nil {
+		conn, err := net.Dial("unix", socket)
+		if err == nil {
+			_ = conn.Close()
 			return
 		}
 		select {
