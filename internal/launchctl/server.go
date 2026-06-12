@@ -56,17 +56,18 @@ func (s *Server) Handle(ctx context.Context, request Request) Response {
 	if s.Task == nil {
 		return ErrorResponse(request.Op, commandError("task_missing", request.Op, "", "control server has no task", nil, nil, nil))
 	}
-	if err := s.validateConfig(); err != nil {
+	manifest := s.commandManifest()
+	if err := s.validateConfig(manifest); err != nil {
 		return ErrorResponse(request.Op, err)
 	}
-	response, err := s.execute(ctx, request)
+	response, err := s.execute(ctx, request, manifest)
 	if err != nil {
 		return ErrorResponse(request.Op, err)
 	}
 	return SuccessResponse(response.Result)
 }
 
-func (s *Server) execute(ctx context.Context, request Request) (ControlResponse, error) {
+func (s *Server) execute(ctx context.Context, request Request, manifest []CommandSpec) (ControlResponse, error) {
 	switch request.Op {
 	case "attach":
 		return s.attach(ctx, request)
@@ -75,7 +76,7 @@ func (s *Server) execute(ctx context.Context, request Request) (ControlResponse,
 	case "detach":
 		return s.detach(ctx, request.Branch)
 	default:
-		return executeRequestWithRegistry(ctx, s.Task, request, s.commandManifest(), s.Pipeline)
+		return executeRequestWithRegistry(ctx, s.Task, request, manifest, s.Pipeline)
 	}
 }
 
@@ -87,8 +88,8 @@ func (s *Server) commandManifest() []CommandSpec {
 	return manifest
 }
 
-func (s *Server) validateConfig() error {
-	if err := validateCommandManifest(s.commandManifest()); err != nil {
+func (s *Server) validateConfig(manifest []CommandSpec) error {
+	if err := validateCommandManifest(manifest); err != nil {
 		return err
 	}
 	return validatePipelineRegistry(s.Pipeline)
@@ -254,7 +255,8 @@ func ServeUnixWithOptions(ctx context.Context, task goav.Task, address string, o
 			option(server)
 		}
 	}
-	if err := server.validateConfig(); err != nil {
+	manifest := server.commandManifest()
+	if err := server.validateConfig(manifest); err != nil {
 		return err
 	}
 	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
