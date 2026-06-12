@@ -248,6 +248,10 @@ func newDemoHost(ctx context.Context) (*demoHost, error) {
 			Encoders: []ctl.EncoderSpec{acmeEncoder},
 		},
 	}
+	if err := ctl.ValidateCapabilities(capabilities); err != nil {
+		_ = task.Close()
+		return nil, err
+	}
 	return &demoHost{task: task, capabilities: capabilities, ready: ready}, nil
 }
 

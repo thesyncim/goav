@@ -116,6 +116,10 @@ func Example_bootstrapControlPlaneHost() {
 			Encoders: []ctl.EncoderSpec{acme},
 		},
 	}
+	if err := ctl.ValidateCapabilities(capabilities); err != nil {
+		fmt.Println(err)
+		return
+	}
 	server := ctl.Server{Task: task}
 	ctl.WithCapabilities(capabilities)(&server)
 
