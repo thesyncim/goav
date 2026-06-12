@@ -151,7 +151,7 @@ func runPipelineHelp() string {
 		"  tap name=<tap-name>\n" +
 		"  resize width=<px> height=<px>|size=<w>x<h>\n" +
 		"  av1enc|vp9enc|vp8enc|h264enc|encode codec=<id> media=<video|audio> bitrate=<rate> fps=<n[/d]> keyframe_interval=<n> [native_key=value...]\n" +
-		"  filesink location=<path> format=<container>\n\n" +
+		"  filesink location=<path> [format=<container>] (known file extensions infer the format)\n\n" +
 		"control example:\n" +
 		"  goav run --control unix:///tmp/goav-live.sock 'testsrc video name=fixture width=1280 height=720 fps=30 duration=30s realtime=true pattern=bars ! tap name=frames ! av1enc bitrate=1200k fps=30 keyframe_interval=60 min_qindex=20 max_qindex=180 tune=zerolatency ! filesink location=/tmp/goav-av1.mkv format=matroska'\n" +
 		"  goav ctl --control unix:///tmp/goav-live.sock taps\n" +
@@ -932,7 +932,25 @@ func parseFileDestination(tokens []string) (fileDestination, error) {
 	if dest.location == "" {
 		return fileDestination{}, fmt.Errorf("goav run: filesink needs location=<path>")
 	}
+	if dest.format == "" {
+		dest.format = inferFileDestinationFormat(dest.location)
+	}
 	return dest, nil
+}
+
+func inferFileDestinationFormat(location string) av.FormatID {
+	switch strings.ToLower(filepath.Ext(location)) {
+	case ".ivf":
+		return av.FormatIVF
+	case ".mkv", ".mka", ".mks":
+		return av.FormatMatroska
+	case ".webm":
+		return av.FormatWebM
+	case ".h264", ".264", ".avc", ".h265", ".hevc":
+		return av.FormatAnnexB
+	default:
+		return ""
+	}
 }
 
 func codecIDFromEncodeName(name string) av.CodecID {

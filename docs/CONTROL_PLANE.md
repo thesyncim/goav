@@ -48,8 +48,12 @@ decoder-readable AV1 IVF file:
 
 ```sh
 goav run \
-  'testsrc video width=1280 height=720 fps=30 duration=3s realtime=true pattern=bars ! av1enc bitrate=1200k fps=30 keyframe_interval=60 min_qindex=20 max_qindex=180 tune=zerolatency ! filesink location=/tmp/goav-av1.ivf format=ivf'
+  'testsrc video width=1280 height=720 fps=30 duration=3s realtime=true pattern=bars ! av1enc bitrate=1200k fps=30 keyframe_interval=60 min_qindex=20 max_qindex=180 tune=zerolatency ! filesink location=/tmp/goav-av1.ivf'
 ```
+
+Known file extensions infer the destination format for `.ivf`, `.mkv`,
+`.webm`, and Annex B elementary-stream paths; keep `format=<id>` when you need
+to override the extension or target a custom container id.
 
 ## Bootstrap Host
 

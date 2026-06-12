@@ -318,6 +318,7 @@ func TestRunPipelineHelpBootstrapsGeneratedControlFlow(t *testing.T) {
 		"size=<w>x<h>",
 		"fps=<n[/d]|decimal>",
 		"format=i420|yuv420p",
+		"known file extensions infer the format",
 		"goav ctl --control unix:///tmp/goav-live.sock taps",
 		"control seek position=2s source=fixture",
 		"attach frames as preview",
@@ -391,6 +392,37 @@ func TestRunGeneratedVideoAV1IVFString(t *testing.T) {
 		t.Fatalf("IVF frame count = %d, want 2", got)
 	}
 	assertDecodableAV1IVF(t, header)
+}
+
+func TestRunGeneratedVideoAV1IVFExtensionInfersFormat(t *testing.T) {
+	out := filepath.Join(t.TempDir(), "generated av1 inferred.ivf")
+	pipeline := fmt.Sprintf(
+		`testsrc video name=fixture width=32 height=18 fps=30 frames=2 realtime=false pattern=bars ! resize width=16 height=16 ! av1enc bitrate=400k fps=30 keyframe_interval=1 min_qindex=20 max_qindex=180 tune=zerolatency ! filesink location=%q`,
+		out,
+	)
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := run([]string{"run", pipeline}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("code=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+	var result runPipelineResult
+	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+		t.Fatalf("result JSON: %v\n%s", err, stdout.String())
+	}
+	if result.Output != out || result.Format != string(av.FormatIVF) || result.Codec != string(av.CodecAV1) {
+		t.Fatalf("result = %+v, want inferred IVF AV1 output", result)
+	}
+	data, err := os.ReadFile(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(data) < 32 || string(data[:4]) != "DKIF" || string(data[8:12]) != "AV01" {
+		t.Fatalf("output header = % x, want AV1 IVF", data[:min(len(data), 32)])
+	}
+	if got := binary.LittleEndian.Uint32(data[24:28]); got != 2 {
+		t.Fatalf("IVF frame count = %d, want 2", got)
+	}
 }
 
 func TestRunGeneratedVideoWithControlSocket(t *testing.T) {
@@ -701,6 +733,33 @@ func TestRunPipelineParserCarriesCustomEncoderSettings(t *testing.T) {
 	}
 	if spec.Settings.Custom["lookahead"] != "deep" || spec.Settings.Custom["aq-mode"] != "cyclic" {
 		t.Fatalf("custom settings = %+v", spec.Settings.Custom)
+	}
+}
+
+func TestRunPipelineParserInfersKnownDestinationFormats(t *testing.T) {
+	for _, tc := range []struct {
+		location string
+		want     av.FormatID
+	}{
+		{location: "/tmp/out.ivf", want: av.FormatIVF},
+		{location: "/tmp/out.mkv", want: av.FormatMatroska},
+		{location: "/tmp/out.mka", want: av.FormatMatroska},
+		{location: "/tmp/out.webm", want: av.FormatWebM},
+		{location: "/tmp/out.h264", want: av.FormatAnnexB},
+		{location: "/tmp/out.bin", want: ""},
+	} {
+		t.Run(tc.location, func(t *testing.T) {
+			plan, err := parseRunPipeline(fmt.Sprintf(
+				`testsrc video width=16 height=16 frames=1 ! av1enc bitrate=200k ! filesink location=%q`,
+				tc.location,
+			))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if plan.destination.format != tc.want {
+				t.Fatalf("format = %q, want %q", plan.destination.format, tc.want)
+			}
+		})
 	}
 }
 

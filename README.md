@@ -756,6 +756,12 @@ test clock, so generated AV1 Matroska output is real decoder-readable media.
 Use `--runtime=default` to run against the standard runtime clock; use
 `--runtime=test` when you intentionally want deterministic fake codecs and fake
 containers for arbitrary codec/container ids.
+Known file extensions infer the destination format, so this pure-Go AV1 IVF
+smoke test also needs no application code:
+
+```sh
+goav run 'testsrc video width=1280 height=720 fps=30 duration=3s realtime=true pattern=bars ! av1enc bitrate=1200k fps=30 keyframe_interval=60 min_qindex=20 max_qindex=180 tune=zerolatency ! filesink location=/tmp/goav-av1.ivf'
+```
 
 The string grammar is intentionally close to the recipe grammar:
 
