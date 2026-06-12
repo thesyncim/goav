@@ -247,6 +247,124 @@ func TestAudioFlowShapePreferenceCopyAndTapContracts(t *testing.T) {
 	if got := chainTransformStepName(TransformSpec{}); got != "transform" {
 		t.Fatalf("chainTransformStepName(empty) = %q, want transform", got)
 	}
+	if got := chainTransformStepName(Resize(320, 180)); got != "resize" {
+		t.Fatalf("chainTransformStepName(resize) = %q, want resize", got)
+	}
+	if got := chainTransformStepName(Resample(48_000, codec.Stereo)); got != "resample" {
+		t.Fatalf("chainTransformStepName(resample) = %q, want resample", got)
+	}
+}
+
+func TestFlowBuilderDefaultShapeContracts(t *testing.T) {
+	audio := Flow("voice").Audio()
+	if got := audio.InputShapes(); len(got) != 1 || got[0].Domain != shape.DomainFrame || got[0].MediaKind != av.MediaAudio {
+		t.Fatalf("audio InputShapes() = %#v, want audio frames", got)
+	}
+	if got := audio.OutputShapes(shape.Spec{}); len(got) != 1 || got[0].Domain != shape.DomainFrame || got[0].MediaKind != av.MediaAudio {
+		t.Fatalf("audio OutputShapes(empty) = %#v, want audio frames", got)
+	}
+
+	video := Flow("preview").Video()
+	if got := video.InputShapes(); len(got) != 1 || got[0].Domain != shape.DomainFrame || got[0].MediaKind != av.MediaVideo {
+		t.Fatalf("video InputShapes() = %#v, want video frames", got)
+	}
+	if got := video.OutputShapes(shape.Spec{}); len(got) != 1 || got[0].Domain != shape.DomainFrame || got[0].MediaKind != av.MediaVideo {
+		t.Fatalf("video OutputShapes(empty) = %#v, want video frames", got)
+	}
+}
+
+func TestFlowBuilderRejectsInvalidCompositionContracts(t *testing.T) {
+	meter := FrameFunc("meter", func(_ context.Context, frame *av.Frame, emit Emit) error {
+		return emit.Frame(frame)
+	})
+
+	tests := []struct {
+		name string
+		flow Chain
+		code errcode.Code
+	}{
+		{
+			name: "shape after encode",
+			flow: Flow("encoded").Audio().
+				Encode(codec.Opus()).
+				Shape(shape.Frame(av.MediaAudio)),
+			code: errcode.StreamStepAfterEncode,
+		},
+		{
+			name: "decode after encode",
+			flow: Flow("encoded").Video().
+				Encode(codec.VP8()).
+				Decode(),
+			code: errcode.StreamStepAfterEncode,
+		},
+		{
+			name: "shape after copy",
+			flow: Flow("copied").Audio().
+				Copy().
+				Shape(shape.Frame(av.MediaAudio)),
+			code: errcode.OperationShapeMismatch,
+		},
+		{
+			name: "flow after encode",
+			flow: Flow("encoded").Audio().
+				Encode(codec.Opus()).
+				Apply(Flow("meter").Audio().Do(meter)),
+			code: errcode.StreamStepAfterEncode,
+		},
+		{
+			name: "decode flow after frame step",
+			flow: Flow("bad").Audio().
+				Do(meter).
+				Apply(Flow("decode").Audio().Decode()),
+			code: errcode.FlowDecodeOrderInvalid,
+		},
+		{
+			name: "duplicate decode through apply",
+			flow: Flow("bad").Audio().
+				Decode().
+				Apply(Flow("decode").Audio().Decode()),
+			code: errcode.FlowDecodeDuplicate,
+		},
+		{
+			name: "copy flow after decode",
+			flow: Flow("bad").Audio().
+				Decode().
+				Apply(Flow("copy").Audio().Copy()),
+			code: errcode.FlowCopyDomainMismatch,
+		},
+		{
+			name: "typed packet tap before encode",
+			flow: Flow("bad").Audio().
+				Tap(PacketTap("voice.packets")),
+			code: errcode.TapDomainMismatch,
+		},
+		{
+			name: "typed frame tap after encode",
+			flow: Flow("bad").Audio().
+				Encode(codec.Opus()).
+				Tap(FrameTap("voice.frames")),
+			code: errcode.TapDomainMismatch,
+		},
+		{
+			name: "empty tap",
+			flow: Flow("bad").Audio().
+				Tap(Tap("")),
+			code: errcode.TapInvalid,
+		},
+		{
+			name: "non snapshot chain",
+			flow: Flow("bad").Audio().
+				Apply(nonSnapshotFlow{}),
+			code: errcode.FlowInvalid,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := chainSpecFrom(tt.flow)
+			assertBuildErrorCode(t, err, tt.code)
+		})
+	}
 }
 
 func TestFlowDuplicateEncodeAndDecodeErrors(t *testing.T) {
@@ -258,6 +376,18 @@ func TestFlowDuplicateEncodeAndDecodeErrors(t *testing.T) {
 	_, err = chainSpecFrom(dupDecode)
 	assertBuildErrorCode(t, err, errcode.FlowDecodeDuplicate)
 }
+
+type nonSnapshotFlow struct{}
+
+func (nonSnapshotFlow) Name() string { return "foreign" }
+func (nonSnapshotFlow) InputShapes() shape.Set {
+	return nil
+}
+func (nonSnapshotFlow) OutputShapes(shape.Spec) shape.Set {
+	return nil
+}
+func (nonSnapshotFlow) Taps() []TapRef { return nil }
+func (nonSnapshotFlow) isChain()       {}
 
 func operationKindsForFlowTest(operations []operationSpec) []plan.OperationKind {
 	out := make([]plan.OperationKind, len(operations))
