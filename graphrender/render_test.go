@@ -3,6 +3,7 @@ package graphrender
 import (
 	"context"
 	"errors"
+	"io"
 	"strings"
 	"testing"
 	"time"
@@ -116,6 +117,79 @@ func TestRenderURI(t *testing.T) {
 	}
 }
 
+type failingWriter struct{}
+
+func (failingWriter) Write([]byte) (int, error) {
+	return 0, errors.New("write failed")
+}
+
+func TestRenderURIFormatsAndErrors(t *testing.T) {
+	spec := pipeline.Spec{}
+	text, err := RenderURI(spec, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(text, "pipeline goav") {
+		t.Fatalf("default text:\n%s", text)
+	}
+
+	dot, err := RenderURI(spec, "goav://graph?format=dot")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(dot, "digraph \"goav\"") {
+		t.Fatalf("query-selected dot:\n%s", dot)
+	}
+
+	if _, err := RenderURI(spec, "%"); err == nil {
+		t.Fatal("invalid URI succeeded")
+	}
+	if _, err := RenderURI(spec, "goav://not-graph/dot"); !errors.Is(err, ErrUnsupportedURI) {
+		t.Fatalf("non-graph URI err = %v, want ErrUnsupportedURI", err)
+	}
+	if err := write(io.Discard, spec, format("json")); !errors.Is(err, ErrUnsupportedFormat) {
+		t.Fatalf("write unsupported err = %v, want ErrUnsupportedFormat", err)
+	}
+	if err := writeText(failingWriter{}, spec); err == nil {
+		t.Fatal("writeText with failing writer succeeded")
+	}
+}
+
+func TestRenderRouteLabelsAndMissingMermaidNodes(t *testing.T) {
+	spec := pipeline.Spec{
+		Name: "routes",
+		Nodes: []pipeline.NodeSpec{
+			{Name: "source", Kind: pipeline.NodeSource},
+			{Name: "sink", Kind: pipeline.NodeSink},
+		},
+		Edges: []pipeline.EdgeSpec{
+			{From: "source", To: "sink", Policy: pipeline.RouteByEvent},
+			{From: "missing/source", To: "sink", Policy: pipeline.RoutePolicy("tap")},
+			{From: "source", To: "missing/sink", Policy: pipeline.RoutePolicy("codec"), Label: "opus"},
+		},
+	}
+
+	text, err := RenderURI(spec, "goav:graph")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"source -> sink [event]", "missing/source -> sink [tap]", "source -> missing/sink [codec=opus]"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("text missing %q:\n%s", want, text)
+		}
+	}
+
+	mermaid, err := RenderURI(spec, "goav://graph/mermaid")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"missing_missing_source", "missing_missing_sink", "-- \"event\" -->", "-- \"tap\" -->", "-- \"codec=opus\" -->"} {
+		if !strings.Contains(mermaid, want) {
+			t.Fatalf("mermaid missing %q:\n%s", want, mermaid)
+		}
+	}
+}
+
 func TestRenderTaskFlowchartAnnotatesRuntimeBranches(t *testing.T) {
 	task := snapshotTask{
 		snap: snapshot.Task{
@@ -160,6 +234,80 @@ func TestRenderTaskFlowchartAnnotatesRuntimeBranches(t *testing.T) {
 	}
 	if !strings.Contains(text, "stage preview-copy [copy\nbranch=preview (attached)]") {
 		t.Fatalf("text:\n%s", text)
+	}
+}
+
+func TestRenderTaskURIHandlesNilAndSnapshotBranchDetails(t *testing.T) {
+	text, err := RenderTaskURI(nil, "goav:graph")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(text, "pipeline goav") {
+		t.Fatalf("nil task text:\n%s", text)
+	}
+
+	task := snapshotTask{snap: snapshot.Task{
+		Spec: pipeline.Spec{
+			Name: "snapshot",
+			Nodes: []pipeline.NodeSpec{
+				{Name: "shared", Kind: pipeline.NodeStage, Detail: "existing"},
+				{Name: "branch-only", Kind: pipeline.NodeStage},
+			},
+		},
+		Branches: []snapshot.Branch{
+			{
+				Name:  "alpha",
+				State: lifecycle.BranchDetached,
+				Nodes: []pipeline.NodeRef{"shared"},
+			},
+			{
+				ID:    "zeta",
+				Nodes: []pipeline.NodeRef{"shared", "shared", ""},
+				Spec: pipeline.Spec{Nodes: []pipeline.NodeSpec{
+					{Name: "branch-only"},
+					{Name: "shared"},
+					{},
+				}},
+			},
+			{},
+		},
+	}}
+
+	text, err = RenderTaskURI(task, "goav:graph")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(text, "stage shared [existing\nbranch=alpha (detached), branch=zeta]") {
+		t.Fatalf("shared branch annotations missing or unsorted:\n%s", text)
+	}
+	if !strings.Contains(text, "stage branch-only [branch=zeta]") {
+		t.Fatalf("snapshot branch spec node annotation missing:\n%s", text)
+	}
+}
+
+func TestRenderHelperEdgeCases(t *testing.T) {
+	if got, err := parseFormat(""); err != nil || got != textFormat {
+		t.Fatalf("parseFormat(empty) = %q, %v; want text", got, err)
+	}
+	if got := mermaidSafeID(""); got != "node" {
+		t.Fatalf("mermaidSafeID(empty) = %q, want node", got)
+	}
+	if got := branchRenderLabel(nil); got != "" {
+		t.Fatalf("nil branch label = %q, want empty", got)
+	}
+	if got := branchNodeNames(nil); got != nil {
+		t.Fatalf("nil branch nodes = %#v, want nil", got)
+	}
+	if got := appendNodeDetail("existing", ""); got != "existing" {
+		t.Fatalf("append empty annotation = %q, want existing", got)
+	}
+	if got := appendNodeDetail("", "annotation"); got != "annotation" {
+		t.Fatalf("append to empty detail = %q, want annotation", got)
+	}
+
+	spec := specFromSnapshot(snapshot.Task{Spec: pipeline.Spec{Name: "plain"}})
+	if spec.Name != "plain" {
+		t.Fatalf("snapshot without branches = %+v", spec)
 	}
 }
 
