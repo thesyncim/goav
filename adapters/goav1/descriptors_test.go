@@ -51,3 +51,13 @@ func TestEncoderDescriptor(t *testing.T) {
 		t.Fatalf("encode pixel formats = %v", desc.Capabilities.PixelFormats)
 	}
 }
+
+func TestDescriptors(t *testing.T) {
+	descriptors := Descriptors()
+	if len(descriptors) != 2 {
+		t.Fatalf("descriptors = %d, want decode and encode descriptors", len(descriptors))
+	}
+	if !descriptors[0].Supports(codec.ModeDecode) || !descriptors[1].Supports(codec.ModeEncode) {
+		t.Fatalf("descriptors = %+v", descriptors)
+	}
+}
