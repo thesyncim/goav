@@ -120,6 +120,45 @@ func (c *Collector) Wait(ctx context.Context, cond func(*Collector) bool) error 
 	}
 }
 
+// WaitFrames blocks until at least n frames have reached the collector, then
+// returns the collected frame copies. It is the common case wrapper around
+// Wait for live or control-driven tests.
+func (c *Collector) WaitFrames(ctx context.Context, n int) ([]*av.Frame, error) {
+	if err := c.waitCount(ctx, n, func(c *Collector) int { return len(c.frames) }); err != nil {
+		return nil, err
+	}
+	return c.Frames(), nil
+}
+
+// WaitPackets blocks until at least n packets have reached the collector, then
+// returns the collected packet copies.
+func (c *Collector) WaitPackets(ctx context.Context, n int) ([]*av.Packet, error) {
+	if err := c.waitCount(ctx, n, func(c *Collector) int { return len(c.packets) }); err != nil {
+		return nil, err
+	}
+	return c.Packets(), nil
+}
+
+// WaitEvents blocks until at least n events have reached the collector, then
+// returns the collected event copies.
+func (c *Collector) WaitEvents(ctx context.Context, n int) ([]av.Event, error) {
+	if err := c.waitCount(ctx, n, func(c *Collector) int { return len(c.events) }); err != nil {
+		return nil, err
+	}
+	return c.Events(), nil
+}
+
+func (c *Collector) waitCount(ctx context.Context, n int, count func(*Collector) int) error {
+	if n <= 0 {
+		return nil
+	}
+	return c.Wait(ctx, func(c *Collector) bool {
+		c.mu.Lock()
+		defer c.mu.Unlock()
+		return count(c) >= n
+	})
+}
+
 // cloneFrame deep-copies a delivered frame: headers by value, plane bytes
 // into fresh backing marked immutable (the collector never writes them again).
 func cloneFrame(frame *av.Frame) *av.Frame {

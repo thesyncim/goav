@@ -51,6 +51,25 @@ func ExampleCollector() {
 	// Output: [[150] [150]]
 }
 
+// ExampleCollector_WaitFrames shows the common count-based wait helper used by
+// live and control-driven pipeline tests.
+func ExampleCollector_WaitFrames() {
+	ctx := context.Background()
+	out := goavtest.NewCollector()
+	err := goav.From(goavtest.Audio(48000, 1, []int16{1}, []int16{2})).
+		Audio().
+		To(out.Sink()).
+		UseRuntime(goavtest.Runtime()).
+		Run(ctx)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	frames, err := out.WaitFrames(ctx, 2)
+	fmt.Println(len(frames), err)
+	// Output: 2 <nil>
+}
+
 // ExampleTestSourceScript shows a provider-shaped fixture with a mixed script:
 // frame data plus an in-band event, both delivered through the source seam.
 func ExampleTestSourceScript() {

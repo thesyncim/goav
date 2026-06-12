@@ -628,12 +628,13 @@ _ = task.Run(ctx)
 
 `Audio`, `Video`, and `Packets` are deterministic PTS-stamped inputs;
 `LiveAudio` never ends, for control-plane tests (`SelectActive`, `Rebranch`)
-paired with the collector's `Wait(ctx, cond)`. `goavtest.Runtime()` is the
-deterministic runtime: standard filters, a byte-faithful passthrough codec for
-every well-known codec id, a fake container for every well-known format id,
-and a fake clock (`goavtest.NewClock`) so realtime pacing records its sleeps
-instead of sleeping. `Codec(id)`/`Format(id)` register the fakes individually,
-and extra options are last-wins overrides.
+paired with the collector's `WaitFrames`, `WaitPackets`, `WaitEvents`, or
+custom `Wait(ctx, cond)` predicate. `goavtest.Runtime()` is the deterministic
+runtime: standard filters, a byte-faithful passthrough codec for every
+well-known codec id, a fake container for every well-known format id, and a
+fake clock (`goavtest.NewClock`) so realtime pacing records its sleeps instead
+of sleeping. `Codec(id)`/`Format(id)` register the fakes individually, and
+extra options are last-wins overrides.
 
 Use `NewTestSource` when you need a provider-shaped fixture that records source
 controls and can emit custom frames, packets, events, or a mixed script:

@@ -12,6 +12,7 @@ import (
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/goavtest"
+	"github.com/thesyncim/goav/shape"
 )
 
 // TestReadmeMixExample pins the README "Testing Your Pipeline" snippet
@@ -108,7 +109,10 @@ func TestPacketsHonorKeyframeFlagsAndPTS(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	packets := out.Packets()
+	packets, err := out.WaitPackets(ctx, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if len(packets) != 2 {
 		t.Fatalf("packets = %d, want 2", len(packets))
 	}
@@ -197,6 +201,33 @@ func TestFormatRoundTripThroughFile(t *testing.T) {
 	}
 }
 
+func TestCollectorWaitEventsObservesEventSource(t *testing.T) {
+	ctx := context.Background()
+	out := goavtest.NewCollector()
+	input := goav.Source("diagnostics",
+		shape.Event(),
+		func(_ context.Context, push goav.SourcePush) error {
+			if _, err := push.Event(av.Event{Type: av.EventStats, Reason: "ready"}); err != nil {
+				return err
+			}
+			return push.EOS()
+		},
+	)
+	if err := goav.From(input).To(out.Sink()).UseRuntime(goavtest.Runtime()).Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	events, err := out.WaitEvents(ctx, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 2 ||
+		events[0].Type != av.EventStats ||
+		events[0].Reason != "ready" ||
+		events[1].Type != av.EventEndOfStream {
+		t.Fatalf("events = %+v, want stats then EOS", events)
+	}
+}
+
 func TestClockRecordsSleepsAndAdvances(t *testing.T) {
 	clock := goavtest.NewClock()
 	if err := clock.Sleep(context.Background(), 20*time.Millisecond); err != nil {
@@ -273,8 +304,12 @@ func TestCollectorWaitObservesLivePipeline(t *testing.T) {
 	runErr := make(chan error, 1)
 	go func() { runErr <- task.Run(ctx) }()
 
-	if err := out.Wait(ctx, func(c *goavtest.Collector) bool { return len(c.Frames()) >= 3 }); err != nil {
-		t.Fatalf("Wait: %v", err)
+	frames, err := out.WaitFrames(ctx, 3)
+	if err != nil {
+		t.Fatalf("WaitFrames: %v", err)
+	}
+	if len(frames) < 3 {
+		t.Fatalf("frames = %d, want at least 3", len(frames))
 	}
 	for _, samples := range out.S16() {
 		if samples[0] != 7 {
