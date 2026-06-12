@@ -740,6 +740,35 @@ or Mermaid). Running tasks can render the current snapshot directly:
 `graphrender.RenderBranchFlowchart(attachment.Snapshot())` for one runtime
 branch.
 
+## String Launcher
+
+For no-code smoke tests, demos, and adapter bootstrap work, the bundled CLI can
+build and run a generated-source pipeline from one string:
+
+```sh
+goav run 'testsrc video width=1280 height=720 fps=30 duration=3s realtime=true pattern=bars ! av1enc bitrate=1200k fps=30 keyframe_interval=60 ! filesink location=/tmp/goav-av1.ivf format=ivf'
+```
+
+That command creates an I420 video test source, marks it realtime, encodes it as
+AV1 through the selected runtime, and writes an IVF file. The default
+`--runtime=demo` mode keeps the standard containers and filters, then injects a
+deterministic encoder for the requested codec so a fresh checkout has a working
+AV1 command. Use `--runtime=default` to require only the registered standard or
+application-supplied adapters; use `--runtime=test` when you want deterministic
+fake codecs and fake containers for arbitrary codec/container ids.
+
+The string grammar is intentionally close to the recipe grammar:
+
+```sh
+goav run 'testsrc video name=fixture size=1920x1080 fps=30000/1001 frames=90 realtime=true ! resize size=640x360 ! encode codec=av1 media=video bitrate=1.8M fps=30000/1001 keyframe_interval=60 lookahead=deep ! filesink location=/tmp/thumbs.ivf format=ivf'
+```
+
+Known encoder options (`bitrate`, `fps`, `keyframe_interval`, `profile`,
+`level`, `channels`, `sample_rate`, `clock_rate`) map to typed `codec` settings.
+Other encoder key/value pairs are carried as `CodecSettings.Custom`, so external
+adapters can validate and apply native settings without waiting for a common
+field.
+
 Applications that want a CLI control surface expose a Unix socket with package
 `ctl`; the bundled command then drives the same task APIs over structured JSON.
 The socket can host built-in controls plus explicit app-owned commands, custom

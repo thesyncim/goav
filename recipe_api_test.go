@@ -4202,30 +4202,32 @@ func TestStreamRecipeRejectsDuplicateEncoder(t *testing.T) {
 	}
 }
 
-func TestStreamRecipeRejectsWorkInProgressRecipeEncoder(t *testing.T) {
+func TestStreamRecipeAllowsRuntimeRegisteredRecipeEncoders(t *testing.T) {
 	tests := []struct {
-		name   string
-		input  string
-		output string
-		codec  codec.CodecSpec
+		name  string
+		codec codec.CodecSpec
 	}{
-		{name: "h264", input: "input.h264", output: "archive.h264", codec: codec.H264(codec.Bitrate(2_000_000))},
-		{name: "av1", input: "input.ivf", output: "archive.ivf", codec: codec.AV1(codec.Bitrate(2_000_000))},
+		{name: "h264", codec: codec.H264(codec.Bitrate(2_000_000))},
+		{name: "av1", codec: codec.AV1(codec.Bitrate(2_000_000))},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := goav.From(goav.FileInput(tt.input, strings.NewReader(""))).
+			source := goav.Source("frames",
+				shape.Frame(av.MediaVideo, shape.Video(16, 16, av.PixelFormatI420)),
+				func(_ context.Context, push goav.SourcePush) error { return push.EOS() },
+			)
+			rt := goav.New(
+				goav.WithMuxer(av.FormatIVF, recipeAPIMuxerFactory{}),
+				goav.WithEncoder(codec.Descriptor{ID: tt.codec.ID, Type: av.MediaVideo}, recipeAPIEncoderFactory{}),
+			)
+			_, err := goav.From(source).
+				UseRuntime(rt).
 				Video().
 				Encode(tt.codec).
-				To(goav.File(tt.output, io.Discard)).
-				Build(context.Background())
-			var buildErr *goav.BuildError
-			if !errors.As(err, &buildErr) || buildErr.Code != "encode_work_in_progress" || !errors.Is(err, goav.ErrUnsupportedBuild) {
-				t.Fatalf("err = %v, want encode_work_in_progress wrapping ErrUnsupportedBuild", err)
-			}
-			if !strings.Contains(err.Error(), "recipe encoding is work in progress") ||
-				!strings.Contains(err.Error(), "opus, vp8, and vp9") {
-				t.Fatalf("err = %v, want work-in-progress encode guidance", err)
+				To(goav.File("archive.ivf", io.Discard, goav.Format(av.FormatIVF))).
+				Describe()
+			if err != nil {
+				t.Fatalf("Describe() err = %v", err)
 			}
 		})
 	}

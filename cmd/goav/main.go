@@ -18,11 +18,23 @@ func main() {
 }
 
 func run(argv []string, stdout io.Writer, stderr io.Writer) int {
-	if len(argv) < 1 || argv[0] != "ctl" {
-		fmt.Fprintln(stderr, "usage: goav ctl [--control unix://PATH] <command>")
+	if len(argv) < 1 {
+		fmt.Fprintln(stderr, "usage: goav <ctl|run> ...")
 		return 2
 	}
-	control, args, err := parseCtlArgs(argv[1:])
+	switch argv[0] {
+	case "ctl":
+		return runCtlCommand(argv[1:], stdout, stderr)
+	case "run":
+		return runPipelineCommand(argv[1:], stdout, stderr)
+	default:
+		fmt.Fprintln(stderr, "usage: goav <ctl|run> ...")
+		return 2
+	}
+}
+
+func runCtlCommand(argv []string, stdout io.Writer, stderr io.Writer) int {
+	control, args, err := parseCtlArgs(argv)
 	if err != nil {
 		printErr(stderr, err)
 		return 2
