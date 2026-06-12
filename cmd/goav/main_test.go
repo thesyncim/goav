@@ -697,6 +697,9 @@ func TestRunPipelineParserRejectsDuplicateStepForms(t *testing.T) {
 		{name: "id option", text: `testsrc video width=16 height=16 frames=1 ! encode id=av1 media=video ! filesink location=/tmp/out.ivf format=ivf`, want: "id duplicates codec"},
 		{name: "type option", text: `testsrc video width=16 height=16 frames=1 ! encode codec=av1 type=video ! filesink location=/tmp/out.ivf format=ivf`, want: "type duplicates media"},
 		{name: "duplicate codec", text: `testsrc video width=16 height=16 frames=1 ! encode codec=av1 codec=vp8 media=video ! filesink location=/tmp/out.ivf format=ivf`, want: "duplicate encode option codec"},
+		{name: "duplicate tap name", text: `testsrc video width=16 height=16 frames=1 ! tap name=left name=right ! encode codec=av1 media=video ! filesink location=/tmp/out.ivf format=ivf`, want: "duplicate tap option name"},
+		{name: "duplicate codec setting", text: `testsrc video width=16 height=16 frames=1 ! encode codec=av1 media=video bitrate=1k bitrate=2k ! filesink location=/tmp/out.ivf format=ivf`, want: "bitrate"},
+		{name: "duplicate custom setting", text: `testsrc video width=16 height=16 frames=1 ! encode codec=av1 media=video lookahead=deep lookahead=shallow ! filesink location=/tmp/out.ivf format=ivf`, want: "lookahead"},
 		{name: "missing media", text: `testsrc video width=16 height=16 frames=1 ! encode codec=av1 ! filesink location=/tmp/out.ivf format=ivf`, want: "media"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

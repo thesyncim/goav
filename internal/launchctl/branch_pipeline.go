@@ -162,7 +162,10 @@ func parseBranchPipelineWithRegistry(task goav.Task, tapName string, branchName 
 			continue
 		}
 		name := strings.ToLower(words[0])
-		args := stepArgs(words[1:])
+		args, err := stepArgs(words[1:])
+		if err != nil {
+			return goav.BranchSpec{}, err
+		}
 		switch name {
 		case "copy":
 			branch.Copy()
@@ -350,17 +353,24 @@ func pipelineSyntaxError(node string, err error) error {
 	)
 }
 
-func stepArgs(words []string) map[string]string {
+func stepArgs(words []string) (map[string]string, error) {
 	args := make(map[string]string)
 	for _, word := range words {
 		key, value, ok := strings.Cut(word, "=")
+		key = strings.ToLower(strings.TrimSpace(key))
+		if key == "" {
+			return nil, commandError("invalid_value", "parse branch pipeline", "argument", "pipeline option name cannot be empty", []string{"value=" + word}, []string{"use key=value"}, nil)
+		}
+		if _, exists := args[key]; exists {
+			return nil, commandError("invalid_value", "parse branch pipeline", key, "pipeline option "+key+" was provided more than once", nil, []string{"keep only one " + key + "=... value"}, nil)
+		}
 		if !ok {
-			args[strings.ToLower(word)] = ""
+			args[key] = ""
 			continue
 		}
-		args[strings.ToLower(key)] = value
+		args[key] = value
 	}
-	return args
+	return args, nil
 }
 
 func parseResizeArgs(words []string) (int, int, error) {

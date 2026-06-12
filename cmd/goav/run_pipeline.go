@@ -744,12 +744,17 @@ func parseTapStep(tokens []string) (runOperation, error) {
 		return runOperation{}, err
 	}
 	op := runOperation{kind: "tap"}
+	seen := make(map[string]struct{}, len(options))
 	for _, positional := range positionals {
 		return runOperation{}, fmt.Errorf("goav run: tap name must be written as name=<tap-name>, got %q", positional)
 	}
 	for _, option := range options {
 		switch option.key {
 		case "name":
+			if _, ok := seen["name"]; ok {
+				return runOperation{}, fmt.Errorf("goav run: duplicate tap option name")
+			}
+			seen["name"] = struct{}{}
 			op.name = option.value
 		case "id":
 			return runOperation{}, fmt.Errorf("goav run: id duplicates tap name; use name=<tap-name>")

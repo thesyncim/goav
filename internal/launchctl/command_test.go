@@ -918,7 +918,10 @@ func TestBranchPipelineLexingSupportsQuotedValues(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	args := stepArgs(fields[1:])
+	args, err := stepArgs(fields[1:])
+	if err != nil {
+		t.Fatal(err)
+	}
 	if fields[0] != "filesink" ||
 		args["location"] != "/tmp/a b=1.ogg" ||
 		args["title"] != `say "hi"` ||
@@ -927,23 +930,32 @@ func TestBranchPipelineLexingSupportsQuotedValues(t *testing.T) {
 	}
 
 	for _, tc := range []struct {
-		name string
-		run  func() error
+		name       string
+		run        func() error
+		wantOffset bool
 	}{
 		{name: "empty step", run: func() error {
 			_, err := splitPipeline(`copy ! ! filesink location=out.ivf`)
 			return err
-		}},
+		}, wantOffset: true},
 		{name: "split quote", run: func() error {
 			_, err := splitPipeline(`copy ! filesink location="unterminated`)
 			return err
-		}},
+		}, wantOffset: true},
 		{name: "field quote", run: func() error {
 			_, err := pipelineFields(`meter label="unterminated`)
 			return err
-		}},
+		}, wantOffset: true},
 		{name: "field escape", run: func() error {
 			_, err := pipelineFields(`meter label="dangling\`)
+			return err
+		}, wantOffset: true},
+		{name: "duplicate step arg", run: func() error {
+			_, err := stepArgs([]string{"label=left", "label=right"})
+			return err
+		}},
+		{name: "empty step arg name", run: func() error {
+			_, err := stepArgs([]string{"=value"})
 			return err
 		}},
 	} {
@@ -952,8 +964,8 @@ func TestBranchPipelineLexingSupportsQuotedValues(t *testing.T) {
 			var structured *Error
 			if !errors.As(err, &structured) ||
 				structured.Code != "invalid_value" ||
-				!detailsContain(structured.Details, "offset=") {
-				t.Fatalf("err = %+v, want invalid_value with offset", err)
+				(tc.wantOffset && !detailsContain(structured.Details, "offset=")) {
+				t.Fatalf("err = %+v, want invalid_value", err)
 			}
 		})
 	}
@@ -1279,7 +1291,10 @@ func TestParseBranchPipelineWithRegistryStructuredErrors(t *testing.T) {
 		{name: "encoder id alias", tap: "raw_video", branch: "archive", pipeline: "encode id=av1 media=video", code: "invalid_value", node: "id"},
 		{name: "encoder type alias", tap: "raw_video", branch: "archive", pipeline: "encode codec=av1 type=video", code: "invalid_value", node: "type"},
 		{name: "encoder invalid media", tap: "raw_video", branch: "archive", pipeline: "encode codec=av1 media=image", code: "invalid_value", node: "media"},
+		{name: "encoder duplicate codec", tap: "raw_video", branch: "archive", pipeline: "encode codec=av1 codec=vp8 media=video", code: "invalid_value", node: "codec"},
 		{name: "missing destination", tap: "raw_video", branch: "archive", pipeline: "copy", code: "missing_required", node: "filesink"},
+		{name: "custom duplicate field", tap: "raw_video", branch: "archive", pipeline: "meter label=left label=right", registry: PipelineRegistry{Steps: []BranchPipelineStepSpec{{Name: "meter", Apply: func(*BranchPipeline, StepArgs) error { return nil }}}}, code: "invalid_value", node: "label"},
+		{name: "file sink duplicate location", tap: "raw_video", branch: "archive", pipeline: "copy ! filesink location=one.ogg location=two.ogg", code: "invalid_value", node: "location"},
 		{name: "file sink path alias", tap: "raw_video", branch: "archive", pipeline: "copy ! filesink path=out.ogg", code: "invalid_value", node: "path"},
 		{name: "file sink file alias", tap: "raw_video", branch: "archive", pipeline: "copy ! filesink file=out.ogg", code: "invalid_value", node: "file"},
 		{name: "file sink container alias", tap: "raw_video", branch: "archive", pipeline: "copy ! filesink location=out.ogg container=ogg", code: "invalid_value", node: "container"},
@@ -1299,7 +1314,10 @@ func TestParseBranchPipelineWithRegistryStructuredErrors(t *testing.T) {
 }
 
 func TestBranchPipelineParserHelperEdges(t *testing.T) {
-	args := stepArgs([]string{"flag", "Key=Value"})
+	args, err := stepArgs([]string{"flag", "Key=Value"})
+	if err != nil {
+		t.Fatal(err)
+	}
 	if args["flag"] != "" || args["key"] != "Value" {
 		t.Fatalf("args = %+v", args)
 	}

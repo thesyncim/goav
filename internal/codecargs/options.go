@@ -38,9 +38,16 @@ func (e *Error) Error() string {
 func ParseOptions(args []Arg) ([]codec.Option, error) {
 	options := make([]codec.Option, 0, len(args))
 	var clockRateOptions []codec.Option
+	seen := make(map[string]struct{}, len(args))
 	for _, arg := range args {
 		key := strings.ToLower(strings.TrimSpace(arg.Key))
 		value := strings.TrimSpace(arg.Value)
+		if key != "" {
+			if _, ok := seen[key]; ok {
+				return nil, optionError(key, value, "encoder option "+key+" was provided more than once", []string{"keep only one " + key + "=... value"}, nil)
+			}
+			seen[key] = struct{}{}
+		}
 		switch key {
 		case "", "codec", "media":
 			continue

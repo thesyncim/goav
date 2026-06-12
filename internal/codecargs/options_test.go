@@ -67,6 +67,28 @@ func TestParseOptionsRejectsDuplicateAliasSpellings(t *testing.T) {
 	}
 }
 
+func TestParseOptionsRejectsDuplicateCanonicalAndCustomSettings(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		args []Arg
+		want string
+	}{
+		{name: "canonical", args: []Arg{{Key: "bitrate", Value: "1k"}, {Key: "bitrate", Value: "2k"}}, want: "bitrate"},
+		{name: "metadata", args: []Arg{{Key: "codec", Value: "av1"}, {Key: "codec", Value: "vp8"}}, want: "codec"},
+		{name: "custom", args: []Arg{{Key: "lookahead", Value: "deep"}, {Key: "lookahead", Value: "shallow"}}, want: "lookahead"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := ParseOptions(tc.args)
+			var optErr *Error
+			if !errors.As(err, &optErr) ||
+				optErr.Field != tc.want ||
+				!stringSliceContains(optErr.Suggestions, "keep only one "+tc.want+"=... value") {
+				t.Fatalf("err = %+v, want duplicate field %q", err, tc.want)
+			}
+		})
+	}
+}
+
 func TestParseOptionsMapKeepsExplicitClockRateOverSampleRate(t *testing.T) {
 	options, err := ParseOptionsMap(map[string]string{
 		"clock_rate":  "90000",
