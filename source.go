@@ -208,10 +208,6 @@ func customSourceProbeResult(input InputSpec) format.ProbeResult {
 	}
 }
 
-func customSourceStream(input InputSpec) av.Stream {
-	return declaredSourceStream(input, input.source.shape)
-}
-
 func declaredSourceStream(input InputSpec, spec shape.Spec) av.Stream {
 	shape := normalizeCustomSourceShape(input.inputName("source"), spec)
 	stream := av.Stream{
