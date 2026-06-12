@@ -3,6 +3,7 @@ package goav
 import (
 	"context"
 	"errors"
+	"sort"
 	"strings"
 	"sync"
 
@@ -472,6 +473,41 @@ func (t *task) Explain(context.Context) (plan.Report, error) {
 		Graph:   t.Describe(),
 		Taps:    planTapRows(t.Taps()),
 	}, nil
+}
+
+// EncoderDescriptors lists encoder factories registered on the task runtime.
+// It is intentionally outside the public Task interface: control-plane helpers
+// use it through an optional interface when a task can describe its runtime.
+func (t *task) EncoderDescriptors() []codec.Descriptor {
+	if t == nil || t.runtime == nil || t.runtime.codecs == nil {
+		return nil
+	}
+	descriptors, err := t.runtime.codecs.Find("", codec.ModeEncode)
+	if err != nil {
+		return nil
+	}
+	out := make([]codec.Descriptor, 0, len(descriptors))
+	seen := make(map[av.CodecID]struct{}, len(descriptors))
+	for _, desc := range descriptors {
+		if desc.ID == "" {
+			continue
+		}
+		if _, ok := seen[desc.ID]; ok {
+			continue
+		}
+		if _, err := t.runtime.codecs.EncoderFactory(desc.ID); err != nil {
+			continue
+		}
+		out = append(out, desc)
+		seen[desc.ID] = struct{}{}
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].ID != out[j].ID {
+			return out[i].ID < out[j].ID
+		}
+		return out[i].Type < out[j].Type
+	})
+	return out
 }
 
 // planTapRows projects live task taps onto the plan report's tap rows.

@@ -51,6 +51,10 @@ func TestRunHostServesCustomHelpAndAttach(t *testing.T) {
 		"aliases: thumbs, sampleframes",
 		"aliases: memsink",
 		"aliases: acme",
+		"Runtime encoders:",
+		"encode codec=x_acme_video media=video",
+		"ACME demo video",
+		"Any encoder registered on the task runtime is callable",
 	} {
 		if !strings.Contains(text, fragment) {
 			t.Fatalf("help missing %q:\n%s", fragment, text)
@@ -116,6 +120,16 @@ func TestRunHostServesCustomHelpAndAttach(t *testing.T) {
 		t.Fatalf("memory attach = %+v", memory)
 	}
 
+	generic := sendDemoRequest(t, socket, ctl.Request{
+		Op:       "attach",
+		Tap:      "frames",
+		Branch:   "acme-generic",
+		Pipeline: `thumbnail every=4 label=generic ! encode codec=x_acme_video media=video bitrate=220k profile=preview fps=2 keyframe_interval=1 ! memorysink name=acme-generic`,
+	})
+	if !generic.OK || generic.Error != nil {
+		t.Fatalf("generic custom encoder attach = %+v", generic)
+	}
+
 	custom := sendDemoRequest(t, socket, ctl.Request{
 		Op:       "attach",
 		Tap:      "frames",
@@ -146,9 +160,11 @@ func TestRunHostServesCustomHelpAndAttach(t *testing.T) {
 		"branch=archive (attached)",
 		"branch=thumbnails (attached)",
 		"branch=memory (attached)",
+		"branch=acme-generic (attached)",
 		"branch=acme-preview (attached)",
 		"demo-left ! right",
 		"demo-thumbnail-preview",
+		"demo-thumbnail-generic",
 	} {
 		if !strings.Contains(flowchart, fragment) {
 			t.Fatalf("flowchart missing %q:\n%s", fragment, flowchart)
@@ -164,7 +180,7 @@ func TestRunHostServesCustomHelpAndAttach(t *testing.T) {
 		t.Fatalf("rebranch = %+v", rebranch)
 	}
 
-	for _, branch := range []string{"archive", "thumbnails", "memory", "acme-preview"} {
+	for _, branch := range []string{"archive", "thumbnails", "memory", "acme-generic", "acme-preview"} {
 		detach := sendDemoRequest(t, socket, ctl.Request{Op: "detach", Branch: branch})
 		if !detach.OK || detach.Error != nil {
 			t.Fatalf("detach %s = %+v", branch, detach)
@@ -196,17 +212,42 @@ func TestRunHostAcceptsDocumentedCLICommands(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	attachHelp := runDemoCLI(t, socket, "help", "attach")
+	for _, fragment := range []string{
+		"thumbnail [every=<positive-int>] [label=<text>]",
+		"memorysink [name=<text>]",
+		"acmeenc bitrate=<bps>",
+		"encode codec=x_acme_video media=video",
+	} {
+		if !strings.Contains(attachHelp, fragment) {
+			t.Fatalf("attach help missing %q:\n%s", fragment, attachHelp)
+		}
+	}
+	controlHelp := runDemoCLI(t, socket, "help", "control", "fixture.controls")
+	if !strings.Contains(controlHelp, "controls recorded by the fixture test source") ||
+		!strings.Contains(controlHelp, "[type=rate|seek|segment]") {
+		t.Fatalf("fixture.controls help:\n%s", controlHelp)
+	}
+
 	runDemoCLI(t, socket, "control", "rate", "value=0.5", "source=fixture")
+	runDemoCLI(t, socket, "control", "--json", `{"type":"rate","rate":0.75,"node":"fixture"}`)
+	runDemoCLI(t, socket, "control", "deliver", "--json", `{"type":"vendor.force_idr","stream_id":"video","reason":"manual","metadata":{"source":"cli","attempt":1,"ok":true}}`, "at=frames")
 	controls := runDemoCLI(t, socket, "control", "fixture.controls", "type=rate")
-	if !strings.Contains(controls, `"count":1`) || !strings.Contains(controls, `"rate":0.5`) {
+	if !strings.Contains(controls, `"count":2`) ||
+		!strings.Contains(controls, `"rate":0.5`) ||
+		!strings.Contains(controls, `"rate":0.75`) {
 		t.Fatalf("fixture.controls CLI output:\n%s", controls)
 	}
 	runDemoCLI(t, socket, "attach", "frames", "as", "memory", `thumbnail every=3 label=preview ! memorysink name=preview`)
+	runDemoCLI(t, socket, "attach", "frames", "as", "acme-generic", `thumbnail every=4 label=generic ! encode codec=x_acme_video media=video bitrate=220k profile=preview fps=2 keyframe_interval=1 ! memorysink name=acme-generic`)
 	graph := runDemoCLI(t, socket, "graph")
-	if !strings.Contains(graph, "flowchart LR") || !strings.Contains(graph, "branch=memory (attached)") {
+	if !strings.Contains(graph, "flowchart LR") ||
+		!strings.Contains(graph, "branch=memory (attached)") ||
+		!strings.Contains(graph, "branch=acme-generic (attached)") {
 		t.Fatalf("graph CLI output:\n%s", graph)
 	}
 	runDemoCLI(t, socket, "detach", "memory")
+	runDemoCLI(t, socket, "detach", "acme-generic")
 
 	cancel()
 	select {
@@ -234,10 +275,14 @@ func TestPrintUsageIncludesCompleteBootstrapLoop(t *testing.T) {
 		"control segment start=1s end=3s source=fixture",
 		"control fixture.controls type=rate",
 		"control vendor.rate value=0.5 source=fixture",
+		"control --json '{\"type\":\"rate\",\"rate\":0.75,\"node\":\"fixture\"}'",
+		"control deliver --json '{\"type\":\"vendor.force_idr\"",
 		"resize 640x360",
 		"filesink location=\"/tmp/goav archive.webm\"",
 		"thumbnail every=5",
 		"memorysink name=preview",
+		"encode codec=x_acme_video media=video",
+		"detach acme-generic",
 		"acmeenc bitrate=250k",
 		"graph format=text",
 		"rebranch memory",

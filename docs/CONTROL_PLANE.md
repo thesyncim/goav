@@ -13,8 +13,10 @@ goav ctl --control unix:///tmp/goav-live.sock attach frames as archive \
 
 The control layer is allowlisted and lowers into the same task APIs normal Go
 code uses: `Task.Control`, `Task.Attach`, `Attachment.Rebranch`, `Task.Detach`,
-`Snapshot`, `Stats`, `Watch`, and `Close`. There is no global registry and no
-user-provided method name dispatch.
+`Snapshot`, `Stats`, `Watch`, and `Close`. Reflection is used only on this cold
+path to bind known command structs, validate fields, parse JSON, and generate
+help from tags. There is no global registry and no user-provided method name
+dispatch.
 
 ## Bootstrap Host
 
@@ -27,6 +29,20 @@ This is the smallest production shape:
 4. Start `ctl.ServeUnixWithOptions`.
 5. Use `goav ctl --control unix://...` to inspect, control, attach, rebranch,
    detach, and render diagnostics from the same running graph.
+
+The default branch grammar is intentionally useful before a host adds any
+custom CLI grammar. If a task runtime has an encoder registered with
+`goav.WithEncoder`, it is callable from attach/rebranch as:
+
+```sh
+goav ctl --control unix:///tmp/goav-live.sock attach frames as preview \
+  'encode codec=x_acme_video media=video bitrate=900k fps=30 ! filesink location=preview.webm format=webm'
+```
+
+`help attach` and `help rebranch` list those runtime-discovered encoders from
+the running task. Add `ctl.EncoderSpec` only when you want a friendly named
+spelling for native adapter-specific settings that cannot be represented as the
+portable common codec settings.
 
 The executable local harness is
 `Example_bootstrapControlPlaneHost` in `ctl/example_test.go`. It builds a live
@@ -188,6 +204,8 @@ goav ctl --control unix:///tmp/goav-live.sock help control vendor.rate
 goav ctl --control unix:///tmp/goav-live.sock help attach
 goav ctl --control unix:///tmp/goav-live.sock taps
 goav ctl --control unix:///tmp/goav-live.sock control vendor.rate value=0.5 source=fixture
+goav ctl --control unix:///tmp/goav-live.sock control --json '{"type":"rate","rate":0.75,"node":"fixture"}'
+goav ctl --control unix:///tmp/goav-live.sock control deliver --json '{"type":"vendor.force_idr","stream_id":"video","metadata":{"source":"cli"}}' at=frames
 goav ctl --control unix:///tmp/goav-live.sock attach frames as archive \
   'meter ! acmeenc bitrate=128000 quality=voice lookahead=deep ! filesink location=/tmp/archive.ogg format=ogg'
 goav ctl --control unix:///tmp/goav-live.sock graph
@@ -198,10 +216,10 @@ goav ctl --control unix:///tmp/goav-live.sock detach archive
 ```
 
 `help attach` and `help rebranch` are server-aware: the response includes the
-built-in branch-pipeline grammar plus every `BranchPipelineStepSpec` and
-`EncoderSpec` registered on that server, including aliases, summaries, and
-`Usage` strings. That makes app-owned branch components discoverable from the
-same CLI surface that invokes them.
+built-in branch-pipeline grammar, runtime-discovered encoders, plus every
+`BranchPipelineStepSpec` and `EncoderSpec` registered on that server, including
+aliases, summaries, and `Usage` strings. That makes app-owned branch components
+discoverable from the same CLI surface that invokes them.
 
 Custom names and aliases are validated as one namespace per server. A custom
 control cannot reuse a built-in control verb or another custom alias, and a
@@ -217,6 +235,12 @@ for paths or custom settings that contain spaces, `!`, or `=`:
 goav ctl --control unix:///tmp/goav-live.sock attach frames as archive \
   'meter label="left ! right" ! filesink location="/tmp/archive copy.ogg" format=ogg'
 ```
+
+Raw JSON is for automation that already has the protocol object. `control
+--json` decodes into the real `goav.Control` representation; `control deliver
+--json` decodes into `av.Event` and then lowers to `goav.Deliver(event)`. Nested
+event metadata is rejected instead of being stringified silently, so a caller
+must choose the exact conversion before sending the request.
 
 Render a live flowchart from the same running task:
 
@@ -289,7 +313,8 @@ Supported built-ins include:
 ## Custom Codecs
 
 Register the codec implementation on the runtime, then call it in an attach or
-rebranch pipeline with the generic `encode` step. Use `goav.Default(...)` when
+rebranch pipeline with the generic `encode` step. This is the default path for
+custom encoders and does not require `ctl.EncoderSpec`. Use `goav.Default(...)` when
 you want the stock codecs, formats, and filters plus your adapter; use
 `goav.New(...)` only when you are intentionally registering every required
 codec, filter, prober, demuxer, and muxer yourself.
