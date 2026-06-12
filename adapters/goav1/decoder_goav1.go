@@ -22,10 +22,17 @@ func Register(registry *codec.SimpleRegistry) {
 		return
 	}
 	registry.RegisterDecoder(activeDescriptor(), NewDecoderFactory())
+	registry.RegisterEncoder(activeEncoderDescriptor(), NewEncoderFactory())
 }
 
 func activeDescriptor() codec.Descriptor {
 	desc := Descriptor()
+	desc.Backend.Status = "active"
+	return desc
+}
+
+func activeEncoderDescriptor() codec.Descriptor {
+	desc := EncoderDescriptor()
 	desc.Backend.Status = "active"
 	return desc
 }

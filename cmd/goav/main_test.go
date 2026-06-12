@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -14,6 +15,7 @@ import (
 	"time"
 
 	goav "github.com/thesyncim/goav"
+	av1adapter "github.com/thesyncim/goav/adapters/goav1"
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/ctl"
@@ -300,7 +302,7 @@ func TestRunPrintsLocalHelp(t *testing.T) {
 func TestRunGeneratedVideoAV1RealtimeString(t *testing.T) {
 	out := filepath.Join(t.TempDir(), "generated av1.ivf")
 	pipeline := fmt.Sprintf(
-		`testsrc video name=fixture width=32 height=18 fps=30 frames=2 realtime=true pattern=bars ! resize width=16 height=16 ! av1enc bitrate=400k fps=30 keyframe_interval=1 speed=8 tune=zerolatency ! filesink location=%q format=ivf`,
+		`testsrc video name=fixture width=32 height=18 fps=30 frames=2 realtime=true pattern=bars ! resize width=16 height=16 ! av1enc bitrate=400k fps=30 keyframe_interval=1 min_qindex=20 max_qindex=180 tune=zerolatency ! filesink location=%q format=ivf`,
 		out,
 	)
 	var stdout bytes.Buffer
@@ -322,6 +324,95 @@ func TestRunGeneratedVideoAV1RealtimeString(t *testing.T) {
 	}
 	if len(header) < 4 || string(header[:4]) != "DKIF" {
 		t.Fatalf("output header = %q, want IVF", header[:min(len(header), 8)])
+	}
+	assertDecodableAV1IVF(t, header)
+}
+
+func assertDecodableAV1IVF(t *testing.T, data []byte) {
+	t.Helper()
+	if len(data) < 32 || string(data[:4]) != "DKIF" || string(data[8:12]) != "AV01" {
+		t.Fatalf("not an AV1 IVF file")
+	}
+	width := int(binary.LittleEndian.Uint16(data[12:14]))
+	height := int(binary.LittleEndian.Uint16(data[14:16]))
+	timebase := av.TimeBase{
+		Num: int64(binary.LittleEndian.Uint32(data[20:24])),
+		Den: int64(binary.LittleEndian.Uint32(data[16:20])),
+	}
+	stream := av.Stream{
+		ID:       "fixture",
+		Type:     av.MediaVideo,
+		TimeBase: timebase,
+		Codec: av.CodecParameters{
+			ID:          av.CodecAV1,
+			Type:        av.MediaVideo,
+			Width:       width,
+			Height:      height,
+			PixelFormat: av.PixelFormatI420,
+			ClockRate:   uint32(timebase.Den),
+		},
+	}
+	factory := av1adapter.NewDecoderFactory()
+	state, err := factory.NewDecodeState(context.Background(), codec.DecodeConfig{
+		Stream: stream,
+		Bounds: codec.DecodeBounds{
+			MaxFramesPerInput:   2,
+			MaxEventsPerInput:   2,
+			MaxRequestsPerInput: 2,
+			MaxPayloadBytes:     len(data),
+			MaxWidth:            width,
+			MaxHeight:           height,
+		},
+	})
+	if err != nil {
+		t.Fatalf("decode state: %v", err)
+	}
+	decoder, err := factory.NewDecoder(context.Background(), codec.DecodeConfig{
+		Stream:      stream,
+		OpaqueState: state,
+	})
+	if err != nil {
+		t.Fatalf("decoder: %v", err)
+	}
+	defer decoder.Close()
+
+	frameScratch := make([]av.Frame, 2)
+	for i := range frameScratch {
+		frameScratch[i].Planes = make([]av.Plane, 0, 3)
+	}
+	decoded := codec.DecodeResult{
+		Frames:   frameScratch[:0],
+		Events:   make([]av.Event, 0, 2),
+		Requests: make([]codec.ControlRequest, 0, 2),
+	}
+	var frames int
+	for offset := 32; offset < len(data); {
+		if offset+12 > len(data) {
+			t.Fatalf("truncated IVF frame header at offset %d", offset)
+		}
+		size := int(binary.LittleEndian.Uint32(data[offset : offset+4]))
+		pts := int64(binary.LittleEndian.Uint64(data[offset+4 : offset+12]))
+		offset += 12
+		if size < 0 || offset+size > len(data) {
+			t.Fatalf("invalid IVF frame size %d at offset %d", size, offset)
+		}
+		packet := av.Packet{
+			StreamID: "fixture",
+			Type:     av.MediaVideo,
+			Payload:  av.Buffer{Bytes: data[offset : offset+size], Ownership: av.BufferBorrowed},
+			PTS:      av.Timestamp{Value: pts, Base: timebase},
+			Duration: av.Duration{Value: 1, Base: timebase},
+			Keyframe: frames == 0,
+		}
+		decoded.Reset()
+		if err := decoder.DecodeInto(context.Background(), &packet, &decoded); err != nil {
+			t.Fatalf("decode IVF frame at offset %d: %v", offset, err)
+		}
+		frames += len(decoded.Frames)
+		offset += size
+	}
+	if frames == 0 {
+		t.Fatal("decoded zero AV1 frames from generated IVF")
 	}
 }
 

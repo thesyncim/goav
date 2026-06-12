@@ -1789,7 +1789,7 @@ func TestDocsShowCodecControlsAndDeclarativePerformanceGoal(t *testing.T) {
 	readmeText := string(readme)
 	for _, required := range []string{
 		"codec.Control(",
-		"Opus, VP8, and VP9 are the full encode/decode recipe verticals",
+		"Opus, VP8, VP9, and AV1 are full encode/decode recipe verticals",
 		"behavior is a two-tier ladder",
 		"a single raw callback handed",
 		"public grammar stays Input, Stream, Tap, Branch, Destination, Flow,",

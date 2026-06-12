@@ -22,6 +22,16 @@ func TestRegisterDecoderFactory(t *testing.T) {
 	if _, err := registry.DecoderFactory(av.CodecAV1); err != nil {
 		t.Fatalf("decoder factory: %v", err)
 	}
+	encoders, err := registry.Find(av.CodecAV1, codec.ModeEncode)
+	if err != nil {
+		t.Fatalf("find AV1 encode: %v", err)
+	}
+	if len(encoders) != 1 || !encoders[0].Supports(codec.ModeEncode) {
+		t.Fatalf("encoders = %+v", encoders)
+	}
+	if _, err := registry.EncoderFactory(av.CodecAV1); err != nil {
+		t.Fatalf("encoder factory: %v", err)
+	}
 }
 
 func TestDecoderFactoryRequiresCallerOwnedState(t *testing.T) {

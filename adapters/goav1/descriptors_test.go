@@ -13,8 +13,8 @@ func TestDescriptor(t *testing.T) {
 	if desc.ID != av.CodecAV1 || desc.Backend.Module != "github.com/thesyncim/goav1" {
 		t.Fatalf("descriptor = %+v", desc)
 	}
-	if desc.Supports(codec.ModeEncode) {
-		t.Fatal("goav1 descriptor should not claim encode support yet")
+	if !desc.Supports(codec.ModeDecode) || desc.Supports(codec.ModeEncode) {
+		t.Fatalf("decode descriptor modes = %v", desc.Modes)
 	}
 	for _, pixelFormat := range []string{
 		av.PixelFormatI420,
@@ -34,5 +34,20 @@ func TestDescriptor(t *testing.T) {
 	}
 	if desc.Backend.Status != "active" {
 		t.Fatalf("backend status = %q", desc.Backend.Status)
+	}
+}
+
+func TestEncoderDescriptor(t *testing.T) {
+	desc := EncoderDescriptor()
+	if desc.ID != av.CodecAV1 || desc.Backend.Module != "github.com/thesyncim/goav1" {
+		t.Fatalf("descriptor = %+v", desc)
+	}
+	if !desc.Supports(codec.ModeEncode) || desc.Supports(codec.ModeDecode) {
+		t.Fatalf("encode descriptor modes = %v", desc.Modes)
+	}
+	if !slices.Contains(desc.Capabilities.PixelFormats, av.PixelFormatI420) ||
+		!slices.Contains(desc.Capabilities.PixelFormats, av.PixelFormatYUV420P) ||
+		slices.Contains(desc.Capabilities.PixelFormats, av.PixelFormatI422) {
+		t.Fatalf("encode pixel formats = %v", desc.Capabilities.PixelFormats)
 	}
 }
