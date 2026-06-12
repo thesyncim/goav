@@ -16,6 +16,7 @@ import (
 	goav "github.com/thesyncim/goav"
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
+	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/goavtest"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/plan"
@@ -159,6 +160,78 @@ func TestExecuteRawControlCallsTaskControl(t *testing.T) {
 	}
 }
 
+func TestDecodeRawControlAliasesAndRefusals(t *testing.T) {
+	keyframe, err := DecodeRawControl([]byte(`{"type":"keyframe","stream":"video","tap":"raw_video"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if keyframe.Type != goav.ControlKeyframe || keyframe.StreamID != "video" || keyframe.Tap != "raw_video" {
+		t.Fatalf("keyframe = %+v", keyframe)
+	}
+
+	bitrate, err := DecodeRawControl([]byte(`{"type":"bitrate","stream":"audio","value":"2M"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bitrate.Type != goav.ControlBitrate || bitrate.StreamID != "audio" || bitrate.Bitrate != 2_000_000 {
+		t.Fatalf("bitrate = %+v", bitrate)
+	}
+
+	segment, err := DecodeRawControl([]byte(`{"type":"segment","position":"10s","end":"20s"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if segment.Type != goav.ControlSegment || segment.Position != 10*time.Second || segment.End != 20*time.Second {
+		t.Fatalf("segment = %+v", segment)
+	}
+
+	selectControl, err := DecodeRawControl([]byte(`{"type":"select","active":"camera_b"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if selectControl.Type != goav.ControlSelect || selectControl.StreamID != "camera_b" {
+		t.Fatalf("select = %+v", selectControl)
+	}
+
+	deliver, err := DecodeRawControl([]byte(`{"type":"deliver","event":{"type":"vendor.force_idr","stream":"video","metadata":{"source":null}},"tap":"raw_video","reason":"manual"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if deliver.Type != goav.ControlEvent ||
+		deliver.Tap != "raw_video" ||
+		deliver.Reason != "manual" ||
+		deliver.Event.Type != "vendor.force_idr" ||
+		deliver.Event.StreamID != "video" ||
+		deliver.Event.Metadata["source"] != "" {
+		t.Fatalf("deliver = %+v event=%+v", deliver, deliver.Event)
+	}
+
+	for _, tc := range []struct {
+		name string
+		json string
+		code string
+		node string
+	}{
+		{name: "missing type", json: `{}`, code: "missing_required", node: "type"},
+		{name: "missing bitrate", json: `{"type":"bitrate","stream":"video"}`, code: "missing_required", node: "bitrate"},
+		{name: "missing seek", json: `{"type":"seek"}`, code: "missing_required", node: "position"},
+		{name: "missing rate", json: `{"type":"rate"}`, code: "missing_required", node: "rate"},
+		{name: "missing segment end", json: `{"type":"segment","start":"10s"}`, code: "missing_required", node: "segment"},
+		{name: "missing event object", json: `{"type":"deliver"}`, code: "missing_required", node: "event"},
+		{name: "unknown type", json: `{"type":"warp"}`, code: "invalid_value", node: "type"},
+		{name: "extra object", json: `{"type":"keyframe"} {"type":"rate"}`, code: "invalid_json"},
+		{name: "null object", json: `null`, code: "invalid_json"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := DecodeRawControl([]byte(tc.json))
+			var structured *Error
+			if !errors.As(err, &structured) || structured.Code != tc.code || (tc.node != "" && structured.Node != tc.node) {
+				t.Fatalf("err = %+v, want code=%s node=%s", structured, tc.code, tc.node)
+			}
+		})
+	}
+}
+
 func TestDecodeRawControlParsesFloatAndDurationFields(t *testing.T) {
 	rate, err := DecodeRawControl([]byte(`{"type":"rate","rate":"1.5","node":"source"}`))
 	if err != nil {
@@ -191,6 +264,27 @@ func TestDecodeRawControlParsesFloatAndDurationFields(t *testing.T) {
 	}
 }
 
+func TestRawEventRejectsLossyMetadata(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		json string
+		code string
+		node string
+	}{
+		{name: "metadata array", json: `{"type":"vendor.force_idr","metadata":[]}`, code: "invalid_value", node: "metadata"},
+		{name: "nested metadata", json: `{"type":"vendor.force_idr","metadata":{"nested":{"bad":true}}}`, code: "invalid_value", node: "metadata.nested"},
+		{name: "missing type", json: `{"metadata":{"source":"cli"}}`, code: "missing_required", node: "type"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := DecodeRawEvent([]byte(tc.json))
+			var structured *Error
+			if !errors.As(err, &structured) || structured.Code != tc.code || structured.Node != tc.node {
+				t.Fatalf("err = %+v, want code=%s node=%s", structured, tc.code, tc.node)
+			}
+		})
+	}
+}
+
 func TestExecuteRawEventCallsTaskControlDeliver(t *testing.T) {
 	task := newFakeTask()
 	_, err := Execute(context.Background(), task, []string{"control", "deliver", "--json", `{"type":"vendor.force_idr","stream_id":"video","reason":"manual","metadata":{"source":"cli","count":2,"ok":true}}`, "at=raw_video"})
@@ -208,6 +302,49 @@ func TestExecuteRawEventCallsTaskControlDeliver(t *testing.T) {
 	if event.Type != "vendor.force_idr" || event.StreamID != "video" || event.Reason != "manual" ||
 		event.Metadata["source"] != "cli" || event.Metadata["count"] != "2" || event.Metadata["ok"] != "true" {
 		t.Fatalf("event = %+v", event)
+	}
+}
+
+func TestControlTargetingVariantsAndRefusals(t *testing.T) {
+	task := newFakeTask()
+	commands := [][]string{
+		{"control", "keyframe", "stream=video", "at=raw_video"},
+		{"control", "bitrate", "stream=video", "value=1200k", "at=main_encoded"},
+		{"control", "seek", "position=1s", "node=program"},
+		{"control", "select", "active=camera_b", "at=raw_video"},
+	}
+	for _, command := range commands {
+		if _, err := Execute(context.Background(), task, command); err != nil {
+			t.Fatalf("%v: %v", command, err)
+		}
+	}
+	if task.controls[0].Tap != "raw_video" ||
+		task.controls[1].Tap != "main_encoded" ||
+		task.controls[2].Node != "program" ||
+		task.controls[3].Tap != "raw_video" {
+		t.Fatalf("controls = %+v", task.controls)
+	}
+
+	for _, tc := range []struct {
+		name string
+		args []string
+		code string
+		node string
+	}{
+		{name: "selector at conflict", args: []string{"control", "select", "active=camera_b", "selector=program", "at=raw_video"}, code: "target_conflict", node: "program,raw_video"},
+		{name: "source node conflict", args: []string{"control", "rate", "value=1", "source=source", "node=program"}, code: "target_conflict", node: "source,program"},
+		{name: "wrong source kind", args: []string{"control", "rate", "value=1", "source=raw-node"}, code: "wrong_target_kind", node: "raw-node"},
+		{name: "unknown source", args: []string{"control", "seek", "position=1s", "source=soruce"}, code: "unknown_node", node: "soruce"},
+		{name: "unknown node", args: []string{"control", "seek", "position=1s", "node=progra"}, code: "unknown_node", node: "progra"},
+		{name: "deliver missing at", args: []string{"control", "deliver", "type=vendor.force_idr"}, code: "missing_target"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := Execute(context.Background(), task, tc.args)
+			var structured *Error
+			if !errors.As(err, &structured) || structured.Code != tc.code || (tc.node != "" && structured.Node != tc.node) {
+				t.Fatalf("err = %+v, want code=%s node=%s", structured, tc.code, tc.node)
+			}
+		})
 	}
 }
 
@@ -230,6 +367,30 @@ func TestRequestFromCLIUsesCanonicalControlProtocol(t *testing.T) {
 	}
 }
 
+func TestRequestFromCLIRejectsMalformedCommands(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		argv []string
+		code string
+	}{
+		{name: "empty", argv: nil, code: "missing_command"},
+		{name: "missing control verb", argv: []string{"control"}, code: "missing_command"},
+		{name: "raw too many args", argv: []string{"control", "--json", `{}`, `{}`}, code: "invalid_argument"},
+		{name: "bad graph args", argv: []string{"graph", "mermaid", "dot"}, code: "invalid_argument"},
+		{name: "bad attach", argv: []string{"attach", "tap", "branch", "copy"}, code: "invalid_argument"},
+		{name: "bad detach", argv: []string{"detach"}, code: "invalid_argument"},
+		{name: "unknown", argv: []string{"warp"}, code: "unknown_command"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := RequestFromCLI(tc.argv)
+			var structured *Error
+			if !errors.As(err, &structured) || structured.Code != tc.code {
+				t.Fatalf("err = %+v, want code=%s", structured, tc.code)
+			}
+		})
+	}
+}
+
 func TestExecuteRequestAppliesControlRequest(t *testing.T) {
 	task := newFakeTask()
 	response := ExecuteRequest(context.Background(), task, Request{
@@ -242,6 +403,40 @@ func TestExecuteRequestAppliesControlRequest(t *testing.T) {
 	}
 	if len(task.controls) != 1 || task.controls[0].Type != goav.ControlBitrate || task.controls[0].Bitrate != 1_200_000 {
 		t.Fatalf("controls = %+v", task.controls)
+	}
+}
+
+func TestExecuteRequestCoversRawAndUtilityOps(t *testing.T) {
+	task := newFakeTask()
+	response := ExecuteRequest(context.Background(), task, Request{
+		Op:      "control_raw",
+		Control: json.RawMessage(`{"type":"keyframe","stream_id":"video","tap":"raw_video"}`),
+	})
+	if !response.OK || response.Error != nil || len(task.controls) != 1 || task.controls[0].Type != goav.ControlKeyframe {
+		t.Fatalf("raw response=%+v controls=%+v", response, task.controls)
+	}
+
+	response = ExecuteRequest(context.Background(), task, Request{Op: "flowchart", Args: map[string]string{"format": "text"}})
+	text, ok := response.Result.(string)
+	if !response.OK || response.Error != nil || !ok || !strings.Contains(text, "pipeline fake") {
+		t.Fatalf("flowchart response = %+v", response)
+	}
+
+	for _, tc := range []struct {
+		name    string
+		request Request
+		code    string
+	}{
+		{name: "missing control verb", request: Request{Op: "control"}, code: "missing_command"},
+		{name: "unknown op", request: Request{Op: "warp"}, code: "unknown_command"},
+		{name: "invalid raw", request: Request{Op: "control_raw", Control: json.RawMessage(`{}`)}, code: "missing_required"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			response := ExecuteRequest(context.Background(), task, tc.request)
+			if response.OK || response.Error == nil || response.Error.Code != tc.code {
+				t.Fatalf("response = %+v, want code=%s", response, tc.code)
+			}
+		})
 	}
 }
 
@@ -1253,6 +1448,47 @@ func TestStructuredErrorFormattingAndUnwrap(t *testing.T) {
 	}
 }
 
+func TestStructuredErrorPreservesUnderlyingShapes(t *testing.T) {
+	if got := structuredError("fallback", nil); got != nil {
+		t.Fatalf("structuredError(nil) = %+v", got)
+	}
+
+	existing := commandError("already_structured", "op", "node", "message", nil, nil, nil)
+	if got := structuredError("fallback", existing); got != existing {
+		t.Fatalf("structuredError(existing) = %+v, want same pointer", got)
+	}
+
+	cause := errors.New("sentinel")
+	buildErr := &goav.BuildError{
+		Code:        errcode.RuntimeBranchTapMissing,
+		Operation:   "attach runtime branch",
+		Node:        "raw_vdieo",
+		Reason:      "unknown tap",
+		Details:     []string{"available_taps=raw_video"},
+		Suggestions: []string{"use at=raw_video"},
+		Cause:       cause,
+	}
+	wrapped := structuredError("fallback", buildErr)
+	if wrapped.Code != string(errcode.RuntimeBranchTapMissing) ||
+		wrapped.Operation != "attach runtime branch" ||
+		wrapped.Node != "raw_vdieo" ||
+		wrapped.Message != "unknown tap" ||
+		!detailsContain(wrapped.Details, "raw_video") ||
+		!suggestionsContain(wrapped.Suggestions, "raw_video") ||
+		!errors.Is(wrapped, cause) {
+		t.Fatalf("wrapped = %+v", wrapped)
+	}
+
+	genericCause := errors.New("plain failure")
+	generic := structuredError("control keyframe", genericCause)
+	if generic.Code != "control_failed" ||
+		generic.Operation != "control keyframe" ||
+		generic.Message != "plain failure" ||
+		!errors.Is(generic, genericCause) {
+		t.Fatalf("generic = %+v", generic)
+	}
+}
+
 func TestReflectionConfinedToLaunchctlProductionFiles(t *testing.T) {
 	root := filepath.Clean(filepath.Join("..", ".."))
 	var offenders []string
@@ -1369,12 +1605,13 @@ func waitForSocket(t *testing.T, socket string, errC <-chan error) {
 }
 
 type fakeTask struct {
-	controls []goav.Control
-	taps     []snapshot.Tap
-	spec     pipeline.Spec
-	snapshot snapshot.Task
-	events   []av.Event
-	closed   bool
+	controls   []goav.Control
+	controlErr error
+	taps       []snapshot.Tap
+	spec       pipeline.Spec
+	snapshot   snapshot.Task
+	events     []av.Event
+	closed     bool
 }
 
 func newFakeTask() *fakeTask {
@@ -1425,6 +1662,9 @@ func (t *fakeTask) Taps() []snapshot.Tap { return append([]snapshot.Tap(nil), t.
 func (t *fakeTask) Snapshot() snapshot.Task { return t.snapshot }
 
 func (t *fakeTask) Control(_ context.Context, control goav.Control) error {
+	if t.controlErr != nil {
+		return t.controlErr
+	}
 	t.controls = append(t.controls, control)
 	return nil
 }
