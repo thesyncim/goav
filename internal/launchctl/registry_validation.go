@@ -2,6 +2,7 @@ package launchctl
 
 import (
 	"fmt"
+	"reflect"
 	"sort"
 	"strings"
 )
@@ -15,6 +16,9 @@ func validateCommandManifest(manifest []CommandSpec) error {
 	owners := make(map[string]registryNameOwner)
 	for _, spec := range manifest {
 		if err := addRegistryName(owners, "control command", spec.Name, spec.Name, "configure control server"); err != nil {
+			return err
+		}
+		if err := validateArgsType("control command", spec.Name, spec.ArgsType, true, "configure control server"); err != nil {
 			return err
 		}
 		for _, alias := range spec.Aliases {
@@ -35,6 +39,9 @@ func validatePipelineRegistry(registry PipelineRegistry) error {
 		if err := addRegistryName(owners, "custom branch-pipeline step", spec.Name, spec.Name, "configure branch pipeline"); err != nil {
 			return err
 		}
+		if err := validateArgsType("custom branch-pipeline step", spec.Name, spec.ArgsType, false, "configure branch pipeline"); err != nil {
+			return err
+		}
 		for _, alias := range spec.Aliases {
 			if err := addRegistryName(owners, "custom branch-pipeline step alias", alias, spec.Name, "configure branch pipeline"); err != nil {
 				return err
@@ -43,6 +50,9 @@ func validatePipelineRegistry(registry PipelineRegistry) error {
 	}
 	for _, spec := range registry.Encoders {
 		if err := addRegistryName(owners, "custom encoder", spec.Name, spec.Name, "configure branch pipeline"); err != nil {
+			return err
+		}
+		if err := validateArgsType("custom encoder", spec.Name, spec.ArgsType, false, "configure branch pipeline"); err != nil {
 			return err
 		}
 		for _, alias := range spec.Aliases {
@@ -57,7 +67,7 @@ func validatePipelineRegistry(registry PipelineRegistry) error {
 func addRegistryName(owners map[string]registryNameOwner, kind string, value string, specName string, operation string) error {
 	name := normalizeRegistryName(value)
 	if name == "" {
-		return nil
+		return invalidRegistryShape(operation, registryNameNode(kind), fmt.Sprintf("%s needs a non-empty name", kind), kind, specName)
 	}
 	owner := registryNameOwner{kind: kind, name: firstNonEmpty(specName, value)}
 	if previous, ok := owners[name]; ok {
@@ -79,6 +89,42 @@ func addRegistryName(owners map[string]registryNameOwner, kind string, value str
 	}
 	owners[name] = owner
 	return nil
+}
+
+func validateArgsType(kind string, name string, argsType reflect.Type, required bool, operation string) error {
+	if argsType == nil {
+		if !required {
+			return nil
+		}
+		return invalidRegistryShape(operation, firstNonEmpty(name, "args"), fmt.Sprintf("%s %q needs a struct ArgsType", kind, name), kind, name)
+	}
+	if argsType.Kind() != reflect.Struct {
+		return invalidRegistryShape(operation, firstNonEmpty(name, "args"), fmt.Sprintf("%s %q ArgsType must be a struct, got %s", kind, name, argsType), kind, name)
+	}
+	return nil
+}
+
+func invalidRegistryShape(operation string, node string, message string, kind string, owner string) error {
+	details := []string{"kind=" + kind}
+	if owner != "" {
+		details = append(details, "owner="+owner)
+	}
+	return commandError(
+		"invalid_registry",
+		operation,
+		node,
+		message,
+		details,
+		[]string{"choose non-empty names and struct settings types for custom control capabilities"},
+		nil,
+	)
+}
+
+func registryNameNode(kind string) string {
+	if strings.Contains(kind, "alias") {
+		return "alias"
+	}
+	return "name"
 }
 
 func normalizeRegistryName(value string) string {
