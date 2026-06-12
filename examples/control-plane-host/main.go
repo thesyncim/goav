@@ -15,6 +15,7 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -52,7 +53,7 @@ func main() {
 func runHost(ctx context.Context, address string, out io.Writer) error {
 	host, err := newDemoHost(ctx)
 	if err != nil {
-		return err
+		return fmt.Errorf("new host: %w", err)
 	}
 	defer host.task.Close()
 
@@ -62,39 +63,50 @@ func runHost(ctx context.Context, address string, out io.Writer) error {
 	go func() {
 		errC <- host.task.Run(runCtx)
 	}()
+	if err := waitForHostSource(runCtx, host.ready, errC); err != nil {
+		stop()
+		_ = host.task.Close()
+		return fmt.Errorf("wait source: %w", err)
+	}
 	go func() {
 		errC <- ctl.ServeUnixWithOptions(runCtx, host.task, address,
 			ctl.WithCommands(host.commands...),
 			ctl.WithPipelineRegistry(host.registry),
 		)
 	}()
-
-	if err := waitForHostSocket(runCtx, address, errC); err != nil {
-		stop()
-		_ = host.task.Close()
-		return err
-	}
 	printUsage(out, address)
 
+	var earlyErr error
+	var earlyResult bool
 	select {
 	case <-ctx.Done():
-	case err := <-errC:
-		stop()
-		_ = host.task.Close()
-		return err
+	case earlyErr = <-errC:
+		earlyResult = true
 	}
 
 	stop()
 	_ = host.task.Close()
+	if earlyResult && earlyErr != nil {
+		if !expectedHostShutdownError(earlyErr) && (ctx.Err() == nil || !errors.Is(earlyErr, pipeline.ErrClosed)) {
+			return fmt.Errorf("early result: %w", earlyErr)
+		}
+	} else if earlyResult && ctx.Err() == nil {
+		return fmt.Errorf("early nil: pipeline stopped before host shutdown")
+	}
+
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	return drainHost(shutdownCtx, errC)
+	if err := drainHost(shutdownCtx, errC); err != nil {
+		return fmt.Errorf("drain: %w", err)
+	}
+	return nil
 }
 
 type demoHost struct {
 	task     goav.Task
 	commands []ctl.CommandSpec
 	registry ctl.PipelineRegistry
+	ready    <-chan struct{}
 }
 
 func newDemoHost(ctx context.Context) (*demoHost, error) {
@@ -105,7 +117,11 @@ func newDemoHost(ctx context.Context) (*demoHost, error) {
 		shape.Packet(av.MediaAudio, av.CodecOpus, shape.Audio(48000, 1, av.SampleFormatS16)),
 		goavtest.TestSourceLive(),
 	)
-	task, err := goav.From(source.Input()).
+	ready := make(chan struct{})
+	input := goav.WrapSource(source.Input(), func(source pipeline.Source) pipeline.Source {
+		return newStartReadySource(source, ready)
+	})
+	task, err := goav.From(input).
 		Audio().Decode().Tap(goav.FrameTap("frames")).
 		To(goavtest.NewCollector().Sink()).
 		UseRuntime(goavtest.Runtime(goav.WithEncoder(factory.descriptor, factory))).
@@ -173,7 +189,7 @@ func newDemoHost(ctx context.Context) (*demoHost, error) {
 			},
 		}},
 	}
-	return &demoHost{task: task, commands: []ctl.CommandSpec{command}, registry: registry}, nil
+	return &demoHost{task: task, commands: []ctl.CommandSpec{command}, registry: registry, ready: ready}, nil
 }
 
 func printUsage(out io.Writer, address string) {
@@ -192,18 +208,45 @@ func waitForHostSocket(ctx context.Context, address string, errC <-chan error) e
 	ticker := time.NewTicker(5 * time.Millisecond)
 	defer ticker.Stop()
 	for {
-		if _, err := os.Stat(path); err == nil {
+		if hostSocketExists(path) {
 			return nil
 		}
 		select {
 		case err := <-errC:
+			if hostSocketExists(path) && (err == nil || expectedHostShutdownError(err)) {
+				return nil
+			}
 			if err == nil {
 				return fmt.Errorf("control server stopped before creating socket")
 			}
 			return err
 		case <-ctx.Done():
+			if hostSocketExists(path) {
+				return nil
+			}
 			return ctx.Err()
 		case <-ticker.C:
+		}
+	}
+}
+
+func hostSocketExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
+}
+
+func waitForHostSource(ctx context.Context, ready <-chan struct{}, errC <-chan error) error {
+	for {
+		select {
+		case <-ready:
+			return nil
+		case err := <-errC:
+			if err == nil {
+				return fmt.Errorf("pipeline stopped before control server started")
+			}
+			return err
+		case <-ctx.Done():
+			return ctx.Err()
 		}
 	}
 }
@@ -213,7 +256,7 @@ func drainHost(ctx context.Context, errC <-chan error) error {
 	for i := 0; i < 2; i++ {
 		select {
 		case err := <-errC:
-			if first == nil && err != nil && !errors.Is(err, context.Canceled) && !errors.Is(err, net.ErrClosed) {
+			if first == nil && err != nil && !expectedHostShutdownError(err) && !errors.Is(err, pipeline.ErrClosed) {
 				first = err
 			}
 		case <-ctx.Done():
@@ -224,6 +267,57 @@ func drainHost(ctx context.Context, errC <-chan error) error {
 		}
 	}
 	return first
+}
+
+func expectedHostShutdownError(err error) bool {
+	if err == nil {
+		return false
+	}
+	return errors.Is(err, context.Canceled) ||
+		err.Error() == context.Canceled.Error() ||
+		errors.Is(err, net.ErrClosed)
+}
+
+type startReadySource struct {
+	source pipeline.Source
+	ready  chan<- struct{}
+	once   sync.Once
+}
+
+func newStartReadySource(source pipeline.Source, ready chan<- struct{}) pipeline.Source {
+	wrapped := &startReadySource{source: source, ready: ready}
+	if _, ok := source.(pipeline.ControllableSource); ok {
+		return &startReadyControllableSource{startReadySource: wrapped}
+	}
+	return wrapped
+}
+
+func (s *startReadySource) Name() string {
+	return s.source.Name()
+}
+
+func (s *startReadySource) DescribeNode() pipeline.NodeSpec {
+	if described, ok := s.source.(interface{ DescribeNode() pipeline.NodeSpec }); ok {
+		return described.DescribeNode()
+	}
+	return pipeline.NodeSpec{Name: s.Name(), Kind: pipeline.NodeSource}
+}
+
+func (s *startReadySource) Start(ctx context.Context, emitter pipeline.Emitter) error {
+	s.once.Do(func() { close(s.ready) })
+	return s.source.Start(ctx, emitter)
+}
+
+func (s *startReadySource) Close() error {
+	return s.source.Close()
+}
+
+type startReadyControllableSource struct {
+	*startReadySource
+}
+
+func (s *startReadyControllableSource) Control(ctx context.Context, msg *pipeline.Message) error {
+	return s.source.(pipeline.ControllableSource).Control(ctx, msg)
 }
 
 func parseDemoRate(value string) (int, error) {
