@@ -302,6 +302,34 @@ func TestRunPrintsLocalHelp(t *testing.T) {
 	}
 }
 
+func TestRunPipelineHelpBootstrapsGeneratedControlFlow(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := run([]string{"run", "--help"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("code = %d stderr=%q", code, stderr.String())
+	}
+	text := stdout.String()
+	for _, want := range []string{
+		"examples:",
+		"/tmp/goav-av1.ivf format=ivf",
+		"min_qindex=20 max_qindex=180 tune=zerolatency",
+		"tap name=<tap-name>",
+		"size=<w>x<h>",
+		"goav ctl --control unix:///tmp/goav-live.sock taps",
+		"control seek position=2s source=fixture",
+		"attach frames as preview",
+		"/tmp/goav-preview.ivf format=ivf",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("help missing %q:\n%s", want, text)
+		}
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("stderr=%q", stderr.String())
+	}
+}
+
 func TestRunGeneratedVideoAV1RealtimeString(t *testing.T) {
 	out := filepath.Join(t.TempDir(), "generated av1.mkv")
 	pipeline := fmt.Sprintf(
