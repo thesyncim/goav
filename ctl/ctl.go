@@ -147,13 +147,14 @@ func Execute(ctx context.Context, task goav.Task, argv []string) (ControlRespons
 }
 
 // WithCommands appends application-specific controls to a server's built-in
-// allowlist.
+// allowlist. Command names and aliases must be unique within the server.
 func WithCommands(commands ...CommandSpec) ServerOption {
 	return launchctl.WithCommands(commands...)
 }
 
 // WithPipelineRegistry installs application-specific branch-pipeline steps and
-// encoders for attach/rebranch parsing.
+// encoders for attach/rebranch parsing. Step and encoder names and aliases
+// share one namespace and cannot shadow built-in branch-pipeline spellings.
 func WithPipelineRegistry(registry PipelineRegistry) ServerOption {
 	return launchctl.WithPipelineRegistry(registry)
 }

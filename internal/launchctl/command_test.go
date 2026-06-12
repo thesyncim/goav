@@ -809,6 +809,73 @@ func TestPipelineStepNamesIncludeCustomAliases(t *testing.T) {
 	}
 }
 
+func TestPipelineRegistryRejectsReservedAndDuplicateNames(t *testing.T) {
+	tests := []struct {
+		name     string
+		registry PipelineRegistry
+		node     string
+		first    string
+		second   string
+	}{
+		{
+			name: "step alias shadows built-in",
+			registry: PipelineRegistry{Steps: []BranchPipelineStepSpec{{
+				Name:    "Meter",
+				Aliases: []string{"copy"},
+			}}},
+			node:   "copy",
+			first:  "built-in branch-pipeline step:copy",
+			second: "custom branch-pipeline step alias:Meter",
+		},
+		{
+			name: "encoder alias shadows built-in",
+			registry: PipelineRegistry{Encoders: []EncoderSpec{{
+				Name:    "AcmeEnc",
+				Aliases: []string{"opus"},
+			}}},
+			node:   "opus",
+			first:  "built-in branch-pipeline step:opus",
+			second: "custom encoder alias:AcmeEnc",
+		},
+		{
+			name: "step and encoder collide",
+			registry: PipelineRegistry{
+				Steps: []BranchPipelineStepSpec{{Name: "meter"}},
+				Encoders: []EncoderSpec{{
+					Name:    "acmeenc",
+					Aliases: []string{"meter"},
+				}},
+			},
+			node:   "meter",
+			first:  "custom branch-pipeline step:meter",
+			second: "custom encoder alias:acmeenc",
+		},
+		{
+			name: "duplicate aliases collide",
+			registry: PipelineRegistry{Steps: []BranchPipelineStepSpec{
+				{Name: "meter", Aliases: []string{"levels"}},
+				{Name: "probe", Aliases: []string{"levels"}},
+			}},
+			node:   "levels",
+			first:  "custom branch-pipeline step alias:meter",
+			second: "custom branch-pipeline step alias:probe",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validatePipelineRegistry(tt.registry)
+			assertRegistryError(t, err, tt.node, tt.first, tt.second)
+
+			_, err = HelpWithRegistry([]string{"attach"}, nil, tt.registry)
+			assertRegistryError(t, err, tt.node, tt.first, tt.second)
+
+			_, err = parseBranchPipelineWithRegistry(newFakeTask(), "raw_video", "archive", "copy", tt.registry)
+			assertRegistryError(t, err, tt.node, tt.first, tt.second)
+		})
+	}
+}
+
 func TestParseBranchPipelineWithBuiltInStepsAndEncoders(t *testing.T) {
 	out := filepath.Join(t.TempDir(), "builtins.ogg")
 	_, err := parseBranchPipelineWithRegistry(newFakeTask(), "raw_video", "builtins",
@@ -1335,6 +1402,71 @@ func TestServerSupportsCustomControlCommand(t *testing.T) {
 	}
 }
 
+func TestServerRejectsCommandRegistryCollisions(t *testing.T) {
+	type vendorCommand struct {
+		Value string `goavctl:"value" usage:"value=<text>" help:"custom value"`
+	}
+	argType := reflect.TypeOf(vendorCommand{})
+	tests := []struct {
+		name     string
+		commands []CommandSpec
+		node     string
+		first    string
+		second   string
+	}{
+		{
+			name:     "custom command shadows built-in",
+			commands: []CommandSpec{{Name: "rate", ArgsType: argType}},
+			node:     "rate",
+			first:    "control command:rate",
+			second:   "control command:rate",
+		},
+		{
+			name: "custom alias shadows built-in",
+			commands: []CommandSpec{{
+				Name:     "vendor.rate",
+				Aliases:  []string{"bitrate"},
+				ArgsType: argType,
+			}},
+			node:   "bitrate",
+			first:  "control command:bitrate",
+			second: "control command alias:vendor.rate",
+		},
+		{
+			name: "duplicate custom aliases",
+			commands: []CommandSpec{
+				{Name: "vendor.one", Aliases: []string{"vendor.tune"}, ArgsType: argType},
+				{Name: "vendor.two", Aliases: []string{"vendor.tune"}, ArgsType: argType},
+			},
+			node:   "vendor.tune",
+			first:  "control command alias:vendor.one",
+			second: "control command alias:vendor.two",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateCommandManifest(append(ControlManifest(), tt.commands...))
+			assertRegistryError(t, err, tt.node, tt.first, tt.second)
+
+			server := &Server{Task: newFakeTask(), Commands: tt.commands}
+			response := server.Handle(context.Background(), Request{
+				Op:   "help",
+				Args: map[string]string{"topic": "control"},
+			})
+			if response.OK || response.Error == nil {
+				t.Fatalf("response = %+v, want registry error", response)
+			}
+			assertRegistryError(t, response.Error, tt.node, tt.first, tt.second)
+
+			socket := filepath.Join(os.TempDir(), fmt.Sprintf("goavctl-collision-%d.sock", time.Now().UnixNano()))
+			t.Cleanup(func() { _ = os.Remove(socket) })
+			err = ServeUnixWithOptions(context.Background(), newFakeTask(), "unix://"+socket, WithCommands(tt.commands...))
+			assertRegistryError(t, err, tt.node, tt.first, tt.second)
+		})
+	}
+}
+
 func TestServerSupportsCustomEncoderSettings(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
@@ -1784,6 +1916,23 @@ func detailsContain(details []string, fragment string) bool {
 		}
 	}
 	return false
+}
+
+func assertRegistryError(t *testing.T, err error, node string, first string, second string) {
+	t.Helper()
+	var structured *Error
+	if !errors.As(err, &structured) {
+		t.Fatalf("err = %v, want *Error", err)
+	}
+	if structured.Code != "invalid_registry" || structured.Node != node {
+		t.Fatalf("err = %+v, want invalid_registry node=%s", structured, node)
+	}
+	if !detailsContain(structured.Details, "first="+first) || !detailsContain(structured.Details, "second="+second) {
+		t.Fatalf("details = %v, want first=%q second=%q", structured.Details, first, second)
+	}
+	if !suggestionsContain(structured.Suggestions, "unique custom") {
+		t.Fatalf("suggestions = %v, want unique-name guidance", structured.Suggestions)
+	}
 }
 
 func stringSliceContains(values []string, want string) bool {

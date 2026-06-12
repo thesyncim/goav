@@ -46,6 +46,9 @@ func (s *Server) Handle(ctx context.Context, request Request) Response {
 	if s.Task == nil {
 		return ErrorResponse(request.Op, commandError("task_missing", request.Op, "", "control server has no task", nil, nil, nil))
 	}
+	if err := s.validateConfig(); err != nil {
+		return ErrorResponse(request.Op, err)
+	}
 	response, err := s.execute(ctx, request)
 	if err != nil {
 		return ErrorResponse(request.Op, err)
@@ -100,6 +103,13 @@ func (s *Server) commandManifest() []CommandSpec {
 		manifest = append(manifest, s.Commands...)
 	}
 	return manifest
+}
+
+func (s *Server) validateConfig() error {
+	if err := validateCommandManifest(s.commandManifest()); err != nil {
+		return err
+	}
+	return validatePipelineRegistry(s.Pipeline)
 }
 
 func (s *Server) attach(ctx context.Context, request Request) (ControlResponse, error) {
@@ -256,6 +266,15 @@ func ServeUnixWithOptions(ctx context.Context, task goav.Task, address string, o
 	if path == "" {
 		return commandError("invalid_address", "serve control", address, "unix control address needs a path", nil, []string{"use unix:///tmp/goav-live.sock"}, nil)
 	}
+	server := &Server{Task: task}
+	for _, option := range options {
+		if option != nil {
+			option(server)
+		}
+	}
+	if err := server.validateConfig(); err != nil {
+		return err
+	}
 	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
@@ -269,12 +288,6 @@ func ServeUnixWithOptions(ctx context.Context, task goav.Task, address string, o
 		<-ctx.Done()
 		_ = listener.Close()
 	}()
-	server := &Server{Task: task}
-	for _, option := range options {
-		if option != nil {
-			option(server)
-		}
-	}
 	for {
 		conn, err := listener.Accept()
 		if err != nil {

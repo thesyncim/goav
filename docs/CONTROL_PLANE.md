@@ -176,6 +176,13 @@ built-in branch-pipeline grammar plus every `BranchPipelineStepSpec` and
 `Usage` strings. That makes app-owned branch components discoverable from the
 same CLI surface that invokes them.
 
+Custom names and aliases are validated as one namespace per server. A custom
+control cannot reuse a built-in control verb or another custom alias, and a
+custom branch step or encoder cannot shadow built-in branch-pipeline spellings
+such as `copy`, `encode`, `opus`, or `file`. Collisions fail with
+`invalid_registry` before a socket starts or a branch pipeline mutates the
+running graph.
+
 Branch-pipeline values can be quoted with single or double quotes. Use quotes
 for paths or custom settings that contain spaces, `!`, or `=`:
 
@@ -309,6 +316,8 @@ structured errors with available names and suggestions.
   instead of introducing a second control model.
 - Custom controls, custom branch steps, custom codec names, and custom encoder
   names are per-server allowlists.
+- Custom command, branch-step, encoder, and alias names must be unique in that
+  server's allowlists; built-in branch-pipeline spellings are reserved.
 - Branch-pipeline strings are parsed by the allowlisted cold-path parser; custom
   behavior is callable only through explicit `PipelineRegistry` entries chosen
   by the host application.
