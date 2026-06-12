@@ -455,7 +455,7 @@ func TestRunGeneratedVideoWithControlSocket(t *testing.T) {
 
 	branchOut := filepath.Join(t.TempDir(), "preview.ivf")
 	attach := runLocalCtl(t, socket, "attach", "frames", "as", "preview",
-		fmt.Sprintf(`resize 16x16 ! av1enc bitrate=120k fps=30 keyframe_interval=1 ! filesink location=%q format=ivf`, branchOut))
+		fmt.Sprintf(`resize width=16 height=16 ! av1enc bitrate=120k fps=30 keyframe_interval=1 ! filesink location=%q format=ivf`, branchOut))
 	if !strings.Contains(attach, `"Name":"preview"`) {
 		t.Fatalf("attach output = %s", attach)
 	}
@@ -641,7 +641,7 @@ func decodeAV1TestPacket(t *testing.T, decoder codec.Decoder, packet av.Packet) 
 }
 
 func TestRunPipelineParserCoversGeneratedTestSourceForms(t *testing.T) {
-	plan, err := parseRunPipeline(`testsrc video name=fixture size=1920x1080 fps=30000/1001 duration=100ms realtime=off pixel_format=yuv420p pattern=solid ! tap frames ! resize 640x360 ! encode av01 bitrate=2M fps=29.97 keyframe_interval=30 profile=main level=5.1 tune=zerolatency ! filesink location="/tmp/generated test.ivf" format=ivf`)
+	plan, err := parseRunPipeline(`testsrc video name=fixture size=1920x1080 fps=30000/1001 duration=100ms realtime=off pixel_format=yuv420p pattern=solid ! tap frames ! resize width=640 height=360 ! encode av01 bitrate=2M fps=29.97 keyframe_interval=30 profile=main level=5.1 tune=zerolatency ! filesink location="/tmp/generated test.ivf" format=ivf`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -799,6 +799,27 @@ func TestRunPipelineParserRejectsDuplicateFileSinkForms(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			_, err := parseRunPipeline(`testsrc video width=16 height=16 frames=1 ! av1enc bitrate=200k ! ` + tc.step)
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("err = %v, want %q", err, tc.want)
+			}
+		})
+	}
+}
+
+func TestRunPipelineParserRejectsDuplicateResizeForms(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		resize string
+		want   string
+	}{
+		{name: "positional", resize: `resize 640x360`, want: "resize"},
+		{name: "size", resize: `resize size=640x360`, want: "size"},
+		{name: "w", resize: `resize w=640 height=360`, want: "w"},
+		{name: "h", resize: `resize width=640 h=360`, want: "h"},
+		{name: "unknown", resize: `resize width=640 height=360 mode=fast`, want: "mode"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := parseRunPipeline(`testsrc video width=16 height=16 frames=1 ! ` + tc.resize + ` ! av1enc bitrate=200k ! filesink location=/tmp/out.ivf`)
 			if err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Fatalf("err = %v, want %q", err, tc.want)
 			}

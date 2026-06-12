@@ -37,7 +37,7 @@ goav ctl --control unix:///tmp/goav-live.sock graph
 goav ctl --control unix:///tmp/goav-live.sock control rate value=0.5 source=fixture
 goav ctl --control unix:///tmp/goav-live.sock control seek position=2s source=fixture
 goav ctl --control unix:///tmp/goav-live.sock attach frames as preview \
-  'resize 320x180 ! av1enc bitrate=300k fps=2 keyframe_interval=1 ! filesink location=/tmp/goav-preview.ivf'
+  'resize width=320 height=180 ! av1enc bitrate=300k fps=2 keyframe_interval=1 ! filesink location=/tmp/goav-preview.ivf'
 goav ctl --control unix:///tmp/goav-live.sock graph format=text
 goav ctl --control unix:///tmp/goav-live.sock detach preview
 goav ctl --control unix:///tmp/goav-live.sock stop
@@ -381,6 +381,8 @@ Ambiguous or duplicate encoder spellings such as `rate`, `framerate`, `keyint`,
 `gop`, `samplerate`, `ch`, `clockrate`, and `bitrate_bps` are rejected with
 suggestions; use the canonical option names above.
 File sinks follow the same rule: use `filesink location=<path> [format=<id>]`.
+Transform steps use one spelling as well: `resize width=<px> height=<px>` and
+`resample sample_rate=<hz> channels=<n>`.
 
 The destination container must accept the selected codec. Standard codecs can
 often use the standard containers registered by `goav.Default`; a private codec

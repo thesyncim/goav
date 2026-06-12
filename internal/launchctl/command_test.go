@@ -822,7 +822,7 @@ func TestBranchPipelineExtensionHandleCallsConfiguredHooks(t *testing.T) {
 }
 
 func TestPipelineParserHelpersCoverCommonFormsAndErrors(t *testing.T) {
-	width, height, err := parseResizeArgs([]string{"854x480"}, nil)
+	width, height, err := parseResizeArgs([]string{"width=854", "height=480"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -830,28 +830,12 @@ func TestPipelineParserHelpersCoverCommonFormsAndErrors(t *testing.T) {
 		t.Fatalf("resize = %dx%d", width, height)
 	}
 
-	width, height, err = parseResizeArgs(nil, map[string]string{"w": "320", "height": "180"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if width != 320 || height != 180 {
-		t.Fatalf("resize args = %dx%d", width, height)
-	}
-
-	rate, channels, err := parseResampleArgs([]string{"48000", "2"}, nil)
+	rate, channels, err := parseResampleArgs([]string{"sample_rate=48000", "channels=2"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if rate != 48000 || channels != 2 {
 		t.Fatalf("resample = %d/%d", rate, channels)
-	}
-
-	rate, channels, err = parseResampleArgs(nil, map[string]string{"sample_rate": "16000", "ch": "1"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if rate != 16000 || channels != 1 {
-		t.Fatalf("resample args = %d/%d", rate, channels)
 	}
 
 	bitrate, err := parseRate("2mbps")
@@ -866,12 +850,28 @@ func TestPipelineParserHelpersCoverCommonFormsAndErrors(t *testing.T) {
 		name string
 		run  func() error
 	}{
-		{name: "resize", run: func() error {
-			_, _, err := parseResizeArgs([]string{"0x480"}, nil)
+		{name: "resize positional", run: func() error {
+			_, _, err := parseResizeArgs([]string{"854x480"})
 			return err
 		}},
-		{name: "resample", run: func() error {
-			_, _, err := parseResampleArgs([]string{"48000", "0"}, nil)
+		{name: "resize short width", run: func() error {
+			_, _, err := parseResizeArgs([]string{"w=854", "height=480"})
+			return err
+		}},
+		{name: "resize zero height", run: func() error {
+			_, _, err := parseResizeArgs([]string{"width=854", "height=0"})
+			return err
+		}},
+		{name: "resample positional", run: func() error {
+			_, _, err := parseResampleArgs([]string{"48000", "2"})
+			return err
+		}},
+		{name: "resample rate alias", run: func() error {
+			_, _, err := parseResampleArgs([]string{"rate=48000", "channels=2"})
+			return err
+		}},
+		{name: "resample zero channels", run: func() error {
+			_, _, err := parseResampleArgs([]string{"sample_rate=48000", "channels=0"})
 			return err
 		}},
 	} {
@@ -1156,7 +1156,7 @@ func TestRegistryValidationRejectsMalformedCapabilityRows(t *testing.T) {
 func TestParseBranchPipelineWithBuiltInStepsAndEncoders(t *testing.T) {
 	out := filepath.Join(t.TempDir(), "builtins.ogg")
 	_, err := parseBranchPipelineWithRegistry(newFakeTask(), "raw_video", "builtins",
-		`decode ! resize width=320 height=180 ! resample rate=48000 channels=2 ! `+
+		`decode ! resize width=320 height=180 ! resample sample_rate=48000 channels=2 ! `+
 			`vp8enc bitrate=1k ! vp9 profile=screen ! h264enc level=3 ! av1enc fps=30000/1001 ! `+
 			`opusenc sample_rate=48000 channels=2 ! encode codec=vendor_custom media=audio clock_rate=48000 ! `+
 			`filesink location="`+out+`" format=ogg`,

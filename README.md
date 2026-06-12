@@ -767,7 +767,7 @@ goav run 'testsrc video width=1280 height=720 fps=30 duration=3s realtime=true p
 The string grammar is intentionally close to the recipe grammar:
 
 ```sh
-goav run 'testsrc video name=fixture size=1920x1080 fps=30000/1001 frames=90 realtime=true ! resize size=640x360 ! encode codec=av1 media=video bitrate=1.8M fps=30000/1001 keyframe_interval=60 min_qindex=20 max_qindex=180 temporal_layers=2 tune=zerolatency ! filesink location=/tmp/thumbs.mkv format=matroska'
+goav run 'testsrc video name=fixture size=1920x1080 fps=30000/1001 frames=90 realtime=true ! resize width=640 height=360 ! encode codec=av1 media=video bitrate=1.8M fps=30000/1001 keyframe_interval=60 min_qindex=20 max_qindex=180 temporal_layers=2 tune=zerolatency ! filesink location=/tmp/thumbs.mkv format=matroska'
 ```
 
 Known encoder options (`bitrate`, `fps`, `keyframe_interval`, `profile`,
@@ -781,6 +781,8 @@ AV1 adapter currently accepts `qindex`, `min_qindex`,
 `max_qindex`, `temporal_layers`, `tile_columns`, `golden_interval`, and
 `tune=zerolatency`.
 File sinks use the same single-spelling rule: `filesink location=<path> [format=<id>]`.
+Transform steps do too: `resize width=<px> height=<px>` and
+`resample sample_rate=<hz> channels=<n>`.
 
 Applications that want a CLI control surface expose a Unix socket with package
 `ctl`; the bundled command then drives the same task APIs over structured JSON.
@@ -798,7 +800,7 @@ goav ctl --control unix:///tmp/goav-live.sock graph
 goav ctl --control unix:///tmp/goav-live.sock control rate value=0.5 source=fixture
 goav ctl --control unix:///tmp/goav-live.sock control seek position=2s source=fixture
 goav ctl --control unix:///tmp/goav-live.sock attach frames as preview \
-  'resize 320x180 ! av1enc bitrate=300k fps=2 keyframe_interval=1 ! filesink location=/tmp/goav-preview.mkv format=matroska'
+  'resize width=320 height=180 ! av1enc bitrate=300k fps=2 keyframe_interval=1 ! filesink location=/tmp/goav-preview.mkv format=matroska'
 goav ctl --control unix:///tmp/goav-live.sock stop
 
 goav ctl --control unix:///tmp/goav-live.sock control bitrate stream=video value=1200k

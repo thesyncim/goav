@@ -7,7 +7,6 @@ import (
 	"os"
 	"reflect"
 	"sort"
-	"strconv"
 	"strings"
 
 	goav "github.com/thesyncim/goav"
@@ -16,6 +15,7 @@ import (
 	"github.com/thesyncim/goav/internal/cliargs"
 	"github.com/thesyncim/goav/internal/codecargs"
 	"github.com/thesyncim/goav/internal/fileargs"
+	"github.com/thesyncim/goav/internal/transformargs"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/shape"
 )
@@ -169,13 +169,13 @@ func parseBranchPipelineWithRegistry(task goav.Task, tapName string, branchName 
 		case "decode":
 			branch.Decode()
 		case "resize":
-			width, height, err := parseResizeArgs(words[1:], args)
+			width, height, err := parseResizeArgs(words[1:])
 			if err != nil {
 				return goav.BranchSpec{}, err
 			}
 			branch.Resize(width, height)
 		case "resample":
-			rate, channels, err := parseResampleArgs(words[1:], args)
+			rate, channels, err := parseResampleArgs(words[1:])
 			if err != nil {
 				return goav.BranchSpec{}, err
 			}
@@ -393,52 +393,45 @@ func stepArgs(words []string) map[string]string {
 	return args
 }
 
-func parseResizeArgs(words []string, args map[string]string) (int, int, error) {
-	if len(words) > 0 {
-		if widthText, heightText, ok := strings.Cut(words[0], "x"); ok {
-			width, errW := strconv.Atoi(widthText)
-			height, errH := strconv.Atoi(heightText)
-			if errW == nil && errH == nil && width > 0 && height > 0 {
-				return width, height, nil
-			}
-		}
+func parseResizeArgs(words []string) (int, int, error) {
+	resize, err := transformargs.ParseResize(pipelineTransformArgs(words))
+	if err != nil {
+		return 0, 0, transformOptionError(err)
 	}
-	width, okW := parsePositiveIntArg(args, "width", "w")
-	height, okH := parsePositiveIntArg(args, "height", "h")
-	if !okW || !okH {
-		return 0, 0, commandError("invalid_value", "parse branch pipeline", "resize", "resize needs dimensions like 854x480 or width=854 height=480", nil, []string{"use `resize 854x480`"}, nil)
-	}
-	return width, height, nil
+	return resize.Width, resize.Height, nil
 }
 
-func parseResampleArgs(words []string, args map[string]string) (int, int, error) {
-	if len(words) >= 2 {
-		rate, errR := strconv.Atoi(words[0])
-		channels, errC := strconv.Atoi(words[1])
-		if errR == nil && errC == nil && rate > 0 && channels > 0 {
-			return rate, channels, nil
-		}
+func parseResampleArgs(words []string) (int, int, error) {
+	resample, err := transformargs.ParseResample(pipelineTransformArgs(words))
+	if err != nil {
+		return 0, 0, transformOptionError(err)
 	}
-	rate, okR := parsePositiveIntArg(args, "rate", "sample_rate")
-	channels, okC := parsePositiveIntArg(args, "channels", "ch")
-	if !okR || !okC {
-		return 0, 0, commandError("invalid_value", "parse branch pipeline", "resample", "resample needs rate and channels", nil, []string{"use `resample 48000 2`", "use `resample rate=48000 channels=2`"}, nil)
-	}
-	return rate, channels, nil
+	return resample.SampleRate, resample.Channels, nil
 }
 
-func parsePositiveIntArg(args map[string]string, keys ...string) (int, bool) {
-	for _, key := range keys {
-		value, ok := args[key]
-		if !ok || value == "" {
+func pipelineTransformArgs(words []string) []transformargs.Arg {
+	args := make([]transformargs.Arg, 0, len(words))
+	for _, word := range words {
+		key, value, ok := strings.Cut(word, "=")
+		if !ok {
+			args = append(args, transformargs.Arg{Value: word})
 			continue
 		}
-		parsed, err := strconv.Atoi(value)
-		if err == nil && parsed > 0 {
-			return parsed, true
-		}
+		args = append(args, transformargs.Arg{Key: strings.ToLower(key), Value: value})
 	}
-	return 0, false
+	return args
+}
+
+func transformOptionError(err error) error {
+	var optErr *transformargs.Error
+	if errors.As(err, &optErr) {
+		details := []string(nil)
+		if optErr.Value != "" {
+			details = []string{"value=" + optErr.Value}
+		}
+		return commandError("invalid_value", "parse branch pipeline", optErr.Field, optErr.Message, details, optErr.Suggestions, err)
+	}
+	return commandError("invalid_value", "parse branch pipeline", "transform", err.Error(), nil, nil, err)
 }
 
 func parseEncoder(id av.CodecID, media av.MediaType, args map[string]string) (codec.CodecSpec, error) {

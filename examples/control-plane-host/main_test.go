@@ -94,7 +94,7 @@ func TestRunHostServesCustomHelpAndAttach(t *testing.T) {
 		Op:     "attach",
 		Tap:    "frames",
 		Branch: "archive",
-		Pipeline: `meter label="left ! right" ! resize 640x360 ! vp8enc bitrate=900k fps=30 keyframe_interval=30 ! filesink location="` +
+		Pipeline: `meter label="left ! right" ! resize width=640 height=360 ! vp8enc bitrate=900k fps=30 keyframe_interval=30 ! filesink location="` +
 			out + `" format=webm`,
 	})
 	if !attach.OK || attach.Error != nil {
@@ -106,7 +106,7 @@ func TestRunHostServesCustomHelpAndAttach(t *testing.T) {
 		Op:     "attach",
 		Tap:    "frames",
 		Branch: "thumbnails",
-		Pipeline: `thumbnail every=5 label=sample ! resize 160x90 ! vp8enc bitrate=160k fps=1 keyframe_interval=1 ! filesink location="` +
+		Pipeline: `thumbnail every=5 label=sample ! resize width=160 height=90 ! vp8enc bitrate=160k fps=1 keyframe_interval=1 ! filesink location="` +
 			thumbOut + `"`,
 	})
 	if !thumbs.OK || thumbs.Error != nil {
@@ -300,7 +300,7 @@ func TestPrintUsageIncludesCompleteBootstrapLoop(t *testing.T) {
 		"control vendor.rate value=0.5 source=fixture",
 		"control --json '{\"type\":\"rate\",\"rate\":0.75,\"node\":\"fixture\"}'",
 		"control deliver --json '{\"type\":\"vendor.force_idr\"",
-		"resize 640x360",
+		"resize width=640 height=360",
 		"filesink location=\"/tmp/goav archive.webm\"",
 		"thumbnail every=5",
 		"memorysink name=preview",

@@ -23,6 +23,7 @@ import (
 	"github.com/thesyncim/goav/internal/cliargs"
 	"github.com/thesyncim/goav/internal/codecargs"
 	"github.com/thesyncim/goav/internal/fileargs"
+	"github.com/thesyncim/goav/internal/transformargs"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/shape"
 )
@@ -152,7 +153,7 @@ func runPipelineHelp() string {
 		"pipeline steps:\n" +
 		"  testsrc video [name=<id>] width=<px> height=<px>|size=<w>x<h> fps=<n[/d]|decimal> frames=<n>|duration=<d> realtime=<bool> [format=i420|yuv420p] [pattern=bars|gradient|solid]\n" +
 		"  tap name=<tap-name>\n" +
-		"  resize width=<px> height=<px>|size=<w>x<h>\n" +
+		"  resize width=<px> height=<px>\n" +
 		"  av1enc|vp9enc|vp8enc|h264enc|encode codec=<id> media=<video|audio> bitrate=<rate> fps=<n[/d]> keyframe_interval=<n> [native_key=value...]\n" +
 		"  encoder settings use canonical names; duplicate aliases such as rate, framerate, keyint, gop, samplerate, ch, clockrate, and bitrate_bps are rejected\n" +
 		"  filesink location=<path> [format=<id>] (known file extensions infer the format)\n\n" +
@@ -162,7 +163,7 @@ func runPipelineHelp() string {
 		"  goav ctl --control unix:///tmp/goav-live.sock graph\n" +
 		"  goav ctl --control unix:///tmp/goav-live.sock control rate value=0.5 source=fixture\n" +
 		"  goav ctl --control unix:///tmp/goav-live.sock control seek position=2s source=fixture\n" +
-		"  goav ctl --control unix:///tmp/goav-live.sock attach frames as preview 'resize 320x180 ! av1enc bitrate=300k fps=2 keyframe_interval=1 ! filesink location=/tmp/goav-preview.ivf'\n" +
+		"  goav ctl --control unix:///tmp/goav-live.sock attach frames as preview 'resize width=320 height=180 ! av1enc bitrate=300k fps=2 keyframe_interval=1 ! filesink location=/tmp/goav-preview.ivf'\n" +
 		"  goav ctl --control unix:///tmp/goav-live.sock stop\n"
 }
 
@@ -812,36 +813,11 @@ func parseResizeStep(tokens []string) (runOperation, error) {
 	if err != nil {
 		return runOperation{}, err
 	}
-	op := runOperation{kind: "resize"}
-	for _, positional := range positionals {
-		if strings.Contains(positional, "x") {
-			op.width, op.height, err = parseSize(positional)
-			if err != nil {
-				return runOperation{}, err
-			}
-			continue
-		}
-		return runOperation{}, fmt.Errorf("goav run: unsupported resize argument %q", positional)
+	resize, err := transformargs.ParseResize(runTransformArgs(positionals, options))
+	if err != nil {
+		return runOperation{}, fmt.Errorf("goav run: %w", err)
 	}
-	for _, option := range options {
-		switch option.key {
-		case "width", "w":
-			op.width, err = parsePositiveInt("width", option.value)
-		case "height", "h":
-			op.height, err = parsePositiveInt("height", option.value)
-		case "size":
-			op.width, op.height, err = parseSize(option.value)
-		default:
-			return runOperation{}, fmt.Errorf("goav run: unknown resize option %q", option.key)
-		}
-		if err != nil {
-			return runOperation{}, err
-		}
-	}
-	if op.width <= 0 || op.height <= 0 {
-		return runOperation{}, fmt.Errorf("goav run: resize needs width and height")
-	}
-	return op, nil
+	return runOperation{kind: "resize", width: resize.Width, height: resize.Height}, nil
 }
 
 func parseEncodeStep(name string, tokens []string) (runOperation, error) {
@@ -886,6 +862,17 @@ func runCodecArgs(options []runOption) []codecargs.Arg {
 	args := make([]codecargs.Arg, 0, len(options))
 	for _, option := range options {
 		args = append(args, codecargs.Arg{Key: option.key, Value: option.value})
+	}
+	return args
+}
+
+func runTransformArgs(positionals []string, options []runOption) []transformargs.Arg {
+	args := make([]transformargs.Arg, 0, len(positionals)+len(options))
+	for _, positional := range positionals {
+		args = append(args, transformargs.Arg{Value: positional})
+	}
+	for _, option := range options {
+		args = append(args, transformargs.Arg{Key: option.key, Value: option.value})
 	}
 	return args
 }

@@ -80,14 +80,14 @@ Attach a stock VP8/WebM transcode from the decoded `frames` tap:
 
 ```sh
 $CTL attach frames as archive \
-  'meter label="left ! right" ! resize 640x360 ! vp8enc bitrate=900k fps=30 keyframe_interval=30 ! filesink location="/tmp/goav archive.webm"'
+  'meter label="left ! right" ! resize width=640 height=360 ! vp8enc bitrate=900k fps=30 keyframe_interval=30 ! filesink location="/tmp/goav archive.webm"'
 ```
 
 Attach a low-rate thumbnail recording:
 
 ```sh
 $CTL attach frames as thumbnails \
-  'thumbnail every=5 label=sample ! resize 160x90 ! vp8enc bitrate=160k fps=1 keyframe_interval=1 ! filesink location="/tmp/goav thumbnails.ivf"'
+  'thumbnail every=5 label=sample ! resize width=160 height=90 ! vp8enc bitrate=160k fps=1 keyframe_interval=1 ! filesink location="/tmp/goav thumbnails.ivf"'
 ```
 
 Attach an app-owned in-process preview sink:

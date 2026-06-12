@@ -255,8 +255,8 @@ func builtinPipelineHelpRows() []pipelineHelpRow {
 	return []pipelineHelpRow{
 		{name: "copy", summary: "copy packets or frames without transforming them"},
 		{name: "decode", summary: "decode packets to frames"},
-		{name: "resize", usage: "854x480 | width=854 height=480", summary: "resize video frames"},
-		{name: "resample", usage: "48000 2 | rate=48000 channels=2", summary: "resample audio frames"},
+		{name: "resize", usage: "width=854 height=480", summary: "resize video frames"},
+		{name: "resample", usage: "sample_rate=48000 channels=2", summary: "resample audio frames"},
 		{name: "encode", usage: "codec=<id> media=<audio|video|subtitle> [bitrate=<rate>] [profile=<name>] [level=<name>] [sample_rate=<hz>] [channels=<n>] [clock_rate=<hz>] [keyframe_interval=<n>] [fps=<n|n/d>] [native_key=value...]", summary: "encode frames with a built-in or runtime-registered codec"},
 		{name: "vp8enc", usage: "[bitrate=<rate>] [fps=<n|n/d>]", summary: "encode VP8 video"},
 		{name: "vp9enc", usage: "[bitrate=<rate>] [fps=<n|n/d>]", summary: "encode VP9 video"},
