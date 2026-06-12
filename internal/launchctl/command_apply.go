@@ -66,6 +66,13 @@ func (e *Error) Unwrap() error {
 	return e.Cause
 }
 
+// NewError builds a structured control-plane refusal. Host-owned custom
+// commands, branch steps, and encoders can return this from Apply to preserve
+// field-level codes, details, suggestions, and causes over the socket.
+func NewError(code, operation, node, message string, details, suggestions []string, cause error) *Error {
+	return commandError(code, operation, node, message, details, suggestions, cause)
+}
+
 func commandError(code, operation, node, message string, details, suggestions []string, cause error) *Error {
 	return &Error{
 		Code:        code,

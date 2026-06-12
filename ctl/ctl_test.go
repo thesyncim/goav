@@ -162,9 +162,28 @@ func TestExternalHostCustomEncoderSpecCanMapArbitrarySettings(t *testing.T) {
 		Encoders: []ctl.EncoderSpec{{
 			Name: "fancyenc",
 			Apply: func(args ctl.StepArgs) (codec.CodecSpec, error) {
+				if args["bitrate"] == "" {
+					return codec.CodecSpec{}, ctl.NewError(
+						"missing_required",
+						"parse branch pipeline",
+						"bitrate",
+						"fancyenc needs bitrate=<bps>",
+						nil,
+						[]string{"use fancyenc bitrate=128k"},
+						nil,
+					)
+				}
 				bitrate, err := parseTestRate(args["bitrate"])
 				if err != nil {
-					return codec.CodecSpec{}, err
+					return codec.CodecSpec{}, ctl.NewError(
+						"invalid_value",
+						"parse branch pipeline",
+						"bitrate",
+						"fancyenc bitrate must be a positive integer or k-suffixed rate",
+						[]string{"value=" + args["bitrate"]},
+						[]string{"use fancyenc bitrate=128k"},
+						err,
+					)
 				}
 				return codec.Codec(customCodec, av.MediaAudio,
 					codec.Bitrate(bitrate),
@@ -179,6 +198,19 @@ func TestExternalHostCustomEncoderSpecCanMapArbitrarySettings(t *testing.T) {
 	}
 
 	socket := startUnixServer(t, ctx, task, ctl.WithPipelineRegistry(registry))
+	missing := sendRequest(t, socket, ctl.Request{
+		Op:       "attach",
+		Tap:      "frames",
+		Branch:   "bad-fancy",
+		Pipeline: "fancyenc quality=cinema ! filesink location=" + filepath.Join(t.TempDir(), "missing.ogg") + " format=ogg",
+	})
+	if missing.OK || missing.Error == nil ||
+		missing.Error.Code != "missing_required" ||
+		missing.Error.Node != "bitrate" ||
+		!strings.Contains(strings.Join(missing.Error.Suggestions, "\n"), "fancyenc bitrate=128k") {
+		t.Fatalf("missing bitrate response = %+v", missing)
+	}
+
 	out := filepath.Join(t.TempDir(), "fancy.ogg")
 	response := sendRequest(t, socket, ctl.Request{
 		Op:       "attach",
