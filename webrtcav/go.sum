@@ -50,8 +50,8 @@ github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec h1:W09IVJc94
 github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec/go.mod h1:qqbHyh8v60DhA7CoWK5oRCqLrMHRGoxYCSS9EjAz6Eo=
 github.com/stretchr/testify v1.11.1 h1:7s2iGBzp5EwR7/aIZr8ao5+dra3wiQyKjjFuvgVKu7U=
 github.com/stretchr/testify v1.11.1/go.mod h1:wZwfW3scLgRK+23gO65QZefKpKQRnfz6sD981Nm4B6U=
-github.com/thesyncim/goaac v0.0.0-20260612180544-330bfd2acec4 h1:1WRqOUpXWwTqPOPJWJ1NyuY/71ChIiTkJcUJv256XRI=
-github.com/thesyncim/goaac v0.0.0-20260612180544-330bfd2acec4/go.mod h1:nh7cIGP2UakcsSBz0OAkppX5LBaZpnN9cJA0T8v+fvs=
+github.com/thesyncim/goaac v0.0.0-20260612181820-28117ebe9116 h1:o3kgn/pNCAkGw7qd6HtGK9Y7tEWdF6jFx2YAiW+Qvf8=
+github.com/thesyncim/goaac v0.0.0-20260612181820-28117ebe9116/go.mod h1:nh7cIGP2UakcsSBz0OAkppX5LBaZpnN9cJA0T8v+fvs=
 github.com/thesyncim/goav1 v0.0.0-20260611170949-792a1f774da1 h1:rPYnlixhYLU8WLl5eMJzl6O1LId2olVy8U/Lplz15FI=
 github.com/thesyncim/goav1 v0.0.0-20260611170949-792a1f774da1/go.mod h1:WfcUmLDoRBNKU32YpA9W/Y/6olN7Otb/Winto4HH97w=
 github.com/thesyncim/goh264 v0.0.0-20260605215817-c3ebee4f35c3 h1:WGzAU8slW6ls79zSPTYnIIoD2/gvacyOff9TArGOOnw=

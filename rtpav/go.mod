@@ -17,7 +17,7 @@ require (
 	github.com/ncruces/go-strftime v1.0.0 // indirect
 	github.com/pion/randutil v0.1.0 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
-	github.com/thesyncim/goaac v0.0.0-20260612180544-330bfd2acec4 // indirect
+	github.com/thesyncim/goaac v0.0.0-20260612181820-28117ebe9116 // indirect
 	github.com/thesyncim/goh264 v0.0.0-20260605215817-c3ebee4f35c3 // indirect
 	github.com/thesyncim/gopus v0.1.1 // indirect
 	github.com/thesyncim/govpx v0.0.0-20260609183451-3d804d8c8f89 // indirect
