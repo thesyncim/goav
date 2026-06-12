@@ -382,7 +382,7 @@ The destination container must accept the selected codec. Standard codecs can
 often use the standard containers registered by `goav.Default`; a private codec
 usually needs a matching `WithFormatAdapter`, `WithMuxer`, or an app-owned
 custom destination step. Runtime muxers registered with `WithMuxer` are callable
-by `filesink location=<path> format=<id>` and appear in `help attach`.
+by `filesink location=<path> [format=<id>]` and appear in `help attach`.
 
 When an encoder needs host-side validation or direct native handle setup,
 expose a named encoder step with `ctl.NewEncoderSpec`. The CLI spelling stays

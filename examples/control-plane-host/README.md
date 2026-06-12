@@ -49,7 +49,7 @@ The ACME encoder is available immediately through the generic
 `encode codec=x_acme_video media=video ...` step because the host registered it
 with `goav.WithEncoder`. Common codec options become typed settings, and extra
 encoder `key=value` pairs are carried as `CodecSettings.Custom`; registered
-muxers are available through `filesink location=<path> format=<id>`.
+muxers are available through `filesink location=<path> [format=<id>]`.
 
 Control the fake source. These are normal built-in source controls targeting
 the `fixture` source node:

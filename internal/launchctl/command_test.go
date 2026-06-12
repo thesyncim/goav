@@ -591,7 +591,7 @@ func TestExecuteRequestHelpIncludesRuntimeCapabilities(t *testing.T) {
 		"encode codec=x_request_pcm media=audio",
 		"Request PCM",
 		"Runtime muxers:",
-		"filesink location=<path> format=x_request_mux",
+		"filesink location=<path> [format=x_request_mux]",
 		"runtime-registered muxer for codecs x_request_pcm",
 	} {
 		if !strings.Contains(text, fragment) {
@@ -2021,7 +2021,7 @@ func TestServerSupportsCustomEncoderSettings(t *testing.T) {
 		Op:       "attach",
 		Tap:      "frames",
 		Branch:   "custom",
-		Pipeline: "fancyenc bitrate=123k quality=cinema ! filesink location=" + out + " format=ogg",
+		Pipeline: "fancyenc bitrate=123k quality=cinema ! filesink location=" + out,
 	})
 	if !response.OK || response.Error != nil {
 		t.Fatalf("attach response = %+v", response)
@@ -2134,7 +2134,7 @@ func TestServerGenericEncodeStepCarriesCommonCodecOptions(t *testing.T) {
 		"Vendor generic audio",
 		"Any encoder registered on the task runtime is callable",
 		"Runtime muxers:",
-		"filesink location=<path> format=ogg",
+		"filesink location=<path> [format=ogg]",
 		"Any muxer registered on the task runtime is callable",
 	} {
 		if !strings.Contains(helpText, fragment) {

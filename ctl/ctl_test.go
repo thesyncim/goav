@@ -182,7 +182,7 @@ func TestExternalHostHelpListsRuntimeRegisteredComponents(t *testing.T) {
 		"encode codec=x_help_pcm media=audio",
 		"Help PCM",
 		"Runtime muxers:",
-		"filesink location=<path> format=x_helpmux",
+		"filesink location=<path> [format=x_helpmux]",
 		"runtime-registered muxer for codecs x_help_pcm",
 	} {
 		if !strings.Contains(text, fragment) {

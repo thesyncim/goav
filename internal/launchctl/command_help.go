@@ -216,7 +216,7 @@ func branchPipelineHelp(name string, usage string, note string, registry Pipelin
 	}
 	out.WriteString("\nBranch pipelines are written as `step key=value ! step key=value`. Custom steps and encoders receive their key=value settings through StepArgs.\n")
 	out.WriteString("Any encoder registered on the task runtime is callable with `encode codec=<id> media=<kind> ...`; common codec settings become typed settings and extra key=value pairs are carried as CodecSettings.Custom for the adapter. Use a custom EncoderSpec when native knobs need typed validation or codec.Control host code.\n")
-	out.WriteString("Any muxer registered on the task runtime is callable from `filesink location=<path> format=<id>`; custom destinations such as uploaders remain host-owned branch steps.\n")
+	out.WriteString("Any muxer registered on the task runtime is callable from `filesink location=<path> [format=<id>]`; file extensions can infer common formats, and custom destinations such as uploaders remain host-owned branch steps.\n")
 	return out.String()
 }
 
@@ -305,7 +305,7 @@ func writeRuntimeMuxerHelpRow(out *strings.Builder, desc format.Descriptor) {
 	if desc.Format == "" {
 		return
 	}
-	label := "filesink location=<path> format=" + string(desc.Format)
+	label := "filesink location=<path> [format=" + string(desc.Format) + "]"
 	summary := "runtime-registered muxer"
 	if len(desc.Codecs) != 0 {
 		summary += " for codecs " + codecIDsLabel(desc.Codecs)
