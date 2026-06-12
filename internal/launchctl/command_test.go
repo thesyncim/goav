@@ -2021,6 +2021,20 @@ func TestHelpGeneratedFromManifestMetadata(t *testing.T) {
 			t.Fatalf("help missing %q:\n%s", fragment, help)
 		}
 	}
+
+	deliver, _ := LookupControlCommand("deliver")
+	help = CommandHelp(deliver)
+	for _, fragment := range []string{
+		"control deliver",
+		"goav ctl --control unix://PATH control deliver type=<event-type> [stream=<stream-id>] [reason=<text>] [at=<tap>] [metadata.<key>=<value>...]",
+		"Raw event usage:",
+		"goav ctl --control unix://PATH control deliver --json '<json-av-event>' at=<tap-name>",
+		"metadata",
+	} {
+		if !strings.Contains(help, fragment) {
+			t.Fatalf("deliver help missing %q:\n%s", fragment, help)
+		}
+	}
 }
 
 func TestHelpRendersRootStaticAndCustomControlTopics(t *testing.T) {
@@ -2028,9 +2042,33 @@ func TestHelpRendersRootStaticAndCustomControlTopics(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, fragment := range []string{"goav ctl", "capabilities", "graph [format=mermaid|dot|text]", "rebranch <branch-name>"} {
+	for _, fragment := range []string{"goav ctl", "capabilities", "graph [format=mermaid|dot|text]", "events [--follow]", "watch [type=<event-type>] [stream=<stream-id>] [--follow]", "rebranch <branch-name>"} {
 		if !strings.Contains(root, fragment) {
 			t.Fatalf("root help missing %q:\n%s", fragment, root)
+		}
+	}
+
+	for topic, fragments := range map[string][]string{
+		"inspect":      {"goav ctl --control unix://PATH inspect", "structural description"},
+		"snapshot":     {"goav ctl --control unix://PATH snapshot", "current task snapshot"},
+		"stats":        {"goav ctl --control unix://PATH stats", "latest task statistics"},
+		"taps":         {"goav ctl --control unix://PATH taps", "named tap points"},
+		"streams":      {"goav ctl --control unix://PATH streams", "Lists streams inferred"},
+		"branches":     {"goav ctl --control unix://PATH branches", "active runtime branches"},
+		"destinations": {"goav ctl --control unix://PATH destinations", "active output destinations"},
+		"capabilities": {"goav ctl --control unix://PATH capabilities", "server-aware"},
+		"events":       {"goav ctl --control unix://PATH events [--follow]", "buffered events"},
+		"watch":        {"goav ctl --control unix://PATH watch [type=<event-type>] [stream=<stream-id>] [--follow]", "optional filters"},
+		"stop":         {"goav ctl --control unix://PATH stop", "close cleanly"},
+	} {
+		text, err := Help([]string{topic})
+		if err != nil {
+			t.Fatalf("help %s: %v", topic, err)
+		}
+		for _, fragment := range fragments {
+			if !strings.Contains(text, fragment) {
+				t.Fatalf("help %s missing %q:\n%s", topic, fragment, text)
+			}
 		}
 	}
 
@@ -2062,7 +2100,7 @@ func TestHelpRendersRootStaticAndCustomControlTopics(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(control, "vendor.tune") || !strings.Contains(control, "custom tuning command") {
+	if !strings.Contains(control, "vendor.tune") || !strings.Contains(control, "custom tuning command") || !strings.Contains(control, "control deliver --json '<json-av-event>' at=<tap-name>") {
 		t.Fatalf("control help:\n%s", control)
 	}
 

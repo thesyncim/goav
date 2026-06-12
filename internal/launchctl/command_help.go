@@ -58,10 +58,30 @@ func helpWithRegistry(args []string, manifest []CommandSpec, registry PipelineRe
 		return branchPipelineHelp("rebranch", "goav ctl --control unix://PATH rebranch <branch-name> [--switch next_frame|next_keyframe] [--keep-old-on-failure] '<branch-pipeline>'", "Replaces an attachment created through this control server, using the same allowlisted branch-pipeline grammar as attach.", registry, caps), nil
 	case "detach":
 		return staticHelp("detach", "goav ctl --control unix://PATH detach <branch-name>", "Detaches an attachment created through this control server."), nil
+	case "inspect":
+		return staticHelp("inspect", "goav ctl --control unix://PATH inspect", "Prints the task's structural description, including nodes, controls, taps, and runtime metadata exposed by the host task."), nil
+	case "snapshot":
+		return staticHelp("snapshot", "goav ctl --control unix://PATH snapshot", "Prints the current task snapshot, including graph, branch, stream, destination, and tap state."), nil
+	case "stats":
+		return staticHelp("stats", "goav ctl --control unix://PATH stats", "Prints the latest task statistics reported by the running pipeline."), nil
+	case "taps":
+		return staticHelp("taps", "goav ctl --control unix://PATH taps", "Lists named tap points that controls, attach, rebranch, and event delivery can target."), nil
+	case "streams":
+		return staticHelp("streams", "goav ctl --control unix://PATH streams", "Lists streams inferred from named taps and the current snapshot, including media kind, source, domain, and tap ownership."), nil
+	case "branches":
+		return staticHelp("branches", "goav ctl --control unix://PATH branches", "Lists active runtime branches and their lifecycle state."), nil
+	case "destinations":
+		return staticHelp("destinations", "goav ctl --control unix://PATH destinations", "Lists active output destinations reported by the running task."), nil
 	case "capabilities":
 		return staticHelp("capabilities", "goav ctl --control unix://PATH capabilities", "Prints the server-aware command, branch-step, encoder, runtime encoder, and runtime muxer manifest as JSON."), nil
 	case "graph", "flowchart":
 		return staticHelp("graph", "goav ctl --control unix://PATH graph [format=mermaid|dot|text]", "Renders the running task snapshot as Mermaid, Graphviz DOT, or text. The default format is Mermaid and runtime branch-owned nodes are annotated by branch name and lifecycle state."), nil
+	case "events":
+		return staticHelp("events", "goav ctl --control unix://PATH events [--follow]", "Prints currently buffered events. With --follow, a control server streams matching future events as JSON responses."), nil
+	case "watch":
+		return staticHelp("watch", "goav ctl --control unix://PATH watch [type=<event-type>] [stream=<stream-id>] [--follow]", "Prints buffered events matching the optional filters. With --follow, a control server streams future matching events."), nil
+	case "stop":
+		return staticHelp("stop", "goav ctl --control unix://PATH stop", "Asks the running task to close cleanly."), nil
 	default:
 		return "", commandError("unknown_command", "help", args[0], fmt.Sprintf("unknown help topic %q", args[0]), nil, []string{"use `goav ctl help control`"}, nil)
 	}
@@ -82,8 +102,8 @@ func rootHelp() string {
 	out.WriteString("  destinations\n")
 	out.WriteString("  capabilities\n")
 	out.WriteString("  graph [format=mermaid|dot|text]\n")
-	out.WriteString("  events --follow\n")
-	out.WriteString("  watch [type=<event-type>] [stream=<stream-id>] --follow\n")
+	out.WriteString("  events [--follow]\n")
+	out.WriteString("  watch [type=<event-type>] [stream=<stream-id>] [--follow]\n")
 	out.WriteString("  stop\n")
 	out.WriteString("  control <verb> ...\n")
 	out.WriteString("  attach <tap-name> as <branch-name> '<branch-pipeline>'\n")
@@ -97,7 +117,8 @@ func controlHelp(manifest []CommandSpec) string {
 	out.WriteString("control\n\n")
 	out.WriteString("Usage:\n")
 	out.WriteString("  goav ctl --control unix://PATH control <verb> [field=value...]\n")
-	out.WriteString("  goav ctl --control unix://PATH control --json '<json-goav-control>'\n\n")
+	out.WriteString("  goav ctl --control unix://PATH control --json '<json-goav-control>'\n")
+	out.WriteString("  goav ctl --control unix://PATH control deliver --json '<json-av-event>' at=<tap-name>\n\n")
 	out.WriteString("Verbs:\n")
 	for _, spec := range manifest {
 		out.WriteString("  ")
@@ -130,6 +151,10 @@ func CommandHelp(spec CommandSpec) string {
 	out.WriteString("  ")
 	out.WriteString(CommandUsage(spec))
 	out.WriteString("\n\n")
+	if spec.Name == "deliver" {
+		out.WriteString("Raw event usage:\n")
+		out.WriteString("  goav ctl --control unix://PATH control deliver --json '<json-av-event>' at=<tap-name>\n\n")
+	}
 	out.WriteString("Fields:\n")
 	for _, field := range orderedFields(commandFields(spec.ArgsType)) {
 		out.WriteString("  ")
