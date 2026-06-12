@@ -739,6 +739,33 @@ func TestRunPipelineParserCarriesCustomEncoderSettings(t *testing.T) {
 	}
 }
 
+func TestRunPipelineParserRejectsDuplicateEncoderAliases(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		option string
+		field  string
+	}{
+		{name: "rate", option: "rate=900k", field: "rate"},
+		{name: "bitrate_bps", option: "bitrate_bps=900000", field: "bitrate_bps"},
+		{name: "framerate", option: "framerate=30", field: "framerate"},
+		{name: "samplerate", option: "samplerate=48000", field: "samplerate"},
+		{name: "ch", option: "ch=2", field: "ch"},
+		{name: "clockrate", option: "clockrate=90000", field: "clockrate"},
+		{name: "keyint", option: "keyint=60", field: "keyint"},
+		{name: "gop", option: "gop=60", field: "gop"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := parseRunPipeline(fmt.Sprintf(
+				`testsrc video width=16 height=16 frames=1 ! av1enc %s ! filesink location=/tmp/out.ivf`,
+				tc.option,
+			))
+			if err == nil || !strings.Contains(err.Error(), tc.field) {
+				t.Fatalf("err = %v, want duplicate encoder option %q", err, tc.field)
+			}
+		})
+	}
+}
+
 func TestRunPipelineParserInfersKnownDestinationFormats(t *testing.T) {
 	for _, tc := range []struct {
 		location string

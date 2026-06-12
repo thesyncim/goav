@@ -377,6 +377,9 @@ The generic encoder step supports the common codec options: `bitrate`,
 `keyframe_interval`, and `fps`. Any other `key=value` pair is passed through as
 `CodecSettings.Custom`, for example `dither=triangular`, `lookahead=deep`, or
 AV1 settings such as `min_qindex=20 max_qindex=180 tune=zerolatency`.
+Ambiguous or duplicate encoder spellings such as `rate`, `framerate`, `keyint`,
+`gop`, `samplerate`, `ch`, `clockrate`, and `bitrate_bps` are rejected with
+suggestions; use the canonical option names above.
 
 The destination container must accept the selected codec. Standard codecs can
 often use the standard containers registered by `goav.Default`; a private codec

@@ -854,20 +854,6 @@ func TestPipelineParserHelpersCoverCommonFormsAndErrors(t *testing.T) {
 		t.Fatalf("resample args = %d/%d", rate, channels)
 	}
 
-	num, den, err := parseFPS("30000/1001")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if num != 30000 || den != 1001 {
-		t.Fatalf("fps = %d/%d", num, den)
-	}
-	num, den, err = parseFPS("29.97")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if num != 2997 || den != 100 {
-		t.Fatalf("decimal fps = %d/%d", num, den)
-	}
 	bitrate, err := parseRate("2mbps")
 	if err != nil {
 		t.Fatal(err)
@@ -886,14 +872,6 @@ func TestPipelineParserHelpersCoverCommonFormsAndErrors(t *testing.T) {
 		}},
 		{name: "resample", run: func() error {
 			_, _, err := parseResampleArgs([]string{"48000", "0"}, nil)
-			return err
-		}},
-		{name: "fps numerator", run: func() error {
-			_, _, err := parseFPS("0")
-			return err
-		}},
-		{name: "fps denominator", run: func() error {
-			_, _, err := parseFPS("30/0")
 			return err
 		}},
 	} {
@@ -1397,8 +1375,31 @@ func TestBranchPipelineParserHelperEdges(t *testing.T) {
 	if !errors.As(err, &structured) || structured.Code != "missing_required" || structured.Node != "media" {
 		t.Fatalf("custom encoder missing media error = %+v", err)
 	}
-	if _, ok := parsePositiveUint32Arg(map[string]string{"clock_rate": "0"}, "clock_rate"); ok {
-		t.Fatal("zero clock rate should not parse")
+	for _, tc := range []struct {
+		name string
+		args map[string]string
+		node string
+	}{
+		{name: "fps", args: map[string]string{"fps": "0"}, node: "fps"},
+		{name: "clock_rate", args: map[string]string{"clock_rate": "0"}, node: "clock_rate"},
+		{name: "rate", args: map[string]string{"rate": "48000"}, node: "rate"},
+		{name: "bitrate_bps", args: map[string]string{"bitrate_bps": "48000"}, node: "bitrate_bps"},
+		{name: "framerate", args: map[string]string{"framerate": "30"}, node: "framerate"},
+		{name: "samplerate", args: map[string]string{"samplerate": "48000"}, node: "samplerate"},
+		{name: "ch", args: map[string]string{"ch": "2"}, node: "ch"},
+		{name: "clockrate", args: map[string]string{"clockrate": "90000"}, node: "clockrate"},
+		{name: "keyint", args: map[string]string{"keyint": "60"}, node: "keyint"},
+		{name: "gop", args: map[string]string{"gop": "60"}, node: "gop"},
+	} {
+		t.Run("invalid encoder "+tc.name, func(t *testing.T) {
+			_, err := parseEncoder(av.CodecAV1, av.MediaVideo, tc.args)
+			var structured *Error
+			if !errors.As(err, &structured) ||
+				structured.Code != "invalid_value" ||
+				structured.Node != tc.node {
+				t.Fatalf("err = %+v, want invalid %s", err, tc.node)
+			}
+		})
 	}
 	if err := (closeOnceWriter{}).Close(); err != nil {
 		t.Fatalf("nil closeOnceWriter close = %v", err)

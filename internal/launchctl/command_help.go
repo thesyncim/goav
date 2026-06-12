@@ -216,6 +216,7 @@ func branchPipelineHelp(name string, usage string, note string, registry Pipelin
 	}
 	out.WriteString("\nBranch pipelines are written as `step key=value ! step key=value`. Custom steps and encoders receive their key=value settings through StepArgs.\n")
 	out.WriteString("Any encoder registered on the task runtime is callable with `encode codec=<id> media=<kind> ...`; common codec settings become typed settings and extra key=value pairs are carried as CodecSettings.Custom for the adapter. Use a custom EncoderSpec when native knobs need typed validation or codec.Control host code.\n")
+	out.WriteString("Common encoder settings use one canonical spelling: bitrate, fps, keyframe_interval, profile, level, channels, sample_rate, and clock_rate.\n")
 	out.WriteString("Any muxer registered on the task runtime is callable from `filesink location=<path> [format=<id>]`; file extensions can infer common formats, and custom destinations such as uploaders remain host-owned branch steps.\n")
 	return out.String()
 }

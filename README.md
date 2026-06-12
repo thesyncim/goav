@@ -774,7 +774,10 @@ Known encoder options (`bitrate`, `fps`, `keyframe_interval`, `profile`,
 `level`, `channels`, `sample_rate`, `clock_rate`) map to typed `codec` settings.
 Other encoder key/value pairs are carried as `CodecSettings.Custom`, so external
 adapters can validate and apply native settings without waiting for a common
-field. The standard AV1 adapter currently accepts `qindex`, `min_qindex`,
+field. Ambiguous or duplicate encoder spellings such as `rate`, `framerate`,
+`keyint`, `gop`, `samplerate`, `ch`, `clockrate`, and `bitrate_bps` are
+rejected with suggestions; use the canonical option names above. The standard
+AV1 adapter currently accepts `qindex`, `min_qindex`,
 `max_qindex`, `temporal_layers`, `tile_columns`, `golden_interval`, and
 `tune=zerolatency`.
 

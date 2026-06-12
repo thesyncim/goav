@@ -20,6 +20,7 @@ import (
 	"github.com/thesyncim/goav/ctl"
 	"github.com/thesyncim/goav/goavtest"
 	"github.com/thesyncim/goav/internal/cliargs"
+	"github.com/thesyncim/goav/internal/codecargs"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/shape"
 )
@@ -151,6 +152,7 @@ func runPipelineHelp() string {
 		"  tap name=<tap-name>\n" +
 		"  resize width=<px> height=<px>|size=<w>x<h>\n" +
 		"  av1enc|vp9enc|vp8enc|h264enc|encode codec=<id> media=<video|audio> bitrate=<rate> fps=<n[/d]> keyframe_interval=<n> [native_key=value...]\n" +
+		"  encoder settings use canonical names; duplicate aliases such as rate, framerate, keyint, gop, samplerate, ch, clockrate, and bitrate_bps are rejected\n" +
 		"  filesink location=<path> [format=<container>] (known file extensions infer the format)\n\n" +
 		"control example:\n" +
 		"  goav run --control unix:///tmp/goav-live.sock 'testsrc video name=fixture width=1280 height=720 fps=30 duration=30s realtime=true pattern=bars ! tap name=frames ! av1enc bitrate=1200k fps=30 keyframe_interval=60 min_qindex=20 max_qindex=180 tune=zerolatency ! filesink location=/tmp/goav-av1.mkv format=matroska'\n" +
@@ -839,55 +841,12 @@ func parseEncodeStep(name string, tokens []string) (runOperation, error) {
 		}
 		return runOperation{}, fmt.Errorf("goav run: unsupported encode argument %q", positional)
 	}
-	var codecOptions []codec.Option
 	for _, option := range options {
 		switch option.key {
 		case "codec", "id":
 			codecID = normalizeCodecID(option.value)
 		case "media", "type":
 			media, err = parseMediaType(option.value)
-		case "bitrate", "rate":
-			var bitrate int
-			bitrate, err = parseRate(option.value)
-			if err == nil {
-				codecOptions = append(codecOptions, codec.Bitrate(bitrate))
-			}
-		case "fps", "framerate":
-			var fps fpsValue
-			fps, err = parseFPS(option.value)
-			if err == nil {
-				codecOptions = append(codecOptions, codec.FPS(fps.num, fps.den))
-			}
-		case "keyframe_interval", "keyint", "gop":
-			var interval int
-			interval, err = parsePositiveInt("keyframe_interval", option.value)
-			if err == nil {
-				codecOptions = append(codecOptions, codec.KeyframeInterval(interval))
-			}
-		case "profile":
-			codecOptions = append(codecOptions, codec.Profile(option.value))
-		case "level":
-			codecOptions = append(codecOptions, codec.Level(option.value))
-		case "channels":
-			var channels int
-			channels, err = parsePositiveInt("channels", option.value)
-			if err == nil {
-				codecOptions = append(codecOptions, codec.Channels(channels))
-			}
-		case "sample_rate", "samplerate":
-			var sampleRate int
-			sampleRate, err = parsePositiveInt("sample_rate", option.value)
-			if err == nil {
-				codecOptions = append(codecOptions, codec.SampleRate(sampleRate))
-			}
-		case "clock_rate", "clockrate":
-			var clockRate int
-			clockRate, err = parsePositiveInt("clock_rate", option.value)
-			if err == nil {
-				codecOptions = append(codecOptions, codec.ClockRate(uint32(clockRate)))
-			}
-		default:
-			codecOptions = append(codecOptions, codec.Setting(option.key, option.value))
 		}
 		if err != nil {
 			return runOperation{}, err
@@ -896,7 +855,19 @@ func parseEncodeStep(name string, tokens []string) (runOperation, error) {
 	if codecID == "" {
 		return runOperation{}, fmt.Errorf("goav run: encode needs codec=<id>")
 	}
-	return runOperation{kind: "encode", codec: buildCodecSpec(codecID, media, codecOptions...)}, nil
+	codecOptions, err := codecargs.ParseOptions(runCodecArgs(options))
+	if err != nil {
+		return runOperation{}, fmt.Errorf("goav run: %w", err)
+	}
+	return runOperation{kind: "encode", codec: codecargs.BuildSpec(codecID, media, codecOptions...)}, nil
+}
+
+func runCodecArgs(options []runOption) []codecargs.Arg {
+	args := make([]codecargs.Arg, 0, len(options))
+	for _, option := range options {
+		args = append(args, codecargs.Arg{Key: option.key, Value: option.value})
+	}
+	return args
 }
 
 func parseFileDestination(tokens []string) (fileDestination, error) {
@@ -980,23 +951,6 @@ func normalizeCodecID(value string) av.CodecID {
 		return av.CodecID("h265")
 	default:
 		return av.CodecID(normalized)
-	}
-}
-
-func buildCodecSpec(id av.CodecID, media av.MediaType, options ...codec.Option) codec.CodecSpec {
-	switch id {
-	case av.CodecAV1:
-		return codec.AV1(options...)
-	case av.CodecVP9:
-		return codec.VP9(options...)
-	case av.CodecVP8:
-		return codec.VP8(options...)
-	case av.CodecH264:
-		return codec.H264(options...)
-	case av.CodecOpus:
-		return codec.Opus(options...)
-	default:
-		return codec.Codec(id, media, options...)
 	}
 }
 

@@ -14,6 +14,7 @@ import (
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/internal/cliargs"
+	"github.com/thesyncim/goav/internal/codecargs"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/shape"
 )
@@ -443,125 +444,35 @@ func parseEncoder(id av.CodecID, media av.MediaType, args map[string]string) (co
 	if id == "" {
 		return codec.CodecSpec{}, commandError("missing_required", "parse branch pipeline", "codec", "encode needs codec=<codec-id>", nil, []string{"use `encode codec=x_pcm_s16 media=audio`"}, nil)
 	}
-	options, err := parseCodecOptions(args)
+	options, err := codecargs.ParseOptionsMap(args)
 	if err != nil {
-		return codec.CodecSpec{}, err
+		return codec.CodecSpec{}, codecOptionError(err)
 	}
+	if isCustomCodec(id) && media == "" {
+		return codec.CodecSpec{}, commandError("missing_required", "parse branch pipeline", "media", "custom encode needs media=audio, media=video, or media=subtitle", []string{"codec=" + string(id)}, []string{"use `encode codec=" + string(id) + " media=audio`"}, nil)
+	}
+	return codecargs.BuildSpec(id, media, options...), nil
+}
+
+func isCustomCodec(id av.CodecID) bool {
 	switch id {
-	case av.CodecOpus:
-		return codec.Opus(options...), nil
-	case av.CodecVP8:
-		return codec.VP8(options...), nil
-	case av.CodecVP9:
-		return codec.VP9(options...), nil
-	case av.CodecH264:
-		return codec.H264(options...), nil
-	case av.CodecAV1:
-		return codec.AV1(options...), nil
-	default:
-		if media == "" {
-			return codec.CodecSpec{}, commandError("missing_required", "parse branch pipeline", "media", "custom encode needs media=audio, media=video, or media=subtitle", []string{"codec=" + string(id)}, []string{"use `encode codec=" + string(id) + " media=audio`"}, nil)
-		}
-		return codec.Codec(id, media, options...), nil
-	}
-}
-
-func parseCodecOptions(args map[string]string) ([]codec.Option, error) {
-	var options []codec.Option
-	if bitrateText := firstNonEmpty(args["bitrate"], args["bitrate_bps"]); bitrateText != "" {
-		bitrate, err := parseRate(bitrateText)
-		if err != nil {
-			return nil, commandError("invalid_value", "parse branch pipeline", "bitrate", "encoder bitrate must be like 300k, 2M, or integer bits per second", []string{"value=" + bitrateText}, []string{"use bitrate=900k"}, err)
-		}
-		options = append(options, codec.Bitrate(bitrate))
-	}
-	if profile := args["profile"]; profile != "" {
-		options = append(options, codec.Profile(profile))
-	}
-	if level := args["level"]; level != "" {
-		options = append(options, codec.Level(level))
-	}
-	if rate, ok := parsePositiveIntArg(args, "rate", "sample_rate"); ok {
-		options = append(options, codec.SampleRate(rate))
-	}
-	if channels, ok := parsePositiveIntArg(args, "channels", "ch"); ok {
-		options = append(options, codec.Channels(channels))
-	}
-	if clockRate, ok := parsePositiveUint32Arg(args, "clock_rate"); ok {
-		options = append(options, codec.ClockRate(clockRate))
-	}
-	if keyframes, ok := parsePositiveIntArg(args, "keyframe_interval", "keyint", "gop"); ok {
-		options = append(options, codec.KeyframeInterval(keyframes))
-	}
-	if fps := args["fps"]; fps != "" {
-		num, den, err := parseFPS(fps)
-		if err != nil {
-			return nil, err
-		}
-		options = append(options, codec.FPS(num, den))
-	}
-	for _, key := range customCodecOptionKeys(args) {
-		options = append(options, codec.Setting(key, args[key]))
-	}
-	return options, nil
-}
-
-func customCodecOptionKeys(args map[string]string) []string {
-	keys := make([]string, 0, len(args))
-	for key := range args {
-		if commonCodecOptionKey(key) {
-			continue
-		}
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	return keys
-}
-
-func commonCodecOptionKey(key string) bool {
-	switch key {
-	case "codec", "id", "media", "type",
-		"bitrate", "bitrate_bps",
-		"profile", "level",
-		"rate", "sample_rate",
-		"channels", "ch",
-		"clock_rate",
-		"keyframe_interval", "keyint", "gop",
-		"fps":
-		return true
-	default:
+	case av.CodecOpus, av.CodecVP8, av.CodecVP9, av.CodecH264, av.CodecAV1:
 		return false
+	default:
+		return true
 	}
 }
 
-func parsePositiveUint32Arg(args map[string]string, keys ...string) (uint32, bool) {
-	for _, key := range keys {
-		value, ok := args[key]
-		if !ok || value == "" {
-			continue
+func codecOptionError(err error) error {
+	var optErr *codecargs.Error
+	if errors.As(err, &optErr) {
+		details := []string(nil)
+		if optErr.Value != "" {
+			details = []string{"value=" + optErr.Value}
 		}
-		parsed, err := strconv.ParseUint(value, 10, 32)
-		if err == nil && parsed > 0 {
-			return uint32(parsed), true
-		}
+		return commandError("invalid_value", "parse branch pipeline", optErr.Field, optErr.Message, details, optErr.Suggestions, err)
 	}
-	return 0, false
-}
-
-func parseFPS(value string) (int, int, error) {
-	fps, err := cliargs.ParseFPS(value)
-	if err != nil {
-		return 0, 0, commandError(
-			"invalid_value",
-			"parse branch pipeline",
-			"fps",
-			"fps must be a positive integer, decimal, or fraction",
-			[]string{"value=" + value},
-			[]string{"use fps=30", "use fps=29.97", "use fps=30000/1001"},
-			err,
-		)
-	}
-	return fps.Num, fps.Den, nil
+	return commandError("invalid_value", "parse branch pipeline", "encoder", err.Error(), nil, nil, err)
 }
 
 func parseFileSink(args map[string]string) (goav.Destination, error) {
