@@ -18,6 +18,13 @@ type CapabilitySet struct {
 	Pipeline PipelineRegistry
 }
 
+// ValidateCapabilities checks a host-owned capability set against the built-in
+// control and branch-pipeline namespaces before a server is started.
+func ValidateCapabilities(caps CapabilitySet) error {
+	manifest := append(ControlManifest(), caps.Commands...)
+	return validateControlRegistry(manifest, caps.Pipeline)
+}
+
 // Merge returns a new set containing both capability sets.
 func (c CapabilitySet) Merge(next CapabilitySet) CapabilitySet {
 	out := CapabilitySet{
@@ -237,10 +244,7 @@ type CapabilityField struct {
 }
 
 func capabilityReport(manifest []CommandSpec, registry PipelineRegistry, task goav.Task) (CapabilityReport, error) {
-	if err := validateCommandManifest(manifest); err != nil {
-		return CapabilityReport{}, err
-	}
-	if err := validatePipelineRegistry(registry); err != nil {
+	if err := validateControlRegistry(manifest, registry); err != nil {
 		return CapabilityReport{}, err
 	}
 	report := CapabilityReport{

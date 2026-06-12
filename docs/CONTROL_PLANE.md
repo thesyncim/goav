@@ -59,8 +59,10 @@ This is the smallest production shape:
 2. Declare host-owned capabilities with typed settings structs.
 3. Group commands, branch steps, sinks, and native encoder spellings in one
    `ctl.CapabilitySet`.
-4. Start `ctl.ServeUnixWithOptions`.
-5. Use `goav ctl --control unix://...` to inspect, control, attach, rebranch,
+4. Call `ctl.ValidateCapabilities` in startup/tests to catch empty names,
+   alias collisions, and non-struct settings before opening a socket.
+5. Start `ctl.ServeUnixWithOptions`.
+6. Use `goav ctl --control unix://...` to inspect, control, attach, rebranch,
    detach, and render diagnostics from the same running graph.
 
 The default branch grammar is intentionally useful before a host adds any
@@ -204,6 +206,10 @@ capabilities := ctl.CapabilitySet{
         Steps:    []ctl.BranchPipelineStepSpec{meter},
         Encoders: []ctl.EncoderSpec{acme},
     },
+}
+
+if err := ctl.ValidateCapabilities(capabilities); err != nil {
+    return err
 }
 ```
 

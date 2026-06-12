@@ -114,6 +114,12 @@ func NewEncoderSpec[T any](name string, summary string, apply func(T) (codec.Cod
 	return launchctl.NewEncoderSpec(name, summary, apply, options...)
 }
 
+// ValidateCapabilities checks custom commands, branch steps, encoder spellings,
+// names, aliases, and typed settings metadata before a server is started.
+func ValidateCapabilities(caps CapabilitySet) error {
+	return launchctl.ValidateCapabilities(caps)
+}
+
 // ControlManifest returns the built-in control command allowlist.
 func ControlManifest() []CommandSpec {
 	return launchctl.ControlManifest()

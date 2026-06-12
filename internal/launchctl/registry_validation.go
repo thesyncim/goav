@@ -12,6 +12,13 @@ type registryNameOwner struct {
 	name string
 }
 
+func validateControlRegistry(manifest []CommandSpec, registry PipelineRegistry) error {
+	if err := validateCommandManifest(manifest); err != nil {
+		return err
+	}
+	return validatePipelineRegistry(registry)
+}
+
 func validateCommandManifest(manifest []CommandSpec) error {
 	owners := make(map[string]registryNameOwner)
 	for _, spec := range manifest {

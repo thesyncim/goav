@@ -3,6 +3,7 @@ package ctl_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -272,6 +273,80 @@ func TestExternalHostCustomEncoderSpecCanMapArbitrarySettings(t *testing.T) {
 	}
 	if err := factory.config.Settings.Control(nil); err != nil || !controlCalled.Load() {
 		t.Fatalf("control callback err=%v called=%v", err, controlCalled.Load())
+	}
+}
+
+func TestPublicValidateCapabilitiesPreflightsCustomMetadata(t *testing.T) {
+	type commandSettings struct {
+		Value string `goavctl:"value,required" usage:"value=<text>" help:"custom value"`
+	}
+	command := ctl.NewCommand[commandSettings](
+		"vendor.preflight",
+		"preflight command",
+		func(context.Context, goav.Task, commandSettings) (ctl.ControlResponse, error) {
+			return ctl.ControlResponse{Operation: "control vendor.preflight"}, nil
+		},
+	)
+
+	type stepSettings struct {
+		Window time.Duration `goavctl:"window,duration" usage:"[window=<duration>]" help:"observation window"`
+	}
+	step := ctl.NewBranchStep[stepSettings](
+		"meter",
+		"preflight meter",
+		func(*ctl.BranchPipeline, stepSettings) error { return nil },
+	)
+
+	type encoderSettings struct {
+		Bitrate int `goavctl:"bitrate,required,rate" usage:"bitrate=<rate>" help:"target bitrate"`
+	}
+	encoder := ctl.NewEncoderSpec[encoderSettings](
+		"acmeenc",
+		"preflight encoder",
+		func(args encoderSettings) (codec.CodecSpec, error) {
+			return codec.Codec("acme", av.MediaAudio, codec.Bitrate(args.Bitrate)), nil
+		},
+	)
+
+	err := ctl.ValidateCapabilities(ctl.CapabilitySet{
+		Commands: []ctl.CommandSpec{command},
+		Pipeline: ctl.PipelineRegistry{
+			Steps:    []ctl.BranchPipelineStepSpec{step},
+			Encoders: []ctl.EncoderSpec{encoder},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = ctl.ValidateCapabilities(ctl.CapabilitySet{
+		Pipeline: ctl.PipelineRegistry{
+			Steps: []ctl.BranchPipelineStepSpec{ctl.NewBranchStep[stepSettings](
+				"custom-copy",
+				"bad alias",
+				func(*ctl.BranchPipeline, stepSettings) error { return nil },
+				ctl.Aliases("copy"),
+			)},
+		},
+	})
+	var structured *ctl.Error
+	if !errors.As(err, &structured) ||
+		structured.Code != "invalid_registry" ||
+		structured.Node != "copy" {
+		t.Fatalf("alias collision err = %+v", structured)
+	}
+
+	err = ctl.ValidateCapabilities(ctl.CapabilitySet{
+		Commands: []ctl.CommandSpec{{
+			Name:     "vendor.pointer",
+			ArgsType: reflect.TypeOf(&commandSettings{}),
+		}},
+	})
+	if !errors.As(err, &structured) ||
+		structured.Code != "invalid_registry" ||
+		structured.Node != "vendor.pointer" ||
+		!strings.Contains(structured.Message, "ArgsType must be a struct") {
+		t.Fatalf("pointer args err = %+v", structured)
 	}
 }
 
