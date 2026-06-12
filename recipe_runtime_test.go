@@ -2571,7 +2571,7 @@ func TestTaskAttachRuntimeMuxBranchRequiresCopyOrEncode(t *testing.T) {
 	}
 }
 
-func TestTaskAttachRuntimeEncodeMuxBranchKeepsH264AV1WIPGuard(t *testing.T) {
+func TestTaskAttachRuntimeEncodeMuxBranchRejectsMissingH264AV1Encoders(t *testing.T) {
 	ctx := context.Background()
 	formats := withTestFormats(
 		testFormatProber(format.DefaultProber()),
@@ -2622,8 +2622,8 @@ func TestTaskAttachRuntimeEncodeMuxBranchKeepsH264AV1WIPGuard(t *testing.T) {
 			Encode(tc.codec).
 			To(tc.output))
 		var buildErr *BuildError
-		if !errors.As(err, &buildErr) || buildErr.Code != "encode_work_in_progress" {
-			t.Fatalf("%s err = %v, want encode_work_in_progress", tc.name, err)
+		if !errors.As(err, &buildErr) || buildErr.Code != "encode_adapter_missing" {
+			t.Fatalf("%s err = %v, want encode_adapter_missing", tc.name, err)
 		}
 	}
 	if strings.Contains(specText(builtTask.Describe()), "h264/") || strings.Contains(specText(builtTask.Describe()), "av1/") {

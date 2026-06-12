@@ -39,6 +39,9 @@ func TestCodecSettingsOptionsAreLastWinsAndCustomFriendly(t *testing.T) {
 	KeyframeInterval(60)(&settings)
 	Profile("voice")(&settings)
 	Level("3.1")(&settings)
+	Setting("lookahead", "deep")(&settings)
+	Setting("lookahead", "shallow")(&settings)
+	Setting("", "ignored")(&settings)
 	Channels(Stereo)(&settings)
 	Channels(6)(&settings)
 	SampleRate(48000)(&settings)
@@ -55,6 +58,9 @@ func TestCodecSettingsOptionsAreLastWinsAndCustomFriendly(t *testing.T) {
 		settings.Profile != "voice" ||
 		settings.Level != "3.1" {
 		t.Fatalf("settings = %+v", settings)
+	}
+	if got := settings.Custom["lookahead"]; got != "shallow" || len(settings.Custom) != 1 {
+		t.Fatalf("custom settings = %+v", settings.Custom)
 	}
 	if settings.Channels != 6 || !settings.ChannelsSet || settings.ChannelLayout != "" {
 		t.Fatalf("channels = %d set=%v layout=%q, want custom 6 with no stale layout", settings.Channels, settings.ChannelsSet, settings.ChannelLayout)

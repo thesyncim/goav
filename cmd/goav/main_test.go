@@ -297,6 +297,51 @@ func TestRunPrintsLocalHelp(t *testing.T) {
 	}
 }
 
+func TestRunGeneratedVideoAV1RealtimeString(t *testing.T) {
+	out := filepath.Join(t.TempDir(), "generated av1.ivf")
+	pipeline := fmt.Sprintf(
+		`testsrc video name=fixture width=32 height=18 fps=30 frames=2 realtime=true pattern=bars ! resize width=16 height=16 ! av1enc bitrate=400k fps=30 keyframe_interval=1 speed=8 tune=zerolatency ! filesink location=%q format=ivf`,
+		out,
+	)
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := run([]string{"run", pipeline}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("code=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+	var result runPipelineResult
+	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+		t.Fatalf("result JSON: %v\n%s", err, stdout.String())
+	}
+	if result.Runtime != "demo" || result.Codec != "av1" || result.Frames != 2 || !result.Realtime || result.Output != out {
+		t.Fatalf("result = %+v", result)
+	}
+	header, err := os.ReadFile(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(header) < 4 || string(header[:4]) != "DKIF" {
+		t.Fatalf("output header = %q, want IVF", header[:min(len(header), 8)])
+	}
+}
+
+func TestRunPipelineParserCarriesCustomEncoderSettings(t *testing.T) {
+	plan, err := parseRunPipeline(`testsrc video width=16 height=16 frames=1 ! encode codec=x_acme media=video bitrate=1.5M lookahead=deep aq-mode=cyclic ! filesink location=/tmp/acme.bin format=ivf`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.ops) != 1 || plan.ops[0].kind != "encode" {
+		t.Fatalf("ops = %+v", plan.ops)
+	}
+	spec := plan.ops[0].codec
+	if spec.ID != "x_acme" || spec.Type != av.MediaVideo || spec.Settings.Bitrate != 1_500_000 {
+		t.Fatalf("codec spec = %+v", spec)
+	}
+	if spec.Settings.Custom["lookahead"] != "deep" || spec.Settings.Custom["aq-mode"] != "cyclic" {
+		t.Fatalf("custom settings = %+v", spec.Settings.Custom)
+	}
+}
+
 func TestRunReportsUsageErrors(t *testing.T) {
 	for _, tc := range []struct {
 		name string
@@ -304,8 +349,8 @@ func TestRunReportsUsageErrors(t *testing.T) {
 		want string
 		code int
 	}{
-		{name: "missing ctl", argv: nil, want: "usage: goav ctl", code: 2},
-		{name: "wrong command", argv: []string{"probe"}, want: "usage: goav ctl", code: 2},
+		{name: "missing command", argv: nil, want: "usage: goav", code: 2},
+		{name: "wrong command", argv: []string{"probe"}, want: "usage: goav", code: 2},
 		{name: "missing control value", argv: []string{"ctl", "--control"}, want: "--control needs unix://PATH", code: 2},
 		{name: "unknown local help", argv: []string{"ctl", "help", "nope"}, want: "unknown help topic", code: 2},
 		{name: "missing remote control", argv: []string{"ctl", "graph"}, want: "missing --control", code: 2},

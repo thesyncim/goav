@@ -52,6 +52,21 @@ func Level(level string) Option {
 	return func(s *CodecSettings) { s.Level = level }
 }
 
+// Setting records one adapter-specific string setting. Common knobs should use
+// the typed options above; Setting is for native/custom adapters that own their
+// own validation vocabulary.
+func Setting(key string, value string) Option {
+	return func(s *CodecSettings) {
+		if key == "" {
+			return
+		}
+		if s.Custom == nil {
+			s.Custom = av.Metadata{}
+		}
+		s.Custom[key] = value
+	}
+}
+
 // Channels sets the encoder output channel count (Mono/Stereo).
 func Channels(channels int) Option {
 	return func(s *CodecSettings) {

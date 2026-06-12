@@ -110,9 +110,9 @@ func (b DecodeBounds) WithDefaults(defaults DecodeBounds) DecodeBounds {
 }
 
 // CodecSettings carries the grouped common encoder/decoder settings (tier 1)
-// plus the raw Control escape hatch (tier 2). Recipes populate it through
-// codec options (Bitrate, FPS, Profile, Control, ...); adapters read it at
-// open.
+// plus adapter-specific string settings and the raw Control escape hatch.
+// Recipes populate it through codec options (Bitrate, FPS, Profile, Setting,
+// Control, ...); adapters read it at open.
 type CodecSettings struct {
 	// Bitrate requests an encoder bitrate in bits per second. Zero lets the
 	// encoder choose its default bitrate.
@@ -131,6 +131,10 @@ type CodecSettings struct {
 	// or preserve the selected input level when copying compatible stream
 	// metadata.
 	Level string
+	// Custom carries adapter-specific string settings that should not become
+	// common fields. CLI and control-plane frontends can pass native knobs here
+	// while external adapters keep ownership of validation and interpretation.
+	Custom av.Metadata
 	// Channels, SampleRate, ClockRate, ChannelLayout set the encoder output audio
 	// format (zero = derive from the input stream). ChannelsSet/SampleRateSet
 	// record that the value was requested explicitly, so a requested zero is

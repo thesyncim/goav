@@ -224,25 +224,7 @@ func validateRecipeEncode(spec codec.CodecSpec, operation string, node string) e
 	if spec.ID == "" {
 		return nil
 	}
-	switch spec.ID {
-	case av.CodecOpus, av.CodecVP8, av.CodecVP9:
-		return validateRecipeEncodeValues(spec, operation, node)
-	case av.CodecH264, av.CodecAV1:
-		return &BuildError{
-			Code:      errcode.EncodeWorkInProgress,
-			Operation: operation,
-			Node:      node,
-			Reason:    string(spec.ID) + " recipe encoding is work in progress; recipe encode branches currently support opus, vp8, and vp9",
-			Suggestions: []string{
-				"decode the stream with .To(goav.Sink(...))",
-				"use .Encode(codec.Opus(...)), .Encode(codec.VP8(...)), or .Encode(codec.VP9(...)) for recipe encode branches",
-				"use the expert builder with an explicit codec.EncodeConfig when testing an experimental encoder",
-			},
-			Cause: ErrUnsupportedBuild,
-		}
-	default:
-		return validateRecipeEncodeValues(spec, operation, node)
-	}
+	return validateRecipeEncodeValues(spec, operation, node)
 }
 
 func validateRecipeEncodeValues(spec codec.CodecSpec, operation string, node string) error {

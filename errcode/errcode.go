@@ -180,8 +180,9 @@ const (
 	// EncodeAutoUnresolved fires when automatic codec selection is
 	// requested where it is not implemented.
 	EncodeAutoUnresolved Code = "encode_auto_unresolved"
-	// EncodeWorkInProgress fires when the requested recipe encoder codec
-	// is not implemented yet.
+	// EncodeWorkInProgress is reserved for staged encoder features that are
+	// present in the API but not enabled yet. Normal codec availability is
+	// reported by the encode adapter error codes.
 	EncodeWorkInProgress Code = "encode_work_in_progress"
 	// EncodeStreamMismatch fires when the encoder's stream selector does
 	// not match the stream the chain decoded.
