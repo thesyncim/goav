@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/thesyncim/goav/av"
+	"github.com/thesyncim/goav/internal/cliargs"
 )
 
 var (
@@ -325,29 +326,7 @@ func parseBool(value string) (bool, error) {
 }
 
 func parseRate(value string) (int, error) {
-	if value == "" {
-		return 0, fmt.Errorf("empty rate")
-	}
-	multiplier := 1.0
-	number := value
-	suffix := value[len(value)-1]
-	switch suffix {
-	case 'k', 'K':
-		multiplier = 1000
-		number = value[:len(value)-1]
-	case 'm', 'M':
-		multiplier = 1000 * 1000
-		number = value[:len(value)-1]
-	}
-	parsed, err := strconv.ParseFloat(number, 64)
-	if err != nil || parsed <= 0 || math.IsInf(parsed, 0) || math.IsNaN(parsed) {
-		return 0, fmt.Errorf("invalid rate %q", value)
-	}
-	bps := parsed * multiplier
-	if bps > float64(math.MaxInt) {
-		return 0, fmt.Errorf("rate overflows int")
-	}
-	return int(math.Round(bps)), nil
+	return cliargs.ParseRate(value)
 }
 
 func unknownFieldError(ctx bindContext, name string, fields map[string]fieldSpec) error {

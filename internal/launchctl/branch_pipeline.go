@@ -12,6 +12,7 @@ import (
 	goav "github.com/thesyncim/goav"
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
+	"github.com/thesyncim/goav/internal/cliargs"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/shape"
 )
@@ -622,19 +623,19 @@ func parsePositiveUint32Arg(args map[string]string, keys ...string) (uint32, boo
 }
 
 func parseFPS(value string) (int, int, error) {
-	numText, denText, hasDen := strings.Cut(value, "/")
-	num, err := strconv.Atoi(numText)
-	if err != nil || num <= 0 {
-		return 0, 0, commandError("invalid_value", "parse branch pipeline", "fps", "fps must be a positive integer or fraction", []string{"value=" + value}, []string{"use fps=30", "use fps=30000/1001"}, err)
+	fps, err := cliargs.ParseFPS(value)
+	if err != nil {
+		return 0, 0, commandError(
+			"invalid_value",
+			"parse branch pipeline",
+			"fps",
+			"fps must be a positive integer, decimal, or fraction",
+			[]string{"value=" + value},
+			[]string{"use fps=30", "use fps=29.97", "use fps=30000/1001"},
+			err,
+		)
 	}
-	if !hasDen {
-		return num, 1, nil
-	}
-	den, err := strconv.Atoi(denText)
-	if err != nil || den <= 0 {
-		return 0, 0, commandError("invalid_value", "parse branch pipeline", "fps", "fps denominator must be positive", []string{"value=" + value}, []string{"use fps=30000/1001"}, err)
-	}
-	return num, den, nil
+	return fps.Num, fps.Den, nil
 }
 
 func parseFileSink(args map[string]string) (goav.Destination, error) {

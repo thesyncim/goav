@@ -861,6 +861,20 @@ func TestPipelineParserHelpersCoverCommonFormsAndErrors(t *testing.T) {
 	if num != 30000 || den != 1001 {
 		t.Fatalf("fps = %d/%d", num, den)
 	}
+	num, den, err = parseFPS("29.97")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if num != 2997 || den != 100 {
+		t.Fatalf("decimal fps = %d/%d", num, den)
+	}
+	bitrate, err := parseRate("2mbps")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bitrate != 2_000_000 {
+		t.Fatalf("bitrate = %d, want 2000000", bitrate)
+	}
 
 	for _, tc := range []struct {
 		name string

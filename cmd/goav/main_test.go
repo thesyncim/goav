@@ -695,8 +695,9 @@ func TestRunPipelineParserHelperEdges(t *testing.T) {
 	if err != nil || fps != (fpsValue{num: 30000, den: 1001}) {
 		t.Fatalf("parseFPS fraction = %+v, %v", fps, err)
 	}
-	if got := gcd(-18, 24); got != 6 {
-		t.Fatalf("gcd = %d, want 6", got)
+	bitrate, err := parseRate("2mbps")
+	if err != nil || bitrate != 2_000_000 {
+		t.Fatalf("parseRate suffix = %d, %v", bitrate, err)
 	}
 	if frames := framesForDuration(time.Millisecond, fpsValue{num: 30000, den: 1001}); frames != 1 {
 		t.Fatalf("framesForDuration = %d, want minimum one frame", frames)

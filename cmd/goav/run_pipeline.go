@@ -20,6 +20,7 @@ import (
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/ctl"
 	"github.com/thesyncim/goav/goavtest"
+	"github.com/thesyncim/goav/internal/cliargs"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/shape"
 )
@@ -1133,51 +1134,11 @@ func parseSize(value string) (int, int, error) {
 }
 
 func parseFPS(value string) (fpsValue, error) {
-	value = strings.TrimSpace(value)
-	if value == "" {
-		return fpsValue{}, fmt.Errorf("goav run: fps is required")
-	}
-	if left, right, ok := strings.Cut(value, "/"); ok {
-		num, err := parsePositiveInt("fps numerator", left)
-		if err != nil {
-			return fpsValue{}, err
-		}
-		den, err := parsePositiveInt("fps denominator", right)
-		if err != nil {
-			return fpsValue{}, err
-		}
-		return reduceFPS(fpsValue{num: num, den: den}), nil
-	}
-	if strings.Contains(value, ".") {
-		parsed, err := strconv.ParseFloat(value, 64)
-		if err != nil || parsed <= 0 {
-			return fpsValue{}, fmt.Errorf("goav run: fps must be positive")
-		}
-		return reduceFPS(fpsValue{num: int(math.Round(parsed * 1000)), den: 1000}), nil
-	}
-	num, err := parsePositiveInt("fps", value)
+	fps, err := cliargs.ParseFPS(value)
 	if err != nil {
-		return fpsValue{}, err
+		return fpsValue{}, fmt.Errorf("goav run: %w", err)
 	}
-	return fpsValue{num: num, den: 1}, nil
-}
-
-func reduceFPS(fps fpsValue) fpsValue {
-	divisor := gcd(fps.num, fps.den)
-	if divisor <= 1 {
-		return fps
-	}
-	return fpsValue{num: fps.num / divisor, den: fps.den / divisor}
-}
-
-func gcd(a int, b int) int {
-	for b != 0 {
-		a, b = b, a%b
-	}
-	if a < 0 {
-		return -a
-	}
-	return a
+	return fpsValue{num: fps.Num, den: fps.Den}, nil
 }
 
 func (f fpsValue) String() string {
@@ -1242,32 +1203,9 @@ func parseMediaType(value string) (av.MediaType, error) {
 }
 
 func parseRate(value string) (int, error) {
-	raw := strings.ToLower(strings.TrimSpace(strings.ReplaceAll(value, "_", "")))
-	if raw == "" {
-		return 0, fmt.Errorf("goav run: bitrate is required")
+	rate, err := cliargs.ParseRate(value)
+	if err != nil {
+		return 0, fmt.Errorf("goav run: %w", err)
 	}
-	multiplier := float64(1)
-	for _, suffix := range []struct {
-		text string
-		mult float64
-	}{
-		{text: "gbps", mult: 1_000_000_000},
-		{text: "mbps", mult: 1_000_000},
-		{text: "kbps", mult: 1_000},
-		{text: "bps", mult: 1},
-		{text: "g", mult: 1_000_000_000},
-		{text: "m", mult: 1_000_000},
-		{text: "k", mult: 1_000},
-	} {
-		if strings.HasSuffix(raw, suffix.text) {
-			raw = strings.TrimSuffix(raw, suffix.text)
-			multiplier = suffix.mult
-			break
-		}
-	}
-	parsed, err := strconv.ParseFloat(raw, 64)
-	if err != nil || parsed <= 0 {
-		return 0, fmt.Errorf("goav run: bitrate must be positive")
-	}
-	return int(math.Round(parsed * multiplier)), nil
+	return rate, nil
 }
