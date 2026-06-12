@@ -48,6 +48,9 @@ func TestVideoCompositeOverlaysTwoI420Frames(t *testing.T) {
 		[]compositeLayout{{X: 0, Y: 0}, {X: 4, Y: 0}}, joinSyncArrival)
 	emit := &mixTestEmitter{}
 	ctx := context.Background()
+	if got := stage.DroppedMessages(); got != 0 {
+		t.Fatalf("initial dropped messages = %d, want 0", got)
+	}
 
 	// One arm ready is not enough — composite advances only when every arm has a frame.
 	if err := stage.Handle(ctx, &pipeline.Message{Kind: pipeline.MessageFrame, Frame: compositeTestI420Frame("a", 4, 4, 100, 10, 20)}, emit); err != nil {
