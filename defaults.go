@@ -2,6 +2,7 @@ package goav
 
 import (
 	annexbadapter "github.com/thesyncim/goav/adapters/annexb"
+	goaacadapter "github.com/thesyncim/goav/adapters/goaac"
 	goav1adapter "github.com/thesyncim/goav/adapters/goav1"
 	goh264adapter "github.com/thesyncim/goav/adapters/goh264"
 	gopusadapter "github.com/thesyncim/goav/adapters/gopus"
@@ -34,11 +35,12 @@ func WithStdFormats() Option {
 	}
 }
 
-// WithStdCodecs registers the standard pure-Go codec adapters: Opus, VP8/VP9,
-// AV1, and H264.
+// WithStdCodecs registers the standard pure-Go codec adapters: Opus, AAC,
+// VP8/VP9, AV1, and H264.
 func WithStdCodecs() Option {
 	return func(runtime *runtime) {
 		gopusadapter.Register(runtime.codecs)
+		goaacadapter.Register(runtime.codecs)
 		govpxadapter.Register(runtime.codecs)
 		goav1adapter.Register(runtime.codecs)
 		goh264adapter.Register(runtime.codecs)

@@ -633,9 +633,9 @@ then reference codecs by id in `codec.Codec(...)` or in the string launcher.
 Codec descriptors drive capability checks, so incompatible media fails before
 allocation or graph mutation.
 
-Opus, VP8, VP9, and AV1 are full encode/decode recipe verticals. H264
-receive/decode paths are active while recipe encode remains guarded as work in
-progress. Encoder behavior has one typed settings contract everywhere:
+Opus, VP8, VP9, and AV1 are full encode/decode recipe verticals. AAC-LC and
+H264 receive/decode paths are active while recipe encode remains guarded as
+work in progress. Encoder behavior has one typed settings contract everywhere:
 package options mutate `codec.CodecSettings`, and the string/control-plane
 frontends reflect the same tagged fields into `encode ... key=value` syntax.
 Custom runtime encoders work through the generic `encode codec=<id> media=<kind>`

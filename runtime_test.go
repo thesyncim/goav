@@ -258,6 +258,17 @@ func TestRuntimeWithCodecAdapter(t *testing.T) {
 	}
 }
 
+func TestRuntimeWithStdCodecsIncludesAACDecode(t *testing.T) {
+	rt := runtimeValue(t, New(WithStdCodecs()))
+
+	if _, err := rt.codecs.DecoderFactory(av.CodecAAC); err != nil {
+		t.Fatalf("AAC decoder factory: %v", err)
+	}
+	if _, err := rt.codecs.EncoderFactory(av.CodecAAC); !errors.Is(err, codec.ErrNotFound) {
+		t.Fatalf("AAC encoder factory err = %v, want codec.ErrNotFound", err)
+	}
+}
+
 func TestRuntimeWithCustomCodecHooks(t *testing.T) {
 	desc := codec.Descriptor{
 		ID:    av.CodecID("x_pcm"),

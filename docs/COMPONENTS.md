@@ -99,7 +99,7 @@ Experimental: `webrtcav.TrackSet` (track acceptance, same-stream replacement,
 codec updates), the codec-update boundary, and the track replacement boundary.
 
 Adapters: see `docs/ADAPTERS.md` for the per-adapter catalog. Stable:
-`adapters/gopus`, `adapters/ivf`, `adapters/annexb`; experimental
+`adapters/gopus`, `adapters/goaac`, `adapters/ivf`, `adapters/annexb`; experimental
 `adapters/govpx`, `adapters/goav1`, `adapters/goh264` (descriptor-only in
 default builds), `adapters/resample`, `adapters/resize`.
 

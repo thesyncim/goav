@@ -85,7 +85,9 @@ Compatibility pins:
 - Core stays pure Go: no cgo, no FFmpeg/GStreamer runtime dependency.
 - Hot paths use caller-owned buffers, reused result structs, allocation guards,
   and direct per-message dispatch.
-- Pion dependencies stay in `rtpav` and `webrtcav`, not the root module.
+- Pion dependencies stay in `rtpav` and `webrtcav`, not the root module; the
+  root dependency allowlist remains limited to sibling modules plus the
+  reviewed modernc runtime set used by the built-in AAC backend.
 - shape validation is central across inputs, operations, flows, taps, branches,
   joins, destinations, runtime attach, and controls.
 - Normal workflows use the recipe grammar. Expert graph handles remain off the

@@ -3,8 +3,21 @@ module github.com/thesyncim/goav
 go 1.26.2
 
 require (
+	github.com/thesyncim/goaac v0.0.0-20260612180544-330bfd2acec4
 	github.com/thesyncim/goav1 v0.0.0-20260611170949-792a1f774da1
 	github.com/thesyncim/goh264 v0.0.0-20260605215817-c3ebee4f35c3
 	github.com/thesyncim/gopus v0.1.1
 	github.com/thesyncim/govpx v0.0.0-20260609183451-3d804d8c8f89
+)
+
+require (
+	github.com/dustin/go-humanize v1.0.1 // indirect
+	github.com/google/uuid v1.6.0 // indirect
+	github.com/mattn/go-isatty v0.0.20 // indirect
+	github.com/ncruces/go-strftime v1.0.0 // indirect
+	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
+	golang.org/x/sys v0.44.0 // indirect
+	modernc.org/libc v1.73.1 // indirect
+	modernc.org/mathutil v1.7.1 // indirect
+	modernc.org/memory v1.11.0 // indirect
 )

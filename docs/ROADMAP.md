@@ -170,10 +170,10 @@ The checklist that gates the tag; each item names its current evidence.
   discovered public package (dynamic module walk; `adapters/*` and
   `container/*` sit behind the codec/format extension points and are excluded by the
   decision recorded in `docs/API_SURFACE.md`).
-- [x] **Dependency purity**: the root module requires only
-  `github.com/thesyncim/*` modules and the standard library
-  (`TestRootModuleDependencyPurity`); the pion ecosystem lives in the nested
-  `rtpav` and `webrtcav` modules. Nested modules tag independently with
+- [x] **Dependency purity**: the root module requires `github.com/thesyncim/*`,
+  the standard library, and only the reviewed modernc runtime set needed by
+  the built-in AAC backend (`TestRootModuleDependencyPurity`); the pion
+  ecosystem lives in the nested `rtpav` and `webrtcav` modules. Nested modules tag independently with
   prefixed tags (`rtpav/vX.Y.Z`, `webrtcav/vX.Y.Z`), so a root v1 does not
   freeze the transport modules and vice versa; webrtcav requires rtpav
   requires the root, so tag the root first, then rtpav, then webrtcav.

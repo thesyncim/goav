@@ -5,10 +5,12 @@ import graph. Core packages (`av`, `codec`, `format`, `filter`, `pipeline`,
 `rtpav`, `webrtcav`) do not import sibling codec modules; concrete integrations
 live under `adapters/...` and `container/...`.
 
-The root module depends only on `github.com/thesyncim/*` modules and the
-standard library (`TestRootModuleDependencyPurity`). `rtpav` and `webrtcav`
-are nested modules with their own `go.mod`; they carry the Pion dependency
-tree, and importing goav alone never pulls it in. Import paths are unchanged.
+The root module keeps third-party dependencies pinned by
+`TestRootModuleDependencyPurity`: only the narrow modernc runtime set required
+by the built-in pure-Go AAC backend is allowed outside `github.com/thesyncim/*`
+and the standard library. `rtpav` and `webrtcav` are nested modules with their
+own `go.mod`; they carry the Pion dependency tree, and importing goav alone
+never pulls it in. Import paths are unchanged.
 
 This file catalogs the shipped adapters. To write one, use
 `docs/ADAPTER_AUTHORING.md` for the extension interfaces, lifecycle rules,
@@ -51,6 +53,7 @@ same as built-ins.
 | `adapters/annexb` | H264 Annex B packet mux (mux-only) for packet-preserving recording after RTP depacketization; start-code probing; zero-alloc write. |
 | `container/matroska`, `container/webm` | Matroska/WebM mux/demux (see `docs/matroska.md`). |
 | `adapters/gopus` | Opus decode/encode over `thesyncim/gopus`: depacketized packet <-> PCM frames, PLC via `EventPacketLoss`, caller-owned buffers. |
+| `adapters/goaac` | AAC-LC decode over `thesyncim/goaac`: ADTS packets by default, raw AAC access units when stream `ExtraData` carries AudioSpecificConfig, interleaved S16 PCM into caller-owned buffers. Decode-only. |
 | `adapters/govpx` | VP8/VP9 decode into caller-owned I420 frames and encode into caller-owned packet buffers; drop-until-keyframe on loss/corruption/discontinuity; keyframe requests via `codec.ControlRequest`; encode honors keyframe-request and codec-change events; zero-alloc hot paths; idempotent close. |
 | `adapters/goav1` | AV1 low-overhead decode over `thesyncim/goav1`: `DecoderState` as documented `OpaqueState`, optional state factory with RTP decode bounds, borrowed gray8/I420/I422/I444 output (yuv* aliases normalized), loss/sync recovery from keyframe markers or parsed payloads, concrete `DecodeRTPPayloadInto` for raw RTP payload callers, runner reuse, allocation/lifecycle guards. The exact frame format matters: the backend frame pool must match the accepted sequence format. |
 | `adapters/goh264` | Descriptor-only by default; the `goav_goh264` tag enables H264 decode (8-bit planar borrowed frames, keyframe requests on loss, zero-alloc mapping, idempotent close). Decode-only. |
