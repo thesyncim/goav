@@ -153,4 +153,5 @@ The emitted command list printed by the host is generated from the same strings
 this guide uses, and the example tests drive both the socket request shape and
 the actual `goav ctl` binary. The host adds controls, steps, sinks, and encoder
 spellings through one explicit `ctl.CapabilitySet`; reflection only binds known
-structs and generates help.
+structs and generates help. The host calls `ctl.ValidateCapabilities` before
+opening the socket so bad names, aliases, or settings structs fail at startup.

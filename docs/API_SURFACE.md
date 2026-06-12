@@ -89,8 +89,10 @@ first-class. See docs/ADAPTERS.md and docs/COMPONENTS.md.
   run a task and expose it to `goav ctl --control unix://...`. It reuses the
   same allowlisted command framework as the bundled command: external hosts
   pass `CommandSpec` for app-specific control verbs, `PipelineRegistry` for
-  custom branch-pipeline steps and encoder names, and `ServeUnixWithOptions`
-  to put those hooks behind a socket. Generic branch pipelines can also encode
+  custom branch-pipeline steps and encoder names, `ValidateCapabilities` to
+  preflight host-owned names/aliases/settings metadata, and
+  `ServeUnixWithOptions` to put those hooks behind a socket. Generic branch
+  pipelines can also encode
   runtime-registered custom codecs with `encode codec=<id> media=<kind> ...`.
   The same socket renders live graph diagnostics through `goav ctl graph`
   (`format=mermaid|dot|text`).

@@ -776,8 +776,9 @@ Applications that want a CLI control surface expose a Unix socket with package
 The socket can host built-in controls plus explicit app-owned commands, custom
 branch-pipeline steps, runtime-registered custom codec names, and optional
 custom encoder spellings for native settings. Host extensions are grouped in a
-typed `ctl.CapabilitySet`, and the running server can report that full manifest
-with `goav ctl capabilities`:
+typed `ctl.CapabilitySet`; `ctl.ValidateCapabilities` preflights names,
+aliases, and settings structs before the socket opens, and the running server
+can report that full manifest with `goav ctl capabilities`:
 
 ```sh
 goav run --control unix:///tmp/goav-live.sock \
