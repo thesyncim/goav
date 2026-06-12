@@ -635,6 +635,21 @@ and a fake clock (`goavtest.NewClock`) so realtime pacing records its sleeps
 instead of sleeping. `Codec(id)`/`Format(id)` register the fakes individually,
 and extra options are last-wins overrides.
 
+Use `NewTestSource` when you need a provider-shaped fixture that records source
+controls and can emit custom frames, packets, or events:
+
+```go
+source := goavtest.NewTestSource("fixture",
+    shape.Packet(av.MediaAudio, av.CodecOpus, shape.Audio(48_000, 1, av.SampleFormatS16)),
+    goavtest.TestSourceLive(),
+)
+task, _ := goav.From(source.Input()).Audio().Copy().
+    To(goavtest.NewCollector().Sink()).
+    UseRuntime(goavtest.Runtime()).Build(ctx)
+_ = task.Control(ctx, goav.Rate(0.5).At("fixture"))
+event, _ := source.WaitControl(ctx, av.EventRate)
+```
+
 ## Debug And Diagnostics
 
 Debugging is ordinary composition. Put a typed tap at the point you want to
