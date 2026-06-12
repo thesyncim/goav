@@ -573,7 +573,38 @@ func parseCodecOptions(args map[string]string) ([]codec.Option, error) {
 		}
 		options = append(options, codec.FPS(num, den))
 	}
+	for _, key := range customCodecOptionKeys(args) {
+		options = append(options, codec.Setting(key, args[key]))
+	}
 	return options, nil
+}
+
+func customCodecOptionKeys(args map[string]string) []string {
+	keys := make([]string, 0, len(args))
+	for key := range args {
+		if commonCodecOptionKey(key) {
+			continue
+		}
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+func commonCodecOptionKey(key string) bool {
+	switch key {
+	case "codec", "id", "media", "type",
+		"bitrate", "bitrate_bps",
+		"profile", "level",
+		"rate", "sample_rate",
+		"channels", "ch",
+		"clock_rate",
+		"keyframe_interval", "keyint", "gop",
+		"fps":
+		return true
+	default:
+		return false
+	}
 }
 
 func parsePositiveUint32Arg(args map[string]string, keys ...string) (uint32, bool) {

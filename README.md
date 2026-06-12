@@ -785,7 +785,7 @@ goav ctl --control unix:///tmp/goav-live.sock control --json '{"type":"rate","ra
 goav ctl --control unix:///tmp/goav-live.sock help attach
 goav ctl --control unix:///tmp/goav-live.sock capabilities
 goav ctl --control unix:///tmp/goav-live.sock attach frames as archive \
-  'encode codec=x_acme_audio media=audio bitrate=128k profile=voice ! filesink location=/tmp/archive.ogg format=ogg'
+  'encode codec=x_acme_audio media=audio bitrate=128k profile=voice lookahead=deep ! filesink location=/tmp/archive.ogg format=ogg'
 goav ctl --control unix:///tmp/goav-live.sock attach frames as native \
   'meter ! acmeenc bitrate=128k quality=voice lookahead=deep ! filesink location=/tmp/archive.ogg format=ogg'
 goav ctl --control unix:///tmp/goav-live.sock graph
@@ -793,7 +793,10 @@ goav ctl --control unix:///tmp/goav-live.sock graph
 
 `help attach`, `help rebranch`, and `capabilities` list the built-in branch
 grammar, encoders and muxers discovered from the task runtime, plus custom
-commands, steps, sinks, and encoder spellings registered by that host. The
+commands, steps, sinks, and encoder spellings registered by that host. Generic
+runtime encoder steps preserve extra `key=value` pairs as
+`CodecSettings.Custom`, so custom adapters can expose their own settings before
+the host adds a friendly typed spelling. The
 bootstrap guide, including
 `go run ./examples/control-plane-host`, lives in
 [`docs/CONTROL_PLANE.md`](docs/CONTROL_PLANE.md). That playground uses a live

@@ -17,7 +17,7 @@ It demonstrates:
 - thumbnail/sample branches from the same running tap;
 - an in-process app sink (`memorysink`);
 - a runtime-registered custom encoder through the default generic `encode`
-  step;
+  step, including pass-through custom settings;
 - an optional custom video encoder spelling (`acmeenc`) with native settings;
 - graph rendering, rebranching, and detach.
 
@@ -47,8 +47,9 @@ $CTL taps
 spellings, and the encoders and muxers discovered from the running task runtime.
 The ACME encoder is available immediately through the generic
 `encode codec=x_acme_video media=video ...` step because the host registered it
-with `goav.WithEncoder`; registered muxers are available through
-`filesink location=<path> format=<id>`.
+with `goav.WithEncoder`. Common codec options become typed settings, and extra
+encoder `key=value` pairs are carried as `CodecSettings.Custom`; registered
+muxers are available through `filesink location=<path> format=<id>`.
 
 Control the fake source. These are normal built-in source controls targeting
 the `fixture` source node:
@@ -103,7 +104,7 @@ understands:
 
 ```sh
 $CTL attach frames as acme-generic \
-  'thumbnail every=4 label=generic ! encode codec=x_acme_video media=video bitrate=220k profile=preview fps=2 keyframe_interval=1 ! memorysink name=acme-generic'
+  'thumbnail every=4 label=generic ! encode codec=x_acme_video media=video bitrate=220k profile=preview fps=2 keyframe_interval=1 lookahead=deep ! memorysink name=acme-generic'
 ```
 
 Attach the same runtime-registered custom encoder to a file through a
@@ -111,7 +112,7 @@ runtime-registered muxer:
 
 ```sh
 $CTL attach frames as acme-file \
-  'thumbnail every=6 label=file ! encode codec=x_acme_video media=video bitrate=320k profile=file fps=2 keyframe_interval=1 ! filesink location="/tmp/goav acme.webm" format=webm'
+  'thumbnail every=6 label=file ! encode codec=x_acme_video media=video bitrate=320k profile=file fps=2 keyframe_interval=1 lookahead=file ! filesink location="/tmp/goav acme.webm" format=webm'
 ```
 
 Attach a custom encoder spelling only when native settings need host code. The

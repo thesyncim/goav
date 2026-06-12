@@ -193,7 +193,7 @@ func branchPipelineHelp(name string, usage string, note string, registry Pipelin
 		}
 	}
 	out.WriteString("\nBranch pipelines are written as `step key=value ! step key=value`. Custom steps and encoders receive their key=value settings through StepArgs.\n")
-	out.WriteString("Any encoder registered on the task runtime is callable with `encode codec=<id> media=<kind> ...` and the common codec settings. Use a custom EncoderSpec only for native adapter knobs that need host code.\n")
+	out.WriteString("Any encoder registered on the task runtime is callable with `encode codec=<id> media=<kind> ...`; common codec settings become typed settings and extra key=value pairs are carried as CodecSettings.Custom for the adapter. Use a custom EncoderSpec when native knobs need typed validation or codec.Control host code.\n")
 	out.WriteString("Any muxer registered on the task runtime is callable from `filesink location=<path> format=<id>`; custom destinations such as uploaders remain host-owned branch steps.\n")
 	return out.String()
 }
@@ -234,7 +234,7 @@ func builtinPipelineHelpRows() []pipelineHelpRow {
 		{name: "decode", summary: "decode packets to frames"},
 		{name: "resize", usage: "854x480 | width=854 height=480", summary: "resize video frames"},
 		{name: "resample", usage: "48000 2 | rate=48000 channels=2", summary: "resample audio frames"},
-		{name: "encode", usage: "codec=<id> media=<audio|video|subtitle> [bitrate=<rate>] [profile=<name>] [level=<name>] [sample_rate=<hz>] [channels=<n>] [clock_rate=<hz>] [keyframe_interval=<n>] [fps=<n|n/d>]", summary: "encode frames with a built-in or runtime-registered codec"},
+		{name: "encode", usage: "codec=<id> media=<audio|video|subtitle> [bitrate=<rate>] [profile=<name>] [level=<name>] [sample_rate=<hz>] [channels=<n>] [clock_rate=<hz>] [keyframe_interval=<n>] [fps=<n|n/d>] [native_key=value...]", summary: "encode frames with a built-in or runtime-registered codec"},
 		{name: "vp8enc", usage: "[bitrate=<rate>] [fps=<n|n/d>]", summary: "encode VP8 video"},
 		{name: "vp9enc", usage: "[bitrate=<rate>] [fps=<n|n/d>]", summary: "encode VP9 video"},
 		{name: "h264enc", usage: "[bitrate=<rate>] [profile=<name>] [level=<name>] [fps=<n|n/d>]", summary: "encode H.264 video"},
@@ -271,7 +271,7 @@ func writeRuntimeEncoderHelpRow(out *strings.Builder, desc codec.Descriptor) {
 	if media == "" {
 		media = "<kind>"
 	}
-	label := "encode codec=" + string(desc.ID) + " media=" + string(media) + " [bitrate=<rate>] [profile=<name>] [level=<name>] [sample_rate=<hz>] [channels=<n>] [clock_rate=<hz>] [keyframe_interval=<n>] [fps=<n|n/d>]"
+	label := "encode codec=" + string(desc.ID) + " media=" + string(media) + " [bitrate=<rate>] [profile=<name>] [level=<name>] [sample_rate=<hz>] [channels=<n>] [clock_rate=<hz>] [keyframe_interval=<n>] [fps=<n|n/d>] [native_key=value...]"
 	summary := desc.Name
 	if summary == "" {
 		summary = "runtime-registered encoder"
