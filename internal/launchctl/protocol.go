@@ -55,7 +55,7 @@ func ExecuteRequest(ctx context.Context, task goav.Task, request Request) Respon
 func executeRequest(ctx context.Context, task goav.Task, request Request) (ControlResponse, error) {
 	switch request.Op {
 	case "help":
-		text, err := Help(helpArgsFromRequest(request))
+		text, err := helpWithRuntime(helpArgsFromRequest(request), ControlManifest(), PipelineRegistry{}, task)
 		if err != nil {
 			return ControlResponse{}, err
 		}
