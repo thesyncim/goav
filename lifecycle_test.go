@@ -86,6 +86,54 @@ func TestTaskSnapshotReportsClosedStateWithoutRun(t *testing.T) {
 	}
 }
 
+func TestTaskSnapshotReportsRootDestinationLifecycle(t *testing.T) {
+	ctx := context.Background()
+	task, err := From(lifecycleTestSource(func(_ context.Context, push SourcePush) error {
+		return lifecycleTestPush(push)
+	})).Audio().Copy().To(lifecycleTestSink("base")).Build(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer task.Close()
+
+	before, ok := destinationSnapshotByName(task.Snapshot().Destinations, "base")
+	if !ok || before.State != lifecycle.DestinationOpen || !before.Open {
+		t.Fatalf("root destination before run = %+v, want open base destination", before)
+	}
+
+	if err := task.Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	committed, ok := destinationSnapshotByName(task.Snapshot().Destinations, "base")
+	if !ok || committed.State != lifecycle.DestinationCommitted || committed.Open {
+		t.Fatalf("root destination after run = %+v, want committed base destination", committed)
+	}
+}
+
+func TestTaskSnapshotReportsFailedRootDestination(t *testing.T) {
+	ctx := context.Background()
+	sourceErr := errors.New("source failed")
+	task, err := From(lifecycleTestSource(func(_ context.Context, push SourcePush) error {
+		packet := av.Packet{Payload: av.Buffer{Bytes: []byte{1}, Ownership: av.BufferImmutable}}
+		if _, err := push.Packet(&packet); err != nil {
+			return err
+		}
+		return sourceErr
+	})).Audio().Copy().To(lifecycleTestSink("base")).Build(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer task.Close()
+
+	if err := task.Run(ctx); !errors.Is(err, sourceErr) {
+		t.Fatalf("Run err = %v, want %v", err, sourceErr)
+	}
+	aborted, ok := destinationSnapshotByName(task.Snapshot().Destinations, "base")
+	if !ok || aborted.State != lifecycle.DestinationAborted || aborted.Open {
+		t.Fatalf("root destination after failed run = %+v, want aborted base destination", aborted)
+	}
+}
+
 func TestTaskSnapshotReportsCommittedDestinationAfterRun(t *testing.T) {
 	ctx := context.Background()
 	task, err := From(lifecycleTestSource(func(_ context.Context, push SourcePush) error {
@@ -108,6 +156,10 @@ func TestTaskSnapshotReportsCommittedDestinationAfterRun(t *testing.T) {
 	if !ok || before.State != lifecycle.DestinationOpen || !before.Open {
 		t.Fatalf("destination before run = %+v, want open rec destination", before)
 	}
+	baseBefore, ok := destinationSnapshotByName(task.Snapshot().Destinations, "base")
+	if !ok || baseBefore.State != lifecycle.DestinationOpen || !baseBefore.Open {
+		t.Fatalf("root destination before run = %+v, want open base destination alongside branch", baseBefore)
+	}
 
 	if err := task.Run(ctx); err != nil {
 		t.Fatal(err)
@@ -123,6 +175,10 @@ func TestTaskSnapshotReportsCommittedDestinationAfterRun(t *testing.T) {
 	committed, ok := destinationSnapshotByName(snap.Destinations, "rec")
 	if !ok || committed.State != lifecycle.DestinationCommitted || committed.Open {
 		t.Fatalf("destination after run = %+v, want committed rec destination", committed)
+	}
+	baseCommitted, ok := destinationSnapshotByName(snap.Destinations, "base")
+	if !ok || baseCommitted.State != lifecycle.DestinationCommitted || baseCommitted.Open {
+		t.Fatalf("root destination after run = %+v, want committed base destination alongside branch", baseCommitted)
 	}
 
 	if err := task.Detach(ctx, attachment); err != nil {

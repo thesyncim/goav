@@ -435,13 +435,14 @@ func connectRefs(graph pipeline.Graph, from pipeline.NodeRef, to pipeline.NodeRe
 }
 
 type task struct {
-	graph        pipeline.Graph
-	runtime      *runtime
-	destinations []*destinationTransaction
-	taps         []snapshot.Tap
-	branchTaps   []snapshot.Tap
-	attachMu     sync.Mutex
-	attachments  map[*runtimeAttachment]struct{}
+	graph            pipeline.Graph
+	runtime          *runtime
+	destinations     []*destinationTransaction
+	rootDestinations []workDestination
+	taps             []snapshot.Tap
+	branchTaps       []snapshot.Tap
+	attachMu         sync.Mutex
+	attachments      map[*runtimeAttachment]struct{}
 
 	// watch fans the graph's event stream out to filtered Watch subscribers.
 	watch eventWatch
@@ -460,7 +461,16 @@ type task struct {
 }
 
 func newTask(graph pipeline.Graph, runtime *runtime, destinations ...*destinationTransaction) *task {
-	return &task{graph: graph, runtime: runtime, destinations: destinations}
+	return newTaskWithRootDestinations(graph, runtime, nil, destinations...)
+}
+
+func newTaskWithRootDestinations(graph pipeline.Graph, runtime *runtime, rootDestinations []workDestination, destinations ...*destinationTransaction) *task {
+	return &task{
+		graph:            graph,
+		runtime:          runtime,
+		destinations:     destinations,
+		rootDestinations: cloneWorkDestinations(rootDestinations),
+	}
 }
 
 func (t *task) Describe() pipeline.Spec {
@@ -635,7 +645,7 @@ func (t *task) Snapshot() snapshot.Task {
 	if t == nil {
 		return snapshot.Task{}
 	}
-	state, _ := t.lifecycleStates()
+	state, destinationState := t.lifecycleStates()
 	stats := t.Stats()
 	t.attachMu.Lock()
 	defer t.attachMu.Unlock()
@@ -653,7 +663,7 @@ func (t *task) Snapshot() snapshot.Task {
 		Stats:        stats,
 		Taps:         t.tapsLocked(),
 		Branches:     branches,
-		Destinations: taskSnapshotDestinations(branches),
+		Destinations: taskSnapshotDestinations(destinationSnapshotsFromWork(t.rootDestinations, destinationState), branches),
 	}
 }
 
@@ -678,12 +688,21 @@ func (t *task) lifecycleStates() (lifecycle.TaskState, lifecycle.DestinationStat
 	}
 }
 
-func taskSnapshotDestinations(branches []snapshot.Branch) []snapshot.Destination {
-	if len(branches) == 0 {
+func taskSnapshotDestinations(root []snapshot.Destination, branches []snapshot.Branch) []snapshot.Destination {
+	if len(root) == 0 && len(branches) == 0 {
 		return nil
 	}
 	out := make([]snapshot.Destination, 0)
 	seen := make(map[string]struct{})
+	for i := range root {
+		destination := root[i]
+		key := destination.Name + "\x00" + string(destination.Operation) + "\x00" + destination.Component
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, destination)
+	}
 	for i := range branches {
 		for j := range branches[i].Destinations {
 			destination := branches[i].Destinations[j]

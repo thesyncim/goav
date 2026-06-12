@@ -85,7 +85,7 @@ func buildGraphPlanTask(ctx context.Context, gp graphPlan) (Task, error) {
 		graph.Close()
 		return nil, err
 	}
-	return newTask(graph, runtime, service.destinationTxs...), nil
+	return newTaskWithRootDestinations(graph, runtime, gp.work.Destinations, service.destinationTxs...), nil
 }
 
 func runtimeWithBuffer(rt *runtime, buffer pipeline.BufferPolicy) *runtime {
