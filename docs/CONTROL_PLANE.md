@@ -383,6 +383,10 @@ suggestions; use the canonical option names above.
 File sinks follow the same rule: use `filesink location=<path> [format=<id>]`.
 Transform steps use one spelling as well: `resize width=<px> height=<px>` and
 `resample sample_rate=<hz> channels=<n>`.
+Generated `goav run` sources use `testsrc video` with
+`width=<px> height=<px> fps=<n>` and either `frames=<n>` or `duration=<d>`;
+duplicate aliases such as `w`, `h`, `size`, `framerate`, `live`, `pix_fmt`,
+and `pixel_format` are rejected with suggestions.
 
 The destination container must accept the selected codec. Standard codecs can
 often use the standard containers registered by `goav.Default`; a private codec

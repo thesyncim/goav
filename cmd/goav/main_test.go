@@ -315,7 +315,6 @@ func TestRunPipelineHelpBootstrapsGeneratedControlFlow(t *testing.T) {
 		"/tmp/goav-av1.ivf'",
 		"min_qindex=20 max_qindex=180 tune=zerolatency",
 		"tap name=<tap-name>",
-		"size=<w>x<h>",
 		"fps=<n[/d]|decimal>",
 		"format=i420|yuv420p",
 		"known file extensions infer the format",
@@ -423,6 +422,7 @@ func TestRunGeneratedVideoAV1IVFExtensionInfersFormat(t *testing.T) {
 	if got := binary.LittleEndian.Uint32(data[24:28]); got != 2 {
 		t.Fatalf("IVF frame count = %d, want 2", got)
 	}
+	assertDecodableAV1IVF(t, data)
 }
 
 func TestRunGeneratedVideoWithControlSocket(t *testing.T) {
@@ -641,7 +641,7 @@ func decodeAV1TestPacket(t *testing.T, decoder codec.Decoder, packet av.Packet) 
 }
 
 func TestRunPipelineParserCoversGeneratedTestSourceForms(t *testing.T) {
-	plan, err := parseRunPipeline(`testsrc video name=fixture size=1920x1080 fps=30000/1001 duration=100ms realtime=off pixel_format=yuv420p pattern=solid ! tap frames ! resize width=640 height=360 ! encode av01 bitrate=2M fps=29.97 keyframe_interval=30 profile=main level=5.1 tune=zerolatency ! filesink location="/tmp/generated test.ivf" format=ivf`)
+	plan, err := parseRunPipeline(`testsrc video name=fixture width=1920 height=1080 fps=30000/1001 duration=100ms realtime=false format=yuv420p pattern=solid ! tap frames ! resize width=640 height=360 ! encode av01 bitrate=2M fps=29.97 keyframe_interval=30 profile=main level=5.1 tune=zerolatency ! filesink location="/tmp/generated test.ivf" format=ivf`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -682,43 +682,31 @@ func TestRunPipelineParserCoversGeneratedTestSourceForms(t *testing.T) {
 	}
 }
 
-func TestRunPipelineParserHelperEdges(t *testing.T) {
-	width, height, err := parseSize("640X360")
-	if err != nil || width != 640 || height != 360 {
-		t.Fatalf("parseSize = %dx%d, %v", width, height, err)
-	}
-	fps, err := parseFPS("29.97")
-	if err != nil || fps != (fpsValue{num: 2997, den: 100}) || fps.String() != "2997/100" {
-		t.Fatalf("parseFPS decimal = %+v, %v", fps, err)
-	}
-	fps, err = parseFPS("60000/2002")
-	if err != nil || fps != (fpsValue{num: 30000, den: 1001}) {
-		t.Fatalf("parseFPS fraction = %+v, %v", fps, err)
-	}
-	bitrate, err := parseRate("2mbps")
-	if err != nil || bitrate != 2_000_000 {
-		t.Fatalf("parseRate suffix = %d, %v", bitrate, err)
-	}
-	if frames := framesForDuration(time.Millisecond, fpsValue{num: 30000, den: 1001}); frames != 1 {
-		t.Fatalf("framesForDuration = %d, want minimum one frame", frames)
-	}
-	pixelFormat, err := parseGeneratedPixelFormat("YUV420P")
-	if err != nil || pixelFormat != av.PixelFormatI420 {
-		t.Fatalf("pixel format = %q, %v", pixelFormat, err)
-	}
-	if _, err := parseGeneratedPixelFormat("rgba"); err == nil || !strings.Contains(err.Error(), "i420/yuv420p") {
-		t.Fatalf("invalid pixel format err = %v", err)
-	}
-	for _, text := range []string{
-		`testsrc video duration=0s ! av1enc ! filesink location=/tmp/out.ivf format=ivf`,
-		`testsrc video size=640 ! av1enc ! filesink location=/tmp/out.ivf format=ivf`,
-		`testsrc video pix_fmt=rgba ! av1enc ! filesink location=/tmp/out.ivf format=ivf`,
-		`testsrc video frames=1 ! ! av1enc ! filesink location=/tmp/out.ivf`,
-		`testsrc video frames=1 ! av1enc tune="dangling\ ! filesink location=/tmp/out.ivf`,
+func TestRunPipelineParserRejectsDuplicateSourceForms(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		text string
+		want string
+	}{
+		{name: "source alias", text: `videosrc video width=16 height=16 frames=1 ! av1enc ! filesink location=/tmp/out.ivf format=ivf`, want: "videosrc"},
+		{name: "missing media kind", text: `testsrc width=16 height=16 frames=1 ! av1enc ! filesink location=/tmp/out.ivf format=ivf`, want: "testsrc"},
+		{name: "size", text: `testsrc video size=16x16 frames=1 ! av1enc ! filesink location=/tmp/out.ivf format=ivf`, want: "size"},
+		{name: "w", text: `testsrc video w=16 height=16 frames=1 ! av1enc ! filesink location=/tmp/out.ivf format=ivf`, want: "w"},
+		{name: "framerate", text: `testsrc video width=16 height=16 framerate=30 frames=1 ! av1enc ! filesink location=/tmp/out.ivf format=ivf`, want: "framerate"},
+		{name: "live", text: `testsrc video width=16 height=16 live=true frames=1 ! av1enc ! filesink location=/tmp/out.ivf format=ivf`, want: "live"},
+		{name: "pix fmt", text: `testsrc video width=16 height=16 pix_fmt=i420 frames=1 ! av1enc ! filesink location=/tmp/out.ivf format=ivf`, want: "pix_fmt"},
+		{name: "invalid format", text: `testsrc video width=16 height=16 format=rgba frames=1 ! av1enc ! filesink location=/tmp/out.ivf format=ivf`, want: "i420/yuv420p"},
+		{name: "duration zero", text: `testsrc video width=16 height=16 duration=0s ! av1enc ! filesink location=/tmp/out.ivf format=ivf`, want: "duration"},
+		{name: "frames and duration", text: `testsrc video width=16 height=16 frames=1 duration=1s ! av1enc ! filesink location=/tmp/out.ivf format=ivf`, want: "duration"},
+		{name: "empty step", text: `testsrc video frames=1 ! ! av1enc ! filesink location=/tmp/out.ivf`, want: "empty pipeline step"},
+		{name: "unterminated quote", text: `testsrc video frames=1 ! av1enc tune="dangling\ ! filesink location=/tmp/out.ivf`, want: "unterminated quoted value"},
 	} {
-		if _, err := parseRunPipeline(text); err == nil {
-			t.Fatalf("parseRunPipeline(%q) succeeded unexpectedly", text)
-		}
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := parseRunPipeline(tc.text)
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("err = %v, want %q", err, tc.want)
+			}
+		})
 	}
 }
 

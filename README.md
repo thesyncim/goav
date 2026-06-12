@@ -767,7 +767,7 @@ goav run 'testsrc video width=1280 height=720 fps=30 duration=3s realtime=true p
 The string grammar is intentionally close to the recipe grammar:
 
 ```sh
-goav run 'testsrc video name=fixture size=1920x1080 fps=30000/1001 frames=90 realtime=true ! resize width=640 height=360 ! encode codec=av1 media=video bitrate=1.8M fps=30000/1001 keyframe_interval=60 min_qindex=20 max_qindex=180 temporal_layers=2 tune=zerolatency ! filesink location=/tmp/thumbs.mkv format=matroska'
+goav run 'testsrc video name=fixture width=1920 height=1080 fps=30000/1001 frames=90 realtime=true ! resize width=640 height=360 ! encode codec=av1 media=video bitrate=1.8M fps=30000/1001 keyframe_interval=60 min_qindex=20 max_qindex=180 temporal_layers=2 tune=zerolatency ! filesink location=/tmp/thumbs.mkv format=matroska'
 ```
 
 Known encoder options (`bitrate`, `fps`, `keyframe_interval`, `profile`,
@@ -783,6 +783,9 @@ AV1 adapter currently accepts `qindex`, `min_qindex`,
 File sinks use the same single-spelling rule: `filesink location=<path> [format=<id>]`.
 Transform steps do too: `resize width=<px> height=<px>` and
 `resample sample_rate=<hz> channels=<n>`.
+Generated sources use `testsrc video width=<px> height=<px> fps=<n> frames=<n>`
+or `duration=<d>`; duplicate aliases such as `w`, `h`, `size`, `framerate`,
+`live`, `pix_fmt`, and `pixel_format` are rejected with suggestions.
 
 Applications that want a CLI control surface expose a Unix socket with package
 `ctl`; the bundled command then drives the same task APIs over structured JSON.

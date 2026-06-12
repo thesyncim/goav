@@ -23,6 +23,7 @@ import (
 	"github.com/thesyncim/goav/internal/cliargs"
 	"github.com/thesyncim/goav/internal/codecargs"
 	"github.com/thesyncim/goav/internal/fileargs"
+	"github.com/thesyncim/goav/internal/sourceargs"
 	"github.com/thesyncim/goav/internal/transformargs"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/shape"
@@ -151,7 +152,7 @@ func runPipelineHelp() string {
 		"  goav run '" + defaultRunPipeline + "'\n" +
 		"  goav run 'testsrc video width=1280 height=720 fps=30 duration=3s realtime=true pattern=bars ! av1enc bitrate=1200k fps=30 keyframe_interval=60 min_qindex=20 max_qindex=180 tune=zerolatency ! filesink location=/tmp/goav-av1.ivf'\n\n" +
 		"pipeline steps:\n" +
-		"  testsrc video [name=<id>] width=<px> height=<px>|size=<w>x<h> fps=<n[/d]|decimal> frames=<n>|duration=<d> realtime=<bool> [format=i420|yuv420p] [pattern=bars|gradient|solid]\n" +
+		"  testsrc video [name=<id>] width=<px> height=<px> fps=<n[/d]|decimal> frames=<n>|duration=<d> realtime=<bool> [format=i420|yuv420p] [pattern=bars|gradient|solid]\n" +
 		"  tap name=<tap-name>\n" +
 		"  resize width=<px> height=<px>\n" +
 		"  av1enc|vp9enc|vp8enc|h264enc|encode codec=<id> media=<video|audio> bitrate=<rate> fps=<n[/d]> keyframe_interval=<n> [native_key=value...]\n" +
@@ -696,72 +697,24 @@ func parseGeneratedVideoSource(tokens []string) (generatedVideoSource, error) {
 	if len(tokens) == 0 {
 		return generatedVideoSource{}, fmt.Errorf("goav run: source step is empty")
 	}
-	name := strings.ToLower(tokens[0])
-	if name != "testsrc" && name != "videosrc" && name != "testvideo" {
-		return generatedVideoSource{}, fmt.Errorf("goav run: unsupported source %q (want testsrc video)", tokens[0])
-	}
 	positionals, options, err := parseKeyValuesOrdered(tokens[1:])
 	if err != nil {
 		return generatedVideoSource{}, err
 	}
-	for _, positional := range positionals {
-		if strings.EqualFold(positional, "video") {
-			continue
-		}
-		return generatedVideoSource{}, fmt.Errorf("goav run: unsupported source argument %q", positional)
+	source, err := sourceargs.ParseGeneratedVideo(tokens[0], runSourceArgs(positionals, options))
+	if err != nil {
+		return generatedVideoSource{}, fmt.Errorf("goav run: %w", err)
 	}
-	source := generatedVideoSource{
-		name:        "testsrc",
-		width:       1280,
-		height:      720,
-		fps:         fpsValue{num: 30, den: 1},
-		frames:      90,
-		realtime:    true,
-		pixelFormat: av.PixelFormatI420,
-		pattern:     "gradient",
-	}
-	var duration time.Duration
-	var durationSet bool
-	for _, option := range options {
-		switch option.key {
-		case "name":
-			if option.value == "" {
-				return generatedVideoSource{}, fmt.Errorf("goav run: source name cannot be empty")
-			}
-			source.name = option.value
-		case "width", "w":
-			source.width, err = parsePositiveInt("width", option.value)
-		case "height", "h":
-			source.height, err = parsePositiveInt("height", option.value)
-		case "size":
-			source.width, source.height, err = parseSize(option.value)
-		case "fps", "framerate":
-			source.fps, err = parseFPS(option.value)
-		case "frames":
-			source.frames, err = parsePositiveInt("frames", option.value)
-		case "duration":
-			duration, err = time.ParseDuration(option.value)
-			durationSet = err == nil
-		case "realtime", "live":
-			source.realtime, err = parseBool(option.value)
-		case "format", "pixel_format", "pix_fmt":
-			source.pixelFormat, err = parseGeneratedPixelFormat(option.value)
-		case "pattern":
-			source.pattern, err = parsePattern(option.value)
-		default:
-			return generatedVideoSource{}, fmt.Errorf("goav run: unknown testsrc option %q", option.key)
-		}
-		if err != nil {
-			return generatedVideoSource{}, err
-		}
-	}
-	if durationSet {
-		source.frames = framesForDuration(duration, source.fps)
-	}
-	if source.frames <= 0 {
-		return generatedVideoSource{}, fmt.Errorf("goav run: frames must be greater than zero")
-	}
-	return source, nil
+	return generatedVideoSource{
+		name:        source.Name,
+		width:       source.Width,
+		height:      source.Height,
+		fps:         fpsValue{num: source.FPS.Num, den: source.FPS.Den},
+		frames:      source.Frames,
+		realtime:    source.Realtime,
+		pixelFormat: source.PixelFormat,
+		pattern:     source.Pattern,
+	}, nil
 }
 
 func parseRunOperation(tokens []string) (runOperation, error) {
@@ -862,6 +815,17 @@ func runCodecArgs(options []runOption) []codecargs.Arg {
 	args := make([]codecargs.Arg, 0, len(options))
 	for _, option := range options {
 		args = append(args, codecargs.Arg{Key: option.key, Value: option.value})
+	}
+	return args
+}
+
+func runSourceArgs(positionals []string, options []runOption) []sourceargs.Arg {
+	args := make([]sourceargs.Arg, 0, len(positionals)+len(options))
+	for _, positional := range positionals {
+		args = append(args, sourceargs.Arg{Value: positional})
+	}
+	for _, option := range options {
+		args = append(args, sourceargs.Arg{Key: option.key, Value: option.value})
 	}
 	return args
 }
@@ -972,82 +936,11 @@ func tokenizeStep(text string) ([]string, error) {
 	return tokens, nil
 }
 
-func parsePositiveInt(name string, value string) (int, error) {
-	parsed, err := strconv.Atoi(strings.TrimSpace(value))
-	if err != nil || parsed <= 0 {
-		return 0, fmt.Errorf("goav run: %s must be a positive integer", name)
-	}
-	return parsed, nil
-}
-
-func parseSize(value string) (int, int, error) {
-	parts := strings.Split(strings.ToLower(strings.TrimSpace(value)), "x")
-	if len(parts) != 2 {
-		return 0, 0, fmt.Errorf("goav run: size must be WIDTHxHEIGHT")
-	}
-	width, err := parsePositiveInt("width", parts[0])
-	if err != nil {
-		return 0, 0, err
-	}
-	height, err := parsePositiveInt("height", parts[1])
-	if err != nil {
-		return 0, 0, err
-	}
-	return width, height, nil
-}
-
-func parseFPS(value string) (fpsValue, error) {
-	fps, err := cliargs.ParseFPS(value)
-	if err != nil {
-		return fpsValue{}, fmt.Errorf("goav run: %w", err)
-	}
-	return fpsValue{num: fps.Num, den: fps.Den}, nil
-}
-
 func (f fpsValue) String() string {
 	if f.den == 1 {
 		return strconv.Itoa(f.num)
 	}
 	return fmt.Sprintf("%d/%d", f.num, f.den)
-}
-
-func framesForDuration(duration time.Duration, fps fpsValue) int {
-	if duration <= 0 {
-		return 0
-	}
-	frames := math.Ceil(duration.Seconds() * float64(fps.num) / float64(fps.den))
-	return max(int(frames), 1)
-}
-
-func parseBool(value string) (bool, error) {
-	switch strings.ToLower(strings.TrimSpace(value)) {
-	case "1", "true", "yes", "on":
-		return true, nil
-	case "0", "false", "no", "off":
-		return false, nil
-	default:
-		return false, fmt.Errorf("goav run: boolean value must be true or false")
-	}
-}
-
-func parseGeneratedPixelFormat(value string) (string, error) {
-	switch strings.ToLower(strings.TrimSpace(value)) {
-	case av.PixelFormatI420, av.PixelFormatYUV420P:
-		return av.PixelFormatI420, nil
-	default:
-		return "", fmt.Errorf("goav run: testsrc currently generates i420/yuv420p")
-	}
-}
-
-func parsePattern(value string) (string, error) {
-	switch strings.ToLower(strings.TrimSpace(value)) {
-	case "", "gradient":
-		return "gradient", nil
-	case "bars", "solid":
-		return strings.ToLower(strings.TrimSpace(value)), nil
-	default:
-		return "", fmt.Errorf("goav run: pattern must be gradient, bars, or solid")
-	}
 }
 
 func parseMediaType(value string) (av.MediaType, error) {
@@ -1063,12 +956,4 @@ func parseMediaType(value string) (av.MediaType, error) {
 	default:
 		return "", fmt.Errorf("goav run: media must be video, audio, subtitle, or data")
 	}
-}
-
-func parseRate(value string) (int, error) {
-	rate, err := cliargs.ParseRate(value)
-	if err != nil {
-		return 0, fmt.Errorf("goav run: %w", err)
-	}
-	return rate, nil
 }
