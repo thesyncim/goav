@@ -260,3 +260,81 @@ func TestRuntimeAttachmentSpecAndStatsFiltering(t *testing.T) {
 		t.Fatalf("branchStatsForNodes(no drops) DropReasons = %#v, want nil", noDropStats.DropReasons)
 	}
 }
+
+func TestDetachReplacedAtBoundaryContracts(t *testing.T) {
+	t.Run("opened detaches with drain outcome", func(t *testing.T) {
+		_, attachment := newBoundaryDetachAttachment(t)
+		group := newSwitchGroup(switchNextFrame)
+		group.markOpen()
+
+		attachment.detachReplacedAtBoundary(group, oldBranchDrain)
+
+		if !attachment.stopped {
+			t.Fatal("opened boundary did not detach replaced attachment")
+		}
+		outcome, ok := attachment.detachOutcome.Load().(lifecycle.DestinationState)
+		if !ok || outcome != lifecycle.DestinationCommitted {
+			t.Fatalf("detach outcome = %v, %t; want committed", outcome, ok)
+		}
+	})
+
+	t.Run("abandoned before open keeps branch attached", func(t *testing.T) {
+		task, attachment := newBoundaryDetachAttachment(t)
+		group := newSwitchGroup(switchNextFrame)
+		gate := group.gate()
+		if err := gate.Close(); err != nil {
+			t.Fatal(err)
+		}
+
+		attachment.detachReplacedAtBoundary(group, oldBranchDrain)
+
+		if attachment.stopped {
+			t.Fatal("abandoned boundary detached replaced attachment")
+		}
+		if _, ok := task.attachments[attachment]; !ok {
+			t.Fatal("abandoned boundary removed attachment from task")
+		}
+		if outcome, ok := attachment.detachOutcome.Load().(lifecycle.DestinationState); ok || outcome != "" {
+			t.Fatalf("abandoned detach outcome = %v, %t; want none", outcome, ok)
+		}
+	})
+
+	t.Run("opened still wins when observed with abandon", func(t *testing.T) {
+		_, attachment := newBoundaryDetachAttachment(t)
+		group := newSwitchGroup(switchNextFrame)
+		gate := group.gate()
+		if err := gate.Close(); err != nil {
+			t.Fatal(err)
+		}
+		group.markOpen()
+
+		attachment.detachReplacedAtBoundary(group, oldBranchAbort)
+
+		if !attachment.stopped {
+			t.Fatal("opened abandoned boundary did not detach replaced attachment")
+		}
+		outcome, ok := attachment.detachOutcome.Load().(lifecycle.DestinationState)
+		if !ok || outcome != lifecycle.DestinationAborted {
+			t.Fatalf("detach outcome = %v, %t; want aborted", outcome, ok)
+		}
+	})
+}
+
+func newBoundaryDetachAttachment(t *testing.T) (*task, *runtimeAttachment) {
+	t.Helper()
+	graph := newWatchTestGraph(1)
+	task := newTask(graph, nil)
+	attachment := &runtimeAttachment{
+		id:    "branch-1",
+		name:  "old-preview",
+		owner: task,
+		nodes: []pipeline.NodeRef{"old-preview-node"},
+	}
+	task.attachments = map[*runtimeAttachment]struct{}{attachment: {}}
+	t.Cleanup(func() {
+		if err := task.Close(); err != nil {
+			t.Fatalf("task close: %v", err)
+		}
+	})
+	return task, attachment
+}
