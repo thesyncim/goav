@@ -193,6 +193,73 @@ func TestMixRequiresTwoArms(t *testing.T) {
 }
 func errorsAsMix(err error, target **BuildError) bool { return errors.As(err, target) }
 
+func TestMixBuilderOptionsCarryIntoJoinSpec(t *testing.T) {
+	var nilMix *mixStream
+	if arm := nilMix.joinArm(); arm.join != nil || arm.region != nil {
+		t.Fatalf("nil mix join arm = %+v, want zero", arm)
+	}
+
+	require := shape.Frame(av.MediaAudio, shape.Audio(48000, codec.Stereo, av.SampleFormatS16))
+	prefer := shape.Frame(av.MediaAudio, shape.Audio(0, 0, av.SampleFormatF32))
+	mix := Mix(
+		From(mixTestAudioSource("a", 100, 200)).Audio(),
+		From(mixTestAudioSource("b", 50, -50)).Audio(),
+	).
+		SyncByPTS().
+		Auto(shape.AllowResample(), shape.AllowConvert()).
+		Require(require).
+		Prefer(prefer).
+		Encode(codec.Opus(codec.Bitrate(128_000), codec.Channels(codec.Stereo))).
+		Tap(FrameTap("mixed"))
+
+	if mix.sync != joinSyncPTS {
+		t.Fatalf("sync = %v, want PTS", mix.sync)
+	}
+	if mix.encode == nil ||
+		mix.encode.ID != av.CodecOpus ||
+		mix.encode.Settings.Bitrate != 128_000 ||
+		mix.encode.Settings.Channels != codec.Stereo {
+		t.Fatalf("encode = %+v", mix.encode)
+	}
+	if len(mix.taps) != 1 || mix.taps[0].name != "mixed" {
+		t.Fatalf("taps = %+v", mix.taps)
+	}
+	if len(mix.operations) != 3 {
+		t.Fatalf("operations = %+v, want auto/require/prefer", mix.operations)
+	}
+	if mix.operations[0].Auto == nil ||
+		!mix.operations[0].Auto.AllowsResample() ||
+		!mix.operations[0].Auto.AllowsConvert() ||
+		mix.operations[0].Auto.AllowsResize() {
+		t.Fatalf("auto operation = %+v", mix.operations[0])
+	}
+	if mix.operations[1].Require == nil || *mix.operations[1].Require != require {
+		t.Fatalf("require operation = %+v", mix.operations[1])
+	}
+	if mix.operations[2].Prefer == nil || *mix.operations[2].Prefer != prefer {
+		t.Fatalf("prefer operation = %+v", mix.operations[2])
+	}
+
+	arm := mix.joinArm()
+	if arm.region != nil {
+		t.Fatalf("mix join arm region = %+v, want nil", arm.region)
+	}
+	if arm.join == nil ||
+		arm.join.kind != joinMix ||
+		arm.join.sync != joinSyncPTS ||
+		arm.join.encode == nil ||
+		arm.join.encode.ID != av.CodecOpus ||
+		len(arm.join.taps) != 1 ||
+		len(arm.join.operations) != 3 {
+		t.Fatalf("join arm = %+v", arm.join)
+	}
+
+	mix.operations[0] = operationSpec{}
+	if arm.join.operations[0].Auto == nil || !arm.join.operations[0].Auto.AllowsResample() {
+		t.Fatalf("join arm operations were not cloned: %+v", arm.join.operations)
+	}
+}
+
 func TestMixDecodesPacketArmsBeforeMixing(t *testing.T) {
 	ctx := context.Background()
 	pcm := av.CodecID("x_pcm_s16")
