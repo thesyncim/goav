@@ -996,6 +996,127 @@ func TestPipelineRegistryRejectsReservedAndDuplicateNames(t *testing.T) {
 	}
 }
 
+func TestRegistryValidationRejectsMalformedCapabilityRows(t *testing.T) {
+	structType := reflect.TypeOf(struct{}{})
+	pointerType := reflect.TypeOf(&struct{}{})
+
+	tests := []struct {
+		name     string
+		validate func() error
+		node     string
+		message  string
+	}{
+		{
+			name: "command empty name",
+			validate: func() error {
+				return validateCommandManifest(append(ControlManifest(), CommandSpec{
+					Name:     "  ",
+					ArgsType: structType,
+				}))
+			},
+			node:    "name",
+			message: "control command needs a non-empty name",
+		},
+		{
+			name: "command missing args type",
+			validate: func() error {
+				return validateCommandManifest(append(ControlManifest(), CommandSpec{Name: "vendor.missing"}))
+			},
+			node:    "vendor.missing",
+			message: `control command "vendor.missing" needs a struct ArgsType`,
+		},
+		{
+			name: "command pointer args type",
+			validate: func() error {
+				return validateCommandManifest(append(ControlManifest(), CommandSpec{
+					Name:     "vendor.pointer",
+					ArgsType: pointerType,
+				}))
+			},
+			node:    "vendor.pointer",
+			message: `control command "vendor.pointer" ArgsType must be a struct`,
+		},
+		{
+			name: "branch step empty alias",
+			validate: func() error {
+				return validatePipelineRegistry(PipelineRegistry{
+					Steps: []BranchPipelineStepSpec{{Name: "meter", Aliases: []string{"  "}}},
+				})
+			},
+			node:    "alias",
+			message: "custom branch-pipeline step alias needs a non-empty name",
+		},
+		{
+			name: "branch step pointer args type",
+			validate: func() error {
+				return validatePipelineRegistry(PipelineRegistry{
+					Steps: []BranchPipelineStepSpec{{Name: "meter", ArgsType: pointerType}},
+				})
+			},
+			node:    "meter",
+			message: `custom branch-pipeline step "meter" ArgsType must be a struct`,
+		},
+		{
+			name: "encoder empty name",
+			validate: func() error {
+				return validatePipelineRegistry(PipelineRegistry{
+					Encoders: []EncoderSpec{{Name: "", ArgsType: structType}},
+				})
+			},
+			node:    "name",
+			message: "custom encoder needs a non-empty name",
+		},
+		{
+			name: "encoder pointer args type",
+			validate: func() error {
+				return validatePipelineRegistry(PipelineRegistry{
+					Encoders: []EncoderSpec{{Name: "acmeenc", ArgsType: pointerType}},
+				})
+			},
+			node:    "acmeenc",
+			message: `custom encoder "acmeenc" ArgsType must be a struct`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.validate()
+			var structured *Error
+			if !errors.As(err, &structured) ||
+				structured.Code != "invalid_registry" ||
+				structured.Node != tt.node ||
+				!strings.Contains(structured.Message, tt.message) ||
+				!suggestionsContain(structured.Suggestions, "struct settings types") {
+				t.Fatalf("err = %+v, want invalid_registry node=%s message containing %q", structured, tt.node, tt.message)
+			}
+		})
+	}
+
+	server := &Server{
+		Task:     newFakeTask(),
+		Commands: []CommandSpec{{Name: "vendor.pointer", ArgsType: pointerType}},
+	}
+	response := server.Handle(context.Background(), Request{
+		Op:   "help",
+		Args: map[string]string{"topic": "control"},
+	})
+	if response.OK || response.Error == nil ||
+		response.Error.Code != "invalid_registry" ||
+		response.Error.Node != "vendor.pointer" {
+		t.Fatalf("server response = %+v, want invalid registry before help", response)
+	}
+
+	socket := filepath.Join(os.TempDir(), fmt.Sprintf("goavctl-malformed-%d.sock", time.Now().UnixNano()))
+	t.Cleanup(func() { _ = os.Remove(socket) })
+	err := ServeUnixWithOptions(context.Background(), newFakeTask(), "unix://"+socket, WithCommands(CommandSpec{Name: "vendor.pointer", ArgsType: pointerType}))
+	var structured *Error
+	if !errors.As(err, &structured) ||
+		structured.Code != "invalid_registry" ||
+		structured.Node != "vendor.pointer" {
+		t.Fatalf("ServeUnixWithOptions err = %+v, want invalid registry", err)
+	}
+}
+
 func TestParseBranchPipelineWithBuiltInStepsAndEncoders(t *testing.T) {
 	out := filepath.Join(t.TempDir(), "builtins.ogg")
 	_, err := parseBranchPipelineWithRegistry(newFakeTask(), "raw_video", "builtins",
