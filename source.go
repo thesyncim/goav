@@ -162,24 +162,42 @@ func customSourceShape(input InputSpec) (shape.Spec, bool) {
 	return normalizeCustomSourceShape(input.inputName("source"), input.source.shape), true
 }
 
+func declaredSourceShape(input InputSpec) (shape.Spec, bool) {
+	if spec, ok := customSourceShape(input); ok {
+		return spec, true
+	}
+	if input.provider == nil {
+		return shape.Spec{}, false
+	}
+	return normalizeCustomSourceShape(input.inputName("source"), input.provider.SourceShape()), true
+}
+
+func declaredSourceStreams(input InputSpec) []av.Stream {
+	spec, ok := declaredSourceShape(input)
+	if !ok {
+		return nil
+	}
+	return []av.Stream{declaredSourceStream(input, spec)}
+}
+
 func compileStateCustomSourceShape(state *recipeCompileState) (shape.Spec, bool) {
 	if state == nil {
 		return shape.Spec{}, false
 	}
 	if state.branchCompositionPresent {
-		return customSourceShape(state.branchInputAttachment)
+		return declaredSourceShape(state.branchInputAttachment)
 	}
 	if len(state.inputAttachments) != 1 {
 		return shape.Spec{}, false
 	}
-	return customSourceShape(state.inputAttachments[0])
+	return declaredSourceShape(state.inputAttachments[0])
 }
 
 func customSourceStreams(input InputSpec) []av.Stream {
 	if input.source == nil {
 		return nil
 	}
-	return []av.Stream{customSourceStream(input)}
+	return []av.Stream{declaredSourceStream(input, input.source.shape)}
 }
 
 func customSourceProbeResult(input InputSpec) format.ProbeResult {
@@ -191,7 +209,11 @@ func customSourceProbeResult(input InputSpec) format.ProbeResult {
 }
 
 func customSourceStream(input InputSpec) av.Stream {
-	shape := normalizeCustomSourceShape(input.inputName("source"), input.source.shape)
+	return declaredSourceStream(input, input.source.shape)
+}
+
+func declaredSourceStream(input InputSpec, spec shape.Spec) av.Stream {
+	shape := normalizeCustomSourceShape(input.inputName("source"), spec)
 	stream := av.Stream{
 		ID:   shape.StreamID,
 		Type: shape.MediaKind,

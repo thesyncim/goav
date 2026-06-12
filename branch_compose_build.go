@@ -645,9 +645,9 @@ func resolveBranchComposeStreamGroups(streams []av.Stream, branches []branchComp
 }
 
 // resolveBranchComposeStreamGroupsForInputs binds every branch to one concrete
-// stream. A single input keeps the legacy flat selection; with several inputs
-// the branch selects across the union of all input streams — narrowed to one
-// input by goav.InputName — and ambiguity fails with the candidate list.
+// stream. A single input keeps flat selection; with several inputs the branch
+// selects across the union of all input streams, narrowed to one input by
+// goav.InputName, and ambiguity fails with the candidate list.
 func resolveBranchComposeStreamGroupsForInputs(sources mediaPlanCompiledSources, inputs []InputSpec, branches []branchComposeRoute) ([]branchComposeStreamGroup, error) {
 	multi := len(sources.streamGroups) > 1
 	var sets []inputStreamSet
@@ -715,7 +715,7 @@ func runtimeInputStreamSets(inputs []InputSpec, groups [][]av.Stream) []inputStr
 		}
 		if i < len(inputs) {
 			set.name = inputs[i].inputName(fmt.Sprintf("input-%d", i))
-			if spec, ok := customSourceShape(inputs[i]); ok && spec.Domain != "" {
+			if spec, ok := declaredSourceShape(inputs[i]); ok && spec.Domain != "" {
 				set.domain = spec.Domain
 			}
 		}
@@ -968,9 +968,9 @@ func branchComposeDuplicateBranchError(name string, index int) error {
 }
 
 // branchComposeRouteOperations returns the branch's private operations — the
-// canonical operation list is the only source of branch transforms; the legacy
-// ad-hoc resize/resample synthesis from parallel plan fields is gone (the
-// shape solver inserts conversions as real operations upstream).
+// canonical operation list is the only source of branch transforms; the old
+// ad-hoc resize/resample synthesis from parallel plan fields is gone (the shape
+// solver inserts conversions as real operations upstream).
 func branchComposeRouteOperations(branch branchComposeBranch) []operationSpec {
 	return cloneOperationSpecs(branch.PrivateOperations)
 }

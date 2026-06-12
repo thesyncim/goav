@@ -239,15 +239,8 @@ func explainStreamRules(rules []streamRule) []plan.Decision {
 // discovered-stream anchors carry the right domain (frame-domain custom
 // sources announce frame streams; everything else is packet-domain).
 func (s InputSpec) sourceEventDomain() shape.MediaDomain {
-	switch {
-	case s.source != nil:
-		if spec, ok := customSourceShape(s); ok && spec.Domain != "" {
-			return spec.Domain
-		}
-	case s.provider != nil:
-		if domain := s.provider.SourceShape().Domain; domain != "" {
-			return domain
-		}
+	if spec, ok := declaredSourceShape(s); ok && spec.Domain != "" {
+		return spec.Domain
 	}
 	return shape.DomainPacket
 }

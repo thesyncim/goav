@@ -721,7 +721,17 @@ func validateJobDecodeAdaptersPass() recipeCompilePass {
 		if !state.options.preflightDecodeAdapters {
 			return nil
 		}
-		return validateRecipeDecodeAdapters(state.operation, state.runtime, state.intent)
+		intent := state.intent
+		intent.Streams = make([]streamIntent, 0, len(state.intent.Streams))
+		for i := range state.intent.Streams {
+			if streamNeedsDecodeForState(state, state.intent.Streams[i]) {
+				intent.Streams = append(intent.Streams, state.intent.Streams[i])
+			}
+		}
+		if len(intent.Streams) == 0 {
+			return nil
+		}
+		return validateRecipeDecodeAdapters(state.operation, state.runtime, intent)
 	}}
 }
 
@@ -975,7 +985,7 @@ func validateJobKnownInputStreamSelectionPass() recipeCompilePass {
 
 // jobStreamSelectionNeedsUnion reports whether a stream chain selects across
 // the union of several inputs (or was explicitly narrowed with InputName),
-// which replaces the legacy per-probe selection checks.
+// which replaces per-probe selection checks with one combined view.
 func jobStreamSelectionNeedsUnion(state *recipeCompileState, stream streamIntent) bool {
 	if state == nil || !state.jobPresent {
 		return false
@@ -1019,9 +1029,9 @@ func streamNeedsDecodeForState(state *recipeCompileState, stream streamIntent) b
 	return streamNeedsDecode(stream)
 }
 
-// jobStreamCustomSourceShape resolves the custom-source shape feeding one
-// stream chain: the single input's shape on single-input jobs (legacy), or the
-// shape of the input the chain's selector binds to on multi-input jobs.
+// jobStreamCustomSourceShape resolves the declared source shape feeding one
+// stream chain: the single input's shape on single-input jobs, or the shape of
+// the input the chain's selector binds to on multi-input jobs.
 func jobStreamCustomSourceShape(state *recipeCompileState, stream streamIntent) (shape.Spec, bool) {
 	if state == nil {
 		return shape.Spec{}, false
@@ -1034,7 +1044,7 @@ func jobStreamCustomSourceShape(state *recipeCompileState, stream streamIntent) 
 	if !ok || index >= len(state.inputAttachments) {
 		return shape.Spec{}, false
 	}
-	return customSourceShape(state.inputAttachments[index])
+	return declaredSourceShape(state.inputAttachments[index])
 }
 
 func validateKnownBranchInputStreamSelectionPass() recipeCompilePass {
@@ -1042,7 +1052,7 @@ func validateKnownBranchInputStreamSelectionPass() recipeCompilePass {
 		if !state.branchInputProbeReady || len(state.branchInputProbe.Streams) == 0 {
 			return nil
 		}
-		if spec, ok := customSourceShape(state.branchInputAttachment); ok && spec.Domain == shape.DomainFrame {
+		if spec, ok := declaredSourceShape(state.branchInputAttachment); ok && spec.Domain == shape.DomainFrame {
 			for i := range state.intent.Streams {
 				if _, err := selectStream(state.branchInputProbe.Streams, streamIntentSelector(state.intent.Streams[i])); err != nil {
 					return err
@@ -1064,7 +1074,7 @@ func validateKnownBranchInputDecodeAdaptersPass() recipeCompilePass {
 		if !state.options.preflightDecodeAdapters || !state.branchInputProbeReady || len(state.branchInputProbe.Streams) == 0 {
 			return nil
 		}
-		if spec, ok := customSourceShape(state.branchInputAttachment); ok && spec.Domain == shape.DomainFrame {
+		if spec, ok := declaredSourceShape(state.branchInputAttachment); ok && spec.Domain == shape.DomainFrame {
 			return nil
 		}
 		return validateKnownRecipeDecodeAdapters(state.operation, state.runtime, []format.ProbeResult{state.branchInputProbe}, state.intent.Streams)
