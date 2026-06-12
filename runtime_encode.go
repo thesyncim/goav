@@ -93,7 +93,9 @@ func (b *builder) newEncodeStageNamed(ctx context.Context, name string, request 
 		StampOutputStream: true,
 	})
 	if err != nil {
-		encoder.Close()
+		if encoder != nil {
+			encoder.Close()
+		}
 		return nil, err
 	}
 	return stage, nil
