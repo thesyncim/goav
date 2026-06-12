@@ -729,7 +729,10 @@ per-arm decode and resample stages — and the planned spec equals the built
 graph node for node. `Describe()` returns the structured graph spec; rendering
 lives outside core (`graphrender.RenderURI(spec, "goav:graph")` for text, DOT,
 or Mermaid). Running tasks can render the current snapshot directly:
-`graphrender.RenderTaskFlowchart(task)`.
+`graphrender.RenderTaskFlowchart(task)`. Captured views use the same renderer:
+`graphrender.RenderSnapshotFlowchart(task.Snapshot())` for a full task and
+`graphrender.RenderBranchFlowchart(attachment.Snapshot())` for one runtime
+branch.
 
 Applications that want a CLI control surface expose a Unix socket with package
 `ctl`; the bundled command then drives the same task APIs over structured JSON.

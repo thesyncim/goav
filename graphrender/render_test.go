@@ -285,6 +285,89 @@ func TestRenderTaskURIHandlesNilAndSnapshotBranchDetails(t *testing.T) {
 	}
 }
 
+func TestRenderSnapshotAndBranchHelpers(t *testing.T) {
+	snap := snapshot.Task{
+		Spec: pipeline.Spec{
+			Name: "live",
+			Nodes: []pipeline.NodeSpec{
+				{Name: "source", Kind: pipeline.NodeSource},
+				{Name: "tap", Kind: pipeline.NodeStage, Detail: "frames"},
+				{Name: "archive-sink", Kind: pipeline.NodeSink},
+			},
+			Edges: []pipeline.EdgeSpec{
+				{From: "source", To: "tap"},
+				{From: "tap", To: "archive-sink"},
+			},
+		},
+		Branches: []snapshot.Branch{{
+			Name:  "archive",
+			State: lifecycle.BranchAttached,
+			Nodes: []pipeline.NodeRef{"archive-sink"},
+		}},
+	}
+
+	flowchart, err := RenderSnapshotFlowchart(snap)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(flowchart, "flowchart LR") ||
+		!strings.Contains(flowchart, "branch=archive (attached)") {
+		t.Fatalf("snapshot flowchart:\n%s", flowchart)
+	}
+	text, err := RenderSnapshotURI(snap, "goav:graph")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(text, "sink archive-sink [branch=archive (attached)]") {
+		t.Fatalf("snapshot text:\n%s", text)
+	}
+
+	branch := snapshot.Branch{
+		ID:    "branch-001",
+		Name:  "preview",
+		State: lifecycle.BranchDetached,
+		Spec: pipeline.Spec{
+			Nodes: []pipeline.NodeSpec{
+				{Name: "preview-meter", Kind: pipeline.NodeStage, Detail: "meter"},
+				{Name: "preview-sink", Kind: pipeline.NodeSink},
+			},
+			Edges: []pipeline.EdgeSpec{{From: "preview-meter", To: "preview-sink"}},
+		},
+	}
+	branchFlowchart, err := RenderBranchFlowchart(branch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(branchFlowchart, "branch=preview (detached)") ||
+		!strings.Contains(branchFlowchart, "preview-meter") {
+		t.Fatalf("branch flowchart:\n%s", branchFlowchart)
+	}
+	if branch.Spec.Nodes[0].Detail != "meter" {
+		t.Fatalf("RenderBranchFlowchart mutated branch spec: %+v", branch.Spec.Nodes[0])
+	}
+	dot, err := RenderBranchURI(branch, "goav://graph/dot")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(dot, "digraph \"preview\"") ||
+		!strings.Contains(dot, "branch=preview (detached)") {
+		t.Fatalf("branch dot:\n%s", dot)
+	}
+
+	unnamedDot, err := RenderBranchURI(snapshot.Branch{
+		ID: "branch-002",
+		Spec: pipeline.Spec{
+			Nodes: []pipeline.NodeSpec{{Name: "sink", Kind: pipeline.NodeSink}},
+		},
+	}, "goav://graph/dot")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(unnamedDot, "digraph \"branch-002\"") {
+		t.Fatalf("unnamed branch dot:\n%s", unnamedDot)
+	}
+}
+
 func TestRenderHelperEdgeCases(t *testing.T) {
 	if got, err := parseFormat(""); err != nil || got != textFormat {
 		t.Fatalf("parseFormat(empty) = %q, %v; want text", got, err)
