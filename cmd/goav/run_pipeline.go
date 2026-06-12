@@ -143,18 +143,22 @@ func parseRunPipelineArgs(argv []string) (runPipelineConfig, error) {
 
 func runPipelineHelp() string {
 	return "usage: goav run [--runtime demo|default|test] [--control unix://PATH] '<pipeline>'\n\n" +
-		"example:\n  goav run '" + defaultRunPipeline + "'\n\n" +
+		"examples:\n" +
+		"  goav run '" + defaultRunPipeline + "'\n" +
+		"  goav run 'testsrc video width=1280 height=720 fps=30 duration=3s realtime=true pattern=bars ! av1enc bitrate=1200k fps=30 keyframe_interval=60 min_qindex=20 max_qindex=180 tune=zerolatency ! filesink location=/tmp/goav-av1.ivf format=ivf'\n\n" +
 		"pipeline steps:\n" +
-		"  testsrc video width=<px> height=<px> fps=<n[/d]> frames=<n>|duration=<d> realtime=<bool>\n" +
+		"  testsrc video [name=<id>] width=<px> height=<px>|size=<w>x<h> fps=<n[/d]> frames=<n>|duration=<d> realtime=<bool> [pattern=bars|gradient|solid]\n" +
 		"  tap name=<tap-name>\n" +
-		"  resize width=<px> height=<px>\n" +
+		"  resize width=<px> height=<px>|size=<w>x<h>\n" +
 		"  av1enc|vp9enc|vp8enc|h264enc|encode codec=<id> media=<video|audio> bitrate=<rate> fps=<n[/d]> keyframe_interval=<n> [native_key=value...]\n" +
 		"  filesink location=<path> format=<container>\n\n" +
 		"control example:\n" +
-		"  goav run --control unix:///tmp/goav-live.sock 'testsrc video name=fixture width=1280 height=720 fps=30 duration=30s realtime=true pattern=bars ! tap name=frames ! av1enc bitrate=1200k fps=30 keyframe_interval=60 ! filesink location=/tmp/goav-av1.mkv format=matroska'\n" +
+		"  goav run --control unix:///tmp/goav-live.sock 'testsrc video name=fixture width=1280 height=720 fps=30 duration=30s realtime=true pattern=bars ! tap name=frames ! av1enc bitrate=1200k fps=30 keyframe_interval=60 min_qindex=20 max_qindex=180 tune=zerolatency ! filesink location=/tmp/goav-av1.mkv format=matroska'\n" +
+		"  goav ctl --control unix:///tmp/goav-live.sock taps\n" +
 		"  goav ctl --control unix:///tmp/goav-live.sock graph\n" +
 		"  goav ctl --control unix:///tmp/goav-live.sock control rate value=0.5 source=fixture\n" +
-		"  goav ctl --control unix:///tmp/goav-live.sock attach frames as preview 'resize 320x180 ! av1enc bitrate=300k fps=2 keyframe_interval=1 ! filesink location=/tmp/goav-preview.mkv format=matroska'\n" +
+		"  goav ctl --control unix:///tmp/goav-live.sock control seek position=2s source=fixture\n" +
+		"  goav ctl --control unix:///tmp/goav-live.sock attach frames as preview 'resize 320x180 ! av1enc bitrate=300k fps=2 keyframe_interval=1 ! filesink location=/tmp/goav-preview.ivf format=ivf'\n" +
 		"  goav ctl --control unix:///tmp/goav-live.sock stop\n"
 }
 
