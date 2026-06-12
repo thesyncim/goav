@@ -62,6 +62,43 @@ func TestRegistryFactory(t *testing.T) {
 	}
 }
 
+func TestRegistryDescriptorsSortedAndCloned(t *testing.T) {
+	registry := NewRegistry()
+	registry.RegisterFactory(Descriptor{
+		Name:        FactoryResample,
+		Input:       av.MediaAudio,
+		Output:      av.MediaAudio,
+		ResizeModes: []ResizeMode{ResizePassthrough},
+		Realtime:    true,
+		Stateless:   true,
+		Metadata:    av.Metadata{"backend": "audio"},
+	}, &fakeFactory{})
+	registry.RegisterFactory(Descriptor{
+		Name:         FactoryResize,
+		Input:        av.MediaVideo,
+		Output:       av.MediaVideo,
+		PixelFormats: []string{av.PixelFormatYUV420P},
+	}, &fakeFactory{})
+
+	descriptors := registry.Descriptors()
+	if len(descriptors) != 2 {
+		t.Fatalf("len = %d, want 2", len(descriptors))
+	}
+	if descriptors[0].Name != FactoryResample || descriptors[1].Name != FactoryResize {
+		t.Fatalf("descriptors not sorted by name: %+v", descriptors)
+	}
+
+	descriptors[0].ResizeModes[0] = ResizeFill
+	descriptors[0].Metadata["backend"] = "mutated"
+	descriptors[1].PixelFormats[0] = av.PixelFormatI420
+	again := registry.Descriptors()
+	if again[0].ResizeModes[0] != ResizePassthrough ||
+		again[0].Metadata["backend"] != "audio" ||
+		again[1].PixelFormats[0] != av.PixelFormatYUV420P {
+		t.Fatalf("descriptor list was not cloned: %+v", again)
+	}
+}
+
 func TestRegistryFactoryNotFound(t *testing.T) {
 	_, err := NewRegistry().Factory(FactoryResize)
 	if err != ErrNotFound {

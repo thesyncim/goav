@@ -176,6 +176,68 @@ caller-owned `filter.Result`; sentinels `filter.ErrResultFull`,
 `filter.ErrOutputBufferTooSmall`, `filter.ErrUnsupportedFormat`.
 
 Register: `goav.WithFilter(desc, factory)` or `goav.WithFilterAdapter(...)`.
+Use the well-known descriptor name for the conversion class you are replacing;
+the last registration wins, so call `WithStdFilters()` first and your adapter
+option after it:
+
+```go
+var passthroughResampler = filter.Descriptor{
+    Name:          filter.FactoryResample,
+    Input:         av.MediaAudio,
+    Output:        av.MediaAudio,
+    SampleFormats: []string{av.SampleFormatS16},
+    Realtime:      true,
+    Stateless:     true,
+    Metadata:      av.Metadata{"backend": "acme-audio"},
+}
+
+type passthroughResamplerFactory struct{}
+
+func (passthroughResamplerFactory) NewFilter(ctx context.Context, cfg filter.Config) (filter.FrameFilter, error) {
+    f := &passthroughResamplerFilter{}
+    if err := f.Open(ctx, cfg); err != nil {
+        return nil, err
+    }
+    return f, nil
+}
+
+type passthroughResamplerFilter struct{}
+
+func (*passthroughResamplerFilter) Descriptor() filter.Descriptor { return passthroughResampler }
+
+func (*passthroughResamplerFilter) Open(_ context.Context, cfg filter.Config) error {
+    if cfg.Stream.Type != av.MediaAudio || cfg.Audio == nil {
+        return filter.ErrUnsupportedFormat
+    }
+    return nil
+}
+
+func (*passthroughResamplerFilter) FilterInto(_ context.Context, frame *av.Frame, out *filter.Result) error {
+    if frame == nil {
+        return nil
+    }
+    if len(out.Frames) == cap(out.Frames) {
+        return filter.ErrResultFull
+    }
+    out.Frames = append(out.Frames, *frame)
+    return nil
+}
+
+func (*passthroughResamplerFilter) FlushInto(context.Context, *filter.Result) error { return nil }
+func (*passthroughResamplerFilter) HandleEvent(context.Context, *av.Event) error    { return nil }
+func (*passthroughResamplerFilter) Close() error                                    { return nil }
+
+runtime := goav.New(
+    goav.WithStdFilters(),
+    goav.WithFilter(passthroughResampler, passthroughResamplerFactory{}),
+)
+```
+
+`FilterInto` and `FlushInto` may append both `out.Events` and `out.Frames`;
+`filter.Stage` emits result events before result frames, forwards input events
+after `HandleEvent`, and flushes before forwarding `av.EventEndOfStream`.
+External hosts that want a new CLI-visible branch primitive should wrap the
+filter in an allowlisted `PipelineRegistry` step; see `docs/CONTROL_PLANE.md`.
 
 ## Source provider (`provider` package)
 
