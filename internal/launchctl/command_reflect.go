@@ -1,7 +1,6 @@
 package launchctl
 
 import (
-	"encoding/json"
 	"fmt"
 	"math"
 	"reflect"
@@ -138,8 +137,8 @@ func BindJSON(spec CommandSpec, data []byte) (any, error) {
 }
 
 func bindKnownJSON(ctx bindContext, data []byte) (any, error) {
-	var raw map[string]any
-	if err := json.Unmarshal(data, &raw); err != nil {
+	raw, err := decodeObject(data)
+	if err != nil {
 		return nil, commandError("invalid_json", ctx.operation, "", err.Error(), nil, nil, err)
 	}
 	args := make([]string, 0, len(raw))

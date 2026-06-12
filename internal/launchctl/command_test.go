@@ -219,6 +219,46 @@ func TestBindJSONParsesBoolFields(t *testing.T) {
 	}
 }
 
+func TestBindJSONParsesNumericFieldsAndMetadata(t *testing.T) {
+	bitrateSpec, _ := LookupControlCommand("bitrate")
+	args, err := BindJSON(bitrateSpec, []byte(`{"stream":"video","value":1200000,"at":"main_encoded"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	bitrate := args.(BitrateCommand)
+	if bitrate.Stream != "video" || bitrate.Value != 1_200_000 || bitrate.At != "main_encoded" {
+		t.Fatalf("bitrate = %+v", bitrate)
+	}
+
+	rateSpec, _ := LookupControlCommand("rate")
+	args, err = BindJSON(rateSpec, []byte(`{"value":0.5,"source":"fixture"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	rate := args.(RateCommand)
+	if rate.Value != 0.5 || rate.Source != "fixture" {
+		t.Fatalf("rate = %+v", rate)
+	}
+
+	deliverSpec, _ := LookupControlCommand("deliver")
+	args, err = BindJSON(deliverSpec, []byte(`{"type":"vendor.force_idr","stream":"video","at":"raw_video","metadata":{"count":2,"ok":true,"empty":null}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	deliver := args.(DeliverCommand)
+	if deliver.Metadata["count"] != "2" ||
+		deliver.Metadata["ok"] != "true" ||
+		deliver.Metadata["empty"] != "" {
+		t.Fatalf("metadata = %+v", deliver.Metadata)
+	}
+
+	_, err = BindJSON(rateSpec, []byte(`{"value":0.5} {"value":1}`))
+	var structured *Error
+	if !errors.As(err, &structured) || structured.Code != "invalid_json" {
+		t.Fatalf("err = %v, want invalid_json", err)
+	}
+}
+
 func TestExecuteRawControlCallsTaskControl(t *testing.T) {
 	task := newFakeTask()
 	_, err := Execute(context.Background(), task, []string{"control", "--json", `{"type":"bitrate","stream_id":"video","bitrate":1200000,"tap":"main_encoded"}`})
