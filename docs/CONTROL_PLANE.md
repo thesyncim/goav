@@ -63,8 +63,7 @@ encoderFactory := &acmeEncoderFactory{
 task, err := goav.From(liveInput).
     Audio().Decode().Tap(goav.FrameTap("frames")).
     To(primaryDestination).
-    UseRuntime(goav.New(
-        goav.WithStdFilters(),
+    UseRuntime(goav.Default(
         goav.WithEncoder(encoderFactory.Descriptor, encoderFactory),
     )).
     Build(ctx)
@@ -272,15 +271,19 @@ Supported built-ins include:
 ## Custom Codecs
 
 Register the codec implementation on the runtime, then call it in an attach or
-rebranch pipeline with the generic `encode` step:
+rebranch pipeline with the generic `encode` step. Use `goav.Default(...)` when
+you want the stock codecs, formats, and filters plus your adapter; use
+`goav.New(...)` only when you are intentionally registering every required
+codec, filter, prober, demuxer, and muxer yourself.
 
 ```go
-rt := goav.New(
+rt := goav.Default(
     goav.WithEncoder(codec.Descriptor{
         ID:   av.CodecID("x_pcm_s16"),
         Name: "ACME PCM S16",
         Type: av.MediaAudio,
     }, acmeEncoderFactory),
+    goav.WithFormatAdapter(acmecontainer.Register), // if no stock container accepts the codec
 )
 ```
 
@@ -292,6 +295,11 @@ goav ctl --control unix:///tmp/goav-live.sock attach frames as record \
 The generic encoder step supports the common codec options: `bitrate`,
 `profile`, `level`, `sample_rate`, `channels`, `clock_rate`,
 `keyframe_interval`, and `fps`.
+
+The destination container must accept the selected codec. Standard codecs can
+often use the standard containers registered by `goav.Default`; a private codec
+usually needs a matching `WithFormatAdapter`, `WithMuxer`, or an app-owned
+custom destination step.
 
 When an encoder exposes native settings beyond those common options, expose a
 named encoder step with `ctl.EncoderSpec`. The CLI spelling stays short and the

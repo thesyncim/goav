@@ -20,6 +20,26 @@ import (
 // forget to extend.
 var docPinImplementationSubtrees = []string{"adapters", "container"}
 
+func TestControlPlaneCustomCodecDocsUseBootstrapRuntime(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("docs", "CONTROL_PLANE.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(data)
+	for _, fragment := range []string{
+		"UseRuntime(goav.Default(",
+		"goav.WithFormatAdapter",
+		"The destination container must accept the selected codec.",
+	} {
+		if !strings.Contains(text, fragment) {
+			t.Fatalf("CONTROL_PLANE.md missing %q", fragment)
+		}
+	}
+	if strings.Contains(text, "UseRuntime(goav.New(\n        goav.WithStdFilters(),") {
+		t.Fatal("CONTROL_PLANE.md custom-codec bootstrap drifted back to a bare runtime")
+	}
+}
+
 // docPinGoverned reports whether a discovered package directory falls under
 // the documentation pin (true for everything outside the implementation
 // subtrees).
