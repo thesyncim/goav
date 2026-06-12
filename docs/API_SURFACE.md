@@ -104,8 +104,8 @@ first-class. See docs/ADAPTERS.md and docs/COMPONENTS.md.
   `BufferOwnership`, `Plane`), timing (`TimeBase`, `Timestamp`, `Duration`,
   rescaling), `Clock`.
 - **Testing** — `goavtest`: deterministic sources (`Audio`, `Video`,
-  `Packets`, `LiveAudio`), `Collector`, `Clock`, passthrough `Codec`/`Format`,
-  one-liner `Runtime()`. Helpers return real grammar values.
+  `Packets`, `LiveAudio`, `NewTestSource`), `Collector`, `Clock`, passthrough
+  `Codec`/`Format`, one-liner `Runtime()`. Helpers return real grammar values.
 
 ### Extension closure
 

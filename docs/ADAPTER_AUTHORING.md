@@ -254,5 +254,6 @@ routing handle branches share.
    `testing.AllocsPerRun` guard on every hot path (see any `adapters/*`
    `*Allocs` test); an end-to-end grammar test (`goavtest.Audio/Video/Packets`
    inputs, `goavtest.NewCollector()` output, `goavtest.Runtime()` plus your
-   `With*` option). `adapterproof/adapter_compat_test.go` is a complete
-   worked example of all five seams.
+   `With*` option). Use `goavtest.NewTestSource` when the adapter needs a
+   provider-shaped, controllable source fixture. `adapterproof/adapter_compat_test.go`
+   is a complete worked example of all five seams.
