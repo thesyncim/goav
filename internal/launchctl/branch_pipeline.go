@@ -110,6 +110,9 @@ func (p *BranchPipeline) finish() goav.BranchSpec {
 }
 
 func parseBranchPipelineWithRegistry(task goav.Task, tapName string, branchName string, pipelineText string, registry PipelineRegistry) (goav.BranchSpec, error) {
+	if err := validatePipelineRegistry(registry); err != nil {
+		return goav.BranchSpec{}, err
+	}
 	if branchName == "" {
 		return goav.BranchSpec{}, commandError("missing_required", "attach", "branch", "branch name is required", nil, []string{"use attach <tap-name> as <branch-name> '<branch-pipeline>'"}, nil)
 	}
@@ -276,19 +279,9 @@ func encoderMap(specs []EncoderSpec) map[string]EncoderSpec {
 }
 
 func pipelineStepNames(registry PipelineRegistry) []string {
-	seen := map[string]struct{}{
-		"copy":     {},
-		"decode":   {},
-		"resize":   {},
-		"resample": {},
-		"encode":   {},
-		"encoder":  {},
-		"vp8enc":   {},
-		"vp9enc":   {},
-		"h264enc":  {},
-		"av1enc":   {},
-		"opusenc":  {},
-		"filesink": {},
+	seen := make(map[string]struct{})
+	for _, name := range builtinPipelineNames() {
+		seen[name] = struct{}{}
 	}
 	for _, spec := range registry.Steps {
 		if spec.Name != "" {

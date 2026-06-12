@@ -20,6 +20,12 @@ func HelpWithCommands(args []string, manifest []CommandSpec) (string, error) {
 // branch-pipeline registry. Servers use this to include application-specific
 // controls, pipeline steps, and encoder spellings.
 func HelpWithRegistry(args []string, manifest []CommandSpec, registry PipelineRegistry) (string, error) {
+	if err := validateCommandManifest(manifest); err != nil {
+		return "", err
+	}
+	if err := validatePipelineRegistry(registry); err != nil {
+		return "", err
+	}
 	if len(args) == 0 {
 		return rootHelp(), nil
 	}
