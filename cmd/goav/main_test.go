@@ -9,13 +9,13 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"reflect"
 	"strings"
 	"testing"
 	"time"
 
 	goav "github.com/thesyncim/goav"
 	"github.com/thesyncim/goav/av"
+	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/ctl"
 	"github.com/thesyncim/goav/goavtest"
 )
@@ -28,15 +28,14 @@ func TestCLIInvokesCustomControlCommand(t *testing.T) {
 		Value string `goavctl:"value,required" usage:"value=<text>" help:"custom CLI value"`
 	}
 	var applied string
-	command := ctl.CommandSpec{
-		Name:     "vendor.cli",
-		Summary:  "custom CLI command",
-		ArgsType: reflect.TypeOf(customCommand{}),
-		Apply: func(_ context.Context, _ goav.Task, args any) (ctl.ControlResponse, error) {
-			applied = args.(customCommand).Value
+	command := ctl.NewCommand[customCommand](
+		"vendor.cli",
+		"custom CLI command",
+		func(_ context.Context, _ goav.Task, args customCommand) (ctl.ControlResponse, error) {
+			applied = args.Value
 			return ctl.ControlResponse{Operation: "control vendor.cli", Result: applied}, nil
 		},
-	}
+	)
 	task, err := goav.From(goavtest.Audio(48000, 1, []int16{1})).
 		Audio().
 		To(goavtest.NewCollector().Sink()).
@@ -51,7 +50,9 @@ func TestCLIInvokesCustomControlCommand(t *testing.T) {
 	t.Cleanup(func() { _ = os.Remove(socket) })
 	errC := make(chan error, 1)
 	go func() {
-		errC <- ctl.ServeUnixWithOptions(ctx, task, "unix://"+socket, ctl.WithCommands(command))
+		errC <- ctl.ServeUnixWithOptions(ctx, task, "unix://"+socket, ctl.WithCapabilities(ctl.CapabilitySet{
+			Commands: []ctl.CommandSpec{command},
+		}))
 	}()
 	waitForCLISocket(t, socket, errC)
 
@@ -79,26 +80,39 @@ func TestCLIHelpListsCustomPipelineRegistry(t *testing.T) {
 	}
 	defer task.Close()
 
-	registry := ctl.PipelineRegistry{
-		Steps: []ctl.BranchPipelineStepSpec{{
-			Name:    "meter",
-			Aliases: []string{"levelmeter"},
-			Summary: "custom level meter",
-			Usage:   "[window=<duration>]",
-		}},
-		Encoders: []ctl.EncoderSpec{{
-			Name:    "acmeenc",
-			Aliases: []string{"acme"},
-			Summary: "ACME native encoder",
-			Usage:   "bitrate=<bps> quality=<name>",
-		}},
+	type meterSettings struct {
+		Window time.Duration `goavctl:"window,duration" usage:"[window=<duration>]" help:"observation window"`
+	}
+	meter := ctl.NewBranchStep[meterSettings](
+		"meter",
+		"custom level meter",
+		func(*ctl.BranchPipeline, meterSettings) error { return nil },
+		ctl.Aliases("levelmeter"),
+	)
+	type acmeSettings struct {
+		Bitrate int    `goavctl:"bitrate,required,rate" usage:"bitrate=<rate>" help:"target bitrate"`
+		Quality string `goavctl:"quality" usage:"[quality=<name>]" help:"native quality"`
+	}
+	acme := ctl.NewEncoderSpec[acmeSettings](
+		"acmeenc",
+		"ACME native encoder",
+		func(args acmeSettings) (codec.CodecSpec, error) {
+			return codec.Codec("acme", av.MediaAudio, codec.Bitrate(args.Bitrate), codec.Profile(args.Quality)), nil
+		},
+		ctl.Aliases("acme"),
+	)
+	capabilities := ctl.CapabilitySet{
+		Pipeline: ctl.PipelineRegistry{
+			Steps:    []ctl.BranchPipelineStepSpec{meter},
+			Encoders: []ctl.EncoderSpec{acme},
+		},
 	}
 
 	socket := filepath.Join(os.TempDir(), fmt.Sprintf("goav-cli-help-%d.sock", time.Now().UnixNano()))
 	t.Cleanup(func() { _ = os.Remove(socket) })
 	errC := make(chan error, 1)
 	go func() {
-		errC <- ctl.ServeUnixWithOptions(ctx, task, "unix://"+socket, ctl.WithPipelineRegistry(registry))
+		errC <- ctl.ServeUnixWithOptions(ctx, task, "unix://"+socket, ctl.WithCapabilities(capabilities))
 	}()
 	waitForCLISocket(t, socket, errC)
 
@@ -115,12 +129,24 @@ func TestCLIHelpListsCustomPipelineRegistry(t *testing.T) {
 		"(aliases: levelmeter)",
 		"custom level meter",
 		"Custom encoders:",
-		"acmeenc bitrate=<bps> quality=<name>",
+		"acmeenc bitrate=<rate> [quality=<name>]",
 		"(aliases: acme)",
 		"ACME native encoder",
 	} {
 		if !strings.Contains(text, fragment) {
 			t.Fatalf("help missing %q:\n%s", fragment, text)
+		}
+	}
+
+	caps := runCLI(t, "--control", "unix://"+socket, "capabilities")
+	for _, fragment := range []string{
+		`"custom_branch_steps"`,
+		`"name":"meter"`,
+		`"name":"acmeenc"`,
+		`"runtime_encoders"`,
+	} {
+		if !strings.Contains(caps, fragment) {
+			t.Fatalf("capabilities missing %q:\n%s", fragment, caps)
 		}
 	}
 }

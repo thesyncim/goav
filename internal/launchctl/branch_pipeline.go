@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"reflect"
 	"sort"
 	"strconv"
 	"strings"
@@ -26,7 +27,10 @@ type BranchPipelineStepSpec struct {
 	Aliases []string
 	Summary string
 	Usage   string
-	Apply   func(*BranchPipeline, StepArgs) error
+	// ArgsType optionally records the typed settings struct used by helper
+	// constructors. It is cold-path metadata for help and capabilities output.
+	ArgsType reflect.Type
+	Apply    func(*BranchPipeline, StepArgs) error
 }
 
 // EncoderSpec is one allowlisted encoder factory for branch pipelines. It is
@@ -37,7 +41,10 @@ type EncoderSpec struct {
 	Aliases []string
 	Summary string
 	Usage   string
-	Apply   func(StepArgs) (codec.CodecSpec, error)
+	// ArgsType optionally records the typed settings struct used by helper
+	// constructors. It is cold-path metadata for help and capabilities output.
+	ArgsType reflect.Type
+	Apply    func(StepArgs) (codec.CodecSpec, error)
 }
 
 // PipelineRegistry is the explicit allowlist for branch-pipeline parsing.

@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"reflect"
-	"strconv"
 	"strings"
 	"time"
 
@@ -63,12 +61,10 @@ func Example_bootstrapControlPlaneHost() {
 		Value  float64 `goavctl:"value,required" usage:"value=<float>" help:"playback rate"`
 		Source string  `goavctl:"source,required" usage:"source=<source-name>" help:"source node to retime"`
 	}
-	command := ctl.CommandSpec{
-		Name:     "vendor.rate",
-		Summary:  "vendor playback-rate control",
-		ArgsType: reflect.TypeOf(SetRate{}),
-		Apply: func(ctx context.Context, task goav.Task, args any) (ctl.ControlResponse, error) {
-			cmd := args.(SetRate)
+	command := ctl.NewCommand[SetRate](
+		"vendor.rate",
+		"vendor playback-rate control",
+		func(ctx context.Context, task goav.Task, cmd SetRate) (ctl.ControlResponse, error) {
 			if err := task.Control(ctx, goav.Rate(cmd.Value).At(pipeline.NodeRef(cmd.Source))); err != nil {
 				return ctl.ControlResponse{}, err
 			}
@@ -77,42 +73,51 @@ func Example_bootstrapControlPlaneHost() {
 				Result:    map[string]any{"value": cmd.Value},
 			}, nil
 		},
-	}
+	)
 
-	registry := ctl.PipelineRegistry{
-		Steps: []ctl.BranchPipelineStepSpec{{
-			Name:    "meter",
-			Summary: "observe frames before encoding",
-			Usage:   "[window=<duration>]",
-			Apply: func(branch *ctl.BranchPipeline, _ ctl.StepArgs) error {
-				branch.Do(goav.FrameFunc("meter", func(_ context.Context, frame *av.Frame, emit goav.Emit) error {
-					return emit.Frame(frame)
-				}))
-				return nil
-			},
-		}},
-		Encoders: []ctl.EncoderSpec{{
-			Name:    "acmeenc",
-			Summary: "ACME audio encoder with native settings",
-			Usage:   "bitrate=<bps> quality=<profile> lookahead=<mode>",
-			Apply: func(args ctl.StepArgs) (codec.CodecSpec, error) {
-				bitrate, err := strconv.Atoi(args["bitrate"])
-				if err != nil {
-					return codec.CodecSpec{}, err
-				}
-				return codec.Codec(customCodec, av.MediaAudio,
-					codec.Bitrate(bitrate),
-					codec.Profile(args["quality"]),
-					codec.Control(func(native any) error {
-						options := native.(*exampleNativeOptions)
-						options.Lookahead = args["lookahead"]
-						return nil
-					}),
-				), nil
-			},
-		}},
+	type MeterSettings struct {
+		Window time.Duration `goavctl:"window,duration" usage:"[window=<duration>]" help:"observation window"`
 	}
-	server := ctl.Server{Task: task, Commands: []ctl.CommandSpec{command}, Pipeline: registry}
+	meter := ctl.NewBranchStep[MeterSettings](
+		"meter",
+		"observe frames before encoding",
+		func(branch *ctl.BranchPipeline, _ MeterSettings) error {
+			branch.Do(goav.FrameFunc("meter", func(_ context.Context, frame *av.Frame, emit goav.Emit) error {
+				return emit.Frame(frame)
+			}))
+			return nil
+		},
+	)
+
+	type ACMESettings struct {
+		Bitrate   int    `goavctl:"bitrate,required,rate" usage:"bitrate=<rate>" help:"target bitrate"`
+		Quality   string `goavctl:"quality" usage:"[quality=<profile>]" help:"native quality profile"`
+		Lookahead string `goavctl:"lookahead" usage:"[lookahead=<mode>]" help:"native lookahead mode"`
+	}
+	acme := ctl.NewEncoderSpec[ACMESettings](
+		"acmeenc",
+		"ACME audio encoder with native settings",
+		func(args ACMESettings) (codec.CodecSpec, error) {
+			return codec.Codec(customCodec, av.MediaAudio,
+				codec.Bitrate(args.Bitrate),
+				codec.Profile(args.Quality),
+				codec.Control(func(native any) error {
+					options := native.(*exampleNativeOptions)
+					options.Lookahead = args.Lookahead
+					return nil
+				}),
+			), nil
+		},
+	)
+	capabilities := ctl.CapabilitySet{
+		Commands: []ctl.CommandSpec{command},
+		Pipeline: ctl.PipelineRegistry{
+			Steps:    []ctl.BranchPipelineStepSpec{meter},
+			Encoders: []ctl.EncoderSpec{acme},
+		},
+	}
+	server := ctl.Server{Task: task}
+	ctl.WithCapabilities(capabilities)(&server)
 
 	rateRequest, _ := ctl.RequestFromCLI([]string{"control", "vendor.rate", "value=0.5", "source=fixture"})
 	rateResponse := server.Handle(ctx, rateRequest)
@@ -121,7 +126,7 @@ func Example_bootstrapControlPlaneHost() {
 	defer os.Remove(out)
 	attachRequest, _ := ctl.RequestFromCLI([]string{
 		"attach", "frames", "as", "archive",
-		"meter ! acmeenc bitrate=128000 quality=voice lookahead=deep ! filesink location=" + out + " format=ogg",
+		"meter ! acmeenc bitrate=128k quality=voice lookahead=deep ! filesink location=" + out + " format=ogg",
 	})
 	attachResponse := server.Handle(ctx, attachRequest)
 
@@ -147,26 +152,29 @@ func Example_bootstrapControlPlaneHost() {
 	// flowchart includes branch: true
 }
 
-func ExampleWithPipelineRegistry_customEncoder() {
+func ExampleNewEncoderSpec_customEncoder() {
 	const customCodec = av.CodecID("x_acme_audio")
-	registry := ctl.PipelineRegistry{
-		Encoders: []ctl.EncoderSpec{{
-			Name:  "acmeenc",
-			Usage: "profile=<name>",
-			Apply: func(args ctl.StepArgs) (codec.CodecSpec, error) {
-				return codec.Codec(customCodec, av.MediaAudio,
-					codec.Profile(args["profile"]),
-					codec.Control(func(native any) error {
-						// Type-assert native to the concrete encoder/options type
-						// documented by the adapter package and apply every knob
-						// that is not part of the common codec settings.
-						return nil
-					}),
-				), nil
-			},
-		}},
+	type ACMESettings struct {
+		Profile string `goavctl:"profile,required" usage:"profile=<name>" help:"native profile"`
 	}
-	_ = ctl.WithPipelineRegistry(registry)
+	acme := ctl.NewEncoderSpec[ACMESettings](
+		"acmeenc",
+		"ACME audio encoder with native settings",
+		func(args ACMESettings) (codec.CodecSpec, error) {
+			return codec.Codec(customCodec, av.MediaAudio,
+				codec.Profile(args.Profile),
+				codec.Control(func(native any) error {
+					// Type-assert native to the concrete encoder/options type
+					// documented by the adapter package and apply every knob
+					// that is not part of the common codec settings.
+					return nil
+				}),
+			), nil
+		},
+	)
+	_ = ctl.WithCapabilities(ctl.CapabilitySet{
+		Pipeline: ctl.PipelineRegistry{Encoders: []ctl.EncoderSpec{acme}},
+	})
 
 	request, _ := ctl.RequestFromCLI([]string{
 		"attach", "frames", "as", "archive",

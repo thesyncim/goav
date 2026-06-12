@@ -29,15 +29,33 @@ type fieldSpec struct {
 	typ      reflect.Type
 }
 
+type bindContext struct {
+	name        string
+	operation   string
+	argsType    reflect.Type
+	usage       string
+	suggestions []string
+}
+
 // BindArgs reflects over a known command args struct and fills it from
 // key=value CLI arguments. The caller supplies the CommandSpec from the
 // manifest; no user-provided method or type name is ever invoked.
 func BindArgs(spec CommandSpec, args []string) (any, error) {
-	if spec.ArgsType.Kind() != reflect.Struct {
-		return nil, commandError("invalid_command", "control "+spec.Name, "", "command args type must be a struct", nil, nil, nil)
+	return bindKnownStruct(bindContext{
+		name:        spec.Name,
+		operation:   "control " + spec.Name,
+		argsType:    spec.ArgsType,
+		usage:       CommandUsage(spec),
+		suggestions: []string{"use `goav ctl help control " + spec.Name + "`"},
+	}, args)
+}
+
+func bindKnownStruct(ctx bindContext, args []string) (any, error) {
+	if ctx.argsType == nil || ctx.argsType.Kind() != reflect.Struct {
+		return nil, commandError("invalid_command", ctx.operation, "", "command args type must be a struct", nil, nil, nil)
 	}
-	fields := commandFields(spec.ArgsType)
-	target := reflect.New(spec.ArgsType).Elem()
+	fields := commandFields(ctx.argsType)
+	target := reflect.New(ctx.argsType).Elem()
 	seen := make(map[string]struct{})
 	for _, arg := range args {
 		if arg == "" {
@@ -47,14 +65,14 @@ func BindArgs(spec CommandSpec, args []string) (any, error) {
 			name := strings.TrimPrefix(arg, "--")
 			field, ok := fields[name]
 			if !ok || field.typ.Kind() != reflect.Bool {
-				return nil, unknownFieldError(spec, name, fields)
+				return nil, unknownFieldError(ctx, name, fields)
 			}
 			target.Field(field.index).SetBool(true)
 			seen[field.name] = struct{}{}
 			continue
 		}
 		if strings.Contains(arg, "..") && !strings.Contains(arg, "=") {
-			if err := bindRange(spec, target, fields, arg, seen); err != nil {
+			if err := bindRange(ctx, target, fields, arg, seen); err != nil {
 				return nil, err
 			}
 			continue
@@ -63,18 +81,18 @@ func BindArgs(spec CommandSpec, args []string) (any, error) {
 		if !ok {
 			return nil, commandError(
 				"invalid_argument",
-				"control "+spec.Name,
+				ctx.operation,
 				arg,
 				"arguments must use key=value form",
 				nil,
-				[]string{"use `goav ctl help control " + spec.Name + "`"},
+				ctx.suggestions,
 				nil,
 			)
 		}
 		if strings.HasPrefix(key, "metadata.") {
 			field, ok := fields["metadata"]
 			if !ok || field.typ != metadataType {
-				return nil, unknownFieldError(spec, key, fields)
+				return nil, unknownFieldError(ctx, key, fields)
 			}
 			setMetadata(target.Field(field.index), strings.TrimPrefix(key, "metadata."), value)
 			seen[field.name] = struct{}{}
@@ -82,9 +100,9 @@ func BindArgs(spec CommandSpec, args []string) (any, error) {
 		}
 		field, ok := fields[key]
 		if !ok {
-			return nil, unknownFieldError(spec, key, fields)
+			return nil, unknownFieldError(ctx, key, fields)
 		}
-		if err := setFieldValue(target.Field(field.index), field, value, spec.Name); err != nil {
+		if err := setFieldValue(target.Field(field.index), field, value, ctx); err != nil {
 			return nil, err
 		}
 		seen[field.name] = struct{}{}
@@ -94,11 +112,11 @@ func BindArgs(spec CommandSpec, args []string) (any, error) {
 			if _, ok := seen[field.name]; !ok {
 				return nil, commandError(
 					"missing_required",
-					"control "+spec.Name,
+					ctx.operation,
 					field.name,
 					fmt.Sprintf("missing required field %s", field.name),
-					[]string{"usage=" + CommandUsage(spec)},
-					[]string{"use `goav ctl help control " + spec.Name + "`"},
+					[]string{"usage=" + ctx.usage},
+					ctx.suggestions,
 					nil,
 				)
 			}
@@ -110,21 +128,31 @@ func BindArgs(spec CommandSpec, args []string) (any, error) {
 // BindJSON fills a known command args struct from a JSON object. It uses the
 // same field metadata as BindArgs so JSON and CLI parsing cannot drift.
 func BindJSON(spec CommandSpec, data []byte) (any, error) {
+	return bindKnownJSON(bindContext{
+		name:        spec.Name,
+		operation:   "control " + spec.Name,
+		argsType:    spec.ArgsType,
+		usage:       CommandUsage(spec),
+		suggestions: []string{"use `goav ctl help control " + spec.Name + "`"},
+	}, data)
+}
+
+func bindKnownJSON(ctx bindContext, data []byte) (any, error) {
 	var raw map[string]any
 	if err := json.Unmarshal(data, &raw); err != nil {
-		return nil, commandError("invalid_json", "control "+spec.Name, "", err.Error(), nil, nil, err)
+		return nil, commandError("invalid_json", ctx.operation, "", err.Error(), nil, nil, err)
 	}
 	args := make([]string, 0, len(raw))
 	for key, value := range raw {
 		if key == "metadata" {
 			obj, ok := value.(map[string]any)
 			if !ok {
-				return nil, commandError("invalid_value", "control "+spec.Name, key, "metadata must be an object", nil, nil, nil)
+				return nil, commandError("invalid_value", ctx.operation, key, "metadata must be an object", nil, nil, nil)
 			}
 			for metadataKey, metadataValue := range obj {
 				text, ok := metadataScalarString(metadataValue)
 				if !ok {
-					return nil, commandError("invalid_value", "control "+spec.Name, "metadata."+metadataKey, "metadata values must be scalar", nil, nil, nil)
+					return nil, commandError("invalid_value", ctx.operation, "metadata."+metadataKey, "metadata values must be scalar", nil, nil, nil)
 				}
 				args = append(args, "metadata."+metadataKey+"="+text)
 			}
@@ -132,11 +160,11 @@ func BindJSON(spec CommandSpec, data []byte) (any, error) {
 		}
 		text, ok := metadataScalarString(value)
 		if !ok {
-			return nil, commandError("invalid_value", "control "+spec.Name, key, "value must be scalar", nil, nil, nil)
+			return nil, commandError("invalid_value", ctx.operation, key, "value must be scalar", nil, nil, nil)
 		}
 		args = append(args, key+"="+text)
 	}
-	return BindArgs(spec, args)
+	return bindKnownStruct(ctx, args)
 }
 
 func commandFields(argsType reflect.Type) map[string]fieldSpec {
@@ -189,7 +217,7 @@ func orderedFields(fields map[string]fieldSpec) []fieldSpec {
 	return out
 }
 
-func setFieldValue(field reflect.Value, spec fieldSpec, value string, command string) error {
+func setFieldValue(field reflect.Value, spec fieldSpec, value string, ctx bindContext) error {
 	if spec.typ == streamIDType || spec.typ == eventTypeType {
 		field.SetString(value)
 		return nil
@@ -199,9 +227,9 @@ func setFieldValue(field reflect.Value, spec fieldSpec, value string, command st
 		if err != nil {
 			return commandError(
 				"invalid_value",
-				"control "+command,
+				ctx.operation,
 				spec.name,
-				fmt.Sprintf("cannot parse %s.%s: expected duration like 12.5s or 1m30s", command, spec.name),
+				fmt.Sprintf("cannot parse %s.%s: expected duration like 12.5s or 1m30s", ctx.name, spec.name),
 				[]string{"value=" + value},
 				[]string{"use " + spec.name + "=12.5s", "use " + spec.name + "=1m30s"},
 				err,
@@ -216,7 +244,7 @@ func setFieldValue(field reflect.Value, spec fieldSpec, value string, command st
 	case reflect.Bool:
 		parsed, err := parseBool(value)
 		if err != nil {
-			return commandError("invalid_value", "control "+command, spec.name, fmt.Sprintf("cannot parse %s.%s: expected true or false", command, spec.name), []string{"value=" + value}, []string{"use " + spec.name + "=true", "use " + spec.name + "=false"}, err)
+			return commandError("invalid_value", ctx.operation, spec.name, fmt.Sprintf("cannot parse %s.%s: expected true or false", ctx.name, spec.name), []string{"value=" + value}, []string{"use " + spec.name + "=true", "use " + spec.name + "=false"}, err)
 		}
 		field.SetBool(parsed)
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
@@ -227,9 +255,9 @@ func setFieldValue(field reflect.Value, spec fieldSpec, value string, command st
 			if err != nil {
 				return commandError(
 					"invalid_value",
-					"control "+command,
+					ctx.operation,
 					spec.name,
-					fmt.Sprintf("cannot parse %s.%s: expected bitrate like 1200k, 2M, or integer bits per second", command, spec.name),
+					fmt.Sprintf("cannot parse %s.%s: expected bitrate like 1200k, 2M, or integer bits per second", ctx.name, spec.name),
 					[]string{"value=" + value},
 					[]string{"use value=1200k", "use value=2000000"},
 					err,
@@ -240,25 +268,25 @@ func setFieldValue(field reflect.Value, spec fieldSpec, value string, command st
 			parsed, err = int(parsed64), parseErr
 		}
 		if err != nil {
-			return commandError("invalid_value", "control "+command, spec.name, fmt.Sprintf("cannot parse %s.%s: expected integer", command, spec.name), []string{"value=" + value}, nil, err)
+			return commandError("invalid_value", ctx.operation, spec.name, fmt.Sprintf("cannot parse %s.%s: expected integer", ctx.name, spec.name), []string{"value=" + value}, nil, err)
 		}
 		field.SetInt(int64(parsed))
 	case reflect.Float64:
 		parsed, err := strconv.ParseFloat(value, 64)
 		if err != nil || math.IsNaN(parsed) {
-			return commandError("invalid_value", "control "+command, spec.name, fmt.Sprintf("cannot parse %s.%s: expected float", command, spec.name), []string{"value=" + value}, []string{"use value=0.5"}, err)
+			return commandError("invalid_value", ctx.operation, spec.name, fmt.Sprintf("cannot parse %s.%s: expected float", ctx.name, spec.name), []string{"value=" + value}, []string{"use value=0.5"}, err)
 		}
 		field.SetFloat(parsed)
 	default:
 		if spec.typ == metadataType {
-			return commandError("invalid_argument", "control "+command, spec.name, "metadata must be set as metadata.<key>=<value>", nil, []string{"use metadata.source=cli"}, nil)
+			return commandError("invalid_argument", ctx.operation, spec.name, "metadata must be set as metadata.<key>=<value>", nil, []string{"use metadata.source=cli"}, nil)
 		}
-		return commandError("invalid_command", "control "+command, spec.name, "unsupported field type "+spec.typ.String(), nil, nil, nil)
+		return commandError("invalid_command", ctx.operation, spec.name, "unsupported field type "+spec.typ.String(), nil, nil, nil)
 	}
 	return nil
 }
 
-func bindRange(spec CommandSpec, target reflect.Value, fields map[string]fieldSpec, arg string, seen map[string]struct{}) error {
+func bindRange(ctx bindContext, target reflect.Value, fields map[string]fieldSpec, arg string, seen map[string]struct{}) error {
 	startText, endText, ok := strings.Cut(arg, "..")
 	if !ok {
 		return nil
@@ -266,12 +294,12 @@ func bindRange(spec CommandSpec, target reflect.Value, fields map[string]fieldSp
 	start, okStart := fields["start"]
 	end, okEnd := fields["end"]
 	if !okStart || !okEnd {
-		return commandError("invalid_argument", "control "+spec.Name, arg, "range syntax is only supported by segment", nil, []string{"use start=10s end=20s"}, nil)
+		return commandError("invalid_argument", ctx.operation, arg, "range syntax is only supported by segment", nil, []string{"use start=10s end=20s"}, nil)
 	}
-	if err := setFieldValue(target.Field(start.index), start, startText, spec.Name); err != nil {
+	if err := setFieldValue(target.Field(start.index), start, startText, ctx); err != nil {
 		return err
 	}
-	if err := setFieldValue(target.Field(end.index), end, endText, spec.Name); err != nil {
+	if err := setFieldValue(target.Field(end.index), end, endText, ctx); err != nil {
 		return err
 	}
 	seen["start"] = struct{}{}
@@ -323,20 +351,20 @@ func parseRate(value string) (int, error) {
 	return int(math.Round(bps)), nil
 }
 
-func unknownFieldError(spec CommandSpec, name string, fields map[string]fieldSpec) error {
+func unknownFieldError(ctx bindContext, name string, fields map[string]fieldSpec) error {
 	names := make([]string, 0, len(fields))
 	for fieldName := range fields {
 		names = append(names, fieldName)
 	}
-	suggestions := []string{"use `goav ctl help control " + spec.Name + "`"}
+	suggestions := cloneStrings(ctx.suggestions)
 	if nearest := closest(name, names); nearest != "" {
 		suggestions = append([]string{"use " + nearest + "="}, suggestions...)
 	}
 	return commandError(
 		"unknown_field",
-		"control "+spec.Name,
+		ctx.operation,
 		name,
-		fmt.Sprintf("unknown field %q for control %s", name, spec.Name),
+		fmt.Sprintf("unknown field %q for %s", name, ctx.name),
 		[]string{"known_fields=" + strings.Join(names, ",")},
 		suggestions,
 		nil,

@@ -60,6 +60,12 @@ func executeRequest(ctx context.Context, task goav.Task, request Request) (Contr
 			return ControlResponse{}, err
 		}
 		return ControlResponse{Operation: "help", Result: text}, nil
+	case "capabilities":
+		report, err := capabilityReport(ControlManifest(), PipelineRegistry{}, task)
+		if err != nil {
+			return ControlResponse{}, err
+		}
+		return ControlResponse{Operation: "capabilities", Result: report}, nil
 	case "control_raw":
 		return executeRawControl(ctx, task, request.Control)
 	case "control":
@@ -135,6 +141,11 @@ func RequestFromCLI(argv []string) (Request, error) {
 	switch argv[0] {
 	case "help":
 		return helpRequestFromCLI(argv[1:]), nil
+	case "capabilities":
+		if len(argv) != 1 {
+			return Request{}, commandError("invalid_argument", "capabilities", "", "capabilities does not accept arguments", nil, []string{"use `goav ctl capabilities`"}, nil)
+		}
+		return Request{Op: "capabilities"}, nil
 	case "control":
 		return controlRequestFromCLI(argv[1:])
 	case "attach":
@@ -294,6 +305,12 @@ func Execute(ctx context.Context, task goav.Task, argv []string) (ControlRespons
 			return ControlResponse{}, err
 		}
 		return ControlResponse{Operation: "help", Result: text}, nil
+	case "capabilities":
+		report, err := capabilityReport(ControlManifest(), PipelineRegistry{}, task)
+		if err != nil {
+			return ControlResponse{}, err
+		}
+		return ControlResponse{Operation: "capabilities", Result: report}, nil
 	case "control":
 		return executeControl(ctx, task, argv[1:])
 	case "inspect":

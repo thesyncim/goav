@@ -44,9 +44,9 @@ func TestRunHostServesCustomHelpAndAttach(t *testing.T) {
 	}
 	for _, fragment := range []string{
 		"meter [label=<text>]",
-		"thumbnail [every=<positive-int>] [label=<text>]",
+		"thumbnail every=<positive-int> [label=<text>]",
 		"memorysink [name=<text>]",
-		"acmeenc bitrate=<bps>",
+		"acmeenc bitrate=<rate>",
 		"aliases: levelmeter",
 		"aliases: thumbs, sampleframes",
 		"aliases: memsink",
@@ -231,9 +231,9 @@ func TestRunHostAcceptsDocumentedCLICommands(t *testing.T) {
 
 	attachHelp := runDemoCLI(t, socket, "help", "attach")
 	for _, fragment := range []string{
-		"thumbnail [every=<positive-int>] [label=<text>]",
+		"thumbnail every=<positive-int> [label=<text>]",
 		"memorysink [name=<text>]",
-		"acmeenc bitrate=<bps>",
+		"acmeenc bitrate=<rate>",
 		"encode codec=x_acme_video media=video",
 		"filesink location=<path> format=webm",
 	} {
@@ -290,6 +290,7 @@ func TestPrintUsageIncludesCompleteBootstrapLoop(t *testing.T) {
 		"help attach",
 		"help control vendor.rate",
 		"help control fixture.controls",
+		"capabilities",
 		"taps",
 		"fake source: live VP8 camera",
 		"control rate value=0.5 source=fixture",

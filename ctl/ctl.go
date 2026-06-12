@@ -14,6 +14,7 @@ import (
 
 	goav "github.com/thesyncim/goav"
 	"github.com/thesyncim/goav/av"
+	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/internal/launchctl"
 )
 
@@ -44,6 +45,22 @@ type EncoderSpec = launchctl.EncoderSpec
 // PipelineRegistry contains the custom steps and encoders one server exposes.
 type PipelineRegistry = launchctl.PipelineRegistry
 
+// CapabilitySet groups every custom command, branch step, and encoder spelling
+// one server exposes.
+type CapabilitySet = launchctl.CapabilitySet
+
+// CapabilityOption configures typed helper constructors.
+type CapabilityOption = launchctl.CapabilityOption
+
+// CapabilityReport is the machine-readable form of server-aware help.
+type CapabilityReport = launchctl.CapabilityReport
+
+// CapabilityEntry describes one callable command or branch-pipeline spelling.
+type CapabilityEntry = launchctl.CapabilityEntry
+
+// CapabilityField describes one reflect-bound key=value field.
+type CapabilityField = launchctl.CapabilityField
+
 // BranchPipeline is the safe builder handle custom branch steps receive.
 type BranchPipeline = launchctl.BranchPipeline
 
@@ -68,6 +85,33 @@ func ErrorResponse(operation string, err error) Response {
 // codes, details, suggestions, and causes in CLI/socket responses.
 func NewError(code, operation, node, message string, details, suggestions []string, cause error) *Error {
 	return launchctl.NewError(code, operation, node, message, details, suggestions, cause)
+}
+
+// Aliases adds alternate CLI spellings for one typed command, branch step, or
+// encoder spelling.
+func Aliases(values ...string) CapabilityOption {
+	return launchctl.Aliases(values...)
+}
+
+// Usage overrides generated typed usage text for a branch step or encoder.
+func Usage(value string) CapabilityOption {
+	return launchctl.Usage(value)
+}
+
+// NewCommand builds a typed, allowlisted control command.
+func NewCommand[T any](name string, summary string, apply func(context.Context, goav.Task, T) (ControlResponse, error), options ...CapabilityOption) CommandSpec {
+	return launchctl.NewCommand(name, summary, apply, options...)
+}
+
+// NewBranchStep builds a typed, allowlisted branch-pipeline step.
+func NewBranchStep[T any](name string, summary string, apply func(*BranchPipeline, T) error, options ...CapabilityOption) BranchPipelineStepSpec {
+	return launchctl.NewBranchStep(name, summary, apply, options...)
+}
+
+// NewEncoderSpec builds a typed custom encoder spelling for native adapter
+// settings.
+func NewEncoderSpec[T any](name string, summary string, apply func(T) (codec.CodecSpec, error), options ...CapabilityOption) EncoderSpec {
+	return launchctl.NewEncoderSpec(name, summary, apply, options...)
 }
 
 // ControlManifest returns the built-in control command allowlist.
@@ -164,6 +208,11 @@ func WithCommands(commands ...CommandSpec) ServerOption {
 // share one namespace and cannot shadow built-in branch-pipeline spellings.
 func WithPipelineRegistry(registry PipelineRegistry) ServerOption {
 	return launchctl.WithPipelineRegistry(registry)
+}
+
+// WithCapabilities installs a whole host-owned capability set on one server.
+func WithCapabilities(caps CapabilitySet) ServerOption {
+	return launchctl.WithCapabilities(caps)
 }
 
 // ServeUnix listens on unix://PATH or PATH and serves one JSON request per

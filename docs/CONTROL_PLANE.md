@@ -23,9 +23,9 @@ dispatch.
 This is the smallest production shape:
 
 1. Build a normal task and name stable taps with `FrameTap` or `PacketTap`.
-2. Add explicit control verbs with `ctl.CommandSpec`.
-3. Add custom branch-pipeline steps and encoder names with
-   `ctl.PipelineRegistry`.
+2. Declare host-owned capabilities with typed settings structs.
+3. Group commands, branch steps, sinks, and native encoder spellings in one
+   `ctl.CapabilitySet`.
 4. Start `ctl.ServeUnixWithOptions`.
 5. Use `goav ctl --control unix://...` to inspect, control, attach, rebranch,
    detach, and render diagnostics from the same running graph.
@@ -40,9 +40,9 @@ goav ctl --control unix:///tmp/goav-live.sock attach frames as preview \
 ```
 
 `help attach` and `help rebranch` list those runtime-discovered encoders and
-muxers from the running task. Add `ctl.EncoderSpec` only when you want a
-friendly named spelling for native adapter-specific settings that cannot be
-represented as the portable common codec settings.
+muxers from the running task. Add a typed encoder spelling only when you want a
+friendly name for native adapter-specific settings that cannot be represented
+as portable common codec settings.
 
 The executable local harness is
 `Example_bootstrapControlPlaneHost` in `ctl/example_test.go`. It builds a live
@@ -103,12 +103,10 @@ type SetRate struct {
     Source string  `goavctl:"source,required" usage:"source=<source-name>" help:"source node to retime"`
 }
 
-rateCommand := ctl.CommandSpec{
-    Name:     "vendor.rate",
-    Summary:  "vendor playback-rate control",
-    ArgsType: reflect.TypeOf(SetRate{}),
-    Apply: func(ctx context.Context, task goav.Task, args any) (ctl.ControlResponse, error) {
-        cmd := args.(SetRate)
+rateCommand := ctl.NewCommand[SetRate](
+    "vendor.rate",
+    "vendor playback-rate control",
+    func(ctx context.Context, task goav.Task, cmd SetRate) (ctl.ControlResponse, error) {
         ctrl := goav.Rate(cmd.Value).At(pipeline.NodeRef(cmd.Source))
         if err := task.Control(ctx, ctrl); err != nil {
             return ctl.ControlResponse{}, err
@@ -118,72 +116,64 @@ rateCommand := ctl.CommandSpec{
             Result:    map[string]any{"value": cmd.Value, "source": cmd.Source},
         }, nil
     },
-}
+)
 ```
 
-Expose custom branch components and custom encoder settings through an explicit
-pipeline registry. Every `key=value` token on the CLI arrives in `StepArgs`; the
-host maps those strings to normal Go values and returns the real
-`codec.CodecSpec` the runtime already understands.
+Expose custom branch components and custom encoder settings through typed
+helpers. Every `key=value` token is bound into your struct, the same tags drive
+help output, and the host returns normal Go values or the real `codec.CodecSpec`
+the runtime already understands.
 
 ```go
-registry := ctl.PipelineRegistry{
-    Steps: []ctl.BranchPipelineStepSpec{{
-        Name:    "meter",
-        Summary: "observe frames before encoding",
-        Usage:   "[window=<duration>]",
-        Apply: func(branch *ctl.BranchPipeline, _ ctl.StepArgs) error {
-            branch.Do(goav.FrameFunc("meter", func(ctx context.Context, frame *av.Frame, emit goav.Emit) error {
-                recordLevel(frame)
-                return emit.Frame(frame)
-            }))
-            return nil
-        },
-    }},
-    Encoders: []ctl.EncoderSpec{{
-        Name:    "acmeenc",
-        Summary: "ACME audio encoder with native settings",
-        Usage:   "bitrate=<bps> quality=<profile> lookahead=<mode>",
-        Apply: func(args ctl.StepArgs) (codec.CodecSpec, error) {
-            if args["bitrate"] == "" {
-                return codec.CodecSpec{}, ctl.NewError(
-                    "missing_required",
-                    "parse branch pipeline",
-                    "bitrate",
-                    "acmeenc needs bitrate=<bps>",
-                    nil,
-                    []string{"use acmeenc bitrate=128000"},
-                    nil,
-                )
-            }
-            bitrate, err := strconv.Atoi(args["bitrate"])
-            if err != nil {
-                return codec.CodecSpec{}, ctl.NewError(
-                    "invalid_value",
-                    "parse branch pipeline",
-                    "bitrate",
-                    "acmeenc bitrate must be a positive integer",
-                    []string{"value=" + args["bitrate"]},
-                    []string{"use acmeenc bitrate=128000"},
-                    err,
-                )
-            }
-            return codec.Codec(customCodec, av.MediaAudio,
-                codec.Bitrate(bitrate),
-                codec.Profile(args["quality"]),
-                codec.Control(func(native any) error {
-                    options := native.(*acme.Options)
-                    options.Lookahead = args["lookahead"]
-                    return nil
-                }),
-            ), nil
-        },
-    }},
+type MeterSettings struct {
+    Window time.Duration `goavctl:"window,duration" usage:"[window=<duration>]" help:"observation window"`
+}
+
+meter := ctl.NewBranchStep[MeterSettings](
+    "meter",
+    "observe frames before encoding",
+    func(branch *ctl.BranchPipeline, _ MeterSettings) error {
+        branch.Do(goav.FrameFunc("meter", func(ctx context.Context, frame *av.Frame, emit goav.Emit) error {
+            recordLevel(frame)
+            return emit.Frame(frame)
+        }))
+        return nil
+    },
+)
+
+type ACMESettings struct {
+    Bitrate   int    `goavctl:"bitrate,required,rate" usage:"bitrate=<rate>" help:"target bitrate"`
+    Quality   string `goavctl:"quality" usage:"[quality=<profile>]" help:"native quality profile"`
+    Lookahead string `goavctl:"lookahead" usage:"[lookahead=<mode>]" help:"native lookahead mode"`
+}
+
+acme := ctl.NewEncoderSpec[ACMESettings](
+    "acmeenc",
+    "ACME audio encoder with native settings",
+    func(args ACMESettings) (codec.CodecSpec, error) {
+        return codec.Codec(customCodec, av.MediaAudio,
+            codec.Bitrate(args.Bitrate),
+            codec.Profile(args.Quality),
+            codec.Control(func(native any) error {
+                options := native.(*acme.Options)
+                options.Lookahead = args.Lookahead
+                return nil
+            }),
+        ), nil
+    },
+)
+
+capabilities := ctl.CapabilitySet{
+    Commands: []ctl.CommandSpec{rateCommand},
+    Pipeline: ctl.PipelineRegistry{
+        Steps:    []ctl.BranchPipelineStepSpec{meter},
+        Encoders: []ctl.EncoderSpec{acme},
+    },
 }
 ```
 
 Use `ctl.NewError` from custom command, step, or encoder callbacks when a
-custom `StepArgs` value is missing or invalid. The structured code, node,
+custom value is missing or invalid. The structured code, node,
 details, suggestions, and cause are preserved in the CLI/socket response.
 
 Start the socket after the task is built. The same options apply whether the
@@ -191,8 +181,7 @@ socket is used by humans, scripts, supervisors, or tests.
 
 ```go
 err = ctl.ServeUnixWithOptions(ctx, task, "unix:///tmp/goav-live.sock",
-    ctl.WithCommands(rateCommand),
-    ctl.WithPipelineRegistry(registry),
+    ctl.WithCapabilities(capabilities),
 )
 ```
 
@@ -202,24 +191,26 @@ Operate it from the CLI:
 goav ctl --control unix:///tmp/goav-live.sock help
 goav ctl --control unix:///tmp/goav-live.sock help control vendor.rate
 goav ctl --control unix:///tmp/goav-live.sock help attach
+goav ctl --control unix:///tmp/goav-live.sock capabilities
 goav ctl --control unix:///tmp/goav-live.sock taps
 goav ctl --control unix:///tmp/goav-live.sock control vendor.rate value=0.5 source=fixture
 goav ctl --control unix:///tmp/goav-live.sock control --json '{"type":"rate","rate":0.75,"node":"fixture"}'
 goav ctl --control unix:///tmp/goav-live.sock control deliver --json '{"type":"vendor.force_idr","stream_id":"video","metadata":{"source":"cli"}}' at=frames
 goav ctl --control unix:///tmp/goav-live.sock attach frames as archive \
-  'meter ! acmeenc bitrate=128000 quality=voice lookahead=deep ! filesink location=/tmp/archive.ogg format=ogg'
+  'meter ! acmeenc bitrate=128k quality=voice lookahead=deep ! filesink location=/tmp/archive.ogg format=ogg'
 goav ctl --control unix:///tmp/goav-live.sock graph
 goav ctl --control unix:///tmp/goav-live.sock graph format=dot
 goav ctl --control unix:///tmp/goav-live.sock rebranch archive \
-  'meter ! acmeenc bitrate=96000 quality=voice lookahead=shallow ! filesink location=/tmp/archive-low.ogg format=ogg'
+  'meter ! acmeenc bitrate=96k quality=voice lookahead=shallow ! filesink location=/tmp/archive-low.ogg format=ogg'
 goav ctl --control unix:///tmp/goav-live.sock detach archive
 ```
 
-`help attach` and `help rebranch` are server-aware: the response includes the
-built-in branch-pipeline grammar, runtime-discovered encoders and muxers, plus every
-`BranchPipelineStepSpec` and `EncoderSpec` registered on that server, including
-aliases, summaries, and `Usage` strings. That makes app-owned branch components
-discoverable from the same CLI surface that invokes them.
+`help attach`, `help rebranch`, and `capabilities` are server-aware: responses
+include the built-in branch-pipeline grammar, runtime-discovered encoders and
+muxers, plus every command, branch step, sink, and encoder spelling registered
+on that server, including aliases, summaries, usage strings, and typed fields.
+That makes app-owned branch components discoverable from the same CLI surface
+that invokes them.
 
 Custom names and aliases are validated as one namespace per server. A custom
 control cannot reuse a built-in control verb or another custom alias, and a
@@ -305,7 +296,7 @@ Supported built-ins include:
 - `control deliver ...` and `control deliver --json '<av.Event JSON>'`
 - `control --json '<goav.Control JSON>'`
 - `inspect`, `snapshot`, `stats`, `taps`, `streams`, `branches`,
-  `destinations`
+  `destinations`, `capabilities`
 - `graph [format=mermaid|dot|text]` and `flowchart [format=mermaid|dot|text]`
 - `events --follow`, `watch [type=<event-type>] [stream=<stream-id>] --follow`
 - `attach`, `rebranch`, `detach`, `stop`
@@ -314,8 +305,9 @@ Supported built-ins include:
 
 Register the codec implementation on the runtime, then call it in an attach or
 rebranch pipeline with the generic `encode` step. This is the default path for
-custom encoders and does not require `ctl.EncoderSpec`. Use `goav.Default(...)` when
-you want the stock codecs, formats, and filters plus your adapter; use
+custom encoders and does not require a custom encoder spelling. Use
+`goav.Default(...)` when you want the stock codecs, formats, and filters plus
+your adapter; use
 `goav.New(...)` only when you are intentionally registering every required
 codec, filter, prober, demuxer, and muxer yourself.
 
@@ -346,12 +338,12 @@ custom destination step. Runtime muxers registered with `WithMuxer` are callable
 by `filesink location=<path> format=<id>` and appear in `help attach`.
 
 When an encoder exposes native settings beyond those common options, expose a
-named encoder step with `ctl.EncoderSpec`. The CLI spelling stays short and the
-host keeps full control over validation and native adapter calls:
+named encoder step with `ctl.NewEncoderSpec`. The CLI spelling stays short and
+the host keeps full control over validation and native adapter calls:
 
 ```sh
 goav ctl --control unix:///tmp/goav-live.sock attach frames as archive \
-  'acmeenc bitrate=128000 quality=cinema lookahead=deep ! filesink location=archive.ogg format=ogg'
+  'acmeenc bitrate=128k quality=cinema lookahead=deep ! filesink location=archive.ogg format=ogg'
 ```
 
 ## Custom Branch Components
@@ -359,18 +351,21 @@ goav ctl --control unix:///tmp/goav-live.sock attach frames as archive \
 Custom branch steps can add external stages, sinks, or compound branch grammar:
 
 ```go
-ctl.BranchPipelineStepSpec{
-    Name:    "meter",
-    Summary: "observe frames before encoding",
-    Usage:   "[window=<duration>]",
-    Apply: func(branch *ctl.BranchPipeline, args ctl.StepArgs) error {
+type MeterSettings struct {
+    Window time.Duration `goavctl:"window,duration" usage:"[window=<duration>]" help:"observation window"`
+}
+
+meter := ctl.NewBranchStep[MeterSettings](
+    "meter",
+    "observe frames before encoding",
+    func(branch *ctl.BranchPipeline, _ MeterSettings) error {
         branch.Do(goav.FrameFunc("meter", func(ctx context.Context, frame *av.Frame, emit goav.Emit) error {
             recordLevel(frame)
             return emit.Frame(frame)
         }))
         return nil
     },
-}
+)
 ```
 
 Custom destination steps call `branch.Destination(...)`. This is the pattern for
@@ -378,19 +373,23 @@ object stores, upload services, analytics queues, or any app-owned sink that is
 not a local file:
 
 ```go
-ctl.BranchPipelineStepSpec{
-    Name:    "objectsink",
-    Summary: "upload branch messages to object storage",
-    Usage:   "bucket=<name> key=<path>",
-    Apply: func(branch *ctl.BranchPipeline, args ctl.StepArgs) error {
-        writer := objectStoreWriter(args["bucket"], args["key"])
+type ObjectSinkSettings struct {
+    Bucket string `goavctl:"bucket,required" usage:"bucket=<name>" help:"object bucket"`
+    Key    string `goavctl:"key,required" usage:"key=<path>" help:"object key"`
+}
+
+objectSink := ctl.NewBranchStep[ObjectSinkSettings](
+    "objectsink",
+    "upload branch messages to object storage",
+    func(branch *ctl.BranchPipeline, args ObjectSinkSettings) error {
+        writer := objectStoreWriter(args.Bucket, args.Key)
         branch.Destination(goav.Writer(writer,
-            goav.Name("object:"+args["key"]),
+            goav.Name("object:"+args.Key),
             goav.Format(av.FormatID("ogg")),
         ))
         return nil
     },
-}
+)
 ```
 
 ```sh
@@ -398,7 +397,7 @@ goav ctl --control unix:///tmp/goav-live.sock attach frames as monitored \
   'meter ! encode codec=x_pcm_s16 media=audio ! filesink location=monitored.ogg format=ogg'
 
 goav ctl --control unix:///tmp/goav-live.sock attach frames as upload \
-  'meter ! acmeenc bitrate=128000 quality=voice lookahead=deep ! objectsink bucket=archive key=session-001.ogg'
+  'meter ! acmeenc bitrate=128k quality=voice lookahead=deep ! objectsink bucket=archive key=session-001.ogg'
 ```
 
 Unknown commands, fields, taps, branches, nodes, and pipeline steps return
@@ -412,10 +411,10 @@ structured errors with available names and suggestions.
 - Commands lower into existing task/control APIs.
 - Raw JSON fallback decodes into the real `goav.Control` or `av.Event` shapes
   instead of introducing a second control model.
-- Custom controls, custom branch steps, custom codec names, and custom encoder
-  names are per-server allowlists.
+- Custom controls, custom branch steps, custom codec names, custom sinks, and
+  custom encoder names are per-server allowlists.
 - Custom command, branch-step, encoder, and alias names must be unique in that
   server's allowlists; built-in branch-pipeline spellings are reserved.
 - Branch-pipeline strings are parsed by the allowlisted cold-path parser; custom
-  behavior is callable only through explicit `PipelineRegistry` entries chosen
-  by the host application.
+  behavior is callable only through explicit `CapabilitySet` entries chosen by
+  the host application.

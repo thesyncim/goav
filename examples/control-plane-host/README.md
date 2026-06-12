@@ -10,6 +10,7 @@ It demonstrates:
 - a custom `fixture.controls` command that reports what the test source
   recorded;
 - server-aware `help attach` output for app-owned branch components;
+- machine-readable `capabilities` output for scripts and humans;
 - generated help for app-owned control commands;
 - raw JSON fallback for existing `goav.Control` and `av.Event` payloads;
 - stock CLI transcode branches (`resize`, `vp8enc`, `filesink`);
@@ -38,12 +39,13 @@ Inspect the host-owned grammar:
 $CTL help attach
 $CTL help control vendor.rate
 $CTL help control fixture.controls
+$CTL capabilities
 $CTL taps
 ```
 
-`help attach` lists the custom branch steps, custom encoder spellings, and the
-encoders and muxers discovered from the running task runtime. The ACME encoder
-is available immediately through the generic
+`help attach` and `capabilities` list the custom branch steps, custom encoder
+spellings, and the encoders and muxers discovered from the running task runtime.
+The ACME encoder is available immediately through the generic
 `encode codec=x_acme_video media=video ...` step because the host registered it
 with `goav.WithEncoder`; registered muxers are available through
 `filesink location=<path> format=<id>`.
@@ -149,5 +151,5 @@ $CTL detach acme-preview
 The emitted command list printed by the host is generated from the same strings
 this guide uses, and the example tests drive both the socket request shape and
 the actual `goav ctl` binary. The host adds controls, steps, sinks, and encoder
-spellings through explicit allowlists; reflection only binds known structs and
-generates help.
+spellings through one explicit `ctl.CapabilitySet`; reflection only binds known
+structs and generates help.
