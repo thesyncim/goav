@@ -809,6 +809,195 @@ func TestPipelineStepNamesIncludeCustomAliases(t *testing.T) {
 	}
 }
 
+func TestParseBranchPipelineWithBuiltInStepsAndEncoders(t *testing.T) {
+	out := filepath.Join(t.TempDir(), "builtins.ogg")
+	_, err := parseBranchPipelineWithRegistry(newFakeTask(), "raw_video", "builtins",
+		`decode ! resize width=320 height=180 ! resample rate=48000 channels=2 ! `+
+			`vp8enc bitrate=1k ! vp9 profile=screen ! h264enc level=3 ! av1enc fps=30000/1001 ! `+
+			`opusenc sample_rate=48000 channels=2 ! encode codec=vendor_custom media=audio clock_rate=48000 ! `+
+			`filesink location="`+out+`" format=ogg`,
+		PipelineRegistry{},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestParseBranchPipelineWithRegistryUsesCustomAliases(t *testing.T) {
+	task := newFakeTask()
+	var calls []string
+	registry := PipelineRegistry{
+		Steps: []BranchPipelineStepSpec{
+			{
+				Name:    "Meter",
+				Aliases: []string{"levelmeter"},
+				Apply: func(branch *BranchPipeline, args StepArgs) error {
+					calls = append(calls, "meter:"+args["label"])
+					branch.Do(goav.FrameFunc("meter", func(_ context.Context, frame *av.Frame, emit goav.Emit) error {
+						return emit.Frame(frame)
+					}))
+					return nil
+				},
+			},
+			{
+				Name:    "Out",
+				Aliases: []string{"outsink"},
+				Apply: func(branch *BranchPipeline, args StepArgs) error {
+					calls = append(calls, "sink:"+args["name"])
+					branch.Destination(goav.Sink(goav.SinkFunc("memory", func(context.Context, goav.Message) error {
+						return nil
+					})))
+					return nil
+				},
+			},
+		},
+		Encoders: []EncoderSpec{{
+			Name:    "AcmeEnc",
+			Aliases: []string{"acme"},
+			Apply: func(args StepArgs) (codec.CodecSpec, error) {
+				calls = append(calls, "encoder:"+args["quality"])
+				bitrate, err := parseRate(args["bitrate"])
+				if err != nil {
+					return codec.CodecSpec{}, err
+				}
+				return codec.Codec("vendor_audio", av.MediaAudio, codec.Bitrate(bitrate), codec.Profile(args["quality"])), nil
+			},
+		}},
+	}
+
+	if _, err := parseBranchPipelineWithRegistry(task, "raw_video", "archive", `levelmeter label="left ! right" ! acme bitrate=123k quality=voice ! outsink name=memory`, registry); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"meter:left ! right", "encoder:voice", "sink:memory"}
+	if !reflect.DeepEqual(calls, want) {
+		t.Fatalf("calls = %v, want %v", calls, want)
+	}
+}
+
+func TestParseBranchPipelineWithRegistryStructuredErrors(t *testing.T) {
+	applyErr := errors.New("stage failed")
+	encoderErr := errors.New("encoder failed")
+	tests := []struct {
+		name     string
+		tap      string
+		branch   string
+		pipeline string
+		registry PipelineRegistry
+		code     string
+		node     string
+	}{
+		{name: "missing branch", tap: "raw_video", pipeline: "copy", code: "missing_required", node: "branch"},
+		{name: "missing tap", branch: "archive", pipeline: "copy", code: "missing_required", node: "tap"},
+		{name: "unknown tap", tap: "raw_vdieo", branch: "archive", pipeline: "copy", code: "unknown_tap", node: "raw_vdieo"},
+		{name: "empty pipeline", tap: "raw_video", branch: "archive", pipeline: "   ", code: "missing_required", node: "pipeline"},
+		{
+			name:     "nil custom apply",
+			tap:      "raw_video",
+			branch:   "archive",
+			pipeline: "meter",
+			registry: PipelineRegistry{Steps: []BranchPipelineStepSpec{{Name: "meter"}}},
+			code:     "invalid_pipeline_step",
+			node:     "meter",
+		},
+		{
+			name:     "custom apply error",
+			tap:      "raw_video",
+			branch:   "archive",
+			pipeline: "meter",
+			registry: PipelineRegistry{Steps: []BranchPipelineStepSpec{{Name: "meter", Apply: func(*BranchPipeline, StepArgs) error { return applyErr }}}},
+			code:     "control_failed",
+		},
+		{
+			name:     "custom encoder error",
+			tap:      "raw_video",
+			branch:   "archive",
+			pipeline: "badenc",
+			registry: PipelineRegistry{Encoders: []EncoderSpec{{Name: "badenc", Apply: func(StepArgs) (codec.CodecSpec, error) { return codec.CodecSpec{}, encoderErr }}}},
+			code:     "control_failed",
+		},
+		{name: "unsupported step", tap: "raw_video", branch: "archive", pipeline: "bogus", code: "unsupported_pipeline_step", node: "bogus"},
+		{name: "missing destination", tap: "raw_video", branch: "archive", pipeline: "copy", code: "missing_required", node: "filesink"},
+		{name: "file sink open", tap: "raw_video", branch: "archive", pipeline: "copy ! filesink location=" + filepath.Join(t.TempDir(), "missing", "out.ogg"), code: "open_destination"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := parseBranchPipelineWithRegistry(newFakeTask(), tt.tap, tt.branch, tt.pipeline, tt.registry)
+			var structured *Error
+			if !errors.As(err, &structured) || structured.Code != tt.code || (tt.node != "" && structured.Node != tt.node) {
+				t.Fatalf("err = %+v, want code=%s node=%s", structured, tt.code, tt.node)
+			}
+		})
+	}
+}
+
+func TestBranchPipelineParserHelperEdges(t *testing.T) {
+	args := stepArgs([]string{"flag", "Key=Value"})
+	if args["flag"] != "" || args["key"] != "Value" {
+		t.Fatalf("args = %+v", args)
+	}
+
+	steps := pipelineStepMap([]BranchPipelineStepSpec{{Name: "Meter", Aliases: []string{"M", ""}}, {Aliases: []string{"aliasOnly"}}})
+	if _, ok := steps["meter"]; !ok {
+		t.Fatalf("steps = %+v, want meter", steps)
+	}
+	if _, ok := steps["m"]; !ok {
+		t.Fatalf("steps = %+v, want alias m", steps)
+	}
+	if _, ok := steps["aliasonly"]; !ok {
+		t.Fatalf("steps = %+v, want aliasonly", steps)
+	}
+
+	encoders := encoderMap([]EncoderSpec{{Name: "VendorEnc", Aliases: []string{"VEnc", ""}}, {Aliases: []string{"aliasEnc"}}})
+	if _, ok := encoders["vendorenc"]; !ok {
+		t.Fatalf("encoders = %+v, want vendorenc", encoders)
+	}
+	if _, ok := encoders["venc"]; !ok {
+		t.Fatalf("encoders = %+v, want alias venc", encoders)
+	}
+	if _, ok := encoders["aliasenc"]; !ok {
+		t.Fatalf("encoders = %+v, want aliasenc", encoders)
+	}
+
+	for _, tc := range []struct {
+		id    av.CodecID
+		media av.MediaType
+	}{
+		{id: av.CodecOpus, media: av.MediaAudio},
+		{id: av.CodecVP8, media: av.MediaVideo},
+		{id: av.CodecVP9, media: av.MediaVideo},
+		{id: av.CodecH264, media: av.MediaVideo},
+		{id: av.CodecAV1, media: av.MediaVideo},
+	} {
+		spec, err := parseEncoder(tc.id, tc.media, map[string]string{"bitrate": "1k"})
+		if err != nil {
+			t.Fatalf("%s: %v", tc.id, err)
+		}
+		if spec.ID != tc.id || spec.Type != tc.media {
+			t.Fatalf("spec = %+v, want id=%s media=%s", spec, tc.id, tc.media)
+		}
+	}
+	if _, err := parseEncoder("vendor_custom", "", nil); err == nil {
+		t.Fatal("expected custom encoder without media to fail")
+	}
+	if _, ok := parsePositiveUint32Arg(map[string]string{"clock_rate": "0"}, "clock_rate"); ok {
+		t.Fatal("zero clock rate should not parse")
+	}
+	if err := (closeOnceWriter{}).Close(); err != nil {
+		t.Fatalf("nil closeOnceWriter close = %v", err)
+	}
+
+	task := newFakeTask()
+	task.taps = append(task.taps, snapshot.Tap{Name: "events", Domain: shape.DomainEvent})
+	tap, err := resolveBranchTap(task, "attach", "events")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tap.Name() != "events" || tap.Domain() != "" {
+		t.Fatalf("tap = %s/%s, want inferred events tap", tap.Name(), tap.Domain())
+	}
+}
+
 func TestExecuteRequestAppliesAttachRequest(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
@@ -1041,6 +1230,29 @@ func TestServerStreamsWatchFollowResponses(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !response.OK || response.Error != nil || response.Result.Type != av.EventStats {
+		t.Fatalf("response = %+v", response)
+	}
+	<-done
+}
+
+func TestServerFollowWithoutTaskReturnsStructuredError(t *testing.T) {
+	server := &Server{}
+	client, serverConn := net.Pipe()
+	defer client.Close()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		server.handleConn(context.Background(), serverConn)
+	}()
+	request := Request{Op: "watch", Args: map[string]string{"follow": "true"}}
+	if err := json.NewEncoder(client).Encode(request); err != nil {
+		t.Fatal(err)
+	}
+	var response Response
+	if err := json.NewDecoder(client).Decode(&response); err != nil {
+		t.Fatal(err)
+	}
+	if response.OK || response.Error == nil || response.Error.Code != "task_missing" {
 		t.Fatalf("response = %+v", response)
 	}
 	<-done
