@@ -10,6 +10,8 @@
 //	out, err := graphrender.RenderURI(spec, "goav://graph/dot")    // DOT
 //	out, err := graphrender.RenderURI(spec, "goav://graph?format=mermaid")
 //	flow, err := graphrender.RenderTaskFlowchart(task)             // live task
+//	flow, err := graphrender.RenderSnapshotFlowchart(task.Snapshot())
+//	flow, err := graphrender.RenderBranchFlowchart(attachment.Snapshot())
 package graphrender
 
 import (
@@ -64,9 +66,36 @@ func RenderTaskFlowchart(task interface{ Snapshot() snapshot.Task }) (string, er
 // this package stays outside the core import graph.
 func RenderTaskURI(task interface{ Snapshot() snapshot.Task }, target string) (string, error) {
 	if task == nil {
-		return RenderURI(pipeline.Spec{}, target)
+		return RenderSnapshotURI(snapshot.Task{}, target)
 	}
-	return RenderURI(specFromSnapshot(task.Snapshot()), target)
+	return RenderSnapshotURI(task.Snapshot(), target)
+}
+
+// RenderSnapshotFlowchart renders a task snapshot as a Mermaid flowchart.
+// Runtime branch-owned nodes are annotated with branch names and lifecycle
+// state, so callers can render a running task after capturing Snapshot().
+func RenderSnapshotFlowchart(snap snapshot.Task) (string, error) {
+	return RenderSnapshotURI(snap, "goav:graph?format=mermaid")
+}
+
+// RenderSnapshotURI renders a task snapshot in the format selected by target.
+// It is useful when a host wants to persist, diff, or render a point-in-time
+// task view without keeping a task handle in scope.
+func RenderSnapshotURI(snap snapshot.Task, target string) (string, error) {
+	return RenderURI(specFromSnapshot(snap), target)
+}
+
+// RenderBranchFlowchart renders an attachment/branch snapshot as a Mermaid
+// flowchart. The branch's nodes are annotated with the branch name and
+// lifecycle state.
+func RenderBranchFlowchart(branch snapshot.Branch) (string, error) {
+	return RenderBranchURI(branch, "goav:graph?format=mermaid")
+}
+
+// RenderBranchURI renders an attachment/branch snapshot in the format selected
+// by target.
+func RenderBranchURI(branch snapshot.Branch, target string) (string, error) {
+	return RenderURI(specFromBranchSnapshot(branch), target)
 }
 
 func write(w io.Writer, spec pipeline.Spec, format format) error {
@@ -343,6 +372,17 @@ func specFromSnapshot(snap snapshot.Task) pipeline.Spec {
 		spec.Nodes[i].Detail = appendNodeDetail(spec.Nodes[i].Detail, strings.Join(nodeLabels, ", "))
 	}
 	return spec
+}
+
+func specFromBranchSnapshot(branch snapshot.Branch) pipeline.Spec {
+	spec := cloneSpec(branch.Spec)
+	if spec.Name == "" {
+		spec.Name = branchSortKey(branch)
+	}
+	return specFromSnapshot(snapshot.Task{
+		Spec:     spec,
+		Branches: []snapshot.Branch{branch},
+	})
 }
 
 func cloneSpec(spec pipeline.Spec) pipeline.Spec {

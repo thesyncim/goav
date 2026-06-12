@@ -229,12 +229,25 @@ if err != nil {
     return err
 }
 fmt.Println(flowchart)
+
+snap := task.Snapshot()
+flowchart, err = graphrender.RenderSnapshotFlowchart(snap)
+if err != nil {
+    return err
+}
+
+attachmentFlowchart, err := graphrender.RenderBranchFlowchart(attachment.Snapshot())
+if err != nil {
+    return err
+}
+fmt.Println(attachmentFlowchart)
 ```
 
-`RenderTaskFlowchart` reads only public `Snapshot()` data. Runtime branch-owned
-nodes are annotated with the branch name and lifecycle state, for example
+The render helpers read only public snapshot data. Runtime branch-owned nodes
+are annotated with the branch name and lifecycle state, for example
 `branch=archive (attached)`. Use `graphrender.RenderTaskURI(task,
-"goav://graph/dot")` or `RenderTaskURI(task, "goav:graph")` when DOT or text
+"goav://graph/dot")`, `RenderSnapshotURI(snap, "goav:graph")`, or
+`RenderBranchURI(attachment.Snapshot(), "goav://graph/dot")` when DOT or text
 is easier to feed into other tooling.
 
 ## Built-In Requests
