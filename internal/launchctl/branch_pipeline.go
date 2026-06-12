@@ -15,6 +15,7 @@ import (
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/internal/cliargs"
 	"github.com/thesyncim/goav/internal/codecargs"
+	"github.com/thesyncim/goav/internal/fileargs"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/shape"
 )
@@ -217,7 +218,7 @@ func parseBranchPipelineWithRegistry(task goav.Task, tapName string, branchName 
 				return goav.BranchSpec{}, err
 			}
 			branch.Encode(enc)
-		case "filesink", "file":
+		case "filesink":
 			destination, err := parseFileSink(args)
 			if err != nil {
 				return goav.BranchSpec{}, err
@@ -476,19 +477,31 @@ func codecOptionError(err error) error {
 }
 
 func parseFileSink(args map[string]string) (goav.Destination, error) {
-	location := firstNonEmpty(args["location"], args["path"], args["file"])
-	if location == "" {
-		return goav.Destination{}, commandError("missing_required", "parse branch pipeline", "filesink", "filesink needs location=<path>", nil, []string{"use `filesink location=out.webm`"}, nil)
-	}
-	writer, err := os.Create(location)
+	sink, err := fileargs.ParseFileSinkMap(args)
 	if err != nil {
-		return goav.Destination{}, commandError("open_destination", "parse branch pipeline", location, err.Error(), nil, []string{"choose a writable filesink location"}, err)
+		return goav.Destination{}, fileSinkOptionError(err)
+	}
+	writer, err := os.Create(sink.Location)
+	if err != nil {
+		return goav.Destination{}, commandError("open_destination", "parse branch pipeline", sink.Location, err.Error(), nil, []string{"choose a writable filesink location"}, err)
 	}
 	var options []goav.DestinationOption
-	if format := args["format"]; format != "" {
-		options = append(options, goav.Format(av.FormatID(format)))
+	if sink.Format != "" {
+		options = append(options, goav.Format(sink.Format))
 	}
-	return goav.File(location, closeOnceWriter{Writer: writer, closer: writer}, options...), nil
+	return goav.File(sink.Location, closeOnceWriter{Writer: writer, closer: writer}, options...), nil
+}
+
+func fileSinkOptionError(err error) error {
+	var optErr *fileargs.Error
+	if errors.As(err, &optErr) {
+		details := []string(nil)
+		if optErr.Value != "" {
+			details = []string{"value=" + optErr.Value}
+		}
+		return commandError("invalid_value", "parse branch pipeline", optErr.Field, optErr.Message, details, optErr.Suggestions, err)
+	}
+	return commandError("invalid_value", "parse branch pipeline", "filesink", err.Error(), nil, nil, err)
 }
 
 type closeOnceWriter struct {

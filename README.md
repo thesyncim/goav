@@ -780,6 +780,7 @@ rejected with suggestions; use the canonical option names above. The standard
 AV1 adapter currently accepts `qindex`, `min_qindex`,
 `max_qindex`, `temporal_layers`, `tile_columns`, `golden_interval`, and
 `tune=zerolatency`.
+File sinks use the same single-spelling rule: `filesink location=<path> [format=<id>]`.
 
 Applications that want a CLI control surface expose a Unix socket with package
 `ctl`; the bundled command then drives the same task APIs over structured JSON.

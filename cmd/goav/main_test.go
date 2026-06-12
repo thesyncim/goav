@@ -641,7 +641,7 @@ func decodeAV1TestPacket(t *testing.T, decoder codec.Decoder, packet av.Packet) 
 }
 
 func TestRunPipelineParserCoversGeneratedTestSourceForms(t *testing.T) {
-	plan, err := parseRunPipeline(`testsrc video name=fixture size=1920x1080 fps=30000/1001 duration=100ms realtime=off pixel_format=yuv420p pattern=solid ! tap frames ! resize 640x360 ! encode av01 bitrate=2M fps=29.97 keyframe_interval=30 profile=main level=5.1 tune=zerolatency ! filesink "/tmp/generated test.ivf" format=ivf`)
+	plan, err := parseRunPipeline(`testsrc video name=fixture size=1920x1080 fps=30000/1001 duration=100ms realtime=off pixel_format=yuv420p pattern=solid ! tap frames ! resize 640x360 ! encode av01 bitrate=2M fps=29.97 keyframe_interval=30 profile=main level=5.1 tune=zerolatency ! filesink location="/tmp/generated test.ivf" format=ivf`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -766,28 +766,41 @@ func TestRunPipelineParserRejectsDuplicateEncoderAliases(t *testing.T) {
 	}
 }
 
-func TestRunPipelineParserInfersKnownDestinationFormats(t *testing.T) {
+func TestRunPipelineParserKeepsExplicitDestinationFormatOnly(t *testing.T) {
+	plan, err := parseRunPipeline(`testsrc video width=16 height=16 frames=1 ! av1enc bitrate=200k ! filesink location=/tmp/out.ivf format=ivf`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.destination.format != av.FormatIVF {
+		t.Fatalf("explicit format = %q, want %q", plan.destination.format, av.FormatIVF)
+	}
+
+	plan, err = parseRunPipeline(`testsrc video width=16 height=16 frames=1 ! av1enc bitrate=200k ! filesink location=/tmp/out.ivf`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.destination.format != "" {
+		t.Fatalf("parsed format = %q, want runtime inference", plan.destination.format)
+	}
+}
+
+func TestRunPipelineParserRejectsDuplicateFileSinkForms(t *testing.T) {
 	for _, tc := range []struct {
-		location string
-		want     av.FormatID
+		name string
+		step string
+		want string
 	}{
-		{location: "/tmp/out.ivf", want: av.FormatIVF},
-		{location: "/tmp/out.mkv", want: av.FormatMatroska},
-		{location: "/tmp/out.mka", want: av.FormatMatroska},
-		{location: "/tmp/out.webm", want: av.FormatWebM},
-		{location: "/tmp/out.h264", want: av.FormatAnnexB},
-		{location: "/tmp/out.bin", want: ""},
+		{name: "positional", step: `filesink /tmp/out.ivf`, want: "location"},
+		{name: "path", step: `filesink path=/tmp/out.ivf`, want: "path"},
+		{name: "file", step: `filesink file=/tmp/out.ivf`, want: "file"},
+		{name: "container", step: `filesink location=/tmp/out.ivf container=ivf`, want: "container"},
+		{name: "unknown", step: `filesink location=/tmp/out.ivf mode=fast`, want: "mode"},
+		{name: "step alias", step: `file location=/tmp/out.ivf`, want: "unsupported destination"},
 	} {
-		t.Run(tc.location, func(t *testing.T) {
-			plan, err := parseRunPipeline(fmt.Sprintf(
-				`testsrc video width=16 height=16 frames=1 ! av1enc bitrate=200k ! filesink location=%q`,
-				tc.location,
-			))
-			if err != nil {
-				t.Fatal(err)
-			}
-			if plan.destination.format != tc.want {
-				t.Fatalf("format = %q, want %q", plan.destination.format, tc.want)
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := parseRunPipeline(`testsrc video width=16 height=16 frames=1 ! av1enc bitrate=200k ! ` + tc.step)
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("err = %v, want %q", err, tc.want)
 			}
 		})
 	}

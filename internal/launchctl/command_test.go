@@ -1260,7 +1260,12 @@ func TestParseBranchPipelineWithRegistryStructuredErrors(t *testing.T) {
 			code:     "control_failed",
 		},
 		{name: "unsupported step", tap: "raw_video", branch: "archive", pipeline: "bogus", code: "unsupported_pipeline_step", node: "bogus"},
+		{name: "file step alias", tap: "raw_video", branch: "archive", pipeline: "copy ! file location=out.ogg", code: "unsupported_pipeline_step", node: "file"},
 		{name: "missing destination", tap: "raw_video", branch: "archive", pipeline: "copy", code: "missing_required", node: "filesink"},
+		{name: "file sink path alias", tap: "raw_video", branch: "archive", pipeline: "copy ! filesink path=out.ogg", code: "invalid_value", node: "path"},
+		{name: "file sink file alias", tap: "raw_video", branch: "archive", pipeline: "copy ! filesink file=out.ogg", code: "invalid_value", node: "file"},
+		{name: "file sink container alias", tap: "raw_video", branch: "archive", pipeline: "copy ! filesink location=out.ogg container=ogg", code: "invalid_value", node: "container"},
+		{name: "file sink unknown field", tap: "raw_video", branch: "archive", pipeline: "copy ! filesink location=out.ogg mode=fast", code: "invalid_value", node: "mode"},
 		{name: "file sink open", tap: "raw_video", branch: "archive", pipeline: "copy ! filesink location=" + filepath.Join(t.TempDir(), "missing", "out.ogg"), code: "open_destination"},
 	}
 

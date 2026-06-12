@@ -18,9 +18,11 @@ import (
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/ctl"
+	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/goavtest"
 	"github.com/thesyncim/goav/internal/cliargs"
 	"github.com/thesyncim/goav/internal/codecargs"
+	"github.com/thesyncim/goav/internal/fileargs"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/shape"
 )
@@ -153,7 +155,7 @@ func runPipelineHelp() string {
 		"  resize width=<px> height=<px>|size=<w>x<h>\n" +
 		"  av1enc|vp9enc|vp8enc|h264enc|encode codec=<id> media=<video|audio> bitrate=<rate> fps=<n[/d]> keyframe_interval=<n> [native_key=value...]\n" +
 		"  encoder settings use canonical names; duplicate aliases such as rate, framerate, keyint, gop, samplerate, ch, clockrate, and bitrate_bps are rejected\n" +
-		"  filesink location=<path> [format=<container>] (known file extensions infer the format)\n\n" +
+		"  filesink location=<path> [format=<id>] (known file extensions infer the format)\n\n" +
 		"control example:\n" +
 		"  goav run --control unix:///tmp/goav-live.sock 'testsrc video name=fixture width=1280 height=720 fps=30 duration=30s realtime=true pattern=bars ! tap name=frames ! av1enc bitrate=1200k fps=30 keyframe_interval=60 min_qindex=20 max_qindex=180 tune=zerolatency ! filesink location=/tmp/goav-av1.mkv format=matroska'\n" +
 		"  goav ctl --control unix:///tmp/goav-live.sock taps\n" +
@@ -238,6 +240,7 @@ func executeRunPipeline(ctx context.Context, runtimeName string, control string,
 	} else if err := task.Run(ctx); err != nil {
 		return runPipelineResult{}, err
 	}
+	outputFormat := reportedFileDestinationFormat(ctx, runtime, plan.destination)
 	return runPipelineResult{
 		Runtime:     runtimeLabel,
 		Source:      plan.source.name,
@@ -246,10 +249,27 @@ func executeRunPipeline(ctx context.Context, runtimeName string, control string,
 		Video:       fmt.Sprintf("%dx%d@%s", plan.source.width, plan.source.height, plan.source.fps.String()),
 		Codec:       string(encoded.ID),
 		Output:      plan.destination.location,
-		Format:      string(plan.destination.format),
+		Format:      string(outputFormat),
 		Control:     control,
 		Description: "generated video source encoded and written successfully",
 	}, nil
+}
+
+func reportedFileDestinationFormat(ctx context.Context, runtime goav.Runtime, dest fileDestination) av.FormatID {
+	if dest.format != "" || runtime == nil {
+		return dest.format
+	}
+	result, err := runtime.Probe(ctx, format.ProbeRequest{
+		Name: dest.location,
+		Input: format.Input{
+			Name:     dest.location,
+			Protocol: av.ProtocolFile,
+		},
+	})
+	if err != nil {
+		return ""
+	}
+	return result.Format
 }
 
 func buildRunPipelineTask(ctx context.Context, runtime goav.Runtime, plan runPipelinePlan, dest goav.Destination) (goav.Task, codec.CodecSpec, error) {
@@ -875,53 +895,25 @@ func parseFileDestination(tokens []string) (fileDestination, error) {
 		return fileDestination{}, fmt.Errorf("goav run: destination step is empty")
 	}
 	name := strings.ToLower(tokens[0])
-	if name != "filesink" && name != "file" && name != "sink" {
+	if name != "filesink" {
 		return fileDestination{}, fmt.Errorf("goav run: unsupported destination %q (want filesink)", tokens[0])
 	}
 	positionals, options, err := parseKeyValuesOrdered(tokens[1:])
 	if err != nil {
 		return fileDestination{}, err
 	}
-	dest := fileDestination{}
+	sinkArgs := make([]fileargs.Arg, 0, len(positionals)+len(options))
 	for _, positional := range positionals {
-		if dest.location == "" {
-			dest.location = positional
-			continue
-		}
-		return fileDestination{}, fmt.Errorf("goav run: unsupported filesink argument %q", positional)
+		sinkArgs = append(sinkArgs, fileargs.Arg{Value: positional})
 	}
 	for _, option := range options {
-		switch option.key {
-		case "location", "path", "file":
-			dest.location = option.value
-		case "format", "container":
-			dest.format = av.FormatID(strings.ToLower(option.value))
-		default:
-			return fileDestination{}, fmt.Errorf("goav run: unknown filesink option %q", option.key)
-		}
+		sinkArgs = append(sinkArgs, fileargs.Arg{Key: option.key, Value: option.value})
 	}
-	if dest.location == "" {
-		return fileDestination{}, fmt.Errorf("goav run: filesink needs location=<path>")
+	sink, err := fileargs.ParseFileSink(sinkArgs)
+	if err != nil {
+		return fileDestination{}, fmt.Errorf("goav run: %w", err)
 	}
-	if dest.format == "" {
-		dest.format = inferFileDestinationFormat(dest.location)
-	}
-	return dest, nil
-}
-
-func inferFileDestinationFormat(location string) av.FormatID {
-	switch strings.ToLower(filepath.Ext(location)) {
-	case ".ivf":
-		return av.FormatIVF
-	case ".mkv", ".mka", ".mks":
-		return av.FormatMatroska
-	case ".webm":
-		return av.FormatWebM
-	case ".h264", ".264", ".avc", ".h265", ".hevc":
-		return av.FormatAnnexB
-	default:
-		return ""
-	}
+	return fileDestination{location: sink.Location, format: sink.Format}, nil
 }
 
 func codecIDFromEncodeName(name string) av.CodecID {

@@ -260,7 +260,7 @@ that invokes them.
 Custom names and aliases are validated as one namespace per server. A custom
 control cannot reuse a built-in control verb or another custom alias, and a
 custom branch step or encoder cannot shadow built-in branch-pipeline spellings
-such as `copy`, `encode`, `opus`, or `file`. Collisions fail with
+such as `copy`, `encode`, `opus`, or `filesink`. Collisions fail with
 `invalid_registry` before a socket starts or a branch pipeline mutates the
 running graph.
 
@@ -380,6 +380,7 @@ AV1 settings such as `min_qindex=20 max_qindex=180 tune=zerolatency`.
 Ambiguous or duplicate encoder spellings such as `rate`, `framerate`, `keyint`,
 `gop`, `samplerate`, `ch`, `clockrate`, and `bitrate_bps` are rejected with
 suggestions; use the canonical option names above.
+File sinks follow the same rule: use `filesink location=<path> [format=<id>]`.
 
 The destination container must accept the selected codec. Standard codecs can
 often use the standard containers registered by `goav.Default`; a private codec

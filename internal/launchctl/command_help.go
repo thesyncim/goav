@@ -263,7 +263,7 @@ func builtinPipelineHelpRows() []pipelineHelpRow {
 		{name: "h264enc", usage: "[bitrate=<rate>] [profile=<name>] [level=<name>] [fps=<n|n/d>]", summary: "encode H.264 video"},
 		{name: "av1enc", usage: "[bitrate=<rate>] [fps=<n|n/d>] [qindex=<n>] [min_qindex=<n>] [max_qindex=<n>] [temporal_layers=<n>]", summary: "encode AV1 video"},
 		{name: "opusenc", usage: "[bitrate=<rate>] [sample_rate=<hz>] [channels=<n>]", summary: "encode Opus audio"},
-		{name: "filesink", usage: "location=<path> [format=<container>]", summary: "write the branch into a file destination"},
+		{name: "filesink", usage: "location=<path> [format=<id>]", summary: "write the branch into a file destination"},
 	}
 }
 

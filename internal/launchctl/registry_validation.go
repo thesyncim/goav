@@ -157,7 +157,6 @@ func builtinPipelineNames() []string {
 		"opusenc",
 		"opus",
 		"filesink",
-		"file",
 	}
 	sort.Strings(names)
 	return names
