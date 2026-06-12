@@ -23,7 +23,7 @@ PLI, FIR with caller-owned scratch).
 `webrtcav` building blocks: `NewSession` (Pion receive sessions with a bounded
 `AcceptTrack(ctx)` queue), `TrackSet` (one long-lived reader per logical
 stream across track replacements), `TrackReader.UpdateCodec`/`UpdateTrack`
-(renegotiation → `EventCodecChanged`), and preserved track metadata (RID, SSRC,
+(renegotiation -> `EventCodecChanged`), and preserved track metadata (RID, SSRC,
 stream ID, track ID).
 
 The session-level shape is:
@@ -55,8 +55,8 @@ When a later accepted track has the same stream ID, `TrackSet` calls
 RTP sources observe the codec-change event without rebuilding the graph.
 
 The recipe layer also accepts raw RTP packet readers directly through the
-generic provider seam: `goav.Input(provider)` adapts any source provider —
-`rtpav.Receive` and `webrtcav.Track` are the built-in ones, and external
+generic provider extension point: `goav.Input(provider)` adapts any source
+provider. `rtpav.Receive` and `webrtcav.Track` are the built-in ones, and external
 transports (SRT, NDI, ...) plug in the same way with zero goav changes. Declare
 codec intent on the provider so it can choose the depacketizer:
 
@@ -70,9 +70,9 @@ err := goav.From(goav.Input(rtpav.Receive(video, rtpav.WithName("video"), rtpav.
 Each reader can be a raw RTP receiver or a `webrtcav.TrackReader`. A track
 reader produced from a session routes RTCP feedback back through the peer
 connection. `rtpav.WithName(...)` gives the graph a stable label; explicit
-realtime input names must be distinct. Selected live streams decode to sinks, continue
-into encoders and mux outputs, and accept filter stages — the same stages used
-by file inputs. Single-stream RTP sources stamp EOS with the stream ID so
+realtime input names must be distinct. Selected live streams decode to sinks,
+continue into encoders and mux outputs, and accept filter stages: the same stages
+used by file inputs. Single-stream RTP sources stamp EOS with the stream ID so
 unrelated inputs do not flush a shared decoder. Decoder factories can provide
 adapter-specific reusable state for this path; `rtpav.WithDecodeBounds(...)`
 seeds payload, retained-fragment, output-count, and geometry limits (used by the

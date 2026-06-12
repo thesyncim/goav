@@ -56,49 +56,49 @@ contract (the proven/measured/not-proven map is `docs/PERFORMANCE.md`):
 
 ## Catalog
 
-Core media (`av`) — stable: `Packet`, `Frame`, `Event`, `Buffer`/`Plane`
+Core media (`av`): stable. `Packet`, `Frame`, `Event`, `Buffer`/`Plane`
 (ownership flags define retain/copy/reuse), and reset helpers so hot paths
 reuse structs instead of allocating.
 
-Pipeline — stable: `pipeline.Message`, `Source`, `Stage`, `Sink`, `Emitter`,
+Pipeline: stable. `pipeline.Message`, `Source`, `Stage`, `Sink`, `Emitter`,
 `Route` (optional stream/event scoping), and one-to-many fanout routing.
 Experimental: dynamic graph mutation (closed graphs reject additions with
-`pipeline.ErrClosed`), the work-plan compile (recipe intent → one composable
+`pipeline.ErrClosed`), the work-plan compile (recipe intent -> one composable
 branch IR with ordered-operation shape validation), `plan.Report`
 (`Job.Explain(ctx)` structured explanation), runtime attach (grouped `Task.Attach` from typed taps with
 preflight, rollback, branch-owned stats, and subtree detach; `Task.Taps()` lists
 stable outlets), buffer policy, and graph stats (`Task.Stats()`,
 `Task.Snapshot()` with spec, stats, taps, and runtime branch states).
 
-RTP — stable: `rtpav.Source` (Pion RTP reader → packets/events with payload
+RTP: stable. `rtpav.Source` (Pion RTP reader -> packets/events with payload
 maps, loss/timestamp tracking, depacketizers, EOS, feedback),
 `rtpav.StaticPayloadMap`, `rtpav.SequenceDetector` (allocation-free loss
 detection), `rtpav.Depacketizer` plus the Opus/VP8/VP9/H264/AV1 depacketizers,
 and `rtpav.FeedbackWriter`. Experimental: `rtpav.JitterBuffer`.
 
-Codec — stable: `codec.Registry`, `codec.Descriptor` (identity + capability
+Codec: stable. `codec.Registry`, `codec.Descriptor` (identity + capability
 preflight), `codec.DecoderFactory`/`EncoderFactory`, `codec.DecoderStage`
-(packets → frames; preserves realtime events, drives loss/PLC, flushes before
-EOS), `codec.EncoderStage` (frames → packets; observes control events, flushes
+(packets -> frames; preserves realtime events, drives loss/PLC, flushes before
+EOS), `codec.EncoderStage` (frames -> packets; observes control events, flushes
 delayed packets), and caller-owned `DecodeResult`/`EncodeResult`. Experimental:
 decode state factories for adapter scratch.
 
-Format — stable: `format.Registry`, `format.Prober`, `format.Demuxer`/`Muxer`,
+Format: stable. `format.Registry`, `format.Prober`, `format.Demuxer`/`Muxer`,
 `format.DemuxSource` (stream-added events, packets, EOS), `format.MuxStage`
 (writes packets, emits write-result events), and caller-owned
 `ReadResult`/`WriteResult`. Experimental: `format.Descriptor` capability
 metadata.
 
-Filters — stable: `filter.Registry`, `filter.FrameFilter`,
+Filters: stable. `filter.Registry`, `filter.FrameFilter`,
 `filter.SimpleRegistry` (descriptor metadata for `Explain(ctx)`),
 `filter.Stage` (frame transforms preserving events, flushing before EOS), and
 caller-owned `filter.Result`.
 
-WebRTC — stable: `webrtcav.TrackReader` (Pion TrackRemote as a packet reader).
+WebRTC: stable. `webrtcav.TrackReader` (Pion TrackRemote as a packet reader).
 Experimental: `webrtcav.TrackSet` (track acceptance, same-stream replacement,
 codec updates), the codec-update boundary, and the track replacement boundary.
 
-Adapters — see `docs/ADAPTERS.md` for the per-adapter catalog: stable
+Adapters: see `docs/ADAPTERS.md` for the per-adapter catalog. Stable:
 `adapters/gopus`, `adapters/ivf`, `adapters/annexb`; experimental
 `adapters/govpx`, `adapters/goav1`, `adapters/goh264` (descriptor-only in
 default builds), `adapters/resample`, `adapters/resize`.

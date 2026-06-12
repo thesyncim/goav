@@ -1,250 +1,109 @@
-# North Star — one grammar, one planner, one task
+# North Star
 
-goav is a Go-native media **work planner** — *not GStreamer in Go*. Borrow the
-power, not the vocabulary. **No public** Element/Pad/Bin/Bus/Probe/Caps/Pipeline-State.
+goav has one user-facing model:
 
-Users describe `inputs + operations + taps + branches + destinations`; goav
-provides shape solving, branch isolation, safe runtime attach/rebranch, custom
-sources/destinations, multi-input composition, lifecycle-aware destinations,
-events/snapshots, and clear errors.
-
-## The one grammar
-
+```text
+From(inputs...) -> stream selection -> operations -> taps -> branches -> destinations -> task
 ```
-From(inputs...) -> select stream -> operations -> Tap -> Branches -> Destinations -> Task
+
+That model must hold for initial builds, runtime attach, diagnostics, control,
+and examples. Normal users should not need graph handles, string routing, or a
+separate workflow API for recording, transcoding, preview, diagnostics, or late
+attachment.
+
+## Contract
+
+- A direct stream is an implicit `Branch("main")`.
+- A branch is an ordered operation list plus destinations, source/tap anchor,
+  media kind, buffer policy, and detach policy.
+- A flow is reusable operations; it owns no source, destination, runtime state,
+  or lifecycle.
+- A destination value is the routing handle. Reusing one destination value
+  groups branches into one mux or sink group.
+- Shape validation is central. Inputs, operations, taps, flows, branches, and
+  destinations all participate in the same compatibility check.
+- Build and Attach share the same lowering model: `WorkPlan` for a full task,
+  `WorkPatch` for a runtime branch update.
+- Runtime observation is composition: `Branch + Do + Sink`, plus `Events`,
+  `Watch`, `Snapshot`, `Stats`, `Explain`, and graph rendering.
+- Runtime controls lower into `Task.Control`, `Task.Attach`,
+  `Attachment.Rebranch`, `Task.Detach`, `Watch`, `Snapshot`, `Stats`, or
+  `Close`; the control-plane binder never calls arbitrary methods.
+
+The internal target shape is:
+
+```text
+BranchSpec -> operationSpec list -> WorkPlan / WorkPatch -> executable task
 ```
-Public nouns: **Input, Chain, Shape, Tap, Branch, Destination, Flow, Source, Task**
-(`Operation` is a method on a Chain, not a headline noun). Never promote
-`Record/Transcode/Path/Target/Output(s)/To("label")/Runtime.Graph/graph handles`.
 
-Core identities:
-- direct chain = implicit `Branch("main")`
-- planned branch = `BranchSpec -> WorkPlan`
-- runtime branch = `BranchSpec -> WorkPatch`
-- Flow = reusable operation list · Destination = routing handle · Shape = compatibility contract
+Every fluent operation appends one internal operation record:
 
-One planner for Build and Attach; one operation list; one branch/destination/shape
-model; no workflow dispatch; no string routing; no graph handles for normal work.
-
-## Target shapes
-
+```text
+Decode -> OpDecode
+Copy -> OpCopy
+Shape/Auto/Require/Prefer -> shape operation
+Resize/Resample -> transform operation
+Do -> stage operation
+Encode -> encode operation
+Tap -> tap operation
 ```
-type BranchSpec struct { Name string; Source BranchSource; Media av.MediaType;
-    Operations []operationSpec; Destinations []Destination; Buffer BranchBuffer;
-    Detach DetachPolicy; Err error }
-type FlowSpec struct { Name string; Media av.MediaType; Operations []operationSpec; Err error }
-```
-Every fluent method appends exactly one internal `operationSpec`: Decode→OpDecode, Copy→OpCopy,
-Shape→OpShape, Resize/Resample→OpTransform, Do→OpStage, Encode→OpEncode, Tap→OpTap.
 
-`WorkPlan{Inputs,Operations,Taps,Branches,Destinations,Edges,Diagnostics}` /
-`WorkPatch{Operations,Taps,Branches,Destinations,Edges,Rollback}` are the only
-executable truth; Explain/Describe/Build/Attach/Snapshot all read from them.
+## Evidence Map
 
-## Feature areas (status)
+The acceptance tests keep the design honest. The numbers below are the stable
+labels used in test failure messages.
 
-- **IR collapse** (§1,2,15): one operation list — BranchSpec is at the target
-  shape (name/media/operations/destinations/source/buffer), `mediaPlan` is
-  deleted (workPlan is the truth), string routing is gone, and the per-workflow
-  builder compilers (remux / decode-to-sink / decode-encode-to-output) are
-  deleted: the expert builder only assembles explicit Source/Stage/Sink graphs
-  and every media job lowers through the one recipe compile. **Remaining:**
-  fold the `streamIntent` normalization layer into `operationSpec` readers;
-  `branchComposePlan` stays, deliberately, as the recipe→lowering hand-off
-  (`branch_compose_build.go`).
-- **Shape solving** (§3,4): validation upgraded to SOLVING — the one compile walk
-  propagates shapes, selects converting adapters from the filter registry by
-  capability delta, and inserts them as real planned operations under
-  `.Auto(shape.AllowResample()/AllowResize()/AllowConvert())` (default OFF;
-  refusals carry the exact policy to add; joins use an implicit arm policy);
-  shape.Contract honored on Do stages; user-facing shape controls shipped —
-  `.Require(spec)` hard assertions (fail with actual/required/fix, solvable
-  under an active policy) on chains/branches/flows and `.Prefer(spec)` soft
-  preferences (fill open conversion-target facts, tie-break ambiguous adapter
-  selection; never fail — dropped with a diagnostic); join outputs feed the same
-  solver before terminal `.Encode(...)` and planned `.Branches(...)` (branch
-  `.Auto(...)` and Mix/Composite output `.Auto(...)` are both honored). **DONE.** TODO:
-  contracts on Source/Sink/Destination/Flow.
-- **Tap** (§5): carry name/domain/kind/shape/producing-op/branch-owner/attach-policy/timebase. **partial.**
-- **Branch control plane** (§6,7,10): pause/resume/stop/rebranch **DONE** (lock-free,
-  both runners, gapless); typed `Task.Control` (Keyframe/Deliver/SelectActive via
-  `pipeline.NodeInjector`, untargeted rides the data path, `.AtTap` by tap name) **DONE**;
-  typed TaskState/BranchState/DestinationState in Snapshot **DONE**. TODO: SwitchAt*
-  policies; `.At(node)` stays expert-only.
-- **Branch isolation/ownership** (§8): lock-free isolation, independent fanout
-  backpressure, per-branch atomic stats, MaxLatency/MaxBytes shedding, Blocking —
-  **DONE (data plane)**. TODO: public CopyMode contract surfacing.
-- **Events/Snapshot/Watch** (§9): typed EventFilter Watch **DONE**; Snapshot with
-  typed states/stats/drop visibility **DONE**. TODO: dedicated
-  attach/detach/commit lifecycle events.
-- **Dynamic streams** (§11): `OnStream(match, branches...)` rules on the job;
-  sources announce via `av.EventStreamAdded` (typed `Event.Stream` payload);
-  late branches attach through the one planner anchored source+stream
-  (RouteByStream), solver included; removal detaches with drain; failures
-  surface as `av.EventAttachError`. **DONE** (ambiguous selection lists its
-  candidates with narrowing fixes). TODO: `When` conditions beyond stream
-  identity.
-- **Multi-input/Join** (§12): Mix/Composite/Select grammars **DONE** over lock-free
-  stages + `task.Control` live switch; variadic `From(a, b...)` with `InputName`
-  narrowing and one shared Destination **DONE**; JoinSpec lowering through ONE join
-  builder (profile tables, `Job.join` single route) **DONE**; join outputs compose
-  (`.Tap`/`.Branches` via the shared chain lowering) **DONE**; planned `OpJoin`
-  node in the IR — joins compile through the one recipe compile, `Describe()` ≡
-  `Build()` guarded, the `buildJoin` graph-assembly route deleted **DONE**;
-  nested joins **DONE** — a join is a `JoinArm` (`Mix(Mix(a, b), c)`,
-  `Select(Mix(a, b), Mix(c, d))`, composites of composites), `joinPlan`
-  recurses through the one compile, nested output ids auto-disambiguate
-  (mix, mix-2), arm conversions apply to a sub-join's output via the solver;
-  mid-graph convergence **DONE** — arm chains keep their `.Decode()/.Tap(...)`
-  (taps install on the task, one decode feeds the join and runtime attaches)
-  and a `TapRef` is a `JoinArm` (the dual of `Branch().From(tap)`): it anchors
-  on an earlier arm's tap, re-stamped under the tap name, no source re-opened;
-  joined-output solving **DONE** — Mix/Composite output `.Auto(...)` solves
-  terminal encode paths and planned branches, and branch-local `.Auto(...)`
-  solves after the join's select node.
-- **Time/sync** (§13): join sync policy **DONE** — `Mix/Composite(...).SyncByPTS()`
-  aligns arms on a common ns clock (min-head step, tolerance = half a frame;
-  ahead arms gap as silence/unpainted, stale frames drop to catch up, an arm
-  discontinuity flushes+re-syncs and forwards, an ended arm stops gating).
-  Realtime file playback is clock-paced **DONE**: `av.Clock` (Now/Sleep,
-  injectable, default monotonic) drives the demux pump — packets deliver when
-  their media time is due, Rate scales the pace live, seeks/segments/
-  discontinuities re-anchor. Remaining: minimal TimeShape
-  (TimeBase/Clock/Live/Latency), pipeline-wide clock service + pull
-  scheduling, A/V sink sync, Attach-at policies. **TODO.**
-- **Source backpressure** (§14): result-aware `push.X(...) (PushResult, error)` —
-  Accepted/Dropped per push, sheds stay nil-error. **DONE.**
+| Area | Current evidence |
+| --- | --- |
+| Grammar | #1 README and docs guards keep the public vocabulary on Input, Stream, Tap, Branch, Destination, Flow, Task. #2 direct chains lower like `Branch("main")`. #3 flows expose no destinations. #4 destination reuse groups by handle. |
+| Planner | #5 Build and Attach share canonical operation lowering. #6 Attach emits `WorkPatch` downstream of taps. #7 Explain reads from `WorkPlan`. #8 Snapshot reflects plan plus patches. #9 legacy workflow packages are gone. #10 workflow-kind dispatch is gone from normal recipes. |
+| Shape | #11 Resize requires video frames. #12 Resample requires audio frames. #13 frames cannot go to byte destinations without Encode. #14 packet Copy to File succeeds. #15 decoded frames can end in Sink. #16 errors include operation, actual/expected shape, and fix. #17 conversions are inserted only under an explicit policy. |
+| Branches | #18 branches after Decode share one decoder. #19 dropping preview branches do not stall archive branches. #20 Blocking backpressures. #21 branch drop counters are visible. #22 mutable branch output cannot corrupt siblings. |
+| Runtime mutation | #23 Attach opens destinations before mutation. #24 attach failure rolls back. #25/#26 drain and abort are pinned where exposed; standalone detach disposition remains planned. #27 Rebranch starts replacement before old detach. #28 failed Rebranch keeps the old branch. #29 Pause/Resume affects one branch. |
+| Events and control | #30 Watch filters and stream/attach/backpressure events are pinned; dedicated attach/detach/commit lifecycle events remain planned. #31 Snapshot reports typed task, branch, destination, tap, and drop state. #32 Keyframe reaches adapters or fails clearly. #33 SetBitrate reaches encoders or fails clearly. |
+| Sources | #34 custom packet source Copy to File. #35 custom frame source Encode to File. #36 SourcePush reports Accepted/Dropped. #37 source EOS commits destinations. |
+| Dynamic streams | #38 late streams attach branches. #39 ambiguous stream selection lists candidates and fixes. #40 removal detaches with drain where exposed; per-rule detach policy remains planned. |
+| Multi-input and joins | #41 multiple inputs can share one destination. #42 codec/format mux compatibility is checked; mux-group timebase validation remains planned. #43 Mix joins audio branches. #44 join shape mismatch is solved or refused before mutation. |
 
-## Acceptance tests (definition of done) — `[x]` holds · `[~]` partial · `[ ]` todo
+## Current State
 
-Grammar: 1[x] README clean (TestReadmeUsesBranchDestinationVocabulary + the
-TestReadme* guard battery pin grammar, vocabulary, and recipe size) · 2[x] direct
-chain ≡ Branch("main") (both naming paths, hard guards) · 3[x] Flow no
-destinations/To (TestNorthStarFlowExposesNoDestinations) · 4[x] Destination reuse
-groups by handle (TestFromMultiInputPlanDedupesSharedDestination: one handle =
-one mux group; TestFromMultiInputRejectsConflictingDestinationHandles: same-name
-distinct handles refuse instead of merging).
-Planner: 5[x] Build+Attach share the canonical operation lowering · 6[x] Attach emits
-WorkPatch only downstream of taps · 7[x] Explain from WorkPlan · 8[x] Snapshot =
-WorkPlan+patches · 9[x] no
-transcode import in core (package deleted) · 10[x] no workflow-kind dispatch
-(the builder-compiler registry is deleted; only explicit graphs remain on the
-expert builder).
-Shape: 11[x] Resize requires video frame · 12[x] Resample requires audio frame ·
-13[x] frame→File w/o Encode fails · 14[x] packet→File w/ Copy ok · 15[x] Decode→frame
-Sink ok · 16[x] errors include branch/op/actual/expected/fix · 17[x] auto-insert only
-when enabled.
-Branches: 18[x] two branches share one decoder
-(TestNorthStarBranchesAfterDecodeShareOneDecoder: one decode node fans out to
-both planned branches, ONE decoder instance opens, each packet decodes once,
-and a runtime branch attached at the tap shares it too) · 19[x] slow
-Latest/DropOldest doesn't stall archive · 20[x] Blocking backpressures · 21[x]
-per-branch drop counts · 22[x] mutable frame branch can't corrupt sibling
-(TestCopyContractMutableFanoutBranchCannotCorruptSibling).
-Runtime: 23[x] Attach opens destinations before mutation
-(TestOnStreamAttachFailureSurfacesEventAndRollsBack: the destination opens
-first; TestTaskAttachClosesPreparedComponentsWhenRuntimeNodeNameExists: opened
-muxer/filter precede the rejected mutation) · 24[x] Attach failure rolls
-back+aborts (same OnStream test: destination aborted, node count and branches
-unchanged; TestTaskAttachRuntimeBranchGroupRollsBackOnLaterFailure) · 25[~]
-Detach+drain commits — drain-commit pinned where exposed: rebranch
-DrainOldBranch (TestRebranchOldBranchDispositionReportsDestinationStates) and
-stream removal (TestOnStreamAttachesLateBranchAndDetachesOnRemoval); plain
-task.Detach has no drain option yet · 26[~] Detach+abort aborts —
-AbortOldBranch and failed-run abort pinned (same rebranch test +
-TestTaskSnapshotReportsFailedTaskAndAbortedDestination); no detach-with-abort
-verb yet · 27[x] Rebranch starts replacement before detach · 28[x] Rebranch
-failure leaves old intact · 29[x] Pause/Resume only that branch.
-Events/Control: 30[~] events — typed Watch filters and
-stream-added/removed/attach-error/backpressure events pinned; dedicated
-attach/detach/commit lifecycle events still missing · 31[x] Snapshot full —
-typed task/branch/destination states, spec, taps, stats incl. drop reasons
-(TestTaskSnapshotReportsTypedTaskLifecycle,
-TestTaskSnapshotReportsCommittedDestinationAfterRun,
-TestFrontDoorDropReasonsReadableWithoutPipeline) · 32[x] RequestKeyframe
-reaches adapter or fails clearly (TestTaskControlKeyframeBroadcastsWithoutTarget
-rides the data path, TestEncoderStageConsumesInputEvents lands it on the
-encoder, TestTaskControlRejectsUnknownAndDirectGraph fails clearly) · 33[x]
-SetBitrate reaches encoder or fails clearly
-(TestDefaultRealtimeEncodeRecipeSupportsLiveEncoderControls pins the
-default-built realtime encoder path; TestTaskControlSetBitrateBroadcastsBitrateEvent
-takes the same encoder event path; TestTaskControlSetBitrateRejectsNonPositiveRate
-refuses at the seam).
-Source: 34[x] custom packet source Copy→File
-(TestNorthStarCustomPacketSourceCopiesToFile) · 35[x] custom frame source
-encode→File (TestNorthStarCustomFrameSourceEncodesToFile) · 36[x] push reports
-drops/backpressure · 37[x] Source EOS commits destinations
-(TestTaskSnapshotReportsCommittedDestinationAfterRun: push EOS →
-DestinationCommitted; the OnStream removal test commits the transactional
-writer).
-Dynamic: 38[x] late stream attach (TestOnStreamAttachesLateBranchAndDetachesOnRemoval,
-TestOnStreamLateBranchReceivesFramesFromFrameSource,
-TestOnStreamRTPLateStreamAttachesBranch) · 39[x] ambiguous selection lists
-candidates (TestFromMultiInputAmbiguousSelectionListsCandidates,
-TestStreamRecipeReportsAmbiguousLiveSelectionBeforeDecoderAdapter,
-TestStreamRecipeReportsProbedFileSelectionBeforeOpeningInput) · 40[~] stream
-removal detaches — drain detach+commit on removal is pinned (the same OnStream
-removal test); a per-branch removal DetachPolicy choice is not exposed yet.
-Multi/Join: 41[x] From(a,v) one shared Destination · 42[~] multi-input mux
-validates codec/format per group (TestBuildRejectsIncompatibleAnnexBMuxGroup);
-no timebase validation yet · 43[x] Join mixes two audio branches · 44[x] Join
-shape mismatch auto-resamples or fails before mutation.
+Done:
 
-## Attack plan (2026-06-09, decided): internal path unity
+- `mediaPlan` and `runtimeBranch` parallel execution records were collapsed
+  into `WorkPlan` and `WorkPatch`.
+- Destination routing is by stable destination handle.
+- Runtime branches use the same operation list as build-time branches.
+- Mix, Composite, Select, custom joins, nested joins, and tap-backed join arms
+  lower through the same recipe compile.
+- Shape solving inserts real planned conversions under `.Auto(...)`; hard
+  assertions use `.Require(...)`; preferences use `.Prefer(...)`.
+- Dynamic streams attach through the normal branch planner.
+- Watch, Snapshot, Stats, Attach, Rebranch, Detach, and task controls are
+  public task capabilities.
+- Generated-source CLI runs and control sockets expose the same task model.
 
-Themes A (graph shape) and B (control plane: `task.Control` + `pipeline.NodeInjector`,
-keyframe/event injection, live Select switch) are closed at the surface. The next big
-thing is NOT more API — it is making all power flow through one internal path.
-Measured residue at decision time (since worked down — see stages): `runtimeBranch`
-251 refs (runtime_attach.go 2,298 lines), `mediaPlan` 113 refs (2,567 lines of
-parallel plan), three join builders 700 near-mirror lines, `branchComposePlan`
-23 refs, `destinationNames` 25 refs; `work_plan.go`+`work_patch.go` existed
-(875 lines) before becoming the truth.
+Still planned:
 
-Stages (each green, in dependency order):
-1. **JoinSpec** — Mix/Composite/Select lower through ONE join builder. **DONE**
-   (+ join outputs compose: `.Tap`/`.Branches` through the shared chain lowering).
-2. **Typed lifecycle states** — TaskState/BranchState/DestinationState in
-   Snapshot. **DONE.**
-3. **runtimeBranch → WorkPatch** — **DONE.** The attach-side parallel IR is
-   deleted; Attach walks the same canonical operationSpec chain as Build
-   (shared shape algebra + stage/destination constructors) and emits the
-   workPatch as THE plan; snapshots render from it.
-4. **mediaPlan → WorkPlan-primary** — **DONE.** The `mediaPlan` aggregate is
-   deleted; `buildWorkPlan` builds the plan once inside the compile; Explain /
-   lowering / mux-compat / taps all read workPlan; destinations route by stable
-   handle IDs (`destination/<label>`), not name strings; the opaque
-   `Job.Plan()` is off the public surface.
-5. **Planned JOIN node** — **DONE.** Joins compile through the one recipe
-   compile: `joinPlan` plans N arm sub-chains converging into an `OpJoin` node,
-   `Describe()` ≡ `Build()` is guard-tested per kind, and the hand-assembled
-   `buildJoin` route is deleted (`Job.join` survives only as captured intent).
-6. **Shape solver** — **DONE.** Validation became solving in the one compile
-   walk; the mix arm-resample hook and the branch-compose inline resize/
-   resample synthesis are absorbed (deleted) into it.
-7. Remaining: SwitchAt* policies; time/clock (theme C — pull scheduling is the
-   keystone). The time-axis CONTROLS exist on the source-control seam
-   (`Seek`/`Rate`/`Segment` → `pipeline.ControllableSource`), and file inputs
-   honour Seek/Segment without custom code: the seekable demuxer hook shipped
-   (`format.Seeker`, discovered by assertion; `format.DemuxSource` becomes a
-   ControllableSource over it; matroska/webm implement it via Cues with a
-   cluster-index fallback). Paced realtime file playback shipped: the demux
-   pump anchors wall↔media time on an injectable `av.Clock` (per-runtime
-   `WithClock`, default monotonic) and re-anchors on every seek/segment/
-   discontinuity/rate change, so Rate on a file is a real pacing multiplier
-   (offline pumps stay full-speed and reject it). What remains of theme C:
-   the pipeline-wide clock service, A/V sink sync, and pull scheduling.
+- Fold the remaining `streamIntent` normalization layer into operation readers.
+- Expand `SwitchAt` boundaries beyond the current frame/keyframe policies.
+- Add standalone detach drain/abort verbs and dedicated attach/detach/commit
+  lifecycle events.
+- Add mux-group timebase validation.
+- Finish the time-shape work: pipeline-wide clock service, A/V sink sync, and
+  pull scheduling.
+- Decide the release minimum Go version before v1.
 
-## Execution order (condensed)
+## Working Rule
 
-Work residue-by-residue, one deletion per slice, each slice green. Done:
-`mediaPlan` → `WorkPlan`, destination-by-handle routing (`destinationNames` is
-gone), shape solving, dynamic streams, and the unreachable per-workflow builder
-compilers deleted (the expert builder keeps only explicit graphs). Naming
-unification for single-branch compositions (direct chain ≡ named branch encode
-nodes) is a maintainer design call recorded in git history. The planner
-internals deliberately stay one root compilation unit — moving them under
-`internal/` packages was measured and rejected; see "Package layering" in
-docs/ARCHITECTURE.md. Remaining: fold the `streamIntent` normalization layer
-into `operationSpec` readers, keep tap/branch/control anchors on one internal
-stream-point model, SwitchAt* policies, TimeShape.
+New functionality belongs in the grammar only when it can answer these
+questions without special cases:
+
+1. What operation record does it append?
+2. What shape facts does it consume and produce?
+3. How does it appear in `Explain`, `Describe`, and `Snapshot`?
+4. How does the same branch attach at runtime?
+5. How does it fail before resources open?
+6. How can a test source or external adapter exercise it end to end?
+
+If those answers require a separate workflow path, keep the feature out of the
+front-door API until the shared planner can express it.

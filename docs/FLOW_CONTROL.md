@@ -1,4 +1,4 @@
-# Flow control — current state
+# Flow control: current state
 
 Branch buffers are branch-local policy (`flow` package): `Blocking`,
 `DropOldest`, `DropNewest`, `Latest`, `Unbounded`, with options for copy
@@ -22,8 +22,8 @@ What holds today (all `-race` clean, with tests):
   and `ErrBackpressure` keeps its flow-control meaning.
 
 The producer-side cost of both paths is measured by `BenchmarkSourcePush`
-(dropping vs blocking) and the steady buffered path is allocation-pinned by
-`pipeline.TestGraphBufferedSteadyEmitAllocs` — see `docs/PERFORMANCE.md`.
+(dropping vs blocking), and the steady buffered path is allocation-pinned by
+`pipeline.TestGraphBufferedSteadyEmitAllocs`; see `docs/PERFORMANCE.md`.
 
 Remaining design choice: whether the bare buffered default should also block
 rather than error on full (currently: only explicit `Blocking` blocks).

@@ -126,6 +126,8 @@ $CTL attach frames as acme-preview \
 
 Render the running graph:
 
+![Runtime pipeline debugging](../../docs/assets/pipeline-debug.svg)
+
 ```sh
 $CTL graph
 $CTL graph format=text

@@ -47,7 +47,7 @@ conversion; attachments, chapters, tags, CRC-32; block-scope AES-CTR content
 encryption; caller-owned packet buffers on demux; format registry adapters for
 `av.Stream`/`av.Packet`.
 
-Codecs — Matroska: Opus, Vorbis, FLAC, AAC, PCMU/PCMA, VP8, VP9, AV1, H.264,
+Codecs: Matroska: Opus, Vorbis, FLAC, AAC, PCMU/PCMA, VP8, VP9, AV1, H.264,
 H.265, S_TEXT/UTF8. WebM: Opus, Vorbis, VP8, VP9, AV1. The WebRTC codec set is
 fully covered for Matroska and the valid WebM subset for WebM.
 

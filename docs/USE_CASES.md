@@ -290,6 +290,8 @@ typed taps. `Attachment.Snapshot()` reports the attached branch, and
 `Task.Snapshot()` reports the whole graph plus active branches with typed
 lifecycle states.
 
+![Runtime pipeline debugging](assets/pipeline-debug.svg)
+
 ```go
 audioDecoded := goav.FrameTap("audio.decoded")
 

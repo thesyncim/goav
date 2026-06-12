@@ -31,6 +31,8 @@ goav run --control unix:///tmp/goav-live.sock \
 
 Then drive the running graph from another shell:
 
+![Runtime pipeline debugging](assets/pipeline-debug.svg)
+
 ```sh
 goav ctl --control unix:///tmp/goav-live.sock taps
 goav ctl --control unix:///tmp/goav-live.sock graph

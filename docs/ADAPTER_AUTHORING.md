@@ -1,27 +1,31 @@
 # Adapter authoring
 
-How to add a codec, container, filter, source provider, or destination
-provider WITHOUT touching goav core. Every seam is an exported interface plus
-a value-typed `With*` option (or a plain value argument) on a per-runtime
-registry — no globals; registration is last-wins, so an adapter can also
-override a standard one under `Default(opts...)`.
+How to add a codec, container, filter, source provider, or destination provider
+without touching core. Every extension point is an exported interface plus a
+value-typed `With*` option (or a plain value argument) on a per-runtime
+registry. There are no globals; registration is last-wins, so an adapter can
+also override a standard implementation under `Default(opts...)`.
 
 The executable proof is `adapterproof/adapter_compat_test.go`: one toy
-implementation of every seam below, defined entirely in a test package that
-imports only public goav packages, run end to end through the recipe grammar.
-The minimal reference implementations are goavtest's fakes
+implementation of every extension point below, defined entirely in a test
+package that imports only public goav packages, run end to end through the
+recipe grammar. The minimal reference implementations are goavtest's fakes
 (`goavtest/codec.go`, `goavtest/format.go`); `docs/ADAPTERS.md` catalogs the
-real ones. When writing yours, copy the smallest real one:
-**`adapters/resample`** is the filter template — a `Descriptor()` func, a
-stateless `Factory` whose `NewFilter` opens the instance, `Open` validating
-stream + target, `FilterInto` writing into the caller's preallocated plane
-with capacity checks, a package `Register(registry)` hook.
-**`adapters/ivf`** is the container template — one factory implementing both
-`MuxerFactory` and `DemuxerFactory`, header at `Open`, one record per
-`Write`/`ReadInto` against caller-owned scratch, `io.EOF` at the clean end,
-magic/extension probe rules.
+real adapters.
 
-## Rules common to every seam
+When writing your adapter, start from the smallest shipped implementation:
+
+- **`adapters/resample`** is the filter template: a `Descriptor()` function, a
+  stateless `Factory` whose `NewFilter` opens the instance, `Open` validation
+  for stream and target, `FilterInto` that writes into the caller's
+  preallocated plane with capacity checks, and a package `Register(registry)`
+  hook.
+- **`adapters/ivf`** is the container template: one factory implementing both
+  `MuxerFactory` and `DemuxerFactory`, headers written at `Open`, one record
+  per `Write`/`ReadInto` against caller-owned scratch, `io.EOF` at the clean
+  end, and magic/extension probe rules.
+
+## Rules common to every extension point
 
 - **Cold vs hot** (`docs/PERFORMANCE.md` is the contract): construction,
   `Open`, probing, and registration may allocate; per-packet/per-frame methods
@@ -30,21 +34,21 @@ magic/extension probe rules.
   backing arrays) and returning a capacity sentinel instead of growing past
   `cap`. No `fmt`, map writes, closures, or error wrapping per message.
 - **Serial workers**: each opened instance is driven by one stream's serial
-  worker — per-message state needs no locking. Factories may serve several
+  worker, so per-message state needs no locking. Factories may serve several
   builds; keep them stateless or guard shared state.
 - **Errors**: build-time refusals reach users as `*goav.BuildError` with a
-  `errcode.Code` — preflight checks descriptors and registries before anything
+  `errcode.Code`; preflight checks descriptors and registries before anything
   opens (`errcode.DecodeAdapterMissing`, `EncodeAdapterIncompatible`,
   `TransformAdapterMissing`, `InputDemuxerMissing`, `OutputMuxerMissing`, ...).
   Return typed sentinels for unsupported config at open
   (`codec.ErrUnsupportedFormat`, ...). Any non-nil error from a hot-path
-  method is fatal to the task — flow control is the graph's job, not the
+  method is fatal to the task; flow control is the graph's job, not the
   adapter's: never sleep, retry, or drop inside an adapter.
-- **Buffer ownership** (`av.BufferOwnership`): mark output payloads honestly.
+- **Buffer ownership** (`av.BufferOwnership`): mark output payloads precisely.
   `BufferBorrowed` = valid until your next call (copied before queueing);
   `BufferOwned` = receiver's to mutate (copied per branch on fanout);
   `BufferImmutable` = shareable by reference forever, never written again by
-  anyone — the only zero-copy fanout class, trusted not checked.
+  anyone. This is the only zero-copy fanout class; it is trusted, not checked.
 - **Close**: called exactly once by the owning stage/source (at task close or
   failed-build cleanup), but implement it idempotently anyway.
 
@@ -69,16 +73,16 @@ Lifecycle (from `codec/stage.go` + `runtime_decode.go`/`runtime_encode.go`):
 
 1. Build-time preflight reads your `Descriptor` (ID, Type, Modes, capability
    lists; empty list = unconstrained) and refuses incompatible plans before
-   anything opens. Descriptor-only → `errcode.*AdapterUnavailable`.
+   anything opens. Descriptor-only -> `errcode.*AdapterUnavailable`.
 2. `New{Decoder,Encoder}(ctx, config)` is called once per stream per build
-   (cold) and must return a READY instance — call your own `Open` inside the
+   (cold) and must return an opened instance; call your own `Open` inside the
    factory; the runtime never calls `Open` separately. Optional
    `codec.DecodeStateFactory` provisions `DecodeConfig.OpaqueState` first; if
    `NewDecoder` then fails, state with a `Close()` is closed.
 3. Per message: `DecodeInto` per packet / `EncodeInto` per frame.
-   `HandleEvent` sees every in-band event BEFORE it is forwarded;
+   `HandleEvent` sees every in-band event before it is forwarded;
    `av.EventEndOfStream` then triggers `FlushInto`; `av.EventPacketLoss` then
-   triggers `DecodeInto(ctx, nil, result)` — **a nil packet is legal**, it is
+   triggers `DecodeInto(ctx, nil, result)`. **A nil packet is legal**; it is
    the concealment/PLC hook. An encoder must apply
    `av.EventKeyframeRequired`/`av.EventBitrateChanged` or return an error.
 4. Decoders ask upstream via `DecodeResult.Requests`
@@ -87,15 +91,15 @@ Lifecycle (from `codec/stage.go` + `runtime_decode.go`/`runtime_encode.go`):
 
 Results: `DecodeResult`/`EncodeResult` are caller-owned scratch sized from
 `DecodeBounds` (merged from stream facts and source-provider bounds). Slot
-exhausted → `codec.ErrResultFull`; preallocated plane/payload too small →
+exhausted -> `codec.ErrResultFull`; preallocated plane/payload too small ->
 `codec.ErrOutputBufferTooSmall`. Honor `DecodeConfig.Bounds` when sizing
 internal arenas. Read `CodecSettings` at open: grouped settings (Bitrate,
-Profile, ...) plus the raw `Control func(any) error` escape hatch — invoke it
+Profile, ...) plus the raw `Control func(any) error` escape hatch. Invoke it
 with your concrete native handle; a non-nil error fails the open.
 
 Register: `goav.WithDecoder(desc, factory)`, `goav.WithEncoder(desc,
 factory)`, `goav.WithCodecDescriptor(desc)` (capability-only), or a bundle
-via `goav.WithCodecAdapter(func(*codec.SimpleRegistry))` — adapter packages
+via `goav.WithCodecAdapter(func(*codec.SimpleRegistry))`; adapter packages
 should export `Register(*codec.SimpleRegistry)`.
 
 ## Container (`format` package)
@@ -124,11 +128,11 @@ Lifecycle (from `format/stage.go`, `runtime_demux.go`, `mux_destination.go`):
 1. Probe: every registered prober runs; highest score wins; non-matches
    return `format.ErrNotFound` fast (a prober error only surfaces if nobody
    matches). `ProbeResult.Streams` may declare streams without opening.
-2. Demux: `NewDemuxer(ctx, probeResult)` (cold) → core calls
-   `Open(ctx, input, options)` — unlike codecs, the core DOES call `Open`
+2. Demux: `NewDemuxer(ctx, probeResult)` (cold) -> core calls
+   `Open(ctx, input, options)`. Unlike codecs, core calls `Open`
    here; on `Open` failure the core calls `Close`. `Streams()` must be
    complete immediately after `Open`. Then `ReadInto` in a loop: fill
-   `out.Packet` (already reset), set `PacketReady=true` (≤1 packet per call),
+   `out.Packet` (already reset), set `PacketReady=true` (<=1 packet per call),
    add bounded events via `AddEvent` (`ErrResultFull` past capacity). Return
    `io.EOF` for the clean end of media (the source emits EOS); any other error
    fails the task. Borrowed payloads stay valid until your next `ReadInto`
@@ -136,8 +140,8 @@ Lifecycle (from `format/stage.go`, `runtime_demux.go`, `mux_destination.go`):
 3. Seeking is a capability: also implement `format.Seeker` and the source
    becomes controllable (`Seek` runs between reads, never racing `ReadInto`).
    Without it, time controls are refused loudly.
-4. Mux: `NewMuxer(ctx, formatID)` (cold) → core calls
-   `Open(ctx, output, streams, options)` with the FINAL stream set; on
+4. Mux: `NewMuxer(ctx, formatID)` (cold) -> core calls
+   `Open(ctx, output, streams, options)` with the final stream set; on
    failure core calls `Close`. `Write` per packet in delivery order; `Close`
    finalizes exactly once; a `Write`/`Close` error marks the destination
    transaction failed (transactional writers abort instead of committing).
@@ -162,7 +166,7 @@ type Factory interface { NewFilter(context.Context, Config) (FrameFilter, error)
 ```
 
 Lifecycle (from `filter/stage.go` + `branch_compose_build.go`): the registry
-keys on `Descriptor.Name` — `filter.FactoryResize` and
+keys on `Descriptor.Name`; `filter.FactoryResize` and
 `filter.FactoryResample` are the names the grammar's
 `.Resize(...)`/`.Resample(...)` resolve, so registering under those names
 replaces the standard implementation. `NewFilter(ctx, config)` is called once
@@ -171,7 +175,7 @@ per stage (cold) with `Config.Stream` plus exactly one of
 `Open`). Then `FilterInto` per frame, `HandleEvent` before each forwarded
 event, `FlushInto` on `av.EventEndOfStream`, `Close` once. Build-time
 validation checks `Descriptor.Input/Output` media and the capability lists
-(empty = unconstrained) → `errcode.TransformAdapterIncompatible`. Results:
+(empty = unconstrained) -> `errcode.TransformAdapterIncompatible`. Results:
 caller-owned `filter.Result`; sentinels `filter.ErrResultFull`,
 `filter.ErrOutputBufferTooSmall`, `filter.ErrUnsupportedFormat`.
 
@@ -257,8 +261,8 @@ scratch). `rtpav.Receive` and `webrtcav.Track` are providers; yours plugs in
 identically via `goav.From(goav.Input(provider))`.
 
 Lifecycle (from `provider/provider.go`, `provider.go`, `source.go`):
-`SourceShape()` is read BEFORE
-opening — declare domain/media/codec/format/realtime honestly, for example
+`SourceShape()` is read before
+opening. Declare domain/media/codec/format/realtime precisely, for example
 `shape.Packet(media, codecID, shape.Audio(...),
 shape.Format(av.FormatID("vendor.format")), shape.Realtime(true))`. The
 planner selects streams and decoders from it. Use `shape.Format` when an
@@ -292,19 +296,19 @@ type TransactionalWriter interface {
 
 Lifecycle (from `mux_destination.go`): `Contract()` is read during planning
 (keep it pure; `Formats[0]` pins the container, skipping output probing).
-`Open` runs once per build, after format and stream resolution —
+`Open` runs once per build after format and stream resolution.
 `provider.Info` carries the final format, streams, metadata, and realtime
 flag. The writer receives muxed bytes on the mux hot path. Teardown: the
 muxer finalizes, then `Commit` (run succeeded or drained detach) or `Abort`
-(run failed, mux write/close error, or build teardown), then `Close` — each
+(run failed, mux write/close error, or build teardown), then `Close`; each
 exactly once. `goav.Writer(name, openFn)` is the contract-free shortcut;
 `goav.File` wraps an open writer (closed once iff it implements `io.Closer`).
-Use via `.To(goav.Custom(name, p))` — the `Destination` value is the
+Use via `.To(goav.Custom(name, p))`; the `Destination` value is the
 routing handle branches share.
 
 ## Checklist
 
-1. Fill the descriptor honestly — capabilities are preflight constraints, and
+1. Fill the descriptor precisely. Capabilities are preflight constraints, and
    wrong ones turn into misleading `BuildError` suggestions.
 2. Factory returns ready instances (codec/filter open themselves; container
    `Open` is called by core).
@@ -321,4 +325,4 @@ routing handle branches share.
    `goavtest.TestSourceScript(goavtest.TestSourcePacket(...),
    goavtest.TestSourceEvent(...))` for mixed media/control scripts.
    `adapterproof/adapter_compat_test.go` is a complete worked example of all
-   five seams.
+   five extension points.

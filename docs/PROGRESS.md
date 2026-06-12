@@ -1,78 +1,103 @@
 # Progress
 
-Current-state summary. The driving spec is `docs/NORTH_STAR.md`; history lives
-in git, not here.
+This file is the compact current-state tracker. `docs/NORTH_STAR.md` defines
+the design contract; `docs/ROADMAP.md` separates stable, experimental,
+deferred, planned, and non-goal work.
 
-## What works today
+## Working Surface
 
-- Composition front door: variadic `From(inputs...)` with `InputName` narrowing;
-  audio/video stream selection; ordered operations (`Decode`, `Copy`, `Shape`,
-  `Resize`, `Resample`, `Do`, `Encode`, `Tap`); typed `Branch`/`Destination`/`Flow`.
-- Convergence: `Mix`, `Composite` (`.Region(x, y)`), and `Select` join N source
-  chains into one composable stream; `SelectActive` switches live via `task.Control`.
-- Control plane: untargeted `Keyframe` rides the data path to encoders;
-  `.AtTap(name)` targets by tap; `.At(node)` is expert-only.
-- Runtime attach: atomic grouped `Task.Attach` from typed taps with rollback,
-  dependent-branch detach, pause/resume/stop/rebranch, and branch-local buffers
-  (`flow.Blocking/DropOldest/DropNewest/Latest/Unbounded`, MaxLatency/MaxBytes shedding).
-- Flow control: lock-free data plane (per-node atomics, snapshot routing, no
-  per-message mutex); `Blocking` backpressures without teardown; per-branch drop
-  accounting; result-aware `SourcePush` (`PushResult{Accepted, Dropped}`).
-- Inspection: `Explain(ctx)`, `Describe()`, `Events`, `Snapshot` with typed
-  `TaskState`/`BranchState`/`DestinationState`.
-- Extensibility: per-runtime registries, layered `Default(opts...)` (last-wins),
-  direct `WithDecoder/WithEncoder/WithFilter/WithMuxer/WithDemuxer/WithProber`,
-  custom source/`Do`/`Sink`/`Writer` components, generic `Codec` specs.
-- Codec settings: one owner (`codec.CodecSettings` via `codec` options); tier-2
-  `codec.Control` raw callback; Opus/VP8/VP9 full verticals, H264/AV1 decode-first.
-- Adapters: IVF, Annex B, Matroska/WebM, gopus, govpx, goav1, goh264 (tagged),
-  resize, resample — all with allocation guards.
+- Composition starts from `From(inputs...)`, narrows by stream selectors, and
+  applies ordered operations: `Decode`, `Copy`, `Shape`, `Auto`, `Require`,
+  `Prefer`, `Resize`, `Resample`, `Do`, `Encode`, and `Tap`.
+- Direct streams, planned branches, runtime branches, and flows share one
+  ordered operation list. A direct stream is syntax for the same branch model.
+- `Destination` is the routing handle. Reusing one destination value groups
+  branches into one mux or sink group.
+- Runtime attach lowers the same branch model into `WorkPatch`; initial build
+  lowers the full job into `WorkPlan`.
+- Observation stays ordinary composition: `Branch + Do + Sink`, `Events`,
+  `Watch`, `Snapshot`, `Stats`, `Explain`, and graph rendering.
 
-## Non-negotiables
-
-- Pure Go, no cgo, no FFmpeg/GStreamer runtime dependency.
-- Hot paths: caller-owned buffers, reused result structs, zero steady-state
-  allocation, lock-free per-message paths; allocation guards required.
-- Pion types stay at RTP/WebRTC package boundaries.
-- One way to express work: one planner, one operation model, one destination
-  model, one branch model, one runtime extension model.
-
-## Active goal
-
-The public grammar is:
+The public grammar remains:
 
 ```text
 From(input) -> Chain -> operations -> Tap -> Branch -> Destination -> Task
 ```
 
-- direct streams are syntax sugar for an implicit `Branch("main")`;
-- every fluent operation appends exactly one internal `operationSpec`; direct streams,
-  planned branches, runtime branches, and flows share one ordered list;
+A flow is reusable operations. It has no destination, source, runtime state, or
+lifecycle policy.
+
+Compatibility pins:
+
+- normal workflows lower from `input -> stream -> operations -> tap -> branch -> destination` into `WorkPlan -> pipeline.Graph -> Task`.
+- runtime attach lowers the same branch model into `WorkPatch`.
+- direct streams are syntax sugar for an implicit `Branch("main")`.
 - `Destination` is the routing handle: reusing the same `Destination` value
-  groups branches into one sink or mux destination;
-- `provider.Destination` is the extension point for custom byte/object/sink
-  behavior; goav owns destination identity so shared groups are reliable;
-- Direct `.To(...)` streams are only ergonomic syntax for the same branch model;
-- normal workflows lower from `input -> stream -> operations -> tap -> branch -> destination` into `WorkPlan -> pipeline.Graph -> Task`;
-  runtime attach lowers the same branch model into `WorkPatch`;
+  groups branches into one sink or mux destination.
+- `provider.Destination` is the extension point for custom byte, object, and
+  sink behavior.
+- Direct `.To(...)` streams are only ergonomic syntax for the same branch
+  model.
+- normal composition does not import `goav/transcode`.
+- `branchComposePlan`, `runtimeBranch`, `destinationNames`, and string output
+  refs were migration markers, not extension points.
+- `shape.Spec` carries the media contract, including custom source facts.
+
+## Working Today
+
+- Variadic `From(inputs...)` with `InputName`, `StreamID`, `StreamName`, and
+  `StreamIndex` narrowing.
+- Audio/video stream selection, packet-preserving copy, decode/encode,
+  resize/resample, custom stages, typed taps, branch fanout, shared
+  destinations, and reusable flows.
+- Mix, Composite, Select, nested joins, tap-backed join arms, and custom joins.
+- Atomic grouped `Task.Attach`, dependent-branch detach, pause/resume/stop,
+  and gapless `Attachment.Rebranch`.
+- BranchBuffer policies: `flow.Blocking`, `DropOldest`, `DropNewest`,
+  `Latest`, `Unbounded`, MaxLatency, MaxBytes, and branch-local drop counters.
+- Task controls: `Keyframe`, `SetBitrate`, `Seek`, `Rate`, `Segment`,
+  `SelectActive`, `Deliver`, `.AtTap(name)`, and expert-only `.At(node)`.
+- Dynamic streams through `OnStream` rules and `av.EventStreamAdded`.
+- Deterministic testing through `goavtest` sources, collectors, fake codecs,
+  fake containers, and fake clocks.
+- Generated-source CLI pipelines and `goav ctl` sockets for live inspection,
+  attach, rebranch, detach, controls, and graph rendering.
+
+## Extension Points
+
+- Custom source production through `goav.Source(...)`, `shape.Spec`, and
+  `goav.SourcePush`.
+- Transport providers through `provider.Source`; RTP and WebRTC live in nested
+  modules.
+- Custom byte/object destinations through `goav.Writer(...)`,
+  `goav.Custom(...)`, `provider.Info`, and `provider.TransactionalWriter`.
+- In-process hooks through `EventFunc`, `FrameFunc`, `PacketFunc`, and
+  `SinkFunc`.
+- Runtime adapters through per-runtime registration:
+  `WithDecoder`, `WithEncoder`, `WithFilter`, `WithMuxer`, `WithDemuxer`,
+  and `WithProber`.
+- Control hosts through package `ctl`: explicit command manifests, custom
+  branch-pipeline steps, custom encoder spellings, capabilities reports, and
+  generated help.
+
+## Non-Negotiables
+
+- Core stays pure Go: no cgo, no FFmpeg/GStreamer runtime dependency.
+- Hot paths use caller-owned buffers, reused result structs, allocation guards,
+  and direct per-message dispatch.
+- Pion dependencies stay in `rtpav` and `webrtcav`, not the root module.
 - shape validation is central across inputs, operations, flows, taps, branches,
-  and destinations; `BranchBuffer` policy and lifecycle are planner/executor work;
-- observation stays branch composition: `Branch + Do + Sink`, `Events`, `Snapshot`;
-- normal composition does not import `goav/transcode`, carry labels, or dispatch
-  by workflow kind; `branchComposePlan`, `runtimeBranch`, `destinationNames`
-  bridge state, and string output refs were removal targets, never extension
-  points — the `runtimeBranch`/`mediaPlan` parallel IRs are deleted, routing is
-  by destination handle, `destinationNames` survives only as display-name
-  overrides, and `branchComposePlan` stays as the recipe→lowering hand-off.
+  joins, destinations, runtime attach, and controls.
+- Normal workflows use the recipe grammar. Expert graph handles remain off the
+  front door.
 
-A flow is reusable operations plus media kind; it has no destination, source,
-runtime state, or lifecycle policy.
+## Remaining Work
 
-## Done Criteria
-
-| Gate | Evidence | State |
-| --- | --- | --- |
-| Simple high-level API | `From`, stream selection, ordered operations, typed taps, branches, direct `File`/`URI`/`Sink` destinations, custom `Writer` destinations with `provider.Info`, stable destination handles for shared mux/sink groups, flows, runtime attach, custom sources, `Explain(ctx)` | active |
-| One grammar, one engine | one planner emits `WorkPlan` for build and `WorkPatch` for attach; the internal IR collapse is the open work (NORTH_STAR attack plan) | in progress |
-| Allocation-guarded hot paths | `testing.AllocsPerRun` guards across core/RTP/codec/format/adapters; no cgo (`hygiene_test.go`) | active |
-| Validation gates | `go test ./...`, adapter tag builds, allocation and lifecycle tests | active |
+- Fold the remaining `streamIntent` normalization layer into operation readers.
+- Add standalone detach drain/abort verbs and dedicated attach/detach/commit
+  lifecycle events.
+- Add mux-group timebase validation.
+- Expand `SwitchAt` boundaries beyond frame/keyframe.
+- Finish time-shape work: pipeline-wide clock service, A/V sink sync, and pull
+  scheduling.
+- Make the v1 release decision, including the minimum supported Go version.

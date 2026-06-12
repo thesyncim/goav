@@ -4,24 +4,24 @@ goav raises one structured error from every build, validation, attach, and
 explain path: `goav.BuildError`. The contract, enforced by a source-scanning
 pin test (`errors_pin_test.go`):
 
-- **Code** — a typed `errcode.Code` identifying the refusal class. Every
+- **Code**: a typed `errcode.Code` identifying the refusal class. Every
   code is an exported constant in the `errcode` package (the catalog), grouped
   by area with a one-line comment saying when it fires. Codes are stable;
   rendered text may improve. The type is an open string: external components
   emit their own vendor-prefixed codes through the same `BuildError` shape.
-- **Operation / Node** — where it happened (`build stream`, `attach runtime
+- **Operation / Node**: where it happened (`build stream`, `attach runtime
   branch`; the chain, branch, tap, or destination name).
-- **Reason** — one line saying why, including actual vs expected where it
+- **Reason**: one line saying why, including actual vs expected where it
   applies (`mix arm "b" cannot be converted to the join format (audio 44.1kHz
   1ch s16 -> audio 48kHz 2ch s16)`).
-- **Details** — machine-readable `key=value` facts (`codec=opus`,
+- **Details**: machine-readable `key=value` facts (`codec=opus`,
   `format=webm`, `actual_shape=...`). Internal invariants that are not
   user-fixable carry a Details line explaining what happened instead of a fix.
-- **Suggestions** — concrete fixes for user-fixable refusals, as real API
+- **Suggestions**: concrete fixes for user-fixable refusals, as real API
   calls: `add .Auto(shape.AllowResample())`, `insert .Resample(48000, 2)
   explicitly`, `encode the mixed audio first:
   goav.Mix(a, b).Encode(codec.Opus(...))`.
-- **Cause** — a sentinel (`goav.ErrUnsupportedBuild`, `goav.ErrNilSink`,
+- **Cause**: a sentinel (`goav.ErrUnsupportedBuild`, `goav.ErrNilSink`,
   `pipeline.ErrBufferedMessageUnsafe`, ...) reachable through `errors.Is`.
 
 One renderer produces one shape:
@@ -54,8 +54,9 @@ if err != nil {
 }
 ```
 
-The full code list lives in [`errcode/errcode.go`](../errcode/errcode.go) — stable,
-autocompletable (`errcode....`), and greppable by value (`rg encode_missing`).
+The full code list lives in [`errcode/errcode.go`](../errcode/errcode.go):
+stable, autocompletable (`errcode.`), and greppable by value
+(`rg encode_missing`).
 
 ## Runtime errors
 

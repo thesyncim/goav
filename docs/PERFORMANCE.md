@@ -47,8 +47,8 @@ silently growing.
 
 | Path | Test | Enforced |
 |---|---|---|
-| Direct graph pass-through (source→stage→sink) | `pipeline.TestGraphDirectRunAllocs` | 0 |
-| Buffered fanout steady path (emit → slot bind → worker deliver → slot release, immutable payload, 1→2 fanout) | `pipeline.TestGraphBufferedSteadyEmitAllocs` | 0 |
+| Direct graph pass-through (source->stage->sink) | `pipeline.TestGraphDirectRunAllocs` | 0 |
+| Buffered fanout steady path (emit -> slot bind -> worker deliver -> slot release, immutable payload, 1->2 fanout) | `pipeline.TestGraphBufferedSteadyEmitAllocs` | 0 |
 | Drop-policy decision | `pipeline.TestDropControllerDecideAllocs` | 0 |
 | Message/scratch resets | `pipeline.TestMessageAndScratchResetAllocs`, `av.TestCoreResetAllocs`, `av.TestTimeBaseHelpersAllocs` | 0 |
 | `SourcePush.Packet` / `SourcePush.Frame` delivery | `goav.TestSourcePushDeliveryAllocs` | 0 |
@@ -77,7 +77,7 @@ No baseline numbers are committed: they are machine-dependent, so only
 same-machine old-vs-new comparison is meaningful.
 
 The canonical-workload suite (root `bench_test.go`) runs the public recipe
-grammar against the deterministic `goavtest` runtime — fake passthrough codecs
+grammar against the deterministic `goavtest` runtime: fake passthrough codecs
 and fake byte-faithful containers (so numbers include the fake's serialization
 cost, not a real codec's), plus the **real** std resize/resample filters.
 Each benchmark builds its task untimed, then pushes exactly `b.N` messages:
@@ -87,12 +87,12 @@ faked.
 
 | Benchmark | Workload |
 |---|---|
-| `BenchmarkRecordPackets` | RTP-style record: packet source → Copy → fake-container file (0 allocs/op measured) |
-| `BenchmarkRemuxPackets` | file→file packet remux (demux → Copy → mux, 0 allocs/op measured) |
-| `BenchmarkDecodeToFrameSink` | packets → decode (fake) → frame sink (0 allocs/op measured) |
-| `BenchmarkDecodeEncode` | decode → re-encode (fake) → sink (0 allocs/op measured) |
-| `BenchmarkResample` | real std filter, 44.1kHz stereo → 48kHz mono (0 allocs/op measured) |
-| `BenchmarkResize` | real std filter, 320x180 → 160x90 I420 (0 allocs/op measured) |
+| `BenchmarkRecordPackets` | RTP-style record: packet source -> Copy -> fake-container file (0 allocs/op measured) |
+| `BenchmarkRemuxPackets` | file->file packet remux (demux -> Copy -> mux, 0 allocs/op measured) |
+| `BenchmarkDecodeToFrameSink` | packets -> decode (fake) -> frame sink (0 allocs/op measured) |
+| `BenchmarkDecodeEncode` | decode -> re-encode (fake) -> sink (0 allocs/op measured) |
+| `BenchmarkResample` | real std filter, 44.1kHz stereo -> 48kHz mono (0 allocs/op measured) |
+| `BenchmarkResize` | real std filter, 320x180 -> 160x90 I420 (0 allocs/op measured) |
 | `BenchmarkBranchFanout/branches=2,8` | one decode, N planned branches to sinks (0 allocs/op measured) |
 | `BenchmarkSharedMuxGroup` | audio+video chains sharing one mux destination (0 allocs/op measured) |
 | `BenchmarkMix/arms=2,8` | N-arm audio mix on a blocking buffered graph (0 allocs/op measured) |
@@ -133,7 +133,7 @@ Stated plainly so the docs never imply otherwise:
 - **Sustained-load soak** (hours-long stability, fragmentation, drift).
 - **Multi-core scaling** targets: `BenchmarkDirectFanoutParallel` measures
   scaling but no specific ratio is promised.
-- "State of the art" anything. Comparative claims require committed
+- Comparative leadership claims. Comparative claims require committed
   methodology and reproducible numbers; the only comparative data in-repo is
   the optional external-tool container benches.
 

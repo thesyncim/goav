@@ -1,4 +1,4 @@
-# Roadmap — stability tiers and the road to v1
+# Roadmap: stability tiers and the road to v1
 
 goav is pre-v1. This document states what is stable now, what is
 experimental, what is deliberately deferred, what is planned, what is a
@@ -22,96 +22,97 @@ Collapse `Target` into `Destination` is done: `File`, `URI`, `Writer`,
 reusing one handle groups branches into one mux/sink group
 (`TestFromMultiInputPlanDedupesSharedDestination`).
 
-## v0 STABLE
+## v0 Stable
 
-Stable means: pinned against silent change, documented, and test-enforced —
+Stable means: pinned against silent change, documented, and test-enforced, but
 not "frozen forever". The governed surface is 319 approved identifiers
 (`api_surface_pin_test.go` + `testdata/api_surface.txt`: 124 root, 147
 `errcode`, 28 `plan`, 13 `lifecycle`, 4 `snapshot`, 3 `graphrender`), every
 exported symbol documented (`doc_pin_test.go`), tiered in
 `docs/API_SURFACE.md`:
 
-- **Tier A — the grammar.** `From`/stream selection/operations
+- **Tier A: the grammar.** `From`/stream selection/operations
   (`Decode`/`Copy`/`Resize`/`Resample`/`Do`/`Encode`)/`Shape`/`Auto`/
   `Require`/`Prefer`/`Tap`/`Branches`/`To`/`OnStream`; `Mix`/`Composite`/
   `Select`; `Flow`; `Task` verbs (`Run`/`Events`/`Watch`/`Snapshot`/`Stats`/
   `Attach`/`Detach`/`Rebranch`/`Control`); `Default`/`New`/`UseRuntime`;
   structured `BuildError` + the `errcode` catalog; the `plan`, `snapshot`,
   `lifecycle`, `shape`, `flow`, and `av` vocabulary packages.
-- **Tier B — extension seams.** `provider.Source` and `Source(fn)` push
+- **Tier B: extension points.** `provider.Source` and `Source(fn)` push
   sources; `provider.Destination`/`Writer`/`Sink` destinations;
   `EventFunc`/`FrameFunc`/`PacketFunc`/`SinkFunc` hooks; codec/format/filter
   factory interfaces with per-runtime `With*` registration; `goavtest`.
-  Every seam has an external toy implementation run end to end
+  Every extension point has an external toy implementation run end to end
   (`adapterproof/adapter_compat_test.go`, guide `docs/ADAPTER_AUTHORING.md`).
-- **Tier C — expert.** `expert.Graph(runtime)` handles, `pipeline` graph
-  machinery, prebuilt codec/format/filter stages — off the grammar, still
+- **Tier C: expert.** `expert.Graph(runtime)` handles, `pipeline` graph
+  machinery, prebuilt codec/format/filter stages. These are off the grammar but
   governed.
 
 The error contract (`errors_pin_test.go`, `error_acceptance_test.go`,
-`docs/ERRORS.md`) and the runtime invariants — close idempotency, close
-during run, race-safe snapshots under attach/detach, commit-failure
-propagation (`task_invariants_test.go`), watcher isolation (`watch_test.go`),
-drop observability (`TestFrontDoorDropReasonsReadableWithoutPipeline`) — are
-stable contracts.
+`docs/ERRORS.md`) and the runtime invariants are stable contracts: close
+idempotency, close during run, race-safe snapshots under attach/detach,
+commit-failure propagation (`task_invariants_test.go`), watcher isolation
+(`watch_test.go`), and drop observability
+(`TestFrontDoorDropReasonsReadableWithoutPipeline`).
 
-## EXPERIMENTAL
+## Experimental
 
 Exists and is tested, but numbers or semantics are expected to move
 (`docs/PERFORMANCE.md` "Experimental" is the performance side of this list):
 
-- **Buffered copy-mode fanout cost** — per-target copy of borrowed payloads
+- **Buffered copy-mode fanout cost**: per-target copy of borrowed payloads
   (`pipeline` `BenchmarkBufferedFanout/copy`); refcounted zero-copy fanout
   would remove it.
-- **Attach-under-load cost** — `BenchmarkAttachDetachUnderLoad` measures a
+- **Attach-under-load cost**: `BenchmarkAttachDetachUnderLoad` measures a
   cold-path control operation dominated by planning; not a data-plane figure.
-- **OnStream rule breadth** — identity matches only (`MatchMedia`/
+- **OnStream rule breadth**: identity matches only (`MatchMedia`/
   `MatchCodec`/`MatchStreamID`/`MatchStream(fn)`); conditions beyond stream
   identity and a per-rule removal detach policy are roadmap
-  (`docs/NORTH_STAR.md` §11, scoreboard item 40).
-- **Join nesting depth** — nested joins are proven at the tested depths
+  (`docs/NORTH_STAR.md` section 11, scoreboard item 40).
+- **Join nesting depth**: nested joins are proven at the tested depths
   (`join_nested_test.go`, `TestJoinDescribeEqualsBuildNestedMix`); deeper
   nesting compiles through the same recursion but has no dedicated proof or
   cost model.
 
 ## Descriptor-only and deferred
 
-- **H264 recipe encode** — descriptor-only: registry descriptors are
+- **H264 recipe encode**: descriptor-only. Registry descriptors are
   discoverable while factory lookup returns `codec.ErrUnavailable`
   (`docs/ARCHITECTURE.md` "Codec backends"); decode/receive verticals are
   active.
-- **A/V sink sync, pipeline-wide clock service, pull scheduling** — the
+- **A/V sink sync, pipeline-wide clock service, pull scheduling**: the
   theme-C endgame; pull scheduling is the keystone. The time-axis controls
   (`Seek`/`Rate`/`Segment`) and clock-paced realtime file playback already
   ship (`task_seek_test.go`, `task_time_control_test.go`); the rest is
   analysed in `docs/NORTH_STAR.md` ("Time/sync", attack-plan stage 7).
   Roadmap.
-- **Internal-package layering** — measured on the cross-file reference graph
+- **Internal-package layering**: measured on the cross-file reference graph
   and rejected: no boundary worth a package today (`docs/ARCHITECTURE.md`
-  "Package layering"). Revisit only with a data-transfer seam.
+  "Package layering"). Revisit only with a data-transfer boundary.
 - **Plain `task.Detach` drain/abort verbs** and **dedicated
-  attach/detach/commit lifecycle events** — drain-commit is pinned where
+  attach/detach/commit lifecycle events**: drain-commit is pinned where
   exposed (rebranch dispositions, stream removal); the standalone verbs and
   events are roadmap (`docs/NORTH_STAR.md` scoreboard items 25, 26, 30).
-- **`streamIntent` normalization fold** — internal debt tracked in
+- **`streamIntent` normalization fold**: internal debt tracked in
   `docs/NORTH_STAR.md` "Execution order".
 
 ## Planned
 
-- **Playout/SRT/NDI providers** through the `provider.Source` seam — by
-  design zero core changes (seam proven by
+- **Playout/SRT/NDI providers** through the `provider.Source` extension point:
+  by design zero core changes (extension point proven by
   `adapterproof/adapter_compat_test.go`). Roadmap.
 - **Extension closure: done for the current grammar.** Everything the
-  grammar accepts is implementable externally — adapters (five-seam proof),
+  grammar accepts is implementable externally: adapters
+  (five-extension-point proof),
   custom joins (`goav.Join`, symmetry proof in
   `adapterproof/join_proof_test.go`), input decoration (`goav.WrapSource`),
   custom controls (`Deliver`+`AtTap`). The recorded boundary: new solver
   delta classes beyond resample/resize/convert remain core work
   (`docs/API_SURFACE.md` "Extension closure"). New grammar verbs reopen the
-  question and must ship with their seam.
-- **Tail-latency benchmarking** — p50/p95/p99 need a histogram harness;
+  question and must ship with their extension point.
+- **Tail-latency benchmarking**: p50/p95/p99 need a histogram harness;
   ns/op is an average (`docs/PERFORMANCE.md` "Not proven"). Roadmap.
-- **PGO workflow** — profile capture over the canonical suite
+- **PGO workflow**: profile capture over the canonical suite
   (`scripts/bench/run.sh` is the entry point) feeding default-on
   profile-guided builds. Roadmap.
 - **Additional `SwitchAt` boundaries** beyond `NextFrame`/`NextKeyframe`
@@ -119,14 +120,15 @@ Exists and is tested, but numbers or semantics are expected to move
 - **Mux-group timebase validation** (`docs/NORTH_STAR.md` scoreboard item
   42). Roadmap.
 
-## NON-GOALS
+## Non-goals
 
 - **GStreamer plugin parity.** goav is not a general multimedia framework;
   matching element-for-element would reproduce the surface the grammar
   exists to avoid (`docs/GSTREAMER_ALTERNATIVE.md`).
-- **Hardware codec backends in core.** Core stays pure Go — pinned by
+- **Hardware codec backends in core.** Core stays pure Go, pinned by
   `TestNoCGOImports` (`hygiene_test.go`); acceleration belongs in external
-  adapters behind the `codec` seams, where cgo is the adapter's choice.
+  adapters behind the `codec` extension points, where cgo is the adapter's
+  choice.
 - **cgo in core.** Same pin; single-binary `CGO_ENABLED=0` deployment is a
   headline property (`.github/workflows/ci.yml` builds with it).
 - **Global registries.** Registries are per-runtime; two runtimes in one
@@ -140,41 +142,41 @@ Exists and is tested, but numbers or semantics are expected to move
 
 The checklist that gates the tag; each item names its current evidence.
 
-- [x] **Approved API surface** — `api_surface_pin_test.go` +
+- [x] **Approved API surface**: `api_surface_pin_test.go` +
   `testdata/api_surface.txt` (both-direction pin), with dynamic package
   discovery asserting every module package is governed
   (`TestEveryPublicPackageIsGoverned`).
-- [x] **Compile-tested examples** — 13 `Example*` functions run under
+- [x] **Compile-tested examples**: 13 `Example*` functions run under
   `go test` (`example_test.go`); the `examples/webrtc-runtime-ladder` module
   builds and tests in CI.
-- [x] **Structured errors enforced** — `errors_pin_test.go` (catalog-code
+- [x] **Structured errors enforced**: `errors_pin_test.go` (catalog-code
   pin) + 10 acceptance snippets (`error_acceptance_test.go`).
-- [x] **Benchmarks present** — 16 measured workloads (`bench_test.go`) +
+- [x] **Benchmarks present**: 16 measured workloads (`bench_test.go`) +
   pipeline/container suites; bench smoke runs in CI; methodology in
   `docs/PERFORMANCE.md`.
-- [x] **Adapter guide** — `docs/ADAPTER_AUTHORING.md` with the executable
-  five-seam proof (`adapterproof/adapter_compat_test.go`).
-- [x] **Race tests pass** — CI runs `go test -race` on root, `pipeline`,
+- [x] **Adapter guide**: `docs/ADAPTER_AUTHORING.md` with the executable
+  extension-point proof (`adapterproof/adapter_compat_test.go`).
+- [x] **Race tests pass**: CI runs `go test -race` on root, `pipeline`,
   `goavtest`, `format` (`.github/workflows/ci.yml`).
-- [x] **Container fuzz/corpus** — `FuzzDemuxerMalformedInputs` with seed
+- [x] **Container fuzz/corpus**: `FuzzDemuxerMalformedInputs` with seed
   corpora (`container/matroska`, `container/webm` `fuzz_test.go` +
   `testdata/fuzz`) plus external field-corpus tests
   (`TestExternalMatroskaFieldCorpus`, `TestExternalWebMFieldCorpus`).
-- [x] **No global state** — registries live on the runtime
+- [x] **No global state**: registries live on the runtime
   (`docs/ARCHITECTURE.md`); audited 2026-06: remaining package-level vars
   are error sentinels, immutable profile tables, and atomic ID counters.
-  No pin test exists for this — the audit is repeated at review.
-- [x] **No undocumented exported symbols** — `doc_pin_test.go` across every
+  No pin test exists for this; the audit is repeated at review.
+- [x] **No undocumented exported symbols**: `doc_pin_test.go` across every
   discovered public package (dynamic module walk; `adapters/*` and
-  `container/*` sit behind the codec/format seams and are excluded by the
+  `container/*` sit behind the codec/format extension points and are excluded by the
   decision recorded in `docs/API_SURFACE.md`).
-- [x] **Dependency purity** — the root module requires only
+- [x] **Dependency purity**: the root module requires only
   `github.com/thesyncim/*` modules and the standard library
   (`TestRootModuleDependencyPurity`); the pion ecosystem lives in the nested
   `rtpav` and `webrtcav` modules. Nested modules tag independently with
   prefixed tags (`rtpav/vX.Y.Z`, `webrtcav/vX.Y.Z`), so a root v1 does not
   freeze the transport modules and vice versa; webrtcav requires rtpav
   requires the root, so tag the root first, then rtpav, then webrtcav.
-- [ ] **Release decision** — confirm the `go 1.26.2` directive in `go.mod`
+- [ ] **Release decision**: confirm the `go 1.26.2` directive in `go.mod`
   is the intended minimum supported Go, write the tag's compatibility note,
   and cut v1. Not done; the only open item is a maintainer call, not code.
