@@ -325,6 +325,12 @@ func TestRunGeneratedVideoAV1RealtimeString(t *testing.T) {
 	if len(header) < 4 || string(header[:4]) != "DKIF" {
 		t.Fatalf("output header = %q, want IVF", header[:min(len(header), 8)])
 	}
+	if got := binary.LittleEndian.Uint32(header[16:20]); got != 30 {
+		t.Fatalf("IVF timebase denominator = %d, want 30", got)
+	}
+	if got := binary.LittleEndian.Uint32(header[24:28]); got != 2 {
+		t.Fatalf("IVF frame count = %d, want 2", got)
+	}
 	assertDecodableAV1IVF(t, header)
 }
 

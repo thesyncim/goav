@@ -13,8 +13,9 @@ import (
 )
 
 const (
-	fileHeaderSize  = 32
-	frameHeaderSize = 12
+	fileHeaderSize   = 32
+	frameHeaderSize  = 12
+	frameCountOffset = 24
 
 	defaultTimeBaseNum = 1
 	defaultTimeBaseDen = 1000
@@ -36,11 +37,16 @@ type Demuxer struct {
 }
 
 type Muxer struct {
-	writer      io.Writer
-	streamID    av.StreamID
-	frameHeader [frameHeaderSize]byte
-	opened      bool
-	closed      bool
+	writer          io.Writer
+	stream          av.Stream
+	streamID        av.StreamID
+	headerOffset    int64
+	frameCount      uint32
+	frameHeader     [frameHeaderSize]byte
+	opened          bool
+	headerWritten   bool
+	patchFrameCount bool
+	closed          bool
 }
 
 func Register(registry *format.SimpleRegistry) {
@@ -208,14 +214,14 @@ func (m *Muxer) Open(ctx context.Context, output format.Output, streams []av.Str
 	if err != nil {
 		return err
 	}
-	var header [fileHeaderSize]byte
-	writeStreamHeader(header[:], stream)
-	if err := writeFull(output.Writer, header[:]); err != nil {
-		return err
-	}
 	m.writer = output.Writer
+	m.stream = stream
 	m.streamID = stream.ID
+	m.headerOffset = 0
+	m.frameCount = 0
 	m.opened = true
+	m.headerWritten = false
+	m.patchFrameCount = false
 	m.closed = false
 	return nil
 }
@@ -239,18 +245,87 @@ func (m *Muxer) Write(ctx context.Context, packet *av.Packet, _ *format.WriteRes
 	if uint64(len(packet.Payload.Bytes)) > math.MaxUint32 {
 		return ErrPayloadTooLarge
 	}
+	if m.frameCount == math.MaxUint32 {
+		return ErrFrameCountTooLarge
+	}
+	if !m.headerWritten {
+		m.stream.TimeBase = ivfTimeBase(m.stream, packet)
+		if err := m.writeHeader(); err != nil {
+			return err
+		}
+	}
 	header := m.frameHeader[:]
+	pts := packetTimestamp(packet.PTS, m.stream.TimeBase)
 	binary.LittleEndian.PutUint32(header[:4], uint32(len(packet.Payload.Bytes)))
-	binary.LittleEndian.PutUint64(header[4:], uint64(packet.PTS.Value))
+	binary.LittleEndian.PutUint64(header[4:], uint64(pts))
 	if err := writeFull(m.writer, header); err != nil {
 		return err
 	}
-	return writeFull(m.writer, packet.Payload.Bytes)
+	if err := writeFull(m.writer, packet.Payload.Bytes); err != nil {
+		return err
+	}
+	m.frameCount++
+	return nil
 }
 
 func (m *Muxer) Close() error {
+	if m.closed {
+		return nil
+	}
+	if m.writer != nil && !m.headerWritten {
+		m.stream.TimeBase = streamTimeBase(m.stream)
+		if err := m.writeHeader(); err != nil {
+			return err
+		}
+	}
+	err := m.patchFrameCountHeader()
 	m.closed = true
 	m.writer = nil
+	return err
+}
+
+func (m *Muxer) writeHeader() error {
+	if m.headerWritten {
+		return nil
+	}
+	if seeker, ok := m.writer.(io.Seeker); ok {
+		if offset, err := seeker.Seek(0, io.SeekCurrent); err == nil {
+			m.headerOffset = offset
+			m.patchFrameCount = true
+		}
+	}
+	var header [fileHeaderSize]byte
+	writeStreamHeader(header[:], m.stream)
+	if err := writeFull(m.writer, header[:]); err != nil {
+		return err
+	}
+	m.headerWritten = true
+	return nil
+}
+
+func (m *Muxer) patchFrameCountHeader() error {
+	if !m.patchFrameCount || !m.headerWritten || m.writer == nil {
+		return nil
+	}
+	seeker, ok := m.writer.(io.Seeker)
+	if !ok {
+		return nil
+	}
+	current, err := seeker.Seek(0, io.SeekCurrent)
+	if err != nil {
+		return err
+	}
+	if _, err := seeker.Seek(m.headerOffset+frameCountOffset, io.SeekStart); err != nil {
+		return err
+	}
+	var count [4]byte
+	binary.LittleEndian.PutUint32(count[:], m.frameCount)
+	if err := writeFull(m.writer, count[:]); err != nil {
+		return err
+	}
+	if _, err := seeker.Seek(current, io.SeekStart); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -334,6 +409,54 @@ func streamTimeBase(stream av.Stream) av.TimeBase {
 		return av.TimeBase{Num: defaultTimeBaseNum, Den: int64(stream.Codec.ClockRate)}
 	}
 	return av.TimeBase{Num: defaultTimeBaseNum, Den: defaultTimeBaseDen}
+}
+
+func ivfTimeBase(stream av.Stream, packet *av.Packet) av.TimeBase {
+	if packet != nil {
+		if base, ok := frameDurationTimeBase(packet.Duration); ok {
+			return base
+		}
+	}
+	return streamTimeBase(stream)
+}
+
+func frameDurationTimeBase(duration av.Duration) (av.TimeBase, bool) {
+	if duration.Value <= 0 || !duration.Base.Valid() {
+		return av.TimeBase{}, false
+	}
+	value := uint64(duration.Value)
+	num := uint64(duration.Base.Num)
+	den := uint64(duration.Base.Den)
+	if value > math.MaxUint64/num {
+		return av.TimeBase{}, false
+	}
+	num *= value
+	divisor := gcd64(num, den)
+	num /= divisor
+	den /= divisor
+	if num == 0 || den == 0 || num > math.MaxUint32 || den > math.MaxUint32 {
+		return av.TimeBase{}, false
+	}
+	return av.TimeBase{Num: int64(num), Den: int64(den)}, true
+}
+
+func packetTimestamp(timestamp av.Timestamp, base av.TimeBase) int64 {
+	if timestamp.Base.Valid() && base.Valid() {
+		if value, ok := av.RescaleValue(timestamp.Value, timestamp.Base, base); ok {
+			return value
+		}
+	}
+	return timestamp.Value
+}
+
+func gcd64(a, b uint64) uint64 {
+	for b != 0 {
+		a, b = b, a%b
+	}
+	if a == 0 {
+		return 1
+	}
+	return a
 }
 
 func clockRate(timeBase av.TimeBase) uint32 {

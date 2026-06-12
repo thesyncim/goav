@@ -178,6 +178,72 @@ func TestMuxerDemuxerRoundTrip(t *testing.T) {
 	}
 }
 
+func TestMuxerWritesPlayableTimingAndFrameCount(t *testing.T) {
+	ctx := context.Background()
+	stream := testStream(av.CodecAV1)
+	writer := &seekableBuffer{}
+	muxer := &Muxer{}
+	if err := muxer.Open(ctx, format.Output{Writer: writer}, []av.Stream{stream}, format.OpenOptions{}); err != nil {
+		t.Fatal(err)
+	}
+
+	packetBase := av.TimeBase{Num: 1, Den: 90000}
+	for i := 0; i < 3; i++ {
+		if err := muxer.Write(ctx, &av.Packet{
+			StreamID: stream.ID,
+			Type:     av.MediaVideo,
+			Payload:  av.Buffer{Bytes: []byte{byte(i + 1)}},
+			PTS:      av.Timestamp{Value: int64(i * 3000), Base: packetBase},
+			Duration: av.Duration{Value: 3000, Base: packetBase},
+		}, &format.WriteResult{}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := muxer.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	data := writer.Bytes()
+	if len(data) < fileHeaderSize || string(data[:4]) != "DKIF" || string(data[8:12]) != "AV01" {
+		t.Fatalf("header = % x", data[:min(len(data), fileHeaderSize)])
+	}
+	if got := binary.LittleEndian.Uint32(data[16:20]); got != 30 {
+		t.Fatalf("timebase denominator = %d, want 30", got)
+	}
+	if got := binary.LittleEndian.Uint32(data[20:24]); got != 1 {
+		t.Fatalf("timebase numerator = %d, want 1", got)
+	}
+	if got := binary.LittleEndian.Uint32(data[24:28]); got != 3 {
+		t.Fatalf("frame count = %d, want 3", got)
+	}
+	if writer.pos != int64(len(data)) {
+		t.Fatalf("writer position = %d, want restored end %d", writer.pos, len(data))
+	}
+
+	offset := fileHeaderSize
+	for i := 0; i < 3; i++ {
+		if offset+frameHeaderSize > len(data) {
+			t.Fatalf("truncated frame header %d at offset %d", i, offset)
+		}
+		size := int(binary.LittleEndian.Uint32(data[offset : offset+4]))
+		pts := binary.LittleEndian.Uint64(data[offset+4 : offset+12])
+		offset += frameHeaderSize
+		if size != 1 || offset+size > len(data) {
+			t.Fatalf("frame %d size = %d at offset %d", i, size, offset)
+		}
+		if pts != uint64(i) {
+			t.Fatalf("frame %d pts = %d, want %d", i, pts, i)
+		}
+		if data[offset] != byte(i+1) {
+			t.Fatalf("frame %d payload = %d, want %d", i, data[offset], i+1)
+		}
+		offset += size
+	}
+	if offset != len(data) {
+		t.Fatalf("trailing bytes = %d", len(data)-offset)
+	}
+}
+
 func TestMuxerSkipsUnrelatedStreams(t *testing.T) {
 	ctx := context.Background()
 	stream := testStream(av.CodecVP9)
@@ -190,6 +256,12 @@ func TestMuxerSkipsUnrelatedStreams(t *testing.T) {
 		StreamID: "audio",
 		Payload:  av.Buffer{Bytes: []byte{1, 2, 3}},
 	}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if buffer.Len() != 0 {
+		t.Fatalf("bytes = %d, want no header before selected stream writes", buffer.Len())
+	}
+	if err := muxer.Close(); err != nil {
 		t.Fatal(err)
 	}
 	if buffer.Len() != fileHeaderSize {
@@ -461,6 +533,52 @@ type errorWriter struct {
 }
 
 func (w errorWriter) Write([]byte) (int, error) { return 0, w.err }
+
+type seekableBuffer struct {
+	data []byte
+	pos  int64
+}
+
+func (b *seekableBuffer) Write(payload []byte) (int, error) {
+	if b.pos < 0 {
+		return 0, errors.New("negative position")
+	}
+	end := b.pos + int64(len(payload))
+	if end < b.pos || end > int64(^uint(0)>>1) {
+		return 0, errors.New("position overflow")
+	}
+	start := int(b.pos)
+	stop := int(end)
+	if stop > len(b.data) {
+		b.data = append(b.data, make([]byte, stop-len(b.data))...)
+	}
+	copy(b.data[start:stop], payload)
+	b.pos = end
+	return len(payload), nil
+}
+
+func (b *seekableBuffer) Seek(offset int64, whence int) (int64, error) {
+	var next int64
+	switch whence {
+	case io.SeekStart:
+		next = offset
+	case io.SeekCurrent:
+		next = b.pos + offset
+	case io.SeekEnd:
+		next = int64(len(b.data)) + offset
+	default:
+		return 0, errors.New("invalid whence")
+	}
+	if next < 0 {
+		return 0, errors.New("negative position")
+	}
+	b.pos = next
+	return next, nil
+}
+
+func (b *seekableBuffer) Bytes() []byte {
+	return b.data
+}
 
 func testStream(codecID av.CodecID) av.Stream {
 	return av.Stream{
