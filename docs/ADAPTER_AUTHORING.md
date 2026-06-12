@@ -317,5 +317,8 @@ routing handle branches share.
    `*Allocs` test); an end-to-end grammar test (`goavtest.Audio/Video/Packets`
    inputs, `goavtest.NewCollector()` output, `goavtest.Runtime()` plus your
    `With*` option). Use `goavtest.NewTestSource` when the adapter needs a
-   provider-shaped, controllable source fixture. `adapterproof/adapter_compat_test.go`
-   is a complete worked example of all five seams.
+   provider-shaped, controllable source fixture; use
+   `goavtest.TestSourceScript(goavtest.TestSourcePacket(...),
+   goavtest.TestSourceEvent(...))` for mixed media/control scripts.
+   `adapterproof/adapter_compat_test.go` is a complete worked example of all
+   five seams.

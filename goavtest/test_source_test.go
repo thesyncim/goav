@@ -140,6 +140,75 @@ func TestTestSourceFramesStartAndClone(t *testing.T) {
 	}
 }
 
+func TestTestSourceMixedScriptAndAppend(t *testing.T) {
+	frame := s16Frame("", 16000, 1, []int16{1}, 0)
+	packet := &av.Packet{Payload: av.Buffer{Bytes: []byte{2}, Ownership: av.BufferImmutable}}
+	event := av.Event{Type: av.EventStats, Reason: "ready", Metadata: av.Metadata{"phase": "start"}}
+	source := NewTestSource("script",
+		shape.Frame(av.MediaAudio, shape.Audio(16000, 1, av.SampleFormatS16)),
+		TestSourceScript(
+			TestSourceFrame(frame),
+			TestSourceEvent(event),
+		),
+		TestSourceAppend(
+			TestSourcePacket(packet),
+			TestSourceMessage{},
+		),
+	)
+	frame.Planes[0].Buffer.Bytes[0] = 99
+	packet.Payload.Bytes[0] = 99
+	event.Metadata["phase"] = "mutated"
+
+	emitter := &recordingEmitter{}
+	if err := source.Start(context.Background(), emitter); err != nil {
+		t.Fatal(err)
+	}
+	if len(emitter.messages) != 4 {
+		t.Fatalf("messages = %d, want frame, event, packet, EOS", len(emitter.messages))
+	}
+	if got := emitter.messages[0].Frame.Planes[0].Buffer.Bytes[0]; got == 99 {
+		t.Fatalf("script frame was not cloned, got payload byte %d", got)
+	}
+	if got := emitter.messages[1].Event.Metadata["phase"]; got != "start" {
+		t.Fatalf("script event metadata = %q, want cloned start", got)
+	}
+	if got := emitter.messages[2].Packet.Payload.Bytes[0]; got != 2 {
+		t.Fatalf("script packet payload = %d, want cloned 2", got)
+	}
+	if eos := emitter.messages[3]; eos.Kind != pipeline.MessageEvent || eos.Event == nil || eos.Event.Type != av.EventEndOfStream {
+		t.Fatalf("last message = %#v, want EOS", eos)
+	}
+
+	emitter.messages[0].Frame.Planes[0].Buffer.Bytes[0] = 42
+	second := &recordingEmitter{}
+	if err := source.Start(context.Background(), second); err != nil {
+		t.Fatal(err)
+	}
+	if got := second.messages[0].Frame.Planes[0].Buffer.Bytes[0]; got == 42 {
+		t.Fatalf("delivered frame mutation leaked into next run")
+	}
+}
+
+func TestTestSourceAppendComposesWithTypedScripts(t *testing.T) {
+	frame := s16Frame("", 16000, 1, []int16{1}, 0)
+	source := NewTestSource("append",
+		shape.Frame(av.MediaAudio, shape.Audio(16000, 1, av.SampleFormatS16)),
+		TestSourceFrames(frame),
+		TestSourceAppend(TestSourceEvent(av.Event{Type: av.EventStats, Reason: "after-frame"})),
+	)
+
+	emitter := &recordingEmitter{}
+	if err := source.Start(context.Background(), emitter); err != nil {
+		t.Fatal(err)
+	}
+	if len(emitter.messages) != 3 ||
+		emitter.messages[0].Kind != pipeline.MessageFrame ||
+		emitter.messages[1].Kind != pipeline.MessageEvent ||
+		emitter.messages[1].Event.Reason != "after-frame" {
+		t.Fatalf("append messages = %#v", emitter.messages)
+	}
+}
+
 func TestTestSourcePacketsEventsAndDefaults(t *testing.T) {
 	packet := &av.Packet{Payload: av.Buffer{Bytes: []byte{7}, Ownership: av.BufferImmutable}}
 	packetSource := NewTestSource("packets",
