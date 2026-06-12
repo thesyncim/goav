@@ -17,6 +17,7 @@ import (
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/errcode"
+	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/goavtest"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/plan"
@@ -539,6 +540,17 @@ func TestRequestFromCLIParsesGraphCommand(t *testing.T) {
 	}
 	if shorthand.Op != "flowchart" || shorthand.Args["format"] != "mermaid" {
 		t.Fatalf("shorthand = %+v", shorthand)
+	}
+
+	caps, err := RequestFromCLI([]string{"capabilities"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if caps.Op != "capabilities" {
+		t.Fatalf("capabilities request = %+v", caps)
+	}
+	if _, err := RequestFromCLI([]string{"capabilities", "extra"}); err == nil {
+		t.Fatal("capabilities with arguments succeeded, want error")
 	}
 }
 
@@ -1505,6 +1517,152 @@ func TestServerSupportsCustomControlCommand(t *testing.T) {
 	}
 }
 
+func TestTypedCapabilityHelpersBindAndReport(t *testing.T) {
+	type tuneCommand struct {
+		Stream av.StreamID `goavctl:"stream,required" usage:"stream=<stream-id>" help:"stream to tune"`
+		Value  int         `goavctl:"value,required,rate" usage:"value=<rate>" help:"target rate"`
+		At     string      `goavctl:"at" usage:"[at=<tap>]" help:"optional tap target"`
+	}
+	var tuneSeen tuneCommand
+	command := NewCommand[tuneCommand](
+		"vendor.tune",
+		"typed vendor tuning control",
+		func(_ context.Context, _ goav.Task, args tuneCommand) (ControlResponse, error) {
+			tuneSeen = args
+			return ControlResponse{Operation: "control vendor.tune", Result: map[string]any{"value": args.Value}}, nil
+		},
+		Aliases("vtune"),
+	)
+	response, err := Invoke(context.Background(), newFakeTask(), command, []string{"stream=video", "value=1.2M", "at=raw_video"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response.Operation != "control vendor.tune" || tuneSeen.Stream != "video" || tuneSeen.Value != 1_200_000 || tuneSeen.At != "raw_video" {
+		t.Fatalf("response=%+v tuneSeen=%+v", response, tuneSeen)
+	}
+
+	type thumbnailStep struct {
+		Every   int    `goavctl:"every,required" usage:"every=<positive-int>" help:"keep every Nth frame"`
+		Label   string `goavctl:"label" usage:"[label=<text>]" help:"diagnostic label"`
+		Enabled bool   `goavctl:"enabled" usage:"[enabled=<bool>]" help:"enable the stage"`
+	}
+	var stepSeen thumbnailStep
+	var stageCalled bool
+	step := NewBranchStep[thumbnailStep](
+		"thumbnail",
+		"typed thumbnail sampler",
+		func(branch *BranchPipeline, args thumbnailStep) error {
+			stepSeen = args
+			branch.Do()
+			return nil
+		},
+		Aliases("thumb"),
+	)
+	err = step.Apply(&BranchPipeline{doFn: func(...pipeline.Stage) { stageCalled = true }}, StepArgs{
+		"every":   "5",
+		"label":   "preview",
+		"enabled": "",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !stageCalled || stepSeen.Every != 5 || stepSeen.Label != "preview" || !stepSeen.Enabled {
+		t.Fatalf("stageCalled=%v stepSeen=%+v", stageCalled, stepSeen)
+	}
+	err = step.Apply(&BranchPipeline{}, StepArgs{"label": "missing"})
+	var structured *Error
+	if !errors.As(err, &structured) ||
+		structured.Code != "missing_required" ||
+		structured.Operation != "parse branch pipeline" ||
+		!detailsContain(structured.Details, "usage=thumbnail every=<positive-int>") {
+		t.Fatalf("missing step error = %+v", structured)
+	}
+
+	type acmeEncoder struct {
+		Bitrate   int    `goavctl:"bitrate,required,rate" usage:"bitrate=<rate>" help:"target bitrate"`
+		Quality   string `goavctl:"quality" usage:"[quality=<profile>]" help:"native quality profile"`
+		Lookahead string `goavctl:"lookahead" usage:"[lookahead=<mode>]" help:"native lookahead mode"`
+	}
+	var nativeLookahead string
+	encoder := NewEncoderSpec[acmeEncoder](
+		"acmeenc",
+		"typed native encoder settings",
+		func(args acmeEncoder) (codec.CodecSpec, error) {
+			return codec.Codec("vendor_video", av.MediaVideo,
+				codec.Bitrate(args.Bitrate),
+				codec.Profile(args.Quality),
+				codec.Control(func(any) error {
+					nativeLookahead = args.Lookahead
+					return nil
+				}),
+			), nil
+		},
+		Aliases("acme"),
+	)
+	spec, err := encoder.Apply(StepArgs{"bitrate": "250k", "quality": "preview", "lookahead": "deep"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if spec.ID != "vendor_video" || spec.Settings.Bitrate != 250_000 || spec.Settings.Profile != "preview" || spec.Settings.Control == nil {
+		t.Fatalf("encoder spec = %+v", spec)
+	}
+	if err := spec.Settings.Control(nil); err != nil || nativeLookahead != "deep" {
+		t.Fatalf("native callback err=%v lookahead=%q", err, nativeLookahead)
+	}
+
+	server := &Server{Task: &descriptorTask{
+		fakeTask: newFakeTask(),
+		encoders: []codec.Descriptor{{
+			ID:   "vendor_video",
+			Name: "Vendor runtime video",
+			Type: av.MediaVideo,
+		}},
+		muxers: []format.Descriptor{{
+			Format: "vendor_mux",
+			Codecs: []av.CodecID{"vendor_video"},
+		}},
+	}}
+	WithCapabilities(CapabilitySet{
+		Commands: []CommandSpec{command},
+		Pipeline: PipelineRegistry{
+			Steps:    []BranchPipelineStepSpec{step},
+			Encoders: []EncoderSpec{encoder},
+		},
+	})(server)
+
+	reportResponse := server.Handle(context.Background(), Request{Op: "capabilities"})
+	report, ok := reportResponse.Result.(CapabilityReport)
+	if !reportResponse.OK || reportResponse.Error != nil || !ok {
+		t.Fatalf("capabilities response = %+v", reportResponse)
+	}
+	if entry, ok := capabilityEntryNamed(report.Controls, "vendor.tune"); !ok ||
+		!stringSliceContains(entry.Aliases, "vtune") ||
+		!capabilityFieldRequired(entry.Fields, "value") {
+		t.Fatalf("control capabilities = %+v", report.Controls)
+	}
+	if entry, ok := capabilityEntryNamed(report.CustomBranchSteps, "thumbnail"); !ok ||
+		entry.Usage != "every=<positive-int> [label=<text>] [enabled=<bool>]" ||
+		!capabilityFieldRequired(entry.Fields, "every") {
+		t.Fatalf("step capabilities = %+v", report.CustomBranchSteps)
+	}
+	if entry, ok := capabilityEntryNamed(report.CustomEncoders, "acmeenc"); !ok ||
+		!strings.Contains(entry.Usage, "bitrate=<rate>") {
+		t.Fatalf("encoder capabilities = %+v", report.CustomEncoders)
+	}
+	if len(report.RuntimeEncoders) != 1 || report.RuntimeEncoders[0].ID != "vendor_video" ||
+		len(report.RuntimeMuxers) != 1 || report.RuntimeMuxers[0].Format != "vendor_mux" {
+		t.Fatalf("runtime capabilities = encoders:%+v muxers:%+v", report.RuntimeEncoders, report.RuntimeMuxers)
+	}
+
+	help := server.Handle(context.Background(), Request{Op: "help", Args: map[string]string{"topic": "attach"}})
+	text, ok := help.Result.(string)
+	if !help.OK || help.Error != nil || !ok ||
+		!strings.Contains(text, "thumbnail every=<positive-int> [label=<text>] [enabled=<bool>]") ||
+		!strings.Contains(text, "acmeenc bitrate=<rate> [quality=<profile>] [lookahead=<mode>]") {
+		t.Fatalf("typed help = %+v\n%s", help, text)
+	}
+}
+
 func TestServerRejectsCommandRegistryCollisions(t *testing.T) {
 	type vendorCommand struct {
 		Value string `goavctl:"value" usage:"value=<text>" help:"custom value"`
@@ -1847,7 +2005,7 @@ func TestHelpRendersRootStaticAndCustomControlTopics(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, fragment := range []string{"goav ctl", "graph [format=mermaid|dot|text]", "rebranch <branch-name>"} {
+	for _, fragment := range []string{"goav ctl", "capabilities", "graph [format=mermaid|dot|text]", "rebranch <branch-name>"} {
 		if !strings.Contains(root, fragment) {
 			t.Fatalf("root help missing %q:\n%s", fragment, root)
 		}
@@ -2070,6 +2228,24 @@ func stringSliceContains(values []string, want string) bool {
 	return false
 }
 
+func capabilityEntryNamed(entries []CapabilityEntry, name string) (CapabilityEntry, bool) {
+	for _, entry := range entries {
+		if entry.Name == name {
+			return entry, true
+		}
+	}
+	return CapabilityEntry{}, false
+}
+
+func capabilityFieldRequired(fields []CapabilityField, name string) bool {
+	for _, field := range fields {
+		if field.Name == name {
+			return field.Required
+		}
+	}
+	return false
+}
+
 func waitForSocket(t *testing.T, socket string, errC <-chan error) {
 	t.Helper()
 	deadline := time.Now().Add(3 * time.Second)
@@ -2183,6 +2359,20 @@ func (t *fakeTask) Stats() pipeline.GraphStats { return pipeline.GraphStats{} }
 func (t *fakeTask) Close() error {
 	t.closed = true
 	return nil
+}
+
+type descriptorTask struct {
+	*fakeTask
+	encoders []codec.Descriptor
+	muxers   []format.Descriptor
+}
+
+func (t *descriptorTask) EncoderDescriptors() []codec.Descriptor {
+	return append([]codec.Descriptor(nil), t.encoders...)
+}
+
+func (t *descriptorTask) MuxerDescriptors() []format.Descriptor {
+	return append([]format.Descriptor(nil), t.muxers...)
 }
 
 func eventMatches(event av.Event, filters []goav.EventFilter) bool {

@@ -42,6 +42,16 @@ func WithPipelineRegistry(registry PipelineRegistry) ServerOption {
 	}
 }
 
+// WithCapabilities installs a whole host-owned capability set on one server.
+// Existing WithCommands and WithPipelineRegistry callers remain supported.
+func WithCapabilities(caps CapabilitySet) ServerOption {
+	return func(server *Server) {
+		server.Commands = append(server.Commands, caps.Commands...)
+		server.Pipeline.Steps = append(server.Pipeline.Steps, caps.Pipeline.Steps...)
+		server.Pipeline.Encoders = append(server.Pipeline.Encoders, caps.Pipeline.Encoders...)
+	}
+}
+
 func (s *Server) Handle(ctx context.Context, request Request) Response {
 	if s.Task == nil {
 		return ErrorResponse(request.Op, commandError("task_missing", request.Op, "", "control server has no task", nil, nil, nil))
@@ -60,6 +70,8 @@ func (s *Server) execute(ctx context.Context, request Request) (ControlResponse,
 	switch request.Op {
 	case "help":
 		return s.help(request)
+	case "capabilities":
+		return s.capabilities()
 	case "control":
 		return s.control(ctx, request)
 	case "control_raw":
@@ -73,6 +85,14 @@ func (s *Server) execute(ctx context.Context, request Request) (ControlResponse,
 	default:
 		return executeRequest(ctx, s.Task, request)
 	}
+}
+
+func (s *Server) capabilities() (ControlResponse, error) {
+	report, err := capabilityReport(s.commandManifest(), s.Pipeline, s.Task)
+	if err != nil {
+		return ControlResponse{}, err
+	}
+	return ControlResponse{Operation: "capabilities", Result: report}, nil
 }
 
 func (s *Server) help(request Request) (ControlResponse, error) {

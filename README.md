@@ -744,22 +744,26 @@ Applications that want a CLI control surface expose a Unix socket with package
 `ctl`; the bundled command then drives the same task APIs over structured JSON.
 The socket can host built-in controls plus explicit app-owned commands, custom
 branch-pipeline steps, runtime-registered custom codec names, and optional
-custom encoder spellings for native settings:
+custom encoder spellings for native settings. Host extensions are grouped in a
+typed `ctl.CapabilitySet`, and the running server can report that full manifest
+with `goav ctl capabilities`:
 
 ```sh
 goav ctl --control unix:///tmp/goav-live.sock control bitrate stream=video value=1200k
 goav ctl --control unix:///tmp/goav-live.sock control --json '{"type":"rate","rate":0.75,"node":"fixture"}'
 goav ctl --control unix:///tmp/goav-live.sock help attach
+goav ctl --control unix:///tmp/goav-live.sock capabilities
 goav ctl --control unix:///tmp/goav-live.sock attach frames as archive \
   'encode codec=x_acme_audio media=audio bitrate=128k profile=voice ! filesink location=/tmp/archive.ogg format=ogg'
 goav ctl --control unix:///tmp/goav-live.sock attach frames as native \
-  'meter ! acmeenc bitrate=128000 quality=voice lookahead=deep ! filesink location=/tmp/archive.ogg format=ogg'
+  'meter ! acmeenc bitrate=128k quality=voice lookahead=deep ! filesink location=/tmp/archive.ogg format=ogg'
 goav ctl --control unix:///tmp/goav-live.sock graph
 ```
 
-`help attach` and `help rebranch` list the built-in branch grammar, encoders
-and muxers discovered from the task runtime, plus custom steps and encoder
-spellings registered by that host. The bootstrap guide, including
+`help attach`, `help rebranch`, and `capabilities` list the built-in branch
+grammar, encoders and muxers discovered from the task runtime, plus custom
+commands, steps, sinks, and encoder spellings registered by that host. The
+bootstrap guide, including
 `go run ./examples/control-plane-host`, lives in
 [`docs/CONTROL_PLANE.md`](docs/CONTROL_PLANE.md). That playground uses a live
 `goavtest.TestSource` so `goav ctl control rate/seek/segment source=fixture`,

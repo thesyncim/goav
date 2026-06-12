@@ -58,6 +58,8 @@ func helpWithRegistry(args []string, manifest []CommandSpec, registry PipelineRe
 		return branchPipelineHelp("rebranch", "goav ctl --control unix://PATH rebranch <branch-name> [--switch next_frame|next_keyframe] [--keep-old-on-failure] '<branch-pipeline>'", "Replaces an attachment created through this control server, using the same allowlisted branch-pipeline grammar as attach.", registry, caps), nil
 	case "detach":
 		return staticHelp("detach", "goav ctl --control unix://PATH detach <branch-name>", "Detaches an attachment created through this control server."), nil
+	case "capabilities":
+		return staticHelp("capabilities", "goav ctl --control unix://PATH capabilities", "Prints the server-aware command, branch-step, encoder, runtime encoder, and runtime muxer manifest as JSON."), nil
 	case "graph", "flowchart":
 		return staticHelp("graph", "goav ctl --control unix://PATH graph [format=mermaid|dot|text]", "Renders the running task snapshot as Mermaid, Graphviz DOT, or text. The default format is Mermaid and runtime branch-owned nodes are annotated by branch name and lifecycle state."), nil
 	default:
@@ -78,6 +80,7 @@ func rootHelp() string {
 	out.WriteString("  streams\n")
 	out.WriteString("  branches\n")
 	out.WriteString("  destinations\n")
+	out.WriteString("  capabilities\n")
 	out.WriteString("  graph [format=mermaid|dot|text]\n")
 	out.WriteString("  events --follow\n")
 	out.WriteString("  watch [type=<event-type>] [stream=<stream-id>] --follow\n")
@@ -110,20 +113,7 @@ func controlHelp(manifest []CommandSpec) string {
 
 // CommandUsage renders the canonical usage line for one control verb.
 func CommandUsage(spec CommandSpec) string {
-	fields := orderedFields(commandFields(spec.ArgsType))
-	var parts []string
-	for _, field := range fields {
-		if field.usage != "" {
-			parts = append(parts, field.usage)
-			continue
-		}
-		text := field.name + "=<value>"
-		if !field.required {
-			text = "[" + text + "]"
-		}
-		parts = append(parts, text)
-	}
-	return strings.TrimSpace("goav ctl --control unix://PATH control " + spec.Name + " " + strings.Join(parts, " "))
+	return strings.TrimSpace("goav ctl --control unix://PATH control " + spec.Name + " " + ArgsUsage(spec.ArgsType))
 }
 
 // CommandHelp renders help for one manifest command.
@@ -181,13 +171,13 @@ func branchPipelineHelp(name string, usage string, note string, registry Pipelin
 	if len(registry.Steps) != 0 {
 		out.WriteString("\nCustom steps:\n")
 		for _, step := range registry.Steps {
-			writePipelineHelpRow(&out, step.Name, step.Usage, step.Aliases, step.Summary)
+			writePipelineHelpRow(&out, step.Name, firstNonEmpty(step.Usage, ArgsUsage(step.ArgsType)), step.Aliases, step.Summary)
 		}
 	}
 	if len(registry.Encoders) != 0 {
 		out.WriteString("\nCustom encoders:\n")
 		for _, encoder := range registry.Encoders {
-			writePipelineHelpRow(&out, encoder.Name, encoder.Usage, encoder.Aliases, encoder.Summary)
+			writePipelineHelpRow(&out, encoder.Name, firstNonEmpty(encoder.Usage, ArgsUsage(encoder.ArgsType)), encoder.Aliases, encoder.Summary)
 		}
 	}
 	if len(caps.encoders) != 0 {

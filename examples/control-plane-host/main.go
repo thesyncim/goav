@@ -12,7 +12,6 @@ import (
 	"net"
 	"os"
 	"os/signal"
-	"reflect"
 	"strconv"
 	"strings"
 	"sync"
@@ -70,8 +69,7 @@ func runHost(ctx context.Context, address string, out io.Writer) error {
 	}
 	go func() {
 		errC <- ctl.ServeUnixWithOptions(runCtx, host.task, address,
-			ctl.WithCommands(host.commands...),
-			ctl.WithPipelineRegistry(host.registry),
+			ctl.WithCapabilities(host.capabilities),
 		)
 	}()
 	printUsage(out, address)
@@ -103,10 +101,9 @@ func runHost(ctx context.Context, address string, out io.Writer) error {
 }
 
 type demoHost struct {
-	task     goav.Task
-	commands []ctl.CommandSpec
-	registry ctl.PipelineRegistry
-	ready    <-chan struct{}
+	task         goav.Task
+	capabilities ctl.CapabilitySet
+	ready        <-chan struct{}
 }
 
 func newDemoHost(ctx context.Context) (*demoHost, error) {
@@ -134,12 +131,10 @@ func newDemoHost(ctx context.Context) (*demoHost, error) {
 		Value  float64 `goavctl:"value,required" usage:"value=<float>" help:"playback rate"`
 		Source string  `goavctl:"source,required" usage:"source=<source-name>" help:"source node to retime"`
 	}
-	command := ctl.CommandSpec{
-		Name:     "vendor.rate",
-		Summary:  "demo playback-rate control",
-		ArgsType: reflect.TypeOf(setRate{}),
-		Apply: func(ctx context.Context, task goav.Task, args any) (ctl.ControlResponse, error) {
-			cmd := args.(setRate)
+	command := ctl.NewCommand[setRate](
+		"vendor.rate",
+		"demo playback-rate control",
+		func(ctx context.Context, task goav.Task, cmd setRate) (ctl.ControlResponse, error) {
 			if err := task.Control(ctx, goav.Rate(cmd.Value).At(pipeline.NodeRef(cmd.Source))); err != nil {
 				return ctl.ControlResponse{}, err
 			}
@@ -148,100 +143,112 @@ func newDemoHost(ctx context.Context) (*demoHost, error) {
 				Result:    map[string]any{"source": cmd.Source, "value": cmd.Value},
 			}, nil
 		},
-	}
+	)
 	type controlHistory struct {
 		Type av.EventType `goavctl:"type" usage:"[type=rate|seek|segment]" help:"optional source-control event type filter"`
 	}
-	controlsCommand := ctl.CommandSpec{
-		Name:     "fixture.controls",
-		Summary:  "report controls recorded by the fixture test source",
-		ArgsType: reflect.TypeOf(controlHistory{}),
-		Apply: func(_ context.Context, _ goav.Task, args any) (ctl.ControlResponse, error) {
-			query := args.(controlHistory)
+	controlsCommand := ctl.NewCommand[controlHistory](
+		"fixture.controls",
+		"report controls recorded by the fixture test source",
+		func(_ context.Context, _ goav.Task, query controlHistory) (ctl.ControlResponse, error) {
 			return ctl.ControlResponse{
 				Operation: "control fixture.controls",
 				Result:    summarizeSourceControls(source, query.Type),
 			}, nil
 		},
-	}
+	)
 
-	registry := ctl.PipelineRegistry{
-		Steps: []ctl.BranchPipelineStepSpec{
-			{
-				Name:    "meter",
-				Aliases: []string{"levelmeter"},
-				Summary: "pass video frames through a demo metering stage",
-				Usage:   `[label=<text>]`,
-				Apply: func(branch *ctl.BranchPipeline, args ctl.StepArgs) error {
-					label := firstNonEmpty(args["label"], "meter")
-					branch.Do(goav.FrameFunc("demo-"+label, func(_ context.Context, frame *av.Frame, emit goav.Emit) error {
-						return emit.Frame(frame)
-					}))
-					return nil
-				},
-			},
-			{
-				Name:    "thumbnail",
-				Aliases: []string{"thumbs", "sampleframes"},
-				Summary: "keep every Nth frame for thumbnail or preview branches",
-				Usage:   `[every=<positive-int>] [label=<text>]`,
-				Apply: func(branch *ctl.BranchPipeline, args ctl.StepArgs) error {
-					every, err := parsePositiveSetting(firstNonEmpty(args["every"], "1"), "every")
-					if err != nil {
-						return err
-					}
-					var seen int
-					name := demoNodeName("demo-thumbnail", args["label"])
-					branch.Do(goav.FrameFunc(name, func(_ context.Context, frame *av.Frame, emit goav.Emit) error {
-						seen++
-						if (seen-1)%every != 0 {
-							return nil
-						}
-						return emit.Frame(frame)
-					}))
-					return nil
-				},
-			},
-			{
-				Name:    "memorysink",
-				Aliases: []string{"memsink"},
-				Summary: "send messages to a demo in-process sink",
-				Usage:   `[name=<text>]`,
-				Apply: func(branch *ctl.BranchPipeline, args ctl.StepArgs) error {
-					name := firstNonEmpty(args["name"], "memory")
-					branch.Destination(goav.Sink(goav.SinkFunc("demo-"+name, func(context.Context, goav.Message) error {
-						return nil
-					})))
-					return nil
-				},
-			},
-		},
-		Encoders: []ctl.EncoderSpec{{
-			Name:    "acmeenc",
-			Aliases: []string{"acme"},
-			Summary: "demo video encoder that maps native ACME settings",
-			Usage:   `bitrate=<bps> quality=<profile> lookahead=<mode>`,
-			Apply: func(args ctl.StepArgs) (codec.CodecSpec, error) {
-				bitrate, err := parseDemoRate(args["bitrate"])
-				if err != nil {
-					return codec.CodecSpec{}, err
-				}
-				return codec.Codec(demoCodec, av.MediaVideo,
-					codec.Bitrate(bitrate),
-					codec.Profile(args["quality"]),
-					codec.Control(func(native any) error {
-						options, ok := native.(*demoNativeOptions)
-						if !ok {
-							return nil
-						}
-						options.Lookahead = args["lookahead"]
-						return nil
-					}),
-				), nil
-			},
-		}},
+	type meterSettings struct {
+		Label string `goavctl:"label" usage:"[label=<text>]" help:"diagnostic label"`
 	}
-	return &demoHost{task: task, commands: []ctl.CommandSpec{command, controlsCommand}, registry: registry, ready: ready}, nil
+	meterStep := ctl.NewBranchStep[meterSettings](
+		"meter",
+		"pass video frames through a demo metering stage",
+		func(branch *ctl.BranchPipeline, args meterSettings) error {
+			label := firstNonEmpty(args.Label, "meter")
+			branch.Do(goav.FrameFunc("demo-"+label, func(_ context.Context, frame *av.Frame, emit goav.Emit) error {
+				return emit.Frame(frame)
+			}))
+			return nil
+		},
+		ctl.Aliases("levelmeter"),
+	)
+
+	type thumbnailSettings struct {
+		Every int    `goavctl:"every,required" usage:"every=<positive-int>" help:"keep every Nth frame"`
+		Label string `goavctl:"label" usage:"[label=<text>]" help:"diagnostic label"`
+	}
+	thumbnailStep := ctl.NewBranchStep[thumbnailSettings](
+		"thumbnail",
+		"keep every Nth frame for thumbnail or preview branches",
+		func(branch *ctl.BranchPipeline, args thumbnailSettings) error {
+			every := args.Every
+			if _, err := parsePositiveSetting(strconv.Itoa(every), "every"); err != nil {
+				return err
+			}
+			var seen int
+			name := demoNodeName("demo-thumbnail", args.Label)
+			branch.Do(goav.FrameFunc(name, func(_ context.Context, frame *av.Frame, emit goav.Emit) error {
+				seen++
+				if (seen-1)%every != 0 {
+					return nil
+				}
+				return emit.Frame(frame)
+			}))
+			return nil
+		},
+		ctl.Aliases("thumbs", "sampleframes"),
+	)
+
+	type memorySinkSettings struct {
+		Name string `goavctl:"name" usage:"[name=<text>]" help:"sink name"`
+	}
+	memorySinkStep := ctl.NewBranchStep[memorySinkSettings](
+		"memorysink",
+		"send messages to a demo in-process sink",
+		func(branch *ctl.BranchPipeline, args memorySinkSettings) error {
+			name := firstNonEmpty(args.Name, "memory")
+			branch.Destination(goav.Sink(goav.SinkFunc("demo-"+name, func(context.Context, goav.Message) error {
+				return nil
+			})))
+			return nil
+		},
+		ctl.Aliases("memsink"),
+	)
+
+	type acmeSettings struct {
+		Bitrate   int    `goavctl:"bitrate,required,rate" usage:"bitrate=<rate>" help:"target bitrate"`
+		Quality   string `goavctl:"quality" usage:"[quality=<profile>]" help:"native quality profile"`
+		Lookahead string `goavctl:"lookahead" usage:"[lookahead=<mode>]" help:"native lookahead mode"`
+	}
+	acmeEncoder := ctl.NewEncoderSpec[acmeSettings](
+		"acmeenc",
+		"demo video encoder that maps native ACME settings",
+		func(args acmeSettings) (codec.CodecSpec, error) {
+			return codec.Codec(demoCodec, av.MediaVideo,
+				codec.Bitrate(args.Bitrate),
+				codec.Profile(args.Quality),
+				codec.Control(func(native any) error {
+					options, ok := native.(*demoNativeOptions)
+					if !ok {
+						return nil
+					}
+					options.Lookahead = args.Lookahead
+					return nil
+				}),
+			), nil
+		},
+		ctl.Aliases("acme"),
+	)
+
+	capabilities := ctl.CapabilitySet{
+		Commands: []ctl.CommandSpec{command, controlsCommand},
+		Pipeline: ctl.PipelineRegistry{
+			Steps:    []ctl.BranchPipelineStepSpec{meterStep, thumbnailStep, memorySinkStep},
+			Encoders: []ctl.EncoderSpec{acmeEncoder},
+		},
+	}
+	return &demoHost{task: task, capabilities: capabilities, ready: ready}, nil
 }
 
 func printUsage(out io.Writer, address string) {
@@ -251,6 +258,7 @@ func printUsage(out io.Writer, address string) {
 	fmt.Fprintf(out, "goav ctl --control %s help attach\n", address)
 	fmt.Fprintf(out, "goav ctl --control %s help control vendor.rate\n", address)
 	fmt.Fprintf(out, "goav ctl --control %s help control fixture.controls\n", address)
+	fmt.Fprintf(out, "goav ctl --control %s capabilities\n", address)
 	fmt.Fprintf(out, "goav ctl --control %s taps\n", address)
 	fmt.Fprintf(out, "# drive the goavtest TestSource through normal source controls\n")
 	fmt.Fprintf(out, "goav ctl --control %s control rate value=0.5 source=fixture\n", address)
