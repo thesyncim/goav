@@ -1141,6 +1141,8 @@ func TestBranchPipelineParserHelperEdges(t *testing.T) {
 		"clock_rate":        "16000",
 		"keyframe_interval": "100",
 		"fps":               "30000/1001",
+		"lookahead":         "deep",
+		"aq-mode":           "cyclic",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -1154,8 +1156,27 @@ func TestBranchPipelineParserHelperEdges(t *testing.T) {
 		spec.Settings.Profile != "low-delay" ||
 		spec.Settings.Level != "1" ||
 		spec.Settings.KeyframeInterval != 100 ||
-		spec.Settings.Framerate != (av.Duration{Value: 1001, Base: av.TimeBase{Num: 1, Den: 30000}}) {
+		spec.Settings.Framerate != (av.Duration{Value: 1001, Base: av.TimeBase{Num: 1, Den: 30000}}) ||
+		spec.Settings.Custom["lookahead"] != "deep" ||
+		spec.Settings.Custom["aq-mode"] != "cyclic" {
 		t.Fatalf("custom encoder spec = %+v", spec)
+	}
+	av1Spec, err := parseEncoder(av.CodecAV1, av.MediaVideo, map[string]string{
+		"bitrate":         "1M",
+		"min_qindex":      "20",
+		"max_qindex":      "180",
+		"temporal_layers": "2",
+		"tune":            "zerolatency",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if av1Spec.Settings.Bitrate != 1_000_000 ||
+		av1Spec.Settings.Custom["min_qindex"] != "20" ||
+		av1Spec.Settings.Custom["max_qindex"] != "180" ||
+		av1Spec.Settings.Custom["temporal_layers"] != "2" ||
+		av1Spec.Settings.Custom["tune"] != "zerolatency" {
+		t.Fatalf("av1 custom settings = %+v", av1Spec.Settings)
 	}
 	_, err = parseEncoder("vendor_pcm", "", map[string]string{"bitrate": "128k"})
 	var structured *Error
@@ -1898,7 +1919,7 @@ func TestServerGenericEncodeStepCarriesCommonCodecOptions(t *testing.T) {
 		Op:     "attach",
 		Tap:    "frames",
 		Branch: "generic",
-		Pipeline: "encode codec=vendor_generic_audio media=audio bitrate=64k profile=voice level=1 sample_rate=16000 channels=1 clock_rate=48000 keyframe_interval=20 fps=30" +
+		Pipeline: "encode codec=vendor_generic_audio media=audio bitrate=64k profile=voice level=1 sample_rate=16000 channels=1 clock_rate=48000 keyframe_interval=20 fps=30 lookahead=deep aq-mode=cyclic" +
 			" ! filesink location=" + out + " format=ogg",
 	})
 	if !response.OK || response.Error != nil {
@@ -1915,7 +1936,9 @@ func TestServerGenericEncodeStepCarriesCommonCodecOptions(t *testing.T) {
 		settings.ClockRate != 48000 ||
 		settings.KeyframeInterval != 20 ||
 		settings.Framerate.Value != 1 ||
-		settings.Framerate.Base.Den != 30 {
+		settings.Framerate.Base.Den != 30 ||
+		settings.Custom["lookahead"] != "deep" ||
+		settings.Custom["aq-mode"] != "cyclic" {
 		t.Fatalf("encoder settings = %+v", settings)
 	}
 }

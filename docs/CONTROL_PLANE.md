@@ -36,13 +36,15 @@ custom CLI grammar. If a task runtime has an encoder registered with
 
 ```sh
 goav ctl --control unix:///tmp/goav-live.sock attach frames as preview \
-  'encode codec=x_acme_video media=video bitrate=900k fps=30 ! filesink location=preview.webm format=webm'
+  'encode codec=x_acme_video media=video bitrate=900k fps=30 lookahead=deep ! filesink location=preview.webm format=webm'
 ```
 
 `help attach` and `help rebranch` list those runtime-discovered encoders and
-muxers from the running task. Add a typed encoder spelling only when you want a
-friendly name for native adapter-specific settings that cannot be represented
-as portable common codec settings.
+muxers from the running task. Common codec options become typed settings, and
+extra encoder `key=value` pairs are carried as `CodecSettings.Custom` so the
+adapter can validate and apply its own vocabulary. Add a typed encoder spelling
+when you want a friendly name, richer validation, or `codec.Control` host code
+for native handles.
 
 The executable local harness is
 `Example_bootstrapControlPlaneHost` in `ctl/example_test.go`. It builds a live
@@ -324,12 +326,14 @@ rt := goav.Default(
 
 ```sh
 goav ctl --control unix:///tmp/goav-live.sock attach frames as record \
-  'encode codec=x_pcm_s16 media=audio bitrate=128k sample_rate=16000 channels=1 profile=voice ! filesink location=record.ogg format=ogg'
+  'encode codec=x_pcm_s16 media=audio bitrate=128k sample_rate=16000 channels=1 profile=voice dither=triangular ! filesink location=record.ogg format=ogg'
 ```
 
 The generic encoder step supports the common codec options: `bitrate`,
 `profile`, `level`, `sample_rate`, `channels`, `clock_rate`,
-`keyframe_interval`, and `fps`.
+`keyframe_interval`, and `fps`. Any other `key=value` pair is passed through as
+`CodecSettings.Custom`, for example `dither=triangular`, `lookahead=deep`, or
+AV1 settings such as `min_qindex=20 max_qindex=180 tune=zerolatency`.
 
 The destination container must accept the selected codec. Standard codecs can
 often use the standard containers registered by `goav.Default`; a private codec
@@ -337,9 +341,9 @@ usually needs a matching `WithFormatAdapter`, `WithMuxer`, or an app-owned
 custom destination step. Runtime muxers registered with `WithMuxer` are callable
 by `filesink location=<path> format=<id>` and appear in `help attach`.
 
-When an encoder exposes native settings beyond those common options, expose a
-named encoder step with `ctl.NewEncoderSpec`. The CLI spelling stays short and
-the host keeps full control over validation and native adapter calls:
+When an encoder needs host-side validation or direct native handle setup,
+expose a named encoder step with `ctl.NewEncoderSpec`. The CLI spelling stays
+short and the host keeps full control over validation and native adapter calls:
 
 ```sh
 goav ctl --control unix:///tmp/goav-live.sock attach frames as archive \

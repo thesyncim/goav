@@ -109,8 +109,9 @@ func NewBranchStep[T any](name string, summary string, apply func(*BranchPipelin
 }
 
 // NewEncoderSpec builds a typed custom encoder spelling for native adapter
-// settings. Prefer generic `encode codec=<id> ...` when common codec settings
-// are enough; use this when host code must apply codec.Control or validation.
+// settings. Prefer generic `encode codec=<id> ...` when pass-through custom
+// settings are enough; use this when host code must apply codec.Control or
+// richer validation.
 func NewEncoderSpec[T any](name string, summary string, apply func(T) (codec.CodecSpec, error), options ...CapabilityOption) EncoderSpec {
 	opts := collectCapabilityOptions(options)
 	argsType := typedArgsType[T]()
