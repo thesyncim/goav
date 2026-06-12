@@ -53,15 +53,19 @@ func ExecuteRequest(ctx context.Context, task goav.Task, request Request) Respon
 }
 
 func executeRequest(ctx context.Context, task goav.Task, request Request) (ControlResponse, error) {
+	return executeRequestWithRegistry(ctx, task, request, ControlManifest(), PipelineRegistry{})
+}
+
+func executeRequestWithRegistry(ctx context.Context, task goav.Task, request Request, manifest []CommandSpec, registry PipelineRegistry) (ControlResponse, error) {
 	switch request.Op {
 	case "help":
-		text, err := helpWithRuntime(helpArgsFromRequest(request), ControlManifest(), PipelineRegistry{}, task)
+		text, err := helpWithRuntime(helpArgsFromRequest(request), manifest, registry, task)
 		if err != nil {
 			return ControlResponse{}, err
 		}
 		return ControlResponse{Operation: "help", Result: text}, nil
 	case "capabilities":
-		report, err := capabilityReport(ControlManifest(), PipelineRegistry{}, task)
+		report, err := capabilityReport(manifest, registry, task)
 		if err != nil {
 			return ControlResponse{}, err
 		}
@@ -75,13 +79,17 @@ func executeRequest(ctx context.Context, task goav.Task, request Request) (Contr
 		if request.Verb == "" {
 			return ControlResponse{}, commandError("missing_command", "control", "", "missing control verb", nil, []string{"use verb=bitrate"}, nil)
 		}
-		return executeControl(ctx, task, append([]string{request.Verb}, argsFromMap(request.Args)...))
+		spec, ok := LookupCommand(manifest, request.Verb)
+		if !ok {
+			return ControlResponse{}, commandError("unknown_command", "control", request.Verb, "unknown control command "+strconvQuote(request.Verb), nil, []string{"use one of: " + strings.Join(commandNames(manifest), ", ")}, nil)
+		}
+		return Invoke(ctx, task, spec, argsFromMap(request.Args))
 	case "inspect", "snapshot", "stats", "taps", "streams", "branches", "destinations", "events", "watch", "stop":
 		return Execute(ctx, task, append([]string{request.Op}, argsFromMap(request.Args)...))
 	case "graph", "flowchart":
 		return executeGraph(task, request.Args)
 	case "attach":
-		return executeAttachRequest(ctx, task, request, PipelineRegistry{})
+		return executeAttachRequest(ctx, task, request, registry)
 	case "rebranch":
 		argv := []string{"rebranch"}
 		if request.Branch != "" {
