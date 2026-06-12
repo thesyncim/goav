@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>goav Gio WebRTC Showcase</title>
+  <link rel="stylesheet" href="/static/styles.css">
+  <script src="/static/app.js" defer></script>
+</head>
+<body>
+  <header>
+    <h1>goav Gio WebRTC Showcase Peer</h1>
+    <div class="toolbar">
+      <label>Input
+        <select id="inputSource">
+          <option value="camera">camera</option>
+          <option value="synthetic">synthetic</option>
+        </select>
+      </label>
+      <label>Camera codec
+        <select id="uploadCodec"></select>
+      </label>
+      <button id="start" class="primary">Start</button>
+      <div class="status"><span id="dot" class="dot"></span><span id="status">idle</span></div>
+      <span id="revision" class="badge">rev 0</span>
+      <span id="streamStatus" class="badge">events offline</span>
+    </div>
+  </header>
+
+  <main>
+    <section class="stack">
+      <div class="panel">
+        <div class="panel-head"><h2>Local Capture</h2><span id="inboundCodec" class="badge">waiting</span></div>
+        <div class="panel-body">
+          <video id="local" autoplay muted playsinline></video>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head"><h2>Add Branch</h2></div>
+        <div class="panel-body">
+          <div class="controls">
+            <label>Kind
+              <select id="newKind">
+                <option value="video">video</option>
+                <option value="audio">audio</option>
+              </select>
+            </label>
+            <label>Codec
+              <select id="newCodec"></select>
+            </label>
+            <label>Width
+              <input id="newWidth" type="number" min="64" step="2" value="960">
+            </label>
+            <label>Height
+              <input id="newHeight" type="number" min="64" step="2" value="540">
+            </label>
+            <label class="wide">Bitrate
+              <input id="newBitrate" type="number" min="16000" step="10000" value="1200000">
+            </label>
+            <button id="add" class="primary" disabled>Add</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head"><h2>Runtime Controls</h2><span id="branchCount" class="badge">0 branches</span></div>
+        <div id="runtimeList" class="panel-body runtime-list"></div>
+      </div>
+    </section>
+
+    <section class="stack">
+      <div class="panel">
+        <div class="panel-head"><h2>Browser Outputs</h2><span id="remoteCount" class="badge">0 tracks</span></div>
+        <div id="remotes" class="panel-body remote-grid"></div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head"><h2>Pipeline Debug</h2><span id="debugTotals" class="badge">0 packets</span></div>
+        <div id="debugList" class="panel-body debug-list"></div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head"><h2>Video Diagnostics</h2><span class="badge">received FPS</span></div>
+        <div id="videoStats" class="panel-body video-stats"></div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head"><h2>Audio Diagnostics</h2><span class="badge">pure Go Opus</span></div>
+        <div id="audioStats" class="panel-body audio-stats"></div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head"><h2>Live Graph</h2><span id="graphBadge" class="badge">0 nodes</span></div>
+        <div class="panel-body graphs">
+          <div class="graph-title">video</div>
+          <svg id="videoGraph" role="img" aria-label="video graph"></svg>
+          <div class="graph-title">audio</div>
+          <svg id="audioGraph" role="img" aria-label="audio graph"></svg>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head"><h2>Event Feed</h2><span id="eventCount" class="badge">0 events</span></div>
+        <div id="eventList" class="panel-body event-list"></div>
+        <div id="log" class="panel-body log"></div>
+      </div>
+    </section>
+  </main>
+</body>
+</html>
