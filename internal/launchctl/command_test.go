@@ -940,6 +940,10 @@ func TestBranchPipelineLexingSupportsQuotedValues(t *testing.T) {
 		name string
 		run  func() error
 	}{
+		{name: "empty step", run: func() error {
+			_, err := splitPipeline(`copy ! ! filesink location=out.ivf`)
+			return err
+		}},
 		{name: "split quote", run: func() error {
 			_, err := splitPipeline(`copy ! filesink location="unterminated`)
 			return err

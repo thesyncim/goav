@@ -1,6 +1,7 @@
 package launchctl
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -340,107 +341,32 @@ func resolveBranchTap(task goav.Task, operation string, tapName string) (goav.Ta
 }
 
 func splitPipeline(pipeline string) ([]string, error) {
-	var steps []string
-	start := 0
-	var quote byte
-	var escaped bool
-	for i := 0; i < len(pipeline); i++ {
-		ch := pipeline[i]
-		if escaped {
-			escaped = false
-			continue
-		}
-		if quote != 0 {
-			if ch == '\\' {
-				escaped = true
-				continue
-			}
-			if ch == quote {
-				quote = 0
-			}
-			continue
-		}
-		switch ch {
-		case '\'', '"':
-			quote = ch
-		case '!':
-			step := strings.TrimSpace(pipeline[start:i])
-			if step != "" {
-				steps = append(steps, step)
-			}
-			start = i + 1
-		}
-	}
-	if quote != 0 {
-		return nil, pipelineSyntaxError("pipeline", len(pipeline), "unterminated quoted value in branch pipeline")
-	}
-	if escaped {
-		return nil, pipelineSyntaxError("pipeline", len(pipeline), "unterminated escape sequence in branch pipeline")
-	}
-	step := strings.TrimSpace(pipeline[start:])
-	if step != "" {
-		steps = append(steps, step)
-	}
-	if len(steps) == 0 {
+	if strings.TrimSpace(pipeline) == "" {
 		return nil, commandError("missing_required", "parse branch pipeline", "pipeline", "branch pipeline is empty", nil, []string{"use `copy ! filesink location=out.webm`"}, nil)
+	}
+	steps, err := cliargs.SplitPipeline(pipeline)
+	if err != nil {
+		return nil, pipelineSyntaxError("pipeline", err)
 	}
 	return steps, nil
 }
 
 func pipelineFields(step string) ([]string, error) {
-	var fields []string
-	var field strings.Builder
-	var quote byte
-	var escaped bool
-	var started bool
-	for i := 0; i < len(step); i++ {
-		ch := step[i]
-		if escaped {
-			field.WriteByte(ch)
-			escaped = false
-			started = true
-			continue
-		}
-		if quote != 0 {
-			switch ch {
-			case '\\':
-				escaped = true
-			case quote:
-				quote = 0
-			default:
-				field.WriteByte(ch)
-			}
-			started = true
-			continue
-		}
-		switch {
-		case ch == '\'' || ch == '"':
-			quote = ch
-			started = true
-		case ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r':
-			if started {
-				fields = append(fields, field.String())
-				field.Reset()
-				started = false
-			}
-		default:
-			field.WriteByte(ch)
-			started = true
-		}
-	}
-	if quote != 0 {
-		return nil, pipelineSyntaxError("pipeline", len(step), "unterminated quoted value in branch pipeline step")
-	}
-	if escaped {
-		return nil, pipelineSyntaxError("pipeline", len(step), "unterminated escape sequence in branch pipeline step")
-	}
-	if started {
-		fields = append(fields, field.String())
+	fields, err := cliargs.PipelineFields(step)
+	if err != nil {
+		return nil, pipelineSyntaxError("pipeline", err)
 	}
 	return fields, nil
 }
 
-func pipelineSyntaxError(node string, offset int, message string) error {
+func pipelineSyntaxError(node string, err error) error {
+	offset := 0
+	message := err.Error()
+	var syntax *cliargs.PipelineSyntaxError
+	if errors.As(err, &syntax) {
+		offset = syntax.Offset
+		message = syntax.Message
+	}
 	return commandError(
 		"invalid_value",
 		"parse branch pipeline",

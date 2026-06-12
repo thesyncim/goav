@@ -713,6 +713,8 @@ func TestRunPipelineParserHelperEdges(t *testing.T) {
 		`testsrc video duration=0s ! av1enc ! filesink location=/tmp/out.ivf format=ivf`,
 		`testsrc video size=640 ! av1enc ! filesink location=/tmp/out.ivf format=ivf`,
 		`testsrc video pix_fmt=rgba ! av1enc ! filesink location=/tmp/out.ivf format=ivf`,
+		`testsrc video frames=1 ! ! av1enc ! filesink location=/tmp/out.ivf`,
+		`testsrc video frames=1 ! av1enc tune="dangling\ ! filesink location=/tmp/out.ivf`,
 	} {
 		if _, err := parseRunPipeline(text); err == nil {
 			t.Fatalf("parseRunPipeline(%q) succeeded unexpectedly", text)

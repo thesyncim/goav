@@ -13,7 +13,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-	"unicode"
 
 	goav "github.com/thesyncim/goav"
 	"github.com/thesyncim/goav/av"
@@ -1025,87 +1024,18 @@ func parseKeyValuesOrdered(tokens []string) ([]string, []runOption, error) {
 }
 
 func splitPipelineSteps(text string) ([]string, error) {
-	var steps []string
-	var current strings.Builder
-	var quote rune
-	escaped := false
-	for _, r := range text {
-		switch {
-		case escaped:
-			current.WriteRune(r)
-			escaped = false
-		case r == '\\':
-			current.WriteRune(r)
-			escaped = true
-		case quote != 0:
-			if r == quote {
-				quote = 0
-			}
-			current.WriteRune(r)
-		case r == '\'' || r == '"':
-			quote = r
-			current.WriteRune(r)
-		case r == '!':
-			step := strings.TrimSpace(current.String())
-			if step == "" {
-				return nil, fmt.Errorf("goav run: empty pipeline step")
-			}
-			steps = append(steps, step)
-			current.Reset()
-		default:
-			current.WriteRune(r)
-		}
+	steps, err := cliargs.SplitPipeline(text)
+	if err != nil {
+		return nil, fmt.Errorf("goav run: %w", err)
 	}
-	if quote != 0 {
-		return nil, fmt.Errorf("goav run: unterminated quote")
-	}
-	step := strings.TrimSpace(current.String())
-	if step == "" {
-		return nil, fmt.Errorf("goav run: empty pipeline step")
-	}
-	steps = append(steps, step)
 	return steps, nil
 }
 
 func tokenizeStep(text string) ([]string, error) {
-	var tokens []string
-	var current strings.Builder
-	var quote rune
-	escaped := false
-	flush := func() {
-		if current.Len() != 0 {
-			tokens = append(tokens, current.String())
-			current.Reset()
-		}
+	tokens, err := cliargs.PipelineFields(text)
+	if err != nil {
+		return nil, fmt.Errorf("goav run: %w", err)
 	}
-	for _, r := range text {
-		switch {
-		case escaped:
-			current.WriteRune(r)
-			escaped = false
-		case r == '\\':
-			escaped = true
-		case quote != 0:
-			if r == quote {
-				quote = 0
-			} else {
-				current.WriteRune(r)
-			}
-		case r == '\'' || r == '"':
-			quote = r
-		case unicode.IsSpace(r):
-			flush()
-		default:
-			current.WriteRune(r)
-		}
-	}
-	if escaped {
-		current.WriteRune('\\')
-	}
-	if quote != 0 {
-		return nil, fmt.Errorf("goav run: unterminated quote")
-	}
-	flush()
 	return tokens, nil
 }
 
