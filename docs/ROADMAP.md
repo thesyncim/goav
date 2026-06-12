@@ -76,7 +76,7 @@ Exists and is tested, but numbers or semantics are expected to move
 
 ## Descriptor-only and deferred
 
-- **H264/AV1 recipe encode** — descriptor-only: registry descriptors are
+- **H264 recipe encode** — descriptor-only: registry descriptors are
   discoverable while factory lookup returns `codec.ErrUnavailable`
   (`docs/ARCHITECTURE.md` "Codec backends"); decode/receive verticals are
   active.

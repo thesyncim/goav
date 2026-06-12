@@ -2571,7 +2571,7 @@ func TestTaskAttachRuntimeMuxBranchRequiresCopyOrEncode(t *testing.T) {
 	}
 }
 
-func TestTaskAttachRuntimeEncodeMuxBranchRejectsMissingH264AV1Encoders(t *testing.T) {
+func TestTaskAttachRuntimeEncodeMuxBranchRejectsMissingH264Encoder(t *testing.T) {
 	ctx := context.Background()
 	formats := withTestFormats(
 		testFormatProber(format.DefaultProber()),
@@ -2614,7 +2614,6 @@ func TestTaskAttachRuntimeEncodeMuxBranchRejectsMissingH264AV1Encoders(t *testin
 		output Destination
 	}{
 		{name: "h264", codec: codec.H264(codec.Bitrate(2_000_000)), output: destinationHandle(fileDestination("archive.h264", io.Discard))},
-		{name: "av1", codec: codec.AV1(codec.Bitrate(2_000_000)), output: destinationHandle(fileDestination("archive.ivf", io.Discard))},
 	}
 	for _, tc := range cases {
 		_, err := builtTask.Attach(ctx, Branch(tc.name).
@@ -2626,7 +2625,7 @@ func TestTaskAttachRuntimeEncodeMuxBranchRejectsMissingH264AV1Encoders(t *testin
 			t.Fatalf("%s err = %v, want encode_adapter_missing", tc.name, err)
 		}
 	}
-	if strings.Contains(specText(builtTask.Describe()), "h264/") || strings.Contains(specText(builtTask.Describe()), "av1/") {
+	if strings.Contains(specText(builtTask.Describe()), "h264/") {
 		t.Fatalf("graph mutated after rejected attach:\n%s", specText(builtTask.Describe()))
 	}
 }

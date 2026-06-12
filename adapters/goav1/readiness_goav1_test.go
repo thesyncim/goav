@@ -15,6 +15,8 @@ func TestBackendRealtimeAPISurface(t *testing.T) {
 		t.Fatalf("build tags = %v", desc.Capabilities.BuildTags)
 	}
 
+	var _ func(backend.VideoEncoderConfig) (*backend.VideoEncoder, error) = backend.NewVideoEncoder
+	var _ func(*backend.VideoEncoder, backend.I420Frame, bool) (backend.EncodedFrame, error) = (*backend.VideoEncoder).Encode
 	var _ func(backend.FrameFormat) (backend.FrameLayout, error) = backend.FrameRequiredSize
 	var _ func(
 		backend.DecoderStream,

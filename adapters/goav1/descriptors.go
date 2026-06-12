@@ -33,3 +33,31 @@ func Descriptor() codec.Descriptor {
 		},
 	}
 }
+
+func EncoderDescriptor() codec.Descriptor {
+	return codec.Descriptor{
+		ID:           av.CodecAV1,
+		Name:         "AV1",
+		Type:         av.MediaVideo,
+		Modes:        []codec.Mode{codec.ModeEncode},
+		Realtime:     true,
+		Experimental: true,
+		Capabilities: codec.Capabilities{
+			PixelFormats: []string{
+				av.PixelFormatI420,
+				av.PixelFormatYUV420P,
+			},
+			RTPPayloads: []string{av.MIMEAV1},
+		},
+		Backend: codec.Backend{
+			Name:    "goav1-encoder",
+			Module:  "github.com/thesyncim/goav1",
+			Package: "github.com/thesyncim/goav/adapters/goav1",
+			Status:  "active",
+		},
+	}
+}
+
+func Descriptors() []codec.Descriptor {
+	return []codec.Descriptor{Descriptor(), EncoderDescriptor()}
+}

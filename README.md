@@ -751,23 +751,25 @@ goav run 'testsrc video width=1280 height=720 fps=30 duration=3s realtime=true p
 
 That command creates an I420 video test source, marks it realtime, encodes it as
 AV1 through the selected runtime, and writes an IVF file. The default
-`--runtime=demo` mode keeps the standard containers and filters, then injects a
-deterministic encoder for the requested codec so a fresh checkout has a working
-AV1 command. Use `--runtime=default` to require only the registered standard or
-application-supplied adapters; use `--runtime=test` when you want deterministic
-fake codecs and fake containers for arbitrary codec/container ids.
+`--runtime=demo` mode uses the standard containers, filters, and codecs with a
+test clock, so generated AV1 IVF output is real decoder-readable media. Use
+`--runtime=default` to run against the standard runtime clock; use
+`--runtime=test` when you intentionally want deterministic fake codecs and fake
+containers for arbitrary codec/container ids.
 
 The string grammar is intentionally close to the recipe grammar:
 
 ```sh
-goav run 'testsrc video name=fixture size=1920x1080 fps=30000/1001 frames=90 realtime=true ! resize size=640x360 ! encode codec=av1 media=video bitrate=1.8M fps=30000/1001 keyframe_interval=60 lookahead=deep ! filesink location=/tmp/thumbs.ivf format=ivf'
+goav run 'testsrc video name=fixture size=1920x1080 fps=30000/1001 frames=90 realtime=true ! resize size=640x360 ! encode codec=av1 media=video bitrate=1.8M fps=30000/1001 keyframe_interval=60 min_qindex=20 max_qindex=180 temporal_layers=2 tune=zerolatency ! filesink location=/tmp/thumbs.ivf format=ivf'
 ```
 
 Known encoder options (`bitrate`, `fps`, `keyframe_interval`, `profile`,
 `level`, `channels`, `sample_rate`, `clock_rate`) map to typed `codec` settings.
 Other encoder key/value pairs are carried as `CodecSettings.Custom`, so external
 adapters can validate and apply native settings without waiting for a common
-field.
+field. The standard AV1 adapter currently accepts `qindex`, `min_qindex`,
+`max_qindex`, `temporal_layers`, `tile_columns`, `golden_interval`, and
+`tune=zerolatency`.
 
 Applications that want a CLI control surface expose a Unix socket with package
 `ctl`; the bundled command then drives the same task APIs over structured JSON.
@@ -872,14 +874,14 @@ reference them with generic `Codec` specs. Codec descriptors drive capability
 checks, so incompatible media fails before allocation or graph mutation. Adapter
 authoring details live in [`docs/ADAPTERS.md`](docs/ADAPTERS.md).
 
-Opus, VP8, and VP9 are the full encode/decode recipe verticals. H264 and AV1
+Opus, VP8, VP9, and AV1 are full encode/decode recipe verticals. H264
 receive/decode paths are active while recipe encode remains guarded as work in
 progress. `Shape(...)` describes structural media compatibility only; encoder
 behavior is a two-tier ladder, and the settings live in the `codec` package (not
 the goav root) so the grammar stays small. Tier 1 is the common typed settings
 (`codec.Bitrate`, `codec.FPS`, `codec.KeyframeInterval`, `codec.Profile`,
-`codec.RateControl`, …). Tier 2 is `codec.Control`: a single raw callback handed
-the adapter's concrete encoder/decoder, so you type-assert and apply anything the
+`codec.Level`, …). Tier 2 is `codec.Control`: a single raw callback handed
+the adapter's native encoder/config, so you type-assert and apply anything the
 library exposes — nothing is ever unreachable, and there is no separate config
 blob to learn:
 

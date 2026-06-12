@@ -279,8 +279,8 @@ Use `Task.Taps()` to discover stable outlets and `Task.Detach(ctx, h)` when the
 task should own detach semantics. Taps declared after encode or copy are packet
 taps. Observer branches can end in a sink while publishing a nested tap with
 `.Do(goav.FrameFunc(...)).Tap(goav.FrameTap(name)).To(goav.Sink(...))`. Detaching
-a parent removes dependent late branches anchored from its taps. H264 and AV1
-recipe encoding remain work in progress.
+a parent removes dependent late branches anchored from its taps. H264 recipe
+encoding remains work in progress.
 
 ## Debug And Diagnostics
 

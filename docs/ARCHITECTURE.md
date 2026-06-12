@@ -95,10 +95,10 @@ with rollback on failure, and returns an attachment handle with `Close(ctx)`.
 Stable outlets come from typed `.Tap(goav.FrameTap(name))` or
 `.Tap(goav.PacketTap(name))` calls listed by `Task.Taps()`; runtime branches
 anchor with `goav.Branch("name").From(tap)`. Late branches can run custom
-stages, apply flows, resize/resample from frame taps, encode Opus/VP8/VP9 from
+stages, apply flows, resize/resample from frame taps, encode Opus/VP8/VP9/AV1 from
 frame taps, copy or decode packet taps, and expose their own typed taps for
 later attachments. Detaching a parent removes dependent branches anchored from
-its taps. H264 and AV1 recipe encoding remain work in progress.
+its taps. H264 recipe encoding remains work in progress.
 
 Design direction: a tap is not a second data path. It is a named stream point
 that later consumers can bind to. Planned branches, runtime branches, join-arm

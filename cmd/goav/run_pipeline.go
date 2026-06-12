@@ -131,7 +131,7 @@ func runPipelineHelp() string {
 		"pipeline steps:\n" +
 		"  testsrc video width=<px> height=<px> fps=<n[/d]> frames=<n>|duration=<d> realtime=<bool>\n" +
 		"  resize width=<px> height=<px>\n" +
-		"  av1enc|vp9enc|vp8enc|h264enc|encode codec=<id> media=<video|audio> bitrate=<rate> fps=<n[/d]> keyframe_interval=<n>\n" +
+		"  av1enc|vp9enc|vp8enc|h264enc|encode codec=<id> media=<video|audio> bitrate=<rate> fps=<n[/d]> keyframe_interval=<n> [native_key=value...]\n" +
 		"  filesink location=<path> format=<container>\n"
 }
 
@@ -235,11 +235,7 @@ func runtimeForRun(name string, plan runPipelinePlan) (goav.Runtime, string, err
 	codecIDs := plan.encodeCodecIDs()
 	switch name {
 	case "demo":
-		opts := []goav.Option{goav.WithClock(goavtest.NewClock())}
-		for _, id := range codecIDs {
-			opts = append(opts, goavtest.Codec(id))
-		}
-		return goav.Default(opts...), "demo", nil
+		return goav.Default(goav.WithClock(goavtest.NewClock())), "demo", nil
 	case "default", "std", "standard":
 		return goav.Default(), "default", nil
 	case "test", "fake", "deterministic":
