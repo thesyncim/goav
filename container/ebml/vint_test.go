@@ -2,9 +2,11 @@ package ebml
 
 import (
 	"bytes"
+	"encoding/binary"
 	"encoding/hex"
 	"errors"
 	"io"
+	"math"
 	"testing"
 )
 
@@ -272,6 +274,225 @@ func TestWriteAndValidateCRC32(t *testing.T) {
 	if ValidateCRC32(stored[:], payload) {
 		t.Fatalf("corrupt crc validated")
 	}
+}
+
+func TestElementErrorFormattingAndUnwrap(t *testing.T) {
+	var nilErr *ElementError
+	if got := nilErr.Error(); got != "<nil>" {
+		t.Fatalf("nil Error() = %q", got)
+	}
+	if err := nilErr.Unwrap(); err != nil {
+		t.Fatalf("nil Unwrap() = %v", err)
+	}
+
+	offsetOnly := &ElementError{Offset: 12, Err: ErrInvalidVINT}
+	if got := offsetOnly.Error(); got != "ebml: offset 12: ebml: invalid variable-size integer" {
+		t.Fatalf("offset Error() = %q", got)
+	}
+	if !errors.Is(offsetOnly, ErrInvalidVINT) {
+		t.Fatalf("errors.Is(offsetOnly, ErrInvalidVINT) = false")
+	}
+
+	withID := &ElementError{ID: 0x1a45dfa3, Offset: 7, Err: ErrInvalidSize}
+	if got := withID.Error(); got != "ebml: element 0x1a45dfa3 at offset 7: ebml: invalid element size" {
+		t.Fatalf("element Error() = %q", got)
+	}
+}
+
+func TestReaderResetRemainingAndKnownSize(t *testing.T) {
+	var nilReader *Reader
+	if got := nilReader.Offset(); got != 0 {
+		t.Fatalf("nil Offset() = %d", got)
+	}
+	if _, ok := nilReader.Remaining(); ok {
+		t.Fatal("nil Remaining() reported true")
+	}
+	if n, err := nilReader.Read(make([]byte, 1)); n != 0 || !errors.Is(err, io.ErrUnexpectedEOF) {
+		t.Fatalf("nil Read() = %d, %v", n, err)
+	}
+
+	limited := &io.LimitedReader{R: bytes.NewReader([]byte{1, 2, 3}), N: 3}
+	reader := NewReader(limited, ReaderOptions{})
+	if got, ok := reader.Remaining(); !ok || got != 3 {
+		t.Fatalf("Remaining() = %d, %v; want 3, true", got, ok)
+	}
+	buf := make([]byte, 2)
+	if n, err := reader.Read(buf); n != 2 || err != nil {
+		t.Fatalf("Read() = %d, %v", n, err)
+	}
+	if got, ok := reader.Remaining(); !ok || got != 1 {
+		t.Fatalf("Remaining() after read = %d, %v; want 1, true", got, ok)
+	}
+	reader.Reset(bytes.NewReader([]byte{9}), ReaderOptions{MaxElementSize: 1})
+	if reader.Offset() != 0 {
+		t.Fatalf("Reset offset = %d, want 0", reader.Offset())
+	}
+	if _, ok := reader.Remaining(); ok {
+		t.Fatal("Remaining() on plain reader reported true")
+	}
+
+	header := Header{ID: 0x4282, Size: Size{Value: 5}, Offset: 10}
+	if got, err := header.KnownSize(); err != nil || got != 5 {
+		t.Fatalf("KnownSize() = %d, %v; want 5, nil", got, err)
+	}
+	header.Size.Unknown = true
+	if _, err := header.KnownSize(); !errors.Is(err, ErrUnknownSize) {
+		t.Fatalf("KnownSize() unknown err = %v, want ErrUnknownSize", err)
+	}
+}
+
+func TestUnsignedVINTEncodingAndReading(t *testing.T) {
+	values := []uint64{0, 1, 126, 127, 128, 16_383, maxVINTData(4), maxVINTData(8)}
+	var scratch [MaxSizeWidth]byte
+	for _, value := range values {
+		n, err := EncodeUnsignedVINT(scratch[:], value)
+		if err != nil {
+			t.Fatalf("EncodeUnsignedVINT(%d): %v", value, err)
+		}
+		decoded, width, err := DecodeUnsignedVINT(scratch[:n])
+		if err != nil {
+			t.Fatalf("DecodeUnsignedVINT(%d): %v", value, err)
+		}
+		if decoded != value || width != n {
+			t.Fatalf("roundtrip %d = %d width %d, want width %d", value, decoded, width, n)
+		}
+		read, readWidth, err := ReadUnsignedVINT(bytes.NewReader(scratch[:n]), &scratch)
+		if err != nil {
+			t.Fatalf("ReadUnsignedVINT(%d): %v", value, err)
+		}
+		if read != value || readWidth != n {
+			t.Fatalf("read %d = %d width %d, want width %d", value, read, readWidth, n)
+		}
+	}
+
+	if _, err := UnsignedVINTWidth(math.MaxUint64); !errors.Is(err, ErrVINTOverflow) {
+		t.Fatalf("UnsignedVINTWidth(MaxUint64) = %v, want ErrVINTOverflow", err)
+	}
+	if _, err := EncodeUnsignedVINTWidth(scratch[:], 1, 0); !errors.Is(err, ErrInvalidVINT) {
+		t.Fatalf("EncodeUnsignedVINTWidth bad width = %v, want ErrInvalidVINT", err)
+	}
+	if _, err := EncodeUnsignedVINTWidth(scratch[:], maxVINTData(1)+1, 1); !errors.Is(err, ErrInvalidVINT) {
+		t.Fatalf("EncodeUnsignedVINTWidth too large = %v, want ErrInvalidVINT", err)
+	}
+}
+
+func TestWriterScalarHelpersAndOffsets(t *testing.T) {
+	var nilWriter *Writer
+	if got := nilWriter.Offset(); got != 0 {
+		t.Fatalf("nil writer offset = %d", got)
+	}
+	if n, err := nilWriter.Write([]byte{1}); n != 0 || !errors.Is(err, io.ErrClosedPipe) {
+		t.Fatalf("nil writer Write() = %d, %v", n, err)
+	}
+
+	var out bytes.Buffer
+	writer := NewWriter(&out)
+	if err := writer.WriteUnknownHeader(0x1a45dfa3, 4); err != nil {
+		t.Fatal(err)
+	}
+	if writer.Offset() != int64(out.Len()) {
+		t.Fatalf("offset = %d, len = %d", writer.Offset(), out.Len())
+	}
+
+	tests := []struct {
+		name    string
+		write   func(*Writer) error
+		id      ID
+		payload []byte
+	}{
+		{name: "uint", id: 0x4285, payload: []byte{0x01, 0x00}, write: func(w *Writer) error { return w.WriteUInt(0x4285, 0x100) }},
+		{name: "int negative", id: 0x4489, payload: []byte{0xff}, write: func(w *Writer) error { return w.WriteInt(0x4489, -1) }},
+		{name: "int positive", id: 0x4489, payload: []byte{0x00, 0x80}, write: func(w *Writer) error { return w.WriteInt(0x4489, 128) }},
+		{name: "float64", id: 0x4489, payload: float64Payload(1.5), write: func(w *Writer) error { return w.WriteFloat64(0x4489, 1.5) }},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var out bytes.Buffer
+			writer := NewWriter(&out)
+			if err := tt.write(writer); err != nil {
+				t.Fatal(err)
+			}
+			header, payload := readOneElement(t, out.Bytes())
+			if header.ID != tt.id {
+				t.Fatalf("id = 0x%x, want 0x%x", uint64(header.ID), uint64(tt.id))
+			}
+			if !bytes.Equal(payload, tt.payload) {
+				t.Fatalf("payload = %x, want %x", payload, tt.payload)
+			}
+		})
+	}
+
+	for _, value := range []uint64{0xff, 0x100, 0x1_0000, 0x1_000000, 0x1_00000000, 0x1_0000000000, 0x1_000000000000, 0x1_00000000000000} {
+		if width := uintPayloadWidth(value); width < 1 || width > 8 {
+			t.Fatalf("uintPayloadWidth(%x) = %d", value, width)
+		}
+	}
+	for _, value := range []int64{-129, -128, -1, 0, 127, 128, 1 << 40} {
+		if width := intPayloadWidth(value); width < 1 || width > 8 {
+			t.Fatalf("intPayloadWidth(%d) = %d", value, width)
+		}
+	}
+}
+
+func TestWriterErrorsAndSizePatchValidation(t *testing.T) {
+	var out bytes.Buffer
+	writer := NewWriter(&out)
+	if err := writer.WriteHeader(0, 1); !errors.Is(err, ErrInvalidElementID) {
+		t.Fatalf("WriteHeader invalid id = %v, want ErrInvalidElementID", err)
+	}
+	if err := writer.WriteUnknownHeader(0x4282, 0); !errors.Is(err, ErrInvalidVINT) {
+		t.Fatalf("WriteUnknownHeader invalid width = %v, want ErrInvalidVINT", err)
+	}
+	if _, err := writer.StartSizedElement(0x4282, 0); !errors.Is(err, ErrInvalidSize) {
+		t.Fatalf("StartSizedElement invalid width = %v, want ErrInvalidSize", err)
+	}
+	if _, err := writer.StartSizedElement(0, 1); !errors.Is(err, ErrInvalidElementID) {
+		t.Fatalf("StartSizedElement invalid id = %v, want ErrInvalidElementID", err)
+	}
+	if err := writer.FinishSizedElement(SizePatch{}); !errors.Is(err, ErrNonSeekableWriter) {
+		t.Fatalf("FinishSizedElement non-seekable = %v, want ErrNonSeekableWriter", err)
+	}
+
+	ws := &memoryWriteSeeker{}
+	seekWriter := NewWriter(ws)
+	patch, err := seekWriter.StartSizedElement(0x1549a966, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := seekWriter.Write(make([]byte, int(maxKnownSize(1)+1))); err != nil {
+		t.Fatal(err)
+	}
+	if err := seekWriter.FinishSizedElement(patch); !errors.Is(err, ErrInvalidSize) {
+		t.Fatalf("FinishSizedElement oversized = %v, want ErrInvalidSize", err)
+	}
+
+	if err := seekWriter.FinishSizedElement(SizePatch{Width: 0}); !errors.Is(err, ErrInvalidSize) {
+		t.Fatalf("FinishSizedElement bad patch = %v, want ErrInvalidSize", err)
+	}
+}
+
+func float64Payload(value float64) []byte {
+	var payload [8]byte
+	binary.BigEndian.PutUint64(payload[:], math.Float64bits(value))
+	return payload[:]
+}
+
+func readOneElement(t *testing.T, data []byte) (Header, []byte) {
+	t.Helper()
+	reader := NewReader(bytes.NewReader(data), ReaderOptions{})
+	header, err := reader.ReadHeader()
+	if err != nil {
+		t.Fatal(err)
+	}
+	size, err := header.KnownSize()
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload := make([]byte, size)
+	if err := reader.ReadFull(payload); err != nil {
+		t.Fatal(err)
+	}
+	return header, payload
 }
 
 func FuzzDecodeSizeVINT(f *testing.F) {
