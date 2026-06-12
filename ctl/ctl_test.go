@@ -17,6 +17,7 @@ import (
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/ctl"
+	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/goavtest"
 )
 
@@ -143,6 +144,49 @@ func TestExternalHostCustomCodecOptionsAndStageOverSocket(t *testing.T) {
 		factory.config.Parameters.SampleRate != 16000 ||
 		factory.config.Parameters.Channels != codec.Mono {
 		t.Fatalf("parameters = %+v", factory.config.Parameters)
+	}
+}
+
+func TestExternalHostHelpListsRuntimeRegisteredComponents(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	const customCodec = av.CodecID("x_help_pcm")
+	const customFormat = av.FormatID("x_helpmux")
+	factory := &recordingEncoderFactory{
+		descriptor: codec.Descriptor{ID: customCodec, Name: "Help PCM", Type: av.MediaAudio},
+	}
+	task := newExternalTask(t, goavtest.Runtime(
+		goav.WithEncoder(factory.descriptor, factory),
+		goav.WithFormatAdapter(func(registry *format.SimpleRegistry) {
+			registry.RegisterMuxerDescriptor(format.Descriptor{
+				Format: customFormat,
+				Codecs: []av.CodecID{customCodec},
+			}, recordingMuxerFactory{format: customFormat})
+		}),
+	))
+	defer task.Close()
+
+	socket := startUnixServer(t, ctx, task)
+	help := sendRequest(t, socket, ctl.Request{
+		Op:   "help",
+		Args: map[string]string{"topic": "attach"},
+	})
+	text, ok := help.Result.(string)
+	if !help.OK || help.Error != nil || !ok {
+		t.Fatalf("help = %+v", help)
+	}
+	for _, fragment := range []string{
+		"Runtime encoders:",
+		"encode codec=x_help_pcm media=audio",
+		"Help PCM",
+		"Runtime muxers:",
+		"filesink location=<path> format=x_helpmux",
+		"runtime-registered muxer for codecs x_help_pcm",
+	} {
+		if !strings.Contains(text, fragment) {
+			t.Fatalf("help missing %q:\n%s", fragment, text)
+		}
 	}
 }
 
@@ -509,3 +553,24 @@ func (e recordingEncoder) EncodeInto(_ context.Context, frame *av.Frame, out *co
 func (e recordingEncoder) FlushInto(context.Context, *codec.EncodeResult) error { return nil }
 func (e recordingEncoder) HandleEvent(context.Context, *av.Event) error         { return nil }
 func (e recordingEncoder) Close() error                                         { return nil }
+
+type recordingMuxerFactory struct {
+	format av.FormatID
+}
+
+func (f recordingMuxerFactory) NewMuxer(context.Context, av.FormatID) (format.Muxer, error) {
+	return recordingMuxer(f), nil
+}
+
+type recordingMuxer struct {
+	format av.FormatID
+}
+
+func (m recordingMuxer) Format() av.FormatID { return m.format }
+func (m recordingMuxer) Open(context.Context, format.Output, []av.Stream, format.OpenOptions) error {
+	return nil
+}
+func (m recordingMuxer) Write(context.Context, *av.Packet, *format.WriteResult) error {
+	return nil
+}
+func (m recordingMuxer) Close() error { return nil }
