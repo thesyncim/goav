@@ -14,6 +14,7 @@ import (
 	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/graphrender"
 	"github.com/thesyncim/goav/pipeline"
+	"github.com/thesyncim/goav/shape"
 )
 
 type runtimeTestSource struct {
@@ -305,6 +306,23 @@ func TestRuntimeWithFormatAdapter(t *testing.T) {
 	}
 }
 
+func TestRuntimeWithDirectFormatHooks(t *testing.T) {
+	formatID := av.FormatID("x_direct")
+	demuxerFactory := remuxTestDemuxerFactory{demuxer: &remuxTestDemuxer{}}
+	muxerFactory := &remuxTestMuxerFactory{}
+	rt := runtimeValue(t, New(
+		WithDemuxer(formatID, demuxerFactory),
+		WithMuxer(formatID, muxerFactory),
+	))
+
+	if got, err := rt.formats.DemuxerFactory(formatID); err != nil || got != demuxerFactory {
+		t.Fatalf("demuxer factory = %T err=%v, want registered direct factory", got, err)
+	}
+	if got, err := rt.formats.MuxerFactory(formatID); err != nil || got != muxerFactory {
+		t.Fatalf("muxer factory = %T err=%v, want registered direct factory", got, err)
+	}
+}
+
 func TestRuntimeWithFilterAdapter(t *testing.T) {
 	rt := runtimeValue(t, New(WithFilterAdapter(func(registry *filter.SimpleRegistry) {
 		registry.RegisterFactory(filter.Descriptor{Name: filter.FactoryResample}, &transcodeTestFilterFactory{})
@@ -312,6 +330,36 @@ func TestRuntimeWithFilterAdapter(t *testing.T) {
 
 	if _, err := rt.filters.Factory(filter.FactoryResample); err != nil {
 		t.Fatalf("filter factory: %v", err)
+	}
+}
+
+func TestTaskExplainReportsLiveGraphAndTaps(t *testing.T) {
+	ctx := context.Background()
+	task, err := From(mixTestAudioSource("frames", 100)).Audio().
+		Tap(FrameTap("frames.decoded")).
+		To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))).
+		Build(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer task.Close()
+
+	report, err := task.Explain(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Summary != "running media task" {
+		t.Fatalf("summary = %q, want running media task", report.Summary)
+	}
+	if len(report.Graph.Nodes) == 0 {
+		t.Fatalf("explain graph has no nodes: %+v", report.Graph)
+	}
+	if len(report.Taps) != 1 ||
+		report.Taps[0].Name != "frames.decoded" ||
+		report.Taps[0].MediaKind != av.MediaAudio ||
+		report.Taps[0].Domain != shape.DomainFrame ||
+		report.Taps[0].Node.String() == "" {
+		t.Fatalf("tap rows = %+v, want frames.decoded audio frame tap", report.Taps)
 	}
 }
 
