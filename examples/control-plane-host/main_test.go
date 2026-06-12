@@ -41,7 +41,14 @@ func TestRunHostServesCustomHelpAndAttach(t *testing.T) {
 	if !help.OK || help.Error != nil || !ok {
 		t.Fatalf("help = %+v", help)
 	}
-	for _, fragment := range []string{"meter [label=<text>]", "acmeenc bitrate=<bps>", "aliases: levelmeter", "aliases: acme"} {
+	for _, fragment := range []string{
+		"meter [label=<text>]",
+		"memorysink [name=<text>]",
+		"acmeenc bitrate=<bps>",
+		"aliases: levelmeter",
+		"aliases: memsink",
+		"aliases: acme",
+	} {
 		if !strings.Contains(text, fragment) {
 			t.Fatalf("help missing %q:\n%s", fragment, text)
 		}
@@ -59,6 +66,27 @@ func TestRunHostServesCustomHelpAndAttach(t *testing.T) {
 		t.Fatalf("attach = %+v", attach)
 	}
 
+	memory := sendDemoRequest(t, socket, ctl.Request{
+		Op:       "attach",
+		Tap:      "frames",
+		Branch:   "memory",
+		Pipeline: `meter ! acmeenc bitrate=64k quality=preview lookahead=shallow ! memorysink name=preview`,
+	})
+	if !memory.OK || memory.Error != nil {
+		t.Fatalf("memory attach = %+v", memory)
+	}
+
+	graph := sendDemoRequest(t, socket, ctl.Request{Op: "graph"})
+	flowchart, ok := graph.Result.(string)
+	if !graph.OK || graph.Error != nil || !ok {
+		t.Fatalf("graph = %+v", graph)
+	}
+	for _, fragment := range []string{"flowchart LR", "branch=archive (attached)", "branch=memory (attached)", "demo-left ! right"} {
+		if !strings.Contains(flowchart, fragment) {
+			t.Fatalf("flowchart missing %q:\n%s", fragment, flowchart)
+		}
+	}
+
 	cancel()
 	select {
 	case err := <-errC:
@@ -67,6 +95,28 @@ func TestRunHostServesCustomHelpAndAttach(t *testing.T) {
 		}
 	case <-time.After(3 * time.Second):
 		t.Fatal("host did not stop")
+	}
+}
+
+func TestPrintUsageIncludesCompleteBootstrapLoop(t *testing.T) {
+	var out strings.Builder
+	printUsage(&out, "unix:///tmp/live.sock")
+	text := out.String()
+	for _, fragment := range []string{
+		"help attach",
+		"help control vendor.rate",
+		"taps",
+		"control vendor.rate value=0.5 source=fixture",
+		"filesink location=\"/tmp/goav archive.ogg\"",
+		"memorysink name=preview",
+		"graph format=text",
+		"rebranch archive",
+		"detach archive",
+		"detach memory",
+	} {
+		if !strings.Contains(text, fragment) {
+			t.Fatalf("usage missing %q:\n%s", fragment, text)
+		}
 	}
 }
 

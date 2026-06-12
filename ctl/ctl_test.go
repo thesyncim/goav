@@ -72,29 +72,46 @@ func TestExternalHostCustomCodecOptionsAndStageOverSocket(t *testing.T) {
 	defer task.Close()
 
 	var metered atomic.Int64
+	var captured atomic.Int64
 	registry := ctl.PipelineRegistry{
-		Steps: []ctl.BranchPipelineStepSpec{{
-			Name:    "meter",
-			Summary: "external frame meter",
-			Apply: func(branch *ctl.BranchPipeline, _ ctl.StepArgs) error {
-				branch.Do(goav.FrameFunc("meter", func(_ context.Context, frame *av.Frame, emit goav.Emit) error {
-					metered.Add(1)
-					return emit.Frame(frame)
-				}))
-				return nil
+		Steps: []ctl.BranchPipelineStepSpec{
+			{
+				Name:    "meter",
+				Summary: "external frame meter",
+				Apply: func(branch *ctl.BranchPipeline, _ ctl.StepArgs) error {
+					branch.Do(goav.FrameFunc("meter", func(_ context.Context, frame *av.Frame, emit goav.Emit) error {
+						metered.Add(1)
+						return emit.Frame(frame)
+					}))
+					return nil
+				},
 			},
-		}},
+			{
+				Name:    "memorysink",
+				Summary: "external in-process sink",
+				Apply: func(branch *ctl.BranchPipeline, args ctl.StepArgs) error {
+					name := args["name"]
+					if name == "" {
+						name = "memory"
+					}
+					branch.Destination(goav.Sink(goav.SinkFunc(name, func(context.Context, goav.Message) error {
+						captured.Add(1)
+						return nil
+					})))
+					return nil
+				},
+			},
+		},
 	}
 
 	socket := startUnixServer(t, ctx, task, ctl.WithPipelineRegistry(registry))
-	out := filepath.Join(t.TempDir(), "custom.ogg")
 	response := sendRequest(t, socket, ctl.Request{
 		Op:     "attach",
 		Tap:    "frames",
 		Branch: "record",
 		Pipeline: "meter ! encode codec=x_cli_pcm media=audio bitrate=123k profile=cinema level=1 " +
 			"sample_rate=16000 channels=1 clock_rate=16000 keyframe_interval=7 fps=24 ! " +
-			"filesink location=" + out + " format=ogg",
+			"memorysink name=archive",
 	})
 	if !response.OK || response.Error != nil {
 		t.Fatalf("attach response = %+v", response)
@@ -105,6 +122,9 @@ func TestExternalHostCustomCodecOptionsAndStageOverSocket(t *testing.T) {
 	}
 	if metered.Load() == 0 {
 		t.Fatal("custom stage did not observe frames")
+	}
+	if captured.Load() == 0 {
+		t.Fatal("custom destination did not receive packets")
 	}
 	settings := factory.config.Settings
 	if settings.Bitrate != 123000 ||
