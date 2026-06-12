@@ -147,7 +147,7 @@ func runPipelineHelp() string {
 		"  goav run '" + defaultRunPipeline + "'\n" +
 		"  goav run 'testsrc video width=1280 height=720 fps=30 duration=3s realtime=true pattern=bars ! av1enc bitrate=1200k fps=30 keyframe_interval=60 min_qindex=20 max_qindex=180 tune=zerolatency ! filesink location=/tmp/goav-av1.ivf format=ivf'\n\n" +
 		"pipeline steps:\n" +
-		"  testsrc video [name=<id>] width=<px> height=<px>|size=<w>x<h> fps=<n[/d]> frames=<n>|duration=<d> realtime=<bool> [pattern=bars|gradient|solid]\n" +
+		"  testsrc video [name=<id>] width=<px> height=<px>|size=<w>x<h> fps=<n[/d]|decimal> frames=<n>|duration=<d> realtime=<bool> [format=i420|yuv420p] [pattern=bars|gradient|solid]\n" +
 		"  tap name=<tap-name>\n" +
 		"  resize width=<px> height=<px>|size=<w>x<h>\n" +
 		"  av1enc|vp9enc|vp8enc|h264enc|encode codec=<id> media=<video|audio> bitrate=<rate> fps=<n[/d]> keyframe_interval=<n> [native_key=value...]\n" +
