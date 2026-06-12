@@ -300,6 +300,11 @@ func (s *Server) handleFollow(ctx context.Context, conn net.Conn, request Reques
 		_ = json.NewEncoder(conn).Encode(ErrorResponse(request.Op, commandError("task_missing", request.Op, "", "control server has no task", nil, nil, nil)))
 		return
 	}
+	manifest := s.commandManifest()
+	if err := s.validateConfig(manifest); err != nil {
+		_ = json.NewEncoder(conn).Encode(ErrorResponse(request.Op, err))
+		return
+	}
 	encoder := json.NewEncoder(conn)
 	for event := range s.watch(request) {
 		if err := encoder.Encode(SuccessResponse(event)); err != nil {

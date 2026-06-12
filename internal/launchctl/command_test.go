@@ -1657,6 +1657,38 @@ func TestServerFollowWithoutTaskReturnsStructuredError(t *testing.T) {
 	<-done
 }
 
+func TestServerFollowValidatesCustomConfiguration(t *testing.T) {
+	server := &Server{
+		Task: newFakeTask(),
+		Commands: []CommandSpec{{
+			Name:     "vendor.pointer",
+			ArgsType: reflect.TypeOf(&struct{}{}),
+		}},
+	}
+	client, serverConn := net.Pipe()
+	defer client.Close()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		server.handleConn(context.Background(), serverConn)
+	}()
+	request := Request{Op: "watch", Args: map[string]string{"follow": "true"}}
+	if err := json.NewEncoder(client).Encode(request); err != nil {
+		t.Fatal(err)
+	}
+	var response Response
+	if err := json.NewDecoder(client).Decode(&response); err != nil {
+		t.Fatal(err)
+	}
+	if response.OK ||
+		response.Error == nil ||
+		response.Error.Code != "invalid_registry" ||
+		response.Error.Node != "vendor.pointer" {
+		t.Fatalf("response = %+v, want invalid registry", response)
+	}
+	<-done
+}
+
 func TestServerAttachRebranchDetachUsesAttachmentTable(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
