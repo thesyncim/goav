@@ -40,6 +40,79 @@ func TestControlManifestContainsBuiltInVerbs(t *testing.T) {
 	}
 }
 
+func TestNewErrorClonesAndUnwrapsCustomControlFailures(t *testing.T) {
+	cause := errors.New("native device refused command")
+	details := []string{"field=gain", "value=hot"}
+	suggestions := []string{"lower gain", "retry"}
+	err := NewError("vendor_refused", "control vendor", "gain", "vendor command failed", details, suggestions, cause)
+	details[0] = "mutated"
+	suggestions[0] = "mutated"
+
+	if err.Code != "vendor_refused" ||
+		err.Operation != "control vendor" ||
+		err.Node != "gain" ||
+		err.Details[0] != "field=gain" ||
+		err.Suggestions[0] != "lower gain" ||
+		!errors.Is(err, cause) {
+		t.Fatalf("NewError() = %+v", err)
+	}
+	text := err.Error()
+	for _, fragment := range []string{"vendor command failed", "field=gain", "lower gain"} {
+		if !strings.Contains(text, fragment) {
+			t.Fatalf("Error() = %q, want fragment %q", text, fragment)
+		}
+	}
+}
+
+func TestInvokeCustomCommandContracts(t *testing.T) {
+	type vendorCommand struct {
+		Stream av.StreamID `goavctl:"stream,required"`
+		Gain   int         `goavctl:"gain,required"`
+	}
+
+	var got vendorCommand
+	spec := CommandSpec{
+		Name:     "vendor",
+		ArgsType: reflect.TypeOf(vendorCommand{}),
+		Apply: func(_ context.Context, _ goav.Task, args any) (ControlResponse, error) {
+			got = args.(vendorCommand)
+			return ControlResponse{
+				Operation: "control vendor",
+				Result:    map[string]any{"stream": got.Stream, "gain": got.Gain},
+			}, nil
+		},
+	}
+	response, err := Invoke(context.Background(), newFakeTask(), spec, []string{"stream=audio", "gain=7"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Stream != "audio" || got.Gain != 7 || response.Operation != "control vendor" {
+		t.Fatalf("Invoke() got=%+v response=%+v", got, response)
+	}
+
+	response, err = Invoke(context.Background(), newFakeTask(), CommandSpec{
+		Name:     "vendor",
+		ArgsType: reflect.TypeOf(vendorCommand{}),
+	}, []string{"stream=audio", "gain=7"})
+	var structured *Error
+	if response.Operation != "" ||
+		!errors.As(err, &structured) ||
+		structured.Code != "unsupported" ||
+		structured.Operation != "control vendor" {
+		t.Fatalf("nil Apply response=%+v err=%+v", response, structured)
+	}
+
+	cause := errors.New("native command failed")
+	customErr := NewError("vendor_failed", "control vendor", "gain", "vendor failed", []string{"gain=7"}, []string{"try gain=3"}, cause)
+	spec.Apply = func(context.Context, goav.Task, any) (ControlResponse, error) {
+		return ControlResponse{}, customErr
+	}
+	_, err = Invoke(context.Background(), newFakeTask(), spec, []string{"stream=audio", "gain=7"})
+	if !errors.As(err, &structured) || structured.Code != "vendor_failed" || !errors.Is(err, cause) {
+		t.Fatalf("custom Invoke error = %+v", err)
+	}
+}
+
 func TestBindArgsParsesControlFields(t *testing.T) {
 	bitrateSpec, _ := LookupControlCommand("bitrate")
 	bitrateArgs, err := BindArgs(bitrateSpec, []string{"stream=video", "value=1200k", "at=raw_video"})
@@ -1046,6 +1119,36 @@ func TestBranchPipelineParserHelperEdges(t *testing.T) {
 	}
 	if _, err := parseEncoder("vendor_custom", "", nil); err == nil {
 		t.Fatal("expected custom encoder without media to fail")
+	}
+	spec, err := parseEncoder("vendor_pcm", av.MediaAudio, map[string]string{
+		"bitrate":           "128k",
+		"profile":           "low-delay",
+		"level":             "1",
+		"sample_rate":       "16000",
+		"channels":          "1",
+		"clock_rate":        "16000",
+		"keyframe_interval": "100",
+		"fps":               "30000/1001",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if spec.ID != "vendor_pcm" ||
+		spec.Type != av.MediaAudio ||
+		spec.Parameters.SampleRate != 16000 ||
+		spec.Parameters.Channels != 1 ||
+		spec.Parameters.ClockRate != 16000 ||
+		spec.Settings.Bitrate != 128_000 ||
+		spec.Settings.Profile != "low-delay" ||
+		spec.Settings.Level != "1" ||
+		spec.Settings.KeyframeInterval != 100 ||
+		spec.Settings.Framerate != (av.Duration{Value: 1001, Base: av.TimeBase{Num: 1, Den: 30000}}) {
+		t.Fatalf("custom encoder spec = %+v", spec)
+	}
+	_, err = parseEncoder("vendor_pcm", "", map[string]string{"bitrate": "128k"})
+	var structured *Error
+	if !errors.As(err, &structured) || structured.Code != "missing_required" || structured.Node != "media" {
+		t.Fatalf("custom encoder missing media error = %+v", err)
 	}
 	if _, ok := parsePositiveUint32Arg(map[string]string{"clock_rate": "0"}, "clock_rate"); ok {
 		t.Fatal("zero clock rate should not parse")
