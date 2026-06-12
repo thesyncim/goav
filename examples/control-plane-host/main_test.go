@@ -107,7 +107,7 @@ func TestRunHostServesCustomHelpAndAttach(t *testing.T) {
 		Tap:    "frames",
 		Branch: "thumbnails",
 		Pipeline: `thumbnail every=5 label=sample ! resize 160x90 ! vp8enc bitrate=160k fps=1 keyframe_interval=1 ! filesink location="` +
-			thumbOut + `" format=ivf`,
+			thumbOut + `"`,
 	})
 	if !thumbs.OK || thumbs.Error != nil {
 		t.Fatalf("thumbnail attach = %+v", thumbs)
@@ -139,7 +139,7 @@ func TestRunHostServesCustomHelpAndAttach(t *testing.T) {
 		Tap:    "frames",
 		Branch: "acme-file",
 		Pipeline: `thumbnail every=6 label=file ! encode codec=x_acme_video media=video bitrate=320k profile=file fps=2 keyframe_interval=1 lookahead=file ! filesink location="` +
-			genericFileOut + `" format=webm`,
+			genericFileOut + `"`,
 	})
 	if !genericFile.OK || genericFile.Error != nil {
 		t.Fatalf("generic custom encoder file attach = %+v", genericFile)
@@ -259,7 +259,7 @@ func TestRunHostAcceptsDocumentedCLICommands(t *testing.T) {
 	runDemoCLI(t, socket, "attach", "frames", "as", "memory", `thumbnail every=3 label=preview ! memorysink name=preview`)
 	runDemoCLI(t, socket, "attach", "frames", "as", "acme-generic", `thumbnail every=4 label=generic ! encode codec=x_acme_video media=video bitrate=220k profile=preview fps=2 keyframe_interval=1 lookahead=deep ! memorysink name=acme-generic`)
 	acmeFileOut := filepath.Join(t.TempDir(), "acme cli.webm")
-	runDemoCLI(t, socket, "attach", "frames", "as", "acme-file", `thumbnail every=6 label=file ! encode codec=x_acme_video media=video bitrate=320k profile=file fps=2 keyframe_interval=1 lookahead=file ! filesink location="`+acmeFileOut+`" format=webm`)
+	runDemoCLI(t, socket, "attach", "frames", "as", "acme-file", `thumbnail every=6 label=file ! encode codec=x_acme_video media=video bitrate=320k profile=file fps=2 keyframe_interval=1 lookahead=file ! filesink location="`+acmeFileOut+`"`)
 	graph := runDemoCLI(t, socket, "graph")
 	if !strings.Contains(graph, "flowchart LR") ||
 		!strings.Contains(graph, "branch=memory (attached)") ||

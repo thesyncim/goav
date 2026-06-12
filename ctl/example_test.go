@@ -182,12 +182,12 @@ func ExampleNewEncoderSpec_customEncoder() {
 
 	request, _ := ctl.RequestFromCLI([]string{
 		"attach", "frames", "as", "archive",
-		"acmeenc profile=cinema ! filesink location=archive.ogg format=ogg",
+		"acmeenc profile=cinema ! filesink location=archive.ogg",
 	})
 	fmt.Println(request.Pipeline)
 
 	// Output:
-	// acmeenc profile=cinema ! filesink location=archive.ogg format=ogg
+	// acmeenc profile=cinema ! filesink location=archive.ogg
 }
 
 type exampleEncoderFactory struct {

@@ -312,7 +312,7 @@ func TestRunPipelineHelpBootstrapsGeneratedControlFlow(t *testing.T) {
 	text := stdout.String()
 	for _, want := range []string{
 		"examples:",
-		"/tmp/goav-av1.ivf format=ivf",
+		"/tmp/goav-av1.ivf'",
 		"min_qindex=20 max_qindex=180 tune=zerolatency",
 		"tap name=<tap-name>",
 		"size=<w>x<h>",
@@ -322,7 +322,7 @@ func TestRunPipelineHelpBootstrapsGeneratedControlFlow(t *testing.T) {
 		"goav ctl --control unix:///tmp/goav-live.sock taps",
 		"control seek position=2s source=fixture",
 		"attach frames as preview",
-		"/tmp/goav-preview.ivf format=ivf",
+		"/tmp/goav-preview.ivf'",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("help missing %q:\n%s", want, text)

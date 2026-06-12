@@ -801,9 +801,9 @@ goav ctl --control unix:///tmp/goav-live.sock control --json '{"type":"rate","ra
 goav ctl --control unix:///tmp/goav-live.sock help attach
 goav ctl --control unix:///tmp/goav-live.sock capabilities
 goav ctl --control unix:///tmp/goav-live.sock attach frames as archive \
-  'encode codec=x_acme_audio media=audio bitrate=128k profile=voice lookahead=deep ! filesink location=/tmp/archive.ogg format=ogg'
+  'encode codec=x_acme_audio media=audio bitrate=128k profile=voice lookahead=deep ! filesink location=/tmp/archive.ogg'
 goav ctl --control unix:///tmp/goav-live.sock attach frames as native \
-  'meter ! acmeenc bitrate=128k quality=voice lookahead=deep ! filesink location=/tmp/archive.ogg format=ogg'
+  'meter ! acmeenc bitrate=128k quality=voice lookahead=deep ! filesink location=/tmp/archive.ogg'
 goav ctl --control unix:///tmp/goav-live.sock graph
 ```
 

@@ -8,7 +8,7 @@ or automation talk to that socket with structured requests.
 goav ctl --control unix:///tmp/goav-live.sock control bitrate stream=video value=1200k
 goav ctl --control unix:///tmp/goav-live.sock watch type=stats --follow
 goav ctl --control unix:///tmp/goav-live.sock attach frames as archive \
-  'encode codec=opus media=audio bitrate=128k ! filesink location=archive.ogg format=ogg'
+  'encode codec=opus media=audio bitrate=128k ! filesink location=archive.ogg'
 ```
 
 The control layer is allowlisted and lowers into the same task APIs normal Go
@@ -37,7 +37,7 @@ goav ctl --control unix:///tmp/goav-live.sock graph
 goav ctl --control unix:///tmp/goav-live.sock control rate value=0.5 source=fixture
 goav ctl --control unix:///tmp/goav-live.sock control seek position=2s source=fixture
 goav ctl --control unix:///tmp/goav-live.sock attach frames as preview \
-  'resize 320x180 ! av1enc bitrate=300k fps=2 keyframe_interval=1 ! filesink location=/tmp/goav-preview.ivf format=ivf'
+  'resize 320x180 ! av1enc bitrate=300k fps=2 keyframe_interval=1 ! filesink location=/tmp/goav-preview.ivf'
 goav ctl --control unix:///tmp/goav-live.sock graph format=text
 goav ctl --control unix:///tmp/goav-live.sock detach preview
 goav ctl --control unix:///tmp/goav-live.sock stop
@@ -75,7 +75,7 @@ custom CLI grammar. If a task runtime has an encoder registered with
 
 ```sh
 goav ctl --control unix:///tmp/goav-live.sock attach frames as preview \
-  'encode codec=x_acme_video media=video bitrate=900k fps=30 lookahead=deep ! filesink location=preview.webm format=webm'
+  'encode codec=x_acme_video media=video bitrate=900k fps=30 lookahead=deep ! filesink location=preview.webm'
 ```
 
 `help attach` and `help rebranch` list those runtime-discovered encoders and
@@ -242,11 +242,11 @@ goav ctl --control unix:///tmp/goav-live.sock control vendor.rate value=0.5 sour
 goav ctl --control unix:///tmp/goav-live.sock control --json '{"type":"rate","rate":0.75,"node":"fixture"}'
 goav ctl --control unix:///tmp/goav-live.sock control deliver --json '{"type":"vendor.force_idr","stream_id":"video","metadata":{"source":"cli"}}' at=frames
 goav ctl --control unix:///tmp/goav-live.sock attach frames as archive \
-  'meter ! acmeenc bitrate=128k quality=voice lookahead=deep ! filesink location=/tmp/archive.ogg format=ogg'
+  'meter ! acmeenc bitrate=128k quality=voice lookahead=deep ! filesink location=/tmp/archive.ogg'
 goav ctl --control unix:///tmp/goav-live.sock graph
 goav ctl --control unix:///tmp/goav-live.sock graph format=dot
 goav ctl --control unix:///tmp/goav-live.sock rebranch archive \
-  'meter ! acmeenc bitrate=96k quality=voice lookahead=shallow ! filesink location=/tmp/archive-low.ogg format=ogg'
+  'meter ! acmeenc bitrate=96k quality=voice lookahead=shallow ! filesink location=/tmp/archive-low.ogg'
 goav ctl --control unix:///tmp/goav-live.sock detach archive
 ```
 
@@ -390,7 +390,7 @@ short and the host keeps full control over validation and native adapter calls:
 
 ```sh
 goav ctl --control unix:///tmp/goav-live.sock attach frames as archive \
-  'acmeenc bitrate=128k quality=cinema lookahead=deep ! filesink location=archive.ogg format=ogg'
+  'acmeenc bitrate=128k quality=cinema lookahead=deep ! filesink location=archive.ogg'
 ```
 
 ## Custom Branch Components
