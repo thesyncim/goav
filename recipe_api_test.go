@@ -1735,6 +1735,25 @@ func TestReadmeShowsCustomSources(t *testing.T) {
 	}
 }
 
+func TestReadmeLinksCompiledBootstrapExamples(t *testing.T) {
+	body, err := os.ReadFile("README.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(body)
+	for _, required := range []string{
+		"ExampleSource_pushAccounting",
+		"ExampleWriter_transactionalUpload",
+		"ExampleWithEncoder_customSettings",
+		"ExampleTask_flowchart",
+		"graphrender.RenderTaskFlowchart(task)",
+	} {
+		if !strings.Contains(text, required) {
+			t.Fatalf("README should keep compiled bootstrap example %q", required)
+		}
+	}
+}
+
 func TestDocsShowDebugDiagnosticsWorkflow(t *testing.T) {
 	for _, file := range []string{
 		"README.md",
