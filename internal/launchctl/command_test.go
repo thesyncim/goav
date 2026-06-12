@@ -272,6 +272,18 @@ func TestExecuteRawControlCallsTaskControl(t *testing.T) {
 	if control.Type != goav.ControlBitrate || control.StreamID != "video" || control.Bitrate != 1_200_000 || control.Tap != "main_encoded" {
 		t.Fatalf("control = %+v", control)
 	}
+
+	_, err = Execute(context.Background(), task, []string{"control", "--json", `{"type":"keyframe","stream_id":"video"}`})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(task.controls) != 2 {
+		t.Fatalf("controls = %d, want 2", len(task.controls))
+	}
+	control = task.controls[1]
+	if control.Type != goav.ControlKeyframe || control.StreamID != "video" || control.Tap != "" {
+		t.Fatalf("keyframe control = %+v", control)
+	}
 }
 
 func TestDecodeRawControlAliasesAndRefusals(t *testing.T) {
