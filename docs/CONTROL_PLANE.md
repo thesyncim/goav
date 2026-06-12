@@ -80,12 +80,14 @@ goav ctl --control unix:///tmp/goav-live.sock attach frames as preview \
   'encode codec=x_acme_video media=video bitrate=900k fps=30 lookahead=deep ! filesink location=preview.webm'
 ```
 
-`help attach` and `help rebranch` list those runtime-discovered encoders and
-muxers from the running task. Common codec options become typed settings, and
-extra encoder `key=value` pairs are carried as `CodecSettings.Custom` so the
-adapter can validate and apply its own vocabulary. Add a typed encoder spelling
-when you want a friendly name, richer validation, or `codec.Control` host code
-for native handles.
+`help attach`, `help rebranch`, and `capabilities` list those
+runtime-discovered encoders and muxers from the running task. Generic `encode`
+reflects over `codec.CodecSettings`, so adding a tagged setting field makes it
+CLI-visible and documented by generated help. Keys not claimed by those typed
+fields are left in `CodecSettings.Custom` for the adapter. Add a typed encoder
+spelling with `ctl.NewEncoderSpec[T]` when you want a friendly name, richer
+validation, or `codec.Control` host code for native handles; it uses the same
+reflected field binder.
 
 The executable local harness is
 `Example_bootstrapControlPlaneHost` in `ctl/example_test.go`. It builds a live
@@ -377,14 +379,17 @@ goav ctl --control unix:///tmp/goav-live.sock attach frames as record \
   'encode codec=x_pcm_s16 media=audio bitrate=128k sample_rate=16000 channels=1 profile=voice dither=triangular ! filesink location=record.ogg format=ogg'
 ```
 
-The generic encoder step supports the common codec options: `bitrate`,
-`profile`, `level`, `sample_rate`, `channels`, `clock_rate`,
-`keyframe_interval`, and `fps`. Any other `key=value` pair is passed through as
-`CodecSettings.Custom`, for example `dither=triangular`, `lookahead=deep`, or
-AV1 settings such as `min_qindex=20 max_qindex=180 tune=zerolatency`.
-Ambiguous or duplicate encoder spellings such as `rate`, `framerate`, `keyint`,
-`gop`, `samplerate`, `ch`, `clockrate`, and `bitrate_bps` are rejected with
-suggestions; use the canonical option names above.
+The generic encoder step is documented by generated help, not by a hand-written
+option list. Run `goav ctl help attach` or `goav ctl capabilities` against the
+host to see the reflected `codec.CodecSettings` fields (`bitrate`, `fps`,
+`keyframe_interval`, `profile`, `level`, `channels`, `sample_rate`,
+`clock_rate`, `channel_layout`, and any future tagged fields). Adapter-owned
+native keys such as `dither=triangular`, `lookahead=deep`, or
+`min_qindex=20 max_qindex=180 tune=zerolatency` fall through to
+`CodecSettings.Custom`. Ambiguous or duplicate spellings such as `rate`,
+`framerate`, `keyint`, `gop`, `samplerate`, `ch`, `clockrate`, and
+`bitrate_bps` are rejected with suggestions; use the canonical names from
+generated help.
 File sinks follow the same rule: use `filesink location=<path> [format=<id>]`.
 Transform steps use one spelling as well: `resize width=<px> height=<px>` and
 `resample sample_rate=<hz> channels=<n>`.

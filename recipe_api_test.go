@@ -1790,8 +1790,11 @@ func TestDocsShowCodecControlsAndDeclarativePerformanceGoal(t *testing.T) {
 	for _, required := range []string{
 		"codec.Control(",
 		"Opus, VP8, VP9, and AV1 are full encode/decode recipe verticals",
-		"behavior is a two-tier ladder",
-		"a single raw callback handed",
+		"one typed settings contract everywhere",
+		"Custom runtime encoders work through the generic `encode codec=<id> media=<kind>`",
+		"`CodecSettings.Custom` for the adapter to validate",
+		"The generated reference is the running host itself",
+		"`goav ctl capabilities` is machine-readable",
 		"public grammar stays Input, Stream, Tap, Branch, Destination, Flow,",
 		"workflows should be expressible through declarative recipes",
 	} {

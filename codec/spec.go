@@ -80,9 +80,9 @@ func applyEncodeCaps(spec *CodecSpec) {
 	s := spec.Settings
 	if s.ChannelsSet {
 		spec.Parameters.Channels = s.Channels
-		if s.ChannelLayout != "" {
-			spec.Parameters.ChannelLayout = s.ChannelLayout
-		}
+	}
+	if s.ChannelLayout != "" {
+		spec.Parameters.ChannelLayout = s.ChannelLayout
 	}
 	if s.SampleRateSet {
 		spec.Parameters.SampleRate = s.SampleRate

@@ -116,42 +116,42 @@ func (b DecodeBounds) WithDefaults(defaults DecodeBounds) DecodeBounds {
 type CodecSettings struct {
 	// Bitrate requests an encoder bitrate in bits per second. Zero lets the
 	// encoder choose its default bitrate.
-	Bitrate int
+	Bitrate int `goavctl:"bitrate,rate" usage:"[bitrate=<rate>]" help:"encoder bitrate; accepts 1200k, 2M, or integer bits per second"`
 	// Framerate requests an encoder frame cadence. Zero lets the encoder infer
 	// cadence from input frames.
-	Framerate av.Duration
+	Framerate av.Duration `goavctl:"fps,fps" usage:"[fps=<n|n/d>]" help:"encoder frame cadence; accepts 30, 29.97, or 30000/1001"`
 	// KeyframeInterval requests a keyframe cadence in encoded frames. Zero lets
 	// the encoder choose its default cadence.
-	KeyframeInterval int
+	KeyframeInterval int `goavctl:"keyframe_interval,positive" usage:"[keyframe_interval=<frames>]" help:"keyframe cadence in encoded frames"`
 	// Profile requests an encoder profile. Empty lets the encoder choose its
 	// default or preserve the selected input profile when copying compatible
 	// stream metadata.
-	Profile string
+	Profile string `goavctl:"profile" usage:"[profile=<name>]" help:"codec profile requested from the adapter"`
 	// Level requests an encoder level. Empty lets the encoder choose its default
 	// or preserve the selected input level when copying compatible stream
 	// metadata.
-	Level string
-	// Custom carries adapter-specific string settings that should not become
-	// common fields. CLI and control-plane frontends can pass native knobs here
-	// while external adapters keep ownership of validation and interpretation.
-	Custom av.Metadata
+	Level string `goavctl:"level" usage:"[level=<name>]" help:"codec conformance level requested from the adapter"`
 	// Channels, SampleRate, ClockRate, ChannelLayout set the encoder output audio
 	// format (zero = derive from the input stream). ChannelsSet/SampleRateSet
 	// record that the value was requested explicitly, so a requested zero is
 	// validated rather than treated as unset.
-	Channels      int
-	SampleRate    int
-	ClockRate     uint32
-	ChannelLayout string
-	ChannelsSet   bool
-	SampleRateSet bool
+	Channels      int    `goavctl:"channels,positive" usage:"[channels=<n>]" help:"encoder output audio channel count"`
+	SampleRate    int    `goavctl:"sample_rate,positive" usage:"[sample_rate=<hz>]" help:"encoder output audio sample rate"`
+	ClockRate     uint32 `goavctl:"clock_rate,positive" usage:"[clock_rate=<hz>]" help:"RTP clock rate"`
+	ChannelLayout string `goavctl:"channel_layout" usage:"[channel_layout=<layout>]" help:"encoder output audio channel layout"`
+	ChannelsSet   bool   `goavctl:"-"`
+	SampleRateSet bool   `goavctl:"-"`
+	// Custom carries adapter-specific string settings that should not become
+	// common fields. CLI and control-plane frontends can pass native knobs here
+	// while external adapters keep ownership of validation and interpretation.
+	Custom av.Metadata `goavctl:"custom,unknown" usage:"[native_key=value...]" help:"adapter-owned settings not claimed by typed codec fields"`
 	// Control is the raw escape hatch: at encoder/decoder open the adapter invokes
 	// it with its *concrete* native encoder/decoder (or, for construction-only
 	// knobs, its options builder — the adapter documents which), so the caller can
 	// type-assert to the real type and apply anything the library exposes. Nothing
 	// is ever unreachable. A non-nil error from Control fails the open. This single
 	// callback replaces a separate typed-config blob — it is strictly more capable.
-	Control func(any) error
+	Control func(any) error `goavctl:"-"`
 }
 
 // DecodeConfig is everything a decoder needs at open: the stream's declared

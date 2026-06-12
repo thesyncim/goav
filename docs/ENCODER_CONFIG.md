@@ -6,10 +6,11 @@ hatch, unified with shape, without polluting the main grammar.
 **Tier 1: common typed settings (portable across codecs).** Options in the
 `codec` package mutate `codec.CodecSettings` (carried by `CodecSpec.Settings`
 and the decode/encode configs): `Bitrate`, `FPS`, `KeyframeInterval`,
-`Profile`, `Level`, ... plus grouped structs by concern
-(rate control, GOP, audio, color, threading) as they land. The grouped tier-1
-catalog (Speed/Tune/Threads/Opus Complexity/FEC/DTX, ...) is still being wired;
-the catalog of ~35 settings grounded in govpx/gopus lives in git history.
+`Profile`, `Level`, audio shape overrides, and future tagged fields as they
+land. The control plane and string launcher reflect over `CodecSettings`, so a
+new exported setting with `goavctl`/`usage`/`help` tags becomes bindable and
+appears in generated `goav ctl help attach` and `goav ctl capabilities` output.
+Docs should point at that generated manifest instead of copying an option list.
 
 **Tier 2: `codec.Control(func(native any) error)`.** Invoked by the adapter at
 open with the concrete native encoder/decoder or construction config; the caller

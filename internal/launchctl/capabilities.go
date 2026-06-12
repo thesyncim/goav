@@ -3,12 +3,13 @@ package launchctl
 import (
 	"context"
 	"reflect"
-	"sort"
 	"strings"
 
 	goav "github.com/thesyncim/goav"
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/format"
+	"github.com/thesyncim/goav/internal/argbind"
+	"github.com/thesyncim/goav/internal/codecargs"
 )
 
 // CapabilitySet groups every host-owned extension one control server exposes.
@@ -171,48 +172,12 @@ func bindStepArgs(name string, argsType reflect.Type, args StepArgs, usage strin
 		argsType:    argsType,
 		usage:       strings.TrimSpace(name + " " + usage),
 		suggestions: []string{"run `goav ctl help attach`"},
-	}, stepArgsArgv(args))
-}
-
-func stepArgsArgv(args StepArgs) []string {
-	if len(args) == 0 {
-		return nil
-	}
-	keys := make([]string, 0, len(args))
-	for key := range args {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	out := make([]string, 0, len(keys))
-	for _, key := range keys {
-		if args[key] == "" {
-			out = append(out, "--"+key)
-			continue
-		}
-		out = append(out, key+"="+args[key])
-	}
-	return out
+	}, argbind.ArgsFromMap(args))
 }
 
 // ArgsUsage renders the key=value usage fragment for a typed args struct.
 func ArgsUsage(argsType reflect.Type) string {
-	if argsType == nil || argsType.Kind() != reflect.Struct {
-		return ""
-	}
-	fields := orderedFields(commandFields(argsType))
-	parts := make([]string, 0, len(fields))
-	for _, field := range fields {
-		if field.usage != "" {
-			parts = append(parts, field.usage)
-			continue
-		}
-		text := field.name + "=<value>"
-		if !field.required {
-			text = "[" + text + "]"
-		}
-		parts = append(parts, text)
-	}
-	return strings.Join(parts, " ")
+	return argbind.ArgsUsage(argsType)
 }
 
 // CapabilityReport is the machine-readable form of server-aware help.
@@ -277,7 +242,14 @@ func builtinBranchCapabilityEntries() []CapabilityEntry {
 	rows := builtinPipelineHelpRows()
 	out := make([]CapabilityEntry, 0, len(rows))
 	for _, row := range rows {
-		out = append(out, CapabilityEntry{Name: row.name, Summary: row.summary, Usage: row.usage})
+		entry := CapabilityEntry{Name: row.name, Summary: row.summary, Usage: row.usage}
+		if row.name == "encode" {
+			entry.Fields = append([]CapabilityField{
+				{Name: "codec", Required: true, Type: "codec-id", Usage: "codec=<id>", Help: "codec id registered on the task runtime"},
+				{Name: "media", Required: true, Type: "media-type", Usage: "media=<audio|video|subtitle>", Help: "media kind accepted by the encoder"},
+			}, fieldCapabilitiesFromFields(codecargs.SettingsFields())...)
+		}
+		out = append(out, entry)
 	}
 	return out
 }
@@ -328,6 +300,30 @@ func fieldCapabilities(argsType reflect.Type) []CapabilityField {
 	return out
 }
 
+func fieldCapabilitiesFromFields(fields []argbind.Field) []CapabilityField {
+	out := make([]CapabilityField, 0, len(fields))
+	for _, field := range fields {
+		if field.Unknown {
+			out = append(out, CapabilityField{
+				Name:     field.Name,
+				Required: field.Required,
+				Type:     "metadata",
+				Usage:    field.Usage,
+				Help:     field.Help,
+			})
+			continue
+		}
+		out = append(out, CapabilityField{
+			Name:     field.Name,
+			Required: field.Required,
+			Type:     fieldTypeLabelFromArgbind(field),
+			Usage:    field.Usage,
+			Help:     field.Help,
+		})
+	}
+	return out
+}
+
 func fieldTypeLabel(field fieldSpec) string {
 	if field.parser != "" {
 		return field.parser
@@ -356,4 +352,22 @@ func fieldTypeLabel(field fieldSpec) string {
 	default:
 		return field.typ.String()
 	}
+}
+
+func fieldTypeLabelFromArgbind(field argbind.Field) string {
+	if field.Parser != "" {
+		return field.Parser
+	}
+	converted := fieldSpec{
+		name:     field.Name,
+		required: field.Required,
+		parser:   field.Parser,
+		usage:    field.Usage,
+		help:     field.Help,
+		index:    field.Index,
+		typ:      field.Type,
+		unknown:  field.Unknown,
+		positive: field.Positive,
+	}
+	return fieldTypeLabel(converted)
 }

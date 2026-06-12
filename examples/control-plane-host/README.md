@@ -17,7 +17,7 @@ It demonstrates:
 - thumbnail/sample branches from the same running tap;
 - an in-process app sink (`memorysink`);
 - a runtime-registered custom encoder through the default generic `encode`
-  step, including pass-through custom settings;
+  step, including reflected typed settings and adapter-owned custom settings;
 - an optional custom video encoder spelling (`acmeenc`) with native settings;
 - graph rendering, rebranching, and detach.
 
@@ -44,12 +44,13 @@ $CTL taps
 ```
 
 `help attach` and `capabilities` list the custom branch steps, custom encoder
-spellings, and the encoders and muxers discovered from the running task runtime.
-The ACME encoder is available immediately through the generic
-`encode codec=x_acme_video media=video ...` step because the host registered it
-with `goav.WithEncoder`. Common codec options become typed settings, and extra
-encoder `key=value` pairs are carried as `CodecSettings.Custom`; registered
-muxers are available through `filesink location=<path> [format=<id>]`.
+spellings, reflected generic `encode` settings, and the encoders and muxers
+discovered from the running task runtime. The ACME encoder is available
+immediately through the generic `encode codec=x_acme_video media=video ...`
+step because the host registered it with `goav.WithEncoder`. Generic `encode`
+binds the tagged `codec.CodecSettings` fields and leaves adapter-owned keys in
+`CodecSettings.Custom`; registered muxers are available through
+`filesink location=<path> [format=<id>]`.
 
 Control the fake source. These are normal built-in source controls targeting
 the `fixture` source node:
@@ -99,8 +100,9 @@ $CTL attach frames as memory \
 
 Attach the runtime-registered custom encoder through the default generic encode
 step to an in-process sink. This needs no custom CLI encoder registry entry;
-common settings are mapped into the `codec.CodecSpec` that the runtime already
-understands:
+the reflected `codec.CodecSettings` fields are mapped into the `codec.CodecSpec`
+that the runtime already understands, while native keys such as `lookahead`
+remain in `CodecSettings.Custom` for the adapter:
 
 ```sh
 $CTL attach frames as acme-generic \
@@ -116,8 +118,9 @@ $CTL attach frames as acme-file \
 ```
 
 Attach a custom encoder spelling only when native settings need host code. The
-CLI spelling is short, but the host maps `bitrate`, `quality`, and `lookahead`
-into a real `codec.CodecSpec` and native adapter settings:
+CLI spelling is short, but it is still generated from the same struct tags: the
+host maps `bitrate`, `quality`, and `lookahead` into a real `codec.CodecSpec`
+and native adapter settings:
 
 ```sh
 $CTL attach frames as acme-preview \

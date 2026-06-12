@@ -1,14 +1,13 @@
 package codecargs
 
 import (
-	"fmt"
+	"errors"
 	"sort"
-	"strconv"
 	"strings"
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
-	"github.com/thesyncim/goav/internal/cliargs"
+	"github.com/thesyncim/goav/internal/argbind"
 )
 
 // Arg is one codec option key/value pair from a CLI-like grammar.
@@ -24,6 +23,7 @@ type Error struct {
 	Value       string
 	Message     string
 	Suggestions []string
+	Cause       error
 }
 
 func (e *Error) Error() string {
@@ -33,87 +33,62 @@ func (e *Error) Error() string {
 	return e.Message
 }
 
-// ParseOptions maps canonical codec option keys into codec.Option values.
-// Unknown keys are preserved as adapter-owned custom settings.
+func (e *Error) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+	return e.Cause
+}
+
+var codecSettingsType = argbind.TypeOf[codec.CodecSettings]()
+
+// ArgsUsage renders the reflected encoder settings usage fragment.
+func ArgsUsage() string {
+	return argbind.ArgsUsage(codecSettingsType)
+}
+
+// SettingsFields reports the reflected encoder setting fields used by CLI and
+// control-plane help.
+func SettingsFields() []argbind.Field {
+	return argbind.OrderedFields(argbind.Fields(codecSettingsType))
+}
+
+// ParseOptions maps reflected codec settings into one codec.Option value.
+// Unmatched keys are preserved as adapter-owned custom settings.
 func ParseOptions(args []Arg) ([]codec.Option, error) {
-	options := make([]codec.Option, 0, len(args))
-	var clockRateOptions []codec.Option
-	seen := make(map[string]struct{}, len(args))
+	seenKeys := make(map[string]struct{}, len(args))
+	bindArgs := make([]string, 0, len(args))
 	for _, arg := range args {
 		key := strings.ToLower(strings.TrimSpace(arg.Key))
 		value := strings.TrimSpace(arg.Value)
 		if key != "" {
-			if _, ok := seen[key]; ok {
+			if _, ok := seenKeys[key]; ok {
 				return nil, optionError(key, value, "encoder option "+key+" was provided more than once", []string{"keep only one " + key + "=... value"}, nil)
 			}
-			seen[key] = struct{}{}
+			seenKeys[key] = struct{}{}
 		}
-		switch key {
-		case "", "codec", "media":
+		if err := validateReservedOrAlias(key, value); err != nil {
+			return nil, err
+		}
+		if key == "" || key == "codec" || key == "media" {
 			continue
-		case "id":
-			return nil, optionError("id", value, "id duplicates codec", []string{"use codec=<id>"}, nil)
-		case "type":
-			return nil, optionError("type", value, "type duplicates media", []string{"use media=<audio|video|subtitle>"}, nil)
-		case "bitrate":
-			bitrate, err := cliargs.ParseRate(value)
-			if err != nil {
-				return nil, optionError("bitrate", value, "encoder bitrate must be like 300k, 2M, or integer bits per second", []string{"use bitrate=900k"}, err)
-			}
-			options = append(options, codec.Bitrate(bitrate))
-		case "fps":
-			fps, err := cliargs.ParseFPS(value)
-			if err != nil {
-				return nil, optionError("fps", value, "fps must be a positive integer, decimal, or fraction", []string{"use fps=30", "use fps=29.97", "use fps=30000/1001"}, err)
-			}
-			options = append(options, codec.FPS(fps.Num, fps.Den))
-		case "framerate":
-			return nil, optionError("framerate", value, "framerate duplicates fps", []string{"use fps=<n|n/d>"}, nil)
-		case "keyframe_interval":
-			frames, err := parsePositiveInt("keyframe_interval", value)
-			if err != nil {
-				return nil, optionError("keyframe_interval", value, "keyframe_interval must be a positive integer", []string{"use keyframe_interval=60"}, err)
-			}
-			options = append(options, codec.KeyframeInterval(frames))
-		case "profile":
-			options = append(options, codec.Profile(value))
-		case "level":
-			options = append(options, codec.Level(value))
-		case "channels":
-			channels, err := parsePositiveInt("channels", value)
-			if err != nil {
-				return nil, optionError("channels", value, "channels must be a positive integer", []string{"use channels=1", "use channels=2"}, err)
-			}
-			options = append(options, codec.Channels(channels))
-		case "ch":
-			return nil, optionError("ch", value, "ch duplicates channels", []string{"use channels=<n>"}, nil)
-		case "sample_rate":
-			sampleRate, err := parsePositiveInt("sample_rate", value)
-			if err != nil {
-				return nil, optionError("sample_rate", value, "sample_rate must be a positive integer", []string{"use sample_rate=48000"}, err)
-			}
-			options = append(options, codec.SampleRate(sampleRate))
-		case "clock_rate":
-			clockRate, err := parsePositiveUint32("clock_rate", value)
-			if err != nil {
-				return nil, optionError("clock_rate", value, "clock_rate must be a positive uint32", []string{"use clock_rate=90000"}, err)
-			}
-			clockRateOptions = append(clockRateOptions, codec.ClockRate(clockRate))
-		case "rate":
-			return nil, optionError("rate", value, "rate is ambiguous for encoder settings", []string{"use bitrate=<rate> for bitrate", "use sample_rate=<hz> for audio sample rate"}, nil)
-		case "bitrate_bps":
-			return nil, optionError("bitrate_bps", value, "bitrate_bps duplicates bitrate", []string{"use bitrate=<rate>"}, nil)
-		case "samplerate":
-			return nil, optionError("samplerate", value, "samplerate duplicates sample_rate", []string{"use sample_rate=<hz>"}, nil)
-		case "clockrate":
-			return nil, optionError("clockrate", value, "clockrate duplicates clock_rate", []string{"use clock_rate=<hz>"}, nil)
-		case "keyint", "gop":
-			return nil, optionError(key, value, key+" duplicates keyframe_interval", []string{"use keyframe_interval=<frames>"}, nil)
-		default:
-			options = append(options, codec.Setting(key, value))
 		}
+		bindArgs = append(bindArgs, key+"="+value)
 	}
-	return append(options, clockRateOptions...), nil
+	result, err := argbind.Bind(argbind.Context{
+		Name:                 "codec settings",
+		Operation:            "parse encoder options",
+		ArgsType:             codecSettingsType,
+		Usage:                strings.TrimSpace("encode codec=<id> media=<kind> " + ArgsUsage()),
+		Suggestions:          []string{"run `goav ctl help attach`"},
+		UnknownMetadataField: "custom",
+	}, bindArgs)
+	if err != nil {
+		return nil, codecBindError(err)
+	}
+	settings := result.Value.(codec.CodecSettings)
+	normalizeSettings(&settings, result.Seen)
+	return []codec.Option{func(target *codec.CodecSettings) { *target = settings }}, nil
 }
 
 // ParseOptionsMap parses a map of codec options in stable key order.
@@ -149,6 +124,85 @@ func BuildSpec(id av.CodecID, media av.MediaType, options ...codec.Option) codec
 	}
 }
 
+func validateReservedOrAlias(key string, value string) error {
+	switch key {
+	case "", "codec", "media":
+		return nil
+	case "id":
+		return optionError("id", value, "id duplicates codec", []string{"use codec=<id>"}, nil)
+	case "type":
+		return optionError("type", value, "type duplicates media", []string{"use media=<audio|video|subtitle>"}, nil)
+	case "rate":
+		return optionError("rate", value, "rate is ambiguous for encoder settings", []string{"use bitrate=<rate> for bitrate", "use sample_rate=<hz> for audio sample rate"}, nil)
+	case "bitrate_bps":
+		return optionError("bitrate_bps", value, "bitrate_bps duplicates bitrate", []string{"use bitrate=<rate>"}, nil)
+	case "framerate":
+		return optionError("framerate", value, "framerate duplicates fps", []string{"use fps=<n|n/d>"}, nil)
+	case "samplerate":
+		return optionError("samplerate", value, "samplerate duplicates sample_rate", []string{"use sample_rate=<hz>"}, nil)
+	case "ch":
+		return optionError("ch", value, "ch duplicates channels", []string{"use channels=<n>"}, nil)
+	case "clockrate":
+		return optionError("clockrate", value, "clockrate duplicates clock_rate", []string{"use clock_rate=<hz>"}, nil)
+	case "keyint", "gop":
+		return optionError(key, value, key+" duplicates keyframe_interval", []string{"use keyframe_interval=<frames>"}, nil)
+	default:
+		return nil
+	}
+}
+
+func normalizeSettings(settings *codec.CodecSettings, seen map[string]struct{}) {
+	if _, ok := seen["channels"]; ok {
+		settings.ChannelsSet = true
+		if settings.ChannelLayout == "" {
+			switch settings.Channels {
+			case codec.Mono:
+				settings.ChannelLayout = "mono"
+			case codec.Stereo:
+				settings.ChannelLayout = "stereo"
+			}
+		}
+	}
+	if _, ok := seen["sample_rate"]; ok {
+		settings.SampleRateSet = true
+		if _, clockSet := seen["clock_rate"]; !clockSet {
+			settings.ClockRate = uint32(settings.SampleRate)
+		}
+	}
+}
+
+func codecBindError(err error) error {
+	var bindErr *argbind.Error
+	if errors.As(err, &bindErr) {
+		message := bindErr.Message
+		switch bindErr.Node {
+		case "bitrate":
+			message = "encoder bitrate must be like 300k, 2M, or integer bits per second"
+		case "fps":
+			message = "fps must be a positive integer, decimal, or fraction"
+		case "keyframe_interval":
+			message = "keyframe_interval must be a positive integer"
+		case "channels":
+			message = "channels must be a positive integer"
+		case "sample_rate":
+			message = "sample_rate must be a positive integer"
+		case "clock_rate":
+			message = "clock_rate must be a positive uint32"
+		}
+		return optionError(bindErr.Node, bindValue(bindErr.Details), message, bindErr.Suggestions, err)
+	}
+	return err
+}
+
+func bindValue(details []string) string {
+	for _, detail := range details {
+		if value, ok := strings.CutPrefix(detail, "value="); ok {
+			return value
+		}
+	}
+	return ""
+}
+
 func optionError(field string, value string, message string, suggestions []string, cause error) error {
 	if cause != nil {
 		message = message + ": " + cause.Error()
@@ -158,21 +212,6 @@ func optionError(field string, value string, message string, suggestions []strin
 		Value:       value,
 		Message:     message,
 		Suggestions: append([]string(nil), suggestions...),
+		Cause:       cause,
 	}
-}
-
-func parsePositiveInt(name string, value string) (int, error) {
-	parsed, err := strconv.Atoi(strings.TrimSpace(value))
-	if err != nil || parsed <= 0 {
-		return 0, fmt.Errorf("%s must be positive", name)
-	}
-	return parsed, nil
-}
-
-func parsePositiveUint32(name string, value string) (uint32, error) {
-	parsed, err := strconv.ParseUint(strings.TrimSpace(value), 10, 32)
-	if err != nil || parsed == 0 {
-		return 0, fmt.Errorf("%s must be positive", name)
-	}
-	return uint32(parsed), nil
 }

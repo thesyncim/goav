@@ -447,10 +447,12 @@ useful for smoke tests, adapter bootstrap, and control-plane demos.
 goav run 'testsrc video width=1280 height=720 fps=30 duration=3s realtime=true pattern=bars ! encode codec=av1 media=video bitrate=1200k fps=30 keyframe_interval=60 ! filesink location=/tmp/goav-av1.mkv format=matroska'
 ```
 
-Known encoder options (`bitrate`, `fps`, `keyframe_interval`, `profile`,
-`level`, `channels`, `sample_rate`, `clock_rate`) map to typed codec settings.
-Other encoder `key=value` pairs are carried as `CodecSettings.Custom`, so
-runtime adapters can validate native settings. Ambiguous aliases are rejected.
+Generic `encode` reflects over `codec.CodecSettings`: every tagged setting is
+available to the string launcher and control socket, and the generated
+`goav ctl help attach` / `goav ctl capabilities` output is the reference. Keys
+not claimed by a typed codec field are left in `CodecSettings.Custom` for the
+adapter. Host-owned encoder spellings use the same reflected struct tags through
+`ctl.NewEncoderSpec[T]`.
 
 The same launcher can expose a control socket:
 
@@ -633,13 +635,19 @@ allocation or graph mutation.
 
 Opus, VP8, VP9, and AV1 are full encode/decode recipe verticals. H264
 receive/decode paths are active while recipe encode remains guarded as work in
-progress. Encoder behavior is a two-tier ladder: common settings are typed,
-and backend-specific settings use an explicit control callback.
+progress. Encoder behavior has one typed settings contract everywhere:
+package options mutate `codec.CodecSettings`, and the string/control-plane
+frontends reflect the same tagged fields into `encode ... key=value` syntax.
+Custom runtime encoders work through the generic `encode codec=<id> media=<kind>`
+step immediately; any key not claimed by a typed field is preserved in
+`CodecSettings.Custom` for the adapter to validate.
 
-Tier 1 is the shared `codec` settings vocabulary: `codec.Bitrate`,
-`codec.FPS`, `codec.KeyframeInterval`, `codec.Profile`, `codec.Level`, and
-codec-specific options. Tier 2 is `codec.Control`: a single raw callback handed
-to the adapter's native encoder or config object.
+The generated reference is the running host itself: `goav ctl help attach` is
+human-readable, and `goav ctl capabilities` is machine-readable. Add exported
+fields with `goavctl`, `usage`, and `help` tags to grow the portable settings
+surface. Use `codec.Control` when an adapter needs the concrete native encoder
+or config object; custom `ctl.NewEncoderSpec[T]` spellings use the same tags for
+host-owned native settings.
 
 ```go
 vp9 := codec.VP9(

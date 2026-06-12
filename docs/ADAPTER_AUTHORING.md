@@ -93,9 +93,14 @@ Results: `DecodeResult`/`EncodeResult` are caller-owned scratch sized from
 `DecodeBounds` (merged from stream facts and source-provider bounds). Slot
 exhausted -> `codec.ErrResultFull`; preallocated plane/payload too small ->
 `codec.ErrOutputBufferTooSmall`. Honor `DecodeConfig.Bounds` when sizing
-internal arenas. Read `CodecSettings` at open: grouped settings (Bitrate,
-Profile, ...) plus the raw `Control func(any) error` escape hatch. Invoke it
-with your concrete native handle; a non-nil error fails the open.
+internal arenas. Read `CodecSettings` at open: typed fields such as bitrate,
+cadence, profile, audio shape overrides, and `Custom` adapter-owned keys all
+arrive through the same settings value. The string launcher and control plane
+reflect exported `CodecSettings` fields tagged with `goavctl`, `usage`, and
+`help`; adding a tagged field makes it bindable and visible in generated
+`goav ctl help attach` / `goav ctl capabilities` output. Invoke the raw
+`Control func(any) error` escape hatch with your concrete native handle when a
+setting truly belongs to the native library; a non-nil error fails the open.
 
 Register: `goav.WithDecoder(desc, factory)`, `goav.WithEncoder(desc,
 factory)`, `goav.WithCodecDescriptor(desc)` (capability-only), or a bundle

@@ -8,6 +8,7 @@ import (
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/format"
+	"github.com/thesyncim/goav/internal/codecargs"
 )
 
 // Help renders generated help from the same manifest and tags used by parsing.
@@ -214,9 +215,8 @@ func branchPipelineHelp(name string, usage string, note string, registry Pipelin
 			writeRuntimeMuxerHelpRow(&out, muxer)
 		}
 	}
-	out.WriteString("\nBranch pipelines are written as `step key=value ! step key=value`. Custom steps and encoders receive their key=value settings through StepArgs.\n")
-	out.WriteString("Any encoder registered on the task runtime is callable with `encode codec=<id> media=<kind> ...`; common codec settings become typed settings and extra key=value pairs are carried as CodecSettings.Custom for the adapter. Use a custom EncoderSpec when native knobs need typed validation or codec.Control host code.\n")
-	out.WriteString("Common encoder settings use one canonical spelling: bitrate, fps, keyframe_interval, profile, level, channels, sample_rate, and clock_rate.\n")
+	out.WriteString("\nBranch pipelines are written as `step key=value ! step key=value`. Custom steps and custom encoder spellings bind their StepArgs key=value settings through the same reflected struct tags used by controls.\n")
+	out.WriteString("Any encoder registered on the task runtime is callable with `encode codec=<id> media=<kind> ...`; generic encode reflects over codec.CodecSettings, so every tagged codec setting is CLI-visible and adapter-owned keys fall through to CodecSettings.Custom. Use a custom EncoderSpec when native knobs need typed validation or codec.Control host code.\n")
 	out.WriteString("Any muxer registered on the task runtime is callable from `filesink location=<path> [format=<id>]`; file extensions can infer common formats, and custom destinations such as uploaders remain host-owned branch steps.\n")
 	return out.String()
 }
@@ -257,7 +257,7 @@ func builtinPipelineHelpRows() []pipelineHelpRow {
 		{name: "decode", summary: "decode packets to frames"},
 		{name: "resize", usage: "width=854 height=480", summary: "resize video frames"},
 		{name: "resample", usage: "sample_rate=48000 channels=2", summary: "resample audio frames"},
-		{name: "encode", usage: "codec=<id> media=<audio|video|subtitle> [bitrate=<rate>] [profile=<name>] [level=<name>] [sample_rate=<hz>] [channels=<n>] [clock_rate=<hz>] [keyframe_interval=<n>] [fps=<n|n/d>] [native_key=value...]", summary: "encode frames with a built-in or runtime-registered codec"},
+		{name: "encode", usage: strings.TrimSpace("codec=<id> media=<audio|video|subtitle> " + codecargs.ArgsUsage()), summary: "encode frames with a built-in or runtime-registered codec"},
 		{name: "filesink", usage: "location=<path> [format=<id>]", summary: "write the branch into a file destination"},
 	}
 }
@@ -289,7 +289,7 @@ func writeRuntimeEncoderHelpRow(out *strings.Builder, desc codec.Descriptor) {
 	if media == "" {
 		media = "<kind>"
 	}
-	label := "encode codec=" + string(desc.ID) + " media=" + string(media) + " [bitrate=<rate>] [profile=<name>] [level=<name>] [sample_rate=<hz>] [channels=<n>] [clock_rate=<hz>] [keyframe_interval=<n>] [fps=<n|n/d>] [native_key=value...]"
+	label := strings.TrimSpace("encode codec=" + string(desc.ID) + " media=" + string(media) + " " + codecargs.ArgsUsage())
 	summary := desc.Name
 	if summary == "" {
 		summary = "runtime-registered encoder"

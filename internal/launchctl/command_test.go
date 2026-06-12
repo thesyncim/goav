@@ -1453,6 +1453,7 @@ func TestBranchPipelineParserHelperEdges(t *testing.T) {
 		spec.Type != av.MediaAudio ||
 		spec.Parameters.SampleRate != 16000 ||
 		spec.Parameters.Channels != 1 ||
+		spec.Parameters.ChannelLayout != "mono" ||
 		spec.Parameters.ClockRate != 16000 ||
 		spec.Settings.Bitrate != 128_000 ||
 		spec.Settings.Profile != "low-delay" ||
@@ -2029,6 +2030,13 @@ func TestTypedCapabilityHelpersBindAndReport(t *testing.T) {
 		!strings.Contains(entry.Usage, "bitrate=<rate>") {
 		t.Fatalf("encoder capabilities = %+v", report.CustomEncoders)
 	}
+	if entry, ok := capabilityEntryNamed(report.BuiltInBranchSteps, "encode"); !ok ||
+		!capabilityFieldRequired(entry.Fields, "codec") ||
+		!capabilityFieldRequired(entry.Fields, "media") ||
+		!capabilityFieldNamed(entry.Fields, "channel_layout") ||
+		!capabilityFieldNamed(entry.Fields, "custom") {
+		t.Fatalf("built-in encode capabilities = %+v", report.BuiltInBranchSteps)
+	}
 	if len(report.RuntimeEncoders) != 1 || report.RuntimeEncoders[0].ID != "vendor_video" ||
 		len(report.RuntimeMuxers) != 1 || report.RuntimeMuxers[0].Format != "vendor_mux" {
 		t.Fatalf("runtime capabilities = encoders:%+v muxers:%+v", report.RuntimeEncoders, report.RuntimeMuxers)
@@ -2537,7 +2545,7 @@ func TestStructuredErrorPreservesUnderlyingShapes(t *testing.T) {
 	}
 }
 
-func TestReflectionConfinedToLaunchctlProductionFiles(t *testing.T) {
+func TestReflectionConfinedToColdPathBinders(t *testing.T) {
 	root := filepath.Clean(filepath.Join("..", ".."))
 	var offenders []string
 	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
@@ -2555,7 +2563,7 @@ func TestReflectionConfinedToLaunchctlProductionFiles(t *testing.T) {
 			return nil
 		}
 		slash := filepath.ToSlash(path)
-		if strings.Contains(slash, "internal/launchctl/") {
+		if strings.Contains(slash, "internal/launchctl/") || strings.Contains(slash, "internal/argbind/") {
 			return nil
 		}
 		if strings.Contains(slash, "/examples/") || strings.HasPrefix(slash, "../../examples/") {
@@ -2661,6 +2669,15 @@ func capabilityFieldRequired(fields []CapabilityField, name string) bool {
 	for _, field := range fields {
 		if field.Name == name {
 			return field.Required
+		}
+	}
+	return false
+}
+
+func capabilityFieldNamed(fields []CapabilityField, name string) bool {
+	for _, field := range fields {
+		if field.Name == name {
+			return true
 		}
 	}
 	return false

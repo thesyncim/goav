@@ -2,6 +2,7 @@ package codecargs
 
 import (
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/thesyncim/goav/av"
@@ -16,6 +17,7 @@ func TestParseOptionsMapsTypedAndCustomSettings(t *testing.T) {
 		{Key: "profile", Value: "main"},
 		{Key: "level", Value: "5.1"},
 		{Key: "channels", Value: "1"},
+		{Key: "channel_layout", Value: "front-left"},
 		{Key: "sample_rate", Value: "16000"},
 		{Key: "clock_rate", Value: "90000"},
 		{Key: "lookahead", Value: "deep"},
@@ -31,11 +33,31 @@ func TestParseOptionsMapsTypedAndCustomSettings(t *testing.T) {
 		spec.Settings.Profile != "main" ||
 		spec.Settings.Level != "5.1" ||
 		spec.Parameters.Channels != 1 ||
+		spec.Parameters.ChannelLayout != "front-left" ||
 		spec.Parameters.SampleRate != 16000 ||
 		spec.Parameters.ClockRate != 90000 ||
 		spec.Settings.Custom["lookahead"] != "deep" ||
 		spec.Settings.Custom["aq-mode"] != "cyclic" {
 		t.Fatalf("spec = %+v", spec)
+	}
+}
+
+func TestReflectedSettingsUsageIncludesTaggedCodecFields(t *testing.T) {
+	usage := ArgsUsage()
+	for _, fragment := range []string{
+		"[bitrate=<rate>]",
+		"[fps=<n|n/d>]",
+		"[keyframe_interval=<frames>]",
+		"[channel_layout=<layout>]",
+		"[native_key=value...]",
+	} {
+		if !strings.Contains(usage, fragment) {
+			t.Fatalf("usage %q missing %q", usage, fragment)
+		}
+	}
+	fields := SettingsFields()
+	if len(fields) == 0 {
+		t.Fatal("expected reflected settings fields")
 	}
 }
 
