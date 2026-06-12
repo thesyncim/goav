@@ -89,6 +89,17 @@ func TestRegistryDescriptorsAreCloned(t *testing.T) {
 		got.Metadata["profile"] != "web" {
 		t.Fatalf("descriptor = %+v, want cloned original", got)
 	}
+	list := registry.MuxerDescriptors()
+	if len(list) != 1 ||
+		list[0].Format != av.FormatOgg ||
+		list[0].Media[0] != av.MediaAudio ||
+		list[0].Codecs[0] != av.CodecOpus ||
+		list[0].Metadata["profile"] != "web" {
+		t.Fatalf("muxer descriptors = %+v, want cloned descriptor", list)
+	}
+	list[0].Media[0] = av.MediaData
+	list[0].Codecs[0] = av.CodecPCM
+	list[0].Metadata["profile"] = "changed"
 
 	got.Media[0] = av.MediaData
 	got.Codecs[0] = av.CodecPCM

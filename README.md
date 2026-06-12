@@ -758,8 +758,8 @@ goav ctl --control unix:///tmp/goav-live.sock graph
 ```
 
 `help attach` and `help rebranch` list the built-in branch grammar, encoders
-discovered from the task runtime, plus custom steps and encoder spellings
-registered by that host. The bootstrap guide, including
+and muxers discovered from the task runtime, plus custom steps and encoder
+spellings registered by that host. The bootstrap guide, including
 `go run ./examples/control-plane-host`, lives in
 [`docs/CONTROL_PLANE.md`](docs/CONTROL_PLANE.md). That playground uses a live
 `goavtest.TestSource` so `goav ctl control rate/seek/segment source=fixture`,

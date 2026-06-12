@@ -5,7 +5,9 @@ import (
 	"strings"
 
 	goav "github.com/thesyncim/goav"
+	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
+	"github.com/thesyncim/goav/format"
 )
 
 // Help renders generated help from the same manifest and tags used by parsing.
@@ -23,14 +25,14 @@ func HelpWithCommands(args []string, manifest []CommandSpec) (string, error) {
 // branch-pipeline registry. Servers use this to include application-specific
 // controls, pipeline steps, and encoder spellings.
 func HelpWithRegistry(args []string, manifest []CommandSpec, registry PipelineRegistry) (string, error) {
-	return helpWithRegistry(args, manifest, registry, nil)
+	return helpWithRegistry(args, manifest, registry, runtimeBranchCapabilities{})
 }
 
 func helpWithRuntime(args []string, manifest []CommandSpec, registry PipelineRegistry, task goav.Task) (string, error) {
-	return helpWithRegistry(args, manifest, registry, runtimeEncoderDescriptors(task))
+	return helpWithRegistry(args, manifest, registry, runtimeCapabilities(task))
 }
 
-func helpWithRegistry(args []string, manifest []CommandSpec, registry PipelineRegistry, encoders []codec.Descriptor) (string, error) {
+func helpWithRegistry(args []string, manifest []CommandSpec, registry PipelineRegistry, caps runtimeBranchCapabilities) (string, error) {
 	if err := validateCommandManifest(manifest); err != nil {
 		return "", err
 	}
@@ -51,9 +53,9 @@ func helpWithRegistry(args []string, manifest []CommandSpec, registry PipelineRe
 		}
 		return CommandHelp(spec), nil
 	case "attach":
-		return branchPipelineHelp("attach", "goav ctl --control unix://PATH attach <tap-name> as <branch-name> '<branch-pipeline>'", "Builds an allowlisted branch pipeline from a named tap.", registry, encoders), nil
+		return branchPipelineHelp("attach", "goav ctl --control unix://PATH attach <tap-name> as <branch-name> '<branch-pipeline>'", "Builds an allowlisted branch pipeline from a named tap.", registry, caps), nil
 	case "rebranch":
-		return branchPipelineHelp("rebranch", "goav ctl --control unix://PATH rebranch <branch-name> [--switch next_frame|next_keyframe] [--keep-old-on-failure] '<branch-pipeline>'", "Replaces an attachment created through this control server, using the same allowlisted branch-pipeline grammar as attach.", registry, encoders), nil
+		return branchPipelineHelp("rebranch", "goav ctl --control unix://PATH rebranch <branch-name> [--switch next_frame|next_keyframe] [--keep-old-on-failure] '<branch-pipeline>'", "Replaces an attachment created through this control server, using the same allowlisted branch-pipeline grammar as attach.", registry, caps), nil
 	case "detach":
 		return staticHelp("detach", "goav ctl --control unix://PATH detach <branch-name>", "Detaches an attachment created through this control server."), nil
 	case "graph", "flowchart":
@@ -164,7 +166,7 @@ func staticHelp(name string, usage string, note string) string {
 	return out.String()
 }
 
-func branchPipelineHelp(name string, usage string, note string, registry PipelineRegistry, encoders []codec.Descriptor) string {
+func branchPipelineHelp(name string, usage string, note string, registry PipelineRegistry, caps runtimeBranchCapabilities) string {
 	var out strings.Builder
 	out.WriteString(name)
 	out.WriteString("\n\nUsage:\n  ")
@@ -188,27 +190,46 @@ func branchPipelineHelp(name string, usage string, note string, registry Pipelin
 			writePipelineHelpRow(&out, encoder.Name, encoder.Usage, encoder.Aliases, encoder.Summary)
 		}
 	}
-	if len(encoders) != 0 {
+	if len(caps.encoders) != 0 {
 		out.WriteString("\nRuntime encoders:\n")
-		for _, encoder := range encoders {
+		for _, encoder := range caps.encoders {
 			writeRuntimeEncoderHelpRow(&out, encoder)
+		}
+	}
+	if len(caps.muxers) != 0 {
+		out.WriteString("\nRuntime muxers:\n")
+		for _, muxer := range caps.muxers {
+			writeRuntimeMuxerHelpRow(&out, muxer)
 		}
 	}
 	out.WriteString("\nBranch pipelines are written as `step key=value ! step key=value`. Custom steps and encoders receive their key=value settings through StepArgs.\n")
 	out.WriteString("Any encoder registered on the task runtime is callable with `encode codec=<id> media=<kind> ...` and the common codec settings. Use a custom EncoderSpec only for native adapter knobs that need host code.\n")
+	out.WriteString("Any muxer registered on the task runtime is callable from `filesink location=<path> format=<id>`; custom destinations such as uploaders remain host-owned branch steps.\n")
 	return out.String()
+}
+
+type runtimeBranchCapabilities struct {
+	encoders []codec.Descriptor
+	muxers   []format.Descriptor
 }
 
 type runtimeEncoderDescriptorProvider interface {
 	EncoderDescriptors() []codec.Descriptor
 }
 
-func runtimeEncoderDescriptors(task goav.Task) []codec.Descriptor {
-	provider, ok := task.(runtimeEncoderDescriptorProvider)
-	if !ok || provider == nil {
-		return nil
+type runtimeMuxerDescriptorProvider interface {
+	MuxerDescriptors() []format.Descriptor
+}
+
+func runtimeCapabilities(task goav.Task) runtimeBranchCapabilities {
+	var caps runtimeBranchCapabilities
+	if provider, ok := task.(runtimeEncoderDescriptorProvider); ok && provider != nil {
+		caps.encoders = provider.EncoderDescriptors()
 	}
-	return provider.EncoderDescriptors()
+	if provider, ok := task.(runtimeMuxerDescriptorProvider); ok && provider != nil {
+		caps.muxers = provider.MuxerDescriptors()
+	}
+	return caps
 }
 
 type pipelineHelpRow struct {
@@ -266,6 +287,28 @@ func writeRuntimeEncoderHelpRow(out *strings.Builder, desc codec.Descriptor) {
 		summary = "runtime-registered encoder"
 	}
 	writePipelineHelpRow(out, label, "", nil, summary)
+}
+
+func writeRuntimeMuxerHelpRow(out *strings.Builder, desc format.Descriptor) {
+	if desc.Format == "" {
+		return
+	}
+	label := "filesink location=<path> format=" + string(desc.Format)
+	summary := "runtime-registered muxer"
+	if len(desc.Codecs) != 0 {
+		summary += " for codecs " + codecIDsLabel(desc.Codecs)
+	}
+	writePipelineHelpRow(out, label, "", nil, summary)
+}
+
+func codecIDsLabel(ids []av.CodecID) string {
+	values := make([]string, 0, len(ids))
+	for _, id := range ids {
+		if id != "" {
+			values = append(values, string(id))
+		}
+	}
+	return strings.Join(values, ",")
 }
 
 func padRight(value string, width int) string {

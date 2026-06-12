@@ -55,6 +55,9 @@ func TestRunHostServesCustomHelpAndAttach(t *testing.T) {
 		"encode codec=x_acme_video media=video",
 		"ACME demo video",
 		"Any encoder registered on the task runtime is callable",
+		"Runtime muxers:",
+		"filesink location=<path> format=webm",
+		"Any muxer registered on the task runtime is callable",
 	} {
 		if !strings.Contains(text, fragment) {
 			t.Fatalf("help missing %q:\n%s", fragment, text)
@@ -218,6 +221,7 @@ func TestRunHostAcceptsDocumentedCLICommands(t *testing.T) {
 		"memorysink [name=<text>]",
 		"acmeenc bitrate=<bps>",
 		"encode codec=x_acme_video media=video",
+		"filesink location=<path> format=webm",
 	} {
 		if !strings.Contains(attachHelp, fragment) {
 			t.Fatalf("attach help missing %q:\n%s", fragment, attachHelp)

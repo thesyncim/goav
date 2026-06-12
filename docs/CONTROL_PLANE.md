@@ -39,10 +39,10 @@ goav ctl --control unix:///tmp/goav-live.sock attach frames as preview \
   'encode codec=x_acme_video media=video bitrate=900k fps=30 ! filesink location=preview.webm format=webm'
 ```
 
-`help attach` and `help rebranch` list those runtime-discovered encoders from
-the running task. Add `ctl.EncoderSpec` only when you want a friendly named
-spelling for native adapter-specific settings that cannot be represented as the
-portable common codec settings.
+`help attach` and `help rebranch` list those runtime-discovered encoders and
+muxers from the running task. Add `ctl.EncoderSpec` only when you want a
+friendly named spelling for native adapter-specific settings that cannot be
+represented as the portable common codec settings.
 
 The executable local harness is
 `Example_bootstrapControlPlaneHost` in `ctl/example_test.go`. It builds a live
@@ -216,7 +216,7 @@ goav ctl --control unix:///tmp/goav-live.sock detach archive
 ```
 
 `help attach` and `help rebranch` are server-aware: the response includes the
-built-in branch-pipeline grammar, runtime-discovered encoders, plus every
+built-in branch-pipeline grammar, runtime-discovered encoders and muxers, plus every
 `BranchPipelineStepSpec` and `EncoderSpec` registered on that server, including
 aliases, summaries, and `Usage` strings. That makes app-owned branch components
 discoverable from the same CLI surface that invokes them.
@@ -342,7 +342,8 @@ The generic encoder step supports the common codec options: `bitrate`,
 The destination container must accept the selected codec. Standard codecs can
 often use the standard containers registered by `goav.Default`; a private codec
 usually needs a matching `WithFormatAdapter`, `WithMuxer`, or an app-owned
-custom destination step.
+custom destination step. Runtime muxers registered with `WithMuxer` are callable
+by `filesink location=<path> format=<id>` and appear in `help attach`.
 
 When an encoder exposes native settings beyond those common options, expose a
 named encoder step with `ctl.EncoderSpec`. The CLI spelling stays short and the

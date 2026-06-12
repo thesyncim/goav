@@ -3,6 +3,7 @@ package format
 import (
 	"context"
 	"errors"
+	"sort"
 
 	"github.com/thesyncim/goav/av"
 )
@@ -151,6 +152,16 @@ func (r *SimpleRegistry) MuxerDescriptor(format av.FormatID) (Descriptor, error)
 		return Descriptor{}, ErrNotFound
 	}
 	return cloneDescriptor(desc), nil
+}
+
+// MuxerDescriptors lists every registered muxer descriptor sorted by format.
+func (r *SimpleRegistry) MuxerDescriptors() []Descriptor {
+	out := make([]Descriptor, 0, len(r.muxerDescriptors))
+	for id := range r.muxerDescriptors {
+		out = append(out, cloneDescriptor(r.muxerDescriptors[id]))
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Format < out[j].Format })
+	return out
 }
 
 func cloneDescriptor(desc Descriptor) Descriptor {
