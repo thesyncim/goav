@@ -26,6 +26,9 @@ func (b *builder) openDemuxSource(ctx context.Context, input format.Input) (demu
 	if err != nil {
 		return demuxBuild{}, inputDemuxerMissingError(input, inputProbe.Format, err)
 	}
+	if demuxer == nil {
+		return demuxBuild{}, format.ErrNilDemuxer
+	}
 	realtime := b.runtime.realtime || input.Realtime
 	if err := demuxer.Open(ctx, input, format.OpenOptions{
 		Realtime: realtime,
