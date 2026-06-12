@@ -999,10 +999,10 @@ func TestPipelineRegistryRejectsReservedAndDuplicateNames(t *testing.T) {
 			name: "encoder alias shadows built-in",
 			registry: PipelineRegistry{Encoders: []EncoderSpec{{
 				Name:    "AcmeEnc",
-				Aliases: []string{"opus"},
+				Aliases: []string{"encode"},
 			}}},
-			node:   "opus",
-			first:  "built-in branch-pipeline step:opus",
+			node:   "encode",
+			first:  "built-in branch-pipeline step:encode",
 			second: "custom encoder alias:AcmeEnc",
 		},
 		{
@@ -1169,8 +1169,8 @@ func TestParseBranchPipelineWithBuiltInStepsAndEncoders(t *testing.T) {
 	out := filepath.Join(t.TempDir(), "builtins.ogg")
 	_, err := parseBranchPipelineWithRegistry(newFakeTask(), "raw_video", "builtins",
 		`decode ! resize width=320 height=180 ! resample sample_rate=48000 channels=2 ! `+
-			`vp8enc bitrate=1k ! vp9 profile=screen ! h264enc level=3 ! av1enc fps=30000/1001 ! `+
-			`opusenc sample_rate=48000 channels=2 ! encode codec=vendor_custom media=audio clock_rate=48000 ! `+
+			`encode codec=vp8 media=video bitrate=1k ! encode codec=vp9 media=video profile=screen ! encode codec=h264 media=video level=3 ! encode codec=av1 media=video fps=30000/1001 ! `+
+			`encode codec=opus media=audio sample_rate=48000 channels=2 ! encode codec=vendor_custom media=audio clock_rate=48000 ! `+
 			`filesink location="`+out+`" format=ogg`,
 		PipelineRegistry{},
 	)
@@ -1273,6 +1273,12 @@ func TestParseBranchPipelineWithRegistryStructuredErrors(t *testing.T) {
 		},
 		{name: "unsupported step", tap: "raw_video", branch: "archive", pipeline: "bogus", code: "unsupported_pipeline_step", node: "bogus"},
 		{name: "file step alias", tap: "raw_video", branch: "archive", pipeline: "copy ! file location=out.ogg", code: "unsupported_pipeline_step", node: "file"},
+		{name: "old encoder step", tap: "raw_video", branch: "archive", pipeline: "av1enc bitrate=900k", code: "unsupported_pipeline_step", node: "av1enc"},
+		{name: "old codec step", tap: "raw_video", branch: "archive", pipeline: "av1 bitrate=900k", code: "unsupported_pipeline_step", node: "av1"},
+		{name: "encoder alias step", tap: "raw_video", branch: "archive", pipeline: "encoder codec=av1 media=video", code: "unsupported_pipeline_step", node: "encoder"},
+		{name: "encoder id alias", tap: "raw_video", branch: "archive", pipeline: "encode id=av1 media=video", code: "invalid_value", node: "id"},
+		{name: "encoder type alias", tap: "raw_video", branch: "archive", pipeline: "encode codec=av1 type=video", code: "invalid_value", node: "type"},
+		{name: "encoder invalid media", tap: "raw_video", branch: "archive", pipeline: "encode codec=av1 media=image", code: "invalid_value", node: "media"},
 		{name: "missing destination", tap: "raw_video", branch: "archive", pipeline: "copy", code: "missing_required", node: "filesink"},
 		{name: "file sink path alias", tap: "raw_video", branch: "archive", pipeline: "copy ! filesink path=out.ogg", code: "invalid_value", node: "path"},
 		{name: "file sink file alias", tap: "raw_video", branch: "archive", pipeline: "copy ! filesink file=out.ogg", code: "invalid_value", node: "file"},
@@ -1339,7 +1345,7 @@ func TestBranchPipelineParserHelperEdges(t *testing.T) {
 		}
 	}
 	if _, err := parseEncoder("vendor_custom", "", nil); err == nil {
-		t.Fatal("expected custom encoder without media to fail")
+		t.Fatal("expected encoder without media to fail")
 	}
 	spec, err := parseEncoder("vendor_pcm", av.MediaAudio, map[string]string{
 		"bitrate":           "128k",
@@ -1398,6 +1404,8 @@ func TestBranchPipelineParserHelperEdges(t *testing.T) {
 		node string
 	}{
 		{name: "fps", args: map[string]string{"fps": "0"}, node: "fps"},
+		{name: "id", args: map[string]string{"id": "av1"}, node: "id"},
+		{name: "type", args: map[string]string{"type": "video"}, node: "type"},
 		{name: "clock_rate", args: map[string]string{"clock_rate": "0"}, node: "clock_rate"},
 		{name: "rate", args: map[string]string{"rate": "48000"}, node: "rate"},
 		{name: "bitrate_bps", args: map[string]string{"bitrate_bps": "48000"}, node: "bitrate_bps"},

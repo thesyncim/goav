@@ -335,7 +335,7 @@ func TestRunPipelineHelpBootstrapsGeneratedControlFlow(t *testing.T) {
 func TestRunGeneratedVideoAV1RealtimeString(t *testing.T) {
 	out := filepath.Join(t.TempDir(), "generated av1.mkv")
 	pipeline := fmt.Sprintf(
-		`testsrc video name=fixture width=32 height=18 fps=30 frames=2 realtime=true pattern=bars ! resize width=16 height=16 ! av1enc bitrate=400k fps=30 keyframe_interval=1 min_qindex=20 max_qindex=180 tune=zerolatency ! filesink location=%q format=matroska`,
+		`testsrc video name=fixture width=32 height=18 fps=30 frames=2 realtime=true pattern=bars ! resize width=16 height=16 ! encode codec=av1 media=video bitrate=400k fps=30 keyframe_interval=1 min_qindex=20 max_qindex=180 tune=zerolatency ! filesink location=%q format=matroska`,
 		out,
 	)
 	var stdout bytes.Buffer
@@ -361,7 +361,7 @@ func TestRunGeneratedVideoAV1RealtimeString(t *testing.T) {
 func TestRunGeneratedVideoAV1IVFString(t *testing.T) {
 	out := filepath.Join(t.TempDir(), "generated av1.ivf")
 	pipeline := fmt.Sprintf(
-		`testsrc video name=fixture width=32 height=18 fps=30 frames=2 realtime=true pattern=bars ! resize width=16 height=16 ! av1enc bitrate=400k fps=30 keyframe_interval=1 min_qindex=20 max_qindex=180 tune=zerolatency ! filesink location=%q format=ivf`,
+		`testsrc video name=fixture width=32 height=18 fps=30 frames=2 realtime=true pattern=bars ! resize width=16 height=16 ! encode codec=av1 media=video bitrate=400k fps=30 keyframe_interval=1 min_qindex=20 max_qindex=180 tune=zerolatency ! filesink location=%q format=ivf`,
 		out,
 	)
 	var stdout bytes.Buffer
@@ -396,7 +396,7 @@ func TestRunGeneratedVideoAV1IVFString(t *testing.T) {
 func TestRunGeneratedVideoAV1IVFExtensionInfersFormat(t *testing.T) {
 	out := filepath.Join(t.TempDir(), "generated av1 inferred.ivf")
 	pipeline := fmt.Sprintf(
-		`testsrc video name=fixture width=32 height=18 fps=30 frames=2 realtime=false pattern=bars ! resize width=16 height=16 ! av1enc bitrate=400k fps=30 keyframe_interval=1 min_qindex=20 max_qindex=180 tune=zerolatency ! filesink location=%q`,
+		`testsrc video name=fixture width=32 height=18 fps=30 frames=2 realtime=false pattern=bars ! resize width=16 height=16 ! encode codec=av1 media=video bitrate=400k fps=30 keyframe_interval=1 min_qindex=20 max_qindex=180 tune=zerolatency ! filesink location=%q`,
 		out,
 	)
 	var stdout bytes.Buffer
@@ -430,7 +430,7 @@ func TestRunGeneratedVideoWithControlSocket(t *testing.T) {
 	t.Cleanup(func() { _ = os.Remove(socket) })
 	out := filepath.Join(t.TempDir(), "controlled.ivf")
 	pipeline := fmt.Sprintf(
-		`testsrc video name=fixture width=32 height=18 fps=30 frames=900 realtime=true pattern=bars ! tap name=frames ! av1enc bitrate=200k fps=30 keyframe_interval=1 ! filesink location=%q format=ivf`,
+		`testsrc video name=fixture width=32 height=18 fps=30 frames=900 realtime=true pattern=bars ! tap name=frames ! encode codec=av1 media=video bitrate=200k fps=30 keyframe_interval=1 ! filesink location=%q format=ivf`,
 		out,
 	)
 
@@ -455,7 +455,7 @@ func TestRunGeneratedVideoWithControlSocket(t *testing.T) {
 
 	branchOut := filepath.Join(t.TempDir(), "preview.ivf")
 	attach := runLocalCtl(t, socket, "attach", "frames", "as", "preview",
-		fmt.Sprintf(`resize width=16 height=16 ! av1enc bitrate=120k fps=30 keyframe_interval=1 ! filesink location=%q format=ivf`, branchOut))
+		fmt.Sprintf(`resize width=16 height=16 ! encode codec=av1 media=video bitrate=120k fps=30 keyframe_interval=1 ! filesink location=%q format=ivf`, branchOut))
 	if !strings.Contains(attach, `"Name":"preview"`) {
 		t.Fatalf("attach output = %s", attach)
 	}
@@ -641,7 +641,7 @@ func decodeAV1TestPacket(t *testing.T, decoder codec.Decoder, packet av.Packet) 
 }
 
 func TestRunPipelineParserCoversGeneratedTestSourceForms(t *testing.T) {
-	plan, err := parseRunPipeline(`testsrc video name=fixture width=1920 height=1080 fps=30000/1001 duration=100ms realtime=false format=yuv420p pattern=solid ! tap frames ! resize width=640 height=360 ! encode av01 bitrate=2M fps=29.97 keyframe_interval=30 profile=main level=5.1 tune=zerolatency ! filesink location="/tmp/generated test.ivf" format=ivf`)
+	plan, err := parseRunPipeline(`testsrc video name=fixture width=1920 height=1080 fps=30000/1001 duration=100ms realtime=false format=yuv420p pattern=solid ! tap name=frames ! resize width=640 height=360 ! encode codec=av1 media=video bitrate=2M fps=29.97 keyframe_interval=30 profile=main level=5.1 tune=zerolatency ! filesink location="/tmp/generated test.ivf" format=ivf`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -682,24 +682,50 @@ func TestRunPipelineParserCoversGeneratedTestSourceForms(t *testing.T) {
 	}
 }
 
+func TestRunPipelineParserRejectsDuplicateStepForms(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		text string
+		want string
+	}{
+		{name: "tap positional", text: `testsrc video width=16 height=16 frames=1 ! tap frames ! encode codec=av1 media=video ! filesink location=/tmp/out.ivf format=ivf`, want: "name=<tap-name>"},
+		{name: "tap id", text: `testsrc video width=16 height=16 frames=1 ! tap id=frames ! encode codec=av1 media=video ! filesink location=/tmp/out.ivf format=ivf`, want: "id duplicates tap name"},
+		{name: "scale", text: `testsrc video width=16 height=16 frames=1 ! scale width=8 height=8 ! encode codec=av1 media=video ! filesink location=/tmp/out.ivf format=ivf`, want: "scale duplicates resize"},
+		{name: "enc", text: `testsrc video width=16 height=16 frames=1 ! enc codec=av1 media=video ! filesink location=/tmp/out.ivf format=ivf`, want: "enc duplicates encode"},
+		{name: "codec encoder", text: `testsrc video width=16 height=16 frames=1 ! av1enc bitrate=1M ! filesink location=/tmp/out.ivf format=ivf`, want: "av1enc duplicates encode"},
+		{name: "positional codec", text: `testsrc video width=16 height=16 frames=1 ! encode av1 media=video ! filesink location=/tmp/out.ivf format=ivf`, want: "unsupported encode argument"},
+		{name: "id option", text: `testsrc video width=16 height=16 frames=1 ! encode id=av1 media=video ! filesink location=/tmp/out.ivf format=ivf`, want: "id duplicates codec"},
+		{name: "type option", text: `testsrc video width=16 height=16 frames=1 ! encode codec=av1 type=video ! filesink location=/tmp/out.ivf format=ivf`, want: "type duplicates media"},
+		{name: "duplicate codec", text: `testsrc video width=16 height=16 frames=1 ! encode codec=av1 codec=vp8 media=video ! filesink location=/tmp/out.ivf format=ivf`, want: "duplicate encode option codec"},
+		{name: "missing media", text: `testsrc video width=16 height=16 frames=1 ! encode codec=av1 ! filesink location=/tmp/out.ivf format=ivf`, want: "media"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := parseRunPipeline(tc.text)
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("err = %v, want %q", err, tc.want)
+			}
+		})
+	}
+}
+
 func TestRunPipelineParserRejectsDuplicateSourceForms(t *testing.T) {
 	for _, tc := range []struct {
 		name string
 		text string
 		want string
 	}{
-		{name: "source alias", text: `videosrc video width=16 height=16 frames=1 ! av1enc ! filesink location=/tmp/out.ivf format=ivf`, want: "videosrc"},
-		{name: "missing media kind", text: `testsrc width=16 height=16 frames=1 ! av1enc ! filesink location=/tmp/out.ivf format=ivf`, want: "testsrc"},
-		{name: "size", text: `testsrc video size=16x16 frames=1 ! av1enc ! filesink location=/tmp/out.ivf format=ivf`, want: "size"},
-		{name: "w", text: `testsrc video w=16 height=16 frames=1 ! av1enc ! filesink location=/tmp/out.ivf format=ivf`, want: "w"},
-		{name: "framerate", text: `testsrc video width=16 height=16 framerate=30 frames=1 ! av1enc ! filesink location=/tmp/out.ivf format=ivf`, want: "framerate"},
-		{name: "live", text: `testsrc video width=16 height=16 live=true frames=1 ! av1enc ! filesink location=/tmp/out.ivf format=ivf`, want: "live"},
-		{name: "pix fmt", text: `testsrc video width=16 height=16 pix_fmt=i420 frames=1 ! av1enc ! filesink location=/tmp/out.ivf format=ivf`, want: "pix_fmt"},
-		{name: "invalid format", text: `testsrc video width=16 height=16 format=rgba frames=1 ! av1enc ! filesink location=/tmp/out.ivf format=ivf`, want: "i420/yuv420p"},
-		{name: "duration zero", text: `testsrc video width=16 height=16 duration=0s ! av1enc ! filesink location=/tmp/out.ivf format=ivf`, want: "duration"},
-		{name: "frames and duration", text: `testsrc video width=16 height=16 frames=1 duration=1s ! av1enc ! filesink location=/tmp/out.ivf format=ivf`, want: "duration"},
-		{name: "empty step", text: `testsrc video frames=1 ! ! av1enc ! filesink location=/tmp/out.ivf`, want: "empty pipeline step"},
-		{name: "unterminated quote", text: `testsrc video frames=1 ! av1enc tune="dangling\ ! filesink location=/tmp/out.ivf`, want: "unterminated quoted value"},
+		{name: "source alias", text: `videosrc video width=16 height=16 frames=1 ! encode codec=av1 media=video ! filesink location=/tmp/out.ivf format=ivf`, want: "videosrc"},
+		{name: "missing media kind", text: `testsrc width=16 height=16 frames=1 ! encode codec=av1 media=video ! filesink location=/tmp/out.ivf format=ivf`, want: "testsrc"},
+		{name: "size", text: `testsrc video size=16x16 frames=1 ! encode codec=av1 media=video ! filesink location=/tmp/out.ivf format=ivf`, want: "size"},
+		{name: "w", text: `testsrc video w=16 height=16 frames=1 ! encode codec=av1 media=video ! filesink location=/tmp/out.ivf format=ivf`, want: "w"},
+		{name: "framerate", text: `testsrc video width=16 height=16 framerate=30 frames=1 ! encode codec=av1 media=video ! filesink location=/tmp/out.ivf format=ivf`, want: "framerate"},
+		{name: "live", text: `testsrc video width=16 height=16 live=true frames=1 ! encode codec=av1 media=video ! filesink location=/tmp/out.ivf format=ivf`, want: "live"},
+		{name: "pix fmt", text: `testsrc video width=16 height=16 pix_fmt=i420 frames=1 ! encode codec=av1 media=video ! filesink location=/tmp/out.ivf format=ivf`, want: "pix_fmt"},
+		{name: "invalid format", text: `testsrc video width=16 height=16 format=rgba frames=1 ! encode codec=av1 media=video ! filesink location=/tmp/out.ivf format=ivf`, want: "i420/yuv420p"},
+		{name: "duration zero", text: `testsrc video width=16 height=16 duration=0s ! encode codec=av1 media=video ! filesink location=/tmp/out.ivf format=ivf`, want: "duration"},
+		{name: "frames and duration", text: `testsrc video width=16 height=16 frames=1 duration=1s ! encode codec=av1 media=video ! filesink location=/tmp/out.ivf format=ivf`, want: "duration"},
+		{name: "empty step", text: `testsrc video frames=1 ! ! encode codec=av1 media=video ! filesink location=/tmp/out.ivf`, want: "empty pipeline step"},
+		{name: "unterminated quote", text: `testsrc video frames=1 ! encode codec=av1 media=video tune="dangling\ ! filesink location=/tmp/out.ivf`, want: "unterminated quoted value"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			_, err := parseRunPipeline(tc.text)
@@ -744,7 +770,7 @@ func TestRunPipelineParserRejectsDuplicateEncoderAliases(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			_, err := parseRunPipeline(fmt.Sprintf(
-				`testsrc video width=16 height=16 frames=1 ! av1enc %s ! filesink location=/tmp/out.ivf`,
+				`testsrc video width=16 height=16 frames=1 ! encode codec=av1 media=video %s ! filesink location=/tmp/out.ivf`,
 				tc.option,
 			))
 			if err == nil || !strings.Contains(err.Error(), tc.field) {
@@ -755,7 +781,7 @@ func TestRunPipelineParserRejectsDuplicateEncoderAliases(t *testing.T) {
 }
 
 func TestRunPipelineParserKeepsExplicitDestinationFormatOnly(t *testing.T) {
-	plan, err := parseRunPipeline(`testsrc video width=16 height=16 frames=1 ! av1enc bitrate=200k ! filesink location=/tmp/out.ivf format=ivf`)
+	plan, err := parseRunPipeline(`testsrc video width=16 height=16 frames=1 ! encode codec=av1 media=video bitrate=200k ! filesink location=/tmp/out.ivf format=ivf`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -763,7 +789,7 @@ func TestRunPipelineParserKeepsExplicitDestinationFormatOnly(t *testing.T) {
 		t.Fatalf("explicit format = %q, want %q", plan.destination.format, av.FormatIVF)
 	}
 
-	plan, err = parseRunPipeline(`testsrc video width=16 height=16 frames=1 ! av1enc bitrate=200k ! filesink location=/tmp/out.ivf`)
+	plan, err = parseRunPipeline(`testsrc video width=16 height=16 frames=1 ! encode codec=av1 media=video bitrate=200k ! filesink location=/tmp/out.ivf`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -786,7 +812,7 @@ func TestRunPipelineParserRejectsDuplicateFileSinkForms(t *testing.T) {
 		{name: "step alias", step: `file location=/tmp/out.ivf`, want: "unsupported destination"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := parseRunPipeline(`testsrc video width=16 height=16 frames=1 ! av1enc bitrate=200k ! ` + tc.step)
+			_, err := parseRunPipeline(`testsrc video width=16 height=16 frames=1 ! encode codec=av1 media=video bitrate=200k ! ` + tc.step)
 			if err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Fatalf("err = %v, want %q", err, tc.want)
 			}
@@ -807,7 +833,7 @@ func TestRunPipelineParserRejectsDuplicateResizeForms(t *testing.T) {
 		{name: "unknown", resize: `resize width=640 height=360 mode=fast`, want: "mode"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := parseRunPipeline(`testsrc video width=16 height=16 frames=1 ! ` + tc.resize + ` ! av1enc bitrate=200k ! filesink location=/tmp/out.ivf`)
+			_, err := parseRunPipeline(`testsrc video width=16 height=16 frames=1 ! ` + tc.resize + ` ! encode codec=av1 media=video bitrate=200k ! filesink location=/tmp/out.ivf`)
 			if err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Fatalf("err = %v, want %q", err, tc.want)
 			}

@@ -29,7 +29,7 @@ import (
 	"github.com/thesyncim/goav/shape"
 )
 
-const defaultRunPipeline = "testsrc video width=1280 height=720 fps=30 duration=3s realtime=true ! av1enc bitrate=1200k fps=30 keyframe_interval=60 ! filesink location=/tmp/goav-av1.mkv format=matroska"
+const defaultRunPipeline = "testsrc video width=1280 height=720 fps=30 duration=3s realtime=true ! encode codec=av1 media=video bitrate=1200k fps=30 keyframe_interval=60 ! filesink location=/tmp/goav-av1.mkv format=matroska"
 
 const generatedRawVideoCodec = av.CodecID("goav_raw_video")
 
@@ -150,21 +150,21 @@ func runPipelineHelp() string {
 	return "usage: goav run [--runtime demo|default|test] [--control unix://PATH] '<pipeline>'\n\n" +
 		"examples:\n" +
 		"  goav run '" + defaultRunPipeline + "'\n" +
-		"  goav run 'testsrc video width=1280 height=720 fps=30 duration=3s realtime=true pattern=bars ! av1enc bitrate=1200k fps=30 keyframe_interval=60 min_qindex=20 max_qindex=180 tune=zerolatency ! filesink location=/tmp/goav-av1.ivf'\n\n" +
+		"  goav run 'testsrc video width=1280 height=720 fps=30 duration=3s realtime=true pattern=bars ! encode codec=av1 media=video bitrate=1200k fps=30 keyframe_interval=60 min_qindex=20 max_qindex=180 tune=zerolatency ! filesink location=/tmp/goav-av1.ivf'\n\n" +
 		"pipeline steps:\n" +
 		"  testsrc video [name=<id>] width=<px> height=<px> fps=<n[/d]|decimal> frames=<n>|duration=<d> realtime=<bool> [format=i420|yuv420p] [pattern=bars|gradient|solid]\n" +
 		"  tap name=<tap-name>\n" +
 		"  resize width=<px> height=<px>\n" +
-		"  av1enc|vp9enc|vp8enc|h264enc|encode codec=<id> media=<video|audio> bitrate=<rate> fps=<n[/d]> keyframe_interval=<n> [native_key=value...]\n" +
+		"  encode codec=<id> media=<video|audio> bitrate=<rate> fps=<n[/d]> keyframe_interval=<n> [native_key=value...]\n" +
 		"  encoder settings use canonical names; duplicate aliases such as rate, framerate, keyint, gop, samplerate, ch, clockrate, and bitrate_bps are rejected\n" +
 		"  filesink location=<path> [format=<id>] (known file extensions infer the format)\n\n" +
 		"control example:\n" +
-		"  goav run --control unix:///tmp/goav-live.sock 'testsrc video name=fixture width=1280 height=720 fps=30 duration=30s realtime=true pattern=bars ! tap name=frames ! av1enc bitrate=1200k fps=30 keyframe_interval=60 min_qindex=20 max_qindex=180 tune=zerolatency ! filesink location=/tmp/goav-av1.mkv format=matroska'\n" +
+		"  goav run --control unix:///tmp/goav-live.sock 'testsrc video name=fixture width=1280 height=720 fps=30 duration=30s realtime=true pattern=bars ! tap name=frames ! encode codec=av1 media=video bitrate=1200k fps=30 keyframe_interval=60 min_qindex=20 max_qindex=180 tune=zerolatency ! filesink location=/tmp/goav-av1.mkv format=matroska'\n" +
 		"  goav ctl --control unix:///tmp/goav-live.sock taps\n" +
 		"  goav ctl --control unix:///tmp/goav-live.sock graph\n" +
 		"  goav ctl --control unix:///tmp/goav-live.sock control rate value=0.5 source=fixture\n" +
 		"  goav ctl --control unix:///tmp/goav-live.sock control seek position=2s source=fixture\n" +
-		"  goav ctl --control unix:///tmp/goav-live.sock attach frames as preview 'resize width=320 height=180 ! av1enc bitrate=300k fps=2 keyframe_interval=1 ! filesink location=/tmp/goav-preview.ivf'\n" +
+		"  goav ctl --control unix:///tmp/goav-live.sock attach frames as preview 'resize width=320 height=180 ! encode codec=av1 media=video bitrate=300k fps=2 keyframe_interval=1 ! filesink location=/tmp/goav-preview.ivf'\n" +
 		"  goav ctl --control unix:///tmp/goav-live.sock stop\n"
 }
 
@@ -725,10 +725,14 @@ func parseRunOperation(tokens []string) (runOperation, error) {
 	switch name {
 	case "tap":
 		return parseTapStep(tokens[1:])
-	case "resize", "scale":
+	case "resize":
 		return parseResizeStep(tokens[1:])
-	case "encode", "enc", "av1enc", "vp9enc", "vp8enc", "h264enc", "opusenc":
-		return parseEncodeStep(name, tokens[1:])
+	case "scale":
+		return runOperation{}, fmt.Errorf("goav run: scale duplicates resize; use resize width=<px> height=<px>")
+	case "encode":
+		return parseEncodeStep(tokens[1:])
+	case "enc", "av1enc", "vp9enc", "vp8enc", "h264enc", "opusenc":
+		return runOperation{}, fmt.Errorf("goav run: %s duplicates encode; use encode codec=<id> media=<video|audio>", name)
 	default:
 		return runOperation{}, fmt.Errorf("goav run: unsupported step %q", tokens[0])
 	}
@@ -741,16 +745,14 @@ func parseTapStep(tokens []string) (runOperation, error) {
 	}
 	op := runOperation{kind: "tap"}
 	for _, positional := range positionals {
-		if op.name == "" {
-			op.name = positional
-			continue
-		}
-		return runOperation{}, fmt.Errorf("goav run: unsupported tap argument %q", positional)
+		return runOperation{}, fmt.Errorf("goav run: tap name must be written as name=<tap-name>, got %q", positional)
 	}
 	for _, option := range options {
 		switch option.key {
-		case "name", "id":
+		case "name":
 			op.name = option.value
+		case "id":
+			return runOperation{}, fmt.Errorf("goav run: id duplicates tap name; use name=<tap-name>")
 		default:
 			return runOperation{}, fmt.Errorf("goav run: unknown tap option %q", option.key)
 		}
@@ -773,29 +775,35 @@ func parseResizeStep(tokens []string) (runOperation, error) {
 	return runOperation{kind: "resize", width: resize.Width, height: resize.Height}, nil
 }
 
-func parseEncodeStep(name string, tokens []string) (runOperation, error) {
+func parseEncodeStep(tokens []string) (runOperation, error) {
 	positionals, options, err := parseKeyValuesOrdered(tokens)
 	if err != nil {
 		return runOperation{}, err
 	}
-	codecID := codecIDFromEncodeName(name)
-	media := av.MediaVideo
-	if name == "opusenc" {
-		media = av.MediaAudio
-	}
 	for _, positional := range positionals {
-		if codecID == "" {
-			codecID = normalizeCodecID(positional)
-			continue
-		}
 		return runOperation{}, fmt.Errorf("goav run: unsupported encode argument %q", positional)
 	}
+	var codecID av.CodecID
+	var media av.MediaType
+	seen := make(map[string]struct{}, len(options))
 	for _, option := range options {
 		switch option.key {
-		case "codec", "id":
-			codecID = normalizeCodecID(option.value)
-		case "media", "type":
+		case "codec":
+			if _, ok := seen["codec"]; ok {
+				return runOperation{}, fmt.Errorf("goav run: duplicate encode option codec")
+			}
+			seen["codec"] = struct{}{}
+			codecID = av.CodecID(strings.TrimSpace(option.value))
+		case "media":
+			if _, ok := seen["media"]; ok {
+				return runOperation{}, fmt.Errorf("goav run: duplicate encode option media")
+			}
+			seen["media"] = struct{}{}
 			media, err = parseMediaType(option.value)
+		case "id":
+			return runOperation{}, fmt.Errorf("goav run: id duplicates codec; use codec=<id>")
+		case "type":
+			return runOperation{}, fmt.Errorf("goav run: type duplicates media; use media=<video|audio>")
 		}
 		if err != nil {
 			return runOperation{}, err
@@ -803,6 +811,9 @@ func parseEncodeStep(name string, tokens []string) (runOperation, error) {
 	}
 	if codecID == "" {
 		return runOperation{}, fmt.Errorf("goav run: encode needs codec=<id>")
+	}
+	if media == "" {
+		return runOperation{}, fmt.Errorf("goav run: encode needs media=<video|audio>")
 	}
 	codecOptions, err := codecargs.ParseOptions(runCodecArgs(options))
 	if err != nil {
@@ -865,36 +876,6 @@ func parseFileDestination(tokens []string) (fileDestination, error) {
 		return fileDestination{}, fmt.Errorf("goav run: %w", err)
 	}
 	return fileDestination{location: sink.Location, format: sink.Format}, nil
-}
-
-func codecIDFromEncodeName(name string) av.CodecID {
-	switch name {
-	case "av1enc":
-		return av.CodecAV1
-	case "vp9enc":
-		return av.CodecVP9
-	case "vp8enc":
-		return av.CodecVP8
-	case "h264enc":
-		return av.CodecH264
-	case "opusenc":
-		return av.CodecOpus
-	default:
-		return ""
-	}
-}
-
-func normalizeCodecID(value string) av.CodecID {
-	normalized := strings.ToLower(strings.TrimSpace(value))
-	normalized = strings.ReplaceAll(normalized, ".", "")
-	switch normalized {
-	case "av01":
-		return av.CodecAV1
-	case "h265", "hevc":
-		return av.CodecID("h265")
-	default:
-		return av.CodecID(normalized)
-	}
 }
 
 type runOption struct {

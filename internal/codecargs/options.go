@@ -42,8 +42,12 @@ func ParseOptions(args []Arg) ([]codec.Option, error) {
 		key := strings.ToLower(strings.TrimSpace(arg.Key))
 		value := strings.TrimSpace(arg.Value)
 		switch key {
-		case "", "codec", "id", "media", "type":
+		case "", "codec", "media":
 			continue
+		case "id":
+			return nil, optionError("id", value, "id duplicates codec", []string{"use codec=<id>"}, nil)
+		case "type":
+			return nil, optionError("type", value, "type duplicates media", []string{"use media=<audio|video|subtitle>"}, nil)
 		case "bitrate":
 			bitrate, err := cliargs.ParseRate(value)
 			if err != nil {

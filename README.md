@@ -747,7 +747,7 @@ For no-code smoke tests, demos, and adapter bootstrap work, the bundled CLI can
 build and run a generated-source pipeline from one string:
 
 ```sh
-goav run 'testsrc video width=1280 height=720 fps=30 duration=3s realtime=true pattern=bars ! av1enc bitrate=1200k fps=30 keyframe_interval=60 ! filesink location=/tmp/goav-av1.mkv format=matroska'
+goav run 'testsrc video width=1280 height=720 fps=30 duration=3s realtime=true pattern=bars ! encode codec=av1 media=video bitrate=1200k fps=30 keyframe_interval=60 ! filesink location=/tmp/goav-av1.mkv format=matroska'
 ```
 
 That command creates an I420 video test source, marks it realtime, encodes it as
@@ -761,7 +761,7 @@ Known file extensions infer the destination format, so this pure-Go AV1 IVF
 smoke test also needs no application code:
 
 ```sh
-goav run 'testsrc video width=1280 height=720 fps=30 duration=3s realtime=true pattern=bars ! av1enc bitrate=1200k fps=30 keyframe_interval=60 min_qindex=20 max_qindex=180 tune=zerolatency ! filesink location=/tmp/goav-av1.ivf'
+goav run 'testsrc video width=1280 height=720 fps=30 duration=3s realtime=true pattern=bars ! encode codec=av1 media=video bitrate=1200k fps=30 keyframe_interval=60 min_qindex=20 max_qindex=180 tune=zerolatency ! filesink location=/tmp/goav-av1.ivf'
 ```
 
 The string grammar is intentionally close to the recipe grammar:
@@ -798,12 +798,12 @@ can report that full manifest with `goav ctl capabilities`:
 
 ```sh
 goav run --control unix:///tmp/goav-live.sock \
-  'testsrc video name=fixture width=1280 height=720 fps=30 duration=30s realtime=true pattern=bars ! tap name=frames ! av1enc bitrate=1200k fps=30 keyframe_interval=60 ! filesink location=/tmp/goav-av1.mkv format=matroska'
+  'testsrc video name=fixture width=1280 height=720 fps=30 duration=30s realtime=true pattern=bars ! tap name=frames ! encode codec=av1 media=video bitrate=1200k fps=30 keyframe_interval=60 ! filesink location=/tmp/goav-av1.mkv format=matroska'
 goav ctl --control unix:///tmp/goav-live.sock graph
 goav ctl --control unix:///tmp/goav-live.sock control rate value=0.5 source=fixture
 goav ctl --control unix:///tmp/goav-live.sock control seek position=2s source=fixture
 goav ctl --control unix:///tmp/goav-live.sock attach frames as preview \
-  'resize width=320 height=180 ! av1enc bitrate=300k fps=2 keyframe_interval=1 ! filesink location=/tmp/goav-preview.mkv format=matroska'
+  'resize width=320 height=180 ! encode codec=av1 media=video bitrate=300k fps=2 keyframe_interval=1 ! filesink location=/tmp/goav-preview.mkv format=matroska'
 goav ctl --control unix:///tmp/goav-live.sock stop
 
 goav ctl --control unix:///tmp/goav-live.sock control bitrate stream=video value=1200k

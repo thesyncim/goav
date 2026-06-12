@@ -26,7 +26,7 @@ pipeline:
 
 ```sh
 goav run --control unix:///tmp/goav-live.sock \
-  'testsrc video name=fixture width=1280 height=720 fps=30 duration=30s realtime=true pattern=bars ! tap name=frames ! av1enc bitrate=1200k fps=30 keyframe_interval=60 min_qindex=20 max_qindex=180 tune=zerolatency ! filesink location=/tmp/goav-av1.mkv format=matroska'
+  'testsrc video name=fixture width=1280 height=720 fps=30 duration=30s realtime=true pattern=bars ! tap name=frames ! encode codec=av1 media=video bitrate=1200k fps=30 keyframe_interval=60 min_qindex=20 max_qindex=180 tune=zerolatency ! filesink location=/tmp/goav-av1.mkv format=matroska'
 ```
 
 Then drive the running graph from another shell:
@@ -37,7 +37,7 @@ goav ctl --control unix:///tmp/goav-live.sock graph
 goav ctl --control unix:///tmp/goav-live.sock control rate value=0.5 source=fixture
 goav ctl --control unix:///tmp/goav-live.sock control seek position=2s source=fixture
 goav ctl --control unix:///tmp/goav-live.sock attach frames as preview \
-  'resize width=320 height=180 ! av1enc bitrate=300k fps=2 keyframe_interval=1 ! filesink location=/tmp/goav-preview.ivf'
+  'resize width=320 height=180 ! encode codec=av1 media=video bitrate=300k fps=2 keyframe_interval=1 ! filesink location=/tmp/goav-preview.ivf'
 goav ctl --control unix:///tmp/goav-live.sock graph format=text
 goav ctl --control unix:///tmp/goav-live.sock detach preview
 goav ctl --control unix:///tmp/goav-live.sock stop
@@ -48,7 +48,7 @@ decoder-readable AV1 IVF file:
 
 ```sh
 goav run \
-  'testsrc video width=1280 height=720 fps=30 duration=3s realtime=true pattern=bars ! av1enc bitrate=1200k fps=30 keyframe_interval=60 min_qindex=20 max_qindex=180 tune=zerolatency ! filesink location=/tmp/goav-av1.ivf'
+  'testsrc video width=1280 height=720 fps=30 duration=3s realtime=true pattern=bars ! encode codec=av1 media=video bitrate=1200k fps=30 keyframe_interval=60 min_qindex=20 max_qindex=180 tune=zerolatency ! filesink location=/tmp/goav-av1.ivf'
 ```
 
 Known file extensions infer the destination format for `.ivf`, `.mkv`,
@@ -260,7 +260,7 @@ that invokes them.
 Custom names and aliases are validated as one namespace per server. A custom
 control cannot reuse a built-in control verb or another custom alias, and a
 custom branch step or encoder cannot shadow built-in branch-pipeline spellings
-such as `copy`, `encode`, `opus`, or `filesink`. Collisions fail with
+such as `copy`, `encode`, `resize`, or `filesink`. Collisions fail with
 `invalid_registry` before a socket starts or a branch pipeline mutates the
 running graph.
 

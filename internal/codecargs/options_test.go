@@ -45,6 +45,8 @@ func TestParseOptionsRejectsDuplicateAliasSpellings(t *testing.T) {
 		suggestion string
 	}{
 		{field: "rate", suggestion: "use bitrate=<rate> for bitrate"},
+		{field: "id", suggestion: "use codec=<id>"},
+		{field: "type", suggestion: "use media=<audio|video|subtitle>"},
 		{field: "bitrate_bps", suggestion: "use bitrate=<rate>"},
 		{field: "framerate", suggestion: "use fps=<n|n/d>"},
 		{field: "samplerate", suggestion: "use sample_rate=<hz>"},

@@ -145,17 +145,6 @@ func builtinPipelineNames() []string {
 		"resize",
 		"resample",
 		"encode",
-		"encoder",
-		"vp8enc",
-		"vp8",
-		"vp9enc",
-		"vp9",
-		"h264enc",
-		"h264",
-		"av1enc",
-		"av1",
-		"opusenc",
-		"opus",
 		"filesink",
 	}
 	sort.Strings(names)

@@ -180,39 +180,9 @@ func parseBranchPipelineWithRegistry(task goav.Task, tapName string, branchName 
 				return goav.BranchSpec{}, err
 			}
 			branch.Resample(rate, channels)
-		case "vp8enc", "vp8":
-			enc, err := parseEncoder(av.CodecVP8, av.MediaVideo, args)
-			if err != nil {
-				return goav.BranchSpec{}, err
-			}
-			branch.Encode(enc)
-		case "vp9enc", "vp9":
-			enc, err := parseEncoder(av.CodecVP9, av.MediaVideo, args)
-			if err != nil {
-				return goav.BranchSpec{}, err
-			}
-			branch.Encode(enc)
-		case "h264enc", "h264":
-			enc, err := parseEncoder(av.CodecH264, av.MediaVideo, args)
-			if err != nil {
-				return goav.BranchSpec{}, err
-			}
-			branch.Encode(enc)
-		case "av1enc", "av1":
-			enc, err := parseEncoder(av.CodecAV1, av.MediaVideo, args)
-			if err != nil {
-				return goav.BranchSpec{}, err
-			}
-			branch.Encode(enc)
-		case "opusenc", "opus":
-			enc, err := parseEncoder(av.CodecOpus, av.MediaAudio, args)
-			if err != nil {
-				return goav.BranchSpec{}, err
-			}
-			branch.Encode(enc)
-		case "encode", "encoder":
-			id := av.CodecID(firstNonEmpty(args["codec"], args["id"]))
-			media := av.MediaType(firstNonEmpty(args["media"], args["type"]))
+		case "encode":
+			id := av.CodecID(strings.TrimSpace(args["codec"]))
+			media := av.MediaType(strings.TrimSpace(args["media"]))
 			enc, err := parseEncoder(id, media, args)
 			if err != nil {
 				return goav.BranchSpec{}, err
@@ -435,26 +405,28 @@ func transformOptionError(err error) error {
 }
 
 func parseEncoder(id av.CodecID, media av.MediaType, args map[string]string) (codec.CodecSpec, error) {
+	if _, ok := args["id"]; ok {
+		return codec.CodecSpec{}, commandError("invalid_value", "parse branch pipeline", "id", "id duplicates codec", nil, []string{"use codec=<codec-id>"}, nil)
+	}
+	if _, ok := args["type"]; ok {
+		return codec.CodecSpec{}, commandError("invalid_value", "parse branch pipeline", "type", "type duplicates media", nil, []string{"use media=<audio|video|subtitle>"}, nil)
+	}
 	if id == "" {
 		return codec.CodecSpec{}, commandError("missing_required", "parse branch pipeline", "codec", "encode needs codec=<codec-id>", nil, []string{"use `encode codec=x_pcm_s16 media=audio`"}, nil)
+	}
+	if media == "" {
+		return codec.CodecSpec{}, commandError("missing_required", "parse branch pipeline", "media", "encode needs media=audio, media=video, or media=subtitle", []string{"codec=" + string(id)}, []string{"use `encode codec=" + string(id) + " media=audio`", "use `encode codec=" + string(id) + " media=video`"}, nil)
+	}
+	switch media {
+	case av.MediaAudio, av.MediaVideo, av.MediaSubtitle:
+	default:
+		return codec.CodecSpec{}, commandError("invalid_value", "parse branch pipeline", "media", "media must be audio, video, or subtitle", []string{"value=" + string(media)}, []string{"use media=audio", "use media=video"}, nil)
 	}
 	options, err := codecargs.ParseOptionsMap(args)
 	if err != nil {
 		return codec.CodecSpec{}, codecOptionError(err)
 	}
-	if isCustomCodec(id) && media == "" {
-		return codec.CodecSpec{}, commandError("missing_required", "parse branch pipeline", "media", "custom encode needs media=audio, media=video, or media=subtitle", []string{"codec=" + string(id)}, []string{"use `encode codec=" + string(id) + " media=audio`"}, nil)
-	}
 	return codecargs.BuildSpec(id, media, options...), nil
-}
-
-func isCustomCodec(id av.CodecID) bool {
-	switch id {
-	case av.CodecOpus, av.CodecVP8, av.CodecVP9, av.CodecH264, av.CodecAV1:
-		return false
-	default:
-		return true
-	}
 }
 
 func codecOptionError(err error) error {

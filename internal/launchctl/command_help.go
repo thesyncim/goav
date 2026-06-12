@@ -258,11 +258,6 @@ func builtinPipelineHelpRows() []pipelineHelpRow {
 		{name: "resize", usage: "width=854 height=480", summary: "resize video frames"},
 		{name: "resample", usage: "sample_rate=48000 channels=2", summary: "resample audio frames"},
 		{name: "encode", usage: "codec=<id> media=<audio|video|subtitle> [bitrate=<rate>] [profile=<name>] [level=<name>] [sample_rate=<hz>] [channels=<n>] [clock_rate=<hz>] [keyframe_interval=<n>] [fps=<n|n/d>] [native_key=value...]", summary: "encode frames with a built-in or runtime-registered codec"},
-		{name: "vp8enc", usage: "[bitrate=<rate>] [fps=<n|n/d>]", summary: "encode VP8 video"},
-		{name: "vp9enc", usage: "[bitrate=<rate>] [fps=<n|n/d>]", summary: "encode VP9 video"},
-		{name: "h264enc", usage: "[bitrate=<rate>] [profile=<name>] [level=<name>] [fps=<n|n/d>]", summary: "encode H.264 video"},
-		{name: "av1enc", usage: "[bitrate=<rate>] [fps=<n|n/d>] [qindex=<n>] [min_qindex=<n>] [max_qindex=<n>] [temporal_layers=<n>]", summary: "encode AV1 video"},
-		{name: "opusenc", usage: "[bitrate=<rate>] [sample_rate=<hz>] [channels=<n>]", summary: "encode Opus audio"},
 		{name: "filesink", usage: "location=<path> [format=<id>]", summary: "write the branch into a file destination"},
 	}
 }
