@@ -316,6 +316,8 @@ func TestRunPipelineHelpBootstrapsGeneratedControlFlow(t *testing.T) {
 		"min_qindex=20 max_qindex=180 tune=zerolatency",
 		"tap name=<tap-name>",
 		"size=<w>x<h>",
+		"fps=<n[/d]|decimal>",
+		"format=i420|yuv420p",
 		"goav ctl --control unix:///tmp/goav-live.sock taps",
 		"control seek position=2s source=fixture",
 		"attach frames as preview",
@@ -604,6 +606,85 @@ func decodeAV1TestPacket(t *testing.T, decoder codec.Decoder, packet av.Packet) 
 		t.Fatalf("decode AV1 packet: %v", err)
 	}
 	return len(decoded.Frames)
+}
+
+func TestRunPipelineParserCoversGeneratedTestSourceForms(t *testing.T) {
+	plan, err := parseRunPipeline(`testsrc video name=fixture size=1920x1080 fps=30000/1001 duration=100ms realtime=off pixel_format=yuv420p pattern=solid ! tap frames ! resize 640x360 ! encode av01 bitrate=2M fps=29.97 keyframe_interval=30 profile=main level=5.1 tune=zerolatency ! filesink "/tmp/generated test.ivf" format=ivf`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := plan.source
+	if source.name != "fixture" ||
+		source.width != 1920 ||
+		source.height != 1080 ||
+		source.fps != (fpsValue{num: 30000, den: 1001}) ||
+		source.frames != 3 ||
+		source.realtime ||
+		source.pixelFormat != av.PixelFormatI420 ||
+		source.pattern != "solid" {
+		t.Fatalf("source = %+v", source)
+	}
+	if plan.destination.location != "/tmp/generated test.ivf" || plan.destination.format != av.FormatIVF {
+		t.Fatalf("destination = %+v", plan.destination)
+	}
+	if len(plan.ops) != 3 {
+		t.Fatalf("ops = %+v", plan.ops)
+	}
+	if plan.ops[0].kind != "tap" || plan.ops[0].name != "frames" {
+		t.Fatalf("tap op = %+v", plan.ops[0])
+	}
+	if plan.ops[1].kind != "resize" || plan.ops[1].width != 640 || plan.ops[1].height != 360 {
+		t.Fatalf("resize op = %+v", plan.ops[1])
+	}
+	encoded := plan.ops[2].codec
+	if encoded.ID != av.CodecAV1 ||
+		encoded.Type != av.MediaVideo ||
+		encoded.Settings.Bitrate != 2_000_000 ||
+		encoded.Settings.KeyframeInterval != 30 ||
+		encoded.Settings.Profile != "main" ||
+		encoded.Settings.Level != "5.1" ||
+		encoded.Settings.Framerate.Value != 100 ||
+		encoded.Settings.Framerate.Base.Den != 2997 ||
+		encoded.Settings.Custom["tune"] != "zerolatency" {
+		t.Fatalf("encoded = %+v", encoded)
+	}
+}
+
+func TestRunPipelineParserHelperEdges(t *testing.T) {
+	width, height, err := parseSize("640X360")
+	if err != nil || width != 640 || height != 360 {
+		t.Fatalf("parseSize = %dx%d, %v", width, height, err)
+	}
+	fps, err := parseFPS("29.97")
+	if err != nil || fps != (fpsValue{num: 2997, den: 100}) || fps.String() != "2997/100" {
+		t.Fatalf("parseFPS decimal = %+v, %v", fps, err)
+	}
+	fps, err = parseFPS("60000/2002")
+	if err != nil || fps != (fpsValue{num: 30000, den: 1001}) {
+		t.Fatalf("parseFPS fraction = %+v, %v", fps, err)
+	}
+	if got := gcd(-18, 24); got != 6 {
+		t.Fatalf("gcd = %d, want 6", got)
+	}
+	if frames := framesForDuration(time.Millisecond, fpsValue{num: 30000, den: 1001}); frames != 1 {
+		t.Fatalf("framesForDuration = %d, want minimum one frame", frames)
+	}
+	pixelFormat, err := parseGeneratedPixelFormat("YUV420P")
+	if err != nil || pixelFormat != av.PixelFormatI420 {
+		t.Fatalf("pixel format = %q, %v", pixelFormat, err)
+	}
+	if _, err := parseGeneratedPixelFormat("rgba"); err == nil || !strings.Contains(err.Error(), "i420/yuv420p") {
+		t.Fatalf("invalid pixel format err = %v", err)
+	}
+	for _, text := range []string{
+		`testsrc video duration=0s ! av1enc ! filesink location=/tmp/out.ivf format=ivf`,
+		`testsrc video size=640 ! av1enc ! filesink location=/tmp/out.ivf format=ivf`,
+		`testsrc video pix_fmt=rgba ! av1enc ! filesink location=/tmp/out.ivf format=ivf`,
+	} {
+		if _, err := parseRunPipeline(text); err == nil {
+			t.Fatalf("parseRunPipeline(%q) succeeded unexpectedly", text)
+		}
+	}
 }
 
 func TestRunPipelineParserCarriesCustomEncoderSettings(t *testing.T) {
