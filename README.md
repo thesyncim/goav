@@ -650,6 +650,15 @@ _ = task.Control(ctx, goav.Rate(0.5).At("fixture"))
 event, _ := source.WaitControl(ctx, av.EventRate)
 ```
 
+The bootstrap examples are compiled as docs, so copy-paste breakage fails in
+CI: `ExampleSource_pushAccounting` shows `SourcePush` delivery accounting,
+`ExampleWriter_transactionalUpload` shows a `goav.Writer` upload with
+`provider.Info` and `provider.TransactionalWriter`,
+`ExampleWithEncoder_customSettings` shows typed codec settings plus
+`codec.Control` for native encoder options, and `ExampleTask_flowchart`
+renders a live task with an attached branch through
+`graphrender.RenderTaskFlowchart(task)`.
+
 ## Debug And Diagnostics
 
 Debugging is ordinary composition. Put a typed tap at the point you want to
