@@ -525,6 +525,41 @@ func TestExecuteRequestAppliesHelpRequest(t *testing.T) {
 	}
 }
 
+func TestExecuteRequestHelpIncludesRuntimeCapabilities(t *testing.T) {
+	task := &descriptorTask{
+		fakeTask: newFakeTask(),
+		encoders: []codec.Descriptor{{
+			ID:   "x_request_pcm",
+			Name: "Request PCM",
+			Type: av.MediaAudio,
+		}},
+		muxers: []format.Descriptor{{
+			Format: "x_request_mux",
+			Codecs: []av.CodecID{"x_request_pcm"},
+		}},
+	}
+	response := ExecuteRequest(context.Background(), task, Request{
+		Op:   "help",
+		Args: map[string]string{"topic": "attach"},
+	})
+	text, ok := response.Result.(string)
+	if !response.OK || response.Error != nil || !ok {
+		t.Fatalf("help response = %+v", response)
+	}
+	for _, fragment := range []string{
+		"Runtime encoders:",
+		"encode codec=x_request_pcm media=audio",
+		"Request PCM",
+		"Runtime muxers:",
+		"filesink location=<path> format=x_request_mux",
+		"runtime-registered muxer for codecs x_request_pcm",
+	} {
+		if !strings.Contains(text, fragment) {
+			t.Fatalf("help missing %q:\n%s", fragment, text)
+		}
+	}
+}
+
 func TestRequestFromCLIParsesGraphCommand(t *testing.T) {
 	request, err := RequestFromCLI([]string{"graph", "format=dot"})
 	if err != nil {
