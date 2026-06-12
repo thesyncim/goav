@@ -76,7 +76,7 @@ func (s *Server) execute(ctx context.Context, request Request) (ControlResponse,
 }
 
 func (s *Server) help(request Request) (ControlResponse, error) {
-	text, err := HelpWithRegistry(helpArgsFromRequest(request), s.commandManifest(), s.Pipeline)
+	text, err := helpWithRuntime(helpArgsFromRequest(request), s.commandManifest(), s.Pipeline, s.Task)
 	if err != nil {
 		return ControlResponse{}, err
 	}

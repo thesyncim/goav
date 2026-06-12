@@ -1701,7 +1701,7 @@ func TestServerGenericEncodeStepCarriesCommonCodecOptions(t *testing.T) {
 	defer cancel()
 
 	const customCodec = av.CodecID("vendor_generic_audio")
-	factory := &recordingEncoderFactory{descriptor: codec.Descriptor{ID: customCodec, Type: av.MediaAudio}}
+	factory := &recordingEncoderFactory{descriptor: codec.Descriptor{ID: customCodec, Name: "Vendor generic audio", Type: av.MediaAudio}}
 	task, err := goav.From(goavtest.Audio(48000, 1, []int16{1})).
 		Audio().Tap(goav.FrameTap("frames")).
 		To(goavtest.NewCollector().Sink()).
@@ -1712,8 +1712,28 @@ func TestServerGenericEncodeStepCarriesCommonCodecOptions(t *testing.T) {
 	}
 	defer task.Close()
 
+	server := &Server{Task: task}
+	help := server.Handle(ctx, Request{
+		Op:   "help",
+		Args: map[string]string{"topic": "attach"},
+	})
+	helpText, ok := help.Result.(string)
+	if !help.OK || help.Error != nil || !ok {
+		t.Fatalf("help response = %+v", help)
+	}
+	for _, fragment := range []string{
+		"Runtime encoders:",
+		"encode codec=vendor_generic_audio media=audio",
+		"Vendor generic audio",
+		"Any encoder registered on the task runtime is callable",
+	} {
+		if !strings.Contains(helpText, fragment) {
+			t.Fatalf("help missing %q:\n%s", fragment, helpText)
+		}
+	}
+
 	out := filepath.Join(t.TempDir(), "generic.ogg")
-	response := (&Server{Task: task}).Handle(ctx, Request{
+	response := server.Handle(ctx, Request{
 		Op:     "attach",
 		Tap:    "frames",
 		Branch: "generic",

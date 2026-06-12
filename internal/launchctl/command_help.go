@@ -3,6 +3,9 @@ package launchctl
 import (
 	"fmt"
 	"strings"
+
+	goav "github.com/thesyncim/goav"
+	"github.com/thesyncim/goav/codec"
 )
 
 // Help renders generated help from the same manifest and tags used by parsing.
@@ -20,6 +23,14 @@ func HelpWithCommands(args []string, manifest []CommandSpec) (string, error) {
 // branch-pipeline registry. Servers use this to include application-specific
 // controls, pipeline steps, and encoder spellings.
 func HelpWithRegistry(args []string, manifest []CommandSpec, registry PipelineRegistry) (string, error) {
+	return helpWithRegistry(args, manifest, registry, nil)
+}
+
+func helpWithRuntime(args []string, manifest []CommandSpec, registry PipelineRegistry, task goav.Task) (string, error) {
+	return helpWithRegistry(args, manifest, registry, runtimeEncoderDescriptors(task))
+}
+
+func helpWithRegistry(args []string, manifest []CommandSpec, registry PipelineRegistry, encoders []codec.Descriptor) (string, error) {
 	if err := validateCommandManifest(manifest); err != nil {
 		return "", err
 	}
@@ -40,9 +51,9 @@ func HelpWithRegistry(args []string, manifest []CommandSpec, registry PipelineRe
 		}
 		return CommandHelp(spec), nil
 	case "attach":
-		return branchPipelineHelp("attach", "goav ctl --control unix://PATH attach <tap-name> as <branch-name> '<branch-pipeline>'", "Builds an allowlisted branch pipeline from a named tap.", registry), nil
+		return branchPipelineHelp("attach", "goav ctl --control unix://PATH attach <tap-name> as <branch-name> '<branch-pipeline>'", "Builds an allowlisted branch pipeline from a named tap.", registry, encoders), nil
 	case "rebranch":
-		return branchPipelineHelp("rebranch", "goav ctl --control unix://PATH rebranch <branch-name> [--switch next_frame|next_keyframe] [--keep-old-on-failure] '<branch-pipeline>'", "Replaces an attachment created through this control server, using the same allowlisted branch-pipeline grammar as attach.", registry), nil
+		return branchPipelineHelp("rebranch", "goav ctl --control unix://PATH rebranch <branch-name> [--switch next_frame|next_keyframe] [--keep-old-on-failure] '<branch-pipeline>'", "Replaces an attachment created through this control server, using the same allowlisted branch-pipeline grammar as attach.", registry, encoders), nil
 	case "detach":
 		return staticHelp("detach", "goav ctl --control unix://PATH detach <branch-name>", "Detaches an attachment created through this control server."), nil
 	case "graph", "flowchart":
@@ -153,7 +164,7 @@ func staticHelp(name string, usage string, note string) string {
 	return out.String()
 }
 
-func branchPipelineHelp(name string, usage string, note string, registry PipelineRegistry) string {
+func branchPipelineHelp(name string, usage string, note string, registry PipelineRegistry, encoders []codec.Descriptor) string {
 	var out strings.Builder
 	out.WriteString(name)
 	out.WriteString("\n\nUsage:\n  ")
@@ -177,8 +188,27 @@ func branchPipelineHelp(name string, usage string, note string, registry Pipelin
 			writePipelineHelpRow(&out, encoder.Name, encoder.Usage, encoder.Aliases, encoder.Summary)
 		}
 	}
+	if len(encoders) != 0 {
+		out.WriteString("\nRuntime encoders:\n")
+		for _, encoder := range encoders {
+			writeRuntimeEncoderHelpRow(&out, encoder)
+		}
+	}
 	out.WriteString("\nBranch pipelines are written as `step key=value ! step key=value`. Custom steps and encoders receive their key=value settings through StepArgs.\n")
+	out.WriteString("Any encoder registered on the task runtime is callable with `encode codec=<id> media=<kind> ...` and the common codec settings. Use a custom EncoderSpec only for native adapter knobs that need host code.\n")
 	return out.String()
+}
+
+type runtimeEncoderDescriptorProvider interface {
+	EncoderDescriptors() []codec.Descriptor
+}
+
+func runtimeEncoderDescriptors(task goav.Task) []codec.Descriptor {
+	provider, ok := task.(runtimeEncoderDescriptorProvider)
+	if !ok || provider == nil {
+		return nil
+	}
+	return provider.EncoderDescriptors()
 }
 
 type pipelineHelpRow struct {
@@ -220,6 +250,22 @@ func writePipelineHelpRow(out *strings.Builder, name string, usage string, alias
 	}
 	out.WriteString(summary)
 	out.WriteString("\n")
+}
+
+func writeRuntimeEncoderHelpRow(out *strings.Builder, desc codec.Descriptor) {
+	if desc.ID == "" {
+		return
+	}
+	media := desc.Type
+	if media == "" {
+		media = "<kind>"
+	}
+	label := "encode codec=" + string(desc.ID) + " media=" + string(media) + " [bitrate=<rate>] [profile=<name>] [level=<name>] [sample_rate=<hz>] [channels=<n>] [clock_rate=<hz>] [keyframe_interval=<n>] [fps=<n|n/d>]"
+	summary := desc.Name
+	if summary == "" {
+		summary = "runtime-registered encoder"
+	}
+	writePipelineHelpRow(out, label, "", nil, summary)
 }
 
 func padRight(value string, width int) string {
