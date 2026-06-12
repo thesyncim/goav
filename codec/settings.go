@@ -57,6 +57,7 @@ func Channels(channels int) Option {
 	return func(s *CodecSettings) {
 		s.Channels = channels
 		s.ChannelsSet = true
+		s.ChannelLayout = ""
 		switch channels {
 		case Mono:
 			s.ChannelLayout = "mono"
