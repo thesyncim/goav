@@ -8,6 +8,7 @@ import (
 	"io"
 	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -43,9 +44,11 @@ func TestRunHostServesCustomHelpAndAttach(t *testing.T) {
 	}
 	for _, fragment := range []string{
 		"meter [label=<text>]",
+		"thumbnail [every=<positive-int>] [label=<text>]",
 		"memorysink [name=<text>]",
 		"acmeenc bitrate=<bps>",
 		"aliases: levelmeter",
+		"aliases: thumbs, sampleframes",
 		"aliases: memsink",
 		"aliases: acme",
 	} {
@@ -54,26 +57,83 @@ func TestRunHostServesCustomHelpAndAttach(t *testing.T) {
 		}
 	}
 
-	out := filepath.Join(t.TempDir(), "archive copy.ogg")
+	for _, request := range []ctl.Request{
+		{Op: "control", Verb: "rate", Args: map[string]string{"value": "0.5", "source": "fixture"}},
+		{Op: "control", Verb: "seek", Args: map[string]string{"position": "2s", "source": "fixture"}},
+		{Op: "control", Verb: "segment", Args: map[string]string{"start": "1s", "end": "3s", "source": "fixture"}},
+	} {
+		response := sendDemoRequest(t, socket, request)
+		if !response.OK || response.Error != nil {
+			t.Fatalf("source control %s = %+v", request.Verb, response)
+		}
+	}
+	controls := sendDemoRequest(t, socket, ctl.Request{Op: "control", Verb: "fixture.controls"})
+	controlMap := responseMap(t, controls)
+	if got := int(controlMap["count"].(float64)); got != 3 {
+		t.Fatalf("fixture.controls count = %d, want 3; response=%+v", got, controls)
+	}
+	rateControls := sendDemoRequest(t, socket, ctl.Request{
+		Op:   "control",
+		Verb: "fixture.controls",
+		Args: map[string]string{"type": string(av.EventRate)},
+	})
+	rateMap := responseMap(t, rateControls)
+	if got := int(rateMap["count"].(float64)); got != 1 {
+		t.Fatalf("fixture.controls type=rate count = %d, want 1; response=%+v", got, rateControls)
+	}
+
+	out := filepath.Join(t.TempDir(), "archive copy.webm")
 	attach := sendDemoRequest(t, socket, ctl.Request{
 		Op:     "attach",
 		Tap:    "frames",
 		Branch: "archive",
-		Pipeline: `meter label="left ! right" ! acmeenc bitrate=64k quality=voice lookahead=deep ! filesink location="` +
-			out + `" format=ogg`,
+		Pipeline: `meter label="left ! right" ! resize 640x360 ! vp8enc bitrate=900k fps=30 keyframe_interval=30 ! filesink location="` +
+			out + `" format=webm`,
 	})
 	if !attach.OK || attach.Error != nil {
 		t.Fatalf("attach = %+v", attach)
+	}
+
+	thumbOut := filepath.Join(t.TempDir(), "thumbnails.ivf")
+	thumbs := sendDemoRequest(t, socket, ctl.Request{
+		Op:     "attach",
+		Tap:    "frames",
+		Branch: "thumbnails",
+		Pipeline: `thumbnail every=5 label=sample ! resize 160x90 ! vp8enc bitrate=160k fps=1 keyframe_interval=1 ! filesink location="` +
+			thumbOut + `" format=ivf`,
+	})
+	if !thumbs.OK || thumbs.Error != nil {
+		t.Fatalf("thumbnail attach = %+v", thumbs)
 	}
 
 	memory := sendDemoRequest(t, socket, ctl.Request{
 		Op:       "attach",
 		Tap:      "frames",
 		Branch:   "memory",
-		Pipeline: `meter ! acmeenc bitrate=64k quality=preview lookahead=shallow ! memorysink name=preview`,
+		Pipeline: `thumbnail every=3 label=preview ! memorysink name=preview`,
 	})
 	if !memory.OK || memory.Error != nil {
 		t.Fatalf("memory attach = %+v", memory)
+	}
+
+	custom := sendDemoRequest(t, socket, ctl.Request{
+		Op:       "attach",
+		Tap:      "frames",
+		Branch:   "acme-preview",
+		Pipeline: `thumbnail every=2 label=acme ! acmeenc bitrate=250k quality=preview lookahead=shallow ! memorysink name=acme-preview`,
+	})
+	if !custom.OK || custom.Error != nil {
+		t.Fatalf("custom encoder attach = %+v", custom)
+	}
+
+	badThumb := sendDemoRequest(t, socket, ctl.Request{
+		Op:       "attach",
+		Tap:      "frames",
+		Branch:   "bad-thumb",
+		Pipeline: `thumbnail every=0 ! memorysink name=bad`,
+	})
+	if badThumb.OK || badThumb.Error == nil || badThumb.Error.Code != "invalid_value" || badThumb.Error.Node != "every" {
+		t.Fatalf("bad thumbnail response = %+v", badThumb)
 	}
 
 	graph := sendDemoRequest(t, socket, ctl.Request{Op: "graph"})
@@ -81,11 +141,72 @@ func TestRunHostServesCustomHelpAndAttach(t *testing.T) {
 	if !graph.OK || graph.Error != nil || !ok {
 		t.Fatalf("graph = %+v", graph)
 	}
-	for _, fragment := range []string{"flowchart LR", "branch=archive (attached)", "branch=memory (attached)", "demo-left ! right"} {
+	for _, fragment := range []string{
+		"flowchart LR",
+		"branch=archive (attached)",
+		"branch=thumbnails (attached)",
+		"branch=memory (attached)",
+		"branch=acme-preview (attached)",
+		"demo-left ! right",
+		"demo-thumbnail-preview",
+	} {
 		if !strings.Contains(flowchart, fragment) {
 			t.Fatalf("flowchart missing %q:\n%s", fragment, flowchart)
 		}
 	}
+
+	rebranch := sendDemoRequest(t, socket, ctl.Request{
+		Op:       "rebranch",
+		Branch:   "memory",
+		Pipeline: `thumbnail every=10 label=slow ! memorysink name=slow-preview`,
+	})
+	if !rebranch.OK || rebranch.Error != nil {
+		t.Fatalf("rebranch = %+v", rebranch)
+	}
+
+	for _, branch := range []string{"archive", "thumbnails", "memory", "acme-preview"} {
+		detach := sendDemoRequest(t, socket, ctl.Request{Op: "detach", Branch: branch})
+		if !detach.OK || detach.Error != nil {
+			t.Fatalf("detach %s = %+v", branch, detach)
+		}
+	}
+
+	cancel()
+	select {
+	case err := <-errC:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("host did not stop")
+	}
+}
+
+func TestRunHostAcceptsDocumentedCLICommands(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	socket := filepath.Join(os.TempDir(), "goav-control-plane-host-cli-"+time.Now().Format("150405.000000000")+".sock")
+	t.Cleanup(func() { _ = os.Remove(socket) })
+
+	errC := make(chan error, 1)
+	go func() {
+		errC <- runHost(ctx, "unix://"+socket, io.Discard)
+	}()
+	if err := waitForHostSocket(ctx, "unix://"+socket, errC); err != nil {
+		t.Fatal(err)
+	}
+
+	runDemoCLI(t, socket, "control", "rate", "value=0.5", "source=fixture")
+	controls := runDemoCLI(t, socket, "control", "fixture.controls", "type=rate")
+	if !strings.Contains(controls, `"count":1`) || !strings.Contains(controls, `"rate":0.5`) {
+		t.Fatalf("fixture.controls CLI output:\n%s", controls)
+	}
+	runDemoCLI(t, socket, "attach", "frames", "as", "memory", `thumbnail every=3 label=preview ! memorysink name=preview`)
+	graph := runDemoCLI(t, socket, "graph")
+	if !strings.Contains(graph, "flowchart LR") || !strings.Contains(graph, "branch=memory (attached)") {
+		t.Fatalf("graph CLI output:\n%s", graph)
+	}
+	runDemoCLI(t, socket, "detach", "memory")
 
 	cancel()
 	select {
@@ -105,14 +226,25 @@ func TestPrintUsageIncludesCompleteBootstrapLoop(t *testing.T) {
 	for _, fragment := range []string{
 		"help attach",
 		"help control vendor.rate",
+		"help control fixture.controls",
 		"taps",
+		"fake source: live VP8 camera",
+		"control rate value=0.5 source=fixture",
+		"control seek position=2s source=fixture",
+		"control segment start=1s end=3s source=fixture",
+		"control fixture.controls type=rate",
 		"control vendor.rate value=0.5 source=fixture",
-		"filesink location=\"/tmp/goav archive.ogg\"",
+		"resize 640x360",
+		"filesink location=\"/tmp/goav archive.webm\"",
+		"thumbnail every=5",
 		"memorysink name=preview",
+		"acmeenc bitrate=250k",
 		"graph format=text",
-		"rebranch archive",
+		"rebranch memory",
 		"detach archive",
+		"detach thumbnails",
 		"detach memory",
+		"detach acme-preview",
 	} {
 		if !strings.Contains(text, fragment) {
 			t.Fatalf("usage missing %q:\n%s", fragment, text)
@@ -148,9 +280,18 @@ func TestDemoHostHelpers(t *testing.T) {
 	if got := firstNonEmpty("", ""); got != "" {
 		t.Fatalf("firstNonEmpty empty = %q", got)
 	}
+	if got, err := parsePositiveSetting("5", "every"); err != nil || got != 5 {
+		t.Fatalf("parsePositiveSetting = %d, %v; want 5 nil", got, err)
+	}
+	if got, err := parsePositiveSetting("0", "every"); err == nil || got != 0 {
+		t.Fatalf("parsePositiveSetting invalid = %d, %v; want error", got, err)
+	}
+	if got := demoNodeName("demo-thumbnail", "left ! right"); got != "demo-thumbnail-left---right" {
+		t.Fatalf("demoNodeName = %q", got)
+	}
 
 	factory := &demoEncoderFactory{
-		descriptor: codec.Descriptor{ID: demoCodec, Type: av.MediaAudio},
+		descriptor: codec.Descriptor{ID: demoCodec, Type: av.MediaVideo},
 	}
 	var nativeSeen bool
 	settings := codec.CodecSettings{}
@@ -172,18 +313,18 @@ func TestDemoHostHelpers(t *testing.T) {
 		t.Fatal(err)
 	}
 	result := codec.EncodeResult{Packets: make([]av.Packet, 0, 1)}
-	err = encoder.EncodeInto(context.Background(), &av.Frame{StreamID: "audio", Type: av.MediaAudio}, &result)
+	err = encoder.EncodeInto(context.Background(), &av.Frame{StreamID: "video", Type: av.MediaVideo}, &result)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(result.Packets) != 1 || result.Packets[0].StreamID != "audio" || result.Packets[0].Type != av.MediaAudio {
+	if len(result.Packets) != 1 || result.Packets[0].StreamID != "video" || result.Packets[0].Type != av.MediaVideo {
 		t.Fatalf("packets = %+v", result.Packets)
 	}
 	full := codec.EncodeResult{Packets: make([]av.Packet, 1)}
 	if err := encoder.EncodeInto(context.Background(), nil, &full); err != nil {
 		t.Fatal(err)
 	}
-	if err := encoder.EncodeInto(context.Background(), &av.Frame{StreamID: "audio", Type: av.MediaAudio}, &full); err != nil {
+	if err := encoder.EncodeInto(context.Background(), &av.Frame{StreamID: "video", Type: av.MediaVideo}, &full); err != nil {
 		t.Fatal(err)
 	}
 	if err := encoder.FlushInto(context.Background(), &result); err != nil {
@@ -301,6 +442,26 @@ func sendDemoRequest(t *testing.T, socket string, request ctl.Request) ctl.Respo
 		t.Fatal(err)
 	}
 	return response
+}
+
+func runDemoCLI(t *testing.T, socket string, args ...string) string {
+	t.Helper()
+	argv := append([]string{"run", "../../cmd/goav", "ctl", "--control", "unix://" + socket}, args...)
+	cmd := exec.Command("go", argv...)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("go %s failed: %v\n%s", strings.Join(argv, " "), err, output)
+	}
+	return string(output)
+}
+
+func responseMap(t *testing.T, response ctl.Response) map[string]any {
+	t.Helper()
+	result, ok := response.Result.(map[string]any)
+	if !response.OK || response.Error != nil || !ok {
+		t.Fatalf("response = %+v, want JSON object result", response)
+	}
+	return result
 }
 
 type demoReadyControlSource struct {

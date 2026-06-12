@@ -756,7 +756,11 @@ goav ctl --control unix:///tmp/goav-live.sock graph
 `help attach` and `help rebranch` list the built-in branch grammar plus custom
 steps and encoders registered by that host. The bootstrap guide, including
 `go run ./examples/control-plane-host`, lives in
-[`docs/CONTROL_PLANE.md`](docs/CONTROL_PLANE.md).
+[`docs/CONTROL_PLANE.md`](docs/CONTROL_PLANE.md). That playground uses a live
+`goavtest.TestSource` so `goav ctl control rate/seek/segment source=fixture`,
+`goav ctl control fixture.controls`, transcode branches, thumbnails,
+custom encoder settings, graph rendering, rebranch, and detach all work from
+one local socket.
 
 ## Live Control
 

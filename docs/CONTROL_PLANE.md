@@ -45,8 +45,13 @@ driving it from another, run:
 go run ./examples/control-plane-host --control unix:///tmp/goav-control-plane-host.sock
 ```
 
-That example uses the same extension points as the snippets below and includes
-copyable commands in `examples/control-plane-host/README.md`.
+That example is a self-contained playground: it starts a live
+`goavtest.TestSource` named `fixture`, accepts normal source controls such as
+`goav ctl control rate value=0.5 source=fixture`, reports the controls captured
+by that test source with `goav ctl control fixture.controls`, and demonstrates
+stock transcode branches, thumbnail branches, custom branch steps, custom
+encoder settings, graph rendering, rebranching, and detach. The complete
+copyable command sequence lives in `examples/control-plane-host/README.md`.
 
 ```go
 ctx := context.Background()

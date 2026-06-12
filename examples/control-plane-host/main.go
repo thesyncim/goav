@@ -28,7 +28,7 @@ import (
 	"github.com/thesyncim/goav/shape"
 )
 
-const demoCodec = av.CodecID("x_acme_audio")
+const demoCodec = av.CodecID("x_acme_video")
 
 func main() {
 	address := flag.String("control", "unix:///tmp/goav-control-plane-host.sock", "control socket address")
@@ -111,10 +111,10 @@ type demoHost struct {
 
 func newDemoHost(ctx context.Context) (*demoHost, error) {
 	factory := &demoEncoderFactory{
-		descriptor: codec.Descriptor{ID: demoCodec, Name: "ACME demo audio", Type: av.MediaAudio},
+		descriptor: codec.Descriptor{ID: demoCodec, Name: "ACME demo video", Type: av.MediaVideo},
 	}
 	source := goavtest.NewTestSource("fixture",
-		shape.Packet(av.MediaAudio, av.CodecOpus, shape.Audio(48000, 1, av.SampleFormatS16)),
+		shape.Packet(av.MediaVideo, av.CodecVP8, shape.Video(1280, 720, av.PixelFormatI420), shape.Realtime(true)),
 		goavtest.TestSourceLive(),
 	)
 	ready := make(chan struct{})
@@ -122,7 +122,7 @@ func newDemoHost(ctx context.Context) (*demoHost, error) {
 		return newStartReadySource(source, ready)
 	})
 	task, err := goav.From(input).
-		Audio().Decode().Tap(goav.FrameTap("frames")).
+		Video().Decode().Tap(goav.FrameTap("frames")).
 		To(goavtest.NewCollector().Sink()).
 		UseRuntime(goavtest.Runtime(goav.WithEncoder(factory.descriptor, factory))).
 		Build(ctx)
@@ -149,17 +149,54 @@ func newDemoHost(ctx context.Context) (*demoHost, error) {
 			}, nil
 		},
 	}
+	type controlHistory struct {
+		Type av.EventType `goavctl:"type" usage:"[type=rate|seek|segment]" help:"optional source-control event type filter"`
+	}
+	controlsCommand := ctl.CommandSpec{
+		Name:     "fixture.controls",
+		Summary:  "report controls recorded by the fixture test source",
+		ArgsType: reflect.TypeOf(controlHistory{}),
+		Apply: func(_ context.Context, _ goav.Task, args any) (ctl.ControlResponse, error) {
+			query := args.(controlHistory)
+			return ctl.ControlResponse{
+				Operation: "control fixture.controls",
+				Result:    summarizeSourceControls(source, query.Type),
+			}, nil
+		},
+	}
 
 	registry := ctl.PipelineRegistry{
 		Steps: []ctl.BranchPipelineStepSpec{
 			{
 				Name:    "meter",
 				Aliases: []string{"levelmeter"},
-				Summary: "pass frames through a demo metering stage",
+				Summary: "pass video frames through a demo metering stage",
 				Usage:   `[label=<text>]`,
 				Apply: func(branch *ctl.BranchPipeline, args ctl.StepArgs) error {
 					label := firstNonEmpty(args["label"], "meter")
 					branch.Do(goav.FrameFunc("demo-"+label, func(_ context.Context, frame *av.Frame, emit goav.Emit) error {
+						return emit.Frame(frame)
+					}))
+					return nil
+				},
+			},
+			{
+				Name:    "thumbnail",
+				Aliases: []string{"thumbs", "sampleframes"},
+				Summary: "keep every Nth frame for thumbnail or preview branches",
+				Usage:   `[every=<positive-int>] [label=<text>]`,
+				Apply: func(branch *ctl.BranchPipeline, args ctl.StepArgs) error {
+					every, err := parsePositiveSetting(firstNonEmpty(args["every"], "1"), "every")
+					if err != nil {
+						return err
+					}
+					var seen int
+					name := demoNodeName("demo-thumbnail", args["label"])
+					branch.Do(goav.FrameFunc(name, func(_ context.Context, frame *av.Frame, emit goav.Emit) error {
+						seen++
+						if (seen-1)%every != 0 {
+							return nil
+						}
 						return emit.Frame(frame)
 					}))
 					return nil
@@ -182,14 +219,14 @@ func newDemoHost(ctx context.Context) (*demoHost, error) {
 		Encoders: []ctl.EncoderSpec{{
 			Name:    "acmeenc",
 			Aliases: []string{"acme"},
-			Summary: "demo encoder that maps native ACME settings",
+			Summary: "demo video encoder that maps native ACME settings",
 			Usage:   `bitrate=<bps> quality=<profile> lookahead=<mode>`,
 			Apply: func(args ctl.StepArgs) (codec.CodecSpec, error) {
 				bitrate, err := parseDemoRate(args["bitrate"])
 				if err != nil {
 					return codec.CodecSpec{}, err
 				}
-				return codec.Codec(demoCodec, av.MediaAudio,
+				return codec.Codec(demoCodec, av.MediaVideo,
 					codec.Bitrate(bitrate),
 					codec.Profile(args["quality"]),
 					codec.Control(func(native any) error {
@@ -204,22 +241,41 @@ func newDemoHost(ctx context.Context) (*demoHost, error) {
 			},
 		}},
 	}
-	return &demoHost{task: task, commands: []ctl.CommandSpec{command}, registry: registry, ready: ready}, nil
+	return &demoHost{task: task, commands: []ctl.CommandSpec{command, controlsCommand}, registry: registry, ready: ready}, nil
 }
 
 func printUsage(out io.Writer, address string) {
 	fmt.Fprintf(out, "control=%s\n", address)
+	fmt.Fprintf(out, "# fake source: live VP8 camera -> decode -> frame tap named frames\n")
+	fmt.Fprintf(out, "# inspect the server-aware grammar\n")
 	fmt.Fprintf(out, "goav ctl --control %s help attach\n", address)
 	fmt.Fprintf(out, "goav ctl --control %s help control vendor.rate\n", address)
+	fmt.Fprintf(out, "goav ctl --control %s help control fixture.controls\n", address)
 	fmt.Fprintf(out, "goav ctl --control %s taps\n", address)
+	fmt.Fprintf(out, "# drive the goavtest TestSource through normal source controls\n")
+	fmt.Fprintf(out, "goav ctl --control %s control rate value=0.5 source=fixture\n", address)
+	fmt.Fprintf(out, "goav ctl --control %s control seek position=2s source=fixture\n", address)
+	fmt.Fprintf(out, "goav ctl --control %s control segment start=1s end=3s source=fixture\n", address)
+	fmt.Fprintf(out, "goav ctl --control %s control fixture.controls\n", address)
+	fmt.Fprintf(out, "goav ctl --control %s control fixture.controls type=rate\n", address)
 	fmt.Fprintf(out, "goav ctl --control %s control vendor.rate value=0.5 source=fixture\n", address)
-	fmt.Fprintf(out, "goav ctl --control %s attach frames as archive 'meter label=\"left ! right\" ! acmeenc bitrate=128000 quality=voice lookahead=deep ! filesink location=\"/tmp/goav archive.ogg\" format=ogg'\n", address)
-	fmt.Fprintf(out, "goav ctl --control %s attach frames as memory 'meter ! acmeenc bitrate=64000 quality=preview lookahead=shallow ! memorysink name=preview'\n", address)
+	fmt.Fprintf(out, "# attach a stock VP8/WebM transcode from the decoded frame tap\n")
+	fmt.Fprintf(out, "goav ctl --control %s attach frames as archive 'meter label=\"left ! right\" ! resize 640x360 ! vp8enc bitrate=900k fps=30 keyframe_interval=30 ! filesink location=\"/tmp/goav archive.webm\" format=webm'\n", address)
+	fmt.Fprintf(out, "# attach a low-rate thumbnail/preview recording\n")
+	fmt.Fprintf(out, "goav ctl --control %s attach frames as thumbnails 'thumbnail every=5 label=sample ! resize 160x90 ! vp8enc bitrate=160k fps=1 keyframe_interval=1 ! filesink location=\"/tmp/goav thumbnails.ivf\" format=ivf'\n", address)
+	fmt.Fprintf(out, "# attach an in-process thumbnail sink for app-owned diagnostics\n")
+	fmt.Fprintf(out, "goav ctl --control %s attach frames as memory 'thumbnail every=3 label=preview ! memorysink name=preview'\n", address)
+	fmt.Fprintf(out, "# attach a custom video encoder with native settings mapped by the host\n")
+	fmt.Fprintf(out, "goav ctl --control %s attach frames as acme-preview 'thumbnail every=2 label=acme ! acmeenc bitrate=250k quality=preview lookahead=shallow ! memorysink name=acme-preview'\n", address)
+	fmt.Fprintf(out, "# render the running graph with branch lifecycle annotations\n")
 	fmt.Fprintf(out, "goav ctl --control %s graph\n", address)
 	fmt.Fprintf(out, "goav ctl --control %s graph format=text\n", address)
-	fmt.Fprintf(out, "goav ctl --control %s rebranch archive 'meter ! acmeenc bitrate=96000 quality=voice lookahead=shallow ! filesink location=\"/tmp/goav archive-low.ogg\" format=ogg'\n", address)
+	fmt.Fprintf(out, "# retarget a live in-process branch without rebuilding the host task\n")
+	fmt.Fprintf(out, "goav ctl --control %s rebranch memory 'thumbnail every=10 label=slow ! memorysink name=slow-preview'\n", address)
 	fmt.Fprintf(out, "goav ctl --control %s detach archive\n", address)
+	fmt.Fprintf(out, "goav ctl --control %s detach thumbnails\n", address)
 	fmt.Fprintf(out, "goav ctl --control %s detach memory\n", address)
+	fmt.Fprintf(out, "goav ctl --control %s detach acme-preview\n", address)
 }
 
 func waitForHostSocket(ctx context.Context, address string, errC <-chan error) error {
@@ -361,6 +417,95 @@ func parseDemoRate(value string) (int, error) {
 		return 0, fmt.Errorf("bitrate must be a positive integer, 128k, or 2M")
 	}
 	return parsed * multiplier, nil
+}
+
+func parsePositiveSetting(value string, name string) (int, error) {
+	parsed, err := strconv.Atoi(strings.TrimSpace(value))
+	if err != nil || parsed <= 0 {
+		return 0, ctl.NewError(
+			"invalid_value",
+			"parse branch pipeline",
+			name,
+			name+" must be a positive integer",
+			[]string{"value=" + value},
+			[]string{"use " + name + "=5"},
+			err,
+		)
+	}
+	return parsed, nil
+}
+
+type sourceControlSummary struct {
+	Source   string               `json:"source"`
+	Type     av.EventType         `json:"type,omitempty"`
+	Count    int                  `json:"count"`
+	Controls []sourceControlEvent `json:"controls"`
+}
+
+type sourceControlEvent struct {
+	Type     av.EventType `json:"type"`
+	Stream   av.StreamID  `json:"stream,omitempty"`
+	Position string       `json:"position,omitempty"`
+	End      string       `json:"end,omitempty"`
+	Rate     float64      `json:"rate,omitempty"`
+	Reason   string       `json:"reason,omitempty"`
+}
+
+func summarizeSourceControls(source *goavtest.TestSource, typ av.EventType) sourceControlSummary {
+	summary := sourceControlSummary{Source: "fixture", Type: typ}
+	if source == nil {
+		return summary
+	}
+	for _, event := range source.Controls() {
+		if typ != "" && event.Type != typ {
+			continue
+		}
+		summary.Controls = append(summary.Controls, sourceControlEventFromEvent(event))
+	}
+	summary.Count = len(summary.Controls)
+	return summary
+}
+
+func sourceControlEventFromEvent(event av.Event) sourceControlEvent {
+	out := sourceControlEvent{
+		Type:   event.Type,
+		Stream: event.StreamID,
+		Reason: event.Reason,
+	}
+	if position, ok := event.Timestamp.ToDuration(); ok {
+		out.Position = position.String()
+	}
+	if rate, ok := av.EventRateValue(&event); ok {
+		out.Rate = rate
+	}
+	if end, ok := av.EventSegmentEnd(&event); ok {
+		out.End = end.String()
+	}
+	return out
+}
+
+func demoNodeName(prefix string, label string) string {
+	label = strings.TrimSpace(label)
+	if label == "" {
+		return prefix
+	}
+	var out strings.Builder
+	for _, r := range label {
+		switch {
+		case r >= 'a' && r <= 'z',
+			r >= 'A' && r <= 'Z',
+			r >= '0' && r <= '9',
+			r == '-',
+			r == '_':
+			out.WriteRune(r)
+		default:
+			out.WriteByte('-')
+		}
+	}
+	if out.Len() == 0 {
+		return prefix
+	}
+	return prefix + "-" + out.String()
 }
 
 func firstNonEmpty(values ...string) string {
