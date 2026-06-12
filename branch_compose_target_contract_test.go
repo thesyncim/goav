@@ -88,3 +88,80 @@ func TestBranchComposeTargetMatchesContracts(t *testing.T) {
 		t.Fatal("label selector matched wrong route")
 	}
 }
+
+func TestBranchComposeTargetRouteNameContracts(t *testing.T) {
+	sink := SinkFunc("frames", func(context.Context, Message) error { return nil })
+	unnamedSink := SinkFunc("", func(context.Context, Message) error { return nil })
+
+	tests := []struct {
+		name   string
+		route  branchComposeTargetRoute
+		expect string
+	}{
+		{
+			name: "declared output name wins",
+			route: branchComposeTargetRoute{
+				output: branchComposeTarget{Name: "declared"},
+				target: format.Output{Name: "target", URI: "file.webm"},
+				sink:   sink,
+			},
+			expect: "declared",
+		},
+		{
+			name: "target name",
+			route: branchComposeTargetRoute{
+				target: format.Output{Name: "archive"},
+			},
+			expect: "archive",
+		},
+		{
+			name: "target URI",
+			route: branchComposeTargetRoute{
+				target: format.Output{URI: "s3://bucket/archive.webm"},
+			},
+			expect: "s3://bucket/archive.webm",
+		},
+		{
+			name: "sink fallback",
+			route: branchComposeTargetRoute{
+				sink: sink,
+			},
+			expect: "frames",
+		},
+		{
+			name: "unnamed sink uses default sink name",
+			route: branchComposeTargetRoute{
+				sink: unnamedSink,
+			},
+			expect: "sink",
+		},
+		{
+			name: "empty route",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := branchComposeTargetRouteName(tt.route); got != tt.expect {
+				t.Fatalf("route name = %q, want %q", got, tt.expect)
+			}
+		})
+	}
+
+	routes := []branchComposeTargetRoute{
+		{output: branchComposeTarget{Name: "preview"}},
+		{target: format.Output{URI: "file:///archive.webm"}},
+		{sink: sink},
+	}
+	if got := branchComposeTargetRouteIndex(routes, "preview"); got != 0 {
+		t.Fatalf("preview route index = %d, want 0", got)
+	}
+	if got := branchComposeTargetRouteIndex(routes, "file:///archive.webm"); got != 1 {
+		t.Fatalf("archive route index = %d, want 1", got)
+	}
+	if got := branchComposeTargetRouteIndex(routes, "frames"); got != 2 {
+		t.Fatalf("sink route index = %d, want 2", got)
+	}
+	if got := branchComposeTargetRouteIndex(routes, "missing"); got != -1 {
+		t.Fatalf("missing route index = %d, want -1", got)
+	}
+}
