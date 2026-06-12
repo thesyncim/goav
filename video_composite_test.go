@@ -2,6 +2,8 @@ package goav
 
 import (
 	"context"
+	"errors"
+	"strings"
 	"testing"
 
 	"github.com/thesyncim/goav/av"
@@ -149,4 +151,182 @@ func TestVideoCompositeEmitsEOSWhenAllInputsEnd(t *testing.T) {
 	if len(emit.events) != 1 || emit.events[0].Type != av.EventEndOfStream || emit.events[0].StreamID != "out" {
 		t.Fatalf("events=%+v, want one out EOS", emit.events)
 	}
+}
+
+func TestVideoCompositeHandleEventAndNilContracts(t *testing.T) {
+	stage := newVideoCompositeStageWithPrealloc("composite", []av.StreamID{"a", "b"}, "out",
+		[]compositeLayout{{X: 0, Y: 0}, {X: 4, Y: 0}}, joinSyncPTS, 0)
+	emit := &mixTestEmitter{}
+	ctx := context.Background()
+
+	for _, msg := range []*pipeline.Message{
+		{Kind: pipeline.MessageFrame},
+		{Kind: pipeline.MessageFrame, Frame: &av.Frame{}},
+		{Kind: pipeline.MessageEvent},
+		{Kind: pipeline.MessagePacket},
+	} {
+		if err := stage.Handle(ctx, msg, emit); err != nil {
+			t.Fatalf("Handle(%+v) error = %v", msg, err)
+		}
+	}
+	if got := len(stage.free["a"]); got != 1 {
+		t.Fatalf("prealloc depth clamp left %d free frames, want 1", got)
+	}
+
+	discontinuity := av.Event{Type: av.EventDiscontinuity, StreamID: "a", Reason: "seek"}
+	if err := stage.Handle(ctx, &pipeline.Message{Kind: pipeline.MessageEvent, Event: &discontinuity}, emit); err != nil {
+		t.Fatalf("discontinuity error = %v", err)
+	}
+	if len(emit.events) != 1 || emit.events[0].Type != av.EventDiscontinuity || emit.events[0].StreamID != "out" || emit.events[0].Reason != "seek" {
+		t.Fatalf("discontinuity events = %+v", emit.events)
+	}
+
+	selectActive := av.Event{Type: av.EventStats, StreamID: "camera_b", Reason: selectorActiveReason}
+	if err := stage.Handle(ctx, &pipeline.Message{Kind: pipeline.MessageEvent, Event: &selectActive}, emit); err != nil {
+		t.Fatalf("select event error = %v", err)
+	}
+	if len(emit.events) != 2 || emit.events[1].StreamID != "camera_b" || emit.events[1].Reason != selectorActiveReason {
+		t.Fatalf("selector events = %+v", emit.events)
+	}
+
+	arrival := newVideoCompositeStage("arrival", []av.StreamID{"a", "b"}, "out",
+		[]compositeLayout{{X: 0, Y: 0}, {X: 4, Y: 0}}, joinSyncArrival)
+	if err := arrival.Handle(ctx, &pipeline.Message{Kind: pipeline.MessageEvent, Event: &discontinuity}, emit); err != nil {
+		t.Fatalf("arrival discontinuity error = %v", err)
+	}
+	ordinary := av.Event{Type: av.EventStats, StreamID: "a", Reason: "periodic"}
+	if err := arrival.Handle(ctx, &pipeline.Message{Kind: pipeline.MessageEvent, Event: &ordinary}, emit); err != nil {
+		t.Fatalf("ordinary event error = %v", err)
+	}
+	if len(emit.events) != 2 {
+		t.Fatalf("arrival/ordinary events changed output: %+v", emit.events)
+	}
+}
+
+func TestVideoCompositeDirectValidationAndReuseContracts(t *testing.T) {
+	dst := &av.Frame{}
+	video := &av.VideoFrame{}
+	if _, err := compositeI420FramesInto(nil, nil, 0, 0, "out", dst, video); err == nil || !strings.Contains(err.Error(), "no participating frames") {
+		t.Fatalf("empty composite err = %v", err)
+	}
+	if _, err := compositeI420FramesInto([]*av.Frame{{StreamID: "a"}}, []compositeLayout{{}}, 0, 0, "out", dst, video); err == nil || !strings.Contains(err.Error(), "no video plane") {
+		t.Fatalf("no video err = %v", err)
+	}
+
+	missingPlanes := compositeTestI420Frame("a", 2, 2, 1, 2, 3)
+	missingPlanes.Planes = missingPlanes.Planes[:2]
+	if _, err := compositeI420FramesInto([]*av.Frame{missingPlanes}, []compositeLayout{{}}, 0, 0, "out", dst, video); err == nil || !strings.Contains(err.Error(), "needs 3 planes") {
+		t.Fatalf("missing planes err = %v", err)
+	}
+
+	emptyCanvas := compositeTestI420Frame("a", 0, 0, 1, 2, 3)
+	if _, err := compositeI420FramesInto([]*av.Frame{emptyCanvas}, []compositeLayout{{}}, 0, 0, "out", dst, video); err == nil || !strings.Contains(err.Error(), "canvas is empty") {
+		t.Fatalf("empty canvas err = %v", err)
+	}
+
+	odd := compositeTestI420Frame("a", 3, 3, 9, 8, 7)
+	out, err := compositeI420FramesInto([]*av.Frame{odd}, []compositeLayout{{X: 1, Y: 1}}, 0, 0, "out", dst, video)
+	if err != nil {
+		t.Fatalf("odd composite error = %v", err)
+	}
+	if out.Video.Width != 4 || out.Video.Height != 4 {
+		t.Fatalf("odd canvas = %+v, want 4x4", out.Video)
+	}
+	if out.Planes[0].Stride != 4 || len(out.Planes[1].Buffer.Bytes) != 4 || len(out.Planes[2].Buffer.Bytes) != 4 {
+		t.Fatalf("odd planes = %+v", out.Planes)
+	}
+	out, err = compositeI420FramesInto([]*av.Frame{odd}, []compositeLayout{{}}, 0, 0, "out", dst, video)
+	if err != nil {
+		t.Fatalf("reused composite error = %v", err)
+	}
+	if out.Video.Width != 3 || out.Video.Height != 3 {
+		t.Fatalf("reused canvas = %+v, want 3x3", out.Video)
+	}
+}
+
+func TestVideoCompositeCopyPlaneClipsAndGuards(t *testing.T) {
+	src := &av.Plane{Buffer: av.Buffer{Bytes: []byte{1, 2, 3, 4, 5, 6}}, Offset: 1}
+	dst := make([]byte, 9)
+	copyPlane(dst, 3, 3, src, 2, 2, -1, -1)
+	if dst[0] != 5 || dst[1] != 0 || dst[3] != 0 {
+		t.Fatalf("negative clipped dst = %v, want only visible source sample copied", dst)
+	}
+
+	dst = make([]byte, 9)
+	copyPlane(dst, 3, 3, &av.Plane{Buffer: av.Buffer{Bytes: []byte{7, 8, 9, 10}}, Stride: 2}, 2, 2, 2, 1)
+	if dst[5] != 7 || dst[8] != 9 {
+		t.Fatalf("right clipped dst = %v, want last column copied", dst)
+	}
+
+	dst = []byte{1, 1, 1, 1}
+	copyPlane(dst, 2, 2, &av.Plane{Buffer: av.Buffer{Bytes: []byte{9, 9}}, Offset: 4}, 2, 1, 0, 0)
+	copyPlane(dst, 2, 2, &av.Plane{Buffer: av.Buffer{Bytes: []byte{8, 8}}}, 2, 1, 4, 0)
+	if got := dst; got[0] != 1 || got[1] != 1 || got[2] != 1 || got[3] != 1 {
+		t.Fatalf("guarded dst = %v, want unchanged", got)
+	}
+}
+
+func TestVideoCompositeCloneAndEmitterErrorContracts(t *testing.T) {
+	stage := newVideoCompositeStage("composite", []av.StreamID{"a", "b"}, "out",
+		[]compositeLayout{{X: 0, Y: 0}, {X: 4, Y: 0}}, joinSyncArrival)
+
+	mutable := compositeTestI420Frame("a", 2, 2, 11, 12, 13)
+	for i := range mutable.Planes {
+		mutable.Planes[i].Buffer.Ownership = av.BufferOwned
+	}
+	clone := stage.cloneCompositeFrame(mutable)
+	mutable.Planes[0].Buffer.Bytes[0] = 99
+	if clone.Planes[0].Buffer.Bytes[0] != 11 || clone.Planes[0].Buffer.Ownership != av.BufferOwned {
+		t.Fatalf("clone plane = %+v, want owned deep copy", clone.Planes[0].Buffer)
+	}
+	stage.recycleCompositeFrame(clone)
+	if got := len(stage.free["a"]); got != 1 {
+		t.Fatalf("recycled free frames = %d, want 1", got)
+	}
+	clone = stage.cloneCompositeFrame(mutable)
+	if clone.Planes[0].Buffer.Bytes[0] != 99 || clone.Planes[0].Buffer.Ownership != av.BufferOwned {
+		t.Fatalf("reused clone plane = %+v, want owned reused buffer", clone.Planes[0].Buffer)
+	}
+	stage.recycleCompositeFrame(clone)
+
+	extra := compositeTestI420Frame("new-arm", 1, 1, 1, 2, 3)
+	extra.Planes = append(extra.Planes, av.Plane{Buffer: av.Buffer{Bytes: []byte{4}}})
+	clone = stage.cloneCompositeFrame(extra)
+	if clone.Video == nil || len(clone.Planes) != 4 {
+		t.Fatalf("unknown-arm clone = %+v, want allocated video and 4 planes", clone)
+	}
+
+	emitErr := errors.New("emit failed")
+	failEmit := &videoCompositeFailEmitter{err: emitErr}
+	if err := stage.Handle(context.Background(), &pipeline.Message{Kind: pipeline.MessageFrame, Frame: compositeTestI420Frame("a", 4, 4, 1, 2, 3)}, failEmit); err != nil {
+		t.Fatalf("first frame error = %v", err)
+	}
+	err := stage.Handle(context.Background(), &pipeline.Message{Kind: pipeline.MessageFrame, Frame: compositeTestI420Frame("b", 4, 4, 4, 5, 6)}, failEmit)
+	if !errors.Is(err, emitErr) {
+		t.Fatalf("emitter error = %v, want %v", err, emitErr)
+	}
+	if closeErr := stage.Close(); closeErr != nil {
+		t.Fatalf("Close error = %v", closeErr)
+	}
+}
+
+func TestVideoCompositeEOSErrorDuringDrain(t *testing.T) {
+	stage := newVideoCompositeStage("composite", []av.StreamID{"a", "b"}, "out",
+		[]compositeLayout{{X: 0, Y: 0}, {X: 4, Y: 0}}, joinSyncArrival)
+	if err := stage.Handle(context.Background(), &pipeline.Message{Kind: pipeline.MessageFrame, Frame: compositeTestI420Frame("a", 4, 4, 1, 2, 3)}, &mixTestEmitter{}); err != nil {
+		t.Fatalf("frame error = %v", err)
+	}
+	emitErr := errors.New("emit failed")
+	err := stage.Handle(context.Background(), &pipeline.Message{Kind: pipeline.MessageEvent, Event: &av.Event{Type: av.EventEndOfStream, StreamID: "b"}}, &videoCompositeFailEmitter{err: emitErr})
+	if !errors.Is(err, emitErr) {
+		t.Fatalf("EOS drain error = %v, want %v", err, emitErr)
+	}
+}
+
+type videoCompositeFailEmitter struct {
+	err error
+}
+
+func (e *videoCompositeFailEmitter) Emit(context.Context, *pipeline.Message) error {
+	return e.err
 }
