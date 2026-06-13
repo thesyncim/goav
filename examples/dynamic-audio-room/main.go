@@ -434,7 +434,10 @@ func summarizeRoomEvents(events []av.Event) []string {
 	for _, event := range events {
 		switch event.Type {
 		case av.EventStreamAdded, av.EventStreamRemoved, av.EventEndOfStream:
-			out = append(out, string(event.Type)+":"+string(event.StreamID))
+			label := string(event.Type) + ":" + string(event.StreamID)
+			if len(out) == 0 || out[len(out)-1] != label {
+				out = append(out, label)
+			}
 		}
 	}
 	return out
