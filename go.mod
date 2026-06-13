@@ -1,6 +1,6 @@
 module github.com/thesyncim/goav
 
-go 1.26.2
+go 1.26.4
 
 require (
 	github.com/thesyncim/goaac v0.0.0-20260612181820-28117ebe9116

@@ -10,6 +10,7 @@ import (
 	"go/token"
 	"io"
 	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -1690,14 +1691,14 @@ func TestPublicDiagnosticsUseDestinationVocabulary(t *testing.T) {
 	}
 }
 
-func TestReadmeShowsCustomDestinations(t *testing.T) {
-	body, err := os.ReadFile("README.md")
+func TestDocsShowCustomDestinations(t *testing.T) {
+	body, err := os.ReadFile(filepath.Join("docs", "EXTENSION_COOKBOOK.md"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	text := string(body)
 	for _, required := range []string{
-		"## Custom Destinations",
+		"## Custom Destination",
 		"goav.Writer(",
 		"goav.Custom(",
 		"provider.Info",
@@ -1708,13 +1709,13 @@ func TestReadmeShowsCustomDestinations(t *testing.T) {
 		"Reuse one destination value",
 	} {
 		if !strings.Contains(text, required) {
-			t.Fatalf("README should keep custom destination text %q", required)
+			t.Fatalf("extension cookbook should keep custom destination text %q", required)
 		}
 	}
 }
 
-func TestReadmeShowsCustomSources(t *testing.T) {
-	body, err := os.ReadFile("README.md")
+func TestDocsShowCustomSources(t *testing.T) {
+	body, err := os.ReadFile(filepath.Join("docs", "EXTENSION_COOKBOOK.md"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1730,13 +1731,13 @@ func TestReadmeShowsCustomSources(t *testing.T) {
 		"push.EOS()",
 	} {
 		if !strings.Contains(text, required) {
-			t.Fatalf("README should keep custom source text %q", required)
+			t.Fatalf("extension cookbook should keep custom source text %q", required)
 		}
 	}
 }
 
-func TestReadmeLinksCompiledBootstrapExamples(t *testing.T) {
-	body, err := os.ReadFile("README.md")
+func TestDocsLinkCompiledBootstrapExamples(t *testing.T) {
+	body, err := os.ReadFile(filepath.Join("docs", "EXTENSION_COOKBOOK.md"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1749,16 +1750,13 @@ func TestReadmeLinksCompiledBootstrapExamples(t *testing.T) {
 		"graphrender.RenderTaskFlowchart(task)",
 	} {
 		if !strings.Contains(text, required) {
-			t.Fatalf("README should keep compiled bootstrap example %q", required)
+			t.Fatalf("extension cookbook should keep compiled bootstrap example %q", required)
 		}
 	}
 }
 
 func TestDocsShowDebugDiagnosticsWorkflow(t *testing.T) {
-	for _, file := range []string{
-		"README.md",
-		"docs/USE_CASES.md",
-	} {
+	for _, file := range []string{"docs/USE_CASES.md"} {
 		body, err := os.ReadFile(file)
 		if err != nil {
 			t.Fatal(err)
@@ -1782,11 +1780,11 @@ func TestDocsShowDebugDiagnosticsWorkflow(t *testing.T) {
 }
 
 func TestDocsShowCodecControlsAndDeclarativePerformanceGoal(t *testing.T) {
-	readme, err := os.ReadFile("README.md")
+	controlPlane, err := os.ReadFile(filepath.Join("docs", "CONTROL_PLANE.md"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	readmeText := string(readme)
+	controlPlaneText := strings.Join(strings.Fields(string(controlPlane)), " ")
 	for _, required := range []string{
 		"codec.Control(",
 		"Opus, VP8, VP9, and AV1 are full encode/decode recipe verticals",
@@ -1798,8 +1796,8 @@ func TestDocsShowCodecControlsAndDeclarativePerformanceGoal(t *testing.T) {
 		"public grammar stays Input, Stream, Tap, Branch, Destination, Flow,",
 		"workflows should be expressible through declarative recipes",
 	} {
-		if !strings.Contains(readmeText, required) {
-			t.Fatalf("README should keep codec/declarative goal text %q", required)
+		if !strings.Contains(controlPlaneText, required) {
+			t.Fatalf("control-plane docs should keep codec/declarative goal text %q", required)
 		}
 	}
 	for _, forbidden := range []string{
@@ -1807,8 +1805,8 @@ func TestDocsShowCodecControlsAndDeclarativePerformanceGoal(t *testing.T) {
 		"framerate from shape",
 		"framerate/FPS",
 	} {
-		if strings.Contains(readmeText, forbidden) {
-			t.Fatalf("README should not reintroduce shape-side encode tuning %q", forbidden)
+		if strings.Contains(controlPlaneText, forbidden) {
+			t.Fatalf("control-plane docs should not reintroduce shape-side encode tuning %q", forbidden)
 		}
 	}
 
@@ -2027,25 +2025,25 @@ func TestBranchFromUsesTypedSources(t *testing.T) {
 	_ = goav.Branch("stream").From(node.Stream("audio"))
 }
 
-func TestReadmeFlowExampleUsesDistinctBranches(t *testing.T) {
-	body, err := os.ReadFile("README.md")
+func TestUseCasesFlowExampleUsesDistinctBranches(t *testing.T) {
+	body, err := os.ReadFile(filepath.Join("docs", "USE_CASES.md"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	text := string(body)
 	if strings.Contains(text, "Apply(voice).\n    Apply(voice)") {
-		t.Fatal("README should not show repeated direct flow application when branches are the intended split")
+		t.Fatal("use-case docs should not show repeated direct flow application when branches are the intended split")
 	}
 	if got := strings.Count(text, `goav.Branch("voice").Apply(voice).To(voiceOut)`); got != 1 {
-		t.Fatalf("README voice flow branch count = %d, want 1", got)
+		t.Fatalf("use-case docs voice flow branch count = %d, want 1", got)
 	}
 	if got := strings.Count(text, `goav.Branch("archive").Apply(archive).To(archiveOut)`); got != 1 {
-		t.Fatalf("README archive flow branch count = %d, want 1", got)
+		t.Fatalf("use-case docs archive flow branch count = %d, want 1", got)
 	}
 }
 
 func TestDocsExplainFlowVersusBranchRule(t *testing.T) {
-	for _, file := range []string{"README.md", "docs/USE_CASES.md"} {
+	for _, file := range []string{"docs/USE_CASES.md"} {
 		body, err := os.ReadFile(file)
 		if err != nil {
 			t.Fatal(err)
@@ -2088,7 +2086,7 @@ func TestDocsKeepGoAVNativeGoal(t *testing.T) {
 }
 
 func TestDocsShowGoAVBranchBuffers(t *testing.T) {
-	for _, file := range []string{"README.md", "docs/USE_CASES.md"} {
+	for _, file := range []string{"docs/USE_CASES.md"} {
 		body, err := os.ReadFile(file)
 		if err != nil {
 			t.Fatal(err)
@@ -2143,7 +2141,7 @@ func TestReadmeThirtySecondExamplesUseDefaultFormats(t *testing.T) {
 	}
 	text := string(body)
 	start := strings.Index(text, "## 30-Second Examples")
-	end := strings.Index(text, "## Composition Patterns")
+	end := strings.Index(text, "## Common Recipes")
 	if start < 0 || end < 0 || end <= start {
 		t.Fatalf("README sections not found")
 	}
@@ -2159,8 +2157,8 @@ func TestReadmeThirtySecondExamplesUseDefaultFormats(t *testing.T) {
 	}
 }
 
-func TestReadmeUsesDestinationOptions(t *testing.T) {
-	body, err := os.ReadFile("README.md")
+func TestDocsUseDestinationOptions(t *testing.T) {
+	body, err := os.ReadFile(filepath.Join("docs", "EXTENSION_COOKBOOK.md"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2172,7 +2170,7 @@ func TestReadmeUsesDestinationOptions(t *testing.T) {
 		"goav.MIME(",
 	} {
 		if !strings.Contains(text, required) {
-			t.Fatalf("README should keep destination option example %q", required)
+			t.Fatalf("extension cookbook should keep destination option example %q", required)
 		}
 	}
 	for _, forbidden := range []string{
@@ -2182,7 +2180,7 @@ func TestReadmeUsesDestinationOptions(t *testing.T) {
 		"Adapter-Backed Workflows",
 	} {
 		if strings.Contains(text, forbidden) {
-			t.Fatalf("README should not teach stale destination/API spelling %q", forbidden)
+			t.Fatalf("extension cookbook should not teach stale destination/API spelling %q", forbidden)
 		}
 	}
 }

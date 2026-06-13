@@ -32,6 +32,11 @@ goav.Default(opts...) / goav.New(opts...) -> Runtime; job.UseRuntime(rt)
 errors: *goav.BuildError{Code: errcode.X, ...} matched with errors.As/Is
 ```
 
+The checked operation reference is
+[`docs/OPERATIONS.md`](OPERATIONS.md): each chain operation lists input shape,
+output shape, allowed domain, inserted conversions, primary refusals, and
+runtime attach behavior.
+
 Vocabulary read by applications, all tier A:
 
 - `errcode`: the error-code catalog (one `Code` per refusal class).
@@ -49,7 +54,8 @@ Vocabulary read by applications, all tier A:
 
 Everything pluggable goes through an exported interface plus a value-typed
 `With*` option on a per-runtime registry. External implementations are
-first-class. See docs/ADAPTERS.md and docs/COMPONENTS.md.
+first-class. See docs/ADAPTERS.md, docs/COMPONENTS.md, and
+docs/EXTENSION_COOKBOOK.md.
 
 - **Sources**: `provider.Source` (`OpenSource`), `goav.Source(fn)` with
   `SourceFunc`/`SourcePush`/`PushResult`; transports build on it:
@@ -243,6 +249,8 @@ tomorrow is governed the day it lands.
 - README front door: first five examples stay on the grammar
   (`TestReadmeFirstScreenAvoidsGraphInternals`); advanced knobs stay out of
   the guide (`TestReadmeKeepsAdvancedRuntimeKnobsOutOfFrontDoor`).
+- Composability laws: `docs/COMPOSABILITY_LAWS.md` maps the front-door
+  invariants to executable tests.
 
 `adapters/*` and `container/*` are implementations behind the `codec`/`format`
 extension points (registered by `Default()`/`WithStd*`), outside the core import
@@ -251,8 +259,8 @@ graph and not part of the governed surface: an explicit, asserted exclusion
 
 ## Module boundaries
 
-The repository is four Go modules, and the module boundary is the dependency
-boundary:
+The repository is split into a root module, transport modules, and runnable
+example modules. The module boundary is the dependency boundary:
 
 - **root (`github.com/thesyncim/goav`)**: the grammar, the extension points,
   and the pure-Go implementations. May require only `github.com/thesyncim/*` modules
@@ -265,11 +273,15 @@ boundary:
   pin (`doc_pin_test.go` per module) and its RTP/WebRTC-flavored integration
   tests (`rtpav/integration`, `webrtcav/integration`); the root module's
   dynamic package walk correctly stops at their `go.mod`.
-- **`examples/webrtc-runtime-ladder`**: a nested module for runnable
-  examples, free to depend on anything.
-- **`examples/control-plane-host`**: a root-module runnable CLI host example
-  for `goav ctl`; it stays dependency-light and is doc-pinned by the root
-  package walk.
+- **runnable examples**: `examples/webrtc-runtime-ladder`,
+  `examples/custom-source`, `examples/provider-source`,
+  `examples/custom-destination`, `examples/custom-filter`,
+  `examples/transactional-writer`, `examples/custom-codec`,
+  `examples/custom-join`, and
+  `examples/control-plane-host` are nested modules. They are copyable
+  adoption examples, free to carry their own dependencies, and CI builds/tests
+  each module through the `examples/*/go.mod` loop. Root surface governance
+  stops at their `go.mod`; each example owns its README and tests.
 
 ## Compatibility
 

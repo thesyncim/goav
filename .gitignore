@@ -5,5 +5,15 @@ dist/
 coverage.out
 *.test
 .claude/
-bench-results/
-webrtc-runtime-ladder
+bench-results/*
+!bench-results/
+!bench-results/README.md
+/examples/webrtc-runtime-ladder/webrtc-runtime-ladder
+/examples/custom-source/custom-source
+/examples/custom-destination/custom-destination
+/examples/custom-filter/custom-filter
+/examples/transactional-writer/transactional-writer
+/examples/custom-codec/custom-codec
+/examples/custom-join/custom-join
+/examples/control-plane-host/control-plane-host
+/examples/provider-source/provider-source

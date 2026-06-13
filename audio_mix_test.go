@@ -7,6 +7,7 @@ import (
 	"errors"
 	"io"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/thesyncim/goav/av"
@@ -191,6 +192,23 @@ func TestMixRequiresTwoArms(t *testing.T) {
 		t.Fatalf("err = %v, want mix_inputs", err)
 	}
 }
+
+func TestMixRawFramesRequireSinkDestination(t *testing.T) {
+	_, err := Mix(
+		From(mixTestAudioSource("a", 1)).Audio(),
+		From(mixTestAudioSource("b", 2)).Audio(),
+	).To(File("mix.ogg", io.Discard)).
+		Build(context.Background())
+	var buildErr *BuildError
+	if !errorsAsMix(err, &buildErr) || buildErr.Code != "mix_destination" || !errors.Is(err, ErrUnsupportedBuild) {
+		t.Fatalf("err = %v, want mix_destination wrapping ErrUnsupportedBuild", err)
+	}
+	if !strings.Contains(err.Error(), ".Encode(codec.Opus") ||
+		!strings.Contains(err.Error(), "goav.Sink") {
+		t.Fatalf("err = %v, want encode-or-sink guidance", err)
+	}
+}
+
 func errorsAsMix(err error, target **BuildError) bool { return errors.As(err, target) }
 
 func TestMixBuilderOptionsCarryIntoJoinSpec(t *testing.T) {

@@ -24,7 +24,8 @@ It demonstrates:
 Start the host:
 
 ```sh
-go run ./examples/control-plane-host --control unix:///tmp/goav-control-plane-host.sock
+cd examples/control-plane-host
+go run . --control unix:///tmp/goav-control-plane-host.sock
 ```
 
 In another shell, set a shorter variable:

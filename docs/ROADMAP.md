@@ -5,8 +5,10 @@ experimental, what is deliberately deferred, what is planned, what is a
 non-goal, and exactly what must hold before a v1 tag. Every claim cites the
 test, benchmark, or document that backs it, or is marked **roadmap**.
 `docs/NORTH_STAR.md` keeps the evidence-cited acceptance scoreboard;
-`docs/PROGRESS.md` is the compact tracker; how goav relates to GStreamer is
-`docs/GSTREAMER_ALTERNATIVE.md`.
+`docs/PROGRESS.md` is the compact tracker; `docs/V1_CREDIBILITY_AUDIT.md`
+maps the v1-credibility pass to reviewer evidence; `docs/REPOSITORY_TRUST.md`
+records the GitHub metadata and release posture; how goav relates to GStreamer
+is `docs/GSTREAMER_ALTERNATIVE.md`.
 
 ## The settled model
 
@@ -110,8 +112,10 @@ Exists and is tested, but numbers or semantics are expected to move
   delta classes beyond resample/resize/convert remain core work
   (`docs/API_SURFACE.md` "Extension closure"). New grammar verbs reopen the
   question and must ship with their extension point.
-- **Tail-latency benchmarking**: p50/p95/p99 need a histogram harness;
-  ns/op is an average (`docs/PERFORMANCE.md` "Not proven"). Roadmap.
+- **Published performance baselines**: the perf-lab harness reports p50/p95/p99,
+  heap/RSS, pressure, attach/detach, fanout, container corpus, and real-Opus
+  smoke, but release-quality long-run artifacts are still missing
+  (`docs/PERFORMANCE.md`). Roadmap.
 - **PGO workflow**: profile capture over the canonical suite
   (`scripts/bench/run.sh` is the entry point) feeding default-on
   profile-guided builds. Roadmap.
@@ -149,13 +153,30 @@ The checklist that gates the tag; each item names its current evidence.
 - [x] **Compile-tested examples**: 13 `Example*` functions run under
   `go test` (`example_test.go`); the `examples/webrtc-runtime-ladder` module
   builds and tests in CI.
+- [x] **Operation reference**: `docs/OPERATIONS.md` covers the front-door
+  chain operations by input shape, output shape, domain, inserted conversions,
+  primary refusals, and runtime attach behavior; `operations_doc_test.go` pins
+  the required sections and front-door links.
 - [x] **Structured errors enforced**: `errors_pin_test.go` (catalog-code
-  pin) + 10 acceptance snippets (`error_acceptance_test.go`).
+  pin) + complete acceptance coverage rows in `docs/ERROR_CATALOG.md`
+  generated from `error_catalog_pin_test.go`; every current errcode names a
+  bad recipe, rendered-error assertion or golden-equivalent coverage, a fix,
+  a cause/sentinel when present, and the test that owns it.
 - [x] **Benchmarks present**: 16 measured workloads (`bench_test.go`) +
-  pipeline/container suites; bench smoke runs in CI; methodology in
+  pipeline/container suites plus perf-lab latency/RSS/pressure/control/fanout/
+  container/real-Opus smoke; bench artifacts run in CI; methodology in
   `docs/PERFORMANCE.md`.
 - [x] **Adapter guide**: `docs/ADAPTER_AUTHORING.md` with the executable
-  extension-point proof (`adapterproof/adapter_compat_test.go`).
+  extension-point proof (`adapterproof/adapter_compat_test.go`) and copyable
+  external modules under `examples/custom-*`, `examples/transactional-writer`,
+  and `examples/control-plane-host`.
+- [x] **Extension cookbook**: `docs/EXTENSION_COOKBOOK.md` maps source,
+  destination, transactional writer, filter, codec, join, and control-plane
+  host seams to copyable code shapes and example modules.
+- [x] **Composability laws**: `docs/COMPOSABILITY_LAWS.md` maps direct stream
+  equivalence, flow restraint, Build/Attach parity, Describe/Build equality,
+  Explain diagnostics, destination handles, branch isolation, rollback, and
+  external parity to executable tests.
 - [x] **Race tests pass**: CI runs `go test -race` on root, `pipeline`,
   `goavtest`, `format` (`.github/workflows/ci.yml`).
 - [x] **Container fuzz/corpus**: `FuzzDemuxerMalformedInputs` with seed
@@ -177,6 +198,12 @@ The checklist that gates the tag; each item names its current evidence.
   prefixed tags (`rtpav/vX.Y.Z`, `webrtcav/vX.Y.Z`), so a root v1 does not
   freeze the transport modules and vice versa; webrtcav requires rtpav
   requires the root, so tag the root first, then rtpav, then webrtcav.
-- [ ] **Release decision**: confirm the `go 1.26.2` directive in `go.mod`
-  is the intended minimum supported Go, write the tag's compatibility note,
-  and cut v1. Not done; the only open item is a maintainer call, not code.
+- [x] **Release automation**: `.github/workflows/release.yml` validates
+  existing signed tags, runs checks in the tagged module directory, builds root
+  CLI archives, and creates GitHub release notes; root CLI releases include
+  checksums, Go module SBOM, per-binary buildinfo, and provenance metadata.
+  `docs/RELEASING.md` documents signed-tag ownership and tag order.
+- [ ] **Release decision**: confirm the `go 1.26.4` directive in `go.mod`
+  is the intended minimum supported Go, fill the compatibility note template in
+  `docs/COMPATIBILITY.md`, and cut v1. Not done; the only open item is a
+  maintainer call, not code.

@@ -38,6 +38,18 @@ func TestPlanOperationSpecsContracts(t *testing.T) {
 			wantCodes:       []string{string(errcode.FrameSource)},
 		},
 		{
+			name:   "custom event source reports event pass-through",
+			input:  inputIntent{Name: "events", Protocol: av.ProtocolCustom},
+			stream: streamIntent{},
+			branch: "events",
+			initial: shape.Event(
+				shape.Stream("events"),
+			),
+			wantKinds:      []plan.OperationKind{plan.OpShape},
+			wantComponents: []string{"shape"},
+			wantCodes:      []string{string(errcode.EventSource)},
+		},
+		{
 			name: "packet file source keeps packet copy when no frame work is requested",
 			input: inputIntent{
 				Name:     "movie",

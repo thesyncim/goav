@@ -1,0 +1,3 @@
+name: mem://voice.ogg
+format: ogg mime: audio/ogg streams: 1
+kind: demo-destination closed: 1 bytes: true

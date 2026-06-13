@@ -2,7 +2,8 @@
 
 This file is the compact current-state tracker. `docs/NORTH_STAR.md` defines
 the design contract; `docs/ROADMAP.md` separates stable, experimental,
-deferred, planned, and non-goal work.
+deferred, planned, and non-goal work; `docs/V1_CREDIBILITY_AUDIT.md` maps the
+current v1-credibility evidence to files, tests, and workflows.
 
 ## Working Surface
 
@@ -62,6 +63,22 @@ Compatibility pins:
   fake containers, and fake clocks.
 - Generated-source CLI pipelines and `goav ctl` sockets for live inspection,
   attach, rebranch, detach, controls, and graph rendering.
+
+## V1 Credibility Evidence
+
+- README is now an adoption front door with one compile-pinned Go snippet and
+  links to deeper docs.
+- Error docs include a checked catalog row for every current errcode, with
+  named coverage instead of catalog-only placeholders.
+- External-style examples for custom filters, transactional writers, custom
+  codecs, and custom joins live in standalone modules with expected output and
+  failure cases.
+- The performance lab writes baseline, latency, RSS, pressure, control, fanout,
+  container, and pprof artifacts under `bench-results/`; CI uploads smoke
+  artifacts and the release workflow emits checksums, SBOM, buildinfo, and
+  provenance metadata.
+- Composability laws, API-surface governance, release docs, and the PR evidence
+  draft are pinned by doc tests.
 
 ## Extension Points
 

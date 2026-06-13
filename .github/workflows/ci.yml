@@ -3,18 +3,38 @@ name: ci
 on:
   push:
     branches: [main]
+    tags:
+      - 'v*'
+      - 'rtpav/v*'
+      - 'webrtcav/v*'
   pull_request:
+
+permissions:
+  contents: read
 
 jobs:
   gate:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            go: '1.26.4'
+            full: true
+          - os: ubuntu-latest
+            go: stable
+            full: false
+          - os: macos-latest
+            go: '1.26.4'
+            full: false
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 50
       - uses: actions/setup-go@v6
         with:
-          go-version-file: go.mod
+          go-version: ${{ matrix.go }}
           cache: true
 
       # Commit messages are part of the project's surface: no tool/AI credits,
@@ -26,27 +46,108 @@ jobs:
           fi
           echo clean
 
+      - name: Changelog hygiene
+        if: matrix.full && github.event_name == 'pull_request'
+        run: |
+          if jq -e '.pull_request.labels[].name == "skip-changelog"' "$GITHUB_EVENT_PATH" >/dev/null; then
+            echo "skip-changelog label present"
+            exit 0
+          fi
+          git fetch --no-tags --depth=1 origin "${{ github.event.pull_request.base.sha }}"
+          if ! git diff --name-only "${{ github.event.pull_request.base.sha }}"...HEAD | grep -qx 'CHANGELOG.md'; then
+            echo "CHANGELOG.md must be updated, or apply the skip-changelog label for internal-only changes"
+            exit 1
+          fi
+
       - name: Build (pure Go)
         run: CGO_ENABLED=0 go build ./...
 
       - name: Test
         run: CGO_ENABLED=0 go test -count=1 ./...
 
+      - name: Coverage
+        if: matrix.full
+        run: CGO_ENABLED=0 go test -count=1 -covermode=atomic -coverprofile=coverage.out ./...
+
+      - name: Upload coverage artifact
+        if: matrix.full
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-${{ matrix.os }}-${{ matrix.go }}
+          path: coverage.out
+
       - name: Race
+        if: matrix.full
         run: CGO_ENABLED=1 go test -race -count=1 . ./pipeline ./goavtest ./format ./cmd/goav ./ctl ./internal/launchctl ./graphrender
 
       # One iteration per benchmark: catches bench bit-rot (compile/run errors)
       # without asserting timing, which would flake on shared runners.
       - name: Bench smoke
-        run: CGO_ENABLED=0 go test -run '^$' -bench . -benchtime=1x ./...
+        if: matrix.full
+        run: |
+          mkdir -p bench-results
+          CGO_ENABLED=0 go test -run '^$' -bench . -benchmem -benchtime=1x ./... | tee bench-results/bench-smoke.txt
+
+      - name: Performance lab smoke
+        if: matrix.full
+        run: PERF_BENCHTIME=1x scripts/bench/perf-lab.sh
+
+      - name: Benchmark comparison against PR base
+        if: matrix.full && github.event_name == 'pull_request'
+        run: |
+          git fetch --no-tags --depth=1 origin "${{ github.event.pull_request.base.sha }}"
+          BENCH_COMPARE_COUNT=3 BENCH_COMPARE_TIME=1x scripts/bench/ci-compare.sh FETCH_HEAD
+
+      - name: Upload benchmark artifact
+        if: matrix.full
+        uses: actions/upload-artifact@v4
+        with:
+          name: bench-smoke-${{ matrix.os }}-${{ matrix.go }}
+          path: |
+            bench-results/bench-smoke.txt
+            bench-results/perf-lab-*.txt
+            bench-results/baseline/**/*.txt
+            bench-results/latency/*.json
+            bench-results/rss/*.json
+            bench-results/pressure/*.json
+            bench-results/control/*.json
+            bench-results/fanout/*.json
+            bench-results/container/*.json
+            bench-results/pprof/**
+            bench-results/bench-base.txt
+            bench-results/bench-current.txt
+            bench-results/benchstat-pr-vs-base.txt
+
+      - name: Fuzz smoke
+        if: matrix.full
+        run: |
+          CGO_ENABLED=0 go test ./container/matroska -run '^$' -fuzz=FuzzDemuxerMalformedInputs -fuzztime=10s
+          CGO_ENABLED=0 go test ./container/webm -run '^$' -fuzz=FuzzDemuxerMalformedInputs -fuzztime=10s
 
       - name: Vet
         run: CGO_ENABLED=0 go vet ./...
 
+      - name: Package documentation smoke
+        if: matrix.full
+        run: |
+          missing="$(go list -f '{{if not .Doc}}{{.ImportPath}}{{end}}' ./... | grep -Ev '/internal/|/adapters/|/container/|/adapterproof$' || true)"
+          if [ -n "$missing" ]; then
+            echo "public packages without package docs:"
+            echo "$missing"
+            exit 1
+          fi
+
       - name: Staticcheck
+        if: matrix.full
         run: |
           go install honnef.co/go/tools/cmd/staticcheck@v0.7.0
           staticcheck ./...
+
+      - name: Govulncheck
+        if: matrix.full
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          govulncheck ./...
 
       - name: Gofmt
         run: test -z "$(gofmt -l .)"
@@ -54,6 +155,7 @@ jobs:
       # The transport modules carry the pion dependencies the root module
       # refuses (TestRootModuleDependencyPurity); each is gated like the root.
       - name: rtpav module
+        if: matrix.full
         working-directory: rtpav
         run: |
           CGO_ENABLED=0 go build ./...
@@ -61,8 +163,10 @@ jobs:
           CGO_ENABLED=1 go test -race -count=1 ./...
           CGO_ENABLED=0 go vet ./...
           staticcheck ./...
+          govulncheck ./...
 
       - name: webrtcav module
+        if: matrix.full
         working-directory: webrtcav
         run: |
           CGO_ENABLED=0 go build ./...
@@ -70,9 +174,28 @@ jobs:
           CGO_ENABLED=1 go test -race -count=1 ./...
           CGO_ENABLED=0 go vet ./...
           staticcheck ./...
+          govulncheck ./...
 
-      - name: Examples module
-        working-directory: examples/webrtc-runtime-ladder
+      - name: Examples modules
+        if: matrix.full
         run: |
-          CGO_ENABLED=0 go build ./...
-          CGO_ENABLED=0 go test -count=1 ./...
+          for mod in examples/*/go.mod; do
+            dir="$(dirname "$mod")"
+            echo "::group::$dir"
+            (cd "$dir" && CGO_ENABLED=0 go build ./... && CGO_ENABLED=0 go test -count=1 ./...)
+            echo "::endgroup::"
+          done
+
+      - name: Release tag validation
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          case "${GITHUB_REF_NAME}" in
+            v[0-9]*.[0-9]*.[0-9]*|rtpav/v[0-9]*.[0-9]*.[0-9]*|webrtcav/v[0-9]*.[0-9]*.[0-9]*)
+              ;;
+            *)
+              echo "unexpected tag shape: ${GITHUB_REF_NAME}" >&2
+              exit 1
+              ;;
+          esac
+          git verify-tag "${GITHUB_REF_NAME}"
+          test -s CHANGELOG.md

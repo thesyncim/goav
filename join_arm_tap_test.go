@@ -327,6 +327,40 @@ func TestMixTapArmUnknownTapListsDeclaredTaps(t *testing.T) {
 	}
 }
 
+func TestCompositeTapArmUnknownTapListsDeclaredTaps(t *testing.T) {
+	_, err := Composite(
+		From(compositeTestVideoSource("cam", 4, 4, 100, 10, 20)).Video().Tap(FrameTap("cam.frames")).Region(0, 0),
+		FrameTap("missing").Region(4, 0),
+	).To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))).
+		Build(context.Background())
+
+	var buildErr *BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "composite_tap_arm" || !errors.Is(err, ErrUnsupportedBuild) {
+		t.Fatalf("err = %v, want composite_tap_arm wrapping ErrUnsupportedBuild", err)
+	}
+	if !strings.Contains(err.Error(), "tap=missing") ||
+		!strings.Contains(err.Error(), "declared=cam.frames") {
+		t.Fatalf("err = %v, want composite tap candidates listed", err)
+	}
+}
+
+func TestSelectTapArmUnknownTapListsDeclaredTaps(t *testing.T) {
+	_, err := Select(
+		From(selectTestOneShotSource("a", 1)).Audio().Tap(FrameTap("selected.frames")),
+		FrameTap("missing"),
+	).To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))).
+		Build(context.Background())
+
+	var buildErr *BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "select_tap_arm" || !errors.Is(err, ErrUnsupportedBuild) {
+		t.Fatalf("err = %v, want select_tap_arm wrapping ErrUnsupportedBuild", err)
+	}
+	if !strings.Contains(err.Error(), "tap=missing") ||
+		!strings.Contains(err.Error(), "declared=selected.frames") {
+		t.Fatalf("err = %v, want select tap candidates listed", err)
+	}
+}
+
 // TestMixTapArmMustFollowDeclaringArm: a tap arm resolves strictly to an
 // EARLIER arm — referencing a tap declared later is refused with the same
 // candidates listing (and the ordering fix).

@@ -1,0 +1,257 @@
+# Extension cookbook
+
+This is the copy-and-adapt guide for code outside the root module. Use
+`docs/ADAPTER_AUTHORING.md` for lifecycle details and hot-path rules; use this
+file when you want the smallest public seam that solves one extension problem.
+
+Every recipe here stays on the front-door grammar:
+
+```go
+goav.From(input).Audio().Decode().Do(stage).Encode(codec).To(destination)
+```
+
+External code should not need graph handles, string routing, package internals,
+or a global registry.
+
+## Choose the seam
+
+| Need | Use | Copy from | Failure to test |
+|---|---|---|---|
+| Push media already owned by the app | `goav.Source(name, shape, fn)` | `examples/custom-source` | missing callback or wrong shape refuses before work starts |
+| Open a transport or live provider | `provider.Source` via `goav.Input(provider)` | `examples/provider-source` | nil provider or missing codec/stream facts refuse before work starts |
+| Write bytes after format resolution | `goav.Writer(name, open, opts...)` | `examples/custom-destination` | nil opener or writer open error fails the task |
+| Commit or abort object-store uploads | `provider.TransactionalWriter` | `examples/transactional-writer` | induced pipeline error calls `Abort`, not `Commit` |
+| Replace a frame transform | `filter.Factory` + `goav.WithFilter` | `examples/custom-filter` | unsupported target returns `filter.ErrUnsupportedFormat` |
+| Add a codec | `codec.EncoderFactory` / `DecoderFactory` + `WithEncoder` / `WithDecoder` | `examples/custom-codec` | descriptor-only registration reports adapter unavailable |
+| Converge several arms | `goav.Join(name, pipeline.Stage, arms...)` | `examples/custom-join` | incompatible arm media refuses at build time |
+| Expose app-specific control | `ctl.CommandSpec`, branch steps, encoder specs | `examples/control-plane-host` | invalid settings fail before branch attach |
+
+## Custom Source
+
+Use `goav.Source` when the application already has packets, frames, or events
+and can push them directly. Declare the shape precisely; it is the planner's
+pre-open contract.
+
+```go
+input := goav.Source("mic",
+    shape.Frame(av.MediaAudio, shape.Audio(48000, 1, av.SampleFormatS16)),
+    func(ctx context.Context, push goav.SourcePush) error {
+        frame := av.Frame{
+            StreamID: "mic",
+            Type:     av.MediaAudio,
+            Audio:    &av.AudioFrame{SampleRate: 48000, Channels: 1, SampleFormat: av.SampleFormatS16},
+            Planes:   []av.Plane{{Buffer: av.Buffer{Bytes: pcm, Ownership: av.BufferImmutable}}},
+        }
+        if _, err := push.Frame(&frame); err != nil {
+            return err
+        }
+        return push.EOS()
+    })
+```
+
+Rules:
+
+- Declare packet sources with `shape.Packet(...)`, frame sources with
+  `shape.Frame(...)`, and event-only sources with `shape.Event()`.
+- Use `push.Packet(...)`, `push.Frame(...)`, `push.Event(...)`, and
+  `push.EOS()` to deliver media and lifecycle events.
+- If a pushed packet or frame has an empty `StreamID`, `SourcePush` fills the
+  declared source stream. If you replay packets from elsewhere, restamp them to
+  the source's stream ID.
+- Return cleanly on `ctx` cancellation or `goav.ErrClosed`.
+- Treat `goav.ErrBackpressure` as pacing feedback; the graph owns shedding and
+  delivery policy.
+
+When the source needs seek/rate control, late stream discovery, decode bounds,
+or a transport-owned open phase, implement `provider.Source` and pass it with
+`goav.Input(provider)`.
+
+The runnable module `examples/custom-source` verifies the happy path and a
+pre-open nil-callback failure. It is the smallest copyable module for packages
+that already own media buffers and only need to push them into goav.
+
+The runnable module `examples/provider-source` verifies the provider-owned open
+phase, declared shape facts, stream discovery, a running `pipeline.Source`, and
+a nil-provider failure. It is the copyable module for transport packages such
+as SRT, NDI, RTP variants, or proprietary ingest.
+
+## Custom Destination
+
+Use `goav.Writer` for byte destinations that should open after the output
+format and stream set are known.
+
+```go
+dest := goav.Writer("mem://voice.ogg",
+    func(ctx context.Context, info provider.Info) (io.WriteCloser, error) {
+        // info.Format, info.Streams, info.Metadata, and info.Realtime are final.
+        return upload, nil
+    },
+    goav.Format(av.FormatOgg),
+    goav.MIME("audio/ogg"),
+    goav.Metadata(av.Metadata{"kind": "voice"}),
+)
+
+err := goav.From(input).Audio().Encode(codec.Opus()).To(dest).Run(ctx)
+```
+
+Use `goav.Sink(goav.SinkFunc(...))` instead when the destination consumes
+frames or packets directly rather than muxed bytes. Use `goav.Custom(...)` or
+`provider.Destination` when the destination must advertise a richer
+`provider.Contract`.
+
+When the writer is a plain file but the extension cannot infer a container from
+the path, pass destination options directly:
+
+```go
+dest := goav.File("", out, goav.Format(av.FormatIVF))
+```
+
+Reuse one destination value when several branches should feed one mux, one sink
+group, or one transactional writer.
+
+The runnable module `examples/custom-destination` verifies the open-time
+`provider.Info` contract and a nil-opener failure without importing internals.
+
+## Transactional Writer
+
+Object-store uploads need an explicit commit boundary. Return a writer that
+also implements `provider.TransactionalWriter`; goav calls `Commit` after a
+successful run and `Abort` after failures.
+
+```go
+type uploadWriter struct {
+    io.Writer
+}
+
+func (w *uploadWriter) Close() error { return nil }
+func (w *uploadWriter) Commit(context.Context) error { return nil }
+func (w *uploadWriter) Abort(context.Context) error { return nil }
+```
+
+The runnable module `examples/transactional-writer` verifies both paths: the
+successful recipe commits once, and an induced frame-stage error aborts without
+committing.
+
+## Custom Filter
+
+Use a filter when a frame-domain operation should participate in normal recipe
+planning, validation, `Explain`, and runtime attach.
+
+```go
+desc := filter.Descriptor{
+    Name:          filter.FactoryResample,
+    Input:         av.MediaAudio,
+    Output:        av.MediaAudio,
+    SampleFormats: []string{av.SampleFormatS16},
+}
+
+rt := goav.New(
+    goav.WithStdFilters(),
+    goav.WithFilter(desc, myFactory{}),
+)
+```
+
+The factory returns an opened `filter.FrameFilter`. `FilterInto` appends to the
+caller-owned `filter.Result`; production hot paths should reuse provided
+buffers and return `filter.ErrOutputBufferTooSmall` or `filter.ErrResultFull`
+instead of allocating.
+
+Copy `examples/custom-filter` for a complete module with README, `go.mod`,
+test, expected output, and a build-time failure example.
+
+## Custom Codec
+
+Register codecs per runtime. A descriptor without a factory is useful for
+capability reporting, but encode/decode recipes need factories.
+
+```go
+desc := codec.Descriptor{
+    ID:   av.CodecID("example/pcm"),
+    Name: "example PCM",
+    Type: av.MediaAudio,
+    Capabilities: codec.Capabilities{
+        SampleFormats: []string{av.SampleFormatS16},
+    },
+}
+
+rt := goav.New(
+    goav.WithEncoder(desc, myCodecFactory{}),
+    goav.WithDecoder(desc, myCodecFactory{}),
+)
+```
+
+The encoder receives decoded frames and appends packets to
+`codec.EncodeResult`. The decoder receives packets and appends frames to
+`codec.DecodeResult`. `examples/custom-codec` shows the full round trip,
+including the packet-source detail that replayed packets must use the source's
+declared stream ID.
+
+## Custom Join
+
+Use `goav.Join` when several arms converge into one stream and built-in
+`Mix`, `Composite`, or `Select` is not the right behavior.
+
+```go
+joined := goav.Join("interleave", newInterleaveStage("interleave", "left", "right"),
+    goav.From(left).Audio(),
+    goav.From(right).Audio(),
+)
+
+err := joined.To(out).Run(ctx)
+```
+
+The stage is a normal `pipeline.Stage`. Its `InputShapes` and `OutputShapes`
+contract lets the planner decode arms, insert compatible conversions, and
+refuse wrong media before resources open. `examples/custom-join` demonstrates
+the EOS rule that matters for joins: drain while at least one arm has pending
+frames; once every arm ended and all queues are empty, stop draining and emit
+one joined EOS.
+
+## Control-Plane Host
+
+Use `ctl` when your application owns a running task and wants to expose
+app-specific verbs, branch steps, or encoder names through `goav ctl`.
+
+```go
+command := ctl.NewCommand[setRate](
+    "vendor.rate",
+    "demo playback-rate control",
+    func(ctx context.Context, task goav.Task, cmd setRate) (ctl.ControlResponse, error) {
+        if err := task.Control(ctx, goav.Rate(cmd.Value).At(pipeline.NodeRef(cmd.Source))); err != nil {
+            return ctl.ControlResponse{}, err
+        }
+        return ctl.ControlResponse{Operation: "control vendor.rate"}, nil
+    },
+)
+
+err := ctl.ServeUnixWithOptions(ctx, task, "unix:///tmp/goav.sock",
+    ctl.WithCapabilities(ctl.CapabilitySet{Commands: []ctl.CommandSpec{command}}),
+)
+```
+
+`examples/control-plane-host` is the runnable playground. It registers a custom
+command, branch steps, and a custom encoder alias, then serves them behind a
+Unix socket.
+
+## Compiled Bootstraps
+
+The package examples double as executable documentation. Keep
+`ExampleSource_pushAccounting`, `ExampleWriter_transactionalUpload`,
+`ExampleWithEncoder_customSettings`, `ExampleTask_flowchart`, and
+`ExampleTestSourceScript` compiling. Runtime diagnostics live outside core; use
+`graphrender.RenderTaskFlowchart(task)` for a running task,
+`graphrender.RenderSnapshotFlowchart(task.Snapshot())` for a captured task
+view, and `graphrender.RenderBranchFlowchart(attachment.Snapshot())` for one
+runtime branch.
+
+## Checklist
+
+- Keep registration per runtime; never rely on package globals.
+- Put unsupported shape or settings checks before resources open when possible.
+- Return typed sentinels such as `codec.ErrUnsupportedFormat` or
+  `filter.ErrUnsupportedFormat` from adapter open paths.
+- Keep hot paths allocation-free unless the example explicitly documents that
+  it is a toy implementation.
+- Test one successful recipe and one refusal/failure path.
+- For standalone examples, keep `go.mod`, README, `main.go`, `main_test.go`,
+  expected output, and a failure example together.

@@ -11,7 +11,28 @@ implementation of every extension point below, defined entirely in a test
 package that imports only public goav packages, run end to end through the
 recipe grammar. The minimal reference implementations are goavtest's fakes
 (`goavtest/codec.go`, `goavtest/format.go`); `docs/ADAPTERS.md` catalogs the
-real adapters.
+real adapters. For a copy-and-adapt guide organized by use case, see
+`docs/EXTENSION_COOKBOOK.md`.
+
+The copyable, separate-module examples are:
+
+- **`examples/custom-source`**: pushes application-owned S16 frames through
+  `goav.Source` and checks `SourcePush` accepted/dropped accounting.
+- **`examples/provider-source`**: implements `provider.Source`, opens a
+  `pipeline.Source`, and feeds goav through `goav.Input(provider)`.
+- **`examples/custom-destination`**: opens a plain byte destination with
+  `goav.Writer` and checks the resolved `provider.Info`.
+- **`examples/custom-filter`**: registers a frame filter with `goav.WithFilter`
+  and drives it through `.Resample(...)`.
+- **`examples/custom-codec`**: registers a codec with `goav.WithEncoder` and
+  `goav.WithDecoder`, then round-trips packets through `.Encode(...)` and
+  `.Decode()`.
+- **`examples/custom-join`**: implements a `pipeline.Stage` consumed by
+  `goav.Join(...)`.
+- **`examples/transactional-writer`**: opens a destination with `goav.Writer`
+  and demonstrates `provider.TransactionalWriter` commit/abort semantics.
+- **`examples/control-plane-host`**: exposes app-owned controls, branch steps,
+  sinks, and encoder spellings through a validated `ctl.CapabilitySet`.
 
 When writing your adapter, start from the smallest shipped implementation:
 

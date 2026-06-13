@@ -1,0 +1,117 @@
+name: release
+
+on:
+  push:
+    tags:
+      - 'v*'
+      - 'rtpav/v*'
+      - 'webrtcav/v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing signed tag to release
+        required: true
+      draft:
+        description: Create the GitHub release as a draft
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.26.4'
+          cache: true
+
+      - name: Resolve tag
+        id: release
+        run: |
+          if [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
+            tag="${{ inputs.tag }}"
+            draft="${{ inputs.draft }}"
+          else
+            tag="${GITHUB_REF_NAME}"
+            draft="false"
+          fi
+          case "$tag" in
+            v[0-9]*.[0-9]*.[0-9]*|rtpav/v[0-9]*.[0-9]*.[0-9]*|webrtcav/v[0-9]*.[0-9]*.[0-9]*)
+              ;;
+            *)
+              echo "unexpected tag shape: $tag" >&2
+              exit 1
+              ;;
+          esac
+          git fetch --force --tags
+          git rev-parse -q --verify "refs/tags/$tag" >/dev/null
+          git verify-tag "$tag"
+          git checkout --detach "$tag"
+          case "$tag" in
+            rtpav/*) module_dir="rtpav" ;;
+            webrtcav/*) module_dir="webrtcav" ;;
+            *) module_dir="." ;;
+          esac
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "draft=$draft" >> "$GITHUB_OUTPUT"
+          echo "module_dir=$module_dir" >> "$GITHUB_OUTPUT"
+
+      - name: Verify changelog entry point
+        run: test -s CHANGELOG.md
+
+      - name: Test tagged module
+        working-directory: ${{ steps.release.outputs.module_dir }}
+        run: CGO_ENABLED=0 go test -count=1 ./...
+
+      - name: Vet tagged module
+        working-directory: ${{ steps.release.outputs.module_dir }}
+        run: CGO_ENABLED=0 go vet ./...
+
+      - name: Build root CLI artifacts
+        if: startsWith(steps.release.outputs.tag, 'v')
+        run: |
+          tag="${{ steps.release.outputs.tag }}"
+          mkdir -p dist
+          {
+            echo "tag=$tag"
+            echo "commit=$(git rev-parse HEAD)"
+            echo "workflow=${GITHUB_WORKFLOW}"
+            echo "run_id=${GITHUB_RUN_ID}"
+            echo "run_attempt=${GITHUB_RUN_ATTEMPT}"
+            echo "go=$(go version)"
+            echo "created_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          } > dist/provenance.txt
+          go list -m -json all > dist/sbom-go-modules.json
+          for goos in linux darwin; do
+            for goarch in amd64 arm64; do
+              dir="goav_${tag}_${goos}_${goarch}"
+              mkdir -p "dist/$dir"
+              GOOS="$goos" GOARCH="$goarch" CGO_ENABLED=0 \
+                go build -trimpath -ldflags="-s -w" -o "dist/$dir/goav" ./cmd/goav
+              go version -m "dist/$dir/goav" > "dist/${dir}.buildinfo.txt"
+              tar -C dist -czf "dist/${dir}.tar.gz" "$dir"
+              rm -rf "dist/$dir"
+            done
+          done
+          (cd dist && shasum -a 256 *.tar.gz *.txt *.json > SHA256SUMS)
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="${{ steps.release.outputs.tag }}"
+          args=(release create "$tag" --verify-tag --title "$tag" --generate-notes)
+          if [ "${{ steps.release.outputs.draft }}" = "true" ]; then
+            args+=(--draft)
+          fi
+          if compgen -G "dist/*" > /dev/null; then
+            args+=(dist/*)
+          fi
+          gh "${args[@]}"

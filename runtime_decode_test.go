@@ -9,6 +9,7 @@ import (
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
+	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/format"
 )
 
@@ -68,6 +69,21 @@ type decodeTestDecoder struct {
 	decodes int
 	flushes int
 	closed  bool
+}
+
+func TestSelectDecodeStreamRequiresCodecMetadata(t *testing.T) {
+	_, err := selectDecodeStream([]av.Stream{{
+		ID:   "mystery",
+		Type: av.MediaAudio,
+	}}, av.StreamSelector{Type: av.MediaAudio})
+	var buildErr *BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != errcode.StreamCodecMissing || !errors.Is(err, ErrUnsupportedBuild) {
+		t.Fatalf("err = %v, want stream_codec_missing wrapping ErrUnsupportedBuild", err)
+	}
+	if !strings.Contains(err.Error(), "provide codec metadata") ||
+		!strings.Contains(err.Error(), "mystery") {
+		t.Fatalf("err = %v, want codec metadata guidance with selected stream", err)
+	}
 }
 
 func (d *decodeTestDecoder) Descriptor() codec.Descriptor {

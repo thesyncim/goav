@@ -1,0 +1,2 @@
+frames: [[10 20] [30 40]]
+accepted: 2 dropped: 0

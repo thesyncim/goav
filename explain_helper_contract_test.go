@@ -3,6 +3,7 @@ package goav
 import (
 	"errors"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/thesyncim/goav/av"
@@ -26,6 +27,37 @@ func TestOperationEncodeCodecContracts(t *testing.T) {
 	}
 	if got := operationEncodeCodec(streamIntent{}, false, plan.Operation{Kind: plan.OpEncode}); got != "" {
 		t.Fatalf("empty component codec = %q, want empty", got)
+	}
+}
+
+func TestExplainDecodeCodecDeferredWarning(t *testing.T) {
+	_, warnings := appendBranchOperationRequirements(nil, recipeResolved{}, plan.Branch{
+		Name:       "audio",
+		Operations: []plan.Operation{{Kind: plan.OpDecode, Component: "decoder"}},
+	}, streamIntent{}, false)
+	if len(warnings) != 1 || warnings[0].Code != string(errcode.DecodeCodecDeferred) ||
+		warnings[0].Node != "audio" ||
+		!explainSuggestionsContain(warnings[0].Suggestions, "declare the provider codec intent") {
+		t.Fatalf("warnings = %+v, want decode_codec_deferred with provider-codec guidance", warnings)
+	}
+}
+
+func explainSuggestionsContain(suggestions []string, fragment string) bool {
+	for _, suggestion := range suggestions {
+		if strings.Contains(suggestion, fragment) {
+			return true
+		}
+	}
+	return false
+}
+
+func TestExplainPreflightErrorWarning(t *testing.T) {
+	var report plan.Report
+	annotatePlanReportError(&report, errors.New("probe exploded"))
+	if len(report.Warnings) != 1 ||
+		report.Warnings[0].Code != string(errcode.ExplainPreflightError) ||
+		report.Warnings[0].Message != "probe exploded" {
+		t.Fatalf("warnings = %+v, want explain_preflight_error", report.Warnings)
 	}
 }
 

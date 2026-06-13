@@ -3,6 +3,8 @@ package goav
 import (
 	"context"
 	"errors"
+	"io"
+	"strings"
 	"testing"
 
 	"github.com/thesyncim/goav/av"
@@ -88,6 +90,22 @@ func TestCompositeRejectsDuplicateStreamIDs(t *testing.T) {
 	var buildErr *BuildError
 	if !errorsAsComposite(err, &buildErr) || buildErr.Code != "composite_arm" {
 		t.Fatalf("err = %v, want composite_arm (distinct stream ids)", err)
+	}
+}
+
+func TestCompositeRawFramesRequireSinkDestination(t *testing.T) {
+	_, err := Composite(
+		From(compositeTestVideoSource("a", 4, 4, 100, 10, 20)).Video().Region(0, 0),
+		From(compositeTestVideoSource("b", 4, 4, 200, 30, 40)).Video().Region(4, 0),
+	).To(File("canvas.ivf", io.Discard)).
+		Build(context.Background())
+	var buildErr *BuildError
+	if !errorsAsComposite(err, &buildErr) || buildErr.Code != "composite_destination" || !errors.Is(err, ErrUnsupportedBuild) {
+		t.Fatalf("err = %v, want composite_destination wrapping ErrUnsupportedBuild", err)
+	}
+	if !strings.Contains(err.Error(), ".Encode(codec.VP8") ||
+		!strings.Contains(err.Error(), "goav.Sink") {
+		t.Fatalf("err = %v, want encode-or-sink guidance", err)
 	}
 }
 

@@ -35,15 +35,14 @@ var surfacePinPackages = []struct {
 // surface churn. They still cannot regress silently — every exported symbol
 // must be documented (TestExportedSymbolsAreDocumented).
 //
-// rtpav and webrtcav are nested modules now (their own go.mod, their own
-// pion dependencies); they govern themselves with their own doc pins and are
-// outside this module's walk by construction.
+// rtpav, webrtcav, and the examples/* modules are nested modules now (their
+// own go.mod, their own dependencies); they govern themselves with their own
+// tests and are outside this module's walk by construction.
 var surfaceSeamPackages = []string{
 	"av",
 	"cmd/goav",
 	"codec",
 	"ctl",
-	"examples/control-plane-host",
 	"expert",
 	"filter",
 	"flow",
@@ -234,6 +233,36 @@ func TestReadmeFirstScreenAvoidsGraphInternals(t *testing.T) {
 	} {
 		if strings.Contains(screen, forbidden) {
 			t.Errorf("README first screen mentions %q; the first five examples must stay on the From/To grammar", forbidden)
+		}
+	}
+}
+
+func TestReadmeStaysFrontDoorSized(t *testing.T) {
+	body, err := os.ReadFile("README.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(body)
+	lines := strings.Count(text, "\n")
+	if lines > 360 {
+		t.Fatalf("README has %d lines, want <= 360; move advanced material into docs/", lines)
+	}
+	for _, required := range []string{
+		"## Install",
+		"## 30-Second Examples",
+		"## Common Recipes",
+		"## Why goav",
+		"## Capability Matrix",
+		"## Stability Matrix",
+		"## Deep Dives",
+		"img.shields.io/badge/go-1.26.4%2B",
+		"CHANGELOG.md",
+		"docs/EXTENSION_COOKBOOK.md",
+		"docs/PERFORMANCE.md",
+		"docs/RELEASING.md",
+	} {
+		if !strings.Contains(text, required) {
+			t.Fatalf("README front door missing %q", required)
 		}
 	}
 }

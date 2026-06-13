@@ -70,6 +70,8 @@ Benchmarks never run under plain `go test`; run them with:
 ```sh
 scripts/bench/run.sh                  # full suite, -benchmem, saved to bench-results/
 scripts/bench/compare.sh old new      # benchstat old-vs-new (same machine!)
+scripts/bench/perf-lab.sh             # latency quantiles, heap/sys, RSS wrapper
+scripts/bench/ci-compare.sh BASE_REF  # CI PR-vs-base benchstat artifact
 ```
 
 `compare.sh` needs `go install golang.org/x/perf/cmd/benchstat@latest`.
@@ -81,9 +83,9 @@ grammar against the deterministic `goavtest` runtime: fake passthrough codecs
 and fake byte-faithful containers (so numbers include the fake's serialization
 cost, not a real codec's), plus the **real** std resize/resample filters.
 Each benchmark builds its task untimed, then pushes exactly `b.N` messages:
-ns/op and allocs/op are per-message steady state. ns/op is the latency proxy;
-p50/p95 percentiles are future work needing a histogram harness and are not
-faked.
+ns/op and allocs/op are per-message steady state. The perf lab adds explicit
+p50/p95/p99 metrics for the packet-record path; other benchmark rows still use
+ns/op as their steady-state timing proxy.
 
 | Benchmark | Workload |
 |---|---|
@@ -100,6 +102,9 @@ faked.
 | `BenchmarkSelectPassthrough` | one-of-N selector forwarding the active arm (0 allocs/op measured) |
 | `BenchmarkAttachDetachUnderLoad` | runtime branch attach+detach per op while live traffic flows (a cold-path control operation, measured against load) |
 | `BenchmarkSourcePush/dropping,blocking` | the flow-control hot path: SourcePush into a DropOldest vs Blocking queue (0 allocs/op measured for both) |
+| `BenchmarkLatencyRecordPackets` | packet-record path with p50/p95/p99 `SourcePush.Packet` acceptance metrics |
+| `BenchmarkSustainedRecordMemory` | bounded packet-record memory smoke, reporting live heap and runtime-reserved memory |
+| `BenchmarkRealOpusEncode` / `BenchmarkRealOpusDecode` | standard Opus adapter throughput path, not the goavtest fake codec |
 
 The `pipeline` package adds the executor-level fanout sweeps
 (`BenchmarkDirectFanout`, `BenchmarkDirectFanoutParallel`,
@@ -107,6 +112,34 @@ The `pipeline` package adds the executor-level fanout sweeps
 `container/matroska` + `container/webm` add demux/remux throughput benches
 with optional external-tool comparisons (ffprobe/ffmpeg/mkvmerge, skipped when
 not installed).
+
+`scripts/bench/perf-lab.sh` runs the performance-lab subset and saves a
+timestamped artifact under the checked layout in
+[`bench-results/README.md`](../bench-results/README.md):
+`bench-results/baseline/<timestamp>/<machine>.txt` for the full transcript,
+`bench-results/latency/<scenario>-<timestamp>.json` for p50/p95/p99 summaries,
+`bench-results/rss/<scenario>-<timestamp>.json` for heap/sys/RSS summaries,
+`bench-results/pressure/<scenario>-<timestamp>.json` for drop/backpressure
+smoke, `bench-results/control/<scenario>-<timestamp>.json` for attach/detach
+under load, `bench-results/fanout/<scenario>-<timestamp>.json` for 1/8/64/512
+fanout, `bench-results/container/<scenario>-<timestamp>.json` for
+Matroska/WebM corpus smoke,
+and `bench-results/pprof/<scenario>-<timestamp>/cpu.out` plus `mem.out` for
+profiles. The Go benchmarks report latency quantiles, heap/sys metrics,
+drop/backpressure costs, attach/detach under load, fanout sweep costs, real
+Opus encode/decode throughput, and container corpus smoke. Optional external
+field-corpus benches stay skipped unless `GOAV_MATROSKA_FIELD_CORPUS` or
+`GOAV_WEBM_FIELD_CORPUS` is set. The script wraps the memory benchmark with
+`/usr/bin/time` on Linux and macOS so max RSS lands in the artifact when the
+host exposes it. CI runs a `PERF_BENCHTIME=1x` smoke to catch bit rot and
+uploads the generated benchmark artifacts. Serious performance claims still
+need same-machine, longer-run artifacts attached to a release.
+
+On pull requests, CI also runs `scripts/bench/ci-compare.sh` against the PR base
+commit and uploads `bench-base.txt`, `bench-current.txt`, and
+`benchstat-pr-vs-base.txt`. This is an advisory same-runner comparison for a
+small benchmark subset; it catches obvious drift and gives reviewers a
+benchstat table, but it is not a release-quality performance claim.
 
 ## Experimental
 
@@ -119,17 +152,26 @@ current numbers as snapshots, not contracts:
 - **Runtime attach under load**: `BenchmarkAttachDetachUnderLoad` measures a
   cold-path control operation; its cost is dominated by planning and is not a
   data-plane figure.
+- **Performance lab smoke**: the latency, memory, pressure, control, fanout,
+  container, and real-Opus rows prove the harness shape, not production
+  percentiles, soak behavior, or reference-hardware throughput at realistic
+  durations.
+- **PR benchstat artifact**: `scripts/bench/ci-compare.sh` compares a small
+  subset against the PR base on the same runner. It is useful review signal,
+  not a pass/fail timing gate.
 
 ## Not proven
 
 Stated plainly so the docs never imply otherwise:
 
-- **Tail latency** (p50/p95/p99): ns/op is an average; no percentile harness
-  exists yet.
-- **Memory footprint** (RSS) under sustained load.
-- **Real-codec throughput** on reference hardware: the canonical suite uses
-  passthrough fakes by design; only the container packages benchmark real
-  parsing work against external tools.
+- **Published tail-latency baselines** under representative long runs. The
+  percentile harness exists, but the committed smoke numbers are not production
+  evidence.
+- **RSS under sustained load** (1h/6h). The perf-lab script captures bounded
+  max RSS/heap smoke only.
+- **Real-codec throughput on reference hardware** beyond the Opus adapter
+  smoke path. VP8/VP9/AV1/H264 throughput needs committed methodology and
+  artifacts before it becomes a claim.
 - **Sustained-load soak** (hours-long stability, fragmentation, drift).
 - **Multi-core scaling** targets: `BenchmarkDirectFanoutParallel` measures
   scaling but no specific ratio is promised.

@@ -1,6 +1,6 @@
 module github.com/thesyncim/goav/webrtcav
 
-go 1.26.2
+go 1.26.4
 
 require (
 	github.com/pion/interceptor v0.1.45

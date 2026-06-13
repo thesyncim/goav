@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
+	"io"
 	"reflect"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -154,6 +156,22 @@ func TestSelectRequiresDistinctArmIDs(t *testing.T) {
 	var buildErr *BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "select_arm" {
 		t.Fatalf("err = %v, want select_arm (distinct ids enforced)", err)
+	}
+}
+
+func TestSelectRequiresSinkDestination(t *testing.T) {
+	_, err := Select(
+		From(selectTestOneShotSource("a", 1)).Audio(),
+		From(selectTestOneShotSource("b", 2)).Audio(),
+	).To(File("selected.ogg", io.Discard)).
+		Build(context.Background())
+	var buildErr *BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "select_destination" || !errors.Is(err, ErrUnsupportedBuild) {
+		t.Fatalf("err = %v, want select_destination wrapping ErrUnsupportedBuild", err)
+	}
+	if !strings.Contains(err.Error(), "goav.Sink") ||
+		!strings.Contains(err.Error(), ".Branches") {
+		t.Fatalf("err = %v, want sink-or-branches guidance", err)
 	}
 }
 

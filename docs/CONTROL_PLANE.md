@@ -103,7 +103,8 @@ For a long-running host process that you can keep open in one terminal while
 driving it from another, run:
 
 ```sh
-go run ./examples/control-plane-host --control unix:///tmp/goav-control-plane-host.sock
+cd examples/control-plane-host
+go run . --control unix:///tmp/goav-control-plane-host.sock
 ```
 
 That example is a self-contained playground: it starts a live
@@ -362,6 +363,19 @@ custom encoders and does not require a custom encoder spelling. Use
 your adapter; use
 `goav.New(...)` only when you are intentionally registering every required
 codec, filter, prober, demuxer, and muxer yourself.
+
+Opus, VP8, VP9, and AV1 are full encode/decode recipe verticals. Encoder
+behavior has one typed settings contract everywhere: package options mutate
+`codec.CodecSettings`, and the string/control-plane frontends reflect the same
+tagged fields into `encode ... key=value` syntax. Custom runtime encoders work
+through the generic `encode codec=<id> media=<kind>` step immediately; any key
+not claimed by a typed field is preserved in `CodecSettings.Custom` for the
+adapter to validate. Use `codec.Control(...)` when an adapter needs the
+concrete native encoder or config object. The generated reference is the
+running host itself; `goav ctl help attach` is human-readable, and
+`goav ctl capabilities` is machine-readable. In normal application code,
+workflows should be expressible through declarative recipes; the public grammar
+stays Input, Stream, Tap, Branch, Destination, Flow, and Task.
 
 ```go
 rt := goav.Default(

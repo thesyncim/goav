@@ -106,4 +106,13 @@ func TestBuildErrorAndCompilerPassErrorContracts(t *testing.T) {
 	if !errors.As(wrapped, &got) || got.Operation != "build branch" {
 		t.Fatalf("wrapped operation = %+v", got)
 	}
+
+	_, err := recipeIntentCompiler{passes: []recipeCompilePass{nil}}.Compile(recipeCompileState{
+		operation: "compile recipe",
+	})
+	if !errors.As(err, &got) || got.Code != errcode.CompilerPassInvalid ||
+		got.Operation != "compile recipe" ||
+		!errors.Is(err, ErrUnsupportedBuild) {
+		t.Fatalf("nil compiler pass err = %v, want compiler_pass_invalid wrapping ErrUnsupportedBuild", err)
+	}
 }
