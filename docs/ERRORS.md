@@ -57,10 +57,10 @@ if err != nil {
 The full checked code list lives in
 [`docs/ERROR_CATALOG.md`](ERROR_CATALOG.md), generated from
 [`errcode/errcode.go`](../errcode/errcode.go): stable, autocompletable
-(`errcode.`), and greppable by value (`rg encode_missing`). Every current
-catalog row names coverage. If a future row appears as `catalog-only`, the
-pin test fails until it gets a bad recipe, rendered error coverage, fixed
-recipe guidance, sentinel/cause, and test name.
+(`errcode.`), and greppable by value (`rg encode_missing`). Every current catalog row names coverage.
+If a future row appears as `catalog-only`, the pin test fails until it gets a
+bad recipe, rendered error coverage, fixed recipe guidance, sentinel/cause,
+and test name.
 
 ## Runtime errors
 

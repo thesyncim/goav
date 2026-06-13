@@ -61,8 +61,8 @@ the required runtime acceptance environment.
   `bench-results/pressure`, `bench-results/control`, `bench-results/fanout`,
   `bench-results/container`, and `bench-results/pprof`.
 - The perf-lab smoke covers p50/p95/p99 latency, heap/RSS, SourcePush pressure,
-  attach/detach under load, fanout sweeps, Matroska/WebM corpus paths, and real
-  Opus encode/decode.
+  attach/detach under load, fanout sweeps, Matroska/WebM corpus paths, and
+  real Opus encode/decode.
 - CI smoke will run `go test -run '^$' -bench . -benchmem -benchtime=1x ./...`
   and `PERF_BENCHTIME=1x scripts/bench/perf-lab.sh`.
 

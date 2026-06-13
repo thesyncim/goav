@@ -135,6 +135,36 @@ func TestControlPlaneHostExampleIsStandaloneModule(t *testing.T) {
 	}
 }
 
+func TestGioShowcaseKeepsPureGoHeadlessFallback(t *testing.T) {
+	dir := "examples/gio-webrtc-showcase"
+	for file, required := range map[string][]string{
+		"main.go": {
+			"//go:build cgo",
+			"gioapp.Main()",
+		},
+		"gio_ui.go": {
+			"//go:build cgo",
+			"func runControlRoom",
+		},
+		"main_nocgo.go": {
+			"//go:build !cgo",
+			"serving the browser peer headlessly",
+			"signal.NotifyContext",
+		},
+		"README.md": {
+			"CGO_ENABLED=0 go run .",
+			"fallback for pure-Go builds",
+		},
+	} {
+		body := readExternalExampleFile(t, filepath.Join(dir, file))
+		for _, phrase := range required {
+			if !strings.Contains(body, phrase) {
+				t.Fatalf("%s/%s missing %q", dir, file, phrase)
+			}
+		}
+	}
+}
+
 func readExternalExampleFile(t *testing.T, path string) string {
 	t.Helper()
 	body, err := os.ReadFile(path)

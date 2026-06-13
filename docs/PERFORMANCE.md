@@ -110,8 +110,9 @@ The `pipeline` package adds the executor-level fanout sweeps
 (`BenchmarkDirectFanout`, `BenchmarkDirectFanoutParallel`,
 `BenchmarkBufferedFanout` over 1/8/64/512 targets), and
 `container/matroska` + `container/webm` add demux/remux throughput benches
-with optional external-tool comparisons (ffprobe/ffmpeg/mkvmerge, skipped when
-not installed).
+(`BenchmarkReadWebRTCCorpus`, `BenchmarkReadWebMCorpus`, and write/read
+variants) with optional external-tool comparisons (ffprobe/ffmpeg/mkvmerge,
+skipped when not installed).
 
 `scripts/bench/perf-lab.sh` runs the performance-lab subset and saves a
 timestamped artifact under the checked layout in

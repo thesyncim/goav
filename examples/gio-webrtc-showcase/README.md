@@ -18,10 +18,12 @@ synthetic A/V in the browser, then add, pause, resume, retune, rebranch, or
 remove output branches from Gio. The browser automatically renegotiates when
 Gio adds or removes WebRTC output tracks.
 
-Server-only mode is useful for browser/API testing:
+The native Gio control room is compiled when cgo is available. Server-only mode
+is useful for browser/API testing and is also the fallback for pure-Go builds:
 
 ```sh
 go run . -headless
+CGO_ENABLED=0 go run .
 ```
 
 Optional native speaker preview uses Oto and is compiled only with a build tag:

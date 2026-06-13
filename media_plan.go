@@ -279,6 +279,19 @@ func planCopyBranches(state *recipeCompileState, outputs []planOutput) ([]planBr
 
 func planOperationSpecs(input inputIntent, stream streamIntent, branchName string, initial shape.Spec, selectComponent string) ([]planOperation, []planDecision) {
 	operations := planInputOperationsForShape(input, initial)
+	if initial.Domain == shape.DomainEvent && stream.Select == (plan.StreamSelect{}) && len(stream.Operations) == 0 {
+		operations = append(operations, planOperation{
+			Kind:      plan.OpShape,
+			Component: "shape",
+			Detail:    "event source",
+			Shape:     initial,
+		})
+		return operations, []planDecision{{
+			Code:    string(errcode.EventSource),
+			Branch:  branchName,
+			Message: "source produces events for sink destinations",
+		}}
+	}
 	operations = append(operations, planOperation{
 		Kind:      plan.OpSelect,
 		Component: firstNonEmpty(selectComponent, selectorComponent(stream.Select)),

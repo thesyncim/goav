@@ -1,4 +1,4 @@
-//go:build cgo
+//go:build !cgo
 
 package main
 
@@ -12,14 +12,17 @@ import (
 	"os/signal"
 	"syscall"
 
-	gioapp "gioui.org/app"
 	"github.com/thesyncim/goav"
 )
 
 func main() {
 	addr := flag.String("addr", ":8080", "HTTP listen address")
-	headless := flag.Bool("headless", false, "serve the browser peer without opening the Gio control room")
+	headless := flag.Bool("headless", true, "serve the browser peer without opening the Gio control room")
 	flag.Parse()
+
+	if !*headless {
+		log.Print("CGO_ENABLED=0 build: Gio control room unavailable; serving the browser peer headlessly")
+	}
 
 	listener, err := net.Listen("tcp", *addr)
 	if err != nil {
@@ -39,19 +42,8 @@ func main() {
 		}
 	}()
 
-	if *headless {
-		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-		defer stop()
-		<-ctx.Done()
-		_ = httpServer.Shutdown(context.Background())
-		return
-	}
-
-	go func() {
-		if err := runControlRoom(showcase, browserURL); err != nil {
-			log.Printf("gio control room stopped: %v", err)
-		}
-		_ = httpServer.Shutdown(context.Background())
-	}()
-	gioapp.Main()
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	<-ctx.Done()
+	_ = httpServer.Shutdown(context.Background())
 }
