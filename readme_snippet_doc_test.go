@@ -25,6 +25,8 @@ func readmeThirtySecondRecording(ctx context.Context, in io.Reader, out io.Write
 		Run(ctx)
 }
 
+var _ func(context.Context, io.Reader, io.Writer) error = readmeThirtySecondRecording
+
 func TestReadmeGoSnippetsAreCompiledAndPinned(t *testing.T) {
 	body, err := os.ReadFile("README.md")
 	if err != nil {
