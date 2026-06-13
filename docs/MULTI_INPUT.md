@@ -100,14 +100,17 @@ convergence: their upstream arms are part of the planned graph. Runtime
 streams; they do not mutate the arm set of an existing join.
 
 For live audio rooms where tracks join and leave continuously, the supported
-pattern today is source-owned mixing: an application source owns the
-participant registry, emits `EventStreamAdded` / `EventStreamRemoved` for
-track lifecycle, and pushes one stable mixed frame stream into goav. The
-copyable reference is `examples/dynamic-audio-room`.
+pattern today is source-owned track discovery: an application source owns the
+participant registry and emits `EventStreamAdded` / `EventStreamRemoved` for
+each track. `OnStream` then attaches ordinary branches for each discovered
+track, so one branch can process the track independently while another branch
+feeds a shared output mixer sink. The copyable reference is
+`examples/dynamic-audio-room`.
 
 A future first-class dynamic upstream mix API should be judged against a higher
-bar than a convenience helper: dynamic source routing into the join, per-track
-format validation/conversion, stream lifecycle events, backpressure behavior,
-snapshots/stats, and detach/close semantics all need one coherent design.
-Until those pieces exist together, keeping the root grammar small is the better
-API choice.
+bar than a convenience helper: it should preserve per-track routes, produce a
+normal mixed stream that can itself be encoded or branched, and handle dynamic
+source routing, per-track format validation/conversion, stream lifecycle
+events, backpressure behavior, snapshots/stats, and detach/close semantics in
+one coherent design. Until those pieces exist together, keeping the root
+grammar small is the better API choice.

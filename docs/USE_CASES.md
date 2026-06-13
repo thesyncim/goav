@@ -66,21 +66,40 @@ suggests `StreamID`, `StreamName`, or `StreamIndex(0)`.
 ## Live Audio Rooms
 
 Conference rooms, watch parties, and collaborative editors often need dynamic
-audio membership: participants join, leave, or reconnect while one mixed stream
-continues feeding recording, transcription, monitoring, or playback.
+audio membership: participants join, leave, or reconnect while the application
+still needs per-track processing for levels, moderation, transcription, or
+recording, plus an optional mixed output for playback or archive.
 
-Use `goav.Mix(arms...)` when the arms are known when the recipe is built. Use
-an app-owned `goav.Source` when membership is a runtime product concern: the
-application owns the participant registry, emits `EventStreamAdded` and
-`EventStreamRemoved` for observability, and pushes one stable mixed frame
-stream into goav.
+Use `goav.Mix(arms...)` when the arms are known when the recipe is built. When
+membership changes at runtime, publish each participant as its own stream:
+the application source owns the registry, emits `EventStreamAdded` and
+`EventStreamRemoved`, and `OnStream` attaches normal branches for every
+discovered track. One branch can process each track independently; another can
+feed a shared mixer sink for the mixed output.
 
 ```go
-room := NewRoom("room.mix", 48_000, 1)
+room := NewRoom("room", 48_000, 1)
+tracks := NewTrackRecorder()
+mix := NewOutputMixer()
+meter := NewTrackMeter()
+trackMeter := goav.FrameFunc("track-meter", func(_ context.Context, frame *av.Frame, emit goav.Emit) error {
+    meter.Observe(frame)
+    return emit.Frame(frame)
+})
+anchor := goav.Sink(goav.SinkFunc("room-anchor", func(context.Context, goav.Message) error {
+    return nil
+}))
 
 task, err := goav.From(room.Input()).
+    OnStream(goav.MatchMedia(av.MediaAudio),
+        goav.Branch("track").
+            Do(trackMeter).
+            To(tracks.Sink()),
+        goav.Branch("mix").
+            To(mix.Sink()),
+    ).
     Audio().
-    To(goav.Sink(playback)).
+    To(anchor).
     Build(ctx)
 if err != nil {
     return err
@@ -88,7 +107,6 @@ if err != nil {
 go func() { _ = task.Run(ctx) }()
 
 _ = room.Join(ctx, "host")
-_ = room.Push(ctx, map[string][]int16{"host": []int16{100, 100}})
 _ = room.Join(ctx, "music")
 _ = room.Push(ctx, map[string][]int16{
     "host":  []int16{100, 100},
@@ -99,11 +117,13 @@ _ = room.Leave(ctx, "music")
 
 The runnable module `examples/dynamic-audio-room` validates this pattern with
 `goavtest/expect`: it proves runtime participant add/remove events, S16
-summing, clamping, and inactive-track rejection. It deliberately does not add a
-root `Room` API. A first-class dynamic upstream mix API should earn root
-surface only if it handles source routing, stream lifecycle, shape conversion,
-backpressure, snapshots, and detach semantics generally instead of baking a
-conference-room helper into the core grammar.
+summing and clamping in the output mixer, per-track processing, and
+inactive-track rejection. It deliberately does not add a root `Room` API. A
+first-class dynamic upstream mix API should earn root surface only if it keeps
+per-track routes visible, produces a normal mixed stream for downstream
+encode/branch work, and handles source routing, stream lifecycle, shape
+conversion, backpressure, snapshots, and detach semantics generally instead of
+baking a conference-room helper into the core grammar.
 
 ## Branches
 

@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/thesyncim/goav"
 	"github.com/thesyncim/goav/av"
@@ -15,42 +16,74 @@ import (
 )
 
 const (
-	roomName       = "room.mix"
+	roomName       = "room"
 	roomSampleRate = 48000
 	roomChannels   = 1
 )
 
 func main() {
-	mixed, events, err := runDynamicRoomDemo(context.Background())
+	result, err := runDynamicRoomDemo(context.Background())
 	if err != nil {
 		panic(err)
 	}
-	fmt.Println("mixed:", mixed)
-	fmt.Println("events:", summarizeRoomEvents(events))
+	fmt.Println("per_track:", result.PerTrackSummary())
+	fmt.Println("mixed:", result.Mixed)
+	fmt.Println("events:", result.Events)
 }
 
-func runDynamicRoomDemo(ctx context.Context) ([][]int16, []av.Event, error) {
-	return runRoomScript(ctx, func(ctx context.Context, room *Room) error {
+type DemoResult struct {
+	PerTrack map[string][][]int16
+	Meter    map[string]int
+	Mixed    [][]int16
+	Events   []string
+}
+
+func (r DemoResult) PerTrackSummary() []string {
+	names := make([]string, 0, len(r.PerTrack))
+	for name := range r.PerTrack {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	out := make([]string, 0, len(names))
+	for _, name := range names {
+		out = append(out, fmt.Sprintf("%s:%v", name, r.PerTrack[name]))
+	}
+	return out
+}
+
+func runDynamicRoomDemo(ctx context.Context) (DemoResult, error) {
+	return runRoomScript(ctx, func(ctx context.Context, room *Room, task goav.Task) error {
 		if err := room.Join(ctx, "host"); err != nil {
 			return err
 		}
+		if err := waitForBranches(ctx, task, "track-host", "mix-host"); err != nil {
+			return err
+		}
 		if err := room.Push(ctx, map[string][]int16{
 			"host": []int16{100, 100},
 		}); err != nil {
 			return err
 		}
+
 		if err := room.Join(ctx, "music"); err != nil {
 			return err
 		}
+		if err := waitForBranches(ctx, task, "track-music", "mix-music"); err != nil {
+			return err
+		}
 		if err := room.Push(ctx, map[string][]int16{
 			"host":  []int16{100, 100},
 			"music": []int16{25, -50},
 		}); err != nil {
 			return err
 		}
+
 		if err := room.Join(ctx, "guest"); err != nil {
 			return err
 		}
+		if err := waitForBranches(ctx, task, "track-guest", "mix-guest"); err != nil {
+			return err
+		}
 		if err := room.Push(ctx, map[string][]int16{
 			"host":  []int16{100, 100},
 			"music": []int16{25, -50},
@@ -58,7 +91,11 @@ func runDynamicRoomDemo(ctx context.Context) ([][]int16, []av.Event, error) {
 		}); err != nil {
 			return err
 		}
+
 		if err := room.Leave(ctx, "music"); err != nil {
+			return err
+		}
+		if err := waitForBranchesGone(ctx, task, "track-music", "mix-music"); err != nil {
 			return err
 		}
 		if err := room.Push(ctx, map[string][]int16{
@@ -67,7 +104,11 @@ func runDynamicRoomDemo(ctx context.Context) ([][]int16, []av.Event, error) {
 		}); err != nil {
 			return err
 		}
+
 		if err := room.Leave(ctx, "guest"); err != nil {
+			return err
+		}
+		if err := waitForBranchesGone(ctx, task, "track-guest", "mix-guest"); err != nil {
 			return err
 		}
 		if err := room.Push(ctx, map[string][]int16{
@@ -75,20 +116,39 @@ func runDynamicRoomDemo(ctx context.Context) ([][]int16, []av.Event, error) {
 		}); err != nil {
 			return err
 		}
-		return room.Leave(ctx, "host")
+
+		if err := room.Leave(ctx, "host"); err != nil {
+			return err
+		}
+		return waitForBranchesGone(ctx, task, "track-host", "mix-host")
 	})
 }
 
-func runRoomScript(ctx context.Context, script func(context.Context, *Room) error) ([][]int16, []av.Event, error) {
+func runRoomScript(ctx context.Context, script func(context.Context, *Room, goav.Task) error) (DemoResult, error) {
 	room := NewRoom(roomName, roomSampleRate, roomChannels)
-	out := goavtest.NewCollector()
+	meter := NewTrackMeter()
+	meterStage := goav.FrameFunc("track-meter", func(_ context.Context, frame *av.Frame, emit goav.Emit) error {
+		meter.Observe(frame)
+		return emit.Frame(frame)
+	})
+	tracks := NewTrackRecorder()
+	mixer := NewOutputMixer()
+	main := goav.Sink(goav.SinkFunc("room-anchor", func(context.Context, goav.Message) error { return nil }))
+
 	task, err := goav.From(room.Input()).
+		OnStream(goav.MatchMedia(av.MediaAudio),
+			goav.Branch("track").
+				Do(meterStage).
+				To(tracks.Sink()),
+			goav.Branch("mix").
+				To(mixer.Sink()),
+		).
 		Audio().
-		To(out.Sink()).
+		To(main).
 		UseRuntime(goavtest.Runtime()).
 		Build(ctx)
 	if err != nil {
-		return nil, nil, err
+		return DemoResult{}, err
 	}
 
 	watch := task.Watch()
@@ -111,7 +171,7 @@ func runRoomScript(ctx context.Context, script func(context.Context, *Room) erro
 		errC <- task.Run(runCtx)
 	}()
 
-	scriptErr := script(runCtx, room)
+	scriptErr := script(runCtx, room, task)
 	if scriptErr == nil {
 		scriptErr = room.Close(runCtx)
 	}
@@ -119,13 +179,13 @@ func runRoomScript(ctx context.Context, script func(context.Context, *Room) erro
 		cancel()
 		_ = task.Close()
 		<-watchDone
-		return out.S16(), eventsSnapshot(&eventMu, &events), scriptErr
+		return roomResult(tracks, meter, mixer, &eventMu, &events), scriptErr
 	}
 
 	runErr := waitRoomTask(ctx, errC, cancel, task)
 	_ = task.Close()
 	<-watchDone
-	return out.S16(), eventsSnapshot(&eventMu, &events), runErr
+	return roomResult(tracks, meter, mixer, &eventMu, &events), runErr
 }
 
 func waitRoomTask(ctx context.Context, errC <-chan error, cancel context.CancelFunc, task goav.Task) error {
@@ -139,6 +199,51 @@ func waitRoomTask(ctx context.Context, errC <-chan error, cancel context.CancelF
 	}
 }
 
+func roomResult(tracks *TrackRecorder, meter *TrackMeter, mixer *OutputMixer, eventMu *sync.Mutex, events *[]av.Event) DemoResult {
+	return DemoResult{
+		PerTrack: tracks.Frames(),
+		Meter:    meter.Counts(),
+		Mixed:    mixer.Mixed(),
+		Events:   summarizeRoomEvents(eventsSnapshot(eventMu, events)),
+	}
+}
+
+func waitForBranches(ctx context.Context, task goav.Task, names ...string) error {
+	return waitForBranchState(ctx, task, true, names...)
+}
+
+func waitForBranchesGone(ctx context.Context, task goav.Task, names ...string) error {
+	return waitForBranchState(ctx, task, false, names...)
+}
+
+func waitForBranchState(ctx context.Context, task goav.Task, present bool, names ...string) error {
+	want := make(map[string]struct{}, len(names))
+	for _, name := range names {
+		want[name] = struct{}{}
+	}
+	ticker := time.NewTicker(time.Millisecond)
+	defer ticker.Stop()
+	for {
+		seen := make(map[string]struct{}, len(want))
+		for _, branch := range task.Snapshot().Branches {
+			if _, ok := want[branch.Name]; ok {
+				seen[branch.Name] = struct{}{}
+			}
+		}
+		if present && len(seen) == len(want) {
+			return nil
+		}
+		if !present && len(seen) == 0 {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+		}
+	}
+}
+
 func eventsSnapshot(mu *sync.Mutex, events *[]av.Event) []av.Event {
 	mu.Lock()
 	defer mu.Unlock()
@@ -149,9 +254,9 @@ func eventsSnapshot(mu *sync.Mutex, events *[]av.Event) []av.Event {
 	return out
 }
 
-// Room is an application-owned live audio room. It is intentionally outside
-// the goav root API: the room owns dynamic participant membership, while goav
-// sees a stable mixed S16 audio source plus stream lifecycle events.
+// Room is an application-owned source of dynamic tracks. It does not mix at
+// input time: every participant is announced as its own goav stream, and
+// output branches decide whether to process the track independently or mix it.
 type Room struct {
 	name       string
 	sampleRate int
@@ -181,7 +286,7 @@ func (r *Room) Input() goav.InputSpec {
 	return goav.Source(r.name,
 		shape.Frame(av.MediaAudio,
 			shape.Audio(r.sampleRate, r.channels, av.SampleFormatS16),
-			shape.Stream(av.StreamID(r.name)),
+			shape.Stream(av.StreamID(r.controlStream())),
 			shape.Realtime(true),
 		),
 		func(ctx context.Context, push goav.SourcePush) error {
@@ -236,6 +341,10 @@ func (r *Room) dispatch(ctx context.Context, command roomCommand) error {
 	}
 }
 
+func (r *Room) controlStream() string {
+	return r.name + ".control"
+}
+
 type roomCommandKind int
 
 const (
@@ -259,14 +368,9 @@ func (r *Room) handle(push goav.SourcePush, active map[string]struct{}, elapsed 
 	case roomLeave:
 		return r.leave(push, active, command.participant)
 	case roomPush:
-		frame, err := r.mix(active, elapsed, command.frames)
-		if err != nil || frame == nil {
-			return err
-		}
-		_, err = push.Frame(frame)
-		return err
+		return r.pushTrackFrames(push, active, elapsed, command.frames)
 	case roomClose:
-		return push.EOS(av.StreamID(r.name))
+		return push.EOS(av.StreamID(r.controlStream()))
 	default:
 		return fmt.Errorf("unknown room command %d", command.kind)
 	}
@@ -284,7 +388,7 @@ func (r *Room) join(push goav.SourcePush, active map[string]struct{}, participan
 		Type:     av.EventStreamAdded,
 		StreamID: av.StreamID(participant),
 		Stream:   r.participantStream(participant),
-		Reason:   "participant joined room mix",
+		Reason:   "participant joined room",
 		Metadata: av.Metadata{"room": r.name},
 	})
 	if err != nil {
@@ -304,7 +408,7 @@ func (r *Room) leave(push goav.SourcePush, active map[string]struct{}, participa
 	_, err := push.Event(av.Event{
 		Type:     av.EventStreamRemoved,
 		StreamID: av.StreamID(participant),
-		Reason:   "participant left room mix",
+		Reason:   "participant left room",
 		Metadata: av.Metadata{"room": r.name},
 	})
 	if err != nil {
@@ -331,46 +435,45 @@ func (r *Room) participantStream(participant string) *av.Stream {
 	}
 }
 
-func (r *Room) mix(active map[string]struct{}, elapsed *int64, frames map[string][]int16) (*av.Frame, error) {
+func (r *Room) pushTrackFrames(push goav.SourcePush, active map[string]struct{}, elapsed *int64, frames map[string][]int16) error {
 	for participant := range frames {
 		if _, ok := active[participant]; !ok {
-			return nil, fmt.Errorf("unknown participant frame %q", participant)
+			return fmt.Errorf("unknown participant frame %q", participant)
 		}
 	}
 	names := activeParticipants(active)
 	if len(names) == 0 {
-		return nil, nil
+		return nil
 	}
 	samples := 0
 	for _, participant := range names {
 		input := frames[participant]
 		if len(input)%r.channels != 0 {
-			return nil, fmt.Errorf("participant %q frame has %d samples, not divisible by %d channels", participant, len(input), r.channels)
+			return fmt.Errorf("participant %q frame has %d samples, not divisible by %d channels", participant, len(input), r.channels)
 		}
 		if len(input) > samples {
 			samples = len(input)
 		}
 	}
 	if samples == 0 {
-		return nil, nil
+		return nil
 	}
 
-	mixed := make([]int16, samples)
-	for i := 0; i < samples; i++ {
-		var sum int32
-		for _, participant := range names {
-			input := frames[participant]
-			if i >= len(input) {
-				continue
-			}
-			sum += int32(input[i])
+	activeList := strings.Join(names, ",")
+	for _, participant := range names {
+		samplesForParticipant := padS16(frames[participant], samples)
+		frame := s16Frame(participant, r.sampleRate, r.channels, samplesForParticipant, *elapsed)
+		frame.Metadata = av.Metadata{
+			"active_participants": activeList,
+			"room":                r.name,
 		}
-		mixed[i] = clampS16(sum)
+		if _, err := push.Frame(frame); err != nil {
+			return err
+		}
 	}
-	frame := s16Frame(r.name, r.sampleRate, r.channels, mixed, *elapsed)
-	frame.Metadata = av.Metadata{"active_participants": strings.Join(names, ",")}
-	*elapsed += frame.Duration.Value
-	return frame, nil
+	duration := av.SamplesDuration(samples/r.channels, r.sampleRate)
+	*elapsed += duration.Value
+	return nil
 }
 
 func activeParticipants(active map[string]struct{}) []string {
@@ -380,6 +483,177 @@ func activeParticipants(active map[string]struct{}) []string {
 	}
 	sort.Strings(names)
 	return names
+}
+
+type TrackMeter struct {
+	mu     sync.Mutex
+	counts map[string]int
+}
+
+func NewTrackMeter() *TrackMeter {
+	return &TrackMeter{counts: make(map[string]int)}
+}
+
+func (m *TrackMeter) Observe(frame *av.Frame) {
+	m.mu.Lock()
+	m.counts[string(frame.StreamID)] += len(readS16(frame))
+	m.mu.Unlock()
+}
+
+func (m *TrackMeter) Counts() map[string]int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := make(map[string]int, len(m.counts))
+	for stream, count := range m.counts {
+		out[stream] = count
+	}
+	return out
+}
+
+type TrackRecorder struct {
+	dest goav.Destination
+
+	mu     sync.Mutex
+	frames map[string][][]int16
+}
+
+func NewTrackRecorder() *TrackRecorder {
+	r := &TrackRecorder{frames: make(map[string][][]int16)}
+	r.dest = goav.Sink(goav.SinkFunc("per-track-output", r.handle))
+	return r
+}
+
+func (r *TrackRecorder) Sink() goav.Destination {
+	return r.dest
+}
+
+func (r *TrackRecorder) handle(_ context.Context, msg goav.Message) error {
+	if msg.Frame == nil {
+		return nil
+	}
+	stream := string(msg.Frame.StreamID)
+	samples := readS16(msg.Frame)
+	r.mu.Lock()
+	r.frames[stream] = append(r.frames[stream], samples)
+	r.mu.Unlock()
+	return nil
+}
+
+func (r *TrackRecorder) Frames() map[string][][]int16 {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := make(map[string][][]int16, len(r.frames))
+	for stream, frames := range r.frames {
+		out[stream] = cloneS16Frames(frames)
+	}
+	return out
+}
+
+type OutputMixer struct {
+	dest goav.Destination
+
+	mu        sync.Mutex
+	pending   map[int64]*mixBucket
+	completed map[int64][]int16
+}
+
+type mixBucket struct {
+	expected map[string]struct{}
+	frames   map[string][]int16
+}
+
+func NewOutputMixer() *OutputMixer {
+	m := &OutputMixer{
+		pending:   make(map[int64]*mixBucket),
+		completed: make(map[int64][]int16),
+	}
+	m.dest = goav.Sink(goav.SinkFunc("room-mix-output", m.handle))
+	return m
+}
+
+func (m *OutputMixer) Sink() goav.Destination {
+	return m.dest
+}
+
+func (m *OutputMixer) handle(_ context.Context, msg goav.Message) error {
+	if msg.Frame == nil {
+		return nil
+	}
+	expected := participantsFromMetadata(msg.Frame.Metadata)
+	if len(expected) == 0 {
+		expected = []string{string(msg.Frame.StreamID)}
+	}
+	samples := readS16(msg.Frame)
+	pts := msg.Frame.PTS.Value
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	bucket := m.pending[pts]
+	if bucket == nil {
+		bucket = &mixBucket{expected: make(map[string]struct{}, len(expected)), frames: make(map[string][]int16)}
+		m.pending[pts] = bucket
+	}
+	for _, participant := range expected {
+		bucket.expected[participant] = struct{}{}
+	}
+	bucket.frames[string(msg.Frame.StreamID)] = samples
+	if len(bucket.frames) < len(bucket.expected) {
+		return nil
+	}
+	m.completed[pts] = mixFrames(bucket.expected, bucket.frames)
+	delete(m.pending, pts)
+	return nil
+}
+
+func (m *OutputMixer) Mixed() [][]int16 {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	keys := make([]int64, 0, len(m.completed))
+	for pts := range m.completed {
+		keys = append(keys, pts)
+	}
+	sort.Slice(keys, func(i, j int) bool { return keys[i] < keys[j] })
+	out := make([][]int16, 0, len(keys))
+	for _, pts := range keys {
+		out = append(out, append([]int16(nil), m.completed[pts]...))
+	}
+	return out
+}
+
+func participantsFromMetadata(metadata av.Metadata) []string {
+	if len(metadata) == 0 || metadata["active_participants"] == "" {
+		return nil
+	}
+	parts := strings.Split(metadata["active_participants"], ",")
+	out := parts[:0]
+	for _, part := range parts {
+		if part = strings.TrimSpace(part); part != "" {
+			out = append(out, part)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+func mixFrames(expected map[string]struct{}, frames map[string][]int16) []int16 {
+	length := 0
+	for participant := range expected {
+		if len(frames[participant]) > length {
+			length = len(frames[participant])
+		}
+	}
+	mixed := make([]int16, length)
+	for i := 0; i < length; i++ {
+		var sum int32
+		for participant := range expected {
+			input := frames[participant]
+			if i < len(input) {
+				sum += int32(input[i])
+			}
+		}
+		mixed[i] = clampS16(sum)
+	}
+	return mixed
 }
 
 func clampS16(value int32) int16 {
@@ -418,6 +692,24 @@ func s16Frame(stream string, sampleRate int, channels int, samples []int16, elap
 	}
 }
 
+func padS16(samples []int16, length int) []int16 {
+	out := make([]int16, length)
+	copy(out, samples)
+	return out
+}
+
+func readS16(frame *av.Frame) []int16 {
+	if frame == nil || frame.Audio == nil || frame.Audio.SampleFormat != av.SampleFormatS16 || len(frame.Planes) == 0 {
+		return nil
+	}
+	payload := frame.Planes[0].Buffer.Bytes
+	samples := make([]int16, len(payload)/2)
+	for i := range samples {
+		samples[i] = int16(binary.LittleEndian.Uint16(payload[i*2:]))
+	}
+	return samples
+}
+
 func cloneRoomFrames(frames map[string][]int16) map[string][]int16 {
 	if len(frames) == 0 {
 		return nil
@@ -429,11 +721,22 @@ func cloneRoomFrames(frames map[string][]int16) map[string][]int16 {
 	return out
 }
 
+func cloneS16Frames(frames [][]int16) [][]int16 {
+	out := make([][]int16, len(frames))
+	for i := range frames {
+		out[i] = append([]int16(nil), frames[i]...)
+	}
+	return out
+}
+
 func summarizeRoomEvents(events []av.Event) []string {
 	out := make([]string, 0, len(events))
 	for _, event := range events {
 		switch event.Type {
 		case av.EventStreamAdded, av.EventStreamRemoved, av.EventEndOfStream:
+			if event.Type == av.EventEndOfStream && event.StreamID == "" {
+				continue
+			}
 			label := string(event.Type) + ":" + string(event.StreamID)
 			if len(out) == 0 || out[len(out)-1] != label {
 				out = append(out, label)

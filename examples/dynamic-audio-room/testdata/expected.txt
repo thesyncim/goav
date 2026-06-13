@@ -1,2 +1,4 @@
+per_track: [guest:[[-10 20] [-10 20]] host:[[100 100] [100 100] [100 100] [100 100] [100 100]] music:[[25 -50] [25 -50]]]
+meter: map[guest:4 host:10 music:4]
 mixed: [[100 100] [125 50] [115 70] [90 120] [100 100]]
-events: [stream_added:host stream_added:music stream_added:guest stream_removed:music stream_removed:guest stream_removed:host end_of_stream:room.mix]
+events: [stream_added:host stream_added:music stream_added:guest stream_removed:music stream_removed:guest stream_removed:host end_of_stream:room.control]
