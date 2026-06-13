@@ -27,12 +27,18 @@ func TestReadmeGoBlocksCompileAsExternalConsumer(t *testing.T) {
 	moduleDir := t.TempDir()
 	writeReadmeConsumerModule(t, moduleDir, root, snippets)
 
-	cmd := exec.Command("go", "test", "-run", "^TestReadmeSnippetsCompile$", "./...")
-	cmd.Dir = moduleDir
+	runReadmeConsumerGo(t, moduleDir, "mod", "tidy")
+	runReadmeConsumerGo(t, moduleDir, "test", "-run", "^TestReadmeSnippetsCompile$", "./...")
+}
+
+func runReadmeConsumerGo(t *testing.T, dir string, args ...string) {
+	t.Helper()
+	cmd := exec.Command("go", args...)
+	cmd.Dir = dir
 	cmd.Env = append(os.Environ(), "CGO_ENABLED=0", "GOWORK=off")
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		t.Fatalf("README Go snippets did not compile as an external module:\n%s", output)
+		t.Fatalf("external README consumer go %s failed:\n%s", strings.Join(args, " "), output)
 	}
 }
 
