@@ -48,7 +48,6 @@ var surfaceSeamPackages = []string{
 	"flow",
 	"format",
 	"goavtest",
-	"goavtest/expect",
 	"pipeline",
 	"provider",
 	"shape",

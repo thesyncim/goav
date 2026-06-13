@@ -15,7 +15,7 @@ func TestEncodeCustomPCM(t *testing.T) {
 
 	packets, err := encodeCustomPCM(ctx, customCodecRuntime())
 	expect.NoError(t, err)
-	expect.Len(t, "packets", packets, 1)
+	expect.Equal(t, "packets", len(packets), 1)
 	expect.DeepEqual(t, "payload", packets[0].Payload.Bytes, samplesToBytes(5, 6))
 }
 

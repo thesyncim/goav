@@ -17,7 +17,7 @@ func TestSuccessfulUploadCommits(t *testing.T) {
 	upload, info, err := runSuccessfulUpload(ctx)
 	expect.NoError(t, err)
 	expect.Equal(t, "provider format", info.Format, av.FormatOgg)
-	expect.Len(t, "provider streams", info.Streams, 1)
+	expect.Equal(t, "provider streams", len(info.Streams), 1)
 	expect.Equal(t, "provider metadata kind", info.Metadata["kind"], "call-recording")
 	expect.Equal(t, "upload commits", upload.commits, 1)
 	expect.Equal(t, "upload aborts", upload.aborts, 0)

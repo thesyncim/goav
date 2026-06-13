@@ -19,7 +19,7 @@ func TestCustomDestinationReceivesResolvedInfo(t *testing.T) {
 	expect.Equal(t, "provider name", info.Name, "mem://voice.ogg")
 	expect.Equal(t, "provider format", info.Format, av.FormatOgg)
 	expect.Equal(t, "provider MIME type", info.MIMEType, "audio/ogg")
-	expect.Len(t, "provider streams", info.Streams, 1)
+	expect.Equal(t, "provider streams", len(info.Streams), 1)
 	expect.Equal(t, "provider metadata kind", info.Metadata["kind"], "demo-destination")
 	expect.Equal(t, "destination closes", dest.closes, 1)
 	expect.Equal(t, "destination wrote bytes", dest.Len() > 0, true)

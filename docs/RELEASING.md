@@ -23,7 +23,7 @@ but the maintainer owns the compatibility decision and signed tag.
 3. Run nested modules and examples:
 
    ```sh
-   for mod in rtpav webrtcav; do
+   for mod in goavtest/expect rtpav webrtcav; do
      (cd "$mod" && CGO_ENABLED=0 go test ./... && CGO_ENABLED=1 go test -race ./... && CGO_ENABLED=0 go vet ./...)
    done
    for mod in examples/*/go.mod; do
@@ -44,7 +44,7 @@ clean local runner.
 
 | Gate | Required evidence |
 |---|---|
-| Pure-Go runtime tests | `CGO_ENABLED=0 go test ./...` passes in the root module, plus pure-Go tests in `rtpav`, `webrtcav`, and every `examples/*/go.mod` module. |
+| Pure-Go runtime tests | `CGO_ENABLED=0 go test ./...` passes in the root module, plus pure-Go tests in `goavtest/expect`, `rtpav`, `webrtcav`, and every `examples/*/go.mod` module. |
 | Race coverage | `CGO_ENABLED=1 go test -race` passes for the governed runtime packages and nested transport modules. |
 | Static analysis and formatting | `CGO_ENABLED=0 go vet ./...`, `staticcheck ./...`, `govulncheck ./...`, and `test -z "$(gofmt -l .)"` pass. |
 | README and docs examples | `TestReadmeGoBlocksCompileAsExternalConsumer`, doc pins, package-doc smoke, and example-module tests pass. |

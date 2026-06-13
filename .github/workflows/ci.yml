@@ -152,6 +152,16 @@ jobs:
       - name: Gofmt
         run: test -z "$(gofmt -l .)"
 
+      - name: goavtest expect module
+        if: matrix.full
+        working-directory: goavtest/expect
+        run: |
+          CGO_ENABLED=0 go build ./...
+          CGO_ENABLED=0 go test -count=1 ./...
+          CGO_ENABLED=0 go vet ./...
+          staticcheck ./...
+          govulncheck ./...
+
       # The transport modules carry the pion dependencies the root module
       # refuses (TestRootModuleDependencyPurity); each is gated like the root.
       - name: rtpav module

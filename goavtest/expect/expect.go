@@ -10,7 +10,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"reflect"
 	"strings"
 
 	"github.com/google/go-cmp/cmp"
@@ -55,24 +54,6 @@ func DeepEqual(t TB, name string, got, want any) {
 	t.Helper()
 	if diff := cmp.Diff(want, got); diff != "" {
 		t.Fatalf("%s mismatch (-want +got):\n%s", label(name), diff)
-	}
-}
-
-// Len fails when got does not have length want. got may be a slice, array,
-// map, string, or channel.
-func Len(t TB, name string, got any, want int) {
-	t.Helper()
-	value := reflect.ValueOf(got)
-	if !value.IsValid() {
-		t.Fatalf("%s has no length; want %d", label(name), want)
-	}
-	switch value.Kind() {
-	case reflect.Array, reflect.Chan, reflect.Map, reflect.Slice, reflect.String:
-	default:
-		t.Fatalf("%s has type %T, which has no length; want %d", label(name), got, want)
-	}
-	if value.Len() != want {
-		t.Fatalf("len(%s) = %d, want %d", label(name), value.Len(), want)
 	}
 }
 
