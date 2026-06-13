@@ -94,17 +94,17 @@ if err != nil {
     return err
 }
 if err := room.Join(ctx, "host"); err != nil {
-    _ = task.Detach(ctx, attachment)
+    _ = task.Detach(ctx, attachment, goav.AbortBranch())
     return err
 }
 attachments["host"] = attachment
 
 // Later, when the participant leaves, remove the source stream and then
-// detach the downstream branches that were anchored to it.
+// drain the downstream branches that were anchored to it.
 if err := room.Leave(ctx, "host"); err != nil {
     return err
 }
-if err := task.Detach(ctx, attachments["host"]); err != nil {
+if err := task.Detach(ctx, attachments["host"], goav.DrainBranch()); err != nil {
     return err
 }
 delete(attachments, "host")

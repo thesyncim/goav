@@ -89,6 +89,18 @@ const MetadataMediaType = "media_type"
 // EventBitrateChanged events.
 const MetadataBitrate = "bitrate_bps"
 
+// MetadataAttachmentID is the Event.Metadata key carrying a runtime branch
+// attachment id on EventBranchAttached and EventBranchDetached.
+const MetadataAttachmentID = "attachment_id"
+
+// MetadataAttachmentName is the Event.Metadata key carrying a runtime branch
+// attachment name on EventBranchAttached and EventBranchDetached.
+const MetadataAttachmentName = "attachment_name"
+
+// MetadataDetachDisposition is the Event.Metadata key carrying how a detached
+// branch finalized its destinations: "detach", "drain", or "abort".
+const MetadataDetachDisposition = "detach_disposition"
+
 // Sample and pixel format names used in CodecParameters, AudioFrame, and
 // VideoFrame. Open strings: adapters may introduce more.
 const (
@@ -493,6 +505,13 @@ const (
 	// detached. Cause carries the failure, Reason names the rule branch, and
 	// StreamID is the discovered stream.
 	EventAttachError EventType = "attach_error"
+	// EventBranchAttached reports that Task.Attach added a runtime branch
+	// group. Metadata carries MetadataAttachmentID and MetadataAttachmentName.
+	EventBranchAttached EventType = "branch_attached"
+	// EventBranchDetached reports that Task.Detach removed a runtime branch
+	// group. Metadata carries MetadataAttachmentID, MetadataAttachmentName, and
+	// MetadataDetachDisposition.
+	EventBranchDetached EventType = "branch_detached"
 	// EventCodecChanged announces that a stream's codec parameters changed
 	// mid-run; Event.Codec carries the new parameters and decode chains apply
 	// their CodecChangePolicy.

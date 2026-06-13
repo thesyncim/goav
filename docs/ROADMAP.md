@@ -27,8 +27,8 @@ reusing one handle groups branches into one mux/sink group
 ## v0 Stable
 
 Stable means: pinned against silent change, documented, and test-enforced, but
-not "frozen forever". The governed surface is 319 approved identifiers
-(`api_surface_pin_test.go` + `testdata/api_surface.txt`: 124 root, 147
+not "frozen forever". The governed surface is 322 approved identifiers
+(`api_surface_pin_test.go` + `testdata/api_surface.txt`: 127 root, 147
 `errcode`, 28 `plan`, 13 `lifecycle`, 4 `snapshot`, 3 `graphrender`), every
 exported symbol documented (`doc_pin_test.go`), tiered in
 `docs/API_SURFACE.md`:
@@ -37,7 +37,8 @@ exported symbol documented (`doc_pin_test.go`), tiered in
   (`Decode`/`Copy`/`Resize`/`Resample`/`Do`/`Encode`)/`Shape`/`Auto`/
   `Require`/`Prefer`/`Tap`/`Branches`/`To`/`OnStream`; `Mix`/`Composite`/
   `Select`; `Flow`; `Task` verbs (`Run`/`Events`/`Watch`/`Snapshot`/`Stats`/
-  `Attach`/`Detach`/`Rebranch`/`Control`); `Default`/`New`/`UseRuntime`;
+  `Attach`/`Detach` with `DrainBranch`/`AbortBranch`/`Rebranch`/`Control`);
+  `Default`/`New`/`UseRuntime`;
   structured `BuildError` + the `errcode` catalog; the `plan`, `snapshot`,
   `lifecycle`, `shape`, `flow`, and `av` vocabulary packages.
 - **Tier B: extension points.** `provider.Source` and `Source(fn)` push
@@ -91,10 +92,11 @@ Exists and is tested, but numbers or semantics are expected to move
 - **Internal-package layering**: measured on the cross-file reference graph
   and rejected: no boundary worth a package today (`docs/ARCHITECTURE.md`
   "Package layering"). Revisit only with a data-transfer boundary.
-- **Plain `task.Detach` drain/abort verbs** and **dedicated
-  attach/detach/commit lifecycle events**: drain-commit is pinned where
-  exposed (rebranch dispositions, stream removal); the standalone verbs and
-  events are roadmap (`docs/NORTH_STAR.md` scoreboard items 25, 26, 30).
+- **Dedicated commit lifecycle events and per-rule `OnStream` detach
+  policy**: standalone `Task.Detach` has explicit drain/abort outcomes and
+  branch attach/detach events are watchable. Commit-specific lifecycle events
+  and per-rule removal policies remain roadmap (`docs/NORTH_STAR.md`
+  scoreboard items 30, 40).
 - **`streamIntent` normalization fold**: internal debt tracked in
   `docs/NORTH_STAR.md` "Execution order".
 
@@ -121,8 +123,6 @@ Exists and is tested, but numbers or semantics are expected to move
   profile-guided builds. Roadmap.
 - **Additional `SwitchAt` boundaries** beyond `NextFrame`/`NextKeyframe`
   (`rebranch_policy.go`). Roadmap.
-- **Mux-group timebase validation** (`docs/NORTH_STAR.md` scoreboard item
-  42). Roadmap.
 
 ## Non-goals
 

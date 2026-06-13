@@ -57,8 +57,9 @@ type Task interface {
 	// published by earlier ones, and a failure rolls the whole group back.
 	Attach(context.Context, ...BranchSpec) (Attachment, error)
 	// Detach removes a runtime branch and any dependent branches anchored on
-	// its taps; their destinations finalize as they close.
-	Detach(context.Context, Attachment) error
+	// its taps. By default destinations finalize as closed; DrainBranch or
+	// AbortBranch records a commit/abort outcome for the detached branch.
+	Detach(context.Context, Attachment, ...DetachOption) error
 	// Taps lists the stable attach points runtime branches can anchor from.
 	Taps() []snapshot.Tap
 	// Snapshot returns a point-in-time diagnostic view without exposing graph handles.

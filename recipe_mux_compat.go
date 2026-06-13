@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/thesyncim/goav/av"
+	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/plan"
@@ -20,9 +21,10 @@ type muxCompatibilityIssue struct {
 }
 
 type plannedMuxStream struct {
-	Branch string
-	Codec  av.CodecID
-	Media  av.MediaType
+	Branch   string
+	Codec    av.CodecID
+	Media    av.MediaType
+	TimeBase av.TimeBase
 }
 
 func validateMuxCompatibilityPass() recipeCompilePass {
@@ -138,20 +140,22 @@ func muxStreamForBranch(
 		if encode := chainEncodeSpec(stream.Operations); streamOK && encode.ID != "" {
 			out.Codec = encode.ID
 			out.Media = firstNonEmptyMedia(encode.Type, encode.Parameters.Type, codecMedia(encode.ID), stream.Select.Type)
+			out.TimeBase = codecSpecMuxTimeBase(encode)
 			return out
 		}
 		out.Codec = av.CodecID(operation.Component)
 		out.Media = codecMedia(out.Codec)
 		return out
 	}
-	if codecID, media, ok := copyMuxStreamCodec(branch, stream, streamOK, intent, inputProbes, transcodeProbe, transcodeProbeReady); ok {
+	if codecID, media, base, ok := copyMuxStreamFacts(branch, stream, streamOK, intent, inputProbes, transcodeProbe, transcodeProbeReady); ok {
 		out.Codec = codecID
 		out.Media = media
+		out.TimeBase = base
 	}
 	return out
 }
 
-func copyMuxStreamCodec(
+func copyMuxStreamFacts(
 	branch workBranch,
 	stream streamIntent,
 	streamOK bool,
@@ -159,24 +163,24 @@ func copyMuxStreamCodec(
 	inputProbes []format.ProbeResult,
 	transcodeProbe format.ProbeResult,
 	transcodeProbeReady bool,
-) (av.CodecID, av.MediaType, bool) {
+) (av.CodecID, av.MediaType, av.TimeBase, bool) {
 	if streamOK {
 		if stream.Select.Codec != "" {
-			return stream.Select.Codec, firstNonEmptyMedia(stream.Select.Type, codecMedia(stream.Select.Codec)), true
+			return stream.Select.Codec, firstNonEmptyMedia(stream.Select.Type, codecMedia(stream.Select.Codec)), av.TimeBase{}, true
 		}
 	}
-	if codecID, media, ok := liveMuxInputCodec(intent.Inputs, branch); ok {
-		return codecID, media, true
+	if codecID, media, base, ok := liveMuxInputFacts(intent.Inputs, branch); ok {
+		return codecID, media, base, true
 	}
 	if transcodeProbeReady {
-		if codecID, media, ok := probedMuxInputCodec([]format.ProbeResult{transcodeProbe}, branch); ok {
-			return codecID, media, true
+		if codecID, media, base, ok := probedMuxInputFacts([]format.ProbeResult{transcodeProbe}, branch); ok {
+			return codecID, media, base, true
 		}
 	}
-	return probedMuxInputCodec(inputProbes, branch)
+	return probedMuxInputFacts(inputProbes, branch)
 }
 
-func liveMuxInputCodec(inputs []inputIntent, branch workBranch) (av.CodecID, av.MediaType, bool) {
+func liveMuxInputFacts(inputs []inputIntent, branch workBranch) (av.CodecID, av.MediaType, av.TimeBase, bool) {
 	for i := range inputs {
 		input := inputs[i]
 		if !input.Realtime || input.Codec.ID == "" {
@@ -187,12 +191,12 @@ func liveMuxInputCodec(inputs []inputIntent, branch workBranch) (av.CodecID, av.
 			continue
 		}
 		media := firstNonEmptyMedia(input.Codec.Type, input.Codec.Parameters.Type, codecMedia(input.Codec.ID))
-		return input.Codec.ID, media, true
+		return input.Codec.ID, media, codecSpecMuxTimeBase(input.Codec), true
 	}
-	return "", "", false
+	return "", "", av.TimeBase{}, false
 }
 
-func probedMuxInputCodec(probes []format.ProbeResult, branch workBranch) (av.CodecID, av.MediaType, bool) {
+func probedMuxInputFacts(probes []format.ProbeResult, branch workBranch) (av.CodecID, av.MediaType, av.TimeBase, bool) {
 	selector := av.StreamSelector{
 		ID:       branch.Stream.ID,
 		Index:    branch.Stream.Index,
@@ -213,14 +217,40 @@ func probedMuxInputCodec(probes []format.ProbeResult, branch workBranch) (av.Cod
 		candidates = append(candidates, selected)
 	}
 	if len(candidates) != 1 {
-		return "", "", false
+		return "", "", av.TimeBase{}, false
 	}
 	stream := candidates[0]
 	media := firstNonEmptyMedia(stream.Type, stream.Codec.Type, codecMedia(stream.Codec.ID))
-	return stream.Codec.ID, media, true
+	return stream.Codec.ID, media, muxStreamTimeBase(stream), true
+}
+
+func codecSpecMuxTimeBase(spec codec.CodecSpec) av.TimeBase {
+	if spec.Parameters.ClockRate != 0 {
+		return av.RTPTimeBase(spec.Parameters.ClockRate)
+	}
+	if spec.Parameters.SampleRate > 0 {
+		return av.TimeBase{Num: 1, Den: int64(spec.Parameters.SampleRate)}
+	}
+	return av.TimeBase{}
+}
+
+func muxStreamTimeBase(stream av.Stream) av.TimeBase {
+	if stream.TimeBase != (av.TimeBase{}) {
+		return stream.TimeBase
+	}
+	if stream.Codec.ClockRate != 0 {
+		return av.RTPTimeBase(stream.Codec.ClockRate)
+	}
+	if stream.Codec.SampleRate > 0 {
+		return av.TimeBase{Num: 1, Den: int64(stream.Codec.SampleRate)}
+	}
+	return av.TimeBase{}
 }
 
 func checkKnownMuxCompatibility(output workDestination, streams []plannedMuxStream, rt Runtime) (muxCompatibilityIssue, bool) {
+	if issue, ok := checkMuxTimebaseCompatibility(output, streams); ok {
+		return issue, true
+	}
 	if desc, ok := muxerDescriptorForRuntime(rt, output.Format); ok {
 		if issue, checked := checkDescriptorMuxCompatibility(output, streams, desc); checked {
 			return issue, true
@@ -274,6 +304,19 @@ func checkDescriptorMuxCompatibility(output workDestination, streams []plannedMu
 		}
 		if stream.Codec != "" && len(desc.Codecs) != 0 && !codecAllowed(desc.Codecs, stream.Codec) {
 			return newMuxCompatibilityIssue(output, streams, descriptorMuxReason(output.Format, desc)), true
+		}
+	}
+	return muxCompatibilityIssue{}, false
+}
+
+func checkMuxTimebaseCompatibility(output workDestination, streams []plannedMuxStream) (muxCompatibilityIssue, bool) {
+	for i := range streams {
+		base := streams[i].TimeBase
+		if base == (av.TimeBase{}) {
+			continue
+		}
+		if !base.Valid() {
+			return newMuxCompatibilityIssue(output, streams, "mux destination streams must declare a valid timebase when timebase facts are present"), true
 		}
 	}
 	return muxCompatibilityIssue{}, false
@@ -394,9 +437,16 @@ func muxCompatibilityDetails(output workDestination, streams []plannedMuxStream)
 		if stream.Media != "" {
 			detail += " media=" + string(stream.Media)
 		}
+		if stream.TimeBase != (av.TimeBase{}) {
+			detail += " timebase=" + muxTimebaseDetail(stream.TimeBase)
+		}
 		details = append(details, detail)
 	}
 	return append(details, "branches="+strings.Join(branchNames, ","))
+}
+
+func muxTimebaseDetail(base av.TimeBase) string {
+	return fmt.Sprintf("%d/%d", base.Num, base.Den)
 }
 
 func muxCompatibilitySuggestions(formatID av.FormatID) []string {

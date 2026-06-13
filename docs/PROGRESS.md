@@ -115,9 +115,8 @@ Compatibility pins:
 ## Remaining Work
 
 - Fold the remaining `streamIntent` normalization layer into operation readers.
-- Add standalone detach drain/abort verbs and dedicated attach/detach/commit
-  lifecycle events.
-- Add mux-group timebase validation.
+- Add dedicated commit lifecycle events.
+- Add per-rule removal detach policy for `OnStream`.
 - Expand `SwitchAt` boundaries beyond frame/keyframe.
 - Finish time-shape work: pipeline-wide clock service, A/V sink sync, and pull
   scheduling.

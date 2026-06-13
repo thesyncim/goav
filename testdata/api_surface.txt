@@ -152,6 +152,7 @@ errcode.TransformAdapterMissing
 errcode.TransformInvalid
 errcode.TransformMediaMismatch
 errcode.UnsupportedInput
+goav.AbortBranch
 goav.AbortOldBranch
 goav.Attachment
 goav.Branch
@@ -175,6 +176,8 @@ goav.Default
 goav.Deliver
 goav.Destination
 goav.DestinationOption
+goav.DetachOption
+goav.DrainBranch
 goav.DrainOldBranch
 goav.Emit
 goav.ErrBackpressure

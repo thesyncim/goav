@@ -27,7 +27,8 @@ goav.Mix/Composite/Select(arms) / Join(name, stage, arms)   N arms -> one stream
 goav.Flow("name")                         reusable operation list (Chain)
 job.Describe() / Explain() -> plan.Report; job.Build(ctx) -> Task; job.Run(ctx)
 Task: Run, Events, Watch(EventFilter), Snapshot -> snapshot.*, Stats,
-      Attach/Detach/Rebranch (SwitchAt, Drain/AbortOldBranch, KeepOldOnFailure),
+      Attach/Detach(DrainBranch|AbortBranch)/Rebranch
+      (SwitchAt, Drain/AbortOldBranch, KeepOldOnFailure),
       Control(Keyframe|Seek|Segment|Rate|SetBitrate|SelectActive|Deliver, .AtTap)
 goav.Default(opts...) / goav.New(opts...) -> Runtime; job.UseRuntime(rt)
 errors: *goav.BuildError{Code: errcode.X, ...} matched with errors.As/Is
@@ -216,6 +217,11 @@ against the constructors in `input.go`/`provider.go`/`source.go`,
 - **Flow vs Branch**: a `Flow` is a reusable operation list and owns no
   destination (`TestNorthStarFlowExposesNoDestinations`); a `Branch` routes
   fanout and owns its destinations.
+- **Attach vs Detach vs Rebranch**: `Task.Attach` adds ordinary branch specs
+  to a running task; `Task.Detach(ctx, h)` removes that attached branch, with
+  `DrainBranch()` and `AbortBranch()` selecting whether branch destinations
+  commit or abort; `Attachment.Rebranch` is attach-new-then-detach-old, with
+  boundary options and old-branch outcome options.
 - **Shape vs Require vs Auto vs Prefer**: `Shape` states a fact about the
   current media point; `Require` asserts a contract that fails the build
   when unmet; `Auto` grants the solver permission to insert conversions;
@@ -228,7 +234,10 @@ against the constructors in `input.go`/`provider.go`/`source.go`,
   programmatically.
 - **Events vs Watch**: `Events()` is the single raw firehose channel;
   `Watch(filters...)` gives each consumer an independent filtered
-  subscription that sheds for itself only.
+  subscription that sheds for itself only. Runtime branch lifecycle events
+  (`av.EventBranchAttached`, `av.EventBranchDetached`) are published through
+  `Watch`, with attachment id/name metadata and a detach disposition on
+  detach.
 - **Control vs Deliver**: `Control` verbs are typed intents (`Keyframe`,
   `SetBitrate`, `Seek`, `Rate`, `Segment`, `SelectActive`);
   `Deliver(event)` is the escape hatch handing a verbatim event to a stage

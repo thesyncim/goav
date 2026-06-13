@@ -67,6 +67,52 @@ func TestDescriptorMuxCompatibilityContracts(t *testing.T) {
 	}
 }
 
+func TestMuxTimebaseCompatibilityContracts(t *testing.T) {
+	output := workDestination{Name: "archive.mkv", Format: av.FormatMatroska}
+
+	if issue, ok := checkMuxTimebaseCompatibility(output, []plannedMuxStream{{Branch: "audio"}}); ok {
+		t.Fatalf("unknown timebase issue = %+v, want deferred", issue)
+	}
+	valid := []plannedMuxStream{{Branch: "audio", Media: av.MediaAudio, Codec: av.CodecOpus, TimeBase: av.TimeBase{Num: 1, Den: 48000}}}
+	if issue, ok := checkMuxTimebaseCompatibility(output, valid); ok {
+		t.Fatalf("valid timebase issue = %+v, want none", issue)
+	}
+
+	invalid := []plannedMuxStream{{Branch: "audio", Media: av.MediaAudio, Codec: av.CodecOpus, TimeBase: av.TimeBase{Num: 1}}}
+	issue, ok := checkMuxTimebaseCompatibility(output, invalid)
+	if !ok {
+		t.Fatal("invalid timebase did not reject the mux group")
+	}
+	if issue.Code != errcode.DestinationMuxIncompatible || !strings.Contains(issue.Reason, "valid timebase") {
+		t.Fatalf("timebase issue = %+v, want mux incompatibility with timebase reason", issue)
+	}
+	if !reflect.DeepEqual(issue.Details, []string{
+		"destination=archive.mkv",
+		"format=matroska",
+		"branch=audio codec=opus media=audio timebase=1/0",
+		"branches=audio",
+	}) {
+		t.Fatalf("details = %#v, want invalid timebase detail", issue.Details)
+	}
+}
+
+func TestMuxStreamTimeBaseContracts(t *testing.T) {
+	explicit := av.TimeBase{Num: 1001, Den: 30000}
+	if got := muxStreamTimeBase(av.Stream{TimeBase: explicit, Codec: av.CodecParameters{ClockRate: 90000}}); got != explicit {
+		t.Fatalf("explicit timebase = %+v, want %+v", got, explicit)
+	}
+	if got := muxStreamTimeBase(av.Stream{Codec: av.CodecParameters{ClockRate: 90000}}); got != av.RTPTimeBase(90000) {
+		t.Fatalf("clock-rate timebase = %+v, want RTP 90k", got)
+	}
+	if got := muxStreamTimeBase(av.Stream{Codec: av.CodecParameters{SampleRate: 48000}}); got != (av.TimeBase{Num: 1, Den: 48000}) {
+		t.Fatalf("sample-rate timebase = %+v, want 1/48000", got)
+	}
+	invalid := av.TimeBase{Num: 1}
+	if got := muxStreamTimeBase(av.Stream{TimeBase: invalid}); got != invalid {
+		t.Fatalf("invalid explicit timebase = %+v, want preserved %+v", got, invalid)
+	}
+}
+
 func TestSingleVideoMuxCompatibilityContracts(t *testing.T) {
 	output := workDestination{Name: "archive.ivf", Format: av.FormatIVF}
 	codecs := map[av.CodecID]bool{av.CodecVP8: true, av.CodecVP9: true, av.CodecAV1: true}

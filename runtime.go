@@ -717,15 +717,16 @@ func taskSnapshotDestinations(root []snapshot.Destination, branches []snapshot.B
 	return out
 }
 
-func (t *task) Detach(ctx context.Context, attachment Attachment) error {
+func (t *task) Detach(ctx context.Context, attachment Attachment, options ...DetachOption) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
 	if attachment == nil {
 		return nil
 	}
+	policy := detachPolicyFromOptions(options)
 	if runtimeAttachment, ok := attachment.(*runtimeAttachment); ok {
-		return t.stopAttachment(ctx, runtimeAttachment)
+		return t.stopAttachment(ctx, runtimeAttachment, policy.disposition)
 	}
 	return attachment.Close(ctx)
 }
@@ -738,7 +739,7 @@ func (t *task) stopAttachments(ctx context.Context) error {
 	defer t.attachMu.Unlock()
 	var first error
 	for attachment := range t.attachments {
-		if err := t.stopAttachmentLocked(ctx, attachment); first == nil && err != nil {
+		if err := t.stopAttachmentLocked(ctx, attachment, oldBranchDetach); first == nil && err != nil {
 			first = err
 		}
 	}

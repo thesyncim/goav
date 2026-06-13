@@ -158,7 +158,9 @@ func (t *controlCaptureTask) Attach(context.Context, ...goav.BranchSpec) (goav.A
 	return nil, nil
 }
 
-func (t *controlCaptureTask) Detach(context.Context, goav.Attachment) error { return nil }
+func (t *controlCaptureTask) Detach(context.Context, goav.Attachment, ...goav.DetachOption) error {
+	return nil
+}
 
 func (t *controlCaptureTask) Taps() []snapshot.Tap {
 	return []snapshot.Tap{{Name: videoTapName, Node: pipeline.NodeRef("video.decoded")}}

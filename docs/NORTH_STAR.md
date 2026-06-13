@@ -59,11 +59,11 @@ labels used in test failure messages.
 | Planner | #5 Build and Attach share canonical operation lowering. #6 Attach emits `WorkPatch` downstream of taps. #7 Explain reads from `WorkPlan`. #8 Snapshot reflects plan plus patches. #9 legacy workflow packages are gone. #10 workflow-kind dispatch is gone from normal recipes. |
 | Shape | #11 Resize requires video frames. #12 Resample requires audio frames. #13 frames cannot go to byte destinations without Encode. #14 packet Copy to File succeeds. #15 decoded frames can end in Sink. #16 errors include operation, actual/expected shape, and fix. #17 conversions are inserted only under an explicit policy. |
 | Branches | #18 branches after Decode share one decoder. #19 dropping preview branches do not stall archive branches. #20 Blocking backpressures. #21 branch drop counters are visible. #22 mutable branch output cannot corrupt siblings. |
-| Runtime mutation | #23 Attach opens destinations before mutation. #24 attach failure rolls back. #25/#26 drain and abort are pinned where exposed; standalone detach disposition remains planned. #27 Rebranch starts replacement before old detach. #28 failed Rebranch keeps the old branch. #29 Pause/Resume affects one branch. |
-| Events and control | #30 Watch filters and stream/attach/backpressure events are pinned; dedicated attach/detach/commit lifecycle events remain planned. #31 Snapshot reports typed task, branch, destination, tap, and drop state. #32 Keyframe reaches adapters or fails clearly. #33 SetBitrate reaches encoders or fails clearly. |
+| Runtime mutation | #23 Attach opens destinations before mutation. #24 attach failure rolls back. #25/#26 drain and abort are pinned for Rebranch and standalone `Task.Detach`. #27 Rebranch starts replacement before old detach. #28 failed Rebranch keeps the old branch. #29 Pause/Resume affects one branch. |
+| Events and control | #30 Watch filters and stream/attach/backpressure events are pinned; `EventBranchAttached` and `EventBranchDetached` report runtime branch lifecycle, while dedicated commit lifecycle events remain planned. #31 Snapshot reports typed task, branch, destination, tap, and drop state. #32 Keyframe reaches adapters or fails clearly. #33 SetBitrate reaches encoders or fails clearly. |
 | Sources | #34 custom packet source Copy to File. #35 custom frame source Encode to File. #36 SourcePush reports Accepted/Dropped. #37 source EOS commits destinations. |
 | Dynamic streams | #38 late streams attach branches. #39 ambiguous stream selection lists candidates and fixes. #40 removal detaches with drain where exposed; per-rule detach policy remains planned. |
-| Multi-input and joins | #41 multiple inputs can share one destination. #42 codec/format mux compatibility is checked; mux-group timebase validation remains planned. #43 Mix joins audio branches. #44 join shape mismatch is solved or refused before mutation. |
+| Multi-input and joins | #41 multiple inputs can share one destination. #42 codec/format/timebase mux compatibility is checked. #43 Mix joins audio branches. #44 join shape mismatch is solved or refused before mutation. |
 
 ## Current State
 
@@ -80,15 +80,18 @@ Done:
 - Dynamic streams attach through the normal branch planner.
 - Watch, Snapshot, Stats, Attach, Rebranch, Detach, and task controls are
   public task capabilities.
+- `Task.Detach` has explicit drain/abort outcomes, and branch attach/detach
+  events are watchable without graph handles.
+- Mux compatibility preflight rejects malformed declared timebase facts while
+  still deferring unknown facts.
 - Generated-source CLI runs and control sockets expose the same task model.
 
 Still planned:
 
 - Fold the remaining `streamIntent` normalization layer into operation readers.
 - Expand `SwitchAt` boundaries beyond the current frame/keyframe policies.
-- Add standalone detach drain/abort verbs and dedicated attach/detach/commit
-  lifecycle events.
-- Add mux-group timebase validation.
+- Add dedicated commit lifecycle events.
+- Add per-rule removal detach policy for `OnStream`.
 - Finish the time-shape work: pipeline-wide clock service, A/V sink sync, and
   pull scheduling.
 - Decide the release minimum Go version before v1.

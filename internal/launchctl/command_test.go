@@ -2755,7 +2755,9 @@ func (t *fakeTask) Attach(context.Context, ...goav.BranchSpec) (goav.Attachment,
 	return nil, errors.New("not implemented")
 }
 
-func (t *fakeTask) Detach(context.Context, goav.Attachment) error { return nil }
+func (t *fakeTask) Detach(context.Context, goav.Attachment, ...goav.DetachOption) error {
+	return nil
+}
 
 func (t *fakeTask) Taps() []snapshot.Tap { return append([]snapshot.Tap(nil), t.taps...) }
 

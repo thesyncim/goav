@@ -248,6 +248,7 @@ func (t *task) Attach(ctx context.Context, specs ...BranchSpec) (Attachment, err
 	attachment := patch.attachment(t, name)
 	t.trackAttachmentLocked(attachment)
 	t.addAttachmentTapsLocked(patch.taps)
+	t.publishBranchLifecycleEvent(av.EventBranchAttached, attachment, oldBranchDetach)
 	return attachment, nil
 }
 
@@ -692,9 +693,10 @@ func runtimeMuxCompatibilityIssue(destinationName string, formatID av.FormatID, 
 		}
 		stream := streams[i]
 		plannedStreams = append(plannedStreams, plannedMuxStream{
-			Branch: branch,
-			Codec:  stream.Codec.ID,
-			Media:  firstNonEmptyMedia(stream.Type, stream.Codec.Type, codecMedia(stream.Codec.ID)),
+			Branch:   branch,
+			Codec:    stream.Codec.ID,
+			Media:    firstNonEmptyMedia(stream.Type, stream.Codec.Type, codecMedia(stream.Codec.ID)),
+			TimeBase: muxStreamTimeBase(stream),
 		})
 	}
 	return checkKnownMuxCompatibility(output, plannedStreams, rt)
@@ -1010,40 +1012,44 @@ func (t *task) removeAttachmentTapsLocked(attachment *runtimeAttachment) {
 	t.branchTaps = out
 }
 
-func (t *task) stopAttachment(ctx context.Context, attachment *runtimeAttachment) error {
+func (t *task) stopAttachment(ctx context.Context, attachment *runtimeAttachment, disposition oldBranchDisposition) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
 	t.attachMu.Lock()
 	defer t.attachMu.Unlock()
-	return t.stopAttachmentLocked(ctx, attachment)
+	return t.stopAttachmentLocked(ctx, attachment, disposition)
 }
 
-func (t *task) stopAttachmentLocked(ctx context.Context, attachment *runtimeAttachment) error {
+func (t *task) stopAttachmentLocked(ctx context.Context, attachment *runtimeAttachment, disposition oldBranchDisposition) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
 	if attachment == nil {
 		return nil
 	}
-	first := t.stopAttachmentChildrenLocked(ctx, attachment)
+	first := t.stopAttachmentChildrenLocked(ctx, attachment, disposition)
 	attachment.stopMu.Lock()
 	defer attachment.stopMu.Unlock()
 	if attachment.stopped {
 		delete(t.attachments, attachment)
 		return first
 	}
+	attachment.applyDetachDisposition(disposition)
 	err := attachment.stopLocked(t.graph)
 	attachment.stopped = true
 	t.removeAttachmentTapsLocked(attachment)
 	delete(t.attachments, attachment)
+	if err == nil {
+		t.publishBranchLifecycleEvent(av.EventBranchDetached, attachment, disposition)
+	}
 	if first != nil {
 		return first
 	}
 	return err
 }
 
-func (t *task) stopAttachmentChildrenLocked(ctx context.Context, attachment *runtimeAttachment) error {
+func (t *task) stopAttachmentChildrenLocked(ctx context.Context, attachment *runtimeAttachment, disposition oldBranchDisposition) error {
 	if attachment == nil {
 		return nil
 	}
@@ -1053,9 +1059,42 @@ func (t *task) stopAttachmentChildrenLocked(ctx context.Context, attachment *run
 		if child == nil {
 			return first
 		}
-		if err := t.stopAttachmentLocked(ctx, child); first == nil && err != nil {
+		if err := t.stopAttachmentLocked(ctx, child, disposition); first == nil && err != nil {
 			first = err
 		}
+	}
+}
+
+func (t *task) publishBranchLifecycleEvent(kind av.EventType, attachment *runtimeAttachment, disposition oldBranchDisposition) {
+	if t == nil || attachment == nil {
+		return
+	}
+	reason := "runtime branch attached"
+	if kind == av.EventBranchDetached {
+		reason = "runtime branch detached"
+	}
+	event := av.Event{
+		Type:   kind,
+		Reason: reason,
+		Metadata: av.Metadata{
+			av.MetadataAttachmentID:   attachment.ID(),
+			av.MetadataAttachmentName: attachment.Name(),
+		},
+	}
+	if kind == av.EventBranchDetached {
+		event.Metadata[av.MetadataDetachDisposition] = detachDispositionLabel(disposition)
+	}
+	t.watch.publish(event)
+}
+
+func detachDispositionLabel(disposition oldBranchDisposition) string {
+	switch disposition {
+	case oldBranchDrain:
+		return "drain"
+	case oldBranchAbort:
+		return "abort"
+	default:
+		return "detach"
 	}
 }
 
@@ -1325,6 +1364,17 @@ func (a *runtimeAttachment) detachReplacedAtBoundary(group *switchGroup, disposi
 func (a *runtimeAttachment) detachReplaced(ctx context.Context, disposition oldBranchDisposition) error {
 	switch disposition {
 	case oldBranchDrain:
+		return a.owner.Detach(ctx, a, DrainBranch())
+	case oldBranchAbort:
+		return a.owner.Detach(ctx, a, AbortBranch())
+	default:
+		return a.owner.Detach(ctx, a)
+	}
+}
+
+func (a *runtimeAttachment) applyDetachDisposition(disposition oldBranchDisposition) {
+	switch disposition {
+	case oldBranchDrain:
 		a.detachOutcome.Store(lifecycle.DestinationCommitted)
 	case oldBranchAbort:
 		for _, stage := range a.stages {
@@ -1333,7 +1383,6 @@ func (a *runtimeAttachment) detachReplaced(ctx context.Context, disposition oldB
 		a.detachOutcome.Store(lifecycle.DestinationAborted)
 	case oldBranchDetach:
 	}
-	return a.owner.Detach(ctx, a)
 }
 
 func (a *runtimeAttachment) Close(ctx context.Context) error {
@@ -1341,7 +1390,7 @@ func (a *runtimeAttachment) Close(ctx context.Context) error {
 		return nil
 	}
 	if a.owner != nil {
-		return a.owner.stopAttachment(ctx, a)
+		return a.owner.stopAttachment(ctx, a, oldBranchDetach)
 	}
 	return nil
 }

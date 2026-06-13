@@ -25,5 +25,30 @@ The producer-side cost of both paths is measured by `BenchmarkSourcePush`
 (dropping vs blocking), and the steady buffered path is allocation-pinned by
 `pipeline.TestGraphBufferedSteadyEmitAllocs`; see `docs/PERFORMANCE.md`.
 
+## Runtime branch detach outcomes
+
+Runtime branches are flow-control boundaries too: they may own buffers, taps,
+and destinations that should close differently depending on why the branch is
+leaving.
+
+- `Task.Detach(ctx, attachment)` removes the branch and reports its
+  destinations as closed.
+- `Task.Detach(ctx, attachment, DrainBranch())` drains/finalizes the branch as
+  committed. Use this for ordinary recording or participant-leave flows where
+  the output should be kept.
+- `Task.Detach(ctx, attachment, AbortBranch())` marks the branch output as
+  abandoned. Use this after failed admission or diagnostic captures that should
+  not commit.
+
+```go
+task.Watch(goav.WatchTypes(
+    av.EventBranchAttached,
+    av.EventBranchDetached,
+))
+```
+
+That watcher reports runtime branch lifecycle changes with the attachment
+id/name and detach disposition.
+
 Remaining design choice: whether the bare buffered default should also block
 rather than error on full (currently: only explicit `Blocking` blocks).

@@ -194,6 +194,90 @@ func TestTaskSnapshotReportsCommittedDestinationAfterRun(t *testing.T) {
 	}
 }
 
+func TestTaskAttachDetachPublishesBranchLifecycleEvents(t *testing.T) {
+	ctx := context.Background()
+	task, err := From(lifecycleTestSource(func(_ context.Context, push SourcePush) error {
+		return lifecycleTestPush(push)
+	})).Audio().Copy().
+		Tap(PacketTap("audio.packets")).
+		To(lifecycleTestSink("base")).Build(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer task.Close()
+
+	events := task.Watch(WatchTypes(av.EventBranchAttached, av.EventBranchDetached))
+	attachment, err := task.Attach(ctx, Branch("rec").
+		From(PacketTap("audio.packets")).
+		To(lifecycleTestSink("rec")))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	attached := recvWatchEvent(t, events)
+	if attached.Type != av.EventBranchAttached {
+		t.Fatalf("attached event type = %q, want %q", attached.Type, av.EventBranchAttached)
+	}
+	if attached.Metadata[av.MetadataAttachmentID] != attachment.ID() || attached.Metadata[av.MetadataAttachmentName] != "rec" {
+		t.Fatalf("attached metadata = %#v, want attachment id/name", attached.Metadata)
+	}
+	if _, ok := attached.Metadata[av.MetadataDetachDisposition]; ok {
+		t.Fatalf("attached metadata includes detach disposition: %#v", attached.Metadata)
+	}
+
+	if err := task.Detach(ctx, attachment, DrainBranch()); err != nil {
+		t.Fatal(err)
+	}
+	detached := recvWatchEvent(t, events)
+	if detached.Type != av.EventBranchDetached {
+		t.Fatalf("detached event type = %q, want %q", detached.Type, av.EventBranchDetached)
+	}
+	if detached.Metadata[av.MetadataAttachmentID] != attachment.ID() ||
+		detached.Metadata[av.MetadataAttachmentName] != "rec" ||
+		detached.Metadata[av.MetadataDetachDisposition] != "drain" {
+		t.Fatalf("detached metadata = %#v, want id/name/drain disposition", detached.Metadata)
+	}
+}
+
+func TestTaskDetachOptionsReportDestinationOutcome(t *testing.T) {
+	ctx := context.Background()
+	task, err := From(lifecycleTestSource(func(_ context.Context, push SourcePush) error {
+		return lifecycleTestPush(push)
+	})).Audio().Copy().
+		Tap(PacketTap("audio.packets")).
+		To(lifecycleTestSink("base")).Build(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer task.Close()
+
+	tests := []struct {
+		name    string
+		dest    string
+		options []DetachOption
+		want    lifecycle.DestinationState
+	}{
+		{name: "rec-drain", dest: "rec-drain", options: []DetachOption{DrainBranch()}, want: lifecycle.DestinationCommitted},
+		{name: "rec-abort", dest: "rec-abort", options: []DetachOption{AbortBranch()}, want: lifecycle.DestinationAborted},
+	}
+	for _, tt := range tests {
+		attachment, err := task.Attach(ctx, Branch(tt.name).
+			From(PacketTap("audio.packets")).
+			To(lifecycleTestSink(tt.dest)))
+		if err != nil {
+			t.Fatalf("%s attach: %v", tt.name, err)
+		}
+		if err := task.Detach(ctx, attachment, tt.options...); err != nil {
+			t.Fatalf("%s detach: %v", tt.name, err)
+		}
+		snap := attachment.Snapshot()
+		destination, ok := destinationSnapshotByName(snap.Destinations, tt.dest)
+		if !ok || destination.State != tt.want || destination.Open {
+			t.Fatalf("%s destination = %+v, want closed %q destination", tt.name, destination, tt.want)
+		}
+	}
+}
+
 func TestTaskSnapshotReportsFailedTaskAndAbortedDestination(t *testing.T) {
 	ctx := context.Background()
 	sourceErr := errors.New("source failed")
