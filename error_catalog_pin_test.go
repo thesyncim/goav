@@ -710,7 +710,7 @@ var errorCatalogAdditionalExamples = []errorCatalogExample{
 		Test:          "TestBranchCompositionRejectsGraphNodeSource",
 		BadRecipe:     `goav.Branch("preview").From(invalidSource).To(...)`,
 		RenderedError: "invalid branch source refusal is asserted by the test",
-		Fix:           "anchor branches with goav.FrameTap(...), goav.PacketTap(...), or the current stream point",
+		Fix:           "anchor branches with goav.FrameTap(...), goav.PacketTap(...), or input.Stream(track)",
 		Cause:         "goav.ErrUnsupportedBuild",
 	},
 	{

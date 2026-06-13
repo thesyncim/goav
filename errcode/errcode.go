@@ -255,7 +255,7 @@ const (
 	// BranchDuplicate fires when two branches share one name.
 	BranchDuplicate Code = "branch_duplicate"
 	// BranchSourceInvalid fires when a branch anchors from something other
-	// than a typed tap or expert graph handle.
+	// than a typed tap, input stream anchor, or expert graph handle.
 	BranchSourceInvalid Code = "branch_source_invalid"
 	// BranchTapMissing fires when a branch's .From(...) tap is not
 	// declared on the parent stream.
