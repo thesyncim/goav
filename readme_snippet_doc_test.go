@@ -27,8 +27,7 @@ func TestReadmeGoBlocksCompileAsExternalConsumer(t *testing.T) {
 	moduleDir := t.TempDir()
 	writeReadmeConsumerModule(t, moduleDir, root, snippets)
 
-	runReadmeConsumerGo(t, moduleDir, "mod", "tidy")
-	runReadmeConsumerGo(t, moduleDir, "test", "-run", "^TestReadmeSnippetsCompile$", "./...")
+	runReadmeConsumerGo(t, moduleDir, "test", "-mod=readonly", "-run", "^TestReadmeSnippetsCompile$", "./...")
 }
 
 func runReadmeConsumerGo(t *testing.T, dir string, args ...string) {
@@ -53,6 +52,13 @@ require github.com/thesyncim/goav v0.0.0
 replace github.com/thesyncim/goav => %s
 `, strconv.Quote(filepath.ToSlash(root)))
 	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte(mod), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	sum, err := os.ReadFile("go.sum")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "go.sum"), sum, 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(dir, "readme_test.go"), []byte(readmeConsumerTestSource(snippets)), 0o644); err != nil {
