@@ -108,6 +108,15 @@ type sourceInputSpec struct {
 	fn    SourceFunc
 }
 
+// InputStream is a runtime-attach anchor for one stream produced by an
+// InputSpec. Applications with an explicit track registry use
+// input.Stream(stream) with Branch(...).From(...) when they need to attach a
+// per-track branch before the source starts pushing that track's media.
+type InputStream struct {
+	input  InputSpec
+	stream av.Stream
+}
+
 // Source declares a custom input the application pushes media into: spec
 // states the media facts the planner needs before the source opens
 // (shape.Packet, shape.Frame, or shape.Event plus format facts), and fn runs
@@ -126,6 +135,37 @@ func Source(name string, spec shape.Spec, fn SourceFunc, opts ...InputOption) In
 		codec:  codecSpecFromSourceShape(spec),
 		name:   name,
 	}, opts)
+}
+
+// Stream returns a runtime branch anchor for a stream that this input produces
+// or will produce. It keeps applications with explicit dynamic tracks on the
+// main grammar:
+//
+//	track := av.Stream{ID: "host", Type: av.MediaAudio, Codec: ...}
+//	task.Attach(ctx, goav.Branch("track-host").From(input.Stream(track)).To(out))
+//
+// The av.Stream supplies the branch's source shape facts, so this is the
+// deterministic sibling of OnStream: use it when the application already owns
+// the track lifecycle and wants to attach before sending the first frame or
+// packet for that stream.
+func (s InputSpec) Stream(stream av.Stream) InputStream {
+	return InputStream{input: s, stream: stream}
+}
+
+// Name reports the source node name this stream anchor attaches from.
+func (s InputStream) Name() string {
+	return s.input.graphSourceNodeName()
+}
+
+func (s InputStream) branchSource() branchSourceBinding {
+	stream := s.stream
+	return branchSourceBinding{
+		from:         s.input.graphSourceNodeName(),
+		policy:       pipeline.RouteByStream,
+		label:        string(stream.ID),
+		stream:       &stream,
+		streamDomain: s.input.sourceEventDomain(),
+	}
 }
 
 func normalizeCustomSourceShape(name string, spec shape.Spec) shape.Spec {

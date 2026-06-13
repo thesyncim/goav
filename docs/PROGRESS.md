@@ -58,7 +58,9 @@ Compatibility pins:
   `Latest`, `Unbounded`, MaxLatency, MaxBytes, and branch-local drop counters.
 - Task controls: `Keyframe`, `SetBitrate`, `Seek`, `Rate`, `Segment`,
   `SelectActive`, `Deliver`, `.AtTap(name)`, and expert-only `.At(node)`.
-- Dynamic streams through `OnStream` rules and `av.EventStreamAdded`.
+- Dynamic streams through `InputSpec.Stream` runtime anchors for app-owned
+  tracks, plus `OnStream` rules and `av.EventStreamAdded` for automatic
+  discovery.
 - Deterministic testing through `goavtest` sources, collectors, fake codecs,
   fake containers, and fake clocks.
 - Generated-source CLI pipelines and `goav ctl` sockets for live inspection,

@@ -100,12 +100,15 @@ convergence: their upstream arms are part of the planned graph. Runtime
 streams; they do not mutate the arm set of an existing join.
 
 For live audio rooms where tracks join and leave continuously, the supported
-pattern today is source-owned track discovery: an application source owns the
-participant registry and emits `EventStreamAdded` / `EventStreamRemoved` for
-each track. `OnStream` then attaches ordinary branches for each discovered
-track, so one branch can process the track independently while another branch
-feeds a shared output mixer sink. The copyable reference is
-`examples/dynamic-audio-room`.
+pattern today is source-owned track lifecycle: an application source owns the
+participant registry, attaches ordinary runtime branches from
+`input.Stream(participantStream)` before accepting media for that participant,
+and emits `EventStreamAdded` / `EventStreamRemoved` for observability. One
+branch can process the track independently while another branch feeds a shared
+output mixer sink. `OnStream` is still available for sources that truly
+discover streams automatically, but app-owned membership should use the
+explicit input-stream anchor so the first frame is deterministic. The copyable
+reference is `examples/dynamic-audio-room`.
 
 A future first-class dynamic upstream mix API should be judged against a higher
 bar than a convenience helper: it should preserve per-track routes, produce a

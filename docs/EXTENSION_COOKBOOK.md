@@ -18,7 +18,7 @@ or a global registry.
 | Need | Use | Copy from | Failure to test |
 |---|---|---|---|
 | Push media already owned by the app | `goav.Source(name, shape, fn)` | `examples/custom-source` | missing callback or wrong shape refuses before work starts |
-| Publish dynamic app-owned tracks and optionally mix an output | `goav.Source` plus `OnStream` branches | `examples/dynamic-audio-room` | inactive participant frames fail instead of silently corrupting the mix |
+| Publish dynamic app-owned tracks and optionally mix an output | `goav.Source` plus `Task.Attach(...From(input.Stream(track)))` | `examples/dynamic-audio-room` | inactive participant frames fail instead of silently corrupting the mix |
 | Open a transport or live provider | `provider.Source` via `goav.Input(provider)` | `examples/provider-source` | nil provider or missing codec/stream facts refuse before work starts |
 | Write bytes after format resolution | `goav.Writer(name, open, opts...)` | `examples/custom-destination` | nil opener or writer open error fails the task |
 | Commit or abort object-store uploads | `provider.TransactionalWriter` | `examples/transactional-writer` | induced pipeline error calls `Abort`, not `Commit` |
@@ -70,6 +70,32 @@ or a transport-owned open phase, implement `provider.Source` and pass it with
 The runnable module `examples/custom-source` verifies the happy path and a
 pre-open nil-callback failure. It is the smallest copyable module for packages
 that already own media buffers and only need to push them into goav.
+
+### Dynamic app-owned tracks
+
+When application state owns track membership, keep the source itself simple:
+emit one stream per participant, and attach downstream work with the same
+runtime branch grammar used everywhere else.
+
+```go
+input := room.Input() // goav.Source(...)
+task, err := goav.From(input).Audio().To(anchor).Build(ctx)
+if err != nil {
+    return err
+}
+
+track := av.Stream{ID: "host", Type: av.MediaAudio, Codec: hostCodec}
+if _, err := task.Attach(ctx,
+    goav.Branch("track-host").From(input.Stream(track)).To(perTrack),
+    goav.Branch("mix-host").From(input.Stream(track)).To(sharedMixer),
+); err != nil {
+    return err
+}
+return room.Join(ctx, "host") // emits EventStreamAdded before frames
+```
+
+Use `OnStream` instead when the source discovers streams internally and the
+application does not need a join-time first-frame boundary.
 
 The runnable module `examples/provider-source` verifies the provider-owned open
 phase, declared shape facts, stream discovery, a running `pipeline.Source`, and

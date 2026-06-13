@@ -65,7 +65,7 @@ group, or transactional writer.
 | Record encoded packets | `From(input).Copy().To(File(...))` | [docs/USE_CASES.md](docs/USE_CASES.md) |
 | Produce several outputs from one stream | `Branches(Branch(...).To(...), ...)` | [docs/USE_CASES.md](docs/USE_CASES.md) |
 | Decode, filter, and re-encode | `.Decode().Resize()/Resample().Encode(codec).To(...)` | [docs/OPERATIONS.md](docs/OPERATIONS.md) |
-| Process live room tracks and mix one output | `OnStream(..., Branch("track")..., Branch("mix").To(sharedMixer))` | [docs/USE_CASES.md](docs/USE_CASES.md), [examples/dynamic-audio-room](examples/dynamic-audio-room) |
+| Process live room tracks and mix one output | `Task.Attach(ctx, Branch(...).From(input.Stream(track)))` | [docs/USE_CASES.md](docs/USE_CASES.md), [examples/dynamic-audio-room](examples/dynamic-audio-room) |
 | Attach diagnostics while live | `Build`, then `Task.Attach(ctx, Branch(...).From(Tap(...)))` | [docs/CONTROL_PLANE.md](docs/CONTROL_PLANE.md) |
 | Add an adapter or external component | `goav.New(goav.With...)` plus the relevant provider interface | [docs/EXTENSION_COOKBOOK.md](docs/EXTENSION_COOKBOOK.md) |
 

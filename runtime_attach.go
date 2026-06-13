@@ -341,7 +341,10 @@ func validateAttachBranchSpec(spec BranchSpec, destinations []attachDestination)
 		return runtimeBranchInvalidError("branch name is empty", "start with goav.Branch(\"name\")")
 	}
 	if spec.source.from == "" && spec.source.tap == "" {
-		return runtimeBranchInvalidError("branch source is empty", "call .From(goav.FrameTap(name)) or .From(goav.PacketTap(name)) with a tap from Task.Taps(), or .From(graphNode) with an expert graph handle")
+		return runtimeBranchInvalidError("branch source is empty", "call .From(input.Stream(stream)) for an input stream, .From(goav.FrameTap(name)) or .From(goav.PacketTap(name)) with a tap from Task.Taps(), or .From(graphNode) with an expert graph handle")
+	}
+	if spec.source.stream != nil && spec.source.label == "" {
+		return runtimeBranchInvalidError("branch source stream id is empty", "set av.Stream.ID before passing the stream to input.Stream(stream)")
 	}
 	seen := make(map[string]int, len(destinations))
 	for i := range destinations {

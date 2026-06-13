@@ -20,6 +20,7 @@ goav.From(input)                          inputs: FileInput, URIInput, Input(pro
   .Encode(codec.VP9(codec.Bitrate(...)))  codec specs from the codec package
   .Tap(goav.Tap|FrameTap|PacketTap)       named attach points
   .Branches(goav.Branch("x")...To(dst))   fan out; BranchSpec also drives Task.Attach
+  input.Stream(av.Stream{ID: ...})        attach anchor for app-owned dynamic tracks
   .To(File|URI|Writer|Custom|Sink)        destinations; reuse one value = mux/sink group
   .OnStream(MatchMedia|MatchCodec|...)    dynamic-stream rules
 goav.Mix/Composite/Select(arms) / Join(name, stage, arms)   N arms -> one stream (JoinArm)
@@ -200,7 +201,10 @@ against the constructors in `input.go`/`provider.go`/`source.go`,
   `SourcePush`; `provider.Source` is the transport extension point
   (`OpenSource`) that `Input(p)` turns into a recipe input. Value inputs,
   custom push sources, and transport providers are three doors into one
-  `InputSpec`.
+  `InputSpec`. `InputSpec.Stream(av.Stream)` returns an `InputStream` attach
+  anchor for app-owned dynamic tracks; it deliberately reuses
+  `Branch(...).From(...)` and `Task.Attach` instead of adding a room/session
+  workflow API.
 - **Destination vs Sink vs Writer vs File**: `Destination` is the routing
   handle every constructor returns (reuse = mux/sink group); `File` wraps an
   `io.Writer` you already opened; `Writer` lets goav open the writer on

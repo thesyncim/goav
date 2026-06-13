@@ -7,7 +7,6 @@ import (
 	"sort"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/thesyncim/goav"
 	"github.com/thesyncim/goav/av"
@@ -52,11 +51,8 @@ func (r DemoResult) PerTrackSummary() []string {
 }
 
 func runDynamicRoomDemo(ctx context.Context) (DemoResult, error) {
-	return runRoomScript(ctx, func(ctx context.Context, room *Room, task goav.Task) error {
+	return runRoomScript(ctx, func(ctx context.Context, room *RoomPipeline) error {
 		if err := room.Join(ctx, "host"); err != nil {
-			return err
-		}
-		if err := waitForBranches(ctx, task, "track-host", "mix-host"); err != nil {
 			return err
 		}
 		if err := room.Push(ctx, map[string][]int16{
@@ -68,9 +64,6 @@ func runDynamicRoomDemo(ctx context.Context) (DemoResult, error) {
 		if err := room.Join(ctx, "music"); err != nil {
 			return err
 		}
-		if err := waitForBranches(ctx, task, "track-music", "mix-music"); err != nil {
-			return err
-		}
 		if err := room.Push(ctx, map[string][]int16{
 			"host":  []int16{100, 100},
 			"music": []int16{25, -50},
@@ -79,9 +72,6 @@ func runDynamicRoomDemo(ctx context.Context) (DemoResult, error) {
 		}
 
 		if err := room.Join(ctx, "guest"); err != nil {
-			return err
-		}
-		if err := waitForBranches(ctx, task, "track-guest", "mix-guest"); err != nil {
 			return err
 		}
 		if err := room.Push(ctx, map[string][]int16{
@@ -95,9 +85,6 @@ func runDynamicRoomDemo(ctx context.Context) (DemoResult, error) {
 		if err := room.Leave(ctx, "music"); err != nil {
 			return err
 		}
-		if err := waitForBranchesGone(ctx, task, "track-music", "mix-music"); err != nil {
-			return err
-		}
 		if err := room.Push(ctx, map[string][]int16{
 			"host":  []int16{100, 100},
 			"guest": []int16{-10, 20},
@@ -106,9 +93,6 @@ func runDynamicRoomDemo(ctx context.Context) (DemoResult, error) {
 		}
 
 		if err := room.Leave(ctx, "guest"); err != nil {
-			return err
-		}
-		if err := waitForBranchesGone(ctx, task, "track-guest", "mix-guest"); err != nil {
 			return err
 		}
 		if err := room.Push(ctx, map[string][]int16{
@@ -120,12 +104,13 @@ func runDynamicRoomDemo(ctx context.Context) (DemoResult, error) {
 		if err := room.Leave(ctx, "host"); err != nil {
 			return err
 		}
-		return waitForBranchesGone(ctx, task, "track-host", "mix-host")
+		return nil
 	})
 }
 
-func runRoomScript(ctx context.Context, script func(context.Context, *Room, goav.Task) error) (DemoResult, error) {
+func runRoomScript(ctx context.Context, script func(context.Context, *RoomPipeline) error) (DemoResult, error) {
 	room := NewRoom(roomName, roomSampleRate, roomChannels)
+	input := room.Input()
 	meter := NewTrackMeter()
 	meterStage := goav.FrameFunc("track-meter", func(_ context.Context, frame *av.Frame, emit goav.Emit) error {
 		meter.Observe(frame)
@@ -135,20 +120,31 @@ func runRoomScript(ctx context.Context, script func(context.Context, *Room, goav
 	mixer := NewOutputMixer()
 	main := goav.Sink(goav.SinkFunc("room-anchor", func(context.Context, goav.Message) error { return nil }))
 
-	task, err := goav.From(room.Input()).
-		OnStream(goav.MatchMedia(av.MediaAudio),
-			goav.Branch("track").
-				Do(meterStage).
-				To(tracks.Sink()),
-			goav.Branch("mix").
-				To(mixer.Sink()),
-		).
+	task, err := goav.From(input).
 		Audio().
 		To(main).
 		UseRuntime(goavtest.Runtime()).
 		Build(ctx)
 	if err != nil {
 		return DemoResult{}, err
+	}
+	roomPipeline := &RoomPipeline{
+		room:        room,
+		task:        task,
+		attachments: make(map[string]goav.Attachment),
+		attach: func(ctx context.Context, participant string) (goav.Attachment, error) {
+			stream := *room.participantStream(participant)
+			anchor := input.Stream(stream)
+			return task.Attach(ctx,
+				goav.Branch("track-"+participant).
+					From(anchor).
+					Do(meterStage).
+					To(tracks.Sink()),
+				goav.Branch("mix-"+participant).
+					From(anchor).
+					To(mixer.Sink()),
+			)
+		},
 	}
 
 	watch := task.Watch()
@@ -176,9 +172,9 @@ func runRoomScript(ctx context.Context, script func(context.Context, *Room, goav
 		return roomResult(tracks, meter, mixer, &eventMu, &events), err
 	}
 
-	scriptErr := script(runCtx, room, task)
+	scriptErr := script(runCtx, roomPipeline)
 	if scriptErr == nil {
-		scriptErr = room.Close(runCtx)
+		scriptErr = roomPipeline.Close(runCtx)
 	}
 	if scriptErr != nil {
 		cancel()
@@ -193,6 +189,60 @@ func runRoomScript(ctx context.Context, script func(context.Context, *Room, goav
 	_ = task.Close()
 	<-watchDone
 	return roomResult(tracks, meter, mixer, &eventMu, &events), runErr
+}
+
+type RoomPipeline struct {
+	room        *Room
+	task        goav.Task
+	attachments map[string]goav.Attachment
+	attach      func(context.Context, string) (goav.Attachment, error)
+}
+
+func (p *RoomPipeline) Join(ctx context.Context, participant string) error {
+	participant = strings.TrimSpace(participant)
+	if participant == "" {
+		return fmt.Errorf("participant name is empty")
+	}
+	if _, ok := p.attachments[participant]; ok {
+		return fmt.Errorf("participant %q already joined", participant)
+	}
+	attachment, err := p.attach(ctx, participant)
+	if err != nil {
+		return err
+	}
+	if err := p.room.Join(ctx, participant); err != nil {
+		_ = p.task.Detach(ctx, attachment)
+		return err
+	}
+	p.attachments[participant] = attachment
+	return nil
+}
+
+func (p *RoomPipeline) Leave(ctx context.Context, participant string) error {
+	participant = strings.TrimSpace(participant)
+	if participant == "" {
+		return fmt.Errorf("participant name is empty")
+	}
+	attachment, ok := p.attachments[participant]
+	if !ok {
+		return fmt.Errorf("participant %q is not active", participant)
+	}
+	if err := p.room.Leave(ctx, participant); err != nil {
+		return err
+	}
+	if err := p.task.Detach(ctx, attachment); err != nil {
+		return err
+	}
+	delete(p.attachments, participant)
+	return nil
+}
+
+func (p *RoomPipeline) Push(ctx context.Context, frames map[string][]int16) error {
+	return p.room.Push(ctx, frames)
+}
+
+func (p *RoomPipeline) Close(ctx context.Context) error {
+	return p.room.Close(ctx)
 }
 
 func waitRoomReady(ctx context.Context, room *Room, errC <-chan error, cancel context.CancelFunc, task goav.Task) error {
@@ -258,42 +308,6 @@ func roomEventDiagnostics(events []av.Event) []string {
 	return out
 }
 
-func waitForBranches(ctx context.Context, task goav.Task, names ...string) error {
-	return waitForBranchState(ctx, task, true, names...)
-}
-
-func waitForBranchesGone(ctx context.Context, task goav.Task, names ...string) error {
-	return waitForBranchState(ctx, task, false, names...)
-}
-
-func waitForBranchState(ctx context.Context, task goav.Task, present bool, names ...string) error {
-	want := make(map[string]struct{}, len(names))
-	for _, name := range names {
-		want[name] = struct{}{}
-	}
-	ticker := time.NewTicker(time.Millisecond)
-	defer ticker.Stop()
-	for {
-		seen := make(map[string]struct{}, len(want))
-		for _, branch := range task.Snapshot().Branches {
-			if _, ok := want[branch.Name]; ok {
-				seen[branch.Name] = struct{}{}
-			}
-		}
-		if present && len(seen) == len(want) {
-			return nil
-		}
-		if !present && len(seen) == 0 {
-			return nil
-		}
-		select {
-		case <-ctx.Done():
-			return fmt.Errorf("wait for branches %v present=%t: %w", names, present, ctx.Err())
-		case <-ticker.C:
-		}
-	}
-}
-
 func eventsSnapshot(mu *sync.Mutex, events *[]av.Event) []av.Event {
 	mu.Lock()
 	defer mu.Unlock()
@@ -305,8 +319,8 @@ func eventsSnapshot(mu *sync.Mutex, events *[]av.Event) []av.Event {
 }
 
 // Room is an application-owned source of dynamic tracks. It does not mix at
-// input time: every participant is announced as its own goav stream, and
-// output branches decide whether to process the track independently or mix it.
+// input time: every participant is announced as its own stream, and runtime
+// branches decide whether to process the track independently or mix it later.
 type Room struct {
 	name       string
 	sampleRate int

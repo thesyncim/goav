@@ -14,8 +14,10 @@ Use this pattern when runtime membership is owned by your product:
 The room stays outside the root `goav` API on purpose. `goav.Mix(arms...)`
 is the right tool when all mix arms are known when the recipe is built. A live
 room has a different ownership model: the application owns membership,
-publishes each participant track through `EventStreamAdded`, and uses
-`OnStream` branches for per-track work and the optional shared mix output.
+attaches ordinary runtime branches from `input.Stream(participantStream)`
+before accepting that participant's media, publishes lifecycle events through
+`EventStreamAdded` / `EventStreamRemoved`, and lets one branch do per-track
+work while another branch feeds the optional shared mix output.
 
 Run it:
 

@@ -234,6 +234,62 @@ func TestCustomSourceShapeCodecOverlayAndLifecycle(t *testing.T) {
 	}
 }
 
+func TestInputStreamAnchorCarriesRuntimeBranchShape(t *testing.T) {
+	input := Source("room",
+		shape.Frame(av.MediaAudio, shape.Audio(48_000, codec.Mono, av.SampleFormatS16)),
+		func(context.Context, SourcePush) error { return nil },
+	)
+	stream := av.Stream{
+		ID:   "host",
+		Type: av.MediaAudio,
+		Codec: av.CodecParameters{
+			Type:         av.MediaAudio,
+			SampleRate:   48_000,
+			Channels:     codec.Mono,
+			SampleFormat: av.SampleFormatS16,
+		},
+	}
+
+	anchor := input.Stream(stream)
+	if anchor.Name() != "room" {
+		t.Fatalf("anchor name = %q, want room", anchor.Name())
+	}
+	source := anchor.branchSource()
+	if source.from != "room" ||
+		source.policy != pipeline.RouteByStream ||
+		source.label != "host" ||
+		source.stream == nil ||
+		source.stream.ID != "host" ||
+		source.streamDomain != shape.DomainFrame {
+		t.Fatalf("branch source = %+v", source)
+	}
+	tap := discoveredStreamAnchorTap(source)
+	if tap.Node != "room" ||
+		tap.Domain != shape.DomainFrame ||
+		tap.MediaKind != av.MediaAudio ||
+		tap.Shape.StreamID != "host" ||
+		tap.Shape.SampleRate != 48_000 ||
+		tap.Shape.Channels != codec.Mono ||
+		tap.Shape.SampleFormat != av.SampleFormatS16 {
+		t.Fatalf("anchor tap = %+v", tap)
+	}
+}
+
+func TestInputStreamAnchorRequiresStreamID(t *testing.T) {
+	input := Source("room",
+		shape.Frame(av.MediaAudio, shape.Audio(48_000, codec.Mono, av.SampleFormatS16)),
+		func(context.Context, SourcePush) error { return nil },
+	)
+	spec := Branch("bad").
+		From(input.Stream(av.Stream{Type: av.MediaAudio, Codec: av.CodecParameters{Type: av.MediaAudio}})).
+		To(Sink(SinkFunc("discard", func(context.Context, Message) error { return nil })))
+
+	err := validateAttachBranchSpec(spec, nil)
+	if err == nil || !strings.Contains(err.Error(), "stream id is empty") {
+		t.Fatalf("validateAttachBranchSpec err = %v, want empty stream id guidance", err)
+	}
+}
+
 func TestEmitHelpersNilAndUnscopedEOS(t *testing.T) {
 	emitter := &componentEmitter{}
 	emit := Emit{ctx: context.Background(), emitter: emitter}

@@ -6,7 +6,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/thesyncim/goav"
 	"github.com/thesyncim/goav/goavtest/expect"
 )
 
@@ -63,11 +62,8 @@ func TestRoomRejectsFramesForInactiveParticipant(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	_, err := runRoomScript(ctx, func(ctx context.Context, room *Room, task goav.Task) error {
+	_, err := runRoomScript(ctx, func(ctx context.Context, room *RoomPipeline) error {
 		if err := room.Join(ctx, "host"); err != nil {
-			return err
-		}
-		if err := waitForBranches(ctx, task, "track-host", "mix-host"); err != nil {
 			return err
 		}
 		return room.Push(ctx, map[string][]int16{
@@ -82,14 +78,11 @@ func TestOutputMixerClampsMixedOutput(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	result, err := runRoomScript(ctx, func(ctx context.Context, room *Room, task goav.Task) error {
+	result, err := runRoomScript(ctx, func(ctx context.Context, room *RoomPipeline) error {
 		if err := room.Join(ctx, "host"); err != nil {
 			return err
 		}
 		if err := room.Join(ctx, "music"); err != nil {
-			return err
-		}
-		if err := waitForBranches(ctx, task, "track-host", "mix-host", "track-music", "mix-music"); err != nil {
 			return err
 		}
 		return room.Push(ctx, map[string][]int16{

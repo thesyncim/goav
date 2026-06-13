@@ -71,14 +71,15 @@ still needs per-track processing for levels, moderation, transcription, or
 recording, plus an optional mixed output for playback or archive.
 
 Use `goav.Mix(arms...)` when the arms are known when the recipe is built. When
-membership changes at runtime, publish each participant as its own stream:
-the application source owns the registry, emits `EventStreamAdded` and
-`EventStreamRemoved`, and `OnStream` attaches normal branches for every
-discovered track. One branch can process each track independently; another can
-feed a shared mixer sink for the mixed output.
+membership changes at runtime, keep each participant as its own source stream:
+the application owns the registry, attaches ordinary runtime branches from
+`input.Stream(participantStream)` before accepting that participant's media,
+emits `EventStreamAdded` / `EventStreamRemoved`, and feeds any mixed output
+after the per-track routes exist.
 
 ```go
 room := NewRoom("room", 48_000, 1)
+input := room.Input()
 tracks := NewTrackRecorder()
 mix := NewOutputMixer()
 meter := NewTrackMeter()
@@ -90,14 +91,7 @@ anchor := goav.Sink(goav.SinkFunc("room-anchor", func(context.Context, goav.Mess
     return nil
 }))
 
-task, err := goav.From(room.Input()).
-    OnStream(goav.MatchMedia(av.MediaAudio),
-        goav.Branch("track").
-            Do(trackMeter).
-            To(tracks.Sink()),
-        goav.Branch("mix").
-            To(mix.Sink()),
-    ).
+task, err := goav.From(input).
     Audio().
     To(anchor).
     Build(ctx)
@@ -106,14 +100,34 @@ if err != nil {
 }
 go func() { _ = task.Run(ctx) }()
 
-_ = room.Join(ctx, "host")
-_ = room.Join(ctx, "music")
+join := func(name string) error {
+    track := room.ParticipantStream(name)
+    if _, err := task.Attach(ctx,
+        goav.Branch("track-"+name).
+            From(input.Stream(track)).
+            Do(trackMeter).
+            To(tracks.Sink()),
+        goav.Branch("mix-"+name).
+            From(input.Stream(track)).
+            To(mix.Sink()),
+    ); err != nil {
+        return err
+    }
+    return room.Join(ctx, name)
+}
+
+_ = join("host")
+_ = join("music")
 _ = room.Push(ctx, map[string][]int16{
     "host":  []int16{100, 100},
     "music": []int16{25, -50},
 })
 _ = room.Leave(ctx, "music")
 ```
+
+`OnStream` remains useful when a source discovers tracks itself and automatic
+branch reactions are enough. For app-owned room membership, explicit
+`input.Stream(track)` anchors make the first-frame boundary deterministic.
 
 The runnable module `examples/dynamic-audio-room` validates this pattern with
 `goavtest/expect`: it proves runtime participant add/remove events, S16
