@@ -10,7 +10,7 @@ improvement at the files, tests, and workflows that carry the evidence.
   and deep links.
 - Evidence: `README.md`, `TestReadmeStaysFrontDoorSized`,
   `TestReadmeFirstScreenAvoidsGraphInternals`,
-  `TestReadmeGoSnippetsAreCompiledAndPinned`.
+  `TestReadmeGoBlocksCompileAsExternalConsumer`.
 
 ## Machine-Checked Docs
 

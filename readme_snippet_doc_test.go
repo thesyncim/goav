@@ -1,44 +1,89 @@
 package goav_test
 
 import (
-	"context"
-	"io"
+	"fmt"
 	"os"
+	"os/exec"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
-
-	"github.com/thesyncim/goav"
 )
 
-const readmeThirtySecondRecordingSnippet = `return goav.From(goav.FileInput("input.ivf", in)).
-    Copy().
-    To(goav.File("recording.ivf", out)).
-    Run(ctx)`
-
-// readmeThirtySecondRecording is the compiled counterpart to the README's
-// 30-second example. TestReadmeGoSnippetsAreCompiledAndPinned keeps the prose
-// snippet in lockstep with this function.
-func readmeThirtySecondRecording(ctx context.Context, in io.Reader, out io.Writer) error {
-	return goav.From(goav.FileInput("input.ivf", in)).
-		Copy().
-		To(goav.File("recording.ivf", out)).
-		Run(ctx)
-}
-
-var _ func(context.Context, io.Reader, io.Writer) error = readmeThirtySecondRecording
-
-func TestReadmeGoSnippetsAreCompiledAndPinned(t *testing.T) {
+func TestReadmeGoBlocksCompileAsExternalConsumer(t *testing.T) {
 	body, err := os.ReadFile("README.md")
 	if err != nil {
 		t.Fatal(err)
 	}
 	snippets := markdownCodeBlocks(string(body), "go")
 	if len(snippets) != 1 {
-		t.Fatalf("README go snippet count = %d, want 1 adoption-front-door example", len(snippets))
+		t.Fatalf("README go snippet count = %d, want one adoption-front-door example", len(snippets))
 	}
-	if normalizeSnippet(snippets[0]) != normalizeSnippet(readmeThirtySecondRecordingSnippet) {
-		t.Fatalf("README 30-second snippet drifted:\n%s", snippets[0])
+
+	root, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
 	}
+	moduleDir := t.TempDir()
+	writeReadmeConsumerModule(t, moduleDir, root, snippets)
+
+	cmd := exec.Command("go", "test", "-run", "^TestReadmeSnippetsCompile$", "./...")
+	cmd.Dir = moduleDir
+	cmd.Env = append(os.Environ(), "CGO_ENABLED=0", "GOWORK=off")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("README Go snippets did not compile as an external module:\n%s", output)
+	}
+}
+
+func writeReadmeConsumerModule(t *testing.T, dir, root string, snippets []string) {
+	t.Helper()
+	mod := fmt.Sprintf(`module github.com/thesyncim/goav-readme-consumer
+
+go 1.26.4
+
+require github.com/thesyncim/goav v0.0.0
+
+replace github.com/thesyncim/goav => %s
+`, strconv.Quote(filepath.ToSlash(root)))
+	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte(mod), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "readme_test.go"), []byte(readmeConsumerTestSource(snippets)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func readmeConsumerTestSource(snippets []string) string {
+	var out strings.Builder
+	out.WriteString(`package readmeconsumer
+
+import (
+	"context"
+	"io"
+	"testing"
+
+	"github.com/thesyncim/goav"
+)
+
+`)
+	for i, snippet := range snippets {
+		fmt.Fprintf(&out, "func readmeSnippet%d(ctx context.Context, in io.Reader, out io.Writer) error {\n%s\n}\n\n", i, indentSnippet(snippet))
+	}
+	out.WriteString("func TestReadmeSnippetsCompile(t *testing.T) {\n")
+	for i := range snippets {
+		fmt.Fprintf(&out, "\t_ = readmeSnippet%d\n", i)
+	}
+	out.WriteString("}\n")
+	return out.String()
+}
+
+func indentSnippet(snippet string) string {
+	lines := strings.Split(strings.TrimSpace(snippet), "\n")
+	for i := range lines {
+		lines[i] = "\t" + strings.TrimRight(lines[i], " \t")
+	}
+	return strings.Join(lines, "\n")
 }
 
 func markdownCodeBlocks(text, lang string) []string {
@@ -59,8 +104,4 @@ func markdownCodeBlocks(text, lang string) []string {
 		}
 	}
 	return blocks
-}
-
-func normalizeSnippet(text string) string {
-	return strings.Join(strings.Fields(text), " ")
 }

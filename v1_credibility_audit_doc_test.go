@@ -17,7 +17,7 @@ func TestV1CredibilityAuditMapsRequestedEvidence(t *testing.T) {
 		"## Front Door",
 		"README.md",
 		"TestReadmeStaysFrontDoorSized",
-		"TestReadmeGoSnippetsAreCompiledAndPinned",
+		"TestReadmeGoBlocksCompileAsExternalConsumer",
 		"## Machine-Checked Docs",
 		"docs/ERROR_CATALOG.md",
 		"docs/OPERATIONS.md",

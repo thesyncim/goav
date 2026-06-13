@@ -67,7 +67,7 @@ func TestReleaseWorkflowAndDocsStayAligned(t *testing.T) {
 		"govulncheck ./...",
 		"test -z \"$(gofmt -l .)\"",
 		"examples/*/go.mod",
-		"TestReadmeGoSnippetsAreCompiledAndPinned",
+		"TestReadmeGoBlocksCompileAsExternalConsumer",
 		"error_catalog_pin_test.go",
 		"Hot-path allocations",
 		"Public API restraint",
