@@ -28,6 +28,6 @@ func TestBrokenCustomSourceFailsBeforeRun(t *testing.T) {
 	err := buildBrokenCustomSource(context.Background())
 	expect.BuildError(t, err, errcode.SourceCallbackMissing,
 		expect.Operation("build input"),
-		expect.Cause(goav.ErrUnsupportedBuild),
+		expect.Cause(goav.ErrNilSource),
 	)
 }
