@@ -170,6 +170,11 @@ func runRoomScript(ctx context.Context, script func(context.Context, *Room, goav
 	go func() {
 		errC <- task.Run(runCtx)
 	}()
+	if err := waitRoomReady(ctx, room, errC, cancel, task); err != nil {
+		_ = task.Close()
+		<-watchDone
+		return roomResult(tracks, meter, mixer, &eventMu, &events), err
+	}
 
 	scriptErr := script(runCtx, room, task)
 	if scriptErr == nil {
@@ -179,13 +184,31 @@ func runRoomScript(ctx context.Context, script func(context.Context, *Room, goav
 		cancel()
 		_ = task.Close()
 		<-watchDone
-		return roomResult(tracks, meter, mixer, &eventMu, &events), scriptErr
+		diagnostics := roomEventDiagnostics(eventsSnapshot(&eventMu, &events))
+		result := roomResult(tracks, meter, mixer, &eventMu, &events)
+		return result, withRoomDiagnostics(scriptErr, diagnostics)
 	}
 
 	runErr := waitRoomTask(ctx, errC, cancel, task)
 	_ = task.Close()
 	<-watchDone
 	return roomResult(tracks, meter, mixer, &eventMu, &events), runErr
+}
+
+func waitRoomReady(ctx context.Context, room *Room, errC <-chan error, cancel context.CancelFunc, task goav.Task) error {
+	select {
+	case <-room.Ready():
+		return nil
+	case err := <-errC:
+		if err == nil {
+			return fmt.Errorf("room task stopped before source ready")
+		}
+		return fmt.Errorf("room task stopped before source ready: %w", err)
+	case <-ctx.Done():
+		cancel()
+		_ = task.Close()
+		return fmt.Errorf("room source did not start: %w", ctx.Err())
+	}
 }
 
 func waitRoomTask(ctx context.Context, errC <-chan error, cancel context.CancelFunc, task goav.Task) error {
@@ -206,6 +229,33 @@ func roomResult(tracks *TrackRecorder, meter *TrackMeter, mixer *OutputMixer, ev
 		Mixed:    mixer.Mixed(),
 		Events:   summarizeRoomEvents(eventsSnapshot(eventMu, events)),
 	}
+}
+
+func withRoomDiagnostics(err error, events []string) error {
+	if err == nil || len(events) == 0 {
+		return err
+	}
+	return fmt.Errorf("%w; room events: %v", err, events)
+}
+
+func roomEventDiagnostics(events []av.Event) []string {
+	out := make([]string, 0, len(events))
+	for _, event := range events {
+		label := string(event.Type)
+		if event.StreamID != "" {
+			label += ":" + string(event.StreamID)
+		}
+		if event.Reason != "" {
+			label += " reason=" + event.Reason
+		}
+		if event.Cause != nil {
+			label += " cause=" + event.Cause.Error()
+		}
+		if len(out) == 0 || out[len(out)-1] != label {
+			out = append(out, label)
+		}
+	}
+	return out
 }
 
 func waitForBranches(ctx context.Context, task goav.Task, names ...string) error {
@@ -238,7 +288,7 @@ func waitForBranchState(ctx context.Context, task goav.Task, present bool, names
 		}
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
+			return fmt.Errorf("wait for branches %v present=%t: %w", names, present, ctx.Err())
 		case <-ticker.C:
 		}
 	}
@@ -262,6 +312,8 @@ type Room struct {
 	sampleRate int
 	channels   int
 	commands   chan roomCommand
+	ready      chan struct{}
+	readyOnce  sync.Once
 }
 
 func NewRoom(name string, sampleRate int, channels int) *Room {
@@ -279,6 +331,7 @@ func NewRoom(name string, sampleRate int, channels int) *Room {
 		sampleRate: sampleRate,
 		channels:   channels,
 		commands:   make(chan roomCommand, 64),
+		ready:      make(chan struct{}),
 	}
 }
 
@@ -290,6 +343,7 @@ func (r *Room) Input() goav.InputSpec {
 			shape.Realtime(true),
 		),
 		func(ctx context.Context, push goav.SourcePush) error {
+			r.markReady()
 			active := make(map[string]struct{})
 			var elapsed int64
 			for {
@@ -308,6 +362,10 @@ func (r *Room) Input() goav.InputSpec {
 				}
 			}
 		})
+}
+
+func (r *Room) Ready() <-chan struct{} {
+	return r.ready
 }
 
 func (r *Room) Join(ctx context.Context, participant string) error {
@@ -331,14 +389,18 @@ func (r *Room) dispatch(ctx context.Context, command roomCommand) error {
 	select {
 	case r.commands <- command:
 	case <-ctx.Done():
-		return ctx.Err()
+		return fmt.Errorf("queue %s command: %w", command.kind, ctx.Err())
 	}
 	select {
 	case err := <-command.ack:
 		return err
 	case <-ctx.Done():
-		return ctx.Err()
+		return fmt.Errorf("room source did not acknowledge %s command: %w", command.kind, ctx.Err())
 	}
+}
+
+func (r *Room) markReady() {
+	r.readyOnce.Do(func() { close(r.ready) })
 }
 
 func (r *Room) controlStream() string {
@@ -353,6 +415,21 @@ const (
 	roomPush
 	roomClose
 )
+
+func (k roomCommandKind) String() string {
+	switch k {
+	case roomJoin:
+		return "join"
+	case roomLeave:
+		return "leave"
+	case roomPush:
+		return "push"
+	case roomClose:
+		return "close"
+	default:
+		return fmt.Sprintf("unknown(%d)", k)
+	}
+}
 
 type roomCommand struct {
 	kind        roomCommandKind
