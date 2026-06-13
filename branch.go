@@ -127,7 +127,7 @@ type branchSourceBinding struct {
 // Route capability. The bound is structural — From validates the anchor and
 // refuses values that are neither.
 type branchSource interface {
-	// Name reports the anchor's name: the tap name or the graph node name.
+	// Name reports the anchor's name: the tap, source node, or graph node name.
 	Name() string
 }
 

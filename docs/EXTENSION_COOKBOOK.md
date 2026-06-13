@@ -85,13 +85,30 @@ if err != nil {
 }
 
 track := av.Stream{ID: "host", Type: av.MediaAudio, Codec: hostCodec}
-if _, err := task.Attach(ctx,
+attachments := map[string]goav.Attachment{}
+attachment, err := task.Attach(ctx,
     goav.Branch("track-host").From(input.Stream(track)).To(perTrack),
     goav.Branch("mix-host").From(input.Stream(track)).To(sharedMixer),
-); err != nil {
+)
+if err != nil {
     return err
 }
-return room.Join(ctx, "host") // emits EventStreamAdded before frames
+if err := room.Join(ctx, "host"); err != nil {
+    _ = task.Detach(ctx, attachment)
+    return err
+}
+attachments["host"] = attachment
+
+// Later, when the participant leaves, remove the source stream and then
+// detach the downstream branches that were anchored to it.
+if err := room.Leave(ctx, "host"); err != nil {
+    return err
+}
+if err := task.Detach(ctx, attachments["host"]); err != nil {
+    return err
+}
+delete(attachments, "host")
+return nil
 ```
 
 Use `OnStream` instead when the source discovers streams internally and the

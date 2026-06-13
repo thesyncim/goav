@@ -100,9 +100,10 @@ if err != nil {
 }
 go func() { _ = task.Run(ctx) }()
 
+attachments := map[string]goav.Attachment{}
 join := func(name string) error {
     track := room.ParticipantStream(name)
-    if _, err := task.Attach(ctx,
+    attachment, err := task.Attach(ctx,
         goav.Branch("track-"+name).
             From(input.Stream(track)).
             Do(trackMeter).
@@ -110,10 +111,31 @@ join := func(name string) error {
         goav.Branch("mix-"+name).
             From(input.Stream(track)).
             To(mix.Sink()),
-    ); err != nil {
+    )
+    if err != nil {
         return err
     }
-    return room.Join(ctx, name)
+    if err := room.Join(ctx, name); err != nil {
+        _ = task.Detach(ctx, attachment)
+        return err
+    }
+    attachments[name] = attachment
+    return nil
+}
+
+leave := func(name string) error {
+    attachment, ok := attachments[name]
+    if !ok {
+        return fmt.Errorf("%s is not active", name)
+    }
+    if err := room.Leave(ctx, name); err != nil {
+        return err
+    }
+    if err := task.Detach(ctx, attachment); err != nil {
+        return err
+    }
+    delete(attachments, name)
+    return nil
 }
 
 _ = join("host")
@@ -122,7 +144,7 @@ _ = room.Push(ctx, map[string][]int16{
     "host":  []int16{100, 100},
     "music": []int16{25, -50},
 })
-_ = room.Leave(ctx, "music")
+_ = leave("music")
 ```
 
 `OnStream` remains useful when a source discovers tracks itself and automatic
