@@ -18,6 +18,7 @@ or a global registry.
 | Need | Use | Copy from | Failure to test |
 |---|---|---|---|
 | Push media already owned by the app | `goav.Source(name, shape, fn)` | `examples/custom-source` | missing callback or wrong shape refuses before work starts |
+| Mix app-owned live tracks with runtime membership | `goav.Source` plus an app-owned room/mixer | `examples/dynamic-audio-room` | inactive participant frames fail instead of silently corrupting the mix |
 | Open a transport or live provider | `provider.Source` via `goav.Input(provider)` | `examples/provider-source` | nil provider or missing codec/stream facts refuse before work starts |
 | Write bytes after format resolution | `goav.Writer(name, open, opts...)` | `examples/custom-destination` | nil opener or writer open error fails the task |
 | Commit or abort object-store uploads | `provider.TransactionalWriter` | `examples/transactional-writer` | induced pipeline error calls `Abort`, not `Commit` |

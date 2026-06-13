@@ -63,6 +63,48 @@ err := goav.From(goav.Input(rtpav.Receive(audio, rtpav.WithName("audio"), rtpav.
 When a media type matches several streams, the build error lists candidates and
 suggests `StreamID`, `StreamName`, or `StreamIndex(0)`.
 
+## Live Audio Rooms
+
+Conference rooms, watch parties, and collaborative editors often need dynamic
+audio membership: participants join, leave, or reconnect while one mixed stream
+continues feeding recording, transcription, monitoring, or playback.
+
+Use `goav.Mix(arms...)` when the arms are known when the recipe is built. Use
+an app-owned `goav.Source` when membership is a runtime product concern: the
+application owns the participant registry, emits `EventStreamAdded` and
+`EventStreamRemoved` for observability, and pushes one stable mixed frame
+stream into goav.
+
+```go
+room := NewRoom("room.mix", 48_000, 1)
+
+task, err := goav.From(room.Input()).
+    Audio().
+    To(goav.Sink(playback)).
+    Build(ctx)
+if err != nil {
+    return err
+}
+go func() { _ = task.Run(ctx) }()
+
+_ = room.Join(ctx, "host")
+_ = room.Push(ctx, map[string][]int16{"host": []int16{100, 100}})
+_ = room.Join(ctx, "music")
+_ = room.Push(ctx, map[string][]int16{
+    "host":  []int16{100, 100},
+    "music": []int16{25, -50},
+})
+_ = room.Leave(ctx, "music")
+```
+
+The runnable module `examples/dynamic-audio-room` validates this pattern with
+`goavtest/expect`: it proves runtime participant add/remove events, S16
+summing, clamping, and inactive-track rejection. It deliberately does not add a
+root `Room` API. A first-class dynamic upstream mix API should earn root
+surface only if it handles source routing, stream lifecycle, shape conversion,
+backpressure, snapshots, and detach semantics generally instead of baking a
+conference-room helper into the core grammar.
+
 ## Branches
 
 `FrameTap` and `PacketTap` name stable points. `Branches` declares downstream

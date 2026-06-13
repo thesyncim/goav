@@ -281,7 +281,7 @@ example modules. The module boundary is the dependency boundary:
   `examples/custom-source`, `examples/provider-source`,
   `examples/custom-destination`, `examples/custom-filter`,
   `examples/transactional-writer`, `examples/custom-codec`,
-  `examples/custom-join`, and
+  `examples/custom-join`, `examples/dynamic-audio-room`, and
   `examples/control-plane-host` are nested modules. They are copyable
   adoption examples, free to carry their own dependencies, and CI builds/tests
   each module through the `examples/*/go.mod` loop. Root surface governance

@@ -1,0 +1,2 @@
+mixed: [[100 100] [125 50] [115 70] [90 120] [100 100]]
+events: [stream_added:host stream_added:music stream_added:guest stream_removed:music stream_removed:guest stream_removed:host end_of_stream:room.mix]

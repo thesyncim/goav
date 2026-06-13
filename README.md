@@ -65,6 +65,7 @@ group, or transactional writer.
 | Record encoded packets | `From(input).Copy().To(File(...))` | [docs/USE_CASES.md](docs/USE_CASES.md) |
 | Produce several outputs from one stream | `Branches(Branch(...).To(...), ...)` | [docs/USE_CASES.md](docs/USE_CASES.md) |
 | Decode, filter, and re-encode | `.Decode().Resize()/Resample().Encode(codec).To(...)` | [docs/OPERATIONS.md](docs/OPERATIONS.md) |
+| Mix a live room with participants joining/leaving | app-owned `goav.Source` emits one mixed stream | [docs/USE_CASES.md](docs/USE_CASES.md), [examples/dynamic-audio-room](examples/dynamic-audio-room) |
 | Attach diagnostics while live | `Build`, then `Task.Attach(ctx, Branch(...).From(Tap(...)))` | [docs/CONTROL_PLANE.md](docs/CONTROL_PLANE.md) |
 | Add an adapter or external component | `goav.New(goav.With...)` plus the relevant provider interface | [docs/EXTENSION_COOKBOOK.md](docs/EXTENSION_COOKBOOK.md) |
 
@@ -109,6 +110,7 @@ of the product.
 | Use cases and branch recipes | [docs/USE_CASES.md](docs/USE_CASES.md) |
 | Operation rules and errors | [docs/OPERATIONS.md](docs/OPERATIONS.md), [docs/ERRORS.md](docs/ERRORS.md), [docs/ERROR_CATALOG.md](docs/ERROR_CATALOG.md) |
 | Runtime control and socket hosts | [docs/CONTROL_PLANE.md](docs/CONTROL_PLANE.md), [examples/control-plane-host](examples/control-plane-host) |
+| Real-world dynamic media patterns | [examples/dynamic-audio-room](examples/dynamic-audio-room), [examples/gio-webrtc-showcase](examples/gio-webrtc-showcase), [examples/webrtc-runtime-ladder](examples/webrtc-runtime-ladder) |
 | Extension cookbook and adapter authoring | [docs/EXTENSION_COOKBOOK.md](docs/EXTENSION_COOKBOOK.md), [docs/ADAPTER_AUTHORING.md](docs/ADAPTER_AUTHORING.md), [docs/ADAPTERS.md](docs/ADAPTERS.md) |
 | Copyable extension modules | [examples/custom-source](examples/custom-source), [examples/provider-source](examples/provider-source), [examples/custom-destination](examples/custom-destination), [examples/custom-filter](examples/custom-filter), [examples/transactional-writer](examples/transactional-writer), [examples/custom-codec](examples/custom-codec), [examples/custom-join](examples/custom-join) |
 | API surface and composability laws | [docs/API_SURFACE.md](docs/API_SURFACE.md), [docs/COMPOSABILITY_LAWS.md](docs/COMPOSABILITY_LAWS.md) |

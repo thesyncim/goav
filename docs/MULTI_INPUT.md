@@ -91,3 +91,23 @@ resamples a 24kHz sub-mix to its 48kHz target), `.SyncByPTS()` on a nested
 join scopes to its own arms, mix clamping applies independently at each stage,
 and a nested join may not carry `.Encode/.To/.Branches` (it is an arm, not a
 terminal; this is reported through `mix_arm`-family errors).
+
+## Dynamic Membership Boundary
+
+`Mix(arms...)`, `Composite(arms...)`, and `Select(arms...)` are recipe-time
+convergence: their upstream arms are part of the planned graph. Runtime
+`Task.Attach` and `OnStream` add downstream work from taps or discovered
+streams; they do not mutate the arm set of an existing join.
+
+For live audio rooms where tracks join and leave continuously, the supported
+pattern today is source-owned mixing: an application source owns the
+participant registry, emits `EventStreamAdded` / `EventStreamRemoved` for
+track lifecycle, and pushes one stable mixed frame stream into goav. The
+copyable reference is `examples/dynamic-audio-room`.
+
+A future first-class dynamic upstream mix API should be judged against a higher
+bar than a convenience helper: dynamic source routing into the join, per-track
+format validation/conversion, stream lifecycle events, backpressure behavior,
+snapshots/stats, and detach/close semantics all need one coherent design.
+Until those pieces exist together, keeping the root grammar small is the better
+API choice.
