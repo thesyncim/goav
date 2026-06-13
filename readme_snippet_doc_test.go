@@ -27,7 +27,7 @@ func TestReadmeGoBlocksCompileAsExternalConsumer(t *testing.T) {
 	moduleDir := t.TempDir()
 	writeReadmeConsumerModule(t, moduleDir, root, snippets)
 
-	runReadmeConsumerGo(t, moduleDir, "test", "-mod=readonly", "-run", "^TestReadmeSnippetsCompile$", "./...")
+	runReadmeConsumerGo(t, moduleDir, "test", "-mod=mod", "-run", "^TestReadmeSnippetsCompile$", "./...")
 }
 
 func runReadmeConsumerGo(t *testing.T, dir string, args ...string) {
