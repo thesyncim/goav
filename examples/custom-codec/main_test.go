@@ -1,13 +1,12 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"fmt"
-	"os"
-	"reflect"
 	"testing"
 	"time"
+
+	"github.com/thesyncim/goav/goavtest/expect"
 )
 
 func TestEncodeCustomPCM(t *testing.T) {
@@ -15,15 +14,9 @@ func TestEncodeCustomPCM(t *testing.T) {
 	defer cancel()
 
 	packets, err := encodeCustomPCM(ctx, customCodecRuntime())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(packets) != 1 {
-		t.Fatalf("packets = %d, want 1", len(packets))
-	}
-	if got, want := packets[0].Payload.Bytes, samplesToBytes(5, 6); !bytes.Equal(got, want) {
-		t.Fatalf("payload = %v, want %v", got, want)
-	}
+	expect.NoError(t, err)
+	expect.Len(t, "packets", packets, 1)
+	expect.DeepEqual(t, "payload", packets[0].Payload.Bytes, samplesToBytes(5, 6))
 }
 
 func TestRunCustomCodec(t *testing.T) {
@@ -31,23 +24,7 @@ func TestRunCustomCodec(t *testing.T) {
 	defer cancel()
 
 	got, err := runCustomCodec(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := [][]int16{{5, 6}}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("decoded = %v, want %v", got, want)
-	}
-	if output := fmt.Sprintln("decoded:", got); output != expectedOutput(t) {
-		t.Fatalf("output = %q, want %q", output, expectedOutput(t))
-	}
-}
-
-func expectedOutput(t *testing.T) string {
-	t.Helper()
-	body, err := os.ReadFile("testdata/expected.txt")
-	if err != nil {
-		t.Fatal(err)
-	}
-	return string(body)
+	expect.NoError(t, err)
+	expect.DeepEqual(t, "decoded", got, [][]int16{{5, 6}})
+	expect.GoldenString(t, "testdata/expected.txt", fmt.Sprintln("decoded:", got))
 }

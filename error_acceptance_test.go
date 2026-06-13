@@ -13,7 +13,6 @@ import (
 	"context"
 	"errors"
 	"io"
-	"strings"
 	"testing"
 	"time"
 
@@ -22,6 +21,7 @@ import (
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/goavtest"
+	"github.com/thesyncim/goav/goavtest/expect"
 	"github.com/thesyncim/goav/shape"
 )
 
@@ -30,43 +30,14 @@ import (
 // Suggestion containing each decisive fix fragment.
 func requireBuildError(t *testing.T, err error, code errcode.Code, operation string, node string, fixes ...string) *goav.BuildError {
 	t.Helper()
-	var buildErr *goav.BuildError
-	if !errors.As(err, &buildErr) {
-		t.Fatalf("err = %v, want a *goav.BuildError", err)
-	}
-	if buildErr.Code != code {
-		t.Fatalf("code = %q, want %q\nerr = %v", buildErr.Code, code, err)
-	}
-	if buildErr.Operation != operation {
-		t.Fatalf("operation = %q, want %q\nerr = %v", buildErr.Operation, operation, err)
-	}
-	if buildErr.Node != node {
-		t.Fatalf("node = %q, want %q\nerr = %v", buildErr.Node, node, err)
+	checks := []expect.BuildErrorCheck{
+		expect.Operation(operation),
+		expect.Node(node),
 	}
 	for _, fix := range fixes {
-		if !suggestionsContain(buildErr.Suggestions, fix) {
-			t.Fatalf("no suggestion contains the fix %q\nerr = %v", fix, err)
-		}
+		checks = append(checks, expect.SuggestionContains(fix))
 	}
-	return buildErr
-}
-
-func suggestionsContain(suggestions []string, fragment string) bool {
-	for i := range suggestions {
-		if strings.Contains(suggestions[i], fragment) {
-			return true
-		}
-	}
-	return false
-}
-
-func detailsContain(details []string, fragment string) bool {
-	for i := range details {
-		if strings.Contains(details[i], fragment) {
-			return true
-		}
-	}
-	return false
+	return expect.BuildError(t, err, code, checks...)
 }
 
 func opusPacketInput() goav.InputSpec {
@@ -151,9 +122,7 @@ func TestErrorAcceptanceCustomSourceShapeUnsupported(t *testing.T) {
 		"declare raw generated media with shape.Frame",
 		"declare diagnostic or lifecycle sources with shape.Event",
 	)
-	if !detailsContain(buildErr.Details, "actual_shape=domain=bytes") {
-		t.Fatalf("details should carry the unsupported domain, err = %v", err)
-	}
+	expect.StringSliceContains(t, "details", buildErr.Details, "actual_shape=domain=bytes")
 }
 
 // TestErrorAcceptanceFrameSourceDecodeMismatch is snippet 0f: frame-domain
@@ -170,9 +139,7 @@ func TestErrorAcceptanceFrameSourceDecodeMismatch(t *testing.T) {
 		"remove .Decode() when using goav.Source(..., shape.Frame(...), ...)",
 		"use shape.Packet(...) when the custom source pushes encoded packets",
 	)
-	if !detailsContain(buildErr.Details, "source_domain=frame") {
-		t.Fatalf("details should carry source_domain=frame, err = %v", err)
-	}
+	expect.StringSliceContains(t, "details", buildErr.Details, "source_domain=frame")
 }
 
 // TestErrorAcceptanceNilFlow is snippet 0g: applying a nil flow. The refusal
@@ -421,9 +388,7 @@ func TestErrorAcceptanceCopyAfterDecode(t *testing.T) {
 		"move .Copy() before decode",
 		"use .Encode(codec...) instead of .Copy()",
 	)
-	if !detailsContain(buildErr.Details, "actual_shape=domain=frame") {
-		t.Fatalf("details should carry the frame-domain shape, err = %v", err)
-	}
+	expect.StringSliceContains(t, "details", buildErr.Details, "actual_shape=domain=frame")
 }
 
 // TestErrorAcceptanceFramesIntoContainerWithoutEncode is snippet 2:
@@ -453,9 +418,7 @@ func TestErrorAcceptanceTransformAfterCopy(t *testing.T) {
 	buildErr := requireBuildError(t, err, errcode.OperationShapeMismatch, "build stream", "video",
 		"call .Decode() before .Resize(...)",
 	)
-	if !strings.Contains(buildErr.Reason, ".Copy() keeps the stream packet-encoded") {
-		t.Fatalf("reason should state the packet-domain rule, err = %v", err)
-	}
+	expect.Contains(t, "reason", buildErr.Reason, ".Copy() keeps the stream packet-encoded")
 }
 
 // TestErrorAcceptanceDestinationFormatUnknown is snippet 4a: a File
@@ -498,20 +461,12 @@ func TestErrorAcceptanceAmbiguousStreamSelectionListsCandidates(t *testing.T) {
 		To(goavtest.NewCollector().Sink()).
 		Build(context.Background())
 
-	var buildErr *goav.BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != errcode.StreamAmbiguous || !errors.Is(err, goav.ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want stream_ambiguous wrapping ErrUnsupportedBuild", err)
-	}
+	buildErr := expect.BuildError(t, err, errcode.StreamAmbiguous, expect.Cause(goav.ErrUnsupportedBuild))
 	msg := err.Error()
-	if !strings.Contains(msg, "input=mic-a") || !strings.Contains(msg, "input=mic-b") {
-		t.Fatalf("err = %v, want candidates listed with their inputs", err)
-	}
-	if !suggestionsContain(buildErr.Suggestions, `.Audio(goav.InputName("mic-a"))`) {
-		t.Fatalf("err = %v, want InputName narrowing suggestion", err)
-	}
-	if !suggestionsContain(buildErr.Suggestions, "goav.StreamID(") {
-		t.Fatalf("err = %v, want StreamID narrowing suggestion", err)
-	}
+	expect.Contains(t, "error", msg, "input=mic-a")
+	expect.Contains(t, "error", msg, "input=mic-b")
+	expect.StringSliceContains(t, "suggestions", buildErr.Suggestions, `.Audio(goav.InputName("mic-a"))`)
+	expect.StringSliceContains(t, "suggestions", buildErr.Suggestions, "goav.StreamID(")
 }
 
 // TestErrorAcceptanceAttachUnknownTapListsDeclaredTaps is snippet 6: a
@@ -535,9 +490,7 @@ func TestErrorAcceptanceAttachUnknownTapListsDeclaredTaps(t *testing.T) {
 		`add .Tap(goav.FrameTap("nope"))`,
 		"call task.Taps() before attaching",
 	)
-	if !detailsContain(buildErr.Details, "audio.decoded") {
-		t.Fatalf("details should list the declared taps, err = %v", err)
-	}
+	expect.StringSliceContains(t, "details", buildErr.Details, "audio.decoded")
 }
 
 // TestErrorAcceptanceTypedTapAtWrongDomain is snippet 7: a FrameTap declared
@@ -553,9 +506,7 @@ func TestErrorAcceptanceTypedTapAtWrongDomain(t *testing.T) {
 		"use goav.PacketTap(name) after .Copy() or an encoder",
 		"use goav.FrameTap(name) after decode",
 	)
-	if !detailsContain(buildErr.Details, "tap=post-encode") {
-		t.Fatalf("details should name the tap, err = %v", err)
-	}
+	expect.StringSliceContains(t, "details", buildErr.Details, "tap=post-encode")
 }
 
 // TestErrorAcceptanceEncoderAdapterMissing is snippet 8: .Encode with a codec
@@ -570,9 +521,8 @@ func TestErrorAcceptanceEncoderAdapterMissing(t *testing.T) {
 	buildErr := requireBuildError(t, err, errcode.EncodeAdapterMissing, "build job", "audio",
 		"goav.WithEncoder(...)",
 	)
-	if !strings.Contains(buildErr.Reason, "weird") || !detailsContain(buildErr.Details, "codec=weird") {
-		t.Fatalf("refusal should name the codec, err = %v", err)
-	}
+	expect.Contains(t, "reason", buildErr.Reason, "weird")
+	expect.StringSliceContains(t, "details", buildErr.Details, "codec=weird")
 }
 
 // TestErrorAcceptanceShapeConversionRefused is snippet 9: the chain needs a

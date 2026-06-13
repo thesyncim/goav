@@ -8,7 +8,6 @@ package goav_test
 import (
 	"context"
 	"errors"
-	"reflect"
 	"testing"
 	"time"
 
@@ -16,6 +15,7 @@ import (
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/goavtest"
+	"github.com/thesyncim/goav/goavtest/expect"
 )
 
 // TestMixRunsTwoAudioSourcesIntoSink is the Mix acceptance test, consumer
@@ -27,16 +27,10 @@ func TestMixRunsTwoAudioSourcesIntoSink(t *testing.T) {
 		goav.From(goavtest.Audio(48000, 1, []int16{100, 200})).Audio(),
 		goav.From(goavtest.Audio(48000, 1, []int16{50, -50})).Audio(),
 	).To(out.Sink()).UseRuntime(goavtest.Runtime()).Build(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
+	expect.NoError(t, err)
 	defer task.Close()
-	if err := task.Run(ctx); err != nil {
-		t.Fatal(err)
-	}
-	if got, want := out.S16(), [][]int16{{150, 150}}; !reflect.DeepEqual(got, want) {
-		t.Fatalf("mixed = %v, want %v", got, want)
-	}
+	expect.NoError(t, task.Run(ctx))
+	expect.S16(t, out, [][]int16{{150, 150}})
 }
 
 // TestSelectSwitchesActiveArmMidRun is the live-switch acceptance test,
@@ -51,9 +45,7 @@ func TestSelectSwitchesActiveArmMidRun(t *testing.T) {
 		goav.From(goavtest.LiveAudio("a", 48000, 1, []int16{100})).Audio(),
 		goav.From(goavtest.LiveAudio("b", 48000, 1, []int16{200})).Audio(),
 	).To(out.Sink()).UseRuntime(goavtest.Runtime()).Build(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
+	expect.NoError(t, err)
 	t.Cleanup(func() { _ = task.Close() })
 
 	runErr := make(chan error, 1)
@@ -79,17 +71,13 @@ func TestSelectSwitchesActiveArmMidRun(t *testing.T) {
 	}
 
 	// Switch live to arm "b" (sample 200) through the control plane.
-	if err := controlWhenRunning(ctx, task, goav.SelectActive("b")); err != nil {
-		t.Fatalf("SelectActive to b: %v", err)
-	}
+	expect.NoError(t, controlWhenRunning(ctx, task, goav.SelectActive("b")))
 	if err := waitForSample(len(out.S16()), 200); err != nil {
 		t.Fatalf("after switch, arm b frame never forwarded: %v", err)
 	}
 
 	// Switch back to "a" to prove the control plane drives the switch both ways.
-	if err := task.Control(ctx, goav.SelectActive("a")); err != nil {
-		t.Fatalf("SelectActive back to a: %v", err)
-	}
+	expect.NoError(t, task.Control(ctx, goav.SelectActive("a")))
 	if err := waitForSample(len(out.S16()), 100); err != nil {
 		t.Fatalf("after switch back, arm a frame never forwarded: %v", err)
 	}
@@ -132,17 +120,14 @@ func TestFakeDecodeFeedsRealResample(t *testing.T) {
 		To(out.Sink()).
 		UseRuntime(goavtest.Runtime()).
 		Run(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
+	expect.NoError(t, err)
 	frames := out.Frames()
 	if len(frames) != 1 || frames[0].Audio == nil {
 		t.Fatalf("frames = %d, want exactly one audio frame", len(frames))
 	}
 	audio := frames[0].Audio
-	if audio.SampleRate != 44_100 || audio.Channels != 1 {
-		t.Fatalf("resampled frame = %d Hz %d ch, want 44100 Hz 1 ch", audio.SampleRate, audio.Channels)
-	}
+	expect.Equal(t, "resampled sample rate", audio.SampleRate, 44_100)
+	expect.Equal(t, "resampled channels", audio.Channels, 1)
 	// The fake decode frame carries 480 samples of 48kHz silence; the real
 	// resampler converts the duration, not the count: ~441 samples at 44.1kHz.
 	if audio.Samples < 400 || audio.Samples > 480 {
@@ -170,15 +155,9 @@ func TestFlowInFlowRunsEndToEnd(t *testing.T) {
 		To(out.Sink()).
 		UseRuntime(goavtest.Runtime()).
 		Run(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if metered != 1 {
-		t.Fatalf("metered frames = %d, want 1 (nested flow stage ran)", metered)
-	}
-	if got, want := out.S16(), [][]int16{{100, 200}}; !reflect.DeepEqual(got, want) {
-		t.Fatalf("collected = %v, want %v", got, want)
-	}
+	expect.NoError(t, err)
+	expect.Equal(t, "metered frames", metered, 1)
+	expect.S16(t, out, [][]int16{{100, 200}})
 }
 
 // The multi-input ambiguity acceptance test moved to error_acceptance_test.go

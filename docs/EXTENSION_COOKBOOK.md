@@ -244,6 +244,29 @@ The package examples double as executable documentation. Keep
 view, and `graphrender.RenderBranchFlowchart(attachment.Snapshot())` for one
 runtime branch.
 
+## Testing Pattern
+
+Use `goavtest` for fixtures and `goavtest/expect` for assertions:
+
+```go
+out := goavtest.NewCollector()
+err := goav.From(goavtest.Audio(48000, 1, []int16{1, 2})).
+    Audio().
+    To(out.Sink()).
+    UseRuntime(goavtest.Runtime(goav.WithFilter(desc, factory))).
+    Run(ctx)
+
+expect.NoError(t, err)
+expect.S16(t, out, [][]int16{{1, 2}})
+```
+
+`goavtest/expect` uses `github.com/google/go-cmp/cmp` for structural diffs and
+keeps the custom layer to goav-specific checks: collector samples, golden
+output files, and `*goav.BuildError` code, operation, node, cause, details,
+and suggestions. The standalone example modules use this pattern so adapter
+authors can copy tests without importing internals or writing local `errors.As`
+and golden-file helpers.
+
 ## Checklist
 
 - Keep registration per runtime; never rely on package globals.
@@ -252,6 +275,7 @@ runtime branch.
   `filter.ErrUnsupportedFormat` from adapter open paths.
 - Keep hot paths allocation-free unless the example explicitly documents that
   it is a toy implementation.
-- Test one successful recipe and one refusal/failure path.
+- Test one successful recipe and one refusal/failure path with
+  `goavtest/expect`.
 - For standalone examples, keep `go.mod`, README, `main.go`, `main_test.go`,
   expected output, and a failure example together.

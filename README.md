@@ -90,7 +90,7 @@ of the product.
 | Codecs | Opus, VP8, VP9, AV1 encode/decode verticals; AAC-LC and H264 receive/decode active | AAC-LC and H264 recipe encode remain descriptor-only until encoder backends are enabled. |
 | Transforms | Resize, resample, custom frame stages | Shape solver inserts conversions only under explicit policy. |
 | Transports | RTP and WebRTC in nested modules | Root module stays dependency-pure; transport modules carry their own third-party dependencies. |
-| Extension points | Sources, destinations, codecs, formats, filters, stages, joins, control-plane hosts, goavtest fixtures | Registrations are per runtime; there is no global adapter table. |
+| Extension points | Sources, destinations, codecs, formats, filters, stages, joins, control-plane hosts, goavtest fixtures and expect assertions | Registrations are per runtime; there is no global adapter table. |
 
 ## Stability Matrix
 

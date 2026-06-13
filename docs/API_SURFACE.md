@@ -114,7 +114,11 @@ docs/EXTENSION_COOKBOOK.md.
   rescaling), `Clock`.
 - **Testing**: `goavtest`: deterministic sources (`Audio`, `Video`,
   `Packets`, `LiveAudio`, `NewTestSource`), `Collector`, `Clock`, passthrough
-  `Codec`/`Format`, one-liner `Runtime()`. Helpers return real grammar values.
+  `Codec`/`Format`, one-liner `Runtime()`. Helpers return real grammar
+  values. `goavtest/expect` is the `testing.TB` assertion layer for those
+  fixtures: it uses `github.com/google/go-cmp/cmp` for structural diffs and
+  adds goav-specific checks for collector samples, golden output, and
+  structured `*goav.BuildError` fields.
 
 ### Extension closure
 

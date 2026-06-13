@@ -346,7 +346,10 @@ routing handle branches share.
    `testing.AllocsPerRun` guard on every hot path (see any `adapters/*`
    `*Allocs` test); an end-to-end grammar test (`goavtest.Audio/Video/Packets`
    inputs, `goavtest.NewCollector()` output, `goavtest.Runtime()` plus your
-   `With*` option). Use `goavtest.NewTestSource` when the adapter needs a
+   `With*` option). Use `goavtest/expect` for assertions: it delegates
+   structural diffs to `github.com/google/go-cmp/cmp` and adds
+   `BuildError`, `S16`, and golden-output checks for goav tests. Use
+   `goavtest.NewTestSource` when the adapter needs a
    provider-shaped, controllable source fixture; use
    `goavtest.TestSourceScript(goavtest.TestSourcePacket(...),
    goavtest.TestSourceEvent(...))` for mixed media/control scripts.

@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"reflect"
 	"testing"
 	"time"
 
@@ -12,6 +11,7 @@ import (
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/goavtest"
+	"github.com/thesyncim/goav/goavtest/expect"
 	"github.com/thesyncim/goav/shape"
 )
 
@@ -32,9 +32,7 @@ func TestReadmeMixExample(t *testing.T) {
 	if err := task.Run(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if got, want := out.S16(), [][]int16{{150}, {150}}; !reflect.DeepEqual(got, want) {
-		t.Fatalf("out.S16() = %v, want %v", got, want)
-	}
+	expect.S16(t, out, [][]int16{{150}, {150}})
 }
 
 func TestAudioStampsCoherentPTS(t *testing.T) {
@@ -60,9 +58,7 @@ func TestAudioStampsCoherentPTS(t *testing.T) {
 	if frames[1].PTS != (av.Timestamp{Value: 2, Base: base}) || frames[1].Duration != (av.Duration{Value: 1, Base: base}) {
 		t.Fatalf("frame 1 timing = %+v/%+v, want 2/1 in 1/48000", frames[1].PTS, frames[1].Duration)
 	}
-	if got, want := out.S16(), [][]int16{{1, 2, 3, 4}, {5, 6}}; !reflect.DeepEqual(got, want) {
-		t.Fatalf("samples = %v, want %v", got, want)
-	}
+	expect.S16(t, out, [][]int16{{1, 2, 3, 4}, {5, 6}})
 }
 
 func TestVideoFramesIdentifiableFromPixels(t *testing.T) {
@@ -163,9 +159,7 @@ func TestCodecRoundTripIsByteFaithful(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got, want := decoded.S16(), [][]int16{{100, -200}, {300}}; !reflect.DeepEqual(got, want) {
-		t.Fatalf("decoded samples = %v, want %v (byte-faithful round trip)", got, want)
-	}
+	expect.S16(t, decoded, [][]int16{{100, -200}, {300}})
 }
 
 // TestFormatRoundTripThroughFile proves the fake container contract: encode
@@ -196,9 +190,7 @@ func TestFormatRoundTripThroughFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got, want := out.S16(), [][]int16{{1, 2, 3}, {4, 5, 6}}; !reflect.DeepEqual(got, want) {
-		t.Fatalf("round-tripped samples = %v, want %v", got, want)
-	}
+	expect.S16(t, out, [][]int16{{1, 2, 3}, {4, 5, 6}})
 }
 
 func TestCollectorWaitEventsObservesEventSource(t *testing.T) {
@@ -237,9 +229,7 @@ func TestClockRecordsSleepsAndAdvances(t *testing.T) {
 	if got := clock.Now(); got != 25*time.Millisecond {
 		t.Fatalf("Now = %v, want 25ms", got)
 	}
-	if got, want := clock.Sleeps(), []time.Duration{20 * time.Millisecond}; !reflect.DeepEqual(got, want) {
-		t.Fatalf("Sleeps = %v, want %v", got, want)
-	}
+	expect.DeepEqual(t, "Sleeps", clock.Sleeps(), []time.Duration{20 * time.Millisecond})
 	cancelled, cancel := context.WithCancel(context.Background())
 	cancel()
 	if err := clock.Sleep(cancelled, time.Second); !errors.Is(err, context.Canceled) {
@@ -280,9 +270,7 @@ func TestRuntimePacesFileInputOnFakeClock(t *testing.T) {
 	}
 	// The first packet anchors; the second waits its 20ms media-time delta —
 	// on the fake clock, recorded instead of slept.
-	if got, want := clock.Sleeps(), []time.Duration{20 * time.Millisecond}; !reflect.DeepEqual(got, want) {
-		t.Fatalf("paced sleeps = %v, want %v", got, want)
-	}
+	expect.DeepEqual(t, "paced sleeps", clock.Sleeps(), []time.Duration{20 * time.Millisecond})
 }
 
 // TestCollectorWaitObservesLivePipeline runs a never-ending LiveAudio source

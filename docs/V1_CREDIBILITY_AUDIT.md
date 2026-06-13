@@ -35,6 +35,9 @@ improvement at the files, tests, and workflows that carry the evidence.
   `testdata/expected.txt`, expected output, and a failure example. The
   control-plane host has its own `go.mod`, README, runnable host, socket/CLI
   tests, and capability-validation proof. All import only public packages.
+- Tests use `goavtest` fixtures plus `goavtest/expect`; generic structural
+  diffs come from `github.com/google/go-cmp/cmp`, while the custom layer stays
+  goav-specific (`BuildError`, collector S16 samples, and golden output).
 - Evidence: `examples/custom-source`, `examples/provider-source`,
   `examples/custom-destination`, `examples/custom-filter`,
   `examples/transactional-writer`, `examples/custom-codec`,
