@@ -1,0 +1,66 @@
+goos: darwin
+goarch: arm64
+pkg: github.com/thesyncim/goav/pipeline
+cpu: Apple M4 Max
+                             │ bench-results/bench-base-direct-fanout-parallel-scaling-20260614.txt │ bench-results/bench-current-direct-fanout-parallel-scaling-20260614.txt │
+                             │                                sec/op                                │                      sec/op                       vs base               │
+DirectFanoutParallel/N=1                                                              17.98n ±  21%                                      14.34n ±  34%        ~ (p=0.132 n=6)
+DirectFanoutParallel/N=1-2                                                            52.96n ±  69%                                      46.96n ±  47%        ~ (p=0.589 n=6)
+DirectFanoutParallel/N=1-4                                                            99.29n ±  50%                                      50.81n ±  36%  -48.82% (p=0.015 n=6)
+DirectFanoutParallel/N=1-8                                                            76.84n ±  42%                                      78.81n ± 102%        ~ (p=0.937 n=6)
+DirectFanoutParallel/N=8                                                              58.44n ±  11%                                      56.96n ±   3%        ~ (p=0.563 n=6)
+DirectFanoutParallel/N=8-2                                                           233.65n ± 175%                                      92.54n ± 122%  -60.39% (p=0.002 n=6)
+DirectFanoutParallel/N=8-4                                                            393.4n ±  29%                                      243.6n ±  43%  -38.07% (p=0.002 n=6)
+DirectFanoutParallel/N=8-8                                                            554.2n ±   9%                                      457.4n ±  16%  -17.48% (p=0.002 n=6)
+DirectFanoutParallel/N=64                                                             388.6n ±  20%                                      379.0n ±  10%        ~ (p=0.905 n=6)
+DirectFanoutParallel/N=64-2                                                          1595.0n ±  56%                                      448.2n ±  79%  -71.90% (p=0.002 n=6)
+DirectFanoutParallel/N=64-4                                                          1205.0n ±  45%                                      546.4n ±  55%  -54.66% (p=0.002 n=6)
+DirectFanoutParallel/N=64-8                                                          1245.5n ±   8%                                      504.8n ±  35%  -59.47% (p=0.002 n=6)
+DirectFanoutParallel/N=512                                                            3.223µ ±   3%                                      3.514µ ±  23%   +9.04% (p=0.004 n=6)
+DirectFanoutParallel/N=512-2                                                          8.365µ ±  40%                                      2.280µ ±  80%  -72.75% (p=0.002 n=6)
+DirectFanoutParallel/N=512-4                                                          6.291µ ±  67%                                      2.113µ ±  36%  -66.42% (p=0.002 n=6)
+DirectFanoutParallel/N=512-8                                                          6.021µ ±  15%                                      2.176µ ±  18%  -63.86% (p=0.002 n=6)
+geomean                                                                               509.4n                                             291.6n         -42.76%
+
+                             │ bench-results/bench-base-direct-fanout-parallel-scaling-20260614.txt │ bench-results/bench-current-direct-fanout-parallel-scaling-20260614.txt │
+                             │                                 B/op                                 │                      B/op                        vs base                │
+DirectFanoutParallel/N=1                                                               1.000 ± 100%                                      1.000 ± 100%       ~ (p=1.000 n=6)
+DirectFanoutParallel/N=1-2                                                             3.000 ±  33%                                      3.000 ±  33%       ~ (p=1.000 n=6)
+DirectFanoutParallel/N=1-4                                                             6.000 ±  50%                                      6.000 ±  33%       ~ (p=0.727 n=6)
+DirectFanoutParallel/N=1-8                                                             16.00 ±  38%                                      16.50 ±  33%       ~ (p=0.848 n=6)
+DirectFanoutParallel/N=8                                                               2.000 ±   0%                                      2.000 ±   0%       ~ (p=1.000 n=6) ¹
+DirectFanoutParallel/N=8-2                                                             4.000 ±   0%                                      4.000 ±   0%       ~ (p=1.000 n=6) ¹
+DirectFanoutParallel/N=8-4                                                             7.500 ±  20%                                      7.000 ±   0%       ~ (p=0.182 n=6)
+DirectFanoutParallel/N=8-8                                                             14.50 ±  17%                                      14.00 ±  14%       ~ (p=0.470 n=6)
+DirectFanoutParallel/N=64                                                              11.00 ±   0%                                      11.00 ±   0%       ~ (p=1.000 n=6) ¹
+DirectFanoutParallel/N=64-2                                                            12.00 ±   0%                                      12.00 ±   0%       ~ (p=1.000 n=6) ¹
+DirectFanoutParallel/N=64-4                                                            15.00 ±   0%                                      15.00 ±   7%       ~ (p=0.455 n=6)
+DirectFanoutParallel/N=64-8                                                            22.00 ±  23%                                      22.50 ±  20%       ~ (p=0.924 n=6)
+DirectFanoutParallel/N=512                                                             75.00 ±   0%                                      75.00 ±   0%       ~ (p=1.000 n=6) ¹
+DirectFanoutParallel/N=512-2                                                           76.00 ±   1%                                      76.00 ±   1%       ~ (p=1.000 n=6)
+DirectFanoutParallel/N=512-4                                                           80.00 ±   0%                                      80.00 ±   0%       ~ (p=1.000 n=6) ¹
+DirectFanoutParallel/N=512-8                                                           86.00 ±   2%                                      86.00 ±   2%       ~ (p=1.000 n=6)
+geomean                                                                                12.65                                             12.61         -0.32%
+¹ all samples are equal
+
+                             │ bench-results/bench-base-direct-fanout-parallel-scaling-20260614.txt │ bench-results/bench-current-direct-fanout-parallel-scaling-20260614.txt │
+                             │                              allocs/op                               │                    allocs/op                     vs base                │
+DirectFanoutParallel/N=1                                                               0.000 ± 0%                                          0.000 ± 0%       ~ (p=1.000 n=6) ¹
+DirectFanoutParallel/N=1-2                                                             0.000 ± 0%                                          0.000 ± 0%       ~ (p=1.000 n=6) ¹
+DirectFanoutParallel/N=1-4                                                             0.000 ± 0%                                          0.000 ± 0%       ~ (p=1.000 n=6) ¹
+DirectFanoutParallel/N=1-8                                                             0.000 ± 0%                                          0.000 ± 0%       ~ (p=1.000 n=6) ¹
+DirectFanoutParallel/N=8                                                               0.000 ± 0%                                          0.000 ± 0%       ~ (p=1.000 n=6) ¹
+DirectFanoutParallel/N=8-2                                                             0.000 ± 0%                                          0.000 ± 0%       ~ (p=1.000 n=6) ¹
+DirectFanoutParallel/N=8-4                                                             0.000 ± 0%                                          0.000 ± 0%       ~ (p=1.000 n=6) ¹
+DirectFanoutParallel/N=8-8                                                             0.000 ± 0%                                          0.000 ± 0%       ~ (p=1.000 n=6) ¹
+DirectFanoutParallel/N=64                                                              0.000 ± 0%                                          0.000 ± 0%       ~ (p=1.000 n=6) ¹
+DirectFanoutParallel/N=64-2                                                            0.000 ± 0%                                          0.000 ± 0%       ~ (p=1.000 n=6) ¹
+DirectFanoutParallel/N=64-4                                                            0.000 ± 0%                                          0.000 ± 0%       ~ (p=1.000 n=6) ¹
+DirectFanoutParallel/N=64-8                                                            0.000 ± 0%                                          0.000 ± 0%       ~ (p=1.000 n=6) ¹
+DirectFanoutParallel/N=512                                                             0.000 ± 0%                                          0.000 ± 0%       ~ (p=1.000 n=6) ¹
+DirectFanoutParallel/N=512-2                                                           0.000 ± 0%                                          0.000 ± 0%       ~ (p=1.000 n=6) ¹
+DirectFanoutParallel/N=512-4                                                           0.000 ± 0%                                          0.000 ± 0%       ~ (p=1.000 n=6) ¹
+DirectFanoutParallel/N=512-8                                                           0.000 ± 0%                                          0.000 ± 0%       ~ (p=1.000 n=6) ¹
+geomean                                                                                           ²                                                    +0.00%               ²
+¹ all samples are equal
+² summaries must be >0 to compute geomean

@@ -3,16 +3,31 @@ package pipeline
 import (
 	"sync"
 	"sync/atomic"
+	"unsafe"
 
 	"github.com/thesyncim/goav/av"
 )
 
+const counterShards = 64
+
 // nodeCounters holds one node's per-message counts. The numeric fields are
 // updated lock-free on the hot path; lastEvent/dropReasons are cold and guarded
 // by the owning runner's coldStats mutex. Each node owns a stable *nodeCounters
-// for the life of the graph, so the hot path can capture the pointer once (under
-// the topology lock it already holds) and increment without further locking.
+// for the life of the graph, so the hot path can capture the pointer once from a
+// routing snapshot and increment without further locking. Hot counters are
+// sharded by message pointer to avoid one cache line serializing concurrent
+// producers that hit the same source or fanout node.
 type nodeCounters struct {
+	shards  [counterShards]nodeCounterShard
+	dropped atomic.Uint64
+
+	// cold: guarded by coldStats.mu.
+	lastEvent        av.Event
+	lastEventPresent bool
+	dropReasons      map[DropPolicy]uint64
+}
+
+type nodeCounterShard struct {
 	inMessages  atomic.Uint64
 	inPackets   atomic.Uint64
 	inFrames    atomic.Uint64
@@ -21,12 +36,6 @@ type nodeCounters struct {
 	outPackets  atomic.Uint64
 	outFrames   atomic.Uint64
 	outEvents   atomic.Uint64
-	dropped     atomic.Uint64
-
-	// cold: guarded by coldStats.mu.
-	lastEvent        av.Event
-	lastEventPresent bool
-	dropReasons      map[DropPolicy]uint64
 }
 
 // coldStats guards the rarely-written event/drop detail for a whole graph
@@ -48,19 +57,20 @@ func observeOut(n *nodeCounters, msg *Message, cold *coldStats) {
 	if n == nil || msg == nil {
 		return
 	}
-	n.outMessages.Add(1)
+	shard := n.shard(msg)
+	shard.outMessages.Add(1)
 	switch msg.Kind {
 	case MessagePacket:
 		if msg.Packet != nil {
-			n.outPackets.Add(1)
+			shard.outPackets.Add(1)
 		}
 	case MessageFrame:
 		if msg.Frame != nil {
-			n.outFrames.Add(1)
+			shard.outFrames.Add(1)
 		}
 	case MessageEvent:
 		if msg.Event != nil {
-			n.outEvents.Add(1)
+			shard.outEvents.Add(1)
 			cold.recordOutEvent(n, msg.Event)
 		}
 	}
@@ -71,22 +81,30 @@ func observeIn(n *nodeCounters, msg *Message, cold *coldStats) {
 	if n == nil || msg == nil {
 		return
 	}
-	n.inMessages.Add(1)
+	shard := n.shard(msg)
+	shard.inMessages.Add(1)
 	switch msg.Kind {
 	case MessagePacket:
 		if msg.Packet != nil {
-			n.inPackets.Add(1)
+			shard.inPackets.Add(1)
 		}
 	case MessageFrame:
 		if msg.Frame != nil {
-			n.inFrames.Add(1)
+			shard.inFrames.Add(1)
 		}
 	case MessageEvent:
 		if msg.Event != nil {
-			n.inEvents.Add(1)
+			shard.inEvents.Add(1)
 			cold.recordNodeEvent(n, msg.Event)
 		}
 	}
+}
+
+func (n *nodeCounters) shard(msg *Message) *nodeCounterShard {
+	h := uintptr(unsafe.Pointer(msg)) >> 4
+	h ^= h >> 7
+	h ^= h >> 13
+	return &n.shards[h&(counterShards-1)]
 }
 
 // observeDrop records a dropped message at node n.
@@ -229,19 +247,21 @@ func reportedDrops(source Source, stage Stage, sink Sink) uint64 {
 // snapshotLocked reads one node's counters into the public NodeStats. The caller
 // must hold the owning coldStats mutex (cold fields are read here).
 func (n *nodeCounters) snapshotLocked() NodeStats {
-	stats := NodeStats{
-		InMessages:       n.inMessages.Load(),
-		InPackets:        n.inPackets.Load(),
-		InFrames:         n.inFrames.Load(),
-		InEvents:         n.inEvents.Load(),
-		OutMessages:      n.outMessages.Load(),
-		OutPackets:       n.outPackets.Load(),
-		OutFrames:        n.outFrames.Load(),
-		OutEvents:        n.outEvents.Load(),
-		Dropped:          n.dropped.Load(),
-		LastEvent:        n.lastEvent,
-		LastEventPresent: n.lastEventPresent,
+	var stats NodeStats
+	for i := range n.shards {
+		shard := &n.shards[i]
+		stats.InMessages += shard.inMessages.Load()
+		stats.InPackets += shard.inPackets.Load()
+		stats.InFrames += shard.inFrames.Load()
+		stats.InEvents += shard.inEvents.Load()
+		stats.OutMessages += shard.outMessages.Load()
+		stats.OutPackets += shard.outPackets.Load()
+		stats.OutFrames += shard.outFrames.Load()
+		stats.OutEvents += shard.outEvents.Load()
 	}
+	stats.Dropped = n.dropped.Load()
+	stats.LastEvent = n.lastEvent
+	stats.LastEventPresent = n.lastEventPresent
 	if len(n.dropReasons) > 0 {
 		stats.DropReasons = make(map[DropPolicy]uint64, len(n.dropReasons))
 		for key, value := range n.dropReasons {

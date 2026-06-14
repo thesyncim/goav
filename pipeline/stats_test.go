@@ -2,8 +2,11 @@ package pipeline
 
 import (
 	"context"
+	"sync"
 	"sync/atomic"
 	"testing"
+
+	"github.com/thesyncim/goav/av"
 )
 
 type dropReportingStage struct {
@@ -72,5 +75,62 @@ func TestStatsFoldsReportedDrops(t *testing.T) {
 				t.Fatalf("sink dropped=%d, want 0 (no reporter)", out.Dropped)
 			}
 		})
+	}
+}
+
+func TestStatsSumsShardedParallelCounters(t *testing.T) {
+	graph, err := NewGraph(GraphConfig{Name: "stats-shards"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer graph.Close()
+	source := &benchCaptureSource{name: "src"}
+	if _, err := graph.AddSource(source, BufferPolicy{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := graph.AddSink(&statsTestSink{name: "out"}, BufferPolicy{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := graph.Connect(Route{From: "src", To: []string{"out"}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := graph.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	const producers = 8
+	const perProducer = 100
+	var wg sync.WaitGroup
+	wg.Add(producers)
+	for i := 0; i < producers; i++ {
+		go func() {
+			defer wg.Done()
+			msg := &Message{
+				Kind: MessagePacket,
+				Packet: &av.Packet{
+					Payload: av.Buffer{Bytes: []byte{1}, Ownership: av.BufferImmutable},
+				},
+			}
+			for j := 0; j < perProducer; j++ {
+				if err := source.emitter.Emit(context.Background(), msg); err != nil {
+					t.Error(err)
+					return
+				}
+			}
+		}()
+	}
+	wg.Wait()
+
+	stats := graph.Stats()
+	want := uint64(producers * perProducer)
+	if stats.Packets != want || stats.Messages != want || stats.Delivered != want {
+		t.Fatalf("stats packets=%d messages=%d delivered=%d, want all %d",
+			stats.Packets, stats.Messages, stats.Delivered, want)
+	}
+	if got := stats.Nodes["src"].OutPackets; got != want {
+		t.Fatalf("source out packets = %d, want %d", got, want)
+	}
+	if got := stats.Nodes["out"].InPackets; got != want {
+		t.Fatalf("sink in packets = %d, want %d", got, want)
 	}
 }

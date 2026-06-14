@@ -22,8 +22,8 @@ Hot paths must avoid hidden allocation:
 
 Once running, stages reuse caller-owned messages, result structs, frame
 planes, packet buffers, and scratch storage, and take no per-message mutex
-(per-node atomics plus atomically-swapped routing snapshots; mutexes on cold
-paths only). The intended shape is
+(sharded per-node atomics plus atomically-swapped routing snapshots; mutexes on
+cold paths only). The intended shape is
 one cold-path executable `WorkPlan` and runtime `WorkPatch`;
 packet, frame, event, and mux/demux loops must not route
 through fluent recipe objects or workflow-specific compiler dispatch.
@@ -148,6 +148,19 @@ implementation with the same benchmark harness. It proves the path stays
 run is not statistically significant, so it is not a release-quality speed
 claim.
 
+For direct fanout multi-core scaling,
+`bench-results/benchstat-direct-fanout-parallel-scaling-20260614.txt` records
+`BenchmarkDirectFanoutParallel` over 1/8/64/512 targets with `-cpu 1,2,4,8`,
+`-benchtime 1000x`, and six samples on an Apple M4 Max. The wide 512-target
+case measured 3.514 us/op at `GOMAXPROCS=1`, 2.113 us/op at 4
+(about 1.66x throughput), and 2.176 us/op at 8 (about 1.62x throughput).
+Smaller fanouts remain overhead-dominated and do not scale monotonically, so
+this is a measured artifact, not a promised scaling contract. The paired
+before/after artifact
+`bench-results/benchstat-direct-fanout-parallel-before-after-20260614.txt`
+shows the sharded-counter change reduced the full scaling matrix geomean by
+42.76% while keeping 0 allocs/op.
+
 On pull requests, CI also runs `scripts/bench/ci-compare.sh` against the PR base
 commit and uploads `bench-base.txt`, `bench-current.txt`, and
 `benchstat-pr-vs-base.txt`. This is an advisory same-runner comparison for a
@@ -188,8 +201,9 @@ Stated plainly so the docs never imply otherwise:
   smoke path. VP8/VP9/AV1/H264 throughput needs committed methodology and
   artifacts before it becomes a claim.
 - **Sustained-load soak** (hours-long stability, fragmentation, drift).
-- **Multi-core scaling** targets: `BenchmarkDirectFanoutParallel` measures
-  scaling but no specific ratio is promised.
+- **Near-linear multi-core scaling across every fanout width**. The direct
+  fanout scaling artifact measures a 512-target improvement at 4/8 CPUs, but
+  smaller fanouts are still overhead-dominated; no general ratio is promised.
 - Comparative leadership claims. Comparative claims require committed
   methodology and reproducible numbers; the only comparative data in-repo is
   the optional external-tool container benches.

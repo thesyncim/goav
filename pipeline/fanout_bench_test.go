@@ -108,8 +108,9 @@ func buildDirectFanout(b *testing.B, n int) (*benchCaptureSource, Graph) {
 }
 
 // BenchmarkDirectFanout measures serial emit->deliver across a 1->N direct
-// fanout (no copy: immutable payload). The per-message cost includes the global
-// statsMu and g.mu.RLock that P2 targets.
+// fanout (no copy: immutable payload). The hot path reads an immutable routing
+// snapshot and touches only per-node counters, so it is the serial baseline for
+// the parallel scaling sweep.
 func BenchmarkDirectFanout(b *testing.B) {
 	msg := benchPacketMessage(fanoutPayload, true)
 	ctx := context.Background()
@@ -130,8 +131,8 @@ func BenchmarkDirectFanout(b *testing.B) {
 
 // BenchmarkDirectFanoutParallel measures concurrent producers hitting the same
 // graph. With -cpu 1,2,4,8 the ns/op ratio is the parallel-scaling number: the
-// global statsMu serializes every message today, so throughput is expected to
-// flatten as cores increase. P2 should make this scale near-linearly.
+// direct fanout path should avoid a graph-wide lock, and the artifact records
+// the ratio actually achieved rather than promising one in the code.
 func BenchmarkDirectFanoutParallel(b *testing.B) {
 	ctx := context.Background()
 	for _, n := range fanoutSizes {

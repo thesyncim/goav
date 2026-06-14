@@ -231,8 +231,8 @@ instead: per-node queues with a single serial worker each, the shared drop
 controller for backpressure/drop behavior, shared immutable media buffers, and
 preallocated copy slots for borrowed payloads under explicit byte bounds.
 Borrowed media without a copy bound fails early. The data plane is lock-free by
-design: per-node atomic stats and atomically-swapped routing snapshots, with
-mutexes only on cold paths. The allocation side of that contract is
+design: sharded per-node atomic stats and atomically-swapped routing snapshots,
+with mutexes only on cold paths. The allocation side of that contract is
 test-enforced (`TestGraphDirectRunAllocs`, `TestGraphBufferedSteadyEmitAllocs`)
 and measured by the fanout benchmarks; see `docs/PERFORMANCE.md` for what is
 proven versus not proven.
