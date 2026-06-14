@@ -1,0 +1,31 @@
+goos: darwin
+goarch: arm64
+pkg: github.com/thesyncim/goav/pipeline
+cpu: Apple M4 Max
+                             │ bench-results/bench-base-buffered-fanout-copy-steady-6x-20260614.txt │ bench-results/bench-current-buffered-fanout-copy-steady-6x-20260614.txt │
+                             │                                sec/op                                │                      sec/op                        vs base              │
+BufferedFanout/copy/N=1-16                                                             271.8n ± 20%                                        258.8n ± 92%       ~ (p=0.485 n=6)
+BufferedFanout/copy/N=8-16                                                             4.086µ ± 80%                                        3.343µ ± 24%       ~ (p=0.093 n=6)
+BufferedFanout/copy/N=64-16                                                            32.15µ ± 21%                                        34.04µ ± 19%       ~ (p=0.394 n=6)
+BufferedFanout/copy/N=512-16                                                           273.1µ ±  4%                                        273.0µ ± 14%       ~ (p=0.394 n=6)
+geomean                                                                                9.936µ                                              9.469µ        -4.70%
+
+                             │ bench-results/bench-base-buffered-fanout-copy-steady-6x-20260614.txt │ bench-results/bench-current-buffered-fanout-copy-steady-6x-20260614.txt │
+                             │                                 B/op                                 │                      B/op                        vs base                │
+BufferedFanout/copy/N=1-16                                                             0.000 ± 0%                                          0.000 ± 0%       ~ (p=1.000 n=6) ¹
+BufferedFanout/copy/N=8-16                                                             0.000 ± 0%                                          0.000 ± 0%       ~ (p=1.000 n=6) ¹
+BufferedFanout/copy/N=64-16                                                            0.000 ±  ?                                          0.000 ±  ?       ~ (p=1.000 n=6)
+BufferedFanout/copy/N=512-16                                                           0.000 ± 0%                                          0.000 ± 0%       ~ (p=1.000 n=6) ¹
+geomean                                                                                           ²                                                    +0.00%               ²
+¹ all samples are equal
+² summaries must be >0 to compute geomean
+
+                             │ bench-results/bench-base-buffered-fanout-copy-steady-6x-20260614.txt │ bench-results/bench-current-buffered-fanout-copy-steady-6x-20260614.txt │
+                             │                              allocs/op                               │                    allocs/op                     vs base                │
+BufferedFanout/copy/N=1-16                                                             0.000 ± 0%                                          0.000 ± 0%       ~ (p=1.000 n=6) ¹
+BufferedFanout/copy/N=8-16                                                             0.000 ± 0%                                          0.000 ± 0%       ~ (p=1.000 n=6) ¹
+BufferedFanout/copy/N=64-16                                                            0.000 ± 0%                                          0.000 ± 0%       ~ (p=1.000 n=6) ¹
+BufferedFanout/copy/N=512-16                                                           0.000 ± 0%                                          0.000 ± 0%       ~ (p=1.000 n=6) ¹
+geomean                                                                                           ²                                                    +0.00%               ²
+¹ all samples are equal
+² summaries must be >0 to compute geomean

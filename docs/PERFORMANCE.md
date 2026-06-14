@@ -49,6 +49,7 @@ silently growing.
 |---|---|---|
 | Direct graph pass-through (source->stage->sink) | `pipeline.TestGraphDirectRunAllocs` | 0 |
 | Buffered fanout steady path (emit -> slot bind -> worker deliver -> slot release, immutable payload, 1->2 fanout) | `pipeline.TestGraphBufferedSteadyEmitAllocs` | 0 |
+| Buffered borrowed-packet fanout steady path (1/8/64/512 targets, one graph-owned refcounted copy) | `pipeline.TestGraphBufferedBorrowedFanoutEmitAllocs` | 0 |
 | Drop-policy decision | `pipeline.TestDropControllerDecideAllocs` | 0 |
 | Message/scratch resets | `pipeline.TestMessageAndScratchResetAllocs`, `av.TestCoreResetAllocs`, `av.TestTimeBaseHelpersAllocs` | 0 |
 | `SourcePush.Packet` / `SourcePush.Frame` delivery | `goav.TestSourcePushDeliveryAllocs` | 0 |
@@ -136,6 +137,17 @@ host exposes it. CI runs a `PERF_BENCHTIME=1x` smoke to catch bit rot and
 uploads the generated benchmark artifacts. Serious performance claims still
 need same-machine, longer-run artifacts attached to a release.
 
+For buffered packet fanout, `BenchmarkBufferedFanout/copy` measures the steady
+borrowed-packet path after the graph is running: the first admitted target
+copies the producer-borrowed payload into graph-owned backing once, and sibling
+targets bind refcounted views. The artifact
+`bench-results/benchstat-buffered-fanout-copy-steady-6x-20260614.txt` records a
+same-machine 1000x, six-sample comparison against the prior per-target copy
+implementation with the same benchmark harness. It proves the path stays
+0 allocs/op and bounded over 1/8/64/512 targets; the timing delta in that short
+run is not statistically significant, so it is not a release-quality speed
+claim.
+
 On pull requests, CI also runs `scripts/bench/ci-compare.sh` against the PR base
 commit and uploads `bench-base.txt`, `bench-current.txt`, and
 `benchstat-pr-vs-base.txt`. This is an advisory same-runner comparison for a
@@ -147,9 +159,11 @@ benchstat table, but it is not a release-quality performance claim.
 Performance characteristics that exist but are expected to change; treat the
 current numbers as snapshots, not contracts:
 
-- **Buffered copy-mode fanout**: borrowed payloads are copied into each
-  target's slot (`BenchmarkBufferedFanout/copy` measures the per-target cost);
-  a refcounted zero-copy fanout would remove it.
+- **Buffered mutable frame/owned-payload fanout**: borrowed packet fanout is
+  refcounted after one graph-owned copy (`BenchmarkBufferedFanout/copy` and
+  `TestGraphBufferedBorrowedPacketFanoutSharesOneGraphCopy`); owned packets,
+  owned frames, and defensive `CopyAlways` paths still copy per target to
+  preserve branch-local mutation isolation.
 - **Runtime attach under load**: `BenchmarkAttachDetachUnderLoad` measures a
   cold-path control operation; its cost is dominated by planning and is not a
   data-plane figure.

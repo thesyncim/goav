@@ -30,10 +30,12 @@ const (
 // CopyMode declares when a branch buffer copies a queued message's payload
 // bytes into branch-owned backing before queueing. This is the ownership
 // contract for buffered fanout: every buffered branch binds messages into its
-// own preallocated slots, so a payload that is copied belongs to that branch
-// alone — a consumer that mutates its delivered bytes can never corrupt the
-// producer's bytes or a sibling branch's view. Payloads that are shared by
-// reference instead of copied must never be written by any consumer.
+// own preallocated slots, so owned mutable payloads are copied into branch-local
+// backing — a consumer that mutates those delivered bytes can never corrupt the
+// producer's bytes or a sibling branch's view. Borrowed packet fanout may copy
+// once into graph-owned backing and share refcounted read-only views across
+// subscribers. Payloads that are shared by reference instead of copied must
+// never be written by any consumer.
 //
 // Copying is bounded, never allocated per message: BufferCopyBounds sizes the
 // per-slot backing, and a payload that needs a copy but cannot get one (bounds
@@ -44,9 +46,10 @@ type CopyMode string
 const (
 	// CopyIfMutable (the default) copies every payload not declared
 	// av.BufferImmutable and shares immutable payloads by reference. Mutable
-	// payloads (av.BufferOwned, av.BufferBorrowed, or undeclared) are either
-	// copied into branch-owned backing or refused — never shared — so a branch
-	// that mutates its delivered frame cannot corrupt a sibling.
+	// owned or undeclared mutable payloads are either copied into branch-owned
+	// backing or refused. Borrowed packet fanout may share one graph-owned copy
+	// across read-only subscriber slots. A branch that mutates its delivered
+	// owned frame or packet cannot corrupt a sibling.
 	CopyIfMutable CopyMode = "if_mutable"
 	// CopyAlways copies every payload, including ones declared
 	// av.BufferImmutable: defensive isolation for producers whose immutable

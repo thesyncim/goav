@@ -1,0 +1,30 @@
+goos: darwin
+goarch: arm64
+pkg: github.com/thesyncim/goav/pipeline
+cpu: Apple M4 Max
+BenchmarkBufferedFanout/copy/N=1-16         	    1000	       315.8 ns/op	       0 B/op	       0 allocs/op
+BenchmarkBufferedFanout/copy/N=1-16         	    1000	       273.2 ns/op	       0 B/op	       0 allocs/op
+BenchmarkBufferedFanout/copy/N=1-16         	    1000	       270.4 ns/op	       0 B/op	       0 allocs/op
+BenchmarkBufferedFanout/copy/N=1-16         	    1000	       258.7 ns/op	       0 B/op	       0 allocs/op
+BenchmarkBufferedFanout/copy/N=1-16         	    1000	       246.4 ns/op	       0 B/op	       0 allocs/op
+BenchmarkBufferedFanout/copy/N=1-16         	    1000	       325.2 ns/op	       0 B/op	       0 allocs/op
+BenchmarkBufferedFanout/copy/N=8-16         	    1000	      7355 ns/op	       0 B/op	       0 allocs/op
+BenchmarkBufferedFanout/copy/N=8-16         	    1000	      4828 ns/op	       0 B/op	       0 allocs/op
+BenchmarkBufferedFanout/copy/N=8-16         	    1000	      4511 ns/op	       0 B/op	       0 allocs/op
+BenchmarkBufferedFanout/copy/N=8-16         	    1000	      3430 ns/op	       0 B/op	       0 allocs/op
+BenchmarkBufferedFanout/copy/N=8-16         	    1000	      3385 ns/op	       0 B/op	       0 allocs/op
+BenchmarkBufferedFanout/copy/N=8-16         	    1000	      3660 ns/op	       0 B/op	       0 allocs/op
+BenchmarkBufferedFanout/copy/N=64-16        	    1000	     32180 ns/op	       0 B/op	       0 allocs/op
+BenchmarkBufferedFanout/copy/N=64-16        	    1000	     38921 ns/op	       0 B/op	       0 allocs/op
+BenchmarkBufferedFanout/copy/N=64-16        	    1000	     32114 ns/op	       1 B/op	       0 allocs/op
+BenchmarkBufferedFanout/copy/N=64-16        	    1000	     26380 ns/op	       0 B/op	       0 allocs/op
+BenchmarkBufferedFanout/copy/N=64-16        	    1000	     37440 ns/op	       0 B/op	       0 allocs/op
+BenchmarkBufferedFanout/copy/N=64-16        	    1000	     25800 ns/op	       0 B/op	       0 allocs/op
+BenchmarkBufferedFanout/copy/N=512-16       	    1000	    285277 ns/op	       0 B/op	       0 allocs/op
+BenchmarkBufferedFanout/copy/N=512-16       	    1000	    282517 ns/op	       0 B/op	       0 allocs/op
+BenchmarkBufferedFanout/copy/N=512-16       	    1000	    272394 ns/op	       0 B/op	       0 allocs/op
+BenchmarkBufferedFanout/copy/N=512-16       	    1000	    272513 ns/op	       0 B/op	       0 allocs/op
+BenchmarkBufferedFanout/copy/N=512-16       	    1000	    272959 ns/op	       0 B/op	       0 allocs/op
+BenchmarkBufferedFanout/copy/N=512-16       	    1000	    273154 ns/op	       0 B/op	       0 allocs/op
+PASS
+ok  	github.com/thesyncim/goav/pipeline	3.891s

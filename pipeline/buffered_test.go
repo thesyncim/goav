@@ -115,6 +115,118 @@ func (s *bufferedBlockingSink) Close() error {
 	return nil
 }
 
+type borrowedPacketFanoutSource struct {
+	name    string
+	payload []byte
+	mutated chan struct{}
+	message Message
+}
+
+func (s *borrowedPacketFanoutSource) Name() string {
+	return s.name
+}
+
+func (s *borrowedPacketFanoutSource) Start(ctx context.Context, emitter Emitter) error {
+	s.message.Kind = MessagePacket
+	s.message.Packet = &av.Packet{
+		Payload: av.Buffer{
+			Bytes:     s.payload,
+			Ownership: av.BufferBorrowed,
+		},
+	}
+	if err := emitter.Emit(ctx, &s.message); err != nil {
+		return err
+	}
+	s.payload[0] = 9
+	close(s.mutated)
+	return nil
+}
+
+func (s *borrowedPacketFanoutSource) Close() error {
+	return nil
+}
+
+type packetPointerSink struct {
+	name   string
+	wait   <-chan struct{}
+	mu     sync.Mutex
+	ptr    *byte
+	values []byte
+}
+
+func (s *packetPointerSink) Name() string {
+	return s.name
+}
+
+func (s *packetPointerSink) Handle(ctx context.Context, msg *Message) error {
+	select {
+	case <-s.wait:
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	if msg == nil || msg.Packet == nil || len(msg.Packet.Payload.Bytes) == 0 {
+		return nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.ptr = &msg.Packet.Payload.Bytes[0]
+	s.values = append(s.values, msg.Packet.Payload.Bytes[0])
+	return nil
+}
+
+func (s *packetPointerSink) Close() error {
+	return nil
+}
+
+type bufferedMutatingPacketSink struct {
+	name    string
+	mutated chan struct{}
+}
+
+func (s *bufferedMutatingPacketSink) Name() string {
+	return s.name
+}
+
+func (s *bufferedMutatingPacketSink) Handle(_ context.Context, msg *Message) error {
+	if msg != nil && msg.Packet != nil {
+		for i := range msg.Packet.Payload.Bytes {
+			msg.Packet.Payload.Bytes[i] = 0xEE
+		}
+	}
+	close(s.mutated)
+	return nil
+}
+
+func (s *bufferedMutatingPacketSink) Close() error {
+	return nil
+}
+
+type bufferedObservingPacketSink struct {
+	name  string
+	wait  <-chan struct{}
+	bytes []byte
+}
+
+func (s *bufferedObservingPacketSink) Name() string {
+	return s.name
+}
+
+func (s *bufferedObservingPacketSink) Handle(ctx context.Context, msg *Message) error {
+	select {
+	case <-s.wait:
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	if msg != nil && msg.Packet != nil {
+		s.bytes = append([]byte(nil), msg.Packet.Payload.Bytes...)
+	}
+	return nil
+}
+
+func (s *bufferedObservingPacketSink) Close() error {
+	return nil
+}
+
 func TestNewGraphBuildsBufferedExecutionForBufferPolicy(t *testing.T) {
 	graph, err := NewGraph(GraphConfig{
 		Name:   "buffered",
@@ -311,6 +423,110 @@ func TestGraphBufferedCopiesBorrowedPacketPayload(t *testing.T) {
 	}
 	if !equalBytes(sink.values, []byte{7}) {
 		t.Fatalf("values = %v, want copied payload 7", sink.values)
+	}
+}
+
+func TestGraphBufferedBorrowedPacketFanoutSharesOneGraphCopy(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	payload := []byte{7}
+	mutated := make(chan struct{})
+	source := &borrowedPacketFanoutSource{name: "source", payload: payload, mutated: mutated}
+	left := &packetPointerSink{name: "left", wait: mutated}
+	right := &packetPointerSink{name: "right", wait: mutated}
+
+	graph, err := NewGraph(GraphConfig{
+		Name: "borrowed-fanout-share",
+		Buffer: BufferPolicy{
+			Capacity:        2,
+			Drop:            DropBlock,
+			CopyPacketBytes: 1,
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := graph.AddSource(source, BufferPolicy{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := graph.AddSink(left, BufferPolicy{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := graph.AddSink(right, BufferPolicy{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := graph.Connect(route("source", "left", "right")); err != nil {
+		t.Fatal(err)
+	}
+	if err := graph.Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if payload[0] != 9 {
+		t.Fatalf("source payload = %v, want source mutation after emit", payload)
+	}
+	if !equalBytes(left.values, []byte{7}) || !equalBytes(right.values, []byte{7}) {
+		t.Fatalf("left=%v right=%v, want both subscribers to see graph copy 7", left.values, right.values)
+	}
+	if left.ptr == nil || right.ptr == nil {
+		t.Fatalf("subscriber pointers left=%p right=%p, want both delivered", left.ptr, right.ptr)
+	}
+	if left.ptr != right.ptr {
+		t.Fatalf("borrowed fanout copied per target: left=%p right=%p, want one shared graph copy", left.ptr, right.ptr)
+	}
+	if err := graph.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestGraphBufferedOwnedPacketFanoutMutatingSinkCannotCorruptSibling(t *testing.T) {
+	original := []byte{1, 2, 3, 4}
+	source := &bufferedPacketSource{
+		name: "source",
+		packets: []av.Packet{{
+			Payload: av.Buffer{
+				Bytes:     append([]byte(nil), original...),
+				Ownership: av.BufferOwned,
+			},
+		}},
+		done: make(chan struct{}),
+	}
+	mutator := &bufferedMutatingPacketSink{name: "mutator", mutated: make(chan struct{})}
+	observer := &bufferedObservingPacketSink{name: "observer", wait: mutator.mutated}
+
+	graph, err := NewGraph(GraphConfig{
+		Name: "owned-packet-fanout-isolation",
+		Buffer: BufferPolicy{
+			Capacity:        2,
+			Drop:            DropOldest,
+			CopyPacketBytes: 16,
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := graph.AddSource(source, BufferPolicy{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := graph.AddSink(mutator, BufferPolicy{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := graph.AddSink(observer, BufferPolicy{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := graph.Connect(route("source", "mutator", "observer")); err != nil {
+		t.Fatal(err)
+	}
+	if err := graph.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if !equalBytes(observer.bytes, original) {
+		t.Fatalf("sibling packet bytes = %v, want original %v after mutator wrote 0xEE", observer.bytes, original)
+	}
+	if !equalBytes(source.packets[0].Payload.Bytes, original) {
+		t.Fatalf("source packet backing = %v, want untouched original %v", source.packets[0].Payload.Bytes, original)
+	}
+	if err := graph.Close(); err != nil {
+		t.Fatal(err)
 	}
 }
 

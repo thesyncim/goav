@@ -284,8 +284,9 @@ const (
 	// BufferBorrowed bytes still belong to the producer and are valid only
 	// until the producer's next Read, Decode, Encode, Filter, or Depacketize
 	// call unless the producer documents a longer lifetime. Consumers must not
-	// retain the bytes past that window; buffered execution copies borrowed
-	// payloads before queueing them.
+	// mutate or retain the bytes past that window; buffered execution copies
+	// borrowed payloads before queueing them, and buffered packet fanout may
+	// share one graph-owned copy across read-only subscribers.
 	BufferBorrowed BufferOwnership = "borrowed"
 	// BufferOwned bytes belong to the receiver, which may mutate them and may
 	// return them to Owner when done. Because an owned payload has exactly one

@@ -2,6 +2,7 @@ package pipeline
 
 import (
 	"context"
+	"strconv"
 	"testing"
 )
 
@@ -70,5 +71,63 @@ func TestGraphBufferedSteadyEmitAllocs(t *testing.T) {
 	}
 	if err := graph.Close(); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// TestGraphBufferedBorrowedFanoutEmitAllocs pins the refcounted borrowed-packet
+// fanout path at zero allocations across the SFU-width sweep. The first target
+// copies the producer-borrowed payload into graph-owned backing once; sibling
+// targets bind refcounted views into their own preallocated slots.
+func TestGraphBufferedBorrowedFanoutEmitAllocs(t *testing.T) {
+	ctx := context.Background()
+	for _, n := range fanoutSizes {
+		t.Run("N="+strconv.Itoa(n), func(t *testing.T) {
+			graph, err := NewGraph(GraphConfig{
+				Name: "borrowed-fanout-alloc",
+				Buffer: BufferPolicy{
+					Capacity:        64,
+					Drop:            DropOldest,
+					CopyPacketBytes: fanoutPayload,
+				},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			source := &holdSource{name: "src", ready: make(chan struct{}), release: make(chan struct{})}
+			if _, err := graph.AddSource(source, BufferPolicy{}); err != nil {
+				t.Fatal(err)
+			}
+			names := make([]string, n)
+			for i := 0; i < n; i++ {
+				names[i] = "sink-" + strconv.Itoa(i)
+				if _, err := graph.AddSink(&benchSink{name: names[i]}, BufferPolicy{}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := graph.Connect(Route{From: "src", To: names}); err != nil {
+				t.Fatal(err)
+			}
+
+			runDone := make(chan error, 1)
+			go func() { runDone <- graph.Run(ctx) }()
+			<-source.ready
+
+			msg := benchPacketMessage(fanoutPayload, false)
+			if allocs := testing.AllocsPerRun(50, func() {
+				if err := source.emitter.Emit(ctx, msg); err != nil {
+					t.Fatal(err)
+				}
+			}); allocs != 0 {
+				t.Fatalf("borrowed buffered fanout emit allocs = %v, want 0", allocs)
+			}
+
+			close(source.release)
+			if err := <-runDone; err != nil {
+				t.Fatal(err)
+			}
+			if err := graph.Close(); err != nil {
+				t.Fatal(err)
+			}
+		})
 	}
 }

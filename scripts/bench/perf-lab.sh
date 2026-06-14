@@ -165,7 +165,13 @@ fanout_direct_8="$(metric_value BenchmarkDirectFanout/N=8 ns/op)"
 fanout_direct_64="$(metric_value BenchmarkDirectFanout/N=64 ns/op)"
 fanout_direct_512="$(metric_value BenchmarkDirectFanout/N=512 ns/op)"
 fanout_buffered_shared_1="$(metric_value BenchmarkBufferedFanout/shared/N=1 ns/op)"
+fanout_buffered_shared_8="$(metric_value BenchmarkBufferedFanout/shared/N=8 ns/op)"
+fanout_buffered_shared_64="$(metric_value BenchmarkBufferedFanout/shared/N=64 ns/op)"
 fanout_buffered_shared_512="$(metric_value BenchmarkBufferedFanout/shared/N=512 ns/op)"
+fanout_buffered_copy_1="$(metric_value BenchmarkBufferedFanout/copy/N=1 ns/op)"
+fanout_buffered_copy_8="$(metric_value BenchmarkBufferedFanout/copy/N=8 ns/op)"
+fanout_buffered_copy_64="$(metric_value BenchmarkBufferedFanout/copy/N=64 ns/op)"
+fanout_buffered_copy_512="$(metric_value BenchmarkBufferedFanout/copy/N=512 ns/op)"
 cat > "$fanout_json" <<EOF
 {
   "scenario": "fanout-sweep",
@@ -177,7 +183,13 @@ cat > "$fanout_json" <<EOF
   "direct_n64_ns_per_op": $(json_number "$fanout_direct_64"),
   "direct_n512_ns_per_op": $(json_number "$fanout_direct_512"),
   "buffered_shared_n1_ns_per_op": $(json_number "$fanout_buffered_shared_1"),
-  "buffered_shared_n512_ns_per_op": $(json_number "$fanout_buffered_shared_512")
+  "buffered_shared_n8_ns_per_op": $(json_number "$fanout_buffered_shared_8"),
+  "buffered_shared_n64_ns_per_op": $(json_number "$fanout_buffered_shared_64"),
+  "buffered_shared_n512_ns_per_op": $(json_number "$fanout_buffered_shared_512"),
+  "buffered_copy_n1_ns_per_op": $(json_number "$fanout_buffered_copy_1"),
+  "buffered_copy_n8_ns_per_op": $(json_number "$fanout_buffered_copy_8"),
+  "buffered_copy_n64_ns_per_op": $(json_number "$fanout_buffered_copy_64"),
+  "buffered_copy_n512_ns_per_op": $(json_number "$fanout_buffered_copy_512")
 }
 EOF
 

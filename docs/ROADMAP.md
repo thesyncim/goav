@@ -63,9 +63,10 @@ commit-failure propagation (`task_invariants_test.go`), watcher isolation
 Exists and is tested, but numbers or semantics are expected to move
 (`docs/PERFORMANCE.md` "Experimental" is the performance side of this list):
 
-- **Buffered copy-mode fanout cost**: per-target copy of borrowed payloads
-  (`pipeline` `BenchmarkBufferedFanout/copy`); refcounted zero-copy fanout
-  would remove it.
+- **Buffered mutable frame/owned-payload fanout cost**: borrowed packet fanout
+  now uses one graph-owned refcounted copy (`pipeline`
+  `BenchmarkBufferedFanout/copy`); owned packets, owned frames, and defensive
+  copy modes still copy per target to preserve branch-local mutation isolation.
 - **Attach-under-load cost**: `BenchmarkAttachDetachUnderLoad` measures a
   cold-path control operation dominated by planning; not a data-plane figure.
 - **OnStream rule breadth**: identity matches only (`MatchMedia`/

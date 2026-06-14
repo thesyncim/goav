@@ -17,6 +17,10 @@ What holds today (all `-race` clean, with tests):
   itself without stalling siblings or the source; per-branch drop counters and
   reasons (`DropOldest`, `DropOverflow`, latency shedding) are reported through
   stats and snapshots.
+- Borrowed packet fanout copies the producer-borrowed payload once into
+  graph-owned backing, then binds refcounted read-only views into subscriber
+  slots. Owned packets/frames and `CopyAlways` still copy per branch so a
+  mutating subscriber cannot corrupt siblings.
 - Custom sources see flow control per push: `push.X(...)` returns
   `(PushResult, error)` where deliberate sheds are `Dropped` with a nil error
   and `ErrBackpressure` keeps its flow-control meaning.

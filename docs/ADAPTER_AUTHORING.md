@@ -66,10 +66,12 @@ When writing your adapter, start from the smallest shipped implementation:
   method is fatal to the task; flow control is the graph's job, not the
   adapter's: never sleep, retry, or drop inside an adapter.
 - **Buffer ownership** (`av.BufferOwnership`): mark output payloads precisely.
-  `BufferBorrowed` = valid until your next call (copied before queueing);
-  `BufferOwned` = receiver's to mutate (copied per branch on fanout);
-  `BufferImmutable` = shareable by reference forever, never written again by
-  anyone. This is the only zero-copy fanout class; it is trusted, not checked.
+  `BufferBorrowed` = valid until your next call and not for consumers to
+  mutate (copied before queueing; borrowed packet fanout may share one
+  graph-owned copy across read-only subscribers); `BufferOwned` = receiver's
+  to mutate (copied per branch on fanout); `BufferImmutable` = shareable by
+  reference forever, never written again by anyone. Immutable is the only class
+  shared directly from the producer; it is trusted, not checked.
 - **Close**: called exactly once by the owning stage/source (at task close or
   failed-build cleanup), but implement it idempotently anyway.
 

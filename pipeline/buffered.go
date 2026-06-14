@@ -86,6 +86,9 @@ type bufferedMessage struct {
 	planes        [bufferedMaxFramePlanes]av.Plane
 	packetBacking []byte
 	frameBacking  []byte
+	packetShare   bufferedSharedPacket
+	sharedPacket  *bufferedSharedPacket
+	packetOwner   bool
 	// enqueuedAt stamps when the message entered the queue, set only when the
 	// node's MaxLatency is non-zero, so the worker can shed stale messages.
 	enqueuedAt time.Time
@@ -93,6 +96,17 @@ type bufferedMessage struct {
 	// recorded when the slot is queued and subtracted from queuedBytes on release.
 	// Nonzero only when MaxBytes > 0, so releaseSlot's subtract is a no-op by default.
 	bytes int64
+}
+
+type bufferedSharedPacket struct {
+	refs  atomic.Int64
+	owner *bufferedNode
+	slot  *bufferedMessage
+	bytes []byte
+}
+
+type bufferedFanoutBind struct {
+	packet *bufferedSharedPacket
 }
 
 type bufferedRunner struct {
@@ -707,6 +721,12 @@ func (g *bufferedRunner) emitDelivery(ctx context.Context, from int, msg *Messag
 	// it cannot abort siblings or the source; a simple one-target chain keeps the
 	// strict behavior (e.g. DropNever propagates ErrBackpressure to tear down).
 	fanout := countTargets(topo, fromNode, msg) > 1
+	var fanoutBind bufferedFanoutBind
+	var fanoutBindPtr *bufferedFanoutBind
+	if fanout {
+		fanoutBindPtr = &fanoutBind
+		defer fanoutBind.release()
+	}
 
 	for i := range fromNode.routes {
 		route := &fromNode.routes[i]
@@ -719,7 +739,7 @@ func (g *bufferedRunner) emitDelivery(ctx context.Context, from int, msg *Messag
 				continue
 			}
 			target := topo.nodes[to].node
-			delivered, err := g.enqueue(ctx, target, msg)
+			delivered, err := g.enqueue(ctx, target, msg, fanoutBindPtr)
 			if err != nil {
 				// Independent fanout backpressure: a full target on a real fanout
 				// drops for itself and keeps delivering to its siblings, so one slow
@@ -768,7 +788,7 @@ func countTargets(topo *bufferedTopo, fromNode *bufferedTopoNode, msg *Message) 
 // (false, nil) is a deliberate shed (paused branch, torn-down queue, byte
 // budget, dropping policy) — counted where applicable, silent to the producer
 // on the plain Emit path, surfaced through Delivery on the EmitDelivery path.
-func (g *bufferedRunner) enqueue(ctx context.Context, node *bufferedNode, msg *Message) (bool, error) {
+func (g *bufferedRunner) enqueue(ctx context.Context, node *bufferedNode, msg *Message, fanout *bufferedFanoutBind) (bool, error) {
 	if node.paused.Load() {
 		// Branch paused: skip this node without touching the source or siblings.
 		return false, nil
@@ -794,12 +814,12 @@ func (g *bufferedRunner) enqueue(ctx context.Context, node *bufferedNode, msg *M
 	action := node.drop.decide(len(node.queue), msg)
 	switch action {
 	case bufferAdmit:
-		if err := g.enqueueBound(ctx, node, msg); err != nil {
+		if err := g.enqueueBound(ctx, node, msg, fanout); err != nil {
 			return false, err
 		}
 		return true, nil
 	case bufferBlock:
-		if err := g.enqueueBlocking(ctx, node, msg); err != nil {
+		if err := g.enqueueBlocking(ctx, node, msg, fanout); err != nil {
 			return false, err
 		}
 		return true, nil
@@ -814,7 +834,7 @@ func (g *bufferedRunner) enqueue(ctx context.Context, node *bufferedNode, msg *M
 			observeDrop(node.counters, node.policy.Drop, &g.cold)
 		default:
 		}
-		if err := g.enqueueBound(ctx, node, msg); err != nil {
+		if err := g.enqueueBound(ctx, node, msg, fanout); err != nil {
 			return false, err
 		}
 		return true, nil
@@ -828,14 +848,14 @@ func (g *bufferedRunner) enqueue(ctx context.Context, node *bufferedNode, msg *M
 // erroring. It holds node.queueMutex but no g.mu (FC-1), and the lock-free worker
 // drains the queue, so the wait always makes progress; ctx cancellation is the
 // only escape.
-func (g *bufferedRunner) enqueueBlocking(ctx context.Context, node *bufferedNode, msg *Message) error {
+func (g *bufferedRunner) enqueueBlocking(ctx context.Context, node *bufferedNode, msg *Message, fanout *bufferedFanoutBind) error {
 	var slot *bufferedMessage
 	select {
 	case slot = <-node.free:
 	case <-ctx.Done():
 		return ctx.Err()
 	}
-	if err := slot.bind(msg, node.policy); err != nil {
+	if err := slot.bindFanout(msg, node.policy, node, fanout); err != nil {
 		node.releaseSlot(slot)
 		return err
 	}
@@ -851,12 +871,12 @@ func (g *bufferedRunner) enqueueBlocking(ctx context.Context, node *bufferedNode
 	}
 }
 
-func (g *bufferedRunner) enqueueBound(ctx context.Context, node *bufferedNode, msg *Message) error {
+func (g *bufferedRunner) enqueueBound(ctx context.Context, node *bufferedNode, msg *Message, fanout *bufferedFanoutBind) error {
 	slot, err := node.acquireSlot()
 	if err != nil {
 		return err
 	}
-	if err := slot.bind(msg, node.policy); err != nil {
+	if err := slot.bindFanout(msg, node.policy, node, fanout); err != nil {
 		node.releaseSlot(slot)
 		return err
 	}
@@ -987,6 +1007,18 @@ func (n *bufferedNode) releaseSlot(slot *bufferedMessage) {
 	}
 	if slot.bytes != 0 {
 		n.queuedBytes.Add(-slot.bytes)
+		slot.bytes = 0
+	}
+	shared := slot.sharedPacket
+	if shared != nil {
+		if slot.packetOwner {
+			releaseSharedPacketRef(shared)
+			return
+		}
+		slot.Reset()
+		n.free <- slot
+		releaseSharedPacketRef(shared)
+		return
 	}
 	slot.Reset()
 	n.free <- slot
@@ -1003,6 +1035,10 @@ func (m *bufferedMessage) init(policy BufferPolicy) {
 }
 
 func (m *bufferedMessage) bind(src *Message, policy BufferPolicy) error {
+	return m.bindFanout(src, policy, nil, nil)
+}
+
+func (m *bufferedMessage) bindFanout(src *Message, policy BufferPolicy, owner *bufferedNode, fanout *bufferedFanoutBind) error {
 	m.Reset()
 	if policy.MaxLatency > 0 {
 		m.enqueuedAt = time.Now()
@@ -1024,6 +1060,10 @@ func (m *bufferedMessage) bind(src *Message, policy BufferPolicy) error {
 			}
 			if len(src.Packet.Payload.Bytes) > cap(packetBacking) {
 				return ErrMessageTooLarge
+			}
+			if m.bindSharedBorrowedPacket(src.Packet.Payload, policy, owner, fanout) {
+				m.message.Packet = &m.packet
+				return nil
 			}
 			m.packet.Payload.Bytes = packetBacking[:len(src.Packet.Payload.Bytes)]
 			copy(m.packet.Payload.Bytes, src.Packet.Payload.Bytes)
@@ -1081,6 +1121,32 @@ func (m *bufferedMessage) bind(src *Message, policy BufferPolicy) error {
 	return nil
 }
 
+func (m *bufferedMessage) bindSharedBorrowedPacket(buffer av.Buffer, policy BufferPolicy, owner *bufferedNode, fanout *bufferedFanoutBind) bool {
+	if !canShareBorrowedPacket(buffer, policy, owner, fanout) {
+		return false
+	}
+	if fanout.packet == nil {
+		m.packet.Payload.Bytes = m.packetBacking[:len(buffer.Bytes)]
+		copy(m.packet.Payload.Bytes, buffer.Bytes)
+		m.packet.Payload.Ownership = av.BufferBorrowed
+		m.packet.Payload.Owner = nil
+		m.packetShare.refs.Store(2) // one queued slot ref plus the producer-loop hold.
+		m.packetShare.owner = owner
+		m.packetShare.slot = m
+		m.packetShare.bytes = m.packet.Payload.Bytes
+		m.sharedPacket = &m.packetShare
+		m.packetOwner = true
+		fanout.packet = &m.packetShare
+		return true
+	}
+	fanout.packet.refs.Add(1)
+	m.packet.Payload.Bytes = fanout.packet.bytes
+	m.packet.Payload.Ownership = av.BufferBorrowed
+	m.packet.Payload.Owner = nil
+	m.sharedPacket = fanout.packet
+	return true
+}
+
 func (m *bufferedMessage) Reset() {
 	m.message.Reset()
 	frameBacking := m.frameBacking
@@ -1094,8 +1160,52 @@ func (m *bufferedMessage) Reset() {
 	}
 	m.packet.Payload.Bytes = m.packetBacking[:0]
 	m.frameBacking = frameBacking[:0]
+	m.packetShare.reset()
+	m.sharedPacket = nil
+	m.packetOwner = false
 	m.enqueuedAt = time.Time{}
 	m.bytes = 0
+}
+
+func (s *bufferedSharedPacket) reset() {
+	s.refs.Store(0)
+	s.owner = nil
+	s.slot = nil
+	s.bytes = nil
+}
+
+func (f *bufferedFanoutBind) release() {
+	if f == nil || f.packet == nil {
+		return
+	}
+	releaseSharedPacketRef(f.packet)
+	f.packet = nil
+}
+
+func releaseSharedPacketRef(shared *bufferedSharedPacket) {
+	if shared == nil {
+		return
+	}
+	if shared.refs.Add(-1) != 0 {
+		return
+	}
+	owner := shared.owner
+	slot := shared.slot
+	if owner == nil || slot == nil {
+		return
+	}
+	slot.Reset()
+	owner.free <- slot
+}
+
+func canShareBorrowedPacket(buffer av.Buffer, policy BufferPolicy, owner *bufferedNode, fanout *bufferedFanoutBind) bool {
+	return fanout != nil &&
+		owner != nil &&
+		!policy.CopyAlways &&
+		buffer.Ownership == av.BufferBorrowed &&
+		len(buffer.Bytes) > 0 &&
+		policy.CopyPacketBytes > 0 &&
+		len(buffer.Bytes) <= policy.CopyPacketBytes
 }
 
 // bufferSafe reports whether a payload may be queued by reference without a
