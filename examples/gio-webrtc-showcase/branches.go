@@ -93,7 +93,7 @@ func sampleDuration(prevPTS time.Duration, havePrev bool, packet *av.Packet, fal
 func defaultBranches() []branchSpec {
 	return []branchSpec{
 		{Kind: "video", Codec: "vp8", Width: 640, Height: 360, Bitrate: 700_000},
-		{Kind: "video", Codec: "vp9", Width: 320, Height: 180, Bitrate: 320_000},
+		{Kind: "video", Codec: "vp8", Width: 320, Height: 180, Bitrate: 320_000},
 		{Kind: "audio", Codec: "opus", Bitrate: 96_000},
 		{Kind: "audio", Codec: "opus", Bitrate: 32_000},
 	}

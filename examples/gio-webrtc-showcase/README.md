@@ -38,7 +38,8 @@ drivers on some targets.
 What it demonstrates:
 
 - Gio desktop UI over a live media runtime.
-- WebRTC VP8/VP9/AV1 video ingest and VP8/VP9 output branches.
+- WebRTC VP8 video ingest and VP8 output branches (VP8-only so the goav data
+  plane is isolated from VP9 encoder behavior; the runtime still supports VP9).
 - Pure-Go Opus decode/encode through `github.com/thesyncim/gopus`.
 - Audio resample, mono/stereo branch fanout, level meters, waveform, packet
   counters, packet-loss/PLC counters, and live Opus bitrate retargeting.

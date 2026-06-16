@@ -53,10 +53,9 @@ els.add.addEventListener("click", () => addBranch().catch(showError));
 els.newKind.addEventListener("change", syncNewCodecOptions);
 
 function initCodecControls() {
-  const capabilities = RTCRtpSender.getCapabilities?.("video")?.codecs || [];
-  const names = [...new Set(capabilities.map(c => codecName(c.mimeType)).filter(c => ["vp8", "vp9", "av1"].includes(c)))];
-  const upload = names.length ? names : ["vp8"];
-  els.uploadCodec.innerHTML = upload.map(c => `<option value="${c}">${c}</option>`).join("");
+  // VP8-only: the showcase ingests and emits VP8 so the goav data plane can be
+  // isolated from VP9 encoder behavior.
+  els.uploadCodec.innerHTML = `<option value="vp8">vp8</option>`;
   syncNewCodecOptions();
   renderEmptyState();
 }
@@ -68,7 +67,7 @@ function syncNewCodecOptions() {
     els.newHeight.disabled = true;
     els.newBitrate.value = "64000";
   } else {
-    els.newCodec.innerHTML = `<option value="vp8">vp8</option><option value="vp9">vp9</option>`;
+    els.newCodec.innerHTML = `<option value="vp8">vp8</option>`;
     els.newWidth.disabled = false;
     els.newHeight.disabled = false;
     if (Number(els.newBitrate.value) < 100000) els.newBitrate.value = "1200000";
