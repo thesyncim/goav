@@ -257,8 +257,8 @@ audio { width: 100%; }
 
 .runtime-row {
   display: grid;
-  grid-template-columns: 92px 120px repeat(4, minmax(68px, 1fr)) auto;
-  gap: 8px;
+  grid-template-columns: 78px minmax(92px, 1.3fr) repeat(4, minmax(50px, 1fr));
+  gap: 8px 8px;
   align-items: end;
   padding: 10px;
   border: 1px solid var(--line);
@@ -266,10 +266,23 @@ audio { width: 100%; }
   background: #14191d;
 }
 
+.runtime-row label input {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+/* Actions sit on their own full-width row so they are never clipped by the
+   editable input columns, regardless of panel width. */
 .row-actions {
+  grid-column: 1 / -1;
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
+}
+
+.row-actions button {
+  flex: 0 0 auto;
 }
 
 .debug-row {
