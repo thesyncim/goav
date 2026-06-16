@@ -167,6 +167,23 @@ func (p *parser) u32() uint32 {
 	return v
 }
 
+func (p *parser) i32() int32 { return int32(p.u32()) }
+
+func (p *parser) u64() uint64 {
+	if !p.need(8) {
+		return 0
+	}
+	v := binary.BigEndian.Uint64(p.data[p.pos:])
+	p.pos += 8
+	return v
+}
+
+func (p *parser) skip(n int) {
+	if p.need(n) {
+		p.pos += n
+	}
+}
+
 // take returns the next n bytes as a sub-slice into the payload (no copy).
 func (p *parser) take(n int) []byte {
 	if !p.need(n) {
