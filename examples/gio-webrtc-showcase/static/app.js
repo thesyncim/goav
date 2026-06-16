@@ -24,6 +24,7 @@ const els = {
   newCodec: document.querySelector("#newCodec"),
   newWidth: document.querySelector("#newWidth"),
   newHeight: document.querySelector("#newHeight"),
+  newFps: document.querySelector("#newFps"),
   newBitrate: document.querySelector("#newBitrate"),
   local: document.querySelector("#local"),
   remotes: document.querySelector("#remotes"),
@@ -65,11 +66,13 @@ function syncNewCodecOptions() {
     els.newCodec.innerHTML = `<option value="opus">opus</option>`;
     els.newWidth.disabled = true;
     els.newHeight.disabled = true;
+    els.newFps.disabled = true;
     els.newBitrate.value = "64000";
   } else {
     els.newCodec.innerHTML = `<option value="vp8">vp8</option>`;
     els.newWidth.disabled = false;
     els.newHeight.disabled = false;
+    els.newFps.disabled = false;
     if (Number(els.newBitrate.value) < 100000) els.newBitrate.value = "1200000";
   }
 }
@@ -257,6 +260,7 @@ async function updateBranch(id) {
     codec: row.dataset.codec,
     width: Number(row.querySelector("[data-field=width]")?.value || 0),
     height: Number(row.querySelector("[data-field=height]")?.value || 0),
+    fps: Number(row.querySelector("[data-field=fps]")?.value || 0),
     bitrate: Number(row.querySelector("[data-field=bitrate]").value)
   };
   const response = await fetch(`/api/sessions/${state.sessionID}/branches/${id}`, {
@@ -282,6 +286,19 @@ async function deleteBranch(id) {
   await refreshState();
 }
 
+async function branchAction(id, action) {
+  const response = await fetch(`/api/sessions/${state.sessionID}/branches/${id}/${action}`, { method: "POST" });
+  if (!response.ok) {
+    let message = `${action} failed`;
+    try { message = (await response.json()).error || message; } catch (_) {}
+    throw new Error(message);
+  }
+  await refreshState();
+}
+
+const pauseBranch = (id) => branchAction(id, "pause");
+const resumeBranch = (id) => branchAction(id, "resume");
+
 async function refreshState() {
   if (!state.sessionID) return;
   const response = await fetch(`/api/sessions/${state.sessionID}/state`);
@@ -297,6 +314,7 @@ function readNewSpec() {
     codec: els.newCodec.value,
     width: kind === "video" ? Number(els.newWidth.value) : 0,
     height: kind === "video" ? Number(els.newHeight.value) : 0,
+    fps: kind === "video" ? Number(els.newFps.value) : 0,
     bitrate: Number(els.newBitrate.value)
   };
 }
@@ -430,33 +448,125 @@ async function autoRenegotiate(payload) {
   await refreshState();
 }
 
+// renderRuntimeList updates the branch matrix incrementally: each branch keeps
+// one stable row keyed by id, so the per-second state refresh only rewrites the
+// read-only status text and never re-creates the editable inputs. That lets the
+// width/height/fps/bitrate fields keep focus and typed values between refreshes,
+// and removed branches drop their row immediately.
 function renderRuntimeList(branches) {
   els.branchCount.textContent = `${branches.length} branches`;
-  if (!branches.length) {
-    els.runtimeList.innerHTML = `<div class="empty">waiting</div>`;
-    return;
+  const rows = state.branchRows || (state.branchRows = new Map());
+
+  if (els.runtimeList.querySelector(".empty")) {
+    els.runtimeList.innerHTML = "";
+    rows.clear();
   }
-  els.runtimeList.innerHTML = "";
+
+  const present = new Set();
   for (const r of branches) {
-    const row = document.createElement("div");
-    row.className = "runtime-row";
-    row.dataset.row = r.id;
-    row.dataset.kind = r.kind;
-    row.dataset.codec = r.codec;
-    const isVideo = r.kind === "video";
-    row.innerHTML = `
-      <div><span class="badge">${r.codec}</span><div class="metric">${escapeHTML(r.id)}</div></div>
-      <div class="metric"><strong>${r.bound ? "attached" : "waiting"}</strong><br>${r.packets} packets<br>${formatBytes(r.bytes)}</div>
-      <label>Width<input data-field="width" type="number" min="64" step="2" value="${r.width || ""}" ${isVideo ? "" : "disabled"}></label>
-      <label>Height<input data-field="height" type="number" min="64" step="2" value="${r.height || ""}" ${isVideo ? "" : "disabled"}></label>
-      <label>Bitrate<input data-field="bitrate" type="number" min="16000" step="10000" value="${r.bitrate}"></label>
-      <button data-action="apply">Apply</button>
-      <button class="danger" data-action="remove">Remove</button>
-    `;
-    row.querySelector("[data-action=apply]").onclick = () => updateBranch(r.id).catch(showError);
-    row.querySelector("[data-action=remove]").onclick = () => deleteBranch(r.id).catch(showError);
-    els.runtimeList.append(row);
+    present.add(r.id);
+    let entry = rows.get(r.id);
+    if (!entry) {
+      entry = createBranchRow(r);
+      rows.set(r.id, entry);
+      els.runtimeList.append(entry.row);
+    }
+    updateBranchStatus(r, entry);
   }
+  for (const [id, entry] of rows) {
+    if (!present.has(id)) {
+      entry.row.remove();
+      rows.delete(id);
+    }
+  }
+  if (!branches.length) {
+    rows.clear();
+    els.runtimeList.innerHTML = `<div class="empty">waiting</div>`;
+  }
+}
+
+function createBranchRow(r) {
+  const isVideo = r.kind === "video";
+  const row = document.createElement("div");
+  row.className = "runtime-row";
+  row.dataset.row = r.id;
+  row.dataset.kind = r.kind;
+  row.dataset.codec = r.codec;
+
+  const head = document.createElement("div");
+  head.innerHTML = `<span class="badge">${escapeHTML(r.codec)}</span><div class="metric">${escapeHTML(r.id)}</div>`;
+
+  const status = document.createElement("div");
+  status.className = "metric";
+
+  const actions = document.createElement("div");
+  actions.className = "row-actions";
+  actions.append(
+    actionButton("Apply", "", () => updateBranch(r.id).catch(showError)),
+    actionButton("Pause", "", () => pauseBranch(r.id).catch(showError)),
+    actionButton("Resume", "", () => resumeBranch(r.id).catch(showError)),
+    actionButton("Remove", "danger", () => deleteBranch(r.id).catch(showError))
+  );
+
+  row.append(
+    head,
+    status,
+    numberField("Width", "width", r.width, isVideo),
+    numberField("Height", "height", r.height, isVideo),
+    numberField("FPS", "fps", r.fps, isVideo),
+    numberField("Bitrate", "bitrate", r.bitrate, true),
+    actions
+  );
+  return { row, status };
+}
+
+function numberField(labelText, field, value, enabled) {
+  const label = document.createElement("label");
+  label.textContent = labelText;
+  const input = document.createElement("input");
+  input.type = "number";
+  input.dataset.field = field;
+  input.value = value || "";
+  input.disabled = !enabled;
+  if (field === "bitrate") {
+    input.min = "16000";
+    input.step = "10000";
+  } else if (field === "fps") {
+    input.min = "1";
+    input.max = "60";
+    input.step = "1";
+  } else {
+    input.min = "64";
+    input.step = "2";
+  }
+  label.append(input);
+  return label;
+}
+
+function actionButton(text, cls, onClick) {
+  const button = document.createElement("button");
+  button.textContent = text;
+  if (cls) button.className = cls;
+  button.onclick = onClick;
+  return button;
+}
+
+function updateBranchStatus(r, entry) {
+  const stateText = r.bound ? (r.paused ? "paused" : "attached") : "waiting";
+  const badge = stateText === "attached" ? "live" : stateText === "paused" ? "warn" : "";
+  const applied = r.kind === "video"
+    ? `${r.width || "?"}×${r.height || "?"} @ ${r.fps || "?"} fps · ${formatBitrate(r.bitrate)}`
+    : formatBitrate(r.bitrate);
+  entry.status.innerHTML =
+    `<span class="badge ${badge}">${escapeHTML(stateText)}</span><br>` +
+    `applied ${escapeHTML(applied)}<br>` +
+    `${r.packets} packets · ${formatBytes(r.bytes)}`;
+}
+
+function formatBitrate(bps) {
+  if (!bps) return "—";
+  if (bps >= 1_000_000) return `${(bps / 1_000_000).toFixed(1)} Mbps`;
+  return `${Math.round(bps / 1000)} kbps`;
 }
 
 function renderAudio(audio) {

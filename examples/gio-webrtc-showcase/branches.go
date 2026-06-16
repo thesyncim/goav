@@ -43,6 +43,7 @@ type branchSpec struct {
 	Codec   string `json:"codec"`
 	Width   int    `json:"width,omitempty"`
 	Height  int    `json:"height,omitempty"`
+	FPS     int    `json:"fps,omitempty"`
 	Bitrate int    `json:"bitrate"`
 }
 
@@ -151,6 +152,7 @@ func (s *session) updateBranch(ctx context.Context, spec branchSpec) (*branch, e
 	}
 	r.Spec.Width = spec.Width
 	r.Spec.Height = spec.Height
+	r.Spec.FPS = spec.FPS
 	r.Spec.Bitrate = spec.Bitrate
 	s.recordLocked("info", "branch", "branch parameters updated", spec.Kind, spec.ID, branchMeta(r.Spec))
 	if err := s.attachBranchLocked(ctx, r); err != nil {
@@ -217,6 +219,7 @@ func (s *session) rebranch(ctx context.Context, id string, spec branchSpec) (*br
 	if r.Attachment == nil {
 		r.Spec.Width = spec.Width
 		r.Spec.Height = spec.Height
+		r.Spec.FPS = spec.FPS
 		r.Spec.Bitrate = spec.Bitrate
 		if err := s.attachBranchLocked(ctx, r); err != nil {
 			return nil, err
@@ -226,6 +229,7 @@ func (s *session) rebranch(ctx context.Context, id string, spec branchSpec) (*br
 	oldSpec := r.Spec
 	r.Spec.Width = spec.Width
 	r.Spec.Height = spec.Height
+	r.Spec.FPS = spec.FPS
 	r.Spec.Bitrate = spec.Bitrate
 	replacement, err := branchRuntimeSpec(r)
 	if err != nil {
@@ -344,9 +348,9 @@ func branchRuntimeSpec(r *branch) (goav.BranchSpec, error) {
 			Resize(r.Spec.Width, r.Spec.Height)
 		switch r.Spec.Codec {
 		case "vp8":
-			return branch.Encode(codec.VP8(codec.Bitrate(r.Spec.Bitrate))).To(goav.Sink(r.Sink)), nil
+			return branch.Encode(codec.VP8(codec.Bitrate(r.Spec.Bitrate), codec.FPS(r.Spec.FPS))).To(goav.Sink(r.Sink)), nil
 		case "vp9":
-			return branch.Encode(codec.VP9(codec.Bitrate(r.Spec.Bitrate))).To(goav.Sink(r.Sink)), nil
+			return branch.Encode(codec.VP9(codec.Bitrate(r.Spec.Bitrate), codec.FPS(r.Spec.FPS))).To(goav.Sink(r.Sink)), nil
 		default:
 			return goav.BranchSpec{}, fmt.Errorf("unsupported video encoder %q", r.Spec.Codec)
 		}
@@ -451,6 +455,16 @@ func normalizeBranch(spec *branchSpec) error {
 		if spec.Height <= 0 {
 			spec.Height = 360
 		}
+		// VP8/VP9 require even dimensions; round down so an odd value typed in the
+		// UI cannot fail the branch's encoder reattach.
+		spec.Width -= spec.Width % 2
+		spec.Height -= spec.Height % 2
+		if spec.FPS <= 0 {
+			spec.FPS = 30
+		}
+		if spec.FPS > 60 {
+			spec.FPS = 60
+		}
 	case "audio":
 		if spec.Codec != "opus" {
 			return fmt.Errorf("audio output supports opus")
@@ -517,6 +531,7 @@ func branchMeta(spec branchSpec) map[string]string {
 	meta := eventMeta("codec", spec.Codec, "bitrate", fmt.Sprintf("%d", spec.Bitrate))
 	if spec.Kind == "video" {
 		meta["size"] = fmt.Sprintf("%dx%d", spec.Width, spec.Height)
+		meta["fps"] = fmt.Sprintf("%d", spec.FPS)
 	}
 	return meta
 }

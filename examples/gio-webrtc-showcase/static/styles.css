@@ -257,13 +257,19 @@ audio { width: 100%; }
 
 .runtime-row {
   display: grid;
-  grid-template-columns: 92px 95px repeat(3, minmax(76px, 1fr)) 76px 76px;
+  grid-template-columns: 92px 120px repeat(4, minmax(68px, 1fr)) auto;
   gap: 8px;
   align-items: end;
   padding: 10px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #14191d;
+}
+
+.row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 
 .debug-row {
