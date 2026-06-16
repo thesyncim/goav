@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"image"
+	"runtime"
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
@@ -177,8 +178,10 @@ func (e *VP9Encoder) resetEncoder() error {
 }
 
 // vp9EncoderOptions builds the libvpx VP9 options. A realtime config selects the
-// low-latency CBR/realtime preset from the govpx RTC reference; otherwise the
-// encoder keeps plain CBR. Bitrate, fps, and keyframe cadence come from CodecSettings.
+// low-latency CBR/realtime preset aligned with the govpx webrtc-vp9 reference
+// sample: tile-column multithreading sized to the frame, cpu-used 9, and a tight
+// quantizer floor. Otherwise the encoder keeps plain CBR. Bitrate, fps, and
+// keyframe cadence come from CodecSettings.
 func vp9EncoderOptions(config codec.EncodeConfig, width, height int) govpxlib.VP9EncoderOptions {
 	options := govpxlib.VP9EncoderOptions{
 		Width:              width,
@@ -191,10 +194,10 @@ func vp9EncoderOptions(config codec.EncodeConfig, width, height int) govpxlib.VP
 	if !config.Realtime {
 		return options
 	}
-	options.Threads = 1
-	options.CpuUsed = 8
+	options.Threads = pickVP9Threads(width, height)
+	options.CpuUsed = 9
 	options.Deadline = govpxlib.DeadlineRealtime
-	options.MinQuantizer = 2
+	options.MinQuantizer = 4
 	options.MaxQuantizer = 56
 	options.MaxKeyframeInterval = encodeKeyframeInterval(config, 3000)
 	options.BufferSizeMs = 1000
@@ -208,6 +211,42 @@ func vp9EncoderOptions(config codec.EncodeConfig, width, height int) govpxlib.VP
 	options.NoiseSensitivity = 4
 	options.StaticThreshold = 1
 	return options
+}
+
+// pickVP9Threads chooses the tile-column worker count for a realtime layer the
+// way the govpx webrtc-vp9 sample does: bounded by the CPU count and by the
+// legal VP9 tile columns for the width, scaling up only when the frame is large
+// enough to benefit.
+func pickVP9Threads(width, height int) int {
+	cpus := runtime.NumCPU()
+	maxTileCols := maxVP9TileColumns(width)
+	if cpus < 2 || maxTileCols < 2 {
+		return 1
+	}
+	if cpus >= 4 && maxTileCols >= 4 && width*height >= 640*360 {
+		return 4
+	}
+	return 2
+}
+
+// maxVP9TileColumns returns the largest legal VP9 tile-column count for a frame
+// width, mirroring libvpx's superblock-derived bound (capped at 4).
+func maxVP9TileColumns(width int) int {
+	miCols := (width + 7) >> 3
+	sb64Cols := (miCols + 7) >> 3
+	maxLog2 := 1
+	for (sb64Cols >> uint(maxLog2)) >= 4 {
+		maxLog2++
+	}
+	maxLog2--
+	if maxLog2 <= 0 {
+		return 1
+	}
+	cols := 1 << uint(maxLog2)
+	if cols > 4 {
+		return 4
+	}
+	return cols
 }
 
 func (e *VP9Encoder) closeEncoder() error {
