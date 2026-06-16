@@ -76,7 +76,20 @@ func TestFormatDemuxerBuffersNonSeekableReader(t *testing.T) {
 }
 
 func TestDemuxRealFile(t *testing.T) {
-	file, err := os.Open("testdata/h264_aac.mp4")
+	assertDemuxesAVFile(t, "testdata/h264_aac.mp4")
+}
+
+func TestDemuxFragmentedFile(t *testing.T) {
+	assertDemuxesAVFile(t, "testdata/h264_aac_fragmented.mp4")
+}
+
+// assertDemuxesAVFile opens an MP4 fixture and checks it demuxes into an H264
+// video track (64x48, with avcC) and an AAC audio track (44100, with the esds
+// AudioSpecificConfig), reads every sample to EOF, and finds at least one video
+// keyframe. It covers both the progressive and fragmented sample paths.
+func assertDemuxesAVFile(t *testing.T, path string) {
+	t.Helper()
+	file, err := os.Open(path)
 	if err != nil {
 		t.Fatalf("open fixture: %v", err)
 	}

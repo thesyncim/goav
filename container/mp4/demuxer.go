@@ -54,7 +54,25 @@ func NewDemuxer(r io.ReaderAt, size int64) (*Demuxer, error) {
 	if err != nil {
 		return nil, err
 	}
-	d := &Demuxer{r: r, size: size, tracks: tracks}
+	byID := make(map[uint32]*track, len(tracks))
+	for _, tr := range tracks {
+		byID[tr.id] = tr
+	}
+	if err := parseFragments(r, size, byID); err != nil {
+		return nil, err
+	}
+	// Keep only tracks that produced samples — from the progressive sample tables
+	// or from fragment runs.
+	kept := tracks[:0]
+	for _, tr := range tracks {
+		if len(tr.samples) > 0 {
+			kept = append(kept, tr)
+		}
+	}
+	if len(kept) == 0 {
+		return nil, ErrNoTracks
+	}
+	d := &Demuxer{r: r, size: size, tracks: kept}
 	d.buildOrder()
 	if len(d.order) == 0 {
 		return nil, ErrNoTracks

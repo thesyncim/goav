@@ -21,6 +21,9 @@ func FuzzDemuxerMalformedInputs(f *testing.F) {
 	if real, err := os.ReadFile("testdata/h264_aac.mp4"); err == nil {
 		f.Add(real)
 	}
+	if frag, err := os.ReadFile("testdata/h264_aac_fragmented.mp4"); err == nil {
+		f.Add(frag)
+	}
 
 	f.Fuzz(func(t *testing.T, data []byte) {
 		demuxer, err := NewDemuxer(bytes.NewReader(data), int64(len(data)))

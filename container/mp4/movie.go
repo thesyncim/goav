@@ -15,6 +15,11 @@ type track struct {
 	timescale uint32
 	params    av.CodecParameters
 	samples   []sample
+	// fragments holds the movie-extends (trex) defaults applied to trun samples
+	// that omit a per-sample duration, size, or flags.
+	defaultSampleDuration uint32
+	defaultSampleSize     uint32
+	defaultSampleFlags    uint32
 }
 
 // parseMovie locates the moov box and parses every supported track into a flat
@@ -37,16 +42,27 @@ func parseMovie(r io.ReaderAt, size int64) ([]*track, error) {
 	}
 
 	var tracks []*track
+	trex := map[uint32]trexDefaults{}
 	if err := walkBoxes(r, moov.PayloadOffset, moov.end(), func(h boxHeader) error {
-		if h.Type != "trak" {
-			return nil
-		}
-		tr, err := parseTrak(r, h)
-		if err != nil {
-			return err
-		}
-		if tr != nil {
-			tracks = append(tracks, tr)
+		switch h.Type {
+		case "trak":
+			tr, err := parseTrak(r, h)
+			if err != nil {
+				return err
+			}
+			if tr != nil {
+				tracks = append(tracks, tr)
+			}
+		case "mvex":
+			return walkBoxes(r, h.PayloadOffset, h.end(), func(m boxHeader) error {
+				if m.Type == "trex" {
+					if pl, err := readPayload(r, m); err == nil {
+						id, d := parseTrex(pl)
+						trex[id] = d
+					}
+				}
+				return nil
+			})
 		}
 		return nil
 	}); err != nil {
@@ -55,7 +71,28 @@ func parseMovie(r io.ReaderAt, size int64) ([]*track, error) {
 	if len(tracks) == 0 {
 		return nil, ErrNoTracks
 	}
+	for _, tr := range tracks {
+		if d, ok := trex[tr.id]; ok {
+			tr.defaultSampleDuration = d.sampleDuration
+			tr.defaultSampleSize = d.sampleSize
+			tr.defaultSampleFlags = d.sampleFlags
+		}
+	}
 	return tracks, nil
+}
+
+// parseTrex reads a movie-extends track defaults box: the per-track default
+// sample duration, size, and flags applied to fragment runs that omit them.
+func parseTrex(payload []byte) (uint32, trexDefaults) {
+	p := newParser(payload)
+	p.fullBox()
+	trackID := p.u32()
+	p.u32() // default_sample_description_index
+	return trackID, trexDefaults{
+		sampleDuration: p.u32(),
+		sampleSize:     p.u32(),
+		sampleFlags:    p.u32(),
+	}
 }
 
 func parseTrak(r io.ReaderAt, trak boxHeader) (*track, error) {
@@ -116,9 +153,8 @@ func parseTrak(r io.ReaderAt, trak boxHeader) (*track, error) {
 	if err != nil {
 		return nil, err
 	}
-	if len(samples) == 0 {
-		return nil, nil
-	}
+	// Keep tracks with empty sample tables: a fragmented movie carries its
+	// samples in moof/trun, which parseFragments appends after the moov walk.
 	tr.samples = samples
 	return tr, nil
 }

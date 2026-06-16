@@ -72,11 +72,11 @@ func parseVisualSampleEntry(payload []byte) (width, height int, extradata []byte
 // AudioSpecificConfig from esds for AAC, or the dOps payload for Opus.
 func parseAudioSampleEntry(payload []byte) (channels, sampleRate int, extradata []byte) {
 	p := newParser(payload)
-	p.skip(6)             // reserved
-	p.skip(2)             // data_reference_index
+	p.skip(6)               // reserved
+	p.skip(2)               // data_reference_index
 	version := int(p.u16()) // QuickTime sound version (0 for ISO BMFF)
-	p.skip(2)             // revision level
-	p.skip(4)             // vendor
+	p.skip(2)               // revision level
+	p.skip(4)               // vendor
 	channels = int(p.u16())
 	p.skip(2) // sample size
 	p.skip(2) // compression id / pre_defined
