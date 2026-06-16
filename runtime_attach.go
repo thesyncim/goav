@@ -269,6 +269,20 @@ func (t *task) configureAttachBranchBuffer(branch *attachPlanBranch, spec Branch
 	}
 	if policy.IsDirect() {
 		policy = realtimeRecipeBufferPolicy(runtimeBuffer)
+	} else {
+		// An explicit branch buffer (flow.DropOldest/Latest/...) still needs the
+		// copy bounds the runtime already sized for this graph's shapes. A direct
+		// branch inherits them through realtimeRecipeBufferPolicy above; an explicit
+		// one must inherit them too, or a buffered edge would refuse mutable
+		// payloads at runtime (ErrBufferedMessageUnsafe) unless the caller redundantly
+		// passed flow.BufferCopyBounds. Only fill bounds the caller left unset — a
+		// caller that sized a bound deliberately (even smaller) keeps it.
+		if policy.CopyPacketBytes == 0 {
+			policy.CopyPacketBytes = runtimeBuffer.CopyPacketBytes
+		}
+		if policy.CopyFrameBytes == 0 {
+			policy.CopyFrameBytes = runtimeBuffer.CopyFrameBytes
+		}
 	}
 	if policy.IsDirect() {
 		return nil
