@@ -11,6 +11,7 @@ import (
 	resampleadapter "github.com/thesyncim/goav/adapters/resample"
 	resizeadapter "github.com/thesyncim/goav/adapters/resize"
 	matroskaadapter "github.com/thesyncim/goav/container/matroska"
+	mp4adapter "github.com/thesyncim/goav/container/mp4"
 	webmadapter "github.com/thesyncim/goav/container/webm"
 )
 
@@ -32,6 +33,7 @@ func WithStdFormats() Option {
 		annexbadapter.Register(runtime.formats)
 		matroskaadapter.Register(runtime.formats)
 		webmadapter.Register(runtime.formats)
+		mp4adapter.Register(runtime.formats)
 	}
 }
 

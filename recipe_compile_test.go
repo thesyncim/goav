@@ -1406,10 +1406,10 @@ func TestInputFormatAdapterPassesRejectMissingDemuxers(t *testing.T) {
 				operation:             branchCompositionOperation,
 				options:               recipeCompileOptions{preflightInputAdapters: true},
 				runtime:               Default(),
-				branchInputAttachment: FileInput("input.mp4", strings.NewReader("")),
+				branchInputAttachment: FileInput("input.flv", strings.NewReader("")),
 			},
 			code: "input_demuxer_missing",
-			want: []string{`format "mp4"`, "no demuxer is registered", "WithFormatAdapter"},
+			want: []string{`format "flv"`, "no demuxer is registered", "WithFormatAdapter"},
 		},
 		{
 			name: "unknown input format",
