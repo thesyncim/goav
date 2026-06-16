@@ -13,8 +13,15 @@ import (
 	"github.com/thesyncim/goav"
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
+	"github.com/thesyncim/goav/flow"
 	"github.com/thesyncim/goav/pipeline"
 )
+
+// videoBranchBufferDepth bounds how many decoded frames a video output branch
+// may queue before the encoder before drop-oldest sheds the stalest one — a
+// few frames of jitter smoothing without letting a slow encoder build latency
+// or backpressure the live decode tap.
+const videoBranchBufferDepth = 12
 
 var branchSeq atomic.Uint64
 
@@ -46,6 +53,41 @@ type trackSampleSink struct {
 	analyzer *audioAnalyzer
 	packets  atomic.Uint64
 	bytes    atomic.Uint64
+
+	// prevPTS tracks the last sample's presentation time so the WebRTC sample
+	// duration reflects the real gap between delivered packets. A dropping output
+	// branch sheds frames under load, so consecutive encoded packets can span more
+	// than one nominal frame; pacing RTP by the PTS delta keeps the timestamp clock
+	// aligned with wall time instead of drifting behind. Handle runs on the node's
+	// single worker, so these need no lock.
+	prevPTS     time.Duration
+	havePrevPTS bool
+}
+
+// maxSampleGap caps the per-sample RTP advance so a PTS discontinuity (clock
+// reset, seek) cannot translate into an absurd timestamp jump; a genuine slow
+// stream stays well under it.
+const maxSampleGap = 2 * time.Second
+
+// sampleDuration paces one WebRTC sample by the real time between presentation
+// timestamps when both are known, falling back to the packet's declared duration
+// and then a fixed cadence. This is what keeps RTP timing correct when a
+// dropping branch sheds frames between delivered packets.
+func sampleDuration(prevPTS time.Duration, havePrev bool, packet *av.Packet, fallback time.Duration) (time.Duration, time.Duration, bool) {
+	cur, haveCur := packet.PTS.ToDuration()
+	if haveCur && havePrev {
+		if gap := cur - prevPTS; gap > 0 && gap <= maxSampleGap {
+			return gap, cur, true
+		}
+	}
+	duration := fallback
+	if d, ok := packet.Duration.ToDuration(); ok && d > 0 {
+		duration = d
+	}
+	if haveCur {
+		return duration, cur, true
+	}
+	return duration, prevPTS, havePrev
 }
 
 func defaultBranches() []branchSpec {
@@ -290,8 +332,15 @@ func branchRuntimeSpec(r *branch) (goav.BranchSpec, error) {
 	}
 	switch r.Spec.Kind {
 	case "video":
+		// A video output branch must not pace the live decode tap: software
+		// VP8/VP9 encoders can fall behind the source, and the default blocking
+		// branch buffer would backpressure the tap fan-out, dragging the decoded
+		// FPS (and every sibling branch) down to the slowest encoder. A realtime
+		// drop-oldest buffer lets a slow encoder shed frames for itself while the
+		// decode path and faster branches keep full rate.
 		branch := goav.Branch(r.Spec.ID).
 			From(goav.FrameTap(videoTapName)).
+			Buffer(flow.DropOldest(videoBranchBufferDepth)).
 			Resize(r.Spec.Width, r.Spec.Height)
 		switch r.Spec.Codec {
 		case "vp8":
@@ -352,10 +401,8 @@ func (s *trackSampleSink) Handle(_ context.Context, msg *pipeline.Message) error
 	if msg.Kind != "packet" || msg.Packet == nil {
 		return nil
 	}
-	duration := s.fallback
-	if d, ok := msg.Packet.Duration.ToDuration(); ok && d > 0 {
-		duration = d
-	}
+	duration, prevPTS, havePrev := sampleDuration(s.prevPTS, s.havePrevPTS, msg.Packet, s.fallback)
+	s.prevPTS, s.havePrevPTS = prevPTS, havePrev
 	if err := s.track.WriteSample(media.Sample{
 		Data:     msg.Packet.Payload.Bytes,
 		Duration: duration,
