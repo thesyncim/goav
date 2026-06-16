@@ -37,6 +37,7 @@ type demuxItem struct {
 // offset, the order the data is laid out in mdat).
 type Demuxer struct {
 	r      io.ReaderAt
+	size   int64
 	tracks []*track
 	order  []demuxItem
 	pos    int
@@ -53,7 +54,7 @@ func NewDemuxer(r io.ReaderAt, size int64) (*Demuxer, error) {
 	if err != nil {
 		return nil, err
 	}
-	d := &Demuxer{r: r, tracks: tracks}
+	d := &Demuxer{r: r, size: size, tracks: tracks}
 	d.buildOrder()
 	if len(d.order) == 0 {
 		return nil, ErrNoTracks
@@ -95,6 +96,11 @@ func (d *Demuxer) ReadInto(dst []byte, out *Sample) error {
 	item := d.order[d.pos]
 	tr := d.tracks[item.track]
 	s := tr.samples[item.sample]
+	// A sample cannot extend past the file; reject before allocating so a
+	// crafted sample size cannot exhaust memory.
+	if s.size < 0 || s.offset < 0 || s.offset+int64(s.size) > d.size {
+		return ErrInvalidData
+	}
 	if cap(dst) < s.size {
 		dst = make([]byte, s.size)
 	} else {
