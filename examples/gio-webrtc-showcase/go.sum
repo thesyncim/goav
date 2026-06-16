@@ -73,8 +73,8 @@ github.com/thesyncim/goh264 v0.0.0-20260614153501-4f6a0ad24a0a h1:89nWx7j8AUFRBf
 github.com/thesyncim/goh264 v0.0.0-20260614153501-4f6a0ad24a0a/go.mod h1:/4BzjdI5P2Yf5ZG1ZuDRucRQAiKmXhAw/bj58zIO+Ec=
 github.com/thesyncim/gopus v0.1.1 h1:SM58S7VZGnEZ3ZR0pX5AoC33//LBxJhKkvm15MbBmik=
 github.com/thesyncim/gopus v0.1.1/go.mod h1:orRqwrGs5gqYRRnhqwI0Y3liqQTeDkreUpra+Kv9bQc=
-github.com/thesyncim/govpx v0.0.0-20260609183451-3d804d8c8f89 h1:3kBokr+E5aO3uC7/XtIORXwcsMgzrmV/aJfxTCm9R0c=
-github.com/thesyncim/govpx v0.0.0-20260609183451-3d804d8c8f89/go.mod h1:NtVLM5omlmx4IstMc/Rx+YsHQ4sAVq3VQ25wnMl43L4=
+github.com/thesyncim/govpx v0.0.0-20260616134231-87844700e104 h1:5vqm+OyArCE09gmFg1OfyJsrLD+MvSO49Svch6Csjr4=
+github.com/thesyncim/govpx v0.0.0-20260616134231-87844700e104/go.mod h1:NtVLM5omlmx4IstMc/Rx+YsHQ4sAVq3VQ25wnMl43L4=
 github.com/wlynxg/anet v0.0.5 h1:J3VJGi1gvo0JwZ/P1/Yc/8p63SoW98B5dHkYDmpgvvU=
 github.com/wlynxg/anet v0.0.5/go.mod h1:eay5PRQr7fIVAMbTbchTnO9gG65Hg/uYGdc7mguHxoA=
 golang.org/x/crypto v0.48.0 h1:/VRzVqiRSggnhY7gNRxPauEQ5Drw9haKdM0jqfcCFts=
