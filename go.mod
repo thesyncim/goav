@@ -7,7 +7,7 @@ require (
 	github.com/thesyncim/goav1 v0.0.0-20260614193402-5e8dce2b9457
 	github.com/thesyncim/goh264 v0.0.0-20260614153501-4f6a0ad24a0a
 	github.com/thesyncim/gopus v0.1.1
-	github.com/thesyncim/govpx v0.0.0-20260616134231-87844700e104
+	github.com/thesyncim/govpx v0.0.0-20260616144227-d6e6e93483bb
 )
 
 require (
