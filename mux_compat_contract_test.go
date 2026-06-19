@@ -130,17 +130,42 @@ func TestMuxOutputStreamsUseWorkOperationCodec(t *testing.T) {
 			Operations: []string{operation.ID},
 		}},
 		map[string]workOperation{operation.ID: operation},
-		intent{Streams: []streamIntent{{
-			Name:       "web",
-			Select:     plan.StreamSelect{Type: av.MediaVideo},
-			Operations: []operationSpec{operationSpecForEncode(codec.VP8())},
-		}}},
+		nil,
 		nil,
 		format.ProbeResult{},
 		false,
 	)
 	if len(streams) != 1 || streams[0].Codec != av.CodecVP9 || streams[0].Media != av.MediaVideo {
 		t.Fatalf("streams = %+v, want work operation VP9 video facts", streams)
+	}
+}
+
+func TestMuxOutputStreamsUseWorkInputCodecFacts(t *testing.T) {
+	streams := muxOutputStreams(
+		workDestination{Name: "archive.webm", Branches: []string{"audio"}},
+		map[string]workBranch{"audio": {
+			Name:  "audio",
+			Input: "mic",
+			Stream: plan.StreamSelect{
+				Type: av.MediaAudio,
+			},
+		}},
+		nil,
+		[]workInput{{
+			Name:      "mic",
+			Realtime:  true,
+			Codec:     av.CodecOpus,
+			CodecSpec: codec.Opus(codec.SampleRate(48_000)),
+		}},
+		nil,
+		format.ProbeResult{},
+		false,
+	)
+	if len(streams) != 1 ||
+		streams[0].Codec != av.CodecOpus ||
+		streams[0].Media != av.MediaAudio ||
+		streams[0].TimeBase != (av.TimeBase{Num: 1, Den: 48_000}) {
+		t.Fatalf("streams = %+v, want Opus audio facts from work input", streams)
 	}
 }
 

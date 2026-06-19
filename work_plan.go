@@ -30,10 +30,11 @@ type workPlan struct {
 }
 
 type workInput struct {
-	Name     string
-	Protocol av.ProtocolID
-	Realtime bool
-	Codec    av.CodecID
+	Name      string
+	Protocol  av.ProtocolID
+	Realtime  bool
+	Codec     av.CodecID
+	CodecSpec codec.CodecSpec
 }
 
 type workStream struct {
@@ -188,10 +189,11 @@ func workInputsFromIntent(inputs []inputIntent) []workInput {
 	for i := range inputs {
 		input := inputs[i]
 		out = append(out, workInput{
-			Name:     firstNonEmpty(input.Name, input.URI, fmt.Sprintf("input-%d", i)),
-			Protocol: input.Protocol,
-			Realtime: input.Realtime,
-			Codec:    input.Codec.ID,
+			Name:      firstNonEmpty(input.Name, input.URI, fmt.Sprintf("input-%d", i)),
+			Protocol:  input.Protocol,
+			Realtime:  input.Realtime,
+			Codec:     input.Codec.ID,
+			CodecSpec: cloneCodecSpec(input.Codec),
 		})
 	}
 	return out
@@ -477,7 +479,7 @@ func workDestinationNameByID(destinations []workDestination, id string) string {
 
 func cloneWorkPlan(wp workPlan) workPlan {
 	clone := wp
-	clone.Inputs = append([]workInput(nil), wp.Inputs...)
+	clone.Inputs = cloneWorkInputs(wp.Inputs)
 	clone.Streams = cloneWorkStreams(wp.Streams)
 	clone.Operations = cloneWorkOperations(wp.Operations)
 	clone.Taps = append([]workTap(nil), wp.Taps...)
@@ -487,6 +489,19 @@ func cloneWorkPlan(wp workPlan) workPlan {
 	clone.Decisions = clonePlanDecisions(wp.Decisions)
 	clone.Diagnostics = clonePlanDiagnostics(wp.Diagnostics)
 	return clone
+}
+
+func cloneWorkInputs(inputs []workInput) []workInput {
+	if len(inputs) == 0 {
+		return nil
+	}
+	out := make([]workInput, 0, len(inputs))
+	for i := range inputs {
+		input := inputs[i]
+		input.CodecSpec = cloneCodecSpec(input.CodecSpec)
+		out = append(out, input)
+	}
+	return out
 }
 
 func cloneWorkStreams(streams []workStream) []workStream {

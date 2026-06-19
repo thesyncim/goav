@@ -317,13 +317,13 @@ func explainRequirements(resolved recipeResolved, work workPlan, report plan.Rep
 	for i := range work.Branches {
 		branch := work.Branches[i]
 		var branchWarnings []plan.Diagnostic
-		requirements, branchWarnings = appendWorkBranchOperationRequirements(requirements, resolved, branch, operations)
+		requirements, branchWarnings = appendWorkBranchOperationRequirements(requirements, resolved, branch, operations, work.Inputs)
 		warnings = append(warnings, branchWarnings...)
 	}
 	return requirements, warnings
 }
 
-func appendWorkBranchOperationRequirements(requirements []plan.AdapterRequirement, resolved recipeResolved, branch workBranch, operations map[string]workOperation) ([]plan.AdapterRequirement, []plan.Diagnostic) {
+func appendWorkBranchOperationRequirements(requirements []plan.AdapterRequirement, resolved recipeResolved, branch workBranch, operations map[string]workOperation, inputs []workInput) ([]plan.AdapterRequirement, []plan.Diagnostic) {
 	var warnings []plan.Diagnostic
 	requiredBy := firstNonEmpty(branch.Name, "branch")
 	for _, id := range branch.Operations {
@@ -333,7 +333,7 @@ func appendWorkBranchOperationRequirements(requirements []plan.AdapterRequiremen
 		}
 		switch operation.Kind {
 		case plan.OpDecode:
-			codecID, ok := workOperationDecodeCodec(resolved, branch, operation)
+			codecID, ok := workOperationDecodeCodec(resolved, branch, operation, inputs)
 			if !ok || codecID == "" {
 				warnings = append(warnings, plan.Diagnostic{
 					Code:    string(errcode.DecodeCodecDeferred),
@@ -364,11 +364,11 @@ func appendWorkBranchOperationRequirements(requirements []plan.AdapterRequiremen
 	return requirements, warnings
 }
 
-func workOperationDecodeCodec(resolved recipeResolved, branch workBranch, operation workOperation) (av.CodecID, bool) {
+func workOperationDecodeCodec(resolved recipeResolved, branch workBranch, operation workOperation, inputs []workInput) (av.CodecID, bool) {
 	if operation.Codec.ID != "" {
 		return operation.Codec.ID, true
 	}
-	if codecID, _, _, ok := copyMuxStreamFacts(branch, resolved.intent, resolved.inputProbes, resolved.branchInputProbe, resolved.branchInputProbeReady); ok {
+	if codecID, _, _, ok := copyMuxStreamFacts(branch, inputs, resolved.inputProbes, resolved.branchInputProbe, resolved.branchInputProbeReady); ok {
 		return codecID, true
 	}
 	codecID := av.CodecID(operation.Component)

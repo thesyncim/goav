@@ -35,7 +35,7 @@ func TestExplainDecodeCodecDeferredWarning(t *testing.T) {
 	_, warnings := appendWorkBranchOperationRequirements(nil, recipeResolved{}, workBranch{
 		Name:       "audio",
 		Operations: []string{operation.ID},
-	}, map[string]workOperation{operation.ID: operation})
+	}, map[string]workOperation{operation.ID: operation}, nil)
 	if len(warnings) != 1 || warnings[0].Code != string(errcode.DecodeCodecDeferred) ||
 		warnings[0].Node != "audio" ||
 		!explainSuggestionsContain(warnings[0].Suggestions, "declare the provider codec intent") {
@@ -53,7 +53,7 @@ func TestExplainRequirementsUseWorkOperationCodec(t *testing.T) {
 	requirements, warnings := appendWorkBranchOperationRequirements(nil, recipeResolved{}, workBranch{
 		Name:       "web",
 		Operations: []string{operation.ID},
-	}, map[string]workOperation{operation.ID: operation})
+	}, map[string]workOperation{operation.ID: operation}, nil)
 	if len(warnings) != 0 || len(requirements) != 1 ||
 		requirements[0].Kind != "encoder" ||
 		requirements[0].Codec != av.CodecVP9 {
