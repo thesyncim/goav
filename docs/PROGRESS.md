@@ -119,8 +119,8 @@ Compatibility pins:
 ## Remaining Work
 
 - Continue folding residual `streamIntent` validation/planning readers into the
-  operation/work-plan model. Explain adapter requirements and mux compatibility
-  already read codec facts from `WorkPlan` operations.
+  operation/work-plan model. Explain stream rows and adapter requirements, plus
+  mux compatibility, already read codec facts from `WorkPlan` operations.
 - Expand `SwitchAt` boundaries beyond frame/keyframe/media-time if future
   live-control workflows need additional switch points.
 - Finish full time-shape work: pipeline-wide clock service, A/V sink sync, and

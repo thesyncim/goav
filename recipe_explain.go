@@ -47,7 +47,7 @@ func newPlanReport(operation string, resolved recipeResolved) (plan.Report, erro
 	}
 	work := resolved.workIR()
 	report.Inputs = explainInputs(resolved)
-	report.Streams = explainStreams(resolved.intent.Streams)
+	report.Streams = explainStreams(work.Streams)
 	report.Taps = explainTaps(work.Taps)
 	report.Branches = explainBranches(work)
 	report.Destinations = explainDestinations(resolved.intent.Destinations, resolved.outputFormats, work.Destinations)
@@ -117,7 +117,7 @@ func (r recipeResolved) inputProbe(index int) (format.ProbeResult, bool) {
 	return probe, true
 }
 
-func explainStreams(streams []streamIntent) []plan.Stream {
+func explainStreams(streams []workStream) []plan.Stream {
 	reports := make([]plan.Stream, 0, len(streams))
 	for i := range streams {
 		stream := streams[i]

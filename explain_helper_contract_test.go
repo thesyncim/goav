@@ -61,6 +61,31 @@ func TestExplainRequirementsUseWorkOperationCodec(t *testing.T) {
 	}
 }
 
+func TestExplainStreamsUseWorkStreamOperations(t *testing.T) {
+	streams := explainStreams([]workStream{{
+		Name:   "preview",
+		Select: plan.StreamSelect{Type: av.MediaVideo},
+		Operations: []operationSpec{
+			operationSpecForDecode(codec.VP8(), string(av.CodecVP8)),
+			operationSpecForEncode(codec.VP9()),
+		},
+		Destinations: []string{"webm"},
+	}})
+	if len(streams) != 1 {
+		t.Fatalf("streams = %d, want 1", len(streams))
+	}
+	stream := streams[0]
+	if !stream.Decode || stream.Encode.ID != av.CodecVP9 {
+		t.Fatalf("stream decode=%v encode=%q, want decode and VP9 encode", stream.Decode, stream.Encode.ID)
+	}
+	if len(stream.Operations) != 2 || stream.Operations[0].Kind != plan.OpDecode || stream.Operations[1].Kind != plan.OpEncode {
+		t.Fatalf("stream operations = %+v, want decode then encode", stream.Operations)
+	}
+	if len(stream.Destinations) != 1 || stream.Destinations[0] != "webm" {
+		t.Fatalf("stream destinations = %+v, want webm", stream.Destinations)
+	}
+}
+
 func explainSuggestionsContain(suggestions []string, fragment string) bool {
 	for _, suggestion := range suggestions {
 		if strings.Contains(suggestion, fragment) {

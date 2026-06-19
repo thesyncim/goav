@@ -94,8 +94,8 @@ Done:
 Still planned:
 
 - Continue folding residual `streamIntent` validation/planning readers into the
-  operation/work-plan model. Explain adapter requirements and mux compatibility
-  already consume codec facts from `WorkPlan` operations.
+  operation/work-plan model. Explain stream rows and adapter requirements, plus
+  mux compatibility, already consume codec facts from `WorkPlan` operations.
 - Expand `SwitchAt` boundaries beyond frame/keyframe/media-time if future
   runtime replacement modes need them.
 - Finish the time-shape work: pipeline-wide clock service, A/V sink sync, and

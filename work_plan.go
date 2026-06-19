@@ -37,8 +37,10 @@ type workInput struct {
 }
 
 type workStream struct {
-	Name   string
-	Select plan.StreamSelect
+	Name         string
+	Select       plan.StreamSelect
+	Operations   []operationSpec
+	Destinations []string
 }
 
 // workOperation is one planned operation. Destinations carries the stable
@@ -203,8 +205,10 @@ func workStreamsFromIntent(streams []streamIntent) []workStream {
 	for i := range streams {
 		stream := streams[i]
 		out = append(out, workStream{
-			Name:   firstNonEmpty(stream.Name, string(stream.Select.Type), fmt.Sprintf("stream-%d", i)),
-			Select: stream.Select,
+			Name:         stream.Name,
+			Select:       stream.Select,
+			Operations:   cloneOperationSpecs(stream.Operations),
+			Destinations: append([]string(nil), stream.Destinations...),
 		})
 	}
 	return out
@@ -474,7 +478,7 @@ func workDestinationNameByID(destinations []workDestination, id string) string {
 func cloneWorkPlan(wp workPlan) workPlan {
 	clone := wp
 	clone.Inputs = append([]workInput(nil), wp.Inputs...)
-	clone.Streams = append([]workStream(nil), wp.Streams...)
+	clone.Streams = cloneWorkStreams(wp.Streams)
 	clone.Operations = cloneWorkOperations(wp.Operations)
 	clone.Taps = append([]workTap(nil), wp.Taps...)
 	clone.Branches = cloneWorkBranches(wp.Branches)
@@ -483,6 +487,20 @@ func cloneWorkPlan(wp workPlan) workPlan {
 	clone.Decisions = clonePlanDecisions(wp.Decisions)
 	clone.Diagnostics = clonePlanDiagnostics(wp.Diagnostics)
 	return clone
+}
+
+func cloneWorkStreams(streams []workStream) []workStream {
+	if len(streams) == 0 {
+		return nil
+	}
+	out := make([]workStream, 0, len(streams))
+	for i := range streams {
+		stream := streams[i]
+		stream.Operations = cloneOperationSpecs(stream.Operations)
+		stream.Destinations = append([]string(nil), stream.Destinations...)
+		out = append(out, stream)
+	}
+	return out
 }
 
 func cloneWorkOperations(operations []workOperation) []workOperation {

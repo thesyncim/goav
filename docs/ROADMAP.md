@@ -97,10 +97,10 @@ Exists and is tested, but numbers or semantics are expected to move
   publish commit/abort/error events. Standalone `Task.Detach` has explicit
   drain/abort outcomes, branch attach/detach events are watchable, and
   `OnRemove(...)` selects per-rule dynamic-stream removal disposition.
-- **`streamIntent` normalization fold**: Explain adapter requirements and mux
-  compatibility now consume codec facts from `WorkPlan` operations. Remaining
-  validation/planning readers are tracked in `docs/NORTH_STAR.md` "Execution
-  order".
+- **`streamIntent` normalization fold**: Explain stream rows and adapter
+  requirements, plus mux compatibility, now consume codec facts from `WorkPlan`
+  operations. Remaining validation/planning readers are tracked in
+  `docs/NORTH_STAR.md` "Execution order".
 
 ## Planned
 
