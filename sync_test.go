@@ -52,6 +52,58 @@ func TestSyncDropLateDropsBehindSharedTimeline(t *testing.T) {
 	}
 }
 
+func TestSyncDropLateNormalizesMultipleTimebases(t *testing.T) {
+	policy := Sync("room", SyncTolerance(5*time.Millisecond), SyncDropLate())
+	audio := newSyncGate(policy)
+	video := newSyncGate(policy)
+	emit := &syncCollectEmitter{}
+
+	if err := audio.Handle(context.Background(), syncPacketMessageWithTimestamp("a", 4800, av.RTPTimeBase(48000)), emit); err != nil {
+		t.Fatal(err)
+	}
+	if err := video.Handle(context.Background(), syncPacketMessageWithTimestamp("v", 4500, av.RTPTimeBase(90000)), emit); err != nil {
+		t.Fatal(err)
+	}
+	if err := video.Handle(context.Background(), syncPacketMessageWithTimestamp("v", 9000, av.RTPTimeBase(90000)), emit); err != nil {
+		t.Fatal(err)
+	}
+	if got := emit.Count(); got != 2 {
+		t.Fatalf("emitted messages = %d, want audio plus caught-up video", got)
+	}
+	if got := video.DroppedMessages(); got != 1 {
+		t.Fatalf("video dropped = %d, want one 50ms packet dropped against 100ms audio", got)
+	}
+}
+
+func TestSyncDiscontinuityResetsTimeline(t *testing.T) {
+	policy := Sync("room", SyncTolerance(10*time.Millisecond), SyncDropLate())
+	audio := newSyncGate(policy)
+	video := newSyncGate(policy)
+	emit := &syncCollectEmitter{}
+
+	if err := audio.Handle(context.Background(), syncPacketMessage("a", 100*time.Millisecond), emit); err != nil {
+		t.Fatal(err)
+	}
+	if err := video.Handle(context.Background(), syncPacketMessage("v", 50*time.Millisecond), emit); err != nil {
+		t.Fatal(err)
+	}
+	if got := video.DroppedMessages(); got != 1 {
+		t.Fatalf("video dropped before reset = %d, want 1", got)
+	}
+	if err := audio.Handle(context.Background(), syncEventMessage(av.Event{Type: av.EventDiscontinuity, StreamID: "a"}), emit); err != nil {
+		t.Fatal(err)
+	}
+	if err := video.Handle(context.Background(), syncPacketMessage("v", 50*time.Millisecond), emit); err != nil {
+		t.Fatal(err)
+	}
+	if got := video.DroppedMessages(); got != 1 {
+		t.Fatalf("video dropped after reset = %d, want still 1", got)
+	}
+	if got := emit.Count(); got != 3 {
+		t.Fatalf("emitted messages = %d, want first audio, reset event, and post-reset video", got)
+	}
+}
+
 func TestSyncHoldLateWaitsForSlowStream(t *testing.T) {
 	policy := Sync("room", SyncTolerance(10*time.Millisecond))
 	blocked := make(chan struct{}, 1)
@@ -158,11 +210,19 @@ func TestSyncOperationCloneUsesSeparateGateWithSharedScheduler(t *testing.T) {
 
 func syncPacketMessage(stream av.StreamID, pts time.Duration) *pipeline.Message {
 	base := av.TimeBase{Num: 1, Den: int64(time.Second)}
+	return syncPacketMessageWithTimestamp(stream, int64(pts), base)
+}
+
+func syncPacketMessageWithTimestamp(stream av.StreamID, value int64, base av.TimeBase) *pipeline.Message {
 	return &pipeline.Message{
 		Kind: pipeline.MessagePacket,
 		Packet: &av.Packet{
 			StreamID: stream,
-			PTS:      av.Timestamp{Value: int64(pts), Base: base},
+			PTS:      av.Timestamp{Value: value, Base: base},
 		},
 	}
+}
+
+func syncEventMessage(event av.Event) *pipeline.Message {
+	return &pipeline.Message{Kind: pipeline.MessageEvent, Event: &event}
 }
