@@ -150,11 +150,21 @@ func (g *syncGate) OutputShapes(input shape.Spec) shape.Set {
 type syncScheduler struct {
 	mu     sync.Mutex
 	latest map[av.StreamID]time.Duration
+	wait   func(context.Context) error
 	closed bool
 }
 
 func newSyncScheduler() *syncScheduler {
-	return &syncScheduler{latest: make(map[av.StreamID]time.Duration)}
+	return &syncScheduler{latest: make(map[av.StreamID]time.Duration), wait: syncSchedulerWait}
+}
+
+func syncSchedulerWait(ctx context.Context) error {
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-time.After(time.Millisecond):
+		return nil
+	}
 }
 
 func (s *syncScheduler) admit(ctx context.Context, stream av.StreamID, pts time.Duration, tolerance time.Duration, mode syncMode) (bool, error) {
@@ -187,13 +197,15 @@ func (s *syncScheduler) admit(ctx context.Context, stream av.StreamID, pts time.
 		if err := ctx.Err(); err != nil {
 			return false, err
 		}
+		wait := s.wait
+		if wait == nil {
+			wait = syncSchedulerWait
+		}
 		s.mu.Unlock()
-		select {
-		case <-ctx.Done():
-			s.mu.Lock()
-			return false, ctx.Err()
-		case <-time.After(time.Millisecond):
-			s.mu.Lock()
+		err := wait(ctx)
+		s.mu.Lock()
+		if err != nil {
+			return false, err
 		}
 		if s.closed {
 			return false, pipeline.ErrClosed

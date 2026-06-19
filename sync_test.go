@@ -54,6 +54,20 @@ func TestSyncDropLateDropsBehindSharedTimeline(t *testing.T) {
 
 func TestSyncHoldLateWaitsForSlowStream(t *testing.T) {
 	policy := Sync("room", SyncTolerance(10*time.Millisecond))
+	blocked := make(chan struct{}, 1)
+	release := make(chan struct{})
+	policy.scheduler.wait = func(ctx context.Context) error {
+		select {
+		case blocked <- struct{}{}:
+		default:
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-release:
+			return nil
+		}
+	}
 	audio := newSyncGate(policy)
 	video := newSyncGate(policy)
 	emit := &syncCollectEmitter{}
@@ -66,13 +80,19 @@ func TestSyncHoldLateWaitsForSlowStream(t *testing.T) {
 		done <- audio.Handle(context.Background(), syncPacketMessage("a", 100*time.Millisecond), emit)
 	}()
 	select {
+	case <-blocked:
+	case <-time.After(time.Second):
+		t.Fatal("audio sync did not wait for slow stream")
+	}
+	select {
 	case err := <-done:
 		t.Fatalf("audio sync returned before slow stream caught up: %v", err)
-	case <-time.After(5 * time.Millisecond):
+	default:
 	}
 	if err := video.Handle(context.Background(), syncPacketMessage("v", 95*time.Millisecond), emit); err != nil {
 		t.Fatal(err)
 	}
+	close(release)
 	select {
 	case err := <-done:
 		if err != nil {
