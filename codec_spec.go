@@ -190,6 +190,41 @@ func encodeConfigFromSpec(spec codec.CodecSpec) codec.EncodeConfig {
 	}
 }
 
+func codecSpecFromEncodeConfig(config codec.EncodeConfig) codec.CodecSpec {
+	parameters := config.Parameters
+	if parameters.ID == "" {
+		parameters = config.Stream.Codec
+	}
+	id := firstNonEmptyCodec(parameters.ID, config.Stream.Codec.ID)
+	media := firstNonEmptyMedia(parameters.Type, config.Stream.Codec.Type, config.Stream.Type, codecMedia(id))
+	if parameters.ID == "" {
+		parameters.ID = id
+	}
+	if parameters.Type == "" {
+		parameters.Type = media
+	}
+	return cloneCodecSpec(codec.CodecSpec{
+		ID:         id,
+		Type:       media,
+		Parameters: parameters,
+		Settings:   cloneCodecSettings(config.Settings),
+	})
+}
+
+func codecSpecFromStream(stream av.Stream) codec.CodecSpec {
+	parameters := stream.Codec
+	id := parameters.ID
+	media := firstNonEmptyMedia(parameters.Type, stream.Type, codecMedia(id))
+	if parameters.Type == "" {
+		parameters.Type = media
+	}
+	return cloneCodecSpec(codec.CodecSpec{
+		ID:         id,
+		Type:       media,
+		Parameters: parameters,
+	})
+}
+
 func cloneEncodeConfig(config codec.EncodeConfig) codec.EncodeConfig {
 	config.Stream.Codec.Attributes = cloneMetadata(config.Stream.Codec.Attributes)
 	config.Stream.Codec.ExtraData = cloneBuffer(config.Stream.Codec.ExtraData)

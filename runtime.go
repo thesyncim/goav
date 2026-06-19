@@ -548,7 +548,7 @@ func (t *task) Run(ctx context.Context) error {
 	t.started = true
 	t.lifecycleMu.Unlock()
 	err := t.structuredRunError(t.graph.Run(ctx))
-	t.finishDestinations(err == nil)
+	t.finishDestinations(err)
 	t.lifecycleMu.Lock()
 	t.finished = true
 	t.runErr = err
@@ -757,7 +757,17 @@ func (t *task) Close() error {
 	return first
 }
 
-func (t *task) finishDestinations(ok bool) {
+func (t *task) finishDestinations(runErr error) {
+	ok := runErr == nil
+	failedDestinations := make(map[string]struct{})
+	if !ok {
+		for i := range t.destinations {
+			if t.destinations[i] == nil || !t.destinations[i].Failed() {
+				continue
+			}
+			failedDestinations[t.destinations[i].Name()] = struct{}{}
+		}
+	}
 	for i := range t.destinations {
 		if t.destinations[i] == nil {
 			continue
@@ -768,13 +778,68 @@ func (t *task) finishDestinations(ok bool) {
 			t.destinations[i].Fail()
 		}
 	}
+	for i := range t.rootDestinations {
+		kind := av.EventDestinationCommitted
+		var cause error
+		if !ok {
+			_, destinationFailed := failedDestinations[t.rootDestinations[i].Name]
+			if !destinationFailed && len(t.rootDestinations) == 1 && len(failedDestinations) != 0 {
+				destinationFailed = true
+			}
+			if destinationFailed {
+				kind = av.EventDestinationCommitError
+				cause = runErr
+			} else {
+				kind = av.EventDestinationAborted
+			}
+		}
+		t.publishDestinationLifecycleEvent(kind, t.rootDestinations[i].Name, nil, cause)
+	}
+}
+
+func (t *task) publishDestinationLifecycleEvent(kind av.EventType, destination string, attachment *runtimeAttachment, cause error) {
+	if t == nil || destination == "" {
+		return
+	}
+	reason := "destination finalized"
+	switch kind {
+	case av.EventDestinationCommitted:
+		reason = "destination committed"
+	case av.EventDestinationAborted:
+		reason = "destination aborted"
+	case av.EventDestinationCommitError:
+		reason = "destination finalization failed"
+	}
+	event := av.Event{
+		Type:   kind,
+		Reason: reason,
+		Cause:  cause,
+		Metadata: av.Metadata{
+			av.MetadataDestinationName: destination,
+		},
+	}
+	if attachment != nil {
+		event.Metadata[av.MetadataAttachmentID] = attachment.ID()
+		event.Metadata[av.MetadataAttachmentName] = attachment.Name()
+	}
+	t.watch.publish(event)
 }
 
 type destinationTransaction struct {
 	mu             sync.Mutex
+	name           string
 	requireSuccess bool
 	succeeded      bool
 	failed         bool
+}
+
+func (t *destinationTransaction) Name() string {
+	if t == nil {
+		return ""
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.name
 }
 
 func (t *destinationTransaction) Succeed() {
@@ -802,4 +867,13 @@ func (t *destinationTransaction) ShouldAbort() bool {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	return t.failed || (t.requireSuccess && !t.succeeded)
+}
+
+func (t *destinationTransaction) Failed() bool {
+	if t == nil {
+		return false
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.failed
 }

@@ -7,7 +7,9 @@ import (
 	"io"
 	"reflect"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/pion/rtp"
 	"github.com/thesyncim/goav"
@@ -842,6 +844,95 @@ func TestFromAndRecordRecipeMultipleRTPInputsRuns(t *testing.T) {
 	}
 	if !audioReceiver.closed || !videoReceiver.closed || !muxer.closed {
 		t.Fatalf("closed audio=%v video=%v mux=%v", audioReceiver.closed, videoReceiver.closed, muxer.closed)
+	}
+}
+
+func TestRTPInputsSyncFromTimestampsAndDropLatePreview(t *testing.T) {
+	ctx := context.Background()
+	audio := av.Stream{
+		ID:       "audio",
+		Type:     av.MediaAudio,
+		TimeBase: av.TimeBase{Num: 1, Den: 48000},
+		Codec: av.CodecParameters{
+			ID:         av.CodecOpus,
+			Type:       av.MediaAudio,
+			ClockRate:  48000,
+			SampleRate: 48000,
+			Channels:   codec.Stereo,
+		},
+	}
+	video := av.Stream{
+		ID:       "video",
+		Type:     av.MediaVideo,
+		TimeBase: av.TimeBase{Num: 1, Den: 90000},
+		Codec: av.CodecParameters{
+			ID:        av.CodecVP8,
+			Type:      av.MediaVideo,
+			ClockRate: 90000,
+			Width:     16,
+			Height:    16,
+		},
+	}
+	audioReceiver := &runtimeRTPReceiver{
+		streams: []av.Stream{audio},
+		payload: rtpav.NewStaticPayloadMap(0, []rtpav.PayloadCodec{{
+			PayloadType: 111,
+			Parameters:  audio.Codec,
+			MIMEType:    av.MIMEOpus,
+			ClockRate:   48000,
+			Channels:    codec.Stereo,
+		}}),
+		packets: []*rtp.Packet{{
+			Header:  rtp.Header{PayloadType: 111, Timestamp: 48000},
+			Payload: []byte{1, 2, 3},
+		}},
+		events: make(chan av.Event),
+	}
+	videoReceiver := &runtimeRTPReceiver{
+		streams: []av.Stream{video},
+		payload: rtpav.NewStaticPayloadMap(0, []rtpav.PayloadCodec{{
+			PayloadType: 96,
+			Parameters:  video.Codec,
+			MIMEType:    av.MIMEVP8,
+			ClockRate:   90000,
+		}}),
+		packets: []*rtp.Packet{{
+			Header:  rtp.Header{PayloadType: 96, Marker: true, Timestamp: 90},
+			Payload: []byte{0x10, 0x00, 0x11, 0x22},
+		}},
+		events: make(chan av.Event),
+	}
+
+	var delivered atomic.Int64
+	sink := goav.Sink(goav.SinkFunc("synced-preview", func(_ context.Context, msg goav.Message) error {
+		if msg.Packet != nil {
+			delivered.Add(1)
+		}
+		return nil
+	}))
+	policy := goav.Sync("rtp-room", goav.SyncTolerance(5*time.Millisecond), goav.SyncDropLate())
+	task, err := goav.From(
+		goav.Input(rtpav.Receive(audioReceiver, rtpav.WithName("audio"), rtpav.WithCodec(codec.Opus()), rtpav.WithBufferLimits(rtpav.BufferLimits{MaxPackets: 2}))),
+		goav.Input(rtpav.Receive(videoReceiver, rtpav.WithName("video"), rtpav.WithCodec(codec.VP8()), rtpav.WithBufferLimits(rtpav.BufferLimits{MaxPackets: 2}))),
+	).
+		Audio(goav.InputName("audio")).Sync(policy).Copy().To(sink).
+		Video(goav.InputName("video")).Sync(policy).Copy().To(sink).
+		Build(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := task.Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	stats := task.Stats()
+	if got := delivered.Load(); got != 1 {
+		t.Fatalf("delivered packets = %d stats=%+v, want only the first RTP stream to pass sync", got, stats)
+	}
+	if stats.DropReasons[pipeline.DropSync] != 1 {
+		t.Fatalf("stats = %+v, want one sync drop", stats)
+	}
+	if err := task.Close(); err != nil {
+		t.Fatal(err)
 	}
 }
 

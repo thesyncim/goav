@@ -90,7 +90,7 @@ func (b *builder) openMuxStage(ctx context.Context, output format.Output, index 
 		return nil, err
 	}
 	if writer != nil {
-		transaction := &destinationTransaction{requireSuccess: b.requireRunOK}
+		transaction := &destinationTransaction{requireSuccess: b.requireRunOK, name: muxNodeName(output, index)}
 		b.destinationTxs = append(b.destinationTxs, transaction)
 		muxer = &destinationWriterMuxer{
 			Muxer:       muxer,
@@ -143,8 +143,14 @@ func (m *destinationWriterMuxer) Close() error {
 		} else {
 			transactionErr = transactional.Commit(context.Background())
 		}
+		if transactionErr != nil {
+			m.transaction.Fail()
+		}
 	}
 	writerErr := m.writer.Close()
+	if writerErr != nil {
+		m.transaction.Fail()
+	}
 	if muxErr != nil {
 		return muxErr
 	}

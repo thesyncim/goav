@@ -60,9 +60,9 @@ labels used in test failure messages.
 | Shape | #11 Resize requires video frames. #12 Resample requires audio frames. #13 frames cannot go to byte destinations without Encode. #14 packet Copy to File succeeds. #15 decoded frames can end in Sink. #16 errors include operation, actual/expected shape, and fix. #17 conversions are inserted only under an explicit policy. |
 | Branches | #18 branches after Decode share one decoder. #19 dropping preview branches do not stall archive branches. #20 Blocking backpressures. #21 branch drop counters are visible. #22 mutable branch output cannot corrupt siblings. |
 | Runtime mutation | #23 Attach opens destinations before mutation. #24 attach failure rolls back. #25/#26 drain and abort are pinned for Rebranch and standalone `Task.Detach`. #27 Rebranch starts replacement before old detach. #28 failed Rebranch keeps the old branch. #29 Pause/Resume affects one branch. |
-| Events and control | #30 Watch filters and stream/attach/backpressure events are pinned; `EventBranchAttached` and `EventBranchDetached` report runtime branch lifecycle, while dedicated commit lifecycle events remain planned. #31 Snapshot reports typed task, branch, destination, tap, and drop state. #32 Keyframe reaches adapters or fails clearly. #33 SetBitrate reaches encoders or fails clearly. |
+| Events and control | #30 Watch filters and stream/attach/backpressure events are pinned; `EventBranchAttached`/`EventBranchDetached` report runtime branch lifecycle, and destination commit/abort/error events report finalization. #31 Snapshot reports typed task, branch, destination, tap, and drop state. #32 Keyframe reaches adapters or fails clearly. #33 SetBitrate reaches encoders or fails clearly. |
 | Sources | #34 custom packet source Copy to File. #35 custom frame source Encode to File. #36 SourcePush reports Accepted/Dropped. #37 source EOS commits destinations. |
-| Dynamic streams | #38 late streams attach branches. #39 ambiguous stream selection lists candidates and fixes. #40 removal detaches with drain where exposed; per-rule detach policy remains planned. |
+| Dynamic streams | #38 late streams attach branches. #39 ambiguous stream selection lists candidates and fixes. #40 removal detaches with rule-selected drain, abort, or plain detach through `OnRemove(...)`. |
 | Multi-input and joins | #41 multiple inputs can share one destination. #42 codec/format/timebase mux compatibility is checked. #43 Mix joins audio branches. #44 join shape mismatch is solved or refused before mutation. |
 
 ## Current State
@@ -82,18 +82,24 @@ Done:
   public task capabilities.
 - `Task.Detach` has explicit drain/abort outcomes, and branch attach/detach
   events are watchable without graph handles.
+- Destination commit, abort, and commit-error events are watchable for task and
+  runtime-branch destinations.
+- `OnStream` rules can select their stream-removal behavior with
+  `OnRemove(...)`.
+- `SwitchAt` supports frame, keyframe, and media-time boundaries.
 - Mux compatibility preflight rejects malformed declared timebase facts while
   still deferring unknown facts.
 - Generated-source CLI runs and control sockets expose the same task model.
 
 Still planned:
 
-- Fold the remaining `streamIntent` normalization layer into operation readers.
-- Expand `SwitchAt` boundaries beyond the current frame/keyframe policies.
-- Add dedicated commit lifecycle events.
-- Add per-rule removal detach policy for `OnStream`.
+- Continue folding residual `streamIntent` validation/planning readers into the
+  operation/work-plan model. Explain adapter requirements and mux compatibility
+  already consume codec facts from `WorkPlan` operations.
+- Expand `SwitchAt` boundaries beyond frame/keyframe/media-time if future
+  runtime replacement modes need them.
 - Finish the time-shape work: pipeline-wide clock service, A/V sink sync, and
-  pull scheduling.
+  pull scheduling beyond branch-local `SyncPolicy` gates.
 - Decide the release minimum Go version before v1.
 
 ## Working Rule

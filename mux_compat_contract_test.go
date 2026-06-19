@@ -6,8 +6,10 @@ import (
 	"testing"
 
 	"github.com/thesyncim/goav/av"
+	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/format"
+	"github.com/thesyncim/goav/plan"
 )
 
 func TestDescriptorMuxReasonContracts(t *testing.T) {
@@ -110,6 +112,35 @@ func TestMuxStreamTimeBaseContracts(t *testing.T) {
 	invalid := av.TimeBase{Num: 1}
 	if got := muxStreamTimeBase(av.Stream{TimeBase: invalid}); got != invalid {
 		t.Fatalf("invalid explicit timebase = %+v, want preserved %+v", got, invalid)
+	}
+}
+
+func TestMuxOutputStreamsUseWorkOperationCodec(t *testing.T) {
+	operation := workOperation{
+		ID:     "web/000/encode",
+		Kind:   plan.OpEncode,
+		Codec:  codec.VP9(),
+		Branch: "web",
+	}
+	streams := muxOutputStreams(
+		workDestination{Name: "preview.ivf", Branches: []string{"web"}},
+		map[string]workBranch{"web": {
+			Name:       "web",
+			Stream:     plan.StreamSelect{Type: av.MediaVideo},
+			Operations: []string{operation.ID},
+		}},
+		map[string]workOperation{operation.ID: operation},
+		intent{Streams: []streamIntent{{
+			Name:       "web",
+			Select:     plan.StreamSelect{Type: av.MediaVideo},
+			Operations: []operationSpec{operationSpecForEncode(codec.VP8())},
+		}}},
+		nil,
+		format.ProbeResult{},
+		false,
+	)
+	if len(streams) != 1 || streams[0].Codec != av.CodecVP9 || streams[0].Media != av.MediaVideo {
+		t.Fatalf("streams = %+v, want work operation VP9 video facts", streams)
 	}
 }
 

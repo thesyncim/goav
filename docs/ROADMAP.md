@@ -27,9 +27,9 @@ reusing one handle groups branches into one mux/sink group
 ## v0 Stable
 
 Stable means: pinned against silent change, documented, and test-enforced, but
-not "frozen forever". The governed surface is 322 approved identifiers
-(`api_surface_pin_test.go` + `testdata/api_surface.txt`: 127 root, 147
-`errcode`, 28 `plan`, 13 `lifecycle`, 4 `snapshot`, 3 `graphrender`), every
+not "frozen forever". The governed surface is 335 approved identifiers
+(`api_surface_pin_test.go` + `testdata/api_surface.txt`: 134 root, 147
+`errcode`, 28 `plan`, 13 `lifecycle`, 4 `snapshot`, 9 `graphrender`), every
 exported symbol documented (`doc_pin_test.go`), tiered in
 `docs/API_SURFACE.md`:
 
@@ -70,8 +70,8 @@ Exists and is tested, but numbers or semantics are expected to move
   cold-path control operation dominated by planning; not a data-plane figure.
 - **OnStream rule breadth**: identity matches only (`MatchMedia`/
   `MatchCodec`/`MatchStreamID`/`MatchStream(fn)`); conditions beyond stream
-  identity and a per-rule removal detach policy are roadmap
-  (`docs/NORTH_STAR.md` section 11, scoreboard item 40).
+  identity remain roadmap. Per-rule removal disposition is now explicit through
+  `OnRemove(...)`.
 - **Join nesting depth**: nested joins are proven at the tested depths
   (`join_nested_test.go`, `TestJoinDescribeEqualsBuildNestedMix`); deeper
   nesting compiles through the same recursion but has no dedicated proof or
@@ -83,22 +83,24 @@ Exists and is tested, but numbers or semantics are expected to move
   discoverable while factory lookup returns `codec.ErrUnavailable`
   (`docs/ARCHITECTURE.md` "Codec backends"); decode/receive verticals are
   active.
-- **A/V sink sync, pipeline-wide clock service, pull scheduling**: the
-  theme-C endgame; pull scheduling is the keystone. The time-axis controls
-  (`Seek`/`Rate`/`Segment`) and clock-paced realtime file playback already
-  ship (`task_seek_test.go`, `task_time_control_test.go`); the rest is
-  analysed in `docs/NORTH_STAR.md` ("Time/sync", attack-plan stage 7).
-  Roadmap.
+- **A/V sink sync, pipeline-wide clock service, pull scheduling**: branch-local
+  `SyncPolicy` gates now align or shed packet/frame messages on shared live
+  timelines, but the theme-C endgame is still pull scheduling and sink-level
+  A/V synchronization. The time-axis controls (`Seek`/`Rate`/`Segment`) and
+  clock-paced realtime file playback already ship (`task_seek_test.go`,
+  `task_time_control_test.go`); the rest is analysed in
+  `docs/NORTH_STAR.md` ("Time/sync", attack-plan stage 7). Roadmap.
 - **Internal-package layering**: measured on the cross-file reference graph
   and rejected: no boundary worth a package today (`docs/ARCHITECTURE.md`
   "Package layering"). Revisit only with a data-transfer boundary.
-- **Dedicated commit lifecycle events and per-rule `OnStream` detach
-  policy**: standalone `Task.Detach` has explicit drain/abort outcomes and
-  branch attach/detach events are watchable. Commit-specific lifecycle events
-  and per-rule removal policies remain roadmap (`docs/NORTH_STAR.md`
-  scoreboard items 30, 40).
-- **`streamIntent` normalization fold**: internal debt tracked in
-  `docs/NORTH_STAR.md` "Execution order".
+- **Destination lifecycle events**: task and runtime-branch destinations now
+  publish commit/abort/error events. Standalone `Task.Detach` has explicit
+  drain/abort outcomes, branch attach/detach events are watchable, and
+  `OnRemove(...)` selects per-rule dynamic-stream removal disposition.
+- **`streamIntent` normalization fold**: Explain adapter requirements and mux
+  compatibility now consume codec facts from `WorkPlan` operations. Remaining
+  validation/planning readers are tracked in `docs/NORTH_STAR.md` "Execution
+  order".
 
 ## Planned
 
@@ -121,8 +123,8 @@ Exists and is tested, but numbers or semantics are expected to move
 - **PGO workflow**: profile capture over the canonical suite
   (`scripts/bench/run.sh` is the entry point) feeding default-on
   profile-guided builds. Roadmap.
-- **Additional `SwitchAt` boundaries** beyond `NextFrame`/`NextKeyframe`
-  (`rebranch_policy.go`). Roadmap.
+- **Additional `SwitchAt` boundaries** beyond `NextFrame`/`NextKeyframe`/
+  `AtMediaTime` (`rebranch_policy.go`). Roadmap.
 
 ## Non-goals
 

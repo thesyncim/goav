@@ -53,14 +53,18 @@ Compatibility pins:
   destinations, and reusable flows.
 - Mix, Composite, Select, nested joins, tap-backed join arms, and custom joins.
 - Atomic grouped `Task.Attach`, dependent-branch detach, pause/resume/stop,
-  and gapless `Attachment.Rebranch`.
+  and gapless `Attachment.Rebranch`, including media-time switch boundaries.
 - BranchBuffer policies: `flow.Blocking`, `DropOldest`, `DropNewest`,
   `Latest`, `Unbounded`, MaxLatency, MaxBytes, and branch-local drop counters.
+- Shared `SyncPolicy` gates on stream chains and branches for live-room
+  packet/frame timeline alignment; late sync drops report through branch stats.
 - Task controls: `Keyframe`, `SetBitrate`, `Seek`, `Rate`, `Segment`,
   `SelectActive`, `Deliver`, `.AtTap(name)`, and expert-only `.At(node)`.
 - Dynamic streams through `InputSpec.Stream` runtime anchors for app-owned
-  tracks, plus `OnStream` rules and `av.EventStreamAdded` for automatic
-  discovery.
+  tracks, plus `OnStream` rules, `OnRemove` detach disposition, and
+  `av.EventStreamAdded` for automatic discovery.
+- Destination commit/abort/error lifecycle events are watchable for task and
+  runtime-branch destinations.
 - Deterministic testing through `goavtest` sources, collectors, fake codecs,
   fake containers, and fake clocks.
 - Generated-source CLI pipelines and `goav ctl` sockets for live inspection,
@@ -114,10 +118,11 @@ Compatibility pins:
 
 ## Remaining Work
 
-- Fold the remaining `streamIntent` normalization layer into operation readers.
-- Add dedicated commit lifecycle events.
-- Add per-rule removal detach policy for `OnStream`.
-- Expand `SwitchAt` boundaries beyond frame/keyframe.
-- Finish time-shape work: pipeline-wide clock service, A/V sink sync, and pull
-  scheduling.
+- Continue folding residual `streamIntent` validation/planning readers into the
+  operation/work-plan model. Explain adapter requirements and mux compatibility
+  already read codec facts from `WorkPlan` operations.
+- Expand `SwitchAt` boundaries beyond frame/keyframe/media-time if future
+  live-control workflows need additional switch points.
+- Finish full time-shape work: pipeline-wide clock service, A/V sink sync, and
+  pull scheduling beyond the branch-local `SyncPolicy` gate.
 - Make the v1 release decision, including the minimum supported Go version.

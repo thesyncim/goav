@@ -17,18 +17,19 @@ goav.From(input)                          inputs: FileInput, URIInput, Input(pro
   .Audio() / .Video() / .Stream()         select a stream (InputName/StreamID/StreamIndex/StreamName)
   .Decode() .Copy() .Resize() .Resample() operations are chain methods
   .Do(stage) .Shape() .Auto() .Require() .Prefer()
+  .Sync(goav.Sync("room", ...))            shared packet/frame timeline gates
   .Encode(codec.VP9(codec.Bitrate(...)))  codec specs from the codec package
   .Tap(goav.Tap|FrameTap|PacketTap)       named attach points
   .Branches(goav.Branch("x")...To(dst))   fan out; BranchSpec also drives Task.Attach
   input.Stream(av.Stream{ID: ...})        attach anchor for app-owned dynamic tracks
   .To(File|URI|Writer|Custom|Sink)        destinations; reuse one value = mux/sink group
-  .OnStream(MatchMedia|MatchCodec|...)    dynamic-stream rules
+  .OnStream(MatchMedia|MatchCodec|...)    dynamic-stream rules; OnRemove controls detach outcome
 goav.Mix/Composite/Select(arms) / Join(name, stage, arms)   N arms -> one stream (JoinArm)
 goav.Flow("name")                         reusable operation list (Chain)
 job.Describe() / Explain() -> plan.Report; job.Build(ctx) -> Task; job.Run(ctx)
 Task: Run, Events, Watch(EventFilter), Snapshot -> snapshot.*, Stats,
       Attach/Detach(DrainBranch|AbortBranch)/Rebranch
-      (SwitchAt, Drain/AbortOldBranch, KeepOldOnFailure),
+      (SwitchAt(NextFrame|NextKeyframe|AtMediaTime), Drain/AbortOldBranch, KeepOldOnFailure),
       Control(Keyframe|Seek|Segment|Rate|SetBitrate|SelectActive|Deliver, .AtTap)
 goav.Default(opts...) / goav.New(opts...) -> Runtime; job.UseRuntime(rt)
 errors: *goav.BuildError{Code: errcode.X, ...} matched with errors.As/Is
@@ -221,7 +222,12 @@ against the constructors in `input.go`/`provider.go`/`source.go`,
   to a running task; `Task.Detach(ctx, h)` removes that attached branch, with
   `DrainBranch()` and `AbortBranch()` selecting whether branch destinations
   commit or abort; `Attachment.Rebranch` is attach-new-then-detach-old, with
-  boundary options and old-branch outcome options.
+  boundary options (`NextFrame`, `NextKeyframe`, `AtMediaTime`) and
+  old-branch outcome options.
+- **Sync**: `Sync(name, SyncTolerance(...), SyncDropLate())` returns a shared
+  timeline policy. Reuse one `SyncPolicy` across audio/video chains or
+  branches; `.Sync(policy)` inserts a packet/frame gate that can hold early
+  media or drop late media and reports sync drops through normal branch stats.
 - **Shape vs Require vs Auto vs Prefer**: `Shape` states a fact about the
   current media point; `Require` asserts a contract that fails the build
   when unmet; `Auto` grants the solver permission to insert conversions;

@@ -70,7 +70,7 @@ SetBitrate needs a positive rate in bits per second, got 0`) and wrap
 `pipeline.ErrUnknownNode` for unknown targets; per-node control failures are
 collected as `goav: control to "node": ...`. Attach/Rebranch refusals are full
 `BuildError` values (the `runtime_branch_*` codes). Failed stream-rule
-reactions surface as `av.EventAttachError` events carrying the stream id,
+branch attachments surface as `av.EventAttachError` events carrying the stream id,
 branch name, and cause. Join stages name the offending arm (`goav: audio mix
 requires s16, got f32 on arm "b"`). Buffered payload safety backstops are also
 structured at the task boundary: a mutable payload reaching `flow.CopyNever`

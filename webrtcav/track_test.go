@@ -391,11 +391,17 @@ func TestTrackReaderUpdateTrackReplacesReaderAndFeedsRTPSource(t *testing.T) {
 	if events[0].Epoch != 4 {
 		t.Fatalf("codec event = %+v", events[0])
 	}
+	if events[0].Stream == nil || events[0].Stream.TimeBase != av.RTPTimeBase(90000) {
+		t.Fatalf("codec event stream timebase = %+v", events[0].Stream)
+	}
 	if len(packets) != 1 {
 		t.Fatalf("packets = %d, want 1", len(packets))
 	}
 	if packets[0].StreamID != "video" || packets[0].CodecEpoch != 4 || !packets[0].Keyframe {
 		t.Fatalf("packet = %+v", packets[0])
+	}
+	if packets[0].PTS.Value != 90 || packets[0].PTS.Base != av.RTPTimeBase(90000) {
+		t.Fatalf("packet PTS = %+v, want RTP timestamp 90 at 90kHz", packets[0].PTS)
 	}
 	want := []byte{0x00, 0x00, 0x00, 0x01, 0x65, 0xaa}
 	if !bytes.Equal(packets[0].Payload.Bytes, want) {

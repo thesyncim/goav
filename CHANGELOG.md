@@ -9,6 +9,15 @@ methodology changes, and migration notes.
 
 ## Unreleased
 
+- Added grammar-shaped live-room sync with `SyncPolicy`, `.Sync(...)`,
+  `SyncTolerance`, and `SyncDropLate` for branch-local audio/video alignment;
+  hold-late behavior is the default and does not add a separate public option.
+- Added `AtMediaTime(...)` rebranch boundaries, per-rule `OnStream(...,
+  OnRemove(...))` removal disposition, and destination commit/abort/error
+  lifecycle events.
+- Updated the dynamic-audio-room and Gio WebRTC showcase examples around the
+  live-room runtime path with sync policy, live rebranching, and dynamic branch
+  behavior.
 - Added repository trust documents and CI artifact guidance for the v1
   credibility pass.
 - Added checked error, operations, extension-cookbook, composability-law, and

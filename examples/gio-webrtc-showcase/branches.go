@@ -185,14 +185,14 @@ func (s *session) rebranch(ctx context.Context, id string, spec branchSpec) (*br
 	r.Spec.Width = spec.Width
 	r.Spec.Height = spec.Height
 	r.Spec.Bitrate = spec.Bitrate
-	replacement, err := branchRuntimeSpec(r)
+	replacement, err := branchRuntimeSpec(r, s.syncPolicy)
 	if err != nil {
 		r.Spec = oldSpec
 		return nil, err
 	}
 	next, err := r.Attachment.Rebranch(ctx,
 		replacement,
-		goav.SwitchAt(goav.NextFrame()),
+		goav.SwitchAt(goav.AtMediaTime(0)),
 		goav.DrainOldBranch(),
 		goav.KeepOldOnFailure(),
 	)
@@ -252,7 +252,7 @@ func (s *session) attachBranchLocked(ctx context.Context, r *branch) error {
 	if r.Attachment != nil {
 		return nil
 	}
-	spec, err := branchRuntimeSpec(r)
+	spec, err := branchRuntimeSpec(r, s.syncPolicy)
 	if err != nil {
 		return err
 	}
@@ -284,7 +284,7 @@ func (s *session) attachBranchLocked(ctx context.Context, r *branch) error {
 	return nil
 }
 
-func branchRuntimeSpec(r *branch) (goav.BranchSpec, error) {
+func branchRuntimeSpec(r *branch, syncPolicy goav.SyncPolicy) (goav.BranchSpec, error) {
 	if r == nil || r.Sink == nil {
 		return goav.BranchSpec{}, fmt.Errorf("branch has no output sink")
 	}
@@ -292,6 +292,7 @@ func branchRuntimeSpec(r *branch) (goav.BranchSpec, error) {
 	case "video":
 		branch := goav.Branch(r.Spec.ID).
 			From(goav.FrameTap(videoTapName)).
+			Sync(syncPolicy).
 			Resize(r.Spec.Width, r.Spec.Height)
 		switch r.Spec.Codec {
 		case "vp8":
@@ -307,6 +308,7 @@ func branchRuntimeSpec(r *branch) (goav.BranchSpec, error) {
 		}
 		return goav.Branch(r.Spec.ID).
 			From(goav.FrameTap(audioTapName)).
+			Sync(syncPolicy).
 			Resample(48_000, codec.Stereo).
 			Encode(codec.Opus(codec.Bitrate(r.Spec.Bitrate), codec.Channels(codec.Stereo), codec.SampleRate(48_000))).
 			To(goav.Sink(r.Sink)), nil

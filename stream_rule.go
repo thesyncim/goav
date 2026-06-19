@@ -76,8 +76,18 @@ func (m StreamMatch) description() string {
 // streamRule is one declared dynamic-stream rule: when a discovered stream
 // matches, the templated branches are attached to it at runtime.
 type streamRule struct {
-	match    StreamMatch
-	branches []BranchSpec
+	match             StreamMatch
+	branches          []BranchSpec
+	removeDisposition oldBranchDisposition
+}
+
+// OnRemove configures how branches created by an OnStream rule detach when
+// the matched stream is removed. Without OnRemove the historical rule default
+// drains; OnRemove() selects plain detach, DrainBranch commits, and AbortBranch
+// aborts.
+func OnRemove(options ...DetachOption) BranchSpec {
+	policy := detachPolicyFromOptions(options)
+	return BranchSpec{removeDisposition: policy.disposition, hasRemoveDisposition: true}
 }
 
 // OnStream declares a dynamic-stream rule on the job: when the running task's
@@ -88,8 +98,8 @@ type streamRule struct {
 // matched stream (suffixed "-<stream id>") so repeated discoveries stay
 // unique. On av.EventStreamRemoved the rule's branches for that stream detach
 // with drain semantics: their destinations commit and the branch snapshot
-// reports lifecycle.DestinationCommitted. Several rules may match one stream; each
-// attaches independently. Attach or detach failures surface as
+// reports lifecycle.DestinationCommitted. Several rules may match one stream;
+// each attaches independently. Attach or detach failures surface as
 // av.EventAttachError on Watch/Events — never silently. A discovered stream
 // matching no rule just surfaces its event, exactly as without rules.
 //
@@ -100,7 +110,16 @@ func (j *Job) OnStream(match StreamMatch, branches ...BranchSpec) *Job {
 	if j == nil {
 		return j
 	}
-	rule := streamRule{match: match, branches: cloneBranchSpecs(branches)}
+	rule := streamRule{match: match, removeDisposition: oldBranchDrain}
+	for i := range branches {
+		branch := branches[i]
+		if branch.hasRemoveDisposition {
+			rule.removeDisposition = branch.removeDisposition
+			continue
+		}
+		rule.branches = append(rule.branches, branch)
+	}
+	rule.branches = cloneBranchSpecs(rule.branches)
 	if err := rule.validate(); err != nil {
 		j.setErr(err)
 		return j
@@ -160,8 +179,9 @@ func cloneStreamRules(rules []streamRule) []streamRule {
 	out := make([]streamRule, 0, len(rules))
 	for i := range rules {
 		out = append(out, streamRule{
-			match:    rules[i].match,
-			branches: cloneBranchSpecs(rules[i].branches),
+			match:             rules[i].match,
+			branches:          cloneBranchSpecs(rules[i].branches),
+			removeDisposition: rules[i].removeDisposition,
 		})
 	}
 	return out

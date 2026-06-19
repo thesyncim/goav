@@ -17,6 +17,9 @@ What holds today (all `-race` clean, with tests):
   itself without stalling siblings or the source; per-branch drop counters and
   reasons (`DropOldest`, `DropOverflow`, latency shedding) are reported through
   stats and snapshots.
+- Branch-local `SyncPolicy` gates can align live audio/video branches without
+  changing unsynced delivery. When `SyncDropLate()` sheds a message, stats use
+  the existing drop accounting with `pipeline.DropSync`.
 - Custom sources see flow control per push: `push.X(...)` returns
   `(PushResult, error)` where deliberate sheds are `Dropped` with a nil error
   and `ErrBackpressure` keeps its flow-control meaning.
@@ -39,16 +42,22 @@ leaving.
 - `Task.Detach(ctx, attachment, AbortBranch())` marks the branch output as
   abandoned. Use this after failed admission or diagnostic captures that should
   not commit.
+- `OnStream(match, Branch(...), OnRemove(...))` applies the same detach choices
+  when a dynamically discovered stream disappears.
 
 ```go
 task.Watch(goav.WatchTypes(
     av.EventBranchAttached,
     av.EventBranchDetached,
+    av.EventDestinationCommitted,
+    av.EventDestinationAborted,
+    av.EventDestinationCommitError,
 ))
 ```
 
 That watcher reports runtime branch lifecycle changes with the attachment
-id/name and detach disposition.
+id/name and detach disposition, plus destination finalization events with the
+destination name and runtime attachment metadata where applicable.
 
 Remaining design choice: whether the bare buffered default should also block
 rather than error on full (currently: only explicit `Blocking` blocks).

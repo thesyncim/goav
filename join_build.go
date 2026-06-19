@@ -1575,6 +1575,7 @@ func (p *joinPlan) appendJoinArmWork(operations *[]workOperation, branches *[]wo
 				Node:      pipeline.NodeRef(arm.decodeNode),
 				Component: codecComponent(arm.stream.Codec.ID),
 				Detail:    "packets to frames",
+				Codec:     codecSpecFromStream(arm.stream),
 				ShapeIn:   current,
 				ShapeOut:  out,
 			})
@@ -1685,6 +1686,7 @@ func (p *joinPlan) joinedWorkBranch(ids map[string]string, outputs []planOutput,
 				Node:      pipeline.NodeRef(encodeNodeName(*p.encode)),
 				Component: string(p.encodeConfig.Parameters.ID),
 				Detail:    "frames to packets",
+				Codec:     codecSpecFromEncodeConfig(p.encodeConfig),
 				ShapeIn:   current,
 				ShapeOut:  encoded,
 			})
@@ -1759,6 +1761,7 @@ func (p *joinPlan) joinFanoutWorkBranches(ids map[string]string, outputs []planO
 				Node:      pipeline.NodeRef(decodeNode),
 				Component: codecComponent(p.joined.Codec.ID),
 				Detail:    "packets to frames",
+				Codec:     codecSpecFromStream(p.joined),
 				ShapeIn:   current,
 				ShapeOut:  out,
 			})
@@ -1771,6 +1774,7 @@ func (p *joinPlan) joinFanoutWorkBranches(ids map[string]string, outputs []planO
 				Branch:    branchName,
 				Component: "packet-copy",
 				Detail:    "preserve encoded packets",
+				Codec:     codecSpecFromStream(p.joined),
 				ShapeIn:   current,
 				ShapeOut:  current,
 			})
@@ -1810,6 +1814,7 @@ func (p *joinPlan) joinFanoutWorkBranches(ids map[string]string, outputs []planO
 				Node:      pipeline.NodeRef(encodeNode),
 				Component: string(route.request.config.Parameters.ID),
 				Detail:    "frames to packets",
+				Codec:     codecSpecFromEncodeConfig(route.request.config),
 				ShapeIn:   current,
 				ShapeOut:  out,
 			})

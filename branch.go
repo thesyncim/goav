@@ -100,7 +100,9 @@ type BranchSpec struct {
 	source       branchSourceBinding
 	branchBuffer flow.BranchBuffer
 
-	err error
+	removeDisposition    oldBranchDisposition
+	hasRemoveDisposition bool
+	err                  error
 }
 
 type branchBuilder struct {
@@ -278,6 +280,16 @@ func (b *branchBuilder) Do(stages ...pipeline.Stage) *branchBuilder {
 		}
 		b.spec.operations = append(b.spec.operations, operationSpecForStage(stages[i]))
 	}
+	return b
+}
+
+// Sync places this branch on a shared media timeline. Reuse one SyncPolicy
+// value across live-room branches when recording or preview paths should align.
+func (b *branchBuilder) Sync(policy SyncPolicy) *branchBuilder {
+	if b == nil {
+		return b
+	}
+	b.spec.operations = append(b.spec.operations, operationSpecForSync(policy))
 	return b
 }
 

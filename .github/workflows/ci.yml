@@ -112,6 +112,7 @@ jobs:
             bench-results/pressure/*.json
             bench-results/control/*.json
             bench-results/fanout/*.json
+            bench-results/live-sync/*.json
             bench-results/container/*.json
             bench-results/pprof/**
             bench-results/bench-base.txt

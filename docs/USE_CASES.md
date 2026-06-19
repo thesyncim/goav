@@ -148,7 +148,7 @@ _ = leave("music")
 ```
 
 `OnStream` remains useful when a source discovers tracks itself and automatic
-branch reactions are enough. For app-owned room membership, explicit
+branch attachments are enough. For app-owned room membership, explicit
 `input.Stream(track)` anchors make the first-frame boundary deterministic.
 
 The runnable module `examples/dynamic-audio-room` validates this pattern with

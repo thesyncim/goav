@@ -3,6 +3,7 @@ package goav
 import (
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/errcode"
@@ -62,6 +63,19 @@ func TestSwitchBoundaryReachedContracts(t *testing.T) {
 	}
 	if !switchBoundaryReached(switchBoundaryKind("unknown"), event) {
 		t.Fatal("unknown boundary should default open")
+	}
+	if switchBoundaryReachedAt(switchMediaTime, 50*time.Millisecond, syncPacketMessage("v", 49*time.Millisecond)) {
+		t.Fatal("media-time boundary should not open before target PTS")
+	}
+	if !switchBoundaryReachedAt(switchMediaTime, 50*time.Millisecond, syncPacketMessage("v", 50*time.Millisecond)) {
+		t.Fatal("media-time boundary should open at target PTS")
+	}
+}
+
+func TestAtMediaTimeRejectsNegativeBoundary(t *testing.T) {
+	policy := rebranchPolicyFromOptions([]RebranchOption{SwitchAt(AtMediaTime(-time.Millisecond))})
+	if policy.invalid == "" {
+		t.Fatal("negative media-time boundary should mark rebranch policy invalid")
 	}
 }
 

@@ -1044,9 +1044,9 @@ var errorCatalogAdditionalExamples = []errorCatalogExample{
 	{
 		Code:          "stream_rule_invalid",
 		Test:          "TestOnStreamValidation",
-		BadRecipe:     `goav.OnStream(...)` + " with no matcher, no reaction, or malformed stream",
+		BadRecipe:     `goav.OnStream(...)` + " with no matcher, no branch, or malformed stream",
 		RenderedError: "invalid OnStream rule variants are asserted by the test",
-		Fix:           "provide a stream matcher and a valid branch reaction",
+		Fix:           "provide a stream matcher and a valid branch spec",
 		Cause:         "goav.ErrUnsupportedBuild",
 	},
 	{

@@ -425,7 +425,7 @@ const (
 // Stream rule codes (OnStream grammar).
 const (
 	// StreamRuleInvalid fires when an OnStream rule is malformed (no
-	// matcher, no reaction, or an unusable discovered stream).
+	// matcher, no branch, or an unusable discovered stream).
 	StreamRuleInvalid Code = "stream_rule_invalid"
 )
 

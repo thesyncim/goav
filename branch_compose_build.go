@@ -1003,6 +1003,12 @@ func branchComposeRouteOperationTransform(branchName string, transformIndex int,
 		if operation.Stage == nil {
 			return mediaTransform{}, branchChainStepError(branchName, "branch stage operation has no stage")
 		}
+		if _, ok := operation.Stage.(*syncGate); ok {
+			return mediaTransform{
+				name:  syncStageOperationName(operation, branchName),
+				stage: operation.Stage,
+			}, nil
+		}
 		return mediaTransform{
 			name:  operation.Stage.Name(),
 			stage: operation.Stage,

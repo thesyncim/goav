@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/thesyncim/goav/av"
+	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/plan"
 	"github.com/thesyncim/goav/shape"
@@ -51,6 +52,7 @@ type workOperation struct {
 	Node         pipeline.NodeRef
 	Component    string
 	Detail       string
+	Codec        codec.CodecSpec
 	Shared       bool
 	ShapeIn      shape.Spec
 	ShapeOut     shape.Spec
@@ -259,6 +261,7 @@ func workOperationsFromBranches(spec pipeline.Spec, branches []planBranch, outpu
 				Node:      node,
 				Component: operation.Component,
 				Detail:    operation.Detail,
+				Codec:     cloneCodecSpec(operation.Codec),
 				Shared:    operation.Shared,
 				ShapeIn:   current,
 				ShapeOut:  shapeOut,
@@ -489,6 +492,7 @@ func cloneWorkOperations(operations []workOperation) []workOperation {
 	out := make([]workOperation, 0, len(operations))
 	for i := range operations {
 		operation := operations[i]
+		operation.Codec = cloneCodecSpec(operation.Codec)
 		operation.Destinations = append([]string(nil), operation.Destinations...)
 		out = append(out, operation)
 	}

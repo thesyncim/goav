@@ -35,6 +35,7 @@ func newSession(ctx context.Context, runtime goav.Runtime, browserURL string) (*
 		video:      newVideoAnalyzer(),
 		audio:      newAudioAnalyzer(),
 		native:     newNativeAudio(),
+		syncPolicy: goav.Sync("browser", goav.SyncTolerance(30*time.Millisecond), goav.SyncDropLate()),
 		scenarios:  runPlannerScenarios(ctx),
 	}
 	session.writeRTCP = pc.WriteRTCP

@@ -87,6 +87,7 @@ type Job struct {
 	inputs             []InputSpec
 	outputs            []destinationSpec
 	outputNames        []string
+	syncOperations     []operationSpec
 	streams            []*jobStreamBuild
 	branchStreams      []streamBuild
 	branchDestinations []namedDestinationSpec
@@ -126,6 +127,22 @@ func From(inputs ...InputSpec) *Job {
 // as From(input).Copy().To(out): packets flow to the destinations without
 // decode. On a selected stream, use the stream chain's Copy instead.
 func (j *Job) Copy() *Job {
+	return j
+}
+
+// Sync places the job's subsequent stream chains on the given media timeline.
+// If a chain is currently under construction, the sync gate is appended there;
+// otherwise the policy is applied to stream chains started after this call.
+func (j *Job) Sync(policy SyncPolicy) *Job {
+	if j == nil {
+		return j
+	}
+	operation := operationSpecForSync(policy)
+	if stream := j.currentStream(); stream != nil && len(stream.outputs) == 0 {
+		stream.operations = append(stream.operations, operation)
+		return j
+	}
+	j.syncOperations = append(j.syncOperations, operation)
 	return j
 }
 
@@ -224,6 +241,9 @@ func (j *Job) streamBuilder(name string, media av.MediaType, options ...streamOp
 		name:     name,
 		selector: config.selector,
 		input:    config.input,
+	}
+	if len(j.syncOperations) != 0 {
+		stream.operations = append(stream.operations, cloneOperationSpecs(j.syncOperations)...)
 	}
 	if last := j.currentStream(); last != nil {
 		if len(j.branchStreams) != 0 {
