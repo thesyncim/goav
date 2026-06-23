@@ -1,8 +1,9 @@
 # Repository trust surface
 
-This file records the GitHub-facing metadata and release posture reviewers
-should see before treating goav as v1-credible. The values are intentionally
-small and adoption-focused.
+This is the public trust checklist for the repository page and release posture.
+It keeps the GitHub-facing metadata, no-release-yet stance, and local trust
+files explicit so reviewers do not have to infer them from scattered settings.
+The values are intentionally small and adoption-focused.
 
 ## GitHub metadata
 

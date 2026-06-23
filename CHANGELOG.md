@@ -1,6 +1,8 @@
 # Changelog
 
-All notable changes to this project should be recorded here.
+This is the human change record for goav. Keep it useful for adopters: name
+what changed, why it matters, and any migration or verification notes a user
+would need.
 
 The project is pre-v1. Until the first tagged release, use commit history and
 pull-request descriptions as the detailed change record. Release entries should
@@ -9,6 +11,8 @@ methodology changes, and migration notes.
 
 ## Unreleased
 
+- Reworked the human-facing docs around reader-first navigation while keeping
+  the checked API, operation, release, and evidence pins current.
 - Added grammar-shaped live-room sync with `SyncPolicy`, `.Sync(...)`,
   `SyncTolerance`, and `SyncDropLate` for branch-local audio/video alignment;
   hold-late behavior is the default and does not add a separate public option.

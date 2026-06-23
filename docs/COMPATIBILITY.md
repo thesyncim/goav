@@ -1,7 +1,11 @@
 # Compatibility policy
 
-goav is pre-v1. The repository can be release-ready only when each tag states
-what compatibility it is promising and what evidence backs that promise.
+goav is pre-v1. This page is the release promise ledger: what users can rely
+on today, what a future v1 should mean, and what a maintainer must write down
+before cutting a tag.
+
+The repository can be release-ready only when each tag states what
+compatibility it is promising and what evidence backs that promise.
 
 ## Current promise
 
@@ -37,7 +41,8 @@ API-restraint checklist in `docs/API_SURFACE.md`.
 
 ## Release compatibility note template
 
-Copy this section into the release notes or PR body before cutting a tag.
+Copy this section into the release notes or PR body before cutting a tag. Empty
+bullets are release blockers, not placeholders to leave behind.
 
 ```text
 Compatibility note for <module> <version>

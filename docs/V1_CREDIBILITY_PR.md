@@ -32,7 +32,7 @@
 
 ## Tests Run
 
-- `go test -c -o /tmp/goav-root.test ./`
+- `go test ./...`
 - `CGO_ENABLED=0 go vet ./...`
 - external example module compile checks:
   `examples/custom-source`, `examples/provider-source`,
@@ -41,6 +41,8 @@
   `examples/custom-codec`, `examples/custom-join`, `examples/control-plane-host`
 - root-module compile-only sweep with `go list ./...` + `go test -c`
 - nested transport module compile-only sweep for `rtpav` and `webrtcav`
+- nested transport module runtime checks for `rtpav` and `webrtcav`
+- standalone example module runtime checks for every `examples/*/go.mod`
 - workflow YAML parse for `.github/workflows/*.yml`
 - package-doc smoke using `go list`
 - `bash -n scripts/bench/*.sh`
@@ -49,9 +51,9 @@
 - `gh repo view` metadata check for description, pkg.go.dev homepage, topics,
   and no latest release.
 
-Local full runtime `go test ./...` is not claimed here: the current machine has
-uninterruptible stale test binaries in `UE` state. CI or a fresh local runner is
-the required runtime acceptance environment.
+Local full runtime `go test ./...` is now part of the safe-point check for this
+line of work. Release acceptance still requires CI or a clean local runner for
+the complete matrix in `docs/RELEASING.md`.
 
 ## Benchmarks Run
 
@@ -90,7 +92,7 @@ the required runtime acceptance environment.
 
 ## API Restraint
 
-- No public API growth is required by this pass.
+- No public API growth is required by this documentation-evidence pass.
 - Existing grammar remains the front door:
   `From -> stream selection -> operations -> taps -> branches -> destinations -> task`.
 - New evidence focuses on documentation, examples, tests, performance

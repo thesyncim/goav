@@ -1,6 +1,8 @@
 # Contributing
 
-Thanks for helping make goav easier to adopt.
+Thanks for helping make goav easier to adopt. The project is still pre-v1, so
+contributions should keep two things in view: make the normal recipe grammar
+clearer, and leave evidence for any behavior users might depend on.
 
 ## Development Checks
 

@@ -1,7 +1,9 @@
 # V1 Credibility Audit
 
-This is the reviewer map for the v1-credibility pass. It points each requested
-improvement at the files, tests, and workflows that carry the evidence.
+This is the reviewer map for the v1-credibility pass. Read it when you want to
+check the claim "this repo is close to release-ready" without spelunking
+through the whole tree. Each section points a requested improvement at the
+files, tests, and workflows that carry the evidence.
 
 ## Front Door
 

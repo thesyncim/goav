@@ -163,7 +163,7 @@ func TestV1CredibilityPRDraftCapturesRequiredEvidence(t *testing.T) {
 		"## What Changed",
 		"## Why It Improves V1 Credibility",
 		"## Tests Run",
-		"go test -c -o /tmp/goav-root.test ./",
+		"go test ./...",
 		"CGO_ENABLED=0 go vet ./...",
 		"examples/custom-source",
 		"examples/provider-source",
@@ -171,6 +171,8 @@ func TestV1CredibilityPRDraftCapturesRequiredEvidence(t *testing.T) {
 		"examples/control-plane-host",
 		"root-module compile-only sweep",
 		"nested transport module compile-only sweep",
+		"nested transport module runtime checks",
+		"standalone example module runtime checks",
 		"gh repo view",
 		"## Benchmarks Run",
 		"bench-results/baseline",
@@ -183,7 +185,7 @@ func TestV1CredibilityPRDraftCapturesRequiredEvidence(t *testing.T) {
 		"No public API growth",
 		"docs/REPOSITORY_TRUST.md",
 		"docs/COMPATIBILITY.md",
-		"Local full runtime `go test ./...` is not claimed",
+		"Local full runtime `go test ./...` is now part of the safe-point check",
 	} {
 		if !strings.Contains(text, required) {
 			t.Fatalf("docs/V1_CREDIBILITY_PR.md missing %q", required)

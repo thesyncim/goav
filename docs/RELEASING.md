@@ -1,7 +1,9 @@
 # Releasing
 
 Releases are tag-driven. CI can validate a tag and create the GitHub release,
-but the maintainer owns the compatibility decision and signed tag.
+but the maintainer owns the compatibility decision and signed tag. Treat this
+as a release-day checklist: it tells you what evidence to refresh before a tag
+exists, and what automation is expected after the tag is pushed.
 
 ## Before Tagging
 
@@ -40,7 +42,8 @@ but the maintainer owns the compatibility decision and signed tag.
 ## Acceptance Gate Matrix
 
 The signed tag should not be cut until each row has fresh evidence from CI or a
-clean local runner.
+clean local runner. If a row is intentionally skipped, the release notes should
+say why.
 
 | Gate | Required evidence |
 |---|---|

@@ -1,7 +1,8 @@
 # Security Policy
 
-goav is pre-v1, but security reports are still handled as private
-maintainer-facing issues.
+goav is pre-v1, but suspected security issues should still be handled
+privately first. The goal is to give the maintainer enough detail to reproduce
+and scope the issue before public disclosure.
 
 ## Supported Versions
 

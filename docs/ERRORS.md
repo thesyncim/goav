@@ -1,8 +1,10 @@
 # Errors
 
-goav raises one structured error from every build, validation, attach, and
-explain path: `goav.BuildError`. The contract, enforced by a source-scanning
-pin test (`errors_pin_test.go`):
+When a recipe is wrong, goav should tell the caller what failed, where it
+failed, and how to fix it. Build, validation, attach, rebranch, and explain
+paths use one structured shape for that job: `goav.BuildError`.
+
+The contract is enforced by a source-scanning pin test (`errors_pin_test.go`):
 
 - **Code**: a typed `errcode.Code` identifying the refusal class. Every
   code is an exported constant in the `errcode` package (the catalog), grouped

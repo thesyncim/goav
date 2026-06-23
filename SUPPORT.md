@@ -1,8 +1,8 @@
 # Support
 
-goav is pre-v1. The best support path today is to open a GitHub issue with a
-minimal recipe, the selected adapters, the Go version, and the full structured
-error output.
+goav is pre-v1. The best support path today is a GitHub issue that a maintainer
+can reproduce without guessing. Include a minimal recipe, the selected
+adapters, the Go version, and the full structured error output.
 
 For adoption questions, include:
 
@@ -13,4 +13,5 @@ For adoption questions, include:
 - whether `CGO_ENABLED=0` is required
 
 For performance questions, include the benchmark command, hardware, operating
-system, Go version, and whether the numbers come from `scripts/bench/run.sh`.
+system, Go version, and whether the numbers come from `scripts/bench/run.sh`
+or `scripts/bench/perf-lab.sh`.
