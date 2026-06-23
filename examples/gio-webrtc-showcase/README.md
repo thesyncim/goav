@@ -1,9 +1,13 @@
-# Gio WebRTC Showcase
+# Gio WebRTC showcase
 
 This standalone module is a native Gio control room for live `goav` WebRTC
 media. A small browser peer handles camera/microphone permissions and playback;
 the Gio window controls the live `goav` graph, runtime branches, diagnostics,
 planner scenarios, and audio meters.
+
+Use this demo when you want to see the live-room runtime from both sides: a
+browser peer with real media tracks, and a native app controlling sync,
+branches, rebranching, bitrate, pause/resume, and diagnostics.
 
 ![Browser peer showing live VP8/VP9 render FPS and audio tracks](docs/browser-peer.jpg)
 

@@ -1,8 +1,11 @@
-# Custom Codec Example
+# Custom codec
 
 This module shows an external codec adapter registered with
 `goav.WithEncoder` and `goav.WithDecoder`. The toy codec copies S16 audio frame
 bytes into packets and decodes those packets back into frames.
+
+Copy this when you need a codec package to stay outside the root module while
+still participating in normal `.Encode(...)` and `.Decode()` recipes.
 
 Run it:
 

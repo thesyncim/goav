@@ -1,9 +1,12 @@
-# Transactional Writer Example
+# Transactional writer
 
 This module shows the object-store upload pattern: `goav.Writer` opens after
 the output format and streams are known, and a returned
 `provider.TransactionalWriter` receives `Commit` on success or `Abort` on
 failure.
+
+Copy this when a destination should publish bytes only after the media run has
+actually succeeded.
 
 Run it:
 

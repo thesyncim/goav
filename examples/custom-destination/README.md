@@ -1,8 +1,12 @@
-# Custom Destination Example
+# Custom destination
 
 This module shows the plain byte-destination seam: `goav.Writer` opens after
 goav has selected the output format and streams, so the callback can validate
 `provider.Info` before accepting bytes.
+
+Copy this when your application owns the final writer: memory buffers, upload
+clients, custom paths, or any byte sink that should open after format
+resolution.
 
 Run it:
 

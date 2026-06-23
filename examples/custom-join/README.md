@@ -1,8 +1,11 @@
-# Custom Join Example
+# Custom join
 
 This module shows a third-party `goav.Join` convergence stage. The stage
 interleaves S16 mono frames from two arms and then emits a normal joined stream
 that can be sent to `.To(...)`, tapped, branched, or encoded.
+
+Copy this when several arms should converge in a way `Mix`, `Composite`, and
+`Select` do not cover.
 
 Run it:
 

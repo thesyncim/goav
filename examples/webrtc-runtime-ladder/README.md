@@ -1,9 +1,12 @@
-# WebRTC Runtime Ladder Demo
+# WebRTC runtime ladder
 
 This standalone module receives camera/microphone WebRTC tracks in the browser,
 decodes VP8, VP9, AV1, and Opus through `goav`, and attaches runtime branches
 that encode Opus, VP8, and VP9 back to browser tracks. Runtime changes are
 streamed back to the page with graph stats, task state, and an event feed.
+
+Use this demo when you want a browser-visible runtime ladder without the native
+Gio shell.
 
 Run:
 

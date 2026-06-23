@@ -3,6 +3,9 @@
 This standalone module shows an application-owned source that pushes decoded
 S16 audio frames through the public `goav.Source` and `goav.SourcePush` APIs.
 
+Copy this when your application already owns media buffers and does not need a
+transport/provider open phase.
+
 Run it from the repo root:
 
 ```sh

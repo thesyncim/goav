@@ -1,8 +1,11 @@
-# Provider Source Example
+# Provider source
 
 This module shows the transport-provider seam: an external package implements
 `provider.Source`, returns a running `pipeline.Source`, and passes it to
 `goav.Input(provider)`.
+
+Copy this when a source needs an open phase, stream discovery, transport-owned
+timing, or provider-level shape facts.
 
 Run it from the repo root:
 
