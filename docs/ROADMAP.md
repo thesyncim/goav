@@ -1,36 +1,44 @@
 # Roadmap: stability tiers and the road to v1
 
-goav is pre-v1. This document states what is stable now, what is
-experimental, what is deliberately deferred, what is planned, what is a
-non-goal, and exactly what must hold before a v1 tag. Every claim cites the
-test, benchmark, or document that backs it, or is marked **roadmap**.
-`docs/NORTH_STAR.md` keeps the evidence-cited acceptance scoreboard;
-`docs/PROGRESS.md` is the compact tracker; `docs/V1_CREDIBILITY_AUDIT.md`
-maps the v1-credibility pass to reviewer evidence; `docs/REPOSITORY_TRUST.md`
-records the GitHub metadata and release posture; how goav relates to GStreamer
-is `docs/GSTREAMER_ALTERNATIVE.md`.
+goav is pre-v1. Use this roadmap to answer a human question: what can I rely
+on today, what is still allowed to move, and what would be dishonest to imply
+as done? It separates stable, experimental, deliberately deferred, planned,
+and non-goal work, then names the checks that must hold before a v1 tag. Every
+claim cites the test, benchmark, or document that backs it, or is marked
+**roadmap**.
+
+The nearby docs split the work by reader need: `docs/NORTH_STAR.md` keeps the
+evidence-cited acceptance scoreboard; `docs/PROGRESS.md` is the compact
+tracker; `docs/V1_CREDIBILITY_AUDIT.md` maps the v1-credibility pass to
+reviewer evidence; `docs/REPOSITORY_TRUST.md` records the GitHub metadata and
+release posture; how goav relates to GStreamer is
+`docs/GSTREAMER_ALTERNATIVE.md`.
 
 ## The settled model
 
-The declarative grammar is the only normal composer:
+The shortest version: recipes are the product surface; plans, graphs, and
+runtimes are implementation layers. The declarative grammar is the only normal
+composer:
 `input -> stream -> operations -> tap -> branch -> destination` lowers into
 `WorkPlan -> pipeline.Graph -> Task`.
-Make runtime attachment a patch of the same plan model:
+
+Live mutation follows the same promise. Make runtime attachment a patch of the same plan model:
 `Task.Attach` compiles the same branch grammar into `WorkPatch`, validates
 before graph mutation, and rolls back fully on failure
 (`TestTaskAttachRuntimeBranchGroupRollsBackOnLaterFailure`).
-Collapse `Target` into `Destination` is done: `File`, `URI`, `Writer`,
+
+The destination model has also been simplified. Collapse `Target` into `Destination` is done: `File`, `URI`, `Writer`,
 `Sink`, and `Custom` return stable goav-owned destination handles, and
 reusing one handle groups branches into one mux/sink group
 (`TestFromMultiInputPlanDedupesSharedDestination`).
 
 ## v0 Stable
 
-Stable means: pinned against silent change, documented, and test-enforced, but
-not "frozen forever". The governed surface is 335 approved identifiers
-(`api_surface_pin_test.go` + `testdata/api_surface.txt`: 134 root, 147
-`errcode`, 28 `plan`, 13 `lifecycle`, 4 `snapshot`, 9 `graphrender`), every
-exported symbol documented (`doc_pin_test.go`), tiered in
+Stable here means "you should not wake up to a silent contract change", not
+"the project has stopped learning". The governed surface is 335 approved
+identifiers (`api_surface_pin_test.go` + `testdata/api_surface.txt`: 134 root,
+147 `errcode`, 28 `plan`, 13 `lifecycle`, 4 `snapshot`, 9 `graphrender`),
+every exported symbol documented (`doc_pin_test.go`), tiered in
 `docs/API_SURFACE.md`:
 
 - **Tier A: the grammar.** `From`/stream selection/operations
@@ -60,8 +68,9 @@ commit-failure propagation (`task_invariants_test.go`), watcher isolation
 
 ## Experimental
 
-Exists and is tested, but numbers or semantics are expected to move
-(`docs/PERFORMANCE.md` "Experimental" is the performance side of this list):
+These pieces exist and are tested, but their numbers or exact semantics may
+still move. `docs/PERFORMANCE.md` "Experimental" is the performance side of
+this list:
 
 - **Buffered copy-mode fanout cost**: per-target copy of borrowed payloads
   (`pipeline` `BenchmarkBufferedFanout/copy`); refcounted zero-copy fanout
@@ -85,11 +94,12 @@ Exists and is tested, but numbers or semantics are expected to move
   active.
 - **A/V sink sync, pipeline-wide clock service, pull scheduling**: branch-local
   `SyncPolicy` gates now align or shed packet/frame messages on shared live
-  timelines, but the theme-C endgame is still pull scheduling and sink-level
-  A/V synchronization. The time-axis controls (`Seek`/`Rate`/`Segment`) and
-  clock-paced realtime file playback already ship (`task_seek_test.go`,
-  `task_time_control_test.go`); the rest is analysed in
-  `docs/NORTH_STAR.md` ("Time/sync", attack-plan stage 7). Roadmap.
+  timelines. That closes the live-room branch-local problem, but the theme-C
+  endgame is still pull scheduling and sink-level A/V synchronization. The
+  time-axis controls (`Seek`/`Rate`/`Segment`) and clock-paced realtime file
+  playback already ship (`task_seek_test.go`, `task_time_control_test.go`);
+  the rest is analysed in `docs/NORTH_STAR.md` ("Time/sync", attack-plan
+  stage 7). Roadmap.
 - **Internal-package layering**: measured on the cross-file reference graph
   and rejected: no boundary worth a package today (`docs/ARCHITECTURE.md`
   "Package layering"). Revisit only with a data-transfer boundary.
@@ -146,7 +156,7 @@ Exists and is tested, but numbers or semantics are expected to move
 
 ## V1 freeze criteria
 
-The checklist that gates the tag; each item names its current evidence.
+The checklist below gates the tag. Each item names its current evidence.
 
 - [x] **Approved API surface**: `api_surface_pin_test.go` +
   `testdata/api_surface.txt` (both-direction pin), with dynamic package
