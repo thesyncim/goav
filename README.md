@@ -83,32 +83,80 @@ one sink group, or one transactional writer.
 | Wrap app-owned media | `goav.Source(...)` or `goav.Input(provider)` | [Extension cookbook](docs/EXTENSION_COOKBOOK.md) |
 | Add a codec, filter, muxer, or control host | `goav.New(...)` with the relevant extension option | [Adapter authoring](docs/ADAPTER_AUTHORING.md) |
 
-## Showcase Recipes
+## What This Unlocks
 
-These are the recipes that make the model click. They still use the same
-grammar; they just lean on the runtime parts harder.
+The first example is tiny on purpose. The interesting part is that the same
+recipe model still holds when the task is live, streams arrive late, and one
+branch needs different latency behavior than another.
 
-- **Record the room, let preview breathe.** Put the archive branch on a
-  steady `goav.Sync("room", goav.SyncTolerance(...))`, then give the preview
-  branch `goav.Sync("room", goav.SyncTolerance(...), goav.SyncDropLate())`
-  and a branch buffer. Late preview media can be shed through normal drop stats
-  while the recording branch keeps draining.
-- **Attach a support meter to a live task.** Name a frame point with
-  `goav.FrameTap("levels")`; later, attach `goav.Branch("support-meter")`
-  from that tap into `goav.Sink(levels)`. The meter is ordinary composition,
-  not a separate debug API.
-- **Replace a branch on a real media boundary.** Build the replacement branch
-  first, then rebranch with `goav.SwitchAt(goav.AtMediaTime(position))` and
-  `goav.KeepOldOnFailure()`. The old branch keeps running unless the
-  replacement is ready to take over.
-- **Treat late WebRTC/RTP tracks like normal streams.** Use `OnStream(...)`
-  rules to attach the same branch recipe when a track appears, and
-  `goav.OnRemove(goav.DrainBranch())` or `goav.AbortBranch()` to decide what
-  happens when that stream disappears.
-- **Expose app controls without exposing internals.** A control host can map
-  app-owned commands to `Task.Control`, `Task.Attach`, or `Attachment.Rebranch`
-  while keeping the public surface on recipes, branches, taps, and
-  destinations.
+### Archive the room while preview adapts
+
+```text
+participant tracks
+  -> shared room timeline
+  -> archive branch: align and drain
+  -> preview branch: align, drop late media, keep moving
+```
+
+The recording branch can stay steady while preview sheds stale media through
+normal drop stats. Start with [dynamic-audio-room](examples/dynamic-audio-room)
+for the deterministic fixture, then open
+[gio-webrtc-showcase](examples/gio-webrtc-showcase) for the browser-visible
+version.
+
+### Attach a meter after the task is already running
+
+```text
+running task
+  -> FrameTap("levels")
+  -> Branch("support-meter")
+  -> Sink(levels)
+  -> detach when the incident is over
+```
+
+Diagnostics are just branches from typed taps. They do not need a parallel
+debug graph, and they can drain or abort with the same lifecycle rules as any
+other runtime branch.
+
+### Swap a branch at a real media boundary
+
+```text
+old branch keeps serving
+replacement starts beside it
+switch at media time
+keep old branch if replacement fails
+```
+
+Use media-time rebranching when a preview, ladder rung, or diagnostics branch
+needs to change without a visible gap. The replacement proves it can start
+before the old branch is detached.
+
+### Let transport tracks become normal recipe inputs
+
+```text
+WebRTC/RTP track appears
+  -> OnStream rule matches it
+  -> branch recipe attaches
+  -> OnRemove chooses drain, abort, or plain detach
+```
+
+Transport-specific code stays at the edge. Once a track is in the task, it is
+selected, tapped, branched, synchronized, recorded, or inspected with the same
+grammar as file and generated sources.
+
+### Expose live controls without exposing internals
+
+```text
+app command
+  -> Task.Control
+  -> Task.Attach
+  -> Attachment.Rebranch
+  -> Watch / Snapshot / Stats
+```
+
+A host can publish app-owned commands for bitrate, keyframes, branch attach,
+or branch replacement while keeping callers on recipes, taps, branches, and
+destinations.
 
 ## Why goav
 
