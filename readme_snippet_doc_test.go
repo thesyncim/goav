@@ -77,6 +77,9 @@ import (
 	"time"
 
 	"github.com/thesyncim/goav"
+	"github.com/thesyncim/goav/av"
+	"github.com/thesyncim/goav/codec"
+	"github.com/thesyncim/goav/shape"
 )
 
 `)
@@ -89,6 +92,47 @@ import (
 	}
 	out.WriteString("}\n")
 	return out.String()
+}
+
+func TestReadmeLiveExamplesUseLiveSourceSemantics(t *testing.T) {
+	body, err := os.ReadFile("README.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(body)
+	for _, section := range []struct {
+		summary  string
+		required []string
+	}{
+		{
+			summary: "Live camera track: archive steadily, keep preview low-latency",
+			required: []string{
+				"goav.Source(",
+				"make(chan *av.Packet)",
+				"goav.Sync(",
+				"goav.Codec(codec.VP8())",
+			},
+		},
+		{
+			summary: "Dynamic WebRTC/RTP tracks: attach branches as streams appear",
+			required: []string{
+				"av.EventStreamAdded",
+				"av.EventStreamRemoved",
+				"packet.StreamID = camera.ID",
+				"goav.OnRemove(goav.DrainBranch())",
+			},
+		},
+	} {
+		block := readmeDetailsBlock(t, text, section.summary)
+		if strings.Contains(block, "goav.FileInput(") {
+			t.Fatalf("%s example uses FileInput; live/runtime examples should model live sources", section.summary)
+		}
+		for _, required := range section.required {
+			if !strings.Contains(block, required) {
+				t.Fatalf("%s example missing %q", section.summary, required)
+			}
+		}
+	}
 }
 
 func indentSnippet(snippet string) string {
@@ -117,4 +161,17 @@ func markdownCodeBlocks(text, lang string) []string {
 		}
 	}
 	return blocks
+}
+
+func readmeDetailsBlock(t *testing.T, text string, summary string) string {
+	t.Helper()
+	start := strings.Index(text, "<summary><strong>"+summary+"</strong></summary>")
+	if start < 0 {
+		t.Fatalf("README details block %q not found", summary)
+	}
+	end := strings.Index(text[start:], "</details>")
+	if end < 0 {
+		t.Fatalf("README details block %q is missing </details>", summary)
+	}
+	return text[start : start+end]
 }

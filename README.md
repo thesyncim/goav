@@ -85,27 +85,48 @@ one sink group, or one transactional writer.
 
 ## Expandable Examples
 
-Open the examples when you want to see the recipe shape. Each one stays on the
-same grammar as the 30-second example; the difference is that the task is now
-live, branchy, and observable.
+Open the examples when you want to see the recipe shape. They stay on the same
+grammar as the 30-second examples, but use live sources, runtime branches, taps,
+and control boundaries.
 
 <details>
-<summary><strong>Live room: archive everything, keep preview low-latency</strong></summary>
+<summary><strong>Live camera track: archive steadily, keep preview low-latency</strong></summary>
 
-Build one task with two branch personalities: archive holds and drains, preview
-uses the same room timeline but is allowed to shed late media.
+Feed packets from the transport edge into one task. The archive branch holds and
+drains; the preview branch uses the same room timeline but can shed late packets
+instead of making the recorder wait.
 
 ```go
+cameraPackets := make(chan *av.Packet)
 roomSync := goav.Sync("room", goav.SyncTolerance(20*time.Millisecond))
 previewSync := goav.Sync("room",
     goav.SyncTolerance(20*time.Millisecond),
     goav.SyncDropLate(),
 )
-preview := goav.Sink(goav.SinkFunc("preview", func(context.Context, goav.Message) error {
+roomCamera := goav.Source("room-camera",
+    shape.Packet(av.MediaVideo, av.CodecVP8, shape.Realtime(true)),
+    func(ctx context.Context, push goav.SourcePush) error {
+        for {
+            select {
+            case <-ctx.Done():
+                return ctx.Err()
+            case packet, ok := <-cameraPackets:
+                if !ok {
+                    return push.EOS("room-camera")
+                }
+                if _, err := push.Packet(packet); err != nil {
+                    return err
+                }
+            }
+        }
+    },
+    goav.Codec(codec.VP8()),
+)
+previewTrack := goav.Sink(goav.SinkFunc("preview-track", func(context.Context, goav.Message) error {
     return nil
 }))
 
-_, err := goav.From(goav.FileInput("room.ivf", in)).
+_, err := goav.From(roomCamera).
     Video().
     Copy().
     Sync(roomSync).
@@ -115,14 +136,15 @@ _, err := goav.From(goav.FileInput("room.ivf", in)).
             To(goav.File("archive.ivf", out)),
         goav.Branch("preview").
             Sync(previewSync).
-            To(preview),
+            To(previewTrack),
     ).
     Build(ctx)
 return err
 ```
 
-The archive branch behaves like evidence; the preview branch behaves like UI.
-Run the deterministic fixture in
+Here `cameraPackets` is owned by your RTP/WebRTC edge and should carry
+RTP-derived PTS values. goav only sees a typed live source. Run the
+deterministic fixture in
 [examples/dynamic-audio-room](examples/dynamic-audio-room), or the browser
 demo in [examples/gio-webrtc-showcase](examples/gio-webrtc-showcase).
 
@@ -167,8 +189,10 @@ in [docs/CONTROL_PLANE.md](docs/CONTROL_PLANE.md).
 <details>
 <summary><strong>Media-time rebranch: replace work without a visible gap</strong></summary>
 
-Open the replacement branch first, then switch at a media boundary. If the
-replacement fails to attach, the old branch keeps running.
+Open the replacement branch first, then switch at a media boundary. This example
+uses a file as a repeatable source because the idea is branch rotation, not live
+track discovery. If the replacement fails to attach, the old branch keeps
+running.
 
 ```go
 task, err := goav.From(goav.FileInput("input.ivf", in)).
@@ -210,14 +234,53 @@ needs to change shape while the task keeps running.
 <details>
 <summary><strong>Dynamic WebRTC/RTP tracks: attach branches as streams appear</strong></summary>
 
-Transport code stays at the edge. When a stream arrives, a rule attaches the
-same branch recipe through the runtime planner.
+Transport code stays at the edge. It announces track lifecycle events and pushes
+packets; the runtime rule attaches the same branch recipe whenever a matching
+stream appears.
 
 ```go
-_, err := goav.From(goav.FileInput("room.ivf", in)).
+roomPackets := make(chan *av.Packet)
+camera := av.Stream{
+    ID: "camera", Type: av.MediaVideo, TimeBase: av.RTPTimeBase(90000),
+    Codec: av.CodecParameters{ID: av.CodecVP8, Type: av.MediaVideo, ClockRate: 90000},
+}
+transport := goav.Source("webrtc-room",
+    shape.Packet(av.MediaVideo, av.CodecVP8, shape.Realtime(true)),
+    func(ctx context.Context, push goav.SourcePush) error {
+        announced := camera
+        if _, err := push.Event(av.Event{Type: av.EventStreamAdded, Stream: &announced}); err != nil {
+            return err
+        }
+        for {
+            select {
+            case <-ctx.Done():
+                return ctx.Err()
+            case packet, ok := <-roomPackets:
+                if !ok {
+                    if _, err := push.Event(av.Event{Type: av.EventStreamRemoved, StreamID: camera.ID}); err != nil {
+                        return err
+                    }
+                    return push.EOS(camera.ID)
+                }
+                if packet == nil {
+                    continue
+                }
+                packet.StreamID = camera.ID
+                packet.Type = av.MediaVideo
+                if _, err := push.Packet(packet); err != nil {
+                    return err
+                }
+            }
+        }
+    },
+    goav.Codec(codec.VP8()),
+)
+
+_, err := goav.From(transport).
     OnStream(
         goav.MatchStreamID("camera"),
         goav.Branch("record-camera").
+            Sync(goav.Sync("room", goav.SyncTolerance(20*time.Millisecond))).
             Copy().
             To(goav.File("camera.ivf", out)),
         goav.OnRemove(goav.DrainBranch()),
@@ -226,7 +289,9 @@ _, err := goav.From(goav.FileInput("room.ivf", in)).
 return err
 ```
 
-Late media still becomes a validated branch of the same task. Start with
+The source announces the track before media, keeps packet routing on the same
+stream id, and removes the track before EOS. Late media still becomes a
+validated branch of the same task. Start with
 [docs/RTP_WEBRTC.md](docs/RTP_WEBRTC.md), then try
 [examples/gio-webrtc-showcase](examples/gio-webrtc-showcase).
 
