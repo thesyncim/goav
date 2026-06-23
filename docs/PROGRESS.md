@@ -93,7 +93,7 @@ Compatibility pins:
   artifacts, and the release workflow emits checksums, SBOM, buildinfo, and
   provenance metadata.
 - Composability laws, API-surface governance, release docs, and the PR evidence
-  draft are pinned by doc tests.
+  notes are pinned by doc tests.
 
 ## Extension Points
 

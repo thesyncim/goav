@@ -22,9 +22,9 @@ claims are made.
 
 | Capability | GStreamer | goav |
 |---|---|---|
-| Pipeline construction | Elements linked by pads into bins/pipelines; textual `gst-launch` syntax; C API with bindings | Typed Go grammar `From(...).To(...)`; recipes are values; surface governed by `api_surface_pin_test.go` + `docs/API_SURFACE.md`; 13 runnable examples in `example_test.go` |
+| Pipeline construction | Elements linked by pads into bins/pipelines; textual `gst-launch` syntax; C API with bindings | Typed Go grammar `From(...).To(...)`; recipes are values; surface governed by `api_surface_pin_test.go` + `docs/API_SURFACE.md`; runnable `Example*` recipes in `example_test.go` |
 | Media negotiation | Automatic caps negotiation between pads, with converter elements inserted by the author or auto-pluggers | Explicit shape solving: every operation validated before resources open; conversions inserted only under a declared `.Auto(...)` policy, asserted with `.Require(...)`, biased with `.Prefer(...)` (`shape_solver_test.go`, `shape_require_prefer_test.go`) |
-| Dynamic streams | `pad-added` signals and auto-plugging (`decodebin`/`uridecodebin`) handled in application callbacks | App-owned tracks attach with `Task.Attach(...From(input.Stream(track)))`; automatic discoveries use declarative `OnStream(match, branches...)` rules that attach through the same planner and detach with drain on removal (`examples/dynamic-audio-room`, `stream_rule_test.go`) |
+| Dynamic streams | `pad-added` signals and auto-plugging (`decodebin`/`uridecodebin`) handled in application callbacks | App-owned tracks attach with `Task.Attach(...From(input.Stream(track)))`; automatic discoveries use declarative `OnStream(match, Branch(...), OnRemove(...))` rules that attach through the same planner and choose drain, abort, or plain detach on removal (`examples/dynamic-audio-room`, `stream_rule_test.go`) |
 | Fanout | `tee` element plus per-branch `queue`s, leaky modes for shedding | `Branches(...)` with branch-local buffer policies (`flow.Blocking`/`DropOldest`/`Latest`) and a pinned ownership contract; a mutating branch cannot corrupt a sibling (`branch_buffer_test.go`, `copy_contract_test.go`; `BenchmarkBranchFanout`) |
 | Mux groups | Muxer elements with request pads linked per stream | Reusing one destination value groups branches into one mux/sink group; same-name distinct handles refuse; preflight checks descriptor codec/media limits, single-stream container limits, and declared timebase validity (`TestFromMultiInputPlanDedupesSharedDestination`, `TestFromMultiInputRejectsConflictingDestinationHandles`, `TestMuxTimebaseCompatibilityContracts`; `BenchmarkSharedMuxGroup`) |
 | Custom source | `appsrc`, or a `GstBaseSrc` subclass | `goav.Source(fn)` push API with per-push `Accepted`/`Dropped` results (`source_push_test.go`), or the `provider.Source` transport extension point; RTP/WebRTC are ordinary providers (`adapterproof/adapter_compat_test.go`) |
@@ -32,30 +32,40 @@ claims are made.
 | Custom codec / filter / container | GstElement plugin API in C (or bindings), installed and discovered as plugins | Exported factory interfaces plus per-runtime `With*` registration; one toy implementation of every extension point runs end to end in `adapterproof/adapter_compat_test.go` (guide: `docs/ADAPTER_AUTHORING.md`) |
 | Error reporting | `GError` messages on the pipeline bus, element-defined | One structured `BuildError` everywhere: a typed code from the `errcode` catalog, failing operation/node, machine-readable details, concrete fixes, and a checked catalog row with named coverage (`docs/ERRORS.md`, `docs/ERROR_CATALOG.md`, `errors_pin_test.go`, `error_catalog_pin_test.go`, `error_acceptance_test.go`) |
 | Graph inspection | `GST_DEBUG_BIN_TO_DOT_FILE` dot dumps; bus messages | `Explain(ctx)`/`Describe()` before any resource opens: plans, decisions, diagnostics as data (`plan.Report`); described and built graphs are guarded equal (`TestJoinDescribeEqualsBuild*` in `join_plan_test.go`, `join_nested_test.go`) |
-| Runtime mutation | Pad probes and blocking for dynamic relinking; powerful, manual | Atomic grouped `Attach` with full rollback (`TestTaskAttachRuntimeBranchGroupRollsBackOnLaterFailure`), `Task.Detach(ctx, h, DrainBranch()/AbortBranch())`, gapless boundary-gated `Rebranch` (`runtime_branch_control_test.go`), per-branch `Pause`/`Resume`, and watchable branch lifecycle events (`TestTaskAttachDetachPublishesBranchLifecycleEvents`); race-safe snapshots (`task_invariants_test.go`) |
+| Runtime mutation | Pad probes and blocking for dynamic relinking; powerful, manual | Atomic grouped `Attach` with full rollback (`TestTaskAttachRuntimeBranchGroupRollsBackOnLaterFailure`), `Task.Detach(ctx, h, DrainBranch()/AbortBranch())`, gapless boundary-gated `Rebranch` including media-time switches (`runtime_branch_control_test.go`), per-branch `Pause`/`Resume`, and watchable branch plus destination lifecycle events (`lifecycle_test.go`); race-safe snapshots (`task_invariants_test.go`) |
+| Live-room sync | Clock selection, live pipelines, queues, and sink synchronization are part of the framework model | Grammar-shaped `SyncPolicy` gates align or shed packet/frame messages on shared live timelines for selected stream chains or branches; unsynced branches keep direct/buffered behavior, and sync drops use normal drop stats (`sync_test.go`, `join_sync_test.go`, `rtpav/integration/recipe_runtime_test.go`, `BenchmarkLiveRoomSync`) |
 | Deployment model | Shared C libraries plus runtime plugin scanning; system or bundled installs | Pure Go, `CGO_ENABLED=0`, one static binary; cgo-free core is pinned (`hygiene_test.go`: `TestNoCGOImports`) and CI builds with CGO disabled (`.github/workflows/ci.yml`) |
 | Performance proof status | Mature C implementation, decades of production tuning; no claim measured here | Contract + benchmarks present: allocation pins in plain `go test`, 16 measured workloads (`bench_test.go`, `perf_pin_test.go`, `docs/PERFORMANCE.md`); **no cross-framework comparison performed** |
 | Ecosystem maturity | Decades old; hundreds of plugins across the base/good/bad/ugly modules; hardware backends (VA-API, NVDEC, V4L2, ...); large community | Young; the standard adapter set is IVF, Annex B, Matroska/WebM, Opus, VP8/VP9 (full verticals), H264/AV1 (decode-first), resize/resample (`docs/ADAPTERS.md`) |
 
-## Flow gaps closed in this pass
+## What goav takes from the comparison
 
 The useful lesson from GStreamer is not "copy pads into the public API"; it is
-that real media applications need mutation, negotiation, and bus-visible
-state changes to be ordinary workflows. The current goav answer is:
+that real media applications need mutation, negotiation, time alignment, and
+bus-visible state changes to be ordinary workflows. The current goav answer is:
 
 - Runtime branch lifecycle is observable without graph handles:
   `av.EventBranchAttached` and `av.EventBranchDetached` are delivered through
   `Task.Watch`, carrying the attachment id/name and detach disposition.
+- Destination finalization is observable too:
+  `av.EventDestinationCommitted`, `av.EventDestinationAborted`, and
+  `av.EventDestinationCommitError` report task and runtime-branch destination
+  outcomes.
 - Standalone detach has an explicit outcome:
   `Task.Detach(ctx, attachment, DrainBranch())` commits branch destinations,
   `AbortBranch()` aborts them, and the no-option form remains a plain detach.
 - Mux preflight now validates declared timebase facts along with stream count,
   codec, and media compatibility. Unknown facts still defer; malformed facts
   fail before resources open.
+- Branch-local live-room synchronization is part of the grammar:
+  applying the same `SyncPolicy` to audio/video branches aligns messages by
+  normalized PTS, while `SyncDropLate()` lets preview branches shed late media
+  without stalling recording branches.
 
-The intentionally deferred gap is still the large one: full pull scheduling
-and A/V sink synchronization. That belongs in the scheduler/time model, not as
-extra branch flags or a graph API escape hatch.
+The intentionally deferred gap is narrower now: pipeline-wide clock service,
+pull scheduling, and sink-level A/V synchronization. Branch-local live-room
+alignment exists; global playout policy still belongs in the scheduler/time
+model, not as extra branch flags or a graph API escape hatch.
 
 ## What goav deliberately does not have
 
@@ -65,10 +75,11 @@ extra branch flags or a graph API escape hatch.
   (`TestNoCGOImports`); acceleration belongs in external adapters. Roadmap
   for adapters, non-goal for core (`docs/ROADMAP.md`).
 - Playback/display stacks, device discovery, auto-pluggers. These are out of
-  scope;
-  goav assumes the application owns its endpoints.
-- A/V sink synchronization and pull scheduling. These are deferred, analysed in
-  `docs/NORTH_STAR.md` (theme C) and `docs/ROADMAP.md`. Roadmap.
+  scope; goav assumes the application owns its endpoints.
+- Pipeline-wide clock service, pull scheduling, and sink-level A/V
+  synchronization. Branch-local live-room `SyncPolicy` gates exist, but global
+  playout policy remains roadmap work (`docs/NORTH_STAR.md`,
+  `docs/ROADMAP.md`).
 
 ## On performance comparisons
 

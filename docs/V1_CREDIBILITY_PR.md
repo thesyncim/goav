@@ -1,3 +1,10 @@
+# V1 Credibility PR Notes
+
+Use this as the release-readiness PR body or review note for the documentation,
+evidence, and automation work. It is intentionally written as a human review
+map: what changed, why it matters, which checks ran, and what still needs a
+maintainer decision before a tag.
+
 ## What Changed
 
 - Shrank README into an adoption front door and moved advanced material into

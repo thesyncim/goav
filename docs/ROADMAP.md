@@ -162,7 +162,7 @@ The checklist below gates the tag. Each item names its current evidence.
   `testdata/api_surface.txt` (both-direction pin), with dynamic package
   discovery asserting every module package is governed
   (`TestEveryPublicPackageIsGoverned`).
-- [x] **Compile-tested examples**: 13 `Example*` functions run under
+- [x] **Compile-tested examples**: root `Example*` functions run under
   `go test` (`example_test.go`); the `examples/webrtc-runtime-ladder` module
   builds and tests in CI.
 - [x] **Operation reference**: `docs/OPERATIONS.md` covers the front-door
