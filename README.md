@@ -7,17 +7,18 @@
 [![Status](https://img.shields.io/badge/status-pre--v1-orange)](docs/ROADMAP.md)
 [![Release Notes](https://img.shields.io/badge/release_notes-CHANGELOG-blue)](CHANGELOG.md)
 
-`goav` is a pure-Go media runtime for applications that need to describe,
-validate, run, inspect, and change media work in-process.
+`goav` is a pure-Go media runtime for applications where media is part of the
+product, not a subprocess bolted on from the side.
 
-You write one recipe: inputs, selected streams, operations, taps, branches, and
-destinations. The recipe is validated before resources open, then compiled into
-a task that can report its plan, expose snapshots and events, accept runtime
-branches, and receive live controls.
+You describe the work once: where media comes from, which streams matter, what
+should happen to them, where the results go, and which points should remain
+available for live branches. Before anything opens, goav can explain and
+validate that recipe. After it starts, the same task can be watched, inspected,
+controlled, branched, rebranched, and detached.
 
-No cgo is required for the core runtime, and no FFmpeg or GStreamer process is
-started behind your back. `CGO_ENABLED=0` builds a static binary when your
-selected adapters allow it.
+The core runtime has no cgo requirement and does not start FFmpeg or GStreamer
+behind your back. If the adapters you choose are pure Go, `CGO_ENABLED=0`
+builds a static binary.
 
 ## Install
 
@@ -27,7 +28,7 @@ go get github.com/thesyncim/goav
 
 ## 30-Second Examples
 
-One packet-preserving recording recipe:
+Start with one packet-preserving recording:
 
 ```go
 return goav.From(goav.FileInput("input.ivf", in)).
@@ -36,86 +37,94 @@ return goav.From(goav.FileInput("input.ivf", in)).
     Run(ctx)
 ```
 
-The grammar stays small:
+Most recipes read like that sentence:
 
-- `Input`: file, URI, transport provider, generated source, or application
+- **Input**: a file, URI, transport provider, generated source, or application
   source.
-- `Stream`: `.Audio()`, `.Video()`, or an explicit stream selector.
-- `Tap`: a named attach point, optionally typed with `goav.FrameTap(...)` or
-  `goav.PacketTap(...)`.
-- `Branch`: one downstream operation sequence from a stream point or tap,
-  declared with `goav.Branch(...)` inside `Branches(...)`.
-- `Destination`: `goav.File(...)`, URI, `goav.Writer(...)`,
-  `goav.Custom(...)`, shared mux, or `goav.Sink(...)`.
-- `Flow`: reusable operations with no destination attached, declared with
+- **Stream**: `.Audio()`, `.Video()`, or an explicit stream selector.
+- **Operations**: `.Decode()`, `.Copy()`, `.Resize()`, `.Resample()`,
+  `.Do(stage)`, `.Encode(codec)`, and `.Tap(...)`.
+- **Tap**: a named point that later branches can attach to; use
+  `goav.FrameTap(...)` or `goav.PacketTap(...)` when the domain matters.
+- **Branch**: a downstream operation sequence from a stream point or tap,
+  built with `goav.Branch(...)` inside `.Branches(...)`.
+- **Destination**: `goav.File(...)`, `goav.Writer(...)`, `goav.Sink(...)`,
+  a URI, object destination, or shared mux/sink group.
+- **Flow**: reusable operations with no destination of their own, built with
   `goav.Flow(...)`.
-- `Task`: a running graph with control, events, snapshots, attach, rebranch,
-  and detach.
+- **Task**: the running work: events, snapshots, stats, control, attach,
+  rebranch, and detach.
 
-The public grammar stays Input, Stream, Tap, Branch, Destination, Flow, and
-Task. Operations are methods on a chain: `.Decode()`, `.Copy()`, `.Resize()`,
-`.Resample()`, `.Do(stage)`, `.Encode(codec)`, and `.To(destination)`.
-Reuse the same destination value when branches should share one mux, sink
-group, or transactional writer.
+The public grammar stays deliberately small: Input, Stream, Tap, Branch,
+Destination, Flow, Task. Reuse the same destination value when several
+branches should feed one mux, sink group, or transactional writer.
 
 ## Common Recipes
 
-| Need | Front-door shape | Deep dive |
+| When you want to | Start with | Keep reading |
 |---|---|---|
-| Record encoded packets | `From(input).Copy().To(File(...))` | [docs/USE_CASES.md](docs/USE_CASES.md) |
-| Produce several outputs from one stream | `Branches(Branch(...).To(...), ...)` | [docs/USE_CASES.md](docs/USE_CASES.md) |
-| Decode, filter, and re-encode | `.Decode().Resize()/Resample().Encode(codec).To(...)` | [docs/OPERATIONS.md](docs/OPERATIONS.md) |
-| Process live room tracks and mix one output | `Task.Attach(ctx, Branch(...).From(input.Stream(track)))` | [docs/USE_CASES.md](docs/USE_CASES.md), [examples/dynamic-audio-room](examples/dynamic-audio-room) |
-| Attach diagnostics while live | `Build`, then `Task.Attach(ctx, Branch(...).From(Tap(...)))` | [docs/CONTROL_PLANE.md](docs/CONTROL_PLANE.md) |
-| Add an adapter or external component | `goav.New(goav.With...)` plus the relevant provider interface | [docs/EXTENSION_COOKBOOK.md](docs/EXTENSION_COOKBOOK.md) |
+| Record encoded packets without decoding | `From(input).Copy().To(File(...))` | [Use cases](docs/USE_CASES.md) |
+| Produce several outputs from one stream | `Branches(Branch(...).To(...), ...)` | [Use cases](docs/USE_CASES.md) |
+| Decode, filter, and re-encode | `.Decode().Resize()/Resample().Encode(codec).To(...)` | [Operations](docs/OPERATIONS.md) |
+| Process live room tracks | `Task.Attach(ctx, Branch(...).From(input.Stream(track)))` | [Dynamic audio room](examples/dynamic-audio-room) |
+| Add diagnostics to a running task | `Build`, then attach a branch from a typed tap | [Control plane](docs/CONTROL_PLANE.md) |
+| Plug in your own source, sink, codec, filter, or container | `goav.New(goav.With...)` plus the relevant interface | [Extension cookbook](docs/EXTENSION_COOKBOOK.md) |
 
 ## Why goav
 
-| If you usually reach for | goav is useful when |
-|---|---|
-| FFmpeg commands | The media work belongs inside your Go process, needs typed errors, or must be changed while running. |
-| GStreamer | You want a smaller Go API with recipe validation, snapshots, and runtime branch attach instead of a full multimedia framework. |
-| Pion-only glue | You need WebRTC/RTP ingest plus recording, decoding, transforms, sinks, and muxing without hand-wiring every path. |
-| In-house pipeline code | You want extension seams for sources, destinations, codecs, filters, joins, and control-plane hosts without inventing another graph contract. |
+goav is useful when media work needs to be part of your Go program's control
+flow: typed errors instead of stderr parsing, validated plans before resources
+open, snapshots and events while a task runs, and live branches when production
+needs one more recorder, meter, preview, or debugging sink.
 
-goav is not a universal replacement for dedicated media tools. It is aimed at
-applications where recipes, validation, observability, and live control are part
-of the product.
+| If your first instinct is | goav helps when |
+|---|---|
+| An FFmpeg command | The job needs typed validation, in-process control, or live changes. |
+| A GStreamer graph | You want a smaller Go-first recipe surface with snapshots and branch attach. |
+| Pion glue code | RTP/WebRTC is only the ingress; you also need recording, decode, transforms, muxing, and sinks. |
+| A custom in-house graph | You want extension seams without inventing another task, event, and lifecycle model. |
+
+It is not trying to replace every dedicated media tool. It is for systems where
+recipes, observability, runtime control, and Go-native extension points are part
+of the application boundary.
 
 ## Capability Matrix
 
-| Area | In tree today | Notes |
+| Area | What is in tree | Human version |
 |---|---|---|
-| Core runtime | Pure Go, in-process recipes, task lifecycle, events, watch, snapshot, stats, attach, detach, rebranch, controls | Core builds with `CGO_ENABLED=0` when selected adapters do. |
-| Containers | IVF, Annex B, Matroska, WebM | Container internals are implementation packages behind the `format` extension seam. |
-| Codecs | Opus, VP8, VP9, AV1 encode/decode verticals; AAC-LC and H264 receive/decode active | AAC-LC and H264 recipe encode remain descriptor-only until encoder backends are enabled. |
-| Transforms | Resize, resample, custom frame stages | Shape solver inserts conversions only under explicit policy. |
-| Transports | RTP and WebRTC in nested modules | Root module stays dependency-pure; transport modules carry their own third-party dependencies. |
-| Extension points | Sources, destinations, codecs, formats, filters, stages, joins, control-plane hosts, goavtest fixtures and expect assertions | Registrations are per runtime; there is no global adapter table. |
+| Core runtime | Recipes, task lifecycle, events, watch, snapshots, stats, attach, detach, rebranch, controls | Build one validated task, then inspect and change it while it runs. |
+| Containers | IVF, Annex B, Matroska, WebM | Enough for the current packet-recording and WebRTC/RTP examples; more formats plug in through `format`. |
+| Codecs | Opus, VP8, VP9, AV1 encode/decode verticals; AAC-LC and H264 receive/decode active | The common realtime paths are present; some encode paths remain descriptor-only until backends are enabled. |
+| Transforms | Resize, resample, custom frame stages | Conversion happens only when the recipe grants an explicit shape policy. |
+| Transports | RTP and WebRTC in nested modules | Pion stays out of the root module and lives where transport code needs it. |
+| Extension points | Sources, destinations, codecs, formats, filters, stages, joins, control hosts, tests | Registrations are per runtime; there is no global adapter table. |
 
 ## Stability Matrix
 
-| Surface | Tier | Status |
+goav is pre-v1, but the important surfaces are already pinned so accidental API
+growth fails tests.
+
+| Surface | Tier | What that means |
 |---|---|---|
-| Recipe grammar, `Task`, structured errors, `plan`, `snapshot`, `lifecycle`, `shape`, `flow`, `av` vocabulary | Tier A | v0 stable and pinned against silent growth. |
-| Provider, codec, format, filter, control-host, custom-stage, custom-join, and testing seams | Tier B | Extension points are documented and doc-pinned; new capabilities may grow them. |
-| Expert graph and prebuilt low-level components | Tier C | Supported for advanced composition, but not the first-learn API. |
-| Performance claims | Evidence based | Allocation pins and benchmarks are real; tail latency, RSS, soak, and comparative leadership are explicitly not proven yet. |
-| Release status | Pre-v1 | The remaining v1 gate is the maintainer release decision and compatibility note; see [docs/ROADMAP.md](docs/ROADMAP.md). |
+| Recipe grammar, `Task`, structured errors, `plan`, `snapshot`, `lifecycle`, `shape`, `flow`, `av` vocabulary | Tier A | Stable enough to build against; changes are deliberate and test-pinned. |
+| Provider, codec, format, filter, control-host, custom-stage, custom-join, and testing seams | Tier B | Extension points are documented and may grow as capabilities grow. |
+| Expert graph and low-level components | Tier C | Supported for advanced composition, but not the first API to learn. |
+| Performance claims | Evidence based | Allocation pins and benchmarks are real; broad tail-latency and soak claims are not made yet. |
+| Release status | Pre-v1 | The remaining gate is the maintainer release decision and compatibility note; see [Roadmap](docs/ROADMAP.md). |
 
 ## Deep Dives
 
 | Topic | Where to go |
 |---|---|
-| Use cases and branch recipes | [docs/USE_CASES.md](docs/USE_CASES.md) |
-| Operation rules and errors | [docs/OPERATIONS.md](docs/OPERATIONS.md), [docs/ERRORS.md](docs/ERRORS.md), [docs/ERROR_CATALOG.md](docs/ERROR_CATALOG.md) |
-| Runtime control and socket hosts | [docs/CONTROL_PLANE.md](docs/CONTROL_PLANE.md), [examples/control-plane-host](examples/control-plane-host) |
-| Real-world dynamic media patterns | [examples/dynamic-audio-room](examples/dynamic-audio-room), [examples/gio-webrtc-showcase](examples/gio-webrtc-showcase), [examples/webrtc-runtime-ladder](examples/webrtc-runtime-ladder) |
-| Extension cookbook and adapter authoring | [docs/EXTENSION_COOKBOOK.md](docs/EXTENSION_COOKBOOK.md), [docs/ADAPTER_AUTHORING.md](docs/ADAPTER_AUTHORING.md), [docs/ADAPTERS.md](docs/ADAPTERS.md) |
-| Copyable extension modules | [examples/custom-source](examples/custom-source), [examples/provider-source](examples/provider-source), [examples/custom-destination](examples/custom-destination), [examples/custom-filter](examples/custom-filter), [examples/transactional-writer](examples/transactional-writer), [examples/custom-codec](examples/custom-codec), [examples/custom-join](examples/custom-join) |
-| API surface and composability laws | [docs/API_SURFACE.md](docs/API_SURFACE.md), [docs/COMPOSABILITY_LAWS.md](docs/COMPOSABILITY_LAWS.md) |
-| Reusable components | [docs/COMPONENTS.md](docs/COMPONENTS.md) |
-| Performance methodology | [docs/PERFORMANCE.md](docs/PERFORMANCE.md) |
-| Repository trust and release process | [docs/REPOSITORY_TRUST.md](docs/REPOSITORY_TRUST.md), [docs/RELEASING.md](docs/RELEASING.md), [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md) |
-| V1 credibility map | [docs/V1_CREDIBILITY_AUDIT.md](docs/V1_CREDIBILITY_AUDIT.md), [docs/ROADMAP.md](docs/ROADMAP.md) |
-| FFmpeg, GStreamer, and framework comparison | [docs/GSTREAMER_ALTERNATIVE.md](docs/GSTREAMER_ALTERNATIVE.md) |
+| Recipes, branches, live-room patterns | [Use cases](docs/USE_CASES.md) |
+| Operation rules and structured errors | [Operations](docs/OPERATIONS.md), [Errors](docs/ERRORS.md), [Error catalog](docs/ERROR_CATALOG.md) |
+| Runtime control and socket hosts | [Control plane](docs/CONTROL_PLANE.md), [control-plane host example](examples/control-plane-host) |
+| Browser and dynamic-media demos | [Dynamic audio room](examples/dynamic-audio-room), [Gio WebRTC showcase](examples/gio-webrtc-showcase), [WebRTC runtime ladder](examples/webrtc-runtime-ladder) |
+| Extension authoring | [Extension cookbook](docs/EXTENSION_COOKBOOK.md), [Adapter authoring](docs/ADAPTER_AUTHORING.md), [Adapters](docs/ADAPTERS.md) |
+| Copyable extension modules | [custom source](examples/custom-source), [provider source](examples/provider-source), [custom destination](examples/custom-destination), [custom filter](examples/custom-filter), [transactional writer](examples/transactional-writer), [custom codec](examples/custom-codec), [custom join](examples/custom-join) |
+| API governance and composition rules | [API surface](docs/API_SURFACE.md), [Composability laws](docs/COMPOSABILITY_LAWS.md) |
+| Reusable components | [Components](docs/COMPONENTS.md) |
+| Performance methodology | [Performance](docs/PERFORMANCE.md) |
+| Repository trust and release process | [Repository trust](docs/REPOSITORY_TRUST.md), [Releasing](docs/RELEASING.md), [Compatibility](docs/COMPATIBILITY.md) |
+| V1 readiness | [V1 credibility audit](docs/V1_CREDIBILITY_AUDIT.md), [Roadmap](docs/ROADMAP.md) |
+| FFmpeg, GStreamer, and framework comparison | [GStreamer alternative](docs/GSTREAMER_ALTERNATIVE.md) |

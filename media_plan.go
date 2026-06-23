@@ -2,8 +2,10 @@ package goav
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/thesyncim/goav/av"
+	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/pipeline"
@@ -28,6 +30,7 @@ type planOperation struct {
 	Kind      plan.OperationKind
 	Component string
 	Detail    string
+	Codec     codec.CodecSpec
 	After     plan.OperationKind
 	Shape     shape.Spec
 	Shared    bool
@@ -391,6 +394,7 @@ func planOperationFromOperationSpec(operation operationSpec) planOperation {
 			Kind:      plan.OpEncode,
 			Component: string(operation.Encode.ID),
 			Detail:    "frames to packets",
+			Codec:     cloneCodecSpec(operation.Encode),
 			Shape:     mediaShapeFromCodecSpec(operation.Encode, shape.DomainPacket),
 			Shared:    operation.Shared,
 		}
@@ -399,6 +403,7 @@ func planOperationFromOperationSpec(operation operationSpec) planOperation {
 			Kind:      plan.OpDecode,
 			Component: firstNonEmpty(string(operation.Decode.ID), operation.Component),
 			Detail:    "packets to frames",
+			Codec:     cloneCodecSpec(operation.Decode),
 			Shared:    operation.Shared,
 		}
 	case plan.OpStage:
@@ -413,6 +418,7 @@ func planOperationFromOperationSpec(operation operationSpec) planOperation {
 			Kind:      plan.OpCopy,
 			Component: firstNonEmpty(operation.Component, "packet-copy"),
 			Detail:    "no frame operation requested",
+			Codec:     cloneCodecSpec(operation.Encode),
 			Shared:    operation.Shared,
 		}
 	default:
@@ -567,8 +573,12 @@ func planShapeAfterOperation(spec shape.Spec, branch planBranch, operation planO
 			spec.MediaKind = firstNonEmptyMedia(spec.MediaKind, codecMedia(codecID))
 		}
 		spec.Domain = shape.DomainPacket
-	case plan.OpDecode, plan.OpStage:
+	case plan.OpDecode:
 		spec.Domain = shape.DomainFrame
+	case plan.OpStage:
+		// Custom stages are shape pass-through unless they carried an explicit
+		// shape contract upstream. Sync gates are packet/frame agnostic and must
+		// not accidentally turn packet-copy recording into frame-domain media.
 	case plan.OpShape:
 		spec = shape.Merge(spec, operation.Shape)
 	case plan.OpTransform:
@@ -579,7 +589,7 @@ func planShapeAfterOperation(spec shape.Spec, branch planBranch, operation planO
 	case plan.OpEncode:
 		spec.Domain = shape.DomainPacket
 		spec.StreamID = av.StreamID(firstNonEmpty(branch.Name, string(spec.StreamID)))
-		spec.Codec = av.CodecID(operation.Component)
+		spec.Codec = firstNonEmptyCodec(operation.Codec.ID, av.CodecID(operation.Component))
 		if media := codecMedia(spec.Codec); media != "" {
 			spec.MediaKind = media
 		}
@@ -710,6 +720,9 @@ func planOperationNodeName(branch planBranch, operation planOperation, index int
 		}
 		return operation.Component + "-" + name
 	case plan.OpStage:
+		if strings.HasPrefix(operation.Component, "sync-") {
+			return syncStageName(planBranchOperationScopeName(branch) + "-" + strings.TrimPrefix(operation.Component, "sync-"))
+		}
 		return operation.Component
 	case plan.OpEncode:
 		return "encode-" + branchEncodeOwnerName(branch)

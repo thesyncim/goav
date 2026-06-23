@@ -54,6 +54,7 @@ type session struct {
 
 	videoTask  goav.Task
 	audioTask  goav.Task
+	syncPolicy goav.SyncPolicy
 	videoCodec string
 	videoSSRC  uint32
 	audioCodec string

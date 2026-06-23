@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Runs the performance-lab smoke benchmarks and saves the output under the
 # checked bench-results/ layout. The Go benchmarks report p50/p95/p99,
-# heap/runtime memory, pressure/control/fanout/container smoke, and real Opus
-# throughput; OS time output adds max RSS where the platform's /usr/bin/time
-# exposes it.
+# heap/runtime memory, live-room sync drift/drop smoke,
+# pressure/control/fanout/container smoke, and real Opus throughput; OS time
+# output adds max RSS where the platform's /usr/bin/time exposes it.
 #
 # Usage:
 #   scripts/bench/perf-lab.sh
@@ -20,9 +20,10 @@ rss_dir="bench-results/rss"
 pressure_dir="bench-results/pressure"
 control_dir="bench-results/control"
 fanout_dir="bench-results/fanout"
+live_sync_dir="bench-results/live-sync"
 container_dir="bench-results/container"
 pprof_dir="bench-results/pprof/perf-lab-${stamp}"
-mkdir -p "${baseline_dir}" "${latency_dir}" "${rss_dir}" "${pressure_dir}" "${control_dir}" "${fanout_dir}" "${container_dir}" "${pprof_dir}"
+mkdir -p "${baseline_dir}" "${latency_dir}" "${rss_dir}" "${pressure_dir}" "${control_dir}" "${fanout_dir}" "${live_sync_dir}" "${container_dir}" "${pprof_dir}"
 out="${baseline_dir}/${machine}.txt"
 legacy="bench-results/perf-lab-${stamp}.txt"
 latency_json="${latency_dir}/record-packets-${stamp}.json"
@@ -30,6 +31,7 @@ rss_json="${rss_dir}/sustained-record-memory-${stamp}.json"
 pressure_json="${pressure_dir}/source-push-${stamp}.json"
 control_json="${control_dir}/attach-detach-${stamp}.json"
 fanout_json="${fanout_dir}/fanout-sweep-${stamp}.json"
+live_sync_json="${live_sync_dir}/live-room-sync-${stamp}.json"
 container_json="${container_dir}/container-corpus-${stamp}.json"
 benchtime="${PERF_BENCHTIME:-100x}"
 : "${CGO_ENABLED:=0}"
@@ -42,7 +44,7 @@ export CGO_ENABLED
   echo "benchtime: ${benchtime}"
   echo "pprof_dir: ${pprof_dir}"
   echo
-  go test -run '^$' -bench 'BenchmarkLatencyRecordPackets|BenchmarkSustainedRecordMemory|BenchmarkRealOpus(Encode|Decode)$' \
+  go test -run '^$' -bench 'BenchmarkLatencyRecordPackets|BenchmarkLiveRoomSync|BenchmarkSustainedRecordMemory|BenchmarkRealOpus(Encode|Decode)$' \
     -benchmem -benchtime "${benchtime}" \
     -cpuprofile "${pprof_dir}/cpu.out" -memprofile "${pprof_dir}/mem.out" .
   echo
@@ -181,6 +183,33 @@ cat > "$fanout_json" <<EOF
 }
 EOF
 
+live_sync_ns="$(metric_value BenchmarkLiveRoomSync ns/op)"
+live_sync_p50="$(metric_value BenchmarkLiveRoomSync p50_ns)"
+live_sync_p95="$(metric_value BenchmarkLiveRoomSync p95_ns)"
+live_sync_p99="$(metric_value BenchmarkLiveRoomSync p99_ns)"
+live_sync_allocs="$(metric_value BenchmarkLiveRoomSync allocs/op)"
+live_sync_source_drops="$(metric_value BenchmarkLiveRoomSync source_drops)"
+live_sync_sync_drops="$(metric_value BenchmarkLiveRoomSync sync_drops)"
+live_sync_delivered="$(metric_value BenchmarkLiveRoomSync delivered)"
+live_sync_max_drift="$(metric_value BenchmarkLiveRoomSync max_drift_ns)"
+cat > "$live_sync_json" <<EOF
+{
+  "scenario": "live-room-sync",
+  "stamp": "${stamp}",
+  "machine": "${machine}",
+  "source": "${out}",
+  "ns_per_op": $(json_number "$live_sync_ns"),
+  "p50_ns": $(json_number "$live_sync_p50"),
+  "p95_ns": $(json_number "$live_sync_p95"),
+  "p99_ns": $(json_number "$live_sync_p99"),
+  "allocs_per_op": $(json_number "$live_sync_allocs"),
+  "source_drops": $(json_number "$live_sync_source_drops"),
+  "sync_drops": $(json_number "$live_sync_sync_drops"),
+  "delivered": $(json_number "$live_sync_delivered"),
+  "max_drift_ns": $(json_number "$live_sync_max_drift")
+}
+EOF
+
 matroska_read_ns="$(metric_value BenchmarkReadWebRTCCorpus ns/op)"
 matroska_write_ns="$(metric_value BenchmarkWriteWebRTCCorpus ns/op)"
 webm_read_ns="$(metric_value BenchmarkReadWebMCorpus ns/op)"
@@ -210,5 +239,6 @@ echo "rss: $rss_json"
 echo "pressure: $pressure_json"
 echo "control: $control_json"
 echo "fanout: $fanout_json"
+echo "live-sync: $live_sync_json"
 echo "container: $container_json"
 echo "profiles: ${pprof_dir}/cpu.out ${pprof_dir}/mem.out"

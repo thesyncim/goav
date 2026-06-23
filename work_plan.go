@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/thesyncim/goav/av"
+	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/plan"
 	"github.com/thesyncim/goav/shape"
@@ -29,15 +30,18 @@ type workPlan struct {
 }
 
 type workInput struct {
-	Name     string
-	Protocol av.ProtocolID
-	Realtime bool
-	Codec    av.CodecID
+	Name      string
+	Protocol  av.ProtocolID
+	Realtime  bool
+	Codec     av.CodecID
+	CodecSpec codec.CodecSpec
 }
 
 type workStream struct {
-	Name   string
-	Select plan.StreamSelect
+	Name         string
+	Select       plan.StreamSelect
+	Operations   []operationSpec
+	Destinations []string
 }
 
 // workOperation is one planned operation. Destinations carries the stable
@@ -51,6 +55,7 @@ type workOperation struct {
 	Node         pipeline.NodeRef
 	Component    string
 	Detail       string
+	Codec        codec.CodecSpec
 	Shared       bool
 	ShapeIn      shape.Spec
 	ShapeOut     shape.Spec
@@ -184,10 +189,11 @@ func workInputsFromIntent(inputs []inputIntent) []workInput {
 	for i := range inputs {
 		input := inputs[i]
 		out = append(out, workInput{
-			Name:     firstNonEmpty(input.Name, input.URI, fmt.Sprintf("input-%d", i)),
-			Protocol: input.Protocol,
-			Realtime: input.Realtime,
-			Codec:    input.Codec.ID,
+			Name:      firstNonEmpty(input.Name, input.URI, fmt.Sprintf("input-%d", i)),
+			Protocol:  input.Protocol,
+			Realtime:  input.Realtime,
+			Codec:     input.Codec.ID,
+			CodecSpec: cloneCodecSpec(input.Codec),
 		})
 	}
 	return out
@@ -201,8 +207,10 @@ func workStreamsFromIntent(streams []streamIntent) []workStream {
 	for i := range streams {
 		stream := streams[i]
 		out = append(out, workStream{
-			Name:   firstNonEmpty(stream.Name, string(stream.Select.Type), fmt.Sprintf("stream-%d", i)),
-			Select: stream.Select,
+			Name:         stream.Name,
+			Select:       stream.Select,
+			Operations:   cloneOperationSpecs(stream.Operations),
+			Destinations: append([]string(nil), stream.Destinations...),
 		})
 	}
 	return out
@@ -259,6 +267,7 @@ func workOperationsFromBranches(spec pipeline.Spec, branches []planBranch, outpu
 				Node:      node,
 				Component: operation.Component,
 				Detail:    operation.Detail,
+				Codec:     cloneCodecSpec(operation.Codec),
 				Shared:    operation.Shared,
 				ShapeIn:   current,
 				ShapeOut:  shapeOut,
@@ -470,8 +479,8 @@ func workDestinationNameByID(destinations []workDestination, id string) string {
 
 func cloneWorkPlan(wp workPlan) workPlan {
 	clone := wp
-	clone.Inputs = append([]workInput(nil), wp.Inputs...)
-	clone.Streams = append([]workStream(nil), wp.Streams...)
+	clone.Inputs = cloneWorkInputs(wp.Inputs)
+	clone.Streams = cloneWorkStreams(wp.Streams)
 	clone.Operations = cloneWorkOperations(wp.Operations)
 	clone.Taps = append([]workTap(nil), wp.Taps...)
 	clone.Branches = cloneWorkBranches(wp.Branches)
@@ -482,6 +491,33 @@ func cloneWorkPlan(wp workPlan) workPlan {
 	return clone
 }
 
+func cloneWorkInputs(inputs []workInput) []workInput {
+	if len(inputs) == 0 {
+		return nil
+	}
+	out := make([]workInput, 0, len(inputs))
+	for i := range inputs {
+		input := inputs[i]
+		input.CodecSpec = cloneCodecSpec(input.CodecSpec)
+		out = append(out, input)
+	}
+	return out
+}
+
+func cloneWorkStreams(streams []workStream) []workStream {
+	if len(streams) == 0 {
+		return nil
+	}
+	out := make([]workStream, 0, len(streams))
+	for i := range streams {
+		stream := streams[i]
+		stream.Operations = cloneOperationSpecs(stream.Operations)
+		stream.Destinations = append([]string(nil), stream.Destinations...)
+		out = append(out, stream)
+	}
+	return out
+}
+
 func cloneWorkOperations(operations []workOperation) []workOperation {
 	if len(operations) == 0 {
 		return nil
@@ -489,6 +525,7 @@ func cloneWorkOperations(operations []workOperation) []workOperation {
 	out := make([]workOperation, 0, len(operations))
 	for i := range operations {
 		operation := operations[i]
+		operation.Codec = cloneCodecSpec(operation.Codec)
 		operation.Destinations = append([]string(nil), operation.Destinations...)
 		out = append(out, operation)
 	}

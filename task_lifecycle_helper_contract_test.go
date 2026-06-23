@@ -66,7 +66,7 @@ func TestTaskFinishDestinationsMarksTransactions(t *testing.T) {
 	task := newTask(newWatchTestGraph(1), nil, nil, success)
 	defer task.Close()
 
-	task.finishDestinations(true)
+	task.finishDestinations(nil)
 	if !success.succeeded || success.failed || success.ShouldAbort() {
 		t.Fatalf("success transaction = %+v, want succeeded without abort", success)
 	}
@@ -75,7 +75,7 @@ func TestTaskFinishDestinationsMarksTransactions(t *testing.T) {
 	task = newTask(newWatchTestGraph(1), nil, failed)
 	defer task.Close()
 
-	task.finishDestinations(false)
+	task.finishDestinations(errors.New("run failed"))
 	if failed.succeeded || !failed.failed || !failed.ShouldAbort() {
 		t.Fatalf("failed transaction = %+v, want failed abort", failed)
 	}

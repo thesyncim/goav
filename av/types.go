@@ -101,6 +101,10 @@ const MetadataAttachmentName = "attachment_name"
 // branch finalized its destinations: "detach", "drain", or "abort".
 const MetadataDetachDisposition = "detach_disposition"
 
+// MetadataDestinationName is the Event.Metadata key carrying the destination
+// finalized by a destination lifecycle event.
+const MetadataDestinationName = "destination_name"
+
 // Sample and pixel format names used in CodecParameters, AudioFrame, and
 // VideoFrame. Open strings: adapters may introduce more.
 const (
@@ -512,6 +516,14 @@ const (
 	// group. Metadata carries MetadataAttachmentID, MetadataAttachmentName, and
 	// MetadataDetachDisposition.
 	EventBranchDetached EventType = "branch_detached"
+	// EventDestinationCommitted reports that a task or runtime branch
+	// destination was committed.
+	EventDestinationCommitted EventType = "destination_committed"
+	// EventDestinationAborted reports that a task or runtime branch destination
+	// was aborted.
+	EventDestinationAborted EventType = "destination_aborted"
+	// EventDestinationCommitError reports a failed destination finalization.
+	EventDestinationCommitError EventType = "destination_commit_error"
 	// EventCodecChanged announces that a stream's codec parameters changed
 	// mid-run; Event.Codec carries the new parameters and decode chains apply
 	// their CodecChangePolicy.

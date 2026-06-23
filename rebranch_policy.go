@@ -3,6 +3,7 @@ package goav
 import (
 	"context"
 	"sync/atomic"
+	"time"
 
 	"github.com/thesyncim/goav/pipeline"
 )
@@ -11,7 +12,8 @@ import (
 // from the replaced branch to its replacements. The zero value switches
 // immediately, which is also what Rebranch does without a SwitchAt option.
 type SwitchBoundary struct {
-	kind switchBoundaryKind
+	kind      switchBoundaryKind
+	mediaTime time.Duration
 }
 
 type switchBoundaryKind string
@@ -20,6 +22,7 @@ const (
 	switchImmediate    switchBoundaryKind = ""
 	switchNextFrame    switchBoundaryKind = "next-frame"
 	switchNextKeyframe switchBoundaryKind = "next-keyframe"
+	switchMediaTime    switchBoundaryKind = "media-time"
 )
 
 // NextFrame switches at the next media message: the replacement branch starts
@@ -34,6 +37,13 @@ func NextFrame() SwitchBoundary {
 // qualifies.
 func NextKeyframe() SwitchBoundary {
 	return SwitchBoundary{kind: switchNextKeyframe}
+}
+
+// AtMediaTime switches when the replacement branch sees a packet or frame at
+// or after the given media timestamp. Negative timestamps are rejected by
+// Rebranch before any graph mutation.
+func AtMediaTime(position time.Duration) SwitchBoundary {
+	return SwitchBoundary{kind: switchMediaTime, mediaTime: position}
 }
 
 // RebranchOption configures Attachment.Rebranch. Replacement BranchSpec
@@ -65,6 +75,8 @@ func (f rebranchOptionFunc) applyRebranch(policy *rebranchPolicy) {
 type rebranchPolicy struct {
 	specs       []BranchSpec
 	boundary    switchBoundaryKind
+	mediaTime   time.Duration
+	invalid     string
 	disposition oldBranchDisposition
 }
 
@@ -86,6 +98,10 @@ const (
 func SwitchAt(boundary SwitchBoundary) RebranchOption {
 	return rebranchOptionFunc(func(policy *rebranchPolicy) {
 		policy.boundary = boundary.kind
+		policy.mediaTime = boundary.mediaTime
+		if boundary.kind == switchMediaTime && boundary.mediaTime < 0 {
+			policy.invalid = "media-time switch boundary must be non-negative"
+		}
 	})
 }
 
@@ -130,15 +146,21 @@ func rebranchPolicyFromOptions(options []RebranchOption) rebranchPolicy {
 // any opened (the switch was abandoned by teardown).
 type switchGroup struct {
 	boundary  switchBoundaryKind
+	mediaTime time.Duration
 	gates     atomic.Int64
 	open      atomic.Bool
 	opened    chan struct{}
 	abandoned chan struct{}
 }
 
-func newSwitchGroup(boundary switchBoundaryKind) *switchGroup {
+func newSwitchGroup(boundary switchBoundaryKind, mediaTime ...time.Duration) *switchGroup {
+	var at time.Duration
+	if len(mediaTime) != 0 {
+		at = mediaTime[0]
+	}
 	return &switchGroup{
 		boundary:  boundary,
+		mediaTime: at,
 		opened:    make(chan struct{}),
 		abandoned: make(chan struct{}),
 	}
@@ -185,7 +207,7 @@ func (g *switchGate) Handle(ctx context.Context, msg *pipeline.Message, emitter 
 		if msg.Kind == pipeline.MessageEvent {
 			return emitter.Emit(ctx, msg)
 		}
-		if !switchBoundaryReached(g.group.boundary, msg) {
+		if !switchGroupBoundaryReached(g.group, msg) {
 			return nil
 		}
 		g.open.Store(true)
@@ -202,6 +224,17 @@ func (g *switchGate) Close() error {
 }
 
 func switchBoundaryReached(boundary switchBoundaryKind, msg *pipeline.Message) bool {
+	return switchBoundaryReachedAt(boundary, 0, msg)
+}
+
+func switchGroupBoundaryReached(group *switchGroup, msg *pipeline.Message) bool {
+	if group == nil {
+		return true
+	}
+	return switchBoundaryReachedAt(group.boundary, group.mediaTime, msg)
+}
+
+func switchBoundaryReachedAt(boundary switchBoundaryKind, mediaTime time.Duration, msg *pipeline.Message) bool {
 	switch boundary {
 	case switchNextFrame:
 		return msg.Kind == pipeline.MessageFrame || msg.Kind == pipeline.MessagePacket
@@ -210,6 +243,9 @@ func switchBoundaryReached(boundary switchBoundaryKind, msg *pipeline.Message) b
 			return true
 		}
 		return msg.Kind == pipeline.MessagePacket && msg.Packet != nil && msg.Packet.Keyframe
+	case switchMediaTime:
+		_, pts, ok := syncMessageTime(msg)
+		return ok && pts >= mediaTime
 	default:
 		return true
 	}

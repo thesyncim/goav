@@ -224,6 +224,10 @@ func (s namedSource) DescribeNode() pipeline.NodeSpec {
 	return describeNamedNode(s.name, pipeline.NodeSource, s.source)
 }
 
+func (s namedSource) DroppedMessages() uint64 {
+	return droppedMessagesFrom(s.source)
+}
+
 type namedStage struct {
 	name  string
 	stage pipeline.Stage
@@ -245,6 +249,10 @@ func (s namedStage) DescribeNode() pipeline.NodeSpec {
 	return describeNamedNode(s.name, pipeline.NodeStage, s.stage)
 }
 
+func (s namedStage) DroppedMessages() uint64 {
+	return droppedMessagesFrom(s.stage)
+}
+
 type namedSink struct {
 	name string
 	sink pipeline.Sink
@@ -264,6 +272,18 @@ func (s namedSink) Close() error {
 
 func (s namedSink) DescribeNode() pipeline.NodeSpec {
 	return describeNamedNode(s.name, pipeline.NodeSink, s.sink)
+}
+
+func (s namedSink) DroppedMessages() uint64 {
+	return droppedMessagesFrom(s.sink)
+}
+
+func droppedMessagesFrom(node any) uint64 {
+	reporter, ok := node.(pipeline.DropReporter)
+	if !ok {
+		return 0
+	}
+	return reporter.DroppedMessages()
 }
 
 func describeNamedNode(name string, kind pipeline.NodeKind, node any) pipeline.NodeSpec {

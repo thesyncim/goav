@@ -1055,12 +1055,42 @@ func (t *task) stopAttachmentLocked(ctx context.Context, attachment *runtimeAtta
 	t.removeAttachmentTapsLocked(attachment)
 	delete(t.attachments, attachment)
 	if err == nil {
+		t.publishAttachmentDestinationLifecycleEvents(attachment, disposition)
 		t.publishBranchLifecycleEvent(av.EventBranchDetached, attachment, disposition)
+	} else {
+		t.publishAttachmentDestinationCommitErrors(attachment, err)
 	}
 	if first != nil {
 		return first
 	}
 	return err
+}
+
+func (t *task) publishAttachmentDestinationLifecycleEvents(attachment *runtimeAttachment, disposition oldBranchDisposition) {
+	if attachment == nil {
+		return
+	}
+	var kind av.EventType
+	switch disposition {
+	case oldBranchDrain:
+		kind = av.EventDestinationCommitted
+	case oldBranchAbort:
+		kind = av.EventDestinationAborted
+	default:
+		return
+	}
+	for i := range attachment.work.Destinations {
+		t.publishDestinationLifecycleEvent(kind, attachment.work.Destinations[i].Name, attachment, nil)
+	}
+}
+
+func (t *task) publishAttachmentDestinationCommitErrors(attachment *runtimeAttachment, cause error) {
+	if attachment == nil || cause == nil {
+		return
+	}
+	for i := range attachment.work.Destinations {
+		t.publishDestinationLifecycleEvent(av.EventDestinationCommitError, attachment.work.Destinations[i].Name, attachment, cause)
+	}
 }
 
 func (t *task) stopAttachmentChildrenLocked(ctx context.Context, attachment *runtimeAttachment, disposition oldBranchDisposition) error {
@@ -1332,10 +1362,13 @@ func (a *runtimeAttachment) Rebranch(ctx context.Context, options ...RebranchOpt
 	if len(policy.specs) == 0 {
 		return nil, runtimeBranchInvalidError("rebranch runtime branch", "pass one or more replacement goav.Branch(name)...To(destination) specs")
 	}
+	if policy.invalid != "" {
+		return nil, runtimeBranchInvalidError(policy.invalid, "pass goav.SwitchAt(goav.AtMediaTime(position)) with position >= 0")
+	}
 	specs := policy.specs
 	var group *switchGroup
 	if policy.boundary != switchImmediate {
-		group = newSwitchGroup(policy.boundary)
+		group = newSwitchGroup(policy.boundary, policy.mediaTime)
 		specs = gatedBranchSpecs(specs, group)
 	}
 	// Attach the replacements first so they are live before the old branch goes

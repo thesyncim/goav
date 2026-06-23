@@ -126,14 +126,6 @@ func knownProbeDecodeStream(probes []format.ProbeResult, stream streamIntent) (a
 	return candidates[0], true
 }
 
-func knownProbeDecodeCodec(probes []format.ProbeResult, stream streamIntent) (av.CodecID, bool) {
-	selected, ok := knownProbeDecodeStream(probes, stream)
-	if !ok {
-		return "", false
-	}
-	return selected.Codec.ID, true
-}
-
 func streamNeedsDecode(stream streamIntent) bool {
 	return chainHasDecode(stream.Operations) ||
 		len(streamIntentTransformSpecs(stream)) != 0 ||
@@ -158,14 +150,6 @@ func liveDecodeStream(inputs []inputIntent, stream streamIntent) (av.Stream, boo
 		return av.Stream{}, false
 	}
 	return selected, true
-}
-
-func liveDecodeCodec(inputs []inputIntent, stream streamIntent) (av.CodecID, bool) {
-	selected, ok := liveDecodeStream(inputs, stream)
-	if !ok {
-		return "", false
-	}
-	return selected.Codec.ID, true
 }
 
 func recipeDecodeAdapterError(operation string, stream streamIntent, codecID av.CodecID, registry *codec.SimpleRegistry, cause error) error {

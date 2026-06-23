@@ -12,33 +12,77 @@ import (
 	"github.com/thesyncim/goav/plan"
 )
 
-func TestOperationEncodeCodecContracts(t *testing.T) {
-	stream := streamIntent{Operations: []operationSpec{
-		{Kind: plan.OpEncode, Encode: codec.Codec(av.CodecID("x_custom"), av.MediaAudio)},
-	}}
-	if got := operationEncodeCodec(stream, true, plan.Operation{Kind: plan.OpEncode, Component: "encoder"}); got != av.CodecID("x_custom") {
-		t.Fatalf("stream encode codec = %q, want x_custom", got)
+func TestWorkOperationEncodeCodecContracts(t *testing.T) {
+	if got := workOperationEncodeCodec(workOperation{
+		Kind:  plan.OpEncode,
+		Codec: codec.Codec(av.CodecID("x_custom"), av.MediaAudio),
+	}); got != av.CodecID("x_custom") {
+		t.Fatalf("work operation codec = %q, want x_custom", got)
 	}
-	if got := operationEncodeCodec(stream, false, plan.Operation{Kind: plan.OpEncode, Component: "x_fallback"}); got != av.CodecID("x_fallback") {
+	if got := workOperationEncodeCodec(workOperation{Kind: plan.OpEncode, Component: "x_fallback"}); got != av.CodecID("x_fallback") {
 		t.Fatalf("operation component codec = %q, want x_fallback", got)
 	}
-	if got := operationEncodeCodec(streamIntent{}, false, plan.Operation{Kind: plan.OpEncode, Component: "encoder"}); got != "" {
+	if got := workOperationEncodeCodec(workOperation{Kind: plan.OpEncode, Component: "encoder"}); got != "" {
 		t.Fatalf("generic encoder component codec = %q, want empty", got)
 	}
-	if got := operationEncodeCodec(streamIntent{}, false, plan.Operation{Kind: plan.OpEncode}); got != "" {
+	if got := workOperationEncodeCodec(workOperation{Kind: plan.OpEncode}); got != "" {
 		t.Fatalf("empty component codec = %q, want empty", got)
 	}
 }
 
 func TestExplainDecodeCodecDeferredWarning(t *testing.T) {
-	_, warnings := appendBranchOperationRequirements(nil, recipeResolved{}, plan.Branch{
+	operation := workOperation{ID: "audio/000/decode", Kind: plan.OpDecode, Component: "decoder"}
+	_, warnings := appendWorkBranchOperationRequirements(nil, recipeResolved{}, workBranch{
 		Name:       "audio",
-		Operations: []plan.Operation{{Kind: plan.OpDecode, Component: "decoder"}},
-	}, streamIntent{}, false)
+		Operations: []string{operation.ID},
+	}, map[string]workOperation{operation.ID: operation}, nil)
 	if len(warnings) != 1 || warnings[0].Code != string(errcode.DecodeCodecDeferred) ||
 		warnings[0].Node != "audio" ||
 		!explainSuggestionsContain(warnings[0].Suggestions, "declare the provider codec intent") {
 		t.Fatalf("warnings = %+v, want decode_codec_deferred with provider-codec guidance", warnings)
+	}
+}
+
+func TestExplainRequirementsUseWorkOperationCodec(t *testing.T) {
+	operation := workOperation{
+		ID:        "web/000/encode",
+		Kind:      plan.OpEncode,
+		Component: "encoder",
+		Codec:     codec.VP9(),
+	}
+	requirements, warnings := appendWorkBranchOperationRequirements(nil, recipeResolved{}, workBranch{
+		Name:       "web",
+		Operations: []string{operation.ID},
+	}, map[string]workOperation{operation.ID: operation}, nil)
+	if len(warnings) != 0 || len(requirements) != 1 ||
+		requirements[0].Kind != "encoder" ||
+		requirements[0].Codec != av.CodecVP9 {
+		t.Fatalf("requirements=%+v warnings=%+v, want VP9 encoder requirement from work operation", requirements, warnings)
+	}
+}
+
+func TestExplainStreamsUseWorkStreamOperations(t *testing.T) {
+	streams := explainStreams([]workStream{{
+		Name:   "preview",
+		Select: plan.StreamSelect{Type: av.MediaVideo},
+		Operations: []operationSpec{
+			operationSpecForDecode(codec.VP8(), string(av.CodecVP8)),
+			operationSpecForEncode(codec.VP9()),
+		},
+		Destinations: []string{"webm"},
+	}})
+	if len(streams) != 1 {
+		t.Fatalf("streams = %d, want 1", len(streams))
+	}
+	stream := streams[0]
+	if !stream.Decode || stream.Encode.ID != av.CodecVP9 {
+		t.Fatalf("stream decode=%v encode=%q, want decode and VP9 encode", stream.Decode, stream.Encode.ID)
+	}
+	if len(stream.Operations) != 2 || stream.Operations[0].Kind != plan.OpDecode || stream.Operations[1].Kind != plan.OpEncode {
+		t.Fatalf("stream operations = %+v, want decode then encode", stream.Operations)
+	}
+	if len(stream.Destinations) != 1 || stream.Destinations[0] != "webm" {
+		t.Fatalf("stream destinations = %+v, want webm", stream.Destinations)
 	}
 }
 

@@ -277,6 +277,21 @@ func TestOnStreamAttachesLateBranchAndDetachesOnRemoval(t *testing.T) {
 	}
 }
 
+func TestOnStreamOnRemoveConfiguresRuleDetachPolicy(t *testing.T) {
+	input := lateStreamSource(lateOpusStream("late-audio"), 0xA, make(chan struct{}), make(chan struct{}))
+	job := From(input).
+		OnStream(MatchMedia(av.MediaAudio),
+			Branch("record").Copy().To(Sink(SinkFunc("record", func(context.Context, Message) error { return nil }))),
+			OnRemove(AbortBranch()),
+		)
+	if len(job.streamRules) != 1 {
+		t.Fatalf("stream rule count = %d, want 1", len(job.streamRules))
+	}
+	if got := job.streamRules[0].removeDisposition; got != oldBranchAbort {
+		t.Fatalf("remove disposition = %q, want %q", got, oldBranchAbort)
+	}
+}
+
 // TestOnStreamLateBranchReceivesFramesFromFrameSource pins the frame-domain
 // anchor: a frame-producing custom source announces a late stream and the rule
 // branch's sink receives that stream's frames directly (no decode).

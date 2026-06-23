@@ -194,9 +194,10 @@ func TestGraphPlanCarriesCloneSafeWorkPlan(t *testing.T) {
 		spec,
 		"work-plan-test",
 		[]workInput{{
-			Name:     "input.ivf",
-			Protocol: av.ProtocolFile,
-			Codec:    av.CodecVP8,
+			Name:      "input.ivf",
+			Protocol:  av.ProtocolFile,
+			Codec:     av.CodecVP8,
+			CodecSpec: codec.VP8(codec.ClockRate(90_000)),
 		}},
 		[]workStream{{
 			Name: "video",
@@ -204,6 +205,8 @@ func TestGraphPlanCarriesCloneSafeWorkPlan(t *testing.T) {
 				Type:  av.MediaVideo,
 				Codec: av.CodecVP8,
 			},
+			Operations:   []operationSpec{operationSpecForEncode(codec.VP9())},
+			Destinations: []string{"frames"},
 		}},
 		branches,
 		outputs,
@@ -218,6 +221,12 @@ func TestGraphPlanCarriesCloneSafeWorkPlan(t *testing.T) {
 	if len(work.Inputs) != 1 || work.Inputs[0].Name != "input.ivf" {
 		t.Fatalf("work inputs = %+v, want input.ivf", work.Inputs)
 	}
+	if work.Inputs[0].CodecSpec.ID != av.CodecVP8 || work.Inputs[0].CodecSpec.Parameters.ClockRate != 90_000 {
+		t.Fatalf("work input codec spec = %+v, want VP8 90kHz", work.Inputs[0].CodecSpec)
+	}
+	if len(work.Streams) != 1 || work.Streams[0].Name != "video" || work.Streams[0].Operations[0].Encode.ID != av.CodecVP9 {
+		t.Fatalf("work streams = %+v, want video stream with VP9 operation facts", work.Streams)
+	}
 	if len(work.Branches) != 1 || work.Branches[0].Name != "preview" {
 		t.Fatalf("work branches = %+v, want preview branch", work.Branches)
 	}
@@ -231,11 +240,23 @@ func TestGraphPlanCarriesCloneSafeWorkPlan(t *testing.T) {
 		t.Fatalf("work edges = %+v, want preview edge", work.Edges)
 	}
 
+	work.Inputs[0].CodecSpec.ID = av.CodecAV1
+	work.Streams[0].Operations[0].Encode.ID = av.CodecAV1
+	work.Streams[0].Destinations[0] = "mutated"
 	work.Branches[0].Operations[0] = "mutated"
 	work.Operations[0].Destinations = append(work.Operations[0].Destinations, "mutated")
 	work.Destinations[0].Branches[0] = "mutated"
 
 	next := graph.workPlan()
+	if next.Inputs[0].CodecSpec.ID != av.CodecVP8 {
+		t.Fatal("graphPlan.workPlan() exposed input codec spec")
+	}
+	if next.Streams[0].Operations[0].Encode.ID != av.CodecVP9 {
+		t.Fatal("graphPlan.workPlan() exposed stream operation slice")
+	}
+	if next.Streams[0].Destinations[0] == "mutated" {
+		t.Fatal("graphPlan.workPlan() exposed stream destination slice")
+	}
 	if next.Branches[0].Operations[0] == "mutated" {
 		t.Fatal("graphPlan.workPlan() exposed branch operation slice")
 	}

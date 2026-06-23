@@ -14,6 +14,7 @@ bench-results/
   pressure/<scenario>-<timestamp>.json    # drop/backpressure SourcePush summary
   control/<scenario>-<timestamp>.json     # hot attach/detach summary
   fanout/<scenario>-<timestamp>.json      # 1/8/64/512 fanout sweep summary
+  live-sync/<scenario>-<timestamp>.json   # live-room sync drift/drop summary
   container/<scenario>-<timestamp>.json   # Matroska/WebM corpus smoke summary
   pprof/<scenario>-<timestamp>/           # cpu.out and mem.out profiles
   bench-*.txt                             # scripts/bench/run.sh outputs
@@ -21,7 +22,7 @@ bench-results/
 ```
 
 `scripts/bench/perf-lab.sh` writes the `baseline`, `latency`, `rss`,
-`pressure`, `control`, `fanout`, `container`, and `pprof` directories,
+`pressure`, `control`, `fanout`, `live-sync`, `container`, and `pprof` directories,
 including CPU and memory profiles for the perf-lab subset. CI runs it with a
 smoke `PERF_BENCHTIME=1x`; release evidence should use longer same-machine
 runs and attach the generated files to the release or PR instead of committing

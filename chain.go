@@ -452,6 +452,14 @@ func (b *jobStreamBuilder) Do(stages ...pipeline.Stage) *jobStreamBuilder {
 	return b
 }
 
+// Sync places this stream chain on a shared media timeline. Reuse one
+// SyncPolicy value across audio/video chains or branches to align them.
+func (b *jobStreamBuilder) Sync(policy SyncPolicy) *jobStreamBuilder {
+	stream := b.current()
+	stream.operations = append(stream.operations, operationSpecForSync(policy))
+	return b
+}
+
 // Auto opts the chain into shape solving with the given conversion policies:
 // when a downstream operation pins format facts (an encoder's sample rate, a
 // stage contract's geometry) the current media does not satisfy, the planner

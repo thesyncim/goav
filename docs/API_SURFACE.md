@@ -1,45 +1,64 @@
 # API surface
 
-The public surface is a governed contract: every exported identifier belongs to
-exactly one tier, the root and vocabulary surfaces are pinned against silent
-growth (`api_surface_pin_test.go` + `testdata/api_surface.txt`), and every
-exported symbol must be documented (`doc_pin_test.go`). Adding an exported
-symbol is a reviewed act, not a side effect of layout.
+This page answers two practical questions:
 
-Tiers: **A**: application grammar (the first-learn API), **B**: extension
-points (implement these to plug things in), **C**: expert (graph handles),
-**D**: leakage (should not be public; tracked below).
+- "What should an application author learn first?"
+- "Where should an extension author plug in without reaching through the
+  runtime?"
 
-## A. The grammar (one screen)
+The public surface is governed, but not for bureaucracy's sake. Every exported
+identifier belongs to one tier, the root and vocabulary surfaces are pinned
+against silent growth (`api_surface_pin_test.go` + `testdata/api_surface.txt`),
+and every exported symbol must be documented (`doc_pin_test.go`). If a new
+export appears, the diff has to say so out loud.
+
+The tiers are a reader map:
+
+- **A. Grammar**: the first API an application should learn.
+- **B. Extension points**: interfaces and options for sources, destinations,
+  codecs, formats, filters, joins, controls, and tests.
+- **C. Expert tier**: graph handles and lower-level building blocks for
+  unusual compositions.
+- **D. Leakage**: public things that should not be public. This section should
+  stay empty.
+
+## A. The Grammar
+
+Most users should be able to stop here. A recipe starts with media, narrows to
+the streams that matter, applies ordered operations, names any attach points,
+branches when work diverges, and ends in destinations.
+
+One-screen shape:
 
 ```
 goav.From(input)                          inputs: FileInput, URIInput, Input(provider), Source(fn)
   .Audio() / .Video() / .Stream()         select a stream (InputName/StreamID/StreamIndex/StreamName)
   .Decode() .Copy() .Resize() .Resample() operations are chain methods
   .Do(stage) .Shape() .Auto() .Require() .Prefer()
+  .Sync(goav.Sync("room", ...))            shared packet/frame timeline gates
   .Encode(codec.VP9(codec.Bitrate(...)))  codec specs from the codec package
   .Tap(goav.Tap|FrameTap|PacketTap)       named attach points
   .Branches(goav.Branch("x")...To(dst))   fan out; BranchSpec also drives Task.Attach
   input.Stream(av.Stream{ID: ...})        attach anchor for app-owned dynamic tracks
   .To(File|URI|Writer|Custom|Sink)        destinations; reuse one value = mux/sink group
-  .OnStream(MatchMedia|MatchCodec|...)    dynamic-stream rules
+  .OnStream(MatchMedia|MatchCodec|...)    dynamic-stream rules; OnRemove controls detach outcome
 goav.Mix/Composite/Select(arms) / Join(name, stage, arms)   N arms -> one stream (JoinArm)
 goav.Flow("name")                         reusable operation list (Chain)
 job.Describe() / Explain() -> plan.Report; job.Build(ctx) -> Task; job.Run(ctx)
 Task: Run, Events, Watch(EventFilter), Snapshot -> snapshot.*, Stats,
       Attach/Detach(DrainBranch|AbortBranch)/Rebranch
-      (SwitchAt, Drain/AbortOldBranch, KeepOldOnFailure),
+      (SwitchAt(NextFrame|NextKeyframe|AtMediaTime), Drain/AbortOldBranch, KeepOldOnFailure),
       Control(Keyframe|Seek|Segment|Rate|SetBitrate|SelectActive|Deliver, .AtTap)
 goav.Default(opts...) / goav.New(opts...) -> Runtime; job.UseRuntime(rt)
 errors: *goav.BuildError{Code: errcode.X, ...} matched with errors.As/Is
 ```
 
 The checked operation reference is
-[`docs/OPERATIONS.md`](OPERATIONS.md): each chain operation lists input shape,
-output shape, allowed domain, inserted conversions, primary refusals, and
-runtime attach behavior.
+[`docs/OPERATIONS.md`](OPERATIONS.md). It is the human-readable contract for
+each operation: input shape, output shape, allowed domain, inserted
+conversions, primary refusals, and runtime attach behavior.
 
-Vocabulary read by applications, all tier A:
+Applications also read these vocabulary packages:
 
 - `errcode`: the error-code catalog (one `Code` per refusal class).
 - `plan`: everything `Explain` reports back.
@@ -54,12 +73,17 @@ Vocabulary read by applications, all tier A:
 
 ## B. Extension Points
 
-Everything pluggable goes through an exported interface plus a value-typed
-`With*` option on a per-runtime registry. External implementations are
-first-class. See docs/ADAPTERS.md, docs/COMPONENTS.md, and
-docs/EXTENSION_COOKBOOK.md.
+If you own media I/O, a codec, a transform, a join, or a control host, you
+should not need private packages. The pattern is deliberately boring: implement
+the exported interface, register it on a runtime with a value-typed `With*`
+option, then keep using the normal recipe grammar.
 
-- **Sources**: `provider.Source` (`OpenSource`), `goav.Source(fn)` with
+For recipes and copyable examples, start with
+[`docs/EXTENSION_COOKBOOK.md`](EXTENSION_COOKBOOK.md). For reference detail,
+use [`docs/ADAPTERS.md`](ADAPTERS.md) and [`docs/COMPONENTS.md`](COMPONENTS.md).
+
+- **Sources**: use these when your application or transport owns incoming
+  media. `provider.Source` (`OpenSource`), `goav.Source(fn)` with
   `SourceFunc`/`SourcePush`/`PushResult`; transports build on it:
   `rtpav.Receive` (PacketReader, Depacketizer, JitterBuffer, FeedbackWriter,
   PayloadMap extension points), `webrtcav.Track`/`Session` (TrackReader,
@@ -74,7 +98,8 @@ docs/EXTENSION_COOKBOOK.md.
   constructor takes a caller-held value (io.Writer for `File`,
   `provider.Destination` for `Custom`/`Writer`, `pipeline.Sink` for `Sink`)
   that callers wrap before passing.
-- **Joins**: `goav.Join(name, stage, arms...)`: N->1 convergence with a
+- **Joins**: use these when several streams become one. `goav.Join(name, stage,
+  arms...)` is N->1 convergence with a
   caller-supplied `pipeline.Stage` as the convergence node. Mix, Composite,
   and Select are profiles over this same machinery; the per-kind behaviors
   the internal profile table carries are derived for externals from the
@@ -85,11 +110,13 @@ docs/EXTENSION_COOKBOOK.md.
   name (node name, output stream id, `<name>_*` error-code family). The
   result is a full citizen: `.Tap/.Branches/.To`, itself a `JoinArm`
   (nesting), `Describe() == Build()`.
-- **Destinations**: `provider.Destination` + `provider.Contract`/
+- **Destinations**: use these when your application owns the output boundary.
+  `provider.Destination` + `provider.Contract`/
   `provider.Info`, `goav.Writer` (`provider.OpenFunc`), transactional uploads
   via `provider.TransactionalWriter`, frame/packet sinks via `goav.Sink` +
   `SinkFunc`.
-- **Custom stages**: `EventFunc`/`FrameFunc`/`PacketFunc` (+`Emit`) for
+- **Custom stages**: use these for in-process inspection or transformation.
+  `EventFunc`/`FrameFunc`/`PacketFunc` (+`Emit`) for
   `.Do(...)`; the node contracts live in `pipeline` (Source/Stage/Sink,
   Emitter, Message, Scratch, capability interfaces).
 - **Codecs**: `codec` Descriptor/Decoder/Encoder/factories, caller-owned
@@ -221,7 +248,12 @@ against the constructors in `input.go`/`provider.go`/`source.go`,
   to a running task; `Task.Detach(ctx, h)` removes that attached branch, with
   `DrainBranch()` and `AbortBranch()` selecting whether branch destinations
   commit or abort; `Attachment.Rebranch` is attach-new-then-detach-old, with
-  boundary options and old-branch outcome options.
+  boundary options (`NextFrame`, `NextKeyframe`, `AtMediaTime`) and
+  old-branch outcome options.
+- **Sync**: `Sync(name, SyncTolerance(...), SyncDropLate())` returns a shared
+  timeline policy. Reuse one `SyncPolicy` across audio/video chains or
+  branches; `.Sync(policy)` inserts a packet/frame gate that can hold early
+  media or drop late media and reports sync drops through normal branch stats.
 - **Shape vs Require vs Auto vs Prefer**: `Shape` states a fact about the
   current media point; `Require` asserts a contract that fails the build
   when unmet; `Auto` grants the solver permission to insert conversions;

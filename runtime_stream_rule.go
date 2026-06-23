@@ -122,6 +122,9 @@ func (t *task) streamRuleBranchSpecs(rule streamRule, stream av.Stream) ([]Branc
 	specs := make([]BranchSpec, 0, len(rule.branches))
 	for i := range rule.branches {
 		spec := branchSpecForDiscoveredStream(rule.branches[i], t.rules.source, domain, stream)
+		if err := validateSyncPolicyForStream("attach stream rule branch", spec.name, stream, spec.operations); err != nil {
+			return nil, err
+		}
 		intent := streamIntent{
 			Name: spec.name,
 			Select: plan.StreamSelect{
@@ -160,7 +163,11 @@ func (t *task) handleStreamRemoved(event av.Event) {
 		if entry.attachment == nil {
 			continue
 		}
-		if err := entry.attachment.detachReplaced(context.Background(), oldBranchDrain); err != nil {
+		disposition := oldBranchDrain
+		if t.rules != nil && entry.rule >= 0 && entry.rule < len(t.rules.rules) {
+			disposition = t.rules.rules[entry.rule].removeDisposition
+		}
+		if err := entry.attachment.detachReplaced(context.Background(), disposition); err != nil {
 			t.publishStreamRuleError(event.StreamID, entry.attachment.Name(), err)
 		}
 	}

@@ -6,8 +6,10 @@ import (
 	"testing"
 
 	"github.com/thesyncim/goav/av"
+	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/format"
+	"github.com/thesyncim/goav/plan"
 )
 
 func TestDescriptorMuxReasonContracts(t *testing.T) {
@@ -110,6 +112,60 @@ func TestMuxStreamTimeBaseContracts(t *testing.T) {
 	invalid := av.TimeBase{Num: 1}
 	if got := muxStreamTimeBase(av.Stream{TimeBase: invalid}); got != invalid {
 		t.Fatalf("invalid explicit timebase = %+v, want preserved %+v", got, invalid)
+	}
+}
+
+func TestMuxOutputStreamsUseWorkOperationCodec(t *testing.T) {
+	operation := workOperation{
+		ID:     "web/000/encode",
+		Kind:   plan.OpEncode,
+		Codec:  codec.VP9(),
+		Branch: "web",
+	}
+	streams := muxOutputStreams(
+		workDestination{Name: "preview.ivf", Branches: []string{"web"}},
+		map[string]workBranch{"web": {
+			Name:       "web",
+			Stream:     plan.StreamSelect{Type: av.MediaVideo},
+			Operations: []string{operation.ID},
+		}},
+		map[string]workOperation{operation.ID: operation},
+		nil,
+		nil,
+		format.ProbeResult{},
+		false,
+	)
+	if len(streams) != 1 || streams[0].Codec != av.CodecVP9 || streams[0].Media != av.MediaVideo {
+		t.Fatalf("streams = %+v, want work operation VP9 video facts", streams)
+	}
+}
+
+func TestMuxOutputStreamsUseWorkInputCodecFacts(t *testing.T) {
+	streams := muxOutputStreams(
+		workDestination{Name: "archive.webm", Branches: []string{"audio"}},
+		map[string]workBranch{"audio": {
+			Name:  "audio",
+			Input: "mic",
+			Stream: plan.StreamSelect{
+				Type: av.MediaAudio,
+			},
+		}},
+		nil,
+		[]workInput{{
+			Name:      "mic",
+			Realtime:  true,
+			Codec:     av.CodecOpus,
+			CodecSpec: codec.Opus(codec.SampleRate(48_000)),
+		}},
+		nil,
+		format.ProbeResult{},
+		false,
+	)
+	if len(streams) != 1 ||
+		streams[0].Codec != av.CodecOpus ||
+		streams[0].Media != av.MediaAudio ||
+		streams[0].TimeBase != (av.TimeBase{Num: 1, Den: 48_000}) {
+		t.Fatalf("streams = %+v, want Opus audio facts from work input", streams)
 	}
 }
 

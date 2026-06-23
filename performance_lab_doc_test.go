@@ -30,6 +30,7 @@ func TestPerformanceLabIsDocumentedAndGated(t *testing.T) {
 		"bench-results/pressure/<scenario>-<timestamp>.json",
 		"bench-results/control/<scenario>-<timestamp>.json",
 		"bench-results/fanout/<scenario>-<timestamp>.json",
+		"bench-results/live-sync/<scenario>-<timestamp>.json",
 		"bench-results/container/<scenario>-<timestamp>.json",
 		"bench-results/pprof/<scenario>-<timestamp>/",
 		"cpu.out",
@@ -38,6 +39,7 @@ func TestPerformanceLabIsDocumentedAndGated(t *testing.T) {
 		"BenchmarkSustainedRecordMemory",
 		"BenchmarkRealOpusEncode",
 		"BenchmarkRealOpusDecode",
+		"BenchmarkLiveRoomSync",
 		"BenchmarkSourcePush",
 		"BenchmarkAttachDetachUnderLoad",
 		"BenchmarkDirectFanout",
@@ -62,6 +64,7 @@ func TestPerformanceLabIsDocumentedAndGated(t *testing.T) {
 		!strings.Contains(string(workflow), "bench-results/pressure/*.json") ||
 		!strings.Contains(string(workflow), "bench-results/control/*.json") ||
 		!strings.Contains(string(workflow), "bench-results/fanout/*.json") ||
+		!strings.Contains(string(workflow), "bench-results/live-sync/*.json") ||
 		!strings.Contains(string(workflow), "bench-results/container/*.json") ||
 		!strings.Contains(string(workflow), "bench-results/pprof/**") ||
 		!strings.Contains(string(workflow), "scripts/bench/ci-compare.sh") ||
@@ -76,7 +79,9 @@ func TestPerformanceLabIsDocumentedAndGated(t *testing.T) {
 		"pressure_dir",
 		"control_dir",
 		"fanout_dir",
+		"live_sync_dir",
 		"container_dir",
+		"BenchmarkLatencyRecordPackets|BenchmarkLiveRoomSync|BenchmarkSustainedRecordMemory",
 		"Benchmark(SourcePush|AttachDetachUnderLoad)",
 		"Benchmark(DirectFanout|DirectFanoutParallel|BufferedFanout)",
 		"Benchmark(Read|Write).*Corpus|BenchmarkExternal.*FieldCorpusScan",

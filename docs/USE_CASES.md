@@ -1,13 +1,19 @@
 # Use Cases
 
-These scenarios keep the public API honest while implementation slices land.
+This is the cookbook layer. It shows the shapes you are likely to copy first,
+then points to the deeper reference docs when you need the edge cases.
+
+The examples are intentionally ordinary: they use the same `From -> stream
+selection -> operations -> branches -> destinations -> task` grammar whether
+the media comes from a file, RTP, WebRTC, or your own application.
 
 ## WebRTC Receive
 
-Receive Pion `TrackRemote` values, preserve RTP metadata, surface packet loss
-and codec changes, then record, decode, transform, or attach analysis.
+When a Pion `TrackRemote` enters your app, goav treats it as another input.
+You can preserve packets for recording, decode for preview, or attach analysis
+later without rebuilding the receive path.
 
-Packet-preserving receive:
+Packet-preserving recording:
 
 ```go
 err := goav.From(goav.Input(webrtcav.Track(track))).
@@ -17,7 +23,8 @@ err := goav.From(goav.Input(webrtcav.Track(track))).
 ```
 
 Reuse the same file, URI, writer, object upload, or sink destination value when
-several branches should feed one mux or sink group.
+several branches should feed one mux or sink group. The destination value is the
+grouping handle.
 
 Decoded preview:
 
@@ -29,14 +36,15 @@ err := goav.From(goav.Input(webrtcav.Track(track))).
     Run(ctx)
 ```
 
-Several realtime inputs compose through the variadic `From(inputs...)`, with
-`goav.InputName(...)` narrowing each chain to its input and one shared
-destination value muxing the encoded chains together.
+Several realtime inputs compose through `From(inputs...)`. Use
+`goav.InputName(...)` to say which chain reads which input, and reuse one
+destination value when the encoded streams should land in the same mux.
 
 ## RTP Receive
 
-Raw RTP uses Pion RTP packet types through `rtpav.PacketReader`. RTP inputs need
-codec intent so the runtime can choose the depacketizer.
+Raw RTP uses Pion RTP packet types through `rtpav.PacketReader`. Give RTP
+inputs codec intent so the runtime can choose the depacketizer before packets
+arrive.
 
 ```go
 err := goav.From(goav.Input(rtpav.Receive(video, rtpav.WithName("video"), rtpav.WithCodec(codec.VP8())))).
@@ -61,21 +69,21 @@ err := goav.From(goav.Input(rtpav.Receive(audio, rtpav.WithName("audio"), rtpav.
 ```
 
 When a media type matches several streams, the build error lists candidates and
-suggests `StreamID`, `StreamName`, or `StreamIndex(0)`.
+suggests the narrow selector to add: `StreamID`, `StreamName`, or
+`StreamIndex(0)`.
 
 ## Live Audio Rooms
 
-Conference rooms, watch parties, and collaborative editors often need dynamic
-audio membership: participants join, leave, or reconnect while the application
-still needs per-track processing for levels, moderation, transcription, or
-recording, plus an optional mixed output for playback or archive.
+Rooms are where the runtime model pays off. Participants join, leave, and
+reconnect while you still need per-track work for levels, moderation,
+transcription, recording, and maybe one mixed output for playback or archive.
 
 Use `goav.Mix(arms...)` when the arms are known when the recipe is built. When
-membership changes at runtime, keep each participant as its own source stream:
-the application owns the registry, attaches ordinary runtime branches from
-`input.Stream(participantStream)` before accepting that participant's media,
-emits `EventStreamAdded` / `EventStreamRemoved`, and feeds any mixed output
-after the per-track routes exist.
+membership changes at runtime, keep each participant as an application-owned
+stream. The application owns the registry, attaches ordinary branches from
+`input.Stream(participantStream)` before accepting media, emits
+`EventStreamAdded` / `EventStreamRemoved`, and feeds any mixed output after the
+per-track routes exist.
 
 ```go
 room := NewRoom("room", 48_000, 1)
@@ -147,19 +155,16 @@ _ = room.Push(ctx, map[string][]int16{
 _ = leave("music")
 ```
 
-`OnStream` remains useful when a source discovers tracks itself and automatic
-branch reactions are enough. For app-owned room membership, explicit
+`OnStream` is still useful when a source discovers tracks itself and automatic
+branch attachments are enough. For app-owned room membership, explicit
 `input.Stream(track)` anchors make the first-frame boundary deterministic.
 
 The runnable module `examples/dynamic-audio-room` validates this pattern with
 `goavtest/expect`: it proves runtime participant add/remove events, S16
 summing and clamping in the output mixer, per-track processing, and
-inactive-track rejection. It deliberately does not add a root `Room` API. A
-first-class dynamic upstream mix API should earn root surface only if it keeps
-per-track routes visible, produces a normal mixed stream for downstream
-encode/branch work, and handles source routing, stream lifecycle, shape
-conversion, backpressure, snapshots, and detach semantics generally instead of
-baking a conference-room helper into the core grammar.
+inactive-track rejection. It deliberately does not add a root `Room` API:
+rooms are an application pattern built from normal streams, branches,
+destinations, snapshots, and detach semantics.
 
 ## Branches
 

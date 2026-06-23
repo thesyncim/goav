@@ -47,13 +47,13 @@ func newPlanReport(operation string, resolved recipeResolved) (plan.Report, erro
 	}
 	work := resolved.workIR()
 	report.Inputs = explainInputs(resolved)
-	report.Streams = explainStreams(resolved.intent.Streams)
+	report.Streams = explainStreams(work.Streams)
 	report.Taps = explainTaps(work.Taps)
 	report.Branches = explainBranches(work)
 	report.Destinations = explainDestinations(resolved.intent.Destinations, resolved.outputFormats, work.Destinations)
 	report.Decisions = explainDecisions(work.Decisions)
 	report.Decisions = append(report.Decisions, explainStreamRules(resolved.streamRules)...)
-	report.RequiredAdapters, report.Warnings = explainRequirements(resolved, report)
+	report.RequiredAdapters, report.Warnings = explainRequirements(resolved, work, report)
 	report.Warnings = appendPlanDiagnostics(report.Warnings, work.Diagnostics...)
 	report.Warnings = appendPlanDiagnostics(report.Warnings, muxCompatibilityDiagnostics(resolvedMuxCompatibilityIssues(resolved))...)
 	report.Summary = explainSummary(resolved.intent.Name, report)
@@ -117,7 +117,7 @@ func (r recipeResolved) inputProbe(index int) (format.ProbeResult, bool) {
 	return probe, true
 }
 
-func explainStreams(streams []streamIntent) []plan.Stream {
+func explainStreams(streams []workStream) []plan.Stream {
 	reports := make([]plan.Stream, 0, len(streams))
 	for i := range streams {
 		stream := streams[i]
@@ -278,7 +278,7 @@ func workDestinationBranches(destinations []workDestination) map[string][]string
 	return branches
 }
 
-func explainRequirements(resolved recipeResolved, report plan.Report) ([]plan.AdapterRequirement, []plan.Diagnostic) {
+func explainRequirements(resolved recipeResolved, work workPlan, report plan.Report) ([]plan.AdapterRequirement, []plan.Diagnostic) {
 	var requirements []plan.AdapterRequirement
 	var warnings []plan.Diagnostic
 	for i := range report.Inputs {
@@ -313,24 +313,27 @@ func explainRequirements(resolved recipeResolved, report plan.Report) ([]plan.Ad
 			firstNonEmpty(output.Name, output.URI, fmt.Sprintf("output-%d", i)),
 		))
 	}
-	for i := range report.Branches {
-		branch := report.Branches[i]
-		stream, streamOK := reportStreamForBranch(resolved.intent.Streams, branch, i)
+	operations := workOperationsByID(work.Operations)
+	for i := range work.Branches {
+		branch := work.Branches[i]
 		var branchWarnings []plan.Diagnostic
-		requirements, branchWarnings = appendBranchOperationRequirements(requirements, resolved, branch, stream, streamOK)
+		requirements, branchWarnings = appendWorkBranchOperationRequirements(requirements, resolved, branch, operations, work.Inputs)
 		warnings = append(warnings, branchWarnings...)
 	}
 	return requirements, warnings
 }
 
-func appendBranchOperationRequirements(requirements []plan.AdapterRequirement, resolved recipeResolved, branch plan.Branch, stream streamIntent, streamOK bool) ([]plan.AdapterRequirement, []plan.Diagnostic) {
+func appendWorkBranchOperationRequirements(requirements []plan.AdapterRequirement, resolved recipeResolved, branch workBranch, operations map[string]workOperation, inputs []workInput) ([]plan.AdapterRequirement, []plan.Diagnostic) {
 	var warnings []plan.Diagnostic
 	requiredBy := firstNonEmpty(branch.Name, "branch")
-	for i := range branch.Operations {
-		operation := branch.Operations[i]
+	for _, id := range branch.Operations {
+		operation, ok := operations[id]
+		if !ok {
+			continue
+		}
 		switch operation.Kind {
 		case plan.OpDecode:
-			codecID, ok := operationDecodeCodec(resolved, stream, streamOK, operation)
+			codecID, ok := workOperationDecodeCodec(resolved, branch, operation, inputs)
 			if !ok || codecID == "" {
 				warnings = append(warnings, plan.Diagnostic{
 					Code:    string(errcode.DecodeCodecDeferred),
@@ -351,7 +354,7 @@ func appendBranchOperationRequirements(requirements []plan.AdapterRequirement, r
 			}
 			requirements = appendAdapterRequirement(requirements, filterAdapterRequirement(resolved.runtime, name, requiredBy))
 		case plan.OpEncode:
-			codecID := operationEncodeCodec(stream, streamOK, operation)
+			codecID := workOperationEncodeCodec(operation)
 			if codecID == "" {
 				continue
 			}
@@ -361,27 +364,12 @@ func appendBranchOperationRequirements(requirements []plan.AdapterRequirement, r
 	return requirements, warnings
 }
 
-func reportStreamForBranch(streams []streamIntent, branch plan.Branch, index int) (streamIntent, bool) {
-	for i := range streams {
-		if reportBranchNameForStream(streams[i], i) == branch.Name {
-			return streams[i], true
-		}
+func workOperationDecodeCodec(resolved recipeResolved, branch workBranch, operation workOperation, inputs []workInput) (av.CodecID, bool) {
+	if operation.Codec.ID != "" {
+		return operation.Codec.ID, true
 	}
-	if index >= 0 && index < len(streams) {
-		return streams[index], true
-	}
-	return streamIntent{}, false
-}
-
-func reportBranchNameForStream(stream streamIntent, index int) string {
-	return firstNonEmpty(stream.Name, string(stream.Select.Type), fmt.Sprintf("branch-%d", index))
-}
-
-func operationDecodeCodec(resolved recipeResolved, stream streamIntent, streamOK bool, operation plan.Operation) (av.CodecID, bool) {
-	if streamOK {
-		if codecID, ok := reportDecodeCodec(resolved, stream); ok {
-			return codecID, true
-		}
+	if codecID, _, _, ok := copyMuxStreamFacts(branch, inputs, resolved.inputProbes, resolved.branchInputProbe, resolved.branchInputProbeReady); ok {
+		return codecID, true
 	}
 	codecID := av.CodecID(operation.Component)
 	if codecID == "" || codecID == "decoder" {
@@ -390,9 +378,9 @@ func operationDecodeCodec(resolved recipeResolved, stream streamIntent, streamOK
 	return codecID, true
 }
 
-func operationEncodeCodec(stream streamIntent, streamOK bool, operation plan.Operation) av.CodecID {
-	if encode := chainEncodeSpec(stream.Operations); streamOK && encode.ID != "" {
-		return encode.ID
+func workOperationEncodeCodec(operation workOperation) av.CodecID {
+	if operation.Codec.ID != "" {
+		return operation.Codec.ID
 	}
 	codecID := av.CodecID(operation.Component)
 	if codecID == "" || codecID == "encoder" {
@@ -551,16 +539,6 @@ func applyCodecDescriptorRequirement(requirement plan.AdapterRequirement, descri
 		requirement.Realtime = requirement.Realtime || descriptors[i].Realtime
 	}
 	return requirement
-}
-
-func reportDecodeCodec(resolved recipeResolved, stream streamIntent) (av.CodecID, bool) {
-	if codecID, ok := liveDecodeCodec(resolved.intent.Inputs, stream); ok {
-		return codecID, true
-	}
-	if resolved.branchInputProbeReady {
-		return knownProbeDecodeCodec([]format.ProbeResult{resolved.branchInputProbe}, stream)
-	}
-	return knownProbeDecodeCodec(resolved.inputProbes, stream)
 }
 
 func appendAdapterRequirement(requirements []plan.AdapterRequirement, requirement plan.AdapterRequirement) []plan.AdapterRequirement {
@@ -863,6 +841,9 @@ func cloneOperationSpecs(operations []operationSpec) []operationSpec {
 	for i := range operations {
 		operation := operations[i]
 		operation.Transform = cloneTransformSpec(operation.Transform)
+		if gate, ok := operation.Stage.(*syncGate); ok {
+			operation.Stage = newSyncGate(gate.policy)
+		}
 		if operation.Auto != nil {
 			policy := *operation.Auto
 			operation.Auto = &policy

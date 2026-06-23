@@ -123,12 +123,14 @@ timestamped artifact under the checked layout in
 `bench-results/pressure/<scenario>-<timestamp>.json` for drop/backpressure
 smoke, `bench-results/control/<scenario>-<timestamp>.json` for attach/detach
 under load, `bench-results/fanout/<scenario>-<timestamp>.json` for 1/8/64/512
-fanout, `bench-results/container/<scenario>-<timestamp>.json` for
-Matroska/WebM corpus smoke,
+fanout, `bench-results/live-sync/<scenario>-<timestamp>.json` for
+live-room sync latency, drift, and drop smoke,
+`bench-results/container/<scenario>-<timestamp>.json` for Matroska/WebM corpus smoke,
 and `bench-results/pprof/<scenario>-<timestamp>/cpu.out` plus `mem.out` for
 profiles. The Go benchmarks report latency quantiles, heap/sys metrics,
 drop/backpressure costs, attach/detach under load, fanout sweep costs, real
-Opus encode/decode throughput, and container corpus smoke. Optional external
+Opus encode/decode throughput, live-room sync drift/drops
+(`BenchmarkLiveRoomSync`), and container corpus smoke. Optional external
 field-corpus benches stay skipped unless `GOAV_MATROSKA_FIELD_CORPUS` or
 `GOAV_WEBM_FIELD_CORPUS` is set. The script wraps the memory benchmark with
 `/usr/bin/time` on Linux and macOS so max RSS lands in the artifact when the
@@ -154,7 +156,7 @@ current numbers as snapshots, not contracts:
   cold-path control operation; its cost is dominated by planning and is not a
   data-plane figure.
 - **Performance lab smoke**: the latency, memory, pressure, control, fanout,
-  container, and real-Opus rows prove the harness shape, not production
+  live-sync, container, and real-Opus rows prove the harness shape, not production
   percentiles, soak behavior, or reference-hardware throughput at realistic
   durations.
 - **PR benchstat artifact**: `scripts/bench/ci-compare.sh` compares a small

@@ -239,6 +239,57 @@ func TestTaskAttachDetachPublishesBranchLifecycleEvents(t *testing.T) {
 	}
 }
 
+func TestTaskDetachPublishesDestinationLifecycleEvents(t *testing.T) {
+	ctx := context.Background()
+	task, err := From(lifecycleTestSource(func(_ context.Context, push SourcePush) error {
+		return lifecycleTestPush(push)
+	})).Audio().Copy().
+		Tap(PacketTap("audio.packets")).
+		To(lifecycleTestSink("base")).Build(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer task.Close()
+
+	events := task.Watch(WatchTypes(av.EventDestinationCommitted, av.EventDestinationAborted, av.EventDestinationCommitError))
+	attachment, err := task.Attach(ctx, Branch("rec").
+		From(PacketTap("audio.packets")).
+		To(lifecycleTestSink("rec")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := task.Detach(ctx, attachment, DrainBranch()); err != nil {
+		t.Fatal(err)
+	}
+	event := recvWatchEvent(t, events)
+	if event.Type != av.EventDestinationCommitted {
+		t.Fatalf("destination event type = %q, want %q", event.Type, av.EventDestinationCommitted)
+	}
+	if event.Metadata[av.MetadataDestinationName] != "rec" ||
+		event.Metadata[av.MetadataAttachmentID] != attachment.ID() ||
+		event.Metadata[av.MetadataAttachmentName] != "rec" {
+		t.Fatalf("destination event metadata = %#v, want destination and attachment facts", event.Metadata)
+	}
+}
+
+func TestTaskFinishPublishesRootDestinationCommitError(t *testing.T) {
+	commitErr := errors.New("commit failed")
+	transaction := &destinationTransaction{name: "commit-error.ivf", requireSuccess: true}
+	transaction.Fail()
+	task := newTaskWithRootDestinations(newWatchTestGraph(1), nil, []workDestination{{Name: "commit-error.ivf"}}, transaction)
+	defer task.Close()
+
+	events := task.Watch(WatchTypes(av.EventDestinationCommitted, av.EventDestinationAborted, av.EventDestinationCommitError))
+	task.finishDestinations(commitErr)
+	event := recvWatchEvent(t, events)
+	if event.Type != av.EventDestinationCommitError {
+		t.Fatalf("destination event type = %q, want %q", event.Type, av.EventDestinationCommitError)
+	}
+	if event.Metadata[av.MetadataDestinationName] != "commit-error.ivf" || !errors.Is(event.Cause, commitErr) {
+		t.Fatalf("destination event = %+v, want commit-error.ivf with commit cause", event)
+	}
+}
+
 func TestTaskDetachOptionsReportDestinationOutcome(t *testing.T) {
 	ctx := context.Background()
 	task, err := From(lifecycleTestSource(func(_ context.Context, push SourcePush) error {

@@ -144,6 +144,9 @@ func (t *task) planAttachBranchSteps(ctx context.Context, spec BranchSpec, desti
 		// shape-synthesized stand-in.
 		currentStream = *spec.source.stream
 	}
+	if err := validateSyncPolicyForStream("attach runtime branch", branchName, currentStream, spec.operations); err != nil {
+		return nil, err
+	}
 	steps := make([]attachStep, 0, len(spec.operations)+len(destinations))
 	fail := func(err error) ([]attachStep, error) {
 		for i := range steps {
@@ -165,6 +168,7 @@ func (t *task) planAttachBranchSteps(ctx context.Context, spec BranchSpec, desti
 		step := attachStep{operation: workOperation{
 			Kind:    operation.Kind,
 			Detail:  attachOperationDetail(operation.Kind),
+			Codec:   operationSpecCodec(operation),
 			ShapeIn: patchShape,
 		}}
 		out := patchShape
@@ -268,6 +272,7 @@ func (t *task) planAttachBranchSteps(ctx context.Context, spec BranchSpec, desti
 			step.component = attachComponent{stage: stage, owned: true}
 			currentStream = encodedStream
 			currentShape = streamPacketShapeFromRuntimeBranchStream(encodedStream, currentShape)
+			step.operation.Codec = cloneCodecSpec(operation.Encode)
 			out = attachStepShape(currentShape, patchShape)
 			encoded = true
 		case plan.OpCopy:

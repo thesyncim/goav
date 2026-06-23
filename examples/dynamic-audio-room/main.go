@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/thesyncim/goav"
 	"github.com/thesyncim/goav/av"
@@ -112,6 +113,7 @@ func runRoomScript(ctx context.Context, script func(context.Context, *RoomPipeli
 	room := NewRoom(roomName, roomSampleRate, roomChannels)
 	input := room.Input()
 	meter := NewTrackMeter()
+	roomSync := goav.Sync("room", goav.SyncTolerance(20*time.Millisecond), goav.SyncDropLate())
 	meterStage := goav.FrameFunc("track-meter", func(_ context.Context, frame *av.Frame, emit goav.Emit) error {
 		meter.Observe(frame)
 		return emit.Frame(frame)
@@ -138,10 +140,12 @@ func runRoomScript(ctx context.Context, script func(context.Context, *RoomPipeli
 			return task.Attach(ctx,
 				goav.Branch("track-"+participant).
 					From(anchor).
+					Sync(roomSync).
 					Do(meterStage).
 					To(tracks.Sink()),
 				goav.Branch("mix-"+participant).
 					From(anchor).
+					Sync(roomSync).
 					To(mixer.Sink()),
 			)
 		},
@@ -520,6 +524,7 @@ func (r *Room) participantStream(participant string) *av.Stream {
 			SampleFormat: av.SampleFormatS16,
 			ClockRate:    uint32(r.sampleRate),
 		},
+		TimeBase: av.TimeBase{Num: 1, Den: int64(r.sampleRate)},
 		Metadata: av.Metadata{
 			"room": r.name,
 		},
