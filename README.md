@@ -83,6 +83,33 @@ one sink group, or one transactional writer.
 | Wrap app-owned media | `goav.Source(...)` or `goav.Input(provider)` | [Extension cookbook](docs/EXTENSION_COOKBOOK.md) |
 | Add a codec, filter, muxer, or control host | `goav.New(...)` with the relevant extension option | [Adapter authoring](docs/ADAPTER_AUTHORING.md) |
 
+## Showcase Recipes
+
+These are the recipes that make the model click. They still use the same
+grammar; they just lean on the runtime parts harder.
+
+- **Record the room, let preview breathe.** Put the archive branch on a
+  steady `goav.Sync("room", goav.SyncTolerance(...))`, then give the preview
+  branch `goav.Sync("room", goav.SyncTolerance(...), goav.SyncDropLate())`
+  and a branch buffer. Late preview media can be shed through normal drop stats
+  while the recording branch keeps draining.
+- **Attach a support meter to a live task.** Name a frame point with
+  `goav.FrameTap("levels")`; later, attach `goav.Branch("support-meter")`
+  from that tap into `goav.Sink(levels)`. The meter is ordinary composition,
+  not a separate debug API.
+- **Replace a branch on a real media boundary.** Build the replacement branch
+  first, then rebranch with `goav.SwitchAt(goav.AtMediaTime(position))` and
+  `goav.KeepOldOnFailure()`. The old branch keeps running unless the
+  replacement is ready to take over.
+- **Treat late WebRTC/RTP tracks like normal streams.** Use `OnStream(...)`
+  rules to attach the same branch recipe when a track appears, and
+  `goav.OnRemove(goav.DrainBranch())` or `goav.AbortBranch()` to decide what
+  happens when that stream disappears.
+- **Expose app controls without exposing internals.** A control host can map
+  app-owned commands to `Task.Control`, `Task.Attach`, or `Attachment.Rebranch`
+  while keeping the public surface on recipes, branches, taps, and
+  destinations.
+
 ## Why goav
 
 Most media tools make the media graph powerful but distant: you build strings,
