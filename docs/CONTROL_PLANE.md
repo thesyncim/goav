@@ -1,8 +1,11 @@
 # Control plane
 
-`goav ctl` is the cold-path control surface for a running task. The
-application owns the task and exposes a Unix socket with package `ctl`; operators
-or automation talk to that socket with structured requests.
+`goav ctl` is the cold-path control surface for a running task. Use it when an
+application wants operators, tests, or automation to inspect and steer a live
+graph without handing them arbitrary access to application internals.
+
+The application owns the task and exposes a Unix socket with package `ctl`;
+operators or automation talk to that socket with structured requests.
 
 ```sh
 goav ctl --control unix:///tmp/goav-live.sock control bitrate stream=video value=1200k
@@ -17,6 +20,9 @@ code uses: `Task.Control`, `Task.Attach`, `Attachment.Rebranch`, `Task.Detach`,
 path to bind known command structs, validate fields, parse JSON, and generate
 help from tags. There is no global registry and no user-provided method name
 dispatch.
+
+The useful mental model: the CLI is a typed remote for the grammar, not a
+second workflow API.
 
 ## No-Code Generated Source
 
@@ -235,7 +241,8 @@ err = ctl.ServeUnixWithOptions(ctx, task, "unix:///tmp/goav-live.sock",
 )
 ```
 
-Operate it from the CLI:
+Operate it from the CLI. These examples are intentionally ordinary commands,
+not a hidden scripting language:
 
 ```sh
 goav ctl --control unix:///tmp/goav-live.sock help
@@ -279,12 +286,13 @@ goav ctl --control unix:///tmp/goav-live.sock attach frames as archive \
 
 Raw JSON is for automation that already has the protocol object. `control
 --json` decodes into the real `goav.Control` representation; `control deliver
---json` decodes into `av.Event` and then lowers to `goav.Deliver(event)`. Nested
-event metadata is rejected instead of being stringified silently, so a caller
-must choose the exact conversion before sending the request. Raw JSON uses the
-documented canonical field names and rejects unknown or duplicate fields before
-anything is applied; use `stream_id`, `bitrate`, `rate`, `start`, `end`, and
-`active` rather than CLI-only field names such as `stream` or `value`.
+--json` decodes into `av.Event` and then lowers to `goav.Deliver(event)`.
+Nested event metadata is rejected instead of being stringified silently, so a
+caller must choose the exact conversion before sending the request. Raw JSON
+uses the documented canonical field names and rejects unknown or duplicate
+fields before anything is applied; use `stream_id`, `bitrate`, `rate`,
+`start`, `end`, and `active` rather than CLI-only field names such as `stream`
+or `value`.
 
 Render a live flowchart from the same running task:
 
@@ -325,8 +333,8 @@ is easier to feed into other tooling.
 
 ## Built-In Requests
 
-The socket protocol is JSON. The CLI is the normal entry point, but hosts and
-tests can use the same request shape directly:
+The socket protocol is JSON. The CLI is the normal human entry point, but hosts
+and tests can use the same request shape directly:
 
 ```go
 request, err := ctl.RequestFromCLI([]string{
@@ -360,9 +368,8 @@ Register the codec implementation on the runtime, then call it in an attach or
 rebranch pipeline with the generic `encode` step. This is the default path for
 custom encoders and does not require a custom encoder spelling. Use
 `goav.Default(...)` when you want the stock codecs, formats, and filters plus
-your adapter; use
-`goav.New(...)` only when you are intentionally registering every required
-codec, filter, prober, demuxer, and muxer yourself.
+your adapter; use `goav.New(...)` only when you are intentionally registering
+every required codec, filter, prober, demuxer, and muxer yourself.
 
 Opus, VP8, VP9, and AV1 are full encode/decode recipe verticals. Encoder
 behavior has one typed settings contract everywhere: package options mutate

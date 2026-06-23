@@ -1,5 +1,10 @@
 # Flow control: current state
 
+Flow control answers one question: when a live branch cannot keep up, who pays
+the cost? In goav the answer is branch-local by default. A slow preview branch
+should not stall a record branch, and an intentional drop should show up in
+stats instead of disappearing.
+
 Branch buffers are branch-local policy (`flow` package): `Blocking`,
 `DropOldest`, `DropNewest`, `Latest`, `Unbounded`, with options for copy
 bounds/mode, `MaxBytes`, and `MaxDelay` latency shedding.

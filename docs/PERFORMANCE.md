@@ -1,16 +1,19 @@
 # Performance
 
-Rule: this repo does not claim performance it cannot prove. Every statement
-here is either **proven** (a named test enforces it in CI), **measured** (a
-named benchmark reports it, numbers vary by machine), or **not proven**
-(explicitly listed). Anything else in the docs is design intent, worded as
-intent.
+Rule: this repo does not claim performance it cannot prove. Read this page as a
+trust boundary, not a marketing sheet.
+
+Every statement here is either **proven** (a named test enforces it in CI),
+**measured** (a named benchmark reports it, numbers vary by machine), or **not
+proven** (explicitly listed). Anything else in the docs is design intent,
+worded as intent.
 
 ## Design intent
 
 `goav` treats construction and steady-state media flow differently. Cold paths
-may allocate: runtime/graph construction, registry setup, recipe planning and
-validation, codec open/configuration, format probing, runtime attach.
+may allocate because they happen before or around media delivery: runtime/graph
+construction, registry setup, recipe planning and validation, codec
+open/configuration, format probing, runtime attach.
 
 Hot paths must avoid hidden allocation:
 
@@ -65,7 +68,8 @@ silently growing.
 
 ## Measured: benchmarks
 
-Benchmarks never run under plain `go test`; run them with:
+Benchmarks never run under plain `go test`. Run them deliberately, on the same
+machine when comparing two revisions:
 
 ```sh
 scripts/bench/run.sh                  # full suite, -benchmem, saved to bench-results/

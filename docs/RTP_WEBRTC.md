@@ -1,10 +1,14 @@
 # RTP and WebRTC
 
-RTP and WebRTC are first-class targets. `goav` uses Pion-native types for
-transport-level data instead of introducing replacement RTP/RTCP/WebRTC structs:
-`rtpav` consumes `pion/rtp.Packet` and `pion/rtcp.Packet`; `webrtcav` consumes
-`pion/webrtc/v4` `PeerConnection`, `TrackRemote`, `RTPReceiver`, and
-`RTPCodecParameters`.
+RTP and WebRTC are first-class targets, but they stay in the transport modules.
+Use this page when you need to connect Pion traffic to normal goav recipes and
+want to know where packet loss, codec switches, feedback, and track replacement
+surface.
+
+`goav` uses Pion-native types for transport-level data instead of introducing
+replacement RTP/RTCP/WebRTC structs: `rtpav` consumes `pion/rtp.Packet` and
+`pion/rtcp.Packet`; `webrtcav` consumes `pion/webrtc/v4` `PeerConnection`,
+`TrackRemote`, `RTPReceiver`, and `RTPCodecParameters`.
 
 ## Receive path
 
@@ -13,18 +17,24 @@ Pion TrackRemote -> rtpav.PacketReader -> rtpav.JitterBuffer ->
 rtpav.Depacketizer -> av.Packet -> codec.DecoderStage -> av.Frame
 ```
 
-`rtpav` building blocks: `StaticPayloadMap` (payload type lookup),
-`SequenceDetector` (explicit gap state), `JitterRing` (bounded ordered release),
-Opus/VP8/VP9/AV1/H264 depacketizers (bounded frame assembly, loss-aware reset),
-`Source` (reads RTP, applies jitter/depacketizers, emits pipeline messages and
-timestamp-discontinuity events), and `FeedbackWriter`/`FeedbackResult` (NACK,
-PLI, FIR with caller-owned scratch).
+`rtpav` building blocks are deliberately small:
 
-`webrtcav` building blocks: `NewSession` (Pion receive sessions with a bounded
-`AcceptTrack(ctx)` queue), `TrackSet` (one long-lived reader per logical
-stream across track replacements), `TrackReader.UpdateCodec`/`UpdateTrack`
-(renegotiation -> `EventCodecChanged`), and preserved track metadata (RID, SSRC,
-stream ID, track ID).
+- `StaticPayloadMap` for payload type lookup.
+- `SequenceDetector` for explicit gap state.
+- `JitterRing` for bounded ordered release.
+- Opus/VP8/VP9/AV1/H264 depacketizers for bounded frame assembly and
+  loss-aware reset.
+- `Source` for reading RTP, applying jitter/depacketizers, and emitting
+  pipeline messages plus timestamp-discontinuity events.
+- `FeedbackWriter`/`FeedbackResult` for NACK, PLI, and FIR with caller-owned
+  scratch.
+
+`webrtcav` building blocks keep WebRTC session concerns on the WebRTC side:
+`NewSession` owns Pion receive sessions with a bounded `AcceptTrack(ctx)` queue;
+`TrackSet` keeps one long-lived reader per logical stream across track
+replacements; `TrackReader.UpdateCodec`/`UpdateTrack` turn renegotiation into
+`EventCodecChanged`; and track metadata such as RID, SSRC, stream ID, and track
+ID is preserved.
 
 The session-level shape is:
 
@@ -38,8 +48,8 @@ err := goav.From(goav.Input(webrtcav.Track(remote.Track))).
     Run(ctx)
 ```
 
-For multiple tracks, pass several inputs to the variadic `From`; writing them to
-one container requires a muxer adapter for that container:
+For multiple tracks, pass several inputs to the variadic `From`; writing them
+to one container requires a muxer adapter for that container:
 
 ```go
 tracks, err := webrtcav.NewTrackSet(webrtcav.TrackSetConfig{Session: session})
@@ -56,9 +66,10 @@ RTP sources observe the codec-change event without rebuilding the graph.
 
 The recipe layer also accepts raw RTP packet readers directly through the
 generic provider extension point: `goav.Input(provider)` adapts any source
-provider. `rtpav.Receive` and `webrtcav.Track` are the built-in ones, and external
-transports (SRT, NDI, ...) plug in the same way with zero goav changes. Declare
-codec intent on the provider so it can choose the depacketizer:
+provider. `rtpav.Receive` and `webrtcav.Track` are the built-in ones, and
+external transports (SRT, NDI, ...) plug in the same way with zero goav
+changes. Declare codec intent on the provider so it can choose the
+depacketizer:
 
 ```go
 err := goav.From(goav.Input(rtpav.Receive(video, rtpav.WithName("video"), rtpav.WithCodec(codec.VP8())))).
@@ -81,8 +92,8 @@ AV1 adapter for conservative scratch sizing).
 ## Loss
 
 Loss is visible data, not just an error return: `av.EventPacketLoss`,
-`av.EventDiscontinuity`, packet `LossBefore`/`Discontinuous`, and RTCP feedback
-requests. Timestamp regressions and configured gaps become
+`av.EventDiscontinuity`, packet `LossBefore`/`Discontinuous`, and RTCP
+feedback requests. Timestamp regressions and configured gaps become
 `av.EventDiscontinuity` before the affected packet is delivered.
 `rtpav.WithBufferLimits(...)` limits use zero for defaults;
 `rtpav.WithMaxTimestampGap(...)` needs a positive duration with a valid
@@ -90,10 +101,12 @@ timebase.
 
 ## Codec switches
 
-When WebRTC payload mappings or codec parameters change: a new payload map
-appears, the stream epoch increments, `av.EventCodecChanged` is emitted,
-depacketizers and decoders reset or drain, and downstream stages drop until
-sync. `TrackReader.UpdateCodec`/`UpdateTrack` emit the event; `rtpav.Source`
+When WebRTC payload mappings or codec parameters change, goav treats it as a
+media boundary, not a hidden transport detail. A new payload map appears, the
+stream epoch increments, `av.EventCodecChanged` is emitted, depacketizers and
+decoders reset or drain, and downstream stages drop until sync.
+
+`TrackReader.UpdateCodec`/`UpdateTrack` emit the event; `rtpav.Source`
 refreshes its payload map, adopts same-codec replacement streams (including
 targeted old-ID replacement for multi-stream readers), and can hand off to a
 different registered depacketizer after refresh. Selected runtime decode graphs
