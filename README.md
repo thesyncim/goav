@@ -83,100 +83,154 @@ one sink group, or one transactional writer.
 | Wrap app-owned media | `goav.Source(...)` or `goav.Input(provider)` | [Extension cookbook](docs/EXTENSION_COOKBOOK.md) |
 | Add a codec, filter, muxer, or control host | `goav.New(...)` with the relevant extension option | [Adapter authoring](docs/ADAPTER_AUTHORING.md) |
 
-## Expanded Examples
+## Expandable Examples
 
-The examples below are sketches, not a second API. They show how the same
-`From -> stream -> operations -> taps -> branches -> destinations -> task`
-grammar scales from a tiny recording to live runtime behavior.
+Open the examples when you want to see the recipe shape. Each one stays on the
+same grammar as the 30-second example; the difference is that the task is now
+live, branchy, and observable.
 
-### Live Room: Archive Plus Low-Latency Preview
+<details>
+<summary><strong>Live room: archive everything, keep preview low-latency</strong></summary>
 
-Build one task that records the room and serves a preview without letting the
-preview dictate archive quality.
+Build one task with two branch personalities: archive holds and drains, preview
+uses the same room timeline but is allowed to shed late media.
 
-```text
-room input
-  -> audio/video stream selection
-  -> shared room sync policy
-  -> branch "archive": hold, drain, commit
-  -> branch "preview": small buffer, drop late media
-  -> task stats: archive health and preview sync drops stay visible
+```go
+roomSync := goav.Sync("room", goav.SyncTolerance(20*time.Millisecond))
+previewSync := goav.Sync("room",
+    goav.SyncTolerance(20*time.Millisecond),
+    goav.SyncDropLate(),
+)
+preview := goav.Sink(goav.SinkFunc("preview", func(context.Context, goav.Message) error {
+    return nil
+}))
+
+_, err := goav.From(goav.FileInput("room.ivf", in)).
+    Video().
+    Copy().
+    Sync(roomSync).
+    Branches(
+        goav.Branch("archive").
+            Sync(roomSync).
+            To(goav.File("archive.ivf", out)),
+        goav.Branch("preview").
+            Sync(previewSync).
+            To(preview),
+    ).
+    Build(ctx)
+return err
 ```
 
-Why it matters: the recording branch should behave like evidence, while the
-preview branch should behave like UI. They have different latency goals, but
-they are still branches of the same task.
-
+The archive branch behaves like evidence; the preview branch behaves like UI.
 Run the deterministic fixture in
-[examples/dynamic-audio-room](examples/dynamic-audio-room), or use
-[examples/gio-webrtc-showcase](examples/gio-webrtc-showcase) when you want the
-browser-visible version.
+[examples/dynamic-audio-room](examples/dynamic-audio-room), or the browser
+demo in [examples/gio-webrtc-showcase](examples/gio-webrtc-showcase).
 
-### Runtime Diagnostics: Attach A Meter Only When You Need It
+</details>
 
-Start the main job with a named frame tap. Later, attach a short-lived branch
-that reads that tap and writes measurements to an application sink.
+<details>
+<summary><strong>Runtime diagnostics: attach a meter after the task starts</strong></summary>
 
-```text
-main recording task
-  -> FrameTap("levels")
+Put a typed tap in the main recipe, then attach a support branch only when you
+need it.
 
-incident starts
-  -> attach branch "support-meter"
-  -> run FrameFunc/SinkFunc diagnostics
-  -> detach with drain or abort
+```go
+levels := goav.Sink(goav.SinkFunc("levels", func(context.Context, goav.Message) error {
+    return nil
+}))
 
-incident ends
-  -> archive branch never changes
+task, err := goav.From(goav.FileInput("input.ivf", in)).
+    Video().
+    Decode().
+    Tap(goav.FrameTap("video.frames")).
+    To(goav.Sink(goav.SinkFunc("archive", func(context.Context, goav.Message) error {
+        return nil
+    }))).
+    Build(ctx)
+if err != nil {
+    return err
+}
+defer task.Close()
+
+_, err = task.Attach(ctx, goav.Branch("support-meter").
+    From(goav.FrameTap("video.frames")).
+    To(levels))
+return err
 ```
 
-Why it matters: support tooling does not need a shadow graph. A diagnostic path
-is regular composition with a lifecycle, so it can be watched, detached, and
-accounted for like any other branch.
+The diagnostic branch has its own lifecycle, so it can be watched, drained, or
+aborted without rebuilding the archive path. The control-plane flow is covered
+in [docs/CONTROL_PLANE.md](docs/CONTROL_PLANE.md).
 
-See the branch and control-plane patterns in
-[docs/CONTROL_PLANE.md](docs/CONTROL_PLANE.md).
+</details>
 
-### Media-Time Rebranch: Replace Work Without A Visible Gap
+<details>
+<summary><strong>Media-time rebranch: replace work without a visible gap</strong></summary>
 
-Use this when a branch needs to change shape while the task keeps running: a
-preview rung gets retuned, a diagnostics branch changes encoder settings, or a
-recording branch rolls to a new destination.
+Open the replacement branch first, then switch at a media boundary. If the
+replacement fails to attach, the old branch keeps running.
 
-```text
-old branch keeps serving
-  -> replacement branch opens beside it
-  -> replacement reaches the requested media time
-  -> switch happens at that boundary
-  -> old branch drains, or stays alive if replacement fails
+```go
+task, err := goav.From(goav.FileInput("input.ivf", in)).
+    Video().
+    Copy().
+    Tap(goav.PacketTap("video.packets")).
+    To(goav.File("live.ivf", out)).
+    Build(ctx)
+if err != nil {
+    return err
+}
+defer task.Close()
+
+rec, err := task.Attach(ctx, goav.Branch("rec").
+    From(goav.PacketTap("video.packets")).
+    Copy().
+    To(goav.File("part-001.ivf", io.Discard)))
+if err != nil {
+    return err
+}
+
+_, err = rec.Rebranch(ctx,
+    goav.Branch("rec").
+        From(goav.PacketTap("video.packets")).
+        Copy().
+        To(goav.File("part-002.ivf", io.Discard)),
+    goav.SwitchAt(goav.AtMediaTime(30*time.Second)),
+    goav.KeepOldOnFailure(),
+    goav.DrainOldBranch(),
+)
+return err
 ```
 
-Why it matters: the task does not have to choose between "stop the world" and
-"hope a hot swap works". Replacement is prepared first, then committed at an
-explicit media boundary.
+Use this for preview rungs, diagnostics, or recording rotation when a branch
+needs to change shape while the task keeps running.
 
-The runtime-control docs cover the watch, snapshot, attach, detach, and graph
-views around this flow: [docs/CONTROL_PLANE.md](docs/CONTROL_PLANE.md).
+</details>
 
-### WebRTC/RTP: Treat Late Tracks As Normal Streams
+<details>
+<summary><strong>Dynamic WebRTC/RTP tracks: attach branches as streams appear</strong></summary>
 
-Transport code stays at the edge. Once a track appears, goav can route it
-through the same stream selection and branch grammar as any other input.
+Transport code stays at the edge. When a stream arrives, a rule attaches the
+same branch recipe through the runtime planner.
 
-```text
-WebRTC or RTP track appears
-  -> OnStream rule matches media, codec, or stream id
-  -> branch recipe attaches
-  -> OnRemove chooses drain, abort, or plain detach
-  -> destination lifecycle events say what committed
+```go
+_, err := goav.From(goav.FileInput("room.ivf", in)).
+    OnStream(
+        goav.MatchStreamID("camera"),
+        goav.Branch("record-camera").
+            Copy().
+            To(goav.File("camera.ivf", out)),
+        goav.OnRemove(goav.DrainBranch()),
+    ).
+    Build(ctx)
+return err
 ```
 
-Why it matters: live rooms are dynamic, but the application should not need a
-separate workflow API for "tracks that arrived later". Late media still becomes
-a validated branch of the same task.
+Late media still becomes a validated branch of the same task. Start with
+[docs/RTP_WEBRTC.md](docs/RTP_WEBRTC.md), then try
+[examples/gio-webrtc-showcase](examples/gio-webrtc-showcase).
 
-Start with [docs/RTP_WEBRTC.md](docs/RTP_WEBRTC.md), then try the browser demo
-in [examples/gio-webrtc-showcase](examples/gio-webrtc-showcase).
+</details>
 
 ## Why goav
 

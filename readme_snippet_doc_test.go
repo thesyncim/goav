@@ -16,8 +16,8 @@ func TestReadmeGoBlocksCompileAsExternalConsumer(t *testing.T) {
 		t.Fatal(err)
 	}
 	snippets := markdownCodeBlocks(string(body), "go")
-	if len(snippets) != 1 {
-		t.Fatalf("README go snippet count = %d, want one adoption-front-door example", len(snippets))
+	if len(snippets) == 0 {
+		t.Fatal("README should include at least one adoption-front-door Go example")
 	}
 
 	root, err := os.Getwd()
@@ -74,6 +74,7 @@ import (
 	"context"
 	"io"
 	"testing"
+	"time"
 
 	"github.com/thesyncim/goav"
 )
