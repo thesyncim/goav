@@ -1,8 +1,9 @@
 # Operations
 
-This is the checked reference for the front-door operation grammar. It
-describes what each chain method consumes, produces, can ask the shape solver
-to insert, and how the same operation behaves when it appears inside a runtime
+This is the checked reference for the front-door operation grammar. Use it when
+you know the operation you want and need to answer practical questions: what
+shape does it consume, what does it produce, what can the shape solver insert,
+which errors are expected, and whether the same spelling works in a runtime
 branch attached with `Task.Attach`.
 
 The invariant is the same one used by the planner:
@@ -11,10 +12,15 @@ The invariant is the same one used by the planner:
 From(inputs...) -> stream selection -> operations -> taps -> branches -> destinations -> task
 ```
 
-Operation records are cold-path declarations. `Build`, `Explain`, `Describe`,
-planned `Branches`, `Task.Attach`, and `Attachment.Rebranch` all lower those
-records through the same shape validation and runtime registration checks
-before resources are opened or the live graph is mutated.
+Operation records are cold-path declarations. They are not per-packet calls.
+`Build`, `Explain`, `Describe`, planned `Branches`, `Task.Attach`, and
+`Attachment.Rebranch` all lower those records through the same shape validation
+and runtime registration checks before resources are opened or the live graph
+is mutated.
+
+If you are skimming, start with the scope table, then jump to the row for the
+operation you are using. The "Runtime attach" column is the quickest way to
+see whether a planned recipe spelling also works for a late branch.
 
 ## Scopes
 
@@ -25,6 +31,10 @@ before resources are opened or the live graph is mutated.
 | Flow | No | No | Yes, after `.Apply(flow)` on a stream or branch | A flow is only reusable operations. It cannot open sources, destinations, runtimes, or lifecycle. |
 
 ## Operation Matrix
+
+Each row describes the public spelling, not a private planner step. "Inserted
+conversions" means work the planner may add before build or attach; "Primary
+refusals" lists the error families a caller should expect to handle.
 
 | Operation | Input shape | Output shape | Allowed domain | Inserted conversions | Primary refusals | Runtime attach |
 |---|---|---|---|---|---|---|

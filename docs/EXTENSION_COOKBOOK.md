@@ -1,8 +1,12 @@
 # Extension cookbook
 
-This is the copy-and-adapt guide for code outside the root module. Use
-`docs/ADAPTER_AUTHORING.md` for lifecycle details and hot-path rules; use this
-file when you want the smallest public seam that solves one extension problem.
+This is the copy-and-adapt guide for code outside the root module. Start here
+when you already know the thing you want to plug in: a source, destination,
+filter, codec, join, or control host.
+
+Use `docs/ADAPTER_AUTHORING.md` for lifecycle details and hot-path rules; use
+this file when you want the smallest public seam that solves one extension
+problem.
 
 Every recipe here stays on the front-door grammar:
 
@@ -11,9 +15,16 @@ goav.From(input).Audio().Decode().Do(stage).Encode(codec).To(destination)
 ```
 
 External code should not need graph handles, string routing, package internals,
-or a global registry.
+or a global registry. If a recipe below seems to require one of those, the
+extension point is probably the wrong one.
 
 ## Choose the seam
+
+Pick the row by ownership, not by file format. If your application already owns
+media buffers, start with `goav.Source`. If another system owns opening,
+streams, timing, or controls, start with `provider.Source`. If the output needs
+commit/abort semantics, treat that as a destination concern, not a pipeline
+stage concern.
 
 | Need | Use | Copy from | Failure to test |
 |---|---|---|---|
@@ -31,7 +42,7 @@ or a global registry.
 
 Use `goav.Source` when the application already has packets, frames, or events
 and can push them directly. Declare the shape precisely; it is the planner's
-pre-open contract.
+pre-open contract and the caller's best error message.
 
 ```go
 input := goav.Source("mic",
@@ -122,7 +133,9 @@ as SRT, NDI, RTP variants, or proprietary ingest.
 ## Custom Destination
 
 Use `goav.Writer` for byte destinations that should open after the output
-format and stream set are known.
+format and stream set are known. This keeps upload clients, memory buffers, and
+custom path schemes outside the media graph until the planner knows what bytes
+will be written.
 
 ```go
 dest := goav.Writer("mem://voice.ogg",
@@ -179,7 +192,9 @@ committing.
 ## Custom Filter
 
 Use a filter when a frame-domain operation should participate in normal recipe
-planning, validation, `Explain`, and runtime attach.
+planning, validation, `Explain`, and runtime attach. If the work is just a
+one-off inspection or metric, prefer `FrameFunc`/`PacketFunc`; filters are for
+shape-aware transforms.
 
 ```go
 desc := filter.Descriptor{
@@ -206,7 +221,9 @@ test, expected output, and a build-time failure example.
 ## Custom Codec
 
 Register codecs per runtime. A descriptor without a factory is useful for
-capability reporting, but encode/decode recipes need factories.
+capability reporting, but encode/decode recipes need factories. Keep adapter
+settings in `codec.CodecSettings` so recipes, the string launcher, and control
+hosts all speak the same shape.
 
 ```go
 desc := codec.Descriptor{

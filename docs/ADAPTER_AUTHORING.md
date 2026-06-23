@@ -1,10 +1,14 @@
 # Adapter authoring
 
 How to add a codec, container, filter, source provider, or destination provider
-without touching core. Every extension point is an exported interface plus a
-value-typed `With*` option (or a plain value argument) on a per-runtime
-registry. There are no globals; registration is last-wins, so an adapter can
-also override a standard implementation under `Default(opts...)`.
+without touching core. The aim is boring integration: your package implements a
+small public interface, registers it on one runtime, and the normal recipe
+grammar does the rest.
+
+Every extension point is an exported interface plus a value-typed `With*`
+option (or a plain value argument) on a per-runtime registry. There are no
+globals; registration is last-wins, so an adapter can also override a standard
+implementation under `Default(opts...)`.
 
 The executable proof is `adapterproof/adapter_compat_test.go`: one toy
 implementation of every extension point below, defined entirely in a test
@@ -34,7 +38,8 @@ The copyable, separate-module examples are:
 - **`examples/control-plane-host`**: exposes app-owned controls, branch steps,
   sinks, and encoder spellings through a validated `ctl.CapabilitySet`.
 
-When writing your adapter, start from the smallest shipped implementation:
+When writing your adapter, start from the smallest shipped implementation that
+matches the kind of boundary you own:
 
 - **`adapters/resample`** is the filter template: a `Descriptor()` function, a
   stateless `Factory` whose `NewFilter` opens the instance, `Open` validation
@@ -47,6 +52,10 @@ When writing your adapter, start from the smallest shipped implementation:
   end, and magic/extension probe rules.
 
 ## Rules common to every extension point
+
+These rules are less about style and more about keeping adapters predictable
+inside live pipelines. Do the expensive thinking while opening; keep the
+message path simple.
 
 - **Cold vs hot** (`docs/PERFORMANCE.md` is the contract): construction,
   `Open`, probing, and registration may allocate; per-packet/per-frame methods
@@ -123,7 +132,7 @@ reflect exported `CodecSettings` fields tagged with `goavctl`, `usage`, and
 `Control func(any) error` escape hatch with your concrete native handle when a
 setting truly belongs to the native library; a non-nil error fails the open.
 
-Register: `goav.WithDecoder(desc, factory)`, `goav.WithEncoder(desc,
+Register with `goav.WithDecoder(desc, factory)`, `goav.WithEncoder(desc,
 factory)`, `goav.WithCodecDescriptor(desc)` (capability-only), or a bundle
 via `goav.WithCodecAdapter(func(*codec.SimpleRegistry))`; adapter packages
 should export `Register(*codec.SimpleRegistry)`.
@@ -172,10 +181,11 @@ Lifecycle (from `format/stage.go`, `runtime_demux.go`, `mux_destination.go`):
    finalizes exactly once; a `Write`/`Close` error marks the destination
    transaction failed (transactional writers abort instead of committing).
 
-Register: `goav.WithDemuxer(id, factory)`, `goav.WithMuxer(id, factory)`,
-`goav.WithProber(prober)`, bundles via `goav.WithFormatAdapter(...)`;
-`Register{Muxer,Demuxer}Descriptor` attaches a capability `format.Descriptor`
-(media kinds, codecs, stream counts) that destination validation reads.
+Register with `goav.WithDemuxer(id, factory)`,
+`goav.WithMuxer(id, factory)`, `goav.WithProber(prober)`, or bundles via
+`goav.WithFormatAdapter(...)`; `Register{Muxer,Demuxer}Descriptor` attaches a
+capability `format.Descriptor` (media kinds, codecs, stream counts) that
+destination validation reads.
 
 ## Filter (`filter` package)
 

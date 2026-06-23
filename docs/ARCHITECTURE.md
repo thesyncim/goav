@@ -1,6 +1,9 @@
 # Architecture
 
-`goav` separates stable media contracts from implementations.
+`goav` separates stable media contracts from implementations. Read this as the
+map behind the recipe API: what the public grammar describes, where validation
+happens, and which runtime pieces stay hidden unless you deliberately opt into
+the expert layer.
 
 The central rule is:
 
@@ -8,7 +11,7 @@ The central rule is:
 every edge carries media data or media events
 ```
 
-That keeps live WebRTC realities visible to the application: packet loss,
+That keeps live WebRTC realities visible to the application. Packet loss,
 renegotiation, codec changes, backpressure, discontinuities, track lifecycle,
 and keyframe recovery are represented as events instead of hidden side effects.
 
@@ -33,26 +36,32 @@ Format, RTP, WebRTC, codec, and filter adapters
 `goav.New` is the composition root. It owns the per-runtime codec, format, and
 filter registries; there are no global registries. `goav.Default(opts...)`
 registers the standard in-repo adapters and then applies caller options
-last-wins, so one call can add or override implementations. `From(input)` is
-the beginner-facing front door. The
-surface is small: `From`, stream selection, ordered operations, taps, branches,
-destinations, flows, and tasks.
-`Branch`, `Destination`, and operation composition is the normal user-facing model.
+last-wins, so one call can add or override implementations.
+
+`From(input)` is the beginner-facing front door. The surface is small: `From`, stream selection, ordered operations, taps, branches, destinations, flows, and
+tasks. `Branch`, `Destination`, and operation composition is the normal
+user-facing model.
 
 | Layer | Vocabulary |
 | --- | --- |
 | Simple high-level API | `From`, stream selection, ordered operations, direct `File`/`URI`/`Sink` destinations, custom `Writer` destinations with `provider.Info`, stable destination handles for shared mux/sink groups |
 
-One media work planner validates, probes, resolves streams and formats/codecs,
-chooses packet-copy or decode branches, inserts demux or depacketize
-boundaries, inserts select/decode/transform/stage/tap/encode operations, groups
-branches by destinations, assigns routes and buffer policy, then emits the
-`pipeline.Spec` used to build the runnable graph. `WorkPlan` is the executable
-cold-path boundary: the one planner/report IR owning planned nodes, edges,
-ordered operations, report inputs, streams, taps, branches, destinations,
-decisions, diagnostics, plus the work-plan lowerers used to build the runtime
-graph. Described graphs and execution graphs must stay equivalent across
-work-plan lowerers.
+One media work planner owns the cold path. It:
+
+- validates recipe shape and extension contracts;
+- probes inputs and resolves streams, formats, and codecs;
+- chooses packet-copy or decode paths;
+- inserts demux, depacketize, select, decode, transform, stage, tap, and encode
+  operations;
+- groups branches by destination;
+- assigns routes and buffer policy;
+- emits the `pipeline.Spec` used to build the runnable graph.
+
+`WorkPlan` is the executable cold-path boundary: the one planner/report IR
+owning planned nodes, edges, ordered operations, report inputs, streams, taps,
+branches, destinations, decisions, diagnostics, plus the work-plan lowerers
+used to build the runtime graph. Described graphs and execution graphs must
+stay equivalent across work-plan lowerers.
 
 The native planning layer is:
 
@@ -65,44 +74,48 @@ BranchSpec -> WorkPatch  // runtime attach
 byte destination, shared destination, and custom source shapes. `WorkPlan`
 owns ordered operations, shape transitions, taps, destinations, branch buffer
 policy, detach policy, and lifecycle expectations. `WorkPatch` uses the same
-branch plan as initial build, anchored downstream of existing typed taps. This
-keeps special workflow compilers out of normal composition and keeps runtime
-attach from becoming a separate graph language. The `runtimeBranch` and
-`mediaPlan` parallel IRs are deleted and collapsed onto the work-plan model,
-along with the per-workflow builder compilers. The remaining internal debt
-(the `streamIntent` normalization layer) is tracked in `docs/NORTH_STAR.md`.
+branch plan as initial build, anchored downstream of existing typed taps.
 
-Inputs and destinations open through one extension point per side: every input kind
-(file, URI, RTP, WebRTC, custom source) resolves through one source opener, and
-destination kinds resolve through destination providers, so the build does not
-branch on input/output kind.
+That is the important constraint: runtime attach is not a separate graph
+language. The `runtimeBranch` and `mediaPlan` parallel IRs are deleted and
+collapsed onto the work-plan model, along with the per-workflow builder
+compilers. The remaining internal debt (the `streamIntent` normalization
+layer) is tracked in `docs/NORTH_STAR.md`.
 
-`Destination` is the public routing handle and extension surface for files, byte
-writers, object-store uploads, URI-backed outputs, frame/packet/event sinks, and
-shared mux/sink groups. Reusing one destination value groups branches. The work
-plan keeps concrete destination openers cold until stream list, format, MIME,
-metadata, and realtime policy are known.
+Inputs and destinations open through one extension point per side: every input
+kind (file, URI, RTP, WebRTC, custom source) resolves through one source
+opener, and destination kinds resolve through destination providers. The build
+does not branch on input/output kind.
+
+`Destination` is the public routing handle and extension surface for files,
+byte writers, object-store uploads, URI-backed outputs, frame/packet/event
+sinks, and shared mux/sink groups. Reusing one destination value groups
+branches. The work plan keeps concrete destination openers cold until stream
+list, format, MIME, metadata, and realtime policy are known.
 
 The handle-based graph builder remains available only as the explicit advanced
 layer through `expert.Graph(runtime)`; it is not on the public `Runtime`
 interface. Recipe `Explain(ctx)` returns structured workflow-report data,
 branch operations, planner decisions, and the same `pipeline.Spec`; rendering
-lives outside core in `graphrender`. Branch operation reports mark shared
-upstream work, so the planner can explain when branches reuse decode,
-transform, stage, or tap boundaries before diverging. A route carries all media
-by default, or matches one stream or event type.
+lives outside core in `graphrender`.
+
+Branch operation reports mark shared upstream work, so the planner can explain
+when branches reuse decode, transform, stage, or tap boundaries before
+diverging. A route carries all media by default, or matches one stream or event
+type.
 
 `Task.Attach` is the runtime control-plane operation for late branches. It
 plans a private graph patch from one or more named downstream branches,
 prepares destinations and components before graph mutation, applies the patch
 with rollback on failure, and returns an attachment handle with `Close(ctx)`.
+
 Stable outlets come from typed `.Tap(goav.FrameTap(name))` or
 `.Tap(goav.PacketTap(name))` calls listed by `Task.Taps()`; runtime branches
 anchor with `goav.Branch("name").From(tap)`. Late branches can run custom
-stages, apply flows, resize/resample from frame taps, encode Opus/VP8/VP9/AV1 from
-frame taps, copy or decode packet taps, and expose their own typed taps for
-later attachments. Detaching a parent removes dependent branches anchored from
-its taps. H264 recipe encoding remains work in progress.
+stages, apply flows, resize/resample from frame taps, encode Opus/VP8/VP9/AV1
+from frame taps, copy or decode packet taps, and expose their own typed taps
+for later attachments. Detaching a parent removes dependent branches anchored
+from its taps. H264 recipe encoding remains work in progress.
 
 Design direction: a tap is not a second data path. It is a named stream point
 that later consumers can bind to. Planned branches, runtime branches, join-arm
@@ -145,29 +158,32 @@ lower through the same filter registry as branch transforms.
 
 ## Package layering
 
-What the compiler enforces today: the sibling packages (`av`, `errcode`, `plan`,
-`shape`, `flow`, `provider`, `pipeline`, `codec`, `format`, `filter`,
+What the compiler enforces today: the sibling packages (`av`, `errcode`,
+`plan`, `shape`, `flow`, `provider`, `pipeline`, `codec`, `format`, `filter`,
 `container`, `lifecycle`, `snapshot`, `rtpav`, `webrtcav`, `adapters`,
 `graphrender`) are leaves; none of them imports the root `goav` package. Root
-depends on leaves, never the reverse. The one exception is `expert`: it sits
-above root (it imports `goav` to return `Task`), and root reaches back only
-through structural interfaces (`ExpertGraph() any`, the branch-anchor `Route`
-capability), never an import.
+depends on leaves, never the reverse.
+
+The one exception is `expert`: it sits above root because it imports `goav` to
+return `Task`. Root reaches back only through structural interfaces
+(`ExpertGraph() any`, the branch-anchor `Route` capability), never an import.
 
 What is convention only: inside the root package, the grammar -> plan -> build
 boundaries (recipe/branch grammar, `mediaPlan`/`WorkPlan` planning,
 graph/attach lowering) are file-naming conventions, not import-checked. The
 root package is deliberately one compilation unit.
 
-Why the planner internals cannot move to `internal/` packages (measured on the
-type-checked cross-file reference graph, 2026-06): the ~20 root files with no
-exported API (`media_plan*`, `recipe_compile`, `branch_compose_*`, `work_*`,
-`shape_solver`/`shape_glue`, `join_build`, `runtime_attach`/`_decode`/
-`_encode`/`_demux`, `mux_destination`, `multi_input`, ~14.8k lines) reference
-identifiers defined in 31 grammar files, including unexported fields of the
-public types (`Branch.operations`, `Branch.dest`, `Runtime` and `Recipe`
-internals). The coupling is bidirectional at field granularity: grammar files
-equally read unexported fields of planner structs (`recipe.go`, `source.go`,
+Why the planner internals cannot move to `internal/` packages today (measured
+on the type-checked cross-file reference graph, 2026-06): the ~20 root files
+with no exported API (`media_plan*`, `recipe_compile`, `branch_compose_*`,
+`work_*`, `shape_solver`/`shape_glue`, `join_build`, `runtime_attach`/
+`_decode`/`_encode`/`_demux`, `mux_destination`, `multi_input`, ~14.8k lines)
+reference identifiers defined in 31 grammar files, including unexported fields
+of the public types (`Branch.operations`, `Branch.dest`, `Runtime` and
+`Recipe` internals).
+
+The coupling is bidirectional at field granularity: grammar files equally read
+unexported fields of planner structs (`recipe.go`, `source.go`,
 `stream_rule.go` into `recipe_compile.go` state; `audio_mix.go`,
 `video_composite_build.go`, `select_build.go` into 46 `join_build.go`
 identifiers). Computing the largest file set closed under intra-package
@@ -181,9 +197,11 @@ back through root, which would be public-API churn (type identity and
 `reflect.Type.PkgPath` change even under aliases), while the planner records
 stay unexported; or introduce a data-transfer boundary so the planner consumes
 and returns plain plan data instead of reading and mutating grammar object
-fields. Both are larger
-restructurings than the boundary is currently worth; the intended cut, if ever,
-is the second one, with the shared data types living in `plan`/`shape`.
+fields.
+
+Both are larger restructurings than the boundary is currently worth; the
+intended cut, if ever, is the second one, with the shared data types living in
+`plan`/`shape`.
 
 ## Core media model
 
