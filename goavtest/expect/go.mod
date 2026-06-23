@@ -13,11 +13,11 @@ require (
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/ncruces/go-strftime v1.0.0 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
-	github.com/thesyncim/goaac v0.0.0-20260612181820-28117ebe9116 // indirect
-	github.com/thesyncim/goav1 v0.0.0-20260611170949-792a1f774da1 // indirect
-	github.com/thesyncim/goh264 v0.0.0-20260605215817-c3ebee4f35c3 // indirect
+	github.com/thesyncim/goaac v0.0.0-20260613202902-c08dbfdfe35f // indirect
+	github.com/thesyncim/goav1 v0.0.0-20260614193402-5e8dce2b9457 // indirect
+	github.com/thesyncim/goh264 v0.0.0-20260614153501-4f6a0ad24a0a // indirect
 	github.com/thesyncim/gopus v0.1.1 // indirect
-	github.com/thesyncim/govpx v0.0.0-20260609183451-3d804d8c8f89 // indirect
+	github.com/thesyncim/govpx v0.0.0-20260616154555-44d3f28506ff // indirect
 	golang.org/x/sys v0.44.0 // indirect
 	modernc.org/libc v1.73.1 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
