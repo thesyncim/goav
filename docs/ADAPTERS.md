@@ -1,9 +1,12 @@
 # Adapters
 
 Adapters keep codec, container, and filter implementations out of the core
-import graph. Core packages (`av`, `codec`, `format`, `filter`, `pipeline`,
-`rtpav`, `webrtcav`) do not import sibling codec modules; concrete integrations
-live under `adapters/...` and `container/...`.
+import graph. Use this page to see what ships today, which paths are narrow by
+design, and where to start if you need to add another implementation.
+
+Core packages (`av`, `codec`, `format`, `filter`, `pipeline`, `rtpav`,
+`webrtcav`) do not import sibling codec modules; concrete integrations live
+under `adapters/...` and `container/...`.
 
 The root module keeps third-party dependencies pinned by
 `TestRootModuleDependencyPurity`: only the narrow modernc runtime set required
@@ -12,11 +15,10 @@ and the standard library. `rtpav` and `webrtcav` are nested modules with their
 own `go.mod`; they carry the Pion dependency tree, and importing goav alone
 never pulls it in. Import paths are unchanged.
 
-This file catalogs the shipped adapters. To write one, use
-`docs/ADAPTER_AUTHORING.md` for the extension interfaces, lifecycle rules,
-error and ownership contracts, and required tests. The executable proof that
-every extension point works from outside core is
-`adapterproof/adapter_compat_test.go`.
+To write an adapter, use `docs/ADAPTER_AUTHORING.md` for the extension
+interfaces, lifecycle rules, error and ownership contracts, and required
+tests. The executable proof that every extension point works from outside core
+is `adapterproof/adapter_compat_test.go`.
 
 ## Rules
 

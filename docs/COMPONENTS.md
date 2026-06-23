@@ -1,6 +1,10 @@
 # Reusable Components
 
-`goav` is not only a recipe DSL. The rule for the project is:
+`goav` is not only a recipe DSL. Use this catalog when you want to know which
+pieces are reusable below the grammar, what owns their contracts, and what
+proof exists that they behave on hot paths.
+
+The rule for the project is:
 
 ```text
 recipes express intent
@@ -25,11 +29,12 @@ stream intents that recipes, branch composers, and runtime attachments compile.
 
 ## Component Contract
 
-Reusable components document: accepted/emitted message shape; hot-path
-allocation expectations after warm-up; buffer ownership and borrowed-buffer
-lifetime; event forwarding/consumption; EOS, flush, discontinuity, loss,
-codec-change, and backpressure behavior; direct and bounded buffered graph
-safety; and the scratch/result objects callers reuse.
+A reusable component should document enough that a caller can wire it without
+reading its source: accepted/emitted message shape; hot-path allocation
+expectations after warm-up; buffer ownership and borrowed-buffer lifetime;
+event forwarding/consumption; EOS, flush, discontinuity, loss, codec-change,
+and backpressure behavior; direct and bounded buffered graph safety; and the
+scratch/result objects callers reuse.
 
 ## Allocation Proofs
 
@@ -65,10 +70,11 @@ Pipeline: stable. `pipeline.Message`, `Source`, `Stage`, `Sink`, `Emitter`,
 Experimental: dynamic graph mutation (closed graphs reject additions with
 `pipeline.ErrClosed`), the work-plan compile (recipe intent -> one composable
 branch IR with ordered-operation shape validation), `plan.Report`
-(`Job.Explain(ctx)` structured explanation), runtime attach (grouped `Task.Attach` from typed taps with
-preflight, rollback, branch-owned stats, and subtree detach; `Task.Taps()` lists
-stable outlets), buffer policy, and graph stats (`Task.Stats()`,
-`Task.Snapshot()` with spec, stats, taps, and runtime branch states).
+(`Job.Explain(ctx)` structured explanation), runtime attach (grouped
+`Task.Attach` from typed taps with preflight, rollback, branch-owned stats, and
+subtree detach; `Task.Taps()` lists stable outlets), buffer policy, and graph
+stats (`Task.Stats()`, `Task.Snapshot()` with spec, stats, taps, and runtime
+branch states).
 
 RTP: stable. `rtpav.Source` (Pion RTP reader -> packets/events with payload
 maps, loss/timestamp tracking, depacketizers, EOS, feedback),

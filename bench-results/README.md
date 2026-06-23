@@ -2,7 +2,8 @@
 
 This directory is the performance-lab artifact landing zone. Generated result
 files are ignored by git; this README keeps the expected layout visible for CI,
-release rehearsals, and local benchmark runs.
+release rehearsals, and local benchmark runs. Treat the layout as the contract:
+numbers belong in generated artifacts, not committed prose.
 
 ## Layout
 

@@ -1,6 +1,7 @@
 # North Star
 
-goav has one user-facing model:
+This is the design contract that keeps the project from growing a separate API
+for every media workflow. goav has one user-facing model:
 
 ```text
 From(inputs...) -> stream selection -> operations -> taps -> branches -> destinations -> task
@@ -51,7 +52,8 @@ Tap -> tap operation
 ## Evidence Map
 
 The acceptance tests keep the design honest. The numbers below are the stable
-labels used in test failure messages.
+labels used in test failure messages; use them as a map when reviewing whether
+a new feature strengthens the grammar or bypasses it.
 
 | Area | Current evidence |
 | --- | --- |

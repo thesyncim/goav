@@ -1,7 +1,10 @@
 # Multi-input convergence
 
-GoAV was structurally a tree (one input fanning out via `Branches`); convergence
-(N streams -> one) is the dual, and it landed as:
+Multi-input work is what you reach for when several media arms need to become
+one stream point: audio mixing, video compositing, active-arm selection, or a
+custom convergence stage. Older goav recipes were structurally a tree (one
+input fanning out via `Branches`); convergence (N streams -> one) is the dual,
+and it landed as:
 
 - `Mix(arms...)`: sums S16 audio arms (per-arm buffering by StreamID, clamping,
   one output EOS after all arms end). Packet arms auto-decode; mismatched rates
@@ -23,33 +26,39 @@ GoAV was structurally a tree (one input fanning out via `Branches`); convergence
 - Variadic `From(inputs...)`: N inputs, per-chain `InputName(...)` narrowing,
   one shared `Destination` value muxing the encoded chains.
 
-Design properties: joins are entry points parallel to `From` (single-input
-chains are untouched); the join output is a normal stream point (`.Tap`,
-`.Branches`, `.Encode().To(...)`, runtime attach from join taps); all three are
-thin faces over one join operation with N input arms. `.To(destinations...)`
-is variadic with chain semantics: each destination receives the joined stream
-(Mix/Composite mux fanout after `.Encode`, Select fans out to several sinks),
-and one handle listed twice raises the same duplicate refusal a chain does. The pipeline already
-supported N input edges per node, and each buffered node has a single serial
-worker, so join stages need no internal locking. Select always defaults a
-direct runtime to a non-lossy buffered graph so `SelectActive` can be injected;
-realtime Mix/Composite do the same so live arms start concurrently, while
-offline (`WithRealtime(false)`) Mix/Composite keep direct-runner speed unless
-the runtime explicitly opts into a buffer. Select pins active-arm passthrough
-at zero allocations (`TestSelectorPassthroughAllocs`), and Mix and Composite
-pin their two-arm per-step hot paths at zero allocations
-(`TestAudioMixStepAllocs`, `TestVideoCompositeStepAllocs`).
+Design properties:
 
-All three plan through the same recipe compile: the joinSpec normalizes into the
-compile state, `joinPlan` plans N arm sub-chains converging into an `OpJoin`
-node (workPlan edges carry the N-to-1), and `Describe()` == `Build()` is
-guard-tested per kind (nested case included). Per-kind behavior lives only in
-the joinProfiles table. Arm shape-solving goes through the central solver
-(`armExpected`/`armPolicy`). The joined output runs through that same solver
-before terminal `.Encode(...)` and before planned `.Branches(...)`, seeded with
-the joined stream's shape: branch-local `.Auto(...)` can insert conversions on
-that branch, and `.Auto(...)` on the Mix/Composite output applies to the
-terminal encode path or to every planned branch.
+- Joins are entry points parallel to `From`; single-input chains are untouched.
+- The join output is a normal stream point (`.Tap`, `.Branches`,
+  `.Encode().To(...)`, runtime attach from join taps).
+- Built-in joins are thin faces over one join operation with N input arms.
+- `.To(destinations...)` is variadic with chain semantics: each destination
+  receives the joined stream. Mix/Composite mux fanout after `.Encode`; Select
+  fans out to several sinks.
+- One handle listed twice raises the same duplicate refusal a chain does.
+- The pipeline already supported N input edges per node, and each buffered node
+  has a single serial worker, so join stages need no internal locking.
+- Select defaults a direct runtime to a non-lossy buffered graph so
+  `SelectActive` can be injected. Realtime Mix/Composite do the same so live
+  arms start concurrently, while offline (`WithRealtime(false)`) Mix/Composite
+  keep direct-runner speed unless the runtime explicitly opts into a buffer.
+- Select pins active-arm passthrough at zero allocations
+  (`TestSelectorPassthroughAllocs`), and Mix and Composite pin their two-arm
+  per-step hot paths at zero allocations (`TestAudioMixStepAllocs`,
+  `TestVideoCompositeStepAllocs`).
+
+All three plan through the same recipe compile. The joinSpec normalizes into
+the compile state, `joinPlan` plans N arm sub-chains converging into an
+`OpJoin` node (workPlan edges carry the N-to-1), and `Describe()` == `Build()`
+is guard-tested per kind, nested case included. Per-kind behavior lives only in
+the joinProfiles table.
+
+Arm shape-solving goes through the central solver (`armExpected`/`armPolicy`).
+The joined output runs through that same solver before terminal `.Encode(...)`
+and before planned `.Branches(...)`, seeded with the joined stream's shape:
+branch-local `.Auto(...)` can insert conversions on that branch, and
+`.Auto(...)` on the Mix/Composite output applies to the terminal encode path
+or to every planned branch.
 
 Taps converge mid-graph: an arm chain keeps its declared `.Decode()`/`.Tap(...)`.
 The tap installs on the task anchored at the arm's decode (or source) node,
@@ -66,7 +75,7 @@ instead of being silently dropped.
 
 Joins are an extension point: `goav.Join(name, stage, arms...)` lowers a
 caller-supplied convergence stage through the same joinSpec/joinProfile
-machinery, so a third party ships `Crossfade(arms...)` without core changes.
+machinery, so a third party can ship `Crossfade(arms...)` without core changes.
 The per-kind behaviors the profile table carries are derived from the stage's
 `shape.Contract` (frame-domain inputs -> decode arms like Mix; packet/any ->
 passthrough like Select; one fact-carrying input shape -> solver-planned arm

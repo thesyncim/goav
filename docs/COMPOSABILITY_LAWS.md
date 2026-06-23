@@ -1,7 +1,9 @@
 # Composability laws
 
 These are the design laws that keep goav from turning into several workflow
-APIs. The tests below are executable evidence; this document is the map.
+APIs. Read this as the short reviewer checklist: if a change breaks one of
+these laws, it is probably adding a new workflow surface instead of extending
+the grammar. The tests below are executable evidence; this document is the map.
 
 | Law | Evidence |
 |---|---|

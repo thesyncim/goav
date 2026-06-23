@@ -1,7 +1,9 @@
 # Encoder configuration: two-tier model
 
-One way to configure encoders: common knobs as typed surface, one raw escape
-hatch, unified with shape, without polluting the main grammar.
+Encoder configuration has one job: expose useful codec knobs without turning
+the main grammar into an options drawer. The model is two-tiered: common typed
+settings for portable behavior, plus one raw escape hatch for native adapter
+details.
 
 **Tier 1: common typed settings (portable across codecs).** Options in the
 `codec` package mutate `codec.CodecSettings` (carried by `CodecSpec.Settings`

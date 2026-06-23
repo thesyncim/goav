@@ -1,9 +1,12 @@
 # Matroska and WebM
 
 `container/matroska` and `container/webm` provide the Matroska/WebM container
-layer: pure Go, codec-implementation agnostic, extractable. They may depend on
-generic `goav` media/format vocabulary and EBML helpers, never on codec
-implementations or runtime internals.
+layer: pure Go, codec-implementation agnostic, extractable. Use this page when
+you need to know what the container packages can read/write today and what is
+still intentionally outside their claim.
+
+They may depend on generic `goav` media/format vocabulary and EBML helpers,
+never on codec implementations or runtime internals.
 
 ## Packages
 
