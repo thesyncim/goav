@@ -83,80 +83,100 @@ one sink group, or one transactional writer.
 | Wrap app-owned media | `goav.Source(...)` or `goav.Input(provider)` | [Extension cookbook](docs/EXTENSION_COOKBOOK.md) |
 | Add a codec, filter, muxer, or control host | `goav.New(...)` with the relevant extension option | [Adapter authoring](docs/ADAPTER_AUTHORING.md) |
 
-## What This Unlocks
+## Expanded Examples
 
-The first example is tiny on purpose. The interesting part is that the same
-recipe model still holds when the task is live, streams arrive late, and one
-branch needs different latency behavior than another.
+The examples below are sketches, not a second API. They show how the same
+`From -> stream -> operations -> taps -> branches -> destinations -> task`
+grammar scales from a tiny recording to live runtime behavior.
 
-### Archive the room while preview adapts
+### Live Room: Archive Plus Low-Latency Preview
+
+Build one task that records the room and serves a preview without letting the
+preview dictate archive quality.
 
 ```text
-participant tracks
-  -> shared room timeline
-  -> archive branch: align and drain
-  -> preview branch: align, drop late media, keep moving
+room input
+  -> audio/video stream selection
+  -> shared room sync policy
+  -> branch "archive": hold, drain, commit
+  -> branch "preview": small buffer, drop late media
+  -> task stats: archive health and preview sync drops stay visible
 ```
 
-The recording branch can stay steady while preview sheds stale media through
-normal drop stats. Start with [dynamic-audio-room](examples/dynamic-audio-room)
-for the deterministic fixture, then open
-[gio-webrtc-showcase](examples/gio-webrtc-showcase) for the browser-visible
-version.
+Why it matters: the recording branch should behave like evidence, while the
+preview branch should behave like UI. They have different latency goals, but
+they are still branches of the same task.
 
-### Attach a meter after the task is already running
+Run the deterministic fixture in
+[examples/dynamic-audio-room](examples/dynamic-audio-room), or use
+[examples/gio-webrtc-showcase](examples/gio-webrtc-showcase) when you want the
+browser-visible version.
+
+### Runtime Diagnostics: Attach A Meter Only When You Need It
+
+Start the main job with a named frame tap. Later, attach a short-lived branch
+that reads that tap and writes measurements to an application sink.
 
 ```text
-running task
+main recording task
   -> FrameTap("levels")
-  -> Branch("support-meter")
-  -> Sink(levels)
-  -> detach when the incident is over
+
+incident starts
+  -> attach branch "support-meter"
+  -> run FrameFunc/SinkFunc diagnostics
+  -> detach with drain or abort
+
+incident ends
+  -> archive branch never changes
 ```
 
-Diagnostics are just branches from typed taps. They do not need a parallel
-debug graph, and they can drain or abort with the same lifecycle rules as any
-other runtime branch.
+Why it matters: support tooling does not need a shadow graph. A diagnostic path
+is regular composition with a lifecycle, so it can be watched, detached, and
+accounted for like any other branch.
 
-### Swap a branch at a real media boundary
+See the branch and control-plane patterns in
+[docs/CONTROL_PLANE.md](docs/CONTROL_PLANE.md).
+
+### Media-Time Rebranch: Replace Work Without A Visible Gap
+
+Use this when a branch needs to change shape while the task keeps running: a
+preview rung gets retuned, a diagnostics branch changes encoder settings, or a
+recording branch rolls to a new destination.
 
 ```text
 old branch keeps serving
-replacement starts beside it
-switch at media time
-keep old branch if replacement fails
+  -> replacement branch opens beside it
+  -> replacement reaches the requested media time
+  -> switch happens at that boundary
+  -> old branch drains, or stays alive if replacement fails
 ```
 
-Use media-time rebranching when a preview, ladder rung, or diagnostics branch
-needs to change without a visible gap. The replacement proves it can start
-before the old branch is detached.
+Why it matters: the task does not have to choose between "stop the world" and
+"hope a hot swap works". Replacement is prepared first, then committed at an
+explicit media boundary.
 
-### Let transport tracks become normal recipe inputs
+The runtime-control docs cover the watch, snapshot, attach, detach, and graph
+views around this flow: [docs/CONTROL_PLANE.md](docs/CONTROL_PLANE.md).
+
+### WebRTC/RTP: Treat Late Tracks As Normal Streams
+
+Transport code stays at the edge. Once a track appears, goav can route it
+through the same stream selection and branch grammar as any other input.
 
 ```text
-WebRTC/RTP track appears
-  -> OnStream rule matches it
+WebRTC or RTP track appears
+  -> OnStream rule matches media, codec, or stream id
   -> branch recipe attaches
   -> OnRemove chooses drain, abort, or plain detach
+  -> destination lifecycle events say what committed
 ```
 
-Transport-specific code stays at the edge. Once a track is in the task, it is
-selected, tapped, branched, synchronized, recorded, or inspected with the same
-grammar as file and generated sources.
+Why it matters: live rooms are dynamic, but the application should not need a
+separate workflow API for "tracks that arrived later". Late media still becomes
+a validated branch of the same task.
 
-### Expose live controls without exposing internals
-
-```text
-app command
-  -> Task.Control
-  -> Task.Attach
-  -> Attachment.Rebranch
-  -> Watch / Snapshot / Stats
-```
-
-A host can publish app-owned commands for bitrate, keyframes, branch attach,
-or branch replacement while keeping callers on recipes, taps, branches, and
-destinations.
+Start with [docs/RTP_WEBRTC.md](docs/RTP_WEBRTC.md), then try the browser demo
+in [examples/gio-webrtc-showcase](examples/gio-webrtc-showcase).
 
 ## Why goav
 
