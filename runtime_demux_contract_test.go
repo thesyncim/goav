@@ -32,11 +32,11 @@ func TestOpenDemuxSourceCustomAdapterContracts(t *testing.T) {
 	}}
 	demuxer := &demuxContractDemuxer{formatID: customFormat}
 	factory := &demuxContractFactory{demuxer: demuxer}
-	runtime := New(
+	runtime := MustNew(
 		WithRealtime(false),
 		WithProber(prober),
 		WithDemuxer(customFormat, factory),
-	).(*runtime)
+	)
 	input := format.Input{
 		Name:     "clip.custom",
 		URI:      "file:///tmp/clip.custom",
@@ -100,11 +100,11 @@ func TestOpenDemuxSourcePrefersDemuxerStreamsAndSizesPacketScratch(t *testing.T)
 		streams:      demuxStreams,
 		packetStream: "video",
 	}
-	runtime := New(
+	runtime := MustNew(
 		WithRealtime(false),
 		WithProber(&demuxContractProber{result: format.ProbeResult{Format: customFormat, Score: 100, Streams: probeStreams}}),
 		WithDemuxer(customFormat, &demuxContractFactory{demuxer: demuxer}),
-	).(*runtime)
+	)
 
 	build, err := (&builder{runtime: runtime}).openDemuxSource(context.Background(), format.Input{Name: "camera.video"})
 	if err != nil {
@@ -127,7 +127,7 @@ func TestOpenDemuxSourceErrorContracts(t *testing.T) {
 	customFormat := av.FormatID("x-custom")
 
 	t.Run("probe not found becomes structured input format error", func(t *testing.T) {
-		runtime := New(WithProber(&demuxContractProber{err: format.ErrNotFound})).(*runtime)
+		runtime := MustNew(WithProber(&demuxContractProber{err: format.ErrNotFound}))
 		_, err := (&builder{runtime: runtime}).openDemuxSource(ctx, input)
 		buildErr := requireRuntimeFormatBuildError(t, err, errcode.InputFormatUnknown)
 		if buildErr.Node != "input.custom" || !errors.Is(buildErr, format.ErrNotFound) {
@@ -136,7 +136,7 @@ func TestOpenDemuxSourceErrorContracts(t *testing.T) {
 	})
 
 	t.Run("detected format without demuxer is structured", func(t *testing.T) {
-		runtime := New(WithProber(&demuxContractProber{result: format.ProbeResult{Format: customFormat, Score: 100}})).(*runtime)
+		runtime := MustNew(WithProber(&demuxContractProber{result: format.ProbeResult{Format: customFormat, Score: 100}}))
 		_, err := (&builder{runtime: runtime}).openDemuxSource(ctx, input)
 		buildErr := requireRuntimeFormatBuildError(t, err, errcode.InputDemuxerMissing)
 		if !strings.Contains(buildErr.Reason, string(customFormat)) || !errors.Is(buildErr, format.ErrNotFound) {
@@ -146,10 +146,10 @@ func TestOpenDemuxSourceErrorContracts(t *testing.T) {
 
 	t.Run("factory error passes through", func(t *testing.T) {
 		factoryErr := errors.New("custom demux factory failed")
-		runtime := New(
+		runtime := MustNew(
 			WithProber(&demuxContractProber{result: format.ProbeResult{Format: customFormat, Score: 100}}),
 			WithDemuxer(customFormat, &demuxContractFactory{err: factoryErr}),
-		).(*runtime)
+		)
 		_, err := (&builder{runtime: runtime}).openDemuxSource(ctx, input)
 		if err != factoryErr {
 			t.Fatalf("factory error = %v, want original", err)
@@ -157,10 +157,10 @@ func TestOpenDemuxSourceErrorContracts(t *testing.T) {
 	})
 
 	t.Run("nil factory result returns format nil demuxer error", func(t *testing.T) {
-		runtime := New(
+		runtime := MustNew(
 			WithProber(&demuxContractProber{result: format.ProbeResult{Format: customFormat, Score: 100}}),
 			WithDemuxer(customFormat, &demuxContractFactory{}),
-		).(*runtime)
+		)
 		_, err := (&builder{runtime: runtime}).openDemuxSource(ctx, input)
 		if !errors.Is(err, format.ErrNilDemuxer) {
 			t.Fatalf("nil demuxer error = %v, want format.ErrNilDemuxer", err)
@@ -170,10 +170,10 @@ func TestOpenDemuxSourceErrorContracts(t *testing.T) {
 	t.Run("open failure closes demuxer", func(t *testing.T) {
 		openErr := errors.New("custom open failed")
 		demuxer := &demuxContractDemuxer{formatID: customFormat, openErr: openErr}
-		runtime := New(
+		runtime := MustNew(
 			WithProber(&demuxContractProber{result: format.ProbeResult{Format: customFormat, Score: 100}}),
 			WithDemuxer(customFormat, &demuxContractFactory{demuxer: demuxer}),
-		).(*runtime)
+		)
 		_, err := (&builder{runtime: runtime}).openDemuxSource(ctx, input)
 		if err != openErr {
 			t.Fatalf("open error = %v, want original", err)

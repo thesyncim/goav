@@ -15,8 +15,8 @@ import (
 	"github.com/thesyncim/goav/pipeline"
 )
 
-// ErrRuntimeRequired reports attempts to use expert graph wiring with a
-// runtime that was not created by goav.New or std.New.
+// ErrRuntimeRequired reports attempts to use expert graph wiring without a
+// runtime created by goav.New, goav.MustNew, std.New, or std.MustNew.
 var ErrRuntimeRequired = errors.New("expert: graph requires goav runtime")
 
 // GraphBuilder is the handle-based expert graph builder: named nodes wired by
@@ -37,14 +37,13 @@ type GraphBuilder interface {
 	Build(context.Context) (goav.Task, error)
 }
 
-// Graph opens the handle-based graph builder on a goav runtime. Runtimes not
-// created by goav.New or std.New yield a builder whose Describe and
-// Build fail with ErrRuntimeRequired.
-func Graph(runtime goav.Runtime) GraphBuilder {
-	if bridge, ok := runtime.(interface{ ExpertGraph() any }); ok {
-		if core, ok := bridge.ExpertGraph().(graphCore); ok {
-			return &graphBuilder{core: core}
-		}
+// Graph opens the handle-based graph builder on a goav runtime.
+func Graph(runtime *goav.Runtime) GraphBuilder {
+	if runtime == nil {
+		return &graphBuilder{err: ErrRuntimeRequired}
+	}
+	if core, ok := runtime.ExpertGraph().(graphCore); ok {
+		return &graphBuilder{core: core}
 	}
 	return &graphBuilder{err: ErrRuntimeRequired}
 }

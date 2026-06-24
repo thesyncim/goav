@@ -173,9 +173,8 @@ func (p mediaPlanStreamGraph) hasSingleSinkDestination() bool {
 	return len(p.outputs) == 1 && p.outputs[0].sink != nil
 }
 
-func newMediaPlanDecodeStreamGraph(rt Runtime, inputs []InputSpec, outputs []destinationSpec, stream streamIntent) (mediaPlanStreamGraph, bool, error) {
-	runtime, ok := rt.(*runtime)
-	if !ok || runtime == nil {
+func newMediaPlanDecodeStreamGraph(rt *Runtime, inputs []InputSpec, outputs []destinationSpec, stream streamIntent) (mediaPlanStreamGraph, bool, error) {
+	if rt == nil {
 		return mediaPlanStreamGraph{}, false, nil
 	}
 	if !mediaPlanStreamInputsSupported(inputs) {
@@ -183,7 +182,7 @@ func newMediaPlanDecodeStreamGraph(rt Runtime, inputs []InputSpec, outputs []des
 	}
 	selector := streamIntentSelector(stream)
 	sg := mediaPlanStreamGraph{
-		runtime:      runtime,
+		runtime:      rt,
 		inputs:       append([]InputSpec(nil), inputs...),
 		outputs:      append([]destinationSpec(nil), outputs...),
 		stream:       stream,
@@ -249,16 +248,15 @@ func mediaPlanStreamInputsSupported(inputs []InputSpec) bool {
 	return true
 }
 
-func newMediaPlanPacketCopyStreamGraph(rt Runtime, inputs []InputSpec, outputs []destinationSpec, stream streamIntent, selectedStream bool) (mediaPlanStreamGraph, bool, error) {
-	runtime, ok := rt.(*runtime)
-	if !ok || runtime == nil {
+func newMediaPlanPacketCopyStreamGraph(rt *Runtime, inputs []InputSpec, outputs []destinationSpec, stream streamIntent, selectedStream bool) (mediaPlanStreamGraph, bool, error) {
+	if rt == nil {
 		return mediaPlanStreamGraph{}, false, nil
 	}
 	if len(inputs) == 0 || len(outputs) == 0 || !mediaPlanStreamInputsSupported(inputs) {
 		return mediaPlanStreamGraph{}, false, nil
 	}
 	return mediaPlanStreamGraph{
-		runtime:        runtime,
+		runtime:        rt,
 		inputs:         append([]InputSpec(nil), inputs...),
 		outputs:        append([]destinationSpec(nil), outputs...),
 		stream:         stream,
@@ -330,9 +328,8 @@ func (p mediaPlanStreamGraph) selectedPacketCopyBranchComposeRoutes() ([]branchC
 	return branches, mediaPlanBranchComposeTargetRoutes(p.outputs, branchName)
 }
 
-func newMediaPlanBranchComposeGraph(rt Runtime, inputs []InputSpec, composePlan branchComposePlan) (mediaPlanBranchComposeGraph, bool, error) {
-	runtime, ok := rt.(*runtime)
-	if !ok || runtime == nil {
+func newMediaPlanBranchComposeGraph(rt *Runtime, inputs []InputSpec, composePlan branchComposePlan) (mediaPlanBranchComposeGraph, bool, error) {
+	if rt == nil {
 		return mediaPlanBranchComposeGraph{}, false, nil
 	}
 	if len(inputs) == 0 {
@@ -366,7 +363,7 @@ func newMediaPlanBranchComposeGraph(rt Runtime, inputs []InputSpec, composePlan 
 		}
 	}
 	return mediaPlanBranchComposeGraph{
-		runtime:      runtime,
+		runtime:      rt,
 		inputs:       append([]InputSpec(nil), inputs...),
 		plan:         composePlan,
 		branches:     branches,

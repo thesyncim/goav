@@ -77,7 +77,7 @@ func (o graphOutlet) Name() string {
 // expert package reaches it through the (*runtime).ExpertGraph bridge, which
 // guarantees the concrete runtime type.
 func newExpertGraph(r *runtime) *graphBuilder {
-	return &graphBuilder{builder: r.New()}
+	return &graphBuilder{builder: r.newBuilder()}
 }
 
 // ExpertGraph is the structural bridge behind expert.Graph: it returns the

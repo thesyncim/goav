@@ -565,20 +565,6 @@ func streamEncodeMissingError(operation string, stream streamIntent) error {
 	}
 }
 
-func recipeRuntimeUnsupportedError(operation string) error {
-	return &BuildError{
-		Code:      errcode.RuntimeUnsupported,
-		Operation: operation,
-		Reason:    "recipe compilation requires a goav runtime",
-		Suggestions: []string{
-			"import github.com/thesyncim/goav/std and use std.New(...) for the standard recipe runtime",
-			"use goav.New(...) when customizing adapters",
-			"use expert.Graph(runtime) for explicit graph wiring with a goav runtime",
-		},
-		Cause: ErrUnsupportedBuild,
-	}
-}
-
 func jobStreamIntentName(stream streamIntent) string {
 	return firstNonEmpty(stream.Name, string(stream.Select.ID), string(stream.Select.Type), "stream")
 }

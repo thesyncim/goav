@@ -15,7 +15,7 @@ import (
 )
 
 func TestSessionPublishesStateForBranchChanges(t *testing.T) {
-	session, err := newSession(context.Background(), std.New(), "http://localhost:8080")
+	session, err := newSession(context.Background(), std.MustNew(), "http://localhost:8080")
 	if err != nil {
 		t.Fatalf("newSession() error = %v", err)
 	}

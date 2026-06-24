@@ -15,9 +15,9 @@ import (
 
 // northStarResampleRuntime is northStarTranscodeRuntime plus an audio resample
 // filter, for acceptance checks that include a transform.
-func northStarResampleRuntime() Runtime {
+func northStarResampleRuntime() *Runtime {
 	streams := []av.Stream{audioOpusTestStream()}
-	return New(
+	return MustNew(
 		withTestFormats(
 			testFormatProber(remuxTestProber{streams: streams}),
 			testFormatDemuxer(av.FormatOgg, decodeTestDemuxerFactory{demuxer: &decodeTestDemuxer{streams: streams}}),
@@ -37,9 +37,9 @@ func northStarResampleRuntime() Runtime {
 
 // northStarTranscodeRuntime builds a runtime that can demux/decode/encode/mux a
 // single Opus audio stream, for the acceptance-suite jobs.
-func northStarTranscodeRuntime() Runtime {
+func northStarTranscodeRuntime() *Runtime {
 	streams := []av.Stream{audioOpusTestStream()}
-	return New(
+	return MustNew(
 		withTestFormats(
 			testFormatProber(remuxTestProber{streams: streams}),
 			testFormatDemuxer(av.FormatOgg, decodeTestDemuxerFactory{demuxer: &decodeTestDemuxer{streams: streams}}),
@@ -132,7 +132,7 @@ func TestNorthStarBranchesAfterDecodeShareOneDecoder(t *testing.T) {
 	}
 	decoder := &decodeTestDecoder{}
 	factory := &countingDecoderFactory{inner: decodeTestDecoderFactory{decoder: decoder}}
-	rt := New(
+	rt := MustNew(
 		withTestFormats(
 			testFormatProber(remuxTestProber{streams: streams}),
 			testFormatDemuxer(av.FormatOgg, decodeTestDemuxerFactory{demuxer: demuxer}),
@@ -217,7 +217,7 @@ func TestNorthStarFlowExposesNoDestinations(t *testing.T) {
 // packet source feeds Copy into a muxed File destination end to end.
 func TestNorthStarCustomPacketSourceCopiesToFile(t *testing.T) {
 	muxers := &remuxTestMuxerFactory{}
-	rt := New(withTestFormats(testFormatMuxer(av.FormatOgg, muxers)))
+	rt := MustNew(withTestFormats(testFormatMuxer(av.FormatOgg, muxers)))
 	input := Source("gen",
 		shape.Packet(av.MediaAudio, av.CodecOpus, shape.Audio(48_000, codec.Stereo, av.SampleFormatS16)),
 		func(_ context.Context, push SourcePush) error {
@@ -244,7 +244,7 @@ func TestNorthStarCustomPacketSourceCopiesToFile(t *testing.T) {
 func TestNorthStarCustomFrameSourceEncodesToFile(t *testing.T) {
 	encoder := &encodeTestEncoder{}
 	muxers := &remuxTestMuxerFactory{}
-	rt := New(
+	rt := MustNew(
 		withTestCodecs(testCodecEncoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &encodeTestEncoderFactory{encoder: encoder})),
 		withTestFormats(testFormatMuxer(av.FormatOgg, muxers)),
 	)

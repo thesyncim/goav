@@ -34,12 +34,12 @@ func TestRecipeResolvedSingleStreamIntentContracts(t *testing.T) {
 }
 
 func TestMediaPlanPacketCopyStreamGraphConstructionContracts(t *testing.T) {
-	var nilRuntime Runtime
+	var nilRuntime *Runtime
 	if graph, ok, err := newMediaPlanPacketCopyStreamGraph(nilRuntime, []InputSpec{{}}, []destinationSpec{{name: "out"}}, streamIntent{}, false); err != nil || ok || graph.runtime != nil {
 		t.Fatalf("newMediaPlanPacketCopyStreamGraph(nil runtime) = %+v, %v, %v; want not handled", graph, ok, err)
 	}
 
-	rt := New()
+	rt := MustNew()
 	for name, tc := range map[string]struct {
 		inputs  []InputSpec
 		outputs []destinationSpec

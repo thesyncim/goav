@@ -492,7 +492,7 @@ func shapeSolverAdapterError(operation string, node string, index int, step oper
 			Details: append(details, "candidates="+strings.Join(selection.candidates, ",")),
 			Suggestions: []string{
 				"keep one " + string(selection.media) + " conversion filter registered per runtime",
-				"build the runtime with only the intended conversion filter via goav.New(goav.WithFilter(...))",
+				"build the runtime with only the intended conversion filter via goav.MustNew(goav.WithFilter(...))",
 				"bias the choice with .Prefer(shape.New(...)) toward a capability only one candidate declares",
 			},
 			Cause: ErrUnsupportedBuild,
@@ -507,7 +507,7 @@ func shapeSolverAdapterError(operation string, node string, index int, step oper
 		Details: details,
 		Suggestions: []string{
 			"register a " + string(selection.media) + " conversion filter with goav.WithFilter(filter.Descriptor{Input: ..., Output: ...}, factory)",
-			"import github.com/thesyncim/goav/std and build with std.NewFilters(...) for the standard resample and resize adapters",
+			"import github.com/thesyncim/goav/std and build with std.MustNewFilters(...) for the standard resample and resize adapters",
 		},
 		Cause: ErrUnsupportedBuild,
 	}

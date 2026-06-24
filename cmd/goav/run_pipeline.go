@@ -258,7 +258,7 @@ func executeRunPipeline(ctx context.Context, runtimeName string, control string,
 	}, nil
 }
 
-func reportedFileDestinationFormat(ctx context.Context, runtime goav.Runtime, dest fileDestination) av.FormatID {
+func reportedFileDestinationFormat(ctx context.Context, runtime *goav.Runtime, dest fileDestination) av.FormatID {
 	if dest.format != "" || runtime == nil {
 		return dest.format
 	}
@@ -275,7 +275,7 @@ func reportedFileDestinationFormat(ctx context.Context, runtime goav.Runtime, de
 	return result.Format
 }
 
-func buildRunPipelineTask(ctx context.Context, runtime goav.Runtime, plan runPipelinePlan, dest goav.Destination) (goav.Task, codec.CodecSpec, error) {
+func buildRunPipelineTask(ctx context.Context, runtime *goav.Runtime, plan runPipelinePlan, dest goav.Destination) (goav.Task, codec.CodecSpec, error) {
 	source := plan.source.input()
 	job := goav.From(source)
 	stream := job.Video(goav.InputName(plan.source.name))
@@ -335,16 +335,16 @@ func expectedRunShutdownError(err error) bool {
 		errors.Is(err, pipeline.ErrClosed)
 }
 
-func runtimeForRun(name string, plan runPipelinePlan) (goav.Runtime, string, error) {
+func runtimeForRun(name string, plan runPipelinePlan) (*goav.Runtime, string, error) {
 	if name == "" {
 		name = "demo"
 	}
 	codecIDs := plan.encodeCodecIDs()
 	switch name {
 	case "demo":
-		return std.New(goav.WithClock(goavtest.NewClock())), "demo", nil
+		return std.MustNew(goav.WithClock(goavtest.NewClock())), "demo", nil
 	case "default", "std", "standard":
-		return std.New(), "default", nil
+		return std.MustNew(), "default", nil
 	case "test", "fake", "deterministic":
 		opts := make([]goav.Option, 0, len(codecIDs))
 		for _, id := range codecIDs {

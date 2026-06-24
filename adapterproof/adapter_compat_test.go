@@ -639,8 +639,8 @@ var _ filter.Factory = toyFilterFactory{}
 
 // toyRuntime registers one external implementation of every seam on a bare
 // runtime — value options only, no registry callbacks, no core knowledge.
-func toyRuntime() goav.Runtime {
-	return goav.New(
+func toyRuntime() *goav.Runtime {
+	return goav.MustNew(
 		goav.WithRealtime(false),
 		goav.WithDecoder(toyCodecDescriptor(), toyCodecFactory{}),
 		goav.WithEncoder(toyCodecDescriptor(), toyCodecFactory{}),

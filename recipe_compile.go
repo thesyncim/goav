@@ -17,7 +17,7 @@ import (
 
 type recipeResolved struct {
 	intent                intent
-	runtime               Runtime
+	runtime               *Runtime
 	spec                  pipeline.Spec
 	specReady             bool
 	specOrigin            string
@@ -36,7 +36,7 @@ type recipeResolved struct {
 type recipeCompileState struct {
 	operation string
 	intent    intent
-	runtime   Runtime
+	runtime   *Runtime
 	options   recipeCompileOptions
 
 	jobPresent               bool
@@ -455,8 +455,8 @@ func runtimeMissingError(operation string) error {
 		Operation: operation,
 		Reason:    "no runtime is configured",
 		Suggestions: []string{
-			"pass a non-nil runtime with .UseRuntime(goav.New(...))",
-			"import github.com/thesyncim/goav/std and build with std.New(...) or std.Run(ctx, job)",
+			"pass a non-nil runtime with .UseRuntime(goav.MustNew(...))",
+			"import github.com/thesyncim/goav/std and build with std.MustNew(...) or std.Run(ctx, job)",
 		},
 		Cause: ErrUnsupportedBuild,
 	}
@@ -479,10 +479,10 @@ func validateJobRecipePass() recipeCompilePass {
 
 func validateRecipeRuntimePass() recipeCompilePass {
 	return recipeCompilePassFunc{name: "validate recipe runtime", fn: func(state *recipeCompileState) error {
-		if _, ok := state.runtime.(*runtime); ok {
+		if state.runtime != nil {
 			return nil
 		}
-		return recipeRuntimeUnsupportedError(state.operation)
+		return runtimeMissingError(state.operation)
 	}}
 }
 
@@ -1105,7 +1105,7 @@ func validateKnownProbeStreamSelection(probe format.ProbeResult, stream streamIn
 // view, Describe, Explain, and the lowering, sees them).
 func validateRecipeOperationShapesPass() recipeCompilePass {
 	return recipeCompilePassFunc{name: "validate recipe operation shapes", fn: func(state *recipeCompileState) error {
-		rt, _ := state.runtime.(*runtime)
+		rt := state.runtime
 		for i := range state.intent.Streams {
 			stream := state.intent.Streams[i]
 			initial := recipeInitialStreamShape(state, stream)

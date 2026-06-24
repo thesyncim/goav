@@ -2,7 +2,7 @@
 // spirit of net/http/httptest: deterministic sources, a recording sink, a
 // fake clock, and passthrough codec and container fakes. Nothing here couples
 // to *testing.T and nothing asserts — every helper returns a real grammar
-// value (goav.InputSpec, goav.Destination, goav.Option, goav.Runtime), so
+// value (goav.InputSpec, goav.Destination, goav.Option, *goav.Runtime), so
 // test code is pipeline code.
 //
 // A complete pipeline test is three values and one Run:
@@ -78,7 +78,7 @@ var runtimeFormats = []av.FormatID{
 //
 // opts are applied last and registration is last-wins, so extra options can
 // both add adapters and override any of the defaults (including the clock).
-func Runtime(opts ...goav.Option) goav.Runtime {
+func Runtime(opts ...goav.Option) *goav.Runtime {
 	options := make([]goav.Option, 0, 2+len(runtimeCodecs)+len(runtimeFormats)+len(opts))
 	options = append(options,
 		goav.WithFilterAdapter(resampleadapter.Register),
@@ -92,5 +92,5 @@ func Runtime(opts ...goav.Option) goav.Runtime {
 	}
 	options = append(options, goav.WithClock(NewClock()))
 	options = append(options, opts...)
-	return goav.New(options...)
+	return goav.MustNew(options...)
 }

@@ -81,7 +81,7 @@ one sink group, or one transactional writer.
 | Attach a live room participant | `Task.Attach(ctx, goav.Branch(...).From(input.Stream(track)))` | [Dynamic audio room](examples/dynamic-audio-room) |
 | Add a meter or diagnostic sink | `goav.FrameTap(...)`, then attach a branch ending in `goav.Sink(...)` | [Control plane](docs/CONTROL_PLANE.md) |
 | Wrap app-owned media | `goav.Source(...)` or `goav.Input(provider)` | [Extension cookbook](docs/EXTENSION_COOKBOOK.md) |
-| Add a codec, filter, muxer, or control host | `goav.New(...)` with the relevant extension option | [Adapter authoring](docs/ADAPTER_AUTHORING.md) |
+| Add a codec, filter, muxer, or control host | `goav.MustNew(...)` with the relevant extension option | [Adapter authoring](docs/ADAPTER_AUTHORING.md) |
 
 ## Expandable Examples
 

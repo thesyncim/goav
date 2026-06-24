@@ -12,7 +12,7 @@ import (
 )
 
 func TestHTTPBranchLifecycleQueuesRenegotiation(t *testing.T) {
-	app := newServer(std.New(), "http://localhost:8080")
+	app := newServer(std.MustNew(), "http://localhost:8080")
 	session, err := newSession(context.Background(), app.runtime, app.browserURL)
 	if err != nil {
 		t.Fatalf("newSession(): %v", err)
@@ -52,7 +52,7 @@ func TestHTTPBranchLifecycleQueuesRenegotiation(t *testing.T) {
 }
 
 func TestHTTPScenariosRefreshState(t *testing.T) {
-	app := newServer(std.New(), "http://localhost:8080")
+	app := newServer(std.MustNew(), "http://localhost:8080")
 	session, err := newSession(context.Background(), app.runtime, app.browserURL)
 	if err != nil {
 		t.Fatalf("newSession(): %v", err)

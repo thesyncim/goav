@@ -128,7 +128,7 @@ func ExampleFrom() {
 			}
 			return nil
 		}))).
-		UseRuntime(std.New()).
+		UseRuntime(std.MustNew()).
 		Run(ctx)
 
 	fmt.Println(err, encoded)
@@ -174,7 +174,7 @@ func ExampleFrom_autoResample() {
 		Auto(shape.AllowResample()).
 		Encode(codec.Opus(codec.Bitrate(96_000))).
 		To(goav.File("voice.webm", io.Discard)).
-		UseRuntime(std.New()).
+		UseRuntime(std.MustNew()).
 		Explain(context.Background())
 	if err != nil {
 		fmt.Println(err)

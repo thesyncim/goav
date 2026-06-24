@@ -9,7 +9,7 @@ import (
 )
 
 func TestSessionPublishesStateForBranchChanges(t *testing.T) {
-	session, err := newSession(context.Background(), std.New())
+	session, err := newSession(context.Background(), std.MustNew())
 	if err != nil {
 		t.Fatalf("newSession() error = %v", err)
 	}

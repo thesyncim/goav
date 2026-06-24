@@ -66,6 +66,6 @@ func TransformOperationContractForTest(transform TransformSpec) shape.Contract {
 // expertGraph opens the internal fluent graph builder the expert package
 // wraps — in-package tests cannot import expert (cycle), so they pin the
 // graph semantics through this seam.
-func expertGraph(rt Runtime) *graphBuilder {
-	return newExpertGraph(rt.(*runtime))
+func expertGraph(rt *Runtime) *graphBuilder {
+	return newExpertGraph(rt)
 }

@@ -39,7 +39,7 @@ const (
 // benchRuntime is the deterministic offline runtime every benchmark uses:
 // goavtest fakes plus WithRealtime(false), so nothing paces on a clock and the
 // fake clock records no sleep trace while b.N grows.
-func benchRuntime(opts ...goav.Option) goav.Runtime {
+func benchRuntime(opts ...goav.Option) *goav.Runtime {
 	return goavtest.Runtime(append([]goav.Option{goav.WithRealtime(false)}, opts...)...)
 }
 

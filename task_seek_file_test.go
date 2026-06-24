@@ -168,7 +168,7 @@ func repeatSleeps(d time.Duration, count int) []time.Duration {
 func seekFileTask(t *testing.T, reader io.Reader, sink *seekFileSink, options ...Option) Task {
 	t.Helper()
 	task, err := From(FileInput("seek.mkv", reader)).
-		UseRuntime(New(append([]Option{WithFormatAdapter(matroskaadapter.Register)}, options...)...)).
+		UseRuntime(MustNew(append([]Option{WithFormatAdapter(matroskaadapter.Register)}, options...)...)).
 		Audio().Copy().
 		To(Sink(SinkFunc("rec", sink.record))).
 		Build(context.Background())
@@ -222,7 +222,7 @@ func TestTaskSegmentExportsRealMatroskaWindow(t *testing.T) {
 	data := muxSeekFileMKV(t)
 	sink := &seekFileSink{}
 	task, err := From(FileInput("seek.mkv", bytes.NewReader(data))).
-		UseRuntime(New(WithFormatAdapter(matroskaadapter.Register), WithClock(&paceFileClock{}))).
+		UseRuntime(MustNew(WithFormatAdapter(matroskaadapter.Register), WithClock(&paceFileClock{}))).
 		Audio().Copy().
 		Tap(PacketTap("audio.packets")).
 		To(Sink(SinkFunc("base", sink.record))).

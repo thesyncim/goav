@@ -480,7 +480,7 @@ func TestErrorAcceptanceDestinationMuxerMissing(t *testing.T) {
 	_, err := goav.From(goavtest.Audio(48000, 1, []int16{1})).
 		Audio().Encode(codec.Opus()).
 		To(goav.File("out.ogg", io.Discard)).
-		UseRuntime(std.NewFilters(goavtest.Codec(av.CodecOpus))).
+		UseRuntime(std.MustNewFilters(goavtest.Codec(av.CodecOpus))).
 		Build(context.Background())
 	requireBuildError(t, err, errcode.DestinationMuxerMissing, "open destination", "out.ogg",
 		"goav.WithMuxer(...)",

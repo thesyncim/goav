@@ -93,7 +93,7 @@ func TestMixChainArmTapDecodesOnceAndMixes(t *testing.T) {
 	ctx := context.Background()
 	pcm := av.CodecID("x_pcm_mono")
 	decoder := &tapArmTestDecoder{}
-	rt := New(WithDecoder(
+	rt := MustNew(WithDecoder(
 		codec.Descriptor{ID: pcm, Name: "PCM mono", Type: av.MediaAudio, Capabilities: codec.Capabilities{SampleFormats: []string{av.SampleFormatS16}}},
 		tapArmTestDecoderFactory{decoder: decoder},
 	))

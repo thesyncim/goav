@@ -33,7 +33,7 @@ const (
 type session struct {
 	id         string
 	pc         *webrtc.PeerConnection
-	runtime    goav.Runtime
+	runtime    *goav.Runtime
 	browserURL string
 	ctx        context.Context
 	cancel     context.CancelFunc

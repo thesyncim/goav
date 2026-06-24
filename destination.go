@@ -485,10 +485,9 @@ func validateDestinationSpecs(operation string, outputs []destinationSpec, desti
 	return nil
 }
 
-func validateOutputFormatAdapters(ctx context.Context, rt Runtime, outputs []destinationSpec, destinationNames ...string) ([]destinationSpec, error) {
+func validateOutputFormatAdapters(ctx context.Context, rt *Runtime, outputs []destinationSpec, destinationNames ...string) ([]destinationSpec, error) {
 	resolved := append([]destinationSpec(nil), outputs...)
-	standard, ok := rt.(*runtime)
-	if !ok || standard == nil {
+	if rt == nil {
 		return resolved, nil
 	}
 	for i := range resolved {
@@ -497,14 +496,14 @@ func validateOutputFormatAdapters(ctx context.Context, rt Runtime, outputs []des
 		}
 		formatID := resolved[i].format
 		if formatID == "" {
-			result, err := standard.formats.Probe(ctx, outputProbeRequest(resolved[i].output))
+			result, err := rt.formats.Probe(ctx, outputProbeRequest(resolved[i].output))
 			if err != nil {
 				return nil, destinationFormatProbeError(destinationNodeName(resolved[i].output, i, destinationNames), resolved[i].output, err)
 			}
 			formatID = result.Format
 			resolved[i] = resolved[i].withResolvedFormat(formatID)
 		}
-		if _, err := standard.formats.MuxerFactory(formatID); err != nil {
+		if _, err := rt.formats.MuxerFactory(formatID); err != nil {
 			return nil, destinationMuxerMissingError(destinationNodeName(resolved[i].output, i, destinationNames), resolved[i].output, formatID, err)
 		}
 	}

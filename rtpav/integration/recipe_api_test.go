@@ -243,7 +243,7 @@ func TestRecordRecipeExplainReturnsStructuredPlan(t *testing.T) {
 }
 
 func TestExplainReportsBranchShapeFromLiveCodecIntent(t *testing.T) {
-	rt := goav.New(goav.WithCodecAdapter(func(registry *codec.SimpleRegistry) {
+	rt := goav.MustNew(goav.WithCodecAdapter(func(registry *codec.SimpleRegistry) {
 		registry.RegisterDecoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, recipeAPIDecoderFactory{})
 	}))
 
@@ -416,7 +416,7 @@ func TestProviderRecipeSurfacesOpenSourceError(t *testing.T) {
 }
 
 func TestStreamRecipeReportsMissingDecodeAdapterBeforeOpeningLiveInput(t *testing.T) {
-	rt := goav.New(goav.WithCodecAdapter(func(registry *codec.SimpleRegistry) {
+	rt := goav.MustNew(goav.WithCodecAdapter(func(registry *codec.SimpleRegistry) {
 		registry.RegisterDescriptor(codec.Descriptor{
 			ID:    av.CodecH264,
 			Name:  "h264",

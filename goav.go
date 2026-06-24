@@ -9,17 +9,17 @@
 // operation lists, and Build(ctx) returns a Task — a running graph with
 // events, snapshots, runtime Attach/Detach, and live Control.
 //
-// New(opts...) builds a bare runtime. Import github.com/thesyncim/goav/std when
-// the application wants the bundled pure-Go adapters. Errors are structured:
-// every refusal is a *BuildError carrying an errcode.Code, the failing
-// operation, and concrete fixes.
+// New(opts...) builds a bare runtime and returns option/configuration errors;
+// MustNew(opts...) is the package-level setup shortcut. Import
+// github.com/thesyncim/goav/std when the application wants the bundled pure-Go
+// adapters. Build errors are structured: every refusal is a *BuildError
+// carrying an errcode.Code, the failing operation, and concrete fixes.
 package goav
 
 import (
 	"context"
 
 	"github.com/thesyncim/goav/av"
-	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/plan"
 	"github.com/thesyncim/goav/snapshot"
@@ -38,10 +38,10 @@ type (
 	Stream = av.Stream
 )
 
-// Runtime is the composition root for applications embedding goav.
-type Runtime interface {
-	Probe(context.Context, format.ProbeRequest) (format.ProbeResult, error)
-}
+// Runtime is the concrete composition root for applications embedding goav.
+// Build it with New or MustNew, or import github.com/thesyncim/goav/std for
+// the bundled standard adapters.
+type Runtime = runtime
 
 // Task is a runnable media composition.
 type Task interface {

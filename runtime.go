@@ -3,6 +3,7 @@ package goav
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sort"
 	"strings"
 	"sync"
@@ -52,38 +53,107 @@ var (
 	ErrClosed = pipeline.ErrClosed
 )
 
+// Config is the mutable runtime construction state passed to Option values.
+// Options may replace registries or update graph policy, but New validates the
+// final config before publishing a concrete Runtime.
+type Config struct {
+	Codecs        *codec.SimpleRegistry
+	Filters       *filter.SimpleRegistry
+	Formats       *format.SimpleRegistry
+	Buffer        pipeline.BufferPolicy
+	Realtime      bool
+	Clock         av.Clock
+	EventCapacity int
+}
+
 // Option configures a runtime under construction: registries (codecs, formats,
 // filters), pacing (WithRealtime, WithClock), and graph policy
-// (WithBufferPolicy, WithEventCapacity). Registration is last-wins, so a later
-// option can override an earlier adapter.
-type Option func(*runtime)
+// (WithBufferPolicy, WithEventCapacity). Invalid options return an error from
+// New instead of silently no-oping.
+type Option func(*Config) error
 
 // New builds a bare runtime: per-runtime registries with no adapters beyond
 // content sniffing, realtime pacing on. Import github.com/thesyncim/goav/std
 // for a runtime with the bundled adapters already registered.
-func New(options ...Option) Runtime {
-	formats := format.NewRegistry()
-	formats.RegisterProber(format.DefaultProber())
-	runtime := &runtime{
-		codecs:   codec.NewRegistry(),
-		filters:  filter.NewRegistry(),
-		formats:  formats,
-		realtime: true,
+func New(options ...Option) (*Runtime, error) {
+	config := newRuntimeConfig()
+	for i, option := range options {
+		if option == nil {
+			return nil, runtimeOptionError(i, "option is nil", nil)
+		}
+		if err := option(config); err != nil {
+			return nil, runtimeOptionError(i, "option rejected config", err)
+		}
 	}
-	for _, option := range options {
-		option(runtime)
+	if err := validateRuntimeConfig(config); err != nil {
+		return nil, err
+	}
+	return &runtime{
+		codecs:        config.Codecs,
+		filters:       config.Filters,
+		formats:       config.Formats,
+		buffer:        config.Buffer,
+		realtime:      config.Realtime,
+		clock:         config.Clock,
+		eventCapacity: config.EventCapacity,
+	}, nil
+}
+
+// MustNew is New for package-level setup and tests: it panics when runtime
+// options are invalid.
+func MustNew(options ...Option) *Runtime {
+	runtime, err := New(options...)
+	if err != nil {
+		panic(err)
 	}
 	return runtime
+}
+
+func newRuntimeConfig() *Config {
+	formats := format.NewRegistry()
+	formats.RegisterProber(format.DefaultProber())
+	return &Config{
+		Codecs:   codec.NewRegistry(),
+		Filters:  filter.NewRegistry(),
+		Formats:  formats,
+		Realtime: true,
+	}
+}
+
+func validateRuntimeConfig(config *Config) error {
+	switch {
+	case config == nil:
+		return errors.New("goav: runtime config is nil")
+	case config.Codecs == nil:
+		return errors.New("goav: runtime config has nil codec registry")
+	case config.Filters == nil:
+		return errors.New("goav: runtime config has nil filter registry")
+	case config.Formats == nil:
+		return errors.New("goav: runtime config has nil format registry")
+	case config.EventCapacity < 0:
+		return fmt.Errorf("goav: runtime event capacity must be non-negative: %d", config.EventCapacity)
+	default:
+		return nil
+	}
+}
+
+func runtimeOptionError(index int, reason string, cause error) error {
+	if cause != nil {
+		return fmt.Errorf("goav: runtime option %d invalid: %s: %w", index, reason, cause)
+	}
+	return fmt.Errorf("goav: runtime option %d invalid: %s", index, reason)
 }
 
 // WithCodecAdapter registers a whole codec bundle at once: the callback
 // receives the runtime's codec registry. Use WithDecoder/WithEncoder for the
 // direct single-value form.
 func WithCodecAdapter(register func(*codec.SimpleRegistry)) Option {
-	return func(runtime *runtime) {
-		if register != nil {
-			register(runtime.codecs)
+	return func(config *Config) error {
+		if register == nil {
+			return errors.New("codec registry callback is nil")
 		}
+		register(config.Codecs)
+		return nil
 	}
 }
 
@@ -100,6 +170,11 @@ func WithCodecDescriptor(desc codec.Descriptor) Option {
 // implementation directly, no registry callback. The descriptor's
 // capabilities drive compatibility checks before anything opens.
 func WithDecoder(desc codec.Descriptor, factory codec.DecoderFactory) Option {
+	if factory == nil {
+		return func(*Config) error {
+			return errors.New("decoder factory is nil")
+		}
+	}
 	return WithCodecAdapter(func(registry *codec.SimpleRegistry) {
 		registry.RegisterDecoder(desc, factory)
 	})
@@ -109,6 +184,11 @@ func WithDecoder(desc codec.Descriptor, factory codec.DecoderFactory) Option {
 // implementation directly, no registry callback. The descriptor's
 // capabilities drive compatibility checks before anything opens.
 func WithEncoder(desc codec.Descriptor, factory codec.EncoderFactory) Option {
+	if factory == nil {
+		return func(*Config) error {
+			return errors.New("encoder factory is nil")
+		}
+	}
 	return WithCodecAdapter(func(registry *codec.SimpleRegistry) {
 		registry.RegisterEncoder(desc, factory)
 	})
@@ -119,6 +199,11 @@ func WithEncoder(desc codec.Descriptor, factory codec.EncoderFactory) Option {
 // implementation, never by touching a registry. (WithFilterAdapter remains for
 // registering a whole bundle at once.)
 func WithFilter(desc filter.Descriptor, factory filter.Factory) Option {
+	if factory == nil {
+		return func(*Config) error {
+			return errors.New("filter factory is nil")
+		}
+	}
 	return WithFilterAdapter(func(registry *filter.SimpleRegistry) {
 		registry.RegisterFactory(desc, factory)
 	})
@@ -127,6 +212,11 @@ func WithFilter(desc filter.Descriptor, factory filter.Factory) Option {
 // WithMuxer adds one muxer factory for a container format — pass the muxer
 // directly, no registry callback.
 func WithMuxer(id av.FormatID, factory format.MuxerFactory) Option {
+	if factory == nil {
+		return func(*Config) error {
+			return errors.New("muxer factory is nil")
+		}
+	}
 	return WithFormatAdapter(func(registry *format.SimpleRegistry) {
 		registry.RegisterMuxer(id, factory)
 	})
@@ -135,6 +225,11 @@ func WithMuxer(id av.FormatID, factory format.MuxerFactory) Option {
 // WithDemuxer adds one demuxer factory for a container format — pass the demuxer
 // directly, no registry callback.
 func WithDemuxer(id av.FormatID, factory format.DemuxerFactory) Option {
+	if factory == nil {
+		return func(*Config) error {
+			return errors.New("demuxer factory is nil")
+		}
+	}
 	return WithFormatAdapter(func(registry *format.SimpleRegistry) {
 		registry.RegisterDemuxer(id, factory)
 	})
@@ -142,6 +237,11 @@ func WithDemuxer(id av.FormatID, factory format.DemuxerFactory) Option {
 
 // WithProber adds one format prober (content sniffing) directly.
 func WithProber(prober format.Prober) Option {
+	if prober == nil {
+		return func(*Config) error {
+			return errors.New("format prober is nil")
+		}
+	}
 	return WithFormatAdapter(func(registry *format.SimpleRegistry) {
 		registry.RegisterProber(prober)
 	})
@@ -151,10 +251,12 @@ func WithProber(prober format.Prober) Option {
 // callback receives the runtime's format registry. Use
 // WithMuxer/WithDemuxer/WithProber for the direct single-value form.
 func WithFormatAdapter(register func(*format.SimpleRegistry)) Option {
-	return func(runtime *runtime) {
-		if register != nil {
-			register(runtime.formats)
+	return func(config *Config) error {
+		if register == nil {
+			return errors.New("format registry callback is nil")
 		}
+		register(config.Formats)
+		return nil
 	}
 }
 
@@ -162,10 +264,12 @@ func WithFormatAdapter(register func(*format.SimpleRegistry)) Option {
 // receives the runtime's filter registry. Use WithFilter for the direct
 // single-value form.
 func WithFilterAdapter(register func(*filter.SimpleRegistry)) Option {
-	return func(runtime *runtime) {
-		if register != nil {
-			register(runtime.filters)
+	return func(config *Config) error {
+		if register == nil {
+			return errors.New("filter registry callback is nil")
 		}
+		register(config.Filters)
+		return nil
 	}
 }
 
@@ -173,8 +277,9 @@ func WithFilterAdapter(register func(*filter.SimpleRegistry)) Option {
 // runtime builds — the queue depth and overflow behavior between nodes.
 // Branch-local .Buffer(flow....) declarations override it per branch.
 func WithBufferPolicy(policy pipeline.BufferPolicy) Option {
-	return func(runtime *runtime) {
-		runtime.buffer = policy
+	return func(config *Config) error {
+		config.Buffer = policy
+		return nil
 	}
 }
 
@@ -182,8 +287,12 @@ func WithBufferPolicy(policy pipeline.BufferPolicy) Option {
 // of each Watch subscriber's channel). A watcher that falls behind by more
 // than this sheds events for itself only.
 func WithEventCapacity(capacity int) Option {
-	return func(runtime *runtime) {
-		runtime.eventCapacity = capacity
+	return func(config *Config) error {
+		if capacity < 0 {
+			return fmt.Errorf("event capacity must be non-negative: %d", capacity)
+		}
+		config.EventCapacity = capacity
+		return nil
 	}
 }
 
@@ -192,8 +301,9 @@ func WithEventCapacity(capacity int) Option {
 // multiplier; false pumps at full speed (offline transcode) and rejects Rate
 // with format.ErrRateUnsupported.
 func WithRealtime(realtime bool) Option {
-	return func(runtime *runtime) {
-		runtime.realtime = realtime
+	return func(config *Config) error {
+		config.Realtime = realtime
+		return nil
 	}
 }
 
@@ -203,8 +313,9 @@ func WithRealtime(realtime bool) Option {
 // av.MonotonicClock(); tests and simulations inject a fake so nothing sleeps
 // for real. Offline runtimes (WithRealtime(false)) never consult it.
 func WithClock(clock av.Clock) Option {
-	return func(runtime *runtime) {
-		runtime.clock = clock
+	return func(config *Config) error {
+		config.Clock = clock
+		return nil
 	}
 }
 
@@ -225,7 +336,7 @@ func (r *runtime) Probe(ctx context.Context, request format.ProbeRequest) (forma
 // New returns the explicit-graph builder behind expert.Graph(runtime). The
 // recipe compiler lowers high-level jobs straight onto pipeline graphs; the
 // builder only assembles caller-provided Source/Stage/Sink nodes and routes.
-func (r *runtime) New() *builder {
+func (r *runtime) newBuilder() *builder {
 	return &builder{runtime: r}
 }
 

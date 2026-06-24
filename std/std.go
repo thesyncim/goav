@@ -26,40 +26,69 @@ import (
 // New builds a runtime with the bundled formats, codecs, and filters already
 // registered, then applies opts on top. Registration is last-wins, so opts can
 // add or override standard implementations.
-func New(opts ...goav.Option) goav.Runtime {
+func New(opts ...goav.Option) (*goav.Runtime, error) {
 	return goav.New(appendOptions(Options(), opts...)...)
 }
 
+// MustNew is New for package-level setup and tests.
+func MustNew(opts ...goav.Option) *goav.Runtime {
+	return goav.MustNew(appendOptions(Options(), opts...)...)
+}
+
 // NewFormats builds a runtime with only the bundled container-format adapters.
-func NewFormats(opts ...goav.Option) goav.Runtime {
+func NewFormats(opts ...goav.Option) (*goav.Runtime, error) {
 	return goav.New(appendOptions(FormatOptions(), opts...)...)
 }
 
+// MustNewFormats is NewFormats for package-level setup and tests.
+func MustNewFormats(opts ...goav.Option) *goav.Runtime {
+	return goav.MustNew(appendOptions(FormatOptions(), opts...)...)
+}
+
 // NewCodecs builds a runtime with only the bundled codec adapters.
-func NewCodecs(opts ...goav.Option) goav.Runtime {
+func NewCodecs(opts ...goav.Option) (*goav.Runtime, error) {
 	return goav.New(appendOptions(CodecOptions(), opts...)...)
 }
 
+// MustNewCodecs is NewCodecs for package-level setup and tests.
+func MustNewCodecs(opts ...goav.Option) *goav.Runtime {
+	return goav.MustNew(appendOptions(CodecOptions(), opts...)...)
+}
+
 // NewFilters builds a runtime with only the bundled frame-filter adapters.
-func NewFilters(opts ...goav.Option) goav.Runtime {
+func NewFilters(opts ...goav.Option) (*goav.Runtime, error) {
 	return goav.New(appendOptions(FilterOptions(), opts...)...)
 }
 
+// MustNewFilters is NewFilters for package-level setup and tests.
+func MustNewFilters(opts ...goav.Option) *goav.Runtime {
+	return goav.MustNew(appendOptions(FilterOptions(), opts...)...)
+}
+
 // Build compiles job with a standard runtime. It is the batteries-included
-// counterpart to job.UseRuntime(std.New(...)).Build(ctx).
+// counterpart to job.UseRuntime(std.MustNew(...)).Build(ctx), while preserving
+// New option errors as returned errors.
 func Build(ctx context.Context, job *goav.Job, opts ...goav.Option) (goav.Task, error) {
-	if job == nil {
-		return goav.From().UseRuntime(New(opts...)).Build(ctx)
+	runtime, err := New(opts...)
+	if err != nil {
+		return nil, err
 	}
-	return job.UseRuntime(New(opts...)).Build(ctx)
+	if job == nil {
+		return goav.From().UseRuntime(runtime).Build(ctx)
+	}
+	return job.UseRuntime(runtime).Build(ctx)
 }
 
 // Run compiles and runs job with a standard runtime, then closes it.
 func Run(ctx context.Context, job *goav.Job, opts ...goav.Option) error {
-	if job == nil {
-		return goav.From().UseRuntime(New(opts...)).Run(ctx)
+	runtime, err := New(opts...)
+	if err != nil {
+		return err
 	}
-	return job.UseRuntime(New(opts...)).Run(ctx)
+	if job == nil {
+		return goav.From().UseRuntime(runtime).Run(ctx)
+	}
+	return job.UseRuntime(runtime).Run(ctx)
 }
 
 // Options returns fresh runtime options for all bundled formats, codecs, and

@@ -173,7 +173,7 @@ func TestMixSyncByPTSSeekArmMidRun(t *testing.T) {
 	defer cancel()
 	pcm := av.CodecID("x_pcm_seek")
 	seekable := &crossSeekArmSource{id: "a", sought: make(chan struct{})}
-	rt := New(
+	rt := MustNew(
 		WithBufferPolicy(pipeline.BufferPolicy{
 			Capacity:        8,
 			Drop:            pipeline.DropBlock,
@@ -260,7 +260,7 @@ func TestMixSyncByPTSSeekArmMidRun(t *testing.T) {
 func TestMixDecodedArmEOSStopsGatingEndToEnd(t *testing.T) {
 	ctx := context.Background()
 	pcm := av.CodecID("x_pcm_mono")
-	rt := New(WithDecoder(
+	rt := MustNew(WithDecoder(
 		codec.Descriptor{ID: pcm, Name: "PCM mono", Type: av.MediaAudio, Capabilities: codec.Capabilities{SampleFormats: []string{av.SampleFormatS16}}},
 		tapArmTestDecoderFactory{decoder: &tapArmTestDecoder{}},
 	))
@@ -497,8 +497,8 @@ func crossGatedFrameSource(id av.StreamID, release chan struct{}, frames ...[]in
 
 // crossLiveJoinRuntime returns the buffered runtime these gated tests use to
 // pin per-node workers while keeping direct copy-policy control local.
-func crossLiveJoinRuntime() Runtime {
-	return New(WithBufferPolicy(pipeline.BufferPolicy{Capacity: 8, Drop: pipeline.DropBlock}))
+func crossLiveJoinRuntime() *Runtime {
+	return MustNew(WithBufferPolicy(pipeline.BufferPolicy{Capacity: 8, Drop: pipeline.DropBlock}))
 }
 
 // crossLockedFrames collects S16 frames behind a mutex so tests can poll the

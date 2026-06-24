@@ -260,7 +260,7 @@ func TestRecipeGraphConfigBufferContracts(t *testing.T) {
 	if _, err := recipeGraphConfig(nil, "", workPlan{}, false); err == nil {
 		t.Fatal("recipeGraphConfig nil runtime error = nil")
 	}
-	rt := New(WithEventCapacity(7)).(*runtime)
+	rt := MustNew(WithEventCapacity(7))
 	config, err := recipeGraphConfig(rt, "", workPlan{Name: "camera"}, true)
 	if err != nil {
 		t.Fatalf("recipeGraphConfig error = %v", err)
@@ -272,7 +272,7 @@ func TestRecipeGraphConfigBufferContracts(t *testing.T) {
 		t.Fatalf("realtime buffer = %+v, want capacity %d drop block", config.Buffer, realtimeRecipeBufferCapacity)
 	}
 
-	rt = New(WithRealtime(false), WithBufferPolicy(pipeline.BufferPolicy{Capacity: 2, Drop: pipeline.DropNewest, CopyPacketBytes: 99, CopyFrameBytes: 100})).(*runtime)
+	rt = MustNew(WithRealtime(false), WithBufferPolicy(pipeline.BufferPolicy{Capacity: 2, Drop: pipeline.DropNewest, CopyPacketBytes: 99, CopyFrameBytes: 100}))
 	config, err = recipeGraphConfig(rt, "override", workPlan{Name: "ignored"}, true)
 	if err != nil {
 		t.Fatalf("offline recipeGraphConfig error = %v", err)

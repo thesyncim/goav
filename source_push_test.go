@@ -77,7 +77,7 @@ func TestSourcePushReportsShedsPerPush(t *testing.T) {
 			return push.EOS()
 		})
 
-	rt := New(WithBufferPolicy(pipeline.BufferPolicy{Capacity: 1, Drop: pipeline.DropNewest}))
+	rt := MustNew(WithBufferPolicy(pipeline.BufferPolicy{Capacity: 1, Drop: pipeline.DropNewest}))
 	task, err := From(src).Audio().To(sink).UseRuntime(rt).Build(ctx)
 	if err != nil {
 		t.Fatal(err)

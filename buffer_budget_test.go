@@ -14,7 +14,7 @@ import (
 
 func TestRealtimeEncodeRecipeRefusesUnsupportedBufferBudgetFact(t *testing.T) {
 	ctx := context.Background()
-	rt := New(WithEncoder(codec.Descriptor{ID: av.CodecVP8, Type: av.MediaVideo}, &controlRecordingEncoderFactory{}))
+	rt := MustNew(WithEncoder(codec.Descriptor{ID: av.CodecVP8, Type: av.MediaVideo}, &controlRecordingEncoderFactory{}))
 	source := Source("rgb",
 		shape.Frame(av.MediaVideo, shape.Video(16, 16, "rgb24"), shape.Stream("rgb")),
 		func(context.Context, SourcePush) error { return nil },
@@ -49,7 +49,7 @@ func TestRealtimeEncodeRecipeRefusesUnsupportedBufferBudgetFact(t *testing.T) {
 
 func TestRealtimeDecodeRecipeRefusesMissingBufferBudgetFact(t *testing.T) {
 	ctx := context.Background()
-	rt := New(WithDecoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &decodeTestDecoderFactory{decoder: &decodeTestDecoder{}}))
+	rt := MustNew(WithDecoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &decodeTestDecoderFactory{decoder: &decodeTestDecoder{}}))
 	source := Source("audio",
 		shape.Packet(av.MediaAudio, av.CodecOpus, shape.Audio(48000, codec.Mono, "")),
 		func(context.Context, SourcePush) error { return nil },

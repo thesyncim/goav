@@ -11,7 +11,7 @@ import (
 	"github.com/thesyncim/goav"
 )
 
-func newSession(ctx context.Context, runtime goav.Runtime) (*session, error) {
+func newSession(ctx context.Context, runtime *goav.Runtime) (*session, error) {
 	api, err := newWebRTCAPI()
 	if err != nil {
 		return nil, err

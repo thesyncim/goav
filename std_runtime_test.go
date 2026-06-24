@@ -15,8 +15,8 @@ import (
 	webmadapter "github.com/thesyncim/goav/container/webm"
 )
 
-func testStdRuntime(opts ...Option) Runtime {
-	return New(append(testStdOptions(), opts...)...)
+func testStdRuntime(opts ...Option) *Runtime {
+	return MustNew(append(testStdOptions(), opts...)...)
 }
 
 func testStdOptions() []Option {
@@ -26,28 +26,31 @@ func testStdOptions() []Option {
 }
 
 func testStdFormats() Option {
-	return func(runtime *runtime) {
-		ivfadapter.Register(runtime.formats)
-		annexbadapter.Register(runtime.formats)
-		matroskaadapter.Register(runtime.formats)
-		webmadapter.Register(runtime.formats)
-		mp4adapter.Register(runtime.formats)
+	return func(config *Config) error {
+		ivfadapter.Register(config.Formats)
+		annexbadapter.Register(config.Formats)
+		matroskaadapter.Register(config.Formats)
+		webmadapter.Register(config.Formats)
+		mp4adapter.Register(config.Formats)
+		return nil
 	}
 }
 
 func testStdCodecs() Option {
-	return func(runtime *runtime) {
-		gopusadapter.Register(runtime.codecs)
-		goaacadapter.Register(runtime.codecs)
-		govpxadapter.Register(runtime.codecs)
-		goav1adapter.Register(runtime.codecs)
-		goh264adapter.Register(runtime.codecs)
+	return func(config *Config) error {
+		gopusadapter.Register(config.Codecs)
+		goaacadapter.Register(config.Codecs)
+		govpxadapter.Register(config.Codecs)
+		goav1adapter.Register(config.Codecs)
+		goh264adapter.Register(config.Codecs)
+		return nil
 	}
 }
 
 func testStdFilters() Option {
-	return func(runtime *runtime) {
-		resampleadapter.Register(runtime.filters)
-		resizeadapter.Register(runtime.filters)
+	return func(config *Config) error {
+		resampleadapter.Register(config.Filters)
+		resizeadapter.Register(config.Filters)
+		return nil
 	}
 }

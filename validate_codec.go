@@ -12,9 +12,8 @@ import (
 	"github.com/thesyncim/goav/format"
 )
 
-func validateRecipeDecodeAdapters(operation string, rt Runtime, intent intent) error {
-	standard, ok := rt.(*runtime)
-	if !ok || standard == nil {
+func validateRecipeDecodeAdapters(operation string, rt *Runtime, intent intent) error {
+	if rt == nil {
 		return nil
 	}
 	for i := range intent.Streams {
@@ -26,19 +25,18 @@ func validateRecipeDecodeAdapters(operation string, rt Runtime, intent intent) e
 		if !ok || request.Codec == "" {
 			continue
 		}
-		if _, err := standard.codecs.DecoderFactory(request.Codec); err != nil {
-			return recipeDecodeAdapterError(operation, stream, request.Codec, standard.codecs, err)
+		if _, err := rt.codecs.DecoderFactory(request.Codec); err != nil {
+			return recipeDecodeAdapterError(operation, stream, request.Codec, rt.codecs, err)
 		}
-		if err := validateDecodeAdapterDescriptors(operation, stream, standard.codecs, request); err != nil {
+		if err := validateDecodeAdapterDescriptors(operation, stream, rt.codecs, request); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func validateKnownRecipeDecodeAdapters(operation string, rt Runtime, probes []format.ProbeResult, streams []streamIntent) error {
-	standard, ok := rt.(*runtime)
-	if !ok || standard == nil {
+func validateKnownRecipeDecodeAdapters(operation string, rt *Runtime, probes []format.ProbeResult, streams []streamIntent) error {
+	if rt == nil {
 		return nil
 	}
 	for i := range streams {
@@ -50,11 +48,11 @@ func validateKnownRecipeDecodeAdapters(operation string, rt Runtime, probes []fo
 		if !ok || selected.Codec.ID == "" {
 			continue
 		}
-		if _, err := standard.codecs.DecoderFactory(selected.Codec.ID); err != nil {
-			return recipeDecodeAdapterError(operation, stream, selected.Codec.ID, standard.codecs, err)
+		if _, err := rt.codecs.DecoderFactory(selected.Codec.ID); err != nil {
+			return recipeDecodeAdapterError(operation, stream, selected.Codec.ID, rt.codecs, err)
 		}
 		request := decodeAdapterRequestFromStream(selected, stream)
-		if err := validateDecodeAdapterDescriptors(operation, stream, standard.codecs, request); err != nil {
+		if err := validateDecodeAdapterDescriptors(operation, stream, rt.codecs, request); err != nil {
 			return err
 		}
 	}
@@ -242,9 +240,8 @@ func decodeAdapterIncompatibleError(operation string, stream streamIntent, reque
 	}
 }
 
-func validateRecipeEncodeAdapters(operation string, rt Runtime, streams []streamIntent) error {
-	standard, ok := rt.(*runtime)
-	if !ok || standard == nil {
+func validateRecipeEncodeAdapters(operation string, rt *Runtime, streams []streamIntent) error {
+	if rt == nil {
 		return nil
 	}
 	for i := range streams {
@@ -253,11 +250,11 @@ func validateRecipeEncodeAdapters(operation string, rt Runtime, streams []stream
 		if codecID == "" {
 			continue
 		}
-		if _, err := standard.codecs.EncoderFactory(codecID); err != nil {
-			return recipeEncodeAdapterError(operation, stream, standard.codecs, err)
+		if _, err := rt.codecs.EncoderFactory(codecID); err != nil {
+			return recipeEncodeAdapterError(operation, stream, rt.codecs, err)
 		}
 		request := encodeAdapterRequestFromStreamIntent(stream)
-		if err := validateEncodeAdapterDescriptors(operation, stream, standard.codecs, request); err != nil {
+		if err := validateEncodeAdapterDescriptors(operation, stream, rt.codecs, request); err != nil {
 			return err
 		}
 	}
@@ -501,7 +498,7 @@ func recipeEncodeAdapterError(operation string, stream streamIntent, registry *c
 		Reason:    reason,
 		Details:   details,
 		Suggestions: []string{
-			"register a " + string(codecID) + " encoder with goav.New(goav.WithEncoder(...)) or a codec adapter that provides one",
+			"register a " + string(codecID) + " encoder with goav.MustNew(goav.WithEncoder(...)) or a codec adapter that provides one",
 			"use .To(goav.Sink(...)) to receive decoded frames without encoding",
 			"use .Copy().To(output) for packet-preserving output when re-encoding is not needed",
 		},

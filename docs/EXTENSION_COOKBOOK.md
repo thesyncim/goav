@@ -204,7 +204,7 @@ desc := filter.Descriptor{
     SampleFormats: []string{av.SampleFormatS16},
 }
 
-rt := std.NewFilters(
+rt := std.MustNewFilters(
     goav.WithFilter(desc, myFactory{}),
 )
 ```
@@ -234,7 +234,7 @@ desc := codec.Descriptor{
     },
 }
 
-rt := goav.New(
+rt := goav.MustNew(
     goav.WithEncoder(desc, myCodecFactory{}),
     goav.WithDecoder(desc, myCodecFactory{}),
 )

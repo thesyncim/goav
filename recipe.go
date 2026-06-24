@@ -83,7 +83,7 @@ func (e *BuildError) Unwrap() error {
 // surface on those calls as structured BuildErrors.
 type Job struct {
 	name               string
-	runtime            Runtime
+	runtime            *Runtime
 	runtimeSet         bool
 	copy               bool
 	inputs             []InputSpec
@@ -157,7 +157,7 @@ func newJob(name string) *Job {
 
 // UseRuntime compiles the job against the given runtime: the seam for custom
 // registries, standard adapter bundles, offline pacing, or injected clocks.
-func (j *Job) UseRuntime(runtime Runtime) *Job {
+func (j *Job) UseRuntime(runtime *Runtime) *Job {
 	if j != nil {
 		j.runtime = runtime
 		j.runtimeSet = true
@@ -165,14 +165,14 @@ func (j *Job) UseRuntime(runtime Runtime) *Job {
 	return j
 }
 
-func (j *Job) compileRuntime() Runtime {
+func (j *Job) compileRuntime() *Runtime {
 	if j == nil {
 		return nil
 	}
 	if j.runtimeSet {
 		return j.runtime
 	}
-	return New()
+	return MustNew()
 }
 
 func (j *Job) setErr(err error) {
@@ -313,8 +313,8 @@ func (j *Job) checkSharedStreamDestination(current *jobStreamBuild, output desti
 
 func (j *Job) plan() intent {
 	intent := intent{Name: j.name, Copy: j.copy}
-	if runtime, ok := j.runtime.(*runtime); ok {
-		intent.Policies.Realtime = runtime.realtime
+	if j.runtime != nil {
+		intent.Policies.Realtime = j.runtime.realtime
 	}
 	for i := range j.inputs {
 		intent.Inputs = append(intent.Inputs, j.inputs[i].intent())

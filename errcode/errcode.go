@@ -437,9 +437,6 @@ const (
 	// RuntimeMissing fires when a job reaches Build with no runtime
 	// configured.
 	RuntimeMissing Code = "runtime_missing"
-	// RuntimeUnsupported fires when recipe compilation is asked to run on
-	// a non-goav runtime implementation.
-	RuntimeUnsupported Code = "runtime_unsupported"
 	// CompilerPassInvalid fires when a recipe compiler pass is nil; an
 	// internal invariant.
 	CompilerPassInvalid Code = "compiler_pass_invalid"

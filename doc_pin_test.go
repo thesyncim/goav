@@ -27,7 +27,7 @@ func TestControlPlaneCustomCodecDocsUseBootstrapRuntime(t *testing.T) {
 	}
 	text := string(data)
 	for _, fragment := range []string{
-		"UseRuntime(std.New(",
+		"UseRuntime(std.MustNew(",
 		"goav.WithFormatAdapter",
 		"The destination container must accept the selected codec.",
 	} {
@@ -35,7 +35,7 @@ func TestControlPlaneCustomCodecDocsUseBootstrapRuntime(t *testing.T) {
 			t.Fatalf("CONTROL_PLANE.md missing %q", fragment)
 		}
 	}
-	if strings.Contains(text, "UseRuntime(goav.New(\n        goav.WithFilterAdapter(") {
+	if strings.Contains(text, "UseRuntime(goav.MustNew(\n        goav.WithFilterAdapter(") {
 		t.Fatal("CONTROL_PLANE.md custom-codec bootstrap drifted back to a bare runtime")
 	}
 }

@@ -12,13 +12,13 @@ import (
 )
 
 type server struct {
-	runtime    goav.Runtime
+	runtime    *goav.Runtime
 	browserURL string
 	mu         sync.Mutex
 	sessions   map[string]*session
 }
 
-func newServer(runtime goav.Runtime, browserURL string) *server {
+func newServer(runtime *goav.Runtime, browserURL string) *server {
 	return &server{
 		runtime:    runtime,
 		browserURL: browserURL,

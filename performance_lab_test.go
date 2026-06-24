@@ -81,7 +81,7 @@ func BenchmarkRealOpusEncode(b *testing.B) {
 		Audio().
 		Encode(codec.Opus()).
 		To(benchSink("real-opus-packets")).
-		UseRuntime(std.New(goav.WithRealtime(false))))
+		UseRuntime(std.MustNew(goav.WithRealtime(false))))
 }
 
 // BenchmarkRealOpusDecode decodes one payload produced by the standard Opus
@@ -92,7 +92,7 @@ func BenchmarkRealOpusDecode(b *testing.B) {
 		Audio().
 		Decode().
 		To(benchSink("real-opus-frames")).
-		UseRuntime(std.New(goav.WithRealtime(false))))
+		UseRuntime(std.MustNew(goav.WithRealtime(false))))
 }
 
 func realOpusPayload(b *testing.B) []byte {
@@ -102,7 +102,7 @@ func realOpusPayload(b *testing.B) []byte {
 		Audio().
 		Encode(codec.Opus()).
 		To(out.Sink()).
-		UseRuntime(std.New(goav.WithRealtime(false))).
+		UseRuntime(std.MustNew(goav.WithRealtime(false))).
 		Run(context.Background())
 	if err != nil {
 		b.Fatal(err)

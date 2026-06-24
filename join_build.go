@@ -1884,8 +1884,8 @@ func intInSlice(needle int, haystack []int) bool {
 func joinIntent(job *Job) intent {
 	spec := job.join
 	intent := intent{Name: string(spec.kind)}
-	if rt, ok := job.runtime.(*runtime); ok {
-		intent.Policies.Realtime = rt.realtime
+	if job.runtime != nil {
+		intent.Policies.Realtime = job.runtime.realtime
 	}
 	for _, input := range joinLeafInputSpecs(spec) {
 		intent.Inputs = append(intent.Inputs, input.intent())

@@ -21,7 +21,7 @@ func inputFormatProbeError(input format.Input, cause error) error {
 		Details:   inputFormatDetails(input),
 		Suggestions: []string{
 			"give file or URI inputs a name, URI, or MIME type a registered prober can recognize",
-			"register a format adapter with goav.New(goav.WithFormatAdapter(...))",
+			"register a format adapter with goav.MustNew(goav.WithFormatAdapter(...))",
 			"use goav.Input(provider) for realtime packet receive",
 		},
 		Cause: cause,
@@ -41,7 +41,7 @@ func inputDemuxerMissingError(input format.Input, id av.FormatID, cause error) e
 		Suggestions: []string{
 			"register a format adapter that provides a " + string(id) + " demuxer",
 			"choose an input container supported by the runtime",
-			"call .UseRuntime(goav.New(goav.WithFormatAdapter(...))) when using a custom adapter bundle",
+			"call .UseRuntime(goav.MustNew(goav.WithFormatAdapter(...))) when using a custom adapter bundle",
 		},
 		Cause: cause,
 	}
@@ -60,7 +60,7 @@ func outputFormatProbeError(output format.Output, index int, cause error) error 
 		Suggestions: []string{
 			"give file outputs a name or MIME type a registered prober can recognize",
 			"pass goav.Format(...) to goav.File(...) or goav.Writer(...) when the writer has no filename",
-			"register a format adapter with goav.New(goav.WithFormatAdapter(...))",
+			"register a format adapter with goav.MustNew(goav.WithFormatAdapter(...))",
 		},
 		Cause: cause,
 	}
@@ -77,9 +77,9 @@ func outputMuxerMissingError(output format.Output, index int, id av.FormatID, ca
 		Reason:    "format " + quoteFormat(id) + " was selected but no muxer is registered",
 		Details:   append(outputFormatDetails(output), "format="+string(id)),
 		Suggestions: []string{
-			"register a " + string(id) + " muxer with goav.New(goav.WithMuxer(...)) or a format adapter that provides one",
+			"register a " + string(id) + " muxer with goav.MustNew(goav.WithMuxer(...)) or a format adapter that provides one",
 			"choose an output container supported by the runtime, such as .ivf for VP8/VP9/AV1 packet recording or .h264 for H264 packet recording",
-			"call .UseRuntime(goav.New(goav.WithFormatAdapter(...))) when using a custom adapter bundle",
+			"call .UseRuntime(goav.MustNew(goav.WithFormatAdapter(...))) when using a custom adapter bundle",
 		},
 		Cause: cause,
 	}
@@ -98,7 +98,7 @@ func destinationFormatProbeError(node string, output format.Output, cause error)
 		Suggestions: []string{
 			"give file destinations a name or MIME type a registered prober can recognize",
 			"pass goav.Format(...) to the destination constructor when the writer has no filename",
-			"register a format adapter with goav.New(goav.WithFormatAdapter(...))",
+			"register a format adapter with goav.MustNew(goav.WithFormatAdapter(...))",
 		},
 		Cause: cause,
 	}
@@ -115,9 +115,9 @@ func destinationMuxerMissingError(node string, output format.Output, id av.Forma
 		Reason:    "format " + quoteFormat(id) + " was selected for destination but no muxer is registered",
 		Details:   append(outputFormatDetails(output), "format="+string(id)),
 		Suggestions: []string{
-			"register a " + string(id) + " muxer with goav.New(goav.WithMuxer(...)) or a format adapter that provides one",
+			"register a " + string(id) + " muxer with goav.MustNew(goav.WithMuxer(...)) or a format adapter that provides one",
 			"choose a destination container supported by the runtime, such as .ivf for VP8/VP9/AV1 packet recording or .h264 for H264 packet recording",
-			"call .UseRuntime(goav.New(goav.WithFormatAdapter(...))) when using a custom adapter bundle",
+			"call .UseRuntime(goav.MustNew(goav.WithFormatAdapter(...))) when using a custom adapter bundle",
 		},
 		Cause: cause,
 	}

@@ -117,7 +117,6 @@ errcode.RuntimeBranchTapMissing
 errcode.RuntimeBranchTransformError
 errcode.RuntimeBranchTransformMediaMismatch
 errcode.RuntimeMissing
-errcode.RuntimeUnsupported
 errcode.SelectArm
 errcode.SelectDestination
 errcode.SelectInputs
@@ -163,6 +162,7 @@ goav.Chain
 goav.Codec
 goav.CodecChangePolicy
 goav.Composite
+goav.Config
 goav.Control
 goav.ControlBitrate
 goav.ControlEvent
@@ -220,6 +220,7 @@ goav.MediaOption
 goav.Message
 goav.Metadata
 goav.Mix
+goav.MustNew
 goav.Name
 goav.New
 goav.NextFrame

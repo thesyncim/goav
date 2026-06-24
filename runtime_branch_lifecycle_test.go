@@ -259,7 +259,7 @@ func TestRuntimeBranchEncodesVP9ThroughDropBuffer(t *testing.T) {
 
 	main := &frameCountSink{name: "main"}
 	task, err := goav.From(liveMutableVideoPackets("camera", 64, 64, time.Millisecond)).
-		UseRuntime(std.New(goavtest.Codec(av.CodecVP8))).
+		UseRuntime(std.MustNew(goavtest.Codec(av.CodecVP8))).
 		Video().
 		Decode().
 		Shape(shape.Frame(av.MediaVideo, shape.Video(64, 64, av.PixelFormatI420))).

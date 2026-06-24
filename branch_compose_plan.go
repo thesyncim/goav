@@ -14,7 +14,7 @@ import (
 )
 
 type branchCompositionJob struct {
-	runtime     Runtime
+	runtime     *Runtime
 	name        string
 	input       InputSpec
 	streams     []streamBuild
@@ -60,8 +60,8 @@ func (j *branchCompositionJob) plan() intent {
 		Name:   firstNonEmpty(j.name, "branch-composition"),
 		Inputs: []inputIntent{j.input.intent()},
 	}
-	if runtime, ok := j.runtime.(*runtime); ok {
-		intent.Policies.Realtime = runtime.realtime
+	if j.runtime != nil {
+		intent.Policies.Realtime = j.runtime.realtime
 	}
 	for i := range j.streams {
 		intent.Streams = append(intent.Streams, branchStreamIntent(j.streams[i]))

@@ -372,7 +372,7 @@ func TestTaskControlAtTapTargetsByTapName(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
-	rt := New(WithBufferPolicy(pipeline.BufferPolicy{Capacity: 32, Drop: pipeline.DropBlock}))
+	rt := MustNew(WithBufferPolicy(pipeline.BufferPolicy{Capacity: 32, Drop: pipeline.DropBlock}))
 	var mu sync.Mutex
 	var reasons []string
 	sink := Sink(SinkFunc("out", func(_ context.Context, m Message) error {

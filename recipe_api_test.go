@@ -46,8 +46,6 @@ func (s recipeAPISource) Close() error {
 	return nil
 }
 
-type recipeAPIRuntimeWithoutBuilder struct{}
-
 type recipeAPIStreamProber struct {
 	streams []av.Stream
 }
@@ -121,10 +119,6 @@ func (recipeAPICustomWriter) Write(p []byte) (int, error) {
 
 func (recipeAPICustomWriter) Close() error {
 	return nil
-}
-
-func (recipeAPIRuntimeWithoutBuilder) Probe(context.Context, format.ProbeRequest) (format.ProbeResult, error) {
-	return format.ProbeResult{}, nil
 }
 
 func specText(spec pipeline.Spec) string {
@@ -380,7 +374,7 @@ func decodeJob(input goav.InputSpec, output goav.Destination) *goav.Job {
 
 type testBranchJob struct {
 	input    goav.InputSpec
-	runtime  goav.Runtime
+	runtime  *goav.Runtime
 	branches []testTranscodeBranch
 }
 
@@ -406,7 +400,7 @@ func branchJob(input goav.InputSpec) *testBranchJob {
 	return &testBranchJob{input: input}
 }
 
-func (j *testBranchJob) UseRuntime(runtime goav.Runtime) *testBranchJob {
+func (j *testBranchJob) UseRuntime(runtime *goav.Runtime) *testBranchJob {
 	j.runtime = runtime
 	return j
 }
@@ -508,10 +502,17 @@ func (b *testTranscodeBranchBuilder) current() *testTranscodeBranch {
 	return &b.job.branches[b.index]
 }
 
-func TestRuntimeInterfaceKeepsLegacyBuilderOutOfFrontDoor(t *testing.T) {
-	runtimeType := reflect.TypeOf((*goav.Runtime)(nil)).Elem()
-	if runtimeType.NumMethod() != 1 {
-		t.Fatalf("Runtime methods = %d, want only Probe", runtimeType.NumMethod())
+func TestRuntimeConcreteKeepsLegacyBuilderOutOfFrontDoor(t *testing.T) {
+	runtime, err := goav.New()
+	if err != nil {
+		t.Fatalf("New(): %v", err)
+	}
+	if runtime == nil {
+		t.Fatal("New() returned nil runtime")
+	}
+	runtimeType := reflect.TypeOf(runtime)
+	if _, ok := runtimeType.MethodByName("Probe"); !ok {
+		t.Fatal("Runtime should expose Probe")
 	}
 	if _, ok := runtimeType.MethodByName("New"); ok {
 		t.Fatal("Runtime exposes legacy New builder; use expert.Graph(runtime) for expert graph wiring")
@@ -524,8 +525,8 @@ func TestRuntimeInterfaceKeepsLegacyBuilderOutOfFrontDoor(t *testing.T) {
 	}
 }
 
-func TestExpertGraphRequiresStandardRuntime(t *testing.T) {
-	graph := expert.Graph(recipeAPIRuntimeWithoutBuilder{})
+func TestExpertGraphRequiresRuntime(t *testing.T) {
+	graph := expert.Graph(nil)
 	if _, err := graph.Describe(); !errors.Is(err, expert.ErrRuntimeRequired) {
 		t.Fatalf("Describe err = %v, want ErrRuntimeRequired", err)
 	}
@@ -576,7 +577,7 @@ func TestExplainReturnsPartialReportForMissingMuxer(t *testing.T) {
 
 func TestExplainReturnsPartialReportForMissingTransformAdapter(t *testing.T) {
 	report, err := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
-		UseRuntime(std.NewCodecs()).
+		UseRuntime(std.MustNewCodecs()).
 		Audio().
 		Resample(16_000, codec.Mono).
 		To(goav.Sink(goav.SinkFunc("frames", func(context.Context, goav.Message) error {
@@ -600,7 +601,7 @@ func TestExplainReturnsPartialReportForMissingTransformAdapter(t *testing.T) {
 }
 
 func TestTranscodeExplainReportsGenericMediaPlanBranches(t *testing.T) {
-	rt := goav.New(
+	rt := goav.MustNew(
 		goav.WithFormatAdapter(func(registry *format.SimpleRegistry) {
 			registry.RegisterProber(recipeAPIStreamProber{streams: []av.Stream{
 				{Index: 0, ID: "audio", Type: av.MediaAudio, Codec: av.CodecParameters{ID: av.CodecOpus, Type: av.MediaAudio}},
@@ -663,7 +664,7 @@ func TestTranscodeExplainReportsGenericMediaPlanBranches(t *testing.T) {
 }
 
 func TestExplainReportsBranchShapeFromProbedInput(t *testing.T) {
-	rt := goav.New(
+	rt := goav.MustNew(
 		goav.WithFormatAdapter(func(registry *format.SimpleRegistry) {
 			registry.RegisterProber(recipeAPIStreamProber{streams: []av.Stream{{
 				Index: 0,
@@ -725,7 +726,7 @@ func TestExplainReportsBranchShapeFromProbedInput(t *testing.T) {
 }
 
 func TestExplainReportsOperationShapeThroughResizeAndEncode(t *testing.T) {
-	rt := goav.New(
+	rt := goav.MustNew(
 		goav.WithFormatAdapter(func(registry *format.SimpleRegistry) {
 			registry.RegisterProber(recipeAPIStreamProber{streams: []av.Stream{{
 				Index: 0,
@@ -815,7 +816,7 @@ func TestExplainReportsOperationShapeThroughResizeAndEncode(t *testing.T) {
 
 func TestShapeAnnotationCannotBreakOperationContract(t *testing.T) {
 	_, err := goav.From(goav.FileInput("input.ivf", strings.NewReader(""))).
-		UseRuntime(std.New()).
+		UseRuntime(std.MustNew()).
 		Video().
 		Decode().
 		Shape(shape.New(shape.Domain(shape.DomainPacket), shape.Media(av.MediaVideo))).
@@ -839,7 +840,7 @@ func TestShapeAnnotationCannotBreakOperationContract(t *testing.T) {
 }
 
 func TestExplainRequirementsFollowOrderedBranchOperations(t *testing.T) {
-	rt := goav.New(
+	rt := goav.MustNew(
 		goav.WithFormatAdapter(func(registry *format.SimpleRegistry) {
 			registry.RegisterProber(recipeAPIStreamProber{streams: []av.Stream{
 				{Index: 0, ID: "video", Type: av.MediaVideo, Codec: av.CodecParameters{ID: av.CodecVP8, Type: av.MediaVideo}},
@@ -912,7 +913,7 @@ func TestExplainRequirementsFollowOrderedBranchOperations(t *testing.T) {
 }
 
 func TestExplainReportsFilterDescriptorCapabilities(t *testing.T) {
-	rt := goav.New(
+	rt := goav.MustNew(
 		goav.WithFormatAdapter(func(registry *format.SimpleRegistry) {
 			registry.RegisterProber(recipeAPIStreamProber{streams: []av.Stream{
 				{Index: 0, ID: "audio", Type: av.MediaAudio, Codec: av.CodecParameters{ID: av.CodecOpus, Type: av.MediaAudio}},
@@ -985,7 +986,7 @@ func TestExplainReportsFilterDescriptorCapabilities(t *testing.T) {
 }
 
 func TestExplainReportsIncompatibleFilterDescriptor(t *testing.T) {
-	rt := goav.New(
+	rt := goav.MustNew(
 		goav.WithFormatAdapter(func(registry *format.SimpleRegistry) {
 			registry.RegisterProber(recipeAPIStreamProber{streams: []av.Stream{
 				{Index: 0, ID: "audio", Type: av.MediaAudio, Codec: av.CodecParameters{ID: av.CodecOpus, Type: av.MediaAudio}},
@@ -1039,7 +1040,7 @@ func TestExplainReportsIncompatibleFilterDescriptor(t *testing.T) {
 
 func TestExplainReportsIncompatibleEncodeDescriptor(t *testing.T) {
 	custom := av.CodecID("x_audio")
-	rt := goav.New(goav.WithCodecAdapter(func(registry *codec.SimpleRegistry) {
+	rt := goav.MustNew(goav.WithCodecAdapter(func(registry *codec.SimpleRegistry) {
 		registry.RegisterEncoder(codec.Descriptor{
 			ID:   custom,
 			Type: av.MediaVideo,
@@ -1085,7 +1086,7 @@ func TestExplainReportsIncompatibleEncodeDescriptor(t *testing.T) {
 
 func TestExplainReportsIncompatibleDecodeDescriptor(t *testing.T) {
 	custom := av.CodecID("x_audio")
-	rt := goav.New(
+	rt := goav.MustNew(
 		goav.WithFormatAdapter(func(registry *format.SimpleRegistry) {
 			registry.RegisterProber(recipeAPIStreamProber{streams: []av.Stream{{
 				Index: 0,
@@ -1144,7 +1145,7 @@ func TestExplainReportsIncompatibleDecodeDescriptor(t *testing.T) {
 }
 
 func TestBuildRejectsIncompatibleIVFMuxGroupBeforeOpeningMuxer(t *testing.T) {
-	rt := goav.New(
+	rt := goav.MustNew(
 		goav.WithFormatAdapter(func(registry *format.SimpleRegistry) {
 			registry.RegisterProber(recipeAPIStreamProber{streams: []av.Stream{
 				{Index: 0, ID: "video", Type: av.MediaVideo, Codec: av.CodecParameters{ID: av.CodecVP8, Type: av.MediaVideo}},
@@ -1184,7 +1185,7 @@ func TestBuildRejectsIncompatibleIVFMuxGroupBeforeOpeningMuxer(t *testing.T) {
 }
 
 func TestBuildRejectsDescriptorBackedMuxIncompatibility(t *testing.T) {
-	rt := goav.New(
+	rt := goav.MustNew(
 		goav.WithFormatAdapter(func(registry *format.SimpleRegistry) {
 			registry.RegisterProber(recipeAPIStreamProber{streams: []av.Stream{
 				{Index: 0, ID: "video", Type: av.MediaVideo, Codec: av.CodecParameters{ID: av.CodecVP8, Type: av.MediaVideo}},
@@ -1231,7 +1232,7 @@ func TestBuildRejectsDescriptorBackedMuxIncompatibility(t *testing.T) {
 }
 
 func TestExplainReportsMuxCompatibilityWarning(t *testing.T) {
-	rt := goav.New(
+	rt := goav.MustNew(
 		goav.WithFormatAdapter(func(registry *format.SimpleRegistry) {
 			registry.RegisterProber(recipeAPIStreamProber{streams: []av.Stream{
 				{Index: 0, ID: "video", Type: av.MediaVideo, Codec: av.CodecParameters{ID: av.CodecVP8, Type: av.MediaVideo}},
@@ -1272,7 +1273,7 @@ func TestExplainReportsMuxCompatibilityWarning(t *testing.T) {
 }
 
 func TestBuildRejectsIncompatibleAnnexBMuxGroup(t *testing.T) {
-	rt := goav.New(
+	rt := goav.MustNew(
 		goav.WithFormatAdapter(func(registry *format.SimpleRegistry) {
 			registry.RegisterProber(recipeAPIStreamProber{streams: []av.Stream{
 				{Index: 0, ID: "video", Type: av.MediaVideo, Codec: av.CodecParameters{ID: av.CodecVP8, Type: av.MediaVideo}},
@@ -1459,7 +1460,7 @@ func TestBranchesIsTheOnlyPublicPlannedSplitVerb(t *testing.T) {
 }
 
 func TestRuntimeBranchTapAnchorIsPublicAPI(t *testing.T) {
-	graph := expert.Graph(std.New())
+	graph := expert.Graph(std.MustNew())
 	source := graph.Source("source", recipeAPISource{name: "source"})
 	decode := graph.Stage("decode-audio", goav.PacketFunc("decode-audio", func(ctx context.Context, packet *goav.Packet, emit goav.Emit) error {
 		return emit.Packet(packet)
@@ -2020,7 +2021,7 @@ func TestBranchFromUsesTypedSources(t *testing.T) {
 	}
 
 	_ = goav.Branch("tap").From(goav.FrameTap("audio.decoded"))
-	graph := expert.Graph(std.New())
+	graph := expert.Graph(std.MustNew())
 	node := graph.Source("source", recipeAPISource{name: "source"})
 	_ = goav.Branch("node").From(node)
 	_ = goav.Branch("stream").From(node.Stream("audio"))
@@ -2349,19 +2350,19 @@ func TestRecipeConstructorsDoNotExposeRuntimeOptions(t *testing.T) {
 	}
 }
 
-func TestRecipeReportsUnsupportedCustomRuntime(t *testing.T) {
+func TestRecipeReportsNilRuntime(t *testing.T) {
 	_, err := recordJob(
 		goav.FileInput("input.ivf", strings.NewReader("")),
 		goav.File("recording.ivf", io.Discard),
-	).UseRuntime(recipeAPIRuntimeWithoutBuilder{}).Build(context.Background())
+	).UseRuntime(nil).Build(context.Background())
 
 	var buildErr *goav.BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "runtime_unsupported" {
-		t.Fatalf("err = %v, want runtime_unsupported", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "runtime_missing" {
+		t.Fatalf("err = %v, want runtime_missing", err)
 	}
-	if !strings.Contains(err.Error(), "recipe compilation requires a goav runtime") ||
-		!strings.Contains(err.Error(), "goav.New") ||
-		!strings.Contains(err.Error(), "std.New") {
+	if !strings.Contains(err.Error(), "no runtime is configured") ||
+		!strings.Contains(err.Error(), "goav.MustNew") ||
+		!strings.Contains(err.Error(), "std.MustNew") {
 		t.Fatalf("err = %v, want runtime guidance", err)
 	}
 }
@@ -3863,7 +3864,7 @@ func TestStreamRecipeRejectsDuplicateSinkDestinations(t *testing.T) {
 func TestStreamRecipeRejectsDuplicateTypedDestinations(t *testing.T) {
 	target := goav.File("voice.ogg", io.Discard)
 	_, err := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
-		UseRuntime(goav.New()).
+		UseRuntime(goav.MustNew()).
 		Audio().
 		Encode(codec.Opus(codec.Bitrate(96_000))).
 		To(target, target).
@@ -4219,7 +4220,7 @@ func TestStreamRecipeRejectsMixedSinkAndFile(t *testing.T) {
 }
 
 func TestStreamRecipeAllowsEncodedMuxAndSinkDestinations(t *testing.T) {
-	rt := goav.New(
+	rt := goav.MustNew(
 		goav.WithFormatAdapter(func(registry *format.SimpleRegistry) {
 			registry.RegisterProber(recipeAPIStreamProber{streams: []av.Stream{
 				{Index: 0, ID: "audio", Type: av.MediaAudio, Codec: av.CodecParameters{ID: av.CodecOpus, Type: av.MediaAudio}},
@@ -4310,7 +4311,7 @@ func TestStreamRecipeAllowsRuntimeRegisteredRecipeEncoders(t *testing.T) {
 				shape.Frame(av.MediaVideo, shape.Video(16, 16, av.PixelFormatI420)),
 				func(_ context.Context, push goav.SourcePush) error { return push.EOS() },
 			)
-			rt := goav.New(
+			rt := goav.MustNew(
 				goav.WithMuxer(av.FormatIVF, recipeAPIMuxerFactory{}),
 				goav.WithEncoder(codec.Descriptor{ID: tt.codec.ID, Type: av.MediaVideo}, recipeAPIEncoderFactory{}),
 			)
@@ -4328,7 +4329,7 @@ func TestStreamRecipeAllowsRuntimeRegisteredRecipeEncoders(t *testing.T) {
 }
 
 func TestStreamRecipeReportsMissingCustomEncoder(t *testing.T) {
-	rt := goav.New(goav.WithFormatAdapter(func(registry *format.SimpleRegistry) {
+	rt := goav.MustNew(goav.WithFormatAdapter(func(registry *format.SimpleRegistry) {
 		registry.RegisterMuxer(av.FormatOgg, recipeAPIMuxerFactory{})
 	}))
 	_, err := goav.From(goav.FileInput("input.wav", strings.NewReader(""))).
@@ -4418,7 +4419,7 @@ func TestStreamRecipeRejectsInvalidEncodeSampleRate(t *testing.T) {
 
 func TestStreamRecipeReportsMissingEncodeAdapterBeforeOpeningInput(t *testing.T) {
 	_, err := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
-		UseRuntime(std.NewFormats()).
+		UseRuntime(std.MustNewFormats()).
 		Audio().
 		Encode(codec.Opus(codec.Bitrate(96_000))).
 		To(goav.File("archive.ivf", io.Discard)).
@@ -4453,7 +4454,7 @@ func TestStreamRecipeReportsProbedFileSelectionBeforeOpeningInput(t *testing.T) 
 		},
 	}
 	demuxerOpened := false
-	rt := goav.New(goav.WithFormatAdapter(func(registry *format.SimpleRegistry) {
+	rt := goav.MustNew(goav.WithFormatAdapter(func(registry *format.SimpleRegistry) {
 		registry.RegisterProber(recipeAPIStreamProber{streams: streams})
 		registry.RegisterDemuxer(av.FormatOgg, recipeAPIDemuxerFactory{called: &demuxerOpened})
 	}))
@@ -4488,7 +4489,7 @@ func TestStreamRecipeReportsProbedFileMissingDecoderBeforeOpeningInput(t *testin
 		Codec: av.CodecParameters{ID: av.CodecOpus, Type: av.MediaAudio},
 	}}
 	demuxerOpened := false
-	rt := goav.New(goav.WithFormatAdapter(func(registry *format.SimpleRegistry) {
+	rt := goav.MustNew(goav.WithFormatAdapter(func(registry *format.SimpleRegistry) {
 		registry.RegisterProber(recipeAPIStreamProber{streams: streams})
 		registry.RegisterDemuxer(av.FormatOgg, recipeAPIDemuxerFactory{called: &demuxerOpened})
 	}))
@@ -4517,7 +4518,7 @@ func TestStreamRecipeReportsProbedFileMissingDecoderBeforeOpeningInput(t *testin
 
 func TestStreamRecipeReportsMissingTransformAdapterBeforeOpeningInput(t *testing.T) {
 	_, err := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
-		UseRuntime(std.NewCodecs()).
+		UseRuntime(std.MustNewCodecs()).
 		Audio().
 		Resample(16_000, codec.Mono).
 		To(goav.Sink(goav.SinkFunc("frames", func(context.Context, goav.Message) error {
@@ -4529,7 +4530,7 @@ func TestStreamRecipeReportsMissingTransformAdapterBeforeOpeningInput(t *testing
 		t.Fatalf("err = %v, want transform_adapter_missing wrapping filter.ErrNotFound", err)
 	}
 	if !strings.Contains(err.Error(), "transform=resample") ||
-		!strings.Contains(err.Error(), "std.NewFilters") ||
+		!strings.Contains(err.Error(), "std.MustNewFilters") ||
 		strings.Contains(err.Error(), "input_demuxer_missing") ||
 		strings.Contains(err.Error(), "cannot open input") {
 		t.Fatalf("err = %v, want transform adapter guidance before input diagnostics", err)
@@ -4544,7 +4545,7 @@ func TestStreamRecipeReportsIncompatibleTransformAdapterBeforeOpeningInput(t *te
 		Codec: av.CodecParameters{ID: av.CodecOpus, Type: av.MediaAudio},
 	}}
 	demuxerOpened := false
-	rt := goav.New(
+	rt := goav.MustNew(
 		goav.WithFormatAdapter(func(registry *format.SimpleRegistry) {
 			registry.RegisterProber(recipeAPIStreamProber{streams: streams})
 			registry.RegisterDemuxer(av.FormatOgg, recipeAPIDemuxerFactory{called: &demuxerOpened})
@@ -4612,7 +4613,7 @@ func TestDefaultRecordIVFRecipeRunShortcutRuns(t *testing.T) {
 	if err := recordJob(
 		goav.FileInput("input.ivf", bytes.NewReader(tinyIVF())),
 		goav.File("preview.ivf", &out),
-	).UseRuntime(std.New()).Run(context.Background()); err != nil {
+	).UseRuntime(std.MustNew()).Run(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	if out.Len() == 0 {
@@ -4625,7 +4626,7 @@ func TestRecordRecipeDescribeMatchesBuiltGraph(t *testing.T) {
 	job := recordJob(
 		goav.FileInput("input.ivf", bytes.NewReader(tinyIVF())),
 		goav.File("preview.ivf", &out),
-	).UseRuntime(std.New())
+	).UseRuntime(std.MustNew())
 
 	planned, err := job.Describe()
 	if err != nil {
@@ -4650,7 +4651,7 @@ func TestDefaultFromFanoutRecipeRunShortcutRuns(t *testing.T) {
 			goav.File("recording.ivf", &recording),
 			goav.File("preview.ivf", &preview),
 		).
-		UseRuntime(std.New()).
+		UseRuntime(std.MustNew()).
 		Run(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -4667,7 +4668,7 @@ func TestFromFanoutRecipeDescribeMatchesBuiltGraph(t *testing.T) {
 			goav.File("recording.ivf", &recording),
 			goav.File("preview.ivf", &preview),
 		).
-		UseRuntime(std.New())
+		UseRuntime(std.MustNew())
 
 	planned, err := job.Describe()
 	if err != nil {
@@ -4689,7 +4690,7 @@ func TestDefaultRecordRecipeRunsWithExplicitUnnamedOutputFormat(t *testing.T) {
 	job := recordJob(
 		goav.FileInput("input.ivf", bytes.NewReader(tinyIVF())),
 		goav.File("", &out, goav.Format(av.FormatIVF)),
-	).UseRuntime(std.New())
+	).UseRuntime(std.MustNew())
 
 	spec, err := job.Describe()
 	if err != nil {
@@ -4982,7 +4983,7 @@ func TestBranchCompositionSharesParentOperationBeforeBranches(t *testing.T) {
 }
 
 func TestExplainMarksSharedBranchOperations(t *testing.T) {
-	rt := goav.New(
+	rt := goav.MustNew(
 		goav.WithFormatAdapter(func(registry *format.SimpleRegistry) {
 			registry.RegisterProber(recipeAPIStreamProber{streams: []av.Stream{{
 				Index: 0,
@@ -5140,7 +5141,7 @@ func TestBranchCompositionRejectsMissingPlannedTap(t *testing.T) {
 }
 
 func TestBranchCompositionRejectsGraphNodeSource(t *testing.T) {
-	graphNode := expert.Graph(std.New()).Stage("decode-video", goav.PacketFunc("decode-video", func(ctx context.Context, packet *goav.Packet, emit goav.Emit) error {
+	graphNode := expert.Graph(std.MustNew()).Stage("decode-video", goav.PacketFunc("decode-video", func(ctx context.Context, packet *goav.Packet, emit goav.Emit) error {
 		return emit.Packet(packet)
 	}))
 	_, err := goav.From(goav.FileInput("input.webm", strings.NewReader(""))).

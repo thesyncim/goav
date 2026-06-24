@@ -218,8 +218,8 @@ func mediaPlanJoinLowererForState(state *recipeCompileState) (graphPlanLowerer, 
 	if state == nil || state.joinAttachment == nil {
 		return nil, false, nil
 	}
-	rt, ok := state.runtime.(*runtime)
-	if !ok || rt == nil {
+	rt := state.runtime
+	if rt == nil {
 		return nil, false, nil
 	}
 	gp, err := newJoinPlan(rt, state)
