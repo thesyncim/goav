@@ -185,6 +185,7 @@ goav.Config
 goav.Controllable
 goav.Custom
 goav.Destination
+goav.DestinationGroup
 goav.DestinationOption
 goav.DetachOption
 goav.DrainBranch

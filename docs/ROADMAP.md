@@ -28,15 +28,17 @@ before graph mutation, and rolls back fully on failure
 (`TestTaskAttachRuntimeBranchGroupRollsBackOnLaterFailure`).
 
 The destination model has also been simplified. Collapse `Target` into `Destination` is done: `File`, `URI`, `Writer`,
-`Sink`, and `Custom` return stable goav-owned destination handles, and
-reusing one handle groups branches into one mux/sink group
-(`TestFromMultiInputPlanDedupesSharedDestination`).
+`Sink`, and `Custom` return stable goav-owned destination handles. Reusing one
+handle still groups branches into one mux/sink group, and
+`DestinationGroup(...)` makes the same intent explicit when branches build
+matching destinations independently (`TestDestinationGroupSurvivesWithAndCopy`,
+`TestFromMultiInputPlanDedupesSharedDestination`).
 
 ## v0 Stable
 
 Stable here means "you should not wake up to a silent contract change", not
-"the project has stopped learning". The governed surface is 337 approved
-identifiers (`api_surface_pin_test.go` + `testdata/api_surface.txt`: 118 root,
+"the project has stopped learning". The governed surface is 338 approved
+identifiers (`api_surface_pin_test.go` + `testdata/api_surface.txt`: 116 root,
 19 `control`, 3 `inspect`, 146 `errcode`, 28 `plan`, 13 `lifecycle`,
 4 `snapshot`, 9 `graphrender`),
 every exported symbol documented (`doc_pin_test.go`), tiered in

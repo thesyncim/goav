@@ -2,6 +2,7 @@ package goav
 
 import (
 	"fmt"
+	"strconv"
 	"sync/atomic"
 
 	"github.com/thesyncim/goav/av"
@@ -16,17 +17,32 @@ import (
 var destinationRefSeq atomic.Uint64
 var destinationSpecSeq atomic.Uint64
 
+func destinationShareKey(dest destinationSpec, id uint64) string {
+	if dest.group != "" {
+		return "group:" + dest.group
+	}
+	if id == 0 {
+		id = dest.id
+	}
+	if id == 0 {
+		return ""
+	}
+	return "handle:" + strconv.FormatUint(id, 10)
+}
+
 // Destination is an opaque handle for a file, URI, writer, media sink, or
 // shared mux/sink group. Built-in constructors and Custom return destination
-// values with goav-owned routing identity.
+// values with goav-owned routing identity; DestinationGroup can make that
+// grouping identity explicit across separately constructed values.
 type Destination struct {
 	spec destinationSpec
 }
 
 // DestinationOption configures a destination value (File, URI, Writer,
-// Custom, or Destination.With): Format pins the container, and the
-// direction-agnostic MediaOptions (Name, MIME, Metadata) satisfy it too. It
-// is sealed — only goav option constructors implement it.
+// Custom, or Destination.With): Format pins the container, DestinationGroup
+// pins grouping identity, and the direction-agnostic MediaOptions (Name, MIME,
+// Metadata) satisfy it too. It is sealed — only goav option constructors
+// implement it.
 type DestinationOption interface {
 	applyDestination(*destinationSpec)
 }
@@ -940,7 +956,7 @@ func branchMissingError(node string) error {
 		Reason:    "Branches requires at least one encoded branch",
 		Suggestions: []string{
 			"pass branches with goav.Branch(name).Encode(codec.VP9(...)).To(goav.File(name, writer))",
-			"reuse the same destination value from multiple branches when they should share one mux group",
+			"reuse the same destination value or pass goav.DestinationGroup(name) when branches should share one mux group",
 		},
 		Cause: ErrUnsupportedBuild,
 	}
@@ -966,7 +982,7 @@ func branchDestinationMissingError(name string) error {
 		Reason:    "branch has no destination",
 		Suggestions: []string{
 			"finish the branch with .To(goav.File(\"web.ivf\", writer)) or .To(goav.Sink(sink))",
-			"reuse the same destination value when several branches should share one mux or sink group",
+			"reuse the same destination value or pass goav.DestinationGroup(name) when several branches should share one mux or sink group",
 		},
 		Cause: ErrUnsupportedBuild,
 	}

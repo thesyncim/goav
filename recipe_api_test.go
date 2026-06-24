@@ -1637,6 +1637,7 @@ func TestReadmeUsesBranchDestinationVocabulary(t *testing.T) {
 		"goav.Sink(",
 		"goav.File(",
 		"goav.Flow(",
+		"goav.DestinationGroup(",
 		"Reuse the same destination value",
 	} {
 		if !strings.Contains(text, required) {
@@ -1708,6 +1709,7 @@ func TestDocsShowCustomDestinations(t *testing.T) {
 		"goav.Format(",
 		"goav.MIME(",
 		"goav.Metadata(",
+		"goav.DestinationGroup(",
 		"Reuse one destination value",
 	} {
 		if !strings.Contains(text, required) {
@@ -1990,7 +1992,7 @@ func TestArchitectureDocsUseSmallCompositionVocabulary(t *testing.T) {
 		"`Branch`, `Destination`, and operation composition",
 		"direct `File`/`URI`/`Sink` destinations",
 		"custom `Writer` destinations with `provider.Info`",
-		"stable destination handles for shared mux/sink groups",
+		"stable destination handles and `DestinationGroup(...)` for shared mux/sink groups",
 		"stable goav-owned destination handles",
 	} {
 		if !strings.Contains(text, required) {

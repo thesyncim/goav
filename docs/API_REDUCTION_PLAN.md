@@ -101,7 +101,7 @@ Move or keep outside the front door:
      internal details.
    - Replace string-only details with typed details and fixes.
 
-8. **Explicit destination groups**
+8. **Explicit destination groups** — landed
    - Introduce explicit mux/group builders.
    - Stop relying on Go value identity as the only way to group destination
      branches.
@@ -114,6 +114,8 @@ Move or keep outside the front door:
 10. **Docs rewrite**
     - Keep the README focused on the small grammar and one or two advanced entry
       points.
+    - Finish with a Markdown-wide consistency pass and a README that works as a
+      credible front door, not just as a passing line-count artifact.
     - Generate standard adapter capability docs from descriptors so the docs and
       registered set cannot drift.
 

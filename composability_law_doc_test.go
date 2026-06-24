@@ -35,7 +35,7 @@ func TestComposabilityLawsMapToExecutableEvidence(t *testing.T) {
 		"runtime `Mutable.Attach`",
 		"`Describe()`",
 		"`Explain()`",
-		"Destination reuse groups",
+		"Destination grouping is explicit",
 		"Branch-local policy",
 		"Runtime attach failures roll back",
 		"External adapters and joins",

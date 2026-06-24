@@ -40,7 +40,7 @@ goav.From(input)                          inputs: FileInput, URIInput, Input(pro
   .Tap(goav.Tap|FrameTap|PacketTap)       named attach points
   .Branches(goav.Branch("x")...To(dst))   fan out; BranchSpec also drives Mutable.Attach
   input.Stream(av.Stream{ID: ...})        attach anchor for app-owned dynamic tracks
-  .To(File|URI|Writer|Custom|Sink)        destinations; reuse one value = mux/sink group
+  .To(File|URI|Writer|Custom|Sink)        destinations; reuse one value or DestinationGroup option = mux/sink group
   .OnStream(MatchMedia|MatchCodec|...)    dynamic-stream rules; OnRemove controls detach outcome
 goav.Mix/Composite/Select(arms) / Join(name, stage, arms)   N arms -> one stream (JoinArm)
 goav.Flow("name")                         reusable operation list (Chain)
@@ -121,7 +121,8 @@ use [`docs/ADAPTERS.md`](ADAPTERS.md) and [`docs/COMPONENTS.md`](COMPONENTS.md).
   `provider.Destination` + `provider.Contract`/
   `provider.Info`, `goav.Writer` (`provider.OpenFunc`), transactional uploads
   via `provider.TransactionalWriter`, frame/packet sinks via `goav.Sink` +
-  `SinkFunc`.
+  `SinkFunc`, and `goav.DestinationGroup(...)` when independently built
+  destinations should share one mux/sink group.
 - **Custom stages**: use these for in-process inspection or transformation.
   `EventFunc`/`FrameFunc`/`PacketFunc` (+`Emit`) for
   `.Do(...)`; the node contracts live in `pipeline` (Source/Stage/Sink,

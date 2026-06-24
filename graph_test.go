@@ -609,6 +609,53 @@ func TestTaskAttachRuntimeBranchGroupSharesSinkDestination(t *testing.T) {
 	}
 }
 
+func TestTaskAttachRuntimeBranchGroupSharesExplicitDestinationGroup(t *testing.T) {
+	ctx := context.Background()
+	graph := expertGraph(MustNew())
+	src := graph.Source("source", &runtimeTestSource{name: "source"})
+	graph.Connect(src.Out(), graph.Sink("base", &runtimeTestSink{name: "base"}).In())
+	task, err := graph.Build(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer task.Close()
+	sharedCount := 0
+	left := Sink(SinkFunc("shared", func(context.Context, Message) error {
+		sharedCount++
+		return nil
+	}), DestinationGroup("diagnostics"))
+	right := Sink(SinkFunc("shared", func(context.Context, Message) error {
+		return fmt.Errorf("explicit destination group should open one shared sink")
+	}), DestinationGroup("diagnostics"))
+
+	attachment, err := task.Attach(ctx,
+		Branch("left").From(src).To(left),
+		Branch("right").From(src).To(right),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	spec := attachment.Spec()
+	sharedNodes := 0
+	for i := range spec.Nodes {
+		if spec.Nodes[i].Name == "shared" {
+			sharedNodes++
+		}
+		if strings.Contains(spec.Nodes[i].Name, "left/") || strings.Contains(spec.Nodes[i].Name, "right/") {
+			t.Fatalf("grouped destination created branch-owned sink node: %+v", spec.Nodes[i])
+		}
+	}
+	if sharedNodes != 1 {
+		t.Fatalf("grouped sink nodes = %d, want 1 in %+v", sharedNodes, spec.Nodes)
+	}
+	if err := task.Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if sharedCount != 2 {
+		t.Fatalf("grouped sink count = %d, want one message per branch", sharedCount)
+	}
+}
+
 func TestTaskAttachRuntimeBranchGroupRejectsDuplicateSinkDestinationNames(t *testing.T) {
 	ctx := context.Background()
 	graph := expertGraph(MustNew())

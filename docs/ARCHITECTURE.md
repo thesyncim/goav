@@ -44,7 +44,7 @@ user-facing model.
 
 | Layer | Vocabulary |
 | --- | --- |
-| Simple high-level API | `From`, stream selection, ordered operations, direct `File`/`URI`/`Sink` destinations, custom `Writer` destinations with `provider.Info`, stable destination handles for shared mux/sink groups |
+| Simple high-level API | `From`, stream selection, ordered operations, direct `File`/`URI`/`Sink` destinations, custom `Writer` destinations with `provider.Info`, stable destination handles and `DestinationGroup(...)` for shared mux/sink groups |
 
 One media work planner owns the cold path. It:
 
@@ -90,8 +90,10 @@ does not branch on input/output kind.
 `Destination` is the public routing handle and extension surface for files,
 byte writers, object-store uploads, URI-backed outputs, frame/packet/event
 sinks, and shared mux/sink groups. Reusing one destination value groups
-branches. The work plan keeps concrete destination openers cold until stream
-list, format, MIME, metadata, and realtime policy are known.
+branches; `DestinationGroup(...)` makes that grouping explicit when branches
+construct matching destinations separately. The work plan keeps concrete
+destination openers cold until stream list, format, MIME, metadata, and
+realtime policy are known.
 
 The handle-based graph builder remains available only as the explicit advanced
 layer through `expert.Graph(runtime)`; it is not on the public `Runtime`

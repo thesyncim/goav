@@ -17,6 +17,7 @@ import (
 // destinationSpec describes a concrete file, URI, writer, or sink destination.
 type destinationSpec struct {
 	id             uint64
+	group          string
 	output         format.Output
 	sink           pipeline.Sink
 	custom         provider.Destination
@@ -276,6 +277,22 @@ func Metadata(metadata av.Metadata) MediaOption {
 func Format(format av.FormatID) DestinationOption {
 	return destinationOption(func(spec *destinationSpec) {
 		*spec = spec.withFormat(format)
+	})
+}
+
+// DestinationGroup marks destinations as the same logical mux/sink group even
+// when they were built as separate Destination values. Destinations in one
+// group should use the same route label and compatible output settings; the
+// first planned destination opens the shared writer or sink.
+func DestinationGroup(name string) DestinationOption {
+	return destinationOption(func(spec *destinationSpec) {
+		if name == "" {
+			if spec.err == nil {
+				spec.err = fmt.Errorf("destination group name is empty")
+			}
+			return
+		}
+		spec.group = name
 	})
 }
 
@@ -541,7 +558,7 @@ func duplicateDestinationHandleError(operation string, name string) error {
 		Suggestions: []string{
 			"list each destination value once in .To(...)",
 			"use distinct destination names when writing to separate destinations",
-			"reuse one destination value from multiple branches through .Branches(...) when outputs should be grouped",
+			"reuse one destination value or pass goav.DestinationGroup(name) through .Branches(...) when outputs should be grouped",
 		},
 		Cause: ErrUnsupportedBuild,
 	}

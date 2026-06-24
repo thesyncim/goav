@@ -25,7 +25,7 @@ var runtimeAttachmentSeq atomic.Uint64
 
 // attachDestination is one validated destination of an attaching branch: the
 // cloned spec, its sink, and the share key that groups reused destination
-// values inside one Mutable.Attach call.
+// values or explicit destination groups inside one Mutable.Attach call.
 type attachDestination struct {
 	name     string
 	dest     destinationSpec
@@ -325,7 +325,8 @@ func attachmentStages(ap *attachPlan, group *runtimeAttachGroup, nodes []pipelin
 }
 
 // attachBranchDestinations validates and clones the branch's destinations,
-// carrying the share keys that group reused destination values.
+// carrying the share keys that group reused destination values or explicit
+// destination groups.
 func attachBranchDestinations(spec BranchSpec) ([]attachDestination, error) {
 	if spec.err != nil {
 		return nil, spec.err
@@ -412,7 +413,7 @@ func validateRuntimeBranchGroupDestinations(specs []BranchSpec, destinations [][
 						"second branch: " + branchName,
 					},
 					Suggestions: []string{
-						"reuse one destination value when branches should share a runtime destination group",
+						"reuse one destination value or pass goav.DestinationGroup(name) when branches should share a runtime destination group",
 						"create distinct destination values with distinct names for independent runtime destinations",
 						"use a sink destination for runtime diagnostic groups or a mux destination for runtime recording groups",
 					},
@@ -435,10 +436,7 @@ func runtimeBranchDestinationCanShareMux(destination attachDestination) bool {
 }
 
 func runtimeBranchSharedDestinationKey(target destinationRef) string {
-	if target.id == 0 {
-		return ""
-	}
-	return strconv.FormatUint(target.id, 10)
+	return destinationShareKey(target.dest, target.id)
 }
 
 func newRuntimeAttachGroup(destinations runtimeBranchGroupDestinations) *runtimeAttachGroup {
@@ -1851,7 +1849,7 @@ func duplicateRuntimeBranchDestinationRefError(branch string, label string, firs
 		Suggestions: []string{
 			"list each destination once in .To(...)",
 			"route one runtime branch to multiple destinations with distinct values such as .To(archive, monitor)",
-			"reuse destination values across separate Branch(...) attachments when they should share a logical destination",
+			"reuse destination values or pass goav.DestinationGroup(name) across separate Branch(...) attachments when they should share a logical destination",
 		},
 		Cause: ErrUnsupportedBuild,
 	}
