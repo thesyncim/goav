@@ -19,6 +19,7 @@ import (
 	"github.com/thesyncim/goav/graphrender"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/rtpav"
+	"github.com/thesyncim/goav/std"
 	"github.com/thesyncim/goav/webrtcav"
 )
 
@@ -72,6 +73,10 @@ func webRTCRemote(t *testing.T, remote webrtcav.RemoteTrack) goav.InputSpec {
 	return goav.Input(rtpav.Receive(reader, options...))
 }
 
+func webRTCTestRuntime() *goav.Runtime {
+	return std.MustNew(goav.WithRealtime(false))
+}
+
 func TestWebRTCTrackRecordRecipeUsesCodecIntent(t *testing.T) {
 	job := goav.From(
 		webRTCRemote(t, webrtcav.RemoteTrack{
@@ -88,7 +93,9 @@ func TestWebRTCTrackRecordRecipeUsesCodecIntent(t *testing.T) {
 				Type: av.MediaVideo,
 			},
 		}),
-	).Copy().To(goav.File("recording.ivf", io.Discard))
+	).UseRuntime(webRTCTestRuntime()).
+		Copy().
+		To(goav.File("recording.ivf", io.Discard))
 
 	spec, err := job.Describe()
 	if err != nil {
@@ -138,7 +145,11 @@ func TestWebRTCTrackUnknownCodecMetadataYieldsNoCodecIntent(t *testing.T) {
 			Type: av.MediaAudio,
 		},
 	})
-	report, err := goav.From(input).Copy().To(goav.File("recording.webm", io.Discard)).Explain(context.Background())
+	report, err := goav.From(input).
+		UseRuntime(webRTCTestRuntime()).
+		Copy().
+		To(goav.File("recording.webm", io.Discard)).
+		Explain(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -168,7 +179,7 @@ func TestWebRTCTrackRecordMultiInputRecipeUsesCodecIntent(t *testing.T) {
 			ID:   "audio",
 			Type: av.MediaAudio,
 		},
-	})).
+	})).UseRuntime(webRTCTestRuntime()).
 		And(webRTCRemote(t, webrtcav.RemoteTrack{
 			Track: &webrtc.TrackRemote{},
 			Codec: webrtc.RTPCodecParameters{
@@ -213,7 +224,9 @@ func TestWebRTCTrackRecipeReportsNilTrack(t *testing.T) {
 	// source opens at build time.
 	_, err := goav.From(
 		goav.Input(webrtcav.Track(nil)),
-	).Copy().To(goav.File("recording.ivf", io.Discard)).
+	).UseRuntime(webRTCTestRuntime()).
+		Copy().
+		To(goav.File("recording.ivf", io.Discard)).
 		Build(context.Background())
 	if !errors.Is(err, webrtcav.ErrNilTrack) {
 		t.Fatalf("err = %v, want webrtcav.ErrNilTrack", err)
