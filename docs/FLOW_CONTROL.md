@@ -51,7 +51,7 @@ leaving.
   when a dynamically discovered stream disappears.
 
 ```go
-task.Watch(goav.WatchTypes(
+task.Watch(inspect.WatchTypes(
     av.EventBranchAttached,
     av.EventBranchDetached,
     av.EventDestinationCommitted,

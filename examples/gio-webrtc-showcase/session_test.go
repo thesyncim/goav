@@ -2,13 +2,14 @@ package main
 
 import (
 	"context"
-	"github.com/thesyncim/goav/control"
 	"testing"
 	"time"
 
 	"github.com/pion/rtcp"
 	"github.com/thesyncim/goav"
 	"github.com/thesyncim/goav/av"
+	"github.com/thesyncim/goav/control"
+	"github.com/thesyncim/goav/inspect"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/plan"
 	"github.com/thesyncim/goav/snapshot"
@@ -180,7 +181,7 @@ func (t *controlCaptureTask) Run(context.Context) error { return nil }
 
 func (t *controlCaptureTask) Events() <-chan av.Event { return nil }
 
-func (t *controlCaptureTask) Watch(...goav.EventFilter) <-chan av.Event { return nil }
+func (t *controlCaptureTask) Watch(...inspect.EventFilter) <-chan av.Event { return nil }
 
 func (t *controlCaptureTask) Stats() pipeline.GraphStats { return pipeline.GraphStats{} }
 

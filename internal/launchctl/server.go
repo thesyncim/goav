@@ -12,6 +12,7 @@ import (
 
 	goav "github.com/thesyncim/goav"
 	"github.com/thesyncim/goav/av"
+	"github.com/thesyncim/goav/inspect"
 )
 
 // Server handles one decoded control-plane request against a task.
@@ -322,12 +323,12 @@ func (s *Server) watch(request Request) <-chan av.Event {
 	if request.Op == "events" {
 		return s.Task.Watch()
 	}
-	var filters []goav.EventFilter
+	var filters []inspect.EventFilter
 	if typ := request.Args["type"]; typ != "" {
-		filters = append(filters, goav.WatchTypes(av.EventType(typ)))
+		filters = append(filters, inspect.WatchTypes(av.EventType(typ)))
 	}
 	if stream := request.Args["stream"]; stream != "" {
-		filters = append(filters, goav.WatchStream(av.StreamID(stream)))
+		filters = append(filters, inspect.WatchStream(av.StreamID(stream)))
 	}
 	return s.Task.Watch(filters...)
 }

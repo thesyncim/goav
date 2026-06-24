@@ -6,14 +6,15 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"github.com/thesyncim/goav/control"
 	"io"
 	"time"
 
 	"github.com/thesyncim/goav"
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
+	"github.com/thesyncim/goav/control"
 	"github.com/thesyncim/goav/errcode"
+	"github.com/thesyncim/goav/inspect"
 	"github.com/thesyncim/goav/shape"
 	"github.com/thesyncim/goav/std"
 )
@@ -419,7 +420,7 @@ func ExampleTask_watch() {
 		return
 	}
 
-	eos := task.Watch(goav.WatchTypes(av.EventEndOfStream))
+	eos := task.Watch(inspect.WatchTypes(av.EventEndOfStream))
 
 	if err := task.Run(ctx); err != nil {
 		fmt.Println(err)

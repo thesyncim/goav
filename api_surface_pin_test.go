@@ -11,8 +11,8 @@ import (
 
 // surfacePinPackages are the packages whose exported package-level identifiers
 // are governed by testdata/api_surface.txt: the root grammar plus the
-// near-frozen vocabulary packages (control, errcode, lifecycle, plan, snapshot)
-// and the diagnostics renderer (graphrender). The extension-seam packages grow with
+// near-frozen vocabulary packages (control, errcode, inspect, lifecycle, plan,
+// snapshot) and the diagnostics renderer (graphrender). The extension-seam packages grow with
 // capabilities and are governed by the doc pin instead
 // (surfaceSeamPackages); TestEveryPublicPackageIsGoverned asserts the two
 // lists cover everything the module discovery finds. See docs/API_SURFACE.md
@@ -25,6 +25,7 @@ var surfacePinPackages = []struct {
 	{dir: "control", prefix: "control"},
 	{dir: "errcode", prefix: "errcode"},
 	{dir: "graphrender", prefix: "graphrender"},
+	{dir: "inspect", prefix: "inspect"},
 	{dir: "lifecycle", prefix: "lifecycle"},
 	{dir: "plan", prefix: "plan"},
 	{dir: "snapshot", prefix: "snapshot"},

@@ -198,7 +198,6 @@ goav.ErrNilStage
 goav.ErrNilWriter
 goav.ErrUnsupportedBuild
 goav.Event
-goav.EventFilter
 goav.EventFunc
 goav.Explainer
 goav.File
@@ -270,8 +269,6 @@ goav.Task
 goav.TransformSpec
 goav.URI
 goav.URIInput
-goav.WatchStream
-goav.WatchTypes
 goav.WithBufferPolicy
 goav.WithClock
 goav.WithCodecAdapter
@@ -297,6 +294,9 @@ graphrender.RenderSnapshotURI
 graphrender.RenderTaskFlowchart
 graphrender.RenderTaskURI
 graphrender.RenderURI
+inspect.EventFilter
+inspect.WatchStream
+inspect.WatchTypes
 lifecycle.BranchAttached
 lifecycle.BranchDetached
 lifecycle.BranchState

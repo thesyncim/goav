@@ -21,6 +21,7 @@ import (
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/control"
+	"github.com/thesyncim/goav/inspect"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/plan"
 	"github.com/thesyncim/goav/snapshot"
@@ -111,7 +112,7 @@ type Observable interface {
 	// Events drain the same underlying stream, so once Watch is used, subscribe
 	// every consumer through Watch (an unfiltered Watch() is the Events
 	// equivalent) rather than reading Events directly.
-	Watch(filters ...EventFilter) <-chan av.Event
+	Watch(filters ...inspect.EventFilter) <-chan av.Event
 }
 
 // LiveTask is the full task capability set produced by the built-in runtime.

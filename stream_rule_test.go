@@ -13,6 +13,7 @@ import (
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/format"
+	"github.com/thesyncim/goav/inspect"
 	"github.com/thesyncim/goav/lifecycle"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/provider"
@@ -219,7 +220,7 @@ func TestOnStreamAttachesLateBranchAndDetachesOnRemoval(t *testing.T) {
 	}
 	defer task.Close()
 
-	attachErrors := task.Watch(WatchTypes(av.EventAttachError))
+	attachErrors := task.Watch(inspect.WatchTypes(av.EventAttachError))
 	runErr := make(chan error, 1)
 	go func() { runErr <- task.Run(ctx) }()
 
@@ -449,7 +450,7 @@ func TestOnStreamLateBranchAutoInsertsConversion(t *testing.T) {
 	}
 	defer task.Close()
 
-	attachErrors := task.Watch(WatchTypes(av.EventAttachError))
+	attachErrors := task.Watch(inspect.WatchTypes(av.EventAttachError))
 	runErr := make(chan error, 1)
 	go func() { runErr <- task.Run(ctx) }()
 
@@ -535,7 +536,7 @@ func TestOnStreamAttachFailureSurfacesEventAndRollsBack(t *testing.T) {
 	defer task.Close()
 	nodesBefore := len(task.Describe().Nodes)
 
-	attachErrors := task.Watch(WatchTypes(av.EventAttachError))
+	attachErrors := task.Watch(inspect.WatchTypes(av.EventAttachError))
 	runErr := make(chan error, 1)
 	go func() { runErr <- task.Run(ctx) }()
 

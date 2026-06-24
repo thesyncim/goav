@@ -5,6 +5,7 @@ import (
 	"sync"
 
 	"github.com/thesyncim/goav/av"
+	"github.com/thesyncim/goav/inspect"
 	"github.com/thesyncim/goav/plan"
 	"github.com/thesyncim/goav/shape"
 )
@@ -52,7 +53,7 @@ func (t *task) installStreamRules(sourceNode string, domain shape.MediaDomain, r
 	events := t.watch.subscribe(
 		t.graph.Events(),
 		streamRuleEventCapacity,
-		[]EventFilter{WatchTypes(av.EventStreamAdded, av.EventStreamRemoved)},
+		[]inspect.EventFilter{inspect.WatchTypes(av.EventStreamAdded, av.EventStreamRemoved)},
 	)
 	go t.runStreamRules(events)
 }

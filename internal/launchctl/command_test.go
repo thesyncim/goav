@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/thesyncim/goav/control"
 	"net"
 	"os"
 	"path/filepath"
@@ -17,9 +16,11 @@ import (
 	goav "github.com/thesyncim/goav"
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
+	"github.com/thesyncim/goav/control"
 	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/goavtest"
+	"github.com/thesyncim/goav/inspect"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/plan"
 	"github.com/thesyncim/goav/shape"
@@ -2783,7 +2784,7 @@ func (t *fakeTask) Events() <-chan av.Event {
 	return ch
 }
 
-func (t *fakeTask) Watch(filters ...goav.EventFilter) <-chan av.Event {
+func (t *fakeTask) Watch(filters ...inspect.EventFilter) <-chan av.Event {
 	ch := make(chan av.Event, len(t.events))
 	for _, event := range t.events {
 		if eventMatches(event, filters) {
@@ -2815,7 +2816,7 @@ func (t *descriptorTask) MuxerDescriptors() []format.Descriptor {
 	return append([]format.Descriptor(nil), t.muxers...)
 }
 
-func eventMatches(event av.Event, filters []goav.EventFilter) bool {
+func eventMatches(event av.Event, filters []inspect.EventFilter) bool {
 	for _, filter := range filters {
 		if filter != nil && !filter(event) {
 			return false

@@ -10,6 +10,7 @@ import (
 	goav "github.com/thesyncim/goav"
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/graphrender"
+	"github.com/thesyncim/goav/inspect"
 	"github.com/thesyncim/goav/pipeline"
 )
 
@@ -455,12 +456,12 @@ func executeWatch(task goav.LiveTask, operation string, args []string) (ControlR
 			nil,
 		)
 	}
-	var filters []goav.EventFilter
+	var filters []inspect.EventFilter
 	if typ := argValues["type"]; typ != "" {
-		filters = append(filters, goav.WatchTypes(av.EventType(typ)))
+		filters = append(filters, inspect.WatchTypes(av.EventType(typ)))
 	}
 	if stream := argValues["stream"]; stream != "" {
-		filters = append(filters, goav.WatchStream(av.StreamID(stream)))
+		filters = append(filters, inspect.WatchStream(av.StreamID(stream)))
 	}
 	ch := task.Watch(filters...)
 	var events []av.Event
