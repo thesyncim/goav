@@ -47,8 +47,10 @@ every exported symbol documented (`doc_pin_test.go`), tiered in
 - **Tier A: the grammar.** `From`/stream selection/operations
   (`Decode`/`Copy`/`Resize`/`Resample`/`Do`/`Encode`)/`Shape`/`Auto`/
   `Require`/`Prefer`/`Tap`/`Branches`/`To`/`OnStream`; `Mix`/`Composite`/
-  `Select`; `Flow`; `Task` verbs (`Run`/`Events`/`Watch`/`Snapshot`/`Stats`/
-  `Attach`/`Detach` with `DrainBranch`/`AbortBranch`/`Rebranch`/`Control`);
+  `Select`; `Flow`; `Task` lifecycle (`Run`/`Close`); opt-in task capability
+  interfaces for `Explain`, inspection (`Describe`/`Taps`/`Snapshot`/`Stats`),
+  mutation (`Attach`/`Detach` with `DrainBranch`/`AbortBranch`, `Rebranch`),
+  controls (`Control`), and observation (`Events`/`Watch`);
   `Default`/`New`/`UseRuntime`;
   structured `BuildError` + the `errcode` catalog; the `plan`, `snapshot`,
   `lifecycle`, `shape`, `flow`, and `av` vocabulary packages.

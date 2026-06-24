@@ -2,10 +2,10 @@
 
 `goav` is pre-release, so the public API should be shaped for the library it
 wants to be instead of preserving every exported convenience already present.
-The current root package mixes recipe grammar, runtime construction, adapter
-bundles, inspection, live mutation, control, rendering-adjacent concepts, and
-expert seams. This plan shrinks the front door and moves advanced capability
-behind explicit package or interface boundaries.
+Before this reduction, the root package mixed recipe grammar, runtime
+construction, adapter bundles, inspection, live mutation, control,
+rendering-adjacent concepts, and expert seams. This plan shrinks the front door
+and moves advanced capability behind explicit package or interface boundaries.
 
 ## Goal
 
@@ -22,9 +22,9 @@ Make the root package a small recipe grammar:
 Target root surface after the reduction: roughly 40 to 70 package-level
 identifiers.
 
-## Current Baseline
+## Initial Baseline
 
-The checked-in public-surface pin currently approves:
+The baseline public-surface pin approved:
 
 - 134 root `goav` package identifiers
 - 147 `errcode` identifiers
@@ -33,10 +33,12 @@ The checked-in public-surface pin currently approves:
 - 28 `plan` identifiers
 - 4 `snapshot` identifiers
 
-The root package also imports the standard adapter bundle through `defaults.go`.
-As a result, importing `github.com/thesyncim/goav` pulls codec/container adapter
-packages and backend codec modules even when an application only wants to build
-recipe data.
+The root package also imported the standard adapter bundle through
+`defaults.go`. As a result, importing `github.com/thesyncim/goav` pulled
+codec/container adapter packages and backend codec modules even when an
+application only wanted to build recipe data.
+
+Current counts and the root dependency proof live in `docs/API_INVENTORY.md`.
 
 ## Target Package Shape
 
@@ -60,16 +62,16 @@ Move or keep outside the front door:
 
 ## Work Slices
 
-1. **Inventory and baseline**
+1. **Inventory and baseline** — landed
    - Record current symbol counts and root dependency behavior.
    - Keep `testdata/api_surface.txt` as the live approval list while symbols move.
 
-2. **Lazy runtime**
+2. **Lazy runtime** — landed
    - Stop constructing the standard runtime in `newJob`.
    - Require an explicit runtime at build time or an explicit standard helper.
    - Return `runtime_missing` for nil or omitted runtime on build paths.
 
-3. **Standard package**
+3. **Standard package** — landed
    - Add `goav/std` for `New`, `MustNew`, `Build`, `Run`, and standard adapter
      options.
    - Move direct imports of bundled codecs, formats, and filters out of the root
@@ -77,24 +79,24 @@ Move or keep outside the front door:
    - Prove `go list -deps github.com/thesyncim/goav` does not include standard
      codec backends unless `std` is imported.
 
-4. **Explicit copy**
+4. **Explicit copy** — landed
    - Make whole-job `Copy` record an explicit operation or remove it.
    - Ensure `Describe`/`Explain` can distinguish intentional packet copy from a
      recipe that forgot to declare work.
 
-5. **Task split**
+5. **Task split** — landed
    - Narrow `Task` to `Run(context.Context) error` and `Close() error`.
    - Introduce opt-in interfaces for description/explanation, inspection,
      mutation, control, watching, and stats.
    - Keep the standard build path returning `LiveTask`, and update consumers to
      accept narrower interfaces whenever they only need one capability.
 
-6. **Constructor strictness**
+6. **Constructor strictness** — landed for constructors
    - Stop returning nil from helper constructors on nil callbacks.
    - Make runtime options reject nil registry callbacks, factories, and invalid
      settings at construction time.
 
-7. **Error families**
+7. **Error families** — started
    - Introduce stable error families such as `InvalidRecipe`, `MissingAdapter`,
      `IncompatibleAdapter`, `UnsupportedShape`, and `RuntimeRejected`.
    - Move implementation-specific errcodes behind compatibility aliases or
@@ -106,14 +108,14 @@ Move or keep outside the front door:
    - Stop relying on Go value identity as the only way to group destination
      branches.
 
-9. **Unified lowering**
+9. **Unified lowering** — started
    - Lower stream chains, branches, joins, and runtime attach through the same
      operation model.
    - Keep build and attach errors aligned for the same invalid operation chain.
    - First parity guard landed with
      `TestBuildAndAttachReturnSameErrorForSameInvalidBranch`.
 
-10. **Docs rewrite**
+10. **Docs rewrite** — in progress
     - Keep the README focused on the small grammar and one or two advanced entry
       points.
     - Finish with a Markdown-wide consistency pass and a README that works as a

@@ -31,7 +31,7 @@ go list -deps github.com/thesyncim/goav
 Initial result: the root package dependency graph included the standard adapter
 packages and backend codec modules.
 
-Standard packages currently pulled by the root include:
+Standard packages included in the initial root graph:
 
 - `github.com/thesyncim/goav/adapters/annexb`
 - `github.com/thesyncim/goav/adapters/goaac`
