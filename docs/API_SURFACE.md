@@ -44,7 +44,7 @@ goav.From(input)                          inputs: FileInput, URIInput, Input(pro
   .OnStream(MatchMedia|MatchCodec|...)    dynamic-stream rules; OnRemove controls detach outcome
 goav.Mix/Composite/Select(arms) / Join(name, stage, arms)   N arms -> one stream (JoinArm)
 goav.Flow("name")                         reusable operation list (Chain)
-job.Describe() / Explain() -> plan.Report; job.Build(ctx) -> LiveTask; job.Run(ctx)
+job.Describe(); adapter-backed Explain/Build/Run use job.UseRuntime(rt) or std.Build/std.Run
 Task: Run, Close
 Explainer: Explain
 Inspectable: Describe, Taps, Snapshot -> snapshot.*, Stats

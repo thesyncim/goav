@@ -553,7 +553,7 @@ func TestExplainReturnsPartialReportForMissingMuxer(t *testing.T) {
 	report, err := recordJob(
 		goav.FileInput("input.ivf", bytes.NewReader(tinyIVF())),
 		goav.File("recording.mp4", io.Discard),
-	).Explain(context.Background())
+	).UseRuntime(goav.MustNew()).Explain(context.Background())
 	var buildErr *goav.BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "destination_muxer_missing" {
 		t.Fatalf("err = %v, want destination_muxer_missing", err)
@@ -2370,6 +2370,21 @@ func TestRecipeReportsNilRuntime(t *testing.T) {
 	}
 }
 
+func TestRecipeReportsOmittedRuntime(t *testing.T) {
+	_, err := recordJob(
+		goav.FileInput("input.ivf", strings.NewReader("")),
+		goav.File("recording.ivf", io.Discard),
+	).Build(context.Background())
+
+	var buildErr *goav.BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "runtime_missing" {
+		t.Fatalf("err = %v, want runtime_missing", err)
+	}
+	if !strings.Contains(err.Error(), "std.Run") {
+		t.Fatalf("err = %v, want standard helper guidance", err)
+	}
+}
+
 func TestReadmeRecordRecipeIsSmall(t *testing.T) {
 	job := recordJob(
 		goav.FileInput("input.ogg", strings.NewReader("")),
@@ -3793,7 +3808,7 @@ func TestRecordRecipeReportsMissingInputDemuxer(t *testing.T) {
 	_, err := recordJob(
 		goav.FileInput("input.ogg", strings.NewReader("")),
 		goav.Sink(goav.SinkFunc("packets", func(context.Context, goav.Message) error { return nil })),
-	).Build(context.Background())
+	).UseRuntime(goav.MustNew()).Build(context.Background())
 
 	var buildErr *goav.BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "input_demuxer_missing" {
@@ -3810,7 +3825,7 @@ func TestRecordRecipeReportsMissingDestinationMuxer(t *testing.T) {
 	_, err := recordJob(
 		goav.FileInput("input.ivf", bytes.NewReader(tinyIVF())),
 		goav.File("recording.mp4", io.Discard),
-	).Build(context.Background())
+	).UseRuntime(goav.MustNew()).Build(context.Background())
 
 	var buildErr *goav.BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "destination_muxer_missing" {

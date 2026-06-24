@@ -12,6 +12,7 @@ import (
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
+	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/inspect"
 	"github.com/thesyncim/goav/lifecycle"
@@ -503,6 +504,27 @@ func TestOnStreamRuleVisibleInExplain(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("no stream_rule decision in plan: %+v", report.Decisions)
+	}
+}
+
+func TestOnStreamFileBranchRequiresExplicitRuntime(t *testing.T) {
+	ctx := context.Background()
+	input := Source("mic",
+		shape.Packet(av.MediaAudio, av.CodecOpus, shape.Audio(48_000, codec.Stereo, av.SampleFormatS16)),
+		func(context.Context, SourcePush) error { return nil },
+	)
+	monitor := Sink(SinkFunc("main", func(context.Context, Message) error { return nil }))
+	job := From(input).
+		OnStream(MatchMedia(av.MediaAudio), Branch("record").Copy().To(File("late.ogg", io.Discard))).
+		Audio().Copy().To(monitor)
+
+	_, err := job.Build(ctx)
+	var buildErr *BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != errcode.RuntimeMissing {
+		t.Fatalf("Build() error = %v, want runtime_missing", err)
+	}
+	if !strings.Contains(err.Error(), "std.Run") {
+		t.Fatalf("Build() error = %v, want standard helper guidance", err)
 	}
 }
 

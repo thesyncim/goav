@@ -68,8 +68,11 @@ Move or keep outside the front door:
 
 2. **Lazy runtime** — landed
    - Stop constructing the standard runtime in `newJob`.
-   - Require an explicit runtime at build time or an explicit standard helper.
-   - Return `runtime_missing` for nil or omitted runtime on build paths.
+   - Require an explicit runtime for adapter-backed build paths, or use an
+     explicit standard helper.
+   - Return `runtime_missing` for nil runtimes and for omitted runtimes on
+     adapter-backed build paths, including dynamic `OnStream` branch
+     destinations and operations.
 
 3. **Standard package** — landed
    - Add `goav/std` for `New`, `MustNew`, `Build`, `Run`, and standard adapter

@@ -13,13 +13,14 @@ import (
 )
 
 type branchCompositionJob struct {
-	runtime     *Runtime
-	name        string
-	input       InputSpec
-	streams     []streamBuild
-	outputs     []namedDestinationSpec
-	streamRules []streamRule
-	err         error
+	runtime         *Runtime
+	runtimeExplicit bool
+	name            string
+	input           InputSpec
+	streams         []streamBuild
+	outputs         []namedDestinationSpec
+	streamRules     []streamRule
+	err             error
 
 	fromBranchSplit bool
 }

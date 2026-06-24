@@ -10,11 +10,11 @@
 Build media workflows that your Go application can validate, run, and change
 while they are alive.
 
-`goav` is a small recipe grammar over an explicit runtime. The root package is
-for describing media work: input, stream selection, ordered operations, taps,
-branches, destinations, flows, and task lifecycle. Bundled adapters live in
-`goav/std`; live controls live in `goav/control`; observation helpers live in
-`goav/inspect`.
+`goav` is a small recipe grammar over app-owned media and explicit adapter
+runtimes. The root package is for describing media work: input, stream
+selection, operations, taps, branches, destinations, flows, and task lifecycle.
+Bundled adapters live in `goav/std`; live controls live in `goav/control`;
+observation helpers live in `goav/inspect`.
 
 Use it when media belongs inside a Go service and you need structured build
 errors, in-process events, runtime branches, or app-owned sources and sinks.
@@ -30,10 +30,10 @@ go get github.com/thesyncim/goav
 Start with one packet-preserving recording:
 
 ```go
-return goav.From(goav.FileInput("input.ivf", in)).
+return std.Run(ctx, goav.From(goav.FileInput("input.ivf", in)).
     Copy().
-    To(goav.File("recording.ivf", out)).
-    Run(ctx)
+    To(goav.File("recording.ivf", out)),
+)
 ```
 
 The front-door vocabulary is intentionally small:
@@ -95,15 +95,15 @@ previewTrack := goav.Sink(goav.SinkFunc("preview-track", func(context.Context, g
     return nil
 }))
 
-_, err := goav.From(roomCamera).
+_, err := std.Build(ctx, goav.From(roomCamera).
     Video().
     Copy().
     Sync(roomSync).
     Branches(
         goav.Branch("archive").Sync(roomSync).To(goav.File("archive.ivf", out)),
         goav.Branch("preview").Sync(previewSync).To(previewTrack),
-    ).
-    Build(ctx)
+    ),
+)
 return err
 ```
 
@@ -148,7 +148,7 @@ transport := goav.Source("webrtc-room",
     goav.Codec(codec.VP8()),
 )
 
-_, err := goav.From(transport).
+_, err := std.Build(ctx, goav.From(transport).
     OnStream(
         goav.MatchStreamID("camera"),
         goav.Branch("record-camera").
@@ -156,8 +156,8 @@ _, err := goav.From(transport).
             Copy().
             To(goav.File("camera.ivf", out)),
         goav.OnRemove(goav.DrainBranch()),
-    ).
-    Build(ctx)
+    ),
+)
 return err
 ```
 

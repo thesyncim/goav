@@ -1059,10 +1059,10 @@ var errorCatalogAdditionalExamples = []errorCatalogExample{
 	},
 	{
 		Code:          "runtime_missing",
-		Test:          "TestRecipeDiagnosticHelperContracts",
-		BadRecipe:     "compile a recipe without a runtime in an internal path that requires one",
-		RenderedError: "runtime missing diagnostic helper fields are asserted by the test",
-		Fix:           "attach a runtime with .UseRuntime(...) or use the default runtime path",
+		Test:          "TestRecipeReportsOmittedRuntime",
+		BadRecipe:     "goav.From(file).Copy().To(file).Build(ctx) without .UseRuntime(...) or std.Build/std.Run",
+		RenderedError: "adapter-backed omitted runtime guidance is asserted by the test",
+		Fix:           "attach a runtime with .UseRuntime(...) or use std.Build/std.Run for the bundled runtime",
 		Cause:         "goav.ErrUnsupportedBuild",
 	},
 	{

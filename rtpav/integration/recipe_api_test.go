@@ -481,6 +481,7 @@ func TestBranchCompositionAcceptsRTPInputThenReportsMissingMuxer(t *testing.T) {
 				Encode(codec.Opus(codec.Bitrate(96_000))).
 				To(goav.File("archive.ogg", io.Discard)),
 		).
+		UseRuntime(goav.MustNew()).
 		Build(context.Background())
 
 	var buildErr *goav.BuildError
