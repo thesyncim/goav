@@ -4120,6 +4120,39 @@ func TestStreamRecipeRejectsNilCustomStage(t *testing.T) {
 	}
 }
 
+func TestNilPacketFuncDoesNotBecomeSilentNilStage(t *testing.T) {
+	_, err := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
+		Audio().
+		Do(goav.PacketFunc("packets", nil)).
+		To(goav.Sink(goav.SinkFunc("frames", func(context.Context, goav.Message) error {
+			return nil
+		}))).
+		Build(context.Background())
+	var buildErr *goav.BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "stage_missing" || !errors.Is(err, goav.ErrNilStage) {
+		t.Fatalf("err = %v, want stage_missing wrapping ErrNilStage", err)
+	}
+	if !strings.Contains(err.Error(), "goav.PacketFunc") ||
+		!strings.Contains(err.Error(), "non-nil stage") {
+		t.Fatalf("err = %v, want PacketFunc nil-callback guidance", err)
+	}
+}
+
+func TestNilSinkFuncDoesNotBecomeSilentNilSink(t *testing.T) {
+	_, err := decodeJob(
+		goav.FileInput("input.ogg", strings.NewReader("")),
+		goav.Sink(goav.SinkFunc("frames", nil)),
+	).Build(context.Background())
+	var buildErr *goav.BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "output_invalid" || !errors.Is(err, goav.ErrNilSink) {
+		t.Fatalf("err = %v, want output_invalid wrapping ErrNilSink", err)
+	}
+	if !strings.Contains(err.Error(), "SinkFunc") ||
+		!strings.Contains(err.Error(), "non-nil sink") {
+		t.Fatalf("err = %v, want SinkFunc nil-callback guidance", err)
+	}
+}
+
 func TestStreamRecipeRejectsWrongMediaTransform(t *testing.T) {
 	_, err := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
 		Audio().

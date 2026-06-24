@@ -374,6 +374,20 @@ func (s destinationSpec) validate(operation string, fallback string) error {
 		}
 	}
 	if s.sink != nil {
+		if err := validateSinkComponent(s.sink); err != nil {
+			return &BuildError{
+				Code:      errcode.OutputInvalid,
+				Operation: operation,
+				Node:      node,
+				Reason:    err.Error(),
+				Suggestions: []string{
+					"pass a non-nil sink callback to goav.SinkFunc(...)",
+					"pass a non-nil sink to goav.Sink(...)",
+					"use goav.File(...) or goav.URI(...) for muxed output",
+				},
+				Cause: err,
+			}
+		}
 		return nil
 	}
 	if s.output.Name == "" && s.output.URI == "" && s.output.Protocol == "" && s.output.MIMEType == "" && s.output.Writer == nil && s.custom == nil && s.format == "" {

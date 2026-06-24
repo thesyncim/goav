@@ -327,8 +327,8 @@ func (b *builder) compileExplicitGraph(graph pipeline.Graph) error {
 		sourceRefs[i] = ref
 	}
 	for i := range b.stages {
-		if b.stages[i] == nil {
-			return ErrNilStage
+		if err := validateStageComponent(b.stages[i]); err != nil {
+			return err
 		}
 		ref, err := graph.AddStage(b.stages[i], b.runtime.buffer)
 		if err != nil {
@@ -337,8 +337,8 @@ func (b *builder) compileExplicitGraph(graph pipeline.Graph) error {
 		stageRefs[i] = ref
 	}
 	for i := range b.sinks {
-		if b.sinks[i] == nil {
-			return ErrNilSink
+		if err := validateSinkComponent(b.sinks[i]); err != nil {
+			return err
 		}
 		ref, err := graph.AddSink(b.sinks[i], b.runtime.buffer)
 		if err != nil {

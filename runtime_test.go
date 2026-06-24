@@ -881,9 +881,19 @@ func TestRuntimeBuilderExplicitGraphValidation(t *testing.T) {
 		t.Fatalf("stage err = %v, want ErrNilStage", err)
 	}
 
+	_, err = newTestBuilder(t).Source(source).Stage(PacketFunc("packets", nil)).Build(context.Background())
+	if !errors.Is(err, ErrNilStage) {
+		t.Fatalf("PacketFunc nil callback err = %v, want ErrNilStage", err)
+	}
+
 	_, err = newTestBuilder(t).Source(source).Sink(nil).Build(context.Background())
 	if !errors.Is(err, ErrNilSink) {
 		t.Fatalf("sink err = %v, want ErrNilSink", err)
+	}
+
+	_, err = newTestBuilder(t).Source(source).Sink(SinkFunc("sink", nil)).Build(context.Background())
+	if !errors.Is(err, ErrNilSink) {
+		t.Fatalf("SinkFunc nil callback err = %v, want ErrNilSink", err)
 	}
 
 	sink := &runtimeTestSink{name: "sink"}

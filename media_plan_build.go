@@ -1593,6 +1593,9 @@ func mediaPlanFilterRouteOperations(filters []filterRequest) ([]operationSpec, e
 		filter := filters[i]
 		switch {
 		case filter.stage != nil:
+			if err := validateStageComponent(filter.stage); err != nil {
+				return nil, err
+			}
 			operations = append(operations, operationSpecForStage(filter.stage))
 		case filter.transform != nil:
 			operation := operationSpecForTransform(transformSpecFromMediaTransform(*filter.transform))
@@ -1742,7 +1745,7 @@ func mediaPlanStreamFilters(stream streamIntent) ([]filterRequest, error) {
 		operation := stream.Operations[i]
 		switch operation.Kind {
 		case plan.OpStage:
-			if operation.Stage == nil {
+			if err := validateStageComponent(operation.Stage); err != nil {
 				return nil, streamStageMissingError(stream)
 			}
 			filters = append(filters, filterRequest{selector: selector, stage: operation.Stage})

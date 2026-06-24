@@ -2,6 +2,7 @@ package goav
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/thesyncim/goav/av"
@@ -50,17 +51,42 @@ func TestPacketFuncCanEmit(t *testing.T) {
 }
 
 func TestFunctionAdaptersRejectNilCallbacks(t *testing.T) {
-	if PacketFunc("packets", nil) != nil {
-		t.Fatal("PacketFunc with nil callback should return nil")
+	packetStage := PacketFunc("packets", nil)
+	if packetStage == nil {
+		t.Fatal("PacketFunc with nil callback should return a named invalid stage")
 	}
-	if FrameFunc("frames", nil) != nil {
-		t.Fatal("FrameFunc with nil callback should return nil")
+	if packetStage.Name() != "packets" {
+		t.Fatalf("PacketFunc invalid name = %q, want packets", packetStage.Name())
 	}
-	if EventFunc("events", nil) != nil {
-		t.Fatal("EventFunc with nil callback should return nil")
+	if err := packetStage.Handle(context.Background(), &pipeline.Message{Kind: pipeline.MessagePacket}, &funcEmitter{}); !errors.Is(err, ErrNilStage) {
+		t.Fatalf("PacketFunc invalid Handle err = %v, want ErrNilStage", err)
 	}
-	if SinkFunc("sink", nil) != nil {
-		t.Fatal("SinkFunc with nil callback should return nil")
+
+	frameStage := FrameFunc("frames", nil)
+	if frameStage == nil {
+		t.Fatal("FrameFunc with nil callback should return a named invalid stage")
+	}
+	if err := frameStage.Handle(context.Background(), &pipeline.Message{Kind: pipeline.MessageFrame}, &funcEmitter{}); !errors.Is(err, ErrNilStage) {
+		t.Fatalf("FrameFunc invalid Handle err = %v, want ErrNilStage", err)
+	}
+
+	eventStage := EventFunc("events", nil)
+	if eventStage == nil {
+		t.Fatal("EventFunc with nil callback should return a named invalid stage")
+	}
+	if err := eventStage.Handle(context.Background(), &pipeline.Message{Kind: pipeline.MessageEvent}, &funcEmitter{}); !errors.Is(err, ErrNilStage) {
+		t.Fatalf("EventFunc invalid Handle err = %v, want ErrNilStage", err)
+	}
+
+	sink := SinkFunc("sink", nil)
+	if sink == nil {
+		t.Fatal("SinkFunc with nil callback should return a named invalid sink")
+	}
+	if sink.Name() != "sink" {
+		t.Fatalf("SinkFunc invalid name = %q, want sink", sink.Name())
+	}
+	if err := sink.Handle(context.Background(), &pipeline.Message{Kind: pipeline.MessageEvent}); !errors.Is(err, ErrNilSink) {
+		t.Fatalf("SinkFunc invalid Handle err = %v, want ErrNilSink", err)
 	}
 }
 

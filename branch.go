@@ -274,7 +274,7 @@ func (b *branchBuilder) Do(stages ...pipeline.Stage) *branchBuilder {
 			b.setErr(chainStepAfterEncodeError("build branch", firstNonEmpty(b.spec.name, "branch"), "custom stage", chainEncodeSpec(b.spec.operations)))
 			return b
 		}
-		if stages[i] == nil {
+		if err := validateStageComponent(stages[i]); err != nil {
 			b.setErr(streamStageMissingError(streamIntent{Name: firstNonEmpty(b.spec.name, "branch")}))
 			return b
 		}

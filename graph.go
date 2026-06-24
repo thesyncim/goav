@@ -104,8 +104,8 @@ func (g *graphBuilder) Source(name string, source pipeline.Source) graphNode {
 }
 
 func (g *graphBuilder) Stage(name string, stage pipeline.Stage) graphNode {
-	if stage == nil {
-		g.setErr(ErrNilStage)
+	if err := validateStageComponent(stage); err != nil {
+		g.setErr(err)
 		return graphNode{name: name}
 	}
 	node := namedStage{name: firstNonEmpty(name, stage.Name()), stage: stage}
@@ -114,8 +114,8 @@ func (g *graphBuilder) Stage(name string, stage pipeline.Stage) graphNode {
 }
 
 func (g *graphBuilder) Sink(name string, sink pipeline.Sink) graphNode {
-	if sink == nil {
-		g.setErr(ErrNilSink)
+	if err := validateSinkComponent(sink); err != nil {
+		g.setErr(err)
 		return graphNode{name: name}
 	}
 	node := namedSink{name: firstNonEmpty(name, sink.Name()), sink: sink}
