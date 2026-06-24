@@ -414,9 +414,6 @@ const (
 	// RuntimeBranchTransformError fires when a runtime branch transform
 	// stage cannot be opened.
 	RuntimeBranchTransformError Code = "runtime_branch_transform_error"
-	// RuntimeBranchTransformMediaMismatch fires when a runtime branch
-	// transform targets the wrong media kind for its tap.
-	RuntimeBranchTransformMediaMismatch Code = "runtime_branch_transform_media_mismatch"
 	// RuntimeBranchGraphError fires when the live graph rejects the branch
 	// attachment.
 	RuntimeBranchGraphError Code = "runtime_branch_graph_error"

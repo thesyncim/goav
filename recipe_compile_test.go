@@ -2499,22 +2499,25 @@ func TestShapeErrorsReportExpectedAndActualShape(t *testing.T) {
 		},
 		{
 			name: "branch resample on video",
-			pass: validateBranchCompositionIntentShapePass(),
+			pass: validateRecipeOperationShapesPass(),
 			state: recipeCompileState{
 				operation: branchCompositionOperation,
 				intent: intent{
 					Inputs: []inputIntent{{Name: "input"}},
 					Streams: []streamIntent{{
-						Name:         "video",
-						Select:       plan.StreamSelect{Type: av.MediaVideo},
-						Operations:   append([]operationSpec{operationSpecForTransform(Resample(48_000, codec.Stereo))}, operationSpecForEncode(codec.VP9(codec.Bitrate(2_000_000)))),
+						Name:   "video",
+						Select: plan.StreamSelect{Type: av.MediaVideo},
+						Operations: append(
+							append(decodeIntentOperations(), operationSpecForTransform(Resample(48_000, codec.Stereo))),
+							operationSpecForEncode(codec.VP9(codec.Bitrate(2_000_000))),
+						),
 						Destinations: []string{"web"},
 					}},
 					Destinations: []destinationIntent{{Name: "web"}},
 				},
 			},
-			code: "transform_media_mismatch",
-			want: []string{"resample applies to audio branches", "expected_shape=domain=frame media=audio", "actual_shape=domain=frame media=video"},
+			code: "operation_shape_mismatch",
+			want: []string{"resample cannot consume the current media shape", "expected_shape=domain=frame media=audio", "actual_shape=domain=frame media=video"},
 		},
 	}
 	for _, tt := range tests {

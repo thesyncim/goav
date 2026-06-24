@@ -578,14 +578,8 @@ func validateBranchTransforms(stream streamIntent) error {
 				Suggestions: []string{"declare two separate steps instead: .Resize(width, height).Resample(rate, channels)"},
 				Cause:       ErrUnsupportedBuild,
 			}
-		case transform.Resize != nil:
-			if stream.Select.Type == av.MediaAudio {
-				return branchTransformMediaError(stream, "resize", av.MediaVideo, stream.Select.Type)
-			}
-		case transform.Resample != nil:
-			if stream.Select.Type == av.MediaVideo {
-				return branchTransformMediaError(stream, "resample", av.MediaAudio, stream.Select.Type)
-			}
+		case transform.Resize != nil, transform.Resample != nil:
+			continue
 		default:
 			return &BuildError{
 				Code:      errcode.TransformInvalid,
@@ -620,24 +614,6 @@ func transformSpecsFromOperationSpecs(operations []operationSpec) []TransformSpe
 		transforms = append(transforms, transform)
 	}
 	return transforms
-}
-
-func branchTransformMediaError(stream streamIntent, transform string, expected av.MediaType, actual av.MediaType) error {
-	return &BuildError{
-		Code:      errcode.TransformMediaMismatch,
-		Operation: branchCompositionOperation,
-		Node:      branchIntentName(stream),
-		Reason:    transform + " applies to " + string(expected) + " branches",
-		Details: []string{
-			"expected_shape=" + shape.Frame(expected).String(),
-			"actual_shape=" + shape.Frame(actual).String(),
-		},
-		Suggestions: []string{
-			"use .Video(...).Resize(...) for video ladder branches",
-			"use .Audio(...).Resample(...) for audio branches",
-		},
-		Cause: ErrUnsupportedBuild,
-	}
 }
 
 func streamIntentSelector(stream streamIntent) av.StreamSelector {

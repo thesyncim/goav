@@ -74,6 +74,14 @@ func opusPacketInput() goav.InputSpec {
 	return goavtest.Packets(av.CodecOpus, av.Packet{Payload: av.Buffer{Bytes: []byte{1}}})
 }
 
+func audioFrameInput() goav.InputSpec {
+	return goav.Source("audio",
+		shape.Frame(av.MediaAudio, shape.Audio(48_000, codec.Mono, av.SampleFormatS16), shape.Stream("audio")),
+		func(context.Context, goav.SourcePush) error {
+			return nil
+		})
+}
+
 // TestErrorAcceptanceNilProviderInput is snippet 0a: a nil source provider
 // handed to goav.Input(...). The refusal keeps the public input constructor
 // vocabulary in the suggestions and preserves ErrNilSource as the cause.
@@ -406,6 +414,49 @@ func TestErrorAcceptancePacketBranchTransformUnsupported(t *testing.T) {
 		"use .Decode().Branches(...) when branch variants need frame transforms",
 		"use .Copy().Branches(...) only for packet-preserving branches",
 	)
+}
+
+func TestBuildAndAttachReturnSameErrorForSameInvalidBranch(t *testing.T) {
+	_, err := goav.From(opusPacketInput()).
+		UseRuntime(goavtest.Runtime()).
+		Audio().
+		Decode().
+		Branches(
+			goav.Branch("bad").
+				Resize(640, 360).
+				To(goavtest.NewCollector().Sink()),
+		).
+		Describe()
+	planned := requireBuildError(t, err, errcode.OperationShapeMismatch, "build branch composition", "bad",
+		"use .Video().Resize(...)",
+	)
+
+	task, err := goav.From(audioFrameInput()).
+		UseRuntime(goav.MustNew()).
+		Audio().
+		Tap(goav.FrameTap("audio.frames")).
+		To(goavtest.NewCollector().Sink()).
+		Build(context.Background())
+	if err != nil {
+		t.Fatalf("base task build: %v", err)
+	}
+	defer task.Close()
+
+	_, err = task.Attach(context.Background(),
+		goav.Branch("bad").
+			From(goav.FrameTap("audio.frames")).
+			Resize(640, 360).
+			To(goavtest.NewCollector().Sink()),
+	)
+	attached := requireBuildError(t, err, errcode.OperationShapeMismatch, "attach runtime branch", "bad",
+		"use .Video().Resize(...)",
+	)
+	for _, buildErr := range []*goav.BuildError{planned, attached} {
+		if !detailsContain(buildErr.Details, "expected_shape=domain=frame media=video") ||
+			!detailsContain(buildErr.Details, "actual_shape=domain=frame media=audio") {
+			t.Fatalf("%s details = %v, want expected/actual audio-video frame shapes", buildErr.Operation, buildErr.Details)
+		}
+	}
 }
 
 // TestErrorAcceptanceCopyAfterDecode is snippet 1: .Decode().Copy() asks for

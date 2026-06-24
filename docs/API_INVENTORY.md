@@ -13,7 +13,7 @@ Source: `testdata/api_surface.txt`.
 | --- | ---: | ---: |
 | `goav` | 134 | 116 |
 | `control` | 0 | 19 |
-| `errcode` | 147 | 146 |
+| `errcode` | 147 | 145 |
 | `graphrender` | 9 | 9 |
 | `inspect` | 0 | 3 |
 | `lifecycle` | 13 | 13 |

@@ -22,6 +22,7 @@ import (
 	"github.com/thesyncim/goav/expert"
 	"github.com/thesyncim/goav/filter"
 	"github.com/thesyncim/goav/format"
+	"github.com/thesyncim/goav/goavtest"
 	"github.com/thesyncim/goav/graphrender"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/plan"
@@ -5450,18 +5451,24 @@ func TestBranchRecipeRejectsNegativeStreamIndex(t *testing.T) {
 }
 
 func TestBranchRecipeRejectsWrongMediaTransform(t *testing.T) {
-	_, err := branchJob(goav.FileInput("input.webm", strings.NewReader(""))).
-		Video("bad").Resample(16_000, codec.Mono).Encode(codec.VP9(codec.Bitrate(600_000))).
-		To(goav.File("bad.webm", io.Discard)).
+	_, err := goav.From(goavtest.Packets(av.CodecOpus, av.Packet{Payload: av.Buffer{Bytes: []byte{1}}})).
+		UseRuntime(goavtest.Runtime()).
+		Audio().
+		Decode().
+		Branches(
+			goav.Branch("bad").
+				Resize(640, 360).
+				To(goavtest.NewCollector().Sink()),
+		).
 		Build(context.Background())
 
 	var buildErr *goav.BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "transform_media_mismatch" || !errors.Is(err, goav.ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want transform_media_mismatch wrapping ErrUnsupportedBuild", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "operation_shape_mismatch" || !errors.Is(err, goav.ErrUnsupportedBuild) {
+		t.Fatalf("err = %v, want operation_shape_mismatch wrapping ErrUnsupportedBuild", err)
 	}
-	if !strings.Contains(err.Error(), "resample applies to audio branches") ||
-		!strings.Contains(err.Error(), ".Video(...).Resize(...)") {
-		t.Fatalf("err = %v, want media transform guidance", err)
+	if !strings.Contains(err.Error(), "resize cannot consume the current media shape") ||
+		!strings.Contains(err.Error(), ".Video().Resize(...)") {
+		t.Fatalf("err = %v, want operation-shape transform guidance", err)
 	}
 }
 

@@ -248,10 +248,10 @@ var errorCatalogExamples = []errorCatalogExample{
 	},
 	{
 		Code:          "transform_media_mismatch",
-		Test:          "TestBranchRecipeRejectsWrongMediaTransform",
-		BadRecipe:     `.Video("bad").Resample(...).Encode(...).To(...)`,
+		Test:          "TestTransformHelperErrorContracts",
+		BadRecipe:     `Resize(...) on an audio stream or Resample(...) on a video stream`,
 		RenderedError: "wrong-media transform guidance is asserted by the test",
-		Fix:           "use .Video(...).Resize(...) for video branches or audio chains for resample",
+		Fix:           "use .Video().Resize(...) for video or .Audio().Resample(...) for audio",
 		Cause:         "goav.ErrUnsupportedBuild",
 	},
 	{
@@ -268,6 +268,14 @@ var errorCatalogExamples = []errorCatalogExample{
 		BadRecipe:     `.Audio().Decode().Copy().To(goav.File(...))`,
 		RenderedError: "full BuildError fields plus rendered suggestions are asserted by the test",
 		Fix:           "move .Copy() before decode, or use .Encode(codec...) instead of .Copy()",
+		Cause:         "goav.ErrUnsupportedBuild",
+	},
+	{
+		Code:          "operation_shape_mismatch",
+		Test:          "TestBuildAndAttachReturnSameErrorForSameInvalidBranch",
+		BadRecipe:     `Resize(...) on an audio branch at build time or runtime attach`,
+		RenderedError: "shared branch wrong-media shape code and shape details are asserted by the test",
+		Fix:           "use a video frame point before .Resize(...) or choose an audio transform",
 		Cause:         "goav.ErrUnsupportedBuild",
 	},
 	{
@@ -1023,14 +1031,6 @@ var errorCatalogAdditionalExamples = []errorCatalogExample{
 		BadRecipe:     "attach a runtime branch whose transform stage cannot open",
 		RenderedError: "runtime transform-open failure is asserted by the test",
 		Fix:           "register a compatible transform adapter before attaching",
-		Cause:         "goav.ErrUnsupportedBuild",
-	},
-	{
-		Code:          "runtime_branch_transform_media_mismatch",
-		Test:          "TestRuntimeBranchStructuredErrorContracts",
-		BadRecipe:     "attach a runtime transform for the wrong tap media kind",
-		RenderedError: "runtime transform media mismatch is asserted by the test",
-		Fix:           "use transforms that match the tap's media kind",
 		Cause:         "goav.ErrUnsupportedBuild",
 	},
 	{

@@ -110,6 +110,8 @@ Move or keep outside the front door:
    - Lower stream chains, branches, joins, and runtime attach through the same
      operation model.
    - Keep build and attach errors aligned for the same invalid operation chain.
+   - First parity guard landed with
+     `TestBuildAndAttachReturnSameErrorForSameInvalidBranch`.
 
 10. **Docs rewrite**
     - Keep the README focused on the small grammar and one or two advanced entry

@@ -37,9 +37,9 @@ matching destinations independently (`TestDestinationGroupSurvivesWithAndCopy`,
 ## v0 Stable
 
 Stable here means "you should not wake up to a silent contract change", not
-"the project has stopped learning". The governed surface is 338 approved
+"the project has stopped learning". The governed surface is 337 approved
 identifiers (`api_surface_pin_test.go` + `testdata/api_surface.txt`: 116 root,
-19 `control`, 3 `inspect`, 146 `errcode`, 28 `plan`, 13 `lifecycle`,
+19 `control`, 3 `inspect`, 145 `errcode`, 28 `plan`, 13 `lifecycle`,
 4 `snapshot`, 9 `graphrender`),
 every exported symbol documented (`doc_pin_test.go`), tiered in
 `docs/API_SURFACE.md`:

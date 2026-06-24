@@ -1575,7 +1575,7 @@ func runtimeBranchTransform(branchName string, stream av.Stream, spec TransformS
 		}
 	case spec.Resize != nil:
 		if stream.Type != av.MediaVideo && stream.Codec.Type != av.MediaVideo {
-			return mediaTransform{}, runtimeBranchTransformMediaError(base, "resize", "video")
+			return mediaTransform{}, runtimeBranchTransformMediaError(base, "resize", av.MediaVideo, runtimeBranchStreamMedia(stream))
 		}
 		resize := *spec.Resize
 		return mediaTransform{
@@ -1585,7 +1585,7 @@ func runtimeBranchTransform(branchName string, stream av.Stream, spec TransformS
 		}, nil
 	case spec.Resample != nil:
 		if stream.Type != av.MediaAudio && stream.Codec.Type != av.MediaAudio {
-			return mediaTransform{}, runtimeBranchTransformMediaError(base, "resample", "audio")
+			return mediaTransform{}, runtimeBranchTransformMediaError(base, "resample", av.MediaAudio, runtimeBranchStreamMedia(stream))
 		}
 		resample := *spec.Resample
 		return mediaTransform{
@@ -1606,6 +1606,13 @@ func runtimeBranchTransform(branchName string, stream av.Stream, spec TransformS
 			Cause: ErrUnsupportedBuild,
 		}
 	}
+}
+
+func runtimeBranchStreamMedia(stream av.Stream) av.MediaType {
+	if stream.Type != "" {
+		return stream.Type
+	}
+	return stream.Codec.Type
 }
 
 func runtimeBranchAnchorShape(anchor snapshot.Tap) shape.Spec {
@@ -1869,12 +1876,16 @@ func runtimeBranchTapDuplicateError(name string) error {
 	}
 }
 
-func runtimeBranchTransformMediaError(branch string, transform string, media string) error {
+func runtimeBranchTransformMediaError(branch string, transform string, expected av.MediaType, actual av.MediaType) error {
 	return &BuildError{
-		Code:      errcode.RuntimeBranchTransformMediaMismatch,
+		Code:      errcode.TransformMediaMismatch,
 		Operation: "attach runtime branch",
 		Node:      branch,
-		Reason:    transform + " applies to " + media + " frame taps",
+		Reason:    transform + " applies to " + string(expected) + " frame taps",
+		Details: []string{
+			"expected_shape=" + shape.Frame(expected).String(),
+			"actual_shape=" + shape.Frame(actual).String(),
+		},
 		Suggestions: []string{
 			"use .Video().Decode().Tap(goav.FrameTap(name)) or a video transform tap before attaching .Resize(...)",
 			"use .Audio().Decode().Tap(goav.FrameTap(name)) or an audio transform tap before attaching .Resample(...)",

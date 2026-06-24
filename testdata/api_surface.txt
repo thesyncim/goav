@@ -134,7 +134,6 @@ errcode.RuntimeBranchNodeDuplicate
 errcode.RuntimeBranchTapDuplicate
 errcode.RuntimeBranchTapMissing
 errcode.RuntimeBranchTransformError
-errcode.RuntimeBranchTransformMediaMismatch
 errcode.RuntimeMissing
 errcode.SelectArm
 errcode.SelectDestination
