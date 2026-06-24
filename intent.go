@@ -21,6 +21,7 @@ type intent struct {
 	Streams      []streamIntent
 	Destinations []destinationIntent
 	Policies     policyIntent
+	Copy         bool
 }
 
 type inputIntent struct {
@@ -60,6 +61,7 @@ type streamIntent struct {
 type operationSpec struct {
 	Kind      plan.OperationKind
 	Component string
+	Detail    string
 	Stage     pipeline.Stage
 	Shape     shape.Spec
 	Transform TransformSpec
@@ -124,7 +126,7 @@ func operationSpecForDecode(codec codec.CodecSpec, component string) operationSp
 }
 
 func operationSpecForCopy(codec codec.CodecSpec) operationSpec {
-	return operationSpec{Kind: plan.OpCopy, Component: "packet-copy", Encode: cloneCodecSpec(codec)}
+	return operationSpec{Kind: plan.OpCopy, Component: "packet-copy", Detail: "explicit packet copy", Encode: cloneCodecSpec(codec)}
 }
 
 func operationSpecForEncode(codec codec.CodecSpec) operationSpec {

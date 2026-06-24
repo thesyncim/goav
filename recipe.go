@@ -85,6 +85,7 @@ type Job struct {
 	name               string
 	runtime            Runtime
 	runtimeSet         bool
+	copy               bool
 	inputs             []InputSpec
 	outputs            []destinationSpec
 	outputNames        []string
@@ -128,6 +129,9 @@ func From(inputs ...InputSpec) *Job {
 // as From(input).Copy().To(out): packets flow to the destinations without
 // decode. On a selected stream, use the stream chain's Copy instead.
 func (j *Job) Copy() *Job {
+	if j != nil {
+		j.copy = true
+	}
 	return j
 }
 
@@ -308,7 +312,7 @@ func (j *Job) checkSharedStreamDestination(current *jobStreamBuild, output desti
 }
 
 func (j *Job) plan() intent {
-	intent := intent{Name: j.name}
+	intent := intent{Name: j.name, Copy: j.copy}
 	if runtime, ok := j.runtime.(*runtime); ok {
 		intent.Policies.Realtime = runtime.realtime
 	}

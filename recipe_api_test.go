@@ -3598,6 +3598,65 @@ func TestWithLayersOptionsOntoConstructedValues(t *testing.T) {
 	}
 }
 
+func TestJobCopyRecordsExplicitIntent(t *testing.T) {
+	input := goav.Source("packets",
+		shape.Packet(av.MediaAudio, av.CodecOpus, shape.Audio(48_000, codec.Stereo, "")),
+		func(context.Context, goav.SourcePush) error { return nil },
+	)
+	output := goav.Sink(goav.SinkFunc("out-packets", func(context.Context, goav.Message) error { return nil }))
+
+	explicit := goav.JobPlanForTest(goav.From(input).Copy().To(output))
+	if !explicit.Copy {
+		t.Fatalf("explicit copy intent = %+v, want Copy marker", explicit)
+	}
+	implicit := goav.JobPlanForTest(goav.From(input).To(output))
+	if implicit.Copy {
+		t.Fatalf("implicit copy intent = %+v, Copy marker should only follow Job.Copy", implicit)
+	}
+}
+
+func TestJobCopyAppearsInExplain(t *testing.T) {
+	input := goav.Source("packets",
+		shape.Packet(av.MediaAudio, av.CodecOpus, shape.Audio(48_000, codec.Stereo, "")),
+		func(context.Context, goav.SourcePush) error { return nil },
+	)
+	output := goav.Sink(goav.SinkFunc("out-packets", func(context.Context, goav.Message) error { return nil }))
+
+	explicit, err := goav.From(input).Copy().To(output).Explain(context.Background())
+	if err != nil {
+		t.Fatalf("explicit Explain(): %v", err)
+	}
+	if !reportHasOperationDetail(explicit, "explicit packet copy") {
+		t.Fatalf("explicit copy report should expose explicit packet copy detail: %+v", explicit.Branches)
+	}
+
+	implicit, err := goav.From(input).To(output).Explain(context.Background())
+	if err != nil {
+		t.Fatalf("implicit Explain(): %v", err)
+	}
+	if reportHasOperationDetail(implicit, "explicit packet copy") {
+		t.Fatalf("implicit copy report should not look like Job.Copy was called: %+v", implicit.Branches)
+	}
+}
+
+func reportHasOperationDetail(report plan.Report, detail string) bool {
+	for i := range report.Streams {
+		for j := range report.Streams[i].Operations {
+			if report.Streams[i].Operations[j].Detail == detail {
+				return true
+			}
+		}
+	}
+	for i := range report.Branches {
+		for j := range report.Branches[i].Operations {
+			if report.Branches[i].Operations[j].Detail == detail {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func TestRecordRecipeRejectsEmptyInputSpec(t *testing.T) {
 	_, err := recordJob(
 		goav.InputSpec{},

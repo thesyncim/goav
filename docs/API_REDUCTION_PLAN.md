@@ -120,7 +120,7 @@ Add focused coverage as the slices land:
 - `TestRootImportDoesNotPullStdAdapters`
 - `TestBuildWithoutRuntimeReturnsStructuredError`
 - `TestUseRuntimeNilReturnsStructuredError`
-- `TestJobCopyAppearsInDescribe`
+- `TestJobCopyAppearsInExplain`
 - `TestNilPacketFuncDoesNotBecomeSilentNilStage`
 - `TestNilSinkFuncDoesNotBecomeSilentNilSink`
 - `TestStdFormatsDocsMatchRegisteredFormats`
