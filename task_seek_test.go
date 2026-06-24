@@ -3,6 +3,7 @@ package goav
 import (
 	"context"
 	"errors"
+	"github.com/thesyncim/goav/control"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -15,8 +16,8 @@ import (
 
 // seekTickSource is a pipeline.ControllableSource for goav-level seek tests:
 // its Start loop emits frames whose PTS counts nanosecond ticks from zero, and
-// Control(av.EventSeek) records the target in one atomic the loop reads — so a
-// task.Control(ctx, Seek(...)) repositions it mid-run, with av.EventDiscontinuity
+// control.Control(av.EventSeek) records the target in one atomic the loop reads — so a
+// task.Control(ctx, control.Seek(...)) repositions it mid-run, with av.EventDiscontinuity
 // emitted before the first repositioned frame per the interface contract.
 type seekTickSource struct {
 	name   string
@@ -183,7 +184,7 @@ func TestTaskSeekRepositionsSourceMidRun(t *testing.T) {
 	// Untargeted Seek broadcasts to ALL sources: the controllable one repositions,
 	// the plain one is reported clearly — errors are collected per source.
 	const position = time.Hour // tick 3.6e12: far beyond what the loop reaches naturally
-	err = task.Control(ctx, Seek(position))
+	err = task.Control(ctx, control.Seek(position))
 	if err == nil {
 		t.Fatal("Seek err = nil, want a clear error for the uncontrollable source")
 	}
@@ -232,7 +233,7 @@ func TestTaskSeekTargetsOneSourceAndDirectGraphs(t *testing.T) {
 	ctx := context.Background()
 
 	// A direct (unbuffered) graph delivers seeks too: sources are controlled by a
-	// synchronous method call, not a queue, so ControlSeek does not depend on
+	// synchronous method call, not a queue, so control.SeekType does not depend on
 	// per-node workers. Delivered before Run, the seek pre-positions the source.
 	graph, err := pipeline.NewGraph(pipeline.GraphConfig{Name: "seek-direct"})
 	if err != nil {
@@ -254,7 +255,7 @@ func TestTaskSeekTargetsOneSourceAndDirectGraphs(t *testing.T) {
 	t.Cleanup(func() { _ = task.Close() })
 
 	// Expert targeting: At names the source node directly.
-	if err := task.Control(ctx, Seek(100*time.Nanosecond).At("ticker")); err != nil {
+	if err := task.Control(ctx, control.Seek(100*time.Nanosecond).At("ticker")); err != nil {
 		t.Fatalf("Seek on direct graph: %v", err)
 	}
 	if err := task.Run(ctx); err != nil {

@@ -313,7 +313,7 @@ func (s *tapArmStage) Handle(ctx context.Context, msg *pipeline.Message, emitter
 			return nil
 		}
 		if msg.Event.Reason == selectorActiveReason {
-			// Control-plane events ride the data path UNCHANGED: a SelectActive
+			// Control-plane events ride the data path unchanged: a SelectActive
 			// heading for a downstream selector carries its target arm in
 			// Event.StreamID — re-stamping it would erase the target.
 			return emitter.Emit(ctx, msg)

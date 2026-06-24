@@ -50,7 +50,7 @@ Explainer: Explain
 Inspectable: Describe, Taps, Snapshot -> snapshot.*, Stats
 Mutable: Attach/Detach(DrainBranch|AbortBranch); Attachment.Rebranch
          (SwitchAt(NextFrame|NextKeyframe|AtMediaTime), Drain/AbortOldBranch, KeepOldOnFailure)
-Controllable: Control(Keyframe|Seek|Segment|Rate|SetBitrate|SelectActive|Deliver, .AtTap)
+Controllable: Control(control.Keyframe|Seek|Segment|Rate|SetBitrate|SelectActive|Deliver, .AtTap)
 Observable: Events, Watch(EventFilter)
 goav.New(opts...) -> (*Runtime, error); goav.MustNew(opts...) -> bare Runtime; std.MustNew(opts...) -> standard Runtime; job.UseRuntime(rt)
 errors: *goav.BuildError{Code: errcode.X, ...} matched with errors.As/Is
@@ -63,6 +63,8 @@ conversions, primary refusals, and runtime attach behavior.
 
 Applications also read these vocabulary packages:
 
+- `control`: live task control vocabulary (`Control`, `Keyframe`, `Rate`,
+  `Seek`, `Segment`, `SetBitrate`, `SelectActive`, `Deliver`).
 - `errcode`: the error-code catalog (one `Code` per refusal class).
 - `plan`: everything `Explain` reports back.
 - `snapshot`: point-in-time task/branch/destination/tap views.
@@ -338,7 +340,9 @@ example modules. The module boundary is the dependency boundary:
 ## Compatibility
 
 Pre-v1, breaking renames land without aliases. The surface-hygiene wave moved
-three clusters off the root: the error catalog is `errcode` (renamed from
+four clusters off the root: the live control vocabulary is `control`
+(`Control`, `Keyframe`, `Rate`, `Seek`, `Segment`, `SetBitrate`,
+`SelectActive`, `Deliver`), the error catalog is `errcode` (renamed from
 `codes`), the source/destination extension contracts are `provider`
 (`Source`, `Destination`, `Writer`, `TransactionalWriter`, `Contract`,
 `Info`, `OpenFunc`), and the expert graph layer is `expert` (`Graph`,

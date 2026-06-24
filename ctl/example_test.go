@@ -3,6 +3,7 @@ package ctl_test
 import (
 	"context"
 	"fmt"
+	"github.com/thesyncim/goav/control"
 	"os"
 	"path/filepath"
 	"strings"
@@ -65,7 +66,7 @@ func Example_bootstrapControlPlaneHost() {
 		"vendor.rate",
 		"vendor playback-rate control",
 		func(ctx context.Context, task goav.LiveTask, cmd SetRate) (ctl.ControlResponse, error) {
-			if err := task.Control(ctx, goav.Rate(cmd.Value).At(pipeline.NodeRef(cmd.Source))); err != nil {
+			if err := task.Control(ctx, control.Rate(cmd.Value).At(pipeline.NodeRef(cmd.Source))); err != nil {
 				return ctl.ControlResponse{}, err
 			}
 			return ctl.ControlResponse{

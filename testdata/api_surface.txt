@@ -5,6 +5,25 @@
 # the list approves a symbol that no longer exists. Exporting a symbol is a
 # deliberate act: add it here in sorted position and say why in the commit.
 # See docs/API_SURFACE.md for the tiering (grammar / seam / expert).
+control.BitrateType
+control.Control
+control.Deliver
+control.ErrNil
+control.ErrNotRunning
+control.ErrUnsupported
+control.EventType
+control.Keyframe
+control.KeyframeType
+control.Rate
+control.RateType
+control.Seek
+control.SeekType
+control.Segment
+control.SegmentType
+control.SelectActive
+control.SelectType
+control.SetBitrate
+control.Type
 errcode.BranchBufferInvalid
 errcode.BranchBufferUnsupported
 errcode.BranchComposePlanEmpty
@@ -163,18 +182,8 @@ goav.Codec
 goav.CodecChangePolicy
 goav.Composite
 goav.Config
-goav.Control
-goav.ControlBitrate
-goav.ControlEvent
-goav.ControlKeyframe
-goav.ControlRate
-goav.ControlSeek
-goav.ControlSegment
-goav.ControlSelect
-goav.ControlType
 goav.Controllable
 goav.Custom
-goav.Deliver
 goav.Destination
 goav.DestinationOption
 goav.DetachOption
@@ -183,9 +192,6 @@ goav.DrainOldBranch
 goav.Emit
 goav.ErrBackpressure
 goav.ErrClosed
-goav.ErrControlNotRunning
-goav.ErrControlUnsupported
-goav.ErrNilControl
 goav.ErrNilSink
 goav.ErrNilSource
 goav.ErrNilStage
@@ -213,7 +219,6 @@ goav.Job
 goav.Join
 goav.JoinArm
 goav.KeepOldOnFailure
-goav.Keyframe
 goav.LiveTask
 goav.MIME
 goav.MatchCodec
@@ -237,17 +242,12 @@ goav.Packet
 goav.PacketFunc
 goav.PacketTap
 goav.PushResult
-goav.Rate
 goav.RealtimeCodecChangePolicy
 goav.RebranchOption
 goav.Resample
 goav.Resize
 goav.Runtime
-goav.Seek
-goav.Segment
 goav.Select
-goav.SelectActive
-goav.SetBitrate
 goav.Sink
 goav.SinkFunc
 goav.Source

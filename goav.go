@@ -7,7 +7,7 @@
 // Writer, Object, or Sink. Branches fan one stream point out, Mix, Composite,
 // and Select converge N arms into one, Tap names attach points, Flow reuses
 // operation lists, and Build(ctx) returns a Task — a running graph with
-// events, snapshots, runtime Attach/Detach, and live Control.
+// events, snapshots, runtime Attach/Detach, and live controls.
 //
 // New(opts...) builds a bare runtime and returns option/configuration errors;
 // MustNew(opts...) is the package-level setup shortcut. Import
@@ -20,6 +20,7 @@ import (
 	"context"
 
 	"github.com/thesyncim/goav/av"
+	"github.com/thesyncim/goav/control"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/plan"
 	"github.com/thesyncim/goav/snapshot"
@@ -93,7 +94,7 @@ type Controllable interface {
 	// Control injects an out-of-band control into the running graph, delivered to a
 	// target node on its serial worker — the control-plane entry point for live
 	// switching (a selector), keyframe requests, and flushes.
-	Control(context.Context, Control) error
+	Control(context.Context, control.Control) error
 }
 
 // Observable exposes task event streams.

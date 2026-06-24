@@ -277,7 +277,7 @@ command := ctl.NewCommand[setRate](
     "vendor.rate",
     "demo playback-rate control",
     func(ctx context.Context, task goav.LiveTask, cmd setRate) (ctl.ControlResponse, error) {
-        if err := task.Control(ctx, goav.Rate(cmd.Value).At(pipeline.NodeRef(cmd.Source))); err != nil {
+        if err := task.Control(ctx, control.Rate(cmd.Value).At(pipeline.NodeRef(cmd.Source))); err != nil {
             return ctl.ControlResponse{}, err
         }
         return ctl.ControlResponse{Operation: "control vendor.rate"}, nil

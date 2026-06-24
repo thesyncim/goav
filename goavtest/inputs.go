@@ -40,7 +40,7 @@ func Audio(sampleRate, channels int, frames ...[]int16) goav.InputSpec {
 // frames in a loop with continuously advancing PTS until the task stops — the
 // input control-plane tests need (SelectActive, Rebranch, live Control),
 // where the stream must outlive the assertion. The caller names it because
-// the name is the stream id controls target (goav.SelectActive(name)). With
+// the name is the stream id controls target (control.SelectActive(name)). With
 // no frames it loops a single one-sample silent frame. The source retries on
 // backpressure and returns cleanly when the task stops.
 func LiveAudio(name string, sampleRate, channels int, frames ...[]int16) goav.InputSpec {

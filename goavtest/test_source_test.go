@@ -3,6 +3,7 @@ package goavtest
 import (
 	"context"
 	"errors"
+	"github.com/thesyncim/goav/control"
 	"testing"
 	"time"
 
@@ -492,7 +493,7 @@ func TestTestSourceRecordsSourceControlsThroughRealTask(t *testing.T) {
 	}
 	defer task.Close()
 
-	if err := task.Control(ctx, goav.Rate(0.5).At("fixture")); err != nil {
+	if err := task.Control(ctx, control.Rate(0.5).At("fixture")); err != nil {
 		t.Fatal(err)
 	}
 	event, err := source.WaitControl(ctx, av.EventRate)
@@ -503,7 +504,7 @@ func TestTestSourceRecordsSourceControlsThroughRealTask(t *testing.T) {
 		t.Fatalf("rate control = %+v, parsed=%v ok=%v", event, rate, ok)
 	}
 
-	if err := task.Control(ctx, goav.Seek(12*time.Second).At("fixture")); err != nil {
+	if err := task.Control(ctx, control.Seek(12*time.Second).At("fixture")); err != nil {
 		t.Fatal(err)
 	}
 	event, err = source.WaitControl(ctx, av.EventSeek)

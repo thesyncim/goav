@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/thesyncim/goav/control"
 	"log"
 	"sort"
 	"strings"
@@ -263,7 +264,7 @@ func (s *session) requestOutputVideoKeyframe(ctx context.Context, branchID, feed
 	meta["rtcp"] = feedback
 	s.mu.Unlock()
 
-	control := goav.Keyframe(av.StreamID("")).AtTap(videoTapName)
+	control := control.Keyframe(av.StreamID("")).AtTap(videoTapName)
 	if err := task.Control(ctx, control); err != nil {
 		meta["cause"] = err.Error()
 		s.record("error", "feedback", "browser output keyframe failed", "video", branchID, meta)
@@ -460,7 +461,7 @@ func (s *session) requestKeyframe(ctx context.Context, kind string) error {
 	if task == nil {
 		return fmt.Errorf("%s task is not running", kind)
 	}
-	if err := task.Control(ctx, goav.Keyframe(av.StreamID(""))); err != nil {
+	if err := task.Control(ctx, control.Keyframe(av.StreamID(""))); err != nil {
 		return err
 	}
 	s.record("info", "control", "keyframe requested", kind, "", nil)

@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"github.com/thesyncim/goav/control"
 	"io"
 	"time"
 
@@ -285,7 +286,7 @@ func ExampleSelect() {
 	go func() { _ = task.Run(ctx) }()
 
 	// The first arm is live by default; switch to the second mid-run.
-	if err := task.Control(ctx, goav.SelectActive("cam-2")); err != nil {
+	if err := task.Control(ctx, control.SelectActive("cam-2")); err != nil {
 		fmt.Println(err)
 	}
 }
@@ -393,10 +394,10 @@ func ExampleTask_control() {
 
 	go func() { _ = task.Run(ctx) }()
 
-	for _, control := range []goav.Control{
-		goav.Keyframe("video"),            // every live encoder for the stream produces a keyframe
-		goav.SetBitrate("video", 900_000), // live encoders retarget mid-stream
-		goav.Seek(30 * time.Second),       // sources reposition to a media position
+	for _, control := range []control.Control{
+		control.Keyframe("video"),            // every live encoder for the stream produces a keyframe
+		control.SetBitrate("video", 900_000), // live encoders retarget mid-stream
+		control.Seek(30 * time.Second),       // sources reposition to a media position
 	} {
 		if err := task.Control(ctx, control); err != nil {
 			fmt.Println(err)

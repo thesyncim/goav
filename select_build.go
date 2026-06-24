@@ -74,15 +74,6 @@ func (s *selectorStream) To(destinations ...Destination) *Job {
 	return newJoinJob(joinSelect, joinSpec{arms: s.arms, dests: destinations, taps: s.taps})
 }
 
-// SelectActive switches a running Select to forward the arm identified by id —
-// task.Control(ctx, goav.SelectActive("cam2")) flips the live output without
-// restarting the task and without naming any graph node: the switch enters at
-// the source boundary and rides the data path to the selector, which consumes
-// it. For a graph with several selectors, narrow with .At(node) (expert).
-func SelectActive(id av.StreamID) Control {
-	return Control{Type: ControlSelect, StreamID: id}
-}
-
 // selectJoinProfile is Select's entry in the join table: media-agnostic
 // passthrough arms (the zero media selector picks each arm's single stream, so a
 // frame or packet arm switches as-is), no decode, selectorStage convergence,

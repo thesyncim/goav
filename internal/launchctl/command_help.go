@@ -115,7 +115,7 @@ func controlHelp(manifest []CommandSpec) string {
 	out.WriteString("control\n\n")
 	out.WriteString("Usage:\n")
 	out.WriteString("  goav ctl --control unix://PATH control <verb> [field=value...]\n")
-	out.WriteString("  goav ctl --control unix://PATH control --json '<json-goav-control>'\n")
+	out.WriteString("  goav ctl --control unix://PATH control --json '<json-control>'\n")
 	out.WriteString("  goav ctl --control unix://PATH control deliver --json '<json-av-event>' at=<tap-name>\n\n")
 	out.WriteString("Verbs:\n")
 	for _, spec := range manifest {

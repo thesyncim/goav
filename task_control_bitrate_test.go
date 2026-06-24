@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"github.com/thesyncim/goav/control"
 	"strings"
 	"sync"
 	"testing"
@@ -57,7 +58,7 @@ func TestTaskControlSetBitrateBroadcastsBitrateEvent(t *testing.T) {
 
 	// No At / AtTap: the retarget enters at the graph's entry row (the node fed
 	// by the source) and rides the data path downstream, like Keyframe.
-	if err := controlUntilAccepted(ctx, task, SetBitrate("a", 250_000)); err != nil {
+	if err := controlUntilAccepted(ctx, task, control.SetBitrate("a", 250_000)); err != nil {
 		t.Fatalf("untargeted SetBitrate: %v", err)
 	}
 	event, err := capture.waitForEvent(ctx, av.EventBitrateChanged)
@@ -79,7 +80,7 @@ func TestTaskControlSetBitrateBroadcastsBitrateEvent(t *testing.T) {
 }
 
 // TestTaskControlSetBitrateRejectsNonPositiveRate is the "fails clearly" half
-// of north-star #33: a non-positive rate is rejected at the Control seam with
+// of north-star #33: a non-positive rate is rejected at the control.Control seam with
 // an explanatory error before anything is injected into the graph.
 func TestTaskControlSetBitrateRejectsNonPositiveRate(t *testing.T) {
 	graph, err := pipeline.NewGraph(pipeline.GraphConfig{
@@ -104,9 +105,9 @@ func TestTaskControlSetBitrateRejectsNonPositiveRate(t *testing.T) {
 	t.Cleanup(func() { _ = task.Close() })
 
 	for _, rate := range []int{0, -1} {
-		err := task.Control(context.Background(), SetBitrate("a", rate))
+		err := task.Control(context.Background(), control.SetBitrate("a", rate))
 		if err == nil || !strings.Contains(err.Error(), "positive") {
-			t.Fatalf("SetBitrate(%d) err = %v, want a positive-rate rejection", rate, err)
+			t.Fatalf("control.SetBitrate(%d) err = %v, want a positive-rate rejection", rate, err)
 		}
 	}
 }
@@ -132,7 +133,7 @@ func TestDefaultRealtimeEncodeRecipeSupportsLiveEncoderControls(t *testing.T) {
 	runErr := make(chan error, 1)
 	go func() { runErr <- task.Run(ctx) }()
 
-	if err := controlUntilAccepted(ctx, task, SetBitrate("cam", 250_000)); err != nil {
+	if err := controlUntilAccepted(ctx, task, control.SetBitrate("cam", 250_000)); err != nil {
 		t.Fatalf("default realtime encode SetBitrate: %v", err)
 	}
 	bitrateEvent, err := encoder.waitForEvent(ctx, av.EventBitrateChanged)
@@ -144,7 +145,7 @@ func TestDefaultRealtimeEncodeRecipeSupportsLiveEncoderControls(t *testing.T) {
 		t.Fatalf("encoder bitrate event = %d (ok=%v), want 250000", bitsPerSecond, ok)
 	}
 
-	if err := controlUntilAccepted(ctx, task, Keyframe("cam")); err != nil {
+	if err := controlUntilAccepted(ctx, task, control.Keyframe("cam")); err != nil {
 		t.Fatalf("default realtime encode Keyframe: %v", err)
 	}
 	if _, err := encoder.waitForEvent(ctx, av.EventKeyframeRequired); err != nil {
@@ -175,9 +176,9 @@ func TestOfflineEncodeRecipeKeepsDirectRunnerForEncoderControls(t *testing.T) {
 	task := built.(*task)
 	t.Cleanup(func() { _ = task.Close() })
 
-	err = task.Control(ctx, SetBitrate("cam", 250_000))
-	if !errors.Is(err, ErrControlUnsupported) {
-		t.Fatalf("offline encode SetBitrate err = %v, want ErrControlUnsupported from direct runner", err)
+	err = task.Control(ctx, control.SetBitrate("cam", 250_000))
+	if !errors.Is(err, control.ErrUnsupported) {
+		t.Fatalf("offline encode SetBitrate err = %v, want control.ErrUnsupported from direct runner", err)
 	}
 }
 

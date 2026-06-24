@@ -3,6 +3,7 @@ package goav
 import (
 	"context"
 	"errors"
+	"github.com/thesyncim/goav/control"
 	"strings"
 	"sync"
 	"testing"
@@ -155,8 +156,8 @@ func TestTaskControlSwitchesSelectorMidRun(t *testing.T) {
 	// Switch the live selector to "b" via the control plane; "b" (sample 200) must
 	// start arriving. Retry until accepted so the test does not race graph startup.
 	sink.resetSeen()
-	if err := controlUntilAccepted(ctx, task, SelectActive("b")); err != nil {
-		t.Fatalf("Control switch to b: %v", err)
+	if err := controlUntilAccepted(ctx, task, control.SelectActive("b")); err != nil {
+		t.Fatalf("control.Control switch to b: %v", err)
 	}
 	if err := sink.waitFor(ctx, 200); err != nil {
 		t.Fatalf("after switch, active 'b' frame never forwarded: %v", err)
@@ -167,8 +168,8 @@ func TestTaskControlSwitchesSelectorMidRun(t *testing.T) {
 
 	// Switch back to "a" to prove the control plane drives the switch both ways.
 	sink.resetSeen()
-	if err := task.Control(ctx, SelectActive("a")); err != nil {
-		t.Fatalf("Control switch to a: %v", err)
+	if err := task.Control(ctx, control.SelectActive("a")); err != nil {
+		t.Fatalf("control.Control switch to a: %v", err)
 	}
 	if err := sink.waitFor(ctx, 100); err != nil {
 		t.Fatalf("after switch back, active 'a' frame never forwarded: %v", err)
@@ -180,14 +181,14 @@ func TestTaskControlSwitchesSelectorMidRun(t *testing.T) {
 	}
 }
 
-// controlUntilAccepted retries Control until the graph is running and accepts it.
-func controlUntilAccepted(ctx context.Context, task *task, control Control) error {
+// controlUntilAccepted retries control.Control until the graph is running and accepts it.
+func controlUntilAccepted(ctx context.Context, task *task, ctrl control.Control) error {
 	for {
-		err := task.Control(ctx, control)
+		err := task.Control(ctx, ctrl)
 		if err == nil {
 			return nil
 		}
-		if !errors.Is(err, ErrControlNotRunning) {
+		if !errors.Is(err, control.ErrNotRunning) {
 			return err
 		}
 		select {
@@ -202,7 +203,7 @@ func TestTaskControlRejectsUnknownAndDirectGraph(t *testing.T) {
 	ctx := context.Background()
 
 	// Unknown target on a buffered graph: surfaced as pipeline.ErrUnknownNode once
-	// the graph is running, ErrControlNotRunning before that. Both are clean errors.
+	// the graph is running, control.ErrNotRunning before that. Both are clean errors.
 	bufGraph, err := pipeline.NewGraph(pipeline.GraphConfig{
 		Name:   "control-reject",
 		Buffer: pipeline.BufferPolicy{Capacity: 1, Drop: pipeline.DropOldest},
@@ -214,19 +215,19 @@ func TestTaskControlRejectsUnknownAndDirectGraph(t *testing.T) {
 	t.Cleanup(func() { _ = bufTask.Close() })
 
 	// Empty node target is rejected without touching the graph.
-	if err := bufTask.Control(ctx, Keyframe("video")); !errors.Is(err, pipeline.ErrUnknownNode) {
-		t.Fatalf("Control empty node err = %v, want ErrUnknownNode", err)
+	if err := bufTask.Control(ctx, control.Keyframe("video")); !errors.Is(err, pipeline.ErrUnknownNode) {
+		t.Fatalf("control.Control empty node err = %v, want ErrUnknownNode", err)
 	}
 
-	// A direct (non-buffered) graph has no per-node worker, so Control is unsupported.
+	// A direct (non-buffered) graph has no per-node worker, so control.Control is unsupported.
 	directGraph, err := pipeline.NewGraph(pipeline.GraphConfig{Name: "direct"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	directTask := newTask(directGraph, nil)
 	t.Cleanup(func() { _ = directTask.Close() })
-	if err := directTask.Control(ctx, Keyframe("video").At("encode")); !errors.Is(err, ErrControlUnsupported) {
-		t.Fatalf("Control on direct graph err = %v, want ErrControlUnsupported", err)
+	if err := directTask.Control(ctx, control.Keyframe("video").At("encode")); !errors.Is(err, control.ErrUnsupported) {
+		t.Fatalf("control.Control on direct graph err = %v, want control.ErrUnsupported", err)
 	}
 }
 
@@ -306,7 +307,7 @@ func TestTaskControlKeyframeBroadcastsWithoutTarget(t *testing.T) {
 
 	// No At / AtTap: the keyframe request enters at the graph's entry row (the
 	// node fed by the source) and rides the data path downstream.
-	if err := controlUntilAccepted(ctx, task, Keyframe("a")); err != nil {
+	if err := controlUntilAccepted(ctx, task, control.Keyframe("a")); err != nil {
 		t.Fatalf("untargeted Keyframe: %v", err)
 	}
 	event, err := capture.waitForEvent(ctx, av.EventKeyframeRequired)
@@ -333,7 +334,7 @@ func TestTaskControlUntargetedDeliverNeedsTarget(t *testing.T) {
 	}
 	task := newTask(graph, nil)
 	t.Cleanup(func() { _ = task.Close() })
-	err = task.Control(context.Background(), Deliver(av.Event{Type: av.EventStats}))
+	err = task.Control(context.Background(), control.Deliver(av.Event{Type: av.EventStats}))
 	if !errors.Is(err, pipeline.ErrUnknownNode) {
 		t.Fatalf("untargeted Deliver err = %v, want ErrUnknownNode", err)
 	}
@@ -399,9 +400,9 @@ func TestTaskControlAtTapTargetsByTapName(t *testing.T) {
 	go func() { runErr <- task.Run(ctx) }()
 
 	// Target the control by TAP NAME — grammar vocabulary, no graph node names.
-	deliver := Deliver(av.Event{Type: av.EventStats, Reason: "from-tap-control"}).AtTap("obs")
+	deliver := control.Deliver(av.Event{Type: av.EventStats, Reason: "from-tap-control"}).AtTap("obs")
 	if err := controlUntilAccepted(ctx, task, deliver); err != nil {
-		t.Fatalf("Control AtTap: %v", err)
+		t.Fatalf("control.Control AtTap: %v", err)
 	}
 	for {
 		mu.Lock()
@@ -425,7 +426,7 @@ func TestTaskControlAtTapTargetsByTapName(t *testing.T) {
 	}
 
 	// Unknown tap names fail with a clear, typed error.
-	err = task.Control(ctx, Deliver(av.Event{Type: av.EventStats}).AtTap("nope"))
+	err = task.Control(ctx, control.Deliver(av.Event{Type: av.EventStats}).AtTap("nope"))
 	if !errors.Is(err, pipeline.ErrUnknownNode) || !strings.Contains(err.Error(), `unknown tap "nope"`) {
 		t.Fatalf("AtTap(nope) err = %v, want unknown-tap ErrUnknownNode", err)
 	}

@@ -297,8 +297,8 @@ func WithEventCapacity(capacity int) Option {
 }
 
 // WithRealtime selects pacing: true (the default) delivers file media when
-// its media time is due on the runtime clock, so Rate works as a live pacing
-// multiplier; false pumps at full speed (offline transcode) and rejects Rate
+// its media time is due on the runtime clock, so control.Rate works as a live
+// pacing multiplier; false pumps at full speed (offline transcode) and rejects Rate
 // with format.ErrRateUnsupported.
 func WithRealtime(realtime bool) Option {
 	return func(config *Config) error {
@@ -309,7 +309,7 @@ func WithRealtime(realtime bool) Option {
 
 // WithClock sets the time source the runtime's realtime pacing runs on — a
 // realtime task playing a file delivers each packet when its media time is due
-// on this clock (and goav.Rate scales that pace). Nil or unset defaults to
+// on this clock (and control.Rate scales that pace). Nil or unset defaults to
 // av.MonotonicClock(); tests and simulations inject a fake so nothing sleeps
 // for real. Offline runtimes (WithRealtime(false)) never consult it.
 func WithClock(clock av.Clock) Option {

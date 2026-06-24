@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"github.com/thesyncim/goav/control"
 	"io"
 	"sync"
 	"testing"
@@ -202,7 +203,7 @@ func TestTaskSeekRepositionsRealMatroskaFile(t *testing.T) {
 	// at-or-before, so playback resumes at the 400ms keyframe with a
 	// discontinuity ahead of it. Delivered before Run, the control
 	// pre-positions the source — no wall-clock waiting in the test.
-	if err := task.Control(ctx, Seek(450*time.Millisecond)); err != nil {
+	if err := task.Control(ctx, control.Seek(450*time.Millisecond)); err != nil {
 		t.Fatalf("Seek err = %v", err)
 	}
 	if err := task.Run(ctx); err != nil {
@@ -242,7 +243,7 @@ func TestTaskSegmentExportsRealMatroskaWindow(t *testing.T) {
 
 	// Trim-to-file from a real container: play [300ms, 600ms) and end
 	// naturally, so the destination commits exactly as at the end of media.
-	if err := task.Control(ctx, Segment(300*time.Millisecond, 600*time.Millisecond)); err != nil {
+	if err := task.Control(ctx, control.Segment(300*time.Millisecond, 600*time.Millisecond)); err != nil {
 		t.Fatalf("Segment err = %v", err)
 	}
 	if err := task.Run(ctx); err != nil {
@@ -275,7 +276,7 @@ func TestTaskSeekNonSeekableFileReaderFailsClearly(t *testing.T) {
 	// The control is recorded (the demuxer supports seeking in general); the
 	// reposition itself fails when the pump applies it, stopping the task with
 	// the typed error instead of playing on from the wrong position.
-	if err := task.Control(ctx, Seek(450*time.Millisecond)); err != nil {
+	if err := task.Control(ctx, control.Seek(450*time.Millisecond)); err != nil {
 		t.Fatalf("Seek err = %v", err)
 	}
 	err := task.Run(ctx)
@@ -319,7 +320,7 @@ func TestTaskOfflineFileTaskPumpsUnpaced(t *testing.T) {
 
 	// With no pacing there is nothing for Rate to scale — the typed rejection
 	// says offline tasks run unpaced instead of lying about playback speed.
-	if err := task.Control(ctx, Rate(2.0)); !errors.Is(err, format.ErrRateUnsupported) {
+	if err := task.Control(ctx, control.Rate(2.0)); !errors.Is(err, format.ErrRateUnsupported) {
 		t.Fatalf("Rate err = %v, want format.ErrRateUnsupported", err)
 	}
 
@@ -341,7 +342,7 @@ func TestTaskRateOnFileScalesPacing(t *testing.T) {
 	// Rate on a file is a pacing multiplier now: at 2x the 100ms cadence
 	// plays in 50ms steps of clock time. Delivered before Run, the control
 	// pre-positions the source (direct-runner delivery).
-	if err := task.Control(ctx, Rate(2.0)); err != nil {
+	if err := task.Control(ctx, control.Rate(2.0)); err != nil {
 		t.Fatalf("Rate err = %v", err)
 	}
 	if err := task.Run(ctx); err != nil {
@@ -369,10 +370,10 @@ func TestTaskSeekAndRateComposeOnFile(t *testing.T) {
 	// Seek and Rate compose: playback resumes at the 400ms keyframe (anchor
 	// reset — the first packet after the discontinuity emits immediately) and
 	// the remaining 100ms cadence paces at 50ms of clock per step.
-	if err := task.Control(ctx, Seek(450*time.Millisecond)); err != nil {
+	if err := task.Control(ctx, control.Seek(450*time.Millisecond)); err != nil {
 		t.Fatalf("Seek err = %v", err)
 	}
-	if err := task.Control(ctx, Rate(2.0)); err != nil {
+	if err := task.Control(ctx, control.Rate(2.0)); err != nil {
 		t.Fatalf("Rate err = %v", err)
 	}
 	if err := task.Run(ctx); err != nil {

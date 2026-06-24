@@ -10,6 +10,7 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
+	"github.com/thesyncim/goav/control"
 	"reflect"
 	"strings"
 	"sync"
@@ -223,7 +224,7 @@ func TestMixSyncByPTSSeekArmMidRun(t *testing.T) {
 
 	// Untargeted Seek: the controllable arm repositions; the push-source arm
 	// is reported clearly by name — never silently skipped.
-	err = task.Control(ctx, Seek(time.Second))
+	err = task.Control(ctx, control.Seek(time.Second))
 	if err == nil {
 		t.Fatal("Seek err = nil, want a clear error for the non-seekable arm")
 	}
@@ -425,7 +426,7 @@ func TestSegmentAttachMidWindowCommitsAtEOS(t *testing.T) {
 	defer task.Close()
 
 	const start, end = 100 * time.Nanosecond, 104 * time.Nanosecond
-	if err := task.Control(ctx, Segment(start, end)); err != nil {
+	if err := task.Control(ctx, control.Segment(start, end)); err != nil {
 		t.Fatalf("Segment err = %v", err)
 	}
 	runErr := make(chan error, 1)
@@ -752,7 +753,7 @@ func TestSelectActiveSwitchToEndedArm(t *testing.T) {
 
 	// Switch to the ended arm mid-run. The control is accepted: ended arms
 	// stay configured, selecting one mutes the output by design.
-	if err := controlWhenRunningInternal(ctx, task, SelectActive("b")); err != nil {
+	if err := controlWhenRunningInternal(ctx, task, control.SelectActive("b")); err != nil {
 		t.Fatalf("SelectActive to the ended arm: %v", err)
 	}
 
@@ -769,10 +770,10 @@ func TestSelectActiveSwitchToEndedArm(t *testing.T) {
 
 // controlWhenRunningInternal retries a control until the running graph
 // accepts it (the internal twin of the dogfood helper).
-func controlWhenRunningInternal(ctx context.Context, task Controllable, control Control) error {
+func controlWhenRunningInternal(ctx context.Context, task Controllable, ctrl control.Control) error {
 	for {
-		err := task.Control(ctx, control)
-		if err == nil || !errors.Is(err, ErrControlNotRunning) {
+		err := task.Control(ctx, ctrl)
+		if err == nil || !errors.Is(err, control.ErrNotRunning) {
 			return err
 		}
 		select {

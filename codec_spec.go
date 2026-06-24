@@ -103,7 +103,7 @@ func metadataEqual(a, b av.Metadata) bool {
 }
 
 func cloneCodecSettings(settings codec.CodecSettings) codec.CodecSettings {
-	// Config (Tier 2) and Control (Tier 3) are reference values owned by the
+	// Config (Tier 2) and control.Control (Tier 3) are reference values owned by the
 	// caller; copy the reference, not the target.
 	return settings
 }

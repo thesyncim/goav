@@ -3,6 +3,7 @@ package goav
 import (
 	"context"
 	"errors"
+	"github.com/thesyncim/goav/control"
 	"io"
 	"reflect"
 	"strings"
@@ -106,7 +107,7 @@ func TestSelectOfMixesSwitchesLive(t *testing.T) {
 
 	// Switch live to the second sub-mix "mix-2" (10+20).
 	sink.resetSeen()
-	if err := controlUntilAccepted(ctx, tk.(*task), SelectActive("mix-2")); err != nil {
+	if err := controlUntilAccepted(ctx, tk.(*task), control.SelectActive("mix-2")); err != nil {
 		t.Fatalf("SelectActive to mix-2: %v", err)
 	}
 	if err := sink.waitFor(ctx, 30); err != nil {
@@ -115,7 +116,7 @@ func TestSelectOfMixesSwitchesLive(t *testing.T) {
 
 	// And back, proving the switch works both ways across nested joins.
 	sink.resetSeen()
-	if err := tk.Control(ctx, SelectActive("mix")); err != nil {
+	if err := tk.Control(ctx, control.SelectActive("mix")); err != nil {
 		t.Fatalf("SelectActive back to mix: %v", err)
 	}
 	if err := sink.waitFor(ctx, 150); err != nil {

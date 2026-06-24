@@ -160,7 +160,7 @@ rateCommand := ctl.NewCommand[SetRate](
     "vendor.rate",
     "vendor playback-rate control",
     func(ctx context.Context, task goav.LiveTask, cmd SetRate) (ctl.ControlResponse, error) {
-        ctrl := goav.Rate(cmd.Value).At(pipeline.NodeRef(cmd.Source))
+        ctrl := control.Rate(cmd.Value).At(pipeline.NodeRef(cmd.Source))
         if err := task.Control(ctx, ctrl); err != nil {
             return ctl.ControlResponse{}, err
         }
@@ -286,8 +286,8 @@ goav ctl --control unix:///tmp/goav-live.sock attach frames as archive \
 ```
 
 Raw JSON is for automation that already has the protocol object. `control
---json` decodes into the real `goav.Control` representation; `control deliver
---json` decodes into `av.Event` and then lowers to `goav.Deliver(event)`.
+--json` decodes into the real `control.Control` representation; `control deliver
+--json` decodes into `av.Event` and then lowers to `control.Deliver(event)`.
 Nested event metadata is rejected instead of being stringified silently, so a
 caller must choose the exact conversion before sending the request. Raw JSON
 uses the documented canonical field names and rejects unknown or duplicate
@@ -356,7 +356,7 @@ Supported built-ins include:
 - `control segment start=<duration> end=<duration> [source=<source>|node=<node>]`
 - `control select active=<arm-or-stream-id> [selector=<name>|at=<tap>]`
 - `control deliver ...` and `control deliver --json '<av.Event JSON>'`
-- `control --json '<goav.Control JSON>'`
+- `control --json '<control.Control JSON>'`
 - `inspect`, `snapshot`, `stats`, `taps`, `streams`, `branches`,
   `destinations`, `capabilities`
 - `graph [format=mermaid|dot|text]` and `flowchart [format=mermaid|dot|text]`
@@ -499,7 +499,7 @@ structured errors with available names and suggestions.
 - No arbitrary method names, unexported internals, or global registries are
   exposed.
 - Commands lower into existing task/control APIs.
-- Raw JSON fallback decodes into the real `goav.Control` or `av.Event` shapes
+- Raw JSON fallback decodes into the real `control.Control` or `av.Event` shapes
   instead of introducing a second control model.
 - Custom controls, custom branch steps, custom codec names, custom sinks, and
   custom encoder names are per-server allowlists.

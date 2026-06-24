@@ -11,6 +11,7 @@ package ctl
 
 import (
 	"context"
+	"github.com/thesyncim/goav/control"
 
 	goav "github.com/thesyncim/goav"
 	"github.com/thesyncim/goav/av"
@@ -151,8 +152,8 @@ func Invoke(ctx context.Context, task goav.LiveTask, spec CommandSpec, args []st
 	return launchctl.Invoke(ctx, task, spec, args)
 }
 
-// DecodeRawControl decodes raw JSON into the real goav.Control shape.
-func DecodeRawControl(data []byte) (goav.Control, error) {
+// DecodeRawControl decodes raw JSON into the real control.Control shape.
+func DecodeRawControl(data []byte) (control.Control, error) {
 	return launchctl.DecodeRawControl(data)
 }
 

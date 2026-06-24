@@ -129,7 +129,7 @@ func (s *videoCompositeStage) Handle(ctx context.Context, msg *pipeline.Message,
 			return emitter.Emit(ctx, &pipeline.Message{Kind: pipeline.MessageEvent, Event: &out})
 		}
 		if msg.Event.Reason == selectorActiveReason {
-			// Control-plane events ride the data path through joins UNCHANGED:
+			// Control-plane events ride the data path through joins unchanged:
 			// a SelectActive heading for a selector downstream of this join
 			// carries its target arm in Event.StreamID and is consumed by the
 			// selector — re-stamping it here would erase the target.
