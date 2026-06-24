@@ -2,12 +2,14 @@ package goav_test
 
 import (
 	"context"
+	"errors"
 	"os"
 	"testing"
 	"time"
 
 	"github.com/thesyncim/goav"
 	"github.com/thesyncim/goav/av"
+	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/goavtest"
 	"github.com/thesyncim/goav/std"
 )
@@ -72,12 +74,16 @@ func TestMP4DemuxesAndDecodesAudioThroughGrammar(t *testing.T) {
 	defer file.Close()
 
 	out := goavtest.NewCollector()
-	if err := goav.From(goav.FileInput("h264_aac.mp4", file)).
+	err = goav.From(goav.FileInput("h264_aac.mp4", file)).
 		UseRuntime(offlineRuntime()).
 		Audio().
 		Decode().
 		To(out.Sink()).
-		Run(ctx); err != nil {
+		Run(ctx)
+	if errors.Is(err, codec.ErrUnavailable) {
+		t.Skip("goaac backend unavailable on this target")
+	}
+	if err != nil {
 		t.Fatalf("run: %v", err)
 	}
 
@@ -100,12 +106,16 @@ func TestMP4DemuxesFragmentedAudioThroughGrammar(t *testing.T) {
 	defer file.Close()
 
 	out := goavtest.NewCollector()
-	if err := goav.From(goav.FileInput("fragmented.mp4", file)).
+	err = goav.From(goav.FileInput("fragmented.mp4", file)).
 		UseRuntime(offlineRuntime()).
 		Audio().
 		Decode().
 		To(out.Sink()).
-		Run(ctx); err != nil {
+		Run(ctx)
+	if errors.Is(err, codec.ErrUnavailable) {
+		t.Skip("goaac backend unavailable on this target")
+	}
+	if err != nil {
 		t.Fatalf("run: %v", err)
 	}
 	if len(out.Frames()) == 0 {
