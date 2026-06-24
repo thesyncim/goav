@@ -203,7 +203,7 @@ func (t *task) planAttachBranchSteps(ctx context.Context, spec BranchSpec, desti
 			if t.runtime == nil {
 				return fail(runtimeBranchInvalidError(
 					"runtime branch transforms require the standard runtime",
-					"build tasks with goav.Default() or goav.New(goav.WithDefaults()) before attaching resize/resample branches",
+					"build tasks with std.New(...) from github.com/thesyncim/goav/std before attaching resize/resample branches",
 				))
 			}
 			if currentShape.Domain != shape.DomainFrame {
@@ -303,7 +303,7 @@ func (t *task) planAttachBranchSteps(ctx context.Context, spec BranchSpec, desti
 	if t.runtime == nil {
 		return fail(runtimeBranchInvalidError(
 			"runtime branch mux destinations require the standard runtime",
-			"build tasks with goav.Default() or goav.New(goav.WithDefaults()) before attaching file or URI branches",
+			"build tasks with std.New(...) from github.com/thesyncim/goav/std before attaching file or URI branches",
 		))
 	}
 	if currentStream.Codec.ID == "" {
@@ -333,7 +333,7 @@ func (t *task) planAttachEncode(ctx context.Context, branchName string, encode c
 	if t.runtime == nil {
 		return nil, av.Stream{}, runtimeBranchInvalidError(
 			"runtime branch encoding requires the standard runtime",
-			"build tasks with goav.Default() or goav.New(goav.WithDefaults()) before attaching encode branches",
+			"build tasks with std.New(...) from github.com/thesyncim/goav/std before attaching encode branches",
 		)
 	}
 	if currentShape.Domain != shape.DomainFrame {

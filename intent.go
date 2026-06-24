@@ -569,7 +569,7 @@ func recipeRuntimeUnsupportedError(operation string) error {
 		Operation: operation,
 		Reason:    "recipe compilation requires a goav runtime",
 		Suggestions: []string{
-			"use goav.Default() for the standard recipe runtime",
+			"import github.com/thesyncim/goav/std and use std.New(...) for the standard recipe runtime",
 			"use goav.New(...) when customizing adapters",
 			"use expert.Graph(runtime) for explicit graph wiring with a goav runtime",
 		},

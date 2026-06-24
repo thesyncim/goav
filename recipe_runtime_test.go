@@ -3408,7 +3408,7 @@ func TestFromAudioStreamRecipeResampleEncodeRuns(t *testing.T) {
 		formats,
 		WithDecoder(desc, recipePCMDecoderFactory{decoder: decoder, config: &decoderConfig}),
 		WithEncoder(desc, encoderFactory),
-		WithStdFilters(),
+		testStdFilters(),
 	)
 	encoded := codec.Codec(customPCM, av.MediaAudio, codec.SampleRate(16_000), codec.Channels(codec.Mono))
 
@@ -3479,7 +3479,7 @@ func TestBranchCompositionCustomEncodeRuns(t *testing.T) {
 		formats,
 		WithDecoder(desc, recipePCMDecoderFactory{decoder: decoder, config: &decoderConfig}),
 		WithEncoder(desc, encoderFactory),
-		WithStdFilters(),
+		testStdFilters(),
 	)
 	encoded := codec.Codec(
 		customPCM,

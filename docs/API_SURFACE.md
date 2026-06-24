@@ -49,7 +49,7 @@ Task: Run, Events, Watch(EventFilter), Snapshot -> snapshot.*, Stats,
       Attach/Detach(DrainBranch|AbortBranch)/Rebranch
       (SwitchAt(NextFrame|NextKeyframe|AtMediaTime), Drain/AbortOldBranch, KeepOldOnFailure),
       Control(Keyframe|Seek|Segment|Rate|SetBitrate|SelectActive|Deliver, .AtTap)
-goav.Default(opts...) / goav.New(opts...) -> Runtime; job.UseRuntime(rt)
+goav.New(opts...) -> bare Runtime; std.New(opts...) -> standard Runtime; job.UseRuntime(rt)
 errors: *goav.BuildError{Code: errcode.X, ...} matched with errors.As/Is
 ```
 
@@ -136,7 +136,7 @@ use [`docs/ADAPTERS.md`](ADAPTERS.md) and [`docs/COMPONENTS.md`](COMPONENTS.md).
   seekable inputs, `WithDemuxer`/`WithMuxer`/`WithFormatAdapter`/`WithProber`.
 - **Filters**: `filter` FrameFilter/Factory/Descriptor,
   `WithFilter`/`WithFilterAdapter`.
-- **Runtime config**: `WithDefaults`/`WithStd*`, `WithClock`, `WithRealtime`,
+- **Runtime config**: `goav.New`, `std.New`, `WithClock`, `WithRealtime`,
   `WithBufferPolicy`, `WithEventCapacity`.
 - **Media vocabulary**: `av` frames/packets/buffers (`Buffer`,
   `BufferOwnership`, `Plane`), timing (`TimeBase`, `Timestamp`, `Duration`,
@@ -302,7 +302,7 @@ tomorrow is governed the day it lands.
   invariants to executable tests.
 
 `adapters/*` and `container/*` are implementations behind the `codec`/`format`
-extension points (registered by `Default()`/`WithStd*`), outside the core import
+extension points (registered by `std.New`), outside the core import
 graph and not part of the governed surface: an explicit, asserted exclusion
 (`docPinImplementationSubtrees`), not a forgotten one.
 

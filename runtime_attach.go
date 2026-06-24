@@ -588,7 +588,7 @@ func (g *runtimeAttachGroup) prepareSharedMuxStages(ctx context.Context, rt *run
 	if rt == nil {
 		return runtimeBranchInvalidError(
 			"runtime branch mux destination groups require the standard runtime",
-			"build tasks with goav.Default() or goav.New(goav.WithDefaults()) before attaching grouped file or URI branches",
+			"build tasks with std.New(...) from github.com/thesyncim/goav/std before attaching grouped file or URI branches",
 		)
 	}
 	service := &builder{runtime: rt}
@@ -682,7 +682,7 @@ func runtimeMuxDestinationFormat(ctx context.Context, rt *runtime, dest destinat
 	if rt == nil {
 		return "", runtimeBranchInvalidError(
 			"runtime branch mux destinations require the standard runtime",
-			"build tasks with goav.Default() or goav.New(goav.WithDefaults()) before attaching file or URI branches",
+			"build tasks with std.New(...) from github.com/thesyncim/goav/std before attaching file or URI branches",
 		)
 	}
 	result, err := rt.formats.Probe(ctx, outputProbeRequest(dest.output))
@@ -1524,7 +1524,7 @@ func (t *task) prepareRuntimeBranchDecode(ctx context.Context, branchName string
 	if t.runtime == nil {
 		return nil, runtimeBranchInvalidError(
 			"runtime branch decoding requires the standard runtime",
-			"build tasks with goav.Default() or goav.New(goav.WithDefaults()) before attaching decode branches",
+			"build tasks with std.New(...) from github.com/thesyncim/goav/std before attaching decode branches",
 		)
 	}
 	if currentShape.Domain != shape.DomainPacket {
@@ -1897,7 +1897,7 @@ func runtimeBranchTransformError(node string, cause error) error {
 		Reason:    "runtime branch transform could not be opened",
 		Suggestions: []string{
 			"register a matching resize or resample filter adapter",
-			"use goav.Default() or goav.New(goav.WithDefaults()) for standard filters",
+			"import github.com/thesyncim/goav/std and use std.NewFilters(...) for standard filters",
 			"attach from a frame tap with media shape that match the requested transform",
 		},
 		Cause: cause,

@@ -168,7 +168,7 @@ func resolveJoinProfile(spec *joinSpec) (joinProfile, error) {
 // Job, so .To/Build/Run are shared by every join kind.
 func newJoinJob(kind joinKind, spec joinSpec) *Job {
 	name := string(kind)
-	job := &Job{name: name, runtime: Default()}
+	job := newJob(name)
 	if len(spec.arms) < 2 {
 		job.setErr(joinInputsError(name, name))
 		return job

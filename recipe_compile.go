@@ -299,7 +299,7 @@ func compileJobRecipeWithOptions(job *Job, options recipeCompileOptions) (recipe
 	if job != nil {
 		state.jobPresent = true
 		state.intent = job.plan()
-		state.runtime = job.runtime
+		state.runtime = job.compileRuntime()
 		state.recipeErr = job.err
 		state.inputAttachments = append([]InputSpec(nil), job.inputs...)
 		state.jobOutputCount = len(job.outputs)
@@ -345,7 +345,7 @@ func compileJobJoinRecipeWithOptions(job *Job, options recipeCompileOptions) (re
 		operation:      "build " + string(spec.kind),
 		options:        options,
 		intent:         joinIntent(job),
-		runtime:        job.runtime,
+		runtime:        job.compileRuntime(),
 		recipeErr:      job.err,
 		joinAttachment: spec,
 	}
@@ -368,11 +368,11 @@ func validateJoinRecipePass() recipeCompilePass {
 		if state.joinAttachment == nil {
 			return nilRecipeError(state.operation, "nil join")
 		}
-		if state.runtime == nil {
-			return runtimeMissingError(state.operation)
-		}
 		if state.recipeErr != nil {
 			return state.recipeErr
+		}
+		if state.runtime == nil {
+			return runtimeMissingError(state.operation)
 		}
 		return nil
 	}}
@@ -380,7 +380,7 @@ func validateJoinRecipePass() recipeCompilePass {
 
 func compileJobBranchRecipeWithOptions(job *Job, options recipeCompileOptions) (recipeResolved, error) {
 	branchJob := &branchCompositionJob{
-		runtime:         job.runtime,
+		runtime:         job.compileRuntime(),
 		name:            job.name,
 		streams:         append([]streamBuild(nil), job.branchStreams...),
 		outputs:         append([]namedDestinationSpec(nil), job.branchDestinations...),
@@ -455,8 +455,8 @@ func runtimeMissingError(operation string) error {
 		Operation: operation,
 		Reason:    "no runtime is configured",
 		Suggestions: []string{
-			"keep the default: goav.From(...) recipes start with goav.Default()",
-			"pass a non-nil runtime with .UseRuntime(goav.New(goav.WithDefaults()))",
+			"pass a non-nil runtime with .UseRuntime(goav.New(...))",
+			"import github.com/thesyncim/goav/std and build with std.New(...) or std.Run(ctx, job)",
 		},
 		Cause: ErrUnsupportedBuild,
 	}
@@ -467,11 +467,11 @@ func validateJobRecipePass() recipeCompilePass {
 		if !state.jobPresent {
 			return nilRecipeError(state.operation, "nil job")
 		}
-		if state.runtime == nil {
-			return runtimeMissingError(state.operation)
-		}
 		if state.recipeErr != nil {
 			return state.recipeErr
+		}
+		if state.runtime == nil {
+			return runtimeMissingError(state.operation)
 		}
 		return nil
 	}}
@@ -798,11 +798,11 @@ func validateBranchCompositionRecipePass() recipeCompilePass {
 		if !state.branchCompositionPresent {
 			return nilRecipeError(state.operation, "nil transcode job")
 		}
-		if state.runtime == nil {
-			return runtimeMissingError(state.operation)
-		}
 		if state.recipeErr != nil {
 			return state.recipeErr
+		}
+		if state.runtime == nil {
+			return runtimeMissingError(state.operation)
 		}
 		return nil
 	}}

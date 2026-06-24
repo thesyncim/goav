@@ -1,5 +1,5 @@
-// Package goav is a pure-Go realtime media runtime: describe the media work
-// once, then compile it into an inspectable, controllable graph.
+// Package goav is a pure-Go realtime media grammar: describe media work once,
+// then compile it with an explicit runtime.
 //
 // The grammar is small. From(input) selects streams (.Audio(), .Video());
 // operations are methods on the chain (.Decode(), .Copy(), .Resize(),
@@ -9,11 +9,10 @@
 // operation lists, and Build(ctx) returns a Task — a running graph with
 // events, snapshots, runtime Attach/Detach, and live Control.
 //
-// Default(opts...) builds a runtime with the standard pure-Go adapters
-// registered; per-runtime registries accept external codecs, formats, and
-// filters through the same With* options. Errors are structured: every
-// refusal is a *BuildError carrying an errcode.Code, the failing operation, and
-// concrete fixes.
+// New(opts...) builds a bare runtime. Import github.com/thesyncim/goav/std when
+// the application wants the bundled pure-Go adapters. Errors are structured:
+// every refusal is a *BuildError carrying an errcode.Code, the failing
+// operation, and concrete fixes.
 package goav
 
 import (

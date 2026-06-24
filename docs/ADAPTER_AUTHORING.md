@@ -8,7 +8,7 @@ grammar does the rest.
 Every extension point is an exported interface plus a value-typed `With*`
 option (or a plain value argument) on a per-runtime registry. There are no
 globals; registration is last-wins, so an adapter can also override a standard
-implementation under `Default(opts...)`.
+implementation under `std.New(opts...)`.
 
 The executable proof is `adapterproof/adapter_compat_test.go`: one toy
 implementation of every extension point below, defined entirely in a test
@@ -217,8 +217,8 @@ caller-owned `filter.Result`; sentinels `filter.ErrResultFull`,
 
 Register: `goav.WithFilter(desc, factory)` or `goav.WithFilterAdapter(...)`.
 Use the well-known descriptor name for the conversion class you are replacing;
-the last registration wins, so call `WithStdFilters()` first and your adapter
-option after it:
+the last registration wins, so build from `std.NewFilters(...)` and pass your
+adapter option after the standard filters:
 
 ```go
 var passthroughResampler = filter.Descriptor{
@@ -267,8 +267,7 @@ func (*passthroughResamplerFilter) FlushInto(context.Context, *filter.Result) er
 func (*passthroughResamplerFilter) HandleEvent(context.Context, *av.Event) error    { return nil }
 func (*passthroughResamplerFilter) Close() error                                    { return nil }
 
-runtime := goav.New(
-    goav.WithStdFilters(),
+runtime := std.NewFilters(
     goav.WithFilter(passthroughResampler, passthroughResamplerFactory{}),
 )
 ```

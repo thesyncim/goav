@@ -84,6 +84,7 @@ func (e *BuildError) Unwrap() error {
 type Job struct {
 	name               string
 	runtime            Runtime
+	runtimeSet         bool
 	inputs             []InputSpec
 	outputs            []destinationSpec
 	outputNames        []string
@@ -147,17 +148,27 @@ func (j *Job) Sync(policy SyncPolicy) *Job {
 }
 
 func newJob(name string) *Job {
-	return &Job{name: name, runtime: Default()}
+	return &Job{name: name}
 }
 
-// UseRuntime compiles the job against the given runtime instead of the
-// standard Default() runtime — the seam for custom registries, offline
-// pacing, or injected clocks.
+// UseRuntime compiles the job against the given runtime: the seam for custom
+// registries, standard adapter bundles, offline pacing, or injected clocks.
 func (j *Job) UseRuntime(runtime Runtime) *Job {
 	if j != nil {
 		j.runtime = runtime
+		j.runtimeSet = true
 	}
 	return j
+}
+
+func (j *Job) compileRuntime() Runtime {
+	if j == nil {
+		return nil
+	}
+	if j.runtimeSet {
+		return j.runtime
+	}
+	return New()
 }
 
 func (j *Job) setErr(err error) {

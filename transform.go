@@ -216,7 +216,7 @@ func recipeTransformAdapterError(operation string, stream streamIntent, name str
 		},
 		Suggestions: []string{
 			"register a filter adapter that provides " + name,
-			"use goav.Default() or goav.New(goav.WithDefaults()) for standard resize and resample adapters",
+			"import github.com/thesyncim/goav/std and build with std.NewFilters(...) for standard resize and resample adapters",
 			"remove ." + transformMethodName(name) + "(...) when that conversion is not needed",
 		},
 		Cause: cause,

@@ -11,10 +11,11 @@ import (
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/plan"
 	"github.com/thesyncim/goav/snapshot"
+	"github.com/thesyncim/goav/std"
 )
 
 func TestSessionPublishesStateForBranchChanges(t *testing.T) {
-	session, err := newSession(context.Background(), goav.Default(), "http://localhost:8080")
+	session, err := newSession(context.Background(), std.New(), "http://localhost:8080")
 	if err != nil {
 		t.Fatalf("newSession() error = %v", err)
 	}

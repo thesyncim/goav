@@ -16,7 +16,7 @@ import (
 )
 
 // ErrRuntimeRequired reports attempts to use expert graph wiring with a
-// runtime that was not created by goav.New or goav.Default.
+// runtime that was not created by goav.New or std.New.
 var ErrRuntimeRequired = errors.New("expert: graph requires goav runtime")
 
 // GraphBuilder is the handle-based expert graph builder: named nodes wired by
@@ -38,7 +38,7 @@ type GraphBuilder interface {
 }
 
 // Graph opens the handle-based graph builder on a goav runtime. Runtimes not
-// created by goav.New or goav.Default yield a builder whose Describe and
+// created by goav.New or std.New yield a builder whose Describe and
 // Build fail with ErrRuntimeRequired.
 func Graph(runtime goav.Runtime) GraphBuilder {
 	if bridge, ok := runtime.(interface{ ExpertGraph() any }); ok {

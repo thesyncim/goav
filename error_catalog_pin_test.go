@@ -446,7 +446,7 @@ var errorCatalogAdditionalExamples = []errorCatalogExample{
 		Test:          "TestRuntimeFormatErrorContracts",
 		BadRecipe:     `goav.FileInput("input.ogg", reader)` + " with no Ogg demuxer registered",
 		RenderedError: "missing input demuxer and adapter registration guidance are asserted by the test",
-		Fix:           "register a demuxer with goav.WithFormatAdapter(...) or use goav.Default()",
+		Fix:           "register a demuxer with goav.WithFormatAdapter(...) or use std.New(...)",
 		Cause:         "goav.ErrUnsupportedBuild",
 	},
 	{
@@ -494,7 +494,7 @@ var errorCatalogAdditionalExamples = []errorCatalogExample{
 		Test:          "TestTransformHelperErrorContracts",
 		BadRecipe:     `.Audio().Resample(...)` + " without a resample filter adapter",
 		RenderedError: "missing transform adapter details and registration guidance are asserted by the test",
-		Fix:           "register the filter with goav.WithFilterAdapter(...) or use goav.Default()",
+		Fix:           "register the filter with goav.WithFilterAdapter(...) or use std.NewFilters(...)",
 		Cause:         "filter.ErrNotFound",
 	},
 	{
@@ -542,7 +542,7 @@ var errorCatalogAdditionalExamples = []errorCatalogExample{
 		Test:          "TestStreamRecipeReportsProbedFileMissingDecoderBeforeOpeningInput",
 		BadRecipe:     `.Audio().Decode()` + " for a probed codec with no decoder registered",
 		RenderedError: "missing decoder adapter and pre-resource ordering are asserted by the test",
-		Fix:           "register a decoder with goav.WithCodecAdapter(...) or use goav.Default()",
+		Fix:           "register a decoder with goav.WithCodecAdapter(...) or use std.New(...)",
 		Cause:         "codec.ErrNotFound",
 	},
 	{
@@ -654,7 +654,7 @@ var errorCatalogAdditionalExamples = []errorCatalogExample{
 		Test:          "TestRuntimeFormatErrorContracts",
 		BadRecipe:     `goav.File("out.ogg", writer)` + " with no Ogg muxer registered",
 		RenderedError: "missing output muxer and registration guidance are asserted by the test",
-		Fix:           "register a muxer with goav.WithFormatAdapter(...) or use goav.Default()",
+		Fix:           "register a muxer with goav.WithFormatAdapter(...) or use std.New(...)",
 		Cause:         "goav.ErrUnsupportedBuild",
 	},
 	{
@@ -1070,7 +1070,7 @@ var errorCatalogAdditionalExamples = []errorCatalogExample{
 		Test:          "TestRecipeReportsUnsupportedCustomRuntime",
 		BadRecipe:     `.UseRuntime(customRuntimeOnlyImplementingProbe)`,
 		RenderedError: "unsupported runtime implementation is asserted by the test",
-		Fix:           "use goav.New/goav.Default or a runtime implementation supported by the recipe compiler",
+		Fix:           "use goav.New or std.New, or a runtime implementation supported by the recipe compiler",
 		Cause:         "goav.ErrUnsupportedBuild",
 	},
 	{

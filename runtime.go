@@ -52,16 +52,15 @@ var (
 	ErrClosed = pipeline.ErrClosed
 )
 
-// Option configures a runtime under construction: registries (codecs,
-// formats, filters), pacing (WithRealtime, WithClock), and graph policy
-// (WithBufferPolicy, WithEventCapacity). Registration is last-wins, so an
-// option layered over Default() can override a standard adapter.
+// Option configures a runtime under construction: registries (codecs, formats,
+// filters), pacing (WithRealtime, WithClock), and graph policy
+// (WithBufferPolicy, WithEventCapacity). Registration is last-wins, so a later
+// option can override an earlier adapter.
 type Option func(*runtime)
 
 // New builds a bare runtime: per-runtime registries with no adapters beyond
-// content sniffing, realtime pacing on. Use Default(opts...) for a runtime
-// with the standard adapters already registered; use New when the application
-// controls every codec, format, and filter explicitly.
+// content sniffing, realtime pacing on. Import github.com/thesyncim/goav/std
+// for a runtime with the bundled adapters already registered.
 func New(options ...Option) Runtime {
 	formats := format.NewRegistry()
 	formats.RegisterProber(format.DefaultProber())

@@ -173,7 +173,6 @@ goav.ControlSegment
 goav.ControlSelect
 goav.ControlType
 goav.Custom
-goav.Default
 goav.Deliver
 goav.Destination
 goav.DestinationOption
@@ -271,7 +270,6 @@ goav.WithClock
 goav.WithCodecAdapter
 goav.WithCodecDescriptor
 goav.WithDecoder
-goav.WithDefaults
 goav.WithDemuxer
 goav.WithEncoder
 goav.WithEventCapacity
@@ -281,9 +279,6 @@ goav.WithFormatAdapter
 goav.WithMuxer
 goav.WithProber
 goav.WithRealtime
-goav.WithStdCodecs
-goav.WithStdFilters
-goav.WithStdFormats
 goav.WrapSource
 goav.Writer
 graphrender.ErrUnsupportedFormat

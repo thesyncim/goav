@@ -27,6 +27,7 @@ import (
 	"github.com/thesyncim/goav/internal/transformargs"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/shape"
+	"github.com/thesyncim/goav/std"
 )
 
 const defaultRunPipeline = "testsrc video width=1280 height=720 fps=30 duration=3s realtime=true ! encode codec=av1 media=video bitrate=1200k fps=30 keyframe_interval=60 ! filesink location=/tmp/goav-av1.mkv format=matroska"
@@ -341,9 +342,9 @@ func runtimeForRun(name string, plan runPipelinePlan) (goav.Runtime, string, err
 	codecIDs := plan.encodeCodecIDs()
 	switch name {
 	case "demo":
-		return goav.Default(goav.WithClock(goavtest.NewClock())), "demo", nil
+		return std.New(goav.WithClock(goavtest.NewClock())), "demo", nil
 	case "default", "std", "standard":
-		return goav.Default(), "default", nil
+		return std.New(), "default", nil
 	case "test", "fake", "deterministic":
 		opts := make([]goav.Option, 0, len(codecIDs))
 		for _, id := range codecIDs {

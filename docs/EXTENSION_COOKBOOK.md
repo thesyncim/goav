@@ -204,8 +204,7 @@ desc := filter.Descriptor{
     SampleFormats: []string{av.SampleFormatS16},
 }
 
-rt := goav.New(
-    goav.WithStdFilters(),
+rt := std.NewFilters(
     goav.WithFilter(desc, myFactory{}),
 )
 ```

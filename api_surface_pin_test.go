@@ -51,6 +51,7 @@ var surfaceSeamPackages = []string{
 	"pipeline",
 	"provider",
 	"shape",
+	"std",
 }
 
 // TestEveryPublicPackageIsGoverned closes the governance gap hardcoded lists

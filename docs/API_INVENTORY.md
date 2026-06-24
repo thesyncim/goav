@@ -1,6 +1,6 @@
 # API Inventory
 
-This is the baseline taken before the API reduction work. It should move
+This started as the baseline taken before the API reduction work. It should move
 downward as symbols leave the root package, standard adapters move behind
 `goav/std`, and implementation-specific error codes collapse into stable error
 families.
@@ -9,24 +9,24 @@ families.
 
 Source: `testdata/api_surface.txt`.
 
-| Package | Approved identifiers |
-| --- | ---: |
-| `goav` | 134 |
-| `errcode` | 147 |
-| `graphrender` | 9 |
-| `lifecycle` | 13 |
-| `plan` | 28 |
-| `snapshot` | 4 |
+| Package | Initial identifiers | Current identifiers |
+| --- | ---: | ---: |
+| `goav` | 134 | 129 |
+| `errcode` | 147 | 147 |
+| `graphrender` | 9 | 9 |
+| `lifecycle` | 13 | 13 |
+| `plan` | 28 | 28 |
+| `snapshot` | 4 | 4 |
 
 ## Root Dependency Baseline
 
-Current command:
+Initial command:
 
 ```sh
 go list -deps github.com/thesyncim/goav
 ```
 
-Current result: the root package dependency graph includes the standard adapter
+Initial result: the root package dependency graph included the standard adapter
 packages and backend codec modules.
 
 Standard packages currently pulled by the root include:
@@ -55,8 +55,10 @@ go list -deps github.com/thesyncim/goav |
   rg 'goaac|goav1|goh264|gopus|govpx|adapters/(annexb|ivf|resample|resize)|container/(matroska|mp4|webm)'
 ```
 
-Expected result: no matches for the root package. Importing `goav/std` should
-pull the standard bundle intentionally.
+Expected result after the standard package split: no matches for the root
+package. Importing `goav/std` should pull the standard bundle intentionally.
+
+Current result after the `goav/std` split: no matches for the root package.
 
 ## Documentation Baseline
 

@@ -795,7 +795,7 @@ func TestFromMultiInputChainsKeepIndependentAutoPolicies(t *testing.T) {
 	sinkDest := func(name string) Destination {
 		return Sink(SinkFunc(name, func(context.Context, Message) error { return nil }))
 	}
-	rt := solverTestOpusRuntime(WithStdFilters())
+	rt := solverTestOpusRuntime(testStdFilters())
 
 	job := From(
 		solverTestAudioSource("micA", 44_100, codec.Stereo, av.SampleFormatS16),
@@ -829,7 +829,7 @@ func TestFromMultiInputChainsKeepIndependentAutoPolicies(t *testing.T) {
 }
 
 func TestMixBranchesAutoSolvesJoinedOutput(t *testing.T) {
-	rt := solverTestOpusRuntime(WithStdFilters())
+	rt := solverTestOpusRuntime(testStdFilters())
 	var packets int
 	job := Mix(
 		From(mixTestAudioSourceRate("a", 44_100)).Audio(),
@@ -879,7 +879,7 @@ func TestMixEncodeRequiresAutoForJoinedOutput(t *testing.T) {
 	).
 		Encode(codec.Opus(codec.Bitrate(96_000), codec.SampleRate(48_000), codec.Channels(codec.Mono))).
 		To(Sink(SinkFunc("enc", func(context.Context, Message) error { return nil }))).
-		UseRuntime(solverTestOpusRuntime(WithStdFilters())).
+		UseRuntime(solverTestOpusRuntime(testStdFilters())).
 		Build(context.Background())
 
 	var buildErr *BuildError
@@ -899,7 +899,7 @@ func TestMixEncodeRequiresAutoForJoinedOutput(t *testing.T) {
 }
 
 func TestMixEncodeAutoSolvesJoinedOutput(t *testing.T) {
-	rt := solverTestOpusRuntime(WithStdFilters())
+	rt := solverTestOpusRuntime(testStdFilters())
 	var packets int
 	job := Mix(
 		From(mixTestAudioSourceRate("a", 44_100)).Audio(),

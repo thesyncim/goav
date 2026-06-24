@@ -507,7 +507,7 @@ func shapeSolverAdapterError(operation string, node string, index int, step oper
 		Details: details,
 		Suggestions: []string{
 			"register a " + string(selection.media) + " conversion filter with goav.WithFilter(filter.Descriptor{Input: ..., Output: ...}, factory)",
-			"use goav.Default() or goav.New(goav.WithDefaults()) for the standard resample and resize adapters",
+			"import github.com/thesyncim/goav/std and build with std.NewFilters(...) for the standard resample and resize adapters",
 		},
 		Cause: ErrUnsupportedBuild,
 	}

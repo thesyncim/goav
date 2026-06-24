@@ -14,6 +14,7 @@ import (
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/shape"
+	"github.com/thesyncim/goav/std"
 )
 
 // pcmSource returns a custom frame-domain input that pushes one S16 PCM frame
@@ -127,6 +128,7 @@ func ExampleFrom() {
 			}
 			return nil
 		}))).
+		UseRuntime(std.New()).
 		Run(ctx)
 
 	fmt.Println(err, encoded)
@@ -172,6 +174,7 @@ func ExampleFrom_autoResample() {
 		Auto(shape.AllowResample()).
 		Encode(codec.Opus(codec.Bitrate(96_000))).
 		To(goav.File("voice.webm", io.Discard)).
+		UseRuntime(std.New()).
 		Explain(context.Background())
 	if err != nil {
 		fmt.Println(err)

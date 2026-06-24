@@ -1142,7 +1142,7 @@ func TestOutputFormatAdapterPassesRejectMissingMuxers(t *testing.T) {
 			state: recipeCompileState{
 				operation: "build job",
 				options:   recipeCompileOptions{preflightOutputAdapters: true},
-				runtime:   Default(),
+				runtime:   testStdRuntime(),
 				outputAttachments: []destinationSpec{
 					fileDestination("recording.mp4", io.Discard),
 				},
@@ -1155,7 +1155,7 @@ func TestOutputFormatAdapterPassesRejectMissingMuxers(t *testing.T) {
 			state: recipeCompileState{
 				operation: "build job",
 				options:   recipeCompileOptions{preflightOutputAdapters: true},
-				runtime:   Default(),
+				runtime:   testStdRuntime(),
 				outputAttachments: []destinationSpec{
 					fileDestination("", io.Discard).withFormat(av.FormatOgg),
 				},
@@ -1168,7 +1168,7 @@ func TestOutputFormatAdapterPassesRejectMissingMuxers(t *testing.T) {
 			state: recipeCompileState{
 				operation: branchCompositionOperation,
 				options:   recipeCompileOptions{preflightOutputAdapters: true},
-				runtime:   Default(),
+				runtime:   testStdRuntime(),
 				branchDestinationAttachments: []namedDestinationSpec{{
 					name:   "web",
 					output: fileDestination("web.mp4", io.Discard),
@@ -1283,13 +1283,13 @@ func TestOutputFormatAdapterPassesStoreResolvedFormats(t *testing.T) {
 }
 
 func TestResolvedJobOutputFormatsEnterMediaPlanBuild(t *testing.T) {
-	runtime := New(
-		WithDefaults(),
+	runtime := New(append(
+		testStdOptions(),
 		withTestFormats(
 			testFormatProber(remuxTestProber{}),
 			testFormatMuxer(av.FormatOgg, &remuxTestMuxerFactory{}),
 		),
-	)
+	)...)
 	job := From(
 		Input(&liveTestProvider{
 			name:    "audio",
@@ -1412,7 +1412,7 @@ func TestInputFormatAdapterPassesRejectMissingDemuxers(t *testing.T) {
 			state: recipeCompileState{
 				operation: "build job",
 				options:   recipeCompileOptions{preflightInputAdapters: true},
-				runtime:   Default(),
+				runtime:   testStdRuntime(),
 				inputAttachments: []InputSpec{
 					FileInput("input.ogg", strings.NewReader("")),
 				},
@@ -1426,7 +1426,7 @@ func TestInputFormatAdapterPassesRejectMissingDemuxers(t *testing.T) {
 			state: recipeCompileState{
 				operation:             branchCompositionOperation,
 				options:               recipeCompileOptions{preflightInputAdapters: true},
-				runtime:               Default(),
+				runtime:               testStdRuntime(),
 				branchInputAttachment: FileInput("input.flv", strings.NewReader("")),
 			},
 			code: "input_demuxer_missing",
@@ -1438,7 +1438,7 @@ func TestInputFormatAdapterPassesRejectMissingDemuxers(t *testing.T) {
 			state: recipeCompileState{
 				operation: "build job",
 				options:   recipeCompileOptions{preflightInputAdapters: true},
-				runtime:   Default(),
+				runtime:   testStdRuntime(),
 				inputAttachments: []InputSpec{
 					FileInput("input.unknown", strings.NewReader("")),
 				},
@@ -1467,7 +1467,7 @@ func TestInputFormatAdapterPassSkipsLiveReceiveInputs(t *testing.T) {
 	state := recipeCompileState{
 		operation: "build job",
 		options:   recipeCompileOptions{preflightInputAdapters: true},
-		runtime:   Default(),
+		runtime:   testStdRuntime(),
 		inputAttachments: []InputSpec{
 			Input(&liveTestProvider{media: av.MediaAudio, codecID: av.CodecOpus}),
 		},
@@ -2223,7 +2223,7 @@ func TestTransformAdapterPassesRejectMissingFilters(t *testing.T) {
 					Operations: []operationSpec{operationSpecForTransform(Resample(16_000, codec.Mono))},
 				}}},
 			},
-			want: []string{"no resample filter adapter", "transform=resample", "goav.Default", ".Resample"},
+			want: []string{"no resample filter adapter", "transform=resample", "std.NewFilters", ".Resample"},
 		},
 		{
 			name: "transcode missing resize filter",
@@ -2238,7 +2238,7 @@ func TestTransformAdapterPassesRejectMissingFilters(t *testing.T) {
 					Operations: []operationSpec{operationSpecForTransform(Resize(1280, 720))},
 				}}},
 			},
-			want: []string{"no resize filter adapter", "transform=resize", "goav.Default", ".Resize"},
+			want: []string{"no resize filter adapter", "transform=resize", "std.NewFilters", ".Resize"},
 		},
 	}
 	for _, tt := range tests {
@@ -2724,7 +2724,7 @@ func TestRecipeRuntimePassRejectsCustomRuntime(t *testing.T) {
 	if !errors.As(err, &buildErr) || buildErr.Code != "runtime_unsupported" || !errors.Is(err, ErrUnsupportedBuild) {
 		t.Fatalf("err = %v, want runtime_unsupported wrapping ErrUnsupportedBuild", err)
 	}
-	for _, want := range []string{"recipe compilation requires a goav runtime", "goav.Default", "goav.New", "expert.Graph"} {
+	for _, want := range []string{"recipe compilation requires a goav runtime", "std.New", "goav.New", "expert.Graph"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Fatalf("err = %v, want %q", err, want)
 		}
@@ -3970,7 +3970,7 @@ func TestBranchComposeLowererRequiresDestinationOperationsBeforeSources(t *testi
 func TestRecipeResolvedBuildUsesMediaPlanPacketCopy(t *testing.T) {
 	job := From(
 		Input(liveVideoVP8Provider("video")),
-	).Copy().To(destinationHandle(fileDestination("recording.ivf", io.Discard)))
+	).Copy().To(destinationHandle(fileDestination("recording.ivf", io.Discard))).UseRuntime(testStdRuntime())
 
 	resolved, err := compileJobRecipe(job)
 	if err != nil {
