@@ -392,7 +392,7 @@ func (j *Job) Describe() (pipeline.Spec, error) {
 // resolve, the graph is wired, and OnStream rules install. The task does not
 // flow until Run. Build a task (instead of calling Run directly) when the
 // application needs inspection, events, live control, or late attachment.
-func (j *Job) Build(ctx context.Context) (Task, error) {
+func (j *Job) Build(ctx context.Context) (LiveTask, error) {
 	resolved, err := compileJobRecipeForBuildContext(ctx, j)
 	if err != nil {
 		return nil, err

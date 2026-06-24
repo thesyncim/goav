@@ -4,7 +4,7 @@ This is the checked reference for the front-door operation grammar. Use it when
 you know the operation you want and need to answer practical questions: what
 shape does it consume, what does it produce, what can the shape solver insert,
 which errors are expected, and whether the same spelling works in a runtime
-branch attached with `Task.Attach`.
+branch attached with `Mutable.Attach`.
 
 The invariant is the same one used by the planner:
 
@@ -13,7 +13,7 @@ From(inputs...) -> stream selection -> operations -> taps -> branches -> destina
 ```
 
 Operation records are cold-path declarations. They are not per-packet calls.
-`Build`, `Explain`, `Describe`, planned `Branches`, `Task.Attach`, and
+`Build`, `Explain`, `Describe`, planned `Branches`, `Mutable.Attach`, and
 `Attachment.Rebranch` all lower those records through the same shape validation
 and runtime registration checks before resources are opened or the live graph
 is mutated.
@@ -27,7 +27,7 @@ see whether a planned recipe spelling also works for a late branch.
 | Scope | Owns source? | Owns destination? | Runtime attach? | Notes |
 |---|---|---|---|---|
 | Stream chain | Yes, through `From(...).Audio()/Video()/Stream(...)` | Yes, through `.To(...)` or `.Branches(...)` | No, it builds the base `WorkPlan` | Frame-consuming methods on stream chains can make decode implicit when the input is packet-domain. |
-| Branch | Optional anchor through `.From(tapOrExpertHandle)` | Yes, through `.To(...)` | Yes, `BranchSpec` is the `Task.Attach` input | A branch starts from its anchor shape; packet taps need `.Decode()` before frame operations. |
+| Branch | Optional anchor through `.From(tapOrExpertHandle)` | Yes, through `.To(...)` | Yes, `BranchSpec` is the `Mutable.Attach` input | A branch starts from its anchor shape; packet taps need `.Decode()` before frame operations. |
 | Flow | No | No | Yes, after `.Apply(flow)` on a stream or branch | A flow is only reusable operations. It cannot open sources, destinations, runtimes, or lifecycle. |
 
 ## Operation Matrix
@@ -50,7 +50,7 @@ refusals" lists the error families a caller should expect to handle.
 | `.Do(stage...)` | Whatever each custom stage contract declares. `FrameFunc` consumes frames, `PacketFunc` consumes packets, and `EventFunc` consumes events. Stream chains can insert decode before frame stages. | Whatever the stage emits through `Emit`. | Stage-defined. | Stage contracts can participate in shape solving when they expose shape facts. | `stage_missing`, `operation_shape_mismatch`, `stream_step_after_encode`, stage-open/runtime errors wrapped at the task boundary. | Valid when the branch anchor satisfies the stage contract. Custom diagnostic branches are usually `Branch(...).From(FrameTap(...)).Do(...).To(Sink(...))`. |
 | `.Tap(tap)` | Current media point. Untyped `Tap` infers from context; `FrameTap` and `PacketTap` assert domain. | Same shape; the tap names this point for later branches, attach, controls, and diagnostics. | Packet or frame. | None. | `tap_invalid`, `tap_domain_mismatch`, runtime tap lookup errors such as `runtime_branch_tap_missing` or `runtime_branch_tap_duplicate`. | Taps are the normal runtime attachment anchors. A packet tap supports packet copy or decode; a frame tap supports transforms, stages, sinks, and encode. |
 | `.Encode(codecSpec)` | Frame-domain audio/video for real codecs. `codec.Copy()` is packet-domain passthrough and is normally written as `.Copy()`. Stream chains can insert decode before real encode. | Packet-domain audio/video with codec facts from the encoder. | Frame for real codecs, packet for `codec.Copy()`. | `.Auto(...)` can insert needed frame conversions before opening the encoder. Encode itself opens a codec adapter. | `encode_missing`, `encode_duplicate`, `encode_parameter_invalid`, `encode_auto_unresolved`, `encode_work_in_progress`, `encode_adapter_missing`, `encode_adapter_unavailable`, `encode_adapter_incompatible`, `packet_branch_encode_unsupported`, `stream_step_after_encode`. | Valid from a frame tap, or after `.Decode()` from a packet tap. Encoder open and shape checks happen before live graph mutation. |
-| `.Branches(branches...)` | The current stream point. Branches inherit the current point unless a branch uses `.From(tap)`. | No single output shape; each branch owns its operation list and destinations. | Packet or frame depending on parent and branch operations. | Each branch has its own `.Auto(...)` policy and insertions. Branch-local buffer policy cannot corrupt siblings. | `branch_missing`, `input_count_unsupported`, `output_scope_mixed`, `branch_duplicate`, `branch_tap_missing`, `branch_destination_invalid`, `destination_mux_incompatible`, `decode_config_conflict`, `decode_policy_conflict`. | Planned branches are build-time only. Runtime equivalents use `Task.Attach(ctx, Branch(...))` with the same branch grammar. |
+| `.Branches(branches...)` | The current stream point. Branches inherit the current point unless a branch uses `.From(tap)`. | No single output shape; each branch owns its operation list and destinations. | Packet or frame depending on parent and branch operations. | Each branch has its own `.Auto(...)` policy and insertions. Branch-local buffer policy cannot corrupt siblings. | `branch_missing`, `input_count_unsupported`, `output_scope_mixed`, `branch_duplicate`, `branch_tap_missing`, `branch_destination_invalid`, `destination_mux_incompatible`, `decode_config_conflict`, `decode_policy_conflict`. | Planned branches are build-time only. Runtime equivalents use `Mutable.Attach(ctx, Branch(...))` with the same branch grammar. |
 | `.To(destinations...)` | Final chain or branch shape. Mux/file/URI/writer destinations consume packets; sink destinations can consume frames, packets, or events depending on the sink. | Terminal delivery. | Packet for muxed byte destinations; frame/packet/event for sinks. | None directly. A stream chain that ends in a sink without an encoder can make decode implicit for packet inputs. | `output_missing`, `destination_missing`, `destination_invalid`, `destination_duplicate`, `destination_format_unknown`, `destination_muxer_missing`, `destination_mux_incompatible`, `destination_shape_mismatch`, `encode_missing`. | Runtime branches open destinations before graph mutation. Reusing one destination value groups branches into one mux/sink output; attach failure rolls back opens and graph changes. |
 
 ## Branch-Only Methods

@@ -14,9 +14,10 @@ goav ctl --control unix:///tmp/goav-live.sock attach frames as archive \
   'encode codec=opus media=audio bitrate=128k ! filesink location=archive.ogg'
 ```
 
-The control layer is allowlisted and lowers into the same task APIs normal Go
-code uses: `Task.Control`, `Task.Attach`, `Attachment.Rebranch`, `Task.Detach`,
-`Snapshot`, `Stats`, `Watch`, and `Close`. Reflection is used only on this cold
+The control layer is allowlisted and lowers into the same task capabilities
+normal Go code uses: `Controllable.Control`, `Mutable.Attach`,
+`Attachment.Rebranch`, `Mutable.Detach`, `Inspectable.Snapshot`,
+`Inspectable.Stats`, `Observable.Watch`, and `Task.Close`. Reflection is used only on this cold
 path to bind known command structs, validate fields, parse JSON, and generate
 help from tags. There is no global registry and no user-provided method name
 dispatch.
@@ -158,7 +159,7 @@ type SetRate struct {
 rateCommand := ctl.NewCommand[SetRate](
     "vendor.rate",
     "vendor playback-rate control",
-    func(ctx context.Context, task goav.Task, cmd SetRate) (ctl.ControlResponse, error) {
+    func(ctx context.Context, task goav.LiveTask, cmd SetRate) (ctl.ControlResponse, error) {
         ctrl := goav.Rate(cmd.Value).At(pipeline.NodeRef(cmd.Source))
         if err := task.Control(ctx, ctrl); err != nil {
             return ctl.ControlResponse{}, err
@@ -382,7 +383,8 @@ concrete native encoder or config object. The generated reference is the
 running host itself; `goav ctl help attach` is human-readable, and
 `goav ctl capabilities` is machine-readable. In normal application code,
 workflows should be expressible through declarative recipes; the public grammar
-stays Input, Stream, Tap, Branch, Destination, Flow, and Task.
+stays Input, Stream, Tap, Branch, Destination, Flow, Task, and opt-in task
+capabilities.
 
 ```go
 rt := std.MustNew(

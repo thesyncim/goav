@@ -105,7 +105,7 @@ terminal; this is reported through `mix_arm`-family errors).
 
 `Mix(arms...)`, `Composite(arms...)`, and `Select(arms...)` are recipe-time
 convergence: their upstream arms are part of the planned graph. Runtime
-`Task.Attach` and `OnStream` add downstream work from taps or discovered
+`Mutable.Attach` and `OnStream` add downstream work from taps or discovered
 streams; they do not mutate the arm set of an existing join.
 
 For live audio rooms where tracks join and leave continuously, the supported

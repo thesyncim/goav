@@ -64,7 +64,7 @@ func Example_bootstrapControlPlaneHost() {
 	command := ctl.NewCommand[SetRate](
 		"vendor.rate",
 		"vendor playback-rate control",
-		func(ctx context.Context, task goav.Task, cmd SetRate) (ctl.ControlResponse, error) {
+		func(ctx context.Context, task goav.LiveTask, cmd SetRate) (ctl.ControlResponse, error) {
 			if err := task.Control(ctx, goav.Rate(cmd.Value).At(pipeline.NodeRef(cmd.Source))); err != nil {
 				return ctl.ControlResponse{}, err
 			}
@@ -235,7 +235,7 @@ func (e exampleEncoder) FlushInto(context.Context, *codec.EncodeResult) error { 
 func (e exampleEncoder) HandleEvent(context.Context, *av.Event) error         { return nil }
 func (e exampleEncoder) Close() error                                         { return nil }
 
-func waitExampleTaskRunning(task goav.Task) error {
+func waitExampleTaskRunning(task goav.LiveTask) error {
 	deadline := time.Now().Add(time.Second)
 	for {
 		if task.Snapshot().State == lifecycle.TaskRunning {

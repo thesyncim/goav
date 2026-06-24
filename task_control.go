@@ -13,7 +13,7 @@ import (
 )
 
 // ControlType classifies an out-of-band control delivered to a running node by
-// Task.Control. It mirrors codec.ControlType in spirit: a small, typed vocabulary
+// Controllable.Control. It mirrors codec.ControlType in spirit: a small, typed vocabulary
 // of requests a live graph understands.
 type ControlType string
 
@@ -56,14 +56,14 @@ const (
 )
 
 var (
-	// ErrControlUnsupported is returned by Task.Control when the task's graph
+	// ErrControlUnsupported is returned by Controllable.Control when the task's graph
 	// cannot inject controls (for example a non-buffered, non-realtime graph that
 	// has no per-node serial worker to deliver on).
 	ErrControlUnsupported = errors.New("goav: task does not support live control")
-	// ErrControlNotRunning is returned by Task.Control when the task is not running,
+	// ErrControlNotRunning is returned by Controllable.Control when the task is not running,
 	// so there is no node worker draining a queue to receive the control.
 	ErrControlNotRunning = errors.New("goav: task is not running")
-	// ErrNilControl is returned by Task.Control when the control carries no payload.
+	// ErrNilControl is returned by Controllable.Control when the control carries no payload.
 	ErrNilControl = errors.New("goav: nil control")
 )
 
@@ -77,11 +77,11 @@ var (
 // it concerns. Build one with Keyframe or Deliver and target it with At.
 type Control struct {
 	// Node is the expert-level target: a node named as it appears in
-	// Task.Describe / snapshot.Tap.Node. Normal controls do not need it — an
+	// Inspectable.Describe / snapshot.Tap.Node. Normal controls do not need it — an
 	// untargeted Keyframe reaches every encoder by itself, and AtTap targets by
 	// tap name.
 	Node pipeline.NodeRef
-	// Tap targets the control at a named tap (resolved through Task.Taps), so
+	// Tap targets the control at a named tap (resolved through Inspectable.Taps), so
 	// callers reason in grammar vocabulary instead of graph node names.
 	Tap string
 	// Type selects how the control is lowered into a pipeline message.
@@ -118,7 +118,7 @@ func (c Control) At(node pipeline.NodeRef) Control {
 
 // AtTap returns a copy of the control targeting the named tap's point in the
 // graph. The tap name is the one given to Tap/FrameTap/PacketTap and reported by
-// Task.Taps — no node names involved.
+// Inspectable.Taps — no node names involved.
 func (c Control) AtTap(name string) Control {
 	c.Tap = name
 	return c
@@ -145,7 +145,7 @@ func Keyframe(stream av.StreamID) Control {
 // live rate control (libvpx vpx_codec_enc_config_set, libopus
 // OPUS_SET_BITRATE) applies it from the next encoded frame; one that cannot
 // returns an error through the task's error path instead of ignoring the
-// request. A non-positive rate fails Task.Control immediately.
+// request. A non-positive rate fails Controllable.Control immediately.
 func SetBitrate(stream av.StreamID, bitsPerSecond int) Control {
 	return Control{Type: ControlBitrate, StreamID: stream, Bitrate: bitsPerSecond}
 }
@@ -176,7 +176,7 @@ func Seek(pos time.Duration) Control {
 
 // Rate builds a control that asks the task's sources to change playback rate:
 // 1.0 is realtime, 2.0 double speed, 0.5 half speed. Only positive rates are
-// valid — reverse playback is out of scope — and Task.Control rejects r <= 0
+// valid — reverse playback is out of scope — and Controllable.Control rejects r <= 0
 // (or a non-finite rate) with a clear error before delivering anything. It
 // rides the seam Seek established: untargeted, it broadcasts to every source
 // node; each source implementing pipeline.ControllableSource has its Control
@@ -196,7 +196,7 @@ func Rate(r float64) Control {
 
 // Segment builds a control that asks the task's sources to play the window
 // [start, end) — start inclusive, end exclusive, both measured from the start
-// of the media — and then end naturally. Task.Control rejects windows that are
+// of the media — and then end naturally. Controllable.Control rejects windows that are
 // not 0 <= start < end with a clear error before delivering anything. It rides
 // the seam Seek established: untargeted, it broadcasts to every source node;
 // each source implementing pipeline.ControllableSource has its Control method

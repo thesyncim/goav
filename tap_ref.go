@@ -34,7 +34,7 @@ func PacketTap(name string) TapRef {
 	return TapRef{name: name, domain: shape.DomainPacket}
 }
 
-// Name returns the tap's stable name, the key Task.Taps and Branch.From use.
+// Name returns the tap's stable name, the key Inspectable.Taps and Branch.From use.
 func (t TapRef) Name() string {
 	return t.name
 }

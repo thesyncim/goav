@@ -172,6 +172,7 @@ goav.ControlSeek
 goav.ControlSegment
 goav.ControlSelect
 goav.ControlType
+goav.Controllable
 goav.Custom
 goav.Deliver
 goav.Destination
@@ -193,6 +194,7 @@ goav.ErrUnsupportedBuild
 goav.Event
 goav.EventFilter
 goav.EventFunc
+goav.Explainer
 goav.File
 goav.FileInput
 goav.Flow
@@ -206,11 +208,13 @@ goav.InputName
 goav.InputOption
 goav.InputSpec
 goav.InputStream
+goav.Inspectable
 goav.Job
 goav.Join
 goav.JoinArm
 goav.KeepOldOnFailure
 goav.Keyframe
+goav.LiveTask
 goav.MIME
 goav.MatchCodec
 goav.MatchMedia
@@ -221,10 +225,12 @@ goav.Message
 goav.Metadata
 goav.Mix
 goav.MustNew
+goav.Mutable
 goav.Name
 goav.New
 goav.NextFrame
 goav.NextKeyframe
+goav.Observable
 goav.OnRemove
 goav.Option
 goav.Packet

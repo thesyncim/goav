@@ -101,7 +101,7 @@ func runHost(ctx context.Context, address string, out io.Writer) error {
 }
 
 type demoHost struct {
-	task         goav.Task
+	task         goav.LiveTask
 	capabilities ctl.CapabilitySet
 	ready        <-chan struct{}
 }
@@ -134,7 +134,7 @@ func newDemoHost(ctx context.Context) (*demoHost, error) {
 	command := ctl.NewCommand[setRate](
 		"vendor.rate",
 		"demo playback-rate control",
-		func(ctx context.Context, task goav.Task, cmd setRate) (ctl.ControlResponse, error) {
+		func(ctx context.Context, task goav.LiveTask, cmd setRate) (ctl.ControlResponse, error) {
 			if err := task.Control(ctx, goav.Rate(cmd.Value).At(pipeline.NodeRef(cmd.Source))); err != nil {
 				return ctl.ControlResponse{}, err
 			}
@@ -150,7 +150,7 @@ func newDemoHost(ctx context.Context) (*demoHost, error) {
 	controlsCommand := ctl.NewCommand[controlHistory](
 		"fixture.controls",
 		"report controls recorded by the fixture test source",
-		func(_ context.Context, _ goav.Task, query controlHistory) (ctl.ControlResponse, error) {
+		func(_ context.Context, _ goav.LiveTask, query controlHistory) (ctl.ControlResponse, error) {
 			return ctl.ControlResponse{
 				Operation: "control fixture.controls",
 				Result:    summarizeSourceControls(source, query.Type),

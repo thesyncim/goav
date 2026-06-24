@@ -213,7 +213,7 @@ func specRenderURI(spec pipeline.Spec, target string) string {
 	return out
 }
 
-func drainTaskEvents(task goav.Task) []av.Event {
+func drainTaskEvents(task goav.Observable) []av.Event {
 	var events []av.Event
 	for {
 		select {
@@ -475,7 +475,7 @@ func (w *fileDestinationWriteCloser) Close() error {
 
 // taskHasBranch reports whether the task snapshot carries an attached branch
 // with the given name.
-func taskHasBranch(task goav.Task, name string) bool {
+func taskHasBranch(task goav.Inspectable, name string) bool {
 	branches := task.Snapshot().Branches
 	for i := range branches {
 		if branches[i].Name == name && branches[i].State == lifecycle.BranchAttached {

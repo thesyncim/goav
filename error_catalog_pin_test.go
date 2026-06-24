@@ -387,7 +387,7 @@ var errorCatalogExamples = []errorCatalogExample{
 		Test:          "TestErrorAcceptanceAttachUnknownTapListsDeclaredTaps",
 		BadRecipe:     `task.Attach(ctx, goav.Branch("late").From(goav.FrameTap("nope")).To(...))`,
 		RenderedError: "declared tap listing and attach suggestions are asserted by the test",
-		Fix:           `add .Tap(goav.FrameTap("nope")) or call task.Taps() before attaching`,
+		Fix:           `add .Tap(goav.FrameTap("nope")) or call Inspectable.Taps() before attaching`,
 		Cause:         "goav.ErrUnsupportedBuild",
 	},
 	{
@@ -950,7 +950,7 @@ var errorCatalogAdditionalExamples = []errorCatalogExample{
 		Test:          "TestRuntimeBranchStructuredErrorContracts",
 		BadRecipe:     "attach a runtime branch from a graph anchor that no longer exists",
 		RenderedError: "missing runtime anchor is asserted by the test",
-		Fix:           "anchor runtime branches on taps listed by task.Taps()",
+		Fix:           "anchor runtime branches on taps listed by Inspectable.Taps()",
 		Cause:         "goav.ErrUnsupportedBuild",
 	},
 	{

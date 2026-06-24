@@ -52,8 +52,8 @@ type session struct {
 	renegotiateKinds []string
 	scenarios        []scenarioResult
 
-	videoTask  goav.Task
-	audioTask  goav.Task
+	videoTask  goav.LiveTask
+	audioTask  goav.LiveTask
 	syncPolicy goav.SyncPolicy
 	videoCodec string
 	videoSSRC  uint32
@@ -162,7 +162,7 @@ func (s *session) startAudioTrack(track *webrtc.TrackRemote) {
 	go s.runTask("audio", task)
 }
 
-func (s *session) runTask(kind string, task goav.Task) {
+func (s *session) runTask(kind string, task goav.LiveTask) {
 	s.record("info", "task", kind+" task running", kind, "", nil)
 	go s.drainTaskEvents(kind, task)
 	if err := task.Run(s.ctx); err != nil && !errors.Is(err, context.Canceled) {
@@ -172,7 +172,7 @@ func (s *session) runTask(kind string, task goav.Task) {
 	s.record("info", "task", kind+" task stopped", kind, "", nil)
 }
 
-func (s *session) drainTaskEvents(kind string, task goav.Task) {
+func (s *session) drainTaskEvents(kind string, task goav.Observable) {
 	for {
 		select {
 		case event, ok := <-task.Events():
@@ -409,7 +409,7 @@ func (s *session) sortedBranchesLocked(kind string) []*branch {
 	return out
 }
 
-func (s *session) taskForKindLocked(kind string) goav.Task {
+func (s *session) taskForKindLocked(kind string) goav.LiveTask {
 	switch kind {
 	case "video":
 		return s.videoTask

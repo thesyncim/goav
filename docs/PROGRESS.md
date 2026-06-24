@@ -60,7 +60,7 @@ Compatibility pins:
   destinations, and reuse flows.
 - Combining media is part of the front door: Mix, Composite, Select, nested
   joins, tap-backed join arms, and custom joins all describe their shape.
-- Live control is now a first-class path: atomic grouped `Task.Attach`,
+- Live control is now a first-class path: atomic grouped `Mutable.Attach`,
   dependent-branch detach, pause/resume/stop, and gapless
   `Attachment.Rebranch`, including media-time switch boundaries.
 - BranchBuffer policies cover `flow.Blocking`, `DropOldest`, `DropNewest`,

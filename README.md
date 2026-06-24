@@ -65,8 +65,9 @@ The public vocabulary is deliberately small:
   `goav.Sink(...)`, a URI, an object destination, or a shared mux/sink group.
 - **Flow** is reusable operation text with no source or destination; build one
   with `goav.Flow(...)`.
-- **Task** is the running work: events, watch, snapshots, stats, control,
-  attach, rebranch, and detach.
+- **Task** is `Run`/`Close`; **LiveTask** adds explain, inspect, events, stats,
+  control, attach, rebranch, and detach through opt-in capability interfaces
+  (`Explainer`, `Inspectable`, `Observable`, `Controllable`, `Mutable`).
 
 Reuse the same destination value when several branches should feed one mux,
 one sink group, or one transactional writer.
@@ -78,7 +79,7 @@ one sink group, or one transactional writer.
 | Record packets without decoding | `From(input).Copy().To(goav.File(...))` | [Use cases](docs/USE_CASES.md) |
 | Record and preview from one stream | `.Branches(goav.Branch("archive").To(...), goav.Branch("preview").To(...))` | [Use cases](docs/USE_CASES.md) |
 | Decode, filter, and encode again | `.Decode().Resize(...)` or `.Resample(...)`, then `.Encode(codec)` | [Operations](docs/OPERATIONS.md) |
-| Attach a live room participant | `Task.Attach(ctx, goav.Branch(...).From(input.Stream(track)))` | [Dynamic audio room](examples/dynamic-audio-room) |
+| Attach a live room participant | `LiveTask.Attach(ctx, goav.Branch(...).From(input.Stream(track)))` | [Dynamic audio room](examples/dynamic-audio-room) |
 | Add a meter or diagnostic sink | `goav.FrameTap(...)`, then attach a branch ending in `goav.Sink(...)` | [Control plane](docs/CONTROL_PLANE.md) |
 | Wrap app-owned media | `goav.Source(...)` or `goav.Input(provider)` | [Extension cookbook](docs/EXTENSION_COOKBOOK.md) |
 | Add a codec, filter, muxer, or control host | `goav.MustNew(...)` with the relevant extension option | [Adapter authoring](docs/ADAPTER_AUTHORING.md) |
@@ -335,7 +336,7 @@ fails tests.
 
 | Surface | Tier | What that means |
 |---|---|---|
-| Recipe grammar, `Task`, structured errors, `plan`, `snapshot`, `lifecycle`, `shape`, `flow`, `av` vocabulary | Tier A | Stable enough to build against; changes are deliberate and test-pinned. |
+| Recipe grammar, `Task`, `LiveTask` capabilities, structured errors, `plan`, `snapshot`, `lifecycle`, `shape`, `flow`, `av` vocabulary | Tier A | Stable enough to build against; changes are deliberate and test-pinned. |
 | Provider, codec, format, filter, control-host, custom-stage, custom-join, and testing seams | Tier B | Extension points are documented and may grow as capabilities grow. |
 | Expert graph and low-level components | Tier C | Supported for advanced composition, but not the first API to learn. |
 | Performance claims | Evidence based | Allocation pins and benchmarks are real; broad tail-latency and soak claims are not made yet. |

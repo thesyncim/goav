@@ -38,17 +38,20 @@ goav.From(input)                          inputs: FileInput, URIInput, Input(pro
   .Sync(goav.Sync("room", ...))            shared packet/frame timeline gates
   .Encode(codec.VP9(codec.Bitrate(...)))  codec specs from the codec package
   .Tap(goav.Tap|FrameTap|PacketTap)       named attach points
-  .Branches(goav.Branch("x")...To(dst))   fan out; BranchSpec also drives Task.Attach
+  .Branches(goav.Branch("x")...To(dst))   fan out; BranchSpec also drives Mutable.Attach
   input.Stream(av.Stream{ID: ...})        attach anchor for app-owned dynamic tracks
   .To(File|URI|Writer|Custom|Sink)        destinations; reuse one value = mux/sink group
   .OnStream(MatchMedia|MatchCodec|...)    dynamic-stream rules; OnRemove controls detach outcome
 goav.Mix/Composite/Select(arms) / Join(name, stage, arms)   N arms -> one stream (JoinArm)
 goav.Flow("name")                         reusable operation list (Chain)
-job.Describe() / Explain() -> plan.Report; job.Build(ctx) -> Task; job.Run(ctx)
-Task: Run, Events, Watch(EventFilter), Snapshot -> snapshot.*, Stats,
-      Attach/Detach(DrainBranch|AbortBranch)/Rebranch
-      (SwitchAt(NextFrame|NextKeyframe|AtMediaTime), Drain/AbortOldBranch, KeepOldOnFailure),
-      Control(Keyframe|Seek|Segment|Rate|SetBitrate|SelectActive|Deliver, .AtTap)
+job.Describe() / Explain() -> plan.Report; job.Build(ctx) -> LiveTask; job.Run(ctx)
+Task: Run, Close
+Explainer: Explain
+Inspectable: Describe, Taps, Snapshot -> snapshot.*, Stats
+Mutable: Attach/Detach(DrainBranch|AbortBranch); Attachment.Rebranch
+         (SwitchAt(NextFrame|NextKeyframe|AtMediaTime), Drain/AbortOldBranch, KeepOldOnFailure)
+Controllable: Control(Keyframe|Seek|Segment|Rate|SetBitrate|SelectActive|Deliver, .AtTap)
+Observable: Events, Watch(EventFilter)
 goav.New(opts...) -> (*Runtime, error); goav.MustNew(opts...) -> bare Runtime; std.MustNew(opts...) -> standard Runtime; job.UseRuntime(rt)
 errors: *goav.BuildError{Code: errcode.X, ...} matched with errors.As/Is
 ```
@@ -231,7 +234,7 @@ against the constructors in `input.go`/`provider.go`/`source.go`,
   custom push sources, and transport providers are three doors into one
   `InputSpec`. `InputSpec.Stream(av.Stream)` returns an `InputStream` attach
   anchor for app-owned dynamic tracks; it deliberately reuses
-  `Branch(...).From(...)` and `Task.Attach` instead of adding a room/session
+  `Branch(...).From(...)` and `Mutable.Attach` instead of adding a room/session
   workflow API.
 - **Destination vs Sink vs Writer vs File**: `Destination` is the routing
   handle every constructor returns (reuse = mux/sink group); `File` wraps an
@@ -244,8 +247,8 @@ against the constructors in `input.go`/`provider.go`/`source.go`,
 - **Flow vs Branch**: a `Flow` is a reusable operation list and owns no
   destination (`TestNorthStarFlowExposesNoDestinations`); a `Branch` routes
   fanout and owns its destinations.
-- **Attach vs Detach vs Rebranch**: `Task.Attach` adds ordinary branch specs
-  to a running task; `Task.Detach(ctx, h)` removes that attached branch, with
+- **Attach vs Detach vs Rebranch**: `Mutable.Attach` adds ordinary branch specs
+  to a running task; `Mutable.Detach(ctx, h)` removes that attached branch, with
   `DrainBranch()` and `AbortBranch()` selecting whether branch destinations
   commit or abort; `Attachment.Rebranch` is attach-new-then-detach-old, with
   boundary options (`NextFrame`, `NextKeyframe`, `AtMediaTime`) and

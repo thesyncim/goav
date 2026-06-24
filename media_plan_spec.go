@@ -44,7 +44,7 @@ func (p graphPlan) Describe() (pipeline.Spec, error) {
 	return p.spec(), nil
 }
 
-func (p graphPlan) Build(ctx context.Context) (Task, error) {
+func (p graphPlan) Build(ctx context.Context) (LiveTask, error) {
 	if !p.ready() {
 		return nil, recipeGraphUnsupportedError("build graph plan", intent{})
 	}

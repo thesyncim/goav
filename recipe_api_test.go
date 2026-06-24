@@ -1770,7 +1770,7 @@ func TestDocsShowDebugDiagnosticsWorkflow(t *testing.T) {
 			"task.Events()",
 			"task.Attach(ctx",
 			"Attachment.Snapshot()",
-			"Task.Snapshot()",
+			"Inspectable.Snapshot()",
 			"task.Snapshot()",
 			"goav.FrameFunc(\"rms\"",
 		} {
@@ -1965,7 +1965,7 @@ func TestArchitectureDocsUseSmallCompositionVocabulary(t *testing.T) {
 		"SinkEndpoint",
 		"FromTap",
 		"From(node)",
-		"node names from `Task.Describe()`",
+		"node names from `Inspectable.Describe()`",
 		"`Target`, destination constructors",
 		"URIOut",
 		"WriteCloser(",
@@ -5187,7 +5187,7 @@ func TestBranchCompositionRejectsStreamEncodeBeforeBranches(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "stream encoders are terminal") ||
 		!strings.Contains(err.Error(), "encoder: vp9") ||
-		!strings.Contains(err.Error(), "Task.Attach") {
+		!strings.Contains(err.Error(), "Mutable.Attach") {
 		t.Fatalf("err = %v, want planned parent encode guidance", err)
 	}
 }

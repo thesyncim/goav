@@ -172,7 +172,7 @@ func lateStreamSource(late av.Stream, payload byte, stopLate <-chan struct{}, fi
 	)
 }
 
-func taskHasBranch(task Task, name string) bool {
+func taskHasBranch(task Inspectable, name string) bool {
 	branches := task.Snapshot().Branches
 	for i := range branches {
 		if branches[i].Name == name && branches[i].State == lifecycle.BranchAttached {

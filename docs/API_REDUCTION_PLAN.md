@@ -13,7 +13,8 @@ Make the root package a small recipe grammar:
 
 - build inert recipes from inputs, stream selectors, operations, branches, joins,
   and destinations
-- return a minimal runnable `Task`
+- keep `Task` as the minimal runnable lifecycle and expose richer runtime work
+  as opt-in task capability interfaces
 - expose structured build refusals
 - keep runtime/adapters, inspection, live mutation, control, and expert graph
   doors opt-in
@@ -46,6 +47,8 @@ Keep in `goav`:
 - minimal media aliases needed by simple custom callbacks
 - `BuildError` and stable error families
 - minimal `Task` with `Run` and `Close`
+- opt-in task capability interfaces: `Explainer`, `Inspectable`, `Mutable`,
+  `Controllable`, `Observable`, and `LiveTask`
 
 Move or keep outside the front door:
 
@@ -83,7 +86,8 @@ Move or keep outside the front door:
    - Narrow `Task` to `Run(context.Context) error` and `Close() error`.
    - Introduce opt-in interfaces for description/explanation, inspection,
      mutation, control, watching, and stats.
-   - Update examples so simple code only depends on minimal `Task`.
+   - Keep the standard build path returning `LiveTask`, and update consumers to
+     accept narrower interfaces whenever they only need one capability.
 
 6. **Constructor strictness**
    - Stop returning nil from helper constructors on nil callbacks.

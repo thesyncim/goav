@@ -16,7 +16,7 @@ import (
 
 // Server handles one decoded control-plane request against a task.
 type Server struct {
-	Task        goav.Task
+	Task        goav.LiveTask
 	Commands    []CommandSpec
 	Pipeline    PipelineRegistry
 	mu          sync.Mutex
@@ -235,13 +235,13 @@ func (s *Server) unknownBranchError(operation string, name string) error {
 
 // ServeUnix listens on unix://PATH or PATH and serves one JSON request per
 // connection until ctx is cancelled.
-func ServeUnix(ctx context.Context, task goav.Task, address string) error {
+func ServeUnix(ctx context.Context, task goav.LiveTask, address string) error {
 	return ServeUnixWithOptions(ctx, task, address)
 }
 
 // ServeUnixWithOptions listens on unix://PATH or PATH and serves one JSON
 // request per connection until ctx is cancelled.
-func ServeUnixWithOptions(ctx context.Context, task goav.Task, address string, options ...ServerOption) error {
+func ServeUnixWithOptions(ctx context.Context, task goav.LiveTask, address string, options ...ServerOption) error {
 	path := strings.TrimPrefix(address, "unix://")
 	if path == "" {
 		return commandError("invalid_address", "serve control", address, "unix control address needs a path", nil, []string{"use unix:///tmp/goav-live.sock"}, nil)

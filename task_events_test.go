@@ -26,7 +26,7 @@ func TestProviderDecodeBoundsForStreamUsesMatchingInput(t *testing.T) {
 	}
 }
 
-func drainTaskEvents(task Task) []av.Event {
+func drainTaskEvents(task Observable) []av.Event {
 	var events []av.Event
 	for {
 		select {

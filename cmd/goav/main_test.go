@@ -36,7 +36,7 @@ func TestCLIInvokesCustomControlCommand(t *testing.T) {
 	command := ctl.NewCommand[customCommand](
 		"vendor.cli",
 		"custom CLI command",
-		func(_ context.Context, _ goav.Task, args customCommand) (ctl.ControlResponse, error) {
+		func(_ context.Context, _ goav.LiveTask, args customCommand) (ctl.ControlResponse, error) {
 			applied = args.Value
 			return ctl.ControlResponse{Operation: "control vendor.cli", Result: applied}, nil
 		},

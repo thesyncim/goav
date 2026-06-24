@@ -159,7 +159,7 @@ type DeliverCommand struct {
 	Metadata av.Metadata  `goavctl:"metadata" usage:"[metadata.<key>=<value>...]" help:"string metadata entries to carry on the event"`
 }
 
-func applyKeyframe(ctx context.Context, task goav.Task, args any) (ControlResponse, error) {
+func applyKeyframe(ctx context.Context, task goav.LiveTask, args any) (ControlResponse, error) {
 	cmd := args.(KeyframeCommand)
 	if err := ensureTap(task, "control keyframe", cmd.At); err != nil {
 		return ControlResponse{}, err
@@ -174,7 +174,7 @@ func applyKeyframe(ctx context.Context, task goav.Task, args any) (ControlRespon
 	return ControlResponse{Operation: "control keyframe", Result: map[string]any{"stream": cmd.Stream, "at": cmd.At}}, nil
 }
 
-func applyBitrate(ctx context.Context, task goav.Task, args any) (ControlResponse, error) {
+func applyBitrate(ctx context.Context, task goav.LiveTask, args any) (ControlResponse, error) {
 	cmd := args.(BitrateCommand)
 	if err := ensureTap(task, "control bitrate", cmd.At); err != nil {
 		return ControlResponse{}, err
@@ -189,7 +189,7 @@ func applyBitrate(ctx context.Context, task goav.Task, args any) (ControlRespons
 	return ControlResponse{Operation: "control bitrate", Result: map[string]any{"stream": cmd.Stream, "value": cmd.Value, "at": cmd.At}}, nil
 }
 
-func applySeek(ctx context.Context, task goav.Task, args any) (ControlResponse, error) {
+func applySeek(ctx context.Context, task goav.LiveTask, args any) (ControlResponse, error) {
 	cmd := args.(SeekCommand)
 	ctrl := goav.Seek(cmd.Position)
 	var err error
@@ -203,7 +203,7 @@ func applySeek(ctx context.Context, task goav.Task, args any) (ControlResponse, 
 	return ControlResponse{Operation: "control seek", Result: map[string]any{"position": cmd.Position.String()}}, nil
 }
 
-func applyRate(ctx context.Context, task goav.Task, args any) (ControlResponse, error) {
+func applyRate(ctx context.Context, task goav.LiveTask, args any) (ControlResponse, error) {
 	cmd := args.(RateCommand)
 	ctrl := goav.Rate(cmd.Value)
 	var err error
@@ -217,7 +217,7 @@ func applyRate(ctx context.Context, task goav.Task, args any) (ControlResponse, 
 	return ControlResponse{Operation: "control rate", Result: map[string]any{"value": cmd.Value}}, nil
 }
 
-func applySegment(ctx context.Context, task goav.Task, args any) (ControlResponse, error) {
+func applySegment(ctx context.Context, task goav.LiveTask, args any) (ControlResponse, error) {
 	cmd := args.(SegmentCommand)
 	ctrl := goav.Segment(cmd.Start, cmd.End)
 	var err error
@@ -231,7 +231,7 @@ func applySegment(ctx context.Context, task goav.Task, args any) (ControlRespons
 	return ControlResponse{Operation: "control segment", Result: map[string]any{"start": cmd.Start.String(), "end": cmd.End.String()}}, nil
 }
 
-func applySelect(ctx context.Context, task goav.Task, args any) (ControlResponse, error) {
+func applySelect(ctx context.Context, task goav.LiveTask, args any) (ControlResponse, error) {
 	cmd := args.(SelectCommand)
 	if cmd.Selector != "" && cmd.At != "" {
 		return ControlResponse{}, commandError(
@@ -262,7 +262,7 @@ func applySelect(ctx context.Context, task goav.Task, args any) (ControlResponse
 	return ControlResponse{Operation: "control select", Result: map[string]any{"active": cmd.Active, "selector": cmd.Selector, "at": cmd.At}}, nil
 }
 
-func applyDeliver(ctx context.Context, task goav.Task, args any) (ControlResponse, error) {
+func applyDeliver(ctx context.Context, task goav.LiveTask, args any) (ControlResponse, error) {
 	cmd := args.(DeliverCommand)
 	if cmd.At == "" {
 		return ControlResponse{}, commandError(
@@ -287,7 +287,7 @@ func applyDeliver(ctx context.Context, task goav.Task, args any) (ControlRespons
 }
 
 // Invoke binds args for one allowlisted spec and applies it.
-func Invoke(ctx context.Context, task goav.Task, spec CommandSpec, args []string) (ControlResponse, error) {
+func Invoke(ctx context.Context, task goav.LiveTask, spec CommandSpec, args []string) (ControlResponse, error) {
 	bound, err := BindArgs(spec, args)
 	if err != nil {
 		return ControlResponse{}, err
@@ -298,7 +298,7 @@ func Invoke(ctx context.Context, task goav.Task, spec CommandSpec, args []string
 	return spec.Apply(ctx, task, bound)
 }
 
-func executeRawControl(ctx context.Context, task goav.Task, data []byte) (ControlResponse, error) {
+func executeRawControl(ctx context.Context, task goav.LiveTask, data []byte) (ControlResponse, error) {
 	ctrl, err := DecodeRawControl(data)
 	if err != nil {
 		return ControlResponse{}, err
@@ -323,7 +323,7 @@ func executeRawControl(ctx context.Context, task goav.Task, data []byte) (Contro
 	return ControlResponse{Operation: "control --json", Result: map[string]any{"type": ctrl.Type, "stream": ctrl.StreamID, "tap": ctrl.Tap}}, nil
 }
 
-func executeRawEvent(ctx context.Context, task goav.Task, data []byte, args []string) (ControlResponse, error) {
+func executeRawEvent(ctx context.Context, task goav.LiveTask, data []byte, args []string) (ControlResponse, error) {
 	event, err := DecodeRawEvent(data)
 	if err != nil {
 		return ControlResponse{}, err
@@ -731,7 +731,7 @@ func metadataScalarString(value any) (string, bool) {
 	}
 }
 
-func applySourceOrNodeTarget(task goav.Task, operation string, ctrl goav.Control, source string, node string) (goav.Control, error) {
+func applySourceOrNodeTarget(task goav.LiveTask, operation string, ctrl goav.Control, source string, node string) (goav.Control, error) {
 	if source != "" && node != "" {
 		return goav.Control{}, commandError(
 			"target_conflict",
@@ -758,7 +758,7 @@ func applySourceOrNodeTarget(task goav.Task, operation string, ctrl goav.Control
 	return ctrl, nil
 }
 
-func ensureTap(task goav.Task, operation string, tap string) error {
+func ensureTap(task goav.LiveTask, operation string, tap string) error {
 	if tap == "" {
 		return nil
 	}
@@ -784,7 +784,7 @@ func ensureTap(task goav.Task, operation string, tap string) error {
 	)
 }
 
-func ensureNode(task goav.Task, operation string, node string) error {
+func ensureNode(task goav.LiveTask, operation string, node string) error {
 	spec := task.Describe()
 	var names []string
 	for _, candidate := range spec.Nodes {
@@ -808,7 +808,7 @@ func ensureNode(task goav.Task, operation string, node string) error {
 	)
 }
 
-func ensureNodeKind(task goav.Task, operation string, node string, kind pipeline.NodeKind) error {
+func ensureNodeKind(task goav.LiveTask, operation string, node string, kind pipeline.NodeKind) error {
 	spec := task.Describe()
 	var names []string
 	for _, candidate := range spec.Nodes {

@@ -32,7 +32,7 @@ func TestComposabilityLawsMapToExecutableEvidence(t *testing.T) {
 		"# Composability laws",
 		"direct stream chain",
 		"`Flow` owns ordered operations only",
-		"runtime `Task.Attach`",
+		"runtime `Mutable.Attach`",
 		"`Describe()`",
 		"`Explain()`",
 		"Destination reuse groups",

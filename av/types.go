@@ -509,10 +509,10 @@ const (
 	// detached. Cause carries the failure, Reason names the rule branch, and
 	// StreamID is the discovered stream.
 	EventAttachError EventType = "attach_error"
-	// EventBranchAttached reports that Task.Attach added a runtime branch
+	// EventBranchAttached reports that Mutable.Attach added a runtime branch
 	// group. Metadata carries MetadataAttachmentID and MetadataAttachmentName.
 	EventBranchAttached EventType = "branch_attached"
-	// EventBranchDetached reports that Task.Detach removed a runtime branch
+	// EventBranchDetached reports that Mutable.Detach removed a runtime branch
 	// group. Metadata carries MetadataAttachmentID, MetadataAttachmentName, and
 	// MetadataDetachDisposition.
 	EventBranchDetached EventType = "branch_detached"

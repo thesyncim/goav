@@ -29,7 +29,7 @@ stage concern.
 | Need | Use | Copy from | Failure to test |
 |---|---|---|---|
 | Push media already owned by the app | `goav.Source(name, shape, fn)` | `examples/custom-source` | missing callback or wrong shape refuses before work starts |
-| Publish dynamic app-owned tracks and optionally mix an output | `goav.Source` plus `Task.Attach(...From(input.Stream(track)))` | `examples/dynamic-audio-room` | inactive participant frames fail instead of silently corrupting the mix |
+| Publish dynamic app-owned tracks and optionally mix an output | `goav.Source` plus `Mutable.Attach(...From(input.Stream(track)))` | `examples/dynamic-audio-room` | inactive participant frames fail instead of silently corrupting the mix |
 | Open a transport or live provider | `provider.Source` via `goav.Input(provider)` | `examples/provider-source` | nil provider or missing codec/stream facts refuse before work starts |
 | Write bytes after format resolution | `goav.Writer(name, open, opts...)` | `examples/custom-destination` | nil opener or writer open error fails the task |
 | Commit or abort object-store uploads | `provider.TransactionalWriter` | `examples/transactional-writer` | induced pipeline error calls `Abort`, not `Commit` |
@@ -276,7 +276,7 @@ app-specific verbs, branch steps, or encoder names through `goav ctl`.
 command := ctl.NewCommand[setRate](
     "vendor.rate",
     "demo playback-rate control",
-    func(ctx context.Context, task goav.Task, cmd setRate) (ctl.ControlResponse, error) {
+    func(ctx context.Context, task goav.LiveTask, cmd setRate) (ctl.ControlResponse, error) {
         if err := task.Control(ctx, goav.Rate(cmd.Value).At(pipeline.NodeRef(cmd.Source))); err != nil {
             return ctl.ControlResponse{}, err
         }

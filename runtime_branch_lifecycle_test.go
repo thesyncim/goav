@@ -119,7 +119,7 @@ func liveMutableVideoPackets(name string, width, height int, tick time.Duration)
 		})
 }
 
-func decodedVideoTapTask(t *testing.T, ctx context.Context, input goav.InputSpec, main pipeline.Sink) goav.Task {
+func decodedVideoTapTask(t *testing.T, ctx context.Context, input goav.InputSpec, main pipeline.Sink) goav.LiveTask {
 	t.Helper()
 	task, err := goav.From(input).
 		UseRuntime(goavtest.Runtime()).
@@ -135,7 +135,7 @@ func decodedVideoTapTask(t *testing.T, ctx context.Context, input goav.InputSpec
 	return task
 }
 
-func attachDropBranch(t *testing.T, ctx context.Context, task goav.Task, name string, sink pipeline.Sink) goav.Attachment {
+func attachDropBranch(t *testing.T, ctx context.Context, task goav.Mutable, name string, sink pipeline.Sink) goav.Attachment {
 	t.Helper()
 	attachment, err := task.Attach(ctx, goav.Branch(name).
 		From(goav.FrameTap(lifecycleTapName)).

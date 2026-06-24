@@ -75,7 +75,7 @@ func TestInvokeCustomCommandContracts(t *testing.T) {
 	spec := CommandSpec{
 		Name:     "vendor",
 		ArgsType: reflect.TypeOf(vendorCommand{}),
-		Apply: func(_ context.Context, _ goav.Task, args any) (ControlResponse, error) {
+		Apply: func(_ context.Context, _ goav.LiveTask, args any) (ControlResponse, error) {
 			got = args.(vendorCommand)
 			return ControlResponse{
 				Operation: "control vendor",
@@ -105,7 +105,7 @@ func TestInvokeCustomCommandContracts(t *testing.T) {
 
 	cause := errors.New("native command failed")
 	customErr := NewError("vendor_failed", "control vendor", "gain", "vendor failed", []string{"gain=7"}, []string{"try gain=3"}, cause)
-	spec.Apply = func(context.Context, goav.Task, any) (ControlResponse, error) {
+	spec.Apply = func(context.Context, goav.LiveTask, any) (ControlResponse, error) {
 		return ControlResponse{}, customErr
 	}
 	_, err = Invoke(context.Background(), newFakeTask(), spec, []string{"stream=audio", "gain=7"})
@@ -1698,7 +1698,7 @@ func TestServeUnixWithOptionsHandlesCustomCommand(t *testing.T) {
 		Name:     "vendor.socket",
 		Summary:  "socket custom command",
 		ArgsType: reflect.TypeOf(socketCommand{}),
-		Apply: func(_ context.Context, _ goav.Task, args any) (ControlResponse, error) {
+		Apply: func(_ context.Context, _ goav.LiveTask, args any) (ControlResponse, error) {
 			applied = args.(socketCommand).Value
 			return ControlResponse{Operation: "control vendor.socket", Result: applied}, nil
 		},
@@ -1875,7 +1875,7 @@ func TestServerSupportsCustomControlCommand(t *testing.T) {
 			Name:     "vendor.custom",
 			Summary:  "custom vendor command",
 			ArgsType: reflect.TypeOf(vendorCommand{}),
-			Apply: func(_ context.Context, _ goav.Task, args any) (ControlResponse, error) {
+			Apply: func(_ context.Context, _ goav.LiveTask, args any) (ControlResponse, error) {
 				applied = args.(vendorCommand).Value
 				return ControlResponse{Operation: "control vendor.custom", Result: applied}, nil
 			},
@@ -1908,7 +1908,7 @@ func TestTypedCapabilityHelpersBindAndReport(t *testing.T) {
 	command := NewCommand[tuneCommand](
 		"vendor.tune",
 		"typed vendor tuning control",
-		func(_ context.Context, _ goav.Task, args tuneCommand) (ControlResponse, error) {
+		func(_ context.Context, _ goav.LiveTask, args tuneCommand) (ControlResponse, error) {
 			tuneSeen = args
 			return ControlResponse{Operation: "control vendor.tune", Result: map[string]any{"value": args.Value}}, nil
 		},
@@ -2595,7 +2595,7 @@ func TestTestOnlyCommandExtensionPath(t *testing.T) {
 		Name:     "fake",
 		Summary:  "fake extension",
 		ArgsType: reflect.TypeOf(fakeCommand{}),
-		Apply: func(_ context.Context, _ goav.Task, args any) (ControlResponse, error) {
+		Apply: func(_ context.Context, _ goav.LiveTask, args any) (ControlResponse, error) {
 			applied = args.(fakeCommand).Name
 			return ControlResponse{Operation: "control fake", Result: applied}, nil
 		},

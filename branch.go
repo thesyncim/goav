@@ -89,7 +89,7 @@ func destinationSpecEmpty(dest destinationSpec) bool {
 
 // BranchSpec is one finished branch declaration: the operations and
 // destinations a Branch(...) builder accumulated, ready for .Branches(...) on
-// a stream chain or Task.Attach at runtime. Values are immutable snapshots —
+// a stream chain or Mutable.Attach at runtime. Values are immutable snapshots —
 // reusing a builder cannot mutate a spec already passed along.
 type BranchSpec struct {
 	name         string
@@ -766,7 +766,7 @@ func branchEncodeParentOperationError(node string, encode codec.CodecSpec) error
 		Suggestions: []string{
 			"move .Branches(...) before the stream encoder",
 			"put .Encode(codec.Opus(...)), .Encode(codec.VP8(...)), or .Encode(codec.VP9(...)) on each goav.Branch(...) that writes a destination",
-			"attach post-encode packet branches at runtime with Task.Attach(ctx, goav.Branch(name).From(goav.PacketTap(name))...)",
+			"attach post-encode packet branches at runtime with Mutable.Attach(ctx, goav.Branch(name).From(goav.PacketTap(name))...)",
 		},
 		Cause: ErrUnsupportedBuild,
 	}
@@ -784,7 +784,7 @@ func plannedBranchNodeSourceError(name string, source string) error {
 		Suggestions: []string{
 			"use .From(goav.FrameTap(name)) or .From(goav.PacketTap(name)) to branch from a stable tap",
 			"omit .From(...) to branch from the current stream point",
-			"use Task.Attach(ctx, goav.Branch(name).From(graphNode)...) for expert runtime graph attachment",
+			"use Mutable.Attach(ctx, goav.Branch(name).From(graphNode)...) for expert runtime graph attachment",
 		},
 		Cause: ErrUnsupportedBuild,
 	}

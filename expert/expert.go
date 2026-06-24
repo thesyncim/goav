@@ -33,8 +33,8 @@ type GraphBuilder interface {
 	Connect(GraphOutlet, ...GraphInlet) GraphBuilder
 	// Describe reports the wired graph spec, or the first wiring error.
 	Describe() (pipeline.Spec, error)
-	// Build compiles the wired graph into a runnable goav Task.
-	Build(context.Context) (goav.Task, error)
+	// Build compiles the wired graph into a runnable goav live task.
+	Build(context.Context) (goav.LiveTask, error)
 }
 
 // Graph opens the handle-based graph builder on a goav runtime.
@@ -58,7 +58,7 @@ type graphCore interface {
 	AddSink(name string, sink pipeline.Sink) string
 	AddRoute(from string, policy pipeline.RoutePolicy, label string, to ...string)
 	Describe() (pipeline.Spec, error)
-	Build(ctx context.Context) (goav.Task, error)
+	Build(ctx context.Context) (goav.LiveTask, error)
 }
 
 // GraphNode is an expert-graph handle to one added source, stage, or sink;
@@ -172,7 +172,7 @@ func (g *graphBuilder) Describe() (pipeline.Spec, error) {
 	return g.core.Describe()
 }
 
-func (g *graphBuilder) Build(ctx context.Context) (goav.Task, error) {
+func (g *graphBuilder) Build(ctx context.Context) (goav.LiveTask, error) {
 	if g.err != nil {
 		return nil, g.err
 	}

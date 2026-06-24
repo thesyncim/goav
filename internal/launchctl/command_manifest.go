@@ -23,7 +23,7 @@ type CommandSpec struct {
 	Aliases  []string
 	Summary  string
 	ArgsType reflect.Type
-	Apply    func(context.Context, goav.Task, any) (ControlResponse, error)
+	Apply    func(context.Context, goav.LiveTask, any) (ControlResponse, error)
 }
 
 // ControlManifest is the complete built-in allowlist for goav ctl control

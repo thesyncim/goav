@@ -44,7 +44,7 @@ func ErrorResponse(operation string, err error) Response {
 
 // ExecuteRequest applies a decoded socket request to a Task and wraps the
 // result in the standard response envelope.
-func ExecuteRequest(ctx context.Context, task goav.Task, request Request) Response {
+func ExecuteRequest(ctx context.Context, task goav.LiveTask, request Request) Response {
 	response, err := executeRequest(ctx, task, request)
 	if err != nil {
 		return ErrorResponse(request.Op, err)
@@ -52,11 +52,11 @@ func ExecuteRequest(ctx context.Context, task goav.Task, request Request) Respon
 	return SuccessResponse(response.Result)
 }
 
-func executeRequest(ctx context.Context, task goav.Task, request Request) (ControlResponse, error) {
+func executeRequest(ctx context.Context, task goav.LiveTask, request Request) (ControlResponse, error) {
 	return executeRequestWithRegistry(ctx, task, request, ControlManifest(), PipelineRegistry{})
 }
 
-func executeRequestWithRegistry(ctx context.Context, task goav.Task, request Request, manifest []CommandSpec, registry PipelineRegistry) (ControlResponse, error) {
+func executeRequestWithRegistry(ctx context.Context, task goav.LiveTask, request Request, manifest []CommandSpec, registry PipelineRegistry) (ControlResponse, error) {
 	switch request.Op {
 	case "help":
 		text, err := helpWithRuntime(helpArgsFromRequest(request), manifest, registry, task)
@@ -112,12 +112,12 @@ func executeRequestWithRegistry(ctx context.Context, task goav.Task, request Req
 	}
 }
 
-func executeAttachRequest(ctx context.Context, task goav.Task, request Request, registry PipelineRegistry) (ControlResponse, error) {
+func executeAttachRequest(ctx context.Context, task goav.LiveTask, request Request, registry PipelineRegistry) (ControlResponse, error) {
 	response, _, err := attachRequest(ctx, task, request, registry)
 	return response, err
 }
 
-func attachRequest(ctx context.Context, task goav.Task, request Request, registry PipelineRegistry) (ControlResponse, goav.Attachment, error) {
+func attachRequest(ctx context.Context, task goav.LiveTask, request Request, registry PipelineRegistry) (ControlResponse, goav.Attachment, error) {
 	spec, err := parseBranchPipelineWithRegistry(task, request.Tap, request.Branch, request.Pipeline, registry)
 	if err != nil {
 		return ControlResponse{}, nil, err
@@ -327,7 +327,7 @@ func flagArg(key string, value string) bool {
 
 // Execute applies one ctl command directly to a Task. It is the in-process
 // equivalent of what a control server does after decoding Request.
-func Execute(ctx context.Context, task goav.Task, argv []string) (ControlResponse, error) {
+func Execute(ctx context.Context, task goav.LiveTask, argv []string) (ControlResponse, error) {
 	if len(argv) == 0 {
 		return ControlResponse{}, commandError("missing_command", "ctl", "", "missing ctl command", nil, []string{"use `goav ctl help`"}, nil)
 	}
@@ -388,7 +388,7 @@ func Execute(ctx context.Context, task goav.Task, argv []string) (ControlRespons
 	}
 }
 
-func executeControl(ctx context.Context, task goav.Task, argv []string) (ControlResponse, error) {
+func executeControl(ctx context.Context, task goav.LiveTask, argv []string) (ControlResponse, error) {
 	if len(argv) == 0 {
 		return ControlResponse{}, commandError("missing_command", "control", "", "missing control verb", nil, []string{"use `goav ctl help control`"}, nil)
 	}
@@ -409,7 +409,7 @@ func executeControl(ctx context.Context, task goav.Task, argv []string) (Control
 	return Invoke(ctx, task, spec, argv[1:])
 }
 
-func executeGraph(task goav.Task, args map[string]string) (ControlResponse, error) {
+func executeGraph(task goav.LiveTask, args map[string]string) (ControlResponse, error) {
 	for key := range args {
 		if key != "format" {
 			return ControlResponse{}, commandError("unknown_field", "graph", key, fmt.Sprintf("unknown graph field %q", key), nil, []string{"use format=mermaid", "use format=dot", "use format=text"}, nil)
@@ -439,7 +439,7 @@ func graphRenderTarget(format string) (string, error) {
 	}
 }
 
-func executeWatch(task goav.Task, operation string, args []string) (ControlResponse, error) {
+func executeWatch(task goav.LiveTask, operation string, args []string) (ControlResponse, error) {
 	argValues, err := argsMap(operation, args)
 	if err != nil {
 		return ControlResponse{}, err
@@ -477,7 +477,7 @@ func executeWatch(task goav.Task, operation string, args []string) (ControlRespo
 	}
 }
 
-func executeUnsupportedDetach(task goav.Task, args []string) (ControlResponse, error) {
+func executeUnsupportedDetach(task goav.LiveTask, args []string) (ControlResponse, error) {
 	if len(args) != 1 {
 		return ControlResponse{}, commandError("invalid_argument", "detach", "", "detach needs exactly one branch name", nil, []string{"use `goav ctl detach <branch-name>`"}, nil)
 	}
@@ -491,7 +491,7 @@ func executeUnsupportedDetach(task goav.Task, args []string) (ControlResponse, e
 				name,
 				"detaching by branch name requires a control server handle table for goav.Attachment",
 				nil,
-				[]string{"keep the goav.Attachment returned by Task.Attach and call task.Detach(ctx, attachment)", "run `goav ctl branches` to inspect branch state"},
+				[]string{"keep the goav.Attachment returned by Mutable.Attach and call task.Detach(ctx, attachment)", "run `goav ctl branches` to inspect branch state"},
 				nil,
 			)
 		}
@@ -504,7 +504,7 @@ func executeUnsupportedDetach(task goav.Task, args []string) (ControlResponse, e
 	return ControlResponse{}, commandError("unknown_branch", "detach", name, fmt.Sprintf("unknown branch %q", name), []string{"available_branches=" + strings.Join(available, ",")}, suggestions, nil)
 }
 
-func executeUnsupportedRebranch(task goav.Task, args []string) (ControlResponse, error) {
+func executeUnsupportedRebranch(task goav.LiveTask, args []string) (ControlResponse, error) {
 	if len(args) == 0 {
 		return ControlResponse{}, commandError("invalid_argument", "rebranch", "", "rebranch needs a branch name", nil, []string{"use `goav ctl help rebranch`"}, nil)
 	}
@@ -550,7 +550,7 @@ type StreamInfo struct {
 	Metadata map[string]string `json:"metadata,omitempty"`
 }
 
-func streamsFromTask(task goav.Task) []StreamInfo {
+func streamsFromTask(task goav.LiveTask) []StreamInfo {
 	var out []StreamInfo
 	seen := make(map[av.StreamID]struct{})
 	for _, tap := range task.Taps() {

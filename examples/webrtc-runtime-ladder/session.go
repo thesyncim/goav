@@ -40,8 +40,8 @@ type session struct {
 	revision  uint64
 	eventSeq  uint64
 
-	videoTask  goav.Task
-	audioTask  goav.Task
+	videoTask  goav.LiveTask
+	audioTask  goav.LiveTask
 	videoCodec string
 	audioCodec string
 	lastError  string
@@ -134,7 +134,7 @@ func (s *session) startAudioTrack(track *webrtc.TrackRemote) {
 	go s.runTask("audio", task)
 }
 
-func (s *session) runTask(kind string, task goav.Task) {
+func (s *session) runTask(kind string, task goav.LiveTask) {
 	s.record("info", "task", kind+" task running", kind, "", nil)
 	go s.drainTaskEvents(task)
 	if err := task.Run(s.ctx); err != nil && !errors.Is(err, context.Canceled) {
@@ -144,7 +144,7 @@ func (s *session) runTask(kind string, task goav.Task) {
 	s.record("info", "task", kind+" task stopped", kind, "", nil)
 }
 
-func (s *session) drainTaskEvents(task goav.Task) {
+func (s *session) drainTaskEvents(task goav.Observable) {
 	for {
 		select {
 		case _, ok := <-task.Events():

@@ -376,7 +376,7 @@ const (
 	SelectTapArm Code = "select_tap_arm"
 )
 
-// Runtime attach codes (Task.Attach / Rebranch refusals).
+// Runtime attach codes (Mutable.Attach / Rebranch refusals).
 const (
 	// RuntimeBranchInvalid fires when a runtime branch spec is nil or
 	// malformed.

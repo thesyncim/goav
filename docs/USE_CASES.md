@@ -378,7 +378,7 @@ if err != nil {
 defer group.Close(ctx)
 ```
 
-Use `Task.Taps()` to discover stable outlets and `Task.Detach(ctx, h)` for a
+Use `Inspectable.Taps()` to discover stable outlets and `Mutable.Detach(ctx, h)` for a
 plain removal, `DrainBranch()` when the branch output should commit, or
 `AbortBranch()` when it should be abandoned. Taps declared after encode or copy
 are packet taps. Observer branches can end in a sink while publishing a nested
@@ -391,7 +391,7 @@ recipe encoding remains work in progress.
 Debugging uses the same composition grammar. Explain the plan before opening the
 graph, drain task events while it runs, then attach temporary branches from
 typed taps. `Attachment.Snapshot()` reports the attached branch, and
-`Task.Snapshot()` reports the whole graph plus active branches with typed
+`Inspectable.Snapshot()` reports the whole graph plus active branches with typed
 lifecycle states.
 
 ![Runtime pipeline debugging](assets/pipeline-debug.svg)

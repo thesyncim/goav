@@ -1,6 +1,6 @@
 package goav
 
-// DetachOption configures Task.Detach. The default detach closes the runtime
+// DetachOption configures Mutable.Detach. The default detach closes the runtime
 // branch and reports its destinations as closed; DrainBranch and AbortBranch
 // choose a terminal destination outcome for workflows where the detach itself
 // is the commit or abort boundary.
@@ -19,7 +19,7 @@ func (f detachOptionFunc) applyDetach(policy *detachPolicy) {
 }
 
 // DrainBranch finalizes the detached branch as drained: its destinations are
-// committed when Task.Detach removes it. This is the standalone detach twin of
+// committed when Mutable.Detach removes it. This is the standalone detach twin of
 // DrainOldBranch for Rebranch.
 func DrainBranch() DetachOption {
 	return detachOptionFunc(func(policy *detachPolicy) {
@@ -28,7 +28,7 @@ func DrainBranch() DetachOption {
 }
 
 // AbortBranch finalizes the detached branch as abandoned: its destinations are
-// aborted when Task.Detach removes it. This is useful for runtime recording or
+// aborted when Mutable.Detach removes it. This is useful for runtime recording or
 // diagnostic branches whose output should not be committed.
 func AbortBranch() DetachOption {
 	return detachOptionFunc(func(policy *detachPolicy) {

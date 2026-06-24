@@ -55,7 +55,7 @@ type graphPlanGraphConfigurer interface {
 	graphConfig(graphPlan) (pipeline.GraphConfig, error)
 }
 
-func buildGraphPlanTask(ctx context.Context, gp graphPlan) (Task, error) {
+func buildGraphPlanTask(ctx context.Context, gp graphPlan) (LiveTask, error) {
 	runtime := gp.runtime
 	if runtime == nil {
 		return nil, recipeGraphUnsupportedError("build recipe", intent{})

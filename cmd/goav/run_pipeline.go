@@ -275,7 +275,7 @@ func reportedFileDestinationFormat(ctx context.Context, runtime *goav.Runtime, d
 	return result.Format
 }
 
-func buildRunPipelineTask(ctx context.Context, runtime *goav.Runtime, plan runPipelinePlan, dest goav.Destination) (goav.Task, codec.CodecSpec, error) {
+func buildRunPipelineTask(ctx context.Context, runtime *goav.Runtime, plan runPipelinePlan, dest goav.Destination) (goav.LiveTask, codec.CodecSpec, error) {
 	source := plan.source.input()
 	job := goav.From(source)
 	stream := job.Video(goav.InputName(plan.source.name))
@@ -300,7 +300,7 @@ func buildRunPipelineTask(ctx context.Context, runtime *goav.Runtime, plan runPi
 	return task, encoded, nil
 }
 
-func runPipelineTaskWithControl(ctx context.Context, task goav.Task, control string) error {
+func runPipelineTaskWithControl(ctx context.Context, task goav.LiveTask, control string) error {
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	errC := make(chan error, 2)

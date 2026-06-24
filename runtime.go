@@ -397,7 +397,7 @@ func (b *builder) Routes(routes ...pipeline.Route) *builder {
 	return b
 }
 
-func (b *builder) Build(ctx context.Context) (Task, error) {
+func (b *builder) Build(ctx context.Context) (LiveTask, error) {
 	b.destinationTxs = nil
 	b.requireRunOK = true
 	graph, err := b.newGraph(ctx)

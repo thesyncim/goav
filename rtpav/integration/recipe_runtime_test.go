@@ -21,6 +21,7 @@ import (
 	"github.com/thesyncim/goav/rtpav"
 	"github.com/thesyncim/goav/shape"
 	"github.com/thesyncim/goav/snapshot"
+	"github.com/thesyncim/goav/std"
 )
 
 // TestProviderRTPDescribePinsLegacyConstructorStrings pins the Describe()
@@ -720,7 +721,7 @@ func TestDefaultRecordRecipeRTPVP8Runs(t *testing.T) {
 	var out bytes.Buffer
 	job := goav.From(
 		goav.Input(rtpav.Receive(receiver, rtpav.WithName("video"), rtpav.WithCodec(codec.VP8()), rtpav.WithBufferLimits(rtpav.BufferLimits{MaxPackets: 2}))),
-	).Copy().To(goav.File("recording.ivf", &out))
+	).UseRuntime(std.MustNew()).Copy().To(goav.File("recording.ivf", &out))
 
 	planned, err := job.Describe()
 	if err != nil {

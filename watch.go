@@ -12,7 +12,7 @@ import (
 const defaultWatchCapacity = 16
 
 // EventFilter reports whether a watcher wants an event. Filters passed to
-// Task.Watch AND together: an event is delivered when every filter matches. A
+// Observable.Watch AND together: an event is delivered when every filter matches. A
 // watch with zero filters receives every event. Any predicate works — WatchTypes
 // and WatchStream cover the common cases.
 type EventFilter func(av.Event) bool
@@ -37,7 +37,7 @@ func WatchStream(id av.StreamID) EventFilter {
 }
 
 // Watch returns an independent, filtered subscription to the task's event
-// stream. See Task.Watch for the delivery, overflow, and closure contract.
+// stream. See Observable.Watch for the delivery, overflow, and closure contract.
 func (t *task) Watch(filters ...EventFilter) <-chan av.Event {
 	return t.watch.subscribe(t.graph.Events(), t.watchCapacity(), filters)
 }

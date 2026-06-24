@@ -102,7 +102,7 @@ func TestSelectSwitchesActiveArmMidRun(t *testing.T) {
 
 // controlWhenRunning retries a control until the graph is running and
 // accepts it — the public-API form of the internal retry helper.
-func controlWhenRunning(ctx context.Context, task goav.Task, control goav.Control) error {
+func controlWhenRunning(ctx context.Context, task goav.Controllable, control goav.Control) error {
 	for {
 		err := task.Control(ctx, control)
 		if err == nil || !errors.Is(err, goav.ErrControlNotRunning) {

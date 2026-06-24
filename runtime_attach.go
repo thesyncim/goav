@@ -25,7 +25,7 @@ var runtimeAttachmentSeq atomic.Uint64
 
 // attachDestination is one validated destination of an attaching branch: the
 // cloned spec, its sink, and the share key that groups reused destination
-// values inside one Task.Attach call.
+// values inside one Mutable.Attach call.
 type attachDestination struct {
 	name     string
 	dest     destinationSpec
@@ -154,7 +154,7 @@ type Attachment interface {
 	// Without options the switch is immediate, exactly like Detach after Attach.
 	Rebranch(context.Context, ...RebranchOption) (Attachment, error)
 	// Close detaches this branch and any dependent branches anchored on its
-	// taps; equivalent to Task.Detach.
+	// taps; equivalent to Mutable.Detach.
 	Close(context.Context) error
 }
 
@@ -356,7 +356,7 @@ func validateAttachBranchSpec(spec BranchSpec, destinations []attachDestination)
 		return runtimeBranchInvalidError("branch name is empty", "start with goav.Branch(\"name\")")
 	}
 	if spec.source.from == "" && spec.source.tap == "" {
-		return runtimeBranchInvalidError("branch source is empty", "call .From(input.Stream(stream)) for an input stream, .From(goav.FrameTap(name)) or .From(goav.PacketTap(name)) with a tap from Task.Taps(), or .From(graphNode) with an expert graph handle")
+		return runtimeBranchInvalidError("branch source is empty", "call .From(input.Stream(stream)) for an input stream, .From(goav.FrameTap(name)) or .From(goav.PacketTap(name)) with a tap from Inspectable.Taps(), or .From(graphNode) with an expert graph handle")
 	}
 	if spec.source.stream != nil && spec.source.label == "" {
 		return runtimeBranchInvalidError("branch source stream id is empty", "set av.Stream.ID before passing the stream to input.Stream(stream)")
@@ -502,11 +502,11 @@ func (g *runtimeAttachGroup) reserveSharedSink(spec pipeline.Spec, key string, d
 
 func (g *runtimeAttachGroup) sharedSinkRef(graph pipeline.Graph, key string) (pipeline.NodeRef, bool, error) {
 	if g == nil || !g.isSharedSink(key) {
-		return "", false, runtimeBranchInvalidError("shared sink destination is not registered", "reuse one goav.Sink(sink) destination value inside one Task.Attach call")
+		return "", false, runtimeBranchInvalidError("shared sink destination is not registered", "reuse one goav.Sink(sink) destination value inside one Mutable.Attach call")
 	}
 	target := g.sharedSinks[key]
 	if target == nil {
-		return "", false, runtimeBranchInvalidError("shared sink destination is not reserved", "reuse one goav.Sink(sink) destination value inside one Task.Attach call")
+		return "", false, runtimeBranchInvalidError("shared sink destination is not reserved", "reuse one goav.Sink(sink) destination value inside one Mutable.Attach call")
 	}
 	if target.ref != "" {
 		return target.ref, false, nil
@@ -570,11 +570,11 @@ func (g *runtimeAttachGroup) sharedMuxKeyForNode(node pipeline.NodeRef) (string,
 
 func (g *runtimeAttachGroup) addSharedMuxRoute(key string, route pipeline.Route) error {
 	if g == nil || !g.isSharedMux(key) {
-		return runtimeBranchInvalidError("shared mux destination is not registered", "reuse one goav.File(name, writer) destination value inside one Task.Attach call")
+		return runtimeBranchInvalidError("shared mux destination is not registered", "reuse one goav.File(name, writer) destination value inside one Mutable.Attach call")
 	}
 	target := g.sharedMuxes[key]
 	if target == nil {
-		return runtimeBranchInvalidError("shared mux destination is not reserved", "reuse one goav.File(name, writer) destination value inside one Task.Attach call")
+		return runtimeBranchInvalidError("shared mux destination is not reserved", "reuse one goav.File(name, writer) destination value inside one Mutable.Attach call")
 	}
 	route.To = []string{target.name}
 	target.routes = append(target.routes, route)
@@ -1796,7 +1796,7 @@ func runtimeBranchAnchorMissingError(node string) error {
 		Node:      node,
 		Reason:    "branch source node does not exist in the running task graph",
 		Suggestions: []string{
-			"call task.Taps() and use .From(goav.FrameTap(name)) or .From(goav.PacketTap(name)) for stable media outlets",
+			"call Inspectable.Taps() and use .From(goav.FrameTap(name)) or .From(goav.PacketTap(name)) for stable media outlets",
 			"keep the GraphNode returned by expert.Graph(runtime).Source/Stage/Sink for expert graph attachments",
 			"attach from a stable decoded-frame tap when the branch needs raw frames",
 		},
@@ -1817,7 +1817,7 @@ func runtimeBranchTapMissingError(name string, taps []snapshot.Tap) error {
 		Details:   details,
 		Suggestions: []string{
 			"add .Tap(goav.FrameTap(" + strconv.Quote(name) + ")) or .Tap(goav.PacketTap(" + strconv.Quote(name) + ")) at the point you want to attach",
-			"call task.Taps() before attaching runtime branches",
+			"call Inspectable.Taps() before attaching runtime branches",
 			"use .From(graphNode) only for expert graph-node attachments",
 		},
 		Cause: pipeline.ErrUnknownNode,
@@ -1865,7 +1865,7 @@ func runtimeBranchTapDuplicateError(name string) error {
 		Reason:    "branch tap name already exists in the task",
 		Suggestions: []string{
 			"use a unique tap name for each runtime branch outlet",
-			"call task.Taps() before attaching to inspect the current tap names",
+			"call Inspectable.Taps() before attaching to inspect the current tap names",
 		},
 		Cause: ErrUnsupportedBuild,
 	}
@@ -1880,7 +1880,7 @@ func runtimeBranchTransformMediaError(branch string, transform string, media str
 		Suggestions: []string{
 			"use .Video().Decode().Tap(goav.FrameTap(name)) or a video transform tap before attaching .Resize(...)",
 			"use .Audio().Decode().Tap(goav.FrameTap(name)) or an audio transform tap before attaching .Resample(...)",
-			"call task.Taps() and choose a tap with matching media kind",
+			"call Inspectable.Taps() and choose a tap with matching media kind",
 		},
 		Cause: ErrUnsupportedBuild,
 	}
@@ -1929,7 +1929,7 @@ func runtimeBranchEncodeDomainError(branch string, shape shape.Spec) error {
 		Suggestions: []string{
 			"attach from a tap declared after Decode, Resize, Resample, or a frame-stage .Do(...)",
 			"use .Copy() from a packet tap when no re-encode is intended",
-			"call task.Taps() and choose a tap with domain=frame",
+			"call Inspectable.Taps() and choose a tap with domain=frame",
 		},
 		Cause: ErrUnsupportedBuild,
 	}
@@ -1945,7 +1945,7 @@ func runtimeBranchDecodeDomainError(branch string, shape shape.Spec) error {
 		Suggestions: []string{
 			"attach from a tap declared after Copy, packet receive, or Encode",
 			"omit .Decode() when attaching from a frame tap",
-			"call task.Taps() and choose a tap with domain=packet",
+			"call Inspectable.Taps() and choose a tap with domain=packet",
 		},
 		Cause: ErrUnsupportedBuild,
 	}
@@ -1961,7 +1961,7 @@ func runtimeBranchDecodeCodecMissingError(branch string, shape shape.Spec) error
 		Suggestions: []string{
 			"attach from a recipe tap with codec shape",
 			"declare the input codec (provider codec intent or file metadata) before building the task",
-			"call task.Taps() and choose a packet tap that reports codec=...",
+			"call Inspectable.Taps() and choose a packet tap that reports codec=...",
 		},
 		Cause: ErrUnsupportedBuild,
 	}
@@ -1977,7 +1977,7 @@ func runtimeBranchCopyDomainError(branch string, shape shape.Spec) error {
 		Suggestions: []string{
 			"attach from a tap declared after Copy or Encode",
 			"encode frame taps with .Encode(codec.Opus(...)), .Encode(codec.VP8(...)), or .Encode(codec.VP9(...)) before writing a muxed destination",
-			"call task.Taps() and choose a tap with domain=packet",
+			"call Inspectable.Taps() and choose a tap with domain=packet",
 		},
 		Cause: ErrUnsupportedBuild,
 	}

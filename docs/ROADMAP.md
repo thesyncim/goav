@@ -23,7 +23,7 @@ composer:
 `WorkPlan -> pipeline.Graph -> Task`.
 
 Live mutation follows the same promise. Make runtime attachment a patch of the same plan model:
-`Task.Attach` compiles the same branch grammar into `WorkPatch`, validates
+`Mutable.Attach` compiles the same branch grammar into `WorkPatch`, validates
 before graph mutation, and rolls back fully on failure
 (`TestTaskAttachRuntimeBranchGroupRollsBackOnLaterFailure`).
 
@@ -104,7 +104,7 @@ this list:
   and rejected: no boundary worth a package today (`docs/ARCHITECTURE.md`
   "Package layering"). Revisit only with a data-transfer boundary.
 - **Destination lifecycle events**: task and runtime-branch destinations now
-  publish commit/abort/error events. Standalone `Task.Detach` has explicit
+  publish commit/abort/error events. Standalone `Mutable.Detach` has explicit
   drain/abort outcomes, branch attach/detach events are watchable, and
   `OnRemove(...)` selects per-rule dynamic-stream removal disposition.
 - **`streamIntent` normalization fold**: Explain stream rows and adapter

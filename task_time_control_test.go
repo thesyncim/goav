@@ -330,7 +330,7 @@ func TestTaskTimeControlRejectionMatrix(t *testing.T) {
 			task := newTask(graph, nil)
 			t.Cleanup(func() { _ = task.Close() })
 
-			// Invalid payloads are rejected at Task.Control with a clear error,
+			// Invalid payloads are rejected at Controllable.Control with a clear error,
 			// before any delivery — identically on both runners.
 			for _, control := range []Control{
 				Rate(0),

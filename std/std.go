@@ -68,7 +68,7 @@ func MustNewFilters(opts ...goav.Option) *goav.Runtime {
 // Build compiles job with a standard runtime. It is the batteries-included
 // counterpart to job.UseRuntime(std.MustNew(...)).Build(ctx), while preserving
 // New option errors as returned errors.
-func Build(ctx context.Context, job *goav.Job, opts ...goav.Option) (goav.Task, error) {
+func Build(ctx context.Context, job *goav.Job, opts ...goav.Option) (goav.LiveTask, error) {
 	runtime, err := New(opts...)
 	if err != nil {
 		return nil, err

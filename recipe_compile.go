@@ -210,7 +210,7 @@ func (r recipeResolved) Describe() (pipeline.Spec, error) {
 	return pipeline.Spec{}, recipeGraphUnsupportedError("describe recipe", r.intent)
 }
 
-func (r recipeResolved) Build(ctx context.Context) (Task, error) {
+func (r recipeResolved) Build(ctx context.Context) (LiveTask, error) {
 	if !r.graphPlan.ready() {
 		return nil, recipeGraphUnsupportedError("build recipe", r.intent)
 	}
