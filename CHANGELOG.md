@@ -25,6 +25,8 @@ methodology changes, and migration notes.
 - Removed graph node-name prefix fallback from `Inspectable.Taps()`; taps now
   come from typed planner/runtime anchors instead of `decode-*` or `select-*`
   naming conventions.
+- Typed resize/resample data in the immutable recipe IR instead of carrying
+  root transform wrappers through the planner boundary.
 - Added the pre-v1 simplification target, started the immutable recipe IR
   boundary used by compile-time planning, and tightened task runtime semantics
   so `Run` preserves both execution and finalization failures while `Events`

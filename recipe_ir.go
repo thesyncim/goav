@@ -237,7 +237,7 @@ func recipeIROperationFromSpec(in operationSpec) recipeir.Operation {
 		Detail:    in.Detail,
 		Stage:     in.Stage,
 		Shape:     in.Shape,
-		Transform: cloneTransformSpec(in.Transform),
+		Transform: recipeIRTransformFromRoot(in.Transform),
 		Tap:       recipeIRTapFromRoot(in.Tap),
 		Decode:    cloneCodecSpec(in.Decode),
 		Encode:    cloneCodecSpec(in.Encode),
@@ -330,16 +330,34 @@ func rootCodecChangeFromRecipeIR(in recipeir.CodecChangePolicy) CodecChangePolic
 	}
 }
 
-func rootTransformFromRecipeIR(in any) TransformSpec {
-	switch transform := in.(type) {
-	case TransformSpec:
-		return cloneTransformSpec(transform)
-	case *TransformSpec:
-		if transform != nil {
-			return cloneTransformSpec(*transform)
+func recipeIRTransformFromRoot(in TransformSpec) recipeir.Transform {
+	switch {
+	case in.resize != nil:
+		return recipeir.Transform{
+			Kind:   recipeir.TransformResize,
+			Resize: *in.resize,
 		}
+	case in.resample != nil:
+		return recipeir.Transform{
+			Kind:     recipeir.TransformResample,
+			Resample: *in.resample,
+		}
+	default:
+		return recipeir.Transform{}
 	}
-	return TransformSpec{}
+}
+
+func rootTransformFromRecipeIR(in recipeir.Transform) TransformSpec {
+	switch in.Kind {
+	case recipeir.TransformResize:
+		config := in.Resize
+		return TransformSpec{resize: &config}
+	case recipeir.TransformResample:
+		config := in.Resample
+		return TransformSpec{resample: &config}
+	default:
+		return TransformSpec{}
+	}
 }
 
 func cloneStreamBuilds(streams []streamBuild) []streamBuild {
