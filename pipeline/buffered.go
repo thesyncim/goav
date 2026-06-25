@@ -699,9 +699,7 @@ func (g *bufferedRunner) emitDelivery(ctx context.Context, from int, msg *Messag
 		return delivery, nil
 	}
 	observeOut(fromNode.node.counters, msg, &g.cold)
-	if err := g.publishEvent(msg); err != nil {
-		return delivery, err
-	}
+	g.publishEvent(msg, fromNode.node.counters)
 
 	// A real fanout (more than one matching target) isolates a failing target so
 	// it cannot abort siblings or the source; a simple one-target chain keeps the
@@ -960,15 +958,14 @@ func (g *bufferedRunner) deliver(ctx context.Context, node *bufferedNode, msg *M
 	}
 }
 
-func (g *bufferedRunner) publishEvent(msg *Message) error {
+func (g *bufferedRunner) publishEvent(msg *Message, counters *nodeCounters) {
 	if msg.Kind != MessageEvent || msg.Event == nil {
-		return nil
+		return
 	}
 	select {
 	case g.events <- *msg.Event:
-		return nil
 	default:
-		return ErrBackpressure
+		observeDrop(counters, DropObserver, &g.cold)
 	}
 }
 

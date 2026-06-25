@@ -331,7 +331,7 @@ func TestGraphDirectRejectsAddAfterClose(t *testing.T) {
 	}
 }
 
-func TestGraphDirectEventBackpressure(t *testing.T) {
+func TestGraphDirectFullEventChannelDoesNotFailRun(t *testing.T) {
 	source := &directEventSource{
 		name: "source",
 		events: []av.Event{
@@ -339,6 +339,7 @@ func TestGraphDirectEventBackpressure(t *testing.T) {
 			{Type: av.EventBackpressure},
 		},
 	}
+	sink := &directTestSink{name: "sink"}
 	graph, err := NewGraph(GraphConfig{Name: "events", EventCapacity: 1})
 	if err != nil {
 		t.Fatal(err)
@@ -346,9 +347,26 @@ func TestGraphDirectEventBackpressure(t *testing.T) {
 	if _, err := graph.AddSource(source, BufferPolicy{}); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := graph.AddSink(sink, BufferPolicy{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := graph.Connect(route("source", "sink")); err != nil {
+		t.Fatal(err)
+	}
 
-	if err := graph.Run(context.Background()); !errors.Is(err, ErrBackpressure) {
-		t.Fatalf("err = %v, want ErrBackpressure", err)
+	if err := graph.Run(context.Background()); err != nil {
+		t.Fatalf("Run error = %v", err)
+	}
+	if sink.count != 2 {
+		t.Fatalf("sink count = %d, want 2", sink.count)
+	}
+	stats := graph.Stats()
+	if stats.Dropped != 1 || stats.DropReasons[DropObserver] != 1 {
+		t.Fatalf("stats dropped=%d reasons=%+v, want one observer drop", stats.Dropped, stats.DropReasons)
+	}
+	sourceStats := stats.Nodes["source"]
+	if sourceStats.Dropped != 1 || sourceStats.DropReasons[DropObserver] != 1 {
+		t.Fatalf("source stats = %+v, want one observer drop", sourceStats)
 	}
 }
 

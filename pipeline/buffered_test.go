@@ -750,6 +750,49 @@ func TestGraphBufferedBackpressure(t *testing.T) {
 	}
 }
 
+func TestGraphBufferedFullEventChannelDoesNotFailRun(t *testing.T) {
+	source := &directEventSource{
+		name: "source",
+		events: []av.Event{
+			{Type: av.EventPacketLoss},
+			{Type: av.EventBackpressure},
+		},
+	}
+	sink := &directTestSink{name: "sink"}
+	graph, err := NewGraph(GraphConfig{
+		Name:          "events",
+		EventCapacity: 1,
+		Buffer:        BufferPolicy{Capacity: 2, Drop: DropNever},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := graph.AddSource(source, BufferPolicy{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := graph.AddSink(sink, BufferPolicy{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := graph.Connect(route("source", "sink")); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := graph.Run(context.Background()); err != nil {
+		t.Fatalf("Run error = %v", err)
+	}
+	if sink.count != 2 {
+		t.Fatalf("sink count = %d, want 2", sink.count)
+	}
+	stats := graph.Stats()
+	if stats.Dropped != 1 || stats.DropReasons[DropObserver] != 1 {
+		t.Fatalf("stats dropped=%d reasons=%+v, want one observer drop", stats.Dropped, stats.DropReasons)
+	}
+	sourceStats := stats.Nodes["source"]
+	if sourceStats.Dropped != 1 || sourceStats.DropReasons[DropObserver] != 1 {
+		t.Fatalf("source stats = %+v, want one observer drop", sourceStats)
+	}
+}
+
 type countingSink struct {
 	name  string
 	delay time.Duration

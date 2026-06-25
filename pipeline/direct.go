@@ -592,9 +592,7 @@ func (g *directRunner) emit(ctx context.Context, from int, msg *Message) error {
 		return nil
 	}
 	observeOut(fromNode.counters, msg, &g.cold)
-	if err := g.publishEvent(msg); err != nil {
-		return err
-	}
+	g.publishEvent(msg, fromNode.counters)
 	for i := range fromNode.routes {
 		route := &fromNode.routes[i]
 		if !route.matches(msg) {
@@ -672,20 +670,19 @@ func closeDirectNode(node *directNode) error {
 	}
 }
 
-func (g *directRunner) publishEvent(msg *Message) error {
+func (g *directRunner) publishEvent(msg *Message, counters *nodeCounters) {
 	if msg.Kind != MessageEvent || msg.Event == nil {
-		return nil
+		return
 	}
 	g.eventsMu.Lock()
 	defer g.eventsMu.Unlock()
 	if g.eventsClosed {
-		return nil
+		return
 	}
 	select {
 	case g.events <- *msg.Event:
-		return nil
 	default:
-		return ErrBackpressure
+		observeDrop(counters, DropObserver, &g.cold)
 	}
 }
 

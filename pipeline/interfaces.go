@@ -50,8 +50,8 @@ func (s *Scratch) Reset() {
 	s.Events = s.Events[:0]
 }
 
-// DropPolicy says what a full node queue does with new messages — and doubles
-// as the recorded reason on drop counters (Stats DropReasons).
+// DropPolicy says why a message or observer event was shed, and doubles as the
+// recorded reason on drop counters (Stats DropReasons).
 type DropPolicy string
 
 const (
@@ -86,6 +86,10 @@ const (
 	// These drops happen inside the node, not in its queue, so they reach the
 	// counters through the optional DropReporter capability at snapshot time.
 	DropSync DropPolicy = "sync"
+	// DropObserver is the reason recorded when the graph's cold-side observer
+	// event channel is full. Media/event delivery to graph routes still
+	// continues; only the raw observer copy is shed.
+	DropObserver DropPolicy = "observer"
 )
 
 // DropReporter is an optional Source/Stage/Sink capability: a node that sheds
