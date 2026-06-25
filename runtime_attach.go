@@ -413,7 +413,7 @@ func validateRuntimeBranchGroupDestinations(specs []BranchSpec, destinations [][
 						"second branch: " + branchName,
 					},
 					Suggestions: []string{
-						"reuse one destination value or pass goav.DestinationGroup(name) when branches should share a runtime destination group",
+						"reuse one destination value or wrap each branch destination with goav.Mux(name, destination) for a shared runtime destination group",
 						"create distinct destination values with distinct names for independent runtime destinations",
 						"use a sink destination for runtime diagnostic groups or a mux destination for runtime recording groups",
 					},
@@ -1856,7 +1856,7 @@ func duplicateRuntimeBranchDestinationRefError(branch string, label string, firs
 		Suggestions: []string{
 			"list each destination once in .To(...)",
 			"route one runtime branch to multiple destinations with distinct values such as .To(archive, monitor)",
-			"reuse destination values or pass goav.DestinationGroup(name) across separate Branch(...) attachments when they should share a logical destination",
+			"reuse destination values or wrap each grouped attachment destination with goav.Mux(name, destination)",
 		},
 		Cause: ErrUnsupportedBuild,
 	}

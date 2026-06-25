@@ -232,6 +232,7 @@ goav.Metadata
 goav.Mix
 goav.MustNew
 goav.Mutable
+goav.Mux
 goav.Name
 goav.New
 goav.NextFrame

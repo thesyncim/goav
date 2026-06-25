@@ -30,8 +30,8 @@ before graph mutation, and rolls back fully on failure
 The destination model has also been simplified. Collapse `Target` into `Destination` is done: `File`, `URI`, `Writer`,
 `Sink`, and `Custom` return stable goav-owned destination handles. Reusing one
 handle still groups branches into one mux/sink group, and
-`DestinationGroup(...)` makes the same intent explicit when branches build
-matching destinations independently (`TestDestinationGroupSurvivesWithAndCopy`,
+`Mux(name, destination)` makes the same intent explicit when branches build
+matching destinations independently (`TestMuxSurvivesWithAndCopy`,
 `TestFromMultiInputPlanDedupesSharedDestination`).
 
 ## v0 Stable

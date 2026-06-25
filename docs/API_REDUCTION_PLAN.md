@@ -156,7 +156,7 @@ Add focused coverage as the slices land:
 - `TestNilSinkFuncDoesNotBecomeSilentNilSink`
 - `TestEmitMessagesAreIndependentWhenEmitterRetainsPointers`
 - `TestStdFormatsDocsMatchRegisteredFormats`
-- `TestDestinationGroupSurvivesWithAndCopy`
+- `TestMuxSurvivesWithAndCopy`
 - `TestBuildAndAttachReturnSameErrorForSameInvalidBranch`
 - `TestErrorDetailsAreTyped`
 - `TestCompatibilityPolicyPinsReleaseDecisionEvidence`

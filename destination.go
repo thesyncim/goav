@@ -286,9 +286,11 @@ func Format(format av.FormatID) DestinationOption {
 }
 
 // DestinationGroup marks destinations as the same logical mux/sink group even
-// when they were built as separate Destination values. Destinations in one
-// group should use the same route label and compatible output settings; the
-// first planned destination opens the shared writer or sink.
+// when they were built as separate Destination values. Prefer Mux for new code;
+// keep this option for callers that layer destination options directly.
+// Destinations in one group should use the same route label and compatible
+// output settings; the first planned destination opens the shared writer or
+// sink.
 func DestinationGroup(name string) DestinationOption {
 	return destinationOption(func(spec *destinationSpec) {
 		if name == "" {
@@ -299,6 +301,13 @@ func DestinationGroup(name string) DestinationOption {
 		}
 		spec.group = name
 	})
+}
+
+// Mux marks destination as a first-class logical mux/sink group. Independently
+// built destinations wrapped with the same non-empty group name share one
+// planned output when their destination settings are compatible.
+func Mux(name string, destination Destination) Destination {
+	return destination.With(DestinationGroup(name))
 }
 
 // With returns a copy of the destination with the options applied — the same
@@ -573,7 +582,7 @@ func duplicateDestinationHandleError(operation string, name string) error {
 		Suggestions: []string{
 			"list each destination value once in .To(...)",
 			"use distinct destination names when writing to separate destinations",
-			"reuse one destination value or pass goav.DestinationGroup(name) through .Branches(...) when outputs should be grouped",
+			"reuse one destination value or wrap each grouped destination with goav.Mux(name, destination)",
 		},
 		Cause: ErrUnsupportedBuild,
 	}

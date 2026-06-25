@@ -20,7 +20,7 @@ attachment.
 - A flow is reusable operations; it owns no source, destination, runtime state,
   or lifecycle.
 - A destination value is the routing handle. Reusing one destination value or
-  matching `DestinationGroup(...)` groups branches into one mux or sink group.
+  matching `Mux(name, destination)` groups branches into one mux or sink group.
 - Shape validation is central. Inputs, operations, taps, flows, branches, and
   destinations all participate in the same compatibility check.
 - Build and Attach share the same lowering model: `WorkPlan` for a full task,
@@ -57,7 +57,7 @@ a new feature strengthens the grammar or bypasses it.
 
 | Area | Current evidence |
 | --- | --- |
-| Grammar | #1 README and docs guards keep the public vocabulary on Input, Stream, Tap, Branch, Destination, Flow, Task. #2 direct chains lower like `Branch("main")`. #3 flows expose no destinations. #4 destination grouping is explicit by handle reuse or `DestinationGroup(...)`. |
+| Grammar | #1 README and docs guards keep the public vocabulary on Input, Stream, Tap, Branch, Destination, Flow, Task. #2 direct chains lower like `Branch("main")`. #3 flows expose no destinations. #4 destination grouping is explicit by handle reuse or `Mux(name, destination)`. |
 | Planner | #5 Build and Attach share canonical operation lowering. #6 Attach emits `WorkPatch` downstream of taps. #7 Explain reads from `WorkPlan`. #8 Snapshot reflects plan plus patches. #9 legacy workflow packages are gone. #10 workflow-kind dispatch is gone from normal recipes. |
 | Shape | #11 Resize requires video frames. #12 Resample requires audio frames. #13 frames cannot go to byte destinations without Encode. #14 packet Copy to File succeeds. #15 decoded frames can end in Sink. #16 errors include operation, actual/expected shape, and fix. #17 conversions are inserted only under an explicit policy. |
 | Branches | #18 branches after Decode share one decoder. #19 dropping preview branches do not stall archive branches. #20 Blocking backpressures. #21 branch drop counters are visible. #22 mutable branch output cannot corrupt siblings. |

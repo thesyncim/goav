@@ -277,9 +277,9 @@ func TestFromMultiInputPlanDedupesSharedDestination(t *testing.T) {
 	}
 }
 
-func TestDestinationGroupSurvivesWithAndCopy(t *testing.T) {
-	videoOut := File("call.ogg", io.Discard, DestinationGroup("call"), Format(av.FormatOgg))
-	audioOut := File("call.ogg", io.Discard, DestinationGroup("call")).With(Format(av.FormatOgg))
+func TestMuxSurvivesWithAndCopy(t *testing.T) {
+	videoOut := Mux("call", File("call.ogg", io.Discard, Format(av.FormatOgg)))
+	audioOut := Mux("call", File("call.ogg", io.Discard)).With(Format(av.FormatOgg))
 	job := From(
 		compositeTestVideoSource("camera", 4, 4, 100, 10, 20),
 		mixTestAudioSource("mic", 1),

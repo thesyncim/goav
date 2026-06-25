@@ -24,7 +24,7 @@ err := goav.From(goav.Input(webrtcav.Track(track))).
 
 Reuse the same file, URI, writer, object upload, or sink destination value when
 several branches should feed one mux or sink group, or give matching
-destinations the same `goav.DestinationGroup(...)` when threading one handle is
+destinations the same `goav.Mux(name, destination)` when threading one handle is
 awkward.
 
 Decoded preview:
@@ -39,7 +39,7 @@ err := goav.From(goav.Input(webrtcav.Track(track))).
 
 Several realtime inputs compose through `From(inputs...)`. Use
 `goav.InputName(...)` to say which chain reads which input, and reuse one
-destination value or `goav.DestinationGroup(...)` when the encoded streams
+destination value or `goav.Mux(name, destination)` when the encoded streams
 should land in the same mux.
 
 ## RTP Receive
@@ -203,7 +203,7 @@ err := goav.From(input).
 ```
 
 One destination can be a mux group: several encoded branches feed the same
-destination value or matching `goav.DestinationGroup(...)`. A destination can
+destination value or matching `goav.Mux(name, destination)`. A destination can
 also be a sink after any branch operation
 (no encode needed for frame-domain ends).
 

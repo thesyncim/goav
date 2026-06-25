@@ -164,7 +164,7 @@ dest := goav.File("", out, goav.Format(av.FormatIVF))
 ```
 
 Reuse one destination value, or give matching destinations the same
-`goav.DestinationGroup(...)`, when several branches should feed one mux, one
+`goav.Mux(name, destination)`, when several branches should feed one mux, one
 sink group, or one transactional writer.
 
 The runnable module `examples/custom-destination` verifies the open-time

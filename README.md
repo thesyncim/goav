@@ -43,12 +43,12 @@ The front-door vocabulary is intentionally small:
 - **Operation**: `.Decode()`, `.Copy()`, `.Resize()`, `.Resample()`, `.Do(stage)`, `.Encode(codec)`, `.Tap(...)`.
 - **Tap**: `goav.FrameTap(...)` or `goav.PacketTap(...)` names a point for later branches.
 - **Branch**: `Branches(goav.Branch(...))` fans one media point into several outcomes.
-- **Destination**: `goav.File(...)`, `goav.Writer(...)`, `goav.Sink(...)`, `goav.Custom(...)`, or `goav.URI(...)`; add `goav.DestinationGroup(...)` for explicit sharing.
+- **Destination**: `goav.File(...)`, `goav.Writer(...)`, `goav.Sink(...)`, `goav.Custom(...)`, or `goav.URI(...)`; add `goav.Mux(name, destination)` for explicit sharing.
 - **Flow**: `goav.Flow(...)` is reusable operation text with no source or destination.
 - **Task**: `Run` and `Close`; richer live behavior is behind `LiveTask` and
   the opt-in capability interfaces.
 
-Reuse the same destination value, or matching `goav.DestinationGroup(...)`,
+Reuse the same destination value, or matching `goav.Mux(name, destination)`,
 when several branches should feed one mux, sink group, or transactional writer.
 
 ## Common Recipes

@@ -609,7 +609,7 @@ func TestTaskAttachRuntimeBranchGroupSharesSinkDestination(t *testing.T) {
 	}
 }
 
-func TestTaskAttachRuntimeBranchGroupSharesExplicitDestinationGroup(t *testing.T) {
+func TestTaskAttachRuntimeBranchGroupSharesMuxSinkDestination(t *testing.T) {
 	ctx := context.Background()
 	graph := expertGraph(MustNew())
 	src := graph.Source("source", &runtimeTestSource{name: "source"})
@@ -620,13 +620,13 @@ func TestTaskAttachRuntimeBranchGroupSharesExplicitDestinationGroup(t *testing.T
 	}
 	defer task.Close()
 	sharedCount := 0
-	left := Sink(SinkFunc("shared", func(context.Context, Message) error {
+	left := Mux("diagnostics", Sink(SinkFunc("shared", func(context.Context, Message) error {
 		sharedCount++
 		return nil
-	}), DestinationGroup("diagnostics"))
-	right := Sink(SinkFunc("shared", func(context.Context, Message) error {
-		return fmt.Errorf("explicit destination group should open one shared sink")
-	}), DestinationGroup("diagnostics"))
+	})))
+	right := Mux("diagnostics", Sink(SinkFunc("shared", func(context.Context, Message) error {
+		return fmt.Errorf("explicit mux destination should open one shared sink")
+	})))
 
 	attachment, err := task.Attach(ctx,
 		Branch("left").From(src).To(left),
