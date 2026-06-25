@@ -46,14 +46,17 @@ func AtMediaTime(position time.Duration) SwitchBoundary {
 	return SwitchBoundary{kind: switchMediaTime, mediaTime: position}
 }
 
-// RebranchOption configures Attachment.Rebranch. Replacement BranchSpec
-// values and switch policies share one variadic list, so a rebranch reads as
-// the branch grammar plus policies:
+// RebranchOption configures Attachment.Rebranch. Replacement BranchSpec values
+// and switch policies share one variadic list, so a rebranch reads as the
+// branch grammar plus policies:
 //
 //	attachment.Rebranch(ctx, goav.Branch("hd").From(tap).Copy().To(dest),
 //	    goav.SwitchAt(goav.NextKeyframe()),
 //	    goav.DrainOldBranch(),
 //	)
+//
+// If attaching the replacements fails, the old branch remains attached and
+// intact.
 type RebranchOption interface {
 	applyRebranch(*rebranchPolicy)
 }
@@ -119,14 +122,6 @@ func AbortOldBranch() RebranchOption {
 	return rebranchOptionFunc(func(policy *rebranchPolicy) {
 		policy.disposition = oldBranchAbort
 	})
-}
-
-// KeepOldOnFailure is the explicit spelling of Rebranch's failure policy:
-// when attaching the replacements fails, the replaced branch is left attached
-// and intact. This is the default (and only) behavior; the option documents
-// the intent at the call site.
-func KeepOldOnFailure() RebranchOption {
-	return rebranchOptionFunc(func(*rebranchPolicy) {})
 }
 
 func rebranchPolicyFromOptions(options []RebranchOption) rebranchPolicy {

@@ -130,7 +130,11 @@ Move or keep outside the front door:
    - First parity guard landed with
      `TestBuildAndAttachReturnSameErrorForSameInvalidBranch`.
 
-11. **Docs rewrite** — in progress
+11. **Rebranch policy cleanup** — landed
+    - Remove the public no-op rebranch failure-policy helper. Failed rebranch
+      already keeps the old branch attached as the only supported policy.
+
+12. **Docs rewrite** — in progress
     - Keep the README focused on the small grammar and one or two advanced entry
       points.
     - Finish with a Markdown-wide consistency pass and a README that works as a
@@ -138,7 +142,7 @@ Move or keep outside the front door:
     - Generate bundled adapter capability docs from descriptors so the docs and
       registered set cannot drift.
 
-12. **Go version floor** — landed
+13. **Go version floor** — landed
     - Lower every module directive from the patch-level local toolchain floor
       to the minor-version support floor (`go 1.26`).
     - Keep CI on the latest Go 1.26 patch with `1.26.x`, plus the rolling

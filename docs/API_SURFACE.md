@@ -49,7 +49,7 @@ Task: Run, Close
 Explainer: Explain
 Inspectable: Describe, Taps, Snapshot -> snapshot.*, Stats
 Mutable: Attach/Detach(DrainBranch|AbortBranch); Attachment.Rebranch
-         (SwitchAt(NextFrame|NextKeyframe|AtMediaTime), Drain/AbortOldBranch, KeepOldOnFailure)
+         (SwitchAt(NextFrame|NextKeyframe|AtMediaTime), Drain/AbortOldBranch)
 Controllable: Control(control.Keyframe|Seek|Segment|Rate|SetBitrate|SelectActive|Deliver, .AtTap)
 Observable: Events, Watch(inspect.EventFilter)
 goav.New(goavruntime.Option...) -> (*Runtime, error); goav.MustNew(...) -> bare Runtime; bundle.MustNew(...) -> bundled Runtime; job.UseRuntime(rt)

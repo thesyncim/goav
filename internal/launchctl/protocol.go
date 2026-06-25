@@ -16,16 +16,15 @@ import (
 
 // Request is the JSON request shape spoken over a goav ctl control socket.
 type Request struct {
-	Op               string            `json:"op"`
-	Verb             string            `json:"verb,omitempty"`
-	Args             map[string]string `json:"args,omitempty"`
-	Control          json.RawMessage   `json:"control,omitempty"`
-	Event            json.RawMessage   `json:"event,omitempty"`
-	Tap              string            `json:"tap,omitempty"`
-	Branch           string            `json:"branch,omitempty"`
-	Pipeline         string            `json:"pipeline,omitempty"`
-	Switch           string            `json:"switch,omitempty"`
-	KeepOldOnFailure bool              `json:"keep_old_on_failure,omitempty"`
+	Op       string            `json:"op"`
+	Verb     string            `json:"verb,omitempty"`
+	Args     map[string]string `json:"args,omitempty"`
+	Control  json.RawMessage   `json:"control,omitempty"`
+	Event    json.RawMessage   `json:"event,omitempty"`
+	Tap      string            `json:"tap,omitempty"`
+	Branch   string            `json:"branch,omitempty"`
+	Pipeline string            `json:"pipeline,omitempty"`
+	Switch   string            `json:"switch,omitempty"`
 }
 
 // Response is the standard envelope for a goav ctl control socket response.
@@ -98,9 +97,6 @@ func executeRequestWithRegistry(ctx context.Context, task goav.LiveTask, request
 		}
 		if request.Switch != "" {
 			argv = append(argv, "--switch", request.Switch)
-		}
-		if request.KeepOldOnFailure {
-			argv = append(argv, "--keep-old-on-failure")
 		}
 		if request.Pipeline != "" {
 			argv = append(argv, request.Pipeline)
@@ -250,9 +246,6 @@ func rebranchRequestFromCLI(argv []string) (Request, error) {
 			}
 			req.Switch = args[1]
 			args = args[2:]
-		case "--keep-old-on-failure":
-			req.KeepOldOnFailure = true
-			args = args[1:]
 		default:
 			if req.Pipeline != "" {
 				return Request{}, commandError("invalid_argument", "rebranch", args[0], "rebranch accepts exactly one branch pipeline", nil, nil, nil)

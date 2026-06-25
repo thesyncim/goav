@@ -243,7 +243,6 @@ func (s *session) rebranch(ctx context.Context, id string, spec branchSpec) (*br
 		replacement,
 		goav.SwitchAt(goav.AtMediaTime(0)),
 		goav.DrainOldBranch(),
-		goav.KeepOldOnFailure(),
 	)
 	if err != nil {
 		r.Spec = oldSpec

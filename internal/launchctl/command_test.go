@@ -724,7 +724,6 @@ func TestRequestFromCLIParsesRebranchCommand(t *testing.T) {
 		"rebranch",
 		"preview",
 		"--switch", "next_keyframe",
-		"--keep-old-on-failure",
 		"copy ! filesink location=preview.webm",
 	})
 	if err != nil {
@@ -733,7 +732,6 @@ func TestRequestFromCLIParsesRebranchCommand(t *testing.T) {
 	if request.Op != "rebranch" ||
 		request.Branch != "preview" ||
 		request.Switch != "next_keyframe" ||
-		!request.KeepOldOnFailure ||
 		request.Pipeline != "copy ! filesink location=preview.webm" {
 		t.Fatalf("request = %+v", request)
 	}

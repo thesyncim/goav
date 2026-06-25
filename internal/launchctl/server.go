@@ -136,9 +136,6 @@ func (s *Server) rebranch(ctx context.Context, request Request) (ControlResponse
 	default:
 		return ControlResponse{}, commandError("invalid_value", "rebranch", "switch", "switch must be next_frame or next_keyframe", []string{"value=" + request.Switch}, []string{"use --switch next_frame", "use --switch next_keyframe"}, nil)
 	}
-	if request.KeepOldOnFailure {
-		options = append(options, goav.KeepOldOnFailure())
-	}
 	next, err := old.Rebranch(ctx, options...)
 	if err != nil {
 		return ControlResponse{}, structuredError("rebranch", err)

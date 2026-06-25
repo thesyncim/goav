@@ -232,7 +232,6 @@ goav.Inspectable
 goav.Job
 goav.Join
 goav.JoinArm
-goav.KeepOldOnFailure
 goav.LiveTask
 goav.MIME
 goav.MediaOption

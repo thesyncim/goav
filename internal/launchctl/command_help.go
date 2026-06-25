@@ -53,7 +53,7 @@ func helpWithRegistry(args []string, manifest []CommandSpec, registry PipelineRe
 	case "attach":
 		return branchPipelineHelp("attach", "goav ctl --control unix://PATH attach <tap-name> as <branch-name> '<branch-pipeline>'", "Builds an allowlisted branch pipeline from a named tap.", registry, caps), nil
 	case "rebranch":
-		return branchPipelineHelp("rebranch", "goav ctl --control unix://PATH rebranch <branch-name> [--switch next_frame|next_keyframe] [--keep-old-on-failure] '<branch-pipeline>'", "Replaces an attachment created through this control server, using the same allowlisted branch-pipeline grammar as attach.", registry, caps), nil
+		return branchPipelineHelp("rebranch", "goav ctl --control unix://PATH rebranch <branch-name> [--switch next_frame|next_keyframe] '<branch-pipeline>'", "Replaces an attachment created through this control server, using the same allowlisted branch-pipeline grammar as attach.", registry, caps), nil
 	case "detach":
 		return staticHelp("detach", "goav ctl --control unix://PATH detach <branch-name>", "Detaches an attachment created through this control server."), nil
 	case "inspect":
@@ -105,7 +105,7 @@ func rootHelp() string {
 	out.WriteString("  stop\n")
 	out.WriteString("  control <verb> ...\n")
 	out.WriteString("  attach <tap-name> as <branch-name> '<branch-pipeline>'\n")
-	out.WriteString("  rebranch <branch-name> [--switch next_frame|next_keyframe] [--keep-old-on-failure] '<branch-pipeline>'\n")
+	out.WriteString("  rebranch <branch-name> [--switch next_frame|next_keyframe] '<branch-pipeline>'\n")
 	out.WriteString("  detach <branch-name>\n")
 	return out.String()
 }

@@ -284,7 +284,6 @@ func TestRebranchSwitchAtNextKeyframeOnPacketStream(t *testing.T) {
 	attB, err := attA.Rebranch(ctx,
 		Branch("b").From(PacketTap("pkts")).Copy().To(bSink),
 		SwitchAt(NextKeyframe()),
-		KeepOldOnFailure(),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -436,9 +435,9 @@ func TestRebranchSwitchAtNextFrameOnFrameStream(t *testing.T) {
 	}
 }
 
-// TestRebranchFailureKeepsOldBranchAttached pins the failure policy spelled by
-// KeepOldOnFailure: when attaching the replacement fails, the old branch stays
-// attached and keeps receiving — including on the SwitchAt path.
+// TestRebranchFailureKeepsOldBranchAttached pins the default failure policy:
+// when attaching the replacement fails, the old branch stays attached and keeps
+// receiving — including on the SwitchAt path.
 func TestRebranchFailureKeepsOldBranchAttached(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -474,7 +473,6 @@ func TestRebranchFailureKeepsOldBranchAttached(t *testing.T) {
 	next, err := attA.Rebranch(ctx,
 		Branch("bad").From(PacketTap("missing")).Copy().To(Sink(SinkFunc("bad-sink", func(context.Context, Message) error { return nil }))),
 		SwitchAt(NextKeyframe()),
-		KeepOldOnFailure(),
 	)
 	if err == nil {
 		t.Fatal("rebranch to a missing tap succeeded, want error")

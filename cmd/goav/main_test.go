@@ -227,7 +227,6 @@ func TestCLIAttachRebranchDetachAndDotGraph(t *testing.T) {
 	second := filepath.Join(t.TempDir(), "second output.ogg")
 	output = runCLI(t, "--control", "unix://"+socket, "rebranch", "cli",
 		"--switch", "next_frame",
-		"--keep-old-on-failure",
 		fmt.Sprintf("copy ! filesink location=%q format=ogg", second))
 	if !strings.Contains(output, `"Name":"cli"`) {
 		t.Fatalf("rebranch output = %s", output)

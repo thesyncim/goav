@@ -146,11 +146,11 @@ type Attachment interface {
 	// attached and start receiving before this branch is detached (no gap), so a
 	// live subscriber can be switched (e.g. to a different simulcast layer)
 	// without rebuilding the task. On attach failure this branch is left intact
-	// (KeepOldOnFailure is the explicit spelling). Pass replacement BranchSpec
-	// values plus policies: SwitchAt(NextFrame()/NextKeyframe()) delays the
-	// switch to that stream boundary — the replacements shed media until the
-	// boundary and this branch detaches at it — and DrainOldBranch/AbortOldBranch
-	// select whether this branch's destinations commit or abort on detach.
+	// by default. Pass replacement BranchSpec values plus policies:
+	// SwitchAt(NextFrame()/NextKeyframe()) delays the switch to that stream
+	// boundary — the replacements shed media until the boundary and this branch
+	// detaches at it — and DrainOldBranch/AbortOldBranch select whether this
+	// branch's destinations commit or abort on detach.
 	// Without options the switch is immediate, exactly like Detach after Attach.
 	Rebranch(context.Context, ...RebranchOption) (Attachment, error)
 	// Close detaches this branch and any dependent branches anchored on its
