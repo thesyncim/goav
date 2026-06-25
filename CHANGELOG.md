@@ -33,6 +33,9 @@ methodology changes, and migration notes.
   do not imply that the constructor opens filesystem paths; `URI(uri)` keeps
   the adapter-opened output path and `FileInput` remains the reader-side file
   input spelling.
+- Updated front-door docs to use task capability vocabulary for runtime attach
+  examples instead of teaching `LiveTask` as the normal user type, and to
+  describe `Watch` as the primary observation surface.
 - Added the pre-v1 simplification target, started the immutable recipe IR
   boundary used by compile-time planning, and tightened task runtime semantics
   so `Run` preserves both execution and finalization failures while `Events`
