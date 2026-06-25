@@ -11,6 +11,10 @@ methodology changes, and migration notes.
 
 ## Unreleased
 
+- Added the pre-v1 simplification target, started the immutable recipe IR
+  boundary used by compile-time planning, and tightened task runtime semantics
+  so `Run` preserves both execution and finalization failures while `Events`
+  returns an independent unfiltered watch subscription.
 - Clarified the bundled-adapter contract: `goav/bundle` is a package in the
   root module, not a nested module. Importing `github.com/thesyncim/goav` does
   not import bundled adapter packages into the root package dependency graph;
