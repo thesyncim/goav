@@ -86,6 +86,61 @@ func chainStepOnPacketCopyError(operation string, node string, step string) erro
 	}
 }
 
+func chainFrameInputRequiredError(operation string, node string, step string) error {
+	return &BuildError{
+		Family:    errcode.FamilyForCode(errcode.OperationShapeMismatch),
+		Code:      errcode.OperationShapeMismatch,
+		Operation: operation,
+		Node:      firstNonEmpty(node, "stream"),
+		Reason:    step + " needs decoded frames, but the selected stream is still packet-domain",
+		Fields: buildErrorFields([]string{
+			"step=" + step,
+			"actual_shape=" + shape.New(shape.Domain(shape.DomainPacket)).String(),
+			"expected_shape=" + shape.New(shape.Domain(shape.DomainFrame)).String(),
+		}),
+		Fixes: buildErrorFixes([]string{
+			"write .Decode()." + streamStepMethodName(step) + "(...) for decoded-frame processing",
+			"keep the stream packet-domain by using .Copy() and removing frame-domain processing",
+		}),
+		Cause: ErrUnsupportedBuild,
+	}
+}
+
+func streamStepMethodName(step string) string {
+	switch step {
+	case "custom stage":
+		return "Do"
+	case "flow":
+		return "Apply"
+	case "encode":
+		return "Encode"
+	default:
+		if step == "" {
+			return "Decode"
+		}
+		return string(step[0]-('a'-'A')) + step[1:]
+	}
+}
+
+func sinkDomainRequiredError(operation string, node string) error {
+	return &BuildError{
+		Family:    errcode.FamilyForCode(errcode.OperationShapeMismatch),
+		Code:      errcode.OperationShapeMismatch,
+		Operation: operation,
+		Node:      firstNonEmpty(node, "stream"),
+		Reason:    "sink output from a packet stream needs an explicit domain",
+		Fields: buildErrorFields([]string{
+			"destination=sink",
+			"actual_shape=" + shape.New(shape.Domain(shape.DomainPacket)).String(),
+		}),
+		Fixes: buildErrorFixes([]string{
+			"decode frames before the sink: .Decode().To(goav.Sink(...))",
+			"preserve packets before the sink: .Copy().To(goav.Sink(...))",
+		}),
+		Cause: ErrUnsupportedBuild,
+	}
+}
+
 func duplicateStreamEncodeError(operation string, node string, first codec.CodecSpec, second codec.CodecSpec) error {
 	return &BuildError{
 		Family:    errcode.FamilyForCode(errcode.EncodeDuplicate),
@@ -237,21 +292,6 @@ func (b *jobStreamBuilder) sourceFrameShape() (shape.Spec, bool) {
 	return spec, true
 }
 
-func (b *jobStreamBuilder) ensureDecodeOperation() {
-	if b.sourceStartsFrameDomain() {
-		return
-	}
-	ensureJobStreamDecodeOperation(b.current())
-}
-
-func (b *jobStreamBuilder) ensureFrameInputOperation() {
-	if b.sourceStartsFrameDomain() {
-		b.ensureFrameSourceShapeOperation()
-		return
-	}
-	ensureJobStreamDecodeOperation(b.current())
-}
-
 func (b *jobStreamBuilder) ensureFrameSourceShapeOperation() {
 	stream := b.current()
 	if stream == nil {
@@ -266,6 +306,26 @@ func (b *jobStreamBuilder) ensureFrameSourceShapeOperation() {
 		return
 	}
 	stream.operations = append([]operationSpec{operation}, stream.operations...)
+}
+
+func (b *jobStreamBuilder) requireFrameInput(stream *jobStreamBuild, step string) bool {
+	if b.sourceStartsFrameDomain() {
+		b.ensureFrameSourceShapeOperation()
+		return true
+	}
+	if chainHasDecode(stream.operations) {
+		return true
+	}
+	b.job.setErr(chainFrameInputRequiredError("build stream", jobStreamName(stream), step))
+	return false
+}
+
+func (b *jobStreamBuilder) requireFrameTapInput(stream *jobStreamBuild) bool {
+	if b.sourceStartsFrameDomain() || chainHasDecode(stream.operations) {
+		return true
+	}
+	b.job.setErr(chainFrameInputRequiredError("build stream", jobStreamName(stream), "tap"))
+	return false
 }
 
 func frameSourceDecodeError(operation string, node string) error {
@@ -334,10 +394,14 @@ func (b *jobStreamBuilder) Apply(flow Chain) *jobStreamBuilder {
 		// The flow's plan.OpDecode is appended below with the rest of spec.operations.
 	}
 	if len(specSteps) != 0 && !chainHasDecode(spec.operations) {
-		b.ensureFrameInputOperation()
+		if !b.requireFrameInput(stream, "flow") {
+			return b
+		}
 	}
 	if codecIntentSet(chainEncodeSpec(spec.operations)) && !chainEncodeSpec(spec.operations).Copy && !chainHasDecode(spec.operations) {
-		b.ensureFrameInputOperation()
+		if !b.requireFrameInput(stream, "flow") {
+			return b
+		}
 	}
 	stream.operations = append(stream.operations, cloneOperationSpecs(spec.operations)...)
 	if codecIntentSet(chainEncodeSpec(spec.operations)) && chainEncodeSpec(spec.operations).Copy {
@@ -403,7 +467,9 @@ func (b *jobStreamBuilder) Tap(tap TapRef) *jobStreamBuilder {
 		b.job.setErr(err)
 		return b
 	}
-	b.ensureDecodeOperation()
+	if !b.requireFrameTapInput(stream) {
+		return b
+	}
 	stream.operations = append(stream.operations, operationSpecForTap(tap, stream.selector.Type, operationSpecAfter(stream.operations, initialStepAfter(chainHasDecode(stream.operations)))))
 	return b
 }
@@ -454,7 +520,9 @@ func (b *jobStreamBuilder) Do(stages ...pipeline.Stage) *jobStreamBuilder {
 			b.job.setErr(streamStageMissingError(streamIntent{Name: jobStreamName(stream)}))
 			return b
 		}
-		b.ensureFrameInputOperation()
+		if !b.requireFrameInput(stream, "custom stage") {
+			return b
+		}
 		stream.operations = append(stream.operations, operationSpecForStage(stages[i]))
 	}
 	return b
@@ -521,7 +589,9 @@ func (b *jobStreamBuilder) Resize(width int, height int, options ...resizeOption
 		b.job.setErr(chainStepAfterEncodeError("build stream", jobStreamName(stream), "resize", chainEncodeSpec(stream.operations)))
 		return b
 	}
-	b.ensureFrameInputOperation()
+	if !b.requireFrameInput(stream, "resize") {
+		return b
+	}
 	transform := Resize(width, height, options...)
 	stream.operations = append(stream.operations, operationSpecForTransform(transform))
 	return b
@@ -533,7 +603,9 @@ func (b *jobStreamBuilder) Resample(sampleRate int, channels int, options ...aud
 		b.job.setErr(chainStepAfterEncodeError("build stream", jobStreamName(stream), "resample", chainEncodeSpec(stream.operations)))
 		return b
 	}
-	b.ensureFrameInputOperation()
+	if !b.requireFrameInput(stream, "resample") {
+		return b
+	}
 	transform := Resample(sampleRate, channels, options...)
 	stream.operations = append(stream.operations, operationSpecForTransform(transform))
 	return b
@@ -545,7 +617,18 @@ func (b *jobStreamBuilder) Encode(codec codec.CodecSpec) *jobStreamBuilder {
 		b.job.setErr(duplicateStreamEncodeError("build stream", jobStreamName(stream), chainEncodeSpec(stream.operations), codec))
 		return b
 	}
-	b.ensureFrameInputOperation()
+	if codec.Copy {
+		if b.sourceStartsFrameDomain() {
+			b.job.setErr(frameSourceCopyError("build stream", jobStreamName(stream)))
+			return b
+		}
+		if chainHasDecode(stream.operations) || operationSpecsContainChainStep(stream.operations) {
+			b.job.setErr(flowCopyDomainError("build stream", jobStreamName(stream)))
+			return b
+		}
+	} else if !b.requireFrameInput(stream, "encode") {
+		return b
+	}
 	stream.operations = append(stream.operations, operationSpecForEncode(cloneCodecSpec(codec)))
 	return b
 }
@@ -576,8 +659,9 @@ func (b *jobStreamBuilder) To(destinations ...Destination) *Job {
 	if outputsContainSinkDestination(outputs) && !codecIntentSet(chainEncodeSpec(stream.operations)) {
 		if b.sourceStartsFrameDomain() {
 			b.ensureFrameSourceShapeOperation()
-		} else {
-			b.ensureDecodeOperation()
+		} else if !chainHasDecode(stream.operations) {
+			b.job.setErr(sinkDomainRequiredError("build stream", jobStreamName(stream)))
+			return b.job
 		}
 	}
 	return b.job

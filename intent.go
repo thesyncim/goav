@@ -283,19 +283,6 @@ func jobStreamHasDecodeOperation(stream *jobStreamBuild) bool {
 	return operationSpecsContainKind(stream.operations, plan.OpDecode)
 }
 
-func ensureJobStreamDecodeOperation(stream *jobStreamBuild) {
-	if stream == nil {
-		return
-	}
-	if jobStreamHasDecodeOperation(stream) {
-		return
-	}
-	// Reached only when no decode op exists yet (so no codec options were given);
-	// an explicit Decode(opts) always appends its own plan.OpDecode.
-	operation := operationSpecForDecode(codec.CodecSpec{}, string(stream.selector.Codec))
-	stream.operations = append([]operationSpec{operation}, stream.operations...)
-}
-
 func jobIntentStream(intent intent) (streamIntent, bool) {
 	if len(intent.Streams) == 0 {
 		return streamIntent{}, false
@@ -332,9 +319,9 @@ func jobOperationSpecs(stream *jobStreamBuild) []operationSpec {
 	if stream == nil {
 		return nil
 	}
-	// The operation list is authoritative: every builder method (Decode, Copy,
-	// Encode, transforms, taps, and the implicit decode-for-sink in To) appends
-	// its operation, so there is nothing to reconstruct from decode/encode flags.
+	// The operation list is authoritative: builder methods append explicit
+	// Decode, Copy, Encode, transforms, and taps, so there is nothing to
+	// reconstruct from decode/encode flags.
 	return cloneOperationSpecs(stream.operations)
 }
 
@@ -536,7 +523,7 @@ func mixedStreamOutputError(operation string, stream streamIntent) error {
 		Node:      jobStreamIntentName(stream),
 		Reason:    "stream recipes cannot mix sinks and muxed outputs",
 		Fixes: buildErrorFixes([]string{
-			"use .To(goav.Sink(...)) for decoded frames",
+			"use .Decode().To(goav.Sink(...)) for decoded frames",
 			"call .Encode(codec.Opus(...)), .Encode(codec.VP8(...)), or .Encode(codec.VP9(...)) before .To(goav.File(...)) for encoded output",
 			"use .Branches(...) when one stream needs separate decoded and encoded branches",
 		}),

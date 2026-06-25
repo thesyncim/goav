@@ -131,6 +131,7 @@ func TestFromMultiInputUnknownInputNameListsInputs(t *testing.T) {
 		mixTestAudioSource("mic-b", 1),
 	).
 		Audio(InputName("microphone")).
+		Decode().
 		To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))).
 		Build(context.Background())
 

@@ -396,7 +396,7 @@ func TestOperationChainInternalsUseChainVocabulary(t *testing.T) {
 		"[]operationSpec",
 		"func operationSpecForTransform",
 		"func operationSpecForTap",
-		"func ensureJobStreamDecodeOperation",
+		"func (b *jobStreamBuilder) requireFrameInput",
 		"func branchSpecChainSteps",
 		"func branchChainStepsFromOperationSpecs",
 	} {
@@ -623,6 +623,7 @@ func TestStoredOperationListsMirrorFlowBranchAndDirectStreamWork(t *testing.T) {
 
 	job := From(FileInput("input.ogg", strings.NewReader(""))).
 		Audio().
+		Decode().
 		Apply(voice).
 		To(File("voice.ogg", io.Discard))
 	if job.err != nil {
@@ -662,7 +663,7 @@ func TestPlannedBranchSplitOperationsInsertImplicitDecode(t *testing.T) {
 	}
 	stream := job.branchStreams[0]
 	if len(stream.sharedOps) != 0 {
-		t.Fatalf("shared operations = %+v, want none before implicit decode", stream.sharedOps)
+		t.Fatalf("shared operations = %+v, want none before normalized decode", stream.sharedOps)
 	}
 	if got, want := operationSpecKindsForTest(stream.privateOps), []plan.OperationKind{plan.OpTransform, plan.OpEncode}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("private operations = %+v, want %+v", got, want)

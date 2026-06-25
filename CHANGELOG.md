@@ -11,6 +11,9 @@ methodology changes, and migration notes.
 
 ## Unreleased
 
+- Stream chains now require an explicit `.Decode()` before frame-domain
+  consumers (`.Do`, `.Resize`, `.Resample`, real `.Encode`, frame taps, and
+  decoded-frame sinks). Use `.Copy()` when a chain should stay packet-domain.
 - Removed legacy `BuildError.Details` and `BuildError.Suggestions` fields;
   callers should use typed `Fields`/`Fixes`, `Detail(key)`, `DetailLines()`,
   and `FixLines()`.

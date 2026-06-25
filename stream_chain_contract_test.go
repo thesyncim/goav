@@ -96,7 +96,7 @@ func TestFrameDomainSourceRejectsDecodeAndCopy(t *testing.T) {
 			job: From(source).Audio().
 				Encode(codec.Copy()).
 				To(sink),
-			code: errcode.OperationShapeMismatch,
+			code: errcode.SourceShapeMismatch,
 		},
 	}
 	for _, tt := range tests {
