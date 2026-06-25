@@ -6,6 +6,7 @@ package recipeir
 import (
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
+	"github.com/thesyncim/goav/filter"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/plan"
 	"github.com/thesyncim/goav/shape"
@@ -72,16 +73,31 @@ type Policies struct {
 	Realtime bool
 }
 
-// Operation is one normalized stream operation. Transform stays as an opaque
-// config during the transition because the current root TransformSpec is still
-// a pre-v1 exported pointer-union slated for the next simplification phases.
+// TransformKind identifies the concrete frame transform carried by Transform.
+type TransformKind string
+
+const (
+	TransformNone     TransformKind = ""
+	TransformResize   TransformKind = "resize"
+	TransformResample TransformKind = "resample"
+)
+
+// Transform is one planner-visible transform config without depending on the
+// root TransformSpec wrapper.
+type Transform struct {
+	Kind     TransformKind
+	Resize   filter.ResizeConfig
+	Resample filter.ResampleConfig
+}
+
+// Operation is one normalized stream operation.
 type Operation struct {
 	Kind      plan.OperationKind
 	Component string
 	Detail    string
 	Stage     pipeline.Stage
 	Shape     shape.Spec
-	Transform any
+	Transform Transform
 	Tap       Tap
 	Decode    codec.CodecSpec
 	Encode    codec.CodecSpec
@@ -89,8 +105,6 @@ type Operation struct {
 	Auto      *shape.Policy
 	Require   *shape.Spec
 	Prefer    *shape.Spec
-	Domain    shape.MediaDomain
-	Config    any
 	Path      Path
 }
 

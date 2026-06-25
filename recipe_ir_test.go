@@ -32,8 +32,24 @@ func TestRecipeIRSnapshotRoundTripsJobIntent(t *testing.T) {
 		!recipeIRHasFrameTap(snapshot.recipe) {
 		t.Fatalf("recipe IR did not capture decode/tap/transform/encode operations: %+v", snapshot.recipe.Streams)
 	}
+	transform := recipeIRTransformForTest(t, snapshot.recipe, plan.OpTransform)
+	if transform.Kind != recipeir.TransformResize ||
+		transform.Resize.Width != 320 ||
+		transform.Resize.Height != 180 {
+		t.Fatalf("recipe IR transform = %+v, want typed resize config", transform)
+	}
 	if got, want := intentFromRecipeIR(snapshot.recipe), job.plan(); !reflect.DeepEqual(got, want) {
 		t.Fatalf("IR round trip drifted\n got: %#v\nwant: %#v", got, want)
+	}
+}
+
+func TestRecipeIROperationTransformIsTyped(t *testing.T) {
+	field, ok := reflect.TypeOf(recipeir.Operation{}).FieldByName("Transform")
+	if !ok {
+		t.Fatal("recipeir.Operation.Transform missing")
+	}
+	if field.Type != reflect.TypeOf(recipeir.Transform{}) {
+		t.Fatalf("recipeir.Operation.Transform type = %s, want recipeir.Transform", field.Type)
 	}
 }
 
@@ -91,4 +107,17 @@ func sourceFunctionBody(t *testing.T, source string, name string) string {
 	}
 	t.Fatalf("could not parse %s body", name)
 	return ""
+}
+
+func recipeIRTransformForTest(t *testing.T, recipe recipeir.Recipe, kind plan.OperationKind) recipeir.Transform {
+	t.Helper()
+	for i := range recipe.Streams {
+		for j := range recipe.Streams[i].Operations {
+			if recipe.Streams[i].Operations[j].Kind == kind {
+				return recipe.Streams[i].Operations[j].Transform
+			}
+		}
+	}
+	t.Fatalf("operation kind %s not found in recipe %+v", kind, recipe)
+	return recipeir.Transform{}
 }
