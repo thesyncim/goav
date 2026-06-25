@@ -15,11 +15,11 @@ import (
 	"github.com/pion/webrtc/v4"
 	"github.com/thesyncim/goav"
 	"github.com/thesyncim/goav/av"
+	"github.com/thesyncim/goav/bundle"
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/graphrender"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/rtpav"
-	"github.com/thesyncim/goav/std"
 	"github.com/thesyncim/goav/webrtcav"
 )
 
@@ -74,7 +74,7 @@ func webRTCRemote(t *testing.T, remote webrtcav.RemoteTrack) goav.InputSpec {
 }
 
 func webRTCTestRuntime() *goav.Runtime {
-	return std.MustNew(goav.WithRealtime(false))
+	return bundle.MustNew(goav.WithRealtime(false))
 }
 
 func TestWebRTCTrackRecordRecipeUsesCodecIntent(t *testing.T) {

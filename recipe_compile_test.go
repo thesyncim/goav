@@ -923,7 +923,7 @@ func TestProductionDiagnosticsUseCurrentVocabulary(t *testing.T) {
 		"branchComposeTargetHasMuxEndpoint",
 		"branchComposeTargetEndpointInvalidError",
 		"runtime_builder_missing",
-		"standard runtime builder",
+		"bundled runtime builder",
 		"recipe compiler produced no runtime builder",
 	} {
 		if strings.Contains(text, forbidden) {
@@ -2220,7 +2220,7 @@ func TestTransformAdapterPassesRejectMissingFilters(t *testing.T) {
 					Operations: []operationSpec{operationSpecForTransform(Resample(16_000, codec.Mono))},
 				}}},
 			},
-			want: []string{"no resample filter adapter", "transform=resample", "std.MustNewFilters", ".Resample"},
+			want: []string{"no resample filter adapter", "transform=resample", "bundle.MustNewFilters", ".Resample"},
 		},
 		{
 			name: "transcode missing resize filter",
@@ -2235,7 +2235,7 @@ func TestTransformAdapterPassesRejectMissingFilters(t *testing.T) {
 					Operations: []operationSpec{operationSpecForTransform(Resize(1280, 720))},
 				}}},
 			},
-			want: []string{"no resize filter adapter", "transform=resize", "std.MustNewFilters", ".Resize"},
+			want: []string{"no resize filter adapter", "transform=resize", "bundle.MustNewFilters", ".Resize"},
 		},
 	}
 	for _, tt := range tests {
@@ -2723,7 +2723,7 @@ func TestRecipeRuntimePassRejectsNilRuntime(t *testing.T) {
 	if !errors.As(err, &buildErr) || buildErr.Code != "runtime_missing" || !errors.Is(err, ErrUnsupportedBuild) {
 		t.Fatalf("err = %v, want runtime_missing wrapping ErrUnsupportedBuild", err)
 	}
-	for _, want := range []string{"no runtime is configured", "std.MustNew", "goav.MustNew"} {
+	for _, want := range []string{"no runtime is configured", "bundle.MustNew", "goav.MustNew"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Fatalf("err = %v, want %q", err, want)
 		}

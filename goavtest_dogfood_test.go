@@ -117,10 +117,10 @@ func controlWhenRunning(ctx context.Context, task goav.Controllable, ctrl contro
 	}
 }
 
-// TestFakeDecodeFeedsRealResample pins the goavtest/std-filter seam: the
+// TestFakeDecodeFeedsRealResample pins the goavtest/bundle-filter seam: the
 // passthrough codec's fabricated decode frame (a foreign opus packet becomes
 // the deterministic 48kHz silent frame shaped by the declared stream) is a
-// well-formed av.Frame the REAL std resample filter converts — fake codec,
+// well-formed av.Frame the REAL bundled resample filter converts — fake codec,
 // real conversion, one chain.
 func TestFakeDecodeFeedsRealResample(t *testing.T) {
 	ctx := context.Background()

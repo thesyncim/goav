@@ -9,12 +9,12 @@ import (
 
 	"github.com/thesyncim/goav"
 	"github.com/thesyncim/goav/av"
+	"github.com/thesyncim/goav/bundle"
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/flow"
 	"github.com/thesyncim/goav/goavtest"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/shape"
-	"github.com/thesyncim/goav/std"
 )
 
 const lifecycleTapName = "video.decoded"
@@ -251,7 +251,7 @@ func TestRuntimeBranchAttachDetachLifecycle(t *testing.T) {
 // that a real (govpx) VP9 output branch behind the realtime drop-oldest buffer
 // produces packets: the explicit dropping buffer inherits the runtime's frame
 // copy bounds (so the buffered edge accepts the decoder's mutable frames) and
-// the encoder runs. std.New keeps the real VP9 encoder; only VP8 decode is
+// the encoder runs. bundle.New keeps the real VP9 encoder; only VP8 decode is
 // faked so the synthetic source decodes to frames the encoder can consume.
 func TestRuntimeBranchEncodesVP9ThroughDropBuffer(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
@@ -259,7 +259,7 @@ func TestRuntimeBranchEncodesVP9ThroughDropBuffer(t *testing.T) {
 
 	main := &frameCountSink{name: "main"}
 	task, err := goav.From(liveMutableVideoPackets("camera", 64, 64, time.Millisecond)).
-		UseRuntime(std.MustNew(goavtest.Codec(av.CodecVP8))).
+		UseRuntime(bundle.MustNew(goavtest.Codec(av.CodecVP8))).
 		Video().
 		Decode().
 		Shape(shape.Frame(av.MediaVideo, shape.Video(64, 64, av.PixelFormatI420))).

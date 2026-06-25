@@ -33,7 +33,7 @@ The baseline public-surface pin approved:
 - 28 `plan` identifiers
 - 4 `snapshot` identifiers
 
-The root package also imported the standard adapter bundle through
+The root package also imported the bundled adapter package through
 `defaults.go`. As a result, importing `github.com/thesyncim/goav` pulled
 codec/container adapter packages and backend codec modules even when an
 application only wanted to build recipe data.
@@ -54,7 +54,7 @@ Keep in `goav`:
 
 Move or keep outside the front door:
 
-- bundled runtime and adapters: `goav/std`
+- bundled runtime and adapters: `goav/bundle`
 - control vocabulary: `goav/control`
 - task inspection, stats, snapshots, watches, and render helpers: `goav/inspect`
 - adapter registration contracts: `goav/adapter` or existing seam packages
@@ -67,20 +67,20 @@ Move or keep outside the front door:
    - Keep `testdata/api_surface.txt` as the live approval list while symbols move.
 
 2. **Lazy runtime** — landed
-   - Stop constructing the standard runtime in `newJob`.
+   - Stop constructing the bundled runtime in `newJob`.
    - Require an explicit runtime for adapter-backed build paths, or use an
-     explicit standard helper.
+     explicit bundle helper.
    - Return `runtime_missing` for nil runtimes and for omitted runtimes on
      adapter-backed build paths, including dynamic `OnStream` branch
      destinations and operations.
 
 3. **Standard package** — landed
-   - Add `goav/std` for `New`, `MustNew`, `Build`, `Run`, and standard adapter
+   - Add `goav/bundle` for `New`, `MustNew`, `Build`, `Run`, and bundled adapter
      options.
    - Move direct imports of bundled codecs, formats, and filters out of the root
      package.
    - Prove `go list -deps github.com/thesyncim/goav` does not include standard
-     codec backends unless `std` is imported.
+     codec backends unless `bundle` is imported.
 
 4. **Explicit copy** — landed
    - Make whole-job `Copy` record an explicit operation or remove it.
@@ -133,7 +133,7 @@ Move or keep outside the front door:
       points.
     - Finish with a Markdown-wide consistency pass and a README that works as a
       credible front door, not just as a passing line-count artifact.
-    - Generate standard adapter capability docs from descriptors so the docs and
+    - Generate bundled adapter capability docs from descriptors so the docs and
       registered set cannot drift.
 
 12. **Go version floor** — landed

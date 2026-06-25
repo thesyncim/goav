@@ -6,14 +6,14 @@ import (
 	"net/http"
 
 	"github.com/thesyncim/goav"
-	"github.com/thesyncim/goav/std"
+	"github.com/thesyncim/goav/bundle"
 )
 
 func main() {
 	addr := flag.String("addr", ":8080", "HTTP listen address")
 	flag.Parse()
 
-	app := newServer(std.MustNew(goav.WithEventCapacity(1024)))
+	app := newServer(bundle.MustNew(goav.WithEventCapacity(1024)))
 	mux := http.NewServeMux()
 	app.routes(mux)
 

@@ -523,8 +523,8 @@ func TestOnStreamFileBranchRequiresExplicitRuntime(t *testing.T) {
 	if !errors.As(err, &buildErr) || buildErr.Code != errcode.RuntimeMissing {
 		t.Fatalf("Build() error = %v, want runtime_missing", err)
 	}
-	if !strings.Contains(err.Error(), "std.Run") {
-		t.Fatalf("Build() error = %v, want standard helper guidance", err)
+	if !strings.Contains(err.Error(), "bundle.Run") {
+		t.Fatalf("Build() error = %v, want bundle helper guidance", err)
 	}
 }
 

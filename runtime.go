@@ -73,7 +73,7 @@ type Config struct {
 type Option func(*Config) error
 
 // New builds a bare runtime: per-runtime registries with no adapters beyond
-// content sniffing, realtime pacing on. Import github.com/thesyncim/goav/std
+// content sniffing, realtime pacing on. Import github.com/thesyncim/goav/bundle
 // for a runtime with the bundled adapters already registered.
 func New(options ...Option) (*Runtime, error) {
 	config := newRuntimeConfig()

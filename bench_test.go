@@ -1,6 +1,6 @@
 // Benchmarks for the canonical goav workloads, run through the public recipe
 // grammar against the deterministic goavtest runtime (fake passthrough codecs,
-// fake byte-faithful containers, real std resize/resample filters), so the
+// fake byte-faithful containers, real bundled resize/resample filters), so the
 // numbers are dependency-free and reproducible: they measure goav's pipeline
 // machinery, not a codec backend.
 //
@@ -260,7 +260,7 @@ func BenchmarkDecodeEncode(b *testing.B) {
 		UseRuntime(benchRuntime()))
 }
 
-// BenchmarkResample is the real std resample filter: 44.1kHz stereo S16 frames
+// BenchmarkResample is the real bundled resample filter: 44.1kHz stereo S16 frames
 // converted to 48kHz mono.
 func BenchmarkResample(b *testing.B) {
 	runBenchTask(b, goav.From(benchAudioFrames("mic", b.N, 44_100, 2, 882)).
@@ -270,7 +270,7 @@ func BenchmarkResample(b *testing.B) {
 		UseRuntime(benchRuntime()))
 }
 
-// BenchmarkResize is the real std resize filter: 320x180 I420 frames scaled to
+// BenchmarkResize is the real bundled resize filter: 320x180 I420 frames scaled to
 // 160x90.
 func BenchmarkResize(b *testing.B) {
 	runBenchTask(b, goav.From(benchVideoFrames("cam", b.N, 320, 180)).

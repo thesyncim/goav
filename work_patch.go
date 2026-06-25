@@ -202,8 +202,8 @@ func (t *task) planAttachBranchSteps(ctx context.Context, spec BranchSpec, desti
 			}
 			if t.runtime == nil {
 				return fail(runtimeBranchInvalidError(
-					"runtime branch transforms require the standard runtime",
-					"build tasks with std.MustNew(...) from github.com/thesyncim/goav/std before attaching resize/resample branches",
+					"runtime branch transforms require the bundled runtime",
+					"build tasks with bundle.MustNew(...) from github.com/thesyncim/goav/bundle before attaching resize/resample branches",
 				))
 			}
 			if currentShape.Domain != shape.DomainFrame {
@@ -302,8 +302,8 @@ func (t *task) planAttachBranchSteps(ctx context.Context, spec BranchSpec, desti
 	}
 	if t.runtime == nil {
 		return fail(runtimeBranchInvalidError(
-			"runtime branch mux destinations require the standard runtime",
-			"build tasks with std.MustNew(...) from github.com/thesyncim/goav/std before attaching file or URI branches",
+			"runtime branch mux destinations require the bundled runtime",
+			"build tasks with bundle.MustNew(...) from github.com/thesyncim/goav/bundle before attaching file or URI branches",
 		))
 	}
 	if currentStream.Codec.ID == "" {
@@ -332,8 +332,8 @@ func (t *task) planAttachBranchSteps(ctx context.Context, spec BranchSpec, desti
 func (t *task) planAttachEncode(ctx context.Context, branchName string, encode codec.CodecSpec, currentStream av.Stream, currentShape shape.Spec) (pipeline.Stage, av.Stream, error) {
 	if t.runtime == nil {
 		return nil, av.Stream{}, runtimeBranchInvalidError(
-			"runtime branch encoding requires the standard runtime",
-			"build tasks with std.MustNew(...) from github.com/thesyncim/goav/std before attaching encode branches",
+			"runtime branch encoding requires the bundled runtime",
+			"build tasks with bundle.MustNew(...) from github.com/thesyncim/goav/bundle before attaching encode branches",
 		)
 	}
 	if currentShape.Domain != shape.DomainFrame {

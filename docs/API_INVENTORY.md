@@ -1,8 +1,8 @@
 # API Inventory
 
 This started as the baseline taken before the API reduction work. It should move
-downward as symbols leave the root package, standard adapters move behind
-`goav/std`, and implementation-specific error codes collapse into stable error
+downward as symbols leave the root package, bundled adapters move behind
+`goav/bundle`, and implementation-specific error codes collapse into stable error
 families.
 
 ## Approved Symbol Counts
@@ -28,10 +28,10 @@ Initial command:
 go list -deps github.com/thesyncim/goav
 ```
 
-Initial result: the root package dependency graph included the standard adapter
+Initial result: the root package dependency graph included the bundled adapter
 packages and backend codec modules.
 
-Standard packages included in the initial root graph:
+Bundled packages included in the initial root graph:
 
 - `github.com/thesyncim/goav/adapters/annexb`
 - `github.com/thesyncim/goav/adapters/goaac`
@@ -57,10 +57,10 @@ go list -deps github.com/thesyncim/goav |
   rg 'goaac|goav1|goh264|gopus|govpx|adapters/(annexb|ivf|resample|resize)|container/(matroska|mp4|webm)'
 ```
 
-Expected result after the standard package split: no matches for the root
-package. Importing `goav/std` should pull the standard bundle intentionally.
+Expected result after the bundle package split: no matches for the root
+package. Importing `goav/bundle` should pull the bundled adapter package intentionally.
 
-Current result after the `goav/std` split: no matches for the root package.
+Current result after the `goav/bundle` split: no matches for the root package.
 
 ## Documentation Baseline
 

@@ -10,12 +10,12 @@ import (
 	"github.com/pion/rtp"
 	"github.com/thesyncim/goav"
 	"github.com/thesyncim/goav/av"
+	"github.com/thesyncim/goav/bundle"
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/plan"
 	"github.com/thesyncim/goav/provider"
 	"github.com/thesyncim/goav/rtpav"
 	"github.com/thesyncim/goav/shape"
-	"github.com/thesyncim/goav/std"
 )
 
 // recipeAPIRTPReader and recipeAPIVideoRTPReader are minimal
@@ -103,11 +103,11 @@ func (recipeAPICustomWriter) Close() error {
 }
 
 func recordJob(input goav.InputSpec, outputs ...goav.Destination) *goav.Job {
-	return goav.From(input).UseRuntime(std.MustNew()).Copy().To(outputs...)
+	return goav.From(input).UseRuntime(bundle.MustNew()).Copy().To(outputs...)
 }
 
 func decodeJob(input goav.InputSpec, output goav.Destination) *goav.Job {
-	return goav.From(input).UseRuntime(std.MustNew()).Stream().Decode().To(output)
+	return goav.From(input).UseRuntime(bundle.MustNew()).Stream().Decode().To(output)
 }
 
 func branchByName(branches []plan.Branch, name string) (plan.Branch, bool) {
@@ -292,7 +292,7 @@ func TestExternalCustomDestinationCanBeDestined(t *testing.T) {
 	target := goav.Custom("custom", dest)
 
 	job := goav.From(goav.Input(rtpav.Receive(recipeAPIVideoRTPReader{}, rtpav.WithName("video"), rtpav.WithCodec(codec.VP8())))).
-		UseRuntime(std.MustNew()).
+		UseRuntime(bundle.MustNew()).
 		Video().
 		Copy().
 		To(target)

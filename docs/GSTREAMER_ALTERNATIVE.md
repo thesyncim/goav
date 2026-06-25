@@ -36,7 +36,7 @@ claims are made.
 | Live-room sync | Clock selection, live pipelines, queues, and sink synchronization are part of the framework model | Grammar-shaped `SyncPolicy` gates align or shed packet/frame messages on shared live timelines for selected stream chains or branches; unsynced branches keep direct/buffered behavior, and sync drops use normal drop stats (`sync_test.go`, `join_sync_test.go`, `rtpav/integration/recipe_runtime_test.go`, `BenchmarkLiveRoomSync`) |
 | Deployment model | Shared C libraries plus runtime plugin scanning; system or bundled installs | Pure Go, `CGO_ENABLED=0`, one static binary; cgo-free core is pinned (`hygiene_test.go`: `TestNoCGOImports`) and CI builds with CGO disabled (`.github/workflows/ci.yml`) |
 | Performance proof status | Mature C implementation, decades of production tuning; no claim measured here | Contract + benchmarks present: allocation pins in plain `go test`, 16 measured workloads (`bench_test.go`, `perf_pin_test.go`, `docs/PERFORMANCE.md`); **no cross-framework comparison performed** |
-| Ecosystem maturity | Decades old; hundreds of plugins across the base/good/bad/ugly modules; hardware backends (VA-API, NVDEC, V4L2, ...); large community | Young; the standard adapter set is IVF, Annex B, Matroska/WebM, Opus, VP8/VP9 (full verticals), H264/AV1 (decode-first), resize/resample (`docs/ADAPTERS.md`) |
+| Ecosystem maturity | Decades old; hundreds of plugins across the base/good/bad/ugly modules; hardware backends (VA-API, NVDEC, V4L2, ...); large community | Young; the bundled adapter set is IVF, Annex B, Matroska/WebM, Opus, VP8/VP9 (full verticals), H264/AV1 (decode-first), resize/resample (`docs/ADAPTERS.md`) |
 
 ## What goav takes from the comparison
 

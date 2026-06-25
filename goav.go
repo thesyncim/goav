@@ -11,7 +11,7 @@
 //
 // New(opts...) builds a bare runtime and returns option/configuration errors;
 // MustNew(opts...) is the package-level setup shortcut. Import
-// github.com/thesyncim/goav/std when the application wants the bundled pure-Go
+// github.com/thesyncim/goav/bundle when the application wants the bundled pure-Go
 // adapters. Build errors are structured: every refusal is a *BuildError
 // carrying an errcode.Code, the failing operation, and concrete fixes.
 package goav
@@ -41,8 +41,8 @@ type (
 )
 
 // Runtime is the concrete composition root for applications embedding goav.
-// Build it with New or MustNew, or import github.com/thesyncim/goav/std for
-// the bundled standard adapters.
+// Build it with New or MustNew, or import github.com/thesyncim/goav/bundle for
+// the bundled adapter set.
 type Runtime = runtime
 
 // Task is the minimal runnable media composition accepted by code that only

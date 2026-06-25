@@ -16,7 +16,7 @@ import (
 )
 
 // ErrRuntimeRequired reports attempts to use expert graph wiring without a
-// runtime created by goav.New, goav.MustNew, std.New, or std.MustNew.
+// runtime created by goav.New, goav.MustNew, bundle.New, or bundle.MustNew.
 var ErrRuntimeRequired = errors.New("expert: graph requires goav runtime")
 
 // GraphBuilder is the handle-based expert graph builder: named nodes wired by

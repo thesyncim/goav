@@ -19,11 +19,11 @@ import (
 
 	"github.com/thesyncim/goav"
 	"github.com/thesyncim/goav/av"
+	"github.com/thesyncim/goav/bundle"
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/goavtest"
 	"github.com/thesyncim/goav/shape"
-	"github.com/thesyncim/goav/std"
 )
 
 // requireBuildError enforces the four acceptance bars on one refusal: typed
@@ -531,7 +531,7 @@ func TestErrorAcceptanceDestinationMuxerMissing(t *testing.T) {
 	_, err := goav.From(goavtest.Audio(48000, 1, []int16{1})).
 		Audio().Encode(codec.Opus()).
 		To(goav.File("out.ogg", io.Discard)).
-		UseRuntime(std.MustNewFilters(goavtest.Codec(av.CodecOpus))).
+		UseRuntime(bundle.MustNewFilters(goavtest.Codec(av.CodecOpus))).
 		Build(context.Background())
 	requireBuildError(t, err, errcode.DestinationMuxerMissing, "open destination", "out.ogg",
 		"goav.WithMuxer(...)",

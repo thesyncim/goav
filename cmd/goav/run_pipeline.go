@@ -16,6 +16,7 @@ import (
 
 	goav "github.com/thesyncim/goav"
 	"github.com/thesyncim/goav/av"
+	"github.com/thesyncim/goav/bundle"
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/ctl"
 	"github.com/thesyncim/goav/format"
@@ -27,7 +28,6 @@ import (
 	"github.com/thesyncim/goav/internal/transformargs"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/shape"
-	"github.com/thesyncim/goav/std"
 )
 
 const defaultRunPipeline = "testsrc video width=1280 height=720 fps=30 duration=3s realtime=true ! encode codec=av1 media=video bitrate=1200k fps=30 keyframe_interval=60 ! filesink location=/tmp/goav-av1.mkv format=matroska"
@@ -342,9 +342,9 @@ func runtimeForRun(name string, plan runPipelinePlan) (*goav.Runtime, string, er
 	codecIDs := plan.encodeCodecIDs()
 	switch name {
 	case "demo":
-		return std.MustNew(goav.WithClock(goavtest.NewClock())), "demo", nil
-	case "default", "std", "standard":
-		return std.MustNew(), "default", nil
+		return bundle.MustNew(goav.WithClock(goavtest.NewClock())), "demo", nil
+	case "default", "bundle":
+		return bundle.MustNew(), "bundle", nil
 	case "test", "fake", "deterministic":
 		opts := make([]goav.Option, 0, len(codecIDs))
 		for _, id := range codecIDs {

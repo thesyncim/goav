@@ -88,7 +88,7 @@ same-machine old-vs-new comparison is meaningful.
 The canonical-workload suite (root `bench_test.go`) runs the public recipe
 grammar against the deterministic `goavtest` runtime: fake passthrough codecs
 and fake byte-faithful containers (so numbers include the fake's serialization
-cost, not a real codec's), plus the **real** std resize/resample filters.
+cost, not a real codec's), plus the **real** bundled resize/resample filters.
 Each benchmark builds its task untimed, then pushes exactly `b.N` messages:
 ns/op and allocs/op are per-message steady state. The perf lab adds explicit
 p50/p95/p99 metrics for the packet-record path; other benchmark rows still use
@@ -100,8 +100,8 @@ ns/op as their steady-state timing proxy.
 | `BenchmarkRemuxPackets` | file->file packet remux (demux -> Copy -> mux, 0 allocs/op measured) |
 | `BenchmarkDecodeToFrameSink` | packets -> decode (fake) -> frame sink (0 allocs/op measured) |
 | `BenchmarkDecodeEncode` | decode -> re-encode (fake) -> sink (0 allocs/op measured) |
-| `BenchmarkResample` | real std filter, 44.1kHz stereo -> 48kHz mono (0 allocs/op measured) |
-| `BenchmarkResize` | real std filter, 320x180 -> 160x90 I420 (0 allocs/op measured) |
+| `BenchmarkResample` | real bundled filter, 44.1kHz stereo -> 48kHz mono (0 allocs/op measured) |
+| `BenchmarkResize` | real bundled filter, 320x180 -> 160x90 I420 (0 allocs/op measured) |
 | `BenchmarkBranchFanout/branches=2,8` | one decode, N planned branches to sinks (0 allocs/op measured) |
 | `BenchmarkSharedMuxGroup` | audio+video chains sharing one mux destination (0 allocs/op measured) |
 | `BenchmarkMix/arms=2,8` | N-arm audio mix on a blocking buffered graph (0 allocs/op measured) |

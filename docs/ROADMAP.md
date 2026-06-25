@@ -51,7 +51,7 @@ every exported symbol documented (`doc_pin_test.go`), tiered in
   interfaces for `Explain`, inspection (`Describe`/`Taps`/`Snapshot`/`Stats`),
   mutation (`Attach`/`Detach` with `DrainBranch`/`AbortBranch`, `Rebranch`),
   controls (`Control`), and observation (`Events`/`Watch`);
-  `New`/`MustNew`/`UseRuntime` and the `std` runtime helpers;
+  `New`/`MustNew`/`UseRuntime` and the `bundle` runtime helpers;
   structured `BuildError` with typed fields/fixes + the `errcode` catalog;
   the `plan`, `snapshot`, `lifecycle`, `shape`, `flow`, and `av` vocabulary
   packages.

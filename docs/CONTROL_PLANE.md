@@ -137,7 +137,7 @@ encoderFactory := &acmeEncoderFactory{
 task, err := goav.From(liveInput).
     Audio().Decode().Tap(goav.FrameTap("frames")).
     To(primaryDestination).
-    UseRuntime(std.MustNew(
+    UseRuntime(bundle.MustNew(
         goav.WithEncoder(encoderFactory.Descriptor, encoderFactory),
     )).
     Build(ctx)
@@ -369,7 +369,7 @@ Supported built-ins include:
 Register the codec implementation on the runtime, then call it in an attach or
 rebranch pipeline with the generic `encode` step. This is the default path for
 custom encoders and does not require a custom encoder spelling. Use
-`std.MustNew(...)` when you want the stock codecs, formats, and filters plus
+`bundle.MustNew(...)` when you want the bundled codecs, formats, and filters plus
 your adapter; use `goav.New(...)` only when you are intentionally registering
 every required codec, filter, prober, demuxer, and muxer yourself.
 
@@ -388,7 +388,7 @@ stays Input, Stream, Tap, Branch, Destination, Flow, Task, and opt-in task
 capabilities.
 
 ```go
-rt := std.MustNew(
+rt := bundle.MustNew(
     goav.WithEncoder(codec.Descriptor{
         ID:   av.CodecID("x_pcm_s16"),
         Name: "ACME PCM S16",
@@ -423,7 +423,7 @@ duplicate aliases such as `w`, `h`, `size`, `framerate`, `live`, `pix_fmt`,
 and `pixel_format` are rejected with suggestions.
 
 The destination container must accept the selected codec. Standard codecs can
-often use the standard containers registered by `std.MustNew`; a private codec
+often use the bundled containers registered by `bundle.MustNew`; a private codec
 usually needs a matching `WithFormatAdapter`, `WithMuxer`, or an app-owned
 custom destination step. Runtime muxers registered with `WithMuxer` are callable
 by `filesink location=<path> [format=<id>]` and appear in `help attach`.

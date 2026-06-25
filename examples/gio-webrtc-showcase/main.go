@@ -14,7 +14,7 @@ import (
 
 	gioapp "gioui.org/app"
 	"github.com/thesyncim/goav"
-	"github.com/thesyncim/goav/std"
+	"github.com/thesyncim/goav/bundle"
 )
 
 func main() {
@@ -28,7 +28,7 @@ func main() {
 	}
 	browserURL := "http://localhost" + listenPort(listener.Addr().String())
 
-	showcase := newServer(std.MustNew(goav.WithEventCapacity(2048)), browserURL)
+	showcase := newServer(bundle.MustNew(goav.WithEventCapacity(2048)), browserURL)
 	mux := http.NewServeMux()
 	showcase.routes(mux)
 	httpServer := &http.Server{Handler: logRequest(mux)}

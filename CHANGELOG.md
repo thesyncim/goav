@@ -12,7 +12,7 @@ methodology changes, and migration notes.
 ## Unreleased
 
 - Reduced and layered the pre-v1 public API: bundled adapters now live behind
-  `goav/std`, live controls and watch filters moved into explicit vocabulary
+  `goav/bundle`, live controls and watch filters moved into explicit vocabulary
   packages, `Task` is the minimal run/close lifecycle, richer runtime behavior
   is exposed through opt-in capability interfaces, and `DestinationGroup(...)`
   declares shared mux/sink grouping without depending only on reused Go values.

@@ -1,9 +1,9 @@
-// Package std provides the bundled pure-Go runtime adapters for goav recipes.
+// Package bundle provides the bundled pure-Go runtime adapters for goav recipes.
 //
-// Import this package when an application wants the standard codecs, container
+// Import this package when an application wants the bundled codecs, container
 // formats, and frame filters. The root package stays focused on the recipe
 // grammar and runtime extension seams.
-package std
+package bundle
 
 import (
 	"context"
@@ -25,7 +25,7 @@ import (
 
 // New builds a runtime with the bundled formats, codecs, and filters already
 // registered, then applies opts on top. Registration is last-wins, so opts can
-// add or override standard implementations.
+// add or override bundled implementations.
 func New(opts ...goav.Option) (*goav.Runtime, error) {
 	return goav.New(appendOptions(Options(), opts...)...)
 }
@@ -65,8 +65,8 @@ func MustNewFilters(opts ...goav.Option) *goav.Runtime {
 	return goav.MustNew(appendOptions(FilterOptions(), opts...)...)
 }
 
-// Build compiles job with a standard runtime. It is the batteries-included
-// counterpart to job.UseRuntime(std.MustNew(...)).Build(ctx), while preserving
+// Build compiles job with a bundled runtime. It is the batteries-included
+// counterpart to job.UseRuntime(bundle.MustNew(...)).Build(ctx), while preserving
 // New option errors as returned errors.
 func Build(ctx context.Context, job *goav.Job, opts ...goav.Option) (goav.LiveTask, error) {
 	runtime, err := New(opts...)
@@ -79,7 +79,7 @@ func Build(ctx context.Context, job *goav.Job, opts ...goav.Option) (goav.LiveTa
 	return job.UseRuntime(runtime).Build(ctx)
 }
 
-// Run compiles and runs job with a standard runtime, then closes it.
+// Run compiles and runs job with a bundled runtime, then closes it.
 func Run(ctx context.Context, job *goav.Job, opts ...goav.Option) error {
 	runtime, err := New(opts...)
 	if err != nil {

@@ -17,6 +17,7 @@ import (
 
 	"github.com/thesyncim/goav"
 	"github.com/thesyncim/goav/av"
+	"github.com/thesyncim/goav/bundle"
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/expert"
@@ -28,7 +29,6 @@ import (
 	"github.com/thesyncim/goav/plan"
 	"github.com/thesyncim/goav/provider"
 	"github.com/thesyncim/goav/shape"
-	"github.com/thesyncim/goav/std"
 )
 
 type recipeAPISource struct {
@@ -578,7 +578,7 @@ func TestExplainReturnsPartialReportForMissingMuxer(t *testing.T) {
 
 func TestExplainReturnsPartialReportForMissingTransformAdapter(t *testing.T) {
 	report, err := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
-		UseRuntime(std.MustNewCodecs()).
+		UseRuntime(bundle.MustNewCodecs()).
 		Audio().
 		Resample(16_000, codec.Mono).
 		To(goav.Sink(goav.SinkFunc("frames", func(context.Context, goav.Message) error {
@@ -817,7 +817,7 @@ func TestExplainReportsOperationShapeThroughResizeAndEncode(t *testing.T) {
 
 func TestShapeAnnotationCannotBreakOperationContract(t *testing.T) {
 	_, err := goav.From(goav.FileInput("input.ivf", strings.NewReader(""))).
-		UseRuntime(std.MustNew()).
+		UseRuntime(bundle.MustNew()).
 		Video().
 		Decode().
 		Shape(shape.New(shape.Domain(shape.DomainPacket), shape.Media(av.MediaVideo))).
@@ -1461,7 +1461,7 @@ func TestBranchesIsTheOnlyPublicPlannedSplitVerb(t *testing.T) {
 }
 
 func TestRuntimeBranchTapAnchorIsPublicAPI(t *testing.T) {
-	graph := expert.Graph(std.MustNew())
+	graph := expert.Graph(bundle.MustNew())
 	source := graph.Source("source", recipeAPISource{name: "source"})
 	decode := graph.Stage("decode-audio", goav.PacketFunc("decode-audio", func(ctx context.Context, packet *goav.Packet, emit goav.Emit) error {
 		return emit.Packet(packet)
@@ -2025,7 +2025,7 @@ func TestBranchFromUsesTypedSources(t *testing.T) {
 	}
 
 	_ = goav.Branch("tap").From(goav.FrameTap("audio.decoded"))
-	graph := expert.Graph(std.MustNew())
+	graph := expert.Graph(bundle.MustNew())
 	node := graph.Source("source", recipeAPISource{name: "source"})
 	_ = goav.Branch("node").From(node)
 	_ = goav.Branch("stream").From(node.Stream("audio"))
@@ -2366,7 +2366,7 @@ func TestRecipeReportsNilRuntime(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "no runtime is configured") ||
 		!strings.Contains(err.Error(), "goav.MustNew") ||
-		!strings.Contains(err.Error(), "std.MustNew") {
+		!strings.Contains(err.Error(), "bundle.MustNew") {
 		t.Fatalf("err = %v, want runtime guidance", err)
 	}
 }
@@ -2381,8 +2381,8 @@ func TestRecipeReportsOmittedRuntime(t *testing.T) {
 	if !errors.As(err, &buildErr) || buildErr.Code != "runtime_missing" {
 		t.Fatalf("err = %v, want runtime_missing", err)
 	}
-	if !strings.Contains(err.Error(), "std.Run") {
-		t.Fatalf("err = %v, want standard helper guidance", err)
+	if !strings.Contains(err.Error(), "bundle.Run") {
+		t.Fatalf("err = %v, want bundle helper guidance", err)
 	}
 }
 
@@ -4438,7 +4438,7 @@ func TestStreamRecipeRejectsInvalidEncodeSampleRate(t *testing.T) {
 
 func TestStreamRecipeReportsMissingEncodeAdapterBeforeOpeningInput(t *testing.T) {
 	_, err := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
-		UseRuntime(std.MustNewFormats()).
+		UseRuntime(bundle.MustNewFormats()).
 		Audio().
 		Encode(codec.Opus(codec.Bitrate(96_000))).
 		To(goav.File("archive.ivf", io.Discard)).
@@ -4537,7 +4537,7 @@ func TestStreamRecipeReportsProbedFileMissingDecoderBeforeOpeningInput(t *testin
 
 func TestStreamRecipeReportsMissingTransformAdapterBeforeOpeningInput(t *testing.T) {
 	_, err := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
-		UseRuntime(std.MustNewCodecs()).
+		UseRuntime(bundle.MustNewCodecs()).
 		Audio().
 		Resample(16_000, codec.Mono).
 		To(goav.Sink(goav.SinkFunc("frames", func(context.Context, goav.Message) error {
@@ -4549,7 +4549,7 @@ func TestStreamRecipeReportsMissingTransformAdapterBeforeOpeningInput(t *testing
 		t.Fatalf("err = %v, want transform_adapter_missing wrapping filter.ErrNotFound", err)
 	}
 	if !strings.Contains(err.Error(), "transform=resample") ||
-		!strings.Contains(err.Error(), "std.MustNewFilters") ||
+		!strings.Contains(err.Error(), "bundle.MustNewFilters") ||
 		strings.Contains(err.Error(), "input_demuxer_missing") ||
 		strings.Contains(err.Error(), "cannot open input") {
 		t.Fatalf("err = %v, want transform adapter guidance before input diagnostics", err)
@@ -4632,7 +4632,7 @@ func TestDefaultRecordIVFRecipeRunShortcutRuns(t *testing.T) {
 	if err := recordJob(
 		goav.FileInput("input.ivf", bytes.NewReader(tinyIVF())),
 		goav.File("preview.ivf", &out),
-	).UseRuntime(std.MustNew()).Run(context.Background()); err != nil {
+	).UseRuntime(bundle.MustNew()).Run(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	if out.Len() == 0 {
@@ -4645,7 +4645,7 @@ func TestRecordRecipeDescribeMatchesBuiltGraph(t *testing.T) {
 	job := recordJob(
 		goav.FileInput("input.ivf", bytes.NewReader(tinyIVF())),
 		goav.File("preview.ivf", &out),
-	).UseRuntime(std.MustNew())
+	).UseRuntime(bundle.MustNew())
 
 	planned, err := job.Describe()
 	if err != nil {
@@ -4670,7 +4670,7 @@ func TestDefaultFromFanoutRecipeRunShortcutRuns(t *testing.T) {
 			goav.File("recording.ivf", &recording),
 			goav.File("preview.ivf", &preview),
 		).
-		UseRuntime(std.MustNew()).
+		UseRuntime(bundle.MustNew()).
 		Run(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -4687,7 +4687,7 @@ func TestFromFanoutRecipeDescribeMatchesBuiltGraph(t *testing.T) {
 			goav.File("recording.ivf", &recording),
 			goav.File("preview.ivf", &preview),
 		).
-		UseRuntime(std.MustNew())
+		UseRuntime(bundle.MustNew())
 
 	planned, err := job.Describe()
 	if err != nil {
@@ -4709,7 +4709,7 @@ func TestDefaultRecordRecipeRunsWithExplicitUnnamedOutputFormat(t *testing.T) {
 	job := recordJob(
 		goav.FileInput("input.ivf", bytes.NewReader(tinyIVF())),
 		goav.File("", &out, goav.Format(av.FormatIVF)),
-	).UseRuntime(std.MustNew())
+	).UseRuntime(bundle.MustNew())
 
 	spec, err := job.Describe()
 	if err != nil {
@@ -5160,7 +5160,7 @@ func TestBranchCompositionRejectsMissingPlannedTap(t *testing.T) {
 }
 
 func TestBranchCompositionRejectsGraphNodeSource(t *testing.T) {
-	graphNode := expert.Graph(std.MustNew()).Stage("decode-video", goav.PacketFunc("decode-video", func(ctx context.Context, packet *goav.Packet, emit goav.Emit) error {
+	graphNode := expert.Graph(bundle.MustNew()).Stage("decode-video", goav.PacketFunc("decode-video", func(ctx context.Context, packet *goav.Packet, emit goav.Emit) error {
 		return emit.Packet(packet)
 	}))
 	_, err := goav.From(goav.FileInput("input.webm", strings.NewReader(""))).

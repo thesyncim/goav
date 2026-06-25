@@ -9,9 +9,9 @@ import (
 
 	"github.com/thesyncim/goav"
 	"github.com/thesyncim/goav/av"
+	"github.com/thesyncim/goav/bundle"
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/goavtest"
-	"github.com/thesyncim/goav/std"
 )
 
 const mp4Fixture = "container/mp4/testdata/h264_aac.mp4"
@@ -20,7 +20,7 @@ const mp4FragmentedFixture = "container/mp4/testdata/h264_aac_fragmented.mp4"
 // offlineRuntime decodes at full speed (no realtime clock pacing) so file tests
 // do not wait wall-clock time.
 func offlineRuntime() *goav.Runtime {
-	return std.MustNew(goav.WithRealtime(false))
+	return bundle.MustNew(goav.WithRealtime(false))
 }
 
 // TestMP4DemuxesAndDecodesVideoThroughGrammar proves the MP4 demuxer is wired
@@ -38,7 +38,7 @@ func TestMP4DemuxesAndDecodesVideoThroughGrammar(t *testing.T) {
 	}
 	defer file.Close()
 
-	rt := std.MustNewFormats(goavtest.Codec(av.CodecH264), goav.WithRealtime(false))
+	rt := bundle.MustNewFormats(goavtest.Codec(av.CodecH264), goav.WithRealtime(false))
 	out := goavtest.NewCollector()
 	if err := goav.From(goav.FileInput("h264_aac.mp4", file)).
 		UseRuntime(rt).

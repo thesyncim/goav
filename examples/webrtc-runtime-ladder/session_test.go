@@ -5,11 +5,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/thesyncim/goav/std"
+	"github.com/thesyncim/goav/bundle"
 )
 
 func TestSessionPublishesStateForBranchChanges(t *testing.T) {
-	session, err := newSession(context.Background(), std.MustNew())
+	session, err := newSession(context.Background(), bundle.MustNew())
 	if err != nil {
 		t.Fatalf("newSession() error = %v", err)
 	}

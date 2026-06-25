@@ -42,6 +42,7 @@ var surfacePinPackages = []struct {
 // tests and are outside this module's walk by construction.
 var surfaceSeamPackages = []string{
 	"av",
+	"bundle",
 	"cmd/goav",
 	"codec",
 	"ctl",
@@ -53,7 +54,6 @@ var surfaceSeamPackages = []string{
 	"pipeline",
 	"provider",
 	"shape",
-	"std",
 }
 
 // TestEveryPublicPackageIsGoverned closes the governance gap hardcoded lists

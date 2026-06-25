@@ -8,16 +8,16 @@ import (
 	"github.com/pion/rtcp"
 	"github.com/thesyncim/goav"
 	"github.com/thesyncim/goav/av"
+	"github.com/thesyncim/goav/bundle"
 	"github.com/thesyncim/goav/control"
 	"github.com/thesyncim/goav/inspect"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/plan"
 	"github.com/thesyncim/goav/snapshot"
-	"github.com/thesyncim/goav/std"
 )
 
 func TestSessionPublishesStateForBranchChanges(t *testing.T) {
-	session, err := newSession(context.Background(), std.MustNew(), "http://localhost:8080")
+	session, err := newSession(context.Background(), bundle.MustNew(), "http://localhost:8080")
 	if err != nil {
 		t.Fatalf("newSession() error = %v", err)
 	}

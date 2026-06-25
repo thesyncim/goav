@@ -44,7 +44,7 @@ goav.From(input)                          inputs: FileInput, URIInput, Input(pro
   .OnStream(MatchMedia|MatchCodec|...)    dynamic-stream rules; OnRemove controls detach outcome
 goav.Mix/Composite/Select(arms) / Join(name, stage, arms)   N arms -> one stream (JoinArm)
 goav.Flow("name")                         reusable operation list (Chain)
-job.Describe(); adapter-backed Explain/Build/Run use job.UseRuntime(rt) or std.Build/std.Run
+job.Describe(); adapter-backed Explain/Build/Run use job.UseRuntime(rt) or bundle.Build/bundle.Run
 Task: Run, Close
 Explainer: Explain
 Inspectable: Describe, Taps, Snapshot -> snapshot.*, Stats
@@ -52,7 +52,7 @@ Mutable: Attach/Detach(DrainBranch|AbortBranch); Attachment.Rebranch
          (SwitchAt(NextFrame|NextKeyframe|AtMediaTime), Drain/AbortOldBranch, KeepOldOnFailure)
 Controllable: Control(control.Keyframe|Seek|Segment|Rate|SetBitrate|SelectActive|Deliver, .AtTap)
 Observable: Events, Watch(inspect.EventFilter)
-goav.New(opts...) -> (*Runtime, error); goav.MustNew(opts...) -> bare Runtime; std.MustNew(opts...) -> standard Runtime; job.UseRuntime(rt)
+goav.New(opts...) -> (*Runtime, error); goav.MustNew(opts...) -> bare Runtime; bundle.MustNew(opts...) -> bundled Runtime; job.UseRuntime(rt)
 errors: *goav.BuildError{Code: errcode.X, Fields: []goav.Detail, Fixes: []goav.Fix, ...} matched with errors.As/Is; Detail(key) for typed facts
 ```
 
@@ -144,7 +144,7 @@ use [`docs/ADAPTERS.md`](ADAPTERS.md) and [`docs/COMPONENTS.md`](COMPONENTS.md).
   seekable inputs, `WithDemuxer`/`WithMuxer`/`WithFormatAdapter`/`WithProber`.
 - **Filters**: `filter` FrameFilter/Factory/Descriptor,
   `WithFilter`/`WithFilterAdapter`.
-- **Runtime config**: `goav.New`, `std.MustNew`, `WithClock`, `WithRealtime`,
+- **Runtime config**: `goav.New`, `bundle.MustNew`, `WithClock`, `WithRealtime`,
   `WithBufferPolicy`, `WithEventCapacity`.
 - **Media vocabulary**: `av` frames/packets/buffers (`Buffer`,
   `BufferOwnership`, `Plane`), timing (`TimeBase`, `Timestamp`, `Duration`,
@@ -177,9 +177,9 @@ implement, with the executable evidence:
 - **The solver's conversion-class boundary.** External filters are selectable
   by the shape solver within the declared delta classes: sample-rate/channel
   (resample), width/height (resize), pixel/sample-format (convert), the
-  vocabulary of `shape.Conversions`, by registering under the std factory
+  vocabulary of `shape.Conversions`, by registering under the bundled factory
   names (`filter.FactoryResample`, ...; adapterproof's toy upsampler is the
-  std resample slot). A new delta class (say colorspace or channel-layout as
+  bundled resample slot). A new delta class (say colorspace or channel-layout as
   a distinct class) is core work: `shape.Conversions` and `shape.Policy`
   enumerate the classes, and externals cannot extend that enumeration.
 - **Controls.** The typed verbs (`Keyframe`, `Seek`, `Rate`, `SetBitrate`,
@@ -311,7 +311,7 @@ tomorrow is governed the day it lands.
   invariants to executable tests.
 
 `adapters/*` and `container/*` are implementations behind the `codec`/`format`
-extension points (registered by `std.MustNew`), outside the core import
+extension points (registered by `bundle.MustNew`), outside the core import
 graph and not part of the governed surface: an explicit, asserted exclusion
 (`docPinImplementationSubtrees`), not a forgotten one.
 

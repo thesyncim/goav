@@ -13,7 +13,7 @@ while they are alive.
 `goav` is a small recipe grammar over app-owned media and explicit adapter
 runtimes. The root package is for describing media work: input, stream
 selection, operations, taps, branches, destinations, flows, and task lifecycle.
-Bundled adapters live in `goav/std`; live controls live in `goav/control`;
+Bundled adapters live in `goav/bundle`; live controls live in `goav/control`;
 observation helpers live in `goav/inspect`.
 
 Use it when media belongs inside a Go service and you need structured build
@@ -30,7 +30,7 @@ go get github.com/thesyncim/goav
 Start with one packet-preserving recording:
 
 ```go
-return std.Run(ctx, goav.From(goav.FileInput("input.ivf", in)).
+return bundle.Run(ctx, goav.From(goav.FileInput("input.ivf", in)).
     Copy().
     To(goav.File("recording.ivf", out)),
 )
@@ -95,7 +95,7 @@ previewTrack := goav.Sink(goav.SinkFunc("preview-track", func(context.Context, g
     return nil
 }))
 
-_, err := std.Build(ctx, goav.From(roomCamera).
+_, err := bundle.Build(ctx, goav.From(roomCamera).
     Video().
     Copy().
     Sync(roomSync).
@@ -148,7 +148,7 @@ transport := goav.Source("webrtc-room",
     goav.Codec(codec.VP8()),
 )
 
-_, err := std.Build(ctx, goav.From(transport).
+_, err := bundle.Build(ctx, goav.From(transport).
     OnStream(
         goav.MatchStreamID("camera"),
         goav.Branch("record-camera").
@@ -167,7 +167,7 @@ return err
 
 goav keeps the recipe as Go data, validates it before resources open, and
 returns a task your application can observe and mutate while it runs. Use the
-root grammar first; import `std`, `control`, `inspect`, `provider`, `codec`,
+root grammar first; import `bundle`, `control`, `inspect`, `provider`, `codec`,
 `format`, `filter`, or `expert` only when the workflow needs that seam.
 
 ## Capability Matrix

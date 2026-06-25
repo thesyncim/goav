@@ -585,8 +585,8 @@ func (g *runtimeAttachGroup) prepareSharedMuxStages(ctx context.Context, rt *run
 	}
 	if rt == nil {
 		return runtimeBranchInvalidError(
-			"runtime branch mux destination groups require the standard runtime",
-			"build tasks with std.MustNew(...) from github.com/thesyncim/goav/std before attaching grouped file or URI branches",
+			"runtime branch mux destination groups require the bundled runtime",
+			"build tasks with bundle.MustNew(...) from github.com/thesyncim/goav/bundle before attaching grouped file or URI branches",
 		)
 	}
 	service := &builder{runtime: rt}
@@ -679,8 +679,8 @@ func runtimeMuxDestinationFormat(ctx context.Context, rt *runtime, dest destinat
 	}
 	if rt == nil {
 		return "", runtimeBranchInvalidError(
-			"runtime branch mux destinations require the standard runtime",
-			"build tasks with std.MustNew(...) from github.com/thesyncim/goav/std before attaching file or URI branches",
+			"runtime branch mux destinations require the bundled runtime",
+			"build tasks with bundle.MustNew(...) from github.com/thesyncim/goav/bundle before attaching file or URI branches",
 		)
 	}
 	result, err := rt.formats.Probe(ctx, outputProbeRequest(dest.output))
@@ -1521,8 +1521,8 @@ func destinationSpecHasOutput(dest destinationSpec) bool {
 func (t *task) prepareRuntimeBranchDecode(ctx context.Context, branchName string, currentStream av.Stream, currentShape shape.Spec, spec codec.CodecSpec) (pipeline.Stage, error) {
 	if t.runtime == nil {
 		return nil, runtimeBranchInvalidError(
-			"runtime branch decoding requires the standard runtime",
-			"build tasks with std.MustNew(...) from github.com/thesyncim/goav/std before attaching decode branches",
+			"runtime branch decoding requires the bundled runtime",
+			"build tasks with bundle.MustNew(...) from github.com/thesyncim/goav/bundle before attaching decode branches",
 		)
 	}
 	if currentShape.Domain != shape.DomainPacket {
@@ -1906,7 +1906,7 @@ func runtimeBranchTransformError(node string, cause error) error {
 		Reason:    "runtime branch transform could not be opened",
 		Suggestions: []string{
 			"register a matching resize or resample filter adapter",
-			"import github.com/thesyncim/goav/std and use std.MustNewFilters(...) for standard filters",
+			"import github.com/thesyncim/goav/bundle and use bundle.MustNewFilters(...) for bundled filters",
 			"attach from a frame tap with media shape that match the requested transform",
 		},
 		Cause: cause,

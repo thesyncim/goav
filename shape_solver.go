@@ -35,7 +35,7 @@ type shapeConversionPlan struct {
 // and one diagnostic per insertion.
 func solveOperationSpecShapes(operation string, rt *runtime, stream streamIntent, initial shape.Spec) ([]operationSpec, []plan.Diagnostic, error) {
 	if rt == nil {
-		// No standard runtime (expert or test states): keep the validate-only walk.
+		// No bundled runtime (expert or test states): keep the validate-only walk.
 		return nil, nil, validateOperationSpecShapes(operation, stream, initial)
 	}
 	current := normalizeTapShape(initial)
@@ -507,7 +507,7 @@ func shapeSolverAdapterError(operation string, node string, index int, step oper
 		Details: details,
 		Suggestions: []string{
 			"register a " + string(selection.media) + " conversion filter with goav.WithFilter(filter.Descriptor{Input: ..., Output: ...}, factory)",
-			"import github.com/thesyncim/goav/std and build with std.MustNewFilters(...) for the standard resample and resize adapters",
+			"import github.com/thesyncim/goav/bundle and build with bundle.MustNewFilters(...) for the bundled resample and resize adapters",
 		},
 		Cause: ErrUnsupportedBuild,
 	}
