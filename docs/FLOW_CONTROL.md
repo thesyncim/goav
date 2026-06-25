@@ -39,19 +39,19 @@ Runtime branches are flow-control boundaries too: they may own buffers, taps,
 and destinations that should close differently depending on why the branch is
 leaving.
 
-- `Task.Detach(ctx, attachment)` removes the branch and reports its
+- `Mutable.Detach(ctx, attachment)` removes the branch and reports its
   destinations as closed.
-- `Task.Detach(ctx, attachment, DrainBranch())` drains/finalizes the branch as
+- `Mutable.Detach(ctx, attachment, DrainBranch())` drains/finalizes the branch as
   committed. Use this for ordinary recording or participant-leave flows where
   the output should be kept.
-- `Task.Detach(ctx, attachment, AbortBranch())` marks the branch output as
+- `Mutable.Detach(ctx, attachment, AbortBranch())` marks the branch output as
   abandoned. Use this after failed admission or diagnostic captures that should
   not commit.
 - `OnStream(match, Branch(...), OnRemove(...))` applies the same detach choices
   when a dynamically discovered stream disappears.
 
 ```go
-task.Watch(goav.WatchTypes(
+task.Watch(inspect.WatchTypes(
     av.EventBranchAttached,
     av.EventBranchDetached,
     av.EventDestinationCommitted,

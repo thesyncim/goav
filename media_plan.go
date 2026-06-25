@@ -243,10 +243,16 @@ func planCopyBranches(state *recipeCompileState, outputs []planOutput) ([]planBr
 			}
 		}
 		operations := planInputOperationsForShape(input, spec)
+		copyDetail := "preserve encoded packets"
+		copyMessage := "no decode, transform, or encode requested; packets are copied to outputs"
+		if intent.Copy {
+			copyDetail = "explicit packet copy"
+			copyMessage = ".Copy requested; packets are copied to outputs"
+		}
 		decision := planDecision{
 			Code:    string(errcode.PacketCopy),
 			Branch:  name,
-			Message: "no decode, transform, or encode requested; packets are copied to outputs",
+			Message: copyMessage,
 		}
 		if spec.Domain == shape.DomainEvent {
 			operations = append(operations, planOperation{
@@ -264,7 +270,7 @@ func planCopyBranches(state *recipeCompileState, outputs []planOutput) ([]planBr
 			operations = append(operations, planOperation{
 				Kind:      plan.OpCopy,
 				Component: "packet-copy",
-				Detail:    "preserve encoded packets",
+				Detail:    copyDetail,
 			})
 		}
 		operations = planOperationsWithShape(name, spec, operations)
@@ -417,7 +423,7 @@ func planOperationFromOperationSpec(operation operationSpec) planOperation {
 		return planOperation{
 			Kind:      plan.OpCopy,
 			Component: firstNonEmpty(operation.Component, "packet-copy"),
-			Detail:    "no frame operation requested",
+			Detail:    firstNonEmpty(operation.Detail, "no frame operation requested"),
 			Codec:     cloneCodecSpec(operation.Encode),
 			Shared:    operation.Shared,
 		}

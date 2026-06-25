@@ -29,7 +29,7 @@ stage concern.
 | Need | Use | Copy from | Failure to test |
 |---|---|---|---|
 | Push media already owned by the app | `goav.Source(name, shape, fn)` | `examples/custom-source` | missing callback or wrong shape refuses before work starts |
-| Publish dynamic app-owned tracks and optionally mix an output | `goav.Source` plus `Task.Attach(...From(input.Stream(track)))` | `examples/dynamic-audio-room` | inactive participant frames fail instead of silently corrupting the mix |
+| Publish dynamic app-owned tracks and optionally mix an output | `goav.Source` plus `Mutable.Attach(...From(input.Stream(track)))` | `examples/dynamic-audio-room` | inactive participant frames fail instead of silently corrupting the mix |
 | Open a transport or live provider | `provider.Source` via `goav.Input(provider)` | `examples/provider-source` | nil provider or missing codec/stream facts refuse before work starts |
 | Write bytes after format resolution | `goav.Writer(name, open, opts...)` | `examples/custom-destination` | nil opener or writer open error fails the task |
 | Commit or abort object-store uploads | `provider.TransactionalWriter` | `examples/transactional-writer` | induced pipeline error calls `Abort`, not `Commit` |
@@ -163,8 +163,9 @@ the path, pass destination options directly:
 dest := goav.File("", out, goav.Format(av.FormatIVF))
 ```
 
-Reuse one destination value when several branches should feed one mux, one sink
-group, or one transactional writer.
+Reuse one destination value, or give matching destinations the same
+`goav.DestinationGroup(...)`, when several branches should feed one mux, one
+sink group, or one transactional writer.
 
 The runnable module `examples/custom-destination` verifies the open-time
 `provider.Info` contract and a nil-opener failure without importing internals.
@@ -204,8 +205,7 @@ desc := filter.Descriptor{
     SampleFormats: []string{av.SampleFormatS16},
 }
 
-rt := goav.New(
-    goav.WithStdFilters(),
+rt := std.MustNewFilters(
     goav.WithFilter(desc, myFactory{}),
 )
 ```
@@ -235,7 +235,7 @@ desc := codec.Descriptor{
     },
 }
 
-rt := goav.New(
+rt := goav.MustNew(
     goav.WithEncoder(desc, myCodecFactory{}),
     goav.WithDecoder(desc, myCodecFactory{}),
 )
@@ -277,8 +277,8 @@ app-specific verbs, branch steps, or encoder names through `goav ctl`.
 command := ctl.NewCommand[setRate](
     "vendor.rate",
     "demo playback-rate control",
-    func(ctx context.Context, task goav.Task, cmd setRate) (ctl.ControlResponse, error) {
-        if err := task.Control(ctx, goav.Rate(cmd.Value).At(pipeline.NodeRef(cmd.Source))); err != nil {
+    func(ctx context.Context, task goav.LiveTask, cmd setRate) (ctl.ControlResponse, error) {
+        if err := task.Control(ctx, control.Rate(cmd.Value).At(pipeline.NodeRef(cmd.Source))); err != nil {
             return ctl.ControlResponse{}, err
         }
         return ctl.ControlResponse{Operation: "control vendor.rate"}, nil
@@ -323,10 +323,10 @@ expect.S16(t, out, [][]int16{{1, 2}})
 
 `goavtest/expect` uses `github.com/google/go-cmp/cmp` for structural diffs and
 keeps the custom layer to goav-specific checks: collector samples, golden
-output files, and `*goav.BuildError` code, operation, node, cause, details,
-and suggestions. The standalone example modules use this pattern so adapter
-authors can copy tests without importing internals or writing local `errors.As`
-and golden-file helpers.
+output files, and `*goav.BuildError` code, operation, node, cause, typed
+fields/fixes, and rendered details/suggestions. The standalone example modules
+use this pattern so adapter authors can copy tests without importing internals
+or writing local `errors.As` and golden-file helpers.
 
 ## Checklist
 

@@ -51,9 +51,8 @@ func Resample(sampleRate int, channels int, options ...audioOption) TransformSpe
 	return TransformSpec{Resample: &config}
 }
 
-func validateRecipeTransformAdapters(operation string, rt Runtime, streams []streamIntent) error {
-	standard, ok := rt.(*runtime)
-	if !ok || standard == nil {
+func validateRecipeTransformAdapters(operation string, rt *Runtime, streams []streamIntent) error {
+	if rt == nil {
 		return nil
 	}
 	for i := range streams {
@@ -64,10 +63,10 @@ func validateRecipeTransformAdapters(operation string, rt Runtime, streams []str
 			if name == "" {
 				continue
 			}
-			if _, err := standard.filters.Factory(name); err != nil {
+			if _, err := rt.filters.Factory(name); err != nil {
 				return recipeTransformAdapterError(operation, stream, name, err)
 			}
-			desc, err := standard.filters.Descriptor(name)
+			desc, err := rt.filters.Descriptor(name)
 			if err == nil {
 				if err := validateTransformAdapterDescriptor(operation, stream, transforms[j], name, desc); err != nil {
 					return err
@@ -216,7 +215,7 @@ func recipeTransformAdapterError(operation string, stream streamIntent, name str
 		},
 		Suggestions: []string{
 			"register a filter adapter that provides " + name,
-			"use goav.Default() or goav.New(goav.WithDefaults()) for standard resize and resample adapters",
+			"import github.com/thesyncim/goav/std and build with std.MustNewFilters(...) for standard resize and resample adapters",
 			"remove ." + transformMethodName(name) + "(...) when that conversion is not needed",
 		},
 		Cause: cause,

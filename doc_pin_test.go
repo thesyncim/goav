@@ -14,7 +14,7 @@ import (
 
 // docPinImplementationSubtrees are the only public package subtrees outside
 // the documentation pin: concrete codec/container implementations behind the
-// codec/format seams, registered by Default()/WithStd* and explicitly outside
+// codec/format seams, registered by std.New and explicitly outside
 // the governed surface (docs/API_SURFACE.md). Everything else the module
 // discovery finds is doc-pinned automatically — there is no package list to
 // forget to extend.
@@ -27,7 +27,7 @@ func TestControlPlaneCustomCodecDocsUseBootstrapRuntime(t *testing.T) {
 	}
 	text := string(data)
 	for _, fragment := range []string{
-		"UseRuntime(goav.Default(",
+		"UseRuntime(std.MustNew(",
 		"goav.WithFormatAdapter",
 		"The destination container must accept the selected codec.",
 	} {
@@ -35,7 +35,7 @@ func TestControlPlaneCustomCodecDocsUseBootstrapRuntime(t *testing.T) {
 			t.Fatalf("CONTROL_PLANE.md missing %q", fragment)
 		}
 	}
-	if strings.Contains(text, "UseRuntime(goav.New(\n        goav.WithStdFilters(),") {
+	if strings.Contains(text, "UseRuntime(goav.MustNew(\n        goav.WithFilterAdapter(") {
 		t.Fatal("CONTROL_PLANE.md custom-codec bootstrap drifted back to a bare runtime")
 	}
 }

@@ -23,32 +23,38 @@ composer:
 `WorkPlan -> pipeline.Graph -> Task`.
 
 Live mutation follows the same promise. Make runtime attachment a patch of the same plan model:
-`Task.Attach` compiles the same branch grammar into `WorkPatch`, validates
+`Mutable.Attach` compiles the same branch grammar into `WorkPatch`, validates
 before graph mutation, and rolls back fully on failure
 (`TestTaskAttachRuntimeBranchGroupRollsBackOnLaterFailure`).
 
 The destination model has also been simplified. Collapse `Target` into `Destination` is done: `File`, `URI`, `Writer`,
-`Sink`, and `Custom` return stable goav-owned destination handles, and
-reusing one handle groups branches into one mux/sink group
-(`TestFromMultiInputPlanDedupesSharedDestination`).
+`Sink`, and `Custom` return stable goav-owned destination handles. Reusing one
+handle still groups branches into one mux/sink group, and
+`DestinationGroup(...)` makes the same intent explicit when branches build
+matching destinations independently (`TestDestinationGroupSurvivesWithAndCopy`,
+`TestFromMultiInputPlanDedupesSharedDestination`).
 
 ## v0 Stable
 
 Stable here means "you should not wake up to a silent contract change", not
-"the project has stopped learning". The governed surface is 335 approved
-identifiers (`api_surface_pin_test.go` + `testdata/api_surface.txt`: 134 root,
-147 `errcode`, 28 `plan`, 13 `lifecycle`, 4 `snapshot`, 9 `graphrender`),
+"the project has stopped learning". The governed surface is 337 approved
+identifiers (`api_surface_pin_test.go` + `testdata/api_surface.txt`: 116 root,
+19 `control`, 3 `inspect`, 145 `errcode`, 28 `plan`, 13 `lifecycle`,
+4 `snapshot`, 9 `graphrender`),
 every exported symbol documented (`doc_pin_test.go`), tiered in
 `docs/API_SURFACE.md`:
 
 - **Tier A: the grammar.** `From`/stream selection/operations
   (`Decode`/`Copy`/`Resize`/`Resample`/`Do`/`Encode`)/`Shape`/`Auto`/
   `Require`/`Prefer`/`Tap`/`Branches`/`To`/`OnStream`; `Mix`/`Composite`/
-  `Select`; `Flow`; `Task` verbs (`Run`/`Events`/`Watch`/`Snapshot`/`Stats`/
-  `Attach`/`Detach` with `DrainBranch`/`AbortBranch`/`Rebranch`/`Control`);
-  `Default`/`New`/`UseRuntime`;
-  structured `BuildError` + the `errcode` catalog; the `plan`, `snapshot`,
-  `lifecycle`, `shape`, `flow`, and `av` vocabulary packages.
+  `Select`; `Flow`; `Task` lifecycle (`Run`/`Close`); opt-in task capability
+  interfaces for `Explain`, inspection (`Describe`/`Taps`/`Snapshot`/`Stats`),
+  mutation (`Attach`/`Detach` with `DrainBranch`/`AbortBranch`, `Rebranch`),
+  controls (`Control`), and observation (`Events`/`Watch`);
+  `New`/`MustNew`/`UseRuntime` and the `std` runtime helpers;
+  structured `BuildError` with typed fields/fixes + the `errcode` catalog;
+  the `plan`, `snapshot`, `lifecycle`, `shape`, `flow`, and `av` vocabulary
+  packages.
 - **Tier B: extension points.** `provider.Source` and `Source(fn)` push
   sources; `provider.Destination`/`Writer`/`Sink` destinations;
   `EventFunc`/`FrameFunc`/`PacketFunc`/`SinkFunc` hooks; codec/format/filter
@@ -104,7 +110,7 @@ this list:
   and rejected: no boundary worth a package today (`docs/ARCHITECTURE.md`
   "Package layering"). Revisit only with a data-transfer boundary.
 - **Destination lifecycle events**: task and runtime-branch destinations now
-  publish commit/abort/error events. Standalone `Task.Detach` has explicit
+  publish commit/abort/error events. Standalone `Mutable.Detach` has explicit
   drain/abort outcomes, branch attach/detach events are watchable, and
   `OnRemove(...)` selects per-rule dynamic-stream removal disposition.
 - **`streamIntent` normalization fold**: Explain stream rows and adapter
@@ -215,7 +221,7 @@ The checklist below gates the tag. Each item names its current evidence.
   CLI archives, and creates GitHub release notes; root CLI releases include
   checksums, Go module SBOM, per-binary buildinfo, and provenance metadata.
   `docs/RELEASING.md` documents signed-tag ownership and tag order.
-- [ ] **Release decision**: confirm the `go 1.26.4` directive in `go.mod`
-  is the intended minimum supported Go, fill the compatibility note template in
+- [ ] **Release decision**: confirm the `go 1.26` directive in `go.mod` is the
+  intended minimum supported Go, fill the compatibility note template in
   `docs/COMPATIBILITY.md`, and cut v1. Not done; the only open item is a
   maintainer call, not code.

@@ -18,7 +18,7 @@ func TestCompatibilityPolicyPinsReleaseDecisionEvidence(t *testing.T) {
 		"## V1 promise draft",
 		"## Release compatibility note template",
 		"## Release blocking rule",
-		"go 1.26.4",
+		"go 1.26",
 		"docs/API_SURFACE.md",
 		"docs/ROADMAP.md",
 		"Minimum Go version:",

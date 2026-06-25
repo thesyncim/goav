@@ -71,9 +71,9 @@ Experimental: dynamic graph mutation (closed graphs reject additions with
 `pipeline.ErrClosed`), the work-plan compile (recipe intent -> one composable
 branch IR with ordered-operation shape validation), `plan.Report`
 (`Job.Explain(ctx)` structured explanation), runtime attach (grouped
-`Task.Attach` from typed taps with preflight, rollback, branch-owned stats, and
-subtree detach; `Task.Taps()` lists stable outlets), buffer policy, and graph
-stats (`Task.Stats()`, `Task.Snapshot()` with spec, stats, taps, and runtime
+`Mutable.Attach` from typed taps with preflight, rollback, branch-owned stats, and
+subtree detach; `Inspectable.Taps()` lists stable outlets), buffer policy, and graph
+stats (`Inspectable.Stats()`, `Inspectable.Snapshot()` with spec, stats, taps, and runtime
 branch states).
 
 RTP: stable. `rtpav.Source` (Pion RTP reader -> packets/events with payload

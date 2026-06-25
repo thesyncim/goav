@@ -17,6 +17,7 @@ import (
 // destinationSpec describes a concrete file, URI, writer, or sink destination.
 type destinationSpec struct {
 	id             uint64
+	group          string
 	output         format.Output
 	sink           pipeline.Sink
 	custom         provider.Destination
@@ -279,6 +280,22 @@ func Format(format av.FormatID) DestinationOption {
 	})
 }
 
+// DestinationGroup marks destinations as the same logical mux/sink group even
+// when they were built as separate Destination values. Destinations in one
+// group should use the same route label and compatible output settings; the
+// first planned destination opens the shared writer or sink.
+func DestinationGroup(name string) DestinationOption {
+	return destinationOption(func(spec *destinationSpec) {
+		if name == "" {
+			if spec.err == nil {
+				spec.err = fmt.Errorf("destination group name is empty")
+			}
+			return
+		}
+		spec.group = name
+	})
+}
+
 // With returns a copy of the destination with the options applied — the same
 // option vocabulary the constructors take, for layering config onto an
 // already-constructed value. The copy keeps the original's routing identity.
@@ -374,6 +391,20 @@ func (s destinationSpec) validate(operation string, fallback string) error {
 		}
 	}
 	if s.sink != nil {
+		if err := validateSinkComponent(s.sink); err != nil {
+			return &BuildError{
+				Code:      errcode.OutputInvalid,
+				Operation: operation,
+				Node:      node,
+				Reason:    err.Error(),
+				Suggestions: []string{
+					"pass a non-nil sink callback to goav.SinkFunc(...)",
+					"pass a non-nil sink to goav.Sink(...)",
+					"use goav.File(...) or goav.URI(...) for muxed output",
+				},
+				Cause: err,
+			}
+		}
 		return nil
 	}
 	if s.output.Name == "" && s.output.URI == "" && s.output.Protocol == "" && s.output.MIMEType == "" && s.output.Writer == nil && s.custom == nil && s.format == "" {
@@ -471,10 +502,9 @@ func validateDestinationSpecs(operation string, outputs []destinationSpec, desti
 	return nil
 }
 
-func validateOutputFormatAdapters(ctx context.Context, rt Runtime, outputs []destinationSpec, destinationNames ...string) ([]destinationSpec, error) {
+func validateOutputFormatAdapters(ctx context.Context, rt *Runtime, outputs []destinationSpec, destinationNames ...string) ([]destinationSpec, error) {
 	resolved := append([]destinationSpec(nil), outputs...)
-	standard, ok := rt.(*runtime)
-	if !ok || standard == nil {
+	if rt == nil {
 		return resolved, nil
 	}
 	for i := range resolved {
@@ -483,14 +513,14 @@ func validateOutputFormatAdapters(ctx context.Context, rt Runtime, outputs []des
 		}
 		formatID := resolved[i].format
 		if formatID == "" {
-			result, err := standard.formats.Probe(ctx, outputProbeRequest(resolved[i].output))
+			result, err := rt.formats.Probe(ctx, outputProbeRequest(resolved[i].output))
 			if err != nil {
 				return nil, destinationFormatProbeError(destinationNodeName(resolved[i].output, i, destinationNames), resolved[i].output, err)
 			}
 			formatID = result.Format
 			resolved[i] = resolved[i].withResolvedFormat(formatID)
 		}
-		if _, err := standard.formats.MuxerFactory(formatID); err != nil {
+		if _, err := rt.formats.MuxerFactory(formatID); err != nil {
 			return nil, destinationMuxerMissingError(destinationNodeName(resolved[i].output, i, destinationNames), resolved[i].output, formatID, err)
 		}
 	}
@@ -528,7 +558,7 @@ func duplicateDestinationHandleError(operation string, name string) error {
 		Suggestions: []string{
 			"list each destination value once in .To(...)",
 			"use distinct destination names when writing to separate destinations",
-			"reuse one destination value from multiple branches through .Branches(...) when outputs should be grouped",
+			"reuse one destination value or pass goav.DestinationGroup(name) through .Branches(...) when outputs should be grouped",
 		},
 		Cause: ErrUnsupportedBuild,
 	}

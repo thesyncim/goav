@@ -1,6 +1,6 @@
 module github.com/thesyncim/goav/rtpav
 
-go 1.26.4
+go 1.26
 
 require (
 	github.com/pion/rtcp v1.2.16

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"github.com/thesyncim/goav/control"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -270,7 +271,7 @@ func (s *session) setBranchBitrate(ctx context.Context, id string, bitrate int) 
 	if task == nil {
 		return fmt.Errorf("%s task is not running", kind)
 	}
-	if err := task.Control(ctx, goav.SetBitrate(av.StreamID(""), bitrate)); err != nil {
+	if err := task.Control(ctx, control.SetBitrate(av.StreamID(""), bitrate)); err != nil {
 		return err
 	}
 	s.record("info", "control", "live bitrate retargeted", kind, id, meta)
@@ -374,7 +375,7 @@ func (s *session) detachLocked(ctx context.Context, r *branch) error {
 	if r.Attachment == nil {
 		return nil
 	}
-	var task goav.Task
+	var task goav.Mutable
 	if r.Spec.Kind == "video" {
 		task = s.videoTask
 	} else {

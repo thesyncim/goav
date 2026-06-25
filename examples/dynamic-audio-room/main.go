@@ -197,7 +197,7 @@ func runRoomScript(ctx context.Context, script func(context.Context, *RoomPipeli
 
 type RoomPipeline struct {
 	room        *Room
-	task        goav.Task
+	task        goav.Mutable
 	attachments map[string]goav.Attachment
 	attach      func(context.Context, string) (goav.Attachment, error)
 }

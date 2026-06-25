@@ -120,7 +120,7 @@ func (p *BranchPipeline) finish() goav.BranchSpec {
 	return p.finishFn()
 }
 
-func parseBranchPipelineWithRegistry(task goav.Task, tapName string, branchName string, pipelineText string, registry PipelineRegistry) (goav.BranchSpec, error) {
+func parseBranchPipelineWithRegistry(task goav.LiveTask, tapName string, branchName string, pipelineText string, registry PipelineRegistry) (goav.BranchSpec, error) {
 	if err := validatePipelineRegistry(registry); err != nil {
 		return goav.BranchSpec{}, err
 	}
@@ -221,7 +221,7 @@ func parseBranchPipelineWithRegistry(task goav.Task, tapName string, branchName 
 				name,
 				fmt.Sprintf("unsupported branch pipeline step %q", name),
 				[]string{"supported_steps=" + strings.Join(pipelineStepNames(registry), ",")},
-				[]string{"use a supported branch-pipeline step or attach with typed Task.Attach in-process"},
+				[]string{"use a supported branch-pipeline step or attach with typed Mutable.Attach in-process"},
 				nil,
 			)
 		}
@@ -295,7 +295,7 @@ func pipelineStepNames(registry PipelineRegistry) []string {
 	return names
 }
 
-func resolveBranchTap(task goav.Task, operation string, tapName string) (goav.TapRef, error) {
+func resolveBranchTap(task goav.LiveTask, operation string, tapName string) (goav.TapRef, error) {
 	if tapName == "" {
 		return goav.TapRef{}, commandError("missing_required", operation, "tap", "tap name is required", nil, []string{"use attach <tap-name> as <branch-name> ..."}, nil)
 	}

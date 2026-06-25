@@ -1,6 +1,6 @@
 module github.com/thesyncim/goav/examples/transactional-writer
 
-go 1.26.4
+go 1.26
 
 require github.com/thesyncim/goav v0.0.0
 

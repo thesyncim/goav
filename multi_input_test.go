@@ -18,7 +18,7 @@ import (
 func TestFromMultiInputChainsShareOneDestination(t *testing.T) {
 	ctx := context.Background()
 	muxers := &remuxTestMuxerFactory{}
-	rt := New(
+	rt := MustNew(
 		withTestFormats(testFormatMuxer(av.FormatOgg, muxers)),
 		WithEncoder(codec.Descriptor{ID: av.CodecVP9, Type: av.MediaVideo}, &encodeTestEncoderFactory{encoder: &encodeTestEncoder{}}),
 		WithEncoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &encodeTestEncoderFactory{encoder: &encodeTestEncoder{}}),
@@ -95,7 +95,7 @@ func TestFromMultiInputHeadlineDecodeShape(t *testing.T) {
 			})
 	}
 	muxers := &remuxTestMuxerFactory{}
-	rt := New(
+	rt := MustNew(
 		withTestFormats(testFormatMuxer(av.FormatWebM, muxers)),
 		WithDecoder(codec.Descriptor{ID: cameraCodec, Type: av.MediaVideo}, &decodeTestDecoderFactory{decoder: &decodeTestDecoder{}}),
 		WithDecoder(codec.Descriptor{ID: micCodec, Type: av.MediaAudio}, &decodeTestDecoderFactory{decoder: &decodeTestDecoder{}}),
@@ -274,5 +274,39 @@ func TestFromMultiInputPlanDedupesSharedDestination(t *testing.T) {
 	}
 	if muxNodes != 1 {
 		t.Fatalf("described mux nodes = %d, want one shared mux group; nodes=%+v", muxNodes, spec.Nodes)
+	}
+}
+
+func TestDestinationGroupSurvivesWithAndCopy(t *testing.T) {
+	videoOut := File("call.ogg", io.Discard, DestinationGroup("call"), Format(av.FormatOgg))
+	audioOut := File("call.ogg", io.Discard, DestinationGroup("call")).With(Format(av.FormatOgg))
+	job := From(
+		compositeTestVideoSource("camera", 4, 4, 100, 10, 20),
+		mixTestAudioSource("mic", 1),
+	).
+		Video().Encode(codec.VP9()).To(videoOut).
+		Audio().Encode(codec.Opus()).To(audioOut)
+
+	intent := job.plan()
+	if len(intent.Destinations) != 1 || intent.Destinations[0].Name != "call.ogg" {
+		t.Fatalf("destinations = %+v, want one grouped call.ogg", intent.Destinations)
+	}
+	for i := range intent.Streams {
+		if len(intent.Streams[i].Destinations) != 1 || intent.Streams[i].Destinations[0] != "call.ogg" {
+			t.Fatalf("stream %d destinations = %v", i, intent.Streams[i].Destinations)
+		}
+	}
+	spec, err := job.Describe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	muxNodes := 0
+	for _, node := range spec.Nodes {
+		if node.Name == "call.ogg" {
+			muxNodes++
+		}
+	}
+	if muxNodes != 1 {
+		t.Fatalf("described mux nodes = %d, want one grouped mux; nodes=%+v", muxNodes, spec.Nodes)
 	}
 }

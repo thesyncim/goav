@@ -27,6 +27,7 @@ import (
 	"github.com/thesyncim/goav/internal/transformargs"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/shape"
+	"github.com/thesyncim/goav/std"
 )
 
 const defaultRunPipeline = "testsrc video width=1280 height=720 fps=30 duration=3s realtime=true ! encode codec=av1 media=video bitrate=1200k fps=30 keyframe_interval=60 ! filesink location=/tmp/goav-av1.mkv format=matroska"
@@ -257,7 +258,7 @@ func executeRunPipeline(ctx context.Context, runtimeName string, control string,
 	}, nil
 }
 
-func reportedFileDestinationFormat(ctx context.Context, runtime goav.Runtime, dest fileDestination) av.FormatID {
+func reportedFileDestinationFormat(ctx context.Context, runtime *goav.Runtime, dest fileDestination) av.FormatID {
 	if dest.format != "" || runtime == nil {
 		return dest.format
 	}
@@ -274,7 +275,7 @@ func reportedFileDestinationFormat(ctx context.Context, runtime goav.Runtime, de
 	return result.Format
 }
 
-func buildRunPipelineTask(ctx context.Context, runtime goav.Runtime, plan runPipelinePlan, dest goav.Destination) (goav.Task, codec.CodecSpec, error) {
+func buildRunPipelineTask(ctx context.Context, runtime *goav.Runtime, plan runPipelinePlan, dest goav.Destination) (goav.LiveTask, codec.CodecSpec, error) {
 	source := plan.source.input()
 	job := goav.From(source)
 	stream := job.Video(goav.InputName(plan.source.name))
@@ -299,7 +300,7 @@ func buildRunPipelineTask(ctx context.Context, runtime goav.Runtime, plan runPip
 	return task, encoded, nil
 }
 
-func runPipelineTaskWithControl(ctx context.Context, task goav.Task, control string) error {
+func runPipelineTaskWithControl(ctx context.Context, task goav.LiveTask, control string) error {
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	errC := make(chan error, 2)
@@ -334,16 +335,16 @@ func expectedRunShutdownError(err error) bool {
 		errors.Is(err, pipeline.ErrClosed)
 }
 
-func runtimeForRun(name string, plan runPipelinePlan) (goav.Runtime, string, error) {
+func runtimeForRun(name string, plan runPipelinePlan) (*goav.Runtime, string, error) {
 	if name == "" {
 		name = "demo"
 	}
 	codecIDs := plan.encodeCodecIDs()
 	switch name {
 	case "demo":
-		return goav.Default(goav.WithClock(goavtest.NewClock())), "demo", nil
+		return std.MustNew(goav.WithClock(goavtest.NewClock())), "demo", nil
 	case "default", "std", "standard":
-		return goav.Default(), "default", nil
+		return std.MustNew(), "default", nil
 	case "test", "fake", "deterministic":
 		opts := make([]goav.Option, 0, len(codecIDs))
 		for _, id := range codecIDs {

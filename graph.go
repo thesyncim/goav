@@ -77,7 +77,7 @@ func (o graphOutlet) Name() string {
 // expert package reaches it through the (*runtime).ExpertGraph bridge, which
 // guarantees the concrete runtime type.
 func newExpertGraph(r *runtime) *graphBuilder {
-	return &graphBuilder{builder: r.New()}
+	return &graphBuilder{builder: r.newBuilder()}
 }
 
 // ExpertGraph is the structural bridge behind expert.Graph: it returns the
@@ -104,8 +104,8 @@ func (g *graphBuilder) Source(name string, source pipeline.Source) graphNode {
 }
 
 func (g *graphBuilder) Stage(name string, stage pipeline.Stage) graphNode {
-	if stage == nil {
-		g.setErr(ErrNilStage)
+	if err := validateStageComponent(stage); err != nil {
+		g.setErr(err)
 		return graphNode{name: name}
 	}
 	node := namedStage{name: firstNonEmpty(name, stage.Name()), stage: stage}
@@ -114,8 +114,8 @@ func (g *graphBuilder) Stage(name string, stage pipeline.Stage) graphNode {
 }
 
 func (g *graphBuilder) Sink(name string, sink pipeline.Sink) graphNode {
-	if sink == nil {
-		g.setErr(ErrNilSink)
+	if err := validateSinkComponent(sink); err != nil {
+		g.setErr(err)
 		return graphNode{name: name}
 	}
 	node := namedSink{name: firstNonEmpty(name, sink.Name()), sink: sink}
@@ -160,7 +160,7 @@ func (g *graphBuilder) Describe() (pipeline.Spec, error) {
 	return g.builder.Describe()
 }
 
-func (g *graphBuilder) Build(ctx context.Context) (Task, error) {
+func (g *graphBuilder) Build(ctx context.Context) (LiveTask, error) {
 	if g.err != nil {
 		return nil, g.err
 	}

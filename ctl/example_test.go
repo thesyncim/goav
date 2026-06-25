@@ -3,6 +3,7 @@ package ctl_test
 import (
 	"context"
 	"fmt"
+	"github.com/thesyncim/goav/control"
 	"os"
 	"path/filepath"
 	"strings"
@@ -64,8 +65,8 @@ func Example_bootstrapControlPlaneHost() {
 	command := ctl.NewCommand[SetRate](
 		"vendor.rate",
 		"vendor playback-rate control",
-		func(ctx context.Context, task goav.Task, cmd SetRate) (ctl.ControlResponse, error) {
-			if err := task.Control(ctx, goav.Rate(cmd.Value).At(pipeline.NodeRef(cmd.Source))); err != nil {
+		func(ctx context.Context, task goav.LiveTask, cmd SetRate) (ctl.ControlResponse, error) {
+			if err := task.Control(ctx, control.Rate(cmd.Value).At(pipeline.NodeRef(cmd.Source))); err != nil {
 				return ctl.ControlResponse{}, err
 			}
 			return ctl.ControlResponse{
@@ -235,7 +236,7 @@ func (e exampleEncoder) FlushInto(context.Context, *codec.EncodeResult) error { 
 func (e exampleEncoder) HandleEvent(context.Context, *av.Event) error         { return nil }
 func (e exampleEncoder) Close() error                                         { return nil }
 
-func waitExampleTaskRunning(task goav.Task) error {
+func waitExampleTaskRunning(task goav.LiveTask) error {
 	deadline := time.Now().Add(time.Second)
 	for {
 		if task.Snapshot().State == lifecycle.TaskRunning {

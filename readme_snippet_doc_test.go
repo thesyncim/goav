@@ -45,7 +45,7 @@ func writeReadmeConsumerModule(t *testing.T, dir, root string, snippets []string
 	t.Helper()
 	mod := fmt.Sprintf(`module github.com/thesyncim/goav-readme-consumer
 
-go 1.26.4
+go 1.26
 
 require github.com/thesyncim/goav v0.0.0
 
@@ -80,6 +80,7 @@ import (
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/shape"
+	"github.com/thesyncim/goav/std"
 )
 
 `)

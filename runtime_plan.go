@@ -43,8 +43,8 @@ func (b *builder) planExplicitGraph(spec pipeline.Spec) (pipeline.Spec, error) {
 		sourceRefs[i] = ref
 	}
 	for i := range b.stages {
-		if b.stages[i] == nil {
-			return pipeline.Spec{}, ErrNilStage
+		if err := validateStageComponent(b.stages[i]); err != nil {
+			return pipeline.Spec{}, err
 		}
 		name := b.stages[i].Name()
 		ref := pipeline.NodeRef(name)
@@ -54,8 +54,8 @@ func (b *builder) planExplicitGraph(spec pipeline.Spec) (pipeline.Spec, error) {
 		stageRefs[i] = ref
 	}
 	for i := range b.sinks {
-		if b.sinks[i] == nil {
-			return pipeline.Spec{}, ErrNilSink
+		if err := validateSinkComponent(b.sinks[i]); err != nil {
+			return pipeline.Spec{}, err
 		}
 		name := b.sinks[i].Name()
 		ref := pipeline.NodeRef(name)

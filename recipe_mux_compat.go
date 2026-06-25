@@ -56,7 +56,7 @@ func muxCompatibilityIssues(
 	inputProbes []format.ProbeResult,
 	transcodeProbe format.ProbeResult,
 	transcodeProbeReady bool,
-	rt Runtime,
+	rt *Runtime,
 ) []muxCompatibilityIssue {
 	var issues []muxCompatibilityIssue
 	branches := workBranchesByName(work.Branches)
@@ -217,7 +217,7 @@ func muxStreamTimeBase(stream av.Stream) av.TimeBase {
 	return av.TimeBase{}
 }
 
-func checkKnownMuxCompatibility(output workDestination, streams []plannedMuxStream, rt Runtime) (muxCompatibilityIssue, bool) {
+func checkKnownMuxCompatibility(output workDestination, streams []plannedMuxStream, rt *Runtime) (muxCompatibilityIssue, bool) {
 	if issue, ok := checkMuxTimebaseCompatibility(output, streams); ok {
 		return issue, true
 	}
@@ -242,12 +242,11 @@ func checkKnownMuxCompatibility(output workDestination, streams []plannedMuxStre
 	}
 }
 
-func muxerDescriptorForRuntime(rt Runtime, formatID av.FormatID) (format.Descriptor, bool) {
-	standard, ok := rt.(*runtime)
-	if !ok || standard == nil {
+func muxerDescriptorForRuntime(rt *Runtime, formatID av.FormatID) (format.Descriptor, bool) {
+	if rt == nil {
 		return format.Descriptor{}, false
 	}
-	desc, err := standard.formats.MuxerDescriptor(formatID)
+	desc, err := rt.formats.MuxerDescriptor(formatID)
 	if err != nil {
 		return format.Descriptor{}, false
 	}

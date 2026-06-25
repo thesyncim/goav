@@ -3,6 +3,7 @@ package goav
 import (
 	"context"
 	"errors"
+	"github.com/thesyncim/goav/control"
 	"io"
 	"reflect"
 	"strings"
@@ -106,7 +107,7 @@ func TestSelectOfMixesSwitchesLive(t *testing.T) {
 
 	// Switch live to the second sub-mix "mix-2" (10+20).
 	sink.resetSeen()
-	if err := controlUntilAccepted(ctx, tk.(*task), SelectActive("mix-2")); err != nil {
+	if err := controlUntilAccepted(ctx, tk.(*task), control.SelectActive("mix-2")); err != nil {
 		t.Fatalf("SelectActive to mix-2: %v", err)
 	}
 	if err := sink.waitFor(ctx, 30); err != nil {
@@ -115,7 +116,7 @@ func TestSelectOfMixesSwitchesLive(t *testing.T) {
 
 	// And back, proving the switch works both ways across nested joins.
 	sink.resetSeen()
-	if err := tk.Control(ctx, SelectActive("mix")); err != nil {
+	if err := tk.Control(ctx, control.SelectActive("mix")); err != nil {
 		t.Fatalf("SelectActive back to mix: %v", err)
 	}
 	if err := sink.waitFor(ctx, 150); err != nil {
@@ -263,7 +264,7 @@ func TestSelectRegionPlacesSwitchedArmOnComposite(t *testing.T) {
 // auto-resampled through the same armPolicy solver path as any leaf arm.
 func TestMixResamplesNestedMixOutput(t *testing.T) {
 	ctx := context.Background()
-	rt := New(WithStdFilters())
+	rt := MustNew(testStdFilters())
 
 	var frames int
 	sink := Sink(SinkFunc("out", func(_ context.Context, m Message) error {
@@ -316,7 +317,7 @@ func TestJoinDescribeEqualsBuildNestedMix(t *testing.T) {
 			From(mixTestAudioSourceRate("c", 24000)).Audio(),
 		).SyncByPTS(),
 	).To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))).
-		UseRuntime(New(WithStdFilters()))
+		UseRuntime(MustNew(testStdFilters()))
 
 	planned := joinPlanGuard(t, job)
 	text := specText(planned)
@@ -414,7 +415,7 @@ func TestNestedMixTapAnchorsOnSubJoinNode(t *testing.T) {
 func TestNestedMixEncodesToFile(t *testing.T) {
 	ctx := context.Background()
 	muxers := &remuxTestMuxerFactory{}
-	rt := New(
+	rt := MustNew(
 		withTestFormats(testFormatMuxer(av.FormatOgg, muxers)),
 		WithEncoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &encodeTestEncoderFactory{encoder: &encodeTestEncoder{}}),
 	)

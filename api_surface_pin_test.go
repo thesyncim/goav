@@ -11,8 +11,8 @@ import (
 
 // surfacePinPackages are the packages whose exported package-level identifiers
 // are governed by testdata/api_surface.txt: the root grammar plus the
-// near-frozen vocabulary packages (errcode, lifecycle, plan, snapshot) and the
-// diagnostics renderer (graphrender). The extension-seam packages grow with
+// near-frozen vocabulary packages (control, errcode, inspect, lifecycle, plan,
+// snapshot) and the diagnostics renderer (graphrender). The extension-seam packages grow with
 // capabilities and are governed by the doc pin instead
 // (surfaceSeamPackages); TestEveryPublicPackageIsGoverned asserts the two
 // lists cover everything the module discovery finds. See docs/API_SURFACE.md
@@ -22,8 +22,10 @@ var surfacePinPackages = []struct {
 	prefix string
 }{
 	{dir: ".", prefix: "goav"},
+	{dir: "control", prefix: "control"},
 	{dir: "errcode", prefix: "errcode"},
 	{dir: "graphrender", prefix: "graphrender"},
+	{dir: "inspect", prefix: "inspect"},
 	{dir: "lifecycle", prefix: "lifecycle"},
 	{dir: "plan", prefix: "plan"},
 	{dir: "snapshot", prefix: "snapshot"},
@@ -51,6 +53,7 @@ var surfaceSeamPackages = []string{
 	"pipeline",
 	"provider",
 	"shape",
+	"std",
 }
 
 // TestEveryPublicPackageIsGoverned closes the governance gap hardcoded lists
@@ -255,7 +258,7 @@ func TestReadmeStaysFrontDoorSized(t *testing.T) {
 		"## Capability Matrix",
 		"## Stability Matrix",
 		"## Deep Dives",
-		"img.shields.io/badge/go-1.26.4%2B",
+		"img.shields.io/badge/go-1.26%2B",
 		"CHANGELOG.md",
 		"docs/EXTENSION_COOKBOOK.md",
 		"docs/PERFORMANCE.md",

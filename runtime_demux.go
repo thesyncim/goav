@@ -53,7 +53,7 @@ func (b *builder) openDemuxSource(ctx context.Context, input format.Input) (demu
 			Events: make([]av.Event, 0, 1),
 		},
 		// A realtime task plays files paced — packets deliver when their media
-		// time is due on the runtime clock, which is what makes goav.Rate work
+		// time is due on the runtime clock, which is what makes control.Rate work
 		// on file inputs. Offline tasks pump at full speed.
 		Realtime: realtime,
 		Clock:    b.runtime.clock,

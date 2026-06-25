@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/thesyncim/goav/control"
 	"log"
 	"sort"
 	"strings"
@@ -33,7 +34,7 @@ const (
 type session struct {
 	id         string
 	pc         *webrtc.PeerConnection
-	runtime    goav.Runtime
+	runtime    *goav.Runtime
 	browserURL string
 	ctx        context.Context
 	cancel     context.CancelFunc
@@ -52,8 +53,8 @@ type session struct {
 	renegotiateKinds []string
 	scenarios        []scenarioResult
 
-	videoTask  goav.Task
-	audioTask  goav.Task
+	videoTask  goav.LiveTask
+	audioTask  goav.LiveTask
 	syncPolicy goav.SyncPolicy
 	videoCodec string
 	videoSSRC  uint32
@@ -162,7 +163,7 @@ func (s *session) startAudioTrack(track *webrtc.TrackRemote) {
 	go s.runTask("audio", task)
 }
 
-func (s *session) runTask(kind string, task goav.Task) {
+func (s *session) runTask(kind string, task goav.LiveTask) {
 	s.record("info", "task", kind+" task running", kind, "", nil)
 	go s.drainTaskEvents(kind, task)
 	if err := task.Run(s.ctx); err != nil && !errors.Is(err, context.Canceled) {
@@ -172,7 +173,7 @@ func (s *session) runTask(kind string, task goav.Task) {
 	s.record("info", "task", kind+" task stopped", kind, "", nil)
 }
 
-func (s *session) drainTaskEvents(kind string, task goav.Task) {
+func (s *session) drainTaskEvents(kind string, task goav.Observable) {
 	for {
 		select {
 		case event, ok := <-task.Events():
@@ -263,7 +264,7 @@ func (s *session) requestOutputVideoKeyframe(ctx context.Context, branchID, feed
 	meta["rtcp"] = feedback
 	s.mu.Unlock()
 
-	control := goav.Keyframe(av.StreamID("")).AtTap(videoTapName)
+	control := control.Keyframe(av.StreamID("")).AtTap(videoTapName)
 	if err := task.Control(ctx, control); err != nil {
 		meta["cause"] = err.Error()
 		s.record("error", "feedback", "browser output keyframe failed", "video", branchID, meta)
@@ -409,7 +410,7 @@ func (s *session) sortedBranchesLocked(kind string) []*branch {
 	return out
 }
 
-func (s *session) taskForKindLocked(kind string) goav.Task {
+func (s *session) taskForKindLocked(kind string) goav.LiveTask {
 	switch kind {
 	case "video":
 		return s.videoTask
@@ -460,7 +461,7 @@ func (s *session) requestKeyframe(ctx context.Context, kind string) error {
 	if task == nil {
 		return fmt.Errorf("%s task is not running", kind)
 	}
-	if err := task.Control(ctx, goav.Keyframe(av.StreamID(""))); err != nil {
+	if err := task.Control(ctx, control.Keyframe(av.StreamID(""))); err != nil {
 		return err
 	}
 	s.record("info", "control", "keyframe requested", kind, "", nil)

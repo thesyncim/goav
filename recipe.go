@@ -13,18 +13,60 @@ import (
 	"github.com/thesyncim/goav/shape"
 )
 
+// Detail is one typed machine-readable fact attached to a BuildError.
+type Detail struct {
+	Key   string
+	Value any
+}
+
+// String renders the detail as the legacy key=value line used in BuildError
+// text output.
+func (d Detail) String() string {
+	if d.Key == "" {
+		return fmt.Sprint(d.Value)
+	}
+	return d.Key + "=" + fmt.Sprint(d.Value)
+}
+
+// RecipePatch is an optional machine-readable recipe edit hint attached to a
+// Fix. It is deliberately data-only: Action names the edit, Path names the
+// recipe location, and Value carries the option, destination, codec, or other
+// value a tool may use to offer an automatic fix.
+type RecipePatch struct {
+	Action string
+	Path   string
+	Value  any
+}
+
+// Fix is one concrete way to repair a BuildError. Message is the
+// human-readable instruction rendered to users; Patch is optional structured
+// data for tools that can edit or rewrite recipes.
+type Fix struct {
+	Message string
+	Patch   *RecipePatch
+}
+
+// String renders the human-readable fix message.
+func (f Fix) String() string {
+	return f.Message
+}
+
 // BuildError is the one structured refusal goav raises from build,
 // validation, attach, and explain paths. Code identifies the refusal class
 // (see the errcode package for the catalog), Operation/Node say where, Reason says why,
-// Details carry machine-readable facts (key=value lines), and Suggestions
-// carry concrete fixes. Cause is a sentinel (ErrUnsupportedBuild, ErrNilSink,
-// pipeline.ErrBufferedMessageUnsafe, ...) reachable through errors.Is.
+// Fields carry typed machine-readable facts, Details carries their legacy
+// key=value rendering, Fixes carry typed repair actions, Suggestions carries
+// their legacy text rendering, and Cause is a sentinel (ErrUnsupportedBuild,
+// ErrNilSink, pipeline.ErrBufferedMessageUnsafe, ...) reachable through
+// errors.Is.
 type BuildError struct {
 	Code        errcode.Code
 	Operation   string
 	Node        string
 	Reason      string
+	Fields      []Detail
 	Details     []string
+	Fixes       []Fix
 	Suggestions []string
 	Cause       error
 }
@@ -51,21 +93,44 @@ func (e *BuildError) Error() string {
 		out.WriteString(": ")
 		out.WriteString(e.Reason)
 	}
-	if len(e.Details) != 0 {
+	details := e.detailLines()
+	if len(details) != 0 {
 		out.WriteString("\nDetails:")
-		for i := range e.Details {
+		for i := range details {
 			out.WriteString("\n  - ")
-			out.WriteString(e.Details[i])
+			out.WriteString(details[i])
 		}
 	}
-	if len(e.Suggestions) != 0 {
+	suggestions := e.suggestionLines()
+	if len(suggestions) != 0 {
 		out.WriteString("\nSuggestions:")
-		for i := range e.Suggestions {
+		for i := range suggestions {
 			out.WriteString("\n  - ")
-			out.WriteString(e.Suggestions[i])
+			out.WriteString(suggestions[i])
 		}
 	}
 	return out.String()
+}
+
+// Detail returns the typed value for key when the BuildError carries it. Typed
+// Fields are checked first; legacy Details fall back to parsing key=value
+// lines and return string values.
+func (e *BuildError) Detail(key string) (any, bool) {
+	if e == nil || key == "" {
+		return nil, false
+	}
+	for i := range e.Fields {
+		if e.Fields[i].Key == key {
+			return e.Fields[i].Value, true
+		}
+	}
+	for i := range e.Details {
+		detailKey, detailValue, ok := strings.Cut(e.Details[i], "=")
+		if ok && detailKey == key {
+			return detailValue, true
+		}
+	}
+	return nil, false
 }
 
 // Unwrap exposes the sentinel Cause (ErrUnsupportedBuild, ErrNilSink, ...)
@@ -77,13 +142,59 @@ func (e *BuildError) Unwrap() error {
 	return e.Cause
 }
 
+func (e *BuildError) detailLines() []string {
+	if e == nil {
+		return nil
+	}
+	if len(e.Details) != 0 {
+		return e.Details
+	}
+	return detailsToLines(e.Fields)
+}
+
+func (e *BuildError) suggestionLines() []string {
+	if e == nil {
+		return nil
+	}
+	if len(e.Suggestions) != 0 {
+		return e.Suggestions
+	}
+	if len(e.Fixes) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(e.Fixes))
+	for i := range e.Fixes {
+		if e.Fixes[i].Message == "" {
+			continue
+		}
+		out = append(out, e.Fixes[i].String())
+	}
+	return out
+}
+
+func detailsToLines(details []Detail) []string {
+	if len(details) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(details))
+	for i := range details {
+		if details[i].Key == "" && details[i].Value == nil {
+			continue
+		}
+		out = append(out, details[i].String())
+	}
+	return out
+}
+
 // Job is a recipe under construction: the inputs, stream chains, branches,
 // joins, and destinations declared so far. A Job is inert until Describe,
 // Explain, Build, or Run compiles it; construction errors are deferred and
 // surface on those calls as structured BuildErrors.
 type Job struct {
 	name               string
-	runtime            Runtime
+	runtime            *Runtime
+	runtimeSet         bool
+	copy               bool
 	inputs             []InputSpec
 	outputs            []destinationSpec
 	outputNames        []string
@@ -127,6 +238,9 @@ func From(inputs ...InputSpec) *Job {
 // as From(input).Copy().To(out): packets flow to the destinations without
 // decode. On a selected stream, use the stream chain's Copy instead.
 func (j *Job) Copy() *Job {
+	if j != nil {
+		j.copy = true
+	}
 	return j
 }
 
@@ -147,17 +261,27 @@ func (j *Job) Sync(policy SyncPolicy) *Job {
 }
 
 func newJob(name string) *Job {
-	return &Job{name: name, runtime: Default()}
+	return &Job{name: name}
 }
 
-// UseRuntime compiles the job against the given runtime instead of the
-// standard Default() runtime — the seam for custom registries, offline
-// pacing, or injected clocks.
-func (j *Job) UseRuntime(runtime Runtime) *Job {
+// UseRuntime compiles the job against the given runtime: the seam for custom
+// registries, standard adapter bundles, offline pacing, or injected clocks.
+func (j *Job) UseRuntime(runtime *Runtime) *Job {
 	if j != nil {
 		j.runtime = runtime
+		j.runtimeSet = true
 	}
 	return j
+}
+
+func (j *Job) compileRuntime() *Runtime {
+	if j == nil {
+		return nil
+	}
+	if j.runtimeSet {
+		return j.runtime
+	}
+	return MustNew()
 }
 
 func (j *Job) setErr(err error) {
@@ -297,9 +421,9 @@ func (j *Job) checkSharedStreamDestination(current *jobStreamBuild, output desti
 }
 
 func (j *Job) plan() intent {
-	intent := intent{Name: j.name}
-	if runtime, ok := j.runtime.(*runtime); ok {
-		intent.Policies.Realtime = runtime.realtime
+	intent := intent{Name: j.name, Copy: j.copy}
+	if j.runtime != nil {
+		intent.Policies.Realtime = j.runtime.realtime
 	}
 	for i := range j.inputs {
 		intent.Inputs = append(intent.Inputs, j.inputs[i].intent())
@@ -377,7 +501,7 @@ func (j *Job) Describe() (pipeline.Spec, error) {
 // resolve, the graph is wired, and OnStream rules install. The task does not
 // flow until Run. Build a task (instead of calling Run directly) when the
 // application needs inspection, events, live control, or late attachment.
-func (j *Job) Build(ctx context.Context) (Task, error) {
+func (j *Job) Build(ctx context.Context) (LiveTask, error) {
 	resolved, err := compileJobRecipeForBuildContext(ctx, j)
 	if err != nil {
 		return nil, err

@@ -23,8 +23,9 @@ err := goav.From(goav.Input(webrtcav.Track(track))).
 ```
 
 Reuse the same file, URI, writer, object upload, or sink destination value when
-several branches should feed one mux or sink group. The destination value is the
-grouping handle.
+several branches should feed one mux or sink group, or give matching
+destinations the same `goav.DestinationGroup(...)` when threading one handle is
+awkward.
 
 Decoded preview:
 
@@ -38,7 +39,8 @@ err := goav.From(goav.Input(webrtcav.Track(track))).
 
 Several realtime inputs compose through `From(inputs...)`. Use
 `goav.InputName(...)` to say which chain reads which input, and reuse one
-destination value when the encoded streams should land in the same mux.
+destination value or `goav.DestinationGroup(...)` when the encoded streams
+should land in the same mux.
 
 ## RTP Receive
 
@@ -201,7 +203,8 @@ err := goav.From(input).
 ```
 
 One destination can be a mux group: several encoded branches feed the same
-destination value. A destination can also be a sink after any branch operation
+destination value or matching `goav.DestinationGroup(...)`. A destination can
+also be a sink after any branch operation
 (no encode needed for frame-domain ends).
 
 Branches normally start from the current stream point. When one branch needs an
@@ -360,8 +363,8 @@ defer recordingHandle.Close(ctx)
 
 Attach several late branches in one call when they should appear or disappear
 together. A later branch in the same call can anchor from a tap published by an
-earlier branch, and one grouped destination value (sink or mux) can receive
-several branch outputs:
+earlier branch, and one reused destination value or explicit destination group
+can receive several sink or mux branch outputs:
 
 ```go
 audioEncoded := goav.PacketTap("audio.encoded")
@@ -378,7 +381,7 @@ if err != nil {
 defer group.Close(ctx)
 ```
 
-Use `Task.Taps()` to discover stable outlets and `Task.Detach(ctx, h)` for a
+Use `Inspectable.Taps()` to discover stable outlets and `Mutable.Detach(ctx, h)` for a
 plain removal, `DrainBranch()` when the branch output should commit, or
 `AbortBranch()` when it should be abandoned. Taps declared after encode or copy
 are packet taps. Observer branches can end in a sink while publishing a nested
@@ -391,7 +394,7 @@ recipe encoding remains work in progress.
 Debugging uses the same composition grammar. Explain the plan before opening the
 graph, drain task events while it runs, then attach temporary branches from
 typed taps. `Attachment.Snapshot()` reports the attached branch, and
-`Task.Snapshot()` reports the whole graph plus active branches with typed
+`Inspectable.Snapshot()` reports the whole graph plus active branches with typed
 lifecycle states.
 
 ![Runtime pipeline debugging](assets/pipeline-debug.svg)

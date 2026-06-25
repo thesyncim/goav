@@ -7,6 +7,7 @@ import (
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
+	"github.com/thesyncim/goav/inspect"
 	"github.com/thesyncim/goav/lifecycle"
 	"github.com/thesyncim/goav/shape"
 )
@@ -206,7 +207,7 @@ func TestTaskAttachDetachPublishesBranchLifecycleEvents(t *testing.T) {
 	}
 	defer task.Close()
 
-	events := task.Watch(WatchTypes(av.EventBranchAttached, av.EventBranchDetached))
+	events := task.Watch(inspect.WatchTypes(av.EventBranchAttached, av.EventBranchDetached))
 	attachment, err := task.Attach(ctx, Branch("rec").
 		From(PacketTap("audio.packets")).
 		To(lifecycleTestSink("rec")))
@@ -251,7 +252,7 @@ func TestTaskDetachPublishesDestinationLifecycleEvents(t *testing.T) {
 	}
 	defer task.Close()
 
-	events := task.Watch(WatchTypes(av.EventDestinationCommitted, av.EventDestinationAborted, av.EventDestinationCommitError))
+	events := task.Watch(inspect.WatchTypes(av.EventDestinationCommitted, av.EventDestinationAborted, av.EventDestinationCommitError))
 	attachment, err := task.Attach(ctx, Branch("rec").
 		From(PacketTap("audio.packets")).
 		To(lifecycleTestSink("rec")))
@@ -279,7 +280,7 @@ func TestTaskFinishPublishesRootDestinationCommitError(t *testing.T) {
 	task := newTaskWithRootDestinations(newWatchTestGraph(1), nil, []workDestination{{Name: "commit-error.ivf"}}, transaction)
 	defer task.Close()
 
-	events := task.Watch(WatchTypes(av.EventDestinationCommitted, av.EventDestinationAborted, av.EventDestinationCommitError))
+	events := task.Watch(inspect.WatchTypes(av.EventDestinationCommitted, av.EventDestinationAborted, av.EventDestinationCommitError))
 	task.finishDestinations(commitErr)
 	event := recvWatchEvent(t, events)
 	if event.Type != av.EventDestinationCommitError {

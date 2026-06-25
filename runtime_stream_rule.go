@@ -5,6 +5,7 @@ import (
 	"sync"
 
 	"github.com/thesyncim/goav/av"
+	"github.com/thesyncim/goav/inspect"
 	"github.com/thesyncim/goav/plan"
 	"github.com/thesyncim/goav/shape"
 )
@@ -19,7 +20,7 @@ const streamRuleEventCapacity = 256
 // rules bound to the built task's source node, plus the bookkeeping that maps
 // discovered streams to the attachments their rules created. Everything here
 // is cold control plane — the reaction loop consumes a Watch subscription and
-// the apply path goes through Task.Attach (which takes the attach mutex); the
+// the apply path goes through Mutable.Attach (which takes the attach mutex); the
 // media hot path is never touched.
 type taskStreamRules struct {
 	source string
@@ -52,7 +53,7 @@ func (t *task) installStreamRules(sourceNode string, domain shape.MediaDomain, r
 	events := t.watch.subscribe(
 		t.graph.Events(),
 		streamRuleEventCapacity,
-		[]EventFilter{WatchTypes(av.EventStreamAdded, av.EventStreamRemoved)},
+		[]inspect.EventFilter{inspect.WatchTypes(av.EventStreamAdded, av.EventStreamRemoved)},
 	)
 	go t.runStreamRules(events)
 }
@@ -69,7 +70,7 @@ func (t *task) runStreamRules(events <-chan av.Event) {
 }
 
 // handleStreamAdded reacts to one stream announce: every matching rule's
-// branches are templated for the stream and lowered through Task.Attach —
+// branches are templated for the stream and lowered through Mutable.Attach —
 // the same plan, atomic apply, and rollback as a manual attach. Failures
 // surface as av.EventAttachError on Watch/Events; a failed rule leaves the
 // task unchanged and a later re-announce retries.

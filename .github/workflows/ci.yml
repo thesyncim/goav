@@ -19,13 +19,13 @@ jobs:
       matrix:
         include:
           - os: ubuntu-latest
-            go: '1.26.4'
+            go: '1.26.x'
             full: true
           - os: ubuntu-latest
             go: stable
             full: false
           - os: macos-latest
-            go: '1.26.4'
+            go: '1.26.x'
             full: false
     runs-on: ${{ matrix.os }}
     steps:

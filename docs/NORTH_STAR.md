@@ -19,16 +19,16 @@ attachment.
   media kind, buffer policy, and detach policy.
 - A flow is reusable operations; it owns no source, destination, runtime state,
   or lifecycle.
-- A destination value is the routing handle. Reusing one destination value
-  groups branches into one mux or sink group.
+- A destination value is the routing handle. Reusing one destination value or
+  matching `DestinationGroup(...)` groups branches into one mux or sink group.
 - Shape validation is central. Inputs, operations, taps, flows, branches, and
   destinations all participate in the same compatibility check.
 - Build and Attach share the same lowering model: `WorkPlan` for a full task,
   `WorkPatch` for a runtime branch update.
 - Runtime observation is composition: `Branch + Do + Sink`, plus `Events`,
   `Watch`, `Snapshot`, `Stats`, `Explain`, and graph rendering.
-- Runtime controls lower into `Task.Control`, `Task.Attach`,
-  `Attachment.Rebranch`, `Task.Detach`, `Watch`, `Snapshot`, `Stats`, or
+- Runtime controls lower into `Controllable.Control`, `Mutable.Attach`,
+  `Attachment.Rebranch`, `Mutable.Detach`, `Watch`, `Snapshot`, `Stats`, or
   `Close`; the control-plane binder never calls arbitrary methods.
 
 The internal target shape is:
@@ -57,11 +57,11 @@ a new feature strengthens the grammar or bypasses it.
 
 | Area | Current evidence |
 | --- | --- |
-| Grammar | #1 README and docs guards keep the public vocabulary on Input, Stream, Tap, Branch, Destination, Flow, Task. #2 direct chains lower like `Branch("main")`. #3 flows expose no destinations. #4 destination reuse groups by handle. |
+| Grammar | #1 README and docs guards keep the public vocabulary on Input, Stream, Tap, Branch, Destination, Flow, Task. #2 direct chains lower like `Branch("main")`. #3 flows expose no destinations. #4 destination grouping is explicit by handle reuse or `DestinationGroup(...)`. |
 | Planner | #5 Build and Attach share canonical operation lowering. #6 Attach emits `WorkPatch` downstream of taps. #7 Explain reads from `WorkPlan`. #8 Snapshot reflects plan plus patches. #9 legacy workflow packages are gone. #10 workflow-kind dispatch is gone from normal recipes. |
 | Shape | #11 Resize requires video frames. #12 Resample requires audio frames. #13 frames cannot go to byte destinations without Encode. #14 packet Copy to File succeeds. #15 decoded frames can end in Sink. #16 errors include operation, actual/expected shape, and fix. #17 conversions are inserted only under an explicit policy. |
 | Branches | #18 branches after Decode share one decoder. #19 dropping preview branches do not stall archive branches. #20 Blocking backpressures. #21 branch drop counters are visible. #22 mutable branch output cannot corrupt siblings. |
-| Runtime mutation | #23 Attach opens destinations before mutation. #24 attach failure rolls back. #25/#26 drain and abort are pinned for Rebranch and standalone `Task.Detach`. #27 Rebranch starts replacement before old detach. #28 failed Rebranch keeps the old branch. #29 Pause/Resume affects one branch. |
+| Runtime mutation | #23 Attach opens destinations before mutation. #24 attach failure rolls back. #25/#26 drain and abort are pinned for Rebranch and standalone `Mutable.Detach`. #27 Rebranch starts replacement before old detach. #28 failed Rebranch keeps the old branch. #29 Pause/Resume affects one branch. |
 | Events and control | #30 Watch filters and stream/attach/backpressure events are pinned; `EventBranchAttached`/`EventBranchDetached` report runtime branch lifecycle, and destination commit/abort/error events report finalization. #31 Snapshot reports typed task, branch, destination, tap, and drop state. #32 Keyframe reaches adapters or fails clearly. #33 SetBitrate reaches encoders or fails clearly. |
 | Sources | #34 custom packet source Copy to File. #35 custom frame source Encode to File. #36 SourcePush reports Accepted/Dropped. #37 source EOS commits destinations. |
 | Dynamic streams | #38 late streams attach branches. #39 ambiguous stream selection lists candidates and fixes. #40 removal detaches with rule-selected drain, abort, or plain detach through `OnRemove(...)`. |
@@ -82,7 +82,7 @@ Done:
 - Dynamic streams attach through the normal branch planner.
 - Watch, Snapshot, Stats, Attach, Rebranch, Detach, and task controls are
   public task capabilities.
-- `Task.Detach` has explicit drain/abort outcomes, and branch attach/detach
+- `Mutable.Detach` has explicit drain/abort outcomes, and branch attach/detach
   events are watchable without graph handles.
 - Destination commit, abort, and commit-error events are watchable for task and
   runtime-branch destinations.

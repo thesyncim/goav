@@ -389,9 +389,8 @@ func workOperationEncodeCodec(operation workOperation) av.CodecID {
 	return codecID
 }
 
-func adapterRequirementRuntimeStatus(rt Runtime, kind string, formatID av.FormatID, codecID av.CodecID, transform string) string {
-	standard, ok := rt.(*runtime)
-	if !ok || standard == nil {
+func adapterRequirementRuntimeStatus(rt *Runtime, kind string, formatID av.FormatID, codecID av.CodecID, transform string) string {
+	if rt == nil {
 		return "required"
 	}
 	switch kind {
@@ -399,7 +398,7 @@ func adapterRequirementRuntimeStatus(rt Runtime, kind string, formatID av.Format
 		if formatID == "" {
 			return "unknown"
 		}
-		if _, err := standard.formats.DemuxerFactory(formatID); err != nil {
+		if _, err := rt.formats.DemuxerFactory(formatID); err != nil {
 			return "missing"
 		}
 		return "available"
@@ -407,21 +406,21 @@ func adapterRequirementRuntimeStatus(rt Runtime, kind string, formatID av.Format
 		if formatID == "" {
 			return "unknown"
 		}
-		if _, err := standard.formats.MuxerFactory(formatID); err != nil {
+		if _, err := rt.formats.MuxerFactory(formatID); err != nil {
 			return "missing"
 		}
 		return "available"
 	case "decoder":
-		_, err := standard.codecs.DecoderFactory(codecID)
+		_, err := rt.codecs.DecoderFactory(codecID)
 		return codecFactoryStatus(err)
 	case "encoder":
-		_, err := standard.codecs.EncoderFactory(codecID)
+		_, err := rt.codecs.EncoderFactory(codecID)
 		return codecFactoryStatus(err)
 	case "filter":
 		if transform == "" {
 			return "unknown"
 		}
-		if _, err := standard.filters.Factory(transform); err != nil {
+		if _, err := rt.filters.Factory(transform); err != nil {
 			return "missing"
 		}
 		return "available"
@@ -430,7 +429,7 @@ func adapterRequirementRuntimeStatus(rt Runtime, kind string, formatID av.Format
 	}
 }
 
-func filterAdapterRequirement(rt Runtime, name string, requiredBy string) plan.AdapterRequirement {
+func filterAdapterRequirement(rt *Runtime, name string, requiredBy string) plan.AdapterRequirement {
 	requirement := plan.AdapterRequirement{
 		Kind:       "filter",
 		Name:       name,
@@ -438,11 +437,10 @@ func filterAdapterRequirement(rt Runtime, name string, requiredBy string) plan.A
 		RequiredBy: requiredBy,
 		Status:     adapterRequirementRuntimeStatus(rt, "filter", "", "", name),
 	}
-	standard, ok := rt.(*runtime)
-	if !ok || standard == nil {
+	if rt == nil {
 		return requirement
 	}
-	desc, err := standard.filters.Descriptor(name)
+	desc, err := rt.filters.Descriptor(name)
 	if err != nil {
 		return requirement
 	}
@@ -457,7 +455,7 @@ func filterAdapterRequirement(rt Runtime, name string, requiredBy string) plan.A
 	return requirement
 }
 
-func formatAdapterRequirement(rt Runtime, kind string, formatID av.FormatID, requiredBy string) plan.AdapterRequirement {
+func formatAdapterRequirement(rt *Runtime, kind string, formatID av.FormatID, requiredBy string) plan.AdapterRequirement {
 	requirement := plan.AdapterRequirement{
 		Kind:       kind,
 		Name:       string(formatID),
@@ -465,17 +463,16 @@ func formatAdapterRequirement(rt Runtime, kind string, formatID av.FormatID, req
 		RequiredBy: requiredBy,
 		Status:     adapterRequirementRuntimeStatus(rt, kind, formatID, "", ""),
 	}
-	standard, ok := rt.(*runtime)
-	if !ok || standard == nil {
+	if rt == nil {
 		return requirement
 	}
 	var desc format.Descriptor
 	var err error
 	switch kind {
 	case "demuxer":
-		desc, err = standard.formats.DemuxerDescriptor(formatID)
+		desc, err = rt.formats.DemuxerDescriptor(formatID)
 	case "muxer":
-		desc, err = standard.formats.MuxerDescriptor(formatID)
+		desc, err = rt.formats.MuxerDescriptor(formatID)
 	default:
 		return requirement
 	}
@@ -501,7 +498,7 @@ func codecFactoryStatus(err error) string {
 	return "missing"
 }
 
-func codecAdapterRequirement(rt Runtime, kind string, codecID av.CodecID, requiredBy string) plan.AdapterRequirement {
+func codecAdapterRequirement(rt *Runtime, kind string, codecID av.CodecID, requiredBy string) plan.AdapterRequirement {
 	requirement := plan.AdapterRequirement{
 		Kind:       kind,
 		Name:       string(codecID),
@@ -513,16 +510,15 @@ func codecAdapterRequirement(rt Runtime, kind string, codecID av.CodecID, requir
 	return applyCodecDescriptorRequirement(requirement, descriptors)
 }
 
-func codecDescriptorsForRequirement(rt Runtime, kind string, codecID av.CodecID) []codec.Descriptor {
-	standard, ok := rt.(*runtime)
-	if !ok || standard == nil || codecID == "" {
+func codecDescriptorsForRequirement(rt *Runtime, kind string, codecID av.CodecID) []codec.Descriptor {
+	if rt == nil || codecID == "" {
 		return nil
 	}
 	mode := codec.ModeDecode
 	if kind == "encoder" {
 		mode = codec.ModeEncode
 	}
-	descriptors, err := standard.codecs.Find(codecID, mode)
+	descriptors, err := rt.codecs.Find(codecID, mode)
 	if err != nil {
 		return nil
 	}
@@ -579,8 +575,8 @@ func annotatePlanReportError(report *plan.Report, err error) {
 		Code:        string(buildErr.Code),
 		Node:        buildErr.Node,
 		Message:     buildErr.Reason,
-		Details:     append([]string(nil), buildErr.Details...),
-		Suggestions: append([]string(nil), buildErr.Suggestions...),
+		Details:     append([]string(nil), buildErr.detailLines()...),
+		Suggestions: append([]string(nil), buildErr.suggestionLines()...),
 	})
 	requirement, ok := adapterRequirementFromBuildError(buildErr)
 	if !ok {
@@ -605,7 +601,7 @@ func annotatePlanReportError(report *plan.Report, err error) {
 }
 
 func adapterRequirementFromBuildError(err *BuildError) (plan.AdapterRequirement, bool) {
-	details := buildErrorDetailMap(err.Details)
+	details := buildErrorDetailMap(err)
 	status := adapterRequirementStatus(err.Code)
 	requiredBy := firstNonEmpty(err.Node, err.Operation)
 	switch err.Code {
@@ -730,14 +726,23 @@ func adapterRequirementStatus(code errcode.Code) string {
 	}
 }
 
-func buildErrorDetailMap(details []string) map[string]string {
-	out := make(map[string]string, len(details))
-	for i := range details {
-		key, value, ok := strings.Cut(details[i], "=")
+func buildErrorDetailMap(err *BuildError) map[string]string {
+	if err == nil {
+		return nil
+	}
+	out := make(map[string]string, len(err.Details)+len(err.Fields))
+	for i := range err.Details {
+		key, value, ok := strings.Cut(err.Details[i], "=")
 		if !ok || key == "" {
 			continue
 		}
 		out[key] = value
+	}
+	for i := range err.Fields {
+		if err.Fields[i].Key == "" || err.Fields[i].Value == nil {
+			continue
+		}
+		out[err.Fields[i].Key] = fmt.Sprint(err.Fields[i].Value)
 	}
 	return out
 }

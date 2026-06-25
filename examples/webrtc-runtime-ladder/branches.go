@@ -177,7 +177,7 @@ func (s *session) detachLocked(ctx context.Context, r *branch) error {
 	if r.Attachment == nil {
 		return nil
 	}
-	var task goav.Task
+	var task goav.Mutable
 	if r.Spec.Kind == "video" {
 		task = s.videoTask
 	} else {

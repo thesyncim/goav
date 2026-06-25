@@ -21,6 +21,7 @@ import (
 	"github.com/thesyncim/goav/rtpav"
 	"github.com/thesyncim/goav/shape"
 	"github.com/thesyncim/goav/snapshot"
+	"github.com/thesyncim/goav/std"
 )
 
 // TestProviderRTPDescribePinsLegacyConstructorStrings pins the Describe()
@@ -95,7 +96,7 @@ func TestRecordRecipeRTPAutoCodecRuns(t *testing.T) {
 		events: make(chan av.Event),
 	}
 	muxers := &remuxTestMuxerFactory{}
-	runtime := goav.New(withTestFormats(
+	runtime := goav.MustNew(withTestFormats(
 		testFormatProber(format.DefaultProber()),
 		testFormatMuxer(av.FormatOgg, muxers),
 	))
@@ -150,7 +151,7 @@ func TestRecordRecipeCopyToTypedDestinationRuns(t *testing.T) {
 		events: make(chan av.Event),
 	}
 	muxers := &remuxTestMuxerFactory{}
-	runtime := goav.New(withTestFormats(
+	runtime := goav.MustNew(withTestFormats(
 		testFormatProber(format.DefaultProber()),
 		testFormatMuxer(av.FormatOgg, muxers),
 	))
@@ -226,7 +227,7 @@ func TestRecordRecipeCopyToCustomWriterDestinationRuns(t *testing.T) {
 	}
 	state := &writerDestinationState{}
 	muxer := &writerDestinationMuxer{}
-	runtime := goav.New(withTestFormats(
+	runtime := goav.MustNew(withTestFormats(
 		testFormatMuxer(av.FormatOgg, writerDestinationMuxerFactory{muxer: muxer}),
 	))
 	target := goav.Writer("s3://bucket/call.ogg", func(_ context.Context, info provider.Info) (io.WriteCloser, error) {
@@ -296,7 +297,7 @@ func TestRecordRecipeCopyToTransactionalWriterDestinationRuns(t *testing.T) {
 	}
 	state := &writerDestinationState{}
 	muxer := &writerDestinationMuxer{}
-	runtime := goav.New(withTestFormats(
+	runtime := goav.MustNew(withTestFormats(
 		testFormatMuxer(av.FormatOgg, writerDestinationMuxerFactory{muxer: muxer}),
 	))
 	metadata := av.Metadata{"storage": "hot"}
@@ -360,7 +361,7 @@ func TestFileDestinationClosesCloserWriterOnce(t *testing.T) {
 		events: make(chan av.Event),
 	}
 	muxer := &writerDestinationMuxer{}
-	runtime := goav.New(withTestFormats(
+	runtime := goav.MustNew(withTestFormats(
 		testFormatMuxer(av.FormatOgg, writerDestinationMuxerFactory{muxer: muxer}),
 	))
 	writer := &fileDestinationWriteCloser{}
@@ -423,7 +424,7 @@ func TestRecordRecipeCustomWriterDestinationAbortsOnRunError(t *testing.T) {
 	}
 	state := &writerDestinationState{}
 	muxer := &writerDestinationMuxer{}
-	runtime := goav.New(withTestFormats(
+	runtime := goav.MustNew(withTestFormats(
 		testFormatProber(format.DefaultProber()),
 		testFormatMuxer(av.FormatOgg, writerDestinationMuxerFactory{muxer: muxer}),
 	))
@@ -488,7 +489,7 @@ func TestTaskAttachCustomWriterDestinationRuns(t *testing.T) {
 	}
 	state := &writerDestinationState{}
 	muxer := &writerDestinationMuxer{}
-	runtime := goav.New(withTestFormats(
+	runtime := goav.MustNew(withTestFormats(
 		testFormatMuxer(av.FormatOgg, writerDestinationMuxerFactory{muxer: muxer}),
 	))
 	task, err := goav.From(goav.Input(rtpav.Receive(receiver, rtpav.WithName("audio"), rtpav.WithCodec(codec.Opus()), rtpav.WithBufferLimits(rtpav.BufferLimits{MaxPackets: 2})))).
@@ -579,7 +580,7 @@ func TestTaskAttachCustomWriterDestinationAbortsOnPatchFailure(t *testing.T) {
 	}
 	state := &writerDestinationState{}
 	muxer := &writerDestinationMuxer{}
-	runtime := goav.New(withTestFormats(
+	runtime := goav.MustNew(withTestFormats(
 		testFormatProber(format.DefaultProber()),
 		testFormatMuxer(av.FormatOgg, writerDestinationMuxerFactory{muxer: muxer}),
 	))
@@ -664,7 +665,7 @@ func TestRecordRecipeRTPCodecUsesReaderStreamWhenUnnamed(t *testing.T) {
 		events: make(chan av.Event),
 	}
 	muxers := &remuxTestMuxerFactory{}
-	runtime := goav.New(withTestFormats(
+	runtime := goav.MustNew(withTestFormats(
 		testFormatProber(format.DefaultProber()),
 		testFormatMuxer(av.FormatOgg, muxers),
 	))
@@ -720,7 +721,7 @@ func TestDefaultRecordRecipeRTPVP8Runs(t *testing.T) {
 	var out bytes.Buffer
 	job := goav.From(
 		goav.Input(rtpav.Receive(receiver, rtpav.WithName("video"), rtpav.WithCodec(codec.VP8()), rtpav.WithBufferLimits(rtpav.BufferLimits{MaxPackets: 2}))),
-	).Copy().To(goav.File("recording.ivf", &out))
+	).UseRuntime(std.MustNew()).Copy().To(goav.File("recording.ivf", &out))
 
 	planned, err := job.Describe()
 	if err != nil {
@@ -812,7 +813,7 @@ func TestFromAndRecordRecipeMultipleRTPInputsRuns(t *testing.T) {
 		events: make(chan av.Event),
 	}
 	muxers := &remuxTestMuxerFactory{}
-	runtime := goav.New(withTestFormats(
+	runtime := goav.MustNew(withTestFormats(
 		testFormatProber(format.DefaultProber()),
 		testFormatMuxer(av.FormatOgg, muxers),
 	))
@@ -966,7 +967,7 @@ func TestStreamRecipeCopyTapCanAttachRuntimeMuxDestination(t *testing.T) {
 		events: make(chan av.Event),
 	}
 	muxers := &remuxTestMuxerFactory{}
-	runtime := goav.New(withTestFormats(
+	runtime := goav.MustNew(withTestFormats(
 		testFormatProber(format.DefaultProber()),
 		testFormatMuxer(av.FormatOgg, muxers),
 	))

@@ -15,6 +15,7 @@ import (
 	"github.com/thesyncim/goav/provider"
 	"github.com/thesyncim/goav/rtpav"
 	"github.com/thesyncim/goav/shape"
+	"github.com/thesyncim/goav/std"
 )
 
 // recipeAPIRTPReader and recipeAPIVideoRTPReader are minimal
@@ -102,11 +103,11 @@ func (recipeAPICustomWriter) Close() error {
 }
 
 func recordJob(input goav.InputSpec, outputs ...goav.Destination) *goav.Job {
-	return goav.From(input).Copy().To(outputs...)
+	return goav.From(input).UseRuntime(std.MustNew()).Copy().To(outputs...)
 }
 
 func decodeJob(input goav.InputSpec, output goav.Destination) *goav.Job {
-	return goav.From(input).Stream().Decode().To(output)
+	return goav.From(input).UseRuntime(std.MustNew()).Stream().Decode().To(output)
 }
 
 func branchByName(branches []plan.Branch, name string) (plan.Branch, bool) {
@@ -243,7 +244,7 @@ func TestRecordRecipeExplainReturnsStructuredPlan(t *testing.T) {
 }
 
 func TestExplainReportsBranchShapeFromLiveCodecIntent(t *testing.T) {
-	rt := goav.New(goav.WithCodecAdapter(func(registry *codec.SimpleRegistry) {
+	rt := goav.MustNew(goav.WithCodecAdapter(func(registry *codec.SimpleRegistry) {
 		registry.RegisterDecoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, recipeAPIDecoderFactory{})
 	}))
 
@@ -291,6 +292,7 @@ func TestExternalCustomDestinationCanBeDestined(t *testing.T) {
 	target := goav.Custom("custom", dest)
 
 	job := goav.From(goav.Input(rtpav.Receive(recipeAPIVideoRTPReader{}, rtpav.WithName("video"), rtpav.WithCodec(codec.VP8())))).
+		UseRuntime(std.MustNew()).
 		Video().
 		Copy().
 		To(target)
@@ -416,7 +418,7 @@ func TestProviderRecipeSurfacesOpenSourceError(t *testing.T) {
 }
 
 func TestStreamRecipeReportsMissingDecodeAdapterBeforeOpeningLiveInput(t *testing.T) {
-	rt := goav.New(goav.WithCodecAdapter(func(registry *codec.SimpleRegistry) {
+	rt := goav.MustNew(goav.WithCodecAdapter(func(registry *codec.SimpleRegistry) {
 		registry.RegisterDescriptor(codec.Descriptor{
 			ID:    av.CodecH264,
 			Name:  "h264",
@@ -479,6 +481,7 @@ func TestBranchCompositionAcceptsRTPInputThenReportsMissingMuxer(t *testing.T) {
 				Encode(codec.Opus(codec.Bitrate(96_000))).
 				To(goav.File("archive.ogg", io.Discard)),
 		).
+		UseRuntime(goav.MustNew()).
 		Build(context.Background())
 
 	var buildErr *goav.BuildError

@@ -16,13 +16,16 @@ The contract is enforced by a source-scanning pin test (`errors_pin_test.go`):
 - **Reason**: one line saying why, including actual vs expected where it
   applies (`mix arm "b" cannot be converted to the join format (audio 44.1kHz
   1ch s16 -> audio 48kHz 2ch s16)`).
-- **Details**: machine-readable `key=value` facts (`codec=opus`,
-  `format=webm`, `actual_shape=...`). Internal invariants that are not
-  user-fixable carry a Details line explaining what happened instead of a fix.
-- **Suggestions**: concrete fixes for user-fixable refusals, as real API
-  calls: `add .Auto(shape.AllowResample())`, `insert .Resample(48000, 2)
-  explicitly`, `encode the mixed audio first:
-  goav.Mix(a, b).Encode(codec.Opus(...))`.
+- **Fields / Details**: typed `goav.Detail` facts for applications, rendered
+  as legacy `key=value` details for humans (`codec=opus`, `format=webm`,
+  `actual_shape=...`). Internal invariants that are not user-fixable carry a
+  detail explaining what happened instead of a fix.
+- **Fixes / Suggestions**: typed `goav.Fix` values for tools, plus rendered
+  suggestion text for humans. Fix messages should be real API calls:
+  `add .Auto(shape.AllowResample())`, `insert .Resample(48000, 2) explicitly`,
+  `encode the mixed audio first: goav.Mix(a, b).Encode(codec.Opus(...))`.
+  A fix may carry a `goav.RecipePatch` hint for applications that can offer
+  automatic recipe edits.
 - **Cause**: a sentinel (`goav.ErrUnsupportedBuild`, `goav.ErrNilSink`,
   `pipeline.ErrBufferedMessageUnsafe`, ...) reachable through `errors.Is`.
 
@@ -49,6 +52,11 @@ if err != nil {
         case errcode.ShapeConversionRefused:
             // widen the .Auto(...) policy
         }
+        if codecValue, ok := buildErr.Detail("codec"); ok {
+            if codecID, ok := codecValue.(av.CodecID); ok {
+                _ = codecID // choose a runtime or fallback by codec
+            }
+        }
     }
     if errors.Is(err, goav.ErrUnsupportedBuild) {
         // any build-shape refusal
@@ -67,7 +75,7 @@ and test name.
 ## Runtime errors
 
 Runtime paths keep the same floor: errors name the node and say what to do.
-`Task.Control` validations reject bad values before delivering (`goav:
+`Controllable.Control` validations reject bad values before delivering (`goav:
 SetBitrate needs a positive rate in bits per second, got 0`) and wrap
 `pipeline.ErrUnknownNode` for unknown targets; per-node control failures are
 collected as `goav: control to "node": ...`. Attach/Rebranch refusals are full

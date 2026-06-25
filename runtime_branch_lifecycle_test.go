@@ -14,6 +14,7 @@ import (
 	"github.com/thesyncim/goav/goavtest"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/shape"
+	"github.com/thesyncim/goav/std"
 )
 
 const lifecycleTapName = "video.decoded"
@@ -118,7 +119,7 @@ func liveMutableVideoPackets(name string, width, height int, tick time.Duration)
 		})
 }
 
-func decodedVideoTapTask(t *testing.T, ctx context.Context, input goav.InputSpec, main pipeline.Sink) goav.Task {
+func decodedVideoTapTask(t *testing.T, ctx context.Context, input goav.InputSpec, main pipeline.Sink) goav.LiveTask {
 	t.Helper()
 	task, err := goav.From(input).
 		UseRuntime(goavtest.Runtime()).
@@ -134,7 +135,7 @@ func decodedVideoTapTask(t *testing.T, ctx context.Context, input goav.InputSpec
 	return task
 }
 
-func attachDropBranch(t *testing.T, ctx context.Context, task goav.Task, name string, sink pipeline.Sink) goav.Attachment {
+func attachDropBranch(t *testing.T, ctx context.Context, task goav.Mutable, name string, sink pipeline.Sink) goav.Attachment {
 	t.Helper()
 	attachment, err := task.Attach(ctx, goav.Branch(name).
 		From(goav.FrameTap(lifecycleTapName)).
@@ -250,7 +251,7 @@ func TestRuntimeBranchAttachDetachLifecycle(t *testing.T) {
 // that a real (govpx) VP9 output branch behind the realtime drop-oldest buffer
 // produces packets: the explicit dropping buffer inherits the runtime's frame
 // copy bounds (so the buffered edge accepts the decoder's mutable frames) and
-// the encoder runs. goav.Default keeps the real VP9 encoder; only VP8 decode is
+// the encoder runs. std.New keeps the real VP9 encoder; only VP8 decode is
 // faked so the synthetic source decodes to frames the encoder can consume.
 func TestRuntimeBranchEncodesVP9ThroughDropBuffer(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
@@ -258,7 +259,7 @@ func TestRuntimeBranchEncodesVP9ThroughDropBuffer(t *testing.T) {
 
 	main := &frameCountSink{name: "main"}
 	task, err := goav.From(liveMutableVideoPackets("camera", 64, 64, time.Millisecond)).
-		UseRuntime(goav.Default(goavtest.Codec(av.CodecVP8))).
+		UseRuntime(std.MustNew(goavtest.Codec(av.CodecVP8))).
 		Video().
 		Decode().
 		Shape(shape.Frame(av.MediaVideo, shape.Video(64, 64, av.PixelFormatI420))).

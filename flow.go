@@ -461,7 +461,7 @@ func (b *chainBuilder) stage(stage pipeline.Stage) {
 		b.setErr(chainStepAfterEncodeError("build flow", firstNonEmpty(b.spec.name, "flow"), "custom stage", chainEncodeSpec(b.spec.operations)))
 		return
 	}
-	if stage == nil {
+	if err := validateStageComponent(stage); err != nil {
 		b.setErr(streamStageMissingError(streamIntent{Name: firstNonEmpty(b.spec.name, "flow")}))
 		return
 	}

@@ -16,6 +16,7 @@ import (
 	"github.com/thesyncim/goav/goavtest"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/shape"
+	"github.com/thesyncim/goav/std"
 )
 
 // BenchmarkLatencyRecordPackets is the percentile harness for the canonical
@@ -80,7 +81,7 @@ func BenchmarkRealOpusEncode(b *testing.B) {
 		Audio().
 		Encode(codec.Opus()).
 		To(benchSink("real-opus-packets")).
-		UseRuntime(goav.Default(goav.WithRealtime(false))))
+		UseRuntime(std.MustNew(goav.WithRealtime(false))))
 }
 
 // BenchmarkRealOpusDecode decodes one payload produced by the standard Opus
@@ -91,7 +92,7 @@ func BenchmarkRealOpusDecode(b *testing.B) {
 		Audio().
 		Decode().
 		To(benchSink("real-opus-frames")).
-		UseRuntime(goav.Default(goav.WithRealtime(false))))
+		UseRuntime(std.MustNew(goav.WithRealtime(false))))
 }
 
 func realOpusPayload(b *testing.B) []byte {
@@ -101,7 +102,7 @@ func realOpusPayload(b *testing.B) []byte {
 		Audio().
 		Encode(codec.Opus()).
 		To(out.Sink()).
-		UseRuntime(goav.Default(goav.WithRealtime(false))).
+		UseRuntime(std.MustNew(goav.WithRealtime(false))).
 		Run(context.Background())
 	if err != nil {
 		b.Fatal(err)

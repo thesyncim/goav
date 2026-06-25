@@ -66,7 +66,7 @@ func Usage(value string) CapabilityOption {
 
 // NewCommand builds a typed, allowlisted control command. The args struct tags
 // drive CLI binding, JSON binding, validation, and generated help.
-func NewCommand[T any](name string, summary string, apply func(context.Context, goav.Task, T) (ControlResponse, error), options ...CapabilityOption) CommandSpec {
+func NewCommand[T any](name string, summary string, apply func(context.Context, goav.LiveTask, T) (ControlResponse, error), options ...CapabilityOption) CommandSpec {
 	opts := collectCapabilityOptions(options)
 	argsType := typedArgsType[T]()
 	spec := CommandSpec{
@@ -76,7 +76,7 @@ func NewCommand[T any](name string, summary string, apply func(context.Context, 
 		ArgsType: argsType,
 	}
 	if apply != nil {
-		spec.Apply = func(ctx context.Context, task goav.Task, args any) (ControlResponse, error) {
+		spec.Apply = func(ctx context.Context, task goav.LiveTask, args any) (ControlResponse, error) {
 			typed, ok := args.(T)
 			if !ok {
 				return ControlResponse{}, commandError("invalid_command", "control "+name, "", "bound command args have unexpected type", nil, nil, nil)
@@ -208,7 +208,7 @@ type CapabilityField struct {
 	Help     string `json:"help,omitempty"`
 }
 
-func capabilityReport(manifest []CommandSpec, registry PipelineRegistry, task goav.Task) (CapabilityReport, error) {
+func capabilityReport(manifest []CommandSpec, registry PipelineRegistry, task goav.LiveTask) (CapabilityReport, error) {
 	if err := validateControlRegistry(manifest, registry); err != nil {
 		return CapabilityReport{}, err
 	}

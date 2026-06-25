@@ -34,7 +34,7 @@ func TestExternalHostCustomCommandOverSocket(t *testing.T) {
 		Name:     "vendor.external",
 		Summary:  "external command",
 		ArgsType: reflect.TypeOf(vendorCommand{}),
-		Apply: func(_ context.Context, _ goav.Task, args any) (ctl.ControlResponse, error) {
+		Apply: func(_ context.Context, _ goav.LiveTask, args any) (ctl.ControlResponse, error) {
 			applied = args.(vendorCommand).Value
 			return ctl.ControlResponse{Operation: "control vendor.external", Result: applied}, nil
 		},
@@ -283,7 +283,7 @@ func TestPublicValidateCapabilitiesPreflightsCustomMetadata(t *testing.T) {
 	command := ctl.NewCommand[commandSettings](
 		"vendor.preflight",
 		"preflight command",
-		func(context.Context, goav.Task, commandSettings) (ctl.ControlResponse, error) {
+		func(context.Context, goav.LiveTask, commandSettings) (ctl.ControlResponse, error) {
 			return ctl.ControlResponse{Operation: "control vendor.preflight"}, nil
 		},
 	)
@@ -421,7 +421,7 @@ func TestPublicWrapperHelpersDelegateToControlSurface(t *testing.T) {
 		Name:     "wrapper",
 		Summary:  "wrapper command",
 		ArgsType: reflect.TypeOf(wrapperCommand{}),
-		Apply: func(_ context.Context, _ goav.Task, args any) (ctl.ControlResponse, error) {
+		Apply: func(_ context.Context, _ goav.LiveTask, args any) (ctl.ControlResponse, error) {
 			applied = args.(wrapperCommand).Value
 			return ctl.ControlResponse{Operation: "control wrapper", Result: applied}, nil
 		},
@@ -506,7 +506,7 @@ func TestPublicExecuteAndServeUnixWrappers(t *testing.T) {
 	}
 }
 
-func newExternalTask(t *testing.T, runtime goav.Runtime) goav.Task {
+func newExternalTask(t *testing.T, runtime *goav.Runtime) goav.LiveTask {
 	t.Helper()
 	task, err := goav.From(goavtest.Audio(48000, 2, []int16{1, 2, 3, 4})).
 		Audio().
@@ -520,7 +520,7 @@ func newExternalTask(t *testing.T, runtime goav.Runtime) goav.Task {
 	return task
 }
 
-func startUnixServer(t *testing.T, ctx context.Context, task goav.Task, options ...ctl.ServerOption) string {
+func startUnixServer(t *testing.T, ctx context.Context, task goav.LiveTask, options ...ctl.ServerOption) string {
 	t.Helper()
 	socket := filepath.Join(os.TempDir(), fmt.Sprintf("goav-ctl-%d.sock", time.Now().UnixNano()))
 	t.Cleanup(func() { _ = os.Remove(socket) })

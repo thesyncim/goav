@@ -376,7 +376,7 @@ const (
 	SelectTapArm Code = "select_tap_arm"
 )
 
-// Runtime attach codes (Task.Attach / Rebranch refusals).
+// Runtime attach codes (Mutable.Attach / Rebranch refusals).
 const (
 	// RuntimeBranchInvalid fires when a runtime branch spec is nil or
 	// malformed.
@@ -414,9 +414,6 @@ const (
 	// RuntimeBranchTransformError fires when a runtime branch transform
 	// stage cannot be opened.
 	RuntimeBranchTransformError Code = "runtime_branch_transform_error"
-	// RuntimeBranchTransformMediaMismatch fires when a runtime branch
-	// transform targets the wrong media kind for its tap.
-	RuntimeBranchTransformMediaMismatch Code = "runtime_branch_transform_media_mismatch"
 	// RuntimeBranchGraphError fires when the live graph rejects the branch
 	// attachment.
 	RuntimeBranchGraphError Code = "runtime_branch_graph_error"
@@ -437,9 +434,6 @@ const (
 	// RuntimeMissing fires when a job reaches Build with no runtime
 	// configured.
 	RuntimeMissing Code = "runtime_missing"
-	// RuntimeUnsupported fires when recipe compilation is asked to run on
-	// a non-goav runtime implementation.
-	RuntimeUnsupported Code = "runtime_unsupported"
 	// CompilerPassInvalid fires when a recipe compiler pass is nil; an
 	// internal invariant.
 	CompilerPassInvalid Code = "compiler_pass_invalid"

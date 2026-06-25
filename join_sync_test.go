@@ -34,7 +34,7 @@ func eventMsg(eventType av.EventType, id av.StreamID) *pipeline.Message {
 	return &pipeline.Message{Kind: pipeline.MessageEvent, Event: &av.Event{Type: eventType, StreamID: id}}
 }
 
-func requireJoinTaskGraph(t *testing.T, built Task, runner string) {
+func requireJoinTaskGraph(t *testing.T, built Inspectable, runner string) {
 	t.Helper()
 	internal, ok := built.(*task)
 	if !ok {
@@ -63,7 +63,7 @@ func TestRealtimeJoinsDefaultBufferedOfflineJoinsStayDirect(t *testing.T) {
 	offlineMix, err := Mix(
 		From(mixSyncTestSource("a", []int64{0}, [][]int16{{1}})).Audio(),
 		From(mixSyncTestSource("b", []int64{0}, [][]int16{{2}})).Audio(),
-	).To(sink).UseRuntime(New(WithRealtime(false))).Build(ctx)
+	).To(sink).UseRuntime(MustNew(WithRealtime(false))).Build(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -83,7 +83,7 @@ func TestRealtimeJoinsDefaultBufferedOfflineJoinsStayDirect(t *testing.T) {
 	offlineComposite, err := Composite(
 		From(compositeTestVideoSource("a", 4, 4, 100, 10, 20)).Video().Region(0, 0),
 		From(compositeTestVideoSource("b", 4, 4, 200, 30, 40)).Video().Region(4, 0),
-	).To(sink).UseRuntime(New(WithRealtime(false))).Build(ctx)
+	).To(sink).UseRuntime(MustNew(WithRealtime(false))).Build(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -38,19 +38,22 @@ goav.From(input)                          inputs: FileInput, URIInput, Input(pro
   .Sync(goav.Sync("room", ...))            shared packet/frame timeline gates
   .Encode(codec.VP9(codec.Bitrate(...)))  codec specs from the codec package
   .Tap(goav.Tap|FrameTap|PacketTap)       named attach points
-  .Branches(goav.Branch("x")...To(dst))   fan out; BranchSpec also drives Task.Attach
+  .Branches(goav.Branch("x")...To(dst))   fan out; BranchSpec also drives Mutable.Attach
   input.Stream(av.Stream{ID: ...})        attach anchor for app-owned dynamic tracks
-  .To(File|URI|Writer|Custom|Sink)        destinations; reuse one value = mux/sink group
+  .To(File|URI|Writer|Custom|Sink)        destinations; reuse one value or DestinationGroup option = mux/sink group
   .OnStream(MatchMedia|MatchCodec|...)    dynamic-stream rules; OnRemove controls detach outcome
 goav.Mix/Composite/Select(arms) / Join(name, stage, arms)   N arms -> one stream (JoinArm)
 goav.Flow("name")                         reusable operation list (Chain)
-job.Describe() / Explain() -> plan.Report; job.Build(ctx) -> Task; job.Run(ctx)
-Task: Run, Events, Watch(EventFilter), Snapshot -> snapshot.*, Stats,
-      Attach/Detach(DrainBranch|AbortBranch)/Rebranch
-      (SwitchAt(NextFrame|NextKeyframe|AtMediaTime), Drain/AbortOldBranch, KeepOldOnFailure),
-      Control(Keyframe|Seek|Segment|Rate|SetBitrate|SelectActive|Deliver, .AtTap)
-goav.Default(opts...) / goav.New(opts...) -> Runtime; job.UseRuntime(rt)
-errors: *goav.BuildError{Code: errcode.X, ...} matched with errors.As/Is
+job.Describe(); adapter-backed Explain/Build/Run use job.UseRuntime(rt) or std.Build/std.Run
+Task: Run, Close
+Explainer: Explain
+Inspectable: Describe, Taps, Snapshot -> snapshot.*, Stats
+Mutable: Attach/Detach(DrainBranch|AbortBranch); Attachment.Rebranch
+         (SwitchAt(NextFrame|NextKeyframe|AtMediaTime), Drain/AbortOldBranch, KeepOldOnFailure)
+Controllable: Control(control.Keyframe|Seek|Segment|Rate|SetBitrate|SelectActive|Deliver, .AtTap)
+Observable: Events, Watch(inspect.EventFilter)
+goav.New(opts...) -> (*Runtime, error); goav.MustNew(opts...) -> bare Runtime; std.MustNew(opts...) -> standard Runtime; job.UseRuntime(rt)
+errors: *goav.BuildError{Code: errcode.X, Fields: []goav.Detail, Fixes: []goav.Fix, ...} matched with errors.As/Is; Detail(key) for typed facts
 ```
 
 The checked operation reference is
@@ -60,6 +63,10 @@ conversions, primary refusals, and runtime attach behavior.
 
 Applications also read these vocabulary packages:
 
+- `control`: live task control vocabulary (`Control`, `Keyframe`, `Rate`,
+  `Seek`, `Segment`, `SetBitrate`, `SelectActive`, `Deliver`).
+- `inspect`: event watch filters (`EventFilter`, `WatchTypes`,
+  `WatchStream`).
 - `errcode`: the error-code catalog (one `Code` per refusal class).
 - `plan`: everything `Explain` reports back.
 - `snapshot`: point-in-time task/branch/destination/tap views.
@@ -114,7 +121,8 @@ use [`docs/ADAPTERS.md`](ADAPTERS.md) and [`docs/COMPONENTS.md`](COMPONENTS.md).
   `provider.Destination` + `provider.Contract`/
   `provider.Info`, `goav.Writer` (`provider.OpenFunc`), transactional uploads
   via `provider.TransactionalWriter`, frame/packet sinks via `goav.Sink` +
-  `SinkFunc`.
+  `SinkFunc`, and `goav.DestinationGroup(...)` when independently built
+  destinations should share one mux/sink group.
 - **Custom stages**: use these for in-process inspection or transformation.
   `EventFunc`/`FrameFunc`/`PacketFunc` (+`Emit`) for
   `.Do(...)`; the node contracts live in `pipeline` (Source/Stage/Sink,
@@ -136,7 +144,7 @@ use [`docs/ADAPTERS.md`](ADAPTERS.md) and [`docs/COMPONENTS.md`](COMPONENTS.md).
   seekable inputs, `WithDemuxer`/`WithMuxer`/`WithFormatAdapter`/`WithProber`.
 - **Filters**: `filter` FrameFilter/Factory/Descriptor,
   `WithFilter`/`WithFilterAdapter`.
-- **Runtime config**: `WithDefaults`/`WithStd*`, `WithClock`, `WithRealtime`,
+- **Runtime config**: `goav.New`, `std.MustNew`, `WithClock`, `WithRealtime`,
   `WithBufferPolicy`, `WithEventCapacity`.
 - **Media vocabulary**: `av` frames/packets/buffers (`Buffer`,
   `BufferOwnership`, `Plane`), timing (`TimeBase`, `Timestamp`, `Duration`,
@@ -231,7 +239,7 @@ against the constructors in `input.go`/`provider.go`/`source.go`,
   custom push sources, and transport providers are three doors into one
   `InputSpec`. `InputSpec.Stream(av.Stream)` returns an `InputStream` attach
   anchor for app-owned dynamic tracks; it deliberately reuses
-  `Branch(...).From(...)` and `Task.Attach` instead of adding a room/session
+  `Branch(...).From(...)` and `Mutable.Attach` instead of adding a room/session
   workflow API.
 - **Destination vs Sink vs Writer vs File**: `Destination` is the routing
   handle every constructor returns (reuse = mux/sink group); `File` wraps an
@@ -244,8 +252,8 @@ against the constructors in `input.go`/`provider.go`/`source.go`,
 - **Flow vs Branch**: a `Flow` is a reusable operation list and owns no
   destination (`TestNorthStarFlowExposesNoDestinations`); a `Branch` routes
   fanout and owns its destinations.
-- **Attach vs Detach vs Rebranch**: `Task.Attach` adds ordinary branch specs
-  to a running task; `Task.Detach(ctx, h)` removes that attached branch, with
+- **Attach vs Detach vs Rebranch**: `Mutable.Attach` adds ordinary branch specs
+  to a running task; `Mutable.Detach(ctx, h)` removes that attached branch, with
   `DrainBranch()` and `AbortBranch()` selecting whether branch destinations
   commit or abort; `Attachment.Rebranch` is attach-new-then-detach-old, with
   boundary options (`NextFrame`, `NextKeyframe`, `AtMediaTime`) and
@@ -294,7 +302,8 @@ tomorrow is governed the day it lands.
   implementation subtree. An unclassified package fails the build.
 - `doc_pin_test.go`: every exported symbol in every discovered public
   package carries a doc comment.
-- `errors_pin_test.go`: every `BuildError` uses a catalog `errcode.Code`.
+- `errors_pin_test.go`: every `BuildError` uses a catalog `errcode.Code` and
+  carries rendered or typed details/fixes.
 - README front door: first five examples stay on the grammar
   (`TestReadmeFirstScreenAvoidsGraphInternals`); advanced knobs stay out of
   the guide (`TestReadmeKeepsAdvancedRuntimeKnobsOutOfFrontDoor`).
@@ -302,7 +311,7 @@ tomorrow is governed the day it lands.
   invariants to executable tests.
 
 `adapters/*` and `container/*` are implementations behind the `codec`/`format`
-extension points (registered by `Default()`/`WithStd*`), outside the core import
+extension points (registered by `std.MustNew`), outside the core import
 graph and not part of the governed surface: an explicit, asserted exclusion
 (`docPinImplementationSubtrees`), not a forgotten one.
 
@@ -335,7 +344,10 @@ example modules. The module boundary is the dependency boundary:
 ## Compatibility
 
 Pre-v1, breaking renames land without aliases. The surface-hygiene wave moved
-three clusters off the root: the error catalog is `errcode` (renamed from
+five clusters off the root: the live control vocabulary is `control`
+(`Control`, `Keyframe`, `Rate`, `Seek`, `Segment`, `SetBitrate`,
+`SelectActive`, `Deliver`), event watch filters are `inspect`
+(`EventFilter`, `WatchTypes`, `WatchStream`), the error catalog is `errcode` (renamed from
 `codes`), the source/destination extension contracts are `provider`
 (`Source`, `Destination`, `Writer`, `TransactionalWriter`, `Contract`,
 `Info`, `OpenFunc`), and the expert graph layer is `expert` (`Graph`,

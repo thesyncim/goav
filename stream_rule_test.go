@@ -12,7 +12,9 @@ import (
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
+	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/format"
+	"github.com/thesyncim/goav/inspect"
 	"github.com/thesyncim/goav/lifecycle"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/provider"
@@ -172,7 +174,7 @@ func lateStreamSource(late av.Stream, payload byte, stopLate <-chan struct{}, fi
 	)
 }
 
-func taskHasBranch(task Task, name string) bool {
+func taskHasBranch(task Inspectable, name string) bool {
 	branches := task.Snapshot().Branches
 	for i := range branches {
 		if branches[i].Name == name && branches[i].State == lifecycle.BranchAttached {
@@ -198,7 +200,7 @@ func TestOnStreamAttachesLateBranchAndDetachesOnRemoval(t *testing.T) {
 	input := lateStreamSource(late, 0xA, stopLate, finish)
 
 	state := &syncObjectState{}
-	rt := New(withTestFormats(testFormatMuxer(av.FormatOgg, &syncTestMuxer{})))
+	rt := MustNew(withTestFormats(testFormatMuxer(av.FormatOgg, &syncTestMuxer{})))
 	record := Writer("s3://bucket/late.ogg", state.open, Format(av.FormatOgg), MIME("audio/ogg"))
 
 	var mainCount atomic.Int32
@@ -219,7 +221,7 @@ func TestOnStreamAttachesLateBranchAndDetachesOnRemoval(t *testing.T) {
 	}
 	defer task.Close()
 
-	attachErrors := task.Watch(WatchTypes(av.EventAttachError))
+	attachErrors := task.Watch(inspect.WatchTypes(av.EventAttachError))
 	runErr := make(chan error, 1)
 	go func() { runErr <- task.Run(ctx) }()
 
@@ -442,14 +444,14 @@ func TestOnStreamLateBranchAutoInsertsConversion(t *testing.T) {
 			Encode(codec.Opus(codec.Bitrate(96_000))).
 			To(encodedSink)).
 		Audio().To(Sink(SinkFunc("main", func(context.Context, Message) error { return nil }))).
-		UseRuntime(solverTestOpusRuntime(WithStdFilters())).
+		UseRuntime(solverTestOpusRuntime(testStdFilters())).
 		Build(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer task.Close()
 
-	attachErrors := task.Watch(WatchTypes(av.EventAttachError))
+	attachErrors := task.Watch(inspect.WatchTypes(av.EventAttachError))
 	runErr := make(chan error, 1)
 	go func() { runErr <- task.Run(ctx) }()
 
@@ -505,6 +507,27 @@ func TestOnStreamRuleVisibleInExplain(t *testing.T) {
 	}
 }
 
+func TestOnStreamFileBranchRequiresExplicitRuntime(t *testing.T) {
+	ctx := context.Background()
+	input := Source("mic",
+		shape.Packet(av.MediaAudio, av.CodecOpus, shape.Audio(48_000, codec.Stereo, av.SampleFormatS16)),
+		func(context.Context, SourcePush) error { return nil },
+	)
+	monitor := Sink(SinkFunc("main", func(context.Context, Message) error { return nil }))
+	job := From(input).
+		OnStream(MatchMedia(av.MediaAudio), Branch("record").Copy().To(File("late.ogg", io.Discard))).
+		Audio().Copy().To(monitor)
+
+	_, err := job.Build(ctx)
+	var buildErr *BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != errcode.RuntimeMissing {
+		t.Fatalf("Build() error = %v, want runtime_missing", err)
+	}
+	if !strings.Contains(err.Error(), "std.Run") {
+		t.Fatalf("Build() error = %v, want standard helper guidance", err)
+	}
+}
+
 // TestOnStreamAttachFailureSurfacesEventAndRollsBack drives the failure path:
 // the rule branch needs an ogg muxer the runtime does not have, so the late
 // attach fails. The failure surfaces as av.EventAttachError on Watch, the
@@ -520,7 +543,7 @@ func TestOnStreamAttachFailureSurfacesEventAndRollsBack(t *testing.T) {
 
 	// No ogg muxer registered: the rule branch cannot build — its destination
 	// opens first and must be aborted by the rollback.
-	rt := New(withTestFormats())
+	rt := MustNew(withTestFormats())
 	state := &syncObjectState{}
 	bad := Writer("late.ogg", state.open, Format(av.FormatOgg))
 
@@ -535,7 +558,7 @@ func TestOnStreamAttachFailureSurfacesEventAndRollsBack(t *testing.T) {
 	defer task.Close()
 	nodesBefore := len(task.Describe().Nodes)
 
-	attachErrors := task.Watch(WatchTypes(av.EventAttachError))
+	attachErrors := task.Watch(inspect.WatchTypes(av.EventAttachError))
 	runErr := make(chan error, 1)
 	go func() { runErr <- task.Run(ctx) }()
 

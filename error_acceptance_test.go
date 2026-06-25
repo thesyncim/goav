@@ -23,6 +23,7 @@ import (
 	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/goavtest"
 	"github.com/thesyncim/goav/shape"
+	"github.com/thesyncim/goav/std"
 )
 
 // requireBuildError enforces the four acceptance bars on one refusal: typed
@@ -71,6 +72,14 @@ func detailsContain(details []string, fragment string) bool {
 
 func opusPacketInput() goav.InputSpec {
 	return goavtest.Packets(av.CodecOpus, av.Packet{Payload: av.Buffer{Bytes: []byte{1}}})
+}
+
+func audioFrameInput() goav.InputSpec {
+	return goav.Source("audio",
+		shape.Frame(av.MediaAudio, shape.Audio(48_000, codec.Mono, av.SampleFormatS16), shape.Stream("audio")),
+		func(context.Context, goav.SourcePush) error {
+			return nil
+		})
 }
 
 // TestErrorAcceptanceNilProviderInput is snippet 0a: a nil source provider
@@ -407,6 +416,49 @@ func TestErrorAcceptancePacketBranchTransformUnsupported(t *testing.T) {
 	)
 }
 
+func TestBuildAndAttachReturnSameErrorForSameInvalidBranch(t *testing.T) {
+	_, err := goav.From(opusPacketInput()).
+		UseRuntime(goavtest.Runtime()).
+		Audio().
+		Decode().
+		Branches(
+			goav.Branch("bad").
+				Resize(640, 360).
+				To(goavtest.NewCollector().Sink()),
+		).
+		Describe()
+	planned := requireBuildError(t, err, errcode.OperationShapeMismatch, "build branch composition", "bad",
+		"use .Video().Resize(...)",
+	)
+
+	task, err := goav.From(audioFrameInput()).
+		UseRuntime(goav.MustNew()).
+		Audio().
+		Tap(goav.FrameTap("audio.frames")).
+		To(goavtest.NewCollector().Sink()).
+		Build(context.Background())
+	if err != nil {
+		t.Fatalf("base task build: %v", err)
+	}
+	defer task.Close()
+
+	_, err = task.Attach(context.Background(),
+		goav.Branch("bad").
+			From(goav.FrameTap("audio.frames")).
+			Resize(640, 360).
+			To(goavtest.NewCollector().Sink()),
+	)
+	attached := requireBuildError(t, err, errcode.OperationShapeMismatch, "attach runtime branch", "bad",
+		"use .Video().Resize(...)",
+	)
+	for _, buildErr := range []*goav.BuildError{planned, attached} {
+		if !detailsContain(buildErr.Details, "expected_shape=domain=frame media=video") ||
+			!detailsContain(buildErr.Details, "actual_shape=domain=frame media=audio") {
+			t.Fatalf("%s details = %v, want expected/actual audio-video frame shapes", buildErr.Operation, buildErr.Details)
+		}
+	}
+}
+
 // TestErrorAcceptanceCopyAfterDecode is snippet 1: .Decode().Copy() asks for
 // packet copy in the frame domain. The refusal states the domain rule and the
 // two real fixes — copy before decode, or re-encode the frames.
@@ -479,7 +531,7 @@ func TestErrorAcceptanceDestinationMuxerMissing(t *testing.T) {
 	_, err := goav.From(goavtest.Audio(48000, 1, []int16{1})).
 		Audio().Encode(codec.Opus()).
 		To(goav.File("out.ogg", io.Discard)).
-		UseRuntime(goav.New(goav.WithStdFilters(), goavtest.Codec(av.CodecOpus))).
+		UseRuntime(std.MustNewFilters(goavtest.Codec(av.CodecOpus))).
 		Build(context.Background())
 	requireBuildError(t, err, errcode.DestinationMuxerMissing, "open destination", "out.ogg",
 		"goav.WithMuxer(...)",
@@ -516,7 +568,7 @@ func TestErrorAcceptanceAmbiguousStreamSelectionListsCandidates(t *testing.T) {
 
 // TestErrorAcceptanceAttachUnknownTapListsDeclaredTaps is snippet 6: a
 // runtime Branch anchored on a tap the task never declared. The refusal lists
-// the taps that DO exist and points at task.Taps().
+// the taps that DO exist and points at Inspectable.Taps().
 func TestErrorAcceptanceAttachUnknownTapListsDeclaredTaps(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -533,7 +585,7 @@ func TestErrorAcceptanceAttachUnknownTapListsDeclaredTaps(t *testing.T) {
 	_, err = task.Attach(ctx, goav.Branch("late").From(goav.FrameTap("nope")).To(goavtest.NewCollector().Sink()))
 	buildErr := requireBuildError(t, err, errcode.RuntimeBranchTapMissing, "attach runtime branch", "nope",
 		`add .Tap(goav.FrameTap("nope"))`,
-		"call task.Taps() before attaching",
+		"call Inspectable.Taps() before attaching",
 	)
 	if !detailsContain(buildErr.Details, "audio.decoded") {
 		t.Fatalf("details should list the declared taps, err = %v", err)

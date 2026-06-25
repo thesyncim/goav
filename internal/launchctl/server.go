@@ -12,11 +12,12 @@ import (
 
 	goav "github.com/thesyncim/goav"
 	"github.com/thesyncim/goav/av"
+	"github.com/thesyncim/goav/inspect"
 )
 
 // Server handles one decoded control-plane request against a task.
 type Server struct {
-	Task        goav.Task
+	Task        goav.LiveTask
 	Commands    []CommandSpec
 	Pipeline    PipelineRegistry
 	mu          sync.Mutex
@@ -235,13 +236,13 @@ func (s *Server) unknownBranchError(operation string, name string) error {
 
 // ServeUnix listens on unix://PATH or PATH and serves one JSON request per
 // connection until ctx is cancelled.
-func ServeUnix(ctx context.Context, task goav.Task, address string) error {
+func ServeUnix(ctx context.Context, task goav.LiveTask, address string) error {
 	return ServeUnixWithOptions(ctx, task, address)
 }
 
 // ServeUnixWithOptions listens on unix://PATH or PATH and serves one JSON
 // request per connection until ctx is cancelled.
-func ServeUnixWithOptions(ctx context.Context, task goav.Task, address string, options ...ServerOption) error {
+func ServeUnixWithOptions(ctx context.Context, task goav.LiveTask, address string, options ...ServerOption) error {
 	path := strings.TrimPrefix(address, "unix://")
 	if path == "" {
 		return commandError("invalid_address", "serve control", address, "unix control address needs a path", nil, []string{"use unix:///tmp/goav-live.sock"}, nil)
@@ -322,12 +323,12 @@ func (s *Server) watch(request Request) <-chan av.Event {
 	if request.Op == "events" {
 		return s.Task.Watch()
 	}
-	var filters []goav.EventFilter
+	var filters []inspect.EventFilter
 	if typ := request.Args["type"]; typ != "" {
-		filters = append(filters, goav.WatchTypes(av.EventType(typ)))
+		filters = append(filters, inspect.WatchTypes(av.EventType(typ)))
 	}
 	if stream := request.Args["stream"]; stream != "" {
-		filters = append(filters, goav.WatchStream(av.StreamID(stream)))
+		filters = append(filters, inspect.WatchStream(av.StreamID(stream)))
 	}
 	return s.Task.Watch(filters...)
 }

@@ -1,6 +1,6 @@
 module github.com/thesyncim/goav/examples/webrtc-runtime-ladder
 
-go 1.26.4
+go 1.26
 
 require (
 	github.com/pion/interceptor v0.1.45

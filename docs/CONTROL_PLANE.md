@@ -14,9 +14,10 @@ goav ctl --control unix:///tmp/goav-live.sock attach frames as archive \
   'encode codec=opus media=audio bitrate=128k ! filesink location=archive.ogg'
 ```
 
-The control layer is allowlisted and lowers into the same task APIs normal Go
-code uses: `Task.Control`, `Task.Attach`, `Attachment.Rebranch`, `Task.Detach`,
-`Snapshot`, `Stats`, `Watch`, and `Close`. Reflection is used only on this cold
+The control layer is allowlisted and lowers into the same task capabilities
+normal Go code uses: `Controllable.Control`, `Mutable.Attach`,
+`Attachment.Rebranch`, `Mutable.Detach`, `Inspectable.Snapshot`,
+`Inspectable.Stats`, `Observable.Watch`, and `Task.Close`. Reflection is used only on this cold
 path to bind known command structs, validate fields, parse JSON, and generate
 help from tags. There is no global registry and no user-provided method name
 dispatch.
@@ -136,7 +137,7 @@ encoderFactory := &acmeEncoderFactory{
 task, err := goav.From(liveInput).
     Audio().Decode().Tap(goav.FrameTap("frames")).
     To(primaryDestination).
-    UseRuntime(goav.Default(
+    UseRuntime(std.MustNew(
         goav.WithEncoder(encoderFactory.Descriptor, encoderFactory),
     )).
     Build(ctx)
@@ -158,8 +159,8 @@ type SetRate struct {
 rateCommand := ctl.NewCommand[SetRate](
     "vendor.rate",
     "vendor playback-rate control",
-    func(ctx context.Context, task goav.Task, cmd SetRate) (ctl.ControlResponse, error) {
-        ctrl := goav.Rate(cmd.Value).At(pipeline.NodeRef(cmd.Source))
+    func(ctx context.Context, task goav.LiveTask, cmd SetRate) (ctl.ControlResponse, error) {
+        ctrl := control.Rate(cmd.Value).At(pipeline.NodeRef(cmd.Source))
         if err := task.Control(ctx, ctrl); err != nil {
             return ctl.ControlResponse{}, err
         }
@@ -229,8 +230,9 @@ if err := ctl.ValidateCapabilities(capabilities); err != nil {
 ```
 
 Use `ctl.NewError` from custom command, step, or encoder callbacks when a
-custom value is missing or invalid. The structured code, node,
-details, suggestions, and cause are preserved in the CLI/socket response.
+custom value is missing or invalid. The structured code, node, typed
+fields/fixes, rendered details/suggestions, and cause are preserved in the
+CLI/socket response.
 
 Start the socket after the task is built. The same options apply whether the
 socket is used by humans, scripts, supervisors, or tests.
@@ -285,8 +287,8 @@ goav ctl --control unix:///tmp/goav-live.sock attach frames as archive \
 ```
 
 Raw JSON is for automation that already has the protocol object. `control
---json` decodes into the real `goav.Control` representation; `control deliver
---json` decodes into `av.Event` and then lowers to `goav.Deliver(event)`.
+--json` decodes into the real `control.Control` representation; `control deliver
+--json` decodes into `av.Event` and then lowers to `control.Deliver(event)`.
 Nested event metadata is rejected instead of being stringified silently, so a
 caller must choose the exact conversion before sending the request. Raw JSON
 uses the documented canonical field names and rejects unknown or duplicate
@@ -355,7 +357,7 @@ Supported built-ins include:
 - `control segment start=<duration> end=<duration> [source=<source>|node=<node>]`
 - `control select active=<arm-or-stream-id> [selector=<name>|at=<tap>]`
 - `control deliver ...` and `control deliver --json '<av.Event JSON>'`
-- `control --json '<goav.Control JSON>'`
+- `control --json '<control.Control JSON>'`
 - `inspect`, `snapshot`, `stats`, `taps`, `streams`, `branches`,
   `destinations`, `capabilities`
 - `graph [format=mermaid|dot|text]` and `flowchart [format=mermaid|dot|text]`
@@ -367,7 +369,7 @@ Supported built-ins include:
 Register the codec implementation on the runtime, then call it in an attach or
 rebranch pipeline with the generic `encode` step. This is the default path for
 custom encoders and does not require a custom encoder spelling. Use
-`goav.Default(...)` when you want the stock codecs, formats, and filters plus
+`std.MustNew(...)` when you want the stock codecs, formats, and filters plus
 your adapter; use `goav.New(...)` only when you are intentionally registering
 every required codec, filter, prober, demuxer, and muxer yourself.
 
@@ -382,10 +384,11 @@ concrete native encoder or config object. The generated reference is the
 running host itself; `goav ctl help attach` is human-readable, and
 `goav ctl capabilities` is machine-readable. In normal application code,
 workflows should be expressible through declarative recipes; the public grammar
-stays Input, Stream, Tap, Branch, Destination, Flow, and Task.
+stays Input, Stream, Tap, Branch, Destination, Flow, Task, and opt-in task
+capabilities.
 
 ```go
-rt := goav.Default(
+rt := std.MustNew(
     goav.WithEncoder(codec.Descriptor{
         ID:   av.CodecID("x_pcm_s16"),
         Name: "ACME PCM S16",
@@ -420,7 +423,7 @@ duplicate aliases such as `w`, `h`, `size`, `framerate`, `live`, `pix_fmt`,
 and `pixel_format` are rejected with suggestions.
 
 The destination container must accept the selected codec. Standard codecs can
-often use the standard containers registered by `goav.Default`; a private codec
+often use the standard containers registered by `std.MustNew`; a private codec
 usually needs a matching `WithFormatAdapter`, `WithMuxer`, or an app-owned
 custom destination step. Runtime muxers registered with `WithMuxer` are callable
 by `filesink location=<path> [format=<id>]` and appear in `help attach`.
@@ -497,7 +500,7 @@ structured errors with available names and suggestions.
 - No arbitrary method names, unexported internals, or global registries are
   exposed.
 - Commands lower into existing task/control APIs.
-- Raw JSON fallback decodes into the real `goav.Control` or `av.Event` shapes
+- Raw JSON fallback decodes into the real `control.Control` or `av.Event` shapes
   instead of introducing a second control model.
 - Custom controls, custom branch steps, custom codec names, custom sinks, and
   custom encoder names are per-server allowlists.

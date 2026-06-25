@@ -34,12 +34,6 @@ func decodeEncodeIntentOperations(spec codec.CodecSpec) []operationSpec {
 	return append(decodeIntentOperations(), operationSpecForEncode(spec))
 }
 
-type stubRuntime struct{}
-
-func (stubRuntime) Probe(context.Context, format.ProbeRequest) (format.ProbeResult, error) {
-	return format.ProbeResult{}, nil
-}
-
 type graphPlanTestLowerer struct {
 	runtime *runtime
 	called  bool
@@ -121,7 +115,7 @@ func TestGraphPlanUsesSharedBuildLifecycle(t *testing.T) {
 }
 
 func TestGraphPlanBuildValidatesOperationsBeforeLowerer(t *testing.T) {
-	runtime := New().(*runtime)
+	runtime := MustNew()
 	lowerer := &graphPlanTestLowerer{runtime: runtime}
 	gp := graphPlan{
 		runtime: runtime,
@@ -148,7 +142,7 @@ func TestGraphPlanBuildValidatesOperationsBeforeLowerer(t *testing.T) {
 }
 
 func TestGraphPlanCarriesCloneSafeWorkPlan(t *testing.T) {
-	runtime := New().(*runtime)
+	runtime := MustNew()
 	branches := []planBranch{{
 		Name:  "preview",
 		Input: "input.ivf",
@@ -1142,7 +1136,7 @@ func TestOutputFormatAdapterPassesRejectMissingMuxers(t *testing.T) {
 			state: recipeCompileState{
 				operation: "build job",
 				options:   recipeCompileOptions{preflightOutputAdapters: true},
-				runtime:   Default(),
+				runtime:   testStdRuntime(),
 				outputAttachments: []destinationSpec{
 					fileDestination("recording.mp4", io.Discard),
 				},
@@ -1155,7 +1149,7 @@ func TestOutputFormatAdapterPassesRejectMissingMuxers(t *testing.T) {
 			state: recipeCompileState{
 				operation: "build job",
 				options:   recipeCompileOptions{preflightOutputAdapters: true},
-				runtime:   Default(),
+				runtime:   testStdRuntime(),
 				outputAttachments: []destinationSpec{
 					fileDestination("", io.Discard).withFormat(av.FormatOgg),
 				},
@@ -1168,7 +1162,7 @@ func TestOutputFormatAdapterPassesRejectMissingMuxers(t *testing.T) {
 			state: recipeCompileState{
 				operation: branchCompositionOperation,
 				options:   recipeCompileOptions{preflightOutputAdapters: true},
-				runtime:   Default(),
+				runtime:   testStdRuntime(),
 				branchDestinationAttachments: []namedDestinationSpec{{
 					name:   "web",
 					output: fileDestination("web.mp4", io.Discard),
@@ -1209,7 +1203,7 @@ func TestOutputFormatAdapterPassesStoreResolvedFormats(t *testing.T) {
 			state: recipeCompileState{
 				operation: "build job",
 				options:   recipeCompileOptions{preflightOutputAdapters: true},
-				runtime: New(withTestFormats(
+				runtime: MustNew(withTestFormats(
 					testFormatProber(remuxTestProber{}),
 					testFormatMuxer(av.FormatOgg, &remuxTestMuxerFactory{}),
 				)),
@@ -1232,7 +1226,7 @@ func TestOutputFormatAdapterPassesStoreResolvedFormats(t *testing.T) {
 			state: recipeCompileState{
 				operation: branchCompositionOperation,
 				options:   recipeCompileOptions{preflightOutputAdapters: true},
-				runtime: New(withTestFormats(
+				runtime: MustNew(withTestFormats(
 					testFormatProber(remuxTestProber{}),
 					testFormatMuxer(av.FormatOgg, &remuxTestMuxerFactory{}),
 				)),
@@ -1257,7 +1251,7 @@ func TestOutputFormatAdapterPassesStoreResolvedFormats(t *testing.T) {
 			state: recipeCompileState{
 				operation: "build job",
 				options:   recipeCompileOptions{preflightOutputAdapters: true},
-				runtime: New(withTestFormats(
+				runtime: MustNew(withTestFormats(
 					testFormatMuxer(av.FormatIVF, &remuxTestMuxerFactory{}),
 				)),
 				outputAttachments: []destinationSpec{
@@ -1283,13 +1277,13 @@ func TestOutputFormatAdapterPassesStoreResolvedFormats(t *testing.T) {
 }
 
 func TestResolvedJobOutputFormatsEnterMediaPlanBuild(t *testing.T) {
-	runtime := New(
-		WithDefaults(),
+	runtime := MustNew(append(
+		testStdOptions(),
 		withTestFormats(
 			testFormatProber(remuxTestProber{}),
 			testFormatMuxer(av.FormatOgg, &remuxTestMuxerFactory{}),
 		),
-	)
+	)...)
 	job := From(
 		Input(&liveTestProvider{
 			name:    "audio",
@@ -1335,7 +1329,7 @@ func TestResolvedTranscodeOutputFormatsEnterPlan(t *testing.T) {
 	state := recipeCompileState{
 		operation: branchCompositionOperation,
 		options:   recipeCompileOptions{preflightOutputAdapters: true},
-		runtime: New(withTestFormats(
+		runtime: MustNew(withTestFormats(
 			testFormatProber(remuxTestProber{}),
 			testFormatMuxer(av.FormatOgg, &remuxTestMuxerFactory{}),
 		)),
@@ -1371,7 +1365,7 @@ func TestResolvedTranscodeOutputFormatsEnterPlan(t *testing.T) {
 
 func TestResolvedBranchRecipeOutputFormatsRefreshPreplannedDestinations(t *testing.T) {
 	streams := []av.Stream{audioOpusTestStream()}
-	runtime := New(
+	runtime := MustNew(
 		withTestFormats(
 			testFormatProber(remuxTestProber{streams: streams}),
 			testFormatDemuxer(av.FormatOgg, decodeTestDemuxerFactory{demuxer: &decodeTestDemuxer{streams: streams}}),
@@ -1412,7 +1406,7 @@ func TestInputFormatAdapterPassesRejectMissingDemuxers(t *testing.T) {
 			state: recipeCompileState{
 				operation: "build job",
 				options:   recipeCompileOptions{preflightInputAdapters: true},
-				runtime:   Default(),
+				runtime:   testStdRuntime(),
 				inputAttachments: []InputSpec{
 					FileInput("input.ogg", strings.NewReader("")),
 				},
@@ -1426,7 +1420,7 @@ func TestInputFormatAdapterPassesRejectMissingDemuxers(t *testing.T) {
 			state: recipeCompileState{
 				operation:             branchCompositionOperation,
 				options:               recipeCompileOptions{preflightInputAdapters: true},
-				runtime:               Default(),
+				runtime:               testStdRuntime(),
 				branchInputAttachment: FileInput("input.flv", strings.NewReader("")),
 			},
 			code: "input_demuxer_missing",
@@ -1438,7 +1432,7 @@ func TestInputFormatAdapterPassesRejectMissingDemuxers(t *testing.T) {
 			state: recipeCompileState{
 				operation: "build job",
 				options:   recipeCompileOptions{preflightInputAdapters: true},
-				runtime:   Default(),
+				runtime:   testStdRuntime(),
 				inputAttachments: []InputSpec{
 					FileInput("input.unknown", strings.NewReader("")),
 				},
@@ -1467,7 +1461,7 @@ func TestInputFormatAdapterPassSkipsLiveReceiveInputs(t *testing.T) {
 	state := recipeCompileState{
 		operation: "build job",
 		options:   recipeCompileOptions{preflightInputAdapters: true},
-		runtime:   Default(),
+		runtime:   testStdRuntime(),
 		inputAttachments: []InputSpec{
 			Input(&liveTestProvider{media: av.MediaAudio, codecID: av.CodecOpus}),
 		},
@@ -1488,7 +1482,7 @@ func TestInputFormatAdapterPassStoresProbeStreams(t *testing.T) {
 	state := recipeCompileState{
 		operation: "build job",
 		options:   recipeCompileOptions{preflightInputAdapters: true},
-		runtime: New(withTestFormats(
+		runtime: MustNew(withTestFormats(
 			testFormatProber(remuxTestProber{streams: streams}),
 			testFormatDemuxer(av.FormatOgg, remuxTestDemuxerFactory{}),
 		)),
@@ -1669,8 +1663,9 @@ func TestDecodeAdapterPassRejectsKnownLiveMissingDecoders(t *testing.T) {
 			Status: "planned-build-tagged",
 		},
 	})
-	descriptorRuntime := New(func(runtime *runtime) {
-		runtime.codecs = descriptorOnly
+	descriptorRuntime := MustNew(func(config *Config) error {
+		config.Codecs = descriptorOnly
+		return nil
 	})
 
 	tests := []struct {
@@ -1685,7 +1680,7 @@ func TestDecodeAdapterPassRejectsKnownLiveMissingDecoders(t *testing.T) {
 			state: recipeCompileState{
 				operation: "build job",
 				options:   recipeCompileOptions{preflightDecodeAdapters: true},
-				runtime:   New(),
+				runtime:   MustNew(),
 				intent: intent{
 					Inputs: []inputIntent{{
 						Name:     "audio",
@@ -1749,7 +1744,7 @@ func TestDecodeAdapterPassDefersAmbiguousLiveSelection(t *testing.T) {
 	state := recipeCompileState{
 		operation: "build job",
 		options:   recipeCompileOptions{preflightDecodeAdapters: true},
-		runtime:   New(),
+		runtime:   MustNew(),
 		intent: intent{
 			Inputs: []inputIntent{
 				{Name: "front", Protocol: av.ProtocolRTP, Codec: codec.H264(), Realtime: true},
@@ -1781,8 +1776,9 @@ func TestKnownInputDecodeAdapterPassesRejectMissingDecoders(t *testing.T) {
 			Status: "planned-build-tagged",
 		},
 	})
-	descriptorRuntime := New(func(runtime *runtime) {
-		runtime.codecs = descriptorOnly
+	descriptorRuntime := MustNew(func(config *Config) error {
+		config.Codecs = descriptorOnly
+		return nil
 	})
 
 	tests := []struct {
@@ -1799,7 +1795,7 @@ func TestKnownInputDecodeAdapterPassesRejectMissingDecoders(t *testing.T) {
 			state: recipeCompileState{
 				operation: "build job",
 				options:   recipeCompileOptions{preflightDecodeAdapters: true},
-				runtime:   New(),
+				runtime:   MustNew(),
 				intent: intent{Streams: []streamIntent{{
 					Name:       "audio",
 					Select:     plan.StreamSelect{Type: av.MediaAudio},
@@ -1851,7 +1847,7 @@ func TestKnownInputDecodeAdapterPassesRejectMissingDecoders(t *testing.T) {
 			state: recipeCompileState{
 				operation: branchCompositionOperation,
 				options:   recipeCompileOptions{preflightDecodeAdapters: true},
-				runtime:   New(),
+				runtime:   MustNew(),
 				intent: intent{Streams: []streamIntent{{
 					Name:         "360p",
 					Select:       plan.StreamSelect{Type: av.MediaVideo},
@@ -1894,7 +1890,7 @@ func TestKnownInputDecodeAdapterPassDefersAmbiguousSelection(t *testing.T) {
 	state := recipeCompileState{
 		operation: "build job",
 		options:   recipeCompileOptions{preflightDecodeAdapters: true},
-		runtime:   New(),
+		runtime:   MustNew(),
 		intent: intent{Streams: []streamIntent{{
 			Name:       "audio",
 			Select:     plan.StreamSelect{Type: av.MediaAudio},
@@ -1928,7 +1924,7 @@ func TestDecodeAdapterPassesRejectIncompatibleDescriptors(t *testing.T) {
 			state: recipeCompileState{
 				operation: "build job",
 				options:   recipeCompileOptions{preflightDecodeAdapters: true},
-				runtime: New(withTestCodecs(testCodecDecoder(codec.Descriptor{
+				runtime: MustNew(withTestCodecs(testCodecDecoder(codec.Descriptor{
 					ID:   audioCodec,
 					Type: av.MediaVideo,
 				}, &decodeTestDecoderFactory{decoder: &decodeTestDecoder{}}))),
@@ -1954,7 +1950,7 @@ func TestDecodeAdapterPassesRejectIncompatibleDescriptors(t *testing.T) {
 			state: recipeCompileState{
 				operation: "build job",
 				options:   recipeCompileOptions{preflightDecodeAdapters: true},
-				runtime: New(withTestCodecs(testCodecDecoder(codec.Descriptor{
+				runtime: MustNew(withTestCodecs(testCodecDecoder(codec.Descriptor{
 					ID:   audioCodec,
 					Type: av.MediaAudio,
 					Capabilities: codec.Capabilities{
@@ -1988,7 +1984,7 @@ func TestDecodeAdapterPassesRejectIncompatibleDescriptors(t *testing.T) {
 			state: recipeCompileState{
 				operation: branchCompositionOperation,
 				options:   recipeCompileOptions{preflightDecodeAdapters: true},
-				runtime: New(withTestCodecs(testCodecDecoder(codec.Descriptor{
+				runtime: MustNew(withTestCodecs(testCodecDecoder(codec.Descriptor{
 					ID:   videoCodec,
 					Type: av.MediaVideo,
 					Capabilities: codec.Capabilities{
@@ -2046,8 +2042,9 @@ func TestEncodeAdapterPassesRejectMissingEncoders(t *testing.T) {
 			Status: "descriptor-only",
 		},
 	})
-	descriptorRuntime := New(func(runtime *runtime) {
-		runtime.codecs = descriptorOnly
+	descriptorRuntime := MustNew(func(config *Config) error {
+		config.Codecs = descriptorOnly
+		return nil
 	})
 
 	tests := []struct {
@@ -2064,7 +2061,7 @@ func TestEncodeAdapterPassesRejectMissingEncoders(t *testing.T) {
 			state: recipeCompileState{
 				operation: "build job",
 				options:   recipeCompileOptions{preflightEncodeAdapters: true},
-				runtime:   New(),
+				runtime:   MustNew(),
 				intent: intent{Streams: []streamIntent{{
 					Name:       "audio",
 					Operations: encodeIntentOperations(codec.Opus(codec.Bitrate(96_000))),
@@ -2122,7 +2119,7 @@ func TestEncodeAdapterPassesRejectIncompatibleDescriptors(t *testing.T) {
 			state: recipeCompileState{
 				operation: "build job",
 				options:   recipeCompileOptions{preflightEncodeAdapters: true},
-				runtime: New(withTestCodecs(testCodecEncoder(codec.Descriptor{
+				runtime: MustNew(withTestCodecs(testCodecEncoder(codec.Descriptor{
 					ID:   audioCodec,
 					Type: av.MediaVideo,
 				}, &encodeTestEncoderFactory{}))),
@@ -2140,7 +2137,7 @@ func TestEncodeAdapterPassesRejectIncompatibleDescriptors(t *testing.T) {
 			state: recipeCompileState{
 				operation: branchCompositionOperation,
 				options:   recipeCompileOptions{preflightEncodeAdapters: true},
-				runtime: New(withTestCodecs(testCodecEncoder(codec.Descriptor{
+				runtime: MustNew(withTestCodecs(testCodecEncoder(codec.Descriptor{
 					ID:   audioCodec,
 					Type: av.MediaAudio,
 					Capabilities: codec.Capabilities{
@@ -2165,7 +2162,7 @@ func TestEncodeAdapterPassesRejectIncompatibleDescriptors(t *testing.T) {
 			state: recipeCompileState{
 				operation: branchCompositionOperation,
 				options:   recipeCompileOptions{preflightEncodeAdapters: true},
-				runtime: New(withTestCodecs(testCodecEncoder(codec.Descriptor{
+				runtime: MustNew(withTestCodecs(testCodecEncoder(codec.Descriptor{
 					ID:   videoCodec,
 					Type: av.MediaVideo,
 					Capabilities: codec.Capabilities{
@@ -2216,14 +2213,14 @@ func TestTransformAdapterPassesRejectMissingFilters(t *testing.T) {
 			state: recipeCompileState{
 				operation: "build job",
 				options:   recipeCompileOptions{preflightTransformAdapters: true},
-				runtime:   New(),
+				runtime:   MustNew(),
 				intent: intent{Streams: []streamIntent{{
 					Name:       "audio",
 					Select:     plan.StreamSelect{Type: av.MediaAudio},
 					Operations: []operationSpec{operationSpecForTransform(Resample(16_000, codec.Mono))},
 				}}},
 			},
-			want: []string{"no resample filter adapter", "transform=resample", "goav.Default", ".Resample"},
+			want: []string{"no resample filter adapter", "transform=resample", "std.MustNewFilters", ".Resample"},
 		},
 		{
 			name: "transcode missing resize filter",
@@ -2231,14 +2228,14 @@ func TestTransformAdapterPassesRejectMissingFilters(t *testing.T) {
 			state: recipeCompileState{
 				operation: branchCompositionOperation,
 				options:   recipeCompileOptions{preflightTransformAdapters: true},
-				runtime:   New(),
+				runtime:   MustNew(),
 				intent: intent{Streams: []streamIntent{{
 					Name:       "720p",
 					Select:     plan.StreamSelect{Type: av.MediaVideo},
 					Operations: []operationSpec{operationSpecForTransform(Resize(1280, 720))},
 				}}},
 			},
-			want: []string{"no resize filter adapter", "transform=resize", "goav.Default", ".Resize"},
+			want: []string{"no resize filter adapter", "transform=resize", "std.MustNewFilters", ".Resize"},
 		},
 	}
 	for _, tt := range tests {
@@ -2270,7 +2267,7 @@ func TestTransformAdapterPassesRejectIncompatibleDescriptors(t *testing.T) {
 			state: recipeCompileState{
 				operation: "build job",
 				options:   recipeCompileOptions{preflightTransformAdapters: true},
-				runtime: New(withTestFilters(testFilterFactory(filter.Descriptor{
+				runtime: MustNew(withTestFilters(testFilterFactory(filter.Descriptor{
 					Name:   filter.FactoryResample,
 					Input:  av.MediaVideo,
 					Output: av.MediaVideo,
@@ -2289,7 +2286,7 @@ func TestTransformAdapterPassesRejectIncompatibleDescriptors(t *testing.T) {
 			state: recipeCompileState{
 				operation: branchCompositionOperation,
 				options:   recipeCompileOptions{preflightTransformAdapters: true},
-				runtime: New(withTestFilters(testFilterFactory(filter.Descriptor{
+				runtime: MustNew(withTestFilters(testFilterFactory(filter.Descriptor{
 					Name:   filter.FactoryResize,
 					Input:  av.MediaAudio,
 					Output: av.MediaAudio,
@@ -2308,7 +2305,7 @@ func TestTransformAdapterPassesRejectIncompatibleDescriptors(t *testing.T) {
 			state: recipeCompileState{
 				operation: "build job",
 				options:   recipeCompileOptions{preflightTransformAdapters: true},
-				runtime: New(withTestFilters(testFilterFactory(filter.Descriptor{
+				runtime: MustNew(withTestFilters(testFilterFactory(filter.Descriptor{
 					Name:        filter.FactoryResize,
 					Input:       av.MediaVideo,
 					Output:      av.MediaVideo,
@@ -2328,7 +2325,7 @@ func TestTransformAdapterPassesRejectIncompatibleDescriptors(t *testing.T) {
 			state: recipeCompileState{
 				operation: branchCompositionOperation,
 				options:   recipeCompileOptions{preflightTransformAdapters: true},
-				runtime: New(withTestFilters(testFilterFactory(filter.Descriptor{
+				runtime: MustNew(withTestFilters(testFilterFactory(filter.Descriptor{
 					Name:         filter.FactoryResize,
 					Input:        av.MediaVideo,
 					Output:       av.MediaVideo,
@@ -2356,7 +2353,7 @@ func TestTransformAdapterPassesRejectIncompatibleDescriptors(t *testing.T) {
 			state: recipeCompileState{
 				operation: "build job",
 				options:   recipeCompileOptions{preflightTransformAdapters: true},
-				runtime: New(withTestFilters(testFilterFactory(filter.Descriptor{
+				runtime: MustNew(withTestFilters(testFilterFactory(filter.Descriptor{
 					Name:          filter.FactoryResample,
 					Input:         av.MediaAudio,
 					Output:        av.MediaAudio,
@@ -2502,22 +2499,25 @@ func TestShapeErrorsReportExpectedAndActualShape(t *testing.T) {
 		},
 		{
 			name: "branch resample on video",
-			pass: validateBranchCompositionIntentShapePass(),
+			pass: validateRecipeOperationShapesPass(),
 			state: recipeCompileState{
 				operation: branchCompositionOperation,
 				intent: intent{
 					Inputs: []inputIntent{{Name: "input"}},
 					Streams: []streamIntent{{
-						Name:         "video",
-						Select:       plan.StreamSelect{Type: av.MediaVideo},
-						Operations:   append([]operationSpec{operationSpecForTransform(Resample(48_000, codec.Stereo))}, operationSpecForEncode(codec.VP9(codec.Bitrate(2_000_000)))),
+						Name:   "video",
+						Select: plan.StreamSelect{Type: av.MediaVideo},
+						Operations: append(
+							append(decodeIntentOperations(), operationSpecForTransform(Resample(48_000, codec.Stereo))),
+							operationSpecForEncode(codec.VP9(codec.Bitrate(2_000_000))),
+						),
 						Destinations: []string{"web"},
 					}},
 					Destinations: []destinationIntent{{Name: "web"}},
 				},
 			},
-			code: "transform_media_mismatch",
-			want: []string{"resample applies to audio branches", "expected_shape=domain=frame media=audio", "actual_shape=domain=frame media=video"},
+			code: "operation_shape_mismatch",
+			want: []string{"resample cannot consume the current media shape", "expected_shape=domain=frame media=audio", "actual_shape=domain=frame media=video"},
 		},
 	}
 	for _, tt := range tests {
@@ -2714,17 +2714,16 @@ func TestRecipeDestinationShapePassAllowsFrameShapeForSinkDestination(t *testing
 	}
 }
 
-func TestRecipeRuntimePassRejectsCustomRuntime(t *testing.T) {
+func TestRecipeRuntimePassRejectsNilRuntime(t *testing.T) {
 	state := recipeCompileState{
 		operation: "build job",
-		runtime:   stubRuntime{},
 	}
 	err := validateRecipeRuntimePass().Apply(&state)
 	var buildErr *BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "runtime_unsupported" || !errors.Is(err, ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want runtime_unsupported wrapping ErrUnsupportedBuild", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "runtime_missing" || !errors.Is(err, ErrUnsupportedBuild) {
+		t.Fatalf("err = %v, want runtime_missing wrapping ErrUnsupportedBuild", err)
 	}
-	for _, want := range []string{"recipe compilation requires a goav runtime", "goav.Default", "goav.New", "expert.Graph"} {
+	for _, want := range []string{"no runtime is configured", "std.MustNew", "goav.MustNew"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Fatalf("err = %v, want %q", err, want)
 		}
@@ -3543,7 +3542,7 @@ func TestRecipeResolvedBuildUsesMediaPlanBranchComposer(t *testing.T) {
 	ctx := context.Background()
 	streams := []av.Stream{audioOpusTestStream()}
 	demuxer := &decodeTestDemuxer{streams: streams}
-	runtime := New(
+	runtime := MustNew(
 		withTestFormats(
 			testFormatProber(remuxTestProber{streams: streams}),
 			testFormatDemuxer(av.FormatOgg, decodeTestDemuxerFactory{demuxer: demuxer}),
@@ -3615,7 +3614,7 @@ func TestBranchComposeLowererUsesPlanInputOperationNodes(t *testing.T) {
 	ctx := context.Background()
 	streams := []av.Stream{audioOpusTestStream()}
 	demuxer := &decodeTestDemuxer{streams: streams}
-	runtime := New(
+	runtime := MustNew(
 		withTestFormats(
 			testFormatProber(remuxTestProber{streams: streams}),
 			testFormatDemuxer(av.FormatOgg, decodeTestDemuxerFactory{demuxer: demuxer}),
@@ -3658,7 +3657,7 @@ func TestBranchComposeLowererUsesPlanSharedStepOperationNodes(t *testing.T) {
 	ctx := context.Background()
 	streams := []av.Stream{audioOpusTestStream()}
 	demuxer := &decodeTestDemuxer{streams: streams}
-	runtime := New(
+	runtime := MustNew(
 		withTestFormats(
 			testFormatProber(remuxTestProber{streams: streams}),
 			testFormatDemuxer(av.FormatOgg, decodeTestDemuxerFactory{demuxer: demuxer}),
@@ -3706,7 +3705,7 @@ func TestBranchComposeLowererUsesPlanPrivateStepAndEncodeOperationNodes(t *testi
 	ctx := context.Background()
 	streams := []av.Stream{audioOpusTestStream()}
 	demuxer := &decodeTestDemuxer{streams: streams}
-	runtime := New(
+	runtime := MustNew(
 		withTestFormats(
 			testFormatProber(remuxTestProber{streams: streams}),
 			testFormatDemuxer(av.FormatOgg, decodeTestDemuxerFactory{demuxer: demuxer}),
@@ -3760,7 +3759,7 @@ func TestBranchComposeLowererUsesPlanDestinationOperationNodes(t *testing.T) {
 	ctx := context.Background()
 	streams := []av.Stream{audioOpusTestStream()}
 	demuxer := &decodeTestDemuxer{streams: streams}
-	runtime := New(
+	runtime := MustNew(
 		withTestFormats(
 			testFormatProber(remuxTestProber{streams: streams}),
 			testFormatDemuxer(av.FormatOgg, decodeTestDemuxerFactory{demuxer: demuxer}),
@@ -3970,7 +3969,7 @@ func TestBranchComposeLowererRequiresDestinationOperationsBeforeSources(t *testi
 func TestRecipeResolvedBuildUsesMediaPlanPacketCopy(t *testing.T) {
 	job := From(
 		Input(liveVideoVP8Provider("video")),
-	).Copy().To(destinationHandle(fileDestination("recording.ivf", io.Discard)))
+	).Copy().To(destinationHandle(fileDestination("recording.ivf", io.Discard))).UseRuntime(testStdRuntime())
 
 	resolved, err := compileJobRecipe(job)
 	if err != nil {
@@ -3996,7 +3995,7 @@ func TestStreamGraphLowererUsesPlanPacketCopyDestinationOperationNodes(t *testin
 	ctx := context.Background()
 	streams := []av.Stream{audioOpusTestStream()}
 	demuxer := &decodeTestDemuxer{streams: streams}
-	runtime := New(
+	runtime := MustNew(
 		withTestFormats(
 			testFormatProber(remuxTestProber{streams: streams}),
 			testFormatDemuxer(av.FormatOgg, decodeTestDemuxerFactory{demuxer: demuxer}),
@@ -4038,7 +4037,7 @@ func TestSelectedPacketCopyLowererUsesPlanSelectOperationNode(t *testing.T) {
 	ctx := context.Background()
 	streams := []av.Stream{audioOpusTestStream()}
 	demuxer := &decodeTestDemuxer{streams: streams}
-	runtime := New(
+	runtime := MustNew(
 		withTestFormats(
 			testFormatProber(remuxTestProber{streams: streams}),
 			testFormatDemuxer(av.FormatOgg, decodeTestDemuxerFactory{demuxer: demuxer}),
@@ -4205,7 +4204,7 @@ func TestPacketCopyLowererPreservesAllStreamsForSingleSourceRemux(t *testing.T) 
 	streams := []av.Stream{audioOpusTestStream(), videoVP8TranscodeTestStream()}
 	demuxer := &decodeTestDemuxer{streams: streams}
 	muxers := &remuxTestMuxerFactory{}
-	runtime := New(
+	runtime := MustNew(
 		withTestFormats(
 			testFormatProber(remuxTestProber{streams: streams}),
 			testFormatDemuxer(av.FormatOgg, decodeTestDemuxerFactory{demuxer: demuxer}),
@@ -4230,7 +4229,7 @@ func TestRecipeResolvedBuildUsesMediaPlanFileSinkDestination(t *testing.T) {
 	ctx := context.Background()
 	streams := []av.Stream{audioOpusTestStream()}
 	demuxer := &decodeTestDemuxer{streams: streams}
-	runtime := New(
+	runtime := MustNew(
 		withTestFormats(
 			testFormatProber(remuxTestProber{streams: streams}),
 			testFormatDemuxer(av.FormatOgg, decodeTestDemuxerFactory{demuxer: demuxer}),
@@ -4265,7 +4264,7 @@ func TestStreamGraphLowererUsesPlanDecodedSinkDestinationOperationNode(t *testin
 	ctx := context.Background()
 	streams := []av.Stream{audioOpusTestStream()}
 	demuxer := &decodeTestDemuxer{streams: streams}
-	runtime := New(
+	runtime := MustNew(
 		withTestFormats(
 			testFormatProber(remuxTestProber{streams: streams}),
 			testFormatDemuxer(av.FormatOgg, decodeTestDemuxerFactory{demuxer: demuxer}),
@@ -4303,7 +4302,7 @@ func TestStreamGraphLowererUsesPlanSelectDecodeFilterOperationNodes(t *testing.T
 	ctx := context.Background()
 	streams := []av.Stream{audioOpusTestStream()}
 	demuxer := &decodeTestDemuxer{streams: streams}
-	runtime := New(
+	runtime := MustNew(
 		withTestFormats(
 			testFormatProber(remuxTestProber{streams: streams}),
 			testFormatDemuxer(av.FormatOgg, decodeTestDemuxerFactory{demuxer: demuxer}),
@@ -4424,7 +4423,7 @@ func TestRecipeResolvedMediaPlanSinkDestinationPreservesCustomStage(t *testing.T
 	ctx := context.Background()
 	streams := []av.Stream{audioOpusTestStream()}
 	demuxer := &decodeTestDemuxer{streams: streams}
-	runtime := New(
+	runtime := MustNew(
 		withTestFormats(
 			testFormatProber(remuxTestProber{streams: streams}),
 			testFormatDemuxer(av.FormatOgg, decodeTestDemuxerFactory{demuxer: demuxer}),
@@ -4455,7 +4454,7 @@ func TestRecipeResolvedMediaPlanSinkDestinationPreservesCustomStage(t *testing.T
 
 func TestRecipeResolvedBuildUsesMediaPlanRTPSinkDestination(t *testing.T) {
 	ctx := context.Background()
-	runtime := New(withTestCodecs(testCodecDecoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &decodeTestDecoderFactory{decoder: &decodeTestDecoder{}})))
+	runtime := MustNew(withTestCodecs(testCodecDecoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &decodeTestDecoderFactory{decoder: &decodeTestDecoder{}})))
 	job := From(Input(liveAudioOpusProvider("audio"))).UseRuntime(runtime).
 		Audio().
 		Decode().
@@ -4484,7 +4483,7 @@ func TestRecipeResolvedBuildUsesMediaPlanSelectedPacketSinkDestination(t *testin
 	ctx := context.Background()
 	streams := []av.Stream{audioOpusTestStream()}
 	demuxer := &decodeTestDemuxer{streams: streams}
-	runtime := New(
+	runtime := MustNew(
 		withTestFormats(
 			testFormatProber(remuxTestProber{streams: streams}),
 			testFormatDemuxer(av.FormatOgg, decodeTestDemuxerFactory{demuxer: demuxer}),
@@ -4518,7 +4517,7 @@ func TestSelectedPacketCopyLowererRequiresSelectOperationBeforeSources(t *testin
 	ctx := context.Background()
 	streams := []av.Stream{audioOpusTestStream()}
 	demuxer := &decodeTestDemuxer{streams: streams}
-	runtime := New(
+	runtime := MustNew(
 		withTestFormats(
 			testFormatProber(remuxTestProber{streams: streams}),
 			testFormatDemuxer(av.FormatOgg, decodeTestDemuxerFactory{demuxer: demuxer}),
@@ -4550,7 +4549,7 @@ func TestSelectedPacketCopyLowererRequiresCopyOperationBeforeSources(t *testing.
 	ctx := context.Background()
 	streams := []av.Stream{audioOpusTestStream()}
 	demuxer := &decodeTestDemuxer{streams: streams}
-	runtime := New(
+	runtime := MustNew(
 		withTestFormats(
 			testFormatProber(remuxTestProber{streams: streams}),
 			testFormatDemuxer(av.FormatOgg, decodeTestDemuxerFactory{demuxer: demuxer}),
@@ -4582,7 +4581,7 @@ func TestSelectedPacketCopyLowererRequiresSingleBranchOperationSet(t *testing.T)
 	ctx := context.Background()
 	streams := []av.Stream{audioOpusTestStream()}
 	demuxer := &decodeTestDemuxer{streams: streams}
-	runtime := New(
+	runtime := MustNew(
 		withTestFormats(
 			testFormatProber(remuxTestProber{streams: streams}),
 			testFormatDemuxer(av.FormatOgg, decodeTestDemuxerFactory{demuxer: demuxer}),
@@ -4618,7 +4617,7 @@ func TestRecipeResolvedBuildUsesMediaPlanFileEncodeOutput(t *testing.T) {
 	ctx := context.Background()
 	streams := []av.Stream{audioOpusTestStream()}
 	demuxer := &decodeTestDemuxer{streams: streams}
-	runtime := New(
+	runtime := MustNew(
 		withTestFormats(
 			testFormatProber(remuxTestProber{streams: streams}),
 			testFormatDemuxer(av.FormatOgg, decodeTestDemuxerFactory{demuxer: demuxer}),
@@ -4663,7 +4662,7 @@ func TestStreamGraphLowererUsesPlanEncodedDestinationOperationNodes(t *testing.T
 	ctx := context.Background()
 	streams := []av.Stream{audioOpusTestStream()}
 	demuxer := &decodeTestDemuxer{streams: streams}
-	runtime := New(
+	runtime := MustNew(
 		withTestFormats(
 			testFormatProber(remuxTestProber{streams: streams}),
 			testFormatDemuxer(av.FormatOgg, decodeTestDemuxerFactory{demuxer: demuxer}),
@@ -4710,7 +4709,7 @@ func TestStreamGraphLowererUsesPlanEncodeOperationNode(t *testing.T) {
 	ctx := context.Background()
 	streams := []av.Stream{audioOpusTestStream()}
 	demuxer := &decodeTestDemuxer{streams: streams}
-	runtime := New(
+	runtime := MustNew(
 		withTestFormats(
 			testFormatProber(remuxTestProber{streams: streams}),
 			testFormatDemuxer(av.FormatOgg, decodeTestDemuxerFactory{demuxer: demuxer}),
@@ -4776,7 +4775,7 @@ func TestEncodedFrameStreamLowererRequiresEncodeOperationBeforeSources(t *testin
 func TestMediaPlanDirectStreamUsesResolvedAttachments(t *testing.T) {
 	ctx := context.Background()
 	streams := []av.Stream{audioOpusTestStream()}
-	runtime := New(
+	runtime := MustNew(
 		withTestFormats(
 			testFormatProber(remuxTestProber{streams: streams}),
 			testFormatDemuxer(av.FormatOgg, decodeTestDemuxerFactory{demuxer: &decodeTestDemuxer{streams: streams}}),
@@ -4832,7 +4831,7 @@ func TestRecipeResolvedBuildUsesMediaPlanFileEncodeSinkDestination(t *testing.T)
 	ctx := context.Background()
 	streams := []av.Stream{audioOpusTestStream()}
 	demuxer := &decodeTestDemuxer{streams: streams}
-	runtime := New(
+	runtime := MustNew(
 		withTestFormats(
 			testFormatProber(remuxTestProber{streams: streams}),
 			testFormatDemuxer(av.FormatOgg, decodeTestDemuxerFactory{demuxer: demuxer}),
@@ -4875,7 +4874,7 @@ func TestRecipeResolvedBuildUsesMediaPlanEncodeMuxAndSinkDestinations(t *testing
 	ctx := context.Background()
 	streams := []av.Stream{audioOpusTestStream()}
 	demuxer := &decodeTestDemuxer{streams: streams}
-	runtime := New(
+	runtime := MustNew(
 		withTestFormats(
 			testFormatProber(remuxTestProber{streams: streams}),
 			testFormatDemuxer(av.FormatOgg, decodeTestDemuxerFactory{demuxer: demuxer}),
@@ -4920,7 +4919,7 @@ func TestRecipeResolvedBuildUsesMediaPlanEncodeMuxAndSinkDestinations(t *testing
 
 func TestRecipeResolvedBuildUsesMediaPlanRTPEncodeOutput(t *testing.T) {
 	ctx := context.Background()
-	runtime := New(
+	runtime := MustNew(
 		withTestFormats(
 			testFormatProber(remuxTestProber{}),
 			testFormatMuxer(av.FormatOgg, &remuxTestMuxerFactory{}),

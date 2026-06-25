@@ -12,8 +12,11 @@ import (
 	"github.com/thesyncim/goav"
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
+	"github.com/thesyncim/goav/control"
 	"github.com/thesyncim/goav/errcode"
+	"github.com/thesyncim/goav/inspect"
 	"github.com/thesyncim/goav/shape"
+	"github.com/thesyncim/goav/std"
 )
 
 // pcmSource returns a custom frame-domain input that pushes one S16 PCM frame
@@ -127,6 +130,7 @@ func ExampleFrom() {
 			}
 			return nil
 		}))).
+		UseRuntime(std.MustNew()).
 		Run(ctx)
 
 	fmt.Println(err, encoded)
@@ -172,6 +176,7 @@ func ExampleFrom_autoResample() {
 		Auto(shape.AllowResample()).
 		Encode(codec.Opus(codec.Bitrate(96_000))).
 		To(goav.File("voice.webm", io.Discard)).
+		UseRuntime(std.MustNew()).
 		Explain(context.Background())
 	if err != nil {
 		fmt.Println(err)
@@ -282,7 +287,7 @@ func ExampleSelect() {
 	go func() { _ = task.Run(ctx) }()
 
 	// The first arm is live by default; switch to the second mid-run.
-	if err := task.Control(ctx, goav.SelectActive("cam-2")); err != nil {
+	if err := task.Control(ctx, control.SelectActive("cam-2")); err != nil {
 		fmt.Println(err)
 	}
 }
@@ -390,10 +395,10 @@ func ExampleTask_control() {
 
 	go func() { _ = task.Run(ctx) }()
 
-	for _, control := range []goav.Control{
-		goav.Keyframe("video"),            // every live encoder for the stream produces a keyframe
-		goav.SetBitrate("video", 900_000), // live encoders retarget mid-stream
-		goav.Seek(30 * time.Second),       // sources reposition to a media position
+	for _, control := range []control.Control{
+		control.Keyframe("video"),            // every live encoder for the stream produces a keyframe
+		control.SetBitrate("video", 900_000), // live encoders retarget mid-stream
+		control.Seek(30 * time.Second),       // sources reposition to a media position
 	} {
 		if err := task.Control(ctx, control); err != nil {
 			fmt.Println(err)
@@ -415,7 +420,7 @@ func ExampleTask_watch() {
 		return
 	}
 
-	eos := task.Watch(goav.WatchTypes(av.EventEndOfStream))
+	eos := task.Watch(inspect.WatchTypes(av.EventEndOfStream))
 
 	if err := task.Run(ctx); err != nil {
 		fmt.Println(err)

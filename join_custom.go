@@ -151,7 +151,7 @@ func (s *joinStream) To(destinations ...Destination) *Job {
 // resolveJoinProfile at plan time.
 func (s *joinStream) refuse(spec joinSpec) (*Job, bool) {
 	if _, err := customJoinProfile(spec.custom); err != nil {
-		job := &Job{name: firstNonEmpty(s.name, "join"), runtime: Default()}
+		job := newJob(firstNonEmpty(s.name, "join"))
 		job.setErr(err)
 		return job, true
 	}

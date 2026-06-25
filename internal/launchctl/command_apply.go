@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/thesyncim/goav/control"
 	"io"
 	"sort"
 	"strconv"
@@ -159,12 +160,12 @@ type DeliverCommand struct {
 	Metadata av.Metadata  `goavctl:"metadata" usage:"[metadata.<key>=<value>...]" help:"string metadata entries to carry on the event"`
 }
 
-func applyKeyframe(ctx context.Context, task goav.Task, args any) (ControlResponse, error) {
+func applyKeyframe(ctx context.Context, task goav.LiveTask, args any) (ControlResponse, error) {
 	cmd := args.(KeyframeCommand)
 	if err := ensureTap(task, "control keyframe", cmd.At); err != nil {
 		return ControlResponse{}, err
 	}
-	ctrl := goav.Keyframe(cmd.Stream)
+	ctrl := control.Keyframe(cmd.Stream)
 	if cmd.At != "" {
 		ctrl = ctrl.AtTap(cmd.At)
 	}
@@ -174,12 +175,12 @@ func applyKeyframe(ctx context.Context, task goav.Task, args any) (ControlRespon
 	return ControlResponse{Operation: "control keyframe", Result: map[string]any{"stream": cmd.Stream, "at": cmd.At}}, nil
 }
 
-func applyBitrate(ctx context.Context, task goav.Task, args any) (ControlResponse, error) {
+func applyBitrate(ctx context.Context, task goav.LiveTask, args any) (ControlResponse, error) {
 	cmd := args.(BitrateCommand)
 	if err := ensureTap(task, "control bitrate", cmd.At); err != nil {
 		return ControlResponse{}, err
 	}
-	ctrl := goav.SetBitrate(cmd.Stream, cmd.Value)
+	ctrl := control.SetBitrate(cmd.Stream, cmd.Value)
 	if cmd.At != "" {
 		ctrl = ctrl.AtTap(cmd.At)
 	}
@@ -189,9 +190,9 @@ func applyBitrate(ctx context.Context, task goav.Task, args any) (ControlRespons
 	return ControlResponse{Operation: "control bitrate", Result: map[string]any{"stream": cmd.Stream, "value": cmd.Value, "at": cmd.At}}, nil
 }
 
-func applySeek(ctx context.Context, task goav.Task, args any) (ControlResponse, error) {
+func applySeek(ctx context.Context, task goav.LiveTask, args any) (ControlResponse, error) {
 	cmd := args.(SeekCommand)
-	ctrl := goav.Seek(cmd.Position)
+	ctrl := control.Seek(cmd.Position)
 	var err error
 	ctrl, err = applySourceOrNodeTarget(task, "control seek", ctrl, cmd.Source, cmd.Node)
 	if err != nil {
@@ -203,9 +204,9 @@ func applySeek(ctx context.Context, task goav.Task, args any) (ControlResponse, 
 	return ControlResponse{Operation: "control seek", Result: map[string]any{"position": cmd.Position.String()}}, nil
 }
 
-func applyRate(ctx context.Context, task goav.Task, args any) (ControlResponse, error) {
+func applyRate(ctx context.Context, task goav.LiveTask, args any) (ControlResponse, error) {
 	cmd := args.(RateCommand)
-	ctrl := goav.Rate(cmd.Value)
+	ctrl := control.Rate(cmd.Value)
 	var err error
 	ctrl, err = applySourceOrNodeTarget(task, "control rate", ctrl, cmd.Source, cmd.Node)
 	if err != nil {
@@ -217,9 +218,9 @@ func applyRate(ctx context.Context, task goav.Task, args any) (ControlResponse, 
 	return ControlResponse{Operation: "control rate", Result: map[string]any{"value": cmd.Value}}, nil
 }
 
-func applySegment(ctx context.Context, task goav.Task, args any) (ControlResponse, error) {
+func applySegment(ctx context.Context, task goav.LiveTask, args any) (ControlResponse, error) {
 	cmd := args.(SegmentCommand)
-	ctrl := goav.Segment(cmd.Start, cmd.End)
+	ctrl := control.Segment(cmd.Start, cmd.End)
 	var err error
 	ctrl, err = applySourceOrNodeTarget(task, "control segment", ctrl, cmd.Source, cmd.Node)
 	if err != nil {
@@ -231,7 +232,7 @@ func applySegment(ctx context.Context, task goav.Task, args any) (ControlRespons
 	return ControlResponse{Operation: "control segment", Result: map[string]any{"start": cmd.Start.String(), "end": cmd.End.String()}}, nil
 }
 
-func applySelect(ctx context.Context, task goav.Task, args any) (ControlResponse, error) {
+func applySelect(ctx context.Context, task goav.LiveTask, args any) (ControlResponse, error) {
 	cmd := args.(SelectCommand)
 	if cmd.Selector != "" && cmd.At != "" {
 		return ControlResponse{}, commandError(
@@ -244,7 +245,7 @@ func applySelect(ctx context.Context, task goav.Task, args any) (ControlResponse
 			nil,
 		)
 	}
-	ctrl := goav.SelectActive(cmd.Active)
+	ctrl := control.SelectActive(cmd.Active)
 	if cmd.Selector != "" {
 		if err := ensureNode(task, "control select", cmd.Selector); err != nil {
 			return ControlResponse{}, err
@@ -262,7 +263,7 @@ func applySelect(ctx context.Context, task goav.Task, args any) (ControlResponse
 	return ControlResponse{Operation: "control select", Result: map[string]any{"active": cmd.Active, "selector": cmd.Selector, "at": cmd.At}}, nil
 }
 
-func applyDeliver(ctx context.Context, task goav.Task, args any) (ControlResponse, error) {
+func applyDeliver(ctx context.Context, task goav.LiveTask, args any) (ControlResponse, error) {
 	cmd := args.(DeliverCommand)
 	if cmd.At == "" {
 		return ControlResponse{}, commandError(
@@ -279,7 +280,7 @@ func applyDeliver(ctx context.Context, task goav.Task, args any) (ControlRespons
 		return ControlResponse{}, err
 	}
 	event := av.Event{Type: cmd.Type, StreamID: cmd.Stream, Reason: cmd.Reason, Metadata: cloneMetadata(cmd.Metadata)}
-	ctrl := goav.Deliver(event).AtTap(cmd.At)
+	ctrl := control.Deliver(event).AtTap(cmd.At)
 	if err := task.Control(ctx, ctrl); err != nil {
 		return ControlResponse{}, structuredError("control deliver", err)
 	}
@@ -287,7 +288,7 @@ func applyDeliver(ctx context.Context, task goav.Task, args any) (ControlRespons
 }
 
 // Invoke binds args for one allowlisted spec and applies it.
-func Invoke(ctx context.Context, task goav.Task, spec CommandSpec, args []string) (ControlResponse, error) {
+func Invoke(ctx context.Context, task goav.LiveTask, spec CommandSpec, args []string) (ControlResponse, error) {
 	bound, err := BindArgs(spec, args)
 	if err != nil {
 		return ControlResponse{}, err
@@ -298,7 +299,7 @@ func Invoke(ctx context.Context, task goav.Task, spec CommandSpec, args []string
 	return spec.Apply(ctx, task, bound)
 }
 
-func executeRawControl(ctx context.Context, task goav.Task, data []byte) (ControlResponse, error) {
+func executeRawControl(ctx context.Context, task goav.LiveTask, data []byte) (ControlResponse, error) {
 	ctrl, err := DecodeRawControl(data)
 	if err != nil {
 		return ControlResponse{}, err
@@ -306,7 +307,7 @@ func executeRawControl(ctx context.Context, task goav.Task, data []byte) (Contro
 	if err := ensureTap(task, "control --json", ctrl.Tap); err != nil {
 		return ControlResponse{}, err
 	}
-	if ctrl.Type == goav.ControlEvent && ctrl.Tap == "" && ctrl.Node == "" {
+	if ctrl.Type == control.EventType && ctrl.Tap == "" && ctrl.Node == "" {
 		return ControlResponse{}, commandError(
 			"missing_target",
 			"control --json",
@@ -323,7 +324,7 @@ func executeRawControl(ctx context.Context, task goav.Task, data []byte) (Contro
 	return ControlResponse{Operation: "control --json", Result: map[string]any{"type": ctrl.Type, "stream": ctrl.StreamID, "tap": ctrl.Tap}}, nil
 }
 
-func executeRawEvent(ctx context.Context, task goav.Task, data []byte, args []string) (ControlResponse, error) {
+func executeRawEvent(ctx context.Context, task goav.LiveTask, data []byte, args []string) (ControlResponse, error) {
 	event, err := DecodeRawEvent(data)
 	if err != nil {
 		return ControlResponse{}, err
@@ -356,96 +357,96 @@ func executeRawEvent(ctx context.Context, task goav.Task, data []byte, args []st
 }
 
 // DecodeRawControl decodes the explicit raw JSON fallback into the real
-// goav.Control shape. It does not introduce a second control model.
-func DecodeRawControl(data []byte) (goav.Control, error) {
+// control.Control shape. It does not introduce a second control model.
+func DecodeRawControl(data []byte) (control.Control, error) {
 	obj, err := decodeObject(data)
 	if err != nil {
-		return goav.Control{}, commandError("invalid_json", "control --json", "", err.Error(), nil, nil, err)
+		return control.Control{}, commandError("invalid_json", "control --json", "", err.Error(), nil, nil, err)
 	}
-	typ := goav.ControlType(fieldString(obj, "type"))
+	typ := control.Type(fieldString(obj, "type"))
 	if typ == "" {
-		return goav.Control{}, commandError("missing_required", "control --json", "type", "raw control JSON needs type", nil, []string{`include "type":"bitrate"`}, nil)
+		return control.Control{}, commandError("missing_required", "control --json", "type", "raw control JSON needs type", nil, []string{`include "type":"bitrate"`}, nil)
 	}
-	var ctrl goav.Control
+	var ctrl control.Control
 	switch typ {
-	case goav.ControlKeyframe:
+	case control.KeyframeType:
 		if err := validateRawFields("control --json", obj, "type", "stream_id", "tap", "node", "reason"); err != nil {
-			return goav.Control{}, err
+			return control.Control{}, err
 		}
 		stream := av.StreamID(fieldString(obj, "stream_id"))
-		ctrl = goav.Keyframe(stream)
-	case goav.ControlBitrate:
+		ctrl = control.Keyframe(stream)
+	case control.BitrateType:
 		if err := validateRawFields("control --json", obj, "type", "stream_id", "bitrate", "tap", "node", "reason"); err != nil {
-			return goav.Control{}, err
+			return control.Control{}, err
 		}
 		stream := av.StreamID(fieldString(obj, "stream_id"))
 		bitrate, ok := fieldInt(obj, "bitrate")
 		if !ok {
-			return goav.Control{}, commandError("missing_required", "control --json", "bitrate", "raw bitrate control needs bitrate", nil, []string{`include "bitrate":1200000`}, nil)
+			return control.Control{}, commandError("missing_required", "control --json", "bitrate", "raw bitrate control needs bitrate", nil, []string{`include "bitrate":1200000`}, nil)
 		}
-		ctrl = goav.SetBitrate(stream, bitrate)
-	case goav.ControlSeek:
+		ctrl = control.SetBitrate(stream, bitrate)
+	case control.SeekType:
 		if err := validateRawFields("control --json", obj, "type", "position", "tap", "node", "reason"); err != nil {
-			return goav.Control{}, err
+			return control.Control{}, err
 		}
 		position, ok, err := fieldDuration(obj, "position")
 		if err != nil {
-			return goav.Control{}, err
+			return control.Control{}, err
 		}
 		if !ok {
-			return goav.Control{}, commandError("missing_required", "control --json", "position", "raw seek control needs position", nil, []string{`include "position":"12.5s"`}, nil)
+			return control.Control{}, commandError("missing_required", "control --json", "position", "raw seek control needs position", nil, []string{`include "position":"12.5s"`}, nil)
 		}
-		ctrl = goav.Seek(position)
-	case goav.ControlRate:
+		ctrl = control.Seek(position)
+	case control.RateType:
 		if err := validateRawFields("control --json", obj, "type", "rate", "tap", "node", "reason"); err != nil {
-			return goav.Control{}, err
+			return control.Control{}, err
 		}
 		rate, ok := fieldFloat(obj, "rate")
 		if !ok {
-			return goav.Control{}, commandError("missing_required", "control --json", "rate", "raw rate control needs rate", nil, []string{`include "rate":0.5`}, nil)
+			return control.Control{}, commandError("missing_required", "control --json", "rate", "raw rate control needs rate", nil, []string{`include "rate":0.5`}, nil)
 		}
-		ctrl = goav.Rate(rate)
-	case goav.ControlSegment:
+		ctrl = control.Rate(rate)
+	case control.SegmentType:
 		if err := validateRawFields("control --json", obj, "type", "start", "end", "tap", "node", "reason"); err != nil {
-			return goav.Control{}, err
+			return control.Control{}, err
 		}
 		start, ok, err := fieldDuration(obj, "start")
 		if err != nil {
-			return goav.Control{}, err
+			return control.Control{}, err
 		}
 		end, endOK, err := fieldDuration(obj, "end")
 		if err != nil {
-			return goav.Control{}, err
+			return control.Control{}, err
 		}
 		if !ok || !endOK {
-			return goav.Control{}, commandError("missing_required", "control --json", "segment", "raw segment control needs start and end", nil, []string{`include "start":"10s","end":"20s"`}, nil)
+			return control.Control{}, commandError("missing_required", "control --json", "segment", "raw segment control needs start and end", nil, []string{`include "start":"10s","end":"20s"`}, nil)
 		}
-		ctrl = goav.Segment(start, end)
-	case goav.ControlSelect:
+		ctrl = control.Segment(start, end)
+	case control.SelectType:
 		if err := validateRawFields("control --json", obj, "type", "active", "tap", "node", "reason"); err != nil {
-			return goav.Control{}, err
+			return control.Control{}, err
 		}
 		active := av.StreamID(fieldString(obj, "active"))
-		ctrl = goav.SelectActive(active)
-	case goav.ControlEvent:
+		ctrl = control.SelectActive(active)
+	case control.EventType:
 		if err := validateRawFields("control --json", obj, "type", "event", "tap", "node", "reason"); err != nil {
-			return goav.Control{}, err
+			return control.Control{}, err
 		}
 		raw, ok := obj["event"]
 		if !ok {
-			return goav.Control{}, commandError("missing_required", "control --json", "event", "raw event control needs event object", nil, []string{`use goav ctl control deliver --json '{"type":"vendor.force_idr"}' at=<tap>`}, nil)
+			return control.Control{}, commandError("missing_required", "control --json", "event", "raw event control needs event object", nil, []string{`use goav ctl control deliver --json '{"type":"vendor.force_idr"}' at=<tap>`}, nil)
 		}
 		eventBytes, err := json.Marshal(raw)
 		if err != nil {
-			return goav.Control{}, commandError("invalid_json", "control --json", "event", err.Error(), nil, nil, err)
+			return control.Control{}, commandError("invalid_json", "control --json", "event", err.Error(), nil, nil, err)
 		}
 		event, err := DecodeRawEvent(eventBytes)
 		if err != nil {
-			return goav.Control{}, err
+			return control.Control{}, err
 		}
-		ctrl = goav.Deliver(event)
+		ctrl = control.Deliver(event)
 	default:
-		return goav.Control{}, commandError("invalid_value", "control --json", "type", fmt.Sprintf("unknown raw control type %q", typ), nil, []string{"use one of: " + strings.Join(rawControlTypeNames(), ", "), `use goav ctl control deliver --json '{"type":"vendor.force_idr"}' at=<tap>`}, nil)
+		return control.Control{}, commandError("invalid_value", "control --json", "type", fmt.Sprintf("unknown raw control type %q", typ), nil, []string{"use one of: " + strings.Join(rawControlTypeNames(), ", "), `use goav ctl control deliver --json '{"type":"vendor.force_idr"}' at=<tap>`}, nil)
 	}
 	ctrl.Reason = firstNonEmpty(fieldString(obj, "reason"), ctrl.Reason)
 	if tap := fieldString(obj, "tap"); tap != "" {
@@ -602,13 +603,13 @@ func validateRawFields(operation string, obj map[string]any, allowed ...string) 
 
 func rawControlTypeNames() []string {
 	names := []string{
-		string(goav.ControlBitrate),
-		string(goav.ControlEvent),
-		string(goav.ControlKeyframe),
-		string(goav.ControlRate),
-		string(goav.ControlSeek),
-		string(goav.ControlSegment),
-		string(goav.ControlSelect),
+		string(control.BitrateType),
+		string(control.EventType),
+		string(control.KeyframeType),
+		string(control.RateType),
+		string(control.SeekType),
+		string(control.SegmentType),
+		string(control.SelectType),
 	}
 	sort.Strings(names)
 	return names
@@ -731,9 +732,9 @@ func metadataScalarString(value any) (string, bool) {
 	}
 }
 
-func applySourceOrNodeTarget(task goav.Task, operation string, ctrl goav.Control, source string, node string) (goav.Control, error) {
+func applySourceOrNodeTarget(task goav.LiveTask, operation string, ctrl control.Control, source string, node string) (control.Control, error) {
 	if source != "" && node != "" {
-		return goav.Control{}, commandError(
+		return control.Control{}, commandError(
 			"target_conflict",
 			operation,
 			source+","+node,
@@ -745,20 +746,20 @@ func applySourceOrNodeTarget(task goav.Task, operation string, ctrl goav.Control
 	}
 	if source != "" {
 		if err := ensureNodeKind(task, operation, source, pipeline.NodeSource); err != nil {
-			return goav.Control{}, err
+			return control.Control{}, err
 		}
 		return ctrl.At(pipeline.NodeRef(source)), nil
 	}
 	if node != "" {
 		if err := ensureNode(task, operation, node); err != nil {
-			return goav.Control{}, err
+			return control.Control{}, err
 		}
 		return ctrl.At(pipeline.NodeRef(node)), nil
 	}
 	return ctrl, nil
 }
 
-func ensureTap(task goav.Task, operation string, tap string) error {
+func ensureTap(task goav.LiveTask, operation string, tap string) error {
 	if tap == "" {
 		return nil
 	}
@@ -784,7 +785,7 @@ func ensureTap(task goav.Task, operation string, tap string) error {
 	)
 }
 
-func ensureNode(task goav.Task, operation string, node string) error {
+func ensureNode(task goav.LiveTask, operation string, node string) error {
 	spec := task.Describe()
 	var names []string
 	for _, candidate := range spec.Nodes {
@@ -808,7 +809,7 @@ func ensureNode(task goav.Task, operation string, node string) error {
 	)
 }
 
-func ensureNodeKind(task goav.Task, operation string, node string, kind pipeline.NodeKind) error {
+func ensureNodeKind(task goav.LiveTask, operation string, node string, kind pipeline.NodeKind) error {
 	spec := task.Describe()
 	var names []string
 	for _, candidate := range spec.Nodes {

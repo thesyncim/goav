@@ -15,8 +15,8 @@ import (
 	"github.com/thesyncim/goav/pipeline"
 )
 
-// ErrRuntimeRequired reports attempts to use expert graph wiring with a
-// runtime that was not created by goav.New or goav.Default.
+// ErrRuntimeRequired reports attempts to use expert graph wiring without a
+// runtime created by goav.New, goav.MustNew, std.New, or std.MustNew.
 var ErrRuntimeRequired = errors.New("expert: graph requires goav runtime")
 
 // GraphBuilder is the handle-based expert graph builder: named nodes wired by
@@ -33,18 +33,17 @@ type GraphBuilder interface {
 	Connect(GraphOutlet, ...GraphInlet) GraphBuilder
 	// Describe reports the wired graph spec, or the first wiring error.
 	Describe() (pipeline.Spec, error)
-	// Build compiles the wired graph into a runnable goav Task.
-	Build(context.Context) (goav.Task, error)
+	// Build compiles the wired graph into a runnable goav live task.
+	Build(context.Context) (goav.LiveTask, error)
 }
 
-// Graph opens the handle-based graph builder on a goav runtime. Runtimes not
-// created by goav.New or goav.Default yield a builder whose Describe and
-// Build fail with ErrRuntimeRequired.
-func Graph(runtime goav.Runtime) GraphBuilder {
-	if bridge, ok := runtime.(interface{ ExpertGraph() any }); ok {
-		if core, ok := bridge.ExpertGraph().(graphCore); ok {
-			return &graphBuilder{core: core}
-		}
+// Graph opens the handle-based graph builder on a goav runtime.
+func Graph(runtime *goav.Runtime) GraphBuilder {
+	if runtime == nil {
+		return &graphBuilder{err: ErrRuntimeRequired}
+	}
+	if core, ok := runtime.ExpertGraph().(graphCore); ok {
+		return &graphBuilder{core: core}
 	}
 	return &graphBuilder{err: ErrRuntimeRequired}
 }
@@ -59,7 +58,7 @@ type graphCore interface {
 	AddSink(name string, sink pipeline.Sink) string
 	AddRoute(from string, policy pipeline.RoutePolicy, label string, to ...string)
 	Describe() (pipeline.Spec, error)
-	Build(ctx context.Context) (goav.Task, error)
+	Build(ctx context.Context) (goav.LiveTask, error)
 }
 
 // GraphNode is an expert-graph handle to one added source, stage, or sink;
@@ -173,7 +172,7 @@ func (g *graphBuilder) Describe() (pipeline.Spec, error) {
 	return g.core.Describe()
 }
 
-func (g *graphBuilder) Build(ctx context.Context) (goav.Task, error) {
+func (g *graphBuilder) Build(ctx context.Context) (goav.LiveTask, error) {
 	if g.err != nil {
 		return nil, g.err
 	}

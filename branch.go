@@ -2,6 +2,7 @@ package goav
 
 import (
 	"fmt"
+	"strconv"
 	"sync/atomic"
 
 	"github.com/thesyncim/goav/av"
@@ -16,17 +17,32 @@ import (
 var destinationRefSeq atomic.Uint64
 var destinationSpecSeq atomic.Uint64
 
+func destinationShareKey(dest destinationSpec, id uint64) string {
+	if dest.group != "" {
+		return "group:" + dest.group
+	}
+	if id == 0 {
+		id = dest.id
+	}
+	if id == 0 {
+		return ""
+	}
+	return "handle:" + strconv.FormatUint(id, 10)
+}
+
 // Destination is an opaque handle for a file, URI, writer, media sink, or
 // shared mux/sink group. Built-in constructors and Custom return destination
-// values with goav-owned routing identity.
+// values with goav-owned routing identity; DestinationGroup can make that
+// grouping identity explicit across separately constructed values.
 type Destination struct {
 	spec destinationSpec
 }
 
 // DestinationOption configures a destination value (File, URI, Writer,
-// Custom, or Destination.With): Format pins the container, and the
-// direction-agnostic MediaOptions (Name, MIME, Metadata) satisfy it too. It
-// is sealed — only goav option constructors implement it.
+// Custom, or Destination.With): Format pins the container, DestinationGroup
+// pins grouping identity, and the direction-agnostic MediaOptions (Name, MIME,
+// Metadata) satisfy it too. It is sealed — only goav option constructors
+// implement it.
 type DestinationOption interface {
 	applyDestination(*destinationSpec)
 }
@@ -89,7 +105,7 @@ func destinationSpecEmpty(dest destinationSpec) bool {
 
 // BranchSpec is one finished branch declaration: the operations and
 // destinations a Branch(...) builder accumulated, ready for .Branches(...) on
-// a stream chain or Task.Attach at runtime. Values are immutable snapshots —
+// a stream chain or Mutable.Attach at runtime. Values are immutable snapshots —
 // reusing a builder cannot mutate a spec already passed along.
 type BranchSpec struct {
 	name         string
@@ -274,7 +290,7 @@ func (b *branchBuilder) Do(stages ...pipeline.Stage) *branchBuilder {
 			b.setErr(chainStepAfterEncodeError("build branch", firstNonEmpty(b.spec.name, "branch"), "custom stage", chainEncodeSpec(b.spec.operations)))
 			return b
 		}
-		if stages[i] == nil {
+		if err := validateStageComponent(stages[i]); err != nil {
 			b.setErr(streamStageMissingError(streamIntent{Name: firstNonEmpty(b.spec.name, "branch")}))
 			return b
 		}
@@ -766,7 +782,7 @@ func branchEncodeParentOperationError(node string, encode codec.CodecSpec) error
 		Suggestions: []string{
 			"move .Branches(...) before the stream encoder",
 			"put .Encode(codec.Opus(...)), .Encode(codec.VP8(...)), or .Encode(codec.VP9(...)) on each goav.Branch(...) that writes a destination",
-			"attach post-encode packet branches at runtime with Task.Attach(ctx, goav.Branch(name).From(goav.PacketTap(name))...)",
+			"attach post-encode packet branches at runtime with Mutable.Attach(ctx, goav.Branch(name).From(goav.PacketTap(name))...)",
 		},
 		Cause: ErrUnsupportedBuild,
 	}
@@ -784,7 +800,7 @@ func plannedBranchNodeSourceError(name string, source string) error {
 		Suggestions: []string{
 			"use .From(goav.FrameTap(name)) or .From(goav.PacketTap(name)) to branch from a stable tap",
 			"omit .From(...) to branch from the current stream point",
-			"use Task.Attach(ctx, goav.Branch(name).From(graphNode)...) for expert runtime graph attachment",
+			"use Mutable.Attach(ctx, goav.Branch(name).From(graphNode)...) for expert runtime graph attachment",
 		},
 		Cause: ErrUnsupportedBuild,
 	}
@@ -940,7 +956,7 @@ func branchMissingError(node string) error {
 		Reason:    "Branches requires at least one encoded branch",
 		Suggestions: []string{
 			"pass branches with goav.Branch(name).Encode(codec.VP9(...)).To(goav.File(name, writer))",
-			"reuse the same destination value from multiple branches when they should share one mux group",
+			"reuse the same destination value or pass goav.DestinationGroup(name) when branches should share one mux group",
 		},
 		Cause: ErrUnsupportedBuild,
 	}
@@ -966,7 +982,7 @@ func branchDestinationMissingError(name string) error {
 		Reason:    "branch has no destination",
 		Suggestions: []string{
 			"finish the branch with .To(goav.File(\"web.ivf\", writer)) or .To(goav.Sink(sink))",
-			"reuse the same destination value when several branches should share one mux or sink group",
+			"reuse the same destination value or pass goav.DestinationGroup(name) when several branches should share one mux or sink group",
 		},
 		Cause: ErrUnsupportedBuild,
 	}

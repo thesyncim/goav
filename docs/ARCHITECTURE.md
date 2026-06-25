@@ -34,7 +34,7 @@ Format, RTP, WebRTC, codec, and filter adapters
 ```
 
 `goav.New` is the composition root. It owns the per-runtime codec, format, and
-filter registries; there are no global registries. `goav.Default(opts...)`
+filter registries; there are no global registries. `std.MustNew(opts...)`
 registers the standard in-repo adapters and then applies caller options
 last-wins, so one call can add or override implementations.
 
@@ -44,7 +44,7 @@ user-facing model.
 
 | Layer | Vocabulary |
 | --- | --- |
-| Simple high-level API | `From`, stream selection, ordered operations, direct `File`/`URI`/`Sink` destinations, custom `Writer` destinations with `provider.Info`, stable destination handles for shared mux/sink groups |
+| Simple high-level API | `From`, stream selection, ordered operations, direct `File`/`URI`/`Sink` destinations, custom `Writer` destinations with `provider.Info`, stable destination handles and `DestinationGroup(...)` for shared mux/sink groups |
 
 One media work planner owns the cold path. It:
 
@@ -90,8 +90,10 @@ does not branch on input/output kind.
 `Destination` is the public routing handle and extension surface for files,
 byte writers, object-store uploads, URI-backed outputs, frame/packet/event
 sinks, and shared mux/sink groups. Reusing one destination value groups
-branches. The work plan keeps concrete destination openers cold until stream
-list, format, MIME, metadata, and realtime policy are known.
+branches; `DestinationGroup(...)` makes that grouping explicit when branches
+construct matching destinations separately. The work plan keeps concrete
+destination openers cold until stream list, format, MIME, metadata, and
+realtime policy are known.
 
 The handle-based graph builder remains available only as the explicit advanced
 layer through `expert.Graph(runtime)`; it is not on the public `Runtime`
@@ -104,13 +106,13 @@ when branches reuse decode, transform, stage, or tap boundaries before
 diverging. A route carries all media by default, or matches one stream or event
 type.
 
-`Task.Attach` is the runtime control-plane operation for late branches. It
+`Mutable.Attach` is the runtime control-plane operation for late branches. It
 plans a private graph patch from one or more named downstream branches,
 prepares destinations and components before graph mutation, applies the patch
 with rollback on failure, and returns an attachment handle with `Close(ctx)`.
 
 Stable outlets come from typed `.Tap(goav.FrameTap(name))` or
-`.Tap(goav.PacketTap(name))` calls listed by `Task.Taps()`; runtime branches
+`.Tap(goav.PacketTap(name))` calls listed by `Inspectable.Taps()`; runtime branches
 anchor with `goav.Branch("name").From(tap)`. Late branches can run custom
 stages, apply flows, resize/resample from frame taps, encode Opus/VP8/VP9/AV1
 from frame taps, copy or decode packet taps, and expose their own typed taps
@@ -165,7 +167,7 @@ What the compiler enforces today: the sibling packages (`av`, `errcode`,
 depends on leaves, never the reverse.
 
 The one exception is `expert`: it sits above root because it imports `goav` to
-return `Task`. Root reaches back only through structural interfaces
+return `LiveTask`. Root reaches back only through structural interfaces
 (`ExpertGraph() any`, the branch-anchor `Route` capability), never an import.
 
 What is convention only: inside the root package, the grammar -> plan -> build
@@ -273,6 +275,6 @@ selector, operation sequence, destinations, and mux groups. Branches selecting
 the same stream share upstream demux, selection, and decode; operations
 declared before `.Branches(...)` form a shared prefix. Naming a point with
 `.Tap(...)` is only required when a stable runtime attach handle should appear
-in `Task.Taps()`. Typical uses: live receive to several outputs, WebRTC receive
+in `Inspectable.Taps()`. Typical uses: live receive to several outputs, WebRTC receive
 to recording plus preview plus analysis, one decode feeding several
 resize/resample branches, and per-output codec/bitrate/container decisions.

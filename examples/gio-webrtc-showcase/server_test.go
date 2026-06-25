@@ -8,11 +8,11 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/thesyncim/goav"
+	"github.com/thesyncim/goav/std"
 )
 
 func TestHTTPBranchLifecycleQueuesRenegotiation(t *testing.T) {
-	app := newServer(goav.Default(), "http://localhost:8080")
+	app := newServer(std.MustNew(), "http://localhost:8080")
 	session, err := newSession(context.Background(), app.runtime, app.browserURL)
 	if err != nil {
 		t.Fatalf("newSession(): %v", err)
@@ -52,7 +52,7 @@ func TestHTTPBranchLifecycleQueuesRenegotiation(t *testing.T) {
 }
 
 func TestHTTPScenariosRefreshState(t *testing.T) {
-	app := newServer(goav.Default(), "http://localhost:8080")
+	app := newServer(std.MustNew(), "http://localhost:8080")
 	session, err := newSession(context.Background(), app.runtime, app.browserURL)
 	if err != nil {
 		t.Fatalf("newSession(): %v", err)

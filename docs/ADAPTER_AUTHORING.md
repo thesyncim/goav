@@ -8,7 +8,7 @@ grammar does the rest.
 Every extension point is an exported interface plus a value-typed `With*`
 option (or a plain value argument) on a per-runtime registry. There are no
 globals; registration is last-wins, so an adapter can also override a standard
-implementation under `Default(opts...)`.
+implementation under `std.MustNew(opts...)`.
 
 The executable proof is `adapterproof/adapter_compat_test.go`: one toy
 implementation of every extension point below, defined entirely in a test
@@ -67,8 +67,9 @@ message path simple.
   worker, so per-message state needs no locking. Factories may serve several
   builds; keep them stateless or guard shared state.
 - **Errors**: build-time refusals reach users as `*goav.BuildError` with a
-  `errcode.Code`; preflight checks descriptors and registries before anything
-  opens (`errcode.DecodeAdapterMissing`, `EncodeAdapterIncompatible`,
+  `errcode.Code`, typed fields/fixes, and rendered details/suggestions;
+  preflight checks descriptors and registries before anything opens
+  (`errcode.DecodeAdapterMissing`, `EncodeAdapterIncompatible`,
   `TransformAdapterMissing`, `InputDemuxerMissing`, `OutputMuxerMissing`, ...).
   Return typed sentinels for unsupported config at open
   (`codec.ErrUnsupportedFormat`, ...). Any non-nil error from a hot-path
@@ -217,8 +218,8 @@ caller-owned `filter.Result`; sentinels `filter.ErrResultFull`,
 
 Register: `goav.WithFilter(desc, factory)` or `goav.WithFilterAdapter(...)`.
 Use the well-known descriptor name for the conversion class you are replacing;
-the last registration wins, so call `WithStdFilters()` first and your adapter
-option after it:
+the last registration wins, so build from `std.MustNewFilters(...)` and pass your
+adapter option after the standard filters:
 
 ```go
 var passthroughResampler = filter.Descriptor{
@@ -267,8 +268,7 @@ func (*passthroughResamplerFilter) FlushInto(context.Context, *filter.Result) er
 func (*passthroughResamplerFilter) HandleEvent(context.Context, *av.Event) error    { return nil }
 func (*passthroughResamplerFilter) Close() error                                    { return nil }
 
-runtime := goav.New(
-    goav.WithStdFilters(),
+runtime := std.MustNewFilters(
     goav.WithFilter(passthroughResampler, passthroughResamplerFactory{}),
 )
 ```
@@ -345,7 +345,7 @@ routing handle branches share.
 ## Checklist
 
 1. Fill the descriptor precisely. Capabilities are preflight constraints, and
-   wrong ones turn into misleading `BuildError` suggestions.
+   wrong ones turn into misleading `BuildError` details and suggestions.
 2. Factory returns ready instances (codec/filter open themselves; container
    `Open` is called by core).
 3. Hot paths: caller-owned results, capacity sentinels, honest
@@ -358,7 +358,7 @@ routing handle branches share.
    inputs, `goavtest.NewCollector()` output, `goavtest.Runtime()` plus your
    `With*` option). Use `goavtest/expect` for assertions: it delegates
    structural diffs to `github.com/google/go-cmp/cmp` and adds
-   `BuildError`, `S16`, and golden-output checks for goav tests. Use
+   `BuildError` fields/fixes, `S16`, and golden-output checks for goav tests. Use
    `goavtest.NewTestSource` when the adapter needs a
    provider-shaped, controllable source fixture; use
    `goavtest.TestSourceScript(goavtest.TestSourcePacket(...),

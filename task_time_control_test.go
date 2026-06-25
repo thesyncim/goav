@@ -3,6 +3,7 @@ package goav
 import (
 	"context"
 	"errors"
+	"github.com/thesyncim/goav/control"
 	"math"
 	"strings"
 	"sync"
@@ -21,7 +22,7 @@ import (
 // its Start loop emits frames whose PTS advances by 1000*rate per emit — the
 // media time a paced realtime source covers per fixed wall tick — so a rate
 // change shows up in the output cadence deterministically, with no wall clocks
-// in the test. Control(av.EventRate) records the rate in one atomic the loop
+// in the test. control.Control(av.EventRate) records the rate in one atomic the loop
 // reads; per the ControllableSource contract a pure pacing change emits NO
 // discontinuity.
 type rateTickSource struct {
@@ -243,7 +244,7 @@ func TestTaskRateChangesSourcePacingMidRun(t *testing.T) {
 
 	// Untargeted Rate broadcasts to ALL sources: the controllable one applies it
 	// synchronously, the plain one is reported clearly — errors collect per source.
-	err := task.Control(ctx, Rate(2.0))
+	err := task.Control(ctx, control.Rate(2.0))
 	if err == nil {
 		t.Fatal("Rate err = nil, want a clear error for the uncontrollable source")
 	}
@@ -257,7 +258,7 @@ func TestTaskRateChangesSourcePacingMidRun(t *testing.T) {
 		t.Fatalf("Rate err = %v, must not blame the adjustable source", err)
 	}
 
-	// Control records the rate synchronously before returning, so this is
+	// control.Control records the rate synchronously before returning, so this is
 	// deterministic — no sleeps.
 	if applied := ticker.applied(); applied != 2.0 {
 		t.Fatalf("applied rate = %v, want 2.0", applied)
@@ -295,7 +296,7 @@ func TestTaskSegmentPlaysWindowThenEndsNaturally(t *testing.T) {
 	task := newTask(graph, nil)
 	t.Cleanup(func() { _ = task.Close() })
 
-	if err := task.Control(ctx, Segment(100*time.Nanosecond, 105*time.Nanosecond)); err != nil {
+	if err := task.Control(ctx, control.Segment(100*time.Nanosecond, 105*time.Nanosecond)); err != nil {
 		t.Fatalf("Segment on direct graph: %v", err)
 	}
 	// The window plays [start, end) and the run finishes naturally — no cancel.
@@ -330,23 +331,23 @@ func TestTaskTimeControlRejectionMatrix(t *testing.T) {
 			task := newTask(graph, nil)
 			t.Cleanup(func() { _ = task.Close() })
 
-			// Invalid payloads are rejected at Task.Control with a clear error,
+			// Invalid payloads are rejected at Controllable.Control with a clear error,
 			// before any delivery — identically on both runners.
-			for _, control := range []Control{
-				Rate(0),
-				Rate(-1),
-				Rate(math.Inf(1)),
-				Rate(math.NaN()),
+			for _, control := range []control.Control{
+				control.Rate(0),
+				control.Rate(-1),
+				control.Rate(math.Inf(1)),
+				control.Rate(math.NaN()),
 			} {
 				err := task.Control(ctx, control)
 				if err == nil || !strings.Contains(err.Error(), "positive, finite playback rate") {
-					t.Fatalf("Rate(%v) err = %v, want a positive-finite rejection", control.Rate, err)
+					t.Fatalf("control.Rate(%v) err = %v, want a positive-finite rejection", control.Rate, err)
 				}
 			}
-			for _, control := range []Control{
-				Segment(2*time.Second, time.Second),
-				Segment(time.Second, time.Second),
-				Segment(-time.Nanosecond, time.Second),
+			for _, control := range []control.Control{
+				control.Segment(2*time.Second, time.Second),
+				control.Segment(time.Second, time.Second),
+				control.Segment(-time.Nanosecond, time.Second),
 			} {
 				err := task.Control(ctx, control)
 				if err == nil || !strings.Contains(err.Error(), "0 <= start < end") {
@@ -364,7 +365,7 @@ func TestTaskTimeControlRejectionMatrix(t *testing.T) {
 	graph, _ := newTimeControlGraph(t, pipeline.BufferPolicy{}, ticker, plain)
 	task := newTask(graph, nil)
 	t.Cleanup(func() { _ = task.Close() })
-	for _, control := range []Control{Rate(2.0), Segment(0, time.Second)} {
+	for _, control := range []control.Control{control.Rate(2.0), control.Segment(0, time.Second)} {
 		err := task.Control(ctx, control.At("plain"))
 		if !errors.Is(err, pipeline.ErrInvalidLink) {
 			t.Fatalf("%s at plain err = %v, want ErrInvalidLink", control.Type, err)
@@ -481,7 +482,7 @@ func TestTaskSegmentExportCommitsDestination(t *testing.T) {
 	}
 
 	const start, end = 100 * time.Nanosecond, 104 * time.Nanosecond
-	if err := task.Control(ctx, Segment(start, end)); err != nil {
+	if err := task.Control(ctx, control.Segment(start, end)); err != nil {
 		t.Fatalf("Segment err = %v", err)
 	}
 	// The window plays [start, end) and Run returns nil naturally on the

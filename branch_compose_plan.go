@@ -4,7 +4,6 @@ package goav
 
 import (
 	"fmt"
-	"strconv"
 	"strings"
 
 	"github.com/thesyncim/goav/av"
@@ -14,13 +13,14 @@ import (
 )
 
 type branchCompositionJob struct {
-	runtime     Runtime
-	name        string
-	input       InputSpec
-	streams     []streamBuild
-	outputs     []namedDestinationSpec
-	streamRules []streamRule
-	err         error
+	runtime         *Runtime
+	runtimeExplicit bool
+	name            string
+	input           InputSpec
+	streams         []streamBuild
+	outputs         []namedDestinationSpec
+	streamRules     []streamRule
+	err             error
 
 	fromBranchSplit bool
 }
@@ -32,6 +32,20 @@ type namedDestinationSpec struct {
 
 func destinationIdentity(destination namedDestinationSpec) string {
 	output := destination.output
+	shareKey := destinationShareKey(output, output.id)
+	if output.group != "" {
+		return strings.Join([]string{
+			destination.name,
+			shareKey,
+			output.label(""),
+			output.output.Name,
+			output.output.URI,
+			string(output.output.Protocol),
+			output.output.MIMEType,
+			string(output.format),
+			string(output.resolvedFormat),
+		}, "\x00")
+	}
 	sinkName := ""
 	sinkAddr := ""
 	if output.sink != nil {
@@ -40,7 +54,7 @@ func destinationIdentity(destination namedDestinationSpec) string {
 	}
 	return strings.Join([]string{
 		destination.name,
-		strconv.FormatUint(destination.output.id, 10),
+		shareKey,
 		output.label(""),
 		sinkName,
 		sinkAddr,
@@ -60,8 +74,8 @@ func (j *branchCompositionJob) plan() intent {
 		Name:   firstNonEmpty(j.name, "branch-composition"),
 		Inputs: []inputIntent{j.input.intent()},
 	}
-	if runtime, ok := j.runtime.(*runtime); ok {
-		intent.Policies.Realtime = runtime.realtime
+	if j.runtime != nil {
+		intent.Policies.Realtime = j.runtime.realtime
 	}
 	for i := range j.streams {
 		intent.Streams = append(intent.Streams, branchStreamIntent(j.streams[i]))
@@ -417,7 +431,7 @@ func branchIntentDestinationMissingError(stream streamIntent) error {
 		Reason:    "branch has no destination",
 		Suggestions: []string{
 			"finish the branch with .To(goav.File(\"web.ivf\", writer)) or .To(goav.Sink(sink))",
-			"reuse the same destination value from multiple branches when they should share one mux group",
+			"reuse the same destination value or pass goav.DestinationGroup(name) when branches should share one mux group",
 		},
 		Cause: ErrUnsupportedBuild,
 	}
@@ -431,7 +445,7 @@ func branchDestinationReferenceMissingError(stream streamIntent, label string) e
 		Reason:    "destination " + label + " is referenced but not defined",
 		Suggestions: []string{
 			"pass a named goav.File(...), goav.URI(...), or goav.Sink(...) destination to the branch .To(...) call",
-			"reuse destination values instead of repeating string destination names",
+			"reuse destination values or pass goav.DestinationGroup(name) instead of repeating string destination names",
 		},
 		Cause: ErrUnsupportedBuild,
 	}
@@ -474,7 +488,7 @@ func branchDestinationDuplicateError(name string) error {
 		Node:      name,
 		Reason:    fmt.Sprintf("destination %q is defined more than once with different destination handles", name),
 		Suggestions: []string{
-			"reuse the same destination value when multiple branches should share one mux group",
+			"reuse the same destination value or pass goav.DestinationGroup(name) when multiple branches should share one mux group",
 			"use distinct destination names when branches should write to different destinations",
 		},
 		Cause: ErrUnsupportedBuild,
@@ -494,7 +508,7 @@ func branchIntentDuplicateError(name string, firstIndex int, secondIndex int) er
 		Suggestions: []string{
 			"use unique names such as .Video(\"720p\") and .Video(\"360p\")",
 			"route one branch to multiple destinations by calling .To(destination, otherDestination)",
-			"route different branches to the same destination by reusing the destination value",
+			"route different branches to the same destination by reusing the destination value or pass goav.DestinationGroup(name)",
 		},
 		Cause: ErrUnsupportedBuild,
 	}
@@ -542,7 +556,7 @@ func duplicateBranchDestinationError(stream streamIntent, target string, firstIn
 		Suggestions: []string{
 			"list each destination once in .To(...)",
 			"route one branch to multiple destinations with distinct values such as .To(archive, preview)",
-			"reuse destination values instead of repeating destination names",
+			"reuse destination values or pass goav.DestinationGroup(name) instead of repeating destination names",
 		},
 		Cause: ErrUnsupportedBuild,
 	}
@@ -565,14 +579,8 @@ func validateBranchTransforms(stream streamIntent) error {
 				Suggestions: []string{"declare two separate steps instead: .Resize(width, height).Resample(rate, channels)"},
 				Cause:       ErrUnsupportedBuild,
 			}
-		case transform.Resize != nil:
-			if stream.Select.Type == av.MediaAudio {
-				return branchTransformMediaError(stream, "resize", av.MediaVideo, stream.Select.Type)
-			}
-		case transform.Resample != nil:
-			if stream.Select.Type == av.MediaVideo {
-				return branchTransformMediaError(stream, "resample", av.MediaAudio, stream.Select.Type)
-			}
+		case transform.Resize != nil, transform.Resample != nil:
+			continue
 		default:
 			return &BuildError{
 				Code:      errcode.TransformInvalid,
@@ -607,24 +615,6 @@ func transformSpecsFromOperationSpecs(operations []operationSpec) []TransformSpe
 		transforms = append(transforms, transform)
 	}
 	return transforms
-}
-
-func branchTransformMediaError(stream streamIntent, transform string, expected av.MediaType, actual av.MediaType) error {
-	return &BuildError{
-		Code:      errcode.TransformMediaMismatch,
-		Operation: branchCompositionOperation,
-		Node:      branchIntentName(stream),
-		Reason:    transform + " applies to " + string(expected) + " branches",
-		Details: []string{
-			"expected_shape=" + shape.Frame(expected).String(),
-			"actual_shape=" + shape.Frame(actual).String(),
-		},
-		Suggestions: []string{
-			"use .Video(...).Resize(...) for video ladder branches",
-			"use .Audio(...).Resample(...) for audio branches",
-		},
-		Cause: ErrUnsupportedBuild,
-	}
 }
 
 func streamIntentSelector(stream streamIntent) av.StreamSelector {

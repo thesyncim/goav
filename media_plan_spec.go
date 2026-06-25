@@ -44,7 +44,7 @@ func (p graphPlan) Describe() (pipeline.Spec, error) {
 	return p.spec(), nil
 }
 
-func (p graphPlan) Build(ctx context.Context) (Task, error) {
+func (p graphPlan) Build(ctx context.Context) (LiveTask, error) {
 	if !p.ready() {
 		return nil, recipeGraphUnsupportedError("build graph plan", intent{})
 	}
@@ -218,8 +218,8 @@ func mediaPlanJoinLowererForState(state *recipeCompileState) (graphPlanLowerer, 
 	if state == nil || state.joinAttachment == nil {
 		return nil, false, nil
 	}
-	rt, ok := state.runtime.(*runtime)
-	if !ok || rt == nil {
+	rt := state.runtime
+	if rt == nil {
 		return nil, false, nil
 	}
 	gp, err := newJoinPlan(rt, state)

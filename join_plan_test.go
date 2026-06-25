@@ -41,8 +41,8 @@ func joinPlanGuard(t *testing.T, job *Job) pipeline.Spec {
 func TestJoinDescribeEqualsBuildMix(t *testing.T) {
 	pcm := av.CodecID("x_pcm_s16")
 	desc := codec.Descriptor{ID: pcm, Name: "PCM", Type: av.MediaAudio, Capabilities: codec.Capabilities{SampleFormats: []string{av.SampleFormatS16}}}
-	rt := New(
-		WithStdFilters(),
+	rt := MustNew(
+		testStdFilters(),
 		WithDecoder(desc, recipePCMDecoderFactory{decoder: &recipePCMDecoder{}}),
 		WithEncoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &encodeTestEncoderFactory{encoder: &encodeTestEncoder{}}),
 		withTestFormats(testFormatMuxer(av.FormatOgg, &remuxTestMuxerFactory{})),
@@ -84,7 +84,7 @@ func TestJoinDescribeEqualsBuildMix(t *testing.T) {
 // contract: the planned spec keeps the encoded join fanning out to every
 // destination and equals the built graph.
 func TestJoinDescribeEqualsBuildMixMultiDestination(t *testing.T) {
-	rt := New(
+	rt := MustNew(
 		WithEncoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &encodeTestEncoderFactory{encoder: &encodeTestEncoder{}}),
 		withTestFormats(testFormatMuxer(av.FormatOgg, &remuxTestMuxerFactory{})),
 	)

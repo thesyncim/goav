@@ -10,6 +10,7 @@ import (
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/rtpav"
+	"github.com/thesyncim/goav/std"
 )
 
 // staticRTPReader is a minimal rtpav.PacketReader: one declared Opus stream
@@ -34,6 +35,7 @@ func ExampleInput() {
 	mic := goav.Input(rtpav.Receive(staticRTPReader{}, rtpav.WithName("mic"), rtpav.WithCodec(codec.Opus())))
 
 	report, err := goav.From(mic).
+		UseRuntime(std.MustNew()).
 		Audio().
 		Copy().
 		To(goav.File("mic.webm", io.Discard)).

@@ -8,13 +8,16 @@ import (
 	"github.com/pion/rtcp"
 	"github.com/thesyncim/goav"
 	"github.com/thesyncim/goav/av"
+	"github.com/thesyncim/goav/control"
+	"github.com/thesyncim/goav/inspect"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/plan"
 	"github.com/thesyncim/goav/snapshot"
+	"github.com/thesyncim/goav/std"
 )
 
 func TestSessionPublishesStateForBranchChanges(t *testing.T) {
-	session, err := newSession(context.Background(), goav.Default(), "http://localhost:8080")
+	session, err := newSession(context.Background(), std.MustNew(), "http://localhost:8080")
 	if err != nil {
 		t.Fatalf("newSession() error = %v", err)
 	}
@@ -116,7 +119,7 @@ func TestSessionRequestsOutputKeyframeFromReceiverFeedback(t *testing.T) {
 	if task.controls != 1 {
 		t.Fatalf("controls = %d, want one keyframe control", task.controls)
 	}
-	if task.last.Type != goav.ControlKeyframe || task.last.Tap != videoTapName {
+	if task.last.Type != control.KeyframeType || task.last.Tap != videoTapName {
 		t.Fatalf("control = %+v, want keyframe at decoded video tap", task.last)
 	}
 	if !hasEvent(session.events, "feedback", "browser output keyframe requested") {
@@ -144,7 +147,7 @@ func TestRTCPKeyframeFeedbackClassification(t *testing.T) {
 }
 
 type controlCaptureTask struct {
-	last     goav.Control
+	last     control.Control
 	controls int
 }
 
@@ -168,8 +171,8 @@ func (t *controlCaptureTask) Taps() []snapshot.Tap {
 
 func (t *controlCaptureTask) Snapshot() snapshot.Task { return snapshot.Task{} }
 
-func (t *controlCaptureTask) Control(_ context.Context, control goav.Control) error {
-	t.last = control
+func (t *controlCaptureTask) Control(_ context.Context, ctrl control.Control) error {
+	t.last = ctrl
 	t.controls++
 	return nil
 }
@@ -178,13 +181,13 @@ func (t *controlCaptureTask) Run(context.Context) error { return nil }
 
 func (t *controlCaptureTask) Events() <-chan av.Event { return nil }
 
-func (t *controlCaptureTask) Watch(...goav.EventFilter) <-chan av.Event { return nil }
+func (t *controlCaptureTask) Watch(...inspect.EventFilter) <-chan av.Event { return nil }
 
 func (t *controlCaptureTask) Stats() pipeline.GraphStats { return pipeline.GraphStats{} }
 
 func (t *controlCaptureTask) Close() error { return nil }
 
-var _ goav.Task = (*controlCaptureTask)(nil)
+var _ goav.LiveTask = (*controlCaptureTask)(nil)
 
 func awaitState(t *testing.T, updates <-chan stateResponse) stateResponse {
 	t.Helper()

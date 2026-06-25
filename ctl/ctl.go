@@ -11,6 +11,7 @@ package ctl
 
 import (
 	"context"
+	"github.com/thesyncim/goav/control"
 
 	goav "github.com/thesyncim/goav"
 	"github.com/thesyncim/goav/av"
@@ -99,7 +100,7 @@ func Usage(value string) CapabilityOption {
 }
 
 // NewCommand builds a typed, allowlisted control command.
-func NewCommand[T any](name string, summary string, apply func(context.Context, goav.Task, T) (ControlResponse, error), options ...CapabilityOption) CommandSpec {
+func NewCommand[T any](name string, summary string, apply func(context.Context, goav.LiveTask, T) (ControlResponse, error), options ...CapabilityOption) CommandSpec {
 	return launchctl.NewCommand(name, summary, apply, options...)
 }
 
@@ -147,12 +148,12 @@ func BindJSON(spec CommandSpec, data []byte) (any, error) {
 }
 
 // Invoke binds and applies one allowlisted command.
-func Invoke(ctx context.Context, task goav.Task, spec CommandSpec, args []string) (ControlResponse, error) {
+func Invoke(ctx context.Context, task goav.LiveTask, spec CommandSpec, args []string) (ControlResponse, error) {
 	return launchctl.Invoke(ctx, task, spec, args)
 }
 
-// DecodeRawControl decodes raw JSON into the real goav.Control shape.
-func DecodeRawControl(data []byte) (goav.Control, error) {
+// DecodeRawControl decodes raw JSON into the real control.Control shape.
+func DecodeRawControl(data []byte) (control.Control, error) {
 	return launchctl.DecodeRawControl(data)
 }
 
@@ -194,12 +195,12 @@ func RequestFromCLI(argv []string) (Request, error) {
 }
 
 // ExecuteRequest applies one decoded request to a task.
-func ExecuteRequest(ctx context.Context, task goav.Task, request Request) Response {
+func ExecuteRequest(ctx context.Context, task goav.LiveTask, request Request) Response {
 	return launchctl.ExecuteRequest(ctx, task, request)
 }
 
 // Execute applies one in-process ctl command directly to a task.
-func Execute(ctx context.Context, task goav.Task, argv []string) (ControlResponse, error) {
+func Execute(ctx context.Context, task goav.LiveTask, argv []string) (ControlResponse, error) {
 	return launchctl.Execute(ctx, task, argv)
 }
 
@@ -223,12 +224,12 @@ func WithCapabilities(caps CapabilitySet) ServerOption {
 
 // ServeUnix listens on unix://PATH or PATH and serves one JSON request per
 // connection until ctx is cancelled.
-func ServeUnix(ctx context.Context, task goav.Task, address string) error {
+func ServeUnix(ctx context.Context, task goav.LiveTask, address string) error {
 	return launchctl.ServeUnix(ctx, task, address)
 }
 
 // ServeUnixWithOptions listens on unix://PATH or PATH with custom command and
 // pipeline allowlists.
-func ServeUnixWithOptions(ctx context.Context, task goav.Task, address string, options ...ServerOption) error {
+func ServeUnixWithOptions(ctx context.Context, task goav.LiveTask, address string, options ...ServerOption) error {
 	return launchctl.ServeUnixWithOptions(ctx, task, address, options...)
 }

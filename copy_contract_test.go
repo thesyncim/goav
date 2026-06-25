@@ -39,7 +39,7 @@ func copyContractFrame(ownership av.BufferOwnership, data []byte) av.Frame {
 // attach branches to: a waiting frame source feeding a base sink on a buffered
 // graph whose default policy can copy mutable frames, with a frame tap on the
 // source node for the branches to hang from.
-func newCopyContractTask(t *testing.T, ctx context.Context, frame *av.Frame) (Task, *runtimeBranchWaitingSource) {
+func newCopyContractTask(t *testing.T, ctx context.Context, frame *av.Frame) (LiveTask, *runtimeBranchWaitingSource) {
 	t.Helper()
 	source := &runtimeBranchWaitingSource{
 		name:   "source",
@@ -48,7 +48,7 @@ func newCopyContractTask(t *testing.T, ctx context.Context, frame *av.Frame) (Ta
 		msg:    pipeline.Message{Kind: pipeline.MessageFrame, Frame: frame},
 	}
 	base := &runtimeTestSink{name: "base"}
-	graph := expertGraph(New(WithBufferPolicy(pipeline.BufferPolicy{Capacity: 2, CopyFrameBytes: 64})))
+	graph := expertGraph(MustNew(WithBufferPolicy(pipeline.BufferPolicy{Capacity: 2, CopyFrameBytes: 64})))
 	src := graph.Source("source", source)
 	graph.Connect(src.Out(), graph.Sink("base", base).In())
 	builtTask, err := graph.Build(ctx)

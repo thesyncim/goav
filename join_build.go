@@ -168,7 +168,7 @@ func resolveJoinProfile(spec *joinSpec) (joinProfile, error) {
 // Job, so .To/Build/Run are shared by every join kind.
 func newJoinJob(kind joinKind, spec joinSpec) *Job {
 	name := string(kind)
-	job := &Job{name: name, runtime: Default()}
+	job := newJob(name)
 	if len(spec.arms) < 2 {
 		job.setErr(joinInputsError(name, name))
 		return job
@@ -1884,8 +1884,8 @@ func intInSlice(needle int, haystack []int) bool {
 func joinIntent(job *Job) intent {
 	spec := job.join
 	intent := intent{Name: string(spec.kind)}
-	if rt, ok := job.runtime.(*runtime); ok {
-		intent.Policies.Realtime = rt.realtime
+	if job.runtime != nil {
+		intent.Policies.Realtime = job.runtime.realtime
 	}
 	for _, input := range joinLeafInputSpecs(spec) {
 		intent.Inputs = append(intent.Inputs, input.intent())

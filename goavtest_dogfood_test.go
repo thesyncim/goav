@@ -8,6 +8,7 @@ package goav_test
 import (
 	"context"
 	"errors"
+	"github.com/thesyncim/goav/control"
 	"reflect"
 	"testing"
 	"time"
@@ -79,7 +80,7 @@ func TestSelectSwitchesActiveArmMidRun(t *testing.T) {
 	}
 
 	// Switch live to arm "b" (sample 200) through the control plane.
-	if err := controlWhenRunning(ctx, task, goav.SelectActive("b")); err != nil {
+	if err := controlWhenRunning(ctx, task, control.SelectActive("b")); err != nil {
 		t.Fatalf("SelectActive to b: %v", err)
 	}
 	if err := waitForSample(len(out.S16()), 200); err != nil {
@@ -87,7 +88,7 @@ func TestSelectSwitchesActiveArmMidRun(t *testing.T) {
 	}
 
 	// Switch back to "a" to prove the control plane drives the switch both ways.
-	if err := task.Control(ctx, goav.SelectActive("a")); err != nil {
+	if err := task.Control(ctx, control.SelectActive("a")); err != nil {
 		t.Fatalf("SelectActive back to a: %v", err)
 	}
 	if err := waitForSample(len(out.S16()), 100); err != nil {
@@ -102,10 +103,10 @@ func TestSelectSwitchesActiveArmMidRun(t *testing.T) {
 
 // controlWhenRunning retries a control until the graph is running and
 // accepts it — the public-API form of the internal retry helper.
-func controlWhenRunning(ctx context.Context, task goav.Task, control goav.Control) error {
+func controlWhenRunning(ctx context.Context, task goav.Controllable, ctrl control.Control) error {
 	for {
-		err := task.Control(ctx, control)
-		if err == nil || !errors.Is(err, goav.ErrControlNotRunning) {
+		err := task.Control(ctx, ctrl)
+		if err == nil || !errors.Is(err, control.ErrNotRunning) {
 			return err
 		}
 		select {

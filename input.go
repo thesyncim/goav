@@ -330,9 +330,8 @@ func duplicateInputNameError(name string, firstIndex int, secondIndex int) error
 	}
 }
 
-func validateInputFormatAdapters(ctx context.Context, rt Runtime, inputs []InputSpec) ([]format.ProbeResult, error) {
-	standard, ok := rt.(*runtime)
-	if !ok || standard == nil {
+func validateInputFormatAdapters(ctx context.Context, rt *Runtime, inputs []InputSpec) ([]format.ProbeResult, error) {
+	if rt == nil {
 		return nil, nil
 	}
 	probes := make([]format.ProbeResult, len(inputs))
@@ -345,12 +344,12 @@ func validateInputFormatAdapters(ctx context.Context, rt Runtime, inputs []Input
 			continue
 		}
 		input := inputs[i].input
-		result, err := standard.formats.Probe(ctx, inputProbeRequest(input))
+		result, err := rt.formats.Probe(ctx, inputProbeRequest(input))
 		if err != nil {
 			return nil, inputFormatProbeError(input, err)
 		}
 		probes[i] = result
-		if _, err := standard.formats.DemuxerFactory(result.Format); err != nil {
+		if _, err := rt.formats.DemuxerFactory(result.Format); err != nil {
 			return nil, inputDemuxerMissingError(input, result.Format, err)
 		}
 	}

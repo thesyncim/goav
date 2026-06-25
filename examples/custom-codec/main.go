@@ -44,7 +44,7 @@ func runCustomCodec(ctx context.Context) ([][]int16, error) {
 	return decoded.S16(), nil
 }
 
-func encodeCustomPCM(ctx context.Context, rt goav.Runtime) ([]*av.Packet, error) {
+func encodeCustomPCM(ctx context.Context, rt *goav.Runtime) ([]*av.Packet, error) {
 	encoded := goavtest.NewCollector()
 	if err := goav.From(goavtest.Audio(8000, 1, []int16{5, 6})).
 		Audio().
@@ -57,7 +57,7 @@ func encodeCustomPCM(ctx context.Context, rt goav.Runtime) ([]*av.Packet, error)
 	return encoded.Packets(), nil
 }
 
-func customCodecRuntime() goav.Runtime {
+func customCodecRuntime() *goav.Runtime {
 	desc := customCodecDescriptor()
 	factory := customCodecFactory{}
 	return goavtest.Runtime(

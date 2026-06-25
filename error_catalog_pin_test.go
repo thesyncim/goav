@@ -248,10 +248,10 @@ var errorCatalogExamples = []errorCatalogExample{
 	},
 	{
 		Code:          "transform_media_mismatch",
-		Test:          "TestBranchRecipeRejectsWrongMediaTransform",
-		BadRecipe:     `.Video("bad").Resample(...).Encode(...).To(...)`,
+		Test:          "TestTransformHelperErrorContracts",
+		BadRecipe:     `Resize(...) on an audio stream or Resample(...) on a video stream`,
 		RenderedError: "wrong-media transform guidance is asserted by the test",
-		Fix:           "use .Video(...).Resize(...) for video branches or audio chains for resample",
+		Fix:           "use .Video().Resize(...) for video or .Audio().Resample(...) for audio",
 		Cause:         "goav.ErrUnsupportedBuild",
 	},
 	{
@@ -268,6 +268,14 @@ var errorCatalogExamples = []errorCatalogExample{
 		BadRecipe:     `.Audio().Decode().Copy().To(goav.File(...))`,
 		RenderedError: "full BuildError fields plus rendered suggestions are asserted by the test",
 		Fix:           "move .Copy() before decode, or use .Encode(codec...) instead of .Copy()",
+		Cause:         "goav.ErrUnsupportedBuild",
+	},
+	{
+		Code:          "operation_shape_mismatch",
+		Test:          "TestBuildAndAttachReturnSameErrorForSameInvalidBranch",
+		BadRecipe:     `Resize(...) on an audio branch at build time or runtime attach`,
+		RenderedError: "shared branch wrong-media shape code and shape details are asserted by the test",
+		Fix:           "use a video frame point before .Resize(...) or choose an audio transform",
 		Cause:         "goav.ErrUnsupportedBuild",
 	},
 	{
@@ -371,7 +379,7 @@ var errorCatalogExamples = []errorCatalogExample{
 		Test:          "TestBranchRecipeRejectsDuplicateDestinations",
 		BadRecipe:     `branchJob(input).Video("720p").To(File("web.webm")).Video("360p").To(File("web.webm"))`,
 		RenderedError: "duplicate destination details and reuse-same-destination guidance are asserted by the test",
-		Fix:           "reuse the same destination value for mux/sink groups",
+		Fix:           "reuse the same destination value or pass goav.DestinationGroup(...) for mux/sink groups",
 		Cause:         "goav.ErrUnsupportedBuild",
 	},
 	{
@@ -387,7 +395,7 @@ var errorCatalogExamples = []errorCatalogExample{
 		Test:          "TestErrorAcceptanceAttachUnknownTapListsDeclaredTaps",
 		BadRecipe:     `task.Attach(ctx, goav.Branch("late").From(goav.FrameTap("nope")).To(...))`,
 		RenderedError: "declared tap listing and attach suggestions are asserted by the test",
-		Fix:           `add .Tap(goav.FrameTap("nope")) or call task.Taps() before attaching`,
+		Fix:           `add .Tap(goav.FrameTap("nope")) or call Inspectable.Taps() before attaching`,
 		Cause:         "goav.ErrUnsupportedBuild",
 	},
 	{
@@ -446,7 +454,7 @@ var errorCatalogAdditionalExamples = []errorCatalogExample{
 		Test:          "TestRuntimeFormatErrorContracts",
 		BadRecipe:     `goav.FileInput("input.ogg", reader)` + " with no Ogg demuxer registered",
 		RenderedError: "missing input demuxer and adapter registration guidance are asserted by the test",
-		Fix:           "register a demuxer with goav.WithFormatAdapter(...) or use goav.Default()",
+		Fix:           "register a demuxer with goav.WithFormatAdapter(...) or use std.MustNew(...)",
 		Cause:         "goav.ErrUnsupportedBuild",
 	},
 	{
@@ -494,7 +502,7 @@ var errorCatalogAdditionalExamples = []errorCatalogExample{
 		Test:          "TestTransformHelperErrorContracts",
 		BadRecipe:     `.Audio().Resample(...)` + " without a resample filter adapter",
 		RenderedError: "missing transform adapter details and registration guidance are asserted by the test",
-		Fix:           "register the filter with goav.WithFilterAdapter(...) or use goav.Default()",
+		Fix:           "register the filter with goav.WithFilterAdapter(...) or use std.MustNewFilters(...)",
 		Cause:         "filter.ErrNotFound",
 	},
 	{
@@ -542,7 +550,7 @@ var errorCatalogAdditionalExamples = []errorCatalogExample{
 		Test:          "TestStreamRecipeReportsProbedFileMissingDecoderBeforeOpeningInput",
 		BadRecipe:     `.Audio().Decode()` + " for a probed codec with no decoder registered",
 		RenderedError: "missing decoder adapter and pre-resource ordering are asserted by the test",
-		Fix:           "register a decoder with goav.WithCodecAdapter(...) or use goav.Default()",
+		Fix:           "register a decoder with goav.WithCodecAdapter(...) or use std.MustNew(...)",
 		Cause:         "codec.ErrNotFound",
 	},
 	{
@@ -654,7 +662,7 @@ var errorCatalogAdditionalExamples = []errorCatalogExample{
 		Test:          "TestRuntimeFormatErrorContracts",
 		BadRecipe:     `goav.File("out.ogg", writer)` + " with no Ogg muxer registered",
 		RenderedError: "missing output muxer and registration guidance are asserted by the test",
-		Fix:           "register a muxer with goav.WithFormatAdapter(...) or use goav.Default()",
+		Fix:           "register a muxer with goav.WithFormatAdapter(...) or use std.MustNew(...)",
 		Cause:         "goav.ErrUnsupportedBuild",
 	},
 	{
@@ -950,7 +958,7 @@ var errorCatalogAdditionalExamples = []errorCatalogExample{
 		Test:          "TestRuntimeBranchStructuredErrorContracts",
 		BadRecipe:     "attach a runtime branch from a graph anchor that no longer exists",
 		RenderedError: "missing runtime anchor is asserted by the test",
-		Fix:           "anchor runtime branches on taps listed by task.Taps()",
+		Fix:           "anchor runtime branches on taps listed by Inspectable.Taps()",
 		Cause:         "goav.ErrUnsupportedBuild",
 	},
 	{
@@ -1026,14 +1034,6 @@ var errorCatalogAdditionalExamples = []errorCatalogExample{
 		Cause:         "goav.ErrUnsupportedBuild",
 	},
 	{
-		Code:          "runtime_branch_transform_media_mismatch",
-		Test:          "TestRuntimeBranchStructuredErrorContracts",
-		BadRecipe:     "attach a runtime transform for the wrong tap media kind",
-		RenderedError: "runtime transform media mismatch is asserted by the test",
-		Fix:           "use transforms that match the tap's media kind",
-		Cause:         "goav.ErrUnsupportedBuild",
-	},
-	{
 		Code:          "runtime_branch_graph_error",
 		Test:          "TestRuntimeBranchStructuredErrorContracts",
 		BadRecipe:     "live graph rejects a prepared runtime branch attachment",
@@ -1059,18 +1059,10 @@ var errorCatalogAdditionalExamples = []errorCatalogExample{
 	},
 	{
 		Code:          "runtime_missing",
-		Test:          "TestRecipeDiagnosticHelperContracts",
-		BadRecipe:     "compile a recipe without a runtime in an internal path that requires one",
-		RenderedError: "runtime missing diagnostic helper fields are asserted by the test",
-		Fix:           "attach a runtime with .UseRuntime(...) or use the default runtime path",
-		Cause:         "goav.ErrUnsupportedBuild",
-	},
-	{
-		Code:          "runtime_unsupported",
-		Test:          "TestRecipeReportsUnsupportedCustomRuntime",
-		BadRecipe:     `.UseRuntime(customRuntimeOnlyImplementingProbe)`,
-		RenderedError: "unsupported runtime implementation is asserted by the test",
-		Fix:           "use goav.New/goav.Default or a runtime implementation supported by the recipe compiler",
+		Test:          "TestRecipeReportsOmittedRuntime",
+		BadRecipe:     "goav.From(file).Copy().To(file).Build(ctx) without .UseRuntime(...) or std.Build/std.Run",
+		RenderedError: "adapter-backed omitted runtime guidance is asserted by the test",
+		Fix:           "attach a runtime with .UseRuntime(...) or use std.Build/std.Run for the bundled runtime",
 		Cause:         "goav.ErrUnsupportedBuild",
 	},
 	{

@@ -21,7 +21,7 @@ and it landed as:
   `task.Stats().Nodes["mix"].Dropped` under the `"sync"` reason, and in
   `task.Snapshot()`.
 - `Select(arms...)`: passthrough one-of-N switch (no decode/encode); the first
-  arm is active by default and `task.Control(ctx, goav.SelectActive(id))`
+  arm is active by default and `task.Control(ctx, control.SelectActive(id))`
   switches live through the control plane.
 - Variadic `From(inputs...)`: N inputs, per-chain `InputName(...)` narrowing,
   one shared `Destination` value muxing the encoded chains.
@@ -105,7 +105,7 @@ terminal; this is reported through `mix_arm`-family errors).
 
 `Mix(arms...)`, `Composite(arms...)`, and `Select(arms...)` are recipe-time
 convergence: their upstream arms are part of the planned graph. Runtime
-`Task.Attach` and `OnStream` add downstream work from taps or discovered
+`Mutable.Attach` and `OnStream` add downstream work from taps or discovered
 streams; they do not mutate the arm set of an existing join.
 
 For live audio rooms where tracks join and leave continuously, the supported

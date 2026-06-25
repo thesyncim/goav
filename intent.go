@@ -21,6 +21,7 @@ type intent struct {
 	Streams      []streamIntent
 	Destinations []destinationIntent
 	Policies     policyIntent
+	Copy         bool
 }
 
 type inputIntent struct {
@@ -60,6 +61,7 @@ type streamIntent struct {
 type operationSpec struct {
 	Kind      plan.OperationKind
 	Component string
+	Detail    string
 	Stage     pipeline.Stage
 	Shape     shape.Spec
 	Transform TransformSpec
@@ -124,7 +126,7 @@ func operationSpecForDecode(codec codec.CodecSpec, component string) operationSp
 }
 
 func operationSpecForCopy(codec codec.CodecSpec) operationSpec {
-	return operationSpec{Kind: plan.OpCopy, Component: "packet-copy", Encode: cloneCodecSpec(codec)}
+	return operationSpec{Kind: plan.OpCopy, Component: "packet-copy", Detail: "explicit packet copy", Encode: cloneCodecSpec(codec)}
 }
 
 func operationSpecForEncode(codec codec.CodecSpec) operationSpec {
@@ -558,20 +560,6 @@ func streamEncodeMissingError(operation string, stream streamIntent) error {
 			"call .Encode(codec.Opus(...)), .Encode(codec.VP8(...)), or .Encode(codec.VP9(...)) before .To(goav.File(...))",
 			"send decoded frames to goav.Sink(...)",
 			"use .Copy().To(output) if you want to copy packets without decoding",
-		},
-		Cause: ErrUnsupportedBuild,
-	}
-}
-
-func recipeRuntimeUnsupportedError(operation string) error {
-	return &BuildError{
-		Code:      errcode.RuntimeUnsupported,
-		Operation: operation,
-		Reason:    "recipe compilation requires a goav runtime",
-		Suggestions: []string{
-			"use goav.Default() for the standard recipe runtime",
-			"use goav.New(...) when customizing adapters",
-			"use expert.Graph(runtime) for explicit graph wiring with a goav runtime",
 		},
 		Cause: ErrUnsupportedBuild,
 	}

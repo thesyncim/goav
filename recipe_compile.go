@@ -17,7 +17,7 @@ import (
 
 type recipeResolved struct {
 	intent                intent
-	runtime               Runtime
+	runtime               *Runtime
 	spec                  pipeline.Spec
 	specReady             bool
 	specOrigin            string
@@ -34,10 +34,11 @@ type recipeResolved struct {
 }
 
 type recipeCompileState struct {
-	operation string
-	intent    intent
-	runtime   Runtime
-	options   recipeCompileOptions
+	operation       string
+	intent          intent
+	runtime         *Runtime
+	runtimeExplicit bool
+	options         recipeCompileOptions
 
 	jobPresent               bool
 	branchCompositionPresent bool
@@ -77,6 +78,7 @@ type recipeCompileState struct {
 
 type recipeCompileOptions struct {
 	ctx                        context.Context
+	requireExplicitRuntime     bool
 	preflightInputAdapters     bool
 	preflightOutputAdapters    bool
 	preflightDecodeAdapters    bool
@@ -210,7 +212,7 @@ func (r recipeResolved) Describe() (pipeline.Spec, error) {
 	return pipeline.Spec{}, recipeGraphUnsupportedError("describe recipe", r.intent)
 }
 
-func (r recipeResolved) Build(ctx context.Context) (Task, error) {
+func (r recipeResolved) Build(ctx context.Context) (LiveTask, error) {
 	if !r.graphPlan.ready() {
 		return nil, recipeGraphUnsupportedError("build recipe", r.intent)
 	}
@@ -275,6 +277,7 @@ func compileJobRecipeForBuild(job *Job) (recipeResolved, error) {
 func compileJobRecipeForBuildContext(ctx context.Context, job *Job) (recipeResolved, error) {
 	return compileJobRecipeWithOptions(job, recipeCompileOptions{
 		ctx:                        ctx,
+		requireExplicitRuntime:     true,
 		preflightInputAdapters:     true,
 		preflightOutputAdapters:    true,
 		preflightDecodeAdapters:    true,
@@ -299,7 +302,8 @@ func compileJobRecipeWithOptions(job *Job, options recipeCompileOptions) (recipe
 	if job != nil {
 		state.jobPresent = true
 		state.intent = job.plan()
-		state.runtime = job.runtime
+		state.runtime = job.compileRuntime()
+		state.runtimeExplicit = job.runtimeSet
 		state.recipeErr = job.err
 		state.inputAttachments = append([]InputSpec(nil), job.inputs...)
 		state.jobOutputCount = len(job.outputs)
@@ -327,10 +331,10 @@ func compileJobRecipeWithOptions(job *Job, options recipeCompileOptions) (recipe
 		validateRecipeOperationShapesPass(),
 		validateRecipeDestinationShapesPass(),
 		validateJobKnownInputDecodeAdaptersPass(),
-		validateRecipeRuntimePass(),
 		emitGraphPlanSpecPass(),
 		validateMuxCompatibilityPass(),
 		requireGraphPlanSpecPass(),
+		validateRecipeRuntimePass(),
 	}}.Compile(state)
 }
 
@@ -342,12 +346,13 @@ func compileJobRecipeWithOptions(job *Job, options recipeCompileOptions) (recipe
 func compileJobJoinRecipeWithOptions(job *Job, options recipeCompileOptions) (recipeResolved, error) {
 	spec := job.join
 	state := recipeCompileState{
-		operation:      "build " + string(spec.kind),
-		options:        options,
-		intent:         joinIntent(job),
-		runtime:        job.runtime,
-		recipeErr:      job.err,
-		joinAttachment: spec,
+		operation:       "build " + string(spec.kind),
+		options:         options,
+		intent:          joinIntent(job),
+		runtime:         job.compileRuntime(),
+		runtimeExplicit: job.runtimeSet,
+		recipeErr:       job.err,
+		joinAttachment:  spec,
 	}
 	state.inputAttachments = joinArmInputs(spec)
 	state.outputAttachments, state.outputDestinationNames = joinOutputAttachments(spec)
@@ -356,10 +361,10 @@ func compileJobJoinRecipeWithOptions(job *Job, options recipeCompileOptions) (re
 		validateJoinRecipePass(),
 		validateStreamRulesPass(),
 		validateJobInputFormatAdaptersPass(),
-		validateRecipeRuntimePass(),
 		emitGraphPlanSpecPass(),
 		validateMuxCompatibilityPass(),
 		requireGraphPlanSpecPass(),
+		validateRecipeRuntimePass(),
 	}}.Compile(state)
 }
 
@@ -367,9 +372,6 @@ func validateJoinRecipePass() recipeCompilePass {
 	return recipeCompilePassFunc{name: "validate join recipe", fn: func(state *recipeCompileState) error {
 		if state.joinAttachment == nil {
 			return nilRecipeError(state.operation, "nil join")
-		}
-		if state.runtime == nil {
-			return runtimeMissingError(state.operation)
 		}
 		if state.recipeErr != nil {
 			return state.recipeErr
@@ -380,7 +382,8 @@ func validateJoinRecipePass() recipeCompilePass {
 
 func compileJobBranchRecipeWithOptions(job *Job, options recipeCompileOptions) (recipeResolved, error) {
 	branchJob := &branchCompositionJob{
-		runtime:         job.runtime,
+		runtime:         job.compileRuntime(),
+		runtimeExplicit: job.runtimeSet,
 		name:            job.name,
 		streams:         append([]streamBuild(nil), job.branchStreams...),
 		outputs:         append([]namedDestinationSpec(nil), job.branchDestinations...),
@@ -405,6 +408,7 @@ func compileBranchCompositionRecipeWithOptions(job *branchCompositionJob, option
 		state.branchCompositionPresent = true
 		state.intent = job.plan()
 		state.runtime = job.runtime
+		state.runtimeExplicit = job.runtimeExplicit
 		state.recipeErr = job.err
 		state.branchInputAttachment = job.input
 		state.branchDestinationAttachments = append([]namedDestinationSpec(nil), job.outputs...)
@@ -429,10 +433,10 @@ func compileBranchCompositionRecipeWithOptions(job *branchCompositionJob, option
 		validateRecipeDestinationShapesPass(),
 		validateKnownBranchInputDecodeAdaptersPass(),
 		planBranchCompositionIntentPass(),
-		validateRecipeRuntimePass(),
 		emitGraphPlanSpecPass(),
 		validateMuxCompatibilityPass(),
 		requireGraphPlanSpecPass(),
+		validateRecipeRuntimePass(),
 	}}.Compile(state)
 }
 
@@ -455,8 +459,8 @@ func runtimeMissingError(operation string) error {
 		Operation: operation,
 		Reason:    "no runtime is configured",
 		Suggestions: []string{
-			"keep the default: goav.From(...) recipes start with goav.Default()",
-			"pass a non-nil runtime with .UseRuntime(goav.New(goav.WithDefaults()))",
+			"pass a non-nil runtime with .UseRuntime(goav.MustNew(...))",
+			"import github.com/thesyncim/goav/std and build with std.MustNew(...), std.Build(ctx, job), or std.Run(ctx, job)",
 		},
 		Cause: ErrUnsupportedBuild,
 	}
@@ -467,9 +471,6 @@ func validateJobRecipePass() recipeCompilePass {
 		if !state.jobPresent {
 			return nilRecipeError(state.operation, "nil job")
 		}
-		if state.runtime == nil {
-			return runtimeMissingError(state.operation)
-		}
 		if state.recipeErr != nil {
 			return state.recipeErr
 		}
@@ -479,11 +480,135 @@ func validateJobRecipePass() recipeCompilePass {
 
 func validateRecipeRuntimePass() recipeCompilePass {
 	return recipeCompilePassFunc{name: "validate recipe runtime", fn: func(state *recipeCompileState) error {
-		if _, ok := state.runtime.(*runtime); ok {
+		if state.runtime != nil && (!state.requiresExplicitRuntime() || state.runtimeExplicit) {
 			return nil
 		}
-		return recipeRuntimeUnsupportedError(state.operation)
+		return runtimeMissingError(state.operation)
 	}}
+}
+
+func (state *recipeCompileState) adapterRuntime() *Runtime {
+	if state.requiresExplicitRuntime() && !state.runtimeExplicit {
+		return nil
+	}
+	return state.runtime
+}
+
+func (state *recipeCompileState) requiresExplicitRuntime() bool {
+	if !state.options.requireExplicitRuntime {
+		return false
+	}
+	if inputSpecsRequireRuntime(state.inputAttachments) || inputSpecRequiresRuntime(state.branchInputAttachment) {
+		return true
+	}
+	if destinationSpecsRequireRuntime(state.outputAttachments) || namedDestinationSpecsRequireRuntime(state.branchDestinationAttachments) {
+		return true
+	}
+	if streamRulesRequireRuntime(state.streamRules) {
+		return true
+	}
+	return intentRequiresRuntime(state.intent)
+}
+
+func inputSpecsRequireRuntime(inputs []InputSpec) bool {
+	for i := range inputs {
+		if inputSpecRequiresRuntime(inputs[i]) {
+			return true
+		}
+	}
+	return false
+}
+
+func inputSpecRequiresRuntime(input InputSpec) bool {
+	if input.err != nil || input.provider != nil || input.source != nil {
+		return false
+	}
+	return input.input.Name != "" ||
+		input.input.URI != "" ||
+		input.input.Protocol != "" ||
+		input.input.MIMEType != "" ||
+		input.input.Reader != nil ||
+		input.input.ReaderAt != nil
+}
+
+func destinationSpecsRequireRuntime(destinations []destinationSpec) bool {
+	for i := range destinations {
+		if destinationSpecRequiresRuntime(destinations[i]) {
+			return true
+		}
+	}
+	return false
+}
+
+func namedDestinationSpecsRequireRuntime(destinations []namedDestinationSpec) bool {
+	for i := range destinations {
+		if destinationSpecRequiresRuntime(destinations[i].output) {
+			return true
+		}
+	}
+	return false
+}
+
+func destinationSpecRequiresRuntime(destination destinationSpec) bool {
+	if destination.err != nil || destination.sink != nil || destination.custom != nil {
+		return false
+	}
+	return destination.output.Name != "" ||
+		destination.output.URI != "" ||
+		destination.output.Protocol != "" ||
+		destination.output.MIMEType != "" ||
+		destination.output.Writer != nil ||
+		destination.format != ""
+}
+
+func intentRequiresRuntime(intent intent) bool {
+	for i := range intent.Streams {
+		if operationSpecsRequireRuntime(intent.Streams[i].Operations) {
+			return true
+		}
+	}
+	return false
+}
+
+func operationSpecsRequireRuntime(operations []operationSpec) bool {
+	for i := range operations {
+		switch operations[i].Kind {
+		case plan.OpDecode, plan.OpEncode, plan.OpTransform:
+			return true
+		}
+	}
+	return false
+}
+
+func streamRulesRequireRuntime(rules []streamRule) bool {
+	for i := range rules {
+		if branchSpecsRequireRuntime(rules[i].branches) {
+			return true
+		}
+	}
+	return false
+}
+
+func branchSpecsRequireRuntime(branches []BranchSpec) bool {
+	for i := range branches {
+		if branchSpecRequiresRuntime(branches[i]) {
+			return true
+		}
+	}
+	return false
+}
+
+func branchSpecRequiresRuntime(branch BranchSpec) bool {
+	return operationSpecsRequireRuntime(branch.operations) || destinationRefsRequireRuntime(branch.destinations)
+}
+
+func destinationRefsRequireRuntime(destinations []destinationRef) bool {
+	for i := range destinations {
+		if destinationSpecRequiresRuntime(destinations[i].dest) {
+			return true
+		}
+	}
+	return false
 }
 
 func validateJobIntentShapePass() recipeCompilePass {
@@ -556,7 +681,7 @@ func jobStreamDestinationMissingError(operation string, stream streamIntent) err
 		Reason:    "stream chain has no destination",
 		Suggestions: []string{
 			"finish each chain with .To(destination) before starting the next .Audio()/.Video()/.Stream()",
-			"share one destination handle across chains to mux them together",
+			"share one destination handle or pass goav.DestinationGroup(name) across chains to mux them together",
 		},
 		Cause: ErrUnsupportedBuild,
 	}
@@ -693,7 +818,7 @@ func validateJobOutputFormatAdaptersPass() recipeCompilePass {
 		if !state.options.preflightOutputAdapters {
 			return nil
 		}
-		outputs, err := validateOutputFormatAdapters(state.options.Context(), state.runtime, state.outputAttachments, state.outputDestinationNames...)
+		outputs, err := validateOutputFormatAdapters(state.options.Context(), state.adapterRuntime(), state.outputAttachments, state.outputDestinationNames...)
 		if err != nil {
 			return err
 		}
@@ -707,7 +832,7 @@ func validateJobInputFormatAdaptersPass() recipeCompilePass {
 		if !state.options.preflightInputAdapters {
 			return nil
 		}
-		probes, err := validateInputFormatAdapters(state.options.Context(), state.runtime, state.inputAttachments)
+		probes, err := validateInputFormatAdapters(state.options.Context(), state.adapterRuntime(), state.inputAttachments)
 		if err != nil {
 			return err
 		}
@@ -731,7 +856,7 @@ func validateJobDecodeAdaptersPass() recipeCompilePass {
 		if len(intent.Streams) == 0 {
 			return nil
 		}
-		return validateRecipeDecodeAdapters(state.operation, state.runtime, intent)
+		return validateRecipeDecodeAdapters(state.operation, state.adapterRuntime(), intent)
 	}}
 }
 
@@ -740,7 +865,7 @@ func validateJobEncodeAdaptersPass() recipeCompilePass {
 		if !state.options.preflightEncodeAdapters {
 			return nil
 		}
-		return validateRecipeEncodeAdapters(state.operation, state.runtime, state.intent.Streams)
+		return validateRecipeEncodeAdapters(state.operation, state.adapterRuntime(), state.intent.Streams)
 	}}
 }
 
@@ -749,7 +874,7 @@ func validateJobTransformAdaptersPass() recipeCompilePass {
 		if !state.options.preflightTransformAdapters {
 			return nil
 		}
-		return validateRecipeTransformAdapters(state.operation, state.runtime, state.intent.Streams)
+		return validateRecipeTransformAdapters(state.operation, state.adapterRuntime(), state.intent.Streams)
 	}}
 }
 
@@ -798,9 +923,6 @@ func validateBranchCompositionRecipePass() recipeCompilePass {
 		if !state.branchCompositionPresent {
 			return nilRecipeError(state.operation, "nil transcode job")
 		}
-		if state.runtime == nil {
-			return runtimeMissingError(state.operation)
-		}
 		if state.recipeErr != nil {
 			return state.recipeErr
 		}
@@ -835,7 +957,7 @@ func validateBranchDestinationFormatAdaptersPass() recipeCompilePass {
 			outputs = append(outputs, output)
 			destinationNames = append(destinationNames, state.branchDestinationAttachments[i].name)
 		}
-		resolved, err := validateOutputFormatAdapters(state.options.Context(), state.runtime, outputs, destinationNames...)
+		resolved, err := validateOutputFormatAdapters(state.options.Context(), state.adapterRuntime(), outputs, destinationNames...)
 		if err != nil {
 			return err
 		}
@@ -851,7 +973,7 @@ func validateBranchInputFormatAdaptersPass() recipeCompilePass {
 		if !state.options.preflightInputAdapters {
 			return nil
 		}
-		probes, err := validateInputFormatAdapters(state.options.Context(), state.runtime, []InputSpec{state.branchInputAttachment})
+		probes, err := validateInputFormatAdapters(state.options.Context(), state.adapterRuntime(), []InputSpec{state.branchInputAttachment})
 		if err != nil {
 			return err
 		}
@@ -868,7 +990,7 @@ func validateBranchEncodeAdaptersPass() recipeCompilePass {
 		if !state.options.preflightEncodeAdapters {
 			return nil
 		}
-		return validateRecipeEncodeAdapters(state.operation, state.runtime, state.intent.Streams)
+		return validateRecipeEncodeAdapters(state.operation, state.adapterRuntime(), state.intent.Streams)
 	}}
 }
 
@@ -877,7 +999,7 @@ func validateBranchTransformAdaptersPass() recipeCompilePass {
 		if !state.options.preflightTransformAdapters {
 			return nil
 		}
-		return validateRecipeTransformAdapters(state.operation, state.runtime, state.intent.Streams)
+		return validateRecipeTransformAdapters(state.operation, state.adapterRuntime(), state.intent.Streams)
 	}}
 }
 
@@ -1018,7 +1140,7 @@ func validateJobKnownInputDecodeAdaptersPass() recipeCompilePass {
 		if len(streams) == 0 {
 			return nil
 		}
-		return validateKnownRecipeDecodeAdapters(state.operation, state.runtime, state.inputProbes, streams)
+		return validateKnownRecipeDecodeAdapters(state.operation, state.adapterRuntime(), state.inputProbes, streams)
 	}}
 }
 
@@ -1077,7 +1199,7 @@ func validateKnownBranchInputDecodeAdaptersPass() recipeCompilePass {
 		if spec, ok := declaredSourceShape(state.branchInputAttachment); ok && spec.Domain == shape.DomainFrame {
 			return nil
 		}
-		return validateKnownRecipeDecodeAdapters(state.operation, state.runtime, []format.ProbeResult{state.branchInputProbe}, state.intent.Streams)
+		return validateKnownRecipeDecodeAdapters(state.operation, state.adapterRuntime(), []format.ProbeResult{state.branchInputProbe}, state.intent.Streams)
 	}}
 }
 
@@ -1105,7 +1227,7 @@ func validateKnownProbeStreamSelection(probe format.ProbeResult, stream streamIn
 // view, Describe, Explain, and the lowering, sees them).
 func validateRecipeOperationShapesPass() recipeCompilePass {
 	return recipeCompilePassFunc{name: "validate recipe operation shapes", fn: func(state *recipeCompileState) error {
-		rt, _ := state.runtime.(*runtime)
+		rt := state.runtime
 		for i := range state.intent.Streams {
 			stream := state.intent.Streams[i]
 			initial := recipeInitialStreamShape(state, stream)
@@ -1451,6 +1573,9 @@ func recipeGraphUnsupportedError(operation string, intent intent) error {
 func requireGraphPlanSpecPass() recipeCompilePass {
 	return recipeCompilePassFunc{name: "require graph plan spec", fn: func(state *recipeCompileState) error {
 		if state.specReady && state.specOrigin == graphSpecOriginGraphPlan && state.graphPlan.ready() {
+			return nil
+		}
+		if state.runtimeExplicit && state.runtime == nil {
 			return nil
 		}
 		return recipeGraphUnsupportedError(state.operation, state.intent)

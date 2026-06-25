@@ -2,6 +2,7 @@ package goav_test
 
 import (
 	"os"
+	"os/exec"
 	"strings"
 	"testing"
 )
@@ -83,6 +84,40 @@ func TestRootModuleDependencyPurity(t *testing.T) {
 				continue
 			}
 			t.Errorf("go.mod line %d: third-party dependency %s; the root module may require only %s* plus the reviewed AAC runtime allowlist", lineNumber+1, module, allowedPrefix)
+		}
+	}
+}
+
+func TestRootImportDoesNotPullStdAdapters(t *testing.T) {
+	cmd := exec.Command("go", "list", "-deps", "github.com/thesyncim/goav")
+	out, err := cmd.Output()
+	if err != nil {
+		if exit, ok := err.(*exec.ExitError); ok {
+			t.Fatalf("go list -deps failed: %v\n%s", err, exit.Stderr)
+		}
+		t.Fatalf("go list -deps failed: %v", err)
+	}
+	deps := string(out)
+	for _, forbidden := range []string{
+		"github.com/thesyncim/goav/adapters/annexb",
+		"github.com/thesyncim/goav/adapters/goaac",
+		"github.com/thesyncim/goav/adapters/goav1",
+		"github.com/thesyncim/goav/adapters/goh264",
+		"github.com/thesyncim/goav/adapters/gopus",
+		"github.com/thesyncim/goav/adapters/govpx",
+		"github.com/thesyncim/goav/adapters/ivf",
+		"github.com/thesyncim/goav/adapters/resample",
+		"github.com/thesyncim/goav/adapters/resize",
+		"github.com/thesyncim/goav/container/matroska",
+		"github.com/thesyncim/goav/container/mp4",
+		"github.com/thesyncim/goav/container/webm",
+		"github.com/thesyncim/goaac",
+		"github.com/thesyncim/goav1",
+		"github.com/thesyncim/gopus",
+		"github.com/thesyncim/govpx",
+	} {
+		if strings.Contains(deps, forbidden) {
+			t.Fatalf("root import pulls standard adapter/backend dependency %s", forbidden)
 		}
 	}
 }

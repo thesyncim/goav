@@ -442,7 +442,7 @@ func (b *jobStreamBuilder) Do(stages ...pipeline.Stage) *jobStreamBuilder {
 			b.job.setErr(chainStepAfterEncodeError("build stream", jobStreamName(stream), "custom stage", chainEncodeSpec(stream.operations)))
 			return b
 		}
-		if stages[i] == nil {
+		if err := validateStageComponent(stages[i]); err != nil {
 			b.job.setErr(streamStageMissingError(streamIntent{Name: jobStreamName(stream)}))
 			return b
 		}

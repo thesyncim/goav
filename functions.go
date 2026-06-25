@@ -20,7 +20,6 @@ type Message = pipeline.Message
 type Emit struct {
 	ctx     context.Context
 	emitter pipeline.Emitter
-	message pipeline.Message
 }
 
 // Packet forwards one packet downstream; nil is a no-op.
@@ -28,7 +27,8 @@ func (e *Emit) Packet(packet *av.Packet) error {
 	if packet == nil {
 		return nil
 	}
-	return e.emitter.Emit(e.ctx, e.packetMessage(packet))
+	msg := packetMessage(packet)
+	return e.emitter.Emit(e.ctx, &msg)
 }
 
 // Frame forwards one frame downstream; nil is a no-op.
@@ -36,36 +36,26 @@ func (e *Emit) Frame(frame *av.Frame) error {
 	if frame == nil {
 		return nil
 	}
-	return e.emitter.Emit(e.ctx, e.frameMessage(frame))
+	msg := frameMessage(frame)
+	return e.emitter.Emit(e.ctx, &msg)
 }
 
 // Event forwards one out-of-band event downstream.
 func (e *Emit) Event(event av.Event) error {
-	return e.emitter.Emit(e.ctx, e.eventMessage(event))
+	msg := eventMessage(event)
+	return e.emitter.Emit(e.ctx, &msg)
 }
 
-func (e *Emit) packetMessage(packet *av.Packet) *pipeline.Message {
-	e.message.Kind = pipeline.MessagePacket
-	e.message.Packet = packet
-	e.message.Frame = nil
-	e.message.Event = nil
-	return &e.message
+func packetMessage(packet *av.Packet) pipeline.Message {
+	return pipeline.Message{Kind: pipeline.MessagePacket, Packet: packet}
 }
 
-func (e *Emit) frameMessage(frame *av.Frame) *pipeline.Message {
-	e.message.Kind = pipeline.MessageFrame
-	e.message.Packet = nil
-	e.message.Frame = frame
-	e.message.Event = nil
-	return &e.message
+func frameMessage(frame *av.Frame) pipeline.Message {
+	return pipeline.Message{Kind: pipeline.MessageFrame, Frame: frame}
 }
 
-func (e *Emit) eventMessage(event av.Event) *pipeline.Message {
-	e.message.Kind = pipeline.MessageEvent
-	e.message.Packet = nil
-	e.message.Frame = nil
-	e.message.Event = &event
-	return &e.message
+func eventMessage(event av.Event) pipeline.Message {
+	return pipeline.Message{Kind: pipeline.MessageEvent, Event: &event}
 }
 
 // packetDelivery/frameDelivery/eventDelivery are the source-push seam: they
@@ -73,15 +63,18 @@ func (e *Emit) eventMessage(event av.Event) *pipeline.Message {
 // the runner's optional pipeline.DeliveryEmitter capability. When the emitter
 // lacks the capability, they fall back to Accepted = (err == nil).
 func (e *Emit) packetDelivery(packet *av.Packet) (PushResult, error) {
-	return e.emitDelivery(e.packetMessage(packet))
+	msg := packetMessage(packet)
+	return e.emitDelivery(&msg)
 }
 
 func (e *Emit) frameDelivery(frame *av.Frame) (PushResult, error) {
-	return e.emitDelivery(e.frameMessage(frame))
+	msg := frameMessage(frame)
+	return e.emitDelivery(&msg)
 }
 
 func (e *Emit) eventDelivery(event av.Event) (PushResult, error) {
-	return e.emitDelivery(e.eventMessage(event))
+	msg := eventMessage(event)
+	return e.emitDelivery(&msg)
 }
 
 func (e *Emit) emitDelivery(msg *pipeline.Message) (PushResult, error) {
@@ -111,9 +104,6 @@ func (e *Emit) EOS(streams ...av.StreamID) error {
 // fn observes or transforms each packet and forwards output through emit.
 // Frames and events pass through untouched.
 func PacketFunc(name string, fn func(context.Context, *av.Packet, Emit) error) pipeline.Stage {
-	if fn == nil {
-		return nil
-	}
 	return mediaFuncStage{name: name, packet: fn}
 }
 
@@ -121,9 +111,6 @@ func PacketFunc(name string, fn func(context.Context, *av.Packet, Emit) error) p
 // observes or transforms each frame and forwards output through emit. Packets
 // and events pass through untouched.
 func FrameFunc(name string, fn func(context.Context, *av.Frame, Emit) error) pipeline.Stage {
-	if fn == nil {
-		return nil
-	}
 	return mediaFuncStage{name: name, frame: fn}
 }
 
@@ -131,19 +118,37 @@ func FrameFunc(name string, fn func(context.Context, *av.Frame, Emit) error) pip
 // sees each event, and every message (the event included) continues
 // downstream.
 func EventFunc(name string, fn func(context.Context, av.Event) error) pipeline.Stage {
-	if fn == nil {
-		return nil
-	}
 	return mediaFuncStage{name: name, event: fn}
 }
 
 // SinkFunc wraps a function as a terminal sink for goav.Sink(...): fn
 // receives every delivered message. Returning an error fails the task.
 func SinkFunc(name string, fn func(context.Context, Message) error) pipeline.Sink {
-	if fn == nil {
-		return nil
-	}
 	return mediaFuncSink{name: name, fn: fn}
+}
+
+type componentValidator interface {
+	validateComponent() error
+}
+
+func validateStageComponent(stage pipeline.Stage) error {
+	if stage == nil {
+		return ErrNilStage
+	}
+	if validator, ok := stage.(componentValidator); ok {
+		return validator.validateComponent()
+	}
+	return nil
+}
+
+func validateSinkComponent(sink pipeline.Sink) error {
+	if sink == nil {
+		return ErrNilSink
+	}
+	if validator, ok := sink.(componentValidator); ok {
+		return validator.validateComponent()
+	}
+	return nil
 }
 
 type mediaFuncStage struct {
@@ -151,6 +156,13 @@ type mediaFuncStage struct {
 	packet func(context.Context, *av.Packet, Emit) error
 	frame  func(context.Context, *av.Frame, Emit) error
 	event  func(context.Context, av.Event) error
+}
+
+func (s mediaFuncStage) validateComponent() error {
+	if s.packet == nil && s.frame == nil && s.event == nil {
+		return ErrNilStage
+	}
+	return nil
 }
 
 func (s mediaFuncStage) Name() string {
@@ -161,6 +173,9 @@ func (s mediaFuncStage) Name() string {
 }
 
 func (s mediaFuncStage) Handle(ctx context.Context, msg *pipeline.Message, emitter pipeline.Emitter) error {
+	if err := s.validateComponent(); err != nil {
+		return err
+	}
 	if msg == nil {
 		return nil
 	}
@@ -193,6 +208,13 @@ type mediaFuncSink struct {
 	fn   func(context.Context, Message) error
 }
 
+func (s mediaFuncSink) validateComponent() error {
+	if s.fn == nil {
+		return ErrNilSink
+	}
+	return nil
+}
+
 func (s mediaFuncSink) Name() string {
 	if s.name != "" {
 		return s.name
@@ -201,7 +223,10 @@ func (s mediaFuncSink) Name() string {
 }
 
 func (s mediaFuncSink) Handle(ctx context.Context, msg *pipeline.Message) error {
-	if s.fn == nil || msg == nil {
+	if err := s.validateComponent(); err != nil {
+		return err
+	}
+	if msg == nil {
 		return nil
 	}
 	return s.fn(ctx, *msg)

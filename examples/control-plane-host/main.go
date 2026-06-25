@@ -8,6 +8,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"github.com/thesyncim/goav/control"
 	"io"
 	"net"
 	"os"
@@ -101,7 +102,7 @@ func runHost(ctx context.Context, address string, out io.Writer) error {
 }
 
 type demoHost struct {
-	task         goav.Task
+	task         goav.LiveTask
 	capabilities ctl.CapabilitySet
 	ready        <-chan struct{}
 }
@@ -134,8 +135,8 @@ func newDemoHost(ctx context.Context) (*demoHost, error) {
 	command := ctl.NewCommand[setRate](
 		"vendor.rate",
 		"demo playback-rate control",
-		func(ctx context.Context, task goav.Task, cmd setRate) (ctl.ControlResponse, error) {
-			if err := task.Control(ctx, goav.Rate(cmd.Value).At(pipeline.NodeRef(cmd.Source))); err != nil {
+		func(ctx context.Context, task goav.LiveTask, cmd setRate) (ctl.ControlResponse, error) {
+			if err := task.Control(ctx, control.Rate(cmd.Value).At(pipeline.NodeRef(cmd.Source))); err != nil {
 				return ctl.ControlResponse{}, err
 			}
 			return ctl.ControlResponse{
@@ -150,7 +151,7 @@ func newDemoHost(ctx context.Context) (*demoHost, error) {
 	controlsCommand := ctl.NewCommand[controlHistory](
 		"fixture.controls",
 		"report controls recorded by the fixture test source",
-		func(_ context.Context, _ goav.Task, query controlHistory) (ctl.ControlResponse, error) {
+		func(_ context.Context, _ goav.LiveTask, query controlHistory) (ctl.ControlResponse, error) {
 			return ctl.ControlResponse{
 				Operation: "control fixture.controls",
 				Result:    summarizeSourceControls(source, query.Type),
@@ -271,7 +272,7 @@ func printUsage(out io.Writer, address string) {
 	fmt.Fprintf(out, "goav ctl --control %s control fixture.controls\n", address)
 	fmt.Fprintf(out, "goav ctl --control %s control fixture.controls type=rate\n", address)
 	fmt.Fprintf(out, "goav ctl --control %s control vendor.rate value=0.5 source=fixture\n", address)
-	fmt.Fprintf(out, "# use the raw JSON fallback when automation already has a goav.Control or av.Event shape\n")
+	fmt.Fprintf(out, "# use the raw JSON fallback when automation already has a control.Control or av.Event shape\n")
 	fmt.Fprintf(out, "goav ctl --control %s control --json '{\"type\":\"rate\",\"rate\":0.75,\"node\":\"fixture\"}'\n", address)
 	fmt.Fprintf(out, "goav ctl --control %s control deliver --json '{\"type\":\"vendor.force_idr\",\"stream_id\":\"video\",\"reason\":\"manual\",\"metadata\":{\"source\":\"cli\"}}' at=frames\n", address)
 	fmt.Fprintf(out, "# attach a stock VP8/WebM transcode from the decoded frame tap\n")

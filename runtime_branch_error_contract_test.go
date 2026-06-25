@@ -36,7 +36,7 @@ func TestRuntimeBranchStructuredErrorContracts(t *testing.T) {
 		},
 		{name: "node duplicate", err: runtimeBranchNodeDuplicateError("preview.sink"), code: errcode.RuntimeBranchNodeDuplicate, cause: pipeline.ErrNodeExists},
 		{name: "tap duplicate", err: runtimeBranchTapDuplicateError("preview.frames"), code: errcode.RuntimeBranchTapDuplicate, cause: ErrUnsupportedBuild},
-		{name: "transform media mismatch", err: runtimeBranchTransformMediaError("preview", "Resize", "video"), code: errcode.RuntimeBranchTransformMediaMismatch, cause: ErrUnsupportedBuild},
+		{name: "transform media mismatch", err: runtimeBranchTransformMediaError("preview", "Resize", av.MediaVideo, av.MediaAudio), code: errcode.TransformMediaMismatch, cause: ErrUnsupportedBuild},
 		{name: "transform open error", err: runtimeBranchTransformError("resize-preview", transformCause), code: errcode.RuntimeBranchTransformError, cause: transformCause},
 		{name: "encode missing", err: runtimeBranchEncodeMissingError("archive"), code: errcode.RuntimeBranchEncodeMissing, cause: ErrUnsupportedBuild},
 		{name: "encode domain mismatch", err: runtimeBranchEncodeDomainError("archive", packetShape), code: errcode.RuntimeBranchEncodeDomainMismatch, cause: ErrUnsupportedBuild},

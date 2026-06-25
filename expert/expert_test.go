@@ -8,7 +8,6 @@ import (
 	"github.com/thesyncim/goav"
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/expert"
-	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/pipeline"
 )
 
@@ -67,7 +66,7 @@ func packetMessage(stream av.StreamID) pipeline.Message {
 // from Source/Stage/Sink, Connect routes (full and stream-narrowed), Describe
 // parity, Build, and a run that delivers messages along the wired routes.
 func TestGraphWiresAndRunsThroughPublicSeam(t *testing.T) {
-	graph := expert.Graph(goav.New())
+	graph := expert.Graph(goav.MustNew())
 	source := graph.Source("source", &expertTestSource{
 		name:     "source",
 		messages: []pipeline.Message{packetMessage("audio"), packetMessage("video")},
@@ -110,7 +109,7 @@ func TestGraphWiresAndRunsThroughPublicSeam(t *testing.T) {
 // a GraphNode passed to goav.Branch(...).From anchors a runtime attachment at
 // that node through the structural Route seam.
 func TestGraphHandlesAnchorRuntimeBranches(t *testing.T) {
-	graph := expert.Graph(goav.New())
+	graph := expert.Graph(goav.MustNew())
 	source := graph.Source("source", &expertTestSource{
 		name:     "source",
 		messages: []pipeline.Message{packetMessage("audio")},
@@ -146,17 +145,11 @@ func TestGraphHandlesAnchorRuntimeBranches(t *testing.T) {
 	}
 }
 
-type probeOnlyRuntime struct{}
-
-func (probeOnlyRuntime) Probe(context.Context, format.ProbeRequest) (format.ProbeResult, error) {
-	return format.ProbeResult{}, nil
-}
-
-// TestGraphRequiresGoavRuntime pins the refusal: a foreign goav.Runtime
-// yields a builder whose Describe and Build fail with ErrRuntimeRequired
-// (node and Connect calls stay safe no-ops).
+// TestGraphRequiresGoavRuntime pins the refusal: a nil runtime yields a
+// builder whose Describe and Build fail with ErrRuntimeRequired (node and
+// Connect calls stay safe no-ops).
 func TestGraphRequiresGoavRuntime(t *testing.T) {
-	graph := expert.Graph(probeOnlyRuntime{})
+	graph := expert.Graph(nil)
 	node := graph.Source("source", &expertTestSource{name: "source"})
 	graph.Connect(node.Out(), node.In())
 	if _, err := graph.Describe(); !errors.Is(err, expert.ErrRuntimeRequired) {
@@ -171,13 +164,13 @@ func TestGraphRequiresGoavRuntime(t *testing.T) {
 // surfacing through the bridge: nil nodes and empty Connect calls latch the
 // goav and pipeline sentinels reported by Describe.
 func TestGraphRefusesNilNodesAndEmptyRoutes(t *testing.T) {
-	graph := expert.Graph(goav.New())
+	graph := expert.Graph(goav.MustNew())
 	graph.Source("source", nil)
 	if _, err := graph.Describe(); !errors.Is(err, goav.ErrNilSource) {
 		t.Fatalf("Describe err = %v, want ErrNilSource", err)
 	}
 
-	graph = expert.Graph(goav.New())
+	graph = expert.Graph(goav.MustNew())
 	node := graph.Source("source", &expertTestSource{name: "source"})
 	graph.Connect(node.Out())
 	if _, err := graph.Describe(); !errors.Is(err, pipeline.ErrInvalidLink) {

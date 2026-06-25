@@ -11,6 +11,23 @@ methodology changes, and migration notes.
 
 ## Unreleased
 
+- Reduced and layered the pre-v1 public API: bundled adapters now live behind
+  `goav/std`, live controls and watch filters moved into explicit vocabulary
+  packages, `Task` is the minimal run/close lifecycle, richer runtime behavior
+  is exposed through opt-in capability interfaces, and `DestinationGroup(...)`
+  declares shared mux/sink grouping without depending only on reused Go values.
+- Added typed `BuildError` fields and fixes (`Detail`, `Fix`, `RecipePatch`,
+  and `Detail(key)`) while preserving existing rendered details and
+  suggestions for human-facing diagnostics.
+- Hardened `Emit` message ownership so packet, frame, and event deliveries no
+  longer share one mutable message slot when an emitter buffers or retains
+  pointers.
+- Lowered every module directive to the minor Go floor (`go 1.26`) and moved CI
+  to the latest Go 1.26 patch instead of making a local patch release the
+  library minimum.
+- Aligned branch transform shape errors across build and runtime attach paths,
+  retiring the runtime-specific transform-media code in favor of the shared
+  `operation_shape_mismatch` family.
 - Reworked the human-facing docs around reader-first navigation while keeping
   the checked API, operation, release, and evidence pins current.
 - Added grammar-shaped live-room sync with `SyncPolicy`, `.Sync(...)`,

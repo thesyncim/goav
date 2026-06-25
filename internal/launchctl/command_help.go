@@ -29,7 +29,7 @@ func HelpWithRegistry(args []string, manifest []CommandSpec, registry PipelineRe
 	return helpWithRegistry(args, manifest, registry, runtimeBranchCapabilities{})
 }
 
-func helpWithRuntime(args []string, manifest []CommandSpec, registry PipelineRegistry, task goav.Task) (string, error) {
+func helpWithRuntime(args []string, manifest []CommandSpec, registry PipelineRegistry, task goav.LiveTask) (string, error) {
 	return helpWithRegistry(args, manifest, registry, runtimeCapabilities(task))
 }
 
@@ -115,7 +115,7 @@ func controlHelp(manifest []CommandSpec) string {
 	out.WriteString("control\n\n")
 	out.WriteString("Usage:\n")
 	out.WriteString("  goav ctl --control unix://PATH control <verb> [field=value...]\n")
-	out.WriteString("  goav ctl --control unix://PATH control --json '<json-goav-control>'\n")
+	out.WriteString("  goav ctl --control unix://PATH control --json '<json-control>'\n")
 	out.WriteString("  goav ctl --control unix://PATH control deliver --json '<json-av-event>' at=<tap-name>\n\n")
 	out.WriteString("Verbs:\n")
 	for _, spec := range manifest {
@@ -234,7 +234,7 @@ type runtimeMuxerDescriptorProvider interface {
 	MuxerDescriptors() []format.Descriptor
 }
 
-func runtimeCapabilities(task goav.Task) runtimeBranchCapabilities {
+func runtimeCapabilities(task goav.LiveTask) runtimeBranchCapabilities {
 	var caps runtimeBranchCapabilities
 	if provider, ok := task.(runtimeEncoderDescriptorProvider); ok && provider != nil {
 		caps.encoders = provider.EncoderDescriptors()

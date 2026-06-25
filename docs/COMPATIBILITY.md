@@ -19,9 +19,11 @@ compatibility it is promising and what evidence backs that promise.
 - Example modules: `examples/*` are copyable adoption artifacts, not imported
   library APIs. They should keep building, but they do not carry compatibility
   promises beyond the public APIs they demonstrate.
-- Minimum Go version: the current module directive is `go 1.26.4`; before a
-  tag, the maintainer must confirm that directive is the intended supported
-  minimum for every module being released.
+- Minimum Go version: the current module directive is `go 1.26`. First-party
+  codec backends currently require Go 1.26, so the release floor is a minor
+  version, not a patch-level local toolchain pin. Before a tag, the maintainer
+  must confirm that directive is the intended supported minimum for every
+  module being released.
 
 ## V1 promise draft
 

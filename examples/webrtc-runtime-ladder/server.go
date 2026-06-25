@@ -12,12 +12,12 @@ import (
 )
 
 type server struct {
-	runtime  goav.Runtime
+	runtime  *goav.Runtime
 	mu       sync.Mutex
 	sessions map[string]*session
 }
 
-func newServer(runtime goav.Runtime) *server {
+func newServer(runtime *goav.Runtime) *server {
 	return &server{
 		runtime:  runtime,
 		sessions: make(map[string]*session),

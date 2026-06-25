@@ -26,7 +26,7 @@ import (
 //
 // A switch is driven live through the control plane: an injected event carrying
 // selectorActiveReason names the target input in Event.StreamID, calls SetActive,
-// and is consumed (not forwarded). SelectActive builds that control.
+// and is consumed (not forwarded). control.SelectActive builds that control.
 type selectorStage struct {
 	name        string
 	inputs      []av.StreamID
@@ -40,7 +40,7 @@ type selectorStage struct {
 
 // selectorActiveReason marks an injected control event as a live switch request:
 // the selector reads Event.StreamID as the input to make active and consumes the
-// event instead of forwarding it. SelectActive stamps this reason.
+// event instead of forwarding it. control.SelectActive stamps this reason.
 const selectorActiveReason = "select.active"
 
 func newSelectorStage(name string, inputs []av.StreamID, out av.StreamID) *selectorStage {
@@ -65,7 +65,7 @@ func (s *selectorStage) SetActive(id av.StreamID) error {
 			return nil
 		}
 	}
-	return fmt.Errorf("goav: selector %q has no input %q (inputs: %s); switch with goav.SelectActive to one of the configured arm ids", s.name, id, joinStreamIDs(s.inputs))
+	return fmt.Errorf("goav: selector %q has no input %q (inputs: %s); switch with control.SelectActive to one of the configured arm ids", s.name, id, joinStreamIDs(s.inputs))
 }
 
 // joinStreamIDs renders the configured arm ids for the SetActive refusal.
