@@ -52,14 +52,15 @@ func (f Fix) String() string {
 }
 
 // BuildError is the one structured refusal goav raises from build,
-// validation, attach, and explain paths. Code identifies the refusal class
-// (see the errcode package for the catalog), Operation/Node say where, Reason says why,
-// Fields carry typed machine-readable facts, Details carries their legacy
-// key=value rendering, Fixes carry typed repair actions, Suggestions carries
-// their legacy text rendering, and Cause is a sentinel (ErrUnsupportedBuild,
-// ErrNilSink, pipeline.ErrBufferedMessageUnsafe, ...) reachable through
-// errors.Is.
+// validation, attach, and explain paths. Family identifies the stable broad
+// refusal class, Code identifies the detailed catalog entry (see the errcode
+// package), Operation/Node say where, Reason says why, Fields carry typed
+// machine-readable facts, Details carries their legacy key=value rendering,
+// Fixes carry typed repair actions, Suggestions carries their legacy text
+// rendering, and Cause is a sentinel (ErrUnsupportedBuild, ErrNilSink,
+// pipeline.ErrBufferedMessageUnsafe, ...) reachable through errors.Is.
 type BuildError struct {
+	Family      errcode.Family
 	Code        errcode.Code
 	Operation   string
 	Node        string

@@ -6,11 +6,15 @@ paths use one structured shape for that job: `goav.BuildError`.
 
 The contract is enforced by a source-scanning pin test (`errors_pin_test.go`):
 
-- **Code**: a typed `errcode.Code` identifying the refusal class. Every
-  code is an exported constant in the `errcode` package (the catalog), grouped
-  by area with a one-line comment saying when it fires. Codes are stable;
-  rendered text may improve. The type is an open string: external components
-  emit their own vendor-prefixed codes through the same `BuildError` shape.
+- **Family**: a typed `errcode.Family` identifying the stable broad class
+  (`destination`, `runtime_branch`, `codec`, ...). Switch on this when a caller
+  wants category-level handling.
+- **Code**: a typed `errcode.Code` identifying the detailed refusal class.
+  Every code is an exported constant in the `errcode` package (the catalog),
+  grouped by area with a one-line comment saying when it fires. Codes are
+  stable; rendered text may improve. The type is an open string: external
+  components emit their own vendor-prefixed codes through the same `BuildError`
+  shape.
 - **Operation / Node**: where it happened (`build stream`, `attach runtime
   branch`; the chain, branch, tap, or destination name).
 - **Reason**: one line saying why, including actual vs expected where it
@@ -46,6 +50,12 @@ task, err := job.Build(ctx)
 if err != nil {
     var buildErr *goav.BuildError
     if errors.As(err, &buildErr) {
+        switch buildErr.Family {
+        case errcode.FamilyCodec:
+            // register an adapter, or choose a codec family fallback
+        case errcode.FamilyShape:
+            // inspect the detailed code below
+        }
         switch buildErr.Code {
         case errcode.EncodeAdapterMissing:
             // register an adapter, or fall back to Copy()

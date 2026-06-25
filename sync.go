@@ -310,6 +310,7 @@ func syncTimebaseError(policy SyncPolicy, msg *pipeline.Message) error {
 		kind = "frame"
 	}
 	return &BuildError{
+		Family:    errcode.FamilyForCode(errcode.RuntimeBranchInvalid),
 		Code:      errcode.RuntimeBranchInvalid,
 		Operation: "sync media timeline",
 		Node:      node,
@@ -337,6 +338,7 @@ func validateSyncPolicyForStream(operation string, branchName string, stream av.
 		return nil
 	}
 	return &BuildError{
+		Family:    errcode.FamilyForCode(errcode.RuntimeBranchInvalid),
 		Code:      errcode.RuntimeBranchInvalid,
 		Operation: operation,
 		Node:      firstNonEmpty(branchName, string(stream.ID), "branch"),

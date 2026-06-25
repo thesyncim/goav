@@ -160,6 +160,7 @@ func transformAdapterExpectedMedia(name string) (av.MediaType, av.MediaType) {
 
 func transformAdapterIncompatibleError(operation string, stream streamIntent, name string, desc filter.Descriptor, expectedInput av.MediaType, expectedOutput av.MediaType) error {
 	return &BuildError{
+		Family:    errcode.FamilyForCode(errcode.TransformAdapterIncompatible),
 		Code:      errcode.TransformAdapterIncompatible,
 		Operation: operation,
 		Node:      jobStreamIntentName(stream),
@@ -182,6 +183,7 @@ func transformAdapterIncompatibleError(operation string, stream streamIntent, na
 
 func transformAdapterCapabilityError(operation string, stream streamIntent, name string, field string, requested string, supported []string) error {
 	return &BuildError{
+		Family:    errcode.FamilyForCode(errcode.TransformAdapterIncompatible),
 		Code:      errcode.TransformAdapterIncompatible,
 		Operation: operation,
 		Node:      jobStreamIntentName(stream),
@@ -206,6 +208,7 @@ func recipeTransformAdapterError(operation string, stream streamIntent, name str
 		return cause
 	}
 	return &BuildError{
+		Family:    errcode.FamilyForCode(errcode.TransformAdapterMissing),
 		Code:      errcode.TransformAdapterMissing,
 		Operation: operation,
 		Node:      jobStreamIntentName(stream),
@@ -245,6 +248,7 @@ func streamTransform(streamName string, selector av.StreamSelector, spec Transfo
 	switch {
 	case spec.Resize != nil && spec.Resample != nil:
 		return mediaTransform{}, &BuildError{
+			Family:      errcode.FamilyForCode(errcode.TransformInvalid),
 			Code:        errcode.TransformInvalid,
 			Operation:   "build stream",
 			Node:        base,
@@ -273,6 +277,7 @@ func streamTransform(streamName string, selector av.StreamSelector, spec Transfo
 		}, nil
 	default:
 		return mediaTransform{}, &BuildError{
+			Family:    errcode.FamilyForCode(errcode.TransformInvalid),
 			Code:      errcode.TransformInvalid,
 			Operation: "build stream",
 			Node:      base,
@@ -294,6 +299,7 @@ func validateTransformSpec(operation string, node string, spec TransformSpec) er
 			return nil
 		}
 		return &BuildError{
+			Family:    errcode.FamilyForCode(errcode.TransformInvalid),
 			Code:      errcode.TransformInvalid,
 			Operation: operation,
 			Node:      node,
@@ -313,6 +319,7 @@ func validateTransformSpec(operation string, node string, spec TransformSpec) er
 			return nil
 		}
 		return &BuildError{
+			Family:    errcode.FamilyForCode(errcode.TransformInvalid),
 			Code:      errcode.TransformInvalid,
 			Operation: operation,
 			Node:      node,
@@ -334,6 +341,7 @@ func validateTransformSpec(operation string, node string, spec TransformSpec) er
 
 func transformMediaError(stream string, transform string, expected av.MediaType, actual av.MediaType) error {
 	return &BuildError{
+		Family:    errcode.FamilyForCode(errcode.TransformMediaMismatch),
 		Code:      errcode.TransformMediaMismatch,
 		Operation: "build stream",
 		Node:      stream,

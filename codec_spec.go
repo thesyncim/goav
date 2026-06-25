@@ -243,6 +243,7 @@ func cloneBuffer(buffer av.Buffer) av.Buffer {
 func validateRecipeEncode(spec codec.CodecSpec, operation string, node string) error {
 	if spec.Auto {
 		return &BuildError{
+			Family:    errcode.FamilyForCode(errcode.EncodeAutoUnresolved),
 			Code:      errcode.EncodeAutoUnresolved,
 			Operation: operation,
 			Node:      node,
@@ -266,6 +267,7 @@ func validateRecipeEncodeValues(spec codec.CodecSpec, operation string, node str
 	switch {
 	case spec.Settings.Bitrate < 0:
 		return &BuildError{
+			Family:    errcode.FamilyForCode(errcode.EncodeParameterInvalid),
 			Code:      errcode.EncodeParameterInvalid,
 			Operation: operation,
 			Node:      node,
@@ -281,6 +283,7 @@ func validateRecipeEncodeValues(spec codec.CodecSpec, operation string, node str
 		}
 	case spec.Settings.Framerate.Value < 0 || spec.Settings.Framerate.Base.Num < 0 || spec.Settings.Framerate.Base.Den < 0:
 		return &BuildError{
+			Family:    errcode.FamilyForCode(errcode.EncodeParameterInvalid),
 			Code:      errcode.EncodeParameterInvalid,
 			Operation: operation,
 			Node:      node,
@@ -296,6 +299,7 @@ func validateRecipeEncodeValues(spec codec.CodecSpec, operation string, node str
 		}
 	case spec.Settings.KeyframeInterval < 0:
 		return &BuildError{
+			Family:    errcode.FamilyForCode(errcode.EncodeParameterInvalid),
 			Code:      errcode.EncodeParameterInvalid,
 			Operation: operation,
 			Node:      node,
@@ -311,6 +315,7 @@ func validateRecipeEncodeValues(spec codec.CodecSpec, operation string, node str
 		}
 	case spec.Settings.SampleRateSet && spec.Parameters.SampleRate <= 0:
 		return &BuildError{
+			Family:    errcode.FamilyForCode(errcode.EncodeParameterInvalid),
 			Code:      errcode.EncodeParameterInvalid,
 			Operation: operation,
 			Node:      node,
@@ -326,6 +331,7 @@ func validateRecipeEncodeValues(spec codec.CodecSpec, operation string, node str
 		}
 	case spec.Settings.ChannelsSet && spec.Parameters.Channels <= 0:
 		return &BuildError{
+			Family:    errcode.FamilyForCode(errcode.EncodeParameterInvalid),
 			Code:      errcode.EncodeParameterInvalid,
 			Operation: operation,
 			Node:      node,
@@ -349,6 +355,7 @@ func validateCodecChangePolicy(operation string, node string, policy CodecChange
 		return nil
 	}
 	return &BuildError{
+		Family:    errcode.FamilyForCode(errcode.CodecChangePolicyUnsupported),
 		Code:      errcode.CodecChangePolicyUnsupported,
 		Operation: operation,
 		Node:      node,

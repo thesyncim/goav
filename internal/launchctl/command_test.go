@@ -2518,6 +2518,7 @@ func TestStructuredErrorPreservesUnderlyingShapes(t *testing.T) {
 
 	cause := errors.New("sentinel")
 	buildErr := &goav.BuildError{
+		Family:      errcode.FamilyForCode(errcode.RuntimeBranchTapMissing),
 		Code:        errcode.RuntimeBranchTapMissing,
 		Operation:   "attach runtime branch",
 		Node:        "raw_vdieo",

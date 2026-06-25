@@ -439,6 +439,7 @@ func muxCompatibilitySuggestions(formatID av.FormatID) []string {
 
 func muxCompatibilityBuildError(operation string, issue muxCompatibilityIssue) error {
 	return &BuildError{
+		Family:      errcode.FamilyForCode(issue.Code),
 		Code:        issue.Code,
 		Operation:   operation,
 		Node:        issue.Destination,

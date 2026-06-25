@@ -218,6 +218,7 @@ func chainStepsFromChainOperations(operations []operationSpec) []chainStep {
 func validateBranchCompositionIntentShape(operation string, intent intent) error {
 	if len(intent.Inputs) == 0 {
 		return &BuildError{
+			Family:    errcode.FamilyForCode(errcode.InputMissing),
 			Code:      errcode.InputMissing,
 			Operation: operation,
 			Reason:    "no input is configured",
@@ -229,6 +230,7 @@ func validateBranchCompositionIntentShape(operation string, intent intent) error
 	}
 	if len(intent.Inputs) > 1 {
 		return &BuildError{
+			Family:    errcode.FamilyForCode(errcode.InputCountUnsupported),
 			Code:      errcode.InputCountUnsupported,
 			Operation: operation,
 			Reason:    "transcode recipes currently take one input",
@@ -378,6 +380,7 @@ func branchDestinationLabelSet(namedOutputs []namedDestinationSpec) map[string]s
 
 func branchStreamMissingError() error {
 	return &BuildError{
+		Family:    errcode.FamilyForCode(errcode.StreamMissing),
 		Code:      errcode.StreamMissing,
 		Operation: branchCompositionOperation,
 		Reason:    "no audio or video branches are configured",
@@ -391,6 +394,7 @@ func branchStreamMissingError() error {
 
 func branchEncodeMissingError(stream streamIntent) error {
 	return &BuildError{
+		Family:    errcode.FamilyForCode(errcode.EncodeMissing),
 		Code:      errcode.EncodeMissing,
 		Operation: branchCompositionOperation,
 		Node:      stream.Name,
@@ -409,6 +413,7 @@ func branchEncodeMissingError(stream streamIntent) error {
 
 func branchCopyUnsupportedError(stream streamIntent) error {
 	return &BuildError{
+		Family:    errcode.FamilyForCode(errcode.CopyUnsupported),
 		Code:      errcode.CopyUnsupported,
 		Operation: branchCompositionOperation,
 		Node:      branchIntentName(stream),
@@ -425,6 +430,7 @@ func branchCopyUnsupportedError(stream streamIntent) error {
 func branchIntentDestinationMissingError(stream streamIntent) error {
 	selector := streamIntentSelector(stream)
 	return &BuildError{
+		Family:    errcode.FamilyForCode(errcode.DestinationMissing),
 		Code:      errcode.DestinationMissing,
 		Operation: branchCompositionOperation,
 		Node:      firstNonEmpty(stream.Name, string(selector.Type), "stream"),
@@ -439,6 +445,7 @@ func branchIntentDestinationMissingError(stream streamIntent) error {
 
 func branchDestinationReferenceMissingError(stream streamIntent, label string) error {
 	return &BuildError{
+		Family:    errcode.FamilyForCode(errcode.DestinationMissing),
 		Code:      errcode.DestinationMissing,
 		Operation: branchCompositionOperation,
 		Node:      stream.Name,
@@ -453,6 +460,7 @@ func branchDestinationReferenceMissingError(stream streamIntent, label string) e
 
 func transcodeUnsupportedLiveInputError() error {
 	return &BuildError{
+		Family:    errcode.FamilyForCode(errcode.UnsupportedInput),
 		Code:      errcode.UnsupportedInput,
 		Operation: branchCompositionOperation,
 		Reason:    "live provider transcode recipes are not supported by the transcode recipe compiler yet",
@@ -466,6 +474,7 @@ func transcodeUnsupportedLiveInputError() error {
 
 func branchDestinationNameEmptyError(stream streamBuild, index int) error {
 	return &BuildError{
+		Family:    errcode.FamilyForCode(errcode.DestinationInvalid),
 		Code:      errcode.DestinationInvalid,
 		Operation: branchCompositionOperation,
 		Node:      firstNonEmpty(stream.name, string(stream.selector.Type), "stream"),
@@ -483,6 +492,7 @@ func branchDestinationNameEmptyError(stream streamBuild, index int) error {
 
 func branchDestinationDuplicateError(name string) error {
 	return &BuildError{
+		Family:    errcode.FamilyForCode(errcode.DestinationDuplicate),
 		Code:      errcode.DestinationDuplicate,
 		Operation: branchCompositionOperation,
 		Node:      name,
@@ -497,6 +507,7 @@ func branchDestinationDuplicateError(name string) error {
 
 func branchIntentDuplicateError(name string, firstIndex int, secondIndex int) error {
 	return &BuildError{
+		Family:    errcode.FamilyForCode(errcode.StreamDuplicate),
 		Code:      errcode.StreamDuplicate,
 		Operation: branchCompositionOperation,
 		Node:      name,
@@ -516,6 +527,7 @@ func branchIntentDuplicateError(name string, firstIndex int, secondIndex int) er
 
 func branchIntentNameMissingError(index int, stream streamIntent) error {
 	return &BuildError{
+		Family:    errcode.FamilyForCode(errcode.StreamNameMissing),
 		Code:      errcode.StreamNameMissing,
 		Operation: branchCompositionOperation,
 		Node:      fmt.Sprintf("branch-%d", index),
@@ -545,6 +557,7 @@ func validateBranchDestinations(stream streamIntent) error {
 
 func duplicateBranchDestinationError(stream streamIntent, target string, firstIndex int, secondIndex int) error {
 	return &BuildError{
+		Family:    errcode.FamilyForCode(errcode.DestinationDuplicate),
 		Code:      errcode.DestinationDuplicate,
 		Operation: branchCompositionOperation,
 		Node:      branchIntentName(stream),
@@ -572,6 +585,7 @@ func validateBranchTransforms(stream streamIntent) error {
 		switch {
 		case transform.Resize != nil && transform.Resample != nil:
 			return &BuildError{
+				Family:      errcode.FamilyForCode(errcode.TransformInvalid),
 				Code:        errcode.TransformInvalid,
 				Operation:   branchCompositionOperation,
 				Node:        branchIntentName(stream),
@@ -583,6 +597,7 @@ func validateBranchTransforms(stream streamIntent) error {
 			continue
 		default:
 			return &BuildError{
+				Family:    errcode.FamilyForCode(errcode.TransformInvalid),
 				Code:      errcode.TransformInvalid,
 				Operation: branchCompositionOperation,
 				Node:      branchIntentName(stream),

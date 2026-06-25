@@ -12,6 +12,7 @@ import (
 	"strconv"
 
 	"github.com/thesyncim/goav/av"
+	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/plan"
 	"github.com/thesyncim/goav/shape"
@@ -251,6 +252,7 @@ func joinTapArmMissingError(join string, tap TapRef, declared []string) error {
 		details = append(details, "declared taps: none")
 	}
 	return &BuildError{
+		Family:    errcode.FamilyForCode(joinErrorCode(join, "tap_arm")),
 		Code:      joinErrorCode(join, "tap_arm"),
 		Operation: "build " + join,
 		Node:      firstNonEmpty(tap.name, join),

@@ -688,6 +688,7 @@ func (t *task) bufferedPayloadRunError(cause error, code errcode.Code, reason st
 		details = append(details, "copy_never_branches="+strings.Join(branches, ","))
 	}
 	return &BuildError{
+		Family:    errcode.FamilyForCode(code),
 		Code:      code,
 		Operation: "run task",
 		Node:      "buffered graph",
@@ -843,6 +844,7 @@ func (t *task) Detach(ctx context.Context, attachment Attachment, options ...Det
 
 func nilAttachmentDetachError() error {
 	return &BuildError{
+		Family:    errcode.FamilyForCode(errcode.RuntimeBranchInvalid),
 		Code:      errcode.RuntimeBranchInvalid,
 		Operation: "detach runtime branch",
 		Reason:    "attachment is nil",

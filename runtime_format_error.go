@@ -19,6 +19,7 @@ func inputFormatProbeError(input format.Input, cause error) error {
 		"use goav.Input(provider) for realtime packet receive",
 	}
 	return &BuildError{
+		Family:      errcode.FamilyForCode(errcode.InputFormatUnknown),
 		Code:        errcode.InputFormatUnknown,
 		Operation:   "open input",
 		Node:        demuxNodeName(input),
@@ -41,6 +42,7 @@ func inputDemuxerMissingError(input format.Input, id av.FormatID, cause error) e
 		"call .UseRuntime(goav.MustNew(goav.WithFormatAdapter(...))) when using a custom adapter bundle",
 	}
 	return &BuildError{
+		Family:      errcode.FamilyForCode(errcode.InputDemuxerMissing),
 		Code:        errcode.InputDemuxerMissing,
 		Operation:   "open input",
 		Node:        demuxNodeName(input),
@@ -63,6 +65,7 @@ func outputFormatProbeError(output format.Output, index int, cause error) error 
 		"register a format adapter with goav.MustNew(goav.WithFormatAdapter(...))",
 	}
 	return &BuildError{
+		Family:      errcode.FamilyForCode(errcode.OutputFormatUnknown),
 		Code:        errcode.OutputFormatUnknown,
 		Operation:   "open output",
 		Node:        muxNodeName(output, index),
@@ -85,6 +88,7 @@ func outputMuxerMissingError(output format.Output, index int, id av.FormatID, ca
 		"call .UseRuntime(goav.MustNew(goav.WithFormatAdapter(...))) when using a custom adapter bundle",
 	}
 	return &BuildError{
+		Family:      errcode.FamilyForCode(errcode.OutputMuxerMissing),
 		Code:        errcode.OutputMuxerMissing,
 		Operation:   "open output",
 		Node:        muxNodeName(output, index),
@@ -107,6 +111,7 @@ func destinationFormatProbeError(node string, output format.Output, cause error)
 		"register a format adapter with goav.MustNew(goav.WithFormatAdapter(...))",
 	}
 	return &BuildError{
+		Family:      errcode.FamilyForCode(errcode.DestinationFormatUnknown),
 		Code:        errcode.DestinationFormatUnknown,
 		Operation:   "open destination",
 		Node:        node,
@@ -129,6 +134,7 @@ func destinationMuxerMissingError(node string, output format.Output, id av.Forma
 		"call .UseRuntime(goav.MustNew(goav.WithFormatAdapter(...))) when using a custom adapter bundle",
 	}
 	return &BuildError{
+		Family:      errcode.FamilyForCode(errcode.DestinationMuxerMissing),
 		Code:        errcode.DestinationMuxerMissing,
 		Operation:   "open destination",
 		Node:        node,

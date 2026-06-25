@@ -170,6 +170,7 @@ func encodeStreamMismatchError(request encodeRequest, stream av.Stream) error {
 
 func encodeTargetMissingError(request encodeRequest, stream av.Stream) error {
 	return &BuildError{
+		Family:    errcode.FamilyForCode(errcode.EncodeDestinationMissing),
 		Code:      errcode.EncodeDestinationMissing,
 		Operation: "configure encode",
 		Node:      encodeNodeName(request),

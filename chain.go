@@ -18,6 +18,7 @@ func validateRecipeStreamSelector(operation string, node string, selector av.Str
 		return nil
 	}
 	return &BuildError{
+		Family:    errcode.FamilyForCode(errcode.StreamSelectorInvalid),
 		Code:      errcode.StreamSelectorInvalid,
 		Operation: operation,
 		Node:      node,
@@ -42,6 +43,7 @@ func chainStepAfterEncodeError(operation string, node string, step string, encod
 		return chainStepOnPacketCopyError(operation, node, step)
 	}
 	return &BuildError{
+		Family:    errcode.FamilyForCode(errcode.StreamStepAfterEncode),
 		Code:      errcode.StreamStepAfterEncode,
 		Operation: operation,
 		Node:      node,
@@ -64,6 +66,7 @@ func chainStepAfterEncodeError(operation string, node string, step string, encod
 // first, or keep the chain a pure packet copy.
 func chainStepOnPacketCopyError(operation string, node string, step string) error {
 	return &BuildError{
+		Family:    errcode.FamilyForCode(errcode.OperationShapeMismatch),
 		Code:      errcode.OperationShapeMismatch,
 		Operation: operation,
 		Node:      node,
@@ -84,6 +87,7 @@ func chainStepOnPacketCopyError(operation string, node string, step string) erro
 
 func duplicateStreamEncodeError(operation string, node string, first codec.CodecSpec, second codec.CodecSpec) error {
 	return &BuildError{
+		Family:    errcode.FamilyForCode(errcode.EncodeDuplicate),
 		Code:      errcode.EncodeDuplicate,
 		Operation: operation,
 		Node:      node,
@@ -265,6 +269,7 @@ func (b *jobStreamBuilder) ensureFrameSourceShapeOperation() {
 
 func frameSourceDecodeError(operation string, node string) error {
 	return &BuildError{
+		Family:    errcode.FamilyForCode(errcode.SourceShapeMismatch),
 		Code:      errcode.SourceShapeMismatch,
 		Operation: operation,
 		Node:      node,
@@ -283,6 +288,7 @@ func frameSourceDecodeError(operation string, node string) error {
 
 func frameSourceCopyError(operation string, node string) error {
 	return &BuildError{
+		Family:    errcode.FamilyForCode(errcode.SourceShapeMismatch),
 		Code:      errcode.SourceShapeMismatch,
 		Operation: operation,
 		Node:      node,
@@ -371,6 +377,7 @@ func (b *jobStreamBuilder) Tap(tap TapRef) *jobStreamBuilder {
 	stream := b.current()
 	if tap.name == "" {
 		b.job.setErr(&BuildError{
+			Family:    errcode.FamilyForCode(errcode.TapInvalid),
 			Code:      errcode.TapInvalid,
 			Operation: "build stream",
 			Node:      jobStreamName(stream),

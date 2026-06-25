@@ -57,6 +57,7 @@ func validateTapDomain(operation string, node string, tap TapRef, actual shape.M
 		return nil
 	}
 	return &BuildError{
+		Family:    errcode.FamilyForCode(errcode.TapDomainMismatch),
 		Code:      errcode.TapDomainMismatch,
 		Operation: operation,
 		Node:      firstNonEmpty(node, "tap"),
@@ -76,6 +77,7 @@ func validateTapDomain(operation string, node string, tap TapRef, actual shape.M
 
 func branchSourceInvalidError(node string) error {
 	return &BuildError{
+		Family:    errcode.FamilyForCode(errcode.BranchSourceInvalid),
 		Code:      errcode.BranchSourceInvalid,
 		Operation: "build branch",
 		Node:      firstNonEmpty(node, "branch"),

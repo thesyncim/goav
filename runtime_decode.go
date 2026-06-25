@@ -117,6 +117,7 @@ func selectStreamWithCodecRequirement(streams []av.Stream, selector av.StreamSel
 	}
 	if requireCodec && selected.Codec.ID == "" {
 		return av.Stream{}, &BuildError{
+			Family:    errcode.FamilyForCode(errcode.StreamCodecMissing),
 			Code:      errcode.StreamCodecMissing,
 			Operation: "select stream",
 			Node:      selectorDetail(selector),
@@ -163,6 +164,7 @@ func streamSelectionError(code errcode.Code, selector av.StreamSelector, streams
 		reason = "multiple streams match " + readableSelector(selector)
 	}
 	return &BuildError{
+		Family:      errcode.FamilyForCode(code),
 		Code:        code,
 		Operation:   operation,
 		Node:        node,
@@ -175,6 +177,7 @@ func streamSelectionError(code errcode.Code, selector av.StreamSelector, streams
 
 func streamRequestMismatchError(code errcode.Code, operation string, node string, selector av.StreamSelector, stream av.Stream, suggestions []string) error {
 	return &BuildError{
+		Family:    errcode.FamilyForCode(code),
 		Code:      code,
 		Operation: operation,
 		Node:      node,

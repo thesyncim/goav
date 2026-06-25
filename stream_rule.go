@@ -267,6 +267,7 @@ func (s InputSpec) sourceEventDomain() shape.MediaDomain {
 
 func streamRuleInvalidError(node string, reason string, suggestion string) error {
 	return &BuildError{
+		Family:    errcode.FamilyForCode(errcode.StreamRuleInvalid),
 		Code:      errcode.StreamRuleInvalid,
 		Operation: "build stream rule",
 		Node:      firstNonEmpty(node, "rule"),

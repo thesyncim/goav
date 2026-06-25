@@ -144,6 +144,7 @@ func (s InputSpec) formatInput() format.Input {
 func (s InputSpec) validate() error {
 	if s.err != nil {
 		return &BuildError{
+			Family:    errcode.FamilyForCode(errcode.InputInvalid),
 			Code:      errcode.InputInvalid,
 			Operation: "build input",
 			Node:      firstNonEmpty(s.name, s.input.Name, s.input.URI, "input"),
@@ -168,6 +169,7 @@ func (s InputSpec) validateCustomSource() error {
 	node := firstNonEmpty(s.name, s.input.Name, "source")
 	if s.source.fn == nil {
 		return &BuildError{
+			Family:    errcode.FamilyForCode(errcode.SourceCallbackMissing),
 			Code:      errcode.SourceCallbackMissing,
 			Operation: "build input",
 			Node:      node,
@@ -182,6 +184,7 @@ func (s InputSpec) validateCustomSource() error {
 	spec := normalizeCustomSourceShape(node, s.source.shape)
 	if spec.Domain != shape.DomainPacket && spec.Domain != shape.DomainFrame && spec.Domain != shape.DomainEvent {
 		return &BuildError{
+			Family:    errcode.FamilyForCode(errcode.SourceShapeUnsupported),
 			Code:      errcode.SourceShapeUnsupported,
 			Operation: "build input",
 			Node:      node,
@@ -200,6 +203,7 @@ func (s InputSpec) validateCustomSource() error {
 	}
 	if spec.Domain != shape.DomainEvent && spec.MediaKind == "" {
 		return &BuildError{
+			Family:    errcode.FamilyForCode(errcode.SourceShapeInvalid),
 			Code:      errcode.SourceShapeInvalid,
 			Operation: "build input",
 			Node:      node,
@@ -225,6 +229,7 @@ func (s InputSpec) validatePlainInput() error {
 		return nil
 	}
 	return &BuildError{
+		Family:    errcode.FamilyForCode(errcode.InputInvalid),
 		Code:      errcode.InputInvalid,
 		Operation: "build input",
 		Node:      "input",
@@ -280,6 +285,7 @@ func validateJobInputs(inputs []InputSpec) error {
 			continue
 		}
 		return &BuildError{
+			Family:    errcode.FamilyForCode(errcode.MultiInputUnsupported),
 			Code:      errcode.MultiInputUnsupported,
 			Operation: "build job",
 			Node:      firstNonEmpty(inputs[i].name, inputs[i].input.Name, inputs[i].input.URI, fmt.Sprintf("input-%d", i)),
@@ -314,6 +320,7 @@ func validateRealtimeInputNames(inputs []InputSpec) error {
 
 func duplicateInputNameError(name string, firstIndex int, secondIndex int) error {
 	return &BuildError{
+		Family:    errcode.FamilyForCode(errcode.InputDuplicate),
 		Code:      errcode.InputDuplicate,
 		Operation: "build job",
 		Node:      name,

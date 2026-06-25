@@ -155,6 +155,7 @@ func graphPlanOperationDestinationsRequired(kind plan.OperationKind) bool {
 
 func graphPlanInvalidError(reason string, details []string) error {
 	return &BuildError{
+		Family:    errcode.FamilyForCode(errcode.GraphPlanInvalid),
 		Code:      errcode.GraphPlanInvalid,
 		Operation: "build graph plan",
 		Reason:    reason,

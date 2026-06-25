@@ -13,11 +13,11 @@ import (
 )
 
 // TestBuildErrorContractPinned enforces the error contract at the source
-// level: every &BuildError{...} literal in the package carries a Code from
-// the errcode catalog (never a raw string), an Operation, a Reason, and
-// either Suggestions/Fixes (a user-fixable refusal's concrete fixes) or
-// Details/Fields (an internal invariant's explanation). The contract is what
-// makes goav errors uniformly actionable; this pin makes regressions
+// level: every &BuildError{...} literal in the package carries a Family derived
+// from its Code, a Code from the errcode catalog (never a raw string), an
+// Operation, a Reason, and either Suggestions/Fixes (a user-fixable refusal's
+// concrete fixes) or Details/Fields (an internal invariant's explanation). The
+// contract is what makes goav errors uniformly actionable; this pin makes regressions
 // impossible.
 func TestBuildErrorContractPinned(t *testing.T) {
 	files := parsePackageSourceFiles(t)
@@ -50,6 +50,12 @@ func TestBuildErrorContractPinned(t *testing.T) {
 			}
 			if reason := describeForbiddenCodeExpr(code); reason != "" {
 				t.Errorf("%s: BuildError Code must come from the errcode catalog: %s", filename, reason)
+			}
+			family, ok := fields["Family"]
+			if !ok {
+				t.Errorf("%s: BuildError literal without Family", filename)
+			} else if !isFamilyForCodeExpr(family) {
+				t.Errorf("%s: BuildError Family must be errcode.FamilyForCode(Code)", filename)
 			}
 			if _, ok := fields["Operation"]; !ok {
 				t.Errorf("%s: BuildError literal without Operation", filename)
@@ -88,6 +94,19 @@ func describeForbiddenCodeExpr(expr ast.Expr) string {
 		}
 	}
 	return ""
+}
+
+func isFamilyForCodeExpr(expr ast.Expr) bool {
+	call, ok := expr.(*ast.CallExpr)
+	if !ok || len(call.Args) != 1 {
+		return false
+	}
+	fn, ok := call.Fun.(*ast.SelectorExpr)
+	if !ok || fn.Sel.Name != "FamilyForCode" {
+		return false
+	}
+	pkg, ok := fn.X.(*ast.Ident)
+	return ok && pkg.Name == "errcode"
 }
 
 // TestErrorCodeCatalogPinned keeps the catalog itself healthy: every Code

@@ -406,6 +406,7 @@ func (s destinationSpec) validate(operation string, fallback string) error {
 			}
 		}
 		return &BuildError{
+			Family:      errcode.FamilyForCode(errcode.OutputInvalid),
 			Code:        errcode.OutputInvalid,
 			Operation:   operation,
 			Node:        node,
@@ -417,6 +418,7 @@ func (s destinationSpec) validate(operation string, fallback string) error {
 	if s.sink != nil {
 		if err := validateSinkComponent(s.sink); err != nil {
 			return &BuildError{
+				Family:    errcode.FamilyForCode(errcode.OutputInvalid),
 				Code:      errcode.OutputInvalid,
 				Operation: operation,
 				Node:      node,
@@ -433,6 +435,7 @@ func (s destinationSpec) validate(operation string, fallback string) error {
 	}
 	if s.output.Name == "" && s.output.URI == "" && s.output.Protocol == "" && s.output.MIMEType == "" && s.output.Writer == nil && s.custom == nil && s.format == "" {
 		return &BuildError{
+			Family:    errcode.FamilyForCode(errcode.OutputInvalid),
 			Code:      errcode.OutputInvalid,
 			Operation: operation,
 			Node:      node,
@@ -446,6 +449,7 @@ func (s destinationSpec) validate(operation string, fallback string) error {
 	}
 	if s.output.Protocol == av.ProtocolFile && s.output.Writer == nil && s.custom == nil {
 		return &BuildError{
+			Family:    errcode.FamilyForCode(errcode.OutputWriterMissing),
 			Code:      errcode.OutputWriterMissing,
 			Operation: operation,
 			Node:      node,
@@ -459,6 +463,7 @@ func (s destinationSpec) validate(operation string, fallback string) error {
 	}
 	if s.output.Protocol == av.ProtocolFile && s.output.Writer != nil && s.output.Name == "" && s.output.URI == "" && s.output.MIMEType == "" && s.format == "" {
 		return &BuildError{
+			Family:    errcode.FamilyForCode(errcode.OutputFormatMissing),
 			Code:      errcode.OutputFormatMissing,
 			Operation: operation,
 			Node:      node,
@@ -472,6 +477,7 @@ func (s destinationSpec) validate(operation string, fallback string) error {
 	}
 	if s.output.URI == "" && s.output.Protocol != av.ProtocolFile && s.output.Writer == nil && s.custom == nil {
 		return &BuildError{
+			Family:    errcode.FamilyForCode(errcode.OutputDestinationMissing),
 			Code:      errcode.OutputDestinationMissing,
 			Operation: operation,
 			Node:      node,
@@ -560,6 +566,7 @@ func destinationNodeName(output format.Output, index int, destinationNames []str
 
 func duplicateOutputError(operation string, name string) error {
 	return &BuildError{
+		Family:    errcode.FamilyForCode(errcode.OutputDuplicate),
 		Code:      errcode.OutputDuplicate,
 		Operation: operation,
 		Node:      name,
@@ -575,6 +582,7 @@ func duplicateOutputError(operation string, name string) error {
 
 func duplicateDestinationHandleError(operation string, name string) error {
 	return &BuildError{
+		Family:    errcode.FamilyForCode(errcode.DestinationDuplicate),
 		Code:      errcode.DestinationDuplicate,
 		Operation: operation,
 		Node:      name,

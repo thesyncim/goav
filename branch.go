@@ -389,6 +389,7 @@ func (b *branchBuilder) Tap(tap TapRef) *branchBuilder {
 	}
 	if tap.name == "" {
 		b.setErr(&BuildError{
+			Family:    errcode.FamilyForCode(errcode.TapInvalid),
 			Code:      errcode.TapInvalid,
 			Operation: "build branch",
 			Node:      firstNonEmpty(b.spec.name, "branch"),
@@ -757,6 +758,7 @@ func chainStepsThroughTap(steps []chainStep, tap string) ([]chainStep, bool) {
 
 func branchCopyParentOperationError(node string) error {
 	return &BuildError{
+		Family:    errcode.FamilyForCode(errcode.CopyBranchSourceInvalid),
 		Code:      errcode.CopyBranchSourceInvalid,
 		Operation: "build branches",
 		Node:      node,
@@ -772,6 +774,7 @@ func branchCopyParentOperationError(node string) error {
 
 func branchEncodeParentOperationError(node string, encode codec.CodecSpec) error {
 	return &BuildError{
+		Family:    errcode.FamilyForCode(errcode.EncodeBranchSourceInvalid),
 		Code:      errcode.EncodeBranchSourceInvalid,
 		Operation: "build branches",
 		Node:      node,
@@ -790,6 +793,7 @@ func branchEncodeParentOperationError(node string, encode codec.CodecSpec) error
 
 func plannedBranchNodeSourceError(name string, source string) error {
 	return &BuildError{
+		Family:    errcode.FamilyForCode(errcode.BranchSourceInvalid),
 		Code:      errcode.BranchSourceInvalid,
 		Operation: "build branches",
 		Node:      firstNonEmpty(name, "branch"),
@@ -808,6 +812,7 @@ func plannedBranchNodeSourceError(name string, source string) error {
 
 func plannedBranchTapMissingError(stream string, branch string, tap string) error {
 	return &BuildError{
+		Family:    errcode.FamilyForCode(errcode.BranchTapMissing),
 		Code:      errcode.BranchTapMissing,
 		Operation: "build branches",
 		Node:      firstNonEmpty(branch, "branch"),
@@ -827,6 +832,7 @@ func plannedBranchTapMissingError(stream string, branch string, tap string) erro
 
 func duplicateBranchDecodeError(node string) error {
 	return &BuildError{
+		Family:    errcode.FamilyForCode(errcode.BranchDecodeDuplicate),
 		Code:      errcode.BranchDecodeDuplicate,
 		Operation: "build branch",
 		Node:      node,
@@ -841,6 +847,7 @@ func duplicateBranchDecodeError(node string) error {
 
 func branchDecodeOrderError(node string) error {
 	return &BuildError{
+		Family:    errcode.FamilyForCode(errcode.BranchDecodeOrderInvalid),
 		Code:      errcode.BranchDecodeOrderInvalid,
 		Operation: "build branch",
 		Node:      node,
@@ -855,6 +862,7 @@ func branchDecodeOrderError(node string) error {
 
 func branchDecodeDomainError(node string) error {
 	return &BuildError{
+		Family:    errcode.FamilyForCode(errcode.BranchDecodeDomainMismatch),
 		Code:      errcode.BranchDecodeDomainMismatch,
 		Operation: "build branches",
 		Node:      node,
@@ -870,6 +878,7 @@ func branchDecodeDomainError(node string) error {
 
 func branchDecodeCopyError(node string) error {
 	return &BuildError{
+		Family:    errcode.FamilyForCode(errcode.BranchDecodeCopyInvalid),
 		Code:      errcode.BranchDecodeCopyInvalid,
 		Operation: "build branch",
 		Node:      node,
@@ -885,6 +894,7 @@ func branchDecodeCopyError(node string) error {
 
 func branchPacketEncodeUnsupportedError(stream streamIntent, encode codec.CodecSpec) error {
 	return &BuildError{
+		Family:    errcode.FamilyForCode(errcode.PacketBranchEncodeUnsupported),
 		Code:      errcode.PacketBranchEncodeUnsupported,
 		Operation: "build branches",
 		Node:      branchIntentName(stream),
@@ -903,6 +913,7 @@ func branchPacketEncodeUnsupportedError(stream streamIntent, encode codec.CodecS
 
 func branchPacketTransformUnsupportedError(stream streamIntent) error {
 	return &BuildError{
+		Family:    errcode.FamilyForCode(errcode.PacketBranchTransformUnsupported),
 		Code:      errcode.PacketBranchTransformUnsupported,
 		Operation: "build branches",
 		Node:      branchIntentName(stream),
@@ -950,6 +961,7 @@ func cloneDestinationSpec(dest destinationSpec) destinationSpec {
 
 func branchMissingError(node string) error {
 	return &BuildError{
+		Family:    errcode.FamilyForCode(errcode.BranchMissing),
 		Code:      errcode.BranchMissing,
 		Operation: "build branches",
 		Node:      node,
@@ -964,6 +976,7 @@ func branchMissingError(node string) error {
 
 func nilBranchError() error {
 	return &BuildError{
+		Family:    errcode.FamilyForCode(errcode.BranchInvalid),
 		Code:      errcode.BranchInvalid,
 		Operation: "build branch",
 		Reason:    "branch is nil",
@@ -976,6 +989,7 @@ func nilBranchError() error {
 
 func branchDestinationMissingError(name string) error {
 	return &BuildError{
+		Family:    errcode.FamilyForCode(errcode.DestinationMissing),
 		Code:      errcode.DestinationMissing,
 		Operation: "build branch",
 		Node:      firstNonEmpty(name, "branch"),
@@ -1002,6 +1016,7 @@ func jobDestinationInvalidError(name string, reason string) error {
 
 func destinationInvalidError(operation string, node string, reason string) error {
 	return &BuildError{
+		Family:    errcode.FamilyForCode(errcode.DestinationInvalid),
 		Code:      errcode.DestinationInvalid,
 		Operation: operation,
 		Node:      node,

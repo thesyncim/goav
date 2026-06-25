@@ -507,6 +507,7 @@ func jobStreamOutputNames(stream *jobStreamBuild) []string {
 
 func streamStageMissingError(stream streamIntent) error {
 	return &BuildError{
+		Family:    errcode.FamilyForCode(errcode.StageMissing),
 		Code:      errcode.StageMissing,
 		Operation: "build stream",
 		Node:      jobStreamIntentName(stream),
@@ -533,6 +534,7 @@ func validateJobStreamOutputKinds(operation string, stream streamIntent, outputs
 
 func mixedStreamOutputError(operation string, stream streamIntent) error {
 	return &BuildError{
+		Family:    errcode.FamilyForCode(errcode.OutputKindMixed),
 		Code:      errcode.OutputKindMixed,
 		Operation: operation,
 		Node:      jobStreamIntentName(stream),
@@ -548,6 +550,7 @@ func mixedStreamOutputError(operation string, stream streamIntent) error {
 
 func streamEncodeMissingError(operation string, stream streamIntent) error {
 	return &BuildError{
+		Family:    errcode.FamilyForCode(errcode.EncodeMissing),
 		Code:      errcode.EncodeMissing,
 		Operation: operation,
 		Node:      jobStreamIntentName(stream),
@@ -578,6 +581,7 @@ func jobStreamName(stream *jobStreamBuild) string {
 
 func duplicateJobStreamError(existing *jobStreamBuild, next *jobStreamBuild) error {
 	return &BuildError{
+		Family:    errcode.FamilyForCode(errcode.StreamDuplicate),
 		Code:      errcode.StreamDuplicate,
 		Operation: "build job",
 		Node:      jobStreamName(next),

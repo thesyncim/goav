@@ -165,6 +165,7 @@ func recipeDecodeAdapterError(operation string, stream streamIntent, codecID av.
 		}
 	}
 	return &BuildError{
+		Family:    errcode.FamilyForCode(code),
 		Code:      code,
 		Operation: operation,
 		Node:      jobStreamIntentName(stream),
@@ -226,6 +227,7 @@ func decodeAdapterIncompatibleError(operation string, stream streamIntent, reque
 		details = append(details, "supported_pixel_formats="+strings.Join(pixelFormats, ","))
 	}
 	return &BuildError{
+		Family:    errcode.FamilyForCode(errcode.DecodeAdapterIncompatible),
 		Code:      errcode.DecodeAdapterIncompatible,
 		Operation: operation,
 		Node:      jobStreamIntentName(stream),
@@ -358,6 +360,7 @@ func encodeAdapterIncompatibleError(operation string, stream streamIntent, reque
 		details = append(details, "supported_pixel_formats="+strings.Join(pixelFormats, ","))
 	}
 	return &BuildError{
+		Family:    errcode.FamilyForCode(errcode.EncodeAdapterIncompatible),
 		Code:      errcode.EncodeAdapterIncompatible,
 		Operation: operation,
 		Node:      jobStreamIntentName(stream),
@@ -492,6 +495,7 @@ func recipeEncodeAdapterError(operation string, stream streamIntent, registry *c
 		}
 	}
 	return &BuildError{
+		Family:    errcode.FamilyForCode(code),
 		Code:      code,
 		Operation: operation,
 		Node:      jobStreamIntentName(stream),

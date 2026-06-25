@@ -96,7 +96,11 @@ func TestBuildErrorAndCompilerPassErrorContracts(t *testing.T) {
 		t.Fatalf("plain compiler error = %v, want original", got)
 	}
 
-	diagnostic := &BuildError{Code: errcode.StreamMissing, Reason: "has diagnostic"}
+	diagnostic := &BuildError{
+		Family: errcode.FamilyForCode(errcode.StreamMissing),
+		Code:   errcode.StreamMissing,
+		Reason: "has diagnostic",
+	}
 	if got := compilerPassError("compile", "lower", diagnostic); got != diagnostic {
 		t.Fatalf("diagnostic compiler error = %v, want original", got)
 	}
@@ -134,6 +138,7 @@ func TestBuildErrorAndCompilerPassErrorContracts(t *testing.T) {
 
 func TestBuildErrorTypedDetailsAndFixes(t *testing.T) {
 	buildErr := &BuildError{
+		Family:    errcode.FamilyForCode(errcode.DecodeAdapterMissing),
 		Code:      errcode.DecodeAdapterMissing,
 		Operation: "build stream",
 		Reason:    "decoder is missing",

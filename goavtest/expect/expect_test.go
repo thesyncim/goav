@@ -17,6 +17,7 @@ import (
 func TestBuildErrorChecksStructuredFields(t *testing.T) {
 	cause := errors.New("sentinel")
 	err := fmt.Errorf("wrapped: %w", &goav.BuildError{
+		Family:      errcode.FamilyForCode(errcode.InputInvalid),
 		Code:        errcode.InputInvalid,
 		Operation:   "build input",
 		Node:        "input",

@@ -211,6 +211,7 @@ func customJoinProfile(custom *customJoinSpec) (joinProfile, error) {
 func validateCustomJoinName(name string) error {
 	if !joinNameSnakeSafe(name) {
 		return &BuildError{
+			Family:    errcode.FamilyForCode(errcode.JoinNameInvalid),
 			Code:      errcode.JoinNameInvalid,
 			Operation: "build join",
 			Node:      firstNonEmpty(name, "join"),
@@ -223,6 +224,7 @@ func validateCustomJoinName(name string) error {
 	}
 	if _, reserved := joinProfiles[joinKind(name)]; reserved {
 		return &BuildError{
+			Family:    errcode.FamilyForCode(errcode.JoinNameInvalid),
 			Code:      errcode.JoinNameInvalid,
 			Operation: "build join",
 			Node:      name,
@@ -242,6 +244,7 @@ func validateCustomJoinName(name string) error {
 // rejected instead of silently suffixed.
 func customJoinNameCollisionError(name string, claimed string) error {
 	return &BuildError{
+		Family:    errcode.FamilyForCode(errcode.JoinNameInvalid),
 		Code:      errcode.JoinNameInvalid,
 		Operation: "build " + name,
 		Node:      claimed,
@@ -258,6 +261,7 @@ func customJoinNameCollisionError(name string, claimed string) error {
 // mismatch).
 func customJoinStageError(name string, reason string) error {
 	return &BuildError{
+		Family:    errcode.FamilyForCode(errcode.JoinStageInvalid),
 		Code:      errcode.JoinStageInvalid,
 		Operation: "build " + firstNonEmpty(name, "join"),
 		Node:      firstNonEmpty(name, "join"),

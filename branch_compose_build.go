@@ -609,6 +609,7 @@ func branchComposePlanEmptyError(kind string) error {
 	}
 	reason := "branch composition has no " + kind
 	return &BuildError{
+		Family:      errcode.FamilyForCode(errcode.BranchComposePlanEmpty),
 		Code:        errcode.BranchComposePlanEmpty,
 		Operation:   "build branch composition",
 		Node:        kind,
@@ -917,6 +918,7 @@ func codecSpecHasDecodeIntent(spec codec.CodecSpec) bool {
 
 func branchComposeDecodeConfigConflictError(first string, second string) error {
 	return &BuildError{
+		Family:    errcode.FamilyForCode(errcode.DecodeConfigConflict),
 		Code:      errcode.DecodeConfigConflict,
 		Operation: "build branch composition",
 		Node:      second,
@@ -934,6 +936,7 @@ func branchComposeDecodeConfigConflictError(first string, second string) error {
 
 func branchComposeCodecChangeConflictError(first string, second string) error {
 	return &BuildError{
+		Family:    errcode.FamilyForCode(errcode.DecodePolicyConflict),
 		Code:      errcode.DecodePolicyConflict,
 		Operation: "build branch composition",
 		Node:      second,
@@ -952,6 +955,7 @@ func branchComposeCodecChangeConflictError(first string, second string) error {
 
 func branchComposeDuplicateBranchError(name string, index int) error {
 	return &BuildError{
+		Family:    errcode.FamilyForCode(errcode.BranchDuplicate),
 		Code:      errcode.BranchDuplicate,
 		Operation: "build branch composition",
 		Node:      name,
@@ -1119,6 +1123,7 @@ func branchComposePrivateOperationTransforms(branch branchComposeRoute) ([]media
 
 func branchChainStepError(name string, reason string) error {
 	return &BuildError{
+		Family:    errcode.FamilyForCode(errcode.BranchOperationChainUnsupported),
 		Code:      errcode.BranchOperationChainUnsupported,
 		Operation: "build branch composition",
 		Node:      name,
@@ -1258,6 +1263,7 @@ func mediaTransformMismatchError(transform mediaTransform, stream av.Stream, ope
 		"codec type: " + string(stream.Codec.Type),
 	}
 	return &BuildError{
+		Family:    errcode.FamilyForCode(errcode.BranchTransformMediaMismatch),
 		Code:      errcode.BranchTransformMediaMismatch,
 		Operation: "build branch composition",
 		Node:      transform.name,
@@ -1321,6 +1327,7 @@ func branchComposeTargetUnmatchedError(output branchComposeTarget, destination f
 		details = append(details, "requested: "+strings.Join(output.Branches, ", "))
 	}
 	return &BuildError{
+		Family:    errcode.FamilyForCode(errcode.BranchDestinationUnmatched),
 		Code:      errcode.BranchDestinationUnmatched,
 		Operation: "build branch composition",
 		Node:      node,
@@ -1337,6 +1344,7 @@ func branchComposeTargetUnmatchedError(output branchComposeTarget, destination f
 
 func branchComposeTargetDestinationInvalidError(output branchComposeTarget, reason string) error {
 	return &BuildError{
+		Family:    errcode.FamilyForCode(errcode.BranchDestinationInvalid),
 		Code:      errcode.BranchDestinationInvalid,
 		Operation: "build branch composition",
 		Node:      branchComposeTargetNodeName(output, "output"),
@@ -1351,6 +1359,7 @@ func branchComposeTargetDestinationInvalidError(output branchComposeTarget, reas
 
 func branchComposeTargetEncodeMissingError(output branchComposeTarget, destination format.Output, branch branchComposeRoute) error {
 	return &BuildError{
+		Family:    errcode.FamilyForCode(errcode.EncodeMissing),
 		Code:      errcode.EncodeMissing,
 		Operation: "build branch composition",
 		Node:      firstNonEmpty(branch.name, branch.branch.Name, branchComposeTargetNodeName(output, "output")),
@@ -1516,6 +1525,7 @@ func transcodeResizeConfigError(stream av.Stream, mode filter.ResizeMode, config
 		node += "-" + string(stream.ID)
 	}
 	return &BuildError{
+		Family:    errcode.FamilyForCode(errcode.TranscodeResizeInvalid),
 		Code:      errcode.TranscodeResizeInvalid,
 		Operation: "build transcode",
 		Node:      node,

@@ -206,6 +206,7 @@ func multiInputStreamSelectionError(code errcode.Code, selector av.StreamSelecto
 		details = append(details, "input="+candidates[i].inputName+" "+streamDiagnostic(candidates[i].stream, i))
 	}
 	return &BuildError{
+		Family:      errcode.FamilyForCode(code),
 		Code:        code,
 		Operation:   "select stream",
 		Node:        selectorDetail(selector),
@@ -260,6 +261,7 @@ func unknownInputNameError(selector av.StreamSelector, inputName string, sets []
 		details = append(details, "input="+sets[i].name)
 	}
 	return &BuildError{
+		Family:    errcode.FamilyForCode(errcode.InputUnknown),
 		Code:      errcode.InputUnknown,
 		Operation: "select stream",
 		Node:      selectorDetail(selector),

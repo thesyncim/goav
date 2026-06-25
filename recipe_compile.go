@@ -152,6 +152,7 @@ func (c recipeIntentCompiler) Compile(state recipeCompileState) (recipeResolved,
 		pass := c.passes[i]
 		if pass == nil {
 			return recipeResolved{}, &BuildError{
+				Family:    errcode.FamilyForCode(errcode.CompilerPassInvalid),
 				Code:      errcode.CompilerPassInvalid,
 				Operation: state.operation,
 				Reason:    fmt.Sprintf("recipe compiler pass %d is nil", i),
@@ -191,6 +192,7 @@ func compilerPassError(operation string, pass string, err error) error {
 		return err
 	}
 	return &BuildError{
+		Family:    errcode.FamilyForCode(errcode.CompilerPassFailed),
 		Code:      errcode.CompilerPassFailed,
 		Operation: firstNonEmpty(buildErr.Operation, operation),
 		Reason:    "recipe compiler pass failed without a diagnostic",
@@ -444,6 +446,7 @@ func compileBranchCompositionRecipeWithOptions(job *branchCompositionJob, option
 // attachment — an internal invariant, not a user-fixable refusal.
 func nilRecipeError(operation string, reason string) error {
 	return &BuildError{
+		Family:    errcode.FamilyForCode(errcode.JobInvalid),
 		Code:      errcode.JobInvalid,
 		Operation: operation,
 		Reason:    reason,
@@ -455,6 +458,7 @@ func nilRecipeError(operation string, reason string) error {
 // runtimeMissingError is the no-runtime refusal shared by every recipe form.
 func runtimeMissingError(operation string) error {
 	return &BuildError{
+		Family:    errcode.FamilyForCode(errcode.RuntimeMissing),
 		Code:      errcode.RuntimeMissing,
 		Operation: operation,
 		Reason:    "no runtime is configured",
@@ -620,6 +624,7 @@ func validateJobIntentShapePass() recipeCompilePass {
 func validateJobIntentShape(operation string, intent intent, jobOutputCount int) error {
 	if len(intent.Inputs) == 0 {
 		return &BuildError{
+			Family:    errcode.FamilyForCode(errcode.InputMissing),
 			Code:      errcode.InputMissing,
 			Operation: operation,
 			Reason:    "no input is configured",
@@ -632,6 +637,7 @@ func validateJobIntentShape(operation string, intent intent, jobOutputCount int)
 	stream, hasStream := jobIntentStream(intent)
 	if len(intent.Destinations) == 0 {
 		return &BuildError{
+			Family:    errcode.FamilyForCode(errcode.OutputMissing),
 			Code:      errcode.OutputMissing,
 			Operation: operation,
 			Reason:    "no output is configured",
@@ -675,6 +681,7 @@ func validateMultiStreamJobIntentShape(operation string, intent intent, jobOutpu
 
 func jobStreamDestinationMissingError(operation string, stream streamIntent) error {
 	return &BuildError{
+		Family:    errcode.FamilyForCode(errcode.OutputMissing),
 		Code:      errcode.OutputMissing,
 		Operation: operation,
 		Node:      jobStreamIntentName(stream),
@@ -699,6 +706,7 @@ func validateJobIntentOutputScope(operation string, intent intent, jobOutputCoun
 
 func jobOutputScopeMixedError(operation string, stream streamIntent) error {
 	return &BuildError{
+		Family:    errcode.FamilyForCode(errcode.OutputScopeMixed),
 		Code:      errcode.OutputScopeMixed,
 		Operation: operation,
 		Node:      jobStreamIntentName(stream),
@@ -714,6 +722,7 @@ func jobOutputScopeMixedError(operation string, stream streamIntent) error {
 
 func jobDestinationReferenceMissingError(operation string, stream streamIntent, label string) error {
 	return &BuildError{
+		Family:    errcode.FamilyForCode(errcode.OutputMissing),
 		Code:      errcode.OutputMissing,
 		Operation: operation,
 		Node:      jobStreamIntentName(stream),
@@ -757,6 +766,7 @@ func validateJobStreamTransformIntentShape(operation string, stream streamIntent
 		switch {
 		case transform.Resize != nil && transform.Resample != nil:
 			return &BuildError{
+				Family:      errcode.FamilyForCode(errcode.TransformInvalid),
 				Code:        errcode.TransformInvalid,
 				Operation:   operation,
 				Node:        node,
@@ -774,6 +784,7 @@ func validateJobStreamTransformIntentShape(operation string, stream streamIntent
 			}
 		default:
 			return &BuildError{
+				Family:    errcode.FamilyForCode(errcode.TransformInvalid),
 				Code:      errcode.TransformInvalid,
 				Operation: operation,
 				Node:      node,
@@ -791,6 +802,7 @@ func validateJobStreamTransformIntentShape(operation string, stream streamIntent
 
 func operationSpecMissingError(operation string, node string) error {
 	return &BuildError{
+		Family:    errcode.FamilyForCode(errcode.StreamOperationMissing),
 		Code:      errcode.StreamOperationMissing,
 		Operation: operation,
 		Node:      node,
@@ -1039,6 +1051,7 @@ func validateRecipeAttachmentConsistencyPass() recipeCompilePass {
 
 func recipeAttachmentMismatchError(operation string, kind string, intentCount int, attachmentCount int) error {
 	return &BuildError{
+		Family:    errcode.FamilyForCode(errcode.RecipeAttachmentMismatch),
 		Code:      errcode.RecipeAttachmentMismatch,
 		Operation: operation,
 		Reason:    kind + " intent and concrete attachments disagree",
@@ -1355,6 +1368,7 @@ func validateRecipeDestinationShape(operation string, node string, destinationNa
 func destinationShapeMismatchError(operation string, node string, destinationName string, destination destinationSpec, spec shape.Spec) error {
 	label := firstNonEmpty(destinationName, destination.label("destination"))
 	return &BuildError{
+		Family:    errcode.FamilyForCode(errcode.DestinationShapeMismatch),
 		Code:      errcode.DestinationShapeMismatch,
 		Operation: operation,
 		Node:      firstNonEmpty(node, label, "destination"),
@@ -1419,6 +1433,7 @@ func shapeRequirementUnmetError(operation string, node string, index int, step o
 		required = *step.Require
 	}
 	return &BuildError{
+		Family:    errcode.FamilyForCode(errcode.ShapeRequirementUnmet),
 		Code:      errcode.ShapeRequirementUnmet,
 		Operation: operation,
 		Node:      node,
@@ -1450,6 +1465,7 @@ func operationSpecOutputShape(input shape.Spec, operation operationSpec) shape.S
 func operationShapeMismatchError(operation string, node string, index int, step operationSpec, expected shape.Set, actual shape.Spec) error {
 	component := firstNonEmpty(step.Component, operationSpecComponent(step), string(step.Kind), "operation")
 	return &BuildError{
+		Family:    errcode.FamilyForCode(errcode.OperationShapeMismatch),
 		Code:      errcode.OperationShapeMismatch,
 		Operation: operation,
 		Node:      node,
@@ -1557,6 +1573,7 @@ func recipeGraphUnsupportedError(operation string, intent intent) error {
 		fmt.Sprintf("destinations: %d", len(intent.Destinations)),
 	}
 	return &BuildError{
+		Family:    errcode.FamilyForCode(errcode.RecipeGraphUnsupported),
 		Code:      errcode.RecipeGraphUnsupported,
 		Operation: operation,
 		Reason:    "recipe intent did not match a supported graph plan",

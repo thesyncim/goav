@@ -153,6 +153,7 @@ func resolveJoinProfile(spec *joinSpec) (joinProfile, error) {
 	if !ok {
 		kind := string(spec.kind)
 		return joinProfile{}, &BuildError{
+			Family:    errcode.FamilyForCode(joinErrorCode(kind, "kind")),
 			Code:      joinErrorCode(kind, "kind"),
 			Operation: "build " + kind,
 			Node:      kind,
@@ -290,6 +291,7 @@ type joinDownstreamStagePlan struct {
 
 func joinArmError(name string, node string, reason string, suggestions ...string) error {
 	return &BuildError{
+		Family:      errcode.FamilyForCode(joinErrorCode(name, "arm")),
 		Code:        joinErrorCode(name, "arm"),
 		Operation:   "build " + name,
 		Node:        node,
@@ -303,6 +305,7 @@ func joinArmError(name string, node string, reason string, suggestions ...string
 // again by the planner for nested joins.
 func joinInputsError(kind string, node string) error {
 	return &BuildError{
+		Family:    errcode.FamilyForCode(joinErrorCode(kind, "inputs")),
 		Code:      joinErrorCode(kind, "inputs"),
 		Operation: "build " + kind,
 		Node:      node,
@@ -369,6 +372,7 @@ func newJoinPlan(rt *runtime, state *recipeCompileState) (*joinPlan, error) {
 		for i := range destinations {
 			if destinations[i].sink == nil {
 				return nil, &BuildError{
+					Family:      errcode.FamilyForCode(joinErrorCode(name, "destination")),
 					Code:        joinErrorCode(name, "destination"),
 					Operation:   "build " + name,
 					Node:        name,
@@ -539,6 +543,7 @@ func explicitEncodeSoftInputShape(operation operationSpec) shape.Spec {
 func resolveJoinDestinations(name string, spec *joinSpec) ([]destinationSpec, error) {
 	if len(spec.dests) == 0 {
 		return nil, &BuildError{
+			Family:    errcode.FamilyForCode(errcode.OutputMissing),
 			Code:      errcode.OutputMissing,
 			Operation: "build " + name,
 			Node:      name,
@@ -1028,6 +1033,7 @@ func joinPlanTaps(spec *joinSpec, name string, joined av.Stream, domain shape.Me
 	for _, tap := range spec.taps {
 		if tap.name == "" {
 			return nil, &BuildError{
+				Family:    errcode.FamilyForCode(errcode.TapInvalid),
 				Code:      errcode.TapInvalid,
 				Operation: "build " + name,
 				Node:      name,

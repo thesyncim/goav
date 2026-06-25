@@ -403,6 +403,7 @@ func validateRuntimeBranchGroupDestinations(specs []BranchSpec, destinations [][
 					}
 				}
 				return group, &BuildError{
+					Family:    errcode.FamilyForCode(errcode.DestinationDuplicate),
 					Code:      errcode.DestinationDuplicate,
 					Operation: "attach runtime branches",
 					Node:      firstNonEmpty(specs[i].name, "branch"),
@@ -1566,6 +1567,7 @@ func runtimeBranchTransform(branchName string, stream av.Stream, spec TransformS
 	switch {
 	case spec.Resize != nil && spec.Resample != nil:
 		return mediaTransform{}, &BuildError{
+			Family:      errcode.FamilyForCode(errcode.TransformInvalid),
 			Code:        errcode.TransformInvalid,
 			Operation:   "attach runtime branch",
 			Node:        base,
@@ -1595,6 +1597,7 @@ func runtimeBranchTransform(branchName string, stream av.Stream, spec TransformS
 		}, nil
 	default:
 		return mediaTransform{}, &BuildError{
+			Family:    errcode.FamilyForCode(errcode.TransformInvalid),
 			Code:      errcode.TransformInvalid,
 			Operation: "attach runtime branch",
 			Node:      base,
@@ -1784,6 +1787,7 @@ func specHasNode(spec pipeline.Spec, name string) bool {
 
 func runtimeBranchInvalidError(reason string, suggestion string) error {
 	return &BuildError{
+		Family:    errcode.FamilyForCode(errcode.RuntimeBranchInvalid),
 		Code:      errcode.RuntimeBranchInvalid,
 		Operation: "attach runtime branch",
 		Reason:    reason,
@@ -1796,6 +1800,7 @@ func runtimeBranchInvalidError(reason string, suggestion string) error {
 
 func runtimeBranchAnchorMissingError(node string) error {
 	return &BuildError{
+		Family:    errcode.FamilyForCode(errcode.RuntimeBranchAnchorMissing),
 		Code:      errcode.RuntimeBranchAnchorMissing,
 		Operation: "attach runtime branch",
 		Node:      node,
@@ -1815,6 +1820,7 @@ func runtimeBranchTapMissingError(name string, taps []snapshot.Tap) error {
 		details = append(details, taps[i].Name+": "+string(taps[i].Domain)+" "+string(taps[i].MediaKind))
 	}
 	return &BuildError{
+		Family:    errcode.FamilyForCode(errcode.RuntimeBranchTapMissing),
 		Code:      errcode.RuntimeBranchTapMissing,
 		Operation: "attach runtime branch",
 		Node:      name,
@@ -1831,6 +1837,7 @@ func runtimeBranchTapMissingError(name string, taps []snapshot.Tap) error {
 
 func runtimeBranchNodeDuplicateError(node string) error {
 	return &BuildError{
+		Family:    errcode.FamilyForCode(errcode.RuntimeBranchNodeDuplicate),
 		Code:      errcode.RuntimeBranchNodeDuplicate,
 		Operation: "attach runtime branch",
 		Node:      node,
@@ -1845,6 +1852,7 @@ func runtimeBranchNodeDuplicateError(node string) error {
 
 func duplicateRuntimeBranchDestinationRefError(branch string, label string, firstIndex int, secondIndex int) error {
 	return &BuildError{
+		Family:    errcode.FamilyForCode(errcode.DestinationDuplicate),
 		Code:      errcode.DestinationDuplicate,
 		Operation: "attach runtime branch",
 		Node:      firstNonEmpty(branch, "branch"),
@@ -1864,6 +1872,7 @@ func duplicateRuntimeBranchDestinationRefError(branch string, label string, firs
 
 func runtimeBranchTapDuplicateError(name string) error {
 	return &BuildError{
+		Family:    errcode.FamilyForCode(errcode.RuntimeBranchTapDuplicate),
 		Code:      errcode.RuntimeBranchTapDuplicate,
 		Operation: "attach runtime branch",
 		Node:      name,
@@ -1878,6 +1887,7 @@ func runtimeBranchTapDuplicateError(name string) error {
 
 func runtimeBranchTransformMediaError(branch string, transform string, expected av.MediaType, actual av.MediaType) error {
 	return &BuildError{
+		Family:    errcode.FamilyForCode(errcode.TransformMediaMismatch),
 		Code:      errcode.TransformMediaMismatch,
 		Operation: "attach runtime branch",
 		Node:      branch,
@@ -1900,6 +1910,7 @@ func runtimeBranchTransformError(node string, cause error) error {
 		return nil
 	}
 	return &BuildError{
+		Family:    errcode.FamilyForCode(errcode.RuntimeBranchTransformError),
 		Code:      errcode.RuntimeBranchTransformError,
 		Operation: "attach runtime branch",
 		Node:      node,
@@ -1915,6 +1926,7 @@ func runtimeBranchTransformError(node string, cause error) error {
 
 func runtimeBranchEncodeMissingError(branch string) error {
 	return &BuildError{
+		Family:    errcode.FamilyForCode(errcode.RuntimeBranchEncodeMissing),
 		Code:      errcode.RuntimeBranchEncodeMissing,
 		Operation: "attach runtime branch",
 		Node:      firstNonEmpty(branch, "branch"),
@@ -1930,6 +1942,7 @@ func runtimeBranchEncodeMissingError(branch string) error {
 
 func runtimeBranchEncodeDomainError(branch string, shape shape.Spec) error {
 	return &BuildError{
+		Family:    errcode.FamilyForCode(errcode.RuntimeBranchEncodeDomainMismatch),
 		Code:      errcode.RuntimeBranchEncodeDomainMismatch,
 		Operation: "attach runtime branch",
 		Node:      firstNonEmpty(branch, "branch"),
@@ -1946,6 +1959,7 @@ func runtimeBranchEncodeDomainError(branch string, shape shape.Spec) error {
 
 func runtimeBranchDecodeDomainError(branch string, shape shape.Spec) error {
 	return &BuildError{
+		Family:    errcode.FamilyForCode(errcode.RuntimeBranchDecodeDomainMismatch),
 		Code:      errcode.RuntimeBranchDecodeDomainMismatch,
 		Operation: "attach runtime branch",
 		Node:      firstNonEmpty(branch, "branch"),
@@ -1962,6 +1976,7 @@ func runtimeBranchDecodeDomainError(branch string, shape shape.Spec) error {
 
 func runtimeBranchDecodeCodecMissingError(branch string, shape shape.Spec) error {
 	return &BuildError{
+		Family:    errcode.FamilyForCode(errcode.RuntimeBranchDecodeCodecMissing),
 		Code:      errcode.RuntimeBranchDecodeCodecMissing,
 		Operation: "attach runtime branch",
 		Node:      firstNonEmpty(branch, "branch"),
@@ -1978,6 +1993,7 @@ func runtimeBranchDecodeCodecMissingError(branch string, shape shape.Spec) error
 
 func runtimeBranchCopyDomainError(branch string, shape shape.Spec) error {
 	return &BuildError{
+		Family:    errcode.FamilyForCode(errcode.RuntimeBranchCopyDomainMismatch),
 		Code:      errcode.RuntimeBranchCopyDomainMismatch,
 		Operation: "attach runtime branch",
 		Node:      firstNonEmpty(branch, "branch"),
@@ -1994,6 +2010,7 @@ func runtimeBranchCopyDomainError(branch string, shape shape.Spec) error {
 
 func runtimeBranchMuxCodecMissingError(branch string, shape shape.Spec) error {
 	return &BuildError{
+		Family:    errcode.FamilyForCode(errcode.RuntimeBranchMuxCodecMissing),
 		Code:      errcode.RuntimeBranchMuxCodecMissing,
 		Operation: "attach runtime branch",
 		Node:      firstNonEmpty(branch, "branch"),
@@ -2024,6 +2041,7 @@ func runtimeBranchShapeDetails(shape shape.Spec) []string {
 
 func runtimeBranchGraphError(operation string, node string, cause error) error {
 	return &BuildError{
+		Family:    errcode.FamilyForCode(errcode.RuntimeBranchGraphError),
 		Code:      errcode.RuntimeBranchGraphError,
 		Operation: operation,
 		Node:      node,

@@ -484,6 +484,7 @@ func shapeSolverAdapterError(operation string, node string, index int, step oper
 	}
 	if selection.cause == errShapeAdapterAmbiguous {
 		return &BuildError{
+			Family:    errcode.FamilyForCode(errcode.ShapeAdapterAmbiguous),
 			Code:      errcode.ShapeAdapterAmbiguous,
 			Operation: operation,
 			Node:      node,
@@ -499,6 +500,7 @@ func shapeSolverAdapterError(operation string, node string, index int, step oper
 		}
 	}
 	return &BuildError{
+		Family:    errcode.FamilyForCode(errcode.ShapeAdapterMissing),
 		Code:      errcode.ShapeAdapterMissing,
 		Operation: operation,
 		Node:      node,
@@ -519,6 +521,7 @@ func shapeSolverAdapterError(operation string, node string, index int, step oper
 func shapeConversionRefusedError(operation string, node string, index int, step operationSpec, allowed shape.Policy, conversion shapeConversionPlan, actual shape.Spec, expected shape.Spec) error {
 	missing := allowed.Missing(conversion.needed)
 	return &BuildError{
+		Family:    errcode.FamilyForCode(errcode.ShapeConversionRefused),
 		Code:      errcode.ShapeConversionRefused,
 		Operation: operation,
 		Node:      node,
