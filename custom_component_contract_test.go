@@ -37,6 +37,15 @@ func (e *componentDeliveryEmitter) EmitDelivery(ctx context.Context, msg *pipeli
 	return e.delivery, err
 }
 
+type componentRetainingEmitter struct {
+	messages []*pipeline.Message
+}
+
+func (e *componentRetainingEmitter) Emit(_ context.Context, msg *pipeline.Message) error {
+	e.messages = append(e.messages, msg)
+	return nil
+}
+
 func cloneComponentMessage(msg *pipeline.Message) pipeline.Message {
 	if msg == nil {
 		return pipeline.Message{}
@@ -328,6 +337,53 @@ func TestEmitHelpersNilAndUnscopedEOS(t *testing.T) {
 	}
 	if err := sink.Handle(context.Background(), nil); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestEmitMessagesAreIndependentWhenEmitterRetainsPointers(t *testing.T) {
+	retained := &componentRetainingEmitter{}
+	emit := Emit{ctx: context.Background(), emitter: retained}
+	packet := &av.Packet{StreamID: "packet", Type: av.MediaAudio}
+	frame := &av.Frame{StreamID: "frame", Type: av.MediaAudio}
+	event := av.Event{Type: av.EventStats, StreamID: "event"}
+
+	if err := emit.Packet(packet); err != nil {
+		t.Fatal(err)
+	}
+	if err := emit.Frame(frame); err != nil {
+		t.Fatal(err)
+	}
+	if err := emit.Event(event); err != nil {
+		t.Fatal(err)
+	}
+
+	if len(retained.messages) != 3 {
+		t.Fatalf("retained messages = %d, want 3", len(retained.messages))
+	}
+	if retained.messages[0] == retained.messages[1] ||
+		retained.messages[0] == retained.messages[2] ||
+		retained.messages[1] == retained.messages[2] {
+		t.Fatalf("retained messages share storage: %p %p %p", retained.messages[0], retained.messages[1], retained.messages[2])
+	}
+	if retained.messages[0].Kind != pipeline.MessagePacket ||
+		retained.messages[0].Packet != packet ||
+		retained.messages[0].Frame != nil ||
+		retained.messages[0].Event != nil {
+		t.Fatalf("first retained message mutated: %+v", retained.messages[0])
+	}
+	if retained.messages[1].Kind != pipeline.MessageFrame ||
+		retained.messages[1].Frame != frame ||
+		retained.messages[1].Packet != nil ||
+		retained.messages[1].Event != nil {
+		t.Fatalf("second retained message mutated: %+v", retained.messages[1])
+	}
+	if retained.messages[2].Kind != pipeline.MessageEvent ||
+		retained.messages[2].Event == nil ||
+		retained.messages[2].Event.Type != av.EventStats ||
+		retained.messages[2].Event.StreamID != "event" ||
+		retained.messages[2].Packet != nil ||
+		retained.messages[2].Frame != nil {
+		t.Fatalf("third retained message mutated: %+v", retained.messages[2])
 	}
 }
 

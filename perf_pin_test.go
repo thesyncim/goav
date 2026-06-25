@@ -78,10 +78,10 @@ func pinFrame() *av.Frame {
 	}
 }
 
-// TestSourcePushDeliveryAllocs pins SourcePush delivery at zero allocations
-// per push: SourcePush.Packet and SourcePush.Frame route through Emit's reused
-// message and the graph's pass-through without allocating, so a custom source
-// pushing media in a loop adds no per-message garbage.
+// TestSourcePushDeliveryAllocs pins SourcePush delivery at one allocation per
+// push: Emit gives each downstream delivery independent message ownership, so
+// buffered or retaining emitters cannot observe later emits mutating earlier
+// messages. The ceiling keeps that safety cost from growing.
 func TestSourcePushDeliveryAllocs(t *testing.T) {
 	ctx := context.Background()
 	emitter := pinDirectGraph(t, &pinNoopSink{name: "out"})
@@ -93,21 +93,21 @@ func TestSourcePushDeliveryAllocs(t *testing.T) {
 		if _, err := push.Packet(packet); err != nil {
 			t.Fatal(err)
 		}
-	}); allocs != 0 {
-		t.Fatalf("SourcePush.Packet allocs = %v, want 0", allocs)
+	}); allocs > 1 {
+		t.Fatalf("SourcePush.Packet allocs = %v, want <= 1", allocs)
 	}
 	if allocs := testing.AllocsPerRun(1000, func() {
 		if _, err := push.Frame(frame); err != nil {
 			t.Fatal(err)
 		}
-	}); allocs != 0 {
-		t.Fatalf("SourcePush.Frame allocs = %v, want 0", allocs)
+	}); allocs > 1 {
+		t.Fatalf("SourcePush.Frame allocs = %v, want <= 1", allocs)
 	}
 }
 
-// TestSinkFuncDeliveryAllocs pins collector-free sink delivery at zero
-// allocations per message: a goav.SinkFunc destination receives each delivered
-// message by value with no per-message wrapping.
+// TestSinkFuncDeliveryAllocs pins SourcePush -> SinkFunc delivery at the same
+// one-allocation ceiling: SinkFunc adds no extra wrapper on top of Emit's
+// independent per-delivery message.
 func TestSinkFuncDeliveryAllocs(t *testing.T) {
 	ctx := context.Background()
 	delivered := 0
@@ -125,8 +125,8 @@ func TestSinkFuncDeliveryAllocs(t *testing.T) {
 		if _, err := push.Packet(packet); err != nil {
 			t.Fatal(err)
 		}
-	}); allocs != 0 {
-		t.Fatalf("SinkFunc delivery allocs = %v, want 0", allocs)
+	}); allocs > 1 {
+		t.Fatalf("SinkFunc delivery allocs = %v, want <= 1", allocs)
 	}
 	if delivered == 0 {
 		t.Fatal("sink saw no messages")

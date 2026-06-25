@@ -99,26 +99,33 @@ Move or keep outside the front door:
    - Make runtime options reject nil registry callbacks, factories, and invalid
      settings at construction time.
 
-7. **Error families** — started
+7. **Emit ownership** — landed
+   - Stop reusing one mutable `pipeline.Message` inside `Emit`.
+   - Give every Packet/Frame/Event emit independent message ownership, so
+     buffered or retaining emitters cannot observe later emits mutating earlier
+     deliveries.
+   - Document and pin the explicit one-allocation `SourcePush` safety cost.
+
+8. **Error families** — started
    - Introduce stable error families such as `InvalidRecipe`, `MissingAdapter`,
      `IncompatibleAdapter`, `UnsupportedShape`, and `RuntimeRejected`.
    - Move implementation-specific errcodes behind compatibility aliases or
      internal details.
    - Replace string-only details with typed details and fixes.
 
-8. **Explicit destination groups** — landed
+9. **Explicit destination groups** — landed
    - Introduce explicit mux/group builders.
    - Stop relying on Go value identity as the only way to group destination
      branches.
 
-9. **Unified lowering** — started
+10. **Unified lowering** — started
    - Lower stream chains, branches, joins, and runtime attach through the same
      operation model.
    - Keep build and attach errors aligned for the same invalid operation chain.
    - First parity guard landed with
      `TestBuildAndAttachReturnSameErrorForSameInvalidBranch`.
 
-10. **Docs rewrite** — in progress
+11. **Docs rewrite** — in progress
     - Keep the README focused on the small grammar and one or two advanced entry
       points.
     - Finish with a Markdown-wide consistency pass and a README that works as a
@@ -136,6 +143,7 @@ Add focused coverage as the slices land:
 - `TestJobCopyAppearsInExplain`
 - `TestNilPacketFuncDoesNotBecomeSilentNilStage`
 - `TestNilSinkFuncDoesNotBecomeSilentNilSink`
+- `TestEmitMessagesAreIndependentWhenEmitterRetainsPointers`
 - `TestStdFormatsDocsMatchRegisteredFormats`
 - `TestDestinationGroupSurvivesWithAndCopy`
 - `TestBuildAndAttachReturnSameErrorForSameInvalidBranch`

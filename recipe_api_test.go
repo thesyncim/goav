@@ -1821,7 +1821,8 @@ func TestDocsShowCodecControlsAndDeclarativePerformanceGoal(t *testing.T) {
 	}
 	performanceText := string(performance)
 	for _, required := range []string{
-		"Hot paths must avoid hidden allocation",
+		"Hot paths must keep allocation explicit and bounded",
+		"per `goav.SourcePush` delivery, which currently allocates one independent",
 		"Keep recipe, flow, branch, tap, destination, and codec abstractions cold-path",
 		"do not dispatch through them for each packet or frame",
 		"one cold-path executable `WorkPlan` and runtime `WorkPatch`",
@@ -1829,7 +1830,7 @@ func TestDocsShowCodecControlsAndDeclarativePerformanceGoal(t *testing.T) {
 		"workflow-specific compiler dispatch",
 	} {
 		if !strings.Contains(performanceText, required) {
-			t.Fatalf("performance docs should keep zero-cost goal text %q", required)
+			t.Fatalf("performance docs should keep bounded-cost goal text %q", required)
 		}
 	}
 
