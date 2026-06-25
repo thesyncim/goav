@@ -160,7 +160,7 @@ func TestVideoFlowOperationsExposeContractsAndCloneSnapshots(t *testing.T) {
 	}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("operation kinds = %v, want %v", got, want)
 	}
-	if spec.operations[1].Transform.Resize == nil || spec.operations[1].Transform.Resize.Width != 320 {
+	if spec.operations[1].Transform.resize == nil || spec.operations[1].Transform.resize.Width != 320 {
 		t.Fatalf("resize operation = %#v, want 320px resize", spec.operations[1])
 	}
 	if spec.operations[4].Auto == nil || !spec.operations[4].Auto.AllowsResize() || !spec.operations[4].Auto.AllowsConvert() {
@@ -173,12 +173,12 @@ func TestVideoFlowOperationsExposeContractsAndCloneSnapshots(t *testing.T) {
 		t.Fatalf("prefer operation = %#v, want I420 preference", spec.operations[6])
 	}
 
-	spec.operations[1].Transform.Resize.Width = 999
+	spec.operations[1].Transform.resize.Width = 999
 	specAgain, err := chainSpecFrom(flow)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := specAgain.operations[1].Transform.Resize.Width; got != 320 {
+	if got := specAgain.operations[1].Transform.resize.Width; got != 320 {
 		t.Fatalf("chainSpecFrom reused resize config, got width %d want 320", got)
 	}
 
@@ -198,8 +198,8 @@ func TestVideoFlowOperationsExposeContractsAndCloneSnapshots(t *testing.T) {
 	}
 	if len(appliedSpec.operations) != 1 ||
 		appliedSpec.operations[0].Kind != plan.OpTransform ||
-		appliedSpec.operations[0].Transform.Resize == nil ||
-		appliedSpec.operations[0].Transform.Resize.Width != 64 {
+		appliedSpec.operations[0].Transform.resize == nil ||
+		appliedSpec.operations[0].Transform.resize.Width != 64 {
 		t.Fatalf("applied video flow operations = %#v, want cloned resize", appliedSpec.operations)
 	}
 }

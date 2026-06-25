@@ -987,7 +987,7 @@ func branchComposeRouteOperationTransformsForName(name string, operations []oper
 		if err != nil {
 			return nil, err
 		}
-		if operations[i].Kind == plan.OpTransform && (operations[i].Transform.Resize != nil || operations[i].Transform.Resample != nil) {
+		if operations[i].Kind == plan.OpTransform && (operations[i].Transform.resize != nil || operations[i].Transform.resample != nil) {
 			transformIndex++
 		}
 		if !mediaTransformEmpty(step) {
@@ -1018,11 +1018,11 @@ func branchComposeRouteOperationTransform(branchName string, transformIndex int,
 			stage: operation.Stage,
 		}, nil
 	case plan.OpTransform:
-		if operation.Transform.Resize != nil && operation.Transform.Resample != nil {
+		if operation.Transform.resize != nil && operation.Transform.resample != nil {
 			return mediaTransform{}, branchChainStepError(branchName, "branch transform operation cannot combine resize and resample")
 		}
-		if operation.Transform.Resize != nil {
-			resize := *operation.Transform.Resize
+		if operation.Transform.resize != nil {
+			resize := *operation.Transform.resize
 			factory := firstNonEmpty(operation.Component, filter.FactoryResize)
 			return mediaTransform{
 				name:    factory + "-" + branchName + suffix,
@@ -1030,8 +1030,8 @@ func branchComposeRouteOperationTransform(branchName string, transformIndex int,
 				video:   &resize,
 			}, nil
 		}
-		if operation.Transform.Resample != nil {
-			resample := *operation.Transform.Resample
+		if operation.Transform.resample != nil {
+			resample := *operation.Transform.resample
 			factory := firstNonEmpty(operation.Component, filter.FactoryResample)
 			return mediaTransform{
 				name:    factory + "-" + branchName + suffix,
@@ -1062,7 +1062,7 @@ func branchComposeRouteStageOperationCount(operations []operationSpec) int {
 				count++
 			}
 		case plan.OpTransform:
-			if operations[i].Transform.Resize != nil || operations[i].Transform.Resample != nil {
+			if operations[i].Transform.resize != nil || operations[i].Transform.resample != nil {
 				count++
 			}
 		}
@@ -1083,7 +1083,7 @@ func branchComposeRouteStageOperations(operations []operationSpec) []operationSp
 				out = append(out, operation)
 			}
 		case plan.OpTransform:
-			if operation.Transform.Resize != nil || operation.Transform.Resample != nil {
+			if operation.Transform.resize != nil || operation.Transform.resample != nil {
 				out = append(out, operation)
 			}
 		}

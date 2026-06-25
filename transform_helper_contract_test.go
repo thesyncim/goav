@@ -2,6 +2,7 @@ package goav
 
 import (
 	"errors"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -12,17 +13,26 @@ import (
 	"github.com/thesyncim/goav/shape"
 )
 
+func TestTransformSpecIsOpaque(t *testing.T) {
+	typ := reflect.TypeOf(TransformSpec{})
+	for i := 0; i < typ.NumField(); i++ {
+		if typ.Field(i).IsExported() {
+			t.Fatalf("TransformSpec field %s is exported; use constructors instead", typ.Field(i).Name)
+		}
+	}
+}
+
 func TestTransformSpecConstructorsApplyOptions(t *testing.T) {
 	resize := Resize(640, 360, nil, func(config *filter.ResizeConfig) {
 		config.PixelFormat = av.PixelFormatI420
 		config.Mode = filter.ResizeFit
 	})
-	if resize.Resize == nil ||
-		resize.Resize.Width != 640 ||
-		resize.Resize.Height != 360 ||
-		resize.Resize.PixelFormat != av.PixelFormatI420 ||
-		resize.Resize.Mode != filter.ResizeFit ||
-		resize.Resample != nil {
+	if resize.resize == nil ||
+		resize.resize.Width != 640 ||
+		resize.resize.Height != 360 ||
+		resize.resize.PixelFormat != av.PixelFormatI420 ||
+		resize.resize.Mode != filter.ResizeFit ||
+		resize.resample != nil {
 		t.Fatalf("Resize spec = %+v", resize)
 	}
 
@@ -30,12 +40,12 @@ func TestTransformSpecConstructorsApplyOptions(t *testing.T) {
 		config.ChannelLayout = "stereo"
 		config.SampleFormat = av.SampleFormatF32
 	})
-	if resample.Resample == nil ||
-		resample.Resample.SampleRate != 48_000 ||
-		resample.Resample.Channels != codec.Stereo ||
-		resample.Resample.ChannelLayout != "stereo" ||
-		resample.Resample.SampleFormat != av.SampleFormatF32 ||
-		resample.Resize != nil {
+	if resample.resample == nil ||
+		resample.resample.SampleRate != 48_000 ||
+		resample.resample.Channels != codec.Stereo ||
+		resample.resample.ChannelLayout != "stereo" ||
+		resample.resample.SampleFormat != av.SampleFormatF32 ||
+		resample.resize != nil {
 		t.Fatalf("Resample spec = %+v", resample)
 	}
 
@@ -85,8 +95,8 @@ func TestStreamTransformContracts(t *testing.T) {
 	}
 	assertTransformBuildError("", TransformSpec{}, av.StreamSelector{Type: av.MediaAudio}, errcode.TransformInvalid, "empty stream transform")
 	assertTransformBuildError("both", TransformSpec{
-		Resize:   &filter.ResizeConfig{Width: 320, Height: 180},
-		Resample: &filter.ResampleConfig{SampleRate: 48_000, Channels: codec.Stereo},
+		resize:   &filter.ResizeConfig{Width: 320, Height: 180},
+		resample: &filter.ResampleConfig{SampleRate: 48_000, Channels: codec.Stereo},
 	}, av.StreamSelector{Type: av.MediaAudio}, errcode.TransformInvalid, "cannot be both")
 	assertTransformBuildError("audio", Resize(320, 180), av.StreamSelector{Type: av.MediaAudio}, errcode.TransformMediaMismatch, "resize applies to video")
 	assertTransformBuildError("video", Resample(48_000, codec.Stereo), av.StreamSelector{Type: av.MediaVideo}, errcode.TransformMediaMismatch, "resample applies to audio")
@@ -94,10 +104,10 @@ func TestStreamTransformContracts(t *testing.T) {
 
 func TestTransformHelperErrorContracts(t *testing.T) {
 	if err := validateTransformSpec("build stream", "both", TransformSpec{
-		Resize:   &filter.ResizeConfig{Width: 320, Height: 180},
-		Resample: &filter.ResampleConfig{SampleRate: 48_000, Channels: codec.Stereo},
-	}); err != nil {
-		t.Fatalf("combined transform validation = %v, want streamTransform to reject later", err)
+		resize:   &filter.ResizeConfig{Width: 320, Height: 180},
+		resample: &filter.ResampleConfig{SampleRate: 48_000, Channels: codec.Stereo},
+	}); err == nil {
+		t.Fatal("combined transform validation succeeded, want transform_invalid")
 	}
 	if err := validateTransformSpec("build stream", "empty", TransformSpec{}); err != nil {
 		t.Fatalf("empty transform validation = %v, want streamTransform to reject later", err)

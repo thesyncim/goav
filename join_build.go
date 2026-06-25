@@ -413,7 +413,7 @@ func (p *joinPlan) planJoinEncode() error {
 			if err != nil {
 				return err
 			}
-			if operation.Kind == plan.OpTransform && (operation.Transform.Resize != nil || operation.Transform.Resample != nil) {
+			if operation.Kind == plan.OpTransform && (operation.Transform.resize != nil || operation.Transform.resample != nil) {
 				transformIndex++
 			}
 			if mediaTransformEmpty(transform) {
@@ -872,8 +872,8 @@ func (p *joinPlan) solveArmConversion(rt *runtime, stream av.Stream, armName str
 		transform: mediaTransform{
 			name:    p.name + "-" + conversion.factory + "-" + string(stream.ID),
 			factory: conversion.factory,
-			video:   conversion.operation.Transform.Resize,
-			audio:   conversion.operation.Transform.Resample,
+			video:   conversion.operation.Transform.resize,
+			audio:   conversion.operation.Transform.resample,
 		},
 		stream: joinArmTransformStream(stream, actual.MediaKind),
 	}, nil

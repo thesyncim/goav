@@ -11,6 +11,8 @@ methodology changes, and migration notes.
 
 ## Unreleased
 
+- Made `TransformSpec` opaque so callers use constructors instead of setting
+  resize/resample fields directly.
 - Removed same-handle destination grouping: repeated destination names now
   require explicit `Mux(name, destination)` groups, even when the same
   destination value is reused.

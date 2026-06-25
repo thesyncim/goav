@@ -112,6 +112,10 @@ Destination-group progress: repeated destination names now require explicit
 `Mux(name, destination)` groups; reusing one ungrouped destination value no
 longer creates a mux/sink group.
 
+Invalid-struct progress: `TransformSpec` is now an opaque constructor-produced
+value, so external callers cannot set both resize and resample fields on one
+transform.
+
 ## Release gate
 
 Do not cut v1 just because the current docs and pins are green. Cut v1 only

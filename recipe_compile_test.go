@@ -794,13 +794,13 @@ func TestPlannedBranchSplitOperationsRespectEarlierTapAnchors(t *testing.T) {
 	}
 	if len(gp.Branches[0].SharedOperations) != 2 ||
 		len(gp.Branches[0].PrivateOperations) != 1 ||
-		gp.Branches[0].PrivateOperations[0].Transform.Resize == nil ||
-		gp.Branches[0].PrivateOperations[0].Transform.Resize.Width != 320 {
+		gp.Branches[0].PrivateOperations[0].Transform.resize == nil ||
+		gp.Branches[0].PrivateOperations[0].Transform.resize.Width != 320 {
 		t.Fatalf("raw plan branch = %+v, want private thumbnail resize from operation split", gp.Branches[0])
 	}
 	if len(gp.Branches[1].SharedOperations) != 4 ||
-		gp.Branches[1].SharedOperations[2].Transform.Resize == nil ||
-		gp.Branches[1].SharedOperations[2].Transform.Resize.Width != 1280 ||
+		gp.Branches[1].SharedOperations[2].Transform.resize == nil ||
+		gp.Branches[1].SharedOperations[2].Transform.resize.Width != 1280 ||
 		len(gp.Branches[1].PrivateOperations) != 1 {
 		t.Fatalf("web plan branch = %+v, want shared 720p resize from operation split", gp.Branches[1])
 	}
@@ -824,16 +824,16 @@ func TestPlannedBranchSplitOperationsRespectEarlierTapAnchors(t *testing.T) {
 	if len(rawShared) != 0 ||
 		len(rawPrivate) != 1 ||
 		rawPrivate[0].Kind != plan.OpTransform ||
-		rawPrivate[0].Transform.Resize == nil ||
-		rawPrivate[0].Transform.Resize.Width != 320 {
+		rawPrivate[0].Transform.resize == nil ||
+		rawPrivate[0].Transform.resize.Width != 320 {
 		t.Fatalf("raw route = %+v, want private thumbnail resize from operation fields", routes[0])
 	}
 	webShared := branchComposeRouteStageOperations(routes[1].sharedOperations)
 	webPrivate := branchComposeRouteStageOperations(routes[1].privateOperations)
 	if len(webShared) != 1 ||
 		webShared[0].Kind != plan.OpTransform ||
-		webShared[0].Transform.Resize == nil ||
-		webShared[0].Transform.Resize.Width != 1280 ||
+		webShared[0].Transform.resize == nil ||
+		webShared[0].Transform.resize.Width != 1280 ||
 		len(webPrivate) != 0 {
 		t.Fatalf("web route = %+v, want shared 720p resize from operation fields", routes[1])
 	}
@@ -2263,7 +2263,7 @@ func TestEncodeAdapterPassesRejectIncompatibleDescriptors(t *testing.T) {
 					Name:   "preview",
 					Select: plan.StreamSelect{Type: av.MediaVideo},
 					Operations: append([]operationSpec{operationSpecForTransform(TransformSpec{
-						Resize: &filter.ResizeConfig{
+						resize: &filter.ResizeConfig{
 							Width:       640,
 							Height:      360,
 							PixelFormat: av.PixelFormatYUV420P,
@@ -2426,7 +2426,7 @@ func TestTransformAdapterPassesRejectIncompatibleDescriptors(t *testing.T) {
 					Name:   "preview",
 					Select: plan.StreamSelect{Type: av.MediaVideo},
 					Operations: []operationSpec{operationSpecForTransform(TransformSpec{
-						Resize: &filter.ResizeConfig{
+						resize: &filter.ResizeConfig{
 							Width:       640,
 							Height:      360,
 							Mode:        filter.ResizeFit,
@@ -2453,7 +2453,7 @@ func TestTransformAdapterPassesRejectIncompatibleDescriptors(t *testing.T) {
 					Name:   "audio",
 					Select: plan.StreamSelect{Type: av.MediaAudio},
 					Operations: []operationSpec{operationSpecForTransform(TransformSpec{
-						Resample: &filter.ResampleConfig{
+						resample: &filter.ResampleConfig{
 							SampleRate:   16_000,
 							Channels:     codec.Mono,
 							SampleFormat: av.SampleFormatF32,

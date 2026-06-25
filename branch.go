@@ -657,7 +657,7 @@ func branchChainStepsFromOperationSpecs(operations []operationSpec) []chainStep 
 				steps = append(steps, chainStep{shape: operation.Shape})
 			}
 		case plan.OpTransform:
-			if operation.Transform.Resize != nil || operation.Transform.Resample != nil {
+			if operation.Transform.resize != nil || operation.Transform.resample != nil {
 				steps = append(steps, chainStep{transform: cloneTransformSpec(operation.Transform)})
 			}
 		case plan.OpTap:

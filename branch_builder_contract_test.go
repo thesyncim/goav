@@ -78,7 +78,7 @@ func TestBranchBuilderSnapshotContracts(t *testing.T) {
 	}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("operation kinds = %v, want %v", got, want)
 	}
-	if snapshot.operations[1].Transform.Resize == nil || snapshot.operations[1].Transform.Resize.Width != 160 {
+	if snapshot.operations[1].Transform.resize == nil || snapshot.operations[1].Transform.resize.Width != 160 {
 		t.Fatalf("applied resize operation = %+v, want 160px thumbnail", snapshot.operations[1])
 	}
 	if snapshot.operations[4].Auto == nil ||
@@ -101,10 +101,10 @@ func TestBranchBuilderSnapshotContracts(t *testing.T) {
 		t.Fatalf("packet tap = %+v, want packet tap after encode", snapshot.operations[11].Tap)
 	}
 
-	snapshot.operations[1].Transform.Resize.Width = 999
+	snapshot.operations[1].Transform.resize.Width = 999
 	again := builder.snapshot()
-	if again.operations[1].Transform.Resize.Width != 160 {
-		t.Fatalf("snapshot operations were not cloned: %+v", again.operations[1].Transform.Resize)
+	if again.operations[1].Transform.resize.Width != 160 {
+		t.Fatalf("snapshot operations were not cloned: %+v", again.operations[1].Transform.resize)
 	}
 
 	spec := builder.To(branchBuilderTestSink("preview-out"))

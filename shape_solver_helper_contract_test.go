@@ -60,10 +60,10 @@ func TestSynthesizeConversionTransformContracts(t *testing.T) {
 		shape.Frame(av.MediaAudio, shape.Audio(44_100, codec.Stereo, av.SampleFormatS16)),
 		shape.Frame(av.MediaAudio, shape.Audio(48_000, 0, av.SampleFormatF32)),
 	)
-	if !ok || audio.Resample == nil ||
-		audio.Resample.SampleRate != 48_000 ||
-		audio.Resample.Channels != codec.Stereo ||
-		audio.Resample.SampleFormat != av.SampleFormatF32 {
+	if !ok || audio.resample == nil ||
+		audio.resample.SampleRate != 48_000 ||
+		audio.resample.Channels != codec.Stereo ||
+		audio.resample.SampleFormat != av.SampleFormatF32 {
 		t.Fatalf("audio transform = %#v, %v", audio, ok)
 	}
 
@@ -80,11 +80,11 @@ func TestSynthesizeConversionTransformContracts(t *testing.T) {
 		shape.Frame(av.MediaVideo, shape.Video(1920, 1080, av.PixelFormatI420)),
 		shape.Frame(av.MediaVideo, shape.Video(640, 0, av.PixelFormatYUV420P)),
 	)
-	if !ok || video.Resize == nil ||
-		video.Resize.Width != 640 ||
-		video.Resize.Height != 1080 ||
-		video.Resize.PixelFormat != av.PixelFormatYUV420P ||
-		video.Resize.Mode != filter.ResizeExact {
+	if !ok || video.resize == nil ||
+		video.resize.Width != 640 ||
+		video.resize.Height != 1080 ||
+		video.resize.PixelFormat != av.PixelFormatYUV420P ||
+		video.resize.Mode != filter.ResizeExact {
 		t.Fatalf("video transform = %#v, %v", video, ok)
 	}
 
