@@ -8,6 +8,7 @@
 control.BitrateType
 control.Control
 control.Deliver
+control.ErrAmbiguousTarget
 control.ErrNil
 control.ErrNotRunning
 control.ErrUnsupported

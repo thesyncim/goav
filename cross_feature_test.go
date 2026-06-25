@@ -222,9 +222,11 @@ func TestMixSyncByPTSSeekArmMidRun(t *testing.T) {
 		t.Fatal(ctx.Err())
 	}
 
-	// Untargeted Seek: the controllable arm repositions; the push-source arm
-	// is reported clearly by name — never silently skipped.
-	err = task.Control(ctx, control.Seek(time.Second))
+	if err := task.Control(ctx, control.Seek(time.Second).At("a")); err != nil {
+		t.Fatalf("Seek controllable arm: %v", err)
+	}
+
+	err = task.Control(ctx, control.Seek(time.Second).At("b"))
 	if err == nil {
 		t.Fatal("Seek err = nil, want a clear error for the non-seekable arm")
 	}

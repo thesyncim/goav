@@ -343,6 +343,88 @@ func TestTaskControlUntargetedDeliverNeedsTarget(t *testing.T) {
 	}
 }
 
+func TestTaskControlUntargetedControlsRejectAmbiguousTargets(t *testing.T) {
+	ctx := context.Background()
+	graph, err := pipeline.NewGraph(pipeline.GraphConfig{
+		Name:   "control-ambiguous",
+		Buffer: pipeline.BufferPolicy{Capacity: 1, Drop: pipeline.DropOldest},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := &controlFrameSource{name: "source", a: "a", b: "b"}
+	first := &controlEventCapture{name: "first"}
+	second := &controlEventCapture{name: "second"}
+	if _, err := graph.AddSource(source, pipeline.BufferPolicy{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := graph.AddStage(first, pipeline.BufferPolicy{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := graph.AddStage(second, pipeline.BufferPolicy{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := graph.Connect(pipeline.Route{From: "source", To: []string{"first", "second"}, Policy: pipeline.RouteAll}); err != nil {
+		t.Fatal(err)
+	}
+	task := newTask(graph, nil)
+	t.Cleanup(func() { _ = task.Close() })
+
+	err = task.Control(ctx, control.Keyframe("a"))
+	if !errors.Is(err, control.ErrAmbiguousTarget) {
+		t.Fatalf("untargeted keyframe err = %v, want ErrAmbiguousTarget", err)
+	}
+	if err == nil || !strings.Contains(err.Error(), "implicit entry targets") || !strings.Contains(err.Error(), "use AtTap(tap) or At(node)") {
+		t.Fatalf("err = %v, want implicit target guidance", err)
+	}
+}
+
+func TestTaskControlUntargetedSourceControlsRejectAmbiguousSources(t *testing.T) {
+	graph, err := pipeline.NewGraph(pipeline.GraphConfig{
+		Name:   "source-control-ambiguous",
+		Buffer: pipeline.BufferPolicy{Capacity: 1, Drop: pipeline.DropOldest},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := graph.AddSource(&controlFrameSource{name: "left", a: "a", b: "b"}, pipeline.BufferPolicy{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := graph.AddSource(&controlFrameSource{name: "right", a: "a", b: "b"}, pipeline.BufferPolicy{}); err != nil {
+		t.Fatal(err)
+	}
+	task := newTask(graph, nil)
+	t.Cleanup(func() { _ = task.Close() })
+
+	err = task.Control(context.Background(), control.Rate(1))
+	if !errors.Is(err, control.ErrAmbiguousTarget) {
+		t.Fatalf("untargeted rate err = %v, want ErrAmbiguousTarget", err)
+	}
+	if err == nil || !strings.Contains(err.Error(), "implicit source targets") {
+		t.Fatalf("err = %v, want source target guidance", err)
+	}
+}
+
+func TestTaskControlRejectsConflictingExplicitTargets(t *testing.T) {
+	graph, err := pipeline.NewGraph(pipeline.GraphConfig{
+		Name:   "control-target-conflict",
+		Buffer: pipeline.BufferPolicy{Capacity: 1, Drop: pipeline.DropOldest},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	task := newTask(graph, nil)
+	t.Cleanup(func() { _ = task.Close() })
+
+	err = task.Control(context.Background(), control.Keyframe("a").At("node").AtTap("tap"))
+	if !errors.Is(err, control.ErrAmbiguousTarget) {
+		t.Fatalf("conflicting target err = %v, want ErrAmbiguousTarget", err)
+	}
+	if err == nil || !strings.Contains(err.Error(), "choose exactly one target") {
+		t.Fatalf("err = %v, want target conflict guidance", err)
+	}
+}
+
 // controlLiveAudioSource is a recipe-level frame source that emits audio frames
 // until the task stops, so a control can land while the graph is live.
 func controlLiveAudioSource(id av.StreamID) InputSpec {

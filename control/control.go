@@ -41,6 +41,9 @@ var (
 	ErrNotRunning = errors.New("goav: task is not running")
 	// ErrNil is returned when a control carries no payload.
 	ErrNil = errors.New("goav: nil control")
+	// ErrAmbiguousTarget is returned when a control does not name exactly one
+	// target and the task cannot infer one safely.
+	ErrAmbiguousTarget = errors.New("goav: control target is ambiguous")
 )
 
 // Control is an out-of-band request injected into a running task's graph.

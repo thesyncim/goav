@@ -242,12 +242,11 @@ func TestTaskRateChangesSourcePacingMidRun(t *testing.T) {
 		t.Fatalf("pre-rate frames never arrived: %v", err)
 	}
 
-	// Untargeted Rate broadcasts to ALL sources: the controllable one applies it
-	// synchronously, the plain one is reported clearly — errors collect per source.
-	err := task.Control(ctx, control.Rate(2.0))
-	if err == nil {
-		t.Fatal("Rate err = nil, want a clear error for the uncontrollable source")
+	if err := task.Control(ctx, control.Rate(2.0).At("ticker")); err != nil {
+		t.Fatalf("Rate controllable source: %v", err)
 	}
+
+	err := task.Control(ctx, control.Rate(2.0).At("plain"))
 	if !errors.Is(err, pipeline.ErrInvalidLink) {
 		t.Fatalf("Rate err = %v, want ErrInvalidLink for the uncontrollable source", err)
 	}

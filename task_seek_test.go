@@ -181,13 +181,12 @@ func TestTaskSeekRepositionsSourceMidRun(t *testing.T) {
 		t.Fatalf("pre-seek frames never arrived: %v", err)
 	}
 
-	// Untargeted Seek broadcasts to ALL sources: the controllable one repositions,
-	// the plain one is reported clearly — errors are collected per source.
 	const position = time.Hour // tick 3.6e12: far beyond what the loop reaches naturally
-	err = task.Control(ctx, control.Seek(position))
-	if err == nil {
-		t.Fatal("Seek err = nil, want a clear error for the uncontrollable source")
+	if err := task.Control(ctx, control.Seek(position).At("ticker")); err != nil {
+		t.Fatalf("Seek controllable source: %v", err)
 	}
+
+	err = task.Control(ctx, control.Seek(position).At("plain"))
 	if !errors.Is(err, pipeline.ErrInvalidLink) {
 		t.Fatalf("Seek err = %v, want ErrInvalidLink for the uncontrollable source", err)
 	}

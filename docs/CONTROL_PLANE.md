@@ -360,6 +360,10 @@ Supported built-ins include:
 - `control --json '<control.Control JSON>'`
 - `inspect`, `snapshot`, `stats`, `taps`, `streams`, `branches`,
   `destinations`, `capabilities`
+
+Untargeted controls infer a destination only when the running task has exactly
+one valid target for that verb. Multi-source or multi-entry graphs require an
+explicit `at=`, `selector=`, `source=`, or `node=` argument.
 - `graph [format=mermaid|dot|text]` and `flowchart [format=mermaid|dot|text]`
 - `events --follow`, `watch [type=<event-type>] [stream=<stream-id>] --follow`
 - `attach`, `rebranch`, `detach`, `stop`

@@ -186,10 +186,12 @@ implement, with the executable evidence:
 - **Controls.** The typed verbs (`Keyframe`, `Seek`, `Rate`, `SetBitrate`,
   `SelectActive`, ...) are core vocabulary, but the control plane is closed
   for externals in two directions. In-process stages still use
-  `Deliver(event).AtTap(name)` to receive arbitrary custom events. Hosts that
-  need CLI access import `ctl`, add explicit `CommandSpec` rows for new verbs,
-  and add `PipelineRegistry` rows for custom runtime branch components. There
-  is no global registry and no arbitrary method invocation.
+  `Deliver(event).AtTap(name)` to receive arbitrary custom events. Untargeted
+  controls only infer a destination when exactly one valid target exists;
+  otherwise callers use `.AtTap(...)`, `.At(...)`, `source=...`, or `node=...`.
+  Hosts that need CLI access import `ctl`, add explicit `CommandSpec` rows for
+  new verbs, and add `PipelineRegistry` rows for custom runtime branch
+  components. There is no global registry and no arbitrary method invocation.
 
 ## C. Expert tier
 
