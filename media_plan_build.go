@@ -1628,11 +1628,11 @@ func transformSpecFromMediaTransform(transform mediaTransform) TransformSpec {
 	var spec TransformSpec
 	if transform.video != nil {
 		resize := *transform.video
-		spec.Resize = &resize
+		spec.resize = &resize
 	}
 	if transform.audio != nil {
 		resample := *transform.audio
-		spec.Resample = &resample
+		spec.resample = &resample
 	}
 	return spec
 }

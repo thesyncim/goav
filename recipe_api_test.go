@@ -197,7 +197,7 @@ func equalOperationKinds(a []plan.OperationKind, b []plan.OperationKind) bool {
 	return true
 }
 
-func transformOperationsForTest(operations any) []goav.TransformSpec {
+func transformOperationsForTest(operations any) []goav.TransformViewForTest {
 	return goav.TransformOperationsForTest(operations)
 }
 
@@ -443,12 +443,13 @@ func (j *testBranchJob) materialize() *goav.Job {
 			builder = builder.Apply(flow)
 		}
 		for _, transform := range branch.transforms {
-			if transform.Resize != nil {
-				resize := transform.Resize
+			view := goav.TransformViewForTestFrom(transform)
+			if view.Resize != nil {
+				resize := view.Resize
 				builder = builder.Resize(resize.Width, resize.Height)
 			}
-			if transform.Resample != nil {
-				resample := transform.Resample
+			if view.Resample != nil {
+				resample := view.Resample
 				builder = builder.Resample(resample.SampleRate, resample.Channels)
 			}
 		}
@@ -2776,11 +2777,14 @@ func TestFlowCarriesOrderedCustomStageAndTap(t *testing.T) {
 		t.Fatalf("intent: %+v", intent)
 	}
 	operations := intent.Streams[0].Operations
-	if len(operations) != 5 ||
-		operations[0].Kind != plan.OpDecode ||
+	if len(operations) != 5 {
+		t.Fatalf("operations: %+v", operations)
+	}
+	transform := goav.TransformViewForTestFrom(operations[3].Transform)
+	if operations[0].Kind != plan.OpDecode ||
 		operations[1].Kind != plan.OpStage || operations[1].Component != "meter" ||
 		operations[2].Kind != plan.OpTap || operations[2].Tap.Name != "audio.after-meter" ||
-		operations[3].Kind != plan.OpTransform || operations[3].Transform.Resample == nil ||
+		operations[3].Kind != plan.OpTransform || transform.Resample == nil ||
 		operations[4].Kind != plan.OpEncode || operations[4].Encode.ID != av.CodecOpus {
 		t.Fatalf("operations: %+v", operations)
 	}
@@ -3182,13 +3186,16 @@ func TestFlowAppliesFlowAtDeclarationPosition(t *testing.T) {
 	// outer flow, in declaration order: decode (auto-inserted), the inner
 	// stage/tap/require/auto, then the outer resample and encoder.
 	operations := intent.Streams[0].Operations
-	if len(operations) != 7 ||
-		operations[0].Kind != plan.OpDecode ||
+	if len(operations) != 7 {
+		t.Fatalf("operations: %+v", operations)
+	}
+	transform := goav.TransformViewForTestFrom(operations[5].Transform)
+	if operations[0].Kind != plan.OpDecode ||
 		operations[1].Kind != plan.OpStage || operations[1].Component != "meter" ||
 		operations[2].Kind != plan.OpTap || operations[2].Tap.Name != "audio.inner-meter" ||
 		operations[3].Kind != plan.OpShape || operations[3].Require == nil ||
 		operations[4].Kind != plan.OpShape || operations[4].Auto == nil ||
-		operations[5].Kind != plan.OpTransform || operations[5].Transform.Resample == nil ||
+		operations[5].Kind != plan.OpTransform || transform.Resample == nil ||
 		operations[6].Kind != plan.OpEncode || operations[6].Encode.ID != av.CodecOpus {
 		t.Fatalf("operations: %+v", operations)
 	}

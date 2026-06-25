@@ -196,7 +196,7 @@ func (t *task) planAttachBranchSteps(ctx context.Context, spec BranchSpec, desti
 			currentShape = shape.Merge(currentShape, operation.Shape)
 			out = attachStepShape(currentShape, patchShape)
 		case plan.OpTransform:
-			if operation.Transform.Resize == nil && operation.Transform.Resample == nil {
+			if operation.Transform.resize == nil && operation.Transform.resample == nil {
 				out = operationSpecOutputShape(patchShape, operation)
 				break
 			}

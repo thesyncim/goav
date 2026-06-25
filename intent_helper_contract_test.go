@@ -71,7 +71,7 @@ func TestJobStreamOperationHelperContracts(t *testing.T) {
 	}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("operation kinds = %v, want %v", got, want)
 	}
-	if ops[1].Transform.Resample == stream.operations[1].Transform.Resample {
+	if ops[1].Transform.resample == stream.operations[1].Transform.resample {
 		t.Fatal("jobOperationSpecs reused resample config pointer")
 	}
 	if ops[2].Auto == stream.operations[2].Auto {
@@ -83,8 +83,8 @@ func TestJobStreamOperationHelperContracts(t *testing.T) {
 	if ops[4].Prefer == stream.operations[4].Prefer {
 		t.Fatal("jobOperationSpecs reused prefer pointer")
 	}
-	ops[1].Transform.Resample.SampleRate = 8_000
-	if got := jobOperationSpecs(stream)[1].Transform.Resample.SampleRate; got != 16_000 {
+	ops[1].Transform.resample.SampleRate = 8_000
+	if got := jobOperationSpecs(stream)[1].Transform.resample.SampleRate; got != 16_000 {
 		t.Fatalf("operation clone mutation leaked into stream, sample rate = %d", got)
 	}
 }
@@ -125,14 +125,14 @@ func TestJobStreamNameAndChainStepContracts(t *testing.T) {
 	if len(steps) != 2 {
 		t.Fatalf("chain steps = %#v, want transform and frame tap", steps)
 	}
-	if steps[0].transform.Resize == nil || steps[0].transform.Resize.Width != 160 {
+	if steps[0].transform.resize == nil || steps[0].transform.resize.Width != 160 {
 		t.Fatalf("first chain step = %#v, want cloned resize", steps[0])
 	}
 	if steps[1].tap != "preview.frames" || steps[1].tapDomain != shape.DomainFrame {
 		t.Fatalf("second chain step = %#v, want frame tap", steps[1])
 	}
-	steps[0].transform.Resize.Width = 999
-	if got := jobStreamChainSteps(stream)[0].transform.Resize.Width; got != 160 {
+	steps[0].transform.resize.Width = 999
+	if got := jobStreamChainSteps(stream)[0].transform.resize.Width; got != 160 {
 		t.Fatalf("chain step clone mutation leaked into stream, width = %d", got)
 	}
 }

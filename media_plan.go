@@ -653,22 +653,22 @@ func mediaShapeFromInputIntent(input inputIntent, domain shape.MediaDomain) shap
 }
 
 func mediaShapeFromTransform(transform TransformSpec) shape.Spec {
-	if transform.Resize != nil {
+	if transform.resize != nil {
 		return shape.Spec{
 			Domain:      shape.DomainFrame,
 			MediaKind:   av.MediaVideo,
-			Width:       transform.Resize.Width,
-			Height:      transform.Resize.Height,
-			PixelFormat: transform.Resize.PixelFormat,
+			Width:       transform.resize.Width,
+			Height:      transform.resize.Height,
+			PixelFormat: transform.resize.PixelFormat,
 		}
 	}
-	if transform.Resample != nil {
+	if transform.resample != nil {
 		return shape.Spec{
 			Domain:       shape.DomainFrame,
 			MediaKind:    av.MediaAudio,
-			SampleRate:   transform.Resample.SampleRate,
-			Channels:     transform.Resample.Channels,
-			SampleFormat: transform.Resample.SampleFormat,
+			SampleRate:   transform.resample.SampleRate,
+			Channels:     transform.resample.Channels,
+			SampleFormat: transform.resample.SampleFormat,
 		}
 	}
 	return shape.Spec{}

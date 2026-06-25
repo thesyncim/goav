@@ -348,7 +348,7 @@ func synthesizeConversionTransform(media av.MediaType, actual shape.Spec, expect
 		if config.SampleRate <= 0 || config.Channels <= 0 {
 			return TransformSpec{}, false
 		}
-		return TransformSpec{Resample: &config}, true
+		return TransformSpec{resample: &config}, true
 	case av.MediaVideo:
 		config := filter.ResizeConfig{
 			Width:       firstPositiveInt(expected.Width, actual.Width),
@@ -359,7 +359,7 @@ func synthesizeConversionTransform(media av.MediaType, actual shape.Spec, expect
 		if config.Width <= 0 || config.Height <= 0 {
 			return TransformSpec{}, false
 		}
-		return TransformSpec{Resize: &config}, true
+		return TransformSpec{resize: &config}, true
 	default:
 		return TransformSpec{}, false
 	}
@@ -398,16 +398,16 @@ func selectShapeConversionAdapter(rt *runtime, media av.MediaType, transform Tra
 		if realtime && !descriptor.Realtime {
 			continue
 		}
-		if transform.Resample != nil && transform.Resample.SampleFormat != "" &&
-			len(descriptor.SampleFormats) != 0 && !stringAllowed(descriptor.SampleFormats, transform.Resample.SampleFormat) {
+		if transform.resample != nil && transform.resample.SampleFormat != "" &&
+			len(descriptor.SampleFormats) != 0 && !stringAllowed(descriptor.SampleFormats, transform.resample.SampleFormat) {
 			continue
 		}
-		if transform.Resize != nil {
+		if transform.resize != nil {
 			if len(descriptor.ResizeModes) != 0 && !resizeModeAllowed(descriptor.ResizeModes, filter.ResizeExact) {
 				continue
 			}
-			if transform.Resize.PixelFormat != "" && len(descriptor.PixelFormats) != 0 &&
-				!stringAllowed(descriptor.PixelFormats, transform.Resize.PixelFormat) {
+			if transform.resize.PixelFormat != "" && len(descriptor.PixelFormats) != 0 &&
+				!stringAllowed(descriptor.PixelFormats, transform.resize.PixelFormat) {
 				continue
 			}
 		}
@@ -568,10 +568,10 @@ func explicitConversionSuggestion(transform TransformSpec, step operationSpec) [
 		target = " before " + operationSpecLabel(step)
 	}
 	switch {
-	case transform.Resample != nil:
-		return []string{fmt.Sprintf("insert .Resample(%d, %d) explicitly%s", transform.Resample.SampleRate, transform.Resample.Channels, target)}
-	case transform.Resize != nil:
-		return []string{fmt.Sprintf("insert .Resize(%d, %d) explicitly%s", transform.Resize.Width, transform.Resize.Height, target)}
+	case transform.resample != nil:
+		return []string{fmt.Sprintf("insert .Resample(%d, %d) explicitly%s", transform.resample.SampleRate, transform.resample.Channels, target)}
+	case transform.resize != nil:
+		return []string{fmt.Sprintf("insert .Resize(%d, %d) explicitly%s", transform.resize.Width, transform.resize.Height, target)}
 	default:
 		return nil
 	}
@@ -661,8 +661,8 @@ func operationSpecLabel(operation operationSpec) string {
 func shapeConversionDetailText(factory string, actual shape.Spec, transform TransformSpec) string {
 	parts := []string{factory}
 	switch {
-	case transform.Resample != nil:
-		config := transform.Resample
+	case transform.resample != nil:
+		config := transform.resample
 		if config.SampleRate != 0 && config.SampleRate != actual.SampleRate {
 			parts = append(parts, formatSampleRate(actual.SampleRate)+"→"+formatSampleRate(config.SampleRate))
 		}
@@ -672,8 +672,8 @@ func shapeConversionDetailText(factory string, actual shape.Spec, transform Tran
 		if config.SampleFormat != "" && config.SampleFormat != actual.SampleFormat {
 			parts = append(parts, formatMediaFormat(actual.SampleFormat)+"→"+config.SampleFormat)
 		}
-	case transform.Resize != nil:
-		config := transform.Resize
+	case transform.resize != nil:
+		config := transform.resize
 		if (config.Width != 0 && config.Width != actual.Width) || (config.Height != 0 && config.Height != actual.Height) {
 			parts = append(parts, formatFrameSize(actual.Width, actual.Height)+"→"+formatFrameSize(config.Width, config.Height))
 		}

@@ -292,8 +292,8 @@ func encodeAdapterRequestFromPreparedStream(spec codec.CodecSpec, stream av.Stre
 func streamIntentSampleFormat(stream streamIntent) string {
 	transforms := streamIntentTransformSpecs(stream)
 	for i := len(transforms) - 1; i >= 0; i-- {
-		if transforms[i].Resample != nil && transforms[i].Resample.SampleFormat != "" {
-			return transforms[i].Resample.SampleFormat
+		if transforms[i].resample != nil && transforms[i].resample.SampleFormat != "" {
+			return transforms[i].resample.SampleFormat
 		}
 	}
 	return ""
@@ -302,8 +302,8 @@ func streamIntentSampleFormat(stream streamIntent) string {
 func streamIntentPixelFormat(stream streamIntent) string {
 	transforms := streamIntentTransformSpecs(stream)
 	for i := len(transforms) - 1; i >= 0; i-- {
-		if transforms[i].Resize != nil && transforms[i].Resize.PixelFormat != "" {
-			return transforms[i].Resize.PixelFormat
+		if transforms[i].resize != nil && transforms[i].resize.PixelFormat != "" {
+			return transforms[i].resize.PixelFormat
 		}
 	}
 	return ""

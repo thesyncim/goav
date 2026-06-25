@@ -1560,7 +1560,7 @@ func runtimeBranchTransform(branchName string, stream av.Stream, spec TransformS
 		suffix = "-" + strconv.Itoa(index+1)
 	}
 	switch {
-	case spec.Resize != nil && spec.Resample != nil:
+	case spec.resize != nil && spec.resample != nil:
 		return mediaTransform{}, &BuildError{
 			Family:    errcode.FamilyForCode(errcode.TransformInvalid),
 			Code:      errcode.TransformInvalid,
@@ -1570,21 +1570,21 @@ func runtimeBranchTransform(branchName string, stream av.Stream, spec TransformS
 			Fixes:     buildErrorFixes([]string{"declare two separate steps instead: .Resize(width, height).Resample(rate, channels)"}),
 			Cause:     ErrUnsupportedBuild,
 		}
-	case spec.Resize != nil:
+	case spec.resize != nil:
 		if stream.Type != av.MediaVideo && stream.Codec.Type != av.MediaVideo {
 			return mediaTransform{}, runtimeBranchTransformMediaError(base, "resize", av.MediaVideo, runtimeBranchStreamMedia(stream))
 		}
-		resize := *spec.Resize
+		resize := *spec.resize
 		return mediaTransform{
 			name:    "resize-" + base + suffix,
 			factory: transformFactoryName(spec),
 			video:   &resize,
 		}, nil
-	case spec.Resample != nil:
+	case spec.resample != nil:
 		if stream.Type != av.MediaAudio && stream.Codec.Type != av.MediaAudio {
 			return mediaTransform{}, runtimeBranchTransformMediaError(base, "resample", av.MediaAudio, runtimeBranchStreamMedia(stream))
 		}
-		resample := *spec.Resample
+		resample := *spec.resample
 		return mediaTransform{
 			name:    "resample-" + base + suffix,
 			factory: transformFactoryName(spec),

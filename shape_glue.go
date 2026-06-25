@@ -52,9 +52,9 @@ func codecSpecOutputShapes(spec codec.CodecSpec, input shape.Spec) shape.Set {
 // resample.
 func (spec TransformSpec) InputShapes() shape.Set {
 	switch {
-	case spec.Resize != nil:
+	case spec.resize != nil:
 		return shape.Set{shape.Frame(av.MediaVideo)}
-	case spec.Resample != nil:
+	case spec.resample != nil:
 		return shape.Set{shape.Frame(av.MediaAudio)}
 	default:
 		return nil
@@ -66,21 +66,21 @@ func (spec TransformSpec) InputShapes() shape.Set {
 func (spec TransformSpec) OutputShapes(input shape.Spec) shape.Set {
 	out := input
 	switch {
-	case spec.Resize != nil:
+	case spec.resize != nil:
 		out.Domain = shape.DomainFrame
 		out.MediaKind = av.MediaVideo
-		out.Width = spec.Resize.Width
-		out.Height = spec.Resize.Height
-		if spec.Resize.PixelFormat != "" {
-			out.PixelFormat = spec.Resize.PixelFormat
+		out.Width = spec.resize.Width
+		out.Height = spec.resize.Height
+		if spec.resize.PixelFormat != "" {
+			out.PixelFormat = spec.resize.PixelFormat
 		}
-	case spec.Resample != nil:
+	case spec.resample != nil:
 		out.Domain = shape.DomainFrame
 		out.MediaKind = av.MediaAudio
-		out.SampleRate = spec.Resample.SampleRate
-		out.Channels = spec.Resample.Channels
-		if spec.Resample.SampleFormat != "" {
-			out.SampleFormat = spec.Resample.SampleFormat
+		out.SampleRate = spec.resample.SampleRate
+		out.Channels = spec.resample.Channels
+		if spec.resample.SampleFormat != "" {
+			out.SampleFormat = spec.resample.SampleFormat
 		}
 	}
 	return shape.Set{out}

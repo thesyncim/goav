@@ -17,13 +17,12 @@ type resizeOption func(*filter.ResizeConfig)
 
 type audioOption func(*filter.ResampleConfig)
 
-// TransformSpec is one declared frame transform — exactly one of Resize or
-// Resample is set. Chains create these through the Resize/Resample methods;
-// the spec exists as a value so flows and tests can describe transforms
-// without a chain.
+// TransformSpec is one declared frame transform. Chains create these through
+// the Resize/Resample methods; the spec exists as an opaque value so flows can
+// describe transforms without exposing partially valid pointer-union state.
 type TransformSpec struct {
-	Resize   *filter.ResizeConfig
-	Resample *filter.ResampleConfig
+	resize   *filter.ResizeConfig
+	resample *filter.ResampleConfig
 }
 
 // Resize declares a video geometry conversion to width x height (exact mode
@@ -36,7 +35,7 @@ func Resize(width int, height int, options ...resizeOption) TransformSpec {
 			options[i](&config)
 		}
 	}
-	return TransformSpec{Resize: &config}
+	return TransformSpec{resize: &config}
 }
 
 // Resample declares an audio conversion to the given sample rate and channel
@@ -48,7 +47,7 @@ func Resample(sampleRate int, channels int, options ...audioOption) TransformSpe
 			options[i](&config)
 		}
 	}
-	return TransformSpec{Resample: &config}
+	return TransformSpec{resample: &config}
 }
 
 func validateRecipeTransformAdapters(operation string, rt *Runtime, streams []streamIntent) error {
@@ -79,9 +78,9 @@ func validateRecipeTransformAdapters(operation string, rt *Runtime, streams []st
 
 func transformFactoryName(spec TransformSpec) string {
 	switch {
-	case spec.Resize != nil:
+	case spec.resize != nil:
 		return filter.FactoryResize
-	case spec.Resample != nil:
+	case spec.resample != nil:
 		return filter.FactoryResample
 	default:
 		return ""
@@ -96,16 +95,16 @@ func validateTransformAdapterDescriptor(operation string, stream streamIntent, s
 	if expectedOutput != "" && desc.Output != "" && desc.Output != expectedOutput {
 		return transformAdapterIncompatibleError(operation, stream, name, desc, expectedInput, expectedOutput)
 	}
-	if spec.Resize != nil {
-		if mode := resizeModeWithDefault(spec.Resize.Mode); mode != "" && len(desc.ResizeModes) != 0 && !resizeModeAllowed(desc.ResizeModes, mode) {
+	if spec.resize != nil {
+		if mode := resizeModeWithDefault(spec.resize.Mode); mode != "" && len(desc.ResizeModes) != 0 && !resizeModeAllowed(desc.ResizeModes, mode) {
 			return transformAdapterCapabilityError(operation, stream, name, "resize_mode", string(mode), resizeModesToStrings(desc.ResizeModes))
 		}
-		if format := spec.Resize.PixelFormat; format != "" && len(desc.PixelFormats) != 0 && !stringAllowed(desc.PixelFormats, format) {
+		if format := spec.resize.PixelFormat; format != "" && len(desc.PixelFormats) != 0 && !stringAllowed(desc.PixelFormats, format) {
 			return transformAdapterCapabilityError(operation, stream, name, "pixel_format", format, desc.PixelFormats)
 		}
 	}
-	if spec.Resample != nil {
-		if format := spec.Resample.SampleFormat; format != "" && len(desc.SampleFormats) != 0 && !stringAllowed(desc.SampleFormats, format) {
+	if spec.resample != nil {
+		if format := spec.resample.SampleFormat; format != "" && len(desc.SampleFormats) != 0 && !stringAllowed(desc.SampleFormats, format) {
 			return transformAdapterCapabilityError(operation, stream, name, "sample_format", format, desc.SampleFormats)
 		}
 	}
@@ -246,7 +245,7 @@ func streamTransform(streamName string, selector av.StreamSelector, spec Transfo
 		return mediaTransform{}, err
 	}
 	switch {
-	case spec.Resize != nil && spec.Resample != nil:
+	case spec.resize != nil && spec.resample != nil:
 		return mediaTransform{}, &BuildError{
 			Family:    errcode.FamilyForCode(errcode.TransformInvalid),
 			Code:      errcode.TransformInvalid,
@@ -255,21 +254,21 @@ func streamTransform(streamName string, selector av.StreamSelector, spec Transfo
 			Reason:    "one stream transform cannot be both resize and resample",
 			Fixes:     buildErrorFixes([]string{"declare two separate steps instead: .Resize(width, height).Resample(rate, channels)"}),
 		}
-	case spec.Resize != nil:
+	case spec.resize != nil:
 		if selector.Type == av.MediaAudio {
 			return mediaTransform{}, transformMediaError(base, "resize", av.MediaVideo, selector.Type)
 		}
-		resize := *spec.Resize
+		resize := *spec.resize
 		return mediaTransform{
 			name:    "resize-" + base + suffix,
 			factory: filter.FactoryResize,
 			video:   &resize,
 		}, nil
-	case spec.Resample != nil:
+	case spec.resample != nil:
 		if selector.Type == av.MediaVideo {
 			return mediaTransform{}, transformMediaError(base, "resample", av.MediaAudio, selector.Type)
 		}
-		resample := *spec.Resample
+		resample := *spec.resample
 		return mediaTransform{
 			name:    "resample-" + base + suffix,
 			factory: filter.FactoryResample,
@@ -292,10 +291,18 @@ func streamTransform(streamName string, selector av.StreamSelector, spec Transfo
 
 func validateTransformSpec(operation string, node string, spec TransformSpec) error {
 	switch {
-	case spec.Resize != nil && spec.Resample != nil:
-		return nil
-	case spec.Resize != nil:
-		if spec.Resize.Width > 0 && spec.Resize.Height > 0 {
+	case spec.resize != nil && spec.resample != nil:
+		return &BuildError{
+			Family:    errcode.FamilyForCode(errcode.TransformInvalid),
+			Code:      errcode.TransformInvalid,
+			Operation: operation,
+			Node:      node,
+			Reason:    "one transform cannot be both resize and resample",
+			Fixes:     buildErrorFixes([]string{"declare two separate steps instead: .Resize(width, height).Resample(rate, channels)"}),
+			Cause:     ErrUnsupportedBuild,
+		}
+	case spec.resize != nil:
+		if spec.resize.Width > 0 && spec.resize.Height > 0 {
 			return nil
 		}
 		return &BuildError{
@@ -305,8 +312,8 @@ func validateTransformSpec(operation string, node string, spec TransformSpec) er
 			Node:      node,
 			Reason:    "resize requires positive width and height",
 			Fields: buildErrorFields([]string{
-				fmt.Sprintf("width=%d", spec.Resize.Width),
-				fmt.Sprintf("height=%d", spec.Resize.Height),
+				fmt.Sprintf("width=%d", spec.resize.Width),
+				fmt.Sprintf("height=%d", spec.resize.Height),
 			}),
 			Fixes: buildErrorFixes([]string{
 				"call .Resize(width, height) with positive dimensions",
@@ -314,8 +321,8 @@ func validateTransformSpec(operation string, node string, spec TransformSpec) er
 			}),
 			Cause: ErrUnsupportedBuild,
 		}
-	case spec.Resample != nil:
-		if spec.Resample.SampleRate > 0 && spec.Resample.Channels > 0 {
+	case spec.resample != nil:
+		if spec.resample.SampleRate > 0 && spec.resample.Channels > 0 {
 			return nil
 		}
 		return &BuildError{
@@ -325,8 +332,8 @@ func validateTransformSpec(operation string, node string, spec TransformSpec) er
 			Node:      node,
 			Reason:    "resample requires positive sample rate and channels",
 			Fields: buildErrorFields([]string{
-				fmt.Sprintf("sample_rate=%d", spec.Resample.SampleRate),
-				fmt.Sprintf("channels=%d", spec.Resample.Channels),
+				fmt.Sprintf("sample_rate=%d", spec.resample.SampleRate),
+				fmt.Sprintf("channels=%d", spec.resample.Channels),
 			}),
 			Fixes: buildErrorFixes([]string{
 				"call .Resample(sampleRate, channels) with positive values",

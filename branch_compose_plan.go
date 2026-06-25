@@ -188,7 +188,7 @@ func chainStepsFromChainOperations(operations []operationSpec) []chainStep {
 				steps = append(steps, chainStep{shape: operation.Shape})
 			}
 		case plan.OpTransform:
-			if operation.Transform.Resize != nil || operation.Transform.Resample != nil {
+			if operation.Transform.resize != nil || operation.Transform.resample != nil {
 				steps = append(steps, chainStep{transform: cloneTransformSpec(operation.Transform)})
 			}
 		case plan.OpTap:
@@ -568,7 +568,7 @@ func validateBranchTransforms(stream streamIntent) error {
 			return err
 		}
 		switch {
-		case transform.Resize != nil && transform.Resample != nil:
+		case transform.resize != nil && transform.resample != nil:
 			return &BuildError{
 				Family:    errcode.FamilyForCode(errcode.TransformInvalid),
 				Code:      errcode.TransformInvalid,
@@ -578,7 +578,7 @@ func validateBranchTransforms(stream streamIntent) error {
 				Fixes:     buildErrorFixes([]string{"declare two separate steps instead: .Resize(width, height).Resample(rate, channels)"}),
 				Cause:     ErrUnsupportedBuild,
 			}
-		case transform.Resize != nil, transform.Resample != nil:
+		case transform.resize != nil, transform.resample != nil:
 			continue
 		default:
 			return &BuildError{

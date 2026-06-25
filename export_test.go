@@ -2,6 +2,7 @@ package goav
 
 import (
 	"github.com/thesyncim/goav/codec"
+	"github.com/thesyncim/goav/filter"
 	"github.com/thesyncim/goav/plan"
 	"github.com/thesyncim/goav/shape"
 )
@@ -41,15 +42,33 @@ func OperationSpecKindsForTest(operations any) []plan.OperationKind {
 	return kinds
 }
 
-func TransformOperationsForTest(operations any) []TransformSpec {
+type TransformViewForTest struct {
+	Resize   *filter.ResizeConfig
+	Resample *filter.ResampleConfig
+}
+
+func TransformViewForTestFrom(spec TransformSpec) TransformViewForTest {
+	var out TransformViewForTest
+	if spec.resize != nil {
+		resize := *spec.resize
+		out.Resize = &resize
+	}
+	if spec.resample != nil {
+		resample := *spec.resample
+		out.Resample = &resample
+	}
+	return out
+}
+
+func TransformOperationsForTest(operations any) []TransformViewForTest {
 	ops, ok := operations.([]operationSpec)
 	if !ok {
 		return nil
 	}
-	transforms := make([]TransformSpec, 0)
+	transforms := make([]TransformViewForTest, 0)
 	for i := range ops {
 		if ops[i].Kind == plan.OpTransform {
-			transforms = append(transforms, ops[i].Transform)
+			transforms = append(transforms, TransformViewForTestFrom(ops[i].Transform))
 		}
 	}
 	return transforms

@@ -654,22 +654,22 @@ func chainEncodeSpec(operations []operationSpec) codec.CodecSpec {
 
 func cloneTransformSpec(spec TransformSpec) TransformSpec {
 	var out TransformSpec
-	if spec.Resize != nil {
-		resize := *spec.Resize
-		out.Resize = &resize
+	if spec.resize != nil {
+		resize := *spec.resize
+		out.resize = &resize
 	}
-	if spec.Resample != nil {
-		resample := *spec.Resample
-		out.Resample = &resample
+	if spec.resample != nil {
+		resample := *spec.resample
+		out.resample = &resample
 	}
 	return out
 }
 
 func chainTransformStepName(spec TransformSpec) string {
 	switch {
-	case spec.Resize != nil:
+	case spec.resize != nil:
 		return "resize"
-	case spec.Resample != nil:
+	case spec.resample != nil:
 		return "resample"
 	default:
 		return "transform"
