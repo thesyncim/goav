@@ -150,7 +150,13 @@ Move or keep outside the front door:
       keeping root `Detach` and `OnRemove` as runtime grammar while removing
       lifecycle disposition constructors from the root package.
 
-15. **Docs rewrite** — in progress
+15. **Rebranch lifecycle cleanup** — landed
+    - Move rebranch switch boundaries and old-branch disposition options to
+      `goav/lifecycle`, keeping `Attachment.Rebranch` typed through
+      `lifecycle.RebranchArg` while removing rebranch policy constructors from
+      the root package.
+
+16. **Docs rewrite** — in progress
     - Keep the README focused on the small grammar and one or two advanced entry
       points.
     - Finish with a Markdown-wide consistency pass and a README that works as a
@@ -158,7 +164,7 @@ Move or keep outside the front door:
     - Generate bundled adapter capability docs from descriptors so the docs and
       registered set cannot drift.
 
-16. **Go version floor** — landed
+17. **Go version floor** — landed
     - Lower every module directive from the patch-level local toolchain floor
       to the minor-version support floor (`go 1.26`).
     - Keep CI on the latest Go 1.26 patch with `1.26.x`, plus the rolling

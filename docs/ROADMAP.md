@@ -139,8 +139,8 @@ this list:
 - **PGO workflow**: profile capture over the canonical suite
   (`scripts/bench/run.sh` is the entry point) feeding default-on
   profile-guided builds. Roadmap.
-- **Additional `SwitchAt` boundaries** beyond `NextFrame`/`NextKeyframe`/
-  `AtMediaTime` (`rebranch_policy.go`). Roadmap.
+- **Additional `lifecycle.SwitchAt` boundaries** beyond `NextFrame`/
+  `NextKeyframe`/`AtMediaTime` (`rebranch_policy.go`). Roadmap.
 
 ## Non-goals
 

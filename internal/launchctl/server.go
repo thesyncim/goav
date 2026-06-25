@@ -13,6 +13,7 @@ import (
 	goav "github.com/thesyncim/goav"
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/inspect"
+	"github.com/thesyncim/goav/lifecycle"
 )
 
 // Server handles one decoded control-plane request against a task.
@@ -126,13 +127,13 @@ func (s *Server) rebranch(ctx context.Context, request Request) (ControlResponse
 	if err != nil {
 		return ControlResponse{}, err
 	}
-	options := []goav.RebranchOption{spec}
+	options := []lifecycle.RebranchArg{spec}
 	switch request.Switch {
 	case "":
 	case "next_frame":
-		options = append(options, goav.SwitchAt(goav.NextFrame()))
+		options = append(options, lifecycle.SwitchAt(lifecycle.NextFrame()))
 	case "next_keyframe":
-		options = append(options, goav.SwitchAt(goav.NextKeyframe()))
+		options = append(options, lifecycle.SwitchAt(lifecycle.NextKeyframe()))
 	default:
 		return ControlResponse{}, commandError("invalid_value", "rebranch", "switch", "switch must be next_frame or next_keyframe", []string{"value=" + request.Switch}, []string{"use --switch next_frame", "use --switch next_keyframe"}, nil)
 	}

@@ -231,7 +231,7 @@ func waitForCondition(t *testing.T, label string, condition func() bool) {
 }
 
 // TestRebranchSwitchAtNextKeyframeOnPacketStream rebranches a live packet
-// branch with SwitchAt(NextKeyframe()): the old branch keeps receiving while
+// branch with lifecycle.SwitchAt(lifecycle.NextKeyframe()): the old branch keeps receiving while
 // non-key packets flow, the new branch sheds them, the new branch's first
 // delivered message is the keyframe itself, and the old branch is detached at
 // that boundary and receives nothing afterwards.
@@ -283,7 +283,7 @@ func TestRebranchSwitchAtNextKeyframeOnPacketStream(t *testing.T) {
 
 	attB, err := attA.Rebranch(ctx,
 		Branch("b").From(PacketTap("pkts")).Copy().To(bSink),
-		SwitchAt(NextKeyframe()),
+		lifecycle.SwitchAt(lifecycle.NextKeyframe()),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -336,7 +336,7 @@ func TestRebranchSwitchAtNextKeyframeOnPacketStream(t *testing.T) {
 }
 
 // TestRebranchSwitchAtNextFrameOnFrameStream rebranches a live frame branch
-// with SwitchAt(NextFrame()): the new branch's first delivered message is the
+// with lifecycle.SwitchAt(lifecycle.NextFrame()): the new branch's first delivered message is the
 // next frame after the rebranch, and the old branch detaches at that frame.
 func TestRebranchSwitchAtNextFrameOnFrameStream(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -407,7 +407,7 @@ func TestRebranchSwitchAtNextFrameOnFrameStream(t *testing.T) {
 
 	if _, err := attA.Rebranch(ctx,
 		Branch("b").From(FrameTap("frames")).To(bSink),
-		SwitchAt(NextFrame()),
+		lifecycle.SwitchAt(lifecycle.NextFrame()),
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -472,7 +472,7 @@ func TestRebranchFailureKeepsOldBranchAttached(t *testing.T) {
 
 	next, err := attA.Rebranch(ctx,
 		Branch("bad").From(PacketTap("missing")).Copy().To(Sink(SinkFunc("bad-sink", func(context.Context, Message) error { return nil }))),
-		SwitchAt(NextKeyframe()),
+		lifecycle.SwitchAt(lifecycle.NextKeyframe()),
 	)
 	if err == nil {
 		t.Fatal("rebranch to a missing tap succeeded, want error")
@@ -536,7 +536,7 @@ func TestRebranchOldBranchDispositionReportsDestinationStates(t *testing.T) {
 	// Drain: the replaced branch's destination commits.
 	attB, err := attA.Rebranch(ctx,
 		Branch("b").From(PacketTap("pkts")).Copy().To(sink("b-sink")),
-		DrainOldBranch(),
+		lifecycle.DrainOldBranch(),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -548,7 +548,7 @@ func TestRebranchOldBranchDispositionReportsDestinationStates(t *testing.T) {
 	// Abort: the replaced branch's destination aborts.
 	attC, err := attB.Rebranch(ctx,
 		Branch("c").From(PacketTap("pkts")).Copy().To(sink("c-sink")),
-		AbortOldBranch(),
+		lifecycle.AbortOldBranch(),
 	)
 	if err != nil {
 		t.Fatal(err)

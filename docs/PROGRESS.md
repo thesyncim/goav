@@ -130,7 +130,7 @@ Compatibility pins:
 - Finish folding residual `streamIntent` validation/planning readers into the
   operation/work-plan model. Explain stream rows and adapter requirements, plus
   mux compatibility, already read codec facts from `WorkPlan` operations.
-- Expand `SwitchAt` boundaries beyond frame/keyframe/media-time only if future
+- Expand `lifecycle.SwitchAt` boundaries beyond frame/keyframe/media-time only if future
   live-control workflows prove they need additional switch points.
 - Finish the full time-shape story: pipeline-wide clock service, A/V sink sync,
   and pull scheduling beyond the branch-local `flow.SyncPolicy` gate.

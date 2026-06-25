@@ -17,6 +17,7 @@ import (
 	"github.com/thesyncim/goav/control"
 	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/inspect"
+	"github.com/thesyncim/goav/lifecycle"
 	"github.com/thesyncim/goav/shape"
 	"github.com/thesyncim/goav/source"
 )
@@ -370,8 +371,8 @@ func ExampleAttachment_rebranch() {
 	// drains so part-001 commits complete.
 	if _, err := rec.Rebranch(ctx,
 		goav.Branch("rec").From(goav.PacketTap("video.encoded")).Copy().To(goav.File("part-002.ivf", &part2)),
-		goav.SwitchAt(goav.NextKeyframe()),
-		goav.DrainOldBranch(),
+		lifecycle.SwitchAt(lifecycle.NextKeyframe()),
+		lifecycle.DrainOldBranch(),
 	); err != nil {
 		fmt.Println(err)
 	}

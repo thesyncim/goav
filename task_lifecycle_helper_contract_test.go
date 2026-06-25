@@ -8,6 +8,7 @@ import (
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/errcode"
+	"github.com/thesyncim/goav/lifecycle"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/snapshot"
 )
@@ -143,7 +144,7 @@ func (a *lifecycleFakeAttachment) Resume(context.Context) error {
 	return nil
 }
 
-func (a *lifecycleFakeAttachment) Rebranch(context.Context, ...RebranchOption) (Attachment, error) {
+func (a *lifecycleFakeAttachment) Rebranch(context.Context, ...lifecycle.RebranchArg) (Attachment, error) {
 	return a, nil
 }
 

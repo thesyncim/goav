@@ -48,8 +48,9 @@ job.Describe(); adapter-backed Explain/Build/Run use job.UseRuntime(rt) or bundl
 Task: Run, Close
 Explainer: Explain
 Inspectable: Describe, Taps, Snapshot -> snapshot.*, Stats
-Mutable: Attach/Detach(DrainBranch|AbortBranch); Attachment.Rebranch
-         (SwitchAt(NextFrame|NextKeyframe|AtMediaTime), Drain/AbortOldBranch)
+Mutable: Attach/Detach(lifecycle.DrainBranch|AbortBranch); Attachment.Rebranch
+         (lifecycle.SwitchAt(lifecycle.NextFrame|lifecycle.NextKeyframe|lifecycle.AtMediaTime),
+          lifecycle.DrainOldBranch|lifecycle.AbortOldBranch)
 Controllable: Control(control.Keyframe|Seek|Segment|Rate|SetBitrate|SelectActive|Deliver, .AtTap)
 Observable: Events, Watch(inspect.EventFilter)
 goav.New(goavruntime.Option...) -> (*Runtime, error); goav.MustNew(...) -> bare Runtime; bundle.MustNew(...) -> bundled Runtime; job.UseRuntime(rt)
@@ -269,7 +270,7 @@ against the constructors in `input.go`/`provider.go`/`source.go`,
   to a running task; `Mutable.Detach(ctx, h)` removes that attached branch, with
   `lifecycle.DrainBranch()` and `lifecycle.AbortBranch()` selecting whether branch destinations
   commit or abort; `Attachment.Rebranch` is attach-new-then-detach-old, with
-  boundary options (`NextFrame`, `NextKeyframe`, `AtMediaTime`) and
+  lifecycle boundary options (`NextFrame`, `NextKeyframe`, `AtMediaTime`) and
   old-branch outcome options.
 - **Sync**: `flow.Sync(name, flow.SyncTolerance(...), flow.SyncDropLate())`
   returns a shared timeline policy. Reuse one `flow.SyncPolicy` across audio/video chains or

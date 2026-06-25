@@ -5,16 +5,9 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/thesyncim/goav/lifecycle"
 	"github.com/thesyncim/goav/pipeline"
 )
-
-// SwitchBoundary is the stream position where a Rebranch hands delivery over
-// from the replaced branch to its replacements. The zero value switches
-// immediately, which is also what Rebranch does without a SwitchAt option.
-type SwitchBoundary struct {
-	kind      switchBoundaryKind
-	mediaTime time.Duration
-}
 
 type switchBoundaryKind string
 
@@ -25,53 +18,9 @@ const (
 	switchMediaTime    switchBoundaryKind = "media-time"
 )
 
-// NextFrame switches at the next media message: the replacement branch starts
-// delivering with the first frame or packet that reaches it.
-func NextFrame() SwitchBoundary {
-	return SwitchBoundary{kind: switchNextFrame}
-}
-
-// NextKeyframe switches at the next decodable sync point: the replacement
-// branch starts delivering with the first keyframe packet that reaches it.
-// Raw frames are independently decodable, so on frame streams the next frame
-// qualifies.
-func NextKeyframe() SwitchBoundary {
-	return SwitchBoundary{kind: switchNextKeyframe}
-}
-
-// AtMediaTime switches when the replacement branch sees a packet or frame at
-// or after the given media timestamp. Negative timestamps are rejected by
-// Rebranch before any graph mutation.
-func AtMediaTime(position time.Duration) SwitchBoundary {
-	return SwitchBoundary{kind: switchMediaTime, mediaTime: position}
-}
-
-// RebranchOption configures Attachment.Rebranch. Replacement BranchSpec values
-// and switch policies share one variadic list, so a rebranch reads as the
-// branch grammar plus policies:
-//
-//	attachment.Rebranch(ctx, goav.Branch("hd").From(tap).Copy().To(dest),
-//	    goav.SwitchAt(goav.NextKeyframe()),
-//	    goav.DrainOldBranch(),
-//	)
-//
-// If attaching the replacements fails, the old branch remains attached and
-// intact.
-type RebranchOption interface {
-	applyRebranch(*rebranchPolicy)
-}
-
-// applyRebranch lets BranchSpec values ride the Rebranch option list as the
-// replacement branches.
-func (s BranchSpec) applyRebranch(policy *rebranchPolicy) {
-	policy.specs = append(policy.specs, s)
-}
-
-type rebranchOptionFunc func(*rebranchPolicy)
-
-func (f rebranchOptionFunc) applyRebranch(policy *rebranchPolicy) {
-	f(policy)
-}
+// RebranchArg lets BranchSpec ride the lifecycle.RebranchArg list accepted by
+// Attachment.Rebranch as a replacement branch.
+func (s BranchSpec) RebranchArg() {}
 
 // rebranchPolicy is the collected Rebranch configuration: the replacement
 // branches, the switch boundary, and the old branch's destination disposition.
@@ -94,43 +43,41 @@ const (
 	oldBranchAbort  oldBranchDisposition = "abort"
 )
 
-// SwitchAt delays the rebranch switch to the given stream boundary: the
-// replacement branches are attached immediately but shed media until the
-// boundary arrives (events always pass), and the replaced branch is detached
-// at that same boundary. Without SwitchAt the switch is immediate.
-func SwitchAt(boundary SwitchBoundary) RebranchOption {
-	return rebranchOptionFunc(func(policy *rebranchPolicy) {
-		policy.boundary = boundary.kind
-		policy.mediaTime = boundary.mediaTime
-		if boundary.kind == switchMediaTime && boundary.mediaTime < 0 {
-			policy.invalid = "media-time switch boundary must be non-negative"
-		}
-	})
+type lifecycleRebranchPolicy interface {
+	Boundary() string
+	MediaTime() time.Duration
+	Invalid() string
+	Disposition() string
 }
 
-// DrainOldBranch finalizes the replaced branch as drained: its destinations
-// are committed when it detaches at the switch boundary.
-func DrainOldBranch() RebranchOption {
-	return rebranchOptionFunc(func(policy *rebranchPolicy) {
-		policy.disposition = oldBranchDrain
-	})
-}
-
-// AbortOldBranch finalizes the replaced branch as abandoned: its destinations
-// are aborted when it detaches at the switch boundary.
-func AbortOldBranch() RebranchOption {
-	return rebranchOptionFunc(func(policy *rebranchPolicy) {
-		policy.disposition = oldBranchAbort
-	})
-}
-
-func rebranchPolicyFromOptions(options []RebranchOption) rebranchPolicy {
+func rebranchPolicyFromOptions(options []lifecycle.RebranchArg) rebranchPolicy {
 	var policy rebranchPolicy
 	for _, option := range options {
 		if option == nil {
 			continue
 		}
-		option.applyRebranch(&policy)
+		switch option := option.(type) {
+		case BranchSpec:
+			policy.specs = append(policy.specs, option)
+		case lifecycleRebranchPolicy:
+			if invalid := option.Invalid(); invalid != "" {
+				policy.invalid = invalid
+			}
+			switch switchBoundaryKind(option.Boundary()) {
+			case switchNextFrame, switchNextKeyframe, switchMediaTime:
+				policy.boundary = switchBoundaryKind(option.Boundary())
+				policy.mediaTime = option.MediaTime()
+			case switchImmediate:
+			default:
+				policy.invalid = "switch boundary is invalid"
+			}
+			switch oldBranchDisposition(option.Disposition()) {
+			case oldBranchDrain:
+				policy.disposition = oldBranchDrain
+			case oldBranchAbort:
+				policy.disposition = oldBranchAbort
+			}
+		}
 	}
 	return policy
 }

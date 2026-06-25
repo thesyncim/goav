@@ -528,7 +528,7 @@ func unsupportedGraphMutation(operation string) error {
 			"",
 			"rebranch by name and branch-pipeline string parsing require a control server attachment table",
 			nil,
-			[]string{"use typed attachment.Rebranch(ctx, goav.Branch(...), goav.SwitchAt(...))", "add a launch pipeline parser and attachment handle table before enabling `goav ctl rebranch`"},
+			[]string{"use typed attachment.Rebranch(ctx, goav.Branch(...), lifecycle.SwitchAt(...))", "add a launch pipeline parser and attachment handle table before enabling `goav ctl rebranch`"},
 			nil,
 		)
 	default:

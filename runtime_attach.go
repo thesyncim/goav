@@ -146,13 +146,14 @@ type Attachment interface {
 	// attached and start receiving before this branch is detached (no gap), so a
 	// live subscriber can be switched (e.g. to a different simulcast layer)
 	// without rebuilding the task. On attach failure this branch is left intact
-	// by default. Pass replacement BranchSpec values plus policies:
-	// SwitchAt(NextFrame()/NextKeyframe()) delays the switch to that stream
-	// boundary — the replacements shed media until the boundary and this branch
-	// detaches at it — and DrainOldBranch/AbortOldBranch select whether this
+	// by default. Pass replacement BranchSpec values plus lifecycle policies:
+	// lifecycle.SwitchAt(lifecycle.NextFrame()/lifecycle.NextKeyframe()) delays
+	// the switch to that stream boundary — the replacements shed media until the
+	// boundary and this branch detaches at it — and
+	// lifecycle.DrainOldBranch/lifecycle.AbortOldBranch select whether this
 	// branch's destinations commit or abort on detach.
 	// Without options the switch is immediate, exactly like Detach after Attach.
-	Rebranch(context.Context, ...RebranchOption) (Attachment, error)
+	Rebranch(context.Context, ...lifecycle.RebranchArg) (Attachment, error)
 	// Close detaches this branch and any dependent branches anchored on its
 	// taps; equivalent to Mutable.Detach.
 	Close(context.Context) error
@@ -1353,7 +1354,7 @@ func (a *runtimeAttachment) setPaused(ctx context.Context, paused bool) error {
 	return first
 }
 
-func (a *runtimeAttachment) Rebranch(ctx context.Context, options ...RebranchOption) (Attachment, error) {
+func (a *runtimeAttachment) Rebranch(ctx context.Context, options ...lifecycle.RebranchArg) (Attachment, error) {
 	if a == nil || a.owner == nil {
 		return nil, runtimeBranchInvalidError("rebranch runtime branch", "attachment has no owning task")
 	}
@@ -1362,7 +1363,7 @@ func (a *runtimeAttachment) Rebranch(ctx context.Context, options ...RebranchOpt
 		return nil, runtimeBranchInvalidError("rebranch runtime branch", "pass one or more replacement goav.Branch(name)...To(destination) specs")
 	}
 	if policy.invalid != "" {
-		return nil, runtimeBranchInvalidError(policy.invalid, "pass goav.SwitchAt(goav.AtMediaTime(position)) with position >= 0")
+		return nil, runtimeBranchInvalidError(policy.invalid, "pass lifecycle.SwitchAt(lifecycle.AtMediaTime(position)) with position >= 0")
 	}
 	specs := policy.specs
 	var group *switchGroup

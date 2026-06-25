@@ -17,6 +17,7 @@ import (
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/flow"
+	"github.com/thesyncim/goav/lifecycle"
 	"github.com/thesyncim/goav/pipeline"
 )
 
@@ -241,8 +242,8 @@ func (s *session) rebranch(ctx context.Context, id string, spec branchSpec) (*br
 	}
 	next, err := r.Attachment.Rebranch(ctx,
 		replacement,
-		goav.SwitchAt(goav.AtMediaTime(0)),
-		goav.DrainOldBranch(),
+		lifecycle.SwitchAt(lifecycle.AtMediaTime(0)),
+		lifecycle.DrainOldBranch(),
 	)
 	if err != nil {
 		r.Spec = oldSpec

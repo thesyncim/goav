@@ -88,7 +88,7 @@ Done:
   runtime-branch destinations.
 - `OnStream` rules can select their stream-removal behavior with
   `OnRemove(...)`.
-- `SwitchAt` supports frame, keyframe, and media-time boundaries.
+- `lifecycle.SwitchAt` supports frame, keyframe, and media-time boundaries.
 - Mux compatibility preflight rejects malformed declared timebase facts while
   still deferring unknown facts.
 - Generated-source CLI runs and control sockets expose the same task model.
@@ -98,7 +98,7 @@ Still planned:
 - Continue folding residual `streamIntent` validation/planning readers into the
   operation/work-plan model. Explain stream rows and adapter requirements, plus
   mux compatibility, already consume codec facts from `WorkPlan` operations.
-- Expand `SwitchAt` boundaries beyond frame/keyframe/media-time if future
+- Expand `lifecycle.SwitchAt` boundaries beyond frame/keyframe/media-time if future
   runtime replacement modes need them.
 - Finish the time-shape work: pipeline-wide clock service, A/V sink sync, and
   pull scheduling beyond branch-local `flow.SyncPolicy` gates.

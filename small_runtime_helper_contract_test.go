@@ -8,6 +8,7 @@ import (
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/errcode"
+	"github.com/thesyncim/goav/lifecycle"
 	"github.com/thesyncim/goav/pipeline"
 )
 
@@ -74,7 +75,7 @@ func TestSwitchBoundaryReachedContracts(t *testing.T) {
 }
 
 func TestAtMediaTimeRejectsNegativeBoundary(t *testing.T) {
-	policy := rebranchPolicyFromOptions([]RebranchOption{SwitchAt(AtMediaTime(-time.Millisecond))})
+	policy := rebranchPolicyFromOptions([]lifecycle.RebranchArg{lifecycle.SwitchAt(lifecycle.AtMediaTime(-time.Millisecond))})
 	if policy.invalid == "" {
 		t.Fatal("negative media-time boundary should mark rebranch policy invalid")
 	}
