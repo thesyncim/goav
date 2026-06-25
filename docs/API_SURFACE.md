@@ -282,12 +282,9 @@ against the constructors in `input.go`/`provider.go`/`source.go`,
   current media point; `Require` asserts a contract that fails the build
   when unmet; `Auto` grants the solver permission to insert conversions;
   `Prefer` hints an open solver choice and never fails.
-- **Copy vs Encode(codec.Copy())**: `.Copy()` is the grammar verb for
-  packet-preserving passthrough; `codec.Copy()` is the `CodecSpec` value it
-  lowers to (branch and flow `.Copy()` literally delegate to
-  `.Encode(codec.Copy())`). Same operation, two spellings: write the verb;
-  the spec value exists for code that builds `CodecSpec` values
-  programmatically.
+- **Copy**: `.Copy()` is the recipe spelling for packet-preserving passthrough.
+  `codec.Copy()` is the internal `CodecSpec` value used by lowerers and helper
+  code; user-facing recipes should write the verb.
 - **Events vs Watch**: `Events()` is an unfiltered event subscription channel;
   `Watch(filters...)` gives each consumer an independent filtered
   subscription with an explicit close handle. Each subscription sheds for
