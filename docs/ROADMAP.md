@@ -37,9 +37,9 @@ matching destinations independently (`TestMuxSurvivesWithAndCopy`,
 ## v0 Stable
 
 Stable here means "you should not wake up to a silent contract change", not
-"the project has stopped learning". The governed surface is 346 approved
-identifiers (`api_surface_pin_test.go` + `testdata/api_surface.txt`: 104 root,
-20 `control`, 4 `inspect`, 164 `errcode`, 28 `plan`, 13 `lifecycle`,
+"the project has stopped learning". The governed surface is 323 approved
+identifiers (`api_surface_pin_test.go` + `testdata/api_surface.txt`: 68 root,
+22 `control`, 4 `inspect`, 164 `errcode`, 28 `plan`, 24 `lifecycle`,
 4 `snapshot`, 9 `graphrender`),
 every exported symbol documented (`doc_pin_test.go`), tiered in
 `docs/API_SURFACE.md`:
