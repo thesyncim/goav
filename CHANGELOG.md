@@ -36,6 +36,8 @@ methodology changes, and migration notes.
 - Updated front-door docs to use task capability vocabulary for runtime attach
   examples instead of teaching `LiveTask` as the normal user type, and to
   describe `Watch` as the primary observation surface.
+- Made recipe-built task `Explain` preserve the structured pre-build workflow
+  report while refreshing live graph and tap rows at call time.
 - Added the pre-v1 simplification target, started the immutable recipe IR
   boundary used by compile-time planning, and tightened task runtime semantics
   so `Run` preserves both execution and finalization failures while `Events`

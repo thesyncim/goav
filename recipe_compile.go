@@ -252,10 +252,15 @@ func (r recipeResolved) Build(ctx context.Context) (LiveTask, error) {
 	if !r.graphPlan.ready() {
 		return nil, recipeGraphUnsupportedError("build recipe", r.intent)
 	}
+	report, err := newPlanReport("build job", r)
+	if err != nil {
+		return nil, err
+	}
 	task, err := r.graphPlan.Build(ctx)
 	if err != nil {
 		return nil, err
 	}
+	installTaskExplainReport(task, report)
 	installTaskTaps(task, r.graphPlan.work.Taps)
 	return task, nil
 }
@@ -277,6 +282,15 @@ func installTaskTaps(mediaTask Task, taps []workTap) {
 		return
 	}
 	runtimeTask.taps = tapInfosFromPlan(taps)
+}
+
+func installTaskExplainReport(mediaTask Task, report plan.Report) {
+	runtimeTask, ok := mediaTask.(*task)
+	if !ok || runtimeTask == nil {
+		return
+	}
+	runtimeTask.explainReport = clonePlanReport(report)
+	runtimeTask.explainReportReady = true
 }
 
 func tapInfosFromPlan(taps []workTap) []snapshot.Tap {
