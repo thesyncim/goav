@@ -20,7 +20,8 @@ Make the root package a small recipe grammar:
   doors opt-in
 
 Target root surface after the reduction: roughly 40 to 70 package-level
-identifiers.
+identifiers, with the stricter v1 target in `docs/SIMPLIFICATION_TARGET.md`
+before a stable tag.
 
 ## Initial Baseline
 

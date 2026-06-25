@@ -288,9 +288,10 @@ against the constructors in `input.go`/`provider.go`/`source.go`,
   `.Encode(codec.Copy())`). Same operation, two spellings: write the verb;
   the spec value exists for code that builds `CodecSpec` values
   programmatically.
-- **Events vs Watch**: `Events()` is the single raw firehose channel;
+- **Events vs Watch**: `Events()` is an unfiltered event subscription channel;
   `Watch(filters...)` gives each consumer an independent filtered
-  subscription that sheds for itself only. Runtime branch lifecycle events
+  subscription with an explicit close handle. Each subscription sheds for
+  itself only. Runtime branch lifecycle events
   (`av.EventBranchAttached`, `av.EventBranchDetached`) are published through
   `Watch`, with attachment id/name metadata and a detach disposition on
   detach.

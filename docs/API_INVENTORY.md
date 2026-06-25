@@ -75,8 +75,10 @@ Current line counts:
 | --- | ---: |
 | `README.md` | 197 |
 | `docs/API_SURFACE.md` | 379 |
-| `docs/ROADMAP.md` | 230 |
-| `docs/PROGRESS.md` | 138 |
+| `docs/ROADMAP.md` | 238 |
+| `docs/PROGRESS.md` | 140 |
+| `docs/API_REDUCTION_PLAN.md` | 211 |
+| `docs/SIMPLIFICATION_TARGET.md` | 111 |
 
 The README target is under 200 lines after the advanced vocabulary moves into
 focused docs.

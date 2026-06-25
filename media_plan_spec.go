@@ -247,7 +247,7 @@ func mediaPlanMultiStreamJobLowererForState(state *recipeCompileState) (graphPla
 	if len(state.inputAttachments) != 0 {
 		input = state.inputAttachments[0]
 	}
-	gp, err := planBranchCompositionRecipe(state.intent, input, namedOutputs, nil)
+	gp, err := planBranchCompositionRecipe(state.intent, input, namedOutputs)
 	if err != nil {
 		return nil, false, err
 	}

@@ -1,0 +1,94 @@
+package goav
+
+import (
+	"bytes"
+	"os"
+	"reflect"
+	"strings"
+	"testing"
+
+	"github.com/thesyncim/goav/codec"
+	"github.com/thesyncim/goav/internal/recipeir"
+	"github.com/thesyncim/goav/plan"
+)
+
+func TestRecipeIRSnapshotRoundTripsJobIntent(t *testing.T) {
+	var out bytes.Buffer
+	job := From(FileInput("input.ivf", strings.NewReader(""))).
+		Video().
+		Decode().
+		Tap(FrameTap("frames")).
+		Resize(320, 180).
+		Encode(codec.VP8()).
+		To(File("output.ivf", &out))
+
+	snapshot := newJobRecipeSnapshot(job)
+	if snapshot.recipe.Kind != recipeir.KindJob {
+		t.Fatalf("recipe kind = %q, want %q", snapshot.recipe.Kind, recipeir.KindJob)
+	}
+	if !recipeIRHasOperationKind(snapshot.recipe, plan.OpDecode) ||
+		!recipeIRHasOperationKind(snapshot.recipe, plan.OpTransform) ||
+		!recipeIRHasOperationKind(snapshot.recipe, plan.OpEncode) ||
+		!recipeIRHasFrameTap(snapshot.recipe) {
+		t.Fatalf("recipe IR did not capture decode/tap/transform/encode operations: %+v", snapshot.recipe.Streams)
+	}
+	if got, want := intentFromRecipeIR(snapshot.recipe), job.plan(); !reflect.DeepEqual(got, want) {
+		t.Fatalf("IR round trip drifted\n got: %#v\nwant: %#v", got, want)
+	}
+}
+
+func TestRecipeCompileEntryPointUsesRecipeIRBoundary(t *testing.T) {
+	body, err := os.ReadFile("recipe_compile.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	compileBody := sourceFunctionBody(t, string(body), "compileJobRecipeWithOptions")
+	for _, required := range []string{
+		"newJobRecipeSnapshot(job)",
+		"compileRecipeSnapshotWithOptions",
+	} {
+		if !strings.Contains(compileBody, required) {
+			t.Fatalf("compileJobRecipeWithOptions should call %s", required)
+		}
+	}
+	for _, forbidden := range []string{
+		"job.plan()",
+		"job.runtimeOrNil()",
+		"job.join",
+		"job.branchStreams",
+		"job.inputs",
+		"job.outputs",
+		"job.streamRules",
+	} {
+		if strings.Contains(compileBody, forbidden) {
+			t.Fatalf("compileJobRecipeWithOptions still reaches through builder internals with %q", forbidden)
+		}
+	}
+}
+
+func sourceFunctionBody(t *testing.T, source string, name string) string {
+	t.Helper()
+	start := strings.Index(source, "func "+name+"(")
+	if start < 0 {
+		t.Fatalf("could not find %s", name)
+	}
+	open := strings.Index(source[start:], "{")
+	if open < 0 {
+		t.Fatalf("could not find %s body", name)
+	}
+	open += start
+	depth := 0
+	for i := open; i < len(source); i++ {
+		switch source[i] {
+		case '{':
+			depth++
+		case '}':
+			depth--
+			if depth == 0 {
+				return source[open : i+1]
+			}
+		}
+	}
+	t.Fatalf("could not parse %s body", name)
+	return ""
+}

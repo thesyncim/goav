@@ -26,18 +26,6 @@ func TestProviderDecodeBoundsForStreamUsesMatchingInput(t *testing.T) {
 	}
 }
 
-func drainTaskEvents(task Observable) []av.Event {
-	var events []av.Event
-	for {
-		select {
-		case event := <-task.Events():
-			events = append(events, event)
-		default:
-			return events
-		}
-	}
-}
-
 func streamIDsEqual(got []av.StreamID, want []av.StreamID) bool {
 	if len(got) != len(want) {
 		return false

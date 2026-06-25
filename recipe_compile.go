@@ -325,30 +325,14 @@ func compileJobRecipeForBuildContext(ctx context.Context, job *Job) (recipeResol
 }
 
 func compileJobRecipeWithOptions(job *Job, options recipeCompileOptions) (recipeResolved, error) {
-	if job != nil && job.join != nil {
-		return compileJobJoinRecipeWithOptions(job, options)
-	}
-	if job != nil && len(job.branchStreams) != 0 {
-		return compileJobBranchRecipeWithOptions(job, options)
-	}
-	state := recipeCompileState{
-		operation: "build job",
-		options:   options,
-	}
-	if job != nil {
-		state.jobPresent = true
-		state.intent = job.plan()
-		state.runtime = job.runtimeOrNil()
-		state.runtimeExplicit = job.runtimeSet
-		state.recipeErr = job.err
-		state.inputAttachments = append([]InputSpec(nil), job.inputs...)
-		state.jobOutputCount = len(job.outputs)
-		streamOutputs, _ := job.streamOutputsAndNames()
-		state.outputAttachments = jobAllOutputs(job.outputs, streamOutputs)
-		state.outputDestinationNames = job.allOutputNames()
-		state.streamRules = cloneStreamRules(job.streamRules)
-	}
-	return compileRecipePhaseSet(state, jobRecipeCompilePhases())
+	return compileRecipeSnapshotWithOptions(newJobRecipeSnapshot(job), options)
+}
+
+func compileRecipeSnapshotWithOptions(snapshot recipeCompileSnapshot, options recipeCompileOptions) (recipeResolved, error) {
+	return compileRecipePhaseSet(
+		recipeCompileStateFromSnapshot(snapshot, options),
+		recipeCompilePhasesForSnapshot(snapshot),
+	)
 }
 
 func jobRecipeCompilePhases() recipeCompilePhaseSet {
@@ -390,20 +374,10 @@ func jobRecipeCompilePhases() recipeCompilePhaseSet {
 // and the shared passes emit and validate the one plan Describe and Build run
 // from. No separate graph assembly exists for joins.
 func compileJobJoinRecipeWithOptions(job *Job, options recipeCompileOptions) (recipeResolved, error) {
-	spec := job.join
-	state := recipeCompileState{
-		operation:       "build " + string(spec.kind),
-		options:         options,
-		intent:          joinIntent(job),
-		runtime:         job.runtimeOrNil(),
-		runtimeExplicit: job.runtimeSet,
-		recipeErr:       job.err,
-		joinAttachment:  spec,
+	if job == nil || job.join == nil {
+		return compileRecipeSnapshotWithOptions(recipeCompileSnapshot{}, options)
 	}
-	state.inputAttachments = joinArmInputs(spec)
-	state.outputAttachments, state.outputDestinationNames = joinOutputAttachments(spec)
-	state.streamRules = cloneStreamRules(job.streamRules)
-	return compileRecipePhaseSet(state, joinRecipeCompilePhases())
+	return compileRecipeSnapshotWithOptions(newJoinRecipeSnapshot(job), options)
 }
 
 func joinRecipeCompilePhases() recipeCompilePhaseSet {
@@ -430,42 +404,14 @@ func validateJoinRecipePass() recipeCompilePass {
 }
 
 func compileJobBranchRecipeWithOptions(job *Job, options recipeCompileOptions) (recipeResolved, error) {
-	branchJob := &branchCompositionJob{
-		runtime:         job.runtimeOrNil(),
-		runtimeExplicit: job.runtimeSet,
-		name:            job.name,
-		streams:         append([]streamBuild(nil), job.branchStreams...),
-		outputs:         append([]namedDestinationSpec(nil), job.branchDestinations...),
-		streamRules:     cloneStreamRules(job.streamRules),
-		err:             job.err,
-		fromBranchSplit: true,
+	if job == nil {
+		return compileRecipeSnapshotWithOptions(recipeCompileSnapshot{}, options)
 	}
-	if len(job.inputs) == 1 {
-		branchJob.input = job.inputs[0]
-	} else if branchJob.err == nil {
-		branchJob.err = branchInputCountError("branches", len(job.inputs))
-	}
-	return compileBranchCompositionRecipeWithOptions(branchJob, options)
+	return compileRecipeSnapshotWithOptions(newBranchJobRecipeSnapshot(job), options)
 }
 
 func compileBranchCompositionRecipeWithOptions(job *branchCompositionJob, options recipeCompileOptions) (recipeResolved, error) {
-	state := recipeCompileState{
-		operation: branchCompositionOperation,
-		options:   options,
-	}
-	if job != nil {
-		state.branchCompositionPresent = true
-		state.intent = job.plan()
-		state.runtime = job.runtime
-		state.runtimeExplicit = job.runtimeExplicit
-		state.recipeErr = job.err
-		state.branchInputAttachment = job.input
-		state.branchDestinationAttachments = append([]namedDestinationSpec(nil), job.outputs...)
-		state.branchCompositionSplit = job.fromBranchSplit
-		state.plan, state.planErr = job.composePlan()
-		state.streamRules = cloneStreamRules(job.streamRules)
-	}
-	return compileRecipePhaseSet(state, branchCompositionRecipeCompilePhases())
+	return compileRecipeSnapshotWithOptions(newBranchCompositionRecipeSnapshot(job), options)
 }
 
 func branchCompositionRecipeCompilePhases() recipeCompilePhaseSet {
@@ -1616,7 +1562,7 @@ func planBranchCompositionIntentPass() recipeCompilePass {
 			return state.planErr
 		}
 		if branchComposePlanReady(state.plan) {
-			fresh, err := planBranchCompositionRecipe(state.intent, state.branchInputAttachment, state.branchDestinationAttachments, nil)
+			fresh, err := planBranchCompositionRecipe(state.intent, state.branchInputAttachment, state.branchDestinationAttachments)
 			if err != nil {
 				return err
 			}
@@ -1624,7 +1570,7 @@ func planBranchCompositionIntentPass() recipeCompilePass {
 			state.plan.Destinations = fresh.Destinations
 			return nil
 		}
-		composePlan, err := planBranchCompositionRecipe(state.intent, state.branchInputAttachment, state.branchDestinationAttachments, nil)
+		composePlan, err := planBranchCompositionRecipe(state.intent, state.branchInputAttachment, state.branchDestinationAttachments)
 		if err != nil {
 			return err
 		}

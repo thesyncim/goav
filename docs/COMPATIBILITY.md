@@ -36,8 +36,9 @@ compatibility it is promising and what evidence backs that promise.
 
 ## V1 promise draft
 
-A v1 tag should promise that the Tier A surface in `docs/API_SURFACE.md` is
-stable for normal users:
+A v1 tag should promise the smaller normal-user surface targeted by
+`docs/SIMPLIFICATION_TARGET.md`, using the Tier A surface in
+`docs/API_SURFACE.md` as the current inventory to shrink or explicitly retain:
 
 - the `From(...) -> stream selection -> operations -> taps -> branches ->
   destinations -> task` grammar;
@@ -100,5 +101,6 @@ Deferred / not claimed:
 ## Release blocking rule
 
 Do not cut v1 until the compatibility note above is filled for the tag, the
-release workflow has validated the signed tag, and the release decision item in
-`docs/ROADMAP.md` has been closed by the maintainer.
+release workflow has validated the signed tag, the release decision item in
+`docs/ROADMAP.md` has been closed by the maintainer, and every exception to
+`docs/SIMPLIFICATION_TARGET.md` is written down.

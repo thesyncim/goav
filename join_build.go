@@ -987,7 +987,7 @@ func (p *joinPlan) planJoinBranches() error {
 	for i := range builds {
 		intent.Streams = append(intent.Streams, branchStreamIntent(builds[i]))
 	}
-	composePlan, err := planBranchCompositionRecipe(intent, InputSpec{}, destinations.branchDestinations, builds)
+	composePlan, err := planBranchCompositionRecipe(intent, InputSpec{}, destinations.branchDestinations)
 	if err != nil {
 		return err
 	}
