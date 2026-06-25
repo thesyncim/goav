@@ -17,6 +17,7 @@ import (
 	"github.com/thesyncim/goav/bundle"
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/component"
+	"github.com/thesyncim/goav/flow"
 	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/provider"
@@ -912,7 +913,7 @@ func TestRTPInputsSyncFromTimestampsAndDropLatePreview(t *testing.T) {
 		}
 		return nil
 	}))
-	policy := goav.Sync("rtp-room", goav.SyncTolerance(5*time.Millisecond), goav.SyncDropLate())
+	policy := flow.Sync("rtp-room", flow.SyncTolerance(5*time.Millisecond), flow.SyncDropLate())
 	task, err := goav.From(
 		goav.Input(rtpav.Receive(audioReceiver, rtpav.WithName("audio"), rtpav.WithCodec(codec.Opus()), rtpav.WithBufferLimits(rtpav.BufferLimits{MaxPackets: 2}))),
 		goav.Input(rtpav.Receive(videoReceiver, rtpav.WithName("video"), rtpav.WithCodec(codec.VP8()), rtpav.WithBufferLimits(rtpav.BufferLimits{MaxPackets: 2}))),

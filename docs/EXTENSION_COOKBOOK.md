@@ -105,7 +105,7 @@ if err != nil {
     return err
 }
 if err := room.Join(ctx, "host"); err != nil {
-    _ = task.Detach(ctx, attachment, goav.AbortBranch())
+    _ = task.Detach(ctx, attachment, lifecycle.AbortBranch())
     return err
 }
 attachments["host"] = attachment
@@ -115,7 +115,7 @@ attachments["host"] = attachment
 if err := room.Leave(ctx, "host"); err != nil {
     return err
 }
-if err := task.Detach(ctx, attachments["host"], goav.DrainBranch()); err != nil {
+if err := task.Detach(ctx, attachments["host"], lifecycle.DrainBranch()); err != nil {
     return err
 }
 delete(attachments, "host")

@@ -68,8 +68,8 @@ when several branches should feed one mux, sink group, or transactional writer.
 
 ```go
 cameraPackets := make(chan *av.Packet)
-roomSync := goav.Sync("room", goav.SyncTolerance(20*time.Millisecond))
-previewSync := goav.Sync("room", goav.SyncTolerance(20*time.Millisecond), goav.SyncDropLate())
+roomSync := flow.Sync("room", flow.SyncTolerance(20*time.Millisecond))
+previewSync := flow.Sync("room", flow.SyncTolerance(20*time.Millisecond), flow.SyncDropLate())
 
 roomCamera := goav.Source("room-camera",
     shape.Packet(av.MediaVideo, av.CodecVP8, shape.Realtime(true)),
@@ -152,10 +152,10 @@ _, err := bundle.Build(ctx, goav.From(transport).
     OnStream(
         source.MatchStreamID("camera"),
         goav.Branch("record-camera").
-            Sync(goav.Sync("room", goav.SyncTolerance(20*time.Millisecond))).
+            Sync(flow.Sync("room", flow.SyncTolerance(20*time.Millisecond))).
             Copy().
             To(goav.File("camera.ivf", out)),
-        goav.OnRemove(goav.DrainBranch()),
+        goav.OnRemove(lifecycle.DrainBranch()),
     ),
 )
 return err

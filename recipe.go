@@ -9,6 +9,7 @@ import (
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/errcode"
+	"github.com/thesyncim/goav/flow"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/shape"
 )
@@ -248,7 +249,7 @@ func (j *Job) Copy() *Job {
 // Sync places the job's subsequent stream chains on the given media timeline.
 // If a chain is currently under construction, the sync gate is appended there;
 // otherwise the policy is applied to stream chains started after this call.
-func (j *Job) Sync(policy SyncPolicy) *Job {
+func (j *Job) Sync(policy flow.SyncPolicy) *Job {
 	if j == nil {
 		return j
 	}

@@ -11,12 +11,12 @@ Source: `testdata/api_surface.txt`.
 
 | Package | Initial identifiers | Current identifiers |
 | --- | ---: | ---: |
-| `goav` | 134 | 83 |
+| `goav` | 134 | 76 |
 | `control` | 0 | 20 |
 | `errcode` | 147 | 164 |
 | `graphrender` | 9 | 9 |
 | `inspect` | 0 | 4 |
-| `lifecycle` | 13 | 13 |
+| `lifecycle` | 13 | 16 |
 | `plan` | 28 | 28 |
 | `snapshot` | 4 | 4 |
 

@@ -332,7 +332,7 @@ func (s *session) attachBranchLocked(ctx context.Context, r *branch) error {
 	return nil
 }
 
-func branchRuntimeSpec(r *branch, syncPolicy goav.SyncPolicy) (goav.BranchSpec, error) {
+func branchRuntimeSpec(r *branch, syncPolicy flow.SyncPolicy) (goav.BranchSpec, error) {
 	if r == nil || r.Sink == nil {
 		return goav.BranchSpec{}, fmt.Errorf("branch has no output sink")
 	}

@@ -22,8 +22,8 @@ What holds today (all `-race` clean, with tests):
   itself without stalling siblings or the source; per-branch drop counters and
   reasons (`DropOldest`, `DropOverflow`, latency shedding) are reported through
   stats and snapshots.
-- Branch-local `SyncPolicy` gates can align live audio/video branches without
-  changing unsynced delivery. When `SyncDropLate()` sheds a message, stats use
+- Branch-local `flow.SyncPolicy` gates can align live audio/video branches without
+  changing unsynced delivery. When `flow.SyncDropLate()` sheds a message, stats use
   the existing drop accounting with `pipeline.DropSync`.
 - Custom sources see flow control per push: `push.X(...)` returns
   `(source.Result, error)` where deliberate sheds are `Dropped` with a nil error
@@ -41,10 +41,10 @@ leaving.
 
 - `Mutable.Detach(ctx, attachment)` removes the branch and reports its
   destinations as closed.
-- `Mutable.Detach(ctx, attachment, DrainBranch())` drains/finalizes the branch as
+- `Mutable.Detach(ctx, attachment, lifecycle.DrainBranch())` drains/finalizes the branch as
   committed. Use this for ordinary recording or participant-leave flows where
   the output should be kept.
-- `Mutable.Detach(ctx, attachment, AbortBranch())` marks the branch output as
+- `Mutable.Detach(ctx, attachment, lifecycle.AbortBranch())` marks the branch output as
   abandoned. Use this after failed admission or diagnostic captures that should
   not commit.
 - `OnStream(match, Branch(...), OnRemove(...))` applies the same detach choices

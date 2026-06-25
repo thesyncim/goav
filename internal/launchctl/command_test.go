@@ -22,6 +22,7 @@ import (
 	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/goavtest"
 	"github.com/thesyncim/goav/inspect"
+	"github.com/thesyncim/goav/lifecycle"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/plan"
 	goavruntime "github.com/thesyncim/goav/runtime"
@@ -2766,7 +2767,7 @@ func (t *fakeTask) Attach(context.Context, ...goav.BranchSpec) (goav.Attachment,
 	return nil, errors.New("not implemented")
 }
 
-func (t *fakeTask) Detach(context.Context, goav.Attachment, ...goav.DetachOption) error {
+func (t *fakeTask) Detach(context.Context, goav.Attachment, ...lifecycle.DetachOption) error {
 	return nil
 }
 

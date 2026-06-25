@@ -66,7 +66,7 @@ Compatibility pins:
   `Attachment.Rebranch`, including media-time switch boundaries.
 - BranchBuffer policies cover `flow.Blocking`, `DropOldest`, `DropNewest`,
   `Latest`, `Unbounded`, MaxLatency, MaxBytes, and branch-local drop counters.
-- Shared `SyncPolicy` gates on stream chains and branches for live-room
+- Shared `flow.SyncPolicy` gates on stream chains and branches for live-room
   packet/frame timeline alignment; late sync drops report through branch stats.
 - Task controls include `Keyframe`, `SetBitrate`, `Seek`, `Rate`, `Segment`,
   `SelectActive`, `Deliver`, `.AtTap(name)`, and expert-only `.At(node)`.
@@ -133,5 +133,5 @@ Compatibility pins:
 - Expand `SwitchAt` boundaries beyond frame/keyframe/media-time only if future
   live-control workflows prove they need additional switch points.
 - Finish the full time-shape story: pipeline-wide clock service, A/V sink sync,
-  and pull scheduling beyond the branch-local `SyncPolicy` gate.
+  and pull scheduling beyond the branch-local `flow.SyncPolicy` gate.
 - Make the v1 release decision, including the minimum supported Go version.

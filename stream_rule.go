@@ -6,6 +6,7 @@ import (
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/errcode"
+	"github.com/thesyncim/goav/lifecycle"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/plan"
 	"github.com/thesyncim/goav/shape"
@@ -22,9 +23,9 @@ type streamRule struct {
 
 // OnRemove configures how branches created by an OnStream rule detach when
 // the matched stream is removed. Without OnRemove the historical rule default
-// drains; OnRemove() selects plain detach, DrainBranch commits, and AbortBranch
-// aborts.
-func OnRemove(options ...DetachOption) BranchSpec {
+// drains; OnRemove() selects plain detach, lifecycle.DrainBranch commits, and
+// lifecycle.AbortBranch aborts.
+func OnRemove(options ...lifecycle.DetachOption) BranchSpec {
 	policy := detachPolicyFromOptions(options)
 	return BranchSpec{removeDisposition: policy.disposition, hasRemoveDisposition: true}
 }

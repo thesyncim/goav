@@ -12,6 +12,7 @@ import (
 	"github.com/thesyncim/goav"
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/component"
+	"github.com/thesyncim/goav/flow"
 	"github.com/thesyncim/goav/goavtest"
 	"github.com/thesyncim/goav/shape"
 	"github.com/thesyncim/goav/source"
@@ -115,7 +116,7 @@ func runRoomScript(ctx context.Context, script func(context.Context, *RoomPipeli
 	room := NewRoom(roomName, roomSampleRate, roomChannels)
 	input := room.Input()
 	meter := NewTrackMeter()
-	roomSync := goav.Sync("room", goav.SyncTolerance(20*time.Millisecond), goav.SyncDropLate())
+	roomSync := flow.Sync("room", flow.SyncTolerance(20*time.Millisecond), flow.SyncDropLate())
 	meterStage := component.FrameFunc("track-meter", func(_ context.Context, frame *av.Frame, emit component.Emit) error {
 		meter.Observe(frame)
 		return emit.Frame(frame)

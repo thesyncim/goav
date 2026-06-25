@@ -8,6 +8,7 @@ import (
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/errcode"
+	"github.com/thesyncim/goav/flow"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/plan"
 	"github.com/thesyncim/goav/shape"
@@ -460,8 +461,8 @@ func (b *jobStreamBuilder) Do(stages ...pipeline.Stage) *jobStreamBuilder {
 }
 
 // Sync places this stream chain on a shared media timeline. Reuse one
-// SyncPolicy value across audio/video chains or branches to align them.
-func (b *jobStreamBuilder) Sync(policy SyncPolicy) *jobStreamBuilder {
+// flow.SyncPolicy value across audio/video chains or branches to align them.
+func (b *jobStreamBuilder) Sync(policy flow.SyncPolicy) *jobStreamBuilder {
 	stream := b.current()
 	stream.operations = append(stream.operations, operationSpecForSync(policy))
 	return b

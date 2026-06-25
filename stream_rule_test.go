@@ -284,7 +284,7 @@ func TestOnStreamOnRemoveConfiguresRuleDetachPolicy(t *testing.T) {
 	job := From(input).
 		OnStream(MatchMedia(av.MediaAudio),
 			Branch("record").Copy().To(Sink(SinkFunc("record", func(context.Context, Message) error { return nil }))),
-			OnRemove(AbortBranch()),
+			OnRemove(lifecycle.AbortBranch()),
 		)
 	if len(job.streamRules) != 1 {
 		t.Fatalf("stream rule count = %d, want 1", len(job.streamRules))

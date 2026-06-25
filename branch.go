@@ -298,9 +298,9 @@ func (b *branchBuilder) Do(stages ...pipeline.Stage) *branchBuilder {
 	return b
 }
 
-// Sync places this branch on a shared media timeline. Reuse one SyncPolicy
+// Sync places this branch on a shared media timeline. Reuse one flow.SyncPolicy
 // value across live-room branches when recording or preview paths should align.
-func (b *branchBuilder) Sync(policy SyncPolicy) *branchBuilder {
+func (b *branchBuilder) Sync(policy flow.SyncPolicy) *branchBuilder {
 	if b == nil {
 		return b
 	}

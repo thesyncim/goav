@@ -101,7 +101,7 @@ Still planned:
 - Expand `SwitchAt` boundaries beyond frame/keyframe/media-time if future
   runtime replacement modes need them.
 - Finish the time-shape work: pipeline-wide clock service, A/V sink sync, and
-  pull scheduling beyond branch-local `SyncPolicy` gates.
+  pull scheduling beyond branch-local `flow.SyncPolicy` gates.
 - Decide the release minimum Go version before v1.
 
 ## Working Rule

@@ -81,6 +81,8 @@ import (
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/bundle"
 	"github.com/thesyncim/goav/component"
+	"github.com/thesyncim/goav/flow"
+	"github.com/thesyncim/goav/lifecycle"
 	"github.com/thesyncim/goav/shape"
 	"github.com/thesyncim/goav/source"
 )
@@ -112,7 +114,7 @@ func TestReadmeLiveExamplesUseLiveSourceSemantics(t *testing.T) {
 			required: []string{
 				"goav.Source(",
 				"make(chan *av.Packet)",
-				"goav.Sync(",
+				"flow.Sync(",
 				"goav.Codec(codec.VP8())",
 			},
 		},
@@ -122,7 +124,7 @@ func TestReadmeLiveExamplesUseLiveSourceSemantics(t *testing.T) {
 				"av.EventStreamAdded",
 				"av.EventStreamRemoved",
 				"packet.StreamID = camera.ID",
-				"goav.OnRemove(goav.DrainBranch())",
+				"goav.OnRemove(lifecycle.DrainBranch())",
 			},
 		},
 	} {

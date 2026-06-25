@@ -22,6 +22,7 @@ import (
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/control"
 	"github.com/thesyncim/goav/inspect"
+	"github.com/thesyncim/goav/lifecycle"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/plan"
 	"github.com/thesyncim/goav/snapshot"
@@ -74,7 +75,7 @@ type Mutable interface {
 	// Detach removes a runtime branch and any dependent branches anchored on
 	// its taps. By default destinations finalize as closed; DrainBranch or
 	// AbortBranch records a commit/abort outcome for the detached branch.
-	Detach(context.Context, Attachment, ...DetachOption) error
+	Detach(context.Context, Attachment, ...lifecycle.DetachOption) error
 }
 
 // Controllable exposes live out-of-band controls.

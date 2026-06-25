@@ -35,7 +35,7 @@ goav.From(input)                          inputs: FileInput, URIInput, Input(pro
   .Audio() / .Video() / .Stream()         select a stream (InputName/StreamID/StreamIndex/StreamName)
   .Decode() .Copy() .Resize() .Resample() operations are chain methods
   .Do(stage) .Shape() .Auto() .Require() .Prefer()
-  .Sync(goav.Sync("room", ...))            shared packet/frame timeline gates
+  .Sync(flow.Sync("room", ...))            shared packet/frame timeline gates
   .Encode(codec.VP9(codec.Bitrate(...)))  codec specs from the codec package
   .Tap(goav.Tap|FrameTap|PacketTap)       named attach points
   .Branches(goav.Branch("x")...To(dst))   fan out; BranchSpec also drives Mutable.Attach
@@ -75,7 +75,8 @@ Applications also read these vocabulary packages:
 - `shape`: shape specs and `.Auto` policies (`AllowResample`, ...);
   `shape.Format` pins open-ended container or transport ids for custom
   adapters.
-- `flow`: branch buffer policies (`Blocking`, `DropOldest`, ...) and the
+- `flow`: branch buffer policies (`Blocking`, `DropOldest`, ...), shared
+  timeline sync policies (`Sync`, `SyncTolerance`, `SyncDropLate`), and the
   `DropReason*` keys for reading drop counters.
 - `runtime`: per-runtime construction options (`WithEncoder`, `WithClock`,
   `WithBufferPolicy`, ...).
@@ -266,12 +267,12 @@ against the constructors in `input.go`/`provider.go`/`source.go`,
   fanout and owns its destinations.
 - **Attach vs Detach vs Rebranch**: `Mutable.Attach` adds ordinary branch specs
   to a running task; `Mutable.Detach(ctx, h)` removes that attached branch, with
-  `DrainBranch()` and `AbortBranch()` selecting whether branch destinations
+  `lifecycle.DrainBranch()` and `lifecycle.AbortBranch()` selecting whether branch destinations
   commit or abort; `Attachment.Rebranch` is attach-new-then-detach-old, with
   boundary options (`NextFrame`, `NextKeyframe`, `AtMediaTime`) and
   old-branch outcome options.
-- **Sync**: `Sync(name, SyncTolerance(...), SyncDropLate())` returns a shared
-  timeline policy. Reuse one `SyncPolicy` across audio/video chains or
+- **Sync**: `flow.Sync(name, flow.SyncTolerance(...), flow.SyncDropLate())`
+  returns a shared timeline policy. Reuse one `flow.SyncPolicy` across audio/video chains or
   branches; `.Sync(policy)` inserts a packet/frame gate that can hold early
   media or drop late media and reports sync drops through normal branch stats.
 - **Shape vs Require vs Auto vs Prefer**: `Shape` states a fact about the

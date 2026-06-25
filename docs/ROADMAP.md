@@ -99,7 +99,7 @@ this list:
   (`docs/ARCHITECTURE.md` "Codec backends"); decode/receive verticals are
   active.
 - **A/V sink sync, pipeline-wide clock service, pull scheduling**: branch-local
-  `SyncPolicy` gates now align or shed packet/frame messages on shared live
+  `flow.SyncPolicy` gates now align or shed packet/frame messages on shared live
   timelines. That closes the live-room branch-local problem, but the theme-C
   endgame is still pull scheduling and sink-level A/V synchronization. The
   time-axis controls (`Seek`/`Rate`/`Segment`) and clock-paced realtime file

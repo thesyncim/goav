@@ -11,6 +11,7 @@ import (
 	"github.com/thesyncim/goav/bundle"
 	"github.com/thesyncim/goav/control"
 	"github.com/thesyncim/goav/inspect"
+	"github.com/thesyncim/goav/lifecycle"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/plan"
 	"github.com/thesyncim/goav/snapshot"
@@ -161,7 +162,7 @@ func (t *controlCaptureTask) Attach(context.Context, ...goav.BranchSpec) (goav.A
 	return nil, nil
 }
 
-func (t *controlCaptureTask) Detach(context.Context, goav.Attachment, ...goav.DetachOption) error {
+func (t *controlCaptureTask) Detach(context.Context, goav.Attachment, ...lifecycle.DetachOption) error {
 	return nil
 }
 

@@ -140,7 +140,17 @@ Move or keep outside the front door:
       `.OnCodecChange(...)` is omitted, and custom policies still fail with a
       structured build error.
 
-13. **Docs rewrite** — in progress
+13. **Sync policy cleanup** — landed
+    - Move shared media-timeline policy constructors to `goav/flow`, keeping
+      root `.Sync(...)` as recipe grammar while removing flow-control
+      vocabulary from the root package.
+
+14. **Detach lifecycle cleanup** — landed
+    - Move standalone detach destination-outcome options to `goav/lifecycle`,
+      keeping root `Detach` and `OnRemove` as runtime grammar while removing
+      lifecycle disposition constructors from the root package.
+
+15. **Docs rewrite** — in progress
     - Keep the README focused on the small grammar and one or two advanced entry
       points.
     - Finish with a Markdown-wide consistency pass and a README that works as a
@@ -148,7 +158,7 @@ Move or keep outside the front door:
     - Generate bundled adapter capability docs from descriptors so the docs and
       registered set cannot drift.
 
-14. **Go version floor** — landed
+16. **Go version floor** — landed
     - Lower every module directive from the patch-level local toolchain floor
       to the minor-version support floor (`go 1.26`).
     - Keep CI on the latest Go 1.26 patch with `1.26.x`, plus the rolling

@@ -594,7 +594,7 @@ func taskSnapshotDestinations(root []snapshot.Destination, branches []snapshot.B
 	return out
 }
 
-func (t *task) Detach(ctx context.Context, attachment Attachment, options ...DetachOption) error {
+func (t *task) Detach(ctx context.Context, attachment Attachment, options ...lifecycle.DetachOption) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}

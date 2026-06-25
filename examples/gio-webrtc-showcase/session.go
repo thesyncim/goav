@@ -17,6 +17,7 @@ import (
 	"github.com/thesyncim/goav"
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
+	"github.com/thesyncim/goav/flow"
 	"github.com/thesyncim/goav/rtpav"
 	"github.com/thesyncim/goav/shape"
 	"github.com/thesyncim/goav/webrtcav"
@@ -56,7 +57,7 @@ type session struct {
 
 	videoTask  goav.LiveTask
 	audioTask  goav.LiveTask
-	syncPolicy goav.SyncPolicy
+	syncPolicy flow.SyncPolicy
 	videoCodec string
 	videoSSRC  uint32
 	audioCodec string

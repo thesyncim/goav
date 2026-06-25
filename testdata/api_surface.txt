@@ -189,7 +189,6 @@ errcode.TransformAdapterMissing
 errcode.TransformInvalid
 errcode.TransformMediaMismatch
 errcode.UnsupportedInput
-goav.AbortBranch
 goav.AbortOldBranch
 goav.AtMediaTime
 goav.Attachment
@@ -204,9 +203,7 @@ goav.Controllable
 goav.Custom
 goav.Destination
 goav.DestinationOption
-goav.DetachOption
 goav.Detail
-goav.DrainBranch
 goav.DrainOldBranch
 goav.ErrBackpressure
 goav.ErrClosed
@@ -260,10 +257,6 @@ goav.StreamIndex
 goav.StreamName
 goav.SwitchAt
 goav.SwitchBoundary
-goav.Sync
-goav.SyncDropLate
-goav.SyncPolicy
-goav.SyncTolerance
 goav.Tap
 goav.TapRef
 goav.Task
@@ -285,6 +278,7 @@ inspect.EventFilter
 inspect.Subscription
 inspect.WatchStream
 inspect.WatchTypes
+lifecycle.AbortBranch
 lifecycle.BranchAttached
 lifecycle.BranchDetached
 lifecycle.BranchState
@@ -293,6 +287,8 @@ lifecycle.DestinationClosed
 lifecycle.DestinationCommitted
 lifecycle.DestinationOpen
 lifecycle.DestinationState
+lifecycle.DetachOption
+lifecycle.DrainBranch
 lifecycle.TaskBuilt
 lifecycle.TaskClosed
 lifecycle.TaskFailed

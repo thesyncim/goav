@@ -126,7 +126,7 @@ join := func(name string) error {
         return err
     }
     if err := room.Join(ctx, name); err != nil {
-        _ = task.Detach(ctx, attachment, goav.AbortBranch())
+        _ = task.Detach(ctx, attachment, lifecycle.AbortBranch())
         return err
     }
     attachments[name] = attachment
@@ -141,7 +141,7 @@ leave := func(name string) error {
     if err := room.Leave(ctx, name); err != nil {
         return err
     }
-    if err := task.Detach(ctx, attachment, goav.DrainBranch()); err != nil {
+    if err := task.Detach(ctx, attachment, lifecycle.DrainBranch()); err != nil {
         return err
     }
     delete(attachments, name)
@@ -382,8 +382,8 @@ defer group.Close(ctx)
 ```
 
 Use `Inspectable.Taps()` to discover stable outlets and `Mutable.Detach(ctx, h)` for a
-plain removal, `DrainBranch()` when the branch output should commit, or
-`AbortBranch()` when it should be abandoned. Taps declared after encode or copy
+plain removal, `lifecycle.DrainBranch()` when the branch output should commit, or
+`lifecycle.AbortBranch()` when it should be abandoned. Taps declared after encode or copy
 are packet taps. Observer branches can end in a sink while publishing a nested
 tap with `.Do(component.FrameFunc(...)).Tap(goav.FrameTap(name)).To(goav.Sink(...))`.
 Detaching a parent removes dependent late branches anchored from its taps. H264

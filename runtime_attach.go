@@ -1410,9 +1410,9 @@ func (a *runtimeAttachment) detachReplacedAtBoundary(group *switchGroup, disposi
 func (a *runtimeAttachment) detachReplaced(ctx context.Context, disposition oldBranchDisposition) error {
 	switch disposition {
 	case oldBranchDrain:
-		return a.owner.Detach(ctx, a, DrainBranch())
+		return a.owner.Detach(ctx, a, lifecycle.DrainBranch())
 	case oldBranchAbort:
-		return a.owner.Detach(ctx, a, AbortBranch())
+		return a.owner.Detach(ctx, a, lifecycle.AbortBranch())
 	default:
 		return a.owner.Detach(ctx, a)
 	}

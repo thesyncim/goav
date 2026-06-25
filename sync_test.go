@@ -2,11 +2,13 @@ package goav
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/thesyncim/goav/av"
+	"github.com/thesyncim/goav/flow"
 	"github.com/thesyncim/goav/pipeline"
 )
 
@@ -33,7 +35,7 @@ type syncNoopEmitter struct{}
 func (syncNoopEmitter) Emit(context.Context, *pipeline.Message) error { return nil }
 
 func TestSyncDropLateDropsBehindSharedTimeline(t *testing.T) {
-	policy := Sync("room", SyncTolerance(10*time.Millisecond), SyncDropLate())
+	policy := flow.Sync("room", flow.SyncTolerance(10*time.Millisecond), flow.SyncDropLate())
 	audio := newSyncGate(policy)
 	video := newSyncGate(policy)
 	emit := &syncCollectEmitter{}
@@ -53,7 +55,7 @@ func TestSyncDropLateDropsBehindSharedTimeline(t *testing.T) {
 }
 
 func TestSyncDropLateNormalizesMultipleTimebases(t *testing.T) {
-	policy := Sync("room", SyncTolerance(5*time.Millisecond), SyncDropLate())
+	policy := flow.Sync("room", flow.SyncTolerance(5*time.Millisecond), flow.SyncDropLate())
 	audio := newSyncGate(policy)
 	video := newSyncGate(policy)
 	emit := &syncCollectEmitter{}
@@ -76,7 +78,7 @@ func TestSyncDropLateNormalizesMultipleTimebases(t *testing.T) {
 }
 
 func TestSyncDiscontinuityResetsTimeline(t *testing.T) {
-	policy := Sync("room", SyncTolerance(10*time.Millisecond), SyncDropLate())
+	policy := flow.Sync("room", flow.SyncTolerance(10*time.Millisecond), flow.SyncDropLate())
 	audio := newSyncGate(policy)
 	video := newSyncGate(policy)
 	emit := &syncCollectEmitter{}
@@ -105,21 +107,7 @@ func TestSyncDiscontinuityResetsTimeline(t *testing.T) {
 }
 
 func TestSyncHoldLateWaitsForSlowStream(t *testing.T) {
-	policy := Sync("room", SyncTolerance(10*time.Millisecond))
-	blocked := make(chan struct{}, 1)
-	release := make(chan struct{})
-	policy.scheduler.wait = func(ctx context.Context) error {
-		select {
-		case blocked <- struct{}{}:
-		default:
-		}
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-release:
-			return nil
-		}
-	}
+	policy := flow.Sync("room", flow.SyncTolerance(10*time.Millisecond))
 	audio := newSyncGate(policy)
 	video := newSyncGate(policy)
 	emit := &syncCollectEmitter{}
@@ -132,19 +120,13 @@ func TestSyncHoldLateWaitsForSlowStream(t *testing.T) {
 		done <- audio.Handle(context.Background(), syncPacketMessage("a", 100*time.Millisecond), emit)
 	}()
 	select {
-	case <-blocked:
-	case <-time.After(time.Second):
-		t.Fatal("audio sync did not wait for slow stream")
-	}
-	select {
 	case err := <-done:
 		t.Fatalf("audio sync returned before slow stream caught up: %v", err)
-	default:
+	case <-time.After(5 * time.Millisecond):
 	}
 	if err := video.Handle(context.Background(), syncPacketMessage("v", 95*time.Millisecond), emit); err != nil {
 		t.Fatal(err)
 	}
-	close(release)
 	select {
 	case err := <-done:
 		if err != nil {
@@ -158,8 +140,59 @@ func TestSyncHoldLateWaitsForSlowStream(t *testing.T) {
 	}
 }
 
+func TestSyncHoldLateHonorsContextWhileWaiting(t *testing.T) {
+	policy := flow.Sync("room", flow.SyncTolerance(10*time.Millisecond))
+	audio := newSyncGate(policy)
+	video := newSyncGate(policy)
+	emit := &syncCollectEmitter{}
+
+	if err := video.Handle(context.Background(), syncPacketMessage("v", 0), emit); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Millisecond)
+	defer cancel()
+	err := audio.Handle(ctx, syncPacketMessage("a", 100*time.Millisecond), emit)
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("audio sync error = %v, want context deadline while waiting", err)
+	}
+}
+
+func TestSyncHoldLateDoesNotWaitAfterSlowStreamCatchesUp(t *testing.T) {
+	policy := flow.Sync("room", flow.SyncTolerance(10*time.Millisecond))
+	audio := newSyncGate(policy)
+	video := newSyncGate(policy)
+	emit := &syncCollectEmitter{}
+
+	if err := video.Handle(context.Background(), syncPacketMessage("v", 0), emit); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() {
+		done <- audio.Handle(context.Background(), syncPacketMessage("a", 100*time.Millisecond), emit)
+	}()
+	select {
+	case err := <-done:
+		t.Fatalf("audio sync returned before slow stream caught up: %v", err)
+	case <-time.After(5 * time.Millisecond):
+	}
+	if err := video.Handle(context.Background(), syncPacketMessage("v", 95*time.Millisecond), emit); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("audio sync did not wait for slow stream")
+	}
+	if got := emit.Count(); got != 3 {
+		t.Fatalf("emitted messages = %d, want 3", got)
+	}
+}
+
 func TestSyncGateRequiresValidMediaTimebase(t *testing.T) {
-	gate := newSyncGate(Sync("room"))
+	gate := newSyncGate(flow.Sync("room"))
 	err := gate.Handle(context.Background(), &pipeline.Message{
 		Kind:   pipeline.MessagePacket,
 		Packet: &av.Packet{StreamID: "a"},
@@ -170,7 +203,7 @@ func TestSyncGateRequiresValidMediaTimebase(t *testing.T) {
 }
 
 func TestSyncGateSteadyStateAllocs(t *testing.T) {
-	gate := newSyncGate(Sync("room", SyncDropLate()))
+	gate := newSyncGate(flow.Sync("room", flow.SyncDropLate()))
 	msg := syncPacketMessage("a", 100*time.Millisecond)
 	emit := syncNoopEmitter{}
 	if err := gate.Handle(context.Background(), msg, emit); err != nil {
@@ -187,7 +220,7 @@ func TestSyncGateSteadyStateAllocs(t *testing.T) {
 }
 
 func TestSyncOperationCloneUsesSeparateGateWithSharedScheduler(t *testing.T) {
-	operation := operationSpecForSync(Sync("room"))
+	operation := operationSpecForSync(flow.Sync("room"))
 	cloned := cloneOperationSpecs([]operationSpec{operation})
 	if len(cloned) != 1 {
 		t.Fatalf("cloned operations = %d, want 1", len(cloned))
@@ -203,8 +236,14 @@ func TestSyncOperationCloneUsesSeparateGateWithSharedScheduler(t *testing.T) {
 	if originalGate == clonedGate {
 		t.Fatal("clone reused sync gate instance")
 	}
-	if originalGate.policy.scheduler != clonedGate.policy.scheduler {
-		t.Fatal("clone did not preserve shared sync scheduler")
+	if err := originalGate.Handle(context.Background(), syncPacketMessage("v", 0), syncNoopEmitter{}); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Millisecond)
+	defer cancel()
+	err := clonedGate.Handle(ctx, syncPacketMessage("a", 100*time.Millisecond), syncNoopEmitter{})
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("cloned gate error = %v, want shared scheduler to hold until context deadline", err)
 	}
 }
 

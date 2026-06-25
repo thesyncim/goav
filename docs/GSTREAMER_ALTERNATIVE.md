@@ -32,8 +32,8 @@ claims are made.
 | Custom codec / filter / container | GstElement plugin API in C (or bindings), installed and discovered as plugins | Exported factory interfaces plus per-runtime `With*` registration; one toy implementation of every extension point runs end to end in `adapterproof/adapter_compat_test.go` (guide: `docs/ADAPTER_AUTHORING.md`) |
 | Error reporting | `GError` messages on the pipeline bus, element-defined | One structured `BuildError` everywhere: a typed code from the `errcode` catalog, failing operation/node, typed details/fixes rendered for humans, and a checked catalog row with named coverage (`docs/ERRORS.md`, `docs/ERROR_CATALOG.md`, `errors_pin_test.go`, `error_catalog_pin_test.go`, `error_acceptance_test.go`) |
 | Graph inspection | `GST_DEBUG_BIN_TO_DOT_FILE` dot dumps; bus messages | `Explain(ctx)`/`Describe()` before any resource opens: plans, decisions, diagnostics as data (`plan.Report`); described and built graphs are guarded equal (`TestJoinDescribeEqualsBuild*` in `join_plan_test.go`, `join_nested_test.go`) |
-| Runtime mutation | Pad probes and blocking for dynamic relinking; powerful, manual | Atomic grouped `Attach` with full rollback (`TestTaskAttachRuntimeBranchGroupRollsBackOnLaterFailure`), `Mutable.Detach(ctx, h, DrainBranch()/AbortBranch())`, gapless boundary-gated `Rebranch` including media-time switches (`runtime_branch_control_test.go`), per-branch `Pause`/`Resume`, and watchable branch plus destination lifecycle events (`lifecycle_test.go`); race-safe snapshots (`task_invariants_test.go`) |
-| Live-room sync | Clock selection, live pipelines, queues, and sink synchronization are part of the framework model | Grammar-shaped `SyncPolicy` gates align or shed packet/frame messages on shared live timelines for selected stream chains or branches; unsynced branches keep direct/buffered behavior, and sync drops use normal drop stats (`sync_test.go`, `join_sync_test.go`, `rtpav/integration/recipe_runtime_test.go`, `BenchmarkLiveRoomSync`) |
+| Runtime mutation | Pad probes and blocking for dynamic relinking; powerful, manual | Atomic grouped `Attach` with full rollback (`TestTaskAttachRuntimeBranchGroupRollsBackOnLaterFailure`), `Mutable.Detach(ctx, h, lifecycle.DrainBranch()/lifecycle.AbortBranch())`, gapless boundary-gated `Rebranch` including media-time switches (`runtime_branch_control_test.go`), per-branch `Pause`/`Resume`, and watchable branch plus destination lifecycle events (`lifecycle_test.go`); race-safe snapshots (`task_invariants_test.go`) |
+| Live-room sync | Clock selection, live pipelines, queues, and sink synchronization are part of the framework model | Grammar-shaped `flow.SyncPolicy` gates align or shed packet/frame messages on shared live timelines for selected stream chains or branches; unsynced branches keep direct/buffered behavior, and sync drops use normal drop stats (`sync_test.go`, `join_sync_test.go`, `rtpav/integration/recipe_runtime_test.go`, `BenchmarkLiveRoomSync`) |
 | Deployment model | Shared C libraries plus runtime plugin scanning; system or bundled installs | Pure Go, `CGO_ENABLED=0`, one static binary; cgo-free core is pinned (`hygiene_test.go`: `TestNoCGOImports`) and CI builds with CGO disabled (`.github/workflows/ci.yml`) |
 | Performance proof status | Mature C implementation, decades of production tuning; no claim measured here | Contract + benchmarks present: allocation pins in plain `go test`, 16 measured workloads (`bench_test.go`, `perf_pin_test.go`, `docs/PERFORMANCE.md`); **no cross-framework comparison performed** |
 | Ecosystem maturity | Decades old; hundreds of plugins across the base/good/bad/ugly modules; hardware backends (VA-API, NVDEC, V4L2, ...); large community | Young; the bundled adapter set is IVF, Annex B, Matroska/WebM, Opus, VP8/VP9 (full verticals), H264/AV1 (decode-first), resize/resample (`docs/ADAPTERS.md`) |
@@ -52,14 +52,14 @@ bus-visible state changes to be ordinary workflows. The current goav answer is:
   `av.EventDestinationCommitError` report task and runtime-branch destination
   outcomes.
 - Standalone detach has an explicit outcome:
-  `Mutable.Detach(ctx, attachment, DrainBranch())` commits branch destinations,
-  `AbortBranch()` aborts them, and the no-option form remains a plain detach.
+  `Mutable.Detach(ctx, attachment, lifecycle.DrainBranch())` commits branch destinations,
+  `lifecycle.AbortBranch()` aborts them, and the no-option form remains a plain detach.
 - Mux preflight now validates declared timebase facts along with stream count,
   codec, and media compatibility. Unknown facts still defer; malformed facts
   fail before resources open.
 - Branch-local live-room synchronization is part of the grammar:
-  applying the same `SyncPolicy` to audio/video branches aligns messages by
-  normalized PTS, while `SyncDropLate()` lets preview branches shed late media
+  applying the same `flow.SyncPolicy` to audio/video branches aligns messages by
+  normalized PTS, while `flow.SyncDropLate()` lets preview branches shed late media
   without stalling recording branches.
 
 The intentionally deferred gap is narrower now: pipeline-wide clock service,
@@ -77,7 +77,7 @@ model, not as extra branch flags or a graph API escape hatch.
 - Playback/display stacks, device discovery, auto-pluggers. These are out of
   scope; goav assumes the application owns its endpoints.
 - Pipeline-wide clock service, pull scheduling, and sink-level A/V
-  synchronization. Branch-local live-room `SyncPolicy` gates exist, but global
+  synchronization. Branch-local live-room `flow.SyncPolicy` gates exist, but global
   playout policy remains roadmap work (`docs/NORTH_STAR.md`,
   `docs/ROADMAP.md`).
 

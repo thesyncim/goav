@@ -15,6 +15,7 @@ import (
 	"github.com/thesyncim/goav/bundle"
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/component"
+	"github.com/thesyncim/goav/flow"
 	"github.com/thesyncim/goav/goavtest"
 	"github.com/thesyncim/goav/pipeline"
 	goavruntime "github.com/thesyncim/goav/runtime"
@@ -129,7 +130,7 @@ func BenchmarkLiveRoomSync(b *testing.B) {
 	var latencyIndex atomic.Int64
 	var sourceDrops atomic.Uint64
 	sink := &liveRoomSyncSink{}
-	policy := goav.Sync("live-room", goav.SyncTolerance(20*time.Millisecond), goav.SyncDropLate())
+	policy := flow.Sync("live-room", flow.SyncTolerance(20*time.Millisecond), flow.SyncDropLate())
 
 	ctx := context.Background()
 	task, err := goav.From(

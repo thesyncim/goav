@@ -226,7 +226,7 @@ func TestTaskAttachDetachPublishesBranchLifecycleEvents(t *testing.T) {
 		t.Fatalf("attached metadata includes detach disposition: %#v", attached.Metadata)
 	}
 
-	if err := task.Detach(ctx, attachment, DrainBranch()); err != nil {
+	if err := task.Detach(ctx, attachment, lifecycle.DrainBranch()); err != nil {
 		t.Fatal(err)
 	}
 	detached := recvWatchEvent(t, events)
@@ -259,7 +259,7 @@ func TestTaskDetachPublishesDestinationLifecycleEvents(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := task.Detach(ctx, attachment, DrainBranch()); err != nil {
+	if err := task.Detach(ctx, attachment, lifecycle.DrainBranch()); err != nil {
 		t.Fatal(err)
 	}
 	event := recvWatchEvent(t, events)
@@ -306,11 +306,11 @@ func TestTaskDetachOptionsReportDestinationOutcome(t *testing.T) {
 	tests := []struct {
 		name    string
 		dest    string
-		options []DetachOption
+		options []lifecycle.DetachOption
 		want    lifecycle.DestinationState
 	}{
-		{name: "rec-drain", dest: "rec-drain", options: []DetachOption{DrainBranch()}, want: lifecycle.DestinationCommitted},
-		{name: "rec-abort", dest: "rec-abort", options: []DetachOption{AbortBranch()}, want: lifecycle.DestinationAborted},
+		{name: "rec-drain", dest: "rec-drain", options: []lifecycle.DetachOption{lifecycle.DrainBranch()}, want: lifecycle.DestinationCommitted},
+		{name: "rec-abort", dest: "rec-abort", options: []lifecycle.DetachOption{lifecycle.AbortBranch()}, want: lifecycle.DestinationAborted},
 	}
 	for _, tt := range tests {
 		attachment, err := task.Attach(ctx, Branch(tt.name).
