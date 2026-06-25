@@ -172,8 +172,7 @@ func TestBuildErrorTypedDetailsAndFixes(t *testing.T) {
 		t.Fatalf("rendered typed BuildError = %q", rendered)
 	}
 
-	legacy := &BuildError{Details: []string{"format=webm"}}
-	if got, ok := legacy.Detail("format"); !ok || got != "webm" {
-		t.Fatalf("legacy detail = %#v, %v; want webm, true", got, ok)
+	if got, ok := (&BuildError{}).Detail("format"); ok || got != nil {
+		t.Fatalf("empty detail = %#v, %v; want nil, false", got, ok)
 	}
 }

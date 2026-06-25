@@ -730,14 +730,7 @@ func buildErrorDetailMap(err *BuildError) map[string]string {
 	if err == nil {
 		return nil
 	}
-	out := make(map[string]string, len(err.Details)+len(err.Fields))
-	for i := range err.Details {
-		key, value, ok := strings.Cut(err.Details[i], "=")
-		if !ok || key == "" {
-			continue
-		}
-		out[key] = value
-	}
+	out := make(map[string]string, len(err.Fields))
 	for i := range err.Fields {
 		if err.Fields[i].Key == "" || err.Fields[i].Value == nil {
 			continue

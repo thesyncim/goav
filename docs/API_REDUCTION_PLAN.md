@@ -120,7 +120,8 @@ Move or keep outside the front door:
    - Replace string-only production errors with typed details and fixes:
      `BuildError` carries typed `Fields []Detail`, `Fixes []Fix`, optional
      `RecipePatch` hints, `Detail(key)`, `DetailLines()`, and `FixLines()`.
-     The source pin rejects new production `Details`/`Suggestions` literals.
+     The legacy `Details`/`Suggestions` fields have been removed from
+     `BuildError`.
 
 9. **Explicit destination groups** — landed
    - Introduce explicit mux/group builders.

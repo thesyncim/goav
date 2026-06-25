@@ -57,9 +57,8 @@ func (f Fix) String() string {
 // validation, attach, and explain paths. Family identifies the stable
 // application branch key, Code identifies the detailed diagnostic leaf (see the
 // errcode package), Operation/Node say where, Reason says why, Fields carry
-// typed machine-readable facts, Details carries their legacy key=value
-// rendering, Fixes carry typed repair actions, Suggestions carries their legacy
-// text rendering, and Cause is a sentinel (ErrUnsupportedBuild, ErrNilSink,
+// typed machine-readable facts, Fixes carry typed repair actions, and Cause is
+// a sentinel (ErrUnsupportedBuild, ErrNilSink,
 // pipeline.ErrBufferedMessageUnsafe, ...) reachable through errors.Is.
 type BuildError struct {
 	Family    errcode.Family
@@ -68,14 +67,8 @@ type BuildError struct {
 	Node      string
 	Reason    string
 	Fields    []Detail
-	// Deprecated: compatibility rendering only. New production errors should
-	// populate Fields and let DetailLines render them.
-	Details []string
-	Fixes   []Fix
-	// Deprecated: compatibility rendering only. New production errors should
-	// populate Fixes and let FixLines render them.
-	Suggestions []string
-	Cause       error
+	Fixes     []Fix
+	Cause     error
 }
 
 // Error renders the one goav error shape: "goav: cannot <operation> for
@@ -119,9 +112,7 @@ func (e *BuildError) Error() string {
 	return out.String()
 }
 
-// Detail returns the typed value for key when the BuildError carries it. Typed
-// Fields are checked first; legacy Details fall back to parsing key=value
-// lines and return string values.
+// Detail returns the typed value for key when the BuildError carries it.
 func (e *BuildError) Detail(key string) (any, bool) {
 	if e == nil || key == "" {
 		return nil, false
@@ -129,12 +120,6 @@ func (e *BuildError) Detail(key string) (any, bool) {
 	for i := range e.Fields {
 		if e.Fields[i].Key == key {
 			return e.Fields[i].Value, true
-		}
-	}
-	for i := range e.Details {
-		detailKey, detailValue, ok := strings.Cut(e.Details[i], "=")
-		if ok && detailKey == key {
-			return detailValue, true
 		}
 	}
 	return nil, false
@@ -163,18 +148,12 @@ func (e *BuildError) detailLines() []string {
 	if e == nil {
 		return nil
 	}
-	if len(e.Details) != 0 {
-		return e.Details
-	}
 	return detailsToLines(e.Fields)
 }
 
 func (e *BuildError) suggestionLines() []string {
 	if e == nil {
 		return nil
-	}
-	if len(e.Suggestions) != 0 {
-		return e.Suggestions
 	}
 	if len(e.Fixes) == 0 {
 		return nil

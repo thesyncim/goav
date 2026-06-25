@@ -116,6 +116,10 @@ Invalid-struct progress: `TransformSpec` is now an opaque constructor-produced
 value, so external callers cannot set both resize and resample fields on one
 transform.
 
+Error-contract progress: `BuildError` no longer exposes legacy
+`Details`/`Suggestions` fields or parses rendered strings in `Detail(key)`;
+typed `Fields` and `Fixes` are the public contract.
+
 ## Release gate
 
 Do not cut v1 just because the current docs and pins are green. Cut v1 only
