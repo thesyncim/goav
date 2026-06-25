@@ -11,6 +11,9 @@ methodology changes, and migration notes.
 
 ## Unreleased
 
+- Removed legacy `BuildError.Details` and `BuildError.Suggestions` fields;
+  callers should use typed `Fields`/`Fixes`, `Detail(key)`, `DetailLines()`,
+  and `FixLines()`.
 - Made `TransformSpec` opaque so callers use constructors instead of setting
   resize/resample fields directly.
 - Removed same-handle destination grouping: repeated destination names now

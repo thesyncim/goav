@@ -16,10 +16,8 @@ import (
 // level: every &BuildError{...} literal in the package carries a Family derived
 // from its Code, a Code from the errcode catalog (never a raw string), an
 // Operation, a Reason, and either Fixes (a user-fixable refusal's concrete
-// fixes) or Fields (an internal invariant's explanation). The legacy
-// Details/Suggestions fields are rendered compatibility only; production
-// BuildError literals must not add new string-only diagnostics. The contract is
-// what makes goav errors uniformly actionable; this pin makes regressions
+// fixes) or Fields (an internal invariant's explanation). The contract is what
+// makes goav errors uniformly actionable; this pin makes regressions
 // impossible.
 func TestBuildErrorContractPinned(t *testing.T) {
 	files := parsePackageSourceFiles(t)

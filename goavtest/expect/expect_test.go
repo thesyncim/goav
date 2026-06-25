@@ -17,14 +17,14 @@ import (
 func TestBuildErrorChecksStructuredFields(t *testing.T) {
 	cause := errors.New("sentinel")
 	err := fmt.Errorf("wrapped: %w", &goav.BuildError{
-		Family:      errcode.FamilyForCode(errcode.InputInvalid),
-		Code:        errcode.InputInvalid,
-		Operation:   "build input",
-		Node:        "input",
-		Reason:      "nil source provider",
-		Details:     []string{"input=0"},
-		Suggestions: []string{"pass a non-nil provider to goav.Input(provider)"},
-		Cause:       cause,
+		Family:    errcode.FamilyForCode(errcode.InputInvalid),
+		Code:      errcode.InputInvalid,
+		Operation: "build input",
+		Node:      "input",
+		Reason:    "nil source provider",
+		Fields:    []goav.Detail{{Key: "input", Value: 0}},
+		Fixes:     []goav.Fix{{Message: "pass a non-nil provider to goav.Input(provider)"}},
+		Cause:     cause,
 	})
 
 	buildErr := expect.BuildError(t, err, errcode.InputInvalid,

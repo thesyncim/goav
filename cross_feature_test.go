@@ -510,6 +510,30 @@ func crossGatedFrameSource(id av.StreamID, release chan struct{}, frames ...[]in
 		})
 }
 
+func crossSignaledFrameSource(id av.StreamID, queued chan<- struct{}, samples ...int16) InputSpec {
+	return Source(string(id),
+		shape.Frame(av.MediaAudio, shape.Audio(48000, codec.Mono, av.SampleFormatS16), shape.Stream(id)),
+		func(_ context.Context, push SourcePush) error {
+			b := make([]byte, len(samples)*2)
+			for i := range samples {
+				binary.LittleEndian.PutUint16(b[i*2:], uint16(samples[i]))
+			}
+			frame := &av.Frame{
+				StreamID: id, Type: av.MediaAudio,
+				Audio:  &av.AudioFrame{SampleRate: 48000, Channels: 1, SampleFormat: av.SampleFormatS16, Samples: len(samples)},
+				Planes: []av.Plane{{Buffer: av.Buffer{Bytes: b, Ownership: av.BufferImmutable}}},
+			}
+			if _, err := push.Frame(frame); err != nil {
+				return err
+			}
+			if err := push.EOS(); err != nil {
+				return err
+			}
+			close(queued)
+			return nil
+		})
+}
+
 // crossLiveJoinRuntime returns the buffered runtime these gated tests use to
 // pin per-node workers while keeping direct copy-policy control local.
 func crossLiveJoinRuntime() *Runtime {
@@ -742,10 +766,11 @@ func TestSelectActiveSwitchToEndedArm(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	releaseA := make(chan struct{}, 2)
+	bEnded := make(chan struct{})
 	var got crossLockedFrames
 	task, err := Select(
 		From(crossGatedFrameSource("a", releaseA, []int16{100}, []int16{200})).Audio(),
-		From(mixTestAudioSource("b", 7)).Audio(),
+		From(crossSignaledFrameSource("b", bEnded, 7)).Audio(),
 	).To(got.sink("out")).Build(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -763,6 +788,13 @@ func TestSelectActiveSwitchToEndedArm(t *testing.T) {
 			t.Fatalf("active arm frame never arrived, got %v", got.snapshot())
 		}
 		time.Sleep(time.Millisecond)
+	}
+	select {
+	case <-bEnded:
+	case err := <-runErr:
+		t.Fatal(err)
+	case <-ctx.Done():
+		t.Fatalf("inactive arm b never ended before switch: %v", ctx.Err())
 	}
 
 	// Switch to the ended arm mid-run. The control is accepted: ended arms

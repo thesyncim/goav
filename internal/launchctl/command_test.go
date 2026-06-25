@@ -2519,14 +2519,18 @@ func TestStructuredErrorPreservesUnderlyingShapes(t *testing.T) {
 
 	cause := errors.New("sentinel")
 	buildErr := &goav.BuildError{
-		Family:      errcode.FamilyForCode(errcode.RuntimeBranchTapMissing),
-		Code:        errcode.RuntimeBranchTapMissing,
-		Operation:   "attach runtime branch",
-		Node:        "raw_vdieo",
-		Reason:      "unknown tap",
-		Details:     []string{"available_taps=raw_video"},
-		Suggestions: []string{"use at=raw_video"},
-		Cause:       cause,
+		Family:    errcode.FamilyForCode(errcode.RuntimeBranchTapMissing),
+		Code:      errcode.RuntimeBranchTapMissing,
+		Operation: "attach runtime branch",
+		Node:      "raw_vdieo",
+		Reason:    "unknown tap",
+		Fields: []goav.Detail{
+			{Key: "available_taps", Value: "raw_video"},
+		},
+		Fixes: []goav.Fix{
+			{Message: "use at=raw_video"},
+		},
+		Cause: cause,
 	}
 	wrapped := structuredError("fallback", buildErr)
 	if wrapped.Code != string(errcode.RuntimeBranchTapMissing) ||
