@@ -136,6 +136,14 @@ Move or keep outside the front door:
     - Generate standard adapter capability docs from descriptors so the docs and
       registered set cannot drift.
 
+12. **Go version floor** — landed
+    - Lower every module directive from the patch-level local toolchain floor
+      to the minor-version support floor (`go 1.26`).
+    - Keep CI on the latest Go 1.26 patch with `1.26.x`, plus the rolling
+      `stable` job, instead of making a patch release the library minimum.
+    - Do not claim a lower floor yet: first-party backend modules currently
+      require Go 1.26.
+
 ## Immediate Tests
 
 Add focused coverage as the slices land:
@@ -151,3 +159,5 @@ Add focused coverage as the slices land:
 - `TestDestinationGroupSurvivesWithAndCopy`
 - `TestBuildAndAttachReturnSameErrorForSameInvalidBranch`
 - `TestErrorDetailsAreTyped`
+- `TestCompatibilityPolicyPinsReleaseDecisionEvidence`
+- `TestCIWorkflowCoversTrustGates`

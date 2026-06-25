@@ -101,7 +101,7 @@ func TestCIWorkflowCoversTrustGates(t *testing.T) {
 	for _, required := range []string{
 		"os: ubuntu-latest",
 		"os: macos-latest",
-		"go: '1.26.4'",
+		"go: '1.26.x'",
 		"go: stable",
 		"Changelog hygiene",
 		"skip-changelog",

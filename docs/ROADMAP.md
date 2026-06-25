@@ -51,9 +51,10 @@ every exported symbol documented (`doc_pin_test.go`), tiered in
   interfaces for `Explain`, inspection (`Describe`/`Taps`/`Snapshot`/`Stats`),
   mutation (`Attach`/`Detach` with `DrainBranch`/`AbortBranch`, `Rebranch`),
   controls (`Control`), and observation (`Events`/`Watch`);
-  `Default`/`New`/`UseRuntime`;
-  structured `BuildError` + the `errcode` catalog; the `plan`, `snapshot`,
-  `lifecycle`, `shape`, `flow`, and `av` vocabulary packages.
+  `New`/`MustNew`/`UseRuntime` and the `std` runtime helpers;
+  structured `BuildError` with typed fields/fixes + the `errcode` catalog;
+  the `plan`, `snapshot`, `lifecycle`, `shape`, `flow`, and `av` vocabulary
+  packages.
 - **Tier B: extension points.** `provider.Source` and `Source(fn)` push
   sources; `provider.Destination`/`Writer`/`Sink` destinations;
   `EventFunc`/`FrameFunc`/`PacketFunc`/`SinkFunc` hooks; codec/format/filter
@@ -220,7 +221,7 @@ The checklist below gates the tag. Each item names its current evidence.
   CLI archives, and creates GitHub release notes; root CLI releases include
   checksums, Go module SBOM, per-binary buildinfo, and provenance metadata.
   `docs/RELEASING.md` documents signed-tag ownership and tag order.
-- [ ] **Release decision**: confirm the `go 1.26.4` directive in `go.mod`
-  is the intended minimum supported Go, fill the compatibility note template in
+- [ ] **Release decision**: confirm the `go 1.26` directive in `go.mod` is the
+  intended minimum supported Go, fill the compatibility note template in
   `docs/COMPATIBILITY.md`, and cut v1. Not done; the only open item is a
   maintainer call, not code.

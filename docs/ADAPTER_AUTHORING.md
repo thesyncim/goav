@@ -67,8 +67,9 @@ message path simple.
   worker, so per-message state needs no locking. Factories may serve several
   builds; keep them stateless or guard shared state.
 - **Errors**: build-time refusals reach users as `*goav.BuildError` with a
-  `errcode.Code`; preflight checks descriptors and registries before anything
-  opens (`errcode.DecodeAdapterMissing`, `EncodeAdapterIncompatible`,
+  `errcode.Code`, typed fields/fixes, and rendered details/suggestions;
+  preflight checks descriptors and registries before anything opens
+  (`errcode.DecodeAdapterMissing`, `EncodeAdapterIncompatible`,
   `TransformAdapterMissing`, `InputDemuxerMissing`, `OutputMuxerMissing`, ...).
   Return typed sentinels for unsupported config at open
   (`codec.ErrUnsupportedFormat`, ...). Any non-nil error from a hot-path
@@ -344,7 +345,7 @@ routing handle branches share.
 ## Checklist
 
 1. Fill the descriptor precisely. Capabilities are preflight constraints, and
-   wrong ones turn into misleading `BuildError` suggestions.
+   wrong ones turn into misleading `BuildError` details and suggestions.
 2. Factory returns ready instances (codec/filter open themselves; container
    `Open` is called by core).
 3. Hot paths: caller-owned results, capacity sentinels, honest
@@ -357,7 +358,7 @@ routing handle branches share.
    inputs, `goavtest.NewCollector()` output, `goavtest.Runtime()` plus your
    `With*` option). Use `goavtest/expect` for assertions: it delegates
    structural diffs to `github.com/google/go-cmp/cmp` and adds
-   `BuildError`, `S16`, and golden-output checks for goav tests. Use
+   `BuildError` fields/fixes, `S16`, and golden-output checks for goav tests. Use
    `goavtest.NewTestSource` when the adapter needs a
    provider-shaped, controllable source fixture; use
    `goavtest.TestSourceScript(goavtest.TestSourcePacket(...),

@@ -1,6 +1,6 @@
 module github.com/thesyncim/goav/examples/gio-webrtc-showcase
 
-go 1.26.4
+go 1.26
 
 require (
 	gioui.org v0.10.0

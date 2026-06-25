@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/thesyncim/goav/actions/workflows/ci.yml/badge.svg)](https://github.com/thesyncim/goav/actions/workflows/ci.yml)
 [![Go Reference](https://pkg.go.dev/badge/github.com/thesyncim/goav.svg)](https://pkg.go.dev/github.com/thesyncim/goav)
-[![Go Version](https://img.shields.io/badge/go-1.26.4%2B-00ADD8)](go.mod)
+[![Go Version](https://img.shields.io/badge/go-1.26%2B-00ADD8)](go.mod)
 [![License](https://img.shields.io/github/license/thesyncim/goav)](LICENSE)
 [![Status](https://img.shields.io/badge/status-pre--v1-orange)](docs/ROADMAP.md)
 [![Release Notes](https://img.shields.io/badge/release_notes-CHANGELOG-blue)](CHANGELOG.md)

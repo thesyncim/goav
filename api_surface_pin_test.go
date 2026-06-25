@@ -258,7 +258,7 @@ func TestReadmeStaysFrontDoorSized(t *testing.T) {
 		"## Capability Matrix",
 		"## Stability Matrix",
 		"## Deep Dives",
-		"img.shields.io/badge/go-1.26.4%2B",
+		"img.shields.io/badge/go-1.26%2B",
 		"CHANGELOG.md",
 		"docs/EXTENSION_COOKBOOK.md",
 		"docs/PERFORMANCE.md",
