@@ -3,10 +3,12 @@ package main
 import (
 	"context"
 	"fmt"
-	"github.com/thesyncim/goav/control"
 	"strings"
 	"sync/atomic"
 	"time"
+
+	"github.com/thesyncim/goav/component"
+	"github.com/thesyncim/goav/control"
 
 	"github.com/pion/rtcp"
 	"github.com/pion/webrtc/v4"
@@ -429,7 +431,7 @@ func (s *trackSampleSink) Close() error {
 }
 
 func discardSink(name string) pipeline.Sink {
-	return goav.SinkFunc(name, func(context.Context, goav.Message) error {
+	return component.SinkFunc(name, func(context.Context, component.Message) error {
 		return nil
 	})
 }

@@ -20,6 +20,7 @@ import (
 
 	"github.com/thesyncim/goav"
 	"github.com/thesyncim/goav/av"
+	"github.com/thesyncim/goav/component"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/shape"
 )
@@ -261,7 +262,7 @@ func s16FrameArm(id av.StreamID, frames ...[]int16) goav.InputSpec {
 
 // s16CollectSink collects S16 frame payloads with their stream ids.
 func s16CollectSink(name string, mu *sync.Mutex, ids *[]av.StreamID, frames *[][]int16) goav.Destination {
-	return goav.Sink(goav.SinkFunc(name, func(_ context.Context, msg goav.Message) error {
+	return goav.Sink(component.SinkFunc(name, func(_ context.Context, msg component.Message) error {
 		if msg.Kind != pipeline.MessageFrame || msg.Frame == nil || len(msg.Frame.Planes) == 0 {
 			return nil
 		}
@@ -425,7 +426,7 @@ func TestExternalJoinReproducesSelectPassthrough(t *testing.T) {
 	var mu sync.Mutex
 	var payloads [][]byte
 	var ids []av.StreamID
-	sink := goav.Sink(goav.SinkFunc("out", func(_ context.Context, msg goav.Message) error {
+	sink := goav.Sink(component.SinkFunc("out", func(_ context.Context, msg component.Message) error {
 		if msg.Kind != pipeline.MessagePacket || msg.Packet == nil {
 			return nil
 		}

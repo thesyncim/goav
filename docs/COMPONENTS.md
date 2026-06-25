@@ -122,7 +122,7 @@ graph users inspect is the graph that ran.
 rtpav.Source
   -> rtpav.OpusDepacketizer
   -> codec.DecoderStage
-  -> goav.FrameFunc meter or pipeline.Sink
+  -> component.FrameFunc meter or pipeline.Sink
 ```
 
 For realtime audio analyzers, bots, and receive pipelines that need direct
@@ -144,8 +144,8 @@ When packet formats already match and the graph stays packet-preserving
 
 ```text
 input source
-  -> goav.PacketFunc or goav.FrameFunc meter
-  -> goav.EventFunc logger
+  -> component.PacketFunc or component.FrameFunc meter
+  -> component.EventFunc logger
   -> sink
 ```
 

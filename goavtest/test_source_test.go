@@ -3,9 +3,10 @@ package goavtest
 import (
 	"context"
 	"errors"
-	"github.com/thesyncim/goav/control"
 	"testing"
 	"time"
+
+	"github.com/thesyncim/goav/control"
 
 	"github.com/thesyncim/goav"
 	"github.com/thesyncim/goav/av"

@@ -27,19 +27,6 @@ import (
 	"github.com/thesyncim/goav/snapshot"
 )
 
-// Media vocabulary aliases, re-exported so simple recipes and custom
-// components (PacketFunc, FrameFunc, SinkFunc) need no av import.
-type (
-	// Packet is one encoded media unit (av.Packet).
-	Packet = av.Packet
-	// Frame is one decoded media unit (av.Frame).
-	Frame = av.Frame
-	// Event is an out-of-band signal riding the data path (av.Event).
-	Event = av.Event
-	// Stream identifies one media stream an input carries (av.Stream).
-	Stream = av.Stream
-)
-
 // Runtime is the concrete composition root for applications embedding goav.
 // Build it with New or MustNew, or import github.com/thesyncim/goav/bundle for
 // the bundled adapter set.

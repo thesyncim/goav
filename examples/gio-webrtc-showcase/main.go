@@ -13,7 +13,6 @@ import (
 	"syscall"
 
 	gioapp "gioui.org/app"
-	"github.com/thesyncim/goav"
 	"github.com/thesyncim/goav/bundle"
 	goavruntime "github.com/thesyncim/goav/runtime"
 )

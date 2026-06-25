@@ -10,6 +10,7 @@ import (
 
 	"github.com/thesyncim/goav"
 	"github.com/thesyncim/goav/av"
+	"github.com/thesyncim/goav/component"
 )
 
 // Collector is a recording destination: point a chain at Sink() and read back
@@ -32,7 +33,7 @@ type Collector struct {
 // so several collectors can terminate different branches of one job.
 func NewCollector() *Collector {
 	c := &Collector{}
-	c.dest = goav.Sink(goav.SinkFunc(nextName("collector"), c.collect))
+	c.dest = goav.Sink(component.SinkFunc(nextName("collector"), c.collect))
 	return c
 }
 
@@ -43,7 +44,7 @@ func (c *Collector) Sink() goav.Destination {
 	return c.dest
 }
 
-func (c *Collector) collect(_ context.Context, msg goav.Message) error {
+func (c *Collector) collect(_ context.Context, msg component.Message) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	switch {

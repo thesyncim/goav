@@ -3,12 +3,13 @@ package goav
 import (
 	"context"
 	"errors"
-	"github.com/thesyncim/goav/control"
 	"io"
 	"reflect"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/thesyncim/goav/control"
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"

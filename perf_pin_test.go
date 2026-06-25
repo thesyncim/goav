@@ -1,5 +1,5 @@
 // Performance pins for the goav-level hot paths the docs claim: SourcePush
-// delivery, SinkFunc (collector-free) delivery, and the join steps. Each
+// delivery, component.SinkFunc (collector-free) delivery, and the join steps. Each
 // pin states exactly what is enforced — zero where the path is allocation-free
 // today, an explicit ceiling where it is not — so docs/PERFORMANCE.md cites
 // tests instead of intentions and a regression fails loudly.
@@ -85,7 +85,7 @@ func pinFrame() *av.Frame {
 func TestSourcePushDeliveryAllocs(t *testing.T) {
 	ctx := context.Background()
 	emitter := pinDirectGraph(t, &pinNoopSink{name: "out"})
-	push := SourcePush{emit: Emit{ctx: ctx, emitter: emitter}, stream: "s"}
+	push := SourcePush{emit: sourceEmit{ctx: ctx, emitter: emitter}, stream: "s"}
 	packet := pinPacket()
 	frame := pinFrame()
 
@@ -105,9 +105,9 @@ func TestSourcePushDeliveryAllocs(t *testing.T) {
 	}
 }
 
-// TestSinkFuncDeliveryAllocs pins SourcePush -> SinkFunc delivery at the same
-// one-allocation ceiling: SinkFunc adds no extra wrapper on top of Emit's
-// independent per-delivery message.
+// TestSinkFuncDeliveryAllocs pins SourcePush -> component.SinkFunc delivery at
+// the same one-allocation ceiling: the sink adapter adds no extra wrapper on
+// top of the source emitter's independent per-delivery message.
 func TestSinkFuncDeliveryAllocs(t *testing.T) {
 	ctx := context.Background()
 	delivered := 0
@@ -118,7 +118,7 @@ func TestSinkFuncDeliveryAllocs(t *testing.T) {
 		return nil
 	})
 	emitter := pinDirectGraph(t, sink)
-	push := SourcePush{emit: Emit{ctx: ctx, emitter: emitter}, stream: "s"}
+	push := SourcePush{emit: sourceEmit{ctx: ctx, emitter: emitter}, stream: "s"}
 	packet := pinPacket()
 
 	if allocs := testing.AllocsPerRun(1000, func() {

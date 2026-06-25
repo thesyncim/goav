@@ -8,7 +8,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"github.com/thesyncim/goav/control"
 	"io"
 	"net"
 	"os"
@@ -18,6 +17,9 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/thesyncim/goav/component"
+	"github.com/thesyncim/goav/control"
 
 	goav "github.com/thesyncim/goav"
 	"github.com/thesyncim/goav/av"
@@ -168,7 +170,7 @@ func newDemoHost(ctx context.Context) (*demoHost, error) {
 		"pass video frames through a demo metering stage",
 		func(branch *ctl.BranchPipeline, args meterSettings) error {
 			label := firstNonEmpty(args.Label, "meter")
-			branch.Do(goav.FrameFunc("demo-"+label, func(_ context.Context, frame *av.Frame, emit goav.Emit) error {
+			branch.Do(component.FrameFunc("demo-"+label, func(_ context.Context, frame *av.Frame, emit component.Emit) error {
 				return emit.Frame(frame)
 			}))
 			return nil
@@ -190,7 +192,7 @@ func newDemoHost(ctx context.Context) (*demoHost, error) {
 			}
 			var seen int
 			name := demoNodeName("demo-thumbnail", args.Label)
-			branch.Do(goav.FrameFunc(name, func(_ context.Context, frame *av.Frame, emit goav.Emit) error {
+			branch.Do(component.FrameFunc(name, func(_ context.Context, frame *av.Frame, emit component.Emit) error {
 				seen++
 				if (seen-1)%every != 0 {
 					return nil
@@ -210,7 +212,7 @@ func newDemoHost(ctx context.Context) (*demoHost, error) {
 		"send messages to a demo in-process sink",
 		func(branch *ctl.BranchPipeline, args memorySinkSettings) error {
 			name := firstNonEmpty(args.Name, "memory")
-			branch.Destination(goav.Sink(goav.SinkFunc("demo-"+name, func(context.Context, goav.Message) error {
+			branch.Destination(goav.Sink(component.SinkFunc("demo-"+name, func(context.Context, component.Message) error {
 				return nil
 			})))
 			return nil

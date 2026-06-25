@@ -12,6 +12,7 @@ import (
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/bundle"
 	"github.com/thesyncim/goav/codec"
+	"github.com/thesyncim/goav/component"
 	"github.com/thesyncim/goav/plan"
 	"github.com/thesyncim/goav/provider"
 	"github.com/thesyncim/goav/rtpav"
@@ -254,7 +255,7 @@ func TestExplainReportsBranchShapeFromLiveCodecIntent(t *testing.T) {
 		Audio().
 		Decode().
 		Tap(goav.FrameTap("audio.decoded")).
-		To(goav.Sink(goav.SinkFunc("frames", func(context.Context, goav.Message) error {
+		To(goav.Sink(component.SinkFunc("frames", func(context.Context, component.Message) error {
 			return nil
 		}))).
 		Explain(context.Background())
@@ -346,7 +347,7 @@ func TestFlowBranchesDescribeLiveInputBranches(t *testing.T) {
 }
 
 func TestReadmeDecodeShortcutUsesSinkDestination(t *testing.T) {
-	sink := goav.SinkFunc("frames", func(context.Context, goav.Message) error {
+	sink := component.SinkFunc("frames", func(context.Context, component.Message) error {
 		return nil
 	})
 	job := decodeJob(
@@ -393,7 +394,7 @@ func TestRecipeAndRejectsDuplicateRealtimeInputNames(t *testing.T) {
 func TestPacketCopyRecipeAcceptsSinkDestination(t *testing.T) {
 	spec, err := goav.From(goav.Input(rtpav.Receive(recipeAPIRTPReader{}, rtpav.WithName("audio"), rtpav.WithCodec(codec.Opus())))).
 		Copy().
-		To(goav.Sink(goav.SinkFunc("packets", func(context.Context, goav.Message) error {
+		To(goav.Sink(component.SinkFunc("packets", func(context.Context, component.Message) error {
 			return nil
 		}))).
 		Describe()
@@ -436,7 +437,7 @@ func TestStreamRecipeReportsMissingDecodeAdapterBeforeOpeningLiveInput(t *testin
 	_, err := goav.From(goav.Input(rtpav.Receive(recipeAPIRTPReader{}, rtpav.WithName("video"), rtpav.WithCodec(codec.H264())))).
 		UseRuntime(rt).
 		Video().
-		To(goav.Sink(goav.SinkFunc("frames", func(context.Context, goav.Message) error {
+		To(goav.Sink(component.SinkFunc("frames", func(context.Context, component.Message) error {
 			return nil
 		}))).
 		Build(context.Background())
@@ -456,7 +457,7 @@ func TestStreamRecipeReportsAmbiguousLiveSelectionBeforeDecoderAdapter(t *testin
 	_, err := goav.From(goav.Input(rtpav.Receive(recipeAPIRTPReader{}, rtpav.WithName("front"), rtpav.WithCodec(codec.VP8())))).
 		And(goav.Input(rtpav.Receive(recipeAPIRTPReader{}, rtpav.WithName("screen"), rtpav.WithCodec(codec.VP8())))).
 		Video().
-		To(goav.Sink(goav.SinkFunc("frames", func(context.Context, goav.Message) error {
+		To(goav.Sink(component.SinkFunc("frames", func(context.Context, component.Message) error {
 			return nil
 		}))).
 		Build(context.Background())

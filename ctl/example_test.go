@@ -3,11 +3,13 @@ package ctl_test
 import (
 	"context"
 	"fmt"
-	"github.com/thesyncim/goav/control"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/thesyncim/goav/component"
+	"github.com/thesyncim/goav/control"
 
 	goav "github.com/thesyncim/goav"
 	"github.com/thesyncim/goav/av"
@@ -84,7 +86,7 @@ func Example_bootstrapControlPlaneHost() {
 		"meter",
 		"observe frames before encoding",
 		func(branch *ctl.BranchPipeline, _ MeterSettings) error {
-			branch.Do(goav.FrameFunc("meter", func(_ context.Context, frame *av.Frame, emit goav.Emit) error {
+			branch.Do(component.FrameFunc("meter", func(_ context.Context, frame *av.Frame, emit component.Emit) error {
 				return emit.Frame(frame)
 			}))
 			return nil

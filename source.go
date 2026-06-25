@@ -47,7 +47,7 @@ type PushResult struct {
 // the PushResult (and counted on that branch) while delivery continues to
 // siblings. Any other error is fatal to the push.
 type SourcePush struct {
-	emit   Emit
+	emit   sourceEmit
 	stream av.StreamID
 }
 
@@ -511,7 +511,7 @@ func (s *customSource) Start(ctx context.Context, emitter pipeline.Emitter) erro
 		return ErrNilSource
 	}
 	push := SourcePush{
-		emit:   Emit{ctx: ctx, emitter: emitter},
+		emit:   sourceEmit{ctx: ctx, emitter: emitter},
 		stream: s.stream,
 	}
 	return s.fn(ctx, push)

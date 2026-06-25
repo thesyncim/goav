@@ -151,7 +151,7 @@ dest := goav.Writer("mem://voice.ogg",
 err := goav.From(input).Audio().Encode(codec.Opus()).To(dest).Run(ctx)
 ```
 
-Use `goav.Sink(goav.SinkFunc(...))` instead when the destination consumes
+Use `goav.Sink(component.SinkFunc(...))` instead when the destination consumes
 frames or packets directly rather than muxed bytes. Use `goav.Custom(...)` or
 `provider.Destination` when the destination must advertise a richer
 `provider.Contract`.

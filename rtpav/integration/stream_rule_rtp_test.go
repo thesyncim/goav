@@ -11,6 +11,7 @@ import (
 	"github.com/thesyncim/goav"
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
+	"github.com/thesyncim/goav/component"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/rtpav"
 )
@@ -101,7 +102,7 @@ func TestOnStreamRTPLateStreamAttachesBranch(t *testing.T) {
 	}
 
 	var lateVideo atomic.Int32
-	monitor := goav.Sink(goav.SinkFunc("monitor", func(_ context.Context, msg goav.Message) error {
+	monitor := goav.Sink(component.SinkFunc("monitor", func(_ context.Context, msg component.Message) error {
 		if msg.Kind == pipeline.MessagePacket && msg.Packet.StreamID == video.ID {
 			lateVideo.Add(1)
 		}
@@ -112,7 +113,7 @@ func TestOnStreamRTPLateStreamAttachesBranch(t *testing.T) {
 		goav.Input(rtpav.Receive(receiver, rtpav.WithName("audio"), rtpav.WithCodec(codec.Opus()))),
 	).
 		OnStream(goav.MatchMedia(av.MediaVideo), goav.Branch("cam-watch").Copy().To(monitor)).
-		Audio().Copy().To(goav.Sink(goav.SinkFunc("main", func(context.Context, goav.Message) error { return nil }))).
+		Audio().Copy().To(goav.Sink(component.SinkFunc("main", func(context.Context, component.Message) error { return nil }))).
 		Build(ctx)
 	if err != nil {
 		t.Fatal(err)

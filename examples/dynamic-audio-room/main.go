@@ -11,6 +11,7 @@ import (
 
 	"github.com/thesyncim/goav"
 	"github.com/thesyncim/goav/av"
+	"github.com/thesyncim/goav/component"
 	"github.com/thesyncim/goav/goavtest"
 	"github.com/thesyncim/goav/shape"
 )
@@ -114,13 +115,13 @@ func runRoomScript(ctx context.Context, script func(context.Context, *RoomPipeli
 	input := room.Input()
 	meter := NewTrackMeter()
 	roomSync := goav.Sync("room", goav.SyncTolerance(20*time.Millisecond), goav.SyncDropLate())
-	meterStage := goav.FrameFunc("track-meter", func(_ context.Context, frame *av.Frame, emit goav.Emit) error {
+	meterStage := component.FrameFunc("track-meter", func(_ context.Context, frame *av.Frame, emit component.Emit) error {
 		meter.Observe(frame)
 		return emit.Frame(frame)
 	})
 	tracks := NewTrackRecorder()
 	mixer := NewOutputMixer()
-	main := goav.Sink(goav.SinkFunc("room-anchor", func(context.Context, goav.Message) error { return nil }))
+	main := goav.Sink(component.SinkFunc("room-anchor", func(context.Context, component.Message) error { return nil }))
 
 	task, err := goav.From(input).
 		Audio().
@@ -615,7 +616,7 @@ type TrackRecorder struct {
 
 func NewTrackRecorder() *TrackRecorder {
 	r := &TrackRecorder{frames: make(map[string][][]int16)}
-	r.dest = goav.Sink(goav.SinkFunc("per-track-output", r.handle))
+	r.dest = goav.Sink(component.SinkFunc("per-track-output", r.handle))
 	return r
 }
 
@@ -623,7 +624,7 @@ func (r *TrackRecorder) Sink() goav.Destination {
 	return r.dest
 }
 
-func (r *TrackRecorder) handle(_ context.Context, msg goav.Message) error {
+func (r *TrackRecorder) handle(_ context.Context, msg component.Message) error {
 	if msg.Frame == nil {
 		return nil
 	}
@@ -663,7 +664,7 @@ func NewOutputMixer() *OutputMixer {
 		pending:   make(map[int64]*mixBucket),
 		completed: make(map[int64][]int16),
 	}
-	m.dest = goav.Sink(goav.SinkFunc("room-mix-output", m.handle))
+	m.dest = goav.Sink(component.SinkFunc("room-mix-output", m.handle))
 	return m
 }
 
@@ -671,7 +672,7 @@ func (m *OutputMixer) Sink() goav.Destination {
 	return m.dest
 }
 
-func (m *OutputMixer) handle(_ context.Context, msg goav.Message) error {
+func (m *OutputMixer) handle(_ context.Context, msg component.Message) error {
 	if msg.Frame == nil {
 		return nil
 	}

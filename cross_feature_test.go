@@ -10,13 +10,14 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
-	"github.com/thesyncim/goav/control"
 	"reflect"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/thesyncim/goav/control"
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"

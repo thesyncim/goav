@@ -186,7 +186,7 @@ meter := ctl.NewBranchStep[MeterSettings](
     "meter",
     "observe frames before encoding",
     func(branch *ctl.BranchPipeline, _ MeterSettings) error {
-        branch.Do(goav.FrameFunc("meter", func(ctx context.Context, frame *av.Frame, emit goav.Emit) error {
+        branch.Do(component.FrameFunc("meter", func(ctx context.Context, frame *av.Frame, emit component.Emit) error {
             recordLevel(frame)
             return emit.Frame(frame)
         }))
@@ -454,7 +454,7 @@ meter := ctl.NewBranchStep[MeterSettings](
     "meter",
     "observe frames before encoding",
     func(branch *ctl.BranchPipeline, _ MeterSettings) error {
-        branch.Do(goav.FrameFunc("meter", func(ctx context.Context, frame *av.Frame, emit goav.Emit) error {
+        branch.Do(component.FrameFunc("meter", func(ctx context.Context, frame *av.Frame, emit component.Emit) error {
             recordLevel(frame)
             return emit.Frame(frame)
         }))

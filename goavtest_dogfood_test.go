@@ -8,10 +8,12 @@ package goav_test
 import (
 	"context"
 	"errors"
-	"github.com/thesyncim/goav/control"
 	"reflect"
 	"testing"
 	"time"
+
+	"github.com/thesyncim/goav/component"
+	"github.com/thesyncim/goav/control"
 
 	"github.com/thesyncim/goav"
 	"github.com/thesyncim/goav/av"
@@ -157,7 +159,7 @@ func TestFakeDecodeFeedsRealResample(t *testing.T) {
 func TestFlowInFlowRunsEndToEnd(t *testing.T) {
 	ctx := context.Background()
 	var metered int
-	meter := goav.FrameFunc("meter", func(ctx context.Context, frame *goav.Frame, emit goav.Emit) error {
+	meter := component.FrameFunc("meter", func(ctx context.Context, frame *av.Frame, emit component.Emit) error {
 		metered++
 		return emit.Frame(frame)
 	})

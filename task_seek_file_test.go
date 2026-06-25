@@ -4,11 +4,12 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"github.com/thesyncim/goav/control"
 	"io"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/thesyncim/goav/control"
 
 	"github.com/thesyncim/goav/av"
 	matroskaadapter "github.com/thesyncim/goav/container/matroska"

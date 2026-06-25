@@ -5,7 +5,6 @@ import (
 	"log"
 	"net/http"
 
-	"github.com/thesyncim/goav"
 	"github.com/thesyncim/goav/bundle"
 	goavruntime "github.com/thesyncim/goav/runtime"
 )

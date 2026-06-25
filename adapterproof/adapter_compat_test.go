@@ -27,6 +27,7 @@ import (
 	"github.com/thesyncim/goav"
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
+	"github.com/thesyncim/goav/component"
 	"github.com/thesyncim/goav/filter"
 	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/pipeline"
@@ -697,7 +698,7 @@ func TestExternalAdaptersComposeThroughPublicGrammar(t *testing.T) {
 	// decoder, collecting decoded frames through a public sink.
 	var mu sync.Mutex
 	var frames [][]int16
-	collect := goav.SinkFunc("collect", func(_ context.Context, msg goav.Message) error {
+	collect := component.SinkFunc("collect", func(_ context.Context, msg component.Message) error {
 		if msg.Kind != pipeline.MessageFrame || msg.Frame == nil || len(msg.Frame.Planes) == 0 {
 			return nil
 		}
@@ -736,7 +737,7 @@ func TestExternalDestinationAbortsOnFailure(t *testing.T) {
 	ctx := context.Background()
 	dest := &toyDestination{}
 	provider := newToyProvider([]int16{100, 200})
-	failing := goav.FrameFunc("boom", func(context.Context, *av.Frame, goav.Emit) error {
+	failing := component.FrameFunc("boom", func(context.Context, *av.Frame, component.Emit) error {
 		return errors.New("adapterproof: induced failure")
 	})
 

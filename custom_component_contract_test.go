@@ -69,7 +69,7 @@ func cloneComponentMessage(msg *pipeline.Message) pipeline.Message {
 func TestSourcePushDefaultsAndDeliveryResults(t *testing.T) {
 	ctx := context.Background()
 	delivery := &componentDeliveryEmitter{delivery: pipeline.Delivery{Delivered: 1, Shed: 1}}
-	push := SourcePush{emit: Emit{ctx: ctx, emitter: delivery}, stream: "declared"}
+	push := SourcePush{emit: sourceEmit{ctx: ctx, emitter: delivery}, stream: "declared"}
 
 	if result, err := push.Packet(nil); err != nil || result != (PushResult{}) {
 		t.Fatalf("nil Packet result=%+v err=%v, want zero nil", result, err)
@@ -131,7 +131,7 @@ func TestSourcePushDefaultsAndDeliveryResults(t *testing.T) {
 	}
 
 	plain := &componentEmitter{}
-	plainPush := SourcePush{emit: Emit{ctx: ctx, emitter: plain}, stream: "plain"}
+	plainPush := SourcePush{emit: sourceEmit{ctx: ctx, emitter: plain}, stream: "plain"}
 	result, err = plainPush.Packet(&av.Packet{})
 	if err != nil {
 		t.Fatal(err)
@@ -301,18 +301,22 @@ func TestInputStreamAnchorRequiresStreamID(t *testing.T) {
 
 func TestEmitHelpersNilAndUnscopedEOS(t *testing.T) {
 	emitter := &componentEmitter{}
-	emit := Emit{ctx: context.Background(), emitter: emitter}
-
-	if err := emit.Packet(nil); err != nil {
-		t.Fatalf("Packet(nil): %v", err)
+	stage := PacketFunc("", func(_ context.Context, packet *av.Packet, emit Emit) error {
+		if err := emit.Packet(nil); err != nil {
+			t.Fatalf("Packet(nil): %v", err)
+		}
+		if err := emit.Frame(nil); err != nil {
+			t.Fatalf("Frame(nil): %v", err)
+		}
+		if len(emitter.messages) != 0 {
+			t.Fatalf("nil emits produced %d messages", len(emitter.messages))
+		}
+		return emit.EOS()
+	})
+	if stage.Name() != "func" {
+		t.Fatalf("default stage name = %q, want func", stage.Name())
 	}
-	if err := emit.Frame(nil); err != nil {
-		t.Fatalf("Frame(nil): %v", err)
-	}
-	if len(emitter.messages) != 0 {
-		t.Fatalf("nil emits produced %d messages", len(emitter.messages))
-	}
-	if err := emit.EOS(); err != nil {
+	if err := stage.Handle(context.Background(), &pipeline.Message{Kind: pipeline.MessagePacket, Packet: &av.Packet{}}, emitter); err != nil {
 		t.Fatal(err)
 	}
 	if len(emitter.messages) != 1 ||
@@ -322,12 +326,6 @@ func TestEmitHelpersNilAndUnscopedEOS(t *testing.T) {
 		t.Fatalf("unscoped EOS message = %+v", emitter.messages)
 	}
 
-	stage := PacketFunc("", func(_ context.Context, packet *av.Packet, emit Emit) error {
-		return emit.Packet(packet)
-	})
-	if stage.Name() != "func" {
-		t.Fatalf("default stage name = %q, want func", stage.Name())
-	}
 	if err := stage.Handle(context.Background(), nil, emitter); err != nil {
 		t.Fatal(err)
 	}
@@ -342,18 +340,20 @@ func TestEmitHelpersNilAndUnscopedEOS(t *testing.T) {
 
 func TestEmitMessagesAreIndependentWhenEmitterRetainsPointers(t *testing.T) {
 	retained := &componentRetainingEmitter{}
-	emit := Emit{ctx: context.Background(), emitter: retained}
 	packet := &av.Packet{StreamID: "packet", Type: av.MediaAudio}
 	frame := &av.Frame{StreamID: "frame", Type: av.MediaAudio}
 	event := av.Event{Type: av.EventStats, StreamID: "event"}
+	stage := PacketFunc("retain", func(_ context.Context, packet *av.Packet, emit Emit) error {
+		if err := emit.Packet(packet); err != nil {
+			return err
+		}
+		if err := emit.Frame(frame); err != nil {
+			return err
+		}
+		return emit.Event(event)
+	})
 
-	if err := emit.Packet(packet); err != nil {
-		t.Fatal(err)
-	}
-	if err := emit.Frame(frame); err != nil {
-		t.Fatal(err)
-	}
-	if err := emit.Event(event); err != nil {
+	if err := stage.Handle(context.Background(), &pipeline.Message{Kind: pipeline.MessagePacket, Packet: packet}, retained); err != nil {
 		t.Fatal(err)
 	}
 

@@ -58,24 +58,24 @@ func TestFunctionAdaptersRejectNilCallbacks(t *testing.T) {
 	if packetStage.Name() != "packets" {
 		t.Fatalf("PacketFunc invalid name = %q, want packets", packetStage.Name())
 	}
-	if err := packetStage.Handle(context.Background(), &pipeline.Message{Kind: pipeline.MessagePacket}, &funcEmitter{}); !errors.Is(err, ErrNilStage) {
-		t.Fatalf("PacketFunc invalid Handle err = %v, want ErrNilStage", err)
+	if err := validateStageComponent(packetStage); !errors.Is(err, ErrNilStage) {
+		t.Fatalf("PacketFunc invalid validation err = %v, want ErrNilStage", err)
 	}
 
 	frameStage := FrameFunc("frames", nil)
 	if frameStage == nil {
 		t.Fatal("FrameFunc with nil callback should return a named invalid stage")
 	}
-	if err := frameStage.Handle(context.Background(), &pipeline.Message{Kind: pipeline.MessageFrame}, &funcEmitter{}); !errors.Is(err, ErrNilStage) {
-		t.Fatalf("FrameFunc invalid Handle err = %v, want ErrNilStage", err)
+	if err := validateStageComponent(frameStage); !errors.Is(err, ErrNilStage) {
+		t.Fatalf("FrameFunc invalid validation err = %v, want ErrNilStage", err)
 	}
 
 	eventStage := EventFunc("events", nil)
 	if eventStage == nil {
 		t.Fatal("EventFunc with nil callback should return a named invalid stage")
 	}
-	if err := eventStage.Handle(context.Background(), &pipeline.Message{Kind: pipeline.MessageEvent}, &funcEmitter{}); !errors.Is(err, ErrNilStage) {
-		t.Fatalf("EventFunc invalid Handle err = %v, want ErrNilStage", err)
+	if err := validateStageComponent(eventStage); !errors.Is(err, ErrNilStage) {
+		t.Fatalf("EventFunc invalid validation err = %v, want ErrNilStage", err)
 	}
 
 	sink := SinkFunc("sink", nil)
@@ -85,8 +85,8 @@ func TestFunctionAdaptersRejectNilCallbacks(t *testing.T) {
 	if sink.Name() != "sink" {
 		t.Fatalf("SinkFunc invalid name = %q, want sink", sink.Name())
 	}
-	if err := sink.Handle(context.Background(), &pipeline.Message{Kind: pipeline.MessageEvent}); !errors.Is(err, ErrNilSink) {
-		t.Fatalf("SinkFunc invalid Handle err = %v, want ErrNilSink", err)
+	if err := validateSinkComponent(sink); !errors.Is(err, ErrNilSink) {
+		t.Fatalf("SinkFunc invalid validation err = %v, want ErrNilSink", err)
 	}
 }
 
@@ -129,9 +129,11 @@ func TestEventFuncObservesAndPreservesEvents(t *testing.T) {
 
 func TestEmitEOSCanEmitStreamEnd(t *testing.T) {
 	emitter := &funcEmitter{}
-	emit := Emit{ctx: context.Background(), emitter: emitter}
+	stage := PacketFunc("eos", func(_ context.Context, packet *av.Packet, emit Emit) error {
+		return emit.EOS("audio")
+	})
 
-	if err := emit.EOS("audio"); err != nil {
+	if err := stage.Handle(context.Background(), &pipeline.Message{Kind: pipeline.MessagePacket, Packet: &av.Packet{}}, emitter); err != nil {
 		t.Fatal(err)
 	}
 	if emitter.events != 1 ||

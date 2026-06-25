@@ -209,7 +209,6 @@ goav.DetachOption
 goav.Detail
 goav.DrainBranch
 goav.DrainOldBranch
-goav.Emit
 goav.ErrBackpressure
 goav.ErrClosed
 goav.ErrNilSink
@@ -217,16 +216,12 @@ goav.ErrNilSource
 goav.ErrNilStage
 goav.ErrNilWriter
 goav.ErrUnsupportedBuild
-goav.Event
-goav.EventFunc
 goav.Explainer
 goav.File
 goav.FileInput
 goav.Fix
 goav.Flow
 goav.Format
-goav.Frame
-goav.FrameFunc
 goav.FrameTap
 goav.From
 goav.Input
@@ -246,7 +241,6 @@ goav.MatchMedia
 goav.MatchStream
 goav.MatchStreamID
 goav.MediaOption
-goav.Message
 goav.Metadata
 goav.Mix
 goav.MustNew
@@ -258,8 +252,6 @@ goav.NextFrame
 goav.NextKeyframe
 goav.Observable
 goav.OnRemove
-goav.Packet
-goav.PacketFunc
 goav.PacketTap
 goav.PushResult
 goav.RealtimeCodecChangePolicy
@@ -270,11 +262,9 @@ goav.Resize
 goav.Runtime
 goav.Select
 goav.Sink
-goav.SinkFunc
 goav.Source
 goav.SourceFunc
 goav.SourcePush
-goav.Stream
 goav.StreamID
 goav.StreamIndex
 goav.StreamMatch

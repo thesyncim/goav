@@ -79,6 +79,8 @@ Applications also read these vocabulary packages:
   `DropReason*` keys for reading drop counters.
 - `runtime`: per-runtime construction options (`WithEncoder`, `WithClock`,
   `WithBufferPolicy`, ...).
+- `component`: custom `.Do(...)` and direct sink adapters
+  (`PacketFunc`, `FrameFunc`, `EventFunc`, `SinkFunc`, `Emit`, `Message`).
 - `av` identifiers: media/codec/format/protocol ids, event types, metadata.
 
 ## B. Extension Points
@@ -124,10 +126,11 @@ use [`docs/ADAPTERS.md`](ADAPTERS.md) and [`docs/COMPONENTS.md`](COMPONENTS.md).
   `provider.Destination` + `provider.Contract`/
   `provider.Info`, `goav.Writer` (`provider.OpenFunc`), transactional uploads
   via `provider.TransactionalWriter`, frame/packet sinks via `goav.Sink` +
-  `SinkFunc`, and `goav.Mux(name, destination)` when independently built
-  destinations should share one mux/sink group.
+  `component.SinkFunc`, and `goav.Mux(name, destination)` when independently
+  built destinations should share one mux/sink group.
 - **Custom stages**: use these for in-process inspection or transformation.
-  `EventFunc`/`FrameFunc`/`PacketFunc` (+`Emit`) for
+  `component.EventFunc`/`component.FrameFunc`/`component.PacketFunc`
+  (+`component.Emit`) for
   `.Do(...)`; the node contracts live in `pipeline` (Source/Stage/Sink,
   Emitter, Message, Scratch, capability interfaces).
 - **Codecs**: `codec` Descriptor/Decoder/Encoder/factories, caller-owned

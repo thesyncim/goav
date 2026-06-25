@@ -17,6 +17,7 @@ import (
 	goav "github.com/thesyncim/goav"
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
+	"github.com/thesyncim/goav/component"
 	"github.com/thesyncim/goav/ctl"
 	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/goavtest"
@@ -82,7 +83,7 @@ func TestExternalHostCustomCodecOptionsAndStageOverSocket(t *testing.T) {
 				Name:    "meter",
 				Summary: "external frame meter",
 				Apply: func(branch *ctl.BranchPipeline, _ ctl.StepArgs) error {
-					branch.Do(goav.FrameFunc("meter", func(_ context.Context, frame *av.Frame, emit goav.Emit) error {
+					branch.Do(component.FrameFunc("meter", func(_ context.Context, frame *av.Frame, emit component.Emit) error {
 						metered.Add(1)
 						return emit.Frame(frame)
 					}))
@@ -97,7 +98,7 @@ func TestExternalHostCustomCodecOptionsAndStageOverSocket(t *testing.T) {
 					if name == "" {
 						name = "memory"
 					}
-					branch.Destination(goav.Sink(goav.SinkFunc(name, func(context.Context, goav.Message) error {
+					branch.Destination(goav.Sink(component.SinkFunc(name, func(context.Context, component.Message) error {
 						captured.Add(1)
 						return nil
 					})))

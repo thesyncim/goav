@@ -6,12 +6,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/thesyncim/goav/control"
 	"io"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/thesyncim/goav/control"
 
 	goav "github.com/thesyncim/goav"
 	"github.com/thesyncim/goav/av"

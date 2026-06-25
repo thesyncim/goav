@@ -93,11 +93,11 @@ input := room.Input()
 tracks := NewTrackRecorder()
 mix := NewOutputMixer()
 meter := NewTrackMeter()
-trackMeter := goav.FrameFunc("track-meter", func(_ context.Context, frame *av.Frame, emit goav.Emit) error {
+trackMeter := component.FrameFunc("track-meter", func(_ context.Context, frame *av.Frame, emit component.Emit) error {
     meter.Observe(frame)
     return emit.Frame(frame)
 })
-anchor := goav.Sink(goav.SinkFunc("room-anchor", func(context.Context, goav.Message) error {
+anchor := goav.Sink(component.SinkFunc("room-anchor", func(context.Context, component.Message) error {
     return nil
 }))
 
@@ -214,7 +214,7 @@ branch with `From`:
 ```go
 videoDecoded := goav.FrameTap("video.decoded")
 videoFrames720p := goav.FrameTap("video.720p.frames")
-thumbs := goav.Sink(goav.SinkFunc("thumbs", collectThumbnail))
+thumbs := goav.Sink(component.SinkFunc("thumbs", collectThumbnail))
 web := goav.File("web.ivf", webFile)
 
 err := goav.From(input).
@@ -246,7 +246,7 @@ or an encoder, it can fan out to both mux destinations and packet sinks;
 branch can call `.Decode()` first when the split needs raw frames.
 
 ```go
-meter := goav.FrameFunc("meter", func(ctx context.Context, frame *goav.Frame, emit goav.Emit) error {
+meter := component.FrameFunc("meter", func(ctx context.Context, frame *av.Frame, emit component.Emit) error {
     observe(frame)
     return emit.Frame(frame)
 })
@@ -255,7 +255,7 @@ err := goav.From(input).
     Audio().
     Decode().
     Do(meter).
-    To(goav.Sink(goav.SinkFunc("levels", collectLevel))).
+    To(goav.Sink(component.SinkFunc("levels", collectLevel))).
     Run(ctx)
 ```
 
@@ -339,7 +339,7 @@ goav.Branch("preview").
 
 goav.Branch("latest-diagnostics").
     Buffer(flow.Latest()).
-    To(goav.Sink(goav.SinkFunc("latest", inspect)))
+    To(goav.Sink(component.SinkFunc("latest", inspect)))
 ```
 
 Attach a late branch from a typed tap; encode from frame taps, copy or decode
@@ -385,7 +385,7 @@ Use `Inspectable.Taps()` to discover stable outlets and `Mutable.Detach(ctx, h)`
 plain removal, `DrainBranch()` when the branch output should commit, or
 `AbortBranch()` when it should be abandoned. Taps declared after encode or copy
 are packet taps. Observer branches can end in a sink while publishing a nested
-tap with `.Do(goav.FrameFunc(...)).Tap(goav.FrameTap(name)).To(goav.Sink(...))`.
+tap with `.Do(component.FrameFunc(...)).Tap(goav.FrameTap(name)).To(goav.Sink(...))`.
 Detaching a parent removes dependent late branches anchored from its taps. H264
 recipe encoding remains work in progress.
 
@@ -431,11 +431,11 @@ go func() { _ = task.Run(ctx) }()
 levels, err := task.Attach(ctx,
     goav.Branch("levels").
         From(audioDecoded).
-        Do(goav.FrameFunc("rms", func(_ context.Context, frame *goav.Frame, emit goav.Emit) error {
+        Do(component.FrameFunc("rms", func(_ context.Context, frame *av.Frame, emit component.Emit) error {
             observeRMS(frame)
             return emit.Frame(frame)
         })).
-        To(goav.Sink(goav.SinkFunc("levels", func(context.Context, goav.Message) error {
+        To(goav.Sink(component.SinkFunc("levels", func(context.Context, component.Message) error {
             return nil
         }))),
 )

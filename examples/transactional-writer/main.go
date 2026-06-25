@@ -10,6 +10,7 @@ import (
 	"github.com/thesyncim/goav"
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
+	"github.com/thesyncim/goav/component"
 	"github.com/thesyncim/goav/goavtest"
 	"github.com/thesyncim/goav/provider"
 )
@@ -60,7 +61,7 @@ func runSuccessfulUpload(ctx context.Context) (*memoryUpload, provider.Info, err
 func runFailedUpload(ctx context.Context) (*memoryUpload, error) {
 	upload := &memoryUpload{}
 	var opened provider.Info
-	fail := goav.FrameFunc("fail-before-commit", func(context.Context, *av.Frame, goav.Emit) error {
+	fail := component.FrameFunc("fail-before-commit", func(context.Context, *av.Frame, component.Emit) error {
 		return errors.New("transactional-writer: induced failure")
 	})
 	err := goav.From(goavtest.Audio(48000, 1, []int16{7, 8})).

@@ -424,7 +424,7 @@ func (s destinationSpec) validate(operation string, fallback string) error {
 				Node:      node,
 				Reason:    err.Error(),
 				Suggestions: []string{
-					"pass a non-nil sink callback to goav.SinkFunc(...)",
+					"pass a non-nil sink callback to component.SinkFunc(...)",
 					"pass a non-nil sink to goav.Sink(...)",
 					"use goav.File(...) or goav.URI(...) for muxed output",
 				},

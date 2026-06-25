@@ -26,6 +26,7 @@ import (
 	"github.com/thesyncim/goav"
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
+	"github.com/thesyncim/goav/component"
 	"github.com/thesyncim/goav/flow"
 	"github.com/thesyncim/goav/goavtest"
 	goavruntime "github.com/thesyncim/goav/runtime"
@@ -47,7 +48,7 @@ func benchRuntime(opts ...goavruntime.Option) *goav.Runtime {
 // benchSink is a no-op message destination, so sink work never pollutes the
 // pipeline numbers.
 func benchSink(name string) goav.Destination {
-	return goav.Sink(goav.SinkFunc(name, func(context.Context, goav.Message) error {
+	return goav.Sink(component.SinkFunc(name, func(context.Context, component.Message) error {
 		return nil
 	}))
 }

@@ -14,6 +14,7 @@ import (
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/bundle"
 	"github.com/thesyncim/goav/codec"
+	"github.com/thesyncim/goav/component"
 	"github.com/thesyncim/goav/goavtest"
 	"github.com/thesyncim/goav/pipeline"
 	goavruntime "github.com/thesyncim/goav/runtime"
@@ -134,8 +135,8 @@ func BenchmarkLiveRoomSync(b *testing.B) {
 		benchLiveRoomVideoPackets("live-video", perStream, latencies, &latencyIndex, &sourceDrops),
 		benchLiveRoomAudioPackets("live-audio", perStream, latencies, &latencyIndex, &sourceDrops),
 	).
-		Video(goav.InputName("live-video")).Sync(policy).Copy().To(goav.Sink(goav.SinkFunc("live-room-video", sink.collect))).
-		Audio(goav.InputName("live-audio")).Sync(policy).Copy().To(goav.Sink(goav.SinkFunc("live-room-audio", sink.collect))).
+		Video(goav.InputName("live-video")).Sync(policy).Copy().To(goav.Sink(component.SinkFunc("live-room-video", sink.collect))).
+		Audio(goav.InputName("live-audio")).Sync(policy).Copy().To(goav.Sink(component.SinkFunc("live-room-audio", sink.collect))).
 		UseRuntime(benchRuntime()).
 		Build(ctx)
 	if err != nil {
@@ -174,7 +175,7 @@ type liveRoomSyncSink struct {
 	maxDrift  time.Duration
 }
 
-func (s *liveRoomSyncSink) collect(_ context.Context, msg goav.Message) error {
+func (s *liveRoomSyncSink) collect(_ context.Context, msg component.Message) error {
 	if msg.Packet == nil || !msg.Packet.PTS.Base.Valid() {
 		return nil
 	}

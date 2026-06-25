@@ -11,6 +11,7 @@ import (
 	"github.com/pion/webrtc/v4/pkg/media"
 	"github.com/thesyncim/goav"
 	"github.com/thesyncim/goav/codec"
+	"github.com/thesyncim/goav/component"
 	"github.com/thesyncim/goav/pipeline"
 )
 
@@ -229,7 +230,7 @@ func (s *trackSampleSink) Close() error {
 }
 
 func discardSink(name string) pipeline.Sink {
-	return goav.SinkFunc(name, func(context.Context, goav.Message) error {
+	return component.SinkFunc(name, func(context.Context, component.Message) error {
 		return nil
 	})
 }

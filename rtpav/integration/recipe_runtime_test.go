@@ -16,6 +16,7 @@ import (
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/bundle"
 	"github.com/thesyncim/goav/codec"
+	"github.com/thesyncim/goav/component"
 	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/provider"
@@ -497,7 +498,7 @@ func TestTaskAttachCustomWriterDestinationRuns(t *testing.T) {
 		Audio().
 		Copy().
 		Tap(goav.PacketTap("audio.packets")).
-		To(goav.Sink(goav.SinkFunc("base", func(context.Context, goav.Message) error { return nil }))).
+		To(goav.Sink(component.SinkFunc("base", func(context.Context, component.Message) error { return nil }))).
 		Build(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -589,7 +590,7 @@ func TestTaskAttachCustomWriterDestinationAbortsOnPatchFailure(t *testing.T) {
 		Audio().
 		Copy().
 		Tap(goav.PacketTap("audio.packets")).
-		To(goav.Sink(goav.SinkFunc("base", func(context.Context, goav.Message) error { return nil }))).
+		To(goav.Sink(component.SinkFunc("base", func(context.Context, component.Message) error { return nil }))).
 		Build(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -608,14 +609,14 @@ func TestTaskAttachCustomWriterDestinationAbortsOnPatchFailure(t *testing.T) {
 	_, err = task.Attach(ctx,
 		goav.Branch("late").
 			From(goav.PacketTap("audio.packets")).
-			Do(goav.PacketFunc("meter", func(_ context.Context, packet *av.Packet, emit goav.Emit) error {
+			Do(component.PacketFunc("meter", func(_ context.Context, packet *av.Packet, emit component.Emit) error {
 				return emit.Packet(packet)
 			})).
 			Copy().
-			To(goav.Sink(goav.SinkFunc("one", func(context.Context, goav.Message) error { return nil }))),
+			To(goav.Sink(component.SinkFunc("one", func(context.Context, component.Message) error { return nil }))),
 		goav.Branch("late").
 			From(goav.PacketTap("audio.packets")).
-			Do(goav.PacketFunc("meter", func(_ context.Context, packet *av.Packet, emit goav.Emit) error {
+			Do(component.PacketFunc("meter", func(_ context.Context, packet *av.Packet, emit component.Emit) error {
 				return emit.Packet(packet)
 			})).
 			Copy().
@@ -905,7 +906,7 @@ func TestRTPInputsSyncFromTimestampsAndDropLatePreview(t *testing.T) {
 	}
 
 	var delivered atomic.Int64
-	sink := goav.Sink(goav.SinkFunc("synced-preview", func(_ context.Context, msg goav.Message) error {
+	sink := goav.Sink(component.SinkFunc("synced-preview", func(_ context.Context, msg component.Message) error {
 		if msg.Packet != nil {
 			delivered.Add(1)
 		}

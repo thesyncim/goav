@@ -16,6 +16,7 @@ import (
 	goav "github.com/thesyncim/goav"
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
+	"github.com/thesyncim/goav/component"
 	"github.com/thesyncim/goav/control"
 	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/format"
@@ -1273,7 +1274,7 @@ func TestParseBranchPipelineWithRegistryUsesCustomAliases(t *testing.T) {
 				Aliases: []string{"levelmeter"},
 				Apply: func(branch *BranchPipeline, args StepArgs) error {
 					calls = append(calls, "meter:"+args["label"])
-					branch.Do(goav.FrameFunc("meter", func(_ context.Context, frame *av.Frame, emit goav.Emit) error {
+					branch.Do(component.FrameFunc("meter", func(_ context.Context, frame *av.Frame, emit component.Emit) error {
 						return emit.Frame(frame)
 					}))
 					return nil
@@ -1284,7 +1285,7 @@ func TestParseBranchPipelineWithRegistryUsesCustomAliases(t *testing.T) {
 				Aliases: []string{"outsink"},
 				Apply: func(branch *BranchPipeline, args StepArgs) error {
 					calls = append(calls, "sink:"+args["name"])
-					branch.Destination(goav.Sink(goav.SinkFunc("memory", func(context.Context, goav.Message) error {
+					branch.Destination(goav.Sink(component.SinkFunc("memory", func(context.Context, component.Message) error {
 						return nil
 					})))
 					return nil

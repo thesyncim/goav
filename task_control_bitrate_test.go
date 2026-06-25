@@ -4,11 +4,12 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"github.com/thesyncim/goav/control"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/thesyncim/goav/control"
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"

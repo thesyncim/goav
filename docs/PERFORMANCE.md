@@ -58,7 +58,7 @@ silently growing.
 | Drop-policy decision | `pipeline.TestDropControllerDecideAllocs` | 0 |
 | Message/scratch resets | `pipeline.TestMessageAndScratchResetAllocs`, `av.TestCoreResetAllocs`, `av.TestTimeBaseHelpersAllocs` | 0 |
 | `SourcePush.Packet` / `SourcePush.Frame` delivery | `goav.TestSourcePushDeliveryAllocs` | <=1 |
-| `goav.SinkFunc` delivery from SourcePush | `goav.TestSinkFuncDeliveryAllocs` | <=1 |
+| `component.SinkFunc` delivery from SourcePush | `goav.TestSinkFuncDeliveryAllocs` | <=1 |
 | Select active-arm passthrough (frame/packet) | `goav.TestSelectorPassthroughAllocs` | 0 |
 | Audio mix join, per step (2 and 8 arms) | `goav.TestAudioMixStepAllocs` | 0 |
 | Video composite join, per step (2 I420 arms) | `goav.TestVideoCompositeStepAllocs` | 0 |

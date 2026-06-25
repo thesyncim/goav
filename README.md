@@ -91,7 +91,7 @@ roomCamera := goav.Source("room-camera",
     goav.Codec(codec.VP8()),
 )
 
-previewTrack := goav.Sink(goav.SinkFunc("preview-track", func(context.Context, goav.Message) error {
+previewTrack := goav.Sink(component.SinkFunc("preview-track", func(context.Context, component.Message) error {
     return nil
 }))
 

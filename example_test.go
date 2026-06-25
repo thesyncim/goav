@@ -13,6 +13,7 @@ import (
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/bundle"
 	"github.com/thesyncim/goav/codec"
+	"github.com/thesyncim/goav/component"
 	"github.com/thesyncim/goav/control"
 	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/inspect"
@@ -124,7 +125,7 @@ func ExampleFrom() {
 		Audio().
 		Decode().
 		Encode(codec.Opus(codec.Bitrate(96_000))).
-		To(goav.Sink(goav.SinkFunc("count", func(_ context.Context, msg goav.Message) error {
+		To(goav.Sink(component.SinkFunc("count", func(_ context.Context, msg component.Message) error {
 			if msg.Packet != nil {
 				encoded++
 			}
@@ -193,7 +194,7 @@ func ExampleFrom_autoResample() {
 // Tap, and Branches like any chain.
 func ExampleMix() {
 	var mixed [][]int16
-	speakers := goav.Sink(goav.SinkFunc("speakers", func(_ context.Context, msg goav.Message) error {
+	speakers := goav.Sink(component.SinkFunc("speakers", func(_ context.Context, msg component.Message) error {
 		if msg.Frame != nil {
 			mixed = append(mixed, pcmSamples(msg.Frame))
 		}
@@ -216,7 +217,7 @@ func ExampleMix() {
 func ExampleMix_syncByPTS() {
 	var mixed [][]int16
 	var pts []int64
-	out := goav.Sink(goav.SinkFunc("out", func(_ context.Context, msg goav.Message) error {
+	out := goav.Sink(component.SinkFunc("out", func(_ context.Context, msg component.Message) error {
 		if msg.Frame != nil {
 			mixed = append(mixed, pcmSamples(msg.Frame))
 			pts = append(pts, msg.Frame.PTS.Value)
@@ -239,7 +240,7 @@ func ExampleMix_syncByPTS() {
 func ExampleComposite() {
 	var canvasW, canvasH int
 	var leftLuma, rightLuma byte
-	preview := goav.Sink(goav.SinkFunc("preview", func(_ context.Context, msg goav.Message) error {
+	preview := goav.Sink(component.SinkFunc("preview", func(_ context.Context, msg component.Message) error {
 		if msg.Frame != nil && msg.Frame.Video != nil && len(msg.Frame.Planes) != 0 {
 			canvasW = msg.Frame.Video.Width
 			canvasH = msg.Frame.Video.Height
@@ -270,7 +271,7 @@ func ExampleComposite() {
 // control plane — no node names, no rebuild.
 func ExampleSelect() {
 	ctx := context.Background()
-	preview := goav.Sink(goav.SinkFunc("preview", func(context.Context, goav.Message) error {
+	preview := goav.Sink(component.SinkFunc("preview", func(context.Context, component.Message) error {
 		return nil
 	}))
 
@@ -299,7 +300,7 @@ func ExampleTask_attach() {
 	ctx := context.Background()
 	mainFrames, monitorFrames := 0, 0
 	countInto := func(counter *int) goav.Destination {
-		return goav.Sink(goav.SinkFunc("count", func(_ context.Context, msg goav.Message) error {
+		return goav.Sink(component.SinkFunc("count", func(_ context.Context, msg component.Message) error {
 			if msg.Frame != nil {
 				*counter++
 			}
@@ -413,7 +414,7 @@ func ExampleTask_watch() {
 	ctx := context.Background()
 	task, err := goav.From(pcmSource("mic", 48_000, 1, []int16{1, 2})).
 		Audio().
-		To(goav.Sink(goav.SinkFunc("out", func(context.Context, goav.Message) error { return nil }))).
+		To(goav.Sink(component.SinkFunc("out", func(context.Context, component.Message) error { return nil }))).
 		Build(ctx)
 	if err != nil {
 		fmt.Println(err)

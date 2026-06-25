@@ -9,6 +9,7 @@ import (
 	"github.com/thesyncim/goav"
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
+	"github.com/thesyncim/goav/component"
 	"github.com/thesyncim/goav/rtpav"
 	"github.com/thesyncim/goav/shape"
 )
@@ -41,7 +42,7 @@ func TestMixAcceptsRTPArmsViaUnifiedOpener(t *testing.T) {
 	_, err := goav.Mix(
 		goav.From(mixTestAudioSource("a", 1)).Audio(),
 		goav.From(goav.Input(rtpav.Receive(&runtimeRTPReceiver{streams: []av.Stream{{ID: "rtp-b", Type: av.MediaAudio}}}))).Audio(),
-	).To(goav.Sink(goav.SinkFunc("out", func(context.Context, goav.Message) error { return nil }))).
+	).To(goav.Sink(component.SinkFunc("out", func(context.Context, component.Message) error { return nil }))).
 		Build(context.Background())
 	var buildErr *goav.BuildError
 	if errors.As(err, &buildErr) && buildErr.Code == "source_unsupported" {

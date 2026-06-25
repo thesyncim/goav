@@ -514,7 +514,7 @@ func streamStageMissingError(stream streamIntent) error {
 		Reason:    "custom stream stage is nil",
 		Suggestions: []string{
 			"pass a non-nil stage to .Do(stage)",
-			"use goav.FrameFunc, goav.PacketFunc, or goav.EventFunc for small hooks",
+			"use component.FrameFunc, component.PacketFunc, or component.EventFunc for small hooks",
 			"remove .Do(...) when no custom processing is needed",
 		},
 		Cause: ErrNilStage,

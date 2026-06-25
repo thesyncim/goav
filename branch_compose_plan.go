@@ -484,7 +484,7 @@ func branchDestinationNameEmptyError(stream streamBuild, index int) error {
 		},
 		Suggestions: []string{
 			"call .To(goav.File(\"web.ivf\", writer)) with a non-empty destination name",
-			"pass goav.Sink(goav.SinkFunc(name, fn)) for sink destinations",
+			"pass goav.Sink(component.SinkFunc(name, fn)) for sink destinations",
 		},
 		Cause: ErrUnsupportedBuild,
 	}

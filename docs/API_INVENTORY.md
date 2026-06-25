@@ -11,7 +11,7 @@ Source: `testdata/api_surface.txt`.
 
 | Package | Initial identifiers | Current identifiers |
 | --- | ---: | ---: |
-| `goav` | 134 | 104 |
+| `goav` | 134 | 94 |
 | `control` | 0 | 20 |
 | `errcode` | 147 | 164 |
 | `graphrender` | 9 | 9 |
@@ -69,7 +69,7 @@ Current line counts:
 | File | Lines |
 | --- | ---: |
 | `README.md` | 198 |
-| `docs/API_SURFACE.md` | 360 |
+| `docs/API_SURFACE.md` | 367 |
 | `docs/ROADMAP.md` | 227 |
 | `docs/PROGRESS.md` | 137 |
 
