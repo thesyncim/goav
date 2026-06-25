@@ -41,7 +41,7 @@ goav.From(input)                          inputs: FileInput, URIInput, Input(pro
   .Branches(goav.Branch("x")...To(dst))   fan out; BranchSpec also drives Mutable.Attach
   input.Stream(av.Stream{ID: ...})        attach anchor for app-owned dynamic tracks
   .To(File|URI|Writer|Custom|Sink)        destinations; reuse one value or Mux(name, destination) = mux/sink group
-  .OnStream(MatchMedia|MatchCodec|...)    dynamic-stream rules; OnRemove controls detach outcome
+  .OnStream(source.MatchMedia|source.MatchCodec|...)    dynamic-stream rules; OnRemove controls detach outcome
 goav.Mix/Composite/Select(arms) / Join(name, stage, arms)   N arms -> one stream (JoinArm)
 goav.Flow("name")                         reusable operation list (Chain)
 job.Describe(); adapter-backed Explain/Build/Run use job.UseRuntime(rt) or bundle.Build/bundle.Run
@@ -81,6 +81,8 @@ Applications also read these vocabulary packages:
   `WithBufferPolicy`, ...).
 - `component`: custom `.Do(...)` and direct sink adapters
   (`PacketFunc`, `FrameFunc`, `EventFunc`, `SinkFunc`, `Emit`, `Message`).
+- `source`: custom source callbacks and dynamic stream matchers
+  (`Func`, `Push`, `Result`, `MatchMedia`, `MatchCodec`, ...).
 - `av` identifiers: media/codec/format/protocol ids, event types, metadata.
 
 ## B. Extension Points
@@ -96,7 +98,7 @@ use [`docs/ADAPTERS.md`](ADAPTERS.md) and [`docs/COMPONENTS.md`](COMPONENTS.md).
 
 - **Sources**: use these when your application or transport owns incoming
   media. `provider.Source` (`OpenSource`), `goav.Source(fn)` with
-  `SourceFunc`/`SourcePush`/`PushResult`; transports build on it:
+  `source.Func`/`source.Push`/`source.Result`; transports build on it:
   `rtpav.Receive` (PacketReader, Depacketizer, JitterBuffer, FeedbackWriter,
   PayloadMap extension points), `webrtcav.Track`/`Session` (TrackReader,
   TrackAdapter). `goav.WrapSource(spec, wrap)` is the decoration point: every
@@ -244,7 +246,7 @@ against the constructors in `input.go`/`provider.go`/`source.go`,
 - **Input vs Source vs provider.Source**: `FileInput`/`URIInput` are value
   inputs over media you already hold; `Source(name, shape, fn)` is the
   custom-push input where the application produces media through
-  `SourcePush`; `provider.Source` is the transport extension point
+  `source.Push`; `provider.Source` is the transport extension point
   (`OpenSource`) that `Input(p)` turns into a recipe input. Value inputs,
   custom push sources, and transport providers are three doors into one
   `InputSpec`. `InputSpec.Stream(av.Stream)` returns an `InputStream` attach

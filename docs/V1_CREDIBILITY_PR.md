@@ -17,7 +17,7 @@ maintainer decision before a tag.
   join, and control-plane host, each with copyable README/test evidence and
   public-package-only imports.
 - Added perf-lab benchmarks, benchmark artifact layout, PR benchstat support,
-  and CI artifact upload.
+  SourcePush pressure evidence, and CI artifact upload.
 - Upgraded CI/release automation with OS/Go matrix coverage, CodeQL,
   govulncheck, staticcheck, fuzz smoke, package-doc smoke, changelog hygiene,
   signed-tag validation, nested-module checks, SBOM, buildinfo, and provenance
@@ -69,7 +69,7 @@ the complete matrix in `docs/RELEASING.md`.
   `bench-results/baseline`, `bench-results/latency`, `bench-results/rss`,
   `bench-results/pressure`, `bench-results/control`, `bench-results/fanout`,
   `bench-results/container`, and `bench-results/pprof`.
-- The perf-lab smoke covers p50/p95/p99 latency, heap/RSS, SourcePush pressure,
+- The perf-lab smoke covers p50/p95/p99 latency, heap/RSS, source.Push pressure,
   attach/detach under load, fanout sweeps, Matroska/WebM corpus paths, and
   real Opus encode/decode.
 - CI smoke will run `go test -run '^$' -bench . -benchmem -benchtime=1x ./...`

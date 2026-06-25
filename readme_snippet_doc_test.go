@@ -82,6 +82,7 @@ import (
 	"github.com/thesyncim/goav/bundle"
 	"github.com/thesyncim/goav/component"
 	"github.com/thesyncim/goav/shape"
+	"github.com/thesyncim/goav/source"
 )
 
 `)

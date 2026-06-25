@@ -23,6 +23,7 @@ import (
 	"github.com/thesyncim/goav/component"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/shape"
+	"github.com/thesyncim/goav/source"
 )
 
 // --- external join stage 1: an S16 frame interleaver ------------------------
@@ -207,7 +208,7 @@ func (s *firstArmStage) Close() error { return nil }
 func toyPacketArm(id av.StreamID, frames ...[]int16) goav.InputSpec {
 	return goav.Source(string(id),
 		shape.Packet(av.MediaAudio, toyCodecID, shape.Audio(8000, 1, av.SampleFormatS16), shape.Stream(id)),
-		func(_ context.Context, push goav.SourcePush) error {
+		func(_ context.Context, push source.Push) error {
 			var elapsed int64
 			for _, samples := range frames {
 				payload := make([]byte, len(samples)*2)
@@ -236,7 +237,7 @@ func toyPacketArm(id av.StreamID, frames ...[]int16) goav.InputSpec {
 func s16FrameArm(id av.StreamID, frames ...[]int16) goav.InputSpec {
 	return goav.Source(string(id),
 		shape.Frame(av.MediaAudio, shape.Audio(8000, 1, av.SampleFormatS16), shape.Stream(id)),
-		func(_ context.Context, push goav.SourcePush) error {
+		func(_ context.Context, push source.Push) error {
 			var elapsed int64
 			for _, samples := range frames {
 				payload := make([]byte, len(samples)*2)

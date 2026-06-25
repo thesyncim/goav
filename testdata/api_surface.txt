@@ -236,10 +236,6 @@ goav.JoinArm
 goav.KeepOldOnFailure
 goav.LiveTask
 goav.MIME
-goav.MatchCodec
-goav.MatchMedia
-goav.MatchStream
-goav.MatchStreamID
 goav.MediaOption
 goav.Metadata
 goav.Mix
@@ -253,7 +249,6 @@ goav.NextKeyframe
 goav.Observable
 goav.OnRemove
 goav.PacketTap
-goav.PushResult
 goav.RealtimeCodecChangePolicy
 goav.RebranchOption
 goav.RecipePatch
@@ -263,11 +258,8 @@ goav.Runtime
 goav.Select
 goav.Sink
 goav.Source
-goav.SourceFunc
-goav.SourcePush
 goav.StreamID
 goav.StreamIndex
-goav.StreamMatch
 goav.StreamName
 goav.SwitchAt
 goav.SwitchBoundary

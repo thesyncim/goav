@@ -31,6 +31,7 @@ import (
 	"github.com/thesyncim/goav/goavtest"
 	goavruntime "github.com/thesyncim/goav/runtime"
 	"github.com/thesyncim/goav/shape"
+	"github.com/thesyncim/goav/source"
 )
 
 const (
@@ -59,7 +60,7 @@ func benchVideoPackets(name string, n int) goav.InputSpec {
 	payload := bytes.Repeat([]byte{0x5a}, benchPacketBytes)
 	return goav.Source(name,
 		shape.Packet(av.MediaVideo, av.CodecVP8, shape.Video(640, 360, av.PixelFormatI420)),
-		func(_ context.Context, push goav.SourcePush) error {
+		func(_ context.Context, push source.Push) error {
 			base := av.TimeBase{Num: 1, Den: 90_000}
 			packet := av.Packet{
 				Type:    av.MediaVideo,
@@ -83,7 +84,7 @@ func benchVideoPackets(name string, n int) goav.InputSpec {
 func benchAudioPackets(name string, n int, payload []byte) goav.InputSpec {
 	return goav.Source(name,
 		shape.Packet(av.MediaAudio, av.CodecOpus, shape.Audio(48_000, 1, av.SampleFormatS16)),
-		func(_ context.Context, push goav.SourcePush) error {
+		func(_ context.Context, push source.Push) error {
 			base := av.TimeBase{Num: 1, Den: 48_000}
 			packet := av.Packet{
 				Type:    av.MediaAudio,
@@ -111,7 +112,7 @@ func benchAudioFrames(name string, n, sampleRate, channels, samplesPerChannel in
 	}
 	return goav.Source(name,
 		shape.Frame(av.MediaAudio, shape.Audio(sampleRate, channels, av.SampleFormatS16)),
-		func(_ context.Context, push goav.SourcePush) error {
+		func(_ context.Context, push source.Push) error {
 			base := av.TimeBase{Num: 1, Den: int64(sampleRate)}
 			frame := av.Frame{
 				Type: av.MediaAudio,
@@ -142,7 +143,7 @@ func benchVideoFrames(name string, n, width, height int) goav.InputSpec {
 	cr := bytes.Repeat([]byte{0x80}, chromaW*chromaH)
 	return goav.Source(name,
 		shape.Frame(av.MediaVideo, shape.Video(width, height, av.PixelFormatI420)),
-		func(_ context.Context, push goav.SourcePush) error {
+		func(_ context.Context, push source.Push) error {
 			base := av.TimeBase{Num: 1, Den: 30}
 			frame := av.Frame{
 				Type:  av.MediaVideo,

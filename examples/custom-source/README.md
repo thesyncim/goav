@@ -1,7 +1,7 @@
 # Custom source example
 
 This standalone module shows an application-owned source that pushes decoded
-S16 audio frames through the public `goav.Source` and `goav.SourcePush` APIs.
+S16 audio frames through the public `goav.Source` and `source.Push` APIs.
 
 Copy this when your application already owns media buffers and does not need a
 transport/provider open phase.

@@ -99,7 +99,7 @@ Compatibility pins:
 ## Extension Points
 
 - Produce a custom source with `goav.Source(...)`, `shape.Spec`, and
-  `goav.SourcePush`.
+  `source.Push`.
 - Bring in transports through `provider.Source`; RTP and WebRTC live in nested
   modules.
 - Write custom byte/object destinations through `goav.Writer(...)`,

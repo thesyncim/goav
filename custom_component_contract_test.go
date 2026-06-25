@@ -15,6 +15,7 @@ import (
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/provider"
 	"github.com/thesyncim/goav/shape"
+	sourcepkg "github.com/thesyncim/goav/source"
 )
 
 type componentEmitter struct {
@@ -69,7 +70,7 @@ func cloneComponentMessage(msg *pipeline.Message) pipeline.Message {
 func TestSourcePushDefaultsAndDeliveryResults(t *testing.T) {
 	ctx := context.Background()
 	delivery := &componentDeliveryEmitter{delivery: pipeline.Delivery{Delivered: 1, Shed: 1}}
-	push := SourcePush{emit: sourceEmit{ctx: ctx, emitter: delivery}, stream: "declared"}
+	push := sourcepkg.NewPush(ctx, delivery, "declared")
 
 	if result, err := push.Packet(nil); err != nil || result != (PushResult{}) {
 		t.Fatalf("nil Packet result=%+v err=%v, want zero nil", result, err)
@@ -131,7 +132,7 @@ func TestSourcePushDefaultsAndDeliveryResults(t *testing.T) {
 	}
 
 	plain := &componentEmitter{}
-	plainPush := SourcePush{emit: sourceEmit{ctx: ctx, emitter: plain}, stream: "plain"}
+	plainPush := sourcepkg.NewPush(ctx, plain, "plain")
 	result, err = plainPush.Packet(&av.Packet{})
 	if err != nil {
 		t.Fatal(err)

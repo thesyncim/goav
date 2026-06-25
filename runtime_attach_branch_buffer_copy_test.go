@@ -10,6 +10,7 @@ import (
 	"github.com/thesyncim/goav/flow"
 	"github.com/thesyncim/goav/goavtest"
 	"github.com/thesyncim/goav/shape"
+	"github.com/thesyncim/goav/source"
 )
 
 // TestRuntimeBranchExplicitDropBufferInheritsCopyBounds pins that an explicit
@@ -68,7 +69,7 @@ func TestRuntimeBranchExplicitDropBufferInheritsCopyBounds(t *testing.T) {
 func mutableFrameVideoPackets(name string, width, height, count int) goav.InputSpec {
 	return goav.Source(name,
 		shape.Packet(av.MediaVideo, av.CodecVP8, shape.Video(width, height, av.PixelFormatI420)),
-		func(_ context.Context, push goav.SourcePush) error {
+		func(_ context.Context, push source.Push) error {
 			base := av.TimeBase{Num: 1, Den: 90_000}
 			for n := 0; n < count; n++ {
 				packet := &av.Packet{

@@ -37,15 +37,17 @@ var (
 	ErrNilWriter = errors.New("goav: nil writer")
 )
 
-// Runtime flow-control sentinels, surfaced on the front door so a SourceFunc,
-// PacketFunc, FrameFunc, or SinkFunc can react to backpressure and shutdown with
-// errors.Is — without importing the pipeline package. They share identity with
-// the values the runtime returns, so errors.Is matches either name.
+// Runtime flow-control sentinels, surfaced on the front door so source.Func,
+// component.PacketFunc, component.FrameFunc, or component.SinkFunc can react to
+// backpressure and shutdown with errors.Is — without importing the pipeline
+// package. They share identity with the values the runtime returns, so errors.Is
+// matches either name.
 var (
-	// ErrBackpressure is returned by SourcePush/Emit when a downstream buffer is
-	// full and the message was not delivered. On a Blocking branch the producer
-	// is paced instead; on a dropping branch the message is shed and the producer
-	// may keep going. A source that can pace itself should slow down on this.
+	// ErrBackpressure is returned by source.Push/component.Emit when a
+	// downstream buffer is full and the message was not delivered. On a Blocking
+	// branch the producer is paced instead; on a dropping branch the message is
+	// shed and the producer may keep going. A source that can pace itself should
+	// slow down on this.
 	ErrBackpressure = pipeline.ErrBackpressure
 	// ErrClosed is returned when emitting into a graph or stage that has shut
 	// down (the task stopped, or its context was cancelled). A source should

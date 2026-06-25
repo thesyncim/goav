@@ -14,6 +14,7 @@ import (
 	"github.com/thesyncim/goav/goavtest"
 	goavruntime "github.com/thesyncim/goav/runtime"
 	"github.com/thesyncim/goav/shape"
+	"github.com/thesyncim/goav/source"
 )
 
 // TestReadmeMixExample pins the README "Testing Your Pipeline" snippet
@@ -207,7 +208,7 @@ func TestCollectorWaitEventsObservesEventSource(t *testing.T) {
 	out := goavtest.NewCollector()
 	input := goav.Source("diagnostics",
 		shape.Event(),
-		func(_ context.Context, push goav.SourcePush) error {
+		func(_ context.Context, push source.Push) error {
 			if _, err := push.Event(av.Event{Type: av.EventStats, Reason: "ready"}); err != nil {
 				return err
 			}

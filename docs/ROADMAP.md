@@ -83,8 +83,8 @@ this list:
   would remove it.
 - **Attach-under-load cost**: `BenchmarkAttachDetachUnderLoad` measures a
   cold-path control operation dominated by planning; not a data-plane figure.
-- **OnStream rule breadth**: identity matches only (`MatchMedia`/
-  `MatchCodec`/`MatchStreamID`/`MatchStream(fn)`); conditions beyond stream
+- **OnStream rule breadth**: identity matches only (`source.MatchMedia`/
+  `source.MatchCodec`/`source.MatchStreamID`/`source.MatchStream(fn)`); conditions beyond stream
   identity remain roadmap. Per-rule removal disposition is now explicit through
   `OnRemove(...)`.
 - **Join nesting depth**: nested joins are proven at the tested depths

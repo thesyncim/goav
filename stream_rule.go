@@ -9,74 +9,13 @@ import (
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/plan"
 	"github.com/thesyncim/goav/shape"
+	sourcepkg "github.com/thesyncim/goav/source"
 )
-
-// StreamMatch selects which discovered streams a dynamic-stream rule reacts
-// to. Build one with MatchMedia, MatchCodec, MatchStreamID, or MatchStream;
-// the zero value matches nothing and is rejected at build.
-type StreamMatch struct {
-	media av.MediaType
-	codec av.CodecID
-	id    av.StreamID
-	fn    func(av.Stream) bool
-	desc  string
-}
-
-// MatchMedia matches discovered streams of the given media kind.
-func MatchMedia(media av.MediaType) StreamMatch {
-	return StreamMatch{media: media, desc: "media=" + string(media)}
-}
-
-// MatchCodec matches discovered streams carrying the given codec.
-func MatchCodec(id av.CodecID) StreamMatch {
-	return StreamMatch{codec: id, desc: "codec=" + string(id)}
-}
-
-// MatchStreamID matches the discovered stream with exactly this id.
-func MatchStreamID(id av.StreamID) StreamMatch {
-	return StreamMatch{id: id, desc: "stream=" + string(id)}
-}
-
-// MatchStream matches discovered streams with a custom predicate — the
-// escape hatch when the typed matchers are not enough.
-func MatchStream(fn func(av.Stream) bool) StreamMatch {
-	return StreamMatch{fn: fn, desc: "custom"}
-}
-
-func (m StreamMatch) empty() bool {
-	return m.media == "" && m.codec == "" && m.id == "" && m.fn == nil
-}
-
-func (m StreamMatch) matches(stream av.Stream) bool {
-	if m.empty() {
-		return false
-	}
-	if m.media != "" && stream.Type != m.media && stream.Codec.Type != m.media {
-		return false
-	}
-	if m.codec != "" && stream.Codec.ID != m.codec {
-		return false
-	}
-	if m.id != "" && stream.ID != m.id {
-		return false
-	}
-	if m.fn != nil && !m.fn(stream) {
-		return false
-	}
-	return true
-}
-
-func (m StreamMatch) description() string {
-	if m.desc != "" {
-		return m.desc
-	}
-	return "none"
-}
 
 // streamRule is one declared dynamic-stream rule: when a discovered stream
 // matches, the templated branches are attached to it at runtime.
 type streamRule struct {
-	match             StreamMatch
+	match             sourcepkg.StreamMatch
 	branches          []BranchSpec
 	removeDisposition oldBranchDisposition
 }
@@ -106,7 +45,7 @@ func OnRemove(options ...DetachOption) BranchSpec {
 // Rules require a single-input job today. Because the task watches its own
 // events, Events() on a rule-bearing task returns an independent Watch
 // subscription per call instead of the shared graph channel.
-func (j *Job) OnStream(match StreamMatch, branches ...BranchSpec) *Job {
+func (j *Job) OnStream(match sourcepkg.StreamMatch, branches ...BranchSpec) *Job {
 	if j == nil {
 		return j
 	}
@@ -129,9 +68,9 @@ func (j *Job) OnStream(match StreamMatch, branches ...BranchSpec) *Job {
 }
 
 func (r streamRule) validate() error {
-	if r.match.empty() {
+	if r.match.Empty() {
 		return streamRuleInvalidError("", "stream rule has no matcher",
-			"pass goav.MatchMedia(...), goav.MatchCodec(...), goav.MatchStreamID(...), or goav.MatchStream(fn)")
+			"pass source.MatchMedia(...), source.MatchCodec(...), source.MatchStreamID(...), or source.MatchStream(fn)")
 	}
 	if len(r.branches) == 0 {
 		return streamRuleInvalidError("", "stream rule has no branches",
@@ -249,7 +188,7 @@ func explainStreamRules(rules []streamRule) []plan.Decision {
 			Code:   string(errcode.StreamRule),
 			Branch: strings.Join(names, "+"),
 			Message: fmt.Sprintf("on discovered stream (%s): attach %s to %s per matched stream",
-				rules[i].match.description(), strings.Join(names, ", "), strings.Join(destinations, ", ")),
+				rules[i].match.Description(), strings.Join(names, ", "), strings.Join(destinations, ", ")),
 		})
 	}
 	return out

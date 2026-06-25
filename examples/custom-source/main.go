@@ -9,6 +9,7 @@ import (
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/goavtest"
 	"github.com/thesyncim/goav/shape"
+	"github.com/thesyncim/goav/source"
 )
 
 func main() {
@@ -54,7 +55,7 @@ func buildBrokenCustomSource(ctx context.Context) error {
 func pcmSource(name string, sampleRate int, channels int, stats *sourceStats, frames ...[]int16) goav.InputSpec {
 	return goav.Source(name,
 		shape.Frame(av.MediaAudio, shape.Audio(sampleRate, channels, av.SampleFormatS16), shape.Stream(av.StreamID(name))),
-		func(_ context.Context, push goav.SourcePush) error {
+		func(_ context.Context, push source.Push) error {
 			var elapsed int64
 			for _, samples := range frames {
 				frame := s16Frame(name, sampleRate, channels, samples, elapsed)

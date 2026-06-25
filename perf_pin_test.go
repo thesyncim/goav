@@ -12,6 +12,7 @@ import (
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/pipeline"
+	sourcepkg "github.com/thesyncim/goav/source"
 )
 
 // pinCaptureSource captures the graph emitter at Start so the pins can drive
@@ -85,7 +86,7 @@ func pinFrame() *av.Frame {
 func TestSourcePushDeliveryAllocs(t *testing.T) {
 	ctx := context.Background()
 	emitter := pinDirectGraph(t, &pinNoopSink{name: "out"})
-	push := SourcePush{emit: sourceEmit{ctx: ctx, emitter: emitter}, stream: "s"}
+	push := sourcepkg.NewPush(ctx, emitter, "s")
 	packet := pinPacket()
 	frame := pinFrame()
 
@@ -118,7 +119,7 @@ func TestSinkFuncDeliveryAllocs(t *testing.T) {
 		return nil
 	})
 	emitter := pinDirectGraph(t, sink)
-	push := SourcePush{emit: sourceEmit{ctx: ctx, emitter: emitter}, stream: "s"}
+	push := sourcepkg.NewPush(ctx, emitter, "s")
 	packet := pinPacket()
 
 	if allocs := testing.AllocsPerRun(1000, func() {

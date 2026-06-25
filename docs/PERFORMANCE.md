@@ -22,7 +22,7 @@ Hot paths must keep allocation explicit and bounded:
 - per decoded/encoded frame
 - per mux/demux packet
 - per direct pipeline message
-- per `goav.SourcePush` delivery, which currently allocates one independent
+- per `source.Push` delivery, which currently allocates one independent
   message wrapper so buffered or retaining emitters cannot observe later emits
   mutating earlier messages
 
@@ -57,8 +57,8 @@ silently growing.
 | Buffered fanout steady path (emit -> slot bind -> worker deliver -> slot release, immutable payload, 1->2 fanout) | `pipeline.TestGraphBufferedSteadyEmitAllocs` | 0 |
 | Drop-policy decision | `pipeline.TestDropControllerDecideAllocs` | 0 |
 | Message/scratch resets | `pipeline.TestMessageAndScratchResetAllocs`, `av.TestCoreResetAllocs`, `av.TestTimeBaseHelpersAllocs` | 0 |
-| `SourcePush.Packet` / `SourcePush.Frame` delivery | `goav.TestSourcePushDeliveryAllocs` | <=1 |
-| `component.SinkFunc` delivery from SourcePush | `goav.TestSinkFuncDeliveryAllocs` | <=1 |
+| `source.Push.Packet` / `source.Push.Frame` delivery | `goav.TestSourcePushDeliveryAllocs` | <=1 |
+| `component.SinkFunc` delivery from `source.Push` | `goav.TestSinkFuncDeliveryAllocs` | <=1 |
 | Select active-arm passthrough (frame/packet) | `goav.TestSelectorPassthroughAllocs` | 0 |
 | Audio mix join, per step (2 and 8 arms) | `goav.TestAudioMixStepAllocs` | 0 |
 | Video composite join, per step (2 I420 arms) | `goav.TestVideoCompositeStepAllocs` | 0 |
@@ -108,8 +108,8 @@ ns/op as their steady-state timing proxy.
 | `BenchmarkComposite` | 2-arm video composite (0 allocs/op measured) |
 | `BenchmarkSelectPassthrough` | one-of-N selector forwarding the active arm (0 allocs/op measured) |
 | `BenchmarkAttachDetachUnderLoad` | runtime branch attach+detach per op while live traffic flows (a cold-path control operation, measured against load) |
-| `BenchmarkSourcePush/dropping,blocking` | the flow-control hot path: SourcePush into a DropOldest vs Blocking queue (bounded by `TestSourcePushDeliveryAllocs`) |
-| `BenchmarkLatencyRecordPackets` | packet-record path with p50/p95/p99 `SourcePush.Packet` acceptance metrics |
+| `BenchmarkSourcePush/dropping,blocking` | the flow-control hot path: source.Push into a DropOldest vs Blocking queue (bounded by `TestSourcePushDeliveryAllocs`) |
+| `BenchmarkLatencyRecordPackets` | packet-record path with p50/p95/p99 `source.Push.Packet` acceptance metrics |
 | `BenchmarkSustainedRecordMemory` | bounded packet-record memory smoke, reporting live heap and runtime-reserved memory |
 | `BenchmarkRealOpusEncode` / `BenchmarkRealOpusDecode` | standard Opus adapter throughput path, not the goavtest fake codec |
 

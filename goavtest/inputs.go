@@ -11,6 +11,7 @@ import (
 	"github.com/thesyncim/goav"
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/shape"
+	"github.com/thesyncim/goav/source"
 )
 
 // Audio returns a deterministic S16 frame source: one interleaved audio frame
@@ -23,7 +24,7 @@ func Audio(sampleRate, channels int, frames ...[]int16) goav.InputSpec {
 	name := nextName("audio")
 	return goav.Source(name,
 		shape.Frame(av.MediaAudio, shape.Audio(sampleRate, channels, av.SampleFormatS16)),
-		func(_ context.Context, push goav.SourcePush) error {
+		func(_ context.Context, push source.Push) error {
 			var elapsed int64
 			for _, samples := range frames {
 				frame := s16Frame(name, sampleRate, channels, samples, elapsed)
@@ -49,7 +50,7 @@ func LiveAudio(name string, sampleRate, channels int, frames ...[]int16) goav.In
 	}
 	return goav.Source(name,
 		shape.Frame(av.MediaAudio, shape.Audio(sampleRate, channels, av.SampleFormatS16), shape.Realtime(true)),
-		func(ctx context.Context, push goav.SourcePush) error {
+		func(ctx context.Context, push source.Push) error {
 			var elapsed int64
 			for i := 0; ; i = (i + 1) % len(frames) {
 				frame := s16Frame(name, sampleRate, channels, frames[i], elapsed)
@@ -84,7 +85,7 @@ func Video(width, height, frames int) goav.InputSpec {
 	name := nextName("video")
 	return goav.Source(name,
 		shape.Frame(av.MediaVideo, shape.Video(width, height, av.PixelFormatI420)),
-		func(_ context.Context, push goav.SourcePush) error {
+		func(_ context.Context, push source.Push) error {
 			for n := 0; n < frames; n++ {
 				if _, err := push.Frame(i420Frame(name, width, height, n)); err != nil {
 					return err
@@ -106,7 +107,7 @@ func Packets(codecID av.CodecID, packets ...av.Packet) goav.InputSpec {
 	media := packetsMedia(codecID, packets)
 	return goav.Source(name,
 		packetSourceShape(codecID, media),
-		func(_ context.Context, push goav.SourcePush) error {
+		func(_ context.Context, push source.Push) error {
 			for i := range packets {
 				packet := packets[i]
 				packet.StreamID = av.StreamID(name)

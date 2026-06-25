@@ -18,6 +18,7 @@ import (
 	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/inspect"
 	"github.com/thesyncim/goav/shape"
+	"github.com/thesyncim/goav/source"
 )
 
 // pcmSource returns a custom frame-domain input that pushes one S16 PCM frame
@@ -31,7 +32,7 @@ func pcmSource(name string, sampleRate int, channels int, frames ...[]int16) goa
 func pcmSourceAt(name string, sampleRate int, channels int, ptsMS []int64, frames ...[]int16) goav.InputSpec {
 	return goav.Source(name,
 		shape.Frame(av.MediaAudio, shape.Audio(sampleRate, channels, av.SampleFormatS16), shape.Stream(av.StreamID(name))),
-		func(_ context.Context, push goav.SourcePush) error {
+		func(_ context.Context, push source.Push) error {
 			for i, samples := range frames {
 				pcm := make([]byte, len(samples)*2)
 				for j, sample := range samples {
@@ -60,7 +61,7 @@ func pcmSourceAt(name string, sampleRate int, channels int, ptsMS []int64, frame
 func i420Source(name string, width int, height int, luma byte) goav.InputSpec {
 	return goav.Source(name,
 		shape.Frame(av.MediaVideo, shape.Video(width, height, av.PixelFormatI420), shape.Stream(av.StreamID(name))),
-		func(_ context.Context, push goav.SourcePush) error {
+		func(_ context.Context, push source.Push) error {
 			chromaW, chromaH := (width+1)/2, (height+1)/2
 			yPlane := bytes.Repeat([]byte{luma}, width*height)
 			uPlane := make([]byte, chromaW*chromaH)
@@ -111,7 +112,7 @@ func ExampleFrom() {
 	// A custom source pushes encoded packets the application already owns.
 	mic := goav.Source("mic",
 		shape.Packet(av.MediaAudio, av.CodecOpus, shape.Audio(48_000, 1, av.SampleFormatS16)),
-		func(_ context.Context, push goav.SourcePush) error {
+		func(_ context.Context, push source.Push) error {
 			packet := av.Packet{StreamID: "mic", Payload: av.Buffer{Bytes: opusTestPacket(), Ownership: av.BufferImmutable}}
 			if _, err := push.Packet(&packet); err != nil {
 				return err

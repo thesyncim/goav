@@ -9,103 +9,12 @@ import (
 	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/shape"
+	sourcepkg "github.com/thesyncim/goav/source"
 )
-
-// SourceFunc is the body of a custom source: push packets, frames, or events
-// until the media ends (push.EOS) or the context is cancelled. The returned
-// error stops the task; a clean EOS return ends the stream naturally.
-type SourceFunc func(context.Context, SourcePush) error
-
-// PushResult reports what happened to one push across its matching downstream
-// targets. On a fan-out a single push can be both Accepted and Dropped: one
-// branch queued the message while another shed it.
-type PushResult struct {
-	// Accepted is true when at least one downstream target queued the message.
-	Accepted bool
-	// Dropped is true when at least one target deliberately shed the message:
-	// a full queue under a dropping policy (DropNewest/DropOldest/Latest), an
-	// exhausted byte budget, or a paused branch. Shedding is normal realtime
-	// behavior, not failure — the push error stays nil.
-	Dropped bool
-}
-
-// SourcePush is how a custom Source delivers packets, frames, and events into
-// the pipeline. The Packet/Frame/Event methods return a PushResult for
-// per-push delivery visibility plus a flow-control error:
-//
-//   - err == nil: the push was handled. The PushResult says what happened:
-//     Accepted means at least one downstream target queued the message; Dropped
-//     means at least one target deliberately shed it. A dropping policy sheds
-//     without error — the shed is reported on the PushResult and counted in the
-//     branch's drop counters (Stats).
-//   - errors.Is(err, ErrBackpressure): the strict paths refused the message
-//     (a Blocking buffer that could not pace, DropNever). A source that can
-//     pace itself should slow down.
-//   - errors.Is(err, ErrClosed): the task has stopped; return cleanly.
-//
-// On a fan-out, one slow branch never fails the push: its shed is reported on
-// the PushResult (and counted on that branch) while delivery continues to
-// siblings. Any other error is fatal to the push.
-type SourcePush struct {
-	emit   sourceEmit
-	stream av.StreamID
-}
-
-// Packet delivers one packet. See SourcePush for the PushResult and
-// ErrBackpressure/ErrClosed flow-control contract.
-func (p *SourcePush) Packet(packet *av.Packet) (PushResult, error) {
-	if packet == nil {
-		return PushResult{}, nil
-	}
-	if packet.StreamID == "" {
-		packet.StreamID = p.stream
-	}
-	return p.emit.packetDelivery(packet)
-}
-
-// Frame delivers one decoded frame. See SourcePush for the PushResult and
-// ErrBackpressure/ErrClosed flow-control contract.
-func (p *SourcePush) Frame(frame *av.Frame) (PushResult, error) {
-	if frame == nil {
-		return PushResult{}, nil
-	}
-	if frame.StreamID == "" {
-		frame.StreamID = p.stream
-	}
-	return p.emit.frameDelivery(frame)
-}
-
-// Event delivers one out-of-band event. It is also the dynamic stream
-// announce seam: a source that discovers a stream mid-run pushes
-// av.Event{Type: av.EventStreamAdded, Stream: &stream} (the full av.Stream
-// rides the typed Stream field) before that stream's media, and
-// av.Event{Type: av.EventStreamRemoved, StreamID: id} when it ends. The
-// running task surfaces both on Events()/Watch and reacts to declared
-// OnStream rules without a rebuild. Events with an empty StreamID inherit
-// the source's declared stream id, so stream announces must set StreamID
-// (or Stream.ID) explicitly.
-func (p *SourcePush) Event(event av.Event) (PushResult, error) {
-	if event.StreamID == "" && event.Stream != nil {
-		event.StreamID = event.Stream.ID
-	}
-	if event.StreamID == "" {
-		event.StreamID = p.stream
-	}
-	return p.emit.eventDelivery(event)
-}
-
-// EOS ends the given streams (or the source's declared stream when none are
-// listed): downstream nodes flush and destinations finalize naturally.
-func (p *SourcePush) EOS(streams ...av.StreamID) error {
-	if len(streams) == 0 && p.stream != "" {
-		streams = []av.StreamID{p.stream}
-	}
-	return p.emit.EOS(streams...)
-}
 
 type sourceInputSpec struct {
 	shape shape.Spec
-	fn    SourceFunc
+	fn    sourcepkg.Func
 }
 
 // InputStream is a runtime-attach anchor for one stream produced by an
@@ -120,10 +29,10 @@ type InputStream struct {
 // Source declares a custom input the application pushes media into: spec
 // states the media facts the planner needs before the source opens
 // (shape.Packet, shape.Frame, or shape.Event plus format facts), and fn runs
-// on the task pushing through the SourcePush. Custom sources participate in
+// on the task pushing through source.Push. Custom sources participate in
 // streams, branches, taps, explain, and runtime attach exactly like built-in
 // inputs.
-func Source(name string, spec shape.Spec, fn SourceFunc, opts ...InputOption) InputSpec {
+func Source(name string, spec shape.Spec, fn sourcepkg.Func, opts ...InputOption) InputSpec {
 	spec = normalizeCustomSourceShape(name, spec)
 	return applyInputOptions(InputSpec{
 		input: format.Input{
@@ -491,7 +400,7 @@ type customSource struct {
 	name   string
 	detail string
 	stream av.StreamID
-	fn     SourceFunc
+	fn     sourcepkg.Func
 	closed atomic.Bool
 }
 
@@ -510,10 +419,7 @@ func (s *customSource) Start(ctx context.Context, emitter pipeline.Emitter) erro
 	if s.fn == nil {
 		return ErrNilSource
 	}
-	push := SourcePush{
-		emit:   sourceEmit{ctx: ctx, emitter: emitter},
-		stream: s.stream,
-	}
+	push := sourcepkg.NewPush(ctx, emitter, s.stream)
 	return s.fn(ctx, push)
 }
 

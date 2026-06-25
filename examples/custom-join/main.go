@@ -10,6 +10,7 @@ import (
 	"github.com/thesyncim/goav/goavtest"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/shape"
+	"github.com/thesyncim/goav/source"
 )
 
 func main() {
@@ -117,7 +118,7 @@ func (s *interleaveStage) Close() error { return nil }
 func s16Source(id av.StreamID, frames ...[]int16) goav.InputSpec {
 	return goav.Source(string(id),
 		shape.Frame(av.MediaAudio, shape.Audio(8000, 1, av.SampleFormatS16), shape.Stream(id)),
-		func(_ context.Context, push goav.SourcePush) error {
+		func(_ context.Context, push source.Push) error {
 			var elapsed int64
 			for _, samples := range frames {
 				frame := av.Frame{

@@ -47,7 +47,7 @@ pre-open contract and the caller's best error message.
 ```go
 input := goav.Source("mic",
     shape.Frame(av.MediaAudio, shape.Audio(48000, 1, av.SampleFormatS16)),
-    func(ctx context.Context, push goav.SourcePush) error {
+    func(ctx context.Context, push source.Push) error {
         frame := av.Frame{
             StreamID: "mic",
             Type:     av.MediaAudio,
@@ -67,7 +67,7 @@ Rules:
   `shape.Frame(...)`, and event-only sources with `shape.Event()`.
 - Use `push.Packet(...)`, `push.Frame(...)`, `push.Event(...)`, and
   `push.EOS()` to deliver media and lifecycle events.
-- If a pushed packet or frame has an empty `StreamID`, `SourcePush` fills the
+- If a pushed packet or frame has an empty `StreamID`, `source.Push` fills the
   declared source stream. If you replay packets from elsewhere, restamp them to
   the source's stream ID.
 - Return cleanly on `ctx` cancellation or `goav.ErrClosed`.

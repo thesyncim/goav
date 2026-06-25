@@ -104,13 +104,13 @@ func TestCustomStreamPredicateAndPreferenceDropReasons(t *testing.T) {
 	match := MatchStream(func(stream av.Stream) bool {
 		return strings.HasPrefix(string(stream.ID), "external-") && stream.Codec.ID == av.CodecOpus
 	})
-	if !match.matches(av.Stream{ID: "external-audio", Codec: av.CodecParameters{ID: av.CodecOpus}}) {
+	if !match.Matches(av.Stream{ID: "external-audio", Codec: av.CodecParameters{ID: av.CodecOpus}}) {
 		t.Fatal("custom stream predicate did not match")
 	}
-	if match.matches(av.Stream{ID: "internal-audio", Codec: av.CodecParameters{ID: av.CodecOpus}}) {
+	if match.Matches(av.Stream{ID: "internal-audio", Codec: av.CodecParameters{ID: av.CodecOpus}}) {
 		t.Fatal("custom stream predicate matched the wrong stream")
 	}
-	if got := match.description(); got != "custom" {
+	if got := match.Description(); got != "custom" {
 		t.Fatalf("description = %q, want custom", got)
 	}
 

@@ -26,7 +26,7 @@ What holds today (all `-race` clean, with tests):
   changing unsynced delivery. When `SyncDropLate()` sheds a message, stats use
   the existing drop accounting with `pipeline.DropSync`.
 - Custom sources see flow control per push: `push.X(...)` returns
-  `(PushResult, error)` where deliberate sheds are `Dropped` with a nil error
+  `(source.Result, error)` where deliberate sheds are `Dropped` with a nil error
   and `ErrBackpressure` keeps its flow-control meaning.
 
 The producer-side cost of both paths is measured by `BenchmarkSourcePush`

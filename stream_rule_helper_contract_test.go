@@ -20,30 +20,30 @@ func TestStreamMatchContracts(t *testing.T) {
 		},
 	}
 
-	if (StreamMatch{}).matches(stream) {
+	if (StreamMatch{}).Matches(stream) {
 		t.Fatal("empty matcher matched a stream")
 	}
-	if !MatchMedia(av.MediaAudio).matches(stream) {
+	if !MatchMedia(av.MediaAudio).Matches(stream) {
 		t.Fatal("media matcher did not match stream.Type")
 	}
-	if MatchMedia(av.MediaVideo).matches(stream) {
+	if MatchMedia(av.MediaVideo).Matches(stream) {
 		t.Fatal("media matcher matched the wrong media")
 	}
 	codecTyped := stream
 	codecTyped.Type = ""
-	if !MatchMedia(av.MediaAudio).matches(codecTyped) {
+	if !MatchMedia(av.MediaAudio).Matches(codecTyped) {
 		t.Fatal("media matcher did not fall back to stream.Codec.Type")
 	}
-	if !MatchCodec(av.CodecOpus).matches(stream) {
+	if !MatchCodec(av.CodecOpus).Matches(stream) {
 		t.Fatal("codec matcher did not match stream.Codec.ID")
 	}
-	if MatchCodec(av.CodecVP8).matches(stream) {
+	if MatchCodec(av.CodecVP8).Matches(stream) {
 		t.Fatal("codec matcher matched the wrong codec")
 	}
-	if !MatchStreamID("voice").matches(stream) {
+	if !MatchStreamID("voice").Matches(stream) {
 		t.Fatal("stream id matcher did not match stream.ID")
 	}
-	if MatchStreamID("other").matches(stream) {
+	if MatchStreamID("other").Matches(stream) {
 		t.Fatal("stream id matcher matched the wrong stream")
 	}
 
@@ -52,26 +52,15 @@ func TestStreamMatchContracts(t *testing.T) {
 		predicateCalls++
 		return got.ID == "voice"
 	})
-	if !custom.matches(stream) || predicateCalls != 1 {
+	if !custom.Matches(stream) || predicateCalls != 1 {
 		t.Fatalf("custom matcher calls=%d, want one successful predicate call", predicateCalls)
 	}
 	rejecting := MatchStream(func(av.Stream) bool { return false })
-	if rejecting.matches(stream) {
+	if rejecting.Matches(stream) {
 		t.Fatal("custom matcher matched after predicate rejection")
 	}
-
-	combined := StreamMatch{
-		media: av.MediaAudio,
-		codec: av.CodecOpus,
-		id:    "voice",
-		fn:    func(av.Stream) bool { return true },
-		desc:  "combined",
-	}
-	if !combined.matches(stream) {
-		t.Fatal("combined matcher did not require all fields to match")
-	}
-	if combined.description() != "combined" || (StreamMatch{}).description() != "none" {
-		t.Fatalf("matcher descriptions = %q / %q", combined.description(), (StreamMatch{}).description())
+	if custom.Description() != "custom" || (StreamMatch{}).Description() != "none" {
+		t.Fatalf("matcher descriptions = %q / %q", custom.Description(), (StreamMatch{}).Description())
 	}
 }
 

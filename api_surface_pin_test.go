@@ -56,6 +56,7 @@ var surfaceSeamPackages = []string{
 	"provider",
 	"runtime",
 	"shape",
+	"source",
 }
 
 // TestEveryPublicPackageIsGoverned closes the governance gap hardcoded lists

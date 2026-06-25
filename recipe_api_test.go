@@ -31,6 +31,7 @@ import (
 	"github.com/thesyncim/goav/provider"
 	goavruntime "github.com/thesyncim/goav/runtime"
 	"github.com/thesyncim/goav/shape"
+	"github.com/thesyncim/goav/source"
 )
 
 type recipeAPISource struct {
@@ -279,7 +280,7 @@ func TestSourceInputIntentUsesCustomProtocol(t *testing.T) {
 		shape.Packet(av.MediaAudio, av.CodecOpus,
 			shape.Audio(48_000, codec.Stereo, av.SampleFormatS16),
 		),
-		func(context.Context, goav.SourcePush) error {
+		func(context.Context, source.Push) error {
 			return nil
 		},
 	)
@@ -1731,7 +1732,7 @@ func TestDocsShowCustomSources(t *testing.T) {
 		"goav.Source(",
 		"shape.Packet(",
 		"shape.Event(",
-		"goav.SourcePush",
+		"source.Push",
 		"push.Packet(",
 		"push.Frame(",
 		"push.Event(",
@@ -1824,7 +1825,7 @@ func TestDocsShowCodecControlsAndDeclarativePerformanceGoal(t *testing.T) {
 	performanceText := string(performance)
 	for _, required := range []string{
 		"Hot paths must keep allocation explicit and bounded",
-		"per `goav.SourcePush` delivery, which currently allocates one independent",
+		"per `source.Push` delivery, which currently allocates one independent",
 		"Keep recipe, flow, branch, tap, destination, and codec abstractions cold-path",
 		"do not dispatch through them for each packet or frame",
 		"one cold-path executable `WorkPlan` and runtime `WorkPatch`",
@@ -3623,7 +3624,7 @@ func TestWithLayersOptionsOntoConstructedValues(t *testing.T) {
 func TestJobCopyRecordsExplicitIntent(t *testing.T) {
 	input := goav.Source("packets",
 		shape.Packet(av.MediaAudio, av.CodecOpus, shape.Audio(48_000, codec.Stereo, "")),
-		func(context.Context, goav.SourcePush) error { return nil },
+		func(context.Context, source.Push) error { return nil },
 	)
 	output := goav.Sink(component.SinkFunc("out-packets", func(context.Context, component.Message) error { return nil }))
 
@@ -3640,7 +3641,7 @@ func TestJobCopyRecordsExplicitIntent(t *testing.T) {
 func TestJobCopyAppearsInExplain(t *testing.T) {
 	input := goav.Source("packets",
 		shape.Packet(av.MediaAudio, av.CodecOpus, shape.Audio(48_000, codec.Stereo, "")),
-		func(context.Context, goav.SourcePush) error { return nil },
+		func(context.Context, source.Push) error { return nil },
 	)
 	output := goav.Sink(component.SinkFunc("out-packets", func(context.Context, component.Message) error { return nil }))
 
@@ -4330,7 +4331,7 @@ func TestStreamRecipeAllowsRuntimeRegisteredRecipeEncoders(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			source := goav.Source("frames",
 				shape.Frame(av.MediaVideo, shape.Video(16, 16, av.PixelFormatI420)),
-				func(_ context.Context, push goav.SourcePush) error { return push.EOS() },
+				func(_ context.Context, push source.Push) error { return push.EOS() },
 			)
 			rt := goav.MustNew(
 				goavruntime.WithMuxer(av.FormatIVF, recipeAPIMuxerFactory{}),

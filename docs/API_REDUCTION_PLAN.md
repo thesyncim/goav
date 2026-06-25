@@ -104,7 +104,7 @@ Move or keep outside the front door:
    - Give every Packet/Frame/Event emit independent message ownership, so
      buffered or retaining emitters cannot observe later emits mutating earlier
      deliveries.
-   - Document and pin the explicit one-allocation `SourcePush` safety cost.
+   - Document and pin the explicit one-allocation `source.Push` safety cost.
 
 8. **Error families** — started; typed fields landed
    - Introduce stable error families such as `InvalidRecipe`, `MissingAdapter`,

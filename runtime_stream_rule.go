@@ -91,7 +91,7 @@ func (t *task) handleStreamAdded(event av.Event) {
 	ctx := context.Background()
 	for index := range t.rules.rules {
 		rule := t.rules.rules[index]
-		if !rule.match.matches(stream) {
+		if !rule.match.Matches(stream) {
 			continue
 		}
 		if t.streamRuleAttached(stream.ID, index) {

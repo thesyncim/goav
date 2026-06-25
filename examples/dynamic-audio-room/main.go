@@ -14,6 +14,7 @@ import (
 	"github.com/thesyncim/goav/component"
 	"github.com/thesyncim/goav/goavtest"
 	"github.com/thesyncim/goav/shape"
+	"github.com/thesyncim/goav/source"
 )
 
 const (
@@ -361,7 +362,7 @@ func (r *Room) Input() goav.InputSpec {
 			shape.Stream(av.StreamID(r.controlStream())),
 			shape.Realtime(true),
 		),
-		func(ctx context.Context, push goav.SourcePush) error {
+		func(ctx context.Context, push source.Push) error {
 			r.markReady()
 			active := make(map[string]struct{})
 			var elapsed int64
@@ -457,7 +458,7 @@ type roomCommand struct {
 	ack         chan error
 }
 
-func (r *Room) handle(push goav.SourcePush, active map[string]struct{}, elapsed *int64, command roomCommand) error {
+func (r *Room) handle(push source.Push, active map[string]struct{}, elapsed *int64, command roomCommand) error {
 	switch command.kind {
 	case roomJoin:
 		return r.join(push, active, command.participant)
@@ -472,7 +473,7 @@ func (r *Room) handle(push goav.SourcePush, active map[string]struct{}, elapsed 
 	}
 }
 
-func (r *Room) join(push goav.SourcePush, active map[string]struct{}, participant string) error {
+func (r *Room) join(push source.Push, active map[string]struct{}, participant string) error {
 	if participant == "" {
 		return fmt.Errorf("participant name is empty")
 	}
@@ -493,7 +494,7 @@ func (r *Room) join(push goav.SourcePush, active map[string]struct{}, participan
 	return err
 }
 
-func (r *Room) leave(push goav.SourcePush, active map[string]struct{}, participant string) error {
+func (r *Room) leave(push source.Push, active map[string]struct{}, participant string) error {
 	if participant == "" {
 		return fmt.Errorf("participant name is empty")
 	}
@@ -532,7 +533,7 @@ func (r *Room) participantStream(participant string) *av.Stream {
 	}
 }
 
-func (r *Room) pushTrackFrames(push goav.SourcePush, active map[string]struct{}, elapsed *int64, frames map[string][]int16) error {
+func (r *Room) pushTrackFrames(push source.Push, active map[string]struct{}, elapsed *int64, frames map[string][]int16) error {
 	for participant := range frames {
 		if _, ok := active[participant]; !ok {
 			return fmt.Errorf("unknown participant frame %q", participant)

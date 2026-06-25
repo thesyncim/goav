@@ -262,7 +262,7 @@ err := goav.From(input).
 Custom sources are the input-side equivalent for applications that already own
 media production. Packet sources use `shape.Packet`, frame sources use
 `shape.Frame` and skip decode, event-only sources use `shape.Event` and route
-straight to sinks. Each push returns a `PushResult` reporting `Accepted` and
+straight to sinks. Each push returns a `source.Result` reporting `Accepted` and
 `Dropped`, so realtime shedding is visible without being an error.
 
 ```go
@@ -270,7 +270,7 @@ input := goav.Source("generated",
     shape.Packet(av.MediaAudio, av.CodecOpus,
         shape.Audio(48_000, codec.Stereo, av.SampleFormatS16),
     ),
-    func(ctx context.Context, push goav.SourcePush) error {
+    func(ctx context.Context, push source.Push) error {
         for packet := range packets {
             if _, err := push.Packet(&packet); err != nil {
                 return err

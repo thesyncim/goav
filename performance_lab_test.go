@@ -19,6 +19,7 @@ import (
 	"github.com/thesyncim/goav/pipeline"
 	goavruntime "github.com/thesyncim/goav/runtime"
 	"github.com/thesyncim/goav/shape"
+	"github.com/thesyncim/goav/source"
 )
 
 // BenchmarkLatencyRecordPackets is the percentile harness for the canonical
@@ -29,7 +30,7 @@ func BenchmarkLatencyRecordPackets(b *testing.B) {
 	payload := bytes.Repeat([]byte{0x7a}, benchPacketBytes)
 	input := goav.Source("latency-cam",
 		shape.Packet(av.MediaVideo, av.CodecVP8, shape.Video(640, 360, av.PixelFormatI420)),
-		func(_ context.Context, push goav.SourcePush) error {
+		func(_ context.Context, push source.Push) error {
 			base := av.TimeBase{Num: 1, Den: 90_000}
 			packet := av.Packet{
 				Type:     av.MediaVideo,
@@ -218,7 +219,7 @@ func benchLiveRoomVideoPackets(name string, n int, latencies []int64, index *ato
 	payload := bytes.Repeat([]byte{0x33}, benchPacketBytes)
 	return goav.Source(name,
 		shape.Packet(av.MediaVideo, av.CodecVP8, shape.Video(640, 360, av.PixelFormatI420)),
-		func(_ context.Context, push goav.SourcePush) error {
+		func(_ context.Context, push source.Push) error {
 			base := av.TimeBase{Num: 1, Den: 90_000}
 			packet := av.Packet{
 				StreamID: av.StreamID(name),
@@ -242,7 +243,7 @@ func benchLiveRoomAudioPackets(name string, n int, latencies []int64, index *ato
 	payload := bytes.Repeat([]byte{0x55}, benchPacketBytes/8)
 	return goav.Source(name,
 		shape.Packet(av.MediaAudio, av.CodecOpus, shape.Audio(48_000, 1, av.SampleFormatS16)),
-		func(_ context.Context, push goav.SourcePush) error {
+		func(_ context.Context, push source.Push) error {
 			base := av.TimeBase{Num: 1, Den: 48_000}
 			packet := av.Packet{
 				StreamID: av.StreamID(name),
@@ -262,7 +263,7 @@ func benchLiveRoomAudioPackets(name string, n int, latencies []int64, index *ato
 		})
 }
 
-func benchLiveRoomPushPacket(push goav.SourcePush, packet *av.Packet, latencies []int64, index *atomic.Int64, drops *atomic.Uint64) error {
+func benchLiveRoomPushPacket(push source.Push, packet *av.Packet, latencies []int64, index *atomic.Int64, drops *atomic.Uint64) error {
 	start := time.Now()
 	result, err := push.Packet(packet)
 	if err != nil {

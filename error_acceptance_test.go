@@ -24,6 +24,7 @@ import (
 	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/goavtest"
 	"github.com/thesyncim/goav/shape"
+	"github.com/thesyncim/goav/source"
 )
 
 // requireBuildError enforces the four acceptance bars on one refusal: typed
@@ -77,7 +78,7 @@ func opusPacketInput() goav.InputSpec {
 func audioFrameInput() goav.InputSpec {
 	return goav.Source("audio",
 		shape.Frame(av.MediaAudio, shape.Audio(48_000, codec.Mono, av.SampleFormatS16), shape.Stream("audio")),
-		func(context.Context, goav.SourcePush) error {
+		func(context.Context, source.Push) error {
 			return nil
 		})
 }
@@ -133,7 +134,7 @@ func TestErrorAcceptanceCustomSourceMissingCallback(t *testing.T) {
 // shape.Packet/shape.Media fixes before any runtime opens.
 func TestErrorAcceptanceCustomSourceShapeInvalid(t *testing.T) {
 	_, err := goav.From(goav.Source("bad", shape.New(shape.Domain(shape.DomainPacket)),
-		func(context.Context, goav.SourcePush) error { return nil },
+		func(context.Context, source.Push) error { return nil },
 	)).
 		Audio().
 		To(goavtest.NewCollector().Sink()).
@@ -150,7 +151,7 @@ func TestErrorAcceptanceCustomSourceShapeInvalid(t *testing.T) {
 func TestErrorAcceptanceCustomSourceShapeUnsupported(t *testing.T) {
 	_, err := goav.From(goav.Source("bytes",
 		shape.New(shape.Domain(shape.MediaDomain("bytes")), shape.Media(av.MediaAudio)),
-		func(context.Context, goav.SourcePush) error { return nil },
+		func(context.Context, source.Push) error { return nil },
 	)).
 		Audio().
 		To(goavtest.NewCollector().Sink()).
@@ -170,7 +171,7 @@ func TestErrorAcceptanceCustomSourceShapeUnsupported(t *testing.T) {
 // public grammar fix.
 func TestErrorAcceptanceFrameSourceDecodeMismatch(t *testing.T) {
 	_, err := goav.From(goav.Source("frames", shape.Frame(av.MediaAudio),
-		func(_ context.Context, push goav.SourcePush) error { return push.EOS() },
+		func(_ context.Context, push source.Push) error { return push.EOS() },
 	)).
 		Audio().Decode().
 		To(goavtest.NewCollector().Sink()).

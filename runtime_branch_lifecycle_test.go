@@ -15,6 +15,7 @@ import (
 	"github.com/thesyncim/goav/goavtest"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/shape"
+	"github.com/thesyncim/goav/source"
 )
 
 const lifecycleTapName = "video.decoded"
@@ -83,7 +84,7 @@ func (s *packetCountSink) Close() error { return nil }
 func liveMutableVideoPackets(name string, width, height int, tick time.Duration) goav.InputSpec {
 	return goav.Source(name,
 		shape.Packet(av.MediaVideo, av.CodecVP8, shape.Video(width, height, av.PixelFormatI420)),
-		func(ctx context.Context, push goav.SourcePush) error {
+		func(ctx context.Context, push source.Push) error {
 			base := av.TimeBase{Num: 1, Den: 90_000}
 			for n := 0; ; n++ {
 				if ctx.Err() != nil {

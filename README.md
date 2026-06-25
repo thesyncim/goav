@@ -73,7 +73,7 @@ previewSync := goav.Sync("room", goav.SyncTolerance(20*time.Millisecond), goav.S
 
 roomCamera := goav.Source("room-camera",
     shape.Packet(av.MediaVideo, av.CodecVP8, shape.Realtime(true)),
-    func(ctx context.Context, push goav.SourcePush) error {
+    func(ctx context.Context, push source.Push) error {
         for {
             select {
             case <-ctx.Done():
@@ -121,7 +121,7 @@ camera := av.Stream{
 
 transport := goav.Source("webrtc-room",
     shape.Packet(av.MediaVideo, av.CodecVP8, shape.Realtime(true)),
-    func(ctx context.Context, push goav.SourcePush) error {
+    func(ctx context.Context, push source.Push) error {
         announced := camera
         if _, err := push.Event(av.Event{Type: av.EventStreamAdded, Stream: &announced}); err != nil {
             return err
@@ -150,7 +150,7 @@ transport := goav.Source("webrtc-room",
 
 _, err := bundle.Build(ctx, goav.From(transport).
     OnStream(
-        goav.MatchStreamID("camera"),
+        source.MatchStreamID("camera"),
         goav.Branch("record-camera").
             Sync(goav.Sync("room", goav.SyncTolerance(20*time.Millisecond))).
             Copy().

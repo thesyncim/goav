@@ -14,6 +14,7 @@ import (
 	"github.com/thesyncim/goav/component"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/rtpav"
+	"github.com/thesyncim/goav/source"
 )
 
 // onStreamRTPReceiver feeds an opus stream, then announces a late VP8 stream
@@ -112,7 +113,7 @@ func TestOnStreamRTPLateStreamAttachesBranch(t *testing.T) {
 	task, err := goav.From(
 		goav.Input(rtpav.Receive(receiver, rtpav.WithName("audio"), rtpav.WithCodec(codec.Opus()))),
 	).
-		OnStream(goav.MatchMedia(av.MediaVideo), goav.Branch("cam-watch").Copy().To(monitor)).
+		OnStream(source.MatchMedia(av.MediaVideo), goav.Branch("cam-watch").Copy().To(monitor)).
 		Audio().Copy().To(goav.Sink(component.SinkFunc("main", func(context.Context, component.Message) error { return nil }))).
 		Build(ctx)
 	if err != nil {

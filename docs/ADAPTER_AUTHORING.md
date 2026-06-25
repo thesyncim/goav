@@ -21,7 +21,7 @@ real adapters. For a copy-and-adapt guide organized by use case, see
 The copyable, separate-module examples are:
 
 - **`examples/custom-source`**: pushes application-owned S16 frames through
-  `goav.Source` and checks `SourcePush` accepted/dropped accounting.
+  `goav.Source` and checks `source.Push` accepted/dropped accounting.
 - **`examples/provider-source`**: implements `provider.Source`, opens a
   `pipeline.Source`, and feeds goav through `goav.Input(provider)`.
 - **`examples/custom-destination`**: opens a plain byte destination with

@@ -11,6 +11,7 @@ import (
 	"github.com/thesyncim/goav/goavtest"
 	goavruntime "github.com/thesyncim/goav/runtime"
 	"github.com/thesyncim/goav/shape"
+	"github.com/thesyncim/goav/source"
 )
 
 const examplePCM av.CodecID = "example/pcm"
@@ -199,7 +200,7 @@ func (d *pcmDecoder) Close() error { return nil }
 func packetSource(name string, packets []*av.Packet) goav.InputSpec {
 	return goav.Source(name,
 		shape.Packet(av.MediaAudio, examplePCM, shape.Audio(8000, 1, av.SampleFormatS16)),
-		func(_ context.Context, push goav.SourcePush) error {
+		func(_ context.Context, push source.Push) error {
 			for _, packet := range packets {
 				clone := *packet
 				clone.StreamID = av.StreamID(name)

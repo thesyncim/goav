@@ -17,6 +17,7 @@ import (
 	"github.com/thesyncim/goav/provider"
 	goavruntime "github.com/thesyncim/goav/runtime"
 	"github.com/thesyncim/goav/shape"
+	"github.com/thesyncim/goav/source"
 )
 
 func exampleFrame(sample int16) av.Frame {
@@ -36,7 +37,7 @@ func ExampleSource_pushAccounting() {
 	accepted, dropped := 0, 0
 	input := goav.Source("mic",
 		shape.Frame(av.MediaAudio, shape.Audio(48000, 1, av.SampleFormatS16)),
-		func(_ context.Context, push goav.SourcePush) error {
+		func(_ context.Context, push source.Push) error {
 			for _, sample := range []int16{1, 2} {
 				frame := exampleFrame(sample)
 				result, err := push.Frame(&frame)

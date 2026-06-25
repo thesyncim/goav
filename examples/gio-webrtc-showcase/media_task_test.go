@@ -9,6 +9,7 @@ import (
 	"github.com/thesyncim/goav/bundle"
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/shape"
+	"github.com/thesyncim/goav/source"
 )
 
 func TestDecodedTapTasksNormalizeBrowserTrackShapes(t *testing.T) {
@@ -17,7 +18,7 @@ func TestDecodedTapTasksNormalizeBrowserTrackShapes(t *testing.T) {
 
 	audioTask, err := goav.From(goav.Source("mic",
 		shape.Packet(av.MediaAudio, av.CodecOpus, shape.Audio(48_000, codec.Stereo, ""), shape.Realtime(true)),
-		func(context.Context, goav.SourcePush) error { return nil },
+		func(context.Context, source.Push) error { return nil },
 	)).
 		UseRuntime(bundle.MustNew()).
 		Audio().
@@ -35,7 +36,7 @@ func TestDecodedTapTasksNormalizeBrowserTrackShapes(t *testing.T) {
 
 	videoTask, err := goav.From(goav.Source("camera",
 		shape.Packet(av.MediaVideo, av.CodecVP8, shape.Realtime(true)),
-		func(context.Context, goav.SourcePush) error { return nil },
+		func(context.Context, source.Push) error { return nil },
 	)).
 		UseRuntime(bundle.MustNew()).
 		Video().

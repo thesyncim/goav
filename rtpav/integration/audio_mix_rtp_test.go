@@ -12,12 +12,13 @@ import (
 	"github.com/thesyncim/goav/component"
 	"github.com/thesyncim/goav/rtpav"
 	"github.com/thesyncim/goav/shape"
+	"github.com/thesyncim/goav/source"
 )
 
 func mixTestAudioSource(id av.StreamID, samples ...int16) goav.InputSpec {
 	return goav.Source(string(id),
 		shape.Frame(av.MediaAudio, shape.Audio(48000, codec.Mono, av.SampleFormatS16), shape.Stream(id)),
-		func(_ context.Context, push goav.SourcePush) error {
+		func(_ context.Context, push source.Push) error {
 			b := make([]byte, len(samples)*2)
 			for i := range samples {
 				binary.LittleEndian.PutUint16(b[i*2:], uint16(samples[i]))
