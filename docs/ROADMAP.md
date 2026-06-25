@@ -27,7 +27,7 @@ Live mutation follows the same promise. Make runtime attachment a patch of the s
 before graph mutation, and rolls back fully on failure
 (`TestTaskAttachRuntimeBranchGroupRollsBackOnLaterFailure`).
 
-The destination model has also been simplified. Collapse `Target` into `Destination` is done: `File`, `URI`, `Writer`,
+The destination model has also been simplified. Collapse `Target` into `Destination` is done: `Write`, `URI`, `Writer`,
 `Sink`, and `Custom` return stable goav-owned destination handles.
 `Mux(name, destination)` is the preferred way to declare one shared mux/sink
 group when branches build matching destinations independently. Reusing one
@@ -51,7 +51,8 @@ every exported symbol documented (`doc_pin_test.go`), tiered in
   `ContextCloser.CloseContext(ctx)`; opt-in task capability
   interfaces for `Explain`, inspection (`Describe`/`Taps`/`Snapshot`/`Stats`),
   mutation (`Attach`/`Detach` with `DrainBranch`/`AbortBranch`, `Rebranch`),
-  controls (`Control`), and observation (`Events`/`Watch`);
+  controls (`Control`), and observation (`Watch`, with `Events` as the
+  unfiltered watch convenience);
   `New`/`MustNew`/`UseRuntime` and the `bundle` runtime helpers;
   structured `BuildError` with stable families, detailed codes, typed fields/fixes;
   the `plan`, `snapshot`, `lifecycle`, `shape`, `flow`, and `av` vocabulary

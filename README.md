@@ -58,7 +58,7 @@ value is rejected so grouping stays explicit.
 | Record packets without decoding | `From(input).Copy().To(goav.Write(...))` | [Use cases](docs/USE_CASES.md) |
 | Record and preview from one stream | `.Branches(goav.Branch("archive").To(...), goav.Branch("preview").To(...))` | [Use cases](docs/USE_CASES.md) |
 | Decode, filter, and encode again | `.Decode().Resize(...)` or `.Resample(...)`, then `.Encode(codec)` | [Operations](docs/OPERATIONS.md) |
-| Attach diagnostics at runtime | `LiveTask.Attach(ctx, goav.Branch(...).From(goav.FrameTap(...)))` | [Control plane](docs/CONTROL_PLANE.md) |
+| Attach diagnostics at runtime | `task.Attach(ctx, goav.Branch(...).From(goav.FrameTap(...)))` | [Control plane](docs/CONTROL_PLANE.md) |
 | Add app-owned media | `goav.Source(...)`, `goav.Input(provider)`, `goav.Sink(...)` | [Extension cookbook](docs/EXTENSION_COOKBOOK.md) |
 
 ## Expandable Examples

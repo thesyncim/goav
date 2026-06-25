@@ -1597,6 +1597,7 @@ func TestReadmeKeepsAdvancedRuntimeKnobsOutOfFrontDoor(t *testing.T) {
 		"RTPBuffer",
 		"MaxTimestampGap",
 		"Runtime.Graph",
+		"LiveTask.Attach",
 		"Expert(",
 		"expert.Graph",
 		"GraphBuilder",
