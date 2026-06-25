@@ -15,9 +15,10 @@ import (
 // TestBuildErrorContractPinned enforces the error contract at the source
 // level: every &BuildError{...} literal in the package carries a Code from
 // the errcode catalog (never a raw string), an Operation, a Reason, and
-// either Suggestions (a user-fixable refusal's concrete fixes) or Details
-// (an internal invariant's explanation). The contract is what makes goav
-// errors uniformly actionable; this pin makes regressions impossible.
+// either Suggestions/Fixes (a user-fixable refusal's concrete fixes) or
+// Details/Fields (an internal invariant's explanation). The contract is what
+// makes goav errors uniformly actionable; this pin makes regressions
+// impossible.
 func TestBuildErrorContractPinned(t *testing.T) {
 	files := parsePackageSourceFiles(t)
 	for filename, file := range files {
@@ -57,9 +58,11 @@ func TestBuildErrorContractPinned(t *testing.T) {
 				t.Errorf("%s: BuildError literal without Reason", filename)
 			}
 			_, hasSuggestions := fields["Suggestions"]
+			_, hasFixes := fields["Fixes"]
 			_, hasDetails := fields["Details"]
-			if !hasSuggestions && !hasDetails {
-				t.Errorf("%s: BuildError literal carries neither Suggestions (the fix) nor Details (what happened)", filename)
+			_, hasFields := fields["Fields"]
+			if !hasSuggestions && !hasFixes && !hasDetails && !hasFields {
+				t.Errorf("%s: BuildError literal carries neither Suggestions/Fixes (the fix) nor Details/Fields (what happened)", filename)
 			}
 			return true
 		})

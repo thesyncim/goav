@@ -187,6 +187,7 @@ goav.Destination
 goav.DestinationGroup
 goav.DestinationOption
 goav.DetachOption
+goav.Detail
 goav.DrainBranch
 goav.DrainOldBranch
 goav.Emit
@@ -202,6 +203,7 @@ goav.EventFunc
 goav.Explainer
 goav.File
 goav.FileInput
+goav.Fix
 goav.Flow
 goav.Format
 goav.Frame
@@ -243,6 +245,7 @@ goav.PacketTap
 goav.PushResult
 goav.RealtimeCodecChangePolicy
 goav.RebranchOption
+goav.RecipePatch
 goav.Resample
 goav.Resize
 goav.Runtime

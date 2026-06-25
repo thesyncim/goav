@@ -575,8 +575,8 @@ func annotatePlanReportError(report *plan.Report, err error) {
 		Code:        string(buildErr.Code),
 		Node:        buildErr.Node,
 		Message:     buildErr.Reason,
-		Details:     append([]string(nil), buildErr.Details...),
-		Suggestions: append([]string(nil), buildErr.Suggestions...),
+		Details:     append([]string(nil), buildErr.detailLines()...),
+		Suggestions: append([]string(nil), buildErr.suggestionLines()...),
 	})
 	requirement, ok := adapterRequirementFromBuildError(buildErr)
 	if !ok {
@@ -601,7 +601,7 @@ func annotatePlanReportError(report *plan.Report, err error) {
 }
 
 func adapterRequirementFromBuildError(err *BuildError) (plan.AdapterRequirement, bool) {
-	details := buildErrorDetailMap(err.Details)
+	details := buildErrorDetailMap(err)
 	status := adapterRequirementStatus(err.Code)
 	requiredBy := firstNonEmpty(err.Node, err.Operation)
 	switch err.Code {
@@ -726,14 +726,23 @@ func adapterRequirementStatus(code errcode.Code) string {
 	}
 }
 
-func buildErrorDetailMap(details []string) map[string]string {
-	out := make(map[string]string, len(details))
-	for i := range details {
-		key, value, ok := strings.Cut(details[i], "=")
+func buildErrorDetailMap(err *BuildError) map[string]string {
+	if err == nil {
+		return nil
+	}
+	out := make(map[string]string, len(err.Details)+len(err.Fields))
+	for i := range err.Details {
+		key, value, ok := strings.Cut(err.Details[i], "=")
 		if !ok || key == "" {
 			continue
 		}
 		out[key] = value
+	}
+	for i := range err.Fields {
+		if err.Fields[i].Key == "" || err.Fields[i].Value == nil {
+			continue
+		}
+		out[err.Fields[i].Key] = fmt.Sprint(err.Fields[i].Value)
 	}
 	return out
 }

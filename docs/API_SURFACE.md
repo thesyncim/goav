@@ -53,7 +53,7 @@ Mutable: Attach/Detach(DrainBranch|AbortBranch); Attachment.Rebranch
 Controllable: Control(control.Keyframe|Seek|Segment|Rate|SetBitrate|SelectActive|Deliver, .AtTap)
 Observable: Events, Watch(inspect.EventFilter)
 goav.New(opts...) -> (*Runtime, error); goav.MustNew(opts...) -> bare Runtime; std.MustNew(opts...) -> standard Runtime; job.UseRuntime(rt)
-errors: *goav.BuildError{Code: errcode.X, ...} matched with errors.As/Is
+errors: *goav.BuildError{Code: errcode.X, Fields: []goav.Detail, Fixes: []goav.Fix, ...} matched with errors.As/Is; Detail(key) for typed facts
 ```
 
 The checked operation reference is
@@ -302,7 +302,8 @@ tomorrow is governed the day it lands.
   implementation subtree. An unclassified package fails the build.
 - `doc_pin_test.go`: every exported symbol in every discovered public
   package carries a doc comment.
-- `errors_pin_test.go`: every `BuildError` uses a catalog `errcode.Code`.
+- `errors_pin_test.go`: every `BuildError` uses a catalog `errcode.Code` and
+  carries rendered or typed details/fixes.
 - README front door: first five examples stay on the grammar
   (`TestReadmeFirstScreenAvoidsGraphInternals`); advanced knobs stay out of
   the guide (`TestReadmeKeepsAdvancedRuntimeKnobsOutOfFrontDoor`).

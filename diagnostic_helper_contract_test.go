@@ -81,6 +81,18 @@ func TestOutputFormatProbeErrorContract(t *testing.T) {
 	if !reflect.DeepEqual(buildErr.Details, wantDetails) {
 		t.Fatalf("details = %#v, want %#v", buildErr.Details, wantDetails)
 	}
+	if got, ok := buildErr.Detail("protocol"); !ok || got != av.ProtocolFile {
+		t.Fatalf("protocol detail = %#v, %v; want %q, true", got, ok, av.ProtocolFile)
+	}
+	if got, ok := buildErr.Detail("mime"); !ok || got != "video/custom" {
+		t.Fatalf("mime detail = %#v, %v; want video/custom, true", got, ok)
+	}
+	if len(buildErr.Fields) != len(wantDetails) {
+		t.Fatalf("typed fields = %#v, want one field per rendered detail", buildErr.Fields)
+	}
+	if len(buildErr.Fixes) == 0 {
+		t.Fatal("typed fixes are empty")
+	}
 
 	cause := errors.New("probe crashed")
 	if got := outputFormatProbeError(output, 3, cause); got != cause {

@@ -2,6 +2,7 @@ package goav
 
 import (
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -128,5 +129,45 @@ func TestBuildErrorAndCompilerPassErrorContracts(t *testing.T) {
 		got.Operation != "compile recipe" ||
 		!errors.Is(err, ErrUnsupportedBuild) {
 		t.Fatalf("nil compiler pass err = %v, want compiler_pass_invalid wrapping ErrUnsupportedBuild", err)
+	}
+}
+
+func TestBuildErrorTypedDetailsAndFixes(t *testing.T) {
+	buildErr := &BuildError{
+		Code:      errcode.DecodeAdapterMissing,
+		Operation: "build stream",
+		Reason:    "decoder is missing",
+		Fields: []Detail{
+			{Key: "codec", Value: av.CodecOpus},
+			{Key: "attempts", Value: 2},
+		},
+		Fixes: []Fix{
+			{
+				Message: "register an Opus decoder",
+				Patch: &RecipePatch{
+					Action: "add_runtime_option",
+					Path:   "runtime",
+					Value:  "goav.WithDecoder(...)",
+				},
+			},
+		},
+		Cause: ErrUnsupportedBuild,
+	}
+	if got, ok := buildErr.Detail("codec"); !ok || got != av.CodecOpus {
+		t.Fatalf("codec detail = %#v, %v; want %q, true", got, ok, av.CodecOpus)
+	}
+	if got, ok := buildErr.Detail("attempts"); !ok || got != 2 {
+		t.Fatalf("attempts detail = %#v, %v; want 2, true", got, ok)
+	}
+	rendered := buildErr.Error()
+	if !strings.Contains(rendered, "codec=opus") ||
+		!strings.Contains(rendered, "attempts=2") ||
+		!strings.Contains(rendered, "register an Opus decoder") {
+		t.Fatalf("rendered typed BuildError = %q", rendered)
+	}
+
+	legacy := &BuildError{Details: []string{"format=webm"}}
+	if got, ok := legacy.Detail("format"); !ok || got != "webm" {
+		t.Fatalf("legacy detail = %#v, %v; want webm, true", got, ok)
 	}
 }
