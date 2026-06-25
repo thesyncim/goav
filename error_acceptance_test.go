@@ -433,7 +433,7 @@ func TestBuildAndAttachReturnSameErrorForSameInvalidBranch(t *testing.T) {
 	)
 
 	task, err := goav.From(audioFrameInput()).
-		UseRuntime(goav.MustNew()).
+		UseRuntime(goav.MustRuntime()).
 		Audio().
 		Tap(goav.FrameTap("audio.frames")).
 		To(goavtest.NewCollector().Sink()).
@@ -527,7 +527,7 @@ func TestErrorAcceptanceDestinationFormatUnknown(t *testing.T) {
 
 // TestErrorAcceptanceDestinationMuxerMissing is snippet 4b: the format is
 // detected but the runtime has no muxer registered for it. The fix names
-// goavruntime.WithMuxer(...).
+// runconfig.WithMuxer(...).
 func TestErrorAcceptanceDestinationMuxerMissing(t *testing.T) {
 	_, err := goav.From(goavtest.Audio(48000, 1, []int16{1})).
 		Audio().Encode(codec.Opus()).
@@ -535,7 +535,7 @@ func TestErrorAcceptanceDestinationMuxerMissing(t *testing.T) {
 		UseRuntime(bundle.MustNewFilters(goavtest.Codec(av.CodecOpus))).
 		Build(context.Background())
 	requireBuildError(t, err, errcode.DestinationMuxerMissing, "open destination", "out.ogg",
-		"goavruntime.WithMuxer(...)",
+		"runconfig.WithMuxer(...)",
 	)
 }
 
@@ -613,7 +613,7 @@ func TestErrorAcceptanceTypedTapAtWrongDomain(t *testing.T) {
 
 // TestErrorAcceptanceEncoderAdapterMissing is snippet 8: .Encode with a codec
 // no registered encoder provides. The refusal names the codec and the
-// goavruntime.WithEncoder(...) registration fix.
+// runconfig.WithEncoder(...) registration fix.
 func TestErrorAcceptanceEncoderAdapterMissing(t *testing.T) {
 	_, err := goav.From(goavtest.Audio(48000, 1, []int16{1})).
 		Audio().Encode(codec.Codec("weird", av.MediaAudio)).
@@ -621,7 +621,7 @@ func TestErrorAcceptanceEncoderAdapterMissing(t *testing.T) {
 		UseRuntime(goavtest.Runtime()).
 		Build(context.Background())
 	buildErr := requireBuildError(t, err, errcode.EncodeAdapterMissing, "build job", "audio",
-		"goavruntime.WithEncoder(...)",
+		"runconfig.WithEncoder(...)",
 	)
 	if !strings.Contains(buildErr.Reason, "weird") || !detailsContain(buildErr.DetailLines(), "codec=weird") {
 		t.Fatalf("refusal should name the codec, err = %v", err)

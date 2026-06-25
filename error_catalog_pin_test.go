@@ -323,7 +323,7 @@ var errorCatalogExamples = []errorCatalogExample{
 		Test:          "TestErrorAcceptanceDestinationMuxerMissing",
 		BadRecipe:     `.To(goav.File("out.ogg", ...))` + " with no Ogg muxer registered",
 		RenderedError: "full BuildError fields plus rendered suggestions are asserted by the test",
-		Fix:           "register a muxer with goavruntime.WithMuxer(...)",
+		Fix:           "register a muxer with runconfig.WithMuxer(...)",
 		Cause:         "goav.ErrUnsupportedBuild",
 	},
 	{
@@ -411,7 +411,7 @@ var errorCatalogExamples = []errorCatalogExample{
 		Test:          "TestErrorAcceptanceEncoderAdapterMissing",
 		BadRecipe:     `.Encode(codec.Codec("weird", av.MediaAudio))`,
 		RenderedError: "codec details and registration suggestion are asserted by the test",
-		Fix:           "register an encoder with goavruntime.WithEncoder(...)",
+		Fix:           "register an encoder with runconfig.WithEncoder(...)",
 		Cause:         "goav.ErrUnsupportedBuild",
 	},
 	{
@@ -454,7 +454,7 @@ var errorCatalogAdditionalExamples = []errorCatalogExample{
 		Test:          "TestRuntimeFormatErrorContracts",
 		BadRecipe:     `goav.FileInput("input.ogg", reader)` + " with no Ogg demuxer registered",
 		RenderedError: "missing input demuxer and adapter registration guidance are asserted by the test",
-		Fix:           "register a demuxer with goavruntime.WithFormatAdapter(...) or use bundle.MustNew(...)",
+		Fix:           "register a demuxer with runconfig.WithFormatAdapter(...) or use bundle.MustNew(...)",
 		Cause:         "goav.ErrUnsupportedBuild",
 	},
 	{
@@ -502,7 +502,7 @@ var errorCatalogAdditionalExamples = []errorCatalogExample{
 		Test:          "TestTransformHelperErrorContracts",
 		BadRecipe:     `.Audio().Resample(...)` + " without a resample filter adapter",
 		RenderedError: "missing transform adapter details and registration guidance are asserted by the test",
-		Fix:           "register the filter with goavruntime.WithFilterAdapter(...) or use bundle.MustNewFilters(...)",
+		Fix:           "register the filter with runconfig.WithFilterAdapter(...) or use bundle.MustNewFilters(...)",
 		Cause:         "filter.ErrNotFound",
 	},
 	{
@@ -550,7 +550,7 @@ var errorCatalogAdditionalExamples = []errorCatalogExample{
 		Test:          "TestStreamRecipeReportsProbedFileMissingDecoderBeforeOpeningInput",
 		BadRecipe:     `.Audio().Decode()` + " for a probed codec with no decoder registered",
 		RenderedError: "missing decoder adapter and pre-resource ordering are asserted by the test",
-		Fix:           "register a decoder with goavruntime.WithCodecAdapter(...) or use bundle.MustNew(...)",
+		Fix:           "register a decoder with runconfig.WithCodecAdapter(...) or use bundle.MustNew(...)",
 		Cause:         "codec.ErrNotFound",
 	},
 	{
@@ -662,7 +662,7 @@ var errorCatalogAdditionalExamples = []errorCatalogExample{
 		Test:          "TestRuntimeFormatErrorContracts",
 		BadRecipe:     `goav.File("out.ogg", writer)` + " with no Ogg muxer registered",
 		RenderedError: "missing output muxer and registration guidance are asserted by the test",
-		Fix:           "register a muxer with goavruntime.WithFormatAdapter(...) or use bundle.MustNew(...)",
+		Fix:           "register a muxer with runconfig.WithFormatAdapter(...) or use bundle.MustNew(...)",
 		Cause:         "goav.ErrUnsupportedBuild",
 	},
 	{

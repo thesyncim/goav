@@ -8,7 +8,7 @@ import (
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/filter"
 	"github.com/thesyncim/goav/goavtest"
-	goavruntime "github.com/thesyncim/goav/runtime"
+	runconfig "github.com/thesyncim/goav/runconfig"
 )
 
 func main() {
@@ -25,7 +25,7 @@ func runCustomFilter(ctx context.Context) ([][]int16, error) {
 		Audio().
 		Resample(16000, 1).
 		To(out.Sink()).
-		UseRuntime(goavtest.Runtime(goavruntime.WithFilter(doubleRateDescriptor(), doubleRateFactory{}))).
+		UseRuntime(goavtest.Runtime(runconfig.WithFilter(doubleRateDescriptor(), doubleRateFactory{}))).
 		Run(ctx)
 	return out.S16(), err
 }

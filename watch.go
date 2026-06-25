@@ -18,6 +18,28 @@ func (t *task) Watch(filters ...inspect.EventFilter) inspect.Subscription {
 	return t.watch.subscribe(t.graph.Events(), t.watchCapacity(), filters)
 }
 
+// events returns the task-owned unfiltered Events subscription. Unlike Watch,
+// callers cannot close this subscription independently; it closes when the
+// graph event stream closes. Keeping one owned subscription preserves the
+// legacy Events channel shape without allocating a watcher on every call.
+func (t *task) ownedEvents() *eventWatcher {
+	if t == nil {
+		return closedEventWatcher()
+	}
+	t.eventsMu.Lock()
+	defer t.eventsMu.Unlock()
+	if t.eventsSubscription == nil {
+		subscription := t.watch.subscribe(t.graph.Events(), t.watchCapacity(), nil)
+		if watcher, ok := subscription.(*eventWatcher); ok {
+			t.eventsSubscription = watcher
+		}
+	}
+	if t.eventsSubscription == nil {
+		return closedEventWatcher()
+	}
+	return t.eventsSubscription
+}
+
 // watchCapacity sizes one watcher buffer, normalized exactly like the
 // pipeline's event channel: the runtime's configured capacity, or 16.
 func (t *task) watchCapacity() int {
@@ -49,6 +71,12 @@ type eventWatcher struct {
 	filters []inspect.EventFilter
 	events  chan av.Event
 	once    sync.Once
+}
+
+func closedEventWatcher() *eventWatcher {
+	watcher := &eventWatcher{events: make(chan av.Event)}
+	watcher.close()
+	return watcher
 }
 
 func (w *eventWatch) subscribe(source <-chan av.Event, capacity int, filters []inspect.EventFilter) inspect.Subscription {

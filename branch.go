@@ -46,6 +46,13 @@ type DestinationOption interface {
 	applyDestination(*destinationSpec)
 }
 
+// MuxOption configures a logical mux/sink group created by Mux. It is sealed
+// so goav can add explicit group-level policy options without making
+// DestinationOption the permanent grouping model.
+type MuxOption interface {
+	applyMux(*destinationSpec)
+}
+
 type destinationRef struct {
 	name string
 	dest destinationSpec

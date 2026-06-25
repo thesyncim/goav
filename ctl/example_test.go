@@ -19,7 +19,7 @@ import (
 	"github.com/thesyncim/goav/graphrender"
 	"github.com/thesyncim/goav/lifecycle"
 	"github.com/thesyncim/goav/pipeline"
-	goavruntime "github.com/thesyncim/goav/runtime"
+	runconfig "github.com/thesyncim/goav/runconfig"
 	"github.com/thesyncim/goav/shape"
 )
 
@@ -37,7 +37,7 @@ func Example_bootstrapControlPlaneHost() {
 	task, err := goav.From(source.Input()).
 		Audio().Decode().Tap(goav.FrameTap("frames")).
 		To(goavtest.NewCollector().Sink()).
-		UseRuntime(goavtest.Runtime(goavruntime.WithEncoder(encoderFactory.descriptor, encoderFactory))).
+		UseRuntime(goavtest.Runtime(runconfig.WithEncoder(encoderFactory.descriptor, encoderFactory))).
 		Build(ctx)
 	if err != nil {
 		fmt.Println(err)

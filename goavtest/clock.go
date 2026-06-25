@@ -13,7 +13,7 @@ import (
 // Clock is a deterministic av.Clock for paced pipelines: Sleep never blocks —
 // it records the requested wait and advances Now by it — so a realtime task
 // runs instantly while a test asserts the exact sleep sequence the pacer
-// asked for. Pair it with goavruntime.WithClock (Runtime injects one by default).
+// asked for. Pair it with runconfig.WithClock (Runtime injects one by default).
 // Advance moves the reading manually for code that polls Now without
 // sleeping. Safe for concurrent use.
 type Clock struct {

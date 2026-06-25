@@ -25,7 +25,7 @@ import (
 	"github.com/thesyncim/goav/lifecycle"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/plan"
-	goavruntime "github.com/thesyncim/goav/runtime"
+	runconfig "github.com/thesyncim/goav/runconfig"
 	"github.com/thesyncim/goav/shape"
 	"github.com/thesyncim/goav/snapshot"
 )
@@ -2128,7 +2128,7 @@ func TestServerSupportsCustomEncoderSettings(t *testing.T) {
 	task, err := goav.From(goavtest.Audio(48000, 1, []int16{1})).
 		Audio().Tap(goav.FrameTap("frames")).
 		To(goavtest.NewCollector().Sink()).
-		UseRuntime(goavtest.Runtime(goavruntime.WithEncoder(factory.descriptor, factory))).
+		UseRuntime(goavtest.Runtime(runconfig.WithEncoder(factory.descriptor, factory))).
 		Build(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -2254,7 +2254,7 @@ func TestServerGenericEncodeStepCarriesCommonCodecOptions(t *testing.T) {
 	task, err := goav.From(goavtest.Audio(48000, 1, []int16{1})).
 		Audio().Tap(goav.FrameTap("frames")).
 		To(goavtest.NewCollector().Sink()).
-		UseRuntime(goavtest.Runtime(goavruntime.WithEncoder(factory.descriptor, factory))).
+		UseRuntime(goavtest.Runtime(runconfig.WithEncoder(factory.descriptor, factory))).
 		Build(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -2519,14 +2519,14 @@ func TestStructuredErrorPreservesUnderlyingShapes(t *testing.T) {
 
 	cause := errors.New("sentinel")
 	buildErr := &goav.BuildError{
-		Family:      errcode.FamilyForCode(errcode.RuntimeBranchTapMissing),
-		Code:        errcode.RuntimeBranchTapMissing,
-		Operation:   "attach runtime branch",
-		Node:        "raw_vdieo",
-		Reason:      "unknown tap",
-		Details:     []string{"available_taps=raw_video"},
-		Suggestions: []string{"use at=raw_video"},
-		Cause:       cause,
+		Family:    errcode.FamilyForCode(errcode.RuntimeBranchTapMissing),
+		Code:      errcode.RuntimeBranchTapMissing,
+		Operation: "attach runtime branch",
+		Node:      "raw_vdieo",
+		Reason:    "unknown tap",
+		Fields:    []goav.Detail{{Key: "available_taps", Value: "raw_video"}},
+		Fixes:     []goav.Fix{{Message: "use at=raw_video"}},
+		Cause:     cause,
 	}
 	wrapped := structuredError("fallback", buildErr)
 	if wrapped.Code != string(errcode.RuntimeBranchTapMissing) ||

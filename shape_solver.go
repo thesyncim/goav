@@ -493,7 +493,7 @@ func shapeSolverAdapterError(operation string, node string, index int, step oper
 			Fields: buildErrorFields(append(details, "candidates="+strings.Join(selection.candidates, ","))),
 			Fixes: buildErrorFixes([]string{
 				"keep one " + string(selection.media) + " conversion filter registered per runtime",
-				"build the runtime with only the intended conversion filter via goav.MustNew(goavruntime.WithFilter(...))",
+				"build the runtime with only the intended conversion filter via goav.MustRuntime(runconfig.WithFilter(...))",
 				"bias the choice with .Prefer(shape.New(...)) toward a capability only one candidate declares",
 			}),
 			Cause: ErrUnsupportedBuild,
@@ -508,7 +508,7 @@ func shapeSolverAdapterError(operation string, node string, index int, step oper
 			selection.needed.String(), operationSpecLabel(step)),
 		Fields: buildErrorFields(details),
 		Fixes: buildErrorFixes([]string{
-			"register a " + string(selection.media) + " conversion filter with goavruntime.WithFilter(filter.Descriptor{Input: ..., Output: ...}, factory)",
+			"register a " + string(selection.media) + " conversion filter with runconfig.WithFilter(filter.Descriptor{Input: ..., Output: ...}, factory)",
 			"import github.com/thesyncim/goav/bundle and build with bundle.MustNewFilters(...) for the bundled resample and resize adapters",
 		}),
 		Cause: ErrUnsupportedBuild,

@@ -26,10 +26,10 @@ The copyable, separate-module examples are:
   `pipeline.Source`, and feeds goav through `goav.Input(provider)`.
 - **`examples/custom-destination`**: opens a plain byte destination with
   `goav.Writer` and checks the resolved `provider.Info`.
-- **`examples/custom-filter`**: registers a frame filter with `goavruntime.WithFilter`
+- **`examples/custom-filter`**: registers a frame filter with `runconfig.WithFilter`
   and drives it through `.Resample(...)`.
-- **`examples/custom-codec`**: registers a codec with `goavruntime.WithEncoder` and
-  `goavruntime.WithDecoder`, then round-trips packets through `.Encode(...)` and
+- **`examples/custom-codec`**: registers a codec with `runconfig.WithEncoder` and
+  `runconfig.WithDecoder`, then round-trips packets through `.Encode(...)` and
   `.Decode()`.
 - **`examples/custom-join`**: implements a `pipeline.Stage` consumed by
   `goav.Join(...)`.
@@ -133,9 +133,9 @@ reflect exported `CodecSettings` fields tagged with `goavctl`, `usage`, and
 `Control func(any) error` escape hatch with your concrete native handle when a
 setting truly belongs to the native library; a non-nil error fails the open.
 
-Register with `goavruntime.WithDecoder(desc, factory)`, `goavruntime.WithEncoder(desc,
-factory)`, `goavruntime.WithCodecDescriptor(desc)` (capability-only), or a bundle
-via `goavruntime.WithCodecAdapter(func(*codec.SimpleRegistry))`; adapter packages
+Register with `runconfig.WithDecoder(desc, factory)`, `runconfig.WithEncoder(desc,
+factory)`, `runconfig.WithCodecDescriptor(desc)` (capability-only), or a bundle
+via `runconfig.WithCodecAdapter(func(*codec.SimpleRegistry))`; adapter packages
 should export `Register(*codec.SimpleRegistry)`.
 
 ## Container (`format` package)
@@ -182,9 +182,9 @@ Lifecycle (from `format/stage.go`, `runtime_demux.go`, `mux_destination.go`):
    finalizes exactly once; a `Write`/`Close` error marks the destination
    transaction failed (transactional writers abort instead of committing).
 
-Register with `goavruntime.WithDemuxer(id, factory)`,
-`goavruntime.WithMuxer(id, factory)`, `goavruntime.WithProber(prober)`, or bundles via
-`goavruntime.WithFormatAdapter(...)`; `Register{Muxer,Demuxer}Descriptor` attaches a
+Register with `runconfig.WithDemuxer(id, factory)`,
+`runconfig.WithMuxer(id, factory)`, `runconfig.WithProber(prober)`, or bundles via
+`runconfig.WithFormatAdapter(...)`; `Register{Muxer,Demuxer}Descriptor` attaches a
 capability `format.Descriptor` (media kinds, codecs, stream counts) that
 destination validation reads.
 
@@ -216,7 +216,7 @@ validation checks `Descriptor.Input/Output` media and the capability lists
 caller-owned `filter.Result`; sentinels `filter.ErrResultFull`,
 `filter.ErrOutputBufferTooSmall`, `filter.ErrUnsupportedFormat`.
 
-Register: `goavruntime.WithFilter(desc, factory)` or `goavruntime.WithFilterAdapter(...)`.
+Register: `runconfig.WithFilter(desc, factory)` or `runconfig.WithFilterAdapter(...)`.
 Use the well-known descriptor name for the conversion class you are replacing;
 the last registration wins, so build from `bundle.MustNewFilters(...)` and pass your
 adapter option after the standard filters:
@@ -269,7 +269,7 @@ func (*passthroughResamplerFilter) HandleEvent(context.Context, *av.Event) error
 func (*passthroughResamplerFilter) Close() error                                    { return nil }
 
 runtime := bundle.MustNewFilters(
-    goavruntime.WithFilter(passthroughResampler, passthroughResamplerFactory{}),
+    runconfig.WithFilter(passthroughResampler, passthroughResamplerFactory{}),
 )
 ```
 

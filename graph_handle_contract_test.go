@@ -41,7 +41,7 @@ func TestExpertGraphHandleAccessorsAndDefaultPolicies(t *testing.T) {
 }
 
 func TestExpertGraphBuilderValidationContracts(t *testing.T) {
-	graph := expertGraph(MustNew())
+	graph := expertGraph(MustRuntime())
 	if got := graph.Stage("missing-stage", nil).Name(); got != "missing-stage" {
 		t.Fatalf("nil stage handle name = %q, want missing-stage", got)
 	}
@@ -55,7 +55,7 @@ func TestExpertGraphBuilderValidationContracts(t *testing.T) {
 		t.Fatalf("Build() err = %v, want first latched ErrNilStage", err)
 	}
 
-	graph = expertGraph(MustNew())
+	graph = expertGraph(MustRuntime())
 	if got := graph.Sink("missing-sink", nil).Name(); got != "missing-sink" {
 		t.Fatalf("nil sink handle name = %q, want missing-sink", got)
 	}
@@ -91,7 +91,7 @@ func TestExpertGraphBuilderValidationContracts(t *testing.T) {
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			graph := expertGraph(MustNew())
+			graph := expertGraph(MustRuntime())
 			tt.run(graph)
 			if _, err := graph.Describe(); !errors.Is(err, tt.want) {
 				t.Fatalf("Describe() err = %v, want %v", err, tt.want)
@@ -109,7 +109,7 @@ func TestExpertGraphBridgeFallbackNamesAndRoutes(t *testing.T) {
 	stage := &runtimeTestStage{name: "stage-self"}
 	sink := &runtimeTestSink{name: "sink-self"}
 
-	graph := expertGraph(MustNew())
+	graph := expertGraph(MustRuntime())
 	sourceName := graph.AddSource("", source)
 	stageName := graph.AddStage("", stage)
 	sinkName := graph.AddSink("", sink)

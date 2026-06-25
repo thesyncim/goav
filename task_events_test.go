@@ -2,6 +2,7 @@ package goav
 
 import (
 	"testing"
+	"time"
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
@@ -28,11 +29,15 @@ func TestProviderDecodeBoundsForStreamUsesMatchingInput(t *testing.T) {
 
 func drainTaskEvents(task Observable) []av.Event {
 	var events []av.Event
+	deadline := time.After(5 * time.Second)
 	for {
 		select {
-		case event := <-task.Events():
+		case event, ok := <-task.Events():
+			if !ok {
+				return events
+			}
 			events = append(events, event)
-		default:
+		case <-deadline:
 			return events
 		}
 	}

@@ -48,7 +48,7 @@ func newCopyContractTask(t *testing.T, ctx context.Context, frame *av.Frame) (Li
 		msg:    pipeline.Message{Kind: pipeline.MessageFrame, Frame: frame},
 	}
 	base := &runtimeTestSink{name: "base"}
-	graph := expertGraph(MustNew(WithBufferPolicy(pipeline.BufferPolicy{Capacity: 2, CopyFrameBytes: 64})))
+	graph := expertGraph(MustRuntime(WithBufferPolicy(pipeline.BufferPolicy{Capacity: 2, CopyFrameBytes: 64})))
 	src := graph.Source("source", source)
 	graph.Connect(src.Out(), graph.Sink("base", base).In())
 	builtTask, err := graph.Build(ctx)
@@ -313,9 +313,6 @@ func TestCopyContractCopyNeverIsSafeOnly(t *testing.T) {
 		if !errors.As(err, &buildErr) || buildErr.Code != errcode.BufferPayloadUnsafe || !errors.Is(err, pipeline.ErrBufferedMessageUnsafe) {
 			t.Fatalf("run err = %v, want buffer_payload_unsafe wrapping ErrBufferedMessageUnsafe", err)
 		}
-		if len(buildErr.Details) != 0 || len(buildErr.Suggestions) != 0 {
-			t.Fatalf("legacy details/suggestions = %v/%v, want typed fields/fixes", buildErr.Details, buildErr.Suggestions)
-		}
 		if got, ok := buildErr.Detail("cause"); !ok || got != "pipeline.ErrBufferedMessageUnsafe" {
 			t.Fatalf("cause detail = %#v, %v; want pipeline.ErrBufferedMessageUnsafe, true", got, ok)
 		}
@@ -402,9 +399,6 @@ func TestCopyContractTooSmallBoundsAreStructured(t *testing.T) {
 	var buildErr *BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != errcode.BufferPayloadTooLarge || !errors.Is(err, pipeline.ErrMessageTooLarge) {
 		t.Fatalf("run err = %v, want buffer_payload_too_large wrapping ErrMessageTooLarge", err)
-	}
-	if len(buildErr.Details) != 0 || len(buildErr.Suggestions) != 0 {
-		t.Fatalf("legacy details/suggestions = %v/%v, want typed fields/fixes", buildErr.Details, buildErr.Suggestions)
 	}
 	if got, ok := buildErr.Detail("cause"); !ok || got != "pipeline.ErrMessageTooLarge" {
 		t.Fatalf("cause detail = %#v, %v; want pipeline.ErrMessageTooLarge, true", got, ok)

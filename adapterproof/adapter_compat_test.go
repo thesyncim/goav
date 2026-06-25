@@ -3,7 +3,7 @@
 // (descriptor+encoder+decoder), container (muxer+demuxer+prober), filter,
 // source provider, and transactional destination provider — defined entirely
 // in this test package, registered through the public value options
-// (goavruntime.WithEncoder/WithDecoder/WithFilter/WithMuxer/WithDemuxer/WithProber)
+// (runconfig.WithEncoder/WithDecoder/WithFilter/WithMuxer/WithDemuxer/WithProber)
 // or passed as values (goav.Input, goav.Custom), and run end to end through
 // the public recipe grammar.
 //
@@ -32,7 +32,7 @@ import (
 	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/provider"
-	goavruntime "github.com/thesyncim/goav/runtime"
+	runconfig "github.com/thesyncim/goav/runconfig"
 	"github.com/thesyncim/goav/shape"
 )
 
@@ -642,14 +642,14 @@ var _ filter.Factory = toyFilterFactory{}
 // toyRuntime registers one external implementation of every seam on a bare
 // runtime — value options only, no registry callbacks, no core knowledge.
 func toyRuntime() *goav.Runtime {
-	return goav.MustNew(
-		goavruntime.WithRealtime(false),
-		goavruntime.WithDecoder(toyCodecDescriptor(), toyCodecFactory{}),
-		goavruntime.WithEncoder(toyCodecDescriptor(), toyCodecFactory{}),
-		goavruntime.WithFilter(toyFilterDescriptor(), toyFilterFactory{}),
-		goavruntime.WithMuxer(toyFormatID, toyContainerFactory{}),
-		goavruntime.WithDemuxer(toyFormatID, toyContainerFactory{}),
-		goavruntime.WithProber(toyProber{}),
+	return goav.MustRuntime(
+		runconfig.WithRealtime(false),
+		runconfig.WithDecoder(toyCodecDescriptor(), toyCodecFactory{}),
+		runconfig.WithEncoder(toyCodecDescriptor(), toyCodecFactory{}),
+		runconfig.WithFilter(toyFilterDescriptor(), toyFilterFactory{}),
+		runconfig.WithMuxer(toyFormatID, toyContainerFactory{}),
+		runconfig.WithDemuxer(toyFormatID, toyContainerFactory{}),
+		runconfig.WithProber(toyProber{}),
 	)
 }
 

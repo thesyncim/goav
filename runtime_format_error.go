@@ -15,7 +15,7 @@ func inputFormatProbeError(input format.Input, cause error) error {
 	}
 	suggestions := []string{
 		"give file or URI inputs a name, URI, or MIME type a registered prober can recognize",
-		"register a format adapter with goav.MustNew(goavruntime.WithFormatAdapter(...))",
+		"register a format adapter with goav.MustRuntime(runconfig.WithFormatAdapter(...))",
 		"use goav.Input(provider) for realtime packet receive",
 	}
 	return &BuildError{
@@ -37,7 +37,7 @@ func inputDemuxerMissingError(input format.Input, id av.FormatID, cause error) e
 	suggestions := []string{
 		"register a format adapter that provides a " + string(id) + " demuxer",
 		"choose an input container supported by the runtime",
-		"call .UseRuntime(goav.MustNew(goavruntime.WithFormatAdapter(...))) when using a custom adapter bundle",
+		"call .UseRuntime(goav.MustRuntime(runconfig.WithFormatAdapter(...))) when using a custom adapter bundle",
 	}
 	return &BuildError{
 		Family:    errcode.FamilyForCode(errcode.InputDemuxerMissing),
@@ -58,7 +58,7 @@ func outputFormatProbeError(output format.Output, index int, cause error) error 
 	suggestions := []string{
 		"give file outputs a name or MIME type a registered prober can recognize",
 		"pass goav.Format(...) to goav.File(...) or goav.Writer(...) when the writer has no filename",
-		"register a format adapter with goav.MustNew(goavruntime.WithFormatAdapter(...))",
+		"register a format adapter with goav.MustRuntime(runconfig.WithFormatAdapter(...))",
 	}
 	return &BuildError{
 		Family:    errcode.FamilyForCode(errcode.OutputFormatUnknown),
@@ -77,9 +77,9 @@ func outputMuxerMissingError(output format.Output, index int, id av.FormatID, ca
 		return cause
 	}
 	suggestions := []string{
-		"register a " + string(id) + " muxer with goav.MustNew(goavruntime.WithMuxer(...)) or a format adapter that provides one",
+		"register a " + string(id) + " muxer with goav.MustRuntime(runconfig.WithMuxer(...)) or a format adapter that provides one",
 		"choose an output container supported by the runtime, such as .ivf for VP8/VP9/AV1 packet recording or .h264 for H264 packet recording",
-		"call .UseRuntime(goav.MustNew(goavruntime.WithFormatAdapter(...))) when using a custom adapter bundle",
+		"call .UseRuntime(goav.MustRuntime(runconfig.WithFormatAdapter(...))) when using a custom adapter bundle",
 	}
 	return &BuildError{
 		Family:    errcode.FamilyForCode(errcode.OutputMuxerMissing),
@@ -100,7 +100,7 @@ func destinationFormatProbeError(node string, output format.Output, cause error)
 	suggestions := []string{
 		"give file destinations a name or MIME type a registered prober can recognize",
 		"pass goav.Format(...) to the destination constructor when the writer has no filename",
-		"register a format adapter with goav.MustNew(goavruntime.WithFormatAdapter(...))",
+		"register a format adapter with goav.MustRuntime(runconfig.WithFormatAdapter(...))",
 	}
 	return &BuildError{
 		Family:    errcode.FamilyForCode(errcode.DestinationFormatUnknown),
@@ -119,9 +119,9 @@ func destinationMuxerMissingError(node string, output format.Output, id av.Forma
 		return cause
 	}
 	suggestions := []string{
-		"register a " + string(id) + " muxer with goav.MustNew(goavruntime.WithMuxer(...)) or a format adapter that provides one",
+		"register a " + string(id) + " muxer with goav.MustRuntime(runconfig.WithMuxer(...)) or a format adapter that provides one",
 		"choose a destination container supported by the runtime, such as .ivf for VP8/VP9/AV1 packet recording or .h264 for H264 packet recording",
-		"call .UseRuntime(goav.MustNew(goavruntime.WithFormatAdapter(...))) when using a custom adapter bundle",
+		"call .UseRuntime(goav.MustRuntime(runconfig.WithFormatAdapter(...))) when using a custom adapter bundle",
 	}
 	return &BuildError{
 		Family:    errcode.FamilyForCode(errcode.DestinationMuxerMissing),

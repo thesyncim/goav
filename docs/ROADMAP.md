@@ -29,16 +29,18 @@ before graph mutation, and rolls back fully on failure
 
 The destination model has also been simplified. Collapse `Target` into `Destination` is done: `File`, `URI`, `Writer`,
 `Sink`, and `Custom` return stable goav-owned destination handles.
-`Mux(name, destination)` is the preferred way to declare one shared mux/sink
-group when branches build matching destinations independently. Reusing one
-handle still groups branches as compatibility sugar (`TestMuxPreferredOverHandleIdentity`,
-`TestMuxSurvivesWithAndCopy`, `TestSameHandleGroupingStillWorksButDocsPreferMux`).
+`Mux(name, destination, opts...)` is the preferred way to declare one shared
+mux/sink group when branches build matching destinations independently. The
+sealed `MuxOption` seam leaves room for explicit group-level policy before v1.
+Reusing one handle still groups branches as compatibility sugar
+(`TestMuxPreferredOverHandleIdentity`, `TestMuxSurvivesWithAndCopy`,
+`TestSameHandleGroupingStillWorksButDocsPreferMux`).
 
 ## v0 Stable
 
 Stable here means "you should not wake up to a silent contract change", not
-"the project has stopped learning". The governed surface is 328 approved
-identifiers (`api_surface_pin_test.go` + `testdata/api_surface.txt`: 69 root,
+"the project has stopped learning". The governed surface is 329 approved
+identifiers (`api_surface_pin_test.go` + `testdata/api_surface.txt`: 70 root,
 22 `control`, 8 `inspect`, 164 `errcode`, 28 `plan`, 24 `lifecycle`,
 4 `snapshot`, 9 `graphrender`),
 every exported symbol documented (`doc_pin_test.go`), tiered in
@@ -52,7 +54,7 @@ every exported symbol documented (`doc_pin_test.go`), tiered in
   interfaces for `Explain`, inspection (`Describe`/`Taps`/`Snapshot`/`Stats`),
   mutation (`Attach`/`Detach` with `DrainBranch`/`AbortBranch`, `Rebranch`),
   controls (`Control`), and observation (`Events`/`Watch`);
-  `New`/`MustNew`/`UseRuntime` and the `bundle` runtime helpers;
+  `NewRuntime`/`MustRuntime`/`UseRuntime` and the `bundle` runtime helpers;
   structured `BuildError` with stable families, detailed codes, typed fields/fixes;
   the `plan`, `snapshot`, `lifecycle`, `shape`, `flow`, and `av` vocabulary
   packages.
@@ -156,7 +158,7 @@ this list:
   headline property (`.github/workflows/ci.yml` builds with it).
 - **Global registries.** Registries are per-runtime; two runtimes in one
   process must never see each other's adapters (`docs/ARCHITECTURE.md`:
-  `goav.New` is the composition root).
+  `goav.NewRuntime` is the composition root).
 - **JIT / runtime code generation.** The planner emits a static graph;
   per-message dispatch stays direct calls. The win would belong to codecs
   (external anyway) and the cost is un-debuggable, un-pinnable hot paths.

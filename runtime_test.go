@@ -127,7 +127,7 @@ func runtimeValue(t *testing.T, rt *Runtime) *runtime {
 
 func newTestBuilder(t *testing.T, options ...Option) *builder {
 	t.Helper()
-	return runtimeValue(t, MustNew(options...)).newBuilder()
+	return runtimeValue(t, MustRuntime(options...)).newBuilder()
 }
 
 func TestRuntimeNewRejectsInvalidOptions(t *testing.T) {
@@ -155,27 +155,36 @@ func TestRuntimeNewRejectsInvalidOptions(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			runtime, err := New(tt.options...)
+			runtime, err := NewRuntime(tt.options...)
 			if err == nil {
-				t.Fatalf("New() err = nil, runtime = %#v", runtime)
+				t.Fatalf("NewRuntime() err = nil, runtime = %#v", runtime)
 			}
 			if runtime != nil {
-				t.Fatalf("New() runtime = %#v, want nil on invalid option", runtime)
+				t.Fatalf("NewRuntime() runtime = %#v, want nil on invalid option", runtime)
 			}
 			if !strings.Contains(err.Error(), tt.want) {
-				t.Fatalf("New() err = %v, want %q", err, tt.want)
+				t.Fatalf("NewRuntime() err = %v, want %q", err, tt.want)
 			}
 		})
 	}
 }
 
-func TestRuntimeMustNewPanicsOnInvalidOption(t *testing.T) {
+func TestMustRuntimePanicsOnInvalidOption(t *testing.T) {
 	defer func() {
 		if recover() == nil {
-			t.Fatal("MustNew(nil) did not panic")
+			t.Fatal("MustRuntime(nil) did not panic")
 		}
 	}()
-	MustNew(nil)
+	MustRuntime(nil)
+}
+
+func TestRuntimeConstructorsSucceed(t *testing.T) {
+	if _, err := NewRuntime(); err != nil {
+		t.Fatalf("NewRuntime() error = %v", err)
+	}
+	if MustRuntime() == nil {
+		t.Fatal("MustRuntime() returned nil")
+	}
 }
 
 func testSelectAudio() av.StreamSelector {
@@ -281,7 +290,7 @@ func testFilterFactory(desc filter.Descriptor, factory filter.Factory) func(*fil
 }
 
 func TestNewRuntimeDefaults(t *testing.T) {
-	rt := runtimeValue(t, MustNew())
+	rt := runtimeValue(t, MustRuntime())
 	if rt.codecs == nil || rt.formats == nil || rt.filters == nil {
 		t.Fatalf("runtime defaults incomplete: %+v", rt)
 	}
@@ -298,7 +307,7 @@ func TestNewRuntimeDefaults(t *testing.T) {
 }
 
 func TestRuntimeWithCodecAdapter(t *testing.T) {
-	rt := runtimeValue(t, MustNew(WithCodecAdapter(gopusadapter.Register)))
+	rt := runtimeValue(t, MustRuntime(WithCodecAdapter(gopusadapter.Register)))
 
 	if _, err := rt.codecs.DecoderFactory(av.CodecOpus); err != nil {
 		t.Fatalf("decoder factory: %v", err)
@@ -306,7 +315,7 @@ func TestRuntimeWithCodecAdapter(t *testing.T) {
 }
 
 func TestRuntimeWithBundleCodecsIncludesAACDecode(t *testing.T) {
-	rt := runtimeValue(t, MustNew(testBundleCodecs()))
+	rt := runtimeValue(t, MustRuntime(testBundleCodecs()))
 
 	if _, err := rt.codecs.DecoderFactory(av.CodecAAC); err != nil {
 		t.Fatalf("AAC decoder factory: %v", err)
@@ -324,7 +333,7 @@ func TestRuntimeWithCustomCodecHooks(t *testing.T) {
 		Modes: []codec.Mode{codec.ModeDecode, codec.ModeEncode},
 	}
 
-	descriptorOnly := runtimeValue(t, MustNew(WithCodecDescriptor(desc)))
+	descriptorOnly := runtimeValue(t, MustRuntime(WithCodecDescriptor(desc)))
 	if _, err := descriptorOnly.codecs.DecoderFactory(desc.ID); !errors.Is(err, codec.ErrUnavailable) {
 		t.Fatalf("descriptor-only decoder err = %v, want codec.ErrUnavailable", err)
 	}
@@ -334,7 +343,7 @@ func TestRuntimeWithCustomCodecHooks(t *testing.T) {
 
 	decoderFactory := &decodeTestDecoderFactory{decoder: &decodeTestDecoder{}}
 	encoderFactory := &encodeTestEncoderFactory{encoder: &encodeTestEncoder{}}
-	rt := runtimeValue(t, MustNew(
+	rt := runtimeValue(t, MustRuntime(
 		WithDecoder(desc, decoderFactory),
 		WithEncoder(desc, encoderFactory),
 	))
@@ -354,7 +363,7 @@ func TestRuntimeWithCustomCodecHooks(t *testing.T) {
 }
 
 func TestRuntimeWithFormatAdapter(t *testing.T) {
-	rt := runtimeValue(t, MustNew(WithFormatAdapter(ivfadapter.Register)))
+	rt := runtimeValue(t, MustRuntime(WithFormatAdapter(ivfadapter.Register)))
 
 	if _, err := rt.formats.DemuxerFactory(av.FormatIVF); err != nil {
 		t.Fatalf("demuxer factory: %v", err)
@@ -368,7 +377,7 @@ func TestRuntimeWithDirectFormatHooks(t *testing.T) {
 	formatID := av.FormatID("x_direct")
 	demuxerFactory := remuxTestDemuxerFactory{demuxer: &remuxTestDemuxer{}}
 	muxerFactory := &remuxTestMuxerFactory{}
-	rt := runtimeValue(t, MustNew(
+	rt := runtimeValue(t, MustRuntime(
 		WithDemuxer(formatID, demuxerFactory),
 		WithMuxer(formatID, muxerFactory),
 	))
@@ -382,7 +391,7 @@ func TestRuntimeWithDirectFormatHooks(t *testing.T) {
 }
 
 func TestRuntimeWithFilterAdapter(t *testing.T) {
-	rt := runtimeValue(t, MustNew(WithFilterAdapter(func(registry *filter.SimpleRegistry) {
+	rt := runtimeValue(t, MustRuntime(WithFilterAdapter(func(registry *filter.SimpleRegistry) {
 		registry.RegisterFactory(filter.Descriptor{Name: filter.FactoryResample}, &transcodeTestFilterFactory{})
 	})))
 
@@ -531,14 +540,15 @@ func TestRuntimeBuilderExplicitGraphWithEventCapacity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	_ = task.Events()
 	if err := task.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if err := task.Close(); err != nil {
 		t.Fatal(err)
 	}
 	if got := drainTaskEvents(task); len(got) != 2 {
 		t.Fatalf("events = %+v, want 2", got)
-	}
-	if err := task.Close(); err != nil {
-		t.Fatal(err)
 	}
 	if !source.closed {
 		t.Fatal("source not closed")
@@ -955,7 +965,7 @@ func TestRuntimeBuilderExplicitGraphValidation(t *testing.T) {
 }
 
 func TestRuntimeWithCodecDescriptorAdapter(t *testing.T) {
-	rt := runtimeValue(t, MustNew(withTestCodecDescriptor(codec.Descriptor{
+	rt := runtimeValue(t, MustRuntime(withTestCodecDescriptor(codec.Descriptor{
 		ID:    av.CodecAV1,
 		Modes: []codec.Mode{codec.ModeDecode},
 	})))

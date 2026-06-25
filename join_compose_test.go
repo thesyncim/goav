@@ -122,7 +122,7 @@ func TestMixBranchesFanOutMixedStream(t *testing.T) {
 func TestMixBranchesEncodeAndMonitorIndependently(t *testing.T) {
 	ctx := context.Background()
 	muxers := &remuxTestMuxerFactory{}
-	rt := MustNew(
+	rt := MustRuntime(
 		withTestFormats(testFormatMuxer(av.FormatOgg, muxers)),
 		WithEncoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &encodeTestEncoderFactory{encoder: &encodeTestEncoder{}}),
 	)

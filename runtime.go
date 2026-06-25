@@ -15,7 +15,7 @@ import (
 	"github.com/thesyncim/goav/lifecycle"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/plan"
-	runtimecfg "github.com/thesyncim/goav/runtime"
+	runconfig "github.com/thesyncim/goav/runconfig"
 	"github.com/thesyncim/goav/snapshot"
 )
 
@@ -55,12 +55,12 @@ var (
 	ErrClosed = pipeline.ErrClosed
 )
 
-// New builds a bare runtime: per-runtime registries with no adapters beyond
-// content sniffing, realtime pacing on. Import github.com/thesyncim/goav/bundle
-// for a runtime with the bundled adapters already registered. Runtime options
-// live in github.com/thesyncim/goav/runtime.
-func New(options ...runtimecfg.Option) (*Runtime, error) {
-	config, err := runtimecfg.NewConfig(options...)
+// NewRuntime builds a bare runtime: per-runtime registries with no adapters
+// beyond content sniffing, realtime pacing on. Import
+// github.com/thesyncim/goav/bundle for a runtime with the bundled adapters
+// already registered. Runtime options live in github.com/thesyncim/goav/runconfig.
+func NewRuntime(options ...runconfig.Option) (*Runtime, error) {
+	config, err := runconfig.NewConfig(options...)
 	if err != nil {
 		return nil, err
 	}
@@ -75,10 +75,10 @@ func New(options ...runtimecfg.Option) (*Runtime, error) {
 	}, nil
 }
 
-// MustNew is New for package-level setup and tests: it panics when runtime
-// options are invalid.
-func MustNew(options ...runtimecfg.Option) *Runtime {
-	runtime, err := New(options...)
+// MustRuntime is NewRuntime for package-level setup and tests: it panics when
+// runtime options are invalid.
+func MustRuntime(options ...runconfig.Option) *Runtime {
+	runtime, err := NewRuntime(options...)
 	if err != nil {
 		panic(err)
 	}
@@ -323,6 +323,12 @@ type task struct {
 	// watch fans the graph's event stream out to filtered Watch subscribers.
 	watch eventWatch
 
+	// events is the task-owned unfiltered Events subscription. Events() returns
+	// the same channel for every caller so it never creates unclosable watcher
+	// state per call.
+	eventsMu           sync.Mutex
+	eventsSubscription *eventWatcher
+
 	// rules is the dynamic-stream rule engine (OnStream grammar), installed at
 	// build before the task escapes; nil when the job declared no rules.
 	rules *taskStreamRules
@@ -463,7 +469,7 @@ func (t *task) bufferedPayloadRunError(cause error, code errcode.Code, reason st
 		Fixes: []Fix{
 			{Message: "for branch buffers, use flow.BufferCopyBounds(packetBytes, frameBytes) with bounds large enough for the payload"},
 			{Message: "when using flow.CopyNever, emit av.BufferImmutable payloads only or switch to flow.CopyIfMutable/flow.CopyAlways"},
-			{Message: "for runtime-level buffers, set goavruntime.WithBufferPolicy(pipeline.BufferPolicy{Capacity: ..., Drop: pipeline.DropBlock, CopyPacketBytes: ..., CopyFrameBytes: ...})"},
+			{Message: "for runtime-level buffers, set runconfig.WithBufferPolicy(pipeline.BufferPolicy{Capacity: ..., Drop: pipeline.DropBlock, CopyPacketBytes: ..., CopyFrameBytes: ...})"},
 		},
 		Cause: cause,
 	}
@@ -497,15 +503,7 @@ func (t *task) copyNeverBranchNames() []string {
 }
 
 func (t *task) Events() <-chan av.Event {
-	if t.rules != nil {
-		// The rule engine holds an internal Watch subscription, so the raw
-		// graph channel is already being drained by the watch distributor.
-		// Hand every Events caller its own unfiltered subscription — the
-		// documented remedy once Watch is in use — so no consumer competes
-		// with the engine for events.
-		return t.Watch().Events()
-	}
-	return t.graph.Events()
+	return t.ownedEvents().Events()
 }
 
 func (t *task) Stats() pipeline.GraphStats {

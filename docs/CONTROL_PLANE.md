@@ -80,7 +80,7 @@ This is the smallest production shape:
 
 The default branch grammar is intentionally useful before a host adds any
 custom CLI grammar. If a task runtime has an encoder registered with
-`goavruntime.WithEncoder`, it is callable from attach/rebranch as:
+`runconfig.WithEncoder`, it is callable from attach/rebranch as:
 
 ```sh
 goav ctl --control unix:///tmp/goav-live.sock attach frames as preview \
@@ -138,7 +138,7 @@ task, err := goav.From(liveInput).
     Audio().Decode().Tap(goav.FrameTap("frames")).
     To(primaryDestination).
     UseRuntime(bundle.MustNew(
-        goavruntime.WithEncoder(encoderFactory.Descriptor, encoderFactory),
+        runconfig.WithEncoder(encoderFactory.Descriptor, encoderFactory),
     )).
     Build(ctx)
 if err != nil {
@@ -378,7 +378,7 @@ Register the codec implementation on the runtime, then call it in an attach or
 rebranch pipeline with the generic `encode` step. This is the default path for
 custom encoders and does not require a custom encoder spelling. Use
 `bundle.MustNew(...)` when you want the bundled codecs, formats, and filters plus
-your adapter; use `goav.New(...)` only when you are intentionally registering
+your adapter; use `goav.NewRuntime(...)` only when you are intentionally registering
 every required codec, filter, prober, demuxer, and muxer yourself.
 
 Opus, VP8, VP9, and AV1 are full encode/decode recipe verticals. Encoder
@@ -397,12 +397,12 @@ capabilities.
 
 ```go
 rt := bundle.MustNew(
-    goavruntime.WithEncoder(codec.Descriptor{
+    runconfig.WithEncoder(codec.Descriptor{
         ID:   av.CodecID("x_pcm_s16"),
         Name: "ACME PCM S16",
         Type: av.MediaAudio,
     }, acmeEncoderFactory),
-    goavruntime.WithFormatAdapter(acmecontainer.Register), // if no stock container accepts the codec
+    runconfig.WithFormatAdapter(acmecontainer.Register), // if no stock container accepts the codec
 )
 ```
 
@@ -432,7 +432,7 @@ and `pixel_format` are rejected with suggestions.
 
 The destination container must accept the selected codec. Standard codecs can
 often use the bundled containers registered by `bundle.MustNew`; a private codec
-usually needs a matching `goavruntime.WithFormatAdapter`, `WithMuxer`, or an app-owned
+usually needs a matching `runconfig.WithFormatAdapter`, `WithMuxer`, or an app-owned
 custom destination step. Runtime muxers registered with `WithMuxer` are callable
 by `filesink location=<path> [format=<id>]` and appear in `help attach`.
 

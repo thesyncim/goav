@@ -16,7 +16,8 @@ compatibility it is promising and what evidence backs that promise.
   import bundled adapter packages into the root package dependency graph.
   `goav/bundle` is currently a package in the root module, not a nested module,
   so the root module still carries bundled backend requirements until/unless a
-  nested-module split is justified by SBOM or scanner pressure.
+  nested-module split is justified by SBOM or scanner pressure. See
+  [`BUNDLE_MODULE_POLICY.md`](BUNDLE_MODULE_POLICY.md).
 - Structured errors: applications should switch on `BuildError.Family` first.
   `BuildError.Code` remains a detailed diagnostic leaf that may grow within a
   family before v1; rendered details and suggestions are compatibility output,

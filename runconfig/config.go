@@ -1,9 +1,9 @@
-// Package runtime owns goav runtime construction options.
+// Package runconfig owns goav runtime construction options.
 //
 // The root goav package stays focused on recipe grammar. Import this package
 // when an application needs to configure a bare runtime, register custom
 // codecs, formats, or filters, change buffering, or inject clocks.
-package runtime
+package runconfig
 
 import (
 	"errors"
@@ -33,7 +33,7 @@ type Config struct {
 // Option configures a runtime under construction: registries (codecs, formats,
 // filters), pacing (WithRealtime, WithClock), and graph policy
 // (WithBufferPolicy, WithEventCapacity). Invalid options return an error from
-// goav.New instead of silently no-oping.
+// goav.NewRuntime instead of silently no-oping.
 type Option func(*Config) error
 
 // NewConfig builds the default bare runtime configuration, applies options in

@@ -43,6 +43,15 @@ func applyDestinationOptions(spec destinationSpec, opts []DestinationOption) des
 	return spec
 }
 
+func applyMuxOptions(spec destinationSpec, opts []MuxOption) destinationSpec {
+	for i := range opts {
+		if opts[i] != nil {
+			opts[i].applyMux(&spec)
+		}
+	}
+	return spec
+}
+
 // File creates a writer-backed destination from an already-open writer. When
 // the writer also implements io.Closer it is closed exactly once when the
 // destination finalizes (run end, drained detach, or failure); a plain writer
@@ -233,6 +242,14 @@ func (o destinationOption) applyDestination(spec *destinationSpec) {
 	}
 }
 
+type muxOption func(*destinationSpec)
+
+func (o muxOption) applyMux(spec *destinationSpec) {
+	if spec != nil && o != nil {
+		o(spec)
+	}
+}
+
 // Name overrides the value's label. On an input it is the name selector
 // narrowing (InputName), errors, and Explain use; on a destination it is the
 // label outputs group and dedupe by.
@@ -301,9 +318,11 @@ func destinationGroup(name string) DestinationOption {
 
 // Mux marks destination as a first-class logical mux/sink group. Independently
 // built destinations wrapped with the same non-empty group name share one
-// planned output when their destination settings are compatible.
-func Mux(name string, destination Destination) Destination {
-	return destination.With(destinationGroup(name))
+// planned output when their destination settings are compatible. MuxOption is
+// reserved for explicit group-level policies; callers usually pass no options.
+func Mux(name string, destination Destination, opts ...MuxOption) Destination {
+	spec := applyDestinationOptions(cloneDestinationSpec(destination.spec), []DestinationOption{destinationGroup(name)})
+	return Destination{spec: applyMuxOptions(spec, opts)}
 }
 
 // With returns a copy of the destination with the options applied — the same

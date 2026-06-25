@@ -14,7 +14,7 @@ while they are alive.
 runtimes. The root package is for describing media work: input, stream
 selection, operations, taps, branches, destinations, flows, and task lifecycle.
 Bundled adapters live in `goav/bundle`; live controls live in `goav/control`;
-observation helpers live in `goav/inspect`.
+watch, snapshot, stats, and render helpers live in `goav/inspect`.
 
 Use it when media belongs inside a Go service and you need structured build
 errors, in-process events, runtime branches, or app-owned sources and sinks.
@@ -35,6 +35,9 @@ return bundle.Run(ctx, goav.From(goav.FileInput("input.ivf", in)).
     To(goav.File("recording.ivf", out)),
 )
 ```
+
+`bundle.Run` is one-shot sugar. Services usually build a runtime once with
+`bundle.MustNew()` and pass it to jobs with `.UseRuntime(rt)`.
 
 The front-door vocabulary is intentionally small:
 
@@ -61,6 +64,29 @@ or transactional writer. Reusing the same destination value is compatibility sug
 | Add app-owned media | `goav.Source(...)`, `goav.Input(provider)`, `goav.Sink(...)` | [Extension cookbook](docs/EXTENSION_COOKBOOK.md) |
 
 ## Expandable Examples
+
+<details>
+<summary><strong>Decode, resize, and encode with a reused runtime</strong></summary>
+
+```go
+rt := bundle.MustNew()
+
+task, err := goav.From(goav.FileInput("input.ivf", in)).
+    UseRuntime(rt).
+    Video().
+    Decode().
+    Resize(1280, 720).
+    Encode(codec.VP8(codec.Bitrate(1_000_000))).
+    To(goav.File("preview.webm", out)).
+    Build(ctx)
+if err != nil {
+    return err
+}
+defer task.Close()
+return task.Run(ctx)
+```
+
+</details>
 
 <details>
 <summary><strong>Live camera track: archive steadily, keep preview low-latency</strong></summary>

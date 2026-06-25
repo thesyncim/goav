@@ -33,8 +33,9 @@ Sources -> packet/frame/event stages -> sinks
 Format, RTP, WebRTC, codec, and filter adapters
 ```
 
-`goav.New` is the composition root. It owns the per-runtime codec, format, and
-filter registries; there are no global registries. `bundle.MustNew(opts...)`
+`goav.NewRuntime` is the composition root. It owns the per-runtime codec,
+format, and filter registries; there are no global registries.
+`bundle.MustNew(opts...)`
 registers the bundled in-repo adapters and then applies caller options
 last-wins, so one call can add or override implementations.
 

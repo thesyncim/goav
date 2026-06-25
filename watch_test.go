@@ -288,12 +288,48 @@ func TestWatchSubscribePublishDistributeConcurrently(t *testing.T) {
 	}
 }
 
-func TestEventsReturnsUnderlyingGraphChannel(t *testing.T) {
+func TestEventsReturnsStableTaskOwnedChannel(t *testing.T) {
 	graph := newWatchTestGraph(1)
 	task := newTask(graph, nil)
-	if task.Events() != (<-chan av.Event)(graph.events) {
-		t.Fatal("Events must expose the graph event channel unchanged")
+	first := task.Events()
+	second := task.Events()
+	if first != second {
+		t.Fatal("Events should return one stable task-owned channel")
 	}
+	if first == (<-chan av.Event)(graph.events) {
+		t.Fatal("Events should not expose the graph channel directly")
+	}
+
+	graph.events <- av.Event{Type: av.EventStats, Reason: "owned"}
+	if err := task.Close(); err != nil {
+		t.Fatal(err)
+	}
+	got := collectUntilClosed(t, first)
+	if len(got) != 1 || got[0].Reason != "owned" {
+		t.Fatalf("events = %+v, want owned stats event", got)
+	}
+}
+
+func TestEventsWithStreamRulesDoesNotCreateWatcherPerCall(t *testing.T) {
+	graph := newWatchTestGraph(1)
+	task := newTask(graph, nil)
+	task.rules = &taskStreamRules{}
+
+	first := task.Events()
+	second := task.Events()
+	if first != second {
+		t.Fatal("Events on rule-bearing task should return one stable channel")
+	}
+	task.watch.mu.Lock()
+	watchers := len(task.watch.watchers)
+	task.watch.mu.Unlock()
+	if watchers != 1 {
+		t.Fatalf("watchers = %d, want one task-owned Events watcher", watchers)
+	}
+	if err := task.Close(); err != nil {
+		t.Fatal(err)
+	}
+	collectUntilClosed(t, first)
 }
 
 func TestWatchEndToEndDeliversAndClosesOnTaskClose(t *testing.T) {

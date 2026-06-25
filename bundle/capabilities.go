@@ -9,7 +9,7 @@ import (
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/filter"
 	"github.com/thesyncim/goav/format"
-	goavruntime "github.com/thesyncim/goav/runtime"
+	runconfig "github.com/thesyncim/goav/runconfig"
 )
 
 type bundledCapabilities struct {
@@ -20,7 +20,7 @@ type bundledCapabilities struct {
 }
 
 func collectBundledCapabilities() (bundledCapabilities, error) {
-	config, err := goavruntime.NewConfig(Options()...)
+	config, err := runconfig.NewConfig(Options()...)
 	if err != nil {
 		return bundledCapabilities{}, err
 	}

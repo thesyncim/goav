@@ -27,7 +27,7 @@ import (
 	"github.com/thesyncim/goav/ctl"
 	"github.com/thesyncim/goav/goavtest"
 	"github.com/thesyncim/goav/pipeline"
-	goavruntime "github.com/thesyncim/goav/runtime"
+	runconfig "github.com/thesyncim/goav/runconfig"
 	"github.com/thesyncim/goav/shape"
 )
 
@@ -125,7 +125,7 @@ func newDemoHost(ctx context.Context) (*demoHost, error) {
 	task, err := goav.From(input).
 		Video().Decode().Tap(goav.FrameTap("frames")).
 		To(goavtest.NewCollector().Sink()).
-		UseRuntime(goavtest.Runtime(goavruntime.WithEncoder(factory.descriptor, factory))).
+		UseRuntime(goavtest.Runtime(runconfig.WithEncoder(factory.descriptor, factory))).
 		Build(ctx)
 	if err != nil {
 		return nil, err

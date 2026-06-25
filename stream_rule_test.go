@@ -200,7 +200,7 @@ func TestOnStreamAttachesLateBranchAndDetachesOnRemoval(t *testing.T) {
 	input := lateStreamSource(late, 0xA, stopLate, finish)
 
 	state := &syncObjectState{}
-	rt := MustNew(withTestFormats(testFormatMuxer(av.FormatOgg, &syncTestMuxer{})))
+	rt := MustRuntime(withTestFormats(testFormatMuxer(av.FormatOgg, &syncTestMuxer{})))
 	record := Writer("s3://bucket/late.ogg", state.open, Format(av.FormatOgg), MIME("audio/ogg"))
 
 	var mainCount atomic.Int32
@@ -543,7 +543,7 @@ func TestOnStreamAttachFailureSurfacesEventAndRollsBack(t *testing.T) {
 
 	// No ogg muxer registered: the rule branch cannot build — its destination
 	// opens first and must be aborted by the rollback.
-	rt := MustNew(withTestFormats())
+	rt := MustRuntime(withTestFormats())
 	state := &syncObjectState{}
 	bad := Writer("late.ogg", state.open, Format(av.FormatOgg))
 

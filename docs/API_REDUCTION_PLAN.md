@@ -119,14 +119,15 @@ Move or keep outside the front door:
    - Replace string-only production errors with typed details and fixes:
      `BuildError` carries typed `Fields []Detail`, `Fixes []Fix`, optional
      `RecipePatch` hints, `Detail(key)`, `DetailLines()`, and `FixLines()`.
-     The source pin rejects new production `Details`/`Suggestions` literals.
+     Legacy `Details`/`Suggestions` fields are removed from the public struct.
 
 9. **Explicit destination groups** — landed
    - Introduce explicit mux/group builders.
    - Stop relying on Go value identity as the only way to group destination
      branches.
-   - Keep `Mux(name, destination)` as the public grouping constructor; the
-     option-only grouping helper is internal.
+   - Keep `Mux(name, destination, opts...)` as the public grouping constructor
+     with a sealed `MuxOption` seam for future group-level policy; the
+     destination-option-only grouping helper is internal.
 
 10. **Unified lowering** — landed
    - Lower stream chains, branches, joins, and runtime attach through the same

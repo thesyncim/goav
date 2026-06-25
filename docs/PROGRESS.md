@@ -107,7 +107,7 @@ Compatibility pins:
   `goav.Custom(...)`, `provider.Info`, and `provider.TransactionalWriter`.
 - Add in-process hooks through `EventFunc`, `FrameFunc`, `PacketFunc`, and
   `SinkFunc`.
-- Register runtime adapters per runtime with `goavruntime.WithDecoder`,
+- Register runtime adapters per runtime with `runconfig.WithDecoder`,
   `WithEncoder`, `WithFilter`, `WithMuxer`, `WithDemuxer`, and `WithProber`.
 - Host controls through package `ctl`: explicit command manifests, custom
   branch-pipeline steps, custom encoder spellings, capabilities reports, and

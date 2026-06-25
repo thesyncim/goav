@@ -153,7 +153,7 @@ func TestBuildErrorTypedDetailsAndFixes(t *testing.T) {
 				Patch: &RecipePatch{
 					Action: "add_runtime_option",
 					Path:   "runtime",
-					Value:  "goavruntime.WithDecoder(...)",
+					Value:  "runconfig.WithDecoder(...)",
 				},
 			},
 		},
@@ -172,8 +172,7 @@ func TestBuildErrorTypedDetailsAndFixes(t *testing.T) {
 		t.Fatalf("rendered typed BuildError = %q", rendered)
 	}
 
-	legacy := &BuildError{Details: []string{"format=webm"}}
-	if got, ok := legacy.Detail("format"); !ok || got != "webm" {
-		t.Fatalf("legacy detail = %#v, %v; want webm, true", got, ok)
+	if got, ok := buildErr.Detail("format"); ok || got != nil {
+		t.Fatalf("missing detail = %#v, %v; want nil, false", got, ok)
 	}
 }

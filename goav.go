@@ -9,8 +9,8 @@
 // operation lists, and Build(ctx) returns a Task — a running graph with
 // events, snapshots, runtime Attach/Detach, and live controls.
 //
-// New(opts...) builds a bare runtime and returns option/configuration errors;
-// MustNew(opts...) is the package-level setup shortcut. Import
+// NewRuntime(opts...) builds a bare runtime and returns option/configuration
+// errors; MustRuntime(opts...) is the package-level setup shortcut. Import
 // github.com/thesyncim/goav/bundle when the application wants the bundled pure-Go
 // adapters. Build errors are structured: every refusal is a *BuildError
 // carrying an errcode.Family, detailed errcode.Code, the failing operation,
@@ -30,7 +30,7 @@ import (
 )
 
 // Runtime is an intentionally opaque composition root for applications
-// embedding goav. Build it with New or MustNew, or import
+// embedding goav. Build it with NewRuntime or MustRuntime, or import
 // github.com/thesyncim/goav/bundle for the bundled adapter set. Applications
 // pass Runtime handles back to recipe builders; construction and adapter
 // registration stay behind the runtime and bundle packages.
@@ -98,8 +98,8 @@ type Controllable interface {
 
 // Observable exposes task event streams.
 type Observable interface {
-	// Events is the single raw event channel. Once Watch is in use, subscribe
-	// every consumer through Watch instead — both drain one underlying stream.
+	// Events returns the task-owned unfiltered event channel. Repeated calls
+	// return the same channel; it closes when the task closes.
 	Events() <-chan av.Event
 	// Watch returns an independent, filtered subscription to the task's event
 	// stream. Filters AND together; with zero filters every event is delivered.
@@ -107,10 +107,8 @@ type Observable interface {
 	// buffer: when a watcher falls behind and its buffer fills, new events are
 	// dropped for that watcher only — the data plane and other watchers never
 	// block on a slow consumer. Subscription channels close when the task closes
-	// or Subscription.Close unsubscribes them. Watch and Events drain the same
-	// underlying stream, so once Watch is used, subscribe every consumer through
-	// Watch (an unfiltered Watch() is the Events equivalent) rather than reading
-	// Events directly.
+	// or Subscription.Close unsubscribes them. Prefer Watch for consumers with
+	// shorter lifetimes than the task.
 	Watch(filters ...inspect.EventFilter) inspect.Subscription
 }
 

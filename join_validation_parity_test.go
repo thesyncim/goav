@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"strings"
 	"testing"
 
 	"github.com/thesyncim/goav/av"
@@ -11,15 +12,37 @@ import (
 	"github.com/thesyncim/goav/errcode"
 )
 
+func TestJoinInputValidationParity(t *testing.T) {
+	_, err := Mix(
+		From(mixTestAudioSource("a", 1)).Audio(),
+	).To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))).
+		Build(context.Background())
+	assertJoinParityBuildError(t, err, errcode.MixInputs)
+}
+
 func TestJoinOutputFormatValidationParity(t *testing.T) {
 	_, err := Mix(
 		From(mixTestAudioSource("a", 1)).Audio(),
 		From(mixTestAudioSource("b", 1)).Audio(),
 	).Encode(codec.Opus()).
 		To(File("out.unknown", io.Discard)).
-		UseRuntime(MustNew(WithEncoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &encodeTestEncoderFactory{encoder: &encodeTestEncoder{}}))).
+		UseRuntime(MustRuntime(WithEncoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &encodeTestEncoderFactory{encoder: &encodeTestEncoder{}}))).
 		Build(context.Background())
 	assertJoinParityBuildError(t, err, errcode.OutputFormatUnknown)
+}
+
+func TestJoinMuxerMissingValidationParity(t *testing.T) {
+	_, err := Mix(
+		From(mixTestAudioSource("a", 1)).Audio(),
+		From(mixTestAudioSource("b", 1)).Audio(),
+	).Encode(codec.Opus()).
+		To(File("out.ogg", io.Discard, Format(av.FormatOgg))).
+		UseRuntime(MustRuntime(WithEncoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &encodeTestEncoderFactory{encoder: &encodeTestEncoder{}}))).
+		Build(context.Background())
+	assertJoinParityBuildError(t, err, errcode.OutputMuxerMissing)
+	if !strings.Contains(err.Error(), "muxer") {
+		t.Fatalf("err = %v, want muxer guidance", err)
+	}
 }
 
 func TestJoinDestinationShapeValidationParity(t *testing.T) {
@@ -36,7 +59,7 @@ func TestJoinTransformAdapterValidationParity(t *testing.T) {
 		From(mixTestAudioSource("a", 1)).Audio(),
 		From(mixTestAudioSourceRate("b", 44_100)).Audio(),
 	).To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))).
-		UseRuntime(MustNew()).
+		UseRuntime(MustRuntime()).
 		Build(context.Background())
 	assertJoinParityBuildError(t, err, errcode.ShapeAdapterMissing)
 }
@@ -47,7 +70,7 @@ func TestJoinMuxCompatibilityValidationParity(t *testing.T) {
 		From(mixTestAudioSource("b", 1)).Audio(),
 	).Encode(codec.Opus()).
 		To(File("out.ivf", io.Discard, Format(av.FormatIVF))).
-		UseRuntime(MustNew(
+		UseRuntime(MustRuntime(
 			WithEncoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &encodeTestEncoderFactory{encoder: &encodeTestEncoder{}}),
 			withTestFormats(testFormatMuxer(av.FormatIVF, writerTestMuxerFactory{})),
 		)).

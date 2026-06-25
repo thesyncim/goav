@@ -237,7 +237,7 @@ func TestAttachedBranchStreamAndEventNarrowRoutes(t *testing.T) {
 	source := &coldPathRoutedSource{name: "feed", ready: make(chan struct{}), resume: make(chan struct{})}
 	base := newColdPathCountSink("base")
 
-	graph := expertGraph(MustNew())
+	graph := expertGraph(MustRuntime())
 	src := graph.Source("feed", source)
 	baseNode := graph.Sink("base", base)
 	graph.Connect(src.Out(), baseNode.In())

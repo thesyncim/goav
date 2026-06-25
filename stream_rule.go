@@ -43,9 +43,9 @@ func OnRemove(options ...lifecycle.DetachOption) BranchSpec {
 // av.EventAttachError on Watch/Events — never silently. A discovered stream
 // matching no rule just surfaces its event, exactly as without rules.
 //
-// Rules require a single-input job today. Because the task watches its own
-// events, Events() on a rule-bearing task returns an independent Watch
-// subscription per call instead of the shared graph channel.
+// Rules require a single-input job today. Rule-bearing tasks still expose one
+// task-owned Events channel; use Watch when a consumer needs its own disposable
+// subscription.
 func (j *Job) OnStream(match sourcepkg.StreamMatch, branches ...BranchSpec) *Job {
 	if j == nil {
 		return j

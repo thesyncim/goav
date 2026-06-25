@@ -54,7 +54,7 @@ var surfaceSeamPackages = []string{
 	"goavtest",
 	"pipeline",
 	"provider",
-	"runtime",
+	"runconfig",
 	"shape",
 	"source",
 }

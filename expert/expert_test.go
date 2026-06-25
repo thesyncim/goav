@@ -66,7 +66,7 @@ func packetMessage(stream av.StreamID) pipeline.Message {
 // from Source/Stage/Sink, Connect routes (full and stream-narrowed), Describe
 // parity, Build, and a run that delivers messages along the wired routes.
 func TestGraphWiresAndRunsThroughPublicSeam(t *testing.T) {
-	graph := expert.Graph(goav.MustNew())
+	graph := expert.Graph(goav.MustRuntime())
 	source := graph.Source("source", &expertTestSource{
 		name:     "source",
 		messages: []pipeline.Message{packetMessage("audio"), packetMessage("video")},
@@ -109,7 +109,7 @@ func TestGraphWiresAndRunsThroughPublicSeam(t *testing.T) {
 // a GraphNode passed to goav.Branch(...).From anchors a runtime attachment at
 // that node through the structural Route seam.
 func TestGraphHandlesAnchorRuntimeBranches(t *testing.T) {
-	graph := expert.Graph(goav.MustNew())
+	graph := expert.Graph(goav.MustRuntime())
 	source := graph.Source("source", &expertTestSource{
 		name:     "source",
 		messages: []pipeline.Message{packetMessage("audio")},
@@ -164,13 +164,13 @@ func TestGraphRequiresGoavRuntime(t *testing.T) {
 // surfacing through the bridge: nil nodes and empty Connect calls latch the
 // goav and pipeline sentinels reported by Describe.
 func TestGraphRefusesNilNodesAndEmptyRoutes(t *testing.T) {
-	graph := expert.Graph(goav.MustNew())
+	graph := expert.Graph(goav.MustRuntime())
 	graph.Source("source", nil)
 	if _, err := graph.Describe(); !errors.Is(err, goav.ErrNilSource) {
 		t.Fatalf("Describe err = %v, want ErrNilSource", err)
 	}
 
-	graph = expert.Graph(goav.MustNew())
+	graph = expert.Graph(goav.MustRuntime())
 	node := graph.Source("source", &expertTestSource{name: "source"})
 	graph.Connect(node.Out())
 	if _, err := graph.Describe(); !errors.Is(err, pipeline.ErrInvalidLink) {

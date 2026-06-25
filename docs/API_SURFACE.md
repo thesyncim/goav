@@ -40,7 +40,7 @@ goav.From(input)                          inputs: FileInput, URIInput, Input(pro
   .Tap(goav.Tap|FrameTap|PacketTap)       named attach points
   .Branches(goav.Branch("x")...To(dst))   fan out; BranchSpec also drives Mutable.Attach
   input.Stream(av.Stream{ID: ...})        attach anchor for app-owned dynamic tracks
-  .To(File|URI|Writer|Custom|Sink|Mux)    destinations; Mux(name, destination) = explicit mux/sink group
+  .To(File|URI|Writer|Custom|Sink|Mux)    destinations; Mux(name, destination, opts...) = explicit mux/sink group
   .OnStream(source.MatchMedia|source.MatchCodec|...)    dynamic-stream rules; OnRemove controls detach outcome
 goav.Mix/Composite/Select(arms) / Join(name, stage, arms)   N arms -> one stream (JoinArm)
 goav.Flow("name")                         reusable operation list (Chain)
@@ -53,7 +53,7 @@ Mutable: Attach/Detach(lifecycle.DrainBranch|AbortBranch); Attachment.Rebranch
           lifecycle.DrainOldBranch|lifecycle.AbortOldBranch)
 Controllable: Control(control.Control values from typed constructors, .AtTap)
 Observable: Events, Watch(inspect.EventFilter); inspect.Subscribe/Snapshot/Stats/Render bridge task capabilities
-goav.New(goavruntime.Option...) -> (*Runtime, error); goav.MustNew(...) -> bare Runtime; bundle.MustNew(...) -> bundled Runtime; job.UseRuntime(rt)
+goav.NewRuntime(runconfig.Option...) -> (*Runtime, error); goav.MustRuntime(...) -> bare Runtime; bundle.MustNew(...) -> bundled Runtime; job.UseRuntime(rt)
 errors: *goav.BuildError{Family: errcode.FamilyX, Code: errcode.X, Fields: []goav.Detail, Fixes: []goav.Fix, ...} matched with errors.As/Is; branch on Family first; Detail(key) for typed facts
 ```
 
@@ -139,7 +139,7 @@ use [`docs/ADAPTERS.md`](ADAPTERS.md) and [`docs/COMPONENTS.md`](COMPONENTS.md).
   `.Do(...)`; the node contracts live in `pipeline` (Source/Stage/Sink,
   Emitter, Message, Scratch, capability interfaces).
 - **Codecs**: `codec` Descriptor/Decoder/Encoder/factories, caller-owned
-  results, `goavruntime.WithDecoder`/`WithEncoder`/`WithCodecAdapter`/
+  results, `runconfig.WithDecoder`/`WithEncoder`/`WithCodecAdapter`/
   `WithCodecDescriptor`.
 - **Control hosts**: `ctl` is the supported package for applications that
   run a task and expose it to `goav ctl --control unix://...`. It reuses the
@@ -153,11 +153,12 @@ use [`docs/ADAPTERS.md`](ADAPTERS.md) and [`docs/COMPONENTS.md`](COMPONENTS.md).
   The same socket renders live graph diagnostics through `goav ctl graph`
   (`format=mermaid|dot|text`).
 - **Containers**: `format` Prober/Demuxer/Muxer/factories, Seeker for
-  seekable inputs, `goavruntime.WithDemuxer`/`WithMuxer`/`WithFormatAdapter`/
+  seekable inputs, `runconfig.WithDemuxer`/`WithMuxer`/`WithFormatAdapter`/
   `WithProber`.
 - **Filters**: `filter` FrameFilter/Factory/Descriptor,
-  `goavruntime.WithFilter`/`WithFilterAdapter`.
-- **Runtime config**: `goav.New`, `bundle.MustNew`, `goavruntime.WithClock`,
+  `runconfig.WithFilter`/`WithFilterAdapter`.
+- **Runtime config**: `goav.NewRuntime`, `goav.MustRuntime`,
+  `bundle.MustNew`, `runconfig.WithClock`,
   `WithRealtime`, `WithBufferPolicy`, `WithEventCapacity`.
 - **Media vocabulary**: `av` frames/packets/buffers (`Buffer`,
   `BufferOwnership`, `Plane`), timing (`TimeBase`, `Timestamp`, `Duration`,
@@ -288,12 +289,12 @@ against the constructors in `input.go`/`provider.go`/`source.go`,
   `.Encode(codec.Copy())`). Same operation, two spellings: write the verb;
   the spec value exists for code that builds `CodecSpec` values
   programmatically.
-- **Events vs Watch**: `Events()` is the single raw firehose channel;
-  `Watch(filters...)` gives each consumer an independent filtered
-  subscription that sheds for itself only. Runtime branch lifecycle events
-  (`av.EventBranchAttached`, `av.EventBranchDetached`) are published through
-  `Watch`, with attachment id/name metadata and a detach disposition on
-  detach.
+- **Events vs Watch**: `Events()` returns the task-owned unfiltered event
+  channel and repeated calls return the same channel. `Watch(filters...)`
+  gives each consumer an independent filtered subscription that can be closed
+  separately and sheds for itself only. Runtime branch lifecycle events
+  (`av.EventBranchAttached`, `av.EventBranchDetached`) carry attachment
+  id/name metadata and a detach disposition on detach.
 - **Control vs Deliver**: `Control` verbs are typed intents (`Keyframe`,
   `SetBitrate`, `Seek`, `Rate`, `Segment`, `SelectActive`) built through
   constructors, not public struct fields;
@@ -321,7 +322,7 @@ tomorrow is governed the day it lands.
   package carries a doc comment.
 - `errors_pin_test.go`: every `BuildError` uses a catalog-derived
   `errcode.Family`, a catalog `errcode.Code`, and carries typed `Fields` or
-  `Fixes`; legacy rendered details/fixes remain compatibility only.
+  `Fixes`; rendered detail/fix lines are derived from those typed values.
 - README front door: first five examples stay on the grammar
   (`TestReadmeFirstScreenAvoidsGraphInternals`); advanced knobs stay out of
   the guide (`TestReadmeKeepsAdvancedRuntimeKnobsOutOfFrontDoor`).

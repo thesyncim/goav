@@ -15,7 +15,14 @@ methodology changes, and migration notes.
   root module, not a nested module. Importing `github.com/thesyncim/goav` does
   not import bundled adapter packages into the root package dependency graph;
   the root module still lists bundled backend requirements until/unless
-  `goav/bundle` becomes a nested module.
+  `goav/bundle` becomes a nested module. The dedicated
+  `docs/BUNDLE_MODULE_POLICY.md` records the split trigger.
+- Renamed the runtime option package from `goav/runtime` to `goav/runconfig`
+  and removed the vague root runtime constructors `goav.New` and
+  `goav.MustNew`; use `goav.NewRuntime` and `goav.MustRuntime`.
+- Removed exported legacy `BuildError.Details` and
+  `BuildError.Suggestions`; typed `Fields`, `Fixes`, `Detail(key)`,
+  `DetailLines()`, and `FixLines()` are now the structured error data model.
 - Added `bundle.Describe`, `goav.ContextCloser`, and `inspect` convenience
   helpers (`Subscribe`, `Snapshot`, `Stats`, `Render`) so bundled structural
   planning, context-aware shutdown, and observation helpers have first-class
@@ -30,8 +37,8 @@ methodology changes, and migration notes.
   is exposed through opt-in capability interfaces, and `Mux(name, destination)`
   declares shared mux/sink grouping without depending only on reused Go values.
 - Added typed `BuildError` fields and fixes (`Detail`, `Fix`, `RecipePatch`,
-  and `Detail(key)`) while preserving existing rendered details and
-  suggestions for human-facing diagnostics.
+  and `Detail(key)`) while preserving rendered details and suggestions for
+  human-facing diagnostics.
 - Hardened `Emit` message ownership so packet, frame, and event deliveries no
   longer share one mutable message slot when an emitter buffers or retains
   pointers.

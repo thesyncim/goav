@@ -48,7 +48,7 @@ $CTL taps
 spellings, reflected generic `encode` settings, and the encoders and muxers
 discovered from the running task runtime. The ACME encoder is available
 immediately through the generic `encode codec=x_acme_video media=video ...`
-step because the host registered it with `goavruntime.WithEncoder`. Generic `encode`
+step because the host registered it with `runconfig.WithEncoder`. Generic `encode`
 binds the tagged `codec.CodecSettings` fields and leaves adapter-owned keys in
 `CodecSettings.Custom`; registered muxers are available through
 `filesink location=<path> [format=<id>]`.

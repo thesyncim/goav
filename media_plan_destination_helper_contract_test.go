@@ -39,7 +39,7 @@ func TestMediaPlanPacketCopyStreamGraphConstructionContracts(t *testing.T) {
 		t.Fatalf("newMediaPlanPacketCopyStreamGraph(nil runtime) = %+v, %v, %v; want structural graph with nil runtime", graph, ok, err)
 	}
 
-	rt := MustNew()
+	rt := MustRuntime()
 	for name, tc := range map[string]struct {
 		inputs  []InputSpec
 		outputs []destinationSpec

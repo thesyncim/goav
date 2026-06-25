@@ -234,11 +234,12 @@ goav.MIME
 goav.MediaOption
 goav.Metadata
 goav.Mix
-goav.MustNew
+goav.MustRuntime
 goav.Mutable
 goav.Mux
+goav.MuxOption
 goav.Name
-goav.New
+goav.NewRuntime
 goav.Observable
 goav.OnRemove
 goav.PacketTap
