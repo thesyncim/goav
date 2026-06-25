@@ -1660,6 +1660,25 @@ func TestReadmeUsesBranchDestinationVocabulary(t *testing.T) {
 	}
 }
 
+func TestFrontDoorDocsPreferCopyVerb(t *testing.T) {
+	for _, file := range []string{"docs/API_SURFACE.md", "docs/OPERATIONS.md"} {
+		body, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		text := string(body)
+		for _, forbidden := range []string{
+			"Copy vs Encode(codec.Copy())",
+			"two spellings",
+			"lowers to `Encode(codec.Copy())`",
+		} {
+			if strings.Contains(text, forbidden) {
+				t.Fatalf("%s should prefer .Copy() as the recipe spelling, found %q", file, forbidden)
+			}
+		}
+	}
+}
+
 func TestPublicDiagnosticsUseDestinationVocabulary(t *testing.T) {
 	files := []string{
 		"branch.go",
