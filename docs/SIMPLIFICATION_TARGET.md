@@ -103,7 +103,9 @@ mutation patches move into stable recipe or plan data.
 
 Runtime lifecycle/observation progress: one-shot `Run` now preserves both run
 and close/finalization failures, and `Events()` returns an unfiltered watch
-subscription rather than exposing the raw graph event channel.
+subscription rather than exposing the raw graph event channel. Recipe-built
+tasks now keep the same structured workflow report as pre-build `Explain`,
+with live graph and tap rows refreshed when task `Explain` is called.
 
 Tap-anchor progress: `Inspectable.Taps()` now reports only typed anchors emitted
 by the planner or runtime attach path; graph node names such as `decode-*` and

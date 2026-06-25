@@ -393,10 +393,14 @@ func TestRuntimeWithFilterAdapter(t *testing.T) {
 
 func TestTaskExplainReportsLiveGraphAndTaps(t *testing.T) {
 	ctx := context.Background()
-	task, err := From(mixTestAudioSource("frames", 100)).Audio().
+	job := From(mixTestAudioSource("frames", 100)).Audio().
 		Tap(FrameTap("frames.decoded")).
-		To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))).
-		Build(ctx)
+		To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil })))
+	planned, err := job.Explain(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	task, err := job.Build(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -406,8 +410,13 @@ func TestTaskExplainReportsLiveGraphAndTaps(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if report.Summary != "running media task" {
-		t.Fatalf("summary = %q, want running media task", report.Summary)
+	if report.Summary != planned.Summary {
+		t.Fatalf("summary = %q, want planned summary %q", report.Summary, planned.Summary)
+	}
+	if len(report.Inputs) != len(planned.Inputs) ||
+		len(report.Streams) != len(planned.Streams) ||
+		len(report.Destinations) != len(planned.Destinations) {
+		t.Fatalf("task explain = %+v, want planned workflow rows from %+v", report, planned)
 	}
 	if len(report.Graph.Nodes) == 0 {
 		t.Fatalf("explain graph has no nodes: %+v", report.Graph)
