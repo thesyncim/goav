@@ -47,8 +47,9 @@ The front-door vocabulary is intentionally small:
 - **Flow**: `goav.Flow(...)` is reusable operation text with no source or destination.
 - **Task**: `Run` and `Close`; richer live behavior is behind opt-in interfaces.
 
-Use `goav.Mux(name, destination)` when several branches should feed one mux, sink group,
-or transactional writer. Reusing the same destination value is compatibility sugar.
+Use `goav.Mux(name, destination)` when several branches should feed one mux,
+sink group, or transactional writer. Reusing the same ungrouped destination
+value is rejected so grouping stays explicit.
 
 ## Common Recipes
 

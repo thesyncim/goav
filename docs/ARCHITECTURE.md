@@ -91,8 +91,7 @@ does not branch on input/output kind.
 byte writers, object-store uploads, URI-backed outputs, frame/packet/event
 sinks, and shared mux/sink groups. `Mux(name, destination)` is the preferred
 first-class grouping model when branches construct matching destinations
-separately. Same-value reuse remains compatibility sugar for local recipes.
-The work plan keeps concrete
+separately; reusing one ungrouped destination value is rejected. The work plan keeps concrete
 destination openers cold until stream list, format, MIME, metadata, and
 realtime policy are known.
 

@@ -22,10 +22,9 @@ err := goav.From(goav.Input(webrtcav.Track(track))).
     Run(ctx)
 ```
 
-Reuse the same file, URI, writer, object upload, or sink destination value when
-several branches should feed one mux or sink group, or give matching
-destinations the same `goav.Mux(name, destination)` when threading one handle is
-awkward.
+Give matching file, URI, writer, object upload, or sink destinations the same
+`goav.Mux(name, destination)` when several branches should feed one mux or sink
+group. Reusing one ungrouped destination value is rejected.
 
 Decoded preview:
 
@@ -38,9 +37,9 @@ err := goav.From(goav.Input(webrtcav.Track(track))).
 ```
 
 Several realtime inputs compose through `From(inputs...)`. Use
-`goav.InputName(...)` to say which chain reads which input, and reuse one
-destination value or `goav.Mux(name, destination)` when the encoded streams
-should land in the same mux.
+`goav.InputName(...)` to say which chain reads which input, and wrap matching
+destinations with `goav.Mux(name, destination)` when the encoded streams should
+land in the same mux.
 
 ## RTP Receive
 
@@ -203,9 +202,8 @@ err := goav.From(input).
 ```
 
 One destination can be a mux group: several encoded branches feed matching
-`goav.Mux(name, destination)` values. Reusing the same destination value is
-compatibility sugar for local recipes. A destination can also be a sink after
-any branch operation
+`goav.Mux(name, destination)` values. Reusing the same ungrouped destination
+value is rejected. A destination can also be a sink after any branch operation
 (no encode needed for frame-domain ends).
 
 Branches normally start from the current stream point. When one branch needs an
@@ -364,7 +362,7 @@ defer recordingHandle.Close(ctx)
 
 Attach several late branches in one call when they should appear or disappear
 together. A later branch in the same call can anchor from a tap published by an
-earlier branch, and one reused destination value or explicit destination group
+earlier branch, and one explicit destination group
 can receive several sink or mux branch outputs:
 
 ```go

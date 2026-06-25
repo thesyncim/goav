@@ -19,9 +19,8 @@ The normal path should feel small even when the runtime is doing serious work:
 - Branching is the one split model. Direct streams, planned branches, runtime
   branches, and flows share one ordered operation list. A direct stream is
   syntax for the same branch model.
-- `Destination` is the routing handle. `Mux(name, destination)` is the
-  first-class way to group branches into one mux or sink group; reusing one
-  destination value remains compatibility sugar.
+- `Mux(name, destination)` is the first-class way to group branches into one
+  mux or sink group; reusing one ungrouped destination value is rejected.
 - Initial builds and live edits lower through the same vocabulary: full jobs
   become `WorkPlan`; runtime attachment becomes `WorkPatch`.
 - Observation stays ordinary composition: `Branch + Do + Sink`, `Events`,
@@ -42,9 +41,8 @@ Compatibility pins:
 - normal workflows lower from `input -> stream -> operations -> tap -> branch -> destination` into `WorkPlan -> pipeline.Graph -> Task`.
 - runtime attach lowers the same branch model into `WorkPatch`.
 - direct streams are syntax sugar for an implicit `Branch("main")`.
-- `Destination` is the routing handle: `Mux(name, destination)` groups branches
-  into one sink or mux destination; reusing the same `Destination` value remains
-  compatibility sugar.
+- `Mux(name, destination)` groups branches into one sink or mux destination;
+  reusing the same ungrouped `Destination` value is rejected.
 - `provider.Destination` is the extension point for custom byte, object, and
   sink behavior.
 - Direct `.To(...)` streams are only ergonomic syntax for the same branch

@@ -14,10 +14,10 @@ import (
 	"github.com/thesyncim/goav/shape"
 )
 
-// TestFromMultiInputChainsShareOneDestination is north-star acceptance #23:
-// two inputs, two stream chains, ONE shared Destination — one mux group
-// receiving both encoded streams, no expert graph.
-func TestFromMultiInputChainsShareOneDestination(t *testing.T) {
+// TestFromMultiInputChainsShareOneMuxDestination is north-star acceptance #23:
+// two inputs, two stream chains, one explicit Mux destination group receiving
+// both encoded streams, no expert graph.
+func TestFromMultiInputChainsShareOneMuxDestination(t *testing.T) {
 	ctx := context.Background()
 	muxers := &remuxTestMuxerFactory{}
 	rt := MustNew(
@@ -26,7 +26,7 @@ func TestFromMultiInputChainsShareOneDestination(t *testing.T) {
 		WithEncoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &encodeTestEncoderFactory{encoder: &encodeTestEncoder{}}),
 	)
 
-	out := File("call.ogg", io.Discard, Format(av.FormatOgg))
+	out := Mux("call", File("call.ogg", io.Discard, Format(av.FormatOgg)))
 	task, err := From(
 		compositeTestVideoSource("camera", 4, 4, 100, 10, 20),
 		mixTestAudioSource("mic", 100, 200),
@@ -105,7 +105,7 @@ func TestFromMultiInputHeadlineDecodeShape(t *testing.T) {
 		WithEncoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &encodeTestEncoderFactory{encoder: &encodeTestEncoder{}}),
 	)
 
-	out := File("call.webm", io.Discard, Format(av.FormatWebM))
+	out := Mux("call", File("call.webm", io.Discard, Format(av.FormatWebM)))
 	err := From(
 		packetSource("camera", av.MediaVideo, cameraCodec, shape.Video(4, 4, av.PixelFormatI420)),
 		packetSource("mic", av.MediaAudio, micCodec, shape.Audio(48000, codec.Mono, av.SampleFormatS16)),
@@ -239,9 +239,9 @@ func TestFromMultiInputRejectsConflictingDestinationHandles(t *testing.T) {
 }
 
 // The Plan intent for a multi-chain job lists every chain and dedupes the
-// shared destination to one entry (one mux group).
-func TestFromMultiInputPlanDedupesSharedDestination(t *testing.T) {
-	out := File("call.ogg", io.Discard, Format(av.FormatOgg))
+// explicit Mux destination to one entry.
+func TestFromMultiInputPlanDedupesMuxDestination(t *testing.T) {
+	out := Mux("call", File("call.ogg", io.Discard, Format(av.FormatOgg)))
 	job := From(
 		compositeTestVideoSource("camera", 4, 4, 100, 10, 20),
 		mixTestAudioSource("mic", 1),
@@ -354,16 +354,19 @@ func TestMuxSameNameDifferentConfigFailsClearly(t *testing.T) {
 	}
 }
 
-func TestSameHandleGroupingStillWorksButDocsPreferMux(t *testing.T) {
+func TestSameHandleGroupingRequiresMux(t *testing.T) {
 	out := File("call.ogg", io.Discard, Format(av.FormatOgg))
-	job := From(
+	_, err := From(
 		compositeTestVideoSource("camera", 4, 4, 100, 10, 20),
 		mixTestAudioSource("mic", 1),
 	).
 		Video().Encode(codec.VP9()).To(out).
-		Audio().Encode(codec.Opus()).To(out)
-	if destinations := job.plan().Destinations; len(destinations) != 1 || destinations[0].Name != "call.ogg" {
-		t.Fatalf("destinations = %+v, want one compatibility same-handle group", destinations)
+		Audio().Encode(codec.Opus()).To(out).
+		Describe()
+
+	var buildErr *BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != errcode.DestinationDuplicate {
+		t.Fatalf("err = %v, want destination_duplicate", err)
 	}
 
 	body, err := os.ReadFile("README.md")
@@ -372,8 +375,8 @@ func TestSameHandleGroupingStillWorksButDocsPreferMux(t *testing.T) {
 	}
 	text := string(body)
 	if !strings.Contains(text, "Use `goav.Mux(name, destination)`") ||
-		!strings.Contains(text, "Reusing the same destination value") ||
-		!strings.Contains(text, "compatibility sugar") {
-		t.Fatalf("README should prefer Mux while keeping same-handle compatibility wording")
+		strings.Contains(text, "compatibility sugar") ||
+		strings.Contains(text, "Reusing the same destination value") {
+		t.Fatalf("README should require explicit Mux grouping")
 	}
 }

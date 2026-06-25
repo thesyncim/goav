@@ -553,7 +553,7 @@ func TestTaskAttachRuntimeBranchGroupRollsBackOnLaterFailure(t *testing.T) {
 	}
 }
 
-func TestTaskAttachRuntimeBranchGroupSharesSinkDestination(t *testing.T) {
+func TestTaskAttachRuntimeBranchGroupRejectsSharedSinkDestinationWithoutMux(t *testing.T) {
 	ctx := context.Background()
 	graph := expertGraph(MustNew())
 	src := graph.Source("source", &runtimeTestSource{name: "source"})
@@ -563,49 +563,21 @@ func TestTaskAttachRuntimeBranchGroupSharesSinkDestination(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer task.Close()
-	sharedCount := 0
 	shared := SinkFunc("shared", func(context.Context, Message) error {
-		sharedCount++
 		return nil
 	})
 	destination := Sink(shared)
 
-	attachment, err := task.Attach(ctx,
+	_, err = task.Attach(ctx,
 		Branch("left").From(src).To(destination),
 		Branch("right").From(src).To(destination),
 	)
-	if err != nil {
-		t.Fatal(err)
+	var buildErr *BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "destination_duplicate" {
+		t.Fatalf("err = %v, want destination_duplicate", err)
 	}
-	spec := attachment.Spec()
-	sharedNodes := 0
-	for i := range spec.Nodes {
-		if spec.Nodes[i].Name == "shared" {
-			sharedNodes++
-		}
-		if strings.Contains(spec.Nodes[i].Name, "left/") || strings.Contains(spec.Nodes[i].Name, "right/") {
-			t.Fatalf("shared destination created branch-owned sink node: %+v", spec.Nodes[i])
-		}
-	}
-	if sharedNodes != 1 {
-		t.Fatalf("shared sink nodes = %d, want 1 in %+v", sharedNodes, spec.Nodes)
-	}
-	if err := task.Run(ctx); err != nil {
-		t.Fatal(err)
-	}
-	if sharedCount != 2 {
-		t.Fatalf("shared sink count = %d, want one message per branch", sharedCount)
-	}
-	stats := attachment.Stats()
-	if len(stats.Nodes) != 1 || stats.Nodes["shared"].InMessages != 2 || stats.Delivered != 2 {
-		t.Fatalf("shared destination stats = %+v", stats)
-	}
-	if err := task.Detach(ctx, attachment); err != nil {
-		t.Fatal(err)
-	}
-	text := specText(task.Describe())
-	if strings.Contains(text, "shared") || strings.Contains(text, "left/") || strings.Contains(text, "right/") {
-		t.Fatalf("spec retained shared destination after detach:\n%s", text)
+	if !strings.Contains(err.Error(), "goav.Mux(name, destination)") {
+		t.Fatalf("err = %v, want mux guidance", err)
 	}
 }
 
@@ -778,7 +750,7 @@ func TestTaskAttachRuntimeBranchGroupSharesMuxDestination(t *testing.T) {
 		},
 	}
 	defer builtTask.Close()
-	destination := File("recording.ogg", io.Discard, Format(av.FormatOgg))
+	destination := Mux("recording", File("recording.ogg", io.Discard, Format(av.FormatOgg)))
 
 	attachment, err := builtTask.Attach(ctx,
 		Branch("audio").From(PacketTap("audio.packets")).Copy().To(destination),

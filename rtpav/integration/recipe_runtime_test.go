@@ -907,12 +907,12 @@ func TestRTPInputsSyncFromTimestampsAndDropLatePreview(t *testing.T) {
 	}
 
 	var delivered atomic.Int64
-	sink := goav.Sink(component.SinkFunc("synced-preview", func(_ context.Context, msg component.Message) error {
+	sink := goav.Mux("synced-preview", goav.Sink(component.SinkFunc("synced-preview", func(_ context.Context, msg component.Message) error {
 		if msg.Packet != nil {
 			delivered.Add(1)
 		}
 		return nil
-	}))
+	})))
 	policy := flow.Sync("rtp-room", flow.SyncTolerance(5*time.Millisecond), flow.SyncDropLate())
 	task, err := goav.From(
 		goav.Input(rtpav.Receive(audioReceiver, rtpav.WithName("audio"), rtpav.WithCodec(codec.Opus()), rtpav.WithBufferLimits(rtpav.BufferLimits{MaxPackets: 2}))),

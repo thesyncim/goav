@@ -14,7 +14,7 @@ var composabilityLawEvidence = map[string]string{
 	"join_plan_test.go":                   "TestJoinDescribeEqualsBuildMix",
 	"shape_solver_test.go":                "TestAutoInsertsFormatConvertThroughRegisteredAdapter",
 	"shape_require_prefer_test.go":        "TestPreferUnsatisfiableIgnoredWithDiagnostic",
-	"multi_input_test.go":                 "TestFromMultiInputPlanDedupesSharedDestination",
+	"multi_input_test.go":                 "TestFromMultiInputPlanDedupesMuxDestination",
 	"copy_contract_test.go":               "TestCopyContractMutableFanoutBranchCannotCorruptSibling",
 	"cross_feature_test.go":               "TestFromMultiInputChainsKeepIndependentAutoPolicies",
 	"graph_test.go":                       "TestTaskAttachRuntimeBranchGroupRollsBackOnLaterFailure",

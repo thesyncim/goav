@@ -33,31 +33,14 @@ type namedDestinationSpec struct {
 func destinationIdentity(destination namedDestinationSpec) string {
 	output := destination.output
 	shareKey := destinationShareKey(output, output.id)
-	if output.group != "" {
-		return strings.Join([]string{
-			destination.name,
-			shareKey,
-			output.label(""),
-			output.output.Name,
-			output.output.URI,
-			string(output.output.Protocol),
-			output.output.MIMEType,
-			string(output.format),
-			string(output.resolvedFormat),
-		}, "\x00")
-	}
-	sinkName := ""
-	sinkAddr := ""
-	if output.sink != nil {
-		sinkName = output.sink.Name()
-		sinkAddr = fmt.Sprintf("%p", output.sink)
+	if shareKey == "" {
+		return ""
 	}
 	return strings.Join([]string{
 		destination.name,
 		shareKey,
 		output.label(""),
-		sinkName,
-		sinkAddr,
+		destinationSinkName(output),
 		output.output.Name,
 		output.output.URI,
 		string(output.output.Protocol),
@@ -65,6 +48,17 @@ func destinationIdentity(destination namedDestinationSpec) string {
 		string(output.format),
 		string(output.resolvedFormat),
 	}, "\x00")
+}
+
+func destinationSinkName(output destinationSpec) string {
+	if output.sink == nil {
+		return ""
+	}
+	return output.sink.Name()
+}
+
+func destinationsShareExplicitGroup(first namedDestinationSpec, second namedDestinationSpec) bool {
+	return destinationIdentity(first) != "" && destinationIdentity(first) == destinationIdentity(second)
 }
 
 const branchCompositionOperation = "build branch composition"
@@ -429,7 +423,6 @@ func branchIntentDestinationMissingError(stream streamIntent) error {
 		Fixes: buildErrorFixes([]string{
 			"finish the branch with .To(goav.File(\"web.ivf\", writer)) or .To(goav.Sink(sink))",
 			"pass goav.Mux(name, destination) when branches should share one mux group",
-			"reuse the same destination value only as compatibility sugar for local recipes",
 		}),
 		Cause: ErrUnsupportedBuild,
 	}
@@ -445,7 +438,6 @@ func branchDestinationReferenceMissingError(stream streamIntent, label string) e
 		Fixes: buildErrorFixes([]string{
 			"pass a named goav.File(...), goav.URI(...), or goav.Sink(...) destination to the branch .To(...) call",
 			"pass goav.Mux(name, destination) when helpers construct matching grouped destinations",
-			"reuse destination values only as compatibility sugar for local recipes",
 		}),
 		Cause: ErrUnsupportedBuild,
 	}
@@ -492,7 +484,6 @@ func branchDestinationDuplicateError(name string) error {
 		Reason:    fmt.Sprintf("destination %q is defined more than once with different destination handles", name),
 		Fixes: buildErrorFixes([]string{
 			"pass goav.Mux(name, destination) when multiple branches should share one mux group",
-			"reuse the same destination value only as compatibility sugar for local recipes",
 			"use distinct destination names when branches should write to different destinations",
 		}),
 		Cause: ErrUnsupportedBuild,
@@ -513,7 +504,7 @@ func branchIntentDuplicateError(name string, firstIndex int, secondIndex int) er
 		Fixes: buildErrorFixes([]string{
 			"use unique names such as .Video(\"720p\") and .Video(\"360p\")",
 			"route one branch to multiple destinations by calling .To(destination, otherDestination)",
-			"route different branches to the same destination by reusing the destination value or pass goav.Mux(name, destination)",
+			"route different branches to the same destination with goav.Mux(name, destination)",
 		}),
 		Cause: ErrUnsupportedBuild,
 	}
@@ -563,7 +554,7 @@ func duplicateBranchDestinationError(stream streamIntent, target string, firstIn
 		Fixes: buildErrorFixes([]string{
 			"list each destination once in .To(...)",
 			"route one branch to multiple destinations with distinct values such as .To(archive, preview)",
-			"reuse destination values or pass goav.Mux(name, destination) instead of repeating destination names",
+			"pass goav.Mux(name, destination) when repeated destination names should form one group",
 		}),
 		Cause: ErrUnsupportedBuild,
 	}

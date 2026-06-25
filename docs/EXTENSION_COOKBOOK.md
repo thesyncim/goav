@@ -164,9 +164,9 @@ dest := goav.File("", out, goav.Format(av.FormatIVF))
 ```
 
 Use `goav.Mux(name, destination)` when several branches should feed one mux,
-one sink group, or one transactional writer. Reusing the same destination value
-is supported as compatibility sugar for local recipes, but explicit mux names
-are preferred when helpers construct matching destinations.
+one sink group, or one transactional writer. Reusing the same ungrouped
+destination value is rejected; helpers that construct matching destinations
+should wrap them in the same explicit mux group.
 
 The runnable module `examples/custom-destination` verifies the open-time
 `provider.Info` contract and a nil-opener failure without importing internals.
