@@ -285,13 +285,9 @@ func Format(format av.FormatID) DestinationOption {
 	})
 }
 
-// DestinationGroup marks destinations as the same logical mux/sink group even
-// when they were built as separate Destination values. Prefer Mux for new code;
-// keep this option for callers that layer destination options directly.
-// Destinations in one group should use the same route label and compatible
-// output settings; the first planned destination opens the shared writer or
-// sink.
-func DestinationGroup(name string) DestinationOption {
+// destinationGroup marks destinations as the same logical mux/sink group for
+// Mux. It stays internal so the public grouping model has one constructor.
+func destinationGroup(name string) DestinationOption {
 	return destinationOption(func(spec *destinationSpec) {
 		if name == "" {
 			if spec.err == nil {
@@ -307,7 +303,7 @@ func DestinationGroup(name string) DestinationOption {
 // built destinations wrapped with the same non-empty group name share one
 // planned output when their destination settings are compatible.
 func Mux(name string, destination Destination) Destination {
-	return destination.With(DestinationGroup(name))
+	return destination.With(destinationGroup(name))
 }
 
 // With returns a copy of the destination with the options applied — the same

@@ -120,6 +120,8 @@ Move or keep outside the front door:
    - Introduce explicit mux/group builders.
    - Stop relying on Go value identity as the only way to group destination
      branches.
+   - Keep `Mux(name, destination)` as the public grouping constructor; the
+     option-only grouping helper is internal.
 
 10. **Unified lowering** — started
    - Lower stream chains, branches, joins, and runtime attach through the same

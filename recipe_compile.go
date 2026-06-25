@@ -747,7 +747,7 @@ func jobStreamDestinationMissingError(operation string, stream streamIntent) err
 		Reason:    "stream chain has no destination",
 		Suggestions: []string{
 			"finish each chain with .To(destination) before starting the next .Audio()/.Video()/.Stream()",
-			"share one destination handle or pass goav.DestinationGroup(name) across chains to mux them together",
+			"share one destination handle or pass goav.Mux(name, destination) across chains to mux them together",
 		},
 		Cause: ErrUnsupportedBuild,
 	}
