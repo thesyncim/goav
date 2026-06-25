@@ -441,6 +441,16 @@ func (g *directRunner) SetNodePaused(ref NodeRef, paused bool) error {
 }
 
 func (g *directRunner) Close() error {
+	return g.CloseContext(context.Background())
+}
+
+func (g *directRunner) CloseContext(ctx context.Context) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	g.mu.Lock()
 	if g.closed {
 		g.mu.Unlock()
@@ -466,7 +476,7 @@ func (g *directRunner) Close() error {
 	var first error
 	stuck := make(map[string]struct{})
 	for i := range nodes {
-		if err := waitNodeGateDrained("close", nodes[i].name, nodes[i].gate); err != nil {
+		if err := waitNodeGateDrainedContext(ctx, "close", nodes[i].name, nodes[i].gate); err != nil {
 			if first == nil {
 				first = err
 			}
@@ -549,8 +559,18 @@ func (g *directRunner) Remove(ref NodeRef) error {
 // snapshot) see the closing bit and shed themselves. This is the cold removal
 // path; in-flight deliveries are bounded by one downstream chain.
 func waitNodeGateDrained(operation string, node string, gate *atomic.Int64) error {
+	return waitNodeGateDrainedContext(context.Background(), operation, node, gate)
+}
+
+func waitNodeGateDrainedContext(ctx context.Context, operation string, node string, gate *atomic.Int64) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	if gate == nil {
 		return nil
+	}
+	if err := ctx.Err(); err != nil {
+		return err
 	}
 	gate.Add(nodeClosingBit)
 	var deadline time.Time
@@ -558,6 +578,9 @@ func waitNodeGateDrained(operation string, node string, gate *atomic.Int64) erro
 		deadline = time.Now().Add(closeWaitTimeout)
 	}
 	for spins := 0; gate.Load() != nodeClosingBit; spins++ {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		if !deadline.IsZero() && time.Now().After(deadline) {
 			pending := gate.Load() &^ nodeClosingBit
 			return &CloseWaitError{Operation: operation, Node: node, Pending: pending, Timeout: closeWaitTimeout}

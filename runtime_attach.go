@@ -415,7 +415,8 @@ func validateRuntimeBranchGroupDestinations(specs []BranchSpec, destinations [][
 						"second branch: " + branchName,
 					}),
 					Fixes: buildErrorFixes([]string{
-						"reuse one destination value or wrap each branch destination with goav.Mux(name, destination) for a shared runtime destination group",
+						"wrap each branch destination with goav.Mux(name, destination) for a shared runtime destination group",
+						"reuse one destination value only as compatibility sugar for local recipes",
 						"create distinct destination values with distinct names for independent runtime destinations",
 						"use a sink destination for runtime diagnostic groups or a mux destination for runtime recording groups",
 					}),

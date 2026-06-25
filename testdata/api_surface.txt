@@ -199,6 +199,7 @@ goav.Chain
 goav.Codec
 goav.CodecChangePolicy
 goav.Composite
+goav.ContextCloser
 goav.Controllable
 goav.Custom
 goav.Destination
@@ -269,6 +270,10 @@ graphrender.RenderTaskFlowchart
 graphrender.RenderTaskURI
 graphrender.RenderURI
 inspect.EventFilter
+inspect.Render
+inspect.Snapshot
+inspect.Stats
+inspect.Subscribe
 inspect.Subscription
 inspect.WatchStream
 inspect.WatchTypes

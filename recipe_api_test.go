@@ -1642,7 +1642,8 @@ func TestReadmeUsesBranchDestinationVocabulary(t *testing.T) {
 		"goav.File(",
 		"goav.Flow(",
 		"goav.Mux(",
-		"Reuse the same destination value",
+		"Use `goav.Mux(name, destination)`",
+		"compatibility sugar",
 	} {
 		if !strings.Contains(text, required) {
 			t.Fatalf("README should show %s in the public composition grammar", required)
@@ -1714,7 +1715,8 @@ func TestDocsShowCustomDestinations(t *testing.T) {
 		"goav.MIME(",
 		"goav.Metadata(",
 		"goav.Mux(",
-		"Reuse one destination value",
+		"Use `goav.Mux(name, destination)`",
+		"compatibility sugar",
 	} {
 		if !strings.Contains(text, required) {
 			t.Fatalf("extension cookbook should keep custom destination text %q", required)
@@ -1864,7 +1866,8 @@ func TestDocsShowCodecControlsAndDeclarativePerformanceGoal(t *testing.T) {
 		"runtime attach lowers the same branch model into `WorkPatch`",
 		"direct streams are syntax sugar for an implicit `Branch(\"main\")`",
 		"`Destination` is",
-		"the routing handle: reusing the same `Destination` value",
+		"the routing handle: `Mux(name, destination)` groups branches",
+		"compatibility sugar",
 		"provider.Destination` is the extension point",
 		"Direct `.To(...)` streams are only ergonomic syntax",
 		"`branchComposePlan`, `runtimeBranch`, `destinationNames`",
@@ -1997,8 +2000,8 @@ func TestArchitectureDocsUseSmallCompositionVocabulary(t *testing.T) {
 		"`Branch`, `Destination`, and operation composition",
 		"direct `File`/`URI`/`Sink` destinations",
 		"custom `Writer` destinations with `provider.Info`",
-		"stable destination handles and `Mux(name, destination)` for shared mux/sink groups",
-		"stable goav-owned destination handles",
+		"`Mux(name, destination)` for shared mux/sink groups",
+		"preferred\nfirst-class grouping model",
 	} {
 		if !strings.Contains(text, required) {
 			t.Fatalf("architecture docs should keep current composition vocabulary %q", required)
@@ -4841,7 +4844,7 @@ func TestBranchRecipeRejectsDuplicateDestinations(t *testing.T) {
 		t.Fatalf("err = %v, want destination_duplicate wrapping ErrUnsupportedBuild", err)
 	}
 	if !strings.Contains(err.Error(), `destination "web.webm"`) ||
-		!strings.Contains(err.Error(), "reuse the same destination value") {
+		!strings.Contains(err.Error(), "goav.Mux(name, destination)") {
 		t.Fatalf("err = %v, want duplicate destination guidance", err)
 	}
 }

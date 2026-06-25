@@ -437,7 +437,8 @@ func branchIntentDestinationMissingError(stream streamIntent) error {
 		Reason:    "branch has no destination",
 		Fixes: buildErrorFixes([]string{
 			"finish the branch with .To(goav.File(\"web.ivf\", writer)) or .To(goav.Sink(sink))",
-			"reuse the same destination value or pass goav.Mux(name, destination) when branches should share one mux group",
+			"pass goav.Mux(name, destination) when branches should share one mux group",
+			"reuse the same destination value only as compatibility sugar for local recipes",
 		}),
 		Cause: ErrUnsupportedBuild,
 	}
@@ -452,7 +453,8 @@ func branchDestinationReferenceMissingError(stream streamIntent, label string) e
 		Reason:    "destination " + label + " is referenced but not defined",
 		Fixes: buildErrorFixes([]string{
 			"pass a named goav.File(...), goav.URI(...), or goav.Sink(...) destination to the branch .To(...) call",
-			"reuse destination values or pass goav.Mux(name, destination) instead of repeating string destination names",
+			"pass goav.Mux(name, destination) when helpers construct matching grouped destinations",
+			"reuse destination values only as compatibility sugar for local recipes",
 		}),
 		Cause: ErrUnsupportedBuild,
 	}
@@ -498,7 +500,8 @@ func branchDestinationDuplicateError(name string) error {
 		Node:      name,
 		Reason:    fmt.Sprintf("destination %q is defined more than once with different destination handles", name),
 		Fixes: buildErrorFixes([]string{
-			"reuse the same destination value or pass goav.Mux(name, destination) when multiple branches should share one mux group",
+			"pass goav.Mux(name, destination) when multiple branches should share one mux group",
+			"reuse the same destination value only as compatibility sugar for local recipes",
 			"use distinct destination names when branches should write to different destinations",
 		}),
 		Cause: ErrUnsupportedBuild,

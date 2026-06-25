@@ -11,6 +11,19 @@ methodology changes, and migration notes.
 
 ## Unreleased
 
+- Clarified the bundled-adapter contract: `goav/bundle` is a package in the
+  root module, not a nested module. Importing `github.com/thesyncim/goav` does
+  not import bundled adapter packages into the root package dependency graph;
+  the root module still lists bundled backend requirements until/unless
+  `goav/bundle` becomes a nested module.
+- Added `bundle.Describe`, `goav.ContextCloser`, and `inspect` convenience
+  helpers (`Subscribe`, `Snapshot`, `Stats`, `Render`) so bundled structural
+  planning, context-aware shutdown, and observation helpers have first-class
+  names.
+- Tightened pre-v1 runtime contracts around explicit runtimes, Mux-first
+  destination grouping, join validation parity, and Family-first structured
+  error matching. Detailed `errcode.Code` values remain diagnostic leaves
+  within stable `errcode.Family` categories.
 - Reduced and layered the pre-v1 public API: bundled adapters now live behind
   `goav/bundle`, live controls and watch filters moved into explicit vocabulary
   packages, `Task` is the minimal run/close lifecycle, richer runtime behavior

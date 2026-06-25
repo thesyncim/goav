@@ -11,11 +11,11 @@ Source: `testdata/api_surface.txt`.
 
 | Package | Initial identifiers | Current identifiers |
 | --- | ---: | ---: |
-| `goav` | 134 | 68 |
+| `goav` | 134 | 69 |
 | `control` | 0 | 22 |
 | `errcode` | 147 | 164 |
 | `graphrender` | 9 | 9 |
-| `inspect` | 0 | 4 |
+| `inspect` | 0 | 8 |
 | `lifecycle` | 13 | 24 |
 | `plan` | 28 | 28 |
 | `snapshot` | 4 | 4 |
@@ -58,9 +58,14 @@ go list -deps github.com/thesyncim/goav |
 ```
 
 Expected result after the bundle package split: no matches for the root
-package. Importing `goav/bundle` should pull the bundled adapter package intentionally.
+package. Importing `goav/bundle` should pull the bundled adapter packages intentionally.
 
 Current result after the `goav/bundle` split: no matches for the root package.
+
+`goav/bundle` is a package in the root module, not a nested module. Importing
+`github.com/thesyncim/goav` does not pull bundled adapter packages into the
+root package dependency graph. The root module still carries bundled backend
+requirements until/unless `goav/bundle` becomes a nested module.
 
 ## Documentation Baseline
 
@@ -68,10 +73,10 @@ Current line counts:
 
 | File | Lines |
 | --- | ---: |
-| `README.md` | 198 |
-| `docs/API_SURFACE.md` | 367 |
-| `docs/ROADMAP.md` | 227 |
-| `docs/PROGRESS.md` | 137 |
+| `README.md` | 197 |
+| `docs/API_SURFACE.md` | 379 |
+| `docs/ROADMAP.md` | 230 |
+| `docs/PROGRESS.md` | 138 |
 
 The README target is under 200 lines after the advanced vocabulary moves into
 focused docs.

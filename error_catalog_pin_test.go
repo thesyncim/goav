@@ -378,8 +378,8 @@ var errorCatalogExamples = []errorCatalogExample{
 		Code:          "destination_duplicate",
 		Test:          "TestBranchRecipeRejectsDuplicateDestinations",
 		BadRecipe:     `branchJob(input).Video("720p").To(File("web.webm")).Video("360p").To(File("web.webm"))`,
-		RenderedError: "duplicate destination details and reuse-same-destination guidance are asserted by the test",
-		Fix:           "reuse the same destination value or pass goav.Mux(name, destination) for mux/sink groups",
+		RenderedError: "duplicate destination details and mux grouping guidance are asserted by the test",
+		Fix:           "pass goav.Mux(name, destination) for mux/sink groups",
 		Cause:         "goav.ErrUnsupportedBuild",
 	},
 	{

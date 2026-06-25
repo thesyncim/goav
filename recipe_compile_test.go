@@ -2806,7 +2806,9 @@ func TestRecipeDestinationShapePassAllowsFrameShapeForSinkDestination(t *testing
 
 func TestRecipeRuntimePassRejectsNilRuntime(t *testing.T) {
 	state := recipeCompileState{
-		operation: "build job",
+		operation:       "build job",
+		runtimeExplicit: true,
+		options:         recipeCompileOptions{requireExplicitRuntime: true},
 	}
 	err := validateRecipeRuntimePass().Apply(&state)
 	var buildErr *BuildError

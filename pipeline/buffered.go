@@ -470,6 +470,16 @@ func (g *bufferedRunner) Stats() GraphStats {
 }
 
 func (g *bufferedRunner) Close() error {
+	return g.CloseContext(context.Background())
+}
+
+func (g *bufferedRunner) CloseContext(ctx context.Context) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	g.mu.Lock()
 	if g.closed {
 		g.mu.Unlock()
@@ -487,7 +497,7 @@ func (g *bufferedRunner) Close() error {
 			continue
 		}
 		if running && node.kind != nodeSource && node.queue != nil {
-			if err := g.closeNodeQueue("close", node); err != nil {
+			if err := g.closeNodeQueueContext(ctx, "close", node); err != nil {
 				if first == nil {
 					first = err
 				}
@@ -507,7 +517,7 @@ func (g *bufferedRunner) Close() error {
 			continue
 		}
 		if running && node.kind != nodeSource {
-			if err := waitCloseDone("close", node.name, node.done); err != nil {
+			if err := waitCloseDoneContext(ctx, "close", node.name, node.done); err != nil {
 				if first == nil {
 					first = err
 				}
@@ -600,7 +610,11 @@ func (g *bufferedRunner) Remove(ref NodeRef) error {
 // closeNodeQueue closes a node's queue exactly once, serialized with the
 // lock-free producer via queueMutex so enqueue never sends on a closed channel.
 func (g *bufferedRunner) closeNodeQueue(operation string, node *bufferedNode) error {
-	if err := lockNodeQueueForClose(operation, node); err != nil {
+	return g.closeNodeQueueContext(context.Background(), operation, node)
+}
+
+func (g *bufferedRunner) closeNodeQueueContext(ctx context.Context, operation string, node *bufferedNode) error {
+	if err := lockNodeQueueForCloseContext(ctx, operation, node); err != nil {
 		return err
 	}
 	defer node.queueMutex.Unlock()
@@ -612,13 +626,27 @@ func (g *bufferedRunner) closeNodeQueue(operation string, node *bufferedNode) er
 	return nil
 }
 
-func lockNodeQueueForClose(operation string, node *bufferedNode) error {
+func lockNodeQueueForCloseContext(ctx context.Context, operation string, node *bufferedNode) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if closeWaitTimeout <= 0 {
-		node.queueMutex.Lock()
+		for !node.queueMutex.TryLock() {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			time.Sleep(100 * time.Microsecond)
+		}
 		return nil
 	}
 	deadline := time.Now().Add(closeWaitTimeout)
 	for !node.queueMutex.TryLock() {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		if time.Now().After(deadline) {
 			return &CloseWaitError{Operation: operation, Node: node.name, Pending: 1, Timeout: closeWaitTimeout}
 		}

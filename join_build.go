@@ -426,7 +426,7 @@ func (p *joinPlan) planJoinEncode() error {
 			}
 		case plan.OpEncode:
 			request := encodeRequest{name: p.name + "-encode", selector: av.StreamSelector{Type: p.profile.media}, config: encodeConfigFromSpec(operation.Encode)}
-			config, encodedStream, err := prepareEncodeConfig(stream, request, p.runtime.realtime)
+			config, encodedStream, err := prepareEncodeConfig(stream, request, runtimeRealtime(p.runtime))
 			if err != nil {
 				return err
 			}
@@ -1111,7 +1111,7 @@ func (p *joinPlan) treeGraphBuffer() (*pipeline.BufferPolicy, bool) {
 // branch-compose planner. The lowering follows the same order, so Describe()
 // equals the built graph.
 func (p *joinPlan) spec() (pipeline.Spec, error) {
-	spec := pipeline.Spec{Name: "goav-" + p.name, Realtime: p.runtime.realtime}
+	spec := pipeline.Spec{Name: "goav-" + p.name, Realtime: runtimeRealtime(p.runtime)}
 	nodes := make(map[string]plannedNode, len(p.arms)*3+4)
 	if err := p.planJoinTreeSpec(&spec, nodes); err != nil {
 		return pipeline.Spec{}, err

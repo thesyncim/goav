@@ -638,10 +638,31 @@ func (t *task) stopAttachments(ctx context.Context) error {
 }
 
 func (t *task) Close() error {
+	return t.CloseContext(context.Background())
+}
+
+func (t *task) CloseContext(ctx context.Context) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	t.lifecycleMu.Lock()
 	t.closed = true
 	t.lifecycleMu.Unlock()
-	first := t.stopAttachments(context.Background())
+	first := t.stopAttachments(ctx)
+	if contextGraph, ok := t.graph.(interface {
+		CloseContext(context.Context) error
+	}); ok {
+		if err := contextGraph.CloseContext(ctx); first == nil && err != nil {
+			first = err
+		}
+		return first
+	}
+	if err := ctx.Err(); first == nil && err != nil {
+		first = err
+	}
 	if err := t.graph.Close(); first == nil && err != nil {
 		first = err
 	}

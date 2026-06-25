@@ -40,21 +40,21 @@ goav.From(input)                          inputs: FileInput, URIInput, Input(pro
   .Tap(goav.Tap|FrameTap|PacketTap)       named attach points
   .Branches(goav.Branch("x")...To(dst))   fan out; BranchSpec also drives Mutable.Attach
   input.Stream(av.Stream{ID: ...})        attach anchor for app-owned dynamic tracks
-  .To(File|URI|Writer|Custom|Sink)        destinations; reuse one value or Mux(name, destination) = mux/sink group
+  .To(File|URI|Writer|Custom|Sink|Mux)    destinations; Mux(name, destination) = explicit mux/sink group
   .OnStream(source.MatchMedia|source.MatchCodec|...)    dynamic-stream rules; OnRemove controls detach outcome
 goav.Mix/Composite/Select(arms) / Join(name, stage, arms)   N arms -> one stream (JoinArm)
 goav.Flow("name")                         reusable operation list (Chain)
-job.Describe(); adapter-backed Explain/Build/Run use job.UseRuntime(rt) or bundle.Build/bundle.Run
-Task: Run, Close
+job.Describe(); adapter-backed Explain/Build/Run use job.UseRuntime(rt), bundle.Describe/Build/Run
+Task: Run, Close; ContextCloser: CloseContext(ctx)
 Explainer: Explain
 Inspectable: Describe, Taps, Snapshot -> snapshot.*, Stats
 Mutable: Attach/Detach(lifecycle.DrainBranch|AbortBranch); Attachment.Rebranch
          (lifecycle.SwitchAt(lifecycle.NextFrame|lifecycle.NextKeyframe|lifecycle.AtMediaTime),
           lifecycle.DrainOldBranch|lifecycle.AbortOldBranch)
 Controllable: Control(control.Control values from typed constructors, .AtTap)
-Observable: Events, Watch(inspect.EventFilter)
+Observable: Events, Watch(inspect.EventFilter); inspect.Subscribe/Snapshot/Stats/Render bridge task capabilities
 goav.New(goavruntime.Option...) -> (*Runtime, error); goav.MustNew(...) -> bare Runtime; bundle.MustNew(...) -> bundled Runtime; job.UseRuntime(rt)
-errors: *goav.BuildError{Family: errcode.FamilyX, Code: errcode.X, Fields: []goav.Detail, Fixes: []goav.Fix, ...} matched with errors.As/Is; Detail(key) for typed facts
+errors: *goav.BuildError{Family: errcode.FamilyX, Code: errcode.X, Fields: []goav.Detail, Fixes: []goav.Fix, ...} matched with errors.As/Is; branch on Family first; Detail(key) for typed facts
 ```
 
 The checked operation reference is
@@ -67,7 +67,8 @@ Applications also read these vocabulary packages:
 - `control`: live task control vocabulary (`Control`, `Keyframe`, `Rate`,
   `Seek`, `Segment`, `SetBitrate`, `SelectActive`, `Deliver`, `Must`).
 - `inspect`: event watch filters (`EventFilter`, `WatchTypes`,
-  `WatchStream`).
+  `WatchStream`) plus structural helpers (`Subscribe`, `Snapshot`, `Stats`,
+  `Render`) that avoid importing the root package.
 - `errcode`: the error-code catalog (stable `Family` categories plus one
   detailed `Code` per refusal class).
 - `plan`: everything `Explain` reports back.
@@ -337,10 +338,14 @@ graph and not part of the governed surface: an explicit, asserted exclusion
 The repository is split into a root module, transport modules, and runnable
 example modules. The module boundary is the dependency boundary:
 
-- **root (`github.com/thesyncim/goav`)**: the grammar, the extension points,
-  and the pure-Go implementations. May require only `github.com/thesyncim/*` modules
-  and the standard library; `TestRootModuleDependencyPurity` pins this (no
-  third-party requires, no `replace` directives).
+- **root package (`github.com/thesyncim/goav`)**: the grammar and extension
+  seams. Importing this package does not import bundled adapter packages.
+- **root module**: contains the root package, `goav/bundle`, bundled adapter
+  packages, and pure-Go implementations. `goav/bundle` is a package, not a
+  nested module; the root module still lists bundled backend requirements
+  until/unless `goav/bundle` becomes a nested module. `TestRootModuleDependencyPurity`
+  pins that module requirements stay inside `github.com/thesyncim/*` with no
+  third-party requires and no `replace` directives.
 - **`rtpav`, `webrtcav`**: nested modules carrying the Pion ecosystem. They
   require the root module (never the reverse), so importing goav pulls in no
   transport dependencies. Import paths are unchanged
@@ -363,8 +368,9 @@ example modules. The module boundary is the dependency boundary:
 Pre-v1, breaking renames land without aliases. The surface-hygiene wave moved
 five clusters off the root: the live control vocabulary is `control`
 (`Control`, `Keyframe`, `Rate`, `Seek`, `Segment`, `SetBitrate`,
-`SelectActive`, `Deliver`, `Must`), event watch filters are `inspect`
-(`EventFilter`, `WatchTypes`, `WatchStream`), the error catalog is `errcode` (renamed from
+`SelectActive`, `Deliver`, `Must`), event subscription and structural helpers
+are `inspect` (`EventFilter`, `WatchTypes`, `WatchStream`, `Subscribe`,
+`Snapshot`, `Stats`, `Render`), the error catalog is `errcode` (renamed from
 `codes`), the source/destination extension contracts are `provider`
 (`Source`, `Destination`, `Writer`, `TransactionalWriter`, `Contract`,
 `Info`, `OpenFunc`), and the expert graph layer is `expert` (`Graph`,

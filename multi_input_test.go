@@ -4,11 +4,13 @@ import (
 	"context"
 	"errors"
 	"io"
+	"os"
 	"strings"
 	"testing"
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
+	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/shape"
 )
 
@@ -277,6 +279,27 @@ func TestFromMultiInputPlanDedupesSharedDestination(t *testing.T) {
 	}
 }
 
+func TestMuxPreferredOverHandleIdentity(t *testing.T) {
+	videoOut := Mux("call", File("call.ogg", io.Discard, Format(av.FormatOgg)))
+	audioOut := Mux("call", File("call.ogg", io.Discard, Format(av.FormatOgg)))
+	job := From(
+		compositeTestVideoSource("camera", 4, 4, 100, 10, 20),
+		mixTestAudioSource("mic", 1),
+	).
+		Video().Encode(codec.VP9()).To(videoOut).
+		Audio().Encode(codec.Opus()).To(audioOut)
+
+	intent := job.plan()
+	if len(intent.Destinations) != 1 || intent.Destinations[0].Name != "call.ogg" {
+		t.Fatalf("destinations = %+v, want one explicit mux group", intent.Destinations)
+	}
+	for i := range intent.Streams {
+		if len(intent.Streams[i].Destinations) != 1 || intent.Streams[i].Destinations[0] != "call.ogg" {
+			t.Fatalf("stream %d destinations = %v", i, intent.Streams[i].Destinations)
+		}
+	}
+}
+
 func TestMuxSurvivesWithAndCopy(t *testing.T) {
 	videoOut := Mux("call", File("call.ogg", io.Discard, Format(av.FormatOgg)))
 	audioOut := Mux("call", File("call.ogg", io.Discard)).With(Format(av.FormatOgg))
@@ -308,5 +331,49 @@ func TestMuxSurvivesWithAndCopy(t *testing.T) {
 	}
 	if muxNodes != 1 {
 		t.Fatalf("described mux nodes = %d, want one grouped mux; nodes=%+v", muxNodes, spec.Nodes)
+	}
+}
+
+func TestMuxSameNameDifferentConfigFailsClearly(t *testing.T) {
+	videoOut := Mux("call", File("call.ogg", io.Discard, Format(av.FormatOgg)))
+	audioOut := Mux("call", File("call.ogg", io.Discard, Format(av.FormatWebM)))
+	_, err := From(
+		compositeTestVideoSource("camera", 4, 4, 100, 10, 20),
+		mixTestAudioSource("mic", 1),
+	).
+		Video().Encode(codec.VP9()).To(videoOut).
+		Audio().Encode(codec.Opus()).To(audioOut).
+		Describe()
+
+	var buildErr *BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != errcode.DestinationDuplicate {
+		t.Fatalf("err = %v, want destination_duplicate", err)
+	}
+	if !strings.Contains(err.Error(), "Mux") {
+		t.Fatalf("err = %v, want explicit mux guidance", err)
+	}
+}
+
+func TestSameHandleGroupingStillWorksButDocsPreferMux(t *testing.T) {
+	out := File("call.ogg", io.Discard, Format(av.FormatOgg))
+	job := From(
+		compositeTestVideoSource("camera", 4, 4, 100, 10, 20),
+		mixTestAudioSource("mic", 1),
+	).
+		Video().Encode(codec.VP9()).To(out).
+		Audio().Encode(codec.Opus()).To(out)
+	if destinations := job.plan().Destinations; len(destinations) != 1 || destinations[0].Name != "call.ogg" {
+		t.Fatalf("destinations = %+v, want one compatibility same-handle group", destinations)
+	}
+
+	body, err := os.ReadFile("README.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(body)
+	if !strings.Contains(text, "Use `goav.Mux(name, destination)`") ||
+		!strings.Contains(text, "Reusing the same destination value") ||
+		!strings.Contains(text, "compatibility sugar") {
+		t.Fatalf("README should prefer Mux while keeping same-handle compatibility wording")
 	}
 }

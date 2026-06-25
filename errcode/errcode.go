@@ -1,14 +1,15 @@
-// Package errcode is the error-code catalog: every refusal a build, attach,
-// or control path can raise carries exactly one Code from this package. The
-// constants are the stable, greppable contract — match them with
-// errors.As(err, *goav.BuildError) and a Code comparison; the rendered text
-// may improve over time, the codes do not. See docs/ERRORS.md for the
-// contract and matching recipes.
+// Package errcode names goav's structured error vocabulary. Family is the
+// stable application branch key; Code is a detailed diagnostic leaf that may
+// grow within a family before v1. Match errors with
+// errors.As(err, *goav.BuildError), switch on Family first, and use Code when
+// a caller needs a specific diagnostic leaf. Rendered text may improve over
+// time. See docs/ERRORS.md for the contract and matching recipes.
 package errcode
 
-// Code identifies one class of refusal or diagnostic. Every BuildError
-// carries one; Explain diagnostics and plan decisions reuse the same
-// vocabulary (as plain strings in the plan package).
+// Code identifies a detailed refusal or diagnostic leaf. Every BuildError
+// carries one; Explain diagnostics and plan decisions reuse the same vocabulary
+// (as plain strings in the plan package). Families are the stable
+// application-level matching surface; codes are the detailed diagnostic surface.
 //
 // Code is an open string, not a closed enum: external components emit their
 // own vendor-prefixed codes through the same BuildError shape, and they flow
@@ -16,9 +17,9 @@ package errcode
 // vocabulary, not the universe of valid errcode.
 type Code string
 
-// Family identifies the stable high-level BuildError class. Code remains the
-// detailed compatibility leaf during the typed-error migration; Family is the
-// coarser field callers can switch on when they do not need every catalog code.
+// Family identifies the stable high-level BuildError class. Code is the
+// detailed diagnostic leaf during the typed-error migration; Family is the
+// field callers should switch on before inspecting a specific catalog code.
 type Family string
 
 const (

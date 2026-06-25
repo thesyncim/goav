@@ -53,22 +53,26 @@ func (f Fix) String() string {
 }
 
 // BuildError is the one structured refusal goav raises from build,
-// validation, attach, and explain paths. Family identifies the stable broad
-// refusal class, Code identifies the detailed catalog entry (see the errcode
-// package), Operation/Node say where, Reason says why, Fields carry typed
-// machine-readable facts, Details carries their legacy key=value rendering,
-// Fixes carry typed repair actions, Suggestions carries their legacy text
-// rendering, and Cause is a sentinel (ErrUnsupportedBuild, ErrNilSink,
+// validation, attach, and explain paths. Family identifies the stable
+// application branch key, Code identifies the detailed diagnostic leaf (see the
+// errcode package), Operation/Node say where, Reason says why, Fields carry
+// typed machine-readable facts, Details carries their legacy key=value
+// rendering, Fixes carry typed repair actions, Suggestions carries their legacy
+// text rendering, and Cause is a sentinel (ErrUnsupportedBuild, ErrNilSink,
 // pipeline.ErrBufferedMessageUnsafe, ...) reachable through errors.Is.
 type BuildError struct {
-	Family      errcode.Family
-	Code        errcode.Code
-	Operation   string
-	Node        string
-	Reason      string
-	Fields      []Detail
-	Details     []string
-	Fixes       []Fix
+	Family    errcode.Family
+	Code      errcode.Code
+	Operation string
+	Node      string
+	Reason    string
+	Fields    []Detail
+	// Deprecated: compatibility rendering only. New production errors should
+	// populate Fields and let DetailLines render them.
+	Details []string
+	Fixes   []Fix
+	// Deprecated: compatibility rendering only. New production errors should
+	// populate Fixes and let FixLines render them.
 	Suggestions []string
 	Cause       error
 }
@@ -319,14 +323,14 @@ func (j *Job) UseRuntime(runtime *Runtime) *Job {
 	return j
 }
 
-func (j *Job) compileRuntime() *Runtime {
+func (j *Job) runtimeOrNil() *Runtime {
 	if j == nil {
 		return nil
 	}
 	if j.runtimeSet {
 		return j.runtime
 	}
-	return MustNew()
+	return nil
 }
 
 func (j *Job) setErr(err error) {

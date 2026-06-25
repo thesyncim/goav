@@ -202,9 +202,10 @@ err := goav.From(input).
     Run(ctx)
 ```
 
-One destination can be a mux group: several encoded branches feed the same
-destination value or matching `goav.Mux(name, destination)`. A destination can
-also be a sink after any branch operation
+One destination can be a mux group: several encoded branches feed matching
+`goav.Mux(name, destination)` values. Reusing the same destination value is
+compatibility sugar for local recipes. A destination can also be a sink after
+any branch operation
 (no encode needed for frame-domain ends).
 
 Branches normally start from the current stream point. When one branch needs an

@@ -56,10 +56,8 @@ type graphPlanGraphConfigurer interface {
 }
 
 func buildGraphPlanTask(ctx context.Context, gp graphPlan) (LiveTask, error) {
-	runtime := gp.runtime
-	if runtime == nil {
-		return nil, recipeGraphUnsupportedError("build recipe", intent{})
-	}
+	runtime := runtimeForGraphExecution(gp.runtime)
+	gp = graphPlanWithRuntime(gp, runtime)
 	if err := validateGraphPlanLowering(gp); err != nil {
 		return nil, err
 	}
@@ -86,6 +84,20 @@ func buildGraphPlanTask(ctx context.Context, gp graphPlan) (LiveTask, error) {
 		return nil, err
 	}
 	return newTaskWithRootDestinations(graph, runtime, gp.work.Destinations, service.destinationTxs...), nil
+}
+
+func runtimeForGraphExecution(rt *runtime) *runtime {
+	if rt != nil {
+		return rt
+	}
+	return MustNew()
+}
+
+func runtimeRealtime(rt *runtime) bool {
+	if rt == nil {
+		return true
+	}
+	return rt.realtime
 }
 
 func runtimeWithBuffer(rt *runtime, buffer pipeline.BufferPolicy) *runtime {
@@ -174,9 +186,6 @@ func (p mediaPlanStreamGraph) hasSingleSinkDestination() bool {
 }
 
 func newMediaPlanDecodeStreamGraph(rt *Runtime, inputs []InputSpec, outputs []destinationSpec, stream streamIntent) (mediaPlanStreamGraph, bool, error) {
-	if rt == nil {
-		return mediaPlanStreamGraph{}, false, nil
-	}
 	if !mediaPlanStreamInputsSupported(inputs) {
 		return mediaPlanStreamGraph{}, false, nil
 	}
@@ -249,9 +258,6 @@ func mediaPlanStreamInputsSupported(inputs []InputSpec) bool {
 }
 
 func newMediaPlanPacketCopyStreamGraph(rt *Runtime, inputs []InputSpec, outputs []destinationSpec, stream streamIntent, selectedStream bool) (mediaPlanStreamGraph, bool, error) {
-	if rt == nil {
-		return mediaPlanStreamGraph{}, false, nil
-	}
 	if len(inputs) == 0 || len(outputs) == 0 || !mediaPlanStreamInputsSupported(inputs) {
 		return mediaPlanStreamGraph{}, false, nil
 	}
@@ -266,7 +272,7 @@ func newMediaPlanPacketCopyStreamGraph(rt *Runtime, inputs []InputSpec, outputs 
 }
 
 func (p mediaPlanStreamGraph) packetCopySpec() (pipeline.Spec, error) {
-	spec := pipeline.Spec{Name: "goav", Realtime: p.runtime.realtime}
+	spec := pipeline.Spec{Name: "goav", Realtime: runtimeRealtime(p.runtime)}
 	nodes := make(map[string]plannedNode, len(p.inputs)+len(p.outputs)+1)
 	sourceRefs, ok, err := mediaPlanSourceSpecs(&spec, nodes, p.inputs)
 	if err != nil {
@@ -329,9 +335,6 @@ func (p mediaPlanStreamGraph) selectedPacketCopyBranchComposeRoutes() ([]branchC
 }
 
 func newMediaPlanBranchComposeGraph(rt *Runtime, inputs []InputSpec, composePlan branchComposePlan) (mediaPlanBranchComposeGraph, bool, error) {
-	if rt == nil {
-		return mediaPlanBranchComposeGraph{}, false, nil
-	}
 	if len(inputs) == 0 {
 		return mediaPlanBranchComposeGraph{}, false, nil
 	}
@@ -372,7 +375,7 @@ func newMediaPlanBranchComposeGraph(rt *Runtime, inputs []InputSpec, composePlan
 }
 
 func (p mediaPlanBranchComposeGraph) spec() (pipeline.Spec, error) {
-	spec := pipeline.Spec{Name: "goav", Realtime: p.runtime.realtime}
+	spec := pipeline.Spec{Name: "goav", Realtime: runtimeRealtime(p.runtime)}
 	nodes := make(map[string]plannedNode, p.nodeCapacity())
 	sourceRefs, ok, err := mediaPlanSourceSpecs(&spec, nodes, p.inputs)
 	if err != nil {
@@ -1572,7 +1575,7 @@ func mediaPlanBranchComposeTargetRoutes(outputs []destinationSpec, branchName st
 }
 
 func (p mediaPlanStreamGraph) specWithSources() (pipeline.Spec, []pipeline.NodeRef, map[string]plannedNode, error) {
-	spec := pipeline.Spec{Name: "goav", Realtime: p.runtime.realtime}
+	spec := pipeline.Spec{Name: "goav", Realtime: runtimeRealtime(p.runtime)}
 	nodes := make(map[string]plannedNode, len(p.inputs)+len(p.outputs)+len(p.filters)+3)
 	sourceRefs, ok, err := mediaPlanSourceSpecs(&spec, nodes, p.inputs)
 	if err != nil {

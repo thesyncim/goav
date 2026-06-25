@@ -9,12 +9,12 @@ The contract is enforced by a source-scanning pin test (`errors_pin_test.go`):
 - **Family**: a typed `errcode.Family` identifying the stable broad class
   (`destination`, `runtime_branch`, `codec`, ...). Switch on this when a caller
   wants category-level handling.
-- **Code**: a typed `errcode.Code` identifying the detailed refusal class.
-  Every code is an exported constant in the `errcode` package (the catalog),
-  grouped by area with a one-line comment saying when it fires. Codes are
-  stable; rendered text may improve. The type is an open string: external
-  components emit their own vendor-prefixed codes through the same `BuildError`
-  shape.
+- **Code**: a typed `errcode.Code` identifying the detailed diagnostic leaf.
+  Codes are exported constants in the `errcode` package and may grow within a
+  family before v1 as diagnostics become more precise. Applications should
+  switch on `BuildError.Family` first, then inspect `Code` only when they need
+  a specific leaf. The type is an open string: external components emit their
+  own vendor-prefixed codes through the same `BuildError` shape.
 - **Operation / Node**: where it happened (`build stream`, `attach runtime
   branch`; the chain, branch, tap, or destination name).
 - **Reason**: one line saying why, including actual vs expected where it
@@ -76,8 +76,9 @@ if err != nil {
 
 The full checked code list lives in
 [`docs/ERROR_CATALOG.md`](ERROR_CATALOG.md), generated from
-[`errcode/errcode.go`](../errcode/errcode.go): stable, autocompletable
-(`errcode.`), and greppable by value (`rg encode_missing`). Every current catalog row names coverage.
+[`errcode/errcode.go`](../errcode/errcode.go): autocompletable
+(`errcode.`), greppable by value (`rg encode_missing`), and grouped under a
+stable family. Every current catalog row names coverage.
 If a future row appears as `catalog-only`, the pin test fails until it gets a
 bad recipe, rendered error coverage, fixed recipe guidance, sentinel/cause,
 and test name.

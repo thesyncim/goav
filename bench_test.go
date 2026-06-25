@@ -305,7 +305,7 @@ func BenchmarkBranchFanout(b *testing.B) {
 }
 
 // BenchmarkSharedMuxGroup is the shared mux group: one video and one audio
-// chain encode (fake passthrough) and reuse one destination value, muxing both
+// chain encode (fake passthrough) and explicit mux grouping, muxing both
 // streams into a single (fake-container) file. Sources split b.N between them.
 func BenchmarkSharedMuxGroup(b *testing.B) {
 	half := b.N / 2

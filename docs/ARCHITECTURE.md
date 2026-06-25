@@ -44,7 +44,7 @@ user-facing model.
 
 | Layer | Vocabulary |
 | --- | --- |
-| Simple high-level API | `From`, stream selection, ordered operations, direct `File`/`URI`/`Sink` destinations, custom `Writer` destinations with `provider.Info`, stable destination handles and `Mux(name, destination)` for shared mux/sink groups |
+| Simple high-level API | `From`, stream selection, ordered operations, direct `File`/`URI`/`Sink` destinations, custom `Writer` destinations with `provider.Info`, and `Mux(name, destination)` for shared mux/sink groups |
 
 One media work planner owns the cold path. It:
 
@@ -89,9 +89,10 @@ does not branch on input/output kind.
 
 `Destination` is the public routing handle and extension surface for files,
 byte writers, object-store uploads, URI-backed outputs, frame/packet/event
-sinks, and shared mux/sink groups. Reusing one destination value groups
-branches; `Mux(name, destination)` makes that grouping explicit when branches
-construct matching destinations separately. The work plan keeps concrete
+sinks, and shared mux/sink groups. `Mux(name, destination)` is the preferred
+first-class grouping model when branches construct matching destinations
+separately. Same-value reuse remains compatibility sugar for local recipes.
+The work plan keeps concrete
 destination openers cold until stream list, format, MIME, metadata, and
 realtime policy are known.
 

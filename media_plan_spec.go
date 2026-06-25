@@ -34,7 +34,7 @@ type graphPlan struct {
 }
 
 func (p graphPlan) ready() bool {
-	return p.lowerer != nil && p.runtime != nil
+	return p.lowerer != nil
 }
 
 func (p graphPlan) Describe() (pipeline.Spec, error) {
@@ -220,9 +220,6 @@ func mediaPlanJoinLowererForState(state *recipeCompileState) (graphPlanLowerer, 
 		return nil, false, nil
 	}
 	rt := state.runtime
-	if rt == nil {
-		return nil, false, nil
-	}
 	gp, err := newJoinPlan(rt, state)
 	if err != nil {
 		return nil, false, err

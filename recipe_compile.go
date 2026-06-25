@@ -338,7 +338,7 @@ func compileJobRecipeWithOptions(job *Job, options recipeCompileOptions) (recipe
 	if job != nil {
 		state.jobPresent = true
 		state.intent = job.plan()
-		state.runtime = job.compileRuntime()
+		state.runtime = job.runtimeOrNil()
 		state.runtimeExplicit = job.runtimeSet
 		state.recipeErr = job.err
 		state.inputAttachments = append([]InputSpec(nil), job.inputs...)
@@ -395,7 +395,7 @@ func compileJobJoinRecipeWithOptions(job *Job, options recipeCompileOptions) (re
 		operation:       "build " + string(spec.kind),
 		options:         options,
 		intent:          joinIntent(job),
-		runtime:         job.compileRuntime(),
+		runtime:         job.runtimeOrNil(),
 		runtimeExplicit: job.runtimeSet,
 		recipeErr:       job.err,
 		joinAttachment:  spec,
@@ -431,7 +431,7 @@ func validateJoinRecipePass() recipeCompilePass {
 
 func compileJobBranchRecipeWithOptions(job *Job, options recipeCompileOptions) (recipeResolved, error) {
 	branchJob := &branchCompositionJob{
-		runtime:         job.compileRuntime(),
+		runtime:         job.runtimeOrNil(),
 		runtimeExplicit: job.runtimeSet,
 		name:            job.name,
 		streams:         append([]streamBuild(nil), job.branchStreams...),
@@ -543,10 +543,19 @@ func validateJobRecipePass() recipeCompilePass {
 
 func validateRecipeRuntimePass() recipeCompilePass {
 	return recipeCompilePassFunc{name: "validate recipe runtime", fn: func(state *recipeCompileState) error {
-		if state.runtime != nil && (!state.requiresExplicitRuntime() || state.runtimeExplicit) {
+		if !state.options.requireExplicitRuntime {
 			return nil
 		}
-		return runtimeMissingError(state.operation)
+		if state.runtimeExplicit && state.runtime == nil {
+			return runtimeMissingError(state.operation)
+		}
+		if state.requiresExplicitRuntime() {
+			if state.runtime != nil && state.runtimeExplicit {
+				return nil
+			}
+			return runtimeMissingError(state.operation)
+		}
+		return nil
 	}}
 }
 

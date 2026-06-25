@@ -682,8 +682,8 @@ func TestTaskAttachRuntimeBranchGroupRejectsDuplicateSinkDestinationNames(t *tes
 	if !errors.As(err, &buildErr) || buildErr.Code != "destination_duplicate" || !errors.Is(err, ErrUnsupportedBuild) {
 		t.Fatalf("err = %v, want destination_duplicate wrapping ErrUnsupportedBuild", err)
 	}
-	if !strings.Contains(err.Error(), "reuse one destination value") {
-		t.Fatalf("err = %v, want shared destination value guidance", err)
+	if !strings.Contains(err.Error(), "goav.Mux(name, destination)") {
+		t.Fatalf("err = %v, want shared mux guidance", err)
 	}
 	text := specText(task.Describe())
 	if strings.Contains(text, "left/") || strings.Contains(text, "right/") || strings.Contains(text, "shared") {

@@ -105,6 +105,28 @@ func TestTaskCloseIsIdempotentWithoutRun(t *testing.T) {
 	}
 }
 
+func TestTaskCloseContextOptInHonorsCanceledContext(t *testing.T) {
+	task, err := goav.From(goavtest.Audio(48000, 1, []int16{1})).
+		Audio().
+		To(goavtest.NewCollector().Sink()).
+		Build(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	closer, ok := task.(goav.ContextCloser)
+	if !ok {
+		t.Fatalf("task = %T, want goav.ContextCloser", task)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := closer.CloseContext(ctx); !errors.Is(err, context.Canceled) {
+		t.Fatalf("CloseContext(canceled) error = %v, want context.Canceled", err)
+	}
+	if err := task.Close(); err != nil {
+		t.Fatalf("Close after canceled CloseContext: %v", err)
+	}
+}
+
 // TestTaskCloseDuringRunStopsTheTask pins Close racing a live Run: the run
 // unwinds without error or with ErrClosed (never a panic or a hang), and a
 // second Close is still nil.

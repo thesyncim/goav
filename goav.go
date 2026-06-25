@@ -13,7 +13,8 @@
 // MustNew(opts...) is the package-level setup shortcut. Import
 // github.com/thesyncim/goav/bundle when the application wants the bundled pure-Go
 // adapters. Build errors are structured: every refusal is a *BuildError
-// carrying an errcode.Code, the failing operation, and concrete fixes.
+// carrying an errcode.Family, detailed errcode.Code, the failing operation,
+// and concrete fixes.
 package goav
 
 import (
@@ -28,9 +29,11 @@ import (
 	"github.com/thesyncim/goav/snapshot"
 )
 
-// Runtime is the concrete composition root for applications embedding goav.
-// Build it with New or MustNew, or import github.com/thesyncim/goav/bundle for
-// the bundled adapter set.
+// Runtime is an intentionally opaque composition root for applications
+// embedding goav. Build it with New or MustNew, or import
+// github.com/thesyncim/goav/bundle for the bundled adapter set. Applications
+// pass Runtime handles back to recipe builders; construction and adapter
+// registration stay behind the runtime and bundle packages.
 type Runtime = runtime
 
 // Task is the minimal runnable media composition accepted by code that only
@@ -42,6 +45,13 @@ type Task interface {
 	// Close releases the task's resources and finalizes destinations; it is
 	// idempotent and safe to call while Run is still in flight.
 	Close() error
+}
+
+// ContextCloser is the opt-in lifecycle extension implemented by tasks that
+// can bound shutdown work with a caller context. Task.Close remains the
+// compatibility shortcut and calls CloseContext(context.Background()).
+type ContextCloser interface {
+	CloseContext(context.Context) error
 }
 
 // Explainer reports the planned workflow before any resource opens: inputs,

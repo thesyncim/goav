@@ -163,9 +163,10 @@ the path, pass destination options directly:
 dest := goav.File("", out, goav.Format(av.FormatIVF))
 ```
 
-Reuse one destination value, or give matching destinations the same
-`goav.Mux(name, destination)`, when several branches should feed one mux, one
-sink group, or one transactional writer.
+Use `goav.Mux(name, destination)` when several branches should feed one mux,
+one sink group, or one transactional writer. Reusing the same destination value
+is supported as compatibility sugar for local recipes, but explicit mux names
+are preferred when helpers construct matching destinations.
 
 The runnable module `examples/custom-destination` verifies the open-time
 `provider.Info` contract and a nil-opener failure without importing internals.

@@ -35,8 +35,8 @@ func TestRecipeResolvedSingleStreamIntentContracts(t *testing.T) {
 
 func TestMediaPlanPacketCopyStreamGraphConstructionContracts(t *testing.T) {
 	var nilRuntime *Runtime
-	if graph, ok, err := newMediaPlanPacketCopyStreamGraph(nilRuntime, []InputSpec{{}}, []destinationSpec{{name: "out"}}, streamIntent{}, false); err != nil || ok || graph.runtime != nil {
-		t.Fatalf("newMediaPlanPacketCopyStreamGraph(nil runtime) = %+v, %v, %v; want not handled", graph, ok, err)
+	if graph, ok, err := newMediaPlanPacketCopyStreamGraph(nilRuntime, []InputSpec{{}}, []destinationSpec{{name: "out"}}, streamIntent{}, false); err != nil || !ok || graph.runtime != nil {
+		t.Fatalf("newMediaPlanPacketCopyStreamGraph(nil runtime) = %+v, %v, %v; want structural graph with nil runtime", graph, ok, err)
 	}
 
 	rt := MustNew()

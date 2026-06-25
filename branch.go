@@ -967,7 +967,8 @@ func branchMissingError(node string) error {
 		Reason:    "Branches requires at least one encoded branch",
 		Fixes: buildErrorFixes([]string{
 			"pass branches with goav.Branch(name).Encode(codec.VP9(...)).To(goav.File(name, writer))",
-			"reuse the same destination value or pass goav.Mux(name, destination) when branches should share one mux group",
+			"pass goav.Mux(name, destination) when branches should share one mux group",
+			"reuse the same destination value only as compatibility sugar for local recipes",
 		}),
 		Cause: ErrUnsupportedBuild,
 	}
@@ -995,7 +996,8 @@ func branchDestinationMissingError(name string) error {
 		Reason:    "branch has no destination",
 		Fixes: buildErrorFixes([]string{
 			"finish the branch with .To(goav.File(\"web.ivf\", writer)) or .To(goav.Sink(sink))",
-			"reuse the same destination value or pass goav.Mux(name, destination) when several branches should share one mux or sink group",
+			"pass goav.Mux(name, destination) when several branches should share one mux or sink group",
+			"reuse the same destination value only as compatibility sugar for local recipes",
 		}),
 		Cause: ErrUnsupportedBuild,
 	}

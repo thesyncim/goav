@@ -12,6 +12,15 @@ compatibility it is promising and what evidence backs that promise.
 - Root module: pre-v1. The front-door grammar, structured errors, task model,
   and extension seams are governed and tested, but breaking changes may still
   land before v1 when they are recorded in `CHANGELOG.md`.
+- Root package dependency scope: importing `github.com/thesyncim/goav` does not
+  import bundled adapter packages into the root package dependency graph.
+  `goav/bundle` is currently a package in the root module, not a nested module,
+  so the root module still carries bundled backend requirements until/unless a
+  nested-module split is justified by SBOM or scanner pressure.
+- Structured errors: applications should switch on `BuildError.Family` first.
+  `BuildError.Code` remains a detailed diagnostic leaf that may grow within a
+  family before v1; rendered details and suggestions are compatibility output,
+  while typed `Fields` and `Fixes` are the production data model.
 - Nested modules: `rtpav` and `webrtcav` tag independently with
   `rtpav/vX.Y.Z` and `webrtcav/vX.Y.Z`. A root release does not freeze the
   transport modules, and a transport release must name the root version it was

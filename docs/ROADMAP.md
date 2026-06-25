@@ -28,18 +28,18 @@ before graph mutation, and rolls back fully on failure
 (`TestTaskAttachRuntimeBranchGroupRollsBackOnLaterFailure`).
 
 The destination model has also been simplified. Collapse `Target` into `Destination` is done: `File`, `URI`, `Writer`,
-`Sink`, and `Custom` return stable goav-owned destination handles. Reusing one
-handle still groups branches into one mux/sink group, and
-`Mux(name, destination)` makes the same intent explicit when branches build
-matching destinations independently (`TestMuxSurvivesWithAndCopy`,
-`TestFromMultiInputPlanDedupesSharedDestination`).
+`Sink`, and `Custom` return stable goav-owned destination handles.
+`Mux(name, destination)` is the preferred way to declare one shared mux/sink
+group when branches build matching destinations independently. Reusing one
+handle still groups branches as compatibility sugar (`TestMuxPreferredOverHandleIdentity`,
+`TestMuxSurvivesWithAndCopy`, `TestSameHandleGroupingStillWorksButDocsPreferMux`).
 
 ## v0 Stable
 
 Stable here means "you should not wake up to a silent contract change", not
-"the project has stopped learning". The governed surface is 323 approved
-identifiers (`api_surface_pin_test.go` + `testdata/api_surface.txt`: 68 root,
-22 `control`, 4 `inspect`, 164 `errcode`, 28 `plan`, 24 `lifecycle`,
+"the project has stopped learning". The governed surface is 328 approved
+identifiers (`api_surface_pin_test.go` + `testdata/api_surface.txt`: 69 root,
+22 `control`, 8 `inspect`, 164 `errcode`, 28 `plan`, 24 `lifecycle`,
 4 `snapshot`, 9 `graphrender`),
 every exported symbol documented (`doc_pin_test.go`), tiered in
 `docs/API_SURFACE.md`:
@@ -47,12 +47,13 @@ every exported symbol documented (`doc_pin_test.go`), tiered in
 - **Tier A: the grammar.** `From`/stream selection/operations
   (`Decode`/`Copy`/`Resize`/`Resample`/`Do`/`Encode`)/`Shape`/`Auto`/
   `Require`/`Prefer`/`Tap`/`Branches`/`To`/`OnStream`; `Mix`/`Composite`/
-  `Select`; `Flow`; `Task` lifecycle (`Run`/`Close`); opt-in task capability
+  `Select`; `Flow`; `Task` lifecycle (`Run`/`Close`) plus opt-in
+  `ContextCloser.CloseContext(ctx)`; opt-in task capability
   interfaces for `Explain`, inspection (`Describe`/`Taps`/`Snapshot`/`Stats`),
   mutation (`Attach`/`Detach` with `DrainBranch`/`AbortBranch`, `Rebranch`),
   controls (`Control`), and observation (`Events`/`Watch`);
   `New`/`MustNew`/`UseRuntime` and the `bundle` runtime helpers;
-  structured `BuildError` with typed fields/fixes + the `errcode` catalog;
+  structured `BuildError` with stable families, detailed codes, typed fields/fixes;
   the `plan`, `snapshot`, `lifecycle`, `shape`, `flow`, and `av` vocabulary
   packages.
 - **Tier B: extension points.** `provider.Source` and `Source(fn)` push
@@ -209,10 +210,12 @@ The checklist below gates the tag. Each item names its current evidence.
   discovered public package (dynamic module walk; `adapters/*` and
   `container/*` sit behind the codec/format extension points and are excluded by the
   decision recorded in `docs/API_SURFACE.md`).
-- [x] **Dependency purity**: the root module requires `github.com/thesyncim/*`,
-  the standard library, and only the reviewed modernc runtime set needed by
-  the built-in AAC backend (`TestRootModuleDependencyPurity`); the pion
-  ecosystem lives in the nested `rtpav` and `webrtcav` modules. Nested modules tag independently with
+- [x] **Dependency purity**: importing the root package does not pull bundled
+  adapter packages into its dependency graph. The root module still carries
+  bundled backend requirements because `goav/bundle` is not a nested module;
+  revisit a nested-module split only if SBOM or scanner pressure justifies it
+  (`TestRootModuleDependencyPurity`). The Pion ecosystem lives in the nested
+  `rtpav` and `webrtcav` modules. Nested modules tag independently with
   prefixed tags (`rtpav/vX.Y.Z`, `webrtcav/vX.Y.Z`), so a root v1 does not
   freeze the transport modules and vice versa; webrtcav requires rtpav
   requires the root, so tag the root first, then rtpav, then webrtcav.

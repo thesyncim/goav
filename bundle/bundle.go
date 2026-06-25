@@ -22,6 +22,7 @@ import (
 	matroskaadapter "github.com/thesyncim/goav/container/matroska"
 	mp4adapter "github.com/thesyncim/goav/container/mp4"
 	webmadapter "github.com/thesyncim/goav/container/webm"
+	"github.com/thesyncim/goav/pipeline"
 	goavruntime "github.com/thesyncim/goav/runtime"
 )
 
@@ -82,6 +83,26 @@ func Build(ctx context.Context, job *goav.Job, opts ...goavruntime.Option) (goav
 		return nil, err
 	}
 	return job.UseRuntime(runtime).Build(ctx)
+}
+
+// Describe compiles job's graph shape with a bundled runtime without opening
+// resources. It is the batteries-included counterpart to
+// job.UseRuntime(bundle.MustNew(...)).Describe().
+func Describe(ctx context.Context, job *goav.Job, opts ...goavruntime.Option) (pipeline.Spec, error) {
+	if job == nil {
+		return pipeline.Spec{}, ErrNilJob
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return pipeline.Spec{}, err
+	}
+	runtime, err := New(opts...)
+	if err != nil {
+		return pipeline.Spec{}, err
+	}
+	return job.UseRuntime(runtime).Describe()
 }
 
 // Run compiles and runs job with a bundled runtime, then closes it.

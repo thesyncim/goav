@@ -61,6 +61,37 @@ func TestGraphDirectEventsChannelAndClose(t *testing.T) {
 	}
 }
 
+func TestGraphCloseContextHonorsCanceledContext(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		buffer BufferPolicy
+	}{
+		{name: "direct"},
+		{name: "buffered", buffer: BufferPolicy{Capacity: 1, Drop: DropNewest}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			graph, err := NewGraph(GraphConfig{Name: tc.name, Buffer: tc.buffer})
+			if err != nil {
+				t.Fatal(err)
+			}
+			closer, ok := graph.(interface {
+				CloseContext(context.Context) error
+			})
+			if !ok {
+				t.Fatalf("graph = %T, want CloseContext", graph)
+			}
+			ctx, cancel := context.WithCancel(context.Background())
+			cancel()
+			if err := closer.CloseContext(ctx); !errors.Is(err, context.Canceled) {
+				t.Fatalf("CloseContext(canceled) error = %v, want context.Canceled", err)
+			}
+			if err := graph.Close(); err != nil {
+				t.Fatalf("Close after canceled CloseContext: %v", err)
+			}
+		})
+	}
+}
+
 func TestGraphDirectDisconnectPauseAndRemoveContracts(t *testing.T) {
 	packet := av.Packet{StreamID: "video"}
 	message := Message{Kind: MessagePacket, Packet: &packet}

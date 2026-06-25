@@ -279,7 +279,7 @@ func TestErrorAcceptanceBranchMissing(t *testing.T) {
 		Describe()
 	requireBuildError(t, err, errcode.BranchMissing, "build branches", "audio",
 		"pass branches with goav.Branch(name).Encode",
-		"reuse the same destination value",
+		"goav.Mux(name, destination)",
 	)
 }
 

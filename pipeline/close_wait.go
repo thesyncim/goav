@@ -1,6 +1,7 @@
 package pipeline
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"time"
@@ -39,18 +40,34 @@ func (e *CloseWaitError) Unwrap() error {
 var closeWaitTimeout = 30 * time.Second
 
 func waitCloseDone(operation string, node string, done <-chan struct{}) error {
+	return waitCloseDoneContext(context.Background(), operation, node, done)
+}
+
+func waitCloseDoneContext(ctx context.Context, operation string, node string, done <-chan struct{}) error {
 	if done == nil {
 		return nil
 	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if closeWaitTimeout <= 0 {
-		<-done
-		return nil
+		select {
+		case <-done:
+			return nil
+		case <-ctx.Done():
+			return ctx.Err()
+		}
 	}
 	timer := time.NewTimer(closeWaitTimeout)
 	defer timer.Stop()
 	select {
 	case <-done:
 		return nil
+	case <-ctx.Done():
+		return ctx.Err()
 	case <-timer.C:
 		return &CloseWaitError{Operation: operation, Node: node, Pending: 1, Timeout: closeWaitTimeout}
 	}
