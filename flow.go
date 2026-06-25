@@ -799,8 +799,8 @@ func branchOutputScopeError(node string) error {
 		Node:      node,
 		Reason:    "branch destinations are declared inside Branch(...).To(...)",
 		Fixes: buildErrorFixes([]string{
-			"route branches with .Branches(goav.Branch(name).To(goav.File(name, writer)))",
-			"use stream .To(goav.File(...)) or .To(goav.Sink(...)) only for one ordinary stream destination",
+			"route branches with .Branches(goav.Branch(name).To(goav.Write(name, writer)))",
+			"use stream .To(goav.Write(...)) or .To(goav.Sink(...)) only for one ordinary stream destination",
 		}),
 		Cause: ErrUnsupportedBuild,
 	}

@@ -421,7 +421,7 @@ func branchIntentDestinationMissingError(stream streamIntent) error {
 		Node:      firstNonEmpty(stream.Name, string(selector.Type), "stream"),
 		Reason:    "branch has no destination",
 		Fixes: buildErrorFixes([]string{
-			"finish the branch with .To(goav.File(\"web.ivf\", writer)) or .To(goav.Sink(sink))",
+			"finish the branch with .To(goav.Write(\"web.ivf\", writer)) or .To(goav.Sink(sink))",
 			"pass goav.Mux(name, destination) when branches should share one mux group",
 		}),
 		Cause: ErrUnsupportedBuild,
@@ -436,7 +436,7 @@ func branchDestinationReferenceMissingError(stream streamIntent, label string) e
 		Node:      stream.Name,
 		Reason:    "destination " + label + " is referenced but not defined",
 		Fixes: buildErrorFixes([]string{
-			"pass a named goav.File(...), goav.URI(...), or goav.Sink(...) destination to the branch .To(...) call",
+			"pass a named goav.Write(...), goav.URI(...), or goav.Sink(...) destination to the branch .To(...) call",
 			"pass goav.Mux(name, destination) when helpers construct matching grouped destinations",
 		}),
 		Cause: ErrUnsupportedBuild,
@@ -468,7 +468,7 @@ func branchDestinationNameEmptyError(stream streamBuild, index int) error {
 			fmt.Sprintf("destination index: %d", index),
 		}),
 		Fixes: buildErrorFixes([]string{
-			"call .To(goav.File(\"web.ivf\", writer)) with a non-empty destination name",
+			"call .To(goav.Write(\"web.ivf\", writer)) with a non-empty destination name",
 			"pass goav.Sink(component.SinkFunc(name, fn)) for sink destinations",
 		}),
 		Cause: ErrUnsupportedBuild,

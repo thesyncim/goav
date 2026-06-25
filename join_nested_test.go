@@ -427,7 +427,7 @@ func TestNestedMixEncodesToFile(t *testing.T) {
 			From(mixTestAudioSource("b", 50, -50)).Audio(),
 		),
 		From(mixTestAudioSource("c", 5, 5)).Audio(),
-	).Encode(codec.Opus()).To(File("mix.ogg", io.Discard, Format(av.FormatOgg))).UseRuntime(rt).Build(ctx)
+	).Encode(codec.Opus()).To(Write("mix.ogg", io.Discard, Format(av.FormatOgg))).UseRuntime(rt).Build(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -97,7 +97,7 @@ func TestCompositeRawFramesRequireSinkDestination(t *testing.T) {
 	_, err := Composite(
 		From(compositeTestVideoSource("a", 4, 4, 100, 10, 20)).Video().Region(0, 0),
 		From(compositeTestVideoSource("b", 4, 4, 200, 30, 40)).Video().Region(4, 0),
-	).To(File("canvas.ivf", io.Discard)).
+	).To(Write("canvas.ivf", io.Discard)).
 		Build(context.Background())
 	var buildErr *BuildError
 	if !errorsAsComposite(err, &buildErr) || buildErr.Code != "composite_destination" || !errors.Is(err, ErrUnsupportedBuild) {

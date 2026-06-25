@@ -32,7 +32,7 @@ Start with one packet-preserving recording:
 ```go
 return bundle.Run(ctx, goav.From(goav.FileInput("input.ivf", in)).
     Copy().
-    To(goav.File("recording.ivf", out)),
+    To(goav.Write("recording.ivf", out)),
 )
 ```
 
@@ -43,7 +43,7 @@ The front-door vocabulary is intentionally small:
 - **Operation**: `.Decode()`, `.Copy()`, `.Resize()`, `.Resample()`, `.Do(stage)`, `.Encode(codec)`, `.Tap(...)`.
 - **Tap**: `goav.FrameTap(...)` or `goav.PacketTap(...)` names a point for later branches.
 - **Branch**: `Branches(goav.Branch(...))` fans one media point into several outcomes.
-- **Destination**: `goav.File(...)`, `goav.Writer(...)`, `goav.Sink(...)`, `goav.Custom(...)`, `goav.URI(...)`, or `goav.Mux(name, destination)` for explicit sharing.
+- **Destination**: `goav.Write(...)`, `goav.Writer(...)`, `goav.Sink(...)`, `goav.Custom(...)`, `goav.URI(...)`, or `goav.Mux(name, destination)` for explicit sharing.
 - **Flow**: `goav.Flow(...)` is reusable operation text with no source or destination.
 - **Task**: `Run` and `Close`; richer live behavior is behind opt-in interfaces.
 
@@ -55,7 +55,7 @@ value is rejected so grouping stays explicit.
 
 | I need to... | Recipe sketch | Go deeper |
 |---|---|---|
-| Record packets without decoding | `From(input).Copy().To(goav.File(...))` | [Use cases](docs/USE_CASES.md) |
+| Record packets without decoding | `From(input).Copy().To(goav.Write(...))` | [Use cases](docs/USE_CASES.md) |
 | Record and preview from one stream | `.Branches(goav.Branch("archive").To(...), goav.Branch("preview").To(...))` | [Use cases](docs/USE_CASES.md) |
 | Decode, filter, and encode again | `.Decode().Resize(...)` or `.Resample(...)`, then `.Encode(codec)` | [Operations](docs/OPERATIONS.md) |
 | Attach diagnostics at runtime | `LiveTask.Attach(ctx, goav.Branch(...).From(goav.FrameTap(...)))` | [Control plane](docs/CONTROL_PLANE.md) |
@@ -100,7 +100,7 @@ _, err := bundle.Build(ctx, goav.From(roomCamera).
     Copy().
     Sync(roomSync).
     Branches(
-        goav.Branch("archive").Sync(roomSync).To(goav.File("archive.ivf", out)),
+        goav.Branch("archive").Sync(roomSync).To(goav.Write("archive.ivf", out)),
         goav.Branch("preview").Sync(previewSync).To(previewTrack),
     ),
 )
@@ -154,7 +154,7 @@ _, err := bundle.Build(ctx, goav.From(transport).
         goav.Branch("record-camera").
             Sync(flow.Sync("room", flow.SyncTolerance(20*time.Millisecond))).
             Copy().
-            To(goav.File("camera.ivf", out)),
+            To(goav.Write("camera.ivf", out)),
         goav.OnRemove(lifecycle.DrainBranch()),
     ),
 )

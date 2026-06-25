@@ -197,7 +197,7 @@ func TestMixRawFramesRequireSinkDestination(t *testing.T) {
 	_, err := Mix(
 		From(mixTestAudioSource("a", 1)).Audio(),
 		From(mixTestAudioSource("b", 2)).Audio(),
-	).To(File("mix.ogg", io.Discard)).
+	).To(Write("mix.ogg", io.Discard)).
 		Build(context.Background())
 	var buildErr *BuildError
 	if !errorsAsMix(err, &buildErr) || buildErr.Code != "mix_destination" || !errors.Is(err, ErrUnsupportedBuild) {
@@ -358,7 +358,7 @@ func TestMixEncodesToFile(t *testing.T) {
 	task, err := Mix(
 		From(mixTestAudioSource("a", 100, 200)).Audio(),
 		From(mixTestAudioSource("b", 50, -50)).Audio(),
-	).Encode(codec.Opus()).To(File("mix.ogg", io.Discard, Format(av.FormatOgg))).UseRuntime(rt).Build(ctx)
+	).Encode(codec.Opus()).To(Write("mix.ogg", io.Discard, Format(av.FormatOgg))).UseRuntime(rt).Build(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -415,8 +415,8 @@ func TestMixEncodesToMultipleFileDestinations(t *testing.T) {
 		From(mixTestAudioSource("a", 100, 200)).Audio(),
 		From(mixTestAudioSource("b", 50, -50)).Audio(),
 	).Encode(codec.Opus()).To(
-		File("first.ogg", &first, Format(av.FormatOgg)),
-		File("second.ogg", &second, Format(av.FormatOgg)),
+		Write("first.ogg", &first, Format(av.FormatOgg)),
+		Write("second.ogg", &second, Format(av.FormatOgg)),
 	).UseRuntime(rt).Build(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -438,7 +438,7 @@ func TestMixRejectsSameDestinationHandleTwice(t *testing.T) {
 		withTestFormats(testFormatMuxer(av.FormatOgg, writerTestMuxerFactory{})),
 		WithEncoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &encodeTestEncoderFactory{encoder: &encodeTestEncoder{}}),
 	)
-	out := File("mix.ogg", io.Discard, Format(av.FormatOgg))
+	out := Write("mix.ogg", io.Discard, Format(av.FormatOgg))
 
 	_, err := Mix(
 		From(mixTestAudioSource("a", 100)).Audio(),

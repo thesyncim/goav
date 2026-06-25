@@ -213,7 +213,6 @@ goav.ErrNilStage
 goav.ErrNilWriter
 goav.ErrUnsupportedBuild
 goav.Explainer
-goav.File
 goav.FileInput
 goav.Fix
 goav.Flow
@@ -259,6 +258,7 @@ goav.TransformSpec
 goav.URI
 goav.URIInput
 goav.WrapSource
+goav.Write
 goav.Writer
 graphrender.ErrUnsupportedFormat
 graphrender.ErrUnsupportedURI

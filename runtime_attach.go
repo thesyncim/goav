@@ -332,7 +332,7 @@ func attachBranchDestinations(spec BranchSpec) ([]attachDestination, error) {
 		return nil, spec.err
 	}
 	if len(spec.destinations) == 0 {
-		return nil, runtimeBranchInvalidError("branch destination is missing", "finish the branch with .To(goav.Sink(sink)) or .To(goav.File(name, writer))")
+		return nil, runtimeBranchInvalidError("branch destination is missing", "finish the branch with .To(goav.Sink(sink)) or .To(goav.Write(name, writer))")
 	}
 	destinations := make([]attachDestination, 0, len(spec.destinations))
 	for i := range spec.destinations {

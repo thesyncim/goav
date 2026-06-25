@@ -43,11 +43,11 @@ func applyDestinationOptions(spec destinationSpec, opts []DestinationOption) des
 	return spec
 }
 
-// File creates a writer-backed destination from an already-open writer. When
+// Write creates a writer-backed destination from an already-open writer. When
 // the writer also implements io.Closer it is closed exactly once when the
 // destination finalizes (run end, drained detach, or failure); a plain writer
 // is left open for the caller.
-func File(name string, writer io.Writer, opts ...DestinationOption) Destination {
+func Write(name string, writer io.Writer, opts ...DestinationOption) Destination {
 	return Destination{spec: applyDestinationOptions(fileDestination(name, writer), opts)}
 }
 
@@ -198,7 +198,7 @@ func (w nopDestinationWriter) Close() error {
 // MediaOption is a direction-agnostic option accepted by both input and
 // destination constructors: Name, MIME, and Metadata state the same fact
 // about either end of a recipe, so goav.FileInput(name, r, goav.MIME(...))
-// and goav.File(name, w, goav.MIME(...)) share one vocabulary. It is sealed —
+// and goav.Write(name, w, goav.MIME(...)) share one vocabulary. It is sealed —
 // only goav option constructors implement it.
 type MediaOption interface {
 	InputOption
@@ -393,12 +393,12 @@ func (s destinationSpec) validate(operation string, fallback string) error {
 	if s.err != nil {
 		suggestions := []string{
 			"pass a non-nil sink to goav.Sink(...)",
-			"use goav.File(...) or goav.URI(...) for muxed output",
+			"use goav.Write(...) or goav.URI(...) for muxed output",
 		}
 		if errors.Is(s.err, ErrNilWriter) {
 			suggestions = []string{
 				"pass a non-nil writer callback to goav.Writer(...)",
-				"use goav.File(...) or goav.URI(...) for muxed output",
+				"use goav.Write(...) or goav.URI(...) for muxed output",
 			}
 		}
 		return &BuildError{
@@ -422,7 +422,7 @@ func (s destinationSpec) validate(operation string, fallback string) error {
 				Fixes: buildErrorFixes([]string{
 					"pass a non-nil sink callback to component.SinkFunc(...)",
 					"pass a non-nil sink to goav.Sink(...)",
-					"use goav.File(...) or goav.URI(...) for muxed output",
+					"use goav.Write(...) or goav.URI(...) for muxed output",
 				}),
 				Cause: err,
 			}
@@ -437,7 +437,7 @@ func (s destinationSpec) validate(operation string, fallback string) error {
 			Node:      node,
 			Reason:    "empty destination",
 			Fixes: buildErrorFixes([]string{
-				"use goav.File(name, writer) for muxed output",
+				"use goav.Write(name, writer) for muxed output",
 				"use goav.Sink(sink) for decoded frames or packets",
 			}),
 			Cause: ErrUnsupportedBuild,
@@ -451,7 +451,7 @@ func (s destinationSpec) validate(operation string, fallback string) error {
 			Node:      node,
 			Reason:    "file output has no writer",
 			Fixes: buildErrorFixes([]string{
-				"pass a non-nil io.Writer to goav.File(name, writer)",
+				"pass a non-nil io.Writer to goav.Write(name, writer)",
 				"use goav.URI(uri) when the output is opened by an adapter",
 			}),
 			Cause: ErrUnsupportedBuild,
@@ -465,8 +465,8 @@ func (s destinationSpec) validate(operation string, fallback string) error {
 			Node:      node,
 			Reason:    "writer-backed file output has no name, URI, MIME type, or explicit format",
 			Fixes: buildErrorFixes([]string{
-				"give goav.File(name, writer) a name with a container extension",
-				"pass goav.Format(...) to goav.File(...) when the writer has no filename",
+				"give goav.Write(name, writer) a name with a container extension",
+				"pass goav.Format(...) to goav.Write(...) when the writer has no filename",
 			}),
 			Cause: ErrUnsupportedBuild,
 		}
@@ -479,7 +479,7 @@ func (s destinationSpec) validate(operation string, fallback string) error {
 			Node:      node,
 			Reason:    "output has no URI, writer, or sink",
 			Fixes: buildErrorFixes([]string{
-				"use goav.File(name, writer) for writer-backed output",
+				"use goav.Write(name, writer) for writer-backed output",
 				"use goav.URI(uri) for URI-backed output",
 			}),
 			Cause: ErrUnsupportedBuild,

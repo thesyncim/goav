@@ -227,7 +227,7 @@ func executeRunPipeline(ctx context.Context, runtimeName string, control string,
 	if plan.destination.format != "" {
 		destOpts = append(destOpts, goav.Format(plan.destination.format))
 	}
-	dest := goav.File(plan.destination.location, file, destOpts...)
+	dest := goav.Write(plan.destination.location, file, destOpts...)
 	runtime, runtimeLabel, err := runtimeForRun(runtimeName, plan)
 	if err != nil {
 		return runPipelineResult{}, err

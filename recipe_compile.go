@@ -640,7 +640,7 @@ func validateJobIntentShape(operation string, intent intent, jobOutputCount int)
 			Operation: operation,
 			Reason:    "no output is configured",
 			Fixes: buildErrorFixes([]string{
-				"route the job to a destination: .To(goav.File(\"out.webm\", writer))",
+				"route the job to a destination: .To(goav.Write(\"out.webm\", writer))",
 				"deliver frames to code with .To(goav.Sink(sink))",
 			}),
 			Cause: ErrUnsupportedBuild,

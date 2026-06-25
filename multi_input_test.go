@@ -26,7 +26,7 @@ func TestFromMultiInputChainsShareOneMuxDestination(t *testing.T) {
 		WithEncoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &encodeTestEncoderFactory{encoder: &encodeTestEncoder{}}),
 	)
 
-	out := Mux("call", File("call.ogg", io.Discard, Format(av.FormatOgg)))
+	out := Mux("call", Write("call.ogg", io.Discard, Format(av.FormatOgg)))
 	task, err := From(
 		compositeTestVideoSource("camera", 4, 4, 100, 10, 20),
 		mixTestAudioSource("mic", 100, 200),
@@ -105,7 +105,7 @@ func TestFromMultiInputHeadlineDecodeShape(t *testing.T) {
 		WithEncoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &encodeTestEncoderFactory{encoder: &encodeTestEncoder{}}),
 	)
 
-	out := Mux("call", File("call.webm", io.Discard, Format(av.FormatWebM)))
+	out := Mux("call", Write("call.webm", io.Discard, Format(av.FormatWebM)))
 	err := From(
 		packetSource("camera", av.MediaVideo, cameraCodec, shape.Video(4, 4, av.PixelFormatI420)),
 		packetSource("mic", av.MediaAudio, micCodec, shape.Audio(48000, codec.Mono, av.SampleFormatS16)),
@@ -223,8 +223,8 @@ func TestBranchesRejectMultiInputJobs(t *testing.T) {
 // Shared-destination dedupe only merges the SAME handle; two different
 // handles colliding on one label is an error.
 func TestFromMultiInputRejectsConflictingDestinationHandles(t *testing.T) {
-	first := File("call.ogg", io.Discard, Format(av.FormatOgg))
-	second := File("call.ogg", io.Discard, Format(av.FormatOgg))
+	first := Write("call.ogg", io.Discard, Format(av.FormatOgg))
+	second := Write("call.ogg", io.Discard, Format(av.FormatOgg))
 	_, err := From(
 		compositeTestVideoSource("camera", 4, 4, 100, 10, 20),
 		mixTestAudioSource("mic", 1),
@@ -242,7 +242,7 @@ func TestFromMultiInputRejectsConflictingDestinationHandles(t *testing.T) {
 // The Plan intent for a multi-chain job lists every chain and dedupes the
 // explicit Mux destination to one entry.
 func TestFromMultiInputPlanDedupesMuxDestination(t *testing.T) {
-	out := Mux("call", File("call.ogg", io.Discard, Format(av.FormatOgg)))
+	out := Mux("call", Write("call.ogg", io.Discard, Format(av.FormatOgg)))
 	job := From(
 		compositeTestVideoSource("camera", 4, 4, 100, 10, 20),
 		mixTestAudioSource("mic", 1),
@@ -281,8 +281,8 @@ func TestFromMultiInputPlanDedupesMuxDestination(t *testing.T) {
 }
 
 func TestMuxPreferredOverHandleIdentity(t *testing.T) {
-	videoOut := Mux("call", File("call.ogg", io.Discard, Format(av.FormatOgg)))
-	audioOut := Mux("call", File("call.ogg", io.Discard, Format(av.FormatOgg)))
+	videoOut := Mux("call", Write("call.ogg", io.Discard, Format(av.FormatOgg)))
+	audioOut := Mux("call", Write("call.ogg", io.Discard, Format(av.FormatOgg)))
 	job := From(
 		compositeTestVideoSource("camera", 4, 4, 100, 10, 20),
 		mixTestAudioSource("mic", 1),
@@ -302,8 +302,8 @@ func TestMuxPreferredOverHandleIdentity(t *testing.T) {
 }
 
 func TestMuxSurvivesWithAndCopy(t *testing.T) {
-	videoOut := Mux("call", File("call.ogg", io.Discard, Format(av.FormatOgg)))
-	audioOut := Mux("call", File("call.ogg", io.Discard)).With(Format(av.FormatOgg))
+	videoOut := Mux("call", Write("call.ogg", io.Discard, Format(av.FormatOgg)))
+	audioOut := Mux("call", Write("call.ogg", io.Discard)).With(Format(av.FormatOgg))
 	job := From(
 		compositeTestVideoSource("camera", 4, 4, 100, 10, 20),
 		mixTestAudioSource("mic", 1),
@@ -336,8 +336,8 @@ func TestMuxSurvivesWithAndCopy(t *testing.T) {
 }
 
 func TestMuxSameNameDifferentConfigFailsClearly(t *testing.T) {
-	videoOut := Mux("call", File("call.ogg", io.Discard, Format(av.FormatOgg)))
-	audioOut := Mux("call", File("call.ogg", io.Discard, Format(av.FormatWebM)))
+	videoOut := Mux("call", Write("call.ogg", io.Discard, Format(av.FormatOgg)))
+	audioOut := Mux("call", Write("call.ogg", io.Discard, Format(av.FormatWebM)))
 	_, err := From(
 		compositeTestVideoSource("camera", 4, 4, 100, 10, 20),
 		mixTestAudioSource("mic", 1),
@@ -356,7 +356,7 @@ func TestMuxSameNameDifferentConfigFailsClearly(t *testing.T) {
 }
 
 func TestSameHandleGroupingRequiresMux(t *testing.T) {
-	out := File("call.ogg", io.Discard, Format(av.FormatOgg))
+	out := Write("call.ogg", io.Discard, Format(av.FormatOgg))
 	_, err := From(
 		compositeTestVideoSource("camera", 4, 4, 100, 10, 20),
 		mixTestAudioSource("mic", 1),

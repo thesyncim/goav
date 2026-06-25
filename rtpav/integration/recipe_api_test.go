@@ -196,7 +196,7 @@ func equalStrings(a []string, b []string) bool {
 func TestRecordRecipeExplainReturnsStructuredPlan(t *testing.T) {
 	job := recordJob(
 		goav.Input(rtpav.Receive(recipeAPIVideoRTPReader{}, rtpav.WithName("video"), rtpav.WithCodec(codec.VP8()))),
-		goav.File("recording.ivf", io.Discard),
+		goav.Write("recording.ivf", io.Discard),
 	)
 	report, err := job.Explain(context.Background())
 	if err != nil {
@@ -317,8 +317,8 @@ func TestExternalCustomDestinationCanBeDestined(t *testing.T) {
 func TestFlowBranchesDescribeLiveInputBranches(t *testing.T) {
 	voice := goav.Flow("voice").Audio().Encode(codec.Opus(codec.Bitrate(32_000), codec.Channels(codec.Mono)))
 	archive := goav.Flow("archive").Audio().Encode(codec.Opus(codec.Bitrate(128_000), codec.Channels(codec.Stereo)))
-	voiceOut := goav.File("voice.ogg", io.Discard)
-	archiveOut := goav.File("archive.ogg", io.Discard)
+	voiceOut := goav.Write("voice.ogg", io.Discard)
+	archiveOut := goav.Write("archive.ogg", io.Discard)
 
 	job := goav.From(goav.Input(rtpav.Receive(recipeAPIRTPReader{}, rtpav.WithName("audio"), rtpav.WithCodec(codec.Opus())))).
 		Audio().
@@ -377,7 +377,7 @@ func TestReadmeDecodeShortcutUsesSinkDestination(t *testing.T) {
 func TestRecipeAndRejectsDuplicateRealtimeInputNames(t *testing.T) {
 	_, err := goav.From(goav.Input(rtpav.Receive(recipeAPIRTPReader{}, rtpav.WithName("media"), rtpav.WithCodec(codec.Opus())))).
 		And(goav.Input(rtpav.Receive(recipeAPIRTPReader{}, rtpav.WithName("media"), rtpav.WithCodec(codec.VP8())))).
-		To(goav.File("recording.webm", io.Discard)).
+		To(goav.Write("recording.webm", io.Discard)).
 		Build(context.Background())
 
 	var buildErr *goav.BuildError
@@ -412,7 +412,7 @@ func TestProviderRecipeSurfacesOpenSourceError(t *testing.T) {
 	// error, surfaced when the source opens at build time.
 	_, err := recordJob(
 		goav.Input(rtpav.Receive(nil, rtpav.WithName("audio"))),
-		goav.File("recording.ivf", io.Discard),
+		goav.Write("recording.ivf", io.Discard),
 	).Build(context.Background())
 	if !errors.Is(err, rtpav.ErrNilReceiver) {
 		t.Fatalf("err = %v, want rtpav.ErrNilReceiver", err)
@@ -483,7 +483,7 @@ func TestBranchCompositionAcceptsRTPInputThenReportsMissingMuxer(t *testing.T) {
 		Branches(
 			goav.Branch("main").
 				Encode(codec.Opus(codec.Bitrate(96_000))).
-				To(goav.File("archive.ogg", io.Discard)),
+				To(goav.Write("archive.ogg", io.Discard)),
 		).
 		UseRuntime(goav.MustNew()).
 		Build(context.Background())

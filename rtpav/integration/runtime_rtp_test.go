@@ -209,7 +209,7 @@ func TestRecipeRTPAV1RecordIVF(t *testing.T) {
 	task, err := goav.From(goav.Input(rtpav.Receive(receiver, rtpav.WithDepacketizers(rtpav.NewAV1Depacketizer(stream))))).
 		UseRuntime(goav.MustNew(goavruntime.WithFormatAdapter(ivfadapter.Register))).
 		Copy().
-		To(goav.File("recording.ivf", &recording)).
+		To(goav.Write("recording.ivf", &recording)).
 		Build(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -275,7 +275,7 @@ func TestRecipeRTPH264RecordAnnexB(t *testing.T) {
 	task, err := goav.From(goav.Input(rtpav.Receive(receiver, rtpav.WithDepacketizers(rtpav.NewH264Depacketizer(stream))))).
 		UseRuntime(goav.MustNew(goavruntime.WithFormatAdapter(annexbadapter.Register))).
 		Copy().
-		To(goav.File("recording.h264", &recording)).
+		To(goav.Write("recording.h264", &recording)).
 		Build(ctx)
 	if err != nil {
 		t.Fatal(err)

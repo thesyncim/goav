@@ -44,7 +44,7 @@ answer, err := session.SetRemoteDescription(ctx, offer)
 remote, err := session.AcceptTrack(ctx)
 err := goav.From(goav.Input(webrtcav.Track(remote.Track))).
     Copy().
-    To(goav.File("recording.ivf", file)).
+    To(goav.Write("recording.ivf", file)).
     Run(ctx)
 ```
 
@@ -56,7 +56,7 @@ tracks, err := webrtcav.NewTrackSet(webrtcav.TrackSetConfig{Session: session})
 audio, err := tracks.Accept(ctx)
 video, err := tracks.Accept(ctx)
 err := goav.From(goav.Input(rtpav.Receive(audio.Reader)), goav.Input(rtpav.Receive(video.Reader))).
-    To(goav.File("recording.webm", file)).
+    To(goav.Write("recording.webm", file)).
     Run(ctx)
 ```
 
@@ -74,7 +74,7 @@ depacketizer:
 ```go
 err := goav.From(goav.Input(rtpav.Receive(video, rtpav.WithName("video"), rtpav.WithCodec(codec.VP8())))).
     Copy().
-    To(goav.File("recording.ivf", file)).
+    To(goav.Write("recording.ivf", file)).
     Run(ctx)
 ```
 

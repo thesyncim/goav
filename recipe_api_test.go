@@ -556,7 +556,7 @@ func TestRecipesExposeStructuredExplain(t *testing.T) {
 func TestExplainReturnsPartialReportForMissingMuxer(t *testing.T) {
 	report, err := recordJob(
 		goav.FileInput("input.ivf", bytes.NewReader(tinyIVF())),
-		goav.File("recording.mp4", io.Discard),
+		goav.Write("recording.mp4", io.Discard),
 	).UseRuntime(goav.MustNew()).Explain(context.Background())
 	var buildErr *goav.BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "destination_muxer_missing" {
@@ -628,7 +628,7 @@ func TestTranscodeExplainReportsGenericMediaPlanBranches(t *testing.T) {
 		}),
 	)
 
-	web := goav.Mux("web", goav.File("web.ogg", io.Discard))
+	web := goav.Mux("web", goav.Write("web.ogg", io.Discard))
 	report, err := branchJob(goav.FileInput("input.ogg", strings.NewReader(""))).
 		UseRuntime(rt).
 		Video("v").Resize(1280, 720).Encode(codec.VP9(codec.Bitrate(2_000_000))).To(web).
@@ -758,7 +758,7 @@ func TestExplainReportsOperationShapeThroughResizeAndEncode(t *testing.T) {
 		}),
 	)
 
-	web := goav.File("web.ogg", io.Discard)
+	web := goav.Write("web.ogg", io.Discard)
 	report, err := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
 		UseRuntime(rt).
 		Video().
@@ -827,7 +827,7 @@ func TestShapeAnnotationCannotBreakOperationContract(t *testing.T) {
 		Decode().
 		Shape(shape.New(shape.Domain(shape.DomainPacket), shape.Media(av.MediaVideo))).
 		Encode(codec.VP9(codec.Bitrate(2_000_000))).
-		To(goav.File("preview.ivf", io.Discard)).
+		To(goav.Write("preview.ivf", io.Discard)).
 		Describe()
 	var buildErr *goav.BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "operation_shape_mismatch" {
@@ -866,7 +866,7 @@ func TestExplainRequirementsFollowOrderedBranchOperations(t *testing.T) {
 		return emit.Frame(frame)
 	})
 
-	web := goav.File("web.ogg", io.Discard)
+	web := goav.Write("web.ogg", io.Discard)
 	report, err := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
 		UseRuntime(rt).
 		Video().
@@ -1168,7 +1168,7 @@ func TestBuildRejectsIncompatibleIVFMuxGroupBeforeOpeningMuxer(t *testing.T) {
 		}),
 	)
 
-	web := goav.Mux("web", goav.File("web.ivf", io.Discard, goav.Format(av.FormatIVF)))
+	web := goav.Mux("web", goav.Write("web.ivf", io.Discard, goav.Format(av.FormatIVF)))
 	_, err := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
 		UseRuntime(rt).
 		Video().
@@ -1216,7 +1216,7 @@ func TestBuildRejectsDescriptorBackedMuxIncompatibility(t *testing.T) {
 		}),
 	)
 
-	target := goav.File("out.mkv", io.Discard, goav.Format(av.FormatMatroska))
+	target := goav.Write("out.mkv", io.Discard, goav.Format(av.FormatMatroska))
 	_, err := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
 		UseRuntime(rt).
 		Video().
@@ -1255,7 +1255,7 @@ func TestExplainReportsMuxCompatibilityWarning(t *testing.T) {
 		}),
 	)
 
-	web := goav.Mux("web", goav.File("web.ivf", io.Discard, goav.Format(av.FormatIVF)))
+	web := goav.Mux("web", goav.Write("web.ivf", io.Discard, goav.Format(av.FormatIVF)))
 	report, err := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
 		UseRuntime(rt).
 		Video().
@@ -1300,7 +1300,7 @@ func TestBuildRejectsIncompatibleAnnexBMuxGroup(t *testing.T) {
 		Video().
 		Decode().
 		Encode(codec.VP8(codec.Bitrate(600_000))).
-		To(goav.File("out.h264", io.Discard, goav.Format(av.FormatAnnexB))).
+		To(goav.Write("out.h264", io.Discard, goav.Format(av.FormatAnnexB))).
 		Build(context.Background())
 	var buildErr *goav.BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "destination_mux_incompatible" {
@@ -1524,7 +1524,7 @@ func TestTypedTapRefsDriveStreamIntent(t *testing.T) {
 		Tap(decoded).
 		Encode(codec.Opus(codec.Bitrate(96_000))).
 		Tap(encoded).
-		To(goav.File("encoded.ogg", io.Discard))
+		To(goav.Write("encoded.ogg", io.Discard))
 
 	intent := goav.JobPlanForTest(job)
 	if len(intent.Streams) != 1 {
@@ -1547,7 +1547,7 @@ func TestTypedTapDomainMismatchIsActionable(t *testing.T) {
 		Audio().
 		Copy().
 		Tap(goav.FrameTap("audio.packets")).
-		To(goav.File("copy.ogg", io.Discard)).
+		To(goav.Write("copy.ogg", io.Discard)).
 		Describe()
 
 	var buildErr *goav.BuildError
@@ -1646,7 +1646,7 @@ func TestReadmeUsesBranchDestinationVocabulary(t *testing.T) {
 		"goav.FrameTap(",
 		"goav.PacketTap(",
 		"goav.Sink(",
-		"goav.File(",
+		"goav.Write(",
 		"goav.Flow(",
 		"goav.Mux(",
 		"Use `goav.Mux(name, destination)`",
@@ -2205,7 +2205,7 @@ func TestDocsUseDestinationOptions(t *testing.T) {
 	}
 	text := string(body)
 	for _, required := range []string{
-		"goav.File(\"\", out, goav.Format(av.FormatIVF))",
+		"goav.Write(\"\", out, goav.Format(av.FormatIVF))",
 		"goav.Writer(",
 		"goav.Format(",
 		"goav.MIME(",
@@ -2392,7 +2392,7 @@ func TestRecipeConstructorsDoNotExposeRuntimeOptions(t *testing.T) {
 func TestRecipeReportsNilRuntime(t *testing.T) {
 	_, err := recordJob(
 		goav.FileInput("input.ivf", strings.NewReader("")),
-		goav.File("recording.ivf", io.Discard),
+		goav.Write("recording.ivf", io.Discard),
 	).UseRuntime(nil).Build(context.Background())
 
 	var buildErr *goav.BuildError
@@ -2409,7 +2409,7 @@ func TestRecipeReportsNilRuntime(t *testing.T) {
 func TestRecipeReportsOmittedRuntime(t *testing.T) {
 	_, err := recordJob(
 		goav.FileInput("input.ivf", strings.NewReader("")),
-		goav.File("recording.ivf", io.Discard),
+		goav.Write("recording.ivf", io.Discard),
 	).Build(context.Background())
 
 	var buildErr *goav.BuildError
@@ -2424,7 +2424,7 @@ func TestRecipeReportsOmittedRuntime(t *testing.T) {
 func TestReadmeRecordRecipeIsSmall(t *testing.T) {
 	job := recordJob(
 		goav.FileInput("input.ogg", strings.NewReader("")),
-		goav.File("recording.ogg", io.Discard),
+		goav.Write("recording.ogg", io.Discard),
 	)
 
 	spec, err := job.Describe()
@@ -2441,7 +2441,7 @@ func TestReadmeRecordRecipeIsSmall(t *testing.T) {
 }
 
 func TestRecordRecipeCanWriteToTypedDestination(t *testing.T) {
-	target := goav.File("recording.ivf", io.Discard)
+	target := goav.Write("recording.ivf", io.Discard)
 	job := goav.From(goav.FileInput("input.ivf", strings.NewReader(""))).
 		Copy().
 		To(target)
@@ -2464,8 +2464,8 @@ func TestRecordRecipeCanWriteToTypedDestination(t *testing.T) {
 func TestReadmeRecordFanoutRecipeIsSmall(t *testing.T) {
 	job := recordJob(
 		goav.FileInput("input.ivf", strings.NewReader("")),
-		goav.File("archive.ivf", io.Discard),
-		goav.File("preview.ivf", io.Discard),
+		goav.Write("archive.ivf", io.Discard),
+		goav.Write("preview.ivf", io.Discard),
 	)
 
 	spec, err := job.Describe()
@@ -2517,7 +2517,7 @@ func TestInferredTapAdoptsChainDomain(t *testing.T) {
 		Resize(640, 360).
 		Tap(goav.Tap("preview")).
 		Encode(codec.VP9(codec.Bitrate(600_000))).
-		To(goav.File("out.webm", io.Discard))
+		To(goav.Write("out.webm", io.Discard))
 	frameDomain := shape.MediaDomain("")
 	for _, tap := range goav.StreamTapsForTest(goav.JobPlanForTest(frameJob).Streams[0]) {
 		if tap.Name == "preview" {
@@ -2536,7 +2536,7 @@ func TestInferredTapAdoptsChainDomain(t *testing.T) {
 			goav.Branch("archive").
 				Encode(codec.Opus(codec.Bitrate(96_000))).
 				Tap(goav.Tap("encoded")).
-				To(goav.File("archive.ogg", io.Discard)),
+				To(goav.Write("archive.ogg", io.Discard)),
 		)
 	pktDomain := shape.MediaDomain("")
 	for _, tap := range goav.StreamTapsForTest(goav.JobPlanForTest(pktJob).Streams[0]) {
@@ -2620,7 +2620,7 @@ func TestAudioChainAppliesToStreamRecipeIntent(t *testing.T) {
 		Audio().
 		Decode().
 		Apply(voice).
-		To(goav.File("voice.ogg", io.Discard))
+		To(goav.Write("voice.ogg", io.Discard))
 
 	intent := goav.JobPlanForTest(job)
 	if len(intent.Streams) != 1 {
@@ -2642,7 +2642,7 @@ func TestStreamRecipeCanWriteToTypedDestination(t *testing.T) {
 		Audio().
 		Resample(16_000, codec.Mono).
 		Encode(codec.Opus(codec.Bitrate(32_000), codec.Channels(codec.Mono)))
-	voiceOut := goav.File("voice.ogg", io.Discard)
+	voiceOut := goav.Write("voice.ogg", io.Discard)
 
 	job := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
 		Audio().
@@ -2675,7 +2675,7 @@ func TestStreamRecipeCanWriteToTypedDestination(t *testing.T) {
 
 func TestToAcceptsDestinationSlices(t *testing.T) {
 	destinations := []goav.Destination{
-		goav.File("archive.ogg", io.Discard),
+		goav.Write("archive.ogg", io.Discard),
 		goav.Sink(component.SinkFunc("stats", func(context.Context, component.Message) error {
 			return nil
 		})),
@@ -2698,7 +2698,7 @@ func TestToAcceptsDestinationSlices(t *testing.T) {
 }
 
 func TestMuxGroupsBranches(t *testing.T) {
-	web := goav.Mux("web", goav.File("web.ivf", io.Discard, goav.Format(av.FormatIVF)))
+	web := goav.Mux("web", goav.Write("web.ivf", io.Discard, goav.Format(av.FormatIVF)))
 
 	job := goav.From(goav.FileInput("input.ivf", strings.NewReader(""))).
 		Video().
@@ -2719,8 +2719,8 @@ func TestMuxGroupsBranches(t *testing.T) {
 }
 
 func TestDuplicateDestinationNameRequiresMux(t *testing.T) {
-	left := goav.File("web.ivf", io.Discard, goav.Format(av.FormatIVF))
-	right := goav.File("web.ivf", io.Discard, goav.Format(av.FormatIVF))
+	left := goav.Write("web.ivf", io.Discard, goav.Format(av.FormatIVF))
+	right := goav.Write("web.ivf", io.Discard, goav.Format(av.FormatIVF))
 
 	_, err := goav.From(goav.FileInput("input.ivf", strings.NewReader(""))).
 		Video().
@@ -2740,8 +2740,8 @@ func TestDestinationConstructorsReturnDestination(t *testing.T) {
 	destinationType := reflect.TypeOf((*goav.Destination)(nil)).Elem()
 	for name, fn := range map[string]any{
 		"Custom": goav.Custom,
-		"File":   goav.File,
 		"URI":    goav.URI,
+		"Write":  goav.Write,
 		"Writer": goav.Writer,
 	} {
 		fnType := reflect.TypeOf(fn)
@@ -2799,7 +2799,7 @@ func TestFlowCarriesOrderedCustomStageAndTap(t *testing.T) {
 		Audio().
 		Decode().
 		Apply(voice).
-		To(goav.File("voice.ogg", io.Discard))
+		To(goav.Write("voice.ogg", io.Discard))
 
 	intent := goav.JobPlanForTest(job)
 	if len(intent.Streams) != 1 {
@@ -2832,7 +2832,7 @@ func TestFlowTapAfterEncodeIsPacketTap(t *testing.T) {
 		Audio().
 		Decode().
 		Apply(voice).
-		To(goav.File("voice.ogg", io.Discard))
+		To(goav.Write("voice.ogg", io.Discard))
 
 	intent := goav.JobPlanForTest(job)
 	if len(intent.Streams) != 1 {
@@ -2865,7 +2865,7 @@ func TestFlowCopyAppliesToStreamRecipeIntent(t *testing.T) {
 	job := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
 		Audio().
 		Apply(packets).
-		To(goav.File("copy.ogg", io.Discard))
+		To(goav.Write("copy.ogg", io.Discard))
 
 	intent := goav.JobPlanForTest(job)
 	if len(intent.Streams) != 1 {
@@ -2899,8 +2899,8 @@ func TestFlowBranchesStayOnJobAndBuildIntent(t *testing.T) {
 		Audio().
 		Resample(48_000, codec.Stereo).
 		Encode(codec.Opus(codec.Bitrate(128_000), codec.Channels(codec.Stereo)))
-	voiceOut := goav.File("voice.ogg", io.Discard)
-	archiveOut := goav.File("archive.ogg", io.Discard)
+	voiceOut := goav.Write("voice.ogg", io.Discard)
+	archiveOut := goav.Write("archive.ogg", io.Discard)
 
 	job := goav.From(goav.FileInput("input.webm", strings.NewReader(""))).
 		Audio(goav.StreamIndex(0)).
@@ -2949,7 +2949,7 @@ func TestFlowAppliesToTranscodeBranch(t *testing.T) {
 		Resize(640, 360).
 		Tap(goav.FrameTap("preview.frames")).
 		Encode(codec.VP9(codec.Bitrate(600_000)))
-	web := goav.File("preview.webm", io.Discard)
+	web := goav.Write("preview.webm", io.Discard)
 
 	job := branchJob(goav.FileInput("input.webm", strings.NewReader(""))).
 		Video("preview").
@@ -2987,8 +2987,8 @@ func TestFlowAppliesToTranscodeBranch(t *testing.T) {
 }
 
 func TestBranchesGroupSelectedStreams(t *testing.T) {
-	watch := goav.Mux("watch", goav.File("watch.webm", io.Discard))
-	mobile := goav.Mux("mobile", goav.File("mobile.webm", io.Discard))
+	watch := goav.Mux("watch", goav.Write("watch.webm", io.Discard))
+	mobile := goav.Mux("mobile", goav.Write("mobile.webm", io.Discard))
 	job := goav.From(goav.FileInput("source.webm", strings.NewReader(""))).
 		Video().
 		Decode().
@@ -3065,7 +3065,7 @@ func TestBranchAfterDecodeCustomStageUsesOrderedOperations(t *testing.T) {
 	meter := component.FrameFunc("meter", func(ctx context.Context, frame *av.Frame, emit component.Emit) error {
 		return emit.Frame(frame)
 	})
-	web := goav.File("web.webm", io.Discard)
+	web := goav.Write("web.webm", io.Discard)
 	job := goav.From(goav.FileInput("source.webm", strings.NewReader(""))).
 		Video().
 		Decode().
@@ -3107,7 +3107,7 @@ func TestBranchAfterDecodeCustomStageUsesOrderedOperations(t *testing.T) {
 }
 
 func TestBranchTapAfterEncodeIsPacketTap(t *testing.T) {
-	archive := goav.File("archive.ogg", io.Discard)
+	archive := goav.Write("archive.ogg", io.Discard)
 	job := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
 		Audio().
 		Decode().
@@ -3151,7 +3151,7 @@ func TestBranchCustomStageUsesOrderedOperations(t *testing.T) {
 	meter := component.FrameFunc("meter", func(ctx context.Context, frame *av.Frame, emit component.Emit) error {
 		return emit.Frame(frame)
 	})
-	web := goav.File("web.webm", io.Discard)
+	web := goav.Write("web.webm", io.Discard)
 	job := goav.From(goav.FileInput("source.webm", strings.NewReader(""))).
 		Video().
 		Decode().
@@ -3207,7 +3207,7 @@ func TestFlowAppliesFlowAtDeclarationPosition(t *testing.T) {
 		Audio().
 		Decode().
 		Apply(outer).
-		To(goav.File("voice.ogg", io.Discard))
+		To(goav.Write("voice.ogg", io.Discard))
 
 	intent := goav.JobPlanForTest(job)
 	if len(intent.Streams) != 1 {
@@ -3243,7 +3243,7 @@ func TestFlowApplyMediaMismatchIsActionable(t *testing.T) {
 	_, err := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
 		Audio().
 		Apply(composed).
-		To(goav.File("voice.ogg", io.Discard)).
+		To(goav.Write("voice.ogg", io.Discard)).
 		Describe()
 
 	var buildErr *goav.BuildError
@@ -3261,7 +3261,7 @@ func TestFlowMediaMismatchIsActionable(t *testing.T) {
 	_, err := goav.From(goav.FileInput("input.webm", strings.NewReader(""))).
 		Video().
 		Apply(goav.Flow("voice").Audio().Encode(codec.Opus(codec.Bitrate(32_000), codec.Channels(codec.Mono)))).
-		To(goav.File("voice.webm", io.Discard)).
+		To(goav.Write("voice.webm", io.Discard)).
 		Describe()
 
 	var buildErr *goav.BuildError
@@ -3279,7 +3279,7 @@ func TestFlowBranchMediaMismatchIsActionable(t *testing.T) {
 		Branches(
 			goav.Branch("voice").
 				Apply(goav.Flow("voice").Audio().Encode(codec.Opus(codec.Bitrate(32_000), codec.Channels(codec.Mono)))).
-				To(goav.File("voice.webm", io.Discard)),
+				To(goav.Write("voice.webm", io.Discard)),
 		).
 		Describe()
 
@@ -3301,7 +3301,7 @@ func TestBranchRejectsConflictingFlowMedia(t *testing.T) {
 			goav.Branch("mixed").
 				Apply(goav.Flow("voice").Audio().Resample(16_000, codec.Mono)).
 				Apply(goav.Flow("preview").Video().Resize(640, 360)).
-				To(goav.File("mixed.webm", io.Discard)),
+				To(goav.Write("mixed.webm", io.Discard)),
 		).
 		Describe()
 
@@ -3323,7 +3323,7 @@ func TestFlowBranchSnapshotsBuilderState(t *testing.T) {
 		Encode(codec.Opus(codec.Bitrate(32_000), codec.Channels(codec.Mono)))
 	branch := goav.Branch("voice").
 		Apply(flow).
-		To(goav.File("voice.ogg", io.Discard))
+		To(goav.Write("voice.ogg", io.Discard))
 
 	flow.Resample(8_000, codec.Mono)
 	job := goav.From(goav.FileInput("input.webm", strings.NewReader(""))).
@@ -3468,7 +3468,7 @@ func TestFlowCopyRequiresPacketDomain(t *testing.T) {
 					Audio().
 					Resample(16_000, codec.Mono).
 					Copy()).
-				To(goav.File("copy.ogg", io.Discard)),
+				To(goav.Write("copy.ogg", io.Discard)),
 		},
 		{
 			name: "after stream decode",
@@ -3476,7 +3476,7 @@ func TestFlowCopyRequiresPacketDomain(t *testing.T) {
 				Audio().
 				Decode().
 				Apply(goav.Flow("packets").Audio().Copy()).
-				To(goav.File("copy.ogg", io.Discard)),
+				To(goav.Write("copy.ogg", io.Discard)),
 		},
 		{
 			name: "after branch frame operation",
@@ -3485,7 +3485,7 @@ func TestFlowCopyRequiresPacketDomain(t *testing.T) {
 				Branches(goav.Branch("copy").
 					Decode().
 					Apply(goav.Flow("packets").Audio().Copy()).
-					To(goav.File("copy.ogg", io.Discard))),
+					To(goav.Write("copy.ogg", io.Discard))),
 		},
 	}
 	for _, tt := range tests {
@@ -3508,7 +3508,7 @@ func TestNilFlowIsActionable(t *testing.T) {
 	_, err := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
 		Audio().
 		Apply(flow).
-		To(goav.File("voice.ogg", io.Discard)).
+		To(goav.Write("voice.ogg", io.Discard)).
 		Describe()
 
 	var buildErr *goav.BuildError
@@ -3521,7 +3521,7 @@ func TestNilFlowBranchIsActionable(t *testing.T) {
 	var flow goav.Chain
 	_, err := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
 		Audio().
-		Branches(goav.Branch("voice").Apply(flow).To(goav.File("voice.ogg", io.Discard))).
+		Branches(goav.Branch("voice").Apply(flow).To(goav.Write("voice.ogg", io.Discard))).
 		Describe()
 
 	var buildErr *goav.BuildError
@@ -3532,12 +3532,12 @@ func TestNilFlowBranchIsActionable(t *testing.T) {
 
 func TestBranchesRejectOuterOutputsAndDuplicateDestinations(t *testing.T) {
 	voice := goav.Flow("voice").Audio().Encode(codec.Opus(codec.Bitrate(32_000), codec.Channels(codec.Mono)))
-	voiceOut := goav.File("voice.ogg", io.Discard)
+	voiceOut := goav.Write("voice.ogg", io.Discard)
 
 	_, err := goav.From(goav.FileInput("input.webm", strings.NewReader(""))).
 		Audio().
 		Branches(goav.Branch("voice").Apply(voice).To(voiceOut)).
-		To(goav.File("ignored.ogg", io.Discard)).
+		To(goav.Write("ignored.ogg", io.Discard)).
 		Describe()
 	var buildErr *goav.BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "output_scope_mixed" {
@@ -3583,7 +3583,7 @@ func TestFlowRejectsNonTapOperationsAfterEncode(t *testing.T) {
 			_, err := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
 				Audio().
 				Apply(tt.flow).
-				To(goav.File("voice.ogg", io.Discard)).
+				To(goav.Write("voice.ogg", io.Discard)).
 				Describe()
 
 			var buildErr *goav.BuildError
@@ -3621,7 +3621,7 @@ func TestStreamRecipeRejectsUnsupportedCodecChangePolicy(t *testing.T) {
 func TestRecipeAndRejectsMultipleFileInputs(t *testing.T) {
 	_, err := goav.From(goav.FileInput("a.ivf", strings.NewReader(""))).
 		And(goav.FileInput("b.ivf", strings.NewReader(""))).
-		To(goav.File("out.ivf", io.Discard)).
+		To(goav.Write("out.ivf", io.Discard)).
 		Build(context.Background())
 	var buildErr *goav.BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "multi_input_unsupported" || !errors.Is(err, goav.ErrUnsupportedBuild) {
@@ -3639,7 +3639,7 @@ func TestMediaOptionsConfigureBothDirections(t *testing.T) {
 		goav.MIME("audio/ogg"),
 		goav.Metadata(av.Metadata{"session": "demo"}),
 		goav.Codec(codec.Opus()),
-	)).Copy().To(goav.File("out", io.Discard,
+	)).Copy().To(goav.Write("out", io.Discard,
 		goav.Name("recording.ogg"),
 		goav.MIME("audio/ogg"),
 		goav.Metadata(av.Metadata{"session": "demo"}),
@@ -3663,7 +3663,7 @@ func TestMediaOptionsConfigureBothDirections(t *testing.T) {
 // destination value and returns a configured copy.
 func TestWithLayersOptionsOntoConstructedValues(t *testing.T) {
 	input := goav.FileInput("in.ogg", strings.NewReader("")).With(goav.Name("mic"))
-	output := goav.File("out.ogg", io.Discard).With(goav.MIME("audio/ogg"))
+	output := goav.Write("out.ogg", io.Discard).With(goav.MIME("audio/ogg"))
 
 	intent := goav.JobPlanForTest(goav.From(input).Copy().To(output))
 	if len(intent.Inputs) != 1 || intent.Inputs[0].Name != "mic" {
@@ -3736,7 +3736,7 @@ func reportHasOperationDetail(report plan.Report, detail string) bool {
 func TestRecordRecipeRejectsEmptyInputSpec(t *testing.T) {
 	_, err := recordJob(
 		goav.InputSpec{},
-		goav.File("recording.ogg", io.Discard),
+		goav.Write("recording.ogg", io.Discard),
 	).Build(context.Background())
 	var buildErr *goav.BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "input_invalid" || !errors.Is(err, goav.ErrUnsupportedBuild) {
@@ -3779,7 +3779,7 @@ func TestDecodeRecipeRejectsNilSinkFuncCallback(t *testing.T) {
 func TestDecodeRecipeRejectsMuxOutput(t *testing.T) {
 	_, err := decodeJob(
 		goav.FileInput("input.ogg", strings.NewReader("")),
-		goav.File("frames.ogg", io.Discard),
+		goav.Write("frames.ogg", io.Discard),
 	).Build(context.Background())
 	var buildErr *goav.BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "encode_missing" || !errors.Is(err, goav.ErrUnsupportedBuild) {
@@ -3812,7 +3812,7 @@ func TestRecordRecipeRejectsEmptyDestination(t *testing.T) {
 		t.Fatalf("err = %v, want destination_invalid wrapping ErrUnsupportedBuild", err)
 	}
 	if !strings.Contains(err.Error(), "destination is empty") ||
-		!strings.Contains(err.Error(), "goav.File") ||
+		!strings.Contains(err.Error(), "goav.Write") ||
 		!strings.Contains(err.Error(), "goav.Sink") {
 		t.Fatalf("err = %v, want destination constructor guidance", err)
 	}
@@ -3821,7 +3821,7 @@ func TestRecordRecipeRejectsEmptyDestination(t *testing.T) {
 func TestRecordRecipeRejectsFileWithoutWriter(t *testing.T) {
 	_, err := recordJob(
 		goav.FileInput("input.ogg", strings.NewReader("")),
-		goav.File("recording.ogg", nil),
+		goav.Write("recording.ogg", nil),
 	).Build(context.Background())
 	var buildErr *goav.BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "output_writer_missing" || !errors.Is(err, goav.ErrUnsupportedBuild) {
@@ -3832,7 +3832,7 @@ func TestRecordRecipeRejectsFileWithoutWriter(t *testing.T) {
 func TestRecordRecipeRejectsUnnamedFileWithoutFormat(t *testing.T) {
 	_, err := recordJob(
 		goav.FileInput("input.ivf", strings.NewReader("")),
-		goav.File("", io.Discard),
+		goav.Write("", io.Discard),
 	).Build(context.Background())
 
 	var buildErr *goav.BuildError
@@ -3856,7 +3856,7 @@ func TestRecordRecipeRejectsFormatOnlyDestination(t *testing.T) {
 		t.Fatalf("err = %v, want output_destination_missing wrapping ErrUnsupportedBuild", err)
 	}
 	if !strings.Contains(err.Error(), "no URI, writer, or sink") ||
-		!strings.Contains(err.Error(), "goav.File") {
+		!strings.Contains(err.Error(), "goav.Write") {
 		t.Fatalf("err = %v, want output destination guidance", err)
 	}
 }
@@ -3881,7 +3881,7 @@ func TestRecordRecipeReportsMissingInputDemuxer(t *testing.T) {
 func TestRecordRecipeReportsMissingDestinationMuxer(t *testing.T) {
 	_, err := recordJob(
 		goav.FileInput("input.ivf", bytes.NewReader(tinyIVF())),
-		goav.File("recording.mp4", io.Discard),
+		goav.Write("recording.mp4", io.Discard),
 	).UseRuntime(goav.MustNew()).Build(context.Background())
 
 	var buildErr *goav.BuildError
@@ -3901,8 +3901,8 @@ func TestRecordRecipeReportsMissingDestinationMuxer(t *testing.T) {
 func TestRecordRecipeRejectsDuplicateOutputs(t *testing.T) {
 	_, err := goav.From(goav.FileInput("input.ivf", strings.NewReader(""))).
 		To(
-			goav.File("recording.ivf", io.Discard),
-			goav.File("recording.ivf", io.Discard),
+			goav.Write("recording.ivf", io.Discard),
+			goav.Write("recording.ivf", io.Discard),
 		).
 		Build(context.Background())
 
@@ -3938,7 +3938,7 @@ func TestStreamRecipeRejectsDuplicateSinkDestinations(t *testing.T) {
 }
 
 func TestStreamRecipeRejectsDuplicateTypedDestinations(t *testing.T) {
-	target := goav.File("voice.ogg", io.Discard)
+	target := goav.Write("voice.ogg", io.Discard)
 	_, err := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
 		UseRuntime(goav.MustNew()).
 		Audio().
@@ -3959,7 +3959,7 @@ func TestStreamRecipeRejectsDuplicateTypedDestinations(t *testing.T) {
 func TestProviderRecipeRejectsNilProvider(t *testing.T) {
 	_, err := recordJob(
 		goav.Input(nil),
-		goav.File("recording.ogg", io.Discard),
+		goav.Write("recording.ogg", io.Discard),
 	).Build(context.Background())
 	var buildErr *goav.BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "input_invalid" || !errors.Is(err, goav.ErrNilSource) {
@@ -3976,7 +3976,7 @@ func TestReadmeAudioEncodeRecipeIsSmall(t *testing.T) {
 		Decode().
 		Do(meter).
 		Encode(codec.Opus(codec.Bitrate(96_000))).
-		To(goav.File("archive.ogg", io.Discard))
+		To(goav.Write("archive.ogg", io.Discard))
 
 	spec, err := job.Describe()
 	if err != nil {
@@ -3996,7 +3996,7 @@ func TestReadmeAudioResampleEncodeRecipeIsSmall(t *testing.T) {
 		Decode().
 		Resample(16_000, codec.Mono).
 		Encode(codec.Opus(codec.Bitrate(48_000))).
-		To(goav.File("preview.ogg", io.Discard))
+		To(goav.Write("preview.ogg", io.Discard))
 
 	spec, err := job.Describe()
 	if err != nil {
@@ -4021,7 +4021,7 @@ func TestReadmeVideoResizeEncodeRecipeIsSmall(t *testing.T) {
 		Decode().
 		Resize(1280, 720).
 		Encode(codec.VP9(codec.Bitrate(2_000_000))).
-		To(goav.File("preview.webm", io.Discard))
+		To(goav.Write("preview.webm", io.Discard))
 
 	spec, err := job.Describe()
 	if err != nil {
@@ -4064,7 +4064,7 @@ func TestStreamRecipeExplicitDecodeOperationsReachFrameDomain(t *testing.T) {
 				Decode().
 				Do(meter).
 				Encode(codec.Opus(codec.Bitrate(96_000))).
-				To(goav.File("archive.ogg", io.Discard)),
+				To(goav.Write("archive.ogg", io.Discard)),
 		},
 		{
 			name: "resample",
@@ -4073,7 +4073,7 @@ func TestStreamRecipeExplicitDecodeOperationsReachFrameDomain(t *testing.T) {
 				Decode().
 				Resample(16_000, codec.Mono).
 				Encode(codec.Opus(codec.Bitrate(48_000))).
-				To(goav.File("preview.ogg", io.Discard)),
+				To(goav.Write("preview.ogg", io.Discard)),
 		},
 		{
 			name: "resize",
@@ -4082,7 +4082,7 @@ func TestStreamRecipeExplicitDecodeOperationsReachFrameDomain(t *testing.T) {
 				Decode().
 				Resize(1280, 720).
 				Encode(codec.VP9(codec.Bitrate(2_000_000))).
-				To(goav.File("preview.webm", io.Discard)),
+				To(goav.Write("preview.webm", io.Discard)),
 		},
 		{
 			name: "encoder",
@@ -4090,7 +4090,7 @@ func TestStreamRecipeExplicitDecodeOperationsReachFrameDomain(t *testing.T) {
 				Audio().
 				Decode().
 				Encode(codec.Opus(codec.Bitrate(96_000))).
-				To(goav.File("archive.ogg", io.Discard)),
+				To(goav.Write("archive.ogg", io.Discard)),
 		},
 	}
 
@@ -4107,7 +4107,7 @@ func TestStreamRecipeExplicitDecodeOperationsReachFrameDomain(t *testing.T) {
 func TestStreamRecipeRequiresOperationForMuxOutput(t *testing.T) {
 	_, err := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
 		Audio().
-		To(goav.File("archive.ogg", io.Discard)).
+		To(goav.Write("archive.ogg", io.Discard)).
 		Build(context.Background())
 	var buildErr *goav.BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "stream_operation_missing" || !errors.Is(err, goav.ErrUnsupportedBuild) {
@@ -4140,7 +4140,7 @@ func TestStreamRecipeRequiresExplicitDecodeBeforeFrameConsumers(t *testing.T) {
 			job: goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
 				Audio().
 				Apply(voiceFlow).
-				To(goav.File("voice.ogg", io.Discard)),
+				To(goav.Write("voice.ogg", io.Discard)),
 			fix: ".Decode().Apply(...)",
 		},
 		{
@@ -4164,7 +4164,7 @@ func TestStreamRecipeRequiresExplicitDecodeBeforeFrameConsumers(t *testing.T) {
 			job: goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
 				Audio().
 				Encode(codec.Opus(codec.Bitrate(96_000))).
-				To(goav.File("archive.ogg", io.Discard)),
+				To(goav.Write("archive.ogg", io.Discard)),
 			fix: ".Decode().Encode(...)",
 		},
 	}
@@ -4199,11 +4199,11 @@ func TestStreamRecipeRequiresExplicitDomainForPacketStreamSink(t *testing.T) {
 
 func TestStreamRecipeRejectsGenericAndStreamOutputs(t *testing.T) {
 	_, err := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
-		To(goav.File("archive.ogg", io.Discard)).
+		To(goav.Write("archive.ogg", io.Discard)).
 		Audio().
 		Decode().
 		Encode(codec.Opus(codec.Bitrate(96_000))).
-		To(goav.File("preview.ogg", io.Discard)).
+		To(goav.Write("preview.ogg", io.Discard)).
 		Build(context.Background())
 
 	var buildErr *goav.BuildError
@@ -4362,7 +4362,7 @@ func TestStreamRecipeRequiresEncoderForFile(t *testing.T) {
 		Audio().
 		Decode().
 		Resample(48_000, codec.Stereo).
-		To(goav.File("archive.ogg", io.Discard)).
+		To(goav.Write("archive.ogg", io.Discard)).
 		Build(context.Background())
 	var buildErr *goav.BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "encode_missing" || !errors.Is(err, goav.ErrUnsupportedBuild) {
@@ -4378,7 +4378,7 @@ func TestStreamRecipeRejectsMixedSinkAndFile(t *testing.T) {
 			goav.Sink(component.SinkFunc("frames", func(context.Context, component.Message) error {
 				return nil
 			})),
-			goav.File("archive.ogg", io.Discard),
+			goav.Write("archive.ogg", io.Discard),
 		).
 		Build(context.Background())
 
@@ -4413,7 +4413,7 @@ func TestStreamRecipeAllowsEncodedMuxAndSinkDestinations(t *testing.T) {
 		Decode().
 		Encode(codec.Opus(codec.Bitrate(96_000))).
 		To(
-			goav.File("archive.ogg", io.Discard),
+			goav.Write("archive.ogg", io.Discard),
 			goav.Sink(component.SinkFunc("packets", func(context.Context, component.Message) error {
 				return nil
 			})),
@@ -4439,7 +4439,7 @@ func TestStreamRecipeRejectsProcessingAfterEncoder(t *testing.T) {
 		Decode().
 		Encode(codec.Opus(codec.Bitrate(96_000))).
 		Resample(16_000, codec.Mono).
-		To(goav.File("archive.ogg", io.Discard)).
+		To(goav.Write("archive.ogg", io.Discard)).
 		Build(context.Background())
 
 	var buildErr *goav.BuildError
@@ -4459,7 +4459,7 @@ func TestStreamRecipeRejectsDuplicateEncoder(t *testing.T) {
 		Decode().
 		Encode(codec.Opus(codec.Bitrate(96_000))).
 		Encode(codec.VP9(codec.Bitrate(600_000))).
-		To(goav.File("archive.ogg", io.Discard)).
+		To(goav.Write("archive.ogg", io.Discard)).
 		Build(context.Background())
 
 	var buildErr *goav.BuildError
@@ -4495,7 +4495,7 @@ func TestStreamRecipeAllowsRuntimeRegisteredRecipeEncoders(t *testing.T) {
 				UseRuntime(rt).
 				Video().
 				Encode(tt.codec).
-				To(goav.File("archive.ivf", io.Discard, goav.Format(av.FormatIVF))).
+				To(goav.Write("archive.ivf", io.Discard, goav.Format(av.FormatIVF))).
 				Describe()
 			if err != nil {
 				t.Fatalf("Describe() err = %v", err)
@@ -4513,7 +4513,7 @@ func TestStreamRecipeReportsMissingCustomEncoder(t *testing.T) {
 		Audio().
 		Decode().
 		Encode(codec.Codec("pcm", av.MediaAudio)).
-		To(goav.File("archive.ogg", io.Discard)).
+		To(goav.Write("archive.ogg", io.Discard)).
 		Build(context.Background())
 	var buildErr *goav.BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "encode_adapter_missing" || !errors.Is(err, codec.ErrNotFound) {
@@ -4530,7 +4530,7 @@ func TestStreamRecipeRejectsNegativeEncodeBitrate(t *testing.T) {
 		Audio().
 		Decode().
 		Encode(codec.Opus(codec.Bitrate(-1))).
-		To(goav.File("archive.ogg", io.Discard)).
+		To(goav.Write("archive.ogg", io.Discard)).
 		Build(context.Background())
 	var buildErr *goav.BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "encode_parameter_invalid" || !errors.Is(err, goav.ErrUnsupportedBuild) {
@@ -4554,7 +4554,7 @@ func TestStreamRecipeRejectsInvalidCodecTimingOptions(t *testing.T) {
 				Video().
 				Decode().
 				Encode(codec.VP9(codec.FPS(0))).
-				To(goav.File("preview.webm", io.Discard)),
+				To(goav.Write("preview.webm", io.Discard)),
 			want: "encode FPS must be positive",
 		},
 		{
@@ -4563,7 +4563,7 @@ func TestStreamRecipeRejectsInvalidCodecTimingOptions(t *testing.T) {
 				Video().
 				Decode().
 				Encode(codec.VP9(codec.KeyframeInterval(-1))).
-				To(goav.File("preview.webm", io.Discard)),
+				To(goav.Write("preview.webm", io.Discard)),
 			want: "encode keyframe interval must be non-negative",
 		},
 	}
@@ -4586,7 +4586,7 @@ func TestStreamRecipeRejectsInvalidEncodeSampleRate(t *testing.T) {
 		Audio().
 		Decode().
 		Encode(codec.Opus(codec.SampleRate(0))).
-		To(goav.File("archive.ogg", io.Discard)).
+		To(goav.Write("archive.ogg", io.Discard)).
 		Build(context.Background())
 	var buildErr *goav.BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "encode_parameter_invalid" || !errors.Is(err, goav.ErrUnsupportedBuild) {
@@ -4604,7 +4604,7 @@ func TestStreamRecipeReportsMissingEncodeAdapterBeforeOpeningInput(t *testing.T)
 		Audio().
 		Decode().
 		Encode(codec.Opus(codec.Bitrate(96_000))).
-		To(goav.File("archive.ivf", io.Discard)).
+		To(goav.Write("archive.ivf", io.Discard)).
 		Build(context.Background())
 	var buildErr *goav.BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "encode_adapter_missing" || !errors.Is(err, codec.ErrNotFound) {
@@ -4784,7 +4784,7 @@ func TestStreamRecipeRejectsUnresolvedEncodeIntents(t *testing.T) {
 				Audio().
 				Decode().
 				Encode(tt.spec).
-				To(goav.File("archive.ogg", io.Discard)).
+				To(goav.Write("archive.ogg", io.Discard)).
 				Build(context.Background())
 			var buildErr *goav.BuildError
 			if !errors.As(err, &buildErr) || buildErr.Code != tt.code || !errors.Is(err, goav.ErrUnsupportedBuild) {
@@ -4798,7 +4798,7 @@ func TestDefaultRecordIVFRecipeRunShortcutRuns(t *testing.T) {
 	var out bytes.Buffer
 	if err := recordJob(
 		goav.FileInput("input.ivf", bytes.NewReader(tinyIVF())),
-		goav.File("preview.ivf", &out),
+		goav.Write("preview.ivf", &out),
 	).UseRuntime(bundle.MustNew()).Run(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -4811,7 +4811,7 @@ func TestRecordRecipeDescribeMatchesBuiltGraph(t *testing.T) {
 	var out bytes.Buffer
 	job := recordJob(
 		goav.FileInput("input.ivf", bytes.NewReader(tinyIVF())),
-		goav.File("preview.ivf", &out),
+		goav.Write("preview.ivf", &out),
 	).UseRuntime(bundle.MustNew())
 
 	planned, err := job.Describe()
@@ -4834,8 +4834,8 @@ func TestDefaultFromFanoutRecipeRunShortcutRuns(t *testing.T) {
 	var preview bytes.Buffer
 	if err := goav.From(goav.FileInput("input.ivf", bytes.NewReader(tinyIVF()))).
 		To(
-			goav.File("recording.ivf", &recording),
-			goav.File("preview.ivf", &preview),
+			goav.Write("recording.ivf", &recording),
+			goav.Write("preview.ivf", &preview),
 		).
 		UseRuntime(bundle.MustNew()).
 		Run(context.Background()); err != nil {
@@ -4851,8 +4851,8 @@ func TestFromFanoutRecipeDescribeMatchesBuiltGraph(t *testing.T) {
 	var preview bytes.Buffer
 	job := goav.From(goav.FileInput("input.ivf", bytes.NewReader(tinyIVF()))).
 		To(
-			goav.File("recording.ivf", &recording),
-			goav.File("preview.ivf", &preview),
+			goav.Write("recording.ivf", &recording),
+			goav.Write("preview.ivf", &preview),
 		).
 		UseRuntime(bundle.MustNew())
 
@@ -4875,7 +4875,7 @@ func TestDefaultRecordRecipeRunsWithExplicitUnnamedOutputFormat(t *testing.T) {
 	var out bytes.Buffer
 	job := recordJob(
 		goav.FileInput("input.ivf", bytes.NewReader(tinyIVF())),
-		goav.File("", &out, goav.Format(av.FormatIVF)),
+		goav.Write("", &out, goav.Format(av.FormatIVF)),
 	).UseRuntime(bundle.MustNew())
 
 	spec, err := job.Describe()
@@ -4904,8 +4904,8 @@ func TestDefaultRecordRecipeRunsWithExplicitUnnamedOutputFormat(t *testing.T) {
 }
 
 func TestReadmeTranscodeLadderRecipeIsSmall(t *testing.T) {
-	web := goav.File("web.webm", io.Discard)
-	preview := goav.File("preview.webm", io.Discard)
+	web := goav.Write("web.webm", io.Discard)
+	preview := goav.Write("preview.webm", io.Discard)
 	job := branchJob(goav.FileInput("input.webm", strings.NewReader(""))).
 		Video("720p").Resize(1280, 720).Encode(codec.VP9(codec.Bitrate(2_000_000))).To(web).
 		Video("360p").Resize(640, 360).Encode(codec.VP9(codec.Bitrate(600_000))).To(preview)
@@ -4932,7 +4932,7 @@ func TestReadmeTranscodeLadderRecipeIsSmall(t *testing.T) {
 }
 
 func TestBranchRecipeComposesAudioAndVideoIntoSharedOutput(t *testing.T) {
-	web := goav.Mux("out", goav.File("out.webm", io.Discard))
+	web := goav.Mux("out", goav.Write("out.webm", io.Discard))
 	job := branchJob(goav.FileInput("input.webm", strings.NewReader(""))).
 		Video("v360").Resize(640, 360).Encode(codec.VP9(codec.Bitrate(600_000))).To(web).
 		Audio("a96").Resample(48_000, codec.Stereo).Encode(codec.Opus(codec.Bitrate(96_000))).To(web)
@@ -4968,7 +4968,7 @@ func TestBranchRecipeComposesAudioAndVideoIntoSharedOutput(t *testing.T) {
 }
 
 func TestBranchRecipeSingleBranchUsesDestination(t *testing.T) {
-	preview := goav.File("preview.webm", io.Discard)
+	preview := goav.Write("preview.webm", io.Discard)
 	job := branchJob(goav.FileInput("input.webm", strings.NewReader(""))).
 		Video("360p").Resize(640, 360).Encode(codec.VP9(codec.Bitrate(600_000))).
 		To(preview)
@@ -4988,8 +4988,8 @@ func TestBranchRecipeSingleBranchUsesDestination(t *testing.T) {
 }
 
 func TestBranchRecipeRejectsDuplicateDestinations(t *testing.T) {
-	web := goav.File("web.webm", io.Discard)
-	web2 := goav.File("web.webm", io.Discard)
+	web := goav.Write("web.webm", io.Discard)
+	web2 := goav.Write("web.webm", io.Discard)
 	_, err := branchJob(goav.FileInput("input.webm", strings.NewReader(""))).
 		Video("720p").Encode(codec.VP9(codec.Bitrate(2_000_000))).To(web).
 		Video("360p").Encode(codec.VP9(codec.Bitrate(600_000))).To(web2).
@@ -5006,7 +5006,7 @@ func TestBranchRecipeRejectsDuplicateDestinations(t *testing.T) {
 }
 
 func TestBranchRecipeRejectsDuplicateBranchDestinations(t *testing.T) {
-	web := goav.File("web.webm", io.Discard)
+	web := goav.Write("web.webm", io.Discard)
 	_, err := branchJob(goav.FileInput("input.webm", strings.NewReader(""))).
 		Video("720p").Encode(codec.VP9(codec.Bitrate(2_000_000))).To(web, web).
 		Build(context.Background())
@@ -5023,8 +5023,8 @@ func TestBranchRecipeRejectsDuplicateBranchDestinations(t *testing.T) {
 }
 
 func TestBranchRecipeRejectsDuplicateBranchNames(t *testing.T) {
-	archive := goav.File("archive.webm", io.Discard)
-	preview := goav.File("preview.webm", io.Discard)
+	archive := goav.Write("archive.webm", io.Discard)
+	preview := goav.Write("preview.webm", io.Discard)
 	_, err := branchJob(goav.FileInput("input.webm", strings.NewReader(""))).
 		Video("720p").Encode(codec.VP9(codec.Bitrate(2_000_000))).To(archive).
 		Video("720p").Encode(codec.VP9(codec.Bitrate(1_000_000))).To(preview).
@@ -5042,7 +5042,7 @@ func TestBranchRecipeRejectsDuplicateBranchNames(t *testing.T) {
 }
 
 func TestBranchRecipeRejectsMissingBranchName(t *testing.T) {
-	web := goav.File("web.webm", io.Discard)
+	web := goav.Write("web.webm", io.Discard)
 	_, err := branchJob(goav.FileInput("input.webm", strings.NewReader(""))).
 		Video("").Encode(codec.VP9(codec.Bitrate(2_000_000))).To(web).
 		Build(context.Background())
@@ -5061,7 +5061,7 @@ func TestBranchRecipeRejectsMissingBranchName(t *testing.T) {
 func TestBranchRecipeRejectsInvalidDestination(t *testing.T) {
 	_, err := branchJob(goav.FileInput("input.webm", strings.NewReader(""))).
 		Video("360p").Encode(codec.VP9(codec.Bitrate(600_000))).
-		To(goav.File("preview.webm", nil)).
+		To(goav.Write("preview.webm", nil)).
 		Build(context.Background())
 
 	var buildErr *goav.BuildError
@@ -5125,7 +5125,7 @@ func TestBranchCompositionAcceptsSinkAfterResize(t *testing.T) {
 }
 
 func TestBranchCompositionSharesParentOperationBeforeBranches(t *testing.T) {
-	web := goav.File("web.webm", io.Discard)
+	web := goav.Write("web.webm", io.Discard)
 	thumbnail := goav.Sink(component.SinkFunc("thumbnail", func(context.Context, component.Message) error {
 		return nil
 	}))
@@ -5195,7 +5195,7 @@ func TestExplainMarksSharedBranchOperations(t *testing.T) {
 		}),
 	)
 
-	web := goav.File("web.ogg", io.Discard)
+	web := goav.Write("web.ogg", io.Discard)
 	thumbnail := goav.Sink(component.SinkFunc("thumbnail", func(context.Context, component.Message) error {
 		return nil
 	}))
@@ -5242,7 +5242,7 @@ func TestExplainMarksSharedBranchOperations(t *testing.T) {
 }
 
 func TestBranchCompositionCanSplitFromEarlierTap(t *testing.T) {
-	web := goav.File("web.webm", io.Discard)
+	web := goav.Write("web.webm", io.Discard)
 	thumbnail := goav.Sink(component.SinkFunc("thumbnail", func(context.Context, component.Message) error {
 		return nil
 	}))
@@ -5379,7 +5379,7 @@ func TestBranchCompositionRejectsStreamEncodeBeforeBranches(t *testing.T) {
 }
 
 func TestBranchCompositionSharesCurrentPointWithoutExplicitTap(t *testing.T) {
-	web := goav.File("web.webm", io.Discard)
+	web := goav.Write("web.webm", io.Discard)
 	thumbnail := goav.Sink(component.SinkFunc("thumbnail", func(context.Context, component.Message) error {
 		return nil
 	}))
@@ -5474,7 +5474,7 @@ func TestBranchCompositionSharesCustomStageCurrentPoint(t *testing.T) {
 }
 
 func TestBranchCompositionAllowsPacketCopyBranches(t *testing.T) {
-	archive := goav.File("archive.ivf", io.Discard)
+	archive := goav.Write("archive.ivf", io.Discard)
 	packets := goav.Sink(component.SinkFunc("packets", func(context.Context, component.Message) error {
 		return nil
 	}))
@@ -5609,7 +5609,7 @@ func TestBranchRecipeRequiresBranchDestination(t *testing.T) {
 		t.Fatalf("err = %v, want destination_missing wrapping ErrUnsupportedBuild", err)
 	}
 	if !strings.Contains(err.Error(), "branch has no destination") ||
-		!strings.Contains(err.Error(), "goav.File") {
+		!strings.Contains(err.Error(), "goav.Write") {
 		t.Fatalf("err = %v, want destination guidance", err)
 	}
 }
@@ -5620,7 +5620,7 @@ func TestBranchRecipeRejectsNegativeStreamIndex(t *testing.T) {
 		Audio(goav.StreamIndex(-1)).
 		Decode().
 		Tap(goav.FrameTap("audio.decoded")).
-		Branches(goav.Branch("bad").Encode(codec.Opus(codec.Bitrate(64_000))).To(goav.File("bad.ogg", io.Discard))).
+		Branches(goav.Branch("bad").Encode(codec.Opus(codec.Bitrate(64_000))).To(goav.Write("bad.ogg", io.Discard))).
 		Build(context.Background())
 
 	var buildErr *goav.BuildError
@@ -5658,7 +5658,7 @@ func TestBranchRecipeRejectsWrongMediaTransform(t *testing.T) {
 func TestBranchRecipeRejectsInvalidResample(t *testing.T) {
 	_, err := branchJob(goav.FileInput("input.webm", strings.NewReader(""))).
 		Audio("bad").Resample(0, codec.Mono).Encode(codec.Opus(codec.Bitrate(64_000))).
-		To(goav.File("bad.ogg", io.Discard)).
+		To(goav.Write("bad.ogg", io.Discard)).
 		Build(context.Background())
 
 	var buildErr *goav.BuildError
@@ -5680,7 +5680,7 @@ func TestBranchRecipeRejectsProcessingAfterEncoder(t *testing.T) {
 			goav.Branch("360p").
 				Encode(codec.VP9(codec.Bitrate(600_000))).
 				Resize(640, 360).
-				To(goav.File("preview.webm", io.Discard)),
+				To(goav.Write("preview.webm", io.Discard)),
 		).
 		Build(context.Background())
 
@@ -5704,7 +5704,7 @@ func TestBranchRecipeRejectsDuplicateEncoder(t *testing.T) {
 			goav.Branch("360p").
 				Encode(codec.VP9(codec.Bitrate(600_000))).
 				Encode(codec.VP8(codec.Bitrate(400_000))).
-				To(goav.File("preview.webm", io.Discard)),
+				To(goav.Write("preview.webm", io.Discard)),
 		).
 		Build(context.Background())
 
@@ -5722,7 +5722,7 @@ func TestBranchRecipeRejectsDuplicateEncoder(t *testing.T) {
 func TestBranchRecipeRejectsNegativeEncodeBitrate(t *testing.T) {
 	_, err := branchJob(goav.FileInput("input.webm", strings.NewReader(""))).
 		Video("bad").Encode(codec.VP9(codec.Bitrate(-1))).
-		To(goav.File("bad.webm", io.Discard)).
+		To(goav.Write("bad.webm", io.Discard)).
 		Build(context.Background())
 
 	var buildErr *goav.BuildError
@@ -5738,7 +5738,7 @@ func TestBranchRecipeRejectsNegativeEncodeBitrate(t *testing.T) {
 func TestBranchRecipeDescribesTransformChain(t *testing.T) {
 	spec, err := branchJob(goav.FileInput("input.webm", strings.NewReader(""))).
 		Video("360p").Resize(1280, 720).Resize(640, 360).Encode(codec.VP9(codec.Bitrate(600_000))).
-		To(goav.File("preview.webm", io.Discard)).
+		To(goav.Write("preview.webm", io.Discard)).
 		Describe()
 	if err != nil {
 		t.Fatalf("Describe() error = %v", err)

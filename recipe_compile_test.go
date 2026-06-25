@@ -625,7 +625,7 @@ func TestStoredOperationListsMirrorFlowBranchAndDirectStreamWork(t *testing.T) {
 		Audio().
 		Decode().
 		Apply(voice).
-		To(File("voice.ogg", io.Discard))
+		To(Write("voice.ogg", io.Discard))
 	if job.err != nil {
 		t.Fatal(job.err)
 	}
@@ -638,7 +638,7 @@ func TestStoredOperationListsMirrorFlowBranchAndDirectStreamWork(t *testing.T) {
 
 	branch := Branch("archive").
 		Apply(voice).
-		To(File("archive.ogg", io.Discard))
+		To(Write("archive.ogg", io.Discard))
 	if branch.err != nil {
 		t.Fatal(branch.err)
 	}
@@ -654,7 +654,7 @@ func TestPlannedBranchSplitOperationsInsertImplicitDecode(t *testing.T) {
 
 	job := From(FileInput("input.ogg", strings.NewReader(""))).
 		Audio().
-		Branches(Branch("voice").Apply(voice).To(File("voice.ogg", io.Discard)))
+		Branches(Branch("voice").Apply(voice).To(Write("voice.ogg", io.Discard)))
 	if job.err != nil {
 		t.Fatal(job.err)
 	}
@@ -682,7 +682,7 @@ func TestPlannedBranchSplitOperationsTreatParentCopyAsPacketAnchor(t *testing.T)
 	decodeJob := From(FileInput("input.ogg", strings.NewReader(""))).
 		Audio().
 		Copy().
-		Branches(Branch("voice").Apply(decodeFlow).To(File("voice.ogg", io.Discard)))
+		Branches(Branch("voice").Apply(decodeFlow).To(Write("voice.ogg", io.Discard)))
 	if decodeJob.err != nil {
 		t.Fatal(decodeJob.err)
 	}
@@ -734,7 +734,7 @@ func TestPlannedBranchSplitOperationsRespectEarlierTapAnchors(t *testing.T) {
 	thumbnail := Sink(SinkFunc("thumbnail", func(context.Context, Message) error {
 		return nil
 	}))
-	web := File("web.ivf", io.Discard)
+	web := Write("web.ivf", io.Discard)
 
 	job := From(FileInput("input.ivf", strings.NewReader(""))).
 		Video().

@@ -23,7 +23,7 @@ func TestBranchComposeTargetHasMuxDestinationContracts(t *testing.T) {
 		name   string
 		target branchComposeTarget
 	}{
-		{name: "file destination", target: branchComposeTarget{Destination: File("archive.webm", io.Discard).spec}},
+		{name: "file destination", target: branchComposeTarget{Destination: Write("archive.webm", io.Discard).spec}},
 		{name: "target name", target: branchComposeTarget{Target: format.Output{Name: "archive.webm"}}},
 		{name: "target uri", target: branchComposeTarget{Target: format.Output{URI: "s3://bucket/archive.webm"}}},
 		{name: "target protocol", target: branchComposeTarget{Target: format.Output{Protocol: av.ProtocolFile}}},

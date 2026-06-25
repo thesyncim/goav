@@ -102,7 +102,7 @@ func TestWrapSourceDecoratesFileInput(t *testing.T) {
 	err := goav.From(goavtest.Packets(av.CodecOpus,
 		av.Packet{Payload: av.Buffer{Bytes: []byte{1}, Ownership: av.BufferImmutable}, Keyframe: true},
 		av.Packet{Payload: av.Buffer{Bytes: []byte{2}, Ownership: av.BufferImmutable}},
-	)).Copy().To(goav.File("in.webm", &file)).UseRuntime(rt).Run(ctx)
+	)).Copy().To(goav.Write("in.webm", &file)).UseRuntime(rt).Run(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}

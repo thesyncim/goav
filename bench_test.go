@@ -215,7 +215,7 @@ func BenchmarkRecordPackets(b *testing.B) {
 	runBenchTask(b, goav.From(benchVideoPackets("cam", b.N)).
 		Video().
 		Copy().
-		To(goav.File("out.mp4", io.Discard)).
+		To(goav.Write("out.mp4", io.Discard)).
 		UseRuntime(benchRuntime()))
 }
 
@@ -227,7 +227,7 @@ func BenchmarkRemuxPackets(b *testing.B) {
 	err := goav.From(benchVideoPackets("cam", b.N)).
 		Video().
 		Copy().
-		To(goav.File("in.mp4", &input)).
+		To(goav.Write("in.mp4", &input)).
 		UseRuntime(benchRuntime()).
 		Run(ctx)
 	if err != nil {
@@ -236,7 +236,7 @@ func BenchmarkRemuxPackets(b *testing.B) {
 	runBenchTask(b, goav.From(goav.FileInput("in.mp4", bytes.NewReader(input.Bytes()))).
 		Video().
 		Copy().
-		To(goav.File("out.mp4", io.Discard)).
+		To(goav.Write("out.mp4", io.Discard)).
 		UseRuntime(benchRuntime()))
 }
 
@@ -312,7 +312,7 @@ func BenchmarkSharedMuxGroup(b *testing.B) {
 	if half < 1 {
 		half = 1
 	}
-	out := goav.File("call.webm", io.Discard)
+	out := goav.Write("call.webm", io.Discard)
 	runBenchTask(b, goav.From(
 		benchVideoFrames("cam", half, 320, 180),
 		benchAudioFrames("mic", half, 48_000, 1, benchAudioSamples),
