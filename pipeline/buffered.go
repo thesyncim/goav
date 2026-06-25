@@ -388,7 +388,7 @@ func (g *bufferedRunner) Run(ctx context.Context) error {
 	g.pending.Wait()
 	g.mu.Lock()
 	g.draining = true
-	g.closeQueuesLocked()
+	reportBufferedError(errs, g.closeQueuesLocked())
 	g.mu.Unlock()
 	g.workers.Wait()
 	g.mu.Lock()
@@ -478,17 +478,21 @@ func (g *bufferedRunner) Close() error {
 	g.closed = true
 	g.closing.Store(true)
 	running := g.running
+	var first error
+	stuck := make(map[*bufferedNode]struct{})
 	nodes := make([]*bufferedNode, 0, len(g.nodes))
-	dones := make([]chan struct{}, 0, len(g.nodes))
 	for i := range g.nodes {
 		node := g.nodes[i]
 		if !node.active {
 			continue
 		}
 		if running && node.kind != nodeSource && node.queue != nil {
-			g.closeNodeQueue(node)
-			if node.done != nil {
-				dones = append(dones, node.done)
+			if err := g.closeNodeQueue("close", node); err != nil {
+				if first == nil {
+					first = err
+				}
+				stuck[node] = struct{}{}
+				go forceCloseNodeQueue(node)
 			}
 		}
 		node.active = false
@@ -497,11 +501,24 @@ func (g *bufferedRunner) Close() error {
 	g.rebuildTopoLocked() // g.closed is set, so this publishes nil
 	g.mu.Unlock()
 
-	for i := range dones {
-		<-dones[i]
-	}
-	var first error
 	for i := range nodes {
+		node := nodes[i]
+		if _, ok := stuck[node]; ok {
+			continue
+		}
+		if running && node.kind != nodeSource {
+			if err := waitCloseDone("close", node.name, node.done); err != nil {
+				if first == nil {
+					first = err
+				}
+				stuck[node] = struct{}{}
+			}
+		}
+	}
+	for i := range nodes {
+		if _, ok := stuck[nodes[i]]; ok {
+			continue
+		}
 		err := closeBufferedNode(nodes[i])
 		if first == nil && err != nil {
 			first = err
@@ -562,20 +579,55 @@ func (g *bufferedRunner) Remove(ref NodeRef) error {
 	}
 	closeNode := node
 	if running && node.queue != nil {
-		g.closeNodeQueue(node)
+		if err := g.closeNodeQueue("remove", node); err != nil {
+			g.rebuildTopoLocked()
+			g.mu.Unlock()
+			go forceCloseNodeQueue(node)
+			return err
+		}
 	}
 	done := node.done
 	g.rebuildTopoLocked()
 	g.mu.Unlock()
 	if running && done != nil {
-		<-done
+		if err := waitCloseDone("remove", closeNode.name, done); err != nil {
+			return err
+		}
 	}
 	return closeBufferedNode(closeNode)
 }
 
 // closeNodeQueue closes a node's queue exactly once, serialized with the
 // lock-free producer via queueMutex so enqueue never sends on a closed channel.
-func (g *bufferedRunner) closeNodeQueue(node *bufferedNode) {
+func (g *bufferedRunner) closeNodeQueue(operation string, node *bufferedNode) error {
+	if err := lockNodeQueueForClose(operation, node); err != nil {
+		return err
+	}
+	defer node.queueMutex.Unlock()
+	if node.queueClosed || node.queue == nil {
+		return nil
+	}
+	node.queueClosed = true
+	close(node.queue)
+	return nil
+}
+
+func lockNodeQueueForClose(operation string, node *bufferedNode) error {
+	if closeWaitTimeout <= 0 {
+		node.queueMutex.Lock()
+		return nil
+	}
+	deadline := time.Now().Add(closeWaitTimeout)
+	for !node.queueMutex.TryLock() {
+		if time.Now().After(deadline) {
+			return &CloseWaitError{Operation: operation, Node: node.name, Pending: 1, Timeout: closeWaitTimeout}
+		}
+		time.Sleep(100 * time.Microsecond)
+	}
+	return nil
+}
+
+func forceCloseNodeQueue(node *bufferedNode) {
 	node.queueMutex.Lock()
 	defer node.queueMutex.Unlock()
 	if node.queueClosed || node.queue == nil {
@@ -658,14 +710,18 @@ func reportBufferedError(errs chan<- error, err error) {
 	}
 }
 
-func (g *bufferedRunner) closeQueuesLocked() {
+func (g *bufferedRunner) closeQueuesLocked() error {
+	var first error
 	for i := range g.nodes {
 		node := g.nodes[i]
 		if !node.active || node.kind == nodeSource || node.queue == nil {
 			continue
 		}
-		g.closeNodeQueue(node)
+		if err := g.closeNodeQueue("drain", node); first == nil && err != nil {
+			first = err
+		}
 	}
+	return first
 }
 
 func (g *bufferedRunner) emit(ctx context.Context, from int, msg *Message) error {

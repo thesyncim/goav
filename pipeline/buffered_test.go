@@ -1277,3 +1277,54 @@ func TestGraphBufferedRemoveDrainsInFlightDeliveries(t *testing.T) {
 		t.Fatal("base sink received nothing, want continuous delivery across removals")
 	}
 }
+
+func TestGraphBufferedRemoveReportsStuckNode(t *testing.T) {
+	oldTimeout := closeWaitTimeout
+	closeWaitTimeout = 10 * time.Millisecond
+	t.Cleanup(func() { closeWaitTimeout = oldTimeout })
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	graph, err := NewGraph(GraphConfig{Name: "buffered-stuck-remove", Buffer: BufferPolicy{Capacity: 1, Drop: DropBlock}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	packet := &av.Packet{StreamID: "live", Payload: av.Buffer{Bytes: []byte{1}, Ownership: av.BufferImmutable}}
+	stop := make(chan struct{})
+	source := &directLoopSource{name: "src", packet: packet, stop: stop}
+	sourceRef, err := graph.AddSource(source, BufferPolicy{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sink := &stuckRemoveSink{name: "stuck", entered: make(chan struct{}), release: make(chan struct{})}
+	sinkRef, err := graph.AddSink(sink, BufferPolicy{Capacity: 1, Drop: DropBlock})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := graph.Connect(Route{From: sourceRef.String(), To: []string{sinkRef.String()}, Policy: RouteAll}); err != nil {
+		t.Fatal(err)
+	}
+	runErr := make(chan error, 1)
+	go func() { runErr <- graph.Run(ctx) }()
+	select {
+	case <-sink.entered:
+	case <-time.After(time.Second):
+		t.Fatal("sink did not enter Handle")
+	}
+
+	err = graph.Remove(sinkRef)
+	var waitErr *CloseWaitError
+	if !errors.Is(err, ErrCloseWait) || !errors.As(err, &waitErr) {
+		t.Fatalf("Remove err = %v, want CloseWaitError", err)
+	}
+	if waitErr.Operation != "remove" || waitErr.Node != "stuck" {
+		t.Fatalf("wait err = %+v, want remove/stuck", waitErr)
+	}
+	close(sink.release)
+	close(stop)
+	cancel()
+	_ = graph.Close()
+	if err := <-runErr; err != nil && !errors.Is(err, context.Canceled) {
+		t.Fatalf("Run err = %v", err)
+	}
+}

@@ -463,11 +463,20 @@ func (g *directRunner) Close() error {
 	// flight loaded the previous one: drain every node's gate before closing,
 	// so Close never runs under a concurrent Handle — the same contract a
 	// live Remove keeps.
-	for i := range nodes {
-		waitNodeGateDrained(nodes[i].gate)
-	}
 	var first error
+	stuck := make(map[string]struct{})
 	for i := range nodes {
+		if err := waitNodeGateDrained("close", nodes[i].name, nodes[i].gate); err != nil {
+			if first == nil {
+				first = err
+			}
+			stuck[nodes[i].name] = struct{}{}
+		}
+	}
+	for i := range nodes {
+		if _, ok := stuck[nodes[i].name]; ok {
+			continue
+		}
 		err := closeDirectNode(&nodes[i])
 		if first == nil && err != nil {
 			first = err
@@ -528,7 +537,9 @@ func (g *directRunner) Remove(ref NodeRef) error {
 	g.rebuildTopoLocked()
 	closeNode := *node
 	g.mu.Unlock()
-	waitNodeGateDrained(closeNode.gate)
+	if err := waitNodeGateDrained("remove", closeNode.name, closeNode.gate); err != nil {
+		return err
+	}
 	return closeDirectNode(&closeNode)
 }
 
@@ -537,18 +548,27 @@ func (g *directRunner) Remove(ref NodeRef) error {
 // concurrent Handle. New deliveries (from emits holding an older routing
 // snapshot) see the closing bit and shed themselves. This is the cold removal
 // path; in-flight deliveries are bounded by one downstream chain.
-func waitNodeGateDrained(gate *atomic.Int64) {
+func waitNodeGateDrained(operation string, node string, gate *atomic.Int64) error {
 	if gate == nil {
-		return
+		return nil
 	}
 	gate.Add(nodeClosingBit)
+	var deadline time.Time
+	if closeWaitTimeout > 0 {
+		deadline = time.Now().Add(closeWaitTimeout)
+	}
 	for spins := 0; gate.Load() != nodeClosingBit; spins++ {
+		if !deadline.IsZero() && time.Now().After(deadline) {
+			pending := gate.Load() &^ nodeClosingBit
+			return &CloseWaitError{Operation: operation, Node: node, Pending: pending, Timeout: closeWaitTimeout}
+		}
 		if spins < 100 {
 			runtime.Gosched()
 			continue
 		}
 		time.Sleep(100 * time.Microsecond)
 	}
+	return nil
 }
 
 func (g *directRunner) addNode(node directNode) (int, error) {
