@@ -953,6 +953,96 @@ func TestRecipeCompileStateDoesNotCarryRecipeBuilders(t *testing.T) {
 	}
 }
 
+func TestRecipeCompilePhaseSequencesArePinned(t *testing.T) {
+	tests := []struct {
+		name   string
+		phases recipeCompilePhaseSet
+		want   []string
+	}{
+		{
+			name:   "job",
+			phases: jobRecipeCompilePhases(),
+			want: []string{
+				"validate job recipe",
+				"validate stream rules",
+				"validate job intent shape",
+				"validate recipe attachments",
+				"validate job attachments",
+				"validate job output bindings",
+				"validate job stream output kinds",
+				"validate packet job outputs",
+				"validate job live stream selection",
+				"validate job output format adapters",
+				"validate job decode adapters",
+				"validate job encode adapters",
+				"validate job transform adapters",
+				"validate job input format adapters",
+				"validate job known input stream selection",
+				"validate recipe operation shapes",
+				"validate recipe destination shapes",
+				"validate job known input decode adapters",
+				"emit graph plan spec",
+				"validate mux compatibility",
+				"require graph plan spec",
+				"validate recipe runtime",
+			},
+		},
+		{
+			name:   "join",
+			phases: joinRecipeCompilePhases(),
+			want: []string{
+				"validate join recipe",
+				"validate stream rules",
+				"validate recipe attachments",
+				"validate job input format adapters",
+				"emit graph plan spec",
+				"validate mux compatibility",
+				"require graph plan spec",
+				"validate recipe runtime",
+			},
+		},
+		{
+			name:   "branch composition",
+			phases: branchCompositionRecipeCompilePhases(),
+			want: []string{
+				"validate transcode recipe",
+				"validate stream rules",
+				"validate transcode intent shape",
+				"validate recipe attachments",
+				"validate transcode attachments",
+				"validate branch destination bindings",
+				"validate branch destination kinds",
+				"validate branch destination format adapters",
+				"validate transcode encode adapters",
+				"validate transcode transform adapters",
+				"validate transcode input format adapters",
+				"validate transcode known input stream selection",
+				"validate recipe operation shapes",
+				"validate recipe destination shapes",
+				"validate transcode known input decode adapters",
+				"plan branch composition intent",
+				"emit graph plan spec",
+				"validate mux compatibility",
+				"require graph plan spec",
+				"validate recipe runtime",
+			},
+		},
+	}
+	for _, tt := range tests {
+		if got := recipeCompilePassNames(recipeCompilePhaseSequence(tt.phases)); !reflect.DeepEqual(got, tt.want) {
+			t.Fatalf("%s phase sequence = %#v, want %#v", tt.name, got, tt.want)
+		}
+	}
+}
+
+func recipeCompilePassNames(passes []recipeCompilePass) []string {
+	names := make([]string, 0, len(passes))
+	for _, pass := range passes {
+		names = append(names, pass.Name())
+	}
+	return names
+}
+
 func TestRecipeAttachmentConsistencyRejectsMismatches(t *testing.T) {
 	tests := []struct {
 		name  string

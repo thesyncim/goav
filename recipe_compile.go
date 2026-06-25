@@ -147,6 +147,40 @@ type recipeIntentCompiler struct {
 	passes []recipeCompilePass
 }
 
+type recipeCompilePhaseSet struct {
+	recipe      []recipeCompilePass
+	intent      []recipeCompilePass
+	attachments []recipeCompilePass
+	adapters    []recipeCompilePass
+	knownInputs []recipeCompilePass
+	shapes      []recipeCompilePass
+	plan        []recipeCompilePass
+}
+
+func compileRecipePhaseSet(state recipeCompileState, phases recipeCompilePhaseSet) (recipeResolved, error) {
+	return recipeIntentCompiler{passes: recipeCompilePhaseSequence(phases)}.Compile(state)
+}
+
+func recipeCompilePhaseSequence(phases recipeCompilePhaseSet) []recipeCompilePass {
+	passes := make([]recipeCompilePass, 0, 24)
+	passes = append(passes, phases.recipe...)
+	passes = append(passes, validateStreamRulesPass())
+	passes = append(passes, phases.intent...)
+	passes = append(passes, validateRecipeAttachmentConsistencyPass())
+	passes = append(passes, phases.attachments...)
+	passes = append(passes, phases.adapters...)
+	passes = append(passes, phases.knownInputs...)
+	passes = append(passes, phases.shapes...)
+	passes = append(passes, phases.plan...)
+	passes = append(passes,
+		emitGraphPlanSpecPass(),
+		validateMuxCompatibilityPass(),
+		requireGraphPlanSpecPass(),
+		validateRecipeRuntimePass(),
+	)
+	return passes
+}
+
 func (c recipeIntentCompiler) Compile(state recipeCompileState) (recipeResolved, error) {
 	for i := range c.passes {
 		pass := c.passes[i]
@@ -314,30 +348,40 @@ func compileJobRecipeWithOptions(job *Job, options recipeCompileOptions) (recipe
 		state.outputDestinationNames = job.allOutputNames()
 		state.streamRules = cloneStreamRules(job.streamRules)
 	}
-	return recipeIntentCompiler{passes: []recipeCompilePass{
-		validateJobRecipePass(),
-		validateStreamRulesPass(),
-		validateJobIntentShapePass(),
-		validateRecipeAttachmentConsistencyPass(),
-		validateJobAttachmentsPass(),
-		validateJobOutputBindingsPass(),
-		validateJobStreamOutputKindsPass(),
-		validatePacketJobOutputsPass(),
-		validateJobLiveStreamSelectionPass(),
-		validateJobOutputFormatAdaptersPass(),
-		validateJobDecodeAdaptersPass(),
-		validateJobEncodeAdaptersPass(),
-		validateJobTransformAdaptersPass(),
-		validateJobInputFormatAdaptersPass(),
-		validateJobKnownInputStreamSelectionPass(),
-		validateRecipeOperationShapesPass(),
-		validateRecipeDestinationShapesPass(),
-		validateJobKnownInputDecodeAdaptersPass(),
-		emitGraphPlanSpecPass(),
-		validateMuxCompatibilityPass(),
-		requireGraphPlanSpecPass(),
-		validateRecipeRuntimePass(),
-	}}.Compile(state)
+	return compileRecipePhaseSet(state, jobRecipeCompilePhases())
+}
+
+func jobRecipeCompilePhases() recipeCompilePhaseSet {
+	return recipeCompilePhaseSet{
+		recipe: []recipeCompilePass{
+			validateJobRecipePass(),
+		},
+		intent: []recipeCompilePass{
+			validateJobIntentShapePass(),
+		},
+		attachments: []recipeCompilePass{
+			validateJobAttachmentsPass(),
+			validateJobOutputBindingsPass(),
+			validateJobStreamOutputKindsPass(),
+			validatePacketJobOutputsPass(),
+			validateJobLiveStreamSelectionPass(),
+		},
+		adapters: []recipeCompilePass{
+			validateJobOutputFormatAdaptersPass(),
+			validateJobDecodeAdaptersPass(),
+			validateJobEncodeAdaptersPass(),
+			validateJobTransformAdaptersPass(),
+			validateJobInputFormatAdaptersPass(),
+		},
+		knownInputs: []recipeCompilePass{
+			validateJobKnownInputStreamSelectionPass(),
+		},
+		shapes: []recipeCompilePass{
+			validateRecipeOperationShapesPass(),
+			validateRecipeDestinationShapesPass(),
+			validateJobKnownInputDecodeAdaptersPass(),
+		},
+	}
 }
 
 // compileJobJoinRecipeWithOptions lowers a join job (Mix/Composite/Select)
@@ -359,15 +403,18 @@ func compileJobJoinRecipeWithOptions(job *Job, options recipeCompileOptions) (re
 	state.inputAttachments = joinArmInputs(spec)
 	state.outputAttachments, state.outputDestinationNames = joinOutputAttachments(spec)
 	state.streamRules = cloneStreamRules(job.streamRules)
-	return recipeIntentCompiler{passes: []recipeCompilePass{
-		validateJoinRecipePass(),
-		validateStreamRulesPass(),
-		validateJobInputFormatAdaptersPass(),
-		emitGraphPlanSpecPass(),
-		validateMuxCompatibilityPass(),
-		requireGraphPlanSpecPass(),
-		validateRecipeRuntimePass(),
-	}}.Compile(state)
+	return compileRecipePhaseSet(state, joinRecipeCompilePhases())
+}
+
+func joinRecipeCompilePhases() recipeCompilePhaseSet {
+	return recipeCompilePhaseSet{
+		recipe: []recipeCompilePass{
+			validateJoinRecipePass(),
+		},
+		adapters: []recipeCompilePass{
+			validateJobInputFormatAdaptersPass(),
+		},
+	}
 }
 
 func validateJoinRecipePass() recipeCompilePass {
@@ -418,28 +465,40 @@ func compileBranchCompositionRecipeWithOptions(job *branchCompositionJob, option
 		state.plan, state.planErr = job.composePlan()
 		state.streamRules = cloneStreamRules(job.streamRules)
 	}
-	return recipeIntentCompiler{passes: []recipeCompilePass{
-		validateBranchCompositionRecipePass(),
-		validateStreamRulesPass(),
-		validateBranchCompositionIntentShapePass(),
-		validateRecipeAttachmentConsistencyPass(),
-		validateBranchCompositionAttachmentsPass(),
-		validateBranchDestinationBindingsPass(),
-		validateBranchDestinationKindsPass(),
-		validateBranchDestinationFormatAdaptersPass(),
-		validateBranchEncodeAdaptersPass(),
-		validateBranchTransformAdaptersPass(),
-		validateBranchInputFormatAdaptersPass(),
-		validateKnownBranchInputStreamSelectionPass(),
-		validateRecipeOperationShapesPass(),
-		validateRecipeDestinationShapesPass(),
-		validateKnownBranchInputDecodeAdaptersPass(),
-		planBranchCompositionIntentPass(),
-		emitGraphPlanSpecPass(),
-		validateMuxCompatibilityPass(),
-		requireGraphPlanSpecPass(),
-		validateRecipeRuntimePass(),
-	}}.Compile(state)
+	return compileRecipePhaseSet(state, branchCompositionRecipeCompilePhases())
+}
+
+func branchCompositionRecipeCompilePhases() recipeCompilePhaseSet {
+	return recipeCompilePhaseSet{
+		recipe: []recipeCompilePass{
+			validateBranchCompositionRecipePass(),
+		},
+		intent: []recipeCompilePass{
+			validateBranchCompositionIntentShapePass(),
+		},
+		attachments: []recipeCompilePass{
+			validateBranchCompositionAttachmentsPass(),
+			validateBranchDestinationBindingsPass(),
+			validateBranchDestinationKindsPass(),
+		},
+		adapters: []recipeCompilePass{
+			validateBranchDestinationFormatAdaptersPass(),
+			validateBranchEncodeAdaptersPass(),
+			validateBranchTransformAdaptersPass(),
+			validateBranchInputFormatAdaptersPass(),
+		},
+		knownInputs: []recipeCompilePass{
+			validateKnownBranchInputStreamSelectionPass(),
+		},
+		shapes: []recipeCompilePass{
+			validateRecipeOperationShapesPass(),
+			validateRecipeDestinationShapesPass(),
+			validateKnownBranchInputDecodeAdaptersPass(),
+		},
+		plan: []recipeCompilePass{
+			planBranchCompositionIntentPass(),
+		},
+	}
 }
 
 // nilRecipeError marks a recipe compile invoked without its job/join
