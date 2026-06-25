@@ -49,20 +49,43 @@ same as built-ins.
 
 ## Current Adapters
 
-| Adapter | Status |
-| --- | --- |
-| `adapters/ivf` | IVF VP8/VP9/AV1 packet demux/mux; magic/extension probing; zero-alloc read/write. Single video stream, no indexing or codec conversion. |
-| `adapters/annexb` | H264 Annex B packet mux (mux-only) for packet-preserving recording after RTP depacketization; start-code probing; zero-alloc write. |
-| `container/matroska`, `container/webm` | Matroska/WebM mux/demux (see `docs/matroska.md`). |
-| `adapters/gopus` | Opus decode/encode over `thesyncim/gopus`: depacketized packet <-> PCM frames, PLC via `EventPacketLoss`, caller-owned buffers. |
-| `adapters/goaac` | AAC-LC decode over `thesyncim/goaac`: ADTS packets by default, raw AAC access units when stream `ExtraData` carries AudioSpecificConfig, interleaved S16 PCM into caller-owned buffers. Decode-only. |
-| `adapters/govpx` | VP8/VP9 decode into caller-owned I420 frames and encode into caller-owned packet buffers; drop-until-keyframe on loss/corruption/discontinuity; keyframe requests via `codec.ControlRequest`; encode honors keyframe-request and codec-change events; zero-alloc hot paths; idempotent close. |
-| `adapters/goav1` | AV1 low-overhead decode over `thesyncim/goav1`: `DecoderState` as documented `OpaqueState`, optional state factory with RTP decode bounds, borrowed gray8/I420/I422/I444 output (yuv* aliases normalized), loss/sync recovery from keyframe markers or parsed payloads, concrete `DecodeRTPPayloadInto` for raw RTP payload callers, runner reuse, allocation/lifecycle guards. The exact frame format matters: the backend frame pool must match the accepted sequence format. |
-| `adapters/goh264` | Descriptor-only by default; the `goav_goh264` tag enables H264 decode (8-bit planar borrowed frames, keyframe requests on loss, zero-alloc mapping, idempotent close). Decode-only. |
-| `adapters/resample` | Interleaved S16 PCM sample-rate (linear) and mono/stereo channel conversion; descriptor metadata for `Explain(ctx)`; caller-owned output; zero-alloc hot path. |
-| `adapters/resize` | Planar 8-bit 4:2:0 (`i420`/`yuv420p`) exact/fit/fill/passthrough nearest-neighbor resize; descriptor metadata; caller-owned planes; zero-alloc hot path. |
+<!-- BEGIN GENERATED BUNDLE CAPABILITIES -->
+The tables below are generated from `bundle.Options()` and the descriptors registered by the bundled adapters. Update the descriptors, not this section by hand.
 
-Every "zero-alloc" entry above is test-enforced, not aspirational: each
+### Container Formats
+
+| Format | Direction | Media | Codecs | Streams | Notes |
+| --- | --- | --- | --- | --- | --- |
+| `ivf` | demux | video | av1, vp8, vp9 | 1 | IVF destinations support one VP8, VP9, or AV1 video stream |
+| `matroska` | demux | audio, subtitle, video | aac, av1, flac, h264, opus, pcm, text_utf8, vorbis, vp8, vp9 | 1+ | Matroska supports multi-track audio, video, and subtitle packets without codec conversion |
+| `mp4` | demux | audio, video | aac, av1, flac, h264, opus, vp8, vp9 | 1+ | MP4 demux reads common ISO BMFF audio and video sample entries |
+| `webm` | demux | audio, video | av1, opus, vorbis, vp8, vp9 | 1+ | WebM supports Opus/Vorbis audio and VP8/VP9/AV1 video packets without codec conversion |
+| `annexb` | mux | video | h264 | 1 | Annex B destinations support one H264 video stream |
+| `ivf` | mux | video | av1, vp8, vp9 | 1 | IVF destinations support one VP8, VP9, or AV1 video stream |
+| `matroska` | mux | audio, subtitle, video | aac, av1, flac, h264, opus, pcm, text_utf8, vorbis, vp8, vp9 | 1+ | Matroska supports multi-track audio, video, and subtitle packets without codec conversion |
+| `webm` | mux | audio, video | av1, opus, vorbis, vp8, vp9 | 1+ | WebM supports Opus/Vorbis audio and VP8/VP9/AV1 video packets without codec conversion |
+
+### Codecs
+
+| Codec | Media | Modes | Backend | Capabilities | Tags | Status |
+| --- | --- | --- | --- | --- | --- | --- |
+| `aac` | audio | decode | `goaac` | profiles=aac_lc; samples=s16; realtime | - | active |
+| `av1` | video | decode | `goav1` | pixels=gray8, i420, i422, i444, yuv420p, yuv422p, yuv444p; rtp=video/av1; realtime; experimental | - | active |
+| `av1` | video | encode | `goav1-encoder` | pixels=i420, yuv420p; rtp=video/av1; realtime; experimental | - | active |
+| `h264` | video | decode | `goh264` | pixels=yuv420p; rtp=video/h264; realtime; experimental | goav_goh264 | planned-build-tagged |
+| `opus` | audio | decode, encode | `gopus` | samples=s16; rtp=audio/opus; realtime | - | active |
+| `vp8` | video | decode, encode | `govpx` | pixels=i420; rtp=video/vp8; realtime; experimental | - | active |
+| `vp9` | video | decode, encode | `govpx` | pixels=i420; rtp=video/vp9; realtime; experimental | - | active |
+
+### Frame Filters
+
+| Filter | Media | Formats | Modes | Traits |
+| --- | --- | --- | --- | --- |
+| `resample` | audio -> audio | samples=s16 | - | backend=resample; realtime; stateless |
+| `resize` | video -> video | pixels=i420, yuv420p | exact, fill, fit, passthrough | backend=resize; realtime; stateless |
+<!-- END GENERATED BUNDLE CAPABILITIES -->
+
+Every "zero-alloc" adapter claim is test-enforced, not aspirational: each
 adapter carries a `testing.AllocsPerRun` guard (`TestMuxerWriteAllocs`,
 `TestDemuxerReadIntoAllocs`, `TestFilterAllocs`, decoder/encoder `*Allocs`
 tests) that fails the suite if the hot path starts allocating. The repo-wide

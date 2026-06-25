@@ -21,7 +21,27 @@ func Register(registry *format.SimpleRegistry) {
 	if registry == nil {
 		return
 	}
-	registry.RegisterDemuxer(av.FormatMP4, DemuxerFactory{})
+	registry.RegisterDemuxerDescriptor(Descriptor(), DemuxerFactory{})
+}
+
+func Descriptor() format.Descriptor {
+	return format.Descriptor{
+		Format: av.FormatMP4,
+		Media:  []av.MediaType{av.MediaAudio, av.MediaVideo},
+		Codecs: []av.CodecID{
+			av.CodecH264,
+			av.CodecAV1,
+			av.CodecVP8,
+			av.CodecVP9,
+			av.CodecAAC,
+			av.CodecOpus,
+			av.CodecFLAC,
+		},
+		MinStreams: 1,
+		Metadata: av.Metadata{
+			"summary": "MP4 demux reads common ISO BMFF audio and video sample entries",
+		},
+	}
 }
 
 // NewDemuxer returns an MP4 demuxer for a probed MP4 result.

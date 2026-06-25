@@ -45,8 +45,31 @@ func Register(registry *format.SimpleRegistry) {
 		return
 	}
 	registry.RegisterProber(Prober{})
-	registry.RegisterDemuxer(av.FormatMatroska, DemuxerFactory{})
-	registry.RegisterMuxer(av.FormatMatroska, MuxerFactory{})
+	registry.RegisterDemuxerDescriptor(Descriptor(), DemuxerFactory{})
+	registry.RegisterMuxerDescriptor(Descriptor(), MuxerFactory{})
+}
+
+func Descriptor() format.Descriptor {
+	return format.Descriptor{
+		Format: av.FormatMatroska,
+		Media:  []av.MediaType{av.MediaAudio, av.MediaVideo, av.MediaSubtitle},
+		Codecs: []av.CodecID{
+			av.CodecOpus,
+			av.CodecVorbis,
+			av.CodecFLAC,
+			av.CodecAAC,
+			av.CodecVP8,
+			av.CodecVP9,
+			av.CodecAV1,
+			av.CodecH264,
+			av.CodecPCM,
+			av.CodecTextUTF8,
+		},
+		MinStreams: 1,
+		Metadata: av.Metadata{
+			"summary": "Matroska supports multi-track audio, video, and subtitle packets without codec conversion",
+		},
+	}
 }
 
 func (Prober) Probe(ctx context.Context, request format.ProbeRequest) (format.ProbeResult, error) {

@@ -46,8 +46,26 @@ func Register(registry *format.SimpleRegistry) {
 		return
 	}
 	registry.RegisterProber(Prober{})
-	registry.RegisterDemuxer(av.FormatWebM, DemuxerFactory{})
-	registry.RegisterMuxer(av.FormatWebM, MuxerFactory{})
+	registry.RegisterDemuxerDescriptor(Descriptor(), DemuxerFactory{})
+	registry.RegisterMuxerDescriptor(Descriptor(), MuxerFactory{})
+}
+
+func Descriptor() format.Descriptor {
+	return format.Descriptor{
+		Format: av.FormatWebM,
+		Media:  []av.MediaType{av.MediaAudio, av.MediaVideo},
+		Codecs: []av.CodecID{
+			av.CodecOpus,
+			av.CodecVorbis,
+			av.CodecVP8,
+			av.CodecVP9,
+			av.CodecAV1,
+		},
+		MinStreams: 1,
+		Metadata: av.Metadata{
+			"summary": "WebM supports Opus/Vorbis audio and VP8/VP9/AV1 video packets without codec conversion",
+		},
+	}
 }
 
 func (Prober) Probe(ctx context.Context, request format.ProbeRequest) (format.ProbeResult, error) {

@@ -134,6 +134,16 @@ func (r *SimpleRegistry) DemuxerDescriptor(format av.FormatID) (Descriptor, erro
 	return cloneDescriptor(desc), nil
 }
 
+// DemuxerDescriptors lists every registered demuxer descriptor sorted by format.
+func (r *SimpleRegistry) DemuxerDescriptors() []Descriptor {
+	out := make([]Descriptor, 0, len(r.demuxerDescriptors))
+	for id := range r.demuxerDescriptors {
+		out = append(out, cloneDescriptor(r.demuxerDescriptors[id]))
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Format < out[j].Format })
+	return out
+}
+
 // MuxerFactory returns the muxer factory registered for a format id, or
 // ErrNotFound.
 func (r *SimpleRegistry) MuxerFactory(format av.FormatID) (MuxerFactory, error) {

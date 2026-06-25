@@ -156,13 +156,13 @@ Move or keep outside the front door:
       `lifecycle.RebranchArg` while removing rebranch policy constructors from
       the root package.
 
-16. **Docs rewrite** — in progress
+16. **Docs rewrite** — landed
     - Keep the README focused on the small grammar and one or two advanced entry
       points.
     - Finish with a Markdown-wide consistency pass and a README that works as a
       credible front door, not just as a passing line-count artifact.
-    - Generate bundled adapter capability docs from descriptors so the docs and
-      registered set cannot drift.
+    - Generate bundled adapter capability docs from `bundle.Options()` and
+      registered descriptors so the docs and registered set cannot drift.
 
 17. **Go version floor** — landed
     - Lower every module directive from the patch-level local toolchain floor
@@ -183,7 +183,7 @@ Add focused coverage as the slices land:
 - `TestNilPacketFuncDoesNotBecomeSilentNilStage`
 - `TestNilSinkFuncDoesNotBecomeSilentNilSink`
 - `TestEmitMessagesAreIndependentWhenEmitterRetainsPointers`
-- `TestStdFormatsDocsMatchRegisteredFormats`
+- `TestBundledAdapterCapabilityDocsMatchDescriptors`
 - `TestMuxSurvivesWithAndCopy`
 - `TestBuildAndAttachReturnSameErrorForSameInvalidBranch`
 - `TestErrorDetailsAreTyped`
