@@ -104,6 +104,10 @@ Runtime lifecycle/observation progress: one-shot `Run` now preserves both run
 and close/finalization failures, and `Events()` returns an unfiltered watch
 subscription rather than exposing the raw graph event channel.
 
+Tap-anchor progress: `Inspectable.Taps()` now reports only typed anchors emitted
+by the planner or runtime attach path; graph node names such as `decode-*` and
+`select-*` no longer synthesize taps.
+
 ## Release gate
 
 Do not cut v1 just because the current docs and pins are green. Cut v1 only
