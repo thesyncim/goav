@@ -155,8 +155,9 @@ report capability details alongside missing/available/incompatible status.
 
 Recipe helpers expose `PacketFunc`, `FrameFunc`, `EventFunc`, and `SinkFunc` so
 small custom hooks can participate without implementing full graph types.
-Operation transforms such as `Audio().Resample(...)` and `Video().Resize(...)`
-lower through the same filter registry as branch transforms.
+Operation transforms such as `Audio().Decode().Resample(...)` and
+`Video().Decode().Resize(...)` lower through the same filter registry as branch
+transforms.
 
 ## Package layering
 

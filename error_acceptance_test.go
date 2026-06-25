@@ -89,6 +89,7 @@ func audioFrameInput() goav.InputSpec {
 func TestErrorAcceptanceNilProviderInput(t *testing.T) {
 	_, err := goav.From(goav.Input(nil)).
 		Audio().
+		Decode().
 		To(goavtest.NewCollector().Sink()).
 		Describe()
 	requireBuildError(t, err, errcode.InputInvalid, "build input", "input",
@@ -137,6 +138,7 @@ func TestErrorAcceptanceCustomSourceShapeInvalid(t *testing.T) {
 		func(context.Context, source.Push) error { return nil },
 	)).
 		Audio().
+		Decode().
 		To(goavtest.NewCollector().Sink()).
 		Describe()
 	requireBuildError(t, err, errcode.SourceShapeInvalid, "build input", "bad",
@@ -154,6 +156,7 @@ func TestErrorAcceptanceCustomSourceShapeUnsupported(t *testing.T) {
 		func(context.Context, source.Push) error { return nil },
 	)).
 		Audio().
+		Decode().
 		To(goavtest.NewCollector().Sink()).
 		Describe()
 	buildErr := requireBuildError(t, err, errcode.SourceShapeUnsupported, "build input", "bytes",
@@ -548,6 +551,7 @@ func TestErrorAcceptanceAmbiguousStreamSelectionListsCandidates(t *testing.T) {
 		goavtest.Audio(48000, 1, []int16{1}).With(goav.Name("mic-b")),
 	).
 		Audio().
+		Decode().
 		To(goavtest.NewCollector().Sink()).
 		Build(context.Background())
 

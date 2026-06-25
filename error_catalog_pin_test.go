@@ -33,7 +33,7 @@ var errorCatalogExamples = []errorCatalogExample{
 	{
 		Code:          "input_invalid",
 		Test:          "TestErrorAcceptanceNilProviderInput",
-		BadRecipe:     `goav.From(goav.Input(nil)).Audio().To(...)`,
+		BadRecipe:     `goav.From(goav.Input(nil)).Audio().Decode().To(...)`,
 		RenderedError: "input constructor fixes and ErrNilSource cause are asserted by the test",
 		Fix:           "pass a non-nil provider to goav.Input(provider), or use FileInput/URIInput/Source",
 		Cause:         "goav.ErrNilSource",
@@ -145,7 +145,7 @@ var errorCatalogExamples = []errorCatalogExample{
 	{
 		Code:          "input_unknown",
 		Test:          "TestFromMultiInputUnknownInputNameListsInputs",
-		BadRecipe:     `.Audio(goav.InputName("microphone")).To(...)` + " with inputs named mic-a and mic-b",
+		BadRecipe:     `.Audio(goav.InputName("microphone")).Decode().To(...)` + " with inputs named mic-a and mic-b",
 		RenderedError: "available input names and unsupported-build cause are asserted by the test",
 		Fix:           "choose one of the listed input names",
 		Cause:         "goav.ErrUnsupportedBuild",
@@ -161,7 +161,7 @@ var errorCatalogExamples = []errorCatalogExample{
 	{
 		Code:          "stream_selector_invalid",
 		Test:          "TestStreamRecipeRejectsNegativeStreamIndex",
-		BadRecipe:     `.Audio(goav.StreamIndex(-1)).To(...)`,
+		BadRecipe:     `.Audio(goav.StreamIndex(-1)).Decode().To(...)`,
 		RenderedError: "negative-index details and stream-selector suggestions are asserted by the test",
 		Fix:           "use goav.StreamIndex(0) or a stable StreamID/StreamName selector",
 		Cause:         "goav.ErrUnsupportedBuild",
@@ -257,7 +257,7 @@ var errorCatalogExamples = []errorCatalogExample{
 	{
 		Code:          "transform_invalid",
 		Test:          "TestStreamRecipeRejectsInvalidResize",
-		BadRecipe:     `.Video().Resize(0, 720).To(...)`,
+		BadRecipe:     `.Video().Decode().Resize(0, 720).To(...)`,
 		RenderedError: "invalid resize dimensions and unsupported-build cause are asserted by the test",
 		Fix:           "use positive width and height",
 		Cause:         "goav.ErrUnsupportedBuild",
@@ -289,7 +289,7 @@ var errorCatalogExamples = []errorCatalogExample{
 	{
 		Code:          "encode_duplicate",
 		Test:          "TestStreamRecipeRejectsDuplicateEncoder",
-		BadRecipe:     `.Audio().Encode(codec.Opus()).Encode(codec.VP9()).To(...)`,
+		BadRecipe:     `.Audio().Decode().Encode(codec.Opus()).Encode(codec.VP9()).To(...)`,
 		RenderedError: "first/second encoder details and one-terminal-encoder guidance are asserted by the test",
 		Fix:           "choose one output codec or use .Branches(...) for multiple encoded outputs",
 		Cause:         "goav.ErrUnsupportedBuild",
@@ -345,7 +345,7 @@ var errorCatalogExamples = []errorCatalogExample{
 	{
 		Code:          "output_scope_mixed",
 		Test:          "TestStreamRecipeRejectsGenericAndStreamOutputs",
-		BadRecipe:     `goav.From(input).To(jobOutput).Audio().Encode(...).To(streamOutput)`,
+		BadRecipe:     `goav.From(input).To(jobOutput).Audio().Decode().Encode(...).To(streamOutput)`,
 		RenderedError: "mixed output-scope guidance and branch alternatives are asserted by the test",
 		Fix:           "keep outputs stream-local or use branches",
 		Cause:         "goav.ErrUnsupportedBuild",
@@ -353,7 +353,7 @@ var errorCatalogExamples = []errorCatalogExample{
 	{
 		Code:          "output_kind_mixed",
 		Test:          "TestStreamRecipeRejectsMixedSinkAndFile",
-		BadRecipe:     `.Audio().To(goav.Sink(...), goav.File(...))`,
+		BadRecipe:     `.Audio().Decode().To(goav.Sink(...), goav.File(...))`,
 		RenderedError: "mixed sink/muxed output guidance is asserted by the test",
 		Fix:           "use branches when one stream needs separate decoded and encoded outputs",
 		Cause:         "goav.ErrUnsupportedBuild",
@@ -385,7 +385,7 @@ var errorCatalogExamples = []errorCatalogExample{
 	{
 		Code:          "stream_ambiguous",
 		Test:          "TestErrorAcceptanceAmbiguousStreamSelectionListsCandidates",
-		BadRecipe:     `From(micA, micB).Audio().To(...)`,
+		BadRecipe:     `From(micA, micB).Audio().Decode().To(...)`,
 		RenderedError: "candidate listing and narrowing suggestions are asserted by the test",
 		Fix:           `narrow with .Audio(goav.InputName("mic-a")), goav.StreamID(...), or an index/name selector`,
 		Cause:         "goav.ErrUnsupportedBuild",
@@ -492,7 +492,7 @@ var errorCatalogAdditionalExamples = []errorCatalogExample{
 	{
 		Code:          "stream_step_after_encode",
 		Test:          "TestStreamRecipeRejectsProcessingAfterEncoder",
-		BadRecipe:     `.Audio().Encode(codec.Opus()).Resample(...)`,
+		BadRecipe:     `.Audio().Decode().Encode(codec.Opus()).Resample(...)`,
 		RenderedError: "terminal-encode ordering refusal and branch guidance are asserted by the test",
 		Fix:           "move transforms before .Encode(...) or use .Branches(...) for post-encode fanout",
 		Cause:         "goav.ErrUnsupportedBuild",
@@ -500,7 +500,7 @@ var errorCatalogAdditionalExamples = []errorCatalogExample{
 	{
 		Code:          "transform_adapter_missing",
 		Test:          "TestTransformHelperErrorContracts",
-		BadRecipe:     `.Audio().Resample(...)` + " without a resample filter adapter",
+		BadRecipe:     `.Audio().Decode().Resample(...)` + " without a resample filter adapter",
 		RenderedError: "missing transform adapter details and registration guidance are asserted by the test",
 		Fix:           "register the filter with goavruntime.WithFilterAdapter(...) or use bundle.MustNewFilters(...)",
 		Cause:         "filter.ErrNotFound",
@@ -508,7 +508,7 @@ var errorCatalogAdditionalExamples = []errorCatalogExample{
 	{
 		Code:          "transform_adapter_incompatible",
 		Test:          "TestExplainReportsIncompatibleFilterDescriptor",
-		BadRecipe:     `.Audio().Resample(...)` + " with a descriptor that rejects the requested shape",
+		BadRecipe:     `.Audio().Decode().Resample(...)` + " with a descriptor that rejects the requested shape",
 		RenderedError: "incompatible filter descriptor warning/refusal is asserted by the test",
 		Fix:           "register a filter descriptor compatible with the requested media and shape",
 		Cause:         "goav.ErrUnsupportedBuild",

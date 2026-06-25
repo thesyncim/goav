@@ -347,6 +347,7 @@ func TestStreamRecipeReportsAmbiguousStreams(t *testing.T) {
 
 	_, err := From(FileInput("input.ogg", nil)).UseRuntime(MustNew(formats, codecs)).
 		Audio().
+		Decode().
 		To(Sink(&runtimeTestSink{name: "frames"})).
 		Build(ctx)
 
@@ -393,6 +394,7 @@ func TestStreamRecipeSelectsFirstStreamByIndex(t *testing.T) {
 
 	task, err := From(FileInput("input.ogg", nil)).UseRuntime(MustNew(formats, codecs)).
 		Audio(StreamIndex(0)).
+		Decode().
 		To(Sink(sink)).
 		Build(ctx)
 	if err != nil {
@@ -444,6 +446,7 @@ func TestStreamRecipeEncodeToSinkDestinationRuns(t *testing.T) {
 
 	task, err := From(FileInput("input.ogg", nil)).UseRuntime(MustNew(formats, codecs)).
 		Audio().
+		Decode().
 		Encode(codec.Opus(codec.Bitrate(96_000))).
 		To(Sink(sink)).
 		Build(ctx)
@@ -493,6 +496,7 @@ func TestStreamRecipeEncodeFansOutToMuxAndSinkDestinations(t *testing.T) {
 
 	task, err := From(FileInput("input.ogg", nil)).UseRuntime(MustNew(formats, codecs)).
 		Audio().
+		Decode().
 		Encode(codec.Opus(codec.Bitrate(96_000))).
 		To(
 			File("archive.ogg", io.Discard),
@@ -547,6 +551,7 @@ func TestStreamRecipeEncodeToTypedDestinationRuns(t *testing.T) {
 	target := File("archive.ogg", io.Discard, Format(av.FormatOgg))
 	job := From(FileInput("input.ogg", nil)).UseRuntime(MustNew(formats, codecs)).
 		Audio().
+		Decode().
 		Encode(codec.Opus(codec.Bitrate(96_000))).
 		To(target)
 
@@ -845,6 +850,7 @@ func TestStreamRecipeDescribeMatchesBuiltGraph(t *testing.T) {
 	codecs := withTestCodecs(testCodecDecoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &decodeTestDecoderFactory{decoder: &decodeTestDecoder{}}))
 	job := From(FileInput("input.ogg", nil)).UseRuntime(MustNew(formats, codecs)).
 		Audio().
+		Decode().
 		To(Sink(&runtimeTestSink{name: "frames"}))
 
 	planned, err := job.Describe()
@@ -889,6 +895,7 @@ func TestFromAudioStreamRecipeDoEncodeRuns(t *testing.T) {
 
 	task, err := From(FileInput("input.ogg", nil)).UseRuntime(MustNew(formats, codecs)).
 		Audio().
+		Decode().
 		Do(meter).
 		Encode(codec.Opus(codec.Bitrate(96_000))).
 		To(File("archive.ogg", io.Discard)).
@@ -3414,6 +3421,7 @@ func TestFromAudioStreamRecipeResampleEncodeRuns(t *testing.T) {
 
 	task, err := From(FileInput("input.ogg", nil)).UseRuntime(runtime).
 		Audio().
+		Decode().
 		Resample(16_000, codec.Mono).
 		Encode(encoded).
 		To(File("preview.ogg", io.Discard)).

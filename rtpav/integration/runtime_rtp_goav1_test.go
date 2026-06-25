@@ -53,6 +53,7 @@ func TestRecipeRTPAV1DecodeSink(t *testing.T) {
 	))).
 		UseRuntime(goav.MustNew(goavruntime.WithCodecAdapter(goav1adapter.Register))).
 		Video().
+		Decode().
 		To(goav.Sink(sink))
 	planned, err := job.Describe()
 	if err != nil {
@@ -136,6 +137,7 @@ func testRecipeRTPAV1DecodeSink420(t *testing.T, pixelFormat string) {
 	))).
 		UseRuntime(goav.MustNew(goavruntime.WithCodecAdapter(goav1adapter.Register))).
 		Video().
+		Decode().
 		To(goav.Sink(sink)).
 		Build(ctx)
 	if err != nil {
@@ -204,6 +206,7 @@ func TestRecipeRTPAV1CodecChangedDropsUntilSync(t *testing.T) {
 	))).
 		UseRuntime(goav.MustNew(goavruntime.WithCodecAdapter(goav1adapter.Register))).
 		Video().
+		Decode().
 		To(goav.Sink(sink)).
 		Build(ctx)
 	if err != nil {
@@ -293,6 +296,7 @@ func testRecipeRTPAV1CodecChangedReplacementStream(t *testing.T, oldIDTarget boo
 	))).
 		UseRuntime(goav.MustNew(goavruntime.WithCodecAdapter(goav1adapter.Register))).
 		Video().
+		Decode().
 		To(goav.Sink(sink)).
 		Build(ctx)
 	if err != nil {

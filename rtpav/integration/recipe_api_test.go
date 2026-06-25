@@ -437,6 +437,7 @@ func TestStreamRecipeReportsMissingDecodeAdapterBeforeOpeningLiveInput(t *testin
 	_, err := goav.From(goav.Input(rtpav.Receive(recipeAPIRTPReader{}, rtpav.WithName("video"), rtpav.WithCodec(codec.H264())))).
 		UseRuntime(rt).
 		Video().
+		Decode().
 		To(goav.Sink(component.SinkFunc("frames", func(context.Context, component.Message) error {
 			return nil
 		}))).
@@ -457,6 +458,7 @@ func TestStreamRecipeReportsAmbiguousLiveSelectionBeforeDecoderAdapter(t *testin
 	_, err := goav.From(goav.Input(rtpav.Receive(recipeAPIRTPReader{}, rtpav.WithName("front"), rtpav.WithCodec(codec.VP8())))).
 		And(goav.Input(rtpav.Receive(recipeAPIRTPReader{}, rtpav.WithName("screen"), rtpav.WithCodec(codec.VP8())))).
 		Video().
+		Decode().
 		To(goav.Sink(component.SinkFunc("frames", func(context.Context, component.Message) error {
 			return nil
 		}))).

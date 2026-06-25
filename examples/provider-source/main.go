@@ -125,6 +125,7 @@ func buildBrokenProvider(ctx context.Context) error {
 	out := goavtest.NewCollector()
 	_, err := goav.From(goav.Input(nil)).
 		Audio().
+		Decode().
 		To(out.Sink()).
 		Build(ctx)
 	return err

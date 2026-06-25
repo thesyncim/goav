@@ -69,6 +69,7 @@ func TestRecipeRTPDecodeUsesProviderDecodeBounds(t *testing.T) {
 	))).
 		UseRuntime(goav.MustNew(codecs)).
 		Video().
+		Decode().
 		To(goav.Sink(sink))
 	planned, err := job.Describe()
 	if err != nil {
@@ -155,6 +156,7 @@ func TestRecipeRTPDecodeRejectsDifferentCodecSwitch(t *testing.T) {
 	))).
 		UseRuntime(goav.MustNew(codecs)).
 		Video().
+		Decode().
 		To(goav.Sink(sink)).
 		Build(ctx)
 	if err != nil {

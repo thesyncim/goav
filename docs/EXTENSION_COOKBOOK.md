@@ -89,7 +89,7 @@ emit one stream per participant, and attach downstream work with the same
 runtime branch grammar used everywhere else.
 
 ```go
-input := room.Input() // goav.Source(...)
+input := room.Input() // goav.Source(..., shape.Frame(...), ...)
 task, err := goav.From(input).Audio().To(anchor).Build(ctx)
 if err != nil {
     return err
@@ -148,7 +148,7 @@ dest := goav.Writer("mem://voice.ogg",
     goav.Metadata(av.Metadata{"kind": "voice"}),
 )
 
-err := goav.From(input).Audio().Encode(codec.Opus()).To(dest).Run(ctx)
+err := goav.From(input).Audio().Decode().Encode(codec.Opus()).To(dest).Run(ctx)
 ```
 
 Use `goav.Sink(component.SinkFunc(...))` instead when the destination consumes
