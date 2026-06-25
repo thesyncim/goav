@@ -214,11 +214,11 @@ func specRenderURI(spec pipeline.Spec, target string) string {
 	return out
 }
 
-func drainTaskEvents(task goav.Observable) []av.Event {
+func drainTaskEvents(ch <-chan av.Event) []av.Event {
 	var events []av.Event
 	for {
 		select {
-		case event := <-task.Events():
+		case event := <-ch:
 			events = append(events, event)
 		default:
 			return events

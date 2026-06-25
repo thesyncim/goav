@@ -176,6 +176,16 @@ boundaries (recipe/branch grammar, `mediaPlan`/`WorkPlan` planning,
 graph/attach lowering) are file-naming conventions, not import-checked. The
 root package is deliberately one compilation unit.
 
+The pre-v1 simplification work has started the data boundary without claiming
+the package split is complete: fluent builders snapshot into
+`internal/recipeir` before the recipe compiler runs, and the main job compile
+entrypoint consumes that snapshot rather than reading `Job` fields directly.
+Branch-composition planning also consumes normalized stream intents, not the
+original `streamBuild` records. Root-only attachments (`InputSpec`,
+`destinationSpec`, `joinSpec`, stream rules, runtime pointers, and graph
+lowering details) still travel beside the IR until later slices move those
+facts into stable recipe/plan data.
+
 Why the planner internals cannot move to `internal/` packages today (measured
 on the type-checked cross-file reference graph, 2026-06): the ~20 root files
 with no exported API (`media_plan*`, `recipe_compile`, `branch_compose_*`,
@@ -193,18 +203,13 @@ identifiers). Computing the largest file set closed under intra-package
 dependencies leaves only `join_sync.go` (+`tap.go` at best) movable, which is
 not a useful package boundary.
 
-What it would take to enforce the layering: either relocate the grammar records
+What it would take to finish enforcing the layering: continue the data-transfer
+boundary so planner passes consume and return plain recipe/plan data instead
+of reading and mutating grammar object fields. Relocating the grammar records
 (`Branch`/`BranchSpec`, `Recipe`, `Runtime`, `Destination`, `InputSpec`,
-`operationSpec`, `joinSpec`) into a shared package and alias the exported ones
-back through root, which would be public-API churn (type identity and
-`reflect.Type.PkgPath` change even under aliases), while the planner records
-stay unexported; or introduce a data-transfer boundary so the planner consumes
-and returns plain plan data instead of reading and mutating grammar object
-fields.
-
-Both are larger restructurings than the boundary is currently worth; the
-intended cut, if ever, is the second one, with the shared data types living in
-`plan`/`shape`.
+`operationSpec`, `joinSpec`) wholesale would still be public-API churn (type
+identity and `reflect.Type.PkgPath` change even under aliases), so the intended
+cut remains the incremental DTO path.
 
 ## Core media model
 

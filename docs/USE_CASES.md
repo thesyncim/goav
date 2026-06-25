@@ -393,7 +393,7 @@ recipe encoding remains work in progress.
 ## Debug And Diagnostics
 
 Debugging uses the same composition grammar. Explain the plan before opening the
-graph, drain task events while it runs, then attach temporary branches from
+graph, watch task events while it runs, then attach temporary branches from
 typed taps. `Attachment.Snapshot()` reports the attached branch, and
 `Inspectable.Snapshot()` reports the whole graph plus active branches with typed
 lifecycle states.
@@ -423,7 +423,7 @@ if err != nil {
     return err
 }
 go func() {
-    for event := range task.Events() {
+    for event := range task.Watch().Events() {
         log.Printf("media event type=%s stream=%s", event.Type, event.StreamID)
     }
 }()

@@ -209,6 +209,7 @@ func TestRecipeRTPAV1CodecChangedDropsUntilSync(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	events := task.Events()
 	if err := task.Run(ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -222,7 +223,7 @@ func TestRecipeRTPAV1CodecChangedDropsUntilSync(t *testing.T) {
 		sink.lastFrame.Video.PixelFormat != av.PixelFormatGray8 {
 		t.Fatalf("frames=%d last=%+v video=%+v", sink.frames, sink.lastFrame, sink.lastFrame.Video)
 	}
-	gotEvents := drainTaskEvents(task)
+	gotEvents := drainTaskEvents(events)
 	if countEventsForStream(gotEvents, av.EventCodecChanged, updated.ID) == 0 ||
 		countEventsForStream(gotEvents, av.EventKeyframeRequired, updated.ID) == 0 ||
 		countEventsForStream(gotEvents, av.EventEndOfStream, updated.ID) == 0 {
@@ -297,6 +298,7 @@ func testRecipeRTPAV1CodecChangedReplacementStream(t *testing.T, oldIDTarget boo
 	if err != nil {
 		t.Fatal(err)
 	}
+	events := task.Events()
 	if err := task.Run(ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -308,7 +310,7 @@ func testRecipeRTPAV1CodecChangedReplacementStream(t *testing.T, oldIDTarget boo
 		sink.lastFrame.Video.PixelFormat != av.PixelFormatGray8 {
 		t.Fatalf("frames=%d last=%+v video=%+v", sink.frames, sink.lastFrame, sink.lastFrame.Video)
 	}
-	gotEvents := drainTaskEvents(task)
+	gotEvents := drainTaskEvents(events)
 	if countEventsForStream(gotEvents, av.EventCodecChanged, updated.ID) == 0 ||
 		countEventsForStream(gotEvents, av.EventKeyframeRequired, updated.ID) == 0 ||
 		countEventsForStream(gotEvents, av.EventEndOfStream, updated.ID) == 0 {

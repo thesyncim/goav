@@ -22,6 +22,7 @@ import (
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/goavtest"
 	"github.com/thesyncim/goav/provider"
+	"github.com/thesyncim/goav/shape"
 )
 
 // countingWriteCloser counts Close calls so tests can pin the
@@ -37,6 +38,7 @@ func (w *countingWriteCloser) Close() error                { w.closes++; return 
 // can fail, for pinning where finalize errors surface.
 type transactionalTestWriter struct {
 	commitErr error
+	abortErr  error
 	commits   int
 	aborts    int
 	closes    int
@@ -45,7 +47,7 @@ type transactionalTestWriter struct {
 func (w *transactionalTestWriter) Write(p []byte) (int, error)  { return len(p), nil }
 func (w *transactionalTestWriter) Close() error                 { w.closes++; return nil }
 func (w *transactionalTestWriter) Commit(context.Context) error { w.commits++; return w.commitErr }
-func (w *transactionalTestWriter) Abort(context.Context) error  { w.aborts++; return nil }
+func (w *transactionalTestWriter) Abort(context.Context) error  { w.aborts++; return w.abortErr }
 
 func transactionalWriterDestination(writer *transactionalTestWriter) goav.Destination {
 	return goav.Writer("mem://upload.ogg", func(context.Context, provider.Info) (io.WriteCloser, error) {
@@ -286,6 +288,43 @@ func TestRunOneShotSurfacesCommitFailure(t *testing.T) {
 	}
 	if writer.commits != 1 || writer.aborts != 0 || writer.closes != 1 {
 		t.Fatalf("commits=%d aborts=%d closes=%d, want exactly one commit and one close",
+			writer.commits, writer.aborts, writer.closes)
+	}
+}
+
+// TestRunOneShotPreservesRunAndCloseFailures pins the one-shot failure
+// contract: a data-plane failure aborts transactional destinations, and if
+// that finalization also fails, Job.Run returns both causes.
+func TestRunOneShotPreservesRunAndCloseFailures(t *testing.T) {
+	runErr := errors.New("source failed")
+	abortErr := errors.New("upload abort failed")
+	writer := &transactionalTestWriter{abortErr: abortErr}
+	err := goav.From(goav.Source("broken-audio",
+		shape.Packet(av.MediaAudio, av.CodecOpus),
+		func(_ context.Context, push goav.SourcePush) error {
+			packet := av.Packet{
+				Payload: av.Buffer{Bytes: []byte{1}, Ownership: av.BufferImmutable},
+				Type:    av.MediaAudio,
+			}
+			if _, pushErr := push.Packet(&packet); pushErr != nil {
+				return pushErr
+			}
+			return runErr
+		},
+		goav.Codec(codec.Opus()),
+	)).
+		Audio().Copy().
+		To(transactionalWriterDestination(writer)).
+		UseRuntime(goavtest.Runtime()).
+		Run(context.Background())
+	if !errors.Is(err, runErr) {
+		t.Fatalf("Run = %v, want source failure %v", err, runErr)
+	}
+	if !errors.Is(err, abortErr) {
+		t.Fatalf("Run = %v, want abort failure %v", err, abortErr)
+	}
+	if writer.commits != 0 || writer.aborts != 1 || writer.closes != 1 {
+		t.Fatalf("commits=%d aborts=%d closes=%d, want exactly one abort and one close",
 			writer.commits, writer.aborts, writer.closes)
 	}
 }

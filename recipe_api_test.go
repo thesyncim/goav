@@ -1775,7 +1775,7 @@ func TestDocsShowDebugDiagnosticsWorkflow(t *testing.T) {
 		for _, required := range []string{
 			"Debug And Diagnostics",
 			"job.Explain(ctx)",
-			"task.Events()",
+			"task.Watch().Events()",
 			"task.Attach(ctx",
 			"Attachment.Snapshot()",
 			"Inspectable.Snapshot()",

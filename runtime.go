@@ -497,15 +497,7 @@ func (t *task) copyNeverBranchNames() []string {
 }
 
 func (t *task) Events() <-chan av.Event {
-	if t.rules != nil {
-		// The rule engine holds an internal Watch subscription, so the raw
-		// graph channel is already being drained by the watch distributor.
-		// Hand every Events caller its own unfiltered subscription — the
-		// documented remedy once Watch is in use — so no consumer competes
-		// with the engine for events.
-		return t.Watch().Events()
-	}
-	return t.graph.Events()
+	return t.Watch().Events()
 }
 
 func (t *task) Stats() pipeline.GraphStats {

@@ -9,10 +9,10 @@ claim cites the test, benchmark, or document that backs it, or is marked
 
 The nearby docs split the work by reader need: `docs/NORTH_STAR.md` keeps the
 evidence-cited acceptance scoreboard; `docs/PROGRESS.md` is the compact
-tracker; `docs/V1_CREDIBILITY_AUDIT.md` maps the v1-credibility pass to
-reviewer evidence; `docs/REPOSITORY_TRUST.md` records the GitHub metadata and
-release posture; how goav relates to GStreamer is
-`docs/GSTREAMER_ALTERNATIVE.md`.
+tracker; `docs/SIMPLIFICATION_TARGET.md` freezes the smaller pre-v1 target;
+`docs/V1_CREDIBILITY_AUDIT.md` maps the v1-credibility pass to reviewer
+evidence; `docs/REPOSITORY_TRUST.md` records the GitHub metadata and release
+posture; how goav relates to GStreamer is `docs/GSTREAMER_ALTERNATIVE.md`.
 
 ## The settled model
 
@@ -108,8 +108,10 @@ this list:
   the rest is analysed in `docs/NORTH_STAR.md` ("Time/sync", attack-plan
   stage 7). Roadmap.
 - **Internal-package layering**: measured on the cross-file reference graph
-  and rejected: no boundary worth a package today (`docs/ARCHITECTURE.md`
-  "Package layering"). Revisit only with a data-transfer boundary.
+  and still not ready for a package split. The data-transfer boundary has
+  started with `internal/recipeir`, but root-only attachments remain before
+  planner internals can move behind enforced package boundaries
+  (`docs/ARCHITECTURE.md` "Package layering").
 - **Destination lifecycle events**: task and runtime-branch destinations now
   publish commit/abort/error events. Standalone `Mutable.Detach` has explicit
   drain/abort outcomes, branch attach/detach events are watchable, and
@@ -162,6 +164,11 @@ this list:
   (external anyway) and the cost is un-debuggable, un-pinnable hot paths.
 
 ## V1 freeze criteria
+
+These checks prove the current surface is governed. They do not, by
+themselves, mean the current surface is the v1 target. The release candidate
+must also satisfy `docs/SIMPLIFICATION_TARGET.md`, or explicitly document every
+retained exception.
 
 The checklist below gates the tag. Each item names its current evidence.
 
@@ -225,6 +232,7 @@ The checklist below gates the tag. Each item names its current evidence.
   checksums, Go module SBOM, per-binary buildinfo, and provenance metadata.
   `docs/RELEASING.md` documents signed-tag ownership and tag order.
 - [ ] **Release decision**: confirm the `go 1.26` directive in `go.mod` is the
-  intended minimum supported Go, fill the compatibility note template in
-  `docs/COMPATIBILITY.md`, and cut v1. Not done; the only open item is a
-  maintainer call, not code.
+  intended minimum supported Go, close or explicitly waive every item in
+  `docs/SIMPLIFICATION_TARGET.md`, fill the compatibility note template in
+  `docs/COMPATIBILITY.md`, and cut v1. Not done; this is a maintainer product
+  decision plus any remaining simplification work.

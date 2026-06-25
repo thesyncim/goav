@@ -90,10 +90,10 @@ func (j *branchCompositionJob) composePlan() (branchComposePlan, error) {
 	if j == nil {
 		return branchComposePlan{}, nil
 	}
-	return planBranchCompositionRecipe(j.plan(), j.input, j.outputs, j.streams)
+	return planBranchCompositionRecipe(j.plan(), j.input, j.outputs)
 }
 
-func planBranchCompositionRecipe(intent intent, input InputSpec, namedOutputs []namedDestinationSpec, branchBuilds []streamBuild) (branchComposePlan, error) {
+func planBranchCompositionRecipe(intent intent, input InputSpec, namedOutputs []namedDestinationSpec) (branchComposePlan, error) {
 	streams := intent.Streams
 	outputs, outputOrder := branchDestinationAttachmentSet(namedOutputs)
 
@@ -107,16 +107,7 @@ func planBranchCompositionRecipe(intent intent, input InputSpec, namedOutputs []
 		branchName := stream.Name
 		selector := streamIntentSelector(stream)
 		operations := cloneOperationSpecs(stream.Operations)
-		var sharedOperations []operationSpec
-		var privateOperations []operationSpec
-		if i < len(branchBuilds) {
-			branchBuild := branchBuilds[i]
-			operations = streamBuildOperationSpecs(branchBuild)
-			sharedOperations = cloneOperationSpecs(branchBuild.sharedOps)
-			privateOperations = cloneOperationSpecs(branchBuild.privateOps)
-		} else {
-			sharedOperations, privateOperations = splitOperationSpecsByShared(operations)
-		}
+		sharedOperations, privateOperations := splitOperationSpecsByShared(operations)
 		encode := chainEncodeSpec(operations)
 		branch := branchComposeBranch{
 			Name:              branchName,

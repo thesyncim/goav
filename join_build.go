@@ -987,7 +987,7 @@ func (p *joinPlan) planJoinBranches() error {
 	for i := range builds {
 		intent.Streams = append(intent.Streams, branchStreamIntent(builds[i]))
 	}
-	composePlan, err := planBranchCompositionRecipe(intent, InputSpec{}, destinations.branchDestinations, builds)
+	composePlan, err := planBranchCompositionRecipe(intent, InputSpec{}, destinations.branchDestinations)
 	if err != nil {
 		return err
 	}
@@ -1879,34 +1879,6 @@ func intInSlice(needle int, haystack []int) bool {
 		}
 	}
 	return false
-}
-
-// --- compile-state normalization ---
-
-// joinIntent renders the joinSpec as the recipe intent the one compile carries:
-// one input per LEAF arm (nested joins flatten depth-first) and the join's
-// destinations. Arm and destination validation stays in newJoinPlan; this is
-// the descriptive surface only.
-func joinIntent(job *Job) intent {
-	spec := job.join
-	intent := intent{Name: string(spec.kind)}
-	if job.runtime != nil {
-		intent.Policies.Realtime = job.runtime.realtime
-	}
-	for _, input := range joinLeafInputSpecs(spec) {
-		intent.Inputs = append(intent.Inputs, input.intent())
-	}
-	if len(spec.branches) != 0 {
-		named, _ := joinBranchNamedDestinations(string(spec.kind), spec.branches)
-		for i := range named {
-			intent.Destinations = append(intent.Destinations, named[i].output.intentWithName(named[i].name))
-		}
-		return intent
-	}
-	for i := range spec.dests {
-		intent.Destinations = append(intent.Destinations, spec.dests[i].spec.intentWithName(""))
-	}
-	return intent
 }
 
 // joinArmInputs captures the arm input attachments aligned with the intent's

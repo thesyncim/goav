@@ -4,6 +4,7 @@ package goav
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -584,9 +585,9 @@ func (j *Job) installStreamRules(built Task) {
 
 // Run is the one-shot shortcut: Build, Run to completion, then Close. It
 // returns the first build refusal or runtime error; destinations commit on
-// success and abort on failure. Finalize failures surface here too: when the
-// run itself succeeds but closing the task fails (a transactional
-// destination's Commit, a writer's Close), Run returns that error.
+// success and abort on failure. Finalize failures surface here too: if both
+// the run and close/finalization fail, Run returns errors.Join(runErr,
+// closeErr) so callers can match either cause.
 func (j *Job) Run(ctx context.Context) error {
 	task, err := j.Build(ctx)
 	if err != nil {
@@ -594,10 +595,7 @@ func (j *Job) Run(ctx context.Context) error {
 	}
 	runErr := task.Run(ctx)
 	closeErr := task.Close()
-	if runErr != nil {
-		return runErr
-	}
-	return closeErr
+	return errors.Join(runErr, closeErr)
 }
 
 func validateJobOutputBindings(operation string, stream streamIntent, outputs []destinationSpec, destinationNames []string) error {

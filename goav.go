@@ -98,8 +98,8 @@ type Controllable interface {
 
 // Observable exposes task event streams.
 type Observable interface {
-	// Events is the single raw event channel. Once Watch is in use, subscribe
-	// every consumer through Watch instead — both drain one underlying stream.
+	// Events returns an unfiltered event subscription channel. Prefer Watch
+	// when callers need filters or explicit Subscription.Close ownership.
 	Events() <-chan av.Event
 	// Watch returns an independent, filtered subscription to the task's event
 	// stream. Filters AND together; with zero filters every event is delivered.
@@ -107,10 +107,8 @@ type Observable interface {
 	// buffer: when a watcher falls behind and its buffer fills, new events are
 	// dropped for that watcher only — the data plane and other watchers never
 	// block on a slow consumer. Subscription channels close when the task closes
-	// or Subscription.Close unsubscribes them. Watch and Events drain the same
-	// underlying stream, so once Watch is used, subscribe every consumer through
-	// Watch (an unfiltered Watch() is the Events equivalent) rather than reading
-	// Events directly.
+	// or Subscription.Close unsubscribes them. An unfiltered Watch() is the
+	// Events equivalent with an explicit subscription handle.
 	Watch(filters ...inspect.EventFilter) inspect.Subscription
 }
 

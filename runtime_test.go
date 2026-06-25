@@ -531,14 +531,16 @@ func TestRuntimeBuilderExplicitGraphWithEventCapacity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	events := task.Events()
 	if err := task.Run(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	if got := drainTaskEvents(task); len(got) != 2 {
-		t.Fatalf("events = %+v, want 2", got)
-	}
 	if err := task.Close(); err != nil {
 		t.Fatal(err)
+	}
+	got := collectUntilClosed(t, events)
+	if len(got) != 2 {
+		t.Fatalf("events = %+v, want 2", got)
 	}
 	if !source.closed {
 		t.Fatal("source not closed")

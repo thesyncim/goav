@@ -3,7 +3,8 @@
 Read this when you want the current shape without archaeology.
 `docs/NORTH_STAR.md` says where the project is trying to go.
 `docs/ROADMAP.md` separates stable, experimental, deferred, planned, and
-non-goal work. `docs/V1_CREDIBILITY_AUDIT.md` points reviewers to the evidence
+non-goal work. `docs/SIMPLIFICATION_TARGET.md` freezes the smaller surface that
+should gate v1. `docs/V1_CREDIBILITY_AUDIT.md` points reviewers to the evidence
 behind the current v1-credibility pass. This page answers the practical
 question: what can a reader build on today, which seams are intentional, and
 which pieces are still being finished?
@@ -136,3 +137,4 @@ Compatibility pins:
 - Finish the full time-shape story: pipeline-wide clock service, A/V sink sync,
   and pull scheduling beyond the branch-local `flow.SyncPolicy` gate.
 - Make the v1 release decision, including the minimum supported Go version.
+- Close or explicitly waive the pre-v1 target in `docs/SIMPLIFICATION_TARGET.md`.

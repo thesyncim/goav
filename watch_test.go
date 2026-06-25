@@ -288,12 +288,24 @@ func TestWatchSubscribePublishDistributeConcurrently(t *testing.T) {
 	}
 }
 
-func TestEventsReturnsUnderlyingGraphChannel(t *testing.T) {
-	graph := newWatchTestGraph(1)
+func TestEventsReturnsIndependentUnfilteredSubscription(t *testing.T) {
+	graph := newWatchTestGraph(8)
 	task := newTask(graph, nil)
-	if task.Events() != (<-chan av.Event)(graph.events) {
-		t.Fatal("Events must expose the graph event channel unchanged")
+	events := task.Events()
+	watch := task.Watch().Events()
+
+	graph.events <- av.Event{Type: av.EventStats, Reason: "one"}
+	if got := recvWatchEvent(t, events); got.Type != av.EventStats || got.Reason != "one" {
+		t.Fatalf("Events event = %+v, want stats one", got)
 	}
+	if got := recvWatchEvent(t, watch); got.Type != av.EventStats || got.Reason != "one" {
+		t.Fatalf("Watch event = %+v, want stats one", got)
+	}
+	if err := task.Close(); err != nil {
+		t.Fatal(err)
+	}
+	collectUntilClosed(t, events)
+	collectUntilClosed(t, watch)
 }
 
 func TestWatchEndToEndDeliversAndClosesOnTaskClose(t *testing.T) {
