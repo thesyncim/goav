@@ -212,9 +212,9 @@ func streamRuleInvalidError(node string, reason string, suggestion string) error
 		Operation: "build stream rule",
 		Node:      firstNonEmpty(node, "rule"),
 		Reason:    reason,
-		Suggestions: []string{
+		Fixes: buildErrorFixes([]string{
 			suggestion,
-		},
+		}),
 		Cause: ErrUnsupportedBuild,
 	}
 }

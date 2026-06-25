@@ -508,11 +508,11 @@ func streamStageMissingError(stream streamIntent) error {
 		Operation: "build stream",
 		Node:      jobStreamIntentName(stream),
 		Reason:    "custom stream stage is nil",
-		Suggestions: []string{
+		Fixes: buildErrorFixes([]string{
 			"pass a non-nil stage to .Do(stage)",
 			"use component.FrameFunc, component.PacketFunc, or component.EventFunc for small hooks",
 			"remove .Do(...) when no custom processing is needed",
-		},
+		}),
 		Cause: ErrNilStage,
 	}
 }
@@ -535,11 +535,11 @@ func mixedStreamOutputError(operation string, stream streamIntent) error {
 		Operation: operation,
 		Node:      jobStreamIntentName(stream),
 		Reason:    "stream recipes cannot mix sinks and muxed outputs",
-		Suggestions: []string{
+		Fixes: buildErrorFixes([]string{
 			"use .To(goav.Sink(...)) for decoded frames",
 			"call .Encode(codec.Opus(...)), .Encode(codec.VP8(...)), or .Encode(codec.VP9(...)) before .To(goav.File(...)) for encoded output",
 			"use .Branches(...) when one stream needs separate decoded and encoded branches",
-		},
+		}),
 		Cause: ErrUnsupportedBuild,
 	}
 }
@@ -551,15 +551,15 @@ func streamEncodeMissingError(operation string, stream streamIntent) error {
 		Operation: operation,
 		Node:      jobStreamIntentName(stream),
 		Reason:    "decoded frames cannot be written to a muxed output without an encoder",
-		Details: []string{
+		Fields: buildErrorFields([]string{
 			"expected_shape=" + shape.New(shape.Domain(shape.DomainPacket), shape.Media(stream.Select.Type)).String(),
 			"actual_shape=" + shape.Frame(stream.Select.Type).String(),
-		},
-		Suggestions: []string{
+		}),
+		Fixes: buildErrorFixes([]string{
 			"call .Encode(codec.Opus(...)), .Encode(codec.VP8(...)), or .Encode(codec.VP9(...)) before .To(goav.File(...))",
 			"send decoded frames to goav.Sink(...)",
 			"use .Copy().To(output) if you want to copy packets without decoding",
-		},
+		}),
 		Cause: ErrUnsupportedBuild,
 	}
 }
@@ -582,15 +582,15 @@ func duplicateJobStreamError(existing *jobStreamBuild, next *jobStreamBuild) err
 		Operation: "build job",
 		Node:      jobStreamName(next),
 		Reason:    "ordinary stream recipes select one audio or video stream",
-		Details: []string{
+		Fields: buildErrorFields([]string{
 			"first stream: " + jobStreamName(existing),
 			"second stream: " + jobStreamName(next),
-		},
-		Suggestions: []string{
+		}),
+		Fixes: buildErrorFixes([]string{
 			"keep one .Audio(...) or .Video(...) chain on goav.From(...)",
 			"use goav.From(input).Video().Decode().Branches(...) for multiple branches from one stream",
 			"use the expert graph API for custom multi-stream routing",
-		},
+		}),
 		Cause: ErrUnsupportedBuild,
 	}
 }

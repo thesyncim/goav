@@ -614,10 +614,10 @@ func nilAttachmentDetachError() error {
 		Code:      errcode.RuntimeBranchInvalid,
 		Operation: "detach runtime branch",
 		Reason:    "attachment is nil",
-		Suggestions: []string{
+		Fixes: buildErrorFixes([]string{
 			"keep the Attachment returned by Task.Attach and pass it to Task.Detach",
 			"skip Detach when no branch is attached",
-		},
+		}),
 		Cause: ErrUnsupportedBuild,
 	}
 }

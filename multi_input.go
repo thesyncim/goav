@@ -206,14 +206,14 @@ func multiInputStreamSelectionError(code errcode.Code, selector av.StreamSelecto
 		details = append(details, "input="+candidates[i].inputName+" "+streamDiagnostic(candidates[i].stream, i))
 	}
 	return &BuildError{
-		Family:      errcode.FamilyForCode(code),
-		Code:        code,
-		Operation:   "select stream",
-		Node:        selectorDetail(selector),
-		Reason:      reason,
-		Details:     details,
-		Suggestions: multiInputSelectionSuggestions(selector, candidates),
-		Cause:       ErrUnsupportedBuild,
+		Family:    errcode.FamilyForCode(code),
+		Code:      code,
+		Operation: "select stream",
+		Node:      selectorDetail(selector),
+		Reason:    reason,
+		Fields:    buildErrorFields(details),
+		Fixes:     buildErrorFixes(multiInputSelectionSuggestions(selector, candidates)),
+		Cause:     ErrUnsupportedBuild,
 	}
 }
 
@@ -266,11 +266,11 @@ func unknownInputNameError(selector av.StreamSelector, inputName string, sets []
 		Operation: "select stream",
 		Node:      selectorDetail(selector),
 		Reason:    "no job input is named " + strconv.Quote(inputName),
-		Details:   details,
-		Suggestions: []string{
+		Fields:    buildErrorFields(details),
+		Fixes: buildErrorFixes([]string{
 			"use one of the listed input names with goav.InputName(...)",
 			"name inputs with goav.Source(name, ...), goav.FileInput(name, ...), or the goav.Name(...) option",
-		},
+		}),
 		Cause: ErrUnsupportedBuild,
 	}
 }

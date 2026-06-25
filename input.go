@@ -149,10 +149,10 @@ func (s InputSpec) validate() error {
 			Operation: "build input",
 			Node:      firstNonEmpty(s.name, s.input.Name, s.input.URI, "input"),
 			Reason:    s.err.Error(),
-			Suggestions: []string{
+			Fixes: buildErrorFixes([]string{
 				"check the input constructor arguments",
 				"pass a non-nil provider to goav.Input(provider)",
-			},
+			}),
 			Cause: s.err,
 		}
 	}
@@ -174,10 +174,10 @@ func (s InputSpec) validateCustomSource() error {
 			Operation: "build input",
 			Node:      node,
 			Reason:    "custom source has no push callback",
-			Suggestions: []string{
+			Fixes: buildErrorFixes([]string{
 				"pass a non-nil callback to goav.Source(name, shape, fn)",
 				"use goav.FileInput or goav.Input(provider) for built-in source adapters",
-			},
+			}),
 			Cause: ErrNilSource,
 		}
 	}
@@ -189,15 +189,15 @@ func (s InputSpec) validateCustomSource() error {
 			Operation: "build input",
 			Node:      node,
 			Reason:    "custom recipe sources currently produce packet-domain, frame-domain, or event-domain media",
-			Details: []string{
+			Fields: buildErrorFields([]string{
 				"actual_shape=" + spec.String(),
-			},
-			Suggestions: []string{
+			}),
+			Fixes: buildErrorFixes([]string{
 				"declare the source with shape.Packet(media, codec, ...)",
 				"declare raw generated media with shape.Frame(media, ...)",
 				"declare diagnostic or lifecycle sources with shape.Event(...)",
 				"use goav.Sink(...) after decode or transform when observing frame-domain media",
-			},
+			}),
 			Cause: ErrUnsupportedBuild,
 		}
 	}
@@ -208,10 +208,10 @@ func (s InputSpec) validateCustomSource() error {
 			Operation: "build input",
 			Node:      node,
 			Reason:    "custom source shape needs a media kind",
-			Suggestions: []string{
+			Fixes: buildErrorFixes([]string{
 				"use shape.Packet(av.MediaAudio, codec) or shape.Packet(av.MediaVideo, codec)",
 				"add shape.Media(...) when constructing a custom shape",
-			},
+			}),
 			Cause: ErrUnsupportedBuild,
 		}
 	}
@@ -234,12 +234,12 @@ func (s InputSpec) validatePlainInput() error {
 		Operation: "build input",
 		Node:      "input",
 		Reason:    "empty input spec",
-		Suggestions: []string{
+		Fixes: buildErrorFixes([]string{
 			"use goav.FileInput(name, reader) for file-like input",
 			"use goav.URIInput(uri) for URI-backed input",
 			"use goav.Source(name, shape, fn) for application-pushed packets",
 			"use goav.Input(provider) for realtime receive through a source provider",
-		},
+		}),
 		Cause: ErrUnsupportedBuild,
 	}
 }
@@ -290,10 +290,10 @@ func validateJobInputs(inputs []InputSpec) error {
 			Operation: "build job",
 			Node:      firstNonEmpty(inputs[i].name, inputs[i].input.Name, inputs[i].input.URI, fmt.Sprintf("input-%d", i)),
 			Reason:    "multiple recipe inputs currently require realtime source providers or custom sources",
-			Suggestions: []string{
+			Fixes: buildErrorFixes([]string{
 				"use goav.From(goav.Input(...)).And(goav.Input(...)) for repeated live inputs",
 				"build an explicit graph when combining multiple file or protocol sources",
-			},
+			}),
 			Cause: ErrUnsupportedBuild,
 		}
 	}
@@ -325,14 +325,14 @@ func duplicateInputNameError(name string, firstIndex int, secondIndex int) error
 		Operation: "build job",
 		Node:      name,
 		Reason:    fmt.Sprintf("realtime input name %q is defined more than once", name),
-		Details: []string{
+		Fields: buildErrorFields([]string{
 			fmt.Sprintf("first input index: %d", firstIndex),
 			fmt.Sprintf("second input index: %d", secondIndex),
-		},
-		Suggestions: []string{
+		}),
+		Fixes: buildErrorFixes([]string{
 			"give each repeated realtime input a distinct goav.Name(...) option",
 			"use stable names such as \"audio\" and \"video\" for separate live streams",
-		},
+		}),
 		Cause: ErrUnsupportedBuild,
 	}
 }

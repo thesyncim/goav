@@ -190,7 +190,7 @@ func (c recipeIntentCompiler) Compile(state recipeCompileState) (recipeResolved,
 				Code:      errcode.CompilerPassInvalid,
 				Operation: state.operation,
 				Reason:    fmt.Sprintf("recipe compiler pass %d is nil", i),
-				Details:   []string{"internal invariant: the recipe compiler was assembled with a nil pass"},
+				Fields:    buildErrorFields([]string{"internal invariant: the recipe compiler was assembled with a nil pass"}),
 				Cause:     ErrUnsupportedBuild,
 			}
 		}
@@ -222,7 +222,7 @@ func compilerPassError(operation string, pass string, err error) error {
 	if !errors.As(err, &buildErr) || buildErr == nil {
 		return err
 	}
-	if buildErr.Code != "" || buildErr.Reason != "" || len(buildErr.Details) != 0 || len(buildErr.Suggestions) != 0 {
+	if buildErr.Code != "" || buildErr.Reason != "" || len(buildErr.DetailLines()) != 0 || len(buildErr.FixLines()) != 0 {
 		return err
 	}
 	return &BuildError{
@@ -230,13 +230,13 @@ func compilerPassError(operation string, pass string, err error) error {
 		Code:      errcode.CompilerPassFailed,
 		Operation: firstNonEmpty(buildErr.Operation, operation),
 		Reason:    "recipe compiler pass failed without a diagnostic",
-		Details: []string{
+		Fields: buildErrorFields([]string{
 			"pass=" + pass,
-		},
-		Suggestions: []string{
+		}),
+		Fixes: buildErrorFixes([]string{
 			"run Explain(ctx) to inspect the partial plan",
 			"report the pass name with the recipe shape",
-		},
+		}),
 		Cause: err,
 	}
 }
@@ -509,7 +509,7 @@ func nilRecipeError(operation string, reason string) error {
 		Code:      errcode.JobInvalid,
 		Operation: operation,
 		Reason:    reason,
-		Details:   []string{"internal invariant: the compiler was invoked without its recipe attachment (recipes are constructed with goav.From(...))"},
+		Fields:    buildErrorFields([]string{"internal invariant: the compiler was invoked without its recipe attachment (recipes are constructed with goav.From(...))"}),
 		Cause:     ErrUnsupportedBuild,
 	}
 }
@@ -521,10 +521,10 @@ func runtimeMissingError(operation string) error {
 		Code:      errcode.RuntimeMissing,
 		Operation: operation,
 		Reason:    "no runtime is configured",
-		Suggestions: []string{
+		Fixes: buildErrorFixes([]string{
 			"pass a non-nil runtime with .UseRuntime(goav.MustNew(...))",
 			"import github.com/thesyncim/goav/bundle and build with bundle.MustNew(...), bundle.Build(ctx, job), or bundle.Run(ctx, job)",
-		},
+		}),
 		Cause: ErrUnsupportedBuild,
 	}
 }
@@ -687,9 +687,9 @@ func validateJobIntentShape(operation string, intent intent, jobOutputCount int)
 			Code:      errcode.InputMissing,
 			Operation: operation,
 			Reason:    "no input is configured",
-			Suggestions: []string{
+			Fixes: buildErrorFixes([]string{
 				"start the recipe from an input: goav.From(goav.FileInput(\"in.webm\", reader))",
-			},
+			}),
 			Cause: ErrUnsupportedBuild,
 		}
 	}
@@ -700,10 +700,10 @@ func validateJobIntentShape(operation string, intent intent, jobOutputCount int)
 			Code:      errcode.OutputMissing,
 			Operation: operation,
 			Reason:    "no output is configured",
-			Suggestions: []string{
+			Fixes: buildErrorFixes([]string{
 				"route the job to a destination: .To(goav.File(\"out.webm\", writer))",
 				"deliver frames to code with .To(goav.Sink(sink))",
-			},
+			}),
 			Cause: ErrUnsupportedBuild,
 		}
 	}
@@ -745,10 +745,10 @@ func jobStreamDestinationMissingError(operation string, stream streamIntent) err
 		Operation: operation,
 		Node:      jobStreamIntentName(stream),
 		Reason:    "stream chain has no destination",
-		Suggestions: []string{
+		Fixes: buildErrorFixes([]string{
 			"finish each chain with .To(destination) before starting the next .Audio()/.Video()/.Stream()",
 			"share one destination handle or pass goav.Mux(name, destination) across chains to mux them together",
-		},
+		}),
 		Cause: ErrUnsupportedBuild,
 	}
 }
@@ -770,11 +770,11 @@ func jobOutputScopeMixedError(operation string, stream streamIntent) error {
 		Operation: operation,
 		Node:      jobStreamIntentName(stream),
 		Reason:    "stream recipes use stream-local outputs",
-		Suggestions: []string{
+		Fixes: buildErrorFixes([]string{
 			"attach outputs to the selected stream chain with .Audio()...To(...) or .Video()...To(...)",
 			"use goav.From(input).Copy().To(output...) for packet-preserving record/remux",
 			"use goav.From(input).Video().Decode().Branches(goav.Branch(name).Encode(codec.VP9(...)).To(output)) for named branches",
-		},
+		}),
 		Cause: ErrUnsupportedBuild,
 	}
 }
@@ -786,11 +786,11 @@ func jobDestinationReferenceMissingError(operation string, stream streamIntent, 
 		Operation: operation,
 		Node:      jobStreamIntentName(stream),
 		Reason:    "stream route output " + label + " is not attached",
-		Suggestions: []string{
+		Fixes: buildErrorFixes([]string{
 			"attach outputs to the selected stream chain with .Audio()...To(...) or .Video()...To(...)",
 			"use goav.From(input).Copy().To(output...) for packet-preserving record/remux",
 			"finish each branch with a typed destination such as .To(output)",
-		},
+		}),
 		Cause: ErrUnsupportedBuild,
 	}
 }
@@ -825,13 +825,13 @@ func validateJobStreamTransformIntentShape(operation string, stream streamIntent
 		switch {
 		case transform.Resize != nil && transform.Resample != nil:
 			return &BuildError{
-				Family:      errcode.FamilyForCode(errcode.TransformInvalid),
-				Code:        errcode.TransformInvalid,
-				Operation:   operation,
-				Node:        node,
-				Reason:      "one stream transform cannot be both resize and resample",
-				Suggestions: []string{"declare two separate steps instead: .Resize(width, height).Resample(rate, channels)"},
-				Cause:       ErrUnsupportedBuild,
+				Family:    errcode.FamilyForCode(errcode.TransformInvalid),
+				Code:      errcode.TransformInvalid,
+				Operation: operation,
+				Node:      node,
+				Reason:    "one stream transform cannot be both resize and resample",
+				Fixes:     buildErrorFixes([]string{"declare two separate steps instead: .Resize(width, height).Resample(rate, channels)"}),
+				Cause:     ErrUnsupportedBuild,
 			}
 		case transform.Resize != nil:
 			if selector.Type == av.MediaAudio {
@@ -848,10 +848,10 @@ func validateJobStreamTransformIntentShape(operation string, stream streamIntent
 				Operation: operation,
 				Node:      node,
 				Reason:    "empty stream transform",
-				Suggestions: []string{
+				Fixes: buildErrorFixes([]string{
 					"call .Resize(width, height) for video streams",
 					"call .Resample(sampleRate, channels) for audio streams",
-				},
+				}),
 				Cause: ErrUnsupportedBuild,
 			}
 		}
@@ -866,11 +866,11 @@ func operationSpecMissingError(operation string, node string) error {
 		Operation: operation,
 		Node:      node,
 		Reason:    "the stream was selected but no decode, processing stage, or encoder was requested",
-		Suggestions: []string{
+		Fixes: buildErrorFixes([]string{
 			"call .To(goav.Sink(...)) to receive decoded frames",
 			"call .Encode(codec.Opus(...)), .Encode(codec.VP8(...)), or .Encode(codec.VP9(...)) before writing to a file output",
 			"use .Copy().To(output) for packet-preserving record or remux",
-		},
+		}),
 		Cause: ErrUnsupportedBuild,
 	}
 }
@@ -1114,14 +1114,14 @@ func recipeAttachmentMismatchError(operation string, kind string, intentCount in
 		Code:      errcode.RecipeAttachmentMismatch,
 		Operation: operation,
 		Reason:    kind + " intent and concrete attachments disagree",
-		Details: []string{
+		Fields: buildErrorFields([]string{
 			fmt.Sprintf("intent %s: %d", kind, intentCount),
 			fmt.Sprintf("attached %s: %d", kind, attachmentCount),
-		},
-		Suggestions: []string{
+		}),
+		Fixes: buildErrorFixes([]string{
 			"build recipes through goav.From(input)",
 			"keep custom compiler passes aligned with the public intent and captured attachments",
-		},
+		}),
 		Cause: ErrUnsupportedBuild,
 	}
 }
@@ -1432,16 +1432,16 @@ func destinationShapeMismatchError(operation string, node string, destinationNam
 		Operation: operation,
 		Node:      firstNonEmpty(node, label, "destination"),
 		Reason:    "byte or mux destination requires packet-domain media",
-		Details: []string{
+		Fields: buildErrorFields([]string{
 			"destination=" + label,
 			"expected_shape=" + shape.New(shape.Domain(shape.DomainPacket), shape.Media(spec.MediaKind)).String(),
 			"actual_shape=" + spec.String(),
-		},
-		Suggestions: []string{
+		}),
+		Fixes: buildErrorFixes([]string{
 			"call .Encode(codec.Opus(...)), .Encode(codec.VP8(...)), or .Encode(codec.VP9(...)) before writing to file, URI, or writer destinations",
 			"use .Copy() from a packet-domain stream point for packet-preserving output",
 			"send frame-domain media to goav.Sink(...) instead of a byte destination",
-		},
+		}),
 		Cause: ErrUnsupportedBuild,
 	}
 }
@@ -1498,17 +1498,17 @@ func shapeRequirementUnmetError(operation string, node string, index int, step o
 		Node:      node,
 		Reason: fmt.Sprintf(".Require(...) is not satisfied: the stream is %s, required %s",
 			humanizeShape(actual), humanizeShape(required)),
-		Details: []string{
+		Fields: buildErrorFields([]string{
 			fmt.Sprintf("operation_index=%d", index),
 			"operation=require",
 			"source=" + humanizeShape(actual),
 			"actual_shape=" + actual.String(),
 			"expected_shape=" + shapeSetString(expected),
-		},
-		Suggestions: []string{
+		}),
+		Fixes: buildErrorFixes([]string{
 			"adjust the chain so the stream satisfies the required shape before .Require(...)",
 			"relax or remove the .Require(...) assertion",
-		},
+		}),
 		Cause: ErrUnsupportedBuild,
 	}
 }
@@ -1529,14 +1529,14 @@ func operationShapeMismatchError(operation string, node string, index int, step 
 		Operation: operation,
 		Node:      node,
 		Reason:    component + " cannot consume the current media shape",
-		Details: []string{
+		Fields: buildErrorFields([]string{
 			fmt.Sprintf("operation_index=%d", index),
 			"operation=" + string(step.Kind),
 			"expected_shape=" + shapeSetString(expected),
 			"actual_shape=" + actual.String(),
-		},
-		Suggestions: operationShapeMismatchSuggestions(step),
-		Cause:       ErrUnsupportedBuild,
+		}),
+		Fixes: buildErrorFixes(operationShapeMismatchSuggestions(step)),
+		Cause: ErrUnsupportedBuild,
 	}
 }
 
@@ -1636,12 +1636,12 @@ func recipeGraphUnsupportedError(operation string, intent intent) error {
 		Code:      errcode.RecipeGraphUnsupported,
 		Operation: operation,
 		Reason:    "recipe intent did not match a supported graph plan",
-		Details:   details,
-		Suggestions: []string{
+		Fields:    buildErrorFields(details),
+		Fixes: buildErrorFixes([]string{
 			"use goav.From(input).Copy().To(output...) for packet-preserving record or remux",
 			"use goav.From(input).Audio().To(goav.Sink(...)) or .Video().To(...) for decoded frames",
 			"use goav.From(input).Video().Decode().Branches(goav.Branch(name).Encode(codec.VP9(...)).To(output)) for named branches",
-		},
+		}),
 		Cause: ErrUnsupportedBuild,
 	}
 }

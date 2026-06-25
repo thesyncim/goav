@@ -121,7 +121,7 @@ func TestTransformHelperErrorContracts(t *testing.T) {
 		buildErr.Code != errcode.TransformAdapterMissing ||
 		buildErr.Node != "voice" ||
 		!strings.Contains(buildErr.Reason, "no resample filter adapter is registered") ||
-		!strings.Contains(strings.Join(buildErr.Suggestions, "\n"), ".Resample") {
+		!strings.Contains(strings.Join(buildErr.FixLines(), "\n"), ".Resample") {
 		t.Fatalf("missing adapter error = %#v", err)
 	}
 

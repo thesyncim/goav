@@ -24,13 +24,13 @@ func validateRecipeStreamSelector(operation string, node string, selector av.Str
 		Operation: operation,
 		Node:      node,
 		Reason:    "stream index must be non-negative",
-		Details: []string{
+		Fields: buildErrorFields([]string{
 			fmt.Sprintf("index=%d", selector.Index),
-		},
-		Suggestions: []string{
+		}),
+		Fixes: buildErrorFixes([]string{
 			"use goav.StreamIndex(0) for the first matching stream",
 			"use goav.StreamID(...) or goav.StreamName(...) when stream metadata is stable",
-		},
+		}),
 		Cause: ErrUnsupportedBuild,
 	}
 }
@@ -49,14 +49,14 @@ func chainStepAfterEncodeError(operation string, node string, step string, encod
 		Operation: operation,
 		Node:      node,
 		Reason:    "stream processing steps must be declared before the encoder",
-		Details: []string{
+		Fields: buildErrorFields([]string{
 			"step: " + step,
 			"encoder: " + codecIntentName(encode),
-		},
-		Suggestions: []string{
+		}),
+		Fixes: buildErrorFixes([]string{
 			"place .Do(...), .Resize(...), or .Resample(...) before .Encode(...)",
 			"call .To(...) after the encoder to attach outputs",
-		},
+		}),
 		Cause: ErrUnsupportedBuild,
 	}
 }
@@ -72,16 +72,16 @@ func chainStepOnPacketCopyError(operation string, node string, step string) erro
 		Operation: operation,
 		Node:      node,
 		Reason:    step + " needs decoded frames, but .Copy() keeps the stream packet-encoded",
-		Details: []string{
+		Fields: buildErrorFields([]string{
 			"step: " + step,
 			"actual_shape=" + shape.New(shape.Domain(shape.DomainPacket)).String(),
 			"expected_shape=" + shape.New(shape.Domain(shape.DomainFrame)).String(),
-		},
-		Suggestions: []string{
+		}),
+		Fixes: buildErrorFixes([]string{
 			"call .Decode() before .Resize(...), .Resample(...), or .Do(...) — transforms run on decoded frames",
 			"remove the processing step to keep a pure packet copy",
 			"use .Branches(...) when one input needs both a packet copy and a processed branch",
-		},
+		}),
 		Cause: ErrUnsupportedBuild,
 	}
 }
@@ -93,14 +93,14 @@ func duplicateStreamEncodeError(operation string, node string, first codec.Codec
 		Operation: operation,
 		Node:      node,
 		Reason:    "stream recipes allow one terminal encoder",
-		Details: []string{
+		Fields: buildErrorFields([]string{
 			"first encoder: " + codecIntentName(first),
 			"second encoder: " + codecIntentName(second),
-		},
-		Suggestions: []string{
+		}),
+		Fixes: buildErrorFixes([]string{
 			"choose one output codec for the stream chain",
 			"use .Branches(...) when one input needs multiple encoded branches",
-		},
+		}),
 		Cause: ErrUnsupportedBuild,
 	}
 }
@@ -275,14 +275,14 @@ func frameSourceDecodeError(operation string, node string) error {
 		Operation: operation,
 		Node:      node,
 		Reason:    "frame-domain custom sources are already decoded frames",
-		Details: []string{
+		Fields: buildErrorFields([]string{
 			"source_domain=frame",
 			"operation=decode",
-		},
-		Suggestions: []string{
+		}),
+		Fixes: buildErrorFixes([]string{
 			"remove .Decode() when using goav.Source(..., shape.Frame(...), ...)",
 			"use shape.Packet(...) when the custom source pushes encoded packets",
-		},
+		}),
 		Cause: ErrUnsupportedBuild,
 	}
 }
@@ -294,14 +294,14 @@ func frameSourceCopyError(operation string, node string) error {
 		Operation: operation,
 		Node:      node,
 		Reason:    "frame-domain custom sources cannot use packet copy",
-		Details: []string{
+		Fields: buildErrorFields([]string{
 			"source_domain=frame",
 			"operation=copy",
-		},
-		Suggestions: []string{
+		}),
+		Fixes: buildErrorFixes([]string{
 			"send frame-domain media to goav.Sink(...)",
 			"encode frames before writing to file, URI, or writer destinations",
-		},
+		}),
 		Cause: ErrUnsupportedBuild,
 	}
 }
@@ -383,10 +383,10 @@ func (b *jobStreamBuilder) Tap(tap TapRef) *jobStreamBuilder {
 			Operation: "build stream",
 			Node:      jobStreamName(stream),
 			Reason:    "tap name is empty",
-			Suggestions: []string{
+			Fixes: buildErrorFixes([]string{
 				"call .Tap(goav.FrameTap(\"video.decoded\")) or another stable tap ref",
 				"omit .Tap(...) when no runtime branch should attach at that point",
-			},
+			}),
 			Cause: ErrUnsupportedBuild,
 		})
 		return b

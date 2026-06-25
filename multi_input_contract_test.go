@@ -25,8 +25,8 @@ func TestDuplicateRealtimeInputNameErrorContract(t *testing.T) {
 	if buildErr.Node != "mic" {
 		t.Fatalf("node = %q, want mic", buildErr.Node)
 	}
-	if !reflect.DeepEqual(buildErr.Details, []string{"first input index: 0", "second input index: 2"}) {
-		t.Fatalf("details = %#v", buildErr.Details)
+	if !reflect.DeepEqual(buildErr.DetailLines(), []string{"first input index: 0", "second input index: 2"}) {
+		t.Fatalf("details = %#v", buildErr.DetailLines())
 	}
 
 	source := func(context.Context, SourcePush) error { return nil }

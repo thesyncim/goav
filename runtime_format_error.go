@@ -19,16 +19,14 @@ func inputFormatProbeError(input format.Input, cause error) error {
 		"use goav.Input(provider) for realtime packet receive",
 	}
 	return &BuildError{
-		Family:      errcode.FamilyForCode(errcode.InputFormatUnknown),
-		Code:        errcode.InputFormatUnknown,
-		Operation:   "open input",
-		Node:        demuxNodeName(input),
-		Reason:      "input format could not be detected",
-		Fields:      inputFormatFields(input),
-		Details:     inputFormatDetails(input),
-		Fixes:       fixesFromSuggestions(suggestions),
-		Suggestions: suggestions,
-		Cause:       cause,
+		Family:    errcode.FamilyForCode(errcode.InputFormatUnknown),
+		Code:      errcode.InputFormatUnknown,
+		Operation: "open input",
+		Node:      demuxNodeName(input),
+		Reason:    "input format could not be detected",
+		Fields:    inputFormatFields(input),
+		Fixes:     buildErrorFixes(suggestions),
+		Cause:     cause,
 	}
 }
 
@@ -42,16 +40,14 @@ func inputDemuxerMissingError(input format.Input, id av.FormatID, cause error) e
 		"call .UseRuntime(goav.MustNew(goavruntime.WithFormatAdapter(...))) when using a custom adapter bundle",
 	}
 	return &BuildError{
-		Family:      errcode.FamilyForCode(errcode.InputDemuxerMissing),
-		Code:        errcode.InputDemuxerMissing,
-		Operation:   "open input",
-		Node:        demuxNodeName(input),
-		Reason:      "format " + quoteFormat(id) + " was detected but no demuxer is registered",
-		Fields:      append(inputFormatFields(input), Detail{Key: "format", Value: id}),
-		Details:     append(inputFormatDetails(input), "format="+string(id)),
-		Fixes:       fixesFromSuggestions(suggestions),
-		Suggestions: suggestions,
-		Cause:       cause,
+		Family:    errcode.FamilyForCode(errcode.InputDemuxerMissing),
+		Code:      errcode.InputDemuxerMissing,
+		Operation: "open input",
+		Node:      demuxNodeName(input),
+		Reason:    "format " + quoteFormat(id) + " was detected but no demuxer is registered",
+		Fields:    append(inputFormatFields(input), Detail{Key: "format", Value: id}),
+		Fixes:     buildErrorFixes(suggestions),
+		Cause:     cause,
 	}
 }
 
@@ -65,16 +61,14 @@ func outputFormatProbeError(output format.Output, index int, cause error) error 
 		"register a format adapter with goav.MustNew(goavruntime.WithFormatAdapter(...))",
 	}
 	return &BuildError{
-		Family:      errcode.FamilyForCode(errcode.OutputFormatUnknown),
-		Code:        errcode.OutputFormatUnknown,
-		Operation:   "open output",
-		Node:        muxNodeName(output, index),
-		Reason:      "output format could not be detected",
-		Fields:      outputFormatFields(output),
-		Details:     outputFormatDetails(output),
-		Fixes:       fixesFromSuggestions(suggestions),
-		Suggestions: suggestions,
-		Cause:       cause,
+		Family:    errcode.FamilyForCode(errcode.OutputFormatUnknown),
+		Code:      errcode.OutputFormatUnknown,
+		Operation: "open output",
+		Node:      muxNodeName(output, index),
+		Reason:    "output format could not be detected",
+		Fields:    outputFormatFields(output),
+		Fixes:     buildErrorFixes(suggestions),
+		Cause:     cause,
 	}
 }
 
@@ -88,16 +82,14 @@ func outputMuxerMissingError(output format.Output, index int, id av.FormatID, ca
 		"call .UseRuntime(goav.MustNew(goavruntime.WithFormatAdapter(...))) when using a custom adapter bundle",
 	}
 	return &BuildError{
-		Family:      errcode.FamilyForCode(errcode.OutputMuxerMissing),
-		Code:        errcode.OutputMuxerMissing,
-		Operation:   "open output",
-		Node:        muxNodeName(output, index),
-		Reason:      "format " + quoteFormat(id) + " was selected but no muxer is registered",
-		Fields:      append(outputFormatFields(output), Detail{Key: "format", Value: id}),
-		Details:     append(outputFormatDetails(output), "format="+string(id)),
-		Fixes:       fixesFromSuggestions(suggestions),
-		Suggestions: suggestions,
-		Cause:       cause,
+		Family:    errcode.FamilyForCode(errcode.OutputMuxerMissing),
+		Code:      errcode.OutputMuxerMissing,
+		Operation: "open output",
+		Node:      muxNodeName(output, index),
+		Reason:    "format " + quoteFormat(id) + " was selected but no muxer is registered",
+		Fields:    append(outputFormatFields(output), Detail{Key: "format", Value: id}),
+		Fixes:     buildErrorFixes(suggestions),
+		Cause:     cause,
 	}
 }
 
@@ -111,16 +103,14 @@ func destinationFormatProbeError(node string, output format.Output, cause error)
 		"register a format adapter with goav.MustNew(goavruntime.WithFormatAdapter(...))",
 	}
 	return &BuildError{
-		Family:      errcode.FamilyForCode(errcode.DestinationFormatUnknown),
-		Code:        errcode.DestinationFormatUnknown,
-		Operation:   "open destination",
-		Node:        node,
-		Reason:      "destination format could not be detected",
-		Fields:      outputFormatFields(output),
-		Details:     outputFormatDetails(output),
-		Fixes:       fixesFromSuggestions(suggestions),
-		Suggestions: suggestions,
-		Cause:       cause,
+		Family:    errcode.FamilyForCode(errcode.DestinationFormatUnknown),
+		Code:      errcode.DestinationFormatUnknown,
+		Operation: "open destination",
+		Node:      node,
+		Reason:    "destination format could not be detected",
+		Fields:    outputFormatFields(output),
+		Fixes:     buildErrorFixes(suggestions),
+		Cause:     cause,
 	}
 }
 
@@ -134,35 +124,15 @@ func destinationMuxerMissingError(node string, output format.Output, id av.Forma
 		"call .UseRuntime(goav.MustNew(goavruntime.WithFormatAdapter(...))) when using a custom adapter bundle",
 	}
 	return &BuildError{
-		Family:      errcode.FamilyForCode(errcode.DestinationMuxerMissing),
-		Code:        errcode.DestinationMuxerMissing,
-		Operation:   "open destination",
-		Node:        node,
-		Reason:      "format " + quoteFormat(id) + " was selected for destination but no muxer is registered",
-		Fields:      append(outputFormatFields(output), Detail{Key: "format", Value: id}),
-		Details:     append(outputFormatDetails(output), "format="+string(id)),
-		Fixes:       fixesFromSuggestions(suggestions),
-		Suggestions: suggestions,
-		Cause:       cause,
+		Family:    errcode.FamilyForCode(errcode.DestinationMuxerMissing),
+		Code:      errcode.DestinationMuxerMissing,
+		Operation: "open destination",
+		Node:      node,
+		Reason:    "format " + quoteFormat(id) + " was selected for destination but no muxer is registered",
+		Fields:    append(outputFormatFields(output), Detail{Key: "format", Value: id}),
+		Fixes:     buildErrorFixes(suggestions),
+		Cause:     cause,
 	}
-}
-
-func fixesFromSuggestions(suggestions []string) []Fix {
-	if len(suggestions) == 0 {
-		return nil
-	}
-	fixes := make([]Fix, 0, len(suggestions))
-	for i := range suggestions {
-		if suggestions[i] == "" {
-			continue
-		}
-		fixes = append(fixes, Fix{Message: suggestions[i]})
-	}
-	return fixes
-}
-
-func inputFormatDetails(input format.Input) []string {
-	return detailsToLines(inputFormatFields(input))
 }
 
 func inputFormatFields(input format.Input) []Detail {
@@ -180,10 +150,6 @@ func inputFormatFields(input format.Input) []Detail {
 		fields = append(fields, Detail{Key: "mime", Value: input.MIMEType})
 	}
 	return fields
-}
-
-func outputFormatDetails(output format.Output) []string {
-	return detailsToLines(outputFormatFields(output))
 }
 
 func outputFormatFields(output format.Output) []Detail {

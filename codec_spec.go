@@ -248,9 +248,9 @@ func validateRecipeEncode(spec codec.CodecSpec, operation string, node string) e
 			Operation: operation,
 			Node:      node,
 			Reason:    "automatic codec selection is not implemented for stream recipes yet",
-			Suggestions: []string{
+			Fixes: buildErrorFixes([]string{
 				"choose an explicit recipe encoder with .Encode(codec.Opus(...)), .Encode(codec.VP8(...)), or .Encode(codec.VP9(...))",
-			},
+			}),
 			Cause: ErrUnsupportedBuild,
 		}
 	}
@@ -272,13 +272,13 @@ func validateRecipeEncodeValues(spec codec.CodecSpec, operation string, node str
 			Operation: operation,
 			Node:      node,
 			Reason:    "encode bitrate must be non-negative",
-			Details: []string{
+			Fields: buildErrorFields([]string{
 				fmt.Sprintf("bitrate=%d", spec.Settings.Bitrate),
-			},
-			Suggestions: []string{
+			}),
+			Fixes: buildErrorFixes([]string{
 				"pass a positive value to codec.Bitrate(...)",
 				"omit codec.Bitrate(...) when the encoder should choose its default",
-			},
+			}),
 			Cause: ErrUnsupportedBuild,
 		}
 	case spec.Settings.Framerate.Value < 0 || spec.Settings.Framerate.Base.Num < 0 || spec.Settings.Framerate.Base.Den < 0:
@@ -288,13 +288,13 @@ func validateRecipeEncodeValues(spec codec.CodecSpec, operation string, node str
 			Operation: operation,
 			Node:      node,
 			Reason:    "encode FPS must be positive",
-			Details: []string{
+			Fields: buildErrorFields([]string{
 				fmt.Sprintf("fps_duration=%d/%d/%d", spec.Settings.Framerate.Value, spec.Settings.Framerate.Base.Num, spec.Settings.Framerate.Base.Den),
-			},
-			Suggestions: []string{
+			}),
+			Fixes: buildErrorFixes([]string{
 				"pass a positive value to goav.FPS(...)",
 				"omit goav.FPS(...) when the encoder should infer frame cadence",
-			},
+			}),
 			Cause: ErrUnsupportedBuild,
 		}
 	case spec.Settings.KeyframeInterval < 0:
@@ -304,13 +304,13 @@ func validateRecipeEncodeValues(spec codec.CodecSpec, operation string, node str
 			Operation: operation,
 			Node:      node,
 			Reason:    "encode keyframe interval must be non-negative",
-			Details: []string{
+			Fields: buildErrorFields([]string{
 				fmt.Sprintf("keyframe_interval=%d", spec.Settings.KeyframeInterval),
-			},
-			Suggestions: []string{
+			}),
+			Fixes: buildErrorFixes([]string{
 				"pass a positive value to goav.KeyframeInterval(...)",
 				"omit goav.KeyframeInterval(...) when the encoder should choose its default cadence",
-			},
+			}),
 			Cause: ErrUnsupportedBuild,
 		}
 	case spec.Settings.SampleRateSet && spec.Parameters.SampleRate <= 0:
@@ -320,13 +320,13 @@ func validateRecipeEncodeValues(spec codec.CodecSpec, operation string, node str
 			Operation: operation,
 			Node:      node,
 			Reason:    "explicit encode sample rate must be positive",
-			Details: []string{
+			Fields: buildErrorFields([]string{
 				fmt.Sprintf("sample_rate=%d", spec.Parameters.SampleRate),
-			},
-			Suggestions: []string{
+			}),
+			Fixes: buildErrorFixes([]string{
 				"use codec.SampleRate(rate) with a positive rate",
 				"omit codec.SampleRate(...) to use the selected stream rate",
-			},
+			}),
 			Cause: ErrUnsupportedBuild,
 		}
 	case spec.Settings.ChannelsSet && spec.Parameters.Channels <= 0:
@@ -336,13 +336,13 @@ func validateRecipeEncodeValues(spec codec.CodecSpec, operation string, node str
 			Operation: operation,
 			Node:      node,
 			Reason:    "explicit encode channel count must be positive",
-			Details: []string{
+			Fields: buildErrorFields([]string{
 				fmt.Sprintf("channels=%d", spec.Parameters.Channels),
-			},
-			Suggestions: []string{
+			}),
+			Fixes: buildErrorFixes([]string{
 				"use codec.Channels(codec.Mono), codec.Channels(codec.Stereo), or another positive channel count",
 				"omit codec.Channels(...) to use the selected stream channel count",
-			},
+			}),
 			Cause: ErrUnsupportedBuild,
 		}
 	default:
@@ -360,15 +360,15 @@ func validateCodecChangePolicy(operation string, node string, policy CodecChange
 		Operation: operation,
 		Node:      node,
 		Reason:    "custom codec-change policies are not implemented yet",
-		Details: []string{
+		Fields: buildErrorFields([]string{
 			"supported: " + codecChangePolicyDetail(defaultCodecChangePolicy()),
 			"requested: " + codecChangePolicyDetail(policy),
-		},
-		Suggestions: []string{
+		}),
+		Fixes: buildErrorFixes([]string{
 			"omit .OnCodecChange(...) to use the default live receive behavior",
 			"use packet-preserving goav.From(input).Copy().To(output) when codec changes should stay encoded",
 			"rebuild the job when a live stream switches to a different decoder codec",
-		},
+		}),
 		Cause: ErrUnsupportedBuild,
 	}
 }

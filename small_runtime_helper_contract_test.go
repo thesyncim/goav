@@ -115,8 +115,8 @@ func TestBuildErrorAndCompilerPassErrorContracts(t *testing.T) {
 	if got.Code != errcode.CompilerPassFailed ||
 		got.Operation != "compile recipe" ||
 		got.Reason != "recipe compiler pass failed without a diagnostic" ||
-		len(got.Details) != 1 ||
-		got.Details[0] != "pass=lower" ||
+		len(got.DetailLines()) != 1 ||
+		got.DetailLines()[0] != "pass=lower" ||
 		!errors.Is(got, empty) {
 		t.Fatalf("wrapped compiler pass error = %+v", got)
 	}

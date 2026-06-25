@@ -46,7 +46,7 @@ func requireBuildError(t *testing.T, err error, code errcode.Code, operation str
 		t.Fatalf("node = %q, want %q\nerr = %v", buildErr.Node, node, err)
 	}
 	for _, fix := range fixes {
-		if !suggestionsContain(buildErr.Suggestions, fix) {
+		if !suggestionsContain(buildErr.FixLines(), fix) {
 			t.Fatalf("no suggestion contains the fix %q\nerr = %v", fix, err)
 		}
 	}
@@ -161,7 +161,7 @@ func TestErrorAcceptanceCustomSourceShapeUnsupported(t *testing.T) {
 		"declare raw generated media with shape.Frame",
 		"declare diagnostic or lifecycle sources with shape.Event",
 	)
-	if !detailsContain(buildErr.Details, "actual_shape=domain=bytes") {
+	if !detailsContain(buildErr.DetailLines(), "actual_shape=domain=bytes") {
 		t.Fatalf("details should carry the unsupported domain, err = %v", err)
 	}
 }
@@ -180,7 +180,7 @@ func TestErrorAcceptanceFrameSourceDecodeMismatch(t *testing.T) {
 		"remove .Decode() when using goav.Source(..., shape.Frame(...), ...)",
 		"use shape.Packet(...) when the custom source pushes encoded packets",
 	)
-	if !detailsContain(buildErr.Details, "source_domain=frame") {
+	if !detailsContain(buildErr.DetailLines(), "source_domain=frame") {
 		t.Fatalf("details should carry source_domain=frame, err = %v", err)
 	}
 }
@@ -453,9 +453,9 @@ func TestBuildAndAttachReturnSameErrorForSameInvalidBranch(t *testing.T) {
 		"use .Video().Resize(...)",
 	)
 	for _, buildErr := range []*goav.BuildError{planned, attached} {
-		if !detailsContain(buildErr.Details, "expected_shape=domain=frame media=video") ||
-			!detailsContain(buildErr.Details, "actual_shape=domain=frame media=audio") {
-			t.Fatalf("%s details = %v, want expected/actual audio-video frame shapes", buildErr.Operation, buildErr.Details)
+		if !detailsContain(buildErr.DetailLines(), "expected_shape=domain=frame media=video") ||
+			!detailsContain(buildErr.DetailLines(), "actual_shape=domain=frame media=audio") {
+			t.Fatalf("%s details = %v, want expected/actual audio-video frame shapes", buildErr.Operation, buildErr.DetailLines())
 		}
 	}
 }
@@ -474,7 +474,7 @@ func TestErrorAcceptanceCopyAfterDecode(t *testing.T) {
 		"move .Copy() before decode",
 		"use .Encode(codec...) instead of .Copy()",
 	)
-	if !detailsContain(buildErr.Details, "actual_shape=domain=frame") {
+	if !detailsContain(buildErr.DetailLines(), "actual_shape=domain=frame") {
 		t.Fatalf("details should carry the frame-domain shape, err = %v", err)
 	}
 }
@@ -559,10 +559,10 @@ func TestErrorAcceptanceAmbiguousStreamSelectionListsCandidates(t *testing.T) {
 	if !strings.Contains(msg, "input=mic-a") || !strings.Contains(msg, "input=mic-b") {
 		t.Fatalf("err = %v, want candidates listed with their inputs", err)
 	}
-	if !suggestionsContain(buildErr.Suggestions, `.Audio(goav.InputName("mic-a"))`) {
+	if !suggestionsContain(buildErr.FixLines(), `.Audio(goav.InputName("mic-a"))`) {
 		t.Fatalf("err = %v, want InputName narrowing suggestion", err)
 	}
-	if !suggestionsContain(buildErr.Suggestions, "goav.StreamID(") {
+	if !suggestionsContain(buildErr.FixLines(), "goav.StreamID(") {
 		t.Fatalf("err = %v, want StreamID narrowing suggestion", err)
 	}
 }
@@ -588,7 +588,7 @@ func TestErrorAcceptanceAttachUnknownTapListsDeclaredTaps(t *testing.T) {
 		`add .Tap(goav.FrameTap("nope"))`,
 		"call Inspectable.Taps() before attaching",
 	)
-	if !detailsContain(buildErr.Details, "audio.decoded") {
+	if !detailsContain(buildErr.DetailLines(), "audio.decoded") {
 		t.Fatalf("details should list the declared taps, err = %v", err)
 	}
 }
@@ -606,7 +606,7 @@ func TestErrorAcceptanceTypedTapAtWrongDomain(t *testing.T) {
 		"use goav.PacketTap(name) after .Copy() or an encoder",
 		"use goav.FrameTap(name) after decode",
 	)
-	if !detailsContain(buildErr.Details, "tap=post-encode") {
+	if !detailsContain(buildErr.DetailLines(), "tap=post-encode") {
 		t.Fatalf("details should name the tap, err = %v", err)
 	}
 }
@@ -623,7 +623,7 @@ func TestErrorAcceptanceEncoderAdapterMissing(t *testing.T) {
 	buildErr := requireBuildError(t, err, errcode.EncodeAdapterMissing, "build job", "audio",
 		"goavruntime.WithEncoder(...)",
 	)
-	if !strings.Contains(buildErr.Reason, "weird") || !detailsContain(buildErr.Details, "codec=weird") {
+	if !strings.Contains(buildErr.Reason, "weird") || !detailsContain(buildErr.DetailLines(), "codec=weird") {
 		t.Fatalf("refusal should name the codec, err = %v", err)
 	}
 }

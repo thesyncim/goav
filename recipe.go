@@ -135,6 +135,16 @@ func (e *BuildError) Detail(key string) (any, bool) {
 	return nil, false
 }
 
+// DetailLines returns the human-readable detail lines rendered in Error.
+func (e *BuildError) DetailLines() []string {
+	return append([]string(nil), e.detailLines()...)
+}
+
+// FixLines returns the human-readable fix lines rendered in Error.
+func (e *BuildError) FixLines() []string {
+	return append([]string(nil), e.suggestionLines()...)
+}
+
 // Unwrap exposes the sentinel Cause (ErrUnsupportedBuild, ErrNilSink, ...)
 // to errors.Is.
 func (e *BuildError) Unwrap() error {
@@ -170,6 +180,39 @@ func (e *BuildError) suggestionLines() []string {
 			continue
 		}
 		out = append(out, e.Fixes[i].String())
+	}
+	return out
+}
+
+func buildErrorFields(lines []string) []Detail {
+	if len(lines) == 0 {
+		return nil
+	}
+	out := make([]Detail, 0, len(lines))
+	for i := range lines {
+		if lines[i] == "" {
+			continue
+		}
+		key, value, ok := strings.Cut(lines[i], "=")
+		if !ok || key == "" {
+			out = append(out, Detail{Value: lines[i]})
+			continue
+		}
+		out = append(out, Detail{Key: key, Value: value})
+	}
+	return out
+}
+
+func buildErrorFixes(lines []string) []Fix {
+	if len(lines) == 0 {
+		return nil
+	}
+	out := make([]Fix, 0, len(lines))
+	for i := range lines {
+		if lines[i] == "" {
+			continue
+		}
+		out = append(out, Fix{Message: lines[i]})
 	}
 	return out
 }

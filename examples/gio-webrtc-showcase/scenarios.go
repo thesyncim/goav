@@ -111,7 +111,7 @@ func scenarioError(err error) scenarioResult {
 	var buildErr *goav.BuildError
 	if errors.As(err, &buildErr) {
 		result.Summary = string(buildErr.Code)
-		result.Fixes = append([]string(nil), buildErr.Suggestions...)
+		result.Fixes = buildErr.FixLines()
 	}
 	return result
 }

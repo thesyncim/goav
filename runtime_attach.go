@@ -409,16 +409,16 @@ func validateRuntimeBranchGroupDestinations(specs []BranchSpec, destinations [][
 					Operation: "attach runtime branches",
 					Node:      firstNonEmpty(specs[i].name, "branch"),
 					Reason:    "runtime branch group reuses one destination name",
-					Details: []string{
+					Fields: buildErrorFields([]string{
 						"destination: " + label,
 						"first branch: " + seenBranch[label],
 						"second branch: " + branchName,
-					},
-					Suggestions: []string{
+					}),
+					Fixes: buildErrorFixes([]string{
 						"reuse one destination value or wrap each branch destination with goav.Mux(name, destination) for a shared runtime destination group",
 						"create distinct destination values with distinct names for independent runtime destinations",
 						"use a sink destination for runtime diagnostic groups or a mux destination for runtime recording groups",
-					},
+					}),
 					Cause: ErrUnsupportedBuild,
 				}
 			}
@@ -1568,13 +1568,13 @@ func runtimeBranchTransform(branchName string, stream av.Stream, spec TransformS
 	switch {
 	case spec.Resize != nil && spec.Resample != nil:
 		return mediaTransform{}, &BuildError{
-			Family:      errcode.FamilyForCode(errcode.TransformInvalid),
-			Code:        errcode.TransformInvalid,
-			Operation:   "attach runtime branch",
-			Node:        base,
-			Reason:      "one runtime branch transform cannot be both resize and resample",
-			Suggestions: []string{"declare two separate steps instead: .Resize(width, height).Resample(rate, channels)"},
-			Cause:       ErrUnsupportedBuild,
+			Family:    errcode.FamilyForCode(errcode.TransformInvalid),
+			Code:      errcode.TransformInvalid,
+			Operation: "attach runtime branch",
+			Node:      base,
+			Reason:    "one runtime branch transform cannot be both resize and resample",
+			Fixes:     buildErrorFixes([]string{"declare two separate steps instead: .Resize(width, height).Resample(rate, channels)"}),
+			Cause:     ErrUnsupportedBuild,
 		}
 	case spec.Resize != nil:
 		if stream.Type != av.MediaVideo && stream.Codec.Type != av.MediaVideo {
@@ -1603,10 +1603,10 @@ func runtimeBranchTransform(branchName string, stream av.Stream, spec TransformS
 			Operation: "attach runtime branch",
 			Node:      base,
 			Reason:    "empty runtime branch transform",
-			Suggestions: []string{
+			Fixes: buildErrorFixes([]string{
 				"call .Resize(width, height) for video frame taps",
 				"call .Resample(sampleRate, channels) for audio frame taps",
-			},
+			}),
 			Cause: ErrUnsupportedBuild,
 		}
 	}
@@ -1792,9 +1792,9 @@ func runtimeBranchInvalidError(reason string, suggestion string) error {
 		Code:      errcode.RuntimeBranchInvalid,
 		Operation: "attach runtime branch",
 		Reason:    reason,
-		Suggestions: []string{
+		Fixes: buildErrorFixes([]string{
 			suggestion,
-		},
+		}),
 		Cause: ErrUnsupportedBuild,
 	}
 }
@@ -1806,11 +1806,11 @@ func runtimeBranchAnchorMissingError(node string) error {
 		Operation: "attach runtime branch",
 		Node:      node,
 		Reason:    "branch source node does not exist in the running task graph",
-		Suggestions: []string{
+		Fixes: buildErrorFixes([]string{
 			"call Inspectable.Taps() and use .From(goav.FrameTap(name)) or .From(goav.PacketTap(name)) for stable media outlets",
 			"keep the GraphNode returned by expert.Graph(runtime).Source/Stage/Sink for expert graph attachments",
 			"attach from a stable decoded-frame tap when the branch needs raw frames",
-		},
+		}),
 		Cause: pipeline.ErrUnknownNode,
 	}
 }
@@ -1826,12 +1826,12 @@ func runtimeBranchTapMissingError(name string, taps []snapshot.Tap) error {
 		Operation: "attach runtime branch",
 		Node:      name,
 		Reason:    "branch source tap does not exist in the running task",
-		Details:   details,
-		Suggestions: []string{
+		Fields:    buildErrorFields(details),
+		Fixes: buildErrorFixes([]string{
 			"add .Tap(goav.FrameTap(" + strconv.Quote(name) + ")) or .Tap(goav.PacketTap(" + strconv.Quote(name) + ")) at the point you want to attach",
 			"call Inspectable.Taps() before attaching runtime branches",
 			"use .From(graphNode) only for expert graph-node attachments",
-		},
+		}),
 		Cause: pipeline.ErrUnknownNode,
 	}
 }
@@ -1843,10 +1843,10 @@ func runtimeBranchNodeDuplicateError(node string) error {
 		Operation: "attach runtime branch",
 		Node:      node,
 		Reason:    "branch node name already exists in the task graph",
-		Suggestions: []string{
+		Fixes: buildErrorFixes([]string{
 			"use a unique goav.Branch(name)",
 			"use distinct stage and sink names inside repeated runtime branches",
-		},
+		}),
 		Cause: pipeline.ErrNodeExists,
 	}
 }
@@ -1858,15 +1858,15 @@ func duplicateRuntimeBranchDestinationRefError(branch string, label string, firs
 		Operation: "attach runtime branch",
 		Node:      firstNonEmpty(branch, "branch"),
 		Reason:    fmt.Sprintf("branch routes to destination %q more than once", label),
-		Details: []string{
+		Fields: buildErrorFields([]string{
 			fmt.Sprintf("first destination index: %d", firstIndex),
 			fmt.Sprintf("second destination index: %d", secondIndex),
-		},
-		Suggestions: []string{
+		}),
+		Fixes: buildErrorFixes([]string{
 			"list each destination once in .To(...)",
 			"route one runtime branch to multiple destinations with distinct values such as .To(archive, monitor)",
 			"reuse destination values or wrap each grouped attachment destination with goav.Mux(name, destination)",
-		},
+		}),
 		Cause: ErrUnsupportedBuild,
 	}
 }
@@ -1878,10 +1878,10 @@ func runtimeBranchTapDuplicateError(name string) error {
 		Operation: "attach runtime branch",
 		Node:      name,
 		Reason:    "branch tap name already exists in the task",
-		Suggestions: []string{
+		Fixes: buildErrorFixes([]string{
 			"use a unique tap name for each runtime branch outlet",
 			"call Inspectable.Taps() before attaching to inspect the current tap names",
-		},
+		}),
 		Cause: ErrUnsupportedBuild,
 	}
 }
@@ -1893,15 +1893,15 @@ func runtimeBranchTransformMediaError(branch string, transform string, expected 
 		Operation: "attach runtime branch",
 		Node:      branch,
 		Reason:    transform + " applies to " + string(expected) + " frame taps",
-		Details: []string{
+		Fields: buildErrorFields([]string{
 			"expected_shape=" + shape.Frame(expected).String(),
 			"actual_shape=" + shape.Frame(actual).String(),
-		},
-		Suggestions: []string{
+		}),
+		Fixes: buildErrorFixes([]string{
 			"use .Video().Decode().Tap(goav.FrameTap(name)) or a video transform tap before attaching .Resize(...)",
 			"use .Audio().Decode().Tap(goav.FrameTap(name)) or an audio transform tap before attaching .Resample(...)",
 			"call Inspectable.Taps() and choose a tap with matching media kind",
-		},
+		}),
 		Cause: ErrUnsupportedBuild,
 	}
 }
@@ -1916,11 +1916,11 @@ func runtimeBranchTransformError(node string, cause error) error {
 		Operation: "attach runtime branch",
 		Node:      node,
 		Reason:    "runtime branch transform could not be opened",
-		Suggestions: []string{
+		Fixes: buildErrorFixes([]string{
 			"register a matching resize or resample filter adapter",
 			"import github.com/thesyncim/goav/bundle and use bundle.MustNewFilters(...) for bundled filters",
 			"attach from a frame tap with media shape that match the requested transform",
-		},
+		}),
 		Cause: cause,
 	}
 }
@@ -1932,11 +1932,11 @@ func runtimeBranchEncodeMissingError(branch string) error {
 		Operation: "attach runtime branch",
 		Node:      firstNonEmpty(branch, "branch"),
 		Reason:    "muxed runtime branches need packet copy or an encoder",
-		Suggestions: []string{
+		Fixes: buildErrorFixes([]string{
 			"call .Copy() when attaching from a packet tap",
 			"call .Encode(codec.Opus(...)), .Encode(codec.VP8(...)), or .Encode(codec.VP9(...)) when attaching from a frame tap",
 			"use .To(goav.Sink(...)) when the runtime branch should receive raw frames",
-		},
+		}),
 		Cause: ErrUnsupportedBuild,
 	}
 }
@@ -1948,12 +1948,12 @@ func runtimeBranchEncodeDomainError(branch string, shape shape.Spec) error {
 		Operation: "attach runtime branch",
 		Node:      firstNonEmpty(branch, "branch"),
 		Reason:    "runtime branch encoding requires a frame tap",
-		Details:   runtimeBranchShapeDetails(shape),
-		Suggestions: []string{
+		Fields:    buildErrorFields(runtimeBranchShapeDetails(shape)),
+		Fixes: buildErrorFixes([]string{
 			"attach from a tap declared after Decode, Resize, Resample, or a frame-stage .Do(...)",
 			"use .Copy() from a packet tap when no re-encode is intended",
 			"call Inspectable.Taps() and choose a tap with domain=frame",
-		},
+		}),
 		Cause: ErrUnsupportedBuild,
 	}
 }
@@ -1965,12 +1965,12 @@ func runtimeBranchDecodeDomainError(branch string, shape shape.Spec) error {
 		Operation: "attach runtime branch",
 		Node:      firstNonEmpty(branch, "branch"),
 		Reason:    "runtime branch decoding requires a packet tap",
-		Details:   runtimeBranchShapeDetails(shape),
-		Suggestions: []string{
+		Fields:    buildErrorFields(runtimeBranchShapeDetails(shape)),
+		Fixes: buildErrorFixes([]string{
 			"attach from a tap declared after Copy, packet receive, or Encode",
 			"omit .Decode() when attaching from a frame tap",
 			"call Inspectable.Taps() and choose a tap with domain=packet",
-		},
+		}),
 		Cause: ErrUnsupportedBuild,
 	}
 }
@@ -1982,12 +1982,12 @@ func runtimeBranchDecodeCodecMissingError(branch string, shape shape.Spec) error
 		Operation: "attach runtime branch",
 		Node:      firstNonEmpty(branch, "branch"),
 		Reason:    "runtime branch decode needs packet codec metadata",
-		Details:   runtimeBranchShapeDetails(shape),
-		Suggestions: []string{
+		Fields:    buildErrorFields(runtimeBranchShapeDetails(shape)),
+		Fixes: buildErrorFixes([]string{
 			"attach from a recipe tap with codec shape",
 			"declare the input codec (provider codec intent or file metadata) before building the task",
 			"call Inspectable.Taps() and choose a packet tap that reports codec=...",
-		},
+		}),
 		Cause: ErrUnsupportedBuild,
 	}
 }
@@ -1999,12 +1999,12 @@ func runtimeBranchCopyDomainError(branch string, shape shape.Spec) error {
 		Operation: "attach runtime branch",
 		Node:      firstNonEmpty(branch, "branch"),
 		Reason:    "runtime branch packet copy requires a packet tap",
-		Details:   runtimeBranchShapeDetails(shape),
-		Suggestions: []string{
+		Fields:    buildErrorFields(runtimeBranchShapeDetails(shape)),
+		Fixes: buildErrorFixes([]string{
 			"attach from a tap declared after Copy or Encode",
 			"encode frame taps with .Encode(codec.Opus(...)), .Encode(codec.VP8(...)), or .Encode(codec.VP9(...)) before writing a muxed destination",
 			"call Inspectable.Taps() and choose a tap with domain=packet",
-		},
+		}),
 		Cause: ErrUnsupportedBuild,
 	}
 }
@@ -2016,12 +2016,12 @@ func runtimeBranchMuxCodecMissingError(branch string, shape shape.Spec) error {
 		Operation: "attach runtime branch",
 		Node:      firstNonEmpty(branch, "branch"),
 		Reason:    "runtime branch mux destination needs codec metadata",
-		Details:   runtimeBranchShapeDetails(shape),
-		Suggestions: []string{
+		Fields:    buildErrorFields(runtimeBranchShapeDetails(shape)),
+		Fixes: buildErrorFixes([]string{
 			"attach from a recipe tap with codec shape",
 			"set an explicit encoder with .Encode(codec.Opus(...)), .Encode(codec.VP8(...)), or .Encode(codec.VP9(...))",
 			"use .To(goav.Sink(...)) when the branch should stay raw",
-		},
+		}),
 		Cause: ErrUnsupportedBuild,
 	}
 }
@@ -2047,11 +2047,11 @@ func runtimeBranchGraphError(operation string, node string, cause error) error {
 		Operation: operation,
 		Node:      node,
 		Reason:    "runtime graph rejected the branch attachment",
-		Suggestions: []string{
+		Fixes: buildErrorFixes([]string{
 			"runtime branches are supported on direct task graphs today",
 			"use a direct buffer policy for live runtime branch experiments",
 			"build the branch before Run when using buffered execution",
-		},
+		}),
 		Cause: cause,
 	}
 }

@@ -111,15 +111,15 @@ Move or keep outside the front door:
      deliveries.
    - Document and pin the explicit one-allocation `source.Push` safety cost.
 
-8. **Error families** — started; typed fields landed
+8. **Error families** — landed
    - Introduce stable error families such as `InvalidRecipe`, `MissingAdapter`,
      `IncompatibleAdapter`, `UnsupportedShape`, and `RuntimeRejected`.
    - Move implementation-specific errcodes behind compatibility aliases or
      internal details.
-   - Replace string-only details with typed details and fixes: `BuildError`
-     now carries typed `Fields []Detail`, `Fixes []Fix`, optional
-     `RecipePatch` hints, and `Detail(key)` access while preserving legacy
-     `Details`/`Suggestions` rendering during the transition.
+   - Replace string-only production errors with typed details and fixes:
+     `BuildError` carries typed `Fields []Detail`, `Fixes []Fix`, optional
+     `RecipePatch` hints, `Detail(key)`, `DetailLines()`, and `FixLines()`.
+     The source pin rejects new production `Details`/`Suggestions` literals.
 
 9. **Explicit destination groups** — landed
    - Introduce explicit mux/group builders.

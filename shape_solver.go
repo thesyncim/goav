@@ -490,12 +490,12 @@ func shapeSolverAdapterError(operation string, node string, index int, step oper
 			Node:      node,
 			Reason: fmt.Sprintf("several registered filters can perform the %s conversion before %s: %s",
 				selection.needed.String(), operationSpecLabel(step), strings.Join(selection.candidates, ", ")),
-			Details: append(details, "candidates="+strings.Join(selection.candidates, ",")),
-			Suggestions: []string{
+			Fields: buildErrorFields(append(details, "candidates="+strings.Join(selection.candidates, ","))),
+			Fixes: buildErrorFixes([]string{
 				"keep one " + string(selection.media) + " conversion filter registered per runtime",
 				"build the runtime with only the intended conversion filter via goav.MustNew(goavruntime.WithFilter(...))",
 				"bias the choice with .Prefer(shape.New(...)) toward a capability only one candidate declares",
-			},
+			}),
 			Cause: ErrUnsupportedBuild,
 		}
 	}
@@ -506,11 +506,11 @@ func shapeSolverAdapterError(operation string, node string, index int, step oper
 		Node:      node,
 		Reason: fmt.Sprintf("no registered filter can perform the %s conversion before %s",
 			selection.needed.String(), operationSpecLabel(step)),
-		Details: details,
-		Suggestions: []string{
+		Fields: buildErrorFields(details),
+		Fixes: buildErrorFixes([]string{
 			"register a " + string(selection.media) + " conversion filter with goavruntime.WithFilter(filter.Descriptor{Input: ..., Output: ...}, factory)",
 			"import github.com/thesyncim/goav/bundle and build with bundle.MustNewFilters(...) for the bundled resample and resize adapters",
-		},
+		}),
 		Cause: ErrUnsupportedBuild,
 	}
 }
@@ -527,7 +527,7 @@ func shapeConversionRefusedError(operation string, node string, index int, step 
 		Node:      node,
 		Reason: fmt.Sprintf("%s needs %s but the chain policy (%s) does not allow it",
 			operationSpecLabel(step), conversion.detail, allowed.String()),
-		Details: []string{
+		Fields: buildErrorFields([]string{
 			fmt.Sprintf("operation_index=%d", index),
 			"operation=" + string(step.Kind),
 			"source=" + humanizeShape(actual),
@@ -535,11 +535,11 @@ func shapeConversionRefusedError(operation string, node string, index int, step 
 			"expected_shape=" + expected.String(),
 			"needed=" + conversion.needed.String(),
 			"allowed=" + allowed.String(),
-		},
-		Suggestions: append(
+		}),
+		Fixes: buildErrorFixes(append(
 			[]string{fmt.Sprintf("add .Auto(%s) to the chain to let the planner insert the conversion", strings.Join(missing.Constructors(), ", "))},
 			explicitConversionSuggestion(conversion.operation.Transform, step)...,
-		),
+		)),
 		Cause: ErrUnsupportedBuild,
 	}
 }
@@ -553,11 +553,11 @@ func appendAutoFixSuggestions(err error, actual shape.Spec, expected shape.Spec,
 		return err
 	}
 	needed := shape.Conversions(actual, expected)
-	buildErr.Suggestions = append(buildErr.Suggestions,
-		fmt.Sprintf("add .Auto(%s) to the chain to let the planner insert the conversion", strings.Join(needed.Constructors(), ", ")))
+	buildErr.Fixes = append(buildErr.Fixes,
+		Fix{Message: fmt.Sprintf("add .Auto(%s) to the chain to let the planner insert the conversion", strings.Join(needed.Constructors(), ", "))})
 	media := firstNonEmptyMedia(expected.MediaKind, actual.MediaKind)
 	if transform, ok := synthesizeConversionTransform(media, actual, expected); ok {
-		buildErr.Suggestions = append(buildErr.Suggestions, explicitConversionSuggestion(transform, step)...)
+		buildErr.Fixes = append(buildErr.Fixes, buildErrorFixes(explicitConversionSuggestion(transform, step))...)
 	}
 	return buildErr
 }

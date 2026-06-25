@@ -122,11 +122,11 @@ func selectStreamWithCodecRequirement(streams []av.Stream, selector av.StreamSel
 			Operation: "select stream",
 			Node:      selectorDetail(selector),
 			Reason:    "selected stream has no codec id",
-			Details:   []string{streamDiagnostic(selected, 0)},
-			Suggestions: []string{
+			Fields:    buildErrorFields([]string{streamDiagnostic(selected, 0)}),
+			Fixes: buildErrorFixes([]string{
 				"provide codec metadata on the input stream",
 				"declare the receive codec on the source provider (e.g. a codec intent option)",
-			},
+			}),
 			Cause: ErrUnsupportedBuild,
 		}
 	}
@@ -164,14 +164,14 @@ func streamSelectionError(code errcode.Code, selector av.StreamSelector, streams
 		reason = "multiple streams match " + readableSelector(selector)
 	}
 	return &BuildError{
-		Family:      errcode.FamilyForCode(code),
-		Code:        code,
-		Operation:   operation,
-		Node:        node,
-		Reason:      reason,
-		Details:     streamDiagnostics(streams),
-		Suggestions: streamSelectionSuggestions(selector, streams),
-		Cause:       ErrUnsupportedBuild,
+		Family:    errcode.FamilyForCode(code),
+		Code:      code,
+		Operation: operation,
+		Node:      node,
+		Reason:    reason,
+		Fields:    buildErrorFields(streamDiagnostics(streams)),
+		Fixes:     buildErrorFixes(streamSelectionSuggestions(selector, streams)),
+		Cause:     ErrUnsupportedBuild,
 	}
 }
 
@@ -182,12 +182,12 @@ func streamRequestMismatchError(code errcode.Code, operation string, node string
 		Operation: operation,
 		Node:      node,
 		Reason:    "requested " + readableSelector(selector) + " does not match selected stream",
-		Details: []string{
+		Fields: buildErrorFields([]string{
 			"selected: " + streamDiagnostic(stream, 0),
 			"requested: " + readableSelector(selector),
-		},
-		Suggestions: suggestions,
-		Cause:       ErrUnsupportedBuild,
+		}),
+		Fixes: buildErrorFixes(suggestions),
+		Cause: ErrUnsupportedBuild,
 	}
 }
 

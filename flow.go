@@ -557,10 +557,10 @@ func (b *chainBuilder) tap(tap TapRef) {
 			Operation: "build flow",
 			Node:      firstNonEmpty(b.spec.name, "flow"),
 			Reason:    "tap name is empty",
-			Suggestions: []string{
+			Fixes: buildErrorFixes([]string{
 				"call .Tap(goav.FrameTap(\"audio.voice.frames\")) or another stable tap ref",
 				"omit .Tap(...) when no runtime branch should attach at that point",
-			},
+			}),
 			Cause: ErrUnsupportedBuild,
 		})
 		return
@@ -687,10 +687,10 @@ func duplicateFlowDecodeError(node string) error {
 		Operation: "build flow",
 		Node:      node,
 		Reason:    "flow already decodes its input packets",
-		Suggestions: []string{
+		Fixes: buildErrorFixes([]string{
 			"call .Decode() once at the start of the flow",
 			"remove the second .Decode() call",
-		},
+		}),
 		Cause: ErrUnsupportedBuild,
 	}
 }
@@ -702,10 +702,10 @@ func flowDecodeOrderError(node string) error {
 		Operation: "build flow",
 		Node:      node,
 		Reason:    "decode must be the first flow operation",
-		Suggestions: []string{
+		Fixes: buildErrorFixes([]string{
 			"write goav.Flow(name).Audio().Decode().Resample(...)",
 			"omit .Decode() when the flow is only applied after stream decode",
-		},
+		}),
 		Cause: ErrUnsupportedBuild,
 	}
 }
@@ -717,11 +717,11 @@ func flowDecodeDomainError(operation string, node string) error {
 		Operation: operation,
 		Node:      firstNonEmpty(node, "flow"),
 		Reason:    "flow decoding requires a packet-domain stream point",
-		Suggestions: []string{
+		Fixes: buildErrorFixes([]string{
 			"omit .Decode() when applying the flow after stream decode",
 			"use the flow from a packet branch or packet tap when it should own decode",
 			"split packet-preserving streams with .Copy().Branches(...) before applying the flow",
-		},
+		}),
 		Cause: ErrUnsupportedBuild,
 	}
 }
@@ -733,11 +733,11 @@ func flowCopyDomainError(operation string, node string) error {
 		Operation: operation,
 		Node:      firstNonEmpty(node, "flow"),
 		Reason:    "flow copying requires a packet-domain stream point",
-		Suggestions: []string{
+		Fixes: buildErrorFixes([]string{
 			"start packet-preserving reusable work with goav.Flow(name).Audio().Copy() or goav.Flow(name).Video().Copy()",
 			"declare packet taps after copy with .Copy().Tap(goav.PacketTap(name))",
 			"use .Decode().Resample(...).Encode(codec.Opus(...)) when the flow should transform frames",
-		},
+		}),
 		Cause: ErrUnsupportedBuild,
 	}
 }
@@ -748,9 +748,9 @@ func nilFlowError() error {
 		Code:      errcode.FlowInvalid,
 		Operation: "build flow",
 		Reason:    "flow is nil",
-		Suggestions: []string{
+		Fixes: buildErrorFixes([]string{
 			"build flows with goav.Flow(name).Audio() or goav.Flow(name).Video()",
-		},
+		}),
 		Cause: ErrUnsupportedBuild,
 	}
 }
@@ -765,10 +765,10 @@ func validateChainMedia(operation string, node string, selected av.MediaType, sp
 		Operation: operation,
 		Node:      firstNonEmpty(spec.name, node, "flow"),
 		Reason:    string(spec.media) + " flow cannot be applied to " + string(selected) + " stream",
-		Suggestions: []string{
+		Fixes: buildErrorFixes([]string{
 			"use goav.Flow(name).Audio() with .Audio()",
 			"use goav.Flow(name).Video() with .Video()",
-		},
+		}),
 		Cause: ErrUnsupportedBuild,
 	}
 }
@@ -780,13 +780,13 @@ func branchInputCountError(node string, count int) error {
 		Operation: "build branches",
 		Node:      node,
 		Reason:    "branches currently compose from one input",
-		Details: []string{
+		Fields: buildErrorFields([]string{
 			fmt.Sprintf("inputs=%d", count),
-		},
-		Suggestions: []string{
+		}),
+		Fixes: buildErrorFixes([]string{
 			"start branches from goav.From(input).Audio() or goav.From(input).Video() with one input",
 			"use the expert graph API when combining several sources manually",
-		},
+		}),
 		Cause: ErrUnsupportedBuild,
 	}
 }
@@ -798,10 +798,10 @@ func branchOutputScopeError(node string) error {
 		Operation: "build branches",
 		Node:      node,
 		Reason:    "branch destinations are declared inside Branch(...).To(...)",
-		Suggestions: []string{
+		Fixes: buildErrorFixes([]string{
 			"route branches with .Branches(goav.Branch(name).To(goav.File(name, writer)))",
 			"use stream .To(goav.File(...)) or .To(goav.Sink(...)) only for one ordinary stream destination",
-		},
+		}),
 		Cause: ErrUnsupportedBuild,
 	}
 }

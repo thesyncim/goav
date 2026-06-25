@@ -15,9 +15,11 @@ import (
 // TestBuildErrorContractPinned enforces the error contract at the source
 // level: every &BuildError{...} literal in the package carries a Family derived
 // from its Code, a Code from the errcode catalog (never a raw string), an
-// Operation, a Reason, and either Suggestions/Fixes (a user-fixable refusal's
-// concrete fixes) or Details/Fields (an internal invariant's explanation). The
-// contract is what makes goav errors uniformly actionable; this pin makes regressions
+// Operation, a Reason, and either Fixes (a user-fixable refusal's concrete
+// fixes) or Fields (an internal invariant's explanation). The legacy
+// Details/Suggestions fields are rendered compatibility only; production
+// BuildError literals must not add new string-only diagnostics. The contract is
+// what makes goav errors uniformly actionable; this pin makes regressions
 // impossible.
 func TestBuildErrorContractPinned(t *testing.T) {
 	files := parsePackageSourceFiles(t)
@@ -67,8 +69,14 @@ func TestBuildErrorContractPinned(t *testing.T) {
 			_, hasFixes := fields["Fixes"]
 			_, hasDetails := fields["Details"]
 			_, hasFields := fields["Fields"]
-			if !hasSuggestions && !hasFixes && !hasDetails && !hasFields {
-				t.Errorf("%s: BuildError literal carries neither Suggestions/Fixes (the fix) nor Details/Fields (what happened)", filename)
+			if hasSuggestions {
+				t.Errorf("%s: BuildError literal uses Suggestions; use Fixes with typed goav.Fix values", filename)
+			}
+			if hasDetails {
+				t.Errorf("%s: BuildError literal uses Details; use Fields with typed goav.Detail values", filename)
+			}
+			if !hasFixes && !hasFields {
+				t.Errorf("%s: BuildError literal carries neither Fixes (the fix) nor Fields (what happened)", filename)
 			}
 			return true
 		})

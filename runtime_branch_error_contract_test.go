@@ -60,7 +60,7 @@ func TestRuntimeBranchStructuredErrorContracts(t *testing.T) {
 			if buildErr.Operation == "" {
 				t.Fatal("Operation is empty")
 			}
-			if len(buildErr.Suggestions) == 0 {
+			if len(buildErr.FixLines()) == 0 {
 				t.Fatal("Suggestions is empty")
 			}
 		})

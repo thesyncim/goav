@@ -158,7 +158,7 @@ func resolveJoinProfile(spec *joinSpec) (joinProfile, error) {
 			Operation: "build " + kind,
 			Node:      kind,
 			Reason:    "unknown join kind",
-			Details:   []string{"declared join kinds: mix, composite, select; custom kinds go through goav.Join"},
+			Fields:    buildErrorFields([]string{"declared join kinds: mix, composite, select; custom kinds go through goav.Join"}),
 			Cause:     ErrUnsupportedBuild,
 		}
 	}
@@ -291,13 +291,13 @@ type joinDownstreamStagePlan struct {
 
 func joinArmError(name string, node string, reason string, suggestions ...string) error {
 	return &BuildError{
-		Family:      errcode.FamilyForCode(joinErrorCode(name, "arm")),
-		Code:        joinErrorCode(name, "arm"),
-		Operation:   "build " + name,
-		Node:        node,
-		Reason:      reason,
-		Suggestions: suggestions,
-		Cause:       ErrUnsupportedBuild,
+		Family:    errcode.FamilyForCode(joinErrorCode(name, "arm")),
+		Code:      joinErrorCode(name, "arm"),
+		Operation: "build " + name,
+		Node:      node,
+		Reason:    reason,
+		Fixes:     buildErrorFixes(suggestions),
+		Cause:     ErrUnsupportedBuild,
 	}
 }
 
@@ -310,10 +310,10 @@ func joinInputsError(kind string, node string) error {
 		Operation: "build " + kind,
 		Node:      node,
 		Reason:    kind + " requires at least two source arms",
-		Suggestions: []string{
+		Fixes: buildErrorFixes([]string{
 			"pass at least two arms: " + joinTwoArmExample(kind),
 			"route the single chain directly when nothing converges",
-		},
+		}),
 		Cause: ErrUnsupportedBuild,
 	}
 }
@@ -372,13 +372,13 @@ func newJoinPlan(rt *runtime, state *recipeCompileState) (*joinPlan, error) {
 		for i := range destinations {
 			if destinations[i].sink == nil {
 				return nil, &BuildError{
-					Family:      errcode.FamilyForCode(joinErrorCode(name, "destination")),
-					Code:        joinErrorCode(name, "destination"),
-					Operation:   "build " + name,
-					Node:        name,
-					Reason:      profile.sinkOnlyReason,
-					Suggestions: append([]string(nil), profile.sinkOnlySuggestions...),
-					Cause:       ErrUnsupportedBuild,
+					Family:    errcode.FamilyForCode(joinErrorCode(name, "destination")),
+					Code:      joinErrorCode(name, "destination"),
+					Operation: "build " + name,
+					Node:      name,
+					Reason:    profile.sinkOnlyReason,
+					Fixes:     buildErrorFixes(append([]string(nil), profile.sinkOnlySuggestions...)),
+					Cause:     ErrUnsupportedBuild,
 				}
 			}
 		}
@@ -548,10 +548,10 @@ func resolveJoinDestinations(name string, spec *joinSpec) ([]destinationSpec, er
 			Operation: "build " + name,
 			Node:      name,
 			Reason:    "no output is configured",
-			Suggestions: []string{
+			Fixes: buildErrorFixes([]string{
 				"route the join to one or more destinations: .To(goav.Sink(sink))",
 				"fan the joined stream out with .Branches(...) when branches need their own chains",
-			},
+			}),
 			Cause: ErrUnsupportedBuild,
 		}
 	}
@@ -1038,10 +1038,10 @@ func joinPlanTaps(spec *joinSpec, name string, joined av.Stream, domain shape.Me
 				Operation: "build " + name,
 				Node:      name,
 				Reason:    "tap name is empty",
-				Suggestions: []string{
+				Fixes: buildErrorFixes([]string{
 					"call .Tap(goav.FrameTap(\"" + name + ".out\")) or another stable tap ref",
 					"omit .Tap(...) when no runtime branch should attach at that point",
-				},
+				}),
 				Cause: ErrUnsupportedBuild,
 			}
 		}

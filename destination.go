@@ -402,13 +402,13 @@ func (s destinationSpec) validate(operation string, fallback string) error {
 			}
 		}
 		return &BuildError{
-			Family:      errcode.FamilyForCode(errcode.OutputInvalid),
-			Code:        errcode.OutputInvalid,
-			Operation:   operation,
-			Node:        node,
-			Reason:      s.err.Error(),
-			Suggestions: suggestions,
-			Cause:       s.err,
+			Family:    errcode.FamilyForCode(errcode.OutputInvalid),
+			Code:      errcode.OutputInvalid,
+			Operation: operation,
+			Node:      node,
+			Reason:    s.err.Error(),
+			Fixes:     buildErrorFixes(suggestions),
+			Cause:     s.err,
 		}
 	}
 	if s.sink != nil {
@@ -419,11 +419,11 @@ func (s destinationSpec) validate(operation string, fallback string) error {
 				Operation: operation,
 				Node:      node,
 				Reason:    err.Error(),
-				Suggestions: []string{
+				Fixes: buildErrorFixes([]string{
 					"pass a non-nil sink callback to component.SinkFunc(...)",
 					"pass a non-nil sink to goav.Sink(...)",
 					"use goav.File(...) or goav.URI(...) for muxed output",
-				},
+				}),
 				Cause: err,
 			}
 		}
@@ -436,10 +436,10 @@ func (s destinationSpec) validate(operation string, fallback string) error {
 			Operation: operation,
 			Node:      node,
 			Reason:    "empty destination",
-			Suggestions: []string{
+			Fixes: buildErrorFixes([]string{
 				"use goav.File(name, writer) for muxed output",
 				"use goav.Sink(sink) for decoded frames or packets",
-			},
+			}),
 			Cause: ErrUnsupportedBuild,
 		}
 	}
@@ -450,10 +450,10 @@ func (s destinationSpec) validate(operation string, fallback string) error {
 			Operation: operation,
 			Node:      node,
 			Reason:    "file output has no writer",
-			Suggestions: []string{
+			Fixes: buildErrorFixes([]string{
 				"pass a non-nil io.Writer to goav.File(name, writer)",
 				"use goav.URI(uri) when the output is opened by an adapter",
-			},
+			}),
 			Cause: ErrUnsupportedBuild,
 		}
 	}
@@ -464,10 +464,10 @@ func (s destinationSpec) validate(operation string, fallback string) error {
 			Operation: operation,
 			Node:      node,
 			Reason:    "writer-backed file output has no name, URI, MIME type, or explicit format",
-			Suggestions: []string{
+			Fixes: buildErrorFixes([]string{
 				"give goav.File(name, writer) a name with a container extension",
 				"pass goav.Format(...) to goav.File(...) when the writer has no filename",
-			},
+			}),
 			Cause: ErrUnsupportedBuild,
 		}
 	}
@@ -478,10 +478,10 @@ func (s destinationSpec) validate(operation string, fallback string) error {
 			Operation: operation,
 			Node:      node,
 			Reason:    "output has no URI, writer, or sink",
-			Suggestions: []string{
+			Fixes: buildErrorFixes([]string{
 				"use goav.File(name, writer) for writer-backed output",
 				"use goav.URI(uri) for URI-backed output",
-			},
+			}),
 			Cause: ErrUnsupportedBuild,
 		}
 	}
@@ -567,11 +567,11 @@ func duplicateOutputError(operation string, name string) error {
 		Operation: operation,
 		Node:      name,
 		Reason:    fmt.Sprintf("output name %q is defined more than once", name),
-		Suggestions: []string{
+		Fixes: buildErrorFixes([]string{
 			"use a unique output name for each output in the recipe",
 			"remove repeated outputs when one output should receive the stream once",
 			"pass goav.Name(...) to outputs or choose distinct sink names when labels should differ",
-		},
+		}),
 		Cause: ErrUnsupportedBuild,
 	}
 }
@@ -583,11 +583,11 @@ func duplicateDestinationHandleError(operation string, name string) error {
 		Operation: operation,
 		Node:      name,
 		Reason:    fmt.Sprintf("destination %q is attached more than once", name),
-		Suggestions: []string{
+		Fixes: buildErrorFixes([]string{
 			"list each destination value once in .To(...)",
 			"use distinct destination names when writing to separate destinations",
 			"reuse one destination value or wrap each grouped destination with goav.Mux(name, destination)",
-		},
+		}),
 		Cause: ErrUnsupportedBuild,
 	}
 }

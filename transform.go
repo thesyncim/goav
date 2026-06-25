@@ -165,18 +165,18 @@ func transformAdapterIncompatibleError(operation string, stream streamIntent, na
 		Operation: operation,
 		Node:      jobStreamIntentName(stream),
 		Reason:    name + " filter adapter declares incompatible media",
-		Details: []string{
+		Fields: buildErrorFields([]string{
 			"transform=" + name,
 			"expected_input=" + string(expectedInput),
 			"expected_output=" + string(expectedOutput),
 			"actual_input=" + string(desc.Input),
 			"actual_output=" + string(desc.Output),
-		},
-		Suggestions: []string{
+		}),
+		Fixes: buildErrorFixes([]string{
 			"register a " + name + " filter adapter whose descriptor declares " + string(expectedInput) + " input and " + string(expectedOutput) + " output",
 			"use .Video().Resize(...) with video resize adapters and .Audio().Resample(...) with audio resample adapters",
 			"fix the adapter descriptor if the implementation already supports this transform",
-		},
+		}),
 		Cause: ErrUnsupportedBuild,
 	}
 }
@@ -188,17 +188,17 @@ func transformAdapterCapabilityError(operation string, stream streamIntent, name
 		Operation: operation,
 		Node:      jobStreamIntentName(stream),
 		Reason:    name + " filter adapter does not support the requested " + strings.ReplaceAll(field, "_", " "),
-		Details: []string{
+		Fields: buildErrorFields([]string{
 			"transform=" + name,
 			"field=" + field,
 			"requested=" + requested,
 			"supported=" + strings.Join(supported, ","),
-		},
-		Suggestions: []string{
+		}),
+		Fixes: buildErrorFixes([]string{
 			"choose one of the supported " + strings.ReplaceAll(field, "_", " ") + " values",
 			"register a " + name + " filter adapter whose descriptor supports this transform config",
 			"fix the adapter descriptor if the implementation already supports this config",
-		},
+		}),
 		Cause: ErrUnsupportedBuild,
 	}
 }
@@ -213,14 +213,14 @@ func recipeTransformAdapterError(operation string, stream streamIntent, name str
 		Operation: operation,
 		Node:      jobStreamIntentName(stream),
 		Reason:    "no " + name + " filter adapter is registered",
-		Details: []string{
+		Fields: buildErrorFields([]string{
 			"transform=" + name,
-		},
-		Suggestions: []string{
+		}),
+		Fixes: buildErrorFixes([]string{
 			"register a filter adapter that provides " + name,
 			"import github.com/thesyncim/goav/bundle and build with bundle.MustNewFilters(...) for bundled resize and resample adapters",
 			"remove ." + transformMethodName(name) + "(...) when that conversion is not needed",
-		},
+		}),
 		Cause: cause,
 	}
 }
@@ -248,12 +248,12 @@ func streamTransform(streamName string, selector av.StreamSelector, spec Transfo
 	switch {
 	case spec.Resize != nil && spec.Resample != nil:
 		return mediaTransform{}, &BuildError{
-			Family:      errcode.FamilyForCode(errcode.TransformInvalid),
-			Code:        errcode.TransformInvalid,
-			Operation:   "build stream",
-			Node:        base,
-			Reason:      "one stream transform cannot be both resize and resample",
-			Suggestions: []string{"declare two separate steps instead: .Resize(width, height).Resample(rate, channels)"},
+			Family:    errcode.FamilyForCode(errcode.TransformInvalid),
+			Code:      errcode.TransformInvalid,
+			Operation: "build stream",
+			Node:      base,
+			Reason:    "one stream transform cannot be both resize and resample",
+			Fixes:     buildErrorFixes([]string{"declare two separate steps instead: .Resize(width, height).Resample(rate, channels)"}),
 		}
 	case spec.Resize != nil:
 		if selector.Type == av.MediaAudio {
@@ -282,10 +282,10 @@ func streamTransform(streamName string, selector av.StreamSelector, spec Transfo
 			Operation: "build stream",
 			Node:      base,
 			Reason:    "empty stream transform",
-			Suggestions: []string{
+			Fixes: buildErrorFixes([]string{
 				"call .Resize(width, height) for video streams",
 				"call .Resample(sampleRate, channels) for audio streams",
-			},
+			}),
 		}
 	}
 }
@@ -304,14 +304,14 @@ func validateTransformSpec(operation string, node string, spec TransformSpec) er
 			Operation: operation,
 			Node:      node,
 			Reason:    "resize requires positive width and height",
-			Details: []string{
+			Fields: buildErrorFields([]string{
 				fmt.Sprintf("width=%d", spec.Resize.Width),
 				fmt.Sprintf("height=%d", spec.Resize.Height),
-			},
-			Suggestions: []string{
+			}),
+			Fixes: buildErrorFixes([]string{
 				"call .Resize(width, height) with positive dimensions",
 				"remove .Resize(...) when no video scaling is needed",
-			},
+			}),
 			Cause: ErrUnsupportedBuild,
 		}
 	case spec.Resample != nil:
@@ -324,14 +324,14 @@ func validateTransformSpec(operation string, node string, spec TransformSpec) er
 			Operation: operation,
 			Node:      node,
 			Reason:    "resample requires positive sample rate and channels",
-			Details: []string{
+			Fields: buildErrorFields([]string{
 				fmt.Sprintf("sample_rate=%d", spec.Resample.SampleRate),
 				fmt.Sprintf("channels=%d", spec.Resample.Channels),
-			},
-			Suggestions: []string{
+			}),
+			Fixes: buildErrorFixes([]string{
 				"call .Resample(sampleRate, channels) with positive values",
 				"remove .Resample(...) when no audio conversion is needed",
-			},
+			}),
 			Cause: ErrUnsupportedBuild,
 		}
 	default:
@@ -346,14 +346,14 @@ func transformMediaError(stream string, transform string, expected av.MediaType,
 		Operation: "build stream",
 		Node:      stream,
 		Reason:    transform + " applies to " + string(expected) + " streams",
-		Details: []string{
+		Fields: buildErrorFields([]string{
 			"expected_shape=" + shape.Frame(expected).String(),
 			"actual_shape=" + shape.Frame(actual).String(),
-		},
-		Suggestions: []string{
+		}),
+		Fixes: buildErrorFixes([]string{
 			"use .Video().Resize(...) for video scaling",
 			"use .Audio().Resample(...) for audio sample-rate or channel conversion",
-		},
+		}),
 		Cause: ErrUnsupportedBuild,
 	}
 }

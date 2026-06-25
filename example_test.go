@@ -458,7 +458,7 @@ func ExampleBuildError() {
 	if errors.As(err, &buildErr) {
 		fmt.Println("code:", buildErr.Code)
 		fmt.Println("catalog match:", buildErr.Code == errcode.EncodeMissing)
-		fmt.Println("has fixes:", len(buildErr.Suggestions) > 0)
+		fmt.Println("has fixes:", len(buildErr.FixLines()) > 0)
 	}
 	fmt.Println("build refusal:", errors.Is(err, goav.ErrUnsupportedBuild))
 	// Output:

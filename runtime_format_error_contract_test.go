@@ -131,13 +131,13 @@ func TestRuntimeFormatErrorContracts(t *testing.T) {
 				t.Fatalf("BuildError does not unwrap %v: %+v", cause, buildErr)
 			}
 			for _, detail := range tt.details {
-				if !runtimeFormatSliceContains(buildErr.Details, detail) {
-					t.Fatalf("details = %v, want fragment %q", buildErr.Details, detail)
+				if !runtimeFormatSliceContains(buildErr.DetailLines(), detail) {
+					t.Fatalf("details = %v, want fragment %q", buildErr.DetailLines(), detail)
 				}
 			}
 			for _, suggestion := range tt.suggestionAny {
-				if !runtimeFormatSliceContains(buildErr.Suggestions, suggestion) {
-					t.Fatalf("suggestions = %v, want fragment %q", buildErr.Suggestions, suggestion)
+				if !runtimeFormatSliceContains(buildErr.FixLines(), suggestion) {
+					t.Fatalf("suggestions = %v, want fragment %q", buildErr.FixLines(), suggestion)
 				}
 			}
 		})

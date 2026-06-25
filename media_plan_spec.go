@@ -159,11 +159,11 @@ func graphPlanInvalidError(reason string, details []string) error {
 		Code:      errcode.GraphPlanInvalid,
 		Operation: "build graph plan",
 		Reason:    reason,
-		Details:   append([]string(nil), details...),
-		Suggestions: []string{
+		Fields:    buildErrorFields(append([]string(nil), details...)),
+		Fixes: buildErrorFixes([]string{
 			"compile recipes through goav.From(...), chains, branches, and destinations",
 			"keep graph-plan nodes, edges, operations, and destinations in sync",
-		},
+		}),
 		Cause: ErrUnsupportedBuild,
 	}
 }

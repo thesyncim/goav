@@ -609,13 +609,13 @@ func branchComposePlanEmptyError(kind string) error {
 	}
 	reason := "branch composition has no " + kind
 	return &BuildError{
-		Family:      errcode.FamilyForCode(errcode.BranchComposePlanEmpty),
-		Code:        errcode.BranchComposePlanEmpty,
-		Operation:   "build branch composition",
-		Node:        kind,
-		Reason:      reason,
-		Suggestions: suggestions,
-		Cause:       ErrUnsupportedBuild,
+		Family:    errcode.FamilyForCode(errcode.BranchComposePlanEmpty),
+		Code:      errcode.BranchComposePlanEmpty,
+		Operation: "build branch composition",
+		Node:      kind,
+		Reason:    reason,
+		Fixes:     buildErrorFixes(suggestions),
+		Cause:     ErrUnsupportedBuild,
 	}
 }
 
@@ -923,14 +923,14 @@ func branchComposeDecodeConfigConflictError(first string, second string) error {
 		Operation: "build branch composition",
 		Node:      second,
 		Reason:    "branches that share one decoder declared different decode configs",
-		Details: []string{
+		Fields: buildErrorFields([]string{
 			"first branch: " + first,
 			"conflicting branch: " + second,
-		},
-		Suggestions: []string{
+		}),
+		Fixes: buildErrorFixes([]string{
 			"move shared decode config to the stream chain with .Decode(...)",
 			"use the same decode config for branches that share a decoder",
-		},
+		}),
 	}
 }
 
@@ -941,14 +941,14 @@ func branchComposeCodecChangeConflictError(first string, second string) error {
 		Operation: "build branch composition",
 		Node:      second,
 		Reason:    "branches that share one decoder declared different codec-change policies",
-		Details: []string{
+		Fields: buildErrorFields([]string{
 			"first branch: " + first,
 			"conflicting branch: " + second,
-		},
-		Suggestions: []string{
+		}),
+		Fixes: buildErrorFixes([]string{
 			"use the same codec-change policy for branches that share a decoder",
 			"split branches by stream selector when policies must differ",
-		},
+		}),
 		Cause: ErrUnsupportedBuild,
 	}
 }
@@ -960,13 +960,13 @@ func branchComposeDuplicateBranchError(name string, index int) error {
 		Operation: "build branch composition",
 		Node:      name,
 		Reason:    "branch name is defined more than once",
-		Details: []string{
+		Fields: buildErrorFields([]string{
 			"duplicate index: " + strconv.Itoa(index),
-		},
-		Suggestions: []string{
+		}),
+		Fixes: buildErrorFixes([]string{
 			"give each branch a stable unique name",
 			"use distinct branch names when multiple branches share one selected stream",
-		},
+		}),
 		Cause: ErrUnsupportedBuild,
 	}
 }
@@ -1128,11 +1128,11 @@ func branchChainStepError(name string, reason string) error {
 		Operation: "build branch composition",
 		Node:      name,
 		Reason:    reason,
-		Suggestions: []string{
+		Fixes: buildErrorFixes([]string{
 			"use one operation per branch call",
 			"use resize on video branches and resample on audio branches",
 			"use goav.Branch(name).Do(stage).Resize(...).Encode(codec.VP9(...)).To(output) for recipe branch operations",
-		},
+		}),
 		Cause: ErrUnsupportedBuild,
 	}
 }
@@ -1268,12 +1268,12 @@ func mediaTransformMismatchError(transform mediaTransform, stream av.Stream, ope
 		Operation: "build branch composition",
 		Node:      transform.name,
 		Reason:    operation + " applies to " + media + " streams",
-		Details:   details,
-		Suggestions: []string{
+		Fields:    buildErrorFields(details),
+		Fixes: buildErrorFixes([]string{
 			"use resize on video branches",
 			"use resample on audio branches",
 			"check the branch selector",
-		},
+		}),
 		Cause: ErrUnsupportedBuild,
 	}
 }
@@ -1332,12 +1332,12 @@ func branchComposeTargetUnmatchedError(output branchComposeTarget, destination f
 		Operation: "build branch composition",
 		Node:      node,
 		Reason:    "destination selects no branches",
-		Details:   details,
-		Suggestions: []string{
+		Fields:    buildErrorFields(details),
+		Fixes: buildErrorFixes([]string{
 			"reference a branch name",
 			"reference a destination name listed on the branch",
 			"omit explicit branch filters when the destination should receive every branch",
-		},
+		}),
 		Cause: ErrUnsupportedBuild,
 	}
 }
@@ -1349,10 +1349,10 @@ func branchComposeTargetDestinationInvalidError(output branchComposeTarget, reas
 		Operation: "build branch composition",
 		Node:      branchComposeTargetNodeName(output, "output"),
 		Reason:    reason,
-		Suggestions: []string{
+		Fixes: buildErrorFixes([]string{
 			"use goav.Sink(sink) for frame or packet sink destinations",
 			"use goav.File(...) or goav.URI(...) for muxed destinations",
-		},
+		}),
 		Cause: ErrUnsupportedBuild,
 	}
 }
@@ -1364,13 +1364,13 @@ func branchComposeTargetEncodeMissingError(output branchComposeTarget, destinati
 		Operation: "build branch composition",
 		Node:      firstNonEmpty(branch.name, branch.branch.Name, branchComposeTargetNodeName(output, "output")),
 		Reason:    "muxed destinations require encoded branches",
-		Details: []string{
+		Fields: buildErrorFields([]string{
 			"destination: " + firstNonEmpty(output.Name, destination.Name, destination.URI, "output"),
-		},
-		Suggestions: []string{
+		}),
+		Fixes: buildErrorFixes([]string{
 			"encode the branch before routing it to a mux destination",
 			"route raw decoded branches to goav.Sink(sink)",
-		},
+		}),
 		Cause: ErrUnsupportedBuild,
 	}
 }
@@ -1530,19 +1530,19 @@ func transcodeResizeConfigError(stream av.Stream, mode filter.ResizeMode, config
 		Operation: "build transcode",
 		Node:      node,
 		Reason:    reason,
-		Details: []string{
+		Fields: buildErrorFields([]string{
 			"mode: " + string(mode),
 			"stream id: " + string(stream.ID),
 			"input width: " + strconv.Itoa(stream.Codec.Width),
 			"input height: " + strconv.Itoa(stream.Codec.Height),
 			"target width: " + strconv.Itoa(config.Width),
 			"target height: " + strconv.Itoa(config.Height),
-		},
-		Suggestions: []string{
+		}),
+		Fixes: buildErrorFixes([]string{
 			"use resize mode exact, fit, fill, or passthrough",
 			"provide positive target dimensions for fit and fill",
 			"use exact resize when input dimensions are not known before filtering",
-		},
+		}),
 		Cause: ErrUnsupportedBuild,
 	}
 }

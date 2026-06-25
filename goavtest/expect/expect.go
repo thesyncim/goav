@@ -169,12 +169,13 @@ func ReasonContains(fragment string) BuildErrorCheck {
 func DetailContains(fragment string) BuildErrorCheck {
 	return func(t TB, err error, buildErr *goav.BuildError) {
 		t.Helper()
-		for _, detail := range buildErr.Details {
+		details := buildErr.DetailLines()
+		for _, detail := range details {
 			if strings.Contains(detail, fragment) {
 				return
 			}
 		}
-		t.Fatalf("BuildError details = %#v, want one entry to contain %q\n%s", buildErr.Details, fragment, formatBuildError(err, buildErr))
+		t.Fatalf("BuildError details = %#v, want one entry to contain %q\n%s", details, fragment, formatBuildError(err, buildErr))
 	}
 }
 
@@ -182,12 +183,13 @@ func DetailContains(fragment string) BuildErrorCheck {
 func SuggestionContains(fragment string) BuildErrorCheck {
 	return func(t TB, err error, buildErr *goav.BuildError) {
 		t.Helper()
-		for _, suggestion := range buildErr.Suggestions {
+		suggestions := buildErr.FixLines()
+		for _, suggestion := range suggestions {
 			if strings.Contains(suggestion, fragment) {
 				return
 			}
 		}
-		t.Fatalf("BuildError suggestions = %#v, want one entry to contain %q\n%s", buildErr.Suggestions, fragment, formatBuildError(err, buildErr))
+		t.Fatalf("BuildError suggestions = %#v, want one entry to contain %q\n%s", suggestions, fragment, formatBuildError(err, buildErr))
 	}
 }
 
@@ -202,14 +204,14 @@ func formatBuildError(err error, buildErr *goav.BuildError) string {
 	if buildErr == nil {
 		return fmt.Sprintf("err: %v", err)
 	}
-	return fmt.Sprintf("err: %v\nfields: code=%q operation=%q node=%q reason=%q details=%#v suggestions=%#v cause=%v",
+	return fmt.Sprintf("err: %v\nfields: code=%q operation=%q node=%q reason=%q details=%#v fixes=%#v cause=%v",
 		err,
 		buildErr.Code,
 		buildErr.Operation,
 		buildErr.Node,
 		buildErr.Reason,
-		buildErr.Details,
-		buildErr.Suggestions,
+		buildErr.DetailLines(),
+		buildErr.FixLines(),
 		buildErr.Cause,
 	)
 }

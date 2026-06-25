@@ -102,8 +102,8 @@ func structuredError(operation string, err error) *Error {
 			firstNonEmpty(buildErr.Operation, operation),
 			buildErr.Node,
 			buildErr.Reason,
-			buildErr.Details,
-			buildErr.Suggestions,
+			buildErr.DetailLines(),
+			buildErr.FixLines(),
 			buildErr.Cause,
 		)
 	}

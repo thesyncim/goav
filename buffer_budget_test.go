@@ -42,7 +42,7 @@ func TestRealtimeEncodeRecipeRefusesUnsupportedBufferBudgetFact(t *testing.T) {
 	if !strings.Contains(buildErr.Reason, `unsupported pixel_format "rgb24"`) {
 		t.Fatalf("reason = %q, want unsupported pixel_format fact", buildErr.Reason)
 	}
-	if len(buildErr.Suggestions) == 0 {
+	if len(buildErr.FixLines()) == 0 {
 		t.Fatalf("suggestions = nil, want user fix")
 	}
 }
@@ -73,7 +73,7 @@ func TestRealtimeDecodeRecipeRefusesMissingBufferBudgetFact(t *testing.T) {
 	if !strings.Contains(buildErr.Reason, "missing sample_format") {
 		t.Fatalf("reason = %q, want missing sample_format fact", buildErr.Reason)
 	}
-	if len(buildErr.Suggestions) == 0 {
+	if len(buildErr.FixLines()) == 0 {
 		t.Fatalf("suggestions = nil, want user fix")
 	}
 }

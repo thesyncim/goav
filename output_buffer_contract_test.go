@@ -197,8 +197,8 @@ func TestBufferBudgetDecisionHelperContracts(t *testing.T) {
 	if buildErr.Code != errcode.BufferBudgetMissing || buildErr.Node != "custom-node" || !strings.Contains(buildErr.Reason, `unsupported pixel_format "rgb24"`) {
 		t.Fatalf("BuildError = %+v, want buffer_budget_missing on custom-node with rgb24 reason", buildErr)
 	}
-	if len(buildErr.Details) != 3 || len(buildErr.Suggestions) == 0 {
-		t.Fatalf("BuildError details/suggestions = %#v / %#v", buildErr.Details, buildErr.Suggestions)
+	if len(buildErr.DetailLines()) != 3 || len(buildErr.FixLines()) == 0 {
+		t.Fatalf("BuildError details/suggestions = %#v / %#v", buildErr.DetailLines(), buildErr.FixLines())
 	}
 }
 
