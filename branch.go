@@ -31,7 +31,7 @@ type Destination struct {
 	spec destinationSpec
 }
 
-// DestinationOption configures a destination value (File, URI, Writer,
+// DestinationOption configures a destination value (Write, URI, Writer,
 // Custom, or Destination.With): Format pins the container, and the
 // direction-agnostic MediaOptions (Name, MIME, Metadata) satisfy it too. It is
 // sealed — only goav option constructors implement it.
@@ -959,7 +959,7 @@ func branchMissingError(node string) error {
 		Node:      node,
 		Reason:    "Branches requires at least one encoded branch",
 		Fixes: buildErrorFixes([]string{
-			"pass branches with goav.Branch(name).Encode(codec.VP9(...)).To(goav.File(name, writer))",
+			"pass branches with goav.Branch(name).Encode(codec.VP9(...)).To(goav.Write(name, writer))",
 			"pass goav.Mux(name, destination) when branches should share one mux group",
 		}),
 		Cause: ErrUnsupportedBuild,
@@ -987,7 +987,7 @@ func branchDestinationMissingError(name string) error {
 		Node:      firstNonEmpty(name, "branch"),
 		Reason:    "branch has no destination",
 		Fixes: buildErrorFixes([]string{
-			"finish the branch with .To(goav.File(\"web.ivf\", writer)) or .To(goav.Sink(sink))",
+			"finish the branch with .To(goav.Write(\"web.ivf\", writer)) or .To(goav.Sink(sink))",
 			"pass goav.Mux(name, destination) when several branches should share one mux or sink group",
 		}),
 		Cause: ErrUnsupportedBuild,
@@ -1014,7 +1014,8 @@ func destinationInvalidError(operation string, node string, reason string) error
 		Node:      node,
 		Reason:    reason,
 		Fixes: buildErrorFixes([]string{
-			"reuse one goav.File(...), goav.URI(...), or goav.Sink(...) value for mux/sink groups",
+			"use goav.Write(...), goav.URI(...), or goav.Sink(...) for a real destination",
+			"wrap shared outputs with goav.Mux(name, destination)",
 			"use distinct destination values for independent outputs",
 		}),
 		Cause: ErrUnsupportedBuild,

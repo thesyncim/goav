@@ -38,7 +38,7 @@ func ExampleInput() {
 		UseRuntime(bundle.MustNew()).
 		Audio().
 		Copy().
-		To(goav.File("mic.webm", io.Discard)).
+		To(goav.Write("mic.webm", io.Discard)).
 		Explain(context.Background())
 	if err != nil {
 		fmt.Println(err)

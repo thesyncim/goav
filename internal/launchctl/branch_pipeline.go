@@ -464,7 +464,7 @@ func parseFileSink(args map[string]string) (goav.Destination, error) {
 	if sink.Format != "" {
 		options = append(options, goav.Format(sink.Format))
 	}
-	return goav.File(sink.Location, closeOnceWriter{Writer: writer, closer: writer}, options...), nil
+	return goav.Write(sink.Location, closeOnceWriter{Writer: writer, closer: writer}, options...), nil
 }
 
 func fileSinkOptionError(err error) error {

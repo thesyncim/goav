@@ -96,7 +96,7 @@ func TestWebRTCTrackRecordRecipeUsesCodecIntent(t *testing.T) {
 		}),
 	).UseRuntime(webRTCTestRuntime()).
 		Copy().
-		To(goav.File("recording.ivf", io.Discard))
+		To(goav.Write("recording.ivf", io.Discard))
 
 	spec, err := job.Describe()
 	if err != nil {
@@ -149,7 +149,7 @@ func TestWebRTCTrackUnknownCodecMetadataYieldsNoCodecIntent(t *testing.T) {
 	report, err := goav.From(input).
 		UseRuntime(webRTCTestRuntime()).
 		Copy().
-		To(goav.File("recording.webm", io.Discard)).
+		To(goav.Write("recording.webm", io.Discard)).
 		Explain(context.Background())
 	if err != nil {
 		t.Fatal(err)
@@ -195,7 +195,7 @@ func TestWebRTCTrackRecordMultiInputRecipeUsesCodecIntent(t *testing.T) {
 				Type: av.MediaVideo,
 			},
 		})).
-		To(goav.File("recording.webm", io.Discard))
+		To(goav.Write("recording.webm", io.Discard))
 
 	spec, err := job.Describe()
 	if err != nil {
@@ -227,7 +227,7 @@ func TestWebRTCTrackRecipeReportsNilTrack(t *testing.T) {
 		goav.Input(webrtcav.Track(nil)),
 	).UseRuntime(webRTCTestRuntime()).
 		Copy().
-		To(goav.File("recording.ivf", io.Discard)).
+		To(goav.Write("recording.ivf", io.Discard)).
 		Build(context.Background())
 	if !errors.Is(err, webrtcav.ErrNilTrack) {
 		t.Fatalf("err = %v, want webrtcav.ErrNilTrack", err)

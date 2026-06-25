@@ -68,7 +68,7 @@ func TestAttachPatchHelperContracts(t *testing.T) {
 		t.Fatalf("unknown detail = %q", got)
 	}
 
-	fileDest := File("archive.webm", io.Discard, Format(av.FormatWebM)).spec
+	fileDest := Write("archive.webm", io.Discard, Format(av.FormatWebM)).spec
 	destinations := []attachDestination{
 		{name: "live", sink: sink},
 		{dest: fileDest},

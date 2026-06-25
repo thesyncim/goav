@@ -163,7 +163,7 @@ func TestSelectRequiresSinkDestination(t *testing.T) {
 	_, err := Select(
 		From(selectTestOneShotSource("a", 1)).Audio(),
 		From(selectTestOneShotSource("b", 2)).Audio(),
-	).To(File("selected.ogg", io.Discard)).
+	).To(Write("selected.ogg", io.Discard)).
 		Build(context.Background())
 	var buildErr *BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "select_destination" || !errors.Is(err, ErrUnsupportedBuild) {

@@ -41,7 +41,7 @@ var errorCatalogExamples = []errorCatalogExample{
 	{
 		Code:          "input_missing",
 		Test:          "TestErrorAcceptanceMissingInput",
-		BadRecipe:     `goav.From().Copy().To(goav.File(...))`,
+		BadRecipe:     `goav.From().Copy().To(goav.Write(...))`,
 		RenderedError: "missing-input rendered error and start-from-input suggestion are asserted by the test",
 		Fix:           `start the recipe from goav.From(goav.FileInput("in.webm", reader))`,
 		Cause:         "goav.ErrUnsupportedBuild",
@@ -169,7 +169,7 @@ var errorCatalogExamples = []errorCatalogExample{
 	{
 		Code:          "stream_operation_missing",
 		Test:          "TestStreamRecipeRequiresOperationForMuxOutput",
-		BadRecipe:     `.Audio().To(goav.File("archive.ogg", ...))`,
+		BadRecipe:     `.Audio().To(goav.Write("archive.ogg", ...))`,
 		RenderedError: "missing-operation refusal is asserted by the test",
 		Fix:           "add Decode/Copy/Encode work before routing to a muxed destination",
 		Cause:         "goav.ErrUnsupportedBuild",
@@ -265,7 +265,7 @@ var errorCatalogExamples = []errorCatalogExample{
 	{
 		Code:          "operation_shape_mismatch",
 		Test:          "TestErrorAcceptanceCopyAfterDecode",
-		BadRecipe:     `.Audio().Decode().Copy().To(goav.File(...))`,
+		BadRecipe:     `.Audio().Decode().Copy().To(goav.Write(...))`,
 		RenderedError: "full BuildError fields plus rendered suggestions are asserted by the test",
 		Fix:           "move .Copy() before decode, or use .Encode(codec...) instead of .Copy()",
 		Cause:         "goav.ErrUnsupportedBuild",
@@ -281,7 +281,7 @@ var errorCatalogExamples = []errorCatalogExample{
 	{
 		Code:          "encode_missing",
 		Test:          "TestErrorAcceptanceFramesIntoContainerWithoutEncode",
-		BadRecipe:     `.Audio().Decode().To(goav.File(...))`,
+		BadRecipe:     `.Audio().Decode().To(goav.Write(...))`,
 		RenderedError: "full BuildError fields plus rendered suggestions are asserted by the test",
 		Fix:           "add .Encode(codec.Opus(...)) or route frames to goav.Sink(...)",
 		Cause:         "goav.ErrUnsupportedBuild",
@@ -305,7 +305,7 @@ var errorCatalogExamples = []errorCatalogExample{
 	{
 		Code:          "operation_shape_mismatch",
 		Test:          "TestErrorAcceptanceTransformAfterCopy",
-		BadRecipe:     `.Video().Copy().Resize(...).To(goav.File(...))`,
+		BadRecipe:     `.Video().Copy().Resize(...).To(goav.Write(...))`,
 		RenderedError: "full BuildError fields plus rendered suggestions are asserted by the test",
 		Fix:           "call .Decode() before .Resize(...)",
 		Cause:         "goav.ErrUnsupportedBuild",
@@ -313,7 +313,7 @@ var errorCatalogExamples = []errorCatalogExample{
 	{
 		Code:          "destination_format_unknown",
 		Test:          "TestErrorAcceptanceDestinationFormatUnknown",
-		BadRecipe:     `.To(goav.File("out.weird", ...))`,
+		BadRecipe:     `.To(goav.Write("out.weird", ...))`,
 		RenderedError: "full BuildError fields plus rendered suggestions are asserted by the test",
 		Fix:           "pass goav.Format(...)",
 		Cause:         "goav.ErrUnsupportedBuild",
@@ -321,7 +321,7 @@ var errorCatalogExamples = []errorCatalogExample{
 	{
 		Code:          "destination_muxer_missing",
 		Test:          "TestErrorAcceptanceDestinationMuxerMissing",
-		BadRecipe:     `.To(goav.File("out.ogg", ...))` + " with no Ogg muxer registered",
+		BadRecipe:     `.To(goav.Write("out.ogg", ...))` + " with no Ogg muxer registered",
 		RenderedError: "full BuildError fields plus rendered suggestions are asserted by the test",
 		Fix:           "register a muxer with goavruntime.WithMuxer(...)",
 		Cause:         "goav.ErrUnsupportedBuild",
@@ -353,7 +353,7 @@ var errorCatalogExamples = []errorCatalogExample{
 	{
 		Code:          "output_kind_mixed",
 		Test:          "TestStreamRecipeRejectsMixedSinkAndFile",
-		BadRecipe:     `.Audio().Decode().To(goav.Sink(...), goav.File(...))`,
+		BadRecipe:     `.Audio().Decode().To(goav.Sink(...), goav.Write(...))`,
 		RenderedError: "mixed sink/muxed output guidance is asserted by the test",
 		Fix:           "use branches when one stream needs separate decoded and encoded outputs",
 		Cause:         "goav.ErrUnsupportedBuild",
@@ -361,7 +361,7 @@ var errorCatalogExamples = []errorCatalogExample{
 	{
 		Code:          "output_writer_missing",
 		Test:          "TestBranchRecipeRejectsInvalidDestination",
-		BadRecipe:     `goav.File("preview.webm", nil)`,
+		BadRecipe:     `goav.Write("preview.webm", nil)`,
 		RenderedError: "nil writer refusal and unsupported-build cause are asserted by the test",
 		Fix:           "pass a non-nil writer",
 		Cause:         "goav.ErrUnsupportedBuild",
@@ -370,14 +370,14 @@ var errorCatalogExamples = []errorCatalogExample{
 		Code:          "destination_missing",
 		Test:          "TestBranchRecipeRequiresBranchDestination",
 		BadRecipe:     `branchJob(input).Video("360p").Encode(...).Build(ctx)`,
-		RenderedError: "missing branch destination and goav.File guidance are asserted by the test",
-		Fix:           "finish the branch with .To(goav.File(...)) or .To(goav.Sink(...))",
+		RenderedError: "missing branch destination and goav.Write guidance are asserted by the test",
+		Fix:           "finish the branch with .To(goav.Write(...)) or .To(goav.Sink(...))",
 		Cause:         "goav.ErrUnsupportedBuild",
 	},
 	{
 		Code:          "destination_duplicate",
 		Test:          "TestBranchRecipeRejectsDuplicateDestinations",
-		BadRecipe:     `branchJob(input).Video("720p").To(File("web.webm")).Video("360p").To(File("web.webm"))`,
+		BadRecipe:     `branchJob(input).Video("720p").To(Write("web.webm")).Video("360p").To(Write("web.webm"))`,
 		RenderedError: "duplicate destination details and mux grouping guidance are asserted by the test",
 		Fix:           "pass goav.Mux(name, destination) for mux/sink groups",
 		Cause:         "goav.ErrUnsupportedBuild",
@@ -644,7 +644,7 @@ var errorCatalogAdditionalExamples = []errorCatalogExample{
 	{
 		Code:          "output_format_missing",
 		Test:          "TestRecordRecipeRejectsUnnamedFileWithoutFormat",
-		BadRecipe:     `goav.File("", writer)` + " without explicit format",
+		BadRecipe:     `goav.Write("", writer)` + " without explicit format",
 		RenderedError: "missing output format derivation is asserted by the test",
 		Fix:           "name the file with an extension or pass goav.Format(...)",
 		Cause:         "goav.ErrUnsupportedBuild",
@@ -652,7 +652,7 @@ var errorCatalogAdditionalExamples = []errorCatalogExample{
 	{
 		Code:          "output_format_unknown",
 		Test:          "TestRuntimeFormatErrorContracts",
-		BadRecipe:     `goav.File("out.unknown", writer)` + " with no detectable output format",
+		BadRecipe:     `goav.Write("out.unknown", writer)` + " with no detectable output format",
 		RenderedError: "unknown output format details and explicit-format guidance are asserted by the test",
 		Fix:           "pass goav.Format(...) or use a known output extension/MIME type",
 		Cause:         "goav.ErrUnsupportedBuild",
@@ -660,7 +660,7 @@ var errorCatalogAdditionalExamples = []errorCatalogExample{
 	{
 		Code:          "output_muxer_missing",
 		Test:          "TestRuntimeFormatErrorContracts",
-		BadRecipe:     `goav.File("out.ogg", writer)` + " with no Ogg muxer registered",
+		BadRecipe:     `goav.Write("out.ogg", writer)` + " with no Ogg muxer registered",
 		RenderedError: "missing output muxer and registration guidance are asserted by the test",
 		Fix:           "register a muxer with goavruntime.WithFormatAdapter(...) or use bundle.MustNew(...)",
 		Cause:         "goav.ErrUnsupportedBuild",
@@ -670,7 +670,7 @@ var errorCatalogAdditionalExamples = []errorCatalogExample{
 		Test:          "TestRecordRecipeRejectsFormatOnlyDestination",
 		BadRecipe:     `goav.Destination{Format: av.FormatOgg}` + " without URI, writer, or sink",
 		RenderedError: "missing destination endpoint is asserted by the test",
-		Fix:           "provide a URI, writer-backed File destination, or Sink destination",
+		Fix:           "provide a URI, writer-backed Write destination, or Sink destination",
 		Cause:         "goav.ErrUnsupportedBuild",
 	},
 	{
@@ -678,7 +678,7 @@ var errorCatalogAdditionalExamples = []errorCatalogExample{
 		Test:          "TestBranchToRefusesEmptyDestination",
 		BadRecipe:     `goav.Branch("preview").To(goav.Destination{})`,
 		RenderedError: "empty branch destination refusal is asserted by the test",
-		Fix:           "use goav.File(...), goav.Sink(...), or another valid destination constructor",
+		Fix:           "use goav.Write(...), goav.Sink(...), or another valid destination constructor",
 		Cause:         "goav.ErrUnsupportedBuild",
 	},
 	{
@@ -868,7 +868,7 @@ var errorCatalogAdditionalExamples = []errorCatalogExample{
 	{
 		Code:          "mix_destination",
 		Test:          "TestMixRawFramesRequireSinkDestination",
-		BadRecipe:     `goav.Mix(a, b).To(goav.File("mix.ogg", writer))` + " without Encode",
+		BadRecipe:     `goav.Mix(a, b).To(goav.Write("mix.ogg", writer))` + " without Encode",
 		RenderedError: "raw Mix destination refusal and encode-or-sink guidance are asserted by the test",
 		Fix:           "call .Encode(codec.Opus(...)) before file output or route raw frames to goav.Sink(...)",
 		Cause:         "goav.ErrUnsupportedBuild",
@@ -900,7 +900,7 @@ var errorCatalogAdditionalExamples = []errorCatalogExample{
 	{
 		Code:          "composite_destination",
 		Test:          "TestCompositeRawFramesRequireSinkDestination",
-		BadRecipe:     `goav.Composite(a, b).To(goav.File("canvas.ivf", writer))` + " without Encode",
+		BadRecipe:     `goav.Composite(a, b).To(goav.Write("canvas.ivf", writer))` + " without Encode",
 		RenderedError: "raw Composite destination refusal and encode-or-sink guidance are asserted by the test",
 		Fix:           "call .Encode(codec.VP8(...)) before file output or route raw frames to goav.Sink(...)",
 		Cause:         "goav.ErrUnsupportedBuild",
@@ -932,7 +932,7 @@ var errorCatalogAdditionalExamples = []errorCatalogExample{
 	{
 		Code:          "select_destination",
 		Test:          "TestSelectRequiresSinkDestination",
-		BadRecipe:     `goav.Select(a, b).To(goav.File("selected.ogg", writer))`,
+		BadRecipe:     `goav.Select(a, b).To(goav.Write("selected.ogg", writer))`,
 		RenderedError: "Select sink-only destination refusal is asserted by the test",
 		Fix:           "deliver selected frames to goav.Sink(...) or use .Branches(...) for muxed outputs",
 		Cause:         "goav.ErrUnsupportedBuild",

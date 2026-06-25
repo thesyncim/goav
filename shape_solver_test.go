@@ -468,7 +468,7 @@ func TestReadmeAutoResampleExampleBuilds(t *testing.T) {
 		Audio().
 		Auto(shape.AllowResample()).
 		Encode(codec.Opus(codec.Bitrate(96_000))).
-		To(File("voice.webm", io.Discard)).
+		To(Write("voice.webm", io.Discard)).
 		UseRuntime(testBundleRuntime())
 	planned, err := job.Describe()
 	if err != nil {

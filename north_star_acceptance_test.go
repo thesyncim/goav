@@ -56,7 +56,7 @@ func northStarTranscodeRuntime() *Runtime {
 // chain must lower to the same graph as the explicit Branch("main") form — the
 // core "a direct chain is just an implicit Branch(\"main\")" rule.
 func TestNorthStarDirectChainEqualsExplicitMainBranch(t *testing.T) {
-	dest := File("archive.ogg", io.Discard)
+	dest := Write("archive.ogg", io.Discard)
 
 	direct, err := From(FileInput("input.ogg", strings.NewReader(""))).UseRuntime(northStarTranscodeRuntime()).
 		Audio().Decode().Encode(codec.Opus(codec.Bitrate(96_000))).To(dest).
@@ -82,7 +82,7 @@ func TestNorthStarDirectChainEqualsExplicitMainBranch(t *testing.T) {
 // the same graph as Branch("main") with the same resample — so the implicit
 // branch names its private transform node by selector scope too, not "main".
 func TestNorthStarDirectChainEqualsExplicitMainBranchWithTransform(t *testing.T) {
-	dest := File("archive.ogg", io.Discard)
+	dest := Write("archive.ogg", io.Discard)
 
 	direct, err := From(FileInput("input.ogg", strings.NewReader(""))).UseRuntime(northStarResampleRuntime()).
 		Audio().Decode().Resample(16_000, codec.Mono).Encode(codec.Opus(codec.Bitrate(96_000))).To(dest).
@@ -229,7 +229,7 @@ func TestNorthStarCustomPacketSourceCopiesToFile(t *testing.T) {
 		},
 	)
 	err := From(input).UseRuntime(rt).
-		Audio().Copy().To(File("capture.ogg", io.Discard, Format(av.FormatOgg))).
+		Audio().Copy().To(Write("capture.ogg", io.Discard, Format(av.FormatOgg))).
 		Run(context.Background())
 	if err != nil {
 		t.Fatalf("NORTH_STAR #34: custom packet source Copy to File: %v", err)
@@ -267,7 +267,7 @@ func TestNorthStarCustomFrameSourceEncodesToFile(t *testing.T) {
 		},
 	)
 	err := From(input).UseRuntime(rt).
-		Audio().Encode(codec.Opus(codec.Bitrate(96_000))).To(File("capture.ogg", io.Discard, Format(av.FormatOgg))).
+		Audio().Encode(codec.Opus(codec.Bitrate(96_000))).To(Write("capture.ogg", io.Discard, Format(av.FormatOgg))).
 		Run(context.Background())
 	if err != nil {
 		t.Fatalf("NORTH_STAR #35: custom frame source Encode to File: %v", err)
@@ -287,7 +287,7 @@ func TestNorthStarShapeGuards(t *testing.T) {
 	// #13: a frame branch to File without Encode must fail (File needs packets).
 	t.Run("frame_to_file_without_encode_fails", func(t *testing.T) {
 		_, err := From(input()).UseRuntime(northStarTranscodeRuntime()).
-			Audio().Decode().To(File("out.ogg", io.Discard)).
+			Audio().Decode().To(Write("out.ogg", io.Discard)).
 			Build(context.Background())
 		if err == nil {
 			t.Fatal("NORTH_STAR #13: a frame branch to File without Encode must fail (File needs packets)")
@@ -307,7 +307,7 @@ func TestNorthStarShapeGuards(t *testing.T) {
 	// #14: packet branch to File with Copy must succeed.
 	t.Run("packet_copy_to_file_succeeds", func(t *testing.T) {
 		_, err := From(input()).UseRuntime(northStarTranscodeRuntime()).
-			Audio().Copy().To(File("out.ogg", io.Discard)).
+			Audio().Copy().To(Write("out.ogg", io.Discard)).
 			Build(context.Background())
 		if err != nil {
 			t.Fatalf("NORTH_STAR #14: a packet branch to File with Copy must succeed: %v", err)

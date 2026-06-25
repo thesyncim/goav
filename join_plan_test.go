@@ -61,7 +61,7 @@ func TestJoinDescribeEqualsBuildMix(t *testing.T) {
 		From(mixTestAudioSourceRate("b", 24000)).Audio(),
 	).Tap(FrameTap("mixed")).
 		Encode(codec.Opus()).
-		To(File("mix.ogg", io.Discard, Format(av.FormatOgg))).
+		To(Write("mix.ogg", io.Discard, Format(av.FormatOgg))).
 		UseRuntime(rt)
 
 	planned := joinPlanGuard(t, job)
@@ -94,8 +94,8 @@ func TestJoinDescribeEqualsBuildMixMultiDestination(t *testing.T) {
 		From(mixTestAudioSource("b", 50)).Audio(),
 	).Encode(codec.Opus()).
 		To(
-			File("first.ogg", io.Discard, Format(av.FormatOgg)),
-			File("second.ogg", io.Discard, Format(av.FormatOgg)),
+			Write("first.ogg", io.Discard, Format(av.FormatOgg)),
+			Write("second.ogg", io.Discard, Format(av.FormatOgg)),
 		).
 		UseRuntime(rt)
 

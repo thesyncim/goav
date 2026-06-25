@@ -146,7 +146,7 @@ func ExampleFrom() {
 func ExampleFrom_multipleInputs() {
 	camera := i420Source("camera", 16, 16, 100)
 	mic := pcmSource("mic", 48_000, 1, make([]int16, 960))
-	out := goav.Mux("call", goav.File("call.webm", io.Discard))
+	out := goav.Mux("call", goav.Write("call.webm", io.Discard))
 
 	job := goav.From(camera, mic).
 		Video(goav.InputName("camera")).Encode(codec.VP8(codec.Bitrate(1_000_000))).To(out).
@@ -178,7 +178,7 @@ func ExampleFrom_autoResample() {
 		Audio().
 		Auto(shape.AllowResample()).
 		Encode(codec.Opus(codec.Bitrate(96_000))).
-		To(goav.File("voice.webm", io.Discard)).
+		To(goav.Write("voice.webm", io.Discard)).
 		UseRuntime(bundle.MustNew()).
 		Explain(context.Background())
 	if err != nil {
@@ -348,7 +348,7 @@ func ExampleAttachment_rebranch() {
 		Video().
 		Copy().
 		Tap(goav.PacketTap("video.encoded")).
-		To(goav.File("live.ivf", io.Discard)).
+		To(goav.Write("live.ivf", io.Discard)).
 		Build(ctx)
 	if err != nil {
 		fmt.Println(err)
@@ -359,7 +359,7 @@ func ExampleAttachment_rebranch() {
 	rec, err := task.Attach(ctx, goav.Branch("rec").
 		From(goav.PacketTap("video.encoded")).
 		Copy().
-		To(goav.File("part-001.ivf", &part1)))
+		To(goav.Write("part-001.ivf", &part1)))
 	if err != nil {
 		fmt.Println(err)
 		return
@@ -370,7 +370,7 @@ func ExampleAttachment_rebranch() {
 	// Rotate to the next file at a clean decode point; the replaced branch
 	// drains so part-001 commits complete.
 	if _, err := rec.Rebranch(ctx,
-		goav.Branch("rec").From(goav.PacketTap("video.encoded")).Copy().To(goav.File("part-002.ivf", &part2)),
+		goav.Branch("rec").From(goav.PacketTap("video.encoded")).Copy().To(goav.Write("part-002.ivf", &part2)),
 		lifecycle.SwitchAt(lifecycle.NextKeyframe()),
 		lifecycle.DrainOldBranch(),
 	); err != nil {
@@ -388,7 +388,7 @@ func ExampleTask_control() {
 		Video().
 		Decode().
 		Encode(codec.VP8(codec.Bitrate(1_000_000))).
-		To(goav.File("out.ivf", io.Discard)).
+		To(goav.Write("out.ivf", io.Discard)).
 		Build(ctx)
 	if err != nil {
 		fmt.Println(err)
@@ -451,7 +451,7 @@ func ExampleBuildError() {
 	_, err := goav.From(goav.FileInput("input.ivf", bytes.NewReader(tinyIVF()))).
 		Video().
 		Decode().
-		To(goav.File("frames.ivf", io.Discard)).
+		To(goav.Write("frames.ivf", io.Discard)).
 		Build(context.Background())
 
 	var buildErr *goav.BuildError

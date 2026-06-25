@@ -57,7 +57,7 @@ func outputFormatProbeError(output format.Output, index int, cause error) error 
 	}
 	suggestions := []string{
 		"give file outputs a name or MIME type a registered prober can recognize",
-		"pass goav.Format(...) to goav.File(...) or goav.Writer(...) when the writer has no filename",
+		"pass goav.Format(...) to goav.Write(...) or goav.Writer(...) when the writer has no filename",
 		"register a format adapter with goav.MustNew(goavruntime.WithFormatAdapter(...))",
 	}
 	return &BuildError{

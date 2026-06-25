@@ -500,7 +500,7 @@ func TestDestinationContractsAndOpeners(t *testing.T) {
 	}
 
 	var plain bytes.Buffer
-	plainWriter, err := File("plain.ogg", &plain).spec.Open(ctx, provider.Info{})
+	plainWriter, err := Write("plain.ogg", &plain).spec.Open(ctx, provider.Info{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -515,7 +515,7 @@ func TestDestinationContractsAndOpeners(t *testing.T) {
 	}
 
 	closer := &componentWriteCloser{}
-	openedCloser, err := File("closer.ogg", closer).spec.Open(ctx, provider.Info{})
+	openedCloser, err := Write("closer.ogg", closer).spec.Open(ctx, provider.Info{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -660,7 +660,7 @@ func TestOpenDestinationOutputPassesClonedProviderInfo(t *testing.T) {
 	}
 
 	var plain bytes.Buffer
-	plainOutput, plainOpened, err := builder.openDestinationOutput(ctx, File("plain.ogg", &plain).spec, nil, av.FormatOgg)
+	plainOutput, plainOpened, err := builder.openDestinationOutput(ctx, Write("plain.ogg", &plain).spec, nil, av.FormatOgg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -668,7 +668,7 @@ func TestOpenDestinationOutputPassesClonedProviderInfo(t *testing.T) {
 		t.Fatalf("plain file output writer=%T opened=%T, want caller writer and nil close hook", plainOutput.Writer, plainOpened)
 	}
 	closer := &componentWriteCloser{}
-	_, closeHook, err := builder.openDestinationOutput(ctx, File("closer.ogg", closer).spec, nil, av.FormatOgg)
+	_, closeHook, err := builder.openDestinationOutput(ctx, Write("closer.ogg", closer).spec, nil, av.FormatOgg)
 	if err != nil {
 		t.Fatal(err)
 	}

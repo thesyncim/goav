@@ -132,7 +132,7 @@ func TestMixBranchesEncodeAndMonitorIndependently(t *testing.T) {
 		From(mixTestAudioSource("a", 100, 200)).Audio(),
 		From(mixTestAudioSource("b", 50, -50)).Audio(),
 	).Branches(
-		Branch("rec").Encode(codec.Opus()).To(File("mix.ogg", io.Discard, Format(av.FormatOgg))),
+		Branch("rec").Encode(codec.Opus()).To(Write("mix.ogg", io.Discard, Format(av.FormatOgg))),
 		Branch("mon").To(joinTestCollectSink("monitor", &monitor)),
 	).UseRuntime(rt).Build(ctx)
 	if err != nil {
@@ -226,7 +226,7 @@ func TestMixBranchMuxDestinationRequiresEncode(t *testing.T) {
 		From(mixTestAudioSource("a", 1)).Audio(),
 		From(mixTestAudioSource("b", 1)).Audio(),
 	).Branches(
-		Branch("x").To(File("x.ogg", io.Discard, Format(av.FormatOgg))),
+		Branch("x").To(Write("x.ogg", io.Discard, Format(av.FormatOgg))),
 	).Build(context.Background())
 	var buildErr *BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "encode_missing" {

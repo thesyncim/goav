@@ -40,7 +40,7 @@ goav.From(input)                          inputs: FileInput, URIInput, Input(pro
   .Tap(goav.Tap|FrameTap|PacketTap)       named attach points
   .Branches(goav.Branch("x")...To(dst))   fan out; BranchSpec also drives Mutable.Attach
   input.Stream(av.Stream{ID: ...})        attach anchor for app-owned dynamic tracks
-  .To(File|URI|Writer|Custom|Sink|Mux)    destinations; Mux(name, destination) = explicit mux/sink group
+  .To(Write|URI|Writer|Custom|Sink|Mux)   destinations; Mux(name, destination) = explicit mux/sink group
   .OnStream(source.MatchMedia|source.MatchCodec|...)    dynamic-stream rules; OnRemove controls detach outcome
 goav.Mix/Composite/Select(arms) / Join(name, stage, arms)   N arms -> one stream (JoinArm)
 goav.Flow("name")                         reusable operation list (Chain)
@@ -112,7 +112,7 @@ use [`docs/ADAPTERS.md`](ADAPTERS.md) and [`docs/COMPONENTS.md`](COMPONENTS.md).
   pinned after wrapping (Describe == Build); a `provider.Source`-level wrap
   was rejected because file/URI inputs have no provider view before the
   runtime opens them. Destinations need no analog: every destination
-  constructor takes a caller-held value (io.Writer for `File`,
+  constructor takes a caller-held value (io.Writer for `Write`,
   `provider.Destination` for `Custom`/`Writer`, `pipeline.Sink` for `Sink`)
   that callers wrap before passing.
 - **Joins**: use these when several streams become one. `goav.Join(name, stage,
@@ -257,11 +257,12 @@ against the constructors in `input.go`/`provider.go`/`source.go`,
   anchor for app-owned dynamic tracks; it deliberately reuses
   `Branch(...).From(...)` and `Mutable.Attach` instead of adding a room/session
   workflow API.
-- **Destination vs Sink vs Writer vs File**: `Destination` is the routing
-  handle every constructor returns (reuse = mux/sink group); `File` wraps an
-  `io.Writer` you already opened; `Writer` lets goav open the writer on
-  demand with final `provider.Info` (and transactional commit/abort);
-  `Sink` ends the branch in frames/packets instead of muxed bytes.
+- **Destination vs Sink vs Writer vs Write**: `Destination` is the routing
+  handle every constructor returns; `Mux(name, destination)` is the explicit
+  shared mux/sink group. `Write` wraps an `io.Writer` you already opened;
+  `Writer` lets goav open the writer on demand with final `provider.Info`
+  (and transactional commit/abort); `Sink` ends the branch in frames/packets
+  instead of muxed bytes.
 - **Tap vs FrameTap vs PacketTap**: `Tap` infers its domain from the chain
   point; `FrameTap`/`PacketTap` assert it, and a mismatch is a build error
   naming the typed constructor to use.

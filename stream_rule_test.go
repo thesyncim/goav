@@ -515,7 +515,7 @@ func TestOnStreamFileBranchRequiresExplicitRuntime(t *testing.T) {
 	)
 	monitor := Sink(SinkFunc("main", func(context.Context, Message) error { return nil }))
 	job := From(input).
-		OnStream(MatchMedia(av.MediaAudio), Branch("record").Copy().To(File("late.ogg", io.Discard))).
+		OnStream(MatchMedia(av.MediaAudio), Branch("record").Copy().To(Write("late.ogg", io.Discard))).
 		Audio().Copy().To(monitor)
 
 	_, err := job.Build(ctx)

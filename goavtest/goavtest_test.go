@@ -179,7 +179,7 @@ func TestFormatRoundTripThroughFile(t *testing.T) {
 	err := goav.From(goavtest.Audio(48000, 1, []int16{1, 2, 3}, []int16{4, 5, 6})).
 		Audio().
 		Encode(codec.Opus()).
-		To(goav.File("roundtrip.ogg", &file)).
+		To(goav.Write("roundtrip.ogg", &file)).
 		UseRuntime(goavtest.Runtime()).
 		Run(ctx)
 	if err != nil {
@@ -260,7 +260,7 @@ func TestRuntimePacesFileInputOnFakeClock(t *testing.T) {
 	err := goav.From(goavtest.Audio(48000, 1, make([]int16, 960), make([]int16, 960))).
 		Audio().
 		Encode(codec.Opus()).
-		To(goav.File("paced.ogg", &file)).
+		To(goav.Write("paced.ogg", &file)).
 		UseRuntime(goavtest.Runtime()).
 		Run(ctx)
 	if err != nil {

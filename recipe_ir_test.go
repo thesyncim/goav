@@ -20,7 +20,7 @@ func TestRecipeIRSnapshotRoundTripsJobIntent(t *testing.T) {
 		Tap(FrameTap("frames")).
 		Resize(320, 180).
 		Encode(codec.VP8()).
-		To(File("output.ivf", &out))
+		To(Write("output.ivf", &out))
 
 	snapshot := newJobRecipeSnapshot(job)
 	if snapshot.recipe.Kind != recipeir.KindJob {

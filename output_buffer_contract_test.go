@@ -16,9 +16,9 @@ import (
 )
 
 func TestJobAllOutputsContracts(t *testing.T) {
-	root := File("root.webm", io.Discard).spec
-	stream := File("stream.webm", io.Discard).spec
-	branch := File("branch.webm", io.Discard).spec
+	root := Write("root.webm", io.Discard).spec
+	stream := Write("stream.webm", io.Discard).spec
+	branch := Write("branch.webm", io.Discard).spec
 
 	job := &Job{
 		outputs: []destinationSpec{root},
@@ -291,8 +291,8 @@ func destinationNamesForTest(outputs []destinationSpec) []string {
 }
 
 func TestJobAllOutputsAppendKeepsOrder(t *testing.T) {
-	first := File("first.webm", io.Discard).spec
-	second := File("second.webm", io.Discard).spec
+	first := Write("first.webm", io.Discard).spec
+	second := Write("second.webm", io.Discard).spec
 	got := jobAllOutputs([]destinationSpec{first}, []destinationSpec{second})
 	if !reflect.DeepEqual(destinationNamesForTest(got), []string{"first.webm", "second.webm"}) {
 		t.Fatalf("all output names = %v", destinationNamesForTest(got))

@@ -29,6 +29,10 @@ methodology changes, and migration notes.
   root transform wrappers through the planner boundary.
 - Clarified front-door docs so `.Copy()` is the packet-preserving recipe
   spelling; `codec.Copy()` remains an internal/lowering `CodecSpec` value.
+- Renamed writer-backed destinations to `Write(name, writer)` so output recipes
+  do not imply that the constructor opens filesystem paths; `URI(uri)` keeps
+  the adapter-opened output path and `FileInput` remains the reader-side file
+  input spelling.
 - Added the pre-v1 simplification target, started the immutable recipe IR
   boundary used by compile-time planning, and tightened task runtime semantics
   so `Run` preserves both execution and finalization failures while `Events`

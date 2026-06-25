@@ -18,7 +18,7 @@ Packet-preserving recording:
 ```go
 err := goav.From(goav.Input(webrtcav.Track(track))).
     Copy().
-    To(goav.File("recording.ivf", file)).
+    To(goav.Write("recording.ivf", file)).
     Run(ctx)
 ```
 
@@ -51,8 +51,8 @@ arrive.
 err := goav.From(goav.Input(rtpav.Receive(video, rtpav.WithName("video"), rtpav.WithCodec(codec.VP8())))).
     Copy().
     To(
-        goav.File("recording.ivf", file),
-        goav.File("preview.ivf", preview),
+        goav.Write("recording.ivf", file),
+        goav.Write("preview.ivf", preview),
     ).
     Run(ctx)
 ```
@@ -65,7 +65,7 @@ err := goav.From(goav.Input(rtpav.Receive(audio, rtpav.WithName("audio"), rtpav.
     Decode().
     Resample(16_000, codec.Mono).
     Encode(codec.Opus(codec.Bitrate(48_000))).
-    To(goav.File("preview.ogg", preview)).
+    To(goav.Write("preview.ogg", preview)).
     Run(ctx)
 ```
 
@@ -177,7 +177,7 @@ before encode or packets after copy/encode.
 
 ```go
 videoFrames720p := goav.FrameTap("video.720p.frames")
-main := goav.File("main.webm", out)
+main := goav.Write("main.webm", out)
 
 err := goav.From(input).
     Video().
@@ -214,7 +214,7 @@ branch with `From`:
 videoDecoded := goav.FrameTap("video.decoded")
 videoFrames720p := goav.FrameTap("video.720p.frames")
 thumbs := goav.Sink(component.SinkFunc("thumbs", collectThumbnail))
-web := goav.File("web.ivf", webFile)
+web := goav.Write("web.ivf", webFile)
 
 err := goav.From(input).
     Video().
@@ -302,8 +302,8 @@ voice := goav.Flow("voice").Audio().
 archive := goav.Flow("archive").Audio().
     Resample(48_000, codec.Stereo).
     Encode(codec.Opus(codec.Bitrate(128_000), codec.Channels(codec.Stereo)))
-voiceOut := goav.File("voice.ogg", voiceFile)
-archiveOut := goav.File("archive.ogg", archiveFile)
+voiceOut := goav.Write("voice.ogg", voiceFile)
+archiveOut := goav.Write("archive.ogg", archiveFile)
 
 err := goav.From(goav.Input(rtpav.Receive(audio, rtpav.WithName("audio"), rtpav.WithCodec(codec.Opus())))).
     Audio().
@@ -346,7 +346,7 @@ from packet taps:
 
 ```go
 audioDecoded := goav.FrameTap("audio.decoded")
-recording := goav.File("recording.ogg", file)
+recording := goav.Write("recording.ogg", file)
 
 recordingHandle, err := task.Attach(ctx,
     goav.Branch("record-audio").
@@ -368,7 +368,7 @@ can receive several sink or mux branch outputs:
 ```go
 audioEncoded := goav.PacketTap("audio.encoded")
 videoEncoded := goav.PacketTap("video.encoded")
-recording := goav.File("recording.webm", file)
+recording := goav.Mux("recording", goav.Write("recording.webm", file))
 
 group, err := task.Attach(ctx,
     goav.Branch("audio").From(audioEncoded).Copy().To(recording),
@@ -466,8 +466,8 @@ Packet-preserving file fanout:
 err := goav.From(goav.FileInput("input.ivf", in)).
     Copy().
     To(
-        goav.File("recording.ivf", recording),
-        goav.File("preview.ivf", preview),
+        goav.Write("recording.ivf", recording),
+        goav.Write("preview.ivf", preview),
     ).
     Run(ctx)
 ```

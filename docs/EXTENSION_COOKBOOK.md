@@ -160,7 +160,7 @@ When the writer is a plain file but the extension cannot infer a container from
 the path, pass destination options directly:
 
 ```go
-dest := goav.File("", out, goav.Format(av.FormatIVF))
+dest := goav.Write("", out, goav.Format(av.FormatIVF))
 ```
 
 Use `goav.Mux(name, destination)` when several branches should feed one mux,

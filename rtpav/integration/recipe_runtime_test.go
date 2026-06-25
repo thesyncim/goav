@@ -45,7 +45,7 @@ func TestProviderRTPDescribePinsLegacyConstructorStrings(t *testing.T) {
 		rtpav.WithCodec(codec.Opus()),
 		rtpav.WithBufferLimits(rtpav.BufferLimits{MaxPackets: 2}),
 		rtpav.WithMaxTimestampGap(av.SamplesDuration(960, 48000)),
-	))).Copy().To(goav.File("recording.ogg", io.Discard, goav.Format(av.FormatOgg)))
+	))).Copy().To(goav.Write("recording.ogg", io.Discard, goav.Format(av.FormatOgg)))
 
 	spec, err := job.Describe()
 	if err != nil {
@@ -105,7 +105,7 @@ func TestRecordRecipeRTPAutoCodecRuns(t *testing.T) {
 
 	task, err := goav.From(
 		goav.Input(rtpav.Receive(receiver, rtpav.WithName("audio"), rtpav.WithCodec(codec.Opus()), rtpav.WithBufferLimits(rtpav.BufferLimits{MaxPackets: 2}))),
-	).Copy().To(goav.File("recording.ogg", io.Discard)).UseRuntime(runtime).Build(ctx)
+	).Copy().To(goav.Write("recording.ogg", io.Discard)).UseRuntime(runtime).Build(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -159,7 +159,7 @@ func TestRecordRecipeCopyToTypedDestinationRuns(t *testing.T) {
 	))
 	job := goav.From(
 		goav.Input(rtpav.Receive(receiver, rtpav.WithName("audio"), rtpav.WithCodec(codec.Opus()), rtpav.WithBufferLimits(rtpav.BufferLimits{MaxPackets: 2}))),
-	).Copy().To(goav.File("recording.ogg", io.Discard, goav.Format(av.FormatOgg))).UseRuntime(runtime)
+	).Copy().To(goav.Write("recording.ogg", io.Discard, goav.Format(av.FormatOgg))).UseRuntime(runtime)
 
 	report, err := job.Explain(ctx)
 	if err != nil {
@@ -370,7 +370,7 @@ func TestFileDestinationClosesCloserWriterOnce(t *testing.T) {
 
 	task, err := goav.From(
 		goav.Input(rtpav.Receive(receiver, rtpav.WithName("audio"), rtpav.WithCodec(codec.Opus()), rtpav.WithBufferLimits(rtpav.BufferLimits{MaxPackets: 2}))),
-	).Copy().To(goav.File("call.ogg", writer, goav.Format(av.FormatOgg))).UseRuntime(runtime).Build(ctx)
+	).Copy().To(goav.Write("call.ogg", writer, goav.Format(av.FormatOgg))).UseRuntime(runtime).Build(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -674,7 +674,7 @@ func TestRecordRecipeRTPCodecUsesReaderStreamWhenUnnamed(t *testing.T) {
 
 	task, err := goav.From(
 		goav.Input(rtpav.Receive(receiver, rtpav.WithCodec(codec.Opus()), rtpav.WithBufferLimits(rtpav.BufferLimits{MaxPackets: 2}))),
-	).Copy().To(goav.File("recording.ogg", io.Discard)).UseRuntime(runtime).Build(ctx)
+	).Copy().To(goav.Write("recording.ogg", io.Discard)).UseRuntime(runtime).Build(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -723,7 +723,7 @@ func TestDefaultRecordRecipeRTPVP8Runs(t *testing.T) {
 	var out bytes.Buffer
 	job := goav.From(
 		goav.Input(rtpav.Receive(receiver, rtpav.WithName("video"), rtpav.WithCodec(codec.VP8()), rtpav.WithBufferLimits(rtpav.BufferLimits{MaxPackets: 2}))),
-	).UseRuntime(bundle.MustNew()).Copy().To(goav.File("recording.ivf", &out))
+	).UseRuntime(bundle.MustNew()).Copy().To(goav.Write("recording.ivf", &out))
 
 	planned, err := job.Describe()
 	if err != nil {
@@ -824,7 +824,7 @@ func TestFromAndRecordRecipeMultipleRTPInputsRuns(t *testing.T) {
 		goav.Input(rtpav.Receive(audioReceiver, rtpav.WithName("audio"), rtpav.WithCodec(codec.Opus()), rtpav.WithBufferLimits(rtpav.BufferLimits{MaxPackets: 2}))),
 	).UseRuntime(runtime).
 		And(goav.Input(rtpav.Receive(videoReceiver, rtpav.WithName("video"), rtpav.WithCodec(codec.VP8()), rtpav.WithBufferLimits(rtpav.BufferLimits{MaxPackets: 2})))).
-		To(goav.File("recording.ogg", io.Discard)).
+		To(goav.Write("recording.ogg", io.Discard)).
 		Build(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -979,7 +979,7 @@ func TestStreamRecipeCopyTapCanAttachRuntimeMuxDestination(t *testing.T) {
 		Audio().
 		Copy().
 		Tap(goav.PacketTap("audio.copied")).
-		To(goav.File("archive.ogg", io.Discard)).
+		To(goav.Write("archive.ogg", io.Discard)).
 		Build(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -1005,7 +1005,7 @@ func TestStreamRecipeCopyTapCanAttachRuntimeMuxDestination(t *testing.T) {
 	recording, err := task.Attach(ctx, goav.Branch("record").
 		From(goav.PacketTap("audio.copied")).
 		Copy().
-		To(goav.File("recording.ogg", io.Discard)))
+		To(goav.Write("recording.ogg", io.Discard)))
 	if err != nil {
 		t.Fatal(err)
 	}

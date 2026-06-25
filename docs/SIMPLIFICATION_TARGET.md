@@ -113,6 +113,10 @@ Destination-group progress: repeated destination names now require explicit
 `Mux(name, destination)` groups; reusing one ungrouped destination value no
 longer creates a mux/sink group.
 
+Writer-backed output progress: `Write(name, writer)` is the public recipe
+spelling for an already-open writer; `URI(uri)` remains the spelling for outputs
+opened by a registered adapter, and `FileInput(name, reader)` stays input-only.
+
 Invalid-struct progress: `TransformSpec` is now an opaque constructor-produced
 value, so external callers cannot set both resize and resample fields on one
 transform.

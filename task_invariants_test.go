@@ -63,7 +63,7 @@ func TestTaskCloseIsIdempotentAfterRun(t *testing.T) {
 	writer := &countingWriteCloser{}
 	task, err := goav.From(goavtest.Audio(48000, 1, []int16{1})).
 		Audio().Encode(codec.Opus()).
-		To(goav.File("out.ogg", writer)).
+		To(goav.Write("out.ogg", writer)).
 		UseRuntime(goavtest.Runtime()).
 		Build(ctx)
 	if err != nil {
@@ -90,7 +90,7 @@ func TestTaskCloseIsIdempotentWithoutRun(t *testing.T) {
 	writer := &countingWriteCloser{}
 	task, err := goav.From(goavtest.Audio(48000, 1, []int16{1})).
 		Audio().Encode(codec.Opus()).
-		To(goav.File("out.ogg", writer)).
+		To(goav.Write("out.ogg", writer)).
 		UseRuntime(goavtest.Runtime()).
 		Build(context.Background())
 	if err != nil {

@@ -55,7 +55,7 @@ type InputSpec struct {
 // detaches the input from source controls such as Seek.
 //
 // Destinations need no analog: every destination constructor takes a
-// caller-held value (an io.Writer for File, a provider.Destination for
+// caller-held value (an io.Writer for Write, a provider.Destination for
 // Custom, a pipeline.Sink for Sink) that can be wrapped before it is passed.
 func WrapSource(spec InputSpec, wrap func(pipeline.Source) pipeline.Source) InputSpec {
 	if wrap == nil {
