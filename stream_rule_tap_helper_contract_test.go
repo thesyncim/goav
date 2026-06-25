@@ -77,7 +77,7 @@ func TestHandleStreamAddedGuardContracts(t *testing.T) {
 	source := make(chan av.Event)
 	defer close(source)
 	task := &task{}
-	events := task.watch.subscribe(source, 4, []inspect.EventFilter{inspect.WatchTypes(av.EventAttachError)})
+	events := task.watch.subscribe(source, 4, []inspect.EventFilter{inspect.WatchTypes(av.EventAttachError)}).Events()
 	task.rules = &taskStreamRules{
 		source: "demux",
 		domain: shape.DomainPacket,
@@ -174,7 +174,7 @@ func TestPublishStreamRuleErrorContracts(t *testing.T) {
 	source := make(chan av.Event)
 	defer close(source)
 	task := &task{}
-	events := task.watch.subscribe(source, 2, []inspect.EventFilter{inspect.WatchTypes(av.EventAttachError)})
+	events := task.watch.subscribe(source, 2, []inspect.EventFilter{inspect.WatchTypes(av.EventAttachError)}).Events()
 	cause := errors.New("attach failed")
 
 	task.publishStreamRuleError("audio", "preview", cause)

@@ -298,6 +298,7 @@ graphrender.RenderTaskFlowchart
 graphrender.RenderTaskURI
 graphrender.RenderURI
 inspect.EventFilter
+inspect.Subscription
 inspect.WatchStream
 inspect.WatchTypes
 lifecycle.BranchAttached

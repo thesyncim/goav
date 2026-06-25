@@ -321,7 +321,7 @@ func (s *Server) handleFollow(ctx context.Context, conn net.Conn, request Reques
 
 func (s *Server) watch(request Request) <-chan av.Event {
 	if request.Op == "events" {
-		return s.Task.Watch()
+		return s.Task.Watch().Events()
 	}
 	var filters []inspect.EventFilter
 	if typ := request.Args["type"]; typ != "" {
@@ -330,7 +330,7 @@ func (s *Server) watch(request Request) <-chan av.Event {
 	if stream := request.Args["stream"]; stream != "" {
 		filters = append(filters, inspect.WatchStream(av.StreamID(stream)))
 	}
-	return s.Task.Watch(filters...)
+	return s.Task.Watch(filters...).Events()
 }
 
 func requestFollows(request Request) bool {

@@ -55,7 +55,7 @@ func (t *task) installStreamRules(sourceNode string, domain shape.MediaDomain, r
 		streamRuleEventCapacity,
 		[]inspect.EventFilter{inspect.WatchTypes(av.EventStreamAdded, av.EventStreamRemoved)},
 	)
-	go t.runStreamRules(events)
+	go t.runStreamRules(events.Events())
 }
 
 func (t *task) runStreamRules(events <-chan av.Event) {

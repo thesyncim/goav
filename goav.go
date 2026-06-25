@@ -105,14 +105,15 @@ type Observable interface {
 	Events() <-chan av.Event
 	// Watch returns an independent, filtered subscription to the task's event
 	// stream. Filters AND together; with zero filters every event is delivered.
-	// Each watcher owns a buffered channel sized like the task's event buffer:
-	// when a watcher falls behind and its buffer fills, new events are dropped
-	// for that watcher only — the data plane and other watchers never block on
-	// a slow consumer. Watcher channels close when the task closes. Watch and
-	// Events drain the same underlying stream, so once Watch is used, subscribe
-	// every consumer through Watch (an unfiltered Watch() is the Events
-	// equivalent) rather than reading Events directly.
-	Watch(filters ...inspect.EventFilter) <-chan av.Event
+	// Each subscription owns a buffered channel sized like the task's event
+	// buffer: when a watcher falls behind and its buffer fills, new events are
+	// dropped for that watcher only — the data plane and other watchers never
+	// block on a slow consumer. Subscription channels close when the task closes
+	// or Subscription.Close unsubscribes them. Watch and Events drain the same
+	// underlying stream, so once Watch is used, subscribe every consumer through
+	// Watch (an unfiltered Watch() is the Events equivalent) rather than reading
+	// Events directly.
+	Watch(filters ...inspect.EventFilter) inspect.Subscription
 }
 
 // LiveTask is the full task capability set produced by the built-in runtime.

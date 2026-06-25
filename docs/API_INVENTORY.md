@@ -15,7 +15,7 @@ Source: `testdata/api_surface.txt`.
 | `control` | 0 | 19 |
 | `errcode` | 147 | 145 |
 | `graphrender` | 9 | 9 |
-| `inspect` | 0 | 3 |
+| `inspect` | 0 | 4 |
 | `lifecycle` | 13 | 13 |
 | `plan` | 28 | 28 |
 | `snapshot` | 4 | 4 |

@@ -151,7 +151,7 @@ func runRoomScript(ctx context.Context, script func(context.Context, *RoomPipeli
 		},
 	}
 
-	watch := task.Watch()
+	watch := task.Watch().Events()
 	var eventMu sync.Mutex
 	var events []av.Event
 	watchDone := make(chan struct{})

@@ -736,7 +736,7 @@ func (t *task) Events() <-chan av.Event {
 		// Hand every Events caller its own unfiltered subscription — the
 		// documented remedy once Watch is in use — so no consumer competes
 		// with the engine for events.
-		return t.Watch()
+		return t.Watch().Events()
 	}
 	return t.graph.Events()
 }

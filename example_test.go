@@ -420,7 +420,7 @@ func ExampleTask_watch() {
 		return
 	}
 
-	eos := task.Watch(inspect.WatchTypes(av.EventEndOfStream))
+	eos := task.Watch(inspect.WatchTypes(av.EventEndOfStream)).Events()
 
 	if err := task.Run(ctx); err != nil {
 		fmt.Println(err)

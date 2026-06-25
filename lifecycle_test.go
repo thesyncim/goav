@@ -207,7 +207,7 @@ func TestTaskAttachDetachPublishesBranchLifecycleEvents(t *testing.T) {
 	}
 	defer task.Close()
 
-	events := task.Watch(inspect.WatchTypes(av.EventBranchAttached, av.EventBranchDetached))
+	events := task.Watch(inspect.WatchTypes(av.EventBranchAttached, av.EventBranchDetached)).Events()
 	attachment, err := task.Attach(ctx, Branch("rec").
 		From(PacketTap("audio.packets")).
 		To(lifecycleTestSink("rec")))
@@ -252,7 +252,7 @@ func TestTaskDetachPublishesDestinationLifecycleEvents(t *testing.T) {
 	}
 	defer task.Close()
 
-	events := task.Watch(inspect.WatchTypes(av.EventDestinationCommitted, av.EventDestinationAborted, av.EventDestinationCommitError))
+	events := task.Watch(inspect.WatchTypes(av.EventDestinationCommitted, av.EventDestinationAborted, av.EventDestinationCommitError)).Events()
 	attachment, err := task.Attach(ctx, Branch("rec").
 		From(PacketTap("audio.packets")).
 		To(lifecycleTestSink("rec")))
@@ -280,7 +280,7 @@ func TestTaskFinishPublishesRootDestinationCommitError(t *testing.T) {
 	task := newTaskWithRootDestinations(newWatchTestGraph(1), nil, []workDestination{{Name: "commit-error.ivf"}}, transaction)
 	defer task.Close()
 
-	events := task.Watch(inspect.WatchTypes(av.EventDestinationCommitted, av.EventDestinationAborted, av.EventDestinationCommitError))
+	events := task.Watch(inspect.WatchTypes(av.EventDestinationCommitted, av.EventDestinationAborted, av.EventDestinationCommitError)).Events()
 	task.finishDestinations(commitErr)
 	event := recvWatchEvent(t, events)
 	if event.Type != av.EventDestinationCommitError {

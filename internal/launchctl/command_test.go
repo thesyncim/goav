@@ -2716,6 +2716,14 @@ type fakeTask struct {
 	closed     bool
 }
 
+type fakeSubscription struct {
+	events <-chan av.Event
+}
+
+func (s fakeSubscription) Events() <-chan av.Event { return s.events }
+
+func (s fakeSubscription) Close() error { return nil }
+
 func newFakeTask() *fakeTask {
 	taps := []snapshot.Tap{
 		{Name: "raw_video", MediaKind: av.MediaVideo, Domain: shape.DomainFrame, Shape: shape.Frame(av.MediaVideo, shape.Stream("video")), Node: "raw-node"},
@@ -2784,7 +2792,7 @@ func (t *fakeTask) Events() <-chan av.Event {
 	return ch
 }
 
-func (t *fakeTask) Watch(filters ...inspect.EventFilter) <-chan av.Event {
+func (t *fakeTask) Watch(filters ...inspect.EventFilter) inspect.Subscription {
 	ch := make(chan av.Event, len(t.events))
 	for _, event := range t.events {
 		if eventMatches(event, filters) {
@@ -2792,7 +2800,7 @@ func (t *fakeTask) Watch(filters ...inspect.EventFilter) <-chan av.Event {
 		}
 	}
 	close(ch)
-	return ch
+	return fakeSubscription{events: ch}
 }
 
 func (t *fakeTask) Stats() pipeline.GraphStats { return pipeline.GraphStats{} }

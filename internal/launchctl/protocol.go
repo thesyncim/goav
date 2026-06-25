@@ -452,7 +452,7 @@ func executeWatch(task goav.LiveTask, operation string, args []string) (ControlR
 			"",
 			"watch/event streaming requires a control server streaming response",
 			nil,
-			[]string{"use task.Watch(...) in-process", "use a goav control server that supports streaming event responses"},
+			[]string{"use task.Watch(...).Events() in-process", "use a goav control server that supports streaming event responses"},
 			nil,
 		)
 	}
@@ -463,7 +463,9 @@ func executeWatch(task goav.LiveTask, operation string, args []string) (ControlR
 	if stream := argValues["stream"]; stream != "" {
 		filters = append(filters, inspect.WatchStream(av.StreamID(stream)))
 	}
-	ch := task.Watch(filters...)
+	sub := task.Watch(filters...)
+	defer sub.Close()
+	ch := sub.Events()
 	var events []av.Event
 	for {
 		select {

@@ -84,7 +84,7 @@ func collectUntilClosed(t *testing.T, watch <-chan av.Event) []av.Event {
 func TestWatchFiltersByType(t *testing.T) {
 	graph := newWatchTestGraph(8)
 	task := newTask(graph, nil)
-	loss := task.Watch(inspect.WatchTypes(av.EventPacketLoss))
+	loss := task.Watch(inspect.WatchTypes(av.EventPacketLoss)).Events()
 
 	graph.events <- av.Event{Type: av.EventStats}
 	graph.events <- av.Event{Type: av.EventPacketLoss, StreamID: "v0"}
@@ -102,7 +102,7 @@ func TestWatchFiltersByType(t *testing.T) {
 func TestWatchFiltersByStream(t *testing.T) {
 	graph := newWatchTestGraph(8)
 	task := newTask(graph, nil)
-	audio := task.Watch(inspect.WatchStream("a0"))
+	audio := task.Watch(inspect.WatchStream("a0")).Events()
 
 	graph.events <- av.Event{Type: av.EventStats, StreamID: "v0"}
 	graph.events <- av.Event{Type: av.EventPacketLoss, StreamID: "a0"}
@@ -126,7 +126,7 @@ func TestWatchFiltersByStream(t *testing.T) {
 func TestWatchFiltersANDTogether(t *testing.T) {
 	graph := newWatchTestGraph(8)
 	task := newTask(graph, nil)
-	watch := task.Watch(inspect.WatchTypes(av.EventPacketLoss), inspect.WatchStream("v0"))
+	watch := task.Watch(inspect.WatchTypes(av.EventPacketLoss), inspect.WatchStream("v0")).Events()
 
 	graph.events <- av.Event{Type: av.EventPacketLoss, StreamID: "a0"}
 	graph.events <- av.Event{Type: av.EventStats, StreamID: "v0"}
@@ -146,8 +146,8 @@ func TestWatchSlowWatcherShedsForItselfOnly(t *testing.T) {
 	const total = 10
 	graph := newWatchTestGraph(1)
 	task := newTask(graph, &runtime{eventCapacity: capacity})
-	fast := task.Watch()
-	slow := task.Watch()
+	fast := task.Watch().Events()
+	slow := task.Watch().Events()
 
 	var fastGot []av.Event
 	for i := 0; i < total; i++ {
@@ -183,6 +183,38 @@ func TestWatchSlowWatcherShedsForItselfOnly(t *testing.T) {
 	}
 }
 
+func TestWatchCloseUnsubscribesBeforeTaskClose(t *testing.T) {
+	graph := newWatchTestGraph(8)
+	task := newTask(graph, nil)
+	closed := task.Watch()
+	live := task.Watch()
+
+	if err := closed.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := closed.Close(); err != nil {
+		t.Fatalf("second Close error = %v", err)
+	}
+	select {
+	case _, ok := <-closed.Events():
+		if ok {
+			t.Fatal("closed subscription delivered an event")
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("closed subscription channel did not close")
+	}
+
+	graph.events <- av.Event{Type: av.EventStats, Reason: "live"}
+	event := recvWatchEvent(t, live.Events())
+	if event.Type != av.EventStats || event.Reason != "live" {
+		t.Fatalf("event = %+v, want live stats event", event)
+	}
+	if err := task.Close(); err != nil {
+		t.Fatal(err)
+	}
+	collectUntilClosed(t, live.Events())
+}
+
 func TestWatchDeliversBufferedEventsAfterClose(t *testing.T) {
 	graph := newWatchTestGraph(4)
 	task := newTask(graph, nil)
@@ -191,7 +223,7 @@ func TestWatchDeliversBufferedEventsAfterClose(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	got := collectUntilClosed(t, task.Watch())
+	got := collectUntilClosed(t, task.Watch().Events())
 	if len(got) != 1 || got[0].Type != av.EventStats {
 		t.Fatalf("events = %+v, want the buffered stats event then closure", got)
 	}
@@ -200,13 +232,13 @@ func TestWatchDeliversBufferedEventsAfterClose(t *testing.T) {
 func TestWatchAfterDistributorDoneIsClosed(t *testing.T) {
 	graph := newWatchTestGraph(1)
 	task := newTask(graph, nil)
-	first := task.Watch()
+	first := task.Watch().Events()
 	if err := task.Close(); err != nil {
 		t.Fatal(err)
 	}
 	collectUntilClosed(t, first)
 
-	late := task.Watch()
+	late := task.Watch().Events()
 	if _, ok := <-late; ok {
 		t.Fatal("watcher subscribed after shutdown should be closed")
 	}
@@ -224,14 +256,14 @@ func TestWatchSubscribePublishDistributeConcurrently(t *testing.T) {
 	const events = 100
 	const watchers = 20
 	channels := make(chan (<-chan av.Event), watchers+1)
-	channels <- task.Watch() // start the distributor before the stress
+	channels <- task.Watch().Events() // start the distributor before the stress
 
 	var wg sync.WaitGroup
 	wg.Add(3)
 	go func() {
 		defer wg.Done()
 		for i := 0; i < watchers; i++ {
-			channels <- task.Watch(inspect.WatchTypes(av.EventStats))
+			channels <- task.Watch(inspect.WatchTypes(av.EventStats)).Events()
 		}
 	}()
 	go func() {
@@ -272,7 +304,7 @@ func TestWatchEndToEndDeliversAndClosesOnTaskClose(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	watch := task.Watch(inspect.WatchTypes(av.EventStats))
+	watch := task.Watch(inspect.WatchTypes(av.EventStats)).Events()
 	if err := task.Run(context.Background()); err != nil {
 		t.Fatal(err)
 	}

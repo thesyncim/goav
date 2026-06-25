@@ -181,7 +181,7 @@ func (t *controlCaptureTask) Run(context.Context) error { return nil }
 
 func (t *controlCaptureTask) Events() <-chan av.Event { return nil }
 
-func (t *controlCaptureTask) Watch(...inspect.EventFilter) <-chan av.Event { return nil }
+func (t *controlCaptureTask) Watch(...inspect.EventFilter) inspect.Subscription { return nil }
 
 func (t *controlCaptureTask) Stats() pipeline.GraphStats { return pipeline.GraphStats{} }
 

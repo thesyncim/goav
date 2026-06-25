@@ -9,6 +9,14 @@ import "github.com/thesyncim/goav/av"
 // WatchTypes and WatchStream cover the common cases.
 type EventFilter func(av.Event) bool
 
+// Subscription is a disposable event subscription returned by a watchable task.
+// Events is closed when the task ends or Close unsubscribes the watcher. Close
+// is idempotent.
+type Subscription interface {
+	Events() <-chan av.Event
+	Close() error
+}
+
 // WatchTypes matches events whose Type is one of types.
 func WatchTypes(types ...av.EventType) EventFilter {
 	set := make(map[av.EventType]struct{}, len(types))

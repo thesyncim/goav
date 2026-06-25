@@ -221,7 +221,7 @@ func TestOnStreamAttachesLateBranchAndDetachesOnRemoval(t *testing.T) {
 	}
 	defer task.Close()
 
-	attachErrors := task.Watch(inspect.WatchTypes(av.EventAttachError))
+	attachErrors := task.Watch(inspect.WatchTypes(av.EventAttachError)).Events()
 	runErr := make(chan error, 1)
 	go func() { runErr <- task.Run(ctx) }()
 
@@ -451,7 +451,7 @@ func TestOnStreamLateBranchAutoInsertsConversion(t *testing.T) {
 	}
 	defer task.Close()
 
-	attachErrors := task.Watch(inspect.WatchTypes(av.EventAttachError))
+	attachErrors := task.Watch(inspect.WatchTypes(av.EventAttachError)).Events()
 	runErr := make(chan error, 1)
 	go func() { runErr <- task.Run(ctx) }()
 
@@ -558,7 +558,7 @@ func TestOnStreamAttachFailureSurfacesEventAndRollsBack(t *testing.T) {
 	defer task.Close()
 	nodesBefore := len(task.Describe().Nodes)
 
-	attachErrors := task.Watch(inspect.WatchTypes(av.EventAttachError))
+	attachErrors := task.Watch(inspect.WatchTypes(av.EventAttachError)).Events()
 	runErr := make(chan error, 1)
 	go func() { runErr <- task.Run(ctx) }()
 

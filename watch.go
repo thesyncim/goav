@@ -14,7 +14,7 @@ const defaultWatchCapacity = 16
 
 // Watch returns an independent, filtered subscription to the task's event
 // stream. See Observable.Watch for the delivery, overflow, and closure contract.
-func (t *task) Watch(filters ...inspect.EventFilter) <-chan av.Event {
+func (t *task) Watch(filters ...inspect.EventFilter) inspect.Subscription {
 	return t.watch.subscribe(t.graph.Events(), t.watchCapacity(), filters)
 }
 
@@ -45,30 +45,51 @@ type eventWatch struct {
 }
 
 type eventWatcher struct {
+	parent  *eventWatch
 	filters []inspect.EventFilter
 	events  chan av.Event
+	once    sync.Once
 }
 
-func (w *eventWatch) subscribe(source <-chan av.Event, capacity int, filters []inspect.EventFilter) <-chan av.Event {
+func (w *eventWatch) subscribe(source <-chan av.Event, capacity int, filters []inspect.EventFilter) inspect.Subscription {
 	if capacity < 1 {
 		capacity = defaultWatchCapacity
 	}
-	watcher := &eventWatcher{filters: filters, events: make(chan av.Event, capacity)}
+	watcher := &eventWatcher{parent: w, filters: filters, events: make(chan av.Event, capacity)}
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	if w.done || source == nil {
 		// The underlying stream already ended (or the graph has none): hand
 		// back a closed channel so the caller observes closure immediately
 		// instead of holding a watcher that can never fire.
-		close(watcher.events)
-		return watcher.events
+		watcher.close()
+		return watcher
 	}
 	w.watchers = append(w.watchers, watcher)
 	if !w.started {
 		w.started = true
 		go w.distribute(source)
 	}
-	return watcher.events
+	return watcher
+}
+
+func (w *eventWatch) unsubscribe(watcher *eventWatcher) error {
+	if watcher == nil {
+		return nil
+	}
+	w.mu.Lock()
+	for i := range w.watchers {
+		if w.watchers[i] != watcher {
+			continue
+		}
+		copy(w.watchers[i:], w.watchers[i+1:])
+		w.watchers[len(w.watchers)-1] = nil
+		w.watchers = w.watchers[:len(w.watchers)-1]
+		break
+	}
+	w.mu.Unlock()
+	watcher.close()
+	return nil
 }
 
 // publish delivers one task-originated event (e.g. a stream-rule attach
@@ -119,8 +140,33 @@ func (w *eventWatch) distribute(source <-chan av.Event) {
 	w.watchers = nil
 	w.mu.Unlock()
 	for _, watcher := range watchers {
-		close(watcher.events)
+		watcher.close()
 	}
+}
+
+func (w *eventWatcher) Events() <-chan av.Event {
+	if w == nil {
+		closed := make(chan av.Event)
+		close(closed)
+		return closed
+	}
+	return w.events
+}
+
+func (w *eventWatcher) Close() error {
+	if w == nil || w.parent == nil {
+		return nil
+	}
+	return w.parent.unsubscribe(w)
+}
+
+func (w *eventWatcher) close() {
+	if w == nil {
+		return
+	}
+	w.once.Do(func() {
+		close(w.events)
+	})
 }
 
 func (w *eventWatcher) matches(event av.Event) bool {
