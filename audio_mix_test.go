@@ -475,7 +475,7 @@ func mixTestAudioSourceRate(id av.StreamID, rate int) InputSpec {
 
 func TestMixResamplesMismatchedArms(t *testing.T) {
 	ctx := context.Background()
-	rt := MustNew(testStdFilters())
+	rt := MustNew(testBundleFilters())
 
 	var frames int
 	var peak int16

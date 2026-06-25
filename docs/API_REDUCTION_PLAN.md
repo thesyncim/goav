@@ -98,6 +98,11 @@ Move or keep outside the front door:
    - Stop returning nil from helper constructors on nil callbacks.
    - Make runtime options reject nil registry callbacks, factories, and invalid
      settings at construction time.
+   - Add strict `component.NewPacketStage`, `NewFrameStage`, `NewEventStage`,
+     and `NewSink` constructors, plus `MustStage`/`MustSink`, for callers that
+     want callback mistakes reported immediately.
+   - Make payload-bearing control constructors validate immediately and keep
+     `control.Control` opaque so callers cannot build loose tagged unions.
 
 7. **Emit ownership** — landed
    - Stop reusing one mutable `pipeline.Message` inside `Emit`.
@@ -123,11 +128,12 @@ Move or keep outside the front door:
    - Keep `Mux(name, destination)` as the public grouping constructor; the
      option-only grouping helper is internal.
 
-10. **Unified lowering** — started
+10. **Unified lowering** — landed
    - Lower stream chains, branches, joins, and runtime attach through the same
      operation model.
    - Keep build and attach errors aligned for the same invalid operation chain.
-   - First parity guard landed with
+   - Phase order and parity are pinned by
+     `TestRecipeCompilePhaseSequencesArePinned` and
      `TestBuildAndAttachReturnSameErrorForSameInvalidBranch`.
 
 11. **Rebranch policy cleanup** — landed
@@ -172,20 +178,33 @@ Move or keep outside the front door:
     - Do not claim a lower floor yet: first-party backend modules currently
       require Go 1.26.
 
+18. **Close/remove diagnostics** — landed
+    - Direct and buffered graph remove/close waits report `pipeline.CloseWaitError`
+      wrapping `pipeline.ErrCloseWait` instead of hanging silently.
+    - Diagnostics include operation, node, timeout, and pending delivery count
+      where the runner can know it.
+
 ## Immediate Tests
 
 Add focused coverage as the slices land:
 
-- `TestRootImportDoesNotPullStdAdapters`
+- `TestRootImportDoesNotPullBundledAdapters`
 - `TestBuildWithoutRuntimeReturnsStructuredError`
 - `TestUseRuntimeNilReturnsStructuredError`
 - `TestJobCopyAppearsInExplain`
 - `TestNilPacketFuncDoesNotBecomeSilentNilStage`
 - `TestNilSinkFuncDoesNotBecomeSilentNilSink`
+- `TestStrictStageConstructorsRejectNilCallbacks`
+- `TestStrictSinkConstructorRejectsNilCallback`
+- `TestControlHasNoExportedFields`
+- `TestValidatedControlConstructorsRejectInvalidPayloads`
 - `TestEmitMessagesAreIndependentWhenEmitterRetainsPointers`
 - `TestBundledAdapterCapabilityDocsMatchDescriptors`
 - `TestMuxSurvivesWithAndCopy`
 - `TestBuildAndAttachReturnSameErrorForSameInvalidBranch`
+- `TestRecipeCompilePhaseSequencesArePinned`
 - `TestErrorDetailsAreTyped`
 - `TestCompatibilityPolicyPinsReleaseDecisionEvidence`
 - `TestCIWorkflowCoversTrustGates`
+- `TestGraphDirectRemoveReportsStuckNode`
+- `TestGraphBufferedRemoveReportsStuckNode`

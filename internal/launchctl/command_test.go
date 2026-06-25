@@ -317,7 +317,7 @@ func TestExecuteRawControlCallsTaskControl(t *testing.T) {
 		t.Fatalf("controls = %d, want 1", len(task.controls))
 	}
 	ctrl := task.controls[0]
-	if ctrl.Type != control.BitrateType || ctrl.StreamID != "video" || ctrl.Bitrate != 1_200_000 || ctrl.Tap != "main_encoded" {
+	if ctrl.Type() != control.BitrateType || ctrl.StreamID() != "video" || ctrl.Bitrate() != 1_200_000 || ctrl.Tap() != "main_encoded" {
 		t.Fatalf("control = %+v", ctrl)
 	}
 
@@ -329,7 +329,7 @@ func TestExecuteRawControlCallsTaskControl(t *testing.T) {
 		t.Fatalf("controls = %d, want 2", len(task.controls))
 	}
 	ctrl = task.controls[1]
-	if ctrl.Type != control.KeyframeType || ctrl.StreamID != "video" || ctrl.Tap != "" {
+	if ctrl.Type() != control.KeyframeType || ctrl.StreamID() != "video" || ctrl.Tap() != "" {
 		t.Fatalf("keyframe control = %+v", ctrl)
 	}
 }
@@ -339,7 +339,7 @@ func TestDecodeRawControlCanonicalFieldsAndRefusals(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if keyframe.Type != control.KeyframeType || keyframe.StreamID != "video" || keyframe.Tap != "raw_video" {
+	if keyframe.Type() != control.KeyframeType || keyframe.StreamID() != "video" || keyframe.Tap() != "raw_video" {
 		t.Fatalf("keyframe = %+v", keyframe)
 	}
 
@@ -347,7 +347,7 @@ func TestDecodeRawControlCanonicalFieldsAndRefusals(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if bitrate.Type != control.BitrateType || bitrate.StreamID != "audio" || bitrate.Bitrate != 2_000_000 {
+	if bitrate.Type() != control.BitrateType || bitrate.StreamID() != "audio" || bitrate.Bitrate() != 2_000_000 {
 		t.Fatalf("bitrate = %+v", bitrate)
 	}
 
@@ -355,7 +355,7 @@ func TestDecodeRawControlCanonicalFieldsAndRefusals(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if segment.Type != control.SegmentType || segment.Position != 10*time.Second || segment.End != 20*time.Second {
+	if segment.Type() != control.SegmentType || segment.Position() != 10*time.Second || segment.End() != 20*time.Second {
 		t.Fatalf("segment = %+v", segment)
 	}
 
@@ -363,7 +363,7 @@ func TestDecodeRawControlCanonicalFieldsAndRefusals(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if selectControl.Type != control.SelectType || selectControl.StreamID != "camera_b" {
+	if selectControl.Type() != control.SelectType || selectControl.StreamID() != "camera_b" {
 		t.Fatalf("select = %+v", selectControl)
 	}
 
@@ -371,13 +371,13 @@ func TestDecodeRawControlCanonicalFieldsAndRefusals(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if deliver.Type != control.EventType ||
-		deliver.Tap != "raw_video" ||
-		deliver.Reason != "manual" ||
-		deliver.Event.Type != "vendor.force_idr" ||
-		deliver.Event.StreamID != "video" ||
-		deliver.Event.Metadata["source"] != "" {
-		t.Fatalf("deliver = %+v event=%+v", deliver, deliver.Event)
+	if deliver.Type() != control.EventType ||
+		deliver.Tap() != "raw_video" ||
+		deliver.Reason() != "manual" ||
+		deliver.Event().Type != "vendor.force_idr" ||
+		deliver.Event().StreamID != "video" ||
+		deliver.Event().Metadata["source"] != "" {
+		t.Fatalf("deliver = %+v event=%+v", deliver, deliver.Event())
 	}
 
 	for _, tc := range []struct {
@@ -418,7 +418,7 @@ func TestDecodeRawControlParsesFloatAndDurationFields(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if rate.Type != control.RateType || rate.Rate != 1.5 || rate.Node != "source" {
+	if rate.Type() != control.RateType || rate.Rate() != 1.5 || rate.Node() != "source" {
 		t.Fatalf("rate = %+v", rate)
 	}
 
@@ -426,7 +426,7 @@ func TestDecodeRawControlParsesFloatAndDurationFields(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if seek.Type != control.SeekType || seek.Position != 250*time.Millisecond {
+	if seek.Type() != control.SeekType || seek.Position() != 250*time.Millisecond {
 		t.Fatalf("seek = %+v", seek)
 	}
 
@@ -434,7 +434,7 @@ func TestDecodeRawControlParsesFloatAndDurationFields(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if segment.Type != control.SegmentType || segment.Position != time.Millisecond || segment.End != 2*time.Millisecond {
+	if segment.Type() != control.SegmentType || segment.Position() != time.Millisecond || segment.End() != 2*time.Millisecond {
 		t.Fatalf("segment = %+v", segment)
 	}
 
@@ -479,10 +479,10 @@ func TestExecuteRawEventCallsTaskControlDeliver(t *testing.T) {
 		t.Fatalf("controls = %d, want 1", len(task.controls))
 	}
 	ctrl := task.controls[0]
-	if ctrl.Type != control.EventType || ctrl.Tap != "raw_video" {
+	if ctrl.Type() != control.EventType || ctrl.Tap() != "raw_video" {
 		t.Fatalf("control = %+v", ctrl)
 	}
-	event := ctrl.Event
+	event := ctrl.Event()
 	if event.Type != "vendor.force_idr" || event.StreamID != "video" || event.Reason != "manual" ||
 		event.Metadata["source"] != "cli" || event.Metadata["count"] != "2" || event.Metadata["ok"] != "true" {
 		t.Fatalf("event = %+v", event)
@@ -510,10 +510,10 @@ func TestControlTargetingVariantsAndRefusals(t *testing.T) {
 			t.Fatalf("%v: %v", command, err)
 		}
 	}
-	if task.controls[0].Tap != "raw_video" ||
-		task.controls[1].Tap != "main_encoded" ||
-		task.controls[2].Node != "program" ||
-		task.controls[3].Tap != "raw_video" {
+	if task.controls[0].Tap() != "raw_video" ||
+		task.controls[1].Tap() != "main_encoded" ||
+		task.controls[2].Node() != "program" ||
+		task.controls[3].Tap() != "raw_video" {
 		t.Fatalf("controls = %+v", task.controls)
 	}
 
@@ -596,7 +596,7 @@ func TestExecuteRequestAppliesControlRequest(t *testing.T) {
 	if !response.OK || response.Error != nil {
 		t.Fatalf("response = %+v", response)
 	}
-	if len(task.controls) != 1 || task.controls[0].Type != control.BitrateType || task.controls[0].Bitrate != 1_200_000 {
+	if len(task.controls) != 1 || task.controls[0].Type() != control.BitrateType || task.controls[0].Bitrate() != 1_200_000 {
 		t.Fatalf("controls = %+v", task.controls)
 	}
 }
@@ -607,7 +607,7 @@ func TestExecuteRequestCoversRawAndUtilityOps(t *testing.T) {
 		Op:      "control_raw",
 		Control: json.RawMessage(`{"type":"keyframe","stream_id":"video","tap":"raw_video"}`),
 	})
-	if !response.OK || response.Error != nil || len(task.controls) != 1 || task.controls[0].Type != control.KeyframeType {
+	if !response.OK || response.Error != nil || len(task.controls) != 1 || task.controls[0].Type() != control.KeyframeType {
 		t.Fatalf("raw response=%+v controls=%+v", response, task.controls)
 	}
 
@@ -1610,11 +1610,11 @@ func TestCanonicalControlCommandsApplySupportedVerbs(t *testing.T) {
 		t.Fatalf("controls = %d, want %d: %+v", got, want, task.controls)
 	}
 	ctrl := task.controls[5]
-	if ctrl.Type != control.SelectType || ctrl.StreamID != "camera_b" || ctrl.Node != "program" {
+	if ctrl.Type() != control.SelectType || ctrl.StreamID() != "camera_b" || ctrl.Node() != "program" {
 		t.Fatalf("select control = %+v", ctrl)
 	}
 	ctrl = task.controls[6]
-	if ctrl.Type != control.EventType || ctrl.Event.Metadata != nil || ctrl.Event.Reason != "manual" {
+	if ctrl.Type() != control.EventType || ctrl.Event().Metadata != nil || ctrl.Event().Reason != "manual" {
 		t.Fatalf("deliver control = %+v", ctrl)
 	}
 }
@@ -1680,7 +1680,7 @@ func TestServeUnixHandlesOneControlRequest(t *testing.T) {
 	if !response.OK || response.Error != nil {
 		t.Fatalf("response = %+v", response)
 	}
-	if len(task.controls) != 1 || task.controls[0].Type != control.EventType || task.controls[0].Tap != "raw_video" {
+	if len(task.controls) != 1 || task.controls[0].Type() != control.EventType || task.controls[0].Tap() != "raw_video" {
 		t.Fatalf("controls = %+v", task.controls)
 	}
 	cancel()

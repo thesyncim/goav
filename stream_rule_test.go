@@ -444,7 +444,7 @@ func TestOnStreamLateBranchAutoInsertsConversion(t *testing.T) {
 			Encode(codec.Opus(codec.Bitrate(96_000))).
 			To(encodedSink)).
 		Audio().To(Sink(SinkFunc("main", func(context.Context, Message) error { return nil }))).
-		UseRuntime(solverTestOpusRuntime(testStdFilters())).
+		UseRuntime(solverTestOpusRuntime(testBundleFilters())).
 		Build(ctx)
 	if err != nil {
 		t.Fatal(err)

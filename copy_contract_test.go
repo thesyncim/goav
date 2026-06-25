@@ -313,6 +313,15 @@ func TestCopyContractCopyNeverIsSafeOnly(t *testing.T) {
 		if !errors.As(err, &buildErr) || buildErr.Code != errcode.BufferPayloadUnsafe || !errors.Is(err, pipeline.ErrBufferedMessageUnsafe) {
 			t.Fatalf("run err = %v, want buffer_payload_unsafe wrapping ErrBufferedMessageUnsafe", err)
 		}
+		if len(buildErr.Details) != 0 || len(buildErr.Suggestions) != 0 {
+			t.Fatalf("legacy details/suggestions = %v/%v, want typed fields/fixes", buildErr.Details, buildErr.Suggestions)
+		}
+		if got, ok := buildErr.Detail("cause"); !ok || got != "pipeline.ErrBufferedMessageUnsafe" {
+			t.Fatalf("cause detail = %#v, %v; want pipeline.ErrBufferedMessageUnsafe, true", got, ok)
+		}
+		if got, ok := buildErr.Detail("copy_never_branches"); !ok || got != "readonly" {
+			t.Fatalf("copy_never_branches detail = %#v, %v; want readonly, true", got, ok)
+		}
 		for _, want := range []string{
 			"copy_never_branches=readonly",
 			"flow.BufferCopyBounds(packetBytes, frameBytes)",
@@ -393,6 +402,12 @@ func TestCopyContractTooSmallBoundsAreStructured(t *testing.T) {
 	var buildErr *BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != errcode.BufferPayloadTooLarge || !errors.Is(err, pipeline.ErrMessageTooLarge) {
 		t.Fatalf("run err = %v, want buffer_payload_too_large wrapping ErrMessageTooLarge", err)
+	}
+	if len(buildErr.Details) != 0 || len(buildErr.Suggestions) != 0 {
+		t.Fatalf("legacy details/suggestions = %v/%v, want typed fields/fixes", buildErr.Details, buildErr.Suggestions)
+	}
+	if got, ok := buildErr.Detail("cause"); !ok || got != "pipeline.ErrMessageTooLarge" {
+		t.Fatalf("cause detail = %#v, %v; want pipeline.ErrMessageTooLarge, true", got, ok)
 	}
 	for _, want := range []string{
 		"pipeline.ErrMessageTooLarge",

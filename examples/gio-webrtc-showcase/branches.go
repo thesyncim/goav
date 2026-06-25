@@ -273,7 +273,11 @@ func (s *session) setBranchBitrate(ctx context.Context, id string, bitrate int) 
 	if task == nil {
 		return fmt.Errorf("%s task is not running", kind)
 	}
-	if err := task.Control(ctx, control.SetBitrate(av.StreamID(""), bitrate)); err != nil {
+	ctrl, err := control.SetBitrate(av.StreamID(""), bitrate)
+	if err != nil {
+		return err
+	}
+	if err := task.Control(ctx, ctrl); err != nil {
 		return err
 	}
 	s.record("info", "control", "live bitrate retargeted", kind, id, meta)

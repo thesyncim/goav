@@ -88,7 +88,7 @@ func TestRootModuleDependencyPurity(t *testing.T) {
 	}
 }
 
-func TestRootImportDoesNotPullStdAdapters(t *testing.T) {
+func TestRootImportDoesNotPullBundledAdapters(t *testing.T) {
 	cmd := exec.Command("go", "list", "-deps", "github.com/thesyncim/goav")
 	out, err := cmd.Output()
 	if err != nil {

@@ -399,9 +399,9 @@ func ExampleTask_control() {
 	go func() { _ = task.Run(ctx) }()
 
 	for _, control := range []control.Control{
-		control.Keyframe("video"),            // every live encoder for the stream produces a keyframe
-		control.SetBitrate("video", 900_000), // live encoders retarget mid-stream
-		control.Seek(30 * time.Second),       // sources reposition to a media position
+		control.Keyframe("video"),                          // every live encoder for the stream produces a keyframe
+		control.Must(control.SetBitrate("video", 900_000)), // live encoders retarget mid-stream
+		control.Seek(30 * time.Second),                     // sources reposition to a media position
 	} {
 		if err := task.Control(ctx, control); err != nil {
 			fmt.Println(err)

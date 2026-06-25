@@ -396,7 +396,7 @@ func TestPublicWrapperHelpersDelegateToControlSurface(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if control.Bitrate != 1_200_000 {
+	if control.Bitrate() != 1_200_000 {
 		t.Fatalf("control = %+v", control)
 	}
 	event, err := ctl.DecodeRawEvent([]byte(`{"type":"vendor.force_idr","stream_id":"video"}`))

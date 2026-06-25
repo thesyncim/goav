@@ -11,7 +11,7 @@ import (
 )
 
 // Control injects an out-of-band control into the running task's graph, delivering
-// it to the node named by ctrl.Node on that node's serial worker. It is safe to
+// it to the node named by ctrl.Node() on that node's serial worker. It is safe to
 // call concurrently with Run: the control rides the target node's normal queue, so
 // the node's Handle still sees one message at a time and needs no extra locking.
 // Time-axis controls (seek, rate, segment) are the exception: sources have no
@@ -71,21 +71,21 @@ func (t *task) controlDeliver(ctrl control.Control) (func(context.Context, pipel
 }
 
 func (t *task) controlTargets(ctrl control.Control) ([]pipeline.NodeRef, error) {
-	if ctrl.Node != "" && ctrl.Tap != "" {
-		return nil, fmt.Errorf("goav: control targets both node %q and tap %q; choose exactly one target: %w", ctrl.Node, ctrl.Tap, control.ErrAmbiguousTarget)
+	if ctrl.Node() != "" && ctrl.Tap() != "" {
+		return nil, fmt.Errorf("goav: control targets both node %q and tap %q; choose exactly one target: %w", ctrl.Node(), ctrl.Tap(), control.ErrAmbiguousTarget)
 	}
-	if ctrl.Node != "" {
-		return []pipeline.NodeRef{ctrl.Node}, nil
+	if ctrl.Node() != "" {
+		return []pipeline.NodeRef{ctrl.Node()}, nil
 	}
-	if ctrl.Tap != "" {
+	if ctrl.Tap() != "" {
 		for _, tap := range t.Taps() {
-			if tap.Name == ctrl.Tap {
+			if tap.Name == ctrl.Tap() {
 				return []pipeline.NodeRef{tap.Node}, nil
 			}
 		}
-		return nil, fmt.Errorf("goav: control targets unknown tap %q: %w", ctrl.Tap, pipeline.ErrUnknownNode)
+		return nil, fmt.Errorf("goav: control targets unknown tap %q: %w", ctrl.Tap(), pipeline.ErrUnknownNode)
 	}
-	if ctrl.Type == control.KeyframeType || ctrl.Type == control.BitrateType || ctrl.Type == control.SelectType {
+	if ctrl.Type() == control.KeyframeType || ctrl.Type() == control.BitrateType || ctrl.Type() == control.SelectType {
 		targets := t.controlEntryNodes()
 		return implicitControlTargets("entry", targets)
 	}

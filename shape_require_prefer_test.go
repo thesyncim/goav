@@ -25,7 +25,7 @@ func TestRequireMetIsNoOp(t *testing.T) {
 		Require(shape.Frame(av.MediaAudio, shape.Audio(48_000, codec.Stereo, ""))).
 		Encode(codec.Opus(codec.Bitrate(96_000))).
 		To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))).
-		UseRuntime(solverTestOpusRuntime(testStdFilters()))
+		UseRuntime(solverTestOpusRuntime(testBundleFilters()))
 
 	planned, err := job.Describe()
 	if err != nil {
@@ -67,7 +67,7 @@ func TestRequireViolatedFailsWithFix(t *testing.T) {
 		Require(shape.Frame(av.MediaAudio, shape.Audio(48_000, codec.Stereo, ""))).
 		Encode(codec.Opus(codec.Bitrate(96_000))).
 		To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))).
-		UseRuntime(solverTestOpusRuntime(testStdFilters())).
+		UseRuntime(solverTestOpusRuntime(testBundleFilters())).
 		Build(context.Background())
 	var buildErr *BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "shape_requirement_unmet" || !errors.Is(err, ErrUnsupportedBuild) {
@@ -101,7 +101,7 @@ func TestRequireSatisfiedByAutoConversion(t *testing.T) {
 		Require(shape.Frame(av.MediaAudio, shape.Audio(48_000, codec.Stereo, ""))).
 		Encode(codec.Opus(codec.Bitrate(96_000))).
 		To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))).
-		UseRuntime(solverTestOpusRuntime(testStdFilters()))
+		UseRuntime(solverTestOpusRuntime(testBundleFilters()))
 
 	planned, err := job.Describe()
 	if err != nil {
@@ -146,7 +146,7 @@ func TestRequireWorksInBranches(t *testing.T) {
 			return push.EOS()
 		})
 	rt := solverTestOpusRuntime(
-		testStdFilters(),
+		testBundleFilters(),
 		WithDecoder(codec.Descriptor{ID: pcm, Name: "PCM", Type: av.MediaAudio, Capabilities: codec.Capabilities{SampleFormats: []string{av.SampleFormatS16}}}, recipePCMDecoderFactory{decoder: &recipePCMDecoder{}}),
 	)
 	_, err := From(source).
@@ -179,7 +179,7 @@ func TestRequireWorksInFlows(t *testing.T) {
 		Apply(normalize).
 		Encode(codec.Opus(codec.Bitrate(96_000))).
 		To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))).
-		UseRuntime(solverTestOpusRuntime(testStdFilters())).
+		UseRuntime(solverTestOpusRuntime(testBundleFilters())).
 		Build(context.Background())
 	var buildErr *BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "shape_requirement_unmet" {
@@ -445,7 +445,7 @@ func TestReadmeRequireExampleBuilds(t *testing.T) {
 		Require(shape.Frame(av.MediaAudio, shape.Audio(48_000, 2, ""))).
 		Encode(codec.Opus(codec.Bitrate(96_000))).
 		To(File("voice.webm", io.Discard)).
-		UseRuntime(testStdRuntime())
+		UseRuntime(testBundleRuntime())
 	planned, err := job.Describe()
 	if err != nil {
 		t.Fatalf("Describe(): %v", err)

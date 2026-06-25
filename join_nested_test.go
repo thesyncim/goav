@@ -265,7 +265,7 @@ func TestSelectRegionPlacesSwitchedArmOnComposite(t *testing.T) {
 // auto-resampled through the same armPolicy solver path as any leaf arm.
 func TestMixResamplesNestedMixOutput(t *testing.T) {
 	ctx := context.Background()
-	rt := MustNew(testStdFilters())
+	rt := MustNew(testBundleFilters())
 
 	var frames int
 	sink := Sink(SinkFunc("out", func(_ context.Context, m Message) error {
@@ -318,7 +318,7 @@ func TestJoinDescribeEqualsBuildNestedMix(t *testing.T) {
 			From(mixTestAudioSourceRate("c", 24000)).Audio(),
 		).SyncByPTS(),
 	).To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))).
-		UseRuntime(MustNew(testStdFilters()))
+		UseRuntime(MustNew(testBundleFilters()))
 
 	planned := joinPlanGuard(t, job)
 	text := specText(planned)

@@ -76,6 +76,13 @@ subtree detach; `Inspectable.Taps()` lists stable outlets), buffer policy, and g
 stats (`Inspectable.Stats()`, `Inspectable.Snapshot()` with spec, stats, taps, and runtime
 branch states).
 
+Function adapters: stable. `component.NewPacketStage`, `NewFrameStage`,
+`NewEventStage`, and `NewSink` are the strict constructors: nil callbacks
+return `ErrNilStageCallback` or `ErrNilSinkCallback` immediately. The shorter
+`PacketFunc`, `FrameFunc`, `EventFunc`, and `SinkFunc` helpers remain useful
+inside examples and tests, but invalid callbacks are reported later by graph or
+recipe validation.
+
 RTP: stable. `rtpav.Source` (Pion RTP reader -> packets/events with payload
 maps, loss/timestamp tracking, depacketizers, EOS, feedback),
 `rtpav.StaticPayloadMap`, `rtpav.SequenceDetector` (allocation-free loss

@@ -41,6 +41,8 @@ var (
 	ErrNotRunning = errors.New("goav: task is not running")
 	// ErrNil is returned when a control carries no payload.
 	ErrNil = errors.New("goav: nil control")
+	// ErrInvalid is returned when a control constructor receives an invalid payload.
+	ErrInvalid = errors.New("goav: invalid control")
 	// ErrAmbiguousTarget is returned when a control does not name exactly one
 	// target and the task cannot infer one safely.
 	ErrAmbiguousTarget = errors.New("goav: control target is ambiguous")
@@ -49,139 +51,219 @@ var (
 // Control is an out-of-band request injected into a running task's graph.
 type Control struct {
 	// Node is the expert-level target: a graph node name.
-	Node pipeline.NodeRef
+	node pipeline.NodeRef
 	// Tap targets the control at a named tap.
-	Tap string
+	tap string
 	// Type selects how the control is lowered into a pipeline message.
-	Type Type
+	typ Type
 	// StreamID scopes a keyframe, bitrate, or select control to one stream.
-	StreamID av.StreamID
+	streamID av.StreamID
 	// Reason is optional human context carried on the lowered event.
-	Reason string
+	reason string
 	// Event is the verbatim event delivered when Type is EventType.
-	Event av.Event
+	event av.Event
 	// Position is the target media position for SeekType, or segment start.
-	Position time.Duration
+	position time.Duration
 	// End is the exclusive segment end.
-	End time.Duration
+	end time.Duration
 	// Rate is the requested playback rate for RateType.
-	Rate float64
+	rate float64
 	// Bitrate is the requested encoder rate in bits per second.
-	Bitrate int
+	bitrate int
 }
 
 // At returns a copy of the control targeting a graph node directly.
 func (c Control) At(node pipeline.NodeRef) Control {
-	c.Node = node
+	c.node = node
 	return c
 }
 
 // AtTap returns a copy of the control targeting the named tap's point.
 func (c Control) AtTap(name string) Control {
-	c.Tap = name
+	c.tap = name
 	return c
+}
+
+// WithReason returns a copy of the control carrying human context.
+func (c Control) WithReason(reason string) Control {
+	c.reason = reason
+	return c
+}
+
+// Node returns the expert graph-node target, if any.
+func (c Control) Node() pipeline.NodeRef {
+	return c.node
+}
+
+// Tap returns the tap target, if any.
+func (c Control) Tap() string {
+	return c.tap
+}
+
+// Type returns the control verb.
+func (c Control) Type() Type {
+	return c.typ
+}
+
+// StreamID returns the stream scoped by the control, if any.
+func (c Control) StreamID() av.StreamID {
+	return c.streamID
+}
+
+// Reason returns optional human context carried on the lowered event.
+func (c Control) Reason() string {
+	return c.reason
+}
+
+// Event returns the event payload for EventType controls.
+func (c Control) Event() av.Event {
+	return c.event
+}
+
+// Position returns the seek position or segment start.
+func (c Control) Position() time.Duration {
+	return c.position
+}
+
+// End returns the exclusive segment end.
+func (c Control) End() time.Duration {
+	return c.end
+}
+
+// Rate returns the playback rate requested by a RateType control.
+func (c Control) Rate() float64 {
+	return c.rate
+}
+
+// Bitrate returns the encoder rate requested by a BitrateType control.
+func (c Control) Bitrate() int {
+	return c.bitrate
 }
 
 // Keyframe builds a keyframe-request control for the given stream.
 func Keyframe(stream av.StreamID) Control {
-	return Control{Type: KeyframeType, StreamID: stream}
+	return Control{typ: KeyframeType, streamID: stream}
 }
 
 // SetBitrate builds a control that retargets live encoders to bitsPerSecond.
-func SetBitrate(stream av.StreamID, bitsPerSecond int) Control {
-	return Control{Type: BitrateType, StreamID: stream, Bitrate: bitsPerSecond}
+func SetBitrate(stream av.StreamID, bitsPerSecond int) (Control, error) {
+	if bitsPerSecond <= 0 {
+		return Control{}, invalidControl("SetBitrate needs a positive rate in bits per second, got %d", bitsPerSecond)
+	}
+	return Control{typ: BitrateType, streamID: stream, bitrate: bitsPerSecond}, nil
 }
 
 // SelectActive switches a running Select to forward the arm identified by id.
 func SelectActive(id av.StreamID) Control {
-	return Control{Type: SelectType, StreamID: id}
+	return Control{typ: SelectType, streamID: id}
 }
 
 // Deliver builds a control that hands a caller-supplied event to the target.
 func Deliver(event av.Event) Control {
-	return Control{Type: EventType, Event: event}
+	return Control{typ: EventType, event: event}
 }
 
 // Seek builds a control that asks task sources to reposition to pos.
 func Seek(pos time.Duration) Control {
-	return Control{Type: SeekType, Position: pos}
+	return Control{typ: SeekType, position: pos}
 }
 
 // Rate builds a control that asks task sources to change playback rate.
-func Rate(r float64) Control {
-	return Control{Type: RateType, Rate: r}
+func Rate(r float64) (Control, error) {
+	if !(r > 0) || math.IsInf(r, 0) {
+		return Control{}, invalidControl("Rate needs a positive, finite playback rate (reverse playback is not supported), got %v", r)
+	}
+	return Control{typ: RateType, rate: r}, nil
 }
 
 // Segment builds a control that asks task sources to play [start, end).
-func Segment(start, end time.Duration) Control {
-	return Control{Type: SegmentType, Position: start, End: end}
+func Segment(start, end time.Duration) (Control, error) {
+	if start < 0 || end <= start {
+		return Control{}, invalidControl("Segment needs 0 <= start < end, got [%v, %v)", start, end)
+	}
+	return Control{typ: SegmentType, position: start, end: end}, nil
+}
+
+// Must unwraps a control constructor in tests and static configurations.
+func Must(ctrl Control, err error) Control {
+	if err != nil {
+		panic(err)
+	}
+	return ctrl
+}
+
+func invalidControl(format string, args ...any) error {
+	return fmt.Errorf("goav: "+format+": %w", append(args, ErrInvalid)...)
 }
 
 // Message lowers the control into the pipeline message delivered to a node.
 func (c Control) Message() (*pipeline.Message, error) {
-	switch c.Type {
+	if c.typ == "" {
+		return nil, ErrNil
+	}
+	switch c.typ {
 	case KeyframeType:
 		return &pipeline.Message{Kind: pipeline.MessageEvent, Event: &av.Event{
 			Type:     av.EventKeyframeRequired,
-			StreamID: c.StreamID,
-			Reason:   c.Reason,
+			StreamID: c.streamID,
+			Reason:   c.reason,
 		}}, nil
 	case BitrateType:
-		if c.Bitrate <= 0 {
-			return nil, fmt.Errorf("goav: SetBitrate needs a positive rate in bits per second, got %d", c.Bitrate)
+		if c.bitrate <= 0 {
+			return nil, invalidControl("SetBitrate needs a positive rate in bits per second, got %d", c.bitrate)
 		}
 		return &pipeline.Message{Kind: pipeline.MessageEvent, Event: &av.Event{
 			Type:     av.EventBitrateChanged,
-			StreamID: c.StreamID,
-			Reason:   c.Reason,
-			Metadata: codec.BitrateMetadata(c.Bitrate),
+			StreamID: c.streamID,
+			Reason:   c.reason,
+			Metadata: codec.BitrateMetadata(c.bitrate),
 		}}, nil
 	case SelectType:
 		return &pipeline.Message{Kind: pipeline.MessageEvent, Event: &av.Event{
 			Type:     av.EventStats,
-			StreamID: c.StreamID,
+			StreamID: c.streamID,
 			Reason:   selectorActiveReason,
 		}}, nil
 	case SeekType:
 		return &pipeline.Message{Kind: pipeline.MessageEvent, Event: &av.Event{
 			Type:      av.EventSeek,
-			StreamID:  c.StreamID,
-			Reason:    c.Reason,
-			Timestamp: av.Timestamp{Value: int64(c.Position), Base: av.TimeBase{Num: 1, Den: int64(time.Second)}},
+			StreamID:  c.streamID,
+			Reason:    c.reason,
+			Timestamp: av.Timestamp{Value: int64(c.position), Base: av.TimeBase{Num: 1, Den: int64(time.Second)}},
 		}}, nil
 	case RateType:
-		if !(c.Rate > 0) || math.IsInf(c.Rate, 1) {
-			return nil, fmt.Errorf("goav: Rate needs a positive, finite playback rate (reverse playback is not supported), got %v", c.Rate)
+		if !(c.rate > 0) || math.IsInf(c.rate, 0) {
+			return nil, invalidControl("Rate needs a positive, finite playback rate (reverse playback is not supported), got %v", c.rate)
 		}
 		return &pipeline.Message{Kind: pipeline.MessageEvent, Event: &av.Event{
 			Type:     av.EventRate,
-			StreamID: c.StreamID,
-			Reason:   c.Reason,
-			Metadata: av.RateMetadata(c.Rate),
+			StreamID: c.streamID,
+			Reason:   c.reason,
+			Metadata: av.RateMetadata(c.rate),
 		}}, nil
 	case SegmentType:
-		if c.Position < 0 || c.End <= c.Position {
-			return nil, fmt.Errorf("goav: Segment needs 0 <= start < end, got [%v, %v)", c.Position, c.End)
+		if c.position < 0 || c.end <= c.position {
+			return nil, invalidControl("Segment needs 0 <= start < end, got [%v, %v)", c.position, c.end)
 		}
 		return &pipeline.Message{Kind: pipeline.MessageEvent, Event: &av.Event{
 			Type:      av.EventSegment,
-			StreamID:  c.StreamID,
-			Reason:    c.Reason,
-			Timestamp: av.Timestamp{Value: int64(c.Position), Base: av.TimeBase{Num: 1, Den: int64(time.Second)}},
-			Metadata:  av.SegmentEndMetadata(c.End),
+			StreamID:  c.streamID,
+			Reason:    c.reason,
+			Timestamp: av.Timestamp{Value: int64(c.position), Base: av.TimeBase{Num: 1, Den: int64(time.Second)}},
+			Metadata:  av.SegmentEndMetadata(c.end),
 		}}, nil
 	case EventType:
-		event := c.Event
+		event := c.event
 		return &pipeline.Message{Kind: pipeline.MessageEvent, Event: &event}, nil
 	default:
-		return nil, fmt.Errorf("goav: unknown control type %q", c.Type)
+		return nil, invalidControl("unknown control type %q", c.typ)
 	}
 }
 
 // TargetsSources reports whether the control is delivered through source
 // Control methods instead of node queues.
 func (c Control) TargetsSources() bool {
-	switch c.Type {
+	switch c.typ {
 	case SeekType, RateType, SegmentType:
 		return true
 	default:

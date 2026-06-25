@@ -62,7 +62,7 @@ func TestRealOpusWebMRoundTripThroughGrammar(t *testing.T) {
 		Audio().
 		Encode(codec.Opus(codec.Bitrate(96_000))).
 		To(File("roundtrip.webm", &webm)).
-		UseRuntime(testStdRuntime()).
+		UseRuntime(testBundleRuntime()).
 		Build(ctx)
 	if err != nil {
 		t.Fatalf("Build(encode): %v", err)
@@ -107,7 +107,7 @@ func TestRealOpusWebMRoundTripThroughGrammar(t *testing.T) {
 		Audio().
 		Decode().
 		To(sink).
-		UseRuntime(testStdRuntime(WithRealtime(false))).
+		UseRuntime(testBundleRuntime(WithRealtime(false))).
 		Build(ctx)
 	if err != nil {
 		t.Fatalf("Build(decode): %v", err)

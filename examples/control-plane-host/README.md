@@ -12,7 +12,7 @@ It demonstrates:
 - server-aware `help attach` output for app-owned branch components;
 - machine-readable `capabilities` output for scripts and humans;
 - generated help for app-owned control commands;
-- raw JSON fallback for existing `control.Control` and `av.Event` payloads;
+- raw JSON fallback for control protocol and `av.Event` payloads;
 - stock CLI transcode branches (`resize`, `encode codec=vp8 media=video`, `filesink`);
 - thumbnail/sample branches from the same running tap;
 - an in-process app sink (`memorysink`);
@@ -70,8 +70,9 @@ $CTL control fixture.controls type=rate
 ```
 
 If automation already has the structured control/event payload, use the raw
-JSON fallback. The first command decodes into the real `control.Control` shape; the
-second decodes into an `av.Event` and delivers it at the `frames` tap:
+JSON fallback. The first command validates through the typed `control.Control`
+constructors; the second decodes into an `av.Event` and delivers it at the
+`frames` tap:
 
 ```sh
 $CTL control --json '{"type":"rate","rate":0.75,"node":"fixture"}'

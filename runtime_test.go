@@ -305,8 +305,8 @@ func TestRuntimeWithCodecAdapter(t *testing.T) {
 	}
 }
 
-func TestRuntimeWithStdCodecsIncludesAACDecode(t *testing.T) {
-	rt := runtimeValue(t, MustNew(testStdCodecs()))
+func TestRuntimeWithBundleCodecsIncludesAACDecode(t *testing.T) {
+	rt := runtimeValue(t, MustNew(testBundleCodecs()))
 
 	if _, err := rt.codecs.DecoderFactory(av.CodecAAC); err != nil {
 		t.Fatalf("AAC decoder factory: %v", err)

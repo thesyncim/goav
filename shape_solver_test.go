@@ -110,7 +110,7 @@ func TestAutoInsertsResampleBeforeEncode(t *testing.T) {
 		Auto(shape.AllowResample()).
 		Encode(codec.Opus(codec.Bitrate(96_000))).
 		To(sink).
-		UseRuntime(solverTestOpusRuntime(testStdFilters()))
+		UseRuntime(solverTestOpusRuntime(testBundleFilters()))
 
 	planned, err := job.Describe()
 	if err != nil {
@@ -163,7 +163,7 @@ func TestAutoEmptyPolicyRefusesConversion(t *testing.T) {
 		Auto().
 		Encode(codec.Opus(codec.Bitrate(96_000))).
 		To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))).
-		UseRuntime(solverTestOpusRuntime(testStdFilters())).
+		UseRuntime(solverTestOpusRuntime(testBundleFilters())).
 		Build(context.Background())
 	var buildErr *BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "shape_conversion_refused" || !errors.Is(err, ErrUnsupportedBuild) {
@@ -196,7 +196,7 @@ func TestAutoInsufficientPolicyRefusesStageConversion(t *testing.T) {
 		Auto(shape.AllowResize()).
 		Do(stage).
 		To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))).
-		UseRuntime(MustNew(testStdFilters())).
+		UseRuntime(MustNew(testBundleFilters())).
 		Build(context.Background())
 	var buildErr *BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "shape_conversion_refused" || !errors.Is(err, ErrUnsupportedBuild) {
@@ -224,7 +224,7 @@ func TestShapeMismatchSuggestsExactAutoFix(t *testing.T) {
 		Audio().
 		Do(stage).
 		To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))).
-		UseRuntime(MustNew(testStdFilters())).
+		UseRuntime(MustNew(testBundleFilters())).
 		Build(context.Background())
 	var buildErr *BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "operation_shape_mismatch" || !errors.Is(err, ErrUnsupportedBuild) {
@@ -249,7 +249,7 @@ func TestAutoInsertsResizeBeforeEncode(t *testing.T) {
 	target.Parameters.Width = 640
 	target.Parameters.Height = 360
 	rt := MustNew(
-		testStdFilters(),
+		testBundleFilters(),
 		WithEncoder(codec.Descriptor{ID: av.CodecVP9, Type: av.MediaVideo}, &encodeTestEncoderFactory{encoder: &encodeTestEncoder{}}),
 	)
 
@@ -398,7 +398,7 @@ func TestAutoSolvesBranchChains(t *testing.T) {
 			return push.EOS()
 		})
 	rt := solverTestOpusRuntime(
-		testStdFilters(),
+		testBundleFilters(),
 		WithDecoder(codec.Descriptor{ID: pcm, Name: "PCM", Type: av.MediaAudio, Capabilities: codec.Capabilities{SampleFormats: []string{av.SampleFormatS16}}}, recipePCMDecoderFactory{decoder: &recipePCMDecoder{}}),
 	)
 	job := From(source).
@@ -440,7 +440,7 @@ func TestAutoWorksInFlows(t *testing.T) {
 		Audio().
 		Apply(normalize).
 		To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))).
-		UseRuntime(solverTestOpusRuntime(testStdFilters()))
+		UseRuntime(solverTestOpusRuntime(testBundleFilters()))
 
 	planned, err := job.Describe()
 	if err != nil {
@@ -469,7 +469,7 @@ func TestReadmeAutoResampleExampleBuilds(t *testing.T) {
 		Auto(shape.AllowResample()).
 		Encode(codec.Opus(codec.Bitrate(96_000))).
 		To(File("voice.webm", io.Discard)).
-		UseRuntime(testStdRuntime())
+		UseRuntime(testBundleRuntime())
 	planned, err := job.Describe()
 	if err != nil {
 		t.Fatalf("Describe(): %v", err)
@@ -495,7 +495,7 @@ func TestMixArmSolvingReportsDiagnostic(t *testing.T) {
 		From(mixTestAudioSourceRate("a", 48_000)).Audio(),
 		From(mixTestAudioSourceRate("b", 24_000)).Audio(),
 	).To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))).
-		UseRuntime(MustNew(testStdFilters()))
+		UseRuntime(MustNew(testBundleFilters()))
 
 	report, err := job.Explain(context.Background())
 	if err != nil {

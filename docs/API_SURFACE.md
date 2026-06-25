@@ -51,7 +51,7 @@ Inspectable: Describe, Taps, Snapshot -> snapshot.*, Stats
 Mutable: Attach/Detach(lifecycle.DrainBranch|AbortBranch); Attachment.Rebranch
          (lifecycle.SwitchAt(lifecycle.NextFrame|lifecycle.NextKeyframe|lifecycle.AtMediaTime),
           lifecycle.DrainOldBranch|lifecycle.AbortOldBranch)
-Controllable: Control(control.Keyframe|Seek|Segment|Rate|SetBitrate|SelectActive|Deliver, .AtTap)
+Controllable: Control(control.Control values from typed constructors, .AtTap)
 Observable: Events, Watch(inspect.EventFilter)
 goav.New(goavruntime.Option...) -> (*Runtime, error); goav.MustNew(...) -> bare Runtime; bundle.MustNew(...) -> bundled Runtime; job.UseRuntime(rt)
 errors: *goav.BuildError{Family: errcode.FamilyX, Code: errcode.X, Fields: []goav.Detail, Fixes: []goav.Fix, ...} matched with errors.As/Is; Detail(key) for typed facts
@@ -65,7 +65,7 @@ conversions, primary refusals, and runtime attach behavior.
 Applications also read these vocabulary packages:
 
 - `control`: live task control vocabulary (`Control`, `Keyframe`, `Rate`,
-  `Seek`, `Segment`, `SetBitrate`, `SelectActive`, `Deliver`).
+  `Seek`, `Segment`, `SetBitrate`, `SelectActive`, `Deliver`, `Must`).
 - `inspect`: event watch filters (`EventFilter`, `WatchTypes`,
   `WatchStream`).
 - `errcode`: the error-code catalog (stable `Family` categories plus one
@@ -195,8 +195,9 @@ implement, with the executable evidence:
   a distinct class) is core work: `shape.Conversions` and `shape.Policy`
   enumerate the classes, and externals cannot extend that enumeration.
 - **Controls.** The typed verbs (`Keyframe`, `Seek`, `Rate`, `SetBitrate`,
-  `SelectActive`, ...) are core vocabulary, but the control plane is closed
-  for externals in two directions. In-process stages still use
+  `SelectActive`, ...) are core vocabulary, but the control value is opaque:
+  payload-bearing constructors validate immediately, and callers target copies
+  with `.AtTap(...)` or `.At(...)`. In-process stages still use
   `Deliver(event).AtTap(name)` to receive arbitrary custom events. Untargeted
   controls only infer a destination when exactly one valid target exists;
   otherwise callers use `.AtTap(...)`, `.At(...)`, `source=...`, or `node=...`.
@@ -293,7 +294,8 @@ against the constructors in `input.go`/`provider.go`/`source.go`,
   `Watch`, with attachment id/name metadata and a detach disposition on
   detach.
 - **Control vs Deliver**: `Control` verbs are typed intents (`Keyframe`,
-  `SetBitrate`, `Seek`, `Rate`, `Segment`, `SelectActive`);
+  `SetBitrate`, `Seek`, `Rate`, `Segment`, `SelectActive`) built through
+  constructors, not public struct fields;
   `Deliver(event)` is the escape hatch handing a verbatim event to a stage
   that interprets it itself.
 - **recipe vs expert**: the recipe grammar (tier A) is the normal surface;
@@ -361,7 +363,7 @@ example modules. The module boundary is the dependency boundary:
 Pre-v1, breaking renames land without aliases. The surface-hygiene wave moved
 five clusters off the root: the live control vocabulary is `control`
 (`Control`, `Keyframe`, `Rate`, `Seek`, `Segment`, `SetBitrate`,
-`SelectActive`, `Deliver`), event watch filters are `inspect`
+`SelectActive`, `Deliver`, `Must`), event watch filters are `inspect`
 (`EventFilter`, `WatchTypes`, `WatchStream`), the error catalog is `errcode` (renamed from
 `codes`), the source/destination extension contracts are `provider`
 (`Source`, `Destination`, `Writer`, `TransactionalWriter`, `Contract`,

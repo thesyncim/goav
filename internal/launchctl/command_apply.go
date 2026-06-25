@@ -181,7 +181,10 @@ func applyBitrate(ctx context.Context, task goav.LiveTask, args any) (ControlRes
 	if err := ensureTap(task, "control bitrate", cmd.At); err != nil {
 		return ControlResponse{}, err
 	}
-	ctrl := control.SetBitrate(cmd.Stream, cmd.Value)
+	ctrl, err := control.SetBitrate(cmd.Stream, cmd.Value)
+	if err != nil {
+		return ControlResponse{}, structuredError("control bitrate", err)
+	}
 	if cmd.At != "" {
 		ctrl = ctrl.AtTap(cmd.At)
 	}
@@ -207,8 +210,10 @@ func applySeek(ctx context.Context, task goav.LiveTask, args any) (ControlRespon
 
 func applyRate(ctx context.Context, task goav.LiveTask, args any) (ControlResponse, error) {
 	cmd := args.(RateCommand)
-	ctrl := control.Rate(cmd.Value)
-	var err error
+	ctrl, err := control.Rate(cmd.Value)
+	if err != nil {
+		return ControlResponse{}, structuredError("control rate", err)
+	}
 	ctrl, err = applySourceOrNodeTarget(task, "control rate", ctrl, cmd.Source, cmd.Node)
 	if err != nil {
 		return ControlResponse{}, err
@@ -221,8 +226,10 @@ func applyRate(ctx context.Context, task goav.LiveTask, args any) (ControlRespon
 
 func applySegment(ctx context.Context, task goav.LiveTask, args any) (ControlResponse, error) {
 	cmd := args.(SegmentCommand)
-	ctrl := control.Segment(cmd.Start, cmd.End)
-	var err error
+	ctrl, err := control.Segment(cmd.Start, cmd.End)
+	if err != nil {
+		return ControlResponse{}, structuredError("control segment", err)
+	}
 	ctrl, err = applySourceOrNodeTarget(task, "control segment", ctrl, cmd.Source, cmd.Node)
 	if err != nil {
 		return ControlResponse{}, err
@@ -305,10 +312,10 @@ func executeRawControl(ctx context.Context, task goav.LiveTask, data []byte) (Co
 	if err != nil {
 		return ControlResponse{}, err
 	}
-	if err := ensureTap(task, "control --json", ctrl.Tap); err != nil {
+	if err := ensureTap(task, "control --json", ctrl.Tap()); err != nil {
 		return ControlResponse{}, err
 	}
-	if ctrl.Type == control.EventType && ctrl.Tap == "" && ctrl.Node == "" {
+	if ctrl.Type() == control.EventType && ctrl.Tap() == "" && ctrl.Node() == "" {
 		return ControlResponse{}, commandError(
 			"missing_target",
 			"control --json",
@@ -322,7 +329,7 @@ func executeRawControl(ctx context.Context, task goav.LiveTask, data []byte) (Co
 	if err := task.Control(ctx, ctrl); err != nil {
 		return ControlResponse{}, structuredError("control --json", err)
 	}
-	return ControlResponse{Operation: "control --json", Result: map[string]any{"type": ctrl.Type, "stream": ctrl.StreamID, "tap": ctrl.Tap}}, nil
+	return ControlResponse{Operation: "control --json", Result: map[string]any{"type": ctrl.Type(), "stream": ctrl.StreamID(), "tap": ctrl.Tap()}}, nil
 }
 
 func executeRawEvent(ctx context.Context, task goav.LiveTask, data []byte, args []string) (ControlResponse, error) {
@@ -385,7 +392,10 @@ func DecodeRawControl(data []byte) (control.Control, error) {
 		if !ok {
 			return control.Control{}, commandError("missing_required", "control --json", "bitrate", "raw bitrate control needs bitrate", nil, []string{`include "bitrate":1200000`}, nil)
 		}
-		ctrl = control.SetBitrate(stream, bitrate)
+		ctrl, err = control.SetBitrate(stream, bitrate)
+		if err != nil {
+			return control.Control{}, structuredError("control --json", err)
+		}
 	case control.SeekType:
 		if err := validateRawFields("control --json", obj, "type", "position", "tap", "node", "reason"); err != nil {
 			return control.Control{}, err
@@ -406,7 +416,10 @@ func DecodeRawControl(data []byte) (control.Control, error) {
 		if !ok {
 			return control.Control{}, commandError("missing_required", "control --json", "rate", "raw rate control needs rate", nil, []string{`include "rate":0.5`}, nil)
 		}
-		ctrl = control.Rate(rate)
+		ctrl, err = control.Rate(rate)
+		if err != nil {
+			return control.Control{}, structuredError("control --json", err)
+		}
 	case control.SegmentType:
 		if err := validateRawFields("control --json", obj, "type", "start", "end", "tap", "node", "reason"); err != nil {
 			return control.Control{}, err
@@ -422,7 +435,10 @@ func DecodeRawControl(data []byte) (control.Control, error) {
 		if !ok || !endOK {
 			return control.Control{}, commandError("missing_required", "control --json", "segment", "raw segment control needs start and end", nil, []string{`include "start":"10s","end":"20s"`}, nil)
 		}
-		ctrl = control.Segment(start, end)
+		ctrl, err = control.Segment(start, end)
+		if err != nil {
+			return control.Control{}, structuredError("control --json", err)
+		}
 	case control.SelectType:
 		if err := validateRawFields("control --json", obj, "type", "active", "tap", "node", "reason"); err != nil {
 			return control.Control{}, err
@@ -449,7 +465,7 @@ func DecodeRawControl(data []byte) (control.Control, error) {
 	default:
 		return control.Control{}, commandError("invalid_value", "control --json", "type", fmt.Sprintf("unknown raw control type %q", typ), nil, []string{"use one of: " + strings.Join(rawControlTypeNames(), ", "), `use goav ctl control deliver --json '{"type":"vendor.force_idr"}' at=<tap>`}, nil)
 	}
-	ctrl.Reason = firstNonEmpty(fieldString(obj, "reason"), ctrl.Reason)
+	ctrl = ctrl.WithReason(firstNonEmpty(fieldString(obj, "reason"), ctrl.Reason()))
 	if tap := fieldString(obj, "tap"); tap != "" {
 		ctrl = ctrl.AtTap(tap)
 	}

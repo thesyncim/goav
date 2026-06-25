@@ -59,7 +59,7 @@ func TestTaskControlSetBitrateBroadcastsBitrateEvent(t *testing.T) {
 
 	// No At / AtTap: the retarget enters at the graph's entry row (the node fed
 	// by the source) and rides the data path downstream, like Keyframe.
-	if err := controlUntilAccepted(ctx, task, control.SetBitrate("a", 250_000)); err != nil {
+	if err := controlUntilAccepted(ctx, task, control.Must(control.SetBitrate("a", 250_000))); err != nil {
 		t.Fatalf("untargeted SetBitrate: %v", err)
 	}
 	event, err := capture.waitForEvent(ctx, av.EventBitrateChanged)
@@ -106,8 +106,8 @@ func TestTaskControlSetBitrateRejectsNonPositiveRate(t *testing.T) {
 	t.Cleanup(func() { _ = task.Close() })
 
 	for _, rate := range []int{0, -1} {
-		err := task.Control(context.Background(), control.SetBitrate("a", rate))
-		if err == nil || !strings.Contains(err.Error(), "positive") {
+		_, err := control.SetBitrate("a", rate)
+		if !errors.Is(err, control.ErrInvalid) || !strings.Contains(err.Error(), "positive") {
 			t.Fatalf("control.SetBitrate(%d) err = %v, want a positive-rate rejection", rate, err)
 		}
 	}
@@ -134,7 +134,7 @@ func TestDefaultRealtimeEncodeRecipeSupportsLiveEncoderControls(t *testing.T) {
 	runErr := make(chan error, 1)
 	go func() { runErr <- task.Run(ctx) }()
 
-	if err := controlUntilAccepted(ctx, task, control.SetBitrate("cam", 250_000)); err != nil {
+	if err := controlUntilAccepted(ctx, task, control.Must(control.SetBitrate("cam", 250_000))); err != nil {
 		t.Fatalf("default realtime encode SetBitrate: %v", err)
 	}
 	bitrateEvent, err := encoder.waitForEvent(ctx, av.EventBitrateChanged)
@@ -177,7 +177,7 @@ func TestOfflineEncodeRecipeKeepsDirectRunnerForEncoderControls(t *testing.T) {
 	task := built.(*task)
 	t.Cleanup(func() { _ = task.Close() })
 
-	err = task.Control(ctx, control.SetBitrate("cam", 250_000))
+	err = task.Control(ctx, control.Must(control.SetBitrate("cam", 250_000)))
 	if !errors.Is(err, control.ErrUnsupported) {
 		t.Fatalf("offline encode SetBitrate err = %v, want control.ErrUnsupported from direct runner", err)
 	}

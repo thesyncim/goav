@@ -1226,7 +1226,7 @@ func TestOutputFormatAdapterPassesRejectMissingMuxers(t *testing.T) {
 			state: recipeCompileState{
 				operation: "build job",
 				options:   recipeCompileOptions{preflightOutputAdapters: true},
-				runtime:   testStdRuntime(),
+				runtime:   testBundleRuntime(),
 				outputAttachments: []destinationSpec{
 					fileDestination("recording.mp4", io.Discard),
 				},
@@ -1239,7 +1239,7 @@ func TestOutputFormatAdapterPassesRejectMissingMuxers(t *testing.T) {
 			state: recipeCompileState{
 				operation: "build job",
 				options:   recipeCompileOptions{preflightOutputAdapters: true},
-				runtime:   testStdRuntime(),
+				runtime:   testBundleRuntime(),
 				outputAttachments: []destinationSpec{
 					fileDestination("", io.Discard).withFormat(av.FormatOgg),
 				},
@@ -1252,7 +1252,7 @@ func TestOutputFormatAdapterPassesRejectMissingMuxers(t *testing.T) {
 			state: recipeCompileState{
 				operation: branchCompositionOperation,
 				options:   recipeCompileOptions{preflightOutputAdapters: true},
-				runtime:   testStdRuntime(),
+				runtime:   testBundleRuntime(),
 				branchDestinationAttachments: []namedDestinationSpec{{
 					name:   "web",
 					output: fileDestination("web.mp4", io.Discard),
@@ -1368,7 +1368,7 @@ func TestOutputFormatAdapterPassesStoreResolvedFormats(t *testing.T) {
 
 func TestResolvedJobOutputFormatsEnterMediaPlanBuild(t *testing.T) {
 	runtime := MustNew(append(
-		testStdOptions(),
+		testBundleOptions(),
 		withTestFormats(
 			testFormatProber(remuxTestProber{}),
 			testFormatMuxer(av.FormatOgg, &remuxTestMuxerFactory{}),
@@ -1496,7 +1496,7 @@ func TestInputFormatAdapterPassesRejectMissingDemuxers(t *testing.T) {
 			state: recipeCompileState{
 				operation: "build job",
 				options:   recipeCompileOptions{preflightInputAdapters: true},
-				runtime:   testStdRuntime(),
+				runtime:   testBundleRuntime(),
 				inputAttachments: []InputSpec{
 					FileInput("input.ogg", strings.NewReader("")),
 				},
@@ -1510,7 +1510,7 @@ func TestInputFormatAdapterPassesRejectMissingDemuxers(t *testing.T) {
 			state: recipeCompileState{
 				operation:             branchCompositionOperation,
 				options:               recipeCompileOptions{preflightInputAdapters: true},
-				runtime:               testStdRuntime(),
+				runtime:               testBundleRuntime(),
 				branchInputAttachment: FileInput("input.flv", strings.NewReader("")),
 			},
 			code: "input_demuxer_missing",
@@ -1522,7 +1522,7 @@ func TestInputFormatAdapterPassesRejectMissingDemuxers(t *testing.T) {
 			state: recipeCompileState{
 				operation: "build job",
 				options:   recipeCompileOptions{preflightInputAdapters: true},
-				runtime:   testStdRuntime(),
+				runtime:   testBundleRuntime(),
 				inputAttachments: []InputSpec{
 					FileInput("input.unknown", strings.NewReader("")),
 				},
@@ -1551,7 +1551,7 @@ func TestInputFormatAdapterPassSkipsLiveReceiveInputs(t *testing.T) {
 	state := recipeCompileState{
 		operation: "build job",
 		options:   recipeCompileOptions{preflightInputAdapters: true},
-		runtime:   testStdRuntime(),
+		runtime:   testBundleRuntime(),
 		inputAttachments: []InputSpec{
 			Input(&liveTestProvider{media: av.MediaAudio, codecID: av.CodecOpus}),
 		},
@@ -4059,7 +4059,7 @@ func TestBranchComposeLowererRequiresDestinationOperationsBeforeSources(t *testi
 func TestRecipeResolvedBuildUsesMediaPlanPacketCopy(t *testing.T) {
 	job := From(
 		Input(liveVideoVP8Provider("video")),
-	).Copy().To(destinationHandle(fileDestination("recording.ivf", io.Discard))).UseRuntime(testStdRuntime())
+	).Copy().To(destinationHandle(fileDestination("recording.ivf", io.Discard))).UseRuntime(testBundleRuntime())
 
 	resolved, err := compileJobRecipe(job)
 	if err != nil {

@@ -9,12 +9,14 @@ control.BitrateType
 control.Control
 control.Deliver
 control.ErrAmbiguousTarget
+control.ErrInvalid
 control.ErrNil
 control.ErrNotRunning
 control.ErrUnsupported
 control.EventType
 control.Keyframe
 control.KeyframeType
+control.Must
 control.Rate
 control.RateType
 control.Seek

@@ -69,7 +69,11 @@ func Example_bootstrapControlPlaneHost() {
 		"vendor.rate",
 		"vendor playback-rate control",
 		func(ctx context.Context, task goav.LiveTask, cmd SetRate) (ctl.ControlResponse, error) {
-			if err := task.Control(ctx, control.Rate(cmd.Value).At(pipeline.NodeRef(cmd.Source))); err != nil {
+			ctrl, err := control.Rate(cmd.Value)
+			if err != nil {
+				return ctl.ControlResponse{}, err
+			}
+			if err := task.Control(ctx, ctrl.At(pipeline.NodeRef(cmd.Source))); err != nil {
 				return ctl.ControlResponse{}, err
 			}
 			return ctl.ControlResponse{

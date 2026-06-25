@@ -244,7 +244,7 @@ func TestTaskSegmentExportsRealMatroskaWindow(t *testing.T) {
 
 	// Trim-to-file from a real container: play [300ms, 600ms) and end
 	// naturally, so the destination commits exactly as at the end of media.
-	if err := task.Control(ctx, control.Segment(300*time.Millisecond, 600*time.Millisecond)); err != nil {
+	if err := task.Control(ctx, control.Must(control.Segment(300*time.Millisecond, 600*time.Millisecond))); err != nil {
 		t.Fatalf("Segment err = %v", err)
 	}
 	if err := task.Run(ctx); err != nil {
@@ -321,7 +321,7 @@ func TestTaskOfflineFileTaskPumpsUnpaced(t *testing.T) {
 
 	// With no pacing there is nothing for Rate to scale — the typed rejection
 	// says offline tasks run unpaced instead of lying about playback speed.
-	if err := task.Control(ctx, control.Rate(2.0)); !errors.Is(err, format.ErrRateUnsupported) {
+	if err := task.Control(ctx, control.Must(control.Rate(2.0))); !errors.Is(err, format.ErrRateUnsupported) {
 		t.Fatalf("Rate err = %v, want format.ErrRateUnsupported", err)
 	}
 
@@ -343,7 +343,7 @@ func TestTaskRateOnFileScalesPacing(t *testing.T) {
 	// Rate on a file is a pacing multiplier now: at 2x the 100ms cadence
 	// plays in 50ms steps of clock time. Delivered before Run, the control
 	// pre-positions the source (direct-runner delivery).
-	if err := task.Control(ctx, control.Rate(2.0)); err != nil {
+	if err := task.Control(ctx, control.Must(control.Rate(2.0))); err != nil {
 		t.Fatalf("Rate err = %v", err)
 	}
 	if err := task.Run(ctx); err != nil {
@@ -374,7 +374,7 @@ func TestTaskSeekAndRateComposeOnFile(t *testing.T) {
 	if err := task.Control(ctx, control.Seek(450*time.Millisecond)); err != nil {
 		t.Fatalf("Seek err = %v", err)
 	}
-	if err := task.Control(ctx, control.Rate(2.0)); err != nil {
+	if err := task.Control(ctx, control.Must(control.Rate(2.0))); err != nil {
 		t.Fatalf("Rate err = %v", err)
 	}
 	if err := task.Run(ctx); err != nil {

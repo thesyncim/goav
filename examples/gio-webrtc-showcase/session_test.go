@@ -120,7 +120,7 @@ func TestSessionRequestsOutputKeyframeFromReceiverFeedback(t *testing.T) {
 	if task.controls != 1 {
 		t.Fatalf("controls = %d, want one keyframe control", task.controls)
 	}
-	if task.last.Type != control.KeyframeType || task.last.Tap != videoTapName {
+	if task.last.Type() != control.KeyframeType || task.last.Tap() != videoTapName {
 		t.Fatalf("control = %+v, want keyframe at decoded video tap", task.last)
 	}
 	if !hasEvent(session.events, "feedback", "browser output keyframe requested") {

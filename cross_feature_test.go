@@ -429,7 +429,7 @@ func TestSegmentAttachMidWindowCommitsAtEOS(t *testing.T) {
 	defer task.Close()
 
 	const start, end = 100 * time.Nanosecond, 104 * time.Nanosecond
-	if err := task.Control(ctx, control.Segment(start, end)); err != nil {
+	if err := task.Control(ctx, control.Must(control.Segment(start, end))); err != nil {
 		t.Fatalf("Segment err = %v", err)
 	}
 	runErr := make(chan error, 1)
@@ -799,7 +799,7 @@ func TestFromMultiInputChainsKeepIndependentAutoPolicies(t *testing.T) {
 	sinkDest := func(name string) Destination {
 		return Sink(SinkFunc(name, func(context.Context, Message) error { return nil }))
 	}
-	rt := solverTestOpusRuntime(testStdFilters())
+	rt := solverTestOpusRuntime(testBundleFilters())
 
 	job := From(
 		solverTestAudioSource("micA", 44_100, codec.Stereo, av.SampleFormatS16),
@@ -833,7 +833,7 @@ func TestFromMultiInputChainsKeepIndependentAutoPolicies(t *testing.T) {
 }
 
 func TestMixBranchesAutoSolvesJoinedOutput(t *testing.T) {
-	rt := solverTestOpusRuntime(testStdFilters())
+	rt := solverTestOpusRuntime(testBundleFilters())
 	var packets int
 	job := Mix(
 		From(mixTestAudioSourceRate("a", 44_100)).Audio(),
@@ -883,7 +883,7 @@ func TestMixEncodeRequiresAutoForJoinedOutput(t *testing.T) {
 	).
 		Encode(codec.Opus(codec.Bitrate(96_000), codec.SampleRate(48_000), codec.Channels(codec.Mono))).
 		To(Sink(SinkFunc("enc", func(context.Context, Message) error { return nil }))).
-		UseRuntime(solverTestOpusRuntime(testStdFilters())).
+		UseRuntime(solverTestOpusRuntime(testBundleFilters())).
 		Build(context.Background())
 
 	var buildErr *BuildError
@@ -903,7 +903,7 @@ func TestMixEncodeRequiresAutoForJoinedOutput(t *testing.T) {
 }
 
 func TestMixEncodeAutoSolvesJoinedOutput(t *testing.T) {
-	rt := solverTestOpusRuntime(testStdFilters())
+	rt := solverTestOpusRuntime(testBundleFilters())
 	var packets int
 	job := Mix(
 		From(mixTestAudioSourceRate("a", 44_100)).Audio(),

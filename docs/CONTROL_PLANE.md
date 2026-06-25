@@ -156,15 +156,18 @@ type SetRate struct {
     Source string  `goavctl:"source,required" usage:"source=<source-name>" help:"source node to retime"`
 }
 
-rateCommand := ctl.NewCommand[SetRate](
-    "vendor.rate",
-    "vendor playback-rate control",
-    func(ctx context.Context, task goav.LiveTask, cmd SetRate) (ctl.ControlResponse, error) {
-        ctrl := control.Rate(cmd.Value).At(pipeline.NodeRef(cmd.Source))
-        if err := task.Control(ctx, ctrl); err != nil {
-            return ctl.ControlResponse{}, err
-        }
-        return ctl.ControlResponse{
+	rateCommand := ctl.NewCommand[SetRate](
+	    "vendor.rate",
+	    "vendor playback-rate control",
+	    func(ctx context.Context, task goav.LiveTask, cmd SetRate) (ctl.ControlResponse, error) {
+	        ctrl, err := control.Rate(cmd.Value)
+	        if err != nil {
+	            return ctl.ControlResponse{}, err
+	        }
+	        if err := task.Control(ctx, ctrl.At(pipeline.NodeRef(cmd.Source))); err != nil {
+	            return ctl.ControlResponse{}, err
+	        }
+	        return ctl.ControlResponse{
             Operation: "control vendor.rate",
             Result:    map[string]any{"value": cmd.Value, "source": cmd.Source},
         }, nil
@@ -287,8 +290,9 @@ goav ctl --control unix:///tmp/goav-live.sock attach frames as archive \
 ```
 
 Raw JSON is for automation that already has the protocol object. `control
---json` decodes into the real `control.Control` representation; `control deliver
---json` decodes into `av.Event` and then lowers to `control.Deliver(event)`.
+--json` validates the object through the typed `control.Control` constructors;
+`control deliver --json` decodes into `av.Event` and then lowers to
+`control.Deliver(event)`.
 Nested event metadata is rejected instead of being stringified silently, so a
 caller must choose the exact conversion before sending the request. Raw JSON
 uses the documented canonical field names and rejects unknown or duplicate
@@ -357,7 +361,7 @@ Supported built-ins include:
 - `control segment start=<duration> end=<duration> [source=<source>|node=<node>]`
 - `control select active=<arm-or-stream-id> [selector=<name>|at=<tap>]`
 - `control deliver ...` and `control deliver --json '<av.Event JSON>'`
-- `control --json '<control.Control JSON>'`
+- `control --json '<control protocol JSON>'`
 - `inspect`, `snapshot`, `stats`, `taps`, `streams`, `branches`,
   `destinations`, `capabilities`
 
@@ -504,8 +508,8 @@ structured errors with available names and suggestions.
 - No arbitrary method names, unexported internals, or global registries are
   exposed.
 - Commands lower into existing task/control APIs.
-- Raw JSON fallback decodes into the real `control.Control` or `av.Event` shapes
-  instead of introducing a second control model.
+- Raw JSON fallback validates through the typed `control.Control` constructors
+  or `av.Event` shape instead of introducing a second control model.
 - Custom controls, custom branch steps, custom codec names, custom sinks, and
   custom encoder names are per-server allowlists.
 - Custom command, branch-step, encoder, and alias names must be unique in that

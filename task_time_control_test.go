@@ -243,11 +243,11 @@ func TestTaskRateChangesSourcePacingMidRun(t *testing.T) {
 		t.Fatalf("pre-rate frames never arrived: %v", err)
 	}
 
-	if err := task.Control(ctx, control.Rate(2.0).At("ticker")); err != nil {
+	if err := task.Control(ctx, control.Must(control.Rate(2.0)).At("ticker")); err != nil {
 		t.Fatalf("Rate controllable source: %v", err)
 	}
 
-	err := task.Control(ctx, control.Rate(2.0).At("plain"))
+	err := task.Control(ctx, control.Must(control.Rate(2.0)).At("plain"))
 	if !errors.Is(err, pipeline.ErrInvalidLink) {
 		t.Fatalf("Rate err = %v, want ErrInvalidLink for the uncontrollable source", err)
 	}
@@ -296,7 +296,7 @@ func TestTaskSegmentPlaysWindowThenEndsNaturally(t *testing.T) {
 	task := newTask(graph, nil)
 	t.Cleanup(func() { _ = task.Close() })
 
-	if err := task.Control(ctx, control.Segment(100*time.Nanosecond, 105*time.Nanosecond)); err != nil {
+	if err := task.Control(ctx, control.Must(control.Segment(100*time.Nanosecond, 105*time.Nanosecond))); err != nil {
 		t.Fatalf("Segment on direct graph: %v", err)
 	}
 	// The window plays [start, end) and the run finishes naturally — no cancel.
@@ -331,27 +331,25 @@ func TestTaskTimeControlRejectionMatrix(t *testing.T) {
 			task := newTask(graph, nil)
 			t.Cleanup(func() { _ = task.Close() })
 
-			// Invalid payloads are rejected at Controllable.Control with a clear error,
-			// before any delivery — identically on both runners.
-			for _, control := range []control.Control{
-				control.Rate(0),
-				control.Rate(-1),
-				control.Rate(math.Inf(1)),
-				control.Rate(math.NaN()),
-			} {
-				err := task.Control(ctx, control)
-				if err == nil || !strings.Contains(err.Error(), "positive, finite playback rate") {
-					t.Fatalf("control.Rate(%v) err = %v, want a positive-finite rejection", control.Rate, err)
+			// Invalid payloads are rejected by the control constructors, before any
+			// direct or buffered runner can deliver them.
+			for _, rate := range []float64{0, -1, math.Inf(1), math.NaN()} {
+				_, err := control.Rate(rate)
+				if !errors.Is(err, control.ErrInvalid) || !strings.Contains(err.Error(), "positive, finite playback rate") {
+					t.Fatalf("control.Rate(%v) err = %v, want a positive-finite rejection", rate, err)
 				}
 			}
-			for _, control := range []control.Control{
-				control.Segment(2*time.Second, time.Second),
-				control.Segment(time.Second, time.Second),
-				control.Segment(-time.Nanosecond, time.Second),
+			for _, window := range []struct {
+				start time.Duration
+				end   time.Duration
+			}{
+				{start: 2 * time.Second, end: time.Second},
+				{start: time.Second, end: time.Second},
+				{start: -time.Nanosecond, end: time.Second},
 			} {
-				err := task.Control(ctx, control)
-				if err == nil || !strings.Contains(err.Error(), "0 <= start < end") {
-					t.Fatalf("Segment[%v,%v) err = %v, want a window rejection", control.Position, control.End, err)
+				_, err := control.Segment(window.start, window.end)
+				if !errors.Is(err, control.ErrInvalid) || !strings.Contains(err.Error(), "0 <= start < end") {
+					t.Fatalf("Segment[%v,%v) err = %v, want a window rejection", window.start, window.end, err)
 				}
 			}
 		})
@@ -365,13 +363,13 @@ func TestTaskTimeControlRejectionMatrix(t *testing.T) {
 	graph, _ := newTimeControlGraph(t, pipeline.BufferPolicy{}, ticker, plain)
 	task := newTask(graph, nil)
 	t.Cleanup(func() { _ = task.Close() })
-	for _, control := range []control.Control{control.Rate(2.0), control.Segment(0, time.Second)} {
+	for _, control := range []control.Control{control.Must(control.Rate(2.0)), control.Must(control.Segment(0, time.Second))} {
 		err := task.Control(ctx, control.At("plain"))
 		if !errors.Is(err, pipeline.ErrInvalidLink) {
-			t.Fatalf("%s at plain err = %v, want ErrInvalidLink", control.Type, err)
+			t.Fatalf("%s at plain err = %v, want ErrInvalidLink", control.Type(), err)
 		}
 		if !strings.Contains(err.Error(), `"plain"`) || !strings.Contains(err.Error(), "ControllableSource") {
-			t.Fatalf("%s at plain err = %v, want it to name the source and the missing capability", control.Type, err)
+			t.Fatalf("%s at plain err = %v, want it to name the source and the missing capability", control.Type(), err)
 		}
 	}
 }
@@ -482,7 +480,7 @@ func TestTaskSegmentExportCommitsDestination(t *testing.T) {
 	}
 
 	const start, end = 100 * time.Nanosecond, 104 * time.Nanosecond
-	if err := task.Control(ctx, control.Segment(start, end)); err != nil {
+	if err := task.Control(ctx, control.Must(control.Segment(start, end))); err != nil {
 		t.Fatalf("Segment err = %v", err)
 	}
 	// The window plays [start, end) and Run returns nil naturally on the

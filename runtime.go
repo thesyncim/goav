@@ -449,9 +449,9 @@ func (t *task) structuredRunError(err error) error {
 }
 
 func (t *task) bufferedPayloadRunError(cause error, code errcode.Code, reason string) error {
-	details := []string{"cause=" + bufferedPayloadCauseName(cause)}
+	fields := []Detail{{Key: "cause", Value: bufferedPayloadCauseName(cause)}}
 	if branches := t.copyNeverBranchNames(); len(branches) != 0 {
-		details = append(details, "copy_never_branches="+strings.Join(branches, ","))
+		fields = append(fields, Detail{Key: "copy_never_branches", Value: strings.Join(branches, ",")})
 	}
 	return &BuildError{
 		Family:    errcode.FamilyForCode(code),
@@ -459,11 +459,11 @@ func (t *task) bufferedPayloadRunError(cause error, code errcode.Code, reason st
 		Operation: "run task",
 		Node:      "buffered graph",
 		Reason:    reason,
-		Details:   details,
-		Suggestions: []string{
-			"for branch buffers, use flow.BufferCopyBounds(packetBytes, frameBytes) with bounds large enough for the payload",
-			"when using flow.CopyNever, emit av.BufferImmutable payloads only or switch to flow.CopyIfMutable/flow.CopyAlways",
-			"for runtime-level buffers, set goavruntime.WithBufferPolicy(pipeline.BufferPolicy{Capacity: ..., Drop: pipeline.DropBlock, CopyPacketBytes: ..., CopyFrameBytes: ...})",
+		Fields:    fields,
+		Fixes: []Fix{
+			{Message: "for branch buffers, use flow.BufferCopyBounds(packetBytes, frameBytes) with bounds large enough for the payload"},
+			{Message: "when using flow.CopyNever, emit av.BufferImmutable payloads only or switch to flow.CopyIfMutable/flow.CopyAlways"},
+			{Message: "for runtime-level buffers, set goavruntime.WithBufferPolicy(pipeline.BufferPolicy{Capacity: ..., Drop: pipeline.DropBlock, CopyPacketBytes: ..., CopyFrameBytes: ...})"},
 		},
 		Cause: cause,
 	}

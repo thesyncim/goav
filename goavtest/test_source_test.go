@@ -494,7 +494,7 @@ func TestTestSourceRecordsSourceControlsThroughRealTask(t *testing.T) {
 	}
 	defer task.Close()
 
-	if err := task.Control(ctx, control.Rate(0.5).At("fixture")); err != nil {
+	if err := task.Control(ctx, control.Must(control.Rate(0.5)).At("fixture")); err != nil {
 		t.Fatal(err)
 	}
 	event, err := source.WaitControl(ctx, av.EventRate)

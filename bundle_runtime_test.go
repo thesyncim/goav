@@ -15,17 +15,17 @@ import (
 	webmadapter "github.com/thesyncim/goav/container/webm"
 )
 
-func testStdRuntime(opts ...Option) *Runtime {
-	return MustNew(append(testStdOptions(), opts...)...)
+func testBundleRuntime(opts ...Option) *Runtime {
+	return MustNew(append(testBundleOptions(), opts...)...)
 }
 
-func testStdOptions() []Option {
+func testBundleOptions() []Option {
 	options := make([]Option, 0, 3)
-	options = append(options, testStdFormats(), testStdCodecs(), testStdFilters())
+	options = append(options, testBundleFormats(), testBundleCodecs(), testBundleFilters())
 	return options
 }
 
-func testStdFormats() Option {
+func testBundleFormats() Option {
 	return func(config *Config) error {
 		ivfadapter.Register(config.Formats)
 		annexbadapter.Register(config.Formats)
@@ -36,7 +36,7 @@ func testStdFormats() Option {
 	}
 }
 
-func testStdCodecs() Option {
+func testBundleCodecs() Option {
 	return func(config *Config) error {
 		gopusadapter.Register(config.Codecs)
 		goaacadapter.Register(config.Codecs)
@@ -47,7 +47,7 @@ func testStdCodecs() Option {
 	}
 }
 
-func testStdFilters() Option {
+func testBundleFilters() Option {
 	return func(config *Config) error {
 		resampleadapter.Register(config.Filters)
 		resizeadapter.Register(config.Filters)

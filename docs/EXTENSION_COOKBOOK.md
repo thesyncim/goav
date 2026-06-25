@@ -274,13 +274,17 @@ Use `ctl` when your application owns a running task and wants to expose
 app-specific verbs, branch steps, or encoder names through `goav ctl`.
 
 ```go
-command := ctl.NewCommand[setRate](
-    "vendor.rate",
-    "demo playback-rate control",
-    func(ctx context.Context, task goav.LiveTask, cmd setRate) (ctl.ControlResponse, error) {
-        if err := task.Control(ctx, control.Rate(cmd.Value).At(pipeline.NodeRef(cmd.Source))); err != nil {
-            return ctl.ControlResponse{}, err
-        }
+	command := ctl.NewCommand[setRate](
+	    "vendor.rate",
+	    "demo playback-rate control",
+	    func(ctx context.Context, task goav.LiveTask, cmd setRate) (ctl.ControlResponse, error) {
+	        ctrl, err := control.Rate(cmd.Value)
+	        if err != nil {
+	            return ctl.ControlResponse{}, err
+	        }
+	        if err := task.Control(ctx, ctrl.At(pipeline.NodeRef(cmd.Source))); err != nil {
+	            return ctl.ControlResponse{}, err
+	        }
         return ctl.ControlResponse{Operation: "control vendor.rate"}, nil
     },
 )
