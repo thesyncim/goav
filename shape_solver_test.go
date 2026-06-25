@@ -345,7 +345,7 @@ func TestAutoFailsWithoutRegisteredAdapter(t *testing.T) {
 	}
 	for _, want := range []string{
 		"no registered filter can perform the resample conversion before encode-opus",
-		"goav.WithFilter(",
+		"goavruntime.WithFilter(",
 		"bundle.MustNewFilters",
 	} {
 		if !strings.Contains(err.Error(), want) {

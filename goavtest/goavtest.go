@@ -2,7 +2,7 @@
 // spirit of net/http/httptest: deterministic sources, a recording sink, a
 // fake clock, and passthrough codec and container fakes. Nothing here couples
 // to *testing.T and nothing asserts — every helper returns a real grammar
-// value (goav.InputSpec, goav.Destination, goav.Option, *goav.Runtime), so
+// value (goav.InputSpec, goav.Destination, goavruntime.Option, *goav.Runtime), so
 // test code is pipeline code.
 //
 // A complete pipeline test is three values and one Run:
@@ -34,6 +34,7 @@ import (
 	resampleadapter "github.com/thesyncim/goav/adapters/resample"
 	resizeadapter "github.com/thesyncim/goav/adapters/resize"
 	"github.com/thesyncim/goav/av"
+	goavruntime "github.com/thesyncim/goav/runtime"
 )
 
 // sourceSeq numbers every constructed goavtest source and collector so each
@@ -73,16 +74,16 @@ var runtimeFormats = []av.FormatID{
 //     annexb, matroska, webm, mp4) — the byte-faithful fake container, so
 //     goav.File destinations and goav.FileInput sources work without real
 //     containers;
-//   - goav.WithClock(NewClock()), so realtime pacing advances a fake clock
+//   - goavruntime.WithClock(NewClock()), so realtime pacing advances a fake clock
 //     instead of sleeping.
 //
 // opts are applied last and registration is last-wins, so extra options can
 // both add adapters and override any of the defaults (including the clock).
-func Runtime(opts ...goav.Option) *goav.Runtime {
-	options := make([]goav.Option, 0, 2+len(runtimeCodecs)+len(runtimeFormats)+len(opts))
+func Runtime(opts ...goavruntime.Option) *goav.Runtime {
+	options := make([]goavruntime.Option, 0, 2+len(runtimeCodecs)+len(runtimeFormats)+len(opts))
 	options = append(options,
-		goav.WithFilterAdapter(resampleadapter.Register),
-		goav.WithFilterAdapter(resizeadapter.Register),
+		goavruntime.WithFilterAdapter(resampleadapter.Register),
+		goavruntime.WithFilterAdapter(resizeadapter.Register),
 	)
 	for _, id := range runtimeCodecs {
 		options = append(options, Codec(id))
@@ -90,7 +91,7 @@ func Runtime(opts ...goav.Option) *goav.Runtime {
 	for _, id := range runtimeFormats {
 		options = append(options, Format(id))
 	}
-	options = append(options, goav.WithClock(NewClock()))
+	options = append(options, goavruntime.WithClock(NewClock()))
 	options = append(options, opts...)
 	return goav.MustNew(options...)
 }

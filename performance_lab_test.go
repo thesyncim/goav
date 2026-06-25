@@ -16,6 +16,7 @@ import (
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/goavtest"
 	"github.com/thesyncim/goav/pipeline"
+	goavruntime "github.com/thesyncim/goav/runtime"
 	"github.com/thesyncim/goav/shape"
 )
 
@@ -81,7 +82,7 @@ func BenchmarkRealOpusEncode(b *testing.B) {
 		Audio().
 		Encode(codec.Opus()).
 		To(benchSink("real-opus-packets")).
-		UseRuntime(bundle.MustNew(goav.WithRealtime(false))))
+		UseRuntime(bundle.MustNew(goavruntime.WithRealtime(false))))
 }
 
 // BenchmarkRealOpusDecode decodes one payload produced by the standard Opus
@@ -92,7 +93,7 @@ func BenchmarkRealOpusDecode(b *testing.B) {
 		Audio().
 		Decode().
 		To(benchSink("real-opus-frames")).
-		UseRuntime(bundle.MustNew(goav.WithRealtime(false))))
+		UseRuntime(bundle.MustNew(goavruntime.WithRealtime(false))))
 }
 
 func realOpusPayload(b *testing.B) []byte {
@@ -102,7 +103,7 @@ func realOpusPayload(b *testing.B) []byte {
 		Audio().
 		Encode(codec.Opus()).
 		To(out.Sink()).
-		UseRuntime(bundle.MustNew(goav.WithRealtime(false))).
+		UseRuntime(bundle.MustNew(goavruntime.WithRealtime(false))).
 		Run(context.Background())
 	if err != nil {
 		b.Fatal(err)

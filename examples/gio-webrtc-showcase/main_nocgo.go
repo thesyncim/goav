@@ -14,6 +14,7 @@ import (
 
 	"github.com/thesyncim/goav"
 	"github.com/thesyncim/goav/bundle"
+	goavruntime "github.com/thesyncim/goav/runtime"
 )
 
 func main() {
@@ -31,7 +32,7 @@ func main() {
 	}
 	browserURL := "http://localhost" + listenPort(listener.Addr().String())
 
-	showcase := newServer(bundle.MustNew(goav.WithEventCapacity(2048)), browserURL)
+	showcase := newServer(bundle.MustNew(goavruntime.WithEventCapacity(2048)), browserURL)
 	mux := http.NewServeMux()
 	showcase.routes(mux)
 	httpServer := &http.Server{Handler: logRequest(mux)}

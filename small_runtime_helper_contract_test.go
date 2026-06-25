@@ -152,7 +152,7 @@ func TestBuildErrorTypedDetailsAndFixes(t *testing.T) {
 				Patch: &RecipePatch{
 					Action: "add_runtime_option",
 					Path:   "runtime",
-					Value:  "goav.WithDecoder(...)",
+					Value:  "goavruntime.WithDecoder(...)",
 				},
 			},
 		},

@@ -11,7 +11,7 @@ Source: `testdata/api_surface.txt`.
 
 | Package | Initial identifiers | Current identifiers |
 | --- | ---: | ---: |
-| `goav` | 134 | 117 |
+| `goav` | 134 | 104 |
 | `control` | 0 | 20 |
 | `errcode` | 147 | 164 |
 | `graphrender` | 9 | 9 |
@@ -50,7 +50,7 @@ Bundled packages included in the initial root graph:
 - `github.com/thesyncim/gopus`
 - `github.com/thesyncim/govpx`
 
-The target check after the standard package split is:
+The target check after the bundle package split is:
 
 ```sh
 go list -deps github.com/thesyncim/goav |
@@ -69,8 +69,8 @@ Current line counts:
 | File | Lines |
 | --- | ---: |
 | `README.md` | 198 |
-| `docs/API_SURFACE.md` | 355 |
-| `docs/ROADMAP.md` | 224 |
+| `docs/API_SURFACE.md` | 360 |
+| `docs/ROADMAP.md` | 227 |
 | `docs/PROGRESS.md` | 137 |
 
 The README target is under 200 lines after the advanced vocabulary moves into

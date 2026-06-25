@@ -12,6 +12,7 @@ import (
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/goavtest"
+	goavruntime "github.com/thesyncim/goav/runtime"
 	"github.com/thesyncim/goav/shape"
 )
 
@@ -191,7 +192,7 @@ func TestFormatRoundTripThroughFile(t *testing.T) {
 	err = goav.From(goav.FileInput("roundtrip.ogg", bytes.NewReader(file.Bytes()))).
 		Audio().Decode().
 		To(out.Sink()).
-		UseRuntime(goavtest.Runtime(goav.WithRealtime(false))).
+		UseRuntime(goavtest.Runtime(goavruntime.WithRealtime(false))).
 		Run(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -270,7 +271,7 @@ func TestRuntimePacesFileInputOnFakeClock(t *testing.T) {
 	err = goav.From(goav.FileInput("paced.ogg", bytes.NewReader(file.Bytes()))).
 		Audio().Copy().
 		To(out.Sink()).
-		UseRuntime(goavtest.Runtime(goav.WithClock(clock))).
+		UseRuntime(goavtest.Runtime(goavruntime.WithClock(clock))).
 		Run(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -332,7 +333,7 @@ func TestRuntimeOptionsAreLastWins(t *testing.T) {
 		Audio().
 		Encode(codec.Opus()).
 		To(out.Sink()).
-		UseRuntime(goavtest.Runtime(goav.WithEncoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, custom))).
+		UseRuntime(goavtest.Runtime(goavruntime.WithEncoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, custom))).
 		Run(ctx)
 	if err != nil {
 		t.Fatal(err)

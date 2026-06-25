@@ -14,7 +14,7 @@ methodology changes, and migration notes.
 - Reduced and layered the pre-v1 public API: bundled adapters now live behind
   `goav/bundle`, live controls and watch filters moved into explicit vocabulary
   packages, `Task` is the minimal run/close lifecycle, richer runtime behavior
-  is exposed through opt-in capability interfaces, and `DestinationGroup(...)`
+  is exposed through opt-in capability interfaces, and `Mux(name, destination)`
   declares shared mux/sink grouping without depending only on reused Go values.
 - Added typed `BuildError` fields and fixes (`Detail`, `Fix`, `RecipePatch`,
   and `Detail(key)`) while preserving existing rendered details and

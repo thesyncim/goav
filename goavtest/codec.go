@@ -8,9 +8,9 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/thesyncim/goav"
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
+	goavruntime "github.com/thesyncim/goav/runtime"
 )
 
 // Codec returns a runtime option registering a deterministic fake
@@ -24,9 +24,9 @@ import (
 //
 // The registered descriptor is media-agnostic (it matches audio and video
 // alike) and capability-open, so it never fails a compatibility check.
-func Codec(id av.CodecID) goav.Option {
+func Codec(id av.CodecID) goavruntime.Option {
 	desc := codecDescriptor(id)
-	return goav.WithCodecAdapter(func(registry *codec.SimpleRegistry) {
+	return goavruntime.WithCodecAdapter(func(registry *codec.SimpleRegistry) {
 		registry.RegisterEncoder(desc, passthroughCodecFactory{desc: desc})
 		registry.RegisterDecoder(desc, passthroughCodecFactory{desc: desc})
 	})

@@ -28,6 +28,7 @@ import (
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/plan"
 	"github.com/thesyncim/goav/provider"
+	goavruntime "github.com/thesyncim/goav/runtime"
 	"github.com/thesyncim/goav/shape"
 )
 
@@ -603,7 +604,7 @@ func TestExplainReturnsPartialReportForMissingTransformAdapter(t *testing.T) {
 
 func TestTranscodeExplainReportsGenericMediaPlanBranches(t *testing.T) {
 	rt := goav.MustNew(
-		goav.WithFormatAdapter(func(registry *format.SimpleRegistry) {
+		goavruntime.WithFormatAdapter(func(registry *format.SimpleRegistry) {
 			registry.RegisterProber(recipeAPIStreamProber{streams: []av.Stream{
 				{Index: 0, ID: "audio", Type: av.MediaAudio, Codec: av.CodecParameters{ID: av.CodecOpus, Type: av.MediaAudio}},
 				{Index: 1, ID: "video", Type: av.MediaVideo, Codec: av.CodecParameters{ID: av.CodecVP8, Type: av.MediaVideo}},
@@ -611,13 +612,13 @@ func TestTranscodeExplainReportsGenericMediaPlanBranches(t *testing.T) {
 			registry.RegisterDemuxer(av.FormatOgg, recipeAPIDemuxerFactory{})
 			registry.RegisterMuxer(av.FormatOgg, recipeAPIMuxerFactory{})
 		}),
-		goav.WithCodecAdapter(func(registry *codec.SimpleRegistry) {
+		goavruntime.WithCodecAdapter(func(registry *codec.SimpleRegistry) {
 			registry.RegisterDecoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, recipeAPIDecoderFactory{})
 			registry.RegisterDecoder(codec.Descriptor{ID: av.CodecVP8, Type: av.MediaVideo}, recipeAPIDecoderFactory{})
 			registry.RegisterEncoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, recipeAPIEncoderFactory{})
 			registry.RegisterEncoder(codec.Descriptor{ID: av.CodecVP9, Type: av.MediaVideo}, recipeAPIEncoderFactory{})
 		}),
-		goav.WithFilterAdapter(func(registry *filter.SimpleRegistry) {
+		goavruntime.WithFilterAdapter(func(registry *filter.SimpleRegistry) {
 			registry.RegisterFactory(filter.Descriptor{Name: filter.FactoryResize, Input: av.MediaVideo, Output: av.MediaVideo}, recipeAPIFilterFactory{})
 			registry.RegisterFactory(filter.Descriptor{Name: filter.FactoryResample, Input: av.MediaAudio, Output: av.MediaAudio}, recipeAPIFilterFactory{})
 		}),
@@ -666,7 +667,7 @@ func TestTranscodeExplainReportsGenericMediaPlanBranches(t *testing.T) {
 
 func TestExplainReportsBranchShapeFromProbedInput(t *testing.T) {
 	rt := goav.MustNew(
-		goav.WithFormatAdapter(func(registry *format.SimpleRegistry) {
+		goavruntime.WithFormatAdapter(func(registry *format.SimpleRegistry) {
 			registry.RegisterProber(recipeAPIStreamProber{streams: []av.Stream{{
 				Index: 0,
 				ID:    "audio",
@@ -681,7 +682,7 @@ func TestExplainReportsBranchShapeFromProbedInput(t *testing.T) {
 			}}})
 			registry.RegisterDemuxer(av.FormatOgg, recipeAPIDemuxerFactory{})
 		}),
-		goav.WithCodecAdapter(func(registry *codec.SimpleRegistry) {
+		goavruntime.WithCodecAdapter(func(registry *codec.SimpleRegistry) {
 			registry.RegisterDecoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, recipeAPIDecoderFactory{})
 		}),
 	)
@@ -728,7 +729,7 @@ func TestExplainReportsBranchShapeFromProbedInput(t *testing.T) {
 
 func TestExplainReportsOperationShapeThroughResizeAndEncode(t *testing.T) {
 	rt := goav.MustNew(
-		goav.WithFormatAdapter(func(registry *format.SimpleRegistry) {
+		goavruntime.WithFormatAdapter(func(registry *format.SimpleRegistry) {
 			registry.RegisterProber(recipeAPIStreamProber{streams: []av.Stream{{
 				Index: 0,
 				ID:    "video",
@@ -744,11 +745,11 @@ func TestExplainReportsOperationShapeThroughResizeAndEncode(t *testing.T) {
 			registry.RegisterDemuxer(av.FormatOgg, recipeAPIDemuxerFactory{})
 			registry.RegisterMuxer(av.FormatOgg, recipeAPIMuxerFactory{})
 		}),
-		goav.WithCodecAdapter(func(registry *codec.SimpleRegistry) {
+		goavruntime.WithCodecAdapter(func(registry *codec.SimpleRegistry) {
 			registry.RegisterDecoder(codec.Descriptor{ID: av.CodecVP8, Type: av.MediaVideo}, recipeAPIDecoderFactory{})
 			registry.RegisterEncoder(codec.Descriptor{ID: av.CodecVP9, Type: av.MediaVideo}, recipeAPIEncoderFactory{})
 		}),
-		goav.WithFilterAdapter(func(registry *filter.SimpleRegistry) {
+		goavruntime.WithFilterAdapter(func(registry *filter.SimpleRegistry) {
 			registry.RegisterFactory(filter.Descriptor{Name: filter.FactoryResize, Input: av.MediaVideo, Output: av.MediaVideo}, recipeAPIFilterFactory{})
 		}),
 	)
@@ -842,18 +843,18 @@ func TestShapeAnnotationCannotBreakOperationContract(t *testing.T) {
 
 func TestExplainRequirementsFollowOrderedBranchOperations(t *testing.T) {
 	rt := goav.MustNew(
-		goav.WithFormatAdapter(func(registry *format.SimpleRegistry) {
+		goavruntime.WithFormatAdapter(func(registry *format.SimpleRegistry) {
 			registry.RegisterProber(recipeAPIStreamProber{streams: []av.Stream{
 				{Index: 0, ID: "video", Type: av.MediaVideo, Codec: av.CodecParameters{ID: av.CodecVP8, Type: av.MediaVideo}},
 			}})
 			registry.RegisterDemuxer(av.FormatOgg, recipeAPIDemuxerFactory{})
 			registry.RegisterMuxer(av.FormatOgg, recipeAPIMuxerFactory{})
 		}),
-		goav.WithCodecAdapter(func(registry *codec.SimpleRegistry) {
+		goavruntime.WithCodecAdapter(func(registry *codec.SimpleRegistry) {
 			registry.RegisterDecoder(codec.Descriptor{ID: av.CodecVP8, Type: av.MediaVideo}, recipeAPIDecoderFactory{})
 			registry.RegisterEncoder(codec.Descriptor{ID: av.CodecVP9, Type: av.MediaVideo}, recipeAPIEncoderFactory{})
 		}),
-		goav.WithFilterAdapter(func(registry *filter.SimpleRegistry) {
+		goavruntime.WithFilterAdapter(func(registry *filter.SimpleRegistry) {
 			registry.RegisterFactory(filter.Descriptor{Name: filter.FactoryResize, Input: av.MediaVideo, Output: av.MediaVideo}, recipeAPIFilterFactory{})
 		}),
 	)
@@ -915,16 +916,16 @@ func TestExplainRequirementsFollowOrderedBranchOperations(t *testing.T) {
 
 func TestExplainReportsFilterDescriptorCapabilities(t *testing.T) {
 	rt := goav.MustNew(
-		goav.WithFormatAdapter(func(registry *format.SimpleRegistry) {
+		goavruntime.WithFormatAdapter(func(registry *format.SimpleRegistry) {
 			registry.RegisterProber(recipeAPIStreamProber{streams: []av.Stream{
 				{Index: 0, ID: "audio", Type: av.MediaAudio, Codec: av.CodecParameters{ID: av.CodecOpus, Type: av.MediaAudio}},
 			}})
 			registry.RegisterDemuxer(av.FormatOgg, recipeAPIDemuxerFactory{})
 		}),
-		goav.WithCodecAdapter(func(registry *codec.SimpleRegistry) {
+		goavruntime.WithCodecAdapter(func(registry *codec.SimpleRegistry) {
 			registry.RegisterDecoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, recipeAPIDecoderFactory{})
 		}),
-		goav.WithFilterAdapter(func(registry *filter.SimpleRegistry) {
+		goavruntime.WithFilterAdapter(func(registry *filter.SimpleRegistry) {
 			registry.RegisterFactory(filter.Descriptor{
 				Name:          filter.FactoryResample,
 				Input:         av.MediaAudio,
@@ -988,16 +989,16 @@ func TestExplainReportsFilterDescriptorCapabilities(t *testing.T) {
 
 func TestExplainReportsIncompatibleFilterDescriptor(t *testing.T) {
 	rt := goav.MustNew(
-		goav.WithFormatAdapter(func(registry *format.SimpleRegistry) {
+		goavruntime.WithFormatAdapter(func(registry *format.SimpleRegistry) {
 			registry.RegisterProber(recipeAPIStreamProber{streams: []av.Stream{
 				{Index: 0, ID: "audio", Type: av.MediaAudio, Codec: av.CodecParameters{ID: av.CodecOpus, Type: av.MediaAudio}},
 			}})
 			registry.RegisterDemuxer(av.FormatOgg, recipeAPIDemuxerFactory{})
 		}),
-		goav.WithCodecAdapter(func(registry *codec.SimpleRegistry) {
+		goavruntime.WithCodecAdapter(func(registry *codec.SimpleRegistry) {
 			registry.RegisterDecoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, recipeAPIDecoderFactory{})
 		}),
-		goav.WithFilterAdapter(func(registry *filter.SimpleRegistry) {
+		goavruntime.WithFilterAdapter(func(registry *filter.SimpleRegistry) {
 			registry.RegisterFactory(filter.Descriptor{
 				Name:   filter.FactoryResample,
 				Input:  av.MediaVideo,
@@ -1041,7 +1042,7 @@ func TestExplainReportsIncompatibleFilterDescriptor(t *testing.T) {
 
 func TestExplainReportsIncompatibleEncodeDescriptor(t *testing.T) {
 	custom := av.CodecID("x_audio")
-	rt := goav.MustNew(goav.WithCodecAdapter(func(registry *codec.SimpleRegistry) {
+	rt := goav.MustNew(goavruntime.WithCodecAdapter(func(registry *codec.SimpleRegistry) {
 		registry.RegisterEncoder(codec.Descriptor{
 			ID:   custom,
 			Type: av.MediaVideo,
@@ -1088,7 +1089,7 @@ func TestExplainReportsIncompatibleEncodeDescriptor(t *testing.T) {
 func TestExplainReportsIncompatibleDecodeDescriptor(t *testing.T) {
 	custom := av.CodecID("x_audio")
 	rt := goav.MustNew(
-		goav.WithFormatAdapter(func(registry *format.SimpleRegistry) {
+		goavruntime.WithFormatAdapter(func(registry *format.SimpleRegistry) {
 			registry.RegisterProber(recipeAPIStreamProber{streams: []av.Stream{{
 				Index: 0,
 				ID:    "audio",
@@ -1101,7 +1102,7 @@ func TestExplainReportsIncompatibleDecodeDescriptor(t *testing.T) {
 			}}})
 			registry.RegisterDemuxer(av.FormatOgg, recipeAPIDemuxerFactory{})
 		}),
-		goav.WithCodecAdapter(func(registry *codec.SimpleRegistry) {
+		goavruntime.WithCodecAdapter(func(registry *codec.SimpleRegistry) {
 			registry.RegisterDecoder(codec.Descriptor{
 				ID:   custom,
 				Type: av.MediaAudio,
@@ -1147,14 +1148,14 @@ func TestExplainReportsIncompatibleDecodeDescriptor(t *testing.T) {
 
 func TestBuildRejectsIncompatibleIVFMuxGroupBeforeOpeningMuxer(t *testing.T) {
 	rt := goav.MustNew(
-		goav.WithFormatAdapter(func(registry *format.SimpleRegistry) {
+		goavruntime.WithFormatAdapter(func(registry *format.SimpleRegistry) {
 			registry.RegisterProber(recipeAPIStreamProber{streams: []av.Stream{
 				{Index: 0, ID: "video", Type: av.MediaVideo, Codec: av.CodecParameters{ID: av.CodecVP8, Type: av.MediaVideo}},
 			}})
 			registry.RegisterDemuxer(av.FormatOgg, recipeAPIDemuxerFactory{})
 			registry.RegisterMuxer(av.FormatIVF, recipeAPIMuxerFactory{})
 		}),
-		goav.WithCodecAdapter(func(registry *codec.SimpleRegistry) {
+		goavruntime.WithCodecAdapter(func(registry *codec.SimpleRegistry) {
 			registry.RegisterDecoder(codec.Descriptor{ID: av.CodecVP8, Type: av.MediaVideo}, recipeAPIDecoderFactory{})
 			registry.RegisterEncoder(codec.Descriptor{ID: av.CodecVP8, Type: av.MediaVideo}, recipeAPIEncoderFactory{})
 			registry.RegisterEncoder(codec.Descriptor{ID: av.CodecVP9, Type: av.MediaVideo}, recipeAPIEncoderFactory{})
@@ -1187,7 +1188,7 @@ func TestBuildRejectsIncompatibleIVFMuxGroupBeforeOpeningMuxer(t *testing.T) {
 
 func TestBuildRejectsDescriptorBackedMuxIncompatibility(t *testing.T) {
 	rt := goav.MustNew(
-		goav.WithFormatAdapter(func(registry *format.SimpleRegistry) {
+		goavruntime.WithFormatAdapter(func(registry *format.SimpleRegistry) {
 			registry.RegisterProber(recipeAPIStreamProber{streams: []av.Stream{
 				{Index: 0, ID: "video", Type: av.MediaVideo, Codec: av.CodecParameters{ID: av.CodecVP8, Type: av.MediaVideo}},
 			}})
@@ -1203,7 +1204,7 @@ func TestBuildRejectsDescriptorBackedMuxIncompatibility(t *testing.T) {
 				},
 			}, recipeAPIMuxerFactory{})
 		}),
-		goav.WithCodecAdapter(func(registry *codec.SimpleRegistry) {
+		goavruntime.WithCodecAdapter(func(registry *codec.SimpleRegistry) {
 			registry.RegisterDecoder(codec.Descriptor{ID: av.CodecVP8, Type: av.MediaVideo}, recipeAPIDecoderFactory{})
 			registry.RegisterEncoder(codec.Descriptor{ID: av.CodecVP8, Type: av.MediaVideo}, recipeAPIEncoderFactory{})
 		}),
@@ -1234,14 +1235,14 @@ func TestBuildRejectsDescriptorBackedMuxIncompatibility(t *testing.T) {
 
 func TestExplainReportsMuxCompatibilityWarning(t *testing.T) {
 	rt := goav.MustNew(
-		goav.WithFormatAdapter(func(registry *format.SimpleRegistry) {
+		goavruntime.WithFormatAdapter(func(registry *format.SimpleRegistry) {
 			registry.RegisterProber(recipeAPIStreamProber{streams: []av.Stream{
 				{Index: 0, ID: "video", Type: av.MediaVideo, Codec: av.CodecParameters{ID: av.CodecVP8, Type: av.MediaVideo}},
 			}})
 			registry.RegisterDemuxer(av.FormatOgg, recipeAPIDemuxerFactory{})
 			registry.RegisterMuxer(av.FormatIVF, recipeAPIMuxerFactory{})
 		}),
-		goav.WithCodecAdapter(func(registry *codec.SimpleRegistry) {
+		goavruntime.WithCodecAdapter(func(registry *codec.SimpleRegistry) {
 			registry.RegisterDecoder(codec.Descriptor{ID: av.CodecVP8, Type: av.MediaVideo}, recipeAPIDecoderFactory{})
 			registry.RegisterEncoder(codec.Descriptor{ID: av.CodecVP8, Type: av.MediaVideo}, recipeAPIEncoderFactory{})
 			registry.RegisterEncoder(codec.Descriptor{ID: av.CodecVP9, Type: av.MediaVideo}, recipeAPIEncoderFactory{})
@@ -1275,14 +1276,14 @@ func TestExplainReportsMuxCompatibilityWarning(t *testing.T) {
 
 func TestBuildRejectsIncompatibleAnnexBMuxGroup(t *testing.T) {
 	rt := goav.MustNew(
-		goav.WithFormatAdapter(func(registry *format.SimpleRegistry) {
+		goavruntime.WithFormatAdapter(func(registry *format.SimpleRegistry) {
 			registry.RegisterProber(recipeAPIStreamProber{streams: []av.Stream{
 				{Index: 0, ID: "video", Type: av.MediaVideo, Codec: av.CodecParameters{ID: av.CodecVP8, Type: av.MediaVideo}},
 			}})
 			registry.RegisterDemuxer(av.FormatOgg, recipeAPIDemuxerFactory{})
 			registry.RegisterMuxer(av.FormatAnnexB, recipeAPIMuxerFactory{})
 		}),
-		goav.WithCodecAdapter(func(registry *codec.SimpleRegistry) {
+		goavruntime.WithCodecAdapter(func(registry *codec.SimpleRegistry) {
 			registry.RegisterDecoder(codec.Descriptor{ID: av.CodecVP8, Type: av.MediaVideo}, recipeAPIDecoderFactory{})
 			registry.RegisterEncoder(codec.Descriptor{ID: av.CodecVP8, Type: av.MediaVideo}, recipeAPIEncoderFactory{})
 		}),
@@ -4240,14 +4241,14 @@ func TestStreamRecipeRejectsMixedSinkAndFile(t *testing.T) {
 
 func TestStreamRecipeAllowsEncodedMuxAndSinkDestinations(t *testing.T) {
 	rt := goav.MustNew(
-		goav.WithFormatAdapter(func(registry *format.SimpleRegistry) {
+		goavruntime.WithFormatAdapter(func(registry *format.SimpleRegistry) {
 			registry.RegisterProber(recipeAPIStreamProber{streams: []av.Stream{
 				{Index: 0, ID: "audio", Type: av.MediaAudio, Codec: av.CodecParameters{ID: av.CodecOpus, Type: av.MediaAudio}},
 			}})
 			registry.RegisterDemuxer(av.FormatOgg, recipeAPIDemuxerFactory{})
 			registry.RegisterMuxer(av.FormatOgg, recipeAPIMuxerFactory{})
 		}),
-		goav.WithCodecAdapter(func(registry *codec.SimpleRegistry) {
+		goavruntime.WithCodecAdapter(func(registry *codec.SimpleRegistry) {
 			registry.RegisterDecoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, recipeAPIDecoderFactory{})
 			registry.RegisterEncoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, recipeAPIEncoderFactory{})
 		}),
@@ -4331,8 +4332,8 @@ func TestStreamRecipeAllowsRuntimeRegisteredRecipeEncoders(t *testing.T) {
 				func(_ context.Context, push goav.SourcePush) error { return push.EOS() },
 			)
 			rt := goav.MustNew(
-				goav.WithMuxer(av.FormatIVF, recipeAPIMuxerFactory{}),
-				goav.WithEncoder(codec.Descriptor{ID: tt.codec.ID, Type: av.MediaVideo}, recipeAPIEncoderFactory{}),
+				goavruntime.WithMuxer(av.FormatIVF, recipeAPIMuxerFactory{}),
+				goavruntime.WithEncoder(codec.Descriptor{ID: tt.codec.ID, Type: av.MediaVideo}, recipeAPIEncoderFactory{}),
 			)
 			_, err := goav.From(source).
 				UseRuntime(rt).
@@ -4348,7 +4349,7 @@ func TestStreamRecipeAllowsRuntimeRegisteredRecipeEncoders(t *testing.T) {
 }
 
 func TestStreamRecipeReportsMissingCustomEncoder(t *testing.T) {
-	rt := goav.MustNew(goav.WithFormatAdapter(func(registry *format.SimpleRegistry) {
+	rt := goav.MustNew(goavruntime.WithFormatAdapter(func(registry *format.SimpleRegistry) {
 		registry.RegisterMuxer(av.FormatOgg, recipeAPIMuxerFactory{})
 	}))
 	_, err := goav.From(goav.FileInput("input.wav", strings.NewReader(""))).
@@ -4473,7 +4474,7 @@ func TestStreamRecipeReportsProbedFileSelectionBeforeOpeningInput(t *testing.T) 
 		},
 	}
 	demuxerOpened := false
-	rt := goav.MustNew(goav.WithFormatAdapter(func(registry *format.SimpleRegistry) {
+	rt := goav.MustNew(goavruntime.WithFormatAdapter(func(registry *format.SimpleRegistry) {
 		registry.RegisterProber(recipeAPIStreamProber{streams: streams})
 		registry.RegisterDemuxer(av.FormatOgg, recipeAPIDemuxerFactory{called: &demuxerOpened})
 	}))
@@ -4508,7 +4509,7 @@ func TestStreamRecipeReportsProbedFileMissingDecoderBeforeOpeningInput(t *testin
 		Codec: av.CodecParameters{ID: av.CodecOpus, Type: av.MediaAudio},
 	}}
 	demuxerOpened := false
-	rt := goav.MustNew(goav.WithFormatAdapter(func(registry *format.SimpleRegistry) {
+	rt := goav.MustNew(goavruntime.WithFormatAdapter(func(registry *format.SimpleRegistry) {
 		registry.RegisterProber(recipeAPIStreamProber{streams: streams})
 		registry.RegisterDemuxer(av.FormatOgg, recipeAPIDemuxerFactory{called: &demuxerOpened})
 	}))
@@ -4565,14 +4566,14 @@ func TestStreamRecipeReportsIncompatibleTransformAdapterBeforeOpeningInput(t *te
 	}}
 	demuxerOpened := false
 	rt := goav.MustNew(
-		goav.WithFormatAdapter(func(registry *format.SimpleRegistry) {
+		goavruntime.WithFormatAdapter(func(registry *format.SimpleRegistry) {
 			registry.RegisterProber(recipeAPIStreamProber{streams: streams})
 			registry.RegisterDemuxer(av.FormatOgg, recipeAPIDemuxerFactory{called: &demuxerOpened})
 		}),
-		goav.WithCodecAdapter(func(registry *codec.SimpleRegistry) {
+		goavruntime.WithCodecAdapter(func(registry *codec.SimpleRegistry) {
 			registry.RegisterDecoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, recipeAPIDecoderFactory{})
 		}),
-		goav.WithFilterAdapter(func(registry *filter.SimpleRegistry) {
+		goavruntime.WithFilterAdapter(func(registry *filter.SimpleRegistry) {
 			registry.RegisterFactory(filter.Descriptor{
 				Name:   filter.FactoryResample,
 				Input:  av.MediaVideo,
@@ -5003,7 +5004,7 @@ func TestBranchCompositionSharesParentOperationBeforeBranches(t *testing.T) {
 
 func TestExplainMarksSharedBranchOperations(t *testing.T) {
 	rt := goav.MustNew(
-		goav.WithFormatAdapter(func(registry *format.SimpleRegistry) {
+		goavruntime.WithFormatAdapter(func(registry *format.SimpleRegistry) {
 			registry.RegisterProber(recipeAPIStreamProber{streams: []av.Stream{{
 				Index: 0,
 				ID:    "video",
@@ -5019,11 +5020,11 @@ func TestExplainMarksSharedBranchOperations(t *testing.T) {
 			registry.RegisterDemuxer(av.FormatOgg, recipeAPIDemuxerFactory{})
 			registry.RegisterMuxer(av.FormatOgg, recipeAPIMuxerFactory{})
 		}),
-		goav.WithCodecAdapter(func(registry *codec.SimpleRegistry) {
+		goavruntime.WithCodecAdapter(func(registry *codec.SimpleRegistry) {
 			registry.RegisterDecoder(codec.Descriptor{ID: av.CodecVP8, Type: av.MediaVideo}, recipeAPIDecoderFactory{})
 			registry.RegisterEncoder(codec.Descriptor{ID: av.CodecVP9, Type: av.MediaVideo}, recipeAPIEncoderFactory{})
 		}),
-		goav.WithFilterAdapter(func(registry *filter.SimpleRegistry) {
+		goavruntime.WithFilterAdapter(func(registry *filter.SimpleRegistry) {
 			registry.RegisterFactory(filter.Descriptor{Name: filter.FactoryResize, Input: av.MediaVideo, Output: av.MediaVideo}, recipeAPIFilterFactory{})
 		}),
 	)

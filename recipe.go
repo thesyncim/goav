@@ -266,7 +266,7 @@ func newJob(name string) *Job {
 }
 
 // UseRuntime compiles the job against the given runtime: the seam for custom
-// registries, standard adapter bundles, offline pacing, or injected clocks.
+// registries, bundled adapter sets, offline pacing, or injected clocks.
 func (j *Job) UseRuntime(runtime *Runtime) *Job {
 	if j != nil {
 		j.runtime = runtime

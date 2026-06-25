@@ -20,6 +20,7 @@ import (
 	"github.com/thesyncim/goav/ctl"
 	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/goavtest"
+	goavruntime "github.com/thesyncim/goav/runtime"
 )
 
 func TestExternalHostCustomCommandOverSocket(t *testing.T) {
@@ -70,7 +71,7 @@ func TestExternalHostCustomCodecOptionsAndStageOverSocket(t *testing.T) {
 	factory := &recordingEncoderFactory{
 		descriptor: codec.Descriptor{ID: customCodec, Name: "CLI PCM", Type: av.MediaAudio},
 	}
-	task := newExternalTask(t, goavtest.Runtime(goav.WithEncoder(factory.descriptor, factory)))
+	task := newExternalTask(t, goavtest.Runtime(goavruntime.WithEncoder(factory.descriptor, factory)))
 	defer task.Close()
 
 	var metered atomic.Int64
@@ -158,8 +159,8 @@ func TestExternalHostHelpListsRuntimeRegisteredComponents(t *testing.T) {
 		descriptor: codec.Descriptor{ID: customCodec, Name: "Help PCM", Type: av.MediaAudio},
 	}
 	task := newExternalTask(t, goavtest.Runtime(
-		goav.WithEncoder(factory.descriptor, factory),
-		goav.WithFormatAdapter(func(registry *format.SimpleRegistry) {
+		goavruntime.WithEncoder(factory.descriptor, factory),
+		goavruntime.WithFormatAdapter(func(registry *format.SimpleRegistry) {
 			registry.RegisterMuxerDescriptor(format.Descriptor{
 				Format: customFormat,
 				Codecs: []av.CodecID{customCodec},
@@ -199,7 +200,7 @@ func TestExternalHostCustomEncoderSpecCanMapArbitrarySettings(t *testing.T) {
 	factory := &recordingEncoderFactory{
 		descriptor: codec.Descriptor{ID: customCodec, Name: "Fancy Audio", Type: av.MediaAudio},
 	}
-	task := newExternalTask(t, goavtest.Runtime(goav.WithEncoder(factory.descriptor, factory)))
+	task := newExternalTask(t, goavtest.Runtime(goavruntime.WithEncoder(factory.descriptor, factory)))
 	defer task.Close()
 
 	var controlCalled atomic.Bool

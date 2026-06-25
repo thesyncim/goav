@@ -33,8 +33,8 @@ stage concern.
 | Open a transport or live provider | `provider.Source` via `goav.Input(provider)` | `examples/provider-source` | nil provider or missing codec/stream facts refuse before work starts |
 | Write bytes after format resolution | `goav.Writer(name, open, opts...)` | `examples/custom-destination` | nil opener or writer open error fails the task |
 | Commit or abort object-store uploads | `provider.TransactionalWriter` | `examples/transactional-writer` | induced pipeline error calls `Abort`, not `Commit` |
-| Replace a frame transform | `filter.Factory` + `goav.WithFilter` | `examples/custom-filter` | unsupported target returns `filter.ErrUnsupportedFormat` |
-| Add a codec | `codec.EncoderFactory` / `DecoderFactory` + `WithEncoder` / `WithDecoder` | `examples/custom-codec` | descriptor-only registration reports adapter unavailable |
+| Replace a frame transform | `filter.Factory` + `goavruntime.WithFilter` | `examples/custom-filter` | unsupported target returns `filter.ErrUnsupportedFormat` |
+| Add a codec | `codec.EncoderFactory` / `DecoderFactory` + `goavruntime.WithEncoder` / `WithDecoder` | `examples/custom-codec` | descriptor-only registration reports adapter unavailable |
 | Converge several arms | `goav.Join(name, pipeline.Stage, arms...)` | `examples/custom-join` | incompatible arm media refuses at build time |
 | Expose app-specific control | `ctl.CommandSpec`, branch steps, encoder specs | `examples/control-plane-host` | invalid settings fail before branch attach |
 
@@ -206,7 +206,7 @@ desc := filter.Descriptor{
 }
 
 rt := bundle.MustNewFilters(
-    goav.WithFilter(desc, myFactory{}),
+    goavruntime.WithFilter(desc, myFactory{}),
 )
 ```
 
@@ -236,8 +236,8 @@ desc := codec.Descriptor{
 }
 
 rt := goav.MustNew(
-    goav.WithEncoder(desc, myCodecFactory{}),
-    goav.WithDecoder(desc, myCodecFactory{}),
+    goavruntime.WithEncoder(desc, myCodecFactory{}),
+    goavruntime.WithDecoder(desc, myCodecFactory{}),
 )
 ```
 
@@ -314,7 +314,7 @@ out := goavtest.NewCollector()
 err := goav.From(goavtest.Audio(48000, 1, []int16{1, 2})).
     Audio().
     To(out.Sink()).
-    UseRuntime(goavtest.Runtime(goav.WithFilter(desc, factory))).
+    UseRuntime(goavtest.Runtime(goavruntime.WithFilter(desc, factory))).
     Run(ctx)
 
 expect.NoError(t, err)

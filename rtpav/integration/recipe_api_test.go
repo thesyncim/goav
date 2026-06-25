@@ -15,6 +15,7 @@ import (
 	"github.com/thesyncim/goav/plan"
 	"github.com/thesyncim/goav/provider"
 	"github.com/thesyncim/goav/rtpav"
+	goavruntime "github.com/thesyncim/goav/runtime"
 	"github.com/thesyncim/goav/shape"
 )
 
@@ -244,7 +245,7 @@ func TestRecordRecipeExplainReturnsStructuredPlan(t *testing.T) {
 }
 
 func TestExplainReportsBranchShapeFromLiveCodecIntent(t *testing.T) {
-	rt := goav.MustNew(goav.WithCodecAdapter(func(registry *codec.SimpleRegistry) {
+	rt := goav.MustNew(goavruntime.WithCodecAdapter(func(registry *codec.SimpleRegistry) {
 		registry.RegisterDecoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, recipeAPIDecoderFactory{})
 	}))
 
@@ -418,7 +419,7 @@ func TestProviderRecipeSurfacesOpenSourceError(t *testing.T) {
 }
 
 func TestStreamRecipeReportsMissingDecodeAdapterBeforeOpeningLiveInput(t *testing.T) {
-	rt := goav.MustNew(goav.WithCodecAdapter(func(registry *codec.SimpleRegistry) {
+	rt := goav.MustNew(goavruntime.WithCodecAdapter(func(registry *codec.SimpleRegistry) {
 		registry.RegisterDescriptor(codec.Descriptor{
 			ID:    av.CodecH264,
 			Name:  "h264",

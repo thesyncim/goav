@@ -3,7 +3,6 @@ package goav
 import (
 	"context"
 	"errors"
-	"fmt"
 	"sort"
 	"strings"
 	"sync"
@@ -16,6 +15,7 @@ import (
 	"github.com/thesyncim/goav/lifecycle"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/plan"
+	runtimecfg "github.com/thesyncim/goav/runtime"
 	"github.com/thesyncim/goav/snapshot"
 )
 
@@ -53,39 +53,13 @@ var (
 	ErrClosed = pipeline.ErrClosed
 )
 
-// Config is the mutable runtime construction state passed to Option values.
-// Options may replace registries or update graph policy, but New validates the
-// final config before publishing a concrete Runtime.
-type Config struct {
-	Codecs        *codec.SimpleRegistry
-	Filters       *filter.SimpleRegistry
-	Formats       *format.SimpleRegistry
-	Buffer        pipeline.BufferPolicy
-	Realtime      bool
-	Clock         av.Clock
-	EventCapacity int
-}
-
-// Option configures a runtime under construction: registries (codecs, formats,
-// filters), pacing (WithRealtime, WithClock), and graph policy
-// (WithBufferPolicy, WithEventCapacity). Invalid options return an error from
-// New instead of silently no-oping.
-type Option func(*Config) error
-
 // New builds a bare runtime: per-runtime registries with no adapters beyond
 // content sniffing, realtime pacing on. Import github.com/thesyncim/goav/bundle
-// for a runtime with the bundled adapters already registered.
-func New(options ...Option) (*Runtime, error) {
-	config := newRuntimeConfig()
-	for i, option := range options {
-		if option == nil {
-			return nil, runtimeOptionError(i, "option is nil", nil)
-		}
-		if err := option(config); err != nil {
-			return nil, runtimeOptionError(i, "option rejected config", err)
-		}
-	}
-	if err := validateRuntimeConfig(config); err != nil {
+// for a runtime with the bundled adapters already registered. Runtime options
+// live in github.com/thesyncim/goav/runtime.
+func New(options ...runtimecfg.Option) (*Runtime, error) {
+	config, err := runtimecfg.NewConfig(options...)
+	if err != nil {
 		return nil, err
 	}
 	return &runtime{
@@ -101,222 +75,12 @@ func New(options ...Option) (*Runtime, error) {
 
 // MustNew is New for package-level setup and tests: it panics when runtime
 // options are invalid.
-func MustNew(options ...Option) *Runtime {
+func MustNew(options ...runtimecfg.Option) *Runtime {
 	runtime, err := New(options...)
 	if err != nil {
 		panic(err)
 	}
 	return runtime
-}
-
-func newRuntimeConfig() *Config {
-	formats := format.NewRegistry()
-	formats.RegisterProber(format.DefaultProber())
-	return &Config{
-		Codecs:   codec.NewRegistry(),
-		Filters:  filter.NewRegistry(),
-		Formats:  formats,
-		Realtime: true,
-	}
-}
-
-func validateRuntimeConfig(config *Config) error {
-	switch {
-	case config == nil:
-		return errors.New("goav: runtime config is nil")
-	case config.Codecs == nil:
-		return errors.New("goav: runtime config has nil codec registry")
-	case config.Filters == nil:
-		return errors.New("goav: runtime config has nil filter registry")
-	case config.Formats == nil:
-		return errors.New("goav: runtime config has nil format registry")
-	case config.EventCapacity < 0:
-		return fmt.Errorf("goav: runtime event capacity must be non-negative: %d", config.EventCapacity)
-	default:
-		return nil
-	}
-}
-
-func runtimeOptionError(index int, reason string, cause error) error {
-	if cause != nil {
-		return fmt.Errorf("goav: runtime option %d invalid: %s: %w", index, reason, cause)
-	}
-	return fmt.Errorf("goav: runtime option %d invalid: %s", index, reason)
-}
-
-// WithCodecAdapter registers a whole codec bundle at once: the callback
-// receives the runtime's codec registry. Use WithDecoder/WithEncoder for the
-// direct single-value form.
-func WithCodecAdapter(register func(*codec.SimpleRegistry)) Option {
-	return func(config *Config) error {
-		if register == nil {
-			return errors.New("codec registry callback is nil")
-		}
-		register(config.Codecs)
-		return nil
-	}
-}
-
-// WithCodecDescriptor registers a codec descriptor without an implementation,
-// so capability checks (Explain, validation) recognize the codec even when
-// encode/decode factories come from elsewhere.
-func WithCodecDescriptor(desc codec.Descriptor) Option {
-	return WithCodecAdapter(func(registry *codec.SimpleRegistry) {
-		registry.RegisterDescriptor(desc)
-	})
-}
-
-// WithDecoder adds one decoder factory by descriptor — pass the
-// implementation directly, no registry callback. The descriptor's
-// capabilities drive compatibility checks before anything opens.
-func WithDecoder(desc codec.Descriptor, factory codec.DecoderFactory) Option {
-	if factory == nil {
-		return func(*Config) error {
-			return errors.New("decoder factory is nil")
-		}
-	}
-	return WithCodecAdapter(func(registry *codec.SimpleRegistry) {
-		registry.RegisterDecoder(desc, factory)
-	})
-}
-
-// WithEncoder adds one encoder factory by descriptor — pass the
-// implementation directly, no registry callback. The descriptor's
-// capabilities drive compatibility checks before anything opens.
-func WithEncoder(desc codec.Descriptor, factory codec.EncoderFactory) Option {
-	if factory == nil {
-		return func(*Config) error {
-			return errors.New("encoder factory is nil")
-		}
-	}
-	return WithCodecAdapter(func(registry *codec.SimpleRegistry) {
-		registry.RegisterEncoder(desc, factory)
-	})
-}
-
-// WithFilter adds one filter factory by descriptor — the direct value form,
-// mirroring WithDecoder/WithEncoder, so an external filter plugs in by passing the
-// implementation, never by touching a registry. (WithFilterAdapter remains for
-// registering a whole bundle at once.)
-func WithFilter(desc filter.Descriptor, factory filter.Factory) Option {
-	if factory == nil {
-		return func(*Config) error {
-			return errors.New("filter factory is nil")
-		}
-	}
-	return WithFilterAdapter(func(registry *filter.SimpleRegistry) {
-		registry.RegisterFactory(desc, factory)
-	})
-}
-
-// WithMuxer adds one muxer factory for a container format — pass the muxer
-// directly, no registry callback.
-func WithMuxer(id av.FormatID, factory format.MuxerFactory) Option {
-	if factory == nil {
-		return func(*Config) error {
-			return errors.New("muxer factory is nil")
-		}
-	}
-	return WithFormatAdapter(func(registry *format.SimpleRegistry) {
-		registry.RegisterMuxer(id, factory)
-	})
-}
-
-// WithDemuxer adds one demuxer factory for a container format — pass the demuxer
-// directly, no registry callback.
-func WithDemuxer(id av.FormatID, factory format.DemuxerFactory) Option {
-	if factory == nil {
-		return func(*Config) error {
-			return errors.New("demuxer factory is nil")
-		}
-	}
-	return WithFormatAdapter(func(registry *format.SimpleRegistry) {
-		registry.RegisterDemuxer(id, factory)
-	})
-}
-
-// WithProber adds one format prober (content sniffing) directly.
-func WithProber(prober format.Prober) Option {
-	if prober == nil {
-		return func(*Config) error {
-			return errors.New("format prober is nil")
-		}
-	}
-	return WithFormatAdapter(func(registry *format.SimpleRegistry) {
-		registry.RegisterProber(prober)
-	})
-}
-
-// WithFormatAdapter registers a whole container-format bundle at once: the
-// callback receives the runtime's format registry. Use
-// WithMuxer/WithDemuxer/WithProber for the direct single-value form.
-func WithFormatAdapter(register func(*format.SimpleRegistry)) Option {
-	return func(config *Config) error {
-		if register == nil {
-			return errors.New("format registry callback is nil")
-		}
-		register(config.Formats)
-		return nil
-	}
-}
-
-// WithFilterAdapter registers a whole filter bundle at once: the callback
-// receives the runtime's filter registry. Use WithFilter for the direct
-// single-value form.
-func WithFilterAdapter(register func(*filter.SimpleRegistry)) Option {
-	return func(config *Config) error {
-		if register == nil {
-			return errors.New("filter registry callback is nil")
-		}
-		register(config.Filters)
-		return nil
-	}
-}
-
-// WithBufferPolicy sets the default node buffer policy for graphs this
-// runtime builds — the queue depth and overflow behavior between nodes.
-// Branch-local .Buffer(flow....) declarations override it per branch.
-func WithBufferPolicy(policy pipeline.BufferPolicy) Option {
-	return func(config *Config) error {
-		config.Buffer = policy
-		return nil
-	}
-}
-
-// WithEventCapacity sets the buffered capacity of the task event stream (and
-// of each Watch subscriber's channel). A watcher that falls behind by more
-// than this sheds events for itself only.
-func WithEventCapacity(capacity int) Option {
-	return func(config *Config) error {
-		if capacity < 0 {
-			return fmt.Errorf("event capacity must be non-negative: %d", capacity)
-		}
-		config.EventCapacity = capacity
-		return nil
-	}
-}
-
-// WithRealtime selects pacing: true (the default) delivers file media when
-// its media time is due on the runtime clock, so control.Rate works as a live
-// pacing multiplier; false pumps at full speed (offline transcode) and rejects Rate
-// with format.ErrRateUnsupported.
-func WithRealtime(realtime bool) Option {
-	return func(config *Config) error {
-		config.Realtime = realtime
-		return nil
-	}
-}
-
-// WithClock sets the time source the runtime's realtime pacing runs on — a
-// realtime task playing a file delivers each packet when its media time is due
-// on this clock (and control.Rate scales that pace). Nil or unset defaults to
-// av.MonotonicClock(); tests and simulations inject a fake so nothing sleeps
-// for real. Offline runtimes (WithRealtime(false)) never consult it.
-func WithClock(clock av.Clock) Option {
-	return func(config *Config) error {
-		config.Clock = clock
-		return nil
-	}
 }
 
 type runtime struct {
@@ -697,7 +461,7 @@ func (t *task) bufferedPayloadRunError(cause error, code errcode.Code, reason st
 		Suggestions: []string{
 			"for branch buffers, use flow.BufferCopyBounds(packetBytes, frameBytes) with bounds large enough for the payload",
 			"when using flow.CopyNever, emit av.BufferImmutable payloads only or switch to flow.CopyIfMutable/flow.CopyAlways",
-			"for runtime-level buffers, set goav.WithBufferPolicy(pipeline.BufferPolicy{Capacity: ..., Drop: pipeline.DropBlock, CopyPacketBytes: ..., CopyFrameBytes: ...})",
+			"for runtime-level buffers, set goavruntime.WithBufferPolicy(pipeline.BufferPolicy{Capacity: ..., Drop: pipeline.DropBlock, CopyPacketBytes: ..., CopyFrameBytes: ...})",
 		},
 		Cause: cause,
 	}

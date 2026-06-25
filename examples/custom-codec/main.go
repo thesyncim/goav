@@ -9,6 +9,7 @@ import (
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/goavtest"
+	goavruntime "github.com/thesyncim/goav/runtime"
 	"github.com/thesyncim/goav/shape"
 )
 
@@ -61,8 +62,8 @@ func customCodecRuntime() *goav.Runtime {
 	desc := customCodecDescriptor()
 	factory := customCodecFactory{}
 	return goavtest.Runtime(
-		goav.WithEncoder(desc, factory),
-		goav.WithDecoder(desc, factory),
+		goavruntime.WithEncoder(desc, factory),
+		goavruntime.WithDecoder(desc, factory),
 	)
 }
 

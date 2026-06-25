@@ -526,7 +526,7 @@ func TestErrorAcceptanceDestinationFormatUnknown(t *testing.T) {
 
 // TestErrorAcceptanceDestinationMuxerMissing is snippet 4b: the format is
 // detected but the runtime has no muxer registered for it. The fix names
-// goav.WithMuxer(...).
+// goavruntime.WithMuxer(...).
 func TestErrorAcceptanceDestinationMuxerMissing(t *testing.T) {
 	_, err := goav.From(goavtest.Audio(48000, 1, []int16{1})).
 		Audio().Encode(codec.Opus()).
@@ -534,7 +534,7 @@ func TestErrorAcceptanceDestinationMuxerMissing(t *testing.T) {
 		UseRuntime(bundle.MustNewFilters(goavtest.Codec(av.CodecOpus))).
 		Build(context.Background())
 	requireBuildError(t, err, errcode.DestinationMuxerMissing, "open destination", "out.ogg",
-		"goav.WithMuxer(...)",
+		"goavruntime.WithMuxer(...)",
 	)
 }
 
@@ -612,7 +612,7 @@ func TestErrorAcceptanceTypedTapAtWrongDomain(t *testing.T) {
 
 // TestErrorAcceptanceEncoderAdapterMissing is snippet 8: .Encode with a codec
 // no registered encoder provides. The refusal names the codec and the
-// goav.WithEncoder(...) registration fix.
+// goavruntime.WithEncoder(...) registration fix.
 func TestErrorAcceptanceEncoderAdapterMissing(t *testing.T) {
 	_, err := goav.From(goavtest.Audio(48000, 1, []int16{1})).
 		Audio().Encode(codec.Codec("weird", av.MediaAudio)).
@@ -620,7 +620,7 @@ func TestErrorAcceptanceEncoderAdapterMissing(t *testing.T) {
 		UseRuntime(goavtest.Runtime()).
 		Build(context.Background())
 	buildErr := requireBuildError(t, err, errcode.EncodeAdapterMissing, "build job", "audio",
-		"goav.WithEncoder(...)",
+		"goavruntime.WithEncoder(...)",
 	)
 	if !strings.Contains(buildErr.Reason, "weird") || !detailsContain(buildErr.Details, "codec=weird") {
 		t.Fatalf("refusal should name the codec, err = %v", err)

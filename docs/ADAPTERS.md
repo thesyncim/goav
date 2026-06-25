@@ -24,7 +24,7 @@ is `adapterproof/adapter_compat_test.go`.
 
 - Implement `codec.DecoderFactory`, `codec.EncoderFactory`,
   `format.DemuxerFactory`, `format.MuxerFactory`, or `filter.Factory`.
-- Application-local factories register with `goav.WithDecoder`, `WithEncoder`,
+- Application-local factories register with `goavruntime.WithDecoder`, `WithEncoder`,
   `WithFilter`, `WithMuxer`, `WithDemuxer`, and `WithProber`. Adapter packages
   should still expose an explicit `Register(...)` hook for runtime bundles.
 - Allocate only during construction or `Open`. Hot-path methods use

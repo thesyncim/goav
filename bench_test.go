@@ -28,6 +28,7 @@ import (
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/flow"
 	"github.com/thesyncim/goav/goavtest"
+	goavruntime "github.com/thesyncim/goav/runtime"
 	"github.com/thesyncim/goav/shape"
 )
 
@@ -39,8 +40,8 @@ const (
 // benchRuntime is the deterministic offline runtime every benchmark uses:
 // goavtest fakes plus WithRealtime(false), so nothing paces on a clock and the
 // fake clock records no sleep trace while b.N grows.
-func benchRuntime(opts ...goav.Option) *goav.Runtime {
-	return goavtest.Runtime(append([]goav.Option{goav.WithRealtime(false)}, opts...)...)
+func benchRuntime(opts ...goavruntime.Option) *goav.Runtime {
+	return goavtest.Runtime(append([]goavruntime.Option{goavruntime.WithRealtime(false)}, opts...)...)
 }
 
 // benchSink is a no-op message destination, so sink work never pollutes the
@@ -336,7 +337,7 @@ func BenchmarkMix(b *testing.B) {
 			}
 			runBenchTask(b, goav.Mix(arms...).
 				To(benchSink("mixed")).
-				UseRuntime(benchRuntime(goav.WithBufferPolicy(flow.Blocking(64).PipelinePolicy()))))
+				UseRuntime(benchRuntime(goavruntime.WithBufferPolicy(flow.Blocking(64).PipelinePolicy()))))
 		})
 	}
 }
@@ -353,7 +354,7 @@ func BenchmarkComposite(b *testing.B) {
 		goav.From(benchVideoFrames("screen", per, 160, 90)).Video().Region(160, 0),
 	).
 		To(benchSink("canvas")).
-		UseRuntime(benchRuntime(goav.WithBufferPolicy(flow.Blocking(64).PipelinePolicy()))))
+		UseRuntime(benchRuntime(goavruntime.WithBufferPolicy(flow.Blocking(64).PipelinePolicy()))))
 }
 
 // BenchmarkSelectPassthrough is the one-of-N live switch in its steady state:
@@ -384,7 +385,7 @@ func BenchmarkAttachDetachUnderLoad(b *testing.B) {
 		Audio().
 		Tap(goav.FrameTap("live.frames")).
 		To(benchSink("main")).
-		UseRuntime(benchRuntime(goav.WithBufferPolicy(flow.DropOldest(64).PipelinePolicy()))).
+		UseRuntime(benchRuntime(goavruntime.WithBufferPolicy(flow.DropOldest(64).PipelinePolicy()))).
 		Build(ctx)
 	if err != nil {
 		b.Fatal(err)
@@ -431,7 +432,7 @@ func BenchmarkSourcePush(b *testing.B) {
 			runBenchTask(b, goav.From(benchAudioFrames("mic", b.N, 48_000, 1, benchAudioSamples)).
 				Audio().
 				To(benchSink("out")).
-				UseRuntime(benchRuntime(goav.WithBufferPolicy(mode.buffer.PipelinePolicy()))))
+				UseRuntime(benchRuntime(goavruntime.WithBufferPolicy(mode.buffer.PipelinePolicy()))))
 		})
 	}
 }

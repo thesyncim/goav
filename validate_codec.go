@@ -502,7 +502,7 @@ func recipeEncodeAdapterError(operation string, stream streamIntent, registry *c
 		Reason:    reason,
 		Details:   details,
 		Suggestions: []string{
-			"register a " + string(codecID) + " encoder with goav.MustNew(goav.WithEncoder(...)) or a codec adapter that provides one",
+			"register a " + string(codecID) + " encoder with goav.MustNew(goavruntime.WithEncoder(...)) or a codec adapter that provides one",
 			"use .To(goav.Sink(...)) to receive decoded frames without encoding",
 			"use .Copy().To(output) for packet-preserving output when re-encoding is not needed",
 		},

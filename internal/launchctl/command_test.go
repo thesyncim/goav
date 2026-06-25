@@ -23,6 +23,7 @@ import (
 	"github.com/thesyncim/goav/inspect"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/plan"
+	goavruntime "github.com/thesyncim/goav/runtime"
 	"github.com/thesyncim/goav/shape"
 	"github.com/thesyncim/goav/snapshot"
 )
@@ -2127,7 +2128,7 @@ func TestServerSupportsCustomEncoderSettings(t *testing.T) {
 	task, err := goav.From(goavtest.Audio(48000, 1, []int16{1})).
 		Audio().Tap(goav.FrameTap("frames")).
 		To(goavtest.NewCollector().Sink()).
-		UseRuntime(goavtest.Runtime(goav.WithEncoder(factory.descriptor, factory))).
+		UseRuntime(goavtest.Runtime(goavruntime.WithEncoder(factory.descriptor, factory))).
 		Build(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -2253,7 +2254,7 @@ func TestServerGenericEncodeStepCarriesCommonCodecOptions(t *testing.T) {
 	task, err := goav.From(goavtest.Audio(48000, 1, []int16{1})).
 		Audio().Tap(goav.FrameTap("frames")).
 		To(goavtest.NewCollector().Sink()).
-		UseRuntime(goavtest.Runtime(goav.WithEncoder(factory.descriptor, factory))).
+		UseRuntime(goavtest.Runtime(goavruntime.WithEncoder(factory.descriptor, factory))).
 		Build(ctx)
 	if err != nil {
 		t.Fatal(err)

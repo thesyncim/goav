@@ -27,6 +27,7 @@ import (
 	"github.com/thesyncim/goav/internal/sourceargs"
 	"github.com/thesyncim/goav/internal/transformargs"
 	"github.com/thesyncim/goav/pipeline"
+	goavruntime "github.com/thesyncim/goav/runtime"
 	"github.com/thesyncim/goav/shape"
 )
 
@@ -342,11 +343,11 @@ func runtimeForRun(name string, plan runPipelinePlan) (*goav.Runtime, string, er
 	codecIDs := plan.encodeCodecIDs()
 	switch name {
 	case "demo":
-		return bundle.MustNew(goav.WithClock(goavtest.NewClock())), "demo", nil
+		return bundle.MustNew(goavruntime.WithClock(goavtest.NewClock())), "demo", nil
 	case "default", "bundle":
 		return bundle.MustNew(), "bundle", nil
 	case "test", "fake", "deterministic":
-		opts := make([]goav.Option, 0, len(codecIDs))
+		opts := make([]goavruntime.Option, 0, len(codecIDs))
 		for _, id := range codecIDs {
 			if !wellKnownTestCodec(id) {
 				opts = append(opts, goavtest.Codec(id))

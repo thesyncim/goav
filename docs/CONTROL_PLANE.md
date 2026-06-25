@@ -80,7 +80,7 @@ This is the smallest production shape:
 
 The default branch grammar is intentionally useful before a host adds any
 custom CLI grammar. If a task runtime has an encoder registered with
-`goav.WithEncoder`, it is callable from attach/rebranch as:
+`goavruntime.WithEncoder`, it is callable from attach/rebranch as:
 
 ```sh
 goav ctl --control unix:///tmp/goav-live.sock attach frames as preview \
@@ -138,7 +138,7 @@ task, err := goav.From(liveInput).
     Audio().Decode().Tap(goav.FrameTap("frames")).
     To(primaryDestination).
     UseRuntime(bundle.MustNew(
-        goav.WithEncoder(encoderFactory.Descriptor, encoderFactory),
+        goavruntime.WithEncoder(encoderFactory.Descriptor, encoderFactory),
     )).
     Build(ctx)
 if err != nil {
@@ -393,12 +393,12 @@ capabilities.
 
 ```go
 rt := bundle.MustNew(
-    goav.WithEncoder(codec.Descriptor{
+    goavruntime.WithEncoder(codec.Descriptor{
         ID:   av.CodecID("x_pcm_s16"),
         Name: "ACME PCM S16",
         Type: av.MediaAudio,
     }, acmeEncoderFactory),
-    goav.WithFormatAdapter(acmecontainer.Register), // if no stock container accepts the codec
+    goavruntime.WithFormatAdapter(acmecontainer.Register), // if no stock container accepts the codec
 )
 ```
 
@@ -428,7 +428,7 @@ and `pixel_format` are rejected with suggestions.
 
 The destination container must accept the selected codec. Standard codecs can
 often use the bundled containers registered by `bundle.MustNew`; a private codec
-usually needs a matching `WithFormatAdapter`, `WithMuxer`, or an app-owned
+usually needs a matching `goavruntime.WithFormatAdapter`, `WithMuxer`, or an app-owned
 custom destination step. Runtime muxers registered with `WithMuxer` are callable
 by `filesink location=<path> [format=<id>]` and appear in `help attach`.
 

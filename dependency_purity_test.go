@@ -117,7 +117,7 @@ func TestRootImportDoesNotPullStdAdapters(t *testing.T) {
 		"github.com/thesyncim/govpx",
 	} {
 		if strings.Contains(deps, forbidden) {
-			t.Fatalf("root import pulls standard adapter/backend dependency %s", forbidden)
+			t.Fatalf("root import pulls bundled adapter/backend dependency %s", forbidden)
 		}
 	}
 }

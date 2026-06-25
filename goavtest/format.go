@@ -12,9 +12,9 @@ import (
 	"io"
 	"math"
 
-	"github.com/thesyncim/goav"
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/format"
+	goavruntime "github.com/thesyncim/goav/runtime"
 )
 
 // Format returns a runtime option registering a deterministic fake container
@@ -24,8 +24,8 @@ import (
 // byte-faithfully, and a prober matching the "."+id name extension. A file
 // muxed through it demuxes to the exact packets that were written, so
 // File→FileInput round trips work without a real container.
-func Format(id av.FormatID) goav.Option {
-	return goav.WithFormatAdapter(func(registry *format.SimpleRegistry) {
+func Format(id av.FormatID) goavruntime.Option {
+	return goavruntime.WithFormatAdapter(func(registry *format.SimpleRegistry) {
 		registry.RegisterMuxer(id, containerFactory{id: id})
 		registry.RegisterDemuxer(id, containerFactory{id: id})
 		registry.RegisterProber(format.NewStaticProber(format.ProbeRule{

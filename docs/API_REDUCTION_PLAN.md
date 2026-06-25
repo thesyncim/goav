@@ -74,7 +74,7 @@ Move or keep outside the front door:
      adapter-backed build paths, including dynamic `OnStream` branch
      destinations and operations.
 
-3. **Standard package** — landed
+3. **Bundle package** — landed
    - Add `goav/bundle` for `New`, `MustNew`, `Build`, `Run`, and bundled adapter
      options.
    - Move direct imports of bundled codecs, formats, and filters out of the root

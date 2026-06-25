@@ -200,7 +200,6 @@ goav.Chain
 goav.Codec
 goav.CodecChangePolicy
 goav.Composite
-goav.Config
 goav.Controllable
 goav.Custom
 goav.Destination
@@ -259,7 +258,6 @@ goav.NextFrame
 goav.NextKeyframe
 goav.Observable
 goav.OnRemove
-goav.Option
 goav.Packet
 goav.PacketFunc
 goav.PacketTap
@@ -293,20 +291,6 @@ goav.Task
 goav.TransformSpec
 goav.URI
 goav.URIInput
-goav.WithBufferPolicy
-goav.WithClock
-goav.WithCodecAdapter
-goav.WithCodecDescriptor
-goav.WithDecoder
-goav.WithDemuxer
-goav.WithEncoder
-goav.WithEventCapacity
-goav.WithFilter
-goav.WithFilterAdapter
-goav.WithFormatAdapter
-goav.WithMuxer
-goav.WithProber
-goav.WithRealtime
 goav.WrapSource
 goav.Writer
 graphrender.ErrUnsupportedFormat

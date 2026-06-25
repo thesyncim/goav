@@ -12,6 +12,7 @@ import (
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/rtpav"
+	goavruntime "github.com/thesyncim/goav/runtime"
 	av1backend "github.com/thesyncim/goav1"
 )
 
@@ -50,7 +51,7 @@ func TestRecipeRTPAV1DecodeSink(t *testing.T) {
 		rtpav.WithName("av1-rtp"),
 		rtpav.WithDepacketizers(rtpav.NewAV1Depacketizer(stream, rtpav.WithMaxVideoFrameSize(128))),
 	))).
-		UseRuntime(goav.MustNew(goav.WithCodecAdapter(goav1adapter.Register))).
+		UseRuntime(goav.MustNew(goavruntime.WithCodecAdapter(goav1adapter.Register))).
 		Video().
 		To(goav.Sink(sink))
 	planned, err := job.Describe()
@@ -133,7 +134,7 @@ func testRecipeRTPAV1DecodeSink420(t *testing.T, pixelFormat string) {
 		rtpav.WithName("av1-rtp"),
 		rtpav.WithDepacketizers(rtpav.NewAV1Depacketizer(stream, rtpav.WithMaxVideoFrameSize(128))),
 	))).
-		UseRuntime(goav.MustNew(goav.WithCodecAdapter(goav1adapter.Register))).
+		UseRuntime(goav.MustNew(goavruntime.WithCodecAdapter(goav1adapter.Register))).
 		Video().
 		To(goav.Sink(sink)).
 		Build(ctx)
@@ -201,7 +202,7 @@ func TestRecipeRTPAV1CodecChangedDropsUntilSync(t *testing.T) {
 		rtpav.WithDepacketizers(rtpav.NewAV1Depacketizer(initial, rtpav.WithMaxVideoFrameSize(128))),
 		rtpav.WithBufferLimits(rtpav.BufferLimits{MaxPackets: 1, MaxEvents: 2}),
 	))).
-		UseRuntime(goav.MustNew(goav.WithCodecAdapter(goav1adapter.Register))).
+		UseRuntime(goav.MustNew(goavruntime.WithCodecAdapter(goav1adapter.Register))).
 		Video().
 		To(goav.Sink(sink)).
 		Build(ctx)
@@ -289,7 +290,7 @@ func testRecipeRTPAV1CodecChangedReplacementStream(t *testing.T, oldIDTarget boo
 		rtpav.WithDepacketizers(rtpav.NewAV1Depacketizer(initial, rtpav.WithMaxVideoFrameSize(128))),
 		rtpav.WithBufferLimits(rtpav.BufferLimits{MaxPackets: 1, MaxEvents: 2}),
 	))).
-		UseRuntime(goav.MustNew(goav.WithCodecAdapter(goav1adapter.Register))).
+		UseRuntime(goav.MustNew(goavruntime.WithCodecAdapter(goav1adapter.Register))).
 		Video().
 		To(goav.Sink(sink)).
 		Build(ctx)

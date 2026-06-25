@@ -52,7 +52,7 @@ Mutable: Attach/Detach(DrainBranch|AbortBranch); Attachment.Rebranch
          (SwitchAt(NextFrame|NextKeyframe|AtMediaTime), Drain/AbortOldBranch, KeepOldOnFailure)
 Controllable: Control(control.Keyframe|Seek|Segment|Rate|SetBitrate|SelectActive|Deliver, .AtTap)
 Observable: Events, Watch(inspect.EventFilter)
-goav.New(opts...) -> (*Runtime, error); goav.MustNew(opts...) -> bare Runtime; bundle.MustNew(opts...) -> bundled Runtime; job.UseRuntime(rt)
+goav.New(goavruntime.Option...) -> (*Runtime, error); goav.MustNew(...) -> bare Runtime; bundle.MustNew(...) -> bundled Runtime; job.UseRuntime(rt)
 errors: *goav.BuildError{Family: errcode.FamilyX, Code: errcode.X, Fields: []goav.Detail, Fixes: []goav.Fix, ...} matched with errors.As/Is; Detail(key) for typed facts
 ```
 
@@ -77,6 +77,8 @@ Applications also read these vocabulary packages:
   adapters.
 - `flow`: branch buffer policies (`Blocking`, `DropOldest`, ...) and the
   `DropReason*` keys for reading drop counters.
+- `runtime`: per-runtime construction options (`WithEncoder`, `WithClock`,
+  `WithBufferPolicy`, ...).
 - `av` identifiers: media/codec/format/protocol ids, event types, metadata.
 
 ## B. Extension Points
@@ -129,7 +131,8 @@ use [`docs/ADAPTERS.md`](ADAPTERS.md) and [`docs/COMPONENTS.md`](COMPONENTS.md).
   `.Do(...)`; the node contracts live in `pipeline` (Source/Stage/Sink,
   Emitter, Message, Scratch, capability interfaces).
 - **Codecs**: `codec` Descriptor/Decoder/Encoder/factories, caller-owned
-  results, `WithDecoder`/`WithEncoder`/`WithCodecAdapter`/`WithCodecDescriptor`.
+  results, `goavruntime.WithDecoder`/`WithEncoder`/`WithCodecAdapter`/
+  `WithCodecDescriptor`.
 - **Control hosts**: `ctl` is the supported package for applications that
   run a task and expose it to `goav ctl --control unix://...`. It reuses the
   same allowlisted command framework as the bundled command: external hosts
@@ -142,11 +145,12 @@ use [`docs/ADAPTERS.md`](ADAPTERS.md) and [`docs/COMPONENTS.md`](COMPONENTS.md).
   The same socket renders live graph diagnostics through `goav ctl graph`
   (`format=mermaid|dot|text`).
 - **Containers**: `format` Prober/Demuxer/Muxer/factories, Seeker for
-  seekable inputs, `WithDemuxer`/`WithMuxer`/`WithFormatAdapter`/`WithProber`.
+  seekable inputs, `goavruntime.WithDemuxer`/`WithMuxer`/`WithFormatAdapter`/
+  `WithProber`.
 - **Filters**: `filter` FrameFilter/Factory/Descriptor,
-  `WithFilter`/`WithFilterAdapter`.
-- **Runtime config**: `goav.New`, `bundle.MustNew`, `WithClock`, `WithRealtime`,
-  `WithBufferPolicy`, `WithEventCapacity`.
+  `goavruntime.WithFilter`/`WithFilterAdapter`.
+- **Runtime config**: `goav.New`, `bundle.MustNew`, `goavruntime.WithClock`,
+  `WithRealtime`, `WithBufferPolicy`, `WithEventCapacity`.
 - **Media vocabulary**: `av` frames/packets/buffers (`Buffer`,
   `BufferOwnership`, `Plane`), timing (`TimeBase`, `Timestamp`, `Duration`,
   rescaling), `Clock`.
