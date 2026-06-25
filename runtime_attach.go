@@ -975,12 +975,7 @@ func (t *task) trackAttachmentLocked(attachment *runtimeAttachment) {
 }
 
 func (t *task) tapsLocked() []snapshot.Tap {
-	var base []snapshot.Tap
-	if len(t.taps) != 0 {
-		base = t.taps
-	} else {
-		base = inferSpecTaps(t.graph.Spec())
-	}
+	base := t.taps
 	out := make([]snapshot.Tap, 0, len(base)+len(t.branchTaps))
 	seen := make(map[string]struct{}, len(base)+len(t.branchTaps))
 	appendTap := func(tap snapshot.Tap) {

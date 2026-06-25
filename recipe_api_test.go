@@ -1463,7 +1463,7 @@ func TestBranchesIsTheOnlyPublicPlannedSplitVerb(t *testing.T) {
 	}
 }
 
-func TestRuntimeBranchTapAnchorIsPublicAPI(t *testing.T) {
+func TestExpertGraphNodeNamesDoNotCreateTapAnchors(t *testing.T) {
 	graph := expert.Graph(bundle.MustNew())
 	source := graph.Source("source", recipeAPISource{name: "source"})
 	decode := graph.Stage("decode-audio", component.PacketFunc("decode-audio", func(ctx context.Context, packet *av.Packet, emit component.Emit) error {
@@ -1478,20 +1478,23 @@ func TestRuntimeBranchTapAnchorIsPublicAPI(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if taps := task.Taps(); len(taps) != 0 {
+		t.Fatalf("Taps() = %+v, want no taps inferred from expert graph node names", taps)
+	}
 	_, err = task.Attach(context.Background(),
-		goav.Branch("wrong-domain").
-			From(goav.PacketTap("audio.decoded")).
-			To(goav.Sink(component.SinkFunc("wrong-domain", func(context.Context, component.Message) error {
+		goav.Branch("implicit-tap").
+			From(goav.FrameTap("audio.decoded")).
+			To(goav.Sink(component.SinkFunc("implicit-tap", func(context.Context, component.Message) error {
 				return nil
 			}))),
 	)
 	var buildErr *goav.BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "tap_domain_mismatch" {
-		t.Fatalf("err = %v, want tap_domain_mismatch", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != errcode.RuntimeBranchTapMissing {
+		t.Fatalf("err = %v, want runtime_branch_tap_missing", err)
 	}
 	attachment, err := task.Attach(context.Background(),
 		goav.Branch("levels").
-			From(goav.FrameTap("audio.decoded")).
+			From(decode).
 			To(goav.Sink(component.SinkFunc("levels", func(context.Context, component.Message) error {
 				return nil
 			}))),
