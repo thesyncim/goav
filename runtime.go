@@ -832,13 +832,26 @@ func (t *task) Detach(ctx context.Context, attachment Attachment, options ...Det
 		return err
 	}
 	if attachment == nil {
-		return nil
+		return nilAttachmentDetachError()
 	}
 	policy := detachPolicyFromOptions(options)
 	if runtimeAttachment, ok := attachment.(*runtimeAttachment); ok {
 		return t.stopAttachment(ctx, runtimeAttachment, policy.disposition)
 	}
 	return attachment.Close(ctx)
+}
+
+func nilAttachmentDetachError() error {
+	return &BuildError{
+		Code:      errcode.RuntimeBranchInvalid,
+		Operation: "detach runtime branch",
+		Reason:    "attachment is nil",
+		Suggestions: []string{
+			"keep the Attachment returned by Task.Attach and pass it to Task.Detach",
+			"skip Detach when no branch is attached",
+		},
+		Cause: ErrUnsupportedBuild,
+	}
 }
 
 func (t *task) stopAttachments(ctx context.Context) error {

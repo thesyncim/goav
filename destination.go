@@ -4,6 +4,7 @@ package goav
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 
@@ -148,6 +149,10 @@ func Writer(name string, open provider.OpenFunc, opts ...DestinationOption) Dest
 			URI:  name,
 		},
 		name: name,
+	}
+	if open == nil {
+		spec.custom = nil
+		spec.err = ErrNilWriter
 	}
 	return Destination{spec: applyDestinationOptions(spec, opts)}
 }
@@ -363,6 +368,9 @@ func (s destinationSpec) Contract() provider.Contract {
 }
 
 func (s destinationSpec) Open(ctx context.Context, info provider.Info) (provider.Writer, error) {
+	if s.err != nil {
+		return nil, s.err
+	}
 	if s.custom != nil {
 		return s.custom.Open(ctx, info)
 	}
@@ -378,16 +386,23 @@ func (s destinationSpec) Open(ctx context.Context, info provider.Info) (provider
 func (s destinationSpec) validate(operation string, fallback string) error {
 	node := s.label(fallback)
 	if s.err != nil {
-		return &BuildError{
-			Code:      errcode.OutputInvalid,
-			Operation: operation,
-			Node:      node,
-			Reason:    s.err.Error(),
-			Suggestions: []string{
-				"pass a non-nil sink to goav.Sink(...)",
+		suggestions := []string{
+			"pass a non-nil sink to goav.Sink(...)",
+			"use goav.File(...) or goav.URI(...) for muxed output",
+		}
+		if errors.Is(s.err, ErrNilWriter) {
+			suggestions = []string{
+				"pass a non-nil writer callback to goav.Writer(...)",
 				"use goav.File(...) or goav.URI(...) for muxed output",
-			},
-			Cause: s.err,
+			}
+		}
+		return &BuildError{
+			Code:        errcode.OutputInvalid,
+			Operation:   operation,
+			Node:        node,
+			Reason:      s.err.Error(),
+			Suggestions: suggestions,
+			Cause:       s.err,
 		}
 	}
 	if s.sink != nil {

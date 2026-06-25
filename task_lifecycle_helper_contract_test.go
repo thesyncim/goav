@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/thesyncim/goav/av"
+	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/snapshot"
 )
@@ -33,8 +34,13 @@ func TestTaskDetachHelperContracts(t *testing.T) {
 	task := newTask(newWatchTestGraph(1), nil)
 	defer task.Close()
 
-	if err := task.Detach(context.Background(), nil); err != nil {
-		t.Fatalf("Detach(nil) error = %v", err)
+	if err := task.Detach(context.Background(), nil); err == nil {
+		t.Fatal("Detach(nil) succeeded")
+	} else {
+		var buildErr *BuildError
+		if !errors.As(err, &buildErr) || buildErr.Code != errcode.RuntimeBranchInvalid || buildErr.Reason != "attachment is nil" {
+			t.Fatalf("Detach(nil) error = %v, want runtime branch invalid BuildError", err)
+		}
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())

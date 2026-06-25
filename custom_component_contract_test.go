@@ -494,6 +494,9 @@ func TestDestinationContractsAndOpeners(t *testing.T) {
 	if err := customDestination("broken", nil).validate("record", "fallback"); !errors.Is(err, ErrNilWriter) {
 		t.Fatalf("nil custom validate err = %v, want ErrNilWriter", err)
 	}
+	if err := Writer("nil.ogg", nil).spec.validate("record", "fallback"); !errors.Is(err, ErrNilWriter) {
+		t.Fatalf("nil writer validate err = %v, want ErrNilWriter", err)
+	}
 
 	var plain bytes.Buffer
 	plainWriter, err := File("plain.ogg", &plain).spec.Open(ctx, provider.Info{})

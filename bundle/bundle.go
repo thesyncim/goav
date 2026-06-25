@@ -7,6 +7,7 @@ package bundle
 
 import (
 	"context"
+	"errors"
 
 	"github.com/thesyncim/goav"
 	annexbadapter "github.com/thesyncim/goav/adapters/annexb"
@@ -22,6 +23,9 @@ import (
 	mp4adapter "github.com/thesyncim/goav/container/mp4"
 	webmadapter "github.com/thesyncim/goav/container/webm"
 )
+
+// ErrNilJob reports a nil recipe passed to Build or Run.
+var ErrNilJob = errors.New("goav/bundle: nil job")
 
 // New builds a runtime with the bundled formats, codecs, and filters already
 // registered, then applies opts on top. Registration is last-wins, so opts can
@@ -69,24 +73,24 @@ func MustNewFilters(opts ...goav.Option) *goav.Runtime {
 // counterpart to job.UseRuntime(bundle.MustNew(...)).Build(ctx), while preserving
 // New option errors as returned errors.
 func Build(ctx context.Context, job *goav.Job, opts ...goav.Option) (goav.LiveTask, error) {
+	if job == nil {
+		return nil, ErrNilJob
+	}
 	runtime, err := New(opts...)
 	if err != nil {
 		return nil, err
-	}
-	if job == nil {
-		return goav.From().UseRuntime(runtime).Build(ctx)
 	}
 	return job.UseRuntime(runtime).Build(ctx)
 }
 
 // Run compiles and runs job with a bundled runtime, then closes it.
 func Run(ctx context.Context, job *goav.Job, opts ...goav.Option) error {
+	if job == nil {
+		return ErrNilJob
+	}
 	runtime, err := New(opts...)
 	if err != nil {
 		return err
-	}
-	if job == nil {
-		return goav.From().UseRuntime(runtime).Run(ctx)
 	}
 	return job.UseRuntime(runtime).Run(ctx)
 }
