@@ -368,18 +368,6 @@ func jobRecipeCompilePhases() recipeCompilePhaseSet {
 	}
 }
 
-// compileJobJoinRecipeWithOptions lowers a join job (Mix/Composite/Select)
-// through the same recipe compiler as every other job: the joinSpec is
-// normalized into the compile state, the join lowerer plans the N-to-1 graph,
-// and the shared passes emit and validate the one plan Describe and Build run
-// from. No separate graph assembly exists for joins.
-func compileJobJoinRecipeWithOptions(job *Job, options recipeCompileOptions) (recipeResolved, error) {
-	if job == nil || job.join == nil {
-		return compileRecipeSnapshotWithOptions(recipeCompileSnapshot{}, options)
-	}
-	return compileRecipeSnapshotWithOptions(newJoinRecipeSnapshot(job), options)
-}
-
 func joinRecipeCompilePhases() recipeCompilePhaseSet {
 	return recipeCompilePhaseSet{
 		recipe: []recipeCompilePass{
@@ -408,10 +396,6 @@ func compileJobBranchRecipeWithOptions(job *Job, options recipeCompileOptions) (
 		return compileRecipeSnapshotWithOptions(recipeCompileSnapshot{}, options)
 	}
 	return compileRecipeSnapshotWithOptions(newBranchJobRecipeSnapshot(job), options)
-}
-
-func compileBranchCompositionRecipeWithOptions(job *branchCompositionJob, options recipeCompileOptions) (recipeResolved, error) {
-	return compileRecipeSnapshotWithOptions(newBranchCompositionRecipeSnapshot(job), options)
 }
 
 func branchCompositionRecipeCompilePhases() recipeCompilePhaseSet {

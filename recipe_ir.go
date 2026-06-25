@@ -468,10 +468,6 @@ func recipeCompilePhasesForSnapshot(snapshot recipeCompileSnapshot) recipeCompil
 	}
 }
 
-func recipeIRRoundTripIntent(in intent, kind recipeir.Kind) intent {
-	return intentFromRecipeIR(recipeIRFromIntent(in, kind))
-}
-
 func recipeIRHasOperationKind(recipe recipeir.Recipe, kind plan.OperationKind) bool {
 	for i := range recipe.Streams {
 		for j := range recipe.Streams[i].Operations {
