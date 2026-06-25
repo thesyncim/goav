@@ -141,12 +141,12 @@ func ExampleFrom() {
 }
 
 // ExampleFrom_multipleInputs feeds two live inputs into one job: each chain
-// narrows to its input with InputName, and reusing one destination value muxes
-// both encoded streams into one shared container.
+// narrows to its input with InputName, and Mux groups both encoded streams
+// into one shared container.
 func ExampleFrom_multipleInputs() {
 	camera := i420Source("camera", 16, 16, 100)
 	mic := pcmSource("mic", 48_000, 1, make([]int16, 960))
-	out := goav.File("call.webm", io.Discard)
+	out := goav.Mux("call", goav.File("call.webm", io.Discard))
 
 	job := goav.From(camera, mic).
 		Video(goav.InputName("camera")).Encode(codec.VP8(codec.Bitrate(1_000_000))).To(out).

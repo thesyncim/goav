@@ -361,22 +361,21 @@ func (j *Job) To(destinations ...Destination) *Job {
 }
 
 func (j *Job) addBranchDestinations(destinations ...destinationRef) error {
-	seen := make(map[string]string, len(j.branchDestinations)+len(destinations))
+	seen := make(map[string]namedDestinationSpec, len(j.branchDestinations)+len(destinations))
 	for i := range j.branchDestinations {
-		seen[j.branchDestinations[i].name] = destinationIdentity(j.branchDestinations[i])
+		seen[j.branchDestinations[i].name] = j.branchDestinations[i]
 	}
 	for i := range destinations {
 		destination := cloneDestinationRef(destinations[i])
 		destination.dest = destination.dest.withName(firstNonEmpty(destination.dest.name, destination.name))
 		named := namedDestinationSpec{name: destination.name, output: destination.dest}
-		identity := destinationIdentity(named)
 		if existing, ok := seen[named.name]; ok {
-			if existing != identity {
+			if !destinationsShareExplicitGroup(existing, named) {
 				return branchDestinationDuplicateError(named.name)
 			}
 			continue
 		}
-		seen[named.name] = identity
+		seen[named.name] = named
 		j.branchDestinations = append(j.branchDestinations, named)
 	}
 	return nil
@@ -460,9 +459,9 @@ func (j *Job) checkSharedStreamDestination(current *jobStreamBuild, output desti
 			if existingLabel != label {
 				continue
 			}
-			existing := destinationIdentity(namedDestinationSpec{name: existingLabel, output: stream.outputs[k]})
-			next := destinationIdentity(namedDestinationSpec{name: label, output: output})
-			if existing != next {
+			existing := namedDestinationSpec{name: existingLabel, output: stream.outputs[k]}
+			next := namedDestinationSpec{name: label, output: output}
+			if !destinationsShareExplicitGroup(existing, next) {
 				return duplicateDestinationHandleError("build stream", label)
 			}
 		}

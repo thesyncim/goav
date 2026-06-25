@@ -626,7 +626,7 @@ func TestTranscodeExplainReportsGenericMediaPlanBranches(t *testing.T) {
 		}),
 	)
 
-	web := goav.File("web.ogg", io.Discard)
+	web := goav.Mux("web", goav.File("web.ogg", io.Discard))
 	report, err := branchJob(goav.FileInput("input.ogg", strings.NewReader(""))).
 		UseRuntime(rt).
 		Video("v").Resize(1280, 720).Encode(codec.VP9(codec.Bitrate(2_000_000))).To(web).
@@ -1164,7 +1164,7 @@ func TestBuildRejectsIncompatibleIVFMuxGroupBeforeOpeningMuxer(t *testing.T) {
 		}),
 	)
 
-	web := goav.File("web.ivf", io.Discard, goav.Format(av.FormatIVF))
+	web := goav.Mux("web", goav.File("web.ivf", io.Discard, goav.Format(av.FormatIVF)))
 	_, err := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
 		UseRuntime(rt).
 		Video().
@@ -1251,7 +1251,7 @@ func TestExplainReportsMuxCompatibilityWarning(t *testing.T) {
 		}),
 	)
 
-	web := goav.File("web.ivf", io.Discard, goav.Format(av.FormatIVF))
+	web := goav.Mux("web", goav.File("web.ivf", io.Discard, goav.Format(av.FormatIVF)))
 	report, err := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
 		UseRuntime(rt).
 		Video().
@@ -1646,11 +1646,13 @@ func TestReadmeUsesBranchDestinationVocabulary(t *testing.T) {
 		"goav.Flow(",
 		"goav.Mux(",
 		"Use `goav.Mux(name, destination)`",
-		"compatibility sugar",
 	} {
 		if !strings.Contains(text, required) {
 			t.Fatalf("README should show %s in the public composition grammar", required)
 		}
+	}
+	if strings.Contains(text, "compatibility sugar") {
+		t.Fatalf("README should not keep same-handle grouping compatibility wording")
 	}
 }
 
@@ -1719,11 +1721,13 @@ func TestDocsShowCustomDestinations(t *testing.T) {
 		"goav.Metadata(",
 		"goav.Mux(",
 		"Use `goav.Mux(name, destination)`",
-		"compatibility sugar",
 	} {
 		if !strings.Contains(text, required) {
 			t.Fatalf("extension cookbook should keep custom destination text %q", required)
 		}
+	}
+	if strings.Contains(text, "compatibility sugar") {
+		t.Fatalf("extension cookbook should not keep same-handle grouping compatibility wording")
 	}
 }
 
@@ -1868,9 +1872,8 @@ func TestDocsShowCodecControlsAndDeclarativePerformanceGoal(t *testing.T) {
 		"normal workflows lower from `input -> stream -> operations -> tap -> branch -> destination` into `WorkPlan -> pipeline.Graph -> Task`",
 		"runtime attach lowers the same branch model into `WorkPatch`",
 		"direct streams are syntax sugar for an implicit `Branch(\"main\")`",
-		"`Destination` is",
-		"the routing handle: `Mux(name, destination)` groups branches",
-		"compatibility sugar",
+		"`Mux(name, destination)` groups branches into one sink or mux destination",
+		"reusing the same ungrouped `Destination` value is rejected",
 		"provider.Destination` is the extension point",
 		"Direct `.To(...)` streams are only ergonomic syntax",
 		"`branchComposePlan`, `runtimeBranch`, `destinationNames`",
@@ -2665,8 +2668,8 @@ func TestToAcceptsDestinationSlices(t *testing.T) {
 	}
 }
 
-func TestSharedDestinationHandleGroupsBranches(t *testing.T) {
-	web := goav.File("web.ivf", io.Discard, goav.Format(av.FormatIVF))
+func TestMuxGroupsBranches(t *testing.T) {
+	web := goav.Mux("web", goav.File("web.ivf", io.Discard, goav.Format(av.FormatIVF)))
 
 	job := goav.From(goav.FileInput("input.ivf", strings.NewReader(""))).
 		Video().
@@ -2686,7 +2689,7 @@ func TestSharedDestinationHandleGroupsBranches(t *testing.T) {
 	}
 }
 
-func TestDuplicateDestinationNameRequiresSameHandle(t *testing.T) {
+func TestDuplicateDestinationNameRequiresMux(t *testing.T) {
 	left := goav.File("web.ivf", io.Discard, goav.Format(av.FormatIVF))
 	right := goav.File("web.ivf", io.Discard, goav.Format(av.FormatIVF))
 
@@ -2950,8 +2953,8 @@ func TestFlowAppliesToTranscodeBranch(t *testing.T) {
 }
 
 func TestBranchesGroupSelectedStreams(t *testing.T) {
-	watch := goav.File("watch.webm", io.Discard)
-	mobile := goav.File("mobile.webm", io.Discard)
+	watch := goav.Mux("watch", goav.File("watch.webm", io.Discard))
+	mobile := goav.Mux("mobile", goav.File("mobile.webm", io.Discard))
 	job := goav.From(goav.FileInput("source.webm", strings.NewReader(""))).
 		Video().
 		Decode().
@@ -4779,7 +4782,7 @@ func TestReadmeTranscodeLadderRecipeIsSmall(t *testing.T) {
 }
 
 func TestBranchRecipeComposesAudioAndVideoIntoSharedOutput(t *testing.T) {
-	web := goav.File("out.webm", io.Discard)
+	web := goav.Mux("out", goav.File("out.webm", io.Discard))
 	job := branchJob(goav.FileInput("input.webm", strings.NewReader(""))).
 		Video("v360").Resize(640, 360).Encode(codec.VP9(codec.Bitrate(600_000))).To(web).
 		Audio("a96").Resample(48_000, codec.Stereo).Encode(codec.Opus(codec.Bitrate(96_000))).To(web)

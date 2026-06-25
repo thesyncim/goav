@@ -2,7 +2,6 @@ package goav
 
 import (
 	"fmt"
-	"strconv"
 	"sync/atomic"
 
 	"github.com/thesyncim/goav/av"
@@ -21,13 +20,7 @@ func destinationShareKey(dest destinationSpec, id uint64) string {
 	if dest.group != "" {
 		return "group:" + dest.group
 	}
-	if id == 0 {
-		id = dest.id
-	}
-	if id == 0 {
-		return ""
-	}
-	return "handle:" + strconv.FormatUint(id, 10)
+	return ""
 }
 
 // Destination is an opaque handle for a file, URI, writer, media sink, or
@@ -968,7 +961,6 @@ func branchMissingError(node string) error {
 		Fixes: buildErrorFixes([]string{
 			"pass branches with goav.Branch(name).Encode(codec.VP9(...)).To(goav.File(name, writer))",
 			"pass goav.Mux(name, destination) when branches should share one mux group",
-			"reuse the same destination value only as compatibility sugar for local recipes",
 		}),
 		Cause: ErrUnsupportedBuild,
 	}
@@ -997,7 +989,6 @@ func branchDestinationMissingError(name string) error {
 		Fixes: buildErrorFixes([]string{
 			"finish the branch with .To(goav.File(\"web.ivf\", writer)) or .To(goav.Sink(sink))",
 			"pass goav.Mux(name, destination) when several branches should share one mux or sink group",
-			"reuse the same destination value only as compatibility sugar for local recipes",
 		}),
 		Cause: ErrUnsupportedBuild,
 	}

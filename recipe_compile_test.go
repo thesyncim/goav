@@ -3217,7 +3217,7 @@ func TestTranscodeOutputBindingsPassRejectsUndefinedRoutes(t *testing.T) {
 		t.Fatalf("err = %v, want destination_missing wrapping ErrUnsupportedBuild", err)
 	}
 	if !strings.Contains(err.Error(), "destination missing is referenced but not defined") ||
-		!strings.Contains(err.Error(), "destination values") {
+		!strings.Contains(err.Error(), "goav.Mux(name, destination)") {
 		t.Fatalf("err = %v, want destination binding guidance", err)
 	}
 }

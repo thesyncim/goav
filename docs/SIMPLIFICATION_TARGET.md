@@ -108,6 +108,10 @@ Tap-anchor progress: `Inspectable.Taps()` now reports only typed anchors emitted
 by the planner or runtime attach path; graph node names such as `decode-*` and
 `select-*` no longer synthesize taps.
 
+Destination-group progress: repeated destination names now require explicit
+`Mux(name, destination)` groups; reusing one ungrouped destination value no
+longer creates a mux/sink group.
+
 ## Release gate
 
 Do not cut v1 just because the current docs and pins are green. Cut v1 only

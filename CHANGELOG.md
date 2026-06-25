@@ -11,6 +11,9 @@ methodology changes, and migration notes.
 
 ## Unreleased
 
+- Removed same-handle destination grouping: repeated destination names now
+  require explicit `Mux(name, destination)` groups, even when the same
+  destination value is reused.
 - Removed graph node-name prefix fallback from `Inspectable.Taps()`; taps now
   come from typed planner/runtime anchors instead of `decode-*` or `select-*`
   naming conventions.

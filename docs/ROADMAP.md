@@ -31,8 +31,8 @@ The destination model has also been simplified. Collapse `Target` into `Destinat
 `Sink`, and `Custom` return stable goav-owned destination handles.
 `Mux(name, destination)` is the preferred way to declare one shared mux/sink
 group when branches build matching destinations independently. Reusing one
-handle still groups branches as compatibility sugar (`TestMuxPreferredOverHandleIdentity`,
-`TestMuxSurvivesWithAndCopy`, `TestSameHandleGroupingStillWorksButDocsPreferMux`).
+ungrouped handle is rejected; grouping is explicit (`TestMuxPreferredOverHandleIdentity`,
+`TestMuxSurvivesWithAndCopy`, `TestSameHandleGroupingRequiresMux`).
 
 ## v0 Stable
 

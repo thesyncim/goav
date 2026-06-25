@@ -424,9 +424,9 @@ func workBranchID(name string, index int) string {
 }
 
 // workDestinationID derives the stable destination ID from the destination's
-// label — the handle identity. Labels are unique per plan (one handle is one
-// destination; the same label with a different config is a planning error), so
-// the ID is stable across plan orderings.
+// label. Labels are unique per plan: matching labels either belong to one
+// explicit mux group or fail as duplicate destinations, so the ID is stable
+// across plan orderings.
 func workDestinationID(name string) string {
 	return "destination/" + firstNonEmpty(name, "unnamed")
 }

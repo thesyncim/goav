@@ -587,7 +587,6 @@ func duplicateDestinationHandleError(operation string, name string) error {
 			"list each destination value once in .To(...)",
 			"use distinct destination names when writing to separate destinations",
 			"wrap grouped destinations with goav.Mux(name, destination)",
-			"reuse one destination value only as compatibility sugar for local recipes",
 		}),
 		Cause: ErrUnsupportedBuild,
 	}

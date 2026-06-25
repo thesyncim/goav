@@ -24,8 +24,8 @@ import (
 var runtimeAttachmentSeq atomic.Uint64
 
 // attachDestination is one validated destination of an attaching branch: the
-// cloned spec, its sink, and the share key that groups reused destination
-// values or explicit destination groups inside one Mutable.Attach call.
+// cloned spec, its sink, and the share key that groups explicit Mux
+// destinations inside one Mutable.Attach call.
 type attachDestination struct {
 	name     string
 	dest     destinationSpec
@@ -326,8 +326,7 @@ func attachmentStages(ap *attachPlan, group *runtimeAttachGroup, nodes []pipelin
 }
 
 // attachBranchDestinations validates and clones the branch's destinations,
-// carrying the share keys that group reused destination values or explicit
-// destination groups.
+// carrying the share keys that group explicit Mux destination groups.
 func attachBranchDestinations(spec BranchSpec) ([]attachDestination, error) {
 	if spec.err != nil {
 		return nil, spec.err
@@ -416,7 +415,6 @@ func validateRuntimeBranchGroupDestinations(specs []BranchSpec, destinations [][
 					}),
 					Fixes: buildErrorFixes([]string{
 						"wrap each branch destination with goav.Mux(name, destination) for a shared runtime destination group",
-						"reuse one destination value only as compatibility sugar for local recipes",
 						"create distinct destination values with distinct names for independent runtime destinations",
 						"use a sink destination for runtime diagnostic groups or a mux destination for runtime recording groups",
 					}),
@@ -503,11 +501,11 @@ func (g *runtimeAttachGroup) reserveSharedSink(spec pipeline.Spec, key string, d
 
 func (g *runtimeAttachGroup) sharedSinkRef(graph pipeline.Graph, key string) (pipeline.NodeRef, bool, error) {
 	if g == nil || !g.isSharedSink(key) {
-		return "", false, runtimeBranchInvalidError("shared sink destination is not registered", "reuse one goav.Sink(sink) destination value inside one Mutable.Attach call")
+		return "", false, runtimeBranchInvalidError("shared sink destination is not registered", "wrap matching sink destinations with goav.Mux(name, destination) inside one Mutable.Attach call")
 	}
 	target := g.sharedSinks[key]
 	if target == nil {
-		return "", false, runtimeBranchInvalidError("shared sink destination is not reserved", "reuse one goav.Sink(sink) destination value inside one Mutable.Attach call")
+		return "", false, runtimeBranchInvalidError("shared sink destination is not reserved", "wrap matching sink destinations with goav.Mux(name, destination) inside one Mutable.Attach call")
 	}
 	if target.ref != "" {
 		return target.ref, false, nil
@@ -571,11 +569,11 @@ func (g *runtimeAttachGroup) sharedMuxKeyForNode(node pipeline.NodeRef) (string,
 
 func (g *runtimeAttachGroup) addSharedMuxRoute(key string, route pipeline.Route) error {
 	if g == nil || !g.isSharedMux(key) {
-		return runtimeBranchInvalidError("shared mux destination is not registered", "reuse one goav.File(name, writer) destination value inside one Mutable.Attach call")
+		return runtimeBranchInvalidError("shared mux destination is not registered", "wrap matching byte destinations with goav.Mux(name, destination) inside one Mutable.Attach call")
 	}
 	target := g.sharedMuxes[key]
 	if target == nil {
-		return runtimeBranchInvalidError("shared mux destination is not reserved", "reuse one goav.File(name, writer) destination value inside one Mutable.Attach call")
+		return runtimeBranchInvalidError("shared mux destination is not reserved", "wrap matching byte destinations with goav.Mux(name, destination) inside one Mutable.Attach call")
 	}
 	route.To = []string{target.name}
 	target.routes = append(target.routes, route)
@@ -1861,7 +1859,7 @@ func duplicateRuntimeBranchDestinationRefError(branch string, label string, firs
 		Fixes: buildErrorFixes([]string{
 			"list each destination once in .To(...)",
 			"route one runtime branch to multiple destinations with distinct values such as .To(archive, monitor)",
-			"reuse destination values or wrap each grouped attachment destination with goav.Mux(name, destination)",
+			"wrap each grouped attachment destination with goav.Mux(name, destination)",
 		}),
 		Cause: ErrUnsupportedBuild,
 	}
