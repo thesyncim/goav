@@ -300,7 +300,7 @@ const (
 	// support the requested media or frame format.
 	EncodeAdapterIncompatible Code = "encode_adapter_incompatible"
 	// CodecChangePolicyUnsupported fires when a custom codec-change policy
-	// is requested; only the built-in policies exist today.
+	// is requested; only the default live receive behavior is supported today.
 	CodecChangePolicyUnsupported Code = "codec_change_policy_unsupported"
 )
 

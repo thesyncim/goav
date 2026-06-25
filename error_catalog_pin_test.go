@@ -588,9 +588,9 @@ var errorCatalogAdditionalExamples = []errorCatalogExample{
 	{
 		Code:          "codec_change_policy_unsupported",
 		Test:          "TestStreamRecipeRejectsUnsupportedCodecChangePolicy",
-		BadRecipe:     `.Decode(codec.CodecChangePolicy(...))` + " with a custom policy",
+		BadRecipe:     `.OnCodecChange(goav.CodecChangePolicy{...})` + " with a custom policy",
 		RenderedError: "unsupported codec-change policy refusal is asserted by the test",
-		Fix:           "use one of the built-in codec-change policies",
+		Fix:           "omit .OnCodecChange(...) to use the default live receive behavior",
 		Cause:         "goav.ErrUnsupportedBuild",
 	},
 	{

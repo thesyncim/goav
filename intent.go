@@ -98,10 +98,9 @@ type policyIntent struct {
 }
 
 // CodecChangePolicy says how a decoding chain reacts when a live source
-// renegotiates its codec mid-stream: whether a compatible decoder is rebound
-// in place, whether a keyframe is requested after the switch, whether media
-// is dropped until a sync point, and whether a different codec fails the
-// chain instead of rebinding.
+// renegotiates its codec mid-stream. The zero value selects the supported
+// live receive behavior. Custom nonzero policies are rejected during build
+// until dynamic decoder rebind is implemented.
 type CodecChangePolicy struct {
 	RebindCompatible     bool
 	RequestKeyframe      bool
@@ -109,10 +108,7 @@ type CodecChangePolicy struct {
 	FailOnDifferentCodec bool
 }
 
-// RealtimeCodecChangePolicy is the live-receive default: rebind compatible
-// decoders, request a keyframe, drop until sync, and fail on a genuinely
-// different codec.
-func RealtimeCodecChangePolicy() CodecChangePolicy {
+func defaultCodecChangePolicy() CodecChangePolicy {
 	return CodecChangePolicy{
 		RebindCompatible:     true,
 		RequestKeyframe:      true,

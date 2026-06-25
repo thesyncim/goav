@@ -2550,7 +2550,12 @@ func TestStreamRecipeNamesCodecChangePolicy(t *testing.T) {
 	sink := component.SinkFunc("frames", func(context.Context, component.Message) error {
 		return nil
 	})
-	policy := goav.RealtimeCodecChangePolicy()
+	policy := goav.CodecChangePolicy{
+		RebindCompatible:     true,
+		RequestKeyframe:      true,
+		DropUntilSync:        true,
+		FailOnDifferentCodec: true,
+	}
 	job := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
 		Audio().
 		OnCodecChange(policy).
@@ -3559,7 +3564,7 @@ func TestStreamRecipeRejectsUnsupportedCodecChangePolicy(t *testing.T) {
 	if !errors.As(err, &buildErr) || buildErr.Code != "codec_change_policy_unsupported" || !errors.Is(err, goav.ErrUnsupportedBuild) {
 		t.Fatalf("err = %v, want codec_change_policy_unsupported wrapping ErrUnsupportedBuild", err)
 	}
-	if !strings.Contains(err.Error(), "RealtimeCodecChangePolicy") ||
+	if !strings.Contains(err.Error(), "default live receive behavior") ||
 		!strings.Contains(err.Error(), "different decoder codec") {
 		t.Fatalf("err = %v, want codec-change policy guidance", err)
 	}

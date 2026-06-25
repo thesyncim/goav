@@ -351,7 +351,7 @@ func validateRecipeEncodeValues(spec codec.CodecSpec, operation string, node str
 }
 
 func validateCodecChangePolicy(operation string, node string, policy CodecChangePolicy) error {
-	if !codecChangePolicySet(policy) || policy == RealtimeCodecChangePolicy() {
+	if !codecChangePolicySet(policy) || policy == defaultCodecChangePolicy() {
 		return nil
 	}
 	return &BuildError{
@@ -361,11 +361,11 @@ func validateCodecChangePolicy(operation string, node string, policy CodecChange
 		Node:      node,
 		Reason:    "custom codec-change policies are not implemented yet",
 		Details: []string{
-			"supported: " + codecChangePolicyDetail(RealtimeCodecChangePolicy()),
+			"supported: " + codecChangePolicyDetail(defaultCodecChangePolicy()),
 			"requested: " + codecChangePolicyDetail(policy),
 		},
 		Suggestions: []string{
-			"use goav.RealtimeCodecChangePolicy() for today's live receive behavior",
+			"omit .OnCodecChange(...) to use the default live receive behavior",
 			"use packet-preserving goav.From(input).Copy().To(output) when codec changes should stay encoded",
 			"rebuild the job when a live stream switches to a different decoder codec",
 		},

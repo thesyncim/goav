@@ -114,12 +114,11 @@ are stricter: they follow same-codec replacement streams and return
 `codec.ErrUnsupportedCodecSwitch` when a live event would require a different
 decoder factory; dynamic rebind is a future policy.
 
-Stream recipes name the supported live policy explicitly:
+Stream recipes use the supported live receive policy by default:
 
 ```go
 err := goav.From(goav.Input(webrtcav.Track(track))).
     Video().
-    OnCodecChange(goav.RealtimeCodecChangePolicy()).
     To(goav.Sink(frames)).
     Run(ctx)
 ```

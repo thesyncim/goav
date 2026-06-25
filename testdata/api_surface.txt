@@ -247,7 +247,6 @@ goav.NextKeyframe
 goav.Observable
 goav.OnRemove
 goav.PacketTap
-goav.RealtimeCodecChangePolicy
 goav.RebranchOption
 goav.RecipePatch
 goav.Resample

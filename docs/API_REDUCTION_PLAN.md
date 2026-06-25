@@ -134,7 +134,13 @@ Move or keep outside the front door:
     - Remove the public no-op rebranch failure-policy helper. Failed rebranch
       already keeps the old branch attached as the only supported policy.
 
-12. **Docs rewrite** — in progress
+12. **Codec-change policy cleanup** — landed
+    - Remove the public helper for the only supported codec-change policy.
+      Recipes use the default live receive behavior when
+      `.OnCodecChange(...)` is omitted, and custom policies still fail with a
+      structured build error.
+
+13. **Docs rewrite** — in progress
     - Keep the README focused on the small grammar and one or two advanced entry
       points.
     - Finish with a Markdown-wide consistency pass and a README that works as a
@@ -142,7 +148,7 @@ Move or keep outside the front door:
     - Generate bundled adapter capability docs from descriptors so the docs and
       registered set cannot drift.
 
-13. **Go version floor** — landed
+14. **Go version floor** — landed
     - Lower every module directive from the patch-level local toolchain floor
       to the minor-version support floor (`go 1.26`).
     - Keep CI on the latest Go 1.26 patch with `1.26.x`, plus the rolling
