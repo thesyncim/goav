@@ -191,12 +191,21 @@ func TestMixSyncByPTSSeekArmMidRun(t *testing.T) {
 	var mixedPTS []int64
 	var discontinuities atomic.Int32
 	mixedReady := make(chan struct{}, 4)
+	releaseAfterControl := make(chan struct{})
+	var releaseAfterControlOnce sync.Once
 	sink := Sink(SinkFunc("out", func(_ context.Context, m Message) error {
 		switch {
 		case m.Kind == pipeline.MessageFrame && m.Frame != nil && m.Frame.Audio != nil:
 			mixed = append(mixed, mixTestReadS16(m.Frame))
 			mixedPTS = append(mixedPTS, m.Frame.PTS.Value)
 			mixedReady <- struct{}{}
+			if len(mixed) == 1 {
+				select {
+				case <-releaseAfterControl:
+				case <-ctx.Done():
+					return ctx.Err()
+				}
+			}
 		case m.Kind == pipeline.MessageEvent && m.Event != nil && m.Event.Type == av.EventDiscontinuity:
 			discontinuities.Add(1)
 		}
@@ -211,6 +220,7 @@ func TestMixSyncByPTSSeekArmMidRun(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer task.Close()
+	defer releaseAfterControlOnce.Do(func() { close(releaseAfterControl) })
 	runErr := make(chan error, 1)
 	go func() { runErr <- task.Run(ctx) }()
 
@@ -228,6 +238,7 @@ func TestMixSyncByPTSSeekArmMidRun(t *testing.T) {
 	}
 
 	err = task.Control(ctx, control.Seek(time.Second).At("b"))
+	releaseAfterControlOnce.Do(func() { close(releaseAfterControl) })
 	if err == nil {
 		t.Fatal("Seek err = nil, want a clear error for the non-seekable arm")
 	}
