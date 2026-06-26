@@ -53,6 +53,8 @@ methodology changes, and migration notes.
   longer reaches through compile state for stream-set facts.
 - Routed join work-plan rendering through an explicit handoff so the join
   renderer consumes captured input, destination, and output-format facts.
+- Moved normal media-planner input binding and selected-stream resolution onto
+  recipe IR input facts instead of concrete input attachments.
 - Added the pre-v1 simplification target, started the immutable recipe IR
   boundary used by compile-time planning, and tightened task runtime semantics
   so `Run` preserves both execution and finalization failures while `Events`

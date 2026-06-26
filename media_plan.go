@@ -124,7 +124,7 @@ func planStreamInputBinding(state *recipeCompileState, stream streamIntent) (inp
 	if len(inputs) <= 1 {
 		return firstInput(inputs), firstInputName(inputs)
 	}
-	sets := jobInputStreamSets(inputs, state.inputAttachments, state.inputProbes)
+	sets := jobInputStreamSetsFromRecipeIR(inputs, state.inputFacts, state.inputProbes)
 	if index, ok := resolveInputSetIndex(sets, streamIntentSelector(stream), stream.Select.Input); ok && index < len(inputs) {
 		return inputs[index], sets[index].name
 	}
@@ -175,7 +175,7 @@ func planSelectedStream(state *recipeCompileState, stream streamIntent) (av.Stre
 		return av.Stream{}, false
 	}
 	if jobStreamSelectionNeedsUnion(state, stream) {
-		sets := jobInputStreamSets(state.intent.Inputs, state.inputAttachments, state.inputProbes)
+		sets := jobInputStreamSetsFromRecipeIR(state.intent.Inputs, state.inputFacts, state.inputProbes)
 		selected, ok, err := selectStreamAcrossInputSets(sets, streamIntentSelector(stream), stream.Select.Input)
 		if err != nil || !ok {
 			return av.Stream{}, false
@@ -211,18 +211,31 @@ func planSelectedStream(state *recipeCompileState, stream streamIntent) (av.Stre
 	// Declared sources expose their stream shape statically. Compiles without
 	// preflight probes (Describe-time) resolve from the declaration, so the
 	// shape solver sees the same facts in Describe and Build.
-	attachments := state.inputAttachments
-	if state.branchCompositionPresent {
-		attachments = []InputSpec{state.branchInputAttachment}
-	}
-	for i := range attachments {
-		declared := declaredSourceStreams(attachments[i])
-		if len(declared) == 0 {
-			continue
+	for i := range state.inputFacts {
+		if spec, ok := recipeIRInputSourceShape(state.inputFacts[i]); ok {
+			selected, err := selectStream([]av.Stream{recipeIRInputDeclaredStream(state.inputFacts[i], spec)}, selector)
+			if err == nil {
+				return selected, true
+			}
 		}
-		selected, err := selectStream(declared, selector)
-		if err == nil {
-			return selected, true
+	}
+	if state.branchCompositionPresent {
+		if declared := declaredSourceStreams(state.branchInputAttachment); len(declared) != 0 {
+			selected, err := selectStream(declared, selector)
+			if err == nil {
+				return selected, true
+			}
+		}
+	} else if len(state.inputFacts) == 0 {
+		for i := range state.inputAttachments {
+			declared := declaredSourceStreams(state.inputAttachments[i])
+			if len(declared) == 0 {
+				continue
+			}
+			selected, err := selectStream(declared, selector)
+			if err == nil {
+				return selected, true
+			}
 		}
 	}
 	return av.Stream{}, false
