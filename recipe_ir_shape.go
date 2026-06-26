@@ -12,15 +12,15 @@ import (
 	"github.com/thesyncim/goav/shape"
 )
 
-func validateRecipeIROperationShapes(operation string, stream streamIntent, operations []recipeir.Operation, initial shape.Spec) error {
+func validateRecipeIROperationShapes(operation string, stream recipeir.Stream, operations []recipeir.Operation, initial shape.Spec) error {
 	shape := normalizeTapShape(initial)
 	if shape.MediaKind == "" {
-		shape.MediaKind = stream.Select.Type
+		shape.MediaKind = stream.Selector.Type
 	}
 	if shape.Codec == "" {
-		shape.Codec = stream.Select.Codec
+		shape.Codec = stream.Selector.Codec
 	}
-	node := firstNonEmpty(stream.Name, string(stream.Select.ID), string(stream.Select.Type), "stream")
+	node := firstNonEmpty(stream.Name, string(stream.Selector.ID), string(stream.Selector.Type), "stream")
 	for i := range operations {
 		next := operations[i]
 		if next.Kind == plan.OpTap || (next.Kind == plan.OpShape && next.Require == nil) {

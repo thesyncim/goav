@@ -222,7 +222,7 @@ func (t *task) planAttachBranchSteps(ctx context.Context, input runtimeAttachBra
 				))
 			}
 			transformName := recipeIRTransformFactoryName(operation.Transform)
-			branchIntent := input.intentForStream(currentStream)
+			branchIntent := input.diagnosticStreamForStream(currentStream)
 			if _, err := t.runtime.filters.Factory(transformName); err != nil {
 				return fail(recipeTransformAdapterError("attach runtime branch", branchIntent, transformName, err))
 			}
@@ -348,7 +348,7 @@ func (t *task) planAttachEncode(ctx context.Context, input runtimeAttachBranchPl
 	if err := validateRecipeEncode(encode, "attach runtime branch", firstNonEmpty(branchName, "branch")); err != nil {
 		return nil, av.Stream{}, err
 	}
-	stream := input.intentForStream(currentStream)
+	stream := input.diagnosticStreamForStream(currentStream)
 	if _, err := t.runtime.codecs.EncoderFactory(encode.ID); err != nil {
 		return nil, av.Stream{}, recipeEncodeAdapterCodecError("attach runtime branch", stream, encode.ID, t.runtime.codecs, err)
 	}

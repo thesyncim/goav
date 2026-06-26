@@ -77,7 +77,7 @@ type runtimeAttachBranchPlanInput struct {
 	from      string
 	anchor    snapshot.Tap
 	graphSpec pipeline.Spec
-	intent    streamIntent
+	stream    recipeir.Stream
 }
 
 type runtimeAttachInput struct {
@@ -373,28 +373,35 @@ func (t *task) runtimeAttachBranchPlanInput(branch runtimeAttachBranchInput, pen
 		from:      from,
 		anchor:    anchor,
 		graphSpec: graphSpec,
-		intent:    runtimeAttachBranchIntent(branch, anchor),
+		stream:    runtimeAttachBranchRecipeStream(branch, anchor),
 	}, nil
 }
 
-func runtimeAttachBranchIntent(branch runtimeAttachBranchInput, anchor snapshot.Tap) streamIntent {
+func runtimeAttachBranchRecipeStream(branch runtimeAttachBranchInput, anchor snapshot.Tap) recipeir.Stream {
 	recipe := branch.recipe
-	return streamIntent{
+	stream := recipeir.Stream{
 		Name: recipe.branch.Name,
-		Select: plan.StreamSelect{
+		Selector: plan.StreamSelect{
 			Type:  firstNonEmptyMedia(recipe.branch.Media, anchor.MediaKind),
 			Codec: anchor.Shape.Codec,
 		},
-		From:         rootTapRefFromRecipeIR(recipe.branch.Source.Tap),
-		Destinations: attachDestinationNames(branch.destinations),
+		From: recipe.branch.Source.Tap,
 	}
+	for _, destination := range attachDestinationNames(branch.destinations) {
+		stream.Outputs = append(stream.Outputs, recipeir.OutputRef(destination))
+	}
+	return stream
 }
 
-func (input runtimeAttachBranchPlanInput) intentForStream(stream av.Stream) streamIntent {
-	intent := input.intent
-	intent.Select.Type = firstNonEmptyMedia(stream.Type, stream.Codec.Type, intent.Select.Type, codecMedia(stream.Codec.ID))
-	intent.Select.Codec = firstNonEmptyCodec(stream.Codec.ID, intent.Select.Codec)
-	return intent
+func (input runtimeAttachBranchPlanInput) recipeStreamForStream(stream av.Stream) recipeir.Stream {
+	recipeStream := input.stream
+	recipeStream.Selector.Type = firstNonEmptyMedia(stream.Type, stream.Codec.Type, recipeStream.Selector.Type, codecMedia(stream.Codec.ID))
+	recipeStream.Selector.Codec = firstNonEmptyCodec(stream.Codec.ID, recipeStream.Selector.Codec)
+	return recipeStream
+}
+
+func (input runtimeAttachBranchPlanInput) diagnosticStreamForStream(stream av.Stream) streamIntent {
+	return streamIntentFromRecipeIR(input.recipeStreamForStream(stream))
 }
 
 func (t *task) configureAttachBranchBuffer(branch *attachPlanBranch, input runtimeAttachBranchPlanInput, steps []attachStep) error {
@@ -969,7 +976,7 @@ func discoveredStreamAnchorTap(source recipeir.RuntimeBranchSource) snapshot.Tap
 // uses, and rejects mux destinations whose final shape is not packet-domain.
 func validateAttachBranchShapeContract(input runtimeAttachBranchPlanInput, initial shape.Spec) error {
 	operations := input.branch.recipe.branch.Operations
-	if err := validateRecipeIROperationShapes("attach runtime branch", input.intent, operations, initial); err != nil {
+	if err := validateRecipeIROperationShapes("attach runtime branch", input.stream, operations, initial); err != nil {
 		return err
 	}
 	final := normalizeTapShape(initial)
@@ -1686,7 +1693,7 @@ func (t *task) prepareRuntimeBranchDecode(ctx context.Context, input runtimeAtta
 		return nil, runtimeBranchDecodeCodecMissingError(branchName, currentShape)
 	}
 	request := runtimeBranchDecodeRequest(branchName, currentStream, spec)
-	stream := input.intentForStream(currentStream)
+	stream := input.diagnosticStreamForStream(currentStream)
 	if _, err := t.runtime.codecs.DecoderFactory(currentStream.Codec.ID); err != nil {
 		return nil, recipeDecodeAdapterError("attach runtime branch", stream, currentStream.Codec.ID, t.runtime.codecs, err)
 	}

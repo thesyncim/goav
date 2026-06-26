@@ -39,7 +39,8 @@ to hide topology.
 Compatibility pins:
 
 - normal workflows lower from `input -> stream -> operations -> tap -> branch -> destination` into `WorkPlan -> pipeline.Graph -> Task`.
-- runtime attach lowers the same branch model into `WorkPatch`.
+- runtime attach lowers the same branch model into `WorkPatch`, carrying branch
+  stream facts as recipe IR through patch planning.
 - direct streams are syntax sugar for an implicit `Branch("main")`.
 - `Mux(name, destination)` groups branches into one sink or mux destination;
   reusing the same ungrouped `Destination` value is rejected.

@@ -611,10 +611,17 @@ func TestReusableRecipeAndBranchChainsStoreOperationSpecsOnly(t *testing.T) {
 		"type runtimeBranch struct",
 		"type runtimeBranchOperation struct",
 		"type runtimeBranchStep struct",
+		"runtimeAttachBranchIntent",
+		"intentForStream",
+		"intent    streamIntent",
 	} {
 		if strings.Contains(runtimeText, forbidden) {
 			t.Fatalf("runtime attach should lower captured branch recipe operations directly, not a parallel %q model", forbidden)
 		}
+	}
+	if !strings.Contains(runtimeText, "runtimeAttachBranchRecipeStream") ||
+		!strings.Contains(runtimeText, "stream    recipeir.Stream") {
+		t.Fatal("runtime attach planning should keep branch planning facts in recipe IR")
 	}
 	if !strings.Contains(runtimeText, "operations := branch.Operations") ||
 		!strings.Contains(runtimeText, "range operations") ||
