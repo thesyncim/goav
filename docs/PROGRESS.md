@@ -128,18 +128,20 @@ Compatibility pins:
 
 ## Remaining Work
 
-- Finish folding residual `streamIntent` validation readers into the
-  operation/work-plan model. Normal branch/copy planning and single-stream
-  lowerer selection now enter through recipe IR, and attachment-consistency
-  validation, intent-shape validation, stream-selection/decode-adapter
-  preflight, operation/destination shape validation, encode/transform adapter
-  validation, explicit-runtime detection, unsupported-graph diagnostics, and
-  output/destination binding/kind validation count recipe IR facts instead of
-  the legacy mirror; Explain stream rows, adapter requirements, and mux
-  compatibility already read codec facts from `WorkPlan` operations.
-- Expand `lifecycle.SwitchAt` boundaries beyond frame/keyframe/media-time only if future
-  live-control workflows prove they need additional switch points.
-- Finish the full time-shape story: pipeline-wide clock service, A/V sink sync,
-  and pull scheduling beyond the branch-local `flow.SyncPolicy` gate.
-- Make the v1 release decision, including the minimum supported Go version.
-- Close or explicitly waive the pre-v1 target in `docs/SIMPLIFICATION_TARGET.md`.
+- The recipe compiler's normal and branch validation path now consumes recipe IR
+  for branch/copy planning, lowerer selection, attachment consistency,
+  intent-shape checks, stream-selection/decode-adapter preflight,
+  operation/destination shape checks, encode/transform adapter checks,
+  explicit-runtime detection, unsupported-graph diagnostics, and
+  output/destination binding/kind validation. The remaining `intent` mirrors are
+  compatibility/reporting and join-planning inputs, not the validation source of
+  truth.
+- Defer `lifecycle.SwitchAt` expansion beyond frame/keyframe/media-time until a
+  live-control workflow proves it needs additional switch points.
+- Defer the full time-shape story -- pipeline-wide clock service, A/V sink sync,
+  and pull scheduling beyond the branch-local `flow.SyncPolicy` gate -- unless
+  it becomes required by the selected release candidate.
+- Keep the minimum supported Go version at `go 1.26` for the first release
+  candidate unless the built-in codec backend floor changes.
+- Treat the remaining runtime-patch executable-handle boundary as the retained
+  pre-v1 exception recorded in `docs/SIMPLIFICATION_TARGET.md`.

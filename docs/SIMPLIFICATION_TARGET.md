@@ -166,8 +166,11 @@ decisions and carries runtime branch stream facts as `recipeir.Stream` instead
 of rehydrating root operation specs or stream intents after branch capture.
 Branch-composition planning now consumes captured recipe IR too; concrete input
 and destination handles remain at the attachment edge.
-The boundary is not complete until the remaining runtime mutation patch facts
-move into stable recipe or plan data.
+Retained runtime-patch exception for the release candidate: concrete writer,
+mux, sink, graph injector, and live stage handles stay at the mutation edge.
+Moving those remaining executable handles into deeper stable patch data is
+deferred unless the runtime mutation API graduates beyond the governed pre-v1
+surface.
 
 Runtime lifecycle/observation progress: one-shot `Run` now preserves both run
 and close/finalization failures, and `LiveTask` exposes one observation model:
