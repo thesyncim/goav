@@ -85,6 +85,8 @@ methodology changes, and migration notes.
   refused before planned or runtime branch mutation treats them as real specs.
 - Marked `Destination` handles with their constructor origin so zero values
   and zero-derived option copies cannot masquerade as real outputs.
+- Marked `InputSpec` values with their constructor origin so zero values and
+  zero-derived option or wrapper copies cannot masquerade as real inputs.
 - Moved normal media-planner input binding and selected-stream resolution onto
   recipe IR input facts instead of concrete input attachments.
 - Moved copy-branch source-shape planning onto recipe IR input facts.

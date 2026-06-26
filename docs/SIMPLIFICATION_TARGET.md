@@ -153,7 +153,8 @@ so zero values and non-branch policy specs are refused before planned or
 runtime branch mutation treats them as real branches. `Destination` handles now
 carry the same constructor-origin marker, so zero values and zero-derived
 option copies are refused before they can masquerade as writer, URI, sink, or
-custom outputs.
+custom outputs. `InputSpec` values now do the same for file, URI, custom
+source, and provider inputs, including zero-derived options or wrappers.
 
 Error-contract progress: `BuildError` no longer exposes legacy
 `Details`/`Suggestions` fields or parses rendered strings in `Detail(key)`;

@@ -20,8 +20,11 @@ import (
 // provider, plus the optional name, MIME, and codec facts the planner uses
 // before opening it. Construct one with FileInput, URIInput, Source, or
 // Input; configure it with options (Name, MIME, Metadata, Codec) and decorate
-// the opened source with WrapSource.
+// the opened source with WrapSource. The zero value is intentionally not a
+// valid input; construct input specs with FileInput, URIInput, Source, or
+// Input.
 type InputSpec struct {
+	origin   inputSpecOrigin
 	input    format.Input
 	provider provider.Source
 	source   *sourceInputSpec
@@ -32,6 +35,18 @@ type InputSpec struct {
 	// declaration order after the input opens through the one source seam.
 	wraps []func(pipeline.Source) pipeline.Source
 	err   error
+}
+
+type inputSpecOrigin uint8
+
+const (
+	inputSpecOriginZero inputSpecOrigin = iota
+	inputSpecOriginConstructed
+)
+
+func inputSpecHandle(spec InputSpec) InputSpec {
+	spec.origin = inputSpecOriginConstructed
+	return spec
 }
 
 // WrapSource returns a copy of the input whose opened source is decorated by
@@ -113,26 +128,26 @@ func applyInputOptions(spec InputSpec, opts []InputOption) InputSpec {
 // FileInput declares a file-like input read from reader; name carries the
 // extension format probing uses (a .ivf name selects the IVF demuxer).
 func FileInput(name string, reader io.Reader, opts ...InputOption) InputSpec {
-	return applyInputOptions(InputSpec{
+	return applyInputOptions(inputSpecHandle(InputSpec{
 		input: format.Input{
 			Name:     name,
 			Protocol: av.ProtocolFile,
 			Reader:   reader,
 		},
 		name: name,
-	}, opts)
+	}), opts)
 }
 
 // URIInput declares an input opened by a registered format adapter from a
 // URI.
 func URIInput(uri string, opts ...InputOption) InputSpec {
-	return applyInputOptions(InputSpec{
+	return applyInputOptions(inputSpecHandle(InputSpec{
 		input: format.Input{
 			Name: uri,
 			URI:  uri,
 		},
 		name: uri,
-	}, opts)
+	}), opts)
 }
 
 func (s InputSpec) formatInput() format.Input {
@@ -154,6 +169,22 @@ func (s InputSpec) validate() error {
 				"pass a non-nil provider to goav.Input(provider)",
 			}),
 			Cause: s.err,
+		}
+	}
+	if s.origin != inputSpecOriginConstructed {
+		return &BuildError{
+			Family:    errcode.FamilyForCode(errcode.InputInvalid),
+			Code:      errcode.InputInvalid,
+			Operation: "build input",
+			Node:      firstNonEmpty(s.name, s.input.Name, s.input.URI, "input"),
+			Reason:    "empty input spec",
+			Fixes: buildErrorFixes([]string{
+				"use goav.FileInput(name, reader) for file-like input",
+				"use goav.URIInput(uri) for URI-backed input",
+				"use goav.Source(name, shape, fn) for application-pushed packets",
+				"use goav.Input(provider) for realtime receive through a source provider",
+			}),
+			Cause: ErrUnsupportedBuild,
 		}
 	}
 	if err := s.validateCustomSource(); err != nil {

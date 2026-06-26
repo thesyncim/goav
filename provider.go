@@ -31,15 +31,15 @@ type (
 //		Copy().To(out)
 func Input(src provider.Source, opts ...InputOption) InputSpec {
 	if src == nil {
-		return InputSpec{err: ErrNilSource}
+		return inputSpecHandle(InputSpec{err: ErrNilSource})
 	}
 	spec := src.SourceShape()
-	return applyInputOptions(InputSpec{
+	return applyInputOptions(inputSpecHandle(InputSpec{
 		input:    format.Input{Realtime: spec.Realtime},
 		provider: src,
 		codec:    codecSpecFromSourceShape(spec),
 		realtime: spec.Realtime,
-	}, opts)
+	}), opts)
 }
 
 // providerNodeName returns the provider's node name capability, defaulting to

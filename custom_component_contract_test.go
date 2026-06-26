@@ -914,8 +914,36 @@ func (p *componentSourceProvider) DecodeBounds(av.StreamID) codec.DecodeBounds {
 }
 
 func TestInputAndProviderSourceContracts(t *testing.T) {
+	typ := reflect.TypeOf(InputSpec{})
+	for i := 0; i < typ.NumField(); i++ {
+		if typ.Field(i).IsExported() {
+			t.Fatalf("InputSpec field %s is exported; use constructors instead", typ.Field(i).Name)
+		}
+	}
+
+	var zero InputSpec
+	if zero.origin != inputSpecOriginZero {
+		t.Fatalf("zero InputSpec origin = %v, want zero", zero.origin)
+	}
+	renamedZero := zero.With(Name("input"), Codec(codec.Opus()))
+	if renamedZero.origin != inputSpecOriginZero {
+		t.Fatalf("zero InputSpec.With origin = %v, want zero", renamedZero.origin)
+	}
+	if err := renamedZero.validate(); err == nil ||
+		!strings.Contains(err.Error(), "empty input spec") ||
+		!strings.Contains(err.Error(), "goav.FileInput") {
+		t.Fatalf("zero InputSpec.With error = %v, want constructor guidance", err)
+	}
+	wrappedZero := WrapSource(zero, func(source pipeline.Source) pipeline.Source { return source })
+	if wrappedZero.origin != inputSpecOriginZero {
+		t.Fatalf("zero WrapSource origin = %v, want zero", wrappedZero.origin)
+	}
+
 	metadata := av.Metadata{"transport": "custom"}
 	uri := URIInput("custom://input", MIME("application/x-custom"), Metadata(metadata))
+	if uri.origin != inputSpecOriginConstructed {
+		t.Fatalf("URIInput origin = %v, want constructed", uri.origin)
+	}
 	if uri.input.URI != "custom://input" ||
 		uri.input.Name != "custom://input" ||
 		uri.input.MIMEType != "application/x-custom" ||
@@ -928,6 +956,23 @@ func TestInputAndProviderSourceContracts(t *testing.T) {
 	}
 	if wrapped := WrapSource(uri, nil); len(wrapped.wraps) != 0 {
 		t.Fatalf("WrapSource nil added wraps: %+v", wrapped.wraps)
+	}
+	for name, input := range map[string]InputSpec{
+		"file":     FileInput("input.ogg", strings.NewReader("")),
+		"uri":      uri,
+		"source":   Source("generated", shape.Packet(av.MediaAudio, av.CodecOpus), func(context.Context, sourcepkg.Push) error { return nil }),
+		"provider": Input(&componentSourceProvider{spec: shape.Packet(av.MediaAudio, av.CodecOpus)}),
+	} {
+		if input.origin != inputSpecOriginConstructed {
+			t.Fatalf("%s input origin = %v, want constructed", name, input.origin)
+		}
+	}
+	nilProvider := Input(nil)
+	if nilProvider.origin != inputSpecOriginConstructed {
+		t.Fatalf("nil provider input origin = %v, want constructed", nilProvider.origin)
+	}
+	if err := nilProvider.validate(); !errors.Is(err, ErrNilSource) {
+		t.Fatalf("nil provider validate error = %v, want ErrNilSource", err)
 	}
 
 	if _, err := openProviderSource(context.Background(), nil, "nil"); !errors.Is(err, ErrNilSource) {

@@ -34,7 +34,7 @@ type InputStream struct {
 // inputs.
 func Source(name string, spec shape.Spec, fn sourcepkg.Func, opts ...InputOption) InputSpec {
 	spec = normalizeCustomSourceShape(name, spec)
-	return applyInputOptions(InputSpec{
+	return applyInputOptions(inputSpecHandle(InputSpec{
 		input: format.Input{
 			Name:     name,
 			Protocol: av.ProtocolCustom,
@@ -43,7 +43,7 @@ func Source(name string, spec shape.Spec, fn sourcepkg.Func, opts ...InputOption
 		source: &sourceInputSpec{shape: spec, fn: fn},
 		codec:  codecSpecFromSourceShape(spec),
 		name:   name,
-	}, opts)
+	}), opts)
 }
 
 // Stream returns a runtime branch anchor for a stream that this input produces
