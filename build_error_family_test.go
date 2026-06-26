@@ -24,7 +24,7 @@ func TestBuildErrorFamilyForCodePinned(t *testing.T) {
 		{errcode.BufferPayloadUnsafe, errcode.FamilyBuffer},
 		{errcode.TapInvalid, errcode.FamilyTap},
 		{errcode.Code("mix_inputs"), errcode.FamilyJoin},
-		{errcode.RuntimeBranchInvalid, errcode.FamilyRuntimeBranch},
+		{runtimeBranchInvalidCode, errcode.FamilyRuntimeBranch},
 		{errcode.StreamRuleInvalid, errcode.FamilyStreamRule},
 		{compilerPassFailedCode, errcode.FamilyCompiler},
 		{errcode.Code(diagnosticShapeConversionInserted), errcode.Family("diagnostic")},
@@ -54,7 +54,7 @@ func TestBuildErrorFamilyReachesReturnedErrors(t *testing.T) {
 		{
 			name:   "nil detach attachment",
 			err:    nilAttachmentDetachError(),
-			code:   errcode.RuntimeBranchInvalid,
+			code:   runtimeBranchInvalidCode,
 			family: errcode.FamilyRuntimeBranch,
 		},
 	}

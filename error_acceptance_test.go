@@ -588,7 +588,7 @@ func TestErrorAcceptanceAttachUnknownTapListsDeclaredTaps(t *testing.T) {
 	defer task.Close()
 
 	_, err = task.Attach(ctx, goav.Branch("late").From(goav.FrameTap("nope")).To(goavtest.NewCollector().Sink()))
-	buildErr := requireBuildError(t, err, errcode.RuntimeBranchTapMissing, "attach runtime branch", "nope",
+	buildErr := requireBuildError(t, err, errcode.Code("runtime_branch_tap_missing"), "attach runtime branch", "nope",
 		`add .Tap(goav.FrameTap("nope"))`,
 		"call Inspectable.Taps() before attaching",
 	)

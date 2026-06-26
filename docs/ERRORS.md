@@ -92,10 +92,11 @@ Runtime paths keep the same floor: errors name the node and say what to do.
 SetBitrate needs a positive rate in bits per second, got 0`) and wrap
 `pipeline.ErrUnknownNode` for unknown targets; per-node control failures are
 collected as `goav: control to "node": ...`. Attach/Rebranch refusals are full
-`BuildError` values (the `runtime_branch_*` codes). Failed stream-rule
-branch attachments surface as `av.EventAttachError` events carrying the stream id,
-branch name, and cause. Join stages name the offending arm (`goav: audio mix
-requires s16, got f32 on arm "b"`). Buffered payload safety backstops are also
+`BuildError` values with `FamilyRuntimeBranch`; exact `runtime_branch_*` leaf
+strings remain typed internally while runtime mutation stays experimental.
+Failed stream-rule branch attachments surface as `av.EventAttachError` events
+carrying the stream id, branch name, and cause. Join stages name the offending
+arm (`goav: audio mix requires s16, got f32 on arm "b"`). Buffered payload safety backstops are also
 structured at the task boundary: a mutable payload reaching `flow.CopyNever`
 returns `errcode.BufferPayloadUnsafe` with the `CopyNever` branch names and
 still matches `pipeline.ErrBufferedMessageUnsafe`; a payload larger than the

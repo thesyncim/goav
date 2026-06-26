@@ -24,27 +24,27 @@ func TestRuntimeBranchStructuredErrorContracts(t *testing.T) {
 		code  errcode.Code
 		cause error
 	}{
-		{name: "invalid branch", err: runtimeBranchInvalidError("missing source", "declare From(...)"), code: errcode.RuntimeBranchInvalid, cause: ErrUnsupportedBuild},
-		{name: "anchor missing", err: runtimeBranchAnchorMissingError("old-node"), code: errcode.RuntimeBranchAnchorMissing, cause: pipeline.ErrUnknownNode},
+		{name: "invalid branch", err: runtimeBranchInvalidError("missing source", "declare From(...)"), code: runtimeBranchInvalidCode, cause: ErrUnsupportedBuild},
+		{name: "anchor missing", err: runtimeBranchAnchorMissingError("old-node"), code: runtimeBranchAnchorMissingCode, cause: pipeline.ErrUnknownNode},
 		{
 			name: "tap missing",
 			err: runtimeBranchTapMissingError("preview.frames", []snapshot.Tap{
 				{Name: "encoded", Domain: shape.DomainPacket, MediaKind: av.MediaVideo},
 			}),
-			code:  errcode.RuntimeBranchTapMissing,
+			code:  runtimeBranchTapMissingCode,
 			cause: pipeline.ErrUnknownNode,
 		},
-		{name: "node duplicate", err: runtimeBranchNodeDuplicateError("preview.sink"), code: errcode.RuntimeBranchNodeDuplicate, cause: pipeline.ErrNodeExists},
-		{name: "tap duplicate", err: runtimeBranchTapDuplicateError("preview.frames"), code: errcode.RuntimeBranchTapDuplicate, cause: ErrUnsupportedBuild},
+		{name: "node duplicate", err: runtimeBranchNodeDuplicateError("preview.sink"), code: runtimeBranchNodeDuplicateCode, cause: pipeline.ErrNodeExists},
+		{name: "tap duplicate", err: runtimeBranchTapDuplicateError("preview.frames"), code: runtimeBranchTapDuplicateCode, cause: ErrUnsupportedBuild},
 		{name: "transform media mismatch", err: runtimeBranchTransformMediaError("preview", "Resize", av.MediaVideo, av.MediaAudio), code: errcode.TransformMediaMismatch, cause: ErrUnsupportedBuild},
-		{name: "transform open error", err: runtimeBranchTransformError("resize-preview", transformCause), code: errcode.RuntimeBranchTransformError, cause: transformCause},
-		{name: "encode missing", err: runtimeBranchEncodeMissingError("archive"), code: errcode.RuntimeBranchEncodeMissing, cause: ErrUnsupportedBuild},
-		{name: "encode domain mismatch", err: runtimeBranchEncodeDomainError("archive", packetShape), code: errcode.RuntimeBranchEncodeDomainMismatch, cause: ErrUnsupportedBuild},
-		{name: "decode domain mismatch", err: runtimeBranchDecodeDomainError("preview", frameShape), code: errcode.RuntimeBranchDecodeDomainMismatch, cause: ErrUnsupportedBuild},
-		{name: "decode codec missing", err: runtimeBranchDecodeCodecMissingError("", shape.Packet(av.MediaAudio, "")), code: errcode.RuntimeBranchDecodeCodecMissing, cause: ErrUnsupportedBuild},
-		{name: "copy domain mismatch", err: runtimeBranchCopyDomainError("archive", frameShape), code: errcode.RuntimeBranchCopyDomainMismatch, cause: ErrUnsupportedBuild},
-		{name: "mux codec missing", err: runtimeBranchMuxCodecMissingError("archive", shape.Packet(av.MediaVideo, "")), code: errcode.RuntimeBranchMuxCodecMissing, cause: ErrUnsupportedBuild},
-		{name: "graph error", err: runtimeBranchGraphError("attach runtime branch", "archive", graphCause), code: errcode.RuntimeBranchGraphError, cause: graphCause},
+		{name: "transform open error", err: runtimeBranchTransformError("resize-preview", transformCause), code: runtimeBranchTransformErrorCode, cause: transformCause},
+		{name: "encode missing", err: runtimeBranchEncodeMissingError("archive"), code: runtimeBranchEncodeMissingCode, cause: ErrUnsupportedBuild},
+		{name: "encode domain mismatch", err: runtimeBranchEncodeDomainError("archive", packetShape), code: runtimeBranchEncodeDomainMismatchCode, cause: ErrUnsupportedBuild},
+		{name: "decode domain mismatch", err: runtimeBranchDecodeDomainError("preview", frameShape), code: runtimeBranchDecodeDomainMismatchCode, cause: ErrUnsupportedBuild},
+		{name: "decode codec missing", err: runtimeBranchDecodeCodecMissingError("", shape.Packet(av.MediaAudio, "")), code: runtimeBranchDecodeCodecMissingCode, cause: ErrUnsupportedBuild},
+		{name: "copy domain mismatch", err: runtimeBranchCopyDomainError("archive", frameShape), code: runtimeBranchCopyDomainMismatchCode, cause: ErrUnsupportedBuild},
+		{name: "mux codec missing", err: runtimeBranchMuxCodecMissingError("archive", shape.Packet(av.MediaVideo, "")), code: runtimeBranchMuxCodecMissingCode, cause: ErrUnsupportedBuild},
+		{name: "graph error", err: runtimeBranchGraphError("attach runtime branch", "archive", graphCause), code: runtimeBranchGraphErrorCode, cause: graphCause},
 	}
 
 	for _, tt := range tests {

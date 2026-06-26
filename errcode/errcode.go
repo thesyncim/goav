@@ -123,13 +123,13 @@ func FamilyForCode(code Code) Family {
 		return FamilyTap
 	case JoinNameInvalid, JoinStageInvalid:
 		return FamilyJoin
-	case RuntimeBranchInvalid, RuntimeBranchAnchorMissing,
-		RuntimeBranchTapMissing, RuntimeBranchTapDuplicate,
-		RuntimeBranchNodeDuplicate, RuntimeBranchEncodeMissing,
-		RuntimeBranchEncodeDomainMismatch, RuntimeBranchDecodeDomainMismatch,
-		RuntimeBranchDecodeCodecMissing, RuntimeBranchCopyDomainMismatch,
-		RuntimeBranchMuxCodecMissing, RuntimeBranchTransformError,
-		RuntimeBranchGraphError:
+	case Code("runtime_branch_invalid"), Code("runtime_branch_anchor_missing"),
+		Code("runtime_branch_tap_missing"), Code("runtime_branch_tap_duplicate"),
+		Code("runtime_branch_node_duplicate"), Code("runtime_branch_encode_missing"),
+		Code("runtime_branch_encode_domain_mismatch"), Code("runtime_branch_decode_domain_mismatch"),
+		Code("runtime_branch_decode_codec_missing"), Code("runtime_branch_copy_domain_mismatch"),
+		Code("runtime_branch_mux_codec_missing"), Code("runtime_branch_transform_error"),
+		Code("runtime_branch_graph_error"):
 		return FamilyRuntimeBranch
 	case StreamRuleInvalid:
 		return FamilyStreamRule
@@ -479,49 +479,6 @@ const (
 	// JoinStageInvalid fires when a custom join's convergence stage is nil
 	// or reports a Name() different from the join's name.
 	JoinStageInvalid Code = "join_stage_invalid"
-)
-
-// Runtime attach codes (Mutable.Attach / Rebranch refusals).
-const (
-	// RuntimeBranchInvalid fires when a runtime branch spec is nil,
-	// unconstructed, or malformed.
-	RuntimeBranchInvalid Code = "runtime_branch_invalid"
-	// RuntimeBranchAnchorMissing fires when the branch's source node does
-	// not exist in the running task graph.
-	RuntimeBranchAnchorMissing Code = "runtime_branch_anchor_missing"
-	// RuntimeBranchTapMissing fires when the branch's source tap does not
-	// exist in the running task.
-	RuntimeBranchTapMissing Code = "runtime_branch_tap_missing"
-	// RuntimeBranchTapDuplicate fires when the branch declares a tap name
-	// that already exists in the task.
-	RuntimeBranchTapDuplicate Code = "runtime_branch_tap_duplicate"
-	// RuntimeBranchNodeDuplicate fires when a branch node name already
-	// exists in the task graph.
-	RuntimeBranchNodeDuplicate Code = "runtime_branch_node_duplicate"
-	// RuntimeBranchEncodeMissing fires when a muxed runtime branch has
-	// neither packet copy nor an encoder.
-	RuntimeBranchEncodeMissing Code = "runtime_branch_encode_missing"
-	// RuntimeBranchEncodeDomainMismatch fires when a runtime branch
-	// encodes from a packet tap; encoding needs a frame tap.
-	RuntimeBranchEncodeDomainMismatch Code = "runtime_branch_encode_domain_mismatch"
-	// RuntimeBranchDecodeDomainMismatch fires when a runtime branch
-	// decodes from a frame tap; decoding needs a packet tap.
-	RuntimeBranchDecodeDomainMismatch Code = "runtime_branch_decode_domain_mismatch"
-	// RuntimeBranchDecodeCodecMissing fires when a runtime branch decode
-	// has no packet codec metadata to open a decoder with.
-	RuntimeBranchDecodeCodecMissing Code = "runtime_branch_decode_codec_missing"
-	// RuntimeBranchCopyDomainMismatch fires when a runtime branch copies
-	// packets from a frame tap.
-	RuntimeBranchCopyDomainMismatch Code = "runtime_branch_copy_domain_mismatch"
-	// RuntimeBranchMuxCodecMissing fires when a runtime branch's mux
-	// destination has no codec metadata for the muxed stream.
-	RuntimeBranchMuxCodecMissing Code = "runtime_branch_mux_codec_missing"
-	// RuntimeBranchTransformError fires when a runtime branch transform
-	// stage cannot be opened.
-	RuntimeBranchTransformError Code = "runtime_branch_transform_error"
-	// RuntimeBranchGraphError fires when the live graph rejects the branch
-	// attachment.
-	RuntimeBranchGraphError Code = "runtime_branch_graph_error"
 )
 
 // Stream rule codes (OnStream grammar).

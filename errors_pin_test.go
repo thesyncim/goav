@@ -11,12 +11,11 @@ import (
 )
 
 // TestBuildErrorContractPinned enforces the error contract at the source
-// level: every &BuildError{...} literal in the package carries a Family derived
-// from its Code, a Code from the errcode catalog (never a raw string), an
-// Operation, a Reason, and either Fixes (a user-fixable refusal's concrete
-// fixes) or Fields (an internal invariant's explanation). The contract is what
-// makes goav errors uniformly actionable; this pin makes regressions
-// impossible.
+// level: every &BuildError{...} literal in the package carries a Family
+// derived from its Code, a typed Code value (never a raw string), an Operation,
+// a Reason, and either Fixes (a user-fixable refusal's concrete fixes) or
+// Fields (an internal invariant's explanation). The contract is what makes
+// goav errors uniformly actionable; this pin makes regressions impossible.
 func TestBuildErrorContractPinned(t *testing.T) {
 	files := parsePackageSourceFiles(t)
 	for filename, file := range files {
@@ -47,7 +46,7 @@ func TestBuildErrorContractPinned(t *testing.T) {
 				return true
 			}
 			if reason := describeForbiddenCodeExpr(code); reason != "" {
-				t.Errorf("%s: BuildError Code must come from the errcode catalog: %s", filename, reason)
+				t.Errorf("%s: BuildError Code must be a typed constant or field, never inline text: %s", filename, reason)
 			}
 			family, ok := fields["Family"]
 			if !ok {
@@ -164,16 +163,16 @@ func TestErrorCodeCatalogPinned(t *testing.T) {
 			}
 		}
 	}
-	if count > 133 {
-		t.Errorf("errcode/errcode.go declares %d Code constants; keep shrinking the public refusal catalog from the current ceiling of 133", count)
+	if count > 120 {
+		t.Errorf("errcode/errcode.go declares %d Code constants; keep shrinking the public refusal catalog from the current ceiling of 120", count)
 	}
 }
 
 // TestErrorCodeLiteralsStayTyped sweeps every non-test source file for stray
 // code-shaped string literals assigned to Code fields — diagnostics and
 // decisions included — so public codes land in the errcode catalog and
-// package-internal invariants use typed local constants instead of scattered
-// strings.
+// package-internal invariants or experimental leaves use typed local constants
+// instead of scattered strings.
 func TestErrorCodeLiteralsStayTyped(t *testing.T) {
 	files := parsePackageSourceFiles(t)
 	for filename, file := range files {

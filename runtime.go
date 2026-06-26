@@ -713,8 +713,8 @@ func (t *task) detachRuntimeAttachment(ctx context.Context, input runtimeDetachI
 
 func nilAttachmentDetachError() error {
 	return &BuildError{
-		Family:    errcode.FamilyForCode(errcode.RuntimeBranchInvalid),
-		Code:      errcode.RuntimeBranchInvalid,
+		Family:    errcode.FamilyForCode(runtimeBranchInvalidCode),
+		Code:      runtimeBranchInvalidCode,
 		Operation: "detach runtime branch",
 		Reason:    "attachment is nil",
 		Fixes: buildErrorFixes([]string{

@@ -1528,7 +1528,7 @@ func TestExpertGraphNodeNamesDoNotCreateTapAnchors(t *testing.T) {
 			}))),
 	)
 	var buildErr *goav.BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != errcode.RuntimeBranchTapMissing {
+	if !errors.As(err, &buildErr) || buildErr.Code != errcode.Code("runtime_branch_tap_missing") {
 		t.Fatalf("err = %v, want runtime_branch_tap_missing", err)
 	}
 	attachment, err := task.Attach(context.Background(),
