@@ -342,7 +342,7 @@ func joinTwoArmExample(kind string) string {
 func newJoinPlan(rt *runtime, state *recipeCompileState) (*joinPlan, error) {
 	spec := state.joinAttachment
 	name := string(spec.kind)
-	sets := jobInputStreamSets(state.intent.Inputs, state.inputAttachments, state.inputProbes)
+	sets := jobInputStreamSetsFromRecipeIR(state.intent.Inputs, state.inputFacts, state.inputProbes)
 	anchors := newJoinTapAnchors(declaredJoinTapNames(spec))
 	p, _, err := planJoinTree(rt, state, spec, sets, 0, make(map[string]struct{}), anchors)
 	if err != nil {
