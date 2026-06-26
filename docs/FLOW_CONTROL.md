@@ -47,8 +47,8 @@ leaving.
 - `Mutable.Detach(ctx, attachment, lifecycle.AbortBranch())` marks the branch output as
   abandoned. Use this after failed admission or diagnostic captures that should
   not commit.
-- `OnStream(match, Branch(...), OnRemove(...))` applies the same detach choices
-  when a dynamically discovered stream disappears.
+- `OnStream(match, Branch(...))` drains rule-created branches when a
+  dynamically discovered stream disappears.
 
 ```go
 task.Watch(inspect.WatchTypes(

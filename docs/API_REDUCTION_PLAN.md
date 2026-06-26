@@ -154,7 +154,7 @@ Move or keep outside the front door:
 
 14. **Detach lifecycle cleanup** — landed
     - Move standalone detach destination-outcome options to `goav/lifecycle`,
-      keeping root `Detach` and `OnRemove` as runtime grammar while removing
+      keeping root `Detach` as runtime grammar while removing
       lifecycle disposition constructors from the root package.
 
 15. **Rebranch lifecycle cleanup** — landed

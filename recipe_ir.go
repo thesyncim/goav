@@ -346,8 +346,7 @@ func recipeIRStreamRulesFromRoot(rules []streamRule) []recipeir.StreamRule {
 
 func recipeIRStreamRuleFromRoot(rule streamRule) recipeir.StreamRule {
 	out := recipeir.StreamRule{
-		MatchDescription:  rule.match.Description(),
-		RemoveDisposition: string(rule.removeDisposition),
+		MatchDescription: rule.match.Description(),
 	}
 	for i := range rule.branches {
 		out.Branches = append(out.Branches, recipeir.StreamRuleBranch{
@@ -645,9 +644,8 @@ func cloneRecipeIRStreamRules(rules []recipeir.StreamRule) []recipeir.StreamRule
 	out := make([]recipeir.StreamRule, len(rules))
 	for i := range rules {
 		out[i] = recipeir.StreamRule{
-			MatchDescription:  rules[i].MatchDescription,
-			RemoveDisposition: rules[i].RemoveDisposition,
-			Branches:          append([]recipeir.StreamRuleBranch(nil), rules[i].Branches...),
+			MatchDescription: rules[i].MatchDescription,
+			Branches:         append([]recipeir.StreamRuleBranch(nil), rules[i].Branches...),
 		}
 		for j := range out[i].Branches {
 			out[i].Branches[j].Destinations = append([]string(nil), rules[i].Branches[j].Destinations...)

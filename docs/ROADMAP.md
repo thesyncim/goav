@@ -92,8 +92,8 @@ this list:
   cold-path control operation dominated by planning; not a data-plane figure.
 - **OnStream rule breadth**: identity matches only (`source.MatchMedia`/
   `source.MatchCodec`/`source.MatchStreamID`/`source.MatchStream(fn)`); conditions beyond stream
-  identity remain roadmap. Per-rule removal disposition is now explicit through
-  `OnRemove(...)`.
+  identity remain roadmap. Rule-created branches drain when the matched stream
+  disappears.
 - **Join nesting depth**: nested joins are proven at the tested depths
   (`join_nested_test.go`, `TestJoinDescribeEqualsBuildNestedMix`); deeper
   nesting compiles through the same recursion but has no dedicated proof or
@@ -121,7 +121,7 @@ this list:
 - **Destination lifecycle events**: task and runtime-branch destinations now
   publish commit/abort/error events. Standalone `Mutable.Detach` has explicit
   drain/abort outcomes, branch attach/detach events are watchable, and
-  `OnRemove(...)` selects per-rule dynamic-stream removal disposition.
+  stream-rule removals drain rule-created branches.
 - **`streamIntent` normalization fold**: Explain stream rows and adapter
   requirements, plus mux compatibility, now consume codec facts from `WorkPlan`
   operations. Remaining validation/planning readers are tracked in

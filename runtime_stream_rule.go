@@ -211,12 +211,8 @@ func (t *task) streamRuleRemoveInput(event av.Event) streamRuleRemoveInput {
 		if entry.attachment == nil {
 			continue
 		}
-		disposition := oldBranchDrain
-		if entry.rule >= 0 && entry.rule < len(rules.rules) {
-			disposition = rules.rules[entry.rule].removeDisposition
-		}
 		input.attachments = append(input.attachments, streamRuleRemoveAttachment{
-			detach:     runtimeDetachInputForRuntimeAttachment(entry.attachment, disposition),
+			detach:     runtimeDetachInputForRuntimeAttachment(entry.attachment, oldBranchDrain),
 			branchName: entry.attachment.Name(),
 		})
 	}

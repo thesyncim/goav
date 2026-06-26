@@ -7,7 +7,6 @@ import (
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/internal/recipeir"
-	"github.com/thesyncim/goav/lifecycle"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/plan"
 	"github.com/thesyncim/goav/shape"
@@ -17,18 +16,8 @@ import (
 // streamRule is one declared dynamic-stream rule: when a discovered stream
 // matches, the templated branches are attached to it at runtime.
 type streamRule struct {
-	match             sourcepkg.StreamMatch
-	branches          []BranchSpec
-	removeDisposition oldBranchDisposition
-}
-
-// OnRemove configures how branches created by an OnStream rule detach when
-// the matched stream is removed. Without OnRemove the historical rule default
-// drains; OnRemove() selects plain detach, lifecycle.DrainBranch commits, and
-// lifecycle.AbortBranch aborts.
-func OnRemove(options ...lifecycle.DetachOption) BranchSpec {
-	policy := detachPolicyFromOptions(options)
-	return BranchSpec{origin: branchSpecOriginOnRemove, removeDisposition: policy.disposition, hasRemoveDisposition: true}
+	match    sourcepkg.StreamMatch
+	branches []BranchSpec
 }
 
 // OnStream declares a dynamic-stream rule on the job: when the running task's
@@ -51,16 +40,8 @@ func (j *Job) OnStream(match sourcepkg.StreamMatch, branches ...BranchSpec) *Job
 	if j == nil {
 		return j
 	}
-	rule := streamRule{match: match, removeDisposition: oldBranchDrain}
-	for i := range branches {
-		branch := branches[i]
-		if branch.origin == branchSpecOriginOnRemove || branch.hasRemoveDisposition {
-			rule.removeDisposition = branch.removeDisposition
-			continue
-		}
-		rule.branches = append(rule.branches, branch)
-	}
-	rule.branches = cloneBranchSpecs(rule.branches)
+	rule := streamRule{match: match}
+	rule.branches = cloneBranchSpecs(branches)
 	if err := rule.validate(); err != nil {
 		j.setErr(err)
 		return j
@@ -124,9 +105,8 @@ func cloneStreamRules(rules []streamRule) []streamRule {
 	out := make([]streamRule, 0, len(rules))
 	for i := range rules {
 		out = append(out, streamRule{
-			match:             rules[i].match,
-			branches:          cloneBranchSpecs(rules[i].branches),
-			removeDisposition: rules[i].removeDisposition,
+			match:    rules[i].match,
+			branches: cloneBranchSpecs(rules[i].branches),
 		})
 	}
 	return out

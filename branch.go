@@ -123,9 +123,7 @@ type BranchSpec struct {
 	source       branchSourceBinding
 	branchBuffer flow.BranchBuffer
 
-	removeDisposition    oldBranchDisposition
-	hasRemoveDisposition bool
-	err                  error
+	err error
 }
 
 type branchSpecOrigin uint8
@@ -133,7 +131,6 @@ type branchSpecOrigin uint8
 const (
 	branchSpecOriginZero branchSpecOrigin = iota
 	branchSpecOriginBranch
-	branchSpecOriginOnRemove
 )
 
 type branchBuilder struct {

@@ -159,9 +159,8 @@ methodology changes, and migration notes.
 - Added grammar-shaped live-room sync with `SyncPolicy`, `.Sync(...)`,
   `SyncTolerance`, and `SyncDropLate` for branch-local audio/video alignment;
   hold-late behavior is the default and does not add a separate public option.
-- Added `AtMediaTime(...)` rebranch boundaries, per-rule `OnStream(...,
-  OnRemove(...))` removal disposition, and destination commit/abort/error
-  lifecycle events.
+- Added `AtMediaTime(...)` rebranch boundaries, dynamic `OnStream(...)`
+  stream-rule removal, and destination commit/abort/error lifecycle events.
 - Updated the dynamic-audio-room and Gio WebRTC showcase examples around the
   live-room runtime path with sync policy, live rebranching, and dynamic branch
   behavior.

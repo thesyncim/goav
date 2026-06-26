@@ -71,8 +71,8 @@ Compatibility pins:
 - Task controls include `Keyframe`, `SetBitrate`, `Seek`, `Rate`, `Segment`,
   `SelectActive`, `Deliver`, `.AtTap(name)`, and expert-only `.At(node)`.
 - Dynamic streams use `InputSpec.Stream` runtime anchors for app-owned tracks,
-  plus `OnStream` rules, `OnRemove` detach disposition, and
-  `av.EventStreamAdded` for automatic discovery.
+  plus `OnStream` rules that drain on removal and `av.EventStreamAdded` for
+  automatic discovery.
 - Destination commit/abort/error lifecycle events are watchable for task and
   runtime-branch destinations.
 - Deterministic testing comes from `goavtest` sources, collectors, fake codecs,

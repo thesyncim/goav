@@ -64,7 +64,7 @@ a new feature strengthens the grammar or bypasses it.
 | Runtime mutation | #23 Attach opens destinations before mutation. #24 attach failure rolls back. #25/#26 drain and abort are pinned for Rebranch and standalone `Mutable.Detach`. #27 Rebranch starts replacement before old detach. #28 failed Rebranch keeps the old branch. #29 Pause/Resume affects one branch. |
 | Events and control | #30 Watch filters and stream/attach/backpressure events are pinned; `EventBranchAttached`/`EventBranchDetached` report runtime branch lifecycle, and destination commit/abort/error events report finalization. #31 Snapshot reports typed task, branch, destination, tap, and drop state. #32 Keyframe reaches adapters or fails clearly. #33 SetBitrate reaches encoders or fails clearly. |
 | Sources | #34 custom packet source Copy to File. #35 custom frame source Encode to File. #36 source.Push reports Accepted/Dropped. #37 source EOS commits destinations. |
-| Dynamic streams | #38 late streams attach branches. #39 ambiguous stream selection lists candidates and fixes. #40 removal detaches with rule-selected drain, abort, or plain detach through `OnRemove(...)`. |
+| Dynamic streams | #38 late streams attach branches. #39 ambiguous stream selection lists candidates and fixes. #40 removal drains rule-created branches. |
 | Multi-input and joins | #41 multiple inputs can share one destination. #42 codec/format/timebase mux compatibility is checked. #43 Mix joins audio branches. #44 join shape mismatch is solved or refused before mutation. |
 
 ## Current State
@@ -86,8 +86,8 @@ Done:
   events are watchable without graph handles.
 - Destination commit, abort, and commit-error events are watchable for task and
   runtime-branch destinations.
-- `OnStream` rules can select their stream-removal behavior with
-  `OnRemove(...)`.
+- `OnStream` rules drain rule-created branches when a matched stream is
+  removed.
 - `lifecycle.SwitchAt` supports frame, keyframe, and media-time boundaries.
 - Mux compatibility preflight rejects malformed declared timebase facts while
   still deferring unknown facts.

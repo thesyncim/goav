@@ -102,9 +102,8 @@ type Destination struct {
 // not carry executable branch specs or custom matcher functions; the runtime
 // still owns those until mutation patches cross the recipe boundary.
 type StreamRule struct {
-	MatchDescription  string
-	Branches          []StreamRuleBranch
-	RemoveDisposition string
+	MatchDescription string
+	Branches         []StreamRuleBranch
 }
 
 // StreamRuleBranch is one branch template visible to Explain/validation.

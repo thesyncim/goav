@@ -175,7 +175,6 @@ func TestStreamRuleAttachInputCapturesTemplatedBranch(t *testing.T) {
 func TestStreamRuleRemoveInputCapturesTrackedBranches(t *testing.T) {
 	attachment := &runtimeAttachment{id: "att-1", name: "late"}
 	task := &task{rules: &taskStreamRules{
-		rules: []streamRule{{removeDisposition: oldBranchAbort}},
 		attached: map[av.StreamID][]streamRuleAttachment{
 			"audio": {
 				{rule: 0, attachment: attachment},
@@ -189,7 +188,7 @@ func TestStreamRuleRemoveInputCapturesTrackedBranches(t *testing.T) {
 		len(input.attachments) != 1 ||
 		input.attachments[0].detach.runtime != attachment ||
 		input.attachments[0].detach.attachment != attachment ||
-		input.attachments[0].detach.disposition != oldBranchAbort ||
+		input.attachments[0].detach.disposition != oldBranchDrain ||
 		input.attachments[0].branchName != "late" {
 		t.Fatalf("stream rule remove input = %+v, want captured tracked attachment", input)
 	}
@@ -247,7 +246,7 @@ func TestStreamRuleRemoveUsesRuntimeDetachInput(t *testing.T) {
 	text := string(body)
 	required := []string{
 		"detach     runtimeDetachInput",
-		"runtimeDetachInputForRuntimeAttachment(entry.attachment, disposition)",
+		"runtimeDetachInputForRuntimeAttachment(entry.attachment, oldBranchDrain)",
 		"t.detachRuntimeAttachment(context.Background(), entry.detach)",
 	}
 	for _, want := range required {

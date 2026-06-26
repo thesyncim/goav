@@ -10,7 +10,6 @@ import (
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/flow"
-	"github.com/thesyncim/goav/lifecycle"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/plan"
 	"github.com/thesyncim/goav/shape"
@@ -132,12 +131,6 @@ func TestBranchSpecOriginContracts(t *testing.T) {
 	branch := Branch("preview").To(branchBuilderTestSink("preview"))
 	if branch.origin != branchSpecOriginBranch {
 		t.Fatalf("branch origin = %v, want branch", branch.origin)
-	}
-	remove := OnRemove(lifecycle.AbortBranch())
-	if remove.origin != branchSpecOriginOnRemove ||
-		!remove.hasRemoveDisposition ||
-		remove.removeDisposition != oldBranchAbort {
-		t.Fatalf("OnRemove BranchSpec = %+v, want policy origin with abort disposition", remove)
 	}
 }
 
