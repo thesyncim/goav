@@ -81,7 +81,6 @@ errcode.FamilyBuffer
 errcode.FamilyCodec
 errcode.FamilyCompiler
 errcode.FamilyDestination
-errcode.FamilyDiagnostic
 errcode.FamilyEncode
 errcode.FamilyExternal
 errcode.FamilyFlow

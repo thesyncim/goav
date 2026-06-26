@@ -51,11 +51,11 @@ const (
 	FamilyStreamRule Family = "stream_rule"
 	// FamilyCompiler groups compiler and internal graph-plan refusals.
 	FamilyCompiler Family = "compiler"
-	// FamilyDiagnostic groups non-failing Explain diagnostics and decisions.
-	FamilyDiagnostic Family = "diagnostic"
 	// FamilyExternal groups vendor-prefixed or otherwise uncataloged codes.
 	FamilyExternal Family = "external"
 )
+
+const familyDiagnostic Family = "diagnostic"
 
 // FamilyForCode returns the stable family for a goav error code. It also
 // recognizes goav's non-failing plan diagnostic strings for report grouping.
@@ -131,7 +131,7 @@ func FamilyForCode(code Code) Family {
 		Code("decode_codec_deferred"), Code("explain_preflight_error"), Code("packet_copy"),
 		Code("frame_source"), Code("event_source"), Code("decode_required"), Code("encode_required"),
 		Code("stream_rule"):
-		return FamilyDiagnostic
+		return familyDiagnostic
 	default:
 		if isCustomJoinCode(code) {
 			return FamilyJoin
