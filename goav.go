@@ -89,8 +89,15 @@ type Controllable interface {
 	Control(context.Context, control.Control) error
 }
 
-// Observable exposes task event streams.
-type Observable interface {
+// LiveTask is the full task capability set produced by the built-in runtime.
+// Accept this only when an API needs inspection, runtime mutation, controls, or
+// events; otherwise accept Task.
+type LiveTask interface {
+	Task
+	Explainer
+	Inspectable
+	Mutable
+	Controllable
 	// Events returns an unfiltered event subscription channel. Prefer Watch
 	// when callers need filters or explicit Subscription.Close ownership.
 	Events() <-chan av.Event
@@ -103,16 +110,4 @@ type Observable interface {
 	// or Subscription.Close unsubscribes them. An unfiltered Watch() is the
 	// Events equivalent with an explicit subscription handle.
 	Watch(filters ...inspect.EventFilter) inspect.Subscription
-}
-
-// LiveTask is the full task capability set produced by the built-in runtime.
-// Accept this only when an API needs inspection, runtime mutation, controls, or
-// events; otherwise accept Task.
-type LiveTask interface {
-	Task
-	Explainer
-	Inspectable
-	Mutable
-	Controllable
-	Observable
 }

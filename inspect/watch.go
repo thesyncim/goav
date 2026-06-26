@@ -4,7 +4,7 @@ package inspect
 import "github.com/thesyncim/goav/av"
 
 // EventFilter reports whether a watcher wants an event. Filters passed to
-// Observable.Watch AND together: an event is delivered when every filter
+// Task Watch filters AND together: an event is delivered when every filter
 // matches. A watch with zero filters receives every event. Any predicate works;
 // WatchTypes and WatchStream cover the common cases.
 type EventFilter func(av.Event) bool

@@ -175,7 +175,9 @@ func (s *session) runTask(kind string, task goav.LiveTask) {
 	s.record("info", "task", kind+" task stopped", kind, "", nil)
 }
 
-func (s *session) drainTaskEvents(kind string, task goav.Observable) {
+func (s *session) drainTaskEvents(kind string, task interface {
+	Events() <-chan av.Event
+}) {
 	for {
 		select {
 		case event, ok := <-task.Events():

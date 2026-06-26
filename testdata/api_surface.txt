@@ -237,7 +237,6 @@ goav.Mutable
 goav.Mux
 goav.Name
 goav.New
-goav.Observable
 goav.OnRemove
 goav.PacketTap
 goav.RecipePatch

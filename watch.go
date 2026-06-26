@@ -13,7 +13,7 @@ import (
 const defaultWatchCapacity = 16
 
 // Watch returns an independent, filtered subscription to the task's event
-// stream. See Observable.Watch for the delivery, overflow, and closure contract.
+// stream. See LiveTask.Watch for the delivery, overflow, and closure contract.
 func (t *task) Watch(filters ...inspect.EventFilter) inspect.Subscription {
 	return t.watch.subscribe(t.graph.Events(), t.watchCapacity(), filters)
 }

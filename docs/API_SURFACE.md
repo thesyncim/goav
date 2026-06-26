@@ -52,7 +52,7 @@ Mutable: Attach/Detach(lifecycle.DrainBranch|AbortBranch); Attachment.Rebranch
          (lifecycle.SwitchAt(lifecycle.NextFrame|lifecycle.NextKeyframe|lifecycle.AtMediaTime),
           lifecycle.DrainOldBranch|lifecycle.AbortOldBranch)
 Controllable: Control(control.Control values from typed constructors, .AtTap)
-Observable: Watch(inspect.EventFilter), Events; inspect.Subscribe/Snapshot/Stats/Render bridge task capabilities
+LiveTask events: Watch(inspect.EventFilter), Events; inspect.Subscribe/Snapshot/Stats/Render bridge task capabilities
 goav.New(goavruntime.Option...) -> (*Runtime, error); goav.MustNew(...) -> bare Runtime; bundle.MustNew(...) -> bundled Runtime; job.UseRuntime(rt)
 errors: *goav.BuildError{Family: errcode.FamilyX, Code: errcode.X, Fields: []goav.Detail, Fixes: []goav.Fix, ...} matched with errors.As/Is; branch on Family first; Detail(key) for typed facts
 ```

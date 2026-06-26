@@ -169,6 +169,8 @@ normal empty-input validation.
 API budget progress: exported `goav.ContextCloser` was removed from the root
 surface; built runtime tasks still expose `CloseContext(ctx)` structurally, and
 callers that only need context-aware shutdown can assert a local interface.
+Exported `goav.Observable` was also removed; event access remains on `LiveTask`,
+while narrow event consumers can use local structural interfaces.
 
 Error-contract progress: `BuildError` no longer exposes legacy
 `Details`/`Suggestions` fields or parses rendered strings in `Detail(key)`;
