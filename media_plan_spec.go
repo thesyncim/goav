@@ -21,6 +21,14 @@ type graphPlanLowerer interface {
 	lower(context.Context, graphPlan, pipeline.Graph, *builder) error
 }
 
+type mediaPlanMultiStreamJobInput struct {
+	runtime      *Runtime
+	intent       intent
+	inputs       []InputSpec
+	input        InputSpec
+	namedOutputs []namedDestinationSpec
+}
+
 // graphPlan binds the compiled work plan — the single executable truth built
 // once by the compile — to the pipeline spec and the lowerer that executes it.
 type graphPlan struct {
@@ -232,8 +240,16 @@ func mediaPlanJoinLowererForState(state *recipeCompileState) (graphPlanLowerer, 
 // through the branch-compose machinery: each chain is one branch and shared
 // Destination handles collapse into one mux group.
 func mediaPlanMultiStreamJobLowererForState(state *recipeCompileState) (graphPlanLowerer, bool, error) {
-	if state == nil || !state.jobPresent || len(state.intent.Streams) < 2 {
+	input, ok := mediaPlanMultiStreamJobInputFromCompileState(state)
+	if !ok {
 		return nil, false, nil
+	}
+	return newMediaPlanMultiStreamJobLowerer(input)
+}
+
+func mediaPlanMultiStreamJobInputFromCompileState(state *recipeCompileState) (mediaPlanMultiStreamJobInput, bool) {
+	if state == nil || !state.jobPresent || len(state.intent.Streams) < 2 {
+		return mediaPlanMultiStreamJobInput{}, false
 	}
 	namedOutputs := make([]namedDestinationSpec, 0, len(state.outputAttachments))
 	for i := range state.outputAttachments {
@@ -246,15 +262,63 @@ func mediaPlanMultiStreamJobLowererForState(state *recipeCompileState) (graphPla
 	if len(state.inputAttachments) != 0 {
 		input = state.inputAttachments[0]
 	}
-	gp, err := planBranchCompositionRecipe(state.intent, input, namedOutputs)
+	return mediaPlanMultiStreamJobInput{
+		runtime:      state.runtime,
+		intent:       clonePlannerIntent(state.intent),
+		inputs:       append([]InputSpec(nil), state.inputAttachments...),
+		input:        input,
+		namedOutputs: cloneNamedDestinationSpecs(namedOutputs),
+	}, true
+}
+
+func newMediaPlanMultiStreamJobLowerer(input mediaPlanMultiStreamJobInput) (graphPlanLowerer, bool, error) {
+	if len(input.intent.Streams) < 2 {
+		return nil, false, nil
+	}
+	gp, err := planBranchCompositionRecipe(input.intent, input.input, input.namedOutputs)
 	if err != nil {
 		return nil, false, err
 	}
-	graph, ok, err := newMediaPlanBranchComposeGraph(state.runtime, state.inputAttachments, gp)
+	graph, ok, err := newMediaPlanBranchComposeGraph(input.runtime, input.inputs, gp)
 	if err != nil || !ok {
 		return nil, ok, err
 	}
 	return graph, true, nil
+}
+
+func clonePlannerIntent(in intent) intent {
+	out := in
+	out.Inputs = cloneInputIntents(in.Inputs)
+	out.Streams = cloneStreamIntents(in.Streams)
+	out.Destinations = append([]destinationIntent(nil), in.Destinations...)
+	return out
+}
+
+func cloneInputIntents(inputs []inputIntent) []inputIntent {
+	if len(inputs) == 0 {
+		return nil
+	}
+	out := make([]inputIntent, 0, len(inputs))
+	for i := range inputs {
+		input := inputs[i]
+		input.Codec = cloneCodecSpec(input.Codec)
+		out = append(out, input)
+	}
+	return out
+}
+
+func cloneStreamIntents(streams []streamIntent) []streamIntent {
+	if len(streams) == 0 {
+		return nil
+	}
+	out := make([]streamIntent, 0, len(streams))
+	for i := range streams {
+		stream := streams[i]
+		stream.Operations = cloneOperationSpecs(stream.Operations)
+		stream.Destinations = append([]string(nil), stream.Destinations...)
+		out = append(out, stream)
+	}
+	return out
 }
 
 func mediaPlanStreamLowererForState(state *recipeCompileState) (graphPlanLowerer, bool, error) {
