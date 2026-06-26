@@ -64,9 +64,13 @@ type runtimeSharedMuxDestination struct {
 	buffer   pipeline.BufferPolicy
 }
 
+type runtimeAttachBranchInput struct {
+	spec         BranchSpec
+	destinations []attachDestination
+}
+
 type runtimeAttachInput struct {
-	specs             []BranchSpec
-	destinations      [][]attachDestination
+	branches          []runtimeAttachBranchInput
 	groupDestinations runtimeBranchGroupDestinations
 	name              string
 }
@@ -192,7 +196,7 @@ func runtimeAttachInputFromBranchSpecs(specs []BranchSpec) (runtimeAttachInput, 
 	if len(specs) == 0 {
 		return runtimeAttachInput{}, runtimeBranchInvalidError("no runtime branches to attach", "pass one or more goav.Branch(name)...To(destination) values")
 	}
-	destinations := make([][]attachDestination, len(specs))
+	branches := make([]runtimeAttachBranchInput, 0, len(specs))
 	for i := range specs {
 		branchDestinations, err := attachBranchDestinations(specs[i])
 		if err != nil {
@@ -201,15 +205,17 @@ func runtimeAttachInputFromBranchSpecs(specs []BranchSpec) (runtimeAttachInput, 
 		if err := validateAttachBranchSpec(specs[i], branchDestinations); err != nil {
 			return runtimeAttachInput{}, err
 		}
-		destinations[i] = branchDestinations
+		branches = append(branches, runtimeAttachBranchInput{
+			spec:         specs[i],
+			destinations: branchDestinations,
+		})
 	}
-	groupDestinations, err := validateRuntimeBranchGroupDestinations(specs, destinations)
+	groupDestinations, err := validateRuntimeBranchGroupDestinations(branches)
 	if err != nil {
 		return runtimeAttachInput{}, err
 	}
 	return runtimeAttachInput{
-		specs:             specs,
-		destinations:      destinations,
+		branches:          branches,
 		groupDestinations: groupDestinations,
 		name:              runtimeAttachmentName(specs),
 	}, nil
@@ -244,8 +250,6 @@ func runtimeRebranchInputFromArgs(ctx context.Context, args []lifecycle.Rebranch
 }
 
 func (t *task) attachRuntimeBranches(ctx context.Context, input runtimeAttachInput) (Attachment, error) {
-	specs := input.specs
-	destinations := input.destinations
 	t.attachMu.Lock()
 	defer t.attachMu.Unlock()
 	group := newRuntimeAttachGroup(input.groupDestinations)
@@ -258,28 +262,30 @@ func (t *task) attachRuntimeBranches(ctx context.Context, input runtimeAttachInp
 		patch.rollback(t)
 		return nil, err
 	}
-	for i := range specs {
+	for i := range input.branches {
+		branch := input.branches[i]
+		spec := branch.spec
 		graphSpec := t.graph.Spec()
-		from, anchor, err := t.resolveRuntimeBranchAnchor(specs[i], graphSpec, patch.taps)
+		from, anchor, err := t.resolveRuntimeBranchAnchor(spec, graphSpec, patch.taps)
 		if err != nil {
 			return rollback(err)
 		}
-		patch.addAnchor(specs[i].source.tap, from)
-		steps, err := t.planAttachBranchSteps(ctx, specs[i], destinations[i], anchor, group)
+		patch.addAnchor(spec.source.tap, from)
+		steps, err := t.planAttachBranchSteps(ctx, branch, anchor, group)
 		if err != nil {
 			return rollback(err)
 		}
-		index := ap.registerBranch(specs[i], from, steps)
+		index := ap.registerBranch(branch, from, steps)
 		if err := t.validateAttachBranchTapsLocked(steps, patch.taps); err != nil {
 			return rollback(err)
 		}
-		if err := t.configureAttachBranchBuffer(&ap.branches[index], specs[i], steps); err != nil {
+		if err := t.configureAttachBranchBuffer(&ap.branches[index], branch, steps); err != nil {
 			return rollback(err)
 		}
-		if specs[i].branchBuffer.CopyMode == flow.CopyNever {
-			patch.copyNeverBranches = append(patch.copyNeverBranches, firstNonEmpty(specs[i].name, "branch"))
+		if spec.branchBuffer.CopyMode == flow.CopyNever {
+			patch.copyNeverBranches = append(patch.copyNeverBranches, firstNonEmpty(spec.name, "branch"))
 		}
-		if err := ap.finalizeBranch(index, specs[i], destinations[i], anchor, graphSpec, group, steps); err != nil {
+		if err := ap.finalizeBranch(index, branch, anchor, graphSpec, group, steps); err != nil {
 			return rollback(err)
 		}
 		patch.addPlannedTaps(ap.branches[index].taps)
@@ -314,10 +320,11 @@ func (t *task) attachRuntimeBranches(ctx context.Context, input runtimeAttachInp
 	return attachment, nil
 }
 
-func (t *task) configureAttachBranchBuffer(branch *attachPlanBranch, spec BranchSpec, steps []attachStep) error {
+func (t *task) configureAttachBranchBuffer(branch *attachPlanBranch, input runtimeAttachBranchInput, steps []attachStep) error {
 	if branch == nil {
 		return nil
 	}
+	spec := input.spec
 	if _, ok := t.graph.(pipeline.NodeInjector); !ok {
 		return nil
 	}
@@ -434,14 +441,15 @@ func validateAttachBranchSpec(spec BranchSpec, destinations []attachDestination)
 	return nil
 }
 
-func validateRuntimeBranchGroupDestinations(specs []BranchSpec, destinations [][]attachDestination) (runtimeBranchGroupDestinations, error) {
+func validateRuntimeBranchGroupDestinations(branches []runtimeAttachBranchInput) (runtimeBranchGroupDestinations, error) {
 	var group runtimeBranchGroupDestinations
 	seen := make(map[string]attachDestination)
 	seenBranch := make(map[string]string)
-	for i := range destinations {
-		branchName := firstNonEmpty(specs[i].name, fmt.Sprintf("branch-%d", i+1))
-		for j := range destinations[i] {
-			destination := destinations[i][j]
+	for i := range branches {
+		spec := branches[i].spec
+		branchName := firstNonEmpty(spec.name, fmt.Sprintf("branch-%d", i+1))
+		for j := range branches[i].destinations {
+			destination := branches[i].destinations[j]
 			label := destination.name
 			if label == "" {
 				continue
@@ -467,7 +475,7 @@ func validateRuntimeBranchGroupDestinations(specs []BranchSpec, destinations [][
 					Family:    errcode.FamilyForCode(errcode.DestinationDuplicate),
 					Code:      errcode.DestinationDuplicate,
 					Operation: "attach runtime branches",
-					Node:      firstNonEmpty(specs[i].name, "branch"),
+					Node:      firstNonEmpty(spec.name, "branch"),
 					Reason:    "runtime branch group reuses one destination name",
 					Fields: buildErrorFields([]string{
 						"destination: " + label,

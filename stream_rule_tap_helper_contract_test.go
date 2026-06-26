@@ -151,12 +151,11 @@ func TestStreamRuleAttachInputCapturesTemplatedBranch(t *testing.T) {
 
 	if input.branchNames != "late" ||
 		input.attach.name != "late-audio" ||
-		len(input.attach.specs) != 1 ||
-		len(input.attach.destinations) != 1 ||
-		len(input.attach.destinations[0]) != 1 {
+		len(input.attach.branches) != 1 ||
+		len(input.attach.branches[0].destinations) != 1 {
 		t.Fatalf("stream rule attach input = %+v, want captured templated branch", input)
 	}
-	spec := input.attach.specs[0]
+	spec := input.attach.branches[0].spec
 	if spec.name != "late-audio" ||
 		spec.source.from != "demux" ||
 		spec.source.policy != pipeline.RouteByStream ||
