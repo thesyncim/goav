@@ -250,10 +250,8 @@ func planCopyBranches(state *recipeCompileState, outputs []planOutput) ([]planBr
 		input := intent.Inputs[i]
 		name := firstNonEmpty(input.Name, input.URI, fmt.Sprintf("input-%d", i))
 		spec := mediaShapeFromInputIntent(input, shape.DomainPacket)
-		if i < len(state.inputAttachments) {
-			if sourceShape, ok := declaredSourceShape(state.inputAttachments[i]); ok {
-				spec = shape.Merge(spec, sourceShape)
-			}
+		if sourceShape, ok := state.inputSourceShape(i); ok {
+			spec = shape.Merge(spec, sourceShape)
 		}
 		operations := planInputOperationsForShape(input, spec)
 		copyDetail := "preserve encoded packets"

@@ -10,6 +10,7 @@ import (
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
+	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/internal/recipeir"
 	"github.com/thesyncim/goav/plan"
 	"github.com/thesyncim/goav/shape"
@@ -197,6 +198,21 @@ func TestMediaPlannerConsumesRecipeIRInputFacts(t *testing.T) {
 	}
 }
 
+func TestCopyPlannerConsumesRecipeIRInputFacts(t *testing.T) {
+	job := From(Source("events", shape.Event(), SourceFunc(func(context.Context, source.Push) error { return nil }))).
+		To(Sink(SinkFunc("events", func(context.Context, Message) error { return nil })))
+
+	state := recipeCompileStateFromSnapshot(newJobRecipeSnapshot(job), recipeCompileOptions{})
+	state.inputAttachments = nil
+	branches, decisions := planCopyBranches(&state, planOutputs(state.intent.Destinations, nil))
+	if len(branches) != 1 || branches[0].Shape.Domain != shape.DomainEvent {
+		t.Fatalf("copy branches = %+v, want event source shape from IR input facts", branches)
+	}
+	if len(decisions) != 1 || decisions[0].Code != string(errcode.EventSource) {
+		t.Fatalf("copy decisions = %+v, want event source decision", decisions)
+	}
+}
+
 func TestRecipeIRSnapshotCapturesSinkDestinationKind(t *testing.T) {
 	job := From(FileInput("input.ivf", strings.NewReader(""))).
 		Video().
@@ -322,6 +338,13 @@ func TestMediaPlannerUsesRecipeIRInputFacts(t *testing.T) {
 	selectedBody := sourceFunctionBody(t, string(body), "planSelectedStream")
 	if !strings.Contains(selectedBody, "for i := range state.inputFacts") {
 		t.Fatal("planSelectedStream should resolve declared source streams from recipe IR input facts")
+	}
+	copyBody := sourceFunctionBody(t, string(body), "planCopyBranches")
+	if !strings.Contains(copyBody, "state.inputSourceShape(i)") {
+		t.Fatal("planCopyBranches should read declared source shape through recipe IR input facts")
+	}
+	if strings.Contains(copyBody, "declaredSourceShape(state.inputAttachments") {
+		t.Fatal("planCopyBranches still reads source shape directly from concrete input attachments")
 	}
 }
 
