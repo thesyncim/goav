@@ -942,42 +942,107 @@ func validateJobTransformAdaptersPass() recipeCompilePass {
 
 func validateJobOutputBindingsPass() recipeCompilePass {
 	return recipeCompilePassFunc{name: "validate job output bindings", fn: func(state *recipeCompileState) error {
-		for i := range state.intent.Streams {
-			if err := validateJobOutputBindings(state.operation, state.intent.Streams[i], state.outputAttachments, state.outputDestinationNames); err != nil {
-				return err
-			}
-		}
-		return nil
+		return validateJobRecipeOutputBindings(state.operation, state.recipe)
 	}}
 }
 
 func validateJobStreamOutputKindsPass() recipeCompilePass {
 	return recipeCompilePassFunc{name: "validate job stream output kinds", fn: func(state *recipeCompileState) error {
-		if len(state.intent.Streams) == 1 {
-			return validateJobStreamOutputKinds(state.operation, state.intent.Streams[0], state.outputAttachments)
-		}
-		// Multiple chains may mix kinds across destinations (one chain to a
-		// mux file, another to a sink); each chain is checked against the
-		// destinations it actually routes to.
-		for i := range state.intent.Streams {
-			stream := state.intent.Streams[i]
-			if err := validateJobStreamOutputKinds(state.operation, stream, jobStreamDestinationSubset(state, stream)); err != nil {
-				return err
-			}
-		}
-		return nil
+		return validateJobRecipeStreamOutputKinds(state.operation, state.recipe)
 	}}
 }
 
-func jobStreamDestinationSubset(state *recipeCompileState, stream streamIntent) []destinationSpec {
-	outputs := make([]destinationSpec, 0, len(stream.Destinations))
-	for i := range state.outputAttachments {
-		name := jobOutputDestinationName(state.outputAttachments, state.outputDestinationNames, i)
-		if stringInSlice(name, stream.Destinations) {
-			outputs = append(outputs, state.outputAttachments[i])
+func validateJobRecipeOutputBindings(operation string, recipe recipeir.Recipe) error {
+	streams := streamIntentsFromRecipeIR(recipe.Streams)
+	destinations := recipeIRDestinationLabelSet(recipe.Destinations)
+	for i := range streams {
+		stream := streams[i]
+		for _, destinationName := range stream.Destinations {
+			if _, ok := destinations[destinationName]; ok {
+				continue
+			}
+			return jobDestinationReferenceMissingError(operation, stream, destinationName)
 		}
 	}
-	return outputs
+	return nil
+}
+
+func validateJobRecipeStreamOutputKinds(operation string, recipe recipeir.Recipe) error {
+	streams := streamIntentsFromRecipeIR(recipe.Streams)
+	if len(streams) == 1 {
+		return validateJobStreamOutputKindsByKind(operation, streams[0], recipeIRDestinationKinds(recipe))
+	}
+	// Multiple chains may mix kinds across destinations (one chain to a mux
+	// file, another to a sink); each chain is checked against its own output refs.
+	kindByName := recipeIRDestinationKindSet(recipe.Destinations)
+	for i := range streams {
+		stream := streams[i]
+		if err := validateJobStreamOutputKindsByKind(operation, stream, recipeIRDestinationKindsForStream(stream, kindByName)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateJobStreamOutputKindsByKind(operation string, stream streamIntent, kinds []recipeir.DestinationKind) error {
+	encode := chainEncodeSpec(stream.Operations)
+	if recipeIRDestinationKindsContainSink(kinds) && recipeIRDestinationKindsContainMux(kinds) && !codecIntentSet(encode) {
+		return mixedStreamOutputError(operation, stream)
+	}
+	if encode.ID == "" && !encode.Copy && recipeIRDestinationKindsContainMux(kinds) {
+		return streamEncodeMissingError(operation, stream)
+	}
+	return nil
+}
+
+func recipeIRDestinationKindsForStream(stream streamIntent, kindByName map[string]recipeir.DestinationKind) []recipeir.DestinationKind {
+	kinds := make([]recipeir.DestinationKind, 0, len(stream.Destinations))
+	for _, name := range stream.Destinations {
+		kind, ok := kindByName[name]
+		if !ok {
+			continue
+		}
+		kinds = append(kinds, kind)
+	}
+	return kinds
+}
+
+func recipeIRDestinationLabelSet(destinations []recipeir.Destination) map[string]struct{} {
+	out := make(map[string]struct{}, len(destinations))
+	for i := range destinations {
+		out[recipeIRDestinationLabel(destinations[i], i)] = struct{}{}
+	}
+	return out
+}
+
+func recipeIRDestinationKindSet(destinations []recipeir.Destination) map[string]recipeir.DestinationKind {
+	out := make(map[string]recipeir.DestinationKind, len(destinations))
+	for i := range destinations {
+		out[recipeIRDestinationLabel(destinations[i], i)] = destinations[i].Kind
+	}
+	return out
+}
+
+func recipeIRDestinationLabel(destination recipeir.Destination, index int) string {
+	return firstNonEmpty(destination.Name, destination.URI, fmt.Sprintf("output-%d", index))
+}
+
+func recipeIRDestinationKindsContainSink(kinds []recipeir.DestinationKind) bool {
+	for i := range kinds {
+		if kinds[i] == recipeir.DestinationKindSink {
+			return true
+		}
+	}
+	return false
+}
+
+func recipeIRDestinationKindsContainMux(kinds []recipeir.DestinationKind) bool {
+	for i := range kinds {
+		if kinds[i] != recipeir.DestinationKindSink {
+			return true
+		}
+	}
+	return false
 }
 
 func validateBranchCompositionRecipePass() recipeCompilePass {
@@ -1067,14 +1132,52 @@ func validateBranchTransformAdaptersPass() recipeCompilePass {
 
 func validateBranchDestinationBindingsPass() recipeCompilePass {
 	return recipeCompilePassFunc{name: "validate branch destination bindings", fn: func(state *recipeCompileState) error {
-		return validateBranchDestinationBindings(state.intent, state.branchDestinationAttachments)
+		return validateBranchRecipeDestinationBindings(state.recipe)
 	}}
 }
 
 func validateBranchDestinationKindsPass() recipeCompilePass {
 	return recipeCompilePassFunc{name: "validate branch destination kinds", fn: func(state *recipeCompileState) error {
-		return validateBranchDestinationKinds(state.intent, state.branchDestinationAttachments)
+		return validateBranchRecipeDestinationKinds(state.recipe)
 	}}
+}
+
+func validateBranchRecipeDestinationBindings(recipe recipeir.Recipe) error {
+	streams := streamIntentsFromRecipeIR(recipe.Streams)
+	destinations := recipeIRDestinationLabelSet(recipe.Destinations)
+	for i := range streams {
+		stream := streams[i]
+		for _, label := range stream.Destinations {
+			if _, ok := destinations[label]; ok {
+				continue
+			}
+			return branchDestinationReferenceMissingError(stream, label)
+		}
+	}
+	return nil
+}
+
+func validateBranchRecipeDestinationKinds(recipe recipeir.Recipe) error {
+	streams := streamIntentsFromRecipeIR(recipe.Streams)
+	kindByName := recipeIRDestinationKindSet(recipe.Destinations)
+	for i := range streams {
+		stream := streams[i]
+		hasMuxDestination := false
+		for _, label := range stream.Destinations {
+			kind, ok := kindByName[label]
+			if !ok {
+				continue
+			}
+			if kind != recipeir.DestinationKindSink {
+				hasMuxDestination = true
+				break
+			}
+		}
+		if hasMuxDestination && !codecIntentSet(chainEncodeSpec(stream.Operations)) {
+			return branchEncodeMissingError(stream)
+		}
+	}
+	return nil
 }
 
 func validateRecipeAttachmentConsistencyPass() recipeCompilePass {

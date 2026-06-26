@@ -588,25 +588,6 @@ func (j *Job) Run(ctx context.Context) error {
 	return errors.Join(runErr, closeErr)
 }
 
-func validateJobOutputBindings(operation string, stream streamIntent, outputs []destinationSpec, destinationNames []string) error {
-	destinations := jobOutputDestinationSet(outputs, destinationNames)
-	for _, destinationName := range stream.Destinations {
-		if _, ok := destinations[destinationName]; ok {
-			continue
-		}
-		return jobDestinationReferenceMissingError(operation, stream, destinationName)
-	}
-	return nil
-}
-
-func jobOutputDestinationSet(outputs []destinationSpec, destinationNames []string) map[string]struct{} {
-	destinations := make(map[string]struct{}, len(outputs))
-	for i := range outputs {
-		destinations[jobOutputDestinationName(outputs, destinationNames, i)] = struct{}{}
-	}
-	return destinations
-}
-
 func (j *Job) allOutputs() []destinationSpec {
 	if len(j.branchDestinations) != 0 {
 		outputs := make([]destinationSpec, 0, len(j.branchDestinations))

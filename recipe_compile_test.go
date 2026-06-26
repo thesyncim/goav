@@ -3,6 +3,7 @@ package goav
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"reflect"
@@ -49,6 +50,29 @@ func moveTestStreamsToRecipeIR(state *recipeCompileState, kind recipeir.Kind) {
 		}
 	}
 	state.intent.Streams = nil
+}
+
+func moveTestOutputsToRecipeIR(state *recipeCompileState, kind recipeir.Kind, destinations ...recipeir.Destination) {
+	if state == nil {
+		return
+	}
+	moveTestStreamsToRecipeIR(state, kind)
+	if len(destinations) != 0 {
+		state.recipe.Destinations = append([]recipeir.Destination(nil), destinations...)
+	} else if len(state.recipe.Destinations) == 0 && len(state.intent.Destinations) != 0 {
+		state.recipe.Destinations = make([]recipeir.Destination, 0, len(state.intent.Destinations))
+		for i := range state.intent.Destinations {
+			state.recipe.Destinations = append(state.recipe.Destinations, recipeIRDestinationFromIntent(state.intent.Destinations[i]))
+		}
+	}
+	state.intent.Destinations = nil
+	state.outputAttachments = nil
+	state.outputDestinationNames = nil
+	state.branchDestinationAttachments = nil
+}
+
+func testRecipeIRDestination(name string, kind recipeir.DestinationKind) recipeir.Destination {
+	return recipeir.Destination{Name: name, Kind: kind}
 }
 
 type graphPlanTestLowerer struct {
@@ -1219,21 +1243,16 @@ func TestJobIntentShapePassRejectsInvalidPublicShape(t *testing.T) {
 }
 
 func TestJobOutputBindingsPassRejectsUndefinedStreamRoutes(t *testing.T) {
+	stream := streamIntent{
+		Name:         "audio",
+		Operations:   decodeIntentOperations(),
+		Destinations: []string{"missing"},
+	}
 	state := recipeCompileState{
 		operation: "build job",
-		intent: intent{
-			Inputs: []inputIntent{{Name: "input.ogg"}},
-			Streams: []streamIntent{{
-				Name:         "audio",
-				Operations:   decodeIntentOperations(),
-				Destinations: []string{"missing"},
-			}},
-			Destinations: []destinationIntent{{Name: "archive.ogg"}},
-		},
-		outputAttachments: []destinationSpec{
-			fileDestination("archive.ogg", io.Discard),
-		},
+		intent:    intent{Streams: []streamIntent{stream}},
 	}
+	moveTestOutputsToRecipeIR(&state, recipeir.KindJob, testRecipeIRDestination("archive.ogg", recipeir.DestinationKindByteStream))
 
 	err := validateJobOutputBindingsPass().Apply(&state)
 	var buildErr *BuildError
@@ -2567,13 +2586,14 @@ func TestJobStreamOutputKindsPassRejectsInvalidOutputShapes(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			state := recipeCompileState{
 				operation: "build job",
-				intent: intent{
-					Inputs:       []inputIntent{{Name: "input.ogg"}},
-					Streams:      []streamIntent{tt.stream},
-					Destinations: []destinationIntent{{Name: "unused"}},
-				},
-				outputAttachments: tt.outputs,
+				intent:    intent{Streams: []streamIntent{tt.stream}},
 			}
+			destinations := make([]recipeir.Destination, 0, len(tt.outputs))
+			for i := range tt.outputs {
+				name := tt.outputs[i].label(fmt.Sprintf("output-%d", i))
+				destinations = append(destinations, testRecipeIRDestination(name, recipeIRDestinationKindFromSpec(tt.outputs[i])))
+			}
+			moveTestOutputsToRecipeIR(&state, recipeir.KindJob, destinations...)
 			err := pass.Apply(&state)
 			var buildErr *BuildError
 			if !errors.As(err, &buildErr) || buildErr.Code != tt.code || !errors.Is(err, errUnsupportedBuild) {
@@ -2589,21 +2609,21 @@ func TestJobStreamOutputKindsPassRejectsInvalidOutputShapes(t *testing.T) {
 }
 
 func TestJobStreamOutputKindsPassAllowsEncodedPacketFanout(t *testing.T) {
-	packetSink := sinkDestination(SinkFunc("packets", func(context.Context, Message) error { return nil }))
-	fileOutput := fileDestination("archive.ogg", io.Discard)
+	stream := streamIntent{
+		Name:         "audio",
+		Operations:   decodeEncodeIntentOperations(codec.Opus(codec.Bitrate(96_000))),
+		Destinations: []string{"packets", "archive.ogg"},
+	}
 	state := recipeCompileState{
 		operation: "build job",
-		intent: intent{
-			Inputs: []inputIntent{{Name: "input.ogg"}},
-			Streams: []streamIntent{{
-				Name:         "audio",
-				Operations:   decodeEncodeIntentOperations(codec.Opus(codec.Bitrate(96_000))),
-				Destinations: []string{"packets", "archive.ogg"},
-			}},
-			Destinations: []destinationIntent{{Name: "packets"}, {Name: "archive.ogg"}},
-		},
-		outputAttachments: []destinationSpec{packetSink, fileOutput},
+		intent:    intent{Streams: []streamIntent{stream}},
 	}
+	moveTestOutputsToRecipeIR(
+		&state,
+		recipeir.KindJob,
+		testRecipeIRDestination("packets", recipeir.DestinationKindSink),
+		testRecipeIRDestination("archive.ogg", recipeir.DestinationKindByteStream),
+	)
 	if err := validateJobStreamOutputKindsPass().Apply(&state); err != nil {
 		t.Fatalf("validateJobStreamOutputKindsPass() error = %v", err)
 	}
@@ -3167,47 +3187,37 @@ func TestTranscodeAttachmentsPassRejectsInvalidConcreteAttachments(t *testing.T)
 }
 
 func TestTranscodeBranchTargetKindsPassAllowsCopyMuxBranches(t *testing.T) {
+	stream := streamIntent{
+		Name:         "archive",
+		Select:       plan.StreamSelect{Type: av.MediaVideo},
+		Operations:   encodeIntentOperations(codec.Copy()),
+		Destinations: []string{"web"},
+	}
 	state := recipeCompileState{
 		operation: branchCompositionOperation,
-		intent: intent{
-			Inputs: []inputIntent{{Name: "input.ivf"}},
-			Streams: []streamIntent{{
-				Name:         "archive",
-				Select:       plan.StreamSelect{Type: av.MediaVideo},
-				Operations:   encodeIntentOperations(codec.Copy()),
-				Destinations: []string{"web"},
-			}},
-		},
-		branchDestinationAttachments: []namedDestinationSpec{{
-			name:   "web",
-			output: fileDestination("web.ivf", io.Discard),
-		}},
+		intent:    intent{Inputs: []inputIntent{{Name: "input.ivf"}}, Streams: []streamIntent{stream}},
 	}
 
 	if err := validateBranchCompositionIntentShapePass().Apply(&state); err != nil {
 		t.Fatalf("validateBranchCompositionIntentShapePass() error = %v", err)
 	}
+	moveTestOutputsToRecipeIR(&state, recipeir.KindBranchComposition, testRecipeIRDestination("web", recipeir.DestinationKindByteStream))
 	if err := validateBranchDestinationKindsPass().Apply(&state); err != nil {
 		t.Fatalf("validateBranchDestinationKindsPass() error = %v", err)
 	}
 }
 
 func TestTranscodeBranchTargetKindsPassAllowsRawSinkBranches(t *testing.T) {
+	stream := streamIntent{
+		Name:         "preview",
+		Select:       plan.StreamSelect{Type: av.MediaVideo},
+		Destinations: []string{"frames"},
+	}
 	state := recipeCompileState{
 		operation: branchCompositionOperation,
-		intent: intent{
-			Inputs: []inputIntent{{Name: "input.ivf"}},
-			Streams: []streamIntent{{
-				Name:         "preview",
-				Select:       plan.StreamSelect{Type: av.MediaVideo},
-				Destinations: []string{"frames"},
-			}},
-		},
-		branchDestinationAttachments: []namedDestinationSpec{{
-			name:   "frames",
-			output: sinkDestination(SinkFunc("frames", func(context.Context, Message) error { return nil })),
-		}},
+		intent:    intent{Streams: []streamIntent{stream}},
 	}
+	moveTestOutputsToRecipeIR(&state, recipeir.KindBranchComposition, testRecipeIRDestination("frames", recipeir.DestinationKindSink))
 
 	if err := validateBranchDestinationKindsPass().Apply(&state); err != nil {
 		t.Fatalf("validateBranchDestinationKindsPass() error = %v", err)
@@ -3215,21 +3225,16 @@ func TestTranscodeBranchTargetKindsPassAllowsRawSinkBranches(t *testing.T) {
 }
 
 func TestTranscodeBranchTargetKindsPassRejectsRawMuxBranches(t *testing.T) {
+	stream := streamIntent{
+		Name:         "preview",
+		Select:       plan.StreamSelect{Type: av.MediaVideo},
+		Destinations: []string{"web"},
+	}
 	state := recipeCompileState{
 		operation: branchCompositionOperation,
-		intent: intent{
-			Inputs: []inputIntent{{Name: "input.ivf"}},
-			Streams: []streamIntent{{
-				Name:         "preview",
-				Select:       plan.StreamSelect{Type: av.MediaVideo},
-				Destinations: []string{"web"},
-			}},
-		},
-		branchDestinationAttachments: []namedDestinationSpec{{
-			name:   "web",
-			output: fileDestination("web.ivf", io.Discard),
-		}},
+		intent:    intent{Streams: []streamIntent{stream}},
 	}
+	moveTestOutputsToRecipeIR(&state, recipeir.KindBranchComposition, testRecipeIRDestination("web", recipeir.DestinationKindByteStream))
 
 	err := validateBranchDestinationKindsPass().Apply(&state)
 	var buildErr *BuildError
@@ -3242,23 +3247,17 @@ func TestTranscodeBranchTargetKindsPassRejectsRawMuxBranches(t *testing.T) {
 }
 
 func TestTranscodeOutputBindingsPassRejectsUndefinedRoutes(t *testing.T) {
+	stream := streamIntent{
+		Name:         "360p",
+		Select:       plan.StreamSelect{Type: av.MediaVideo},
+		Operations:   encodeIntentOperations(codec.VP9(codec.Bitrate(600_000))),
+		Destinations: []string{"missing"},
+	}
 	state := recipeCompileState{
 		operation: branchCompositionOperation,
-		intent: intent{
-			Inputs: []inputIntent{{Name: "input.ivf"}},
-			Streams: []streamIntent{{
-				Name:         "360p",
-				Select:       plan.StreamSelect{Type: av.MediaVideo},
-				Operations:   encodeIntentOperations(codec.VP9(codec.Bitrate(600_000))),
-				Destinations: []string{"missing"},
-			}},
-			Destinations: []destinationIntent{{Name: "web.ivf"}},
-		},
-		branchDestinationAttachments: []namedDestinationSpec{{
-			name:   "web",
-			output: fileDestination("web.ivf", io.Discard),
-		}},
+		intent:    intent{Streams: []streamIntent{stream}},
 	}
+	moveTestOutputsToRecipeIR(&state, recipeir.KindBranchComposition, testRecipeIRDestination("web", recipeir.DestinationKindByteStream))
 
 	err := validateBranchDestinationBindingsPass().Apply(&state)
 	var buildErr *BuildError

@@ -493,17 +493,6 @@ func streamStageMissingError(stream streamIntent) error {
 	}
 }
 
-func validateJobStreamOutputKinds(operation string, stream streamIntent, outputs []destinationSpec) error {
-	encode := chainEncodeSpec(stream.Operations)
-	if outputsContainSinkDestination(outputs) && outputsContainMuxDestination(outputs) && !codecIntentSet(encode) {
-		return mixedStreamOutputError(operation, stream)
-	}
-	if encode.ID == "" && !encode.Copy && outputsContainMuxDestination(outputs) {
-		return streamEncodeMissingError(operation, stream)
-	}
-	return nil
-}
-
 func mixedStreamOutputError(operation string, stream streamIntent) error {
 	return &BuildError{
 		Family:    errcode.FamilyForCode(outputKindMixedCode),

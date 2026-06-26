@@ -856,6 +856,34 @@ func TestAdapterValidationPassesConsumeRecipeIRStreams(t *testing.T) {
 	}
 }
 
+func TestOutputValidationPassesConsumeRecipeIR(t *testing.T) {
+	body, err := os.ReadFile("recipe_compile.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := string(body)
+	for fn, required := range map[string]string{
+		"validateJobOutputBindingsPass":         "validateJobRecipeOutputBindings(state.operation, state.recipe)",
+		"validateJobStreamOutputKindsPass":      "validateJobRecipeStreamOutputKinds(state.operation, state.recipe)",
+		"validateBranchDestinationBindingsPass": "validateBranchRecipeDestinationBindings(state.recipe)",
+		"validateBranchDestinationKindsPass":    "validateBranchRecipeDestinationKinds(state.recipe)",
+	} {
+		fnBody := sourceFunctionBody(t, source, fn)
+		if !strings.Contains(fnBody, required) {
+			t.Fatalf("%s should call %s", fn, required)
+		}
+		for _, forbidden := range []string{
+			"state.intent",
+			"state.outputAttachments",
+			"state.branchDestinationAttachments",
+		} {
+			if strings.Contains(fnBody, forbidden) {
+				t.Fatalf("%s still reads legacy output facts with %q", fn, forbidden)
+			}
+		}
+	}
+}
+
 func TestBranchRecipeSnapshotBuildsRecipeIRDirectly(t *testing.T) {
 	body, err := os.ReadFile("recipe_ir.go")
 	if err != nil {

@@ -264,42 +264,6 @@ func validateBranchCompositionAttachments(input InputSpec, namedOutputs []namedD
 	return nil
 }
 
-func validateBranchDestinationKinds(intent intent, namedOutputs []namedDestinationSpec) error {
-	outputs := branchDestinationSet(namedOutputs)
-	for i := range intent.Streams {
-		stream := intent.Streams[i]
-		hasMuxDestination := false
-		for _, label := range stream.Destinations {
-			output, ok := outputs[label]
-			if !ok {
-				continue
-			}
-			if output.sink == nil {
-				hasMuxDestination = true
-				break
-			}
-		}
-		if hasMuxDestination && !codecIntentSet(chainEncodeSpec(stream.Operations)) {
-			return branchEncodeMissingError(stream)
-		}
-	}
-	return nil
-}
-
-func validateBranchDestinationBindings(intent intent, namedOutputs []namedDestinationSpec) error {
-	outputs := branchDestinationLabelSet(namedOutputs)
-	for i := range intent.Streams {
-		stream := intent.Streams[i]
-		for _, label := range stream.Destinations {
-			if _, ok := outputs[label]; ok {
-				continue
-			}
-			return branchDestinationReferenceMissingError(stream, label)
-		}
-	}
-	return nil
-}
-
 func branchDestinationSet(namedOutputs []namedDestinationSpec) map[string]destinationSpec {
 	outputs := make(map[string]destinationSpec, len(namedOutputs))
 	for i := range namedOutputs {
@@ -317,14 +281,6 @@ func branchDestinationAttachmentSet(namedOutputs []namedDestinationSpec) (map[st
 		outputs[name] = namedOutputs[i].output.withName(firstNonEmpty(namedOutputs[i].output.name, name))
 	}
 	return outputs, outputOrder
-}
-
-func branchDestinationLabelSet(namedOutputs []namedDestinationSpec) map[string]struct{} {
-	outputs := make(map[string]struct{}, len(namedOutputs))
-	for i := range namedOutputs {
-		outputs[namedOutputs[i].name] = struct{}{}
-	}
-	return outputs
 }
 
 func branchStreamMissingError() error {
