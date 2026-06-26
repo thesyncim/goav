@@ -24,14 +24,12 @@ import (
 
 var runtimeAttachmentSeq atomic.Uint64
 
-// attachDestination is one validated destination of an attaching branch: the
-// cloned spec, its sink, and the share key that groups explicit Mux
-// destinations inside one Mutable.Attach call.
+// attachDestination is one validated destination of an attaching branch: stable
+// recipe facts plus the concrete handle kept for the mutation edge.
 type attachDestination struct {
-	name     string
-	dest     destinationSpec
-	sink     pipeline.Sink
-	shareKey string
+	recipe recipeir.RuntimeDestination
+	dest   destinationSpec
+	sink   pipeline.Sink
 }
 
 type runtimeBranchGroupDestinations struct {
@@ -492,13 +490,21 @@ func attachBranchDestinations(spec BranchSpec) ([]attachDestination, error) {
 			return nil, err
 		}
 		destinations = append(destinations, attachDestination{
-			name:     name,
-			dest:     destination,
-			sink:     destination.sink,
-			shareKey: runtimeBranchSharedDestinationKey(ref),
+			recipe: runtimeDestinationFromSpec(name, destination, runtimeBranchSharedDestinationKey(ref)),
+			dest:   destination,
+			sink:   destination.sink,
 		})
 	}
 	return destinations, nil
+}
+
+func runtimeDestinationFromSpec(name string, destination destinationSpec, shareKey string) recipeir.RuntimeDestination {
+	return recipeir.RuntimeDestination{
+		Name:     name,
+		Kind:     recipeIRDestinationKindFromSpec(destination),
+		Format:   destinationOpenFormat(destination),
+		ShareKey: shareKey,
+	}
 }
 
 func validateAttachBranchSpec(spec BranchSpec, destinations []attachDestination) error {
@@ -513,7 +519,7 @@ func validateAttachBranchSpec(spec BranchSpec, destinations []attachDestination)
 	}
 	seen := make(map[string]int, len(destinations))
 	for i := range destinations {
-		name := firstNonEmpty(destinations[i].name, destinations[i].dest.label(fmt.Sprintf("target%d", i+1)))
+		name := firstNonEmpty(destinations[i].recipe.Name, destinations[i].dest.label(fmt.Sprintf("target%d", i+1)))
 		if firstIndex, ok := seen[name]; ok {
 			return duplicateRuntimeBranchDestinationRefError(spec.name, name, firstIndex, i)
 		}
@@ -531,24 +537,24 @@ func validateRuntimeBranchGroupDestinations(branches []runtimeAttachBranchInput)
 		branchName := firstNonEmpty(recipe.branch.Name, fmt.Sprintf("branch-%d", i+1))
 		for j := range branches[i].destinations {
 			destination := branches[i].destinations[j]
-			label := destination.name
+			label := destination.recipe.Name
 			if label == "" {
 				continue
 			}
 			if first, ok := seen[label]; ok {
-				if first.shareKey != "" && first.shareKey == destination.shareKey {
+				if first.recipe.ShareKey != "" && first.recipe.ShareKey == destination.recipe.ShareKey {
 					switch {
 					case runtimeBranchDestinationCanShareSink(first) && runtimeBranchDestinationCanShareSink(destination):
 						if group.sharedSinkKeys == nil {
 							group.sharedSinkKeys = make(map[string]struct{})
 						}
-						group.sharedSinkKeys[first.shareKey] = struct{}{}
+						group.sharedSinkKeys[first.recipe.ShareKey] = struct{}{}
 						continue
 					case runtimeBranchDestinationCanShareMux(first) && runtimeBranchDestinationCanShareMux(destination):
 						if group.sharedMuxKeys == nil {
 							group.sharedMuxKeys = make(map[string]struct{})
 						}
-						group.sharedMuxKeys[first.shareKey] = struct{}{}
+						group.sharedMuxKeys[first.recipe.ShareKey] = struct{}{}
 						continue
 					}
 				}
@@ -579,11 +585,11 @@ func validateRuntimeBranchGroupDestinations(branches []runtimeAttachBranchInput)
 }
 
 func runtimeBranchDestinationCanShareSink(destination attachDestination) bool {
-	return destination.sink != nil && !destinationSpecHasOutput(destination.dest)
+	return destination.recipe.Kind == recipeir.DestinationKindSink
 }
 
 func runtimeBranchDestinationCanShareMux(destination attachDestination) bool {
-	return destination.sink == nil && destinationSpecHasOutput(destination.dest)
+	return destination.recipe.Kind == recipeir.DestinationKindByteStream
 }
 
 func runtimeBranchSharedDestinationKey(target destinationRef) string {
@@ -974,16 +980,16 @@ func validateAttachBranchShapeContract(input runtimeAttachBranchPlanInput, initi
 	destinations := input.branch.destinations
 	for i := range destinations {
 		destination := destinations[i]
-		if destination.sink != nil {
+		if destination.recipe.Kind == recipeir.DestinationKindSink {
 			continue
 		}
-		if !destinationSpecHasOutput(destination.dest) {
+		if destination.recipe.Kind != recipeir.DestinationKindByteStream {
 			continue
 		}
 		if final.Domain == shape.DomainPacket {
 			continue
 		}
-		destinationName := firstNonEmpty(destination.name, destination.dest.label(fmt.Sprintf("destination%d", i+1)))
+		destinationName := firstNonEmpty(destination.recipe.Name, destination.dest.label(fmt.Sprintf("destination%d", i+1)))
 		return destinationShapeMismatchError("attach runtime branch", input.branch.recipe.branch.Name, destinationName, destination.dest, final)
 	}
 	return nil

@@ -74,6 +74,9 @@ methodology changes, and migration notes.
 - Captured runtime attach/rebranch branch recipes as `internal/recipeir`
   runtime branch data before patch planning, leaving destination handles at the
   mutation edge.
+- Captured runtime attach destination name, kind, format, and share-key facts
+  as `internal/recipeir` data while keeping concrete writer/sink handles at the
+  mutation edge.
 - Updated front-door docs to use task capability vocabulary for runtime attach
   examples instead of teaching `LiveTask` as the normal user type, and to
   describe `Watch` as the primary observation surface.

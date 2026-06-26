@@ -6,6 +6,7 @@ import (
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
+	"github.com/thesyncim/goav/internal/recipeir"
 	"github.com/thesyncim/goav/lifecycle"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/plan"
@@ -15,8 +16,8 @@ import (
 
 // workPatch is the plan for a runtime attach: the operations, taps, branches,
 // destinations, edges, and rollback steps the apply step executes against the
-// running graph. It is produced by the attach planner from BranchSpec values
-// through the same operationSpec chain walk the build path lowers, and
+// running graph. It is produced by the attach planner from captured runtime
+// branch inputs through the same operation chain walk the build path lowers, and
 // snapshots render from it.
 type workPatch struct {
 	Name         string
@@ -315,9 +316,9 @@ func (t *task) planAttachBranchSteps(ctx context.Context, input runtimeAttachBra
 	for i := range destinations {
 		destination := destinations[i]
 		switch {
-		case destination.sink != nil:
+		case destination.recipe.Kind == recipeir.DestinationKindSink:
 			steps = append(steps, attachSinkDestinationStep(destination, currentStream, patchShape))
-		case group.isSharedMux(destination.shareKey):
+		case group.isSharedMux(destination.recipe.ShareKey):
 			steps = append(steps, attachSharedMuxDestinationStep(destination, currentStream, patchShape))
 		default:
 			step, err := t.planAttachMuxDestinationStep(ctx, branch.Name, destination, currentStream, patchShape, i)
@@ -410,8 +411,8 @@ func (t *task) planAttachMuxDestinationStep(ctx context.Context, branchName stri
 	if err != nil {
 		return attachStep{}, err
 	}
-	name := firstNonEmpty(branchName, destination.name, "branch")
-	destinationName := firstNonEmpty(destination.name, destination.dest.label(name))
+	name := firstNonEmpty(branchName, destination.recipe.Name, "branch")
+	destinationName := firstNonEmpty(destination.recipe.Name, destination.dest.label(name))
 	if issue, ok := runtimeMuxCompatibilityIssue(destinationName, formatID, []string{name}, []av.Stream{stream}, t.runtime); ok {
 		return attachStep{}, muxCompatibilityBuildError("attach runtime branch", issue)
 	}
@@ -492,21 +493,21 @@ func (p *attachPlan) finalizeBranch(index int, input runtimeAttachBranchPlanInpu
 			continue
 		}
 		if step.terminal {
-			destinationName := firstNonEmpty(step.destination.name, attachComponentName(step.component), "destination")
+			destinationName := firstNonEmpty(step.destination.recipe.Name, attachComponentName(step.component), "destination")
 			var node pipeline.NodeRef
 			addsNode := false
 			switch {
-			case group.isSharedSink(step.destination.shareKey):
-				if err := group.reserveSharedSink(graphSpec, step.destination.shareKey, step.destination.name, step.destination.sink, branch.buffer); err != nil {
+			case group.isSharedSink(step.destination.recipe.ShareKey):
+				if err := group.reserveSharedSink(graphSpec, step.destination.recipe.ShareKey, step.destination.recipe.Name, step.destination.sink, branch.buffer); err != nil {
 					return err
 				}
-				node = pipeline.NodeRef(group.sharedSinks[step.destination.shareKey].name)
+				node = pipeline.NodeRef(group.sharedSinks[step.destination.recipe.ShareKey].name)
 				addsNode = true
-			case group.isSharedMux(step.destination.shareKey):
-				if err := group.reserveSharedMux(graphSpec, name, branch.buffer, step.destination.shareKey, step.destination.name, step.destination.dest, step.stream); err != nil {
+			case group.isSharedMux(step.destination.recipe.ShareKey):
+				if err := group.reserveSharedMux(graphSpec, name, branch.buffer, step.destination.recipe.ShareKey, step.destination.recipe.Name, step.destination.dest, step.stream); err != nil {
 					return err
 				}
-				node = pipeline.NodeRef(group.sharedMuxes[step.destination.shareKey].name)
+				node = pipeline.NodeRef(group.sharedMuxes[step.destination.recipe.ShareKey].name)
 				addsNode = true
 			case step.component.stage != nil || step.component.sink != nil:
 				nodeName := runtimeBranchNodeName(name, attachComponentName(step.component), fmt.Sprintf("target%d", terminalIndex+1))
@@ -528,7 +529,7 @@ func (p *attachPlan) finalizeBranch(index int, input runtimeAttachBranchPlanInpu
 				Name:      destinationName,
 				Operation: operation.Kind,
 				Component: operation.Component,
-				Format:    destinationOpenFormat(step.destination.dest),
+				Format:    step.destination.recipe.Format,
 				Branches:  []string{name},
 			})
 			terminalIndex++
@@ -629,20 +630,20 @@ func attachOperationComponent(operation operationSpec, stage pipeline.Stage) str
 }
 
 func attachDestinationOperationKind(destination attachDestination) plan.OperationKind {
-	if destination.sink != nil {
+	if destination.recipe.Kind == recipeir.DestinationKindSink {
 		return plan.OpSink
 	}
-	if destinationSpecHasOutput(destination.dest) {
+	if destination.recipe.Kind == recipeir.DestinationKindByteStream {
 		return plan.OpMux
 	}
 	return plan.OpSink
 }
 
 func attachDestinationComponent(destination attachDestination) string {
-	if destination.sink != nil {
+	if destination.recipe.Kind == recipeir.DestinationKindSink {
 		return "sink"
 	}
-	if formatID := destinationOpenFormat(destination.dest); formatID != "" {
+	if formatID := destination.recipe.Format; formatID != "" {
 		return string(formatID)
 	}
 	return "mux"
@@ -654,7 +655,7 @@ func attachDestinationNames(destinations []attachDestination) []string {
 	}
 	out := make([]string, 0, len(destinations))
 	for i := range destinations {
-		out = append(out, firstNonEmpty(destinations[i].name, destinations[i].dest.label("destination")))
+		out = append(out, firstNonEmpty(destinations[i].recipe.Name, destinations[i].dest.label("destination")))
 	}
 	return out
 }
@@ -667,14 +668,14 @@ func attachDestinationIDs(destinations []attachDestination) []string {
 	}
 	out := make([]string, 0, len(destinations))
 	for i := range destinations {
-		out = append(out, workDestinationID(firstNonEmpty(destinations[i].name, destinations[i].dest.label("destination"))))
+		out = append(out, workDestinationID(firstNonEmpty(destinations[i].recipe.Name, destinations[i].dest.label("destination"))))
 	}
 	return out
 }
 
 func attachDestinationsHaveMux(destinations []attachDestination) bool {
 	for i := range destinations {
-		if destinations[i].sink == nil && destinationSpecHasOutput(destinations[i].dest) {
+		if destinations[i].recipe.Kind == recipeir.DestinationKindByteStream {
 			return true
 		}
 	}

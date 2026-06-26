@@ -139,6 +139,16 @@ type RuntimeBranchSource struct {
 	StreamDomain  shape.MediaDomain
 }
 
+// RuntimeDestination is the planner-visible destination data captured for a
+// runtime branch before graph patch planning. Concrete writer/sink handles stay
+// outside this DTO and are opened only at the mutation edge.
+type RuntimeDestination struct {
+	Name     string
+	Kind     DestinationKind
+	Format   av.FormatID
+	ShareKey string
+}
+
 // Join summarizes the planner-visible shape of a convergence recipe. It keeps
 // validation and diagnostics off the executable root joinSpec while the lowerer
 // continues to own concrete arms, stages, and destination handles.

@@ -68,10 +68,11 @@ func TestAttachPatchHelperContracts(t *testing.T) {
 		t.Fatalf("unknown detail = %q", got)
 	}
 
+	sinkDest := Sink(sink).spec
 	fileDest := Write("archive.webm", io.Discard, Format(av.FormatWebM)).spec
 	destinations := []attachDestination{
-		{name: "live", sink: sink},
-		{dest: fileDest},
+		{recipe: runtimeDestinationFromSpec("live", sinkDest, ""), dest: sinkDest, sink: sink},
+		{recipe: runtimeDestinationFromSpec("archive.webm", fileDest, ""), dest: fileDest},
 	}
 	if got := attachDestinationOperationKind(destinations[0]); got != plan.OpSink {
 		t.Fatalf("sink destination kind = %s", got)

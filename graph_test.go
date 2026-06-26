@@ -18,6 +18,7 @@ import (
 	"github.com/thesyncim/goav/filter"
 	"github.com/thesyncim/goav/flow"
 	"github.com/thesyncim/goav/format"
+	"github.com/thesyncim/goav/internal/recipeir"
 	"github.com/thesyncim/goav/lifecycle"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/plan"
@@ -449,6 +450,7 @@ func TestRuntimeAttachUsesGraphPatchBoundary(t *testing.T) {
 		"type runtimeAttachInput struct",
 		"type runtimeBranchRecipe struct",
 		"branch recipeir.RuntimeBranch",
+		"recipe recipeir.RuntimeDestination",
 		"type runtimeAttachBranchInput struct",
 		"type runtimeAttachBranchPlanInput struct",
 		"func runtimeAttachInputFromBranchSpecs",
@@ -470,6 +472,8 @@ func TestRuntimeAttachUsesGraphPatchBoundary(t *testing.T) {
 		"func (p *attachPlan) finalizeBranch(index int, input runtimeAttachBranchPlanInput",
 		"intent:    runtimeAttachBranchIntent(branch, anchor)",
 		"range operations",
+		"destination.recipe.Kind",
+		"destination.recipe.ShareKey",
 		"operationSpecOutputShape",
 		"for i := range input.branches",
 		"patch.resetPlannedTaps()",
@@ -526,7 +530,9 @@ func TestRuntimeAttachInputCapturesBranchRecipe(t *testing.T) {
 		input.branches[0].recipe.branch.Name != "watch" ||
 		input.branches[0].recipe.branch.Source.Tap.Name != "pkts" ||
 		len(input.branches[0].recipe.branch.Operations) != 1 ||
-		len(input.branches[0].destinations) != 1 {
+		len(input.branches[0].destinations) != 1 ||
+		input.branches[0].destinations[0].recipe.Name != "late" ||
+		input.branches[0].destinations[0].recipe.Kind != recipeir.DestinationKindSink {
 		t.Fatalf("runtime attach input = %+v, want captured branch recipe and destinations", input)
 	}
 }
