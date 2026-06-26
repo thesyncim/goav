@@ -101,8 +101,8 @@ instead of a generic root wrapper, and destination sink/byte-stream behavior is
 now captured as recipe IR so shape validation does not need to infer that fact
 from concrete writer or sink attachments. Input kind and declared source shape
 now cross the same boundary for compile-time stream selection and normal media
-planner input binding, and dynamic stream-rule summaries feed validation and
-Explain from recipe IR. Join
+planner input/copy binding, and dynamic stream-rule summaries feed validation
+and Explain from recipe IR. Join
 summaries now cross the boundary, and join planning plus join work-plan
 rendering enter through explicit IR-derived handoffs instead of reading compile
 state directly. The executable join lowerer still owns concrete arms and stages.

@@ -55,6 +55,7 @@ methodology changes, and migration notes.
   renderer consumes captured input, destination, and output-format facts.
 - Moved normal media-planner input binding and selected-stream resolution onto
   recipe IR input facts instead of concrete input attachments.
+- Moved copy-branch source-shape planning onto recipe IR input facts.
 - Added the pre-v1 simplification target, started the immutable recipe IR
   boundary used by compile-time planning, and tightened task runtime semantics
   so `Run` preserves both execution and finalization failures while `Events`
