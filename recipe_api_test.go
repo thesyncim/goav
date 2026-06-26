@@ -1679,16 +1679,24 @@ func TestReadmeUsesBranchDestinationVocabulary(t *testing.T) {
 		"goav.Branch(",
 		"Branches(",
 		"goav.Writer(",
-		"goav.FrameTap(",
-		"goav.PacketTap(",
 		"goav.Sink(",
 		"goav.Write(",
-		"goav.Flow(",
 		"goav.Mux(",
 		"Use `goav.Mux(name, destination)`",
 	} {
 		if !strings.Contains(text, required) {
 			t.Fatalf("README should show %s in the public composition grammar", required)
+		}
+	}
+	for _, advanced := range []string{
+		"Runtime attach point",
+		"Reusable operation list",
+		"goav.FrameTap(",
+		"goav.PacketTap(",
+		"goav.Flow(",
+	} {
+		if strings.Contains(text, advanced) {
+			t.Fatalf("README should keep %s out of the beginner recipe table", advanced)
 		}
 	}
 	if strings.Contains(text, "compatibility sugar") {

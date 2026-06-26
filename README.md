@@ -10,9 +10,9 @@
 Build media recipes inside Go services: describe the work, validate it before
 resources open, then run it with explicit adapters.
 
-`goav` keeps the front door small: inputs, stream selection, operations,
-branches, destinations, flows, and task lifecycle. Bundled adapters live in
-`goav/bundle`; deeper runtime control and extension seams are linked below.
+`goav` keeps the front door small: inputs, stream selection, explicit
+operations, fanout branches, destinations, and task lifecycle. Bundled adapters
+live in `goav/bundle`; advanced runtime and extension topics are linked below.
 
 ## Install
 
@@ -43,8 +43,6 @@ use `.Copy()` to stay packet-domain, and route results to `goav.Write(...)`,
 | Decode to app code | `From(input).Audio().Decode().To(goav.Sink(...))` | [Operations](docs/OPERATIONS.md) |
 | Transform and encode | `.Decode().Resize(...).Encode(codec)` or `.Decode().Resample(...).Encode(codec)` | [Operations](docs/OPERATIONS.md) |
 | Fan out one stream | `.Branches(goav.Branch("archive").To(...), goav.Branch("preview").To(...))` | [Use cases](docs/USE_CASES.md) |
-| Runtime attach point | `.Tap(goav.FrameTap("frames"))` or `.Tap(goav.PacketTap("packets"))` | [Control plane](docs/CONTROL_PLANE.md) |
-| Reusable operation list | `goav.Flow("preview").Video().Decode().Resize(...)` | [API surface](docs/API_SURFACE.md) |
 | Custom media boundary | `goav.Source(...)`, `goav.Input(provider)`, `goav.Sink(...)`, `goav.Custom(...)` | [Extension cookbook](docs/EXTENSION_COOKBOOK.md) |
 
 Use `goav.Mux(name, destination)` when several branches should feed one mux,
@@ -59,8 +57,8 @@ rejected so sharing is explicit.
   a custom runtime per service.
 - Build failures are structured `*goav.BuildError` values with stable families,
   details, fixes, and causes.
-- App-owned sources, sinks, destinations, codecs, formats, filters, joins, and
-  controls plug in without global process state.
+- App-owned sources, sinks, destinations, codecs, formats, and filters plug in
+  without global process state.
 
 ## Deep Dives
 

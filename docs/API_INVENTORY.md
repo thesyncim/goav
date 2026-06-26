@@ -73,7 +73,7 @@ Current line counts:
 
 | File | Lines |
 | --- | ---: |
-| `README.md` | 74 |
+| `README.md` | 72 |
 | `docs/API_SURFACE.md` | 378 |
 | `docs/ROADMAP.md` | 244 |
 | `docs/PROGRESS.md` | 138 |
