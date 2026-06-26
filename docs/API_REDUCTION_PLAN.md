@@ -50,8 +50,7 @@ Keep in `goav`:
 - minimal media aliases needed by simple custom callbacks
 - `BuildError` and stable error families
 - minimal `Task` with `Run` and `Close`
-- opt-in task capabilities: `Inspectable` and `LiveTask` with structural
-  mutation methods
+- opt-in task capabilities on `LiveTask`: inspection and mutation methods
 
 Move or keep outside the front door:
 

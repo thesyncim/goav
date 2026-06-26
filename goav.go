@@ -47,10 +47,14 @@ type Task interface {
 	Close() error
 }
 
-// Inspectable exposes graph and runtime state for diagnostics, rendering, and
-// branch anchoring. It is deliberately separate from Task so simple runners do
-// not need to promise inspection support.
-type Inspectable interface {
+// LiveTask is the full task capability set produced by the built-in runtime.
+// Accept this only when an API needs inspection, runtime mutation, controls, or
+// events; otherwise accept Task.
+type LiveTask interface {
+	Task
+	// Explain reports the planned workflow before any resource opens: inputs,
+	// branches, destinations, taps, shapes, planner decisions, and warnings.
+	Explain(context.Context) (plan.Report, error)
 	// Describe returns the structured graph spec — the same nodes and edges
 	// Run executes, node for node. Rendering lives outside core (graphrender).
 	Describe() pipeline.Spec
@@ -61,17 +65,6 @@ type Inspectable interface {
 	// Stats returns per-node counters — packets, frames, drops by reason —
 	// readable while the task runs (lock-free atomic reads).
 	Stats() pipeline.GraphStats
-}
-
-// LiveTask is the full task capability set produced by the built-in runtime.
-// Accept this only when an API needs inspection, runtime mutation, controls, or
-// events; otherwise accept Task.
-type LiveTask interface {
-	Task
-	// Explain reports the planned workflow before any resource opens: inputs,
-	// branches, destinations, taps, shapes, planner decisions, and warnings.
-	Explain(context.Context) (plan.Report, error)
-	Inspectable
 	// Attach adds late branches to the running graph from typed taps. One call
 	// applies all branches atomically: later branches may anchor on taps
 	// published by earlier ones, and a failure rolls the whole group back.

@@ -177,6 +177,8 @@ Exported `goav.Controllable` was removed the same way; live control remains on
 Exported `goav.Explainer` was removed as a separate alias; built-task
 explanation remains on `LiveTask`, and `Job.Explain(ctx)` remains the
 pre-build path.
+Exported `goav.Inspectable` was removed; runtime inspection remains on
+`LiveTask`, and inspection-only helpers can accept a local structural interface.
 Exported `goav.Mutable` was removed; runtime branch mutation remains on
 `LiveTask`, and mutation-only helpers can accept a local structural interface.
 Exported `goav.MediaOption` was removed while keeping `Name`, `MIME`, and

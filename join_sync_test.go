@@ -34,7 +34,7 @@ func eventMsg(eventType av.EventType, id av.StreamID) *pipeline.Message {
 	return &pipeline.Message{Kind: pipeline.MessageEvent, Event: &av.Event{Type: eventType, StreamID: id}}
 }
 
-func requireJoinTaskGraph(t *testing.T, built Inspectable, runner string) {
+func requireJoinTaskGraph(t *testing.T, built any, runner string) {
 	t.Helper()
 	internal, ok := built.(*task)
 	if !ok {

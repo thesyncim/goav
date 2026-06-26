@@ -19,6 +19,7 @@ import (
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/provider"
 	"github.com/thesyncim/goav/shape"
+	"github.com/thesyncim/goav/snapshot"
 )
 
 // syncObjectState is a mutex-guarded transactional destination recorder: the
@@ -174,7 +175,11 @@ func lateStreamSource(late av.Stream, payload byte, stopLate <-chan struct{}, fi
 	)
 }
 
-func taskHasBranch(task Inspectable, name string) bool {
+type taskSnapshotter interface {
+	Snapshot() snapshot.Task
+}
+
+func taskHasBranch(task taskSnapshotter, name string) bool {
 	branches := task.Snapshot().Branches
 	for i := range branches {
 		if branches[i].Name == name && branches[i].State == lifecycle.BranchAttached {

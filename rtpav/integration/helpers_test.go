@@ -22,6 +22,7 @@ import (
 	"github.com/thesyncim/goav/provider"
 	"github.com/thesyncim/goav/rtpav"
 	goavruntime "github.com/thesyncim/goav/runtime"
+	"github.com/thesyncim/goav/snapshot"
 )
 
 // runtimeRTPReceiver is a scripted rtpav.PacketReader: fixed streams, a fixed
@@ -476,7 +477,11 @@ func (w *fileDestinationWriteCloser) Close() error {
 
 // taskHasBranch reports whether the task snapshot carries an attached branch
 // with the given name.
-func taskHasBranch(task goav.Inspectable, name string) bool {
+type taskSnapshotter interface {
+	Snapshot() snapshot.Task
+}
+
+func taskHasBranch(task taskSnapshotter, name string) bool {
 	branches := task.Snapshot().Branches
 	for i := range branches {
 		if branches[i].Name == name && branches[i].State == lifecycle.BranchAttached {

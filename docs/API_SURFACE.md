@@ -47,7 +47,7 @@ goav.Flow("name")                         reusable operation list (Chain)
 job.Describe(); adapter-backed Explain/Build/Run use job.UseRuntime(rt), bundle.Describe/Build/Run
 Task: Run, Close; built runtime tasks also implement structural CloseContext(ctx)
 LiveTask explain: Explain
-Inspectable: Describe, Taps, Snapshot -> snapshot.*, Stats
+LiveTask inspection: Describe, Taps, Snapshot -> snapshot.*, Stats
 LiveTask mutation: Attach/Detach(lifecycle.DrainBranch|AbortBranch); Attachment.Rebranch
          (lifecycle.SwitchAt(lifecycle.NextFrame|lifecycle.NextKeyframe|lifecycle.AtMediaTime),
           lifecycle.DrainOldBranch|lifecycle.AbortOldBranch)
