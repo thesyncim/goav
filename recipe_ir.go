@@ -425,6 +425,17 @@ func recipeIROperationFromSpec(in operationSpec) recipeir.Operation {
 	return out
 }
 
+func recipeIROperationsFromSpecs(operations []operationSpec) []recipeir.Operation {
+	if len(operations) == 0 {
+		return nil
+	}
+	out := make([]recipeir.Operation, 0, len(operations))
+	for i := range operations {
+		out = append(out, recipeIROperationFromSpec(operations[i]))
+	}
+	return out
+}
+
 func operationSpecFromRecipeIR(in recipeir.Operation) operationSpec {
 	out := operationSpec{
 		Kind:      in.Kind,
@@ -453,6 +464,17 @@ func operationSpecFromRecipeIR(in recipeir.Operation) operationSpec {
 	return out
 }
 
+func operationSpecsFromRecipeIR(operations []recipeir.Operation) []operationSpec {
+	if len(operations) == 0 {
+		return nil
+	}
+	out := make([]operationSpec, 0, len(operations))
+	for i := range operations {
+		out = append(out, operationSpecFromRecipeIR(operations[i]))
+	}
+	return out
+}
+
 func recipeIRTapFromRoot(in tapIntent) recipeir.Tap {
 	return recipeir.Tap{
 		Name:      in.Name,
@@ -477,6 +499,21 @@ func recipeIRTapRefFromRoot(in tapRef) recipeir.TapRef {
 
 func rootTapRefFromRecipeIR(in recipeir.TapRef) tapRef {
 	return tapRef{name: in.Name, domain: in.Domain}
+}
+
+func recipeIRRuntimeBranchSourceFromRoot(in branchSourceBinding) recipeir.RuntimeBranchSource {
+	out := recipeir.RuntimeBranchSource{
+		From:         in.from,
+		Tap:          recipeIRTapRefFromRoot(tapRef{name: in.tap, domain: in.tapDomain}),
+		Policy:       in.policy,
+		Label:        in.label,
+		StreamDomain: in.streamDomain,
+	}
+	if in.stream != nil {
+		out.Stream = *in.stream
+		out.StreamPresent = true
+	}
+	return out
 }
 
 func recipeIRCodecChangeFromRoot(in codecChangePolicy) recipeir.CodecChangePolicy {

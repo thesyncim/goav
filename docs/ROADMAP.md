@@ -116,9 +116,9 @@ this list:
 - **Internal-package layering**: measured on the cross-file reference graph
   and still not ready for a package split. The data-transfer boundary has
   started with `internal/recipeir`; normal recipes, OnStream branch facts, and
-  runtime mutation handoffs now cross explicit DTOs, but root-only attachments
-  remain before planner internals can move behind enforced package boundaries
-  (`docs/ARCHITECTURE.md` "Package layering").
+  runtime attach/rebranch branch recipes now cross explicit DTOs, but root-only
+  attachments remain before planner internals can move behind enforced package
+  boundaries (`docs/ARCHITECTURE.md` "Package layering").
 - **Destination lifecycle events**: task and runtime-branch destinations now
   publish commit/abort/error events. Standalone `Mutable.Detach` has explicit
   drain/abort outcomes, branch attach/detach events are watchable, and

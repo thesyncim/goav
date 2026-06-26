@@ -448,6 +448,7 @@ func TestRuntimeAttachUsesGraphPatchBoundary(t *testing.T) {
 		"type runtimeGraphPatch struct",
 		"type runtimeAttachInput struct",
 		"type runtimeBranchRecipe struct",
+		"branch recipeir.RuntimeBranch",
 		"type runtimeAttachBranchInput struct",
 		"type runtimeAttachBranchPlanInput struct",
 		"func runtimeAttachInputFromBranchSpecs",
@@ -468,7 +469,7 @@ func TestRuntimeAttachUsesGraphPatchBoundary(t *testing.T) {
 		"func (p *attachPlan) registerBranch(input runtimeAttachBranchPlanInput",
 		"func (p *attachPlan) finalizeBranch(index int, input runtimeAttachBranchPlanInput",
 		"intent:    runtimeAttachBranchIntent(branch, anchor)",
-		"range recipe.operations",
+		"range operations",
 		"operationSpecOutputShape",
 		"for i := range input.branches",
 		"patch.resetPlannedTaps()",
@@ -522,9 +523,9 @@ func TestRuntimeAttachInputCapturesBranchRecipe(t *testing.T) {
 
 	if input.name != "watch" ||
 		len(input.branches) != 1 ||
-		input.branches[0].recipe.name != "watch" ||
-		input.branches[0].recipe.source.tap != "pkts" ||
-		len(input.branches[0].recipe.operations) != 1 ||
+		input.branches[0].recipe.branch.Name != "watch" ||
+		input.branches[0].recipe.branch.Source.Tap.Name != "pkts" ||
+		len(input.branches[0].recipe.branch.Operations) != 1 ||
 		len(input.branches[0].destinations) != 1 {
 		t.Fatalf("runtime attach input = %+v, want captured branch recipe and destinations", input)
 	}
@@ -576,12 +577,12 @@ func TestRuntimeRebranchInputCapturesReplacementSpecsAndPolicy(t *testing.T) {
 		input.disposition != oldBranchDrain ||
 		input.attach.name != "next" ||
 		len(input.attach.branches) != 1 ||
-		input.attach.branches[0].recipe.name != "next" ||
-		input.attach.branches[0].recipe.source.tap != "pkts" ||
+		input.attach.branches[0].recipe.branch.Name != "next" ||
+		input.attach.branches[0].recipe.branch.Source.Tap.Name != "pkts" ||
 		len(input.attach.branches[0].destinations) != 1 {
 		t.Fatalf("runtime rebranch input = %+v, want captured switch-gated replacement", input)
 	}
-	operations := input.attach.branches[0].recipe.operations
+	operations := input.attach.branches[0].recipe.branch.Operations
 	if len(operations) != 2 ||
 		operations[0].Kind != plan.OpStage ||
 		operations[1].Kind != plan.OpCopy {

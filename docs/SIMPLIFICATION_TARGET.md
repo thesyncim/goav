@@ -129,7 +129,10 @@ removals now capture the same runtime detach input for each tracked attachment
 before mutation. OnStream branch facts now carry media, operation, destination,
 and buffer data in the immutable recipe IR, and stream-rule attach captures
 runtime branch inputs before graph locking and patch planning instead of
-recapturing public branch specs inside the mutation executor.
+recapturing public branch specs inside the mutation executor. Runtime
+attach/rebranch inputs now also carry branch name, media, source anchor,
+operation, and buffer facts as `internal/recipeir` runtime branch data before
+patch planning; concrete destination handles still stay at the mutation edge.
 The boundary is not complete until the remaining runtime mutation patch facts
 move into stable recipe or plan data.
 

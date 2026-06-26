@@ -116,6 +116,29 @@ type StreamRuleBranch struct {
 	Buffer       flow.BranchBuffer
 }
 
+// RuntimeBranch is the immutable branch recipe captured for runtime mutation
+// before patch planning opens stages or mutates a graph.
+type RuntimeBranch struct {
+	Name       string
+	Media      av.MediaType
+	Source     RuntimeBranchSource
+	Operations []Operation
+	Buffer     flow.BranchBuffer
+}
+
+// RuntimeBranchSource is the planner-visible source anchor for a runtime
+// branch. It can name an existing graph node, a typed tap, or one discovered
+// source stream.
+type RuntimeBranchSource struct {
+	From          string
+	Tap           TapRef
+	Policy        pipeline.RoutePolicy
+	Label         string
+	Stream        av.Stream
+	StreamPresent bool
+	StreamDomain  shape.MediaDomain
+}
+
 // Join summarizes the planner-visible shape of a convergence recipe. It keeps
 // validation and diagnostics off the executable root joinSpec while the lowerer
 // continues to own concrete arms, stages, and destination handles.

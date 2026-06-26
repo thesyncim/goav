@@ -275,7 +275,7 @@ func TestInputStreamAnchorCarriesRuntimeBranchShape(t *testing.T) {
 		source.streamDomain != shape.DomainFrame {
 		t.Fatalf("branch source = %+v", source)
 	}
-	tap := discoveredStreamAnchorTap(source)
+	tap := discoveredStreamAnchorTap(recipeIRRuntimeBranchSourceFromRoot(source))
 	if tap.Node != "room" ||
 		tap.Domain != shape.DomainFrame ||
 		tap.MediaKind != av.MediaAudio ||

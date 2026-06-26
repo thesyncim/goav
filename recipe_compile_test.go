@@ -557,8 +557,9 @@ func TestReusableRecipeAndBranchChainsStoreOperationSpecsOnly(t *testing.T) {
 			t.Fatalf("runtime attach should lower captured branch recipe operations directly, not a parallel %q model", forbidden)
 		}
 	}
-	if !strings.Contains(runtimeText, "range recipe.operations") {
-		t.Fatal("runtime attach planning should walk the captured runtime branch recipe operation list")
+	if !strings.Contains(runtimeText, "operations := operationSpecsFromRecipeIR(branch.Operations)") ||
+		!strings.Contains(runtimeText, "range operations") {
+		t.Fatal("runtime attach planning should walk the captured runtime branch recipe operation list through the IR handoff")
 	}
 
 	intentBody, err := os.ReadFile("intent.go")

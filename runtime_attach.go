@@ -14,6 +14,7 @@ import (
 	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/flow"
 	"github.com/thesyncim/goav/format"
+	"github.com/thesyncim/goav/internal/recipeir"
 	"github.com/thesyncim/goav/lifecycle"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/plan"
@@ -65,11 +66,7 @@ type runtimeSharedMuxDestination struct {
 }
 
 type runtimeBranchRecipe struct {
-	name       string
-	media      av.MediaType
-	source     branchSourceBinding
-	operations []operationSpec
-	buffer     flow.BranchBuffer
+	branch recipeir.RuntimeBranch
 }
 
 type runtimeAttachBranchInput struct {
@@ -246,21 +243,14 @@ func runtimeAttachInputFromBranchInputs(branches []runtimeAttachBranchInput, nam
 
 func runtimeBranchRecipeFromBranchSpec(spec BranchSpec) runtimeBranchRecipe {
 	return runtimeBranchRecipe{
-		name:       spec.name,
-		media:      spec.media,
-		source:     cloneBranchSourceBinding(spec.source),
-		operations: cloneOperationSpecs(spec.operations),
-		buffer:     spec.branchBuffer,
+		branch: recipeir.RuntimeBranch{
+			Name:       spec.name,
+			Media:      spec.media,
+			Source:     recipeIRRuntimeBranchSourceFromRoot(spec.source),
+			Operations: recipeIROperationsFromSpecs(spec.operations),
+			Buffer:     spec.branchBuffer,
+		},
 	}
-}
-
-func cloneBranchSourceBinding(source branchSourceBinding) branchSourceBinding {
-	out := source
-	if source.stream != nil {
-		stream := *source.stream
-		out.stream = &stream
-	}
-	return out
 }
 
 func validateRuntimeBranchSpecOrigin(spec BranchSpec) error {
@@ -324,7 +314,7 @@ func (t *task) attachRuntimeBranches(ctx context.Context, input runtimeAttachInp
 			return rollback(err)
 		}
 		recipe := planInput.branch.recipe
-		patch.addAnchor(recipe.source.tap, planInput.from)
+		patch.addAnchor(recipe.branch.Source.Tap.Name, planInput.from)
 		steps, err := t.planAttachBranchSteps(ctx, planInput, group)
 		if err != nil {
 			return rollback(err)
@@ -336,8 +326,8 @@ func (t *task) attachRuntimeBranches(ctx context.Context, input runtimeAttachInp
 		if err := t.configureAttachBranchBuffer(&ap.branches[index], planInput, steps); err != nil {
 			return rollback(err)
 		}
-		if recipe.buffer.CopyMode == flow.CopyNever {
-			patch.copyNeverBranches = append(patch.copyNeverBranches, firstNonEmpty(recipe.name, "branch"))
+		if recipe.branch.Buffer.CopyMode == flow.CopyNever {
+			patch.copyNeverBranches = append(patch.copyNeverBranches, firstNonEmpty(recipe.branch.Name, "branch"))
 		}
 		if err := ap.finalizeBranch(index, planInput, group, steps); err != nil {
 			return rollback(err)
@@ -392,13 +382,13 @@ func (t *task) runtimeAttachBranchPlanInput(branch runtimeAttachBranchInput, pen
 func runtimeAttachBranchIntent(branch runtimeAttachBranchInput, anchor snapshot.Tap) streamIntent {
 	recipe := branch.recipe
 	return streamIntent{
-		Name: recipe.name,
+		Name: recipe.branch.Name,
 		Select: plan.StreamSelect{
-			Type:  firstNonEmptyMedia(recipe.media, anchor.MediaKind),
+			Type:  firstNonEmptyMedia(recipe.branch.Media, anchor.MediaKind),
 			Codec: anchor.Shape.Codec,
 		},
-		From:         tapRef{name: recipe.source.tap, domain: recipe.source.tapDomain},
-		Operations:   cloneOperationSpecs(recipe.operations),
+		From:         rootTapRefFromRecipeIR(recipe.branch.Source.Tap),
+		Operations:   operationSpecsFromRecipeIR(recipe.branch.Operations),
 		Destinations: attachDestinationNames(branch.destinations),
 	}
 }
@@ -419,7 +409,7 @@ func (t *task) configureAttachBranchBuffer(branch *attachPlanBranch, input runti
 	if _, ok := t.graph.(pipeline.NodeInjector); !ok {
 		return nil
 	}
-	if recipe.buffer.CopyMode == flow.CopyNever {
+	if recipe.branch.Buffer.CopyMode == flow.CopyNever {
 		return nil
 	}
 	policy := branch.buffer
@@ -538,7 +528,7 @@ func validateRuntimeBranchGroupDestinations(branches []runtimeAttachBranchInput)
 	seenBranch := make(map[string]string)
 	for i := range branches {
 		recipe := branches[i].recipe
-		branchName := firstNonEmpty(recipe.name, fmt.Sprintf("branch-%d", i+1))
+		branchName := firstNonEmpty(recipe.branch.Name, fmt.Sprintf("branch-%d", i+1))
 		for j := range branches[i].destinations {
 			destination := branches[i].destinations[j]
 			label := destination.name
@@ -566,7 +556,7 @@ func validateRuntimeBranchGroupDestinations(branches []runtimeAttachBranchInput)
 					Family:    errcode.FamilyForCode(destinationDuplicateCode),
 					Code:      destinationDuplicateCode,
 					Operation: "attach runtime branches",
-					Node:      firstNonEmpty(recipe.name, "branch"),
+					Node:      firstNonEmpty(recipe.branch.Name, "branch"),
 					Reason:    "runtime branch group reuses one destination name",
 					fields: buildErrorFields([]string{
 						"destination: " + label,
@@ -893,12 +883,12 @@ func runtimeAttachmentName(specs []BranchSpec) string {
 
 func runtimeAttachmentNameFromBranchInputs(branches []runtimeAttachBranchInput) string {
 	if len(branches) == 1 {
-		return branches[0].recipe.name
+		return branches[0].recipe.branch.Name
 	}
 	names := make([]string, 0, len(branches))
 	for i := range branches {
-		if branches[i].recipe.name != "" {
-			names = append(names, branches[i].recipe.name)
+		if branches[i].recipe.branch.Name != "" {
+			names = append(names, branches[i].recipe.branch.Name)
 		}
 	}
 	if len(names) == 0 {
@@ -928,40 +918,42 @@ func uniqueStrings(values []string) []string {
 }
 
 func (t *task) resolveRuntimeBranchAnchor(recipe runtimeBranchRecipe, graphSpec pipeline.Spec, pending []snapshot.Tap) (string, snapshot.Tap, error) {
-	if recipe.source.tap != "" {
+	branch := recipe.branch
+	source := branch.Source
+	if source.Tap.Name != "" {
 		taps := append([]snapshot.Tap(nil), t.tapsLocked()...)
 		taps = append(taps, pending...)
 		for _, tap := range taps {
-			if tap.Name == recipe.source.tap {
-				if err := validateTapDomain("attach runtime branch", firstNonEmpty(recipe.name, "branch"), tapRef{name: recipe.source.tap, domain: recipe.source.tapDomain}, tap.Domain); err != nil {
+			if tap.Name == source.Tap.Name {
+				if err := validateTapDomain("attach runtime branch", firstNonEmpty(branch.Name, "branch"), rootTapRefFromRecipeIR(source.Tap), tap.Domain); err != nil {
 					return "", snapshot.Tap{}, err
 				}
 				return tap.Node.String(), tap, nil
 			}
 		}
-		return "", snapshot.Tap{}, runtimeBranchTapMissingError(recipe.source.tap, taps)
+		return "", snapshot.Tap{}, runtimeBranchTapMissingError(source.Tap.Name, taps)
 	}
-	if !specHasNode(graphSpec, recipe.source.from) {
-		return "", snapshot.Tap{}, runtimeBranchAnchorMissingError(recipe.source.from)
+	if !specHasNode(graphSpec, source.From) {
+		return "", snapshot.Tap{}, runtimeBranchAnchorMissingError(source.From)
 	}
-	if recipe.source.stream != nil {
-		return recipe.source.from, discoveredStreamAnchorTap(recipe.source), nil
+	if source.StreamPresent {
+		return source.From, discoveredStreamAnchorTap(source), nil
 	}
-	return recipe.source.from, snapshot.Tap{Node: pipeline.NodeRef(recipe.source.from)}, nil
+	return source.From, snapshot.Tap{Node: pipeline.NodeRef(source.From)}, nil
 }
 
 // discoveredStreamAnchorTap synthesizes the anchor tap for a source+stream
 // anchor (a branch attached to a stream the source discovered at runtime):
 // the source node is the anchor and the announced av.Stream supplies the
 // shape facts a tap would normally carry.
-func discoveredStreamAnchorTap(source branchSourceBinding) snapshot.Tap {
-	domain := source.streamDomain
+func discoveredStreamAnchorTap(source recipeir.RuntimeBranchSource) snapshot.Tap {
+	domain := source.StreamDomain
 	if domain == "" {
 		domain = shape.DomainPacket
 	}
-	spec := shape.FromStream(*source.stream, domain)
+	spec := shape.FromStream(source.Stream, domain)
 	return snapshot.Tap{
-		Node:      pipeline.NodeRef(source.from),
+		Node:      pipeline.NodeRef(source.From),
 		Domain:    domain,
 		MediaKind: spec.MediaKind,
 		Shape:     spec,
@@ -976,7 +968,7 @@ func validateAttachBranchShapeContract(input runtimeAttachBranchPlanInput, initi
 		return err
 	}
 	final := normalizeTapShape(initial)
-	for _, operation := range input.branch.recipe.operations {
+	for _, operation := range operationSpecsFromRecipeIR(input.branch.recipe.branch.Operations) {
 		final = operationSpecOutputShape(final, operation)
 	}
 	destinations := input.branch.destinations
@@ -992,7 +984,7 @@ func validateAttachBranchShapeContract(input runtimeAttachBranchPlanInput, initi
 			continue
 		}
 		destinationName := firstNonEmpty(destination.name, destination.dest.label(fmt.Sprintf("destination%d", i+1)))
-		return destinationShapeMismatchError("attach runtime branch", input.branch.recipe.name, destinationName, destination.dest, final)
+		return destinationShapeMismatchError("attach runtime branch", input.branch.recipe.branch.Name, destinationName, destination.dest, final)
 	}
 	return nil
 }
@@ -1675,7 +1667,7 @@ func destinationSpecHasOutput(dest destinationSpec) bool {
 }
 
 func (t *task) prepareRuntimeBranchDecode(ctx context.Context, input runtimeAttachBranchPlanInput, currentStream av.Stream, currentShape shape.Spec, spec codec.CodecSpec) (pipeline.Stage, error) {
-	branchName := firstNonEmpty(input.branch.recipe.name, "branch")
+	branchName := firstNonEmpty(input.branch.recipe.branch.Name, "branch")
 	if t.runtime == nil {
 		return nil, runtimeBranchInvalidError(
 			"runtime branch decoding requires the bundled runtime",

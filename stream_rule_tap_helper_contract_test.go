@@ -161,13 +161,13 @@ func TestStreamRuleAttachInputCapturesTemplatedBranch(t *testing.T) {
 		t.Fatalf("stream rule attach input = %+v, want captured templated branch", input)
 	}
 	recipe := input.attach.branches[0].recipe
-	if recipe.name != "late-audio" ||
-		recipe.source.from != "demux" ||
-		recipe.source.policy != pipeline.RouteByStream ||
-		recipe.source.stream == nil ||
-		recipe.source.stream.ID != "audio" ||
-		len(recipe.operations) != 1 ||
-		recipe.operations[0].Kind != plan.OpCopy {
+	if recipe.branch.Name != "late-audio" ||
+		recipe.branch.Source.From != "demux" ||
+		recipe.branch.Source.Policy != pipeline.RouteByStream ||
+		!recipe.branch.Source.StreamPresent ||
+		recipe.branch.Source.Stream.ID != "audio" ||
+		len(recipe.branch.Operations) != 1 ||
+		recipe.branch.Operations[0].Kind != plan.OpCopy {
 		t.Fatalf("stream rule attach recipe = %+v, want discovered-stream source and copy operation", recipe)
 	}
 }

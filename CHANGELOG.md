@@ -71,6 +71,9 @@ methodology changes, and migration notes.
 - Captured OnStream branch media, operation, destination, and buffer facts in
   the immutable recipe IR, and lowered stream-rule attach through captured
   runtime branch inputs before graph mutation.
+- Captured runtime attach/rebranch branch recipes as `internal/recipeir`
+  runtime branch data before patch planning, leaving destination handles at the
+  mutation edge.
 - Updated front-door docs to use task capability vocabulary for runtime attach
   examples instead of teaching `LiveTask` as the normal user type, and to
   describe `Watch` as the primary observation surface.
