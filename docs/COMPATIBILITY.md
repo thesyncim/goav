@@ -65,7 +65,9 @@ Compatibility note for root v0.1.0
 Minimum Go version:
 - go 1.26. The root module, nested transport modules, and standalone example
   modules use the 1.26 module floor as of 2026-06-26. The maintainer still
-  needs to confirm this floor before signing the tag.
+  needs to confirm this floor before signing the tag. Release security evidence
+  should use the latest Go 1.26 patch toolchain; the local govulncheck pass
+  below used Go 1.26.3.
 
 Module scope:
 - Root module tag: `v0.1.0`.
@@ -124,20 +126,27 @@ Migration notes:
 
 Evidence:
 - Local root tests: `go test -p 1 ./...`.
+- Local patched-toolchain tests: `GOTOOLCHAIN=go1.26.3 go test -p 1 ./...`.
 - Local pure-Go tests: `CGO_ENABLED=0 go test -p 1 ./...`.
+- Local race subset: `CGO_ENABLED=1 go test -race -count=1 . ./pipeline
+  ./goavtest ./format ./cmd/goav ./ctl ./internal/launchctl ./graphrender`.
 - Local static checks: `go vet ./...` and
   `go run honnef.co/go/tools/cmd/staticcheck@latest ./...`.
+- Local formatting check: `test -z "$(gofmt -l .)"`.
+- Local security scan:
+  `GOTOOLCHAIN=go1.26.3 go run golang.org/x/vuln/cmd/govulncheck@latest ./...`
+  reported no called vulnerabilities.
 - Nested module tests: every `examples/*/go.mod`, `goavtest/expect`, `rtpav`,
   and `webrtcav` passed `go test -p 1 ./...`.
 - Root dependency check: `go list -deps github.com/thesyncim/goav` had no
   adapter, container, `rtpav`, or `webrtcav` package leak.
-- CI release workflow, signed-tag validation, race tests, govulncheck, and
-  release-quality benchmark artifacts still need release-day evidence.
+- CI release workflow, signed-tag validation, and release-quality benchmark
+  artifacts still need release-day evidence.
 
 Deferred / not claimed:
 - No production performance leadership claim is made from this local pass.
-- Signed tag, GitHub release, race matrix, security scan, and long perf-lab
-  artifacts remain release-day work.
+- Signed tag, GitHub release, full CI matrix, and long perf-lab artifacts
+  remain release-day work.
 - v1 stability is not claimed by `v0.1.0`; this is the first pre-v1 root
   release candidate note.
 
