@@ -106,7 +106,9 @@ now cross the same boundary for compile-time stream selection and normal media
 planner input/copy binding, and dynamic stream-rule summaries feed validation
 and Explain from recipe IR. Join summaries now cross the boundary, and join
 planning plus join work-plan rendering enter through explicit IR-derived
-handoffs instead of reading compile state directly. Normal work-plan rendering
+handoffs instead of reading compile state directly; join branch fanout planning
+now builds recipe IR stream facts instead of synthesized builder records.
+Normal work-plan rendering
 also now consumes a captured handoff rather than reaching back into compile
 state while it renders operations, branches, destinations, decisions, and
 diagnostics; that handoff now reads inputs, streams, destinations, and

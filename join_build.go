@@ -996,23 +996,18 @@ func (p *joinPlan) deriveJoinedDomain() shape.MediaDomain {
 }
 
 // planJoinBranches plans the joined stream's fanout through the same
-// branch-composition planner the recipe path uses: each BranchSpec is validated
-// with validateBranchSpec, lowered to a streamBuild, planned with
-// planBranchCompositionRecipe, and prepared with prepareBranchComposePlan —
-// anchored at the join node instead of a demuxed source, with no second fanout
-// implementation.
+// branch-composition planner the recipe path uses: each BranchSpec is validated,
+// lowered to recipe stream facts, planned with planBranchCompositionRecipe, and
+// prepared with prepareBranchComposePlan — anchored at the join node instead of
+// a demuxed source, with no second fanout implementation.
 func (p *joinPlan) planJoinBranches() error {
 	name := p.name
 	parentPacket := p.joinedDomain == shape.DomainPacket
-	// The synthesized parent stream stands in for the joined stream point: frame
-	// joins read like a decoded stream, packet joins like a .Copy() point, so the
-	// shared planned-branch helpers see the shapes they already know.
-	parent := &jobStreamBuild{name: name, selector: av.StreamSelector{Type: p.joined.Type}}
-	if parentPacket {
-		parent.operations = []operationSpec{operationSpecForCopy(codec.Copy())}
+	destinations, err := joinBranchNamedDestinations(p.join.branches)
+	if err != nil {
+		return err
 	}
-	destinations := &Job{name: name}
-	builds := make([]streamBuild, 0, len(p.join.branches))
+	recipe := recipeir.Recipe{Kind: recipeir.KindBranchComposition, Name: name}
 	for i := range p.join.branches {
 		branch := p.join.branches[i]
 		if err := validateBranchSpec(p.joined.Type, parentPacket, i, branch); err != nil {
@@ -1021,36 +1016,27 @@ func (p *joinPlan) planJoinBranches() error {
 		if err := p.validateJoinBranchAnchor(branch); err != nil {
 			return err
 		}
-		if err := destinations.addBranchDestinations(branch.destinations...); err != nil {
-			return err
-		}
 		operations := cloneOperationSpecs(p.join.operations)
-		operations = append(operations, plannedBranchPrivateOperationSpecs(parent, branch, parentPacket)...)
+		operations = append(operations, joinBranchOperationSpecs(parentPacket, branch)...)
 		solved, err := p.solveJoinedOperations(branch.name, operations)
 		if err != nil {
 			return err
 		}
 		operations = solved
-		builds = append(builds, streamBuild{
-			name:             branch.name,
-			selector:         av.StreamSelector{Type: p.joined.Type},
-			decode:           !parentPacket || chainHasDecode(operations),
-			decodeCodec:      chainDecodeCodec(operations),
-			operations:       operations,
-			privateOps:       operations,
-			destinationNames: append([]string(nil), branchDestinationNames(branch.destinations)...),
-		})
+		recipe.Streams = append(recipe.Streams, recipeIRStreamFromIntent(streamIntent{
+			Name:         branch.name,
+			Select:       plan.StreamSelect{Type: p.joined.Type},
+			Operations:   operations,
+			Destinations: append([]string(nil), branchDestinationNames(branch.destinations)...),
+		}))
 	}
-	for i := range destinations.branchDestinations {
-		if err := destinations.branchDestinations[i].output.validate("build "+name, fmt.Sprintf("output-%d", i)); err != nil {
+	for i := range destinations {
+		if err := destinations[i].output.validate("build "+name, fmt.Sprintf("output-%d", i)); err != nil {
 			return err
 		}
+		recipe.Destinations = append(recipe.Destinations, recipeIRDestinationFromIntent(destinations[i].output.intentWithName(destinations[i].name)))
 	}
-	intent := intent{Name: name}
-	for i := range builds {
-		intent.Streams = append(intent.Streams, branchStreamIntent(builds[i]))
-	}
-	composePlan, err := planBranchCompositionRecipe(recipeIRFromIntent(intent, recipeir.KindBranchComposition), InputSpec{}, destinations.branchDestinations)
+	composePlan, err := planBranchCompositionRecipe(recipe, InputSpec{}, destinations)
 	if err != nil {
 		return err
 	}
@@ -1064,6 +1050,18 @@ func (p *joinPlan) planJoinBranches() error {
 	p.branchRoutes = routes
 	p.branchTargets = targets
 	return nil
+}
+
+func joinBranchOperationSpecs(parentPacket bool, branch BranchSpec) []operationSpec {
+	if !parentPacket || chainHasDecode(branch.operations) || codecIntentSet(chainEncodeSpec(branch.operations)) {
+		return cloneOperationSpecs(branch.operations)
+	}
+	if operationSpecsContainKind(branch.operations, plan.OpCopy) {
+		return cloneOperationSpecs(branch.operations)
+	}
+	out := []operationSpec{operationSpecForCopy(codec.Copy())}
+	out = append(out, cloneOperationSpecs(branch.operations)...)
+	return out
 }
 
 // validateJoinBranchAnchor resolves a branch's .From(...) against the join: the
@@ -1993,7 +1991,7 @@ func joinOutputAttachments(spec *joinSpec) ([]destinationSpec, []string) {
 		}
 		return outputs, names
 	}
-	named, _ := joinBranchNamedDestinations(string(spec.kind), spec.branches)
+	named, _ := joinBranchNamedDestinations(spec.branches)
 	outputs := make([]destinationSpec, 0, len(named))
 	names := make([]string, 0, len(named))
 	for i := range named {
@@ -2005,14 +2003,16 @@ func joinOutputAttachments(spec *joinSpec) ([]destinationSpec, []string) {
 
 // joinBranchNamedDestinations collects the branch destinations through the same
 // dedupe the planned-branch path uses.
-func joinBranchNamedDestinations(name string, branches []BranchSpec) ([]namedDestinationSpec, error) {
-	destinations := &Job{name: name}
+func joinBranchNamedDestinations(branches []BranchSpec) ([]namedDestinationSpec, error) {
+	var destinations []namedDestinationSpec
 	for i := range branches {
-		if err := destinations.addBranchDestinations(branches[i].destinations...); err != nil {
+		updated, err := appendNamedBranchDestinations(destinations, branches[i].destinations...)
+		if err != nil {
 			return nil, err
 		}
+		destinations = updated
 	}
-	return destinations.branchDestinations, nil
+	return destinations, nil
 }
 
 // joinErrorCode derives a join refusal code from the join kind and family:

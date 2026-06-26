@@ -88,6 +88,8 @@ methodology changes, and migration notes.
 - Removed the branch-composition builder `composePlan` wrapper and moved branch
   destination-name validation errors onto stream intent facts instead of
   `streamBuild` builder records.
+- Routed join branch fanout planning through recipe IR stream facts instead of
+  synthesized `jobStreamBuild`/`streamBuild` records.
 - Routed media input binding, copy planning, live stream selection, and
   multi-input stream resolution through captured recipe input facts instead of
   the legacy intent mirror.

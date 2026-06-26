@@ -390,7 +390,7 @@ func recipeIRJoinFromSpec(spec *joinSpec, inputCount int) recipeir.Join {
 		Custom:         spec.custom != nil,
 	}
 	if len(spec.branches) != 0 {
-		named, _ := joinBranchNamedDestinations(string(spec.kind), spec.branches)
+		named, _ := joinBranchNamedDestinations(spec.branches)
 		join.DestinationCount = len(named)
 	} else {
 		join.DestinationCount = len(spec.dests)
@@ -631,7 +631,7 @@ func joinIntentFromSpec(job *Job, spec *joinSpec) intent {
 		in.Inputs = append(in.Inputs, input.intent())
 	}
 	if len(spec.branches) != 0 {
-		named, _ := joinBranchNamedDestinations(string(spec.kind), spec.branches)
+		named, _ := joinBranchNamedDestinations(spec.branches)
 		for i := range named {
 			in.Destinations = append(in.Destinations, named[i].output.intentWithName(named[i].name))
 		}

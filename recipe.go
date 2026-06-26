@@ -335,9 +335,19 @@ func (j *Job) To(destinations ...Destination) *Job {
 }
 
 func (j *Job) addBranchDestinations(destinations ...destinationRef) error {
-	seen := make(map[string]namedDestinationSpec, len(j.branchDestinations)+len(destinations))
-	for i := range j.branchDestinations {
-		seen[j.branchDestinations[i].name] = j.branchDestinations[i]
+	updated, err := appendNamedBranchDestinations(j.branchDestinations, destinations...)
+	if err != nil {
+		return err
+	}
+	j.branchDestinations = updated
+	return nil
+}
+
+func appendNamedBranchDestinations(existing []namedDestinationSpec, destinations ...destinationRef) ([]namedDestinationSpec, error) {
+	out := append([]namedDestinationSpec(nil), existing...)
+	seen := make(map[string]namedDestinationSpec, len(existing)+len(destinations))
+	for i := range existing {
+		seen[existing[i].name] = existing[i]
 	}
 	for i := range destinations {
 		destination := cloneDestinationRef(destinations[i])
@@ -345,14 +355,14 @@ func (j *Job) addBranchDestinations(destinations ...destinationRef) error {
 		named := namedDestinationSpec{name: destination.name, output: destination.dest}
 		if existing, ok := seen[named.name]; ok {
 			if !destinationsShareExplicitGroup(existing, named) {
-				return branchDestinationDuplicateError(named.name)
+				return nil, branchDestinationDuplicateError(named.name)
 			}
 			continue
 		}
 		seen[named.name] = named
-		j.branchDestinations = append(j.branchDestinations, named)
+		out = append(out, named)
 	}
-	return nil
+	return out, nil
 }
 
 // And appends more inputs to the job, equivalent to listing them in From.

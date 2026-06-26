@@ -780,7 +780,7 @@ func TestPlannerConsumerFunctionsAvoidBuilderInternals(t *testing.T) {
 		},
 		{
 			file:      "join_build.go",
-			functions: []string{"newJoinPlan", "buildJoinWorkPlan"},
+			functions: []string{"newJoinPlan", "planJoinBranches", "buildJoinWorkPlan"},
 		},
 	}
 	for _, tt := range tests {
@@ -796,6 +796,50 @@ func TestPlannerConsumerFunctionsAvoidBuilderInternals(t *testing.T) {
 					t.Fatalf("%s:%s reaches across the recipe boundary with %q", tt.file, fn, forbidden)
 				}
 			}
+		}
+	}
+}
+
+func TestJoinBranchPlanningUsesRecipeFacts(t *testing.T) {
+	body, err := os.ReadFile("join_build.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := string(body)
+	planBody := sourceFunctionBody(t, source, "planJoinBranches")
+	for _, required := range []string{
+		"recipe := recipeir.Recipe{Kind: recipeir.KindBranchComposition",
+		"recipe.Streams = append(recipe.Streams, recipeIRStreamFromIntent",
+		"planBranchCompositionRecipe(recipe, InputSpec{}, destinations)",
+	} {
+		if !strings.Contains(planBody, required) {
+			t.Fatalf("planJoinBranches should use recipe facts: missing %s", required)
+		}
+	}
+	for _, forbidden := range []string{
+		"jobStreamBuild",
+		"streamBuild",
+		"recipeIRFromIntent",
+		"branchStreamIntent",
+		"destinations.branchDestinations",
+	} {
+		if strings.Contains(planBody, forbidden) {
+			t.Fatalf("planJoinBranches still uses builder-shaped join branch planning with %q", forbidden)
+		}
+	}
+
+	destinationBody := sourceFunctionBody(t, source, "joinBranchNamedDestinations")
+	if !strings.Contains(destinationBody, "appendNamedBranchDestinations") {
+		t.Fatal("joinBranchNamedDestinations should use the shared branch destination collector")
+	}
+	for _, forbidden := range []string{
+		"&Job",
+		"Job{",
+		"addBranchDestinations",
+		"branchDestinations",
+	} {
+		if strings.Contains(destinationBody, forbidden) {
+			t.Fatalf("joinBranchNamedDestinations still borrows job destination state with %q", forbidden)
 		}
 	}
 }
