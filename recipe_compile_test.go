@@ -2263,7 +2263,7 @@ func TestEncodeAdapterPassesRejectIncompatibleDescriptors(t *testing.T) {
 				intent: intent{Streams: []streamIntent{{
 					Name:   "preview",
 					Select: plan.StreamSelect{Type: av.MediaVideo},
-					Operations: append([]operationSpec{operationSpecForTransform(TransformSpec{
+					Operations: append([]operationSpec{operationSpecForTransform(transformSpec{
 						resize: &filter.ResizeConfig{
 							Width:       640,
 							Height:      360,
@@ -2426,7 +2426,7 @@ func TestTransformAdapterPassesRejectIncompatibleDescriptors(t *testing.T) {
 				intent: intent{Streams: []streamIntent{{
 					Name:   "preview",
 					Select: plan.StreamSelect{Type: av.MediaVideo},
-					Operations: []operationSpec{operationSpecForTransform(TransformSpec{
+					Operations: []operationSpec{operationSpecForTransform(transformSpec{
 						resize: &filter.ResizeConfig{
 							Width:       640,
 							Height:      360,
@@ -2453,7 +2453,7 @@ func TestTransformAdapterPassesRejectIncompatibleDescriptors(t *testing.T) {
 				intent: intent{Streams: []streamIntent{{
 					Name:   "audio",
 					Select: plan.StreamSelect{Type: av.MediaAudio},
-					Operations: []operationSpec{operationSpecForTransform(TransformSpec{
+					Operations: []operationSpec{operationSpecForTransform(transformSpec{
 						resample: &filter.ResampleConfig{
 							SampleRate:   16_000,
 							Channels:     codec.Mono,
@@ -2903,7 +2903,7 @@ func TestJobIntentShapePassRejectsOperationTransforms(t *testing.T) {
 			stream: streamIntent{
 				Name:         "video",
 				Select:       plan.StreamSelect{Type: av.MediaVideo},
-				Operations:   append(decodeIntentOperations(), operationSpecForTransform(TransformSpec{})),
+				Operations:   append(decodeIntentOperations(), operationSpecForTransform(transformSpec{})),
 				Destinations: []string{"frames"},
 			},
 			code: "transform_invalid",

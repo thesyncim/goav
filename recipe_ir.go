@@ -491,7 +491,7 @@ func rootCodecChangeFromRecipeIR(in recipeir.CodecChangePolicy) CodecChangePolic
 	}
 }
 
-func recipeIRTransformFromRoot(in TransformSpec) recipeir.Transform {
+func recipeIRTransformFromRoot(in transformSpec) recipeir.Transform {
 	switch {
 	case in.resize != nil:
 		return recipeir.Transform{
@@ -508,16 +508,16 @@ func recipeIRTransformFromRoot(in TransformSpec) recipeir.Transform {
 	}
 }
 
-func rootTransformFromRecipeIR(in recipeir.Transform) TransformSpec {
+func rootTransformFromRecipeIR(in recipeir.Transform) transformSpec {
 	switch in.Kind {
 	case recipeir.TransformResize:
 		config := in.Resize
-		return TransformSpec{resize: &config}
+		return transformSpec{resize: &config}
 	case recipeir.TransformResample:
 		config := in.Resample
-		return TransformSpec{resample: &config}
+		return transformSpec{resample: &config}
 	default:
-		return TransformSpec{}
+		return transformSpec{}
 	}
 }
 

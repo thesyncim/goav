@@ -247,7 +247,6 @@ goav.StreamName
 goav.Tap
 goav.TapRef
 goav.Task
-goav.TransformSpec
 goav.URI
 goav.URIInput
 goav.WrapSource

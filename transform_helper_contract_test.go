@@ -14,10 +14,10 @@ import (
 )
 
 func TestTransformSpecIsOpaque(t *testing.T) {
-	typ := reflect.TypeOf(TransformSpec{})
+	typ := reflect.TypeOf(transformSpec{})
 	for i := 0; i < typ.NumField(); i++ {
 		if typ.Field(i).IsExported() {
-			t.Fatalf("TransformSpec field %s is exported; use constructors instead", typ.Field(i).Name)
+			t.Fatalf("transformSpec field %s is exported; use constructors instead", typ.Field(i).Name)
 		}
 	}
 }
@@ -82,7 +82,7 @@ func TestStreamTransformContracts(t *testing.T) {
 		t.Fatalf("resample transform = %+v", resample)
 	}
 
-	assertTransformBuildError := func(name string, spec TransformSpec, selector av.StreamSelector, code errcode.Code, fragment string) {
+	assertTransformBuildError := func(name string, spec transformSpec, selector av.StreamSelector, code errcode.Code, fragment string) {
 		t.Helper()
 		_, err := streamTransform(name, selector, spec, 0)
 		var buildErr *BuildError
@@ -93,8 +93,8 @@ func TestStreamTransformContracts(t *testing.T) {
 			t.Fatalf("reason = %q, want %q", buildErr.Reason, fragment)
 		}
 	}
-	assertTransformBuildError("", TransformSpec{}, av.StreamSelector{Type: av.MediaAudio}, errcode.TransformInvalid, "empty stream transform")
-	assertTransformBuildError("both", TransformSpec{
+	assertTransformBuildError("", transformSpec{}, av.StreamSelector{Type: av.MediaAudio}, errcode.TransformInvalid, "empty stream transform")
+	assertTransformBuildError("both", transformSpec{
 		resize:   &filter.ResizeConfig{Width: 320, Height: 180},
 		resample: &filter.ResampleConfig{SampleRate: 48_000, Channels: codec.Stereo},
 	}, av.StreamSelector{Type: av.MediaAudio}, errcode.TransformInvalid, "cannot be both")
@@ -103,13 +103,13 @@ func TestStreamTransformContracts(t *testing.T) {
 }
 
 func TestTransformHelperErrorContracts(t *testing.T) {
-	if err := validateTransformSpec("build stream", "both", TransformSpec{
+	if err := validateTransformSpec("build stream", "both", transformSpec{
 		resize:   &filter.ResizeConfig{Width: 320, Height: 180},
 		resample: &filter.ResampleConfig{SampleRate: 48_000, Channels: codec.Stereo},
 	}); err == nil {
 		t.Fatal("combined transform validation succeeded, want transform_invalid")
 	}
-	if err := validateTransformSpec("build stream", "empty", TransformSpec{}); err != nil {
+	if err := validateTransformSpec("build stream", "empty", transformSpec{}); err != nil {
 		t.Fatalf("empty transform validation = %v, want streamTransform to reject later", err)
 	}
 

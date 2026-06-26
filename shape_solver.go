@@ -337,7 +337,7 @@ func preferenceDropReason(err error) string {
 // synthesizeConversionTransform builds the explicit transform config from the
 // expected shape, falling back to the actual shape for facts the expectation
 // leaves open. Targets that cannot be fully resolved are not completable.
-func synthesizeConversionTransform(media av.MediaType, actual shape.Spec, expected shape.Spec) (TransformSpec, bool) {
+func synthesizeConversionTransform(media av.MediaType, actual shape.Spec, expected shape.Spec) (transformSpec, bool) {
 	switch media {
 	case av.MediaAudio:
 		config := filter.ResampleConfig{
@@ -346,9 +346,9 @@ func synthesizeConversionTransform(media av.MediaType, actual shape.Spec, expect
 			SampleFormat: firstNonEmpty(expected.SampleFormat, actual.SampleFormat),
 		}
 		if config.SampleRate <= 0 || config.Channels <= 0 {
-			return TransformSpec{}, false
+			return transformSpec{}, false
 		}
-		return TransformSpec{resample: &config}, true
+		return transformSpec{resample: &config}, true
 	case av.MediaVideo:
 		config := filter.ResizeConfig{
 			Width:       firstPositiveInt(expected.Width, actual.Width),
@@ -357,11 +357,11 @@ func synthesizeConversionTransform(media av.MediaType, actual shape.Spec, expect
 			Mode:        filter.ResizeExact,
 		}
 		if config.Width <= 0 || config.Height <= 0 {
-			return TransformSpec{}, false
+			return transformSpec{}, false
 		}
-		return TransformSpec{resize: &config}, true
+		return transformSpec{resize: &config}, true
 	default:
-		return TransformSpec{}, false
+		return transformSpec{}, false
 	}
 }
 
@@ -387,7 +387,7 @@ func (e *shapeAdapterSelectionError) Unwrap() error { return e.cause }
 // candidates remain, a non-zero pref narrows them to the adapters whose
 // declared capabilities cover the preference; resolved reports whether that
 // tie-break decided the choice. Exactly one candidate must remain.
-func selectShapeConversionAdapter(rt *runtime, media av.MediaType, transform TransformSpec, realtime bool, pref shape.Spec) (filter.Descriptor, []string, bool, error) {
+func selectShapeConversionAdapter(rt *runtime, media av.MediaType, transform transformSpec, realtime bool, pref shape.Spec) (filter.Descriptor, []string, bool, error) {
 	descriptors := rt.filters.Descriptors()
 	matched := make([]filter.Descriptor, 0, len(descriptors))
 	for i := range descriptors {
@@ -562,7 +562,7 @@ func appendAutoFixSuggestions(err error, actual shape.Spec, expected shape.Spec,
 	return buildErr
 }
 
-func explicitConversionSuggestion(transform TransformSpec, step operationSpec) []string {
+func explicitConversionSuggestion(transform transformSpec, step operationSpec) []string {
 	target := ""
 	if step.Kind != "" {
 		target = " before " + operationSpecLabel(step)
@@ -658,7 +658,7 @@ func operationSpecLabel(operation operationSpec) string {
 
 // shapeConversionDetailText renders the conversion delta for humans:
 // "resample 44.1kHz→48kHz", "resize 1280x720→640x360", "resample s16→f32".
-func shapeConversionDetailText(factory string, actual shape.Spec, transform TransformSpec) string {
+func shapeConversionDetailText(factory string, actual shape.Spec, transform transformSpec) string {
 	parts := []string{factory}
 	switch {
 	case transform.resample != nil:

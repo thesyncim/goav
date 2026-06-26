@@ -482,7 +482,7 @@ func planInputOperationsForShape(input inputIntent, spec shape.Spec) []planOpera
 	}
 }
 
-func planTransformOperation(transform TransformSpec) planOperation {
+func planTransformOperation(transform transformSpec) planOperation {
 	name := transformFactoryName(transform)
 	return planOperation{
 		Kind:      plan.OpTransform,
@@ -663,7 +663,7 @@ func mediaShapeFromInputIntent(input inputIntent, domain shape.MediaDomain) shap
 	return spec
 }
 
-func mediaShapeFromTransform(transform TransformSpec) shape.Spec {
+func mediaShapeFromTransform(transform transformSpec) shape.Spec {
 	if transform.resize != nil {
 		return shape.Spec{
 			Domain:      shape.DomainFrame,

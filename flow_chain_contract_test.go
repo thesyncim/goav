@@ -244,7 +244,7 @@ func TestAudioFlowShapePreferenceCopyAndTapContracts(t *testing.T) {
 	_, err = chainSpecFrom(badStage)
 	assertBuildErrorCode(t, err, errcode.StageMissing)
 
-	if got := chainTransformStepName(TransformSpec{}); got != "transform" {
+	if got := chainTransformStepName(transformSpec{}); got != "transform" {
 		t.Fatalf("chainTransformStepName(empty) = %q, want transform", got)
 	}
 	if got := chainTransformStepName(Resize(320, 180)); got != "resize" {

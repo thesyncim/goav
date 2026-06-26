@@ -95,7 +95,7 @@ func TestSynthesizeConversionTransformContracts(t *testing.T) {
 	); ok || !mediaShapeEmpty(mediaShapeFromTransform(got)) {
 		t.Fatalf("incomplete video transform = %#v, %v; want zero, false", got, ok)
 	}
-	if got, ok := synthesizeConversionTransform(av.MediaData, shape.Spec{}, shape.Spec{}); ok || got != (TransformSpec{}) {
+	if got, ok := synthesizeConversionTransform(av.MediaData, shape.Spec{}, shape.Spec{}); ok || got != (transformSpec{}) {
 		t.Fatalf("unknown media transform = %#v, %v; want zero, false", got, ok)
 	}
 }
@@ -134,7 +134,7 @@ func TestShapeSolverDiagnosticHelperContracts(t *testing.T) {
 		[]string{"insert .Resize(640, 360) explicitly"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("resize suggestion = %#v, want %#v", got, want)
 	}
-	if got := explicitConversionSuggestion(TransformSpec{}, operationSpecForDecode(codec.Opus(), "opus")); got != nil {
+	if got := explicitConversionSuggestion(transformSpec{}, operationSpecForDecode(codec.Opus(), "opus")); got != nil {
 		t.Fatalf("empty transform suggestion = %#v, want nil", got)
 	}
 }

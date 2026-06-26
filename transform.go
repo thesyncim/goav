@@ -17,10 +17,10 @@ type resizeOption func(*filter.ResizeConfig)
 
 type audioOption func(*filter.ResampleConfig)
 
-// TransformSpec is one declared frame transform. Chains create these through
+// transformSpec is one declared frame transform. Chains create these through
 // the Resize/Resample methods; the spec exists as an opaque value so flows can
 // describe transforms without exposing partially valid pointer-union state.
-type TransformSpec struct {
+type transformSpec struct {
 	resize   *filter.ResizeConfig
 	resample *filter.ResampleConfig
 }
@@ -28,26 +28,26 @@ type TransformSpec struct {
 // Resize declares a video geometry conversion to width x height (exact mode
 // unless an option changes it), performed by the runtime's registered resize
 // filter.
-func Resize(width int, height int, options ...resizeOption) TransformSpec {
+func Resize(width int, height int, options ...resizeOption) transformSpec {
 	config := filter.ResizeConfig{Width: width, Height: height, Mode: filter.ResizeExact}
 	for i := range options {
 		if options[i] != nil {
 			options[i](&config)
 		}
 	}
-	return TransformSpec{resize: &config}
+	return transformSpec{resize: &config}
 }
 
 // Resample declares an audio conversion to the given sample rate and channel
 // count, performed by the runtime's registered resample filter.
-func Resample(sampleRate int, channels int, options ...audioOption) TransformSpec {
+func Resample(sampleRate int, channels int, options ...audioOption) transformSpec {
 	config := filter.ResampleConfig{SampleRate: sampleRate, Channels: channels}
 	for i := range options {
 		if options[i] != nil {
 			options[i](&config)
 		}
 	}
-	return TransformSpec{resample: &config}
+	return transformSpec{resample: &config}
 }
 
 func validateRecipeTransformAdapters(operation string, rt *Runtime, streams []streamIntent) error {
@@ -76,7 +76,7 @@ func validateRecipeTransformAdapters(operation string, rt *Runtime, streams []st
 	return nil
 }
 
-func transformFactoryName(spec TransformSpec) string {
+func transformFactoryName(spec transformSpec) string {
 	switch {
 	case spec.resize != nil:
 		return filter.FactoryResize
@@ -87,7 +87,7 @@ func transformFactoryName(spec TransformSpec) string {
 	}
 }
 
-func validateTransformAdapterDescriptor(operation string, stream streamIntent, spec TransformSpec, name string, desc filter.Descriptor) error {
+func validateTransformAdapterDescriptor(operation string, stream streamIntent, spec transformSpec, name string, desc filter.Descriptor) error {
 	expectedInput, expectedOutput := transformAdapterExpectedMedia(name)
 	if expectedInput != "" && desc.Input != "" && desc.Input != expectedInput {
 		return transformAdapterIncompatibleError(operation, stream, name, desc, expectedInput, expectedOutput)
@@ -235,7 +235,7 @@ func transformMethodName(name string) string {
 	}
 }
 
-func streamTransform(streamName string, selector av.StreamSelector, spec TransformSpec, index int) (mediaTransform, error) {
+func streamTransform(streamName string, selector av.StreamSelector, spec transformSpec, index int) (mediaTransform, error) {
 	base := firstNonEmpty(streamName, string(selector.ID), string(selector.Type), "stream")
 	suffix := ""
 	if index > 0 {
@@ -289,7 +289,7 @@ func streamTransform(streamName string, selector av.StreamSelector, spec Transfo
 	}
 }
 
-func validateTransformSpec(operation string, node string, spec TransformSpec) error {
+func validateTransformSpec(operation string, node string, spec transformSpec) error {
 	switch {
 	case spec.resize != nil && spec.resample != nil:
 		return &BuildError{

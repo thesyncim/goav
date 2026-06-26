@@ -47,7 +47,7 @@ type TransformViewForTest struct {
 	Resample *filter.ResampleConfig
 }
 
-func TransformViewForTestFrom(spec TransformSpec) TransformViewForTest {
+func TransformViewForTestFrom(spec transformSpec) TransformViewForTest {
 	var out TransformViewForTest
 	if spec.resize != nil {
 		resize := *spec.resize
@@ -78,7 +78,7 @@ func CopyOperationContractForTest() shape.Contract {
 	return operationSpecForCopy(codec.Copy())
 }
 
-func TransformOperationContractForTest(transform TransformSpec) shape.Contract {
+func TransformOperationContractForTest(transform transformSpec) shape.Contract {
 	return operationSpecForTransform(transform)
 }
 

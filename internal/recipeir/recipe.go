@@ -143,7 +143,7 @@ const (
 )
 
 // Transform is one planner-visible transform config without depending on the
-// root TransformSpec wrapper.
+// root transformSpec wrapper.
 type Transform struct {
 	Kind     TransformKind
 	Resize   filter.ResizeConfig

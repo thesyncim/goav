@@ -258,7 +258,7 @@ type jobStreamBuild struct {
 type chainStep struct {
 	stage     pipeline.Stage
 	shape     shape.Spec
-	transform TransformSpec
+	transform transformSpec
 	tap       string
 	tapDomain shape.MediaDomain
 }

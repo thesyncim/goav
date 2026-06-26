@@ -50,7 +50,7 @@ func codecSpecOutputShapes(spec codec.CodecSpec, input shape.Spec) shape.Set {
 // InputShapes reports the media shapes the transform can consume (its
 // shape.Contract input side): video frames for a resize, audio frames for a
 // resample.
-func (spec TransformSpec) InputShapes() shape.Set {
+func (spec transformSpec) InputShapes() shape.Set {
 	switch {
 	case spec.resize != nil:
 		return shape.Set{shape.Frame(av.MediaVideo)}
@@ -63,7 +63,7 @@ func (spec TransformSpec) InputShapes() shape.Set {
 
 // OutputShapes reports the shape the transform produces for the given input:
 // the input shape with the resized geometry or resampled audio layout applied.
-func (spec TransformSpec) OutputShapes(input shape.Spec) shape.Set {
+func (spec transformSpec) OutputShapes(input shape.Spec) shape.Set {
 	out := input
 	switch {
 	case spec.resize != nil:

@@ -598,15 +598,15 @@ func validateBranchTransforms(stream streamIntent) error {
 	return nil
 }
 
-func streamIntentTransformSpecs(stream streamIntent) []TransformSpec {
+func streamIntentTransformSpecs(stream streamIntent) []transformSpec {
 	return transformSpecsFromOperationSpecs(stream.Operations)
 }
 
-func transformSpecsFromOperationSpecs(operations []operationSpec) []TransformSpec {
+func transformSpecsFromOperationSpecs(operations []operationSpec) []transformSpec {
 	if len(operations) == 0 {
 		return nil
 	}
-	transforms := make([]TransformSpec, 0)
+	transforms := make([]transformSpec, 0)
 	for i := range operations {
 		if operations[i].Kind != plan.OpTransform {
 			continue

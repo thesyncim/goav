@@ -1624,8 +1624,8 @@ func applyTransformComponentOverride(transform mediaTransform, operation operati
 	return transform
 }
 
-func transformSpecFromMediaTransform(transform mediaTransform) TransformSpec {
-	var spec TransformSpec
+func transformSpecFromMediaTransform(transform mediaTransform) transformSpec {
+	var spec transformSpec
 	if transform.video != nil {
 		resize := *transform.video
 		spec.resize = &resize

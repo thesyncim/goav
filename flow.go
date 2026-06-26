@@ -441,7 +441,7 @@ func (b *chainBuilder) decode(options ...codec.Option) {
 	b.spec.operations = append(b.spec.operations, operationSpecForDecode(decodeCodec, string(decodeCodec.ID)))
 }
 
-func (b *chainBuilder) transform(spec TransformSpec) {
+func (b *chainBuilder) transform(spec transformSpec) {
 	if b == nil {
 		return
 	}
@@ -652,8 +652,8 @@ func chainEncodeSpec(operations []operationSpec) codec.CodecSpec {
 	return codec.CodecSpec{}
 }
 
-func cloneTransformSpec(spec TransformSpec) TransformSpec {
-	var out TransformSpec
+func cloneTransformSpec(spec transformSpec) transformSpec {
+	var out transformSpec
 	if spec.resize != nil {
 		resize := *spec.resize
 		out.resize = &resize
@@ -665,7 +665,7 @@ func cloneTransformSpec(spec TransformSpec) TransformSpec {
 	return out
 }
 
-func chainTransformStepName(spec TransformSpec) string {
+func chainTransformStepName(spec transformSpec) string {
 	switch {
 	case spec.resize != nil:
 		return "resize"

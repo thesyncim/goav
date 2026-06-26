@@ -36,8 +36,9 @@ methodology changes, and migration notes.
 - Removed legacy `BuildError.Details` and `BuildError.Suggestions` fields;
   callers should use typed `Fields`/`Fixes`, `Detail(key)`, `DetailLines()`,
   and `FixLines()`.
-- Made `TransformSpec` opaque so callers use constructors instead of setting
-  resize/resample fields directly.
+- Removed exported `goav.TransformSpec`; callers still use `Resize` and
+  `Resample` constructors, but the transform value type is no longer part of
+  the root contract.
 - Removed same-handle destination grouping: repeated destination names now
   require explicit `Mux(name, destination)` groups, even when the same
   destination value is reused.

@@ -1646,7 +1646,7 @@ func (t *task) prepareRuntimeBranchDecode(ctx context.Context, branchName string
 	return stage, nil
 }
 
-func runtimeBranchTransform(branchName string, stream av.Stream, spec TransformSpec, index int) (mediaTransform, error) {
+func runtimeBranchTransform(branchName string, stream av.Stream, spec transformSpec, index int) (mediaTransform, error) {
 	base := firstNonEmpty(branchName, "branch")
 	if err := validateTransformSpec("attach runtime branch", base, spec); err != nil {
 		return mediaTransform{}, err

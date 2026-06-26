@@ -390,9 +390,17 @@ type testTranscodeBranch struct {
 	name         string
 	media        av.MediaType
 	flows        []goav.Chain
-	transforms   []goav.TransformSpec
+	transforms   []testTransform
 	encode       codec.CodecSpec
 	destinations []goav.Destination
+}
+
+type testTransform struct {
+	kind       string
+	width      int
+	height     int
+	sampleRate int
+	channels   int
 }
 
 type testTranscodeBranchBuilder struct {
@@ -443,14 +451,11 @@ func (j *testBranchJob) materialize() *goav.Job {
 			builder = builder.Apply(flow)
 		}
 		for _, transform := range branch.transforms {
-			view := goav.TransformViewForTestFrom(transform)
-			if view.Resize != nil {
-				resize := view.Resize
-				builder = builder.Resize(resize.Width, resize.Height)
-			}
-			if view.Resample != nil {
-				resample := view.Resample
-				builder = builder.Resample(resample.SampleRate, resample.Channels)
+			switch transform.kind {
+			case "resize":
+				builder = builder.Resize(transform.width, transform.height)
+			case "resample":
+				builder = builder.Resample(transform.sampleRate, transform.channels)
 			}
 		}
 		if branch.encode.ID != "" {
@@ -484,12 +489,12 @@ func (b *testTranscodeBranchBuilder) Apply(flow goav.Chain) *testTranscodeBranch
 }
 
 func (b *testTranscodeBranchBuilder) Resize(width int, height int) *testTranscodeBranchBuilder {
-	b.current().transforms = append(b.current().transforms, goav.Resize(width, height))
+	b.current().transforms = append(b.current().transforms, testTransform{kind: "resize", width: width, height: height})
 	return b
 }
 
 func (b *testTranscodeBranchBuilder) Resample(sampleRate int, channels int) *testTranscodeBranchBuilder {
-	b.current().transforms = append(b.current().transforms, goav.Resample(sampleRate, channels))
+	b.current().transforms = append(b.current().transforms, testTransform{kind: "resample", sampleRate: sampleRate, channels: channels})
 	return b
 }
 

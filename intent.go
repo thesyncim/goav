@@ -64,7 +64,7 @@ type operationSpec struct {
 	Detail    string
 	Stage     pipeline.Stage
 	Shape     shape.Spec
-	Transform TransformSpec
+	Transform transformSpec
 	Tap       tapIntent
 	Decode    codec.CodecSpec
 	Encode    codec.CodecSpec
@@ -206,7 +206,7 @@ func operationSpecIsAnnotation(operation operationSpec) bool {
 		(operation.Auto != nil || operation.Require != nil || operation.Prefer != nil)
 }
 
-func operationSpecForTransform(transform TransformSpec) operationSpec {
+func operationSpecForTransform(transform transformSpec) operationSpec {
 	return operationSpec{
 		Kind:      plan.OpTransform,
 		Component: transformFactoryName(transform),

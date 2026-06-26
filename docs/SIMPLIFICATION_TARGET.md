@@ -153,16 +153,17 @@ Writer-backed output progress: `Write(name, writer)` is the public recipe
 spelling for an already-open writer; `URI(uri)` remains the spelling for outputs
 opened by a registered adapter, and `FileInput(name, reader)` stays input-only.
 
-Invalid-struct progress: `TransformSpec` is now an opaque constructor-produced
-value, so external callers cannot set both resize and resample fields on one
-transform. `BranchSpec` values now carry their unexported constructor origin,
-so zero values and non-branch policy specs are refused before planned or
-runtime branch mutation treats them as real branches. `Destination` handles now
-carry the same constructor-origin marker, so zero values and zero-derived
-option copies are refused before they can masquerade as writer, URI, sink, or
-custom outputs. `InputSpec` values now do the same for file, URI, custom
-source, and provider inputs, including zero-derived options or wrappers. `Job`
-values now carry constructor origin too, so public zero jobs fail as
+Invalid-struct progress: the root no longer exports `goav.TransformSpec`;
+callers still use the `Resize` and `Resample` constructors, but the transform
+value type is no longer part of the public contract. `BranchSpec` values now
+carry their unexported constructor origin, so zero values and non-branch policy
+specs are refused before planned or runtime branch mutation treats them as real
+branches. `Destination` handles now carry the same constructor-origin marker,
+so zero values and zero-derived option copies are refused before they can
+masquerade as writer, URI, sink, or custom outputs. `InputSpec` values now do
+the same for file, URI, custom source, and provider inputs, including
+zero-derived options or wrappers. `Job` values now carry constructor origin too,
+so public zero jobs fail as
 unconstructed recipes with `goav.From(...)` guidance instead of blending into
 normal empty-input validation.
 
