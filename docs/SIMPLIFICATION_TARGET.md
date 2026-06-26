@@ -95,21 +95,22 @@ grammar-builder internals.
 
 Current progress: `internal/recipeir` carries the first immutable recipe
 snapshot, `compileJobRecipe` enters through that snapshot, and branch
-composition planning reads captured recipe IR instead of `streamBuild` builder
-records, without a builder `composePlan` wrapper; branch destination-name
-validation errors now consume stream intent facts rather than builder records
-too. Transform operations now cross the boundary as typed recipe IR data
-instead of a generic root wrapper, and destination sink/byte-stream behavior is
-now captured as recipe IR so shape validation does not need to infer that fact
-from concrete writer or sink attachments. Input kind and declared source shape
-now cross the same boundary for compile-time stream selection and normal media
-planner input/copy binding, and dynamic stream-rule summaries feed validation
-and Explain from recipe IR. Join summaries now cross the boundary, and join
-planning plus join work-plan rendering enter through explicit IR-derived
-handoffs instead of reading compile state directly; join branch fanout planning
-now builds recipe IR stream facts instead of synthesized builder records, and
-join chain-arm inputs are captured at the join-arm boundary before join tree
-planning.
+composition snapshots are built directly from captured branch facts while
+branch composition planning reads captured recipe IR instead of `streamBuild`
+builder records, without a builder `composePlan` wrapper; branch
+destination-name validation errors now consume stream intent facts rather than
+builder records too. Transform operations now cross the boundary as typed
+recipe IR data instead of a generic root wrapper, and destination
+sink/byte-stream behavior is now captured as recipe IR so shape validation does
+not need to infer that fact from concrete writer or sink attachments. Input kind
+and declared source shape now cross the same boundary for compile-time stream
+selection and normal media planner input/copy binding, and dynamic stream-rule
+summaries feed validation and Explain from recipe IR. Join summaries now cross
+the boundary, and join planning plus join work-plan rendering enter through
+explicit IR-derived handoffs instead of reading compile state directly; join
+branch fanout planning now builds recipe IR stream facts instead of synthesized
+builder records, and join chain-arm inputs are captured at the join-arm boundary
+before join tree planning.
 Normal work-plan rendering
 also now consumes a captured handoff rather than reaching back into compile
 state while it renders operations, branches, destinations, decisions, and

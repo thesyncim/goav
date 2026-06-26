@@ -93,43 +93,44 @@ func newJoinRecipeSnapshot(job *Job) recipeCompileSnapshot {
 }
 
 func newBranchJobRecipeSnapshot(job *Job) recipeCompileSnapshot {
-	branchJob := &branchCompositionJob{
-		runtime:         job.runtimeOrNil(),
-		runtimeExplicit: job.runtimeSet,
-		name:            job.name,
-		streams:         cloneStreamBuilds(job.branchStreams),
-		outputs:         cloneNamedDestinationSpecs(job.branchDestinations),
-		streamRules:     cloneStreamRules(job.streamRules),
-		err:             job.err,
-		fromBranchSplit: true,
-	}
+	input := InputSpec{}
+	recipeErr := job.err
 	if len(job.inputs) == 1 {
-		branchJob.input = job.inputs[0]
-	} else if branchJob.err == nil {
-		branchJob.err = branchInputCountError("branches", len(job.inputs))
+		input = job.inputs[0]
+	} else if recipeErr == nil {
+		recipeErr = branchInputCountError("branches", len(job.inputs))
 	}
-	return newBranchCompositionRecipeSnapshot(branchJob)
-}
-
-func newBranchCompositionRecipeSnapshot(job *branchCompositionJob) recipeCompileSnapshot {
-	if job == nil {
-		return recipeCompileSnapshot{recipe: recipeir.Recipe{Kind: recipeir.KindBranchComposition}}
+	runtime := job.runtimeOrNil()
+	destinations := cloneNamedDestinationSpecs(job.branchDestinations)
+	recipe := recipeir.Recipe{
+		Kind: recipeir.KindBranchComposition,
+		Name: firstNonEmpty(job.name, "branch-composition"),
+		Inputs: []recipeir.Input{
+			recipeIRInputFromSpec(input),
+		},
 	}
-	destinations := cloneNamedDestinationSpecs(job.outputs)
-	recipe := recipeIRFromIntent(job.plan(), recipeir.KindBranchComposition)
-	annotateRecipeIRInputsFromSpecs(&recipe, []InputSpec{job.input})
-	annotateRecipeIRDestinationsFromNamedSpecs(&recipe, destinations)
+	if runtime != nil {
+		recipe.Policies.Realtime = runtime.realtime
+	}
+	for i := range job.branchStreams {
+		recipe.Streams = append(recipe.Streams, recipeIRStreamFromIntent(branchStreamIntent(job.branchStreams[i])))
+	}
+	for i := range destinations {
+		destination := recipeIRDestinationFromIntent(destinations[i].output.intentWithName(destinations[i].name))
+		destination.Kind = recipeIRDestinationKindFromSpec(destinations[i].output)
+		recipe.Destinations = append(recipe.Destinations, destination)
+	}
 	recipe.StreamRules = recipeIRStreamRulesFromRoot(job.streamRules)
-	branchPlan, branchPlanErr := planBranchCompositionRecipe(recipe, job.input, destinations)
+	branchPlan, branchPlanErr := planBranchCompositionRecipe(recipe, input, destinations)
 	return recipeCompileSnapshot{
 		recipe:                       recipe,
-		runtime:                      job.runtime,
-		runtimeExplicit:              job.runtimeExplicit,
-		recipeErr:                    job.err,
+		runtime:                      runtime,
+		runtimeExplicit:              job.runtimeSet,
+		recipeErr:                    recipeErr,
 		branchCompositionPresent:     true,
-		branchInputAttachment:        job.input,
+		branchInputAttachment:        input,
 		branchDestinationAttachments: destinations,
-		branchCompositionSplit:       job.fromBranchSplit,
+		branchCompositionSplit:       true,
 		branchPlan:                   branchPlan,
 		branchPlanErr:                branchPlanErr,
 		streamRules:                  cloneStreamRules(job.streamRules),
@@ -318,18 +319,6 @@ func annotateRecipeIRDestinationsFromSpecs(recipe *recipeir.Recipe, destinations
 			return
 		}
 		recipe.Destinations[i].Kind = recipeIRDestinationKindFromSpec(destinations[i])
-	}
-}
-
-func annotateRecipeIRDestinationsFromNamedSpecs(recipe *recipeir.Recipe, destinations []namedDestinationSpec) {
-	if recipe == nil {
-		return
-	}
-	for i := range recipe.Destinations {
-		if i >= len(destinations) {
-			return
-		}
-		recipe.Destinations[i].Kind = recipeIRDestinationKindFromSpec(destinations[i].output)
 	}
 }
 
@@ -562,22 +551,6 @@ func rootTransformFromRecipeIR(in recipeir.Transform) transformSpec {
 	default:
 		return transformSpec{}
 	}
-}
-
-func cloneStreamBuilds(streams []streamBuild) []streamBuild {
-	if len(streams) == 0 {
-		return nil
-	}
-	out := make([]streamBuild, 0, len(streams))
-	for i := range streams {
-		stream := streams[i]
-		stream.operations = cloneOperationSpecs(stream.operations)
-		stream.sharedOps = cloneOperationSpecs(stream.sharedOps)
-		stream.privateOps = cloneOperationSpecs(stream.privateOps)
-		stream.destinationNames = append([]string(nil), stream.destinationNames...)
-		out = append(out, stream)
-	}
-	return out
 }
 
 func cloneNamedDestinationSpecs(destinations []namedDestinationSpec) []namedDestinationSpec {

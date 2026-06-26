@@ -88,6 +88,8 @@ methodology changes, and migration notes.
 - Removed the branch-composition builder `composePlan` wrapper and moved branch
   destination-name validation errors onto stream intent facts instead of
   `streamBuild` builder records.
+- Built branch-composition recipe snapshots directly from captured branch facts
+  instead of routing through a temporary branch job wrapper.
 - Routed join branch fanout planning through recipe IR stream facts instead of
   synthesized `jobStreamBuild`/`streamBuild` records.
 - Captured join chain-arm inputs at the join-arm boundary so join tree

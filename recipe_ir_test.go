@@ -747,6 +747,39 @@ func TestBranchCompositionPlannerConsumesRecipeIR(t *testing.T) {
 	}
 }
 
+func TestBranchRecipeSnapshotBuildsRecipeIRDirectly(t *testing.T) {
+	body, err := os.ReadFile("recipe_ir.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := string(body)
+	if strings.Contains(source, "type branchCompositionJob struct") {
+		t.Fatal("branch recipe snapshots should not use a branchCompositionJob builder wrapper")
+	}
+	snapshotBody := sourceFunctionBody(t, source, "newBranchJobRecipeSnapshot")
+	for _, required := range []string{
+		"recipe := recipeir.Recipe{",
+		"Kind: recipeir.KindBranchComposition",
+		"recipeIRInputFromSpec(input)",
+		"recipeIRStreamFromIntent(branchStreamIntent(job.branchStreams[i]))",
+		"planBranchCompositionRecipe(recipe, input, destinations)",
+	} {
+		if !strings.Contains(snapshotBody, required) {
+			t.Fatalf("newBranchJobRecipeSnapshot should build branch recipe facts directly: missing %s", required)
+		}
+	}
+	for _, forbidden := range []string{
+		"branchCompositionJob",
+		"newBranchCompositionRecipeSnapshot",
+		"recipeIRFromIntent",
+		"job.plan()",
+	} {
+		if strings.Contains(snapshotBody, forbidden) {
+			t.Fatalf("newBranchJobRecipeSnapshot still routes through legacy branch recipe construction with %q", forbidden)
+		}
+	}
+}
+
 func TestPlannerConsumerFunctionsAvoidBuilderInternals(t *testing.T) {
 	commonForbidden := []string{
 		"job.plan()",

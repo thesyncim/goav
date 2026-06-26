@@ -935,11 +935,10 @@ func TestProductionDiagnosticsUseCurrentVocabulary(t *testing.T) {
 func TestRecipeCompileStateDoesNotCarryRecipeBuilders(t *testing.T) {
 	stateType := reflect.TypeOf(recipeCompileState{})
 	forbidden := map[reflect.Type]string{
-		reflect.TypeOf((*Job)(nil)):                  "*Job",
-		reflect.TypeOf((*branchCompositionJob)(nil)): "*branchCompositionJob",
-		reflect.TypeOf((*jobStreamBuild)(nil)):       "*jobStreamBuild",
-		reflect.TypeOf([]streamBuild(nil)):           "[]streamBuild",
-		reflect.TypeOf((*builder)(nil)):              "*builder",
+		reflect.TypeOf((*Job)(nil)):            "*Job",
+		reflect.TypeOf((*jobStreamBuild)(nil)): "*jobStreamBuild",
+		reflect.TypeOf([]streamBuild(nil)):     "[]streamBuild",
+		reflect.TypeOf((*builder)(nil)):        "*builder",
 	}
 	for i := 0; i < stateType.NumField(); i++ {
 		field := stateType.Field(i)

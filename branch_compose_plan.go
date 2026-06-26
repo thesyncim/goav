@@ -1,4 +1,4 @@
-// Branch composition planning: branchCompositionJob and its intent validation.
+// Branch composition planning: recipe IR validation and graph handoff.
 
 package goav
 
@@ -12,19 +12,6 @@ import (
 	"github.com/thesyncim/goav/plan"
 	"github.com/thesyncim/goav/shape"
 )
-
-type branchCompositionJob struct {
-	runtime         *Runtime
-	runtimeExplicit bool
-	name            string
-	input           InputSpec
-	streams         []streamBuild
-	outputs         []namedDestinationSpec
-	streamRules     []streamRule
-	err             error
-
-	fromBranchSplit bool
-}
 
 type namedDestinationSpec struct {
 	name   string
@@ -63,23 +50,6 @@ func destinationsShareExplicitGroup(first namedDestinationSpec, second namedDest
 }
 
 const branchCompositionOperation = "build branch composition"
-
-func (j *branchCompositionJob) plan() intent {
-	intent := intent{
-		Name:   firstNonEmpty(j.name, "branch-composition"),
-		Inputs: []inputIntent{j.input.intent()},
-	}
-	if j.runtime != nil {
-		intent.Policies.Realtime = j.runtime.realtime
-	}
-	for i := range j.streams {
-		intent.Streams = append(intent.Streams, branchStreamIntent(j.streams[i]))
-	}
-	for i := range j.outputs {
-		intent.Destinations = append(intent.Destinations, j.outputs[i].output.intentWithName(j.outputs[i].name))
-	}
-	return intent
-}
 
 func planBranchCompositionRecipe(recipe recipeir.Recipe, input InputSpec, namedOutputs []namedDestinationSpec) (branchComposePlan, error) {
 	streams := streamIntentsFromRecipeIR(recipe.Streams)
