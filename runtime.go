@@ -682,6 +682,14 @@ type runtimeDetachInput struct {
 	disposition oldBranchDisposition
 }
 
+func runtimeDetachInputForRuntimeAttachment(attachment *runtimeAttachment, disposition oldBranchDisposition) runtimeDetachInput {
+	return runtimeDetachInput{
+		attachment:  attachment,
+		runtime:     attachment,
+		disposition: disposition,
+	}
+}
+
 func runtimeDetachInputFromArgs(ctx context.Context, attachment Attachment, options []lifecycle.DetachOption) (runtimeDetachInput, error) {
 	if err := ctx.Err(); err != nil {
 		return runtimeDetachInput{}, err
@@ -695,14 +703,14 @@ func runtimeDetachInputFromArgs(ctx context.Context, attachment Attachment, opti
 		disposition: policy.disposition,
 	}
 	if runtimeAttachment, ok := attachment.(*runtimeAttachment); ok {
-		input.runtime = runtimeAttachment
+		input = runtimeDetachInputForRuntimeAttachment(runtimeAttachment, policy.disposition)
 	}
 	return input, nil
 }
 
 func (t *task) detachRuntimeAttachment(ctx context.Context, input runtimeDetachInput) error {
 	if input.runtime != nil {
-		return t.stopAttachment(ctx, input.runtime, input.disposition)
+		return t.stopAttachment(ctx, input)
 	}
 	return input.attachment.Close(ctx)
 }
@@ -729,7 +737,8 @@ func (t *task) stopAttachments(ctx context.Context) error {
 	defer t.attachMu.Unlock()
 	var first error
 	for attachment := range t.attachments {
-		if err := t.stopAttachmentLocked(ctx, attachment, oldBranchDetach); first == nil && err != nil {
+		input := runtimeDetachInputForRuntimeAttachment(attachment, oldBranchDetach)
+		if err := t.stopAttachmentLocked(ctx, input); first == nil && err != nil {
 			first = err
 		}
 	}

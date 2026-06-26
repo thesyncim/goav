@@ -74,6 +74,9 @@ methodology changes, and migration notes.
   replacement specs, switch policy, and old-branch disposition before mutation.
 - Routed runtime detach through an explicit input handoff that captures
   attachment target and disposition before closing or stopping runtime branches.
+- Carried the runtime detach input through the locked stop path and
+  child-attachment recursion instead of unwrapping attachment/disposition
+  arguments.
 - Routed dynamic stream-rule attach reactions through the same runtime attach
   input handoff before mutating the live graph.
 - Routed dynamic stream-rule remove reactions through an explicit input handoff

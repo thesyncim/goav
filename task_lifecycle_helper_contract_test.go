@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"strings"
 	"testing"
 
 	"github.com/thesyncim/goav/av"
@@ -55,6 +57,42 @@ func TestTaskDetachHelperContracts(t *testing.T) {
 		input.runtime != runtimeAttachment ||
 		input.disposition != oldBranchDrain {
 		t.Fatalf("runtime detach input = %+v, want runtime attachment with drain disposition", input)
+	}
+	direct := runtimeDetachInputForRuntimeAttachment(runtimeAttachment, oldBranchAbort)
+	if direct.attachment != runtimeAttachment ||
+		direct.runtime != runtimeAttachment ||
+		direct.disposition != oldBranchAbort {
+		t.Fatalf("direct runtime detach input = %+v, want runtime attachment with abort disposition", direct)
+	}
+
+	var body strings.Builder
+	for _, file := range []string{"runtime.go", "runtime_attach.go"} {
+		fileBody, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		body.Write(fileBody)
+	}
+	text := body.String()
+	for _, required := range []string{
+		"func (t *task) detachRuntimeAttachment(ctx context.Context, input runtimeDetachInput) error",
+		"func (t *task) stopAttachment(ctx context.Context, input runtimeDetachInput) error",
+		"func (t *task) stopAttachmentLocked(ctx context.Context, input runtimeDetachInput) error",
+		"func (t *task) stopAttachmentChildrenLocked(ctx context.Context, input runtimeDetachInput) error",
+		"childInput := runtimeDetachInputForRuntimeAttachment",
+	} {
+		if !strings.Contains(text, required) {
+			t.Fatalf("runtime detach should preserve captured input through stop path; missing %q", required)
+		}
+	}
+	for _, forbidden := range []string{
+		"stopAttachment(ctx, input.runtime, input.disposition)",
+		"stopAttachmentLocked(ctx, attachment, oldBranchDetach)",
+		"stopAttachmentLocked(ctx, child, disposition)",
+	} {
+		if strings.Contains(text, forbidden) {
+			t.Fatalf("runtime detach should not unwrap input into loose args; found %q", forbidden)
+		}
 	}
 
 	if err := task.Detach(context.Background(), nil); err == nil {
