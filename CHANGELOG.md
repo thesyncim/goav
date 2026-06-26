@@ -21,6 +21,8 @@ methodology changes, and migration notes.
   shutdown can define that small interface locally.
 - Removed exported `goav.Observable`; event access remains on `LiveTask`, and
   callers that only need `Events`/`Watch` can use a local structural interface.
+- Removed exported `goav.Controllable`; live control remains on `LiveTask`, and
+  control-only helpers can accept a local structural interface.
 - Stream chains now require an explicit `.Decode()` before frame-domain
   consumers (`.Do`, `.Resize`, `.Resample`, real `.Encode`, frame taps, and
   decoded-frame sinks). Use `.Copy()` when a chain should stay packet-domain.

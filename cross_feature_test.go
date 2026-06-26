@@ -816,7 +816,9 @@ func TestSelectActiveSwitchToEndedArm(t *testing.T) {
 
 // controlWhenRunningInternal retries a control until the running graph
 // accepts it (the internal twin of the dogfood helper).
-func controlWhenRunningInternal(ctx context.Context, task Controllable, ctrl control.Control) error {
+func controlWhenRunningInternal(ctx context.Context, task interface {
+	Control(context.Context, control.Control) error
+}, ctrl control.Control) error {
 	for {
 		err := task.Control(ctx, ctrl)
 		if err == nil || !errors.Is(err, control.ErrNotRunning) {

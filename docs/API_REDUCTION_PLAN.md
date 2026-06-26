@@ -51,7 +51,7 @@ Keep in `goav`:
 - `BuildError` and stable error families
 - minimal `Task` with `Run` and `Close`
 - opt-in task capability interfaces: `Explainer`, `Inspectable`, `Mutable`,
-  `Controllable`, and `LiveTask`
+  and `LiveTask`
 
 Move or keep outside the front door:
 

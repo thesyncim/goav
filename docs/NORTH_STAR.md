@@ -27,7 +27,7 @@ attachment.
   `WorkPatch` for a runtime branch update.
 - Runtime observation is composition: `Branch + Do + Sink`, plus `Events`,
   `Watch`, `Snapshot`, `Stats`, `Explain`, and graph rendering.
-- Runtime controls lower into `Controllable.Control`, `Mutable.Attach`,
+- Runtime controls lower into `task.Control`, `Mutable.Attach`,
   `Attachment.Rebranch`, `Mutable.Detach`, `Watch`, `Snapshot`, `Stats`, or
   `Close`; the control-plane binder never calls arbitrary methods.
 

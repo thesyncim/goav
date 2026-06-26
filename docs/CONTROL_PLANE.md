@@ -15,7 +15,7 @@ goav ctl --control unix:///tmp/goav-live.sock attach frames as archive \
 ```
 
 The control layer is allowlisted and lowers into the same task capabilities
-normal Go code uses: `Controllable.Control`, `Mutable.Attach`,
+normal Go code uses: `task.Control`, `Mutable.Attach`,
 `Attachment.Rebranch`, `Mutable.Detach`, `Inspectable.Snapshot`,
 `Inspectable.Stats`, `Observable.Watch`, and `Task.Close`. Reflection is used only on this cold
 path to bind known command structs, validate fields, parse JSON, and generate

@@ -86,7 +86,7 @@ and test name.
 ## Runtime errors
 
 Runtime paths keep the same floor: errors name the node and say what to do.
-`Controllable.Control` validations reject bad values before delivering (`goav:
+`task.Control` validations reject bad values before delivering (`goav:
 SetBitrate needs a positive rate in bits per second, got 0`) and wrap
 `pipeline.ErrUnknownNode` for unknown targets; per-node control failures are
 collected as `goav: control to "node": ...`. Attach/Rebranch refusals are full

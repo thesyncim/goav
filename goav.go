@@ -81,14 +81,6 @@ type Mutable interface {
 	Detach(context.Context, Attachment, ...lifecycle.DetachOption) error
 }
 
-// Controllable exposes live out-of-band controls.
-type Controllable interface {
-	// Control injects an out-of-band control into the running graph, delivered to a
-	// target node on its serial worker — the control-plane entry point for live
-	// switching (a selector), keyframe requests, and flushes.
-	Control(context.Context, control.Control) error
-}
-
 // LiveTask is the full task capability set produced by the built-in runtime.
 // Accept this only when an API needs inspection, runtime mutation, controls, or
 // events; otherwise accept Task.
@@ -97,7 +89,10 @@ type LiveTask interface {
 	Explainer
 	Inspectable
 	Mutable
-	Controllable
+	// Control injects an out-of-band control into the running graph, delivered to a
+	// target node on its serial worker — the control-plane entry point for live
+	// switching (a selector), keyframe requests, and flushes.
+	Control(context.Context, control.Control) error
 	// Events returns an unfiltered event subscription channel. Prefer Watch
 	// when callers need filters or explicit Subscription.Close ownership.
 	Events() <-chan av.Event
