@@ -4,9 +4,37 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/thesyncim/goav/av"
 )
+
+func TestGraphConfigCloseWaitTimeoutDefault(t *testing.T) {
+	directGraph, err := NewGraph(GraphConfig{Name: "close-wait-default"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	direct, ok := directGraph.(*directRunner)
+	if !ok {
+		t.Fatalf("direct graph = %T, want *directRunner", directGraph)
+	}
+	if got := direct.config.CloseWaitTimeout; got != defaultCloseWaitTimeout {
+		t.Fatalf("direct close wait timeout = %s, want %s", got, defaultCloseWaitTimeout)
+	}
+
+	const custom = 5 * time.Millisecond
+	bufferedGraph, err := NewGraph(GraphConfig{Name: "close-wait-custom", Buffer: BufferPolicy{Capacity: 1}, CloseWaitTimeout: custom})
+	if err != nil {
+		t.Fatal(err)
+	}
+	buffered, ok := bufferedGraph.(*bufferedRunner)
+	if !ok {
+		t.Fatalf("buffered graph = %T, want *bufferedRunner", bufferedGraph)
+	}
+	if got := buffered.config.CloseWaitTimeout; got != custom {
+		t.Fatalf("buffered close wait timeout = %s, want %s", got, custom)
+	}
+}
 
 type describedSource struct {
 	directTestSource

@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
@@ -68,13 +69,14 @@ func New(options ...runtimecfg.Option) (*Runtime, error) {
 		return nil, err
 	}
 	return &runtime{
-		codecs:        config.Codecs,
-		filters:       config.Filters,
-		formats:       config.Formats,
-		buffer:        config.Buffer,
-		realtime:      config.Realtime,
-		clock:         config.Clock,
-		eventCapacity: config.EventCapacity,
+		codecs:           config.Codecs,
+		filters:          config.Filters,
+		formats:          config.Formats,
+		buffer:           config.Buffer,
+		realtime:         config.Realtime,
+		clock:            config.Clock,
+		eventCapacity:    config.EventCapacity,
+		closeWaitTimeout: config.CloseWaitTimeout,
 	}, nil
 }
 
@@ -87,13 +89,14 @@ func mustNew(options ...runtimecfg.Option) *Runtime {
 }
 
 type runtime struct {
-	codecs        *codec.SimpleRegistry
-	filters       *filter.SimpleRegistry
-	formats       *format.SimpleRegistry
-	buffer        pipeline.BufferPolicy
-	realtime      bool
-	clock         av.Clock
-	eventCapacity int
+	codecs           *codec.SimpleRegistry
+	filters          *filter.SimpleRegistry
+	formats          *format.SimpleRegistry
+	buffer           pipeline.BufferPolicy
+	realtime         bool
+	clock            av.Clock
+	eventCapacity    int
+	closeWaitTimeout time.Duration
 }
 
 func (r *runtime) Probe(ctx context.Context, request format.ProbeRequest) (format.ProbeResult, error) {
@@ -119,10 +122,11 @@ type builder struct {
 
 func (b *builder) newGraph(_ context.Context) (pipeline.Graph, error) {
 	return pipeline.NewGraph(pipeline.GraphConfig{
-		Name:          "goav",
-		Realtime:      b.runtime.realtime,
-		Buffer:        b.runtime.buffer,
-		EventCapacity: b.runtime.eventCapacity,
+		Name:             "goav",
+		Realtime:         b.runtime.realtime,
+		Buffer:           b.runtime.buffer,
+		EventCapacity:    b.runtime.eventCapacity,
+		CloseWaitTimeout: b.runtime.closeWaitTimeout,
 	})
 }
 

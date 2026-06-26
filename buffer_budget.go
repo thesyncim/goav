@@ -40,10 +40,11 @@ func recipeGraphConfig(rt *runtime, name string, work workPlan, bufferedWhenReal
 		}
 	}
 	return pipeline.GraphConfig{
-		Name:          firstNonEmpty(name, work.Name, "goav"),
-		Realtime:      rt.realtime,
-		Buffer:        buffer,
-		EventCapacity: rt.eventCapacity,
+		Name:             firstNonEmpty(name, work.Name, "goav"),
+		Realtime:         rt.realtime,
+		Buffer:           buffer,
+		EventCapacity:    rt.eventCapacity,
+		CloseWaitTimeout: rt.closeWaitTimeout,
 	}, nil
 }
 

@@ -37,13 +37,20 @@ func (e *CloseWaitError) Unwrap() error {
 	return ErrCloseWait
 }
 
-var closeWaitTimeout = 30 * time.Second
+const defaultCloseWaitTimeout = 30 * time.Second
 
-func waitCloseDone(operation string, node string, done <-chan struct{}) error {
-	return waitCloseDoneContext(context.Background(), operation, node, done)
+func normalizeCloseWaitTimeout(timeout time.Duration) time.Duration {
+	if timeout == 0 {
+		return defaultCloseWaitTimeout
+	}
+	return timeout
 }
 
-func waitCloseDoneContext(ctx context.Context, operation string, node string, done <-chan struct{}) error {
+func waitCloseDone(operation string, node string, done <-chan struct{}, timeout time.Duration) error {
+	return waitCloseDoneContext(context.Background(), operation, node, done, timeout)
+}
+
+func waitCloseDoneContext(ctx context.Context, operation string, node string, done <-chan struct{}, timeout time.Duration) error {
 	if done == nil {
 		return nil
 	}
@@ -53,7 +60,7 @@ func waitCloseDoneContext(ctx context.Context, operation string, node string, do
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if closeWaitTimeout <= 0 {
+	if timeout <= 0 {
 		select {
 		case <-done:
 			return nil
@@ -61,7 +68,7 @@ func waitCloseDoneContext(ctx context.Context, operation string, node string, do
 			return ctx.Err()
 		}
 	}
-	timer := time.NewTimer(closeWaitTimeout)
+	timer := time.NewTimer(timeout)
 	defer timer.Stop()
 	select {
 	case <-done:
@@ -69,6 +76,6 @@ func waitCloseDoneContext(ctx context.Context, operation string, node string, do
 	case <-ctx.Done():
 		return ctx.Err()
 	case <-timer.C:
-		return &CloseWaitError{Operation: operation, Node: node, Pending: 1, Timeout: closeWaitTimeout}
+		return &CloseWaitError{Operation: operation, Node: node, Pending: 1, Timeout: timeout}
 	}
 }

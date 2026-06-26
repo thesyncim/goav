@@ -1266,7 +1266,13 @@ func (p *joinPlan) graphConfig(gp graphPlan) (pipeline.GraphConfig, error) {
 			return pipeline.GraphConfig{}, err
 		}
 	}
-	return pipeline.GraphConfig{Name: "goav-" + p.name, Buffer: buffer, Realtime: p.runtime.realtime, EventCapacity: p.runtime.eventCapacity}, nil
+	return pipeline.GraphConfig{
+		Name:             "goav-" + p.name,
+		Buffer:           buffer,
+		Realtime:         p.runtime.realtime,
+		EventCapacity:    p.runtime.eventCapacity,
+		CloseWaitTimeout: p.runtime.closeWaitTimeout,
+	}, nil
 }
 
 // treeGraphBuffer returns the first profile-pinned graph buffer in the join

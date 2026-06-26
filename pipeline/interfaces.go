@@ -276,11 +276,13 @@ type NodeStats struct {
 }
 
 // GraphConfig configures a new graph: its name, realtime pacing, the default
-// node buffer policy, and the event channel capacity.
+// node buffer policy, event channel capacity, and diagnostic close/remove wait
+// timeout. A zero CloseWaitTimeout keeps the default 30s budget.
 type GraphConfig struct {
-	Name          string
-	Realtime      bool
-	Buffer        BufferPolicy
-	EventCapacity int
-	Metadata      av.Metadata
+	Name             string
+	Realtime         bool
+	Buffer           BufferPolicy
+	EventCapacity    int
+	CloseWaitTimeout time.Duration
+	Metadata         av.Metadata
 }

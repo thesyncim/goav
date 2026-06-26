@@ -1279,13 +1279,9 @@ func TestGraphBufferedRemoveDrainsInFlightDeliveries(t *testing.T) {
 }
 
 func TestGraphBufferedRemoveReportsStuckNode(t *testing.T) {
-	oldTimeout := closeWaitTimeout
-	closeWaitTimeout = 10 * time.Millisecond
-	t.Cleanup(func() { closeWaitTimeout = oldTimeout })
-
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	graph, err := NewGraph(GraphConfig{Name: "buffered-stuck-remove", Buffer: BufferPolicy{Capacity: 1, Drop: DropBlock}})
+	graph, err := NewGraph(GraphConfig{Name: "buffered-stuck-remove", Buffer: BufferPolicy{Capacity: 1, Drop: DropBlock}, CloseWaitTimeout: 10 * time.Millisecond})
 	if err != nil {
 		t.Fatal(err)
 	}

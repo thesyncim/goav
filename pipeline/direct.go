@@ -120,6 +120,7 @@ func (e *directEmitter) EmitDelivery(ctx context.Context, msg *Message) (Deliver
 // NewGraph creates the single public pipeline graph. Direct execution is used
 // for direct buffer policy; bounded buffered execution is selected otherwise.
 func NewGraph(config GraphConfig) (Graph, error) {
+	config.CloseWaitTimeout = normalizeCloseWaitTimeout(config.CloseWaitTimeout)
 	if !config.Buffer.IsDirect() {
 		return newBufferedRunner(config)
 	}
@@ -472,7 +473,7 @@ func (g *directRunner) CloseContext(ctx context.Context) error {
 	var first error
 	stuck := make(map[string]struct{})
 	for i := range nodes {
-		if err := waitNodeGateDrainedContext(ctx, "close", nodes[i].name, nodes[i].gate); err != nil {
+		if err := waitNodeGateDrainedContext(ctx, "close", nodes[i].name, nodes[i].gate, g.config.CloseWaitTimeout); err != nil {
 			if first == nil {
 				first = err
 			}
@@ -543,7 +544,7 @@ func (g *directRunner) Remove(ref NodeRef) error {
 	g.rebuildTopoLocked()
 	closeNode := *node
 	g.mu.Unlock()
-	if err := waitNodeGateDrained("remove", closeNode.name, closeNode.gate); err != nil {
+	if err := waitNodeGateDrained("remove", closeNode.name, closeNode.gate, g.config.CloseWaitTimeout); err != nil {
 		return err
 	}
 	return closeDirectNode(&closeNode)
@@ -554,11 +555,11 @@ func (g *directRunner) Remove(ref NodeRef) error {
 // concurrent Handle. New deliveries (from emits holding an older routing
 // snapshot) see the closing bit and shed themselves. This is the cold removal
 // path; in-flight deliveries are bounded by one downstream chain.
-func waitNodeGateDrained(operation string, node string, gate *atomic.Int64) error {
-	return waitNodeGateDrainedContext(context.Background(), operation, node, gate)
+func waitNodeGateDrained(operation string, node string, gate *atomic.Int64, timeout time.Duration) error {
+	return waitNodeGateDrainedContext(context.Background(), operation, node, gate, timeout)
 }
 
-func waitNodeGateDrainedContext(ctx context.Context, operation string, node string, gate *atomic.Int64) error {
+func waitNodeGateDrainedContext(ctx context.Context, operation string, node string, gate *atomic.Int64, timeout time.Duration) error {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -570,8 +571,8 @@ func waitNodeGateDrainedContext(ctx context.Context, operation string, node stri
 	}
 	gate.Add(nodeClosingBit)
 	var deadline time.Time
-	if closeWaitTimeout > 0 {
-		deadline = time.Now().Add(closeWaitTimeout)
+	if timeout > 0 {
+		deadline = time.Now().Add(timeout)
 	}
 	for spins := 0; gate.Load() != nodeClosingBit; spins++ {
 		if err := ctx.Err(); err != nil {
@@ -579,7 +580,7 @@ func waitNodeGateDrainedContext(ctx context.Context, operation string, node stri
 		}
 		if !deadline.IsZero() && time.Now().After(deadline) {
 			pending := gate.Load() &^ nodeClosingBit
-			return &CloseWaitError{Operation: operation, Node: node, Pending: pending, Timeout: closeWaitTimeout}
+			return &CloseWaitError{Operation: operation, Node: node, Pending: pending, Timeout: timeout}
 		}
 		if spins < 100 {
 			runtime.Gosched()

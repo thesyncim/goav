@@ -463,13 +463,9 @@ func (s *stuckRemoveSink) Close() error {
 }
 
 func TestGraphDirectRemoveReportsStuckNode(t *testing.T) {
-	oldTimeout := closeWaitTimeout
-	closeWaitTimeout = 10 * time.Millisecond
-	t.Cleanup(func() { closeWaitTimeout = oldTimeout })
-
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	graph, err := NewGraph(GraphConfig{Name: "direct-stuck-remove"})
+	graph, err := NewGraph(GraphConfig{Name: "direct-stuck-remove", CloseWaitTimeout: 10 * time.Millisecond})
 	if err != nil {
 		t.Fatal(err)
 	}

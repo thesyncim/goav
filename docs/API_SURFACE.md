@@ -136,7 +136,8 @@ use [`docs/ADAPTERS.md`](ADAPTERS.md) and [`docs/COMPONENTS.md`](COMPONENTS.md).
 - **Filters**: `filter` FrameFilter/Factory/Descriptor,
   `goavruntime.WithFilter`/`WithFilterAdapter`.
 - **Runtime config**: `goav.New`, `bundle.MustNew`, `goavruntime.WithClock`,
-  `WithRealtime`, `WithBufferPolicy`, `WithEventCapacity`.
+  `WithRealtime`, `WithBufferPolicy`, `WithEventCapacity`,
+  `WithCloseWaitTimeout`.
 - **Media vocabulary**: `av` frames/packets/buffers (`Buffer`,
   `BufferOwnership`, `Plane`), timing (`TimeBase`, `Timestamp`, `Duration`,
   rescaling), `Clock`.

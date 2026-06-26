@@ -517,7 +517,7 @@ func (g *bufferedRunner) CloseContext(ctx context.Context) error {
 			continue
 		}
 		if running && node.kind != nodeSource {
-			if err := waitCloseDoneContext(ctx, "close", node.name, node.done); err != nil {
+			if err := waitCloseDoneContext(ctx, "close", node.name, node.done, g.config.CloseWaitTimeout); err != nil {
 				if first == nil {
 					first = err
 				}
@@ -600,7 +600,7 @@ func (g *bufferedRunner) Remove(ref NodeRef) error {
 	g.rebuildTopoLocked()
 	g.mu.Unlock()
 	if running && done != nil {
-		if err := waitCloseDone("remove", closeNode.name, done); err != nil {
+		if err := waitCloseDone("remove", closeNode.name, done, g.config.CloseWaitTimeout); err != nil {
 			return err
 		}
 	}
@@ -614,7 +614,7 @@ func (g *bufferedRunner) closeNodeQueue(operation string, node *bufferedNode) er
 }
 
 func (g *bufferedRunner) closeNodeQueueContext(ctx context.Context, operation string, node *bufferedNode) error {
-	if err := lockNodeQueueForCloseContext(ctx, operation, node); err != nil {
+	if err := lockNodeQueueForCloseContext(ctx, operation, node, g.config.CloseWaitTimeout); err != nil {
 		return err
 	}
 	defer node.queueMutex.Unlock()
@@ -626,14 +626,14 @@ func (g *bufferedRunner) closeNodeQueueContext(ctx context.Context, operation st
 	return nil
 }
 
-func lockNodeQueueForCloseContext(ctx context.Context, operation string, node *bufferedNode) error {
+func lockNodeQueueForCloseContext(ctx context.Context, operation string, node *bufferedNode, timeout time.Duration) error {
 	if ctx == nil {
 		ctx = context.Background()
 	}
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if closeWaitTimeout <= 0 {
+	if timeout <= 0 {
 		for !node.queueMutex.TryLock() {
 			if err := ctx.Err(); err != nil {
 				return err
@@ -642,13 +642,13 @@ func lockNodeQueueForCloseContext(ctx context.Context, operation string, node *b
 		}
 		return nil
 	}
-	deadline := time.Now().Add(closeWaitTimeout)
+	deadline := time.Now().Add(timeout)
 	for !node.queueMutex.TryLock() {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
 		if time.Now().After(deadline) {
-			return &CloseWaitError{Operation: operation, Node: node.name, Pending: 1, Timeout: closeWaitTimeout}
+			return &CloseWaitError{Operation: operation, Node: node.name, Pending: 1, Timeout: timeout}
 		}
 		time.Sleep(100 * time.Microsecond)
 	}

@@ -8,6 +8,7 @@ package runtime
 import (
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
@@ -21,19 +22,20 @@ import (
 // validates the final config before the root package publishes a concrete
 // Runtime.
 type Config struct {
-	Codecs        *codec.SimpleRegistry
-	Filters       *filter.SimpleRegistry
-	Formats       *format.SimpleRegistry
-	Buffer        pipeline.BufferPolicy
-	Realtime      bool
-	Clock         av.Clock
-	EventCapacity int
+	Codecs           *codec.SimpleRegistry
+	Filters          *filter.SimpleRegistry
+	Formats          *format.SimpleRegistry
+	Buffer           pipeline.BufferPolicy
+	Realtime         bool
+	Clock            av.Clock
+	EventCapacity    int
+	CloseWaitTimeout time.Duration
 }
 
 // Option configures a runtime under construction: registries (codecs, formats,
 // filters), pacing (WithRealtime, WithClock), and graph policy
-// (WithBufferPolicy, WithEventCapacity). Invalid options return an error from
-// goav.New instead of silently no-oping.
+// (WithBufferPolicy, WithEventCapacity, WithCloseWaitTimeout). Invalid options
+// return an error from goav.New instead of silently no-oping.
 type Option func(*Config) error
 
 // NewConfig builds the default bare runtime configuration, applies options in
@@ -80,6 +82,8 @@ func Validate(config *Config) error {
 		return errors.New("goav: runtime config has nil format registry")
 	case config.EventCapacity < 0:
 		return fmt.Errorf("goav: runtime event capacity must be non-negative: %d", config.EventCapacity)
+	case config.CloseWaitTimeout < 0:
+		return fmt.Errorf("goav: runtime close wait timeout must be non-negative: %s", config.CloseWaitTimeout)
 	default:
 		return nil
 	}
@@ -230,6 +234,19 @@ func WithEventCapacity(capacity int) Option {
 			return fmt.Errorf("event capacity must be non-negative: %d", capacity)
 		}
 		config.EventCapacity = capacity
+		return nil
+	}
+}
+
+// WithCloseWaitTimeout sets the diagnostic timeout graph Close and Remove use
+// while waiting for in-flight handlers to drain. A zero timeout keeps the
+// pipeline default.
+func WithCloseWaitTimeout(timeout time.Duration) Option {
+	return func(config *Config) error {
+		if timeout < 0 {
+			return fmt.Errorf("close wait timeout must be non-negative: %s", timeout)
+		}
+		config.CloseWaitTimeout = timeout
 		return nil
 	}
 }

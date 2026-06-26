@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	gopusadapter "github.com/thesyncim/goav/adapters/gopus"
 	ivfadapter "github.com/thesyncim/goav/adapters/ivf"
@@ -149,6 +150,7 @@ func TestRuntimeNewRejectsInvalidOptions(t *testing.T) {
 		{name: "nil demuxer", options: []Option{WithDemuxer(av.FormatOgg, nil)}, want: "demuxer factory is nil"},
 		{name: "nil prober", options: []Option{WithProber(nil)}, want: "format prober is nil"},
 		{name: "negative event capacity", options: []Option{WithEventCapacity(-1)}, want: "event capacity must be non-negative"},
+		{name: "negative close wait timeout", options: []Option{WithCloseWaitTimeout(-time.Millisecond)}, want: "close wait timeout must be non-negative"},
 		{name: "nil codec registry", options: []Option{func(config *Config) error {
 			config.Codecs = nil
 			return nil

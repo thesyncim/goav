@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
@@ -259,13 +260,13 @@ func TestRecipeGraphConfigBufferContracts(t *testing.T) {
 	if _, err := recipeGraphConfig(nil, "", workPlan{}, false); err == nil {
 		t.Fatal("recipeGraphConfig nil runtime error = nil")
 	}
-	rt := mustNew(WithEventCapacity(7))
+	rt := mustNew(WithEventCapacity(7), WithCloseWaitTimeout(15*time.Millisecond))
 	config, err := recipeGraphConfig(rt, "", workPlan{Name: "camera"}, true)
 	if err != nil {
 		t.Fatalf("recipeGraphConfig error = %v", err)
 	}
-	if config.Name != "camera" || !config.Realtime || config.EventCapacity != 7 {
-		t.Fatalf("config identity = %+v, want name camera realtime eventCapacity 7", config)
+	if config.Name != "camera" || !config.Realtime || config.EventCapacity != 7 || config.CloseWaitTimeout != 15*time.Millisecond {
+		t.Fatalf("config identity = %+v, want name camera realtime eventCapacity 7 closeWaitTimeout 15ms", config)
 	}
 	if config.Buffer.Capacity != realtimeRecipeBufferCapacity || config.Buffer.Drop != pipeline.DropBlock {
 		t.Fatalf("realtime buffer = %+v, want capacity %d drop block", config.Buffer, realtimeRecipeBufferCapacity)
