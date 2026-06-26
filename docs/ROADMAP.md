@@ -37,9 +37,9 @@ ungrouped handle is rejected; grouping is explicit (`TestMuxPreferredOverHandleI
 ## Governed pre-v1 surface
 
 Governed here means "changes are deliberate, tested, and recorded", not "this
-whole surface is the v1 promise." The governed surface is 290 approved
+whole surface is the v1 promise." The governed surface is 289 approved
 identifiers (`api_surface_pin_test.go` + `testdata/api_surface.txt`: 55 root,
-22 `control`, 8 `inspect`, 140 `errcode`, 28 `plan`, 24 `lifecycle`,
+22 `control`, 8 `inspect`, 139 `errcode`, 28 `plan`, 24 `lifecycle`,
 4 `snapshot`, 9 `graphrender`), every exported symbol is documented
 (`doc_pin_test.go`), and the current inventory is tiered in
 `docs/API_SURFACE.md`:
@@ -52,8 +52,8 @@ identifiers (`api_surface_pin_test.go` + `testdata/api_surface.txt`: 55 root,
   built-task `CloseContext(ctx)`; opt-in task capability
   interfaces for `Explain`, inspection (`Describe`/`Taps`/`Snapshot`/`Stats`),
   mutation (`Attach`/`Detach` with `DrainBranch`/`AbortBranch`, `Rebranch`),
-  controls (`Control`), and observation (`Watch`, with `Events` as the
-  unfiltered watch convenience);
+  controls (`Control`), and observation (`Watch`; unfiltered `Watch()` observes
+  every task event);
   `New`/`MustNew`/`UseRuntime` and the `bundle` runtime helpers;
   structured `BuildError` with stable families, detailed codes, typed fields/fixes;
   the `plan`, `snapshot`, `lifecycle`, `shape`, `flow`, and `av` vocabulary

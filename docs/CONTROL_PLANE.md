@@ -17,10 +17,10 @@ goav ctl --control unix:///tmp/goav-live.sock attach frames as archive \
 The control layer is allowlisted and lowers into the same task capabilities
 normal Go code uses: `task.Control`, `Mutable.Attach`,
 `Attachment.Rebranch`, `Mutable.Detach`, `Inspectable.Snapshot`,
-`Inspectable.Stats`, `Observable.Watch`, and `Task.Close`. Reflection is used only on this cold
-path to bind known command structs, validate fields, parse JSON, and generate
-help from tags. There is no global registry and no user-provided method name
-dispatch.
+`Inspectable.Stats`, task `Watch`, and `Task.Close`. Reflection is used only on
+this cold path to bind known command structs, validate fields, parse JSON, and
+generate help from tags. There is no global registry and no user-provided
+method name dispatch.
 
 The useful mental model: the CLI is a typed remote for the grammar, not a
 second workflow API.

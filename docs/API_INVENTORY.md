@@ -13,7 +13,7 @@ Source: `testdata/api_surface.txt`.
 | --- | ---: | ---: |
 | `goav` | 134 | 55 |
 | `control` | 0 | 22 |
-| `errcode` | 147 | 140 |
+| `errcode` | 147 | 139 |
 | `graphrender` | 9 | 9 |
 | `inspect` | 0 | 8 |
 | `lifecycle` | 13 | 24 |
@@ -78,7 +78,7 @@ Current line counts:
 | `docs/ROADMAP.md` | 244 |
 | `docs/PROGRESS.md` | 138 |
 | `docs/API_REDUCTION_PLAN.md` | 211 |
-| `docs/SIMPLIFICATION_TARGET.md` | 201 |
+| `docs/SIMPLIFICATION_TARGET.md` | 202 |
 
 The README meets the <=120 line target after the advanced vocabulary moved into
 focused docs.

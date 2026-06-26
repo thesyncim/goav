@@ -171,8 +171,8 @@ normal empty-input validation.
 API budget progress: exported `goav.ContextCloser` was removed from the root
 surface; built runtime tasks still expose `CloseContext(ctx)` structurally, and
 callers that only need context-aware shutdown can assert a local interface.
-Exported `goav.Observable` was also removed; event access remains on `LiveTask`,
-while narrow event consumers can use local structural interfaces.
+Exported `goav.Observable` was also removed; task event access is `Watch`,
+while narrow event consumers can still use local structural interfaces.
 Exported `goav.Controllable` was removed the same way; live control remains on
 `LiveTask`, and control-only helpers can accept a local structural interface.
 Exported `goav.Explainer` was removed as a separate alias; built-task

@@ -46,7 +46,7 @@ bus-visible state changes to be ordinary workflows. The current goav answer is:
 
 - Runtime branch lifecycle is observable without graph handles:
   `av.EventBranchAttached` and `av.EventBranchDetached` are delivered through
-  `Observable.Watch`, carrying the attachment id/name and detach disposition.
+  task `Watch`, carrying the attachment id/name and detach disposition.
 - Destination finalization is observable too:
   `av.EventDestinationCommitted`, `av.EventDestinationAborted`, and
   `av.EventDestinationCommitError` report task and runtime-branch destination

@@ -87,7 +87,7 @@ func (t *task) runStreamRules(events <-chan av.Event) {
 // handleStreamAdded reacts to one stream announce: every matching rule's
 // branches are templated for the stream and lowered through Mutable.Attach —
 // the same plan, atomic apply, and rollback as a manual attach. Failures
-// surface as av.EventAttachError on Watch/Events; a failed rule leaves the
+// surface as av.EventAttachError on task watches; a failed rule leaves the
 // task unchanged and a later re-announce retries.
 func (t *task) handleStreamAdded(event av.Event) {
 	if event.Stream == nil {

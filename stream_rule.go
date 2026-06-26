@@ -41,12 +41,12 @@ func OnRemove(options ...lifecycle.DetachOption) BranchSpec {
 // with drain semantics: their destinations commit and the branch snapshot
 // reports lifecycle.DestinationCommitted. Several rules may match one stream;
 // each attaches independently. Attach or detach failures surface as
-// av.EventAttachError on Watch/Events — never silently. A discovered stream
+// av.EventAttachError on task watches — never silently. A discovered stream
 // matching no rule just surfaces its event, exactly as without rules.
 //
 // Rules require a single-input job today. Because the task watches its own
-// events, Events() on a rule-bearing task returns an independent Watch
-// subscription per call instead of the shared graph channel.
+// events, each task watch remains independent instead of exposing the shared
+// graph channel.
 func (j *Job) OnStream(match sourcepkg.StreamMatch, branches ...BranchSpec) *Job {
 	if j == nil {
 		return j

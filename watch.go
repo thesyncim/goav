@@ -9,7 +9,8 @@ import (
 )
 
 // defaultWatchCapacity mirrors the pipeline's default event channel capacity so
-// an unconfigured task gives every watcher the same buffer depth as Events().
+// an unconfigured task gives every watcher the same buffer depth as the graph
+// event stream.
 const defaultWatchCapacity = 16
 
 // Watch returns an independent, filtered subscription to the task's event
