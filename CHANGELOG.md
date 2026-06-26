@@ -25,6 +25,9 @@ methodology changes, and migration notes.
   control-only helpers can accept a local structural interface.
 - Removed exported `goav.Explainer`; built-task explanation remains on
   `LiveTask`, and `Job.Explain(ctx)` remains the pre-build path.
+- Removed exported `goav.Mutable`; runtime branch mutation remains on
+  `LiveTask`, and mutation-only helpers can accept a local structural
+  interface.
 - Removed exported `goav.MediaOption`; `Name`, `MIME`, and `Metadata` still work
   as shared input/destination options.
 - Removed exported `goav.InputOption` and `goav.DestinationOption`; option

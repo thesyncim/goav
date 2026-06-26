@@ -12,10 +12,16 @@ import (
 	"github.com/thesyncim/goav"
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/component"
+	"github.com/thesyncim/goav/lifecycle"
 	"github.com/thesyncim/goav/pipeline"
 )
 
 var branchSeq atomic.Uint64
+
+type branchMutator interface {
+	Attach(context.Context, ...goav.BranchSpec) (goav.Attachment, error)
+	Detach(context.Context, goav.Attachment, ...lifecycle.DetachOption) error
+}
 
 type branch struct {
 	Spec       branchSpec                     `json:"spec"`
@@ -178,7 +184,7 @@ func (s *session) detachLocked(ctx context.Context, r *branch) error {
 	if r.Attachment == nil {
 		return nil
 	}
-	var task goav.Mutable
+	var task branchMutator
 	if r.Spec.Kind == "video" {
 		task = s.videoTask
 	} else {

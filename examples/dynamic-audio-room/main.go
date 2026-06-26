@@ -14,6 +14,7 @@ import (
 	"github.com/thesyncim/goav/component"
 	"github.com/thesyncim/goav/flow"
 	"github.com/thesyncim/goav/goavtest"
+	"github.com/thesyncim/goav/lifecycle"
 	"github.com/thesyncim/goav/shape"
 	"github.com/thesyncim/goav/source"
 )
@@ -23,6 +24,11 @@ const (
 	roomSampleRate = 48000
 	roomChannels   = 1
 )
+
+type branchMutator interface {
+	Attach(context.Context, ...goav.BranchSpec) (goav.Attachment, error)
+	Detach(context.Context, goav.Attachment, ...lifecycle.DetachOption) error
+}
 
 func main() {
 	result, err := runDynamicRoomDemo(context.Background())
@@ -200,7 +206,7 @@ func runRoomScript(ctx context.Context, script func(context.Context, *RoomPipeli
 
 type RoomPipeline struct {
 	room        *Room
-	task        goav.Mutable
+	task        branchMutator
 	attachments map[string]goav.Attachment
 	attach      func(context.Context, string) (goav.Attachment, error)
 }

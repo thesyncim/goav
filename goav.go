@@ -63,18 +63,6 @@ type Inspectable interface {
 	Stats() pipeline.GraphStats
 }
 
-// Mutable exposes runtime branch mutation.
-type Mutable interface {
-	// Attach adds late branches to the running graph from typed taps. One call
-	// applies all branches atomically: later branches may anchor on taps
-	// published by earlier ones, and a failure rolls the whole group back.
-	Attach(context.Context, ...BranchSpec) (Attachment, error)
-	// Detach removes a runtime branch and any dependent branches anchored on
-	// its taps. By default destinations finalize as closed; DrainBranch or
-	// AbortBranch records a commit/abort outcome for the detached branch.
-	Detach(context.Context, Attachment, ...lifecycle.DetachOption) error
-}
-
 // LiveTask is the full task capability set produced by the built-in runtime.
 // Accept this only when an API needs inspection, runtime mutation, controls, or
 // events; otherwise accept Task.
@@ -84,7 +72,14 @@ type LiveTask interface {
 	// branches, destinations, taps, shapes, planner decisions, and warnings.
 	Explain(context.Context) (plan.Report, error)
 	Inspectable
-	Mutable
+	// Attach adds late branches to the running graph from typed taps. One call
+	// applies all branches atomically: later branches may anchor on taps
+	// published by earlier ones, and a failure rolls the whole group back.
+	Attach(context.Context, ...BranchSpec) (Attachment, error)
+	// Detach removes a runtime branch and any dependent branches anchored on
+	// its taps. By default destinations finalize as closed; DrainBranch or
+	// AbortBranch records a commit/abort outcome for the detached branch.
+	Detach(context.Context, Attachment, ...lifecycle.DetachOption) error
 	// Control injects an out-of-band control into the running graph, delivered to a
 	// target node on its serial worker — the control-plane entry point for live
 	// switching (a selector), keyframe requests, and flushes.

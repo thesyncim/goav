@@ -29,6 +29,11 @@ const videoBranchBufferDepth = 12
 
 var branchSeq atomic.Uint64
 
+type branchMutator interface {
+	Attach(context.Context, ...goav.BranchSpec) (goav.Attachment, error)
+	Detach(context.Context, goav.Attachment, ...lifecycle.DetachOption) error
+}
+
 type branch struct {
 	Spec       branchSpec                     `json:"spec"`
 	Track      *webrtc.TrackLocalStaticSample `json:"-"`
@@ -381,7 +386,7 @@ func (s *session) detachLocked(ctx context.Context, r *branch) error {
 	if r.Attachment == nil {
 		return nil
 	}
-	var task goav.Mutable
+	var task branchMutator
 	if r.Spec.Kind == "video" {
 		task = s.videoTask
 	} else {

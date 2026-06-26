@@ -38,7 +38,7 @@ goav.From(input)                          inputs: FileInput, URIInput, Input(pro
   .Sync(flow.Sync("room", ...))            shared packet/frame timeline gates
   .Encode(codec.VP9(codec.Bitrate(...)))  codec specs from the codec package
   .Tap(goav.Tap|FrameTap|PacketTap)       named attach points
-  .Branches(goav.Branch("x")...To(dst))   fan out; BranchSpec also drives Mutable.Attach
+  .Branches(goav.Branch("x")...To(dst))   fan out; BranchSpec also drives task.Attach
   input.Stream(av.Stream{ID: ...})        attach anchor for app-owned dynamic tracks
   .To(Write|URI|Writer|Custom|Sink|Mux)   destinations; Mux(name, destination) = explicit mux/sink group
   .OnStream(source.MatchMedia|source.MatchCodec|...)    dynamic-stream rules; OnRemove controls detach outcome
@@ -48,7 +48,7 @@ job.Describe(); adapter-backed Explain/Build/Run use job.UseRuntime(rt), bundle.
 Task: Run, Close; built runtime tasks also implement structural CloseContext(ctx)
 LiveTask explain: Explain
 Inspectable: Describe, Taps, Snapshot -> snapshot.*, Stats
-Mutable: Attach/Detach(lifecycle.DrainBranch|AbortBranch); Attachment.Rebranch
+LiveTask mutation: Attach/Detach(lifecycle.DrainBranch|AbortBranch); Attachment.Rebranch
          (lifecycle.SwitchAt(lifecycle.NextFrame|lifecycle.NextKeyframe|lifecycle.AtMediaTime),
           lifecycle.DrainOldBranch|lifecycle.AbortOldBranch)
 LiveTask control: Control(control.Control values from typed constructors, .AtTap)
@@ -255,7 +255,7 @@ against the constructors in `input.go`/`provider.go`/`source.go`,
   custom push sources, and transport providers are three doors into one
   `InputSpec`. `InputSpec.Stream(av.Stream)` returns a branch attach
   anchor for app-owned dynamic tracks; it deliberately reuses
-  `Branch(...).From(...)` and `Mutable.Attach` instead of adding a room/session
+  `Branch(...).From(...)` and `task.Attach` instead of adding a room/session
   workflow API.
 - **Destination vs Sink vs Writer vs Write**: `Destination` is the routing
   handle every constructor returns; `Mux(name, destination)` is the explicit
@@ -269,8 +269,8 @@ against the constructors in `input.go`/`provider.go`/`source.go`,
 - **Flow vs Branch**: a `Flow` is a reusable operation list and owns no
   destination (`TestNorthStarFlowExposesNoDestinations`); a `Branch` routes
   fanout and owns its destinations.
-- **Attach vs Detach vs Rebranch**: `Mutable.Attach` adds ordinary branch specs
-  to a running task; `Mutable.Detach(ctx, h)` removes that attached branch, with
+- **Attach vs Detach vs Rebranch**: `task.Attach` adds ordinary branch specs
+  to a running task; `task.Detach(ctx, h)` removes that attached branch, with
   `lifecycle.DrainBranch()` and `lifecycle.AbortBranch()` selecting whether branch destinations
   commit or abort; `Attachment.Rebranch` is attach-new-then-detach-old, with
   lifecycle boundary options (`NextFrame`, `NextKeyframe`, `AtMediaTime`) and

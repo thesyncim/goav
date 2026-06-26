@@ -13,12 +13,18 @@ import (
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/flow"
 	"github.com/thesyncim/goav/goavtest"
+	"github.com/thesyncim/goav/lifecycle"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/shape"
 	"github.com/thesyncim/goav/source"
 )
 
 const lifecycleTapName = "video.decoded"
+
+type branchMutator interface {
+	Attach(context.Context, ...goav.BranchSpec) (goav.Attachment, error)
+	Detach(context.Context, goav.Attachment, ...lifecycle.DetachOption) error
+}
 
 // frameCountSink counts the decoded frames it receives.
 type frameCountSink struct {
@@ -136,7 +142,7 @@ func decodedVideoTapTask(t *testing.T, ctx context.Context, input goav.InputSpec
 	return task
 }
 
-func attachDropBranch(t *testing.T, ctx context.Context, task goav.Mutable, name string, sink pipeline.Sink) goav.Attachment {
+func attachDropBranch(t *testing.T, ctx context.Context, task branchMutator, name string, sink pipeline.Sink) goav.Attachment {
 	t.Helper()
 	attachment, err := task.Attach(ctx, goav.Branch(name).
 		From(goav.FrameTap(lifecycleTapName)).
