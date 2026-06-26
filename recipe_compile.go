@@ -63,11 +63,8 @@ type recipeCompileState struct {
 	branchInputProbeReady        bool
 	branchCompositionSplit       bool
 
-	// joinAttachment is the captured joinSpec for a Mix/Composite/Select job;
-	// joinPlan is the planned multi-upstream join the lowerer pass produced,
-	// the source buildWorkPlan renders the join work plan from.
+	// joinAttachment is the captured joinSpec for a Mix/Composite/Select job.
 	joinAttachment *joinSpec
-	joinPlan       *joinPlan
 
 	plan    branchComposePlan
 	planErr error

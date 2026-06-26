@@ -53,6 +53,8 @@ methodology changes, and migration notes.
   longer reaches through compile state for stream-set facts.
 - Routed join work-plan rendering through an explicit handoff so the join
   renderer consumes captured input, destination, and output-format facts.
+- Removed the concrete join-plan attachment from compile state; graph-plan
+  construction now passes the selected join lowerer into work-plan rendering.
 - Routed normal work-plan rendering through an explicit handoff so operation,
   branch, destination, decision, and diagnostic rendering consumes captured
   planner data.

@@ -165,6 +165,10 @@ func TestJoinPlannerConsumesRecipeIRInput(t *testing.T) {
 	if err != nil {
 		t.Fatalf("join spec: %v", err)
 	}
+	workFromLowerer := buildWorkPlan(&state, spec, planned)
+	if len(workFromLowerer.Inputs) != 2 || len(workFromLowerer.Destinations) != 1 {
+		t.Fatalf("join work from selected lowerer inputs=%+v destinations=%+v, want planned join work", workFromLowerer.Inputs, workFromLowerer.Destinations)
+	}
 	workInput := joinWorkPlanInputFromCompileState(&state)
 	state.intent.Inputs = nil
 	state.intent.Destinations = nil
@@ -495,8 +499,11 @@ func TestJoinPlannerUsesRecipeIRInputFacts(t *testing.T) {
 		t.Fatal(err)
 	}
 	workHandoff := sourceFunctionBody(t, string(workPlanBody), "buildWorkPlan")
-	if !strings.Contains(workHandoff, "state.joinPlan.buildJoinWorkPlan(joinWorkPlanInputFromCompileState(state), spec)") {
-		t.Fatal("buildWorkPlan should pass joinWorkPlanInput into join work rendering")
+	if !strings.Contains(workHandoff, "join.buildJoinWorkPlan(joinWorkPlanInputFromCompileState(state), spec)") {
+		t.Fatal("buildWorkPlan should pass the selected join lowerer into join work rendering")
+	}
+	if strings.Contains(workHandoff, "state.joinPlan") {
+		t.Fatal("buildWorkPlan should not read a concrete join plan from compile state")
 	}
 	lowererBody, err := os.ReadFile("media_plan_spec.go")
 	if err != nil {
@@ -505,6 +512,21 @@ func TestJoinPlannerUsesRecipeIRInputFacts(t *testing.T) {
 	handoff := sourceFunctionBody(t, string(lowererBody), "mediaPlanJoinLowererForState")
 	if !strings.Contains(handoff, "newJoinPlan(joinPlanInputFromCompileState(state))") {
 		t.Fatal("join lowerer should build joinPlanInput from compile state at the boundary")
+	}
+	if strings.Contains(handoff, "state.joinPlan") {
+		t.Fatal("join lowerer should return the planned join instead of storing it on compile state")
+	}
+	graphBody := sourceFunctionBody(t, string(lowererBody), "graphPlanForState")
+	if !strings.Contains(graphBody, "buildWorkPlan(state, spec, lowerer)") {
+		t.Fatal("graphPlanForState should pass the selected lowerer into work-plan rendering")
+	}
+	compileStateBody, err := os.ReadFile("recipe_compile.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(compileStateBody), "joinPlan       *joinPlan") ||
+		strings.Contains(string(compileStateBody), "joinPlan *joinPlan") {
+		t.Fatal("recipeCompileState should not store the concrete join plan")
 	}
 }
 
