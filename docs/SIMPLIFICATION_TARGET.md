@@ -173,6 +173,9 @@ Exported `goav.Observable` was also removed; event access remains on `LiveTask`,
 while narrow event consumers can use local structural interfaces.
 Exported `goav.Controllable` was removed the same way; live control remains on
 `LiveTask`, and control-only helpers can accept a local structural interface.
+Exported `goav.Explainer` was removed as a separate alias; built-task
+explanation remains on `LiveTask`, and `Job.Explain(ctx)` remains the
+pre-build path.
 
 Error-contract progress: `BuildError` no longer exposes legacy
 `Details`/`Suggestions` fields or parses rendered strings in `Detail(key)`;

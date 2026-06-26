@@ -50,8 +50,7 @@ Keep in `goav`:
 - minimal media aliases needed by simple custom callbacks
 - `BuildError` and stable error families
 - minimal `Task` with `Run` and `Close`
-- opt-in task capability interfaces: `Explainer`, `Inspectable`, `Mutable`,
-  and `LiveTask`
+- opt-in task capability interfaces: `Inspectable`, `Mutable`, and `LiveTask`
 
 Move or keep outside the front door:
 

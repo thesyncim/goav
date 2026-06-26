@@ -23,6 +23,8 @@ methodology changes, and migration notes.
   callers that only need `Events`/`Watch` can use a local structural interface.
 - Removed exported `goav.Controllable`; live control remains on `LiveTask`, and
   control-only helpers can accept a local structural interface.
+- Removed exported `goav.Explainer`; built-task explanation remains on
+  `LiveTask`, and `Job.Explain(ctx)` remains the pre-build path.
 - Stream chains now require an explicit `.Decode()` before frame-domain
   consumers (`.Do`, `.Resize`, `.Resample`, real `.Encode`, frame taps, and
   decoded-frame sinks). Use `.Copy()` when a chain should stay packet-domain.

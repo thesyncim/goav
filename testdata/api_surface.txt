@@ -210,7 +210,6 @@ goav.ErrNilSource
 goav.ErrNilStage
 goav.ErrNilWriter
 goav.ErrUnsupportedBuild
-goav.Explainer
 goav.FileInput
 goav.Fix
 goav.Flow

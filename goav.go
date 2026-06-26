@@ -47,12 +47,6 @@ type Task interface {
 	Close() error
 }
 
-// Explainer reports the planned workflow before any resource opens: inputs,
-// branches, destinations, taps, shapes, planner decisions, and warnings.
-type Explainer interface {
-	Explain(context.Context) (plan.Report, error)
-}
-
 // Inspectable exposes graph and runtime state for diagnostics, rendering, and
 // branch anchoring. It is deliberately separate from Task so simple runners do
 // not need to promise inspection support.
@@ -86,7 +80,9 @@ type Mutable interface {
 // events; otherwise accept Task.
 type LiveTask interface {
 	Task
-	Explainer
+	// Explain reports the planned workflow before any resource opens: inputs,
+	// branches, destinations, taps, shapes, planner decisions, and warnings.
+	Explain(context.Context) (plan.Report, error)
 	Inspectable
 	Mutable
 	// Control injects an out-of-band control into the running graph, delivered to a
