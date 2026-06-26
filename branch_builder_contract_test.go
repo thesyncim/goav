@@ -10,6 +10,7 @@ import (
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/flow"
+	"github.com/thesyncim/goav/lifecycle"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/plan"
 	"github.com/thesyncim/goav/shape"
@@ -113,6 +114,30 @@ func TestBranchBuilderSnapshotContracts(t *testing.T) {
 	}
 	if got, want := branchDestinationNames(spec.destinations), []string{"preview-out"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("destination names = %v, want %v", got, want)
+	}
+}
+
+func TestBranchSpecOriginContracts(t *testing.T) {
+	typ := reflect.TypeOf(BranchSpec{})
+	for i := 0; i < typ.NumField(); i++ {
+		if typ.Field(i).IsExported() {
+			t.Fatalf("BranchSpec field %s is exported; use constructors instead", typ.Field(i).Name)
+		}
+	}
+
+	var zero BranchSpec
+	if zero.origin != branchSpecOriginZero {
+		t.Fatalf("zero BranchSpec origin = %v, want zero", zero.origin)
+	}
+	branch := Branch("preview").To(branchBuilderTestSink("preview"))
+	if branch.origin != branchSpecOriginBranch {
+		t.Fatalf("branch origin = %v, want branch", branch.origin)
+	}
+	remove := OnRemove(lifecycle.AbortBranch())
+	if remove.origin != branchSpecOriginOnRemove ||
+		!remove.hasRemoveDisposition ||
+		remove.removeDisposition != oldBranchAbort {
+		t.Fatalf("OnRemove BranchSpec = %+v, want policy origin with abort disposition", remove)
 	}
 }
 

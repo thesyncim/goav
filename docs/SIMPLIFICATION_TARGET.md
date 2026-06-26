@@ -148,7 +148,9 @@ opened by a registered adapter, and `FileInput(name, reader)` stays input-only.
 
 Invalid-struct progress: `TransformSpec` is now an opaque constructor-produced
 value, so external callers cannot set both resize and resample fields on one
-transform.
+transform. `BranchSpec` values now carry their unexported constructor origin,
+so zero values and non-branch policy specs are refused before planned or
+runtime branch mutation treats them as real branches.
 
 Error-contract progress: `BuildError` no longer exposes legacy
 `Details`/`Suggestions` fields or parses rendered strings in `Detail(key)`;

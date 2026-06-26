@@ -28,7 +28,7 @@ type streamRule struct {
 // lifecycle.AbortBranch aborts.
 func OnRemove(options ...lifecycle.DetachOption) BranchSpec {
 	policy := detachPolicyFromOptions(options)
-	return BranchSpec{removeDisposition: policy.disposition, hasRemoveDisposition: true}
+	return BranchSpec{origin: branchSpecOriginOnRemove, removeDisposition: policy.disposition, hasRemoveDisposition: true}
 }
 
 // OnStream declares a dynamic-stream rule on the job: when the running task's
@@ -54,7 +54,7 @@ func (j *Job) OnStream(match sourcepkg.StreamMatch, branches ...BranchSpec) *Job
 	rule := streamRule{match: match, removeDisposition: oldBranchDrain}
 	for i := range branches {
 		branch := branches[i]
-		if branch.hasRemoveDisposition {
+		if branch.origin == branchSpecOriginOnRemove || branch.hasRemoveDisposition {
 			rule.removeDisposition = branch.removeDisposition
 			continue
 		}
@@ -82,6 +82,10 @@ func (r streamRule) validate() error {
 		branch := r.branches[i]
 		if branch.err != nil {
 			return branch.err
+		}
+		if branch.origin != branchSpecOriginBranch {
+			return streamRuleInvalidError("", fmt.Sprintf("stream rule branch %d was not constructed with goav.Branch(name)", i+1),
+				"pass one or more goav.Branch(name)...To(destination) values")
 		}
 		if branch.name == "" {
 			return streamRuleInvalidError("", fmt.Sprintf("stream rule branch %d has no name", i+1),

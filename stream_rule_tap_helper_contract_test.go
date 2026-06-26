@@ -84,7 +84,10 @@ func TestHandleStreamAddedGuardContracts(t *testing.T) {
 	task.rules = &taskStreamRules{
 		source: "demux",
 		domain: shape.DomainPacket,
-		rules:  []streamRule{{match: MatchMedia(av.MediaAudio), branches: []BranchSpec{{name: "late"}}}},
+		rules: []streamRule{{
+			match:    MatchMedia(av.MediaAudio),
+			branches: []BranchSpec{{origin: branchSpecOriginBranch, name: "late"}},
+		}},
 		attached: map[av.StreamID][]streamRuleAttachment{
 			"from-event": {{rule: 0, attachment: &runtimeAttachment{id: "att-1", name: "late"}}},
 		},
@@ -258,7 +261,10 @@ func TestStreamRuleRemoveUsesRuntimeDetachInput(t *testing.T) {
 }
 
 func TestStreamRuleBranchNamesContract(t *testing.T) {
-	rule := streamRule{branches: []BranchSpec{{name: "preview"}, {name: "archive"}}}
+	rule := streamRule{branches: []BranchSpec{
+		{origin: branchSpecOriginBranch, name: "preview"},
+		{origin: branchSpecOriginBranch, name: "archive"},
+	}}
 	if got := streamRuleBranchNames(rule); got != "preview+archive" {
 		t.Fatalf("streamRuleBranchNames() = %q, want preview+archive", got)
 	}
