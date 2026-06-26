@@ -278,7 +278,24 @@ func TestMixBuilderOptionsCarryIntoJoinSpec(t *testing.T) {
 	}
 }
 
-func TestMixDecodesPacketArmsBeforeMixing(t *testing.T) {
+func TestMixRequiresExplicitDecodeForPacketArms(t *testing.T) {
+	packetArm := Source("a",
+		shape.Packet(av.MediaAudio, av.CodecOpus, shape.Audio(48000, codec.Stereo, av.SampleFormatS16), shape.Stream("a")),
+		func(context.Context, SourcePush) error { return nil })
+
+	_, err := Mix(
+		From(packetArm).Audio(),
+		From(mixTestAudioSource("b", 1)).Audio(),
+	).To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))).Describe()
+	var buildErr *BuildError
+	if !errorsAsMix(err, &buildErr) || buildErr.Code != "mix_arm" ||
+		!strings.Contains(buildErr.Reason, "require explicit .Decode()") ||
+		!strings.Contains(strings.Join(buildErr.FixLines(), "\n"), ".Decode()") {
+		t.Fatalf("err = %v, want explicit decode refusal", err)
+	}
+}
+
+func TestMixUsesExplicitlyDecodedPacketArmsBeforeMixing(t *testing.T) {
 	ctx := context.Background()
 	pcm := av.CodecID("x_pcm_s16")
 	desc := codec.Descriptor{ID: pcm, Name: "PCM", Type: av.MediaAudio, Capabilities: codec.Capabilities{SampleFormats: []string{av.SampleFormatS16}}}
@@ -304,8 +321,8 @@ func TestMixDecodesPacketArmsBeforeMixing(t *testing.T) {
 	}))
 
 	task, err := Mix(
-		From(packetSrc("a")).Audio(),
-		From(packetSrc("b")).Audio(),
+		From(packetSrc("a")).Audio().Decode(),
+		From(packetSrc("b")).Audio().Decode(),
 	).To(sink).UseRuntime(rt).Build(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -315,7 +332,7 @@ func TestMixDecodesPacketArmsBeforeMixing(t *testing.T) {
 		t.Fatal(err)
 	}
 	if frames != 1 {
-		t.Fatalf("mixed frames at sink = %d, want 1 (packet arms auto-decoded then mixed)", frames)
+		t.Fatalf("mixed frames at sink = %d, want 1 (explicitly decoded packet arms then mixed)", frames)
 	}
 }
 

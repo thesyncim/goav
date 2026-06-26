@@ -98,7 +98,7 @@ use [`docs/ADAPTERS.md`](ADAPTERS.md) and [`docs/COMPONENTS.md`](COMPONENTS.md).
   caller-supplied `pipeline.Stage` as the convergence node. Mix, Composite,
   and Select are profiles over this same machinery; the per-kind behaviors
   the internal profile table carries are derived for externals from the
-  stage's `shape.Contract` (frame-domain inputs -> decode arms like Mix,
+  stage's `shape.Contract` (frame-domain inputs -> explicit decoded arms like Mix,
   packet/any -> passthrough like Select; a single fact-carrying input shape ->
   solver-planned per-arm conversions; the contract's output -> the joined
   stream, falling back to first-arm facts) and from the join's snake-safe
@@ -160,7 +160,7 @@ implement, with the executable evidence:
   destinations (`adapterproof/adapter_compat_test.go` - the five-extension-point proof),
   custom `.Do` stages, custom push sources, and custom joins
   (`adapterproof/join_proof_test.go` - an external interleaver runs with
-  planner-inserted decode arms, taps, branches, and nested inside Mix, and
+  explicit decoded arms, taps, branches, and nested inside Mix, and
   Select's passthrough semantics are re-expressed through `goav.Join`,
   proving the built-ins hold no private power). Input decoration is closed by
   `goav.WrapSource`; destination decoration was already closed by value

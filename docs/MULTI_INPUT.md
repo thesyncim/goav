@@ -7,8 +7,8 @@ input fanning out via `Branches`); convergence (N streams -> one) is the dual,
 and it landed as:
 
 - `Mix(arms...)`: sums S16 audio arms (per-arm buffering by StreamID, clamping,
-  one output EOS after all arms end). Packet arms auto-decode; mismatched rates
-  auto-resample to the first arm's format.
+  one output EOS after all arms end). Packet arms call `.Decode()` explicitly;
+  mismatched rates auto-resample to the first arm's format.
 - `Composite(arms...)`: paints video arms onto a canvas at `.Region(x, y)` offsets.
 - `.SyncByPTS()` on Mix/Composite: opt-in timestamp alignment (default stays
   arrival order): per step the minimum head PTS on a common ns clock leads,
@@ -78,7 +78,7 @@ Joins are an extension point: `goav.Join(name, stage, arms...)` lowers a
 caller-supplied convergence stage through the same joinSpec/joinProfile
 machinery, so a third party can ship `Crossfade(arms...)` without core changes.
 The per-kind behaviors the profile table carries are derived from the stage's
-`shape.Contract` (frame-domain inputs -> decode arms like Mix; packet/any ->
+`shape.Contract` (frame-domain inputs -> explicit decoded arms like Mix; packet/any ->
 passthrough like Select; one fact-carrying input shape -> solver-planned arm
 conversions; declared output -> the joined stream, else first-arm facts) and
 from the join's snake-safe name (node name, joined output stream id,

@@ -51,9 +51,9 @@ import (
 //
 // Per-arm behavior derives from the stage's shape.Contract when implemented:
 //
-//   - InputShapes() all in the frame domain → packet arms decode before the
-//     stage, exactly like Mix/Composite; otherwise arms pass through as-is,
-//     exactly like Select. A uniform MediaKind across the input shapes
+//   - InputShapes() all in the frame domain → packet arms must call .Decode()
+//     before the stage, exactly like Mix/Composite; otherwise arms pass
+//     through as-is, exactly like Select. A uniform MediaKind across the input shapes
 //     selects each arm's stream (.Audio()-like); mixed or absent kinds keep
 //     the join media-agnostic.
 //   - A single frame-domain input shape carrying format facts (sample rate /
@@ -294,7 +294,7 @@ func joinNameSnakeSafe(name string) bool {
 }
 
 // customJoinDecodesArms derives the arm domain from the stage's input
-// contract: a contract accepting only frame-domain media gets decode arms
+// contract: a contract accepting only frame-domain media requires decoded arms
 // (Mix-shaped); a packet or unconstrained contract — or none — passes arms
 // through as-is (Select-shaped).
 func customJoinDecodesArms(inputs shape.Set) bool {

@@ -35,9 +35,9 @@ func joinPlanGuard(t *testing.T, job *Job) pipeline.Spec {
 	return planned
 }
 
-// TestJoinDescribeEqualsBuildMix covers the deepest mix shape: one packet arm
-// (auto-decoded), one mismatched frame arm (auto-resampled), the mix encoded
-// and muxed to a file.
+// TestJoinDescribeEqualsBuildMix covers the deepest mix shape: one explicitly
+// decoded packet arm, one mismatched frame arm (auto-resampled), the mix
+// encoded and muxed to a file.
 func TestJoinDescribeEqualsBuildMix(t *testing.T) {
 	pcm := av.CodecID("x_pcm_s16")
 	desc := codec.Descriptor{ID: pcm, Name: "PCM", Type: av.MediaAudio, Capabilities: codec.Capabilities{SampleFormats: []string{av.SampleFormatS16}}}
@@ -57,7 +57,7 @@ func TestJoinDescribeEqualsBuildMix(t *testing.T) {
 		})
 
 	job := Mix(
-		From(packetArm).Audio(),
+		From(packetArm).Audio().Decode(),
 		From(mixTestAudioSourceRate("b", 24000)).Audio(),
 	).Tap(FrameTap("mixed")).
 		Encode(codec.Opus()).
@@ -67,7 +67,7 @@ func TestJoinDescribeEqualsBuildMix(t *testing.T) {
 	planned := joinPlanGuard(t, job)
 	text := specText(planned)
 	for _, want := range []string{
-		"mix-decode-a",                 // packet arm auto-decode
+		"mix-decode-a",                 // packet arm explicit decode
 		"mix-resample-b",               // mismatched frame arm auto-resample
 		"-> mix",                       // convergence into the join node
 		"encode-mix-encode -> mix.ogg", // joined chain: encode then mux

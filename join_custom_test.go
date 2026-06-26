@@ -1,7 +1,7 @@
 // Custom-join contract tests, consumer side: the goav.Join identity rules
 // (name, stage), the in-tree uniqueness refusal, and the solver service a
 // stage contract buys — all through the public API. The end-to-end symmetry
-// proof (decode arms, branches, nesting, Select re-expressed) lives in
+// proof (explicit decoded arms, branches, nesting, Select re-expressed) lives in
 // adapterproof/join_proof_test.go.
 
 package goav_test
@@ -25,7 +25,8 @@ const shapeConversionInsertedDiagnostic = "shape_conversion_inserted"
 // funnelStage is a minimal external convergence stage: every arm frame
 // forwards restamped to the join's output id, one joined EOS once the
 // declared number of arms ended. Its contract pins frame-domain S16 mono
-// 8kHz arms, so the join planner owes it decode arms and solver conversions.
+// 8kHz arms, so packet-domain callers must declare .Decode() before the
+// planner applies solver conversions.
 type funnelStage struct {
 	name string
 	arms int

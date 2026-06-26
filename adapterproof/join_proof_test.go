@@ -2,11 +2,12 @@
 // and this file is the executable claim. Two genuinely external convergence
 // stages — an S16 frame interleaver and a first-arm passthrough that
 // re-expresses Select's data-plane semantics — are defined entirely in this
-// test package, lowered through the public grammar (decode arms, taps,
+// test package, lowered through the public grammar (explicit decoded arms, taps,
 // branches, nesting inside a built-in Mix), and run end to end. Like the
 // adapter proof, the compile-time claim IS the proof: only public goav
 // packages are imported, so a third party can ship Crossfade(arms...) from
-// another module with exactly this code shape. The stage contract each toy
+// another module with exactly this code shape. Packet arms declare .Decode()
+// before frame-consuming joins. The stage contract each toy
 // follows is documented on goav.Join (audio mix is the in-tree reference).
 package adapterproof_test
 
@@ -31,8 +32,8 @@ import (
 // One frame per arm per round, in arm order — a zipper, not a sum, so the
 // output proves a convergence behavior no built-in offers. Its shape.Contract
 // declares frame-domain S16 mono 8kHz inputs, which is ALL the planner needs:
-// packet arms get decode stages inserted (like Mix) and mismatched arms get
-// solver conversions, with zero core knowledge of this type.
+// explicit packet-arm decodes and mismatched-arm solver conversions lower
+// with zero core knowledge of this type.
 
 type interleaveStage struct {
 	name    string
@@ -59,7 +60,7 @@ func (s *interleaveStage) DescribeNode() pipeline.NodeSpec {
 }
 
 // InputShapes/OutputShapes is the stage's shape.Contract — the seam the join
-// planner derives every per-kind behavior from (decode arms, media kind, arm
+// planner derives every per-kind behavior from (decoded-arm requirement, media kind, arm
 // format solving, joined output stream).
 func (s *interleaveStage) InputShapes() shape.Set {
 	return shape.Set{shape.Frame(av.MediaAudio, shape.Audio(8000, 1, av.SampleFormatS16))}
@@ -203,8 +204,7 @@ func (s *firstArmStage) Close() error { return nil }
 
 // --- fixtures ----------------------------------------------------------------
 
-// toyPacketArm declares a packet-domain source pushing toy-codec packets —
-// the arm shape that forces the join planner to insert decode arms.
+// toyPacketArm declares a packet-domain source pushing toy-codec packets.
 func toyPacketArm(id av.StreamID, frames ...[]int16) goav.InputSpec {
 	return goav.Source(string(id),
 		shape.Packet(av.MediaAudio, toyCodecID, shape.Audio(8000, 1, av.SampleFormatS16), shape.Stream(id)),
@@ -283,11 +283,10 @@ func s16CollectSink(name string, mu *sync.Mutex, ids *[]av.StreamID, frames *[][
 // --- the proof -----------------------------------------------------------------
 
 // TestExternalJoinComposesThroughPublicGrammar runs the external interleaver
-// end to end: two toy-codec PACKET arms force planner-inserted decode arms
-// (derived from the stage's frame-domain contract — like Mix, with zero core
-// knowledge of the stage), the joined stream is tapped, and Describe() equals
-// the built graph node for node — the planned join node carries the custom
-// stage's detail.
+// end to end: two toy-codec packet arms explicitly decode before the
+// frame-domain stage, the joined stream is tapped, and Describe() equals the
+// built graph node for node — the planned join node carries the custom stage's
+// detail.
 func TestExternalJoinComposesThroughPublicGrammar(t *testing.T) {
 	ctx := context.Background()
 	var mu sync.Mutex
@@ -295,8 +294,8 @@ func TestExternalJoinComposesThroughPublicGrammar(t *testing.T) {
 	var frames [][]int16
 
 	job := goav.Join("interleave", newInterleaveStage("interleave", "left", "right"),
-		goav.From(toyPacketArm("left", []int16{10}, []int16{30})).Audio(),
-		goav.From(toyPacketArm("right", []int16{20}, []int16{40})).Audio(),
+		goav.From(toyPacketArm("left", []int16{10}, []int16{30})).Audio().Decode(),
+		goav.From(toyPacketArm("right", []int16{20}, []int16{40})).Audio().Decode(),
 	).Tap(goav.FrameTap("interleaved")).
 		To(s16CollectSink("out", &mu, &ids, &frames)).
 		UseRuntime(toyRuntime())
@@ -329,7 +328,7 @@ func TestExternalJoinComposesThroughPublicGrammar(t *testing.T) {
 		t.Fatalf("planned join node detail = %q, want the external stage's detail", joinDetail)
 	}
 	if decodes != 2 {
-		t.Fatalf("planned decode arms = %d, want 2 (derived from the stage's frame-domain contract)", decodes)
+		t.Fatalf("planned decode arms = %d, want 2 explicit arm decodes", decodes)
 	}
 
 	// The join tap is a first-class task tap anchored on the custom join node.

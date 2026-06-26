@@ -124,7 +124,7 @@ func (c *compositeStream) To(destinations ...Destination) *Job {
 }
 
 // compositeJoinProfile is Composite's entry in the join table: video arms,
-// auto-decode for packet arms, per-arm Region layout collection,
+// explicit packet-arm decode, per-arm Region layout collection,
 // videoCompositeStage convergence, and an encodable output stream derived from
 // the Region bounding box over every arm's frame shape.
 var compositeJoinProfile = joinProfile{

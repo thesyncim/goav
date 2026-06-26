@@ -53,7 +53,7 @@ func TestCustomJoinShapeContractHelpers(t *testing.T) {
 		t.Fatal("mixed-domain input contract decoded arms")
 	}
 	if !customJoinDecodesArms(shape.Set{audioFrame, videoFrame}) {
-		t.Fatal("all frame-domain input contract did not decode arms")
+		t.Fatal("all frame-domain input contract did not require decoded arms")
 	}
 
 	if got := customJoinMedia(shape.Set{audioFrame, shape.Frame(av.MediaAudio)}); got != av.MediaAudio {

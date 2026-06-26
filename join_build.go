@@ -101,8 +101,9 @@ type joinProfile struct {
 	// media selects each arm's stream; the zero value picks the arm's single
 	// stream regardless of type (Select is media-agnostic passthrough).
 	media av.MediaType
-	// decodeArms auto-inserts a decode for packet-domain arms so the join stage
-	// sees frames. Select forwards packets as-is and leaves this false.
+	// decodeArms marks joins whose convergence stage consumes frames. Packet
+	// chain arms must declare .Decode() explicitly; packet tap/nested arms are
+	// rejected instead of gaining hidden decode work.
 	decodeArms bool
 	// graphBuffer, when non-nil, replaces a direct runtime buffer so the graph
 	// gets per-node serial workers for control-plane injection (Select) or for
@@ -348,6 +349,16 @@ func joinArmError(name string, node string, reason string, suggestions ...string
 		Fixes:     buildErrorFixes(suggestions),
 		Cause:     ErrUnsupportedBuild,
 	}
+}
+
+func validateJoinArmDomain(name string, arm string, profile joinProfile, domain shape.MediaDomain, operations []operationSpec) error {
+	if !profile.decodeArms || domain != shape.DomainPacket || chainHasDecode(operations) {
+		return nil
+	}
+	return joinArmError(name, firstNonEmpty(arm, name),
+		name+" arm is packet-domain; frame-consuming joins require explicit .Decode() on each packet arm",
+		"write the arm as goav.From(input).Audio().Decode() or goav.From(input).Video().Decode() before passing it to the join",
+		"for an already decoded source, declare a frame-domain source shape or pass a goav.FrameTap(...) arm")
 }
 
 // joinInputsError is the too-few-arms refusal, raised by the public sugar and
@@ -707,11 +718,14 @@ func planJoinTree(input joinPlanInput, spec *joinSpec, cursor int, used map[stri
 				"give each arm a distinct stream id: name inputs/taps differently so no two arms publish the same id")
 		}
 		seen[armPlan.stream.ID] = struct{}{}
-		// Packet-domain arms decode to frames before the join (auto-inserted —
-		// the join stage works on decoded media — and honored when the arm chain
-		// declared .Decode() explicitly). Frame-domain arms feed it directly.
-		// Passthrough kinds without an explicit decode forward packets as-is.
-		if armPlan.domain == shape.DomainPacket && (profile.decodeArms || chainHasDecode(chainArmOperations(armSpec.chain))) {
+		armOps := chainArmOperations(armSpec.chain)
+		if err := validateJoinArmDomain(name, armPlan.inputName, profile, armPlan.domain, armOps); err != nil {
+			return nil, 0, err
+		}
+		// Explicit .Decode() on a packet-domain chain arm becomes the arm decode
+		// node. Frame-domain arms feed frame-consuming joins directly, and
+		// passthrough joins without .Decode() forward packets as-is.
+		if armPlan.domain == shape.DomainPacket && chainHasDecode(armOps) {
 			armPlan.decodeNode = name + "-decode-" + string(armPlan.stream.ID)
 		}
 		if profile.planArm != nil {
@@ -958,10 +972,10 @@ func (p *joinPlan) joinNodeDetail() string {
 	return joinSyncNodeDetail(p.join.sync)
 }
 
-// deriveJoinedDomain reports the media domain of the join's output: kinds that
-// decode their arms always converge frames; passthrough kinds forward the first
-// arm's domain unchanged (frames when the arm chain declared .Decode()). A
-// custom join whose stage contract declares an output domain wins outright.
+// deriveJoinedDomain reports the media domain of the join's output:
+// frame-consuming kinds always converge frames; passthrough kinds forward the
+// first arm's domain unchanged (frames when the arm chain declared .Decode()).
+// A custom join whose stage contract declares an output domain wins outright.
 func (p *joinPlan) deriveJoinedDomain() shape.MediaDomain {
 	if domain := p.customJoinedOutputDomain(); domain != "" {
 		return domain

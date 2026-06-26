@@ -396,11 +396,11 @@ func (m *mixStream) To(destinations ...Destination) *Job {
 	return newJoinJob(joinMix, joinSpec{arms: m.arms, dests: destinations, encode: m.encode, operations: cloneOperationSpecs(m.operations), taps: m.taps, sync: m.sync})
 }
 
-// mixJoinProfile is Mix's entry in the join table: audio arms, auto-decode for
-// packet arms, first-arm-wins format solving through the shared shape solver
-// (the implicit always-on arm policy — no user opt-in needed), audioMixStage
-// convergence, and an encodable S16 output stream derived from the first arm's
-// shape.
+// mixJoinProfile is Mix's entry in the join table: audio arms, explicit
+// packet-arm decode, first-arm-wins format solving through the shared shape
+// solver (the implicit always-on arm policy — no user opt-in needed),
+// audioMixStage convergence, and an encodable S16 output stream derived from
+// the first arm's shape.
 var mixJoinProfile = joinProfile{
 	media:      av.MediaAudio,
 	decodeArms: true,

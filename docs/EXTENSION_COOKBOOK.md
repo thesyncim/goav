@@ -255,19 +255,19 @@ Use `goav.Join` when several arms converge into one stream and built-in
 
 ```go
 joined := goav.Join("interleave", newInterleaveStage("interleave", "left", "right"),
-    goav.From(left).Audio(),
-    goav.From(right).Audio(),
+    goav.From(left).Audio().Decode(),
+    goav.From(right).Audio().Decode(),
 )
 
 err := joined.To(out).Run(ctx)
 ```
 
 The stage is a normal `pipeline.Stage`. Its `InputShapes` and `OutputShapes`
-contract lets the planner decode arms, insert compatible conversions, and
-refuse wrong media before resources open. `examples/custom-join` demonstrates
-the EOS rule that matters for joins: drain while at least one arm has pending
-frames; once every arm ended and all queues are empty, stop draining and emit
-one joined EOS.
+contract lets the planner require explicit arm decode, insert compatible
+conversions, and refuse wrong media before resources open. `examples/custom-join`
+demonstrates the EOS rule that matters for joins: drain while at least one arm
+has pending frames; once every arm ended and all queues are empty, stop draining
+and emit one joined EOS.
 
 ## Control-Plane Host
 
