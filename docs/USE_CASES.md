@@ -70,8 +70,7 @@ err := goav.From(goav.Input(rtpav.Receive(audio, rtpav.WithName("audio"), rtpav.
 ```
 
 When a media type matches several streams, the build error lists candidates and
-suggests the narrow selector to add: `StreamID`, `StreamName`, or
-`StreamIndex(0)`.
+suggests the narrow selector to add: `StreamID` or `StreamIndex(0)`.
 
 ## Live Audio Rooms
 

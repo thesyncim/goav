@@ -89,7 +89,6 @@ goav.Sink
 goav.Source
 goav.StreamID
 goav.StreamIndex
-goav.StreamName
 goav.Task
 goav.URI
 goav.WrapSource

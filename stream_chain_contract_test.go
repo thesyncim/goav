@@ -14,14 +14,12 @@ func TestStreamSelectorOptionsCarryStableMetadata(t *testing.T) {
 	config := newStreamSelectConfig(
 		av.MediaAudio,
 		StreamID("eng"),
-		StreamName("English"),
 		StreamIndex(2),
 		InputName("mic"),
 		nil,
 	)
 	if config.selector.Type != av.MediaAudio ||
 		config.selector.ID != "eng" ||
-		config.selector.Name != "English" ||
 		config.selector.Index != 2 ||
 		!config.selector.UseIndex ||
 		config.input != "mic" {

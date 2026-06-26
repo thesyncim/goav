@@ -55,7 +55,7 @@ Compatibility pins:
 ## Working Today
 
 - Recipe entry points cover variadic `From(inputs...)`, `InputName`,
-  `StreamID`, `StreamName`, and `StreamIndex` narrowing.
+  `StreamID`, and `StreamIndex` narrowing.
 - Audio/video workflows can select streams, preserve packets, decode/encode,
   resize/resample, run custom stages, tap typed media, fan out branches, share
   destinations, and reuse flows.

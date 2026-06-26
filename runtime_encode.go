@@ -163,7 +163,7 @@ func encodeStreamMismatchError(request encodeRequest, stream av.Stream) error {
 		[]string{
 			"use the same stream selector for Decode and Encode in the expert builder",
 			"use .Audio().Decode().Encode(codec.Opus(...)) for audio streams or .Video().Decode().Encode(codec.VP8(...))/.Encode(codec.VP9(...)) for video streams in recipes",
-			"narrow ambiguous inputs with StreamID, StreamName, or StreamIndex(0)",
+			"narrow ambiguous inputs with StreamID or StreamIndex(0)",
 		},
 	)
 }

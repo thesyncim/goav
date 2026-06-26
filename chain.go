@@ -29,7 +29,7 @@ func validateRecipeStreamSelector(operation string, node string, selector av.Str
 		}),
 		fixes: buildErrorFixes([]string{
 			"use goav.StreamIndex(0) for the first matching stream",
-			"use goav.StreamID(...) or goav.StreamName(...) when stream metadata is stable",
+			"use goav.StreamID(...) when stream metadata is stable",
 		}),
 		cause: errUnsupportedBuild,
 	}
@@ -207,14 +207,6 @@ type streamBuild struct {
 func StreamID(id av.StreamID) streamOption {
 	return func(config *streamSelectConfig) {
 		config.selector.ID = id
-	}
-}
-
-// StreamName narrows a stream selection to the stream with the given
-// container-declared name.
-func StreamName(name string) streamOption {
-	return func(config *streamSelectConfig) {
-		config.selector.Name = name
 	}
 }
 

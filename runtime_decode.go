@@ -248,16 +248,6 @@ func streamSelectionSuggestions(selector av.StreamSelector, streams []av.Stream)
 			break
 		}
 	}
-	for i := range streams {
-		if streams[i].Name != "" {
-			if recipeCall {
-				suggestions = append(suggestions, call+"(goav.StreamName("+strconv.Quote(streams[i].Name)+"))")
-			} else {
-				suggestions = append(suggestions, "select stream name "+strconv.Quote(streams[i].Name))
-			}
-			break
-		}
-	}
 	if len(streams) != 0 {
 		index := streams[0].Index
 		if recipeCall {

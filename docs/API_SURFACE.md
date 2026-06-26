@@ -34,7 +34,7 @@ One-screen shape:
 
 ```
 goav.From(input)                          inputs: FileInput, Input(provider), Source(fn)
-  .Audio() / .Video() / .Stream()         select a stream (InputName/StreamID/StreamIndex/StreamName)
+  .Audio() / .Video() / .Stream()         select a stream (InputName/StreamID/StreamIndex)
   .Decode() or .Copy()                    make packet/frame domain explicit
   .Resize() / .Resample() / .Do(stage)    frame-domain operations after Decode
   .Encode(codec.VP9(codec.Bitrate(...)))  codec specs from the codec package

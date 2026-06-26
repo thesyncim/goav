@@ -362,14 +362,14 @@ func (j *Job) And(inputs ...InputSpec) *Job {
 }
 
 // Audio starts a chain on the job's audio stream. With several candidates the
-// selector options (InputName, StreamID, StreamName, StreamIndex) narrow the
+// selector options (InputName, StreamID, StreamIndex) narrow the
 // match; an ambiguous selection fails the build listing the candidates.
 func (j *Job) Audio(options ...streamOption) *jobStreamBuilder {
 	return j.streamBuilder("audio", av.MediaAudio, options...)
 }
 
 // Video starts a chain on the job's video stream. With several candidates the
-// selector options (InputName, StreamID, StreamName, StreamIndex) narrow the
+// selector options (InputName, StreamID, StreamIndex) narrow the
 // match; an ambiguous selection fails the build listing the candidates.
 func (j *Job) Video(options ...streamOption) *jobStreamBuilder {
 	return j.streamBuilder("video", av.MediaVideo, options...)
