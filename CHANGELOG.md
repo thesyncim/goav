@@ -11,6 +11,10 @@ methodology changes, and migration notes.
 
 ## Unreleased
 
+- No unreleased changes.
+
+## v0.1.0 - 2026-06-26
+
 - Shrank the README under the pre-v1 120-line target and moved long
   live/runtime walkthrough expectations into focused docs.
 - Clarified that runtime mutation/control/expert graph features are governed
