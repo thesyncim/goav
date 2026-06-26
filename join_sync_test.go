@@ -63,7 +63,7 @@ func TestRealtimeJoinsDefaultBufferedOfflineJoinsStayDirect(t *testing.T) {
 	offlineMix, err := Mix(
 		From(mixSyncTestSource("a", []int64{0}, [][]int16{{1}})).Audio(),
 		From(mixSyncTestSource("b", []int64{0}, [][]int16{{2}})).Audio(),
-	).To(sink).UseRuntime(MustNew(WithRealtime(false))).Build(ctx)
+	).To(sink).UseRuntime(mustNew(WithRealtime(false))).Build(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -83,7 +83,7 @@ func TestRealtimeJoinsDefaultBufferedOfflineJoinsStayDirect(t *testing.T) {
 	offlineComposite, err := Composite(
 		From(compositeTestVideoSource("a", 4, 4, 100, 10, 20)).Video().Region(0, 0),
 		From(compositeTestVideoSource("b", 4, 4, 200, 30, 40)).Video().Region(4, 0),
-	).To(sink).UseRuntime(MustNew(WithRealtime(false))).Build(ctx)
+	).To(sink).UseRuntime(mustNew(WithRealtime(false))).Build(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}

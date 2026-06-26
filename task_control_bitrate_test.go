@@ -118,7 +118,7 @@ func TestDefaultRealtimeEncodeRecipeSupportsLiveEncoderControls(t *testing.T) {
 	defer cancel()
 
 	encoder := &controlRecordingEncoder{}
-	rt := MustNew(WithEncoder(codec.Descriptor{ID: av.CodecVP8, Type: av.MediaVideo}, &controlRecordingEncoderFactory{encoder: encoder}))
+	rt := mustNew(WithEncoder(codec.Descriptor{ID: av.CodecVP8, Type: av.MediaVideo}, &controlRecordingEncoderFactory{encoder: encoder}))
 	built, err := From(controlLiveVideoSource("cam")).
 		Video().
 		Encode(codec.VP8(codec.Bitrate(600_000))).
@@ -161,7 +161,7 @@ func TestDefaultRealtimeEncodeRecipeSupportsLiveEncoderControls(t *testing.T) {
 
 func TestOfflineEncodeRecipeKeepsDirectRunnerForEncoderControls(t *testing.T) {
 	ctx := context.Background()
-	rt := MustNew(
+	rt := mustNew(
 		WithRealtime(false),
 		WithEncoder(codec.Descriptor{ID: av.CodecVP8, Type: av.MediaVideo}, &controlRecordingEncoderFactory{}),
 	)

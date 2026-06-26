@@ -195,7 +195,7 @@ func TestDecodeRejectsIncompatibleDescriptorBeforeOpeningDecoder(t *testing.T) {
 	}, decoderFactory))
 
 	_, err := From(FileInput("input.ogg", nil)).
-		UseRuntime(MustNew(formats, codecs)).
+		UseRuntime(mustNew(formats, codecs)).
 		Audio().
 		Decode().
 		To(Sink(&runtimeTestSink{name: "frames"})).
@@ -241,7 +241,7 @@ func TestDecodeUsesFactoryStateProvider(t *testing.T) {
 	sink := &runtimeTestSink{name: "frames"}
 
 	task, err := From(FileInput("input.ivf", nil)).
-		UseRuntime(MustNew(formats, codecs)).
+		UseRuntime(mustNew(formats, codecs)).
 		Video().
 		Decode().
 		To(Sink(sink)).
@@ -268,7 +268,7 @@ func TestDecodeUsesFactoryStateProvider(t *testing.T) {
 
 func TestNewDecodeStageNamedPassesCustomDecoderSettings(t *testing.T) {
 	factory := &decodeTestDecoderFactory{decoder: &decodeTestDecoder{}}
-	rt := MustNew(withTestCodecs(testCodecDecoder(codec.Descriptor{ID: av.CodecPCM, Type: av.MediaAudio}, factory)))
+	rt := mustNew(withTestCodecs(testCodecDecoder(codec.Descriptor{ID: av.CodecPCM, Type: av.MediaAudio}, factory)))
 	control := func(any) error { return nil }
 	request := decodeRequest{
 		selector: testSelectAudio(),
@@ -345,7 +345,7 @@ func TestNewDecodeStageNamedCustomDecoderErrorContracts(t *testing.T) {
 	}
 	request := decodeRequest{selector: testSelectAudio()}
 	newRuntime := func(factory codec.DecoderFactory) *runtime {
-		return MustNew(withTestCodecs(testCodecDecoder(codec.Descriptor{ID: av.CodecPCM, Type: av.MediaAudio}, factory)))
+		return mustNew(withTestCodecs(testCodecDecoder(codec.Descriptor{ID: av.CodecPCM, Type: av.MediaAudio}, factory)))
 	}
 
 	stateErr := errors.New("state failed")

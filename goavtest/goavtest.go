@@ -93,5 +93,9 @@ func Runtime(opts ...goavruntime.Option) *goav.Runtime {
 	}
 	options = append(options, goavruntime.WithClock(NewClock()))
 	options = append(options, opts...)
-	return goav.MustNew(options...)
+	runtime, err := goav.New(options...)
+	if err != nil {
+		panic(err)
+	}
+	return runtime
 }

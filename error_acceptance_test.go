@@ -429,7 +429,7 @@ func TestBuildAndAttachReturnSameErrorForSameInvalidBranch(t *testing.T) {
 	)
 
 	task, err := goav.From(audioFrameInput()).
-		UseRuntime(goav.MustNew()).
+		UseRuntime(mustRuntime()).
 		Audio().
 		Tap(goav.FrameTap("audio.frames")).
 		To(goavtest.NewCollector().Sink()).

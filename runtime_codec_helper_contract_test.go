@@ -82,7 +82,7 @@ func TestPrepareEncodeConfigCarriesCustomSettingsAndStreamOverrides(t *testing.T
 
 func TestNewEncodeStageNamedPassesCustomEncoderSettings(t *testing.T) {
 	factory := &encodeTestEncoderFactory{}
-	rt := MustNew(withTestCodecs(testCodecEncoder(codec.Descriptor{ID: av.CodecPCM, Type: av.MediaAudio}, factory)))
+	rt := mustNew(withTestCodecs(testCodecEncoder(codec.Descriptor{ID: av.CodecPCM, Type: av.MediaAudio}, factory)))
 	request := encodeRequest{
 		name:     "voice",
 		selector: testSelectAudio(),
@@ -119,18 +119,18 @@ func TestNewEncodeStageNamedPassesCustomEncoderSettings(t *testing.T) {
 
 func TestNewEncodeStageNamedSurfacesCustomEncoderFactoryErrors(t *testing.T) {
 	config := pcmEncodeConfig()
-	rt := MustNew()
+	rt := mustNew()
 	if _, err := (&builder{runtime: rt}).newEncodeStageNamed(context.Background(), "encode-custom", encodeRequest{selector: testSelectAudio(), config: config}, config); err == nil {
 		t.Fatal("unregistered encoder error = nil, want lookup error")
 	}
 
 	factoryErr := errors.New("encoder factory failed")
-	rt = MustNew(withTestCodecs(testCodecEncoder(codec.Descriptor{ID: av.CodecPCM, Type: av.MediaAudio}, errorEncodeFactory{err: factoryErr})))
+	rt = mustNew(withTestCodecs(testCodecEncoder(codec.Descriptor{ID: av.CodecPCM, Type: av.MediaAudio}, errorEncodeFactory{err: factoryErr})))
 	if _, err := (&builder{runtime: rt}).newEncodeStageNamed(context.Background(), "encode-custom", encodeRequest{selector: testSelectAudio(), config: config}, config); !errors.Is(err, factoryErr) {
 		t.Fatalf("factory error = %v, want %v", err, factoryErr)
 	}
 
-	rt = MustNew(withTestCodecs(testCodecEncoder(codec.Descriptor{ID: av.CodecPCM, Type: av.MediaAudio}, nilEncodeFactory{})))
+	rt = mustNew(withTestCodecs(testCodecEncoder(codec.Descriptor{ID: av.CodecPCM, Type: av.MediaAudio}, nilEncodeFactory{})))
 	if _, err := (&builder{runtime: rt}).newEncodeStageNamed(context.Background(), "encode-custom", encodeRequest{selector: testSelectAudio(), config: config}, config); !errors.Is(err, codec.ErrNilEncoder) {
 		t.Fatalf("nil encoder error = %v, want codec.ErrNilEncoder", err)
 	}
@@ -138,7 +138,7 @@ func TestNewEncodeStageNamedSurfacesCustomEncoderFactoryErrors(t *testing.T) {
 
 func TestCompileEncodeStageNamedConnectsNamedStage(t *testing.T) {
 	factory := &encodeTestEncoderFactory{}
-	rt := MustNew(withTestCodecs(testCodecEncoder(codec.Descriptor{ID: av.CodecPCM, Type: av.MediaAudio}, factory)))
+	rt := mustNew(withTestCodecs(testCodecEncoder(codec.Descriptor{ID: av.CodecPCM, Type: av.MediaAudio}, factory)))
 	graph, err := pipeline.NewGraph(pipeline.GraphConfig{Name: "encode-contract"})
 	if err != nil {
 		t.Fatal(err)
@@ -166,7 +166,7 @@ func TestCompileEncodeStageNamedConnectsNamedStage(t *testing.T) {
 func TestCompileEncodeStageNamedClosesStageWhenGraphRefusesIt(t *testing.T) {
 	encoder := &encodeTestEncoder{}
 	factory := &encodeTestEncoderFactory{encoder: encoder}
-	rt := MustNew(
+	rt := mustNew(
 		WithBufferPolicy(pipeline.BufferPolicy{Capacity: 1}),
 		withTestCodecs(testCodecEncoder(codec.Descriptor{ID: av.CodecPCM, Type: av.MediaAudio}, factory)),
 	)

@@ -236,10 +236,13 @@ desc := codec.Descriptor{
     },
 }
 
-rt := goav.MustNew(
+rt, err := goav.New(
     goavruntime.WithEncoder(desc, myCodecFactory{}),
     goavruntime.WithDecoder(desc, myCodecFactory{}),
 )
+if err != nil {
+    return err
+}
 ```
 
 The encoder receives decoded frames and appends packets to

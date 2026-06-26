@@ -32,7 +32,7 @@ func TestRecipeH264DescriptorOnlyDecodeUnavailable(t *testing.T) {
 	codecs := withTestCodecs(goh264adapter.Register)
 
 	_, err := From(FileInput("input.ogg", nil)).
-		UseRuntime(MustNew(formats, codecs)).
+		UseRuntime(mustNew(formats, codecs)).
 		Video().
 		Decode().
 		To(Sink(&runtimeTestSink{name: "frames"})).

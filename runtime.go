@@ -74,9 +74,7 @@ func New(options ...runtimecfg.Option) (*Runtime, error) {
 	}, nil
 }
 
-// MustNew is New for package-level setup and tests: it panics when runtime
-// options are invalid.
-func MustNew(options ...runtimecfg.Option) *Runtime {
+func mustNew(options ...runtimecfg.Option) *Runtime {
 	runtime, err := New(options...)
 	if err != nil {
 		panic(err)

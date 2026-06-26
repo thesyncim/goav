@@ -38,7 +38,7 @@ func New(opts ...goavruntime.Option) (*goav.Runtime, error) {
 
 // MustNew is New for package-level setup and tests.
 func MustNew(opts ...goavruntime.Option) *goav.Runtime {
-	return goav.MustNew(appendOptions(Options(), opts...)...)
+	return mustRuntime(New(opts...))
 }
 
 // NewFormats builds a runtime with only the bundled container-format adapters.
@@ -48,7 +48,7 @@ func NewFormats(opts ...goavruntime.Option) (*goav.Runtime, error) {
 
 // MustNewFormats is NewFormats for package-level setup and tests.
 func MustNewFormats(opts ...goavruntime.Option) *goav.Runtime {
-	return goav.MustNew(appendOptions(FormatOptions(), opts...)...)
+	return mustRuntime(NewFormats(opts...))
 }
 
 // NewCodecs builds a runtime with only the bundled codec adapters.
@@ -58,7 +58,7 @@ func NewCodecs(opts ...goavruntime.Option) (*goav.Runtime, error) {
 
 // MustNewCodecs is NewCodecs for package-level setup and tests.
 func MustNewCodecs(opts ...goavruntime.Option) *goav.Runtime {
-	return goav.MustNew(appendOptions(CodecOptions(), opts...)...)
+	return mustRuntime(NewCodecs(opts...))
 }
 
 // NewFilters builds a runtime with only the bundled frame-filter adapters.
@@ -68,7 +68,14 @@ func NewFilters(opts ...goavruntime.Option) (*goav.Runtime, error) {
 
 // MustNewFilters is NewFilters for package-level setup and tests.
 func MustNewFilters(opts ...goavruntime.Option) *goav.Runtime {
-	return goav.MustNew(appendOptions(FilterOptions(), opts...)...)
+	return mustRuntime(NewFilters(opts...))
+}
+
+func mustRuntime(runtime *goav.Runtime, err error) *goav.Runtime {
+	if err != nil {
+		panic(err)
+	}
+	return runtime
 }
 
 // Build compiles job with a bundled runtime. It is the batteries-included

@@ -90,7 +90,7 @@ func runtimeForGraphExecution(rt *runtime) *runtime {
 	if rt != nil {
 		return rt
 	}
-	return MustNew()
+	return mustNew()
 }
 
 func runtimeRealtime(rt *runtime) bool {

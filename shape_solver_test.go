@@ -88,7 +88,7 @@ func solverTestOpusRuntime(options ...Option) *Runtime {
 	options = append([]Option{
 		WithEncoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &encodeTestEncoderFactory{encoder: &encodeTestEncoder{}}),
 	}, options...)
-	return MustNew(options...)
+	return mustNew(options...)
 }
 
 // TestAutoInsertsResampleBeforeEncode is the end-to-end solver path: a 44.1kHz
@@ -196,7 +196,7 @@ func TestAutoInsufficientPolicyRefusesStageConversion(t *testing.T) {
 		Auto(shape.AllowResize()).
 		Do(stage).
 		To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))).
-		UseRuntime(MustNew(testBundleFilters())).
+		UseRuntime(mustNew(testBundleFilters())).
 		Build(context.Background())
 	var buildErr *BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "shape_conversion_refused" || !errors.Is(err, errUnsupportedBuild) {
@@ -224,7 +224,7 @@ func TestShapeMismatchSuggestsExactAutoFix(t *testing.T) {
 		Audio().
 		Do(stage).
 		To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))).
-		UseRuntime(MustNew(testBundleFilters())).
+		UseRuntime(mustNew(testBundleFilters())).
 		Build(context.Background())
 	var buildErr *BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "operation_shape_mismatch" || !errors.Is(err, errUnsupportedBuild) {
@@ -248,7 +248,7 @@ func TestAutoInsertsResizeBeforeEncode(t *testing.T) {
 	target := codec.VP9(codec.Bitrate(600_000))
 	target.Parameters.Width = 640
 	target.Parameters.Height = 360
-	rt := MustNew(
+	rt := mustNew(
 		testBundleFilters(),
 		WithEncoder(codec.Descriptor{ID: av.CodecVP9, Type: av.MediaVideo}, &encodeTestEncoderFactory{encoder: &encodeTestEncoder{}}),
 	)
@@ -296,7 +296,7 @@ func TestAutoInsertsFormatConvertThroughRegisteredAdapter(t *testing.T) {
 		inputs: shape.Set{shape.Frame(av.MediaAudio, shape.Audio(48_000, codec.Mono, av.SampleFormatS16))},
 	}
 	factory := &shapeSolverTestFilterFactory{}
-	rt := MustNew(WithFilter(filter.Descriptor{
+	rt := mustNew(WithFilter(filter.Descriptor{
 		Name:          "sampleconv",
 		Input:         av.MediaAudio,
 		Output:        av.MediaAudio,
@@ -495,7 +495,7 @@ func TestMixArmSolvingReportsDiagnostic(t *testing.T) {
 		From(mixTestAudioSourceRate("a", 48_000)).Audio(),
 		From(mixTestAudioSourceRate("b", 24_000)).Audio(),
 	).To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))).
-		UseRuntime(MustNew(testBundleFilters()))
+		UseRuntime(mustNew(testBundleFilters()))
 
 	report, err := job.Explain(context.Background())
 	if err != nil {

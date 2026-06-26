@@ -31,13 +31,13 @@ func TestJoinStagePreallocDepthContracts(t *testing.T) {
 	if got := joinStagePreallocDepth(nil); got != 1 {
 		t.Fatalf("nil runtime prealloc depth = %d, want 1", got)
 	}
-	if got := joinStagePreallocDepth(MustNew()); got != 1 {
+	if got := joinStagePreallocDepth(mustNew()); got != 1 {
 		t.Fatalf("direct runtime prealloc depth = %d, want 1", got)
 	}
-	if got := joinStagePreallocDepth(MustNew(WithBufferPolicy(pipeline.BufferPolicy{Drop: pipeline.DropOldest}))); got != 1 {
+	if got := joinStagePreallocDepth(mustNew(WithBufferPolicy(pipeline.BufferPolicy{Drop: pipeline.DropOldest}))); got != 1 {
 		t.Fatalf("zero-capacity buffered prealloc depth = %d, want 1", got)
 	}
-	if got := joinStagePreallocDepth(MustNew(WithBufferPolicy(pipeline.BufferPolicy{Capacity: 128, Drop: pipeline.DropOldest}))); got != joinStagePreallocDepthLimit {
+	if got := joinStagePreallocDepth(mustNew(WithBufferPolicy(pipeline.BufferPolicy{Capacity: 128, Drop: pipeline.DropOldest}))); got != joinStagePreallocDepthLimit {
 		t.Fatalf("large buffered prealloc depth = %d, want cap %d", got, joinStagePreallocDepthLimit)
 	}
 }
@@ -85,7 +85,7 @@ func TestInsertJoinArmStageConnectsUpstream(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ref, err := insertJoinArmStage(graph, MustNew(), &runtimeTestStage{name: "arm-stage"}, string(sourceRef))
+	ref, err := insertJoinArmStage(graph, mustNew(), &runtimeTestStage{name: "arm-stage"}, string(sourceRef))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -106,7 +106,7 @@ func TestInsertJoinArmStageFailureContracts(t *testing.T) {
 	defer graph.Close()
 	_, err = insertJoinArmStage(
 		graph,
-		MustNew(WithBufferPolicy(pipeline.BufferPolicy{Capacity: 1})),
+		mustNew(WithBufferPolicy(pipeline.BufferPolicy{Capacity: 1})),
 		&runtimeTestStage{name: "buffered-stage"},
 		"source",
 	)
@@ -114,7 +114,7 @@ func TestInsertJoinArmStageFailureContracts(t *testing.T) {
 		t.Fatalf("buffered insert error = %v, want ErrBufferedEdgesUnsupported", err)
 	}
 
-	_, err = insertJoinArmStage(graph, MustNew(), &runtimeTestStage{name: "orphan-stage"}, "missing")
+	_, err = insertJoinArmStage(graph, mustNew(), &runtimeTestStage{name: "orphan-stage"}, "missing")
 	if err == nil {
 		t.Fatal("missing upstream insert error = nil, want connect error")
 	}

@@ -54,7 +54,7 @@ identifiers (`api_surface_pin_test.go` + `testdata/api_surface.txt`: 55 root,
   mutation (`Attach`/`Detach` with `DrainBranch`/`AbortBranch`, `Rebranch`),
   controls (`Control`), and observation (`Watch`; unfiltered `Watch()` observes
   every task event);
-  `New`/`MustNew`/`UseRuntime` and the `bundle` runtime helpers;
+  `New`/`UseRuntime` and the `bundle` runtime helpers;
   structured `BuildError` with stable families, detailed codes, typed fields/fixes;
   the `plan`, `snapshot`, `lifecycle`, `shape`, `flow`, and `av` vocabulary
   packages. Runtime mutation/control/advanced observation and joined-stream

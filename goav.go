@@ -9,10 +9,10 @@
 // operation lists, and Build(ctx) returns a Task — a running graph with
 // events, snapshots, runtime Attach/Detach, and live controls.
 //
-// New(opts...) builds a bare runtime and returns option/configuration errors;
-// MustNew(opts...) is the package-level setup shortcut. Import
-// github.com/thesyncim/goav/bundle when the application wants the bundled pure-Go
-// adapters. Build errors are structured: every refusal is a *BuildError
+// New(opts...) builds a bare runtime and returns option/configuration errors.
+// Import github.com/thesyncim/goav/bundle when the application wants the
+// bundled pure-Go adapters. Build errors are structured: every refusal is a
+// *BuildError
 // carrying an errcode.Family, detailed errcode.Code, the failing operation,
 // and concrete fixes.
 package goav
@@ -29,7 +29,7 @@ import (
 )
 
 // Runtime is an intentionally opaque composition root for applications
-// embedding goav. Build it with New or MustNew, or import
+// embedding goav. Build it with New, or import
 // github.com/thesyncim/goav/bundle for the bundled adapter set. Applications
 // pass Runtime handles back to recipe builders; construction and adapter
 // registration stay behind the runtime and bundle packages.

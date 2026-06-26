@@ -298,7 +298,7 @@ func TestMixUsesExplicitlyDecodedPacketArmsBeforeMixing(t *testing.T) {
 	ctx := context.Background()
 	pcm := av.CodecID("x_pcm_s16")
 	desc := codec.Descriptor{ID: pcm, Name: "PCM", Type: av.MediaAudio, Capabilities: codec.Capabilities{SampleFormats: []string{av.SampleFormatS16}}}
-	rt := MustNew(WithDecoder(desc, recipePCMDecoderFactory{}))
+	rt := mustNew(WithDecoder(desc, recipePCMDecoderFactory{}))
 
 	packetSrc := func(id av.StreamID) InputSpec {
 		return Source(string(id),
@@ -337,7 +337,7 @@ func TestMixUsesExplicitlyDecodedPacketArmsBeforeMixing(t *testing.T) {
 
 func TestMixEncodesMixedOutput(t *testing.T) {
 	ctx := context.Background()
-	rt := MustNew(WithEncoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &encodeTestEncoderFactory{encoder: &encodeTestEncoder{}}))
+	rt := mustNew(WithEncoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &encodeTestEncoderFactory{encoder: &encodeTestEncoder{}}))
 
 	var packets int
 	sink := Sink(SinkFunc("out", func(_ context.Context, m Message) error {
@@ -366,7 +366,7 @@ func TestMixEncodesMixedOutput(t *testing.T) {
 func TestMixEncodesToFile(t *testing.T) {
 	ctx := context.Background()
 	muxers := &remuxTestMuxerFactory{}
-	rt := MustNew(
+	rt := mustNew(
 		withTestFormats(testFormatMuxer(av.FormatOgg, muxers)),
 		WithEncoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &encodeTestEncoderFactory{encoder: &encodeTestEncoder{}}),
 	)
@@ -421,7 +421,7 @@ func (m *writerTestMuxer) Close() error { return nil }
 
 func TestMixEncodesToMultipleFileDestinations(t *testing.T) {
 	ctx := context.Background()
-	rt := MustNew(
+	rt := mustNew(
 		withTestFormats(testFormatMuxer(av.FormatOgg, writerTestMuxerFactory{})),
 		WithEncoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &encodeTestEncoderFactory{encoder: &encodeTestEncoder{}}),
 	)
@@ -450,7 +450,7 @@ func TestMixEncodesToMultipleFileDestinations(t *testing.T) {
 }
 
 func TestMixRejectsSameDestinationHandleTwice(t *testing.T) {
-	rt := MustNew(
+	rt := mustNew(
 		withTestFormats(testFormatMuxer(av.FormatOgg, writerTestMuxerFactory{})),
 		WithEncoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &encodeTestEncoderFactory{encoder: &encodeTestEncoder{}}),
 	)
@@ -491,7 +491,7 @@ func mixTestAudioSourceRate(id av.StreamID, rate int) InputSpec {
 
 func TestMixResamplesMismatchedArms(t *testing.T) {
 	ctx := context.Background()
-	rt := MustNew(testBundleFilters())
+	rt := mustNew(testBundleFilters())
 
 	var frames int
 	var peak int16

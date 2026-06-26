@@ -127,7 +127,7 @@ func runtimeValue(t *testing.T, rt *Runtime) *runtime {
 
 func newTestBuilder(t *testing.T, options ...Option) *builder {
 	t.Helper()
-	return runtimeValue(t, MustNew(options...)).newBuilder()
+	return runtimeValue(t, mustNew(options...)).newBuilder()
 }
 
 func TestRuntimeNewRejectsInvalidOptions(t *testing.T) {
@@ -172,10 +172,10 @@ func TestRuntimeNewRejectsInvalidOptions(t *testing.T) {
 func TestRuntimeMustNewPanicsOnInvalidOption(t *testing.T) {
 	defer func() {
 		if recover() == nil {
-			t.Fatal("MustNew(nil) did not panic")
+			t.Fatal("mustNew(nil) did not panic")
 		}
 	}()
-	MustNew(nil)
+	mustNew(nil)
 }
 
 func testSelectAudio() av.StreamSelector {
@@ -281,7 +281,7 @@ func testFilterFactory(desc filter.Descriptor, factory filter.Factory) func(*fil
 }
 
 func TestNewRuntimeDefaults(t *testing.T) {
-	rt := runtimeValue(t, MustNew())
+	rt := runtimeValue(t, mustNew())
 	if rt.codecs == nil || rt.formats == nil || rt.filters == nil {
 		t.Fatalf("runtime defaults incomplete: %+v", rt)
 	}
@@ -298,7 +298,7 @@ func TestNewRuntimeDefaults(t *testing.T) {
 }
 
 func TestRuntimeWithCodecAdapter(t *testing.T) {
-	rt := runtimeValue(t, MustNew(WithCodecAdapter(gopusadapter.Register)))
+	rt := runtimeValue(t, mustNew(WithCodecAdapter(gopusadapter.Register)))
 
 	if _, err := rt.codecs.DecoderFactory(av.CodecOpus); err != nil {
 		t.Fatalf("decoder factory: %v", err)
@@ -306,7 +306,7 @@ func TestRuntimeWithCodecAdapter(t *testing.T) {
 }
 
 func TestRuntimeWithBundleCodecsIncludesAACDecode(t *testing.T) {
-	rt := runtimeValue(t, MustNew(testBundleCodecs()))
+	rt := runtimeValue(t, mustNew(testBundleCodecs()))
 
 	if _, err := rt.codecs.DecoderFactory(av.CodecAAC); err != nil {
 		t.Fatalf("AAC decoder factory: %v", err)
@@ -324,7 +324,7 @@ func TestRuntimeWithCustomCodecHooks(t *testing.T) {
 		Modes: []codec.Mode{codec.ModeDecode, codec.ModeEncode},
 	}
 
-	descriptorOnly := runtimeValue(t, MustNew(WithCodecDescriptor(desc)))
+	descriptorOnly := runtimeValue(t, mustNew(WithCodecDescriptor(desc)))
 	if _, err := descriptorOnly.codecs.DecoderFactory(desc.ID); !errors.Is(err, codec.ErrUnavailable) {
 		t.Fatalf("descriptor-only decoder err = %v, want codec.ErrUnavailable", err)
 	}
@@ -334,7 +334,7 @@ func TestRuntimeWithCustomCodecHooks(t *testing.T) {
 
 	decoderFactory := &decodeTestDecoderFactory{decoder: &decodeTestDecoder{}}
 	encoderFactory := &encodeTestEncoderFactory{encoder: &encodeTestEncoder{}}
-	rt := runtimeValue(t, MustNew(
+	rt := runtimeValue(t, mustNew(
 		WithDecoder(desc, decoderFactory),
 		WithEncoder(desc, encoderFactory),
 	))
@@ -354,7 +354,7 @@ func TestRuntimeWithCustomCodecHooks(t *testing.T) {
 }
 
 func TestRuntimeWithFormatAdapter(t *testing.T) {
-	rt := runtimeValue(t, MustNew(WithFormatAdapter(ivfadapter.Register)))
+	rt := runtimeValue(t, mustNew(WithFormatAdapter(ivfadapter.Register)))
 
 	if _, err := rt.formats.DemuxerFactory(av.FormatIVF); err != nil {
 		t.Fatalf("demuxer factory: %v", err)
@@ -368,7 +368,7 @@ func TestRuntimeWithDirectFormatHooks(t *testing.T) {
 	formatID := av.FormatID("x_direct")
 	demuxerFactory := remuxTestDemuxerFactory{demuxer: &remuxTestDemuxer{}}
 	muxerFactory := &remuxTestMuxerFactory{}
-	rt := runtimeValue(t, MustNew(
+	rt := runtimeValue(t, mustNew(
 		WithDemuxer(formatID, demuxerFactory),
 		WithMuxer(formatID, muxerFactory),
 	))
@@ -382,7 +382,7 @@ func TestRuntimeWithDirectFormatHooks(t *testing.T) {
 }
 
 func TestRuntimeWithFilterAdapter(t *testing.T) {
-	rt := runtimeValue(t, MustNew(WithFilterAdapter(func(registry *filter.SimpleRegistry) {
+	rt := runtimeValue(t, mustNew(WithFilterAdapter(func(registry *filter.SimpleRegistry) {
 		registry.RegisterFactory(filter.Descriptor{Name: filter.FactoryResample}, &transcodeTestFilterFactory{})
 	})))
 
@@ -966,7 +966,7 @@ func TestRuntimeBuilderExplicitGraphValidation(t *testing.T) {
 }
 
 func TestRuntimeWithCodecDescriptorAdapter(t *testing.T) {
-	rt := runtimeValue(t, MustNew(withTestCodecDescriptor(codec.Descriptor{
+	rt := runtimeValue(t, mustNew(withTestCodecDescriptor(codec.Descriptor{
 		ID:    av.CodecAV1,
 		Modes: []codec.Mode{codec.ModeDecode},
 	})))

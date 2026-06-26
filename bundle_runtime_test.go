@@ -16,7 +16,7 @@ import (
 )
 
 func testBundleRuntime(opts ...Option) *Runtime {
-	return MustNew(append(testBundleOptions(), opts...)...)
+	return mustNew(append(testBundleOptions(), opts...)...)
 }
 
 func testBundleOptions() []Option {

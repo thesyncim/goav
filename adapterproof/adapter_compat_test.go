@@ -642,7 +642,7 @@ var _ filter.Factory = toyFilterFactory{}
 // toyRuntime registers one external implementation of every seam on a bare
 // runtime — value options only, no registry callbacks, no core knowledge.
 func toyRuntime() *goav.Runtime {
-	return goav.MustNew(
+	runtime, err := goav.New(
 		goavruntime.WithRealtime(false),
 		goavruntime.WithDecoder(toyCodecDescriptor(), toyCodecFactory{}),
 		goavruntime.WithEncoder(toyCodecDescriptor(), toyCodecFactory{}),
@@ -651,6 +651,10 @@ func toyRuntime() *goav.Runtime {
 		goavruntime.WithDemuxer(toyFormatID, toyContainerFactory{}),
 		goavruntime.WithProber(toyProber{}),
 	)
+	if err != nil {
+		panic(err)
+	}
+	return runtime
 }
 
 // TestExternalAdaptersComposeThroughPublicGrammar runs the five toy seams in

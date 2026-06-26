@@ -63,11 +63,19 @@ func packetMessage(stream av.StreamID) pipeline.Message {
 	return pipeline.Message{Kind: pipeline.MessagePacket, Packet: &packet}
 }
 
+func mustRuntime() *goav.Runtime {
+	runtime, err := goav.New()
+	if err != nil {
+		panic(err)
+	}
+	return runtime
+}
+
 // TestGraphWiresAndRunsThroughPublicSeam pins the whole expert door: handles
 // from Source/Stage/Sink, Connect routes (full and stream-narrowed), Describe
 // parity, Build, and a run that delivers messages along the wired routes.
 func TestGraphWiresAndRunsThroughPublicSeam(t *testing.T) {
-	graph := expert.Graph(goav.MustNew())
+	graph := expert.Graph(mustRuntime())
 	source := graph.Source("source", &expertTestSource{
 		name:     "source",
 		messages: []pipeline.Message{packetMessage("audio"), packetMessage("video")},
@@ -110,7 +118,7 @@ func TestGraphWiresAndRunsThroughPublicSeam(t *testing.T) {
 // a GraphNode passed to goav.Branch(...).From anchors a runtime attachment at
 // that node through the structural Route seam.
 func TestGraphHandlesAnchorRuntimeBranches(t *testing.T) {
-	graph := expert.Graph(goav.MustNew())
+	graph := expert.Graph(mustRuntime())
 	source := graph.Source("source", &expertTestSource{
 		name:     "source",
 		messages: []pipeline.Message{packetMessage("audio")},
@@ -165,13 +173,13 @@ func TestGraphRequiresGoavRuntime(t *testing.T) {
 // surfacing through the bridge: nil nodes and empty Connect calls latch the
 // root and pipeline errors reported by Describe.
 func TestGraphRefusesNilNodesAndEmptyRoutes(t *testing.T) {
-	graph := expert.Graph(goav.MustNew())
+	graph := expert.Graph(mustRuntime())
 	graph.Source("source", nil)
 	if _, err := graph.Describe(); err == nil || !strings.Contains(err.Error(), "nil source") {
 		t.Fatalf("Describe err = %v, want nil source refusal", err)
 	}
 
-	graph = expert.Graph(goav.MustNew())
+	graph = expert.Graph(mustRuntime())
 	node := graph.Source("source", &expertTestSource{name: "source"})
 	graph.Connect(node.Out())
 	if _, err := graph.Describe(); !errors.Is(err, pipeline.ErrInvalidLink) {

@@ -77,7 +77,6 @@ goav.LiveTask
 goav.MIME
 goav.Metadata
 goav.Mix
-goav.MustNew
 goav.Mux
 goav.Name
 goav.New

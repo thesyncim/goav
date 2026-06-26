@@ -19,7 +19,7 @@ import (
 func TestFromMultiInputChainsShareOneMuxDestination(t *testing.T) {
 	ctx := context.Background()
 	muxers := &remuxTestMuxerFactory{}
-	rt := MustNew(
+	rt := mustNew(
 		withTestFormats(testFormatMuxer(av.FormatOgg, muxers)),
 		WithEncoder(codec.Descriptor{ID: av.CodecVP9, Type: av.MediaVideo}, &encodeTestEncoderFactory{encoder: &encodeTestEncoder{}}),
 		WithEncoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &encodeTestEncoderFactory{encoder: &encodeTestEncoder{}}),
@@ -96,7 +96,7 @@ func TestFromMultiInputHeadlineDecodeShape(t *testing.T) {
 			})
 	}
 	muxers := &remuxTestMuxerFactory{}
-	rt := MustNew(
+	rt := mustNew(
 		withTestFormats(testFormatMuxer(av.FormatWebM, muxers)),
 		WithDecoder(codec.Descriptor{ID: cameraCodec, Type: av.MediaVideo}, &decodeTestDecoderFactory{decoder: &decodeTestDecoder{}}),
 		WithDecoder(codec.Descriptor{ID: micCodec, Type: av.MediaAudio}, &decodeTestDecoderFactory{decoder: &decodeTestDecoder{}}),

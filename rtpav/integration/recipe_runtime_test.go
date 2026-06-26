@@ -98,7 +98,7 @@ func TestRecordRecipeRTPAutoCodecRuns(t *testing.T) {
 		events: make(chan av.Event),
 	}
 	muxers := &remuxTestMuxerFactory{}
-	runtime := goav.MustNew(withTestFormats(
+	runtime := mustGoAVRuntime(withTestFormats(
 		testFormatProber(format.DefaultProber()),
 		testFormatMuxer(av.FormatOgg, muxers),
 	))
@@ -153,7 +153,7 @@ func TestRecordRecipeCopyToTypedDestinationRuns(t *testing.T) {
 		events: make(chan av.Event),
 	}
 	muxers := &remuxTestMuxerFactory{}
-	runtime := goav.MustNew(withTestFormats(
+	runtime := mustGoAVRuntime(withTestFormats(
 		testFormatProber(format.DefaultProber()),
 		testFormatMuxer(av.FormatOgg, muxers),
 	))
@@ -229,7 +229,7 @@ func TestRecordRecipeCopyToCustomWriterDestinationRuns(t *testing.T) {
 	}
 	state := &writerDestinationState{}
 	muxer := &writerDestinationMuxer{}
-	runtime := goav.MustNew(withTestFormats(
+	runtime := mustGoAVRuntime(withTestFormats(
 		testFormatMuxer(av.FormatOgg, writerDestinationMuxerFactory{muxer: muxer}),
 	))
 	target := goav.Writer("s3://bucket/call.ogg", func(_ context.Context, info provider.Info) (io.WriteCloser, error) {
@@ -299,7 +299,7 @@ func TestRecordRecipeCopyToTransactionalWriterDestinationRuns(t *testing.T) {
 	}
 	state := &writerDestinationState{}
 	muxer := &writerDestinationMuxer{}
-	runtime := goav.MustNew(withTestFormats(
+	runtime := mustGoAVRuntime(withTestFormats(
 		testFormatMuxer(av.FormatOgg, writerDestinationMuxerFactory{muxer: muxer}),
 	))
 	metadata := av.Metadata{"storage": "hot"}
@@ -363,7 +363,7 @@ func TestFileDestinationClosesCloserWriterOnce(t *testing.T) {
 		events: make(chan av.Event),
 	}
 	muxer := &writerDestinationMuxer{}
-	runtime := goav.MustNew(withTestFormats(
+	runtime := mustGoAVRuntime(withTestFormats(
 		testFormatMuxer(av.FormatOgg, writerDestinationMuxerFactory{muxer: muxer}),
 	))
 	writer := &fileDestinationWriteCloser{}
@@ -426,7 +426,7 @@ func TestRecordRecipeCustomWriterDestinationAbortsOnRunError(t *testing.T) {
 	}
 	state := &writerDestinationState{}
 	muxer := &writerDestinationMuxer{}
-	runtime := goav.MustNew(withTestFormats(
+	runtime := mustGoAVRuntime(withTestFormats(
 		testFormatProber(format.DefaultProber()),
 		testFormatMuxer(av.FormatOgg, writerDestinationMuxerFactory{muxer: muxer}),
 	))
@@ -491,7 +491,7 @@ func TestTaskAttachCustomWriterDestinationRuns(t *testing.T) {
 	}
 	state := &writerDestinationState{}
 	muxer := &writerDestinationMuxer{}
-	runtime := goav.MustNew(withTestFormats(
+	runtime := mustGoAVRuntime(withTestFormats(
 		testFormatMuxer(av.FormatOgg, writerDestinationMuxerFactory{muxer: muxer}),
 	))
 	task, err := goav.From(goav.Input(rtpav.Receive(receiver, rtpav.WithName("audio"), rtpav.WithCodec(codec.Opus()), rtpav.WithBufferLimits(rtpav.BufferLimits{MaxPackets: 2})))).
@@ -582,7 +582,7 @@ func TestTaskAttachCustomWriterDestinationAbortsOnPatchFailure(t *testing.T) {
 	}
 	state := &writerDestinationState{}
 	muxer := &writerDestinationMuxer{}
-	runtime := goav.MustNew(withTestFormats(
+	runtime := mustGoAVRuntime(withTestFormats(
 		testFormatProber(format.DefaultProber()),
 		testFormatMuxer(av.FormatOgg, writerDestinationMuxerFactory{muxer: muxer}),
 	))
@@ -667,7 +667,7 @@ func TestRecordRecipeRTPCodecUsesReaderStreamWhenUnnamed(t *testing.T) {
 		events: make(chan av.Event),
 	}
 	muxers := &remuxTestMuxerFactory{}
-	runtime := goav.MustNew(withTestFormats(
+	runtime := mustGoAVRuntime(withTestFormats(
 		testFormatProber(format.DefaultProber()),
 		testFormatMuxer(av.FormatOgg, muxers),
 	))
@@ -815,7 +815,7 @@ func TestFromAndRecordRecipeMultipleRTPInputsRuns(t *testing.T) {
 		events: make(chan av.Event),
 	}
 	muxers := &remuxTestMuxerFactory{}
-	runtime := goav.MustNew(withTestFormats(
+	runtime := mustGoAVRuntime(withTestFormats(
 		testFormatProber(format.DefaultProber()),
 		testFormatMuxer(av.FormatOgg, muxers),
 	))
@@ -969,7 +969,7 @@ func TestStreamRecipeCopyTapCanAttachRuntimeMuxDestination(t *testing.T) {
 		events: make(chan av.Event),
 	}
 	muxers := &remuxTestMuxerFactory{}
-	runtime := goav.MustNew(withTestFormats(
+	runtime := mustGoAVRuntime(withTestFormats(
 		testFormatProber(format.DefaultProber()),
 		testFormatMuxer(av.FormatOgg, muxers),
 	))

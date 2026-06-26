@@ -492,7 +492,8 @@ func runtimeMissingError(operation string) error {
 		Operation: operation,
 		Reason:    "no runtime is configured",
 		fixes: buildErrorFixes([]string{
-			"pass a non-nil runtime with .UseRuntime(goav.MustNew(...))",
+			"pass a non-nil runtime with .UseRuntime(runtime)",
+			"build a bare runtime with goav.New(...)",
 			"import github.com/thesyncim/goav/bundle and build with bundle.MustNew(...), bundle.Build(ctx, job), or bundle.Run(ctx, job)",
 		}),
 		cause: errUnsupportedBuild,

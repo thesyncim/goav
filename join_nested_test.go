@@ -265,7 +265,7 @@ func TestSelectRegionPlacesSwitchedArmOnComposite(t *testing.T) {
 // auto-resampled through the same armPolicy solver path as any leaf arm.
 func TestMixResamplesNestedMixOutput(t *testing.T) {
 	ctx := context.Background()
-	rt := MustNew(testBundleFilters())
+	rt := mustNew(testBundleFilters())
 
 	var frames int
 	sink := Sink(SinkFunc("out", func(_ context.Context, m Message) error {
@@ -318,7 +318,7 @@ func TestJoinDescribeEqualsBuildNestedMix(t *testing.T) {
 			From(mixTestAudioSourceRate("c", 24000)).Audio(),
 		).SyncByPTS(),
 	).To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))).
-		UseRuntime(MustNew(testBundleFilters()))
+		UseRuntime(mustNew(testBundleFilters()))
 
 	planned := joinPlanGuard(t, job)
 	text := specText(planned)
@@ -416,7 +416,7 @@ func TestNestedMixTapAnchorsOnSubJoinNode(t *testing.T) {
 func TestNestedMixEncodesToFile(t *testing.T) {
 	ctx := context.Background()
 	muxers := &remuxTestMuxerFactory{}
-	rt := MustNew(
+	rt := mustNew(
 		withTestFormats(testFormatMuxer(av.FormatOgg, muxers)),
 		WithEncoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &encodeTestEncoderFactory{encoder: &encodeTestEncoder{}}),
 	)

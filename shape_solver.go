@@ -493,7 +493,7 @@ func shapeSolverAdapterError(operation string, node string, index int, step oper
 			fields: buildErrorFields(append(details, "candidates="+strings.Join(selection.candidates, ","))),
 			fixes: buildErrorFixes([]string{
 				"keep one " + string(selection.media) + " conversion filter registered per runtime",
-				"build the runtime with only the intended conversion filter via goav.MustNew(goavruntime.WithFilter(...))",
+				"build the runtime with only the intended conversion filter via goav.New(goavruntime.WithFilter(...))",
 				"bias the choice with .Prefer(shape.New(...)) toward a capability only one candidate declares",
 			}),
 			cause: errUnsupportedBuild,

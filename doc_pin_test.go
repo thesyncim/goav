@@ -35,7 +35,7 @@ func TestControlPlaneCustomCodecDocsUseBootstrapRuntime(t *testing.T) {
 			t.Fatalf("CONTROL_PLANE.md missing %q", fragment)
 		}
 	}
-	if strings.Contains(text, "UseRuntime(goav.MustNew(\n        goavruntime.WithFilterAdapter(") {
+	if strings.Contains(text, "goav.New(\n        goavruntime.WithFilterAdapter(") {
 		t.Fatal("CONTROL_PLANE.md custom-codec bootstrap drifted back to a bare runtime")
 	}
 }
