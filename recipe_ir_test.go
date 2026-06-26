@@ -326,6 +326,41 @@ func TestSingleStreamGraphLowerersConsumeHandoffs(t *testing.T) {
 	})
 }
 
+func TestBranchComposerGraphLowererConsumesHandoff(t *testing.T) {
+	job := From(mixTestAudioSource("mic", 11, 22)).
+		Audio().
+		Branches(Branch("monitor").To(Sink(SinkFunc("frames", func(context.Context, Message) error { return nil }))))
+
+	state := recipeCompileStateFromSnapshot(newJobRecipeSnapshot(job), recipeCompileOptions{})
+	input, ok := mediaPlanBranchComposerInputFromCompileState(&state)
+	if !ok {
+		t.Fatal("branch-composer graph lowerer input was not selected")
+	}
+
+	state.runtime = nil
+	state.branchInputAttachment = InputSpec{}
+	state.plan = branchComposePlan{}
+
+	lowerer, ok, err := newMediaPlanBranchComposerLowerer(input)
+	if err != nil {
+		t.Fatalf("lower branch composition from captured input: %v", err)
+	}
+	if !ok {
+		t.Fatal("branch-composer graph lowerer was not built from captured input")
+	}
+	graph, ok := lowerer.(mediaPlanBranchComposeGraph)
+	if !ok {
+		t.Fatalf("lowerer = %T, want mediaPlanBranchComposeGraph", lowerer)
+	}
+	if len(graph.inputs) != 1 ||
+		len(graph.plan.Branches) != 1 ||
+		graph.plan.Branches[0].Name != "monitor" ||
+		len(graph.plan.Destinations) != 1 {
+		t.Fatalf("branch-compose graph = inputs:%+v branches:%+v destinations:%+v, want captured handoff data",
+			graph.inputs, graph.plan.Branches, graph.plan.Destinations)
+	}
+}
+
 func TestMediaPlannerConsumesRecipeIRInputFacts(t *testing.T) {
 	job := From(
 		compositeTestVideoSource("camera", 4, 4, 100, 10, 20),
@@ -625,6 +660,46 @@ func TestSingleStreamGraphLowerersUseHandoffs(t *testing.T) {
 		if strings.Contains(renderBody, "*recipeCompileState") || strings.Contains(renderBody, "state.") {
 			t.Fatalf("%s should consume captured input instead of compile state", fn)
 		}
+	}
+}
+
+func TestBranchComposerGraphLowererUsesHandoff(t *testing.T) {
+	body, err := os.ReadFile("media_plan_spec.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := string(body)
+	if !strings.Contains(source, "type mediaPlanBranchComposerInput struct") {
+		t.Fatal("branch-composer graph lowerer should declare an explicit input boundary")
+	}
+	lowererBody := sourceFunctionBody(t, source, "mediaPlanBranchComposerLowerer")
+	if !strings.Contains(lowererBody, "input, ok := mediaPlanBranchComposerInputFromCompileState(state)") ||
+		!strings.Contains(lowererBody, "return newMediaPlanBranchComposerLowerer(input)") {
+		t.Fatal("mediaPlanBranchComposerLowerer should pass captured input into graph lowering")
+	}
+	for _, forbidden := range []string{
+		"newMediaPlanBranchComposeGraph(state.runtime",
+		"state.branchInputAttachment",
+		"state.plan",
+	} {
+		if strings.Contains(lowererBody, forbidden) {
+			t.Fatalf("mediaPlanBranchComposerLowerer still lowers directly from compile state with %q", forbidden)
+		}
+	}
+	inputBody := sourceFunctionBody(t, source, "mediaPlanBranchComposerInputFromCompileState")
+	if !strings.Contains(inputBody, "cloneBranchComposePlan(state.plan)") {
+		t.Fatal("mediaPlanBranchComposerInputFromCompileState should clone branch-compose plan at the boundary")
+	}
+	renderBody := sourceFunctionBody(t, source, "newMediaPlanBranchComposerLowerer")
+	if strings.Contains(renderBody, "*recipeCompileState") || strings.Contains(renderBody, "state.") {
+		t.Fatal("newMediaPlanBranchComposerLowerer should consume captured input instead of compile state")
+	}
+	composeBody, err := os.ReadFile("branch_compose_build.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(composeBody), "func cloneBranchComposePlan") {
+		t.Fatal("branch-compose plan handoff should have an explicit clone helper")
 	}
 }
 

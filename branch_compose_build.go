@@ -56,6 +56,50 @@ type branchComposeTarget struct {
 	resolvedFormat av.FormatID
 }
 
+func cloneBranchComposePlan(plan branchComposePlan) branchComposePlan {
+	clone := plan
+	clone.Input.Metadata = cloneMetadata(plan.Input.Metadata)
+	clone.Branches = cloneBranchComposeBranches(plan.Branches)
+	clone.Destinations = cloneBranchComposeTargets(plan.Destinations)
+	clone.Metadata = cloneMetadata(plan.Metadata)
+	return clone
+}
+
+func cloneBranchComposeBranches(branches []branchComposeBranch) []branchComposeBranch {
+	if len(branches) == 0 {
+		return nil
+	}
+	out := make([]branchComposeBranch, 0, len(branches))
+	for i := range branches {
+		branch := branches[i]
+		branch.Operations = cloneOperationSpecs(branch.Operations)
+		branch.SharedOperations = cloneOperationSpecs(branch.SharedOperations)
+		branch.PrivateOperations = cloneOperationSpecs(branch.PrivateOperations)
+		branch.DecodeConfig = cloneCodecSpec(branch.DecodeConfig)
+		branch.Encode = cloneEncodeConfig(branch.Encode)
+		branch.Labels = append([]string(nil), branch.Labels...)
+		branch.Metadata = cloneMetadata(branch.Metadata)
+		out = append(out, branch)
+	}
+	return out
+}
+
+func cloneBranchComposeTargets(targets []branchComposeTarget) []branchComposeTarget {
+	if len(targets) == 0 {
+		return nil
+	}
+	out := make([]branchComposeTarget, 0, len(targets))
+	for i := range targets {
+		target := targets[i]
+		target.Destination = cloneDestinationSpec(target.Destination)
+		target.Target.Metadata = cloneMetadata(target.Target.Metadata)
+		target.Branches = append([]string(nil), target.Branches...)
+		target.Metadata = cloneMetadata(target.Metadata)
+		out = append(out, target)
+	}
+	return out
+}
+
 func (t branchComposeTarget) OpenFormat() av.FormatID {
 	if t.resolvedFormat != "" {
 		return t.resolvedFormat

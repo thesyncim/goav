@@ -44,6 +44,12 @@ type mediaPlanDecodeStreamInput struct {
 	stream  streamIntent
 }
 
+type mediaPlanBranchComposerInput struct {
+	runtime *Runtime
+	input   InputSpec
+	plan    branchComposePlan
+}
+
 // graphPlan binds the compiled work plan — the single executable truth built
 // once by the compile — to the pipeline spec and the lowerer that executes it.
 type graphPlan struct {
@@ -485,10 +491,26 @@ func mediaPlanEncodeShape(stream streamIntent, outputs []destinationSpec, frameS
 }
 
 func mediaPlanBranchComposerLowerer(state *recipeCompileState) (graphPlanLowerer, bool, error) {
-	if state == nil || !state.branchCompositionPresent {
+	input, ok := mediaPlanBranchComposerInputFromCompileState(state)
+	if !ok {
 		return nil, false, nil
 	}
-	gp, ok, err := newMediaPlanBranchComposeGraph(state.runtime, []InputSpec{state.branchInputAttachment}, state.plan)
+	return newMediaPlanBranchComposerLowerer(input)
+}
+
+func mediaPlanBranchComposerInputFromCompileState(state *recipeCompileState) (mediaPlanBranchComposerInput, bool) {
+	if state == nil || !state.branchCompositionPresent {
+		return mediaPlanBranchComposerInput{}, false
+	}
+	return mediaPlanBranchComposerInput{
+		runtime: state.runtime,
+		input:   state.branchInputAttachment,
+		plan:    cloneBranchComposePlan(state.plan),
+	}, true
+}
+
+func newMediaPlanBranchComposerLowerer(input mediaPlanBranchComposerInput) (graphPlanLowerer, bool, error) {
+	gp, ok, err := newMediaPlanBranchComposeGraph(input.runtime, []InputSpec{input.input}, input.plan)
 	if err != nil || !ok {
 		return nil, ok, err
 	}
