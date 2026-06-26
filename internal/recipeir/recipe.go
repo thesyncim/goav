@@ -32,6 +32,7 @@ type Recipe struct {
 	Inputs       []Input
 	Streams      []Stream
 	Destinations []Destination
+	Join         Join
 	StreamRules  []StreamRule
 	Policies     Policies
 	Copy         bool
@@ -110,6 +111,21 @@ type StreamRule struct {
 type StreamRuleBranch struct {
 	Name         string
 	Destinations []string
+}
+
+// Join summarizes the planner-visible shape of a convergence recipe. It keeps
+// validation and diagnostics off the executable root joinSpec while the lowerer
+// continues to own concrete arms, stages, and destination handles.
+type Join struct {
+	Kind             string
+	ArmCount         int
+	InputCount       int
+	DestinationCount int
+	BranchCount      int
+	OperationCount   int
+	TapCount         int
+	HasEncode        bool
+	Custom           bool
 }
 
 // Policies are recipe-wide planning flags.

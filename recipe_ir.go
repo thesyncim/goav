@@ -73,6 +73,7 @@ func newJoinRecipeSnapshot(job *Job) recipeCompileSnapshot {
 	recipe := recipeIRFromIntent(joinIntentFromSpec(job, spec), recipeir.KindJoin)
 	annotateRecipeIRInputsFromSpecs(&recipe, inputs)
 	annotateRecipeIRDestinationsFromSpecs(&recipe, outputs)
+	recipe.Join = recipeIRJoinFromSpec(spec, len(inputs))
 	recipe.StreamRules = recipeIRStreamRulesFromRoot(job.streamRules)
 	return recipeCompileSnapshot{
 		recipe:                 recipe,
@@ -353,6 +354,29 @@ func recipeIRStreamRuleFromRoot(rule streamRule) recipeir.StreamRule {
 	return out
 }
 
+func recipeIRJoinFromSpec(spec *joinSpec, inputCount int) recipeir.Join {
+	if spec == nil {
+		return recipeir.Join{}
+	}
+	join := recipeir.Join{
+		Kind:           string(spec.kind),
+		ArmCount:       len(spec.arms),
+		InputCount:     inputCount,
+		BranchCount:    len(spec.branches),
+		OperationCount: len(spec.operations),
+		TapCount:       len(spec.taps),
+		HasEncode:      spec.encode != nil,
+		Custom:         spec.custom != nil,
+	}
+	if len(spec.branches) != 0 {
+		named, _ := joinBranchNamedDestinations(string(spec.kind), spec.branches)
+		join.DestinationCount = len(named)
+	} else {
+		join.DestinationCount = len(spec.dests)
+	}
+	return join
+}
+
 func destinationIntentFromRecipeIR(in recipeir.Destination) destinationIntent {
 	return destinationIntent{
 		Name:     in.Name,
@@ -578,6 +602,7 @@ func recipeCompileStateFromSnapshot(snapshot recipeCompileSnapshot, options reci
 		intent:                       intentFromRecipeIR(snapshot.recipe),
 		inputFacts:                   cloneRecipeIRInputs(snapshot.recipe.Inputs),
 		destinationKinds:             recipeIRDestinationKinds(snapshot.recipe),
+		joinFacts:                    snapshot.recipe.Join,
 		streamRuleFacts:              cloneRecipeIRStreamRules(snapshot.recipe.StreamRules),
 		runtime:                      snapshot.runtime,
 		runtimeExplicit:              snapshot.runtimeExplicit,

@@ -48,6 +48,7 @@ type recipeCompileState struct {
 
 	inputFacts             []recipeir.Input
 	destinationKinds       []recipeir.DestinationKind
+	joinFacts              recipeir.Join
 	streamRuleFacts        []recipeir.StreamRule
 	inputAttachments       []InputSpec
 	jobOutputCount         int
@@ -401,7 +402,7 @@ func joinRecipeCompilePhases() recipeCompilePhaseSet {
 
 func validateJoinRecipePass() recipeCompilePass {
 	return recipeCompilePassFunc{name: "validate join recipe", fn: func(state *recipeCompileState) error {
-		if state.joinAttachment == nil {
+		if !state.joinPresent() {
 			return nilRecipeError(state.operation, "nil join")
 		}
 		if state.recipeErr != nil {
@@ -409,6 +410,13 @@ func validateJoinRecipePass() recipeCompilePass {
 		}
 		return nil
 	}}
+}
+
+func (state *recipeCompileState) joinPresent() bool {
+	if state == nil {
+		return false
+	}
+	return state.joinFacts.Kind != "" || state.joinAttachment != nil
 }
 
 func compileJobBranchRecipeWithOptions(job *Job, options recipeCompileOptions) (recipeResolved, error) {

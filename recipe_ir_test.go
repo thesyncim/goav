@@ -107,6 +107,31 @@ func TestRecipeIRSnapshotCapturesStreamRules(t *testing.T) {
 	}
 }
 
+func TestRecipeIRSnapshotCapturesJoinFacts(t *testing.T) {
+	job := Mix(
+		From(FileInput("a.ogg", strings.NewReader(""))).Audio(),
+		From(FileInput("b.ogg", strings.NewReader(""))).Audio(),
+	).Encode(codec.Opus()).To(Write("mixed.ogg", &bytes.Buffer{}))
+
+	snapshot := newJobRecipeSnapshot(job)
+	if snapshot.recipe.Kind != recipeir.KindJoin {
+		t.Fatalf("recipe kind = %q, want %q", snapshot.recipe.Kind, recipeir.KindJoin)
+	}
+	join := snapshot.recipe.Join
+	if join.Kind != "mix" ||
+		join.ArmCount != 2 ||
+		join.InputCount != 2 ||
+		join.DestinationCount != 1 ||
+		!join.HasEncode {
+		t.Fatalf("recipe IR join = %+v", join)
+	}
+	state := recipeCompileStateFromSnapshot(snapshot, recipeCompileOptions{})
+	state.joinAttachment = nil
+	if err := validateJoinRecipePass().Apply(&state); err != nil {
+		t.Fatalf("validate join from IR facts: %v", err)
+	}
+}
+
 func TestRecipeIRSnapshotCapturesSinkDestinationKind(t *testing.T) {
 	job := From(FileInput("input.ivf", strings.NewReader(""))).
 		Video().
@@ -166,6 +191,20 @@ func TestRecipeCompileEntryPointUsesRecipeIRBoundary(t *testing.T) {
 		if strings.Contains(compileBody, forbidden) {
 			t.Fatalf("compileJobRecipeWithOptions still reaches through builder internals with %q", forbidden)
 		}
+	}
+}
+
+func TestJoinPlannerUsesRecipeIRInputFacts(t *testing.T) {
+	body, err := os.ReadFile("join_build.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	planBody := sourceFunctionBody(t, string(body), "newJoinPlan")
+	if !strings.Contains(planBody, "jobInputStreamSetsFromRecipeIR(state.intent.Inputs, state.inputFacts, state.inputProbes)") {
+		t.Fatal("newJoinPlan should derive stream sets from recipe IR input facts")
+	}
+	if strings.Contains(planBody, "jobInputStreamSets(state.intent.Inputs, state.inputAttachments") {
+		t.Fatal("newJoinPlan still derives stream sets from concrete input attachments")
 	}
 }
 
