@@ -943,6 +943,29 @@ func TestShapeValidationPassesConsumeRecipeIR(t *testing.T) {
 	}
 }
 
+func TestRuntimeAndUnsupportedDiagnosticsConsumeRecipeIR(t *testing.T) {
+	body, err := os.ReadFile("recipe_compile.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := string(body)
+	requiresRuntimeBody := sourceFunctionBody(t, source, "requiresExplicitRuntime")
+	if !strings.Contains(requiresRuntimeBody, "recipeIRStreamsRequireRuntime(state.recipe.Streams)") {
+		t.Fatal("requiresExplicitRuntime should inspect recipe IR streams")
+	}
+	if strings.Contains(requiresRuntimeBody, "state.intent") {
+		t.Fatal("requiresExplicitRuntime still reads legacy intent")
+	}
+
+	passBody := sourceFunctionBody(t, source, "requireGraphPlanSpecPass")
+	if !strings.Contains(passBody, "recipeGraphUnsupportedRecipeError(state.operation, state.recipe)") {
+		t.Fatal("requireGraphPlanSpecPass should report unsupported recipe shape from recipe IR")
+	}
+	if strings.Contains(passBody, "state.intent") {
+		t.Fatal("requireGraphPlanSpecPass still reports unsupported shape from legacy intent")
+	}
+}
+
 func TestOutputValidationPassesConsumeRecipeIR(t *testing.T) {
 	body, err := os.ReadFile("recipe_compile.go")
 	if err != nil {

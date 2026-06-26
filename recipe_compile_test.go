@@ -2944,6 +2944,24 @@ func TestRecipeRuntimePassRejectsNilRuntime(t *testing.T) {
 	}
 }
 
+func TestRecipeRuntimePassRequiresRuntimeFromRecipeIRStreams(t *testing.T) {
+	state := recipeCompileState{
+		operation: "build job",
+		options:   recipeCompileOptions{requireExplicitRuntime: true},
+		intent: intent{Streams: []streamIntent{{
+			Name:       "audio",
+			Operations: decodeIntentOperations(),
+		}}},
+	}
+	moveTestIntentToRecipeIR(&state, recipeir.KindJob)
+
+	err := validateRecipeRuntimePass().Apply(&state)
+	var buildErr *BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "runtime_missing" || !errors.Is(err, errUnsupportedBuild) {
+		t.Fatalf("err = %v, want runtime_missing with matching BuildError code", err)
+	}
+}
+
 func TestRequireGraphPlanSpecPassWrapsUnsupportedRecipeShape(t *testing.T) {
 	state := recipeCompileState{
 		operation: "build job",
@@ -2952,6 +2970,7 @@ func TestRequireGraphPlanSpecPassWrapsUnsupportedRecipeShape(t *testing.T) {
 			Inputs: []inputIntent{{Name: "input.ivf"}},
 		},
 	}
+	moveTestIntentToRecipeIR(&state, recipeir.KindJob)
 
 	err := requireGraphPlanSpecPass().Apply(&state)
 	var buildErr *BuildError

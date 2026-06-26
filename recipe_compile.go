@@ -17,6 +17,7 @@ import (
 )
 
 type recipeResolved struct {
+	recipe                recipeir.Recipe
 	intent                intent
 	runtime               *Runtime
 	spec                  pipeline.Spec
@@ -212,6 +213,7 @@ func (c recipeIntentCompiler) Compile(state recipeCompileState) (recipeResolved,
 		}
 	}
 	return recipeResolved{
+		recipe:                cloneRecipeIRRecipe(state.recipe),
 		intent:                state.intent,
 		runtime:               state.runtime,
 		spec:                  state.spec,
@@ -259,12 +261,12 @@ func (r recipeResolved) Describe() (pipeline.Spec, error) {
 	if r.specReady && r.specOrigin == graphSpecOriginGraphPlan && r.graphPlan.ready() {
 		return r.graphPlan.Describe()
 	}
-	return pipeline.Spec{}, recipeGraphUnsupportedError("describe recipe", r.intent)
+	return pipeline.Spec{}, recipeGraphUnsupportedRecipeError("describe recipe", r.recipe)
 }
 
 func (r recipeResolved) Build(ctx context.Context) (LiveTask, error) {
 	if !r.graphPlan.ready() {
-		return nil, recipeGraphUnsupportedError("build recipe", r.intent)
+		return nil, recipeGraphUnsupportedRecipeError("build recipe", r.recipe)
 	}
 	report, err := newPlanReport("build job", r)
 	if err != nil {
@@ -560,7 +562,7 @@ func (state *recipeCompileState) requiresExplicitRuntime() bool {
 	if streamRulesRequireRuntime(state.streamRules) {
 		return true
 	}
-	return intentRequiresRuntime(state.intent)
+	return recipeIRStreamsRequireRuntime(state.recipe.Streams)
 }
 
 func inputSpecsRequireRuntime(inputs []InputSpec) bool {
@@ -614,9 +616,19 @@ func destinationSpecRequiresRuntime(destination destinationSpec) bool {
 		destination.format != ""
 }
 
-func intentRequiresRuntime(intent intent) bool {
-	for i := range intent.Streams {
-		if operationSpecsRequireRuntime(intent.Streams[i].Operations) {
+func recipeIRStreamsRequireRuntime(streams []recipeir.Stream) bool {
+	for i := range streams {
+		if recipeIROperationsRequireRuntime(streams[i].Operations) {
+			return true
+		}
+	}
+	return false
+}
+
+func recipeIROperationsRequireRuntime(operations []recipeir.Operation) bool {
+	for i := range operations {
+		switch operations[i].Kind {
+		case plan.OpDecode, plan.OpEncode, plan.OpTransform:
 			return true
 		}
 	}
@@ -1782,11 +1794,15 @@ func planBranchCompositionIntentPass() recipeCompilePass {
 }
 
 func recipeGraphUnsupportedError(operation string, intent intent) error {
+	return recipeGraphUnsupportedRecipeError(operation, recipeIRFromIntent(intent, ""))
+}
+
+func recipeGraphUnsupportedRecipeError(operation string, recipe recipeir.Recipe) error {
 	details := []string{
-		fmt.Sprintf("recipe: %s", firstNonEmpty(intent.Name, "unnamed")),
-		fmt.Sprintf("inputs: %d", len(intent.Inputs)),
-		fmt.Sprintf("streams: %d", len(intent.Streams)),
-		fmt.Sprintf("destinations: %d", len(intent.Destinations)),
+		fmt.Sprintf("recipe: %s", firstNonEmpty(recipe.Name, "unnamed")),
+		fmt.Sprintf("inputs: %d", len(recipe.Inputs)),
+		fmt.Sprintf("streams: %d", len(recipe.Streams)),
+		fmt.Sprintf("destinations: %d", len(recipe.Destinations)),
 	}
 	return &BuildError{
 		Family:    errcode.FamilyForCode(errcode.RecipeGraphUnsupported),
@@ -1811,6 +1827,6 @@ func requireGraphPlanSpecPass() recipeCompilePass {
 		if state.runtimeExplicit && state.runtime == nil {
 			return nil
 		}
-		return recipeGraphUnsupportedError(state.operation, state.intent)
+		return recipeGraphUnsupportedRecipeError(state.operation, state.recipe)
 	}}
 }
