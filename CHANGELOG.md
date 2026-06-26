@@ -53,6 +53,9 @@ methodology changes, and migration notes.
   longer reaches through compile state for stream-set facts.
 - Routed join work-plan rendering through an explicit handoff so the join
   renderer consumes captured input, destination, and output-format facts.
+- Routed normal work-plan rendering through an explicit handoff so operation,
+  branch, destination, decision, and diagnostic rendering consumes captured
+  planner data.
 - Moved normal media-planner input binding and selected-stream resolution onto
   recipe IR input facts instead of concrete input attachments.
 - Moved copy-branch source-shape planning onto recipe IR input facts.

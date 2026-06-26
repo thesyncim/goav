@@ -806,6 +806,46 @@ func planOutputsWithBranches(outputs []planOutput, branches []planBranch) []plan
 	return outputs
 }
 
+func clonePlannerBranches(branches []planBranch) []planBranch {
+	if len(branches) == 0 {
+		return nil
+	}
+	out := make([]planBranch, 0, len(branches))
+	for i := range branches {
+		branch := branches[i]
+		branch.Operations = clonePlannerOperations(branch.Operations)
+		branch.Outputs = append([]string(nil), branch.Outputs...)
+		out = append(out, branch)
+	}
+	return out
+}
+
+func clonePlannerOperations(operations []planOperation) []planOperation {
+	if len(operations) == 0 {
+		return nil
+	}
+	out := make([]planOperation, 0, len(operations))
+	for i := range operations {
+		operation := operations[i]
+		operation.Codec = cloneCodecSpec(operation.Codec)
+		out = append(out, operation)
+	}
+	return out
+}
+
+func clonePlannerOutputs(outputs []planOutput) []planOutput {
+	if len(outputs) == 0 {
+		return nil
+	}
+	out := make([]planOutput, 0, len(outputs))
+	for i := range outputs {
+		output := outputs[i]
+		output.BranchRefs = append([]string(nil), output.BranchRefs...)
+		out = append(out, output)
+	}
+	return out
+}
+
 func clonePlanDecisions(decisions []planDecision) []planDecision {
 	if len(decisions) == 0 {
 		return nil

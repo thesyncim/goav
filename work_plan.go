@@ -104,6 +104,16 @@ type workEdge struct {
 	Branch string
 }
 
+type workPlanInput struct {
+	name        string
+	inputs      []workInput
+	streams     []workStream
+	branches    []planBranch
+	outputs     []planOutput
+	decisions   []planDecision
+	diagnostics []plan.Diagnostic
+}
+
 // buildWorkPlan builds the work plan once per compile: the branch planners
 // lower the intent into per-branch operation lists, and one flattening walk
 // emits the ordered operations, taps, branches, destinations, and edges.
@@ -113,6 +123,13 @@ func buildWorkPlan(state *recipeCompileState, spec pipeline.Spec) workPlan {
 		// the plan.OpJoin node, and the downstream chain into the same workPlan IR.
 		return state.joinPlan.buildJoinWorkPlan(joinWorkPlanInputFromCompileState(state), spec)
 	}
+	return buildNormalWorkPlan(workPlanInputFromCompileState(state), spec)
+}
+
+func workPlanInputFromCompileState(state *recipeCompileState) workPlanInput {
+	if state == nil {
+		return workPlanInput{}
+	}
 	intent := state.intent
 	outputs := planOutputs(intent.Destinations, state.outputFormatMap())
 	// The work plan plans every branch straight from intent.Streams:
@@ -121,16 +138,28 @@ func buildWorkPlan(state *recipeCompileState, spec pipeline.Spec) workPlan {
 	// branchComposePlan is only the Build-side lowerer input.
 	branches, decisions := planBranches(state, outputs)
 	outputs = planOutputsWithBranches(outputs, branches)
+	return workPlanInput{
+		name:        firstNonEmpty(intent.Name, state.operation, "job"),
+		inputs:      workInputsFromIntent(intent.Inputs),
+		streams:     workStreamsFromIntent(intent.Streams),
+		branches:    clonePlannerBranches(branches),
+		outputs:     clonePlannerOutputs(outputs),
+		decisions:   clonePlanDecisions(decisions),
+		diagnostics: clonePlanDiagnostics(state.shapeDiagnostics),
+	}
+}
+
+func buildNormalWorkPlan(input workPlanInput, spec pipeline.Spec) workPlan {
 	work := composeWorkPlan(
 		spec,
-		firstNonEmpty(intent.Name, state.operation, "job"),
-		workInputsFromIntent(intent.Inputs),
-		workStreamsFromIntent(intent.Streams),
-		branches,
-		outputs,
-		decisions,
+		input.name,
+		cloneWorkInputs(input.inputs),
+		cloneWorkStreams(input.streams),
+		clonePlannerBranches(input.branches),
+		clonePlannerOutputs(input.outputs),
+		clonePlanDecisions(input.decisions),
 	)
-	work.Diagnostics = clonePlanDiagnostics(state.shapeDiagnostics)
+	work.Diagnostics = clonePlanDiagnostics(input.diagnostics)
 	return work
 }
 
