@@ -134,7 +134,9 @@ attach/rebranch inputs now also carry branch name, media, source anchor,
 operation, and buffer facts as `internal/recipeir` runtime branch data before
 patch planning. Runtime destination name, kind, format, and share-key facts now
 cross the same boundary; concrete writer, mux, and sink handles still stay at
-the mutation edge.
+the mutation edge. Runtime attach patch planning now walks captured
+`recipeir.Operation` values directly for shape, sync, component, codec, and tap
+decisions instead of rehydrating root operation specs after branch capture.
 The boundary is not complete until the remaining runtime mutation patch facts
 move into stable recipe or plan data.
 

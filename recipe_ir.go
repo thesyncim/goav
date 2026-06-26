@@ -464,17 +464,6 @@ func operationSpecFromRecipeIR(in recipeir.Operation) operationSpec {
 	return out
 }
 
-func operationSpecsFromRecipeIR(operations []recipeir.Operation) []operationSpec {
-	if len(operations) == 0 {
-		return nil
-	}
-	out := make([]operationSpec, 0, len(operations))
-	for i := range operations {
-		out = append(out, operationSpecFromRecipeIR(operations[i]))
-	}
-	return out
-}
-
 func recipeIRTapFromRoot(in tapIntent) recipeir.Tap {
 	return recipeir.Tap{
 		Name:      in.Name,

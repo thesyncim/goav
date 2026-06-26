@@ -32,7 +32,7 @@ func TestAttachOperationComponentContracts(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := attachOperationComponent(tt.operation, tt.stage); got != tt.want {
+			if got := attachOperationComponent(recipeIROperationFromSpec(tt.operation), tt.stage); got != tt.want {
 				t.Fatalf("component = %q, want %q", got, tt.want)
 			}
 		})

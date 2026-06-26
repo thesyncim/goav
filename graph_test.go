@@ -456,7 +456,7 @@ func TestRuntimeAttachUsesGraphPatchBoundary(t *testing.T) {
 		"func runtimeAttachInputFromBranchSpecs",
 		"func (t *task) runtimeAttachBranchPlanInput",
 		"func runtimeAttachBranchIntent",
-		"func (input runtimeAttachBranchPlanInput) intentForOperations",
+		"func (input runtimeAttachBranchPlanInput) intentForStream",
 		"func (t *task) attachRuntimeBranches",
 		"func (p *runtimeGraphPatch) addAnchor",
 		"func (p *runtimeGraphPatch) addApplied",
@@ -474,7 +474,7 @@ func TestRuntimeAttachUsesGraphPatchBoundary(t *testing.T) {
 		"range operations",
 		"destination.recipe.Kind",
 		"destination.recipe.ShareKey",
-		"operationSpecOutputShape",
+		"recipeIROperationOutputShape",
 		"for i := range input.branches",
 		"patch.resetPlannedTaps()",
 		"patch.setWork(",
@@ -489,6 +489,8 @@ func TestRuntimeAttachUsesGraphPatchBoundary(t *testing.T) {
 		"type runtimeBranch struct",
 		"workPatchFromRuntimeBranches",
 		"runtimeBranchWorkSteps",
+		"operationSpecsFromRecipeIR",
+		"operationSpecFromRecipeIR",
 	} {
 		if strings.Contains(text, forbidden) {
 			t.Fatalf("runtime attach should plan the workPatch from one captured recipe, not a parallel %q model", forbidden)

@@ -77,6 +77,9 @@ methodology changes, and migration notes.
 - Captured runtime attach destination name, kind, format, and share-key facts
   as `internal/recipeir` data while keeping concrete writer/sink handles at the
   mutation edge.
+- Switched runtime attach patch planning to walk captured `recipeir.Operation`
+  values directly instead of rehydrating root operation specs after branch
+  capture.
 - Updated front-door docs to use task capability vocabulary for runtime attach
   examples instead of teaching `LiveTask` as the normal user type, and to
   describe `Watch` as the primary observation surface.

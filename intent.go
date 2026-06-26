@@ -140,17 +140,6 @@ func operationSpecForStage(stage pipeline.Stage) operationSpec {
 	return operationSpec{Kind: plan.OpStage, Component: name, Stage: stage}
 }
 
-func operationSpecCodec(operation operationSpec) codec.CodecSpec {
-	switch operation.Kind {
-	case plan.OpDecode:
-		return cloneCodecSpec(operation.Decode)
-	case plan.OpEncode, plan.OpCopy:
-		return cloneCodecSpec(operation.Encode)
-	default:
-		return codec.CodecSpec{}
-	}
-}
-
 func operationSpecForShape(shape shape.Spec) operationSpec {
 	return operationSpec{Kind: plan.OpShape, Component: "shape", Shape: shape}
 }

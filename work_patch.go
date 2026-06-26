@@ -125,14 +125,14 @@ func (p *attachPlan) closeOwned() {
 }
 
 // planAttachBranchSteps lowers one captured runtime branch into ordered attach
-// steps by walking the canonical operation list once — the same operationSpec
-// chain the build path compiles — opening the stages and destinations each
-// step needs against the live anchor shape. Destinations open before any graph
-// mutation; on failure every stage the walk owned is closed.
+// steps by walking the captured recipe IR operation list once, opening the
+// stages and destinations each step needs against the live anchor shape.
+// Destinations open before any graph mutation; on failure every stage the walk
+// owned is closed.
 func (t *task) planAttachBranchSteps(ctx context.Context, input runtimeAttachBranchPlanInput, group *runtimeAttachGroup) ([]attachStep, error) {
 	recipe := input.branch.recipe
 	branch := recipe.branch
-	operations := operationSpecsFromRecipeIR(branch.Operations)
+	operations := branch.Operations
 	destinations := input.branch.destinations
 	branchName := firstNonEmpty(branch.Name, "branch")
 	currentShape := runtimeBranchAnchorShape(input.anchor)
@@ -152,7 +152,7 @@ func (t *task) planAttachBranchSteps(ctx context.Context, input runtimeAttachBra
 		// shape-synthesized stand-in.
 		currentStream = branch.Source.Stream
 	}
-	if err := validateSyncPolicyForStream("attach runtime branch", branchName, currentStream, operations); err != nil {
+	if err := validateSyncPolicyForRecipeIROperations("attach runtime branch", branchName, currentStream, operations); err != nil {
 		return nil, err
 	}
 	steps := make([]attachStep, 0, len(operations)+len(destinations))
@@ -176,7 +176,7 @@ func (t *task) planAttachBranchSteps(ctx context.Context, input runtimeAttachBra
 		step := attachStep{operation: workOperation{
 			Kind:    operation.Kind,
 			Detail:  attachOperationDetail(operation.Kind),
-			Codec:   operationSpecCodec(operation),
+			Codec:   recipeIROperationCodec(operation),
 			ShapeIn: patchShape,
 		}}
 		out := patchShape
@@ -191,21 +191,22 @@ func (t *task) planAttachBranchSteps(ctx context.Context, input runtimeAttachBra
 			out = attachStepShape(currentShape, patchShape)
 		case plan.OpStage:
 			if operation.Stage == nil {
-				out = operationSpecOutputShape(patchShape, operation)
+				out = recipeIROperationOutputShape(patchShape, operation)
 				break
 			}
 			step.component = attachComponent{stage: operation.Stage}
 			out = attachStepShape(currentShape, patchShape)
 		case plan.OpShape:
 			if mediaShapeEmpty(operation.Shape) {
-				out = operationSpecOutputShape(patchShape, operation)
+				out = recipeIROperationOutputShape(patchShape, operation)
 				break
 			}
 			currentShape = shape.Merge(currentShape, operation.Shape)
 			out = attachStepShape(currentShape, patchShape)
 		case plan.OpTransform:
-			if operation.Transform.resize == nil && operation.Transform.resample == nil {
-				out = operationSpecOutputShape(patchShape, operation)
+			transformSpec := rootTransformFromRecipeIR(operation.Transform)
+			if recipeIRTransformEmpty(operation.Transform) {
+				out = recipeIROperationOutputShape(patchShape, operation)
 				break
 			}
 			if t.runtime == nil {
@@ -220,17 +221,17 @@ func (t *task) planAttachBranchSteps(ctx context.Context, input runtimeAttachBra
 					"attach transform branches with .From(goav.FrameTap(name)) where name is declared after Decode, Resize, Resample, or a frame-stage Tap",
 				))
 			}
-			transformName := transformFactoryName(operation.Transform)
-			branchIntent := input.intentForOperations(currentStream, operation)
+			transformName := recipeIRTransformFactoryName(operation.Transform)
+			branchIntent := input.intentForStream(currentStream)
 			if _, err := t.runtime.filters.Factory(transformName); err != nil {
 				return fail(recipeTransformAdapterError("attach runtime branch", branchIntent, transformName, err))
 			}
 			if desc, err := t.runtime.filters.Descriptor(transformName); err == nil {
-				if err := validateTransformAdapterDescriptor("attach runtime branch", branchIntent, operation.Transform, transformName, desc); err != nil {
+				if err := validateTransformAdapterDescriptor("attach runtime branch", branchIntent, transformSpec, transformName, desc); err != nil {
 					return fail(err)
 				}
 			}
-			transform, err := runtimeBranchTransform(branch.Name, currentStream, operation.Transform, transformIndex)
+			transform, err := runtimeBranchTransform(branch.Name, currentStream, transformSpec, transformIndex)
 			if err != nil {
 				return fail(err)
 			}
@@ -246,17 +247,17 @@ func (t *task) planAttachBranchSteps(ctx context.Context, input runtimeAttachBra
 		case plan.OpTap:
 			tapName := firstNonEmpty(operation.Tap.Name, operation.Component)
 			if tapName == "" {
-				out = operationSpecOutputShape(patchShape, operation)
+				out = recipeIROperationOutputShape(patchShape, operation)
 				break
 			}
-			terminal := operationSpecTapIsTerminalPacket(operation)
+			terminal := recipeIROperationTapIsTerminalPacket(operation)
 			if operation.Tap.Name != "" && !terminal {
 				if err := validateTapDomain("attach runtime branch", branchName, tapRef{name: operation.Tap.Name, domain: operation.Tap.Domain}, currentShape.Domain); err != nil {
 					return fail(err)
 				}
 			}
 			if terminal && !encoded && !copied {
-				out = operationSpecOutputShape(patchShape, operation)
+				out = recipeIROperationOutputShape(patchShape, operation)
 			} else {
 				out = attachStepShape(currentShape, patchShape)
 			}
@@ -284,9 +285,9 @@ func (t *task) planAttachBranchSteps(ctx context.Context, input runtimeAttachBra
 				return fail(runtimeBranchCopyDomainError(branch.Name, currentShape))
 			}
 			copied = true
-			out = operationSpecOutputShape(patchShape, operation)
+			out = recipeIROperationOutputShape(patchShape, operation)
 		default:
-			out = operationSpecOutputShape(patchShape, operation)
+			out = recipeIROperationOutputShape(patchShape, operation)
 		}
 		step.operation.Component = attachOperationComponent(operation, step.component.stage)
 		step.operation.ShapeOut = out
@@ -347,17 +348,15 @@ func (t *task) planAttachEncode(ctx context.Context, input runtimeAttachBranchPl
 	if err := validateRecipeEncode(encode, "attach runtime branch", firstNonEmpty(branchName, "branch")); err != nil {
 		return nil, av.Stream{}, err
 	}
-	encodeOperation := operationSpecForEncode(encode)
+	stream := input.intentForStream(currentStream)
 	if _, err := t.runtime.codecs.EncoderFactory(encode.ID); err != nil {
-		stream := input.intentForOperations(currentStream, encodeOperation)
-		return nil, av.Stream{}, recipeEncodeAdapterError("attach runtime branch", stream, t.runtime.codecs, err)
+		return nil, av.Stream{}, recipeEncodeAdapterCodecError("attach runtime branch", stream, encode.ID, t.runtime.codecs, err)
 	}
 	request := runtimeBranchEncodeRequest(branchName, encode, currentStream)
 	config, encodedStream, err := prepareEncodeConfig(currentStream, request, t.runtime.realtime)
 	if err != nil {
 		return nil, av.Stream{}, err
 	}
-	stream := input.intentForOperations(currentStream, encodeOperation)
 	if err := validateEncodeAdapterDescriptors("attach runtime branch", stream, t.runtime.codecs, encodeAdapterRequestFromPreparedStream(encode, encodedStream)); err != nil {
 		return nil, av.Stream{}, err
 	}
@@ -616,8 +615,8 @@ func attachOperationDetail(kind plan.OperationKind) string {
 	}
 }
 
-func attachOperationComponent(operation operationSpec, stage pipeline.Stage) string {
-	if component := firstNonEmpty(operationSpecComponent(operation), operation.Component); component != "" {
+func attachOperationComponent(operation recipeir.Operation, stage pipeline.Stage) string {
+	if component := firstNonEmpty(recipeIROperationComponent(operation), operation.Component); component != "" {
 		return component
 	}
 	if stage != nil {

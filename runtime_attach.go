@@ -386,16 +386,14 @@ func runtimeAttachBranchIntent(branch runtimeAttachBranchInput, anchor snapshot.
 			Codec: anchor.Shape.Codec,
 		},
 		From:         rootTapRefFromRecipeIR(recipe.branch.Source.Tap),
-		Operations:   operationSpecsFromRecipeIR(recipe.branch.Operations),
 		Destinations: attachDestinationNames(branch.destinations),
 	}
 }
 
-func (input runtimeAttachBranchPlanInput) intentForOperations(stream av.Stream, operations ...operationSpec) streamIntent {
+func (input runtimeAttachBranchPlanInput) intentForStream(stream av.Stream) streamIntent {
 	intent := input.intent
 	intent.Select.Type = firstNonEmptyMedia(stream.Type, stream.Codec.Type, intent.Select.Type, codecMedia(stream.Codec.ID))
 	intent.Select.Codec = firstNonEmptyCodec(stream.Codec.ID, intent.Select.Codec)
-	intent.Operations = cloneOperationSpecs(operations)
 	return intent
 }
 
@@ -970,12 +968,13 @@ func discoveredStreamAnchorTap(source recipeir.RuntimeBranchSource) snapshot.Tap
 // against the live anchor shape with the same shape algebra the build path
 // uses, and rejects mux destinations whose final shape is not packet-domain.
 func validateAttachBranchShapeContract(input runtimeAttachBranchPlanInput, initial shape.Spec) error {
-	if err := validateOperationSpecShapes("attach runtime branch", input.intent, initial); err != nil {
+	operations := input.branch.recipe.branch.Operations
+	if err := validateRecipeIROperationShapes("attach runtime branch", input.intent, operations, initial); err != nil {
 		return err
 	}
 	final := normalizeTapShape(initial)
-	for _, operation := range operationSpecsFromRecipeIR(input.branch.recipe.branch.Operations) {
-		final = operationSpecOutputShape(final, operation)
+	for _, operation := range operations {
+		final = recipeIROperationOutputShape(final, operation)
 	}
 	destinations := input.branch.destinations
 	for i := range destinations {
@@ -1687,12 +1686,10 @@ func (t *task) prepareRuntimeBranchDecode(ctx context.Context, input runtimeAtta
 		return nil, runtimeBranchDecodeCodecMissingError(branchName, currentShape)
 	}
 	request := runtimeBranchDecodeRequest(branchName, currentStream, spec)
-	decodeOperation := operationSpecForDecode(spec, string(currentStream.Codec.ID))
+	stream := input.intentForStream(currentStream)
 	if _, err := t.runtime.codecs.DecoderFactory(currentStream.Codec.ID); err != nil {
-		stream := input.intentForOperations(currentStream, decodeOperation)
 		return nil, recipeDecodeAdapterError("attach runtime branch", stream, currentStream.Codec.ID, t.runtime.codecs, err)
 	}
-	stream := input.intentForOperations(currentStream, decodeOperation)
 	stream.Select = streamSelectFromAV(request.selector)
 	if err := validateDecodeAdapterDescriptors("attach runtime branch", stream, t.runtime.codecs, decodeAdapterRequestFromStream(currentStream, stream)); err != nil {
 		return nil, err

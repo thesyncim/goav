@@ -9,6 +9,7 @@ import (
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/flow"
+	"github.com/thesyncim/goav/internal/recipeir"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/plan"
 	"github.com/thesyncim/goav/shape"
@@ -143,6 +144,17 @@ func validateSyncPolicyForStream(operation string, branchName string, stream av.
 	if !operationSpecsContainSync(operations) {
 		return nil
 	}
+	return validateSyncPolicyForBranch(operation, branchName, stream)
+}
+
+func validateSyncPolicyForRecipeIROperations(operation string, branchName string, stream av.Stream, operations []recipeir.Operation) error {
+	if !recipeIROperationsContainSync(operations) {
+		return nil
+	}
+	return validateSyncPolicyForBranch(operation, branchName, stream)
+}
+
+func validateSyncPolicyForBranch(operation string, branchName string, stream av.Stream) error {
 	if stream.TimeBase.Valid() {
 		return nil
 	}
@@ -165,6 +177,15 @@ func validateSyncPolicyForStream(operation string, branchName string, stream av.
 }
 
 func operationSpecsContainSync(operations []operationSpec) bool {
+	for i := range operations {
+		if _, ok := operations[i].Stage.(*syncGate); ok {
+			return true
+		}
+	}
+	return false
+}
+
+func recipeIROperationsContainSync(operations []recipeir.Operation) bool {
 	for i := range operations {
 		if _, ok := operations[i].Stage.(*syncGate); ok {
 			return true

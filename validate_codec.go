@@ -480,7 +480,10 @@ func mergeStringList(existing []string, next []string) []string {
 }
 
 func recipeEncodeAdapterError(operation string, stream streamIntent, registry *codec.SimpleRegistry, cause error) error {
-	codecID := chainEncodeSpec(stream.Operations).ID
+	return recipeEncodeAdapterCodecError(operation, stream, chainEncodeSpec(stream.Operations).ID, registry, cause)
+}
+
+func recipeEncodeAdapterCodecError(operation string, stream streamIntent, codecID av.CodecID, registry *codec.SimpleRegistry, cause error) error {
 	code := encodeAdapterMissingCode
 	reason := "no encoder adapter is registered for " + string(codecID)
 	if errors.Is(cause, codec.ErrUnavailable) {
