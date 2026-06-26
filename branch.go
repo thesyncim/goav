@@ -26,10 +26,20 @@ func destinationShareKey(dest destinationSpec, id uint64) string {
 // Destination is an opaque handle for a file, URI, writer, media sink, or
 // shared mux/sink group. Built-in constructors and Custom return destination
 // values with goav-owned routing identity; Mux can make that grouping identity
-// explicit across separately constructed values.
+// explicit across separately constructed values. The zero value is intentionally
+// not a valid destination; construct destination handles with Write, URI, Sink,
+// Writer, Custom, or Mux.
 type Destination struct {
-	spec destinationSpec
+	origin destinationOrigin
+	spec   destinationSpec
 }
+
+type destinationOrigin uint8
+
+const (
+	destinationOriginZero destinationOrigin = iota
+	destinationOriginConstructed
+)
 
 // DestinationOption configures a destination value (Write, URI, Writer,
 // Custom, or Destination.With): Format pins the container, and the
@@ -75,6 +85,9 @@ func branchDestinationNames(destinations []destinationRef) []string {
 }
 
 func destinationSpecFromDestination(dest Destination) (destinationSpec, error) {
+	if dest.origin != destinationOriginConstructed {
+		return destinationSpec{}, fmt.Errorf("destination is empty; construct it with goav.Write(...), goav.URI(...), goav.Sink(...), goav.Writer(...), or goav.Custom(...)")
+	}
 	if destinationSpecEmpty(dest.spec) {
 		return destinationSpec{}, fmt.Errorf("destination is empty")
 	}
