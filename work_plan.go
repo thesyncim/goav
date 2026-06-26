@@ -111,7 +111,7 @@ func buildWorkPlan(state *recipeCompileState, spec pipeline.Spec) workPlan {
 	if state.joinPlan != nil {
 		// Joins plan multi-upstream convergence: the joinPlan renders its arms,
 		// the plan.OpJoin node, and the downstream chain into the same workPlan IR.
-		return state.joinPlan.buildJoinWorkPlan(state, spec)
+		return state.joinPlan.buildJoinWorkPlan(joinWorkPlanInputFromCompileState(state), spec)
 	}
 	intent := state.intent
 	outputs := planOutputs(intent.Destinations, state.outputFormatMap())
