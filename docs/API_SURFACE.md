@@ -33,7 +33,7 @@ outside this first-screen map.
 One-screen shape:
 
 ```
-goav.From(input)                          inputs: FileInput, URIInput, Input(provider), Source(fn)
+goav.From(input)                          inputs: FileInput, Input(provider), Source(fn)
   .Audio() / .Video() / .Stream()         select a stream (InputName/StreamID/StreamIndex/StreamName)
   .Decode() or .Copy()                    make packet/frame domain explicit
   .Resize() / .Resample() / .Do(stage)    frame-domain operations after Decode
@@ -225,9 +225,9 @@ against the constructors in `input.go`/`provider.go`/`source.go`,
 `destination.go`, `tap_ref.go`, `flow.go`/`branch.go`, `chain.go`,
 `watch.go`, `task_control.go`, `expert/expert.go`):
 
-- **Input vs Source vs provider.Source**: `FileInput`/`URIInput` are value
-  inputs over media you already hold; `Source(name, shape, fn)` is the
-  custom-push input where the application produces media through
+- **Input vs Source vs provider.Source**: `FileInput` is the value input over
+  media you already hold; `Source(name, shape, fn)` is the custom-push input
+  where the application produces media through
   `source.Push`; `provider.Source` is the transport extension point
   (`OpenSource`) that `Input(p)` turns into a recipe input. Value inputs,
   custom push sources, and transport providers are three doors into one

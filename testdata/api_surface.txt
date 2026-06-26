@@ -94,7 +94,6 @@ goav.StreamIndex
 goav.StreamName
 goav.Task
 goav.URI
-goav.URIInput
 goav.WrapSource
 goav.Write
 goav.Writer

@@ -16,14 +16,13 @@ import (
 	"github.com/thesyncim/goav/shape"
 )
 
-// InputSpec is one declared job input: a file, URI, custom source, or source
-// provider, plus the optional name and MIME facts the planner uses
-// before opening it. Construct one with FileInput, URIInput, Source, or
+// InputSpec is one declared job input: a file-like reader, custom source, or
+// source provider, plus the optional name and MIME facts the planner uses
+// before opening it. Construct one with FileInput, Source, or
 // Input; configure it with options (Name, MIME, Metadata) and decorate the
 // opened source with WrapSource. Packet/frame codec facts come from a custom
 // Source or provider SourceShape declaration. The zero value is intentionally
-// not a valid input; construct input specs with FileInput, URIInput, Source,
-// or Input.
+// not a valid input; construct input specs with FileInput, Source, or Input.
 type InputSpec struct {
 	origin   inputSpecOrigin
 	input    format.Input
@@ -83,8 +82,8 @@ func WrapSource(spec InputSpec, wrap func(pipeline.Source) pipeline.Source) Inpu
 	return spec
 }
 
-// inputOptionValue configures an input value (FileInput, URIInput, Source,
-// Input, or InputSpec.With). The direction-agnostic media options (Name, MIME,
+// inputOptionValue configures an input value (FileInput, Source, Input, or
+// InputSpec.With). The direction-agnostic media options (Name, MIME,
 // Metadata) satisfy it. It is sealed — only goav option constructors implement
 // it.
 type inputOptionValue interface {
@@ -120,18 +119,6 @@ func FileInput(name string, reader io.Reader, opts ...inputOptionValue) InputSpe
 	}), opts)
 }
 
-// URIInput declares an input opened by a registered format adapter from a
-// URI.
-func URIInput(uri string, opts ...inputOptionValue) InputSpec {
-	return applyInputOptions(inputSpecHandle(InputSpec{
-		input: format.Input{
-			Name: uri,
-			URI:  uri,
-		},
-		name: uri,
-	}), opts)
-}
-
 func (s InputSpec) formatInput() format.Input {
 	input := s.input
 	input.Realtime = input.Realtime || s.realtime
@@ -162,7 +149,6 @@ func (s InputSpec) validate() error {
 			Reason:    "empty input spec",
 			fixes: buildErrorFixes([]string{
 				"use goav.FileInput(name, reader) for file-like input",
-				"use goav.URIInput(uri) for URI-backed input",
 				"use goav.Source(name, shape, fn) for application-pushed packets",
 				"use goav.Input(provider) for realtime receive through a source provider",
 			}),
@@ -249,7 +235,6 @@ func (s InputSpec) validatePlainInput() error {
 		Reason:    "empty input spec",
 		fixes: buildErrorFixes([]string{
 			"use goav.FileInput(name, reader) for file-like input",
-			"use goav.URIInput(uri) for URI-backed input",
 			"use goav.Source(name, shape, fn) for application-pushed packets",
 			"use goav.Input(provider) for realtime receive through a source provider",
 		}),

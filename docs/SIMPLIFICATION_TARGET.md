@@ -162,7 +162,7 @@ specs are refused before planned or runtime branch mutation treats them as real
 branches. `Destination` handles now carry the same constructor-origin marker,
 so zero values and zero-derived option copies are refused before they can
 masquerade as writer, URI, sink, or custom outputs. `InputSpec` values now do
-the same for file, URI, custom source, and provider inputs, including
+the same for file-like reader, custom source, and provider inputs, including
 zero-derived options or wrappers. `Job` values now carry constructor origin too,
 so public zero jobs fail as
 unconstructed recipes with `goav.From(...)` guidance instead of blending into

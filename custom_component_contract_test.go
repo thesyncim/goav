@@ -942,26 +942,25 @@ func TestInputAndProviderSourceContracts(t *testing.T) {
 	}
 
 	metadata := av.Metadata{"transport": "custom"}
-	uri := URIInput("custom://input", MIME("application/x-custom"), Metadata(metadata))
-	if uri.origin != inputSpecOriginConstructed {
-		t.Fatalf("URIInput origin = %v, want constructed", uri.origin)
+	file := FileInput("custom.ogg", strings.NewReader(""), MIME("application/x-custom"), Metadata(metadata))
+	if file.origin != inputSpecOriginConstructed {
+		t.Fatalf("FileInput origin = %v, want constructed", file.origin)
 	}
-	if uri.input.URI != "custom://input" ||
-		uri.input.Name != "custom://input" ||
-		uri.input.MIMEType != "application/x-custom" ||
-		uri.input.Metadata["transport"] != "custom" {
-		t.Fatalf("URIInput = %+v", uri.input)
+	if file.input.Name != "custom.ogg" ||
+		file.input.Reader == nil ||
+		file.input.MIMEType != "application/x-custom" ||
+		file.input.Metadata["transport"] != "custom" {
+		t.Fatalf("FileInput = %+v", file.input)
 	}
 	metadata["transport"] = "mutated"
-	if uri.input.Metadata["transport"] != "custom" {
-		t.Fatalf("URIInput metadata was not cloned: %+v", uri.input.Metadata)
+	if file.input.Metadata["transport"] != "custom" {
+		t.Fatalf("FileInput metadata was not cloned: %+v", file.input.Metadata)
 	}
-	if wrapped := WrapSource(uri, nil); len(wrapped.wraps) != 0 {
+	if wrapped := WrapSource(file, nil); len(wrapped.wraps) != 0 {
 		t.Fatalf("WrapSource nil added wraps: %+v", wrapped.wraps)
 	}
 	for name, input := range map[string]InputSpec{
-		"file":     FileInput("input.ogg", strings.NewReader("")),
-		"uri":      uri,
+		"file":     file,
 		"source":   Source("generated", shape.Packet(av.MediaAudio, av.CodecOpus), func(context.Context, sourcepkg.Push) error { return nil }),
 		"provider": Input(&componentSourceProvider{spec: shape.Packet(av.MediaAudio, av.CodecOpus)}),
 	} {
