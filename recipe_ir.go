@@ -635,6 +635,7 @@ func joinIntentFromSpec(job *Job, spec *joinSpec) intent {
 func recipeCompileStateFromSnapshot(snapshot recipeCompileSnapshot, options recipeCompileOptions) recipeCompileState {
 	return recipeCompileState{
 		operation:                    recipeCompileOperation(snapshot),
+		recipe:                       cloneRecipeIRRecipe(snapshot.recipe),
 		intent:                       intentFromRecipeIR(snapshot.recipe),
 		inputFacts:                   cloneRecipeIRInputs(snapshot.recipe.Inputs),
 		destinationKinds:             recipeIRDestinationKinds(snapshot.recipe),
@@ -661,12 +662,34 @@ func recipeCompileStateFromSnapshot(snapshot recipeCompileSnapshot, options reci
 	}
 }
 
+func cloneRecipeIRRecipe(recipe recipeir.Recipe) recipeir.Recipe {
+	out := recipe
+	out.Inputs = cloneRecipeIRInputs(recipe.Inputs)
+	out.Streams = cloneRecipeIRStreams(recipe.Streams)
+	out.Destinations = append([]recipeir.Destination(nil), recipe.Destinations...)
+	out.StreamRules = cloneRecipeIRStreamRules(recipe.StreamRules)
+	return out
+}
+
 func cloneRecipeIRInputs(inputs []recipeir.Input) []recipeir.Input {
 	if len(inputs) == 0 {
 		return nil
 	}
 	out := make([]recipeir.Input, len(inputs))
 	copy(out, inputs)
+	return out
+}
+
+func cloneRecipeIRStreams(streams []recipeir.Stream) []recipeir.Stream {
+	if len(streams) == 0 {
+		return nil
+	}
+	out := make([]recipeir.Stream, len(streams))
+	for i := range streams {
+		out[i] = streams[i]
+		out[i].Operations = cloneRecipeIROperations(streams[i].Operations)
+		out[i].Outputs = append([]recipeir.OutputRef(nil), streams[i].Outputs...)
+	}
 	return out
 }
 

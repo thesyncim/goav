@@ -37,6 +37,7 @@ type recipeResolved struct {
 
 type recipeCompileState struct {
 	operation       string
+	recipe          recipeir.Recipe
 	intent          intent
 	runtime         *Runtime
 	runtimeExplicit bool
@@ -1305,12 +1306,25 @@ func validateRecipeOperationShapesPass() recipeCompilePass {
 			if solved == nil {
 				continue
 			}
-			state.intent.Streams[i].Operations = solved
+			state.setSolvedStreamOperations(i, solved)
 			state.shapeDiagnostics = append(state.shapeDiagnostics, diagnostics...)
 			state.patchBranchComposeOperations(stream.Name, solved)
 		}
 		return nil
 	}}
+}
+
+func (s *recipeCompileState) setSolvedStreamOperations(index int, solved []operationSpec) {
+	if s == nil || index < 0 {
+		return
+	}
+	solved = cloneOperationSpecs(solved)
+	if index < len(s.intent.Streams) {
+		s.intent.Streams[index].Operations = cloneOperationSpecs(solved)
+	}
+	if index < len(s.recipe.Streams) {
+		s.recipe.Streams[index].Operations = recipeIROperationsFromSpecs(solved)
+	}
 }
 
 // patchBranchComposeOperations re-points a pre-planned branch composition at

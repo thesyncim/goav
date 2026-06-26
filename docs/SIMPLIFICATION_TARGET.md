@@ -107,15 +107,17 @@ planning plus join work-plan rendering enter through explicit IR-derived
 handoffs instead of reading compile state directly. Normal work-plan rendering
 also now consumes a captured handoff rather than reaching back into compile
 state while it renders operations, branches, destinations, decisions, and
-diagnostics. Multi-stream job graph lowering now enters through a captured
-handoff before branch-compose graph construction, and single-stream packet-copy
-and decode graph lowerers now do the same before graph construction. Explicit
-branch-composition graph lowering also now uses a captured handoff with cloned
-branch-compose plan data. The compile state no longer stores the concrete join
-plan; graph-plan construction passes the selected join lowerer directly into
-work-plan rendering. The executable join lowerer still owns concrete arms and
-stages. Runtime attach/rebranch/detach and stream-rule attach/remove reactions
-now capture branch specs, destination facts, switch policy, attachment target,
+diagnostics; that handoff now reads inputs, streams, destinations, and
+solver-updated operation lists from the captured recipe IR instead of the
+legacy intent mirror. Multi-stream job graph lowering now enters through a
+captured handoff before branch-compose graph construction, and single-stream
+packet-copy and decode graph lowerers now do the same before graph construction.
+Explicit branch-composition graph lowering also now uses a captured handoff
+with cloned branch-compose plan data. The compile state no longer stores the
+concrete join plan; graph-plan construction passes the selected join lowerer
+directly into work-plan rendering. The executable join lowerer still owns
+concrete arms and stages. Runtime attach/rebranch/detach and stream-rule
+attach/remove reactions now capture branch specs, destination facts, switch policy, attachment target,
 and disposition in explicit handoffs before graph locking and patch planning.
 Runtime attach inputs now carry each branch's captured runtime recipe and
 validated destinations as one branch record, so patch planning no longer

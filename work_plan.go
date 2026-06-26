@@ -6,6 +6,7 @@ import (
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
+	"github.com/thesyncim/goav/internal/recipeir"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/plan"
 	"github.com/thesyncim/goav/shape"
@@ -130,18 +131,21 @@ func workPlanInputFromCompileState(state *recipeCompileState) workPlanInput {
 	if state == nil {
 		return workPlanInput{}
 	}
-	intent := state.intent
-	outputs := planOutputs(intent.Destinations, state.outputFormatMap())
-	// The work plan plans every branch straight from intent.Streams:
-	// branchCompositionJob.plan() populates each branch streamIntent with its
+	recipe := state.recipe
+	if recipe.Kind == "" {
+		recipe = recipeIRFromIntent(state.intent, recipeir.KindJob)
+	}
+	outputs := planOutputsFromRecipeIR(recipe.Destinations, state.outputFormatMap())
+	// The work plan plans every branch straight from recipe streams:
+	// branchCompositionJob.plan() populates each branch recipe stream with its
 	// full (shared-op-inherited) operation list, so the parallel
 	// branchComposePlan is only the Build-side lowerer input.
-	branches, decisions := planBranches(state, outputs)
+	branches, decisions := planBranchesFromRecipeIR(state, recipe, outputs)
 	outputs = planOutputsWithBranches(outputs, branches)
 	return workPlanInput{
-		name:        firstNonEmpty(intent.Name, state.operation, "job"),
-		inputs:      workInputsFromIntent(intent.Inputs),
-		streams:     workStreamsFromIntent(intent.Streams),
+		name:        firstNonEmpty(recipe.Name, state.operation, "job"),
+		inputs:      workInputsFromRecipeIR(recipe.Inputs),
+		streams:     workStreamsFromRecipeIR(recipe.Streams),
 		branches:    clonePlannerBranches(branches),
 		outputs:     clonePlannerOutputs(outputs),
 		decisions:   clonePlanDecisions(decisions),
@@ -228,7 +232,25 @@ func workInputsFromIntent(inputs []inputIntent) []workInput {
 	return out
 }
 
-func workStreamsFromIntent(streams []streamIntent) []workStream {
+func workInputsFromRecipeIR(inputs []recipeir.Input) []workInput {
+	if len(inputs) == 0 {
+		return nil
+	}
+	out := make([]workInput, 0, len(inputs))
+	for i := range inputs {
+		input := inputs[i]
+		out = append(out, workInput{
+			Name:      firstNonEmpty(input.Name, input.URI, fmt.Sprintf("input-%d", i)),
+			Protocol:  input.Protocol,
+			Realtime:  input.Realtime,
+			Codec:     input.Codec.ID,
+			CodecSpec: cloneCodecSpec(input.Codec),
+		})
+	}
+	return out
+}
+
+func workStreamsFromRecipeIR(streams []recipeir.Stream) []workStream {
 	if len(streams) == 0 {
 		return nil
 	}
@@ -237,10 +259,32 @@ func workStreamsFromIntent(streams []streamIntent) []workStream {
 		stream := streams[i]
 		out = append(out, workStream{
 			Name:         stream.Name,
-			Select:       stream.Select,
-			Operations:   cloneOperationSpecs(stream.Operations),
-			Destinations: append([]string(nil), stream.Destinations...),
+			Select:       stream.Selector,
+			Operations:   operationSpecsFromRecipeIROperations(stream.Operations),
+			Destinations: recipeIROutputRefsToStrings(stream.Outputs),
 		})
+	}
+	return out
+}
+
+func operationSpecsFromRecipeIROperations(operations []recipeir.Operation) []operationSpec {
+	if len(operations) == 0 {
+		return nil
+	}
+	out := make([]operationSpec, 0, len(operations))
+	for i := range operations {
+		out = append(out, operationSpecFromRecipeIR(operations[i]))
+	}
+	return out
+}
+
+func recipeIROutputRefsToStrings(refs []recipeir.OutputRef) []string {
+	if len(refs) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(refs))
+	for i := range refs {
+		out = append(out, string(refs[i]))
 	}
 	return out
 }

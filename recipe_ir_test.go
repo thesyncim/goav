@@ -201,6 +201,9 @@ func TestNormalWorkPlanConsumesHandoff(t *testing.T) {
 		Code:    "captured",
 		Details: []string{"before"},
 	}}
+	state.intent.Inputs[0].Name = "mutated-input"
+	state.intent.Streams = nil
+	state.intent.Destinations = nil
 	input := workPlanInputFromCompileState(&state)
 
 	state.operation = "mutated"
@@ -583,6 +586,7 @@ func TestNormalWorkPlanUsesHandoff(t *testing.T) {
 	for _, forbidden := range []string{
 		"planOutputs(intent.Destinations",
 		"planBranches(state",
+		"workInputsFromIntent(intent.Inputs)",
 		"workStreamsFromIntent(intent.Streams)",
 	} {
 		if strings.Contains(buildBody, forbidden) {
@@ -591,9 +595,12 @@ func TestNormalWorkPlanUsesHandoff(t *testing.T) {
 	}
 	workInputBody := sourceFunctionBody(t, source, "workPlanInputFromCompileState")
 	for _, required := range []string{
-		"outputs := planOutputs(intent.Destinations, state.outputFormatMap())",
-		"branches, decisions := planBranches(state, outputs)",
+		"recipe := state.recipe",
+		"outputs := planOutputsFromRecipeIR(recipe.Destinations, state.outputFormatMap())",
+		"branches, decisions := planBranchesFromRecipeIR(state, recipe, outputs)",
 		"outputs = planOutputsWithBranches(outputs, branches)",
+		"inputs:      workInputsFromRecipeIR(recipe.Inputs)",
+		"streams:     workStreamsFromRecipeIR(recipe.Streams)",
 		"diagnostics: clonePlanDiagnostics(state.shapeDiagnostics)",
 	} {
 		if !strings.Contains(workInputBody, required) {

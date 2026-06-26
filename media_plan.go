@@ -7,6 +7,7 @@ import (
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/format"
+	"github.com/thesyncim/goav/internal/recipeir"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/plan"
 	"github.com/thesyncim/goav/shape"
@@ -70,6 +71,17 @@ func planOutputs(outputs []destinationIntent, formats map[string]av.FormatID) []
 		})
 	}
 	return out
+}
+
+func planOutputsFromRecipeIR(outputs []recipeir.Destination, formats map[string]av.FormatID) []planOutput {
+	if len(outputs) == 0 {
+		return nil
+	}
+	intents := make([]destinationIntent, 0, len(outputs))
+	for i := range outputs {
+		intents = append(intents, destinationIntentFromRecipeIR(outputs[i]))
+	}
+	return planOutputs(intents, formats)
 }
 
 // planBranchFromStreamIntent plans one branch from a resolved stream intent —
@@ -142,6 +154,24 @@ func planBranches(state *recipeCompileState, outputs []planOutput) ([]planBranch
 		return planCopyBranches(state, outputs)
 	}
 	return planBranchesFromStreamIntents(state, state.intent.Streams, outputs)
+}
+
+func planBranchesFromRecipeIR(state *recipeCompileState, recipe recipeir.Recipe, outputs []planOutput) ([]planBranch, []planDecision) {
+	if len(recipe.Streams) == 0 {
+		return planCopyBranches(state, outputs)
+	}
+	return planBranchesFromStreamIntents(state, streamIntentsFromRecipeIR(recipe.Streams), outputs)
+}
+
+func streamIntentsFromRecipeIR(streams []recipeir.Stream) []streamIntent {
+	if len(streams) == 0 {
+		return nil
+	}
+	out := make([]streamIntent, 0, len(streams))
+	for i := range streams {
+		out = append(out, streamIntentFromRecipeIR(streams[i]))
+	}
+	return out
 }
 
 // planBranchesFromStreamIntents plans every branch from a resolved streamIntent

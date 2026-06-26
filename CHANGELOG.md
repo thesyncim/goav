@@ -80,6 +80,9 @@ methodology changes, and migration notes.
 - Switched runtime attach patch planning to walk captured `recipeir.Operation`
   values directly instead of rehydrating root operation specs after branch
   capture.
+- Carried the full captured recipe IR through compile state and made normal
+  work-plan handoff inputs, streams, destinations, and solver-updated
+  operations read from that recipe boundary.
 - Updated front-door docs to use task capability vocabulary for runtime attach
   examples instead of teaching `LiveTask` as the normal user type, and to
   describe `Watch` as the primary observation surface.
