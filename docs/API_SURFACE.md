@@ -14,7 +14,7 @@ export appears, the diff has to say so out loud.
 
 The tiers are a reader map:
 
-- **A. Grammar**: the first API an application should learn.
+- **A. Front-door grammar**: the first API an application should learn.
 - **B. Extension points**: interfaces and options for sources, destinations,
   codecs, formats, filters, joins, controls, and tests.
 - **C. Expert tier**: graph handles and lower-level building blocks for
@@ -22,37 +22,26 @@ The tiers are a reader map:
 - **D. Leakage**: public things that should not be public. This section should
   stay empty.
 
-## A. The Grammar
+## A. Front-door Grammar
 
 Most users should be able to stop here. A recipe starts with media, narrows to
-the streams that matter, applies ordered operations, names any attach points,
-branches when work diverges, and ends in destinations.
+the streams that matter, declares the packet/frame domain and ordered
+operations, optionally fans out, and ends in destinations. Advanced live,
+reusable, converged-stream, inspection, and expert capabilities are governed
+outside this first-screen map.
 
 One-screen shape:
 
 ```
 goav.From(input)                          inputs: FileInput, URIInput, Input(provider), Source(fn)
   .Audio() / .Video() / .Stream()         select a stream (InputName/StreamID/StreamIndex/StreamName)
-  .Decode() .Copy() .Resize() .Resample() operations are chain methods
-  .Do(stage) .Shape() .Auto() .Require() .Prefer()
-  .Sync(flow.Sync("room", ...))            shared packet/frame timeline gates
+  .Decode() or .Copy()                    make packet/frame domain explicit
+  .Resize() / .Resample() / .Do(stage)    frame-domain operations after Decode
   .Encode(codec.VP9(codec.Bitrate(...)))  codec specs from the codec package
-  .Tap(goav.Tap|FrameTap|PacketTap)       named attach points
-  .Branches(goav.Branch("x")...To(dst))   fan out; BranchSpec also drives task.Attach
-  input.Stream(av.Stream{ID: ...})        attach anchor for app-owned dynamic tracks
+  .Branches(goav.Branch("x")...To(dst))   explicit fanout when work diverges
   .To(Write|URI|Writer|Custom|Sink|Mux)   destinations; Mux(name, destination) = explicit mux/sink group
-  .OnStream(source.MatchMedia|source.MatchCodec|...)    dynamic-stream rules; OnRemove controls detach outcome
-goav.Mix/Composite/Select(arms) / Join(name, stage, arms)   N arms -> one stream (JoinArm)
-goav.Flow("name")                         reusable operation list (Chain)
 job.Describe(); adapter-backed Explain/Build/Run use job.UseRuntime(rt), bundle.Describe/Build/Run
-Task: Run, Close; built runtime tasks also implement structural CloseContext(ctx)
-LiveTask explain: Explain
-LiveTask inspection: Describe, Taps, Snapshot -> snapshot.*, Stats
-LiveTask mutation: Attach/Detach(lifecycle.DrainBranch|AbortBranch); Attachment.Rebranch
-         (lifecycle.SwitchAt(lifecycle.NextFrame|lifecycle.NextKeyframe|lifecycle.AtMediaTime),
-          lifecycle.DrainOldBranch|lifecycle.AbortOldBranch)
-LiveTask control: Control(control.Control values from typed constructors, .AtTap)
-LiveTask events: Watch(inspect.EventFilter); inspect.Subscribe/Snapshot/Stats/Render bridge task capabilities
+Task: Run, Close
 goav.New(goavruntime.Option...) -> (*Runtime, error); goav.MustNew(...) -> bare Runtime; bundle.MustNew(...) -> bundled Runtime; job.UseRuntime(rt)
 errors: *goav.BuildError{Family: errcode.FamilyX, Code: errcode.X, Fields: []goav.Detail, Fixes: []goav.Fix, ...} matched with errors.As/Is; branch on Family first; Detail(key) for typed facts
 ```
@@ -60,33 +49,22 @@ errors: *goav.BuildError{Family: errcode.FamilyX, Code: errcode.X, Fields: []goa
 The checked operation reference is
 [`docs/OPERATIONS.md`](OPERATIONS.md). It is the human-readable contract for
 each operation: input shape, output shape, allowed domain, inserted
-conversions, primary refusals, and runtime attach behavior.
+conversions, primary refusals, and advanced/runtime notes.
 
-Applications also read these vocabulary packages:
+Normal recipes also read these vocabulary packages:
 
-- `control`: live task control vocabulary (`Control`, `Keyframe`, `Rate`,
-  `Seek`, `Segment`, `SetBitrate`, `SelectActive`, `Deliver`, `Must`).
-- `inspect`: event watch filters (`EventFilter`, `WatchTypes`,
-  `WatchStream`) plus structural helpers (`Subscribe`, `Snapshot`, `Stats`,
-  `Render`) that avoid importing the root package.
 - `errcode`: the error-code catalog (stable `Family` categories plus one
   detailed `Code` per refusal class).
-- `plan`: everything `Explain` reports back.
-- `snapshot`: point-in-time task/branch/destination/tap views.
-- `lifecycle`: task/branch/destination states.
 - `shape`: shape specs and `.Auto` policies (`AllowResample`, ...);
   `shape.Format` pins open-ended container or transport ids for custom
   adapters.
-- `flow`: branch buffer policies (`Blocking`, `DropOldest`, ...), shared
-  timeline sync policies (`Sync`, `SyncTolerance`, `SyncDropLate`), and the
-  `DropReason*` keys for reading drop counters.
-- `runtime`: per-runtime construction options (`WithEncoder`, `WithClock`,
-  `WithBufferPolicy`, ...).
 - `component`: custom `.Do(...)` and direct sink adapters
   (`PacketFunc`, `FrameFunc`, `EventFunc`, `SinkFunc`, `Emit`, `Message`).
-- `source`: custom source callbacks and dynamic stream matchers
-  (`Func`, `Push`, `Result`, `MatchMedia`, `MatchCodec`, ...).
+- `source`: custom source callbacks (`Func`, `Push`, `Result`).
 - `av` identifiers: media/codec/format/protocol ids, event types, metadata.
+
+Advanced governed vocabulary lives in the focused docs where it is needed:
+`control`, `inspect`, `plan`, `snapshot`, `lifecycle`, `flow`, and `runtime`.
 
 ## B. Extension Points
 

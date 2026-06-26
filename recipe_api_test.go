@@ -1704,6 +1704,50 @@ func TestReadmeUsesBranchDestinationVocabulary(t *testing.T) {
 	}
 }
 
+func TestAPISurfaceFrontDoorGrammarAvoidsAdvancedSurfaces(t *testing.T) {
+	body, err := os.ReadFile(filepath.Join("docs", "API_SURFACE.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(body)
+	start := strings.Index(text, "## A. Front-door Grammar")
+	end := strings.Index(text, "## B. Extension Points")
+	if start < 0 || end < 0 || end <= start {
+		t.Fatalf("API surface grammar section not found")
+	}
+	section := text[start:end]
+	for _, required := range []string{
+		"goav.From(input)",
+		".Decode() or .Copy()",
+		".Branches(goav.Branch(\"x\")...To(dst))",
+		".To(Write|URI|Writer|Custom|Sink|Mux)",
+		"Task: Run, Close",
+		"*goav.BuildError",
+	} {
+		if !strings.Contains(section, required) {
+			t.Fatalf("API surface front-door grammar should include %q", required)
+		}
+	}
+	for _, advanced := range []string{
+		"goav.Mix/Composite/Select",
+		"Join(name, stage, arms)",
+		"goav.Flow(\"name\")",
+		"input.Stream(av.Stream",
+		".OnStream(",
+		"BranchSpec also drives task.Attach",
+		"LiveTask",
+		"Mutable.Attach",
+		"Attachment.Rebranch",
+		"Watch(inspect.EventFilter)",
+		"SelectActive",
+		"Snapshot ->",
+	} {
+		if strings.Contains(section, advanced) {
+			t.Fatalf("API surface front-door grammar should keep %s in advanced docs", advanced)
+		}
+	}
+}
+
 func TestFrontDoorDocsPreferCopyVerb(t *testing.T) {
 	for _, file := range []string{"docs/API_SURFACE.md", "docs/OPERATIONS.md"} {
 		body, err := os.ReadFile(file)
