@@ -207,8 +207,8 @@ func sortedSurface(set map[string]bool) []string {
 }
 
 // TestReadmeFirstScreenAvoidsGraphInternals enforces the front-door rule on
-// the README's first screen — everything through the close of the fifth Go
-// example. The first thing a reader learns must be the grammar alone: no
+// the README's opening screen. The first thing a reader learns must be the
+// grammar alone: no
 // pipeline node types, no registries or runtime adapter options, no buffer
 // ownership, no expert graph handles. The whole-file guard
 // (TestReadmeKeepsAdvancedRuntimeKnobsOutOfFrontDoor) stays broader; this one
@@ -250,22 +250,21 @@ func TestReadmeStaysFrontDoorSized(t *testing.T) {
 	}
 	text := string(body)
 	lines := strings.Count(text, "\n")
-	if lines > 360 {
-		t.Fatalf("README has %d lines, want <= 360; move advanced material into docs/", lines)
+	if lines > 120 {
+		t.Fatalf("README has %d lines, want <= 120; move advanced material into docs/", lines)
 	}
 	for _, required := range []string{
 		"## Install",
 		"## 30-Second Examples",
 		"## Common Recipes",
 		"## Why goav",
-		"## Capability Matrix",
-		"## Stability Matrix",
 		"## Deep Dives",
 		"img.shields.io/badge/go-1.26%2B",
 		"CHANGELOG.md",
 		"docs/EXTENSION_COOKBOOK.md",
 		"docs/PERFORMANCE.md",
 		"docs/RELEASING.md",
+		"docs/V1_CREDIBILITY_AUDIT.md",
 	} {
 		if !strings.Contains(text, required) {
 			t.Fatalf("README front door missing %q", required)

@@ -459,8 +459,8 @@ func TestAutoWorksInFlows(t *testing.T) {
 	}
 }
 
-// TestReadmeAutoResampleExampleBuilds verifies the README Shape Solving
-// example against the default runtime: the inserted resample shows up in the
+// TestReadmeAutoResampleExampleBuilds verifies the documented shape-solving
+// recipe against the default runtime: the inserted resample shows up in the
 // plan and the planned spec equals the built graph.
 func TestReadmeAutoResampleExampleBuilds(t *testing.T) {
 	mic := solverTestAudioSource("mic", 44_100, codec.Stereo, av.SampleFormatS16)

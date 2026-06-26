@@ -8,8 +8,8 @@ files, tests, and workflows that carry the evidence.
 ## Front Door
 
 - README is the adoption front door: what goav is, install, one 30-second
-  example, five common recipes, why goav, capability matrix, stability matrix,
-  and deep links.
+  example, common recipes, why goav, and deep links. Longer live/runtime and
+  extension walkthroughs live in focused docs.
 - Evidence: `README.md`, `TestReadmeStaysFrontDoorSized`,
   `TestReadmeFirstScreenAvoidsGraphInternals`,
   `TestReadmeGoBlocksCompileAsExternalConsumer`.

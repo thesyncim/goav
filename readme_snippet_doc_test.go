@@ -74,17 +74,9 @@ import (
 	"context"
 	"io"
 	"testing"
-	"time"
 
 	"github.com/thesyncim/goav"
-	"github.com/thesyncim/goav/av"
-	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/bundle"
-	"github.com/thesyncim/goav/component"
-	"github.com/thesyncim/goav/flow"
-	"github.com/thesyncim/goav/lifecycle"
-	"github.com/thesyncim/goav/shape"
-	"github.com/thesyncim/goav/source"
 )
 
 `)
@@ -99,43 +91,25 @@ import (
 	return out.String()
 }
 
-func TestReadmeLiveExamplesUseLiveSourceSemantics(t *testing.T) {
-	body, err := os.ReadFile("README.md")
+func TestUseCaseLiveExamplesUseLiveSourceSemantics(t *testing.T) {
+	body, err := os.ReadFile(filepath.Join("docs", "USE_CASES.md"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	text := string(body)
-	for _, section := range []struct {
-		summary  string
-		required []string
-	}{
-		{
-			summary: "Live camera track: archive steadily, keep preview low-latency",
-			required: []string{
-				"goav.Source(",
-				"make(chan *av.Packet)",
-				"flow.Sync(",
-				"goav.Codec(codec.VP8())",
-			},
-		},
-		{
-			summary: "Dynamic WebRTC/RTP tracks: attach branches as streams appear",
-			required: []string{
-				"av.EventStreamAdded",
-				"av.EventStreamRemoved",
-				"packet.StreamID = camera.ID",
-				"goav.OnRemove(lifecycle.DrainBranch())",
-			},
-		},
+	for _, required := range []string{
+		"## Live Audio Rooms",
+		"`EventStreamAdded` / `EventStreamRemoved`",
+		"`input.Stream(track)`",
+		"lifecycle.DrainBranch()",
+		"## Custom Components",
+		"goav.Source(\"generated\"",
+		"source.Push",
+		"shape.Packet",
+		"push.Packet",
 	} {
-		block := readmeDetailsBlock(t, text, section.summary)
-		if strings.Contains(block, "goav.FileInput(") {
-			t.Fatalf("%s example uses FileInput; live/runtime examples should model live sources", section.summary)
-		}
-		for _, required := range section.required {
-			if !strings.Contains(block, required) {
-				t.Fatalf("%s example missing %q", section.summary, required)
-			}
+		if !strings.Contains(text, required) {
+			t.Fatalf("docs/USE_CASES.md live/custom source examples missing %q", required)
 		}
 	}
 }
@@ -166,17 +140,4 @@ func markdownCodeBlocks(text, lang string) []string {
 		}
 	}
 	return blocks
-}
-
-func readmeDetailsBlock(t *testing.T, text string, summary string) string {
-	t.Helper()
-	start := strings.Index(text, "<summary><strong>"+summary+"</strong></summary>")
-	if start < 0 {
-		t.Fatalf("README details block %q not found", summary)
-	}
-	end := strings.Index(text[start:], "</details>")
-	if end < 0 {
-		t.Fatalf("README details block %q is missing </details>", summary)
-	}
-	return text[start : start+end]
 }

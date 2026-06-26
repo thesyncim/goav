@@ -7,17 +7,12 @@
 [![Status](https://img.shields.io/badge/status-pre--v1-orange)](docs/ROADMAP.md)
 [![Release Notes](https://img.shields.io/badge/release_notes-CHANGELOG-blue)](CHANGELOG.md)
 
-Build media workflows that your Go application can validate, run, and change
-while they are alive.
+Build media recipes inside Go services: describe the work, validate it before
+resources open, then run it with explicit adapters.
 
-`goav` is a small recipe grammar over app-owned media and explicit adapter
-runtimes. The root package is for describing media work: input, stream
-selection, operations, taps, branches, destinations, flows, and task lifecycle.
-Bundled adapters live in `goav/bundle`; live controls live in `goav/control`;
-observation helpers live in `goav/inspect`.
-
-Use it when media belongs inside a Go service and you need structured build
-errors, in-process events, runtime branches, or app-owned sources and sinks.
+`goav` keeps the front door small: inputs, stream selection, operations,
+branches, destinations, flows, and task lifecycle. Bundled adapters live in
+`goav/bundle`; deeper runtime control and extension seams are linked below.
 
 ## Install
 
@@ -27,7 +22,7 @@ go get github.com/thesyncim/goav
 
 ## 30-Second Examples
 
-Start with one packet-preserving recording:
+Record packets without decoding:
 
 ```go
 return bundle.Run(ctx, goav.From(goav.FileInput("input.ivf", in)).
@@ -36,163 +31,44 @@ return bundle.Run(ctx, goav.From(goav.FileInput("input.ivf", in)).
 )
 ```
 
-The front-door vocabulary is intentionally small:
-
-- **Input**: `FileInput`, `URIInput`, `Input(provider)`, or `Source`.
-- **Stream**: `.Audio()`, `.Video()`, or a stream matcher.
-- **Operation**: `.Decode()`, `.Copy()`, `.Resize()`, `.Resample()`, `.Do(stage)`, `.Encode(codec)`, `.Tap(...)`.
-- **Tap**: `goav.FrameTap(...)` or `goav.PacketTap(...)` names a point for later branches.
-- **Branch**: `Branches(goav.Branch(...))` fans one media point into several outcomes.
-- **Destination**: `goav.Write(...)`, `goav.Writer(...)`, `goav.Sink(...)`, `goav.Custom(...)`, `goav.URI(...)`, or `goav.Mux(name, destination)` for explicit sharing.
-- **Flow**: `goav.Flow(...)` is reusable operation text with no source or destination.
-- **Task**: `Run` and `Close`; richer live behavior is behind opt-in interfaces.
-
-Use `goav.Mux(name, destination)` when several branches should feed one mux,
-sink group, or transactional writer. Reusing the same ungrouped destination
-value is rejected so grouping stays explicit.
+The normal path is visible in the recipe: call `.Decode()` before frame work,
+use `.Copy()` to stay packet-domain, and route results to `goav.Write(...)`,
+`goav.Writer(...)`, `goav.URI(...)`, `goav.Custom(...)`, or `goav.Sink(...)`.
 
 ## Common Recipes
 
-| I need to... | Recipe sketch | Go deeper |
-|---|---|---|
-| Record packets without decoding | `From(input).Copy().To(goav.Write(...))` | [Use cases](docs/USE_CASES.md) |
-| Record and preview from one stream | `.Branches(goav.Branch("archive").To(...), goav.Branch("preview").To(...))` | [Use cases](docs/USE_CASES.md) |
-| Decode, filter, and encode again | `.Decode().Resize(...)` or `.Resample(...)`, then `.Encode(codec)` | [Operations](docs/OPERATIONS.md) |
-| Attach diagnostics at runtime | `task.Attach(ctx, goav.Branch(...).From(goav.FrameTap(...)))` | [Control plane](docs/CONTROL_PLANE.md) |
-| Add app-owned media | `goav.Source(...)`, `goav.Input(provider)`, `goav.Sink(...)` | [Extension cookbook](docs/EXTENSION_COOKBOOK.md) |
+| Need | Shape | Details |
+| --- | --- | --- |
+| Packet record/remux | `From(input).Copy().To(goav.Write(...))` | [Use cases](docs/USE_CASES.md) |
+| Decode to app code | `From(input).Audio().Decode().To(goav.Sink(...))` | [Operations](docs/OPERATIONS.md) |
+| Transform and encode | `.Decode().Resize(...).Encode(codec)` or `.Decode().Resample(...).Encode(codec)` | [Operations](docs/OPERATIONS.md) |
+| Fan out one stream | `.Branches(goav.Branch("archive").To(...), goav.Branch("preview").To(...))` | [Use cases](docs/USE_CASES.md) |
+| Runtime attach point | `.Tap(goav.FrameTap("frames"))` or `.Tap(goav.PacketTap("packets"))` | [Control plane](docs/CONTROL_PLANE.md) |
+| Reusable operation list | `goav.Flow("preview").Video().Decode().Resize(...)` | [API surface](docs/API_SURFACE.md) |
+| Custom media boundary | `goav.Source(...)`, `goav.Input(provider)`, `goav.Sink(...)`, `goav.Custom(...)` | [Extension cookbook](docs/EXTENSION_COOKBOOK.md) |
 
-## Expandable Examples
-
-<details>
-<summary><strong>Live camera track: archive steadily, keep preview low-latency</strong></summary>
-
-```go
-cameraPackets := make(chan *av.Packet)
-roomSync := flow.Sync("room", flow.SyncTolerance(20*time.Millisecond))
-previewSync := flow.Sync("room", flow.SyncTolerance(20*time.Millisecond), flow.SyncDropLate())
-
-roomCamera := goav.Source("room-camera",
-    shape.Packet(av.MediaVideo, av.CodecVP8, shape.Realtime(true)),
-    func(ctx context.Context, push source.Push) error {
-        for {
-            select {
-            case <-ctx.Done():
-                return ctx.Err()
-            case packet, ok := <-cameraPackets:
-                if !ok {
-                    return push.EOS("room-camera")
-                }
-                if _, err := push.Packet(packet); err != nil {
-                    return err
-                }
-            }
-        }
-    },
-    goav.Codec(codec.VP8()),
-)
-
-previewTrack := goav.Sink(component.SinkFunc("preview-track", func(context.Context, component.Message) error {
-    return nil
-}))
-
-_, err := bundle.Build(ctx, goav.From(roomCamera).
-    Video().
-    Copy().
-    Sync(roomSync).
-    Branches(
-        goav.Branch("archive").Sync(roomSync).To(goav.Write("archive.ivf", out)),
-        goav.Branch("preview").Sync(previewSync).To(previewTrack),
-    ),
-)
-return err
-```
-
-</details>
-
-<details>
-<summary><strong>Dynamic WebRTC/RTP tracks: attach branches as streams appear</strong></summary>
-
-```go
-roomPackets := make(chan *av.Packet)
-camera := av.Stream{
-    ID: "camera", Type: av.MediaVideo, TimeBase: av.RTPTimeBase(90000),
-    Codec: av.CodecParameters{ID: av.CodecVP8, Type: av.MediaVideo, ClockRate: 90000},
-}
-
-transport := goav.Source("webrtc-room",
-    shape.Packet(av.MediaVideo, av.CodecVP8, shape.Realtime(true)),
-    func(ctx context.Context, push source.Push) error {
-        announced := camera
-        if _, err := push.Event(av.Event{Type: av.EventStreamAdded, Stream: &announced}); err != nil {
-            return err
-        }
-        for {
-            select {
-            case <-ctx.Done():
-                return ctx.Err()
-            case packet, ok := <-roomPackets:
-                if !ok {
-                    if _, err := push.Event(av.Event{Type: av.EventStreamRemoved, StreamID: camera.ID}); err != nil {
-                        return err
-                    }
-                    return push.EOS(camera.ID)
-                }
-                packet.StreamID = camera.ID
-                packet.Type = av.MediaVideo
-                if _, err := push.Packet(packet); err != nil {
-                    return err
-                }
-            }
-        }
-    },
-    goav.Codec(codec.VP8()),
-)
-
-_, err := bundle.Build(ctx, goav.From(transport).
-    OnStream(
-        source.MatchStreamID("camera"),
-        goav.Branch("record-camera").
-            Sync(flow.Sync("room", flow.SyncTolerance(20*time.Millisecond))).
-            Copy().
-            To(goav.Write("camera.ivf", out)),
-        goav.OnRemove(lifecycle.DrainBranch()),
-    ),
-)
-return err
-```
-
-</details>
+Use `goav.Mux(name, destination)` when several branches should feed one mux,
+sink group, or transactional writer. Repeated ungrouped destination names are
+rejected so sharing is explicit.
 
 ## Why goav
 
-goav keeps the recipe as Go data, validates it before resources open, and
-returns a task your application can observe and mutate while it runs. Use the
-root grammar first; import `bundle`, `control`, `inspect`, `provider`, `codec`,
-`format`, `filter`, or `expert` only when the workflow needs that seam.
-
-## Capability Matrix
-
-| Area | In tree today | What that means |
-|---|---|---|
-| Core runtime | recipes, task lifecycle, events, watch, snapshots, stats, attach, detach, rebranch, controls | Build one validated task, then inspect or change it while it runs. |
-| Extension points | sources, destinations, codecs, formats, filters, stages, joins, control hosts | Add capability per runtime, without global process state. |
-
-## Stability Matrix
-
-| Surface | Tier | What that means |
-|---|---|---|
-| Recipe grammar, `Task`, capability interfaces, `control`, `inspect`, `plan`, `snapshot`, `lifecycle`, `shape`, `flow`, `av` | Tier A | Deliberate and test-pinned, but still pre-v1. |
-| Provider, codec, format, filter, control-host, custom-stage, custom-join, and testing seams | Tier B | Documented extension points that can grow with capability. |
-| Expert graph and low-level components | Tier C | Supported for advanced composition, not the first API to learn. |
+- Recipes are Go data: `Describe` and `Explain` show the plan before resources
+  open.
+- Runtime adapters are explicit: use `bundle.Run` for the bundled set, or build
+  a custom runtime per service.
+- Build failures are structured `*goav.BuildError` values with stable families,
+  details, fixes, and causes.
+- App-owned sources, sinks, destinations, codecs, formats, filters, joins, and
+  controls plug in without global process state.
 
 ## Deep Dives
 
 | Topic | Start here |
-|---|---|
-| Recipes, branches, and live-room patterns | [Use cases](docs/USE_CASES.md) |
-| Operation rules and structured errors | [Operations](docs/OPERATIONS.md), [Errors](docs/ERRORS.md), [Error catalog](docs/ERROR_CATALOG.md) |
-| Runtime control and socket hosts | [Control plane](docs/CONTROL_PLANE.md), [control-plane host example](examples/control-plane-host) |
+| --- | --- |
+| Operation rules and shape errors | [Operations](docs/OPERATIONS.md), [Errors](docs/ERRORS.md), [Error catalog](docs/ERROR_CATALOG.md) |
+| Recipes, branches, live rooms, RTP, WebRTC | [Use cases](docs/USE_CASES.md) |
 | Extension authoring | [Extension cookbook](docs/EXTENSION_COOKBOOK.md), [Adapter authoring](docs/ADAPTER_AUTHORING.md), [Adapters](docs/ADAPTERS.md) |
 | Copyable examples | [custom source](examples/custom-source), [provider source](examples/provider-source), [custom destination](examples/custom-destination), [custom filter](examples/custom-filter), [transactional writer](examples/transactional-writer), [custom codec](examples/custom-codec), [custom join](examples/custom-join) |
-| Components and performance | [Components](docs/COMPONENTS.md), [Performance](docs/PERFORMANCE.md) |
-| Release process | [Repository trust](docs/REPOSITORY_TRUST.md), [Releasing](docs/RELEASING.md), [Compatibility](docs/COMPATIBILITY.md), [V1 audit](docs/V1_CREDIBILITY_AUDIT.md), [Roadmap](docs/ROADMAP.md) |
+| Runtime control and observation | [Control plane](docs/CONTROL_PLANE.md), [control-plane host](examples/control-plane-host), [Components](docs/COMPONENTS.md) |
+| Performance and release trust | [Performance](docs/PERFORMANCE.md), [Releasing](docs/RELEASING.md), [Compatibility](docs/COMPATIBILITY.md), [Repository trust](docs/REPOSITORY_TRUST.md), [V1 audit](docs/V1_CREDIBILITY_AUDIT.md) |

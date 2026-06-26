@@ -321,7 +321,7 @@ tomorrow is governed the day it lands.
 - `errors_pin_test.go`: every `BuildError` uses a catalog-derived
   `errcode.Family`, a catalog `errcode.Code`, and carries typed `Fields` or
   `Fixes`; legacy rendered details/fixes remain compatibility only.
-- README front door: first five examples stay on the grammar
+- README front door: opening examples stay on the grammar
   (`TestReadmeFirstScreenAvoidsGraphInternals`); advanced knobs stay out of
   the guide (`TestReadmeKeepsAdvancedRuntimeKnobsOutOfFrontDoor`).
 - Composability laws: `docs/COMPOSABILITY_LAWS.md` maps the front-door

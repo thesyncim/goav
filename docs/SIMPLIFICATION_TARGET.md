@@ -134,6 +134,10 @@ subscription rather than exposing the raw graph event channel. Recipe-built
 tasks now keep the same structured workflow report as pre-build `Explain`,
 with live graph and tap rows refreshed when task `Explain` is called.
 
+V1 rescope progress: README now meets the <=120 line target and acts as the
+adoption front door only; longer live/runtime and extension walkthroughs live
+in focused docs.
+
 Tap-anchor progress: `Inspectable.Taps()` now reports only typed anchors emitted
 by the planner or runtime attach path; graph node names such as `decode-*` and
 `select-*` no longer synthesize taps.

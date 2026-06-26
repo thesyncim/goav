@@ -11,6 +11,8 @@ methodology changes, and migration notes.
 
 ## Unreleased
 
+- Shrank the README under the pre-v1 120-line target and moved long
+  live/runtime walkthrough expectations into focused docs.
 - Stream chains now require an explicit `.Decode()` before frame-domain
   consumers (`.Do`, `.Resize`, `.Resample`, real `.Encode`, frame taps, and
   decoded-frame sinks). Use `.Copy()` when a chain should stay packet-domain.

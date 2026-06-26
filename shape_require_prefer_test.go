@@ -434,7 +434,7 @@ func TestPreferWorksInBranches(t *testing.T) {
 	}
 }
 
-// TestReadmeRequireExampleBuilds verifies the README Shape Errors example:
+// TestReadmeRequireExampleBuilds verifies the documented shape-error recipe:
 // .Require(...) under .Auto(shape.AllowResample()) builds against the default
 // runtime with the conversion inserted before the assertion.
 func TestReadmeRequireExampleBuilds(t *testing.T) {
