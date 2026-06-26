@@ -122,7 +122,7 @@ func TestExplainAdapterStatusContracts(t *testing.T) {
 	}{
 		{transformAdapterIncompatibleCode, "incompatible"},
 		{encodeAdapterUnavailableCode, "unavailable"},
-		{errcode.InputFormatUnknown, "unknown"},
+		{inputFormatUnknownCode, "unknown"},
 		{encodeAdapterMissingCode, "missing"},
 	}
 	for _, tt := range tests {

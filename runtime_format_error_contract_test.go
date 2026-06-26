@@ -38,7 +38,7 @@ func TestRuntimeFormatErrorContracts(t *testing.T) {
 		{
 			name:      "input probe",
 			err:       inputFormatProbeError(input, cause),
-			code:      errcode.InputFormatUnknown,
+			code:      inputFormatUnknownCode,
 			operation: "open input",
 			node:      "camera",
 			reason:    "input format could not be detected",
@@ -52,7 +52,7 @@ func TestRuntimeFormatErrorContracts(t *testing.T) {
 		{
 			name:      "input demuxer",
 			err:       inputDemuxerMissingError(input, av.FormatID("weird"), cause),
-			code:      errcode.InputDemuxerMissing,
+			code:      inputDemuxerMissingCode,
 			operation: "open input",
 			node:      "camera",
 			reason:    `format "weird" was detected but no demuxer is registered`,

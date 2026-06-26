@@ -19,8 +19,8 @@ func inputFormatProbeError(input format.Input, cause error) error {
 		"use goav.Input(provider) for realtime packet receive",
 	}
 	return &BuildError{
-		Family:    errcode.FamilyForCode(errcode.InputFormatUnknown),
-		Code:      errcode.InputFormatUnknown,
+		Family:    errcode.FamilyForCode(inputFormatUnknownCode),
+		Code:      inputFormatUnknownCode,
 		Operation: "open input",
 		Node:      demuxNodeName(input),
 		Reason:    "input format could not be detected",
@@ -40,8 +40,8 @@ func inputDemuxerMissingError(input format.Input, id av.FormatID, cause error) e
 		"call .UseRuntime(goav.MustNew(goavruntime.WithFormatAdapter(...))) when using a custom adapter bundle",
 	}
 	return &BuildError{
-		Family:    errcode.FamilyForCode(errcode.InputDemuxerMissing),
-		Code:      errcode.InputDemuxerMissing,
+		Family:    errcode.FamilyForCode(inputDemuxerMissingCode),
+		Code:      inputDemuxerMissingCode,
 		Operation: "open input",
 		Node:      demuxNodeName(input),
 		Reason:    "format " + quoteFormat(id) + " was detected but no demuxer is registered",

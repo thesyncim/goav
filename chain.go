@@ -19,8 +19,8 @@ func validateRecipeStreamSelector(operation string, node string, selector av.Str
 		return nil
 	}
 	return &BuildError{
-		Family:    errcode.FamilyForCode(errcode.StreamSelectorInvalid),
-		Code:      errcode.StreamSelectorInvalid,
+		Family:    errcode.FamilyForCode(streamSelectorInvalidCode),
+		Code:      streamSelectorInvalidCode,
 		Operation: operation,
 		Node:      node,
 		Reason:    "stream index must be non-negative",
@@ -44,8 +44,8 @@ func chainStepAfterEncodeError(operation string, node string, step string, encod
 		return chainStepOnPacketCopyError(operation, node, step)
 	}
 	return &BuildError{
-		Family:    errcode.FamilyForCode(errcode.StreamStepAfterEncode),
-		Code:      errcode.StreamStepAfterEncode,
+		Family:    errcode.FamilyForCode(streamStepAfterEncodeCode),
+		Code:      streamStepAfterEncodeCode,
 		Operation: operation,
 		Node:      node,
 		Reason:    "stream processing steps must be declared before the encoder",
@@ -330,8 +330,8 @@ func (b *jobStreamBuilder) requireFrameTapInput(stream *jobStreamBuild) bool {
 
 func frameSourceDecodeError(operation string, node string) error {
 	return &BuildError{
-		Family:    errcode.FamilyForCode(errcode.SourceShapeMismatch),
-		Code:      errcode.SourceShapeMismatch,
+		Family:    errcode.FamilyForCode(sourceShapeMismatchCode),
+		Code:      sourceShapeMismatchCode,
 		Operation: operation,
 		Node:      node,
 		Reason:    "frame-domain custom sources are already decoded frames",
@@ -349,8 +349,8 @@ func frameSourceDecodeError(operation string, node string) error {
 
 func frameSourceCopyError(operation string, node string) error {
 	return &BuildError{
-		Family:    errcode.FamilyForCode(errcode.SourceShapeMismatch),
-		Code:      errcode.SourceShapeMismatch,
+		Family:    errcode.FamilyForCode(sourceShapeMismatchCode),
+		Code:      sourceShapeMismatchCode,
 		Operation: operation,
 		Node:      node,
 		Reason:    "frame-domain custom sources cannot use packet copy",

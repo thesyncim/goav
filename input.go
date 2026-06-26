@@ -141,8 +141,8 @@ func (s InputSpec) formatInput() format.Input {
 func (s InputSpec) validate() error {
 	if s.err != nil {
 		return &BuildError{
-			Family:    errcode.FamilyForCode(errcode.InputInvalid),
-			Code:      errcode.InputInvalid,
+			Family:    errcode.FamilyForCode(inputInvalidCode),
+			Code:      inputInvalidCode,
 			Operation: "build input",
 			Node:      firstNonEmpty(s.name, s.input.Name, s.input.URI, "input"),
 			Reason:    s.err.Error(),
@@ -155,8 +155,8 @@ func (s InputSpec) validate() error {
 	}
 	if s.origin != inputSpecOriginConstructed {
 		return &BuildError{
-			Family:    errcode.FamilyForCode(errcode.InputInvalid),
-			Code:      errcode.InputInvalid,
+			Family:    errcode.FamilyForCode(inputInvalidCode),
+			Code:      inputInvalidCode,
 			Operation: "build input",
 			Node:      firstNonEmpty(s.name, s.input.Name, s.input.URI, "input"),
 			Reason:    "empty input spec",
@@ -182,8 +182,8 @@ func (s InputSpec) validateCustomSource() error {
 	node := firstNonEmpty(s.name, s.input.Name, "source")
 	if s.source.fn == nil {
 		return &BuildError{
-			Family:    errcode.FamilyForCode(errcode.SourceCallbackMissing),
-			Code:      errcode.SourceCallbackMissing,
+			Family:    errcode.FamilyForCode(sourceCallbackMissingCode),
+			Code:      sourceCallbackMissingCode,
 			Operation: "build input",
 			Node:      node,
 			Reason:    "custom source has no push callback",
@@ -197,8 +197,8 @@ func (s InputSpec) validateCustomSource() error {
 	spec := normalizeCustomSourceShape(node, s.source.shape)
 	if spec.Domain != shape.DomainPacket && spec.Domain != shape.DomainFrame && spec.Domain != shape.DomainEvent {
 		return &BuildError{
-			Family:    errcode.FamilyForCode(errcode.SourceShapeUnsupported),
-			Code:      errcode.SourceShapeUnsupported,
+			Family:    errcode.FamilyForCode(sourceShapeUnsupportedCode),
+			Code:      sourceShapeUnsupportedCode,
 			Operation: "build input",
 			Node:      node,
 			Reason:    "custom recipe sources currently produce packet-domain, frame-domain, or event-domain media",
@@ -216,8 +216,8 @@ func (s InputSpec) validateCustomSource() error {
 	}
 	if spec.Domain != shape.DomainEvent && spec.MediaKind == "" {
 		return &BuildError{
-			Family:    errcode.FamilyForCode(errcode.SourceShapeInvalid),
-			Code:      errcode.SourceShapeInvalid,
+			Family:    errcode.FamilyForCode(sourceShapeInvalidCode),
+			Code:      sourceShapeInvalidCode,
 			Operation: "build input",
 			Node:      node,
 			Reason:    "custom source shape needs a media kind",
@@ -242,8 +242,8 @@ func (s InputSpec) validatePlainInput() error {
 		return nil
 	}
 	return &BuildError{
-		Family:    errcode.FamilyForCode(errcode.InputInvalid),
-		Code:      errcode.InputInvalid,
+		Family:    errcode.FamilyForCode(inputInvalidCode),
+		Code:      inputInvalidCode,
 		Operation: "build input",
 		Node:      "input",
 		Reason:    "empty input spec",
@@ -298,8 +298,8 @@ func validateJobInputs(inputs []InputSpec) error {
 			continue
 		}
 		return &BuildError{
-			Family:    errcode.FamilyForCode(errcode.MultiInputUnsupported),
-			Code:      errcode.MultiInputUnsupported,
+			Family:    errcode.FamilyForCode(multiInputUnsupportedCode),
+			Code:      multiInputUnsupportedCode,
 			Operation: "build job",
 			Node:      firstNonEmpty(inputs[i].name, inputs[i].input.Name, inputs[i].input.URI, fmt.Sprintf("input-%d", i)),
 			Reason:    "multiple recipe inputs currently require realtime source providers or custom sources",
@@ -333,8 +333,8 @@ func validateRealtimeInputNames(inputs []InputSpec) error {
 
 func duplicateInputNameError(name string, firstIndex int, secondIndex int) error {
 	return &BuildError{
-		Family:    errcode.FamilyForCode(errcode.InputDuplicate),
-		Code:      errcode.InputDuplicate,
+		Family:    errcode.FamilyForCode(inputDuplicateCode),
+		Code:      inputDuplicateCode,
 		Operation: "build job",
 		Node:      name,
 		Reason:    fmt.Sprintf("realtime input name %q is defined more than once", name),

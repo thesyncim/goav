@@ -242,7 +242,7 @@ func TestAudioFlowShapePreferenceCopyAndTapContracts(t *testing.T) {
 
 	badStage := Flow("bad").Audio().Do(nil)
 	_, err = chainSpecFrom(badStage)
-	assertBuildErrorCode(t, err, errcode.StageMissing)
+	assertBuildErrorCode(t, err, stageMissingCode)
 
 	if got := chainTransformStepName(transformSpec{}); got != "transform" {
 		t.Fatalf("chainTransformStepName(empty) = %q, want transform", got)
@@ -288,14 +288,14 @@ func TestFlowBuilderRejectsInvalidCompositionContracts(t *testing.T) {
 			flow: Flow("encoded").Audio().
 				Encode(codec.Opus()).
 				Shape(shape.Frame(av.MediaAudio)),
-			code: errcode.StreamStepAfterEncode,
+			code: streamStepAfterEncodeCode,
 		},
 		{
 			name: "decode after encode",
 			flow: Flow("encoded").Video().
 				Encode(codec.VP8()).
 				Decode(),
-			code: errcode.StreamStepAfterEncode,
+			code: streamStepAfterEncodeCode,
 		},
 		{
 			name: "shape after copy",
@@ -309,7 +309,7 @@ func TestFlowBuilderRejectsInvalidCompositionContracts(t *testing.T) {
 			flow: Flow("encoded").Audio().
 				Encode(codec.Opus()).
 				Apply(Flow("meter").Audio().Do(meter)),
-			code: errcode.StreamStepAfterEncode,
+			code: streamStepAfterEncodeCode,
 		},
 		{
 			name: "decode flow after frame step",

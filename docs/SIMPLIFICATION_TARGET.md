@@ -220,6 +220,9 @@ Media-operation leaf codes now do the same for transform, shape, codec-adapter,
 and encode refusals: detailed `transform_*`, `shape_*`, `*_adapter_*`, and
 `encode_*` strings stay typed internally, while public code switches use the
 stable transform/shape/codec/encode families.
+Input/source and stream-selection leaf codes are also internal typed details
+now; callers match `FamilyInput` or `FamilyStream` for stable handling, which
+brings the public `errcode` surface below the v1 budget.
 
 ## Release gate
 

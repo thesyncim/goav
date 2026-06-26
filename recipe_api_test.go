@@ -583,7 +583,7 @@ func TestZeroJobRejectsPublicConstruction(t *testing.T) {
 		Copy().
 		To(goav.Write("out.ogg", io.Discard)).
 		Describe()
-	if !errors.As(err, &buildErr) || buildErr.Code != errcode.InputMissing {
+	if !errors.As(err, &buildErr) || buildErr.Code != errcode.Code("input_missing") {
 		t.Fatalf("From() err = %v, want input_missing", err)
 	}
 }

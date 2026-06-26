@@ -98,8 +98,8 @@ func TestBuildErrorAndCompilerPassErrorContracts(t *testing.T) {
 	}
 
 	diagnostic := &BuildError{
-		Family: errcode.FamilyForCode(errcode.StreamMissing),
-		Code:   errcode.StreamMissing,
+		Family: errcode.FamilyForCode(streamMissingCode),
+		Code:   streamMissingCode,
 		Reason: "has diagnostic",
 	}
 	if got := compilerPassError("compile", "lower", diagnostic); got != diagnostic {

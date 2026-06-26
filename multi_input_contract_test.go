@@ -8,13 +8,12 @@ import (
 	"testing"
 
 	"github.com/thesyncim/goav/av"
-	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/shape"
 )
 
 func TestDuplicateRealtimeInputNameErrorContract(t *testing.T) {
 	err := duplicateInputNameError("mic", 0, 2)
-	assertBuildErrorCode(t, err, errcode.InputDuplicate)
+	assertBuildErrorCode(t, err, inputDuplicateCode)
 	if !errors.Is(err, ErrUnsupportedBuild) {
 		t.Fatalf("err = %v, want ErrUnsupportedBuild cause", err)
 	}
@@ -35,7 +34,7 @@ func TestDuplicateRealtimeInputNameErrorContract(t *testing.T) {
 		Source("camera", shape.Frame(av.MediaVideo), source),
 		Source("mic", shape.Frame(av.MediaAudio), source),
 	})
-	assertBuildErrorCode(t, err, errcode.InputDuplicate)
+	assertBuildErrorCode(t, err, inputDuplicateCode)
 	if !strings.Contains(err.Error(), "realtime input name \"mic\" is defined more than once") {
 		t.Fatalf("err = %v, want duplicate name reason", err)
 	}
@@ -77,7 +76,7 @@ func TestAllInputBoundStreamsAndMissingSelectionDetails(t *testing.T) {
 	if ok {
 		t.Fatal("selectStreamAcrossInputSets ok = true, want false")
 	}
-	assertBuildErrorCode(t, err, errcode.StreamMissing)
+	assertBuildErrorCode(t, err, streamMissingCode)
 	if !strings.Contains(err.Error(), "input=mic audio[0] id=mic-left") ||
 		!strings.Contains(err.Error(), "input=events data[2] id=levels") {
 		t.Fatalf("err = %v, want all input candidates listed", err)

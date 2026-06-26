@@ -26,7 +26,7 @@ func TestRunCustomSource(t *testing.T) {
 
 func TestBrokenCustomSourceFailsBeforeRun(t *testing.T) {
 	err := buildBrokenCustomSource(context.Background())
-	expect.BuildError(t, err, errcode.SourceCallbackMissing,
+	expect.BuildError(t, err, errcode.Code("source_callback_missing"),
 		expect.Operation("build input"),
 		expect.Cause(goav.ErrNilSource),
 	)

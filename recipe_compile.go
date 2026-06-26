@@ -662,8 +662,8 @@ func validateJobIntentShapePass() recipeCompilePass {
 func validateJobIntentShape(operation string, intent intent, jobOutputCount int) error {
 	if len(intent.Inputs) == 0 {
 		return &BuildError{
-			Family:    errcode.FamilyForCode(errcode.InputMissing),
-			Code:      errcode.InputMissing,
+			Family:    errcode.FamilyForCode(inputMissingCode),
+			Code:      inputMissingCode,
 			Operation: operation,
 			Reason:    "no input is configured",
 			fixes: buildErrorFixes([]string{
@@ -840,8 +840,8 @@ func validateJobStreamTransformIntentShape(operation string, stream streamIntent
 
 func operationSpecMissingError(operation string, node string) error {
 	return &BuildError{
-		Family:    errcode.FamilyForCode(errcode.StreamOperationMissing),
-		Code:      errcode.StreamOperationMissing,
+		Family:    errcode.FamilyForCode(streamOperationMissingCode),
+		Code:      streamOperationMissingCode,
 		Operation: operation,
 		Node:      node,
 		Reason:    "the stream was selected but no decode, processing stage, or encoder was requested",

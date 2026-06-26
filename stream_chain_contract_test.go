@@ -68,35 +68,35 @@ func TestFrameDomainSourceRejectsDecodeAndCopy(t *testing.T) {
 			job: From(source).Audio().
 				Decode().
 				To(sink),
-			code: errcode.SourceShapeMismatch,
+			code: sourceShapeMismatchCode,
 		},
 		{
 			name: "direct copy",
 			job: From(source).Audio().
 				Copy().
 				To(sink),
-			code: errcode.SourceShapeMismatch,
+			code: sourceShapeMismatchCode,
 		},
 		{
 			name: "flow decode",
 			job: From(source).Audio().
 				Apply(Flow("decode").Audio().Decode()).
 				To(sink),
-			code: errcode.SourceShapeMismatch,
+			code: sourceShapeMismatchCode,
 		},
 		{
 			name: "flow copy",
 			job: From(source).Audio().
 				Apply(Flow("copy").Audio().Copy()).
 				To(sink),
-			code: errcode.SourceShapeMismatch,
+			code: sourceShapeMismatchCode,
 		},
 		{
 			name: "copy through encode helper",
 			job: From(source).Audio().
 				Encode(codec.Copy()).
 				To(sink),
-			code: errcode.SourceShapeMismatch,
+			code: sourceShapeMismatchCode,
 		},
 	}
 	for _, tt := range tests {
@@ -124,7 +124,7 @@ func TestStreamChainRejectsInvalidPostEncodeAndTapContracts(t *testing.T) {
 			job: From(source).Audio().
 				Do(nil).
 				To(sink),
-			code: errcode.StageMissing,
+			code: stageMissingCode,
 		},
 		{
 			name: "shape after encode",
@@ -132,7 +132,7 @@ func TestStreamChainRejectsInvalidPostEncodeAndTapContracts(t *testing.T) {
 				Encode(codec.Opus()).
 				Shape(shape.Frame(av.MediaAudio)).
 				To(sink),
-			code: errcode.StreamStepAfterEncode,
+			code: streamStepAfterEncodeCode,
 		},
 		{
 			name: "stage after encode",
@@ -140,7 +140,7 @@ func TestStreamChainRejectsInvalidPostEncodeAndTapContracts(t *testing.T) {
 				Encode(codec.Opus()).
 				Do(meter).
 				To(sink),
-			code: errcode.StreamStepAfterEncode,
+			code: streamStepAfterEncodeCode,
 		},
 		{
 			name: "empty tap",

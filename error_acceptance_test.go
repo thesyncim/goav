@@ -92,7 +92,7 @@ func TestErrorAcceptanceNilProviderInput(t *testing.T) {
 		Decode().
 		To(goavtest.NewCollector().Sink()).
 		Describe()
-	requireBuildError(t, err, errcode.InputInvalid, "build input", "input",
+	requireBuildError(t, err, errcode.Code("input_invalid"), "build input", "input",
 		"check the input constructor arguments",
 		"pass a non-nil provider to goav.Input(provider)",
 	)
@@ -108,7 +108,7 @@ func TestErrorAcceptanceMissingInput(t *testing.T) {
 		Copy().
 		To(goav.Write("out.ogg", io.Discard)).
 		Describe()
-	requireBuildError(t, err, errcode.InputMissing, "build job", "",
+	requireBuildError(t, err, errcode.Code("input_missing"), "build job", "",
 		"goav.From(goav.FileInput",
 	)
 }
@@ -121,7 +121,7 @@ func TestErrorAcceptanceCustomSourceMissingCallback(t *testing.T) {
 		Audio().
 		To(goavtest.NewCollector().Sink()).
 		Describe()
-	requireBuildError(t, err, errcode.SourceCallbackMissing, "build input", "mic",
+	requireBuildError(t, err, errcode.Code("source_callback_missing"), "build input", "mic",
 		"pass a non-nil callback to goav.Source(name, shape, fn)",
 		"use goav.FileInput or goav.Input(provider)",
 	)
@@ -141,7 +141,7 @@ func TestErrorAcceptanceCustomSourceShapeInvalid(t *testing.T) {
 		Decode().
 		To(goavtest.NewCollector().Sink()).
 		Describe()
-	requireBuildError(t, err, errcode.SourceShapeInvalid, "build input", "bad",
+	requireBuildError(t, err, errcode.Code("source_shape_invalid"), "build input", "bad",
 		"use shape.Packet(av.MediaAudio, codec)",
 		"add shape.Media(...)",
 	)
@@ -159,7 +159,7 @@ func TestErrorAcceptanceCustomSourceShapeUnsupported(t *testing.T) {
 		Decode().
 		To(goavtest.NewCollector().Sink()).
 		Describe()
-	buildErr := requireBuildError(t, err, errcode.SourceShapeUnsupported, "build input", "bytes",
+	buildErr := requireBuildError(t, err, errcode.Code("source_shape_unsupported"), "build input", "bytes",
 		"declare the source with shape.Packet",
 		"declare raw generated media with shape.Frame",
 		"declare diagnostic or lifecycle sources with shape.Event",
@@ -179,7 +179,7 @@ func TestErrorAcceptanceFrameSourceDecodeMismatch(t *testing.T) {
 		Audio().Decode().
 		To(goavtest.NewCollector().Sink()).
 		Describe()
-	buildErr := requireBuildError(t, err, errcode.SourceShapeMismatch, "build stream", "audio",
+	buildErr := requireBuildError(t, err, errcode.Code("source_shape_mismatch"), "build stream", "audio",
 		"remove .Decode() when using goav.Source(..., shape.Frame(...), ...)",
 		"use shape.Packet(...) when the custom source pushes encoded packets",
 	)
@@ -556,7 +556,7 @@ func TestErrorAcceptanceAmbiguousStreamSelectionListsCandidates(t *testing.T) {
 		Build(context.Background())
 
 	var buildErr *goav.BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != errcode.StreamAmbiguous || !errors.Is(err, goav.ErrUnsupportedBuild) {
+	if !errors.As(err, &buildErr) || buildErr.Code != errcode.Code("stream_ambiguous") || !errors.Is(err, goav.ErrUnsupportedBuild) {
 		t.Fatalf("err = %v, want stream_ambiguous wrapping ErrUnsupportedBuild", err)
 	}
 	msg := err.Error()

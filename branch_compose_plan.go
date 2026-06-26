@@ -203,8 +203,8 @@ func chainStepsFromChainOperations(operations []operationSpec) []chainStep {
 func validateBranchCompositionIntentShape(operation string, intent intent) error {
 	if len(intent.Inputs) == 0 {
 		return &BuildError{
-			Family:    errcode.FamilyForCode(errcode.InputMissing),
-			Code:      errcode.InputMissing,
+			Family:    errcode.FamilyForCode(inputMissingCode),
+			Code:      inputMissingCode,
 			Operation: operation,
 			Reason:    "no input is configured",
 			fixes: buildErrorFixes([]string{
@@ -215,8 +215,8 @@ func validateBranchCompositionIntentShape(operation string, intent intent) error
 	}
 	if len(intent.Inputs) > 1 {
 		return &BuildError{
-			Family:    errcode.FamilyForCode(errcode.InputCountUnsupported),
-			Code:      errcode.InputCountUnsupported,
+			Family:    errcode.FamilyForCode(inputCountUnsupportedCode),
+			Code:      inputCountUnsupportedCode,
 			Operation: operation,
 			Reason:    "transcode recipes currently take one input",
 			fields: buildErrorFields([]string{
@@ -365,8 +365,8 @@ func branchDestinationLabelSet(namedOutputs []namedDestinationSpec) map[string]s
 
 func branchStreamMissingError() error {
 	return &BuildError{
-		Family:    errcode.FamilyForCode(errcode.StreamMissing),
-		Code:      errcode.StreamMissing,
+		Family:    errcode.FamilyForCode(streamMissingCode),
+		Code:      streamMissingCode,
 		Operation: branchCompositionOperation,
 		Reason:    "no audio or video branches are configured",
 		fixes: buildErrorFixes([]string{
@@ -445,8 +445,8 @@ func branchDestinationReferenceMissingError(stream streamIntent, label string) e
 
 func transcodeUnsupportedLiveInputError() error {
 	return &BuildError{
-		Family:    errcode.FamilyForCode(errcode.UnsupportedInput),
-		Code:      errcode.UnsupportedInput,
+		Family:    errcode.FamilyForCode(unsupportedInputCode),
+		Code:      unsupportedInputCode,
 		Operation: branchCompositionOperation,
 		Reason:    "live provider transcode recipes are not supported by the transcode recipe compiler yet",
 		fixes: buildErrorFixes([]string{
@@ -492,8 +492,8 @@ func branchDestinationDuplicateError(name string) error {
 
 func branchIntentDuplicateError(name string, firstIndex int, secondIndex int) error {
 	return &BuildError{
-		Family:    errcode.FamilyForCode(errcode.StreamDuplicate),
-		Code:      errcode.StreamDuplicate,
+		Family:    errcode.FamilyForCode(streamDuplicateCode),
+		Code:      streamDuplicateCode,
 		Operation: branchCompositionOperation,
 		Node:      name,
 		Reason:    fmt.Sprintf("branch name %q is defined more than once", name),
@@ -512,8 +512,8 @@ func branchIntentDuplicateError(name string, firstIndex int, secondIndex int) er
 
 func branchIntentNameMissingError(index int, stream streamIntent) error {
 	return &BuildError{
-		Family:    errcode.FamilyForCode(errcode.StreamNameMissing),
-		Code:      errcode.StreamNameMissing,
+		Family:    errcode.FamilyForCode(streamNameMissingCode),
+		Code:      streamNameMissingCode,
 		Operation: branchCompositionOperation,
 		Node:      fmt.Sprintf("branch-%d", index),
 		Reason:    "branches need stable names",

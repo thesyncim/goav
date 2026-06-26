@@ -9,7 +9,6 @@ import (
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
-	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/format"
 )
 
@@ -77,7 +76,7 @@ func TestSelectDecodeStreamRequiresCodecMetadata(t *testing.T) {
 		Type: av.MediaAudio,
 	}}, av.StreamSelector{Type: av.MediaAudio})
 	var buildErr *BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != errcode.StreamCodecMissing || !errors.Is(err, ErrUnsupportedBuild) {
+	if !errors.As(err, &buildErr) || buildErr.Code != streamCodecMissingCode || !errors.Is(err, ErrUnsupportedBuild) {
 		t.Fatalf("err = %v, want stream_codec_missing wrapping ErrUnsupportedBuild", err)
 	}
 	if !strings.Contains(err.Error(), "provide codec metadata") ||

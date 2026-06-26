@@ -27,7 +27,7 @@ func TestBuildErrorChecksStructuredFields(t *testing.T) {
 		Describe()
 	err = fmt.Errorf("wrapped: %w", err)
 
-	buildErr := expect.BuildError(t, err, errcode.SourceShapeUnsupported,
+	buildErr := expect.BuildError(t, err, errcode.Code("source_shape_unsupported"),
 		expect.Operation("build input"),
 		expect.Node("bytes"),
 		expect.Cause(goav.ErrUnsupportedBuild),
@@ -35,7 +35,7 @@ func TestBuildErrorChecksStructuredFields(t *testing.T) {
 		expect.DetailContains("actual_shape="),
 		expect.SuggestionContains("shape.Packet"),
 	)
-	expect.Equal(t, "code", buildErr.Code, errcode.SourceShapeUnsupported)
+	expect.Equal(t, "code", buildErr.Code, errcode.Code("source_shape_unsupported"))
 }
 
 func TestValueAndGoldenHelpers(t *testing.T) {

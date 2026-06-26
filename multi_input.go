@@ -187,11 +187,11 @@ func selectStreamAcrossInputSets(sets []inputStreamSet, selector av.StreamSelect
 		}
 		return selected, true, nil
 	case len(matches) > 1:
-		return inputBoundStream{}, false, multiInputStreamSelectionError(errcode.StreamAmbiguous, selector, inputName, matches, sets)
+		return inputBoundStream{}, false, multiInputStreamSelectionError(streamAmbiguousCode, selector, inputName, matches, sets)
 	case unknown:
 		return inputBoundStream{}, false, nil
 	default:
-		return inputBoundStream{}, false, multiInputStreamSelectionError(errcode.StreamMissing, selector, inputName, allInputBoundStreams(sets), sets)
+		return inputBoundStream{}, false, multiInputStreamSelectionError(streamMissingCode, selector, inputName, allInputBoundStreams(sets), sets)
 	}
 }
 
@@ -221,7 +221,7 @@ func allInputBoundStreams(sets []inputStreamSet) []inputBoundStream {
 
 func multiInputStreamSelectionError(code errcode.Code, selector av.StreamSelector, inputName string, candidates []inputBoundStream, sets []inputStreamSet) error {
 	reason := "no stream across the inputs matches " + readableSelector(selector)
-	if code == errcode.StreamAmbiguous {
+	if code == streamAmbiguousCode {
 		reason = "multiple streams across the inputs match " + readableSelector(selector)
 	}
 	if inputName != "" {
@@ -287,8 +287,8 @@ func unknownInputNameError(selector av.StreamSelector, inputName string, sets []
 		details = append(details, "input="+sets[i].name)
 	}
 	return &BuildError{
-		Family:    errcode.FamilyForCode(errcode.InputUnknown),
-		Code:      errcode.InputUnknown,
+		Family:    errcode.FamilyForCode(inputUnknownCode),
+		Code:      inputUnknownCode,
 		Operation: "select stream",
 		Node:      selectorDetail(selector),
 		Reason:    "no job input is named " + strconv.Quote(inputName),

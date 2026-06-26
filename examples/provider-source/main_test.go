@@ -28,7 +28,7 @@ func TestRunProviderSource(t *testing.T) {
 
 func TestBrokenProviderFailsBeforeRun(t *testing.T) {
 	err := buildBrokenProvider(context.Background())
-	expect.BuildError(t, err, errcode.InputInvalid,
+	expect.BuildError(t, err, errcode.Code("input_invalid"),
 		expect.Operation("build input"),
 		expect.Cause(goav.ErrNilSource),
 	)

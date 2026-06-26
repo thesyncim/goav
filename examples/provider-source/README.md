@@ -30,6 +30,7 @@ Failure example:
 goav.Input(nil)
 ```
 
-A nil provider is refused before the task starts with `errcode.InputInvalid`.
+A nil provider is refused before the task starts with `FamilyInput` and
+`Code("input_invalid")`.
 This is the copyable pattern for transport packages that need an open phase,
 stream discovery, and shape facts without using goav internals.

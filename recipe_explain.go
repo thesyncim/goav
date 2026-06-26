@@ -605,7 +605,7 @@ func adapterRequirementFromBuildError(err *BuildError) (plan.AdapterRequirement,
 	status := adapterRequirementStatus(err.Code)
 	requiredBy := firstNonEmpty(err.Node, err.Operation)
 	switch err.Code {
-	case errcode.InputDemuxerMissing:
+	case inputDemuxerMissingCode:
 		formatID := av.FormatID(details["format"])
 		return plan.AdapterRequirement{
 			Kind:       "demuxer",

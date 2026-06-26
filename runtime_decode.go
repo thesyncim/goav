@@ -110,15 +110,15 @@ func selectStreamWithCodecRequirement(streams []av.Stream, selector av.StreamSel
 		matched = append(matched, streams[i])
 	}
 	if matches == 0 {
-		return av.Stream{}, streamSelectionError(errcode.StreamMissing, selector, streams)
+		return av.Stream{}, streamSelectionError(streamMissingCode, selector, streams)
 	}
 	if matches > 1 {
-		return av.Stream{}, streamSelectionError(errcode.StreamAmbiguous, selector, matched)
+		return av.Stream{}, streamSelectionError(streamAmbiguousCode, selector, matched)
 	}
 	if requireCodec && selected.Codec.ID == "" {
 		return av.Stream{}, &BuildError{
-			Family:    errcode.FamilyForCode(errcode.StreamCodecMissing),
-			Code:      errcode.StreamCodecMissing,
+			Family:    errcode.FamilyForCode(streamCodecMissingCode),
+			Code:      streamCodecMissingCode,
 			Operation: "select stream",
 			Node:      selectorDetail(selector),
 			Reason:    "selected stream has no codec id",
@@ -160,7 +160,7 @@ func streamSelectionError(code errcode.Code, selector av.StreamSelector, streams
 	operation := "select stream"
 	node := selectorDetail(selector)
 	reason := "no stream matches " + readableSelector(selector)
-	if code == errcode.StreamAmbiguous {
+	if code == streamAmbiguousCode {
 		reason = "multiple streams match " + readableSelector(selector)
 	}
 	return &BuildError{

@@ -29,6 +29,6 @@ goav.Source("broken", shape.Frame(av.MediaAudio, shape.Audio(48000, 1, av.Sample
 ```
 
 A nil callback is refused before the task starts with
-`errcode.SourceCallbackMissing`. This is the copyable pattern for packages that
-already own media buffers and need to feed goav without implementing a
-transport provider.
+`FamilyInput` and `Code("source_callback_missing")`. This is the copyable
+pattern for packages that already own media buffers and need to feed goav
+without implementing a transport provider.

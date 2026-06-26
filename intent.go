@@ -490,8 +490,8 @@ func jobStreamOutputNames(stream *jobStreamBuild) []string {
 
 func streamStageMissingError(stream streamIntent) error {
 	return &BuildError{
-		Family:    errcode.FamilyForCode(errcode.StageMissing),
-		Code:      errcode.StageMissing,
+		Family:    errcode.FamilyForCode(stageMissingCode),
+		Code:      stageMissingCode,
 		Operation: "build stream",
 		Node:      jobStreamIntentName(stream),
 		Reason:    "custom stream stage is nil",
@@ -564,8 +564,8 @@ func jobStreamName(stream *jobStreamBuild) string {
 
 func duplicateJobStreamError(existing *jobStreamBuild, next *jobStreamBuild) error {
 	return &BuildError{
-		Family:    errcode.FamilyForCode(errcode.StreamDuplicate),
-		Code:      errcode.StreamDuplicate,
+		Family:    errcode.FamilyForCode(streamDuplicateCode),
+		Code:      streamDuplicateCode,
 		Operation: "build job",
 		Node:      jobStreamName(next),
 		Reason:    "ordinary stream recipes select one audio or video stream",

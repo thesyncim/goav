@@ -710,7 +710,7 @@ func resolveBranchComposeStreamGroupsForInputs(sources mediaPlanCompiledSources,
 				return nil, selectErr
 			}
 			if !ok {
-				return nil, streamSelectionError(errcode.StreamMissing, branches[i].branch.Selector, sources.streams)
+				return nil, streamSelectionError(streamMissingCode, branches[i].branch.Selector, sources.streams)
 			}
 			stream = selected.stream
 		} else {

@@ -9,7 +9,6 @@ import (
 	"testing"
 
 	"github.com/thesyncim/goav/av"
-	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/pipeline"
 )
@@ -129,7 +128,7 @@ func TestOpenDemuxSourceErrorContracts(t *testing.T) {
 	t.Run("probe not found becomes structured input format error", func(t *testing.T) {
 		runtime := MustNew(WithProber(&demuxContractProber{err: format.ErrNotFound}))
 		_, err := (&builder{runtime: runtime}).openDemuxSource(ctx, input)
-		buildErr := requireRuntimeFormatBuildError(t, err, errcode.InputFormatUnknown)
+		buildErr := requireRuntimeFormatBuildError(t, err, inputFormatUnknownCode)
 		if buildErr.Node != "input.custom" || !errors.Is(buildErr, format.ErrNotFound) {
 			t.Fatalf("probe error = %+v", buildErr)
 		}
@@ -138,7 +137,7 @@ func TestOpenDemuxSourceErrorContracts(t *testing.T) {
 	t.Run("detected format without demuxer is structured", func(t *testing.T) {
 		runtime := MustNew(WithProber(&demuxContractProber{result: format.ProbeResult{Format: customFormat, Score: 100}}))
 		_, err := (&builder{runtime: runtime}).openDemuxSource(ctx, input)
-		buildErr := requireRuntimeFormatBuildError(t, err, errcode.InputDemuxerMissing)
+		buildErr := requireRuntimeFormatBuildError(t, err, inputDemuxerMissingCode)
 		if !strings.Contains(buildErr.Reason, string(customFormat)) || !errors.Is(buildErr, format.ErrNotFound) {
 			t.Fatalf("missing demuxer error = %+v", buildErr)
 		}

@@ -775,8 +775,8 @@ func validateChainMedia(operation string, node string, selected av.MediaType, sp
 
 func branchInputCountError(node string, count int) error {
 	return &BuildError{
-		Family:    errcode.FamilyForCode(errcode.InputCountUnsupported),
-		Code:      errcode.InputCountUnsupported,
+		Family:    errcode.FamilyForCode(inputCountUnsupportedCode),
+		Code:      inputCountUnsupportedCode,
 		Operation: "build branches",
 		Node:      node,
 		Reason:    "branches currently compose from one input",

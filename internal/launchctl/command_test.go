@@ -2527,7 +2527,7 @@ func TestStructuredErrorPreservesUnderlyingShapes(t *testing.T) {
 		To(goavtest.NewCollector().Sink()).
 		Describe()
 	wrapped := structuredError("fallback", buildErr)
-	if wrapped.Code != string(errcode.SourceShapeUnsupported) ||
+	if wrapped.Code != string(errcode.Code("source_shape_unsupported")) ||
 		wrapped.Operation != "build input" ||
 		wrapped.Node != "bytes" ||
 		!strings.Contains(wrapped.Message, "packet-domain") ||
