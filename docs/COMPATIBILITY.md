@@ -58,6 +58,89 @@ The extension seams remain documented and tested, but they may grow as new
 adapters require additional capability. New exported symbols still require the
 API-restraint checklist in `docs/API_SURFACE.md`.
 
+## Draft compatibility note: root v0.1.0
+
+Compatibility note for root v0.1.0
+
+Minimum Go version:
+- go 1.26. The root module, nested transport modules, and standalone example
+  modules use the 1.26 module floor as of 2026-06-26. The maintainer still
+  needs to confirm this floor before signing the tag.
+
+Module scope:
+- Root module tag: `v0.1.0`.
+- Nested modules are not included in the root tag. `rtpav` and `webrtcav`
+  require separate prefixed tags if released.
+- Tag order remains root first, then `rtpav`, then `webrtcav`.
+
+API surface:
+- Added exported symbols: typed `BuildError` helpers/fields, `BuildLive`,
+  task capability vocabulary, `Mux(name, destination)`, `Write(name, writer)`,
+  `bundle.Describe`, inspect helpers, sync policy options, and media-time
+  rebranch boundaries.
+- Removed or renamed exported symbols: `ContextCloser`, `Observable`,
+  `Controllable`, `Explainer`, `Inspectable`, `Mutable`, `MediaOption`,
+  `InputOption`, `DestinationOption`, `InputStream`, `RecipePatch`,
+  `TransformSpec`, legacy `BuildError.Details`, legacy
+  `BuildError.Suggestions`, path-style writer destinations, same-handle
+  destination grouping, and graph-node-prefix tap fallback.
+- API-restraint links for additions: `docs/API_SURFACE.md`,
+  `docs/SIMPLIFICATION_TARGET.md`, and `docs/V1_CREDIBILITY_AUDIT.md`.
+
+Behavior changes:
+- Normal `Build` returns the narrow `Task` lifecycle; callers that need
+  inspection, watches, controls, or runtime mutation use `BuildLive`.
+- Stream chains require explicit `.Decode()` before frame-domain consumers;
+  `.Copy()` keeps packet-domain recipes packet preserving.
+- Reused destination handles no longer imply grouping; shared outputs require
+  explicit `Mux(name, destination)`.
+- Compile-time planning now uses captured immutable recipe IR for inputs,
+  streams, destinations, joins, stream rules, graph lowerers, and work-plan
+  rendering.
+- Runtime attach, detach, rebranch, and stream-rule mutation capture explicit
+  input handoffs before graph mutation.
+- Runtime mutation, control hosts, raw controls, advanced observation,
+  `OnStream`, joins, composite/select, and `expert.Graph` remain governed
+  pre-v1 features, not automatic v1 promises.
+
+Adapter and extension changes:
+- Bundled adapters remain behind `goav/bundle`; importing the root package does
+  not import bundled adapter packages into the root package dependency graph.
+- External example modules cover custom sources, provider sources, custom
+  destinations, filters, codecs, joins, transactional writers, and
+  control-plane hosts.
+
+Migration notes:
+- Replace root lifecycle/control interfaces with local structural interfaces
+  or explicit `BuildLive` capabilities.
+- Replace `Writer`/path-style output spelling with `Write(name, writer)` or
+  `URI(uri)` as appropriate.
+- Replace repeated destination handles with `Mux(name, destination)` for shared
+  mux/sink grouping.
+- Switch structured-error callers from legacy details/suggestions fields to
+  `Detail(key)`, `DetailLines()`, and `FixLines()`.
+- Add explicit `.Decode()` before frame transforms, real encoders, frame taps,
+  or decoded-frame sinks; use `.Copy()` for packet-preserving flows.
+
+Evidence:
+- Local root tests: `go test -p 1 ./...`.
+- Local pure-Go tests: `CGO_ENABLED=0 go test -p 1 ./...`.
+- Local static checks: `go vet ./...` and
+  `go run honnef.co/go/tools/cmd/staticcheck@latest ./...`.
+- Nested module tests: every `examples/*/go.mod`, `goavtest/expect`, `rtpav`,
+  and `webrtcav` passed `go test -p 1 ./...`.
+- Root dependency check: `go list -deps github.com/thesyncim/goav` had no
+  adapter, container, `rtpav`, or `webrtcav` package leak.
+- CI release workflow, signed-tag validation, race tests, govulncheck, and
+  release-quality benchmark artifacts still need release-day evidence.
+
+Deferred / not claimed:
+- No production performance leadership claim is made from this local pass.
+- Signed tag, GitHub release, race matrix, security scan, and long perf-lab
+  artifacts remain release-day work.
+- v1 stability is not claimed by `v0.1.0`; this is the first pre-v1 root
+  release candidate note.
+
 ## Release compatibility note template
 
 Copy this section into the release notes or PR body before cutting a tag. Empty
