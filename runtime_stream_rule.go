@@ -41,6 +41,17 @@ type streamRuleAttachInput struct {
 	branchNames string
 }
 
+type streamRuleRemoveInput struct {
+	streamID    av.StreamID
+	attachments []streamRuleRemoveAttachment
+}
+
+type streamRuleRemoveAttachment struct {
+	attachment  *runtimeAttachment
+	branchName  string
+	disposition oldBranchDisposition
+}
+
 // installStreamRules binds the job's declared rules to the built task and
 // starts the reaction loop: an internal Watch subscription filtered to stream
 // added/removed events. The loop ends when the task closes (the graph closes
@@ -171,26 +182,47 @@ func (t *task) streamRuleBranchSpecs(rule streamRule, stream av.Stream) ([]Branc
 // snapshot reports lifecycle.DestinationCommitted — the same typed outcome as
 // Rebranch's DrainOldBranch.
 func (t *task) handleStreamRemoved(event av.Event) {
-	if event.StreamID == "" {
+	input := t.streamRuleRemoveInput(event)
+	if input.streamID == "" {
 		return
 	}
-	t.rules.mu.Lock()
-	attachments := t.rules.attached[event.StreamID]
-	delete(t.rules.attached, event.StreamID)
-	t.rules.mu.Unlock()
+	for i := range input.attachments {
+		entry := input.attachments[i]
+		if entry.attachment == nil {
+			continue
+		}
+		if err := entry.attachment.detachReplaced(context.Background(), entry.disposition); err != nil {
+			t.publishStreamRuleError(input.streamID, entry.branchName, err)
+		}
+	}
+}
+
+func (t *task) streamRuleRemoveInput(event av.Event) streamRuleRemoveInput {
+	input := streamRuleRemoveInput{streamID: event.StreamID}
+	if t == nil || t.rules == nil || event.StreamID == "" {
+		return input
+	}
+	rules := t.rules
+	rules.mu.Lock()
+	attachments := append([]streamRuleAttachment(nil), rules.attached[event.StreamID]...)
+	delete(rules.attached, event.StreamID)
+	rules.mu.Unlock()
 	for i := range attachments {
 		entry := attachments[i]
 		if entry.attachment == nil {
 			continue
 		}
 		disposition := oldBranchDrain
-		if t.rules != nil && entry.rule >= 0 && entry.rule < len(t.rules.rules) {
-			disposition = t.rules.rules[entry.rule].removeDisposition
+		if entry.rule >= 0 && entry.rule < len(rules.rules) {
+			disposition = rules.rules[entry.rule].removeDisposition
 		}
-		if err := entry.attachment.detachReplaced(context.Background(), disposition); err != nil {
-			t.publishStreamRuleError(event.StreamID, entry.attachment.Name(), err)
-		}
+		input.attachments = append(input.attachments, streamRuleRemoveAttachment{
+			attachment:  entry.attachment,
+			branchName:  entry.attachment.Name(),
+			disposition: disposition,
+		})
 	}
+	return input
 }
 
 func (t *task) streamRuleAttached(id av.StreamID, rule int) bool {

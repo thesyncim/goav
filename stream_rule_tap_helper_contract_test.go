@@ -168,6 +168,31 @@ func TestStreamRuleAttachInputCapturesTemplatedBranch(t *testing.T) {
 	}
 }
 
+func TestStreamRuleRemoveInputCapturesTrackedBranches(t *testing.T) {
+	attachment := &runtimeAttachment{id: "att-1", name: "late"}
+	task := &task{rules: &taskStreamRules{
+		rules: []streamRule{{removeDisposition: oldBranchAbort}},
+		attached: map[av.StreamID][]streamRuleAttachment{
+			"audio": {
+				{rule: 0, attachment: attachment},
+				{rule: 1, attachment: nil},
+			},
+		},
+	}}
+
+	input := task.streamRuleRemoveInput(av.Event{Type: av.EventStreamRemoved, StreamID: "audio"})
+	if input.streamID != "audio" ||
+		len(input.attachments) != 1 ||
+		input.attachments[0].attachment != attachment ||
+		input.attachments[0].branchName != "late" ||
+		input.attachments[0].disposition != oldBranchAbort {
+		t.Fatalf("stream rule remove input = %+v, want captured tracked attachment", input)
+	}
+	if _, ok := task.rules.attached["audio"]; ok {
+		t.Fatalf("removed stream still tracked: %+v", task.rules.attached)
+	}
+}
+
 func TestHandleStreamRemovedDetachesTrackedBranchesWithDrain(t *testing.T) {
 	graph := newWatchTestGraph(1)
 	task := newTask(graph, nil)
