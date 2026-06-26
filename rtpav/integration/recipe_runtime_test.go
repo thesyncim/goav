@@ -105,7 +105,7 @@ func TestRecordRecipeRTPAutoCodecRuns(t *testing.T) {
 
 	task, err := goav.From(
 		goav.Input(rtpav.Receive(receiver, rtpav.WithName("audio"), rtpav.WithCodec(codec.Opus()), rtpav.WithBufferLimits(rtpav.BufferLimits{MaxPackets: 2}))),
-	).Copy().To(goav.Write("recording.ogg", io.Discard)).UseRuntime(runtime).Build(ctx)
+	).Copy().To(goav.Write("recording.ogg", io.Discard)).UseRuntime(runtime).BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -177,7 +177,7 @@ func TestRecordRecipeCopyToTypedDestinationRuns(t *testing.T) {
 		t.Fatalf("planned:\n%s", text)
 	}
 
-	task, err := job.Build(ctx)
+	task, err := job.BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -240,7 +240,7 @@ func TestRecordRecipeCopyToCustomWriterDestinationRuns(t *testing.T) {
 
 	task, err := goav.From(
 		goav.Input(rtpav.Receive(receiver, rtpav.WithName("audio"), rtpav.WithCodec(codec.Opus()), rtpav.WithBufferLimits(rtpav.BufferLimits{MaxPackets: 2}))),
-	).Copy().To(target).UseRuntime(runtime).Build(ctx)
+	).Copy().To(target).UseRuntime(runtime).BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -311,7 +311,7 @@ func TestRecordRecipeCopyToTransactionalWriterDestinationRuns(t *testing.T) {
 
 	task, err := goav.From(
 		goav.Input(rtpav.Receive(receiver, rtpav.WithName("audio"), rtpav.WithCodec(codec.Opus()), rtpav.WithBufferLimits(rtpav.BufferLimits{MaxPackets: 2}))),
-	).Copy().To(target).UseRuntime(runtime).Build(ctx)
+	).Copy().To(target).UseRuntime(runtime).BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -370,7 +370,7 @@ func TestFileDestinationClosesCloserWriterOnce(t *testing.T) {
 
 	task, err := goav.From(
 		goav.Input(rtpav.Receive(receiver, rtpav.WithName("audio"), rtpav.WithCodec(codec.Opus()), rtpav.WithBufferLimits(rtpav.BufferLimits{MaxPackets: 2}))),
-	).Copy().To(goav.Write("call.ogg", writer, goav.Format(av.FormatOgg))).UseRuntime(runtime).Build(ctx)
+	).Copy().To(goav.Write("call.ogg", writer, goav.Format(av.FormatOgg))).UseRuntime(runtime).BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -441,7 +441,7 @@ func TestRecordRecipeCustomWriterDestinationAbortsOnRunError(t *testing.T) {
 		},
 		goav.Format(av.FormatOgg),
 		goav.MIME("audio/ogg"),
-	)).UseRuntime(runtime).Build(ctx)
+	)).UseRuntime(runtime).BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -500,7 +500,7 @@ func TestTaskAttachCustomWriterDestinationRuns(t *testing.T) {
 		Copy().
 		Tap(goav.PacketTap("audio.packets")).
 		To(goav.Sink(component.SinkFunc("base", func(context.Context, component.Message) error { return nil }))).
-		Build(ctx)
+		BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -592,7 +592,7 @@ func TestTaskAttachCustomWriterDestinationAbortsOnPatchFailure(t *testing.T) {
 		Copy().
 		Tap(goav.PacketTap("audio.packets")).
 		To(goav.Sink(component.SinkFunc("base", func(context.Context, component.Message) error { return nil }))).
-		Build(ctx)
+		BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -674,7 +674,7 @@ func TestRecordRecipeRTPCodecUsesReaderStreamWhenUnnamed(t *testing.T) {
 
 	task, err := goav.From(
 		goav.Input(rtpav.Receive(receiver, rtpav.WithCodec(codec.Opus()), rtpav.WithBufferLimits(rtpav.BufferLimits{MaxPackets: 2}))),
-	).Copy().To(goav.Write("recording.ogg", io.Discard)).UseRuntime(runtime).Build(ctx)
+	).Copy().To(goav.Write("recording.ogg", io.Discard)).UseRuntime(runtime).BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -730,7 +730,7 @@ func TestDefaultRecordRecipeRTPVP8Runs(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	task, err := job.Build(ctx)
+	task, err := job.BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -825,7 +825,7 @@ func TestFromAndRecordRecipeMultipleRTPInputsRuns(t *testing.T) {
 	).UseRuntime(runtime).
 		And(goav.Input(rtpav.Receive(videoReceiver, rtpav.WithName("video"), rtpav.WithCodec(codec.VP8()), rtpav.WithBufferLimits(rtpav.BufferLimits{MaxPackets: 2})))).
 		To(goav.Write("recording.ogg", io.Discard)).
-		Build(ctx)
+		BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -920,7 +920,7 @@ func TestRTPInputsSyncFromTimestampsAndDropLatePreview(t *testing.T) {
 	).
 		Audio(goav.InputName("audio")).Sync(policy).Copy().To(sink).
 		Video(goav.InputName("video")).Sync(policy).Copy().To(sink).
-		Build(ctx)
+		BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -980,7 +980,7 @@ func TestStreamRecipeCopyTapCanAttachRuntimeMuxDestination(t *testing.T) {
 		Copy().
 		Tap(goav.PacketTap("audio.copied")).
 		To(goav.Write("archive.ogg", io.Discard)).
-		Build(ctx)
+		BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}

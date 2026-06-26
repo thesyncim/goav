@@ -488,7 +488,7 @@ func TestTestSourceRecordsSourceControlsThroughRealTask(t *testing.T) {
 		Audio().Copy().
 		To(NewCollector().Sink()).
 		UseRuntime(Runtime()).
-		Build(ctx)
+		BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}

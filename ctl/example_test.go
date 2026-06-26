@@ -38,7 +38,7 @@ func Example_bootstrapControlPlaneHost() {
 		Audio().Decode().Tap(goav.FrameTap("frames")).
 		To(goavtest.NewCollector().Sink()).
 		UseRuntime(goavtest.Runtime(goavruntime.WithEncoder(encoderFactory.descriptor, encoderFactory))).
-		Build(ctx)
+		BuildLive(ctx)
 	if err != nil {
 		fmt.Println(err)
 		return

@@ -115,7 +115,7 @@ func TestOnStreamRTPLateStreamAttachesBranch(t *testing.T) {
 	).
 		OnStream(source.MatchMedia(av.MediaVideo), goav.Branch("cam-watch").Copy().To(monitor)).
 		Audio().Copy().To(goav.Sink(component.SinkFunc("main", func(context.Context, component.Message) error { return nil }))).
-		Build(ctx)
+		BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}

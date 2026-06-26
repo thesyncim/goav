@@ -41,7 +41,7 @@ func TestTaskSnapshotReportsTypedTaskLifecycle(t *testing.T) {
 		close(started)
 		<-release
 		return lifecycleTestPush(push)
-	})).Audio().Copy().To(lifecycleTestSink("packets")).Build(ctx)
+	})).Audio().Copy().To(lifecycleTestSink("packets")).BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -75,7 +75,7 @@ func TestTaskSnapshotReportsClosedStateWithoutRun(t *testing.T) {
 	ctx := context.Background()
 	task, err := From(lifecycleTestSource(func(_ context.Context, push SourcePush) error {
 		return lifecycleTestPush(push)
-	})).Audio().Copy().To(lifecycleTestSink("packets")).Build(ctx)
+	})).Audio().Copy().To(lifecycleTestSink("packets")).BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -91,7 +91,7 @@ func TestTaskSnapshotReportsRootDestinationLifecycle(t *testing.T) {
 	ctx := context.Background()
 	task, err := From(lifecycleTestSource(func(_ context.Context, push SourcePush) error {
 		return lifecycleTestPush(push)
-	})).Audio().Copy().To(lifecycleTestSink("base")).Build(ctx)
+	})).Audio().Copy().To(lifecycleTestSink("base")).BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -120,7 +120,7 @@ func TestTaskSnapshotReportsFailedRootDestination(t *testing.T) {
 			return err
 		}
 		return sourceErr
-	})).Audio().Copy().To(lifecycleTestSink("base")).Build(ctx)
+	})).Audio().Copy().To(lifecycleTestSink("base")).BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -141,7 +141,7 @@ func TestTaskSnapshotReportsCommittedDestinationAfterRun(t *testing.T) {
 		return lifecycleTestPush(push)
 	})).Audio().Copy().
 		Tap(PacketTap("audio.packets")).
-		To(lifecycleTestSink("base")).Build(ctx)
+		To(lifecycleTestSink("base")).BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -201,7 +201,7 @@ func TestTaskAttachDetachPublishesBranchLifecycleEvents(t *testing.T) {
 		return lifecycleTestPush(push)
 	})).Audio().Copy().
 		Tap(PacketTap("audio.packets")).
-		To(lifecycleTestSink("base")).Build(ctx)
+		To(lifecycleTestSink("base")).BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -246,7 +246,7 @@ func TestTaskDetachPublishesDestinationLifecycleEvents(t *testing.T) {
 		return lifecycleTestPush(push)
 	})).Audio().Copy().
 		Tap(PacketTap("audio.packets")).
-		To(lifecycleTestSink("base")).Build(ctx)
+		To(lifecycleTestSink("base")).BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -297,7 +297,7 @@ func TestTaskDetachOptionsReportDestinationOutcome(t *testing.T) {
 		return lifecycleTestPush(push)
 	})).Audio().Copy().
 		Tap(PacketTap("audio.packets")).
-		To(lifecycleTestSink("base")).Build(ctx)
+		To(lifecycleTestSink("base")).BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -341,7 +341,7 @@ func TestTaskSnapshotReportsFailedTaskAndAbortedDestination(t *testing.T) {
 		return sourceErr
 	})).Audio().Copy().
 		Tap(PacketTap("audio.packets")).
-		To(lifecycleTestSink("base")).Build(ctx)
+		To(lifecycleTestSink("base")).BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}

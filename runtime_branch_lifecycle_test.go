@@ -135,9 +135,9 @@ func decodedVideoTapTask(t *testing.T, ctx context.Context, input goav.InputSpec
 		Shape(shape.Frame(av.MediaVideo, shape.Video(64, 64, av.PixelFormatI420))).
 		Tap(goav.FrameTap(lifecycleTapName)).
 		To(goav.Sink(main)).
-		Build(ctx)
+		BuildLive(ctx)
 	if err != nil {
-		t.Fatalf("Build() error = %v", err)
+		t.Fatalf("BuildLive() error = %v", err)
 	}
 	return task
 }
@@ -272,9 +272,9 @@ func TestRuntimeBranchEncodesVP9ThroughDropBuffer(t *testing.T) {
 		Shape(shape.Frame(av.MediaVideo, shape.Video(64, 64, av.PixelFormatI420))).
 		Tap(goav.FrameTap(lifecycleTapName)).
 		To(goav.Sink(main)).
-		Build(ctx)
+		BuildLive(ctx)
 	if err != nil {
-		t.Fatalf("Build() error = %v", err)
+		t.Fatalf("BuildLive() error = %v", err)
 	}
 	defer task.Close()
 

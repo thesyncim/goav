@@ -135,7 +135,7 @@ func runRoomScript(ctx context.Context, script func(context.Context, *RoomPipeli
 		Audio().
 		To(main).
 		UseRuntime(goavtest.Runtime()).
-		Build(ctx)
+		BuildLive(ctx)
 	if err != nil {
 		return DemoResult{}, err
 	}

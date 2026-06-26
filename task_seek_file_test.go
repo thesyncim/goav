@@ -173,7 +173,7 @@ func seekFileTask(t *testing.T, reader io.Reader, sink *seekFileSink, options ..
 		UseRuntime(mustNew(append([]Option{WithFormatAdapter(matroskaadapter.Register)}, options...)...)).
 		Audio().Copy().
 		To(Sink(SinkFunc("rec", sink.record))).
-		Build(context.Background())
+		BuildLive(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -228,7 +228,7 @@ func TestTaskSegmentExportsRealMatroskaWindow(t *testing.T) {
 		Audio().Copy().
 		Tap(PacketTap("audio.packets")).
 		To(Sink(SinkFunc("base", sink.record))).
-		Build(ctx)
+		BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}

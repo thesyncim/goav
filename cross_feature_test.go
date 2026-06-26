@@ -215,7 +215,7 @@ func TestMixSyncByPTSSeekArmMidRun(t *testing.T) {
 	task, err := Mix(
 		From(Input(&crossSeekArmProvider{source: seekable, codec: pcm})).Audio().Decode(),
 		From(mixSyncTestSource("b", []int64{0, 1000}, [][]int16{{1, 1}, {2, 2}})).Audio(),
-	).SyncByPTS().To(sink).UseRuntime(rt).Build(ctx)
+	).SyncByPTS().To(sink).UseRuntime(rt).BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -296,7 +296,7 @@ func TestMixDecodedArmEOSStopsGatingEndToEnd(t *testing.T) {
 	task, err := Mix(
 		From(tapArmTestPacketSource("a", pcm, 100, 100)).Audio().Decode(),
 		From(crossGatedFrameSource("b", release, []int16{1, 1}, []int16{2, 2})).Audio(),
-	).To(sink).UseRuntime(rt).Build(ctx)
+	).To(sink).UseRuntime(rt).BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -433,7 +433,7 @@ func TestSegmentAttachMidWindowCommitsAtEOS(t *testing.T) {
 	task, err := From(Input(&crossSegmentGatedProvider{source: source})).
 		Audio().Copy().
 		Tap(PacketTap("audio.packets")).
-		To(lifecycleTestSink("base")).Build(ctx)
+		To(lifecycleTestSink("base")).BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -583,7 +583,7 @@ func TestRebranchSwapsBranchOnJoinTap(t *testing.T) {
 	task, err := Mix(
 		From(crossGatedFrameSource("a", releaseA, []int16{100, 100}, []int16{200, 200})).Audio(),
 		From(crossGatedFrameSource("b", releaseB, []int16{1, 1}, []int16{2, 2})).Audio(),
-	).Tap(FrameTap("mixed")).To(main.sink("out")).UseRuntime(crossLiveJoinRuntime()).Build(ctx)
+	).Tap(FrameTap("mixed")).To(main.sink("out")).UseRuntime(crossLiveJoinRuntime()).BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -652,7 +652,7 @@ func TestPauseResumeBranchOnJoinTap(t *testing.T) {
 	task, err := Mix(
 		From(crossGatedFrameSource("a", releaseA, []int16{10}, []int16{20}, []int16{30})).Audio(),
 		From(crossGatedFrameSource("b", releaseB, []int16{1}, []int16{2}, []int16{3})).Audio(),
-	).Tap(FrameTap("mixed")).To(main.sink("out")).UseRuntime(crossLiveJoinRuntime()).Build(ctx)
+	).Tap(FrameTap("mixed")).To(main.sink("out")).UseRuntime(crossLiveJoinRuntime()).BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -723,7 +723,7 @@ func TestDetachBranchOnTapArmAnchorKeepsJoin(t *testing.T) {
 		From(crossGatedFrameSource("a", release, []int16{100, 200})).Audio().Tap(FrameTap("dry")),
 		FrameTap("dry"),
 		From(mixTestAudioSource("live", 50, -50)).Audio(),
-	).To(joinTestCollectSink("out", &got)).Build(ctx)
+	).To(joinTestCollectSink("out", &got)).BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -771,7 +771,7 @@ func TestSelectActiveSwitchToEndedArm(t *testing.T) {
 	task, err := Select(
 		From(crossGatedFrameSource("a", releaseA, []int16{100}, []int16{200})).Audio(),
 		From(crossSignaledFrameSource("b", bEnded, 7)).Audio(),
-	).To(got.sink("out")).Build(ctx)
+	).To(got.sink("out")).BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -867,7 +867,7 @@ func TestFromMultiInputChainsKeepIndependentAutoPolicies(t *testing.T) {
 	if strings.Contains(text, "select-audio@micB -> resample") {
 		t.Fatalf("chain B must not borrow chain A's Auto grant:\n%s", text)
 	}
-	task, err := job.Build(context.Background())
+	task, err := job.BuildLive(context.Background())
 	if err != nil {
 		t.Fatalf("Build(): %v", err)
 	}
@@ -905,7 +905,7 @@ func TestMixBranchesAutoSolvesJoinedOutput(t *testing.T) {
 		!strings.Contains(text, "resample-enc -> encode-enc") {
 		t.Fatalf("joined branch output was not solved before encode:\n%s", text)
 	}
-	task, err := job.Build(context.Background())
+	task, err := job.BuildLive(context.Background())
 	if err != nil {
 		t.Fatalf("Build(): %v", err)
 	}
@@ -974,7 +974,7 @@ func TestMixEncodeAutoSolvesJoinedOutput(t *testing.T) {
 		!strings.Contains(text, "resample-mix -> encode-mix") {
 		t.Fatalf("joined terminal encode was not solved before encode:\n%s", text)
 	}
-	task, err := job.Build(context.Background())
+	task, err := job.BuildLive(context.Background())
 	if err != nil {
 		t.Fatalf("Build(): %v", err)
 	}

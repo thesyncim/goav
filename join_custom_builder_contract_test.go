@@ -97,7 +97,7 @@ func TestCustomJoinBuilderTapBranchesAndJoinArmContracts(t *testing.T) {
 	}))
 	task, err := joined.Branches(
 		Branch("monitor").From(FrameTap("funnel.frames")).To(collect),
-	).Build(ctx)
+	).BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -123,7 +123,7 @@ func TestCustomJoinBranchesRejectInvalidBuilder(t *testing.T) {
 		From(mixTestAudioSource("b", 50)).Audio(),
 	).Branches(
 		Branch("monitor").To(branchBuilderTestSink("monitor")),
-	).Build(context.Background())
+	).BuildLive(context.Background())
 	assertBuildErrorCode(t, err, errcode.JoinNameInvalid)
 
 	if _, err := customJoinProfile(nil); err == nil {

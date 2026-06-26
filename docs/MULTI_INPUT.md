@@ -17,12 +17,13 @@ and it landed as:
   up, an arm discontinuity (Seek/Segment) flushes that arm and re-syncs, and an
   ended arm stops gating so the rest keep joining (both modes). Catch-up drops
   surface on the join node's counters via the optional `pipeline.DropReporter`
-  capability (polled at snapshot time with an atomic counter on the hot path):
-  `task.Stats().Nodes["mix"].Dropped` under the `"sync"` reason, and in
-  `task.Snapshot()`.
+  capability (polled at snapshot time with an atomic counter on the hot path).
+  With `BuildLive`, they appear as `task.Stats().Nodes["mix"].Dropped` under
+  the `"sync"` reason, and in `task.Snapshot()`.
 - `Select(arms...)`: passthrough one-of-N switch (no decode/encode); the first
-  arm is active by default and `task.Control(ctx, control.SelectActive(id))`
-  switches live through the control plane.
+  arm is active by default and, with `BuildLive`,
+  `task.Control(ctx, control.SelectActive(id))` switches live through the
+  control plane.
 - Variadic `From(inputs...)`: N inputs, per-chain `InputName(...)` narrowing,
   one shared `Destination` value muxing the encoded chains.
 

@@ -126,7 +126,7 @@ func newDemoHost(ctx context.Context) (*demoHost, error) {
 		Video().Decode().Tap(goav.FrameTap("frames")).
 		To(goavtest.NewCollector().Sink()).
 		UseRuntime(goavtest.Runtime(goavruntime.WithEncoder(factory.descriptor, factory))).
-		Build(ctx)
+		BuildLive(ctx)
 	if err != nil {
 		return nil, err
 	}

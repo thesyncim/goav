@@ -304,7 +304,7 @@ func TestExternalJoinComposesThroughPublicGrammar(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	task, err := job.Build(ctx)
+	task, err := job.BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}

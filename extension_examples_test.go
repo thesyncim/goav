@@ -241,7 +241,7 @@ func ExampleTask_flowchart() {
 		Tap(goav.FrameTap("frames")).
 		To(main.Sink()).
 		UseRuntime(goavtest.Runtime()).
-		Build(ctx)
+		BuildLive(ctx)
 	if err != nil {
 		fmt.Println(err)
 		return

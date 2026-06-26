@@ -170,7 +170,7 @@ func benchVideoFrames(name string, n, width, height int) goav.InputSpec {
 func runBenchTask(b *testing.B, job *goav.Job) {
 	b.Helper()
 	ctx := context.Background()
-	task, err := job.Build(ctx)
+	task, err := job.BuildLive(ctx)
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -403,7 +403,7 @@ func BenchmarkAttachDetachUnderLoad(b *testing.B) {
 		Tap(goav.FrameTap("live.frames")).
 		To(benchSink("main")).
 		UseRuntime(benchRuntime(goavruntime.WithBufferPolicy(flow.DropOldest(64).PipelinePolicy()))).
-		Build(ctx)
+		BuildLive(ctx)
 	if err != nil {
 		b.Fatal(err)
 	}

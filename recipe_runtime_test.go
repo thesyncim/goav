@@ -69,7 +69,7 @@ func TestCustomPacketSourceRunsThroughRecipe(t *testing.T) {
 		t.Fatalf("intent: %+v", intent)
 	}
 
-	task, err := job.Build(ctx)
+	task, err := job.BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -107,7 +107,7 @@ func TestFrontDoorFlowControlSentinelsClassifyRuntimeErrors(t *testing.T) {
 	)
 	task, err := From(input).Audio().Copy().
 		To(Sink(SinkFunc("packets", func(context.Context, Message) error { return nil }))).
-		Build(ctx)
+		BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -170,7 +170,7 @@ func TestCustomFrameSourceRunsThroughRecipeWithoutDecode(t *testing.T) {
 		t.Fatalf("spec:\n%s", text)
 	}
 
-	task, err := job.Build(ctx)
+	task, err := job.BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -222,7 +222,7 @@ func TestCustomEventSourceRunsThroughRecipeToSink(t *testing.T) {
 		t.Fatalf("spec:\n%s", text)
 	}
 
-	task, err := job.Build(ctx)
+	task, err := job.BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -274,7 +274,7 @@ func TestRecordRecipeInputMIMEDrivesFormatProbe(t *testing.T) {
 		t.Fatalf("intent: %+v", intent)
 	}
 
-	task, err := job.Build(ctx)
+	task, err := job.BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -317,7 +317,7 @@ func TestRecordRecipeOutputMIMEDrivesFormatProbe(t *testing.T) {
 		t.Fatalf("spec:\n%s", text)
 	}
 
-	task, err := job.Build(ctx)
+	task, err := job.BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -349,7 +349,7 @@ func TestStreamRecipeReportsAmbiguousStreams(t *testing.T) {
 		Audio().
 		Decode().
 		To(Sink(&runtimeTestSink{name: "frames"})).
-		Build(ctx)
+		BuildLive(ctx)
 
 	var buildErr *BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "stream_ambiguous" || !errors.Is(err, errUnsupportedBuild) {
@@ -396,7 +396,7 @@ func TestStreamRecipeSelectsFirstStreamByIndex(t *testing.T) {
 		Audio(StreamIndex(0)).
 		Decode().
 		To(Sink(sink)).
-		Build(ctx)
+		BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -449,7 +449,7 @@ func TestStreamRecipeEncodeToSinkDestinationRuns(t *testing.T) {
 		Decode().
 		Encode(codec.Opus(codec.Bitrate(96_000))).
 		To(Sink(sink)).
-		Build(ctx)
+		BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -502,7 +502,7 @@ func TestStreamRecipeEncodeFansOutToMuxAndSinkDestinations(t *testing.T) {
 			Write("archive.ogg", io.Discard),
 			Sink(sink),
 		).
-		Build(ctx)
+		BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -572,7 +572,7 @@ func TestStreamRecipeEncodeToTypedDestinationRuns(t *testing.T) {
 		t.Fatalf("planned:\n%s", text)
 	}
 
-	task, err := job.Build(ctx)
+	task, err := job.BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -616,7 +616,7 @@ func TestStreamRecipeCopyTapCanAttachRuntimeSink(t *testing.T) {
 		Copy().
 		Tap(PacketTap("audio.packets")).
 		To(Sink(base)).
-		Build(ctx)
+		BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -672,7 +672,7 @@ func TestStreamRecipeCopyFansOutToMuxAndSinkDestinations(t *testing.T) {
 			Write("archive.ogg", io.Discard),
 			Sink(sink),
 		).
-		Build(ctx)
+		BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -713,7 +713,7 @@ func TestTaskAttachRuntimeFlowCopyBranchFromPacketTap(t *testing.T) {
 		Copy().
 		Tap(PacketTap("audio.packets")).
 		To(Sink(base)).
-		Build(ctx)
+		BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -781,7 +781,7 @@ func TestBranchCompositionCopyBranchesFanOutPackets(t *testing.T) {
 			Branch("archive").To(Write("archive.ogg", io.Discard)),
 			Branch("packets").To(Sink(sink)),
 		).
-		Build(ctx)
+		BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -857,7 +857,7 @@ func TestStreamRecipeDescribeMatchesBuiltGraph(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	task, err := job.Build(ctx)
+	task, err := job.BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -899,7 +899,7 @@ func TestFromAudioStreamRecipeDoEncodeRuns(t *testing.T) {
 		Do(meter).
 		Encode(codec.Opus(codec.Bitrate(96_000))).
 		To(Write("archive.ogg", io.Discard)).
-		Build(ctx)
+		BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -947,7 +947,7 @@ func TestBranchCompositionRecipeDescribeMatchesBuiltGraph(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	task, err := job.Build(ctx)
+	task, err := job.BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1007,7 +1007,7 @@ func TestBranchCompositionSharedParentOperationDescribeMatchesBuiltGraph(t *test
 		}
 	}
 
-	task, err := job.Build(ctx)
+	task, err := job.BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1065,7 +1065,7 @@ func TestBranchCompositionCurrentPointDescribeMatchesBuiltGraph(t *testing.T) {
 		}
 	}
 
-	task, err := job.Build(ctx)
+	task, err := job.BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1106,7 +1106,7 @@ func TestBranchCompositionEncodeFPSOptionSetsEncodeFramerate(t *testing.T) {
 				To(Write("web.ivf", io.Discard, Format(av.FormatIVF))),
 		)
 
-	task, err := job.Build(ctx)
+	task, err := job.BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1179,7 +1179,7 @@ func TestBranchCompositionSharedResampleCurrentPointRuns(t *testing.T) {
 		}
 	}
 
-	task, err := job.Build(ctx)
+	task, err := job.BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1236,7 +1236,7 @@ func TestBranchCompositionFrameSinkDestinationRuns(t *testing.T) {
 		t.Fatalf("planned:\n%s", specText(planned))
 	}
 
-	task, err := job.Build(ctx)
+	task, err := job.BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1290,7 +1290,7 @@ func TestBranchCompositionPacketBranchDecodeSinkRuns(t *testing.T) {
 		t.Fatalf("planned:\n%s", text)
 	}
 
-	task, err := job.Build(ctx)
+	task, err := job.BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1351,7 +1351,7 @@ func TestStreamRecipeFlowDecodeSinkRuns(t *testing.T) {
 		t.Fatalf("planned:\n%s", text)
 	}
 
-	task, err := job.Build(ctx)
+	task, err := job.BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1439,7 +1439,7 @@ func TestBranchCompositionPacketBranchDecodeResampleEncodeMuxRuns(t *testing.T) 
 		}
 	}
 
-	task, err := job.Build(ctx)
+	task, err := job.BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1515,7 +1515,7 @@ func TestBranchCompositionFrameSinkFanoutRuns(t *testing.T) {
 		t.Fatalf("planned:\n%s", plannedText)
 	}
 
-	task, err := job.Build(ctx)
+	task, err := job.BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1581,7 +1581,7 @@ func TestBranchCompositionResizeSinkDestinationRuns(t *testing.T) {
 		t.Fatalf("planned:\n%s", specText(planned))
 	}
 
-	task, err := job.Build(ctx)
+	task, err := job.BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1628,7 +1628,7 @@ func TestBranchCompositionEncodeSinkDestinationRuns(t *testing.T) {
 		Decode().
 		Branches(Branch("packets").Encode(codec.Opus(codec.Bitrate(96_000))).To(Sink(sink)))
 
-	task, err := job.Build(ctx)
+	task, err := job.BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1682,7 +1682,7 @@ func TestBranchCompositionTaskAttachesAfterEncodeTap(t *testing.T) {
 				To(Write("archive.ogg", io.Discard)),
 		)
 
-	task, err := job.Build(ctx)
+	task, err := job.BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1764,7 +1764,7 @@ func TestBranchCompositionTaskExposesAndAttachesAfterResizeTap(t *testing.T) {
 				To(Write("web.ogg", io.Discard)),
 		)
 
-	task, err := job.Build(ctx)
+	task, err := job.BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1855,7 +1855,7 @@ func TestStreamRecipeTaskAttachesAfterCustomStageAndEncodeTaps(t *testing.T) {
 		Tap(PacketTap("audio.encoded")).
 		To(Write("archive.ogg", io.Discard))
 
-	task, err := job.Build(ctx)
+	task, err := job.BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1943,7 +1943,7 @@ func TestTaskSnapshotReportsRuntimeBranchSnapshot(t *testing.T) {
 			return nil
 		})))
 
-	task, err := job.Build(ctx)
+	task, err := job.BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2033,7 +2033,7 @@ func TestRuntimeAttachShapeAnnotationCannotBreakOperationContract(t *testing.T) 
 			return nil
 		})))
 
-	task, err := job.Build(ctx)
+	task, err := job.BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2082,7 +2082,7 @@ func TestStreamRecipeTaskAttachesRuntimeResampleBranch(t *testing.T) {
 		Decode().
 		Tap(FrameTap("audio.decoded")).
 		To(Sink(&runtimeTestSink{name: "frames"})).
-		Build(ctx)
+		BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2157,7 +2157,7 @@ func TestRuntimeObservationBranchPublishesTapAndDetachesSubtree(t *testing.T) {
 		Decode().
 		Tap(FrameTap("audio.decoded")).
 		To(Sink(base)).
-		Build(ctx)
+		BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2243,7 +2243,7 @@ func TestTaskAttachRejectsRuntimeTransformDescriptorConfigBeforeMutation(t *test
 		Decode().
 		Tap(FrameTap("audio.decoded")).
 		To(Sink(&runtimeTestSink{name: "frames"})).
-		Build(ctx)
+		BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2307,7 +2307,7 @@ func TestStreamRecipeTaskAttachesRuntimeEncodeMuxBranch(t *testing.T) {
 		Decode().
 		Tap(FrameTap("audio.decoded")).
 		To(Sink(&runtimeTestSink{name: "frames"})).
-		Build(ctx)
+		BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2370,7 +2370,7 @@ func TestTaskAttachRejectsRuntimeMuxDescriptorBeforeMutation(t *testing.T) {
 		Decode().
 		Tap(FrameTap("audio.decoded")).
 		To(Sink(&runtimeTestSink{name: "frames"})).
-		Build(ctx)
+		BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -3425,7 +3425,7 @@ func TestFromAudioStreamRecipeResampleEncodeRuns(t *testing.T) {
 		Resample(16_000, codec.Mono).
 		Encode(encoded).
 		To(Write("preview.ogg", io.Discard)).
-		Build(ctx)
+		BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -3514,7 +3514,7 @@ func TestBranchCompositionCustomEncodeRuns(t *testing.T) {
 				Encode(encoded).
 				To(archive),
 		).
-		Build(ctx)
+		BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -3593,7 +3593,7 @@ func TestBranchCompositionRejectsConflictingDecodeConfigs(t *testing.T) {
 					return nil
 				}))),
 		).
-		Build(ctx)
+		BuildLive(ctx)
 	if err == nil {
 		t.Fatal("expected conflicting decode config error")
 	}

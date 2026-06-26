@@ -78,10 +78,17 @@ func mustRuntime(runtime *goav.Runtime, err error) *goav.Runtime {
 	return runtime
 }
 
-// Build compiles job with a bundled runtime. It is the batteries-included
-// counterpart to job.UseRuntime(bundle.MustNew(...)).Build(ctx), while preserving
-// New option errors as returned errors.
-func Build(ctx context.Context, job *goav.Job, opts ...goavruntime.Option) (goav.LiveTask, error) {
+// Build compiles job with a bundled runtime into the narrow runnable Task. It
+// is the batteries-included counterpart to
+// job.UseRuntime(bundle.MustNew(...)).Build(ctx), while preserving New option
+// errors as returned errors.
+func Build(ctx context.Context, job *goav.Job, opts ...goavruntime.Option) (goav.Task, error) {
+	return BuildLive(ctx, job, opts...)
+}
+
+// BuildLive compiles job with a bundled runtime into the full live task
+// capability surface for inspection, watches, controls, and runtime mutation.
+func BuildLive(ctx context.Context, job *goav.Job, opts ...goavruntime.Option) (goav.LiveTask, error) {
 	if job == nil {
 		return nil, ErrNilJob
 	}
@@ -89,7 +96,7 @@ func Build(ctx context.Context, job *goav.Job, opts ...goavruntime.Option) (goav
 	if err != nil {
 		return nil, err
 	}
-	return job.UseRuntime(runtime).Build(ctx)
+	return job.UseRuntime(runtime).BuildLive(ctx)
 }
 
 // Describe compiles job's graph shape with a bundled runtime without opening

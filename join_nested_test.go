@@ -35,7 +35,7 @@ func TestMixOfMixSumsBothStages(t *testing.T) {
 			From(mixTestAudioSource("b", 50, -50)).Audio(),
 		),
 		From(mixTestAudioSource("c", 5, 5)).Audio(),
-	).To(joinTestCollectSink("out", &got)).Build(ctx)
+	).To(joinTestCollectSink("out", &got)).BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -61,7 +61,7 @@ func TestNestedMixClampsPerStage(t *testing.T) {
 			From(mixTestAudioSource("b", 30000)).Audio(),
 		),
 		From(mixTestAudioSource("c", -30000)).Audio(),
-	).To(joinTestCollectSink("out", &got)).Build(ctx)
+	).To(joinTestCollectSink("out", &got)).BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -92,7 +92,7 @@ func TestSelectOfMixesSwitchesLive(t *testing.T) {
 			From(selectTestLiveSource("c", 10)).Audio(),
 			From(selectTestLiveSource("d", 20)).Audio(),
 		),
-	).To(Sink(sink)).Build(ctx)
+	).To(Sink(sink)).BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -151,7 +151,7 @@ func TestCompositeOfCompositesPaintsNestedCanvas(t *testing.T) {
 			From(compositeTestVideoSource("b", 4, 4, 200, 30, 40)).Video().Region(4, 0),
 		),
 		From(compositeTestVideoSource("c", 4, 4, 50, 10, 20)).Video().Region(0, 4),
-	).To(joinNestedTestFrameSink("out", &got)).Build(ctx)
+	).To(joinNestedTestFrameSink("out", &got)).BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -188,7 +188,7 @@ func TestNestedCompositeRegionPlacesSubCanvas(t *testing.T) {
 			From(compositeTestVideoSource("a", 4, 4, 100, 10, 20)).Video().Region(0, 0),
 			From(compositeTestVideoSource("b", 4, 4, 200, 30, 40)).Video().Region(4, 0),
 		).Region(0, 4),
-	).To(joinNestedTestFrameSink("out", &got)).Build(ctx)
+	).To(joinNestedTestFrameSink("out", &got)).BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -240,7 +240,7 @@ func TestSelectRegionPlacesSwitchedArmOnComposite(t *testing.T) {
 			From(compositeTestVideoSource("a", 4, 4, 100, 10, 20)).Video(),
 			From(compositeTestVideoSource("b", 4, 4, 200, 30, 40)).Video(),
 		).Region(0, 4),
-	).To(sink).Build(ctx)
+	).To(sink).BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -294,7 +294,7 @@ func TestMixResamplesNestedMixOutput(t *testing.T) {
 		t.Fatalf("planned spec missing the nested-arm resample:\n%s", specText(planned))
 	}
 
-	task, err := job.Build(ctx)
+	task, err := job.BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -307,7 +307,7 @@ func TestMixResamplesNestedMixOutput(t *testing.T) {
 	}
 }
 
-// TestJoinDescribeEqualsBuildNestedMix is the nested Describe() ≡ Build()
+// TestJoinDescribeEqualsBuildNestedMix is the nested Describe() ≡ BuildLive()
 // guard: a sub-mix arm (with its own SyncByPTS) under an outer mix that
 // resamples the sub-mix output, planned and built from the one plan.
 func TestJoinDescribeEqualsBuildNestedMix(t *testing.T) {
@@ -376,7 +376,7 @@ func TestNestedMixTapAnchorsOnSubJoinNode(t *testing.T) {
 			From(mixTestAudioSource("b", 50, -50)).Audio(),
 		).Tap(FrameTap("submix")),
 		From(mixTestAudioSource("c", 5, 5)).Audio(),
-	).To(joinTestCollectSink("out", &main)).Build(ctx)
+	).To(joinTestCollectSink("out", &main)).BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -427,7 +427,7 @@ func TestNestedMixEncodesToFile(t *testing.T) {
 			From(mixTestAudioSource("b", 50, -50)).Audio(),
 		),
 		From(mixTestAudioSource("c", 5, 5)).Audio(),
-	).Encode(codec.Opus()).To(Write("mix.ogg", io.Discard, Format(av.FormatOgg))).UseRuntime(rt).Build(ctx)
+	).Encode(codec.Opus()).To(Write("mix.ogg", io.Discard, Format(av.FormatOgg))).UseRuntime(rt).BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -450,7 +450,7 @@ func TestNestedJoinArmRejectsEncode(t *testing.T) {
 		).Encode(codec.Opus()),
 		From(mixTestAudioSource("c", 1)).Audio(),
 	).To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))).
-		Build(context.Background())
+		BuildLive(context.Background())
 	var buildErr *BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "mix_arm" {
 		t.Fatalf("err = %v, want mix_arm (a nested join arm is not a terminal)", err)
@@ -468,7 +468,7 @@ func TestNestedJoinArmsRequireDistinctOutputIDs(t *testing.T) {
 		// The leaf arm collides with the nested mix's auto-assigned output id.
 		From(mixTestAudioSource("mix-2", 1)).Audio(),
 	).To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))).
-		Build(context.Background())
+		BuildLive(context.Background())
 	var buildErr *BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "mix_arm" {
 		t.Fatalf("err = %v, want mix_arm (distinct ids across nested output and siblings)", err)
@@ -481,7 +481,7 @@ func TestNestedJoinRequiresTwoArms(t *testing.T) {
 		Mix(From(mixTestAudioSource("a", 1)).Audio()),
 		From(mixTestAudioSource("c", 1)).Audio(),
 	).To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))).
-		Build(context.Background())
+		BuildLive(context.Background())
 	var buildErr *BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "mix_inputs" {
 		t.Fatalf("err = %v, want mix_inputs (nested joins need two arms too)", err)
@@ -498,7 +498,7 @@ func TestMixRejectsNestedCompositeArm(t *testing.T) {
 		),
 		From(mixTestAudioSource("c", 1)).Audio(),
 	).To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))).
-		Build(context.Background())
+		BuildLive(context.Background())
 	var buildErr *BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "mix_arm" {
 		t.Fatalf("err = %v, want mix_arm (a mix arm must produce audio)", err)

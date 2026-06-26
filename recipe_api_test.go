@@ -475,8 +475,19 @@ func (j *testBranchJob) Build(ctx context.Context) (goav.Task, error) {
 	return j.materialize().Build(ctx)
 }
 
+func (j *testBranchJob) BuildLive(ctx context.Context) (goav.LiveTask, error) {
+	return j.materialize().BuildLive(ctx)
+}
+
 func (j *testBranchJob) Run(ctx context.Context) error {
 	return j.materialize().Run(ctx)
+}
+
+func TestJobBuildSignaturesSplitNarrowAndLiveTask(t *testing.T) {
+	var _ interface {
+		Build(context.Context) (goav.Task, error)
+		BuildLive(context.Context) (goav.LiveTask, error)
+	} = (*goav.Job)(nil)
 }
 
 func (b *testTranscodeBranchBuilder) Resize(width int, height int) *testTranscodeBranchBuilder {
@@ -1203,7 +1214,7 @@ func TestBuildRejectsIncompatibleIVFMuxGroupBeforeOpeningMuxer(t *testing.T) {
 			goav.Branch("v8").Encode(codec.VP8(codec.Bitrate(600_000))).To(web),
 			goav.Branch("v9").Encode(codec.VP9(codec.Bitrate(900_000))).To(web),
 		).
-		Build(context.Background())
+		BuildLive(context.Background())
 	var buildErr *goav.BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "destination_mux_incompatible" {
 		t.Fatalf("err = %v, want destination_mux_incompatible", err)
@@ -1248,7 +1259,7 @@ func TestBuildRejectsDescriptorBackedMuxIncompatibility(t *testing.T) {
 		Video().
 		Decode().
 		Branches(goav.Branch("video").Encode(codec.VP8(codec.Bitrate(600_000))).To(target)).
-		Build(context.Background())
+		BuildLive(context.Background())
 	var buildErr *goav.BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "destination_mux_incompatible" {
 		t.Fatalf("err = %v, want destination_mux_incompatible", err)
@@ -1327,7 +1338,7 @@ func TestBuildRejectsIncompatibleAnnexBMuxGroup(t *testing.T) {
 		Decode().
 		Encode(codec.VP8(codec.Bitrate(600_000))).
 		To(goav.Write("out.h264", io.Discard, goav.Format(av.FormatAnnexB))).
-		Build(context.Background())
+		BuildLive(context.Background())
 	var buildErr *goav.BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "destination_mux_incompatible" {
 		t.Fatalf("err = %v, want destination_mux_incompatible", err)
@@ -2472,7 +2483,7 @@ func TestRecipeReportsNilRuntime(t *testing.T) {
 	_, err := recordJob(
 		goav.FileInput("input.ivf", strings.NewReader("")),
 		goav.Write("recording.ivf", io.Discard),
-	).UseRuntime(nil).Build(context.Background())
+	).UseRuntime(nil).BuildLive(context.Background())
 
 	var buildErr *goav.BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "runtime_missing" {
@@ -2489,7 +2500,7 @@ func TestRecipeReportsOmittedRuntime(t *testing.T) {
 	_, err := recordJob(
 		goav.FileInput("input.ivf", strings.NewReader("")),
 		goav.Write("recording.ivf", io.Discard),
-	).Build(context.Background())
+	).BuildLive(context.Background())
 
 	var buildErr *goav.BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "runtime_missing" {
@@ -3657,7 +3668,7 @@ func TestRecipeAndRejectsMultipleFileInputs(t *testing.T) {
 	_, err := goav.From(goav.FileInput("a.ivf", strings.NewReader(""))).
 		And(goav.FileInput("b.ivf", strings.NewReader(""))).
 		To(goav.Write("out.ivf", io.Discard)).
-		Build(context.Background())
+		BuildLive(context.Background())
 	var buildErr *goav.BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "multi_input_unsupported" {
 		t.Fatalf("err = %v, want multi_input_unsupported with matching BuildError code", err)
@@ -3770,7 +3781,7 @@ func TestRecordRecipeRejectsEmptyInputSpec(t *testing.T) {
 	_, err := recordJob(
 		goav.InputSpec{},
 		goav.Write("recording.ogg", io.Discard),
-	).Build(context.Background())
+	).BuildLive(context.Background())
 	var buildErr *goav.BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "input_invalid" {
 		t.Fatalf("err = %v, want input_invalid with matching BuildError code", err)
@@ -3785,7 +3796,7 @@ func TestDecodeRecipeRejectsNilSinkDestination(t *testing.T) {
 	_, err := decodeJob(
 		goav.FileInput("input.ogg", strings.NewReader("")),
 		goav.Sink(nil),
-	).Build(context.Background())
+	).BuildLive(context.Background())
 	var buildErr *goav.BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "output_invalid" {
 		t.Fatalf("err = %v, want output_invalid wrapping errNilSink", err)
@@ -3799,7 +3810,7 @@ func TestDecodeRecipeRejectsNilSinkFuncCallback(t *testing.T) {
 	_, err := decodeJob(
 		goav.FileInput("input.ogg", strings.NewReader("")),
 		goav.Sink(component.SinkFunc("frames", nil)),
-	).Build(context.Background())
+	).BuildLive(context.Background())
 	var buildErr *goav.BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "output_invalid" {
 		t.Fatalf("err = %v, want output_invalid wrapping errNilSink", err)
@@ -3813,7 +3824,7 @@ func TestDecodeRecipeRejectsMuxOutput(t *testing.T) {
 	_, err := decodeJob(
 		goav.FileInput("input.ogg", strings.NewReader("")),
 		goav.Write("frames.ogg", io.Discard),
-	).Build(context.Background())
+	).BuildLive(context.Background())
 	var buildErr *goav.BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "encode_missing" {
 		t.Fatalf("err = %v, want encode_missing with matching BuildError code", err)
@@ -3827,7 +3838,7 @@ func TestDecodeRecipeRejectsMuxOutput(t *testing.T) {
 func TestRecordRecipeRejectsMissingOutput(t *testing.T) {
 	_, err := recordJob(
 		goav.FileInput("input.ogg", strings.NewReader("")),
-	).Build(context.Background())
+	).BuildLive(context.Background())
 	var buildErr *goav.BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "output_missing" {
 		t.Fatalf("err = %v, want output_missing", err)
@@ -3839,7 +3850,7 @@ func TestRecordRecipeRejectsEmptyDestination(t *testing.T) {
 	_, err := recordJob(
 		goav.FileInput("input.ogg", strings.NewReader("")),
 		target,
-	).Build(context.Background())
+	).BuildLive(context.Background())
 	var buildErr *goav.BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "destination_invalid" {
 		t.Fatalf("err = %v, want destination_invalid with matching BuildError code", err)
@@ -3855,7 +3866,7 @@ func TestRecordRecipeRejectsFileWithoutWriter(t *testing.T) {
 	_, err := recordJob(
 		goav.FileInput("input.ogg", strings.NewReader("")),
 		goav.Write("recording.ogg", nil),
-	).Build(context.Background())
+	).BuildLive(context.Background())
 	var buildErr *goav.BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "output_writer_missing" {
 		t.Fatalf("err = %v, want output_writer_missing with matching BuildError code", err)
@@ -3866,7 +3877,7 @@ func TestRecordRecipeRejectsUnnamedFileWithoutFormat(t *testing.T) {
 	_, err := recordJob(
 		goav.FileInput("input.ivf", strings.NewReader("")),
 		goav.Write("", io.Discard),
-	).Build(context.Background())
+	).BuildLive(context.Background())
 
 	var buildErr *goav.BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "output_format_missing" {
@@ -3882,7 +3893,7 @@ func TestRecordRecipeRejectsFormatOnlyDestination(t *testing.T) {
 	_, err := recordJob(
 		goav.FileInput("input.ivf", strings.NewReader("")),
 		goav.URI("", goav.Format(av.FormatIVF)),
-	).Build(context.Background())
+	).BuildLive(context.Background())
 
 	var buildErr *goav.BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "output_destination_missing" {
@@ -3898,7 +3909,7 @@ func TestRecordRecipeReportsMissingInputDemuxer(t *testing.T) {
 	_, err := recordJob(
 		goav.FileInput("input.ogg", strings.NewReader("")),
 		goav.Sink(component.SinkFunc("packets", func(context.Context, component.Message) error { return nil })),
-	).UseRuntime(mustRuntime()).Build(context.Background())
+	).UseRuntime(mustRuntime()).BuildLive(context.Background())
 
 	var buildErr *goav.BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "input_demuxer_missing" {
@@ -3915,7 +3926,7 @@ func TestRecordRecipeReportsMissingDestinationMuxer(t *testing.T) {
 	_, err := recordJob(
 		goav.FileInput("input.ivf", bytes.NewReader(tinyIVF())),
 		goav.Write("recording.mp4", io.Discard),
-	).UseRuntime(mustRuntime()).Build(context.Background())
+	).UseRuntime(mustRuntime()).BuildLive(context.Background())
 
 	var buildErr *goav.BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "destination_muxer_missing" {
@@ -3937,7 +3948,7 @@ func TestRecordRecipeRejectsDuplicateOutputs(t *testing.T) {
 			goav.Write("recording.ivf", io.Discard),
 			goav.Write("recording.ivf", io.Discard),
 		).
-		Build(context.Background())
+		BuildLive(context.Background())
 
 	var buildErr *goav.BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "output_duplicate" {
@@ -3958,7 +3969,7 @@ func TestStreamRecipeRejectsDuplicateSinkDestinations(t *testing.T) {
 			goav.Sink(component.SinkFunc("frames", sink)),
 			goav.Sink(component.SinkFunc("frames", sink)),
 		).
-		Build(context.Background())
+		BuildLive(context.Background())
 
 	var buildErr *goav.BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "output_duplicate" {
@@ -3993,7 +4004,7 @@ func TestProviderRecipeRejectsNilProvider(t *testing.T) {
 	_, err := recordJob(
 		goav.Input(nil),
 		goav.Write("recording.ogg", io.Discard),
-	).Build(context.Background())
+	).BuildLive(context.Background())
 	var buildErr *goav.BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "input_invalid" {
 		t.Fatalf("err = %v, want input_invalid wrapping errNilSource", err)
@@ -4141,7 +4152,7 @@ func TestStreamRecipeRequiresOperationForMuxOutput(t *testing.T) {
 	_, err := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
 		Audio().
 		To(goav.Write("archive.ogg", io.Discard)).
-		Build(context.Background())
+		BuildLive(context.Background())
 	var buildErr *goav.BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "stream_operation_missing" {
 		t.Fatalf("err = %v, want stream_operation_missing with matching BuildError code", err)
@@ -4203,7 +4214,7 @@ func TestStreamRecipeRequiresExplicitDecodeBeforeFrameConsumers(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := tt.job.Build(context.Background())
+			_, err := tt.job.BuildLive(context.Background())
 			var buildErr *goav.BuildError
 			if !errors.As(err, &buildErr) || buildErr.Code != "operation_shape_mismatch" {
 				t.Fatalf("err = %v, want operation_shape_mismatch with matching BuildError code", err)
@@ -4219,7 +4230,7 @@ func TestStreamRecipeRequiresExplicitDomainForPacketStreamSink(t *testing.T) {
 	_, err := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
 		Audio().
 		To(goav.Sink(component.SinkFunc("frames", func(context.Context, component.Message) error { return nil }))).
-		Build(context.Background())
+		BuildLive(context.Background())
 	var buildErr *goav.BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "operation_shape_mismatch" {
 		t.Fatalf("err = %v, want operation_shape_mismatch with matching BuildError code", err)
@@ -4237,7 +4248,7 @@ func TestStreamRecipeRejectsGenericAndStreamOutputs(t *testing.T) {
 		Decode().
 		Encode(codec.Opus(codec.Bitrate(96_000))).
 		To(goav.Write("preview.ogg", io.Discard)).
-		Build(context.Background())
+		BuildLive(context.Background())
 
 	var buildErr *goav.BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "output_scope_mixed" {
@@ -4256,7 +4267,7 @@ func TestStreamRecipeRejectsJobLevelOutput(t *testing.T) {
 	job.To(goav.Sink(component.SinkFunc("frames", func(context.Context, component.Message) error {
 		return nil
 	})))
-	_, err := job.Build(context.Background())
+	_, err := job.BuildLive(context.Background())
 
 	var buildErr *goav.BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "output_scope_mixed" {
@@ -4273,7 +4284,7 @@ func TestStreamRecipeRejectsSecondStreamSelectionBeforeRouting(t *testing.T) {
 	job := goav.From(goav.FileInput("input.webm", strings.NewReader("")))
 	job.Audio()
 	job.Video()
-	_, err := job.Build(context.Background())
+	_, err := job.BuildLive(context.Background())
 
 	var buildErr *goav.BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "stream_duplicate" {
@@ -4293,7 +4304,7 @@ func TestStreamRecipeRejectsNegativeStreamIndex(t *testing.T) {
 		To(goav.Sink(component.SinkFunc("frames", func(context.Context, component.Message) error {
 			return nil
 		}))).
-		Build(context.Background())
+		BuildLive(context.Background())
 	var buildErr *goav.BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "stream_selector_invalid" {
 		t.Fatalf("err = %v, want stream_selector_invalid with matching BuildError code", err)
@@ -4312,7 +4323,7 @@ func TestStreamRecipeRejectsNilCustomStage(t *testing.T) {
 		To(goav.Sink(component.SinkFunc("frames", func(context.Context, component.Message) error {
 			return nil
 		}))).
-		Build(context.Background())
+		BuildLive(context.Background())
 	var buildErr *goav.BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "stage_missing" {
 		t.Fatalf("err = %v, want stage_missing wrapping errNilStage", err)
@@ -4330,7 +4341,7 @@ func TestNilPacketFuncDoesNotBecomeSilentNilStage(t *testing.T) {
 		To(goav.Sink(component.SinkFunc("frames", func(context.Context, component.Message) error {
 			return nil
 		}))).
-		Build(context.Background())
+		BuildLive(context.Background())
 	var buildErr *goav.BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "stage_missing" {
 		t.Fatalf("err = %v, want stage_missing wrapping errNilStage", err)
@@ -4345,7 +4356,7 @@ func TestNilSinkFuncDoesNotBecomeSilentNilSink(t *testing.T) {
 	_, err := decodeJob(
 		goav.FileInput("input.ogg", strings.NewReader("")),
 		goav.Sink(component.SinkFunc("frames", nil)),
-	).Build(context.Background())
+	).BuildLive(context.Background())
 	var buildErr *goav.BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "output_invalid" {
 		t.Fatalf("err = %v, want output_invalid wrapping errNilSink", err)
@@ -4364,7 +4375,7 @@ func TestStreamRecipeRejectsWrongMediaTransform(t *testing.T) {
 		To(goav.Sink(component.SinkFunc("frames", func(context.Context, component.Message) error {
 			return nil
 		}))).
-		Build(context.Background())
+		BuildLive(context.Background())
 	var buildErr *goav.BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "transform_media_mismatch" {
 		t.Fatalf("err = %v, want transform_media_mismatch", err)
@@ -4379,7 +4390,7 @@ func TestStreamRecipeRejectsInvalidResize(t *testing.T) {
 		To(goav.Sink(component.SinkFunc("frames", func(context.Context, component.Message) error {
 			return nil
 		}))).
-		Build(context.Background())
+		BuildLive(context.Background())
 	var buildErr *goav.BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "transform_invalid" {
 		t.Fatalf("err = %v, want transform_invalid with matching BuildError code", err)
@@ -4396,7 +4407,7 @@ func TestStreamRecipeRequiresEncoderForFile(t *testing.T) {
 		Decode().
 		Resample(48_000, codec.Stereo).
 		To(goav.Write("archive.ogg", io.Discard)).
-		Build(context.Background())
+		BuildLive(context.Background())
 	var buildErr *goav.BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "encode_missing" {
 		t.Fatalf("err = %v, want encode_missing with matching BuildError code", err)
@@ -4413,7 +4424,7 @@ func TestStreamRecipeRejectsMixedSinkAndFile(t *testing.T) {
 			})),
 			goav.Write("archive.ogg", io.Discard),
 		).
-		Build(context.Background())
+		BuildLive(context.Background())
 
 	var buildErr *goav.BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "output_kind_mixed" {
@@ -4473,7 +4484,7 @@ func TestStreamRecipeRejectsProcessingAfterEncoder(t *testing.T) {
 		Encode(codec.Opus(codec.Bitrate(96_000))).
 		Resample(16_000, codec.Mono).
 		To(goav.Write("archive.ogg", io.Discard)).
-		Build(context.Background())
+		BuildLive(context.Background())
 
 	var buildErr *goav.BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "stream_step_after_encode" {
@@ -4493,7 +4504,7 @@ func TestStreamRecipeRejectsDuplicateEncoder(t *testing.T) {
 		Encode(codec.Opus(codec.Bitrate(96_000))).
 		Encode(codec.VP9(codec.Bitrate(600_000))).
 		To(goav.Write("archive.ogg", io.Discard)).
-		Build(context.Background())
+		BuildLive(context.Background())
 
 	var buildErr *goav.BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "encode_duplicate" {
@@ -4547,7 +4558,7 @@ func TestStreamRecipeReportsMissingCustomEncoder(t *testing.T) {
 		Decode().
 		Encode(codec.Codec("pcm", av.MediaAudio)).
 		To(goav.Write("archive.ogg", io.Discard)).
-		Build(context.Background())
+		BuildLive(context.Background())
 	var buildErr *goav.BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "encode_adapter_missing" || !errors.Is(err, codec.ErrNotFound) {
 		t.Fatalf("err = %v, want encode_adapter_missing wrapping codec.ErrNotFound", err)
@@ -4564,7 +4575,7 @@ func TestStreamRecipeRejectsNegativeEncodeBitrate(t *testing.T) {
 		Decode().
 		Encode(codec.Opus(codec.Bitrate(-1))).
 		To(goav.Write("archive.ogg", io.Discard)).
-		Build(context.Background())
+		BuildLive(context.Background())
 	var buildErr *goav.BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "encode_parameter_invalid" {
 		t.Fatalf("err = %v, want encode_parameter_invalid with matching BuildError code", err)
@@ -4602,7 +4613,7 @@ func TestStreamRecipeRejectsInvalidCodecTimingOptions(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := tt.job.Build(context.Background())
+			_, err := tt.job.BuildLive(context.Background())
 			var buildErr *goav.BuildError
 			if !errors.As(err, &buildErr) || buildErr.Code != "encode_parameter_invalid" {
 				t.Fatalf("err = %v, want encode_parameter_invalid with matching BuildError code", err)
@@ -4620,7 +4631,7 @@ func TestStreamRecipeRejectsInvalidEncodeSampleRate(t *testing.T) {
 		Decode().
 		Encode(codec.Opus(codec.SampleRate(0))).
 		To(goav.Write("archive.ogg", io.Discard)).
-		Build(context.Background())
+		BuildLive(context.Background())
 	var buildErr *goav.BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "encode_parameter_invalid" {
 		t.Fatalf("err = %v, want encode_parameter_invalid with matching BuildError code", err)
@@ -4638,7 +4649,7 @@ func TestStreamRecipeReportsMissingEncodeAdapterBeforeOpeningInput(t *testing.T)
 		Decode().
 		Encode(codec.Opus(codec.Bitrate(96_000))).
 		To(goav.Write("archive.ivf", io.Discard)).
-		Build(context.Background())
+		BuildLive(context.Background())
 	var buildErr *goav.BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "encode_adapter_missing" || !errors.Is(err, codec.ErrNotFound) {
 		t.Fatalf("err = %v, want encode_adapter_missing wrapping codec.ErrNotFound", err)
@@ -4681,7 +4692,7 @@ func TestStreamRecipeReportsProbedFileSelectionBeforeOpeningInput(t *testing.T) 
 		To(goav.Sink(component.SinkFunc("frames", func(context.Context, component.Message) error {
 			return nil
 		}))).
-		Build(context.Background())
+		BuildLive(context.Background())
 	var buildErr *goav.BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "stream_ambiguous" {
 		t.Fatalf("err = %v, want stream_ambiguous with matching BuildError code", err)
@@ -4717,7 +4728,7 @@ func TestStreamRecipeReportsProbedFileMissingDecoderBeforeOpeningInput(t *testin
 		To(goav.Sink(component.SinkFunc("frames", func(context.Context, component.Message) error {
 			return nil
 		}))).
-		Build(context.Background())
+		BuildLive(context.Background())
 	var buildErr *goav.BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "decode_adapter_missing" || !errors.Is(err, codec.ErrNotFound) {
 		t.Fatalf("err = %v, want decode_adapter_missing wrapping codec.ErrNotFound", err)
@@ -4742,7 +4753,7 @@ func TestStreamRecipeReportsMissingTransformAdapterBeforeOpeningInput(t *testing
 		To(goav.Sink(component.SinkFunc("frames", func(context.Context, component.Message) error {
 			return nil
 		}))).
-		Build(context.Background())
+		BuildLive(context.Background())
 	var buildErr *goav.BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "transform_adapter_missing" || !errors.Is(err, filter.ErrNotFound) {
 		t.Fatalf("err = %v, want transform_adapter_missing wrapping filter.ErrNotFound", err)
@@ -4787,7 +4798,7 @@ func TestStreamRecipeReportsIncompatibleTransformAdapterBeforeOpeningInput(t *te
 		To(goav.Sink(component.SinkFunc("frames", func(context.Context, component.Message) error {
 			return nil
 		}))).
-		Build(context.Background())
+		BuildLive(context.Background())
 	var buildErr *goav.BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "transform_adapter_incompatible" {
 		t.Fatalf("err = %v, want transform_adapter_incompatible with matching BuildError code", err)
@@ -4818,7 +4829,7 @@ func TestStreamRecipeRejectsUnresolvedEncodeIntents(t *testing.T) {
 				Decode().
 				Encode(tt.spec).
 				To(goav.Write("archive.ogg", io.Discard)).
-				Build(context.Background())
+				BuildLive(context.Background())
 			var buildErr *goav.BuildError
 			if !errors.As(err, &buildErr) || buildErr.Code != tt.code {
 				t.Fatalf("err = %v, want %s with matching BuildError code", err, tt.code)
@@ -4851,7 +4862,7 @@ func TestRecordRecipeDescribeMatchesBuiltGraph(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	task, err := job.Build(context.Background())
+	task, err := job.BuildLive(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -4893,7 +4904,7 @@ func TestFromFanoutRecipeDescribeMatchesBuiltGraph(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	task, err := job.Build(context.Background())
+	task, err := job.BuildLive(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -4921,7 +4932,7 @@ func TestDefaultRecordRecipeRunsWithExplicitUnnamedOutputFormat(t *testing.T) {
 		t.Fatalf("spec:\n%s", text)
 	}
 
-	task, err := job.Build(context.Background())
+	task, err := job.BuildLive(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -5026,7 +5037,7 @@ func TestBranchRecipeRejectsDuplicateDestinations(t *testing.T) {
 	_, err := branchJob(goav.FileInput("input.webm", strings.NewReader(""))).
 		Video("720p").Encode(codec.VP9(codec.Bitrate(2_000_000))).To(web).
 		Video("360p").Encode(codec.VP9(codec.Bitrate(600_000))).To(web2).
-		Build(context.Background())
+		BuildLive(context.Background())
 
 	var buildErr *goav.BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "destination_duplicate" {
@@ -5042,7 +5053,7 @@ func TestBranchRecipeRejectsDuplicateBranchDestinations(t *testing.T) {
 	web := goav.Write("web.webm", io.Discard)
 	_, err := branchJob(goav.FileInput("input.webm", strings.NewReader(""))).
 		Video("720p").Encode(codec.VP9(codec.Bitrate(2_000_000))).To(web, web).
-		Build(context.Background())
+		BuildLive(context.Background())
 
 	var buildErr *goav.BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "destination_duplicate" {
@@ -5061,7 +5072,7 @@ func TestBranchRecipeRejectsDuplicateBranchNames(t *testing.T) {
 	_, err := branchJob(goav.FileInput("input.webm", strings.NewReader(""))).
 		Video("720p").Encode(codec.VP9(codec.Bitrate(2_000_000))).To(archive).
 		Video("720p").Encode(codec.VP9(codec.Bitrate(1_000_000))).To(preview).
-		Build(context.Background())
+		BuildLive(context.Background())
 
 	var buildErr *goav.BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "stream_duplicate" {
@@ -5078,7 +5089,7 @@ func TestBranchRecipeRejectsMissingBranchName(t *testing.T) {
 	web := goav.Write("web.webm", io.Discard)
 	_, err := branchJob(goav.FileInput("input.webm", strings.NewReader(""))).
 		Video("").Encode(codec.VP9(codec.Bitrate(2_000_000))).To(web).
-		Build(context.Background())
+		BuildLive(context.Background())
 
 	var buildErr *goav.BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "stream_name_missing" {
@@ -5095,7 +5106,7 @@ func TestBranchRecipeRejectsInvalidDestination(t *testing.T) {
 	_, err := branchJob(goav.FileInput("input.webm", strings.NewReader(""))).
 		Video("360p").Encode(codec.VP9(codec.Bitrate(600_000))).
 		To(goav.Write("preview.webm", nil)).
-		Build(context.Background())
+		BuildLive(context.Background())
 
 	var buildErr *goav.BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "output_writer_missing" {
@@ -5560,7 +5571,7 @@ func TestBranchCompositionRejectsDecodeAfterBranchOperation(t *testing.T) {
 					return nil
 				}))),
 		).
-		Build(context.Background())
+		BuildLive(context.Background())
 
 	var buildErr *goav.BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "branch_decode_order_invalid" {
@@ -5584,7 +5595,7 @@ func TestBranchCompositionRejectsDecodeThenCopy(t *testing.T) {
 					return nil
 				}))),
 		).
-		Build(context.Background())
+		BuildLive(context.Background())
 
 	var buildErr *goav.BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "branch_decode_copy_invalid" {
@@ -5607,7 +5618,7 @@ func TestBranchCompositionRejectsDecodeFromFrameBranchPoint(t *testing.T) {
 					return nil
 				}))),
 		).
-		Build(context.Background())
+		BuildLive(context.Background())
 
 	var buildErr *goav.BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "branch_decode_domain_mismatch" {
@@ -5621,7 +5632,7 @@ func TestBranchCompositionRejectsDecodeFromFrameBranchPoint(t *testing.T) {
 
 func TestBranchRecipeRequiresBranch(t *testing.T) {
 	_, err := goav.From(goav.FileInput("input.webm", strings.NewReader(""))).
-		Build(context.Background())
+		BuildLive(context.Background())
 
 	var buildErr *goav.BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "output_missing" {
@@ -5635,7 +5646,7 @@ func TestBranchRecipeRequiresBranch(t *testing.T) {
 func TestBranchRecipeRequiresBranchDestination(t *testing.T) {
 	job := branchJob(goav.FileInput("input.webm", strings.NewReader("")))
 	job.Video("360p").Encode(codec.VP9(codec.Bitrate(600_000)))
-	_, err := job.Build(context.Background())
+	_, err := job.BuildLive(context.Background())
 
 	var buildErr *goav.BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "destination_missing" {
@@ -5654,7 +5665,7 @@ func TestBranchRecipeRejectsNegativeStreamIndex(t *testing.T) {
 		Decode().
 		Tap(goav.FrameTap("audio.decoded")).
 		Branches(goav.Branch("bad").Encode(codec.Opus(codec.Bitrate(64_000))).To(goav.Write("bad.ogg", io.Discard))).
-		Build(context.Background())
+		BuildLive(context.Background())
 
 	var buildErr *goav.BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "stream_selector_invalid" {
@@ -5676,7 +5687,7 @@ func TestBranchRecipeRejectsWrongMediaTransform(t *testing.T) {
 				Resize(640, 360).
 				To(goavtest.NewCollector().Sink()),
 		).
-		Build(context.Background())
+		BuildLive(context.Background())
 
 	var buildErr *goav.BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "operation_shape_mismatch" {
@@ -5692,7 +5703,7 @@ func TestBranchRecipeRejectsInvalidResample(t *testing.T) {
 	_, err := branchJob(goav.FileInput("input.webm", strings.NewReader(""))).
 		Audio("bad").Resample(0, codec.Mono).Encode(codec.Opus(codec.Bitrate(64_000))).
 		To(goav.Write("bad.ogg", io.Discard)).
-		Build(context.Background())
+		BuildLive(context.Background())
 
 	var buildErr *goav.BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "transform_invalid" {
@@ -5715,7 +5726,7 @@ func TestBranchRecipeRejectsProcessingAfterEncoder(t *testing.T) {
 				Resize(640, 360).
 				To(goav.Write("preview.webm", io.Discard)),
 		).
-		Build(context.Background())
+		BuildLive(context.Background())
 
 	var buildErr *goav.BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "stream_step_after_encode" {
@@ -5739,7 +5750,7 @@ func TestBranchRecipeRejectsDuplicateEncoder(t *testing.T) {
 				Encode(codec.VP8(codec.Bitrate(400_000))).
 				To(goav.Write("preview.webm", io.Discard)),
 		).
-		Build(context.Background())
+		BuildLive(context.Background())
 
 	var buildErr *goav.BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "encode_duplicate" {
@@ -5756,7 +5767,7 @@ func TestBranchRecipeRejectsNegativeEncodeBitrate(t *testing.T) {
 	_, err := branchJob(goav.FileInput("input.webm", strings.NewReader(""))).
 		Video("bad").Encode(codec.VP9(codec.Bitrate(-1))).
 		To(goav.Write("bad.webm", io.Discard)).
-		Build(context.Background())
+		BuildLive(context.Background())
 
 	var buildErr *goav.BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "encode_parameter_invalid" {

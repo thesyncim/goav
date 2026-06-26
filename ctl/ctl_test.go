@@ -515,7 +515,7 @@ func newExternalTask(t *testing.T, runtime *goav.Runtime) goav.LiveTask {
 		Tap(goav.FrameTap("frames")).
 		To(goavtest.NewCollector().Sink()).
 		UseRuntime(runtime).
-		Build(context.Background())
+		BuildLive(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}

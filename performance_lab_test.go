@@ -140,7 +140,7 @@ func BenchmarkLiveRoomSync(b *testing.B) {
 		Video(goav.InputName("live-video")).Sync(policy).Copy().To(goav.Sink(component.SinkFunc("live-room-video", sink.collect))).
 		Audio(goav.InputName("live-audio")).Sync(policy).Copy().To(goav.Sink(component.SinkFunc("live-room-audio", sink.collect))).
 		UseRuntime(benchRuntime()).
-		Build(ctx)
+		BuildLive(ctx)
 	if err != nil {
 		b.Fatal(err)
 	}

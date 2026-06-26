@@ -463,7 +463,7 @@ func TestTaskSegmentExportCommitsDestination(t *testing.T) {
 	task, err := From(Input(&segmentProvider{source: source})).
 		Audio().Copy().
 		Tap(PacketTap("audio.packets")).
-		To(lifecycleTestSink("base")).Build(ctx)
+		To(lifecycleTestSink("base")).BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -159,7 +159,7 @@ func TestMixDescribeShowsConvergentJoin(t *testing.T) {
 	spec, err := Mix(
 		From(mixTestAudioSource("a", 1)).Audio(),
 		From(mixTestAudioSource("b", 1)).Audio(),
-	).To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))).Build(context.Background())
+	).To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))).BuildLive(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -322,7 +322,7 @@ func TestMixUsesExplicitlyDecodedPacketArmsBeforeMixing(t *testing.T) {
 	task, err := Mix(
 		From(packetSrc("a")).Audio().Decode(),
 		From(packetSrc("b")).Audio().Decode(),
-	).To(sink).UseRuntime(rt).Build(ctx)
+	).To(sink).UseRuntime(rt).BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -350,7 +350,7 @@ func TestMixEncodesMixedOutput(t *testing.T) {
 	task, err := Mix(
 		From(mixTestAudioSource("a", 100, 200)).Audio(),
 		From(mixTestAudioSource("b", 50, -50)).Audio(),
-	).Encode(codec.Opus()).To(sink).UseRuntime(rt).Build(ctx)
+	).Encode(codec.Opus()).To(sink).UseRuntime(rt).BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -374,7 +374,7 @@ func TestMixEncodesToFile(t *testing.T) {
 	task, err := Mix(
 		From(mixTestAudioSource("a", 100, 200)).Audio(),
 		From(mixTestAudioSource("b", 50, -50)).Audio(),
-	).Encode(codec.Opus()).To(Write("mix.ogg", io.Discard, Format(av.FormatOgg))).UseRuntime(rt).Build(ctx)
+	).Encode(codec.Opus()).To(Write("mix.ogg", io.Discard, Format(av.FormatOgg))).UseRuntime(rt).BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -433,7 +433,7 @@ func TestMixEncodesToMultipleFileDestinations(t *testing.T) {
 	).Encode(codec.Opus()).To(
 		Write("first.ogg", &first, Format(av.FormatOgg)),
 		Write("second.ogg", &second, Format(av.FormatOgg)),
-	).UseRuntime(rt).Build(ctx)
+	).UseRuntime(rt).BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -459,7 +459,7 @@ func TestMixRejectsSameDestinationHandleTwice(t *testing.T) {
 	_, err := Mix(
 		From(mixTestAudioSource("a", 100)).Audio(),
 		From(mixTestAudioSource("b", 50)).Audio(),
-	).Encode(codec.Opus()).To(out, out).UseRuntime(rt).Build(context.Background())
+	).Encode(codec.Opus()).To(out, out).UseRuntime(rt).BuildLive(context.Background())
 
 	// One handle listed twice is the same refusal a chain's .To(out, out)
 	// raises: the joined stream reaches each destination once.
@@ -516,7 +516,7 @@ func TestMixResamplesMismatchedArms(t *testing.T) {
 	task, err := Mix(
 		From(mixTestAudioSourceRate("a", 48000)).Audio(),
 		From(mixTestAudioSourceRate("b", 24000)).Audio(),
-	).To(sink).UseRuntime(rt).Build(ctx)
+	).To(sink).UseRuntime(rt).BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}

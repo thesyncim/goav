@@ -2,7 +2,7 @@
 // public API only. The decorator that was previously unimplementable — count
 // the messages a BUILT-IN input produces without reimplementing it — wraps a
 // custom source and a file input, and the node-identity pin keeps Describe()
-// ≡ Build() even when the decorator misreports its name.
+// ≡ BuildLive() even when the decorator misreports its name.
 
 package goav_test
 
@@ -49,7 +49,7 @@ func (e countingEmitter) Emit(ctx context.Context, msg *pipeline.Message) error 
 
 // TestWrapSourceDecoratesCustomInput wraps a goavtest source with a counting
 // decorator: the media flows unchanged, the decorator observes every frame,
-// and the planned graph keeps the input's own node (Describe() ≡ Build()
+// and the planned graph keeps the input's own node (Describe() ≡ BuildLive()
 // despite the decorator's misreported name).
 func TestWrapSourceDecoratesCustomInput(t *testing.T) {
 	ctx := context.Background()
@@ -65,13 +65,13 @@ func TestWrapSourceDecoratesCustomInput(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	task, err := job.Build(ctx)
+	task, err := job.BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer task.Close()
 	if built := task.Describe(); !reflect.DeepEqual(planned, built) {
-		t.Fatalf("Describe() != Build() under WrapSource:\nplanned: %+v\nbuilt:   %+v", planned, built)
+		t.Fatalf("Describe() != BuildLive() under WrapSource:\nplanned: %+v\nbuilt:   %+v", planned, built)
 	}
 	for _, node := range task.Describe().Nodes {
 		if node.Name == "renamed-by-decorator" {

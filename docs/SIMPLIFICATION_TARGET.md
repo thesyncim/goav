@@ -135,7 +135,9 @@ and close/finalization failures, and `LiveTask` exposes one observation model:
 `Watch(filters...).Events()`, with unfiltered `Watch()` for every task event.
 Recipe-built tasks now keep the same structured workflow report as pre-build
 `Explain`, with live graph and tap rows refreshed when task `Explain` is
-called.
+called. Normal recipe and bundle `Build` now return the narrow `Task`
+lifecycle; callers that need inspection, watches, controls, or runtime mutation
+opt into the full surface with `BuildLive`.
 
 V1 rescope progress: README now meets the <=120 line target and acts as the
 adoption front door only; longer live/runtime and extension walkthroughs live
@@ -176,14 +178,17 @@ callers that only need context-aware shutdown can assert a local interface.
 Exported `goav.Observable` was also removed; task event access is `Watch`,
 while narrow event consumers can still use local structural interfaces.
 Exported `goav.Controllable` was removed the same way; live control remains on
-`LiveTask`, and control-only helpers can accept a local structural interface.
+the explicit `BuildLive`/`LiveTask` path, and control-only helpers can accept a
+local structural interface.
 Exported `goav.Explainer` was removed as a separate alias; built-task
-explanation remains on `LiveTask`, and `Job.Explain(ctx)` remains the
-pre-build path.
+explanation remains on the explicit `BuildLive`/`LiveTask` path, and
+`Job.Explain(ctx)` remains the pre-build path.
 Exported `goav.Inspectable` was removed; runtime inspection remains on
-`LiveTask`, and inspection-only helpers can accept a local structural interface.
+the explicit `BuildLive`/`LiveTask` path, and inspection-only helpers can accept
+a local structural interface.
 Exported `goav.Mutable` was removed; runtime branch mutation remains on
-`LiveTask`, and mutation-only helpers can accept a local structural interface.
+the explicit `BuildLive`/`LiveTask` path, and mutation-only helpers can accept a
+local structural interface.
 Exported `goav.MediaOption` was removed while keeping `Name`, `MIME`, and
 `Metadata` usable as shared input/destination options.
 Exported `goav.InputOption` and `goav.DestinationOption` were also removed;

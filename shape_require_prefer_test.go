@@ -44,13 +44,13 @@ func TestRequireMetIsNoOp(t *testing.T) {
 			t.Fatalf("satisfied .Require(...) reported an insertion: %+v", warning)
 		}
 	}
-	task, err := job.Build(ctx)
+	task, err := job.BuildLive(ctx)
 	if err != nil {
-		t.Fatalf("Build(): %v", err)
+		t.Fatalf("BuildLive(): %v", err)
 	}
 	defer task.Close()
 	if specText(task.Describe()) != specText(planned) {
-		t.Fatalf("Describe() != Build():\nplanned:\n%s\nbuilt:\n%s", specText(planned), specText(task.Describe()))
+		t.Fatalf("Describe() != BuildLive():\nplanned:\n%s\nbuilt:\n%s", specText(planned), specText(task.Describe()))
 	}
 	if err := task.Run(ctx); err != nil {
 		t.Fatalf("Run(): %v", err)
@@ -68,7 +68,7 @@ func TestRequireViolatedFailsWithFix(t *testing.T) {
 		Encode(codec.Opus(codec.Bitrate(96_000))).
 		To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))).
 		UseRuntime(solverTestOpusRuntime(testBundleFilters())).
-		Build(context.Background())
+		BuildLive(context.Background())
 	var buildErr *BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "shape_requirement_unmet" || !errors.Is(err, errUnsupportedBuild) {
 		t.Fatalf("err = %v, want shape_requirement_unmet with matching BuildError code", err)
@@ -123,13 +123,13 @@ func TestRequireSatisfiedByAutoConversion(t *testing.T) {
 	if !found {
 		t.Fatalf("Explain should report the insertion before the requirement, warnings = %+v", report.Warnings)
 	}
-	task, err := job.Build(ctx)
+	task, err := job.BuildLive(ctx)
 	if err != nil {
-		t.Fatalf("Build(): %v", err)
+		t.Fatalf("BuildLive(): %v", err)
 	}
 	defer task.Close()
 	if specText(task.Describe()) != specText(planned) {
-		t.Fatalf("Describe() != Build():\nplanned:\n%s\nbuilt:\n%s", specText(planned), specText(task.Describe()))
+		t.Fatalf("Describe() != BuildLive():\nplanned:\n%s\nbuilt:\n%s", specText(planned), specText(task.Describe()))
 	}
 }
 
@@ -159,7 +159,7 @@ func TestRequireWorksInBranches(t *testing.T) {
 				To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))),
 		).
 		UseRuntime(rt).
-		Build(context.Background())
+		BuildLive(context.Background())
 	var buildErr *BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "shape_requirement_unmet" {
 		t.Fatalf("err = %v, want shape_requirement_unmet", err)
@@ -180,7 +180,7 @@ func TestRequireWorksInFlows(t *testing.T) {
 		Encode(codec.Opus(codec.Bitrate(96_000))).
 		To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))).
 		UseRuntime(solverTestOpusRuntime(testBundleFilters())).
-		Build(context.Background())
+		BuildLive(context.Background())
 	var buildErr *BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "shape_requirement_unmet" {
 		t.Fatalf("err = %v, want shape_requirement_unmet", err)
@@ -216,7 +216,7 @@ func TestPreferResolvesAdapterAmbiguity(t *testing.T) {
 		Encode(codec.Opus(codec.Bitrate(96_000))).
 		To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))).
 		UseRuntime(rt).
-		Build(context.Background())
+		BuildLive(context.Background())
 	var buildErr *BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "shape_adapter_ambiguous" {
 		t.Fatalf("err = %v, want shape_adapter_ambiguous without a preference", err)
@@ -248,13 +248,13 @@ func TestPreferResolvesAdapterAmbiguity(t *testing.T) {
 	if !found {
 		t.Fatalf("Explain should record the preference resolution, warnings = %+v", report.Warnings)
 	}
-	task, err := job.Build(context.Background())
+	task, err := job.BuildLive(context.Background())
 	if err != nil {
-		t.Fatalf("Build(): %v", err)
+		t.Fatalf("BuildLive(): %v", err)
 	}
 	defer task.Close()
 	if specText(task.Describe()) != specText(planned) {
-		t.Fatalf("Describe() != Build():\nplanned:\n%s\nbuilt:\n%s", specText(planned), specText(task.Describe()))
+		t.Fatalf("Describe() != BuildLive():\nplanned:\n%s\nbuilt:\n%s", specText(planned), specText(task.Describe()))
 	}
 }
 
@@ -297,9 +297,9 @@ func TestPreferBiasesOpenConversionTarget(t *testing.T) {
 	if !applied || !inserted {
 		t.Fatalf("Explain should record the biased target (applied=%v inserted=%v), warnings = %+v", applied, inserted, report.Warnings)
 	}
-	task, err := job.Build(context.Background())
+	task, err := job.BuildLive(context.Background())
 	if err != nil {
-		t.Fatalf("Build(): %v", err)
+		t.Fatalf("BuildLive(): %v", err)
 	}
 	defer task.Close()
 	if len(factory.configs) != 1 || factory.configs[0].Audio == nil || factory.configs[0].Audio.SampleFormat != "f32" {
@@ -342,9 +342,9 @@ func TestPreferUnsatisfiableIgnoredWithDiagnostic(t *testing.T) {
 	if !ignored {
 		t.Fatalf("Explain should record the dropped preference, warnings = %+v", report.Warnings)
 	}
-	task, err := job.Build(context.Background())
+	task, err := job.BuildLive(context.Background())
 	if err != nil {
-		t.Fatalf("Build(): %v", err)
+		t.Fatalf("BuildLive(): %v", err)
 	}
 	defer task.Close()
 	if len(factory.configs) != 1 || factory.configs[0].Audio == nil || factory.configs[0].Audio.SampleFormat != av.SampleFormatS16 {
@@ -394,7 +394,7 @@ func TestPreferWorksInBranches(t *testing.T) {
 	_, err := From(source()).Audio().Decode().
 		Branches(branch(false)).
 		UseRuntime(rt).
-		Build(context.Background())
+		BuildLive(context.Background())
 	var buildErr *BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "shape_adapter_ambiguous" {
 		t.Fatalf("err = %v, want shape_adapter_ambiguous without a preference", err)
@@ -424,13 +424,13 @@ func TestPreferWorksInBranches(t *testing.T) {
 	if !found {
 		t.Fatalf("Explain should record the branch preference resolution, warnings = %+v", report.Warnings)
 	}
-	task, err := job.Build(context.Background())
+	task, err := job.BuildLive(context.Background())
 	if err != nil {
-		t.Fatalf("Build(): %v", err)
+		t.Fatalf("BuildLive(): %v", err)
 	}
 	defer task.Close()
 	if specText(task.Describe()) != specText(planned) {
-		t.Fatalf("Describe() != Build():\nplanned:\n%s\nbuilt:\n%s", specText(planned), specText(task.Describe()))
+		t.Fatalf("Describe() != BuildLive():\nplanned:\n%s\nbuilt:\n%s", specText(planned), specText(task.Describe()))
 	}
 }
 
@@ -453,9 +453,9 @@ func TestReadmeRequireExampleBuilds(t *testing.T) {
 	if !strings.Contains(specText(planned), "resample-audio") {
 		t.Fatalf("planned spec should show the inserted resample node:\n%s", specText(planned))
 	}
-	task, err := job.Build(context.Background())
+	task, err := job.BuildLive(context.Background())
 	if err != nil {
-		t.Fatalf("Build(): %v", err)
+		t.Fatalf("BuildLive(): %v", err)
 	}
 	defer task.Close()
 }

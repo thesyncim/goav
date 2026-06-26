@@ -406,7 +406,7 @@ func TestErrorAcceptancePacketBranchTransformUnsupported(t *testing.T) {
 				Resample(16_000, codec.Mono).
 				To(goavtest.NewCollector().Sink()),
 		).
-		Build(context.Background())
+		BuildLive(context.Background())
 	requireBuildError(t, err, errcode.Code("packet_branch_transform_unsupported"), "build branches", "bad",
 		"use .Decode().Branches(...) when branch variants need frame transforms",
 		"use .Copy().Branches(...) only for packet-preserving branches",
@@ -433,7 +433,7 @@ func TestBuildAndAttachReturnSameErrorForSameInvalidBranch(t *testing.T) {
 		Audio().
 		Tap(goav.FrameTap("audio.frames")).
 		To(goavtest.NewCollector().Sink()).
-		Build(context.Background())
+		BuildLive(context.Background())
 	if err != nil {
 		t.Fatalf("base task build: %v", err)
 	}
@@ -464,7 +464,7 @@ func TestErrorAcceptanceCopyAfterDecode(t *testing.T) {
 		Audio().Decode().Copy().
 		To(goav.Write("out.ogg", io.Discard)).
 		UseRuntime(goavtest.Runtime()).
-		Build(context.Background())
+		BuildLive(context.Background())
 	buildErr := requireBuildError(t, err, errcode.Code("operation_shape_mismatch"), "build job", "audio",
 		"copy only consumes packet-domain media",
 		"move .Copy() before decode",
@@ -483,7 +483,7 @@ func TestErrorAcceptanceFramesIntoContainerWithoutEncode(t *testing.T) {
 		Audio().Decode().
 		To(goav.Write("out.ogg", io.Discard)).
 		UseRuntime(goavtest.Runtime()).
-		Build(context.Background())
+		BuildLive(context.Background())
 	requireBuildError(t, err, errcode.Code("encode_missing"), "build job", "audio",
 		".Encode(codec.Opus(...))",
 		"goav.Sink(...)",
@@ -498,7 +498,7 @@ func TestErrorAcceptanceTransformAfterCopy(t *testing.T) {
 		Video().Copy().Resize(640, 360).
 		To(goav.Write("out.ivf", io.Discard)).
 		UseRuntime(goavtest.Runtime()).
-		Build(context.Background())
+		BuildLive(context.Background())
 	buildErr := requireBuildError(t, err, errcode.Code("operation_shape_mismatch"), "build stream", "video",
 		"call .Decode() before .Resize(...)",
 	)
@@ -515,7 +515,7 @@ func TestErrorAcceptanceDestinationFormatUnknown(t *testing.T) {
 		Audio().Encode(codec.Opus()).
 		To(goav.Write("out.weird", io.Discard)).
 		UseRuntime(goavtest.Runtime()).
-		Build(context.Background())
+		BuildLive(context.Background())
 	requireBuildError(t, err, errcode.Code("destination_format_unknown"), "open destination", "out.weird",
 		"pass goav.Format(...)",
 	)
@@ -529,7 +529,7 @@ func TestErrorAcceptanceDestinationMuxerMissing(t *testing.T) {
 		Audio().Encode(codec.Opus()).
 		To(goav.Write("out.ogg", io.Discard)).
 		UseRuntime(bundle.MustNewFilters(goavtest.Codec(av.CodecOpus))).
-		Build(context.Background())
+		BuildLive(context.Background())
 	requireBuildError(t, err, errcode.Code("destination_muxer_missing"), "open destination", "out.ogg",
 		"goavruntime.WithMuxer(...)",
 	)
@@ -546,7 +546,7 @@ func TestErrorAcceptanceAmbiguousStreamSelectionListsCandidates(t *testing.T) {
 		Audio().
 		Decode().
 		To(goavtest.NewCollector().Sink()).
-		Build(context.Background())
+		BuildLive(context.Background())
 
 	var buildErr *goav.BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != errcode.Code("stream_ambiguous") {
@@ -574,7 +574,7 @@ func TestErrorAcceptanceAttachUnknownTapListsDeclaredTaps(t *testing.T) {
 		Audio().Tap(goav.FrameTap("audio.decoded")).
 		To(goavtest.NewCollector().Sink()).
 		UseRuntime(goavtest.Runtime()).
-		Build(ctx)
+		BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -598,7 +598,7 @@ func TestErrorAcceptanceTypedTapAtWrongDomain(t *testing.T) {
 		Audio().Encode(codec.Opus()).Tap(goav.FrameTap("post-encode")).
 		To(goav.Write("out.ogg", io.Discard)).
 		UseRuntime(goavtest.Runtime()).
-		Build(context.Background())
+		BuildLive(context.Background())
 	buildErr := requireBuildError(t, err, errcode.TapDomainMismatch, "build stream", "audio",
 		"use goav.PacketTap(name) after .Copy() or an encoder",
 		"use goav.FrameTap(name) after decode",
@@ -616,7 +616,7 @@ func TestErrorAcceptanceEncoderAdapterMissing(t *testing.T) {
 		Audio().Encode(codec.Codec("weird", av.MediaAudio)).
 		To(goav.Write("out.ogg", io.Discard)).
 		UseRuntime(goavtest.Runtime()).
-		Build(context.Background())
+		BuildLive(context.Background())
 	buildErr := requireBuildError(t, err, errcode.Code("encode_adapter_missing"), "build job", "audio",
 		"goavruntime.WithEncoder(...)",
 	)
@@ -635,7 +635,7 @@ func TestErrorAcceptanceShapeConversionRefused(t *testing.T) {
 		Audio().Auto().Encode(codec.Opus()).
 		To(goavtest.NewCollector().Sink()).
 		UseRuntime(goavtest.Runtime()).
-		Build(context.Background())
+		BuildLive(context.Background())
 	requireBuildError(t, err, errcode.Code("shape_conversion_refused"), "build job", "audio",
 		"add .Auto(shape.AllowResample())",
 		"insert .Resample(48000, 2) explicitly",

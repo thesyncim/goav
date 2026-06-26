@@ -64,7 +64,7 @@ func TestRecipeRTPAV1DecodeSink(t *testing.T) {
 		t.Fatalf("planned:\n%s", specText(planned))
 	}
 
-	task, err := job.Build(ctx)
+	task, err := job.BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -139,7 +139,7 @@ func testRecipeRTPAV1DecodeSink420(t *testing.T, pixelFormat string) {
 		Video().
 		Decode().
 		To(goav.Sink(sink)).
-		Build(ctx)
+		BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -208,7 +208,7 @@ func TestRecipeRTPAV1CodecChangedDropsUntilSync(t *testing.T) {
 		Video().
 		Decode().
 		To(goav.Sink(sink)).
-		Build(ctx)
+		BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -298,7 +298,7 @@ func testRecipeRTPAV1CodecChangedReplacementStream(t *testing.T, oldIDTarget boo
 		Video().
 		Decode().
 		To(goav.Sink(sink)).
-		Build(ctx)
+		BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}

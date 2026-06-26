@@ -442,7 +442,7 @@ func TestRenderTaskFlowchartReadsLiveTaskSnapshot(t *testing.T) {
 		Audio().Copy().Tap(goav.PacketTap("pkts")).
 		To(goavtest.NewCollector().Sink()).
 		UseRuntime(goavtest.Runtime()).
-		Build(ctx)
+		BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}

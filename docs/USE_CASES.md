@@ -102,7 +102,7 @@ anchor := goav.Sink(component.SinkFunc("room-anchor", func(context.Context, comp
 task, err := goav.From(input).
     Audio().
     To(anchor).
-    Build(ctx)
+    BuildLive(ctx)
 if err != nil {
     return err
 }
@@ -415,7 +415,7 @@ for _, warning := range report.Warnings {
         warning.Code, warning.Node, warning.Message)
 }
 
-task, err := job.Build(ctx)
+task, err := job.BuildLive(ctx)
 if err != nil {
     return err
 }

@@ -1542,7 +1542,7 @@ func TestExecuteRequestAppliesAttachRequest(t *testing.T) {
 		Audio().Copy().Tap(goav.PacketTap("pkts")).
 		To(goavtest.NewCollector().Sink()).
 		UseRuntime(goavtest.Runtime()).
-		Build(ctx)
+		BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1573,7 +1573,7 @@ func TestExecuteAppliesAttachCommand(t *testing.T) {
 		Audio().Copy().Tap(goav.PacketTap("pkts")).
 		To(goavtest.NewCollector().Sink()).
 		UseRuntime(goavtest.Runtime()).
-		Build(ctx)
+		BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1834,7 +1834,7 @@ func TestServerAttachRebranchDetachUsesAttachmentTable(t *testing.T) {
 		Audio().Copy().Tap(goav.PacketTap("pkts")).
 		To(goavtest.NewCollector().Sink()).
 		UseRuntime(goavtest.Runtime()).
-		Build(ctx)
+		BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2130,7 +2130,7 @@ func TestServerSupportsCustomEncoderSettings(t *testing.T) {
 		Audio().Tap(goav.FrameTap("frames")).
 		To(goavtest.NewCollector().Sink()).
 		UseRuntime(goavtest.Runtime(goavruntime.WithEncoder(factory.descriptor, factory))).
-		Build(ctx)
+		BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2256,7 +2256,7 @@ func TestServerGenericEncodeStepCarriesCommonCodecOptions(t *testing.T) {
 		Audio().Tap(goav.FrameTap("frames")).
 		To(goavtest.NewCollector().Sink()).
 		UseRuntime(goavtest.Runtime(goavruntime.WithEncoder(factory.descriptor, factory))).
-		Build(ctx)
+		BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2325,7 +2325,7 @@ func TestExecuteControlAgainstRealControllableTestSource(t *testing.T) {
 		Audio().Copy().
 		To(goavtest.NewCollector().Sink()).
 		UseRuntime(goavtest.Runtime()).
-		Build(ctx)
+		BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}

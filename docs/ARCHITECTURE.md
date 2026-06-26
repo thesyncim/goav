@@ -168,7 +168,8 @@ What the compiler enforces today: the sibling packages (`av`, `errcode`,
 depends on leaves, never the reverse.
 
 The one exception is `expert`: it sits above root because it imports `goav` to
-return `LiveTask`. Root reaches back only through structural interfaces
+return `Task` on the normal build path and `LiveTask` through `BuildLive`.
+Root reaches back only through structural interfaces
 (`ExpertGraph() any`, the branch-anchor `Route` capability), never an import.
 
 What is convention only: inside the root package, the grammar -> plan -> build

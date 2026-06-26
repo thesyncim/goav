@@ -171,9 +171,9 @@ func TestNorthStarBranchesAfterDecodeShareOneDecoder(t *testing.T) {
 		t.Fatalf("NORTH_STAR #18: decode fanout = %v, want the one decode node feeding both branches; spec:\n%s", fanout, specText(spec))
 	}
 
-	task, err := job.Build(context.Background())
+	task, err := job.BuildLive(context.Background())
 	if err != nil {
-		t.Fatalf("Build(): %v", err)
+		t.Fatalf("BuildLive(): %v", err)
 	}
 	defer task.Close()
 	sinkC := &runtimeTestSink{name: "c"}
@@ -288,7 +288,7 @@ func TestNorthStarShapeGuards(t *testing.T) {
 	t.Run("frame_to_file_without_encode_fails", func(t *testing.T) {
 		_, err := From(input()).UseRuntime(northStarTranscodeRuntime()).
 			Audio().Decode().To(Write("out.ogg", io.Discard)).
-			Build(context.Background())
+			BuildLive(context.Background())
 		if err == nil {
 			t.Fatal("NORTH_STAR #13: a frame branch to File without Encode must fail (File needs packets)")
 		}
@@ -298,7 +298,7 @@ func TestNorthStarShapeGuards(t *testing.T) {
 	t.Run("decode_to_frame_sink_succeeds", func(t *testing.T) {
 		_, err := From(input()).UseRuntime(northStarTranscodeRuntime()).
 			Audio().Decode().To(Sink(SinkFunc("frames", func(context.Context, Message) error { return nil }))).
-			Build(context.Background())
+			BuildLive(context.Background())
 		if err != nil {
 			t.Fatalf("NORTH_STAR #15: decode to a frame Sink must succeed: %v", err)
 		}
@@ -308,7 +308,7 @@ func TestNorthStarShapeGuards(t *testing.T) {
 	t.Run("packet_copy_to_file_succeeds", func(t *testing.T) {
 		_, err := From(input()).UseRuntime(northStarTranscodeRuntime()).
 			Audio().Copy().To(Write("out.ogg", io.Discard)).
-			Build(context.Background())
+			BuildLive(context.Background())
 		if err != nil {
 			t.Fatalf("NORTH_STAR #14: a packet branch to File with Copy must succeed: %v", err)
 		}

@@ -6,8 +6,9 @@
 // .Encode(codec.VP9(...))); .To(destination) ends a chain at a File, URI,
 // Writer, Object, or Sink. Branches fan one stream point out, Mix, Composite,
 // and Select converge N arms into one, Tap names attach points, Flow reuses
-// operation lists, and Build(ctx) returns a Task — a running graph with
-// events, snapshots, runtime Attach/Detach, and live controls.
+// operation lists, and Build(ctx) returns a Task with only Run and Close.
+// BuildLive(ctx) opts into events, snapshots, runtime Attach/Detach, and live
+// controls.
 //
 // New(opts...) builds a bare runtime and returns option/configuration errors.
 // Import github.com/thesyncim/goav/bundle when the application wants the
@@ -47,8 +48,8 @@ type Task interface {
 }
 
 // LiveTask is the full task capability set produced by the built-in runtime.
-// Accept this only when an API needs inspection, runtime mutation, controls, or
-// event watches; otherwise accept Task.
+// BuildLive returns it for APIs that need inspection, runtime mutation,
+// controls, or event watches; otherwise accept Task and build with Build.
 type LiveTask interface {
 	Task
 	// Explain reports the planned workflow before any resource opens: inputs,

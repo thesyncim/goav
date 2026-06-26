@@ -138,13 +138,13 @@ func TestAutoInsertsResampleBeforeEncode(t *testing.T) {
 		t.Fatalf("Explain should carry the insertion diagnostic, warnings = %+v", report.Warnings)
 	}
 
-	task, err := job.Build(ctx)
+	task, err := job.BuildLive(ctx)
 	if err != nil {
-		t.Fatalf("Build(): %v", err)
+		t.Fatalf("BuildLive(): %v", err)
 	}
 	defer task.Close()
 	if specText(task.Describe()) != specText(planned) {
-		t.Fatalf("Describe() != Build():\nplanned:\n%s\nbuilt:\n%s", specText(planned), specText(task.Describe()))
+		t.Fatalf("Describe() != BuildLive():\nplanned:\n%s\nbuilt:\n%s", specText(planned), specText(task.Describe()))
 	}
 	if err := task.Run(ctx); err != nil {
 		t.Fatalf("Run(): %v", err)
@@ -164,7 +164,7 @@ func TestAutoEmptyPolicyRefusesConversion(t *testing.T) {
 		Encode(codec.Opus(codec.Bitrate(96_000))).
 		To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))).
 		UseRuntime(solverTestOpusRuntime(testBundleFilters())).
-		Build(context.Background())
+		BuildLive(context.Background())
 	var buildErr *BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "shape_conversion_refused" || !errors.Is(err, errUnsupportedBuild) {
 		t.Fatalf("err = %v, want shape_conversion_refused with matching BuildError code", err)
@@ -197,7 +197,7 @@ func TestAutoInsufficientPolicyRefusesStageConversion(t *testing.T) {
 		Do(stage).
 		To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))).
 		UseRuntime(mustNew(testBundleFilters())).
-		Build(context.Background())
+		BuildLive(context.Background())
 	var buildErr *BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "shape_conversion_refused" || !errors.Is(err, errUnsupportedBuild) {
 		t.Fatalf("err = %v, want shape_conversion_refused with matching BuildError code", err)
@@ -225,7 +225,7 @@ func TestShapeMismatchSuggestsExactAutoFix(t *testing.T) {
 		Do(stage).
 		To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))).
 		UseRuntime(mustNew(testBundleFilters())).
-		Build(context.Background())
+		BuildLive(context.Background())
 	var buildErr *BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "operation_shape_mismatch" || !errors.Is(err, errUnsupportedBuild) {
 		t.Fatalf("err = %v, want operation_shape_mismatch with matching BuildError code", err)
@@ -267,9 +267,9 @@ func TestAutoInsertsResizeBeforeEncode(t *testing.T) {
 	if !strings.Contains(specText(planned), "resize-video") {
 		t.Fatalf("planned spec should show the inserted resize node:\n%s", specText(planned))
 	}
-	task, err := job.Build(context.Background())
+	task, err := job.BuildLive(context.Background())
 	if err != nil {
-		t.Fatalf("Build(): %v", err)
+		t.Fatalf("BuildLive(): %v", err)
 	}
 	defer task.Close()
 	report, err := job.Explain(context.Background())
@@ -319,9 +319,9 @@ func TestAutoInsertsFormatConvertThroughRegisteredAdapter(t *testing.T) {
 	if !strings.Contains(specText(planned), "sampleconv-audio") {
 		t.Fatalf("planned spec should show the selected adapter node:\n%s", specText(planned))
 	}
-	task, err := job.Build(context.Background())
+	task, err := job.BuildLive(context.Background())
 	if err != nil {
-		t.Fatalf("Build(): %v", err)
+		t.Fatalf("BuildLive(): %v", err)
 	}
 	defer task.Close()
 	if len(factory.configs) != 1 || factory.configs[0].Audio == nil || factory.configs[0].Audio.SampleFormat != av.SampleFormatS16 {
@@ -338,7 +338,7 @@ func TestAutoFailsWithoutRegisteredAdapter(t *testing.T) {
 		Encode(codec.Opus(codec.Bitrate(96_000))).
 		To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))).
 		UseRuntime(solverTestOpusRuntime()).
-		Build(context.Background())
+		BuildLive(context.Background())
 	var buildErr *BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "shape_adapter_missing" || !errors.Is(err, errUnsupportedBuild) {
 		t.Fatalf("err = %v, want shape_adapter_missing with matching BuildError code", err)
@@ -374,7 +374,7 @@ func TestAutoFailsOnAmbiguousAdapters(t *testing.T) {
 		Encode(codec.Opus(codec.Bitrate(96_000))).
 		To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))).
 		UseRuntime(rt).
-		Build(context.Background())
+		BuildLive(context.Background())
 	var buildErr *BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "shape_adapter_ambiguous" || !errors.Is(err, errUnsupportedBuild) {
 		t.Fatalf("err = %v, want shape_adapter_ambiguous with matching BuildError code", err)
@@ -419,13 +419,13 @@ func TestAutoSolvesBranchChains(t *testing.T) {
 	if !strings.Contains(specText(planned), "resample-voice") {
 		t.Fatalf("planned spec should show the inserted branch resample node:\n%s", specText(planned))
 	}
-	task, err := job.Build(context.Background())
+	task, err := job.BuildLive(context.Background())
 	if err != nil {
-		t.Fatalf("Build(): %v", err)
+		t.Fatalf("BuildLive(): %v", err)
 	}
 	defer task.Close()
 	if specText(task.Describe()) != specText(planned) {
-		t.Fatalf("Describe() != Build():\nplanned:\n%s\nbuilt:\n%s", specText(planned), specText(task.Describe()))
+		t.Fatalf("Describe() != BuildLive():\nplanned:\n%s\nbuilt:\n%s", specText(planned), specText(task.Describe()))
 	}
 }
 
@@ -449,13 +449,13 @@ func TestAutoWorksInFlows(t *testing.T) {
 	if !strings.Contains(specText(planned), "resample-audio") {
 		t.Fatalf("planned spec should show the flow-enabled resample node:\n%s", specText(planned))
 	}
-	task, err := job.Build(context.Background())
+	task, err := job.BuildLive(context.Background())
 	if err != nil {
-		t.Fatalf("Build(): %v", err)
+		t.Fatalf("BuildLive(): %v", err)
 	}
 	defer task.Close()
 	if specText(task.Describe()) != specText(planned) {
-		t.Fatalf("Describe() != Build():\nplanned:\n%s\nbuilt:\n%s", specText(planned), specText(task.Describe()))
+		t.Fatalf("Describe() != BuildLive():\nplanned:\n%s\nbuilt:\n%s", specText(planned), specText(task.Describe()))
 	}
 }
 
@@ -477,13 +477,13 @@ func TestReadmeAutoResampleExampleBuilds(t *testing.T) {
 	if !strings.Contains(specText(planned), "resample-audio") {
 		t.Fatalf("planned spec should show the inserted resample node:\n%s", specText(planned))
 	}
-	task, err := job.Build(context.Background())
+	task, err := job.BuildLive(context.Background())
 	if err != nil {
-		t.Fatalf("Build(): %v", err)
+		t.Fatalf("BuildLive(): %v", err)
 	}
 	defer task.Close()
 	if specText(task.Describe()) != specText(planned) {
-		t.Fatalf("Describe() != Build():\nplanned:\n%s\nbuilt:\n%s", specText(planned), specText(task.Describe()))
+		t.Fatalf("Describe() != BuildLive():\nplanned:\n%s\nbuilt:\n%s", specText(planned), specText(task.Describe()))
 	}
 }
 

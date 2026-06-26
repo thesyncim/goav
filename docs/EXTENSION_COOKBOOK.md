@@ -90,7 +90,7 @@ runtime branch grammar used everywhere else.
 
 ```go
 input := room.Input() // goav.Source(..., shape.Frame(...), ...)
-task, err := goav.From(input).Audio().To(anchor).Build(ctx)
+task, err := goav.From(input).Audio().To(anchor).BuildLive(ctx)
 if err != nil {
     return err
 }

@@ -140,7 +140,7 @@ task, err := goav.From(liveInput).
     UseRuntime(bundle.MustNew(
         goavruntime.WithEncoder(encoderFactory.Descriptor, encoderFactory),
     )).
-    Build(ctx)
+    BuildLive(ctx)
 if err != nil {
     return err
 }

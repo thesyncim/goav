@@ -32,7 +32,7 @@ func TestFromMultiInputChainsShareOneMuxDestination(t *testing.T) {
 	).UseRuntime(rt).
 		Video().Encode(codec.VP9(codec.Bitrate(1_000_000))).To(out).
 		Audio().Encode(codec.Opus(codec.Bitrate(96_000))).To(out).
-		Build(ctx)
+		BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -132,7 +132,7 @@ func TestFromMultiInputUnknownInputNameListsInputs(t *testing.T) {
 		Audio(InputName("microphone")).
 		Decode().
 		To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))).
-		Build(context.Background())
+		BuildLive(context.Background())
 
 	var buildErr *BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "input_unknown" || !errors.Is(err, errUnsupportedBuild) {
@@ -152,7 +152,7 @@ func TestFromMultiInputInputNameNarrowsChains(t *testing.T) {
 	).
 		Audio(InputName("mic-a")).To(joinTestCollectSink("sink-a", &gotA)).
 		Audio(InputName("mic-b")).To(joinTestCollectSink("sink-b", &gotB)).
-		Build(ctx)
+		BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -178,7 +178,7 @@ func TestFromMultiInputUnambiguousChainJustWorks(t *testing.T) {
 		mixTestAudioSource("mic", 5, 6),
 	).
 		Audio().To(joinTestCollectSink("sink", &got)).
-		Build(ctx)
+		BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -196,7 +196,7 @@ func TestJoinArmsRejectMultiInputChains(t *testing.T) {
 		From(mixTestAudioSource("a", 1), mixTestAudioSource("b", 1)).Audio(),
 		From(mixTestAudioSource("c", 1)).Audio(),
 	).To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))).
-		Build(context.Background())
+		BuildLive(context.Background())
 
 	var buildErr *BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "mix_arm" || !errors.Is(err, errUnsupportedBuild) {
@@ -211,7 +211,7 @@ func TestBranchesRejectMultiInputJobs(t *testing.T) {
 	).
 		Audio(InputName("a")).
 		Branches(Branch("mon").To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil })))).
-		Build(context.Background())
+		BuildLive(context.Background())
 
 	var buildErr *BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "input_count_unsupported" {
@@ -230,7 +230,7 @@ func TestFromMultiInputRejectsConflictingDestinationHandles(t *testing.T) {
 	).
 		Video().Encode(codec.VP9()).To(first).
 		Audio().Encode(codec.Opus()).To(second).
-		Build(context.Background())
+		BuildLive(context.Background())
 
 	var buildErr *BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "destination_duplicate" {

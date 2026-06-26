@@ -28,7 +28,7 @@ func TestMixRunsTwoAudioSourcesIntoSink(t *testing.T) {
 	task, err := goav.Mix(
 		goav.From(goavtest.Audio(48000, 1, []int16{100, 200})).Audio(),
 		goav.From(goavtest.Audio(48000, 1, []int16{50, -50})).Audio(),
-	).To(out.Sink()).UseRuntime(goavtest.Runtime()).Build(ctx)
+	).To(out.Sink()).UseRuntime(goavtest.Runtime()).BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -52,7 +52,7 @@ func TestSelectSwitchesActiveArmMidRun(t *testing.T) {
 	task, err := goav.Select(
 		goav.From(goavtest.LiveAudio("a", 48000, 1, []int16{100})).Audio(),
 		goav.From(goavtest.LiveAudio("b", 48000, 1, []int16{200})).Audio(),
-	).To(out.Sink()).UseRuntime(goavtest.Runtime()).Build(ctx)
+	).To(out.Sink()).UseRuntime(goavtest.Runtime()).BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -91,8 +91,9 @@ Move or keep outside the front door:
    - Narrow `Task` to `Run(context.Context) error` and `Close() error`.
    - Introduce opt-in interfaces for description/explanation, inspection,
      mutation, control, watching, and stats.
-   - Keep the standard build path returning `LiveTask`, and update consumers to
-     accept narrower interfaces whenever they only need one capability.
+   - Make the standard build path return the narrow `Task`, keep `BuildLive`
+     for explicit live capabilities, and update consumers to accept narrower
+     interfaces whenever they only need one capability.
 
 6. **Constructor strictness** — landed for constructors
    - Stop returning nil from helper constructors on nil callbacks.

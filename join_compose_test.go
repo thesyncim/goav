@@ -33,7 +33,7 @@ func TestMixTapDeliversMixedFramesToRuntimeBranch(t *testing.T) {
 	task, err := Mix(
 		From(mixTestAudioSource("a", 100, 200)).Audio(),
 		From(mixTestAudioSource("b", 50, -50)).Audio(),
-	).Tap(FrameTap("mixed")).To(joinTestCollectSink("out", &main)).Build(ctx)
+	).Tap(FrameTap("mixed")).To(joinTestCollectSink("out", &main)).BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -82,7 +82,7 @@ func TestMixBranchesFanOutMixedStream(t *testing.T) {
 	).Branches(
 		Branch("x").To(joinTestCollectSink("x-sink", &xs)),
 		Branch("y").To(joinTestCollectSink("y-sink", &ys)),
-	).Build(ctx)
+	).BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -134,7 +134,7 @@ func TestMixBranchesEncodeAndMonitorIndependently(t *testing.T) {
 	).Branches(
 		Branch("rec").Encode(codec.Opus()).To(Write("mix.ogg", io.Discard, Format(av.FormatOgg))),
 		Branch("mon").To(joinTestCollectSink("monitor", &monitor)),
-	).UseRuntime(rt).Build(ctx)
+	).UseRuntime(rt).BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -158,7 +158,7 @@ func TestMixBranchAnchorsFromJoinTap(t *testing.T) {
 		From(mixTestAudioSource("b", 50, -50)).Audio(),
 	).Tap(FrameTap("mixed")).Branches(
 		Branch("x").From(FrameTap("mixed")).To(joinTestCollectSink("x-sink", &got)),
-	).Build(ctx)
+	).BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -178,7 +178,7 @@ func TestMixBranchesRequireAtLeastOneBranch(t *testing.T) {
 	_, err := Mix(
 		From(mixTestAudioSource("a", 1)).Audio(),
 		From(mixTestAudioSource("b", 1)).Audio(),
-	).Branches().Build(context.Background())
+	).Branches().BuildLive(context.Background())
 	var buildErr *BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "branch_missing" {
 		t.Fatalf("err = %v, want branch_missing", err)
@@ -191,7 +191,7 @@ func TestMixEncodeIsTerminalForBranches(t *testing.T) {
 		From(mixTestAudioSource("b", 1)).Audio(),
 	).Encode(codec.Opus()).Branches(
 		Branch("x").To(Sink(SinkFunc("x", func(context.Context, Message) error { return nil }))),
-	).Build(context.Background())
+	).BuildLive(context.Background())
 	var buildErr *BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "encode_branch_source_invalid" {
 		t.Fatalf("err = %v, want encode_branch_source_invalid (same as the chain rule)", err)
@@ -201,7 +201,7 @@ func TestMixEncodeIsTerminalForBranches(t *testing.T) {
 func TestMixBranchesPreserveArmCountError(t *testing.T) {
 	_, err := Mix(From(mixTestAudioSource("a", 1)).Audio()).Branches(
 		Branch("x").To(Sink(SinkFunc("x", func(context.Context, Message) error { return nil }))),
-	).Build(context.Background())
+	).BuildLive(context.Background())
 	var buildErr *BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "mix_inputs" {
 		t.Fatalf("err = %v, want mix_inputs", err)
@@ -214,7 +214,7 @@ func TestMixBranchFromUnknownTapRejected(t *testing.T) {
 		From(mixTestAudioSource("b", 1)).Audio(),
 	).Branches(
 		Branch("x").From(FrameTap("nope")).To(Sink(SinkFunc("x", func(context.Context, Message) error { return nil }))),
-	).Build(context.Background())
+	).BuildLive(context.Background())
 	var buildErr *BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "branch_tap_missing" {
 		t.Fatalf("err = %v, want branch_tap_missing", err)
@@ -227,7 +227,7 @@ func TestMixBranchMuxDestinationRequiresEncode(t *testing.T) {
 		From(mixTestAudioSource("b", 1)).Audio(),
 	).Branches(
 		Branch("x").To(Write("x.ogg", io.Discard, Format(av.FormatOgg))),
-	).Build(context.Background())
+	).BuildLive(context.Background())
 	var buildErr *BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "encode_missing" {
 		t.Fatalf("err = %v, want encode_missing (same as the chain rule)", err)
@@ -278,7 +278,7 @@ func TestCompositeBranchesFanOutCompositedStream(t *testing.T) {
 	).Branches(
 		Branch("x").To(collect("x-sink", &xs)),
 		Branch("y").To(collect("y-sink", &ys)),
-	).Build(ctx)
+	).BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -305,7 +305,7 @@ func TestSelectTapNamesSwitchedStream(t *testing.T) {
 	task, err := Select(
 		From(selectTestOneShotSource("a", 100)).Audio(),
 		From(selectTestOneShotSource("b", 200)).Audio(),
-	).Tap(FrameTap("switched")).To(joinTestCollectSink("out", &got)).Build(ctx)
+	).Tap(FrameTap("switched")).To(joinTestCollectSink("out", &got)).BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}

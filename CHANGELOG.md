@@ -19,18 +19,21 @@ methodology changes, and migration notes.
 - Removed exported `goav.ContextCloser`; runtime tasks still expose
   `CloseContext(ctx)` structurally, and callers that need context-aware
   shutdown can define that small interface locally.
-- Removed exported `goav.Observable`; event access remains on `LiveTask`, and
-  callers that only need `Events`/`Watch` can use a local structural interface.
-- Removed exported `goav.Controllable`; live control remains on `LiveTask`, and
-  control-only helpers can accept a local structural interface.
+- Removed exported `goav.Observable`; event access remains on the explicit
+  `BuildLive`/`LiveTask` path, and callers that only need `Events`/`Watch` can
+  use a local structural interface.
+- Removed exported `goav.Controllable`; live control remains on the explicit
+  `BuildLive`/`LiveTask` path, and control-only helpers can accept a local
+  structural interface.
 - Removed exported `goav.Explainer`; built-task explanation remains on
-  `LiveTask`, and `Job.Explain(ctx)` remains the pre-build path.
+  the explicit `BuildLive`/`LiveTask` path, and `Job.Explain(ctx)` remains the
+  pre-build path.
 - Removed exported `goav.Inspectable`; runtime inspection remains on
-  `LiveTask`, and inspection-only helpers can accept a local structural
-  interface.
+  the explicit `BuildLive`/`LiveTask` path, and inspection-only helpers can
+  accept a local structural interface.
 - Removed exported `goav.Mutable`; runtime branch mutation remains on
-  `LiveTask`, and mutation-only helpers can accept a local structural
-  interface.
+  the explicit `BuildLive`/`LiveTask` path, and mutation-only helpers can accept
+  a local structural interface.
 - Removed exported `goav.MediaOption`; `Name`, `MIME`, and `Metadata` still work
   as shared input/destination options.
 - Removed exported `goav.InputOption` and `goav.DestinationOption`; option
@@ -62,6 +65,9 @@ methodology changes, and migration notes.
   do not imply that the constructor opens filesystem paths; `URI(uri)` keeps
   the adapter-opened output path and `FileInput` remains the reader-side file
   input spelling.
+- Changed recipe and bundled `Build` helpers to return the narrow `Task`
+  lifecycle (`Run`, `Close`) and added `BuildLive` for callers that need
+  inspection, watches, controls, or runtime mutation.
 - Updated front-door docs to use task capability vocabulary for runtime attach
   examples instead of teaching `LiveTask` as the normal user type, and to
   describe `Watch` as the primary observation surface.

@@ -280,7 +280,7 @@ func ExampleSelect() {
 	task, err := goav.Select(
 		goav.From(i420Source("cam-1", 16, 16, 100)).Video(),
 		goav.From(i420Source("cam-2", 16, 16, 200)).Video(),
-	).To(preview).Build(ctx)
+	).To(preview).BuildLive(ctx)
 	if err != nil {
 		fmt.Println(err)
 		return
@@ -314,7 +314,7 @@ func ExampleTask_attach() {
 		Audio().
 		Tap(goav.FrameTap("mic.frames")).
 		To(countInto(&mainFrames)).
-		Build(ctx)
+		BuildLive(ctx)
 	if err != nil {
 		fmt.Println(err)
 		return
@@ -349,7 +349,7 @@ func ExampleAttachment_rebranch() {
 		Copy().
 		Tap(goav.PacketTap("video.encoded")).
 		To(goav.Write("live.ivf", io.Discard)).
-		Build(ctx)
+		BuildLive(ctx)
 	if err != nil {
 		fmt.Println(err)
 		return
@@ -389,7 +389,7 @@ func ExampleTask_control() {
 		Decode().
 		Encode(codec.VP8(codec.Bitrate(1_000_000))).
 		To(goav.Write("out.ivf", io.Discard)).
-		Build(ctx)
+		BuildLive(ctx)
 	if err != nil {
 		fmt.Println(err)
 		return
@@ -417,7 +417,7 @@ func ExampleTask_watch() {
 	task, err := goav.From(pcmSource("mic", 48_000, 1, []int16{1, 2})).
 		Audio().
 		To(goav.Sink(component.SinkFunc("out", func(context.Context, component.Message) error { return nil }))).
-		Build(ctx)
+		BuildLive(ctx)
 	if err != nil {
 		fmt.Println(err)
 		return
@@ -452,7 +452,7 @@ func ExampleBuildError() {
 		Video().
 		Decode().
 		To(goav.Write("frames.ivf", io.Discard)).
-		Build(context.Background())
+		BuildLive(context.Background())
 
 	var buildErr *goav.BuildError
 	if errors.As(err, &buildErr) {

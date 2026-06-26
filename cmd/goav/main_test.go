@@ -45,7 +45,7 @@ func TestCLIInvokesCustomControlCommand(t *testing.T) {
 		Audio().
 		To(goavtest.NewCollector().Sink()).
 		UseRuntime(goavtest.Runtime()).
-		Build(ctx)
+		BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -79,7 +79,7 @@ func TestCLIHelpListsCustomPipelineRegistry(t *testing.T) {
 		Audio().
 		To(goavtest.NewCollector().Sink()).
 		UseRuntime(goavtest.Runtime()).
-		Build(ctx)
+		BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -164,7 +164,7 @@ func TestCLIPrintsGraphAsRawText(t *testing.T) {
 		Audio().
 		To(goavtest.NewCollector().Sink()).
 		UseRuntime(goavtest.Runtime()).
-		Build(ctx)
+		BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -198,7 +198,7 @@ func TestCLIAttachRebranchDetachAndDotGraph(t *testing.T) {
 		Audio().Copy().Tap(goav.PacketTap("pkts")).
 		To(goavtest.NewCollector().Sink()).
 		UseRuntime(goavtest.Runtime()).
-		Build(ctx)
+		BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}

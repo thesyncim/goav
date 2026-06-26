@@ -118,7 +118,7 @@ func TestWebRTCTrackRecordRecipeUsesCodecIntent(t *testing.T) {
 		t.Fatalf("inputs: %+v", report.Inputs)
 	}
 
-	task, err := job.Build(context.Background())
+	task, err := job.BuildLive(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}

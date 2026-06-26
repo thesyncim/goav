@@ -23,14 +23,14 @@ func joinPlanGuard(t *testing.T, job *Job) pipeline.Spec {
 	if err != nil {
 		t.Fatalf("Describe(): %v", err)
 	}
-	task, err := job.Build(context.Background())
+	task, err := job.BuildLive(context.Background())
 	if err != nil {
-		t.Fatalf("Build(): %v", err)
+		t.Fatalf("BuildLive(): %v", err)
 	}
 	defer task.Close()
 	built := task.Describe()
 	if specText(planned) != specText(built) {
-		t.Fatalf("Describe() != Build():\nplanned:\n%s\nbuilt:\n%s", specText(planned), specText(built))
+		t.Fatalf("Describe() != BuildLive():\nplanned:\n%s\nbuilt:\n%s", specText(planned), specText(built))
 	}
 	return planned
 }

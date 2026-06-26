@@ -52,7 +52,7 @@ func TestRuntimeBranchControlPlaneOnLiveTask(t *testing.T) {
 		}
 		return nil
 	}))
-	task, err := From(input).Audio().Copy().Tap(PacketTap("pkts")).To(mainSink).Build(ctx)
+	task, err := From(input).Audio().Copy().Tap(PacketTap("pkts")).To(mainSink).BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -141,7 +141,7 @@ func TestRuntimeBranchRebranchSwapsLiveBranch(t *testing.T) {
 			return nil
 		}))
 	}
-	task, err := From(input).Audio().Copy().Tap(PacketTap("pkts")).To(count(&mainCount)).Build(ctx)
+	task, err := From(input).Audio().Copy().Tap(PacketTap("pkts")).To(count(&mainCount)).BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -264,7 +264,7 @@ func TestRebranchSwitchAtNextKeyframeOnPacketStream(t *testing.T) {
 		return nil
 	}))
 
-	task, err := From(input).Audio().Copy().Tap(PacketTap("pkts")).To(Sink(SinkFunc("main", func(context.Context, Message) error { return nil }))).Build(ctx)
+	task, err := From(input).Audio().Copy().Tap(PacketTap("pkts")).To(Sink(SinkFunc("main", func(context.Context, Message) error { return nil }))).BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -388,7 +388,7 @@ func TestRebranchSwitchAtNextFrameOnFrameStream(t *testing.T) {
 		return nil
 	}))
 
-	task, err := From(input).Audio().Tap(FrameTap("frames")).To(Sink(SinkFunc("main", func(context.Context, Message) error { return nil }))).Build(ctx)
+	task, err := From(input).Audio().Tap(FrameTap("frames")).To(Sink(SinkFunc("main", func(context.Context, Message) error { return nil }))).BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -454,7 +454,7 @@ func TestRebranchFailureKeepsOldBranchAttached(t *testing.T) {
 		return nil
 	}))
 
-	task, err := From(input).Audio().Copy().Tap(PacketTap("pkts")).To(Sink(SinkFunc("main", func(context.Context, Message) error { return nil }))).Build(ctx)
+	task, err := From(input).Audio().Copy().Tap(PacketTap("pkts")).To(Sink(SinkFunc("main", func(context.Context, Message) error { return nil }))).BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -507,7 +507,7 @@ func TestRebranchOldBranchDispositionReportsDestinationStates(t *testing.T) {
 	sink := func(name string) Destination {
 		return Sink(SinkFunc(name, func(context.Context, Message) error { return nil }))
 	}
-	task, err := From(input).Audio().Copy().Tap(PacketTap("pkts")).To(sink("main")).Build(ctx)
+	task, err := From(input).Audio().Copy().Tap(PacketTap("pkts")).To(sink("main")).BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}

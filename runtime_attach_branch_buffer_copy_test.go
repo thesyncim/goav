@@ -36,9 +36,9 @@ func TestRuntimeBranchExplicitDropBufferInheritsCopyBounds(t *testing.T) {
 		Shape(shape.Frame(av.MediaVideo, shape.Video(64, 64, av.PixelFormatI420))).
 		Tap(goav.FrameTap("video.decoded")).
 		To(out.Sink()).
-		Build(ctx)
+		BuildLive(ctx)
 	if err != nil {
-		t.Fatalf("Build() error = %v", err)
+		t.Fatalf("BuildLive() error = %v", err)
 	}
 	t.Cleanup(func() { _ = task.Close() })
 

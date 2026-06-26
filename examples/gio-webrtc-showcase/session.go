@@ -98,7 +98,7 @@ func (s *session) startVideoTrack(track *webrtc.TrackRemote) {
 		Shape(shape.Frame(av.MediaVideo, shape.Video(videoTapWidth, videoTapHeight, av.PixelFormatI420))).
 		Tap(goav.FrameTap(videoTapName)).
 		To(goav.Sink(s.video)).
-		Build(s.ctx)
+		BuildLive(s.ctx)
 	if err != nil {
 		s.setError(err.Error())
 		return
@@ -141,7 +141,7 @@ func (s *session) startAudioTrack(track *webrtc.TrackRemote) {
 		Shape(shape.Frame(av.MediaAudio, shape.Audio(48_000, codec.Stereo, av.SampleFormatS16))).
 		Tap(goav.FrameTap(audioTapName)).
 		To(goav.Sink(newAudioMonitorSink(s.audio, s.native))).
-		Build(s.ctx)
+		BuildLive(s.ctx)
 	if err != nil {
 		s.setError(err.Error())
 		return

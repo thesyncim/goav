@@ -293,7 +293,7 @@ func buildRunPipelineTask(ctx context.Context, runtime *goav.Runtime, plan runPi
 			return nil, codec.CodecSpec{}, fmt.Errorf("goav run: unsupported operation %q", op.kind)
 		}
 	}
-	task, err := stream.To(dest).UseRuntime(runtime).Build(ctx)
+	task, err := stream.To(dest).UseRuntime(runtime).BuildLive(ctx)
 	if err != nil {
 		return nil, codec.CodecSpec{}, err
 	}

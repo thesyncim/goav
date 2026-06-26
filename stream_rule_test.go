@@ -220,7 +220,7 @@ func TestOnStreamAttachesLateBranchAndDetachesOnRemoval(t *testing.T) {
 		OnStream(MatchMedia(av.MediaAudio), Branch("record").Copy().To(record)).
 		Audio().Copy().To(mainSink).
 		UseRuntime(rt).
-		Build(ctx)
+		BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -346,7 +346,7 @@ func TestOnStreamLateBranchReceivesFramesFromFrameSource(t *testing.T) {
 	task, err := From(input).
 		OnStream(MatchStreamID(late.ID), Branch("watch").To(monitor)).
 		Audio().To(Sink(SinkFunc("main", func(context.Context, Message) error { return nil }))).
-		Build(ctx)
+		BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -435,7 +435,7 @@ func TestOnStreamLateBranchAutoInsertsConversion(t *testing.T) {
 			To(encodedSink)).
 		Audio().To(Sink(SinkFunc("main", func(context.Context, Message) error { return nil }))).
 		UseRuntime(solverTestOpusRuntime(testBundleFilters())).
-		Build(ctx)
+		BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -508,13 +508,13 @@ func TestOnStreamFileBranchRequiresExplicitRuntime(t *testing.T) {
 		OnStream(MatchMedia(av.MediaAudio), Branch("record").Copy().To(Write("late.ogg", io.Discard))).
 		Audio().Copy().To(monitor)
 
-	_, err := job.Build(ctx)
+	_, err := job.BuildLive(ctx)
 	var buildErr *BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != errcode.RuntimeMissing {
-		t.Fatalf("Build() error = %v, want runtime_missing", err)
+		t.Fatalf("BuildLive() error = %v, want runtime_missing", err)
 	}
 	if !strings.Contains(err.Error(), "bundle.Run") {
-		t.Fatalf("Build() error = %v, want bundle helper guidance", err)
+		t.Fatalf("BuildLive() error = %v, want bundle helper guidance", err)
 	}
 }
 
@@ -541,7 +541,7 @@ func TestOnStreamAttachFailureSurfacesEventAndRollsBack(t *testing.T) {
 		OnStream(MatchMedia(av.MediaAudio), Branch("bad").Copy().To(bad)).
 		Audio().Copy().To(Sink(SinkFunc("main", func(context.Context, Message) error { return nil }))).
 		UseRuntime(rt).
-		Build(ctx)
+		BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -607,7 +607,7 @@ func TestOnStreamMultipleRulesAllApply(t *testing.T) {
 		OnStream(MatchMedia(av.MediaAudio), Branch("media").Copy().To(count("media-sink", &byMedia))).
 		OnStream(MatchCodec(av.CodecOpus), Branch("codec").Copy().To(count("codec-sink", &byCodec))).
 		Audio().Copy().To(Sink(SinkFunc("main", func(context.Context, Message) error { return nil }))).
-		Build(ctx)
+		BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -642,7 +642,7 @@ func TestOnStreamValidation(t *testing.T) {
 
 	requireRuleError := func(t *testing.T, job *Job, fragment string) {
 		t.Helper()
-		_, err := job.Build(ctx)
+		_, err := job.BuildLive(ctx)
 		var buildErr *BuildError
 		if !errors.As(err, &buildErr) || buildErr.Code != "stream_rule_invalid" {
 			t.Fatalf("err = %v, want stream_rule_invalid", err)

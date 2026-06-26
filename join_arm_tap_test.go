@@ -102,7 +102,7 @@ func TestMixChainArmTapDecodesOnceAndMixes(t *testing.T) {
 	task, err := Mix(
 		From(tapArmTestPacketSource("a", pcm, 100, 200)).Audio().Decode().Tap(FrameTap("music")),
 		From(mixTestAudioSource("live", 50, -50)).Audio(),
-	).To(joinTestCollectSink("out", &main)).UseRuntime(rt).Build(ctx)
+	).To(joinTestCollectSink("out", &main)).UseRuntime(rt).BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -162,7 +162,7 @@ func TestMixTapArmConvergesTappedStreamAgain(t *testing.T) {
 		From(mixTestAudioSource("a", 100, 200)).Audio().Tap(FrameTap("dry")),
 		FrameTap("dry"),
 		From(mixTestAudioSource("live", 50, -50)).Audio(),
-	).To(joinTestCollectSink("out", &got)).Build(ctx)
+	).To(joinTestCollectSink("out", &got)).BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -187,7 +187,7 @@ func TestMixTapArmAnchorsOnNestedJoinTap(t *testing.T) {
 		).Tap(FrameTap("sub")),
 		FrameTap("sub"),
 		From(mixTestAudioSource("c", 1, 1)).Audio(),
-	).To(joinTestCollectSink("out", &got)).Build(ctx)
+	).To(joinTestCollectSink("out", &got)).BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -246,7 +246,7 @@ func TestMixTapArmSyncByPTS(t *testing.T) {
 		From(mixSyncTestSource("a", []int64{0, 20}, [][]int16{{10, 10}, {20, 20}})).Audio().Tap(FrameTap("dry")),
 		FrameTap("dry"),
 		From(mixSyncTestSource("b", []int64{20, 40}, [][]int16{{1, 1}, {2, 2}})).Audio(),
-	).SyncByPTS().To(sink).Build(ctx)
+	).SyncByPTS().To(sink).BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -282,7 +282,7 @@ func TestCompositeTapArmPaintsTappedStreamTwice(t *testing.T) {
 		From(compositeTestVideoSource("cam", 4, 4, 100, 10, 20)).Video().Tap(FrameTap("cam.frames")).Region(0, 0),
 		FrameTap("cam.frames").Region(4, 0),
 		From(compositeTestVideoSource("fresh", 4, 4, 200, 30, 40)).Video().Region(0, 4),
-	).To(sink).Build(ctx)
+	).To(sink).BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}

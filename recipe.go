@@ -520,11 +520,18 @@ func (j *Job) Describe() (pipeline.Spec, error) {
 	return resolved.Describe()
 }
 
-// Build compiles and materializes the job into a runnable Task: sources
-// resolve, the graph is wired, and OnStream rules install. The task does not
-// flow until Run. Build a task (instead of calling Run directly) when the
-// application needs inspection, events, live control, or late attachment.
-func (j *Job) Build(ctx context.Context) (LiveTask, error) {
+// Build compiles and materializes the job into the narrow runnable Task
+// lifecycle: sources resolve, the graph is wired, and OnStream rules install.
+// The task does not flow until Run. Use BuildLive when the application needs
+// inspection, events, live control, or late attachment.
+func (j *Job) Build(ctx context.Context) (Task, error) {
+	return j.BuildLive(ctx)
+}
+
+// BuildLive compiles and materializes the job into the full live task
+// capability surface for inspection, events, live control, or late attachment.
+// Prefer Build when the caller only needs Run and Close.
+func (j *Job) BuildLive(ctx context.Context) (LiveTask, error) {
 	resolved, err := compileJobRecipeForBuildContext(ctx, j)
 	if err != nil {
 		return nil, err

@@ -65,7 +65,7 @@ func TestTaskCloseIsIdempotentAfterRun(t *testing.T) {
 		Audio().Encode(codec.Opus()).
 		To(goav.Write("out.ogg", writer)).
 		UseRuntime(goavtest.Runtime()).
-		Build(ctx)
+		BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -92,7 +92,7 @@ func TestTaskCloseIsIdempotentWithoutRun(t *testing.T) {
 		Audio().Encode(codec.Opus()).
 		To(goav.Write("out.ogg", writer)).
 		UseRuntime(goavtest.Runtime()).
-		Build(context.Background())
+		BuildLive(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -111,7 +111,7 @@ func TestTaskCloseContextOptInHonorsCanceledContext(t *testing.T) {
 	task, err := goav.From(goavtest.Audio(48000, 1, []int16{1})).
 		Audio().
 		To(goavtest.NewCollector().Sink()).
-		Build(context.Background())
+		BuildLive(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -141,7 +141,7 @@ func TestTaskCloseDuringRunStopsTheTask(t *testing.T) {
 	task, err := goav.From(goavtest.LiveAudio("live", 48000, 1)).
 		Audio().To(out.Sink()).
 		UseRuntime(goavtest.Runtime()).
-		Build(ctx)
+		BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -177,7 +177,7 @@ func TestTaskSnapshotIsRaceSafeDuringAttachDetach(t *testing.T) {
 		Audio().Tap(goav.FrameTap("audio.decoded")).
 		To(goavtest.NewCollector().Sink()).
 		UseRuntime(goavtest.Runtime()).
-		Build(ctx)
+		BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -254,7 +254,7 @@ func TestTransactionalCommitFailureSurfacesFromTaskClose(t *testing.T) {
 		Audio().Encode(codec.Opus()).
 		To(transactionalWriterDestination(writer)).
 		UseRuntime(goavtest.Runtime()).
-		Build(ctx)
+		BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}

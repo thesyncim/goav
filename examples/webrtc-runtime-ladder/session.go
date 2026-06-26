@@ -71,7 +71,7 @@ func (s *session) startVideoTrack(track *webrtc.TrackRemote) {
 		Decode().
 		Tap(goav.FrameTap(videoTapName)).
 		To(goav.Sink(discardSink("video-decoded"))).
-		Build(s.ctx)
+		BuildLive(s.ctx)
 	if err != nil {
 		s.setError(err.Error())
 		return
@@ -110,7 +110,7 @@ func (s *session) startAudioTrack(track *webrtc.TrackRemote) {
 		Decode().
 		Tap(goav.FrameTap(audioTapName)).
 		To(goav.Sink(discardSink("audio-decoded"))).
-		Build(s.ctx)
+		BuildLive(s.ctx)
 	if err != nil {
 		s.setError(err.Error())
 		return

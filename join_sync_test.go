@@ -53,7 +53,7 @@ func TestRealtimeJoinsDefaultBufferedOfflineJoinsStayDirect(t *testing.T) {
 	realtimeMix, err := Mix(
 		From(mixSyncTestSource("a", []int64{0}, [][]int16{{1}})).Audio(),
 		From(mixSyncTestSource("b", []int64{0}, [][]int16{{2}})).Audio(),
-	).To(sink).Build(ctx)
+	).To(sink).BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -63,7 +63,7 @@ func TestRealtimeJoinsDefaultBufferedOfflineJoinsStayDirect(t *testing.T) {
 	offlineMix, err := Mix(
 		From(mixSyncTestSource("a", []int64{0}, [][]int16{{1}})).Audio(),
 		From(mixSyncTestSource("b", []int64{0}, [][]int16{{2}})).Audio(),
-	).To(sink).UseRuntime(mustNew(WithRealtime(false))).Build(ctx)
+	).To(sink).UseRuntime(mustNew(WithRealtime(false))).BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -73,7 +73,7 @@ func TestRealtimeJoinsDefaultBufferedOfflineJoinsStayDirect(t *testing.T) {
 	realtimeComposite, err := Composite(
 		From(compositeTestVideoSource("a", 4, 4, 100, 10, 20)).Video().Region(0, 0),
 		From(compositeTestVideoSource("b", 4, 4, 200, 30, 40)).Video().Region(4, 0),
-	).To(sink).Build(ctx)
+	).To(sink).BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -83,7 +83,7 @@ func TestRealtimeJoinsDefaultBufferedOfflineJoinsStayDirect(t *testing.T) {
 	offlineComposite, err := Composite(
 		From(compositeTestVideoSource("a", 4, 4, 100, 10, 20)).Video().Region(0, 0),
 		From(compositeTestVideoSource("b", 4, 4, 200, 30, 40)).Video().Region(4, 0),
-	).To(sink).UseRuntime(mustNew(WithRealtime(false))).Build(ctx)
+	).To(sink).UseRuntime(mustNew(WithRealtime(false))).BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -343,7 +343,7 @@ func TestMixSyncByPTSEndToEnd(t *testing.T) {
 	task, err := Mix(
 		From(mixSyncTestSource("a", []int64{0, 20}, [][]int16{{10, 10}, {20, 20}})).Audio(),
 		From(mixSyncTestSource("b", []int64{20, 40}, [][]int16{{1, 1}, {2, 2}})).Audio(),
-	).SyncByPTS().To(sink).Build(ctx)
+	).SyncByPTS().To(sink).BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -372,7 +372,7 @@ func TestMixSyncByPTSDropsVisibleInStats(t *testing.T) {
 		// and is dropped to catch up, whatever the arrival interleaving.
 		From(mixSyncTestSource("a", []int64{0, 0, 20}, [][]int16{{10, 10}, {99, 99}, {20, 20}})).Audio(),
 		From(mixSyncTestSource("b", []int64{0, 20}, [][]int16{{1, 1}, {2, 2}})).Audio(),
-	).SyncByPTS().To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))).Build(ctx)
+	).SyncByPTS().To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))).BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -399,7 +399,7 @@ func TestMixSyncByPTSDropsVisibleInStats(t *testing.T) {
 
 // TestJoinDescribeEqualsBuildMixSyncByPTS: the sync mode is part of the plan —
 // the planned join node carries the sync=pts detail, the built stage reports
-// the same through DescribeNode, and Describe() ≡ Build() stays exact.
+// the same through DescribeNode, and Describe() ≡ BuildLive() stays exact.
 func TestJoinDescribeEqualsBuildMixSyncByPTS(t *testing.T) {
 	job := Mix(
 		From(mixSyncTestSource("a", []int64{0}, [][]int16{{1, 1}})).Audio(),
