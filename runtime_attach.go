@@ -1109,23 +1109,25 @@ func (t *task) removeAttachmentTapsLocked(attachment *runtimeAttachment) {
 	t.branchTaps = out
 }
 
-func (t *task) stopAttachment(ctx context.Context, attachment *runtimeAttachment, disposition oldBranchDisposition) error {
+func (t *task) stopAttachment(ctx context.Context, input runtimeDetachInput) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
 	t.attachMu.Lock()
 	defer t.attachMu.Unlock()
-	return t.stopAttachmentLocked(ctx, attachment, disposition)
+	return t.stopAttachmentLocked(ctx, input)
 }
 
-func (t *task) stopAttachmentLocked(ctx context.Context, attachment *runtimeAttachment, disposition oldBranchDisposition) error {
+func (t *task) stopAttachmentLocked(ctx context.Context, input runtimeDetachInput) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+	attachment := input.runtime
+	disposition := input.disposition
 	if attachment == nil {
 		return nil
 	}
-	first := t.stopAttachmentChildrenLocked(ctx, attachment, disposition)
+	first := t.stopAttachmentChildrenLocked(ctx, input)
 	attachment.stopMu.Lock()
 	defer attachment.stopMu.Unlock()
 	if attachment.stopped {
@@ -1176,17 +1178,18 @@ func (t *task) publishAttachmentDestinationCommitErrors(attachment *runtimeAttac
 	}
 }
 
-func (t *task) stopAttachmentChildrenLocked(ctx context.Context, attachment *runtimeAttachment, disposition oldBranchDisposition) error {
-	if attachment == nil {
+func (t *task) stopAttachmentChildrenLocked(ctx context.Context, input runtimeDetachInput) error {
+	if input.runtime == nil {
 		return nil
 	}
 	var first error
 	for {
-		child := t.childAttachmentLocked(attachment)
+		child := t.childAttachmentLocked(input.runtime)
 		if child == nil {
 			return first
 		}
-		if err := t.stopAttachmentLocked(ctx, child, disposition); first == nil && err != nil {
+		childInput := runtimeDetachInputForRuntimeAttachment(child, input.disposition)
+		if err := t.stopAttachmentLocked(ctx, childInput); first == nil && err != nil {
 			first = err
 		}
 	}
@@ -1487,14 +1490,7 @@ func (a *runtimeAttachment) detachReplacedAtBoundary(group *switchGroup, disposi
 // drain commits its destinations, abort marks its prepared stages failed so
 // closing aborts them, and the default stays a plain detach.
 func (a *runtimeAttachment) detachReplaced(ctx context.Context, disposition oldBranchDisposition) error {
-	switch disposition {
-	case oldBranchDrain:
-		return a.owner.Detach(ctx, a, lifecycle.DrainBranch())
-	case oldBranchAbort:
-		return a.owner.Detach(ctx, a, lifecycle.AbortBranch())
-	default:
-		return a.owner.Detach(ctx, a)
-	}
+	return a.owner.stopAttachment(ctx, runtimeDetachInputForRuntimeAttachment(a, disposition))
 }
 
 func (a *runtimeAttachment) applyDetachDisposition(disposition oldBranchDisposition) {
@@ -1515,7 +1511,7 @@ func (a *runtimeAttachment) Close(ctx context.Context) error {
 		return nil
 	}
 	if a.owner != nil {
-		return a.owner.stopAttachment(ctx, a, oldBranchDetach)
+		return a.owner.stopAttachment(ctx, runtimeDetachInputForRuntimeAttachment(a, oldBranchDetach))
 	}
 	return nil
 }

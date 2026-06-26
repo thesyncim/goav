@@ -121,7 +121,9 @@ Runtime attach inputs now carry each branch's spec and validated destinations as
 one branch record, so patch planning no longer coordinates parallel spec and
 destination arrays. Runtime attach planning also captures the resolved source
 anchor and graph snapshot with that branch record before step planning and patch
-finalization.
+finalization. Runtime detach now carries its captured attachment target and
+disposition through the locked stop path and child-attachment recursion instead
+of unwrapping them into loose arguments.
 The boundary is not complete until the remaining runtime mutation patch facts
 move into stable recipe or plan data.
 
