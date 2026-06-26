@@ -66,6 +66,8 @@ methodology changes, and migration notes.
   with cloned branch-compose plan data.
 - Routed runtime attach through an explicit input handoff that captures branch
   specs and destination facts before graph locking and patch planning.
+- Routed runtime rebranch through an explicit input handoff that captures
+  replacement specs, switch policy, and old-branch disposition before mutation.
 - Moved normal media-planner input binding and selected-stream resolution onto
   recipe IR input facts instead of concrete input attachments.
 - Moved copy-branch source-shape planning onto recipe IR input facts.
