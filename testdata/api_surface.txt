@@ -218,7 +218,6 @@ goav.From
 goav.Input
 goav.InputName
 goav.InputSpec
-goav.InputStream
 goav.Inspectable
 goav.Job
 goav.Join

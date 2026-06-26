@@ -155,7 +155,7 @@ type branchSourceBinding struct {
 }
 
 // branchSource is the anchor a branch hangs from: a TapRef names a stable
-// tap, an InputStream names one stream from a recipe input, and an expert graph
+// tap, input.Stream(...) names one stream from a recipe input, and an expert graph
 // handle (expert.GraphNode, expert.GraphOutlet) names a graph node through its
 // Route capability. The bound is structural — From validates the anchor and
 // refuses values that are neither.

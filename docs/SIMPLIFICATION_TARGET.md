@@ -181,6 +181,9 @@ Exported `goav.MediaOption` was removed while keeping `Name`, `MIME`, and
 `Metadata` usable as shared input/destination options.
 Exported `goav.InputOption` and `goav.DestinationOption` were also removed;
 option constructors still pass directly to recipe constructors and `.With(...)`.
+Exported `goav.InputStream` was removed while keeping
+`InputSpec.Stream(stream)` as the branch attach anchor for app-owned dynamic
+tracks.
 
 Error-contract progress: `BuildError` no longer exposes legacy
 `Details`/`Suggestions` fields or parses rendered strings in `Detail(key)`;

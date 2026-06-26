@@ -17,11 +17,11 @@ type sourceInputSpec struct {
 	fn    sourcepkg.Func
 }
 
-// InputStream is a runtime-attach anchor for one stream produced by an
+// inputStreamAnchor is a runtime-attach anchor for one stream produced by an
 // InputSpec. Applications with an explicit track registry use
 // input.Stream(stream) with Branch(...).From(...) when they need to attach a
 // per-track branch before the source starts pushing that track's media.
-type InputStream struct {
+type inputStreamAnchor struct {
 	input  InputSpec
 	stream av.Stream
 }
@@ -57,16 +57,16 @@ func Source(name string, spec shape.Spec, fn sourcepkg.Func, opts ...inputOption
 // deterministic sibling of OnStream: use it when the application already owns
 // the track lifecycle and wants to attach before sending the first frame or
 // packet for that stream.
-func (s InputSpec) Stream(stream av.Stream) InputStream {
-	return InputStream{input: s, stream: stream}
+func (s InputSpec) Stream(stream av.Stream) inputStreamAnchor {
+	return inputStreamAnchor{input: s, stream: stream}
 }
 
 // Name reports the source node name this stream anchor attaches from.
-func (s InputStream) Name() string {
+func (s inputStreamAnchor) Name() string {
 	return s.input.graphSourceNodeName()
 }
 
-func (s InputStream) branchSource() branchSourceBinding {
+func (s inputStreamAnchor) branchSource() branchSourceBinding {
 	stream := s.stream
 	return branchSourceBinding{
 		from:         s.input.graphSourceNodeName(),

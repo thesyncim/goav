@@ -253,7 +253,7 @@ against the constructors in `input.go`/`provider.go`/`source.go`,
   `source.Push`; `provider.Source` is the transport extension point
   (`OpenSource`) that `Input(p)` turns into a recipe input. Value inputs,
   custom push sources, and transport providers are three doors into one
-  `InputSpec`. `InputSpec.Stream(av.Stream)` returns an `InputStream` attach
+  `InputSpec`. `InputSpec.Stream(av.Stream)` returns a branch attach
   anchor for app-owned dynamic tracks; it deliberately reuses
   `Branch(...).From(...)` and `Mutable.Attach` instead of adding a room/session
   workflow API.

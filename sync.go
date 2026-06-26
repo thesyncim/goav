@@ -156,7 +156,7 @@ func validateSyncPolicyForStream(operation string, branchName string, stream av.
 		Node:      firstNonEmpty(branchName, string(stream.ID), "branch"),
 		Reason:    "sync branches need stream timebase facts before graph mutation",
 		Fixes: buildErrorFixes([]string{
-			"set av.Stream.TimeBase on the InputStream or discovered stream",
+			"set av.Stream.TimeBase on the input.Stream(...) anchor or discovered stream",
 			"set Codec.ClockRate so RTP-style timestamps can derive a timebase",
 			"remove .Sync(...) from dynamic branches whose source has no media timeline",
 		}),

@@ -30,6 +30,8 @@ methodology changes, and migration notes.
 - Removed exported `goav.InputOption` and `goav.DestinationOption`; option
   constructors such as `Codec`, `Format`, `Name`, `MIME`, and `Metadata`
   still pass directly to recipe constructors and `.With(...)`.
+- Removed exported `goav.InputStream`; `InputSpec.Stream(stream)` still returns
+  the attach anchor used with `Branch(...).From(...)`.
 - Stream chains now require an explicit `.Decode()` before frame-domain
   consumers (`.Do`, `.Resize`, `.Resample`, real `.Encode`, frame taps, and
   decoded-frame sinks). Use `.Copy()` when a chain should stay packet-domain.
