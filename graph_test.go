@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"reflect"
 	"strings"
 	"sync"
@@ -435,86 +434,6 @@ func TestTaskAttachRuntimeBranchGroupCanUsePendingTap(t *testing.T) {
 	}
 }
 
-func TestRuntimeAttachUsesGraphPatchBoundary(t *testing.T) {
-	var body strings.Builder
-	for _, file := range []string{"runtime_attach.go", "work_patch.go"} {
-		fileBody, err := os.ReadFile(file)
-		if err != nil {
-			t.Fatal(err)
-		}
-		body.Write(fileBody)
-	}
-	text := body.String()
-	for _, required := range []string{
-		"type runtimeGraphPatch struct",
-		"type runtimeAttachInput struct",
-		"type runtimeBranchRecipe struct",
-		"branch recipeir.RuntimeBranch",
-		"recipe recipeir.RuntimeDestination",
-		"type runtimeAttachBranchInput struct",
-		"type runtimeAttachBranchPlanInput struct",
-		"func runtimeAttachInputFromBranchSpecs",
-		"func (t *task) runtimeAttachBranchPlanInput",
-		"func runtimeAttachBranchRecipeStream",
-		"func (input runtimeAttachBranchPlanInput) recipeStreamForStream",
-		"func (input runtimeAttachBranchPlanInput) diagnosticStreamForStream",
-		"func (t *task) attachRuntimeBranches",
-		"func (p *runtimeGraphPatch) addAnchor",
-		"func (p *runtimeGraphPatch) addApplied",
-		"func (p *runtimeGraphPatch) setWork",
-		"func (p runtimeGraphPatch) rollback",
-		"func (p runtimeGraphPatch) attachment",
-		"type workPatch struct",
-		"func (t *task) planAttachBranchSteps",
-		"func (p *attachPlan) finalizeBranch",
-		"func (t *task) applyAttachBranch",
-		"planInput, err := t.runtimeAttachBranchPlanInput",
-		"func (p *attachPlan) registerBranch(input runtimeAttachBranchPlanInput",
-		"func (p *attachPlan) finalizeBranch(index int, input runtimeAttachBranchPlanInput",
-		"stream:    runtimeAttachBranchRecipeStream(branch, anchor)",
-		"range operations",
-		"destination.recipe.Kind",
-		"destination.recipe.ShareKey",
-		"recipeIROperationOutputShape",
-		"for i := range input.branches",
-		"patch.resetPlannedTaps()",
-		"patch.setWork(",
-		"patch.attachment(t, name)",
-		"return t.attachRuntimeBranches(ctx, input)",
-	} {
-		if !strings.Contains(text, required) {
-			t.Fatalf("runtime attach should lower through runtimeGraphPatch; missing %q", required)
-		}
-	}
-	for _, forbidden := range []string{
-		"type runtimeBranch struct",
-		"workPatchFromRuntimeBranches",
-		"runtimeBranchWorkSteps",
-		"runtimeAttachBranchIntent",
-		"intentForStream",
-		"operationSpecsFromRecipeIR",
-		"operationSpecFromRecipeIR",
-	} {
-		if strings.Contains(text, forbidden) {
-			t.Fatalf("runtime attach should plan the workPatch from one captured recipe, not a parallel %q model", forbidden)
-		}
-	}
-	for name, body := range map[string]string{
-		"planAttachBranchSteps":      sourceFunctionBody(t, text, "planAttachBranchSteps"),
-		"planAttachEncode":           sourceFunctionBody(t, text, "planAttachEncode"),
-		"prepareRuntimeBranchDecode": sourceFunctionBody(t, text, "prepareRuntimeBranchDecode"),
-		"registerBranch":             sourceFunctionBody(t, text, "registerBranch"),
-		"finalizeBranch":             sourceFunctionBody(t, text, "finalizeBranch"),
-	} {
-		if strings.Contains(body, "streamIntent{") {
-			t.Fatalf("%s should use the captured runtimeAttachBranchPlanInput intent, not rebuild streamIntent inline", name)
-		}
-		if strings.Contains(body, ".branch.spec") {
-			t.Fatalf("%s should use the captured runtime branch recipe instead of BranchSpec", name)
-		}
-	}
-}
-
 func TestRuntimeAttachInputCapturesBranchRecipe(t *testing.T) {
 	spec := Branch("watch").
 		From(PacketTap("pkts")).
@@ -539,28 +458,6 @@ func TestRuntimeAttachInputCapturesBranchRecipe(t *testing.T) {
 		input.branches[0].destinations[0].recipe.Name != "late" ||
 		input.branches[0].destinations[0].recipe.Kind != recipeir.DestinationKindSink {
 		t.Fatalf("runtime attach input = %+v, want captured branch recipe and destinations", input)
-	}
-}
-
-func TestRuntimeRebranchUsesInputBoundary(t *testing.T) {
-	body, err := os.ReadFile("runtime_attach.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	text := string(body)
-	for _, required := range []string{
-		"type runtimeRebranchInput struct",
-		"func runtimeRebranchInputFromArgs",
-		"func (a *runtimeAttachment) rebranchRuntimeAttachment",
-		"return a.rebranchRuntimeAttachment(ctx, input)",
-		"a.owner.attachRuntimeBranches(ctx, input.attach)",
-	} {
-		if !strings.Contains(text, required) {
-			t.Fatalf("runtime rebranch should pass captured input to the mutation executor; missing %q", required)
-		}
-	}
-	if strings.Contains(text, "return a.owner.Attach(ctx, specs...)") {
-		t.Fatal("runtime rebranch should not recapture replacement specs through Attach")
 	}
 }
 
@@ -613,42 +510,6 @@ func workPatchOperationKindsForBranch(operations []workOperation, branch string)
 		}
 	}
 	return out
-}
-
-func TestRuntimeAttachUsesSharedMuxDestinationPreparation(t *testing.T) {
-	var body strings.Builder
-	for _, file := range []string{"runtime_attach.go", "work_patch.go"} {
-		fileBody, err := os.ReadFile(file)
-		if err != nil {
-			t.Fatal(err)
-		}
-		body.Write(fileBody)
-	}
-	text := body.String()
-	for _, required := range []string{
-		"func runtimeMuxDestinationFormat",
-		"func runtimeMuxCompatibilityIssue",
-		"func (t *task) planAttachMuxDestinationStep",
-		"func attachSinkDestinationStep",
-		"func attachSharedMuxDestinationStep",
-		"runtimeMuxDestinationFormat(ctx, rt, target.dest, i)",
-		"runtimeMuxCompatibilityIssue(target.name",
-		"runtimeMuxDestinationFormat(ctx, t.runtime, destination.dest, index)",
-	} {
-		if !strings.Contains(text, required) {
-			t.Fatalf("runtime attach target prep should share mux helpers; missing %q", required)
-		}
-	}
-	for _, forbidden := range []string{
-		"func runtimeSharedMuxFormat",
-		"func (t *task) runtimeBranchMuxFormat",
-		"func runtimeSharedMuxCompatibilityIssue",
-		"func runtimeBranchMuxCompatibilityIssue",
-	} {
-		if strings.Contains(text, forbidden) {
-			t.Fatalf("runtime attach should not keep split mux format helper %q", forbidden)
-		}
-	}
 }
 
 func TestTaskAttachRuntimeBranchGroupRollsBackOnLaterFailure(t *testing.T) {

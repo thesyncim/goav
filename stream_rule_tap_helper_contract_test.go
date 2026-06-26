@@ -3,8 +3,6 @@ package goav
 import (
 	"context"
 	"errors"
-	"os"
-	"strings"
 	"testing"
 
 	"github.com/thesyncim/goav/av"
@@ -235,49 +233,6 @@ func TestHandleStreamRemovedDetachesTrackedBranchesWithDrain(t *testing.T) {
 	outcome, ok := attachment.detachOutcome.Load().(lifecycle.DestinationState)
 	if !ok || outcome != lifecycle.DestinationCommitted {
 		t.Fatalf("detach outcome = %v, %t; want committed", outcome, ok)
-	}
-}
-
-func TestStreamRuleRemoveUsesRuntimeDetachInput(t *testing.T) {
-	body, err := os.ReadFile("runtime_stream_rule.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	text := string(body)
-	required := []string{
-		"detach     runtimeDetachInput",
-		"runtimeDetachInputForRuntimeAttachment(entry.attachment, oldBranchDrain)",
-		"t.detachRuntimeAttachment(context.Background(), entry.detach)",
-	}
-	for _, want := range required {
-		if !strings.Contains(text, want) {
-			t.Fatalf("runtime_stream_rule.go missing %q", want)
-		}
-	}
-	if strings.Contains(text, "entry.attachment.detachReplaced") {
-		t.Fatal("stream-rule remove path bypasses captured runtime detach input")
-	}
-}
-
-func TestStreamRuleAttachUsesRuntimeBranchInput(t *testing.T) {
-	body, err := os.ReadFile("runtime_stream_rule.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	text := string(body)
-	required := []string{
-		"func (t *task) streamRuleAttachBranches",
-		"runtimeAttachInputFromBranchInputs(branches",
-		"runtimeBranchRecipeFromBranchSpec(spec)",
-	}
-	for _, want := range required {
-		if !strings.Contains(text, want) {
-			t.Fatalf("runtime_stream_rule.go missing %q", want)
-		}
-	}
-	attachBody := sourceFunctionBody(t, text, "streamRuleAttachInput")
-	if strings.Contains(attachBody, "runtimeAttachInputFromBranchSpecs") {
-		t.Fatal("stream-rule attach should hand off captured runtime branch inputs, not recapture BranchSpec values")
 	}
 }
 

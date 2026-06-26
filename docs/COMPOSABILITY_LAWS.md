@@ -8,7 +8,7 @@ the grammar. The tests below are executable evidence; this document is the map.
 | Law | Evidence |
 |---|---|
 | A direct stream chain is syntax sugar for `Branch("main")`. | `TestNorthStarDirectChainEqualsExplicitMainBranch`, `TestNorthStarDirectChainEqualsExplicitMainBranchWithTransform` |
-| `Flow` owns ordered operations only; sources, destinations, runtime, lifecycle, and branch ownership stay outside flows. | `TestReusableRecipeAndBranchChainsStoreOperationSpecsOnly`, `TestFlowBranchesStayOnJobAndBuildIntent`, `TestFlowReportsShapeContractAndTaps` |
+| `Flow` owns ordered operations only; sources, destinations, runtime, lifecycle, and branch ownership stay outside flows. | `TestStoredOperationListsMirrorFlowBranchAndDirectStreamWork`, `TestFlowBranchesStayOnJobAndBuildIntent`, `TestFlowReportsShapeContractAndTaps` |
 | Build-time branches and runtime `Mutable.Attach` use the same branch grammar and operation lowering. | `TestTaskAttachRuntimeFlowCopyBranchFromPacketTap`, `TestTaskAttachRuntimeDecodeResampleEncodeMuxBranchFromPacketTap`, `TestTaskAttachRuntimeFlowCustomEncodeMuxBranch` |
 | `Describe()` is the graph shape that `Build()` installs. | `TestStreamRecipeDescribeMatchesBuiltGraph`, `TestBranchCompositionRecipeDescribeMatchesBuiltGraph`, `TestJoinDescribeEqualsBuildMix`, `TestJoinDescribeEqualsBuildNestedMix` |
 | `Explain()` reports solver insertions and soft preferences without opening resources. | `TestAutoInsertsFormatConvertThroughRegisteredAdapter`, `TestRequireWithAutoInsertsConversion`, `TestPreferUnsatisfiableIgnoredWithDiagnostic` |

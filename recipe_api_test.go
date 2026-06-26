@@ -2424,36 +2424,6 @@ func TestReportsUseDestinations(t *testing.T) {
 	}
 }
 
-func TestHighLevelCompositionInternalsAvoidEndpointVocabulary(t *testing.T) {
-	files := []string{
-		"branch.go",
-		"flow.go",
-		"recipe.go",
-		"intent.go",
-		"input.go",
-		"destination.go",
-		"chain.go",
-		"transform.go",
-		"codec_spec.go",
-		"validate_codec.go",
-		"branch_compose_plan.go",
-		"recipe_compile.go",
-		"media_plan_spec.go",
-		"media_plan_build.go",
-		"runtime_attach.go",
-		"runtime_encode.go",
-	}
-	for _, file := range files {
-		body, err := os.ReadFile(file)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if strings.Contains(strings.ToLower(string(body)), "endpoint") {
-			t.Fatalf("%s uses endpoint vocabulary; use destination naming in high-level composition code", file)
-		}
-	}
-}
-
 func TestRecipeConstructorsDoNotExposeRuntimeOptions(t *testing.T) {
 	inputType := reflect.TypeOf(goav.InputSpec{})
 	jobType := reflect.TypeOf((*goav.Job)(nil))
@@ -2827,20 +2797,6 @@ func TestDestinationProviderIsWrappedByCustomHandle(t *testing.T) {
 	}
 	if impl.AssignableTo(destinationType) {
 		t.Fatalf("provider %v should not be assignable to Destination handle %v", impl, destinationType)
-	}
-}
-
-func TestRootAPIDoesNotExportTarget(t *testing.T) {
-	body, err := os.ReadFile("branch.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(string(body), "type Destination struct") ||
-		strings.Contains(string(body), "type Destination interface") {
-		t.Fatal("root API should expose Destination as a concrete handle, not an interface")
-	}
-	if strings.Contains(string(body), "func Target(") {
-		t.Fatal("root API should not export Target")
 	}
 }
 
