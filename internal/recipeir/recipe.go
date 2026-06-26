@@ -59,6 +59,17 @@ type Stream struct {
 // OutputRef names a destination declared on the recipe.
 type OutputRef string
 
+// DestinationKind identifies the planner-visible behavior of a destination
+// without carrying the concrete writer, sink, or provider object across the
+// recipe boundary.
+type DestinationKind string
+
+const (
+	DestinationKindUnknown    DestinationKind = ""
+	DestinationKindByteStream DestinationKind = "byte-stream"
+	DestinationKindSink       DestinationKind = "sink"
+)
+
 // Destination is the planner-visible data for one output.
 type Destination struct {
 	Name     string
@@ -66,6 +77,7 @@ type Destination struct {
 	Protocol av.ProtocolID
 	MIMEType string
 	Format   av.FormatID
+	Kind     DestinationKind
 }
 
 // Policies are recipe-wide planning flags.

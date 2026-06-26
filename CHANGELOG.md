@@ -38,6 +38,9 @@ methodology changes, and migration notes.
   describe `Watch` as the primary observation surface.
 - Made recipe-built task `Explain` preserve the structured pre-build workflow
   report while refreshing live graph and tap rows at call time.
+- Captured destination sink/byte-stream behavior in the immutable recipe IR so
+  destination shape validation reads planner-visible data instead of concrete
+  writer or sink attachments.
 - Added the pre-v1 simplification target, started the immutable recipe IR
   boundary used by compile-time planning, and tightened task runtime semantics
   so `Run` preserves both execution and finalization failures while `Events`
