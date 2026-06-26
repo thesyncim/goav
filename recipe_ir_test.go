@@ -810,6 +810,30 @@ func TestBranchCompositionPlannerConsumesRecipeIR(t *testing.T) {
 	}
 }
 
+func TestAttachmentConsistencyPassConsumesRecipeIR(t *testing.T) {
+	body, err := os.ReadFile("recipe_compile.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	passBody := sourceFunctionBody(t, string(body), "validateRecipeAttachmentConsistencyPass")
+	for _, required := range []string{
+		"len(state.recipe.Inputs)",
+		"len(state.recipe.Destinations)",
+	} {
+		if !strings.Contains(passBody, required) {
+			t.Fatalf("validateRecipeAttachmentConsistencyPass should read %s", required)
+		}
+	}
+	for _, forbidden := range []string{
+		"state.intent",
+		"recipeInputIntents()",
+	} {
+		if strings.Contains(passBody, forbidden) {
+			t.Fatalf("validateRecipeAttachmentConsistencyPass still reads legacy mirror with %q", forbidden)
+		}
+	}
+}
+
 func TestBranchRecipeSnapshotBuildsRecipeIRDirectly(t *testing.T) {
 	body, err := os.ReadFile("recipe_ir.go")
 	if err != nil {

@@ -1081,20 +1081,22 @@ func validateRecipeAttachmentConsistencyPass() recipeCompilePass {
 	return recipeCompilePassFunc{name: "validate recipe attachments", fn: func(state *recipeCompileState) error {
 		switch {
 		case state.jobPresent:
-			inputCount := len(state.recipeInputIntents())
+			inputCount := len(state.recipe.Inputs)
 			if inputCount != len(state.inputAttachments) {
 				return recipeAttachmentMismatchError(state.operation, "inputs", inputCount, len(state.inputAttachments))
 			}
-			if len(state.intent.Destinations) != len(state.outputAttachments) {
-				return recipeAttachmentMismatchError(state.operation, "destinations", len(state.intent.Destinations), len(state.outputAttachments))
+			outputCount := len(state.recipe.Destinations)
+			if outputCount != len(state.outputAttachments) {
+				return recipeAttachmentMismatchError(state.operation, "destinations", outputCount, len(state.outputAttachments))
 			}
 		case state.branchCompositionPresent:
-			inputCount := len(state.recipeInputIntents())
+			inputCount := len(state.recipe.Inputs)
 			if inputCount != 1 {
 				return recipeAttachmentMismatchError(state.operation, "inputs", inputCount, 1)
 			}
-			if len(state.intent.Destinations) != len(state.branchDestinationAttachments) {
-				return recipeAttachmentMismatchError(state.operation, "destinations", len(state.intent.Destinations), len(state.branchDestinationAttachments))
+			outputCount := len(state.recipe.Destinations)
+			if outputCount != len(state.branchDestinationAttachments) {
+				return recipeAttachmentMismatchError(state.operation, "destinations", outputCount, len(state.branchDestinationAttachments))
 			}
 		}
 		return nil

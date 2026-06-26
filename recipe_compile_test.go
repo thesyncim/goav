@@ -1053,7 +1053,8 @@ func TestRecipeAttachmentConsistencyRejectsMismatches(t *testing.T) {
 			state: recipeCompileState{
 				operation:         "build job",
 				jobPresent:        true,
-				intent:            intent{Inputs: []inputIntent{{Name: "input.ivf"}}},
+				intent:            intent{},
+				recipe:            recipeir.Recipe{Kind: recipeir.KindJob, Inputs: []recipeir.Input{{Name: "input.ivf"}}},
 				outputAttachments: []destinationSpec{fileDestination("recording.ivf", io.Discard)},
 			},
 			want: "inputs",
@@ -1063,7 +1064,8 @@ func TestRecipeAttachmentConsistencyRejectsMismatches(t *testing.T) {
 			state: recipeCompileState{
 				operation:         "build job",
 				jobPresent:        true,
-				intent:            intent{Inputs: []inputIntent{{Name: "input.ivf"}}, Destinations: []destinationIntent{{Name: "recording.ivf"}}},
+				intent:            intent{},
+				recipe:            recipeir.Recipe{Kind: recipeir.KindJob, Inputs: []recipeir.Input{{Name: "input.ivf"}}, Destinations: []recipeir.Destination{{Name: "recording.ivf"}}},
 				inputAttachments:  []InputSpec{FileInput("input.ivf", strings.NewReader(""))},
 				outputAttachments: nil,
 			},
@@ -1074,9 +1076,25 @@ func TestRecipeAttachmentConsistencyRejectsMismatches(t *testing.T) {
 			state: recipeCompileState{
 				operation:                    branchCompositionOperation,
 				branchCompositionPresent:     true,
-				intent:                       intent{Inputs: []inputIntent{{Name: "input.ivf"}}, Destinations: []destinationIntent{{Name: "web.ivf"}}},
+				intent:                       intent{},
+				recipe:                       recipeir.Recipe{Kind: recipeir.KindBranchComposition, Inputs: []recipeir.Input{{Name: "input.ivf"}}, Destinations: []recipeir.Destination{{Name: "web.ivf"}}},
 				branchInputAttachment:        FileInput("input.ivf", strings.NewReader("")),
 				branchDestinationAttachments: nil,
+			},
+			want: "destinations",
+		},
+		{
+			name: "job output mirror ignored",
+			state: recipeCompileState{
+				operation:  "build job",
+				jobPresent: true,
+				intent: intent{
+					Inputs:       []inputIntent{{Name: "legacy-input"}},
+					Destinations: []destinationIntent{},
+				},
+				recipe:            recipeir.Recipe{Kind: recipeir.KindJob, Inputs: []recipeir.Input{{Name: "input.ivf"}}, Destinations: []recipeir.Destination{{Name: "recording.ivf"}}},
+				inputAttachments:  []InputSpec{FileInput("input.ivf", strings.NewReader(""))},
+				outputAttachments: nil,
 			},
 			want: "destinations",
 		},
