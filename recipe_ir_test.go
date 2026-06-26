@@ -10,6 +10,7 @@ import (
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
+	"github.com/thesyncim/goav/flow"
 	"github.com/thesyncim/goav/internal/recipeir"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/plan"
@@ -78,7 +79,7 @@ func TestRecipeIRSnapshotCapturesStreamRules(t *testing.T) {
 	job := From(FileInput("input.ivf", strings.NewReader(""))).
 		OnStream(
 			MatchMedia(av.MediaAudio),
-			Branch("record").Copy().To(Sink(SinkFunc("late", func(context.Context, Message) error { return nil }))),
+			Branch("record").Apply(Flow("audio").Audio()).Copy().Buffer(flow.DropOldest(4)).To(Sink(SinkFunc("late", func(context.Context, Message) error { return nil }))),
 		)
 
 	snapshot := newJobRecipeSnapshot(job)
@@ -89,11 +90,20 @@ func TestRecipeIRSnapshotCapturesStreamRules(t *testing.T) {
 	if rule.MatchDescription != "media=audio" ||
 		len(rule.Branches) != 1 ||
 		rule.Branches[0].Name != "record" ||
+		rule.Branches[0].Media != av.MediaAudio ||
+		len(rule.Branches[0].Operations) != 1 ||
+		rule.Branches[0].Operations[0].Kind != plan.OpCopy ||
+		rule.Branches[0].Buffer.Mode != flow.BufferDropOldest ||
+		rule.Branches[0].Buffer.Capacity != 4 ||
 		!reflect.DeepEqual(rule.Branches[0].Destinations, []string{"late"}) {
 		t.Fatalf("recipe IR stream rule = %+v", rule)
 	}
 
 	state := recipeCompileStateFromSnapshot(snapshot, recipeCompileOptions{})
+	snapshot.recipe.StreamRules[0].Branches[0].Operations[0].Kind = plan.OpDecode
+	if state.streamRuleFacts[0].Branches[0].Operations[0].Kind != plan.OpCopy {
+		t.Fatalf("compile state stream rule operation mutated through snapshot: %+v", state.streamRuleFacts[0].Branches[0].Operations)
+	}
 	state.streamRules = nil
 	state.inputAttachments = nil
 	if err := validateStreamRulesPass().Apply(&state); err != nil {

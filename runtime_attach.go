@@ -229,6 +229,10 @@ func runtimeAttachInputFromBranchSpecs(specs []BranchSpec) (runtimeAttachInput, 
 			destinations: branchDestinations,
 		})
 	}
+	return runtimeAttachInputFromBranchInputs(branches, runtimeAttachmentName(specs))
+}
+
+func runtimeAttachInputFromBranchInputs(branches []runtimeAttachBranchInput, name string) (runtimeAttachInput, error) {
 	groupDestinations, err := validateRuntimeBranchGroupDestinations(branches)
 	if err != nil {
 		return runtimeAttachInput{}, err
@@ -236,7 +240,7 @@ func runtimeAttachInputFromBranchSpecs(specs []BranchSpec) (runtimeAttachInput, 
 	return runtimeAttachInput{
 		branches:          branches,
 		groupDestinations: groupDestinations,
-		name:              runtimeAttachmentName(specs),
+		name:              firstNonEmpty(name, runtimeAttachmentNameFromBranchInputs(branches)),
 	}, nil
 }
 
@@ -879,6 +883,22 @@ func runtimeAttachmentName(specs []BranchSpec) string {
 	for i := range specs {
 		if specs[i].name != "" {
 			names = append(names, specs[i].name)
+		}
+	}
+	if len(names) == 0 {
+		return "branches"
+	}
+	return strings.Join(names, "+")
+}
+
+func runtimeAttachmentNameFromBranchInputs(branches []runtimeAttachBranchInput) string {
+	if len(branches) == 1 {
+		return branches[0].recipe.name
+	}
+	names := make([]string, 0, len(branches))
+	for i := range branches {
+		if branches[i].recipe.name != "" {
+			names = append(names, branches[i].recipe.name)
 		}
 	}
 	if len(names) == 0 {

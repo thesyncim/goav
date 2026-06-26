@@ -259,6 +259,28 @@ func TestStreamRuleRemoveUsesRuntimeDetachInput(t *testing.T) {
 	}
 }
 
+func TestStreamRuleAttachUsesRuntimeBranchInput(t *testing.T) {
+	body, err := os.ReadFile("runtime_stream_rule.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(body)
+	required := []string{
+		"func (t *task) streamRuleAttachBranches",
+		"runtimeAttachInputFromBranchInputs(branches",
+		"runtimeBranchRecipeFromBranchSpec(spec)",
+	}
+	for _, want := range required {
+		if !strings.Contains(text, want) {
+			t.Fatalf("runtime_stream_rule.go missing %q", want)
+		}
+	}
+	attachBody := sourceFunctionBody(t, text, "streamRuleAttachInput")
+	if strings.Contains(attachBody, "runtimeAttachInputFromBranchSpecs") {
+		t.Fatal("stream-rule attach should hand off captured runtime branch inputs, not recapture BranchSpec values")
+	}
+}
+
 func TestStreamRuleBranchNamesContract(t *testing.T) {
 	rule := streamRule{branches: []BranchSpec{
 		{origin: branchSpecOriginBranch, name: "preview"},

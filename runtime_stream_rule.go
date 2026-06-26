@@ -128,11 +128,11 @@ func (t *task) handleStreamAdded(event av.Event) {
 
 func (t *task) streamRuleAttachInput(rule streamRule, stream av.Stream) (streamRuleAttachInput, error) {
 	input := streamRuleAttachInput{branchNames: streamRuleBranchNames(rule)}
-	specs, err := t.streamRuleBranchSpecs(rule, stream)
+	branches, err := t.streamRuleAttachBranches(rule, stream)
 	if err != nil {
 		return input, err
 	}
-	attach, err := runtimeAttachInputFromBranchSpecs(specs)
+	attach, err := runtimeAttachInputFromBranchInputs(branches, runtimeAttachmentNameFromBranchInputs(branches))
 	if err != nil {
 		return input, err
 	}
@@ -140,18 +140,21 @@ func (t *task) streamRuleAttachInput(rule streamRule, stream av.Stream) (streamR
 	return input, nil
 }
 
-// streamRuleBranchSpecs templates one rule's branches for a matched stream
-// and runs each through the shape solver, so .Auto(shape.Allow*) policies on
-// late branches insert the same conversions the build-time compile would.
-func (t *task) streamRuleBranchSpecs(rule streamRule, stream av.Stream) ([]BranchSpec, error) {
+// streamRuleAttachBranches templates one rule's branches for a matched stream,
+// solves their operation shapes, and captures them as runtime branch inputs
+// before any graph mutation.
+func (t *task) streamRuleAttachBranches(rule streamRule, stream av.Stream) ([]runtimeAttachBranchInput, error) {
 	domain := t.rules.domain
 	if domain == "" {
 		domain = shape.DomainPacket
 	}
 	initial := shape.FromStream(stream, domain)
-	specs := make([]BranchSpec, 0, len(rule.branches))
+	branches := make([]runtimeAttachBranchInput, 0, len(rule.branches))
 	for i := range rule.branches {
 		spec := branchSpecForDiscoveredStream(rule.branches[i], t.rules.source, domain, stream)
+		if err := validateRuntimeBranchSpecOrigin(spec); err != nil {
+			return nil, err
+		}
 		if err := validateSyncPolicyForStream("attach stream rule branch", spec.name, stream, spec.operations); err != nil {
 			return nil, err
 		}
@@ -171,9 +174,19 @@ func (t *task) streamRuleBranchSpecs(rule streamRule, stream av.Stream) ([]Branc
 		if solved != nil {
 			spec.operations = solved
 		}
-		specs = append(specs, spec)
+		destinations, err := attachBranchDestinations(spec)
+		if err != nil {
+			return nil, err
+		}
+		if err := validateAttachBranchSpec(spec, destinations); err != nil {
+			return nil, err
+		}
+		branches = append(branches, runtimeAttachBranchInput{
+			recipe:       runtimeBranchRecipeFromBranchSpec(spec),
+			destinations: destinations,
+		})
 	}
-	return specs, nil
+	return branches, nil
 }
 
 // handleStreamRemoved detaches every attachment the rules created for the

@@ -68,6 +68,9 @@ methodology changes, and migration notes.
 - Changed recipe and bundled `Build` helpers to return the narrow `Task`
   lifecycle (`Run`, `Close`) and added `BuildLive` for callers that need
   inspection, watches, controls, or runtime mutation.
+- Captured OnStream branch media, operation, destination, and buffer facts in
+  the immutable recipe IR, and lowered stream-rule attach through captured
+  runtime branch inputs before graph mutation.
 - Updated front-door docs to use task capability vocabulary for runtime attach
   examples instead of teaching `LiveTask` as the normal user type, and to
   describe `Watch` as the primary observation surface.

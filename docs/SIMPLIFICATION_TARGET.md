@@ -126,7 +126,10 @@ and patch finalization. Runtime detach now carries its captured attachment
 target and disposition through the locked stop path and child-attachment
 recursion instead of unwrapping them into loose arguments, and stream-rule
 removals now capture the same runtime detach input for each tracked attachment
-before mutation.
+before mutation. OnStream branch facts now carry media, operation, destination,
+and buffer data in the immutable recipe IR, and stream-rule attach captures
+runtime branch inputs before graph locking and patch planning instead of
+recapturing public branch specs inside the mutation executor.
 The boundary is not complete until the remaining runtime mutation patch facts
 move into stable recipe or plan data.
 

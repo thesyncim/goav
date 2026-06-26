@@ -7,6 +7,7 @@ import (
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/filter"
+	"github.com/thesyncim/goav/flow"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/plan"
 	"github.com/thesyncim/goav/shape"
@@ -99,8 +100,8 @@ type Destination struct {
 }
 
 // StreamRule is the planner-visible summary of a dynamic-stream rule. It does
-// not carry executable branch specs or custom matcher functions; the runtime
-// still owns those until mutation patches cross the recipe boundary.
+// not carry executable destination handles or custom matcher functions; the
+// runtime still owns those while mutation patches cross the recipe boundary.
 type StreamRule struct {
 	MatchDescription string
 	Branches         []StreamRuleBranch
@@ -109,7 +110,10 @@ type StreamRule struct {
 // StreamRuleBranch is one branch template visible to Explain/validation.
 type StreamRuleBranch struct {
 	Name         string
+	Media        av.MediaType
+	Operations   []Operation
 	Destinations []string
+	Buffer       flow.BranchBuffer
 }
 
 // Join summarizes the planner-visible shape of a convergence recipe. It keeps

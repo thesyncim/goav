@@ -349,9 +349,16 @@ func recipeIRStreamRuleFromRoot(rule streamRule) recipeir.StreamRule {
 		MatchDescription: rule.match.Description(),
 	}
 	for i := range rule.branches {
+		operations := make([]recipeir.Operation, 0, len(rule.branches[i].operations))
+		for j := range rule.branches[i].operations {
+			operations = append(operations, recipeIROperationFromSpec(rule.branches[i].operations[j]))
+		}
 		out.Branches = append(out.Branches, recipeir.StreamRuleBranch{
 			Name:         rule.branches[i].name,
+			Media:        rule.branches[i].media,
+			Operations:   operations,
 			Destinations: branchDestinationNames(rule.branches[i].destinations),
+			Buffer:       rule.branches[i].branchBuffer,
 		})
 	}
 	return out
@@ -648,8 +655,20 @@ func cloneRecipeIRStreamRules(rules []recipeir.StreamRule) []recipeir.StreamRule
 			Branches:         append([]recipeir.StreamRuleBranch(nil), rules[i].Branches...),
 		}
 		for j := range out[i].Branches {
+			out[i].Branches[j].Operations = cloneRecipeIROperations(rules[i].Branches[j].Operations)
 			out[i].Branches[j].Destinations = append([]string(nil), rules[i].Branches[j].Destinations...)
 		}
+	}
+	return out
+}
+
+func cloneRecipeIROperations(operations []recipeir.Operation) []recipeir.Operation {
+	if len(operations) == 0 {
+		return nil
+	}
+	out := make([]recipeir.Operation, len(operations))
+	for i := range operations {
+		out[i] = recipeIROperationFromSpec(operationSpecFromRecipeIR(operations[i]))
 	}
 	return out
 }
