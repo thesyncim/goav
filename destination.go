@@ -52,7 +52,7 @@ func Write(name string, writer io.Writer, opts ...destinationOptionValue) Destin
 }
 
 func fileDestination(name string, writer io.Writer) destinationSpec {
-	return destinationSpec{
+	spec := destinationSpec{
 		id: destinationSpecSeq.Add(1),
 		output: format.Output{
 			Name:     name,
@@ -61,6 +61,10 @@ func fileDestination(name string, writer io.Writer) destinationSpec {
 		},
 		name: name,
 	}
+	if writer == nil {
+		spec.err = errNilWriter
+	}
+	return spec
 }
 
 // URI creates a URI destination opened by a registered format adapter.
@@ -107,7 +111,7 @@ func Custom(name string, dest provider.Destination, opts ...destinationOptionVal
 
 func customDestination(name string, dest provider.Destination) destinationSpec {
 	if dest == nil {
-		return destinationSpec{id: destinationSpecSeq.Add(1), err: errNilWriter}
+		return destinationSpec{id: destinationSpecSeq.Add(1), name: name, err: errNilDestinationProvider}
 	}
 	contract := dest.Contract()
 	spec := destinationSpec{
@@ -391,6 +395,20 @@ func (s destinationSpec) Open(ctx context.Context, info provider.Info) (provider
 func (s destinationSpec) validate(operation string, fallback string) error {
 	node := s.label(fallback)
 	if s.err != nil {
+		if errors.Is(s.err, errNilWriter) && s.output.Protocol == av.ProtocolFile {
+			return &BuildError{
+				Family:    errcode.FamilyForCode(outputWriterMissingCode),
+				Code:      outputWriterMissingCode,
+				Operation: operation,
+				Node:      node,
+				Reason:    "file output has no writer",
+				fixes: buildErrorFixes([]string{
+					"pass a non-nil io.Writer to goav.Write(name, writer)",
+					"use goav.URI(uri) when the output is opened by an adapter",
+				}),
+				cause: s.err,
+			}
+		}
 		suggestions := []string{
 			"pass a non-nil sink to goav.Sink(...)",
 			"use goav.Write(...) or goav.URI(...) for muxed output",
@@ -399,6 +417,12 @@ func (s destinationSpec) validate(operation string, fallback string) error {
 			suggestions = []string{
 				"pass a non-nil writer callback to goav.Writer(...)",
 				"use goav.Write(...) or goav.URI(...) for muxed output",
+			}
+		}
+		if errors.Is(s.err, errNilDestinationProvider) {
+			suggestions = []string{
+				"pass a non-nil provider.Destination to goav.Custom(name, destination)",
+				"use goav.Write(...), goav.Writer(...), goav.URI(...), or goav.Sink(...) for built-in destinations",
 			}
 		}
 		return &BuildError{

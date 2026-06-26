@@ -194,7 +194,7 @@ func TestDecodeRejectsIncompatibleDescriptorBeforeOpeningDecoder(t *testing.T) {
 		},
 	}, decoderFactory))
 
-	_, err := From(FileInput("input.ogg", nil)).
+	_, err := From(FileInput("input.ogg", strings.NewReader(""))).
 		UseRuntime(mustNew(formats, codecs)).
 		Audio().
 		Decode().
@@ -240,7 +240,7 @@ func TestDecodeUsesFactoryStateProvider(t *testing.T) {
 	codecs := withTestCodecs(testCodecDecoder(codec.Descriptor{ID: av.CodecVP8, Type: av.MediaVideo}, factory))
 	sink := &runtimeTestSink{name: "frames"}
 
-	task, err := From(FileInput("input.ivf", nil)).
+	task, err := From(FileInput("input.ivf", strings.NewReader(""))).
 		UseRuntime(mustNew(formats, codecs)).
 		Video().
 		Decode().

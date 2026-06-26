@@ -2,6 +2,7 @@ package goav
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/thesyncim/goav/av"
@@ -110,7 +111,7 @@ func TestSourceEventDomainContracts(t *testing.T) {
 		},
 		{
 			name: "plain input",
-			in:   FileInput("input.ogg", nil),
+			in:   FileInput("input.ogg", strings.NewReader("")),
 			want: shape.DomainPacket,
 		},
 	} {

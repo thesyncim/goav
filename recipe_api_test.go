@@ -4300,7 +4300,10 @@ func TestNilPacketFuncDoesNotBecomeSilentNilStage(t *testing.T) {
 		BuildLive(context.Background())
 	var buildErr *goav.BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "stage_missing" {
-		t.Fatalf("err = %v, want stage_missing wrapping errNilStage", err)
+		t.Fatalf("err = %v, want stage_missing with matching BuildError code", err)
+	}
+	if !errors.Is(err, component.ErrNilStageCallback) {
+		t.Fatalf("err = %v, want ErrNilStageCallback cause", err)
 	}
 	if !strings.Contains(err.Error(), "component.PacketFunc") ||
 		!strings.Contains(err.Error(), "non-nil stage") {
@@ -4315,7 +4318,10 @@ func TestNilSinkFuncDoesNotBecomeSilentNilSink(t *testing.T) {
 	).BuildLive(context.Background())
 	var buildErr *goav.BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "output_invalid" {
-		t.Fatalf("err = %v, want output_invalid wrapping errNilSink", err)
+		t.Fatalf("err = %v, want output_invalid with matching BuildError code", err)
+	}
+	if !errors.Is(err, component.ErrNilSinkCallback) {
+		t.Fatalf("err = %v, want ErrNilSinkCallback cause", err)
 	}
 	if !strings.Contains(err.Error(), "SinkFunc") ||
 		!strings.Contains(err.Error(), "non-nil sink") {

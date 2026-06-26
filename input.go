@@ -4,6 +4,7 @@ package goav
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 
@@ -109,14 +110,18 @@ func applyInputOptions(spec InputSpec, opts []inputOptionValue) InputSpec {
 // FileInput declares a file-like input read from reader; name carries the
 // extension format probing uses (a .ivf name selects the IVF demuxer).
 func FileInput(name string, reader io.Reader, opts ...inputOptionValue) InputSpec {
-	return applyInputOptions(inputSpecHandle(InputSpec{
+	spec := InputSpec{
 		input: format.Input{
 			Name:     name,
 			Protocol: av.ProtocolFile,
 			Reader:   reader,
 		},
 		name: name,
-	}), opts)
+	}
+	if reader == nil {
+		spec.err = errNilReader
+	}
+	return applyInputOptions(inputSpecHandle(spec), opts)
 }
 
 func (s InputSpec) formatInput() format.Input {
@@ -127,17 +132,25 @@ func (s InputSpec) formatInput() format.Input {
 
 func (s InputSpec) validate() error {
 	if s.err != nil {
+		fixes := []string{
+			"check the input constructor arguments",
+			"pass a non-nil provider to goav.Input(provider)",
+		}
+		if errors.Is(s.err, errNilReader) {
+			fixes = []string{
+				"pass a non-nil io.Reader to goav.FileInput(name, reader)",
+				"use goav.Input(provider) for realtime receive through a source provider",
+				"use goav.Source(name, shape, fn) for application-pushed media",
+			}
+		}
 		return &BuildError{
 			Family:    errcode.FamilyForCode(inputInvalidCode),
 			Code:      inputInvalidCode,
 			Operation: "build input",
 			Node:      firstNonEmpty(s.name, s.input.Name, s.input.URI, "input"),
 			Reason:    s.err.Error(),
-			fixes: buildErrorFixes([]string{
-				"check the input constructor arguments",
-				"pass a non-nil provider to goav.Input(provider)",
-			}),
-			cause: s.err,
+			fixes:     buildErrorFixes(fixes),
+			cause:     s.err,
 		}
 	}
 	if s.origin != inputSpecOriginConstructed {

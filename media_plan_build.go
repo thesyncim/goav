@@ -1746,7 +1746,7 @@ func mediaPlanStreamFilters(stream streamIntent) ([]filterRequest, error) {
 		switch operation.Kind {
 		case plan.OpStage:
 			if err := validateStageComponent(operation.Stage); err != nil {
-				return nil, streamStageMissingError(stream)
+				return nil, streamStageMissingError(stream, err)
 			}
 			filters = append(filters, filterRequest{selector: selector, stage: operation.Stage})
 			frameStepIndex++

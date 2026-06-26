@@ -462,7 +462,7 @@ func (b *chainBuilder) stage(stage pipeline.Stage) {
 		return
 	}
 	if err := validateStageComponent(stage); err != nil {
-		b.setErr(streamStageMissingError(streamIntent{Name: firstNonEmpty(b.spec.name, "flow")}))
+		b.setErr(streamStageMissingError(streamIntent{Name: firstNonEmpty(b.spec.name, "flow")}, err))
 		return
 	}
 	b.spec.operations = append(b.spec.operations, operationSpecForStage(stage))

@@ -520,7 +520,7 @@ func (b *jobStreamBuilder) Do(stages ...pipeline.Stage) *jobStreamBuilder {
 			return b
 		}
 		if err := validateStageComponent(stages[i]); err != nil {
-			b.job.setErr(streamStageMissingError(streamIntent{Name: jobStreamName(stream)}))
+			b.job.setErr(streamStageMissingError(streamIntent{Name: jobStreamName(stream)}, err))
 			return b
 		}
 		if !b.requireFrameInput(stream, "custom stage") {

@@ -28,12 +28,16 @@ var (
 	errUnsupportedBuild = errors.New("goav: unsupported builder graph")
 	// errNilSource reports a nil source handed to a builder or constructor.
 	errNilSource = errors.New("goav: nil source")
+	// errNilReader reports a nil reader handed to FileInput.
+	errNilReader = errors.New("goav: nil input reader")
 	// errNilStage reports a nil stage handed to a builder or .Do(...).
 	errNilStage = errors.New("goav: nil stage")
 	// errNilSink reports a nil sink handed to a builder or goav.Sink(...).
 	errNilSink = errors.New("goav: nil sink")
 	// errNilWriter reports a nil writer handed to a byte destination.
 	errNilWriter = errors.New("goav: nil writer")
+	// errNilDestinationProvider reports a nil provider.Destination handed to Custom.
+	errNilDestinationProvider = errors.New("goav: nil destination provider")
 )
 
 // Runtime flow-control sentinels, surfaced on the front door so source.Func,

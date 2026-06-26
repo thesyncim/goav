@@ -5,6 +5,7 @@ package goav
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	goh264adapter "github.com/thesyncim/goav/adapters/goh264"
@@ -31,7 +32,7 @@ func TestRecipeH264DescriptorOnlyDecodeUnavailable(t *testing.T) {
 	)
 	codecs := withTestCodecs(goh264adapter.Register)
 
-	_, err := From(FileInput("input.ogg", nil)).
+	_, err := From(FileInput("input.ogg", strings.NewReader(""))).
 		UseRuntime(mustNew(formats, codecs)).
 		Video().
 		Decode().

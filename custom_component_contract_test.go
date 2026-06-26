@@ -494,8 +494,8 @@ func TestDestinationContractsAndOpeners(t *testing.T) {
 		!overridden.Realtime {
 		t.Fatalf("overridden custom contract = %+v", overridden)
 	}
-	if err := customDestination("broken", nil).validate("record", "fallback"); !errors.Is(err, errNilWriter) {
-		t.Fatalf("nil custom validate err = %v, want errNilWriter", err)
+	if err := customDestination("broken", nil).validate("record", "fallback"); !errors.Is(err, errNilDestinationProvider) || errors.Is(err, errNilWriter) {
+		t.Fatalf("nil custom validate err = %v, want errNilDestinationProvider only", err)
 	}
 	if err := Writer("nil.ogg", nil).spec.validate("record", "fallback"); !errors.Is(err, errNilWriter) {
 		t.Fatalf("nil writer validate err = %v, want errNilWriter", err)

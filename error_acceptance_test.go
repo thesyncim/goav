@@ -98,6 +98,48 @@ func TestErrorAcceptanceNilProviderInput(t *testing.T) {
 	)
 }
 
+// TestErrorAcceptanceNilFileInputReader is snippet 0aa: FileInput needs a
+// real reader, so a filename alone cannot masquerade as an open input.
+func TestErrorAcceptanceNilFileInputReader(t *testing.T) {
+	_, err := goav.From(goav.FileInput("input.ogg", nil)).
+		Audio().
+		Copy().
+		To(goav.Write("out.ogg", io.Discard)).
+		Describe()
+	requireBuildError(t, err, errcode.Code("input_invalid"), "build input", "input.ogg",
+		"pass a non-nil io.Reader to goav.FileInput(name, reader)",
+	)
+}
+
+// TestErrorAcceptanceNilCustomDestinationProvider is snippet 0ab: Custom wraps
+// a provider.Destination, so a nil provider is not reported as a nil writer.
+func TestErrorAcceptanceNilCustomDestinationProvider(t *testing.T) {
+	_, err := goav.From(opusPacketInput()).
+		Audio().
+		Copy().
+		To(goav.Custom("out.ogg", nil)).
+		Describe()
+	buildErr := requireBuildError(t, err, errcode.Code("output_invalid"), "build job", "out.ogg",
+		"pass a non-nil provider.Destination to goav.Custom(name, destination)",
+	)
+	if !strings.Contains(buildErr.Reason, "nil destination provider") {
+		t.Fatalf("reason = %q, want nil destination provider", buildErr.Reason)
+	}
+}
+
+// TestErrorAcceptanceNilWriter is snippet 0ac: writer-backed outputs need an
+// actual io.Writer and are not treated like adapter-opened URIs.
+func TestErrorAcceptanceNilWriter(t *testing.T) {
+	_, err := goav.From(opusPacketInput()).
+		Audio().
+		Copy().
+		To(goav.Write("out.ogg", nil)).
+		Describe()
+	requireBuildError(t, err, errcode.Code("output_writer_missing"), "build job", "out.ogg",
+		"pass a non-nil io.Writer to goav.Write(name, writer)",
+	)
+}
+
 // TestErrorAcceptanceMissingInput is snippet 0b: a recipe with destinations
 // but no input. The fix is to start from a real input constructor.
 func TestErrorAcceptanceMissingInput(t *testing.T) {

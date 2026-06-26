@@ -303,7 +303,7 @@ func (b *branchBuilder) Do(stages ...pipeline.Stage) *branchBuilder {
 			return b
 		}
 		if err := validateStageComponent(stages[i]); err != nil {
-			b.setErr(streamStageMissingError(streamIntent{Name: firstNonEmpty(b.spec.name, "branch")}))
+			b.setErr(streamStageMissingError(streamIntent{Name: firstNonEmpty(b.spec.name, "branch")}, err))
 			return b
 		}
 		b.spec.operations = append(b.spec.operations, operationSpecForStage(stages[i]))

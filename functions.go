@@ -12,7 +12,7 @@ func validateStageComponent(stage pipeline.Stage) error {
 	}
 	if validator, ok := stage.(componentValidator); ok {
 		if err := validator.ValidateComponent(); err != nil {
-			return errNilStage
+			return err
 		}
 	}
 	return nil
@@ -24,7 +24,7 @@ func validateSinkComponent(sink pipeline.Sink) error {
 	}
 	if validator, ok := sink.(componentValidator); ok {
 		if err := validator.ValidateComponent(); err != nil {
-			return errNilSink
+			return err
 		}
 	}
 	return nil

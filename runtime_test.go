@@ -10,6 +10,7 @@ import (
 	ivfadapter "github.com/thesyncim/goav/adapters/ivf"
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
+	"github.com/thesyncim/goav/component"
 	"github.com/thesyncim/goav/filter"
 	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/graphrender"
@@ -940,8 +941,8 @@ func TestRuntimeBuilderExplicitGraphValidation(t *testing.T) {
 	}
 
 	_, err = newTestBuilder(t).Source(source).Stage(PacketFunc("packets", nil)).Build(context.Background())
-	if !errors.Is(err, errNilStage) {
-		t.Fatalf("PacketFunc nil callback err = %v, want errNilStage", err)
+	if !errors.Is(err, component.ErrNilStageCallback) || errors.Is(err, errNilStage) {
+		t.Fatalf("PacketFunc nil callback err = %v, want ErrNilStageCallback only", err)
 	}
 
 	_, err = newTestBuilder(t).Source(source).Sink(nil).Build(context.Background())
@@ -950,8 +951,8 @@ func TestRuntimeBuilderExplicitGraphValidation(t *testing.T) {
 	}
 
 	_, err = newTestBuilder(t).Source(source).Sink(SinkFunc("sink", nil)).Build(context.Background())
-	if !errors.Is(err, errNilSink) {
-		t.Fatalf("SinkFunc nil callback err = %v, want errNilSink", err)
+	if !errors.Is(err, component.ErrNilSinkCallback) || errors.Is(err, errNilSink) {
+		t.Fatalf("SinkFunc nil callback err = %v, want ErrNilSinkCallback only", err)
 	}
 
 	sink := &runtimeTestSink{name: "sink"}

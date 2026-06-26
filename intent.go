@@ -470,7 +470,10 @@ func jobStreamOutputNames(stream *jobStreamBuild) []string {
 	return append([]string(nil), stream.outputNames...)
 }
 
-func streamStageMissingError(stream streamIntent) error {
+func streamStageMissingError(stream streamIntent, cause error) error {
+	if cause == nil {
+		cause = errNilStage
+	}
 	return &BuildError{
 		Family:    errcode.FamilyForCode(stageMissingCode),
 		Code:      stageMissingCode,
@@ -482,7 +485,7 @@ func streamStageMissingError(stream streamIntent) error {
 			"use component.FrameFunc, component.PacketFunc, or component.EventFunc for small hooks",
 			"remove .Do(...) when no custom processing is needed",
 		}),
-		cause: errNilStage,
+		cause: cause,
 	}
 }
 
