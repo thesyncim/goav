@@ -82,8 +82,8 @@ func FamilyForCode(code Code) Family {
 		StreamSelectorInvalid, StreamCodecMissing, StreamOperationMissing,
 		StreamStepAfterEncode, StageMissing:
 		return FamilyStream
-	case FlowInvalid, FlowMediaMismatch, FlowDecodeDuplicate,
-		FlowDecodeOrderInvalid, FlowDecodeDomainMismatch, FlowCopyDomainMismatch:
+	case Code("flow_invalid"), Code("flow_media_mismatch"), Code("flow_decode_duplicate"),
+		Code("flow_decode_order_invalid"), Code("flow_decode_domain_mismatch"), Code("flow_copy_domain_mismatch"):
 		return FamilyFlow
 	case TransformInvalid, TransformMediaMismatch, TransformAdapterMissing,
 		TransformAdapterIncompatible, TranscodeResizeInvalid,
@@ -229,27 +229,6 @@ const (
 	StreamStepAfterEncode Code = "stream_step_after_encode"
 	// StageMissing fires when a custom stream stage is nil.
 	StageMissing Code = "stage_missing"
-)
-
-// Flow codes (reusable Flow fragments applied to chains).
-const (
-	// FlowInvalid fires when a nil flow is applied.
-	FlowInvalid Code = "flow_invalid"
-	// FlowMediaMismatch fires when a flow built for one media kind is
-	// applied to a stream of another.
-	FlowMediaMismatch Code = "flow_media_mismatch"
-	// FlowDecodeDuplicate fires when a flow decodes a stream that already
-	// decodes.
-	FlowDecodeDuplicate Code = "flow_decode_duplicate"
-	// FlowDecodeOrderInvalid fires when a flow's decode is not its first
-	// operation.
-	FlowDecodeOrderInvalid Code = "flow_decode_order_invalid"
-	// FlowDecodeDomainMismatch fires when a flow decodes a point that is
-	// not packet-domain.
-	FlowDecodeDomainMismatch Code = "flow_decode_domain_mismatch"
-	// FlowCopyDomainMismatch fires when a flow copies packets from a point
-	// that is not packet-domain.
-	FlowCopyDomainMismatch Code = "flow_copy_domain_mismatch"
 )
 
 // Transform and shape errcode.

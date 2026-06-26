@@ -10,11 +10,12 @@ The contract is enforced by a source-scanning pin test (`errors_pin_test.go`):
   (`destination`, `runtime_branch`, `codec`, ...). Switch on this when a caller
   wants category-level handling.
 - **Code**: a typed `errcode.Code` identifying the detailed refusal leaf.
-  Codes are exported constants in the `errcode` package and may grow within a
-  family before v1 as diagnostics become more precise. Applications should
-  switch on `BuildError.Family` first, then inspect `Code` only when they need
-  a specific leaf. The type is an open string: external components emit their
-  own vendor-prefixed codes through the same `BuildError` shape.
+  Public catalog codes are exported constants in the `errcode` package, while
+  implementation-specific or experimental leaves may stay typed internally and
+  map to the same family before v1. Applications should switch on
+  `BuildError.Family` first, then inspect `Code` only when they need a
+  specific leaf. The type is an open string: external components emit their own
+  vendor-prefixed codes through the same `BuildError` shape.
 - **Operation / Node**: where it happened (`build stream`, `attach runtime
   branch`; the chain, branch, tap, or destination name).
 - **Reason**: one line saying why, including actual vs expected where it

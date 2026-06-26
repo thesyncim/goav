@@ -14,7 +14,7 @@ func TestBuildErrorFamilyForCodePinned(t *testing.T) {
 	}{
 		{errcode.InputInvalid, errcode.FamilyInput},
 		{errcode.StreamAmbiguous, errcode.FamilyStream},
-		{errcode.FlowDecodeDuplicate, errcode.FamilyFlow},
+		{flowDecodeDuplicateCode, errcode.FamilyFlow},
 		{errcode.TransformAdapterMissing, errcode.FamilyTransform},
 		{errcode.ShapeRequirementUnmet, errcode.FamilyShape},
 		{errcode.DecodeAdapterMissing, errcode.FamilyCodec},

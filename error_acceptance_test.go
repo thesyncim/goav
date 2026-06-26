@@ -197,7 +197,7 @@ func TestErrorAcceptanceNilFlow(t *testing.T) {
 		Apply(flow).
 		To(goavtest.NewCollector().Sink()).
 		Describe()
-	requireBuildError(t, err, errcode.FlowInvalid, "build flow", "",
+	requireBuildError(t, err, errcode.Code("flow_invalid"), "build flow", "",
 		"build flows with goav.Flow(name).Audio() or goav.Flow(name).Video()",
 	)
 }
@@ -210,7 +210,7 @@ func TestErrorAcceptanceFlowMediaMismatch(t *testing.T) {
 		Apply(goav.Flow("thumbs").Video().Resize(320, 180)).
 		To(goavtest.NewCollector().Sink()).
 		Describe()
-	requireBuildError(t, err, errcode.FlowMediaMismatch, "build stream", "thumbs",
+	requireBuildError(t, err, errcode.Code("flow_media_mismatch"), "build stream", "thumbs",
 		"use goav.Flow(name).Audio() with .Audio()",
 		"use goav.Flow(name).Video() with .Video()",
 	)
@@ -224,7 +224,7 @@ func TestErrorAcceptanceFlowDecodeDuplicate(t *testing.T) {
 		Apply(goav.Flow("voice").Audio().Decode().Decode()).
 		To(goavtest.NewCollector().Sink()).
 		Describe()
-	requireBuildError(t, err, errcode.FlowDecodeDuplicate, "build flow", "voice",
+	requireBuildError(t, err, errcode.Code("flow_decode_duplicate"), "build flow", "voice",
 		"call .Decode() once at the start of the flow",
 		"remove the second .Decode() call",
 	)
@@ -238,7 +238,7 @@ func TestErrorAcceptanceFlowDecodeOrderInvalid(t *testing.T) {
 		Apply(goav.Flow("voice").Audio().Resample(16_000, codec.Mono).Decode()).
 		To(goavtest.NewCollector().Sink()).
 		Describe()
-	requireBuildError(t, err, errcode.FlowDecodeOrderInvalid, "build flow", "voice",
+	requireBuildError(t, err, errcode.Code("flow_decode_order_invalid"), "build flow", "voice",
 		"write goav.Flow(name).Audio().Decode().Resample(...)",
 		"omit .Decode() when the flow is only applied after stream decode",
 	)
@@ -252,7 +252,7 @@ func TestErrorAcceptanceFlowDecodeDomainMismatch(t *testing.T) {
 		Apply(goav.Flow("voice").Audio().Decode()).
 		To(goavtest.NewCollector().Sink()).
 		Describe()
-	requireBuildError(t, err, errcode.FlowDecodeDomainMismatch, "build stream", "voice",
+	requireBuildError(t, err, errcode.Code("flow_decode_domain_mismatch"), "build stream", "voice",
 		"omit .Decode() when applying the flow after stream decode",
 		"use the flow from a packet branch or packet tap",
 	)
@@ -267,7 +267,7 @@ func TestErrorAcceptanceFlowCopyDomainMismatch(t *testing.T) {
 		Apply(goav.Flow("packets").Audio().Resample(16_000, codec.Mono).Copy()).
 		To(goav.Write("copy.ogg", io.Discard)).
 		Describe()
-	requireBuildError(t, err, errcode.FlowCopyDomainMismatch, "build flow", "packets",
+	requireBuildError(t, err, errcode.Code("flow_copy_domain_mismatch"), "build flow", "packets",
 		"start packet-preserving reusable work with goav.Flow(name).Audio().Copy()",
 		"use .Decode().Resample(...).Encode(codec.Opus(...))",
 	)

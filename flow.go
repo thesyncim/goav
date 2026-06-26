@@ -682,8 +682,8 @@ func duplicateFlowEncodeError(name string, first codec.CodecSpec, second codec.C
 
 func duplicateFlowDecodeError(node string) error {
 	return &BuildError{
-		Family:    errcode.FamilyForCode(errcode.FlowDecodeDuplicate),
-		Code:      errcode.FlowDecodeDuplicate,
+		Family:    errcode.FamilyForCode(flowDecodeDuplicateCode),
+		Code:      flowDecodeDuplicateCode,
 		Operation: "build flow",
 		Node:      node,
 		Reason:    "flow already decodes its input packets",
@@ -697,8 +697,8 @@ func duplicateFlowDecodeError(node string) error {
 
 func flowDecodeOrderError(node string) error {
 	return &BuildError{
-		Family:    errcode.FamilyForCode(errcode.FlowDecodeOrderInvalid),
-		Code:      errcode.FlowDecodeOrderInvalid,
+		Family:    errcode.FamilyForCode(flowDecodeOrderInvalidCode),
+		Code:      flowDecodeOrderInvalidCode,
 		Operation: "build flow",
 		Node:      node,
 		Reason:    "decode must be the first flow operation",
@@ -712,8 +712,8 @@ func flowDecodeOrderError(node string) error {
 
 func flowDecodeDomainError(operation string, node string) error {
 	return &BuildError{
-		Family:    errcode.FamilyForCode(errcode.FlowDecodeDomainMismatch),
-		Code:      errcode.FlowDecodeDomainMismatch,
+		Family:    errcode.FamilyForCode(flowDecodeDomainMismatchCode),
+		Code:      flowDecodeDomainMismatchCode,
 		Operation: operation,
 		Node:      firstNonEmpty(node, "flow"),
 		Reason:    "flow decoding requires a packet-domain stream point",
@@ -728,8 +728,8 @@ func flowDecodeDomainError(operation string, node string) error {
 
 func flowCopyDomainError(operation string, node string) error {
 	return &BuildError{
-		Family:    errcode.FamilyForCode(errcode.FlowCopyDomainMismatch),
-		Code:      errcode.FlowCopyDomainMismatch,
+		Family:    errcode.FamilyForCode(flowCopyDomainMismatchCode),
+		Code:      flowCopyDomainMismatchCode,
 		Operation: operation,
 		Node:      firstNonEmpty(node, "flow"),
 		Reason:    "flow copying requires a packet-domain stream point",
@@ -744,8 +744,8 @@ func flowCopyDomainError(operation string, node string) error {
 
 func nilFlowError() error {
 	return &BuildError{
-		Family:    errcode.FamilyForCode(errcode.FlowInvalid),
-		Code:      errcode.FlowInvalid,
+		Family:    errcode.FamilyForCode(flowInvalidCode),
+		Code:      flowInvalidCode,
 		Operation: "build flow",
 		Reason:    "flow is nil",
 		fixes: buildErrorFixes([]string{
@@ -760,8 +760,8 @@ func validateChainMedia(operation string, node string, selected av.MediaType, sp
 		return nil
 	}
 	return &BuildError{
-		Family:    errcode.FamilyForCode(errcode.FlowMediaMismatch),
-		Code:      errcode.FlowMediaMismatch,
+		Family:    errcode.FamilyForCode(flowMediaMismatchCode),
+		Code:      flowMediaMismatchCode,
 		Operation: operation,
 		Node:      firstNonEmpty(spec.name, node, "flow"),
 		Reason:    string(spec.media) + " flow cannot be applied to " + string(selected) + " stream",

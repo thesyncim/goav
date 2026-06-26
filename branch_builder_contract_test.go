@@ -246,14 +246,14 @@ func TestBranchBuilderNilAndErrorContracts(t *testing.T) {
 		{name: "flow after encode", spec: Branch("bad").Encode(codec.Opus()).Apply(Flow("meter").Audio().Do(meter)).To(branchBuilderTestSink("out")), code: errcode.StreamStepAfterEncode},
 		{name: "duplicate decode through apply", spec: Branch("bad").Decode().Apply(Flow("decode").Audio().Decode()).To(branchBuilderTestSink("out")), code: errcode.BranchDecodeDuplicate},
 		{name: "decode flow after frame step", spec: Branch("bad").Do(meter).Apply(Flow("decode").Audio().Decode()).To(branchBuilderTestSink("out")), code: errcode.BranchDecodeOrderInvalid},
-		{name: "copy flow after decode", spec: Branch("bad").Decode().Apply(Flow("copy").Audio().Copy()).To(branchBuilderTestSink("out")), code: errcode.FlowCopyDomainMismatch},
-		{name: "media mismatch through apply", spec: Branch("bad").Apply(Flow("voice").Audio()).Apply(Flow("preview").Video()).To(branchBuilderTestSink("out")), code: errcode.FlowMediaMismatch},
+		{name: "copy flow after decode", spec: Branch("bad").Decode().Apply(Flow("copy").Audio().Copy()).To(branchBuilderTestSink("out")), code: flowCopyDomainMismatchCode},
+		{name: "media mismatch through apply", spec: Branch("bad").Apply(Flow("voice").Audio()).Apply(Flow("preview").Video()).To(branchBuilderTestSink("out")), code: flowMediaMismatchCode},
 		{name: "decode then copy", spec: Branch("bad").Decode().Copy().To(branchBuilderTestSink("out")), code: errcode.BranchDecodeCopyInvalid},
 		{name: "frame step after copy", spec: Branch("bad").Copy().Resample(48_000, codec.Mono).To(branchBuilderTestSink("out")), code: errcode.OperationShapeMismatch},
 		{name: "duplicate encode", spec: Branch("bad").Encode(codec.Opus()).Encode(codec.Opus()).To(branchBuilderTestSink("out")), code: errcode.EncodeDuplicate},
 		{name: "empty tap", spec: Branch("bad").Tap(FrameTap("")).To(branchBuilderTestSink("out")), code: errcode.TapInvalid},
 		{name: "typed frame tap after encode", spec: Branch("bad").Encode(codec.Opus()).Tap(FrameTap("frames")).To(branchBuilderTestSink("out")), code: errcode.TapDomainMismatch},
-		{name: "nil flow", spec: Branch("bad").Apply(nil).To(branchBuilderTestSink("out")), code: errcode.FlowInvalid},
+		{name: "nil flow", spec: Branch("bad").Apply(nil).To(branchBuilderTestSink("out")), code: flowInvalidCode},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

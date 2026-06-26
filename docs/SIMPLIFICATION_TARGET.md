@@ -204,6 +204,10 @@ were the exported `goav.Detail` and `goav.Fix` DTO names.
 Runtime-branch mutation leaf codes are no longer exported `errcode` constants;
 they remain typed internally and still map to `FamilyRuntimeBranch`, but the
 experimental mutation surface no longer expands the public refusal catalog.
+Reusable Flow leaf codes are no longer exported `errcode` constants either;
+they remain typed inside the root package and still map to `FamilyFlow`, while
+public callers match the stable family and read the detailed `flow_*` string
+only when they need that internal leaf.
 
 ## Release gate
 

@@ -89,12 +89,6 @@ errcode.FamilyStream
 errcode.FamilyStreamRule
 errcode.FamilyTap
 errcode.FamilyTransform
-errcode.FlowCopyDomainMismatch
-errcode.FlowDecodeDomainMismatch
-errcode.FlowDecodeDuplicate
-errcode.FlowDecodeOrderInvalid
-errcode.FlowInvalid
-errcode.FlowMediaMismatch
 errcode.InputCountUnsupported
 errcode.InputDemuxerMissing
 errcode.InputDuplicate

@@ -61,7 +61,7 @@ func TestFlowChainAccessorsAndNilSafety(t *testing.T) {
 		nilAudio.Copy() != nil {
 		t.Fatal("nil audio chain method returned non-nil")
 	}
-	assertBuildErrorCode(t, nilAudio.chainSpec().err, errcode.FlowInvalid)
+	assertBuildErrorCode(t, nilAudio.chainSpec().err, flowInvalidCode)
 
 	var nilVideo *videoChain
 	if got := nilVideo.Name(); got != "" {
@@ -89,7 +89,7 @@ func TestFlowChainAccessorsAndNilSafety(t *testing.T) {
 		nilVideo.Copy() != nil {
 		t.Fatal("nil video chain method returned non-nil")
 	}
-	assertBuildErrorCode(t, nilVideo.chainSpec().err, errcode.FlowInvalid)
+	assertBuildErrorCode(t, nilVideo.chainSpec().err, flowInvalidCode)
 
 	var builder *chainBuilder
 	if got := builder.name(); got != "" {
@@ -114,7 +114,7 @@ func TestFlowChainAccessorsAndNilSafety(t *testing.T) {
 	builder.apply(audio)
 	builder.tap(FrameTap("preview.frames"))
 	builder.encode(codec.VP8())
-	assertBuildErrorCode(t, builder.snapshot().err, errcode.FlowInvalid)
+	assertBuildErrorCode(t, builder.snapshot().err, flowInvalidCode)
 }
 
 func TestVideoFlowOperationsExposeContractsAndCloneSnapshots(t *testing.T) {
@@ -316,21 +316,21 @@ func TestFlowBuilderRejectsInvalidCompositionContracts(t *testing.T) {
 			flow: Flow("bad").Audio().
 				Do(meter).
 				Apply(Flow("decode").Audio().Decode()),
-			code: errcode.FlowDecodeOrderInvalid,
+			code: flowDecodeOrderInvalidCode,
 		},
 		{
 			name: "duplicate decode through apply",
 			flow: Flow("bad").Audio().
 				Decode().
 				Apply(Flow("decode").Audio().Decode()),
-			code: errcode.FlowDecodeDuplicate,
+			code: flowDecodeDuplicateCode,
 		},
 		{
 			name: "copy flow after decode",
 			flow: Flow("bad").Audio().
 				Decode().
 				Apply(Flow("copy").Audio().Copy()),
-			code: errcode.FlowCopyDomainMismatch,
+			code: flowCopyDomainMismatchCode,
 		},
 		{
 			name: "typed packet tap before encode",
@@ -355,7 +355,7 @@ func TestFlowBuilderRejectsInvalidCompositionContracts(t *testing.T) {
 			name: "non snapshot chain",
 			flow: Flow("bad").Audio().
 				Apply(nonSnapshotFlow{}),
-			code: errcode.FlowInvalid,
+			code: flowInvalidCode,
 		},
 	}
 
@@ -374,7 +374,7 @@ func TestFlowDuplicateEncodeAndDecodeErrors(t *testing.T) {
 
 	dupDecode := Flow("preview").Video().Decode().Decode()
 	_, err = chainSpecFrom(dupDecode)
-	assertBuildErrorCode(t, err, errcode.FlowDecodeDuplicate)
+	assertBuildErrorCode(t, err, flowDecodeDuplicateCode)
 }
 
 type nonSnapshotFlow struct{}
