@@ -12,6 +12,7 @@ import (
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/internal/recipeir"
+	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/plan"
 	"github.com/thesyncim/goav/shape"
 	"github.com/thesyncim/goav/source"
@@ -170,6 +171,46 @@ func TestJoinPlannerConsumesRecipeIRInput(t *testing.T) {
 	work := planned.buildJoinWorkPlan(workInput, spec)
 	if len(work.Inputs) != 2 || len(work.Destinations) != 1 {
 		t.Fatalf("join work plan inputs=%+v destinations=%+v, want captured handoff data", work.Inputs, work.Destinations)
+	}
+}
+
+func TestNormalWorkPlanConsumesHandoff(t *testing.T) {
+	var out bytes.Buffer
+	job := From(FileInput("input.ivf", strings.NewReader(""))).
+		Video().
+		Decode().
+		Resize(320, 180).
+		Encode(codec.VP8()).
+		To(Write("output.ivf", &out))
+
+	state := recipeCompileStateFromSnapshot(newJobRecipeSnapshot(job), recipeCompileOptions{})
+	state.shapeDiagnostics = []plan.Diagnostic{{
+		Code:    "captured",
+		Details: []string{"before"},
+	}}
+	input := workPlanInputFromCompileState(&state)
+
+	state.operation = "mutated"
+	state.intent.Inputs = nil
+	state.intent.Streams = nil
+	state.intent.Destinations = nil
+	state.shapeDiagnostics[0].Details[0] = "after"
+	state.shapeDiagnostics = []plan.Diagnostic{{Code: "mutated"}}
+
+	work := buildNormalWorkPlan(input, pipeline.Spec{Name: "goav-test"})
+	if len(work.Inputs) != 1 ||
+		work.Inputs[0].Name != "input.ivf" ||
+		len(work.Streams) != 1 ||
+		len(work.Branches) != 1 ||
+		len(work.Destinations) != 1 ||
+		work.Destinations[0].Name != "output.ivf" {
+		t.Fatalf("normal work plan = inputs:%+v streams:%+v branches:%+v destinations:%+v, want captured handoff data",
+			work.Inputs, work.Streams, work.Branches, work.Destinations)
+	}
+	if len(work.Diagnostics) != 1 ||
+		work.Diagnostics[0].Code != "captured" ||
+		!reflect.DeepEqual(work.Diagnostics[0].Details, []string{"before"}) {
+		t.Fatalf("work diagnostics = %+v, want cloned captured diagnostics", work.Diagnostics)
 	}
 }
 
@@ -345,6 +386,45 @@ func TestMediaPlannerUsesRecipeIRInputFacts(t *testing.T) {
 	}
 	if strings.Contains(copyBody, "declaredSourceShape(state.inputAttachments") {
 		t.Fatal("planCopyBranches still reads source shape directly from concrete input attachments")
+	}
+}
+
+func TestNormalWorkPlanUsesHandoff(t *testing.T) {
+	body, err := os.ReadFile("work_plan.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := string(body)
+	if !strings.Contains(source, "type workPlanInput struct") {
+		t.Fatal("normal work-plan rendering should declare an explicit workPlanInput boundary")
+	}
+	buildBody := sourceFunctionBody(t, source, "buildWorkPlan")
+	if !strings.Contains(buildBody, "buildNormalWorkPlan(workPlanInputFromCompileState(state), spec)") {
+		t.Fatal("buildWorkPlan should pass workPlanInput into normal work rendering")
+	}
+	for _, forbidden := range []string{
+		"planOutputs(intent.Destinations",
+		"planBranches(state",
+		"workStreamsFromIntent(intent.Streams)",
+	} {
+		if strings.Contains(buildBody, forbidden) {
+			t.Fatalf("buildWorkPlan still performs normal work planning directly with %q", forbidden)
+		}
+	}
+	workInputBody := sourceFunctionBody(t, source, "workPlanInputFromCompileState")
+	for _, required := range []string{
+		"outputs := planOutputs(intent.Destinations, state.outputFormatMap())",
+		"branches, decisions := planBranches(state, outputs)",
+		"outputs = planOutputsWithBranches(outputs, branches)",
+		"diagnostics: clonePlanDiagnostics(state.shapeDiagnostics)",
+	} {
+		if !strings.Contains(workInputBody, required) {
+			t.Fatalf("workPlanInputFromCompileState should capture %s", required)
+		}
+	}
+	renderBody := sourceFunctionBody(t, source, "buildNormalWorkPlan")
+	if strings.Contains(renderBody, "*recipeCompileState") || strings.Contains(renderBody, "state.") {
+		t.Fatal("buildNormalWorkPlan should consume workPlanInput instead of compile state")
 	}
 }
 
