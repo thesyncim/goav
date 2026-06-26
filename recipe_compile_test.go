@@ -52,9 +52,26 @@ func moveTestStreamsToRecipeIR(state *recipeCompileState, kind recipeir.Kind) {
 	state.intent.Streams = nil
 }
 
+func moveTestIntentToRecipeIR(state *recipeCompileState, kind recipeir.Kind) {
+	if state == nil {
+		return
+	}
+	state.recipe = recipeIRFromIntent(state.intent, kind)
+	state.intent = intent{}
+	state.outputAttachments = nil
+	state.outputDestinationNames = nil
+	state.branchDestinationAttachments = nil
+}
+
 func moveTestOutputsToRecipeIR(state *recipeCompileState, kind recipeir.Kind, destinations ...recipeir.Destination) {
 	if state == nil {
 		return
+	}
+	if len(state.recipe.Inputs) == 0 && len(state.intent.Inputs) != 0 {
+		state.recipe.Inputs = make([]recipeir.Input, 0, len(state.intent.Inputs))
+		for i := range state.intent.Inputs {
+			state.recipe.Inputs = append(state.recipe.Inputs, recipeIRInputFromIntent(state.intent.Inputs[i]))
+		}
 	}
 	moveTestStreamsToRecipeIR(state, kind)
 	if len(destinations) != 0 {
@@ -65,6 +82,7 @@ func moveTestOutputsToRecipeIR(state *recipeCompileState, kind recipeir.Kind, de
 			state.recipe.Destinations = append(state.recipe.Destinations, recipeIRDestinationFromIntent(state.intent.Destinations[i]))
 		}
 	}
+	state.intent.Inputs = nil
 	state.intent.Destinations = nil
 	state.outputAttachments = nil
 	state.outputDestinationNames = nil
@@ -1230,7 +1248,9 @@ func TestJobIntentShapePassRejectsInvalidPublicShape(t *testing.T) {
 	pass := validateJobIntentShapePass()
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := pass.Apply(&tt.state)
+			state := tt.state
+			moveTestIntentToRecipeIR(&state, recipeir.KindJob)
+			err := pass.Apply(&state)
 			var buildErr *BuildError
 			if !errors.As(err, &buildErr) || buildErr.Code != tt.code || !errors.Is(err, errUnsupportedBuild) {
 				t.Fatalf("err = %v, want %s with matching BuildError code", err, tt.code)
@@ -2681,7 +2701,11 @@ func TestShapeErrorsReportExpectedAndActualShape(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := tt.pass.Apply(&tt.state)
+			state := tt.state
+			if tt.name == "job resize on audio" {
+				moveTestIntentToRecipeIR(&state, recipeir.KindJob)
+			}
+			err := tt.pass.Apply(&state)
 			var buildErr *BuildError
 			if !errors.As(err, &buildErr) || buildErr.Code != tt.code || !errors.Is(err, errUnsupportedBuild) {
 				t.Fatalf("err = %v, want %s with matching BuildError code", err, tt.code)
@@ -2989,6 +3013,7 @@ func TestJobIntentShapePassRejectsOperationTransforms(t *testing.T) {
 					Destinations: []destinationIntent{{Name: "frames"}},
 				},
 			}
+			moveTestIntentToRecipeIR(&state, recipeir.KindJob)
 			err := pass.Apply(&state)
 			var buildErr *BuildError
 			if !errors.As(err, &buildErr) || buildErr.Code != tt.code {
@@ -3127,7 +3152,9 @@ func TestTranscodeIntentShapePassRejectsInvalidPublicShape(t *testing.T) {
 	pass := validateBranchCompositionIntentShapePass()
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := pass.Apply(&tt.state)
+			state := tt.state
+			moveTestIntentToRecipeIR(&state, recipeir.KindBranchComposition)
+			err := pass.Apply(&state)
 			var buildErr *BuildError
 			if !errors.As(err, &buildErr) || buildErr.Code != tt.code || !errors.Is(err, errUnsupportedBuild) {
 				t.Fatalf("err = %v, want %s with matching BuildError code", err, tt.code)
@@ -3197,11 +3224,11 @@ func TestTranscodeBranchTargetKindsPassAllowsCopyMuxBranches(t *testing.T) {
 		operation: branchCompositionOperation,
 		intent:    intent{Inputs: []inputIntent{{Name: "input.ivf"}}, Streams: []streamIntent{stream}},
 	}
+	moveTestOutputsToRecipeIR(&state, recipeir.KindBranchComposition, testRecipeIRDestination("web", recipeir.DestinationKindByteStream))
 
 	if err := validateBranchCompositionIntentShapePass().Apply(&state); err != nil {
 		t.Fatalf("validateBranchCompositionIntentShapePass() error = %v", err)
 	}
-	moveTestOutputsToRecipeIR(&state, recipeir.KindBranchComposition, testRecipeIRDestination("web", recipeir.DestinationKindByteStream))
 	if err := validateBranchDestinationKindsPass().Apply(&state); err != nil {
 		t.Fatalf("validateBranchDestinationKindsPass() error = %v", err)
 	}

@@ -856,6 +856,38 @@ func TestAdapterValidationPassesConsumeRecipeIRStreams(t *testing.T) {
 	}
 }
 
+func TestIntentShapePassesConsumeRecipeIR(t *testing.T) {
+	compileBody, err := os.ReadFile("recipe_compile.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	compileSource := string(compileBody)
+	for fn, required := range map[string]string{
+		"validateJobIntentShapePass":               "validateJobRecipeIntentShape(state.operation, state.recipe, state.jobOutputCount)",
+		"validateBranchCompositionIntentShapePass": "validateBranchCompositionRecipeShape(state.operation, state.recipe)",
+	} {
+		fnBody := sourceFunctionBody(t, compileSource, fn)
+		if !strings.Contains(fnBody, required) {
+			t.Fatalf("%s should call %s", fn, required)
+		}
+		if strings.Contains(fnBody, "state.intent") {
+			t.Fatalf("%s still validates shape from legacy intent", fn)
+		}
+	}
+
+	branchBody, err := os.ReadFile("branch_compose_plan.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	branchShapeBody := sourceFunctionBody(t, string(branchBody), "validateBranchCompositionRecipeShape")
+	if !strings.Contains(branchShapeBody, "streamIntentsFromRecipeIR(recipe.Streams)") {
+		t.Fatal("validateBranchCompositionRecipeShape should derive streams from recipe IR")
+	}
+	if strings.Contains(branchShapeBody, "intent.Streams") || strings.Contains(branchShapeBody, "intent.Inputs") {
+		t.Fatal("validateBranchCompositionRecipeShape still reads legacy intent shape")
+	}
+}
+
 func TestOutputValidationPassesConsumeRecipeIR(t *testing.T) {
 	body, err := os.ReadFile("recipe_compile.go")
 	if err != nil {

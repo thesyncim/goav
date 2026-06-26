@@ -164,8 +164,8 @@ func chainStepsFromChainOperations(operations []operationSpec) []chainStep {
 	return steps
 }
 
-func validateBranchCompositionIntentShape(operation string, intent intent) error {
-	if len(intent.Inputs) == 0 {
+func validateBranchCompositionRecipeShape(operation string, recipe recipeir.Recipe) error {
+	if len(recipe.Inputs) == 0 {
 		return &BuildError{
 			Family:    errcode.FamilyForCode(inputMissingCode),
 			Code:      inputMissingCode,
@@ -177,14 +177,14 @@ func validateBranchCompositionIntentShape(operation string, intent intent) error
 			cause: errUnsupportedBuild,
 		}
 	}
-	if len(intent.Inputs) > 1 {
+	if len(recipe.Inputs) > 1 {
 		return &BuildError{
 			Family:    errcode.FamilyForCode(inputCountUnsupportedCode),
 			Code:      inputCountUnsupportedCode,
 			Operation: operation,
 			Reason:    "transcode recipes currently take one input",
 			fields: buildErrorFields([]string{
-				fmt.Sprintf("inputs=%d", len(intent.Inputs)),
+				fmt.Sprintf("inputs=%d", len(recipe.Inputs)),
 			}),
 			fixes: buildErrorFixes([]string{
 				"use one goav.From(input) source per composed job",
@@ -193,7 +193,7 @@ func validateBranchCompositionIntentShape(operation string, intent intent) error
 			cause: errUnsupportedBuild,
 		}
 	}
-	streams := intent.Streams
+	streams := streamIntentsFromRecipeIR(recipe.Streams)
 	if len(streams) == 0 {
 		return branchStreamMissingError()
 	}

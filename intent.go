@@ -272,13 +272,6 @@ func jobStreamHasDecodeOperation(stream *jobStreamBuild) bool {
 	return operationSpecsContainKind(stream.operations, plan.OpDecode)
 }
 
-func jobIntentStream(intent intent) (streamIntent, bool) {
-	if len(intent.Streams) == 0 {
-		return streamIntent{}, false
-	}
-	return intent.Streams[0], true
-}
-
 func jobStreamIntent(stream *jobStreamBuild) streamIntent {
 	if stream == nil {
 		return streamIntent{}

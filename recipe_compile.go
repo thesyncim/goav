@@ -667,12 +667,12 @@ func destinationRefsRequireRuntime(destinations []destinationRef) bool {
 
 func validateJobIntentShapePass() recipeCompilePass {
 	return recipeCompilePassFunc{name: "validate job intent shape", fn: func(state *recipeCompileState) error {
-		return validateJobIntentShape(state.operation, state.intent, state.jobOutputCount)
+		return validateJobRecipeIntentShape(state.operation, state.recipe, state.jobOutputCount)
 	}}
 }
 
-func validateJobIntentShape(operation string, intent intent, jobOutputCount int) error {
-	if len(intent.Inputs) == 0 {
+func validateJobRecipeIntentShape(operation string, recipe recipeir.Recipe, jobOutputCount int) error {
+	if len(recipe.Inputs) == 0 {
 		return &BuildError{
 			Family:    errcode.FamilyForCode(inputMissingCode),
 			Code:      inputMissingCode,
@@ -684,8 +684,9 @@ func validateJobIntentShape(operation string, intent intent, jobOutputCount int)
 			cause: errUnsupportedBuild,
 		}
 	}
-	stream, hasStream := jobIntentStream(intent)
-	if len(intent.Destinations) == 0 {
+	streams := streamIntentsFromRecipeIR(recipe.Streams)
+	stream, hasStream := jobRecipeIntentStream(streams)
+	if len(recipe.Destinations) == 0 {
 		return &BuildError{
 			Family:    errcode.FamilyForCode(outputMissingCode),
 			Code:      outputMissingCode,
@@ -698,10 +699,10 @@ func validateJobIntentShape(operation string, intent intent, jobOutputCount int)
 			cause: errUnsupportedBuild,
 		}
 	}
-	if len(intent.Streams) > 1 {
-		return validateMultiStreamJobIntentShape(operation, intent, jobOutputCount)
+	if len(streams) > 1 {
+		return validateMultiStreamJobRecipeShape(operation, streams, jobOutputCount)
 	}
-	if err := validateJobIntentOutputScope(operation, intent, jobOutputCount, stream, hasStream); err != nil {
+	if err := validateJobRecipeOutputScope(operation, len(recipe.Destinations), jobOutputCount, stream, hasStream); err != nil {
 		return err
 	}
 	if !hasStream {
@@ -710,15 +711,15 @@ func validateJobIntentShape(operation string, intent intent, jobOutputCount int)
 	return validateJobStreamIntentShape(operation, stream)
 }
 
-// validateMultiStreamJobIntentShape checks a job with several stream chains:
+// validateMultiStreamJobRecipeShape checks a job with several stream chains:
 // every chain carries its own operations and stream-local destinations, and
 // the job-level output scope stays empty (the chains own the routing).
-func validateMultiStreamJobIntentShape(operation string, intent intent, jobOutputCount int) error {
+func validateMultiStreamJobRecipeShape(operation string, streams []streamIntent, jobOutputCount int) error {
 	if jobOutputCount != 0 {
-		return jobOutputScopeMixedError(operation, intent.Streams[0])
+		return jobOutputScopeMixedError(operation, streams[0])
 	}
-	for i := range intent.Streams {
-		stream := intent.Streams[i]
+	for i := range streams {
+		stream := streams[i]
 		if len(stream.Destinations) == 0 {
 			return jobStreamDestinationMissingError(operation, stream)
 		}
@@ -727,6 +728,13 @@ func validateMultiStreamJobIntentShape(operation string, intent intent, jobOutpu
 		}
 	}
 	return nil
+}
+
+func jobRecipeIntentStream(streams []streamIntent) (streamIntent, bool) {
+	if len(streams) == 0 {
+		return streamIntent{}, false
+	}
+	return streams[0], true
 }
 
 func jobStreamDestinationMissingError(operation string, stream streamIntent) error {
@@ -744,11 +752,11 @@ func jobStreamDestinationMissingError(operation string, stream streamIntent) err
 	}
 }
 
-func validateJobIntentOutputScope(operation string, intent intent, jobOutputCount int, stream streamIntent, hasStream bool) error {
+func validateJobRecipeOutputScope(operation string, destinationCount int, jobOutputCount int, stream streamIntent, hasStream bool) error {
 	if !hasStream {
 		return nil
 	}
-	if jobOutputCount == 0 && len(intent.Destinations) == len(stream.Destinations) {
+	if jobOutputCount == 0 && destinationCount == len(stream.Destinations) {
 		return nil
 	}
 	return jobOutputScopeMixedError(operation, stream)
@@ -1059,7 +1067,7 @@ func validateBranchCompositionRecipePass() recipeCompilePass {
 
 func validateBranchCompositionIntentShapePass() recipeCompilePass {
 	return recipeCompilePassFunc{name: "validate transcode intent shape", fn: func(state *recipeCompileState) error {
-		return validateBranchCompositionIntentShape(state.operation, state.intent)
+		return validateBranchCompositionRecipeShape(state.operation, state.recipe)
 	}}
 }
 
