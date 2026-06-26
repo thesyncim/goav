@@ -541,6 +541,21 @@ func TestJoinPlannerUsesRecipeIRInputFacts(t *testing.T) {
 		strings.Contains(string(compileStateBody), "joinPlan *joinPlan") {
 		t.Fatal("recipeCompileState should not store the concrete join plan")
 	}
+	treeBody := sourceFunctionBody(t, string(body), "planJoinTree")
+	leafBody := sourceFunctionBody(t, string(body), "joinLeafInputSpecs")
+	for name, fnBody := range map[string]string{
+		"planJoinTree":       treeBody,
+		"joinLeafInputSpecs": leafBody,
+	} {
+		for _, forbidden := range []string{
+			".chain.job.inputs",
+			".chain.job.err",
+		} {
+			if strings.Contains(fnBody, forbidden) {
+				t.Fatalf("%s still reads chain-arm job internals with %q", name, forbidden)
+			}
+		}
+	}
 }
 
 func TestMediaPlannerUsesRecipeIRInputFacts(t *testing.T) {

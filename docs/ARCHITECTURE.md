@@ -184,7 +184,8 @@ entrypoint consumes that snapshot rather than reading `Job` fields directly.
 Branch-composition planning consumes captured recipe IR, not the original
 `streamBuild` records, and normal work-plan rendering no longer falls back to
 the legacy intent mirror. Join branch fanout planning also builds branch recipe
-streams directly instead of synthesizing builder records. Root-only attachments
+streams directly instead of synthesizing builder records, and join chain-arm
+inputs are captured before join tree planning. Root-only attachments
 (`InputSpec`, `destinationSpec`, `joinSpec`, stream rules, runtime pointers,
 and graph lowering details) still travel beside the IR until later slices move
 those facts into stable recipe/plan data.

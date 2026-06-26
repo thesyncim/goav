@@ -88,10 +88,13 @@ type joinArm interface {
 // or tap (a reference to a tap declared by an earlier arm) is set. region
 // carries the arm's composite placement, when declared.
 type joinArmSpec struct {
-	chain  *jobStreamBuilder
-	join   *joinSpec
-	tap    *tapRef
-	region *compositeRegion
+	chain        *jobStreamBuilder
+	chainInput   InputSpec
+	chainInputOK bool
+	chainErr     error
+	join         *joinSpec
+	tap          *tapRef
+	region       *compositeRegion
 }
 
 // joinProfile is the per-kind configuration consulted by the join planner.
@@ -682,8 +685,8 @@ func planJoinTree(input joinPlanInput, spec *joinSpec, cursor int, used map[stri
 				return nil, 0, err
 			}
 			armPlan = tapPlan
-		case armSpec.chain != nil && armSpec.chain.job != nil && len(armSpec.chain.job.inputs) == 1:
-			if err := armSpec.chain.job.err; err != nil {
+		case armSpec.chain != nil && armSpec.chainInputOK:
+			if err := armSpec.chainErr; err != nil {
 				return nil, 0, err
 			}
 			if cursor >= len(input.sets) || !input.sets[cursor].known || len(input.sets[cursor].streams) == 0 {
@@ -694,7 +697,7 @@ func planJoinTree(input joinPlanInput, spec *joinSpec, cursor int, used map[stri
 				return nil, 0, err
 			}
 			armPlan = joinArmPlan{
-				input:     armSpec.chain.job.inputs[0],
+				input:     armSpec.chainInput,
 				inputName: input.sets[cursor].name,
 				stream:    stream,
 				domain:    input.sets[cursor].domain,
@@ -1967,8 +1970,8 @@ func joinLeafInputSpecs(spec *joinSpec) []InputSpec {
 				}
 			case resolved.tap != nil:
 				// A tap arm attaches to an already-open stream.
-			case resolved.chain != nil && resolved.chain.job != nil && len(resolved.chain.job.inputs) == 1:
-				out = append(out, resolved.chain.job.inputs[0])
+			case resolved.chain != nil && resolved.chainInputOK:
+				out = append(out, resolved.chainInput)
 			default:
 				return false
 			}

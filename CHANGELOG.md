@@ -90,6 +90,8 @@ methodology changes, and migration notes.
   `streamBuild` builder records.
 - Routed join branch fanout planning through recipe IR stream facts instead of
   synthesized `jobStreamBuild`/`streamBuild` records.
+- Captured join chain-arm inputs at the join-arm boundary so join tree
+  planning and join input snapshots no longer read through chain builders.
 - Routed media input binding, copy planning, live stream selection, and
   multi-input stream resolution through captured recipe input facts instead of
   the legacy intent mirror.

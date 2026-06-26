@@ -107,7 +107,9 @@ planner input/copy binding, and dynamic stream-rule summaries feed validation
 and Explain from recipe IR. Join summaries now cross the boundary, and join
 planning plus join work-plan rendering enter through explicit IR-derived
 handoffs instead of reading compile state directly; join branch fanout planning
-now builds recipe IR stream facts instead of synthesized builder records.
+now builds recipe IR stream facts instead of synthesized builder records, and
+join chain-arm inputs are captured at the join-arm boundary before join tree
+planning.
 Normal work-plan rendering
 also now consumes a captured handoff rather than reaching back into compile
 state while it renders operations, branches, destinations, decisions, and

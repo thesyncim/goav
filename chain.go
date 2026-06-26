@@ -249,7 +249,15 @@ func (b *jobStreamBuilder) joinArm() joinArmSpec {
 	if b == nil {
 		return joinArmSpec{}
 	}
-	return joinArmSpec{chain: b, region: b.region}
+	spec := joinArmSpec{chain: b, region: b.region}
+	if b.job != nil {
+		spec.chainErr = b.job.err
+		if len(b.job.inputs) == 1 {
+			spec.chainInput = b.job.inputs[0]
+			spec.chainInputOK = true
+		}
+	}
+	return spec
 }
 
 func (b *jobStreamBuilder) sourceStartsFrameDomain() bool {
