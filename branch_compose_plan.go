@@ -398,8 +398,8 @@ func branchEncodeMissingError(stream streamIntent) error {
 
 func branchCopyUnsupportedError(stream streamIntent) error {
 	return &BuildError{
-		Family:    errcode.FamilyForCode(errcode.CopyUnsupported),
-		Code:      errcode.CopyUnsupported,
+		Family:    errcode.FamilyForCode(copyUnsupportedCode),
+		Code:      copyUnsupportedCode,
 		Operation: branchCompositionOperation,
 		Node:      branchIntentName(stream),
 		Reason:    "copy branches require a packet-domain stream point",

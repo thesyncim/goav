@@ -107,17 +107,18 @@ func FamilyForCode(code Code) Family {
 		DestinationFormatUnknown, DestinationMuxerMissing,
 		DestinationMuxIncompatible, DestinationShapeMismatch:
 		return FamilyDestination
-	case BranchInvalid, BranchMissing, BranchDuplicate, BranchSourceInvalid,
-		BranchTapMissing, BranchDecodeDuplicate, BranchDecodeOrderInvalid,
-		BranchDecodeDomainMismatch, BranchDecodeCopyInvalid,
-		BranchTransformMediaMismatch, BranchDestinationInvalid,
-		BranchDestinationUnmatched, BranchOperationChainUnsupported,
-		branchComposePlanEmpty, CopyBranchSourceInvalid, CopyUnsupported,
-		PacketBranchEncodeUnsupported, PacketBranchTransformUnsupported,
-		DecodeConfigConflict, DecodePolicyConflict:
+	case Code("branch_invalid"), Code("branch_missing"), Code("branch_duplicate"),
+		Code("branch_source_invalid"), Code("branch_tap_missing"), Code("branch_decode_duplicate"),
+		Code("branch_decode_order_invalid"), Code("branch_decode_domain_mismatch"),
+		Code("branch_decode_copy_invalid"), Code("branch_transform_media_mismatch"),
+		Code("branch_destination_invalid"), Code("branch_destination_unmatched"),
+		Code("branch_operation_chain_unsupported"), branchComposePlanEmpty,
+		Code("copy_branch_source_invalid"), Code("copy_unsupported"),
+		Code("packet_branch_encode_unsupported"), Code("packet_branch_transform_unsupported"),
+		Code("decode_config_conflict"), Code("decode_policy_conflict"):
 		return FamilyBranch
-	case BranchBufferInvalid, BranchBufferUnsupported, BufferPayloadUnsafe,
-		BufferPayloadTooLarge, bufferBudgetMissing:
+	case Code("branch_buffer_invalid"), Code("branch_buffer_unsupported"),
+		Code("buffer_payload_unsafe"), Code("buffer_payload_too_large"), bufferBudgetMissing:
 		return FamilyBuffer
 	case TapInvalid, TapDomainMismatch:
 		return FamilyTap
@@ -364,76 +365,6 @@ const (
 	// DestinationShapeMismatch fires when frame-domain media is routed to
 	// a byte or mux destination; those consume packets.
 	DestinationShapeMismatch Code = "destination_shape_mismatch"
-)
-
-// Planned branch codes (.Branches fanout declared at build time).
-const (
-	// BranchInvalid fires when a branch spec is nil, unconstructed, or
-	// otherwise malformed before branch planning can use it.
-	BranchInvalid Code = "branch_invalid"
-	// BranchMissing fires when .Branches(...) is called with no branches.
-	BranchMissing Code = "branch_missing"
-	// BranchDuplicate fires when two branches share one name.
-	BranchDuplicate Code = "branch_duplicate"
-	// BranchSourceInvalid fires when a branch anchors from something other
-	// than a typed tap, input stream anchor, or expert graph handle.
-	BranchSourceInvalid Code = "branch_source_invalid"
-	// BranchTapMissing fires when a branch's .From(...) tap is not
-	// declared on the parent stream.
-	BranchTapMissing Code = "branch_tap_missing"
-	// BranchDecodeDuplicate fires when a branch decodes an already-decoded
-	// input.
-	BranchDecodeDuplicate Code = "branch_decode_duplicate"
-	// BranchDecodeOrderInvalid fires when a branch's decode is not its
-	// first operation.
-	BranchDecodeOrderInvalid Code = "branch_decode_order_invalid"
-	// BranchDecodeDomainMismatch fires when a branch decodes a point that
-	// is not packet-domain.
-	BranchDecodeDomainMismatch Code = "branch_decode_domain_mismatch"
-	// BranchDecodeCopyInvalid fires when a branch decodes and then copies
-	// the original packets.
-	BranchDecodeCopyInvalid Code = "branch_decode_copy_invalid"
-	// BranchTransformMediaMismatch fires when a branch transform targets
-	// the wrong media kind.
-	BranchTransformMediaMismatch Code = "branch_transform_media_mismatch"
-	// BranchDestinationInvalid fires when a branch destination is
-	// malformed.
-	BranchDestinationInvalid Code = "branch_destination_invalid"
-	// BranchDestinationUnmatched fires when a declared destination selects
-	// no branches.
-	BranchDestinationUnmatched Code = "branch_destination_unmatched"
-	// BranchOperationChainUnsupported fires when a branch's operation
-	// chain uses an unsupported combination.
-	BranchOperationChainUnsupported Code = "branch_operation_chain_unsupported"
-	// BranchBufferInvalid fires when a branch buffer policy is malformed.
-	BranchBufferInvalid Code = "branch_buffer_invalid"
-	// BranchBufferUnsupported fires when an unbounded branch buffer is
-	// requested; the runtime does not support it yet.
-	BranchBufferUnsupported Code = "branch_buffer_unsupported"
-	// BufferPayloadUnsafe fires when buffered execution receives a mutable
-	// payload that the configured copy policy refuses to copy.
-	BufferPayloadUnsafe Code = "buffer_payload_unsafe"
-	// BufferPayloadTooLarge fires when buffered execution receives a payload
-	// larger than the configured copy bounds.
-	BufferPayloadTooLarge Code = "buffer_payload_too_large"
-	// CopyBranchSourceInvalid fires when a packet-copy branch starts from
-	// a point that is not packet-domain.
-	CopyBranchSourceInvalid Code = "copy_branch_source_invalid"
-	// CopyUnsupported fires when a copy branch is requested from a
-	// frame-domain stream point.
-	CopyUnsupported Code = "copy_unsupported"
-	// PacketBranchEncodeUnsupported fires when a packet-domain branch
-	// encodes without decoding first.
-	PacketBranchEncodeUnsupported Code = "packet_branch_encode_unsupported"
-	// PacketBranchTransformUnsupported fires when a packet-domain branch
-	// resizes or resamples without decoding first.
-	PacketBranchTransformUnsupported Code = "packet_branch_transform_unsupported"
-	// DecodeConfigConflict fires when branches sharing one decoder declare
-	// different decode configs.
-	DecodeConfigConflict Code = "decode_config_conflict"
-	// DecodePolicyConflict fires when branches sharing one decoder declare
-	// different codec-change policies.
-	DecodePolicyConflict Code = "decode_policy_conflict"
 )
 
 // Tap errcode.

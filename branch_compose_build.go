@@ -962,8 +962,8 @@ func codecSpecHasDecodeIntent(spec codec.CodecSpec) bool {
 
 func branchComposeDecodeConfigConflictError(first string, second string) error {
 	return &BuildError{
-		Family:    errcode.FamilyForCode(errcode.DecodeConfigConflict),
-		Code:      errcode.DecodeConfigConflict,
+		Family:    errcode.FamilyForCode(decodeConfigConflictCode),
+		Code:      decodeConfigConflictCode,
 		Operation: "build branch composition",
 		Node:      second,
 		Reason:    "branches that share one decoder declared different decode configs",
@@ -980,8 +980,8 @@ func branchComposeDecodeConfigConflictError(first string, second string) error {
 
 func branchComposeCodecChangeConflictError(first string, second string) error {
 	return &BuildError{
-		Family:    errcode.FamilyForCode(errcode.DecodePolicyConflict),
-		Code:      errcode.DecodePolicyConflict,
+		Family:    errcode.FamilyForCode(decodePolicyConflictCode),
+		Code:      decodePolicyConflictCode,
 		Operation: "build branch composition",
 		Node:      second,
 		Reason:    "branches that share one decoder declared different codec-change policies",
@@ -999,8 +999,8 @@ func branchComposeCodecChangeConflictError(first string, second string) error {
 
 func branchComposeDuplicateBranchError(name string, index int) error {
 	return &BuildError{
-		Family:    errcode.FamilyForCode(errcode.BranchDuplicate),
-		Code:      errcode.BranchDuplicate,
+		Family:    errcode.FamilyForCode(branchDuplicateCode),
+		Code:      branchDuplicateCode,
 		Operation: "build branch composition",
 		Node:      name,
 		Reason:    "branch name is defined more than once",
@@ -1167,8 +1167,8 @@ func branchComposePrivateOperationTransforms(branch branchComposeRoute) ([]media
 
 func branchChainStepError(name string, reason string) error {
 	return &BuildError{
-		Family:    errcode.FamilyForCode(errcode.BranchOperationChainUnsupported),
-		Code:      errcode.BranchOperationChainUnsupported,
+		Family:    errcode.FamilyForCode(branchOperationChainUnsupportedCode),
+		Code:      branchOperationChainUnsupportedCode,
 		Operation: "build branch composition",
 		Node:      name,
 		Reason:    reason,
@@ -1307,8 +1307,8 @@ func mediaTransformMismatchError(transform mediaTransform, stream av.Stream, ope
 		"codec type: " + string(stream.Codec.Type),
 	}
 	return &BuildError{
-		Family:    errcode.FamilyForCode(errcode.BranchTransformMediaMismatch),
-		Code:      errcode.BranchTransformMediaMismatch,
+		Family:    errcode.FamilyForCode(branchTransformMediaMismatchCode),
+		Code:      branchTransformMediaMismatchCode,
 		Operation: "build branch composition",
 		Node:      transform.name,
 		Reason:    operation + " applies to " + media + " streams",
@@ -1371,8 +1371,8 @@ func branchComposeTargetUnmatchedError(output branchComposeTarget, destination f
 		details = append(details, "requested: "+strings.Join(output.Branches, ", "))
 	}
 	return &BuildError{
-		Family:    errcode.FamilyForCode(errcode.BranchDestinationUnmatched),
-		Code:      errcode.BranchDestinationUnmatched,
+		Family:    errcode.FamilyForCode(branchDestinationUnmatchedCode),
+		Code:      branchDestinationUnmatchedCode,
 		Operation: "build branch composition",
 		Node:      node,
 		Reason:    "destination selects no branches",
@@ -1388,8 +1388,8 @@ func branchComposeTargetUnmatchedError(output branchComposeTarget, destination f
 
 func branchComposeTargetDestinationInvalidError(output branchComposeTarget, reason string) error {
 	return &BuildError{
-		Family:    errcode.FamilyForCode(errcode.BranchDestinationInvalid),
-		Code:      errcode.BranchDestinationInvalid,
+		Family:    errcode.FamilyForCode(branchDestinationInvalidCode),
+		Code:      branchDestinationInvalidCode,
 		Operation: "build branch composition",
 		Node:      branchComposeTargetNodeName(output, "output"),
 		Reason:    reason,

@@ -208,6 +208,11 @@ Reusable Flow leaf codes are no longer exported `errcode` constants either;
 they remain typed inside the root package and still map to `FamilyFlow`, while
 public callers match the stable family and read the detailed `flow_*` string
 only when they need that internal leaf.
+Planned branch and branch-buffer leaf codes now follow the same rule: branch
+grammar and buffer safety refusals still return exact typed `branch_*`,
+`copy_*`, `packet_branch_*`, `decode_*`, and `buffer_*` strings, but the public
+matching contract is `FamilyBranch` or `FamilyBuffer` instead of one exported
+constant per planner edge case.
 
 ## Release gate
 

@@ -68,8 +68,8 @@ func validateTapDomain(operation string, node string, tap tapRef, actual shape.M
 
 func branchSourceInvalidError(node string) error {
 	return &BuildError{
-		Family:    errcode.FamilyForCode(errcode.BranchSourceInvalid),
-		Code:      errcode.BranchSourceInvalid,
+		Family:    errcode.FamilyForCode(branchSourceInvalidCode),
+		Code:      branchSourceInvalidCode,
 		Operation: "build branch",
 		Node:      firstNonEmpty(node, "branch"),
 		Reason:    "branch source must be a typed tap or expert graph handle",

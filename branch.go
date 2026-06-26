@@ -776,8 +776,8 @@ func chainStepsThroughTap(steps []chainStep, tap string) ([]chainStep, bool) {
 
 func branchCopyParentOperationError(node string) error {
 	return &BuildError{
-		Family:    errcode.FamilyForCode(errcode.CopyBranchSourceInvalid),
-		Code:      errcode.CopyBranchSourceInvalid,
+		Family:    errcode.FamilyForCode(copyBranchSourceInvalidCode),
+		Code:      copyBranchSourceInvalidCode,
 		Operation: "build branches",
 		Node:      node,
 		Reason:    "packet-copy branches must start from a packet-domain stream point",
@@ -811,8 +811,8 @@ func branchEncodeParentOperationError(node string, encode codec.CodecSpec) error
 
 func plannedBranchNodeSourceError(name string, source string) error {
 	return &BuildError{
-		Family:    errcode.FamilyForCode(errcode.BranchSourceInvalid),
-		Code:      errcode.BranchSourceInvalid,
+		Family:    errcode.FamilyForCode(branchSourceInvalidCode),
+		Code:      branchSourceInvalidCode,
 		Operation: "build branches",
 		Node:      firstNonEmpty(name, "branch"),
 		Reason:    "planned branches do not anchor from graph handles",
@@ -830,8 +830,8 @@ func plannedBranchNodeSourceError(name string, source string) error {
 
 func plannedBranchTapMissingError(stream string, branch string, tap string) error {
 	return &BuildError{
-		Family:    errcode.FamilyForCode(errcode.BranchTapMissing),
-		Code:      errcode.BranchTapMissing,
+		Family:    errcode.FamilyForCode(branchTapMissingCode),
+		Code:      branchTapMissingCode,
 		Operation: "build branches",
 		Node:      firstNonEmpty(branch, "branch"),
 		Reason:    "branch tap is not declared on the parent stream",
@@ -850,8 +850,8 @@ func plannedBranchTapMissingError(stream string, branch string, tap string) erro
 
 func duplicateBranchDecodeError(node string) error {
 	return &BuildError{
-		Family:    errcode.FamilyForCode(errcode.BranchDecodeDuplicate),
-		Code:      errcode.BranchDecodeDuplicate,
+		Family:    errcode.FamilyForCode(branchDecodeDuplicateCode),
+		Code:      branchDecodeDuplicateCode,
 		Operation: "build branch",
 		Node:      node,
 		Reason:    "branch already decodes its input packets",
@@ -865,8 +865,8 @@ func duplicateBranchDecodeError(node string) error {
 
 func branchDecodeOrderError(node string) error {
 	return &BuildError{
-		Family:    errcode.FamilyForCode(errcode.BranchDecodeOrderInvalid),
-		Code:      errcode.BranchDecodeOrderInvalid,
+		Family:    errcode.FamilyForCode(branchDecodeOrderInvalidCode),
+		Code:      branchDecodeOrderInvalidCode,
 		Operation: "build branch",
 		Node:      node,
 		Reason:    "decode must be the first branch operation",
@@ -880,8 +880,8 @@ func branchDecodeOrderError(node string) error {
 
 func branchDecodeDomainError(node string) error {
 	return &BuildError{
-		Family:    errcode.FamilyForCode(errcode.BranchDecodeDomainMismatch),
-		Code:      errcode.BranchDecodeDomainMismatch,
+		Family:    errcode.FamilyForCode(branchDecodeDomainMismatchCode),
+		Code:      branchDecodeDomainMismatchCode,
 		Operation: "build branches",
 		Node:      node,
 		Reason:    "branch decoding requires a packet-domain stream point",
@@ -896,8 +896,8 @@ func branchDecodeDomainError(node string) error {
 
 func branchDecodeCopyError(node string) error {
 	return &BuildError{
-		Family:    errcode.FamilyForCode(errcode.BranchDecodeCopyInvalid),
-		Code:      errcode.BranchDecodeCopyInvalid,
+		Family:    errcode.FamilyForCode(branchDecodeCopyInvalidCode),
+		Code:      branchDecodeCopyInvalidCode,
 		Operation: "build branch",
 		Node:      node,
 		Reason:    "a branch cannot decode packets and then copy the original packet payload",
@@ -912,8 +912,8 @@ func branchDecodeCopyError(node string) error {
 
 func branchPacketEncodeUnsupportedError(stream streamIntent, encode codec.CodecSpec) error {
 	return &BuildError{
-		Family:    errcode.FamilyForCode(errcode.PacketBranchEncodeUnsupported),
-		Code:      errcode.PacketBranchEncodeUnsupported,
+		Family:    errcode.FamilyForCode(packetBranchEncodeUnsupportedCode),
+		Code:      packetBranchEncodeUnsupportedCode,
 		Operation: "build branches",
 		Node:      branchIntentName(stream),
 		Reason:    "packet-domain planned branches cannot encode without decoding first",
@@ -931,8 +931,8 @@ func branchPacketEncodeUnsupportedError(stream streamIntent, encode codec.CodecS
 
 func branchPacketTransformUnsupportedError(stream streamIntent) error {
 	return &BuildError{
-		Family:    errcode.FamilyForCode(errcode.PacketBranchTransformUnsupported),
-		Code:      errcode.PacketBranchTransformUnsupported,
+		Family:    errcode.FamilyForCode(packetBranchTransformUnsupportedCode),
+		Code:      packetBranchTransformUnsupportedCode,
 		Operation: "build branches",
 		Node:      branchIntentName(stream),
 		Reason:    "packet-domain planned branches cannot resize or resample without decoding first",
@@ -979,8 +979,8 @@ func cloneDestinationSpec(dest destinationSpec) destinationSpec {
 
 func branchMissingError(node string) error {
 	return &BuildError{
-		Family:    errcode.FamilyForCode(errcode.BranchMissing),
-		Code:      errcode.BranchMissing,
+		Family:    errcode.FamilyForCode(branchMissingCode),
+		Code:      branchMissingCode,
 		Operation: "build branches",
 		Node:      node,
 		Reason:    "Branches requires at least one encoded branch",
@@ -994,8 +994,8 @@ func branchMissingError(node string) error {
 
 func nilBranchError() error {
 	return &BuildError{
-		Family:    errcode.FamilyForCode(errcode.BranchInvalid),
-		Code:      errcode.BranchInvalid,
+		Family:    errcode.FamilyForCode(branchInvalidCode),
+		Code:      branchInvalidCode,
 		Operation: "build branch",
 		Reason:    "branch is nil",
 		fixes: buildErrorFixes([]string{
@@ -1007,8 +1007,8 @@ func nilBranchError() error {
 
 func branchSpecOriginError(index int, selected av.MediaType) error {
 	return &BuildError{
-		Family:    errcode.FamilyForCode(errcode.BranchInvalid),
-		Code:      errcode.BranchInvalid,
+		Family:    errcode.FamilyForCode(branchInvalidCode),
+		Code:      branchInvalidCode,
 		Operation: "build branches",
 		Node:      fmt.Sprintf("branch-%d", index),
 		Reason:    "branch spec was not constructed with goav.Branch(name)",

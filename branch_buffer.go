@@ -14,8 +14,8 @@ func validateBranchBuffer(b flow.BranchBuffer, operation string, node string) er
 	case "", flow.BufferBlocking, flow.BufferDropOldest, flow.BufferDropNewest, flow.BufferLatest:
 	case flow.BufferUnbounded:
 		return &BuildError{
-			Family:    errcode.FamilyForCode(errcode.BranchBufferUnsupported),
-			Code:      errcode.BranchBufferUnsupported,
+			Family:    errcode.FamilyForCode(branchBufferUnsupportedCode),
+			Code:      branchBufferUnsupportedCode,
 			Operation: operation,
 			Node:      firstNonEmpty(node, "branch"),
 			Reason:    "unbounded branch buffers are not supported by the runtime yet",
@@ -57,8 +57,8 @@ func validateBranchBuffer(b flow.BranchBuffer, operation string, node string) er
 
 func branchBufferInvalidError(operation string, node string, reason string) error {
 	return &BuildError{
-		Family:    errcode.FamilyForCode(errcode.BranchBufferInvalid),
-		Code:      errcode.BranchBufferInvalid,
+		Family:    errcode.FamilyForCode(branchBufferInvalidCode),
+		Code:      branchBufferInvalidCode,
 		Operation: operation,
 		Node:      firstNonEmpty(node, "branch"),
 		Reason:    reason,

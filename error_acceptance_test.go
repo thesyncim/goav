@@ -280,7 +280,7 @@ func TestErrorAcceptanceBranchMissing(t *testing.T) {
 		Audio().
 		Branches().
 		Describe()
-	requireBuildError(t, err, errcode.BranchMissing, "build branches", "audio",
+	requireBuildError(t, err, errcode.Code("branch_missing"), "build branches", "audio",
 		"pass branches with goav.Branch(name).Encode",
 		"goav.Mux(name, destination)",
 	)
@@ -293,7 +293,7 @@ func TestErrorAcceptanceBranchSpecUnconstructed(t *testing.T) {
 		Audio().
 		Branches(goav.BranchSpec{}).
 		Describe()
-	requireBuildError(t, err, errcode.BranchInvalid, "build branches", "branch-0",
+	requireBuildError(t, err, errcode.Code("branch_invalid"), "build branches", "branch-0",
 		"construct branches with goav.Branch(name).To(destination)",
 	)
 }
@@ -309,7 +309,7 @@ func TestErrorAcceptanceBranchTapMissing(t *testing.T) {
 				To(goavtest.NewCollector().Sink()),
 		).
 		Describe()
-	requireBuildError(t, err, errcode.BranchTapMissing, "build branches", "levels",
+	requireBuildError(t, err, errcode.Code("branch_tap_missing"), "build branches", "levels",
 		`add .Tap(goav.FrameTap("audio.missing"))`,
 		"omit .From(...) to branch from the current stream point",
 	)
@@ -327,7 +327,7 @@ func TestErrorAcceptanceBranchDecodeDuplicate(t *testing.T) {
 				To(goavtest.NewCollector().Sink()),
 		).
 		Describe()
-	requireBuildError(t, err, errcode.BranchDecodeDuplicate, "build branch", "bad",
+	requireBuildError(t, err, errcode.Code("branch_decode_duplicate"), "build branch", "bad",
 		"call .Decode() once before frame operations",
 		"remove the second .Decode() call",
 	)
@@ -345,7 +345,7 @@ func TestErrorAcceptanceBranchDecodeOrderInvalid(t *testing.T) {
 				To(goavtest.NewCollector().Sink()),
 		).
 		Describe()
-	requireBuildError(t, err, errcode.BranchDecodeOrderInvalid, "build branch", "bad",
+	requireBuildError(t, err, errcode.Code("branch_decode_order_invalid"), "build branch", "bad",
 		"write goav.Branch(name).Decode().Resample(...).To(target)",
 		"start from a frame tap",
 	)
@@ -362,7 +362,7 @@ func TestErrorAcceptanceBranchDecodeDomainMismatch(t *testing.T) {
 				To(goavtest.NewCollector().Sink()),
 		).
 		Describe()
-	requireBuildError(t, err, errcode.BranchDecodeDomainMismatch, "build branches", "bad",
+	requireBuildError(t, err, errcode.Code("branch_decode_domain_mismatch"), "build branches", "bad",
 		"omit .Decode() when the branch already starts after stream decode",
 		"use .Copy().Branches",
 	)
@@ -380,7 +380,7 @@ func TestErrorAcceptanceBranchDecodeCopyInvalid(t *testing.T) {
 				To(goavtest.NewCollector().Sink()),
 		).
 		Describe()
-	requireBuildError(t, err, errcode.BranchDecodeCopyInvalid, "build branch", "bad",
+	requireBuildError(t, err, errcode.Code("branch_decode_copy_invalid"), "build branch", "bad",
 		"use .Copy() for packet-preserving branches",
 		"use .Decode().Encode(codec).To(destination)",
 	)
@@ -397,7 +397,7 @@ func TestErrorAcceptancePacketBranchEncodeUnsupported(t *testing.T) {
 				To(goav.Write("bad.ogg", io.Discard)),
 		).
 		Describe()
-	requireBuildError(t, err, errcode.PacketBranchEncodeUnsupported, "build branches", "bad",
+	requireBuildError(t, err, errcode.Code("packet_branch_encode_unsupported"), "build branches", "bad",
 		"use .Decode().Branches",
 		"use .Copy().Branches",
 	)
@@ -414,7 +414,7 @@ func TestErrorAcceptancePacketBranchTransformUnsupported(t *testing.T) {
 				To(goavtest.NewCollector().Sink()),
 		).
 		Build(context.Background())
-	requireBuildError(t, err, errcode.PacketBranchTransformUnsupported, "build branches", "bad",
+	requireBuildError(t, err, errcode.Code("packet_branch_transform_unsupported"), "build branches", "bad",
 		"use .Decode().Branches(...) when branch variants need frame transforms",
 		"use .Copy().Branches(...) only for packet-preserving branches",
 	)

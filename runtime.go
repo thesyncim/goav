@@ -520,10 +520,10 @@ func (t *task) structuredRunError(err error) error {
 	}
 	switch {
 	case errors.Is(err, pipeline.ErrBufferedMessageUnsafe):
-		return t.bufferedPayloadRunError(err, errcode.BufferPayloadUnsafe,
+		return t.bufferedPayloadRunError(err, bufferPayloadUnsafeCode,
 			"a buffered edge refused a mutable payload that cannot be shared safely")
 	case errors.Is(err, pipeline.ErrMessageTooLarge):
-		return t.bufferedPayloadRunError(err, errcode.BufferPayloadTooLarge,
+		return t.bufferedPayloadRunError(err, bufferPayloadTooLargeCode,
 			"a buffered edge received a payload larger than its copy bounds")
 	default:
 		return err

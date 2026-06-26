@@ -57,7 +57,7 @@ func TestBranchesRefuseCopyParentAfterDecode(t *testing.T) {
 		Audio().Decode().Copy().
 		Branches(Branch("rec").To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil })))).
 		Describe()
-	requireColdPathBuildError(t, err, errcode.CopyBranchSourceInvalid)
+	requireColdPathBuildError(t, err, copyBranchSourceInvalidCode)
 }
 
 // TestBranchRefusesSecondDecode pins the duplicate-decode refusal on the
@@ -69,7 +69,7 @@ func TestBranchRefusesSecondDecode(t *testing.T) {
 		Audio().Copy().
 		Branches(spec).
 		Describe()
-	requireColdPathBuildError(t, err, errcode.BranchDecodeDuplicate)
+	requireColdPathBuildError(t, err, branchDecodeDuplicateCode)
 }
 
 // TestBranchesRefusePacketBranchEncode pins the packet-domain encode rule:
@@ -80,7 +80,7 @@ func TestBranchesRefusePacketBranchEncode(t *testing.T) {
 		Branches(Branch("web").Encode(codec.Opus(codec.Bitrate(96_000))).
 			To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil })))).
 		Describe()
-	requireColdPathBuildError(t, err, errcode.PacketBranchEncodeUnsupported)
+	requireColdPathBuildError(t, err, packetBranchEncodeUnsupportedCode)
 }
 
 // TestNilBranchBuilderToIsRefused pins the nil-builder refusal: a nil
@@ -93,7 +93,7 @@ func TestNilBranchBuilderToIsRefused(t *testing.T) {
 		Audio().Copy().
 		Branches(spec).
 		Describe()
-	requireColdPathBuildError(t, err, errcode.BranchInvalid)
+	requireColdPathBuildError(t, err, branchInvalidCode)
 }
 
 // TestBranchToRefusesEmptyDestination pins the empty-handle refusal on the

@@ -223,7 +223,7 @@ func TestBranchBuilderNilAndErrorContracts(t *testing.T) {
 		nilBuilder.Copy() != nil {
 		t.Fatal("nil branch builder method returned non-nil")
 	}
-	assertBuildErrorCode(t, nilBuilder.To(branchBuilderTestSink("nil")).err, errcode.BranchInvalid)
+	assertBuildErrorCode(t, nilBuilder.To(branchBuilderTestSink("nil")).err, branchInvalidCode)
 
 	meter := branchBuilderTestMeter("meter")
 	tests := []struct {
@@ -233,22 +233,22 @@ func TestBranchBuilderNilAndErrorContracts(t *testing.T) {
 	}{
 		{name: "missing destination", spec: Branch("bad").To(), code: errcode.DestinationMissing},
 		{name: "invalid destination", spec: Branch("bad").To(Destination{}), code: errcode.DestinationInvalid},
-		{name: "invalid source", spec: Branch("bad").From(invalidBranchSource{}).To(branchBuilderTestSink("out")), code: errcode.BranchSourceInvalid},
-		{name: "invalid buffer", spec: Branch("bad").Buffer(flow.DropOldest(0)).To(branchBuilderTestSink("out")), code: errcode.BranchBufferInvalid},
+		{name: "invalid source", spec: Branch("bad").From(invalidBranchSource{}).To(branchBuilderTestSink("out")), code: branchSourceInvalidCode},
+		{name: "invalid buffer", spec: Branch("bad").Buffer(flow.DropOldest(0)).To(branchBuilderTestSink("out")), code: branchBufferInvalidCode},
 		{name: "nil stage", spec: Branch("bad").Do(nil).To(branchBuilderTestSink("out")), code: errcode.StageMissing},
-		{name: "duplicate decode", spec: Branch("bad").Decode().Decode().To(branchBuilderTestSink("out")), code: errcode.BranchDecodeDuplicate},
-		{name: "decode after frame step", spec: Branch("bad").Do(meter).Decode().To(branchBuilderTestSink("out")), code: errcode.BranchDecodeOrderInvalid},
+		{name: "duplicate decode", spec: Branch("bad").Decode().Decode().To(branchBuilderTestSink("out")), code: branchDecodeDuplicateCode},
+		{name: "decode after frame step", spec: Branch("bad").Do(meter).Decode().To(branchBuilderTestSink("out")), code: branchDecodeOrderInvalidCode},
 		{name: "decode after encode", spec: Branch("bad").Encode(codec.Opus()).Decode().To(branchBuilderTestSink("out")), code: errcode.StreamStepAfterEncode},
 		{name: "shape after encode", spec: Branch("bad").Encode(codec.Opus()).Shape(shape.Frame(av.MediaAudio)).To(branchBuilderTestSink("out")), code: errcode.StreamStepAfterEncode},
 		{name: "resize after encode", spec: Branch("bad").Encode(codec.VP8()).Resize(320, 180).To(branchBuilderTestSink("out")), code: errcode.StreamStepAfterEncode},
 		{name: "resample after encode", spec: Branch("bad").Encode(codec.Opus()).Resample(48_000, codec.Stereo).To(branchBuilderTestSink("out")), code: errcode.StreamStepAfterEncode},
 		{name: "stage after encode", spec: Branch("bad").Encode(codec.Opus()).Do(meter).To(branchBuilderTestSink("out")), code: errcode.StreamStepAfterEncode},
 		{name: "flow after encode", spec: Branch("bad").Encode(codec.Opus()).Apply(Flow("meter").Audio().Do(meter)).To(branchBuilderTestSink("out")), code: errcode.StreamStepAfterEncode},
-		{name: "duplicate decode through apply", spec: Branch("bad").Decode().Apply(Flow("decode").Audio().Decode()).To(branchBuilderTestSink("out")), code: errcode.BranchDecodeDuplicate},
-		{name: "decode flow after frame step", spec: Branch("bad").Do(meter).Apply(Flow("decode").Audio().Decode()).To(branchBuilderTestSink("out")), code: errcode.BranchDecodeOrderInvalid},
+		{name: "duplicate decode through apply", spec: Branch("bad").Decode().Apply(Flow("decode").Audio().Decode()).To(branchBuilderTestSink("out")), code: branchDecodeDuplicateCode},
+		{name: "decode flow after frame step", spec: Branch("bad").Do(meter).Apply(Flow("decode").Audio().Decode()).To(branchBuilderTestSink("out")), code: branchDecodeOrderInvalidCode},
 		{name: "copy flow after decode", spec: Branch("bad").Decode().Apply(Flow("copy").Audio().Copy()).To(branchBuilderTestSink("out")), code: flowCopyDomainMismatchCode},
 		{name: "media mismatch through apply", spec: Branch("bad").Apply(Flow("voice").Audio()).Apply(Flow("preview").Video()).To(branchBuilderTestSink("out")), code: flowMediaMismatchCode},
-		{name: "decode then copy", spec: Branch("bad").Decode().Copy().To(branchBuilderTestSink("out")), code: errcode.BranchDecodeCopyInvalid},
+		{name: "decode then copy", spec: Branch("bad").Decode().Copy().To(branchBuilderTestSink("out")), code: branchDecodeCopyInvalidCode},
 		{name: "frame step after copy", spec: Branch("bad").Copy().Resample(48_000, codec.Mono).To(branchBuilderTestSink("out")), code: errcode.OperationShapeMismatch},
 		{name: "duplicate encode", spec: Branch("bad").Encode(codec.Opus()).Encode(codec.Opus()).To(branchBuilderTestSink("out")), code: errcode.EncodeDuplicate},
 		{name: "empty tap", spec: Branch("bad").Tap(FrameTap("")).To(branchBuilderTestSink("out")), code: errcode.TapInvalid},

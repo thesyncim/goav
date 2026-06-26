@@ -19,9 +19,9 @@ func TestBranchComposeStructuredErrorContracts(t *testing.T) {
 		code errcode.Code
 	}{
 		{name: "empty plan", err: branchComposePlanEmptyError("branches"), code: branchComposePlanEmptyCode},
-		{name: "codec change conflict", err: branchComposeCodecChangeConflictError("main", "backup"), code: errcode.DecodePolicyConflict},
-		{name: "duplicate branch", err: branchComposeDuplicateBranchError("preview", 2), code: errcode.BranchDuplicate},
-		{name: "branch chain step", err: branchChainStepError("preview", "stage and resize were grouped"), code: errcode.BranchOperationChainUnsupported},
+		{name: "codec change conflict", err: branchComposeCodecChangeConflictError("main", "backup"), code: decodePolicyConflictCode},
+		{name: "duplicate branch", err: branchComposeDuplicateBranchError("preview", 2), code: branchDuplicateCode},
+		{name: "branch chain step", err: branchChainStepError("preview", "stage and resize were grouped"), code: branchOperationChainUnsupportedCode},
 		{
 			name: "media mismatch",
 			err: mediaTransformMismatchError(
@@ -30,7 +30,7 @@ func TestBranchComposeStructuredErrorContracts(t *testing.T) {
 				"resize",
 				"video",
 			),
-			code: errcode.BranchTransformMediaMismatch,
+			code: branchTransformMediaMismatchCode,
 		},
 		{
 			name: "unmatched target",
@@ -38,12 +38,12 @@ func TestBranchComposeStructuredErrorContracts(t *testing.T) {
 				branchComposeTarget{Name: "mobile", Branches: []string{"preview"}},
 				format.Output{Name: "mobile.webm"},
 			),
-			code: errcode.BranchDestinationUnmatched,
+			code: branchDestinationUnmatchedCode,
 		},
 		{
 			name: "invalid target destination",
 			err:  branchComposeTargetDestinationInvalidError(branchComposeTarget{Name: "mixed"}, "target cannot configure both a sink and a mux destination"),
-			code: errcode.BranchDestinationInvalid,
+			code: branchDestinationInvalidCode,
 		},
 		{
 			name: "encode missing",

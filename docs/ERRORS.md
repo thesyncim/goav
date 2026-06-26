@@ -99,10 +99,11 @@ Failed stream-rule branch attachments surface as `av.EventAttachError` events
 carrying the stream id, branch name, and cause. Join stages name the offending
 arm (`goav: audio mix requires s16, got f32 on arm "b"`). Buffered payload safety backstops are also
 structured at the task boundary: a mutable payload reaching `flow.CopyNever`
-returns `errcode.BufferPayloadUnsafe` with the `CopyNever` branch names and
-still matches `pipeline.ErrBufferedMessageUnsafe`; a payload larger than the
-configured copy bounds returns `errcode.BufferPayloadTooLarge` and still
-matches `pipeline.ErrMessageTooLarge`.
+returns `FamilyBuffer` with `Code("buffer_payload_unsafe")`, the `CopyNever`
+branch names, and still matches `pipeline.ErrBufferedMessageUnsafe`; a payload
+larger than the configured copy bounds returns `FamilyBuffer` with
+`Code("buffer_payload_too_large")` and still matches
+`pipeline.ErrMessageTooLarge`.
 
 ## Diagnostics
 

@@ -16,7 +16,6 @@ import (
 	"time"
 
 	"github.com/thesyncim/goav/av"
-	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/flow"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/shape"
@@ -310,7 +309,7 @@ func TestCopyContractCopyNeverIsSafeOnly(t *testing.T) {
 		close(source.resume)
 		err := <-runErr
 		var buildErr *BuildError
-		if !errors.As(err, &buildErr) || buildErr.Code != errcode.BufferPayloadUnsafe || !errors.Is(err, pipeline.ErrBufferedMessageUnsafe) {
+		if !errors.As(err, &buildErr) || buildErr.Code != bufferPayloadUnsafeCode || !errors.Is(err, pipeline.ErrBufferedMessageUnsafe) {
 			t.Fatalf("run err = %v, want buffer_payload_unsafe wrapping ErrBufferedMessageUnsafe", err)
 		}
 		if got, ok := buildErr.Detail("cause"); !ok || got != "pipeline.ErrBufferedMessageUnsafe" {
@@ -397,7 +396,7 @@ func TestCopyContractTooSmallBoundsAreStructured(t *testing.T) {
 	close(source.resume)
 	err := <-runErr
 	var buildErr *BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != errcode.BufferPayloadTooLarge || !errors.Is(err, pipeline.ErrMessageTooLarge) {
+	if !errors.As(err, &buildErr) || buildErr.Code != bufferPayloadTooLargeCode || !errors.Is(err, pipeline.ErrMessageTooLarge) {
 		t.Fatalf("run err = %v, want buffer_payload_too_large wrapping ErrMessageTooLarge", err)
 	}
 	if got, ok := buildErr.Detail("cause"); !ok || got != "pipeline.ErrMessageTooLarge" {
