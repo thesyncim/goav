@@ -6,7 +6,6 @@ import (
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
-	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/plan"
@@ -261,7 +260,7 @@ func planCopyBranches(state *recipeCompileState, outputs []planOutput) ([]planBr
 			copyMessage = ".Copy requested; packets are copied to outputs"
 		}
 		decision := planDecision{
-			Code:    string(errcode.PacketCopy),
+			Code:    diagnosticPacketCopy,
 			Branch:  name,
 			Message: copyMessage,
 		}
@@ -273,7 +272,7 @@ func planCopyBranches(state *recipeCompileState, outputs []planOutput) ([]planBr
 				Shape:     spec,
 			})
 			decision = planDecision{
-				Code:    string(errcode.EventSource),
+				Code:    diagnosticEventSource,
 				Branch:  name,
 				Message: "source produces events for sink destinations",
 			}
@@ -307,7 +306,7 @@ func planOperationSpecs(input inputIntent, stream streamIntent, branchName strin
 			Shape:     initial,
 		})
 		return operations, []planDecision{{
-			Code:    string(errcode.EventSource),
+			Code:    diagnosticEventSource,
 			Branch:  branchName,
 			Message: "source produces events for sink destinations",
 		}}
@@ -327,7 +326,7 @@ func planOperationSpecs(input inputIntent, stream streamIntent, branchName strin
 	var decisions []planDecision
 	if initial.Domain == shape.DomainFrame {
 		decisions = append(decisions, planDecision{
-			Code:    string(errcode.FrameSource),
+			Code:    diagnosticFrameSource,
 			Branch:  branchName,
 			Message: "source already produces decoded frames",
 		})
@@ -339,7 +338,7 @@ func planOperationSpecs(input inputIntent, stream streamIntent, branchName strin
 		Detail:    "no frame operation requested",
 	})
 	decisions = append(decisions, planDecision{
-		Code:    string(errcode.PacketCopy),
+		Code:    diagnosticPacketCopy,
 		Branch:  branchName,
 		Message: "stream can remain packet encoded",
 	})
@@ -355,20 +354,20 @@ func planStreamIntentOperations(stream streamIntent, branchName string) ([]planO
 	}
 	if operationSpecKindPresent(stream.Operations, plan.OpDecode) {
 		decisions = append(decisions, planDecision{
-			Code:    string(errcode.DecodeRequired),
+			Code:    diagnosticDecodeRequired,
 			Branch:  branchName,
 			Message: "operation specs require decoded frames",
 		})
 	} else if operationSpecKindPresent(stream.Operations, plan.OpCopy) {
 		decisions = append(decisions, planDecision{
-			Code:    string(errcode.PacketCopy),
+			Code:    diagnosticPacketCopy,
 			Branch:  branchName,
 			Message: "stream can remain packet encoded",
 		})
 	}
 	if operationSpecKindPresent(stream.Operations, plan.OpEncode) {
 		decisions = append(decisions, planDecision{
-			Code:    string(errcode.EncodeRequired),
+			Code:    diagnosticEncodeRequired,
 			Branch:  branchName,
 			Message: "muxed stream output requires encoded packets",
 		})

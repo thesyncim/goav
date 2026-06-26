@@ -905,7 +905,7 @@ func (p *joinPlan) solveArmConversion(rt *runtime, stream av.Stream, armName str
 			"feed the arm "+humanizeShape(expected)+" media, or align its source format with the first arm (the join's format reference)")
 	}
 	p.diagnostics = append(p.diagnostics, plan.Diagnostic{
-		Code: string(errcode.ShapeConversionInserted),
+		Code: diagnosticShapeConversionInserted,
 		Node: firstNonEmpty(armName, string(stream.ID)),
 		Message: fmt.Sprintf("inserted %s on %s arm %q (join arm policy)",
 			conversion.detail, p.name, firstNonEmpty(armName, string(stream.ID))),

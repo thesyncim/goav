@@ -20,6 +20,8 @@ import (
 	"github.com/thesyncim/goav/shape"
 )
 
+const shapeConversionInsertedDiagnostic = "shape_conversion_inserted"
+
 // funnelStage is a minimal external convergence stage: every arm frame
 // forwards restamped to the join's output id, one joined EOS once the
 // declared number of arms ended. Its contract pins frame-domain S16 mono
@@ -182,7 +184,7 @@ func TestJoinSolverConvertsMismatchedArms(t *testing.T) {
 	}
 	inserted := false
 	for _, warning := range report.Warnings {
-		if warning.Code == string(errcode.ShapeConversionInserted) {
+		if warning.Code == shapeConversionInsertedDiagnostic {
 			inserted = true
 		}
 	}

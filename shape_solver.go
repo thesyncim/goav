@@ -589,7 +589,7 @@ func shapePreferenceAppliedDiagnostic(node string, pref shape.Spec, conversion s
 		effects = append(effects, "resolved the adapter choice")
 	}
 	return plan.Diagnostic{
-		Code:    string(errcode.ShapePreferenceApplied),
+		Code:    diagnosticShapePreferenceApplied,
 		Node:    node,
 		Message: fmt.Sprintf("preference (%s) %s: %s", pref.String(), strings.Join(effects, " and "), conversion.detail),
 		Details: []string{
@@ -603,7 +603,7 @@ func shapePreferenceAppliedDiagnostic(node string, pref shape.Spec, conversion s
 // honor — soft by definition, the plain plan proceeds untouched.
 func shapePreferenceIgnoredDiagnostic(node string, pref shape.Spec, reason string) plan.Diagnostic {
 	return plan.Diagnostic{
-		Code:    string(errcode.ShapePreferenceIgnored),
+		Code:    diagnosticShapePreferenceIgnored,
 		Node:    node,
 		Message: fmt.Sprintf("preference (%s) ignored: %s", pref.String(), reason),
 		Details: []string{"preference=" + pref.String()},
@@ -614,7 +614,7 @@ func shapePreferenceIgnoredDiagnostic(node string, pref shape.Spec, reason strin
 // "inserted resample 44.1kHz→48kHz before encode-opus (AllowResample)".
 func shapeConversionDiagnostic(node string, conversion shapeConversionPlan, step operationSpec, actual shape.Spec, expected shape.Spec) plan.Diagnostic {
 	return plan.Diagnostic{
-		Code:    string(errcode.ShapeConversionInserted),
+		Code:    diagnosticShapeConversionInserted,
 		Node:    node,
 		Message: fmt.Sprintf("inserted %s before %s (%s)", conversion.detail, operationSpecLabel(step), shapePolicyLabel(conversion.needed)),
 		Details: []string{

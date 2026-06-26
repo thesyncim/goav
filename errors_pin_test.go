@@ -166,8 +166,8 @@ func TestErrorCodeCatalogPinned(t *testing.T) {
 			}
 		}
 	}
-	if count < 140 {
-		t.Errorf("errcode/errcode.go declares %d Code constants; the catalog should stay complete (>= 140)", count)
+	if count < 130 {
+		t.Errorf("errcode/errcode.go declares %d Code constants; the public refusal catalog should stay complete (>= 130)", count)
 	}
 }
 

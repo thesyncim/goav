@@ -210,7 +210,7 @@ func explainStreamRuleFacts(rules []recipeir.StreamRule) []plan.Decision {
 		}
 		match := firstNonEmpty(rules[i].MatchDescription, "none")
 		out = append(out, plan.Decision{
-			Code:   string(errcode.StreamRule),
+			Code:   diagnosticStreamRule,
 			Branch: strings.Join(names, "+"),
 			Message: fmt.Sprintf("on discovered stream (%s): attach %s to %s per matched stream",
 				match, strings.Join(names, ", "), strings.Join(destinations, ", ")),

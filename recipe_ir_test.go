@@ -10,7 +10,6 @@ import (
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
-	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/internal/recipeir"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/plan"
@@ -400,7 +399,7 @@ func TestCopyPlannerConsumesRecipeIRInputFacts(t *testing.T) {
 	if len(branches) != 1 || branches[0].Shape.Domain != shape.DomainEvent {
 		t.Fatalf("copy branches = %+v, want event source shape from IR input facts", branches)
 	}
-	if len(decisions) != 1 || decisions[0].Code != string(errcode.EventSource) {
+	if len(decisions) != 1 || decisions[0].Code != diagnosticEventSource {
 		t.Fatalf("copy decisions = %+v, want event source decision", decisions)
 	}
 }

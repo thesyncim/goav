@@ -9,7 +9,7 @@ The contract is enforced by a source-scanning pin test (`errors_pin_test.go`):
 - **Family**: a typed `errcode.Family` identifying the stable broad class
   (`destination`, `runtime_branch`, `codec`, ...). Switch on this when a caller
   wants category-level handling.
-- **Code**: a typed `errcode.Code` identifying the detailed diagnostic leaf.
+- **Code**: a typed `errcode.Code` identifying the detailed refusal leaf.
   Codes are exported constants in the `errcode` package and may grow within a
   family before v1 as diagnostics become more precise. Applications should
   switch on `BuildError.Family` first, then inspect `Code` only when they need
@@ -100,7 +100,8 @@ matches `pipeline.ErrMessageTooLarge`.
 
 ## Diagnostics
 
-Explain reports reuse the same vocabulary for things that did NOT fail the
-build: `plan.Diagnostic`/`plan.Decision` codes such as
-`shape_conversion_inserted` and `shape_preference_ignored` are declared in the
-same catalog.
+Explain reports also carry `plan.Diagnostic` and `plan.Decision` string codes
+for things that did NOT fail the build, such as
+`shape_conversion_inserted` and `shape_preference_ignored`. Those strings are
+stable report vocabulary, but they are not exported `errcode` constants and do
+not appear in the public error catalog.

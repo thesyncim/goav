@@ -336,7 +336,7 @@ func appendWorkBranchOperationRequirements(requirements []plan.AdapterRequiremen
 			codecID, ok := workOperationDecodeCodec(resolved, branch, operation, inputs)
 			if !ok || codecID == "" {
 				warnings = append(warnings, plan.Diagnostic{
-					Code:    string(errcode.DecodeCodecDeferred),
+					Code:    diagnosticDecodeCodecDeferred,
 					Node:    requiredBy,
 					Message: "decode codec will be resolved when the input opens",
 					Suggestions: []string{
@@ -566,7 +566,7 @@ func annotatePlanReportError(report *plan.Report, err error) {
 	var buildErr *BuildError
 	if !errors.As(err, &buildErr) || buildErr == nil {
 		report.Warnings = appendPlanDiagnostics(report.Warnings, plan.Diagnostic{
-			Code:    string(errcode.ExplainPreflightError),
+			Code:    diagnosticExplainPreflightError,
 			Message: err.Error(),
 		})
 		return

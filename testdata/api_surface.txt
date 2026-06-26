@@ -59,10 +59,8 @@ errcode.CopyUnsupported
 errcode.DecodeAdapterIncompatible
 errcode.DecodeAdapterMissing
 errcode.DecodeAdapterUnavailable
-errcode.DecodeCodecDeferred
 errcode.DecodeConfigConflict
 errcode.DecodePolicyConflict
-errcode.DecodeRequired
 errcode.DestinationDuplicate
 errcode.DestinationFormatUnknown
 errcode.DestinationInvalid
@@ -79,11 +77,8 @@ errcode.EncodeDestinationMissing
 errcode.EncodeDuplicate
 errcode.EncodeMissing
 errcode.EncodeParameterInvalid
-errcode.EncodeRequired
 errcode.EncodeStreamMismatch
 errcode.EncodeWorkInProgress
-errcode.EventSource
-errcode.ExplainPreflightError
 errcode.ExplicitGraphSourceMissing
 errcode.Family
 errcode.FamilyBranch
@@ -110,7 +105,6 @@ errcode.FlowDecodeDuplicate
 errcode.FlowDecodeOrderInvalid
 errcode.FlowInvalid
 errcode.FlowMediaMismatch
-errcode.FrameSource
 errcode.GraphPlanInvalid
 errcode.InputCountUnsupported
 errcode.InputDemuxerMissing
@@ -140,7 +134,6 @@ errcode.OutputScopeMixed
 errcode.OutputWriterMissing
 errcode.PacketBranchEncodeUnsupported
 errcode.PacketBranchTransformUnsupported
-errcode.PacketCopy
 errcode.RecipeAttachmentMismatch
 errcode.RecipeGraphUnsupported
 errcode.RuntimeBranchAnchorMissing
@@ -163,10 +156,7 @@ errcode.SelectInputs
 errcode.SelectTapArm
 errcode.ShapeAdapterAmbiguous
 errcode.ShapeAdapterMissing
-errcode.ShapeConversionInserted
 errcode.ShapeConversionRefused
-errcode.ShapePreferenceApplied
-errcode.ShapePreferenceIgnored
 errcode.ShapeRequirementUnmet
 errcode.SourceCallbackMissing
 errcode.SourceShapeInvalid
@@ -179,7 +169,6 @@ errcode.StreamDuplicate
 errcode.StreamMissing
 errcode.StreamNameMissing
 errcode.StreamOperationMissing
-errcode.StreamRule
 errcode.StreamRuleInvalid
 errcode.StreamSelectorInvalid
 errcode.StreamStepAfterEncode

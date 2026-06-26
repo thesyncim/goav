@@ -6,7 +6,6 @@ import (
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
-	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/filter"
 	"github.com/thesyncim/goav/plan"
 	"github.com/thesyncim/goav/shape"
@@ -35,7 +34,7 @@ func TestPlanOperationSpecsContracts(t *testing.T) {
 			selectComponent: "declared-select",
 			wantKinds:       []plan.OperationKind{plan.OpSelect},
 			wantComponents:  []string{"declared-select"},
-			wantCodes:       []string{string(errcode.FrameSource)},
+			wantCodes:       []string{diagnosticFrameSource},
 		},
 		{
 			name:   "custom event source reports event pass-through",
@@ -47,7 +46,7 @@ func TestPlanOperationSpecsContracts(t *testing.T) {
 			),
 			wantKinds:      []plan.OperationKind{plan.OpShape},
 			wantComponents: []string{"shape"},
-			wantCodes:      []string{string(errcode.EventSource)},
+			wantCodes:      []string{diagnosticEventSource},
 		},
 		{
 			name: "packet file source keeps packet copy when no frame work is requested",
@@ -62,7 +61,7 @@ func TestPlanOperationSpecsContracts(t *testing.T) {
 			initial:        shape.Packet(av.MediaVideo, av.CodecVP8),
 			wantKinds:      []plan.OperationKind{plan.OpDemux, plan.OpSelect, plan.OpCopy},
 			wantComponents: []string{"container", "video", "packet-copy"},
-			wantCodes:      []string{string(errcode.PacketCopy)},
+			wantCodes:      []string{diagnosticPacketCopy},
 		},
 		{
 			name: "realtime source depacketizes before packet copy",
@@ -77,7 +76,7 @@ func TestPlanOperationSpecsContracts(t *testing.T) {
 			initial:        shape.Packet(av.MediaAudio, av.CodecOpus, shape.Realtime(true)),
 			wantKinds:      []plan.OperationKind{plan.OpDepacketize, plan.OpSelect, plan.OpCopy},
 			wantComponents: []string{"opus", "floor", "packet-copy"},
-			wantCodes:      []string{string(errcode.PacketCopy)},
+			wantCodes:      []string{diagnosticPacketCopy},
 		},
 		{
 			name: "declared decode transform encode operations report frame and packet requirements",
@@ -106,7 +105,7 @@ func TestPlanOperationSpecsContracts(t *testing.T) {
 				plan.OpEncode,
 			},
 			wantComponents: []string{"container", "select-voice", "opus", filter.FactoryResample, "opus"},
-			wantCodes:      []string{string(errcode.DecodeRequired), string(errcode.EncodeRequired)},
+			wantCodes:      []string{diagnosticDecodeRequired, diagnosticEncodeRequired},
 		},
 		{
 			name: "declared copy operation reports packet preservation",
@@ -123,7 +122,7 @@ func TestPlanOperationSpecsContracts(t *testing.T) {
 			initial:        shape.Packet(av.MediaAudio, av.CodecOpus),
 			wantKinds:      []plan.OperationKind{plan.OpDemux, plan.OpSelect, plan.OpCopy},
 			wantComponents: []string{"container", "audio", "packet-copy"},
-			wantCodes:      []string{string(errcode.PacketCopy)},
+			wantCodes:      []string{diagnosticPacketCopy},
 		},
 	}
 

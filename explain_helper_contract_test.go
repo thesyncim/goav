@@ -36,7 +36,7 @@ func TestExplainDecodeCodecDeferredWarning(t *testing.T) {
 		Name:       "audio",
 		Operations: []string{operation.ID},
 	}, map[string]workOperation{operation.ID: operation}, nil)
-	if len(warnings) != 1 || warnings[0].Code != string(errcode.DecodeCodecDeferred) ||
+	if len(warnings) != 1 || warnings[0].Code != diagnosticDecodeCodecDeferred ||
 		warnings[0].Node != "audio" ||
 		!explainSuggestionsContain(warnings[0].Suggestions, "declare the provider codec intent") {
 		t.Fatalf("warnings = %+v, want decode_codec_deferred with provider-codec guidance", warnings)
@@ -99,7 +99,7 @@ func TestExplainPreflightErrorWarning(t *testing.T) {
 	var report plan.Report
 	annotatePlanReportError(&report, errors.New("probe exploded"))
 	if len(report.Warnings) != 1 ||
-		report.Warnings[0].Code != string(errcode.ExplainPreflightError) ||
+		report.Warnings[0].Code != diagnosticExplainPreflightError ||
 		report.Warnings[0].Message != "probe exploded" {
 		t.Fatalf("warnings = %+v, want explain_preflight_error", report.Warnings)
 	}

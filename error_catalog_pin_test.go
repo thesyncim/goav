@@ -1121,94 +1121,6 @@ var errorCatalogAdditionalExamples = []errorCatalogExample{
 		Fix:           "propagate packet/frame copy budgets before lowering buffered work",
 		Cause:         "goav.ErrUnsupportedBuild",
 	},
-	{
-		Code:          "shape_conversion_inserted",
-		Test:          "TestAutoInsertsResampleBeforeEncode",
-		BadRecipe:     `.Auto(shape.AllowResample()).Encode(codec.Opus())` + " from incompatible source facts",
-		RenderedError: "inserted conversion Explain diagnostic is asserted by the test",
-		Fix:           "not a failure; Explain reports the inserted conversion",
-		Cause:         "not an error (Explain diagnostic)",
-	},
-	{
-		Code:          "shape_preference_applied",
-		Test:          "TestPreferResolvesAdapterAmbiguity",
-		BadRecipe:     `.Prefer(...)` + " resolves an otherwise open conversion choice",
-		RenderedError: "applied preference Explain diagnostic is asserted by the test",
-		Fix:           "not a failure; the preference was honored",
-		Cause:         "not an error (Explain diagnostic)",
-	},
-	{
-		Code:          "shape_preference_ignored",
-		Test:          "TestPreferUnsatisfiableIgnoredWithDiagnostic",
-		BadRecipe:     `.Prefer(...)` + " asks for a conversion the active Auto policy cannot perform",
-		RenderedError: "ignored preference Explain diagnostic is asserted by the test",
-		Fix:           "not a failure; add an Auto policy if the preference should become actionable",
-		Cause:         "not an error (Explain diagnostic)",
-	},
-	{
-		Code:          "decode_codec_deferred",
-		Test:          "TestExplainDecodeCodecDeferredWarning",
-		BadRecipe:     `.Decode()` + " where codec metadata will resolve only after input open",
-		RenderedError: "deferred decode-codec Explain warning is asserted by the test",
-		Fix:           "declare provider codec intent or provide probe metadata when known",
-		Cause:         "not an error (Explain diagnostic)",
-	},
-	{
-		Code:          "explain_preflight_error",
-		Test:          "TestExplainPreflightErrorWarning",
-		BadRecipe:     "Explain preflight returns a non-BuildError failure",
-		RenderedError: "generic preflight warning mapping is asserted by the test",
-		Fix:           "inspect the warning message; preflight should prefer structured BuildError when possible",
-		Cause:         "not an error (Explain diagnostic)",
-	},
-	{
-		Code:          "packet_copy",
-		Test:          "TestPlanOperationSpecsContracts",
-		BadRecipe:     "packet source with no frame work requested",
-		RenderedError: "packet-copy planner decision is asserted by the test",
-		Fix:           "not a failure; Explain records that packets are preserved",
-		Cause:         "not an error (Explain decision)",
-	},
-	{
-		Code:          "frame_source",
-		Test:          "TestPlanOperationSpecsContracts",
-		BadRecipe:     "custom frame source selected without decode",
-		RenderedError: "frame-source planner decision is asserted by the test",
-		Fix:           "not a failure; Explain records that the source already produces frames",
-		Cause:         "not an error (Explain decision)",
-	},
-	{
-		Code:          "event_source",
-		Test:          "TestPlanOperationSpecsContracts",
-		BadRecipe:     "custom event source selected for sink delivery",
-		RenderedError: "event-source planner decision is asserted by the test",
-		Fix:           "not a failure; Explain records event pass-through",
-		Cause:         "not an error (Explain decision)",
-	},
-	{
-		Code:          "decode_required",
-		Test:          "TestPlanOperationSpecsContracts",
-		BadRecipe:     "declared transform/encode work requires decoded frames",
-		RenderedError: "decode-required planner decision is asserted by the test",
-		Fix:           "not a failure; planner records that decode is required",
-		Cause:         "not an error (Explain decision)",
-	},
-	{
-		Code:          "encode_required",
-		Test:          "TestPlanOperationSpecsContracts",
-		BadRecipe:     "declared frame work routes to encoded output",
-		RenderedError: "encode-required planner decision is asserted by the test",
-		Fix:           "not a failure; planner records that encode is required",
-		Cause:         "not an error (Explain decision)",
-	},
-	{
-		Code:          "stream_rule",
-		Test:          "TestOnStreamRuleVisibleInExplain",
-		BadRecipe:     `goav.OnStream(...)` + " rule wired onto a task",
-		RenderedError: "stream-rule Explain decision is asserted by the test",
-		Fix:           "not a failure; Explain records the dynamic stream rule",
-		Cause:         "not an error (Explain decision)",
-	},
 }
 
 func allErrorCatalogExamples() []errorCatalogExample {
@@ -1309,10 +1221,10 @@ func readErrorCatalogEntries(t *testing.T) []errorCatalogEntry {
 			continue
 		}
 		section := firstDocLine(gen.Doc)
-		kind := "refusal"
 		if strings.HasPrefix(section, "Diagnostic and decision") {
-			kind = "diagnostic"
+			t.Fatalf("errcode/errcode.go: non-failing diagnostic codes should stay out of the public error catalog")
 		}
+		kind := "refusal"
 		for _, spec := range gen.Specs {
 			valueSpec, ok := spec.(*ast.ValueSpec)
 			if !ok || !isErrcodeCodeSpec(valueSpec) {
@@ -1398,7 +1310,7 @@ func renderErrorCatalogDoc(entries []errorCatalogEntry) string {
 	var b strings.Builder
 	b.WriteString("# Error Catalog\n\n")
 	b.WriteString("<!-- Code generated from errcode/errcode.go by TestErrorCatalogDocMatchesErrcodeCatalog; DO NOT EDIT BY HAND. -->\n\n")
-	b.WriteString("This catalog is the checked index of goav's error and diagnostic codes. ")
+	b.WriteString("This catalog is the checked index of goav's public BuildError refusal codes. ")
 	b.WriteString("The `Code`, `Constant`, `Section`, `Kind`, and `When it fires` columns are generated from `errcode/errcode.go`, so a new code must update the source catalog and this checked document together.\n\n")
 	b.WriteString("Every current catalog row names coverage. If a future row is marked `catalog-only`, it still needs a dedicated bad recipe, rendered golden error, fixed recipe, sentinel/cause, and test name before the v1 error catalog is complete. ")
 	b.WriteString("Rows naming tests already have public grammar snippets, rendered-error assertions, fix coverage, or sentinel checks in the named test.\n\n")
