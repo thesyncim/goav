@@ -227,7 +227,6 @@ goav.Join
 goav.JoinArm
 goav.LiveTask
 goav.MIME
-goav.MediaOption
 goav.Metadata
 goav.Mix
 goav.MustNew

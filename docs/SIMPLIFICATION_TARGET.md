@@ -176,6 +176,8 @@ Exported `goav.Controllable` was removed the same way; live control remains on
 Exported `goav.Explainer` was removed as a separate alias; built-task
 explanation remains on `LiveTask`, and `Job.Explain(ctx)` remains the
 pre-build path.
+Exported `goav.MediaOption` was removed while keeping `Name`, `MIME`, and
+`Metadata` usable as shared input/destination options.
 
 Error-contract progress: `BuildError` no longer exposes legacy
 `Details`/`Suggestions` fields or parses rendered strings in `Detail(key)`;

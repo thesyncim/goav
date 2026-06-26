@@ -25,6 +25,8 @@ methodology changes, and migration notes.
   control-only helpers can accept a local structural interface.
 - Removed exported `goav.Explainer`; built-task explanation remains on
   `LiveTask`, and `Job.Explain(ctx)` remains the pre-build path.
+- Removed exported `goav.MediaOption`; `Name`, `MIME`, and `Metadata` still work
+  as shared input/destination options.
 - Stream chains now require an explicit `.Decode()` before frame-domain
   consumers (`.Do`, `.Resize`, `.Resample`, real `.Encode`, frame taps, and
   decoded-frame sinks). Use `.Copy()` when a chain should stay packet-domain.

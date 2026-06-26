@@ -84,7 +84,7 @@ func WrapSource(spec InputSpec, wrap func(pipeline.Source) pipeline.Source) Inpu
 
 // InputOption configures an input value (FileInput, URIInput, Source, Input,
 // or InputSpec.With): Codec declares the stream's codec, and the
-// direction-agnostic MediaOptions (Name, MIME, Metadata) satisfy it too. It
+// direction-agnostic media options (Name, MIME, Metadata) satisfy it too. It
 // is sealed — only goav option constructors implement it.
 type InputOption interface {
 	applyInput(*InputSpec)

@@ -37,8 +37,8 @@ ungrouped handle is rejected; grouping is explicit (`TestMuxPreferredOverHandleI
 ## Governed pre-v1 surface
 
 Governed here means "changes are deliberate, tested, and recorded", not "this
-whole surface is the v1 promise." The governed surface is 324 approved
-identifiers (`api_surface_pin_test.go` + `testdata/api_surface.txt`: 65 root,
+whole surface is the v1 promise." The governed surface is 323 approved
+identifiers (`api_surface_pin_test.go` + `testdata/api_surface.txt`: 64 root,
 22 `control`, 8 `inspect`, 164 `errcode`, 28 `plan`, 24 `lifecycle`,
 4 `snapshot`, 9 `graphrender`), every exported symbol is documented
 (`doc_pin_test.go`), and the current inventory is tiered in

@@ -195,12 +195,12 @@ func (w nopDestinationWriter) Close() error {
 	return nil
 }
 
-// MediaOption is a direction-agnostic option accepted by both input and
-// destination constructors: Name, MIME, and Metadata state the same fact
+// mediaOptionValue is a direction-agnostic option accepted by both input and
+// destination constructors. Name, MIME, and Metadata state the same fact
 // about either end of a recipe, so goav.FileInput(name, r, goav.MIME(...))
-// and goav.Write(name, w, goav.MIME(...)) share one vocabulary. It is sealed —
+// and goav.Write(name, w, goav.MIME(...)) share one vocabulary. It is sealed:
 // only goav option constructors implement it.
-type MediaOption interface {
+type mediaOptionValue interface {
 	InputOption
 	DestinationOption
 }
@@ -236,7 +236,7 @@ func (o destinationOption) applyDestination(spec *destinationSpec) {
 // Name overrides the value's label. On an input it is the name selector
 // narrowing (InputName), errors, and Explain use; on a destination it is the
 // label outputs group and dedupe by.
-func Name(name string) MediaOption {
+func Name(name string) mediaOptionValue {
 	return mediaOption{
 		input: func(spec *InputSpec) {
 			spec.name = name
@@ -251,7 +251,7 @@ func Name(name string) MediaOption {
 // MIME sets the value's MIME type, which drives format probing when the name
 // carries no extension: input MIME selects the demuxer, destination MIME
 // selects the output format and is reported to destination openers.
-func MIME(mimeType string) MediaOption {
+func MIME(mimeType string) mediaOptionValue {
 	return mediaOption{
 		input: func(spec *InputSpec) {
 			spec.input.MIMEType = mimeType
@@ -265,7 +265,7 @@ func MIME(mimeType string) MediaOption {
 // Metadata attaches caller metadata to the value: input metadata rides
 // format.Input to the opening adapter, destination metadata reaches openers
 // on provider.Info (an uploader can store it as object metadata).
-func Metadata(metadata av.Metadata) MediaOption {
+func Metadata(metadata av.Metadata) mediaOptionValue {
 	return mediaOption{
 		input: func(spec *InputSpec) {
 			spec.input.Metadata = cloneMetadata(metadata)
