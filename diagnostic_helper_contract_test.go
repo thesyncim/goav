@@ -29,6 +29,11 @@ func TestRecipeDiagnosticHelperContracts(t *testing.T) {
 			err:  runtimeMissingError("compile job"),
 			code: errcode.RuntimeMissing,
 		},
+		{
+			name: "unconstructed job",
+			err:  unconstructedJobError(),
+			code: errcode.JobInvalid,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

@@ -553,6 +553,36 @@ func TestRecipesExposeStructuredExplain(t *testing.T) {
 	}
 }
 
+func TestZeroJobRejectsPublicConstruction(t *testing.T) {
+	typ := reflect.TypeOf(goav.Job{})
+	for i := 0; i < typ.NumField(); i++ {
+		if typ.Field(i).IsExported() {
+			t.Fatalf("Job field %s is exported; use goav.From instead", typ.Field(i).Name)
+		}
+	}
+
+	var zero goav.Job
+	_, err := zero.Copy().
+		To(goav.Write("out.ogg", io.Discard)).
+		Describe()
+	var buildErr *goav.BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != errcode.JobInvalid || !errors.Is(err, goav.ErrUnsupportedBuild) {
+		t.Fatalf("err = %v, want job_invalid wrapping ErrUnsupportedBuild", err)
+	}
+	if !strings.Contains(err.Error(), "empty job") ||
+		!strings.Contains(err.Error(), "goav.From(input)") {
+		t.Fatalf("err = %v, want From constructor guidance", err)
+	}
+
+	_, err = goav.From().
+		Copy().
+		To(goav.Write("out.ogg", io.Discard)).
+		Describe()
+	if !errors.As(err, &buildErr) || buildErr.Code != errcode.InputMissing {
+		t.Fatalf("From() err = %v, want input_missing", err)
+	}
+}
+
 func TestExplainReturnsPartialReportForMissingMuxer(t *testing.T) {
 	report, err := recordJob(
 		goav.FileInput("input.ivf", bytes.NewReader(tinyIVF())),

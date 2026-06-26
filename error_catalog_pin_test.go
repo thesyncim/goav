@@ -1059,9 +1059,9 @@ var errorCatalogAdditionalExamples = []errorCatalogExample{
 	},
 	{
 		Code:          "job_invalid",
-		Test:          "TestRecipeDiagnosticHelperContracts",
-		BadRecipe:     "compile a nil job or nil join intent",
-		RenderedError: "job invalid diagnostic helper fields are asserted by the test",
+		Test:          "TestZeroJobRejectsPublicConstruction",
+		BadRecipe:     "compile a nil job, zero goav.Job, or nil join intent",
+		RenderedError: "zero-job constructor guidance is asserted by the test",
 		Fix:           "start from goav.From(...), goav.Mix(...), goav.Composite(...), or goav.Select(...)",
 		Cause:         "goav.ErrUnsupportedBuild",
 	},

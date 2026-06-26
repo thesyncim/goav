@@ -469,6 +469,21 @@ func nilRecipeError(operation string, reason string) error {
 	}
 }
 
+func unconstructedJobError() error {
+	return &BuildError{
+		Family:    errcode.FamilyForCode(errcode.JobInvalid),
+		Code:      errcode.JobInvalid,
+		Operation: "build job",
+		Reason:    "empty job",
+		Fixes: buildErrorFixes([]string{
+			"start the recipe with goav.From(input)",
+			"use goav.From(goav.FileInput(\"in.webm\", reader)) for reader-backed input",
+			"use goav.From(goav.Source(name, shape, fn)) for application-pushed input",
+		}),
+		Cause: ErrUnsupportedBuild,
+	}
+}
+
 // runtimeMissingError is the no-runtime refusal shared by every recipe form.
 func runtimeMissingError(operation string) error {
 	return &BuildError{

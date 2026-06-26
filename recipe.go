@@ -216,10 +216,12 @@ func detailsToLines(details []Detail) []string {
 }
 
 // Job is a recipe under construction: the inputs, stream chains, branches,
-// joins, and destinations declared so far. A Job is inert until Describe,
+// joins, and destinations declared so far. Construct one with From; the zero
+// value is intentionally not a valid recipe. A Job is inert until Describe,
 // Explain, Build, or Run compiles it; construction errors are deferred and
 // surface on those calls as structured BuildErrors.
 type Job struct {
+	origin             jobOrigin
 	name               string
 	runtime            *Runtime
 	runtimeSet         bool
@@ -235,6 +237,13 @@ type Job struct {
 	join               *joinSpec
 	err                error
 }
+
+type jobOrigin uint8
+
+const (
+	jobOriginZero jobOrigin = iota
+	jobOriginConstructed
+)
 
 type jobStreamBuild struct {
 	name        string
@@ -290,7 +299,7 @@ func (j *Job) Sync(policy flow.SyncPolicy) *Job {
 }
 
 func newJob(name string) *Job {
-	return &Job{name: name}
+	return &Job{origin: jobOriginConstructed, name: name}
 }
 
 // UseRuntime compiles the job against the given runtime: the seam for custom

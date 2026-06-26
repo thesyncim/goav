@@ -87,6 +87,8 @@ methodology changes, and migration notes.
   and zero-derived option copies cannot masquerade as real outputs.
 - Marked `InputSpec` values with their constructor origin so zero values and
   zero-derived option or wrapper copies cannot masquerade as real inputs.
+- Marked `Job` values with their constructor origin so zero values refuse with
+  `goav.From(...)` guidance instead of looking like ordinary empty recipes.
 - Moved normal media-planner input binding and selected-stream resolution onto
   recipe IR input facts instead of concrete input attachments.
 - Moved copy-branch source-shape planning onto recipe IR input facts.

@@ -568,8 +568,8 @@ const (
 
 // Job and compiler errcode.
 const (
-	// JobInvalid fires when a nil job or join reaches the recipe compiler;
-	// an internal invariant.
+	// JobInvalid fires when a nil, zero, or otherwise unconstructed job or
+	// join reaches the recipe compiler.
 	JobInvalid Code = "job_invalid"
 	// RuntimeMissing fires when a job reaches Build with no runtime
 	// configured.

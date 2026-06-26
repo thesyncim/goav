@@ -52,11 +52,15 @@ func newLinearJobRecipeSnapshot(job *Job) recipeCompileSnapshot {
 	annotateRecipeIRInputsFromSpecs(&recipe, job.inputs)
 	annotateRecipeIRDestinationsFromSpecs(&recipe, outputs)
 	recipe.StreamRules = recipeIRStreamRulesFromRoot(job.streamRules)
+	recipeErr := job.err
+	if job.origin != jobOriginConstructed && recipeErr == nil {
+		recipeErr = unconstructedJobError()
+	}
 	return recipeCompileSnapshot{
 		recipe:                 recipe,
 		runtime:                job.runtimeOrNil(),
 		runtimeExplicit:        job.runtimeSet,
-		recipeErr:              job.err,
+		recipeErr:              recipeErr,
 		jobPresent:             true,
 		inputAttachments:       append([]InputSpec(nil), job.inputs...),
 		jobOutputCount:         len(job.outputs),
