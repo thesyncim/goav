@@ -653,8 +653,8 @@ func branchComposePlanEmptyError(kind string) error {
 	}
 	reason := "branch composition has no " + kind
 	return &BuildError{
-		Family:    errcode.FamilyForCode(errcode.BranchComposePlanEmpty),
-		Code:      errcode.BranchComposePlanEmpty,
+		Family:    errcode.FamilyForCode(branchComposePlanEmptyCode),
+		Code:      branchComposePlanEmptyCode,
 		Operation: "build branch composition",
 		Node:      kind,
 		Reason:    reason,

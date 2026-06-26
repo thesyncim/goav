@@ -9,7 +9,6 @@ import (
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
-	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/plan"
 	"github.com/thesyncim/goav/shape"
@@ -194,7 +193,7 @@ func TestBufferBudgetDecisionHelperContracts(t *testing.T) {
 	if !errors.As(err, &buildErr) {
 		t.Fatalf("error = %T, want *BuildError", err)
 	}
-	if buildErr.Code != errcode.BufferBudgetMissing || buildErr.Node != "custom-node" || !strings.Contains(buildErr.Reason, `unsupported pixel_format "rgb24"`) {
+	if buildErr.Code != bufferBudgetMissingCode || buildErr.Node != "custom-node" || !strings.Contains(buildErr.Reason, `unsupported pixel_format "rgb24"`) {
 		t.Fatalf("BuildError = %+v, want buffer_budget_missing on custom-node with rgb24 reason", buildErr)
 	}
 	if len(buildErr.DetailLines()) != 3 || len(buildErr.FixLines()) == 0 {

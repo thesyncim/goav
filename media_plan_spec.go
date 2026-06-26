@@ -184,8 +184,8 @@ func graphPlanOperationDestinationsRequired(kind plan.OperationKind) bool {
 
 func graphPlanInvalidError(reason string, details []string) error {
 	return &BuildError{
-		Family:    errcode.FamilyForCode(errcode.GraphPlanInvalid),
-		Code:      errcode.GraphPlanInvalid,
+		Family:    errcode.FamilyForCode(graphPlanInvalidCode),
+		Code:      graphPlanInvalidCode,
 		Operation: "build graph plan",
 		Reason:    reason,
 		Fields:    buildErrorFields(append([]string(nil), details...)),

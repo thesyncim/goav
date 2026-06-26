@@ -64,7 +64,7 @@ func TestGraphPlanDestinationOperationNodeContracts(t *testing.T) {
 	}
 	err := validateGraphPlanDestinationOperationNode("packet-copy", target)
 	var buildErr *BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != errcode.GraphPlanInvalid ||
+	if !errors.As(err, &buildErr) || buildErr.Code != graphPlanInvalidCode ||
 		!strings.Contains(buildErr.Reason, "packet-copy destination operation has no node") {
 		t.Fatalf("validateGraphPlanDestinationOperationNode() error = %v; want graph-plan node error", err)
 	}

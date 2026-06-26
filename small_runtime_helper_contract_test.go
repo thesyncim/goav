@@ -112,7 +112,7 @@ func TestBuildErrorAndCompilerPassErrorContracts(t *testing.T) {
 	if !errors.As(wrapped, &got) {
 		t.Fatalf("wrapped = %T, want *BuildError", wrapped)
 	}
-	if got.Code != errcode.CompilerPassFailed ||
+	if got.Code != compilerPassFailedCode ||
 		got.Operation != "compile recipe" ||
 		got.Reason != "recipe compiler pass failed without a diagnostic" ||
 		len(got.DetailLines()) != 1 ||
@@ -130,7 +130,7 @@ func TestBuildErrorAndCompilerPassErrorContracts(t *testing.T) {
 	_, err := recipeIntentCompiler{passes: []recipeCompilePass{nil}}.Compile(recipeCompileState{
 		operation: "compile recipe",
 	})
-	if !errors.As(err, &got) || got.Code != errcode.CompilerPassInvalid ||
+	if !errors.As(err, &got) || got.Code != compilerPassInvalidCode ||
 		got.Operation != "compile recipe" ||
 		!errors.Is(err, ErrUnsupportedBuild) {
 		t.Fatalf("nil compiler pass err = %v, want compiler_pass_invalid wrapping ErrUnsupportedBuild", err)

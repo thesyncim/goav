@@ -164,16 +164,17 @@ func TestErrorCodeCatalogPinned(t *testing.T) {
 			}
 		}
 	}
-	if count < 115 {
-		t.Errorf("errcode/errcode.go declares %d Code constants; the public refusal catalog should stay complete (>= 115)", count)
+	if count > 133 {
+		t.Errorf("errcode/errcode.go declares %d Code constants; keep shrinking the public refusal catalog from the current ceiling of 133", count)
 	}
 }
 
-// TestErrorCodeLiteralsStayInCatalog sweeps every non-test source file for
-// stray code-shaped string literals assigned to Code fields — diagnostics and
-// decisions included — so new codes land in the errcode catalog instead of
-// drifting back to scattered strings.
-func TestErrorCodeLiteralsStayInCatalog(t *testing.T) {
+// TestErrorCodeLiteralsStayTyped sweeps every non-test source file for stray
+// code-shaped string literals assigned to Code fields — diagnostics and
+// decisions included — so public codes land in the errcode catalog and
+// package-internal invariants use typed local constants instead of scattered
+// strings.
+func TestErrorCodeLiteralsStayTyped(t *testing.T) {
 	files := parsePackageSourceFiles(t)
 	for filename, file := range files {
 		ast.Inspect(file, func(n ast.Node) bool {

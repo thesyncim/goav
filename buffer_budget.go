@@ -256,8 +256,8 @@ func bufferBudgetMissingError(operation workOperation, err error) error {
 	fact := err.Error()
 	node := firstNonEmpty(operation.Node.String(), operation.Name, operation.Branch, "node")
 	return &BuildError{
-		Family:    errcode.FamilyForCode(errcode.BufferBudgetMissing),
-		Code:      errcode.BufferBudgetMissing,
+		Family:    errcode.FamilyForCode(bufferBudgetMissingCode),
+		Code:      bufferBudgetMissingCode,
 		Operation: "configure graph buffer",
 		Node:      node,
 		Reason:    "buffered recipe graph cannot derive a copy budget: " + fact,

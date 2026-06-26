@@ -189,8 +189,8 @@ func (c recipeIntentCompiler) Compile(state recipeCompileState) (recipeResolved,
 		pass := c.passes[i]
 		if pass == nil {
 			return recipeResolved{}, &BuildError{
-				Family:    errcode.FamilyForCode(errcode.CompilerPassInvalid),
-				Code:      errcode.CompilerPassInvalid,
+				Family:    errcode.FamilyForCode(compilerPassInvalidCode),
+				Code:      compilerPassInvalidCode,
 				Operation: state.operation,
 				Reason:    fmt.Sprintf("recipe compiler pass %d is nil", i),
 				Fields:    buildErrorFields([]string{"internal invariant: the recipe compiler was assembled with a nil pass"}),
@@ -230,8 +230,8 @@ func compilerPassError(operation string, pass string, err error) error {
 		return err
 	}
 	return &BuildError{
-		Family:    errcode.FamilyForCode(errcode.CompilerPassFailed),
-		Code:      errcode.CompilerPassFailed,
+		Family:    errcode.FamilyForCode(compilerPassFailedCode),
+		Code:      compilerPassFailedCode,
 		Operation: firstNonEmpty(buildErr.Operation, operation),
 		Reason:    "recipe compiler pass failed without a diagnostic",
 		Fields: buildErrorFields([]string{
@@ -1089,8 +1089,8 @@ func validateRecipeAttachmentConsistencyPass() recipeCompilePass {
 
 func recipeAttachmentMismatchError(operation string, kind string, intentCount int, attachmentCount int) error {
 	return &BuildError{
-		Family:    errcode.FamilyForCode(errcode.RecipeAttachmentMismatch),
-		Code:      errcode.RecipeAttachmentMismatch,
+		Family:    errcode.FamilyForCode(recipeAttachmentMismatchCode),
+		Code:      recipeAttachmentMismatchCode,
 		Operation: operation,
 		Reason:    kind + " intent and concrete attachments disagree",
 		Fields: buildErrorFields([]string{

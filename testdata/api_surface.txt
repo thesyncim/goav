@@ -29,7 +29,6 @@ control.SetBitrate
 control.Type
 errcode.BranchBufferInvalid
 errcode.BranchBufferUnsupported
-errcode.BranchComposePlanEmpty
 errcode.BranchDecodeCopyInvalid
 errcode.BranchDecodeDomainMismatch
 errcode.BranchDecodeDuplicate
@@ -43,13 +42,10 @@ errcode.BranchOperationChainUnsupported
 errcode.BranchSourceInvalid
 errcode.BranchTapMissing
 errcode.BranchTransformMediaMismatch
-errcode.BufferBudgetMissing
 errcode.BufferPayloadTooLarge
 errcode.BufferPayloadUnsafe
 errcode.Code
 errcode.CodecChangePolicyUnsupported
-errcode.CompilerPassFailed
-errcode.CompilerPassInvalid
 errcode.CopyBranchSourceInvalid
 errcode.CopyUnsupported
 errcode.DecodeAdapterIncompatible
@@ -99,7 +95,6 @@ errcode.FlowDecodeDuplicate
 errcode.FlowDecodeOrderInvalid
 errcode.FlowInvalid
 errcode.FlowMediaMismatch
-errcode.GraphPlanInvalid
 errcode.InputCountUnsupported
 errcode.InputDemuxerMissing
 errcode.InputDuplicate
@@ -124,7 +119,6 @@ errcode.OutputScopeMixed
 errcode.OutputWriterMissing
 errcode.PacketBranchEncodeUnsupported
 errcode.PacketBranchTransformUnsupported
-errcode.RecipeAttachmentMismatch
 errcode.RecipeGraphUnsupported
 errcode.RuntimeBranchAnchorMissing
 errcode.RuntimeBranchCopyDomainMismatch

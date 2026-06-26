@@ -28,7 +28,7 @@ func TestGraphPlanNotReadyContracts(t *testing.T) {
 
 	err := gp.lower(context.Background(), nil, nil)
 	var buildErr *BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != errcode.GraphPlanInvalid ||
+	if !errors.As(err, &buildErr) || buildErr.Code != graphPlanInvalidCode ||
 		!strings.Contains(buildErr.Reason, "graph plan is not ready") {
 		t.Fatalf("lower() error = %v, want graph_plan_invalid not-ready error", err)
 	}

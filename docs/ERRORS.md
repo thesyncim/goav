@@ -72,7 +72,7 @@ if err != nil {
 }
 ```
 
-The full checked code list lives in
+The public checked refusal-code list lives in
 [`docs/ERROR_CATALOG.md`](ERROR_CATALOG.md), generated from
 [`errcode/errcode.go`](../errcode/errcode.go) and the checked derived-code
 tables: autocompletable for exported constants (`errcode.`), greppable by
@@ -80,6 +80,10 @@ value (`rg encode_missing`), and grouped under a stable family. Every current ca
 If a future row appears as `catalog-only`, the pin test fails until it gets a
 bad recipe, rendered error coverage, fixed recipe guidance, sentinel/cause,
 and test name.
+
+Package-internal invariant wrappers may still use typed `Code` values so
+`FamilyForCode` and rendered errors stay stable, but they are not exported
+public match constants and do not appear in the generated catalog.
 
 ## Runtime errors
 

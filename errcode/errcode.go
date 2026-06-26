@@ -57,6 +57,15 @@ const (
 
 const familyDiagnostic Family = "diagnostic"
 
+const (
+	branchComposePlanEmpty   = Code("branch_compose_plan_empty")
+	compilerPassInvalid      = Code("compiler_pass_invalid")
+	compilerPassFailed       = Code("compiler_pass_failed")
+	recipeAttachmentMismatch = Code("recipe_attachment_mismatch")
+	graphPlanInvalid         = Code("graph_plan_invalid")
+	bufferBudgetMissing      = Code("buffer_budget_missing")
+)
+
 // FamilyForCode returns the stable family for a goav error code. It also
 // recognizes goav's non-failing plan diagnostic strings for report grouping.
 // Unknown vendor-prefixed codes fall back to FamilyExternal. Custom join codes
@@ -103,12 +112,12 @@ func FamilyForCode(code Code) Family {
 		BranchDecodeDomainMismatch, BranchDecodeCopyInvalid,
 		BranchTransformMediaMismatch, BranchDestinationInvalid,
 		BranchDestinationUnmatched, BranchOperationChainUnsupported,
-		BranchComposePlanEmpty, CopyBranchSourceInvalid, CopyUnsupported,
+		branchComposePlanEmpty, CopyBranchSourceInvalid, CopyUnsupported,
 		PacketBranchEncodeUnsupported, PacketBranchTransformUnsupported,
 		DecodeConfigConflict, DecodePolicyConflict:
 		return FamilyBranch
 	case BranchBufferInvalid, BranchBufferUnsupported, BufferPayloadUnsafe,
-		BufferPayloadTooLarge, BufferBudgetMissing:
+		BufferPayloadTooLarge, bufferBudgetMissing:
 		return FamilyBuffer
 	case TapInvalid, TapDomainMismatch:
 		return FamilyTap
@@ -124,8 +133,8 @@ func FamilyForCode(code Code) Family {
 		return FamilyRuntimeBranch
 	case StreamRuleInvalid:
 		return FamilyStreamRule
-	case JobInvalid, RuntimeMissing, CompilerPassInvalid, CompilerPassFailed,
-		RecipeGraphUnsupported, RecipeAttachmentMismatch, GraphPlanInvalid:
+	case JobInvalid, RuntimeMissing, compilerPassInvalid, compilerPassFailed,
+		RecipeGraphUnsupported, recipeAttachmentMismatch, graphPlanInvalid:
 		return FamilyCompiler
 	case Code("shape_conversion_inserted"), Code("shape_preference_applied"), Code("shape_preference_ignored"),
 		Code("decode_codec_deferred"), Code("explain_preflight_error"), Code("packet_copy"),
@@ -417,9 +426,6 @@ const (
 	// BranchOperationChainUnsupported fires when a branch's operation
 	// chain uses an unsupported combination.
 	BranchOperationChainUnsupported Code = "branch_operation_chain_unsupported"
-	// BranchComposePlanEmpty fires when branch composition planned no
-	// routes; an internal planner invariant.
-	BranchComposePlanEmpty Code = "branch_compose_plan_empty"
 	// BranchBufferInvalid fires when a branch buffer policy is malformed.
 	BranchBufferInvalid Code = "branch_buffer_invalid"
 	// BranchBufferUnsupported fires when an unbounded branch buffer is
@@ -533,22 +539,7 @@ const (
 	// RuntimeMissing fires when a job reaches Build with no runtime
 	// configured.
 	RuntimeMissing Code = "runtime_missing"
-	// CompilerPassInvalid fires when a recipe compiler pass is nil; an
-	// internal invariant.
-	CompilerPassInvalid Code = "compiler_pass_invalid"
-	// CompilerPassFailed fires when a compiler pass fails without its own
-	// diagnostic; an internal invariant.
-	CompilerPassFailed Code = "compiler_pass_failed"
 	// RecipeGraphUnsupported fires when the recipe intent matches no
 	// supported graph plan.
 	RecipeGraphUnsupported Code = "recipe_graph_unsupported"
-	// RecipeAttachmentMismatch fires when the recipe intent and its
-	// concrete attachments disagree; an internal invariant.
-	RecipeAttachmentMismatch Code = "recipe_attachment_mismatch"
-	// GraphPlanInvalid fires when a media graph plan is internally
-	// inconsistent; an internal invariant.
-	GraphPlanInvalid Code = "graph_plan_invalid"
-	// BufferBudgetMissing fires when a recipe needs a buffered graph but the
-	// propagated stream facts cannot size graph-owned packet/frame copies.
-	BufferBudgetMissing Code = "buffer_budget_missing"
 )

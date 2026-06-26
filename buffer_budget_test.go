@@ -8,7 +8,6 @@ import (
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
-	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/shape"
 )
 
@@ -33,8 +32,8 @@ func TestRealtimeEncodeRecipeRefusesUnsupportedBufferBudgetFact(t *testing.T) {
 	if !errors.As(err, &buildErr) {
 		t.Fatalf("err = %v, want *BuildError", err)
 	}
-	if buildErr.Code != errcode.BufferBudgetMissing {
-		t.Fatalf("code = %q, want %q", buildErr.Code, errcode.BufferBudgetMissing)
+	if buildErr.Code != bufferBudgetMissingCode {
+		t.Fatalf("code = %q, want %q", buildErr.Code, bufferBudgetMissingCode)
 	}
 	if !errors.Is(err, ErrUnsupportedBuild) {
 		t.Fatalf("err = %v, want ErrUnsupportedBuild sentinel", err)
@@ -67,8 +66,8 @@ func TestRealtimeDecodeRecipeRefusesMissingBufferBudgetFact(t *testing.T) {
 	if !errors.As(err, &buildErr) {
 		t.Fatalf("err = %v, want *BuildError", err)
 	}
-	if buildErr.Code != errcode.BufferBudgetMissing {
-		t.Fatalf("code = %q, want %q", buildErr.Code, errcode.BufferBudgetMissing)
+	if buildErr.Code != bufferBudgetMissingCode {
+		t.Fatalf("code = %q, want %q", buildErr.Code, bufferBudgetMissingCode)
 	}
 	if !strings.Contains(buildErr.Reason, "missing sample_format") {
 		t.Fatalf("reason = %q, want missing sample_format fact", buildErr.Reason)

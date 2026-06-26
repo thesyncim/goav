@@ -250,7 +250,7 @@ func TestCustomEventSourceRejectsMuxDestination(t *testing.T) {
 	_, err := From(input).To(Write("events.ivf", io.Discard, Format(av.FormatIVF))).Describe()
 	var buildErr *BuildError
 	if !errors.As(err, &buildErr) ||
-		buildErr.Code != "graph_plan_invalid" ||
+		buildErr.Code != graphPlanInvalidCode ||
 		!strings.Contains(err.Error(), "event source destination must be a sink") {
 		t.Fatalf("err = %v, want event source sink-only diagnostic", err)
 	}

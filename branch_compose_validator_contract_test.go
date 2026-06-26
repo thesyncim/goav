@@ -16,12 +16,12 @@ import (
 
 func TestPrepareBranchComposePlanEmptyContracts(t *testing.T) {
 	_, _, err := prepareBranchComposePlan(branchComposePlan{})
-	assertBranchComposeGraphPlanBuildError(t, err, errcode.BranchComposePlanEmpty, "no branches")
+	assertBranchComposeGraphPlanBuildError(t, err, branchComposePlanEmptyCode, "no branches")
 
 	_, _, err = prepareBranchComposePlan(branchComposePlan{
 		Branches: []branchComposeBranch{{Name: "preview"}},
 	})
-	assertBranchComposeGraphPlanBuildError(t, err, errcode.BranchComposePlanEmpty, "no destinations")
+	assertBranchComposeGraphPlanBuildError(t, err, branchComposePlanEmptyCode, "no destinations")
 }
 
 func TestValidateBranchComposeBranchOperationContracts(t *testing.T) {
@@ -85,7 +85,7 @@ func TestValidateBranchComposeBranchOperationContracts(t *testing.T) {
 	for _, tt := range errorCases {
 		t.Run(tt.name, func(t *testing.T) {
 			err := graph.validateBranchComposeBranchOperations(tt.route, tt.operations)
-			assertBranchComposeGraphPlanBuildError(t, err, errcode.GraphPlanInvalid, tt.reason)
+			assertBranchComposeGraphPlanBuildError(t, err, graphPlanInvalidCode, tt.reason)
 		})
 	}
 }
@@ -101,7 +101,7 @@ func TestPrepareBranchComposeBranchOperationsContracts(t *testing.T) {
 	_, err := graph.prepareBranchComposeBranchOperations(map[string][]workOperation{
 		"encoded": {{Kind: plan.OpEncode}},
 	})
-	assertBranchComposeGraphPlanBuildError(t, err, errcode.GraphPlanInvalid, "encode operation has no node")
+	assertBranchComposeGraphPlanBuildError(t, err, graphPlanInvalidCode, "encode operation has no node")
 
 	operations, err := graph.prepareBranchComposeBranchOperations(map[string][]workOperation{
 		"encoded": {{Kind: plan.OpEncode, Node: "encode-node", ShapeOut: shape.Packet(av.MediaVideo, av.CodecVP8)}},
@@ -148,7 +148,7 @@ func TestValidateBranchComposeDestinationOperationContracts(t *testing.T) {
 	for _, tt := range errorCases {
 		t.Run(tt.name, func(t *testing.T) {
 			err := validateBranchComposeDestinationOperation(tt.operation, tt.target)
-			assertBranchComposeGraphPlanBuildError(t, err, errcode.GraphPlanInvalid, tt.reason)
+			assertBranchComposeGraphPlanBuildError(t, err, graphPlanInvalidCode, tt.reason)
 		})
 	}
 

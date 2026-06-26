@@ -133,7 +133,7 @@ func TestGraphPlanBuildValidatesOperationsBeforeLowerer(t *testing.T) {
 		t.Fatal("buildGraphPlanTask() error = nil, want invalid graph-plan error")
 	}
 	var buildErr *BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "graph_plan_invalid" || !errors.Is(err, ErrUnsupportedBuild) {
+	if !errors.As(err, &buildErr) || buildErr.Code != graphPlanInvalidCode || !errors.Is(err, ErrUnsupportedBuild) {
 		t.Fatalf("err = %v, want graph_plan_invalid wrapping ErrUnsupportedBuild", err)
 	}
 	if lowerer.called {
@@ -1095,7 +1095,7 @@ func TestRecipeAttachmentConsistencyRejectsMismatches(t *testing.T) {
 				!strings.Contains(err.Error(), "goav.From") {
 				t.Fatalf("err = %v, want attachment mismatch guidance", err)
 			}
-			if !errors.As(err, &buildErr) || buildErr.Code != "recipe_attachment_mismatch" || !errors.Is(err, ErrUnsupportedBuild) {
+			if !errors.As(err, &buildErr) || buildErr.Code != recipeAttachmentMismatchCode || !errors.Is(err, ErrUnsupportedBuild) {
 				t.Fatalf("err = %v, want recipe_attachment_mismatch wrapping ErrUnsupportedBuild", err)
 			}
 		})
@@ -4001,7 +4001,7 @@ func TestBranchComposeLowererRequiresBranchOperationsBeforeSources(t *testing.T)
 		t.Fatal("resolved.Build() error = nil, want graph_plan_invalid")
 	}
 	var buildErr *BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "graph_plan_invalid" ||
+	if !errors.As(err, &buildErr) || buildErr.Code != graphPlanInvalidCode ||
 		!strings.Contains(err.Error(), "branch composition graph plan has no operations for branch") {
 		t.Fatalf("err = %v, want missing branch-operation graph-plan error", err)
 	}
@@ -4027,7 +4027,7 @@ func TestBranchComposeLowererRequiresDecodeOperationBeforeSources(t *testing.T) 
 		t.Fatal("resolved.Build() error = nil, want graph_plan_invalid")
 	}
 	var buildErr *BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "graph_plan_invalid" ||
+	if !errors.As(err, &buildErr) || buildErr.Code != graphPlanInvalidCode ||
 		!strings.Contains(err.Error(), "branch composition graph plan has no decode operation for branch") {
 		t.Fatalf("err = %v, want missing decode-operation graph-plan error", err)
 	}
@@ -4053,7 +4053,7 @@ func TestBranchComposeLowererRequiresDestinationOperationsBeforeSources(t *testi
 		t.Fatal("resolved.Build() error = nil, want graph_plan_invalid")
 	}
 	var buildErr *BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "graph_plan_invalid" ||
+	if !errors.As(err, &buildErr) || buildErr.Code != graphPlanInvalidCode ||
 		!strings.Contains(err.Error(), "branch composition graph plan has no destination operations") {
 		t.Fatalf("err = %v, want missing destination-operation graph-plan error", err)
 	}
@@ -4179,7 +4179,7 @@ func TestPacketCopyLowererRequiresDestinationOperationsBeforeSources(t *testing.
 		t.Fatal("resolved.Build() error = nil, want graph_plan_invalid")
 	}
 	var buildErr *BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "graph_plan_invalid" ||
+	if !errors.As(err, &buildErr) || buildErr.Code != graphPlanInvalidCode ||
 		!strings.Contains(err.Error(), "packet-copy graph plan has no destination operations") {
 		t.Fatalf("err = %v, want missing destination-operation graph-plan error", err)
 	}
@@ -4201,7 +4201,7 @@ func TestPacketCopyLowererRequiresCopyOperationBeforeSources(t *testing.T) {
 		t.Fatal("resolved.Build() error = nil, want graph_plan_invalid")
 	}
 	var buildErr *BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "graph_plan_invalid" ||
+	if !errors.As(err, &buildErr) || buildErr.Code != graphPlanInvalidCode ||
 		!strings.Contains(err.Error(), "packet-copy graph plan has no copy operation for branch") {
 		t.Fatalf("err = %v, want missing copy-operation graph-plan error", err)
 	}
@@ -4225,7 +4225,7 @@ func TestPacketCopyLowererRequiresTargetBranchBindingsBeforeSources(t *testing.T
 		t.Fatal("resolved.Build() error = nil, want graph_plan_invalid")
 	}
 	var buildErr *BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "graph_plan_invalid" ||
+	if !errors.As(err, &buildErr) || buildErr.Code != graphPlanInvalidCode ||
 		!strings.Contains(err.Error(), "packet-copy destination operation branches do not match output branches") {
 		t.Fatalf("err = %v, want packet-copy destination branch binding graph-plan error", err)
 	}
@@ -4249,7 +4249,7 @@ func TestPacketCopyLowererRequiresConsistentDestinationOperationsBeforeSources(t
 		t.Fatal("resolved.Build() error = nil, want graph_plan_invalid")
 	}
 	var buildErr *BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "graph_plan_invalid" ||
+	if !errors.As(err, &buildErr) || buildErr.Code != graphPlanInvalidCode ||
 		!strings.Contains(err.Error(), "packet-copy destination operation is not consistent across branches") {
 		t.Fatalf("err = %v, want duplicate target consistency graph-plan error", err)
 	}
@@ -4456,7 +4456,7 @@ func TestFrameStreamLowererRequiresDecodeOperationBeforeSources(t *testing.T) {
 		t.Fatal("resolved.Build() error = nil, want graph_plan_invalid")
 	}
 	var buildErr *BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "graph_plan_invalid" ||
+	if !errors.As(err, &buildErr) || buildErr.Code != graphPlanInvalidCode ||
 		!strings.Contains(err.Error(), "frame stream graph plan has no decode operation") {
 		t.Fatalf("err = %v, want missing decode-operation graph-plan error", err)
 	}
@@ -4479,7 +4479,7 @@ func TestFrameStreamLowererRequiresDestinationOperationsBeforeSources(t *testing
 		t.Fatal("resolved.Build() error = nil, want graph_plan_invalid")
 	}
 	var buildErr *BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "graph_plan_invalid" ||
+	if !errors.As(err, &buildErr) || buildErr.Code != graphPlanInvalidCode ||
 		!strings.Contains(err.Error(), "frame stream graph plan has no destination operations") {
 		t.Fatalf("err = %v, want missing destination-operation graph-plan error", err)
 	}
@@ -4506,7 +4506,7 @@ func TestFrameStreamLowererRequiresSingleBranchOperationSet(t *testing.T) {
 		t.Fatal("resolved.Build() error = nil, want graph_plan_invalid")
 	}
 	var buildErr *BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "graph_plan_invalid" ||
+	if !errors.As(err, &buildErr) || buildErr.Code != graphPlanInvalidCode ||
 		!strings.Contains(err.Error(), "frame stream graph plan must have exactly one branch operation set") {
 		t.Fatalf("err = %v, want single-branch graph-plan error", err)
 	}
@@ -4632,7 +4632,7 @@ func TestSelectedPacketCopyLowererRequiresSelectOperationBeforeSources(t *testin
 		t.Fatal("resolved.Build() error = nil, want graph_plan_invalid")
 	}
 	var buildErr *BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "graph_plan_invalid" ||
+	if !errors.As(err, &buildErr) || buildErr.Code != graphPlanInvalidCode ||
 		!strings.Contains(err.Error(), "selected packet-copy graph plan has no select operation") {
 		t.Fatalf("err = %v, want missing select-operation graph-plan error", err)
 	}
@@ -4664,7 +4664,7 @@ func TestSelectedPacketCopyLowererRequiresCopyOperationBeforeSources(t *testing.
 		t.Fatal("resolved.Build() error = nil, want graph_plan_invalid")
 	}
 	var buildErr *BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "graph_plan_invalid" ||
+	if !errors.As(err, &buildErr) || buildErr.Code != graphPlanInvalidCode ||
 		!strings.Contains(err.Error(), "selected packet-copy graph plan has no copy operation") {
 		t.Fatalf("err = %v, want selected copy-operation graph-plan error", err)
 	}
@@ -4700,7 +4700,7 @@ func TestSelectedPacketCopyLowererRequiresSingleBranchOperationSet(t *testing.T)
 		t.Fatal("resolved.Build() error = nil, want graph_plan_invalid")
 	}
 	var buildErr *BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "graph_plan_invalid" ||
+	if !errors.As(err, &buildErr) || buildErr.Code != graphPlanInvalidCode ||
 		!strings.Contains(err.Error(), "selected packet-copy graph plan must have exactly one branch operation set") {
 		t.Fatalf("err = %v, want single-branch graph-plan error", err)
 	}
@@ -4859,7 +4859,7 @@ func TestEncodedFrameStreamLowererRequiresEncodeOperationBeforeSources(t *testin
 		t.Fatal("resolved.Build() error = nil, want graph_plan_invalid")
 	}
 	var buildErr *BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "graph_plan_invalid" ||
+	if !errors.As(err, &buildErr) || buildErr.Code != graphPlanInvalidCode ||
 		!strings.Contains(err.Error(), "encoded frame stream graph plan has no encode operation") {
 		t.Fatalf("err = %v, want missing encode-operation graph-plan error", err)
 	}
