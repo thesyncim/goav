@@ -35,6 +35,28 @@ func TestTaskDetachHelperContracts(t *testing.T) {
 	task := newTask(newWatchTestGraph(1), nil)
 	defer task.Close()
 
+	attachment := &lifecycleFakeAttachment{name: "archive"}
+	input, err := runtimeDetachInputFromArgs(context.Background(), attachment, []lifecycle.DetachOption{lifecycle.AbortBranch()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if input.attachment != attachment ||
+		input.runtime != nil ||
+		input.disposition != oldBranchAbort {
+		t.Fatalf("detach input = %+v, want non-runtime attachment with abort disposition", input)
+	}
+
+	runtimeAttachment := &runtimeAttachment{name: "recording"}
+	input, err = runtimeDetachInputFromArgs(context.Background(), runtimeAttachment, []lifecycle.DetachOption{lifecycle.DrainBranch()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if input.attachment != runtimeAttachment ||
+		input.runtime != runtimeAttachment ||
+		input.disposition != oldBranchDrain {
+		t.Fatalf("runtime detach input = %+v, want runtime attachment with drain disposition", input)
+	}
+
 	if err := task.Detach(context.Background(), nil); err == nil {
 		t.Fatal("Detach(nil) succeeded")
 	} else {
@@ -46,7 +68,6 @@ func TestTaskDetachHelperContracts(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	attachment := &lifecycleFakeAttachment{name: "archive"}
 	if err := task.Detach(ctx, attachment); !errors.Is(err, context.Canceled) {
 		t.Fatalf("Detach canceled error = %v, want context.Canceled", err)
 	}

@@ -68,6 +68,8 @@ methodology changes, and migration notes.
   specs and destination facts before graph locking and patch planning.
 - Routed runtime rebranch through an explicit input handoff that captures
   replacement specs, switch policy, and old-branch disposition before mutation.
+- Routed runtime detach through an explicit input handoff that captures
+  attachment target and disposition before closing or stopping runtime branches.
 - Moved normal media-planner input binding and selected-stream resolution onto
   recipe IR input facts instead of concrete input attachments.
 - Moved copy-branch source-shape planning onto recipe IR input facts.
