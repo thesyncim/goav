@@ -148,14 +148,7 @@ func TestBuildErrorTypedDetailsAndFixes(t *testing.T) {
 			{Key: "attempts", Value: 2},
 		},
 		Fixes: []Fix{
-			{
-				Message: "register an Opus decoder",
-				Patch: &RecipePatch{
-					Action: "add_runtime_option",
-					Path:   "runtime",
-					Value:  "goavruntime.WithDecoder(...)",
-				},
-			},
+			{Message: "register an Opus decoder"},
 		},
 		Cause: ErrUnsupportedBuild,
 	}

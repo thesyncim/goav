@@ -32,6 +32,8 @@ methodology changes, and migration notes.
   still pass directly to recipe constructors and `.With(...)`.
 - Removed exported `goav.InputStream`; `InputSpec.Stream(stream)` still returns
   the attach anchor used with `Branch(...).From(...)`.
+- Removed unused `goav.RecipePatch`; `BuildError.Fixes` now carry typed fix
+  messages without an edit-patch DTO.
 - Stream chains now require an explicit `.Decode()` before frame-domain
   consumers (`.Do`, `.Resize`, `.Resample`, real `.Encode`, frame taps, and
   decoded-frame sinks). Use `.Copy()` when a chain should stay packet-domain.
@@ -135,8 +137,8 @@ methodology changes, and migration notes.
   packages, `Task` is the minimal run/close lifecycle, richer runtime behavior
   is exposed through opt-in capability interfaces, and `Mux(name, destination)`
   declares shared mux/sink grouping without depending only on reused Go values.
-- Added typed `BuildError` fields and fixes (`Detail`, `Fix`, `RecipePatch`,
-  and `Detail(key)`) while preserving existing rendered details and
+- Added typed `BuildError` fields and fixes (`Detail`, `Fix`, and
+  `Detail(key)`) while preserving existing rendered details and
   suggestions for human-facing diagnostics.
 - Hardened `Emit` message ownership so packet, frame, and event deliveries no
   longer share one mutable message slot when an emitter buffers or retains

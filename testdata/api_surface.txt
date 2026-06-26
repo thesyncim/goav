@@ -233,7 +233,6 @@ goav.Name
 goav.New
 goav.OnRemove
 goav.PacketTap
-goav.RecipePatch
 goav.Resample
 goav.Resize
 goav.Runtime

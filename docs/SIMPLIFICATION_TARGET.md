@@ -187,7 +187,8 @@ tracks.
 
 Error-contract progress: `BuildError` no longer exposes legacy
 `Details`/`Suggestions` fields or parses rendered strings in `Detail(key)`;
-typed `Fields` and `Fixes` are the public contract.
+typed `Fields` and `Fixes` are the public contract. The unused
+`goav.RecipePatch` edit-hint DTO was also removed from the root surface.
 
 ## Release gate
 

@@ -30,22 +30,10 @@ func (d Detail) String() string {
 	return d.Key + "=" + fmt.Sprint(d.Value)
 }
 
-// RecipePatch is an optional machine-readable recipe edit hint attached to a
-// Fix. It is deliberately data-only: Action names the edit, Path names the
-// recipe location, and Value carries the option, destination, codec, or other
-// value a tool may use to offer an automatic fix.
-type RecipePatch struct {
-	Action string
-	Path   string
-	Value  any
-}
-
 // Fix is one concrete way to repair a BuildError. Message is the
-// human-readable instruction rendered to users; Patch is optional structured
-// data for tools that can edit or rewrite recipes.
+// human-readable instruction rendered to users.
 type Fix struct {
 	Message string
-	Patch   *RecipePatch
 }
 
 // String renders the human-readable fix message.

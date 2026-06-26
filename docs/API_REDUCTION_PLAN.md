@@ -117,8 +117,8 @@ Move or keep outside the front door:
    - Move implementation-specific errcodes behind compatibility aliases or
      internal details.
    - Replace string-only production errors with typed details and fixes:
-     `BuildError` carries typed `Fields []Detail`, `Fixes []Fix`, optional
-     `RecipePatch` hints, `Detail(key)`, `DetailLines()`, and `FixLines()`.
+     `BuildError` carries typed `Fields []Detail`, `Fixes []Fix`,
+     `Detail(key)`, `DetailLines()`, and `FixLines()`.
      The legacy `Details`/`Suggestions` fields have been removed from
      `BuildError`.
 

@@ -28,8 +28,6 @@ The contract is enforced by a source-scanning pin test (`errors_pin_test.go`):
   humans. Fix messages should be real API calls:
   `add .Auto(shape.AllowResample())`, `insert .Resample(48000, 2) explicitly`,
   `encode the mixed audio first: goav.Mix(a, b).Encode(codec.Opus(...))`.
-  A fix may carry a `goav.RecipePatch` hint for applications that can offer
-  automatic recipe edits.
 - **Cause**: a sentinel (`goav.ErrUnsupportedBuild`, `goav.ErrNilSink`,
   `pipeline.ErrBufferedMessageUnsafe`, ...) reachable through `errors.Is`.
 
