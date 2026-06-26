@@ -445,6 +445,9 @@ func TestRuntimeAttachUsesGraphPatchBoundary(t *testing.T) {
 	text := body.String()
 	for _, required := range []string{
 		"type runtimeGraphPatch struct",
+		"type runtimeAttachInput struct",
+		"func runtimeAttachInputFromBranchSpecs",
+		"func (t *task) attachRuntimeBranches",
 		"func (p *runtimeGraphPatch) addAnchor",
 		"func (p *runtimeGraphPatch) addApplied",
 		"func (p *runtimeGraphPatch) setWork",
@@ -459,6 +462,7 @@ func TestRuntimeAttachUsesGraphPatchBoundary(t *testing.T) {
 		"patch.resetPlannedTaps()",
 		"patch.setWork(",
 		"patch.attachment(t, name)",
+		"return t.attachRuntimeBranches(ctx, input)",
 	} {
 		if !strings.Contains(text, required) {
 			t.Fatalf("runtime attach should lower through runtimeGraphPatch; missing %q", required)
@@ -472,6 +476,33 @@ func TestRuntimeAttachUsesGraphPatchBoundary(t *testing.T) {
 		if strings.Contains(text, forbidden) {
 			t.Fatalf("runtime attach should plan the workPatch directly from BranchSpec, not a parallel %q model", forbidden)
 		}
+	}
+}
+
+func TestRuntimeAttachInputCapturesBranchSpecs(t *testing.T) {
+	spec := Branch("watch").
+		From(PacketTap("pkts")).
+		Copy().
+		To(Sink(SinkFunc("late", func(context.Context, Message) error { return nil })))
+
+	input, err := runtimeAttachInputFromBranchSpecs([]BranchSpec{spec})
+	if err != nil {
+		t.Fatal(err)
+	}
+	spec.name = "mutated"
+	spec.operations = nil
+	spec.destinations = nil
+	spec.source.tap = "other"
+
+	if input.name != "watch" ||
+		len(input.specs) != 1 ||
+		input.specs[0].name != "watch" ||
+		input.specs[0].source.tap != "pkts" ||
+		len(input.specs[0].operations) != 1 ||
+		len(input.specs[0].destinations) != 1 ||
+		len(input.destinations) != 1 ||
+		len(input.destinations[0]) != 1 {
+		t.Fatalf("runtime attach input = %+v, want captured branch spec and destinations", input)
 	}
 }
 
