@@ -97,9 +97,11 @@ Current progress: `internal/recipeir` carries the first immutable recipe
 snapshot, `compileJobRecipe` enters through that snapshot, and branch
 composition planning reads normalized intent instead of `streamBuild` builder
 records. Transform operations now cross the boundary as typed recipe IR data
-instead of a generic root wrapper. The boundary is not complete until root-only
-attachments such as destinations, input specs, joins, stream rules, and runtime
-mutation patches move into stable recipe or plan data.
+instead of a generic root wrapper, and destination sink/byte-stream behavior is
+now captured as recipe IR so shape validation does not need to infer that fact
+from concrete writer or sink attachments. The boundary is not complete until
+remaining root-only attachments such as input specs, joins, stream rules, and
+runtime mutation patches move into stable recipe or plan data.
 
 Runtime lifecycle/observation progress: one-shot `Run` now preserves both run
 and close/finalization failures, and `Events()` returns an unfiltered watch

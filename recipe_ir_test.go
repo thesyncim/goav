@@ -2,14 +2,17 @@ package goav
 
 import (
 	"bytes"
+	"context"
 	"os"
 	"reflect"
 	"strings"
 	"testing"
 
+	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/internal/recipeir"
 	"github.com/thesyncim/goav/plan"
+	"github.com/thesyncim/goav/shape"
 )
 
 func TestRecipeIRSnapshotRoundTripsJobIntent(t *testing.T) {
@@ -38,8 +41,35 @@ func TestRecipeIRSnapshotRoundTripsJobIntent(t *testing.T) {
 		transform.Resize.Height != 180 {
 		t.Fatalf("recipe IR transform = %+v, want typed resize config", transform)
 	}
+	if len(snapshot.recipe.Destinations) != 1 ||
+		snapshot.recipe.Destinations[0].Kind != recipeir.DestinationKindByteStream {
+		t.Fatalf("recipe IR destinations = %+v, want writer-backed byte-stream kind", snapshot.recipe.Destinations)
+	}
 	if got, want := intentFromRecipeIR(snapshot.recipe), job.plan(); !reflect.DeepEqual(got, want) {
 		t.Fatalf("IR round trip drifted\n got: %#v\nwant: %#v", got, want)
+	}
+}
+
+func TestRecipeIRSnapshotCapturesSinkDestinationKind(t *testing.T) {
+	job := From(FileInput("input.ivf", strings.NewReader(""))).
+		Video().
+		Decode().
+		To(Sink(SinkFunc("frames", func(context.Context, Message) error { return nil })))
+
+	snapshot := newJobRecipeSnapshot(job)
+	if len(snapshot.recipe.Destinations) != 1 ||
+		snapshot.recipe.Destinations[0].Kind != recipeir.DestinationKindSink {
+		t.Fatalf("recipe IR destinations = %+v, want sink kind", snapshot.recipe.Destinations)
+	}
+}
+
+func TestRecipeDestinationShapeUsesIRKind(t *testing.T) {
+	frameShape := shape.Frame(av.MediaVideo)
+	if err := validateRecipeDestinationShape("build job", "video", "frames", recipeir.DestinationKindSink, fileDestination("frames.ivf", &bytes.Buffer{}), frameShape); err != nil {
+		t.Fatalf("sink IR kind should accept frame shape even when concrete fallback looks byte-stream: %v", err)
+	}
+	if err := validateRecipeDestinationShape("build job", "video", "frames", recipeir.DestinationKindByteStream, destinationSpec{}, frameShape); err == nil {
+		t.Fatal("byte-stream IR kind should reject frame shape even when concrete fallback is empty")
 	}
 }
 

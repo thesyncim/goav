@@ -9,6 +9,7 @@ import (
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/format"
+	"github.com/thesyncim/goav/internal/recipeir"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/plan"
 	"github.com/thesyncim/goav/shape"
@@ -44,6 +45,7 @@ type recipeCompileState struct {
 	branchCompositionPresent bool
 	recipeErr                error
 
+	destinationKinds       []recipeir.DestinationKind
 	inputAttachments       []InputSpec
 	jobOutputCount         int
 	outputAttachments      []destinationSpec
@@ -1296,6 +1298,7 @@ func validateRecipeDestinationShapesPass() recipeCompilePass {
 		if len(outputs) == 0 {
 			return nil
 		}
+		kinds := state.recipeDestinationKindSet()
 		for i := range state.intent.Streams {
 			stream := state.intent.Streams[i]
 			shape := recipeFinalStreamShape(state, stream)
@@ -1305,7 +1308,11 @@ func validateRecipeDestinationShapesPass() recipeCompilePass {
 				if !ok {
 					continue
 				}
-				if err := validateRecipeDestinationShape(state.operation, node, label, destination, shape); err != nil {
+				kind := kinds[label]
+				if kind == recipeir.DestinationKindUnknown {
+					kind = recipeIRDestinationKindFromSpec(destination)
+				}
+				if err := validateRecipeDestinationShape(state.operation, node, label, kind, destination, shape); err != nil {
 					return err
 				}
 			}
@@ -1326,6 +1333,25 @@ func (s *recipeCompileState) recipeDestinationSet() map[string]destinationSpec {
 		outputs[jobOutputDestinationName(s.outputAttachments, s.outputDestinationNames, i)] = s.outputAttachments[i]
 	}
 	return outputs
+}
+
+func (s *recipeCompileState) recipeDestinationKindSet() map[string]recipeir.DestinationKind {
+	if s == nil || len(s.destinationKinds) == 0 {
+		return nil
+	}
+	kinds := make(map[string]recipeir.DestinationKind, len(s.destinationKinds))
+	for i := range s.intent.Destinations {
+		if i >= len(s.destinationKinds) {
+			break
+		}
+		kind := s.destinationKinds[i]
+		if kind == recipeir.DestinationKindUnknown {
+			continue
+		}
+		label := firstNonEmpty(s.intent.Destinations[i].Name, s.intent.Destinations[i].URI, fmt.Sprintf("output-%d", i))
+		kinds[label] = kind
+	}
+	return kinds
 }
 
 func recipeInitialStreamShape(state *recipeCompileState, stream streamIntent) shape.Spec {
@@ -1364,11 +1390,11 @@ func recipeFinalStreamShape(state *recipeCompileState, stream streamIntent) shap
 	return shape
 }
 
-func validateRecipeDestinationShape(operation string, node string, destinationName string, destination destinationSpec, spec shape.Spec) error {
-	if destination.sink != nil {
+func validateRecipeDestinationShape(operation string, node string, destinationName string, kind recipeir.DestinationKind, destination destinationSpec, spec shape.Spec) error {
+	if kind == recipeir.DestinationKindSink {
 		return nil
 	}
-	if !destinationSpecHasOutput(destination) {
+	if kind == recipeir.DestinationKindUnknown && !destinationSpecHasOutput(destination) {
 		return nil
 	}
 	if spec.Domain == shape.DomainPacket {

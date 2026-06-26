@@ -46,16 +46,20 @@ func newJobRecipeSnapshot(job *Job) recipeCompileSnapshot {
 
 func newLinearJobRecipeSnapshot(job *Job) recipeCompileSnapshot {
 	streamOutputs, _ := job.streamOutputsAndNames()
+	outputs := jobAllOutputs(job.outputs, streamOutputs)
+	outputNames := job.allOutputNames()
+	recipe := recipeIRFromIntent(job.plan(), recipeir.KindJob)
+	annotateRecipeIRDestinationsFromSpecs(&recipe, outputs)
 	return recipeCompileSnapshot{
-		recipe:                 recipeIRFromIntent(job.plan(), recipeir.KindJob),
+		recipe:                 recipe,
 		runtime:                job.runtimeOrNil(),
 		runtimeExplicit:        job.runtimeSet,
 		recipeErr:              job.err,
 		jobPresent:             true,
 		inputAttachments:       append([]InputSpec(nil), job.inputs...),
 		jobOutputCount:         len(job.outputs),
-		outputAttachments:      jobAllOutputs(job.outputs, streamOutputs),
-		outputDestinationNames: job.allOutputNames(),
+		outputAttachments:      outputs,
+		outputDestinationNames: outputNames,
 		streamRules:            cloneStreamRules(job.streamRules),
 	}
 }
@@ -63,8 +67,10 @@ func newLinearJobRecipeSnapshot(job *Job) recipeCompileSnapshot {
 func newJoinRecipeSnapshot(job *Job) recipeCompileSnapshot {
 	spec := cloneJoinSpec(job.join)
 	outputs, names := joinOutputAttachments(spec)
+	recipe := recipeIRFromIntent(joinIntentFromSpec(job, spec), recipeir.KindJoin)
+	annotateRecipeIRDestinationsFromSpecs(&recipe, outputs)
 	return recipeCompileSnapshot{
-		recipe:                 recipeIRFromIntent(joinIntentFromSpec(job, spec), recipeir.KindJoin),
+		recipe:                 recipe,
 		runtime:                job.runtimeOrNil(),
 		runtimeExplicit:        job.runtimeSet,
 		recipeErr:              job.err,
@@ -100,14 +106,17 @@ func newBranchCompositionRecipeSnapshot(job *branchCompositionJob) recipeCompile
 		return recipeCompileSnapshot{recipe: recipeir.Recipe{Kind: recipeir.KindBranchComposition}}
 	}
 	branchPlan, branchPlanErr := job.composePlan()
+	destinations := cloneNamedDestinationSpecs(job.outputs)
+	recipe := recipeIRFromIntent(job.plan(), recipeir.KindBranchComposition)
+	annotateRecipeIRDestinationsFromNamedSpecs(&recipe, destinations)
 	return recipeCompileSnapshot{
-		recipe:                       recipeIRFromIntent(job.plan(), recipeir.KindBranchComposition),
+		recipe:                       recipe,
 		runtime:                      job.runtime,
 		runtimeExplicit:              job.runtimeExplicit,
 		recipeErr:                    job.err,
 		branchCompositionPresent:     true,
 		branchInputAttachment:        job.input,
-		branchDestinationAttachments: cloneNamedDestinationSpecs(job.outputs),
+		branchDestinationAttachments: destinations,
 		branchCompositionSplit:       job.fromBranchSplit,
 		branchPlan:                   branchPlan,
 		branchPlanErr:                branchPlanErr,
@@ -217,6 +226,41 @@ func recipeIRDestinationFromIntent(in destinationIntent) recipeir.Destination {
 		Protocol: in.Protocol,
 		MIMEType: in.MIMEType,
 		Format:   in.Format,
+	}
+}
+
+func annotateRecipeIRDestinationsFromSpecs(recipe *recipeir.Recipe, destinations []destinationSpec) {
+	if recipe == nil {
+		return
+	}
+	for i := range recipe.Destinations {
+		if i >= len(destinations) {
+			return
+		}
+		recipe.Destinations[i].Kind = recipeIRDestinationKindFromSpec(destinations[i])
+	}
+}
+
+func annotateRecipeIRDestinationsFromNamedSpecs(recipe *recipeir.Recipe, destinations []namedDestinationSpec) {
+	if recipe == nil {
+		return
+	}
+	for i := range recipe.Destinations {
+		if i >= len(destinations) {
+			return
+		}
+		recipe.Destinations[i].Kind = recipeIRDestinationKindFromSpec(destinations[i].output)
+	}
+}
+
+func recipeIRDestinationKindFromSpec(destination destinationSpec) recipeir.DestinationKind {
+	switch {
+	case destination.sink != nil:
+		return recipeir.DestinationKindSink
+	case destinationSpecHasOutput(destination), destination.custom != nil:
+		return recipeir.DestinationKindByteStream
+	default:
+		return recipeir.DestinationKindUnknown
 	}
 }
 
@@ -443,6 +487,7 @@ func recipeCompileStateFromSnapshot(snapshot recipeCompileSnapshot, options reci
 	return recipeCompileState{
 		operation:                    recipeCompileOperation(snapshot),
 		intent:                       intentFromRecipeIR(snapshot.recipe),
+		destinationKinds:             recipeIRDestinationKinds(snapshot.recipe),
 		runtime:                      snapshot.runtime,
 		runtimeExplicit:              snapshot.runtimeExplicit,
 		options:                      options,
@@ -462,6 +507,17 @@ func recipeCompileStateFromSnapshot(snapshot recipeCompileSnapshot, options reci
 		plan:                         snapshot.branchPlan,
 		planErr:                      snapshot.branchPlanErr,
 	}
+}
+
+func recipeIRDestinationKinds(recipe recipeir.Recipe) []recipeir.DestinationKind {
+	if len(recipe.Destinations) == 0 {
+		return nil
+	}
+	kinds := make([]recipeir.DestinationKind, len(recipe.Destinations))
+	for i := range recipe.Destinations {
+		kinds[i] = recipe.Destinations[i].Kind
+	}
+	return kinds
 }
 
 func recipeCompileOperation(snapshot recipeCompileSnapshot) string {
