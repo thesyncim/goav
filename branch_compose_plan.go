@@ -475,36 +475,8 @@ func duplicateBranchDestinationError(stream streamIntent, target string, firstIn
 func validateBranchTransforms(stream streamIntent) error {
 	transforms := streamIntentTransformSpecs(stream)
 	for i := range transforms {
-		transform := transforms[i]
-		if err := validateTransformSpec(branchCompositionOperation, branchIntentName(stream), transform); err != nil {
+		if err := validateTransformSpec(branchCompositionOperation, branchIntentName(stream), transforms[i]); err != nil {
 			return err
-		}
-		switch {
-		case transform.resize != nil && transform.resample != nil:
-			return &BuildError{
-				Family:    errcode.FamilyForCode(transformInvalidCode),
-				Code:      transformInvalidCode,
-				Operation: branchCompositionOperation,
-				Node:      branchIntentName(stream),
-				Reason:    "one transform cannot be both resize and resample",
-				fixes:     buildErrorFixes([]string{"declare two separate steps instead: .Resize(width, height).Resample(rate, channels)"}),
-				cause:     errUnsupportedBuild,
-			}
-		case transform.resize != nil, transform.resample != nil:
-			continue
-		default:
-			return &BuildError{
-				Family:    errcode.FamilyForCode(transformInvalidCode),
-				Code:      transformInvalidCode,
-				Operation: branchCompositionOperation,
-				Node:      branchIntentName(stream),
-				Reason:    "empty stream transform",
-				fixes: buildErrorFixes([]string{
-					"call .Resize(width, height) on video branches",
-					"call .Resample(sampleRate, channels) on audio branches",
-				}),
-				cause: errUnsupportedBuild,
-			}
 		}
 	}
 	return nil

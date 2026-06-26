@@ -833,16 +833,6 @@ func validateJobStreamTransformIntentShape(operation string, stream streamIntent
 			return err
 		}
 		switch {
-		case transform.resize != nil && transform.resample != nil:
-			return &BuildError{
-				Family:    errcode.FamilyForCode(transformInvalidCode),
-				Code:      transformInvalidCode,
-				Operation: operation,
-				Node:      node,
-				Reason:    "one stream transform cannot be both resize and resample",
-				fixes:     buildErrorFixes([]string{"declare two separate steps instead: .Resize(width, height).Resample(rate, channels)"}),
-				cause:     errUnsupportedBuild,
-			}
 		case transform.resize != nil:
 			if selector.Type == av.MediaAudio {
 				return transformMediaError(node, "resize", av.MediaVideo, selector.Type)
@@ -852,18 +842,7 @@ func validateJobStreamTransformIntentShape(operation string, stream streamIntent
 				return transformMediaError(node, "resample", av.MediaAudio, selector.Type)
 			}
 		default:
-			return &BuildError{
-				Family:    errcode.FamilyForCode(transformInvalidCode),
-				Code:      transformInvalidCode,
-				Operation: operation,
-				Node:      node,
-				Reason:    "empty stream transform",
-				fixes: buildErrorFixes([]string{
-					"call .Resize(width, height) for video streams",
-					"call .Resample(sampleRate, channels) for audio streams",
-				}),
-				cause: errUnsupportedBuild,
-			}
+			return emptyTransformSpecError(operation, node)
 		}
 	}
 	return nil

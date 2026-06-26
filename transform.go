@@ -245,15 +245,6 @@ func streamTransform(streamName string, selector av.StreamSelector, spec transfo
 		return mediaTransform{}, err
 	}
 	switch {
-	case spec.resize != nil && spec.resample != nil:
-		return mediaTransform{}, &BuildError{
-			Family:    errcode.FamilyForCode(transformInvalidCode),
-			Code:      transformInvalidCode,
-			Operation: "build stream",
-			Node:      base,
-			Reason:    "one stream transform cannot be both resize and resample",
-			fixes:     buildErrorFixes([]string{"declare two separate steps instead: .Resize(width, height).Resample(rate, channels)"}),
-		}
 	case spec.resize != nil:
 		if selector.Type == av.MediaAudio {
 			return mediaTransform{}, transformMediaError(base, "resize", av.MediaVideo, selector.Type)
@@ -275,32 +266,14 @@ func streamTransform(streamName string, selector av.StreamSelector, spec transfo
 			audio:   &resample,
 		}, nil
 	default:
-		return mediaTransform{}, &BuildError{
-			Family:    errcode.FamilyForCode(transformInvalidCode),
-			Code:      transformInvalidCode,
-			Operation: "build stream",
-			Node:      base,
-			Reason:    "empty stream transform",
-			fixes: buildErrorFixes([]string{
-				"call .Resize(width, height) for video streams",
-				"call .Resample(sampleRate, channels) for audio streams",
-			}),
-		}
+		return mediaTransform{}, emptyTransformSpecError("build stream", base)
 	}
 }
 
 func validateTransformSpec(operation string, node string, spec transformSpec) error {
 	switch {
 	case spec.resize != nil && spec.resample != nil:
-		return &BuildError{
-			Family:    errcode.FamilyForCode(transformInvalidCode),
-			Code:      transformInvalidCode,
-			Operation: operation,
-			Node:      node,
-			Reason:    "one transform cannot be both resize and resample",
-			fixes:     buildErrorFixes([]string{"declare two separate steps instead: .Resize(width, height).Resample(rate, channels)"}),
-			cause:     errUnsupportedBuild,
-		}
+		return combinedTransformSpecError(operation, node)
 	case spec.resize != nil:
 		if spec.resize.Width > 0 && spec.resize.Height > 0 {
 			return nil
@@ -342,7 +315,34 @@ func validateTransformSpec(operation string, node string, spec transformSpec) er
 			cause: errUnsupportedBuild,
 		}
 	default:
-		return nil
+		return emptyTransformSpecError(operation, node)
+	}
+}
+
+func combinedTransformSpecError(operation string, node string) error {
+	return &BuildError{
+		Family:    errcode.FamilyForCode(transformInvalidCode),
+		Code:      transformInvalidCode,
+		Operation: operation,
+		Node:      node,
+		Reason:    "one transform cannot be both resize and resample",
+		fixes:     buildErrorFixes([]string{"declare two separate steps instead: .Resize(width, height).Resample(rate, channels)"}),
+		cause:     errUnsupportedBuild,
+	}
+}
+
+func emptyTransformSpecError(operation string, node string) error {
+	return &BuildError{
+		Family:    errcode.FamilyForCode(transformInvalidCode),
+		Code:      transformInvalidCode,
+		Operation: operation,
+		Node:      node,
+		Reason:    "empty stream transform",
+		fixes: buildErrorFixes([]string{
+			"call .Resize(width, height) for video streams",
+			"call .Resample(sampleRate, channels) for audio streams",
+		}),
+		cause: errUnsupportedBuild,
 	}
 }
 

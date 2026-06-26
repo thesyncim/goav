@@ -109,8 +109,12 @@ func TestTransformHelperErrorContracts(t *testing.T) {
 	}); err == nil {
 		t.Fatal("combined transform validation succeeded, want transform_invalid")
 	}
-	if err := validateTransformSpec("build stream", "empty", transformSpec{}); err != nil {
-		t.Fatalf("empty transform validation = %v, want streamTransform to reject later", err)
+	err := validateTransformSpec("build stream", "empty", transformSpec{})
+	var buildErr *BuildError
+	if !errors.As(err, &buildErr) ||
+		buildErr.Code != transformInvalidCode ||
+		!strings.Contains(buildErr.Reason, "empty stream transform") {
+		t.Fatalf("empty transform validation = %v, want transform_invalid", err)
 	}
 
 	if in, out := transformAdapterExpectedMedia("custom-filter"); in != "" || out != "" {
@@ -125,13 +129,13 @@ func TestTransformHelperErrorContracts(t *testing.T) {
 	if err := recipeTransformAdapterError("build stream", stream, filter.FactoryResample, cause); !errors.Is(err, cause) {
 		t.Fatalf("non-not-found error = %v, want original cause", err)
 	}
-	err := recipeTransformAdapterError("build stream", stream, filter.FactoryResample, filter.ErrNotFound)
-	var buildErr *BuildError
-	if !errors.As(err, &buildErr) ||
-		buildErr.Code != transformAdapterMissingCode ||
-		buildErr.Node != "voice" ||
-		!strings.Contains(buildErr.Reason, "no resample filter adapter is registered") ||
-		!strings.Contains(strings.Join(buildErr.FixLines(), "\n"), ".Resample") {
+	err = recipeTransformAdapterError("build stream", stream, filter.FactoryResample, filter.ErrNotFound)
+	var missingErr *BuildError
+	if !errors.As(err, &missingErr) ||
+		missingErr.Code != transformAdapterMissingCode ||
+		missingErr.Node != "voice" ||
+		!strings.Contains(missingErr.Reason, "no resample filter adapter is registered") ||
+		!strings.Contains(strings.Join(missingErr.FixLines(), "\n"), ".Resample") {
 		t.Fatalf("missing adapter error = %#v", err)
 	}
 

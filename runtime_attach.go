@@ -1718,16 +1718,6 @@ func runtimeBranchTransform(branchName string, stream av.Stream, spec transformS
 		suffix = "-" + strconv.Itoa(index+1)
 	}
 	switch {
-	case spec.resize != nil && spec.resample != nil:
-		return mediaTransform{}, &BuildError{
-			Family:    errcode.FamilyForCode(transformInvalidCode),
-			Code:      transformInvalidCode,
-			Operation: "attach runtime branch",
-			Node:      base,
-			Reason:    "one runtime branch transform cannot be both resize and resample",
-			fixes:     buildErrorFixes([]string{"declare two separate steps instead: .Resize(width, height).Resample(rate, channels)"}),
-			cause:     errUnsupportedBuild,
-		}
 	case spec.resize != nil:
 		if stream.Type != av.MediaVideo && stream.Codec.Type != av.MediaVideo {
 			return mediaTransform{}, runtimeBranchTransformMediaError(base, "resize", av.MediaVideo, runtimeBranchStreamMedia(stream))
@@ -1749,18 +1739,7 @@ func runtimeBranchTransform(branchName string, stream av.Stream, spec transformS
 			audio:   &resample,
 		}, nil
 	default:
-		return mediaTransform{}, &BuildError{
-			Family:    errcode.FamilyForCode(transformInvalidCode),
-			Code:      transformInvalidCode,
-			Operation: "attach runtime branch",
-			Node:      base,
-			Reason:    "empty runtime branch transform",
-			fixes: buildErrorFixes([]string{
-				"call .Resize(width, height) for video frame taps",
-				"call .Resample(sampleRate, channels) for audio frame taps",
-			}),
-			cause: errUnsupportedBuild,
-		}
+		return mediaTransform{}, emptyTransformSpecError("attach runtime branch", base)
 	}
 }
 
