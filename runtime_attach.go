@@ -64,6 +64,13 @@ type runtimeSharedMuxDestination struct {
 	buffer   pipeline.BufferPolicy
 }
 
+type runtimeAttachInput struct {
+	specs             []BranchSpec
+	destinations      [][]attachDestination
+	groupDestinations runtimeBranchGroupDestinations
+	name              string
+}
+
 type runtimeGraphPatch struct {
 	nodes             []pipeline.NodeRef
 	routes            []pipeline.Route
@@ -167,27 +174,47 @@ func (t *task) Attach(ctx context.Context, specs ...BranchSpec) (Attachment, err
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
+	input, err := runtimeAttachInputFromBranchSpecs(specs)
+	if err != nil {
+		return nil, err
+	}
+	return t.attachRuntimeBranches(ctx, input)
+}
+
+func runtimeAttachInputFromBranchSpecs(specs []BranchSpec) (runtimeAttachInput, error) {
+	specs = cloneBranchSpecs(specs)
 	if len(specs) == 0 {
-		return nil, runtimeBranchInvalidError("no runtime branches to attach", "pass one or more goav.Branch(name)...To(destination) values")
+		return runtimeAttachInput{}, runtimeBranchInvalidError("no runtime branches to attach", "pass one or more goav.Branch(name)...To(destination) values")
 	}
 	destinations := make([][]attachDestination, len(specs))
 	for i := range specs {
 		branchDestinations, err := attachBranchDestinations(specs[i])
 		if err != nil {
-			return nil, err
+			return runtimeAttachInput{}, err
 		}
 		if err := validateAttachBranchSpec(specs[i], branchDestinations); err != nil {
-			return nil, err
+			return runtimeAttachInput{}, err
 		}
 		destinations[i] = branchDestinations
 	}
 	groupDestinations, err := validateRuntimeBranchGroupDestinations(specs, destinations)
 	if err != nil {
-		return nil, err
+		return runtimeAttachInput{}, err
 	}
+	return runtimeAttachInput{
+		specs:             specs,
+		destinations:      destinations,
+		groupDestinations: groupDestinations,
+		name:              runtimeAttachmentName(specs),
+	}, nil
+}
+
+func (t *task) attachRuntimeBranches(ctx context.Context, input runtimeAttachInput) (Attachment, error) {
+	specs := input.specs
+	destinations := input.destinations
 	t.attachMu.Lock()
 	defer t.attachMu.Unlock()
-	group := newRuntimeAttachGroup(groupDestinations)
+	group := newRuntimeAttachGroup(input.groupDestinations)
 	ap := newAttachPlan()
 	var patch runtimeGraphPatch
 	rollback := func(err error) (Attachment, error) {
@@ -226,7 +253,7 @@ func (t *task) Attach(ctx context.Context, specs ...BranchSpec) (Attachment, err
 	if err := group.prepareSharedMuxStages(ctx, t.runtime); err != nil {
 		return rollback(err)
 	}
-	name := runtimeAttachmentName(specs)
+	name := input.name
 	ap.work.Name = firstNonEmpty(name, "runtime-attach")
 	ap.work.Rollback = workPatchRollbackFromBranches(ap.work.Operations, ap.work.Destinations)
 	patch.setWork(ap.work)
