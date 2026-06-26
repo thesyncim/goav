@@ -166,8 +166,8 @@ func TestErrorCodeCatalogPinned(t *testing.T) {
 			}
 		}
 	}
-	if count > 74 {
-		t.Errorf("errcode/errcode.go declares %d Code constants; keep shrinking the public refusal catalog from the current ceiling of 74", count)
+	if count > 50 {
+		t.Errorf("errcode/errcode.go declares %d Code constants; keep shrinking the public refusal catalog from the current ceiling of 50", count)
 	}
 }
 

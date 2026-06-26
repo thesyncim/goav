@@ -623,7 +623,7 @@ func adapterRequirementFromBuildError(err *BuildError) (plan.AdapterRequirement,
 			RequiredBy: requiredBy,
 			Status:     status,
 		}, formatID != ""
-	case errcode.DecodeAdapterMissing, errcode.DecodeAdapterUnavailable, errcode.DecodeAdapterIncompatible:
+	case decodeAdapterMissingCode, decodeAdapterUnavailableCode, decodeAdapterIncompatibleCode:
 		codecID := av.CodecID(details["codec"])
 		requirement := plan.AdapterRequirement{
 			Kind:       "decoder",
@@ -634,7 +634,7 @@ func adapterRequirementFromBuildError(err *BuildError) (plan.AdapterRequirement,
 		}
 		applyCodecDetailsFromBuildError(&requirement, details)
 		return requirement, codecID != ""
-	case errcode.EncodeAdapterMissing, errcode.EncodeAdapterUnavailable, errcode.EncodeAdapterIncompatible:
+	case encodeAdapterMissingCode, encodeAdapterUnavailableCode, encodeAdapterIncompatibleCode:
 		codecID := av.CodecID(details["codec"])
 		requirement := plan.AdapterRequirement{
 			Kind:       "encoder",
@@ -645,7 +645,7 @@ func adapterRequirementFromBuildError(err *BuildError) (plan.AdapterRequirement,
 		}
 		applyCodecDetailsFromBuildError(&requirement, details)
 		return requirement, codecID != ""
-	case errcode.TransformAdapterMissing, errcode.TransformAdapterIncompatible:
+	case transformAdapterMissingCode, transformAdapterIncompatibleCode:
 		name := details["transform"]
 		requirement := filterAdapterRequirement(nil, name, requiredBy)
 		requirement.Status = status

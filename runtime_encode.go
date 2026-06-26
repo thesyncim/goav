@@ -155,7 +155,7 @@ func prepareEncodeConfig(input av.Stream, request encodeRequest, realtime bool) 
 
 func encodeStreamMismatchError(request encodeRequest, stream av.Stream) error {
 	return streamRequestMismatchError(
-		errcode.EncodeStreamMismatch,
+		encodeStreamMismatchCode,
 		"configure encode",
 		encodeNodeName(request),
 		request.selector,
@@ -170,8 +170,8 @@ func encodeStreamMismatchError(request encodeRequest, stream av.Stream) error {
 
 func encodeTargetMissingError(request encodeRequest, stream av.Stream) error {
 	return &BuildError{
-		Family:    errcode.FamilyForCode(errcode.EncodeDestinationMissing),
-		Code:      errcode.EncodeDestinationMissing,
+		Family:    errcode.FamilyForCode(encodeDestinationMissingCode),
+		Code:      encodeDestinationMissingCode,
 		Operation: "configure encode",
 		Node:      encodeNodeName(request),
 		Reason:    "no target codec was provided",

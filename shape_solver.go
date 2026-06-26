@@ -484,8 +484,8 @@ func shapeSolverAdapterError(operation string, node string, index int, step oper
 	}
 	if selection.cause == errShapeAdapterAmbiguous {
 		return &BuildError{
-			Family:    errcode.FamilyForCode(errcode.ShapeAdapterAmbiguous),
-			Code:      errcode.ShapeAdapterAmbiguous,
+			Family:    errcode.FamilyForCode(shapeAdapterAmbiguousCode),
+			Code:      shapeAdapterAmbiguousCode,
 			Operation: operation,
 			Node:      node,
 			Reason: fmt.Sprintf("several registered filters can perform the %s conversion before %s: %s",
@@ -500,8 +500,8 @@ func shapeSolverAdapterError(operation string, node string, index int, step oper
 		}
 	}
 	return &BuildError{
-		Family:    errcode.FamilyForCode(errcode.ShapeAdapterMissing),
-		Code:      errcode.ShapeAdapterMissing,
+		Family:    errcode.FamilyForCode(shapeAdapterMissingCode),
+		Code:      shapeAdapterMissingCode,
 		Operation: operation,
 		Node:      node,
 		Reason: fmt.Sprintf("no registered filter can perform the %s conversion before %s",
@@ -521,8 +521,8 @@ func shapeSolverAdapterError(operation string, node string, index int, step oper
 func shapeConversionRefusedError(operation string, node string, index int, step operationSpec, allowed shape.Policy, conversion shapeConversionPlan, actual shape.Spec, expected shape.Spec) error {
 	missing := allowed.Missing(conversion.needed)
 	return &BuildError{
-		Family:    errcode.FamilyForCode(errcode.ShapeConversionRefused),
-		Code:      errcode.ShapeConversionRefused,
+		Family:    errcode.FamilyForCode(shapeConversionRefusedCode),
+		Code:      shapeConversionRefusedCode,
 		Operation: operation,
 		Node:      node,
 		Reason: fmt.Sprintf("%s needs %s but the chain policy (%s) does not allow it",

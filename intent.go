@@ -533,8 +533,8 @@ func mixedStreamOutputError(operation string, stream streamIntent) error {
 
 func streamEncodeMissingError(operation string, stream streamIntent) error {
 	return &BuildError{
-		Family:    errcode.FamilyForCode(errcode.EncodeMissing),
-		Code:      errcode.EncodeMissing,
+		Family:    errcode.FamilyForCode(encodeMissingCode),
+		Code:      encodeMissingCode,
 		Operation: operation,
 		Node:      jobStreamIntentName(stream),
 		Reason:    "decoded frames cannot be written to a muxed output without an encoder",

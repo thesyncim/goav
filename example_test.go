@@ -442,8 +442,8 @@ func ExampleTask_watch() {
 	// Output: end of stream: true
 }
 
-// ExampleBuildError matches a structured refusal: every failed build carries a
-// typed code from the codes catalog, the failing operation, and concrete
+// ExampleBuildError matches a structured refusal: every failed build carries
+// a stable family, a typed detailed code, the failing operation, and concrete
 // fixes, and wraps a sentinel for errors.Is.
 func ExampleBuildError() {
 	// Decoded frames cannot feed a muxed file without an encoder: the build
@@ -457,13 +457,13 @@ func ExampleBuildError() {
 	var buildErr *goav.BuildError
 	if errors.As(err, &buildErr) {
 		fmt.Println("code:", buildErr.Code)
-		fmt.Println("catalog match:", buildErr.Code == errcode.EncodeMissing)
+		fmt.Println("family match:", buildErr.Family == errcode.FamilyEncode)
 		fmt.Println("has fixes:", len(buildErr.FixLines()) > 0)
 	}
 	fmt.Println("build refusal:", errors.Is(err, goav.ErrUnsupportedBuild))
 	// Output:
 	// code: encode_missing
-	// catalog match: true
+	// family match: true
 	// has fixes: true
 	// build refusal: true
 }

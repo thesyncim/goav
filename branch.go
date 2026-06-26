@@ -792,8 +792,8 @@ func branchCopyParentOperationError(node string) error {
 
 func branchEncodeParentOperationError(node string, encode codec.CodecSpec) error {
 	return &BuildError{
-		Family:    errcode.FamilyForCode(errcode.EncodeBranchSourceInvalid),
-		Code:      errcode.EncodeBranchSourceInvalid,
+		Family:    errcode.FamilyForCode(encodeBranchSourceInvalidCode),
+		Code:      encodeBranchSourceInvalidCode,
 		Operation: "build branches",
 		Node:      node,
 		Reason:    "stream encoders are terminal for planned branches",

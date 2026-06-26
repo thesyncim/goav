@@ -69,8 +69,7 @@ message path simple.
 - **Errors**: build-time refusals reach users as `*goav.BuildError` with a
   `errcode.Code`, typed fields/fixes, and rendered details/suggestions;
   preflight checks descriptors and registries before anything opens
-  (`errcode.DecodeAdapterMissing`, `EncodeAdapterIncompatible`,
-  `TransformAdapterMissing`, `InputDemuxerMissing`, `OutputMuxerMissing`, ...).
+  (`FamilyCodec`, `FamilyTransform`, `FamilyInput`, `FamilyDestination`, ...).
   Return typed sentinels for unsupported config at open
   (`codec.ErrUnsupportedFormat`, ...). Any non-nil error from a hot-path
   method is fatal to the task; flow control is the graph's job, not the
@@ -212,7 +211,8 @@ per stage (cold) with `Config.Stream` plus exactly one of
 `Open`). Then `FilterInto` per frame, `HandleEvent` before each forwarded
 event, `FlushInto` on `av.EventEndOfStream`, `Close` once. Build-time
 validation checks `Descriptor.Input/Output` media and the capability lists
-(empty = unconstrained) -> `errcode.TransformAdapterIncompatible`. Results:
+(empty = unconstrained) -> `FamilyTransform` with
+`Code("transform_adapter_incompatible")`. Results:
 caller-owned `filter.Result`; sentinels `filter.ErrResultFull`,
 `filter.ErrOutputBufferTooSmall`, `filter.ErrUnsupportedFormat`.
 

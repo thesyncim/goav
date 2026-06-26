@@ -120,10 +120,10 @@ func TestExplainAdapterStatusContracts(t *testing.T) {
 		code errcode.Code
 		want string
 	}{
-		{errcode.TransformAdapterIncompatible, "incompatible"},
-		{errcode.EncodeAdapterUnavailable, "unavailable"},
+		{transformAdapterIncompatibleCode, "incompatible"},
+		{encodeAdapterUnavailableCode, "unavailable"},
 		{errcode.InputFormatUnknown, "unknown"},
-		{errcode.EncodeAdapterMissing, "missing"},
+		{encodeAdapterMissingCode, "missing"},
 	}
 	for _, tt := range tests {
 		if got := adapterRequirementStatus(tt.code); got != tt.want {

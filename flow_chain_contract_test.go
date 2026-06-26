@@ -302,7 +302,7 @@ func TestFlowBuilderRejectsInvalidCompositionContracts(t *testing.T) {
 			flow: Flow("copied").Audio().
 				Copy().
 				Shape(shape.Frame(av.MediaAudio)),
-			code: errcode.OperationShapeMismatch,
+			code: operationShapeMismatchCode,
 		},
 		{
 			name: "flow after encode",
@@ -370,7 +370,7 @@ func TestFlowBuilderRejectsInvalidCompositionContracts(t *testing.T) {
 func TestFlowDuplicateEncodeAndDecodeErrors(t *testing.T) {
 	dupEncode := Flow("voice").Audio().Encode(codec.Opus()).Encode(codec.Opus())
 	_, err := chainSpecFrom(dupEncode)
-	assertBuildErrorCode(t, err, errcode.EncodeDuplicate)
+	assertBuildErrorCode(t, err, encodeDuplicateCode)
 
 	dupDecode := Flow("preview").Video().Decode().Decode()
 	_, err = chainSpecFrom(dupDecode)

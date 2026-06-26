@@ -431,7 +431,7 @@ func TestBuildAndAttachReturnSameErrorForSameInvalidBranch(t *testing.T) {
 				To(goavtest.NewCollector().Sink()),
 		).
 		Describe()
-	planned := requireBuildError(t, err, errcode.OperationShapeMismatch, "build branch composition", "bad",
+	planned := requireBuildError(t, err, errcode.Code("operation_shape_mismatch"), "build branch composition", "bad",
 		"use .Video().Resize(...)",
 	)
 
@@ -452,7 +452,7 @@ func TestBuildAndAttachReturnSameErrorForSameInvalidBranch(t *testing.T) {
 			Resize(640, 360).
 			To(goavtest.NewCollector().Sink()),
 	)
-	attached := requireBuildError(t, err, errcode.OperationShapeMismatch, "attach runtime branch", "bad",
+	attached := requireBuildError(t, err, errcode.Code("operation_shape_mismatch"), "attach runtime branch", "bad",
 		"use .Video().Resize(...)",
 	)
 	for _, buildErr := range []*goav.BuildError{planned, attached} {
@@ -472,7 +472,7 @@ func TestErrorAcceptanceCopyAfterDecode(t *testing.T) {
 		To(goav.Write("out.ogg", io.Discard)).
 		UseRuntime(goavtest.Runtime()).
 		Build(context.Background())
-	buildErr := requireBuildError(t, err, errcode.OperationShapeMismatch, "build job", "audio",
+	buildErr := requireBuildError(t, err, errcode.Code("operation_shape_mismatch"), "build job", "audio",
 		"copy only consumes packet-domain media",
 		"move .Copy() before decode",
 		"use .Encode(codec...) instead of .Copy()",
@@ -491,7 +491,7 @@ func TestErrorAcceptanceFramesIntoContainerWithoutEncode(t *testing.T) {
 		To(goav.Write("out.ogg", io.Discard)).
 		UseRuntime(goavtest.Runtime()).
 		Build(context.Background())
-	requireBuildError(t, err, errcode.EncodeMissing, "build job", "audio",
+	requireBuildError(t, err, errcode.Code("encode_missing"), "build job", "audio",
 		".Encode(codec.Opus(...))",
 		"goav.Sink(...)",
 	)
@@ -506,7 +506,7 @@ func TestErrorAcceptanceTransformAfterCopy(t *testing.T) {
 		To(goav.Write("out.ivf", io.Discard)).
 		UseRuntime(goavtest.Runtime()).
 		Build(context.Background())
-	buildErr := requireBuildError(t, err, errcode.OperationShapeMismatch, "build stream", "video",
+	buildErr := requireBuildError(t, err, errcode.Code("operation_shape_mismatch"), "build stream", "video",
 		"call .Decode() before .Resize(...)",
 	)
 	if !strings.Contains(buildErr.Reason, ".Copy() keeps the stream packet-encoded") {
@@ -624,7 +624,7 @@ func TestErrorAcceptanceEncoderAdapterMissing(t *testing.T) {
 		To(goav.Write("out.ogg", io.Discard)).
 		UseRuntime(goavtest.Runtime()).
 		Build(context.Background())
-	buildErr := requireBuildError(t, err, errcode.EncodeAdapterMissing, "build job", "audio",
+	buildErr := requireBuildError(t, err, errcode.Code("encode_adapter_missing"), "build job", "audio",
 		"goavruntime.WithEncoder(...)",
 	)
 	if !strings.Contains(buildErr.Reason, "weird") || !detailsContain(buildErr.DetailLines(), "codec=weird") {
@@ -643,7 +643,7 @@ func TestErrorAcceptanceShapeConversionRefused(t *testing.T) {
 		To(goavtest.NewCollector().Sink()).
 		UseRuntime(goavtest.Runtime()).
 		Build(context.Background())
-	requireBuildError(t, err, errcode.ShapeConversionRefused, "build job", "audio",
+	requireBuildError(t, err, errcode.Code("shape_conversion_refused"), "build job", "audio",
 		"add .Auto(shape.AllowResample())",
 		"insert .Resample(48000, 2) explicitly",
 	)

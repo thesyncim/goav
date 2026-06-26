@@ -151,10 +151,10 @@ func liveDecodeStream(inputs []inputIntent, stream streamIntent) (av.Stream, boo
 }
 
 func recipeDecodeAdapterError(operation string, stream streamIntent, codecID av.CodecID, registry *codec.SimpleRegistry, cause error) error {
-	code := errcode.DecodeAdapterMissing
+	code := decodeAdapterMissingCode
 	reason := "no decoder adapter is registered for " + string(codecID)
 	if errors.Is(cause, codec.ErrUnavailable) {
-		code = errcode.DecodeAdapterUnavailable
+		code = decodeAdapterUnavailableCode
 		reason = string(codecID) + " decoder adapter is descriptor-only in this build"
 	}
 	details := []string{"codec=" + string(codecID)}
@@ -227,8 +227,8 @@ func decodeAdapterIncompatibleError(operation string, stream streamIntent, reque
 		details = append(details, "supported_pixel_formats="+strings.Join(pixelFormats, ","))
 	}
 	return &BuildError{
-		Family:    errcode.FamilyForCode(errcode.DecodeAdapterIncompatible),
-		Code:      errcode.DecodeAdapterIncompatible,
+		Family:    errcode.FamilyForCode(decodeAdapterIncompatibleCode),
+		Code:      decodeAdapterIncompatibleCode,
 		Operation: operation,
 		Node:      jobStreamIntentName(stream),
 		Reason:    string(request.Codec) + " decoder adapter does not support the requested " + label,
@@ -360,8 +360,8 @@ func encodeAdapterIncompatibleError(operation string, stream streamIntent, reque
 		details = append(details, "supported_pixel_formats="+strings.Join(pixelFormats, ","))
 	}
 	return &BuildError{
-		Family:    errcode.FamilyForCode(errcode.EncodeAdapterIncompatible),
-		Code:      errcode.EncodeAdapterIncompatible,
+		Family:    errcode.FamilyForCode(encodeAdapterIncompatibleCode),
+		Code:      encodeAdapterIncompatibleCode,
 		Operation: operation,
 		Node:      jobStreamIntentName(stream),
 		Reason:    string(request.Codec) + " encoder adapter does not support the requested " + label,
@@ -481,10 +481,10 @@ func mergeStringList(existing []string, next []string) []string {
 
 func recipeEncodeAdapterError(operation string, stream streamIntent, registry *codec.SimpleRegistry, cause error) error {
 	codecID := chainEncodeSpec(stream.Operations).ID
-	code := errcode.EncodeAdapterMissing
+	code := encodeAdapterMissingCode
 	reason := "no encoder adapter is registered for " + string(codecID)
 	if errors.Is(cause, codec.ErrUnavailable) {
-		code = errcode.EncodeAdapterUnavailable
+		code = encodeAdapterUnavailableCode
 		reason = string(codecID) + " encoder adapter is descriptor-only in this build"
 	}
 	details := []string{"codec=" + string(codecID)}

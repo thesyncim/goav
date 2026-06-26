@@ -85,20 +85,21 @@ func FamilyForCode(code Code) Family {
 	case Code("flow_invalid"), Code("flow_media_mismatch"), Code("flow_decode_duplicate"),
 		Code("flow_decode_order_invalid"), Code("flow_decode_domain_mismatch"), Code("flow_copy_domain_mismatch"):
 		return FamilyFlow
-	case TransformInvalid, TransformMediaMismatch, TransformAdapterMissing,
-		TransformAdapterIncompatible, TranscodeResizeInvalid,
-		OperationShapeMismatch:
+	case Code("transform_invalid"), Code("transform_media_mismatch"), Code("transform_adapter_missing"),
+		Code("transform_adapter_incompatible"), Code("transcode_resize_invalid"),
+		Code("operation_shape_mismatch"):
 		return FamilyTransform
-	case ShapeRequirementUnmet, ShapeConversionRefused, ShapeAdapterMissing,
-		ShapeAdapterAmbiguous:
+	case Code("shape_requirement_unmet"), Code("shape_conversion_refused"),
+		Code("shape_adapter_missing"), Code("shape_adapter_ambiguous"):
 		return FamilyShape
-	case DecodeAdapterMissing, DecodeAdapterUnavailable, DecodeAdapterIncompatible,
-		EncodeAdapterMissing, EncodeAdapterUnavailable, EncodeAdapterIncompatible,
-		CodecChangePolicyUnsupported:
+	case Code("decode_adapter_missing"), Code("decode_adapter_unavailable"),
+		Code("decode_adapter_incompatible"), Code("encode_adapter_missing"),
+		Code("encode_adapter_unavailable"), Code("encode_adapter_incompatible"),
+		Code("codec_change_policy_unsupported"):
 		return FamilyCodec
-	case EncodeMissing, EncodeDuplicate, EncodeParameterInvalid,
-		EncodeAutoUnresolved, EncodeStreamMismatch,
-		EncodeDestinationMissing, EncodeBranchSourceInvalid:
+	case Code("encode_missing"), Code("encode_duplicate"), Code("encode_parameter_invalid"),
+		Code("encode_auto_unresolved"), Code("encode_stream_mismatch"),
+		Code("encode_destination_missing"), Code("encode_branch_source_invalid"):
 		return FamilyEncode
 	case Code("output_invalid"), Code("output_missing"), Code("output_duplicate"),
 		Code("output_scope_mixed"), Code("output_kind_mixed"), Code("output_writer_missing"),
@@ -230,90 +231,6 @@ const (
 	StreamStepAfterEncode Code = "stream_step_after_encode"
 	// StageMissing fires when a custom stream stage is nil.
 	StageMissing Code = "stage_missing"
-)
-
-// Transform and shape errcode.
-const (
-	// TransformInvalid fires when a transform is empty, conflicting, or
-	// malformed (one transform declaring both resize and resample).
-	TransformInvalid Code = "transform_invalid"
-	// TransformMediaMismatch fires when a transform is applied to the
-	// wrong media kind (resize on audio, resample on video).
-	TransformMediaMismatch Code = "transform_media_mismatch"
-	// TransformAdapterMissing fires when no filter adapter is registered
-	// for the requested transform.
-	TransformAdapterMissing Code = "transform_adapter_missing"
-	// TransformAdapterIncompatible fires when the registered filter
-	// adapter does not support the requested configuration.
-	TransformAdapterIncompatible Code = "transform_adapter_incompatible"
-	// TranscodeResizeInvalid fires when a transcode resize has invalid
-	// dimensions.
-	TranscodeResizeInvalid Code = "transcode_resize_invalid"
-	// OperationShapeMismatch fires when an operation cannot consume the
-	// media shape the chain produces at that point.
-	OperationShapeMismatch Code = "operation_shape_mismatch"
-	// ShapeRequirementUnmet fires when a .Require(...) assertion is not
-	// satisfied and no active .Auto(...) policy covers the conversion.
-	ShapeRequirementUnmet Code = "shape_requirement_unmet"
-	// ShapeConversionRefused fires when a needed conversion exists but the
-	// chain's .Auto(...) policy does not allow it.
-	ShapeConversionRefused Code = "shape_conversion_refused"
-	// ShapeAdapterMissing fires when no registered filter can perform a
-	// needed conversion.
-	ShapeAdapterMissing Code = "shape_adapter_missing"
-	// ShapeAdapterAmbiguous fires when several registered filters could
-	// perform a needed conversion and no .Prefer(...) resolves the choice.
-	ShapeAdapterAmbiguous Code = "shape_adapter_ambiguous"
-)
-
-// Codec adapter codes (decode/encode availability and capability).
-const (
-	// DecodeAdapterMissing fires when no decoder adapter is registered for
-	// the stream's codec.
-	DecodeAdapterMissing Code = "decode_adapter_missing"
-	// DecodeAdapterUnavailable fires when the decoder adapter is
-	// descriptor-only in this build (missing build tag).
-	DecodeAdapterUnavailable Code = "decode_adapter_unavailable"
-	// DecodeAdapterIncompatible fires when the decoder adapter does not
-	// support the requested media or frame format.
-	DecodeAdapterIncompatible Code = "decode_adapter_incompatible"
-	// EncodeAdapterMissing fires when no encoder adapter is registered for
-	// the requested codec.
-	EncodeAdapterMissing Code = "encode_adapter_missing"
-	// EncodeAdapterUnavailable fires when the encoder adapter is
-	// descriptor-only in this build (missing build tag).
-	EncodeAdapterUnavailable Code = "encode_adapter_unavailable"
-	// EncodeAdapterIncompatible fires when the encoder adapter does not
-	// support the requested media or frame format.
-	EncodeAdapterIncompatible Code = "encode_adapter_incompatible"
-	// CodecChangePolicyUnsupported fires when a custom codec-change policy
-	// is requested; only the default live receive behavior is supported today.
-	CodecChangePolicyUnsupported Code = "codec_change_policy_unsupported"
-)
-
-// Encode errcode.
-const (
-	// EncodeMissing fires when decoded frames are routed to a muxed
-	// destination without an encoder.
-	EncodeMissing Code = "encode_missing"
-	// EncodeDuplicate fires when a chain declares a second terminal
-	// encoder.
-	EncodeDuplicate Code = "encode_duplicate"
-	// EncodeParameterInvalid fires when an encode setting is out of range
-	// (negative bitrate, non-positive FPS).
-	EncodeParameterInvalid Code = "encode_parameter_invalid"
-	// EncodeAutoUnresolved fires when automatic codec selection is
-	// requested where it is not implemented.
-	EncodeAutoUnresolved Code = "encode_auto_unresolved"
-	// EncodeStreamMismatch fires when the encoder's stream selector does
-	// not match the stream the chain decoded.
-	EncodeStreamMismatch Code = "encode_stream_mismatch"
-	// EncodeDestinationMissing fires when an encode stage is built with no
-	// target codec.
-	EncodeDestinationMissing Code = "encode_destination_missing"
-	// EncodeBranchSourceInvalid fires when a planned branch anchors after
-	// a terminal stream encoder.
-	EncodeBranchSourceInvalid Code = "encode_branch_source_invalid"
 )
 
 // Tap errcode.

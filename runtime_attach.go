@@ -1671,8 +1671,8 @@ func runtimeBranchTransform(branchName string, stream av.Stream, spec transformS
 	switch {
 	case spec.resize != nil && spec.resample != nil:
 		return mediaTransform{}, &BuildError{
-			Family:    errcode.FamilyForCode(errcode.TransformInvalid),
-			Code:      errcode.TransformInvalid,
+			Family:    errcode.FamilyForCode(transformInvalidCode),
+			Code:      transformInvalidCode,
 			Operation: "attach runtime branch",
 			Node:      base,
 			Reason:    "one runtime branch transform cannot be both resize and resample",
@@ -1701,8 +1701,8 @@ func runtimeBranchTransform(branchName string, stream av.Stream, spec transformS
 		}, nil
 	default:
 		return mediaTransform{}, &BuildError{
-			Family:    errcode.FamilyForCode(errcode.TransformInvalid),
-			Code:      errcode.TransformInvalid,
+			Family:    errcode.FamilyForCode(transformInvalidCode),
+			Code:      transformInvalidCode,
 			Operation: "attach runtime branch",
 			Node:      base,
 			Reason:    "empty runtime branch transform",
@@ -1991,8 +1991,8 @@ func runtimeBranchTapDuplicateError(name string) error {
 
 func runtimeBranchTransformMediaError(branch string, transform string, expected av.MediaType, actual av.MediaType) error {
 	return &BuildError{
-		Family:    errcode.FamilyForCode(errcode.TransformMediaMismatch),
-		Code:      errcode.TransformMediaMismatch,
+		Family:    errcode.FamilyForCode(transformMediaMismatchCode),
+		Code:      transformMediaMismatchCode,
 		Operation: "attach runtime branch",
 		Node:      branch,
 		Reason:    transform + " applies to " + string(expected) + " frame taps",

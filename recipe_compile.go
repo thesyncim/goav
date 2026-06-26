@@ -804,8 +804,8 @@ func validateJobStreamTransformIntentShape(operation string, stream streamIntent
 		switch {
 		case transform.resize != nil && transform.resample != nil:
 			return &BuildError{
-				Family:    errcode.FamilyForCode(errcode.TransformInvalid),
-				Code:      errcode.TransformInvalid,
+				Family:    errcode.FamilyForCode(transformInvalidCode),
+				Code:      transformInvalidCode,
 				Operation: operation,
 				Node:      node,
 				Reason:    "one stream transform cannot be both resize and resample",
@@ -822,8 +822,8 @@ func validateJobStreamTransformIntentShape(operation string, stream streamIntent
 			}
 		default:
 			return &BuildError{
-				Family:    errcode.FamilyForCode(errcode.TransformInvalid),
-				Code:      errcode.TransformInvalid,
+				Family:    errcode.FamilyForCode(transformInvalidCode),
+				Code:      transformInvalidCode,
 				Operation: operation,
 				Node:      node,
 				Reason:    "empty stream transform",
@@ -1510,8 +1510,8 @@ func shapeRequirementUnmetError(operation string, node string, index int, step o
 		required = *step.Require
 	}
 	return &BuildError{
-		Family:    errcode.FamilyForCode(errcode.ShapeRequirementUnmet),
-		Code:      errcode.ShapeRequirementUnmet,
+		Family:    errcode.FamilyForCode(shapeRequirementUnmetCode),
+		Code:      shapeRequirementUnmetCode,
 		Operation: operation,
 		Node:      node,
 		Reason: fmt.Sprintf(".Require(...) is not satisfied: the stream is %s, required %s",
@@ -1542,8 +1542,8 @@ func operationSpecOutputShape(input shape.Spec, operation operationSpec) shape.S
 func operationShapeMismatchError(operation string, node string, index int, step operationSpec, expected shape.Set, actual shape.Spec) error {
 	component := firstNonEmpty(step.Component, operationSpecComponent(step), string(step.Kind), "operation")
 	return &BuildError{
-		Family:    errcode.FamilyForCode(errcode.OperationShapeMismatch),
-		Code:      errcode.OperationShapeMismatch,
+		Family:    errcode.FamilyForCode(operationShapeMismatchCode),
+		Code:      operationShapeMismatchCode,
 		Operation: operation,
 		Node:      node,
 		Reason:    component + " cannot consume the current media shape",

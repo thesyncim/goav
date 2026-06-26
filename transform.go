@@ -159,8 +159,8 @@ func transformAdapterExpectedMedia(name string) (av.MediaType, av.MediaType) {
 
 func transformAdapterIncompatibleError(operation string, stream streamIntent, name string, desc filter.Descriptor, expectedInput av.MediaType, expectedOutput av.MediaType) error {
 	return &BuildError{
-		Family:    errcode.FamilyForCode(errcode.TransformAdapterIncompatible),
-		Code:      errcode.TransformAdapterIncompatible,
+		Family:    errcode.FamilyForCode(transformAdapterIncompatibleCode),
+		Code:      transformAdapterIncompatibleCode,
 		Operation: operation,
 		Node:      jobStreamIntentName(stream),
 		Reason:    name + " filter adapter declares incompatible media",
@@ -182,8 +182,8 @@ func transformAdapterIncompatibleError(operation string, stream streamIntent, na
 
 func transformAdapterCapabilityError(operation string, stream streamIntent, name string, field string, requested string, supported []string) error {
 	return &BuildError{
-		Family:    errcode.FamilyForCode(errcode.TransformAdapterIncompatible),
-		Code:      errcode.TransformAdapterIncompatible,
+		Family:    errcode.FamilyForCode(transformAdapterIncompatibleCode),
+		Code:      transformAdapterIncompatibleCode,
 		Operation: operation,
 		Node:      jobStreamIntentName(stream),
 		Reason:    name + " filter adapter does not support the requested " + strings.ReplaceAll(field, "_", " "),
@@ -207,8 +207,8 @@ func recipeTransformAdapterError(operation string, stream streamIntent, name str
 		return cause
 	}
 	return &BuildError{
-		Family:    errcode.FamilyForCode(errcode.TransformAdapterMissing),
-		Code:      errcode.TransformAdapterMissing,
+		Family:    errcode.FamilyForCode(transformAdapterMissingCode),
+		Code:      transformAdapterMissingCode,
 		Operation: operation,
 		Node:      jobStreamIntentName(stream),
 		Reason:    "no " + name + " filter adapter is registered",
@@ -247,8 +247,8 @@ func streamTransform(streamName string, selector av.StreamSelector, spec transfo
 	switch {
 	case spec.resize != nil && spec.resample != nil:
 		return mediaTransform{}, &BuildError{
-			Family:    errcode.FamilyForCode(errcode.TransformInvalid),
-			Code:      errcode.TransformInvalid,
+			Family:    errcode.FamilyForCode(transformInvalidCode),
+			Code:      transformInvalidCode,
 			Operation: "build stream",
 			Node:      base,
 			Reason:    "one stream transform cannot be both resize and resample",
@@ -276,8 +276,8 @@ func streamTransform(streamName string, selector av.StreamSelector, spec transfo
 		}, nil
 	default:
 		return mediaTransform{}, &BuildError{
-			Family:    errcode.FamilyForCode(errcode.TransformInvalid),
-			Code:      errcode.TransformInvalid,
+			Family:    errcode.FamilyForCode(transformInvalidCode),
+			Code:      transformInvalidCode,
 			Operation: "build stream",
 			Node:      base,
 			Reason:    "empty stream transform",
@@ -293,8 +293,8 @@ func validateTransformSpec(operation string, node string, spec transformSpec) er
 	switch {
 	case spec.resize != nil && spec.resample != nil:
 		return &BuildError{
-			Family:    errcode.FamilyForCode(errcode.TransformInvalid),
-			Code:      errcode.TransformInvalid,
+			Family:    errcode.FamilyForCode(transformInvalidCode),
+			Code:      transformInvalidCode,
 			Operation: operation,
 			Node:      node,
 			Reason:    "one transform cannot be both resize and resample",
@@ -306,8 +306,8 @@ func validateTransformSpec(operation string, node string, spec transformSpec) er
 			return nil
 		}
 		return &BuildError{
-			Family:    errcode.FamilyForCode(errcode.TransformInvalid),
-			Code:      errcode.TransformInvalid,
+			Family:    errcode.FamilyForCode(transformInvalidCode),
+			Code:      transformInvalidCode,
 			Operation: operation,
 			Node:      node,
 			Reason:    "resize requires positive width and height",
@@ -326,8 +326,8 @@ func validateTransformSpec(operation string, node string, spec transformSpec) er
 			return nil
 		}
 		return &BuildError{
-			Family:    errcode.FamilyForCode(errcode.TransformInvalid),
-			Code:      errcode.TransformInvalid,
+			Family:    errcode.FamilyForCode(transformInvalidCode),
+			Code:      transformInvalidCode,
 			Operation: operation,
 			Node:      node,
 			Reason:    "resample requires positive sample rate and channels",
@@ -348,8 +348,8 @@ func validateTransformSpec(operation string, node string, spec transformSpec) er
 
 func transformMediaError(stream string, transform string, expected av.MediaType, actual av.MediaType) error {
 	return &BuildError{
-		Family:    errcode.FamilyForCode(errcode.TransformMediaMismatch),
-		Code:      errcode.TransformMediaMismatch,
+		Family:    errcode.FamilyForCode(transformMediaMismatchCode),
+		Code:      transformMediaMismatchCode,
 		Operation: "build stream",
 		Node:      stream,
 		Reason:    transform + " applies to " + string(expected) + " streams",

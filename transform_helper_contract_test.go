@@ -93,13 +93,13 @@ func TestStreamTransformContracts(t *testing.T) {
 			t.Fatalf("reason = %q, want %q", buildErr.Reason, fragment)
 		}
 	}
-	assertTransformBuildError("", transformSpec{}, av.StreamSelector{Type: av.MediaAudio}, errcode.TransformInvalid, "empty stream transform")
+	assertTransformBuildError("", transformSpec{}, av.StreamSelector{Type: av.MediaAudio}, transformInvalidCode, "empty stream transform")
 	assertTransformBuildError("both", transformSpec{
 		resize:   &filter.ResizeConfig{Width: 320, Height: 180},
 		resample: &filter.ResampleConfig{SampleRate: 48_000, Channels: codec.Stereo},
-	}, av.StreamSelector{Type: av.MediaAudio}, errcode.TransformInvalid, "cannot be both")
-	assertTransformBuildError("audio", Resize(320, 180), av.StreamSelector{Type: av.MediaAudio}, errcode.TransformMediaMismatch, "resize applies to video")
-	assertTransformBuildError("video", Resample(48_000, codec.Stereo), av.StreamSelector{Type: av.MediaVideo}, errcode.TransformMediaMismatch, "resample applies to audio")
+	}, av.StreamSelector{Type: av.MediaAudio}, transformInvalidCode, "cannot be both")
+	assertTransformBuildError("audio", Resize(320, 180), av.StreamSelector{Type: av.MediaAudio}, transformMediaMismatchCode, "resize applies to video")
+	assertTransformBuildError("video", Resample(48_000, codec.Stereo), av.StreamSelector{Type: av.MediaVideo}, transformMediaMismatchCode, "resample applies to audio")
 }
 
 func TestTransformHelperErrorContracts(t *testing.T) {
@@ -128,7 +128,7 @@ func TestTransformHelperErrorContracts(t *testing.T) {
 	err := recipeTransformAdapterError("build stream", stream, filter.FactoryResample, filter.ErrNotFound)
 	var buildErr *BuildError
 	if !errors.As(err, &buildErr) ||
-		buildErr.Code != errcode.TransformAdapterMissing ||
+		buildErr.Code != transformAdapterMissingCode ||
 		buildErr.Node != "voice" ||
 		!strings.Contains(buildErr.Reason, "no resample filter adapter is registered") ||
 		!strings.Contains(strings.Join(buildErr.FixLines(), "\n"), ".Resample") {

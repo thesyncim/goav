@@ -139,8 +139,8 @@ func TestBuildErrorAndCompilerPassErrorContracts(t *testing.T) {
 
 func TestBuildErrorTypedDetailsAndFixes(t *testing.T) {
 	buildErr := &BuildError{
-		Family:    errcode.FamilyForCode(errcode.DecodeAdapterMissing),
-		Code:      errcode.DecodeAdapterMissing,
+		Family:    errcode.FamilyForCode(decodeAdapterMissingCode),
+		Code:      decodeAdapterMissingCode,
 		Operation: "build stream",
 		Reason:    "decoder is missing",
 		fields: []buildErrorDetail{

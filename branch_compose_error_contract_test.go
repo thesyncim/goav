@@ -52,7 +52,7 @@ func TestBranchComposeStructuredErrorContracts(t *testing.T) {
 				format.Output{Name: "archive.webm"},
 				branchComposeRoute{name: "preview"},
 			),
-			code: errcode.EncodeMissing,
+			code: encodeMissingCode,
 		},
 		{
 			name: "missing branch destination",
@@ -149,11 +149,11 @@ func TestBranchComposeTargetNamesAndResizeContracts(t *testing.T) {
 	} {
 		bad := av.Stream{ID: "bad", Type: av.MediaVideo, Codec: av.CodecParameters{Type: av.MediaVideo, Width: 0, Height: 0}}
 		err := applyResizeConfigToStream(&bad, config)
-		assertBuildErrorCode(t, err, errcode.TranscodeResizeInvalid)
+		assertBuildErrorCode(t, err, transcodeResizeInvalidCode)
 	}
 	tinyFit := av.Stream{ID: "tiny", Type: av.MediaVideo, Codec: av.CodecParameters{Type: av.MediaVideo, Width: 640, Height: 360}}
 	err := applyResizeConfigToStream(&tinyFit, filter.ResizeConfig{Mode: filter.ResizeFit, Width: 1, Height: 1})
-	assertBuildErrorCode(t, err, errcode.TranscodeResizeInvalid)
+	assertBuildErrorCode(t, err, transcodeResizeInvalidCode)
 
 	if w, h := resizeFitStreamDimensions(1920, 1080, 640, 480); w != 640 || h != 360 {
 		t.Fatalf("fit 16:9 into 4:3 = %dx%d, want 640x360", w, h)

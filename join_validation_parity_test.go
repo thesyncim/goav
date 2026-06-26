@@ -38,7 +38,7 @@ func TestJoinTransformAdapterValidationParity(t *testing.T) {
 	).To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))).
 		UseRuntime(MustNew()).
 		Build(context.Background())
-	assertJoinParityBuildError(t, err, errcode.ShapeAdapterMissing)
+	assertJoinParityBuildError(t, err, shapeAdapterMissingCode)
 }
 
 func TestJoinMuxCompatibilityValidationParity(t *testing.T) {

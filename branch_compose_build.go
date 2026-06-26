@@ -1403,8 +1403,8 @@ func branchComposeTargetDestinationInvalidError(output branchComposeTarget, reas
 
 func branchComposeTargetEncodeMissingError(output branchComposeTarget, destination format.Output, branch branchComposeRoute) error {
 	return &BuildError{
-		Family:    errcode.FamilyForCode(errcode.EncodeMissing),
-		Code:      errcode.EncodeMissing,
+		Family:    errcode.FamilyForCode(encodeMissingCode),
+		Code:      encodeMissingCode,
 		Operation: "build branch composition",
 		Node:      firstNonEmpty(branch.name, branch.branch.Name, branchComposeTargetNodeName(output, "output")),
 		Reason:    "muxed destinations require encoded branches",
@@ -1569,8 +1569,8 @@ func transcodeResizeConfigError(stream av.Stream, mode filter.ResizeMode, config
 		node += "-" + string(stream.ID)
 	}
 	return &BuildError{
-		Family:    errcode.FamilyForCode(errcode.TranscodeResizeInvalid),
-		Code:      errcode.TranscodeResizeInvalid,
+		Family:    errcode.FamilyForCode(transcodeResizeInvalidCode),
+		Code:      transcodeResizeInvalidCode,
 		Operation: "build transcode",
 		Node:      node,
 		Reason:    reason,

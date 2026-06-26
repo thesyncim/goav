@@ -216,6 +216,10 @@ constant per planner edge case.
 Destination and output leaf codes now follow the same family-first contract:
 recipes still return exact typed `output_*` and `destination_*` details, while
 public callers match `FamilyDestination` for stable handling.
+Media-operation leaf codes now do the same for transform, shape, codec-adapter,
+and encode refusals: detailed `transform_*`, `shape_*`, `*_adapter_*`, and
+`encode_*` strings stay typed internally, while public code switches use the
+stable transform/shape/codec/encode families.
 
 ## Release gate
 

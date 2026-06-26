@@ -379,8 +379,8 @@ func branchStreamMissingError() error {
 
 func branchEncodeMissingError(stream streamIntent) error {
 	return &BuildError{
-		Family:    errcode.FamilyForCode(errcode.EncodeMissing),
-		Code:      errcode.EncodeMissing,
+		Family:    errcode.FamilyForCode(encodeMissingCode),
+		Code:      encodeMissingCode,
 		Operation: branchCompositionOperation,
 		Node:      stream.Name,
 		Reason:    "branch needs an encoder before writing to a muxed destination",
@@ -570,8 +570,8 @@ func validateBranchTransforms(stream streamIntent) error {
 		switch {
 		case transform.resize != nil && transform.resample != nil:
 			return &BuildError{
-				Family:    errcode.FamilyForCode(errcode.TransformInvalid),
-				Code:      errcode.TransformInvalid,
+				Family:    errcode.FamilyForCode(transformInvalidCode),
+				Code:      transformInvalidCode,
 				Operation: branchCompositionOperation,
 				Node:      branchIntentName(stream),
 				Reason:    "one transform cannot be both resize and resample",
@@ -582,8 +582,8 @@ func validateBranchTransforms(stream streamIntent) error {
 			continue
 		default:
 			return &BuildError{
-				Family:    errcode.FamilyForCode(errcode.TransformInvalid),
-				Code:      errcode.TransformInvalid,
+				Family:    errcode.FamilyForCode(transformInvalidCode),
+				Code:      transformInvalidCode,
 				Operation: branchCompositionOperation,
 				Node:      branchIntentName(stream),
 				Reason:    "empty stream transform",

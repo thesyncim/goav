@@ -56,9 +56,9 @@ if err != nil {
             // inspect the detailed code below
         }
         switch buildErr.Code {
-        case errcode.EncodeAdapterMissing:
+        case errcode.Code("encode_adapter_missing"):
             // register an adapter, or fall back to Copy()
-        case errcode.ShapeConversionRefused:
+        case errcode.Code("shape_conversion_refused"):
             // widen the .Auto(...) policy
         }
         if codecValue, ok := buildErr.Detail("codec"); ok {

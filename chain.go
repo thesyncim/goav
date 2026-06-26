@@ -67,8 +67,8 @@ func chainStepAfterEncodeError(operation string, node string, step string, encod
 // first, or keep the chain a pure packet copy.
 func chainStepOnPacketCopyError(operation string, node string, step string) error {
 	return &BuildError{
-		Family:    errcode.FamilyForCode(errcode.OperationShapeMismatch),
-		Code:      errcode.OperationShapeMismatch,
+		Family:    errcode.FamilyForCode(operationShapeMismatchCode),
+		Code:      operationShapeMismatchCode,
 		Operation: operation,
 		Node:      node,
 		Reason:    step + " needs decoded frames, but .Copy() keeps the stream packet-encoded",
@@ -88,8 +88,8 @@ func chainStepOnPacketCopyError(operation string, node string, step string) erro
 
 func chainFrameInputRequiredError(operation string, node string, step string) error {
 	return &BuildError{
-		Family:    errcode.FamilyForCode(errcode.OperationShapeMismatch),
-		Code:      errcode.OperationShapeMismatch,
+		Family:    errcode.FamilyForCode(operationShapeMismatchCode),
+		Code:      operationShapeMismatchCode,
 		Operation: operation,
 		Node:      firstNonEmpty(node, "stream"),
 		Reason:    step + " needs decoded frames, but the selected stream is still packet-domain",
@@ -124,8 +124,8 @@ func streamStepMethodName(step string) string {
 
 func sinkDomainRequiredError(operation string, node string) error {
 	return &BuildError{
-		Family:    errcode.FamilyForCode(errcode.OperationShapeMismatch),
-		Code:      errcode.OperationShapeMismatch,
+		Family:    errcode.FamilyForCode(operationShapeMismatchCode),
+		Code:      operationShapeMismatchCode,
 		Operation: operation,
 		Node:      firstNonEmpty(node, "stream"),
 		Reason:    "sink output from a packet stream needs an explicit domain",
@@ -143,8 +143,8 @@ func sinkDomainRequiredError(operation string, node string) error {
 
 func duplicateStreamEncodeError(operation string, node string, first codec.CodecSpec, second codec.CodecSpec) error {
 	return &BuildError{
-		Family:    errcode.FamilyForCode(errcode.EncodeDuplicate),
-		Code:      errcode.EncodeDuplicate,
+		Family:    errcode.FamilyForCode(encodeDuplicateCode),
+		Code:      encodeDuplicateCode,
 		Operation: operation,
 		Node:      node,
 		Reason:    "stream recipes allow one terminal encoder",
