@@ -888,6 +888,30 @@ func TestIntentShapePassesConsumeRecipeIR(t *testing.T) {
 	}
 }
 
+func TestSelectionAndDecodePassesConsumeRecipeIR(t *testing.T) {
+	body, err := os.ReadFile("recipe_compile.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := string(body)
+	for _, fn := range []string{
+		"validateJobDecodeAdaptersPass",
+		"validateJobLiveStreamSelectionPass",
+		"validateJobKnownInputStreamSelectionPass",
+		"validateJobKnownInputDecodeAdaptersPass",
+		"validateKnownBranchInputStreamSelectionPass",
+		"validateKnownBranchInputDecodeAdaptersPass",
+	} {
+		fnBody := sourceFunctionBody(t, source, fn)
+		if !strings.Contains(fnBody, "streamIntentsFromRecipeIR(state.recipe.Streams)") {
+			t.Fatalf("%s should derive streams from recipe IR", fn)
+		}
+		if strings.Contains(fnBody, "state.intent.Streams") {
+			t.Fatalf("%s still reads legacy stream mirror", fn)
+		}
+	}
+}
+
 func TestOutputValidationPassesConsumeRecipeIR(t *testing.T) {
 	body, err := os.ReadFile("recipe_compile.go")
 	if err != nil {

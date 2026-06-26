@@ -12,16 +12,16 @@ import (
 	"github.com/thesyncim/goav/format"
 )
 
-func validateRecipeDecodeAdapters(operation string, rt *Runtime, intent intent) error {
+func validateRecipeDecodeAdapters(operation string, rt *Runtime, inputs []inputIntent, streams []streamIntent) error {
 	if rt == nil {
 		return nil
 	}
-	for i := range intent.Streams {
-		stream := intent.Streams[i]
+	for i := range streams {
+		stream := streams[i]
 		if !streamNeedsDecode(stream) {
 			continue
 		}
-		request, ok := liveDecodeAdapterRequest(intent.Inputs, stream)
+		request, ok := liveDecodeAdapterRequest(inputs, stream)
 		if !ok || request.Codec == "" {
 			continue
 		}

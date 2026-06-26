@@ -916,17 +916,17 @@ func validateJobDecodeAdaptersPass() recipeCompilePass {
 		if !state.options.preflightDecodeAdapters {
 			return nil
 		}
-		intent := state.intent
-		intent.Streams = make([]streamIntent, 0, len(state.intent.Streams))
-		for i := range state.intent.Streams {
-			if streamNeedsDecodeForState(state, state.intent.Streams[i]) {
-				intent.Streams = append(intent.Streams, state.intent.Streams[i])
+		streams := streamIntentsFromRecipeIR(state.recipe.Streams)
+		decodeStreams := make([]streamIntent, 0, len(streams))
+		for i := range streams {
+			if streamNeedsDecodeForState(state, streams[i]) {
+				decodeStreams = append(decodeStreams, streams[i])
 			}
 		}
-		if len(intent.Streams) == 0 {
+		if len(decodeStreams) == 0 {
 			return nil
 		}
-		return validateRecipeDecodeAdapters(state.operation, state.adapterRuntime(), intent)
+		return validateRecipeDecodeAdapters(state.operation, state.adapterRuntime(), state.recipeInputIntents(), decodeStreams)
 	}}
 }
 
@@ -1243,8 +1243,9 @@ func validateJobLiveStreamSelectionPass() recipeCompilePass {
 		if !state.options.preflightLiveStreams {
 			return nil
 		}
-		for i := range state.intent.Streams {
-			stream := state.intent.Streams[i]
+		streams := streamIntentsFromRecipeIR(state.recipe.Streams)
+		for i := range streams {
+			stream := streams[i]
 			if jobStreamSelectionNeedsUnion(state, stream) {
 				if err := validateJobStreamSelectionAcrossInputs(state, stream); err != nil {
 					return err
@@ -1264,8 +1265,9 @@ func validateJobLiveStreamSelectionPass() recipeCompilePass {
 
 func validateJobKnownInputStreamSelectionPass() recipeCompilePass {
 	return recipeCompilePassFunc{name: "validate job known input stream selection", fn: func(state *recipeCompileState) error {
-		for i := range state.intent.Streams {
-			stream := state.intent.Streams[i]
+		streams := streamIntentsFromRecipeIR(state.recipe.Streams)
+		for i := range streams {
+			stream := streams[i]
 			if jobStreamSelectionNeedsUnion(state, stream) {
 				if err := validateJobStreamSelectionAcrossInputs(state, stream); err != nil {
 					return err
@@ -1308,12 +1310,13 @@ func validateJobKnownInputDecodeAdaptersPass() recipeCompilePass {
 		if !state.options.preflightDecodeAdapters {
 			return nil
 		}
-		streams := make([]streamIntent, 0, len(state.intent.Streams))
-		for i := range state.intent.Streams {
-			if !streamNeedsDecodeForState(state, state.intent.Streams[i]) {
+		recipeStreams := streamIntentsFromRecipeIR(state.recipe.Streams)
+		streams := make([]streamIntent, 0, len(recipeStreams))
+		for i := range recipeStreams {
+			if !streamNeedsDecodeForState(state, recipeStreams[i]) {
 				continue
 			}
-			streams = append(streams, state.intent.Streams[i])
+			streams = append(streams, recipeStreams[i])
 		}
 		if len(streams) == 0 {
 			return nil
@@ -1367,16 +1370,17 @@ func validateKnownBranchInputStreamSelectionPass() recipeCompilePass {
 		if !state.branchInputProbeReady || len(state.branchInputProbe.Streams) == 0 {
 			return nil
 		}
+		streams := streamIntentsFromRecipeIR(state.recipe.Streams)
 		if spec, ok := state.inputSourceShape(0); ok && spec.Domain == shape.DomainFrame {
-			for i := range state.intent.Streams {
-				if _, err := selectStream(state.branchInputProbe.Streams, streamIntentSelector(state.intent.Streams[i])); err != nil {
+			for i := range streams {
+				if _, err := selectStream(state.branchInputProbe.Streams, streamIntentSelector(streams[i])); err != nil {
 					return err
 				}
 			}
 			return nil
 		}
-		for i := range state.intent.Streams {
-			if err := validateKnownProbeStreamSelection(state.branchInputProbe, state.intent.Streams[i]); err != nil {
+		for i := range streams {
+			if err := validateKnownProbeStreamSelection(state.branchInputProbe, streams[i]); err != nil {
 				return err
 			}
 		}
@@ -1392,7 +1396,7 @@ func validateKnownBranchInputDecodeAdaptersPass() recipeCompilePass {
 		if spec, ok := state.inputSourceShape(0); ok && spec.Domain == shape.DomainFrame {
 			return nil
 		}
-		return validateKnownRecipeDecodeAdapters(state.operation, state.adapterRuntime(), []format.ProbeResult{state.branchInputProbe}, state.intent.Streams)
+		return validateKnownRecipeDecodeAdapters(state.operation, state.adapterRuntime(), []format.ProbeResult{state.branchInputProbe}, streamIntentsFromRecipeIR(state.recipe.Streams))
 	}}
 }
 

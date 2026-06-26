@@ -1713,6 +1713,7 @@ func TestKnownInputStreamSelectionPassRejectsProbedAmbiguousAndMissingStreams(t 
 					Streams: streams,
 				}},
 			}
+			moveTestIntentToRecipeIR(&state, recipeir.KindJob)
 			err := pass.Apply(&state)
 			var buildErr *BuildError
 			if !errors.As(err, &buildErr) || buildErr.Code != tt.code || !errors.Is(err, errUnsupportedBuild) {
@@ -1773,6 +1774,7 @@ func TestLiveStreamSelectionPassRejectsAmbiguousAndMissingStreams(t *testing.T) 
 				options:   recipeCompileOptions{preflightLiveStreams: true},
 				intent:    tt.intent,
 			}
+			moveTestIntentToRecipeIR(&state, recipeir.KindJob)
 			err := validateJobLiveStreamSelectionPass().Apply(&state)
 			var buildErr *BuildError
 			if !errors.As(err, &buildErr) || buildErr.Code != tt.code || !errors.Is(err, errUnsupportedBuild) {
@@ -1798,6 +1800,7 @@ func TestLiveStreamSelectionPassSkipsPacketOnlyJobs(t *testing.T) {
 			Realtime: true,
 		}}},
 	}
+	moveTestIntentToRecipeIR(&state, recipeir.KindJob)
 	if err := validateJobLiveStreamSelectionPass().Apply(&state); err != nil {
 		t.Fatalf("err = %v, want packet-only record recipe skipped", err)
 	}
@@ -1880,7 +1883,9 @@ func TestDecodeAdapterPassRejectsKnownLiveMissingDecoders(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := validateJobDecodeAdaptersPass().Apply(&tt.state)
+			state := tt.state
+			moveTestIntentToRecipeIR(&state, recipeir.KindJob)
+			err := validateJobDecodeAdaptersPass().Apply(&state)
 			var buildErr *BuildError
 			if !errors.As(err, &buildErr) || buildErr.Code != tt.code || !errors.Is(err, tt.cause) {
 				t.Fatalf("err = %v, want %s wrapping %v", err, tt.code, tt.cause)
@@ -1911,6 +1916,7 @@ func TestDecodeAdapterPassDefersAmbiguousLiveSelection(t *testing.T) {
 			}},
 		},
 	}
+	moveTestIntentToRecipeIR(&state, recipeir.KindJob)
 	if err := validateJobDecodeAdaptersPass().Apply(&state); err != nil {
 		t.Fatalf("err = %v, want ambiguity to stay with stream resolution", err)
 	}
@@ -2026,7 +2032,13 @@ func TestKnownInputDecodeAdapterPassesRejectMissingDecoders(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := tt.pass.Apply(&tt.state)
+			state := tt.state
+			kind := recipeir.KindJob
+			if state.operation == branchCompositionOperation {
+				kind = recipeir.KindBranchComposition
+			}
+			moveTestIntentToRecipeIR(&state, kind)
+			err := tt.pass.Apply(&state)
 			var buildErr *BuildError
 			if !errors.As(err, &buildErr) || buildErr.Code != tt.code || !errors.Is(err, tt.cause) {
 				t.Fatalf("err = %v, want %s wrapping %v", err, tt.code, tt.cause)
@@ -2058,6 +2070,7 @@ func TestKnownInputDecodeAdapterPassDefersAmbiguousSelection(t *testing.T) {
 			},
 		}},
 	}
+	moveTestIntentToRecipeIR(&state, recipeir.KindJob)
 	if err := validateJobKnownInputDecodeAdaptersPass().Apply(&state); err != nil {
 		t.Fatalf("err = %v, want ambiguity to stay with stream resolution", err)
 	}
@@ -2171,7 +2184,13 @@ func TestDecodeAdapterPassesRejectIncompatibleDescriptors(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := tt.pass.Apply(&tt.state)
+			state := tt.state
+			kind := recipeir.KindJob
+			if state.operation == branchCompositionOperation {
+				kind = recipeir.KindBranchComposition
+			}
+			moveTestIntentToRecipeIR(&state, kind)
+			err := tt.pass.Apply(&state)
 			var buildErr *BuildError
 			if !errors.As(err, &buildErr) || buildErr.Code != "decode_adapter_incompatible" || !errors.Is(err, errUnsupportedBuild) {
 				t.Fatalf("err = %v, want decode_adapter_incompatible with matching BuildError code", err)
@@ -3326,6 +3345,7 @@ func TestTranscodeKnownInputStreamSelectionPassRejectsProbedBranchAmbiguity(t *t
 			Streams: streams,
 		},
 	}
+	moveTestIntentToRecipeIR(&state, recipeir.KindBranchComposition)
 
 	err := validateKnownBranchInputStreamSelectionPass().Apply(&state)
 	var buildErr *BuildError
