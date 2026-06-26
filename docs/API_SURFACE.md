@@ -241,9 +241,10 @@ against the constructors in `input.go`/`provider.go`/`source.go`,
   `Writer` lets goav open the writer on demand with final `provider.Info`
   (and transactional commit/abort); `Sink` ends the branch in frames/packets
   instead of muxed bytes.
-- **Tap vs FrameTap vs PacketTap**: `Tap` infers its domain from the chain
-  point; `FrameTap`/`PacketTap` assert it, and a mismatch is a build error
-  naming the typed constructor to use.
+- **FrameTap vs PacketTap**: `.Tap(...)` takes an explicit typed tap handle.
+  Use `FrameTap` after decode, transforms, or frame stages, and `PacketTap`
+  after `.Copy()` or an encoder. A mismatch is a build error naming the typed
+  constructor to use.
 - **Flow vs Branch**: a `Flow` is a reusable operation list and owns no
   destination (`TestNorthStarFlowExposesNoDestinations`); a `Branch` routes
   fanout and owns its destinations.

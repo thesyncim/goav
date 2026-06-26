@@ -145,7 +145,7 @@ func TestStreamChainRejectsInvalidPostEncodeAndTapContracts(t *testing.T) {
 		{
 			name: "empty tap",
 			job: From(source).Audio().
-				Tap(Tap("")).
+				Tap(FrameTap("")).
 				To(sink),
 			code: errcode.TapInvalid,
 		},

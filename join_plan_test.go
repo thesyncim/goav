@@ -132,7 +132,7 @@ func TestJoinDescribeEqualsBuildSelect(t *testing.T) {
 	job := Select(
 		From(selectTestOneShotSource("a", 100)).Audio(),
 		From(selectTestOneShotSource("b", 200)).Audio(),
-	).Tap(Tap("switched")).
+	).Tap(FrameTap("switched")).
 		To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil })))
 
 	planned := joinPlanGuard(t, job)

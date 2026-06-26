@@ -419,7 +419,7 @@ func TestMixArmRejectsUnsupportedChainOperations(t *testing.T) {
 // empty tap name here) fails the join compile instead of being dropped.
 func TestMixArmChainErrorSurfaces(t *testing.T) {
 	_, err := Mix(
-		From(mixTestAudioSource("a", 1)).Audio().Tap(Tap("")),
+		From(mixTestAudioSource("a", 1)).Audio().Tap(FrameTap("")),
 		From(mixTestAudioSource("b", 1)).Audio(),
 	).To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))).
 		Build(context.Background())

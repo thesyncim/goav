@@ -189,6 +189,8 @@ option constructors still pass directly to recipe constructors and `.With(...)`.
 Exported `goav.InputStream` was removed while keeping
 `InputSpec.Stream(stream)` as the branch attach anchor for app-owned dynamic
 tracks.
+Exported `goav.Tap` was removed; callers now choose `FrameTap` or `PacketTap`
+explicitly so public tap handles always state their media domain.
 
 Error-contract progress: `BuildError` no longer exposes legacy
 `Details`/`Suggestions` fields or parses rendered strings in `Detail(key)`;

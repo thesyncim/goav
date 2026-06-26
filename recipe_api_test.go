@@ -2596,14 +2596,14 @@ func TestReadmeAudioDecodeRecipeIsSmall(t *testing.T) {
 	}
 }
 
-// TestInferredTapAdoptsChainDomain proves goav.Tap infers its domain from the
-// chain point (frame before encode, packet after encode) with no domain mismatch.
-func TestInferredTapAdoptsChainDomain(t *testing.T) {
+// TestTypedTapsCarryDeclaredDomain proves public tap constructors carry explicit
+// frame/packet domains through stream and branch planning.
+func TestTypedTapsCarryDeclaredDomain(t *testing.T) {
 	frameJob := goav.From(goav.FileInput("in.webm", strings.NewReader(""))).
 		Video().
 		Decode().
 		Resize(640, 360).
-		Tap(goav.Tap("preview")).
+		Tap(goav.FrameTap("preview")).
 		Encode(codec.VP9(codec.Bitrate(600_000))).
 		To(goav.Write("out.webm", io.Discard))
 	frameDomain := shape.MediaDomain("")
@@ -2614,7 +2614,7 @@ func TestInferredTapAdoptsChainDomain(t *testing.T) {
 		}
 	}
 	if frameDomain != shape.DomainFrame {
-		t.Fatalf("inferred preview tap domain = %q, want frame", frameDomain)
+		t.Fatalf("preview tap domain = %q, want frame", frameDomain)
 	}
 
 	pktJob := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
@@ -2623,7 +2623,7 @@ func TestInferredTapAdoptsChainDomain(t *testing.T) {
 		Branches(
 			goav.Branch("archive").
 				Encode(codec.Opus(codec.Bitrate(96_000))).
-				Tap(goav.Tap("encoded")).
+				Tap(goav.PacketTap("encoded")).
 				To(goav.Write("archive.ogg", io.Discard)),
 		)
 	pktDomain := shape.MediaDomain("")
@@ -2634,7 +2634,7 @@ func TestInferredTapAdoptsChainDomain(t *testing.T) {
 		}
 	}
 	if pktDomain != shape.DomainPacket {
-		t.Fatalf("inferred encoded tap domain = %q, want packet", pktDomain)
+		t.Fatalf("encoded tap domain = %q, want packet", pktDomain)
 	}
 }
 

@@ -142,7 +142,15 @@ func parseBranchPipelineWithRegistry(task goav.LiveTask, tapName string, branchN
 	case shape.DomainPacket:
 		builder = builder.From(goav.PacketTap(tapName))
 	default:
-		builder = builder.From(goav.Tap(tapName))
+		return goav.BranchSpec{}, commandError(
+			"invalid_value",
+			"attach",
+			"tap",
+			"tap domain is unknown",
+			[]string{"tap=" + tapName},
+			[]string{"declare attach points with goav.FrameTap(name) or goav.PacketTap(name)"},
+			nil,
+		)
 	}
 	var destinations []goav.Destination
 	branch := &BranchPipeline{

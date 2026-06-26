@@ -25,7 +25,7 @@ func TestOperationSpecsContainChainStepContracts(t *testing.T) {
 		{name: "transform is a chain step", operation: operationSpecForTransform(Resize(320, 180)), wantIsStep: true},
 		{name: "packet tap is not a frame chain step", operation: operationSpecForTap(PacketTap("packets"), av.MediaAudio, plan.OpEncode)},
 		{name: "frame tap is a chain step", operation: operationSpecForTap(FrameTap("frames"), av.MediaAudio, plan.OpDecode), wantIsStep: true},
-		{name: "inferred frame tap is a chain step", operation: operationSpecForTap(Tap("decoded"), av.MediaAudio, plan.OpDecode), wantIsStep: true},
+		{name: "typed frame tap is a chain step", operation: operationSpecForTap(FrameTap("decoded"), av.MediaAudio, plan.OpDecode), wantIsStep: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

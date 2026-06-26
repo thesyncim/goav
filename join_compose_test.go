@@ -305,7 +305,7 @@ func TestSelectTapNamesSwitchedStream(t *testing.T) {
 	task, err := Select(
 		From(selectTestOneShotSource("a", 100)).Audio(),
 		From(selectTestOneShotSource("b", 200)).Audio(),
-	).Tap(Tap("switched")).To(joinTestCollectSink("out", &got)).Build(ctx)
+	).Tap(FrameTap("switched")).To(joinTestCollectSink("out", &got)).Build(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}

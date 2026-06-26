@@ -208,7 +208,6 @@ goav.Source
 goav.StreamID
 goav.StreamIndex
 goav.StreamName
-goav.Tap
 goav.Task
 goav.URI
 goav.URIInput

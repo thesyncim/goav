@@ -208,7 +208,7 @@ func TestAudioFlowShapePreferenceCopyAndTapContracts(t *testing.T) {
 	flow := Flow("voice").Audio().
 		Shape(shape.Frame(av.MediaAudio, shape.Audio(48_000, 1, av.SampleFormatS16))).
 		Prefer(shape.Frame(av.MediaAudio, shape.Audio(0, 0, av.SampleFormatF32))).
-		Tap(Tap("voice.auto")).
+		Tap(FrameTap("voice.auto")).
 		Encode(codec.Opus(codec.Bitrate(96_000)))
 	spec, err := chainSpecFrom(flow)
 	if err != nil {
@@ -348,7 +348,7 @@ func TestFlowBuilderRejectsInvalidCompositionContracts(t *testing.T) {
 		{
 			name: "empty tap",
 			flow: Flow("bad").Audio().
-				Tap(Tap("")),
+				Tap(FrameTap("")),
 			code: errcode.TapInvalid,
 		},
 		{

@@ -907,7 +907,7 @@ var errorCatalogAdditionalExamples = []errorCatalogExample{
 	{
 		Code:          "tap_invalid",
 		Test:          "TestStreamChainRejectsInvalidPostEncodeAndTapContracts",
-		BadRecipe:     `.Tap(goav.Tap(""))`,
+		BadRecipe:     `.Tap(goav.FrameTap(""))`,
 		RenderedError: "empty tap name refusal is asserted by the test",
 		Fix:           "use a non-empty typed tap such as goav.FrameTap(\"audio.frames\")",
 		Cause:         "goav.ErrUnsupportedBuild",

@@ -251,7 +251,7 @@ func TestBranchBuilderNilAndErrorContracts(t *testing.T) {
 		{name: "decode then copy", spec: Branch("bad").Decode().Copy().To(branchBuilderTestSink("out")), code: errcode.BranchDecodeCopyInvalid},
 		{name: "frame step after copy", spec: Branch("bad").Copy().Resample(48_000, codec.Mono).To(branchBuilderTestSink("out")), code: errcode.OperationShapeMismatch},
 		{name: "duplicate encode", spec: Branch("bad").Encode(codec.Opus()).Encode(codec.Opus()).To(branchBuilderTestSink("out")), code: errcode.EncodeDuplicate},
-		{name: "empty tap", spec: Branch("bad").Tap(Tap("")).To(branchBuilderTestSink("out")), code: errcode.TapInvalid},
+		{name: "empty tap", spec: Branch("bad").Tap(FrameTap("")).To(branchBuilderTestSink("out")), code: errcode.TapInvalid},
 		{name: "typed frame tap after encode", spec: Branch("bad").Encode(codec.Opus()).Tap(FrameTap("frames")).To(branchBuilderTestSink("out")), code: errcode.TapDomainMismatch},
 		{name: "nil flow", spec: Branch("bad").Apply(nil).To(branchBuilderTestSink("out")), code: errcode.FlowInvalid},
 	}
