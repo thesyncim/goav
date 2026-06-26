@@ -48,7 +48,6 @@ type recipeCompileState struct {
 	recipeErr                error
 
 	inputFacts             []recipeir.Input
-	destinationKinds       []recipeir.DestinationKind
 	joinFacts              recipeir.Join
 	streamRuleFacts        []recipeir.StreamRule
 	inputAttachments       []InputSpec
@@ -1425,8 +1424,9 @@ func validateKnownProbeStreamSelection(probe format.ProbeResult, stream streamIn
 func validateRecipeOperationShapesPass() recipeCompilePass {
 	return recipeCompilePassFunc{name: "validate recipe operation shapes", fn: func(state *recipeCompileState) error {
 		rt := state.runtime
-		for i := range state.intent.Streams {
-			stream := state.intent.Streams[i]
+		streams := streamIntentsFromRecipeIR(state.recipe.Streams)
+		for i := range streams {
+			stream := streams[i]
 			initial := recipeInitialStreamShape(state, stream)
 			solved, diagnostics, err := solveOperationSpecShapes(state.operation, rt, stream, initial)
 			if err != nil {
@@ -1482,8 +1482,9 @@ func validateRecipeDestinationShapesPass() recipeCompilePass {
 			return nil
 		}
 		kinds := state.recipeDestinationKindSet()
-		for i := range state.intent.Streams {
-			stream := state.intent.Streams[i]
+		streams := streamIntentsFromRecipeIR(state.recipe.Streams)
+		for i := range streams {
+			stream := streams[i]
 			shape := recipeFinalStreamShape(state, stream)
 			node := firstNonEmpty(stream.Name, string(stream.Select.ID), string(stream.Select.Type), "stream")
 			for _, label := range stream.Destinations {
@@ -1508,33 +1509,26 @@ func (s *recipeCompileState) recipeDestinationSet() map[string]destinationSpec {
 	if s == nil {
 		return nil
 	}
-	if s.branchCompositionPresent {
-		return branchDestinationSet(s.branchDestinationAttachments)
-	}
-	outputs := make(map[string]destinationSpec, len(s.outputAttachments))
-	for i := range s.outputAttachments {
-		outputs[jobOutputDestinationName(s.outputAttachments, s.outputDestinationNames, i)] = s.outputAttachments[i]
+	outputs := make(map[string]destinationSpec, len(s.recipe.Destinations))
+	for i := range s.recipe.Destinations {
+		label := recipeIRDestinationLabel(s.recipe.Destinations[i], i)
+		switch {
+		case s.branchCompositionPresent && i < len(s.branchDestinationAttachments):
+			outputs[label] = s.branchDestinationAttachments[i].output
+		case i < len(s.outputAttachments):
+			outputs[label] = s.outputAttachments[i]
+		default:
+			outputs[label] = destinationSpec{}
+		}
 	}
 	return outputs
 }
 
 func (s *recipeCompileState) recipeDestinationKindSet() map[string]recipeir.DestinationKind {
-	if s == nil || len(s.destinationKinds) == 0 {
+	if s == nil {
 		return nil
 	}
-	kinds := make(map[string]recipeir.DestinationKind, len(s.destinationKinds))
-	for i := range s.intent.Destinations {
-		if i >= len(s.destinationKinds) {
-			break
-		}
-		kind := s.destinationKinds[i]
-		if kind == recipeir.DestinationKindUnknown {
-			continue
-		}
-		label := firstNonEmpty(s.intent.Destinations[i].Name, s.intent.Destinations[i].URI, fmt.Sprintf("output-%d", i))
-		kinds[label] = kind
-	}
-	return kinds
+	return recipeIRDestinationKindSet(s.recipe.Destinations)
 }
 
 func recipeInitialStreamShape(state *recipeCompileState, stream streamIntent) shape.Spec {

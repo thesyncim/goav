@@ -131,10 +131,11 @@ Compatibility pins:
   operation/work-plan model. Normal branch/copy planning and single-stream
   lowerer selection now enter through recipe IR, and attachment-consistency
   validation, intent-shape validation, stream-selection/decode-adapter
-  preflight, encode/transform adapter validation, and output/destination
-  binding/kind validation count recipe IR facts instead of the legacy mirror;
-  Explain stream rows, adapter requirements, and mux compatibility already read
-  codec facts from `WorkPlan` operations.
+  preflight, operation/destination shape validation, encode/transform adapter
+  validation, and output/destination binding/kind validation count recipe IR
+  facts instead of the legacy mirror; Explain stream rows, adapter
+  requirements, and mux compatibility already read codec facts from `WorkPlan`
+  operations.
 - Expand `lifecycle.SwitchAt` boundaries beyond frame/keyframe/media-time only if future
   live-control workflows prove they need additional switch points.
 - Finish the full time-shape story: pipeline-wide clock service, A/V sink sync,

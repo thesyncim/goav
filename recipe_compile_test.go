@@ -2723,6 +2723,8 @@ func TestShapeErrorsReportExpectedAndActualShape(t *testing.T) {
 			state := tt.state
 			if tt.name == "job resize on audio" {
 				moveTestIntentToRecipeIR(&state, recipeir.KindJob)
+			} else {
+				moveTestIntentToRecipeIR(&state, recipeir.KindBranchComposition)
 			}
 			err := tt.pass.Apply(&state)
 			var buildErr *BuildError
@@ -2819,6 +2821,7 @@ func TestRecipeOperationShapePassRejectsInvalidOrderedOperations(t *testing.T) {
 					Destinations: []destinationIntent{{Name: "web"}, {Name: "frames"}, {Name: "packets"}},
 				},
 			}
+			moveTestIntentToRecipeIR(&state, recipeir.KindJob)
 			err := pass.Apply(&state)
 			var buildErr *BuildError
 			if !errors.As(err, &buildErr) || buildErr.Code != tt.code || !errors.Is(err, errUnsupportedBuild) {
@@ -2852,6 +2855,7 @@ func TestRecipeOperationShapePassAllowsCustomStageShapeDeclaration(t *testing.T)
 			Destinations: []destinationIntent{{Name: "web"}},
 		},
 	}
+	moveTestIntentToRecipeIR(&state, recipeir.KindJob)
 	if err := validateRecipeOperationShapesPass().Apply(&state); err != nil {
 		t.Fatalf("validateRecipeOperationShapesPass() error = %v", err)
 	}
@@ -2875,6 +2879,9 @@ func TestRecipeDestinationShapePassRejectsFrameShapeForMuxDestination(t *testing
 		},
 		outputAttachments: []destinationSpec{fileDestination("archive.ivf", io.Discard)},
 	}
+	state.recipe = recipeIRFromIntent(state.intent, recipeir.KindJob)
+	annotateRecipeIRDestinationsFromSpecs(&state.recipe, state.outputAttachments)
+	state.intent = intent{}
 
 	err := validateRecipeDestinationShapesPass().Apply(&state)
 	var buildErr *BuildError
@@ -2911,6 +2918,9 @@ func TestRecipeDestinationShapePassAllowsFrameShapeForSinkDestination(t *testing
 		},
 		outputAttachments: []destinationSpec{sinkDestination(SinkFunc("frames", func(context.Context, Message) error { return nil }))},
 	}
+	state.recipe = recipeIRFromIntent(state.intent, recipeir.KindJob)
+	annotateRecipeIRDestinationsFromSpecs(&state.recipe, state.outputAttachments)
+	state.intent = intent{}
 	if err := validateRecipeDestinationShapesPass().Apply(&state); err != nil {
 		t.Fatalf("validateRecipeDestinationShapesPass() error = %v", err)
 	}

@@ -128,7 +128,9 @@ boundary. Output binding and destination-kind validation now use recipe IR
 output refs and destination kinds instead of concrete destination arrays, and
 intent-shape validation now starts from recipe IR inputs, streams, and outputs.
 Stream-selection and decode-adapter preflight now derive stream chains from
-recipe IR before probing live or known input facts.
+recipe IR before probing live or known input facts. Operation-shape solving and
+destination-shape validation now iterate recipe IR streams and destination
+metadata before touching concrete output handles.
 Explicit branch-composition graph lowering also now uses a captured handoff
 with cloned branch-compose plan data. The compile state no longer stores the
 concrete join plan; graph-plan construction passes the selected join lowerer

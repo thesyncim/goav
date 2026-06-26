@@ -912,6 +912,37 @@ func TestSelectionAndDecodePassesConsumeRecipeIR(t *testing.T) {
 	}
 }
 
+func TestShapeValidationPassesConsumeRecipeIR(t *testing.T) {
+	body, err := os.ReadFile("recipe_compile.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := string(body)
+	for _, fn := range []string{
+		"validateRecipeOperationShapesPass",
+		"validateRecipeDestinationShapesPass",
+	} {
+		fnBody := sourceFunctionBody(t, source, fn)
+		if !strings.Contains(fnBody, "streamIntentsFromRecipeIR(state.recipe.Streams)") {
+			t.Fatalf("%s should derive streams from recipe IR", fn)
+		}
+		if strings.Contains(fnBody, "state.intent.Streams") {
+			t.Fatalf("%s still reads legacy stream mirror", fn)
+		}
+	}
+	destinationSetBody := sourceFunctionBody(t, source, "recipeDestinationSet")
+	if !strings.Contains(destinationSetBody, "s.recipe.Destinations") {
+		t.Fatal("recipeDestinationSet should key concrete outputs by recipe IR destinations")
+	}
+	destinationKindBody := sourceFunctionBody(t, source, "recipeDestinationKindSet")
+	if !strings.Contains(destinationKindBody, "recipeIRDestinationKindSet(s.recipe.Destinations)") {
+		t.Fatal("recipeDestinationKindSet should read destination kinds from recipe IR")
+	}
+	if strings.Contains(destinationKindBody, "s.intent.Destinations") || strings.Contains(destinationKindBody, "destinationKinds") {
+		t.Fatal("recipeDestinationKindSet still reads a legacy destination-kind mirror")
+	}
+}
+
 func TestOutputValidationPassesConsumeRecipeIR(t *testing.T) {
 	body, err := os.ReadFile("recipe_compile.go")
 	if err != nil {

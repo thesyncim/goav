@@ -264,14 +264,6 @@ func validateBranchCompositionAttachments(input InputSpec, namedOutputs []namedD
 	return nil
 }
 
-func branchDestinationSet(namedOutputs []namedDestinationSpec) map[string]destinationSpec {
-	outputs := make(map[string]destinationSpec, len(namedOutputs))
-	for i := range namedOutputs {
-		outputs[namedOutputs[i].name] = namedOutputs[i].output
-	}
-	return outputs
-}
-
 func branchDestinationAttachmentSet(namedOutputs []namedDestinationSpec) (map[string]destinationSpec, []string) {
 	outputs := make(map[string]destinationSpec, len(namedOutputs))
 	outputOrder := make([]string, 0, len(namedOutputs))

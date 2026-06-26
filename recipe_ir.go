@@ -626,7 +626,6 @@ func recipeCompileStateFromSnapshot(snapshot recipeCompileSnapshot, options reci
 		recipe:                       cloneRecipeIRRecipe(snapshot.recipe),
 		intent:                       intentFromRecipeIR(snapshot.recipe),
 		inputFacts:                   cloneRecipeIRInputs(snapshot.recipe.Inputs),
-		destinationKinds:             recipeIRDestinationKinds(snapshot.recipe),
 		joinFacts:                    snapshot.recipe.Join,
 		streamRuleFacts:              cloneRecipeIRStreamRules(snapshot.recipe.StreamRules),
 		runtime:                      snapshot.runtime,
