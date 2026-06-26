@@ -9,6 +9,7 @@ import (
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/errcode"
+	"github.com/thesyncim/goav/internal/recipeir"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/plan"
 	"github.com/thesyncim/goav/shape"
@@ -1049,7 +1050,7 @@ func (p *joinPlan) planJoinBranches() error {
 	for i := range builds {
 		intent.Streams = append(intent.Streams, branchStreamIntent(builds[i]))
 	}
-	composePlan, err := planBranchCompositionRecipe(intent, InputSpec{}, destinations.branchDestinations)
+	composePlan, err := planBranchCompositionRecipe(recipeIRFromIntent(intent, recipeir.KindBranchComposition), InputSpec{}, destinations.branchDestinations)
 	if err != nil {
 		return err
 	}

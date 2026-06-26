@@ -8,6 +8,7 @@ import (
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/errcode"
+	"github.com/thesyncim/goav/internal/recipeir"
 	"github.com/thesyncim/goav/plan"
 	"github.com/thesyncim/goav/shape"
 )
@@ -84,11 +85,11 @@ func (j *branchCompositionJob) composePlan() (branchComposePlan, error) {
 	if j == nil {
 		return branchComposePlan{}, nil
 	}
-	return planBranchCompositionRecipe(j.plan(), j.input, j.outputs)
+	return planBranchCompositionRecipe(recipeIRFromIntent(j.plan(), recipeir.KindBranchComposition), j.input, j.outputs)
 }
 
-func planBranchCompositionRecipe(intent intent, input InputSpec, namedOutputs []namedDestinationSpec) (branchComposePlan, error) {
-	streams := intent.Streams
+func planBranchCompositionRecipe(recipe recipeir.Recipe, input InputSpec, namedOutputs []namedDestinationSpec) (branchComposePlan, error) {
+	streams := streamIntentsFromRecipeIR(recipe.Streams)
 	outputs, outputOrder := branchDestinationAttachmentSet(namedOutputs)
 
 	branches := make([]branchComposeBranch, 0, len(streams))

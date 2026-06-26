@@ -115,12 +115,12 @@ func newBranchCompositionRecipeSnapshot(job *branchCompositionJob) recipeCompile
 	if job == nil {
 		return recipeCompileSnapshot{recipe: recipeir.Recipe{Kind: recipeir.KindBranchComposition}}
 	}
-	branchPlan, branchPlanErr := job.composePlan()
 	destinations := cloneNamedDestinationSpecs(job.outputs)
 	recipe := recipeIRFromIntent(job.plan(), recipeir.KindBranchComposition)
 	annotateRecipeIRInputsFromSpecs(&recipe, []InputSpec{job.input})
 	annotateRecipeIRDestinationsFromNamedSpecs(&recipe, destinations)
 	recipe.StreamRules = recipeIRStreamRulesFromRoot(job.streamRules)
+	branchPlan, branchPlanErr := planBranchCompositionRecipe(recipe, job.input, destinations)
 	return recipeCompileSnapshot{
 		recipe:                       recipe,
 		runtime:                      job.runtime,

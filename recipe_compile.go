@@ -1651,8 +1651,9 @@ func planBranchCompositionIntentPass() recipeCompilePass {
 		if state.planErr != nil {
 			return state.planErr
 		}
+		recipe := state.recipe
 		if branchComposePlanReady(state.plan) {
-			fresh, err := planBranchCompositionRecipe(state.intent, state.branchInputAttachment, state.branchDestinationAttachments)
+			fresh, err := planBranchCompositionRecipe(recipe, state.branchInputAttachment, state.branchDestinationAttachments)
 			if err != nil {
 				return err
 			}
@@ -1660,7 +1661,7 @@ func planBranchCompositionIntentPass() recipeCompilePass {
 			state.plan.Destinations = fresh.Destinations
 			return nil
 		}
-		composePlan, err := planBranchCompositionRecipe(state.intent, state.branchInputAttachment, state.branchDestinationAttachments)
+		composePlan, err := planBranchCompositionRecipe(recipe, state.branchInputAttachment, state.branchDestinationAttachments)
 		if err != nil {
 			return err
 		}

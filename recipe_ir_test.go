@@ -647,7 +647,8 @@ func TestMultiStreamGraphLowererUsesHandoff(t *testing.T) {
 	}
 	inputBody := sourceFunctionBody(t, source, "mediaPlanMultiStreamJobInputFromCompileState")
 	for _, required := range []string{
-		"clonePlannerIntent(state.intent)",
+		"len(state.recipe.Streams) < 2",
+		"cloneRecipeIRRecipe(state.recipe)",
 		"append([]InputSpec(nil), state.inputAttachments...)",
 		"cloneNamedDestinationSpecs(namedOutputs)",
 	} {
@@ -655,9 +656,63 @@ func TestMultiStreamGraphLowererUsesHandoff(t *testing.T) {
 			t.Fatalf("mediaPlanMultiStreamJobInputFromCompileState should capture %s", required)
 		}
 	}
+	for _, forbidden := range []string{
+		"len(state.intent.Streams) < 2",
+		"clonePlannerIntent(state.intent)",
+	} {
+		if strings.Contains(inputBody, forbidden) {
+			t.Fatalf("mediaPlanMultiStreamJobInputFromCompileState still depends on legacy intent with %q", forbidden)
+		}
+	}
 	renderBody := sourceFunctionBody(t, source, "newMediaPlanMultiStreamJobLowerer")
+	if !strings.Contains(renderBody, "planBranchCompositionRecipe(recipe, input.input, input.namedOutputs)") {
+		t.Fatal("newMediaPlanMultiStreamJobLowerer should plan branch composition from captured recipe IR")
+	}
+	for _, forbidden := range []string{
+		"planBranchCompositionRecipe(input.intent",
+		"recipeIRFromIntent(input.intent",
+	} {
+		if strings.Contains(renderBody, forbidden) {
+			t.Fatalf("newMediaPlanMultiStreamJobLowerer still plans branch composition from legacy intent with %q", forbidden)
+		}
+	}
 	if strings.Contains(renderBody, "*recipeCompileState") || strings.Contains(renderBody, "state.") {
 		t.Fatal("newMediaPlanMultiStreamJobLowerer should consume mediaPlanMultiStreamJobInput instead of compile state")
+	}
+}
+
+func TestBranchCompositionPlannerConsumesRecipeIR(t *testing.T) {
+	body, err := os.ReadFile("branch_compose_plan.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := string(body)
+	planBody := sourceFunctionBody(t, source, "planBranchCompositionRecipe")
+	if !strings.Contains(planBody, "streamIntentsFromRecipeIR(recipe.Streams)") {
+		t.Fatal("planBranchCompositionRecipe should read streams from captured recipe IR")
+	}
+	for _, forbidden := range []string{
+		"streamBuild",
+		"intent.Streams",
+		"recipeIRFromIntent",
+	} {
+		if strings.Contains(planBody, forbidden) {
+			t.Fatalf("planBranchCompositionRecipe still depends on legacy builder/intent shape with %q", forbidden)
+		}
+	}
+
+	compileBody, err := os.ReadFile("recipe_compile.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	passBody := sourceFunctionBody(t, string(compileBody), "planBranchCompositionIntentPass")
+	if !strings.Contains(passBody, "recipe := state.recipe") ||
+		!strings.Contains(passBody, "planBranchCompositionRecipe(recipe, state.branchInputAttachment, state.branchDestinationAttachments)") {
+		t.Fatal("planBranchCompositionIntentPass should pass captured recipe IR into branch planning")
+	}
+	if strings.Contains(passBody, "recipeIRFromIntent(state.intent") ||
+		strings.Contains(passBody, "planBranchCompositionRecipe(state.intent") {
+		t.Fatal("planBranchCompositionIntentPass still rebuilds branch planning input from legacy intent")
 	}
 }
 

@@ -142,6 +142,8 @@ cross the same boundary; concrete writer, mux, and sink handles still stay at
 the mutation edge. Runtime attach patch planning now walks captured
 `recipeir.Operation` values directly for shape, sync, component, codec, and tap
 decisions instead of rehydrating root operation specs after branch capture.
+Branch-composition planning now consumes captured recipe IR too; concrete input
+and destination handles remain at the attachment edge.
 The boundary is not complete until the remaining runtime mutation patch facts
 move into stable recipe or plan data.
 

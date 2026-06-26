@@ -14,6 +14,7 @@ import (
 	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/filter"
 	"github.com/thesyncim/goav/format"
+	"github.com/thesyncim/goav/internal/recipeir"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/plan"
 	"github.com/thesyncim/goav/shape"
@@ -716,7 +717,7 @@ func TestPlannedBranchSplitOperationsTreatParentCopyAsPacketAnchor(t *testing.T)
 	if tap := streamBuildOperationSpecs(copyJob.branchStreams[0])[1].Tap; tap.Name != "packets.branch" || tap.Domain != shape.DomainPacket {
 		t.Fatalf("copy branch tap = %+v, want packet branch tap", tap)
 	}
-	copyPlan, err := planBranchCompositionRecipe(copyJob.plan(), copyJob.inputs[0], copyJob.branchDestinations)
+	copyPlan, err := planBranchCompositionRecipe(recipeIRFromIntent(copyJob.plan(), recipeir.KindBranchComposition), copyJob.inputs[0], copyJob.branchDestinations)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -788,7 +789,7 @@ func TestPlannedBranchSplitOperationsRespectEarlierTapAnchors(t *testing.T) {
 		t.Fatalf("web operations = %+v, want anchor tap video.720p.frames", webOps)
 	}
 
-	gp, err := planBranchCompositionRecipe(job.plan(), job.inputs[0], job.branchDestinations)
+	gp, err := planBranchCompositionRecipe(recipeIRFromIntent(job.plan(), recipeir.KindBranchComposition), job.inputs[0], job.branchDestinations)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1419,29 +1420,21 @@ func TestResolvedJobOutputFormatsEnterMediaPlanBuild(t *testing.T) {
 }
 
 func TestResolvedTranscodeOutputFormatsEnterPlan(t *testing.T) {
-	state := recipeCompileState{
-		operation: branchCompositionOperation,
-		options:   recipeCompileOptions{preflightOutputAdapters: true},
-		runtime: mustNew(withTestFormats(
-			testFormatProber(remuxTestProber{}),
-			testFormatMuxer(av.FormatOgg, &remuxTestMuxerFactory{}),
-		)),
-		intent: intent{
-			Inputs: []inputIntent{{Name: "input.ivf"}},
-			Streams: []streamIntent{{
-				Name:         "audio",
-				Select:       plan.StreamSelect{Type: av.MediaAudio},
-				Operations:   encodeIntentOperations(codec.Opus(codec.Bitrate(96_000))),
-				Destinations: []string{"archive"},
-			}},
-			Destinations: []destinationIntent{{Name: "archive"}},
-		},
-		branchInputAttachment: FileInput("input.ivf", strings.NewReader("")),
-		branchDestinationAttachments: []namedDestinationSpec{{
-			name:   "archive",
-			output: fileDestination("archive.ogg", io.Discard),
-		}},
-	}
+	runtime := mustNew(withTestFormats(
+		testFormatProber(remuxTestProber{}),
+		testFormatMuxer(av.FormatOgg, &remuxTestMuxerFactory{}),
+	))
+	job := From(FileInput("input.ivf", strings.NewReader(""))).UseRuntime(runtime).
+		Audio().
+		Decode().
+		Branches(Branch("archive").Encode(codec.Opus(codec.Bitrate(96_000))).To(destinationHandle(fileDestination("archive.ogg", io.Discard))))
+	state := recipeCompileStateFromSnapshot(
+		newJobRecipeSnapshot(job),
+		recipeCompileOptions{preflightOutputAdapters: true},
+	)
+	state.intent.Streams = nil
+	state.intent.Destinations = nil
+	state.intent.Inputs = nil
 
 	if err := validateBranchDestinationFormatAdaptersPass().Apply(&state); err != nil {
 		t.Fatalf("validateBranchDestinationFormatAdaptersPass() error = %v", err)

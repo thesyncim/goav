@@ -117,6 +117,8 @@ methodology changes, and migration notes.
   handoffs before graph construction.
 - Routed explicit branch-composition graph lowering through an explicit handoff
   with cloned branch-compose plan data.
+- Routed branch-composition planning through captured recipe IR while keeping
+  concrete input and destination handles at the attachment edge.
 - Routed runtime attach through an explicit input handoff that captures branch
   specs and destination facts before graph locking and patch planning.
 - Captured runtime attach branch specs and validated destinations as one

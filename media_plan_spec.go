@@ -6,6 +6,7 @@ import (
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/errcode"
+	"github.com/thesyncim/goav/internal/recipeir"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/plan"
 	"github.com/thesyncim/goav/shape"
@@ -23,7 +24,7 @@ type graphPlanLowerer interface {
 
 type mediaPlanMultiStreamJobInput struct {
 	runtime      *Runtime
-	intent       intent
+	recipe       recipeir.Recipe
 	inputs       []InputSpec
 	input        InputSpec
 	namedOutputs []namedDestinationSpec
@@ -267,7 +268,7 @@ func mediaPlanMultiStreamJobLowererForState(state *recipeCompileState) (graphPla
 }
 
 func mediaPlanMultiStreamJobInputFromCompileState(state *recipeCompileState) (mediaPlanMultiStreamJobInput, bool) {
-	if state == nil || !state.jobPresent || len(state.intent.Streams) < 2 {
+	if state == nil || !state.jobPresent || len(state.recipe.Streams) < 2 {
 		return mediaPlanMultiStreamJobInput{}, false
 	}
 	namedOutputs := make([]namedDestinationSpec, 0, len(state.outputAttachments))
@@ -283,7 +284,7 @@ func mediaPlanMultiStreamJobInputFromCompileState(state *recipeCompileState) (me
 	}
 	return mediaPlanMultiStreamJobInput{
 		runtime:      state.runtime,
-		intent:       clonePlannerIntent(state.intent),
+		recipe:       cloneRecipeIRRecipe(state.recipe),
 		inputs:       append([]InputSpec(nil), state.inputAttachments...),
 		input:        input,
 		namedOutputs: cloneNamedDestinationSpecs(namedOutputs),
@@ -291,10 +292,11 @@ func mediaPlanMultiStreamJobInputFromCompileState(state *recipeCompileState) (me
 }
 
 func newMediaPlanMultiStreamJobLowerer(input mediaPlanMultiStreamJobInput) (graphPlanLowerer, bool, error) {
-	if len(input.intent.Streams) < 2 {
+	recipe := input.recipe
+	if len(recipe.Streams) < 2 {
 		return nil, false, nil
 	}
-	gp, err := planBranchCompositionRecipe(input.intent, input.input, input.namedOutputs)
+	gp, err := planBranchCompositionRecipe(recipe, input.input, input.namedOutputs)
 	if err != nil {
 		return nil, false, err
 	}
@@ -303,14 +305,6 @@ func newMediaPlanMultiStreamJobLowerer(input mediaPlanMultiStreamJobInput) (grap
 		return nil, ok, err
 	}
 	return graph, true, nil
-}
-
-func clonePlannerIntent(in intent) intent {
-	out := in
-	out.Inputs = cloneInputIntents(in.Inputs)
-	out.Streams = cloneStreamIntents(in.Streams)
-	out.Destinations = append([]destinationIntent(nil), in.Destinations...)
-	return out
 }
 
 func cloneInputIntents(inputs []inputIntent) []inputIntent {
@@ -322,17 +316,6 @@ func cloneInputIntents(inputs []inputIntent) []inputIntent {
 		input := inputs[i]
 		input.Codec = cloneCodecSpec(input.Codec)
 		out = append(out, input)
-	}
-	return out
-}
-
-func cloneStreamIntents(streams []streamIntent) []streamIntent {
-	if len(streams) == 0 {
-		return nil
-	}
-	out := make([]streamIntent, 0, len(streams))
-	for i := range streams {
-		out = append(out, cloneStreamIntent(streams[i]))
 	}
 	return out
 }
