@@ -13,6 +13,7 @@ import (
 	"github.com/thesyncim/goav/internal/recipeir"
 	"github.com/thesyncim/goav/plan"
 	"github.com/thesyncim/goav/shape"
+	"github.com/thesyncim/goav/source"
 )
 
 func TestRecipeIRSnapshotRoundTripsJobIntent(t *testing.T) {
@@ -35,6 +36,10 @@ func TestRecipeIRSnapshotRoundTripsJobIntent(t *testing.T) {
 		!recipeIRHasFrameTap(snapshot.recipe) {
 		t.Fatalf("recipe IR did not capture decode/tap/transform/encode operations: %+v", snapshot.recipe.Streams)
 	}
+	if len(snapshot.recipe.Inputs) != 1 ||
+		snapshot.recipe.Inputs[0].Kind != recipeir.InputKindByteStream {
+		t.Fatalf("recipe IR inputs = %+v, want file-like byte-stream kind", snapshot.recipe.Inputs)
+	}
 	transform := recipeIRTransformForTest(t, snapshot.recipe, plan.OpTransform)
 	if transform.Kind != recipeir.TransformResize ||
 		transform.Resize.Width != 320 ||
@@ -47,6 +52,24 @@ func TestRecipeIRSnapshotRoundTripsJobIntent(t *testing.T) {
 	}
 	if got, want := intentFromRecipeIR(snapshot.recipe), job.plan(); !reflect.DeepEqual(got, want) {
 		t.Fatalf("IR round trip drifted\n got: %#v\nwant: %#v", got, want)
+	}
+}
+
+func TestRecipeIRSnapshotCapturesCustomSourceShape(t *testing.T) {
+	input := Source("camera", shape.Frame(av.MediaVideo), SourceFunc(func(context.Context, source.Push) error { return nil }))
+	snapshot := newJobRecipeSnapshot(From(input))
+	if len(snapshot.recipe.Inputs) != 1 ||
+		snapshot.recipe.Inputs[0].Kind != recipeir.InputKindCustomSource ||
+		snapshot.recipe.Inputs[0].SourceShape.Domain != shape.DomainFrame ||
+		snapshot.recipe.Inputs[0].SourceShape.MediaKind != av.MediaVideo {
+		t.Fatalf("recipe IR inputs = %+v, want custom source frame shape", snapshot.recipe.Inputs)
+	}
+
+	state := recipeCompileStateFromSnapshot(snapshot, recipeCompileOptions{})
+	state.inputAttachments = nil
+	spec, ok := compileStateCustomSourceShape(&state)
+	if !ok || spec.Domain != shape.DomainFrame || spec.MediaKind != av.MediaVideo {
+		t.Fatalf("compile state source shape = %+v, %v; want IR-backed video frame shape", spec, ok)
 	}
 }
 

@@ -45,6 +45,7 @@ type recipeCompileState struct {
 	branchCompositionPresent bool
 	recipeErr                error
 
+	inputFacts             []recipeir.Input
 	destinationKinds       []recipeir.DestinationKind
 	inputAttachments       []InputSpec
 	jobOutputCount         int
@@ -1147,7 +1148,7 @@ func jobStreamSelectionNeedsUnion(state *recipeCompileState, stream streamIntent
 // fail with the candidate list (input + stream id + media kind) and
 // InputName/StreamID narrowing suggestions.
 func validateJobStreamSelectionAcrossInputs(state *recipeCompileState, stream streamIntent) error {
-	sets := jobInputStreamSets(state.intent.Inputs, state.inputAttachments, state.inputProbes)
+	sets := jobInputStreamSetsFromRecipeIR(state.intent.Inputs, state.inputFacts, state.inputProbes)
 	_, _, err := selectStreamAcrossInputSets(sets, streamIntentSelector(stream), stream.Select.Input)
 	return err
 }
@@ -1188,12 +1189,27 @@ func jobStreamCustomSourceShape(state *recipeCompileState, stream streamIntent) 
 	if state.branchCompositionPresent || len(state.inputAttachments) <= 1 {
 		return compileStateCustomSourceShape(state)
 	}
-	sets := jobInputStreamSets(state.intent.Inputs, state.inputAttachments, state.inputProbes)
+	sets := jobInputStreamSetsFromRecipeIR(state.intent.Inputs, state.inputFacts, state.inputProbes)
 	index, ok := resolveInputSetIndex(sets, streamIntentSelector(stream), stream.Select.Input)
-	if !ok || index >= len(state.inputAttachments) {
+	if !ok {
 		return shape.Spec{}, false
 	}
-	return declaredSourceShape(state.inputAttachments[index])
+	return state.inputSourceShape(index)
+}
+
+func (state *recipeCompileState) inputSourceShape(index int) (shape.Spec, bool) {
+	if state == nil || index < 0 {
+		return shape.Spec{}, false
+	}
+	if index < len(state.inputFacts) {
+		if spec, ok := recipeIRInputSourceShape(state.inputFacts[index]); ok {
+			return spec, true
+		}
+	}
+	if index < len(state.inputAttachments) {
+		return declaredSourceShape(state.inputAttachments[index])
+	}
+	return shape.Spec{}, false
 }
 
 func validateKnownBranchInputStreamSelectionPass() recipeCompilePass {
@@ -1201,7 +1217,7 @@ func validateKnownBranchInputStreamSelectionPass() recipeCompilePass {
 		if !state.branchInputProbeReady || len(state.branchInputProbe.Streams) == 0 {
 			return nil
 		}
-		if spec, ok := declaredSourceShape(state.branchInputAttachment); ok && spec.Domain == shape.DomainFrame {
+		if spec, ok := state.inputSourceShape(0); ok && spec.Domain == shape.DomainFrame {
 			for i := range state.intent.Streams {
 				if _, err := selectStream(state.branchInputProbe.Streams, streamIntentSelector(state.intent.Streams[i])); err != nil {
 					return err
@@ -1223,7 +1239,7 @@ func validateKnownBranchInputDecodeAdaptersPass() recipeCompilePass {
 		if !state.options.preflightDecodeAdapters || !state.branchInputProbeReady || len(state.branchInputProbe.Streams) == 0 {
 			return nil
 		}
-		if spec, ok := declaredSourceShape(state.branchInputAttachment); ok && spec.Domain == shape.DomainFrame {
+		if spec, ok := state.inputSourceShape(0); ok && spec.Domain == shape.DomainFrame {
 			return nil
 		}
 		return validateKnownRecipeDecodeAdapters(state.operation, state.adapterRuntime(), []format.ProbeResult{state.branchInputProbe}, state.intent.Streams)

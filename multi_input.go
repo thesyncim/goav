@@ -7,6 +7,7 @@ import (
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/format"
+	"github.com/thesyncim/goav/internal/recipeir"
 	"github.com/thesyncim/goav/shape"
 )
 
@@ -27,6 +28,10 @@ type inputStreamSet struct {
 // example a file destination before probing) stay known=false so selection
 // validation skips them instead of guessing.
 func jobInputStreamSets(inputs []inputIntent, attachments []InputSpec, probes []format.ProbeResult) []inputStreamSet {
+	return jobInputStreamSetsFromRecipeIR(inputs, recipeIRInputsFromSpecs(attachments), probes)
+}
+
+func jobInputStreamSetsFromRecipeIR(inputs []inputIntent, inputFacts []recipeir.Input, probes []format.ProbeResult) []inputStreamSet {
 	sets := make([]inputStreamSet, 0, len(inputs))
 	for i := range inputs {
 		set := inputStreamSet{
@@ -34,10 +39,10 @@ func jobInputStreamSets(inputs []inputIntent, attachments []InputSpec, probes []
 			domain: shape.DomainPacket,
 		}
 		switch {
-		case i < len(attachments) && (attachments[i].source != nil || attachments[i].provider != nil):
-			spec, _ := declaredSourceShape(attachments[i])
+		case i < len(inputFacts) && inputFacts[i].SourceShape.Domain != "":
+			spec, _ := recipeIRInputSourceShape(inputFacts[i])
 			set.domain = spec.Domain
-			set.streams = declaredSourceStreams(attachments[i])
+			set.streams = []av.Stream{recipeIRInputDeclaredStream(inputFacts[i], spec)}
 			set.known = true
 		case i < len(probes) && len(probes[i].Streams) != 0:
 			set.streams = append([]av.Stream(nil), probes[i].Streams...)
@@ -51,6 +56,27 @@ func jobInputStreamSets(inputs []inputIntent, attachments []InputSpec, probes []
 		sets = append(sets, set)
 	}
 	return sets
+}
+
+func recipeIRInputDeclaredStream(input recipeir.Input, spec shape.Spec) av.Stream {
+	shape := normalizeCustomSourceShape(input.Name, spec)
+	stream := av.Stream{
+		ID:   shape.StreamID,
+		Type: shape.MediaKind,
+		Codec: av.CodecParameters{
+			ID:           shape.Codec,
+			Type:         shape.MediaKind,
+			SampleRate:   shape.SampleRate,
+			Channels:     shape.Channels,
+			Width:        shape.Width,
+			Height:       shape.Height,
+			PixelFormat:  shape.PixelFormat,
+			SampleFormat: shape.SampleFormat,
+		},
+		Name: string(shape.StreamID),
+	}
+	fillStreamCodecParameters(&stream, input.Codec)
+	return stream
 }
 
 // inputSpecStreamSets derives the per-input stream sets straight from the input
