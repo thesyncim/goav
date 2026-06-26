@@ -310,6 +310,34 @@ func joinPlanInputFromCompileState(state *recipeCompileState) joinPlanInput {
 	}
 }
 
+type joinWorkPlanInput struct {
+	inputs        []inputIntent
+	destinations  []destinationIntent
+	outputFormats map[string]av.FormatID
+}
+
+func joinWorkPlanInputFromCompileState(state *recipeCompileState) joinWorkPlanInput {
+	if state == nil {
+		return joinWorkPlanInput{}
+	}
+	return joinWorkPlanInput{
+		inputs:        append([]inputIntent(nil), state.intent.Inputs...),
+		destinations:  append([]destinationIntent(nil), state.intent.Destinations...),
+		outputFormats: cloneOutputFormatMap(state.outputFormatMap()),
+	}
+}
+
+func cloneOutputFormatMap(formats map[string]av.FormatID) map[string]av.FormatID {
+	if len(formats) == 0 {
+		return nil
+	}
+	out := make(map[string]av.FormatID, len(formats))
+	for name, formatID := range formats {
+		out[name] = formatID
+	}
+	return out
+}
+
 func joinArmError(name string, node string, reason string, suggestions ...string) error {
 	return &BuildError{
 		Family:    errcode.FamilyForCode(joinErrorCode(name, "arm")),
@@ -1493,13 +1521,12 @@ func insertJoinArmStage(graph pipeline.Graph, rt *runtime, stage pipeline.Stage,
 // joined branch anchored on the plan.OpJoin node carrying the downstream chain,
 // and — for fanouts — one branch per planned branch route. The N-to-1
 // convergence rides workPlan.Edges, copied from the planned spec.
-func (p *joinPlan) buildJoinWorkPlan(state *recipeCompileState, spec pipeline.Spec) workPlan {
-	intent := state.intent
-	outputs := planOutputs(intent.Destinations, state.outputFormatMap())
+func (p *joinPlan) buildJoinWorkPlan(input joinWorkPlanInput, spec pipeline.Spec) workPlan {
+	outputs := planOutputs(input.destinations, input.outputFormats)
 	work := workPlan{
 		Name:         firstNonEmpty(spec.Name, "goav-"+p.name),
 		Realtime:     spec.Realtime,
-		Inputs:       workInputsFromIntent(intent.Inputs),
+		Inputs:       workInputsFromIntent(input.inputs),
 		Taps:         p.allTaps(),
 		Destinations: workDestinationsFromPlan(outputs),
 		Diagnostics:  clonePlanDiagnostics(p.allDiagnostics()),

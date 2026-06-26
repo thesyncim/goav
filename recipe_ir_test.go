@@ -158,6 +158,18 @@ func TestJoinPlannerConsumesRecipeIRInput(t *testing.T) {
 		planned.arms[1].domain != shape.DomainFrame {
 		t.Fatalf("join arms = %+v, want IR-derived frame inputs a and b", planned.arms)
 	}
+
+	spec, err := planned.spec()
+	if err != nil {
+		t.Fatalf("join spec: %v", err)
+	}
+	workInput := joinWorkPlanInputFromCompileState(&state)
+	state.intent.Inputs = nil
+	state.intent.Destinations = nil
+	work := planned.buildJoinWorkPlan(workInput, spec)
+	if len(work.Inputs) != 2 || len(work.Destinations) != 1 {
+		t.Fatalf("join work plan inputs=%+v destinations=%+v, want captured handoff data", work.Inputs, work.Destinations)
+	}
 }
 
 func TestRecipeIRSnapshotCapturesSinkDestinationKind(t *testing.T) {
@@ -241,6 +253,22 @@ func TestJoinPlannerUsesRecipeIRInputFacts(t *testing.T) {
 	if strings.Contains(planBody, "*recipeCompileState") || strings.Contains(planBody, "state.") {
 		t.Fatal("newJoinPlan should consume joinPlanInput instead of compile state")
 	}
+	workBody := sourceFunctionBody(t, string(body), "buildJoinWorkPlan")
+	if strings.Contains(workBody, "*recipeCompileState") || strings.Contains(workBody, "state.") {
+		t.Fatal("buildJoinWorkPlan should consume joinWorkPlanInput instead of compile state")
+	}
+	workInputBody := sourceFunctionBody(t, string(body), "joinWorkPlanInputFromCompileState")
+	if !strings.Contains(workInputBody, "outputFormats: cloneOutputFormatMap(state.outputFormatMap())") {
+		t.Fatal("join work-plan input should capture output format facts at the boundary")
+	}
+	workPlanBody, err := os.ReadFile("work_plan.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	workHandoff := sourceFunctionBody(t, string(workPlanBody), "buildWorkPlan")
+	if !strings.Contains(workHandoff, "state.joinPlan.buildJoinWorkPlan(joinWorkPlanInputFromCompileState(state), spec)") {
+		t.Fatal("buildWorkPlan should pass joinWorkPlanInput into join work rendering")
+	}
 	lowererBody, err := os.ReadFile("media_plan_spec.go")
 	if err != nil {
 		t.Fatal(err)
@@ -254,6 +282,12 @@ func TestJoinPlannerUsesRecipeIRInputFacts(t *testing.T) {
 func sourceFunctionBody(t *testing.T, source string, name string) string {
 	t.Helper()
 	start := strings.Index(source, "func "+name+"(")
+	if start < 0 {
+		method := strings.Index(source, ") "+name+"(")
+		if method >= 0 {
+			start = strings.LastIndex(source[:method], "func ")
+		}
+	}
 	if start < 0 {
 		t.Fatalf("could not find %s", name)
 	}
