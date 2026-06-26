@@ -56,6 +56,8 @@ methodology changes, and migration notes.
 - Routed normal work-plan rendering through an explicit handoff so operation,
   branch, destination, decision, and diagnostic rendering consumes captured
   planner data.
+- Routed multi-stream job graph lowering through an explicit handoff before
+  branch-compose graph construction.
 - Moved normal media-planner input binding and selected-stream resolution onto
   recipe IR input facts instead of concrete input attachments.
 - Moved copy-branch source-shape planning onto recipe IR input facts.

@@ -214,6 +214,47 @@ func TestNormalWorkPlanConsumesHandoff(t *testing.T) {
 	}
 }
 
+func TestMultiStreamGraphLowererConsumesHandoff(t *testing.T) {
+	job := From(
+		mixTestAudioSource("mic-a", 11, 22),
+		mixTestAudioSource("mic-b", 33, 44),
+	).
+		Audio(InputName("mic-a")).To(Sink(SinkFunc("sink-a", func(context.Context, Message) error { return nil }))).
+		Audio(InputName("mic-b")).To(Sink(SinkFunc("sink-b", func(context.Context, Message) error { return nil })))
+
+	state := recipeCompileStateFromSnapshot(newJobRecipeSnapshot(job), recipeCompileOptions{})
+	input, ok := mediaPlanMultiStreamJobInputFromCompileState(&state)
+	if !ok {
+		t.Fatal("multi-stream graph lowerer input was not selected")
+	}
+
+	state.runtime = nil
+	state.intent.Streams = nil
+	state.inputAttachments = nil
+	state.outputAttachments = nil
+	state.outputDestinationNames = nil
+
+	lowerer, ok, err := newMediaPlanMultiStreamJobLowerer(input)
+	if err != nil {
+		t.Fatalf("lower multi-stream job from captured input: %v", err)
+	}
+	if !ok {
+		t.Fatal("multi-stream graph lowerer was not built from captured input")
+	}
+	graph, ok := lowerer.(mediaPlanBranchComposeGraph)
+	if !ok {
+		t.Fatalf("lowerer = %T, want mediaPlanBranchComposeGraph", lowerer)
+	}
+	if len(graph.inputs) != 2 ||
+		len(graph.plan.Branches) != 2 ||
+		len(graph.plan.Destinations) != 2 ||
+		graph.plan.Branches[0].Input != "mic-a" ||
+		graph.plan.Branches[1].Input != "mic-b" {
+		t.Fatalf("multi-stream graph = inputs:%+v branches:%+v destinations:%+v, want captured handoff data",
+			graph.inputs, graph.plan.Branches, graph.plan.Destinations)
+	}
+}
+
 func TestMediaPlannerConsumesRecipeIRInputFacts(t *testing.T) {
 	job := From(
 		compositeTestVideoSource("camera", 4, 4, 100, 10, 20),
@@ -425,6 +466,46 @@ func TestNormalWorkPlanUsesHandoff(t *testing.T) {
 	renderBody := sourceFunctionBody(t, source, "buildNormalWorkPlan")
 	if strings.Contains(renderBody, "*recipeCompileState") || strings.Contains(renderBody, "state.") {
 		t.Fatal("buildNormalWorkPlan should consume workPlanInput instead of compile state")
+	}
+}
+
+func TestMultiStreamGraphLowererUsesHandoff(t *testing.T) {
+	body, err := os.ReadFile("media_plan_spec.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := string(body)
+	if !strings.Contains(source, "type mediaPlanMultiStreamJobInput struct") {
+		t.Fatal("multi-stream graph lowerer should declare an explicit input boundary")
+	}
+	lowererBody := sourceFunctionBody(t, source, "mediaPlanMultiStreamJobLowererForState")
+	if !strings.Contains(lowererBody, "input, ok := mediaPlanMultiStreamJobInputFromCompileState(state)") ||
+		!strings.Contains(lowererBody, "return newMediaPlanMultiStreamJobLowerer(input)") {
+		t.Fatal("mediaPlanMultiStreamJobLowererForState should pass captured input into graph lowering")
+	}
+	for _, forbidden := range []string{
+		"planBranchCompositionRecipe(state.intent",
+		"newMediaPlanBranchComposeGraph(state.runtime",
+		"state.inputAttachments",
+		"state.outputAttachments",
+	} {
+		if strings.Contains(lowererBody, forbidden) {
+			t.Fatalf("mediaPlanMultiStreamJobLowererForState still lowers directly from compile state with %q", forbidden)
+		}
+	}
+	inputBody := sourceFunctionBody(t, source, "mediaPlanMultiStreamJobInputFromCompileState")
+	for _, required := range []string{
+		"clonePlannerIntent(state.intent)",
+		"append([]InputSpec(nil), state.inputAttachments...)",
+		"cloneNamedDestinationSpecs(namedOutputs)",
+	} {
+		if !strings.Contains(inputBody, required) {
+			t.Fatalf("mediaPlanMultiStreamJobInputFromCompileState should capture %s", required)
+		}
+	}
+	renderBody := sourceFunctionBody(t, source, "newMediaPlanMultiStreamJobLowerer")
+	if strings.Contains(renderBody, "*recipeCompileState") || strings.Contains(renderBody, "state.") {
+		t.Fatal("newMediaPlanMultiStreamJobLowerer should consume mediaPlanMultiStreamJobInput instead of compile state")
 	}
 }
 
