@@ -110,7 +110,8 @@ func TestEmitDeliveryReportsShedsPerMessage(t *testing.T) {
 }
 
 // TestDirectEmitterImplementsDelivery pins that the direct runner offers the
-// same capability: synchronous success is one delivery, nothing shed.
+// same capability and reports accepted fanout targets, not just successful
+// emissions.
 func TestDirectEmitterImplementsDelivery(t *testing.T) {
 	gate := make(chan struct{})
 	close(gate) // direct execution must not block
@@ -123,19 +124,74 @@ func TestDirectEmitterImplementsDelivery(t *testing.T) {
 	if _, err := graph.AddSource(source, BufferPolicy{}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := graph.AddSink(sink, BufferPolicy{}); err != nil {
+	left := sink
+	right := &gatedSink{name: "right", gate: gate}
+	if _, err := graph.AddSink(left, BufferPolicy{}); err != nil {
 		t.Fatal(err)
 	}
-	if err := graph.Connect(Route{From: "src", To: []string{"sink"}, Policy: RouteAll}); err != nil {
+	if _, err := graph.AddSink(right, BufferPolicy{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := graph.Connect(Route{From: "src", To: []string{"sink", "right"}, Policy: RouteAll}); err != nil {
 		t.Fatal(err)
 	}
 	if err := graph.Run(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	if got := source.delivered.Load(); got != 4 {
-		t.Fatalf("direct delivered = %d, want 4", got)
+	if got := source.delivered.Load(); got != 8 {
+		t.Fatalf("direct delivered = %d, want 8", got)
 	}
 	if got := source.shed.Load(); got != 0 {
 		t.Fatalf("direct shed = %d, want 0", got)
+	}
+	if got := left.seen.Load(); got != 4 {
+		t.Fatalf("left sink saw %d, want 4", got)
+	}
+	if got := right.seen.Load(); got != 4 {
+		t.Fatalf("right sink saw %d, want 4", got)
+	}
+}
+
+func TestDirectEmitterDeliveryReportsPausedTargetsAsShed(t *testing.T) {
+	gate := make(chan struct{})
+	close(gate)
+	graph, err := NewGraph(GraphConfig{Name: "delivery-direct-paused"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	const pushes = 4
+	source := &deliverySource{name: "src", count: pushes, gate: make(chan struct{})}
+	left := &gatedSink{name: "left", gate: gate}
+	right := &gatedSink{name: "right", gate: gate}
+	if _, err := graph.AddSource(source, BufferPolicy{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := graph.AddSink(left, BufferPolicy{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := graph.AddSink(right, BufferPolicy{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := graph.Connect(Route{From: "src", To: []string{"left", "right"}, Policy: RouteAll}); err != nil {
+		t.Fatal(err)
+	}
+	pauser := graph.(NodePauser)
+	if err := pauser.SetNodePaused("right", true); err != nil {
+		t.Fatal(err)
+	}
+	if err := graph.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if got := source.delivered.Load(); got != pushes {
+		t.Fatalf("direct delivered = %d, want %d", got, pushes)
+	}
+	if got := source.shed.Load(); got != pushes {
+		t.Fatalf("direct shed = %d, want %d", got, pushes)
+	}
+	if got := left.seen.Load(); got != pushes {
+		t.Fatalf("left sink saw %d, want %d", got, pushes)
+	}
+	if got := right.seen.Load(); got != 0 {
+		t.Fatalf("paused right sink saw %d, want 0", got)
 	}
 }

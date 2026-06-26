@@ -8,9 +8,10 @@ import "context"
 // from Emit alone cannot tell a producer whether this message was delivered;
 // Delivery can.
 type Delivery struct {
-	// Delivered counts targets that accepted the message into their queue.
-	// (Under DropOldest a target may have evicted an older message to admit
-	// this one — that eviction lands in the target's drop counters.)
+	// Delivered counts matching targets that accepted the message. Buffered
+	// targets accept by queueing; direct targets accept when their handler
+	// returns nil. Under DropOldest a target may have evicted an older message
+	// to admit this one — that eviction lands in the target's drop counters.
 	Delivered int
 	// Shed counts targets that deliberately dropped this message: a full queue
 	// under a dropping policy, an exhausted byte budget, a paused branch, or a

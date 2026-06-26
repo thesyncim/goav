@@ -111,14 +111,10 @@ func (e *directEmitter) Emit(ctx context.Context, msg *Message) error {
 	return e.graph.emit(ctx, e.from, msg)
 }
 
-// EmitDelivery implements the optional DeliveryEmitter capability. Direct
-// execution is synchronous — a nil error means the whole downstream chain
-// processed the message — so success is one delivery and nothing is ever shed.
+// EmitDelivery implements the optional DeliveryEmitter capability: Emit plus a
+// per-message report of delivered vs deliberately-shed targets.
 func (e *directEmitter) EmitDelivery(ctx context.Context, msg *Message) (Delivery, error) {
-	if err := e.Emit(ctx, msg); err != nil {
-		return Delivery{}, err
-	}
-	return Delivery{Delivered: 1}, nil
+	return e.graph.emitDelivery(ctx, e.from, msg)
 }
 
 // NewGraph creates the single public pipeline graph. Direct execution is used
@@ -614,25 +610,31 @@ func (g *directRunner) addNode(node directNode) (int, error) {
 }
 
 func (g *directRunner) emit(ctx context.Context, from int, msg *Message) error {
+	_, err := g.emitDelivery(ctx, from, msg)
+	return err
+}
+
+func (g *directRunner) emitDelivery(ctx context.Context, from int, msg *Message) (Delivery, error) {
+	var delivery Delivery
 	if msg == nil {
-		return ErrNilMessage
+		return delivery, ErrNilMessage
 	}
 	if err := ctx.Err(); err != nil {
-		return err
+		return delivery, err
 	}
 	// Lock-free hot path: read an immutable routing snapshot, deliver inline. No
 	// mutex, no per-node copy, and no per-message destination slice (so wide
 	// fanout stays allocation-free).
 	topo := g.topo.Load()
 	if topo == nil {
-		return ErrClosed
+		return delivery, ErrClosed
 	}
 	if from < 0 || from >= len(topo.nodes) {
-		return ErrUnknownNode
+		return delivery, ErrUnknownNode
 	}
 	fromNode := &topo.nodes[from]
 	if !fromNode.active {
-		return nil
+		return delivery, nil
 	}
 	observeOut(fromNode.counters, msg, &g.cold)
 	g.publishEvent(msg, fromNode.counters)
@@ -650,18 +652,24 @@ func (g *directRunner) emit(ctx context.Context, from int, msg *Message) error {
 			if !dst.active {
 				continue
 			}
-			if err := g.deliverTopo(ctx, dst, msg); err != nil {
-				return err
+			delivered, err := g.deliverTopo(ctx, dst, msg)
+			if err != nil {
+				return delivery, err
+			}
+			if delivered {
+				delivery.Delivered++
+			} else {
+				delivery.Shed++
 			}
 		}
 	}
-	return nil
+	return delivery, nil
 }
 
-func (g *directRunner) deliverTopo(ctx context.Context, dst *directTopoNode, msg *Message) error {
+func (g *directRunner) deliverTopo(ctx context.Context, dst *directTopoNode, msg *Message) (bool, error) {
 	if dst.paused != nil && dst.paused.Load() {
 		// Branch paused: skip this node; the source and siblings keep flowing.
-		return nil
+		return false, nil
 	}
 	if dst.gate != nil {
 		// Register this delivery before checking the tombstone: Remove sets
@@ -670,18 +678,24 @@ func (g *directRunner) deliverTopo(ctx context.Context, dst *directTopoNode, msg
 		// bit sheds itself — Close never runs under an in-flight Handle.
 		if dst.gate.Add(1)&nodeClosingBit != 0 {
 			dst.gate.Add(-1)
-			return nil
+			return false, nil
 		}
 		defer dst.gate.Add(-1)
 	}
 	observeIn(dst.counters, msg, &g.cold)
 	switch dst.kind {
 	case nodeStage:
-		return dst.stage.Handle(ctx, msg, dst.emitter)
+		if err := dst.stage.Handle(ctx, msg, dst.emitter); err != nil {
+			return false, err
+		}
+		return true, nil
 	case nodeSink:
-		return dst.sink.Handle(ctx, msg)
+		if err := dst.sink.Handle(ctx, msg); err != nil {
+			return false, err
+		}
+		return true, nil
 	default:
-		return ErrInvalidLink
+		return false, ErrInvalidLink
 	}
 }
 
