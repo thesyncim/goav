@@ -201,7 +201,6 @@ goav.CodecChangePolicy
 goav.Composite
 goav.Custom
 goav.Destination
-goav.DestinationOption
 goav.Detail
 goav.ErrBackpressure
 goav.ErrClosed
@@ -218,7 +217,6 @@ goav.FrameTap
 goav.From
 goav.Input
 goav.InputName
-goav.InputOption
 goav.InputSpec
 goav.InputStream
 goav.Inspectable

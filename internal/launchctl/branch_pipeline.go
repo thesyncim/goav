@@ -460,11 +460,10 @@ func parseFileSink(args map[string]string) (goav.Destination, error) {
 	if err != nil {
 		return goav.Destination{}, commandError("open_destination", "parse branch pipeline", sink.Location, err.Error(), nil, []string{"choose a writable filesink location"}, err)
 	}
-	var options []goav.DestinationOption
 	if sink.Format != "" {
-		options = append(options, goav.Format(sink.Format))
+		return goav.Write(sink.Location, closeOnceWriter{Writer: writer, closer: writer}, goav.Format(sink.Format)), nil
 	}
-	return goav.Write(sink.Location, closeOnceWriter{Writer: writer, closer: writer}, options...), nil
+	return goav.Write(sink.Location, closeOnceWriter{Writer: writer, closer: writer}), nil
 }
 
 func fileSinkOptionError(err error) error {

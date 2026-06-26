@@ -223,11 +223,10 @@ func executeRunPipeline(ctx context.Context, runtimeName string, control string,
 	}
 	defer file.Close()
 
-	destOpts := []goav.DestinationOption(nil)
+	dest := goav.Write(plan.destination.location, file)
 	if plan.destination.format != "" {
-		destOpts = append(destOpts, goav.Format(plan.destination.format))
+		dest = goav.Write(plan.destination.location, file, goav.Format(plan.destination.format))
 	}
-	dest := goav.Write(plan.destination.location, file, destOpts...)
 	runtime, runtimeLabel, err := runtimeForRun(runtimeName, plan)
 	if err != nil {
 		return runPipelineResult{}, err

@@ -82,11 +82,11 @@ func WrapSource(spec InputSpec, wrap func(pipeline.Source) pipeline.Source) Inpu
 	return spec
 }
 
-// InputOption configures an input value (FileInput, URIInput, Source, Input,
+// inputOptionValue configures an input value (FileInput, URIInput, Source, Input,
 // or InputSpec.With): Codec declares the stream's codec, and the
 // direction-agnostic media options (Name, MIME, Metadata) satisfy it too. It
 // is sealed — only goav option constructors implement it.
-type InputOption interface {
+type inputOptionValue interface {
 	applyInput(*InputSpec)
 }
 
@@ -103,7 +103,7 @@ func (o inputOption) applyInput(spec *InputSpec) {
 // for live receives where the transport negotiated the codec out of band. It
 // is input-only: destinations carry container facts (Format, MIME), never a
 // stream codec.
-func Codec(spec codec.CodecSpec) InputOption {
+func Codec(spec codec.CodecSpec) inputOptionValue {
 	return inputOption(func(input *InputSpec) {
 		input.codec = cloneCodecSpec(spec)
 	})
@@ -112,11 +112,11 @@ func Codec(spec codec.CodecSpec) InputOption {
 // With returns a copy of the input with the options applied — the same option
 // vocabulary the constructors take, for layering config onto an
 // already-constructed value (renaming a generated test input, say).
-func (s InputSpec) With(opts ...InputOption) InputSpec {
+func (s InputSpec) With(opts ...inputOptionValue) InputSpec {
 	return applyInputOptions(s, opts)
 }
 
-func applyInputOptions(spec InputSpec, opts []InputOption) InputSpec {
+func applyInputOptions(spec InputSpec, opts []inputOptionValue) InputSpec {
 	for i := range opts {
 		if opts[i] != nil {
 			opts[i].applyInput(&spec)
@@ -127,7 +127,7 @@ func applyInputOptions(spec InputSpec, opts []InputOption) InputSpec {
 
 // FileInput declares a file-like input read from reader; name carries the
 // extension format probing uses (a .ivf name selects the IVF demuxer).
-func FileInput(name string, reader io.Reader, opts ...InputOption) InputSpec {
+func FileInput(name string, reader io.Reader, opts ...inputOptionValue) InputSpec {
 	return applyInputOptions(inputSpecHandle(InputSpec{
 		input: format.Input{
 			Name:     name,
@@ -140,7 +140,7 @@ func FileInput(name string, reader io.Reader, opts ...InputOption) InputSpec {
 
 // URIInput declares an input opened by a registered format adapter from a
 // URI.
-func URIInput(uri string, opts ...InputOption) InputSpec {
+func URIInput(uri string, opts ...inputOptionValue) InputSpec {
 	return applyInputOptions(inputSpecHandle(InputSpec{
 		input: format.Input{
 			Name: uri,

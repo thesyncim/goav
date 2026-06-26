@@ -41,11 +41,11 @@ const (
 	destinationOriginConstructed
 )
 
-// DestinationOption configures a destination value (Write, URI, Writer,
+// destinationOptionValue configures a destination value (Write, URI, Writer,
 // Custom, or Destination.With): Format pins the container, and the
 // direction-agnostic media options (Name, MIME, Metadata) satisfy it too. It is
 // sealed — only goav option constructors implement it.
-type DestinationOption interface {
+type destinationOptionValue interface {
 	applyDestination(*destinationSpec)
 }
 

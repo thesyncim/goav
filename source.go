@@ -32,7 +32,7 @@ type InputStream struct {
 // on the task pushing through source.Push. Custom sources participate in
 // streams, branches, taps, explain, and runtime attach exactly like built-in
 // inputs.
-func Source(name string, spec shape.Spec, fn sourcepkg.Func, opts ...InputOption) InputSpec {
+func Source(name string, spec shape.Spec, fn sourcepkg.Func, opts ...inputOptionValue) InputSpec {
 	spec = normalizeCustomSourceShape(name, spec)
 	return applyInputOptions(inputSpecHandle(InputSpec{
 		input: format.Input{
