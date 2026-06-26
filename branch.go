@@ -98,8 +98,10 @@ func destinationSpecEmpty(dest destinationSpec) bool {
 // BranchSpec is one finished branch declaration: the operations and
 // destinations a Branch(...) builder accumulated, ready for .Branches(...) on
 // a stream chain or Mutable.Attach at runtime. Values are immutable snapshots —
-// reusing a builder cannot mutate a spec already passed along.
+// reusing a builder cannot mutate a spec already passed along. The zero value
+// is intentionally not a valid branch; construct branch specs with Branch(name).
 type BranchSpec struct {
+	origin       branchSpecOrigin
 	name         string
 	media        av.MediaType
 	operations   []operationSpec
@@ -112,6 +114,14 @@ type BranchSpec struct {
 	hasRemoveDisposition bool
 	err                  error
 }
+
+type branchSpecOrigin uint8
+
+const (
+	branchSpecOriginZero branchSpecOrigin = iota
+	branchSpecOriginBranch
+	branchSpecOriginOnRemove
+)
 
 type branchBuilder struct {
 	spec BranchSpec
@@ -159,7 +169,7 @@ type tapAnchor interface {
 // anchors it at an earlier point, and .To(destinations...) finishes it into a
 // BranchSpec. Names must be unique within one Branches or Attach call.
 func Branch(name string) *branchBuilder {
-	return &branchBuilder{spec: BranchSpec{name: name}}
+	return &branchBuilder{spec: BranchSpec{origin: branchSpecOriginBranch, name: name}}
 }
 
 func (b *branchBuilder) From(source branchSource) *branchBuilder {
@@ -532,6 +542,9 @@ func (b *jobStreamBuilder) Branches(branches ...BranchSpec) *Job {
 func validateBranchSpec(selected av.MediaType, parentPacket bool, index int, spec BranchSpec) error {
 	if spec.err != nil {
 		return spec.err
+	}
+	if spec.origin != branchSpecOriginBranch {
+		return branchSpecOriginError(index, selected)
 	}
 	if spec.source.from != "" {
 		return plannedBranchNodeSourceError(spec.name, spec.source.from)
@@ -974,6 +987,23 @@ func nilBranchError() error {
 		Reason:    "branch is nil",
 		Fixes: buildErrorFixes([]string{
 			"build branches with goav.Branch(name)",
+		}),
+		Cause: ErrUnsupportedBuild,
+	}
+}
+
+func branchSpecOriginError(index int, selected av.MediaType) error {
+	return &BuildError{
+		Family:    errcode.FamilyForCode(errcode.BranchInvalid),
+		Code:      errcode.BranchInvalid,
+		Operation: "build branches",
+		Node:      fmt.Sprintf("branch-%d", index),
+		Reason:    "branch spec was not constructed with goav.Branch(name)",
+		Fields: buildErrorFields([]string{
+			"media=" + string(selected),
+		}),
+		Fixes: buildErrorFixes([]string{
+			"construct branches with goav.Branch(name).To(destination)",
 		}),
 		Cause: ErrUnsupportedBuild,
 	}

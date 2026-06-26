@@ -286,15 +286,15 @@ func TestErrorAcceptanceBranchMissing(t *testing.T) {
 	)
 }
 
-// TestErrorAcceptanceBranchNameMissing is snippet 0n: a zero BranchSpec
-// reaches Branches(...). The refusal says branches need stable names.
-func TestErrorAcceptanceBranchNameMissing(t *testing.T) {
+// TestErrorAcceptanceBranchSpecUnconstructed is snippet 0n: a zero BranchSpec
+// reaches Branches(...). The refusal says real branches come from Branch(name).
+func TestErrorAcceptanceBranchSpecUnconstructed(t *testing.T) {
 	_, err := goav.From(opusPacketInput()).
 		Audio().
 		Branches(goav.BranchSpec{}).
 		Describe()
-	requireBuildError(t, err, errcode.StreamNameMissing, "build branch composition", "branch-0",
-		"use branch names as handles for graph inspection and destination planning",
+	requireBuildError(t, err, errcode.BranchInvalid, "build branches", "branch-0",
+		"construct branches with goav.Branch(name).To(destination)",
 	)
 }
 

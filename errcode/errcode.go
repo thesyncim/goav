@@ -387,7 +387,8 @@ const (
 
 // Planned branch codes (.Branches fanout declared at build time).
 const (
-	// BranchInvalid fires when a branch spec is nil.
+	// BranchInvalid fires when a branch spec is nil, unconstructed, or
+	// otherwise malformed before branch planning can use it.
 	BranchInvalid Code = "branch_invalid"
 	// BranchMissing fires when .Branches(...) is called with no branches.
 	BranchMissing Code = "branch_missing"
@@ -517,8 +518,8 @@ const (
 
 // Runtime attach codes (Mutable.Attach / Rebranch refusals).
 const (
-	// RuntimeBranchInvalid fires when a runtime branch spec is nil or
-	// malformed.
+	// RuntimeBranchInvalid fires when a runtime branch spec is nil,
+	// unconstructed, or malformed.
 	RuntimeBranchInvalid Code = "runtime_branch_invalid"
 	// RuntimeBranchAnchorMissing fires when the branch's source node does
 	// not exist in the running task graph.

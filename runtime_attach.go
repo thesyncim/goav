@@ -205,6 +205,9 @@ func runtimeAttachInputFromBranchSpecs(specs []BranchSpec) (runtimeAttachInput, 
 	}
 	branches := make([]runtimeAttachBranchInput, 0, len(specs))
 	for i := range specs {
+		if err := validateRuntimeBranchSpecOrigin(specs[i]); err != nil {
+			return runtimeAttachInput{}, err
+		}
 		branchDestinations, err := attachBranchDestinations(specs[i])
 		if err != nil {
 			return runtimeAttachInput{}, err
@@ -226,6 +229,19 @@ func runtimeAttachInputFromBranchSpecs(specs []BranchSpec) (runtimeAttachInput, 
 		groupDestinations: groupDestinations,
 		name:              runtimeAttachmentName(specs),
 	}, nil
+}
+
+func validateRuntimeBranchSpecOrigin(spec BranchSpec) error {
+	if spec.err != nil {
+		return nil
+	}
+	if spec.origin != branchSpecOriginBranch {
+		return runtimeBranchInvalidError(
+			"branch spec was not constructed with goav.Branch(name)",
+			"attach a named branch built with goav.Branch(name).From(...).To(destination)",
+		)
+	}
+	return nil
 }
 
 func runtimeRebranchInputFromArgs(ctx context.Context, args []lifecycle.RebranchArg) (runtimeRebranchInput, error) {
