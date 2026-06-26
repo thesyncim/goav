@@ -447,6 +447,7 @@ func TestRuntimeAttachUsesGraphPatchBoundary(t *testing.T) {
 	for _, required := range []string{
 		"type runtimeGraphPatch struct",
 		"type runtimeAttachInput struct",
+		"type runtimeBranchRecipe struct",
 		"type runtimeAttachBranchInput struct",
 		"type runtimeAttachBranchPlanInput struct",
 		"func runtimeAttachInputFromBranchSpecs",
@@ -467,7 +468,7 @@ func TestRuntimeAttachUsesGraphPatchBoundary(t *testing.T) {
 		"func (p *attachPlan) registerBranch(input runtimeAttachBranchPlanInput",
 		"func (p *attachPlan) finalizeBranch(index int, input runtimeAttachBranchPlanInput",
 		"intent:    runtimeAttachBranchIntent(branch, anchor)",
-		"range spec.operations",
+		"range recipe.operations",
 		"operationSpecOutputShape",
 		"for i := range input.branches",
 		"patch.resetPlannedTaps()",
@@ -485,21 +486,26 @@ func TestRuntimeAttachUsesGraphPatchBoundary(t *testing.T) {
 		"runtimeBranchWorkSteps",
 	} {
 		if strings.Contains(text, forbidden) {
-			t.Fatalf("runtime attach should plan the workPatch directly from BranchSpec, not a parallel %q model", forbidden)
+			t.Fatalf("runtime attach should plan the workPatch from one captured recipe, not a parallel %q model", forbidden)
 		}
 	}
 	for name, body := range map[string]string{
 		"planAttachBranchSteps":      sourceFunctionBody(t, text, "planAttachBranchSteps"),
 		"planAttachEncode":           sourceFunctionBody(t, text, "planAttachEncode"),
 		"prepareRuntimeBranchDecode": sourceFunctionBody(t, text, "prepareRuntimeBranchDecode"),
+		"registerBranch":             sourceFunctionBody(t, text, "registerBranch"),
+		"finalizeBranch":             sourceFunctionBody(t, text, "finalizeBranch"),
 	} {
 		if strings.Contains(body, "streamIntent{") {
 			t.Fatalf("%s should use the captured runtimeAttachBranchPlanInput intent, not rebuild streamIntent inline", name)
 		}
+		if strings.Contains(body, ".branch.spec") {
+			t.Fatalf("%s should use the captured runtime branch recipe instead of BranchSpec", name)
+		}
 	}
 }
 
-func TestRuntimeAttachInputCapturesBranchSpecs(t *testing.T) {
+func TestRuntimeAttachInputCapturesBranchRecipe(t *testing.T) {
 	spec := Branch("watch").
 		From(PacketTap("pkts")).
 		Copy().
@@ -516,12 +522,11 @@ func TestRuntimeAttachInputCapturesBranchSpecs(t *testing.T) {
 
 	if input.name != "watch" ||
 		len(input.branches) != 1 ||
-		input.branches[0].spec.name != "watch" ||
-		input.branches[0].spec.source.tap != "pkts" ||
-		len(input.branches[0].spec.operations) != 1 ||
-		len(input.branches[0].spec.destinations) != 1 ||
+		input.branches[0].recipe.name != "watch" ||
+		input.branches[0].recipe.source.tap != "pkts" ||
+		len(input.branches[0].recipe.operations) != 1 ||
 		len(input.branches[0].destinations) != 1 {
-		t.Fatalf("runtime attach input = %+v, want captured branch spec and destinations", input)
+		t.Fatalf("runtime attach input = %+v, want captured branch recipe and destinations", input)
 	}
 }
 
@@ -571,12 +576,12 @@ func TestRuntimeRebranchInputCapturesReplacementSpecsAndPolicy(t *testing.T) {
 		input.disposition != oldBranchDrain ||
 		input.attach.name != "next" ||
 		len(input.attach.branches) != 1 ||
-		input.attach.branches[0].spec.name != "next" ||
-		input.attach.branches[0].spec.source.tap != "pkts" ||
+		input.attach.branches[0].recipe.name != "next" ||
+		input.attach.branches[0].recipe.source.tap != "pkts" ||
 		len(input.attach.branches[0].destinations) != 1 {
 		t.Fatalf("runtime rebranch input = %+v, want captured switch-gated replacement", input)
 	}
-	operations := input.attach.branches[0].spec.operations
+	operations := input.attach.branches[0].recipe.operations
 	if len(operations) != 2 ||
 		operations[0].Kind != plan.OpStage ||
 		operations[1].Kind != plan.OpCopy {

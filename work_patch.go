@@ -90,8 +90,8 @@ func newAttachPlan() *attachPlan {
 // buffer, and the prepared stages it owns — before names are reserved, so a
 // later planning failure can still close everything the branch opened.
 func (p *attachPlan) registerBranch(input runtimeAttachBranchPlanInput, steps []attachStep) int {
-	spec := input.branch.spec
-	policy := spec.source.policy
+	recipe := input.branch.recipe
+	policy := recipe.source.policy
 	if policy == "" {
 		policy = pipeline.RouteAll
 	}
@@ -102,11 +102,11 @@ func (p *attachPlan) registerBranch(input runtimeAttachBranchPlanInput, steps []
 		}
 	}
 	p.branches = append(p.branches, attachPlanBranch{
-		name:   firstNonEmpty(spec.name, "branch"),
+		name:   firstNonEmpty(recipe.name, "branch"),
 		from:   pipeline.NodeRef(input.from),
 		policy: policy,
-		label:  spec.source.label,
-		buffer: spec.branchBuffer.PipelinePolicy(),
+		label:  recipe.source.label,
+		buffer: recipe.buffer.PipelinePolicy(),
 		owned:  owned,
 	})
 	return len(p.branches) - 1
@@ -121,18 +121,18 @@ func (p *attachPlan) closeOwned() {
 	}
 }
 
-// planAttachBranchSteps lowers one BranchSpec into ordered attach steps by
-// walking the canonical operation list once — the same operationSpec chain the
-// build path compiles — opening the stages and destinations each step needs
-// against the live anchor shape. Destinations open before any graph mutation;
-// on failure every stage the walk owned is closed.
+// planAttachBranchSteps lowers one captured runtime branch into ordered attach
+// steps by walking the canonical operation list once — the same operationSpec
+// chain the build path compiles — opening the stages and destinations each
+// step needs against the live anchor shape. Destinations open before any graph
+// mutation; on failure every stage the walk owned is closed.
 func (t *task) planAttachBranchSteps(ctx context.Context, input runtimeAttachBranchPlanInput, group *runtimeAttachGroup) ([]attachStep, error) {
-	spec := input.branch.spec
+	recipe := input.branch.recipe
 	destinations := input.branch.destinations
-	branchName := firstNonEmpty(spec.name, "branch")
+	branchName := firstNonEmpty(recipe.name, "branch")
 	currentShape := runtimeBranchAnchorShape(input.anchor)
-	if spec.media != "" && currentShape.MediaKind != "" {
-		if err := validateChainMedia("attach runtime branch", branchName, currentShape.MediaKind, chainSpec{name: spec.name, media: spec.media}); err != nil {
+	if recipe.media != "" && currentShape.MediaKind != "" {
+		if err := validateChainMedia("attach runtime branch", branchName, currentShape.MediaKind, chainSpec{name: recipe.name, media: recipe.media}); err != nil {
 			return nil, err
 		}
 	}
@@ -140,17 +140,17 @@ func (t *task) planAttachBranchSteps(ctx context.Context, input runtimeAttachBra
 		return nil, err
 	}
 	patchShape := normalizeTapShape(currentShape)
-	currentStream := streamFromRuntimeBranchShape(spec.name, currentShape)
-	if spec.source.stream != nil {
+	currentStream := streamFromRuntimeBranchShape(recipe.name, currentShape)
+	if recipe.source.stream != nil {
 		// Source+stream anchor: the announced av.Stream is the live truth —
 		// keep its time base, clock rate, and codec extradata instead of the
 		// shape-synthesized stand-in.
-		currentStream = *spec.source.stream
+		currentStream = *recipe.source.stream
 	}
-	if err := validateSyncPolicyForStream("attach runtime branch", branchName, currentStream, spec.operations); err != nil {
+	if err := validateSyncPolicyForStream("attach runtime branch", branchName, currentStream, recipe.operations); err != nil {
 		return nil, err
 	}
-	steps := make([]attachStep, 0, len(spec.operations)+len(destinations))
+	steps := make([]attachStep, 0, len(recipe.operations)+len(destinations))
 	fail := func(err error) ([]attachStep, error) {
 		for i := range steps {
 			if steps[i].component.owned && steps[i].component.stage != nil {
@@ -163,8 +163,8 @@ func (t *task) planAttachBranchSteps(ctx context.Context, input runtimeAttachBra
 	transformIndex := 0
 	encoded := false
 	copied := false
-	for i := range spec.operations {
-		operation := spec.operations[i]
+	for i := range recipe.operations {
+		operation := recipe.operations[i]
 		if operation.Kind == "" {
 			continue
 		}
@@ -225,7 +225,7 @@ func (t *task) planAttachBranchSteps(ctx context.Context, input runtimeAttachBra
 					return fail(err)
 				}
 			}
-			transform, err := runtimeBranchTransform(spec.name, currentStream, operation.Transform, transformIndex)
+			transform, err := runtimeBranchTransform(recipe.name, currentStream, operation.Transform, transformIndex)
 			if err != nil {
 				return fail(err)
 			}
@@ -276,7 +276,7 @@ func (t *task) planAttachBranchSteps(ctx context.Context, input runtimeAttachBra
 			encoded = true
 		case plan.OpCopy:
 			if currentShape.Domain != shape.DomainPacket {
-				return fail(runtimeBranchCopyDomainError(spec.name, currentShape))
+				return fail(runtimeBranchCopyDomainError(recipe.name, currentShape))
 			}
 			copied = true
 			out = operationSpecOutputShape(patchShape, operation)
@@ -291,7 +291,7 @@ func (t *task) planAttachBranchSteps(ctx context.Context, input runtimeAttachBra
 
 	hasMux := attachDestinationsHaveMux(destinations)
 	if hasMux && !encoded && !copied {
-		return fail(runtimeBranchEncodeMissingError(spec.name))
+		return fail(runtimeBranchEncodeMissingError(recipe.name))
 	}
 	if !hasMux {
 		for i := range destinations {
@@ -306,7 +306,7 @@ func (t *task) planAttachBranchSteps(ctx context.Context, input runtimeAttachBra
 		))
 	}
 	if currentStream.Codec.ID == "" {
-		return fail(runtimeBranchMuxCodecMissingError(spec.name, currentShape))
+		return fail(runtimeBranchMuxCodecMissingError(recipe.name, currentShape))
 	}
 	for i := range destinations {
 		destination := destinations[i]
@@ -316,7 +316,7 @@ func (t *task) planAttachBranchSteps(ctx context.Context, input runtimeAttachBra
 		case group.isSharedMux(destination.shareKey):
 			steps = append(steps, attachSharedMuxDestinationStep(destination, currentStream, patchShape))
 		default:
-			step, err := t.planAttachMuxDestinationStep(ctx, spec.name, destination, currentStream, patchShape, i)
+			step, err := t.planAttachMuxDestinationStep(ctx, recipe.name, destination, currentStream, patchShape, i)
 			if err != nil {
 				return fail(err)
 			}
@@ -329,7 +329,7 @@ func (t *task) planAttachBranchSteps(ctx context.Context, input runtimeAttachBra
 // planAttachEncode opens the branch encoder against the live frame shape with
 // the same validation and stage construction the build path uses.
 func (t *task) planAttachEncode(ctx context.Context, input runtimeAttachBranchPlanInput, encode codec.CodecSpec, currentStream av.Stream, currentShape shape.Spec) (pipeline.Stage, av.Stream, error) {
-	branchName := firstNonEmpty(input.branch.spec.name, "branch")
+	branchName := firstNonEmpty(input.branch.recipe.name, "branch")
 	if t.runtime == nil {
 		return nil, av.Stream{}, runtimeBranchInvalidError(
 			"runtime branch encoding requires the bundled runtime",

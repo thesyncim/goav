@@ -64,8 +64,16 @@ type runtimeSharedMuxDestination struct {
 	buffer   pipeline.BufferPolicy
 }
 
+type runtimeBranchRecipe struct {
+	name       string
+	media      av.MediaType
+	source     branchSourceBinding
+	operations []operationSpec
+	buffer     flow.BranchBuffer
+}
+
 type runtimeAttachBranchInput struct {
-	spec         BranchSpec
+	recipe       runtimeBranchRecipe
 	destinations []attachDestination
 }
 
@@ -217,7 +225,7 @@ func runtimeAttachInputFromBranchSpecs(specs []BranchSpec) (runtimeAttachInput, 
 			return runtimeAttachInput{}, err
 		}
 		branches = append(branches, runtimeAttachBranchInput{
-			spec:         specs[i],
+			recipe:       runtimeBranchRecipeFromBranchSpec(specs[i]),
 			destinations: branchDestinations,
 		})
 	}
@@ -230,6 +238,25 @@ func runtimeAttachInputFromBranchSpecs(specs []BranchSpec) (runtimeAttachInput, 
 		groupDestinations: groupDestinations,
 		name:              runtimeAttachmentName(specs),
 	}, nil
+}
+
+func runtimeBranchRecipeFromBranchSpec(spec BranchSpec) runtimeBranchRecipe {
+	return runtimeBranchRecipe{
+		name:       spec.name,
+		media:      spec.media,
+		source:     cloneBranchSourceBinding(spec.source),
+		operations: cloneOperationSpecs(spec.operations),
+		buffer:     spec.branchBuffer,
+	}
+}
+
+func cloneBranchSourceBinding(source branchSourceBinding) branchSourceBinding {
+	out := source
+	if source.stream != nil {
+		stream := *source.stream
+		out.stream = &stream
+	}
+	return out
 }
 
 func validateRuntimeBranchSpecOrigin(spec BranchSpec) error {
@@ -292,8 +319,8 @@ func (t *task) attachRuntimeBranches(ctx context.Context, input runtimeAttachInp
 		if err != nil {
 			return rollback(err)
 		}
-		spec := planInput.branch.spec
-		patch.addAnchor(spec.source.tap, planInput.from)
+		recipe := planInput.branch.recipe
+		patch.addAnchor(recipe.source.tap, planInput.from)
 		steps, err := t.planAttachBranchSteps(ctx, planInput, group)
 		if err != nil {
 			return rollback(err)
@@ -305,8 +332,8 @@ func (t *task) attachRuntimeBranches(ctx context.Context, input runtimeAttachInp
 		if err := t.configureAttachBranchBuffer(&ap.branches[index], planInput, steps); err != nil {
 			return rollback(err)
 		}
-		if spec.branchBuffer.CopyMode == flow.CopyNever {
-			patch.copyNeverBranches = append(patch.copyNeverBranches, firstNonEmpty(spec.name, "branch"))
+		if recipe.buffer.CopyMode == flow.CopyNever {
+			patch.copyNeverBranches = append(patch.copyNeverBranches, firstNonEmpty(recipe.name, "branch"))
 		}
 		if err := ap.finalizeBranch(index, planInput, group, steps); err != nil {
 			return rollback(err)
@@ -345,7 +372,7 @@ func (t *task) attachRuntimeBranches(ctx context.Context, input runtimeAttachInp
 
 func (t *task) runtimeAttachBranchPlanInput(branch runtimeAttachBranchInput, pending []snapshot.Tap) (runtimeAttachBranchPlanInput, error) {
 	graphSpec := t.graph.Spec()
-	from, anchor, err := t.resolveRuntimeBranchAnchor(branch.spec, graphSpec, pending)
+	from, anchor, err := t.resolveRuntimeBranchAnchor(branch.recipe, graphSpec, pending)
 	if err != nil {
 		return runtimeAttachBranchPlanInput{}, err
 	}
@@ -359,15 +386,15 @@ func (t *task) runtimeAttachBranchPlanInput(branch runtimeAttachBranchInput, pen
 }
 
 func runtimeAttachBranchIntent(branch runtimeAttachBranchInput, anchor snapshot.Tap) streamIntent {
-	spec := branch.spec
+	recipe := branch.recipe
 	return streamIntent{
-		Name: spec.name,
+		Name: recipe.name,
 		Select: plan.StreamSelect{
-			Type:  firstNonEmptyMedia(spec.media, anchor.MediaKind),
+			Type:  firstNonEmptyMedia(recipe.media, anchor.MediaKind),
 			Codec: anchor.Shape.Codec,
 		},
-		From:         tapRef{name: spec.source.tap, domain: spec.source.tapDomain},
-		Operations:   cloneOperationSpecs(spec.operations),
+		From:         tapRef{name: recipe.source.tap, domain: recipe.source.tapDomain},
+		Operations:   cloneOperationSpecs(recipe.operations),
 		Destinations: attachDestinationNames(branch.destinations),
 	}
 }
@@ -384,11 +411,11 @@ func (t *task) configureAttachBranchBuffer(branch *attachPlanBranch, input runti
 	if branch == nil {
 		return nil
 	}
-	spec := input.branch.spec
+	recipe := input.branch.recipe
 	if _, ok := t.graph.(pipeline.NodeInjector); !ok {
 		return nil
 	}
-	if spec.branchBuffer.CopyMode == flow.CopyNever {
+	if recipe.buffer.CopyMode == flow.CopyNever {
 		return nil
 	}
 	policy := branch.buffer
@@ -506,8 +533,8 @@ func validateRuntimeBranchGroupDestinations(branches []runtimeAttachBranchInput)
 	seen := make(map[string]attachDestination)
 	seenBranch := make(map[string]string)
 	for i := range branches {
-		spec := branches[i].spec
-		branchName := firstNonEmpty(spec.name, fmt.Sprintf("branch-%d", i+1))
+		recipe := branches[i].recipe
+		branchName := firstNonEmpty(recipe.name, fmt.Sprintf("branch-%d", i+1))
 		for j := range branches[i].destinations {
 			destination := branches[i].destinations[j]
 			label := destination.name
@@ -535,7 +562,7 @@ func validateRuntimeBranchGroupDestinations(branches []runtimeAttachBranchInput)
 					Family:    errcode.FamilyForCode(destinationDuplicateCode),
 					Code:      destinationDuplicateCode,
 					Operation: "attach runtime branches",
-					Node:      firstNonEmpty(spec.name, "branch"),
+					Node:      firstNonEmpty(recipe.name, "branch"),
 					Reason:    "runtime branch group reuses one destination name",
 					fields: buildErrorFields([]string{
 						"destination: " + label,
@@ -880,27 +907,27 @@ func uniqueStrings(values []string) []string {
 	return out
 }
 
-func (t *task) resolveRuntimeBranchAnchor(spec BranchSpec, graphSpec pipeline.Spec, pending []snapshot.Tap) (string, snapshot.Tap, error) {
-	if spec.source.tap != "" {
+func (t *task) resolveRuntimeBranchAnchor(recipe runtimeBranchRecipe, graphSpec pipeline.Spec, pending []snapshot.Tap) (string, snapshot.Tap, error) {
+	if recipe.source.tap != "" {
 		taps := append([]snapshot.Tap(nil), t.tapsLocked()...)
 		taps = append(taps, pending...)
 		for _, tap := range taps {
-			if tap.Name == spec.source.tap {
-				if err := validateTapDomain("attach runtime branch", firstNonEmpty(spec.name, "branch"), tapRef{name: spec.source.tap, domain: spec.source.tapDomain}, tap.Domain); err != nil {
+			if tap.Name == recipe.source.tap {
+				if err := validateTapDomain("attach runtime branch", firstNonEmpty(recipe.name, "branch"), tapRef{name: recipe.source.tap, domain: recipe.source.tapDomain}, tap.Domain); err != nil {
 					return "", snapshot.Tap{}, err
 				}
 				return tap.Node.String(), tap, nil
 			}
 		}
-		return "", snapshot.Tap{}, runtimeBranchTapMissingError(spec.source.tap, taps)
+		return "", snapshot.Tap{}, runtimeBranchTapMissingError(recipe.source.tap, taps)
 	}
-	if !specHasNode(graphSpec, spec.source.from) {
-		return "", snapshot.Tap{}, runtimeBranchAnchorMissingError(spec.source.from)
+	if !specHasNode(graphSpec, recipe.source.from) {
+		return "", snapshot.Tap{}, runtimeBranchAnchorMissingError(recipe.source.from)
 	}
-	if spec.source.stream != nil {
-		return spec.source.from, discoveredStreamAnchorTap(spec.source), nil
+	if recipe.source.stream != nil {
+		return recipe.source.from, discoveredStreamAnchorTap(recipe.source), nil
 	}
-	return spec.source.from, snapshot.Tap{Node: pipeline.NodeRef(spec.source.from)}, nil
+	return recipe.source.from, snapshot.Tap{Node: pipeline.NodeRef(recipe.source.from)}, nil
 }
 
 // discoveredStreamAnchorTap synthesizes the anchor tap for a source+stream
@@ -929,7 +956,7 @@ func validateAttachBranchShapeContract(input runtimeAttachBranchPlanInput, initi
 		return err
 	}
 	final := normalizeTapShape(initial)
-	for _, operation := range input.branch.spec.operations {
+	for _, operation := range input.branch.recipe.operations {
 		final = operationSpecOutputShape(final, operation)
 	}
 	destinations := input.branch.destinations
@@ -945,7 +972,7 @@ func validateAttachBranchShapeContract(input runtimeAttachBranchPlanInput, initi
 			continue
 		}
 		destinationName := firstNonEmpty(destination.name, destination.dest.label(fmt.Sprintf("destination%d", i+1)))
-		return destinationShapeMismatchError("attach runtime branch", input.branch.spec.name, destinationName, destination.dest, final)
+		return destinationShapeMismatchError("attach runtime branch", input.branch.recipe.name, destinationName, destination.dest, final)
 	}
 	return nil
 }
@@ -1628,7 +1655,7 @@ func destinationSpecHasOutput(dest destinationSpec) bool {
 }
 
 func (t *task) prepareRuntimeBranchDecode(ctx context.Context, input runtimeAttachBranchPlanInput, currentStream av.Stream, currentShape shape.Spec, spec codec.CodecSpec) (pipeline.Stage, error) {
-	branchName := firstNonEmpty(input.branch.spec.name, "branch")
+	branchName := firstNonEmpty(input.branch.recipe.name, "branch")
 	if t.runtime == nil {
 		return nil, runtimeBranchInvalidError(
 			"runtime branch decoding requires the bundled runtime",
