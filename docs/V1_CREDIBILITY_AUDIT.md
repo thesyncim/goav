@@ -17,7 +17,7 @@ files, tests, and workflows that carry the evidence.
 ## Machine-Checked Docs
 
 - Error catalog: every current errcode has coverage metadata for bad recipe,
-  rendered-error assertion or golden-equivalent coverage, fix, sentinel/cause,
+  rendered-error assertion or golden-equivalent coverage, fix, public contract check,
   and owning test.
 - Operation reference: each front-door operation documents shape in/out,
   domain, inserted conversions, primary refusals, and runtime attach behavior.

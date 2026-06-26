@@ -150,7 +150,7 @@ func (s InputSpec) validate() error {
 				"check the input constructor arguments",
 				"pass a non-nil provider to goav.Input(provider)",
 			}),
-			Cause: s.err,
+			cause: s.err,
 		}
 	}
 	if s.origin != inputSpecOriginConstructed {
@@ -166,7 +166,7 @@ func (s InputSpec) validate() error {
 				"use goav.Source(name, shape, fn) for application-pushed packets",
 				"use goav.Input(provider) for realtime receive through a source provider",
 			}),
-			Cause: ErrUnsupportedBuild,
+			cause: errUnsupportedBuild,
 		}
 	}
 	if err := s.validateCustomSource(); err != nil {
@@ -191,7 +191,7 @@ func (s InputSpec) validateCustomSource() error {
 				"pass a non-nil callback to goav.Source(name, shape, fn)",
 				"use goav.FileInput or goav.Input(provider) for built-in source adapters",
 			}),
-			Cause: ErrNilSource,
+			cause: errNilSource,
 		}
 	}
 	spec := normalizeCustomSourceShape(node, s.source.shape)
@@ -211,7 +211,7 @@ func (s InputSpec) validateCustomSource() error {
 				"declare diagnostic or lifecycle sources with shape.Event(...)",
 				"use goav.Sink(...) after decode or transform when observing frame-domain media",
 			}),
-			Cause: ErrUnsupportedBuild,
+			cause: errUnsupportedBuild,
 		}
 	}
 	if spec.Domain != shape.DomainEvent && spec.MediaKind == "" {
@@ -225,7 +225,7 @@ func (s InputSpec) validateCustomSource() error {
 				"use shape.Packet(av.MediaAudio, codec) or shape.Packet(av.MediaVideo, codec)",
 				"add shape.Media(...) when constructing a custom shape",
 			}),
-			Cause: ErrUnsupportedBuild,
+			cause: errUnsupportedBuild,
 		}
 	}
 	return nil
@@ -253,7 +253,7 @@ func (s InputSpec) validatePlainInput() error {
 			"use goav.Source(name, shape, fn) for application-pushed packets",
 			"use goav.Input(provider) for realtime receive through a source provider",
 		}),
-		Cause: ErrUnsupportedBuild,
+		cause: errUnsupportedBuild,
 	}
 }
 
@@ -307,7 +307,7 @@ func validateJobInputs(inputs []InputSpec) error {
 				"use goav.From(goav.Input(...)).And(goav.Input(...)) for repeated live inputs",
 				"build an explicit graph when combining multiple file or protocol sources",
 			}),
-			Cause: ErrUnsupportedBuild,
+			cause: errUnsupportedBuild,
 		}
 	}
 	if err := validateRealtimeInputNames(inputs); err != nil {
@@ -346,7 +346,7 @@ func duplicateInputNameError(name string, firstIndex int, secondIndex int) error
 			"give each repeated realtime input a distinct goav.Name(...) option",
 			"use stable names such as \"audio\" and \"video\" for separate live streams",
 		}),
-		Cause: ErrUnsupportedBuild,
+		cause: errUnsupportedBuild,
 	}
 }
 

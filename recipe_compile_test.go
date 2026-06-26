@@ -133,8 +133,8 @@ func TestGraphPlanBuildValidatesOperationsBeforeLowerer(t *testing.T) {
 		t.Fatal("buildGraphPlanTask() error = nil, want invalid graph-plan error")
 	}
 	var buildErr *BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != graphPlanInvalidCode || !errors.Is(err, ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want graph_plan_invalid wrapping ErrUnsupportedBuild", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != graphPlanInvalidCode || !errors.Is(err, errUnsupportedBuild) {
+		t.Fatalf("err = %v, want graph_plan_invalid with matching BuildError code", err)
 	}
 	if lowerer.called {
 		t.Fatal("graph-plan lowerer was called after invalid ordered operations")
@@ -422,7 +422,7 @@ func TestBranchPacketTransformWithoutDecodeFails(t *testing.T) {
 		t.Fatal("expected a packet branch with a transform (no decode) to be rejected")
 	}
 	var buildErr *BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "packet_branch_transform_unsupported" || !errors.Is(err, ErrUnsupportedBuild) {
+	if !errors.As(err, &buildErr) || buildErr.Code != "packet_branch_transform_unsupported" || !errors.Is(err, errUnsupportedBuild) {
 		t.Fatalf("error = %v, want packet_branch_transform_unsupported BuildError", err)
 	}
 }
@@ -1095,8 +1095,8 @@ func TestRecipeAttachmentConsistencyRejectsMismatches(t *testing.T) {
 				!strings.Contains(err.Error(), "goav.From") {
 				t.Fatalf("err = %v, want attachment mismatch guidance", err)
 			}
-			if !errors.As(err, &buildErr) || buildErr.Code != recipeAttachmentMismatchCode || !errors.Is(err, ErrUnsupportedBuild) {
-				t.Fatalf("err = %v, want recipe_attachment_mismatch wrapping ErrUnsupportedBuild", err)
+			if !errors.As(err, &buildErr) || buildErr.Code != recipeAttachmentMismatchCode || !errors.Is(err, errUnsupportedBuild) {
+				t.Fatalf("err = %v, want recipe_attachment_mismatch with matching BuildError code", err)
 			}
 		})
 	}
@@ -1176,8 +1176,8 @@ func TestJobIntentShapePassRejectsInvalidPublicShape(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			err := pass.Apply(&tt.state)
 			var buildErr *BuildError
-			if !errors.As(err, &buildErr) || buildErr.Code != tt.code || !errors.Is(err, ErrUnsupportedBuild) {
-				t.Fatalf("err = %v, want %s wrapping ErrUnsupportedBuild", err, tt.code)
+			if !errors.As(err, &buildErr) || buildErr.Code != tt.code || !errors.Is(err, errUnsupportedBuild) {
+				t.Fatalf("err = %v, want %s with matching BuildError code", err, tt.code)
 			}
 			if !strings.Contains(err.Error(), tt.want) {
 				t.Fatalf("err = %v, want %q", err, tt.want)
@@ -1205,8 +1205,8 @@ func TestJobOutputBindingsPassRejectsUndefinedStreamRoutes(t *testing.T) {
 
 	err := validateJobOutputBindingsPass().Apply(&state)
 	var buildErr *BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "output_missing" || !errors.Is(err, ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want output_missing wrapping ErrUnsupportedBuild", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "output_missing" || !errors.Is(err, errUnsupportedBuild) {
+		t.Fatalf("err = %v, want output_missing with matching BuildError code", err)
 	}
 	if !strings.Contains(err.Error(), "stream route output missing is not attached") ||
 		!strings.Contains(err.Error(), "selected stream chain") {
@@ -1652,8 +1652,8 @@ func TestKnownInputStreamSelectionPassRejectsProbedAmbiguousAndMissingStreams(t 
 			}
 			err := pass.Apply(&state)
 			var buildErr *BuildError
-			if !errors.As(err, &buildErr) || buildErr.Code != tt.code || !errors.Is(err, ErrUnsupportedBuild) {
-				t.Fatalf("err = %v, want %s wrapping ErrUnsupportedBuild", err, tt.code)
+			if !errors.As(err, &buildErr) || buildErr.Code != tt.code || !errors.Is(err, errUnsupportedBuild) {
+				t.Fatalf("err = %v, want %s with matching BuildError code", err, tt.code)
 			}
 			for _, want := range tt.want {
 				if !strings.Contains(err.Error(), want) {
@@ -1712,8 +1712,8 @@ func TestLiveStreamSelectionPassRejectsAmbiguousAndMissingStreams(t *testing.T) 
 			}
 			err := validateJobLiveStreamSelectionPass().Apply(&state)
 			var buildErr *BuildError
-			if !errors.As(err, &buildErr) || buildErr.Code != tt.code || !errors.Is(err, ErrUnsupportedBuild) {
-				t.Fatalf("err = %v, want %s wrapping ErrUnsupportedBuild", err, tt.code)
+			if !errors.As(err, &buildErr) || buildErr.Code != tt.code || !errors.Is(err, errUnsupportedBuild) {
+				t.Fatalf("err = %v, want %s with matching BuildError code", err, tt.code)
 			}
 			for _, want := range tt.want {
 				if !strings.Contains(err.Error(), want) {
@@ -2110,8 +2110,8 @@ func TestDecodeAdapterPassesRejectIncompatibleDescriptors(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			err := tt.pass.Apply(&tt.state)
 			var buildErr *BuildError
-			if !errors.As(err, &buildErr) || buildErr.Code != "decode_adapter_incompatible" || !errors.Is(err, ErrUnsupportedBuild) {
-				t.Fatalf("err = %v, want decode_adapter_incompatible wrapping ErrUnsupportedBuild", err)
+			if !errors.As(err, &buildErr) || buildErr.Code != "decode_adapter_incompatible" || !errors.Is(err, errUnsupportedBuild) {
+				t.Fatalf("err = %v, want decode_adapter_incompatible with matching BuildError code", err)
 			}
 			for _, want := range tt.want {
 				if !strings.Contains(err.Error(), want) {
@@ -2279,8 +2279,8 @@ func TestEncodeAdapterPassesRejectIncompatibleDescriptors(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			err := tt.pass.Apply(&tt.state)
 			var buildErr *BuildError
-			if !errors.As(err, &buildErr) || buildErr.Code != "encode_adapter_incompatible" || !errors.Is(err, ErrUnsupportedBuild) {
-				t.Fatalf("err = %v, want encode_adapter_incompatible wrapping ErrUnsupportedBuild", err)
+			if !errors.As(err, &buildErr) || buildErr.Code != "encode_adapter_incompatible" || !errors.Is(err, errUnsupportedBuild) {
+				t.Fatalf("err = %v, want encode_adapter_incompatible with matching BuildError code", err)
 			}
 			for _, want := range tt.want {
 				if !strings.Contains(err.Error(), want) {
@@ -2469,8 +2469,8 @@ func TestTransformAdapterPassesRejectIncompatibleDescriptors(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			err := tt.pass.Apply(&tt.state)
 			var buildErr *BuildError
-			if !errors.As(err, &buildErr) || buildErr.Code != "transform_adapter_incompatible" || !errors.Is(err, ErrUnsupportedBuild) {
-				t.Fatalf("err = %v, want transform_adapter_incompatible wrapping ErrUnsupportedBuild", err)
+			if !errors.As(err, &buildErr) || buildErr.Code != "transform_adapter_incompatible" || !errors.Is(err, errUnsupportedBuild) {
+				t.Fatalf("err = %v, want transform_adapter_incompatible with matching BuildError code", err)
 			}
 			for _, want := range tt.want {
 				if !strings.Contains(err.Error(), want) {
@@ -2528,8 +2528,8 @@ func TestJobStreamOutputKindsPassRejectsInvalidOutputShapes(t *testing.T) {
 			}
 			err := pass.Apply(&state)
 			var buildErr *BuildError
-			if !errors.As(err, &buildErr) || buildErr.Code != tt.code || !errors.Is(err, ErrUnsupportedBuild) {
-				t.Fatalf("err = %v, want %s wrapping ErrUnsupportedBuild", err, tt.code)
+			if !errors.As(err, &buildErr) || buildErr.Code != tt.code || !errors.Is(err, errUnsupportedBuild) {
+				t.Fatalf("err = %v, want %s with matching BuildError code", err, tt.code)
 			}
 			for _, want := range tt.want {
 				if !strings.Contains(err.Error(), want) {
@@ -2615,8 +2615,8 @@ func TestShapeErrorsReportExpectedAndActualShape(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			err := tt.pass.Apply(&tt.state)
 			var buildErr *BuildError
-			if !errors.As(err, &buildErr) || buildErr.Code != tt.code || !errors.Is(err, ErrUnsupportedBuild) {
-				t.Fatalf("err = %v, want %s wrapping ErrUnsupportedBuild", err, tt.code)
+			if !errors.As(err, &buildErr) || buildErr.Code != tt.code || !errors.Is(err, errUnsupportedBuild) {
+				t.Fatalf("err = %v, want %s with matching BuildError code", err, tt.code)
 			}
 			for _, want := range tt.want {
 				if !strings.Contains(err.Error(), want) {
@@ -2710,8 +2710,8 @@ func TestRecipeOperationShapePassRejectsInvalidOrderedOperations(t *testing.T) {
 			}
 			err := pass.Apply(&state)
 			var buildErr *BuildError
-			if !errors.As(err, &buildErr) || buildErr.Code != tt.code || !errors.Is(err, ErrUnsupportedBuild) {
-				t.Fatalf("err = %v, want %s wrapping ErrUnsupportedBuild", err, tt.code)
+			if !errors.As(err, &buildErr) || buildErr.Code != tt.code || !errors.Is(err, errUnsupportedBuild) {
+				t.Fatalf("err = %v, want %s with matching BuildError code", err, tt.code)
 			}
 			for _, want := range tt.want {
 				if !strings.Contains(err.Error(), want) {
@@ -2767,8 +2767,8 @@ func TestRecipeDestinationShapePassRejectsFrameShapeForMuxDestination(t *testing
 
 	err := validateRecipeDestinationShapesPass().Apply(&state)
 	var buildErr *BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "destination_shape_mismatch" || !errors.Is(err, ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want destination_shape_mismatch wrapping ErrUnsupportedBuild", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "destination_shape_mismatch" || !errors.Is(err, errUnsupportedBuild) {
+		t.Fatalf("err = %v, want destination_shape_mismatch with matching BuildError code", err)
 	}
 	for _, want := range []string{
 		"byte or mux destination requires packet-domain media",
@@ -2813,8 +2813,8 @@ func TestRecipeRuntimePassRejectsNilRuntime(t *testing.T) {
 	}
 	err := validateRecipeRuntimePass().Apply(&state)
 	var buildErr *BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "runtime_missing" || !errors.Is(err, ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want runtime_missing wrapping ErrUnsupportedBuild", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "runtime_missing" || !errors.Is(err, errUnsupportedBuild) {
+		t.Fatalf("err = %v, want runtime_missing with matching BuildError code", err)
 	}
 	for _, want := range []string{"no runtime is configured", "bundle.MustNew", "goav.MustNew"} {
 		if !strings.Contains(err.Error(), want) {
@@ -2834,8 +2834,8 @@ func TestRequireGraphPlanSpecPassWrapsUnsupportedRecipeShape(t *testing.T) {
 
 	err := requireGraphPlanSpecPass().Apply(&state)
 	var buildErr *BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "recipe_graph_unsupported" || !errors.Is(err, ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want recipe_graph_unsupported wrapping ErrUnsupportedBuild", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "recipe_graph_unsupported" || !errors.Is(err, errUnsupportedBuild) {
+		t.Fatalf("err = %v, want recipe_graph_unsupported with matching BuildError code", err)
 	}
 	for _, want := range []string{"recipe intent", "inputs: 1", "destinations: 0", "goav.From", ".Copy().To", ".Branches"} {
 		if !strings.Contains(err.Error(), want) {
@@ -3061,8 +3061,8 @@ func TestTranscodeIntentShapePassRejectsInvalidPublicShape(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			err := pass.Apply(&tt.state)
 			var buildErr *BuildError
-			if !errors.As(err, &buildErr) || buildErr.Code != tt.code || !errors.Is(err, ErrUnsupportedBuild) {
-				t.Fatalf("err = %v, want %s wrapping ErrUnsupportedBuild", err, tt.code)
+			if !errors.As(err, &buildErr) || buildErr.Code != tt.code || !errors.Is(err, errUnsupportedBuild) {
+				t.Fatalf("err = %v, want %s with matching BuildError code", err, tt.code)
 			}
 			if !strings.Contains(err.Error(), tt.want) {
 				t.Fatalf("err = %v, want %q", err, tt.want)
@@ -3108,8 +3108,8 @@ func TestTranscodeAttachmentsPassRejectsInvalidConcreteAttachments(t *testing.T)
 		t.Run(tt.name, func(t *testing.T) {
 			err := pass.Apply(&tt.state)
 			var buildErr *BuildError
-			if !errors.As(err, &buildErr) || buildErr.Code != tt.code || !errors.Is(err, ErrUnsupportedBuild) {
-				t.Fatalf("err = %v, want %s wrapping ErrUnsupportedBuild", err, tt.code)
+			if !errors.As(err, &buildErr) || buildErr.Code != tt.code || !errors.Is(err, errUnsupportedBuild) {
+				t.Fatalf("err = %v, want %s with matching BuildError code", err, tt.code)
 			}
 			if !strings.Contains(err.Error(), tt.want) {
 				t.Fatalf("err = %v, want %q", err, tt.want)
@@ -3185,8 +3185,8 @@ func TestTranscodeBranchTargetKindsPassRejectsRawMuxBranches(t *testing.T) {
 
 	err := validateBranchDestinationKindsPass().Apply(&state)
 	var buildErr *BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "encode_missing" || !errors.Is(err, ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want encode_missing wrapping ErrUnsupportedBuild", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "encode_missing" || !errors.Is(err, errUnsupportedBuild) {
+		t.Fatalf("err = %v, want encode_missing with matching BuildError code", err)
 	}
 	if !strings.Contains(err.Error(), "muxed destination") || !strings.Contains(err.Error(), "Sink") {
 		t.Fatalf("err = %v, want mux and sink guidance", err)
@@ -3214,8 +3214,8 @@ func TestTranscodeOutputBindingsPassRejectsUndefinedRoutes(t *testing.T) {
 
 	err := validateBranchDestinationBindingsPass().Apply(&state)
 	var buildErr *BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "destination_missing" || !errors.Is(err, ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want destination_missing wrapping ErrUnsupportedBuild", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "destination_missing" || !errors.Is(err, errUnsupportedBuild) {
+		t.Fatalf("err = %v, want destination_missing with matching BuildError code", err)
 	}
 	if !strings.Contains(err.Error(), "destination missing is referenced but not defined") ||
 		!strings.Contains(err.Error(), "goav.Mux(name, destination)") {
@@ -3255,8 +3255,8 @@ func TestTranscodeKnownInputStreamSelectionPassRejectsProbedBranchAmbiguity(t *t
 
 	err := validateKnownBranchInputStreamSelectionPass().Apply(&state)
 	var buildErr *BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "stream_ambiguous" || !errors.Is(err, ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want stream_ambiguous wrapping ErrUnsupportedBuild", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "stream_ambiguous" || !errors.Is(err, errUnsupportedBuild) {
+		t.Fatalf("err = %v, want stream_ambiguous with matching BuildError code", err)
 	}
 	if !strings.Contains(err.Error(), "multiple streams match type=video") ||
 		!strings.Contains(err.Error(), "id=camera") ||

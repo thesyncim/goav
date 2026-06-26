@@ -874,8 +874,8 @@ func TestRuntimeBuilderExplicitLinksOverrideLinearDefault(t *testing.T) {
 }
 
 func TestRuntimeBuilderDescribeValidation(t *testing.T) {
-	if _, err := newTestBuilder(t).Source(nil).Describe(); !errors.Is(err, ErrNilSource) {
-		t.Fatalf("source err = %v, want ErrNilSource", err)
+	if _, err := newTestBuilder(t).Source(nil).Describe(); !errors.Is(err, errNilSource) {
+		t.Fatalf("source err = %v, want errNilSource", err)
 	}
 
 	packet := av.Packet{StreamID: "audio"}
@@ -915,14 +915,14 @@ func TestRuntimeBuilderDescribeValidation(t *testing.T) {
 
 func TestRuntimeBuilderExplicitGraphValidation(t *testing.T) {
 	_, err := newTestBuilder(t).Source(nil).Build(context.Background())
-	if !errors.Is(err, ErrNilSource) {
-		t.Fatalf("source err = %v, want ErrNilSource", err)
+	if !errors.Is(err, errNilSource) {
+		t.Fatalf("source err = %v, want errNilSource", err)
 	}
 
 	_, err = newTestBuilder(t).Stage(&runtimeTestStage{name: "stage"}).Build(context.Background())
 	var buildErr *BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "explicit_graph_source_missing" || !errors.Is(err, ErrUnsupportedBuild) {
-		t.Fatalf("stage err = %v, want explicit_graph_source_missing wrapping ErrUnsupportedBuild", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "explicit_graph_source_missing" || !errors.Is(err, errUnsupportedBuild) {
+		t.Fatalf("stage err = %v, want explicit_graph_source_missing with matching BuildError code", err)
 	}
 	if !strings.Contains(err.Error(), "no source node") ||
 		!strings.Contains(err.Error(), "Source(...)") {
@@ -935,23 +935,23 @@ func TestRuntimeBuilderExplicitGraphValidation(t *testing.T) {
 		message: pipeline.Message{Kind: pipeline.MessagePacket, Packet: &packet},
 	}
 	_, err = newTestBuilder(t).Source(source).Stage(nil).Build(context.Background())
-	if !errors.Is(err, ErrNilStage) {
-		t.Fatalf("stage err = %v, want ErrNilStage", err)
+	if !errors.Is(err, errNilStage) {
+		t.Fatalf("stage err = %v, want errNilStage", err)
 	}
 
 	_, err = newTestBuilder(t).Source(source).Stage(PacketFunc("packets", nil)).Build(context.Background())
-	if !errors.Is(err, ErrNilStage) {
-		t.Fatalf("PacketFunc nil callback err = %v, want ErrNilStage", err)
+	if !errors.Is(err, errNilStage) {
+		t.Fatalf("PacketFunc nil callback err = %v, want errNilStage", err)
 	}
 
 	_, err = newTestBuilder(t).Source(source).Sink(nil).Build(context.Background())
-	if !errors.Is(err, ErrNilSink) {
-		t.Fatalf("sink err = %v, want ErrNilSink", err)
+	if !errors.Is(err, errNilSink) {
+		t.Fatalf("sink err = %v, want errNilSink", err)
 	}
 
 	_, err = newTestBuilder(t).Source(source).Sink(SinkFunc("sink", nil)).Build(context.Background())
-	if !errors.Is(err, ErrNilSink) {
-		t.Fatalf("SinkFunc nil callback err = %v, want ErrNilSink", err)
+	if !errors.Is(err, errNilSink) {
+		t.Fatalf("SinkFunc nil callback err = %v, want errNilSink", err)
 	}
 
 	sink := &runtimeTestSink{name: "sink"}

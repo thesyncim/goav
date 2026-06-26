@@ -181,7 +181,7 @@ func encodeTargetMissingError(request encodeRequest, stream av.Stream) error {
 			"set codec.EncodeConfig.Parameters.ID in the expert builder",
 			"use codec.Copy() or .Copy().To(...) when no encode step is intended",
 		}),
-		Cause: ErrUnsupportedBuild,
+		cause: errUnsupportedBuild,
 	}
 }
 

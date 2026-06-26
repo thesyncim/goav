@@ -135,7 +135,7 @@ func syncTimebaseError(policy flow.SyncPolicy, msg *pipeline.Message) error {
 			"declare live stream TimeBase facts on the input or discovered stream",
 			"remove .Sync(...) from branches that cannot carry media timestamps",
 		}),
-		Cause: ErrUnsupportedBuild,
+		cause: errUnsupportedBuild,
 	}
 }
 
@@ -160,7 +160,7 @@ func validateSyncPolicyForStream(operation string, branchName string, stream av.
 			"set Codec.ClockRate so RTP-style timestamps can derive a timebase",
 			"remove .Sync(...) from dynamic branches whose source has no media timeline",
 		}),
-		Cause: ErrUnsupportedBuild,
+		cause: errUnsupportedBuild,
 	}
 }
 

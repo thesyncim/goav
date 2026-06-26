@@ -93,7 +93,7 @@ func sinkDestination(sink pipeline.Sink) destinationSpec {
 		name = sink.Name()
 	}
 	if sink == nil {
-		return destinationSpec{id: destinationSpecSeq.Add(1), err: ErrNilSink}
+		return destinationSpec{id: destinationSpecSeq.Add(1), err: errNilSink}
 	}
 	return destinationSpec{id: destinationSpecSeq.Add(1), sink: sink, name: name}
 }
@@ -107,7 +107,7 @@ func Custom(name string, dest provider.Destination, opts ...destinationOptionVal
 
 func customDestination(name string, dest provider.Destination) destinationSpec {
 	if dest == nil {
-		return destinationSpec{id: destinationSpecSeq.Add(1), err: ErrNilWriter}
+		return destinationSpec{id: destinationSpecSeq.Add(1), err: errNilWriter}
 	}
 	contract := dest.Contract()
 	spec := destinationSpec{
@@ -152,7 +152,7 @@ func Writer(name string, open provider.OpenFunc, opts ...destinationOptionValue)
 	}
 	if open == nil {
 		spec.custom = nil
-		spec.err = ErrNilWriter
+		spec.err = errNilWriter
 	}
 	return destinationHandle(applyDestinationOptions(spec, opts))
 }
@@ -175,14 +175,14 @@ func (d writerDestination) Contract() provider.Contract {
 
 func (d writerDestination) Open(ctx context.Context, info provider.Info) (provider.Writer, error) {
 	if d.open == nil {
-		return nil, ErrNilWriter
+		return nil, errNilWriter
 	}
 	writer, err := d.open(ctx, info)
 	if err != nil {
 		return nil, err
 	}
 	if writer == nil {
-		return nil, ErrNilWriter
+		return nil, errNilWriter
 	}
 	return writer, nil
 }
@@ -395,7 +395,7 @@ func (s destinationSpec) validate(operation string, fallback string) error {
 			"pass a non-nil sink to goav.Sink(...)",
 			"use goav.Write(...) or goav.URI(...) for muxed output",
 		}
-		if errors.Is(s.err, ErrNilWriter) {
+		if errors.Is(s.err, errNilWriter) {
 			suggestions = []string{
 				"pass a non-nil writer callback to goav.Writer(...)",
 				"use goav.Write(...) or goav.URI(...) for muxed output",
@@ -408,7 +408,7 @@ func (s destinationSpec) validate(operation string, fallback string) error {
 			Node:      node,
 			Reason:    s.err.Error(),
 			fixes:     buildErrorFixes(suggestions),
-			Cause:     s.err,
+			cause:     s.err,
 		}
 	}
 	if s.sink != nil {
@@ -424,7 +424,7 @@ func (s destinationSpec) validate(operation string, fallback string) error {
 					"pass a non-nil sink to goav.Sink(...)",
 					"use goav.Write(...) or goav.URI(...) for muxed output",
 				}),
-				Cause: err,
+				cause: err,
 			}
 		}
 		return nil
@@ -440,7 +440,7 @@ func (s destinationSpec) validate(operation string, fallback string) error {
 				"use goav.Write(name, writer) for muxed output",
 				"use goav.Sink(sink) for decoded frames or packets",
 			}),
-			Cause: ErrUnsupportedBuild,
+			cause: errUnsupportedBuild,
 		}
 	}
 	if s.output.Protocol == av.ProtocolFile && s.output.Writer == nil && s.custom == nil {
@@ -454,7 +454,7 @@ func (s destinationSpec) validate(operation string, fallback string) error {
 				"pass a non-nil io.Writer to goav.Write(name, writer)",
 				"use goav.URI(uri) when the output is opened by an adapter",
 			}),
-			Cause: ErrUnsupportedBuild,
+			cause: errUnsupportedBuild,
 		}
 	}
 	if s.output.Protocol == av.ProtocolFile && s.output.Writer != nil && s.output.Name == "" && s.output.URI == "" && s.output.MIMEType == "" && s.format == "" {
@@ -468,7 +468,7 @@ func (s destinationSpec) validate(operation string, fallback string) error {
 				"give goav.Write(name, writer) a name with a container extension",
 				"pass goav.Format(...) to goav.Write(...) when the writer has no filename",
 			}),
-			Cause: ErrUnsupportedBuild,
+			cause: errUnsupportedBuild,
 		}
 	}
 	if s.output.URI == "" && s.output.Protocol != av.ProtocolFile && s.output.Writer == nil && s.custom == nil {
@@ -482,7 +482,7 @@ func (s destinationSpec) validate(operation string, fallback string) error {
 				"use goav.Write(name, writer) for writer-backed output",
 				"use goav.URI(uri) for URI-backed output",
 			}),
-			Cause: ErrUnsupportedBuild,
+			cause: errUnsupportedBuild,
 		}
 	}
 	return nil
@@ -572,7 +572,7 @@ func duplicateOutputError(operation string, name string) error {
 			"remove repeated outputs when one output should receive the stream once",
 			"pass goav.Name(...) to outputs or choose distinct sink names when labels should differ",
 		}),
-		Cause: ErrUnsupportedBuild,
+		cause: errUnsupportedBuild,
 	}
 }
 
@@ -588,7 +588,7 @@ func duplicateDestinationHandleError(operation string, name string) error {
 			"use distinct destination names when writing to separate destinations",
 			"wrap grouped destinations with goav.Mux(name, destination)",
 		}),
-		Cause: ErrUnsupportedBuild,
+		cause: errUnsupportedBuild,
 	}
 }
 

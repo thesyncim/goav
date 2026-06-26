@@ -6,7 +6,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/thesyncim/goav"
 	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/goavtest/expect"
 )
@@ -28,6 +27,5 @@ func TestBrokenCustomSourceFailsBeforeRun(t *testing.T) {
 	err := buildBrokenCustomSource(context.Background())
 	expect.BuildError(t, err, errcode.Code("source_callback_missing"),
 		expect.Operation("build input"),
-		expect.Cause(goav.ErrNilSource),
 	)
 }

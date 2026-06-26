@@ -58,24 +58,24 @@ func TestFunctionAdaptersRejectNilCallbacks(t *testing.T) {
 	if packetStage.Name() != "packets" {
 		t.Fatalf("PacketFunc invalid name = %q, want packets", packetStage.Name())
 	}
-	if err := validateStageComponent(packetStage); !errors.Is(err, ErrNilStage) {
-		t.Fatalf("PacketFunc invalid validation err = %v, want ErrNilStage", err)
+	if err := validateStageComponent(packetStage); !errors.Is(err, errNilStage) {
+		t.Fatalf("PacketFunc invalid validation err = %v, want errNilStage", err)
 	}
 
 	frameStage := FrameFunc("frames", nil)
 	if frameStage == nil {
 		t.Fatal("FrameFunc with nil callback should return a named invalid stage")
 	}
-	if err := validateStageComponent(frameStage); !errors.Is(err, ErrNilStage) {
-		t.Fatalf("FrameFunc invalid validation err = %v, want ErrNilStage", err)
+	if err := validateStageComponent(frameStage); !errors.Is(err, errNilStage) {
+		t.Fatalf("FrameFunc invalid validation err = %v, want errNilStage", err)
 	}
 
 	eventStage := EventFunc("events", nil)
 	if eventStage == nil {
 		t.Fatal("EventFunc with nil callback should return a named invalid stage")
 	}
-	if err := validateStageComponent(eventStage); !errors.Is(err, ErrNilStage) {
-		t.Fatalf("EventFunc invalid validation err = %v, want ErrNilStage", err)
+	if err := validateStageComponent(eventStage); !errors.Is(err, errNilStage) {
+		t.Fatalf("EventFunc invalid validation err = %v, want errNilStage", err)
 	}
 
 	sink := SinkFunc("sink", nil)
@@ -85,8 +85,8 @@ func TestFunctionAdaptersRejectNilCallbacks(t *testing.T) {
 	if sink.Name() != "sink" {
 		t.Fatalf("SinkFunc invalid name = %q, want sink", sink.Name())
 	}
-	if err := validateSinkComponent(sink); !errors.Is(err, ErrNilSink) {
-		t.Fatalf("SinkFunc invalid validation err = %v, want ErrNilSink", err)
+	if err := validateSinkComponent(sink); !errors.Is(err, errNilSink) {
+		t.Fatalf("SinkFunc invalid validation err = %v, want errNilSink", err)
 	}
 }
 

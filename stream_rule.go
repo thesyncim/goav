@@ -239,6 +239,6 @@ func streamRuleInvalidError(node string, reason string, suggestion string) error
 		fixes: buildErrorFixes([]string{
 			suggestion,
 		}),
-		Cause: ErrUnsupportedBuild,
+		cause: errUnsupportedBuild,
 	}
 }

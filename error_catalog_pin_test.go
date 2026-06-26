@@ -26,7 +26,7 @@ type errorCatalogExample struct {
 	BadRecipe     string
 	RenderedError string
 	Fix           string
-	Cause         string
+	Contract      string
 }
 
 var derivedJoinErrorCatalogEntries = []errorCatalogEntry{
@@ -123,7 +123,7 @@ var errorCatalogExamples = []errorCatalogExample{
 		BadRecipe:     `.Encode(codec.Opus()).Tap(goav.FrameTap("post-encode"))`,
 		RenderedError: "domain details and typed-tap suggestions are asserted by the test",
 		Fix:           "use goav.PacketTap(name) after packet-domain operations, or goav.FrameTap(name) after decode",
-		Cause:         "goav.ErrUnsupportedBuild",
+		Contract:      "BuildError.Code",
 	},
 }
 
@@ -134,7 +134,7 @@ var errorCatalogAdditionalExamples = []errorCatalogExample{
 		BadRecipe:     `.Tap(goav.FrameTap(""))`,
 		RenderedError: "empty tap name refusal is asserted by the test",
 		Fix:           "use a non-empty typed tap such as goav.FrameTap(\"audio.frames\")",
-		Cause:         "goav.ErrUnsupportedBuild",
+		Contract:      "BuildError.Code",
 	},
 	{
 		Code:          "join_name_invalid",
@@ -142,7 +142,7 @@ var errorCatalogAdditionalExamples = []errorCatalogExample{
 		BadRecipe:     `goav.Join("Cross Fade", stage, arms...)`,
 		RenderedError: "invalid custom join name variants are asserted by the test",
 		Fix:           "use a snake-safe non-reserved custom join name",
-		Cause:         "goav.ErrUnsupportedBuild",
+		Contract:      "BuildError.Code",
 	},
 	{
 		Code:          "join_stage_invalid",
@@ -150,7 +150,7 @@ var errorCatalogAdditionalExamples = []errorCatalogExample{
 		BadRecipe:     `goav.Join("funnel", nil, arms...)` + " or stage.Name() mismatch",
 		RenderedError: "nil/mismatched join stage refusal is asserted by the test",
 		Fix:           "pass a non-nil stage whose Name() equals the join name",
-		Cause:         "goav.ErrUnsupportedBuild",
+		Contract:      "BuildError.Code",
 	},
 	{
 		Code:          "mix_inputs",
@@ -158,7 +158,7 @@ var errorCatalogAdditionalExamples = []errorCatalogExample{
 		BadRecipe:     `goav.Mix(oneArm).To(...)`,
 		RenderedError: "Mix minimum arm count is asserted by the test",
 		Fix:           "pass at least two Mix arms",
-		Cause:         "goav.ErrUnsupportedBuild",
+		Contract:      "BuildError.Code",
 	},
 	{
 		Code:          "mix_arm",
@@ -166,7 +166,7 @@ var errorCatalogAdditionalExamples = []errorCatalogExample{
 		BadRecipe:     "a Mix arm has invalid media, duplicate stream ids, or unsupported nested operations",
 		RenderedError: "Mix arm validation details are asserted by the test",
 		Fix:           "make every Mix arm an audio chain with a distinct stream id and supported operations",
-		Cause:         "goav.ErrUnsupportedBuild",
+		Contract:      "BuildError.Code",
 	},
 	{
 		Code:          "mix_destination",
@@ -174,7 +174,7 @@ var errorCatalogAdditionalExamples = []errorCatalogExample{
 		BadRecipe:     `goav.Mix(a, b).To(goav.Write("mix.ogg", writer))` + " without Encode",
 		RenderedError: "raw Mix destination refusal and encode-or-sink guidance are asserted by the test",
 		Fix:           "call .Encode(codec.Opus(...)) before file output or route raw frames to goav.Sink(...)",
-		Cause:         "goav.ErrUnsupportedBuild",
+		Contract:      "BuildError.Code",
 	},
 	{
 		Code:          "mix_tap_arm",
@@ -182,7 +182,7 @@ var errorCatalogAdditionalExamples = []errorCatalogExample{
 		BadRecipe:     `goav.Mix(chain.Tap(goav.FrameTap("dry")), goav.FrameTap("nope"))`,
 		RenderedError: "unknown Mix tap arm and declared taps are asserted by the test",
 		Fix:           "declare the tap on an earlier arm or reorder the arms",
-		Cause:         "goav.ErrUnsupportedBuild",
+		Contract:      "BuildError.Code",
 	},
 	{
 		Code:          "composite_inputs",
@@ -190,7 +190,7 @@ var errorCatalogAdditionalExamples = []errorCatalogExample{
 		BadRecipe:     `goav.Composite(oneArm).To(...)`,
 		RenderedError: "Composite minimum arm count is asserted by the test",
 		Fix:           "pass at least two Composite arms",
-		Cause:         "goav.ErrUnsupportedBuild",
+		Contract:      "BuildError.Code",
 	},
 	{
 		Code:          "composite_arm",
@@ -198,7 +198,7 @@ var errorCatalogAdditionalExamples = []errorCatalogExample{
 		BadRecipe:     "Composite arms declare duplicate stream ids or invalid video arms",
 		RenderedError: "Composite arm validation details are asserted by the test",
 		Fix:           "make every Composite arm a valid video chain with a distinct stream id",
-		Cause:         "goav.ErrUnsupportedBuild",
+		Contract:      "BuildError.Code",
 	},
 	{
 		Code:          "composite_destination",
@@ -206,7 +206,7 @@ var errorCatalogAdditionalExamples = []errorCatalogExample{
 		BadRecipe:     `goav.Composite(a, b).To(goav.Write("canvas.ivf", writer))` + " without Encode",
 		RenderedError: "raw Composite destination refusal and encode-or-sink guidance are asserted by the test",
 		Fix:           "call .Encode(codec.VP8(...)) before file output or route raw frames to goav.Sink(...)",
-		Cause:         "goav.ErrUnsupportedBuild",
+		Contract:      "BuildError.Code",
 	},
 	{
 		Code:          "composite_tap_arm",
@@ -214,7 +214,7 @@ var errorCatalogAdditionalExamples = []errorCatalogExample{
 		BadRecipe:     `goav.Composite(chain.Tap(goav.FrameTap("cam.frames")), goav.FrameTap("missing").Region(...))`,
 		RenderedError: "unknown Composite tap arm and declared taps are asserted by the test",
 		Fix:           "declare the tap on an earlier Composite arm or reorder the arms",
-		Cause:         "goav.ErrUnsupportedBuild",
+		Contract:      "BuildError.Code",
 	},
 	{
 		Code:          "select_inputs",
@@ -222,7 +222,7 @@ var errorCatalogAdditionalExamples = []errorCatalogExample{
 		BadRecipe:     `goav.Select(oneArm).To(...)`,
 		RenderedError: "Select minimum arm count is asserted by the test",
 		Fix:           "pass at least two Select arms",
-		Cause:         "goav.ErrUnsupportedBuild",
+		Contract:      "BuildError.Code",
 	},
 	{
 		Code:          "select_arm",
@@ -230,7 +230,7 @@ var errorCatalogAdditionalExamples = []errorCatalogExample{
 		BadRecipe:     "Select arms declare duplicate stream ids or invalid arms",
 		RenderedError: "Select arm validation details are asserted by the test",
 		Fix:           "make every Select arm valid and give each a distinct stream id",
-		Cause:         "goav.ErrUnsupportedBuild",
+		Contract:      "BuildError.Code",
 	},
 	{
 		Code:          "select_destination",
@@ -238,7 +238,7 @@ var errorCatalogAdditionalExamples = []errorCatalogExample{
 		BadRecipe:     `goav.Select(a, b).To(goav.Write("selected.ogg", writer))`,
 		RenderedError: "Select sink-only destination refusal is asserted by the test",
 		Fix:           "deliver selected frames to goav.Sink(...) or use .Branches(...) for muxed outputs",
-		Cause:         "goav.ErrUnsupportedBuild",
+		Contract:      "BuildError.Code",
 	},
 	{
 		Code:          "select_tap_arm",
@@ -246,7 +246,7 @@ var errorCatalogAdditionalExamples = []errorCatalogExample{
 		BadRecipe:     `goav.Select(chain.Tap(goav.FrameTap("selected.frames")), goav.FrameTap("missing"))`,
 		RenderedError: "unknown Select tap arm and declared taps are asserted by the test",
 		Fix:           "declare the tap on an earlier Select arm or reorder the arms",
-		Cause:         "goav.ErrUnsupportedBuild",
+		Contract:      "BuildError.Code",
 	},
 	{
 		Code:          "stream_rule_invalid",
@@ -254,7 +254,7 @@ var errorCatalogAdditionalExamples = []errorCatalogExample{
 		BadRecipe:     `goav.OnStream(...)` + " with no matcher, no branch, or malformed stream",
 		RenderedError: "invalid OnStream rule variants are asserted by the test",
 		Fix:           "provide a stream matcher and a valid branch spec",
-		Cause:         "goav.ErrUnsupportedBuild",
+		Contract:      "BuildError.Code",
 	},
 	{
 		Code:          "job_invalid",
@@ -262,7 +262,7 @@ var errorCatalogAdditionalExamples = []errorCatalogExample{
 		BadRecipe:     "compile a nil job, zero goav.Job, or nil join intent",
 		RenderedError: "zero-job constructor guidance is asserted by the test",
 		Fix:           "start from goav.From(...), goav.Mix(...), goav.Composite(...), or goav.Select(...)",
-		Cause:         "goav.ErrUnsupportedBuild",
+		Contract:      "BuildError.Code",
 	},
 	{
 		Code:          "runtime_missing",
@@ -270,7 +270,7 @@ var errorCatalogAdditionalExamples = []errorCatalogExample{
 		BadRecipe:     "goav.From(file).Copy().To(file).Build(ctx) without .UseRuntime(...) or bundle.Build/bundle.Run",
 		RenderedError: "adapter-backed omitted runtime guidance is asserted by the test",
 		Fix:           "attach a runtime with .UseRuntime(...) or use bundle.Build/bundle.Run for the bundled runtime",
-		Cause:         "goav.ErrUnsupportedBuild",
+		Contract:      "BuildError.Code",
 	},
 	{
 		Code:          "recipe_graph_unsupported",
@@ -278,7 +278,7 @@ var errorCatalogAdditionalExamples = []errorCatalogExample{
 		BadRecipe:     "describe/build a recipe shape that has no graph plan",
 		RenderedError: "unsupported recipe graph helper is asserted by the test",
 		Fix:           "use a supported front-door recipe shape",
-		Cause:         "goav.ErrUnsupportedBuild",
+		Contract:      "BuildError.Code",
 	},
 }
 
@@ -339,7 +339,7 @@ func TestErrorCatalogCoverageMetadataIsComplete(t *testing.T) {
 			"bad recipe":     example.BadRecipe,
 			"rendered error": example.RenderedError,
 			"fix":            example.Fix,
-			"cause":          example.Cause,
+			"contract":       example.Contract,
 		} {
 			if strings.TrimSpace(value) == "" {
 				t.Fatalf("coverage row for %s/%s has empty %s", example.Code, example.Test, field)
@@ -474,10 +474,10 @@ func renderErrorCatalogDoc(entries []errorCatalogEntry) string {
 	b.WriteString("<!-- Code generated from errcode/errcode.go by TestErrorCatalogDocMatchesErrcodeCatalog; DO NOT EDIT BY HAND. -->\n\n")
 	b.WriteString("This catalog is the checked index of goav's public BuildError refusal codes. ")
 	b.WriteString("The `Code`, `Constant`, `Section`, `Kind`, and `When it fires` columns are generated from `errcode/errcode.go` plus checked derived-code tables, so a new code must update the source catalog and this checked document together.\n\n")
-	b.WriteString("Every current catalog row names coverage. If a future row is marked `catalog-only`, it still needs a dedicated bad recipe, rendered golden error, fixed recipe, sentinel/cause, and test name before the v1 error catalog is complete. ")
-	b.WriteString("Rows naming tests already have public grammar snippets, rendered-error assertions, fix coverage, or sentinel checks in the named test.\n\n")
+	b.WriteString("Every current catalog row names coverage. If a future row is marked `catalog-only`, it still needs a dedicated bad recipe, rendered golden error, fixed recipe, public contract check, and test name before the v1 error catalog is complete. ")
+	b.WriteString("Rows naming tests already have public grammar snippets, rendered-error assertions, fix coverage, or BuildError field checks in the named test.\n\n")
 	b.WriteString("## Acceptance Snippet Coverage\n\n")
-	b.WriteString("| Code | Test | Bad recipe | Rendered error | Fix coverage | Cause |\n")
+	b.WriteString("| Code | Test | Bad recipe | Rendered error | Fix coverage | Public check |\n")
 	b.WriteString("|---|---|---|---|---|---|\n")
 	for _, example := range allErrorCatalogExamples() {
 		b.WriteString(fmt.Sprintf("| `%s` | `%s` | %s | %s | %s | `%s` |\n",
@@ -486,7 +486,7 @@ func renderErrorCatalogDoc(entries []errorCatalogEntry) string {
 			escapeMarkdown(example.BadRecipe),
 			escapeMarkdown(example.RenderedError),
 			escapeMarkdown(example.Fix),
-			escapeMarkdown(example.Cause),
+			escapeMarkdown(example.Contract),
 		))
 	}
 	b.WriteString("\n## Full Code Index\n\n")

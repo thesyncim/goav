@@ -48,19 +48,19 @@ func TestExpertGraphBuilderValidationContracts(t *testing.T) {
 	if got := graph.Sink("missing-sink", nil).Name(); got != "missing-sink" {
 		t.Fatalf("nil sink handle name = %q, want missing-sink", got)
 	}
-	if _, err := graph.Describe(); !errors.Is(err, ErrNilStage) {
-		t.Fatalf("Describe() err = %v, want first latched ErrNilStage", err)
+	if _, err := graph.Describe(); !errors.Is(err, errNilStage) {
+		t.Fatalf("Describe() err = %v, want first latched errNilStage", err)
 	}
-	if _, err := graph.Build(context.Background()); !errors.Is(err, ErrNilStage) {
-		t.Fatalf("Build() err = %v, want first latched ErrNilStage", err)
+	if _, err := graph.Build(context.Background()); !errors.Is(err, errNilStage) {
+		t.Fatalf("Build() err = %v, want first latched errNilStage", err)
 	}
 
 	graph = expertGraph(MustNew())
 	if got := graph.Sink("missing-sink", nil).Name(); got != "missing-sink" {
 		t.Fatalf("nil sink handle name = %q, want missing-sink", got)
 	}
-	if _, err := graph.Describe(); !errors.Is(err, ErrNilSink) {
-		t.Fatalf("Describe() err = %v, want ErrNilSink", err)
+	if _, err := graph.Describe(); !errors.Is(err, errNilSink) {
+		t.Fatalf("Describe() err = %v, want errNilSink", err)
 	}
 
 	for _, tt := range []struct {

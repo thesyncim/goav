@@ -43,7 +43,7 @@ goav.From(input)                          inputs: FileInput, URIInput, Input(pro
 job.Describe(); adapter-backed Explain/Build/Run use job.UseRuntime(rt), bundle.Describe/Build/Run
 Task: Run, Close
 goav.New(goavruntime.Option...) -> (*Runtime, error); goav.MustNew(...) -> bare Runtime; bundle.MustNew(...) -> bundled Runtime; job.UseRuntime(rt)
-errors: *goav.BuildError matched with errors.As/Is; branch on Family first; Detail(key) for typed facts; DetailLines/FixLines for rendered diagnostics
+errors: *goav.BuildError matched with errors.As; branch on Family first; Detail(key) for typed facts; DetailLines/FixLines for rendered diagnostics
 ```
 
 The checked operation reference is

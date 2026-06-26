@@ -31,7 +31,7 @@ type (
 //		Copy().To(out)
 func Input(src provider.Source, opts ...inputOptionValue) InputSpec {
 	if src == nil {
-		return inputSpecHandle(InputSpec{err: ErrNilSource})
+		return inputSpecHandle(InputSpec{err: errNilSource})
 	}
 	spec := src.SourceShape()
 	return applyInputOptions(inputSpecHandle(InputSpec{
@@ -79,7 +79,7 @@ func disambiguateSourceNodeName(seen map[string]struct{}, name string, provider 
 // realtime policy, and the optional decode-bounds capability.
 func openProviderSource(ctx context.Context, src provider.Source, name string) (graphSourceBuild, error) {
 	if src == nil {
-		return graphSourceBuild{}, ErrNilSource
+		return graphSourceBuild{}, errNilSource
 	}
 	source, streams, err := src.OpenSource(ctx)
 	if err != nil {

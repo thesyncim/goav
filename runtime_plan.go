@@ -33,7 +33,7 @@ func (b *builder) planExplicitGraph(spec pipeline.Spec) (pipeline.Spec, error) {
 
 	for i := range b.sources {
 		if b.sources[i] == nil {
-			return pipeline.Spec{}, ErrNilSource
+			return pipeline.Spec{}, errNilSource
 		}
 		name := b.sources[i].Name()
 		ref := pipeline.NodeRef(name)
@@ -98,7 +98,7 @@ func explicitGraphMissingSourceError() error {
 			"add at least one Source(...) before Stage(...) or Sink(...)",
 			"use the goav.From(input) grammar (.Audio()/.Video(), .Copy(), .To(...)) when you want recipe lowering instead of explicit graph wiring",
 		}),
-		Cause: ErrUnsupportedBuild,
+		cause: errUnsupportedBuild,
 	}
 }
 

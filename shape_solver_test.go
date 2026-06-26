@@ -166,8 +166,8 @@ func TestAutoEmptyPolicyRefusesConversion(t *testing.T) {
 		UseRuntime(solverTestOpusRuntime(testBundleFilters())).
 		Build(context.Background())
 	var buildErr *BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "shape_conversion_refused" || !errors.Is(err, ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want shape_conversion_refused wrapping ErrUnsupportedBuild", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "shape_conversion_refused" || !errors.Is(err, errUnsupportedBuild) {
+		t.Fatalf("err = %v, want shape_conversion_refused with matching BuildError code", err)
 	}
 	for _, want := range []string{
 		"encode-opus needs resample 44.1kHz→48kHz",
@@ -199,8 +199,8 @@ func TestAutoInsufficientPolicyRefusesStageConversion(t *testing.T) {
 		UseRuntime(MustNew(testBundleFilters())).
 		Build(context.Background())
 	var buildErr *BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "shape_conversion_refused" || !errors.Is(err, ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want shape_conversion_refused wrapping ErrUnsupportedBuild", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "shape_conversion_refused" || !errors.Is(err, errUnsupportedBuild) {
+		t.Fatalf("err = %v, want shape_conversion_refused with matching BuildError code", err)
 	}
 	for _, want := range []string{
 		"stage-voice needs resample 44.1kHz→48kHz",
@@ -227,8 +227,8 @@ func TestShapeMismatchSuggestsExactAutoFix(t *testing.T) {
 		UseRuntime(MustNew(testBundleFilters())).
 		Build(context.Background())
 	var buildErr *BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "operation_shape_mismatch" || !errors.Is(err, ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want operation_shape_mismatch wrapping ErrUnsupportedBuild", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "operation_shape_mismatch" || !errors.Is(err, errUnsupportedBuild) {
+		t.Fatalf("err = %v, want operation_shape_mismatch with matching BuildError code", err)
 	}
 	for _, want := range []string{
 		"actual_shape=",
@@ -340,8 +340,8 @@ func TestAutoFailsWithoutRegisteredAdapter(t *testing.T) {
 		UseRuntime(solverTestOpusRuntime()).
 		Build(context.Background())
 	var buildErr *BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "shape_adapter_missing" || !errors.Is(err, ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want shape_adapter_missing wrapping ErrUnsupportedBuild", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "shape_adapter_missing" || !errors.Is(err, errUnsupportedBuild) {
+		t.Fatalf("err = %v, want shape_adapter_missing with matching BuildError code", err)
 	}
 	for _, want := range []string{
 		"no registered filter can perform the resample conversion before encode-opus",
@@ -376,8 +376,8 @@ func TestAutoFailsOnAmbiguousAdapters(t *testing.T) {
 		UseRuntime(rt).
 		Build(context.Background())
 	var buildErr *BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "shape_adapter_ambiguous" || !errors.Is(err, ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want shape_adapter_ambiguous wrapping ErrUnsupportedBuild", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "shape_adapter_ambiguous" || !errors.Is(err, errUnsupportedBuild) {
+		t.Fatalf("err = %v, want shape_adapter_ambiguous with matching BuildError code", err)
 	}
 	if !strings.Contains(err.Error(), "conv-a, conv-b") {
 		t.Fatalf("err = %v, want candidate list conv-a, conv-b", err)

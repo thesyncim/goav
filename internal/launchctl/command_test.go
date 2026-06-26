@@ -2532,8 +2532,7 @@ func TestStructuredErrorPreservesUnderlyingShapes(t *testing.T) {
 		wrapped.Node != "bytes" ||
 		!strings.Contains(wrapped.Message, "packet-domain") ||
 		!detailsContain(wrapped.Details, "actual_shape=") ||
-		!suggestionsContain(wrapped.Suggestions, "shape.Packet") ||
-		!errors.Is(wrapped, goav.ErrUnsupportedBuild) {
+		!suggestionsContain(wrapped.Suggestions, "shape.Packet") {
 		t.Fatalf("wrapped = %+v", wrapped)
 	}
 

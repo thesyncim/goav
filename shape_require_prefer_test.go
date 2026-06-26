@@ -70,8 +70,8 @@ func TestRequireViolatedFailsWithFix(t *testing.T) {
 		UseRuntime(solverTestOpusRuntime(testBundleFilters())).
 		Build(context.Background())
 	var buildErr *BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "shape_requirement_unmet" || !errors.Is(err, ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want shape_requirement_unmet wrapping ErrUnsupportedBuild", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "shape_requirement_unmet" || !errors.Is(err, errUnsupportedBuild) {
+		t.Fatalf("err = %v, want shape_requirement_unmet with matching BuildError code", err)
 	}
 	for _, want := range []string{
 		".Require(...) is not satisfied",

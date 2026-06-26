@@ -29,8 +29,9 @@ The contract is enforced by a source-scanning pin test (`errors_pin_test.go`):
   suggestion text for humans. Fix messages should be real API calls:
   `add .Auto(shape.AllowResample())`, `insert .Resample(48000, 2) explicitly`,
   `encode the mixed audio first: goav.Mix(a, b).Encode(codec.Opus(...))`.
-- **Cause**: a sentinel (`goav.ErrUnsupportedBuild`, `goav.ErrNilSink`,
-  `pipeline.ErrBufferedMessageUnsafe`, ...) reachable through `errors.Is`.
+- **Unwrap**: low-level runtime causes such as
+  `pipeline.ErrBufferedMessageUnsafe` remain reachable through `errors.Is`;
+  build-shape matching should use `Family`, `Code`, and details.
 
 One renderer produces one shape:
 
@@ -67,9 +68,6 @@ if err != nil {
             }
         }
     }
-    if errors.Is(err, goav.ErrUnsupportedBuild) {
-        // any build-shape refusal
-    }
 }
 ```
 
@@ -79,8 +77,8 @@ The public checked refusal-code list lives in
 tables: autocompletable for exported constants (`errcode.`), greppable by
 value (`rg encode_missing`), and grouped under a stable family. Every current catalog row names coverage.
 If a future row appears as `catalog-only`, the pin test fails until it gets a
-bad recipe, rendered error coverage, fixed recipe guidance, sentinel/cause,
-and test name.
+bad recipe, rendered error coverage, fixed recipe guidance, public contract
+coverage, and test name.
 
 Package-internal invariant wrappers may still use typed `Code` values so
 `FamilyForCode` and rendered errors stay stable, but they are not exported

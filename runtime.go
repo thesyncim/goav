@@ -19,22 +19,21 @@ import (
 	"github.com/thesyncim/goav/snapshot"
 )
 
-// Build-refusal sentinels. Build-time BuildErrors wrap one of these as their
-// Cause, so errors.Is classifies a refusal while errors.As + the Code field
-// identify it precisely. Runtime safety wrappers may instead carry a pipeline
-// sentinel when preserving low-level errors.Is compatibility matters.
+// Internal build-refusal causes. Public build-shape matching lives on
+// BuildError.Family and BuildError.Code; these only keep package-internal
+// errors.Is checks and low-level unwrap chains stable.
 var (
-	// ErrUnsupportedBuild is the cause behind every build-shape refusal: the
+	// errUnsupportedBuild is the cause behind every build-shape refusal: the
 	// declared recipe or graph cannot be lowered as written.
-	ErrUnsupportedBuild = errors.New("goav: unsupported builder graph")
-	// ErrNilSource reports a nil source handed to a builder or constructor.
-	ErrNilSource = errors.New("goav: nil source")
-	// ErrNilStage reports a nil stage handed to a builder or .Do(...).
-	ErrNilStage = errors.New("goav: nil stage")
-	// ErrNilSink reports a nil sink handed to a builder or goav.Sink(...).
-	ErrNilSink = errors.New("goav: nil sink")
-	// ErrNilWriter reports a nil writer handed to a byte destination.
-	ErrNilWriter = errors.New("goav: nil writer")
+	errUnsupportedBuild = errors.New("goav: unsupported builder graph")
+	// errNilSource reports a nil source handed to a builder or constructor.
+	errNilSource = errors.New("goav: nil source")
+	// errNilStage reports a nil stage handed to a builder or .Do(...).
+	errNilStage = errors.New("goav: nil stage")
+	// errNilSink reports a nil sink handed to a builder or goav.Sink(...).
+	errNilSink = errors.New("goav: nil sink")
+	// errNilWriter reports a nil writer handed to a byte destination.
+	errNilWriter = errors.New("goav: nil writer")
 )
 
 // Runtime flow-control sentinels, surfaced on the front door so source.Func,
@@ -195,7 +194,7 @@ func (b *builder) compileExplicitGraph(graph pipeline.Graph) error {
 
 	for i := range b.sources {
 		if b.sources[i] == nil {
-			return ErrNilSource
+			return errNilSource
 		}
 		ref, err := graph.AddSource(b.sources[i], b.runtime.buffer)
 		if err != nil {
@@ -547,7 +546,7 @@ func (t *task) bufferedPayloadRunError(cause error, code errcode.Code, reason st
 			{Message: "when using flow.CopyNever, emit av.BufferImmutable payloads only or switch to flow.CopyIfMutable/flow.CopyAlways"},
 			{Message: "for runtime-level buffers, set goavruntime.WithBufferPolicy(pipeline.BufferPolicy{Capacity: ..., Drop: pipeline.DropBlock, CopyPacketBytes: ..., CopyFrameBytes: ...})"},
 		},
-		Cause: cause,
+		cause: cause,
 	}
 }
 
@@ -721,7 +720,7 @@ func nilAttachmentDetachError() error {
 			"keep the Attachment returned by Task.Attach and pass it to Task.Detach",
 			"skip Detach when no branch is attached",
 		}),
-		Cause: ErrUnsupportedBuild,
+		cause: errUnsupportedBuild,
 	}
 }
 

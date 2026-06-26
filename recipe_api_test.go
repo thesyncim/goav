@@ -571,8 +571,8 @@ func TestZeroJobRejectsPublicConstruction(t *testing.T) {
 		To(goav.Write("out.ogg", io.Discard)).
 		Describe()
 	var buildErr *goav.BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != errcode.JobInvalid || !errors.Is(err, goav.ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want job_invalid wrapping ErrUnsupportedBuild", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != errcode.JobInvalid {
+		t.Fatalf("err = %v, want job_invalid with matching BuildError code", err)
 	}
 	if !strings.Contains(err.Error(), "empty job") ||
 		!strings.Contains(err.Error(), "goav.From(input)") {
@@ -1586,8 +1586,8 @@ func TestTypedTapDomainMismatchIsActionable(t *testing.T) {
 		Describe()
 
 	var buildErr *goav.BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "tap_domain_mismatch" || !errors.Is(err, goav.ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want tap_domain_mismatch wrapping ErrUnsupportedBuild", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "tap_domain_mismatch" {
+		t.Fatalf("err = %v, want tap_domain_mismatch with matching BuildError code", err)
 	}
 	if !strings.Contains(err.Error(), "FrameTap") ||
 		!strings.Contains(err.Error(), "PacketTap") {
@@ -1609,8 +1609,8 @@ func TestTypedBranchTapDomainMismatchIsActionable(t *testing.T) {
 		Describe()
 
 	var buildErr *goav.BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "tap_domain_mismatch" || !errors.Is(err, goav.ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want tap_domain_mismatch wrapping ErrUnsupportedBuild", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "tap_domain_mismatch" {
+		t.Fatalf("err = %v, want tap_domain_mismatch with matching BuildError code", err)
 	}
 	if !strings.Contains(err.Error(), "FrameTap") ||
 		!strings.Contains(err.Error(), "PacketTap") {
@@ -3305,8 +3305,8 @@ func TestFlowApplyMediaMismatchIsActionable(t *testing.T) {
 		Describe()
 
 	var buildErr *goav.BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "flow_media_mismatch" || !errors.Is(err, goav.ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want flow_media_mismatch wrapping ErrUnsupportedBuild", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "flow_media_mismatch" {
+		t.Fatalf("err = %v, want flow_media_mismatch with matching BuildError code", err)
 	}
 	if !strings.Contains(err.Error(), "video flow cannot be applied to audio stream") ||
 		!strings.Contains(err.Error(), "Flow(name).Audio") ||
@@ -3342,8 +3342,8 @@ func TestFlowBranchMediaMismatchIsActionable(t *testing.T) {
 		Describe()
 
 	var buildErr *goav.BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "flow_media_mismatch" || !errors.Is(err, goav.ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want flow_media_mismatch wrapping ErrUnsupportedBuild", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "flow_media_mismatch" {
+		t.Fatalf("err = %v, want flow_media_mismatch with matching BuildError code", err)
 	}
 	if !strings.Contains(err.Error(), "audio flow cannot be applied to video stream") ||
 		!strings.Contains(err.Error(), "Flow(name).Audio") ||
@@ -3364,8 +3364,8 @@ func TestBranchRejectsConflictingFlowMedia(t *testing.T) {
 		Describe()
 
 	var buildErr *goav.BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "flow_media_mismatch" || !errors.Is(err, goav.ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want flow_media_mismatch wrapping ErrUnsupportedBuild", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "flow_media_mismatch" {
+		t.Fatalf("err = %v, want flow_media_mismatch with matching BuildError code", err)
 	}
 	if !strings.Contains(err.Error(), "video flow cannot be applied to audio stream") ||
 		!strings.Contains(err.Error(), "Flow(name).Audio") ||
@@ -3482,8 +3482,8 @@ func TestFlowDecodeRejectsAfterStreamDecode(t *testing.T) {
 		Describe()
 
 	var buildErr *goav.BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "flow_decode_domain_mismatch" || !errors.Is(err, goav.ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want flow_decode_domain_mismatch wrapping ErrUnsupportedBuild", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "flow_decode_domain_mismatch" {
+		t.Fatalf("err = %v, want flow_decode_domain_mismatch with matching BuildError code", err)
 	}
 	if !strings.Contains(err.Error(), "requires a packet-domain stream point") ||
 		!strings.Contains(err.Error(), "after stream decode") {
@@ -3504,8 +3504,8 @@ func TestFlowDecodeMustBeFirstOperation(t *testing.T) {
 		Describe()
 
 	var buildErr *goav.BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "flow_decode_order_invalid" || !errors.Is(err, goav.ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want flow_decode_order_invalid wrapping ErrUnsupportedBuild", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "flow_decode_order_invalid" {
+		t.Fatalf("err = %v, want flow_decode_order_invalid with matching BuildError code", err)
 	}
 	if !strings.Contains(err.Error(), "decode must be the first flow operation") ||
 		!strings.Contains(err.Error(), ".Decode().Resample") {
@@ -3550,8 +3550,8 @@ func TestFlowCopyRequiresPacketDomain(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			_, err := tt.job.Describe()
 			var buildErr *goav.BuildError
-			if !errors.As(err, &buildErr) || buildErr.Code != "flow_copy_domain_mismatch" || !errors.Is(err, goav.ErrUnsupportedBuild) {
-				t.Fatalf("err = %v, want flow_copy_domain_mismatch wrapping ErrUnsupportedBuild", err)
+			if !errors.As(err, &buildErr) || buildErr.Code != "flow_copy_domain_mismatch" {
+				t.Fatalf("err = %v, want flow_copy_domain_mismatch with matching BuildError code", err)
 			}
 			if !strings.Contains(err.Error(), "requires a packet-domain stream point") ||
 				!strings.Contains(err.Error(), ".Copy().Tap") {
@@ -3661,8 +3661,8 @@ func TestRecipeAndRejectsMultipleFileInputs(t *testing.T) {
 		To(goav.Write("out.ivf", io.Discard)).
 		Build(context.Background())
 	var buildErr *goav.BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "multi_input_unsupported" || !errors.Is(err, goav.ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want multi_input_unsupported wrapping ErrUnsupportedBuild", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "multi_input_unsupported" {
+		t.Fatalf("err = %v, want multi_input_unsupported with matching BuildError code", err)
 	}
 }
 
@@ -3774,8 +3774,8 @@ func TestRecordRecipeRejectsEmptyInputSpec(t *testing.T) {
 		goav.Write("recording.ogg", io.Discard),
 	).Build(context.Background())
 	var buildErr *goav.BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "input_invalid" || !errors.Is(err, goav.ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want input_invalid wrapping ErrUnsupportedBuild", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "input_invalid" {
+		t.Fatalf("err = %v, want input_invalid with matching BuildError code", err)
 	}
 	if !strings.Contains(err.Error(), "empty input spec") ||
 		!strings.Contains(err.Error(), "goav.FileInput") {
@@ -3789,8 +3789,8 @@ func TestDecodeRecipeRejectsNilSinkDestination(t *testing.T) {
 		goav.Sink(nil),
 	).Build(context.Background())
 	var buildErr *goav.BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "output_invalid" || !errors.Is(err, goav.ErrNilSink) {
-		t.Fatalf("err = %v, want output_invalid wrapping ErrNilSink", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "output_invalid" {
+		t.Fatalf("err = %v, want output_invalid wrapping errNilSink", err)
 	}
 	if !strings.Contains(err.Error(), "non-nil sink") {
 		t.Fatalf("err = %v, want sink destination guidance", err)
@@ -3803,8 +3803,8 @@ func TestDecodeRecipeRejectsNilSinkFuncCallback(t *testing.T) {
 		goav.Sink(component.SinkFunc("frames", nil)),
 	).Build(context.Background())
 	var buildErr *goav.BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "output_invalid" || !errors.Is(err, goav.ErrNilSink) {
-		t.Fatalf("err = %v, want output_invalid wrapping ErrNilSink", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "output_invalid" {
+		t.Fatalf("err = %v, want output_invalid wrapping errNilSink", err)
 	}
 	if !strings.Contains(err.Error(), "non-nil sink") {
 		t.Fatalf("err = %v, want sink guidance", err)
@@ -3817,8 +3817,8 @@ func TestDecodeRecipeRejectsMuxOutput(t *testing.T) {
 		goav.Write("frames.ogg", io.Discard),
 	).Build(context.Background())
 	var buildErr *goav.BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "encode_missing" || !errors.Is(err, goav.ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want encode_missing wrapping ErrUnsupportedBuild", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "encode_missing" {
+		t.Fatalf("err = %v, want encode_missing with matching BuildError code", err)
 	}
 	if !strings.Contains(err.Error(), "goav.Sink") ||
 		!strings.Contains(err.Error(), ".Copy().To(output)") {
@@ -3843,8 +3843,8 @@ func TestRecordRecipeRejectsEmptyDestination(t *testing.T) {
 		target,
 	).Build(context.Background())
 	var buildErr *goav.BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "destination_invalid" || !errors.Is(err, goav.ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want destination_invalid wrapping ErrUnsupportedBuild", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "destination_invalid" {
+		t.Fatalf("err = %v, want destination_invalid with matching BuildError code", err)
 	}
 	if !strings.Contains(err.Error(), "destination is empty") ||
 		!strings.Contains(err.Error(), "goav.Write") ||
@@ -3859,8 +3859,8 @@ func TestRecordRecipeRejectsFileWithoutWriter(t *testing.T) {
 		goav.Write("recording.ogg", nil),
 	).Build(context.Background())
 	var buildErr *goav.BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "output_writer_missing" || !errors.Is(err, goav.ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want output_writer_missing wrapping ErrUnsupportedBuild", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "output_writer_missing" {
+		t.Fatalf("err = %v, want output_writer_missing with matching BuildError code", err)
 	}
 }
 
@@ -3871,8 +3871,8 @@ func TestRecordRecipeRejectsUnnamedFileWithoutFormat(t *testing.T) {
 	).Build(context.Background())
 
 	var buildErr *goav.BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "output_format_missing" || !errors.Is(err, goav.ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want output_format_missing wrapping ErrUnsupportedBuild", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "output_format_missing" {
+		t.Fatalf("err = %v, want output_format_missing with matching BuildError code", err)
 	}
 	if !strings.Contains(err.Error(), "explicit format") ||
 		!strings.Contains(err.Error(), "container extension") {
@@ -3887,8 +3887,8 @@ func TestRecordRecipeRejectsFormatOnlyDestination(t *testing.T) {
 	).Build(context.Background())
 
 	var buildErr *goav.BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "output_destination_missing" || !errors.Is(err, goav.ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want output_destination_missing wrapping ErrUnsupportedBuild", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "output_destination_missing" {
+		t.Fatalf("err = %v, want output_destination_missing with matching BuildError code", err)
 	}
 	if !strings.Contains(err.Error(), "no URI, writer, or sink") ||
 		!strings.Contains(err.Error(), "goav.Write") {
@@ -3942,8 +3942,8 @@ func TestRecordRecipeRejectsDuplicateOutputs(t *testing.T) {
 		Build(context.Background())
 
 	var buildErr *goav.BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "output_duplicate" || !errors.Is(err, goav.ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want output_duplicate wrapping ErrUnsupportedBuild", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "output_duplicate" {
+		t.Fatalf("err = %v, want output_duplicate with matching BuildError code", err)
 	}
 	if !strings.Contains(err.Error(), `output name "recording.ivf"`) ||
 		!strings.Contains(err.Error(), "unique output name") {
@@ -3963,8 +3963,8 @@ func TestStreamRecipeRejectsDuplicateSinkDestinations(t *testing.T) {
 		Build(context.Background())
 
 	var buildErr *goav.BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "output_duplicate" || !errors.Is(err, goav.ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want output_duplicate wrapping ErrUnsupportedBuild", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "output_duplicate" {
+		t.Fatalf("err = %v, want output_duplicate with matching BuildError code", err)
 	}
 	if !strings.Contains(err.Error(), `output name "frames"`) ||
 		!strings.Contains(err.Error(), ".Name") {
@@ -3983,8 +3983,8 @@ func TestStreamRecipeRejectsDuplicateTypedDestinations(t *testing.T) {
 		Describe()
 
 	var buildErr *goav.BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "output_duplicate" || !errors.Is(err, goav.ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want output_duplicate wrapping ErrUnsupportedBuild", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "output_duplicate" {
+		t.Fatalf("err = %v, want output_duplicate with matching BuildError code", err)
 	}
 	if !strings.Contains(err.Error(), `output name "voice.ogg"`) {
 		t.Fatalf("err = %v, want duplicate destination guidance", err)
@@ -3997,8 +3997,8 @@ func TestProviderRecipeRejectsNilProvider(t *testing.T) {
 		goav.Write("recording.ogg", io.Discard),
 	).Build(context.Background())
 	var buildErr *goav.BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "input_invalid" || !errors.Is(err, goav.ErrNilSource) {
-		t.Fatalf("err = %v, want input_invalid wrapping ErrNilSource", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "input_invalid" {
+		t.Fatalf("err = %v, want input_invalid wrapping errNilSource", err)
 	}
 }
 
@@ -4145,8 +4145,8 @@ func TestStreamRecipeRequiresOperationForMuxOutput(t *testing.T) {
 		To(goav.Write("archive.ogg", io.Discard)).
 		Build(context.Background())
 	var buildErr *goav.BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "stream_operation_missing" || !errors.Is(err, goav.ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want stream_operation_missing wrapping ErrUnsupportedBuild", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "stream_operation_missing" {
+		t.Fatalf("err = %v, want stream_operation_missing with matching BuildError code", err)
 	}
 }
 
@@ -4207,8 +4207,8 @@ func TestStreamRecipeRequiresExplicitDecodeBeforeFrameConsumers(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			_, err := tt.job.Build(context.Background())
 			var buildErr *goav.BuildError
-			if !errors.As(err, &buildErr) || buildErr.Code != "operation_shape_mismatch" || !errors.Is(err, goav.ErrUnsupportedBuild) {
-				t.Fatalf("err = %v, want operation_shape_mismatch wrapping ErrUnsupportedBuild", err)
+			if !errors.As(err, &buildErr) || buildErr.Code != "operation_shape_mismatch" {
+				t.Fatalf("err = %v, want operation_shape_mismatch with matching BuildError code", err)
 			}
 			if !strings.Contains(err.Error(), "needs decoded frames") || !strings.Contains(err.Error(), tt.fix) {
 				t.Fatalf("err = %v, want explicit decode guidance %q", err, tt.fix)
@@ -4223,8 +4223,8 @@ func TestStreamRecipeRequiresExplicitDomainForPacketStreamSink(t *testing.T) {
 		To(goav.Sink(component.SinkFunc("frames", func(context.Context, component.Message) error { return nil }))).
 		Build(context.Background())
 	var buildErr *goav.BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "operation_shape_mismatch" || !errors.Is(err, goav.ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want operation_shape_mismatch wrapping ErrUnsupportedBuild", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "operation_shape_mismatch" {
+		t.Fatalf("err = %v, want operation_shape_mismatch with matching BuildError code", err)
 	}
 	if !strings.Contains(err.Error(), ".Decode().To(goav.Sink(...))") ||
 		!strings.Contains(err.Error(), ".Copy().To(goav.Sink(...))") {
@@ -4242,8 +4242,8 @@ func TestStreamRecipeRejectsGenericAndStreamOutputs(t *testing.T) {
 		Build(context.Background())
 
 	var buildErr *goav.BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "output_scope_mixed" || !errors.Is(err, goav.ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want output_scope_mixed wrapping ErrUnsupportedBuild", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "output_scope_mixed" {
+		t.Fatalf("err = %v, want output_scope_mixed with matching BuildError code", err)
 	}
 	if !strings.Contains(err.Error(), "stream recipes use stream-local outputs") ||
 		!strings.Contains(err.Error(), ".Copy().To") ||
@@ -4261,8 +4261,8 @@ func TestStreamRecipeRejectsJobLevelOutput(t *testing.T) {
 	_, err := job.Build(context.Background())
 
 	var buildErr *goav.BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "output_scope_mixed" || !errors.Is(err, goav.ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want output_scope_mixed wrapping ErrUnsupportedBuild", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "output_scope_mixed" {
+		t.Fatalf("err = %v, want output_scope_mixed with matching BuildError code", err)
 	}
 	if !strings.Contains(err.Error(), ".Audio()...To(...)") {
 		t.Fatalf("err = %v, want stream-local To guidance", err)
@@ -4278,8 +4278,8 @@ func TestStreamRecipeRejectsSecondStreamSelectionBeforeRouting(t *testing.T) {
 	_, err := job.Build(context.Background())
 
 	var buildErr *goav.BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "stream_duplicate" || !errors.Is(err, goav.ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want stream_duplicate wrapping ErrUnsupportedBuild", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "stream_duplicate" {
+		t.Fatalf("err = %v, want stream_duplicate with matching BuildError code", err)
 	}
 	if !strings.Contains(err.Error(), "first stream: audio") ||
 		!strings.Contains(err.Error(), "second stream: video") ||
@@ -4297,8 +4297,8 @@ func TestStreamRecipeRejectsNegativeStreamIndex(t *testing.T) {
 		}))).
 		Build(context.Background())
 	var buildErr *goav.BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "stream_selector_invalid" || !errors.Is(err, goav.ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want stream_selector_invalid wrapping ErrUnsupportedBuild", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "stream_selector_invalid" {
+		t.Fatalf("err = %v, want stream_selector_invalid with matching BuildError code", err)
 	}
 	if !strings.Contains(err.Error(), "stream index must be non-negative") ||
 		!strings.Contains(err.Error(), "index=-1") ||
@@ -4316,8 +4316,8 @@ func TestStreamRecipeRejectsNilCustomStage(t *testing.T) {
 		}))).
 		Build(context.Background())
 	var buildErr *goav.BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "stage_missing" || !errors.Is(err, goav.ErrNilStage) {
-		t.Fatalf("err = %v, want stage_missing wrapping ErrNilStage", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "stage_missing" {
+		t.Fatalf("err = %v, want stage_missing wrapping errNilStage", err)
 	}
 	if !strings.Contains(err.Error(), ".Do(stage)") ||
 		!strings.Contains(err.Error(), "component.FrameFunc") {
@@ -4334,8 +4334,8 @@ func TestNilPacketFuncDoesNotBecomeSilentNilStage(t *testing.T) {
 		}))).
 		Build(context.Background())
 	var buildErr *goav.BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "stage_missing" || !errors.Is(err, goav.ErrNilStage) {
-		t.Fatalf("err = %v, want stage_missing wrapping ErrNilStage", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "stage_missing" {
+		t.Fatalf("err = %v, want stage_missing wrapping errNilStage", err)
 	}
 	if !strings.Contains(err.Error(), "component.PacketFunc") ||
 		!strings.Contains(err.Error(), "non-nil stage") {
@@ -4349,8 +4349,8 @@ func TestNilSinkFuncDoesNotBecomeSilentNilSink(t *testing.T) {
 		goav.Sink(component.SinkFunc("frames", nil)),
 	).Build(context.Background())
 	var buildErr *goav.BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "output_invalid" || !errors.Is(err, goav.ErrNilSink) {
-		t.Fatalf("err = %v, want output_invalid wrapping ErrNilSink", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "output_invalid" {
+		t.Fatalf("err = %v, want output_invalid wrapping errNilSink", err)
 	}
 	if !strings.Contains(err.Error(), "SinkFunc") ||
 		!strings.Contains(err.Error(), "non-nil sink") {
@@ -4383,8 +4383,8 @@ func TestStreamRecipeRejectsInvalidResize(t *testing.T) {
 		}))).
 		Build(context.Background())
 	var buildErr *goav.BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "transform_invalid" || !errors.Is(err, goav.ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want transform_invalid wrapping ErrUnsupportedBuild", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "transform_invalid" {
+		t.Fatalf("err = %v, want transform_invalid with matching BuildError code", err)
 	}
 	if !strings.Contains(err.Error(), "positive width and height") ||
 		!strings.Contains(err.Error(), "width=0") {
@@ -4400,8 +4400,8 @@ func TestStreamRecipeRequiresEncoderForFile(t *testing.T) {
 		To(goav.Write("archive.ogg", io.Discard)).
 		Build(context.Background())
 	var buildErr *goav.BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "encode_missing" || !errors.Is(err, goav.ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want encode_missing wrapping ErrUnsupportedBuild", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "encode_missing" {
+		t.Fatalf("err = %v, want encode_missing with matching BuildError code", err)
 	}
 }
 
@@ -4418,8 +4418,8 @@ func TestStreamRecipeRejectsMixedSinkAndFile(t *testing.T) {
 		Build(context.Background())
 
 	var buildErr *goav.BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "output_kind_mixed" || !errors.Is(err, goav.ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want output_kind_mixed wrapping ErrUnsupportedBuild", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "output_kind_mixed" {
+		t.Fatalf("err = %v, want output_kind_mixed with matching BuildError code", err)
 	}
 	if !strings.Contains(err.Error(), "cannot mix sinks and muxed outputs") ||
 		!strings.Contains(err.Error(), ".Branches") {
@@ -4478,8 +4478,8 @@ func TestStreamRecipeRejectsProcessingAfterEncoder(t *testing.T) {
 		Build(context.Background())
 
 	var buildErr *goav.BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "stream_step_after_encode" || !errors.Is(err, goav.ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want stream_step_after_encode wrapping ErrUnsupportedBuild", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "stream_step_after_encode" {
+		t.Fatalf("err = %v, want stream_step_after_encode with matching BuildError code", err)
 	}
 	if !strings.Contains(err.Error(), "step: resample") ||
 		!strings.Contains(err.Error(), "encoder: opus") ||
@@ -4498,8 +4498,8 @@ func TestStreamRecipeRejectsDuplicateEncoder(t *testing.T) {
 		Build(context.Background())
 
 	var buildErr *goav.BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "encode_duplicate" || !errors.Is(err, goav.ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want encode_duplicate wrapping ErrUnsupportedBuild", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "encode_duplicate" {
+		t.Fatalf("err = %v, want encode_duplicate with matching BuildError code", err)
 	}
 	if !strings.Contains(err.Error(), "first encoder: opus") ||
 		!strings.Contains(err.Error(), "second encoder: vp9") ||
@@ -4568,8 +4568,8 @@ func TestStreamRecipeRejectsNegativeEncodeBitrate(t *testing.T) {
 		To(goav.Write("archive.ogg", io.Discard)).
 		Build(context.Background())
 	var buildErr *goav.BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "encode_parameter_invalid" || !errors.Is(err, goav.ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want encode_parameter_invalid wrapping ErrUnsupportedBuild", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "encode_parameter_invalid" {
+		t.Fatalf("err = %v, want encode_parameter_invalid with matching BuildError code", err)
 	}
 	if !strings.Contains(err.Error(), "bitrate must be non-negative") ||
 		!strings.Contains(err.Error(), "bitrate=-1") {
@@ -4606,8 +4606,8 @@ func TestStreamRecipeRejectsInvalidCodecTimingOptions(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			_, err := tt.job.Build(context.Background())
 			var buildErr *goav.BuildError
-			if !errors.As(err, &buildErr) || buildErr.Code != "encode_parameter_invalid" || !errors.Is(err, goav.ErrUnsupportedBuild) {
-				t.Fatalf("err = %v, want encode_parameter_invalid wrapping ErrUnsupportedBuild", err)
+			if !errors.As(err, &buildErr) || buildErr.Code != "encode_parameter_invalid" {
+				t.Fatalf("err = %v, want encode_parameter_invalid with matching BuildError code", err)
 			}
 			if !strings.Contains(err.Error(), tt.want) {
 				t.Fatalf("err = %v, want %q", err, tt.want)
@@ -4624,8 +4624,8 @@ func TestStreamRecipeRejectsInvalidEncodeSampleRate(t *testing.T) {
 		To(goav.Write("archive.ogg", io.Discard)).
 		Build(context.Background())
 	var buildErr *goav.BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "encode_parameter_invalid" || !errors.Is(err, goav.ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want encode_parameter_invalid wrapping ErrUnsupportedBuild", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "encode_parameter_invalid" {
+		t.Fatalf("err = %v, want encode_parameter_invalid with matching BuildError code", err)
 	}
 	if !strings.Contains(err.Error(), "sample rate must be positive") ||
 		!strings.Contains(err.Error(), "sample_rate=0") {
@@ -4685,8 +4685,8 @@ func TestStreamRecipeReportsProbedFileSelectionBeforeOpeningInput(t *testing.T) 
 		}))).
 		Build(context.Background())
 	var buildErr *goav.BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "stream_ambiguous" || !errors.Is(err, goav.ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want stream_ambiguous wrapping ErrUnsupportedBuild", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "stream_ambiguous" {
+		t.Fatalf("err = %v, want stream_ambiguous with matching BuildError code", err)
 	}
 	if demuxerOpened {
 		t.Fatal("demuxer opened before known stream selection failed")
@@ -4791,8 +4791,8 @@ func TestStreamRecipeReportsIncompatibleTransformAdapterBeforeOpeningInput(t *te
 		}))).
 		Build(context.Background())
 	var buildErr *goav.BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "transform_adapter_incompatible" || !errors.Is(err, goav.ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want transform_adapter_incompatible wrapping ErrUnsupportedBuild", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "transform_adapter_incompatible" {
+		t.Fatalf("err = %v, want transform_adapter_incompatible with matching BuildError code", err)
 	}
 	if demuxerOpened {
 		t.Fatal("demuxer opened before transform adapter preflight failed")
@@ -4822,8 +4822,8 @@ func TestStreamRecipeRejectsUnresolvedEncodeIntents(t *testing.T) {
 				To(goav.Write("archive.ogg", io.Discard)).
 				Build(context.Background())
 			var buildErr *goav.BuildError
-			if !errors.As(err, &buildErr) || buildErr.Code != tt.code || !errors.Is(err, goav.ErrUnsupportedBuild) {
-				t.Fatalf("err = %v, want %s wrapping ErrUnsupportedBuild", err, tt.code)
+			if !errors.As(err, &buildErr) || buildErr.Code != tt.code {
+				t.Fatalf("err = %v, want %s with matching BuildError code", err, tt.code)
 			}
 		})
 	}
@@ -5031,8 +5031,8 @@ func TestBranchRecipeRejectsDuplicateDestinations(t *testing.T) {
 		Build(context.Background())
 
 	var buildErr *goav.BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "destination_duplicate" || !errors.Is(err, goav.ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want destination_duplicate wrapping ErrUnsupportedBuild", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "destination_duplicate" {
+		t.Fatalf("err = %v, want destination_duplicate with matching BuildError code", err)
 	}
 	if !strings.Contains(err.Error(), `destination "web.webm"`) ||
 		!strings.Contains(err.Error(), "goav.Mux(name, destination)") {
@@ -5047,8 +5047,8 @@ func TestBranchRecipeRejectsDuplicateBranchDestinations(t *testing.T) {
 		Build(context.Background())
 
 	var buildErr *goav.BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "destination_duplicate" || !errors.Is(err, goav.ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want destination_duplicate wrapping ErrUnsupportedBuild", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "destination_duplicate" {
+		t.Fatalf("err = %v, want destination_duplicate with matching BuildError code", err)
 	}
 	if !strings.Contains(err.Error(), `branch routes to destination "web.webm" more than once`) ||
 		!strings.Contains(err.Error(), "second destination index: 1") ||
@@ -5066,8 +5066,8 @@ func TestBranchRecipeRejectsDuplicateBranchNames(t *testing.T) {
 		Build(context.Background())
 
 	var buildErr *goav.BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "stream_duplicate" || !errors.Is(err, goav.ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want stream_duplicate wrapping ErrUnsupportedBuild", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "stream_duplicate" {
+		t.Fatalf("err = %v, want stream_duplicate with matching BuildError code", err)
 	}
 	if !strings.Contains(err.Error(), `branch name "720p"`) ||
 		!strings.Contains(err.Error(), "first branch index: 0") ||
@@ -5083,8 +5083,8 @@ func TestBranchRecipeRejectsMissingBranchName(t *testing.T) {
 		Build(context.Background())
 
 	var buildErr *goav.BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "stream_name_missing" || !errors.Is(err, goav.ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want stream_name_missing wrapping ErrUnsupportedBuild", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "stream_name_missing" {
+		t.Fatalf("err = %v, want stream_name_missing with matching BuildError code", err)
 	}
 	if !strings.Contains(err.Error(), "branches need stable names") ||
 		!strings.Contains(err.Error(), `.Video("720p")`) ||
@@ -5100,8 +5100,8 @@ func TestBranchRecipeRejectsInvalidDestination(t *testing.T) {
 		Build(context.Background())
 
 	var buildErr *goav.BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "output_writer_missing" || !errors.Is(err, goav.ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want output_writer_missing wrapping ErrUnsupportedBuild", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "output_writer_missing" {
+		t.Fatalf("err = %v, want output_writer_missing with matching BuildError code", err)
 	}
 }
 
@@ -5352,8 +5352,8 @@ func TestBranchCompositionRejectsMissingPlannedTap(t *testing.T) {
 		Describe()
 
 	var buildErr *goav.BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "branch_tap_missing" || !errors.Is(err, goav.ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want branch_tap_missing wrapping ErrUnsupportedBuild", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "branch_tap_missing" {
+		t.Fatalf("err = %v, want branch_tap_missing with matching BuildError code", err)
 	}
 	if !strings.Contains(err.Error(), `Tap(goav.FrameTap("video.missing"))`) ||
 		!strings.Contains(err.Error(), "current stream point") {
@@ -5379,8 +5379,8 @@ func TestBranchCompositionRejectsGraphNodeSource(t *testing.T) {
 		Describe()
 
 	var buildErr *goav.BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "branch_source_invalid" || !errors.Is(err, goav.ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want branch_source_invalid wrapping ErrUnsupportedBuild", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "branch_source_invalid" {
+		t.Fatalf("err = %v, want branch_source_invalid with matching BuildError code", err)
 	}
 	if !strings.Contains(err.Error(), "graph handles") ||
 		!strings.Contains(err.Error(), "From(goav.FrameTap") {
@@ -5403,8 +5403,8 @@ func TestBranchCompositionRejectsStreamEncodeBeforeBranches(t *testing.T) {
 		Describe()
 
 	var buildErr *goav.BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "encode_branch_source_invalid" || !errors.Is(err, goav.ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want encode_branch_source_invalid wrapping ErrUnsupportedBuild", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "encode_branch_source_invalid" {
+		t.Fatalf("err = %v, want encode_branch_source_invalid with matching BuildError code", err)
 	}
 	if !strings.Contains(err.Error(), "stream encoders are terminal") ||
 		!strings.Contains(err.Error(), "encoder: vp9") ||
@@ -5565,8 +5565,8 @@ func TestBranchCompositionRejectsDecodeAfterBranchOperation(t *testing.T) {
 		Build(context.Background())
 
 	var buildErr *goav.BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "branch_decode_order_invalid" || !errors.Is(err, goav.ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want branch_decode_order_invalid wrapping ErrUnsupportedBuild", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "branch_decode_order_invalid" {
+		t.Fatalf("err = %v, want branch_decode_order_invalid with matching BuildError code", err)
 	}
 	if !strings.Contains(err.Error(), "decode must be the first branch operation") ||
 		!strings.Contains(err.Error(), ".Decode().Resample") {
@@ -5589,8 +5589,8 @@ func TestBranchCompositionRejectsDecodeThenCopy(t *testing.T) {
 		Build(context.Background())
 
 	var buildErr *goav.BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "branch_decode_copy_invalid" || !errors.Is(err, goav.ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want branch_decode_copy_invalid wrapping ErrUnsupportedBuild", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "branch_decode_copy_invalid" {
+		t.Fatalf("err = %v, want branch_decode_copy_invalid with matching BuildError code", err)
 	}
 	if !strings.Contains(err.Error(), "cannot decode packets and then copy") ||
 		!strings.Contains(err.Error(), ".Copy() for packet-preserving branches") {
@@ -5612,8 +5612,8 @@ func TestBranchCompositionRejectsDecodeFromFrameBranchPoint(t *testing.T) {
 		Build(context.Background())
 
 	var buildErr *goav.BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "branch_decode_domain_mismatch" || !errors.Is(err, goav.ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want branch_decode_domain_mismatch wrapping ErrUnsupportedBuild", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "branch_decode_domain_mismatch" {
+		t.Fatalf("err = %v, want branch_decode_domain_mismatch with matching BuildError code", err)
 	}
 	if !strings.Contains(err.Error(), "requires a packet-domain stream point") ||
 		!strings.Contains(err.Error(), "already starts after stream decode") {
@@ -5626,8 +5626,8 @@ func TestBranchRecipeRequiresBranch(t *testing.T) {
 		Build(context.Background())
 
 	var buildErr *goav.BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "output_missing" || !errors.Is(err, goav.ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want output_missing wrapping ErrUnsupportedBuild", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "output_missing" {
+		t.Fatalf("err = %v, want output_missing with matching BuildError code", err)
 	}
 	if !strings.Contains(err.Error(), "no output is configured") {
 		t.Fatalf("err = %v, want output guidance", err)
@@ -5640,8 +5640,8 @@ func TestBranchRecipeRequiresBranchDestination(t *testing.T) {
 	_, err := job.Build(context.Background())
 
 	var buildErr *goav.BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "destination_missing" || !errors.Is(err, goav.ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want destination_missing wrapping ErrUnsupportedBuild", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "destination_missing" {
+		t.Fatalf("err = %v, want destination_missing with matching BuildError code", err)
 	}
 	if !strings.Contains(err.Error(), "branch has no destination") ||
 		!strings.Contains(err.Error(), "goav.Write") {
@@ -5659,8 +5659,8 @@ func TestBranchRecipeRejectsNegativeStreamIndex(t *testing.T) {
 		Build(context.Background())
 
 	var buildErr *goav.BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "stream_selector_invalid" || !errors.Is(err, goav.ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want stream_selector_invalid wrapping ErrUnsupportedBuild", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "stream_selector_invalid" {
+		t.Fatalf("err = %v, want stream_selector_invalid with matching BuildError code", err)
 	}
 	if !strings.Contains(err.Error(), "stream index must be non-negative") ||
 		!strings.Contains(err.Error(), "index=-1") {
@@ -5681,8 +5681,8 @@ func TestBranchRecipeRejectsWrongMediaTransform(t *testing.T) {
 		Build(context.Background())
 
 	var buildErr *goav.BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "operation_shape_mismatch" || !errors.Is(err, goav.ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want operation_shape_mismatch wrapping ErrUnsupportedBuild", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "operation_shape_mismatch" {
+		t.Fatalf("err = %v, want operation_shape_mismatch with matching BuildError code", err)
 	}
 	if !strings.Contains(err.Error(), "resize cannot consume the current media shape") ||
 		!strings.Contains(err.Error(), ".Video().Resize(...)") {
@@ -5697,8 +5697,8 @@ func TestBranchRecipeRejectsInvalidResample(t *testing.T) {
 		Build(context.Background())
 
 	var buildErr *goav.BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "transform_invalid" || !errors.Is(err, goav.ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want transform_invalid wrapping ErrUnsupportedBuild", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "transform_invalid" {
+		t.Fatalf("err = %v, want transform_invalid with matching BuildError code", err)
 	}
 	if !strings.Contains(err.Error(), "positive sample rate and channels") ||
 		!strings.Contains(err.Error(), "sample_rate=0") {
@@ -5720,8 +5720,8 @@ func TestBranchRecipeRejectsProcessingAfterEncoder(t *testing.T) {
 		Build(context.Background())
 
 	var buildErr *goav.BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "stream_step_after_encode" || !errors.Is(err, goav.ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want stream_step_after_encode wrapping ErrUnsupportedBuild", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "stream_step_after_encode" {
+		t.Fatalf("err = %v, want stream_step_after_encode with matching BuildError code", err)
 	}
 	if !strings.Contains(err.Error(), "step: resize") ||
 		!strings.Contains(err.Error(), "encoder: vp9") ||
@@ -5744,8 +5744,8 @@ func TestBranchRecipeRejectsDuplicateEncoder(t *testing.T) {
 		Build(context.Background())
 
 	var buildErr *goav.BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "encode_duplicate" || !errors.Is(err, goav.ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want encode_duplicate wrapping ErrUnsupportedBuild", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "encode_duplicate" {
+		t.Fatalf("err = %v, want encode_duplicate with matching BuildError code", err)
 	}
 	if !strings.Contains(err.Error(), "first encoder: vp9") ||
 		!strings.Contains(err.Error(), "second encoder: vp8") ||
@@ -5761,8 +5761,8 @@ func TestBranchRecipeRejectsNegativeEncodeBitrate(t *testing.T) {
 		Build(context.Background())
 
 	var buildErr *goav.BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "encode_parameter_invalid" || !errors.Is(err, goav.ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want encode_parameter_invalid wrapping ErrUnsupportedBuild", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "encode_parameter_invalid" {
+		t.Fatalf("err = %v, want encode_parameter_invalid with matching BuildError code", err)
 	}
 	if !strings.Contains(err.Error(), "bitrate must be non-negative") ||
 		!strings.Contains(err.Error(), "bitrate=-1") {

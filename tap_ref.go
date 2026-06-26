@@ -62,7 +62,7 @@ func validateTapDomain(operation string, node string, tap tapRef, actual shape.M
 			"use goav.FrameTap(name) after decode, resize, resample, or custom frame stages",
 			"use goav.PacketTap(name) after .Copy() or an encoder",
 		}),
-		Cause: ErrUnsupportedBuild,
+		cause: errUnsupportedBuild,
 	}
 }
 
@@ -77,6 +77,6 @@ func branchSourceInvalidError(node string) error {
 			"use .From(goav.FrameTap(name)) or .From(goav.PacketTap(name)) for tap branches",
 			"use .From(graphNode) only for expert graph-handle attachments",
 		}),
-		Cause: ErrUnsupportedBuild,
+		cause: errUnsupportedBuild,
 	}
 }

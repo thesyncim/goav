@@ -26,7 +26,7 @@ func inputFormatProbeError(input format.Input, cause error) error {
 		Reason:    "input format could not be detected",
 		fields:    inputFormatFields(input),
 		fixes:     buildErrorFixes(suggestions),
-		Cause:     cause,
+		cause:     cause,
 	}
 }
 
@@ -47,7 +47,7 @@ func inputDemuxerMissingError(input format.Input, id av.FormatID, cause error) e
 		Reason:    "format " + quoteFormat(id) + " was detected but no demuxer is registered",
 		fields:    append(inputFormatFields(input), buildErrorDetail{Key: "format", Value: id}),
 		fixes:     buildErrorFixes(suggestions),
-		Cause:     cause,
+		cause:     cause,
 	}
 }
 
@@ -68,7 +68,7 @@ func outputFormatProbeError(output format.Output, index int, cause error) error 
 		Reason:    "output format could not be detected",
 		fields:    outputFormatFields(output),
 		fixes:     buildErrorFixes(suggestions),
-		Cause:     cause,
+		cause:     cause,
 	}
 }
 
@@ -89,7 +89,7 @@ func outputMuxerMissingError(output format.Output, index int, id av.FormatID, ca
 		Reason:    "format " + quoteFormat(id) + " was selected but no muxer is registered",
 		fields:    append(outputFormatFields(output), buildErrorDetail{Key: "format", Value: id}),
 		fixes:     buildErrorFixes(suggestions),
-		Cause:     cause,
+		cause:     cause,
 	}
 }
 
@@ -110,7 +110,7 @@ func destinationFormatProbeError(node string, output format.Output, cause error)
 		Reason:    "destination format could not be detected",
 		fields:    outputFormatFields(output),
 		fixes:     buildErrorFixes(suggestions),
-		Cause:     cause,
+		cause:     cause,
 	}
 }
 
@@ -131,7 +131,7 @@ func destinationMuxerMissingError(node string, output format.Output, id av.Forma
 		Reason:    "format " + quoteFormat(id) + " was selected for destination but no muxer is registered",
 		fields:    append(outputFormatFields(output), buildErrorDetail{Key: "format", Value: id}),
 		fixes:     buildErrorFixes(suggestions),
-		Cause:     cause,
+		cause:     cause,
 	}
 }
 

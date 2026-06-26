@@ -460,10 +460,8 @@ func ExampleBuildError() {
 		fmt.Println("family match:", buildErr.Family == errcode.FamilyEncode)
 		fmt.Println("has fixes:", len(buildErr.FixLines()) > 0)
 	}
-	fmt.Println("build refusal:", errors.Is(err, goav.ErrUnsupportedBuild))
 	// Output:
 	// code: encode_missing
 	// family match: true
 	// has fixes: true
-	// build refusal: true
 }

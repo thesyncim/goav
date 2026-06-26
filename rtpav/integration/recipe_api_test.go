@@ -381,8 +381,8 @@ func TestRecipeAndRejectsDuplicateRealtimeInputNames(t *testing.T) {
 		Build(context.Background())
 
 	var buildErr *goav.BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "input_duplicate" || !errors.Is(err, goav.ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want input_duplicate wrapping ErrUnsupportedBuild", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "input_duplicate" {
+		t.Fatalf("err = %v, want input_duplicate with matching BuildError code", err)
 	}
 	if !strings.Contains(err.Error(), `realtime input name "media"`) ||
 		!strings.Contains(err.Error(), "second input index: 1") ||
@@ -464,8 +464,8 @@ func TestStreamRecipeReportsAmbiguousLiveSelectionBeforeDecoderAdapter(t *testin
 		}))).
 		Build(context.Background())
 	var buildErr *goav.BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "stream_ambiguous" || !errors.Is(err, goav.ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want stream_ambiguous wrapping ErrUnsupportedBuild", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "stream_ambiguous" {
+		t.Fatalf("err = %v, want stream_ambiguous with matching BuildError code", err)
 	}
 	if !strings.Contains(err.Error(), "id=front") ||
 		!strings.Contains(err.Error(), "id=screen") ||

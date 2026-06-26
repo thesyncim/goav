@@ -75,8 +75,8 @@ func TestBranchComposeStructuredErrorContracts(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			assertBuildErrorCode(t, tt.err, tt.code)
-			if !errors.Is(tt.err, ErrUnsupportedBuild) {
-				t.Fatalf("err = %v, want ErrUnsupportedBuild cause", tt.err)
+			if !errors.Is(tt.err, errUnsupportedBuild) {
+				t.Fatalf("err = %v, want errUnsupportedBuild cause", tt.err)
 			}
 		})
 	}

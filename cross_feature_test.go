@@ -932,8 +932,8 @@ func TestMixEncodeRequiresAutoForJoinedOutput(t *testing.T) {
 		Build(context.Background())
 
 	var buildErr *BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "operation_shape_mismatch" || !errors.Is(err, ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want operation_shape_mismatch wrapping ErrUnsupportedBuild", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "operation_shape_mismatch" || !errors.Is(err, errUnsupportedBuild) {
+		t.Fatalf("err = %v, want operation_shape_mismatch with matching BuildError code", err)
 	}
 	for _, want := range []string{
 		"opus cannot consume the current media shape",

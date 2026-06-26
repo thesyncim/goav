@@ -8,11 +8,11 @@ type componentValidator interface {
 
 func validateStageComponent(stage pipeline.Stage) error {
 	if stage == nil {
-		return ErrNilStage
+		return errNilStage
 	}
 	if validator, ok := stage.(componentValidator); ok {
 		if err := validator.ValidateComponent(); err != nil {
-			return ErrNilStage
+			return errNilStage
 		}
 	}
 	return nil
@@ -20,11 +20,11 @@ func validateStageComponent(stage pipeline.Stage) error {
 
 func validateSinkComponent(sink pipeline.Sink) error {
 	if sink == nil {
-		return ErrNilSink
+		return errNilSink
 	}
 	if validator, ok := sink.(componentValidator); ok {
 		if err := validator.ValidateComponent(); err != nil {
-			return ErrNilSink
+			return errNilSink
 		}
 	}
 	return nil

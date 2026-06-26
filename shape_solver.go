@@ -496,7 +496,7 @@ func shapeSolverAdapterError(operation string, node string, index int, step oper
 				"build the runtime with only the intended conversion filter via goav.MustNew(goavruntime.WithFilter(...))",
 				"bias the choice with .Prefer(shape.New(...)) toward a capability only one candidate declares",
 			}),
-			Cause: ErrUnsupportedBuild,
+			cause: errUnsupportedBuild,
 		}
 	}
 	return &BuildError{
@@ -511,7 +511,7 @@ func shapeSolverAdapterError(operation string, node string, index int, step oper
 			"register a " + string(selection.media) + " conversion filter with goavruntime.WithFilter(filter.Descriptor{Input: ..., Output: ...}, factory)",
 			"import github.com/thesyncim/goav/bundle and build with bundle.MustNewFilters(...) for the bundled resample and resize adapters",
 		}),
-		Cause: ErrUnsupportedBuild,
+		cause: errUnsupportedBuild,
 	}
 }
 
@@ -540,7 +540,7 @@ func shapeConversionRefusedError(operation string, node string, index int, step 
 			[]string{fmt.Sprintf("add .Auto(%s) to the chain to let the planner insert the conversion", strings.Join(missing.Constructors(), ", "))},
 			explicitConversionSuggestion(conversion.operation.Transform, step)...,
 		)),
-		Cause: ErrUnsupportedBuild,
+		cause: errUnsupportedBuild,
 	}
 }
 

@@ -104,7 +104,7 @@ func structuredError(operation string, err error) *Error {
 			buildErr.Reason,
 			buildErr.DetailLines(),
 			buildErr.FixLines(),
-			buildErr.Cause,
+			errors.Unwrap(buildErr),
 		)
 	}
 	return commandError("control_failed", operation, "", err.Error(), nil, nil, err)

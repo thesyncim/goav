@@ -100,8 +100,8 @@ func TestCompositeRawFramesRequireSinkDestination(t *testing.T) {
 	).To(Write("canvas.ivf", io.Discard)).
 		Build(context.Background())
 	var buildErr *BuildError
-	if !errorsAsComposite(err, &buildErr) || buildErr.Code != "composite_destination" || !errors.Is(err, ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want composite_destination wrapping ErrUnsupportedBuild", err)
+	if !errorsAsComposite(err, &buildErr) || buildErr.Code != "composite_destination" || !errors.Is(err, errUnsupportedBuild) {
+		t.Fatalf("err = %v, want composite_destination with matching BuildError code", err)
 	}
 	if !strings.Contains(err.Error(), ".Encode(codec.VP8") ||
 		!strings.Contains(err.Error(), "goav.Sink") {

@@ -135,8 +135,8 @@ func TestFromMultiInputUnknownInputNameListsInputs(t *testing.T) {
 		Build(context.Background())
 
 	var buildErr *BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "input_unknown" || !errors.Is(err, ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want input_unknown wrapping ErrUnsupportedBuild", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "input_unknown" || !errors.Is(err, errUnsupportedBuild) {
+		t.Fatalf("err = %v, want input_unknown with matching BuildError code", err)
 	}
 	if !strings.Contains(err.Error(), "input=mic-a") || !strings.Contains(err.Error(), "input=mic-b") {
 		t.Fatalf("err = %v, want available input names listed", err)
@@ -199,8 +199,8 @@ func TestJoinArmsRejectMultiInputChains(t *testing.T) {
 		Build(context.Background())
 
 	var buildErr *BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "mix_arm" || !errors.Is(err, ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want mix_arm wrapping ErrUnsupportedBuild", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "mix_arm" || !errors.Is(err, errUnsupportedBuild) {
+		t.Fatalf("err = %v, want mix_arm with matching BuildError code", err)
 	}
 }
 

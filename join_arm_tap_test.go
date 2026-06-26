@@ -318,8 +318,8 @@ func TestMixTapArmUnknownTapListsDeclaredTaps(t *testing.T) {
 		Build(context.Background())
 
 	var buildErr *BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "mix_tap_arm" || !errors.Is(err, ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want mix_tap_arm wrapping ErrUnsupportedBuild", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "mix_tap_arm" || !errors.Is(err, errUnsupportedBuild) {
+		t.Fatalf("err = %v, want mix_tap_arm with matching BuildError code", err)
 	}
 	msg := err.Error()
 	if !strings.Contains(msg, "tap=nope") || !strings.Contains(msg, "declared=dry") {
@@ -335,8 +335,8 @@ func TestCompositeTapArmUnknownTapListsDeclaredTaps(t *testing.T) {
 		Build(context.Background())
 
 	var buildErr *BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "composite_tap_arm" || !errors.Is(err, ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want composite_tap_arm wrapping ErrUnsupportedBuild", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "composite_tap_arm" || !errors.Is(err, errUnsupportedBuild) {
+		t.Fatalf("err = %v, want composite_tap_arm with matching BuildError code", err)
 	}
 	if !strings.Contains(err.Error(), "tap=missing") ||
 		!strings.Contains(err.Error(), "declared=cam.frames") {
@@ -352,8 +352,8 @@ func TestSelectTapArmUnknownTapListsDeclaredTaps(t *testing.T) {
 		Build(context.Background())
 
 	var buildErr *BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "select_tap_arm" || !errors.Is(err, ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want select_tap_arm wrapping ErrUnsupportedBuild", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "select_tap_arm" || !errors.Is(err, errUnsupportedBuild) {
+		t.Fatalf("err = %v, want select_tap_arm with matching BuildError code", err)
 	}
 	if !strings.Contains(err.Error(), "tap=missing") ||
 		!strings.Contains(err.Error(), "declared=selected.frames") {

@@ -60,7 +60,7 @@ func (b *builder) openDestinationOutput(ctx context.Context, destination destina
 		return output, nil, err
 	}
 	if writer == nil {
-		return output, nil, ErrNilWriter
+		return output, nil, errNilWriter
 	}
 	output.Writer = writer
 	return output, writer, nil

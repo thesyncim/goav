@@ -251,7 +251,7 @@ func validateRecipeEncode(spec codec.CodecSpec, operation string, node string) e
 			fixes: buildErrorFixes([]string{
 				"choose an explicit recipe encoder with .Encode(codec.Opus(...)), .Encode(codec.VP8(...)), or .Encode(codec.VP9(...))",
 			}),
-			Cause: ErrUnsupportedBuild,
+			cause: errUnsupportedBuild,
 		}
 	}
 	if spec.Copy {
@@ -279,7 +279,7 @@ func validateRecipeEncodeValues(spec codec.CodecSpec, operation string, node str
 				"pass a positive value to codec.Bitrate(...)",
 				"omit codec.Bitrate(...) when the encoder should choose its default",
 			}),
-			Cause: ErrUnsupportedBuild,
+			cause: errUnsupportedBuild,
 		}
 	case spec.Settings.Framerate.Value < 0 || spec.Settings.Framerate.Base.Num < 0 || spec.Settings.Framerate.Base.Den < 0:
 		return &BuildError{
@@ -295,7 +295,7 @@ func validateRecipeEncodeValues(spec codec.CodecSpec, operation string, node str
 				"pass a positive value to goav.FPS(...)",
 				"omit goav.FPS(...) when the encoder should infer frame cadence",
 			}),
-			Cause: ErrUnsupportedBuild,
+			cause: errUnsupportedBuild,
 		}
 	case spec.Settings.KeyframeInterval < 0:
 		return &BuildError{
@@ -311,7 +311,7 @@ func validateRecipeEncodeValues(spec codec.CodecSpec, operation string, node str
 				"pass a positive value to goav.KeyframeInterval(...)",
 				"omit goav.KeyframeInterval(...) when the encoder should choose its default cadence",
 			}),
-			Cause: ErrUnsupportedBuild,
+			cause: errUnsupportedBuild,
 		}
 	case spec.Settings.SampleRateSet && spec.Parameters.SampleRate <= 0:
 		return &BuildError{
@@ -327,7 +327,7 @@ func validateRecipeEncodeValues(spec codec.CodecSpec, operation string, node str
 				"use codec.SampleRate(rate) with a positive rate",
 				"omit codec.SampleRate(...) to use the selected stream rate",
 			}),
-			Cause: ErrUnsupportedBuild,
+			cause: errUnsupportedBuild,
 		}
 	case spec.Settings.ChannelsSet && spec.Parameters.Channels <= 0:
 		return &BuildError{
@@ -343,7 +343,7 @@ func validateRecipeEncodeValues(spec codec.CodecSpec, operation string, node str
 				"use codec.Channels(codec.Mono), codec.Channels(codec.Stereo), or another positive channel count",
 				"omit codec.Channels(...) to use the selected stream channel count",
 			}),
-			Cause: ErrUnsupportedBuild,
+			cause: errUnsupportedBuild,
 		}
 	default:
 		return nil
@@ -369,7 +369,7 @@ func validateCodecChangePolicy(operation string, node string, policy codecChange
 			"use packet-preserving goav.From(input).Copy().To(output) when codec changes should stay encoded",
 			"rebuild the job when a live stream switches to a different decoder codec",
 		}),
-		Cause: ErrUnsupportedBuild,
+		cause: errUnsupportedBuild,
 	}
 }
 

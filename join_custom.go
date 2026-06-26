@@ -219,7 +219,7 @@ func validateCustomJoinName(name string) error {
 			fixes: buildErrorFixes([]string{
 				"name the join with lowercase letters, digits, and underscores: goav.Join(\"crossfade\", stage, arms...)",
 			}),
-			Cause: ErrUnsupportedBuild,
+			cause: errUnsupportedBuild,
 		}
 	}
 	if _, reserved := joinProfiles[joinKind(name)]; reserved {
@@ -232,7 +232,7 @@ func validateCustomJoinName(name string) error {
 			fixes: buildErrorFixes([]string{
 				"pick a distinct name: the name is the join's node name, output stream id, and error-code family",
 			}),
-			Cause: ErrUnsupportedBuild,
+			cause: errUnsupportedBuild,
 		}
 	}
 	return nil
@@ -253,7 +253,7 @@ func customJoinNameCollisionError(name string, claimed string) error {
 			"give each goav.Join its own name (the name is the node name and the joined stream id)",
 			"construct a distinct stage instance per join — a stage carries run state",
 		}),
-		Cause: ErrUnsupportedBuild,
+		cause: errUnsupportedBuild,
 	}
 }
 
@@ -270,7 +270,7 @@ func customJoinStageError(name string, reason string) error {
 			"pass a pipeline.Stage whose Name() equals the join name: goav.Join(\"crossfade\", stage, arms...)",
 			"see the Join doc for the convergence-stage contract (audio mix is the reference implementation)",
 		}),
-		Cause: ErrUnsupportedBuild,
+		cause: errUnsupportedBuild,
 	}
 }
 

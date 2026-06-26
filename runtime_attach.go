@@ -547,7 +547,7 @@ func validateRuntimeBranchGroupDestinations(branches []runtimeAttachBranchInput)
 						"create distinct destination values with distinct names for independent runtime destinations",
 						"use a sink destination for runtime diagnostic groups or a mux destination for runtime recording groups",
 					}),
-					Cause: ErrUnsupportedBuild,
+					cause: errUnsupportedBuild,
 				}
 			}
 			seen[label] = destination
@@ -1677,7 +1677,7 @@ func runtimeBranchTransform(branchName string, stream av.Stream, spec transformS
 			Node:      base,
 			Reason:    "one runtime branch transform cannot be both resize and resample",
 			fixes:     buildErrorFixes([]string{"declare two separate steps instead: .Resize(width, height).Resample(rate, channels)"}),
-			Cause:     ErrUnsupportedBuild,
+			cause:     errUnsupportedBuild,
 		}
 	case spec.resize != nil:
 		if stream.Type != av.MediaVideo && stream.Codec.Type != av.MediaVideo {
@@ -1710,7 +1710,7 @@ func runtimeBranchTransform(branchName string, stream av.Stream, spec transformS
 				"call .Resize(width, height) for video frame taps",
 				"call .Resample(sampleRate, channels) for audio frame taps",
 			}),
-			Cause: ErrUnsupportedBuild,
+			cause: errUnsupportedBuild,
 		}
 	}
 }
@@ -1898,7 +1898,7 @@ func runtimeBranchInvalidError(reason string, suggestion string) error {
 		fixes: buildErrorFixes([]string{
 			suggestion,
 		}),
-		Cause: ErrUnsupportedBuild,
+		cause: errUnsupportedBuild,
 	}
 }
 
@@ -1914,7 +1914,7 @@ func runtimeBranchAnchorMissingError(node string) error {
 			"keep the GraphNode returned by expert.Graph(runtime).Source/Stage/Sink for expert graph attachments",
 			"attach from a stable decoded-frame tap when the branch needs raw frames",
 		}),
-		Cause: pipeline.ErrUnknownNode,
+		cause: pipeline.ErrUnknownNode,
 	}
 }
 
@@ -1935,7 +1935,7 @@ func runtimeBranchTapMissingError(name string, taps []snapshot.Tap) error {
 			"call Inspectable.Taps() before attaching runtime branches",
 			"use .From(graphNode) only for expert graph-node attachments",
 		}),
-		Cause: pipeline.ErrUnknownNode,
+		cause: pipeline.ErrUnknownNode,
 	}
 }
 
@@ -1950,7 +1950,7 @@ func runtimeBranchNodeDuplicateError(node string) error {
 			"use a unique goav.Branch(name)",
 			"use distinct stage and sink names inside repeated runtime branches",
 		}),
-		Cause: pipeline.ErrNodeExists,
+		cause: pipeline.ErrNodeExists,
 	}
 }
 
@@ -1970,7 +1970,7 @@ func duplicateRuntimeBranchDestinationRefError(branch string, label string, firs
 			"route one runtime branch to multiple destinations with distinct values such as .To(archive, monitor)",
 			"wrap each grouped attachment destination with goav.Mux(name, destination)",
 		}),
-		Cause: ErrUnsupportedBuild,
+		cause: errUnsupportedBuild,
 	}
 }
 
@@ -1985,7 +1985,7 @@ func runtimeBranchTapDuplicateError(name string) error {
 			"use a unique tap name for each runtime branch outlet",
 			"call Inspectable.Taps() before attaching to inspect the current tap names",
 		}),
-		Cause: ErrUnsupportedBuild,
+		cause: errUnsupportedBuild,
 	}
 }
 
@@ -2005,7 +2005,7 @@ func runtimeBranchTransformMediaError(branch string, transform string, expected 
 			"use .Audio().Decode().Tap(goav.FrameTap(name)) or an audio transform tap before attaching .Resample(...)",
 			"call Inspectable.Taps() and choose a tap with matching media kind",
 		}),
-		Cause: ErrUnsupportedBuild,
+		cause: errUnsupportedBuild,
 	}
 }
 
@@ -2024,7 +2024,7 @@ func runtimeBranchTransformError(node string, cause error) error {
 			"import github.com/thesyncim/goav/bundle and use bundle.MustNewFilters(...) for bundled filters",
 			"attach from a frame tap with media shape that match the requested transform",
 		}),
-		Cause: cause,
+		cause: cause,
 	}
 }
 
@@ -2040,7 +2040,7 @@ func runtimeBranchEncodeMissingError(branch string) error {
 			"call .Encode(codec.Opus(...)), .Encode(codec.VP8(...)), or .Encode(codec.VP9(...)) when attaching from a frame tap",
 			"use .To(goav.Sink(...)) when the runtime branch should receive raw frames",
 		}),
-		Cause: ErrUnsupportedBuild,
+		cause: errUnsupportedBuild,
 	}
 }
 
@@ -2057,7 +2057,7 @@ func runtimeBranchEncodeDomainError(branch string, shape shape.Spec) error {
 			"use .Copy() from a packet tap when no re-encode is intended",
 			"call Inspectable.Taps() and choose a tap with domain=frame",
 		}),
-		Cause: ErrUnsupportedBuild,
+		cause: errUnsupportedBuild,
 	}
 }
 
@@ -2074,7 +2074,7 @@ func runtimeBranchDecodeDomainError(branch string, shape shape.Spec) error {
 			"omit .Decode() when attaching from a frame tap",
 			"call Inspectable.Taps() and choose a tap with domain=packet",
 		}),
-		Cause: ErrUnsupportedBuild,
+		cause: errUnsupportedBuild,
 	}
 }
 
@@ -2091,7 +2091,7 @@ func runtimeBranchDecodeCodecMissingError(branch string, shape shape.Spec) error
 			"declare the input codec (provider codec intent or file metadata) before building the task",
 			"call Inspectable.Taps() and choose a packet tap that reports codec=...",
 		}),
-		Cause: ErrUnsupportedBuild,
+		cause: errUnsupportedBuild,
 	}
 }
 
@@ -2108,7 +2108,7 @@ func runtimeBranchCopyDomainError(branch string, shape shape.Spec) error {
 			"encode frame taps with .Encode(codec.Opus(...)), .Encode(codec.VP8(...)), or .Encode(codec.VP9(...)) before writing a muxed destination",
 			"call Inspectable.Taps() and choose a tap with domain=packet",
 		}),
-		Cause: ErrUnsupportedBuild,
+		cause: errUnsupportedBuild,
 	}
 }
 
@@ -2125,7 +2125,7 @@ func runtimeBranchMuxCodecMissingError(branch string, shape shape.Spec) error {
 			"set an explicit encoder with .Encode(codec.Opus(...)), .Encode(codec.VP8(...)), or .Encode(codec.VP9(...))",
 			"use .To(goav.Sink(...)) when the branch should stay raw",
 		}),
-		Cause: ErrUnsupportedBuild,
+		cause: errUnsupportedBuild,
 	}
 }
 
@@ -2155,6 +2155,6 @@ func runtimeBranchGraphError(operation string, node string, cause error) error {
 			"use a direct buffer policy for live runtime branch experiments",
 			"build the branch before Run when using buffered execution",
 		}),
-		Cause: cause,
+		cause: cause,
 	}
 }

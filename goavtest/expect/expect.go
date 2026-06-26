@@ -212,6 +212,6 @@ func formatBuildError(err error, buildErr *goav.BuildError) string {
 		buildErr.Reason,
 		buildErr.DetailLines(),
 		buildErr.FixLines(),
-		buildErr.Cause,
+		errors.Unwrap(buildErr),
 	)
 }

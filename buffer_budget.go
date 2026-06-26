@@ -267,7 +267,7 @@ func bufferBudgetMissingError(operation workOperation, err error) error {
 			"shape=" + operation.ShapeIn.String(),
 		}),
 		fixes: buildErrorFixes(bufferBudgetSuggestions(operation, fact)),
-		Cause: ErrUnsupportedBuild,
+		cause: errUnsupportedBuild,
 	}
 }
 

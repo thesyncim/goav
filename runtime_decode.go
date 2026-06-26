@@ -127,7 +127,7 @@ func selectStreamWithCodecRequirement(streams []av.Stream, selector av.StreamSel
 				"provide codec metadata on the input stream",
 				"declare the receive codec on the source provider (e.g. a codec intent option)",
 			}),
-			Cause: ErrUnsupportedBuild,
+			cause: errUnsupportedBuild,
 		}
 	}
 	return selected, nil
@@ -171,7 +171,7 @@ func streamSelectionError(code errcode.Code, selector av.StreamSelector, streams
 		Reason:    reason,
 		fields:    buildErrorFields(streamDiagnostics(streams)),
 		fixes:     buildErrorFixes(streamSelectionSuggestions(selector, streams)),
-		Cause:     ErrUnsupportedBuild,
+		cause:     errUnsupportedBuild,
 	}
 }
 
@@ -187,7 +187,7 @@ func streamRequestMismatchError(code errcode.Code, operation string, node string
 			"requested: " + readableSelector(selector),
 		}),
 		fixes: buildErrorFixes(suggestions),
-		Cause: ErrUnsupportedBuild,
+		cause: errUnsupportedBuild,
 	}
 }
 

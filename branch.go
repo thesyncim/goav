@@ -413,7 +413,7 @@ func (b *branchBuilder) Tap(tap tapRef) *branchBuilder {
 				"call .Tap(goav.FrameTap(\"video.720p.frames\")) or another stable tap ref",
 				"omit .Tap(...) when no runtime branch should attach at that point",
 			}),
-			Cause: ErrUnsupportedBuild,
+			cause: errUnsupportedBuild,
 		})
 		return b
 	}
@@ -786,7 +786,7 @@ func branchCopyParentOperationError(node string) error {
 			"use .Decode().Branches(...) when branches need resize, resample, custom frame stages, or encode",
 			"attach runtime packet-copy branches from a packet Tap when the branch should start later",
 		}),
-		Cause: ErrUnsupportedBuild,
+		cause: errUnsupportedBuild,
 	}
 }
 
@@ -805,7 +805,7 @@ func branchEncodeParentOperationError(node string, encode codec.CodecSpec) error
 			"put .Encode(codec.Opus(...)), .Encode(codec.VP8(...)), or .Encode(codec.VP9(...)) on each goav.Branch(...) that writes a destination",
 			"attach post-encode packet branches at runtime with Mutable.Attach(ctx, goav.Branch(name).From(goav.PacketTap(name))...)",
 		}),
-		Cause: ErrUnsupportedBuild,
+		cause: errUnsupportedBuild,
 	}
 }
 
@@ -824,7 +824,7 @@ func plannedBranchNodeSourceError(name string, source string) error {
 			"omit .From(...) to branch from the current stream point",
 			"use Mutable.Attach(ctx, goav.Branch(name).From(graphNode)...) for expert runtime graph attachment",
 		}),
-		Cause: ErrUnsupportedBuild,
+		cause: errUnsupportedBuild,
 	}
 }
 
@@ -844,7 +844,7 @@ func plannedBranchTapMissingError(stream string, branch string, tap string) erro
 			"use .From(goav.FrameTap(\"audio.decoded\")) or .From(goav.FrameTap(\"video.decoded\")) after .Decode() when branching from decoded frames",
 			"omit .From(...) to branch from the current stream point",
 		}),
-		Cause: ErrUnsupportedBuild,
+		cause: errUnsupportedBuild,
 	}
 }
 
@@ -859,7 +859,7 @@ func duplicateBranchDecodeError(node string) error {
 			"call .Decode() once before frame operations",
 			"remove the second .Decode() call",
 		}),
-		Cause: ErrUnsupportedBuild,
+		cause: errUnsupportedBuild,
 	}
 }
 
@@ -874,7 +874,7 @@ func branchDecodeOrderError(node string) error {
 			"write goav.Branch(name).Decode().Resample(...).To(target)",
 			"start from a frame tap when the branch should skip decode",
 		}),
-		Cause: ErrUnsupportedBuild,
+		cause: errUnsupportedBuild,
 	}
 }
 
@@ -890,7 +890,7 @@ func branchDecodeDomainError(node string) error {
 			"use .Copy().Branches(goav.Branch(name).Decode()...) when a packet-preserving split later needs frames",
 			"attach runtime decode branches from packet taps",
 		}),
-		Cause: ErrUnsupportedBuild,
+		cause: errUnsupportedBuild,
 	}
 }
 
@@ -906,7 +906,7 @@ func branchDecodeCopyError(node string) error {
 			"use .Decode().To(goav.Sink(...)) for decoded frames",
 			"use .Decode().Encode(codec).To(destination) for re-encoded packets",
 		}),
-		Cause: ErrUnsupportedBuild,
+		cause: errUnsupportedBuild,
 	}
 }
 
@@ -925,7 +925,7 @@ func branchPacketEncodeUnsupportedError(stream streamIntent, encode codec.CodecS
 			"use .Copy().Branches(goav.Branch(name).To(destination)) for packet-preserving variants",
 			"attach a runtime branch from a frame Tap when late encoding is needed",
 		}),
-		Cause: ErrUnsupportedBuild,
+		cause: errUnsupportedBuild,
 	}
 }
 
@@ -941,7 +941,7 @@ func branchPacketTransformUnsupportedError(stream streamIntent) error {
 			"use .Copy().Branches(...) only for packet-preserving branches",
 			"attach a runtime branch from a frame Tap when late transforms are needed",
 		}),
-		Cause: ErrUnsupportedBuild,
+		cause: errUnsupportedBuild,
 	}
 }
 
@@ -988,7 +988,7 @@ func branchMissingError(node string) error {
 			"pass branches with goav.Branch(name).Encode(codec.VP9(...)).To(goav.Write(name, writer))",
 			"pass goav.Mux(name, destination) when branches should share one mux group",
 		}),
-		Cause: ErrUnsupportedBuild,
+		cause: errUnsupportedBuild,
 	}
 }
 
@@ -1001,7 +1001,7 @@ func nilBranchError() error {
 		fixes: buildErrorFixes([]string{
 			"build branches with goav.Branch(name)",
 		}),
-		Cause: ErrUnsupportedBuild,
+		cause: errUnsupportedBuild,
 	}
 }
 
@@ -1018,7 +1018,7 @@ func branchSpecOriginError(index int, selected av.MediaType) error {
 		fixes: buildErrorFixes([]string{
 			"construct branches with goav.Branch(name).To(destination)",
 		}),
-		Cause: ErrUnsupportedBuild,
+		cause: errUnsupportedBuild,
 	}
 }
 
@@ -1033,7 +1033,7 @@ func branchDestinationMissingError(name string) error {
 			"finish the branch with .To(goav.Write(\"web.ivf\", writer)) or .To(goav.Sink(sink))",
 			"pass goav.Mux(name, destination) when several branches should share one mux or sink group",
 		}),
-		Cause: ErrUnsupportedBuild,
+		cause: errUnsupportedBuild,
 	}
 }
 
@@ -1061,6 +1061,6 @@ func destinationInvalidError(operation string, node string, reason string) error
 			"wrap shared outputs with goav.Mux(name, destination)",
 			"use distinct destination values for independent outputs",
 		}),
-		Cause: ErrUnsupportedBuild,
+		cause: errUnsupportedBuild,
 	}
 }

@@ -166,8 +166,8 @@ func TestSelectRequiresSinkDestination(t *testing.T) {
 	).To(Write("selected.ogg", io.Discard)).
 		Build(context.Background())
 	var buildErr *BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "select_destination" || !errors.Is(err, ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want select_destination wrapping ErrUnsupportedBuild", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "select_destination" || !errors.Is(err, errUnsupportedBuild) {
+		t.Fatalf("err = %v, want select_destination with matching BuildError code", err)
 	}
 	if !strings.Contains(err.Error(), "goav.Sink") ||
 		!strings.Contains(err.Error(), ".Branches") {

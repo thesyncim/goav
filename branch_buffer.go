@@ -23,7 +23,7 @@ func validateBranchBuffer(b flow.BranchBuffer, operation string, node string) er
 				"use flow.Blocking(capacity) for intentional backpressure",
 				"use flow.DropOldest(capacity), flow.DropNewest(capacity), or flow.Latest() for realtime branches",
 			}),
-			Cause: ErrUnsupportedBuild,
+			cause: errUnsupportedBuild,
 		}
 	default:
 		return branchBufferInvalidError(operation, node, "unknown branch buffer mode "+string(b.Mode))
@@ -66,6 +66,6 @@ func branchBufferInvalidError(operation string, node string, reason string) erro
 			"use flow.Blocking(capacity) when slow branches should apply backpressure",
 			"use flow.DropOldest(capacity), flow.DropNewest(capacity), or flow.Latest() for realtime diagnostics and previews",
 		}),
-		Cause: ErrUnsupportedBuild,
+		cause: errUnsupportedBuild,
 	}
 }

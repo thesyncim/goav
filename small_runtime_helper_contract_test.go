@@ -87,7 +87,7 @@ func TestBuildErrorAndCompilerPassErrorContracts(t *testing.T) {
 		t.Fatal("nil BuildError should unwrap to nil")
 	}
 	cause := errors.New("root cause")
-	buildErr := &BuildError{Cause: cause}
+	buildErr := &BuildError{cause: cause}
 	if !errors.Is(buildErr, cause) {
 		t.Fatalf("BuildError did not unwrap cause: %v", buildErr)
 	}
@@ -132,8 +132,8 @@ func TestBuildErrorAndCompilerPassErrorContracts(t *testing.T) {
 	})
 	if !errors.As(err, &got) || got.Code != compilerPassInvalidCode ||
 		got.Operation != "compile recipe" ||
-		!errors.Is(err, ErrUnsupportedBuild) {
-		t.Fatalf("nil compiler pass err = %v, want compiler_pass_invalid wrapping ErrUnsupportedBuild", err)
+		!errors.Is(err, errUnsupportedBuild) {
+		t.Fatalf("nil compiler pass err = %v, want compiler_pass_invalid with matching BuildError code", err)
 	}
 }
 
@@ -150,7 +150,7 @@ func TestBuildErrorTypedDetailsAndFixes(t *testing.T) {
 		fixes: []buildErrorFix{
 			{Message: "register an Opus decoder"},
 		},
-		Cause: ErrUnsupportedBuild,
+		cause: errUnsupportedBuild,
 	}
 	if got, ok := buildErr.Detail("codec"); !ok || got != av.CodecOpus {
 		t.Fatalf("codec detail = %#v, %v; want %q, true", got, ok, av.CodecOpus)

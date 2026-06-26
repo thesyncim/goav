@@ -95,7 +95,7 @@ type graphBuilder struct {
 
 func (g *graphBuilder) Source(name string, source pipeline.Source) graphNode {
 	if source == nil {
-		g.setErr(ErrNilSource)
+		g.setErr(errNilSource)
 		return graphNode{name: name}
 	}
 	node := namedSource{name: firstNonEmpty(name, source.Name()), source: source}
@@ -175,20 +175,20 @@ func (g *graphBuilder) setErr(err error) {
 
 // AddSource registers a source under the resolved node name (the given name,
 // or the source's own when empty) and reports it — the string-based bridge
-// behind expert.GraphBuilder.Source. A nil source latches ErrNilSource.
+// behind expert.GraphBuilder.Source. A nil source latches errNilSource.
 func (g *graphBuilder) AddSource(name string, source pipeline.Source) string {
 	return g.Source(name, source).name
 }
 
 // AddStage registers a stage under the resolved node name and reports it —
 // the bridge behind expert.GraphBuilder.Stage. A nil stage latches
-// ErrNilStage.
+// errNilStage.
 func (g *graphBuilder) AddStage(name string, stage pipeline.Stage) string {
 	return g.Stage(name, stage).name
 }
 
 // AddSink registers a sink under the resolved node name and reports it — the
-// bridge behind expert.GraphBuilder.Sink. A nil sink latches ErrNilSink.
+// bridge behind expert.GraphBuilder.Sink. A nil sink latches errNilSink.
 func (g *graphBuilder) AddSink(name string, sink pipeline.Sink) string {
 	return g.Sink(name, sink).name
 }

@@ -500,7 +500,7 @@ func streamStageMissingError(stream streamIntent) error {
 			"use component.FrameFunc, component.PacketFunc, or component.EventFunc for small hooks",
 			"remove .Do(...) when no custom processing is needed",
 		}),
-		Cause: ErrNilStage,
+		cause: errNilStage,
 	}
 }
 
@@ -527,7 +527,7 @@ func mixedStreamOutputError(operation string, stream streamIntent) error {
 			"call .Encode(codec.Opus(...)), .Encode(codec.VP8(...)), or .Encode(codec.VP9(...)) before .To(goav.Write(...)) for encoded output",
 			"use .Branches(...) when one stream needs separate decoded and encoded branches",
 		}),
-		Cause: ErrUnsupportedBuild,
+		cause: errUnsupportedBuild,
 	}
 }
 
@@ -547,7 +547,7 @@ func streamEncodeMissingError(operation string, stream streamIntent) error {
 			"send decoded frames to goav.Sink(...)",
 			"use .Copy().To(output) if you want to copy packets without decoding",
 		}),
-		Cause: ErrUnsupportedBuild,
+		cause: errUnsupportedBuild,
 	}
 }
 
@@ -578,7 +578,7 @@ func duplicateJobStreamError(existing *jobStreamBuild, next *jobStreamBuild) err
 			"use goav.From(input).Video().Decode().Branches(...) for multiple branches from one stream",
 			"use the expert graph API for custom multi-stream routing",
 		}),
-		Cause: ErrUnsupportedBuild,
+		cause: errUnsupportedBuild,
 	}
 }
 

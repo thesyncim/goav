@@ -43,8 +43,8 @@ func requireColdPathBuildError(t *testing.T, err error, code errcode.Code) *Buil
 	if buildErr.Code != code {
 		t.Fatalf("code = %q, want %q\nerr = %v", buildErr.Code, code, err)
 	}
-	if !errors.Is(err, ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want it to wrap ErrUnsupportedBuild", err)
+	if !errors.Is(err, errUnsupportedBuild) {
+		t.Fatalf("err = %v, want it to wrap errUnsupportedBuild", err)
 	}
 	return buildErr
 }

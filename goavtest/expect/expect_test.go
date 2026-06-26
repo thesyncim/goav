@@ -30,7 +30,6 @@ func TestBuildErrorChecksStructuredFields(t *testing.T) {
 	buildErr := expect.BuildError(t, err, errcode.Code("source_shape_unsupported"),
 		expect.Operation("build input"),
 		expect.Node("bytes"),
-		expect.Cause(goav.ErrUnsupportedBuild),
 		expect.ReasonContains("packet-domain"),
 		expect.DetailContains("actual_shape="),
 		expect.SuggestionContains("shape.Packet"),

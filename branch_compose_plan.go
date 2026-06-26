@@ -210,7 +210,7 @@ func validateBranchCompositionIntentShape(operation string, intent intent) error
 			fixes: buildErrorFixes([]string{
 				"start the recipe from an input: goav.From(goav.FileInput(\"in.webm\", reader))",
 			}),
-			Cause: ErrUnsupportedBuild,
+			cause: errUnsupportedBuild,
 		}
 	}
 	if len(intent.Inputs) > 1 {
@@ -226,7 +226,7 @@ func validateBranchCompositionIntentShape(operation string, intent intent) error
 				"use one goav.From(input) source per composed job",
 				"use the expert graph API when multiple sources must be composed manually",
 			}),
-			Cause: ErrUnsupportedBuild,
+			cause: errUnsupportedBuild,
 		}
 	}
 	streams := intent.Streams
@@ -373,7 +373,7 @@ func branchStreamMissingError() error {
 			"add a video branch such as .Video(\"720p\").Resize(...).Encode(codec.VP9(...)).To(...)",
 			"add an audio branch such as .Audio(\"main\").Resample(...).Encode(codec.Opus(...)).To(...)",
 		}),
-		Cause: ErrUnsupportedBuild,
+		cause: errUnsupportedBuild,
 	}
 }
 
@@ -392,7 +392,7 @@ func branchEncodeMissingError(stream streamIntent) error {
 			"call .Encode(codec.Opus(...)), .Encode(codec.VP8(...)), or .Encode(codec.VP9(...)) before .To(...)",
 			"route raw frames to goav.Sink(...) when the branch should stay decoded",
 		}),
-		Cause: ErrUnsupportedBuild,
+		cause: errUnsupportedBuild,
 	}
 }
 
@@ -408,7 +408,7 @@ func branchCopyUnsupportedError(stream streamIntent) error {
 			"attach a runtime branch from a packet tap and call .Copy() when packet-domain fanout is needed",
 			"omit .Copy() when the branch should deliver decoded frames to goav.Sink(...)",
 		}),
-		Cause: ErrUnsupportedBuild,
+		cause: errUnsupportedBuild,
 	}
 }
 
@@ -424,7 +424,7 @@ func branchIntentDestinationMissingError(stream streamIntent) error {
 			"finish the branch with .To(goav.Write(\"web.ivf\", writer)) or .To(goav.Sink(sink))",
 			"pass goav.Mux(name, destination) when branches should share one mux group",
 		}),
-		Cause: ErrUnsupportedBuild,
+		cause: errUnsupportedBuild,
 	}
 }
 
@@ -439,7 +439,7 @@ func branchDestinationReferenceMissingError(stream streamIntent, label string) e
 			"pass a named goav.Write(...), goav.URI(...), or goav.Sink(...) destination to the branch .To(...) call",
 			"pass goav.Mux(name, destination) when helpers construct matching grouped destinations",
 		}),
-		Cause: ErrUnsupportedBuild,
+		cause: errUnsupportedBuild,
 	}
 }
 
@@ -453,7 +453,7 @@ func transcodeUnsupportedLiveInputError() error {
 			"use From(...).Copy().To(...) for packet recording",
 			"use From(...).Audio().Decode() or From(...).Video().Decode() for one selected receive path",
 		}),
-		Cause: ErrUnsupportedBuild,
+		cause: errUnsupportedBuild,
 	}
 }
 
@@ -471,7 +471,7 @@ func branchDestinationNameEmptyError(stream streamBuild, index int) error {
 			"call .To(goav.Write(\"web.ivf\", writer)) with a non-empty destination name",
 			"pass goav.Sink(component.SinkFunc(name, fn)) for sink destinations",
 		}),
-		Cause: ErrUnsupportedBuild,
+		cause: errUnsupportedBuild,
 	}
 }
 
@@ -486,7 +486,7 @@ func branchDestinationDuplicateError(name string) error {
 			"pass goav.Mux(name, destination) when multiple branches should share one mux group",
 			"use distinct destination names when branches should write to different destinations",
 		}),
-		Cause: ErrUnsupportedBuild,
+		cause: errUnsupportedBuild,
 	}
 }
 
@@ -506,7 +506,7 @@ func branchIntentDuplicateError(name string, firstIndex int, secondIndex int) er
 			"route one branch to multiple destinations by calling .To(destination, otherDestination)",
 			"route different branches to the same destination with goav.Mux(name, destination)",
 		}),
-		Cause: ErrUnsupportedBuild,
+		cause: errUnsupportedBuild,
 	}
 }
 
@@ -525,7 +525,7 @@ func branchIntentNameMissingError(index int, stream streamIntent) error {
 			"call .Audio(\"main\") for audio branches",
 			"use branch names as handles for graph inspection and destination planning",
 		}),
-		Cause: ErrUnsupportedBuild,
+		cause: errUnsupportedBuild,
 	}
 }
 
@@ -556,7 +556,7 @@ func duplicateBranchDestinationError(stream streamIntent, target string, firstIn
 			"route one branch to multiple destinations with distinct values such as .To(archive, preview)",
 			"pass goav.Mux(name, destination) when repeated destination names should form one group",
 		}),
-		Cause: ErrUnsupportedBuild,
+		cause: errUnsupportedBuild,
 	}
 }
 
@@ -576,7 +576,7 @@ func validateBranchTransforms(stream streamIntent) error {
 				Node:      branchIntentName(stream),
 				Reason:    "one transform cannot be both resize and resample",
 				fixes:     buildErrorFixes([]string{"declare two separate steps instead: .Resize(width, height).Resample(rate, channels)"}),
-				Cause:     ErrUnsupportedBuild,
+				cause:     errUnsupportedBuild,
 			}
 		case transform.resize != nil, transform.resample != nil:
 			continue
@@ -591,7 +591,7 @@ func validateBranchTransforms(stream streamIntent) error {
 					"call .Resize(width, height) on video branches",
 					"call .Resample(sampleRate, channels) on audio branches",
 				}),
-				Cause: ErrUnsupportedBuild,
+				cause: errUnsupportedBuild,
 			}
 		}
 	}

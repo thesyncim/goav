@@ -29,7 +29,7 @@ type decodeStateTestFactory struct {
 
 func (f *decodeStateTestFactory) NewDecodeState(_ context.Context, config codec.DecodeConfig) (any, error) {
 	if config.OpaqueState != nil || config.Stream.ID == "" || config.Bounds.MaxFramesPerInput == 0 {
-		return nil, ErrUnsupportedBuild
+		return nil, errUnsupportedBuild
 	}
 	f.state = &struct{ stream av.StreamID }{stream: config.Stream.ID}
 	return f.state, nil
@@ -76,8 +76,8 @@ func TestSelectDecodeStreamRequiresCodecMetadata(t *testing.T) {
 		Type: av.MediaAudio,
 	}}, av.StreamSelector{Type: av.MediaAudio})
 	var buildErr *BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != streamCodecMissingCode || !errors.Is(err, ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want stream_codec_missing wrapping ErrUnsupportedBuild", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != streamCodecMissingCode || !errors.Is(err, errUnsupportedBuild) {
+		t.Fatalf("err = %v, want stream_codec_missing with matching BuildError code", err)
 	}
 	if !strings.Contains(err.Error(), "provide codec metadata") ||
 		!strings.Contains(err.Error(), "mystery") {

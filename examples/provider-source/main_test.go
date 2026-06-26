@@ -6,7 +6,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/thesyncim/goav"
 	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/goavtest/expect"
 )
@@ -30,6 +29,5 @@ func TestBrokenProviderFailsBeforeRun(t *testing.T) {
 	err := buildBrokenProvider(context.Background())
 	expect.BuildError(t, err, errcode.Code("input_invalid"),
 		expect.Operation("build input"),
-		expect.Cause(goav.ErrNilSource),
 	)
 }

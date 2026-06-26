@@ -176,7 +176,7 @@ func transformAdapterIncompatibleError(operation string, stream streamIntent, na
 			"use .Video().Resize(...) with video resize adapters and .Audio().Resample(...) with audio resample adapters",
 			"fix the adapter descriptor if the implementation already supports this transform",
 		}),
-		Cause: ErrUnsupportedBuild,
+		cause: errUnsupportedBuild,
 	}
 }
 
@@ -198,7 +198,7 @@ func transformAdapterCapabilityError(operation string, stream streamIntent, name
 			"register a " + name + " filter adapter whose descriptor supports this transform config",
 			"fix the adapter descriptor if the implementation already supports this config",
 		}),
-		Cause: ErrUnsupportedBuild,
+		cause: errUnsupportedBuild,
 	}
 }
 
@@ -220,7 +220,7 @@ func recipeTransformAdapterError(operation string, stream streamIntent, name str
 			"import github.com/thesyncim/goav/bundle and build with bundle.MustNewFilters(...) for bundled resize and resample adapters",
 			"remove ." + transformMethodName(name) + "(...) when that conversion is not needed",
 		}),
-		Cause: cause,
+		cause: cause,
 	}
 }
 
@@ -299,7 +299,7 @@ func validateTransformSpec(operation string, node string, spec transformSpec) er
 			Node:      node,
 			Reason:    "one transform cannot be both resize and resample",
 			fixes:     buildErrorFixes([]string{"declare two separate steps instead: .Resize(width, height).Resample(rate, channels)"}),
-			Cause:     ErrUnsupportedBuild,
+			cause:     errUnsupportedBuild,
 		}
 	case spec.resize != nil:
 		if spec.resize.Width > 0 && spec.resize.Height > 0 {
@@ -319,7 +319,7 @@ func validateTransformSpec(operation string, node string, spec transformSpec) er
 				"call .Resize(width, height) with positive dimensions",
 				"remove .Resize(...) when no video scaling is needed",
 			}),
-			Cause: ErrUnsupportedBuild,
+			cause: errUnsupportedBuild,
 		}
 	case spec.resample != nil:
 		if spec.resample.SampleRate > 0 && spec.resample.Channels > 0 {
@@ -339,7 +339,7 @@ func validateTransformSpec(operation string, node string, spec transformSpec) er
 				"call .Resample(sampleRate, channels) with positive values",
 				"remove .Resample(...) when no audio conversion is needed",
 			}),
-			Cause: ErrUnsupportedBuild,
+			cause: errUnsupportedBuild,
 		}
 	default:
 		return nil
@@ -361,6 +361,6 @@ func transformMediaError(stream string, transform string, expected av.MediaType,
 			"use .Video().Resize(...) for video scaling",
 			"use .Audio().Resample(...) for audio sample-rate or channel conversion",
 		}),
-		Cause: ErrUnsupportedBuild,
+		cause: errUnsupportedBuild,
 	}
 }

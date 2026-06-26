@@ -176,7 +176,7 @@ func recipeDecodeAdapterError(operation string, stream streamIntent, codecID av.
 			"enable the adapter build tag or choose a runtime with a concrete decoder",
 			"use goav.From(input).Copy().To(output) for packet-preserving receive when decoding is not needed",
 		}),
-		Cause: cause,
+		cause: cause,
 	}
 }
 
@@ -238,7 +238,7 @@ func decodeAdapterIncompatibleError(operation string, stream streamIntent, reque
 			"fix the input stream metadata if it describes the wrong media or frame format",
 			"fix the codec descriptor if the implementation already supports this config",
 		}),
-		Cause: ErrUnsupportedBuild,
+		cause: errUnsupportedBuild,
 	}
 }
 
@@ -371,7 +371,7 @@ func encodeAdapterIncompatibleError(operation string, stream streamIntent, reque
 			"change the operation spec chain so the encoder receives one of the supported formats",
 			"fix the codec descriptor if the implementation already supports this config",
 		}),
-		Cause: ErrUnsupportedBuild,
+		cause: errUnsupportedBuild,
 	}
 }
 
@@ -506,7 +506,7 @@ func recipeEncodeAdapterError(operation string, stream streamIntent, registry *c
 			"use .Decode().To(goav.Sink(...)) to receive decoded frames without encoding",
 			"use .Copy().To(output) for packet-preserving output when re-encoding is not needed",
 		}),
-		Cause: cause,
+		cause: cause,
 	}
 }
 

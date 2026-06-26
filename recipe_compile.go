@@ -194,7 +194,7 @@ func (c recipeIntentCompiler) Compile(state recipeCompileState) (recipeResolved,
 				Operation: state.operation,
 				Reason:    fmt.Sprintf("recipe compiler pass %d is nil", i),
 				fields:    buildErrorFields([]string{"internal invariant: the recipe compiler was assembled with a nil pass"}),
-				Cause:     ErrUnsupportedBuild,
+				cause:     errUnsupportedBuild,
 			}
 		}
 		if err := pass.Apply(&state); err != nil {
@@ -241,7 +241,7 @@ func compilerPassError(operation string, pass string, err error) error {
 			"run Explain(ctx) to inspect the partial plan",
 			"report the pass name with the recipe shape",
 		}),
-		Cause: err,
+		cause: err,
 	}
 }
 
@@ -465,7 +465,7 @@ func nilRecipeError(operation string, reason string) error {
 		Operation: operation,
 		Reason:    reason,
 		fields:    buildErrorFields([]string{"internal invariant: the compiler was invoked without its recipe attachment (recipes are constructed with goav.From(...))"}),
-		Cause:     ErrUnsupportedBuild,
+		cause:     errUnsupportedBuild,
 	}
 }
 
@@ -480,7 +480,7 @@ func unconstructedJobError() error {
 			"use goav.From(goav.FileInput(\"in.webm\", reader)) for reader-backed input",
 			"use goav.From(goav.Source(name, shape, fn)) for application-pushed input",
 		}),
-		Cause: ErrUnsupportedBuild,
+		cause: errUnsupportedBuild,
 	}
 }
 
@@ -495,7 +495,7 @@ func runtimeMissingError(operation string) error {
 			"pass a non-nil runtime with .UseRuntime(goav.MustNew(...))",
 			"import github.com/thesyncim/goav/bundle and build with bundle.MustNew(...), bundle.Build(ctx, job), or bundle.Run(ctx, job)",
 		}),
-		Cause: ErrUnsupportedBuild,
+		cause: errUnsupportedBuild,
 	}
 }
 
@@ -669,7 +669,7 @@ func validateJobIntentShape(operation string, intent intent, jobOutputCount int)
 			fixes: buildErrorFixes([]string{
 				"start the recipe from an input: goav.From(goav.FileInput(\"in.webm\", reader))",
 			}),
-			Cause: ErrUnsupportedBuild,
+			cause: errUnsupportedBuild,
 		}
 	}
 	stream, hasStream := jobIntentStream(intent)
@@ -683,7 +683,7 @@ func validateJobIntentShape(operation string, intent intent, jobOutputCount int)
 				"route the job to a destination: .To(goav.Write(\"out.webm\", writer))",
 				"deliver frames to code with .To(goav.Sink(sink))",
 			}),
-			Cause: ErrUnsupportedBuild,
+			cause: errUnsupportedBuild,
 		}
 	}
 	if len(intent.Streams) > 1 {
@@ -728,7 +728,7 @@ func jobStreamDestinationMissingError(operation string, stream streamIntent) err
 			"finish each chain with .To(destination) before starting the next .Audio()/.Video()/.Stream()",
 			"pass goav.Mux(name, destination) across chains to mux them together",
 		}),
-		Cause: ErrUnsupportedBuild,
+		cause: errUnsupportedBuild,
 	}
 }
 
@@ -754,7 +754,7 @@ func jobOutputScopeMixedError(operation string, stream streamIntent) error {
 			"use goav.From(input).Copy().To(output...) for packet-preserving record/remux",
 			"use goav.From(input).Video().Decode().Branches(goav.Branch(name).Encode(codec.VP9(...)).To(output)) for named branches",
 		}),
-		Cause: ErrUnsupportedBuild,
+		cause: errUnsupportedBuild,
 	}
 }
 
@@ -770,7 +770,7 @@ func jobDestinationReferenceMissingError(operation string, stream streamIntent, 
 			"use goav.From(input).Copy().To(output...) for packet-preserving record/remux",
 			"finish each branch with a typed destination such as .To(output)",
 		}),
-		Cause: ErrUnsupportedBuild,
+		cause: errUnsupportedBuild,
 	}
 }
 
@@ -810,7 +810,7 @@ func validateJobStreamTransformIntentShape(operation string, stream streamIntent
 				Node:      node,
 				Reason:    "one stream transform cannot be both resize and resample",
 				fixes:     buildErrorFixes([]string{"declare two separate steps instead: .Resize(width, height).Resample(rate, channels)"}),
-				Cause:     ErrUnsupportedBuild,
+				cause:     errUnsupportedBuild,
 			}
 		case transform.resize != nil:
 			if selector.Type == av.MediaAudio {
@@ -831,7 +831,7 @@ func validateJobStreamTransformIntentShape(operation string, stream streamIntent
 					"call .Resize(width, height) for video streams",
 					"call .Resample(sampleRate, channels) for audio streams",
 				}),
-				Cause: ErrUnsupportedBuild,
+				cause: errUnsupportedBuild,
 			}
 		}
 	}
@@ -850,7 +850,7 @@ func operationSpecMissingError(operation string, node string) error {
 			"call .Decode().Encode(codec.Opus(...)), .Decode().Encode(codec.VP8(...)), or .Decode().Encode(codec.VP9(...)) before writing to a file output",
 			"use .Copy().To(output) for packet-preserving record or remux",
 		}),
-		Cause: ErrUnsupportedBuild,
+		cause: errUnsupportedBuild,
 	}
 }
 
@@ -1101,7 +1101,7 @@ func recipeAttachmentMismatchError(operation string, kind string, intentCount in
 			"build recipes through goav.From(input)",
 			"keep custom compiler passes aligned with the public intent and captured attachments",
 		}),
-		Cause: ErrUnsupportedBuild,
+		cause: errUnsupportedBuild,
 	}
 }
 
@@ -1460,7 +1460,7 @@ func destinationShapeMismatchError(operation string, node string, destinationNam
 			"use .Copy() from a packet-domain stream point for packet-preserving output",
 			"send frame-domain media to goav.Sink(...) instead of a byte destination",
 		}),
-		Cause: ErrUnsupportedBuild,
+		cause: errUnsupportedBuild,
 	}
 }
 
@@ -1527,7 +1527,7 @@ func shapeRequirementUnmetError(operation string, node string, index int, step o
 			"adjust the chain so the stream satisfies the required shape before .Require(...)",
 			"relax or remove the .Require(...) assertion",
 		}),
-		Cause: ErrUnsupportedBuild,
+		cause: errUnsupportedBuild,
 	}
 }
 
@@ -1554,7 +1554,7 @@ func operationShapeMismatchError(operation string, node string, index int, step 
 			"actual_shape=" + actual.String(),
 		}),
 		fixes: buildErrorFixes(operationShapeMismatchSuggestions(step)),
-		Cause: ErrUnsupportedBuild,
+		cause: errUnsupportedBuild,
 	}
 }
 
@@ -1660,7 +1660,7 @@ func recipeGraphUnsupportedError(operation string, intent intent) error {
 			"use goav.From(input).Audio().Decode().To(goav.Sink(...)) or .Video().Decode().To(...) for decoded frames",
 			"use goav.From(input).Video().Decode().Branches(goav.Branch(name).Encode(codec.VP9(...)).To(output)) for named branches",
 		}),
-		Cause: ErrUnsupportedBuild,
+		cause: errUnsupportedBuild,
 	}
 }
 

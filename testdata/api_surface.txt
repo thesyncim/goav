@@ -64,11 +64,6 @@ goav.Custom
 goav.Destination
 goav.ErrBackpressure
 goav.ErrClosed
-goav.ErrNilSink
-goav.ErrNilSource
-goav.ErrNilStage
-goav.ErrNilWriter
-goav.ErrUnsupportedBuild
 goav.FileInput
 goav.Flow
 goav.Format

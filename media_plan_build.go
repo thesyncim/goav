@@ -1604,7 +1604,7 @@ func mediaPlanFilterRouteOperations(filters []filterRequest) ([]operationSpec, e
 			operation.Component = firstNonEmpty(filter.transform.factory, operation.Component)
 			operations = append(operations, operation)
 		default:
-			return nil, ErrNilStage
+			return nil, errNilStage
 		}
 	}
 	return operations, nil

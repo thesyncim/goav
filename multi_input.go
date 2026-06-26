@@ -239,7 +239,7 @@ func multiInputStreamSelectionError(code errcode.Code, selector av.StreamSelecto
 		Reason:    reason,
 		fields:    buildErrorFields(details),
 		fixes:     buildErrorFixes(multiInputSelectionSuggestions(selector, candidates)),
-		Cause:     ErrUnsupportedBuild,
+		cause:     errUnsupportedBuild,
 	}
 }
 
@@ -297,6 +297,6 @@ func unknownInputNameError(selector av.StreamSelector, inputName string, sets []
 			"use one of the listed input names with goav.InputName(...)",
 			"name inputs with goav.Source(name, ...), goav.FileInput(name, ...), or the goav.Name(...) option",
 		}),
-		Cause: ErrUnsupportedBuild,
+		cause: errUnsupportedBuild,
 	}
 }

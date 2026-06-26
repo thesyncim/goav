@@ -56,7 +56,7 @@ rejected so sharing is explicit.
 - Runtime adapters are explicit: use `bundle.Run` for the bundled set, or build
   a custom runtime per service.
 - Build failures are structured `*goav.BuildError` values with stable families,
-  details, fixes, and causes.
+  codes, details, and fixes.
 - App-owned sources, sinks, destinations, codecs, formats, and filters plug in
   without global process state.
 

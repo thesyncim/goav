@@ -160,7 +160,7 @@ func resolveJoinProfile(spec *joinSpec) (joinProfile, error) {
 			Node:      kind,
 			Reason:    "unknown join kind",
 			fields:    buildErrorFields([]string{"declared join kinds: mix, composite, select; custom kinds go through goav.Join"}),
-			Cause:     ErrUnsupportedBuild,
+			cause:     errUnsupportedBuild,
 		}
 	}
 	return profile, nil
@@ -347,7 +347,7 @@ func joinArmError(name string, node string, reason string, suggestions ...string
 		Node:      node,
 		Reason:    reason,
 		fixes:     buildErrorFixes(suggestions),
-		Cause:     ErrUnsupportedBuild,
+		cause:     errUnsupportedBuild,
 	}
 }
 
@@ -374,7 +374,7 @@ func joinInputsError(kind string, node string) error {
 			"pass at least two arms: " + joinTwoArmExample(kind),
 			"route the single chain directly when nothing converges",
 		}),
-		Cause: ErrUnsupportedBuild,
+		cause: errUnsupportedBuild,
 	}
 }
 
@@ -437,7 +437,7 @@ func newJoinPlan(input joinPlanInput) (*joinPlan, error) {
 					Node:      name,
 					Reason:    profile.sinkOnlyReason,
 					fixes:     buildErrorFixes(append([]string(nil), profile.sinkOnlySuggestions...)),
-					Cause:     ErrUnsupportedBuild,
+					cause:     errUnsupportedBuild,
 				}
 			}
 		}
@@ -611,7 +611,7 @@ func resolveJoinDestinations(name string, spec *joinSpec) ([]destinationSpec, er
 				"route the join to one or more destinations: .To(goav.Sink(sink))",
 				"fan the joined stream out with .Branches(...) when branches need their own chains",
 			}),
-			Cause: ErrUnsupportedBuild,
+			cause: errUnsupportedBuild,
 		}
 	}
 	outputs := make([]destinationSpec, 0, len(spec.dests))
@@ -1104,7 +1104,7 @@ func joinPlanTaps(spec *joinSpec, name string, joined av.Stream, domain shape.Me
 					"call .Tap(goav.FrameTap(\"" + name + ".out\")) or another stable tap ref",
 					"omit .Tap(...) when no runtime branch should attach at that point",
 				}),
-				Cause: ErrUnsupportedBuild,
+				cause: errUnsupportedBuild,
 			}
 		}
 		if err := validateTapDomain("build "+name, name, tap, domain); err != nil {

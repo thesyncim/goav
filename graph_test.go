@@ -108,8 +108,8 @@ func TestRuntimeGraphHandleEventRoute(t *testing.T) {
 func TestRuntimeGraphHandlesRejectNilNode(t *testing.T) {
 	graph := expertGraph(MustNew())
 	graph.Source("source", nil)
-	if _, err := graph.Build(context.Background()); !errors.Is(err, ErrNilSource) {
-		t.Fatalf("err = %v, want ErrNilSource", err)
+	if _, err := graph.Build(context.Background()); !errors.Is(err, errNilSource) {
+		t.Fatalf("err = %v, want errNilSource", err)
 	}
 }
 
@@ -764,8 +764,8 @@ func TestTaskAttachRuntimeBranchGroupRejectsDuplicateSinkDestinationNames(t *tes
 		Branch("right").From(src).To(right),
 	)
 	var buildErr *BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "destination_duplicate" || !errors.Is(err, ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want destination_duplicate wrapping ErrUnsupportedBuild", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "destination_duplicate" || !errors.Is(err, errUnsupportedBuild) {
+		t.Fatalf("err = %v, want destination_duplicate with matching BuildError code", err)
 	}
 	if !strings.Contains(err.Error(), "goav.Mux(name, destination)") {
 		t.Fatalf("err = %v, want shared mux guidance", err)
@@ -794,8 +794,8 @@ func TestTaskAttachRuntimeBranchGroupRejectsDuplicateMuxDestinations(t *testing.
 		Branch("right").From(src).To(right),
 	)
 	var buildErr *BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "destination_duplicate" || !errors.Is(err, ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want destination_duplicate wrapping ErrUnsupportedBuild", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "destination_duplicate" || !errors.Is(err, errUnsupportedBuild) {
+		t.Fatalf("err = %v, want destination_duplicate with matching BuildError code", err)
 	}
 	if !strings.Contains(err.Error(), "runtime branch group reuses one destination name") ||
 		!strings.Contains(err.Error(), "runtime destination group") ||
@@ -920,8 +920,8 @@ func TestTaskAttachRuntimeBranchGroupRequiresBranch(t *testing.T) {
 
 	_, err = task.Attach(ctx)
 	var buildErr *BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "runtime_branch_invalid" || !errors.Is(err, ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want runtime_branch_invalid wrapping ErrUnsupportedBuild", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "runtime_branch_invalid" || !errors.Is(err, errUnsupportedBuild) {
+		t.Fatalf("err = %v, want runtime_branch_invalid with matching BuildError code", err)
 	}
 	if !strings.Contains(err.Error(), "no runtime branches to attach") ||
 		!strings.Contains(err.Error(), "goav.Branch") {

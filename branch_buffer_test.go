@@ -76,8 +76,8 @@ func TestBranchBufferRejectsInvalidPolicies(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			err := validateBranchBuffer(tt.buffer, "build branch", "preview")
 			var buildErr *BuildError
-			if !errors.As(err, &buildErr) || buildErr.Code != tt.code || !errors.Is(err, ErrUnsupportedBuild) {
-				t.Fatalf("err = %v, want %s wrapping ErrUnsupportedBuild", err, tt.code)
+			if !errors.As(err, &buildErr) || buildErr.Code != tt.code || !errors.Is(err, errUnsupportedBuild) {
+				t.Fatalf("err = %v, want %s with matching BuildError code", err, tt.code)
 			}
 		})
 	}

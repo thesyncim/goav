@@ -46,8 +46,8 @@ func TestStreamRecipeRejectsUnsupportedCodecChangePolicy(t *testing.T) {
 		Build(context.Background())
 
 	var buildErr *BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "codec_change_policy_unsupported" || !errors.Is(err, ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want codec_change_policy_unsupported wrapping ErrUnsupportedBuild", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "codec_change_policy_unsupported" || !errors.Is(err, errUnsupportedBuild) {
+		t.Fatalf("err = %v, want codec_change_policy_unsupported with matching BuildError code", err)
 	}
 	if !strings.Contains(err.Error(), "default live receive behavior") ||
 		!strings.Contains(err.Error(), "different decoder codec") {

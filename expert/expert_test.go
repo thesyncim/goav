@@ -3,6 +3,7 @@ package expert_test
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/thesyncim/goav"
@@ -160,14 +161,14 @@ func TestGraphRequiresGoavRuntime(t *testing.T) {
 	}
 }
 
-// TestGraphRefusesNilNodesAndEmptyRoutes pins the wiring validation sentinels
+// TestGraphRefusesNilNodesAndEmptyRoutes pins the wiring validation refusals
 // surfacing through the bridge: nil nodes and empty Connect calls latch the
-// goav and pipeline sentinels reported by Describe.
+// root and pipeline errors reported by Describe.
 func TestGraphRefusesNilNodesAndEmptyRoutes(t *testing.T) {
 	graph := expert.Graph(goav.MustNew())
 	graph.Source("source", nil)
-	if _, err := graph.Describe(); !errors.Is(err, goav.ErrNilSource) {
-		t.Fatalf("Describe err = %v, want ErrNilSource", err)
+	if _, err := graph.Describe(); err == nil || !strings.Contains(err.Error(), "nil source") {
+		t.Fatalf("Describe err = %v, want nil source refusal", err)
 	}
 
 	graph = expert.Graph(goav.MustNew())

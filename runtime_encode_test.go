@@ -111,8 +111,8 @@ func TestPrepareEncodeConfigRequiresMatchingStream(t *testing.T) {
 
 	_, _, err := prepareEncodeConfig(audioOpusTestStream(), request, false)
 	var buildErr *BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "encode_stream_mismatch" || !errors.Is(err, ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want encode_stream_mismatch wrapping ErrUnsupportedBuild", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "encode_stream_mismatch" || !errors.Is(err, errUnsupportedBuild) {
+		t.Fatalf("err = %v, want encode_stream_mismatch with matching BuildError code", err)
 	}
 	if !strings.Contains(err.Error(), "selected: audio[0]") || !strings.Contains(err.Error(), "requested: type=video") {
 		t.Fatalf("err = %v, want selected and requested stream details", err)
@@ -124,8 +124,8 @@ func TestPrepareEncodeConfigRequiresTargetCodec(t *testing.T) {
 
 	_, _, err := prepareEncodeConfig(audioOpusTestStream(), request, false)
 	var buildErr *BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "encode_destination_missing" || !errors.Is(err, ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want encode_destination_missing wrapping ErrUnsupportedBuild", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "encode_destination_missing" || !errors.Is(err, errUnsupportedBuild) {
+		t.Fatalf("err = %v, want encode_destination_missing with matching BuildError code", err)
 	}
 	if !strings.Contains(err.Error(), "no target codec") || !strings.Contains(err.Error(), "codec.EncodeConfig.Parameters.ID") {
 		t.Fatalf("err = %v, want target codec guidance", err)

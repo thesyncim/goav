@@ -199,8 +199,8 @@ func TestMixRawFramesRequireSinkDestination(t *testing.T) {
 	).To(Write("mix.ogg", io.Discard)).
 		Build(context.Background())
 	var buildErr *BuildError
-	if !errorsAsMix(err, &buildErr) || buildErr.Code != "mix_destination" || !errors.Is(err, ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want mix_destination wrapping ErrUnsupportedBuild", err)
+	if !errorsAsMix(err, &buildErr) || buildErr.Code != "mix_destination" || !errors.Is(err, errUnsupportedBuild) {
+		t.Fatalf("err = %v, want mix_destination with matching BuildError code", err)
 	}
 	if !strings.Contains(err.Error(), ".Encode(codec.Opus") ||
 		!strings.Contains(err.Error(), "goav.Sink") {

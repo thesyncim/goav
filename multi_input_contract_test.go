@@ -14,8 +14,8 @@ import (
 func TestDuplicateRealtimeInputNameErrorContract(t *testing.T) {
 	err := duplicateInputNameError("mic", 0, 2)
 	assertBuildErrorCode(t, err, inputDuplicateCode)
-	if !errors.Is(err, ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want ErrUnsupportedBuild cause", err)
+	if !errors.Is(err, errUnsupportedBuild) {
+		t.Fatalf("err = %v, want errUnsupportedBuild cause", err)
 	}
 	var buildErr *BuildError
 	if !errors.As(err, &buildErr) {

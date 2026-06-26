@@ -659,7 +659,7 @@ func branchComposePlanEmptyError(kind string) error {
 		Node:      kind,
 		Reason:    reason,
 		fixes:     buildErrorFixes(suggestions),
-		Cause:     ErrUnsupportedBuild,
+		cause:     errUnsupportedBuild,
 	}
 }
 
@@ -993,7 +993,7 @@ func branchComposeCodecChangeConflictError(first string, second string) error {
 			"use the same codec-change policy for branches that share a decoder",
 			"split branches by stream selector when policies must differ",
 		}),
-		Cause: ErrUnsupportedBuild,
+		cause: errUnsupportedBuild,
 	}
 }
 
@@ -1011,7 +1011,7 @@ func branchComposeDuplicateBranchError(name string, index int) error {
 			"give each branch a stable unique name",
 			"use distinct branch names when multiple branches share one selected stream",
 		}),
-		Cause: ErrUnsupportedBuild,
+		cause: errUnsupportedBuild,
 	}
 }
 
@@ -1177,7 +1177,7 @@ func branchChainStepError(name string, reason string) error {
 			"use resize on video branches and resample on audio branches",
 			"use goav.Branch(name).Do(stage).Resize(...).Encode(codec.VP9(...)).To(output) for recipe branch operations",
 		}),
-		Cause: ErrUnsupportedBuild,
+		cause: errUnsupportedBuild,
 	}
 }
 
@@ -1318,7 +1318,7 @@ func mediaTransformMismatchError(transform mediaTransform, stream av.Stream, ope
 			"use resample on audio branches",
 			"check the branch selector",
 		}),
-		Cause: ErrUnsupportedBuild,
+		cause: errUnsupportedBuild,
 	}
 }
 
@@ -1382,7 +1382,7 @@ func branchComposeTargetUnmatchedError(output branchComposeTarget, destination f
 			"reference a destination name listed on the branch",
 			"omit explicit branch filters when the destination should receive every branch",
 		}),
-		Cause: ErrUnsupportedBuild,
+		cause: errUnsupportedBuild,
 	}
 }
 
@@ -1397,7 +1397,7 @@ func branchComposeTargetDestinationInvalidError(output branchComposeTarget, reas
 			"use goav.Sink(sink) for frame or packet sink destinations",
 			"use goav.Write(...) or goav.URI(...) for muxed destinations",
 		}),
-		Cause: ErrUnsupportedBuild,
+		cause: errUnsupportedBuild,
 	}
 }
 
@@ -1415,7 +1415,7 @@ func branchComposeTargetEncodeMissingError(output branchComposeTarget, destinati
 			"encode the branch before routing it to a mux destination",
 			"route raw decoded branches to goav.Sink(sink)",
 		}),
-		Cause: ErrUnsupportedBuild,
+		cause: errUnsupportedBuild,
 	}
 }
 
@@ -1587,7 +1587,7 @@ func transcodeResizeConfigError(stream av.Stream, mode filter.ResizeMode, config
 			"provide positive target dimensions for fit and fill",
 			"use exact resize when input dimensions are not known before filtering",
 		}),
-		Cause: ErrUnsupportedBuild,
+		cause: errUnsupportedBuild,
 	}
 }
 

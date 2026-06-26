@@ -43,10 +43,10 @@ func (f buildErrorFix) String() string {
 // validation, attach, and explain paths. Family identifies the stable
 // application branch key, Code identifies the detailed diagnostic leaf (see the
 // errcode package), Operation/Node say where, Reason says why, Detail exposes
-// typed machine-readable facts, DetailLines and FixLines expose rendered
-// details and repair actions, and Cause is a sentinel (ErrUnsupportedBuild,
-// ErrNilSink, pipeline.ErrBufferedMessageUnsafe, ...) reachable through
-// errors.Is.
+// typed machine-readable facts, and DetailLines and FixLines expose rendered
+// details and repair actions. Match build-shape refusals through Family and
+// Code; Unwrap preserves low-level causes for errors.Is where a pipeline or
+// runtime sentinel is still part of that lower-level contract.
 type BuildError struct {
 	Family    errcode.Family
 	Code      errcode.Code
@@ -55,7 +55,7 @@ type BuildError struct {
 	Reason    string
 	fields    []buildErrorDetail
 	fixes     []buildErrorFix
-	Cause     error
+	cause     error
 }
 
 // Error renders the one goav error shape: "goav: cannot <operation> for
@@ -122,13 +122,12 @@ func (e *BuildError) FixLines() []string {
 	return append([]string(nil), e.suggestionLines()...)
 }
 
-// Unwrap exposes the sentinel Cause (ErrUnsupportedBuild, ErrNilSink, ...)
-// to errors.Is.
+// Unwrap exposes the underlying cause to errors.Is.
 func (e *BuildError) Unwrap() error {
 	if e == nil {
 		return nil
 	}
-	return e.Cause
+	return e.cause
 }
 
 func (e *BuildError) detailLines() []string {

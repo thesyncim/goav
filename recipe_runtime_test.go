@@ -352,8 +352,8 @@ func TestStreamRecipeReportsAmbiguousStreams(t *testing.T) {
 		Build(ctx)
 
 	var buildErr *BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "stream_ambiguous" || !errors.Is(err, ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want stream_ambiguous wrapping ErrUnsupportedBuild", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "stream_ambiguous" || !errors.Is(err, errUnsupportedBuild) {
+		t.Fatalf("err = %v, want stream_ambiguous with matching BuildError code", err)
 	}
 	text := err.Error()
 	for _, want := range []string{
@@ -2045,8 +2045,8 @@ func TestRuntimeAttachShapeAnnotationCannotBreakOperationContract(t *testing.T) 
 		Encode(codec.Opus(codec.Bitrate(96_000))).
 		To(Write("bad.ogg", io.Discard)))
 	var buildErr *BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "operation_shape_mismatch" || !errors.Is(err, ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want operation_shape_mismatch wrapping ErrUnsupportedBuild", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "operation_shape_mismatch" || !errors.Is(err, errUnsupportedBuild) {
+		t.Fatalf("err = %v, want operation_shape_mismatch with matching BuildError code", err)
 	}
 	for _, want := range []string{
 		"opus cannot consume the current media shape",
@@ -2505,8 +2505,8 @@ func TestTaskAttachRejectsDuplicateRuntimeBranchDestinationsBeforeMutation(t *te
 	if !errors.As(err, &buildErr) ||
 		buildErr.Code != "destination_duplicate" ||
 		buildErr.Operation != "attach runtime branch" ||
-		!errors.Is(err, ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want runtime destination_duplicate wrapping ErrUnsupportedBuild", err)
+		!errors.Is(err, errUnsupportedBuild) {
+		t.Fatalf("err = %v, want runtime destination_duplicate with matching BuildError code", err)
 	}
 	if !strings.Contains(err.Error(), `branch routes to destination "archive.ogg" more than once`) ||
 		!strings.Contains(err.Error(), "second destination index: 1") ||
@@ -3016,8 +3016,8 @@ func TestTaskAttachRuntimeFlowMediaMismatchBeforeMutation(t *testing.T) {
 			return nil
 		}))))
 	var buildErr *BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "flow_media_mismatch" || !errors.Is(err, ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want flow_media_mismatch wrapping ErrUnsupportedBuild", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "flow_media_mismatch" || !errors.Is(err, errUnsupportedBuild) {
+		t.Fatalf("err = %v, want flow_media_mismatch with matching BuildError code", err)
 	}
 	if buildErr.Operation != "attach runtime branch" ||
 		!strings.Contains(err.Error(), "audio flow cannot be applied to video stream") ||

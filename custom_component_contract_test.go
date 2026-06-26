@@ -211,11 +211,11 @@ func TestCustomSourceShapeDeclaresCodecFactsAndLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := nilSource.Start(context.Background(), &componentEmitter{}); !errors.Is(err, ErrNilSource) {
-		t.Fatalf("nil callback Start err = %v, want ErrNilSource", err)
+	if err := nilSource.Start(context.Background(), &componentEmitter{}); !errors.Is(err, errNilSource) {
+		t.Fatalf("nil callback Start err = %v, want errNilSource", err)
 	}
-	if _, _, err := newCustomSource(InputSpec{}); !errors.Is(err, ErrNilSource) {
-		t.Fatalf("empty custom source err = %v, want ErrNilSource", err)
+	if _, _, err := newCustomSource(InputSpec{}); !errors.Is(err, errNilSource) {
+		t.Fatalf("empty custom source err = %v, want errNilSource", err)
 	}
 	if streams := customSourceStreams(InputSpec{}); streams != nil {
 		t.Fatalf("customSourceStreams(empty) = %+v, want nil", streams)
@@ -494,11 +494,11 @@ func TestDestinationContractsAndOpeners(t *testing.T) {
 		!overridden.Realtime {
 		t.Fatalf("overridden custom contract = %+v", overridden)
 	}
-	if err := customDestination("broken", nil).validate("record", "fallback"); !errors.Is(err, ErrNilWriter) {
-		t.Fatalf("nil custom validate err = %v, want ErrNilWriter", err)
+	if err := customDestination("broken", nil).validate("record", "fallback"); !errors.Is(err, errNilWriter) {
+		t.Fatalf("nil custom validate err = %v, want errNilWriter", err)
 	}
-	if err := Writer("nil.ogg", nil).spec.validate("record", "fallback"); !errors.Is(err, ErrNilWriter) {
-		t.Fatalf("nil writer validate err = %v, want ErrNilWriter", err)
+	if err := Writer("nil.ogg", nil).spec.validate("record", "fallback"); !errors.Is(err, errNilWriter) {
+		t.Fatalf("nil writer validate err = %v, want errNilWriter", err)
 	}
 
 	var plain bytes.Buffer
@@ -541,13 +541,13 @@ func TestDestinationContractsAndOpeners(t *testing.T) {
 		dest Destination
 		want error
 	}{
-		{name: "nil callback", dest: Writer("nil.ogg", nil), want: ErrNilWriter},
+		{name: "nil callback", dest: Writer("nil.ogg", nil), want: errNilWriter},
 		{name: "callback error", dest: Writer("err.ogg", func(context.Context, provider.Info) (io.WriteCloser, error) {
 			return nil, boom
 		}), want: boom},
 		{name: "nil writer", dest: Writer("nil-writer.ogg", func(context.Context, provider.Info) (io.WriteCloser, error) {
 			return nil, nil
-		}), want: ErrNilWriter},
+		}), want: errNilWriter},
 	}
 	for _, tt := range writerCases {
 		t.Run(tt.name, func(t *testing.T) {
@@ -738,8 +738,8 @@ func TestOpenDestinationOutputPassesClonedProviderInfo(t *testing.T) {
 		t.Fatalf("custom open err = %v, want openErr", err)
 	}
 	nilDestination := &componentDestination{}
-	if _, _, err := builder.openDestinationOutput(ctx, Custom("nil.ogg", nilDestination).spec, nil, av.FormatOgg); !errors.Is(err, ErrNilWriter) {
-		t.Fatalf("custom nil writer err = %v, want ErrNilWriter", err)
+	if _, _, err := builder.openDestinationOutput(ctx, Custom("nil.ogg", nilDestination).spec, nil, av.FormatOgg); !errors.Is(err, errNilWriter) {
+		t.Fatalf("custom nil writer err = %v, want errNilWriter", err)
 	}
 }
 
@@ -973,12 +973,12 @@ func TestInputAndProviderSourceContracts(t *testing.T) {
 	if nilProvider.origin != inputSpecOriginConstructed {
 		t.Fatalf("nil provider input origin = %v, want constructed", nilProvider.origin)
 	}
-	if err := nilProvider.validate(); !errors.Is(err, ErrNilSource) {
-		t.Fatalf("nil provider validate error = %v, want ErrNilSource", err)
+	if err := nilProvider.validate(); !errors.Is(err, errNilSource) {
+		t.Fatalf("nil provider validate error = %v, want errNilSource", err)
 	}
 
-	if _, err := openProviderSource(context.Background(), nil, "nil"); !errors.Is(err, ErrNilSource) {
-		t.Fatalf("nil provider err = %v, want ErrNilSource", err)
+	if _, err := openProviderSource(context.Background(), nil, "nil"); !errors.Is(err, errNilSource) {
+		t.Fatalf("nil provider err = %v, want errNilSource", err)
 	}
 	openErr := errors.New("open source failed")
 	if _, err := openProviderSource(context.Background(), &componentSourceProvider{err: openErr}, "broken"); !errors.Is(err, openErr) {

@@ -193,7 +193,7 @@ func graphPlanInvalidError(reason string, details []string) error {
 			"compile recipes through goav.From(...), chains, branches, and destinations",
 			"keep graph-plan nodes, edges, operations, and destinations in sync",
 		}),
-		Cause: ErrUnsupportedBuild,
+		cause: errUnsupportedBuild,
 	}
 }
 

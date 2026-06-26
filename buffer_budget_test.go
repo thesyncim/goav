@@ -35,8 +35,8 @@ func TestRealtimeEncodeRecipeRefusesUnsupportedBufferBudgetFact(t *testing.T) {
 	if buildErr.Code != bufferBudgetMissingCode {
 		t.Fatalf("code = %q, want %q", buildErr.Code, bufferBudgetMissingCode)
 	}
-	if !errors.Is(err, ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want ErrUnsupportedBuild sentinel", err)
+	if !errors.Is(err, errUnsupportedBuild) {
+		t.Fatalf("err = %v, want errUnsupportedBuild sentinel", err)
 	}
 	if !strings.Contains(buildErr.Reason, `unsupported pixel_format "rgb24"`) {
 		t.Fatalf("reason = %q, want unsupported pixel_format fact", buildErr.Reason)

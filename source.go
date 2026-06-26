@@ -410,11 +410,11 @@ func (s InputSpec) graphSourceNodeDetail() string {
 
 func newCustomSource(input InputSpec) (pipeline.Source, []av.Stream, error) {
 	if input.source == nil {
-		return nil, nil, ErrNilSource
+		return nil, nil, errNilSource
 	}
 	streams := customSourceStreams(input)
 	if len(streams) == 0 {
-		return nil, nil, ErrNilSource
+		return nil, nil, errNilSource
 	}
 	source := &customSource{
 		name:   customSourceNodeName(input),
@@ -446,7 +446,7 @@ func (s *customSource) Start(ctx context.Context, emitter pipeline.Emitter) erro
 		return pipeline.ErrClosed
 	}
 	if s.fn == nil {
-		return ErrNilSource
+		return errNilSource
 	}
 	push := sourcepkg.NewPush(ctx, emitter, s.stream)
 	return s.fn(ctx, push)

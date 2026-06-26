@@ -561,7 +561,7 @@ func (b *chainBuilder) tap(tap tapRef) {
 				"call .Tap(goav.FrameTap(\"audio.voice.frames\")) or another stable tap ref",
 				"omit .Tap(...) when no runtime branch should attach at that point",
 			}),
-			Cause: ErrUnsupportedBuild,
+			cause: errUnsupportedBuild,
 		})
 		return
 	}
@@ -691,7 +691,7 @@ func duplicateFlowDecodeError(node string) error {
 			"call .Decode() once at the start of the flow",
 			"remove the second .Decode() call",
 		}),
-		Cause: ErrUnsupportedBuild,
+		cause: errUnsupportedBuild,
 	}
 }
 
@@ -706,7 +706,7 @@ func flowDecodeOrderError(node string) error {
 			"write goav.Flow(name).Audio().Decode().Resample(...)",
 			"omit .Decode() when the flow is only applied after stream decode",
 		}),
-		Cause: ErrUnsupportedBuild,
+		cause: errUnsupportedBuild,
 	}
 }
 
@@ -722,7 +722,7 @@ func flowDecodeDomainError(operation string, node string) error {
 			"use the flow from a packet branch or packet tap when it should own decode",
 			"split packet-preserving streams with .Copy().Branches(...) before applying the flow",
 		}),
-		Cause: ErrUnsupportedBuild,
+		cause: errUnsupportedBuild,
 	}
 }
 
@@ -738,7 +738,7 @@ func flowCopyDomainError(operation string, node string) error {
 			"declare packet taps after copy with .Copy().Tap(goav.PacketTap(name))",
 			"use .Decode().Resample(...).Encode(codec.Opus(...)) when the flow should transform frames",
 		}),
-		Cause: ErrUnsupportedBuild,
+		cause: errUnsupportedBuild,
 	}
 }
 
@@ -751,7 +751,7 @@ func nilFlowError() error {
 		fixes: buildErrorFixes([]string{
 			"build flows with goav.Flow(name).Audio() or goav.Flow(name).Video()",
 		}),
-		Cause: ErrUnsupportedBuild,
+		cause: errUnsupportedBuild,
 	}
 }
 
@@ -769,7 +769,7 @@ func validateChainMedia(operation string, node string, selected av.MediaType, sp
 			"use goav.Flow(name).Audio() with .Audio()",
 			"use goav.Flow(name).Video() with .Video()",
 		}),
-		Cause: ErrUnsupportedBuild,
+		cause: errUnsupportedBuild,
 	}
 }
 
@@ -787,7 +787,7 @@ func branchInputCountError(node string, count int) error {
 			"start branches from goav.From(input).Audio() or goav.From(input).Video() with one input",
 			"use the expert graph API when combining several sources manually",
 		}),
-		Cause: ErrUnsupportedBuild,
+		cause: errUnsupportedBuild,
 	}
 }
 
@@ -802,6 +802,6 @@ func branchOutputScopeError(node string) error {
 			"route branches with .Branches(goav.Branch(name).To(goav.Write(name, writer)))",
 			"use stream .To(goav.Write(...)) or .To(goav.Sink(...)) only for one ordinary stream destination",
 		}),
-		Cause: ErrUnsupportedBuild,
+		cause: errUnsupportedBuild,
 	}
 }

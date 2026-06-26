@@ -85,7 +85,7 @@ func audioFrameInput() goav.InputSpec {
 
 // TestErrorAcceptanceNilProviderInput is snippet 0a: a nil source provider
 // handed to goav.Input(...). The refusal keeps the public input constructor
-// vocabulary in the suggestions and preserves ErrNilSource as the cause.
+// vocabulary in the suggestions.
 func TestErrorAcceptanceNilProviderInput(t *testing.T) {
 	_, err := goav.From(goav.Input(nil)).
 		Audio().
@@ -96,9 +96,6 @@ func TestErrorAcceptanceNilProviderInput(t *testing.T) {
 		"check the input constructor arguments",
 		"pass a non-nil provider to goav.Input(provider)",
 	)
-	if !errors.Is(err, goav.ErrNilSource) {
-		t.Fatalf("err = %v, want ErrNilSource cause", err)
-	}
 }
 
 // TestErrorAcceptanceMissingInput is snippet 0b: a recipe with destinations
@@ -125,9 +122,6 @@ func TestErrorAcceptanceCustomSourceMissingCallback(t *testing.T) {
 		"pass a non-nil callback to goav.Source(name, shape, fn)",
 		"use goav.FileInput or goav.Input(provider)",
 	)
-	if !errors.Is(err, goav.ErrNilSource) {
-		t.Fatalf("err = %v, want ErrNilSource cause", err)
-	}
 }
 
 // TestErrorAcceptanceCustomSourceShapeInvalid is snippet 0d: a packet-domain
@@ -556,8 +550,8 @@ func TestErrorAcceptanceAmbiguousStreamSelectionListsCandidates(t *testing.T) {
 		Build(context.Background())
 
 	var buildErr *goav.BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != errcode.Code("stream_ambiguous") || !errors.Is(err, goav.ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want stream_ambiguous wrapping ErrUnsupportedBuild", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != errcode.Code("stream_ambiguous") {
+		t.Fatalf("err = %v, want stream_ambiguous with matching BuildError code", err)
 	}
 	msg := err.Error()
 	if !strings.Contains(msg, "input=mic-a") || !strings.Contains(msg, "input=mic-b") {

@@ -262,7 +262,7 @@ func joinTapArmMissingError(join string, tap tapRef, declared []string) error {
 			"declare the tap on an arm chain: goav.From(input).Audio().Decode().Tap(goav.FrameTap(" + strconv.Quote(tap.name) + "))",
 			"order arms so the tap-declaring chain comes before the tap arm",
 		}),
-		Cause: ErrUnsupportedBuild,
+		cause: errUnsupportedBuild,
 	}
 }
 

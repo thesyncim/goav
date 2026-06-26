@@ -31,7 +31,7 @@ func validateRecipeStreamSelector(operation string, node string, selector av.Str
 			"use goav.StreamIndex(0) for the first matching stream",
 			"use goav.StreamID(...) or goav.StreamName(...) when stream metadata is stable",
 		}),
-		Cause: ErrUnsupportedBuild,
+		cause: errUnsupportedBuild,
 	}
 }
 
@@ -57,7 +57,7 @@ func chainStepAfterEncodeError(operation string, node string, step string, encod
 			"place .Do(...), .Resize(...), or .Resample(...) before .Encode(...)",
 			"call .To(...) after the encoder to attach outputs",
 		}),
-		Cause: ErrUnsupportedBuild,
+		cause: errUnsupportedBuild,
 	}
 }
 
@@ -82,7 +82,7 @@ func chainStepOnPacketCopyError(operation string, node string, step string) erro
 			"remove the processing step to keep a pure packet copy",
 			"use .Branches(...) when one input needs both a packet copy and a processed branch",
 		}),
-		Cause: ErrUnsupportedBuild,
+		cause: errUnsupportedBuild,
 	}
 }
 
@@ -102,7 +102,7 @@ func chainFrameInputRequiredError(operation string, node string, step string) er
 			"write .Decode()." + streamStepMethodName(step) + "(...) for decoded-frame processing",
 			"keep the stream packet-domain by using .Copy() and removing frame-domain processing",
 		}),
-		Cause: ErrUnsupportedBuild,
+		cause: errUnsupportedBuild,
 	}
 }
 
@@ -137,7 +137,7 @@ func sinkDomainRequiredError(operation string, node string) error {
 			"decode frames before the sink: .Decode().To(goav.Sink(...))",
 			"preserve packets before the sink: .Copy().To(goav.Sink(...))",
 		}),
-		Cause: ErrUnsupportedBuild,
+		cause: errUnsupportedBuild,
 	}
 }
 
@@ -156,7 +156,7 @@ func duplicateStreamEncodeError(operation string, node string, first codec.Codec
 			"choose one output codec for the stream chain",
 			"use .Branches(...) when one input needs multiple encoded branches",
 		}),
-		Cause: ErrUnsupportedBuild,
+		cause: errUnsupportedBuild,
 	}
 }
 
@@ -343,7 +343,7 @@ func frameSourceDecodeError(operation string, node string) error {
 			"remove .Decode() when using goav.Source(..., shape.Frame(...), ...)",
 			"use shape.Packet(...) when the custom source pushes encoded packets",
 		}),
-		Cause: ErrUnsupportedBuild,
+		cause: errUnsupportedBuild,
 	}
 }
 
@@ -362,7 +362,7 @@ func frameSourceCopyError(operation string, node string) error {
 			"send frame-domain media to goav.Sink(...)",
 			"encode frames before writing to file, URI, or writer destinations",
 		}),
-		Cause: ErrUnsupportedBuild,
+		cause: errUnsupportedBuild,
 	}
 }
 
@@ -451,7 +451,7 @@ func (b *jobStreamBuilder) Tap(tap tapRef) *jobStreamBuilder {
 				"call .Tap(goav.FrameTap(\"video.decoded\")) or another stable tap ref",
 				"omit .Tap(...) when no runtime branch should attach at that point",
 			}),
-			Cause: ErrUnsupportedBuild,
+			cause: errUnsupportedBuild,
 		})
 		return b
 	}
