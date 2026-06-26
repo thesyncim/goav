@@ -606,7 +606,7 @@ func validateBranchSpec(selected av.MediaType, parentPacket bool, index int, spe
 	seen := make(map[string]int, len(spec.destinations))
 	for i, destinationName := range branchDestinationNames(spec.destinations) {
 		if destinationName == "" {
-			return branchDestinationNameEmptyError(streamBuild{name: spec.name, selector: av.StreamSelector{Type: selected}}, i)
+			return branchDestinationNameEmptyError(stream, i)
 		}
 		if firstIndex, ok := seen[destinationName]; ok {
 			return duplicateBranchDestinationError(

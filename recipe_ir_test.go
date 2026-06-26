@@ -701,6 +701,12 @@ func TestBranchCompositionPlannerConsumesRecipeIR(t *testing.T) {
 	if !strings.Contains(planBody, "streamIntentsFromRecipeIR(recipe.Streams)") {
 		t.Fatal("planBranchCompositionRecipe should read streams from captured recipe IR")
 	}
+	if !strings.Contains(source, "func branchDestinationNameEmptyError(stream streamIntent, index int) error") {
+		t.Fatal("branchDestinationNameEmptyError should consume streamIntent facts instead of streamBuild builder records")
+	}
+	if strings.Contains(source, "func branchDestinationNameEmptyError(stream streamBuild") {
+		t.Fatal("branchDestinationNameEmptyError still accepts streamBuild builder records")
+	}
 	for _, forbidden := range []string{
 		"streamBuild",
 		"intent.Streams",

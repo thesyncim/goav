@@ -21,17 +21,6 @@ func TestRecipeResolvedUnsupportedContracts(t *testing.T) {
 	}
 }
 
-func TestBranchCompositionNilComposePlanContract(t *testing.T) {
-	var job *branchCompositionJob
-	plan, err := job.composePlan()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if branchComposePlanReady(plan) {
-		t.Fatalf("nil composePlan() = %+v, want not ready", plan)
-	}
-}
-
 func TestCompileJobBranchRecipeWithOptionsRequiresOneInput(t *testing.T) {
 	_, err := compileJobBranchRecipeWithOptions(&Job{runtime: mustNew()}, recipeCompileOptions{})
 	var buildErr *BuildError

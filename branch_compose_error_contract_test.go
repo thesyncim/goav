@@ -64,9 +64,9 @@ func TestBranchComposeStructuredErrorContracts(t *testing.T) {
 		},
 		{
 			name: "empty destination name",
-			err: branchDestinationNameEmptyError(streamBuild{
-				name:     "preview",
-				selector: av.StreamSelector{Type: av.MediaVideo},
+			err: branchDestinationNameEmptyError(streamIntent{
+				Name:   "preview",
+				Select: plan.StreamSelect{Type: av.MediaVideo},
 			}, 3),
 			code: destinationInvalidCode,
 		},

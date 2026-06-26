@@ -96,7 +96,9 @@ grammar-builder internals.
 Current progress: `internal/recipeir` carries the first immutable recipe
 snapshot, `compileJobRecipe` enters through that snapshot, and branch
 composition planning reads captured recipe IR instead of `streamBuild` builder
-records. Transform operations now cross the boundary as typed recipe IR data
+records, without a builder `composePlan` wrapper; branch destination-name
+validation errors now consume stream intent facts rather than builder records
+too. Transform operations now cross the boundary as typed recipe IR data
 instead of a generic root wrapper, and destination sink/byte-stream behavior is
 now captured as recipe IR so shape validation does not need to infer that fact
 from concrete writer or sink attachments. Input kind and declared source shape

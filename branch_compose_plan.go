@@ -81,13 +81,6 @@ func (j *branchCompositionJob) plan() intent {
 	return intent
 }
 
-func (j *branchCompositionJob) composePlan() (branchComposePlan, error) {
-	if j == nil {
-		return branchComposePlan{}, nil
-	}
-	return planBranchCompositionRecipe(recipeIRFromIntent(j.plan(), recipeir.KindBranchComposition), j.input, j.outputs)
-}
-
 func planBranchCompositionRecipe(recipe recipeir.Recipe, input InputSpec, namedOutputs []namedDestinationSpec) (branchComposePlan, error) {
 	streams := streamIntentsFromRecipeIR(recipe.Streams)
 	outputs, outputOrder := branchDestinationAttachmentSet(namedOutputs)
@@ -458,12 +451,12 @@ func transcodeUnsupportedLiveInputError() error {
 	}
 }
 
-func branchDestinationNameEmptyError(stream streamBuild, index int) error {
+func branchDestinationNameEmptyError(stream streamIntent, index int) error {
 	return &BuildError{
 		Family:    errcode.FamilyForCode(destinationInvalidCode),
 		Code:      destinationInvalidCode,
 		Operation: branchCompositionOperation,
-		Node:      firstNonEmpty(stream.name, string(stream.selector.Type), "stream"),
+		Node:      firstNonEmpty(stream.Name, string(stream.Select.Type), "stream"),
 		Reason:    "branch destinations must be non-empty",
 		fields: buildErrorFields([]string{
 			fmt.Sprintf("destination index: %d", index),
