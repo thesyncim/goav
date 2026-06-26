@@ -52,7 +52,7 @@ func newPlanReport(operation string, resolved recipeResolved) (plan.Report, erro
 	report.Branches = explainBranches(work)
 	report.Destinations = explainDestinations(resolved.intent.Destinations, resolved.outputFormats, work.Destinations)
 	report.Decisions = explainDecisions(work.Decisions)
-	report.Decisions = append(report.Decisions, explainStreamRules(resolved.streamRules)...)
+	report.Decisions = append(report.Decisions, explainStreamRuleFacts(resolved.streamRuleFacts)...)
 	report.RequiredAdapters, report.Warnings = explainRequirements(resolved, work, report)
 	report.Warnings = appendPlanDiagnostics(report.Warnings, work.Diagnostics...)
 	report.Warnings = appendPlanDiagnostics(report.Warnings, muxCompatibilityDiagnostics(resolvedMuxCompatibilityIssues(resolved))...)

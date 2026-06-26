@@ -32,6 +32,7 @@ type Recipe struct {
 	Inputs       []Input
 	Streams      []Stream
 	Destinations []Destination
+	StreamRules  []StreamRule
 	Policies     Policies
 	Copy         bool
 }
@@ -94,6 +95,21 @@ type Destination struct {
 	MIMEType string
 	Format   av.FormatID
 	Kind     DestinationKind
+}
+
+// StreamRule is the planner-visible summary of a dynamic-stream rule. It does
+// not carry executable branch specs or custom matcher functions; the runtime
+// still owns those until mutation patches cross the recipe boundary.
+type StreamRule struct {
+	MatchDescription  string
+	Branches          []StreamRuleBranch
+	RemoveDisposition string
+}
+
+// StreamRuleBranch is one branch template visible to Explain/validation.
+type StreamRuleBranch struct {
+	Name         string
+	Destinations []string
 }
 
 // Policies are recipe-wide planning flags.
