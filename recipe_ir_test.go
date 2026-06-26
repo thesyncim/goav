@@ -172,6 +172,31 @@ func TestJoinPlannerConsumesRecipeIRInput(t *testing.T) {
 	}
 }
 
+func TestMediaPlannerConsumesRecipeIRInputFacts(t *testing.T) {
+	job := From(
+		compositeTestVideoSource("camera", 4, 4, 100, 10, 20),
+		mixTestAudioSource("mic", 1),
+	).
+		Audio(InputName("mic")).
+		To(Sink(SinkFunc("audio", func(context.Context, Message) error { return nil })))
+
+	state := recipeCompileStateFromSnapshot(newJobRecipeSnapshot(job), recipeCompileOptions{})
+	state.inputAttachments = nil
+	stream := state.intent.Streams[0]
+	input, inputName := planStreamInputBinding(&state, stream)
+	if input.Name != "mic" || inputName != "mic" {
+		t.Fatalf("input binding = %+v %q, want mic from IR input facts", input, inputName)
+	}
+	selected, ok := planSelectedStream(&state, stream)
+	if !ok || selected.ID != "mic" || selected.Type != av.MediaAudio {
+		t.Fatalf("selected stream = %+v %v, want mic audio from IR input facts", selected, ok)
+	}
+	branches, _ := planBranches(&state, planOutputs(state.intent.Destinations, nil))
+	if len(branches) != 1 || branches[0].Input != "mic" {
+		t.Fatalf("planned branches = %+v, want branch bound to mic", branches)
+	}
+}
+
 func TestRecipeIRSnapshotCapturesSinkDestinationKind(t *testing.T) {
 	job := From(FileInput("input.ivf", strings.NewReader(""))).
 		Video().
@@ -276,6 +301,27 @@ func TestJoinPlannerUsesRecipeIRInputFacts(t *testing.T) {
 	handoff := sourceFunctionBody(t, string(lowererBody), "mediaPlanJoinLowererForState")
 	if !strings.Contains(handoff, "newJoinPlan(joinPlanInputFromCompileState(state))") {
 		t.Fatal("join lowerer should build joinPlanInput from compile state at the boundary")
+	}
+}
+
+func TestMediaPlannerUsesRecipeIRInputFacts(t *testing.T) {
+	body, err := os.ReadFile("media_plan.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, fn := range []string{"planStreamInputBinding", "planSelectedStream"} {
+		fnBody := sourceFunctionBody(t, string(body), fn)
+		if !strings.Contains(fnBody, "jobInputStreamSetsFromRecipeIR") {
+			t.Fatalf("%s should derive stream sets from recipe IR input facts", fn)
+		}
+		if strings.Contains(fnBody, "jobInputStreamSets(state.intent.Inputs, state.inputAttachments") ||
+			strings.Contains(fnBody, "jobInputStreamSets(inputs, state.inputAttachments") {
+			t.Fatalf("%s still derives stream sets from concrete input attachments", fn)
+		}
+	}
+	selectedBody := sourceFunctionBody(t, string(body), "planSelectedStream")
+	if !strings.Contains(selectedBody, "for i := range state.inputFacts") {
+		t.Fatal("planSelectedStream should resolve declared source streams from recipe IR input facts")
 	}
 }
 
