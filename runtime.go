@@ -578,10 +578,6 @@ func (t *task) copyNeverBranchNames() []string {
 	return uniqueStrings(out)
 }
 
-func (t *task) Events() <-chan av.Event {
-	return t.Watch().Events()
-}
-
 func (t *task) Stats() pipeline.GraphStats {
 	return t.graph.Stats()
 }
