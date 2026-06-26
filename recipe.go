@@ -238,7 +238,7 @@ type jobStreamBuild struct {
 	selector    av.StreamSelector
 	input       string
 	operations  []operationSpec
-	codecChange CodecChangePolicy
+	codecChange codecChangePolicy
 	outputs     []destinationSpec
 	outputNames []string
 }

@@ -39,7 +39,7 @@ type branchComposeBranch struct {
 	SharedOperations  []operationSpec
 	PrivateOperations []operationSpec
 	DecodeConfig      codec.CodecSpec
-	CodecChange       CodecChangePolicy
+	CodecChange       codecChangePolicy
 	Encode            codec.EncodeConfig
 	Labels            []string
 	Metadata          av.Metadata
@@ -117,7 +117,7 @@ type branchComposeRoute struct {
 	branch            branchComposeBranch
 	copy              bool
 	decode            codec.CodecSpec
-	codecChange       CodecChangePolicy
+	codecChange       codecChangePolicy
 	dropDecodeEvents  bool
 	sourceDomain      shape.MediaDomain
 	sharedOperations  []operationSpec
@@ -908,8 +908,8 @@ func branchComposeGroupDecodeConfig(indices []int, branches []branchComposeRoute
 	return config, nil
 }
 
-func branchComposeGroupCodecChangePolicy(indices []int, branches []branchComposeRoute) (CodecChangePolicy, error) {
-	var policy CodecChangePolicy
+func branchComposeGroupCodecChangePolicy(indices []int, branches []branchComposeRoute) (codecChangePolicy, error) {
+	var policy codecChangePolicy
 	var owner string
 	havePolicy := false
 	for _, index := range indices {
@@ -927,7 +927,7 @@ func branchComposeGroupCodecChangePolicy(indices []int, branches []branchCompose
 			continue
 		}
 		if policy != candidate {
-			return CodecChangePolicy{}, branchComposeCodecChangeConflictError(owner, branches[index].name)
+			return codecChangePolicy{}, branchComposeCodecChangeConflictError(owner, branches[index].name)
 		}
 	}
 	return policy, nil

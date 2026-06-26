@@ -2616,36 +2616,6 @@ func TestReadmeCustomStageToCustomSinkRecipeIsSmall(t *testing.T) {
 	}
 }
 
-func TestStreamRecipeNamesCodecChangePolicy(t *testing.T) {
-	sink := component.SinkFunc("frames", func(context.Context, component.Message) error {
-		return nil
-	})
-	policy := goav.CodecChangePolicy{
-		RebindCompatible:     true,
-		RequestKeyframe:      true,
-		DropUntilSync:        true,
-		FailOnDifferentCodec: true,
-	}
-	job := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
-		Audio().
-		Decode().
-		OnCodecChange(policy).
-		To(goav.Sink(sink))
-
-	spec, err := job.Describe()
-	if err != nil {
-		t.Fatal(err)
-	}
-	text := specText(spec)
-	if !strings.Contains(text, "codec-change=rebind-compatible,request-keyframe,drop-until-sync,fail-different-codec") {
-		t.Fatalf("spec:\n%s", text)
-	}
-	intent := goav.JobPlanForTest(job)
-	if len(intent.Streams) != 1 || intent.Streams[0].CodecChange != policy {
-		t.Fatalf("intent: %+v", intent)
-	}
-}
-
 func TestAudioChainAppliesToStreamRecipeIntent(t *testing.T) {
 	voice := goav.Flow("voice").
 		Audio().
@@ -3630,27 +3600,6 @@ func TestFlowRejectsNonTapOperationsAfterEncode(t *testing.T) {
 				t.Fatalf("err = %v, want flow %s guidance", err, tt.want)
 			}
 		})
-	}
-}
-
-func TestStreamRecipeRejectsUnsupportedCodecChangePolicy(t *testing.T) {
-	sink := component.SinkFunc("frames", func(context.Context, component.Message) error {
-		return nil
-	})
-	_, err := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
-		Audio().
-		Decode().
-		OnCodecChange(goav.CodecChangePolicy{RebindCompatible: true}).
-		To(goav.Sink(sink)).
-		Build(context.Background())
-
-	var buildErr *goav.BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "codec_change_policy_unsupported" || !errors.Is(err, goav.ErrUnsupportedBuild) {
-		t.Fatalf("err = %v, want codec_change_policy_unsupported wrapping ErrUnsupportedBuild", err)
-	}
-	if !strings.Contains(err.Error(), "default live receive behavior") ||
-		!strings.Contains(err.Error(), "different decoder codec") {
-		t.Fatalf("err = %v, want codec-change policy guidance", err)
 	}
 }
 

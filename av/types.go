@@ -526,7 +526,7 @@ const (
 	EventDestinationCommitError EventType = "destination_commit_error"
 	// EventCodecChanged announces that a stream's codec parameters changed
 	// mid-run; Event.Codec carries the new parameters and decode chains apply
-	// their CodecChangePolicy.
+	// their codec-change policy.
 	EventCodecChanged EventType = "codec_changed"
 	// EventDiscontinuity marks a timeline break (a seek landed, a receiver
 	// reset): downstream decoders reset and consumers re-sync on it.

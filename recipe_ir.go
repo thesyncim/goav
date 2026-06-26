@@ -473,7 +473,7 @@ func rootTapRefFromRecipeIR(in recipeir.TapRef) TapRef {
 	return TapRef{name: in.Name, domain: in.Domain}
 }
 
-func recipeIRCodecChangeFromRoot(in CodecChangePolicy) recipeir.CodecChangePolicy {
+func recipeIRCodecChangeFromRoot(in codecChangePolicy) recipeir.CodecChangePolicy {
 	return recipeir.CodecChangePolicy{
 		RebindCompatible:     in.RebindCompatible,
 		RequestKeyframe:      in.RequestKeyframe,
@@ -482,8 +482,8 @@ func recipeIRCodecChangeFromRoot(in CodecChangePolicy) recipeir.CodecChangePolic
 	}
 }
 
-func rootCodecChangeFromRecipeIR(in recipeir.CodecChangePolicy) CodecChangePolicy {
-	return CodecChangePolicy{
+func rootCodecChangeFromRecipeIR(in recipeir.CodecChangePolicy) codecChangePolicy {
+	return codecChangePolicy{
 		RebindCompatible:     in.RebindCompatible,
 		RequestKeyframe:      in.RequestKeyframe,
 		DropUntilSync:        in.DropUntilSync,

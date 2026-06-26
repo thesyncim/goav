@@ -633,7 +633,7 @@ func (b *jobStreamBuilder) Encode(codec codec.CodecSpec) *jobStreamBuilder {
 	return b
 }
 
-func (b *jobStreamBuilder) OnCodecChange(policy CodecChangePolicy) *jobStreamBuilder {
+func (b *jobStreamBuilder) OnCodecChange(policy codecChangePolicy) *jobStreamBuilder {
 	stream := b.current()
 	stream.codecChange = policy
 	return b

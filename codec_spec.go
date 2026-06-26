@@ -350,7 +350,7 @@ func validateRecipeEncodeValues(spec codec.CodecSpec, operation string, node str
 	}
 }
 
-func validateCodecChangePolicy(operation string, node string, policy CodecChangePolicy) error {
+func validateCodecChangePolicy(operation string, node string, policy codecChangePolicy) error {
 	if !codecChangePolicySet(policy) || policy == defaultCodecChangePolicy() {
 		return nil
 	}
@@ -373,11 +373,11 @@ func validateCodecChangePolicy(operation string, node string, policy CodecChange
 	}
 }
 
-func codecChangePolicySet(policy CodecChangePolicy) bool {
+func codecChangePolicySet(policy codecChangePolicy) bool {
 	return policy.RebindCompatible || policy.RequestKeyframe || policy.DropUntilSync || policy.FailOnDifferentCodec
 }
 
-func codecChangePolicyDetail(policy CodecChangePolicy) string {
+func codecChangePolicyDetail(policy codecChangePolicy) string {
 	if !codecChangePolicySet(policy) {
 		return "codec-change=default"
 	}

@@ -133,7 +133,7 @@ type encodeRequest struct {
 
 type decodeRequest struct {
 	selector    av.StreamSelector
-	codecChange CodecChangePolicy
+	codecChange codecChangePolicy
 	config      codec.CodecSpec
 }
 

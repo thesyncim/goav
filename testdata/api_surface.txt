@@ -197,7 +197,6 @@ goav.BranchSpec
 goav.BuildError
 goav.Chain
 goav.Codec
-goav.CodecChangePolicy
 goav.Composite
 goav.Custom
 goav.Destination

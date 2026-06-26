@@ -142,7 +142,7 @@ Move or keep outside the front door:
       already keeps the old branch attached as the only supported policy.
 
 12. **Codec-change policy cleanup** — landed
-    - Remove the public helper for the only supported codec-change policy.
+    - Remove the public type for the only supported codec-change policy.
       Recipes use the default live receive behavior when
       `.OnCodecChange(...)` is omitted, and custom policies still fail with a
       structured build error.
