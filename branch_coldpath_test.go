@@ -104,7 +104,7 @@ func TestBranchToRefusesEmptyDestination(t *testing.T) {
 		Audio().Copy().
 		Branches(spec).
 		Describe()
-	buildErr := requireColdPathBuildError(t, err, errcode.DestinationInvalid)
+	buildErr := requireColdPathBuildError(t, err, destinationInvalidCode)
 	if buildErr.Operation != "build branch" {
 		t.Fatalf("operation = %q, want build branch", buildErr.Operation)
 	}
@@ -117,7 +117,7 @@ func TestStreamToRefusesEmptyDestination(t *testing.T) {
 		Audio().Copy().
 		To(Destination{}).
 		Describe()
-	buildErr := requireColdPathBuildError(t, err, errcode.DestinationInvalid)
+	buildErr := requireColdPathBuildError(t, err, destinationInvalidCode)
 	if buildErr.Operation != "build stream" {
 		t.Fatalf("operation = %q, want build stream", buildErr.Operation)
 	}

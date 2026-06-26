@@ -7,7 +7,6 @@ import (
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
-	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/plan"
 )
@@ -42,7 +41,7 @@ func TestDescriptorMuxCompatibilityContracts(t *testing.T) {
 	if !ok {
 		t.Fatal("MaxStreams descriptor did not reject the mux group")
 	}
-	if issue.Code != errcode.DestinationMuxIncompatible || issue.Destination != "archive.xpack" || issue.Format != av.FormatID("xpack") {
+	if issue.Code != destinationMuxIncompatibleCode || issue.Destination != "archive.xpack" || issue.Format != av.FormatID("xpack") {
 		t.Fatalf("issue identity = %+v", issue)
 	}
 	if !strings.Contains(issue.Reason, "up to 1 stream") {
@@ -85,7 +84,7 @@ func TestMuxTimebaseCompatibilityContracts(t *testing.T) {
 	if !ok {
 		t.Fatal("invalid timebase did not reject the mux group")
 	}
-	if issue.Code != errcode.DestinationMuxIncompatible || !strings.Contains(issue.Reason, "valid timebase") {
+	if issue.Code != destinationMuxIncompatibleCode || !strings.Contains(issue.Reason, "valid timebase") {
 		t.Fatalf("timebase issue = %+v, want mux incompatibility with timebase reason", issue)
 	}
 	if !reflect.DeepEqual(issue.Details, []string{
@@ -173,7 +172,7 @@ func TestSingleVideoMuxCompatibilityContracts(t *testing.T) {
 	output := workDestination{Name: "archive.ivf", Format: av.FormatIVF}
 	codecs := map[av.CodecID]bool{av.CodecVP8: true, av.CodecVP9: true, av.CodecAV1: true}
 
-	if issue, ok := checkSingleVideoMuxCompatibility(output, nil, codecs, "single video only"); !ok || issue.Code != errcode.DestinationMuxIncompatible {
+	if issue, ok := checkSingleVideoMuxCompatibility(output, nil, codecs, "single video only"); !ok || issue.Code != destinationMuxIncompatibleCode {
 		t.Fatalf("empty streams issue = %+v ok=%v", issue, ok)
 	}
 	if issue, ok := checkSingleVideoMuxCompatibility(output, []plannedMuxStream{{Branch: "unknown"}}, codecs, "single video only"); ok {

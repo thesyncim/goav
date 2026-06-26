@@ -19,7 +19,7 @@ func TestBuildErrorFamilyForCodePinned(t *testing.T) {
 		{errcode.ShapeRequirementUnmet, errcode.FamilyShape},
 		{errcode.DecodeAdapterMissing, errcode.FamilyCodec},
 		{errcode.EncodeMissing, errcode.FamilyEncode},
-		{errcode.DestinationDuplicate, errcode.FamilyDestination},
+		{destinationDuplicateCode, errcode.FamilyDestination},
 		{branchInvalidCode, errcode.FamilyBranch},
 		{bufferPayloadUnsafeCode, errcode.FamilyBuffer},
 		{errcode.TapInvalid, errcode.FamilyTap},
@@ -48,7 +48,7 @@ func TestBuildErrorFamilyReachesReturnedErrors(t *testing.T) {
 		{
 			name:   "destination duplicate",
 			err:    duplicateDestinationHandleError("build recipe", "archive.webm"),
-			code:   errcode.DestinationDuplicate,
+			code:   destinationDuplicateCode,
 			family: errcode.FamilyDestination,
 		},
 		{

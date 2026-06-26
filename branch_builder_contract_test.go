@@ -231,8 +231,8 @@ func TestBranchBuilderNilAndErrorContracts(t *testing.T) {
 		spec BranchSpec
 		code errcode.Code
 	}{
-		{name: "missing destination", spec: Branch("bad").To(), code: errcode.DestinationMissing},
-		{name: "invalid destination", spec: Branch("bad").To(Destination{}), code: errcode.DestinationInvalid},
+		{name: "missing destination", spec: Branch("bad").To(), code: destinationMissingCode},
+		{name: "invalid destination", spec: Branch("bad").To(Destination{}), code: destinationInvalidCode},
 		{name: "invalid source", spec: Branch("bad").From(invalidBranchSource{}).To(branchBuilderTestSink("out")), code: branchSourceInvalidCode},
 		{name: "invalid buffer", spec: Branch("bad").Buffer(flow.DropOldest(0)).To(branchBuilderTestSink("out")), code: branchBufferInvalidCode},
 		{name: "nil stage", spec: Branch("bad").Do(nil).To(branchBuilderTestSink("out")), code: errcode.StageMissing},

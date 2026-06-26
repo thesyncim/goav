@@ -19,7 +19,7 @@ func TestJoinOutputFormatValidationParity(t *testing.T) {
 		To(Write("out.unknown", io.Discard)).
 		UseRuntime(MustNew(WithEncoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &encodeTestEncoderFactory{encoder: &encodeTestEncoder{}}))).
 		Build(context.Background())
-	assertJoinParityBuildError(t, err, errcode.OutputFormatUnknown)
+	assertJoinParityBuildError(t, err, outputFormatUnknownCode)
 }
 
 func TestJoinDestinationShapeValidationParity(t *testing.T) {
@@ -52,7 +52,7 @@ func TestJoinMuxCompatibilityValidationParity(t *testing.T) {
 			withTestFormats(testFormatMuxer(av.FormatIVF, writerTestMuxerFactory{})),
 		)).
 		Build(context.Background())
-	assertJoinParityBuildError(t, err, errcode.DestinationMuxIncompatible)
+	assertJoinParityBuildError(t, err, destinationMuxIncompatibleCode)
 }
 
 func TestJoinRuntimeMissingValidationParity(t *testing.T) {

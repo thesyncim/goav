@@ -523,7 +523,7 @@ func TestErrorAcceptanceDestinationFormatUnknown(t *testing.T) {
 		To(goav.Write("out.weird", io.Discard)).
 		UseRuntime(goavtest.Runtime()).
 		Build(context.Background())
-	requireBuildError(t, err, errcode.DestinationFormatUnknown, "open destination", "out.weird",
+	requireBuildError(t, err, errcode.Code("destination_format_unknown"), "open destination", "out.weird",
 		"pass goav.Format(...)",
 	)
 }
@@ -537,7 +537,7 @@ func TestErrorAcceptanceDestinationMuxerMissing(t *testing.T) {
 		To(goav.Write("out.ogg", io.Discard)).
 		UseRuntime(bundle.MustNewFilters(goavtest.Codec(av.CodecOpus))).
 		Build(context.Background())
-	requireBuildError(t, err, errcode.DestinationMuxerMissing, "open destination", "out.ogg",
+	requireBuildError(t, err, errcode.Code("destination_muxer_missing"), "open destination", "out.ogg",
 		"goavruntime.WithMuxer(...)",
 	)
 }

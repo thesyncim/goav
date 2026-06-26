@@ -61,8 +61,8 @@ func outputFormatProbeError(output format.Output, index int, cause error) error 
 		"register a format adapter with goav.MustNew(goavruntime.WithFormatAdapter(...))",
 	}
 	return &BuildError{
-		Family:    errcode.FamilyForCode(errcode.OutputFormatUnknown),
-		Code:      errcode.OutputFormatUnknown,
+		Family:    errcode.FamilyForCode(outputFormatUnknownCode),
+		Code:      outputFormatUnknownCode,
 		Operation: "open output",
 		Node:      muxNodeName(output, index),
 		Reason:    "output format could not be detected",
@@ -82,8 +82,8 @@ func outputMuxerMissingError(output format.Output, index int, id av.FormatID, ca
 		"call .UseRuntime(goav.MustNew(goavruntime.WithFormatAdapter(...))) when using a custom adapter bundle",
 	}
 	return &BuildError{
-		Family:    errcode.FamilyForCode(errcode.OutputMuxerMissing),
-		Code:      errcode.OutputMuxerMissing,
+		Family:    errcode.FamilyForCode(outputMuxerMissingCode),
+		Code:      outputMuxerMissingCode,
 		Operation: "open output",
 		Node:      muxNodeName(output, index),
 		Reason:    "format " + quoteFormat(id) + " was selected but no muxer is registered",
@@ -103,8 +103,8 @@ func destinationFormatProbeError(node string, output format.Output, cause error)
 		"register a format adapter with goav.MustNew(goavruntime.WithFormatAdapter(...))",
 	}
 	return &BuildError{
-		Family:    errcode.FamilyForCode(errcode.DestinationFormatUnknown),
-		Code:      errcode.DestinationFormatUnknown,
+		Family:    errcode.FamilyForCode(destinationFormatUnknownCode),
+		Code:      destinationFormatUnknownCode,
 		Operation: "open destination",
 		Node:      node,
 		Reason:    "destination format could not be detected",
@@ -124,8 +124,8 @@ func destinationMuxerMissingError(node string, output format.Output, id av.Forma
 		"call .UseRuntime(goav.MustNew(goavruntime.WithFormatAdapter(...))) when using a custom adapter bundle",
 	}
 	return &BuildError{
-		Family:    errcode.FamilyForCode(errcode.DestinationMuxerMissing),
-		Code:      errcode.DestinationMuxerMissing,
+		Family:    errcode.FamilyForCode(destinationMuxerMissingCode),
+		Code:      destinationMuxerMissingCode,
 		Operation: "open destination",
 		Node:      node,
 		Reason:    "format " + quoteFormat(id) + " was selected for destination but no muxer is registered",

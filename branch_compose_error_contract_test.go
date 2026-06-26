@@ -60,7 +60,7 @@ func TestBranchComposeStructuredErrorContracts(t *testing.T) {
 				Name:   "preview",
 				Select: plan.StreamSelect{Type: av.MediaVideo},
 			}),
-			code: errcode.DestinationMissing,
+			code: destinationMissingCode,
 		},
 		{
 			name: "empty destination name",
@@ -68,7 +68,7 @@ func TestBranchComposeStructuredErrorContracts(t *testing.T) {
 				name:     "preview",
 				selector: av.StreamSelector{Type: av.MediaVideo},
 			}, 3),
-			code: errcode.DestinationInvalid,
+			code: destinationInvalidCode,
 		},
 	}
 

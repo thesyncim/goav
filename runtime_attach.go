@@ -532,8 +532,8 @@ func validateRuntimeBranchGroupDestinations(branches []runtimeAttachBranchInput)
 					}
 				}
 				return group, &BuildError{
-					Family:    errcode.FamilyForCode(errcode.DestinationDuplicate),
-					Code:      errcode.DestinationDuplicate,
+					Family:    errcode.FamilyForCode(destinationDuplicateCode),
+					Code:      destinationDuplicateCode,
 					Operation: "attach runtime branches",
 					Node:      firstNonEmpty(spec.name, "branch"),
 					Reason:    "runtime branch group reuses one destination name",
@@ -1956,8 +1956,8 @@ func runtimeBranchNodeDuplicateError(node string) error {
 
 func duplicateRuntimeBranchDestinationRefError(branch string, label string, firstIndex int, secondIndex int) error {
 	return &BuildError{
-		Family:    errcode.FamilyForCode(errcode.DestinationDuplicate),
-		Code:      errcode.DestinationDuplicate,
+		Family:    errcode.FamilyForCode(destinationDuplicateCode),
+		Code:      destinationDuplicateCode,
 		Operation: "attach runtime branch",
 		Node:      firstNonEmpty(branch, "branch"),
 		Reason:    fmt.Sprintf("branch routes to destination %q more than once", label),

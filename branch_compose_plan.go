@@ -415,8 +415,8 @@ func branchCopyUnsupportedError(stream streamIntent) error {
 func branchIntentDestinationMissingError(stream streamIntent) error {
 	selector := streamIntentSelector(stream)
 	return &BuildError{
-		Family:    errcode.FamilyForCode(errcode.DestinationMissing),
-		Code:      errcode.DestinationMissing,
+		Family:    errcode.FamilyForCode(destinationMissingCode),
+		Code:      destinationMissingCode,
 		Operation: branchCompositionOperation,
 		Node:      firstNonEmpty(stream.Name, string(selector.Type), "stream"),
 		Reason:    "branch has no destination",
@@ -430,8 +430,8 @@ func branchIntentDestinationMissingError(stream streamIntent) error {
 
 func branchDestinationReferenceMissingError(stream streamIntent, label string) error {
 	return &BuildError{
-		Family:    errcode.FamilyForCode(errcode.DestinationMissing),
-		Code:      errcode.DestinationMissing,
+		Family:    errcode.FamilyForCode(destinationMissingCode),
+		Code:      destinationMissingCode,
 		Operation: branchCompositionOperation,
 		Node:      stream.Name,
 		Reason:    "destination " + label + " is referenced but not defined",
@@ -459,8 +459,8 @@ func transcodeUnsupportedLiveInputError() error {
 
 func branchDestinationNameEmptyError(stream streamBuild, index int) error {
 	return &BuildError{
-		Family:    errcode.FamilyForCode(errcode.DestinationInvalid),
-		Code:      errcode.DestinationInvalid,
+		Family:    errcode.FamilyForCode(destinationInvalidCode),
+		Code:      destinationInvalidCode,
 		Operation: branchCompositionOperation,
 		Node:      firstNonEmpty(stream.name, string(stream.selector.Type), "stream"),
 		Reason:    "branch destinations must be non-empty",
@@ -477,8 +477,8 @@ func branchDestinationNameEmptyError(stream streamBuild, index int) error {
 
 func branchDestinationDuplicateError(name string) error {
 	return &BuildError{
-		Family:    errcode.FamilyForCode(errcode.DestinationDuplicate),
-		Code:      errcode.DestinationDuplicate,
+		Family:    errcode.FamilyForCode(destinationDuplicateCode),
+		Code:      destinationDuplicateCode,
 		Operation: branchCompositionOperation,
 		Node:      name,
 		Reason:    fmt.Sprintf("destination %q is defined more than once with different destination handles", name),
@@ -542,8 +542,8 @@ func validateBranchDestinations(stream streamIntent) error {
 
 func duplicateBranchDestinationError(stream streamIntent, target string, firstIndex int, secondIndex int) error {
 	return &BuildError{
-		Family:    errcode.FamilyForCode(errcode.DestinationDuplicate),
-		Code:      errcode.DestinationDuplicate,
+		Family:    errcode.FamilyForCode(destinationDuplicateCode),
+		Code:      destinationDuplicateCode,
 		Operation: branchCompositionOperation,
 		Node:      branchIntentName(stream),
 		Reason:    fmt.Sprintf("branch routes to destination %q more than once", target),

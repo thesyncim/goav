@@ -675,8 +675,8 @@ func validateJobIntentShape(operation string, intent intent, jobOutputCount int)
 	stream, hasStream := jobIntentStream(intent)
 	if len(intent.Destinations) == 0 {
 		return &BuildError{
-			Family:    errcode.FamilyForCode(errcode.OutputMissing),
-			Code:      errcode.OutputMissing,
+			Family:    errcode.FamilyForCode(outputMissingCode),
+			Code:      outputMissingCode,
 			Operation: operation,
 			Reason:    "no output is configured",
 			fixes: buildErrorFixes([]string{
@@ -719,8 +719,8 @@ func validateMultiStreamJobIntentShape(operation string, intent intent, jobOutpu
 
 func jobStreamDestinationMissingError(operation string, stream streamIntent) error {
 	return &BuildError{
-		Family:    errcode.FamilyForCode(errcode.OutputMissing),
-		Code:      errcode.OutputMissing,
+		Family:    errcode.FamilyForCode(outputMissingCode),
+		Code:      outputMissingCode,
 		Operation: operation,
 		Node:      jobStreamIntentName(stream),
 		Reason:    "stream chain has no destination",
@@ -744,8 +744,8 @@ func validateJobIntentOutputScope(operation string, intent intent, jobOutputCoun
 
 func jobOutputScopeMixedError(operation string, stream streamIntent) error {
 	return &BuildError{
-		Family:    errcode.FamilyForCode(errcode.OutputScopeMixed),
-		Code:      errcode.OutputScopeMixed,
+		Family:    errcode.FamilyForCode(outputScopeMixedCode),
+		Code:      outputScopeMixedCode,
 		Operation: operation,
 		Node:      jobStreamIntentName(stream),
 		Reason:    "stream recipes use stream-local outputs",
@@ -760,8 +760,8 @@ func jobOutputScopeMixedError(operation string, stream streamIntent) error {
 
 func jobDestinationReferenceMissingError(operation string, stream streamIntent, label string) error {
 	return &BuildError{
-		Family:    errcode.FamilyForCode(errcode.OutputMissing),
-		Code:      errcode.OutputMissing,
+		Family:    errcode.FamilyForCode(outputMissingCode),
+		Code:      outputMissingCode,
 		Operation: operation,
 		Node:      jobStreamIntentName(stream),
 		Reason:    "stream route output " + label + " is not attached",
@@ -1445,8 +1445,8 @@ func validateRecipeDestinationShape(operation string, node string, destinationNa
 func destinationShapeMismatchError(operation string, node string, destinationName string, destination destinationSpec, spec shape.Spec) error {
 	label := firstNonEmpty(destinationName, destination.label("destination"))
 	return &BuildError{
-		Family:    errcode.FamilyForCode(errcode.DestinationShapeMismatch),
-		Code:      errcode.DestinationShapeMismatch,
+		Family:    errcode.FamilyForCode(destinationShapeMismatchCode),
+		Code:      destinationShapeMismatchCode,
 		Operation: operation,
 		Node:      firstNonEmpty(node, label, "destination"),
 		Reason:    "byte or mux destination requires packet-domain media",

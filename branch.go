@@ -1024,8 +1024,8 @@ func branchSpecOriginError(index int, selected av.MediaType) error {
 
 func branchDestinationMissingError(name string) error {
 	return &BuildError{
-		Family:    errcode.FamilyForCode(errcode.DestinationMissing),
-		Code:      errcode.DestinationMissing,
+		Family:    errcode.FamilyForCode(destinationMissingCode),
+		Code:      destinationMissingCode,
 		Operation: "build branch",
 		Node:      firstNonEmpty(name, "branch"),
 		Reason:    "branch has no destination",
@@ -1051,8 +1051,8 @@ func jobDestinationInvalidError(name string, reason string) error {
 
 func destinationInvalidError(operation string, node string, reason string) error {
 	return &BuildError{
-		Family:    errcode.FamilyForCode(errcode.DestinationInvalid),
-		Code:      errcode.DestinationInvalid,
+		Family:    errcode.FamilyForCode(destinationInvalidCode),
+		Code:      destinationInvalidCode,
 		Operation: operation,
 		Node:      node,
 		Reason:    reason,

@@ -66,7 +66,7 @@ func TestRuntimeFormatErrorContracts(t *testing.T) {
 		{
 			name:      "output probe",
 			err:       outputFormatProbeError(format.Output{Protocol: "file", MIMEType: "application/x-weird"}, 2, cause),
-			code:      errcode.OutputFormatUnknown,
+			code:      outputFormatUnknownCode,
 			operation: "open output",
 			node:      "output-2",
 			reason:    "output format could not be detected",
@@ -80,7 +80,7 @@ func TestRuntimeFormatErrorContracts(t *testing.T) {
 		{
 			name:      "output muxer",
 			err:       outputMuxerMissingError(output, 1, av.FormatID("ogg"), cause),
-			code:      errcode.OutputMuxerMissing,
+			code:      outputMuxerMissingCode,
 			operation: "open output",
 			node:      "recording",
 			reason:    `format "ogg" was selected but no muxer is registered`,
@@ -94,7 +94,7 @@ func TestRuntimeFormatErrorContracts(t *testing.T) {
 		{
 			name:      "destination probe",
 			err:       destinationFormatProbeError("archive", output, cause),
-			code:      errcode.DestinationFormatUnknown,
+			code:      destinationFormatUnknownCode,
 			operation: "open destination",
 			node:      "archive",
 			reason:    "destination format could not be detected",
@@ -108,7 +108,7 @@ func TestRuntimeFormatErrorContracts(t *testing.T) {
 		{
 			name:      "destination muxer",
 			err:       destinationMuxerMissingError("archive", output, av.FormatID("ogg"), cause),
-			code:      errcode.DestinationMuxerMissing,
+			code:      destinationMuxerMissingCode,
 			operation: "open destination",
 			node:      "archive",
 			reason:    `format "ogg" was selected for destination but no muxer is registered`,

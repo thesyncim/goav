@@ -100,12 +100,12 @@ func FamilyForCode(code Code) Family {
 		EncodeAutoUnresolved, EncodeStreamMismatch,
 		EncodeDestinationMissing, EncodeBranchSourceInvalid:
 		return FamilyEncode
-	case OutputInvalid, OutputMissing, OutputDuplicate, OutputScopeMixed,
-		OutputKindMixed, OutputWriterMissing, OutputFormatMissing,
-		OutputFormatUnknown, OutputMuxerMissing, OutputDestinationMissing,
-		DestinationInvalid, DestinationMissing, DestinationDuplicate,
-		DestinationFormatUnknown, DestinationMuxerMissing,
-		DestinationMuxIncompatible, DestinationShapeMismatch:
+	case Code("output_invalid"), Code("output_missing"), Code("output_duplicate"),
+		Code("output_scope_mixed"), Code("output_kind_mixed"), Code("output_writer_missing"),
+		Code("output_format_missing"), Code("output_format_unknown"), Code("output_muxer_missing"),
+		Code("output_destination_missing"), Code("destination_invalid"), Code("destination_missing"),
+		Code("destination_duplicate"), Code("destination_format_unknown"), Code("destination_muxer_missing"),
+		Code("destination_mux_incompatible"), Code("destination_shape_mismatch"):
 		return FamilyDestination
 	case Code("branch_invalid"), Code("branch_missing"), Code("branch_duplicate"),
 		Code("branch_source_invalid"), Code("branch_tap_missing"), Code("branch_decode_duplicate"),
@@ -314,57 +314,6 @@ const (
 	// EncodeBranchSourceInvalid fires when a planned branch anchors after
 	// a terminal stream encoder.
 	EncodeBranchSourceInvalid Code = "encode_branch_source_invalid"
-)
-
-// Destination and output errcode.
-const (
-	// OutputInvalid fires when a destination is empty or carries a
-	// construction error (a nil sink or writer).
-	OutputInvalid Code = "output_invalid"
-	// OutputMissing fires when a job, chain, or route reaches Build with
-	// no destination attached.
-	OutputMissing Code = "output_missing"
-	// OutputDuplicate fires when two outputs declare the same name.
-	OutputDuplicate Code = "output_duplicate"
-	// OutputScopeMixed fires when job-level and branch-local destinations
-	// are mixed in one recipe.
-	OutputScopeMixed Code = "output_scope_mixed"
-	// OutputKindMixed fires when one stream mixes sink and muxed outputs.
-	OutputKindMixed Code = "output_kind_mixed"
-	// OutputWriterMissing fires when a file output has no writer.
-	OutputWriterMissing Code = "output_writer_missing"
-	// OutputFormatMissing fires when a writer-backed output gives no name,
-	// URI, MIME type, or explicit format to derive a container from.
-	OutputFormatMissing Code = "output_format_missing"
-	// OutputFormatUnknown fires when the output format cannot be detected.
-	OutputFormatUnknown Code = "output_format_unknown"
-	// OutputMuxerMissing fires when the selected output format has no
-	// registered muxer.
-	OutputMuxerMissing Code = "output_muxer_missing"
-	// OutputDestinationMissing fires when an output has no URI, writer, or
-	// sink at all.
-	OutputDestinationMissing Code = "output_destination_missing"
-	// DestinationInvalid fires when a branch destination is empty or
-	// unnamed.
-	DestinationInvalid Code = "destination_invalid"
-	// DestinationMissing fires when a branch has no destination or
-	// references an undefined one.
-	DestinationMissing Code = "destination_missing"
-	// DestinationDuplicate fires when one destination label is bound to
-	// two different destination handles, or routed twice from one branch.
-	DestinationDuplicate Code = "destination_duplicate"
-	// DestinationFormatUnknown fires when a destination's format cannot be
-	// detected.
-	DestinationFormatUnknown Code = "destination_format_unknown"
-	// DestinationMuxerMissing fires when the destination format has no
-	// registered muxer.
-	DestinationMuxerMissing Code = "destination_muxer_missing"
-	// DestinationMuxIncompatible fires when the planned mux group violates
-	// the container's stream/codec contract (two streams into Annex B).
-	DestinationMuxIncompatible Code = "destination_mux_incompatible"
-	// DestinationShapeMismatch fires when frame-domain media is routed to
-	// a byte or mux destination; those consume packets.
-	DestinationShapeMismatch Code = "destination_shape_mismatch"
 )
 
 // Tap errcode.

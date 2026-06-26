@@ -602,8 +602,8 @@ func explicitEncodeSoftInputShape(operation operationSpec) shape.Spec {
 func resolveJoinDestinations(name string, spec *joinSpec) ([]destinationSpec, error) {
 	if len(spec.dests) == 0 {
 		return nil, &BuildError{
-			Family:    errcode.FamilyForCode(errcode.OutputMissing),
-			Code:      errcode.OutputMissing,
+			Family:    errcode.FamilyForCode(outputMissingCode),
+			Code:      outputMissingCode,
 			Operation: "build " + name,
 			Node:      name,
 			Reason:    "no output is configured",

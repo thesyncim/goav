@@ -580,7 +580,7 @@ func annotatePlanReportError(report *plan.Report, err error) {
 	})
 	requirement, ok := adapterRequirementFromBuildError(buildErr)
 	if !ok {
-		if buildErr.Code == errcode.DestinationMuxIncompatible {
+		if buildErr.Code == destinationMuxIncompatibleCode {
 			return
 		}
 		report.Missing = append(report.Missing, plan.Requirement{
@@ -614,7 +614,7 @@ func adapterRequirementFromBuildError(err *BuildError) (plan.AdapterRequirement,
 			RequiredBy: requiredBy,
 			Status:     status,
 		}, formatID != ""
-	case errcode.OutputMuxerMissing, errcode.DestinationMuxerMissing:
+	case outputMuxerMissingCode, destinationMuxerMissingCode:
 		formatID := av.FormatID(details["format"])
 		return plan.AdapterRequirement{
 			Kind:       "muxer",

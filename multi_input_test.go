@@ -10,7 +10,6 @@ import (
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
-	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/shape"
 )
 
@@ -347,7 +346,7 @@ func TestMuxSameNameDifferentConfigFailsClearly(t *testing.T) {
 		Describe()
 
 	var buildErr *BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != errcode.DestinationDuplicate {
+	if !errors.As(err, &buildErr) || buildErr.Code != destinationDuplicateCode {
 		t.Fatalf("err = %v, want destination_duplicate", err)
 	}
 	if !strings.Contains(err.Error(), "Mux") {
@@ -366,7 +365,7 @@ func TestSameHandleGroupingRequiresMux(t *testing.T) {
 		Describe()
 
 	var buildErr *BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != errcode.DestinationDuplicate {
+	if !errors.As(err, &buildErr) || buildErr.Code != destinationDuplicateCode {
 		t.Fatalf("err = %v, want destination_duplicate", err)
 	}
 

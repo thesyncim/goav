@@ -69,7 +69,7 @@ func TestOutputFormatProbeErrorContract(t *testing.T) {
 		MIMEType: "video/custom",
 	}
 	err := outputFormatProbeError(output, 3, format.ErrNotFound)
-	assertBuildErrorCode(t, err, errcode.OutputFormatUnknown)
+	assertBuildErrorCode(t, err, outputFormatUnknownCode)
 	if !errors.Is(err, format.ErrNotFound) {
 		t.Fatalf("err = %v, want format.ErrNotFound cause", err)
 	}

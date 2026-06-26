@@ -793,8 +793,8 @@ func branchInputCountError(node string, count int) error {
 
 func branchOutputScopeError(node string) error {
 	return &BuildError{
-		Family:    errcode.FamilyForCode(errcode.OutputScopeMixed),
-		Code:      errcode.OutputScopeMixed,
+		Family:    errcode.FamilyForCode(outputScopeMixedCode),
+		Code:      outputScopeMixedCode,
 		Operation: "build branches",
 		Node:      node,
 		Reason:    "branch destinations are declared inside Branch(...).To(...)",

@@ -517,8 +517,8 @@ func validateJobStreamOutputKinds(operation string, stream streamIntent, outputs
 
 func mixedStreamOutputError(operation string, stream streamIntent) error {
 	return &BuildError{
-		Family:    errcode.FamilyForCode(errcode.OutputKindMixed),
-		Code:      errcode.OutputKindMixed,
+		Family:    errcode.FamilyForCode(outputKindMixedCode),
+		Code:      outputKindMixedCode,
 		Operation: operation,
 		Node:      jobStreamIntentName(stream),
 		Reason:    "stream recipes cannot mix sinks and muxed outputs",

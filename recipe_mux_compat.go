@@ -378,7 +378,7 @@ func checkSingleVideoMuxCompatibility(output workDestination, streams []plannedM
 
 func newMuxCompatibilityIssue(output workDestination, streams []plannedMuxStream, reason string) muxCompatibilityIssue {
 	return muxCompatibilityIssue{
-		Code:        errcode.DestinationMuxIncompatible,
+		Code:        destinationMuxIncompatibleCode,
 		Destination: output.Name,
 		Format:      output.Format,
 		Reason:      reason,

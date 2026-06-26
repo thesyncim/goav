@@ -213,6 +213,9 @@ grammar and buffer safety refusals still return exact typed `branch_*`,
 `copy_*`, `packet_branch_*`, `decode_*`, and `buffer_*` strings, but the public
 matching contract is `FamilyBranch` or `FamilyBuffer` instead of one exported
 constant per planner edge case.
+Destination and output leaf codes now follow the same family-first contract:
+recipes still return exact typed `output_*` and `destination_*` details, while
+public callers match `FamilyDestination` for stable handling.
 
 ## Release gate
 
