@@ -92,15 +92,40 @@ func codecSpecFromSourceShape(shape shape.Spec) codec.CodecSpec {
 		ID:   shape.Codec,
 		Type: shape.MediaKind,
 		Parameters: av.CodecParameters{
-			ID:           shape.Codec,
-			Type:         shape.MediaKind,
-			SampleRate:   shape.SampleRate,
-			Channels:     shape.Channels,
-			Width:        shape.Width,
-			Height:       shape.Height,
-			PixelFormat:  shape.PixelFormat,
-			SampleFormat: shape.SampleFormat,
+			ID:            shape.Codec,
+			Type:          shape.MediaKind,
+			ClockRate:     sourceShapeClockRate(shape),
+			SampleRate:    shape.SampleRate,
+			Channels:      shape.Channels,
+			ChannelLayout: sourceShapeChannelLayout(shape),
+			Width:         shape.Width,
+			Height:        shape.Height,
+			PixelFormat:   shape.PixelFormat,
+			SampleFormat:  shape.SampleFormat,
 		},
+	}
+}
+
+func sourceShapeClockRate(spec shape.Spec) uint32 {
+	if spec.SampleRate > 0 {
+		return uint32(spec.SampleRate)
+	}
+	switch spec.MediaKind {
+	case av.MediaVideo:
+		return 90000
+	default:
+		return 0
+	}
+}
+
+func sourceShapeChannelLayout(spec shape.Spec) string {
+	switch spec.Channels {
+	case codec.Mono:
+		return "mono"
+	case codec.Stereo:
+		return "stereo"
+	default:
+		return ""
 	}
 }
 
@@ -184,11 +209,9 @@ func declaredSourceStream(input InputSpec, spec shape.Spec) av.Stream {
 	return stream
 }
 
-// fillStreamCodecParameters overlays a goav.Codec(...) input declaration onto
-// a custom source's stream facts: the declared shape stays authoritative, the
-// codec spec's parameters fill only the facts the shape left open — so
-// goav.Codec(codec.Opus()) gives a codec-only fixture its 48kHz/stereo facts
-// instead of being silently ignored.
+// fillStreamCodecParameters overlays shape-derived codec parameters onto a
+// declared source stream: the declared stream stays authoritative, and the
+// source shape fills only facts the stream left open.
 func fillStreamCodecParameters(stream *av.Stream, spec codec.CodecSpec) {
 	if spec.ID != "" && stream.Codec.ID != "" && spec.ID != stream.Codec.ID {
 		return

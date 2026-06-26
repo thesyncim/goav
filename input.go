@@ -17,12 +17,13 @@ import (
 )
 
 // InputSpec is one declared job input: a file, URI, custom source, or source
-// provider, plus the optional name, MIME, and codec facts the planner uses
+// provider, plus the optional name and MIME facts the planner uses
 // before opening it. Construct one with FileInput, URIInput, Source, or
-// Input; configure it with options (Name, MIME, Metadata, Codec) and decorate
-// the opened source with WrapSource. The zero value is intentionally not a
-// valid input; construct input specs with FileInput, URIInput, Source, or
-// Input.
+// Input; configure it with options (Name, MIME, Metadata) and decorate the
+// opened source with WrapSource. Packet/frame codec facts come from a custom
+// Source or provider SourceShape declaration. The zero value is intentionally
+// not a valid input; construct input specs with FileInput, URIInput, Source,
+// or Input.
 type InputSpec struct {
 	origin   inputSpecOrigin
 	input    format.Input
@@ -82,31 +83,12 @@ func WrapSource(spec InputSpec, wrap func(pipeline.Source) pipeline.Source) Inpu
 	return spec
 }
 
-// inputOptionValue configures an input value (FileInput, URIInput, Source, Input,
-// or InputSpec.With): Codec declares the stream's codec, and the
-// direction-agnostic media options (Name, MIME, Metadata) satisfy it too. It
-// is sealed — only goav option constructors implement it.
+// inputOptionValue configures an input value (FileInput, URIInput, Source,
+// Input, or InputSpec.With). The direction-agnostic media options (Name, MIME,
+// Metadata) satisfy it. It is sealed — only goav option constructors implement
+// it.
 type inputOptionValue interface {
 	applyInput(*InputSpec)
-}
-
-// inputOption is the concrete input-only option (Codec).
-type inputOption func(*InputSpec)
-
-func (o inputOption) applyInput(spec *InputSpec) {
-	if spec != nil && o != nil {
-		o(spec)
-	}
-}
-
-// Codec declares the input's codec when probing cannot discover it — typical
-// for live receives where the transport negotiated the codec out of band. It
-// is input-only: destinations carry container facts (Format, MIME), never a
-// stream codec.
-func Codec(spec codec.CodecSpec) inputOptionValue {
-	return inputOption(func(input *InputSpec) {
-		input.codec = cloneCodecSpec(spec)
-	})
 }
 
 // With returns a copy of the input with the options applied — the same option

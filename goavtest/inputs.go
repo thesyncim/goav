@@ -10,6 +10,7 @@ import (
 
 	"github.com/thesyncim/goav"
 	"github.com/thesyncim/goav/av"
+	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/shape"
 	"github.com/thesyncim/goav/source"
 )
@@ -125,7 +126,7 @@ func Packets(codecID av.CodecID, packets ...av.Packet) goav.InputSpec {
 func packetSourceShape(codecID av.CodecID, media av.MediaType) shape.Spec {
 	switch codecID {
 	case av.CodecOpus:
-		return shape.Packet(media, codecID, shape.Audio(0, 0, av.SampleFormatS16))
+		return shape.Packet(media, codecID, shape.Audio(48_000, codec.Stereo, av.SampleFormatS16))
 	default:
 		return shape.Packet(media, codecID)
 	}

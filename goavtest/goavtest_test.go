@@ -157,7 +157,7 @@ func TestCodecRoundTripIsByteFaithful(t *testing.T) {
 		packets = append(packets, *packet)
 	}
 	decoded := goavtest.NewCollector()
-	err = goav.From(goavtest.Packets(av.CodecOpus, packets...).With(goav.Codec(codec.Opus(codec.Channels(1))))).
+	err = goav.From(goavtest.Packets(av.CodecOpus, packets...)).
 		Audio().Decode().
 		To(decoded.Sink()).
 		UseRuntime(goavtest.Runtime()).

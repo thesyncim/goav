@@ -186,6 +186,9 @@ Exported `goav.MediaOption` was removed while keeping `Name`, `MIME`, and
 `Metadata` usable as shared input/destination options.
 Exported `goav.InputOption` and `goav.DestinationOption` were also removed;
 option constructors still pass directly to recipe constructors and `.With(...)`.
+Exported `goav.Codec` was removed as a separate input-option spelling; custom
+sources and source providers now declare input codec facts through their
+`shape.Spec`/`SourceShape` instead of a root option overlay.
 Exported `goav.InputStream` was removed while keeping
 `InputSpec.Stream(stream)` as the branch attach anchor for app-owned dynamic
 tracks.

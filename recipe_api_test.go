@@ -3667,15 +3667,13 @@ func TestRecipeAndRejectsMultipleFileInputs(t *testing.T) {
 }
 
 // TestMediaOptionsConfigureBothDirections pins the direction-agnostic option
-// vocabulary: the SAME goav.MIME / goav.Name / goav.Metadata values configure
-// input and destination constructors, Codec stays input-typed, and Format
-// stays destination-typed.
+// vocabulary: the same goav.MIME / goav.Name / goav.Metadata values configure
+// input and destination constructors, while Format stays destination-typed.
 func TestMediaOptionsConfigureBothDirections(t *testing.T) {
 	job := goav.From(goav.FileInput("in", strings.NewReader(""),
 		goav.Name("mic"),
 		goav.MIME("audio/ogg"),
 		goav.Metadata(av.Metadata{"session": "demo"}),
-		goav.Codec(codec.Opus()),
 	)).Copy().To(goav.Write("out", io.Discard,
 		goav.Name("recording.ogg"),
 		goav.MIME("audio/ogg"),
@@ -3687,7 +3685,7 @@ func TestMediaOptionsConfigureBothDirections(t *testing.T) {
 	if len(intent.Inputs) != 1 || len(intent.Destinations) != 1 {
 		t.Fatalf("intent: %+v", intent)
 	}
-	if intent.Inputs[0].Name != "mic" || intent.Inputs[0].MIMEType != "audio/ogg" || intent.Inputs[0].Codec.ID != av.CodecOpus {
+	if intent.Inputs[0].Name != "mic" || intent.Inputs[0].MIMEType != "audio/ogg" {
 		t.Fatalf("input intent: %+v", intent.Inputs[0])
 	}
 	if intent.Destinations[0].Name != "recording.ogg" || intent.Destinations[0].MIMEType != "audio/ogg" || intent.Destinations[0].Format != av.FormatOgg {

@@ -165,7 +165,6 @@ goav.Branch
 goav.BranchSpec
 goav.BuildError
 goav.Chain
-goav.Codec
 goav.Composite
 goav.Custom
 goav.Destination

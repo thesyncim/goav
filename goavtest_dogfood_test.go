@@ -17,7 +17,6 @@ import (
 
 	"github.com/thesyncim/goav"
 	"github.com/thesyncim/goav/av"
-	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/goavtest"
 )
 
@@ -129,8 +128,7 @@ func controlWhenRunning(ctx context.Context, task interface {
 func TestFakeDecodeFeedsRealResample(t *testing.T) {
 	ctx := context.Background()
 	out := goavtest.NewCollector()
-	input := goavtest.Packets(av.CodecOpus, av.Packet{Payload: av.Buffer{Bytes: []byte{1, 2, 3}, Ownership: av.BufferImmutable}}).
-		With(goav.Codec(codec.Opus()))
+	input := goavtest.Packets(av.CodecOpus, av.Packet{Payload: av.Buffer{Bytes: []byte{1, 2, 3}, Ownership: av.BufferImmutable}})
 	err := goav.From(input).
 		Audio().Decode().
 		Resample(44_100, 1).

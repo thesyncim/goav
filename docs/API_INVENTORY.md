@@ -11,7 +11,7 @@ Source: `testdata/api_surface.txt`.
 
 | Package | Initial identifiers | Current identifiers |
 | --- | ---: | ---: |
-| `goav` | 134 | 54 |
+| `goav` | 134 | 53 |
 | `control` | 0 | 22 |
 | `errcode` | 147 | 133 |
 | `graphrender` | 9 | 9 |

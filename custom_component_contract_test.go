@@ -142,15 +142,17 @@ func TestSourcePushDefaultsAndDeliveryResults(t *testing.T) {
 	}
 }
 
-func TestCustomSourceShapeCodecOverlayAndLifecycle(t *testing.T) {
+func TestCustomSourceShapeDeclaresCodecFactsAndLifecycle(t *testing.T) {
 	var ran bool
 	input := Source("mic",
-		shape.Packet(av.MediaAudio, "", shape.Realtime(true)),
+		shape.Packet(av.MediaAudio, av.CodecOpus,
+			shape.Audio(48_000, codec.Mono, ""),
+			shape.Realtime(true),
+		),
 		func(context.Context, SourcePush) error {
 			ran = true
 			return nil
 		},
-		Codec(codec.Opus(codec.Channels(codec.Mono))),
 	)
 
 	spec, ok := customSourceShape(input)
@@ -171,7 +173,7 @@ func TestCustomSourceShapeCodecOverlayAndLifecycle(t *testing.T) {
 		stream.Codec.Channels != codec.Mono ||
 		stream.Codec.ChannelLayout != "mono" ||
 		stream.Codec.ClockRate != 48000 {
-		t.Fatalf("stream after codec overlay = %+v", stream)
+		t.Fatalf("stream from source shape = %+v", stream)
 	}
 	probe := customSourceProbeResult(input)
 	if probe.Score != 100 || probe.Reason == "" || !reflect.DeepEqual(probe.Streams, streams) {
@@ -237,7 +239,7 @@ func TestCustomSourceShapeCodecOverlayAndLifecycle(t *testing.T) {
 	mismatched := av.Stream{Codec: av.CodecParameters{ID: av.CodecOpus, SampleRate: 48000}}
 	fillStreamCodecParameters(&mismatched, codec.VP8(codec.ClockRate(90000)))
 	if mismatched.Codec.ID != av.CodecOpus || mismatched.Codec.ClockRate != 0 {
-		t.Fatalf("mismatched codec overlay changed stream: %+v", mismatched.Codec)
+		t.Fatalf("mismatched codec facts changed stream: %+v", mismatched.Codec)
 	}
 	if got := customSourceNodeName(InputSpec{name: "named"}); got != "named" {
 		t.Fatalf("customSourceNodeName without source = %q, want named", got)
@@ -925,7 +927,7 @@ func TestInputAndProviderSourceContracts(t *testing.T) {
 	if zero.origin != inputSpecOriginZero {
 		t.Fatalf("zero InputSpec origin = %v, want zero", zero.origin)
 	}
-	renamedZero := zero.With(Name("input"), Codec(codec.Opus()))
+	renamedZero := zero.With(Name("input"))
 	if renamedZero.origin != inputSpecOriginZero {
 		t.Fatalf("zero InputSpec.With origin = %v, want zero", renamedZero.origin)
 	}

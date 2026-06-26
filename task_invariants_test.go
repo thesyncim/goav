@@ -302,7 +302,7 @@ func TestRunOneShotPreservesRunAndCloseFailures(t *testing.T) {
 	abortErr := errors.New("upload abort failed")
 	writer := &transactionalTestWriter{abortErr: abortErr}
 	err := goav.From(goav.Source("broken-audio",
-		shape.Packet(av.MediaAudio, av.CodecOpus),
+		shape.Packet(av.MediaAudio, av.CodecOpus, shape.Audio(48_000, codec.Stereo, "")),
 		func(_ context.Context, push goav.SourcePush) error {
 			packet := av.Packet{
 				Payload: av.Buffer{Bytes: []byte{1}, Ownership: av.BufferImmutable},
@@ -313,7 +313,6 @@ func TestRunOneShotPreservesRunAndCloseFailures(t *testing.T) {
 			}
 			return runErr
 		},
-		goav.Codec(codec.Opus()),
 	)).
 		Audio().Copy().
 		To(transactionalWriterDestination(writer)).
