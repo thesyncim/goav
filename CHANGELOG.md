@@ -68,6 +68,8 @@ methodology changes, and migration notes.
   specs and destination facts before graph locking and patch planning.
 - Captured runtime attach branch specs and validated destinations as one
   per-branch input record before patch planning.
+- Captured each runtime attach branch's resolved source anchor and graph
+  snapshot in the same planning input used by patch lowering.
 - Routed runtime rebranch through an explicit input handoff that captures
   replacement specs, switch policy, and old-branch disposition before mutation.
 - Routed runtime detach through an explicit input handoff that captures
