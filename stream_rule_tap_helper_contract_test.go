@@ -1,6 +1,7 @@
 package goav
 
 import (
+	"context"
 	"errors"
 	"testing"
 
@@ -116,6 +117,54 @@ func TestHandleStreamAddedGuardContracts(t *testing.T) {
 		buildErr.Code != errcode.StreamRuleInvalid ||
 		buildErr.Reason != "discovered stream has no id" {
 		t.Fatalf("missing-id cause = %v", event.Cause)
+	}
+}
+
+func TestStreamRuleAttachInputCapturesTemplatedBranch(t *testing.T) {
+	task := &task{rules: &taskStreamRules{
+		source: "demux",
+		domain: shape.DomainPacket,
+	}}
+	rule := streamRule{
+		branches: []BranchSpec{
+			Branch("late").
+				Copy().
+				To(Sink(SinkFunc("late-sink", func(context.Context, Message) error { return nil }))),
+		},
+	}
+	stream := av.Stream{
+		ID:   "audio",
+		Type: av.MediaAudio,
+		Codec: av.CodecParameters{
+			ID:   av.CodecOpus,
+			Type: av.MediaAudio,
+		},
+	}
+
+	input, err := task.streamRuleAttachInput(rule, stream)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rule.branches[0].name = "mutated"
+	rule.branches[0].operations = nil
+	rule.branches[0].destinations = nil
+
+	if input.branchNames != "late" ||
+		input.attach.name != "late-audio" ||
+		len(input.attach.specs) != 1 ||
+		len(input.attach.destinations) != 1 ||
+		len(input.attach.destinations[0]) != 1 {
+		t.Fatalf("stream rule attach input = %+v, want captured templated branch", input)
+	}
+	spec := input.attach.specs[0]
+	if spec.name != "late-audio" ||
+		spec.source.from != "demux" ||
+		spec.source.policy != pipeline.RouteByStream ||
+		spec.source.stream == nil ||
+		spec.source.stream.ID != "audio" ||
+		len(spec.operations) != 1 ||
+		spec.operations[0].Kind != plan.OpCopy {
+		t.Fatalf("stream rule attach spec = %+v, want discovered-stream source and copy operation", spec)
 	}
 }
 

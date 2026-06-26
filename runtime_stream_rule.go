@@ -36,6 +36,11 @@ type streamRuleAttachment struct {
 	attachment *runtimeAttachment
 }
 
+type streamRuleAttachInput struct {
+	attach      runtimeAttachInput
+	branchNames string
+}
+
 // installStreamRules binds the job's declared rules to the built task and
 // starts the reaction loop: an internal Watch subscription filtered to stream
 // added/removed events. The loop ends when the task closes (the graph closes
@@ -97,18 +102,32 @@ func (t *task) handleStreamAdded(event av.Event) {
 		if t.streamRuleAttached(stream.ID, index) {
 			continue
 		}
-		specs, err := t.streamRuleBranchSpecs(rule, stream)
+		input, err := t.streamRuleAttachInput(rule, stream)
 		if err != nil {
-			t.publishStreamRuleError(stream.ID, streamRuleBranchNames(rule), err)
+			t.publishStreamRuleError(stream.ID, input.branchNames, err)
 			continue
 		}
-		attachment, err := t.Attach(ctx, specs...)
+		attachment, err := t.attachRuntimeBranches(ctx, input.attach)
 		if err != nil {
-			t.publishStreamRuleError(stream.ID, streamRuleBranchNames(rule), err)
+			t.publishStreamRuleError(stream.ID, input.branchNames, err)
 			continue
 		}
 		t.trackStreamRuleAttachment(stream.ID, index, attachment)
 	}
+}
+
+func (t *task) streamRuleAttachInput(rule streamRule, stream av.Stream) (streamRuleAttachInput, error) {
+	input := streamRuleAttachInput{branchNames: streamRuleBranchNames(rule)}
+	specs, err := t.streamRuleBranchSpecs(rule, stream)
+	if err != nil {
+		return input, err
+	}
+	attach, err := runtimeAttachInputFromBranchSpecs(specs)
+	if err != nil {
+		return input, err
+	}
+	input.attach = attach
+	return input, nil
 }
 
 // streamRuleBranchSpecs templates one rule's branches for a matched stream

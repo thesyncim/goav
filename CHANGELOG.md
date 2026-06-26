@@ -70,6 +70,8 @@ methodology changes, and migration notes.
   replacement specs, switch policy, and old-branch disposition before mutation.
 - Routed runtime detach through an explicit input handoff that captures
   attachment target and disposition before closing or stopping runtime branches.
+- Routed dynamic stream-rule attach reactions through the same runtime attach
+  input handoff before mutating the live graph.
 - Moved normal media-planner input binding and selected-stream resolution onto
   recipe IR input facts instead of concrete input attachments.
 - Moved copy-branch source-shape planning onto recipe IR input facts.
