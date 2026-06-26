@@ -540,7 +540,7 @@ func TestRuntimeBuilderExplicitGraphWithEventCapacity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	events := task.Events()
+	events := task.Watch().Events()
 	if err := task.Run(context.Background()); err != nil {
 		t.Fatal(err)
 	}

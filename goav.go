@@ -20,7 +20,6 @@ package goav
 import (
 	"context"
 
-	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/control"
 	"github.com/thesyncim/goav/inspect"
 	"github.com/thesyncim/goav/lifecycle"
@@ -49,7 +48,7 @@ type Task interface {
 
 // LiveTask is the full task capability set produced by the built-in runtime.
 // Accept this only when an API needs inspection, runtime mutation, controls, or
-// events; otherwise accept Task.
+// event watches; otherwise accept Task.
 type LiveTask interface {
 	Task
 	// Explain reports the planned workflow before any resource opens: inputs,
@@ -77,16 +76,13 @@ type LiveTask interface {
 	// target node on its serial worker — the control-plane entry point for live
 	// switching (a selector), keyframe requests, and flushes.
 	Control(context.Context, control.Control) error
-	// Events returns an unfiltered event subscription channel. Prefer Watch
-	// when callers need filters or explicit Subscription.Close ownership.
-	Events() <-chan av.Event
 	// Watch returns an independent, filtered subscription to the task's event
 	// stream. Filters AND together; with zero filters every event is delivered.
 	// Each subscription owns a buffered channel sized like the task's event
 	// buffer: when a watcher falls behind and its buffer fills, new events are
 	// dropped for that watcher only — the data plane and other watchers never
 	// block on a slow consumer. Subscription channels close when the task closes
-	// or Subscription.Close unsubscribes them. An unfiltered Watch() is the
-	// Events equivalent with an explicit subscription handle.
+	// or Subscription.Close unsubscribes them. Use an unfiltered Watch() when
+	// every event should be delivered.
 	Watch(filters ...inspect.EventFilter) inspect.Subscription
 }

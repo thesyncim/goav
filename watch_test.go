@@ -288,15 +288,15 @@ func TestWatchSubscribePublishDistributeConcurrently(t *testing.T) {
 	}
 }
 
-func TestEventsReturnsIndependentUnfilteredSubscription(t *testing.T) {
+func TestUnfilteredWatchReturnsIndependentSubscription(t *testing.T) {
 	graph := newWatchTestGraph(8)
 	task := newTask(graph, nil)
-	events := task.Events()
+	events := task.Watch().Events()
 	watch := task.Watch().Events()
 
 	graph.events <- av.Event{Type: av.EventStats, Reason: "one"}
 	if got := recvWatchEvent(t, events); got.Type != av.EventStats || got.Reason != "one" {
-		t.Fatalf("Events event = %+v, want stats one", got)
+		t.Fatalf("unfiltered watch event = %+v, want stats one", got)
 	}
 	if got := recvWatchEvent(t, watch); got.Type != av.EventStats || got.Reason != "one" {
 		t.Fatalf("Watch event = %+v, want stats one", got)

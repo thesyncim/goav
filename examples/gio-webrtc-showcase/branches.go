@@ -7,7 +7,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/thesyncim/goav/component"
 	"github.com/thesyncim/goav/control"
 
 	"github.com/pion/rtcp"
@@ -437,12 +436,6 @@ func (s *trackSampleSink) Handle(_ context.Context, msg *pipeline.Message) error
 
 func (s *trackSampleSink) Close() error {
 	return nil
-}
-
-func discardSink(name string) pipeline.Sink {
-	return component.SinkFunc(name, func(context.Context, component.Message) error {
-		return nil
-	})
 }
 
 func normalizeBranch(spec *branchSpec) error {

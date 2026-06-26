@@ -212,7 +212,7 @@ func TestRecipeRTPAV1CodecChangedDropsUntilSync(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	events := task.Events()
+	events := task.Watch().Events()
 	if err := task.Run(ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -302,7 +302,7 @@ func testRecipeRTPAV1CodecChangedReplacementStream(t *testing.T, oldIDTarget boo
 	if err != nil {
 		t.Fatal(err)
 	}
-	events := task.Events()
+	events := task.Watch().Events()
 	if err := task.Run(ctx); err != nil {
 		t.Fatal(err)
 	}

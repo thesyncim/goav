@@ -12,6 +12,7 @@ import (
 	"github.com/pion/rtcp"
 	"github.com/pion/webrtc/v4"
 	"github.com/thesyncim/goav"
+	"github.com/thesyncim/goav/inspect"
 	"github.com/thesyncim/goav/rtpav"
 	"github.com/thesyncim/goav/webrtcav"
 )
@@ -145,11 +146,12 @@ func (s *session) runTask(kind string, task goav.LiveTask) {
 }
 
 func (s *session) drainTaskEvents(task interface {
-	Events() <-chan av.Event
+	Watch(...inspect.EventFilter) inspect.Subscription
 }) {
+	events := task.Watch().Events()
 	for {
 		select {
-		case _, ok := <-task.Events():
+		case _, ok := <-events:
 			if !ok {
 				return
 			}

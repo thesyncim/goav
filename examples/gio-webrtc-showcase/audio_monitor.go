@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 
-	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/pipeline"
 )
 
@@ -37,22 +36,4 @@ func (s *audioMonitorSink) Close() error {
 		return s.native.Close()
 	}
 	return nil
-}
-
-func cloneAudioFrameForPlayback(frame *av.Frame) *av.Frame {
-	if frame == nil {
-		return nil
-	}
-	clone := *frame
-	if frame.Audio != nil {
-		audio := *frame.Audio
-		clone.Audio = &audio
-	}
-	clone.Planes = make([]av.Plane, len(frame.Planes))
-	for i := range frame.Planes {
-		clone.Planes[i] = frame.Planes[i]
-		clone.Planes[i].Buffer.Bytes = append([]byte(nil), frame.Planes[i].Buffer.Bytes...)
-		clone.Planes[i].Buffer.Ownership = av.BufferOwned
-	}
-	return &clone
 }

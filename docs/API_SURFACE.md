@@ -52,7 +52,7 @@ LiveTask mutation: Attach/Detach(lifecycle.DrainBranch|AbortBranch); Attachment.
          (lifecycle.SwitchAt(lifecycle.NextFrame|lifecycle.NextKeyframe|lifecycle.AtMediaTime),
           lifecycle.DrainOldBranch|lifecycle.AbortOldBranch)
 LiveTask control: Control(control.Control values from typed constructors, .AtTap)
-LiveTask events: Watch(inspect.EventFilter), Events; inspect.Subscribe/Snapshot/Stats/Render bridge task capabilities
+LiveTask events: Watch(inspect.EventFilter); inspect.Subscribe/Snapshot/Stats/Render bridge task capabilities
 goav.New(goavruntime.Option...) -> (*Runtime, error); goav.MustNew(...) -> bare Runtime; bundle.MustNew(...) -> bundled Runtime; job.UseRuntime(rt)
 errors: *goav.BuildError{Family: errcode.FamilyX, Code: errcode.X, Fields: []goav.Detail, Fixes: []goav.Fix, ...} matched with errors.As/Is; branch on Family first; Detail(key) for typed facts
 ```
@@ -286,9 +286,9 @@ against the constructors in `input.go`/`provider.go`/`source.go`,
 - **Copy**: `.Copy()` is the recipe spelling for packet-preserving passthrough.
   `codec.Copy()` is the internal `CodecSpec` value used by lowerers and helper
   code; user-facing recipes should write the verb.
-- **Watch vs Events**: `Watch(filters...)` gives each consumer an independent
-  filtered subscription with an explicit close handle. `Events()` is the
-  unfiltered watch convenience. Each subscription sheds for itself only.
+- **Watch**: `Watch(filters...)` gives each consumer an independent filtered
+  subscription with an explicit close handle. An unfiltered `Watch()` observes
+  every task event. Each subscription sheds for itself only.
   Runtime branch lifecycle events
   (`av.EventBranchAttached`, `av.EventBranchDetached`) are published through
   `Watch`, with attachment id/name metadata and a detach disposition on

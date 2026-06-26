@@ -15,15 +15,15 @@ import (
 	"github.com/thesyncim/goav/snapshot"
 )
 
-func TestTaskEventsUsesIndependentWatchSubscription(t *testing.T) {
+func TestTaskWatchUsesIndependentSubscription(t *testing.T) {
 	graph := newWatchTestGraph(1)
 	task := newTask(graph, nil)
 	task.rules = &taskStreamRules{}
 	defer task.Close()
 
-	events := task.Events()
+	events := task.Watch().Events()
 	if events == (<-chan av.Event)(graph.events) {
-		t.Fatal("Events should return an isolated watch subscription")
+		t.Fatal("Watch should return an isolated subscription")
 	}
 
 	graph.events <- av.Event{Type: av.EventStats, StreamID: "video"}

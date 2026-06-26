@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/pion/rtp"
-	"github.com/thesyncim/goav"
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/format"
