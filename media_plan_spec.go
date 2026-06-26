@@ -367,18 +367,18 @@ func mediaPlanPacketCopyStream(state *recipeCompileState) (streamIntent, bool, b
 	if state == nil {
 		return streamIntent{}, false, false
 	}
-	return mediaPlanPacketCopyIntentStream(state.jobPresent, state.intent)
+	return mediaPlanPacketCopyRecipeStream(state.jobPresent, state.recipe)
 }
 
-func mediaPlanPacketCopyIntentStream(jobPresent bool, intent intent) (streamIntent, bool, bool) {
+func mediaPlanPacketCopyRecipeStream(jobPresent bool, recipe recipeir.Recipe) (streamIntent, bool, bool) {
 	if !jobPresent {
 		return streamIntent{}, false, false
 	}
-	switch len(intent.Streams) {
+	switch len(recipe.Streams) {
 	case 0:
 		return streamIntent{}, false, true
 	case 1:
-		stream := intent.Streams[0]
+		stream := streamIntentFromRecipeIR(recipe.Streams[0])
 		if streamIntentPacketCopyOnly(stream) {
 			return stream, true, true
 		}
@@ -426,10 +426,10 @@ func mediaPlanDecodeStreamLowererForState(state *recipeCompileState) (graphPlanL
 }
 
 func mediaPlanDecodeStreamInputFromCompileState(state *recipeCompileState) (mediaPlanDecodeStreamInput, bool) {
-	if state == nil || !state.jobPresent || len(state.intent.Streams) != 1 {
+	if state == nil || !state.jobPresent || len(state.recipe.Streams) != 1 {
 		return mediaPlanDecodeStreamInput{}, false
 	}
-	stream := cloneStreamIntent(state.intent.Streams[0])
+	stream := streamIntentFromRecipeIR(state.recipe.Streams[0])
 	inputs := append([]InputSpec(nil), state.inputAttachments...)
 	outputs := cloneDestinationSpecs(state.outputAttachments)
 	if !mediaPlanDecodeStreamShape(stream, outputs, mediaPlanStreamInputDomain(inputs, stream) == shape.DomainFrame) {

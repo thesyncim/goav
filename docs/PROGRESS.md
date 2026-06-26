@@ -127,10 +127,11 @@ Compatibility pins:
 
 ## Remaining Work
 
-- Finish folding residual `streamIntent` validation and lowerer-selection readers
-  into the operation/work-plan model. Normal branch/copy planning now enters
-  through recipe IR; Explain stream rows, adapter requirements, and mux
-  compatibility already read codec facts from `WorkPlan` operations.
+- Finish folding residual `streamIntent` validation readers into the
+  operation/work-plan model. Normal branch/copy planning and single-stream
+  lowerer selection now enter through recipe IR; Explain stream rows, adapter
+  requirements, and mux compatibility already read codec facts from `WorkPlan`
+  operations.
 - Expand `lifecycle.SwitchAt` boundaries beyond frame/keyframe/media-time only if future
   live-control workflows prove they need additional switch points.
 - Finish the full time-shape story: pipeline-wide clock service, A/V sink sync,

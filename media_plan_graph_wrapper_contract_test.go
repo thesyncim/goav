@@ -9,6 +9,7 @@ import (
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/errcode"
+	"github.com/thesyncim/goav/internal/recipeir"
 	"github.com/thesyncim/goav/plan"
 	"github.com/thesyncim/goav/shape"
 )
@@ -53,7 +54,10 @@ func TestMediaPlanPacketCopyStreamLowererRefusalContracts(t *testing.T) {
 	}
 	copyState := &recipeCompileState{
 		jobPresent: true,
-		intent:     intent{Streams: []streamIntent{copyOnly}},
+		recipe: recipeir.Recipe{
+			Kind:    recipeir.KindJob,
+			Streams: []recipeir.Stream{recipeIRStreamFromIntent(copyOnly)},
+		},
 	}
 	stream, selected, ok := mediaPlanPacketCopyStream(copyState)
 	if !ok || !selected || stream.Name != "audio" {

@@ -281,11 +281,11 @@ func TestSingleStreamGraphLowerersConsumeHandoffs(t *testing.T) {
 			To(Write("output.ivf", &out))
 
 		state := recipeCompileStateFromSnapshot(newJobRecipeSnapshot(job), recipeCompileOptions{})
+		state.intent.Streams = nil
 		input, ok := mediaPlanPacketCopyStreamInputFromCompileState(&state)
 		if !ok {
 			t.Fatal("packet-copy graph lowerer input was not selected")
 		}
-		state.intent.Streams = nil
 		state.inputAttachments = nil
 		state.outputAttachments = nil
 
@@ -314,11 +314,11 @@ func TestSingleStreamGraphLowerersConsumeHandoffs(t *testing.T) {
 			To(Sink(SinkFunc("frames", func(context.Context, Message) error { return nil })))
 
 		state := recipeCompileStateFromSnapshot(newJobRecipeSnapshot(job), recipeCompileOptions{})
+		state.intent.Streams = nil
 		input, ok := mediaPlanDecodeStreamInputFromCompileState(&state)
 		if !ok {
 			t.Fatal("decode graph lowerer input was not selected")
 		}
-		state.intent.Streams = nil
 		state.inputAttachments = nil
 		state.outputAttachments = nil
 
@@ -999,6 +999,39 @@ func TestSingleStreamGraphLowerersUseHandoffs(t *testing.T) {
 		renderBody := sourceFunctionBody(t, source, fn)
 		if strings.Contains(renderBody, "*recipeCompileState") || strings.Contains(renderBody, "state.") {
 			t.Fatalf("%s should consume captured input instead of compile state", fn)
+		}
+	}
+	packetInputBody := sourceFunctionBody(t, source, "mediaPlanPacketCopyStreamInputFromCompileState")
+	if !strings.Contains(packetInputBody, "mediaPlanPacketCopyStream(state)") {
+		t.Fatal("mediaPlanPacketCopyStreamInputFromCompileState should select packet-copy streams through the recipe handoff helper")
+	}
+	packetStreamBody := sourceFunctionBody(t, source, "mediaPlanPacketCopyStream")
+	if !strings.Contains(packetStreamBody, "mediaPlanPacketCopyRecipeStream(state.jobPresent, state.recipe)") {
+		t.Fatal("mediaPlanPacketCopyStream should select packet-copy streams from recipe IR")
+	}
+	packetRecipeBody := sourceFunctionBody(t, source, "mediaPlanPacketCopyRecipeStream")
+	if !strings.Contains(packetRecipeBody, "streamIntentFromRecipeIR(recipe.Streams[0])") {
+		t.Fatal("mediaPlanPacketCopyRecipeStream should convert the selected recipe stream at the boundary")
+	}
+	decodeInputBody := sourceFunctionBody(t, source, "mediaPlanDecodeStreamInputFromCompileState")
+	if !strings.Contains(decodeInputBody, "len(state.recipe.Streams) != 1") ||
+		!strings.Contains(decodeInputBody, "streamIntentFromRecipeIR(state.recipe.Streams[0])") {
+		t.Fatal("mediaPlanDecodeStreamInputFromCompileState should select decode streams from recipe IR")
+	}
+	for name, body := range map[string]string{
+		"packet stream": packetStreamBody,
+		"packet recipe": packetRecipeBody,
+		"decode input":  decodeInputBody,
+	} {
+		for _, forbidden := range []string{
+			"state.intent.Streams",
+			"state.intent",
+			"intent.Streams",
+			"mediaPlanPacketCopyIntentStream",
+		} {
+			if strings.Contains(body, forbidden) {
+				t.Fatalf("%s still selects single-stream lowerers through legacy intent with %q", name, forbidden)
+			}
 		}
 	}
 }

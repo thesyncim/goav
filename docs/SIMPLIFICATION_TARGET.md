@@ -120,7 +120,8 @@ solver-updated operation lists from the captured recipe IR instead of the
 legacy intent mirror, with no fallback to rebuilding from that mirror.
 Multi-stream job graph lowering now enters through a
 captured handoff before branch-compose graph construction, and single-stream
-packet-copy and decode graph lowerers now do the same before graph construction.
+packet-copy and decode graph lowerers now select streams from recipe IR before
+graph construction.
 Explicit branch-composition graph lowering also now uses a captured handoff
 with cloned branch-compose plan data. The compile state no longer stores the
 concrete join plan; graph-plan construction passes the selected join lowerer
