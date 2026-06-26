@@ -89,7 +89,8 @@ func newAttachPlan() *attachPlan {
 // registerBranch records the branch's apply context — anchor, route policy,
 // buffer, and the prepared stages it owns — before names are reserved, so a
 // later planning failure can still close everything the branch opened.
-func (p *attachPlan) registerBranch(spec BranchSpec, from string, steps []attachStep) int {
+func (p *attachPlan) registerBranch(input runtimeAttachBranchInput, from string, steps []attachStep) int {
+	spec := input.spec
 	policy := spec.source.policy
 	if policy == "" {
 		policy = pipeline.RouteAll
@@ -125,7 +126,9 @@ func (p *attachPlan) closeOwned() {
 // build path compiles — opening the stages and destinations each step needs
 // against the live anchor shape. Destinations open before any graph mutation;
 // on failure every stage the walk owned is closed.
-func (t *task) planAttachBranchSteps(ctx context.Context, spec BranchSpec, destinations []attachDestination, anchor snapshot.Tap, group *runtimeAttachGroup) ([]attachStep, error) {
+func (t *task) planAttachBranchSteps(ctx context.Context, input runtimeAttachBranchInput, anchor snapshot.Tap, group *runtimeAttachGroup) ([]attachStep, error) {
+	spec := input.spec
+	destinations := input.destinations
 	branchName := firstNonEmpty(spec.name, "branch")
 	currentShape := runtimeBranchAnchorShape(anchor)
 	if spec.media != "" && currentShape.MediaKind != "" {
@@ -444,7 +447,8 @@ func (t *task) planAttachMuxDestinationStep(ctx context.Context, branchName stri
 // and the attach group, then emits the branch's slice of the patch: its
 // operations, taps, destinations, and edges, with the prepared components
 // registered under their planned nodes.
-func (p *attachPlan) finalizeBranch(index int, spec BranchSpec, destinations []attachDestination, anchor snapshot.Tap, graphSpec pipeline.Spec, group *runtimeAttachGroup, steps []attachStep) error {
+func (p *attachPlan) finalizeBranch(index int, input runtimeAttachBranchInput, anchor snapshot.Tap, graphSpec pipeline.Spec, group *runtimeAttachGroup, steps []attachStep) error {
+	destinations := input.destinations
 	branch := &p.branches[index]
 	name := branch.name
 	opStart := len(p.work.Operations)

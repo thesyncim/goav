@@ -447,6 +447,7 @@ func TestRuntimeAttachUsesGraphPatchBoundary(t *testing.T) {
 	for _, required := range []string{
 		"type runtimeGraphPatch struct",
 		"type runtimeAttachInput struct",
+		"type runtimeAttachBranchInput struct",
 		"func runtimeAttachInputFromBranchSpecs",
 		"func (t *task) attachRuntimeBranches",
 		"func (p *runtimeGraphPatch) addAnchor",
@@ -460,6 +461,7 @@ func TestRuntimeAttachUsesGraphPatchBoundary(t *testing.T) {
 		"func (t *task) applyAttachBranch",
 		"range spec.operations",
 		"operationSpecOutputShape",
+		"for i := range input.branches",
 		"patch.resetPlannedTaps()",
 		"patch.setWork(",
 		"patch.attachment(t, name)",
@@ -496,13 +498,12 @@ func TestRuntimeAttachInputCapturesBranchSpecs(t *testing.T) {
 	spec.source.tap = "other"
 
 	if input.name != "watch" ||
-		len(input.specs) != 1 ||
-		input.specs[0].name != "watch" ||
-		input.specs[0].source.tap != "pkts" ||
-		len(input.specs[0].operations) != 1 ||
-		len(input.specs[0].destinations) != 1 ||
-		len(input.destinations) != 1 ||
-		len(input.destinations[0]) != 1 {
+		len(input.branches) != 1 ||
+		input.branches[0].spec.name != "watch" ||
+		input.branches[0].spec.source.tap != "pkts" ||
+		len(input.branches[0].spec.operations) != 1 ||
+		len(input.branches[0].spec.destinations) != 1 ||
+		len(input.branches[0].destinations) != 1 {
 		t.Fatalf("runtime attach input = %+v, want captured branch spec and destinations", input)
 	}
 }
@@ -552,14 +553,13 @@ func TestRuntimeRebranchInputCapturesReplacementSpecsAndPolicy(t *testing.T) {
 		input.group.boundary != switchNextKeyframe ||
 		input.disposition != oldBranchDrain ||
 		input.attach.name != "next" ||
-		len(input.attach.specs) != 1 ||
-		input.attach.specs[0].name != "next" ||
-		input.attach.specs[0].source.tap != "pkts" ||
-		len(input.attach.destinations) != 1 ||
-		len(input.attach.destinations[0]) != 1 {
+		len(input.attach.branches) != 1 ||
+		input.attach.branches[0].spec.name != "next" ||
+		input.attach.branches[0].spec.source.tap != "pkts" ||
+		len(input.attach.branches[0].destinations) != 1 {
 		t.Fatalf("runtime rebranch input = %+v, want captured switch-gated replacement", input)
 	}
-	operations := input.attach.specs[0].operations
+	operations := input.attach.branches[0].spec.operations
 	if len(operations) != 2 ||
 		operations[0].Kind != plan.OpStage ||
 		operations[1].Kind != plan.OpCopy {

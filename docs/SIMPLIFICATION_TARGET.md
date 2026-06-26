@@ -117,6 +117,9 @@ work-plan rendering. The executable join lowerer still owns concrete arms and
 stages. Runtime attach/rebranch/detach and stream-rule attach/remove reactions
 now capture branch specs, destination facts, switch policy, attachment target,
 and disposition in explicit handoffs before graph locking and patch planning.
+Runtime attach inputs now carry each branch's spec and validated destinations as
+one branch record, so patch planning no longer coordinates parallel spec and
+destination arrays.
 The boundary is not complete until the remaining runtime mutation patch facts
 move into stable recipe or plan data.
 
