@@ -588,6 +588,53 @@ func TestDestinationContractsAndOpeners(t *testing.T) {
 	}
 }
 
+func TestDestinationOriginContracts(t *testing.T) {
+	typ := reflect.TypeOf(Destination{})
+	for i := 0; i < typ.NumField(); i++ {
+		if typ.Field(i).IsExported() {
+			t.Fatalf("Destination field %s is exported; use constructors instead", typ.Field(i).Name)
+		}
+	}
+
+	var zero Destination
+	if zero.origin != destinationOriginZero {
+		t.Fatalf("zero Destination origin = %v, want zero", zero.origin)
+	}
+	if _, err := destinationSpecFromDestination(zero); err == nil ||
+		!strings.Contains(err.Error(), "destination is empty") ||
+		!strings.Contains(err.Error(), "goav.Write") {
+		t.Fatalf("zero Destination error = %v, want constructor guidance", err)
+	}
+	withOptions := zero.With(Format(av.FormatOgg), Name("archive.ogg"))
+	if withOptions.origin != destinationOriginZero {
+		t.Fatalf("zero Destination.With origin = %v, want zero", withOptions.origin)
+	}
+	if _, err := destinationSpecFromDestination(withOptions); err == nil ||
+		!strings.Contains(err.Error(), "destination is empty") {
+		t.Fatalf("zero Destination.With error = %v, want unconstructed refusal", err)
+	}
+
+	custom := &componentDestination{name: "custom", writer: &componentWriteCloser{}}
+	writer := func(context.Context, provider.Info) (io.WriteCloser, error) {
+		return &componentWriteCloser{}, nil
+	}
+	for name, destination := range map[string]Destination{
+		"write":  Write("out.ogg", io.Discard),
+		"uri":    URI("file:///tmp/out.ogg"),
+		"sink":   Sink(SinkFunc("frames", func(context.Context, Message) error { return nil })),
+		"custom": Custom("custom", custom),
+		"writer": Writer("writer.ogg", writer),
+		"mux":    Mux("archive", Write("archive.ogg", io.Discard)),
+	} {
+		if destination.origin != destinationOriginConstructed {
+			t.Fatalf("%s destination origin = %v, want constructed", name, destination.origin)
+		}
+		if _, err := destinationSpecFromDestination(destination); err != nil {
+			t.Fatalf("%s destination spec error = %v", name, err)
+		}
+	}
+}
+
 func TestOpenDestinationOutputPassesClonedProviderInfo(t *testing.T) {
 	ctx := context.Background()
 	writer := &componentWriteCloser{}

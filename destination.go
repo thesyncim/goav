@@ -29,7 +29,7 @@ type destinationSpec struct {
 }
 
 func destinationHandle(spec destinationSpec) Destination {
-	return Destination{spec: spec}
+	return Destination{origin: destinationOriginConstructed, spec: spec}
 }
 
 // applyDestinationOptions is the destination twin of applyInputOptions: one
@@ -48,7 +48,7 @@ func applyDestinationOptions(spec destinationSpec, opts []DestinationOption) des
 // destination finalizes (run end, drained detach, or failure); a plain writer
 // is left open for the caller.
 func Write(name string, writer io.Writer, opts ...DestinationOption) Destination {
-	return Destination{spec: applyDestinationOptions(fileDestination(name, writer), opts)}
+	return destinationHandle(applyDestinationOptions(fileDestination(name, writer), opts))
 }
 
 func fileDestination(name string, writer io.Writer) destinationSpec {
@@ -65,7 +65,7 @@ func fileDestination(name string, writer io.Writer) destinationSpec {
 
 // URI creates a URI destination opened by a registered format adapter.
 func URI(uri string, opts ...DestinationOption) Destination {
-	return Destination{spec: applyDestinationOptions(uriDestination(uri), opts)}
+	return destinationHandle(applyDestinationOptions(uriDestination(uri), opts))
 }
 
 func uriDestination(uri string) destinationSpec {
@@ -84,7 +84,7 @@ func uriDestination(uri string) destinationSpec {
 // label outputs group and dedupe by (byte-stream options such as Format and
 // MIME state nothing about a sink).
 func Sink(sink pipeline.Sink, opts ...DestinationOption) Destination {
-	return Destination{spec: applyDestinationOptions(sinkDestination(sink), opts)}
+	return destinationHandle(applyDestinationOptions(sinkDestination(sink), opts))
 }
 
 func sinkDestination(sink pipeline.Sink) destinationSpec {
@@ -102,7 +102,7 @@ func sinkDestination(sink pipeline.Sink) destinationSpec {
 // provider owns naming, contract, and opening, while the returned Destination
 // stays the stable routing handle branches share.
 func Custom(name string, dest provider.Destination, opts ...DestinationOption) Destination {
-	return Destination{spec: applyDestinationOptions(customDestination(name, dest), opts)}
+	return destinationHandle(applyDestinationOptions(customDestination(name, dest), opts))
 }
 
 func customDestination(name string, dest provider.Destination) destinationSpec {
@@ -154,7 +154,7 @@ func Writer(name string, open provider.OpenFunc, opts ...DestinationOption) Dest
 		spec.custom = nil
 		spec.err = ErrNilWriter
 	}
-	return Destination{spec: applyDestinationOptions(spec, opts)}
+	return destinationHandle(applyDestinationOptions(spec, opts))
 }
 
 type writerDestination struct {
@@ -310,7 +310,7 @@ func Mux(name string, destination Destination) Destination {
 // option vocabulary the constructors take, for layering config onto an
 // already-constructed value. The copy keeps the original's routing identity.
 func (d Destination) With(opts ...DestinationOption) Destination {
-	return Destination{spec: applyDestinationOptions(cloneDestinationSpec(d.spec), opts)}
+	return Destination{origin: d.origin, spec: applyDestinationOptions(cloneDestinationSpec(d.spec), opts)}
 }
 
 func (s destinationSpec) withName(name string) destinationSpec {

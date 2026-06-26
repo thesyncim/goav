@@ -150,7 +150,10 @@ Invalid-struct progress: `TransformSpec` is now an opaque constructor-produced
 value, so external callers cannot set both resize and resample fields on one
 transform. `BranchSpec` values now carry their unexported constructor origin,
 so zero values and non-branch policy specs are refused before planned or
-runtime branch mutation treats them as real branches.
+runtime branch mutation treats them as real branches. `Destination` handles now
+carry the same constructor-origin marker, so zero values and zero-derived
+option copies are refused before they can masquerade as writer, URI, sink, or
+custom outputs.
 
 Error-contract progress: `BuildError` no longer exposes legacy
 `Details`/`Suggestions` fields or parses rendered strings in `Detail(key)`;

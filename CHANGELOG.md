@@ -83,6 +83,8 @@ methodology changes, and migration notes.
   captured for each tracked attachment before mutation.
 - Marked `BranchSpec` values with their constructor origin so zero values are
   refused before planned or runtime branch mutation treats them as real specs.
+- Marked `Destination` handles with their constructor origin so zero values
+  and zero-derived option copies cannot masquerade as real outputs.
 - Moved normal media-planner input binding and selected-stream resolution onto
   recipe IR input facts instead of concrete input attachments.
 - Moved copy-branch source-shape planning onto recipe IR input facts.
