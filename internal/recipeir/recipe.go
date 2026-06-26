@@ -36,6 +36,18 @@ type Recipe struct {
 	Copy         bool
 }
 
+// InputKind identifies the planner-visible behavior of an input without
+// carrying the concrete reader, source provider, or callback across the recipe
+// boundary.
+type InputKind string
+
+const (
+	InputKindUnknown      InputKind = ""
+	InputKindByteStream   InputKind = "byte-stream"
+	InputKindProvider     InputKind = "provider"
+	InputKindCustomSource InputKind = "custom-source"
+)
+
 // Input is the planner-visible data for one recipe input.
 type Input struct {
 	Name     string
@@ -44,6 +56,10 @@ type Input struct {
 	MIMEType string
 	Codec    codec.CodecSpec
 	Realtime bool
+	Kind     InputKind
+	// SourceShape is set for provider and custom-source inputs whose stream
+	// shape is known before opening runtime resources.
+	SourceShape shape.Spec
 }
 
 // Stream is one selected stream chain with ordered operations and output refs.

@@ -134,12 +134,18 @@ func compileStateCustomSourceShape(state *recipeCompileState) (shape.Spec, bool)
 		return shape.Spec{}, false
 	}
 	if state.branchCompositionPresent {
+		if spec, ok := state.inputSourceShape(0); ok {
+			return spec, true
+		}
 		return declaredSourceShape(state.branchInputAttachment)
+	}
+	if len(state.inputFacts) == 1 {
+		return state.inputSourceShape(0)
 	}
 	if len(state.inputAttachments) != 1 {
 		return shape.Spec{}, false
 	}
-	return declaredSourceShape(state.inputAttachments[0])
+	return state.inputSourceShape(0)
 }
 
 func customSourceStreams(input InputSpec) []av.Stream {
