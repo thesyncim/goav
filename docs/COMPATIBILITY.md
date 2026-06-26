@@ -36,16 +36,23 @@ compatibility it is promising and what evidence backs that promise.
 
 ## V1 promise draft
 
-A v1 tag should promise the smaller normal-user surface targeted by
-`docs/SIMPLIFICATION_TARGET.md`, using the Tier A surface in
-`docs/API_SURFACE.md` as the current inventory to shrink or explicitly retain:
+A v1 tag should promise the smaller normal-user workflows targeted by
+`docs/SIMPLIFICATION_TARGET.md`, not the entire current governed inventory.
+Use the Tier A surface in `docs/API_SURFACE.md` as an inventory to shrink or
+explicitly retain, not as an automatic v1 promise:
 
-- the `From(...) -> stream selection -> operations -> taps -> branches ->
-  destinations -> task` grammar;
-- `Task`, runtime attach/rebranch/detach, watch/events/snapshot/stats, and
-  structured `*goav.BuildError` refusals;
-- the public vocabulary packages named Tier A in `docs/API_SURFACE.md`;
-- documented compatibility behavior for Build, Explain, Attach, and Rebranch.
+- the supported `From(...) -> stream selection -> operations -> branches ->
+  destinations` workflows named in `docs/SIMPLIFICATION_TARGET.md`;
+- `Describe`/`Explain` before `Build`, plus `Task.Run`/`Task.Close` for built
+  tasks;
+- structured `*goav.BuildError` refusals with stable families and typed
+  fields/fixes;
+- custom source and custom sink seams needed by the supported workflows.
+
+Runtime mutation (`Attach`, `Detach`, `Rebranch`), control-plane hosts, raw
+controls, advanced observation, `OnStream` breadth, `Mix`/`Composite`/`Select`,
+and `expert.Graph` are advanced/non-v1 unless the release compatibility note
+explicitly retains them and records the exception to `docs/SIMPLIFICATION_TARGET.md`.
 
 The extension seams remain documented and tested, but they may grow as new
 adapters require additional capability. New exported symbols still require the
@@ -75,6 +82,7 @@ Behavior changes:
 - Build/Explain/Attach/Rebranch compatibility:
 - Structured error code/catalog changes:
 - Runtime control or snapshot/event changes:
+- Advanced/non-v1 exceptions retained in this release:
 
 Adapter and extension changes:
 - Codec/filter/format/provider/control-host changes:

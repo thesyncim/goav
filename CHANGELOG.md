@@ -13,6 +13,9 @@ methodology changes, and migration notes.
 
 - Shrank the README under the pre-v1 120-line target and moved long
   live/runtime walkthrough expectations into focused docs.
+- Clarified that runtime mutation/control/expert graph features are governed
+  pre-v1 behavior, not automatic v1 promises unless the release decision
+  explicitly retains them.
 - Stream chains now require an explicit `.Decode()` before frame-domain
   consumers (`.Do`, `.Resize`, `.Resample`, real `.Encode`, frame taps, and
   decoded-frame sinks). Use `.Copy()` when a chain should stay packet-domain.

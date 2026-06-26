@@ -34,17 +34,18 @@ group when branches build matching destinations independently. Reusing one
 ungrouped handle is rejected; grouping is explicit (`TestMuxPreferredOverHandleIdentity`,
 `TestMuxSurvivesWithAndCopy`, `TestSameHandleGroupingRequiresMux`).
 
-## v0 Stable
+## Governed pre-v1 surface
 
-Stable here means "you should not wake up to a silent contract change", not
-"the project has stopped learning". The governed surface is 328 approved
+Governed here means "changes are deliberate, tested, and recorded", not "this
+whole surface is the v1 promise." The governed surface is 328 approved
 identifiers (`api_surface_pin_test.go` + `testdata/api_surface.txt`: 69 root,
 22 `control`, 8 `inspect`, 164 `errcode`, 28 `plan`, 24 `lifecycle`,
-4 `snapshot`, 9 `graphrender`),
-every exported symbol documented (`doc_pin_test.go`), tiered in
+4 `snapshot`, 9 `graphrender`), every exported symbol is documented
+(`doc_pin_test.go`), and the current inventory is tiered in
 `docs/API_SURFACE.md`:
 
-- **Tier A: the grammar.** `From`/stream selection/operations
+- **Tier A inventory: the grammar and task capabilities.** `From`/stream
+  selection/operations
   (`Decode`/`Copy`/`Resize`/`Resample`/`Do`/`Encode`)/`Shape`/`Auto`/
   `Require`/`Prefer`/`Tap`/`Branches`/`To`/`OnStream`; `Mix`/`Composite`/
   `Select`; `Flow`; `Task` lifecycle (`Run`/`Close`) plus opt-in
@@ -56,7 +57,9 @@ every exported symbol documented (`doc_pin_test.go`), tiered in
   `New`/`MustNew`/`UseRuntime` and the `bundle` runtime helpers;
   structured `BuildError` with stable families, detailed codes, typed fields/fixes;
   the `plan`, `snapshot`, `lifecycle`, `shape`, `flow`, and `av` vocabulary
-  packages.
+  packages. Runtime mutation/control/advanced observation and joined-stream
+  breadth are governed pre-v1 behavior, not normal v1 promises unless the
+  release decision explicitly retains them.
 - **Tier B: extension points.** `provider.Source` and `Source(fn)` push
   sources; `provider.Destination`/`Writer`/`Sink` destinations;
   `EventFunc`/`FrameFunc`/`PacketFunc`/`SinkFunc` hooks; codec/format/filter
@@ -64,15 +67,17 @@ every exported symbol documented (`doc_pin_test.go`), tiered in
   Every extension point has an external toy implementation run end to end
   (`adapterproof/adapter_compat_test.go`, guide `docs/ADAPTER_AUTHORING.md`).
 - **Tier C: expert.** `expert.Graph(runtime)` handles, `pipeline` graph
-  machinery, prebuilt codec/format/filter stages. These are off the grammar but
-  governed.
+  machinery, prebuilt codec/format/filter stages. These are off the grammar,
+  governed as escape hatches, and advanced/non-v1 unless explicitly retained.
 
 The error contract (`errors_pin_test.go`, `error_acceptance_test.go`,
-`docs/ERRORS.md`) and the runtime invariants are stable contracts: close
+`docs/ERRORS.md`) and runtime invariants are pinned current contracts: close
 idempotency, close during run, race-safe snapshots under attach/detach,
 commit-failure propagation (`task_invariants_test.go`), watcher isolation
 (`watch_test.go`), and drop observability
-(`TestFrontDoorDropReasonsReadableWithoutPipeline`).
+(`TestFrontDoorDropReasonsReadableWithoutPipeline`). They prove the current
+surface is controlled; they do not by themselves promote every advanced
+capability into v1.
 
 ## Experimental
 

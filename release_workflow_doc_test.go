@@ -107,6 +107,9 @@ func TestRoadmapReleaseAndErrorEvidenceStaysCurrent(t *testing.T) {
 		"existing signed tags",
 		"tagged module directory",
 		"docs/COMPATIBILITY.md",
+		"## Governed pre-v1 surface",
+		"not normal v1 promises unless the",
+		"advanced/non-v1 unless explicitly retained",
 	} {
 		if !strings.Contains(text, required) {
 			t.Fatalf("docs/ROADMAP.md missing current evidence phrase %q", required)

@@ -136,7 +136,10 @@ with live graph and tap rows refreshed when task `Explain` is called.
 
 V1 rescope progress: README now meets the <=120 line target and acts as the
 adoption front door only; longer live/runtime and extension walkthroughs live
-in focused docs.
+in focused docs. `docs/COMPATIBILITY.md` and `docs/ROADMAP.md` now describe
+runtime mutation, control-plane hosts, advanced observation, joined-stream
+breadth, and expert graph features as governed pre-v1 behavior rather than
+automatic v1 promises unless the release decision explicitly retains them.
 
 Tap-anchor progress: `Inspectable.Taps()` now reports only typed anchors emitted
 by the planner or runtime attach path; graph node names such as `decode-*` and
