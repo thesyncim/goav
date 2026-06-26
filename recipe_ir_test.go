@@ -397,7 +397,7 @@ func TestMediaPlannerConsumesRecipeIRInputFacts(t *testing.T) {
 	if !ok || selected.ID != "mic" || selected.Type != av.MediaAudio {
 		t.Fatalf("selected stream = %+v %v, want mic audio from IR input facts", selected, ok)
 	}
-	branches, _ := planBranches(&state, planOutputs(state.intent.Destinations, nil))
+	branches, _ := planBranchesFromRecipeIR(&state, state.recipe, planOutputsFromRecipeIR(state.recipe.Destinations, nil))
 	if len(branches) != 1 || branches[0].Input != "mic" {
 		t.Fatalf("planned branches = %+v, want branch bound to mic", branches)
 	}
@@ -409,7 +409,7 @@ func TestCopyPlannerConsumesRecipeIRInputFacts(t *testing.T) {
 
 	state := recipeCompileStateFromSnapshot(newJobRecipeSnapshot(job), recipeCompileOptions{})
 	state.inputAttachments = nil
-	branches, decisions := planCopyBranches(&state, planOutputs(state.intent.Destinations, nil))
+	branches, decisions := planCopyBranchesFromRecipeIR(&state, state.recipe, planOutputsFromRecipeIR(state.recipe.Destinations, nil))
 	if len(branches) != 1 || branches[0].Shape.Domain != shape.DomainEvent {
 		t.Fatalf("copy branches = %+v, want event source shape from IR input facts", branches)
 	}
@@ -586,8 +586,9 @@ func TestMediaPlannerUsesRecipeIRInputFacts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	source := string(body)
 	for _, fn := range []string{"planStreamInputBinding", "planSelectedStream"} {
-		fnBody := sourceFunctionBody(t, string(body), fn)
+		fnBody := sourceFunctionBody(t, source, fn)
 		if !strings.Contains(fnBody, "jobInputStreamSetsFromRecipeIR") {
 			t.Fatalf("%s should derive stream sets from recipe IR input facts", fn)
 		}
@@ -600,19 +601,58 @@ func TestMediaPlannerUsesRecipeIRInputFacts(t *testing.T) {
 			t.Fatalf("%s still derives stream sets from concrete input attachments", fn)
 		}
 	}
-	selectedBody := sourceFunctionBody(t, string(body), "planSelectedStream")
+	selectedBody := sourceFunctionBody(t, source, "planSelectedStream")
 	if !strings.Contains(selectedBody, "for i := range state.inputFacts") {
 		t.Fatal("planSelectedStream should resolve declared source streams from recipe IR input facts")
 	}
-	copyBody := sourceFunctionBody(t, string(body), "planCopyBranches")
+	branchBody := sourceFunctionBody(t, source, "planBranchesFromRecipeIR")
+	for _, required := range []string{
+		"planCopyBranchesFromRecipeIR(state, recipe, outputs)",
+		"streamIntentsFromRecipeIR(recipe.Streams)",
+	} {
+		if !strings.Contains(branchBody, required) {
+			t.Fatalf("planBranchesFromRecipeIR should capture %s", required)
+		}
+	}
+	for _, forbidden := range []string{
+		"state.intent.Streams",
+		"planBranches(state",
+	} {
+		if strings.Contains(source, forbidden) {
+			t.Fatalf("normal branch planning still has legacy entrypoint/reference %q", forbidden)
+		}
+	}
+	copyInputBody := sourceFunctionBody(t, source, "planCopyBranchesFromRecipeIR")
+	for _, required := range []string{
+		"inputIntentsFromRecipeIR(recipe.Inputs)",
+		"recipe.Copy",
+	} {
+		if !strings.Contains(copyInputBody, required) {
+			t.Fatalf("planCopyBranchesFromRecipeIR should capture %s", required)
+		}
+	}
+	for _, forbidden := range []string{
+		"state.intent.Copy",
+		"state.recipe.Copy",
+		"state.recipeInputIntents()",
+	} {
+		if strings.Contains(copyInputBody, forbidden) {
+			t.Fatalf("planCopyBranchesFromRecipeIR still reads copy/input facts through compile state with %q", forbidden)
+		}
+	}
+	copyBody := sourceFunctionBody(t, source, "planCopyBranches")
 	if !strings.Contains(copyBody, "state.inputSourceShape(i)") {
 		t.Fatal("planCopyBranches should read declared source shape through recipe IR input facts")
 	}
-	if !strings.Contains(copyBody, "state.recipeInputIntents()") {
-		t.Fatal("planCopyBranches should read input intents from recipe IR input facts")
-	}
-	if strings.Contains(copyBody, "declaredSourceShape(state.inputAttachments") {
-		t.Fatal("planCopyBranches still reads source shape directly from concrete input attachments")
+	for _, forbidden := range []string{
+		"state.intent",
+		"state.recipe",
+		"state.recipeInputIntents()",
+		"declaredSourceShape(state.inputAttachments",
+	} {
+		if strings.Contains(copyBody, forbidden) {
+			t.Fatalf("planCopyBranches still reads recipe facts through compile state with %q", forbidden)
+		}
 	}
 }
 

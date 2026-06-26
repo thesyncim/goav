@@ -149,16 +149,9 @@ func planStreamInput(state *recipeCompileState, stream streamIntent) inputIntent
 	return input
 }
 
-func planBranches(state *recipeCompileState, outputs []planOutput) ([]planBranch, []planDecision) {
-	if len(state.intent.Streams) == 0 {
-		return planCopyBranches(state, outputs)
-	}
-	return planBranchesFromStreamIntents(state, state.intent.Streams, outputs)
-}
-
 func planBranchesFromRecipeIR(state *recipeCompileState, recipe recipeir.Recipe, outputs []planOutput) ([]planBranch, []planDecision) {
 	if len(recipe.Streams) == 0 {
-		return planCopyBranches(state, outputs)
+		return planCopyBranchesFromRecipeIR(state, recipe, outputs)
 	}
 	return planBranchesFromStreamIntents(state, streamIntentsFromRecipeIR(recipe.Streams), outputs)
 }
@@ -175,9 +168,8 @@ func streamIntentsFromRecipeIR(streams []recipeir.Stream) []streamIntent {
 }
 
 // planBranchesFromStreamIntents plans every branch from a resolved streamIntent
-// list — shared by the direct-stream path (planBranches, source
-// state.intent.Streams) and the branch-composition path (buildMediaPlan, source
-// streamIntentsFromBranchComposePlan). One planner, two sources.
+// list — shared by the recipe stream path and the branch-composition path
+// after each has crossed the recipe-IR boundary. One planner, two sources.
 func planBranchesFromStreamIntents(state *recipeCompileState, streams []streamIntent, outputs []planOutput) ([]planBranch, []planDecision) {
 	branches := make([]planBranch, 0, len(streams))
 	decisions := make([]planDecision, 0, len(streams))
@@ -270,12 +262,11 @@ func planSelectedStream(state *recipeCompileState, stream streamIntent) (av.Stre
 	return av.Stream{}, false
 }
 
-func planCopyBranches(state *recipeCompileState, outputs []planOutput) ([]planBranch, []planDecision) {
-	inputs := state.recipeInputIntents()
-	copyRequested := state.intent.Copy
-	if state.recipe.Kind != "" {
-		copyRequested = state.recipe.Copy
-	}
+func planCopyBranchesFromRecipeIR(state *recipeCompileState, recipe recipeir.Recipe, outputs []planOutput) ([]planBranch, []planDecision) {
+	return planCopyBranches(state, inputIntentsFromRecipeIR(recipe.Inputs), recipe.Copy, outputs)
+}
+
+func planCopyBranches(state *recipeCompileState, inputs []inputIntent, copyRequested bool, outputs []planOutput) ([]planBranch, []planDecision) {
 	branches := make([]planBranch, 0, len(inputs))
 	decisions := make([]planDecision, 0, len(inputs))
 	outputNames := planOutputNames(outputs)
