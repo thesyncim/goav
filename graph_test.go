@@ -451,6 +451,8 @@ func TestRuntimeAttachUsesGraphPatchBoundary(t *testing.T) {
 		"type runtimeAttachBranchPlanInput struct",
 		"func runtimeAttachInputFromBranchSpecs",
 		"func (t *task) runtimeAttachBranchPlanInput",
+		"func runtimeAttachBranchIntent",
+		"func (input runtimeAttachBranchPlanInput) intentForOperations",
 		"func (t *task) attachRuntimeBranches",
 		"func (p *runtimeGraphPatch) addAnchor",
 		"func (p *runtimeGraphPatch) addApplied",
@@ -464,6 +466,7 @@ func TestRuntimeAttachUsesGraphPatchBoundary(t *testing.T) {
 		"planInput, err := t.runtimeAttachBranchPlanInput",
 		"func (p *attachPlan) registerBranch(input runtimeAttachBranchPlanInput",
 		"func (p *attachPlan) finalizeBranch(index int, input runtimeAttachBranchPlanInput",
+		"intent:    runtimeAttachBranchIntent(branch, anchor)",
 		"range spec.operations",
 		"operationSpecOutputShape",
 		"for i := range input.branches",
@@ -483,6 +486,15 @@ func TestRuntimeAttachUsesGraphPatchBoundary(t *testing.T) {
 	} {
 		if strings.Contains(text, forbidden) {
 			t.Fatalf("runtime attach should plan the workPatch directly from BranchSpec, not a parallel %q model", forbidden)
+		}
+	}
+	for name, body := range map[string]string{
+		"planAttachBranchSteps":      sourceFunctionBody(t, text, "planAttachBranchSteps"),
+		"planAttachEncode":           sourceFunctionBody(t, text, "planAttachEncode"),
+		"prepareRuntimeBranchDecode": sourceFunctionBody(t, text, "prepareRuntimeBranchDecode"),
+	} {
+		if strings.Contains(body, "streamIntent{") {
+			t.Fatalf("%s should use the captured runtimeAttachBranchPlanInput intent, not rebuild streamIntent inline", name)
 		}
 	}
 }

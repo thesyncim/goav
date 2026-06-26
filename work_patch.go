@@ -136,7 +136,7 @@ func (t *task) planAttachBranchSteps(ctx context.Context, input runtimeAttachBra
 			return nil, err
 		}
 	}
-	if err := validateAttachBranchShapeContract(spec, destinations, currentShape); err != nil {
+	if err := validateAttachBranchShapeContract(input, currentShape); err != nil {
 		return nil, err
 	}
 	patchShape := normalizeTapShape(currentShape)
@@ -177,7 +177,7 @@ func (t *task) planAttachBranchSteps(ctx context.Context, input runtimeAttachBra
 		out := patchShape
 		switch operation.Kind {
 		case plan.OpDecode:
-			stage, err := t.prepareRuntimeBranchDecode(ctx, spec.name, currentStream, currentShape, operation.Decode)
+			stage, err := t.prepareRuntimeBranchDecode(ctx, input, currentStream, currentShape, operation.Decode)
 			if err != nil {
 				return fail(err)
 			}
@@ -216,11 +216,7 @@ func (t *task) planAttachBranchSteps(ctx context.Context, input runtimeAttachBra
 				))
 			}
 			transformName := transformFactoryName(operation.Transform)
-			branchIntent := streamIntent{
-				Name:       branchName,
-				Select:     plan.StreamSelect{Type: currentStream.Type},
-				Operations: []operationSpec{operation},
-			}
+			branchIntent := input.intentForOperations(currentStream, operation)
 			if _, err := t.runtime.filters.Factory(transformName); err != nil {
 				return fail(recipeTransformAdapterError("attach runtime branch", branchIntent, transformName, err))
 			}
@@ -268,7 +264,7 @@ func (t *task) planAttachBranchSteps(ctx context.Context, input runtimeAttachBra
 			}
 			step.install = operation.Tap.Name != "" && (!terminal || encoded || copied)
 		case plan.OpEncode:
-			stage, encodedStream, err := t.planAttachEncode(ctx, spec.name, operation.Encode, currentStream, currentShape)
+			stage, encodedStream, err := t.planAttachEncode(ctx, input, operation.Encode, currentStream, currentShape)
 			if err != nil {
 				return fail(err)
 			}
@@ -332,7 +328,8 @@ func (t *task) planAttachBranchSteps(ctx context.Context, input runtimeAttachBra
 
 // planAttachEncode opens the branch encoder against the live frame shape with
 // the same validation and stage construction the build path uses.
-func (t *task) planAttachEncode(ctx context.Context, branchName string, encode codec.CodecSpec, currentStream av.Stream, currentShape shape.Spec) (pipeline.Stage, av.Stream, error) {
+func (t *task) planAttachEncode(ctx context.Context, input runtimeAttachBranchPlanInput, encode codec.CodecSpec, currentStream av.Stream, currentShape shape.Spec) (pipeline.Stage, av.Stream, error) {
+	branchName := firstNonEmpty(input.branch.spec.name, "branch")
 	if t.runtime == nil {
 		return nil, av.Stream{}, runtimeBranchInvalidError(
 			"runtime branch encoding requires the bundled runtime",
@@ -345,8 +342,9 @@ func (t *task) planAttachEncode(ctx context.Context, branchName string, encode c
 	if err := validateRecipeEncode(encode, "attach runtime branch", firstNonEmpty(branchName, "branch")); err != nil {
 		return nil, av.Stream{}, err
 	}
+	encodeOperation := operationSpecForEncode(encode)
 	if _, err := t.runtime.codecs.EncoderFactory(encode.ID); err != nil {
-		stream := streamIntent{Name: branchName, Operations: []operationSpec{operationSpecForEncode(encode)}}
+		stream := input.intentForOperations(currentStream, encodeOperation)
 		return nil, av.Stream{}, recipeEncodeAdapterError("attach runtime branch", stream, t.runtime.codecs, err)
 	}
 	request := runtimeBranchEncodeRequest(branchName, encode, currentStream)
@@ -354,11 +352,7 @@ func (t *task) planAttachEncode(ctx context.Context, branchName string, encode c
 	if err != nil {
 		return nil, av.Stream{}, err
 	}
-	stream := streamIntent{
-		Name:       branchName,
-		Select:     plan.StreamSelect{Type: currentStream.Type},
-		Operations: []operationSpec{operationSpecForEncode(encode)},
-	}
+	stream := input.intentForOperations(currentStream, encodeOperation)
 	if err := validateEncodeAdapterDescriptors("attach runtime branch", stream, t.runtime.codecs, encodeAdapterRequestFromPreparedStream(encode, encodedStream)); err != nil {
 		return nil, av.Stream{}, err
 	}
@@ -648,6 +642,17 @@ func attachDestinationComponent(destination attachDestination) string {
 		return string(formatID)
 	}
 	return "mux"
+}
+
+func attachDestinationNames(destinations []attachDestination) []string {
+	if len(destinations) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(destinations))
+	for i := range destinations {
+		out = append(out, firstNonEmpty(destinations[i].name, destinations[i].dest.label("destination")))
+	}
+	return out
 }
 
 // attachDestinationIDs derives the stable destination IDs for a branch's
