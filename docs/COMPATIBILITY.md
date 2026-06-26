@@ -136,6 +136,9 @@ Evidence:
 - Local security scan:
   `GOTOOLCHAIN=go1.26.3 go run golang.org/x/vuln/cmd/govulncheck@latest ./...`
   reported no called vulnerabilities.
+- Local benchmark smoke:
+  `BENCH_COUNT=1 scripts/bench/run.sh -bench 'BenchmarkLatencyRecordPackets|BenchmarkSourcePush' .`.
+- Local perf-lab smoke: `PERF_BENCHTIME=1x scripts/bench/perf-lab.sh`.
 - Nested module tests: every `examples/*/go.mod`, `goavtest/expect`, `rtpav`,
   and `webrtcav` passed `go test -p 1 ./...`.
 - Root dependency check: `go list -deps github.com/thesyncim/goav` had no
