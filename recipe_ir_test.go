@@ -255,6 +255,77 @@ func TestMultiStreamGraphLowererConsumesHandoff(t *testing.T) {
 	}
 }
 
+func TestSingleStreamGraphLowerersConsumeHandoffs(t *testing.T) {
+	t.Run("packet copy", func(t *testing.T) {
+		var out bytes.Buffer
+		job := From(FileInput("input.ivf", strings.NewReader(""))).
+			Video().
+			Copy().
+			To(Write("output.ivf", &out))
+
+		state := recipeCompileStateFromSnapshot(newJobRecipeSnapshot(job), recipeCompileOptions{})
+		input, ok := mediaPlanPacketCopyStreamInputFromCompileState(&state)
+		if !ok {
+			t.Fatal("packet-copy graph lowerer input was not selected")
+		}
+		state.intent.Streams = nil
+		state.inputAttachments = nil
+		state.outputAttachments = nil
+
+		lowerer, ok, err := newMediaPlanPacketCopyStreamLowerer(input)
+		if err != nil {
+			t.Fatalf("lower packet-copy stream from captured input: %v", err)
+		}
+		if !ok {
+			t.Fatal("packet-copy graph lowerer was not built from captured input")
+		}
+		graph, ok := lowerer.(mediaPlanStreamGraph)
+		if !ok {
+			t.Fatalf("lowerer = %T, want mediaPlanStreamGraph", lowerer)
+		}
+		if !graph.copyPackets ||
+			len(graph.inputs) != 1 ||
+			len(graph.outputs) != 1 ||
+			graph.stream.Name != "video" {
+			t.Fatalf("packet-copy graph = %+v, want captured packet-copy stream data", graph)
+		}
+	})
+
+	t.Run("decode", func(t *testing.T) {
+		job := From(mixTestAudioSource("mic", 11, 22)).
+			Audio().
+			To(Sink(SinkFunc("frames", func(context.Context, Message) error { return nil })))
+
+		state := recipeCompileStateFromSnapshot(newJobRecipeSnapshot(job), recipeCompileOptions{})
+		input, ok := mediaPlanDecodeStreamInputFromCompileState(&state)
+		if !ok {
+			t.Fatal("decode graph lowerer input was not selected")
+		}
+		state.intent.Streams = nil
+		state.inputAttachments = nil
+		state.outputAttachments = nil
+
+		lowerer, ok, err := newMediaPlanDecodeStreamLowerer(input)
+		if err != nil {
+			t.Fatalf("lower decode stream from captured input: %v", err)
+		}
+		if !ok {
+			t.Fatal("decode graph lowerer was not built from captured input")
+		}
+		graph, ok := lowerer.(mediaPlanStreamGraph)
+		if !ok {
+			t.Fatalf("lowerer = %T, want mediaPlanStreamGraph", lowerer)
+		}
+		if graph.copyPackets ||
+			len(graph.inputs) != 1 ||
+			len(graph.outputs) != 1 ||
+			graph.stream.Name != "audio" ||
+			graph.sourceDomain != shape.DomainFrame {
+			t.Fatalf("decode graph = %+v, want captured frame-domain stream data", graph)
+		}
+	})
+}
+
 func TestMediaPlannerConsumesRecipeIRInputFacts(t *testing.T) {
 	job := From(
 		compositeTestVideoSource("camera", 4, 4, 100, 10, 20),
@@ -506,6 +577,54 @@ func TestMultiStreamGraphLowererUsesHandoff(t *testing.T) {
 	renderBody := sourceFunctionBody(t, source, "newMediaPlanMultiStreamJobLowerer")
 	if strings.Contains(renderBody, "*recipeCompileState") || strings.Contains(renderBody, "state.") {
 		t.Fatal("newMediaPlanMultiStreamJobLowerer should consume mediaPlanMultiStreamJobInput instead of compile state")
+	}
+}
+
+func TestSingleStreamGraphLowerersUseHandoffs(t *testing.T) {
+	body, err := os.ReadFile("media_plan_spec.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := string(body)
+	for _, required := range []string{
+		"type mediaPlanPacketCopyStreamInput struct",
+		"type mediaPlanDecodeStreamInput struct",
+	} {
+		if !strings.Contains(source, required) {
+			t.Fatalf("single-stream graph lowerers should declare %s", required)
+		}
+	}
+
+	packetBody := sourceFunctionBody(t, source, "mediaPlanPacketCopyStreamLowererForState")
+	if !strings.Contains(packetBody, "input, ok := mediaPlanPacketCopyStreamInputFromCompileState(state)") ||
+		!strings.Contains(packetBody, "return newMediaPlanPacketCopyStreamLowerer(input)") {
+		t.Fatal("mediaPlanPacketCopyStreamLowererForState should pass captured input into packet-copy graph lowering")
+	}
+	decodeBody := sourceFunctionBody(t, source, "mediaPlanDecodeStreamLowererForState")
+	if !strings.Contains(decodeBody, "input, ok := mediaPlanDecodeStreamInputFromCompileState(state)") ||
+		!strings.Contains(decodeBody, "return newMediaPlanDecodeStreamLowerer(input)") {
+		t.Fatal("mediaPlanDecodeStreamLowererForState should pass captured input into decode graph lowering")
+	}
+	for name, body := range map[string]string{
+		"packet-copy": packetBody,
+		"decode":      decodeBody,
+	} {
+		for _, forbidden := range []string{
+			"newMediaPlanPacketCopyStreamGraph(state.runtime",
+			"newMediaPlanDecodeStreamGraph(state.runtime",
+			"state.inputAttachments",
+			"state.outputAttachments",
+		} {
+			if strings.Contains(body, forbidden) {
+				t.Fatalf("%s lowerer still lowers directly from compile state with %q", name, forbidden)
+			}
+		}
+	}
+	for _, fn := range []string{"newMediaPlanPacketCopyStreamLowerer", "newMediaPlanDecodeStreamLowerer"} {
+		renderBody := sourceFunctionBody(t, source, fn)
+		if strings.Contains(renderBody, "*recipeCompileState") || strings.Contains(renderBody, "state.") {
+			t.Fatalf("%s should consume captured input instead of compile state", fn)
+		}
 	}
 }
 

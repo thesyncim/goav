@@ -108,10 +108,11 @@ handoffs instead of reading compile state directly. Normal work-plan rendering
 also now consumes a captured handoff rather than reaching back into compile
 state while it renders operations, branches, destinations, decisions, and
 diagnostics. Multi-stream job graph lowering now enters through a captured
-handoff before branch-compose graph construction. The executable join lowerer
-still owns concrete arms and stages. The boundary is not complete until
-remaining root-only attachments such as concrete join plans and runtime mutation
-patches move into stable recipe or plan data.
+handoff before branch-compose graph construction, and single-stream packet-copy
+and decode graph lowerers now do the same before graph construction. The
+executable join lowerer still owns concrete arms and stages. The boundary is not
+complete until remaining root-only attachments such as concrete join plans and
+runtime mutation patches move into stable recipe or plan data.
 
 Runtime lifecycle/observation progress: one-shot `Run` now preserves both run
 and close/finalization failures, and `Events()` returns an unfiltered watch
