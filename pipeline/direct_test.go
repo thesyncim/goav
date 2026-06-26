@@ -53,6 +53,55 @@ func (s *directEventSource) Close() error {
 	return nil
 }
 
+type directBlockingStartSource struct {
+	name    string
+	started chan struct{}
+	release <-chan struct{}
+}
+
+func (s *directBlockingStartSource) Name() string {
+	return s.name
+}
+
+func (s *directBlockingStartSource) Start(ctx context.Context, _ Emitter) error {
+	close(s.started)
+	select {
+	case <-s.release:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func (s *directBlockingStartSource) Close() error {
+	return nil
+}
+
+type directReleasingSource struct {
+	name    string
+	wait    <-chan struct{}
+	release chan<- struct{}
+	msg     *Message
+}
+
+func (s *directReleasingSource) Name() string {
+	return s.name
+}
+
+func (s *directReleasingSource) Start(ctx context.Context, emitter Emitter) error {
+	select {
+	case <-s.wait:
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	close(s.release)
+	return emitter.Emit(ctx, s.msg)
+}
+
+func (s *directReleasingSource) Close() error {
+	return nil
+}
+
 type directPassStage struct {
 	name   string
 	detail string
@@ -96,6 +145,42 @@ func (s *directTestSink) Handle(_ context.Context, msg *Message) error {
 
 func (s *directTestSink) Close() error {
 	return nil
+}
+
+func TestGraphDirectStartsSourcesConcurrently(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	started := make(chan struct{})
+	release := make(chan struct{})
+	packet := av.Packet{StreamID: "audio"}
+	msg := Message{Kind: MessagePacket, Packet: &packet}
+	blocking := &directBlockingStartSource{name: "blocking", started: started, release: release}
+	releasing := &directReleasingSource{name: "releasing", wait: started, release: release, msg: &msg}
+	sink := &directTestSink{name: "sink"}
+
+	graph, err := NewGraph(GraphConfig{Name: "direct-sources"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := graph.AddSource(blocking, BufferPolicy{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := graph.AddSource(releasing, BufferPolicy{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := graph.AddSink(sink, BufferPolicy{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := graph.Connect(route("releasing", "sink")); err != nil {
+		t.Fatal(err)
+	}
+	if err := graph.Run(ctx); err != nil {
+		t.Fatalf("Run() error = %v; direct sources must start concurrently", err)
+	}
+	if sink.count != 1 || sink.lastPacket != &packet {
+		t.Fatalf("sink count=%d packet=%p, want one packet %p", sink.count, sink.lastPacket, &packet)
+	}
 }
 
 func TestGraphDirectPassThrough(t *testing.T) {

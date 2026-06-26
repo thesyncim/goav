@@ -112,8 +112,18 @@ func TestCustomJoinBuilderTapBranchesAndJoinArmContracts(t *testing.T) {
 	if err := task.Run(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if len(got) != 2 || got[0][0] != 100 || got[1][0] != 50 {
-		t.Fatalf("branch frames = %v, want forwarded custom-join frames [100] [50]", got)
+	if len(got) != 2 {
+		t.Fatalf("branch frames = %v, want two forwarded custom-join frames", got)
+	}
+	seen := make(map[int16]int, len(got))
+	for i := range got {
+		if len(got[i]) != 1 {
+			t.Fatalf("branch frame %d = %v, want one sample", i, got[i])
+		}
+		seen[got[i][0]]++
+	}
+	if seen[100] != 1 || seen[50] != 1 {
+		t.Fatalf("branch frames = %v, want forwarded custom-join frames [100] and [50]", got)
 	}
 }
 

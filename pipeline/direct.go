@@ -63,6 +63,7 @@ type directNode struct {
 	emitter  *directEmitter
 	counters *nodeCounters
 	paused   *atomic.Bool
+	handleMu *sync.Mutex
 	// gate counts in-flight deliveries to this node and carries the closing
 	// tombstone bit, so a live Remove can wait out deliveries that loaded an
 	// older routing snapshot before it closes the node. One atomic add/sub per
@@ -98,6 +99,7 @@ type directTopoNode struct {
 	emitter  *directEmitter
 	counters *nodeCounters
 	paused   *atomic.Bool
+	handleMu *sync.Mutex
 	gate     *atomic.Int64
 	routes   []directRoute
 }
@@ -105,6 +107,11 @@ type directTopoNode struct {
 type directEmitter struct {
 	graph *directRunner
 	from  int
+}
+
+type directSourceRun struct {
+	source  Source
+	emitter *directEmitter
 }
 
 func (e *directEmitter) Emit(ctx context.Context, msg *Message) error {
@@ -160,6 +167,7 @@ func (g *directRunner) rebuildTopoLocked() {
 		tn.emitter = n.emitter
 		tn.counters = n.counters
 		tn.paused = n.paused
+		tn.handleMu = n.handleMu
 		tn.gate = n.gate
 		if len(n.routes) == 0 {
 			continue
@@ -348,27 +356,51 @@ func (g *directRunner) Run(ctx context.Context) error {
 		g.mu.RUnlock()
 		return ErrClosed
 	}
-	var sourceStack [8]int
+	var sourceStack [8]directSourceRun
 	sources := sourceStack[:0]
 	for i := range g.sources {
-		if !g.nodes[g.sources[i]].active {
+		index := g.sources[i]
+		if !g.nodes[index].active {
 			continue
 		}
 		if len(sources) < cap(sources) {
-			sources = append(sources, g.sources[i])
+			sources = append(sources, directSourceRun{
+				source:  g.nodes[index].source,
+				emitter: g.nodes[index].emitter,
+			})
 			continue
 		}
-		sources = append(sources, g.sources[i])
+		sources = append(sources, directSourceRun{
+			source:  g.nodes[index].source,
+			emitter: g.nodes[index].emitter,
+		})
 	}
 	g.mu.RUnlock()
+
+	switch len(sources) {
+	case 0:
+		return nil
+	case 1:
+		run := sources[0]
+		return run.source.Start(ctx, run.emitter)
+	}
+
+	errs := make(chan error, len(sources))
+	var runs sync.WaitGroup
 	for i := range sources {
-		node, err := g.nodeSnapshot(sources[i])
-		if err != nil {
-			return err
-		}
-		if err := node.source.Start(ctx, node.emitter); err != nil {
-			return err
-		}
+		run := sources[i]
+		runs.Add(1)
+		go func() {
+			defer runs.Done()
+			if err := run.source.Start(ctx, run.emitter); err != nil {
+				errs <- err
+			}
+		}()
+	}
+	runs.Wait()
+	close(errs)
+	for err := range errs {
+		return err
 	}
 	return nil
 }
@@ -603,6 +635,7 @@ func (g *directRunner) addNode(node directNode) (int, error) {
 	node.emitter = &directEmitter{graph: g, from: index}
 	node.counters = &nodeCounters{}
 	node.paused = &atomic.Bool{}
+	node.handleMu = &sync.Mutex{}
 	node.gate = &atomic.Int64{}
 	g.index[node.name] = index
 	g.nodes = append(g.nodes, node)
@@ -683,6 +716,10 @@ func (g *directRunner) deliverTopo(ctx context.Context, dst *directTopoNode, msg
 		}
 		defer dst.gate.Add(-1)
 	}
+	if dst.handleMu != nil {
+		dst.handleMu.Lock()
+		defer dst.handleMu.Unlock()
+	}
 	observeIn(dst.counters, msg, &g.cold)
 	switch dst.kind {
 	case nodeStage:
@@ -698,21 +735,6 @@ func (g *directRunner) deliverTopo(ctx context.Context, dst *directTopoNode, msg
 	default:
 		return false, ErrInvalidLink
 	}
-}
-
-func (g *directRunner) nodeSnapshot(index int) (directNode, error) {
-	g.mu.RLock()
-	defer g.mu.RUnlock()
-	if g.closed {
-		return directNode{}, ErrClosed
-	}
-	if index < 0 || index >= len(g.nodes) {
-		return directNode{}, ErrUnknownNode
-	}
-	if !g.nodes[index].active {
-		return directNode{}, ErrUnknownNode
-	}
-	return g.nodes[index], nil
 }
 
 func closeDirectNode(node *directNode) error {

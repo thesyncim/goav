@@ -767,7 +767,7 @@ func TestTaskAttachRuntimeBranchGroupSharesMuxDestination(t *testing.T) {
 	if len(muxers.muxers) != 1 ||
 		muxers.muxers[0].writes != 2 ||
 		!streamIDsEqual(muxers.muxers[0].openedStreams, []av.StreamID{"audio", "video"}) ||
-		!streamIDsEqual(muxers.muxers[0].writtenStreams, []av.StreamID{"audio", "video"}) {
+		!streamIDSetsEqual(muxers.muxers[0].writtenStreams, []av.StreamID{"audio", "video"}) {
 		t.Fatalf("muxers=%d first=%+v", len(muxers.muxers), muxers.muxers)
 	}
 	stats := attachment.Stats()

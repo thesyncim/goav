@@ -37,3 +37,20 @@ func streamIDsEqual(got []av.StreamID, want []av.StreamID) bool {
 	}
 	return true
 }
+
+func streamIDSetsEqual(got []av.StreamID, want []av.StreamID) bool {
+	if len(got) != len(want) {
+		return false
+	}
+	counts := make(map[av.StreamID]int, len(want))
+	for i := range want {
+		counts[want[i]]++
+	}
+	for i := range got {
+		counts[got[i]]--
+		if counts[got[i]] < 0 {
+			return false
+		}
+	}
+	return true
+}
