@@ -18,6 +18,7 @@ import (
 	"github.com/thesyncim/goav/filter"
 	"github.com/thesyncim/goav/flow"
 	"github.com/thesyncim/goav/format"
+	"github.com/thesyncim/goav/lifecycle"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/plan"
 	"github.com/thesyncim/goav/shape"
@@ -503,6 +504,70 @@ func TestRuntimeAttachInputCapturesBranchSpecs(t *testing.T) {
 		len(input.destinations) != 1 ||
 		len(input.destinations[0]) != 1 {
 		t.Fatalf("runtime attach input = %+v, want captured branch spec and destinations", input)
+	}
+}
+
+func TestRuntimeRebranchUsesInputBoundary(t *testing.T) {
+	body, err := os.ReadFile("runtime_attach.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(body)
+	for _, required := range []string{
+		"type runtimeRebranchInput struct",
+		"func runtimeRebranchInputFromArgs",
+		"func (a *runtimeAttachment) rebranchRuntimeAttachment",
+		"return a.rebranchRuntimeAttachment(ctx, input)",
+		"a.owner.attachRuntimeBranches(ctx, input.attach)",
+	} {
+		if !strings.Contains(text, required) {
+			t.Fatalf("runtime rebranch should pass captured input to the mutation executor; missing %q", required)
+		}
+	}
+	if strings.Contains(text, "return a.owner.Attach(ctx, specs...)") {
+		t.Fatal("runtime rebranch should not recapture replacement specs through Attach")
+	}
+}
+
+func TestRuntimeRebranchInputCapturesReplacementSpecsAndPolicy(t *testing.T) {
+	spec := Branch("next").
+		From(PacketTap("pkts")).
+		Copy().
+		To(Sink(SinkFunc("late", func(context.Context, Message) error { return nil })))
+
+	input, err := runtimeRebranchInputFromArgs(context.Background(), []lifecycle.RebranchArg{
+		spec,
+		lifecycle.SwitchAt(lifecycle.NextKeyframe()),
+		lifecycle.DrainOldBranch(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	spec.name = "mutated"
+	spec.operations = nil
+	spec.destinations = nil
+	spec.source.tap = "other"
+
+	if input.group == nil ||
+		input.group.boundary != switchNextKeyframe ||
+		input.disposition != oldBranchDrain ||
+		input.attach.name != "next" ||
+		len(input.attach.specs) != 1 ||
+		input.attach.specs[0].name != "next" ||
+		input.attach.specs[0].source.tap != "pkts" ||
+		len(input.attach.destinations) != 1 ||
+		len(input.attach.destinations[0]) != 1 {
+		t.Fatalf("runtime rebranch input = %+v, want captured switch-gated replacement", input)
+	}
+	operations := input.attach.specs[0].operations
+	if len(operations) != 2 ||
+		operations[0].Kind != plan.OpStage ||
+		operations[1].Kind != plan.OpCopy {
+		t.Fatalf("runtime rebranch operations = %+v, want switch gate then copy", operations)
+	}
+	gate, ok := operations[0].Stage.(*switchGate)
+	if !ok || gate.group != input.group {
+		t.Fatalf("runtime rebranch gate = %#v, %v; want switch gate tied to input group", operations[0].Stage, ok)
 	}
 }
 

@@ -114,10 +114,10 @@ branch-composition graph lowering also now uses a captured handoff with cloned
 branch-compose plan data. The compile state no longer stores the concrete join
 plan; graph-plan construction passes the selected join lowerer directly into
 work-plan rendering. The executable join lowerer still owns concrete arms and
-stages. Runtime attach now captures branch specs and destination facts in an
-explicit handoff before graph locking and patch planning. The boundary is not
-complete until remaining runtime mutation patch facts move into stable recipe or
-plan data.
+stages. Runtime attach/rebranch now captures branch specs, destination facts,
+switch policy, and replacement disposition in explicit handoffs before graph
+locking and patch planning. The boundary is not complete until the remaining
+runtime mutation patch facts move into stable recipe or plan data.
 
 Runtime lifecycle/observation progress: one-shot `Run` now preserves both run
 and close/finalization failures, and `Events()` returns an unfiltered watch

@@ -71,6 +71,12 @@ type runtimeAttachInput struct {
 	name              string
 }
 
+type runtimeRebranchInput struct {
+	attach      runtimeAttachInput
+	group       *switchGroup
+	disposition oldBranchDisposition
+}
+
 type runtimeGraphPatch struct {
 	nodes             []pipeline.NodeRef
 	routes            []pipeline.Route
@@ -206,6 +212,34 @@ func runtimeAttachInputFromBranchSpecs(specs []BranchSpec) (runtimeAttachInput, 
 		destinations:      destinations,
 		groupDestinations: groupDestinations,
 		name:              runtimeAttachmentName(specs),
+	}, nil
+}
+
+func runtimeRebranchInputFromArgs(ctx context.Context, args []lifecycle.RebranchArg) (runtimeRebranchInput, error) {
+	policy := rebranchPolicyFromOptions(args)
+	if len(policy.specs) == 0 {
+		return runtimeRebranchInput{}, runtimeBranchInvalidError("rebranch runtime branch", "pass one or more replacement goav.Branch(name)...To(destination) specs")
+	}
+	if policy.invalid != "" {
+		return runtimeRebranchInput{}, runtimeBranchInvalidError(policy.invalid, "pass lifecycle.SwitchAt(lifecycle.AtMediaTime(position)) with position >= 0")
+	}
+	if err := ctx.Err(); err != nil {
+		return runtimeRebranchInput{}, err
+	}
+	specs := policy.specs
+	var group *switchGroup
+	if policy.boundary != switchImmediate {
+		group = newSwitchGroup(policy.boundary, policy.mediaTime)
+		specs = gatedBranchSpecs(specs, group)
+	}
+	attach, err := runtimeAttachInputFromBranchSpecs(specs)
+	if err != nil {
+		return runtimeRebranchInput{}, err
+	}
+	return runtimeRebranchInput{
+		attach:      attach,
+		group:       group,
+		disposition: policy.disposition,
 	}, nil
 }
 
@@ -1379,32 +1413,27 @@ func (a *runtimeAttachment) Rebranch(ctx context.Context, options ...lifecycle.R
 	if a == nil || a.owner == nil {
 		return nil, runtimeBranchInvalidError("rebranch runtime branch", "attachment has no owning task")
 	}
-	policy := rebranchPolicyFromOptions(options)
-	if len(policy.specs) == 0 {
-		return nil, runtimeBranchInvalidError("rebranch runtime branch", "pass one or more replacement goav.Branch(name)...To(destination) specs")
-	}
-	if policy.invalid != "" {
-		return nil, runtimeBranchInvalidError(policy.invalid, "pass lifecycle.SwitchAt(lifecycle.AtMediaTime(position)) with position >= 0")
-	}
-	specs := policy.specs
-	var group *switchGroup
-	if policy.boundary != switchImmediate {
-		group = newSwitchGroup(policy.boundary, policy.mediaTime)
-		specs = gatedBranchSpecs(specs, group)
-	}
-	// Attach the replacements first so they are live before the old branch goes
-	// away (no delivery gap); if that fails, leave the old branch untouched.
-	next, err := a.owner.Attach(ctx, specs...)
+	input, err := runtimeRebranchInputFromArgs(ctx, options)
 	if err != nil {
 		return nil, err
 	}
-	if group == nil {
-		if err := a.detachReplaced(ctx, policy.disposition); err != nil {
+	return a.rebranchRuntimeAttachment(ctx, input)
+}
+
+func (a *runtimeAttachment) rebranchRuntimeAttachment(ctx context.Context, input runtimeRebranchInput) (Attachment, error) {
+	// Attach the replacements first so they are live before the old branch goes
+	// away (no delivery gap); if that fails, leave the old branch untouched.
+	next, err := a.owner.attachRuntimeBranches(ctx, input.attach)
+	if err != nil {
+		return nil, err
+	}
+	if input.group == nil {
+		if err := a.detachReplaced(ctx, input.disposition); err != nil {
 			return next, err
 		}
 		return next, nil
 	}
-	go a.detachReplacedAtBoundary(group, policy.disposition)
+	go a.detachReplacedAtBoundary(input.group, input.disposition)
 	return next, nil
 }
 
