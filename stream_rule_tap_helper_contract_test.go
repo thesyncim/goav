@@ -3,6 +3,8 @@ package goav
 import (
 	"context"
 	"errors"
+	"os"
+	"strings"
 	"testing"
 
 	"github.com/thesyncim/goav/av"
@@ -182,9 +184,10 @@ func TestStreamRuleRemoveInputCapturesTrackedBranches(t *testing.T) {
 	input := task.streamRuleRemoveInput(av.Event{Type: av.EventStreamRemoved, StreamID: "audio"})
 	if input.streamID != "audio" ||
 		len(input.attachments) != 1 ||
-		input.attachments[0].attachment != attachment ||
-		input.attachments[0].branchName != "late" ||
-		input.attachments[0].disposition != oldBranchAbort {
+		input.attachments[0].detach.runtime != attachment ||
+		input.attachments[0].detach.attachment != attachment ||
+		input.attachments[0].detach.disposition != oldBranchAbort ||
+		input.attachments[0].branchName != "late" {
 		t.Fatalf("stream rule remove input = %+v, want captured tracked attachment", input)
 	}
 	if _, ok := task.rules.attached["audio"]; ok {
@@ -230,6 +233,27 @@ func TestHandleStreamRemovedDetachesTrackedBranchesWithDrain(t *testing.T) {
 	outcome, ok := attachment.detachOutcome.Load().(lifecycle.DestinationState)
 	if !ok || outcome != lifecycle.DestinationCommitted {
 		t.Fatalf("detach outcome = %v, %t; want committed", outcome, ok)
+	}
+}
+
+func TestStreamRuleRemoveUsesRuntimeDetachInput(t *testing.T) {
+	body, err := os.ReadFile("runtime_stream_rule.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(body)
+	required := []string{
+		"detach     runtimeDetachInput",
+		"runtimeDetachInputForRuntimeAttachment(entry.attachment, disposition)",
+		"t.detachRuntimeAttachment(context.Background(), entry.detach)",
+	}
+	for _, want := range required {
+		if !strings.Contains(text, want) {
+			t.Fatalf("runtime_stream_rule.go missing %q", want)
+		}
+	}
+	if strings.Contains(text, "entry.attachment.detachReplaced") {
+		t.Fatal("stream-rule remove path bypasses captured runtime detach input")
 	}
 }
 

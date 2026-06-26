@@ -123,7 +123,8 @@ destination arrays. Runtime attach planning also captures the resolved source
 anchor and graph snapshot with that branch record before step planning and patch
 finalization. Runtime detach now carries its captured attachment target and
 disposition through the locked stop path and child-attachment recursion instead
-of unwrapping them into loose arguments.
+of unwrapping them into loose arguments, and stream-rule removals now capture
+the same runtime detach input for each tracked attachment before mutation.
 The boundary is not complete until the remaining runtime mutation patch facts
 move into stable recipe or plan data.
 

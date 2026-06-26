@@ -47,9 +47,8 @@ type streamRuleRemoveInput struct {
 }
 
 type streamRuleRemoveAttachment struct {
-	attachment  *runtimeAttachment
-	branchName  string
-	disposition oldBranchDisposition
+	detach     runtimeDetachInput
+	branchName string
 }
 
 // installStreamRules binds the job's declared rules to the built task and
@@ -188,10 +187,10 @@ func (t *task) handleStreamRemoved(event av.Event) {
 	}
 	for i := range input.attachments {
 		entry := input.attachments[i]
-		if entry.attachment == nil {
+		if entry.detach.runtime == nil {
 			continue
 		}
-		if err := entry.attachment.detachReplaced(context.Background(), entry.disposition); err != nil {
+		if err := t.detachRuntimeAttachment(context.Background(), entry.detach); err != nil {
 			t.publishStreamRuleError(input.streamID, entry.branchName, err)
 		}
 	}
@@ -217,9 +216,8 @@ func (t *task) streamRuleRemoveInput(event av.Event) streamRuleRemoveInput {
 			disposition = rules.rules[entry.rule].removeDisposition
 		}
 		input.attachments = append(input.attachments, streamRuleRemoveAttachment{
-			attachment:  entry.attachment,
-			branchName:  entry.attachment.Name(),
-			disposition: disposition,
+			detach:     runtimeDetachInputForRuntimeAttachment(entry.attachment, disposition),
+			branchName: entry.attachment.Name(),
 		})
 	}
 	return input
