@@ -29,6 +29,21 @@ type mediaPlanMultiStreamJobInput struct {
 	namedOutputs []namedDestinationSpec
 }
 
+type mediaPlanPacketCopyStreamInput struct {
+	runtime        *Runtime
+	inputs         []InputSpec
+	outputs        []destinationSpec
+	stream         streamIntent
+	selectedStream bool
+}
+
+type mediaPlanDecodeStreamInput struct {
+	runtime *Runtime
+	inputs  []InputSpec
+	outputs []destinationSpec
+	stream  streamIntent
+}
+
 // graphPlan binds the compiled work plan — the single executable truth built
 // once by the compile — to the pipeline spec and the lowerer that executes it.
 type graphPlan struct {
@@ -313,12 +328,15 @@ func cloneStreamIntents(streams []streamIntent) []streamIntent {
 	}
 	out := make([]streamIntent, 0, len(streams))
 	for i := range streams {
-		stream := streams[i]
-		stream.Operations = cloneOperationSpecs(stream.Operations)
-		stream.Destinations = append([]string(nil), stream.Destinations...)
-		out = append(out, stream)
+		out = append(out, cloneStreamIntent(streams[i]))
 	}
 	return out
+}
+
+func cloneStreamIntent(stream streamIntent) streamIntent {
+	stream.Operations = cloneOperationSpecs(stream.Operations)
+	stream.Destinations = append([]string(nil), stream.Destinations...)
+	return stream
 }
 
 func mediaPlanStreamLowererForState(state *recipeCompileState) (graphPlanLowerer, bool, error) {
@@ -329,11 +347,29 @@ func mediaPlanStreamLowererForState(state *recipeCompileState) (graphPlanLowerer
 }
 
 func mediaPlanPacketCopyStreamLowererForState(state *recipeCompileState) (graphPlanLowerer, bool, error) {
-	stream, selectedStream, ok := mediaPlanPacketCopyStream(state)
+	input, ok := mediaPlanPacketCopyStreamInputFromCompileState(state)
 	if !ok {
 		return nil, false, nil
 	}
-	gp, ok, err := newMediaPlanPacketCopyStreamGraph(state.runtime, state.inputAttachments, state.outputAttachments, stream, selectedStream)
+	return newMediaPlanPacketCopyStreamLowerer(input)
+}
+
+func mediaPlanPacketCopyStreamInputFromCompileState(state *recipeCompileState) (mediaPlanPacketCopyStreamInput, bool) {
+	stream, selectedStream, ok := mediaPlanPacketCopyStream(state)
+	if !ok {
+		return mediaPlanPacketCopyStreamInput{}, false
+	}
+	return mediaPlanPacketCopyStreamInput{
+		runtime:        state.runtime,
+		inputs:         append([]InputSpec(nil), state.inputAttachments...),
+		outputs:        cloneDestinationSpecs(state.outputAttachments),
+		stream:         cloneStreamIntent(stream),
+		selectedStream: selectedStream,
+	}, true
+}
+
+func newMediaPlanPacketCopyStreamLowerer(input mediaPlanPacketCopyStreamInput) (graphPlanLowerer, bool, error) {
+	gp, ok, err := newMediaPlanPacketCopyStreamGraph(input.runtime, input.inputs, input.outputs, input.stream, input.selectedStream)
 	if err != nil || !ok {
 		return nil, ok, err
 	}
@@ -395,14 +431,33 @@ func streamIntentPacketCopyOnly(stream streamIntent) bool {
 }
 
 func mediaPlanDecodeStreamLowererForState(state *recipeCompileState) (graphPlanLowerer, bool, error) {
+	input, ok := mediaPlanDecodeStreamInputFromCompileState(state)
+	if !ok {
+		return nil, false, nil
+	}
+	return newMediaPlanDecodeStreamLowerer(input)
+}
+
+func mediaPlanDecodeStreamInputFromCompileState(state *recipeCompileState) (mediaPlanDecodeStreamInput, bool) {
 	if state == nil || !state.jobPresent || len(state.intent.Streams) != 1 {
-		return nil, false, nil
+		return mediaPlanDecodeStreamInput{}, false
 	}
-	stream := state.intent.Streams[0]
-	if !mediaPlanDecodeStreamShape(stream, state.outputAttachments, mediaPlanStreamInputDomain(state.inputAttachments, stream) == shape.DomainFrame) {
-		return nil, false, nil
+	stream := cloneStreamIntent(state.intent.Streams[0])
+	inputs := append([]InputSpec(nil), state.inputAttachments...)
+	outputs := cloneDestinationSpecs(state.outputAttachments)
+	if !mediaPlanDecodeStreamShape(stream, outputs, mediaPlanStreamInputDomain(inputs, stream) == shape.DomainFrame) {
+		return mediaPlanDecodeStreamInput{}, false
 	}
-	gp, ok, err := newMediaPlanDecodeStreamGraph(state.runtime, state.inputAttachments, state.outputAttachments, stream)
+	return mediaPlanDecodeStreamInput{
+		runtime: state.runtime,
+		inputs:  inputs,
+		outputs: outputs,
+		stream:  stream,
+	}, true
+}
+
+func newMediaPlanDecodeStreamLowerer(input mediaPlanDecodeStreamInput) (graphPlanLowerer, bool, error) {
+	gp, ok, err := newMediaPlanDecodeStreamGraph(input.runtime, input.inputs, input.outputs, input.stream)
 	if err != nil || !ok {
 		return nil, ok, err
 	}

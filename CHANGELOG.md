@@ -58,6 +58,8 @@ methodology changes, and migration notes.
   planner data.
 - Routed multi-stream job graph lowering through an explicit handoff before
   branch-compose graph construction.
+- Routed single-stream packet-copy and decode graph lowering through explicit
+  handoffs before graph construction.
 - Moved normal media-planner input binding and selected-stream resolution onto
   recipe IR input facts instead of concrete input attachments.
 - Moved copy-branch source-shape planning onto recipe IR input facts.
