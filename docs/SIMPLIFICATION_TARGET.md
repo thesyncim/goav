@@ -122,7 +122,9 @@ Multi-stream job graph lowering now enters through a
 captured handoff before branch-compose graph construction, and single-stream
 packet-copy and decode graph lowerers now select streams from recipe IR before
 graph construction. Attachment-consistency validation now counts recipe IR
-inputs and destinations instead of the legacy intent mirror.
+inputs and destinations instead of the legacy intent mirror, and
+encode/transform adapter validation now reads recipe IR stream facts at the pass
+boundary.
 Explicit branch-composition graph lowering also now uses a captured handoff
 with cloned branch-compose plan data. The compile state no longer stores the
 concrete join plan; graph-plan construction passes the selected join lowerer

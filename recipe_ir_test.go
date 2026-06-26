@@ -834,6 +834,28 @@ func TestAttachmentConsistencyPassConsumesRecipeIR(t *testing.T) {
 	}
 }
 
+func TestAdapterValidationPassesConsumeRecipeIRStreams(t *testing.T) {
+	body, err := os.ReadFile("recipe_compile.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := string(body)
+	for _, fn := range []string{
+		"validateJobEncodeAdaptersPass",
+		"validateJobTransformAdaptersPass",
+		"validateBranchEncodeAdaptersPass",
+		"validateBranchTransformAdaptersPass",
+	} {
+		fnBody := sourceFunctionBody(t, source, fn)
+		if !strings.Contains(fnBody, "streamIntentsFromRecipeIR(state.recipe.Streams)") {
+			t.Fatalf("%s should pass recipe IR streams into adapter validation", fn)
+		}
+		if strings.Contains(fnBody, "state.intent.Streams") {
+			t.Fatalf("%s still validates adapters from legacy stream mirror", fn)
+		}
+	}
+}
+
 func TestBranchRecipeSnapshotBuildsRecipeIRDirectly(t *testing.T) {
 	body, err := os.ReadFile("recipe_ir.go")
 	if err != nil {

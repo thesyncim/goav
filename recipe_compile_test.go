@@ -35,6 +35,22 @@ func decodeEncodeIntentOperations(spec codec.CodecSpec) []operationSpec {
 	return append(decodeIntentOperations(), operationSpecForEncode(spec))
 }
 
+func moveTestStreamsToRecipeIR(state *recipeCompileState, kind recipeir.Kind) {
+	if state == nil {
+		return
+	}
+	if state.recipe.Kind == "" {
+		state.recipe.Kind = kind
+	}
+	if len(state.recipe.Streams) == 0 && len(state.intent.Streams) != 0 {
+		state.recipe.Streams = make([]recipeir.Stream, 0, len(state.intent.Streams))
+		for i := range state.intent.Streams {
+			state.recipe.Streams = append(state.recipe.Streams, recipeIRStreamFromIntent(state.intent.Streams[i]))
+		}
+	}
+	state.intent.Streams = nil
+}
+
 type graphPlanTestLowerer struct {
 	runtime *runtime
 	called  bool
@@ -2189,6 +2205,12 @@ func TestEncodeAdapterPassesRejectMissingEncoders(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			switch tt.pass.Name() {
+			case "validate job encode adapters":
+				moveTestStreamsToRecipeIR(&tt.state, recipeir.KindJob)
+			case "validate transcode encode adapters":
+				moveTestStreamsToRecipeIR(&tt.state, recipeir.KindBranchComposition)
+			}
 			err := tt.pass.Apply(&tt.state)
 			var buildErr *BuildError
 			if !errors.As(err, &buildErr) || buildErr.Code != tt.code || !errors.Is(err, tt.cause) {
@@ -2285,6 +2307,12 @@ func TestEncodeAdapterPassesRejectIncompatibleDescriptors(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			switch tt.pass.Name() {
+			case "validate job encode adapters":
+				moveTestStreamsToRecipeIR(&tt.state, recipeir.KindJob)
+			case "validate transcode encode adapters":
+				moveTestStreamsToRecipeIR(&tt.state, recipeir.KindBranchComposition)
+			}
 			err := tt.pass.Apply(&tt.state)
 			var buildErr *BuildError
 			if !errors.As(err, &buildErr) || buildErr.Code != "encode_adapter_incompatible" || !errors.Is(err, errUnsupportedBuild) {
@@ -2339,6 +2367,12 @@ func TestTransformAdapterPassesRejectMissingFilters(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			switch tt.pass.Name() {
+			case "validate job transform adapters":
+				moveTestStreamsToRecipeIR(&tt.state, recipeir.KindJob)
+			case "validate transcode transform adapters":
+				moveTestStreamsToRecipeIR(&tt.state, recipeir.KindBranchComposition)
+			}
 			err := tt.pass.Apply(&tt.state)
 			var buildErr *BuildError
 			if !errors.As(err, &buildErr) || buildErr.Code != "transform_adapter_missing" || !errors.Is(err, filter.ErrNotFound) {
@@ -2475,6 +2509,12 @@ func TestTransformAdapterPassesRejectIncompatibleDescriptors(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			switch tt.pass.Name() {
+			case "validate job transform adapters":
+				moveTestStreamsToRecipeIR(&tt.state, recipeir.KindJob)
+			case "validate transcode transform adapters":
+				moveTestStreamsToRecipeIR(&tt.state, recipeir.KindBranchComposition)
+			}
 			err := tt.pass.Apply(&tt.state)
 			var buildErr *BuildError
 			if !errors.As(err, &buildErr) || buildErr.Code != "transform_adapter_incompatible" || !errors.Is(err, errUnsupportedBuild) {
