@@ -131,7 +131,7 @@ func planStreamInputBinding(state *recipeCompileState, stream streamIntent) (inp
 	if state == nil {
 		return inputIntent{}, "input"
 	}
-	inputs := state.intent.Inputs
+	inputs := state.recipeInputIntents()
 	if len(inputs) <= 1 {
 		return firstInput(inputs), firstInputName(inputs)
 	}
@@ -204,7 +204,7 @@ func planSelectedStream(state *recipeCompileState, stream streamIntent) (av.Stre
 		return av.Stream{}, false
 	}
 	if jobStreamSelectionNeedsUnion(state, stream) {
-		sets := jobInputStreamSetsFromRecipeIR(state.intent.Inputs, state.inputFacts, state.inputProbes)
+		sets := jobInputStreamSetsFromRecipeIR(state.recipeInputIntents(), state.inputFacts, state.inputProbes)
 		selected, ok, err := selectStreamAcrossInputSets(sets, streamIntentSelector(stream), stream.Select.Input)
 		if err != nil || !ok {
 			return av.Stream{}, false
@@ -230,7 +230,7 @@ func planSelectedStream(state *recipeCompileState, stream streamIntent) (av.Stre
 		}
 		return selected, true
 	}
-	streams := liveIntentStreams(state.intent.Inputs)
+	streams := liveIntentStreams(state.recipeInputIntents())
 	if len(streams) != 0 {
 		selected, err := selectDecodeStream(streams, selector)
 		if err == nil {
@@ -271,12 +271,16 @@ func planSelectedStream(state *recipeCompileState, stream streamIntent) (av.Stre
 }
 
 func planCopyBranches(state *recipeCompileState, outputs []planOutput) ([]planBranch, []planDecision) {
-	intent := state.intent
-	branches := make([]planBranch, 0, len(intent.Inputs))
-	decisions := make([]planDecision, 0, len(intent.Inputs))
+	inputs := state.recipeInputIntents()
+	copyRequested := state.intent.Copy
+	if state.recipe.Kind != "" {
+		copyRequested = state.recipe.Copy
+	}
+	branches := make([]planBranch, 0, len(inputs))
+	decisions := make([]planDecision, 0, len(inputs))
 	outputNames := planOutputNames(outputs)
-	for i := range intent.Inputs {
-		input := intent.Inputs[i]
+	for i := range inputs {
+		input := inputs[i]
 		name := firstNonEmpty(input.Name, input.URI, fmt.Sprintf("input-%d", i))
 		spec := mediaShapeFromInputIntent(input, shape.DomainPacket)
 		if sourceShape, ok := state.inputSourceShape(i); ok {
@@ -285,7 +289,7 @@ func planCopyBranches(state *recipeCompileState, outputs []planOutput) ([]planBr
 		operations := planInputOperationsForShape(input, spec)
 		copyDetail := "preserve encoded packets"
 		copyMessage := "no decode, transform, or encode requested; packets are copied to outputs"
-		if intent.Copy {
+		if copyRequested {
 			copyDetail = "explicit packet copy"
 			copyMessage = ".Copy requested; packets are copied to outputs"
 		}

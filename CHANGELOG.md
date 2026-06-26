@@ -83,6 +83,9 @@ methodology changes, and migration notes.
 - Carried the full captured recipe IR through compile state and made normal
   work-plan handoff inputs, streams, destinations, and solver-updated
   operations read from that recipe boundary.
+- Routed media input binding, copy planning, live stream selection, and
+  multi-input stream resolution through captured recipe input facts instead of
+  the legacy intent mirror.
 - Updated front-door docs to use task capability vocabulary for runtime attach
   examples instead of teaching `LiveTask` as the normal user type, and to
   describe `Watch` as the primary observation surface.

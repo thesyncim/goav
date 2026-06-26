@@ -256,6 +256,17 @@ func inputIntentFromRecipeIR(in recipeir.Input) inputIntent {
 	}
 }
 
+func inputIntentsFromRecipeIR(inputs []recipeir.Input) []inputIntent {
+	if len(inputs) == 0 {
+		return nil
+	}
+	out := make([]inputIntent, 0, len(inputs))
+	for i := range inputs {
+		out = append(out, inputIntentFromRecipeIR(inputs[i]))
+	}
+	return out
+}
+
 func recipeIRStreamFromIntent(in streamIntent) recipeir.Stream {
 	out := recipeir.Stream{
 		Name:        in.Name,

@@ -122,6 +122,16 @@ func (s *recipeCompileState) outputFormatMap() map[string]av.FormatID {
 	return formats
 }
 
+func (s *recipeCompileState) recipeInputIntents() []inputIntent {
+	if s == nil {
+		return nil
+	}
+	if len(s.recipe.Inputs) != 0 {
+		return inputIntentsFromRecipeIR(s.recipe.Inputs)
+	}
+	return cloneInputIntents(s.intent.Inputs)
+}
+
 func destinationSpecFormat(output destinationSpec) av.FormatID {
 	if output.resolvedFormat != "" {
 		return output.resolvedFormat
@@ -1071,15 +1081,17 @@ func validateRecipeAttachmentConsistencyPass() recipeCompilePass {
 	return recipeCompilePassFunc{name: "validate recipe attachments", fn: func(state *recipeCompileState) error {
 		switch {
 		case state.jobPresent:
-			if len(state.intent.Inputs) != len(state.inputAttachments) {
-				return recipeAttachmentMismatchError(state.operation, "inputs", len(state.intent.Inputs), len(state.inputAttachments))
+			inputCount := len(state.recipeInputIntents())
+			if inputCount != len(state.inputAttachments) {
+				return recipeAttachmentMismatchError(state.operation, "inputs", inputCount, len(state.inputAttachments))
 			}
 			if len(state.intent.Destinations) != len(state.outputAttachments) {
 				return recipeAttachmentMismatchError(state.operation, "destinations", len(state.intent.Destinations), len(state.outputAttachments))
 			}
 		case state.branchCompositionPresent:
-			if len(state.intent.Inputs) != 1 {
-				return recipeAttachmentMismatchError(state.operation, "inputs", len(state.intent.Inputs), 1)
+			inputCount := len(state.recipeInputIntents())
+			if inputCount != 1 {
+				return recipeAttachmentMismatchError(state.operation, "inputs", inputCount, 1)
 			}
 			if len(state.intent.Destinations) != len(state.branchDestinationAttachments) {
 				return recipeAttachmentMismatchError(state.operation, "destinations", len(state.intent.Destinations), len(state.branchDestinationAttachments))
@@ -1129,7 +1141,7 @@ func validateJobLiveStreamSelectionPass() recipeCompilePass {
 			if !streamNeedsDecodeForState(state, stream) {
 				continue
 			}
-			if err := validateLiveStreamSelection(state.intent.Inputs, stream); err != nil {
+			if err := validateLiveStreamSelection(state.recipeInputIntents(), stream); err != nil {
 				return err
 			}
 		}
@@ -1165,7 +1177,7 @@ func jobStreamSelectionNeedsUnion(state *recipeCompileState, stream streamIntent
 	if state == nil || !state.jobPresent {
 		return false
 	}
-	return len(state.intent.Inputs) > 1 || stream.Select.Input != ""
+	return len(state.recipeInputIntents()) > 1 || stream.Select.Input != ""
 }
 
 // validateJobStreamSelectionAcrossInputs resolves one stream chain against the
@@ -1173,7 +1185,7 @@ func jobStreamSelectionNeedsUnion(state *recipeCompileState, stream streamIntent
 // fail with the candidate list (input + stream id + media kind) and
 // InputName/StreamID narrowing suggestions.
 func validateJobStreamSelectionAcrossInputs(state *recipeCompileState, stream streamIntent) error {
-	sets := jobInputStreamSetsFromRecipeIR(state.intent.Inputs, state.inputFacts, state.inputProbes)
+	sets := jobInputStreamSetsFromRecipeIR(state.recipeInputIntents(), state.inputFacts, state.inputProbes)
 	_, _, err := selectStreamAcrossInputSets(sets, streamIntentSelector(stream), stream.Select.Input)
 	return err
 }
@@ -1214,7 +1226,7 @@ func jobStreamCustomSourceShape(state *recipeCompileState, stream streamIntent) 
 	if state.branchCompositionPresent || len(state.inputAttachments) <= 1 {
 		return compileStateCustomSourceShape(state)
 	}
-	sets := jobInputStreamSetsFromRecipeIR(state.intent.Inputs, state.inputFacts, state.inputProbes)
+	sets := jobInputStreamSetsFromRecipeIR(state.recipeInputIntents(), state.inputFacts, state.inputProbes)
 	index, ok := resolveInputSetIndex(sets, streamIntentSelector(stream), stream.Select.Input)
 	if !ok {
 		return shape.Spec{}, false

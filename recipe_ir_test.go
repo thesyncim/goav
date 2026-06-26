@@ -218,6 +218,7 @@ func TestNormalWorkPlanConsumesHandoff(t *testing.T) {
 		work.Inputs[0].Name != "input.ivf" ||
 		len(work.Streams) != 1 ||
 		len(work.Branches) != 1 ||
+		work.Branches[0].Input != "input.ivf" ||
 		len(work.Destinations) != 1 ||
 		work.Destinations[0].Name != "output.ivf" {
 		t.Fatalf("normal work plan = inputs:%+v streams:%+v branches:%+v destinations:%+v, want captured handoff data",
@@ -552,8 +553,12 @@ func TestMediaPlannerUsesRecipeIRInputFacts(t *testing.T) {
 		if !strings.Contains(fnBody, "jobInputStreamSetsFromRecipeIR") {
 			t.Fatalf("%s should derive stream sets from recipe IR input facts", fn)
 		}
+		if !strings.Contains(fnBody, "state.recipeInputIntents()") {
+			t.Fatalf("%s should derive input intents from recipe IR input facts", fn)
+		}
 		if strings.Contains(fnBody, "jobInputStreamSets(state.intent.Inputs, state.inputAttachments") ||
-			strings.Contains(fnBody, "jobInputStreamSets(inputs, state.inputAttachments") {
+			strings.Contains(fnBody, "jobInputStreamSets(inputs, state.inputAttachments") ||
+			strings.Contains(fnBody, "state.intent.Inputs") {
 			t.Fatalf("%s still derives stream sets from concrete input attachments", fn)
 		}
 	}
@@ -564,6 +569,9 @@ func TestMediaPlannerUsesRecipeIRInputFacts(t *testing.T) {
 	copyBody := sourceFunctionBody(t, string(body), "planCopyBranches")
 	if !strings.Contains(copyBody, "state.inputSourceShape(i)") {
 		t.Fatal("planCopyBranches should read declared source shape through recipe IR input facts")
+	}
+	if !strings.Contains(copyBody, "state.recipeInputIntents()") {
+		t.Fatal("planCopyBranches should read input intents from recipe IR input facts")
 	}
 	if strings.Contains(copyBody, "declaredSourceShape(state.inputAttachments") {
 		t.Fatal("planCopyBranches still reads source shape directly from concrete input attachments")
