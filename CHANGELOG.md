@@ -49,6 +49,8 @@ methodology changes, and migration notes.
   concrete runtime rule attachments.
 - Captured join summary facts in the immutable recipe IR and made join
   stream-set planning use IR input facts instead of concrete input attachments.
+- Routed join planning through an explicit IR-derived handoff so the planner no
+  longer reaches through compile state for stream-set facts.
 - Added the pre-v1 simplification target, started the immutable recipe IR
   boundary used by compile-time planning, and tightened task runtime semantics
   so `Run` preserves both execution and finalization failures while `Events`
