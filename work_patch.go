@@ -89,8 +89,8 @@ func newAttachPlan() *attachPlan {
 // registerBranch records the branch's apply context — anchor, route policy,
 // buffer, and the prepared stages it owns — before names are reserved, so a
 // later planning failure can still close everything the branch opened.
-func (p *attachPlan) registerBranch(input runtimeAttachBranchInput, from string, steps []attachStep) int {
-	spec := input.spec
+func (p *attachPlan) registerBranch(input runtimeAttachBranchPlanInput, steps []attachStep) int {
+	spec := input.branch.spec
 	policy := spec.source.policy
 	if policy == "" {
 		policy = pipeline.RouteAll
@@ -103,7 +103,7 @@ func (p *attachPlan) registerBranch(input runtimeAttachBranchInput, from string,
 	}
 	p.branches = append(p.branches, attachPlanBranch{
 		name:   firstNonEmpty(spec.name, "branch"),
-		from:   pipeline.NodeRef(from),
+		from:   pipeline.NodeRef(input.from),
 		policy: policy,
 		label:  spec.source.label,
 		buffer: spec.branchBuffer.PipelinePolicy(),
@@ -126,11 +126,11 @@ func (p *attachPlan) closeOwned() {
 // build path compiles — opening the stages and destinations each step needs
 // against the live anchor shape. Destinations open before any graph mutation;
 // on failure every stage the walk owned is closed.
-func (t *task) planAttachBranchSteps(ctx context.Context, input runtimeAttachBranchInput, anchor snapshot.Tap, group *runtimeAttachGroup) ([]attachStep, error) {
-	spec := input.spec
-	destinations := input.destinations
+func (t *task) planAttachBranchSteps(ctx context.Context, input runtimeAttachBranchPlanInput, group *runtimeAttachGroup) ([]attachStep, error) {
+	spec := input.branch.spec
+	destinations := input.branch.destinations
 	branchName := firstNonEmpty(spec.name, "branch")
-	currentShape := runtimeBranchAnchorShape(anchor)
+	currentShape := runtimeBranchAnchorShape(input.anchor)
 	if spec.media != "" && currentShape.MediaKind != "" {
 		if err := validateChainMedia("attach runtime branch", branchName, currentShape.MediaKind, chainSpec{name: spec.name, media: spec.media}); err != nil {
 			return nil, err
@@ -447,8 +447,9 @@ func (t *task) planAttachMuxDestinationStep(ctx context.Context, branchName stri
 // and the attach group, then emits the branch's slice of the patch: its
 // operations, taps, destinations, and edges, with the prepared components
 // registered under their planned nodes.
-func (p *attachPlan) finalizeBranch(index int, input runtimeAttachBranchInput, anchor snapshot.Tap, graphSpec pipeline.Spec, group *runtimeAttachGroup, steps []attachStep) error {
-	destinations := input.destinations
+func (p *attachPlan) finalizeBranch(index int, input runtimeAttachBranchPlanInput, group *runtimeAttachGroup, steps []attachStep) error {
+	destinations := input.branch.destinations
+	graphSpec := input.graphSpec
 	branch := &p.branches[index]
 	name := branch.name
 	opStart := len(p.work.Operations)
@@ -565,7 +566,7 @@ func (p *attachPlan) finalizeBranch(index int, input runtimeAttachBranchInput, a
 	p.work.Branches = append(p.work.Branches, workBranch{
 		ID:           workBranchID(name, index),
 		Name:         name,
-		SourceShape:  normalizeTapShape(runtimeBranchAnchorShape(anchor)),
+		SourceShape:  normalizeTapShape(runtimeBranchAnchorShape(input.anchor)),
 		Operations:   ids,
 		Destinations: attachDestinationIDs(destinations),
 	})

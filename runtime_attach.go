@@ -69,6 +69,13 @@ type runtimeAttachBranchInput struct {
 	destinations []attachDestination
 }
 
+type runtimeAttachBranchPlanInput struct {
+	branch    runtimeAttachBranchInput
+	from      string
+	anchor    snapshot.Tap
+	graphSpec pipeline.Spec
+}
+
 type runtimeAttachInput struct {
 	branches          []runtimeAttachBranchInput
 	groupDestinations runtimeBranchGroupDestinations
@@ -264,28 +271,27 @@ func (t *task) attachRuntimeBranches(ctx context.Context, input runtimeAttachInp
 	}
 	for i := range input.branches {
 		branch := input.branches[i]
-		spec := branch.spec
-		graphSpec := t.graph.Spec()
-		from, anchor, err := t.resolveRuntimeBranchAnchor(spec, graphSpec, patch.taps)
+		planInput, err := t.runtimeAttachBranchPlanInput(branch, patch.taps)
 		if err != nil {
 			return rollback(err)
 		}
-		patch.addAnchor(spec.source.tap, from)
-		steps, err := t.planAttachBranchSteps(ctx, branch, anchor, group)
+		spec := planInput.branch.spec
+		patch.addAnchor(spec.source.tap, planInput.from)
+		steps, err := t.planAttachBranchSteps(ctx, planInput, group)
 		if err != nil {
 			return rollback(err)
 		}
-		index := ap.registerBranch(branch, from, steps)
+		index := ap.registerBranch(planInput, steps)
 		if err := t.validateAttachBranchTapsLocked(steps, patch.taps); err != nil {
 			return rollback(err)
 		}
-		if err := t.configureAttachBranchBuffer(&ap.branches[index], branch, steps); err != nil {
+		if err := t.configureAttachBranchBuffer(&ap.branches[index], planInput, steps); err != nil {
 			return rollback(err)
 		}
 		if spec.branchBuffer.CopyMode == flow.CopyNever {
 			patch.copyNeverBranches = append(patch.copyNeverBranches, firstNonEmpty(spec.name, "branch"))
 		}
-		if err := ap.finalizeBranch(index, branch, anchor, graphSpec, group, steps); err != nil {
+		if err := ap.finalizeBranch(index, planInput, group, steps); err != nil {
 			return rollback(err)
 		}
 		patch.addPlannedTaps(ap.branches[index].taps)
@@ -320,11 +326,25 @@ func (t *task) attachRuntimeBranches(ctx context.Context, input runtimeAttachInp
 	return attachment, nil
 }
 
-func (t *task) configureAttachBranchBuffer(branch *attachPlanBranch, input runtimeAttachBranchInput, steps []attachStep) error {
+func (t *task) runtimeAttachBranchPlanInput(branch runtimeAttachBranchInput, pending []snapshot.Tap) (runtimeAttachBranchPlanInput, error) {
+	graphSpec := t.graph.Spec()
+	from, anchor, err := t.resolveRuntimeBranchAnchor(branch.spec, graphSpec, pending)
+	if err != nil {
+		return runtimeAttachBranchPlanInput{}, err
+	}
+	return runtimeAttachBranchPlanInput{
+		branch:    branch,
+		from:      from,
+		anchor:    anchor,
+		graphSpec: graphSpec,
+	}, nil
+}
+
+func (t *task) configureAttachBranchBuffer(branch *attachPlanBranch, input runtimeAttachBranchPlanInput, steps []attachStep) error {
 	if branch == nil {
 		return nil
 	}
-	spec := input.spec
+	spec := input.branch.spec
 	if _, ok := t.graph.(pipeline.NodeInjector); !ok {
 		return nil
 	}
