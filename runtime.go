@@ -669,17 +669,42 @@ func taskSnapshotDestinations(root []snapshot.Destination, branches []snapshot.B
 }
 
 func (t *task) Detach(ctx context.Context, attachment Attachment, options ...lifecycle.DetachOption) error {
-	if err := ctx.Err(); err != nil {
+	input, err := runtimeDetachInputFromArgs(ctx, attachment, options)
+	if err != nil {
 		return err
 	}
+	return t.detachRuntimeAttachment(ctx, input)
+}
+
+type runtimeDetachInput struct {
+	attachment  Attachment
+	runtime     *runtimeAttachment
+	disposition oldBranchDisposition
+}
+
+func runtimeDetachInputFromArgs(ctx context.Context, attachment Attachment, options []lifecycle.DetachOption) (runtimeDetachInput, error) {
+	if err := ctx.Err(); err != nil {
+		return runtimeDetachInput{}, err
+	}
 	if attachment == nil {
-		return nilAttachmentDetachError()
+		return runtimeDetachInput{}, nilAttachmentDetachError()
 	}
 	policy := detachPolicyFromOptions(options)
-	if runtimeAttachment, ok := attachment.(*runtimeAttachment); ok {
-		return t.stopAttachment(ctx, runtimeAttachment, policy.disposition)
+	input := runtimeDetachInput{
+		attachment:  attachment,
+		disposition: policy.disposition,
 	}
-	return attachment.Close(ctx)
+	if runtimeAttachment, ok := attachment.(*runtimeAttachment); ok {
+		input.runtime = runtimeAttachment
+	}
+	return input, nil
+}
+
+func (t *task) detachRuntimeAttachment(ctx context.Context, input runtimeDetachInput) error {
+	if input.runtime != nil {
+		return t.stopAttachment(ctx, input.runtime, input.disposition)
+	}
+	return input.attachment.Close(ctx)
 }
 
 func nilAttachmentDetachError() error {
