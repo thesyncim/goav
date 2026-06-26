@@ -29,6 +29,93 @@ type errorCatalogExample struct {
 	Cause         string
 }
 
+var derivedJoinErrorCatalogEntries = []errorCatalogEntry{
+	{
+		Section:  "Derived join codes (built-in Mix, Composite, Select profiles).",
+		Constant: `joinErrorCode("mix", "inputs")`,
+		Code:     "mix_inputs",
+		Kind:     "refusal",
+		When:     "Mix is given fewer than two arms.",
+	},
+	{
+		Section:  "Derived join codes (built-in Mix, Composite, Select profiles).",
+		Constant: `joinErrorCode("mix", "arm")`,
+		Code:     "mix_arm",
+		Kind:     "refusal",
+		When:     "A Mix arm is invalid: wrong media, duplicate stream ids, an unconvertible format, or a nested arm carrying .Encode.",
+	},
+	{
+		Section:  "Derived join codes (built-in Mix, Composite, Select profiles).",
+		Constant: `joinErrorCode("mix", "destination")`,
+		Code:     "mix_destination",
+		Kind:     "refusal",
+		When:     "Mix without .Encode is routed to a non-sink destination.",
+	},
+	{
+		Section:  "Derived join codes (built-in Mix, Composite, Select profiles).",
+		Constant: `joinErrorCode("mix", "tap_arm")`,
+		Code:     "mix_tap_arm",
+		Kind:     "refusal",
+		When:     "A Mix tap arm references a tap no earlier arm declares.",
+	},
+	{
+		Section:  "Derived join codes (built-in Mix, Composite, Select profiles).",
+		Constant: `joinErrorCode("composite", "inputs")`,
+		Code:     "composite_inputs",
+		Kind:     "refusal",
+		When:     "Composite is given fewer than two arms.",
+	},
+	{
+		Section:  "Derived join codes (built-in Mix, Composite, Select profiles).",
+		Constant: `joinErrorCode("composite", "arm")`,
+		Code:     "composite_arm",
+		Kind:     "refusal",
+		When:     "A Composite arm is invalid: wrong media, duplicate stream ids, an unconvertible format, or unsupported nested operations.",
+	},
+	{
+		Section:  "Derived join codes (built-in Mix, Composite, Select profiles).",
+		Constant: `joinErrorCode("composite", "destination")`,
+		Code:     "composite_destination",
+		Kind:     "refusal",
+		When:     "Composite without .Encode is routed to a non-sink destination.",
+	},
+	{
+		Section:  "Derived join codes (built-in Mix, Composite, Select profiles).",
+		Constant: `joinErrorCode("composite", "tap_arm")`,
+		Code:     "composite_tap_arm",
+		Kind:     "refusal",
+		When:     "A Composite tap arm references a tap no earlier arm declares.",
+	},
+	{
+		Section:  "Derived join codes (built-in Mix, Composite, Select profiles).",
+		Constant: `joinErrorCode("select", "inputs")`,
+		Code:     "select_inputs",
+		Kind:     "refusal",
+		When:     "Select is given fewer than two arms.",
+	},
+	{
+		Section:  "Derived join codes (built-in Mix, Composite, Select profiles).",
+		Constant: `joinErrorCode("select", "arm")`,
+		Code:     "select_arm",
+		Kind:     "refusal",
+		When:     "A Select arm is invalid: duplicate stream ids, incompatible media facts, or unsupported nested operations.",
+	},
+	{
+		Section:  "Derived join codes (built-in Mix, Composite, Select profiles).",
+		Constant: `joinErrorCode("select", "destination")`,
+		Code:     "select_destination",
+		Kind:     "refusal",
+		When:     "Select's output cannot reach the declared destination kind.",
+	},
+	{
+		Section:  "Derived join codes (built-in Mix, Composite, Select profiles).",
+		Constant: `joinErrorCode("select", "tap_arm")`,
+		Code:     "select_tap_arm",
+		Kind:     "refusal",
+		When:     "A Select tap arm references a tap no earlier arm declares.",
+	},
+}
+
 var errorCatalogExamples = []errorCatalogExample{
 	{
 		Code:          "input_invalid",
@@ -1243,6 +1330,9 @@ func readErrorCatalogEntries(t *testing.T) []errorCatalogEntry {
 				})
 			}
 		}
+		if strings.HasPrefix(section, "Join codes") {
+			entries = append(entries, derivedJoinErrorCatalogEntries...)
+		}
 	}
 	if len(entries) == 0 {
 		t.Fatal("no errcode.Code constants found")
@@ -1303,7 +1393,7 @@ func renderErrorCatalogDoc(entries []errorCatalogEntry) string {
 	b.WriteString("# Error Catalog\n\n")
 	b.WriteString("<!-- Code generated from errcode/errcode.go by TestErrorCatalogDocMatchesErrcodeCatalog; DO NOT EDIT BY HAND. -->\n\n")
 	b.WriteString("This catalog is the checked index of goav's public BuildError refusal codes. ")
-	b.WriteString("The `Code`, `Constant`, `Section`, `Kind`, and `When it fires` columns are generated from `errcode/errcode.go`, so a new code must update the source catalog and this checked document together.\n\n")
+	b.WriteString("The `Code`, `Constant`, `Section`, `Kind`, and `When it fires` columns are generated from `errcode/errcode.go` plus checked derived-code tables, so a new code must update the source catalog and this checked document together.\n\n")
 	b.WriteString("Every current catalog row names coverage. If a future row is marked `catalog-only`, it still needs a dedicated bad recipe, rendered golden error, fixed recipe, sentinel/cause, and test name before the v1 error catalog is complete. ")
 	b.WriteString("Rows naming tests already have public grammar snippets, rendered-error assertions, fix coverage, or sentinel checks in the named test.\n\n")
 	b.WriteString("## Acceptance Snippet Coverage\n\n")

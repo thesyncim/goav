@@ -28,7 +28,7 @@ func TestJoinDestinationShapeValidationParity(t *testing.T) {
 		From(mixTestAudioSource("b", 1)).Audio(),
 	).To(Write("out.ogg", io.Discard, Format(av.FormatOgg))).
 		Build(context.Background())
-	assertJoinParityBuildError(t, err, errcode.MixDestination)
+	assertJoinParityBuildError(t, err, errcode.Code("mix_destination"))
 }
 
 func TestJoinTransformAdapterValidationParity(t *testing.T) {

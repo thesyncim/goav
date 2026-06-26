@@ -50,10 +50,6 @@ errcode.Code
 errcode.CodecChangePolicyUnsupported
 errcode.CompilerPassFailed
 errcode.CompilerPassInvalid
-errcode.CompositeArm
-errcode.CompositeDestination
-errcode.CompositeInputs
-errcode.CompositeTapArm
 errcode.CopyBranchSourceInvalid
 errcode.CopyUnsupported
 errcode.DecodeAdapterIncompatible
@@ -115,10 +111,6 @@ errcode.InputUnknown
 errcode.JobInvalid
 errcode.JoinNameInvalid
 errcode.JoinStageInvalid
-errcode.MixArm
-errcode.MixDestination
-errcode.MixInputs
-errcode.MixTapArm
 errcode.MultiInputUnsupported
 errcode.OperationShapeMismatch
 errcode.OutputDestinationMissing
@@ -149,10 +141,6 @@ errcode.RuntimeBranchTapDuplicate
 errcode.RuntimeBranchTapMissing
 errcode.RuntimeBranchTransformError
 errcode.RuntimeMissing
-errcode.SelectArm
-errcode.SelectDestination
-errcode.SelectInputs
-errcode.SelectTapArm
 errcode.ShapeAdapterAmbiguous
 errcode.ShapeAdapterMissing
 errcode.ShapeConversionRefused

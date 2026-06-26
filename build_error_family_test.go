@@ -23,7 +23,7 @@ func TestBuildErrorFamilyForCodePinned(t *testing.T) {
 		{errcode.BranchInvalid, errcode.FamilyBranch},
 		{errcode.BufferPayloadUnsafe, errcode.FamilyBuffer},
 		{errcode.TapInvalid, errcode.FamilyTap},
-		{errcode.MixInputs, errcode.FamilyJoin},
+		{errcode.Code("mix_inputs"), errcode.FamilyJoin},
 		{errcode.RuntimeBranchInvalid, errcode.FamilyRuntimeBranch},
 		{errcode.StreamRuleInvalid, errcode.FamilyStreamRule},
 		{errcode.CompilerPassFailed, errcode.FamilyCompiler},

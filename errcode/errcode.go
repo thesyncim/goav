@@ -112,10 +112,7 @@ func FamilyForCode(code Code) Family {
 		return FamilyBuffer
 	case TapInvalid, TapDomainMismatch:
 		return FamilyTap
-	case JoinNameInvalid, JoinStageInvalid, MixInputs, MixArm, MixDestination,
-		MixTapArm, CompositeInputs, CompositeArm, CompositeDestination,
-		CompositeTapArm, SelectInputs, SelectArm, SelectDestination,
-		SelectTapArm:
+	case JoinNameInvalid, JoinStageInvalid:
 		return FamilyJoin
 	case RuntimeBranchInvalid, RuntimeBranchAnchorMissing,
 		RuntimeBranchTapMissing, RuntimeBranchTapDuplicate,
@@ -463,13 +460,10 @@ const (
 	TapDomainMismatch Code = "tap_domain_mismatch"
 )
 
-// Join codes (Mix, Composite, Select, and custom goav.Join kinds). Each join
-// kind raises its own per-kind code, derived as <kind>_<family> by the goav
-// root joinErrorCode helper; the full enumeration for the built-in kinds is
-// declared here. A custom join named "crossfade" raises the same families
-// under its own name (crossfade_inputs, crossfade_arm, crossfade_destination,
-// crossfade_tap_arm) — the snake-safe name requirement (JoinNameInvalid)
-// keeps those derived codes well-formed.
+// Join codes. Built-in and custom join profile refusals derive per-kind codes
+// as <kind>_<family> through goav's joinErrorCode helper; custom joins use the
+// same families under their own snake-safe names. The explicit catalog here is
+// limited to constructor/name validation that does not derive from a profile.
 const (
 	// JoinNameInvalid fires when a custom join (goav.Join) declares an
 	// unusable name: empty, not snake-safe ([a-z][a-z0-9_]*), reserved by a
@@ -479,37 +473,6 @@ const (
 	// JoinStageInvalid fires when a custom join's convergence stage is nil
 	// or reports a Name() different from the join's name.
 	JoinStageInvalid Code = "join_stage_invalid"
-	// MixInputs fires when Mix is given fewer than two arms.
-	MixInputs Code = "mix_inputs"
-	// MixArm fires when a Mix arm is invalid: wrong media, duplicate
-	// stream ids, an unconvertible format, or a nested arm carrying .Encode.
-	MixArm Code = "mix_arm"
-	// MixDestination fires when a Mix without .Encode is routed to a
-	// non-sink destination.
-	MixDestination Code = "mix_destination"
-	// MixTapArm fires when a Mix tap arm references a tap no earlier arm
-	// declares.
-	MixTapArm Code = "mix_tap_arm"
-	// CompositeInputs fires when Composite is given fewer than two arms.
-	CompositeInputs Code = "composite_inputs"
-	// CompositeArm fires when a Composite arm is invalid (see MixArm).
-	CompositeArm Code = "composite_arm"
-	// CompositeDestination fires when a Composite without .Encode is
-	// routed to a non-sink destination.
-	CompositeDestination Code = "composite_destination"
-	// CompositeTapArm fires when a Composite tap arm references a tap no
-	// earlier arm declares.
-	CompositeTapArm Code = "composite_tap_arm"
-	// SelectInputs fires when Select is given fewer than two arms.
-	SelectInputs Code = "select_inputs"
-	// SelectArm fires when a Select arm is invalid (see MixArm).
-	SelectArm Code = "select_arm"
-	// SelectDestination fires when a Select's output cannot reach the
-	// declared destination kind.
-	SelectDestination Code = "select_destination"
-	// SelectTapArm fires when a Select tap arm references a tap no earlier
-	// arm declares.
-	SelectTapArm Code = "select_tap_arm"
 )
 
 // Runtime attach codes (Mutable.Attach / Rebranch refusals).

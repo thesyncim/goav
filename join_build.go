@@ -2001,10 +2001,10 @@ func joinBranchNamedDestinations(name string, branches []BranchSpec) ([]namedDes
 }
 
 // joinErrorCode derives a join refusal code from the join kind and family:
-// joinErrorCode("mix", "arm") == errcode.MixArm. The values for the built-in
-// kinds (mix, composite, select) are enumerated in the errcode catalog; nested
-// joins of a repeated kind carry their claimed node name (mix-2_arm), and the
-// "kind" family marks the internal unknown-join-kind invariant.
+// joinErrorCode("mix", "arm") == errcode.Code("mix_arm"). Built-in and custom
+// profile codes share the same suffix families; nested joins of a repeated kind
+// carry their claimed node name (mix-2_arm), and the "kind" family marks the
+// internal unknown-join-kind invariant.
 func joinErrorCode(kind string, family string) errcode.Code {
 	return errcode.Code(kind + "_" + family)
 }
