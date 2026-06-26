@@ -148,14 +148,6 @@ func planJoinTapArm(name string, kind string, profile joinProfile, tap tapRef, a
 	}, nil
 }
 
-// chainArmOperations reads a chain arm's declared operation list.
-func chainArmOperations(chain *jobStreamBuilder) []operationSpec {
-	if chain == nil || chain.stream == nil {
-		return nil
-	}
-	return chain.stream.operations
-}
-
 // validateJoinArmOperations keeps arm chains honest: a join arm supports
 // .Decode() and .Tap(...) before the join — everything else (transforms,
 // stages, encoders, copies, shape steps) was silently dropped before and is
@@ -194,11 +186,11 @@ func joinChainArmTaps(join string, arm string, operations []operationSpec) ([]jo
 	return taps, nil
 }
 
-// declaredJoinTapNames walks the join spec tree and lists every tap name an
+// declaredJoinTapNames walks the captured join tree and lists every tap name an
 // arm could anchor — chain-arm taps plus nested joins' output taps (the
 // root's own output taps are excluded: a join cannot feed itself). The list
 // feeds the unresolved-tap-arm error candidates.
-func declaredJoinTapNames(spec *joinSpec) []string {
+func declaredJoinTapNames(tree *joinTreeSnapshot) []string {
 	var names []string
 	seen := make(map[string]struct{})
 	add := func(name string) {
@@ -211,18 +203,17 @@ func declaredJoinTapNames(spec *joinSpec) []string {
 		seen[name] = struct{}{}
 		names = append(names, name)
 	}
-	var walk func(s *joinSpec, root bool)
-	walk = func(s *joinSpec, root bool) {
-		for _, arm := range s.arms {
-			if arm == nil {
-				continue
-			}
-			resolved := arm.joinArm()
+	var walk func(t *joinTreeSnapshot, root bool)
+	walk = func(t *joinTreeSnapshot, root bool) {
+		if t == nil {
+			return
+		}
+		for _, resolved := range t.arms {
 			switch {
 			case resolved.join != nil:
 				walk(resolved.join, false)
-			case resolved.chain != nil:
-				for _, op := range chainArmOperations(resolved.chain) {
+			case resolved.chainInputOK:
+				for _, op := range resolved.chainOperations {
 					if op.Kind == plan.OpTap {
 						add(op.Tap.Name)
 					}
@@ -232,11 +223,11 @@ func declaredJoinTapNames(spec *joinSpec) []string {
 		if root {
 			return
 		}
-		for _, tap := range s.taps {
+		for _, tap := range t.taps {
 			add(tap.name)
 		}
 	}
-	walk(spec, true)
+	walk(tree, true)
 	return names
 }
 

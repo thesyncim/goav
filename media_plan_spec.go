@@ -245,7 +245,7 @@ func graphPlanLowererForState(state *recipeCompileState) (graphPlanLowerer, bool
 // multi-upstream join: N arm sub-chains converging into one join node with the
 // downstream chain hanging off it.
 func mediaPlanJoinLowererForState(state *recipeCompileState) (graphPlanLowerer, bool, error) {
-	if state == nil || state.joinAttachment == nil {
+	if state == nil || state.joinTree == nil {
 		return nil, false, nil
 	}
 	gp, err := newJoinPlan(joinPlanInputFromCompileState(state))

@@ -424,7 +424,7 @@ var mixJoinProfile = joinProfile{
 	},
 	armPolicy: shape.AllowResample().Union(shape.AllowConvert()),
 	newStage: func(p *joinPlan, armIDs []av.StreamID) (pipeline.Stage, *pipeline.BufferPolicy) {
-		return newAudioMixStageWithPrealloc(p.name, armIDs, av.StreamID(p.name), p.join.sync, joinStagePreallocDepth(p.runtime)), nil
+		return newAudioMixStageWithPrealloc(p.name, armIDs, av.StreamID(p.name), p.tree.sync, joinStagePreallocDepth(p.runtime)), nil
 	},
 	// The output id is the join's planned node name (mix, or mix-2 when
 	// nested under another mix); the format facts come from the first arm —

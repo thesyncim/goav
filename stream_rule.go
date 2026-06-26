@@ -140,7 +140,7 @@ func validateStreamRulesPass() recipeCompilePass {
 		if state.streamRuleCount() == 0 {
 			return nil
 		}
-		if state.joinAttachment != nil {
+		if state.joinTree != nil {
 			return streamRuleInvalidError("", "stream rules are not supported on Mix/Composite/Select jobs",
 				"declare OnStream rules on single-input goav.From(input) jobs")
 		}

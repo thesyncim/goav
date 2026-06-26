@@ -64,8 +64,8 @@ type recipeCompileState struct {
 	branchInputProbeReady        bool
 	branchCompositionSplit       bool
 
-	// joinAttachment is the captured joinSpec for a Mix/Composite/Select job.
-	joinAttachment *joinSpec
+	// joinTree is the captured Mix/Composite/Select arm tree consumed by join planning.
+	joinTree *joinTreeSnapshot
 
 	plan    branchComposePlan
 	planErr error
@@ -424,7 +424,7 @@ func (state *recipeCompileState) joinPresent() bool {
 	if state == nil {
 		return false
 	}
-	return state.joinFacts.Kind != "" || state.joinAttachment != nil
+	return state.joinFacts.Kind != "" || state.joinTree != nil
 }
 
 func compileJobBranchRecipeWithOptions(job *Job, options recipeCompileOptions) (recipeResolved, error) {

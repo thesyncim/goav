@@ -94,6 +94,9 @@ methodology changes, and migration notes.
   synthesized `jobStreamBuild`/`streamBuild` records.
 - Captured join chain-arm inputs at the join-arm boundary so join tree
   planning and join input snapshots no longer read through chain builders.
+- Captured join tree arm facts before planning so recursive join planning,
+  leaf input collection, and tap-name discovery no longer call back into arm
+  builders or chain operation helpers.
 - Routed media input binding, copy planning, live stream selection, and
   multi-input stream resolution through captured recipe input facts instead of
   the legacy intent mirror.

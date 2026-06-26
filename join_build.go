@@ -84,17 +84,43 @@ type joinArm interface {
 }
 
 // joinArmSpec is the resolved arm behind the sealed joinArm interface:
-// exactly one of chain (a single-input source chain), join (a nested join),
-// or tap (a reference to a tap declared by an earlier arm) is set. region
-// carries the arm's composite placement, when declared.
+// exactly one of captured source-chain facts, join (a nested join), or tap
+// (a reference to a tap declared by an earlier arm) is set. region carries the
+// arm's composite placement, when declared.
 type joinArmSpec struct {
-	chain        *jobStreamBuilder
-	chainInput   InputSpec
-	chainInputOK bool
-	chainErr     error
-	join         *joinSpec
-	tap          *tapRef
-	region       *compositeRegion
+	chainInput      InputSpec
+	chainInputOK    bool
+	chainErr        error
+	chainOperations []operationSpec
+	join            *joinSpec
+	tap             *tapRef
+	region          *compositeRegion
+}
+
+// joinTreeSnapshot is the planner-facing join tree captured at the recipe
+// boundary. It preserves the recursive arm shape and concrete resource handles
+// needed by the current lowerer while removing planner-time calls back into
+// fluent arm builders.
+type joinTreeSnapshot struct {
+	kind       joinKind
+	arms       []joinArmSnapshot
+	dests      []Destination
+	encode     *codec.CodecSpec
+	operations []operationSpec
+	taps       []tapRef
+	branches   []BranchSpec
+	sync       joinSyncMode
+	custom     *customJoinSpec
+}
+
+type joinArmSnapshot struct {
+	chainInput      InputSpec
+	chainInputOK    bool
+	chainErr        error
+	chainOperations []operationSpec
+	join            *joinTreeSnapshot
+	tap             *tapRef
+	region          *compositeRegion
 }
 
 // joinProfile is the per-kind configuration consulted by the join planner.
@@ -117,7 +143,7 @@ type joinProfile struct {
 	// planArm runs per arm at plan time after the optional decode decision to
 	// record arm state (composite layouts). Format solving does NOT live here —
 	// it goes through the shape solver via armExpected/armPolicy.
-	planArm func(p *joinPlan, arm joinArmSpec, stream av.Stream) (*joinArmStagePlan, error)
+	planArm func(p *joinPlan, arm joinArmSnapshot, stream av.Stream) (*joinArmStagePlan, error)
 	// armExpected derives the format facts every arm must satisfy before the
 	// join stage (mix: the first arm's audio format is the target). A zero Spec
 	// skips solving for that arm. The needed conversions are planned through the
@@ -150,13 +176,13 @@ var joinProfiles = map[joinKind]joinProfile{
 // table for Mix/Composite/Select, the contract-derived profile for a custom
 // goav.Join (join_custom.go). The unknown-kind refusal guards the internal
 // invariant that every non-custom spec was constructed by a built-in builder.
-func resolveJoinProfile(spec *joinSpec) (joinProfile, error) {
-	if spec.custom != nil {
-		return customJoinProfile(spec.custom)
+func resolveJoinProfile(tree *joinTreeSnapshot) (joinProfile, error) {
+	if tree.custom != nil {
+		return customJoinProfile(tree.custom)
 	}
-	profile, ok := joinProfiles[spec.kind]
+	profile, ok := joinProfiles[tree.kind]
 	if !ok {
-		kind := string(spec.kind)
+		kind := string(tree.kind)
 		return joinProfile{}, &BuildError{
 			Family:    errcode.FamilyForCode(joinErrorCode(kind, "kind")),
 			Code:      joinErrorCode(kind, "kind"),
@@ -256,7 +282,7 @@ func (a *joinArmPlan) armTapAnchorNode() string {
 // and Build() come from the one plan.
 type joinPlan struct {
 	runtime *runtime
-	join    *joinSpec
+	tree    *joinTreeSnapshot
 	profile joinProfile
 	name    string
 
@@ -298,7 +324,7 @@ type joinPlanInput struct {
 	runtime   *runtime
 	operation string
 	intent    intent
-	spec      *joinSpec
+	tree      *joinTreeSnapshot
 	sets      []inputStreamSet
 }
 
@@ -310,7 +336,7 @@ func joinPlanInputFromCompileState(state *recipeCompileState) joinPlanInput {
 		runtime:   state.runtime,
 		operation: state.operation,
 		intent:    state.intent,
-		spec:      state.joinAttachment,
+		tree:      cloneJoinTreeSnapshot(state.joinTree),
 		sets:      jobInputStreamSetsFromRecipeIR(state.intent.Inputs, state.inputFacts, state.inputProbes),
 	}
 }
@@ -319,6 +345,99 @@ type joinWorkPlanInput struct {
 	inputs        []inputIntent
 	destinations  []destinationIntent
 	outputFormats map[string]av.FormatID
+}
+
+func joinTreeSnapshotFromSpec(spec *joinSpec) *joinTreeSnapshot {
+	if spec == nil {
+		return nil
+	}
+	tree := &joinTreeSnapshot{
+		kind:       spec.kind,
+		dests:      append([]Destination(nil), spec.dests...),
+		operations: cloneOperationSpecs(spec.operations),
+		taps:       append([]tapRef(nil), spec.taps...),
+		branches:   cloneBranchSpecs(spec.branches),
+		sync:       spec.sync,
+		custom:     spec.custom,
+	}
+	if spec.encode != nil {
+		encode := cloneCodecSpec(*spec.encode)
+		tree.encode = &encode
+	}
+	for i := range spec.arms {
+		tree.arms = append(tree.arms, joinArmSnapshotFromArm(spec.arms[i]))
+	}
+	return tree
+}
+
+func joinArmSnapshotFromArm(arm joinArm) joinArmSnapshot {
+	if arm == nil {
+		return joinArmSnapshot{}
+	}
+	resolved := arm.joinArm()
+	out := joinArmSnapshot{
+		chainInput:      resolved.chainInput,
+		chainInputOK:    resolved.chainInputOK,
+		chainErr:        resolved.chainErr,
+		chainOperations: cloneOperationSpecs(resolved.chainOperations),
+	}
+	if resolved.join != nil {
+		out.join = joinTreeSnapshotFromSpec(resolved.join)
+	}
+	if resolved.tap != nil {
+		tap := *resolved.tap
+		out.tap = &tap
+	}
+	if resolved.region != nil {
+		region := *resolved.region
+		out.region = &region
+	}
+	return out
+}
+
+func cloneJoinTreeSnapshot(tree *joinTreeSnapshot) *joinTreeSnapshot {
+	if tree == nil {
+		return nil
+	}
+	out := &joinTreeSnapshot{
+		kind:       tree.kind,
+		dests:      append([]Destination(nil), tree.dests...),
+		operations: cloneOperationSpecs(tree.operations),
+		taps:       append([]tapRef(nil), tree.taps...),
+		branches:   cloneBranchSpecs(tree.branches),
+		sync:       tree.sync,
+		custom:     tree.custom,
+	}
+	if tree.encode != nil {
+		encode := cloneCodecSpec(*tree.encode)
+		out.encode = &encode
+	}
+	if len(tree.arms) != 0 {
+		out.arms = make([]joinArmSnapshot, len(tree.arms))
+		for i := range tree.arms {
+			out.arms[i] = cloneJoinArmSnapshot(tree.arms[i])
+		}
+	}
+	return out
+}
+
+func cloneJoinArmSnapshot(arm joinArmSnapshot) joinArmSnapshot {
+	out := joinArmSnapshot{
+		chainInput:      arm.chainInput,
+		chainInputOK:    arm.chainInputOK,
+		chainErr:        arm.chainErr,
+		chainOperations: cloneOperationSpecs(arm.chainOperations),
+		join:            cloneJoinTreeSnapshot(arm.join),
+	}
+	if arm.tap != nil {
+		tap := *arm.tap
+		out.tap = &tap
+	}
+	if arm.region != nil {
+		region := *arm.region
+		out.region = &region
+	}
+	return out
 }
 
 func joinWorkPlanInputFromCompileState(state *recipeCompileState) joinWorkPlanInput {
@@ -397,38 +516,41 @@ func joinTwoArmExample(kind string) string {
 	}
 }
 
-// newJoinPlan plans a joinSpec from the compile state: the join tree is
+// newJoinPlan plans a captured join tree from the compile state: the join tree is
 // planned recursively (an arm is a source chain or a nested join), each arm is
 // validated and resolved statically (custom-source shapes, probes, live codec
 // intent, per-kind arm stages and solver conversions), and the downstream
 // chain (taps + branches or encode/destination) is planned against the root's
 // joined stream — all before any source opens.
 func newJoinPlan(input joinPlanInput) (*joinPlan, error) {
-	spec := input.spec
-	name := string(spec.kind)
-	anchors := newJoinTapAnchors(declaredJoinTapNames(spec))
-	p, _, err := planJoinTree(input, spec, 0, make(map[string]struct{}), anchors)
+	tree := input.tree
+	if tree == nil {
+		return nil, nilRecipeError(input.operation, "nil join")
+	}
+	name := string(tree.kind)
+	anchors := newJoinTapAnchors(declaredJoinTapNames(tree))
+	p, _, err := planJoinTree(input, tree, 0, make(map[string]struct{}), anchors)
 	if err != nil {
 		return nil, err
 	}
 	p.assignArmSourceNames()
 	profile := p.profile
 	switch {
-	case len(spec.branches) != 0:
+	case len(tree.branches) != 0:
 		if err := p.planJoinBranches(); err != nil {
 			return nil, err
 		}
-	case spec.encode != nil:
+	case tree.encode != nil:
 		if err := p.planJoinEncode(); err != nil {
 			return nil, err
 		}
-		destinations, err := resolveJoinDestinations(name, spec)
+		destinations, err := resolveJoinDestinations(name, tree)
 		if err != nil {
 			return nil, err
 		}
 		p.destinations = destinations
 	default:
-		destinations, err := resolveJoinDestinations(name, spec)
+		destinations, err := resolveJoinDestinations(name, tree)
 		if err != nil {
 			return nil, err
 		}
@@ -454,11 +576,11 @@ func newJoinPlan(input joinPlanInput) (*joinPlan, error) {
 // and materializes any inserted conversion operations as real stages between
 // the join node and encode node.
 func (p *joinPlan) planJoinEncode() error {
-	if p == nil || p.join == nil || p.join.encode == nil {
+	if p == nil || p.tree == nil || p.tree.encode == nil {
 		return nil
 	}
-	operations := cloneOperationSpecs(p.join.operations)
-	operations = append(operations, operationSpecForEncode(*p.join.encode))
+	operations := cloneOperationSpecs(p.tree.operations)
+	operations = append(operations, operationSpecForEncode(*p.tree.encode))
 	operations, err := p.solveJoinedOperations(p.name, operations)
 	if err != nil {
 		return err
@@ -603,8 +725,8 @@ func explicitEncodeSoftInputShape(operation operationSpec) shape.Spec {
 // with the chain rules: at least one destination, and the same duplicate
 // detection multi-destination chain fanout applies (one handle listed twice is
 // the same refusal).
-func resolveJoinDestinations(name string, spec *joinSpec) ([]destinationSpec, error) {
-	if len(spec.dests) == 0 {
+func resolveJoinDestinations(name string, tree *joinTreeSnapshot) ([]destinationSpec, error) {
+	if len(tree.dests) == 0 {
 		return nil, &BuildError{
 			Family:    errcode.FamilyForCode(outputMissingCode),
 			Code:      outputMissingCode,
@@ -618,9 +740,9 @@ func resolveJoinDestinations(name string, spec *joinSpec) ([]destinationSpec, er
 			cause: errUnsupportedBuild,
 		}
 	}
-	outputs := make([]destinationSpec, 0, len(spec.dests))
-	for i := range spec.dests {
-		outputs = append(outputs, cloneDestinationSpec(spec.dests[i].spec))
+	outputs := make([]destinationSpec, 0, len(tree.dests))
+	for i := range tree.dests {
+		outputs = append(outputs, cloneDestinationSpec(tree.dests[i].spec))
 	}
 	if err := validateDestinationSpecs("build "+name, outputs); err != nil {
 		return nil, err
@@ -637,26 +759,23 @@ func resolveJoinDestinations(name string, spec *joinSpec) ([]destinationSpec, er
 // declared by already-planned arms, so a tap-reference arm resolves strictly to an
 // earlier point of the same tree — forward references and cycles are
 // unrepresentable by construction.
-func planJoinTree(input joinPlanInput, spec *joinSpec, cursor int, used map[string]struct{}, anchors *joinTapAnchors) (*joinPlan, int, error) {
-	kind := string(spec.kind)
-	profile, err := resolveJoinProfile(spec)
+func planJoinTree(input joinPlanInput, tree *joinTreeSnapshot, cursor int, used map[string]struct{}, anchors *joinTapAnchors) (*joinPlan, int, error) {
+	kind := string(tree.kind)
+	profile, err := resolveJoinProfile(tree)
 	if err != nil {
 		return nil, 0, err
 	}
 	name := claimJoinName(used, kind)
-	if spec.custom != nil && name != kind {
+	if tree.custom != nil && name != kind {
 		return nil, 0, customJoinNameCollisionError(kind, name)
 	}
-	p := &joinPlan{runtime: input.runtime, join: spec, profile: profile, name: name}
-	if len(spec.arms) < 2 {
+	p := &joinPlan{runtime: input.runtime, tree: tree, profile: profile, name: name}
+	if len(tree.arms) < 2 {
 		return nil, 0, joinInputsError(kind, name)
 	}
-	seen := make(map[av.StreamID]struct{}, len(spec.arms))
-	for i := range spec.arms {
-		var armSpec joinArmSpec
-		if spec.arms[i] != nil {
-			armSpec = spec.arms[i].joinArm()
-		}
+	seen := make(map[av.StreamID]struct{}, len(tree.arms))
+	for i := range tree.arms {
+		armSpec := tree.arms[i]
 		var armPlan joinArmPlan
 		switch {
 		case armSpec.join != nil:
@@ -685,7 +804,7 @@ func planJoinTree(input joinPlanInput, spec *joinSpec, cursor int, used map[stri
 				return nil, 0, err
 			}
 			armPlan = tapPlan
-		case armSpec.chain != nil && armSpec.chainInputOK:
+		case armSpec.chainInputOK:
 			if err := armSpec.chainErr; err != nil {
 				return nil, 0, err
 			}
@@ -702,7 +821,7 @@ func planJoinTree(input joinPlanInput, spec *joinSpec, cursor int, used map[stri
 				stream:    stream,
 				domain:    input.sets[cursor].domain,
 			}
-			armOps := chainArmOperations(armSpec.chain)
+			armOps := cloneOperationSpecs(armSpec.chainOperations)
 			if err := validateJoinArmOperations(name, armPlan.inputName, armOps); err != nil {
 				return nil, 0, err
 			}
@@ -722,7 +841,7 @@ func planJoinTree(input joinPlanInput, spec *joinSpec, cursor int, used map[stri
 				"give each arm a distinct stream id: name inputs/taps differently so no two arms publish the same id")
 		}
 		seen[armPlan.stream.ID] = struct{}{}
-		armOps := chainArmOperations(armSpec.chain)
+		armOps := cloneOperationSpecs(armSpec.chainOperations)
 		if err := validateJoinArmDomain(name, armPlan.inputName, profile, armPlan.domain, armOps); err != nil {
 			return nil, 0, err
 		}
@@ -765,7 +884,7 @@ func planJoinTree(input joinPlanInput, spec *joinSpec, cursor int, used map[stri
 	// compose against it.
 	p.joined = profile.joinedStream(p)
 	p.joinedDomain = p.deriveJoinedDomain()
-	taps, err := joinPlanTaps(spec, name, p.joined, p.joinedDomain, pipeline.NodeRef(name))
+	taps, err := joinPlanTaps(tree.taps, name, p.joined, p.joinedDomain, pipeline.NodeRef(name))
 	if err != nil {
 		return nil, 0, err
 	}
@@ -799,7 +918,7 @@ func claimJoinName(used map[string]struct{}, kind string) string {
 // arm contributes its joined output to the outer join, so it cannot carry its
 // own encoder. (.To and .Branches already return a *Job, which is not a
 // joinArm — those stay impossible at compile time.)
-func validateNestedJoinArm(outer string, sub *joinSpec) error {
+func validateNestedJoinArm(outer string, sub *joinTreeSnapshot) error {
 	if sub.encode != nil {
 		return joinArmError(outer, string(sub.kind),
 			"a nested "+string(sub.kind)+" arm cannot carry .Encode(...); encode the outer join instead",
@@ -970,10 +1089,10 @@ func joinArmTransformStream(stream av.Stream, media av.MediaType) av.Stream {
 // planned node carries whatever the caller's stage describes, so Describe() ≡
 // Build() holds for external convergence stages too.
 func (p *joinPlan) joinNodeDetail() string {
-	if p.join.custom != nil {
-		return describedNodeDetail(p.join.custom.stage)
+	if p.tree.custom != nil {
+		return describedNodeDetail(p.tree.custom.stage)
 	}
-	return joinSyncNodeDetail(p.join.sync)
+	return joinSyncNodeDetail(p.tree.sync)
 }
 
 // deriveJoinedDomain reports the media domain of the join's output:
@@ -1006,20 +1125,20 @@ func (p *joinPlan) deriveJoinedDomain() shape.MediaDomain {
 func (p *joinPlan) planJoinBranches() error {
 	name := p.name
 	parentPacket := p.joinedDomain == shape.DomainPacket
-	destinations, err := joinBranchNamedDestinations(p.join.branches)
+	destinations, err := joinBranchNamedDestinations(p.tree.branches)
 	if err != nil {
 		return err
 	}
 	recipe := recipeir.Recipe{Kind: recipeir.KindBranchComposition, Name: name}
-	for i := range p.join.branches {
-		branch := p.join.branches[i]
+	for i := range p.tree.branches {
+		branch := p.tree.branches[i]
 		if err := validateBranchSpec(p.joined.Type, parentPacket, i, branch); err != nil {
 			return err
 		}
 		if err := p.validateJoinBranchAnchor(branch); err != nil {
 			return err
 		}
-		operations := cloneOperationSpecs(p.join.operations)
+		operations := cloneOperationSpecs(p.tree.operations)
 		operations = append(operations, joinBranchOperationSpecs(parentPacket, branch)...)
 		solved, err := p.solveJoinedOperations(branch.name, operations)
 		if err != nil {
@@ -1075,7 +1194,7 @@ func (p *joinPlan) validateJoinBranchAnchor(branch BranchSpec) error {
 	if branch.source.tap == "" {
 		return nil
 	}
-	for _, tap := range p.join.taps {
+	for _, tap := range p.tree.taps {
 		if tap.name != branch.source.tap {
 			continue
 		}
@@ -1089,12 +1208,12 @@ func (p *joinPlan) validateJoinBranchAnchor(branch BranchSpec) error {
 // workTap records the recipe compiler installs on its tasks, anchored at the
 // join node — so a join tap shows up in task.Taps() and anchors runtime
 // branches exactly like a tap declared on an ordinary stream chain.
-func joinPlanTaps(spec *joinSpec, name string, joined av.Stream, domain shape.MediaDomain, node pipeline.NodeRef) ([]workTap, error) {
-	if len(spec.taps) == 0 {
+func joinPlanTaps(joinTaps []tapRef, name string, joined av.Stream, domain shape.MediaDomain, node pipeline.NodeRef) ([]workTap, error) {
+	if len(joinTaps) == 0 {
 		return nil, nil
 	}
-	taps := make([]workTap, 0, len(spec.taps))
-	for _, tap := range spec.taps {
+	taps := make([]workTap, 0, len(joinTaps))
+	for _, tap := range joinTaps {
 		if tap.name == "" {
 			return nil, &BuildError{
 				Family:    errcode.FamilyForCode(errcode.TapInvalid),
@@ -1605,7 +1724,7 @@ func (p *joinPlan) appendJoinArmWork(operations *[]workOperation, branches *[]wo
 		if arm.sub != nil {
 			subArmShape := arm.sub.appendJoinArmWork(operations, branches)
 			joinDetail := "converge " + strconv.Itoa(len(arm.sub.arms)) + " arms"
-			if arm.sub.join.sync == joinSyncPTS {
+			if arm.sub.tree.sync == joinSyncPTS {
 				joinDetail += " by pts"
 			}
 			appendOperation(workOperation{
@@ -1700,7 +1819,7 @@ func (p *joinPlan) appendJoinArmWork(operations *[]workOperation, branches *[]wo
 func (p *joinPlan) joinedWorkBranch(ids map[string]string, outputs []planOutput, armShape shape.Spec, joinedShape shape.Spec, branchIndex int) ([]workOperation, workBranch) {
 	branchName := p.name
 	joinDetail := "converge " + strconv.Itoa(len(p.arms)) + " arms"
-	if p.join.sync == joinSyncPTS {
+	if p.tree.sync == joinSyncPTS {
 		joinDetail += " by pts"
 	}
 	operations := []workOperation{{
@@ -1946,23 +2065,22 @@ func intInSlice(needle int, haystack []int) bool {
 
 // joinArmInputs captures the arm input attachments aligned with the intent's
 // inputs (stopping at the first malformed arm, which newJoinPlan rejects).
-func joinArmInputs(spec *joinSpec) []InputSpec {
-	return joinLeafInputSpecs(spec)
+func joinArmInputs(tree *joinTreeSnapshot) []InputSpec {
+	return joinLeafInputSpecs(tree)
 }
 
 // joinLeafInputSpecs returns every leaf arm's InputSpec in depth-first arm
 // order — the order the compile state's inputs, probes, and stream sets follow
 // and planJoinTree consumes. Tap arms open no input and are skipped. It stops
 // at the first malformed arm, which planJoinTree rejects with a precise error.
-func joinLeafInputSpecs(spec *joinSpec) []InputSpec {
-	out := make([]InputSpec, 0, len(spec.arms))
-	var walk func(s *joinSpec) bool
-	walk = func(s *joinSpec) bool {
-		for _, arm := range s.arms {
-			if arm == nil {
-				return false
-			}
-			resolved := arm.joinArm()
+func joinLeafInputSpecs(tree *joinTreeSnapshot) []InputSpec {
+	if tree == nil {
+		return nil
+	}
+	out := make([]InputSpec, 0, len(tree.arms))
+	var walk func(t *joinTreeSnapshot) bool
+	walk = func(t *joinTreeSnapshot) bool {
+		for _, resolved := range t.arms {
 			switch {
 			case resolved.join != nil:
 				if !walk(resolved.join) {
@@ -1970,7 +2088,7 @@ func joinLeafInputSpecs(spec *joinSpec) []InputSpec {
 				}
 			case resolved.tap != nil:
 				// A tap arm attaches to an already-open stream.
-			case resolved.chain != nil && resolved.chainInputOK:
+			case resolved.chainInputOK:
 				out = append(out, resolved.chainInput)
 			default:
 				return false
@@ -1978,7 +2096,7 @@ func joinLeafInputSpecs(spec *joinSpec) []InputSpec {
 		}
 		return true
 	}
-	walk(spec)
+	walk(tree)
 	return out
 }
 

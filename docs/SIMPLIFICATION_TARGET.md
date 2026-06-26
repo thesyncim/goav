@@ -110,7 +110,8 @@ the boundary, and join planning plus join work-plan rendering enter through
 explicit IR-derived handoffs instead of reading compile state directly; join
 branch fanout planning now builds recipe IR stream facts instead of synthesized
 builder records, and join chain-arm inputs are captured at the join-arm boundary
-before join tree planning.
+before join tree planning. Recursive join planning now walks captured join tree
+arm facts instead of resolving arm builders or reading chain operation helpers.
 Normal work-plan rendering
 also now consumes a captured handoff rather than reaching back into compile
 state while it renders operations, branches, destinations, decisions, and

@@ -137,7 +137,7 @@ func TestRecipeIRSnapshotCapturesJoinFacts(t *testing.T) {
 		t.Fatalf("recipe IR join = %+v", join)
 	}
 	state := recipeCompileStateFromSnapshot(snapshot, recipeCompileOptions{})
-	state.joinAttachment = nil
+	state.joinTree = nil
 	if err := validateJoinRecipePass().Apply(&state); err != nil {
 		t.Fatalf("validate join from IR facts: %v", err)
 	}
@@ -492,10 +492,17 @@ func TestJoinPlannerUsesRecipeIRInputFacts(t *testing.T) {
 	if !strings.Contains(inputBody, "jobInputStreamSetsFromRecipeIR(state.intent.Inputs, state.inputFacts, state.inputProbes)") {
 		t.Fatal("joinPlanInput should derive stream sets from recipe IR input facts")
 	}
+	if !strings.Contains(inputBody, "tree:      cloneJoinTreeSnapshot(state.joinTree)") {
+		t.Fatal("joinPlanInput should capture the join tree snapshot at the boundary")
+	}
 	if strings.Contains(inputBody, "jobInputStreamSets(state.intent.Inputs, state.inputAttachments") {
 		t.Fatal("joinPlanInput still derives stream sets from concrete input attachments")
 	}
 	planBody := sourceFunctionBody(t, string(body), "newJoinPlan")
+	if !strings.Contains(planBody, "declaredJoinTapNames(tree)") ||
+		!strings.Contains(planBody, "planJoinTree(input, tree") {
+		t.Fatal("newJoinPlan should pass captured join tree facts into planning")
+	}
 	if strings.Contains(planBody, "*recipeCompileState") || strings.Contains(planBody, "state.") {
 		t.Fatal("newJoinPlan should consume joinPlanInput instead of compile state")
 	}
@@ -529,6 +536,9 @@ func TestJoinPlannerUsesRecipeIRInputFacts(t *testing.T) {
 	if strings.Contains(handoff, "state.joinPlan") {
 		t.Fatal("join lowerer should return the planned join instead of storing it on compile state")
 	}
+	if strings.Contains(handoff, "state.joinAttachment") {
+		t.Fatal("join lowerer should select from the captured join tree, not a concrete join attachment")
+	}
 	graphBody := sourceFunctionBody(t, string(lowererBody), "graphPlanForState")
 	if !strings.Contains(graphBody, "buildWorkPlan(state, spec, lowerer)") {
 		t.Fatal("graphPlanForState should pass the selected lowerer into work-plan rendering")
@@ -543,13 +553,26 @@ func TestJoinPlannerUsesRecipeIRInputFacts(t *testing.T) {
 	}
 	treeBody := sourceFunctionBody(t, string(body), "planJoinTree")
 	leafBody := sourceFunctionBody(t, string(body), "joinLeafInputSpecs")
+	tapBodyBytes, err := os.ReadFile("join_arm_tap.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tapNamesBody := sourceFunctionBody(t, string(tapBodyBytes), "declaredJoinTapNames")
 	for name, fnBody := range map[string]string{
-		"planJoinTree":       treeBody,
-		"joinLeafInputSpecs": leafBody,
+		"planJoinTree":         treeBody,
+		"joinLeafInputSpecs":   leafBody,
+		"declaredJoinTapNames": tapNamesBody,
 	} {
 		for _, forbidden := range []string{
 			".chain.job.inputs",
 			".chain.job.err",
+			"armSpec.chain.",
+			"chainArmOperations",
+			".joinArm()",
+			"*jobStreamBuilder",
+			"*joinSpec",
+			"state.joinAttachment",
+			"p.join",
 		} {
 			if strings.Contains(fnBody, forbidden) {
 				t.Fatalf("%s still reads chain-arm job internals with %q", name, forbidden)

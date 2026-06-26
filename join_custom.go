@@ -386,10 +386,10 @@ func (p *joinPlan) customJoinBaseStream(decodeArms bool) (av.Stream, shape.Spec)
 // contract declares ("" without one): the joined-domain derivation honors it
 // over the decode-arms default.
 func (p *joinPlan) customJoinedOutputDomain() shape.MediaDomain {
-	if p.join.custom == nil || len(p.arms) == 0 {
+	if p.tree.custom == nil || len(p.arms) == 0 {
 		return ""
 	}
-	contract, ok := p.join.custom.stage.(shape.Contract)
+	contract, ok := p.tree.custom.stage.(shape.Contract)
 	if !ok {
 		return ""
 	}

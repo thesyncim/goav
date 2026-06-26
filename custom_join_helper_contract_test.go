@@ -215,28 +215,28 @@ func TestCustomJoinedStreamAndDomainContracts(t *testing.T) {
 		t.Fatalf("customJoinedStream empty output = %+v, want fallback %+v", emptyOutput, withoutContract)
 	}
 
-	if got := (&joinPlan{join: &joinSpec{}}).customJoinedOutputDomain(); got != "" {
+	if got := (&joinPlan{tree: &joinTreeSnapshot{}}).customJoinedOutputDomain(); got != "" {
 		t.Fatalf("customJoinedOutputDomain non-custom plan = %s, want empty", got)
 	}
-	if got := (&joinPlan{join: &joinSpec{custom: &customJoinSpec{name: "empty", stage: stage}}}).customJoinedOutputDomain(); got != "" {
+	if got := (&joinPlan{tree: &joinTreeSnapshot{custom: &customJoinSpec{name: "empty", stage: stage}}}).customJoinedOutputDomain(); got != "" {
 		t.Fatalf("customJoinedOutputDomain without arms = %s, want empty", got)
 	}
 	if got := (&joinPlan{
 		name: "bare",
-		join: &joinSpec{custom: &customJoinSpec{name: "bare", stage: customJoinBareStage{name: "bare"}}},
+		tree: &joinTreeSnapshot{custom: &customJoinSpec{name: "bare", stage: customJoinBareStage{name: "bare"}}},
 		arms: plan.arms,
 	}).customJoinedOutputDomain(); got != "" {
 		t.Fatalf("customJoinedOutputDomain bare stage = %s, want empty", got)
 	}
 	if got := (&joinPlan{
 		name: "empty",
-		join: &joinSpec{custom: &customJoinSpec{name: "empty", stage: customJoinContractStage{name: "empty"}}},
+		tree: &joinTreeSnapshot{custom: &customJoinSpec{name: "empty", stage: customJoinContractStage{name: "empty"}}},
 		arms: plan.arms,
 	}).customJoinedOutputDomain(); got != "" {
 		t.Fatalf("customJoinedOutputDomain empty outputs = %s, want empty", got)
 	}
 
-	plan.join = &joinSpec{custom: &customJoinSpec{name: "funnel", stage: stage}}
+	plan.tree = &joinTreeSnapshot{custom: &customJoinSpec{name: "funnel", stage: stage}}
 	plan.profile.decodeArms = true
 	if got := plan.customJoinedOutputDomain(); got != shape.DomainFrame {
 		t.Fatalf("customJoinedOutputDomain = %s, want frame", got)

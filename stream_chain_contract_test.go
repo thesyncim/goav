@@ -29,7 +29,7 @@ func TestStreamSelectorOptionsCarryStableMetadata(t *testing.T) {
 
 func TestJobStreamBuilderJoinArmAndCurrentContracts(t *testing.T) {
 	var nilBuilder *jobStreamBuilder
-	if arm := nilBuilder.joinArm(); arm.chain != nil || arm.join != nil || arm.tap != nil || arm.region != nil {
+	if arm := nilBuilder.joinArm(); arm.chainInputOK || arm.chainErr != nil || len(arm.chainOperations) != 0 || arm.join != nil || arm.tap != nil || arm.region != nil {
 		t.Fatalf("nil stream join arm = %+v, want zero", arm)
 	}
 

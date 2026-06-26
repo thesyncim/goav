@@ -28,7 +28,7 @@ type recipeCompileSnapshot struct {
 	branchPlan                   branchComposePlan
 	branchPlanErr                error
 
-	joinAttachment *joinSpec
+	joinTree *joinTreeSnapshot
 }
 
 func newJobRecipeSnapshot(job *Job) recipeCompileSnapshot {
@@ -73,11 +73,12 @@ func newLinearJobRecipeSnapshot(job *Job) recipeCompileSnapshot {
 func newJoinRecipeSnapshot(job *Job) recipeCompileSnapshot {
 	spec := cloneJoinSpec(job.join)
 	outputs, names := joinOutputAttachments(spec)
-	inputs := joinArmInputs(spec)
-	recipe := recipeIRFromIntent(joinIntentFromSpec(job, spec), recipeir.KindJoin)
+	tree := joinTreeSnapshotFromSpec(spec)
+	inputs := joinArmInputs(tree)
+	recipe := recipeIRFromIntent(joinIntentFromTree(job, tree), recipeir.KindJoin)
 	annotateRecipeIRInputsFromSpecs(&recipe, inputs)
 	annotateRecipeIRDestinationsFromSpecs(&recipe, outputs)
-	recipe.Join = recipeIRJoinFromSpec(spec, len(inputs))
+	recipe.Join = recipeIRJoinFromTree(tree, len(inputs))
 	recipe.StreamRules = recipeIRStreamRulesFromRoot(job.streamRules)
 	return recipeCompileSnapshot{
 		recipe:                 recipe,
@@ -88,7 +89,7 @@ func newJoinRecipeSnapshot(job *Job) recipeCompileSnapshot {
 		outputAttachments:      outputs,
 		outputDestinationNames: names,
 		streamRules:            cloneStreamRules(job.streamRules),
-		joinAttachment:         spec,
+		joinTree:               tree,
 	}
 }
 
@@ -364,25 +365,25 @@ func recipeIRStreamRuleFromRoot(rule streamRule) recipeir.StreamRule {
 	return out
 }
 
-func recipeIRJoinFromSpec(spec *joinSpec, inputCount int) recipeir.Join {
-	if spec == nil {
+func recipeIRJoinFromTree(tree *joinTreeSnapshot, inputCount int) recipeir.Join {
+	if tree == nil {
 		return recipeir.Join{}
 	}
 	join := recipeir.Join{
-		Kind:           string(spec.kind),
-		ArmCount:       len(spec.arms),
+		Kind:           string(tree.kind),
+		ArmCount:       len(tree.arms),
 		InputCount:     inputCount,
-		BranchCount:    len(spec.branches),
-		OperationCount: len(spec.operations),
-		TapCount:       len(spec.taps),
-		HasEncode:      spec.encode != nil,
-		Custom:         spec.custom != nil,
+		BranchCount:    len(tree.branches),
+		OperationCount: len(tree.operations),
+		TapCount:       len(tree.taps),
+		HasEncode:      tree.encode != nil,
+		Custom:         tree.custom != nil,
 	}
-	if len(spec.branches) != 0 {
-		named, _ := joinBranchNamedDestinations(spec.branches)
+	if len(tree.branches) != 0 {
+		named, _ := joinBranchNamedDestinations(tree.branches)
 		join.DestinationCount = len(named)
 	} else {
-		join.DestinationCount = len(spec.dests)
+		join.DestinationCount = len(tree.dests)
 	}
 	return join
 }
@@ -595,23 +596,26 @@ func cloneJoinSpec(spec *joinSpec) *joinSpec {
 	return &out
 }
 
-func joinIntentFromSpec(job *Job, spec *joinSpec) intent {
-	in := intent{Name: string(spec.kind)}
+func joinIntentFromTree(job *Job, tree *joinTreeSnapshot) intent {
+	if tree == nil {
+		return intent{}
+	}
+	in := intent{Name: string(tree.kind)}
 	if job.runtime != nil {
 		in.Policies.Realtime = job.runtime.realtime
 	}
-	for _, input := range joinLeafInputSpecs(spec) {
+	for _, input := range joinLeafInputSpecs(tree) {
 		in.Inputs = append(in.Inputs, input.intent())
 	}
-	if len(spec.branches) != 0 {
-		named, _ := joinBranchNamedDestinations(spec.branches)
+	if len(tree.branches) != 0 {
+		named, _ := joinBranchNamedDestinations(tree.branches)
 		for i := range named {
 			in.Destinations = append(in.Destinations, named[i].output.intentWithName(named[i].name))
 		}
 		return in
 	}
-	for i := range spec.dests {
-		in.Destinations = append(in.Destinations, spec.dests[i].spec.intentWithName(""))
+	for i := range tree.dests {
+		in.Destinations = append(in.Destinations, tree.dests[i].spec.intentWithName(""))
 	}
 	return in
 }
@@ -640,7 +644,7 @@ func recipeCompileStateFromSnapshot(snapshot recipeCompileSnapshot, options reci
 		branchDestinationAttachments: cloneNamedDestinationSpecs(snapshot.branchDestinationAttachments),
 		branchInputProbeReady:        false,
 		branchCompositionSplit:       snapshot.branchCompositionSplit,
-		joinAttachment:               cloneJoinSpec(snapshot.joinAttachment),
+		joinTree:                     cloneJoinTreeSnapshot(snapshot.joinTree),
 		plan:                         snapshot.branchPlan,
 		planErr:                      snapshot.branchPlanErr,
 	}

@@ -138,7 +138,7 @@ var compositeJoinProfile = joinProfile{
 	// Each arm places its frame on the canvas at its declared Region — a chain
 	// arm's .Region(x, y) or a nested composite's — defaulting to the top-left
 	// corner {0,0}.
-	planArm: func(p *joinPlan, arm joinArmSpec, _ av.Stream) (*joinArmStagePlan, error) {
+	planArm: func(p *joinPlan, arm joinArmSnapshot, _ av.Stream) (*joinArmStagePlan, error) {
 		layout := compositeLayout{}
 		if arm.region != nil {
 			layout = compositeLayout{X: arm.region.x, Y: arm.region.y}
@@ -147,7 +147,7 @@ var compositeJoinProfile = joinProfile{
 		return nil, nil
 	},
 	newStage: func(p *joinPlan, armIDs []av.StreamID) (pipeline.Stage, *pipeline.BufferPolicy) {
-		return newVideoCompositeStageWithPrealloc(p.name, armIDs, av.StreamID(p.name), p.layouts, p.join.sync, joinStagePreallocDepth(p.runtime)), nil
+		return newVideoCompositeStageWithPrealloc(p.name, armIDs, av.StreamID(p.name), p.layouts, p.tree.sync, joinStagePreallocDepth(p.runtime)), nil
 	},
 	// The output id is the join's planned node name (composite, or composite-2
 	// when nested); the geometry facts are the full Region bounding box over

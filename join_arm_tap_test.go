@@ -466,13 +466,6 @@ func TestJoinTapAnchorHelperContracts(t *testing.T) {
 }
 
 func TestJoinTapHelperCollectionContracts(t *testing.T) {
-	if got := chainArmOperations(nil); got != nil {
-		t.Fatalf("nil chain operations = %+v, want nil", got)
-	}
-	if got := chainArmOperations(&jobStreamBuilder{}); got != nil {
-		t.Fatalf("empty chain operations = %+v, want nil", got)
-	}
-
 	_, err := joinChainArmTaps("mix", "arm", []operationSpec{{
 		Kind: plan.OpTap,
 		Tap:  tapIntent{Name: "packets", Domain: shape.DomainPacket},
@@ -492,7 +485,7 @@ func TestJoinTapHelperCollectionContracts(t *testing.T) {
 			From(mixTestAudioSource("d", 1)).Audio(),
 		).Tap(FrameTap("sub")),
 	).Tap(FrameTap("root")).joinArm().join
-	names := declaredJoinTapNames(root)
+	names := declaredJoinTapNames(joinTreeSnapshotFromSpec(root))
 	if !reflect.DeepEqual(names, []string{"dry", "sub"}) {
 		t.Fatalf("declared tap names = %v, want [dry sub] without root duplicate", names)
 	}

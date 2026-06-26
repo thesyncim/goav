@@ -10,7 +10,7 @@ import (
 
 func TestSelectJoinArmContracts(t *testing.T) {
 	var nilSelect *selectorStream
-	if arm := nilSelect.joinArm(); arm.chain != nil || arm.join != nil || arm.tap != nil || arm.region != nil {
+	if arm := nilSelect.joinArm(); arm.chainInputOK || arm.chainErr != nil || len(arm.chainOperations) != 0 || arm.join != nil || arm.tap != nil || arm.region != nil {
 		t.Fatalf("nil selector join arm = %+v, want zero", arm)
 	}
 
