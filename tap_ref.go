@@ -5,13 +5,13 @@ import (
 	"github.com/thesyncim/goav/shape"
 )
 
-// TapRef is a typed handle to a stable media attach point.
-type TapRef struct {
+// tapRef is a typed handle to a stable media attach point.
+type tapRef struct {
 	name   string
 	domain shape.MediaDomain
 }
 
-func (t TapRef) branchSource() branchSourceBinding {
+func (t tapRef) branchSource() branchSourceBinding {
 	return branchSourceBinding{tap: t.name, tapDomain: t.domain}
 }
 
@@ -19,40 +19,40 @@ func (t TapRef) branchSource() branchSourceBinding {
 // declared in the chain: frame after decode/resize/resample/custom frame stages,
 // packet after .Copy() or an encoder. Prefer Tap for everyday use; reach for
 // FrameTap/PacketTap only to assert the domain early.
-func Tap(name string) TapRef {
-	return TapRef{name: name}
+func Tap(name string) tapRef {
+	return tapRef{name: name}
 }
 
 // FrameTap names a frame-domain attach point. It is Tap with an early
 // frame-domain assertion.
-func FrameTap(name string) TapRef {
-	return TapRef{name: name, domain: shape.DomainFrame}
+func FrameTap(name string) tapRef {
+	return tapRef{name: name, domain: shape.DomainFrame}
 }
 
 // PacketTap names a packet-domain attach point.
-func PacketTap(name string) TapRef {
-	return TapRef{name: name, domain: shape.DomainPacket}
+func PacketTap(name string) tapRef {
+	return tapRef{name: name, domain: shape.DomainPacket}
 }
 
-// Name returns the tap's stable name, the key Inspectable.Taps and Branch.From use.
-func (t TapRef) Name() string {
+// Name returns the tap's stable name, the key LiveTask.Taps and Branch.From use.
+func (t tapRef) Name() string {
 	return t.name
 }
 
 // Domain returns the asserted media domain: frame, packet, or empty when the
 // tap infers its domain from the chain point.
-func (t TapRef) Domain() shape.MediaDomain {
+func (t tapRef) Domain() shape.MediaDomain {
 	return t.domain
 }
 
-func tapWithDomain(tap TapRef, domain shape.MediaDomain) TapRef {
+func tapWithDomain(tap tapRef, domain shape.MediaDomain) tapRef {
 	if tap.domain == "" {
 		tap.domain = domain
 	}
 	return tap
 }
 
-func validateTapDomain(operation string, node string, tap TapRef, actual shape.MediaDomain) error {
+func validateTapDomain(operation string, node string, tap tapRef, actual shape.MediaDomain) error {
 	if tap.domain == "" || actual == "" || tap.domain == actual {
 		return nil
 	}

@@ -22,7 +22,7 @@ func Composite(arms ...JoinArm) *compositeStream {
 type compositeStream struct {
 	arms       []JoinArm
 	encode     *codec.CodecSpec
-	taps       []TapRef
+	taps       []tapRef
 	operations []operationSpec
 	sync       joinSyncMode
 	region     *compositeRegion
@@ -102,7 +102,7 @@ func (c *compositeStream) Encode(spec codec.CodecSpec) *compositeStream {
 // Tap names the composited stream as a stable frame-domain attach point — the
 // same tap a normal chain declares: it appears in task.Taps() and runtime
 // branches can Attach from it later.
-func (c *compositeStream) Tap(tap TapRef) *compositeStream {
+func (c *compositeStream) Tap(tap tapRef) *compositeStream {
 	c.taps = append(c.taps, tap)
 	return c
 }

@@ -465,12 +465,12 @@ func rootTapFromRecipeIR(in recipeir.Tap) tapIntent {
 	}
 }
 
-func recipeIRTapRefFromRoot(in TapRef) recipeir.TapRef {
+func recipeIRTapRefFromRoot(in tapRef) recipeir.TapRef {
 	return recipeir.TapRef{Name: in.name, Domain: in.domain}
 }
 
-func rootTapRefFromRecipeIR(in recipeir.TapRef) TapRef {
-	return TapRef{name: in.Name, domain: in.Domain}
+func rootTapRefFromRecipeIR(in recipeir.TapRef) tapRef {
+	return tapRef{name: in.Name, domain: in.Domain}
 }
 
 func recipeIRCodecChangeFromRoot(in codecChangePolicy) recipeir.CodecChangePolicy {
@@ -574,7 +574,7 @@ func cloneJoinSpec(spec *joinSpec) *joinSpec {
 		out.encode = &encode
 	}
 	out.operations = cloneOperationSpecs(spec.operations)
-	out.taps = append([]TapRef(nil), spec.taps...)
+	out.taps = append([]tapRef(nil), spec.taps...)
 	out.branches = cloneBranchSpecs(spec.branches)
 	return &out
 }

@@ -16,7 +16,7 @@ import (
 
 // These tests pin the tap-arm contract: a chain arm keeps its declared
 // .Decode()/.Tap(...) (the tap installs on the task, anchored mid-graph), and
-// a TapRef arm converges that already-flowing point again — the join-side
+// a tap-reference arm converges that already-flowing point again — the join-side
 // dual of Branch().From(tap). One decode, any number of consumers.
 
 type tapArmTestDecoderFactory struct {
@@ -152,7 +152,7 @@ func TestMixChainArmTapDecodesOnceAndMixes(t *testing.T) {
 	}
 }
 
-// TestMixTapArmConvergesTappedStreamAgain: a TapRef arm feeds the SAME tapped
+// TestMixTapArmConvergesTappedStreamAgain: a tap-reference arm feeds the SAME tapped
 // point into the join a second time, re-stamped under the tap name — no
 // source re-opened, the mixed sum carries the stream twice.
 func TestMixTapArmConvergesTappedStreamAgain(t *testing.T) {
@@ -453,7 +453,7 @@ func TestJoinTapAnchorHelperContracts(t *testing.T) {
 		t.Fatal("resolve unexpectedly found missing tap")
 	}
 
-	_, err := planJoinTapArm("mix", "mix", joinProfile{media: av.MediaAudio}, TapRef{}, anchors)
+	_, err := planJoinTapArm("mix", "mix", joinProfile{media: av.MediaAudio}, tapRef{}, anchors)
 	var buildErr *BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "mix_arm" || !strings.Contains(buildErr.Reason, "tap arm has no name") {
 		t.Fatalf("empty tap arm err = %v", err)

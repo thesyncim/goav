@@ -1,6 +1,6 @@
-// Tap arms: a TapRef as one arm of a join. The tap-declaring chain rides into
+// Tap arms: a tap reference as one arm of a join. The tap-declaring chain rides into
 // the join as an ordinary arm (its .Decode()/.Tap(...) operations are honored
-// and the tap installs on the task); a TapRef arm then converges that
+// and the tap installs on the task); a tap-reference arm then converges that
 // already-flowing point again — anchored on the tap's planned node, no source
 // re-opened — the join-side dual of Branch().From(tap).
 
@@ -22,7 +22,7 @@ import (
 // the tap's node — declared by an EARLIER arm of the same join expression —
 // instead of opening a source, so the tapped stream converges mid-graph
 // (decoded once). The arm's stream id is the tap name.
-func (t TapRef) joinArm() joinArmSpec {
+func (t tapRef) joinArm() joinArmSpec {
 	tap := t
 	return joinArmSpec{tap: &tap}
 }
@@ -30,14 +30,14 @@ func (t TapRef) joinArm() joinArmSpec {
 // Region places this tap arm's frames at (x, y) on the composite canvas —
 // the tap-arm form of the chain arm's .Region(x, y). It has no effect on arms
 // outside a Composite.
-func (t TapRef) Region(x, y int) JoinArm {
+func (t tapRef) Region(x, y int) JoinArm {
 	return tapArmRef{tap: t, region: compositeRegion{x: x, y: y}}
 }
 
-// tapArmRef is a TapRef arm carrying its composite placement; it stays behind
+// tapArmRef is a tap-reference arm carrying its composite placement; it stays behind
 // the sealed JoinArm interface like every other arm shape.
 type tapArmRef struct {
-	tap    TapRef
+	tap    tapRef
 	region compositeRegion
 }
 
@@ -50,7 +50,7 @@ func (t tapArmRef) joinArm() joinArmSpec {
 // joinArmTap is one tap a chain arm declared: the resolved ref plus the
 // operation it follows (decode, or nothing on frame-domain sources).
 type joinArmTap struct {
-	ref   TapRef
+	ref   tapRef
 	after plan.OperationKind
 }
 
@@ -59,7 +59,7 @@ type joinArmTap struct {
 // tap name (join stages identify arms by stream id, so the converged copy
 // must carry its own).
 type joinTapArmPlan struct {
-	tap    TapRef
+	tap    tapRef
 	anchor joinTapAnchor
 	node   string
 }
@@ -86,7 +86,7 @@ func (a joinTapAnchor) node() string {
 
 // joinTapAnchors tracks the taps declared by already-planned arms of one join
 // tree, in depth-first arm order — the same order the lowering walks — so a
-// TapRef arm always anchors strictly upstream. declared lists every tap name
+// tap-reference arm always anchors strictly upstream. declared lists every tap name
 // in the whole spec (including not-yet-planned arms) for error candidates.
 type joinTapAnchors struct {
 	declared []string
@@ -114,10 +114,10 @@ func (a *joinTapAnchors) resolve(name string) (joinTapAnchor, bool) {
 	return anchor, ok
 }
 
-// planJoinTapArm plans one TapRef arm: the named tap must already be anchored
+// planJoinTapArm plans one tap-reference arm: the named tap must already be anchored
 // (declared by an earlier arm of the tree), its typed domain must match, and
 // the arm's stream is the tapped stream re-stamped under the tap name.
-func planJoinTapArm(name string, kind string, profile joinProfile, tap TapRef, anchors *joinTapAnchors) (joinArmPlan, error) {
+func planJoinTapArm(name string, kind string, profile joinProfile, tap tapRef, anchors *joinTapAnchors) (joinArmPlan, error) {
 	if tap.name == "" {
 		return joinArmPlan{}, joinArmError(name, name, "tap arm has no name",
 			"use a named typed tap ref: goav.FrameTap(\"voice.decoded\") or goav.PacketTap(\"cam.packets\")")
@@ -185,7 +185,7 @@ func joinChainArmTaps(join string, arm string, operations []operationSpec) ([]jo
 			continue
 		}
 		intent := operations[i].Tap
-		ref := tapWithDomain(TapRef{name: intent.Name, domain: intent.Domain}, shape.DomainFrame)
+		ref := tapWithDomain(tapRef{name: intent.Name, domain: intent.Domain}, shape.DomainFrame)
 		if err := validateTapDomain("build "+join, firstNonEmpty(arm, join), ref, shape.DomainFrame); err != nil {
 			return nil, err
 		}
@@ -243,7 +243,7 @@ func declaredJoinTapNames(spec *joinSpec) []string {
 // joinTapArmMissingError is the unresolved tap arm refusal: the referenced
 // tap is not anchored by any earlier arm. It lists every tap the join
 // expression declares, in the established candidates style.
-func joinTapArmMissingError(join string, tap TapRef, declared []string) error {
+func joinTapArmMissingError(join string, tap tapRef, declared []string) error {
 	details := []string{"tap=" + tap.name}
 	for _, name := range declared {
 		details = append(details, "declared="+name)

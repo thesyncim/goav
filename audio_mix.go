@@ -314,7 +314,7 @@ func Mix(arms ...JoinArm) *mixStream {
 type mixStream struct {
 	arms       []JoinArm
 	encode     *codec.CodecSpec
-	taps       []TapRef
+	taps       []tapRef
 	operations []operationSpec
 	sync       joinSyncMode
 }
@@ -374,7 +374,7 @@ func (m *mixStream) Encode(spec codec.CodecSpec) *mixStream {
 // Tap names the mixed stream as a stable frame-domain attach point — the same
 // tap a normal chain declares: it appears in task.Taps() and runtime branches
 // can Attach from it later.
-func (m *mixStream) Tap(tap TapRef) *mixStream {
+func (m *mixStream) Tap(tap tapRef) *mixStream {
 	m.taps = append(m.taps, tap)
 	return m
 }

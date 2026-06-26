@@ -240,7 +240,6 @@ goav.StreamID
 goav.StreamIndex
 goav.StreamName
 goav.Tap
-goav.TapRef
 goav.Task
 goav.URI
 goav.URIInput

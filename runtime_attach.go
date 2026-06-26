@@ -862,7 +862,7 @@ func (t *task) resolveRuntimeBranchAnchor(spec BranchSpec, graphSpec pipeline.Sp
 		taps = append(taps, pending...)
 		for _, tap := range taps {
 			if tap.Name == spec.source.tap {
-				if err := validateTapDomain("attach runtime branch", firstNonEmpty(spec.name, "branch"), TapRef{name: spec.source.tap, domain: spec.source.tapDomain}, tap.Domain); err != nil {
+				if err := validateTapDomain("attach runtime branch", firstNonEmpty(spec.name, "branch"), tapRef{name: spec.source.tap, domain: spec.source.tapDomain}, tap.Domain); err != nil {
 					return "", snapshot.Tap{}, err
 				}
 				return tap.Node.String(), tap, nil

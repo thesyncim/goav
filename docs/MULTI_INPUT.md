@@ -63,7 +63,8 @@ or to every planned branch.
 Taps converge mid-graph: an arm chain keeps its declared `.Decode()`/`.Tap(...)`.
 The tap installs on the task anchored at the arm's decode (or source) node,
 so one decode feeds the join and any other consumer (runtime attach, a later
-arm). A `TapRef` is itself a `JoinArm`: it anchors on a tap declared by an
+arm). A value returned by `goav.FrameTap` or `goav.PacketTap` is itself a
+`JoinArm`: it anchors on a tap declared by an
 earlier arm of the same join expression (no source re-opened) and re-stamps
 the tapped media under the tap name as the arm's id (`<join>-tap-<name>`
 restamp node; join stages identify arms by stream id). Composite tap arms

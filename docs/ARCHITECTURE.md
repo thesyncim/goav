@@ -121,7 +121,7 @@ from its taps. H264 recipe encoding remains work in progress.
 
 Design direction: a tap is not a second data path. It is a named stream point
 that later consumers can bind to. Planned branches, runtime branches, join-arm
-`TapRef`s, and `Control.AtTap` should keep sharing that one internal anchor
+tap references, and `Control.AtTap` should keep sharing that one internal anchor
 model: `.Tap(...)` declares the point, `.From(tap)` consumes it, and the
 planner owns the node/domain/shape facts. That gives the useful part of "tap
 at any point" while preserving the small public grammar and avoiding a second

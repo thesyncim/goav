@@ -20,7 +20,7 @@ type Chain interface {
 	Name() string
 	InputShapes() shape.Set
 	OutputShapes(shape.Spec) shape.Set
-	Taps() []TapRef
+	Taps() []tapRef
 	isChain()
 }
 
@@ -124,14 +124,14 @@ func (b *videoChain) OutputShapes(input shape.Spec) shape.Set {
 	return b.chainBuilder.outputShapes(input)
 }
 
-func (b *audioChain) Taps() []TapRef {
+func (b *audioChain) Taps() []tapRef {
 	if b == nil {
 		return nil
 	}
 	return b.chainBuilder.taps()
 }
 
-func (b *videoChain) Taps() []TapRef {
+func (b *videoChain) Taps() []tapRef {
 	if b == nil {
 		return nil
 	}
@@ -222,7 +222,7 @@ func (b *audioChain) Apply(flow Chain) *audioChain {
 	return b
 }
 
-func (b *audioChain) Tap(tap TapRef) *audioChain {
+func (b *audioChain) Tap(tap tapRef) *audioChain {
 	if b == nil {
 		return b
 	}
@@ -333,7 +333,7 @@ func (b *videoChain) Apply(flow Chain) *videoChain {
 	return b
 }
 
-func (b *videoChain) Tap(tap TapRef) *videoChain {
+func (b *videoChain) Tap(tap tapRef) *videoChain {
 	if b == nil {
 		return b
 	}
@@ -406,17 +406,17 @@ func (b *chainBuilder) outputShapes(input shape.Spec) shape.Set {
 	return shape.Set{spec}
 }
 
-func (b *chainBuilder) taps() []TapRef {
+func (b *chainBuilder) taps() []tapRef {
 	if b == nil {
 		return nil
 	}
-	out := make([]TapRef, 0, len(b.spec.operations))
+	out := make([]tapRef, 0, len(b.spec.operations))
 	for i := range b.spec.operations {
 		operation := b.spec.operations[i]
 		if operation.Kind != plan.OpTap || operation.Tap.Name == "" {
 			continue
 		}
-		out = append(out, TapRef{name: operation.Tap.Name, domain: operation.Tap.Domain})
+		out = append(out, tapRef{name: operation.Tap.Name, domain: operation.Tap.Domain})
 	}
 	return out
 }
@@ -546,7 +546,7 @@ func (b *chainBuilder) apply(flow Chain) {
 	b.spec.operations = append(b.spec.operations, cloneOperationSpecs(spec.operations)...)
 }
 
-func (b *chainBuilder) tap(tap TapRef) {
+func (b *chainBuilder) tap(tap tapRef) {
 	if b == nil {
 		return
 	}

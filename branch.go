@@ -154,7 +154,7 @@ type branchSourceBinding struct {
 	streamDomain shape.MediaDomain
 }
 
-// branchSource is the anchor a branch hangs from: a TapRef names a stable
+// branchSource is the anchor a branch hangs from: a tap reference names a stable
 // tap, input.Stream(...) names one stream from a recipe input, and an expert graph
 // handle (expert.GraphNode, expert.GraphOutlet) names a graph node through its
 // Route capability. The bound is structural — From validates the anchor and
@@ -171,7 +171,7 @@ type graphRouteAnchor interface {
 	Route() pipeline.Route
 }
 
-// tapAnchor is the sealed capability TapRef and the internal graph handles
+// tapAnchor is the sealed capability tap references and the internal graph handles
 // implement directly.
 type tapAnchor interface {
 	branchSource() branchSourceBinding
@@ -398,7 +398,7 @@ func (b *branchBuilder) Resample(sampleRate int, channels int, options ...audioO
 	return b
 }
 
-func (b *branchBuilder) Tap(tap TapRef) *branchBuilder {
+func (b *branchBuilder) Tap(tap tapRef) *branchBuilder {
 	if b == nil {
 		return b
 	}
@@ -635,7 +635,7 @@ func validateBranchStepTapDomains(spec BranchSpec, parentPacket bool) error {
 		if step.tap == "" {
 			continue
 		}
-		if err := validateTapDomain("build branches", firstNonEmpty(spec.name, "branch"), TapRef{name: step.tap, domain: step.tapDomain}, domain); err != nil {
+		if err := validateTapDomain("build branches", firstNonEmpty(spec.name, "branch"), tapRef{name: step.tap, domain: step.tapDomain}, domain); err != nil {
 			return err
 		}
 	}
@@ -703,7 +703,7 @@ func operationSpecTapIsTerminalPacket(operation operationSpec) bool {
 		(operation.Tap.After == plan.OpEncode || operation.Tap.After == plan.OpCopy)
 }
 
-func plannedBranchAnchor(stream *jobStreamBuild, spec BranchSpec, parentPacket bool) ([]chainStep, TapRef, error) {
+func plannedBranchAnchor(stream *jobStreamBuild, spec BranchSpec, parentPacket bool) ([]chainStep, tapRef, error) {
 	streamSteps := jobStreamChainSteps(stream)
 	if spec.source.tap == "" {
 		if parentPacket {
@@ -712,35 +712,35 @@ func plannedBranchAnchor(stream *jobStreamBuild, spec BranchSpec, parentPacket b
 		return cloneChainSteps(streamSteps), lastStreamTapRef(stream), nil
 	}
 	if stream == nil {
-		return nil, TapRef{}, plannedBranchTapMissingError("", spec.name, spec.source.tap)
+		return nil, tapRef{}, plannedBranchTapMissingError("", spec.name, spec.source.tap)
 	}
 	if parentPacket {
 		if tapIsPacketAnchor(stream, spec.source.tap) {
-			from := TapRef{name: spec.source.tap, domain: spec.source.tapDomain}
+			from := tapRef{name: spec.source.tap, domain: spec.source.tapDomain}
 			if err := validateTapDomain("build branches", firstNonEmpty(spec.name, "branch"), from, shape.DomainPacket); err != nil {
-				return nil, TapRef{}, err
+				return nil, tapRef{}, err
 			}
 			return nil, tapWithDomain(from, shape.DomainPacket), nil
 		}
-		return nil, TapRef{}, plannedBranchTapMissingError(jobStreamName(stream), spec.name, spec.source.tap)
+		return nil, tapRef{}, plannedBranchTapMissingError(jobStreamName(stream), spec.name, spec.source.tap)
 	}
 	if chainHasDecode(stream.operations) && spec.source.tap == defaultDecodedTapName(stream.selector.Type) {
-		from := TapRef{name: spec.source.tap, domain: spec.source.tapDomain}
+		from := tapRef{name: spec.source.tap, domain: spec.source.tapDomain}
 		if err := validateTapDomain("build branches", firstNonEmpty(spec.name, "branch"), from, shape.DomainFrame); err != nil {
-			return nil, TapRef{}, err
+			return nil, tapRef{}, err
 		}
 		return nil, tapWithDomain(from, shape.DomainFrame), nil
 	}
 	if steps, ok := chainStepsThroughTap(streamSteps, spec.source.tap); ok {
-		from := TapRef{name: spec.source.tap, domain: spec.source.tapDomain}
+		from := tapRef{name: spec.source.tap, domain: spec.source.tapDomain}
 		if err := validateTapDomain("build branches", firstNonEmpty(spec.name, "branch"), from, shape.DomainFrame); err != nil {
-			return nil, TapRef{}, err
+			return nil, tapRef{}, err
 		}
 		return steps, tapWithDomain(from, shape.DomainFrame), nil
 	}
 	// Post-encode taps cannot occur here: Branches already refused encoding
 	// parents, and a .Copy() parent reaches the packet-anchor path above.
-	return nil, TapRef{}, plannedBranchTapMissingError(jobStreamName(stream), spec.name, spec.source.tap)
+	return nil, tapRef{}, plannedBranchTapMissingError(jobStreamName(stream), spec.name, spec.source.tap)
 }
 
 func tapIsPacketAnchor(stream *jobStreamBuild, tap string) bool {

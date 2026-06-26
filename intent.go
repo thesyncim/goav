@@ -47,7 +47,7 @@ type inputIntent struct {
 type streamIntent struct {
 	Name         string
 	Select       plan.StreamSelect
-	From         TapRef
+	From         tapRef
 	Operations   []operationSpec
 	CodecChange  codecChangePolicy
 	Destinations []string
@@ -214,7 +214,7 @@ func operationSpecForTransform(transform transformSpec) operationSpec {
 	}
 }
 
-func operationSpecForTap(tap TapRef, media av.MediaType, after plan.OperationKind) operationSpec {
+func operationSpecForTap(tap tapRef, media av.MediaType, after plan.OperationKind) operationSpec {
 	domain := tap.domain
 	if domain == "" {
 		domain = tapDomainForAfter(after)

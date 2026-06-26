@@ -193,7 +193,7 @@ func newStreamSelectConfig(media av.MediaType, options ...streamOption) streamSe
 type streamBuild struct {
 	name             string
 	selector         av.StreamSelector
-	from             TapRef
+	from             tapRef
 	decode           bool
 	decodeCodec      codec.CodecSpec
 	operations       []operationSpec
@@ -438,7 +438,7 @@ func (b *jobStreamBuilder) Copy() *jobStreamBuilder {
 	return b
 }
 
-func (b *jobStreamBuilder) Tap(tap TapRef) *jobStreamBuilder {
+func (b *jobStreamBuilder) Tap(tap tapRef) *jobStreamBuilder {
 	stream := b.current()
 	if tap.name == "" {
 		b.job.setErr(&BuildError{
@@ -485,9 +485,9 @@ func streamSelectFromAV(selector av.StreamSelector) plan.StreamSelect {
 	}
 }
 
-func lastStreamTapRef(stream *jobStreamBuild) TapRef {
+func lastStreamTapRef(stream *jobStreamBuild) tapRef {
 	if stream == nil {
-		return TapRef{}
+		return tapRef{}
 	}
 	for i := len(stream.operations) - 1; i >= 0; i-- {
 		if operationSpecTapIsTerminalPacket(stream.operations[i]) {
@@ -500,13 +500,13 @@ func lastStreamTapRef(stream *jobStreamBuild) TapRef {
 	}
 	for i := len(steps) - 1; i >= 0; i-- {
 		if steps[i].tap != "" {
-			return tapWithDomain(TapRef{name: steps[i].tap, domain: steps[i].tapDomain}, shape.DomainFrame)
+			return tapWithDomain(tapRef{name: steps[i].tap, domain: steps[i].tapDomain}, shape.DomainFrame)
 		}
 	}
 	if len(steps) == 0 && stream.selector.Type != "" && chainHasDecode(stream.operations) {
 		return FrameTap(defaultDecodedTapName(stream.selector.Type))
 	}
-	return TapRef{}
+	return tapRef{}
 }
 
 func (b *jobStreamBuilder) Do(stages ...pipeline.Stage) *jobStreamBuilder {

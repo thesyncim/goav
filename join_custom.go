@@ -79,7 +79,7 @@ type joinStream struct {
 	name  string
 	stage pipeline.Stage
 	arms  []JoinArm
-	taps  []TapRef
+	taps  []tapRef
 }
 
 // customJoinSpec carries the caller-supplied convergence stage behind a
@@ -115,7 +115,7 @@ func (s *joinStream) joinArm() joinArmSpec {
 // normal chain declares: it appears in task.Taps() and runtime branches can
 // Attach from it later. Its domain follows the join's output (frame-domain
 // for decode-arm joins, the arms' domain for passthrough joins).
-func (s *joinStream) Tap(tap TapRef) *joinStream {
+func (s *joinStream) Tap(tap tapRef) *joinStream {
 	s.taps = append(s.taps, tap)
 	return s
 }

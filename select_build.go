@@ -26,7 +26,7 @@ const selectBufferCapacity = 32
 
 type selectorStream struct {
 	arms   []JoinArm
-	taps   []TapRef
+	taps   []tapRef
 	region *compositeRegion
 }
 
@@ -52,7 +52,7 @@ func (s *selectorStream) Region(x, y int) *selectorStream {
 // normal chain declares: it appears in task.Taps() and runtime branches can
 // Attach from it later. Its domain follows the arms (frame arms switch frames,
 // packet arms switch packets).
-func (s *selectorStream) Tap(tap TapRef) *selectorStream {
+func (s *selectorStream) Tap(tap tapRef) *selectorStream {
 	s.taps = append(s.taps, tap)
 	return s
 }

@@ -250,7 +250,7 @@ func (t *task) planAttachBranchSteps(ctx context.Context, input runtimeAttachBra
 			}
 			terminal := operationSpecTapIsTerminalPacket(operation)
 			if operation.Tap.Name != "" && !terminal {
-				if err := validateTapDomain("attach runtime branch", branchName, TapRef{name: operation.Tap.Name, domain: operation.Tap.Domain}, currentShape.Domain); err != nil {
+				if err := validateTapDomain("attach runtime branch", branchName, tapRef{name: operation.Tap.Name, domain: operation.Tap.Domain}, currentShape.Domain); err != nil {
 					return fail(err)
 				}
 			}

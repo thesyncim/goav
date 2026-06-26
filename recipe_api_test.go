@@ -1549,7 +1549,7 @@ func TestExpertGraphNodeNamesDoNotCreateTapAnchors(t *testing.T) {
 	}
 }
 
-func TestTypedTapRefsDriveStreamIntent(t *testing.T) {
+func TestTypedTapsDriveStreamIntent(t *testing.T) {
 	decoded := goav.FrameTap("audio.decoded")
 	encoded := goav.PacketTap("audio.encoded")
 

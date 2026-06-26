@@ -55,7 +55,7 @@ type joinSpec struct {
 	operations []operationSpec
 	// taps name the joined stream as stable attach points, installed on the task
 	// exactly like chain taps (visible in task.Taps(), runtime-attachable).
-	taps []TapRef
+	taps []tapRef
 	// branches fan the joined stream out to planned branch chains, each carrying
 	// its own destinations; when set, dest/encode are unused.
 	branches []BranchSpec
@@ -72,7 +72,7 @@ type joinSpec struct {
 // JoinArm is one source arm of a join: an ordinary source chain such as
 // From(x).Audio(), another join whose joined output feeds the outer join —
 // Mix(Mix(a, b), c) sub-mixes two arms and mixes the result with a third, and
-// Select(Mix(a, b), Mix(c, d)) switches between two live mixes — or a TapRef
+// Select(Mix(a, b), Mix(c, d)) switches between two live mixes — or a tap reference
 // naming a tap an earlier arm declared, so one decoded stream converges
 // mid-graph without opening its source again. It is a sealed interface: only
 // goav builders implement it.
@@ -89,7 +89,7 @@ type JoinArm interface {
 type joinArmSpec struct {
 	chain  *jobStreamBuilder
 	join   *joinSpec
-	tap    *TapRef
+	tap    *tapRef
 	region *compositeRegion
 }
 
@@ -619,7 +619,7 @@ func resolveJoinDestinations(name string, spec *joinSpec) ([]destinationSpec, er
 // cursor is the next unconsumed leaf and the updated cursor is returned. Join
 // node names are claimed depth-first through used, so nested joins of the same
 // kind get disambiguated names (mix, mix-2, ...). anchors collects the taps
-// declared by already-planned arms, so a TapRef arm resolves strictly to an
+// declared by already-planned arms, so a tap-reference arm resolves strictly to an
 // earlier point of the same tree — forward references and cycles are
 // unrepresentable by construction.
 func planJoinTree(input joinPlanInput, spec *joinSpec, cursor int, used map[string]struct{}, anchors *joinTapAnchors) (*joinPlan, int, error) {
@@ -1063,7 +1063,7 @@ func (p *joinPlan) validateJoinBranchAnchor(branch BranchSpec) error {
 		if tap.name != branch.source.tap {
 			continue
 		}
-		from := TapRef{name: branch.source.tap, domain: branch.source.tapDomain}
+		from := tapRef{name: branch.source.tap, domain: branch.source.tapDomain}
 		return validateTapDomain("build branches", firstNonEmpty(branch.name, "branch"), from, p.joinedDomain)
 	}
 	return plannedBranchTapMissingError(p.name, branch.name, branch.source.tap)

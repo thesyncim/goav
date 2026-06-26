@@ -139,7 +139,7 @@ func TestVideoFlowOperationsExposeContractsAndCloneSnapshots(t *testing.T) {
 	if len(outputs) != 1 || outputs[0].Domain != shape.DomainPacket || outputs[0].Codec != av.CodecVP8 {
 		t.Fatalf("OutputShapes() = %#v, want VP8 packets", outputs)
 	}
-	if got := flow.Taps(); !reflect.DeepEqual(got, []TapRef{FrameTap("preview.frames")}) {
+	if got := flow.Taps(); !reflect.DeepEqual(got, []tapRef{FrameTap("preview.frames")}) {
 		t.Fatalf("Taps() = %#v, want preview frame tap", got)
 	}
 
@@ -386,7 +386,7 @@ func (nonSnapshotFlow) InputShapes() shape.Set {
 func (nonSnapshotFlow) OutputShapes(shape.Spec) shape.Set {
 	return nil
 }
-func (nonSnapshotFlow) Taps() []TapRef { return nil }
+func (nonSnapshotFlow) Taps() []tapRef { return nil }
 func (nonSnapshotFlow) isChain()       {}
 
 func operationKindsForFlowTest(operations []operationSpec) []plan.OperationKind {

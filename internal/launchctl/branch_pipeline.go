@@ -127,7 +127,7 @@ func parseBranchPipelineWithRegistry(task goav.LiveTask, tapName string, branchN
 	if branchName == "" {
 		return goav.BranchSpec{}, commandError("missing_required", "attach", "branch", "branch name is required", nil, []string{"use attach <tap-name> as <branch-name> '<branch-pipeline>'"}, nil)
 	}
-	tap, err := resolveBranchTap(task, "attach", tapName)
+	tapDomain, err := resolveBranchTapDomain(task, "attach", tapName)
 	if err != nil {
 		return goav.BranchSpec{}, err
 	}
@@ -135,7 +135,15 @@ func parseBranchPipelineWithRegistry(task goav.LiveTask, tapName string, branchN
 	if err != nil {
 		return goav.BranchSpec{}, err
 	}
-	builder := goav.Branch(branchName).From(tap)
+	builder := goav.Branch(branchName)
+	switch tapDomain {
+	case shape.DomainFrame:
+		builder = builder.From(goav.FrameTap(tapName))
+	case shape.DomainPacket:
+		builder = builder.From(goav.PacketTap(tapName))
+	default:
+		builder = builder.From(goav.Tap(tapName))
+	}
 	var destinations []goav.Destination
 	branch := &BranchPipeline{
 		copyFn:     func() { builder = builder.Copy() },
@@ -295,24 +303,17 @@ func pipelineStepNames(registry PipelineRegistry) []string {
 	return names
 }
 
-func resolveBranchTap(task goav.LiveTask, operation string, tapName string) (goav.TapRef, error) {
+func resolveBranchTapDomain(task goav.LiveTask, operation string, tapName string) (shape.MediaDomain, error) {
 	if tapName == "" {
-		return goav.TapRef{}, commandError("missing_required", operation, "tap", "tap name is required", nil, []string{"use attach <tap-name> as <branch-name> ..."}, nil)
+		return "", commandError("missing_required", operation, "tap", "tap name is required", nil, []string{"use attach <tap-name> as <branch-name> ..."}, nil)
 	}
 	for _, tap := range task.Taps() {
 		if tap.Name != tapName {
 			continue
 		}
-		switch tap.Domain {
-		case shape.DomainFrame:
-			return goav.FrameTap(tapName), nil
-		case shape.DomainPacket:
-			return goav.PacketTap(tapName), nil
-		default:
-			return goav.Tap(tapName), nil
-		}
+		return tap.Domain, nil
 	}
-	return goav.TapRef{}, ensureTap(task, operation, tapName)
+	return "", ensureTap(task, operation, tapName)
 }
 
 func splitPipeline(pipeline string) ([]string, error) {

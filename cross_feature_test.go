@@ -711,7 +711,7 @@ func TestPauseResumeBranchOnJoinTap(t *testing.T) {
 // --- Detach of a branch sharing a tap-arm join's anchor ---
 
 // TestDetachBranchOnTapArmAnchorKeepsJoin attaches and detaches a runtime
-// branch on the SAME tap a TapRef join arm converges from, before any media
+// branch on the SAME tap a tap-reference join arm converges from, before any media
 // flows: the planned tap-arm edge survives the detach and the mix still sums
 // the tapped stream twice.
 func TestDetachBranchOnTapArmAnchorKeepsJoin(t *testing.T) {

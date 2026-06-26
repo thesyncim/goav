@@ -1523,12 +1523,12 @@ func TestBranchPipelineParserHelperEdges(t *testing.T) {
 
 	task := newFakeTask()
 	task.taps = append(task.taps, snapshot.Tap{Name: "events", Domain: shape.DomainEvent})
-	tap, err := resolveBranchTap(task, "attach", "events")
+	tapDomain, err := resolveBranchTapDomain(task, "attach", "events")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if tap.Name() != "events" || tap.Domain() != "" {
-		t.Fatalf("tap = %s/%s, want inferred events tap", tap.Name(), tap.Domain())
+	if tapDomain != shape.DomainEvent {
+		t.Fatalf("tap domain = %s, want event", tapDomain)
 	}
 }
 
