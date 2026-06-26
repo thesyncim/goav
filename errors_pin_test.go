@@ -8,8 +8,6 @@ import (
 	"regexp"
 	"strings"
 	"testing"
-
-	"github.com/thesyncim/goav/errcode"
 )
 
 // TestBuildErrorContractPinned enforces the error contract at the source
@@ -169,48 +167,6 @@ func TestErrorCodeCatalogPinned(t *testing.T) {
 	if count < 130 {
 		t.Errorf("errcode/errcode.go declares %d Code constants; the public refusal catalog should stay complete (>= 130)", count)
 	}
-}
-
-func TestReservedEncodeWorkInProgressCodeStaysExplicit(t *testing.T) {
-	fset := token.NewFileSet()
-	file, err := parser.ParseFile(fset, "errcode/errcode.go", nil, parser.ParseComments)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, decl := range file.Decls {
-		gen, ok := decl.(*ast.GenDecl)
-		if !ok || gen.Tok != token.CONST {
-			continue
-		}
-		for _, spec := range gen.Specs {
-			vs, ok := spec.(*ast.ValueSpec)
-			if !ok {
-				continue
-			}
-			for i, name := range vs.Names {
-				if name.Name != "EncodeWorkInProgress" {
-					continue
-				}
-				if i >= len(vs.Values) {
-					t.Fatal("EncodeWorkInProgress has no explicit value")
-				}
-				lit, ok := vs.Values[i].(*ast.BasicLit)
-				if !ok || strings.Trim(lit.Value, `"`) != string(errcode.EncodeWorkInProgress) {
-					t.Fatalf("EncodeWorkInProgress literal = %v, want %q", vs.Values[i], errcode.EncodeWorkInProgress)
-				}
-				doc := ""
-				if vs.Doc != nil {
-					doc = vs.Doc.Text()
-				}
-				if !strings.Contains(doc, "reserved") ||
-					!strings.Contains(doc, "Normal codec availability is reported by the encode adapter error codes") {
-					t.Fatalf("EncodeWorkInProgress doc = %q, want reserved-code guidance", doc)
-				}
-				return
-			}
-		}
-	}
-	t.Fatal("EncodeWorkInProgress not found")
 }
 
 // TestErrorCodeLiteralsStayInCatalog sweeps every non-test source file for

@@ -88,7 +88,7 @@ func FamilyForCode(code Code) Family {
 		CodecChangePolicyUnsupported:
 		return FamilyCodec
 	case EncodeMissing, EncodeDuplicate, EncodeParameterInvalid,
-		EncodeAutoUnresolved, EncodeWorkInProgress, EncodeStreamMismatch,
+		EncodeAutoUnresolved, EncodeStreamMismatch,
 		EncodeDestinationMissing, EncodeBranchSourceInvalid:
 		return FamilyEncode
 	case OutputInvalid, OutputMissing, OutputDuplicate, OutputScopeMixed,
@@ -319,10 +319,6 @@ const (
 	// EncodeAutoUnresolved fires when automatic codec selection is
 	// requested where it is not implemented.
 	EncodeAutoUnresolved Code = "encode_auto_unresolved"
-	// EncodeWorkInProgress is reserved for staged encoder features that are
-	// present in the API but not enabled yet.
-	// Normal codec availability is reported by the encode adapter error codes.
-	EncodeWorkInProgress Code = "encode_work_in_progress"
 	// EncodeStreamMismatch fires when the encoder's stream selector does
 	// not match the stream the chain decoded.
 	EncodeStreamMismatch Code = "encode_stream_mismatch"

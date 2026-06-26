@@ -610,14 +610,6 @@ var errorCatalogAdditionalExamples = []errorCatalogExample{
 		Cause:         "goav.ErrUnsupportedBuild",
 	},
 	{
-		Code:          "encode_work_in_progress",
-		Test:          "TestReservedEncodeWorkInProgressCodeStaysExplicit",
-		BadRecipe:     "reserved staged-encoder feature code, not emitted for normal codec availability",
-		RenderedError: "reserved-code documentation and literal value are asserted by the test",
-		Fix:           "normal encoder availability failures use encode_adapter_missing, encode_adapter_unavailable, or encode_adapter_incompatible",
-		Cause:         "none (reserved)",
-	},
-	{
 		Code:          "encode_stream_mismatch",
 		Test:          "TestPrepareEncodeConfigRequiresMatchingStream",
 		BadRecipe:     "prepare an encoder config for a stream different from the selected chain stream",

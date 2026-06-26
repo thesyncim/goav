@@ -78,7 +78,6 @@ errcode.EncodeDuplicate
 errcode.EncodeMissing
 errcode.EncodeParameterInvalid
 errcode.EncodeStreamMismatch
-errcode.EncodeWorkInProgress
 errcode.ExplicitGraphSourceMissing
 errcode.Family
 errcode.FamilyBranch
