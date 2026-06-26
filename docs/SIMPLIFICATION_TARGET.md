@@ -102,10 +102,12 @@ now captured as recipe IR so shape validation does not need to infer that fact
 from concrete writer or sink attachments. Input kind and declared source shape
 now cross the same boundary for compile-time stream selection, and dynamic
 stream-rule summaries feed validation and Explain from recipe IR. Join
-summaries now cross the boundary and join stream-set planning reads IR input
-facts, but the executable join lowerer still owns concrete arms and stages. The
-boundary is not complete until remaining root-only attachments such as concrete
-join plans and runtime mutation patches move into stable recipe or plan data.
+summaries now cross the boundary, and join planning enters through an explicit
+IR-derived handoff that carries stream-set facts instead of reading compile
+state directly. The executable join lowerer still owns concrete arms and stages.
+The boundary is not complete until remaining root-only attachments such as
+concrete join plans and runtime mutation patches move into stable recipe or
+plan data.
 
 Runtime lifecycle/observation progress: one-shot `Run` now preserves both run
 and close/finalization failures, and `Events()` returns an unfiltered watch

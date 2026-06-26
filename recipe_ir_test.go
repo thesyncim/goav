@@ -132,6 +132,34 @@ func TestRecipeIRSnapshotCapturesJoinFacts(t *testing.T) {
 	}
 }
 
+func TestJoinPlannerConsumesRecipeIRInput(t *testing.T) {
+	job := Mix(
+		From(mixTestAudioSource("a", 1)).Audio(),
+		From(mixTestAudioSource("b", 1)).Audio(),
+	).To(Sink(SinkFunc("mixed", func(context.Context, Message) error { return nil })))
+
+	state := recipeCompileStateFromSnapshot(newJobRecipeSnapshot(job), recipeCompileOptions{})
+	state.inputAttachments = nil
+	lowerer, ok, err := mediaPlanJoinLowererForState(&state)
+	if err != nil {
+		t.Fatalf("plan join from IR input facts: %v", err)
+	}
+	if !ok {
+		t.Fatal("join lowerer was not selected")
+	}
+	planned, ok := lowerer.(*joinPlan)
+	if !ok {
+		t.Fatalf("join lowerer = %T, %v; want *joinPlan", lowerer, ok)
+	}
+	if len(planned.arms) != 2 ||
+		planned.arms[0].inputName != "a" ||
+		planned.arms[1].inputName != "b" ||
+		planned.arms[0].domain != shape.DomainFrame ||
+		planned.arms[1].domain != shape.DomainFrame {
+		t.Fatalf("join arms = %+v, want IR-derived frame inputs a and b", planned.arms)
+	}
+}
+
 func TestRecipeIRSnapshotCapturesSinkDestinationKind(t *testing.T) {
 	job := From(FileInput("input.ivf", strings.NewReader(""))).
 		Video().
@@ -199,12 +227,27 @@ func TestJoinPlannerUsesRecipeIRInputFacts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	planBody := sourceFunctionBody(t, string(body), "newJoinPlan")
-	if !strings.Contains(planBody, "jobInputStreamSetsFromRecipeIR(state.intent.Inputs, state.inputFacts, state.inputProbes)") {
-		t.Fatal("newJoinPlan should derive stream sets from recipe IR input facts")
+	if !strings.Contains(string(body), "type joinPlanInput struct") {
+		t.Fatal("join planner should declare an explicit joinPlanInput boundary")
 	}
-	if strings.Contains(planBody, "jobInputStreamSets(state.intent.Inputs, state.inputAttachments") {
-		t.Fatal("newJoinPlan still derives stream sets from concrete input attachments")
+	inputBody := sourceFunctionBody(t, string(body), "joinPlanInputFromCompileState")
+	if !strings.Contains(inputBody, "jobInputStreamSetsFromRecipeIR(state.intent.Inputs, state.inputFacts, state.inputProbes)") {
+		t.Fatal("joinPlanInput should derive stream sets from recipe IR input facts")
+	}
+	if strings.Contains(inputBody, "jobInputStreamSets(state.intent.Inputs, state.inputAttachments") {
+		t.Fatal("joinPlanInput still derives stream sets from concrete input attachments")
+	}
+	planBody := sourceFunctionBody(t, string(body), "newJoinPlan")
+	if strings.Contains(planBody, "*recipeCompileState") || strings.Contains(planBody, "state.") {
+		t.Fatal("newJoinPlan should consume joinPlanInput instead of compile state")
+	}
+	lowererBody, err := os.ReadFile("media_plan_spec.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	handoff := sourceFunctionBody(t, string(lowererBody), "mediaPlanJoinLowererForState")
+	if !strings.Contains(handoff, "newJoinPlan(joinPlanInputFromCompileState(state))") {
+		t.Fatal("join lowerer should build joinPlanInput from compile state at the boundary")
 	}
 }
 
