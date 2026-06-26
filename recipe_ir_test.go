@@ -615,6 +615,16 @@ func TestNormalWorkPlanUsesHandoff(t *testing.T) {
 			t.Fatalf("workPlanInputFromCompileState should capture %s", required)
 		}
 	}
+	for _, forbidden := range []string{
+		"recipeIRFromIntent(state.intent",
+		"workInputsFromIntent(state.intent",
+		"workStreamsFromIntent(state.intent",
+		"planOutputs(state.intent",
+	} {
+		if strings.Contains(workInputBody, forbidden) {
+			t.Fatalf("workPlanInputFromCompileState still rebuilds from legacy intent with %q", forbidden)
+		}
+	}
 	renderBody := sourceFunctionBody(t, source, "buildNormalWorkPlan")
 	if strings.Contains(renderBody, "*recipeCompileState") || strings.Contains(renderBody, "state.") {
 		t.Fatal("buildNormalWorkPlan should consume workPlanInput instead of compile state")
@@ -713,6 +723,74 @@ func TestBranchCompositionPlannerConsumesRecipeIR(t *testing.T) {
 	if strings.Contains(passBody, "recipeIRFromIntent(state.intent") ||
 		strings.Contains(passBody, "planBranchCompositionRecipe(state.intent") {
 		t.Fatal("planBranchCompositionIntentPass still rebuilds branch planning input from legacy intent")
+	}
+}
+
+func TestPlannerConsumerFunctionsAvoidBuilderInternals(t *testing.T) {
+	commonForbidden := []string{
+		"job.plan()",
+		"job.runtimeOrNil()",
+		"job.join",
+		"job.branchStreams",
+		"job.inputs",
+		"job.outputs",
+		"job.streamRules",
+		"streamBuild",
+		"jobStreamBuild",
+		"branchCompositionJob",
+		"chainBuilder",
+		"branchBuilder",
+		".snapshot()",
+		"recipeIRFromIntent(",
+		"state.inputAttachments",
+		"state.outputAttachments",
+		"state.branchInputAttachment",
+		"state.branchDestinationAttachments",
+		"state.joinAttachment",
+	}
+	tests := []struct {
+		file      string
+		functions []string
+		extra     []string
+	}{
+		{
+			file:      "work_plan.go",
+			functions: []string{"workPlanInputFromCompileState", "buildNormalWorkPlan"},
+			extra:     []string{"state.intent"},
+		},
+		{
+			file:      "branch_compose_plan.go",
+			functions: []string{"planBranchCompositionRecipe"},
+			extra:     []string{"intent.Streams"},
+		},
+		{
+			file: "media_plan_spec.go",
+			functions: []string{
+				"newMediaPlanMultiStreamJobLowerer",
+				"newMediaPlanPacketCopyStreamLowerer",
+				"newMediaPlanDecodeStreamLowerer",
+				"newMediaPlanBranchComposerLowerer",
+			},
+		},
+		{
+			file:      "join_build.go",
+			functions: []string{"newJoinPlan", "buildJoinWorkPlan"},
+		},
+	}
+	for _, tt := range tests {
+		body, err := os.ReadFile(tt.file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		source := string(body)
+		for _, fn := range tt.functions {
+			fnBody := sourceFunctionBody(t, source, fn)
+			for _, forbidden := range append(append([]string(nil), commonForbidden...), tt.extra...) {
+				if strings.Contains(fnBody, forbidden) {
+					t.Fatalf("%s:%s reaches across the recipe boundary with %q", tt.file, fn, forbidden)
+				}
+			}
+		}
 	}
 }
 

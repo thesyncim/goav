@@ -181,11 +181,12 @@ The pre-v1 simplification work has started the data boundary without claiming
 the package split is complete: fluent builders snapshot into
 `internal/recipeir` before the recipe compiler runs, and the main job compile
 entrypoint consumes that snapshot rather than reading `Job` fields directly.
-Branch-composition planning also consumes normalized stream intents, not the
-original `streamBuild` records. Root-only attachments (`InputSpec`,
-`destinationSpec`, `joinSpec`, stream rules, runtime pointers, and graph
-lowering details) still travel beside the IR until later slices move those
-facts into stable recipe/plan data.
+Branch-composition planning consumes captured recipe IR, not the original
+`streamBuild` records, and normal work-plan rendering no longer falls back to
+the legacy intent mirror. Root-only attachments (`InputSpec`, `destinationSpec`,
+`joinSpec`, stream rules, runtime pointers, and graph lowering details) still
+travel beside the IR until later slices move those facts into stable recipe/plan
+data.
 
 Why the planner internals cannot move to `internal/` packages today (measured
 on the type-checked cross-file reference graph, 2026-06): the ~20 root files

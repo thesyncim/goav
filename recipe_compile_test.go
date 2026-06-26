@@ -842,14 +842,10 @@ func TestPlannedBranchSplitOperationsRespectEarlierTapAnchors(t *testing.T) {
 		t.Fatalf("web route = %+v, want shared 720p resize from operation fields", routes[1])
 	}
 
-	work := buildWorkPlan(&recipeCompileState{
-		operation:                    branchCompositionOperation,
-		branchCompositionPresent:     true,
-		intent:                       job.plan(),
-		branchInputAttachment:        job.inputs[0],
-		branchDestinationAttachments: job.branchDestinations,
-		plan:                         gp,
-	}, pipeline.Spec{}, nil)
+	state := recipeCompileStateFromSnapshot(newJobRecipeSnapshot(job), recipeCompileOptions{})
+	state.intent = intent{}
+	state.plan = gp
+	work := buildWorkPlan(&state, pipeline.Spec{}, nil)
 	if len(work.Branches) != 2 {
 		t.Fatalf("work branches = %d, want 2", len(work.Branches))
 	}

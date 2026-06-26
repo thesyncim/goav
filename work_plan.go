@@ -132,12 +132,9 @@ func workPlanInputFromCompileState(state *recipeCompileState) workPlanInput {
 		return workPlanInput{}
 	}
 	recipe := state.recipe
-	if recipe.Kind == "" {
-		recipe = recipeIRFromIntent(state.intent, recipeir.KindJob)
-	}
 	outputs := planOutputsFromRecipeIR(recipe.Destinations, state.outputFormatMap())
 	// The work plan plans every branch straight from recipe streams:
-	// branchCompositionJob.plan() populates each branch recipe stream with its
+	// the snapshot populates each branch recipe stream with its
 	// full (shared-op-inherited) operation list, so the parallel
 	// branchComposePlan is only the Build-side lowerer input.
 	branches, decisions := planBranchesFromRecipeIR(state, recipe, outputs)

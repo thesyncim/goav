@@ -95,7 +95,7 @@ grammar-builder internals.
 
 Current progress: `internal/recipeir` carries the first immutable recipe
 snapshot, `compileJobRecipe` enters through that snapshot, and branch
-composition planning reads normalized intent instead of `streamBuild` builder
+composition planning reads captured recipe IR instead of `streamBuild` builder
 records. Transform operations now cross the boundary as typed recipe IR data
 instead of a generic root wrapper, and destination sink/byte-stream behavior is
 now captured as recipe IR so shape validation does not need to infer that fact
@@ -109,7 +109,8 @@ also now consumes a captured handoff rather than reaching back into compile
 state while it renders operations, branches, destinations, decisions, and
 diagnostics; that handoff now reads inputs, streams, destinations, and
 solver-updated operation lists from the captured recipe IR instead of the
-legacy intent mirror. Multi-stream job graph lowering now enters through a
+legacy intent mirror, with no fallback to rebuilding from that mirror.
+Multi-stream job graph lowering now enters through a
 captured handoff before branch-compose graph construction, and single-stream
 packet-copy and decode graph lowerers now do the same before graph construction.
 Explicit branch-composition graph lowering also now uses a captured handoff

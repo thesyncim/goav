@@ -83,6 +83,8 @@ methodology changes, and migration notes.
 - Carried the full captured recipe IR through compile state and made normal
   work-plan handoff inputs, streams, destinations, and solver-updated
   operations read from that recipe boundary.
+- Removed the normal work-plan handoff's legacy intent fallback so rendering
+  requires the captured recipe IR.
 - Routed media input binding, copy planning, live stream selection, and
   multi-input stream resolution through captured recipe input facts instead of
   the legacy intent mirror.
