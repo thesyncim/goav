@@ -111,10 +111,11 @@ diagnostics. Multi-stream job graph lowering now enters through a captured
 handoff before branch-compose graph construction, and single-stream packet-copy
 and decode graph lowerers now do the same before graph construction. Explicit
 branch-composition graph lowering also now uses a captured handoff with cloned
-branch-compose plan data. The executable join lowerer still owns concrete arms
-and stages. The boundary is not complete until remaining root-only attachments
-such as concrete join plans and runtime mutation patches move into stable recipe
-or plan data.
+branch-compose plan data. The compile state no longer stores the concrete join
+plan; graph-plan construction passes the selected join lowerer directly into
+work-plan rendering. The executable join lowerer still owns concrete arms and
+stages. The boundary is not complete until remaining root-only attachments such
+as runtime mutation patches move into stable recipe or plan data.
 
 Runtime lifecycle/observation progress: one-shot `Run` now preserves both run
 and close/finalization failures, and `Events()` returns an unfiltered watch

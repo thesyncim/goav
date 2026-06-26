@@ -846,7 +846,7 @@ func TestPlannedBranchSplitOperationsRespectEarlierTapAnchors(t *testing.T) {
 		branchInputAttachment:        job.inputs[0],
 		branchDestinationAttachments: job.branchDestinations,
 		plan:                         gp,
-	}, pipeline.Spec{})
+	}, pipeline.Spec{}, nil)
 	if len(work.Branches) != 2 {
 		t.Fatalf("work branches = %d, want 2", len(work.Branches))
 	}

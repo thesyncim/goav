@@ -117,11 +117,11 @@ type workPlanInput struct {
 // buildWorkPlan builds the work plan once per compile: the branch planners
 // lower the intent into per-branch operation lists, and one flattening walk
 // emits the ordered operations, taps, branches, destinations, and edges.
-func buildWorkPlan(state *recipeCompileState, spec pipeline.Spec) workPlan {
-	if state.joinPlan != nil {
+func buildWorkPlan(state *recipeCompileState, spec pipeline.Spec, lowerer graphPlanLowerer) workPlan {
+	if join, ok := lowerer.(*joinPlan); ok && join != nil {
 		// Joins plan multi-upstream convergence: the joinPlan renders its arms,
 		// the plan.OpJoin node, and the downstream chain into the same workPlan IR.
-		return state.joinPlan.buildJoinWorkPlan(joinWorkPlanInputFromCompileState(state), spec)
+		return join.buildJoinWorkPlan(joinWorkPlanInputFromCompileState(state), spec)
 	}
 	return buildNormalWorkPlan(workPlanInputFromCompileState(state), spec)
 }

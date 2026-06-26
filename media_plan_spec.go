@@ -220,7 +220,7 @@ func graphPlanForState(state *recipeCompileState) (graphPlan, bool, error) {
 	if err != nil {
 		return graphPlan{}, false, err
 	}
-	work := buildWorkPlan(state, spec)
+	work := buildWorkPlan(state, spec, lowerer)
 	return newGraphPlan(lowerer.runtimeRef(), spec, work, lowerer), true, nil
 }
 
@@ -242,8 +242,7 @@ func graphPlanLowererForState(state *recipeCompileState) (graphPlanLowerer, bool
 
 // mediaPlanJoinLowererForState plans a Mix/Composite/Select job as a
 // multi-upstream join: N arm sub-chains converging into one join node with the
-// downstream chain hanging off it. The planned joinPlan is recorded on the
-// state so buildWorkPlan renders the join work plan from the same plan.
+// downstream chain hanging off it.
 func mediaPlanJoinLowererForState(state *recipeCompileState) (graphPlanLowerer, bool, error) {
 	if state == nil || state.joinAttachment == nil {
 		return nil, false, nil
@@ -252,7 +251,6 @@ func mediaPlanJoinLowererForState(state *recipeCompileState) (graphPlanLowerer, 
 	if err != nil {
 		return nil, false, err
 	}
-	state.joinPlan = gp
 	return gp, true, nil
 }
 
