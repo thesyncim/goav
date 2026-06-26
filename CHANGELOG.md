@@ -44,6 +44,9 @@ methodology changes, and migration notes.
 - Captured input kind and declared custom/provider source shape in the
   immutable recipe IR so compile-time stream selection can use boundary data
   instead of concrete input attachments.
+- Captured dynamic stream-rule summaries in the immutable recipe IR so
+  validation and Explain can read rule matcher/branch/destination facts without
+  concrete runtime rule attachments.
 - Added the pre-v1 simplification target, started the immutable recipe IR
   boundary used by compile-time planning, and tightened task runtime semantics
   so `Run` preserves both execution and finalization failures while `Events`

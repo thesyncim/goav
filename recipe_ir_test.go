@@ -73,6 +73,40 @@ func TestRecipeIRSnapshotCapturesCustomSourceShape(t *testing.T) {
 	}
 }
 
+func TestRecipeIRSnapshotCapturesStreamRules(t *testing.T) {
+	job := From(FileInput("input.ivf", strings.NewReader(""))).
+		OnStream(
+			MatchMedia(av.MediaAudio),
+			Branch("record").Copy().To(Sink(SinkFunc("late", func(context.Context, Message) error { return nil }))),
+		)
+
+	snapshot := newJobRecipeSnapshot(job)
+	if len(snapshot.recipe.StreamRules) != 1 {
+		t.Fatalf("stream rule count = %d, want 1", len(snapshot.recipe.StreamRules))
+	}
+	rule := snapshot.recipe.StreamRules[0]
+	if rule.MatchDescription != "media=audio" ||
+		len(rule.Branches) != 1 ||
+		rule.Branches[0].Name != "record" ||
+		!reflect.DeepEqual(rule.Branches[0].Destinations, []string{"late"}) {
+		t.Fatalf("recipe IR stream rule = %+v", rule)
+	}
+
+	state := recipeCompileStateFromSnapshot(snapshot, recipeCompileOptions{})
+	state.streamRules = nil
+	state.inputAttachments = nil
+	if err := validateStreamRulesPass().Apply(&state); err != nil {
+		t.Fatalf("validate stream rules from IR facts: %v", err)
+	}
+	decisions := explainStreamRuleFacts(snapshot.recipe.StreamRules)
+	if len(decisions) != 1 ||
+		decisions[0].Branch != "record-<stream>" ||
+		!strings.Contains(decisions[0].Message, "media=audio") ||
+		!strings.Contains(decisions[0].Message, "late") {
+		t.Fatalf("stream rule decisions = %+v", decisions)
+	}
+}
+
 func TestRecipeIRSnapshotCapturesSinkDestinationKind(t *testing.T) {
 	job := From(FileInput("input.ivf", strings.NewReader(""))).
 		Video().

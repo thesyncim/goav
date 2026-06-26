@@ -51,6 +51,7 @@ func newLinearJobRecipeSnapshot(job *Job) recipeCompileSnapshot {
 	recipe := recipeIRFromIntent(job.plan(), recipeir.KindJob)
 	annotateRecipeIRInputsFromSpecs(&recipe, job.inputs)
 	annotateRecipeIRDestinationsFromSpecs(&recipe, outputs)
+	recipe.StreamRules = recipeIRStreamRulesFromRoot(job.streamRules)
 	return recipeCompileSnapshot{
 		recipe:                 recipe,
 		runtime:                job.runtimeOrNil(),
@@ -72,6 +73,7 @@ func newJoinRecipeSnapshot(job *Job) recipeCompileSnapshot {
 	recipe := recipeIRFromIntent(joinIntentFromSpec(job, spec), recipeir.KindJoin)
 	annotateRecipeIRInputsFromSpecs(&recipe, inputs)
 	annotateRecipeIRDestinationsFromSpecs(&recipe, outputs)
+	recipe.StreamRules = recipeIRStreamRulesFromRoot(job.streamRules)
 	return recipeCompileSnapshot{
 		recipe:                 recipe,
 		runtime:                job.runtimeOrNil(),
@@ -113,6 +115,7 @@ func newBranchCompositionRecipeSnapshot(job *branchCompositionJob) recipeCompile
 	recipe := recipeIRFromIntent(job.plan(), recipeir.KindBranchComposition)
 	annotateRecipeIRInputsFromSpecs(&recipe, []InputSpec{job.input})
 	annotateRecipeIRDestinationsFromNamedSpecs(&recipe, destinations)
+	recipe.StreamRules = recipeIRStreamRulesFromRoot(job.streamRules)
 	return recipeCompileSnapshot{
 		recipe:                       recipe,
 		runtime:                      job.runtime,
@@ -323,6 +326,31 @@ func recipeIRDestinationKindFromSpec(destination destinationSpec) recipeir.Desti
 	default:
 		return recipeir.DestinationKindUnknown
 	}
+}
+
+func recipeIRStreamRulesFromRoot(rules []streamRule) []recipeir.StreamRule {
+	if len(rules) == 0 {
+		return nil
+	}
+	out := make([]recipeir.StreamRule, 0, len(rules))
+	for i := range rules {
+		out = append(out, recipeIRStreamRuleFromRoot(rules[i]))
+	}
+	return out
+}
+
+func recipeIRStreamRuleFromRoot(rule streamRule) recipeir.StreamRule {
+	out := recipeir.StreamRule{
+		MatchDescription:  rule.match.Description(),
+		RemoveDisposition: string(rule.removeDisposition),
+	}
+	for i := range rule.branches {
+		out.Branches = append(out.Branches, recipeir.StreamRuleBranch{
+			Name:         rule.branches[i].name,
+			Destinations: branchDestinationNames(rule.branches[i].destinations),
+		})
+	}
+	return out
 }
 
 func destinationIntentFromRecipeIR(in recipeir.Destination) destinationIntent {
@@ -550,6 +578,7 @@ func recipeCompileStateFromSnapshot(snapshot recipeCompileSnapshot, options reci
 		intent:                       intentFromRecipeIR(snapshot.recipe),
 		inputFacts:                   cloneRecipeIRInputs(snapshot.recipe.Inputs),
 		destinationKinds:             recipeIRDestinationKinds(snapshot.recipe),
+		streamRuleFacts:              cloneRecipeIRStreamRules(snapshot.recipe.StreamRules),
 		runtime:                      snapshot.runtime,
 		runtimeExplicit:              snapshot.runtimeExplicit,
 		options:                      options,
@@ -577,6 +606,24 @@ func cloneRecipeIRInputs(inputs []recipeir.Input) []recipeir.Input {
 	}
 	out := make([]recipeir.Input, len(inputs))
 	copy(out, inputs)
+	return out
+}
+
+func cloneRecipeIRStreamRules(rules []recipeir.StreamRule) []recipeir.StreamRule {
+	if len(rules) == 0 {
+		return nil
+	}
+	out := make([]recipeir.StreamRule, len(rules))
+	for i := range rules {
+		out[i] = recipeir.StreamRule{
+			MatchDescription:  rules[i].MatchDescription,
+			RemoveDisposition: rules[i].RemoveDisposition,
+			Branches:          append([]recipeir.StreamRuleBranch(nil), rules[i].Branches...),
+		}
+		for j := range out[i].Branches {
+			out[i].Branches[j].Destinations = append([]string(nil), rules[i].Branches[j].Destinations...)
+		}
+	}
 	return out
 }
 

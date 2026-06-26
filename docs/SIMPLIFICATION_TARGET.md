@@ -100,9 +100,10 @@ records. Transform operations now cross the boundary as typed recipe IR data
 instead of a generic root wrapper, and destination sink/byte-stream behavior is
 now captured as recipe IR so shape validation does not need to infer that fact
 from concrete writer or sink attachments. Input kind and declared source shape
-now cross the same boundary for compile-time stream selection. The boundary is
-not complete until remaining root-only attachments such as joins, stream rules,
-and runtime mutation patches move into stable recipe or plan data.
+now cross the same boundary for compile-time stream selection, and dynamic
+stream-rule summaries feed validation and Explain from recipe IR. The boundary
+is not complete until remaining root-only attachments such as joins and runtime
+mutation patches move into stable recipe or plan data.
 
 Runtime lifecycle/observation progress: one-shot `Run` now preserves both run
 and close/finalization failures, and `Events()` returns an unfiltered watch

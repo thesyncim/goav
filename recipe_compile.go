@@ -31,6 +31,7 @@ type recipeResolved struct {
 	branchInputProbeReady bool
 	outputFormats         map[string]av.FormatID
 	plan                  branchComposePlan
+	streamRuleFacts       []recipeir.StreamRule
 	streamRules           []streamRule
 }
 
@@ -47,6 +48,7 @@ type recipeCompileState struct {
 
 	inputFacts             []recipeir.Input
 	destinationKinds       []recipeir.DestinationKind
+	streamRuleFacts        []recipeir.StreamRule
 	inputAttachments       []InputSpec
 	jobOutputCount         int
 	outputAttachments      []destinationSpec
@@ -216,6 +218,7 @@ func (c recipeIntentCompiler) Compile(state recipeCompileState) (recipeResolved,
 		branchInputProbeReady: state.branchInputProbeReady,
 		outputFormats:         state.outputFormatMap(),
 		plan:                  state.plan,
+		streamRuleFacts:       cloneRecipeIRStreamRules(state.streamRuleFacts),
 		streamRules:           cloneStreamRules(state.streamRules),
 	}, nil
 }

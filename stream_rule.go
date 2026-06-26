@@ -6,6 +6,7 @@ import (
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/errcode"
+	"github.com/thesyncim/goav/internal/recipeir"
 	"github.com/thesyncim/goav/lifecycle"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/plan"
@@ -152,17 +153,14 @@ func branchSpecForDiscoveredStream(spec BranchSpec, sourceNode string, domain sh
 // validated by OnStream itself).
 func validateStreamRulesPass() recipeCompilePass {
 	return recipeCompilePassFunc{name: "validate stream rules", fn: func(state *recipeCompileState) error {
-		if len(state.streamRules) == 0 {
+		if state.streamRuleCount() == 0 {
 			return nil
 		}
 		if state.joinAttachment != nil {
 			return streamRuleInvalidError("", "stream rules are not supported on Mix/Composite/Select jobs",
 				"declare OnStream rules on single-input goav.From(input) jobs")
 		}
-		inputs := len(state.inputAttachments)
-		if state.branchCompositionPresent {
-			inputs = 1
-		}
+		inputs := state.streamRuleInputCount()
 		if inputs != 1 {
 			return streamRuleInvalidError("", fmt.Sprintf("stream rules require exactly one input, got %d", inputs),
 				"declare OnStream rules on single-input goav.From(input) jobs")
@@ -171,25 +169,47 @@ func validateStreamRulesPass() recipeCompilePass {
 	}}
 }
 
-// explainStreamRules renders the declared rules as plan decisions, so Explain
-// lists the conditional branches before any stream appears.
-func explainStreamRules(rules []streamRule) []plan.Decision {
+func (state *recipeCompileState) streamRuleCount() int {
+	if state == nil {
+		return 0
+	}
+	if len(state.streamRuleFacts) != 0 {
+		return len(state.streamRuleFacts)
+	}
+	return len(state.streamRules)
+}
+
+func (state *recipeCompileState) streamRuleInputCount() int {
+	if state == nil {
+		return 0
+	}
+	if state.branchCompositionPresent {
+		return 1
+	}
+	if len(state.inputFacts) != 0 {
+		return len(state.inputFacts)
+	}
+	return len(state.inputAttachments)
+}
+
+func explainStreamRuleFacts(rules []recipeir.StreamRule) []plan.Decision {
 	if len(rules) == 0 {
 		return nil
 	}
 	out := make([]plan.Decision, 0, len(rules))
 	for i := range rules {
-		names := make([]string, 0, len(rules[i].branches))
+		names := make([]string, 0, len(rules[i].Branches))
 		destinations := make([]string, 0)
-		for j := range rules[i].branches {
-			names = append(names, rules[i].branches[j].name+"-<stream>")
-			destinations = append(destinations, branchDestinationNames(rules[i].branches[j].destinations)...)
+		for j := range rules[i].Branches {
+			names = append(names, rules[i].Branches[j].Name+"-<stream>")
+			destinations = append(destinations, rules[i].Branches[j].Destinations...)
 		}
+		match := firstNonEmpty(rules[i].MatchDescription, "none")
 		out = append(out, plan.Decision{
 			Code:   string(errcode.StreamRule),
 			Branch: strings.Join(names, "+"),
 			Message: fmt.Sprintf("on discovered stream (%s): attach %s to %s per matched stream",
-				rules[i].match.Description(), strings.Join(names, ", "), strings.Join(destinations, ", ")),
+				match, strings.Join(names, ", "), strings.Join(destinations, ", ")),
 		})
 	}
 	return out
