@@ -115,9 +115,11 @@ func TestTaskCloseContextOptInHonorsCanceledContext(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	closer, ok := task.(goav.ContextCloser)
+	closer, ok := task.(interface {
+		CloseContext(context.Context) error
+	})
 	if !ok {
-		t.Fatalf("task = %T, want goav.ContextCloser", task)
+		t.Fatalf("task = %T, want structural CloseContext support", task)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()

@@ -166,6 +166,10 @@ values now carry constructor origin too, so public zero jobs fail as
 unconstructed recipes with `goav.From(...)` guidance instead of blending into
 normal empty-input validation.
 
+API budget progress: exported `goav.ContextCloser` was removed from the root
+surface; built runtime tasks still expose `CloseContext(ctx)` structurally, and
+callers that only need context-aware shutdown can assert a local interface.
+
 Error-contract progress: `BuildError` no longer exposes legacy
 `Details`/`Suggestions` fields or parses rendered strings in `Detail(key)`;
 typed `Fields` and `Fixes` are the public contract.

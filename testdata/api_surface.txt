@@ -199,7 +199,6 @@ goav.Chain
 goav.Codec
 goav.CodecChangePolicy
 goav.Composite
-goav.ContextCloser
 goav.Controllable
 goav.Custom
 goav.Destination

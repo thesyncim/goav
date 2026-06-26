@@ -48,8 +48,8 @@ identifiers (`api_surface_pin_test.go` + `testdata/api_surface.txt`: 69 root,
   selection/operations
   (`Decode`/`Copy`/`Resize`/`Resample`/`Do`/`Encode`)/`Shape`/`Auto`/
   `Require`/`Prefer`/`Tap`/`Branches`/`To`/`OnStream`; `Mix`/`Composite`/
-  `Select`; `Flow`; `Task` lifecycle (`Run`/`Close`) plus opt-in
-  `ContextCloser.CloseContext(ctx)`; opt-in task capability
+  `Select`; `Flow`; `Task` lifecycle (`Run`/`Close`) plus structural
+  built-task `CloseContext(ctx)`; opt-in task capability
   interfaces for `Explain`, inspection (`Describe`/`Taps`/`Snapshot`/`Stats`),
   mutation (`Attach`/`Detach` with `DrainBranch`/`AbortBranch`, `Rebranch`),
   controls (`Control`), and observation (`Watch`, with `Events` as the

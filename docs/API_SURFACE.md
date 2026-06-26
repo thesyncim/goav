@@ -45,7 +45,7 @@ goav.From(input)                          inputs: FileInput, URIInput, Input(pro
 goav.Mix/Composite/Select(arms) / Join(name, stage, arms)   N arms -> one stream (JoinArm)
 goav.Flow("name")                         reusable operation list (Chain)
 job.Describe(); adapter-backed Explain/Build/Run use job.UseRuntime(rt), bundle.Describe/Build/Run
-Task: Run, Close; ContextCloser: CloseContext(ctx)
+Task: Run, Close; built runtime tasks also implement structural CloseContext(ctx)
 Explainer: Explain
 Inspectable: Describe, Taps, Snapshot -> snapshot.*, Stats
 Mutable: Attach/Detach(lifecycle.DrainBranch|AbortBranch); Attachment.Rebranch

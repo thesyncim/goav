@@ -16,6 +16,9 @@ methodology changes, and migration notes.
 - Clarified that runtime mutation/control/expert graph features are governed
   pre-v1 behavior, not automatic v1 promises unless the release decision
   explicitly retains them.
+- Removed exported `goav.ContextCloser`; runtime tasks still expose
+  `CloseContext(ctx)` structurally, and callers that need context-aware
+  shutdown can define that small interface locally.
 - Stream chains now require an explicit `.Decode()` before frame-domain
   consumers (`.Do`, `.Resize`, `.Resample`, real `.Encode`, frame taps, and
   decoded-frame sinks). Use `.Copy()` when a chain should stay packet-domain.
@@ -106,10 +109,9 @@ methodology changes, and migration notes.
   not import bundled adapter packages into the root package dependency graph;
   the root module still lists bundled backend requirements until/unless
   `goav/bundle` becomes a nested module.
-- Added `bundle.Describe`, `goav.ContextCloser`, and `inspect` convenience
-  helpers (`Subscribe`, `Snapshot`, `Stats`, `Render`) so bundled structural
-  planning, context-aware shutdown, and observation helpers have first-class
-  names.
+- Added `bundle.Describe` and `inspect` convenience helpers (`Subscribe`,
+  `Snapshot`, `Stats`, `Render`) so bundled structural planning and
+  observation helpers have first-class names.
 - Tightened pre-v1 runtime contracts around explicit runtimes, Mux-first
   destination grouping, join validation parity, and Family-first structured
   error matching. Detailed `errcode.Code` values remain diagnostic leaves

@@ -47,13 +47,6 @@ type Task interface {
 	Close() error
 }
 
-// ContextCloser is the opt-in lifecycle extension implemented by tasks that
-// can bound shutdown work with a caller context. Task.Close remains the
-// compatibility shortcut and calls CloseContext(context.Background()).
-type ContextCloser interface {
-	CloseContext(context.Context) error
-}
-
 // Explainer reports the planned workflow before any resource opens: inputs,
 // branches, destinations, taps, shapes, planner decisions, and warnings.
 type Explainer interface {
