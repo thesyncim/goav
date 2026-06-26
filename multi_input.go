@@ -237,8 +237,8 @@ func multiInputStreamSelectionError(code errcode.Code, selector av.StreamSelecto
 		Operation: "select stream",
 		Node:      selectorDetail(selector),
 		Reason:    reason,
-		Fields:    buildErrorFields(details),
-		Fixes:     buildErrorFixes(multiInputSelectionSuggestions(selector, candidates)),
+		fields:    buildErrorFields(details),
+		fixes:     buildErrorFixes(multiInputSelectionSuggestions(selector, candidates)),
 		Cause:     ErrUnsupportedBuild,
 	}
 }
@@ -292,8 +292,8 @@ func unknownInputNameError(selector av.StreamSelector, inputName string, sets []
 		Operation: "select stream",
 		Node:      selectorDetail(selector),
 		Reason:    "no job input is named " + strconv.Quote(inputName),
-		Fields:    buildErrorFields(details),
-		Fixes: buildErrorFixes([]string{
+		fields:    buildErrorFields(details),
+		fixes: buildErrorFixes([]string{
 			"use one of the listed input names with goav.InputName(...)",
 			"name inputs with goav.Source(name, ...), goav.FileInput(name, ...), or the goav.Name(...) option",
 		}),

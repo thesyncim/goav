@@ -495,7 +495,7 @@ func streamStageMissingError(stream streamIntent) error {
 		Operation: "build stream",
 		Node:      jobStreamIntentName(stream),
 		Reason:    "custom stream stage is nil",
-		Fixes: buildErrorFixes([]string{
+		fixes: buildErrorFixes([]string{
 			"pass a non-nil stage to .Do(stage)",
 			"use component.FrameFunc, component.PacketFunc, or component.EventFunc for small hooks",
 			"remove .Do(...) when no custom processing is needed",
@@ -522,7 +522,7 @@ func mixedStreamOutputError(operation string, stream streamIntent) error {
 		Operation: operation,
 		Node:      jobStreamIntentName(stream),
 		Reason:    "stream recipes cannot mix sinks and muxed outputs",
-		Fixes: buildErrorFixes([]string{
+		fixes: buildErrorFixes([]string{
 			"use .Decode().To(goav.Sink(...)) for decoded frames",
 			"call .Encode(codec.Opus(...)), .Encode(codec.VP8(...)), or .Encode(codec.VP9(...)) before .To(goav.Write(...)) for encoded output",
 			"use .Branches(...) when one stream needs separate decoded and encoded branches",
@@ -538,11 +538,11 @@ func streamEncodeMissingError(operation string, stream streamIntent) error {
 		Operation: operation,
 		Node:      jobStreamIntentName(stream),
 		Reason:    "decoded frames cannot be written to a muxed output without an encoder",
-		Fields: buildErrorFields([]string{
+		fields: buildErrorFields([]string{
 			"expected_shape=" + shape.New(shape.Domain(shape.DomainPacket), shape.Media(stream.Select.Type)).String(),
 			"actual_shape=" + shape.Frame(stream.Select.Type).String(),
 		}),
-		Fixes: buildErrorFixes([]string{
+		fixes: buildErrorFixes([]string{
 			"call .Encode(codec.Opus(...)), .Encode(codec.VP8(...)), or .Encode(codec.VP9(...)) before .To(goav.Write(...))",
 			"send decoded frames to goav.Sink(...)",
 			"use .Copy().To(output) if you want to copy packets without decoding",
@@ -569,11 +569,11 @@ func duplicateJobStreamError(existing *jobStreamBuild, next *jobStreamBuild) err
 		Operation: "build job",
 		Node:      jobStreamName(next),
 		Reason:    "ordinary stream recipes select one audio or video stream",
-		Fields: buildErrorFields([]string{
+		fields: buildErrorFields([]string{
 			"first stream: " + jobStreamName(existing),
 			"second stream: " + jobStreamName(next),
 		}),
-		Fixes: buildErrorFixes([]string{
+		fixes: buildErrorFixes([]string{
 			"keep one .Audio(...) or .Video(...) chain on goav.From(...)",
 			"use goav.From(input).Video().Decode().Branches(...) for multiple branches from one stream",
 			"use the expert graph API for custom multi-stream routing",

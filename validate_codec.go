@@ -170,8 +170,8 @@ func recipeDecodeAdapterError(operation string, stream streamIntent, codecID av.
 		Operation: operation,
 		Node:      jobStreamIntentName(stream),
 		Reason:    reason,
-		Fields:    buildErrorFields(details),
-		Fixes: buildErrorFixes([]string{
+		fields:    buildErrorFields(details),
+		fixes: buildErrorFixes([]string{
 			"register a codec adapter that provides a " + string(codecID) + " decoder",
 			"enable the adapter build tag or choose a runtime with a concrete decoder",
 			"use goav.From(input).Copy().To(output) for packet-preserving receive when decoding is not needed",
@@ -232,8 +232,8 @@ func decodeAdapterIncompatibleError(operation string, stream streamIntent, reque
 		Operation: operation,
 		Node:      jobStreamIntentName(stream),
 		Reason:    string(request.Codec) + " decoder adapter does not support the requested " + label,
-		Fields:    buildErrorFields(details),
-		Fixes: buildErrorFixes([]string{
+		fields:    buildErrorFields(details),
+		fixes: buildErrorFixes([]string{
 			"choose a decoder adapter that supports this " + label,
 			"fix the input stream metadata if it describes the wrong media or frame format",
 			"fix the codec descriptor if the implementation already supports this config",
@@ -365,8 +365,8 @@ func encodeAdapterIncompatibleError(operation string, stream streamIntent, reque
 		Operation: operation,
 		Node:      jobStreamIntentName(stream),
 		Reason:    string(request.Codec) + " encoder adapter does not support the requested " + label,
-		Fields:    buildErrorFields(details),
-		Fixes: buildErrorFixes([]string{
+		fields:    buildErrorFields(details),
+		fixes: buildErrorFixes([]string{
 			"choose an encoder adapter that supports this " + label,
 			"change the operation spec chain so the encoder receives one of the supported formats",
 			"fix the codec descriptor if the implementation already supports this config",
@@ -500,8 +500,8 @@ func recipeEncodeAdapterError(operation string, stream streamIntent, registry *c
 		Operation: operation,
 		Node:      jobStreamIntentName(stream),
 		Reason:    reason,
-		Fields:    buildErrorFields(details),
-		Fixes: buildErrorFixes([]string{
+		fields:    buildErrorFields(details),
+		fixes: buildErrorFixes([]string{
 			"register a " + string(codecID) + " encoder with goav.MustNew(goavruntime.WithEncoder(...)) or a codec adapter that provides one",
 			"use .Decode().To(goav.Sink(...)) to receive decoded frames without encoding",
 			"use .Copy().To(output) for packet-preserving output when re-encoding is not needed",

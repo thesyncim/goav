@@ -557,7 +557,7 @@ func (b *chainBuilder) tap(tap tapRef) {
 			Operation: "build flow",
 			Node:      firstNonEmpty(b.spec.name, "flow"),
 			Reason:    "tap name is empty",
-			Fixes: buildErrorFixes([]string{
+			fixes: buildErrorFixes([]string{
 				"call .Tap(goav.FrameTap(\"audio.voice.frames\")) or another stable tap ref",
 				"omit .Tap(...) when no runtime branch should attach at that point",
 			}),
@@ -687,7 +687,7 @@ func duplicateFlowDecodeError(node string) error {
 		Operation: "build flow",
 		Node:      node,
 		Reason:    "flow already decodes its input packets",
-		Fixes: buildErrorFixes([]string{
+		fixes: buildErrorFixes([]string{
 			"call .Decode() once at the start of the flow",
 			"remove the second .Decode() call",
 		}),
@@ -702,7 +702,7 @@ func flowDecodeOrderError(node string) error {
 		Operation: "build flow",
 		Node:      node,
 		Reason:    "decode must be the first flow operation",
-		Fixes: buildErrorFixes([]string{
+		fixes: buildErrorFixes([]string{
 			"write goav.Flow(name).Audio().Decode().Resample(...)",
 			"omit .Decode() when the flow is only applied after stream decode",
 		}),
@@ -717,7 +717,7 @@ func flowDecodeDomainError(operation string, node string) error {
 		Operation: operation,
 		Node:      firstNonEmpty(node, "flow"),
 		Reason:    "flow decoding requires a packet-domain stream point",
-		Fixes: buildErrorFixes([]string{
+		fixes: buildErrorFixes([]string{
 			"omit .Decode() when applying the flow after stream decode",
 			"use the flow from a packet branch or packet tap when it should own decode",
 			"split packet-preserving streams with .Copy().Branches(...) before applying the flow",
@@ -733,7 +733,7 @@ func flowCopyDomainError(operation string, node string) error {
 		Operation: operation,
 		Node:      firstNonEmpty(node, "flow"),
 		Reason:    "flow copying requires a packet-domain stream point",
-		Fixes: buildErrorFixes([]string{
+		fixes: buildErrorFixes([]string{
 			"start packet-preserving reusable work with goav.Flow(name).Audio().Copy() or goav.Flow(name).Video().Copy()",
 			"declare packet taps after copy with .Copy().Tap(goav.PacketTap(name))",
 			"use .Decode().Resample(...).Encode(codec.Opus(...)) when the flow should transform frames",
@@ -748,7 +748,7 @@ func nilFlowError() error {
 		Code:      errcode.FlowInvalid,
 		Operation: "build flow",
 		Reason:    "flow is nil",
-		Fixes: buildErrorFixes([]string{
+		fixes: buildErrorFixes([]string{
 			"build flows with goav.Flow(name).Audio() or goav.Flow(name).Video()",
 		}),
 		Cause: ErrUnsupportedBuild,
@@ -765,7 +765,7 @@ func validateChainMedia(operation string, node string, selected av.MediaType, sp
 		Operation: operation,
 		Node:      firstNonEmpty(spec.name, node, "flow"),
 		Reason:    string(spec.media) + " flow cannot be applied to " + string(selected) + " stream",
-		Fixes: buildErrorFixes([]string{
+		fixes: buildErrorFixes([]string{
 			"use goav.Flow(name).Audio() with .Audio()",
 			"use goav.Flow(name).Video() with .Video()",
 		}),
@@ -780,10 +780,10 @@ func branchInputCountError(node string, count int) error {
 		Operation: "build branches",
 		Node:      node,
 		Reason:    "branches currently compose from one input",
-		Fields: buildErrorFields([]string{
+		fields: buildErrorFields([]string{
 			fmt.Sprintf("inputs=%d", count),
 		}),
-		Fixes: buildErrorFixes([]string{
+		fixes: buildErrorFixes([]string{
 			"start branches from goav.From(input).Audio() or goav.From(input).Video() with one input",
 			"use the expert graph API when combining several sources manually",
 		}),
@@ -798,7 +798,7 @@ func branchOutputScopeError(node string) error {
 		Operation: "build branches",
 		Node:      node,
 		Reason:    "branch destinations are declared inside Branch(...).To(...)",
-		Fixes: buildErrorFixes([]string{
+		fixes: buildErrorFixes([]string{
 			"route branches with .Branches(goav.Branch(name).To(goav.Write(name, writer)))",
 			"use stream .To(goav.Write(...)) or .To(goav.Sink(...)) only for one ordinary stream destination",
 		}),

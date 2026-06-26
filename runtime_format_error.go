@@ -24,8 +24,8 @@ func inputFormatProbeError(input format.Input, cause error) error {
 		Operation: "open input",
 		Node:      demuxNodeName(input),
 		Reason:    "input format could not be detected",
-		Fields:    inputFormatFields(input),
-		Fixes:     buildErrorFixes(suggestions),
+		fields:    inputFormatFields(input),
+		fixes:     buildErrorFixes(suggestions),
 		Cause:     cause,
 	}
 }
@@ -45,8 +45,8 @@ func inputDemuxerMissingError(input format.Input, id av.FormatID, cause error) e
 		Operation: "open input",
 		Node:      demuxNodeName(input),
 		Reason:    "format " + quoteFormat(id) + " was detected but no demuxer is registered",
-		Fields:    append(inputFormatFields(input), Detail{Key: "format", Value: id}),
-		Fixes:     buildErrorFixes(suggestions),
+		fields:    append(inputFormatFields(input), buildErrorDetail{Key: "format", Value: id}),
+		fixes:     buildErrorFixes(suggestions),
 		Cause:     cause,
 	}
 }
@@ -66,8 +66,8 @@ func outputFormatProbeError(output format.Output, index int, cause error) error 
 		Operation: "open output",
 		Node:      muxNodeName(output, index),
 		Reason:    "output format could not be detected",
-		Fields:    outputFormatFields(output),
-		Fixes:     buildErrorFixes(suggestions),
+		fields:    outputFormatFields(output),
+		fixes:     buildErrorFixes(suggestions),
 		Cause:     cause,
 	}
 }
@@ -87,8 +87,8 @@ func outputMuxerMissingError(output format.Output, index int, id av.FormatID, ca
 		Operation: "open output",
 		Node:      muxNodeName(output, index),
 		Reason:    "format " + quoteFormat(id) + " was selected but no muxer is registered",
-		Fields:    append(outputFormatFields(output), Detail{Key: "format", Value: id}),
-		Fixes:     buildErrorFixes(suggestions),
+		fields:    append(outputFormatFields(output), buildErrorDetail{Key: "format", Value: id}),
+		fixes:     buildErrorFixes(suggestions),
 		Cause:     cause,
 	}
 }
@@ -108,8 +108,8 @@ func destinationFormatProbeError(node string, output format.Output, cause error)
 		Operation: "open destination",
 		Node:      node,
 		Reason:    "destination format could not be detected",
-		Fields:    outputFormatFields(output),
-		Fixes:     buildErrorFixes(suggestions),
+		fields:    outputFormatFields(output),
+		fixes:     buildErrorFixes(suggestions),
 		Cause:     cause,
 	}
 }
@@ -129,42 +129,42 @@ func destinationMuxerMissingError(node string, output format.Output, id av.Forma
 		Operation: "open destination",
 		Node:      node,
 		Reason:    "format " + quoteFormat(id) + " was selected for destination but no muxer is registered",
-		Fields:    append(outputFormatFields(output), Detail{Key: "format", Value: id}),
-		Fixes:     buildErrorFixes(suggestions),
+		fields:    append(outputFormatFields(output), buildErrorDetail{Key: "format", Value: id}),
+		fixes:     buildErrorFixes(suggestions),
 		Cause:     cause,
 	}
 }
 
-func inputFormatFields(input format.Input) []Detail {
-	var fields []Detail
+func inputFormatFields(input format.Input) []buildErrorDetail {
+	var fields []buildErrorDetail
 	if input.Name != "" {
-		fields = append(fields, Detail{Key: "name", Value: input.Name})
+		fields = append(fields, buildErrorDetail{Key: "name", Value: input.Name})
 	}
 	if input.URI != "" {
-		fields = append(fields, Detail{Key: "uri", Value: input.URI})
+		fields = append(fields, buildErrorDetail{Key: "uri", Value: input.URI})
 	}
 	if input.Protocol != "" {
-		fields = append(fields, Detail{Key: "protocol", Value: input.Protocol})
+		fields = append(fields, buildErrorDetail{Key: "protocol", Value: input.Protocol})
 	}
 	if input.MIMEType != "" {
-		fields = append(fields, Detail{Key: "mime", Value: input.MIMEType})
+		fields = append(fields, buildErrorDetail{Key: "mime", Value: input.MIMEType})
 	}
 	return fields
 }
 
-func outputFormatFields(output format.Output) []Detail {
-	var fields []Detail
+func outputFormatFields(output format.Output) []buildErrorDetail {
+	var fields []buildErrorDetail
 	if output.Name != "" {
-		fields = append(fields, Detail{Key: "name", Value: output.Name})
+		fields = append(fields, buildErrorDetail{Key: "name", Value: output.Name})
 	}
 	if output.URI != "" {
-		fields = append(fields, Detail{Key: "uri", Value: output.URI})
+		fields = append(fields, buildErrorDetail{Key: "uri", Value: output.URI})
 	}
 	if output.Protocol != "" {
-		fields = append(fields, Detail{Key: "protocol", Value: output.Protocol})
+		fields = append(fields, buildErrorDetail{Key: "protocol", Value: output.Protocol})
 	}
 	if output.MIMEType != "" {
-		fields = append(fields, Detail{Key: "mime", Value: output.MIMEType})
+		fields = append(fields, buildErrorDetail{Key: "mime", Value: output.MIMEType})
 	}
 	return fields
 }

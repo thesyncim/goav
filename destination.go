@@ -407,7 +407,7 @@ func (s destinationSpec) validate(operation string, fallback string) error {
 			Operation: operation,
 			Node:      node,
 			Reason:    s.err.Error(),
-			Fixes:     buildErrorFixes(suggestions),
+			fixes:     buildErrorFixes(suggestions),
 			Cause:     s.err,
 		}
 	}
@@ -419,7 +419,7 @@ func (s destinationSpec) validate(operation string, fallback string) error {
 				Operation: operation,
 				Node:      node,
 				Reason:    err.Error(),
-				Fixes: buildErrorFixes([]string{
+				fixes: buildErrorFixes([]string{
 					"pass a non-nil sink callback to component.SinkFunc(...)",
 					"pass a non-nil sink to goav.Sink(...)",
 					"use goav.Write(...) or goav.URI(...) for muxed output",
@@ -436,7 +436,7 @@ func (s destinationSpec) validate(operation string, fallback string) error {
 			Operation: operation,
 			Node:      node,
 			Reason:    "empty destination",
-			Fixes: buildErrorFixes([]string{
+			fixes: buildErrorFixes([]string{
 				"use goav.Write(name, writer) for muxed output",
 				"use goav.Sink(sink) for decoded frames or packets",
 			}),
@@ -450,7 +450,7 @@ func (s destinationSpec) validate(operation string, fallback string) error {
 			Operation: operation,
 			Node:      node,
 			Reason:    "file output has no writer",
-			Fixes: buildErrorFixes([]string{
+			fixes: buildErrorFixes([]string{
 				"pass a non-nil io.Writer to goav.Write(name, writer)",
 				"use goav.URI(uri) when the output is opened by an adapter",
 			}),
@@ -464,7 +464,7 @@ func (s destinationSpec) validate(operation string, fallback string) error {
 			Operation: operation,
 			Node:      node,
 			Reason:    "writer-backed file output has no name, URI, MIME type, or explicit format",
-			Fixes: buildErrorFixes([]string{
+			fixes: buildErrorFixes([]string{
 				"give goav.Write(name, writer) a name with a container extension",
 				"pass goav.Format(...) to goav.Write(...) when the writer has no filename",
 			}),
@@ -478,7 +478,7 @@ func (s destinationSpec) validate(operation string, fallback string) error {
 			Operation: operation,
 			Node:      node,
 			Reason:    "output has no URI, writer, or sink",
-			Fixes: buildErrorFixes([]string{
+			fixes: buildErrorFixes([]string{
 				"use goav.Write(name, writer) for writer-backed output",
 				"use goav.URI(uri) for URI-backed output",
 			}),
@@ -567,7 +567,7 @@ func duplicateOutputError(operation string, name string) error {
 		Operation: operation,
 		Node:      name,
 		Reason:    fmt.Sprintf("output name %q is defined more than once", name),
-		Fixes: buildErrorFixes([]string{
+		fixes: buildErrorFixes([]string{
 			"use a unique output name for each output in the recipe",
 			"remove repeated outputs when one output should receive the stream once",
 			"pass goav.Name(...) to outputs or choose distinct sink names when labels should differ",
@@ -583,7 +583,7 @@ func duplicateDestinationHandleError(operation string, name string) error {
 		Operation: operation,
 		Node:      name,
 		Reason:    fmt.Sprintf("destination %q is attached more than once", name),
-		Fixes: buildErrorFixes([]string{
+		fixes: buildErrorFixes([]string{
 			"list each destination value once in .To(...)",
 			"use distinct destination names when writing to separate destinations",
 			"wrap grouped destinations with goav.Mux(name, destination)",

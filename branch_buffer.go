@@ -19,7 +19,7 @@ func validateBranchBuffer(b flow.BranchBuffer, operation string, node string) er
 			Operation: operation,
 			Node:      firstNonEmpty(node, "branch"),
 			Reason:    "unbounded branch buffers are not supported by the runtime yet",
-			Fixes: buildErrorFixes([]string{
+			fixes: buildErrorFixes([]string{
 				"use flow.Blocking(capacity) for intentional backpressure",
 				"use flow.DropOldest(capacity), flow.DropNewest(capacity), or flow.Latest() for realtime branches",
 			}),
@@ -62,7 +62,7 @@ func branchBufferInvalidError(operation string, node string, reason string) erro
 		Operation: operation,
 		Node:      firstNonEmpty(node, "branch"),
 		Reason:    reason,
-		Fixes: buildErrorFixes([]string{
+		fixes: buildErrorFixes([]string{
 			"use flow.Blocking(capacity) when slow branches should apply backpressure",
 			"use flow.DropOldest(capacity), flow.DropNewest(capacity), or flow.Latest() for realtime diagnostics and previews",
 		}),

@@ -28,6 +28,7 @@ import (
 	goavruntime "github.com/thesyncim/goav/runtime"
 	"github.com/thesyncim/goav/shape"
 	"github.com/thesyncim/goav/snapshot"
+	"github.com/thesyncim/goav/source"
 )
 
 func TestControlManifestContainsBuiltInVerbs(t *testing.T) {
@@ -2517,29 +2518,22 @@ func TestStructuredErrorPreservesUnderlyingShapes(t *testing.T) {
 		t.Fatalf("structuredError(existing) = %+v, want same pointer", got)
 	}
 
-	cause := errors.New("sentinel")
-	buildErr := &goav.BuildError{
-		Family:    errcode.FamilyForCode(errcode.Code("runtime_branch_tap_missing")),
-		Code:      errcode.Code("runtime_branch_tap_missing"),
-		Operation: "attach runtime branch",
-		Node:      "raw_vdieo",
-		Reason:    "unknown tap",
-		Fields: []goav.Detail{
-			{Key: "available_taps", Value: "raw_video"},
-		},
-		Fixes: []goav.Fix{
-			{Message: "use at=raw_video"},
-		},
-		Cause: cause,
-	}
+	_, buildErr := goav.From(goav.Source("bytes",
+		shape.New(shape.Domain(shape.MediaDomain("bytes")), shape.Media(av.MediaAudio)),
+		func(context.Context, source.Push) error { return nil },
+	)).
+		Audio().
+		Decode().
+		To(goavtest.NewCollector().Sink()).
+		Describe()
 	wrapped := structuredError("fallback", buildErr)
-	if wrapped.Code != string(errcode.Code("runtime_branch_tap_missing")) ||
-		wrapped.Operation != "attach runtime branch" ||
-		wrapped.Node != "raw_vdieo" ||
-		wrapped.Message != "unknown tap" ||
-		!detailsContain(wrapped.Details, "raw_video") ||
-		!suggestionsContain(wrapped.Suggestions, "raw_video") ||
-		!errors.Is(wrapped, cause) {
+	if wrapped.Code != string(errcode.SourceShapeUnsupported) ||
+		wrapped.Operation != "build input" ||
+		wrapped.Node != "bytes" ||
+		!strings.Contains(wrapped.Message, "packet-domain") ||
+		!detailsContain(wrapped.Details, "actual_shape=") ||
+		!suggestionsContain(wrapped.Suggestions, "shape.Packet") ||
+		!errors.Is(wrapped, goav.ErrUnsupportedBuild) {
 		t.Fatalf("wrapped = %+v", wrapped)
 	}
 

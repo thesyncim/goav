@@ -155,7 +155,6 @@ goav.Chain
 goav.Composite
 goav.Custom
 goav.Destination
-goav.Detail
 goav.ErrBackpressure
 goav.ErrClosed
 goav.ErrNilSink
@@ -164,7 +163,6 @@ goav.ErrNilStage
 goav.ErrNilWriter
 goav.ErrUnsupportedBuild
 goav.FileInput
-goav.Fix
 goav.Flow
 goav.Format
 goav.FrameTap

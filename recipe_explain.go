@@ -730,12 +730,12 @@ func buildErrorDetailMap(err *BuildError) map[string]string {
 	if err == nil {
 		return nil
 	}
-	out := make(map[string]string, len(err.Fields))
-	for i := range err.Fields {
-		if err.Fields[i].Key == "" || err.Fields[i].Value == nil {
+	out := make(map[string]string, len(err.fields))
+	for i := range err.fields {
+		if err.fields[i].Key == "" || err.fields[i].Value == nil {
 			continue
 		}
-		out[err.Fields[i].Key] = fmt.Sprint(err.Fields[i].Value)
+		out[err.fields[i].Key] = fmt.Sprint(err.fields[i].Value)
 	}
 	return out
 }

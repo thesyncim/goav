@@ -188,8 +188,8 @@ func graphPlanInvalidError(reason string, details []string) error {
 		Code:      graphPlanInvalidCode,
 		Operation: "build graph plan",
 		Reason:    reason,
-		Fields:    buildErrorFields(append([]string(nil), details...)),
-		Fixes: buildErrorFixes([]string{
+		fields:    buildErrorFields(append([]string(nil), details...)),
+		fixes: buildErrorFixes([]string{
 			"compile recipes through goav.From(...), chains, branches, and destinations",
 			"keep graph-plan nodes, edges, operations, and destinations in sync",
 		}),

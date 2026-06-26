@@ -143,11 +143,11 @@ func TestBuildErrorTypedDetailsAndFixes(t *testing.T) {
 		Code:      errcode.DecodeAdapterMissing,
 		Operation: "build stream",
 		Reason:    "decoder is missing",
-		Fields: []Detail{
+		fields: []buildErrorDetail{
 			{Key: "codec", Value: av.CodecOpus},
 			{Key: "attempts", Value: 2},
 		},
-		Fixes: []Fix{
+		fixes: []buildErrorFix{
 			{Message: "register an Opus decoder"},
 		},
 		Cause: ErrUnsupportedBuild,

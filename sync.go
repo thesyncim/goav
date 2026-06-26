@@ -127,10 +127,10 @@ func syncTimebaseError(policy flow.SyncPolicy, msg *pipeline.Message) error {
 		Operation: "sync media timeline",
 		Node:      node,
 		Reason:    "media message has no valid PTS timebase",
-		Fields: buildErrorFields([]string{
+		fields: buildErrorFields([]string{
 			"message=" + firstNonEmpty(kind, "unknown"),
 		}),
-		Fixes: buildErrorFixes([]string{
+		fixes: buildErrorFixes([]string{
 			"set Packet.PTS or Frame.PTS with a valid av.TimeBase before the sync gate",
 			"declare live stream TimeBase facts on the input or discovered stream",
 			"remove .Sync(...) from branches that cannot carry media timestamps",
@@ -155,7 +155,7 @@ func validateSyncPolicyForStream(operation string, branchName string, stream av.
 		Operation: operation,
 		Node:      firstNonEmpty(branchName, string(stream.ID), "branch"),
 		Reason:    "sync branches need stream timebase facts before graph mutation",
-		Fixes: buildErrorFixes([]string{
+		fixes: buildErrorFixes([]string{
 			"set av.Stream.TimeBase on the input.Stream(...) anchor or discovered stream",
 			"set Codec.ClockRate so RTP-style timestamps can derive a timebase",
 			"remove .Sync(...) from dynamic branches whose source has no media timeline",

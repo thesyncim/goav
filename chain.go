@@ -24,10 +24,10 @@ func validateRecipeStreamSelector(operation string, node string, selector av.Str
 		Operation: operation,
 		Node:      node,
 		Reason:    "stream index must be non-negative",
-		Fields: buildErrorFields([]string{
+		fields: buildErrorFields([]string{
 			fmt.Sprintf("index=%d", selector.Index),
 		}),
-		Fixes: buildErrorFixes([]string{
+		fixes: buildErrorFixes([]string{
 			"use goav.StreamIndex(0) for the first matching stream",
 			"use goav.StreamID(...) or goav.StreamName(...) when stream metadata is stable",
 		}),
@@ -49,11 +49,11 @@ func chainStepAfterEncodeError(operation string, node string, step string, encod
 		Operation: operation,
 		Node:      node,
 		Reason:    "stream processing steps must be declared before the encoder",
-		Fields: buildErrorFields([]string{
+		fields: buildErrorFields([]string{
 			"step: " + step,
 			"encoder: " + codecIntentName(encode),
 		}),
-		Fixes: buildErrorFixes([]string{
+		fixes: buildErrorFixes([]string{
 			"place .Do(...), .Resize(...), or .Resample(...) before .Encode(...)",
 			"call .To(...) after the encoder to attach outputs",
 		}),
@@ -72,12 +72,12 @@ func chainStepOnPacketCopyError(operation string, node string, step string) erro
 		Operation: operation,
 		Node:      node,
 		Reason:    step + " needs decoded frames, but .Copy() keeps the stream packet-encoded",
-		Fields: buildErrorFields([]string{
+		fields: buildErrorFields([]string{
 			"step: " + step,
 			"actual_shape=" + shape.New(shape.Domain(shape.DomainPacket)).String(),
 			"expected_shape=" + shape.New(shape.Domain(shape.DomainFrame)).String(),
 		}),
-		Fixes: buildErrorFixes([]string{
+		fixes: buildErrorFixes([]string{
 			"call .Decode() before .Resize(...), .Resample(...), or .Do(...) — transforms run on decoded frames",
 			"remove the processing step to keep a pure packet copy",
 			"use .Branches(...) when one input needs both a packet copy and a processed branch",
@@ -93,12 +93,12 @@ func chainFrameInputRequiredError(operation string, node string, step string) er
 		Operation: operation,
 		Node:      firstNonEmpty(node, "stream"),
 		Reason:    step + " needs decoded frames, but the selected stream is still packet-domain",
-		Fields: buildErrorFields([]string{
+		fields: buildErrorFields([]string{
 			"step=" + step,
 			"actual_shape=" + shape.New(shape.Domain(shape.DomainPacket)).String(),
 			"expected_shape=" + shape.New(shape.Domain(shape.DomainFrame)).String(),
 		}),
-		Fixes: buildErrorFixes([]string{
+		fixes: buildErrorFixes([]string{
 			"write .Decode()." + streamStepMethodName(step) + "(...) for decoded-frame processing",
 			"keep the stream packet-domain by using .Copy() and removing frame-domain processing",
 		}),
@@ -129,11 +129,11 @@ func sinkDomainRequiredError(operation string, node string) error {
 		Operation: operation,
 		Node:      firstNonEmpty(node, "stream"),
 		Reason:    "sink output from a packet stream needs an explicit domain",
-		Fields: buildErrorFields([]string{
+		fields: buildErrorFields([]string{
 			"destination=sink",
 			"actual_shape=" + shape.New(shape.Domain(shape.DomainPacket)).String(),
 		}),
-		Fixes: buildErrorFixes([]string{
+		fixes: buildErrorFixes([]string{
 			"decode frames before the sink: .Decode().To(goav.Sink(...))",
 			"preserve packets before the sink: .Copy().To(goav.Sink(...))",
 		}),
@@ -148,11 +148,11 @@ func duplicateStreamEncodeError(operation string, node string, first codec.Codec
 		Operation: operation,
 		Node:      node,
 		Reason:    "stream recipes allow one terminal encoder",
-		Fields: buildErrorFields([]string{
+		fields: buildErrorFields([]string{
 			"first encoder: " + codecIntentName(first),
 			"second encoder: " + codecIntentName(second),
 		}),
-		Fixes: buildErrorFixes([]string{
+		fixes: buildErrorFixes([]string{
 			"choose one output codec for the stream chain",
 			"use .Branches(...) when one input needs multiple encoded branches",
 		}),
@@ -335,11 +335,11 @@ func frameSourceDecodeError(operation string, node string) error {
 		Operation: operation,
 		Node:      node,
 		Reason:    "frame-domain custom sources are already decoded frames",
-		Fields: buildErrorFields([]string{
+		fields: buildErrorFields([]string{
 			"source_domain=frame",
 			"operation=decode",
 		}),
-		Fixes: buildErrorFixes([]string{
+		fixes: buildErrorFixes([]string{
 			"remove .Decode() when using goav.Source(..., shape.Frame(...), ...)",
 			"use shape.Packet(...) when the custom source pushes encoded packets",
 		}),
@@ -354,11 +354,11 @@ func frameSourceCopyError(operation string, node string) error {
 		Operation: operation,
 		Node:      node,
 		Reason:    "frame-domain custom sources cannot use packet copy",
-		Fields: buildErrorFields([]string{
+		fields: buildErrorFields([]string{
 			"source_domain=frame",
 			"operation=copy",
 		}),
-		Fixes: buildErrorFixes([]string{
+		fixes: buildErrorFixes([]string{
 			"send frame-domain media to goav.Sink(...)",
 			"encode frames before writing to file, URI, or writer destinations",
 		}),
@@ -447,7 +447,7 @@ func (b *jobStreamBuilder) Tap(tap tapRef) *jobStreamBuilder {
 			Operation: "build stream",
 			Node:      jobStreamName(stream),
 			Reason:    "tap name is empty",
-			Fixes: buildErrorFixes([]string{
+			fixes: buildErrorFixes([]string{
 				"call .Tap(goav.FrameTap(\"video.decoded\")) or another stable tap ref",
 				"omit .Tap(...) when no runtime branch should attach at that point",
 			}),

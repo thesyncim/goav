@@ -531,9 +531,9 @@ func (t *task) structuredRunError(err error) error {
 }
 
 func (t *task) bufferedPayloadRunError(cause error, code errcode.Code, reason string) error {
-	fields := []Detail{{Key: "cause", Value: bufferedPayloadCauseName(cause)}}
+	fields := []buildErrorDetail{{Key: "cause", Value: bufferedPayloadCauseName(cause)}}
 	if branches := t.copyNeverBranchNames(); len(branches) != 0 {
-		fields = append(fields, Detail{Key: "copy_never_branches", Value: strings.Join(branches, ",")})
+		fields = append(fields, buildErrorDetail{Key: "copy_never_branches", Value: strings.Join(branches, ",")})
 	}
 	return &BuildError{
 		Family:    errcode.FamilyForCode(code),
@@ -541,8 +541,8 @@ func (t *task) bufferedPayloadRunError(cause error, code errcode.Code, reason st
 		Operation: "run task",
 		Node:      "buffered graph",
 		Reason:    reason,
-		Fields:    fields,
-		Fixes: []Fix{
+		fields:    fields,
+		fixes: []buildErrorFix{
 			{Message: "for branch buffers, use flow.BufferCopyBounds(packetBytes, frameBytes) with bounds large enough for the payload"},
 			{Message: "when using flow.CopyNever, emit av.BufferImmutable payloads only or switch to flow.CopyIfMutable/flow.CopyAlways"},
 			{Message: "for runtime-level buffers, set goavruntime.WithBufferPolicy(pipeline.BufferPolicy{Capacity: ..., Drop: pipeline.DropBlock, CopyPacketBytes: ..., CopyFrameBytes: ...})"},
@@ -717,7 +717,7 @@ func nilAttachmentDetachError() error {
 		Code:      runtimeBranchInvalidCode,
 		Operation: "detach runtime branch",
 		Reason:    "attachment is nil",
-		Fixes: buildErrorFixes([]string{
+		fixes: buildErrorFixes([]string{
 			"keep the Attachment returned by Task.Attach and pass it to Task.Detach",
 			"skip Detach when no branch is attached",
 		}),

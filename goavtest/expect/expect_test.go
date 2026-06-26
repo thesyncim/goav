@@ -2,40 +2,40 @@ package expect_test
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/thesyncim/goav"
+	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/goavtest"
 	"github.com/thesyncim/goav/goavtest/expect"
+	"github.com/thesyncim/goav/shape"
+	"github.com/thesyncim/goav/source"
 )
 
 func TestBuildErrorChecksStructuredFields(t *testing.T) {
-	cause := errors.New("sentinel")
-	err := fmt.Errorf("wrapped: %w", &goav.BuildError{
-		Family:    errcode.FamilyForCode(errcode.InputInvalid),
-		Code:      errcode.InputInvalid,
-		Operation: "build input",
-		Node:      "input",
-		Reason:    "nil source provider",
-		Fields:    []goav.Detail{{Key: "input", Value: 0}},
-		Fixes:     []goav.Fix{{Message: "pass a non-nil provider to goav.Input(provider)"}},
-		Cause:     cause,
-	})
+	_, err := goav.From(goav.Source("bytes",
+		shape.New(shape.Domain(shape.MediaDomain("bytes")), shape.Media(av.MediaAudio)),
+		func(context.Context, source.Push) error { return nil },
+	)).
+		Audio().
+		Decode().
+		To(goavtest.NewCollector().Sink()).
+		Describe()
+	err = fmt.Errorf("wrapped: %w", err)
 
-	buildErr := expect.BuildError(t, err, errcode.InputInvalid,
+	buildErr := expect.BuildError(t, err, errcode.SourceShapeUnsupported,
 		expect.Operation("build input"),
-		expect.Node("input"),
-		expect.Cause(cause),
-		expect.ReasonContains("nil source"),
-		expect.DetailContains("input=0"),
-		expect.SuggestionContains("goav.Input(provider)"),
+		expect.Node("bytes"),
+		expect.Cause(goav.ErrUnsupportedBuild),
+		expect.ReasonContains("packet-domain"),
+		expect.DetailContains("actual_shape="),
+		expect.SuggestionContains("shape.Packet"),
 	)
-	expect.Equal(t, "code", buildErr.Code, errcode.InputInvalid)
+	expect.Equal(t, "code", buildErr.Code, errcode.SourceShapeUnsupported)
 }
 
 func TestValueAndGoldenHelpers(t *testing.T) {

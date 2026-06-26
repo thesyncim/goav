@@ -444,8 +444,8 @@ func muxCompatibilityBuildError(operation string, issue muxCompatibilityIssue) e
 		Operation: operation,
 		Node:      issue.Destination,
 		Reason:    issue.Reason,
-		Fields:    buildErrorFields(append([]string(nil), issue.Details...)),
-		Fixes:     buildErrorFixes(append([]string(nil), issue.Suggestions...)),
+		fields:    buildErrorFields(append([]string(nil), issue.Details...)),
+		fixes:     buildErrorFixes(append([]string(nil), issue.Suggestions...)),
 		Cause:     ErrUnsupportedBuild,
 	}
 }

@@ -15,47 +15,46 @@ import (
 	"github.com/thesyncim/goav/shape"
 )
 
-// Detail is one typed machine-readable fact attached to a BuildError.
-type Detail struct {
+// buildErrorDetail is one typed machine-readable fact attached to a
+// BuildError. Callers read details through BuildError.Detail and
+// BuildError.DetailLines so the root API does not expose implementation DTOs.
+type buildErrorDetail struct {
 	Key   string
 	Value any
 }
 
-// String renders the detail as the legacy key=value line used in BuildError
-// text output.
-func (d Detail) String() string {
+func (d buildErrorDetail) String() string {
 	if d.Key == "" {
 		return fmt.Sprint(d.Value)
 	}
 	return d.Key + "=" + fmt.Sprint(d.Value)
 }
 
-// Fix is one concrete way to repair a BuildError. Message is the
-// human-readable instruction rendered to users.
-type Fix struct {
+// buildErrorFix is one concrete way to repair a BuildError.
+type buildErrorFix struct {
 	Message string
 }
 
-// String renders the human-readable fix message.
-func (f Fix) String() string {
+func (f buildErrorFix) String() string {
 	return f.Message
 }
 
 // BuildError is the one structured refusal goav raises from build,
 // validation, attach, and explain paths. Family identifies the stable
 // application branch key, Code identifies the detailed diagnostic leaf (see the
-// errcode package), Operation/Node say where, Reason says why, Fields carry
-// typed machine-readable facts, Fixes carry typed repair actions, and Cause is
-// a sentinel (ErrUnsupportedBuild, ErrNilSink,
-// pipeline.ErrBufferedMessageUnsafe, ...) reachable through errors.Is.
+// errcode package), Operation/Node say where, Reason says why, Detail exposes
+// typed machine-readable facts, DetailLines and FixLines expose rendered
+// details and repair actions, and Cause is a sentinel (ErrUnsupportedBuild,
+// ErrNilSink, pipeline.ErrBufferedMessageUnsafe, ...) reachable through
+// errors.Is.
 type BuildError struct {
 	Family    errcode.Family
 	Code      errcode.Code
 	Operation string
 	Node      string
 	Reason    string
-	Fields    []Detail
-	Fixes     []Fix
+	fields    []buildErrorDetail
+	fixes     []buildErrorFix
 	Cause     error
 }
 
@@ -105,9 +104,9 @@ func (e *BuildError) Detail(key string) (any, bool) {
 	if e == nil || key == "" {
 		return nil, false
 	}
-	for i := range e.Fields {
-		if e.Fields[i].Key == key {
-			return e.Fields[i].Value, true
+	for i := range e.fields {
+		if e.fields[i].Key == key {
+			return e.fields[i].Value, true
 		}
 	}
 	return nil, false
@@ -136,60 +135,60 @@ func (e *BuildError) detailLines() []string {
 	if e == nil {
 		return nil
 	}
-	return detailsToLines(e.Fields)
+	return detailsToLines(e.fields)
 }
 
 func (e *BuildError) suggestionLines() []string {
 	if e == nil {
 		return nil
 	}
-	if len(e.Fixes) == 0 {
+	if len(e.fixes) == 0 {
 		return nil
 	}
-	out := make([]string, 0, len(e.Fixes))
-	for i := range e.Fixes {
-		if e.Fixes[i].Message == "" {
+	out := make([]string, 0, len(e.fixes))
+	for i := range e.fixes {
+		if e.fixes[i].Message == "" {
 			continue
 		}
-		out = append(out, e.Fixes[i].String())
+		out = append(out, e.fixes[i].String())
 	}
 	return out
 }
 
-func buildErrorFields(lines []string) []Detail {
+func buildErrorFields(lines []string) []buildErrorDetail {
 	if len(lines) == 0 {
 		return nil
 	}
-	out := make([]Detail, 0, len(lines))
+	out := make([]buildErrorDetail, 0, len(lines))
 	for i := range lines {
 		if lines[i] == "" {
 			continue
 		}
 		key, value, ok := strings.Cut(lines[i], "=")
 		if !ok || key == "" {
-			out = append(out, Detail{Value: lines[i]})
+			out = append(out, buildErrorDetail{Value: lines[i]})
 			continue
 		}
-		out = append(out, Detail{Key: key, Value: value})
+		out = append(out, buildErrorDetail{Key: key, Value: value})
 	}
 	return out
 }
 
-func buildErrorFixes(lines []string) []Fix {
+func buildErrorFixes(lines []string) []buildErrorFix {
 	if len(lines) == 0 {
 		return nil
 	}
-	out := make([]Fix, 0, len(lines))
+	out := make([]buildErrorFix, 0, len(lines))
 	for i := range lines {
 		if lines[i] == "" {
 			continue
 		}
-		out = append(out, Fix{Message: lines[i]})
+		out = append(out, buildErrorFix{Message: lines[i]})
 	}
 	return out
 }
 
-func detailsToLines(details []Detail) []string {
+func detailsToLines(details []buildErrorDetail) []string {
 	if len(details) == 0 {
 		return nil
 	}

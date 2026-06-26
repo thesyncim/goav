@@ -409,7 +409,7 @@ func (b *branchBuilder) Tap(tap tapRef) *branchBuilder {
 			Operation: "build branch",
 			Node:      firstNonEmpty(b.spec.name, "branch"),
 			Reason:    "tap name is empty",
-			Fixes: buildErrorFixes([]string{
+			fixes: buildErrorFixes([]string{
 				"call .Tap(goav.FrameTap(\"video.720p.frames\")) or another stable tap ref",
 				"omit .Tap(...) when no runtime branch should attach at that point",
 			}),
@@ -781,7 +781,7 @@ func branchCopyParentOperationError(node string) error {
 		Operation: "build branches",
 		Node:      node,
 		Reason:    "packet-copy branches must start from a packet-domain stream point",
-		Fixes: buildErrorFixes([]string{
+		fixes: buildErrorFixes([]string{
 			"call .Copy().Branches(...) before frame operations when the branches should preserve packets",
 			"use .Decode().Branches(...) when branches need resize, resample, custom frame stages, or encode",
 			"attach runtime packet-copy branches from a packet Tap when the branch should start later",
@@ -797,10 +797,10 @@ func branchEncodeParentOperationError(node string, encode codec.CodecSpec) error
 		Operation: "build branches",
 		Node:      node,
 		Reason:    "stream encoders are terminal for planned branches",
-		Fields: buildErrorFields([]string{
+		fields: buildErrorFields([]string{
 			"encoder: " + codecIntentName(encode),
 		}),
-		Fixes: buildErrorFixes([]string{
+		fixes: buildErrorFixes([]string{
 			"move .Branches(...) before the stream encoder",
 			"put .Encode(codec.Opus(...)), .Encode(codec.VP8(...)), or .Encode(codec.VP9(...)) on each goav.Branch(...) that writes a destination",
 			"attach post-encode packet branches at runtime with Mutable.Attach(ctx, goav.Branch(name).From(goav.PacketTap(name))...)",
@@ -816,10 +816,10 @@ func plannedBranchNodeSourceError(name string, source string) error {
 		Operation: "build branches",
 		Node:      firstNonEmpty(name, "branch"),
 		Reason:    "planned branches do not anchor from graph handles",
-		Fields: buildErrorFields([]string{
+		fields: buildErrorFields([]string{
 			"source: " + source,
 		}),
-		Fixes: buildErrorFixes([]string{
+		fixes: buildErrorFixes([]string{
 			"use .From(goav.FrameTap(name)) or .From(goav.PacketTap(name)) to branch from a stable tap",
 			"omit .From(...) to branch from the current stream point",
 			"use Mutable.Attach(ctx, goav.Branch(name).From(graphNode)...) for expert runtime graph attachment",
@@ -835,11 +835,11 @@ func plannedBranchTapMissingError(stream string, branch string, tap string) erro
 		Operation: "build branches",
 		Node:      firstNonEmpty(branch, "branch"),
 		Reason:    "branch tap is not declared on the parent stream",
-		Fields: buildErrorFields([]string{
+		fields: buildErrorFields([]string{
 			"stream: " + firstNonEmpty(stream, "stream"),
 			"tap: " + tap,
 		}),
-		Fixes: buildErrorFixes([]string{
+		fixes: buildErrorFixes([]string{
 			"add .Tap(goav.FrameTap(\"" + tap + "\")) before .Branches(...) on the selected stream",
 			"use .From(goav.FrameTap(\"audio.decoded\")) or .From(goav.FrameTap(\"video.decoded\")) after .Decode() when branching from decoded frames",
 			"omit .From(...) to branch from the current stream point",
@@ -855,7 +855,7 @@ func duplicateBranchDecodeError(node string) error {
 		Operation: "build branch",
 		Node:      node,
 		Reason:    "branch already decodes its input packets",
-		Fixes: buildErrorFixes([]string{
+		fixes: buildErrorFixes([]string{
 			"call .Decode() once before frame operations",
 			"remove the second .Decode() call",
 		}),
@@ -870,7 +870,7 @@ func branchDecodeOrderError(node string) error {
 		Operation: "build branch",
 		Node:      node,
 		Reason:    "decode must be the first branch operation",
-		Fixes: buildErrorFixes([]string{
+		fixes: buildErrorFixes([]string{
 			"write goav.Branch(name).Decode().Resample(...).To(target)",
 			"start from a frame tap when the branch should skip decode",
 		}),
@@ -885,7 +885,7 @@ func branchDecodeDomainError(node string) error {
 		Operation: "build branches",
 		Node:      node,
 		Reason:    "branch decoding requires a packet-domain stream point",
-		Fixes: buildErrorFixes([]string{
+		fixes: buildErrorFixes([]string{
 			"omit .Decode() when the branch already starts after stream decode",
 			"use .Copy().Branches(goav.Branch(name).Decode()...) when a packet-preserving split later needs frames",
 			"attach runtime decode branches from packet taps",
@@ -901,7 +901,7 @@ func branchDecodeCopyError(node string) error {
 		Operation: "build branch",
 		Node:      node,
 		Reason:    "a branch cannot decode packets and then copy the original packet payload",
-		Fixes: buildErrorFixes([]string{
+		fixes: buildErrorFixes([]string{
 			"use .Copy() for packet-preserving branches",
 			"use .Decode().To(goav.Sink(...)) for decoded frames",
 			"use .Decode().Encode(codec).To(destination) for re-encoded packets",
@@ -917,10 +917,10 @@ func branchPacketEncodeUnsupportedError(stream streamIntent, encode codec.CodecS
 		Operation: "build branches",
 		Node:      branchIntentName(stream),
 		Reason:    "packet-domain planned branches cannot encode without decoding first",
-		Fields: buildErrorFields([]string{
+		fields: buildErrorFields([]string{
 			"encoder: " + codecIntentName(encode),
 		}),
-		Fixes: buildErrorFixes([]string{
+		fixes: buildErrorFixes([]string{
 			"use .Decode().Branches(goav.Branch(name).Encode(codec.Opus(...)).To(destination)) for encoded variants",
 			"use .Copy().Branches(goav.Branch(name).To(destination)) for packet-preserving variants",
 			"attach a runtime branch from a frame Tap when late encoding is needed",
@@ -936,7 +936,7 @@ func branchPacketTransformUnsupportedError(stream streamIntent) error {
 		Operation: "build branches",
 		Node:      branchIntentName(stream),
 		Reason:    "packet-domain planned branches cannot resize or resample without decoding first",
-		Fixes: buildErrorFixes([]string{
+		fixes: buildErrorFixes([]string{
 			"use .Decode().Branches(...) when branch variants need frame transforms",
 			"use .Copy().Branches(...) only for packet-preserving branches",
 			"attach a runtime branch from a frame Tap when late transforms are needed",
@@ -984,7 +984,7 @@ func branchMissingError(node string) error {
 		Operation: "build branches",
 		Node:      node,
 		Reason:    "Branches requires at least one encoded branch",
-		Fixes: buildErrorFixes([]string{
+		fixes: buildErrorFixes([]string{
 			"pass branches with goav.Branch(name).Encode(codec.VP9(...)).To(goav.Write(name, writer))",
 			"pass goav.Mux(name, destination) when branches should share one mux group",
 		}),
@@ -998,7 +998,7 @@ func nilBranchError() error {
 		Code:      errcode.BranchInvalid,
 		Operation: "build branch",
 		Reason:    "branch is nil",
-		Fixes: buildErrorFixes([]string{
+		fixes: buildErrorFixes([]string{
 			"build branches with goav.Branch(name)",
 		}),
 		Cause: ErrUnsupportedBuild,
@@ -1012,10 +1012,10 @@ func branchSpecOriginError(index int, selected av.MediaType) error {
 		Operation: "build branches",
 		Node:      fmt.Sprintf("branch-%d", index),
 		Reason:    "branch spec was not constructed with goav.Branch(name)",
-		Fields: buildErrorFields([]string{
+		fields: buildErrorFields([]string{
 			"media=" + string(selected),
 		}),
-		Fixes: buildErrorFixes([]string{
+		fixes: buildErrorFixes([]string{
 			"construct branches with goav.Branch(name).To(destination)",
 		}),
 		Cause: ErrUnsupportedBuild,
@@ -1029,7 +1029,7 @@ func branchDestinationMissingError(name string) error {
 		Operation: "build branch",
 		Node:      firstNonEmpty(name, "branch"),
 		Reason:    "branch has no destination",
-		Fixes: buildErrorFixes([]string{
+		fixes: buildErrorFixes([]string{
 			"finish the branch with .To(goav.Write(\"web.ivf\", writer)) or .To(goav.Sink(sink))",
 			"pass goav.Mux(name, destination) when several branches should share one mux or sink group",
 		}),
@@ -1056,7 +1056,7 @@ func destinationInvalidError(operation string, node string, reason string) error
 		Operation: operation,
 		Node:      node,
 		Reason:    reason,
-		Fixes: buildErrorFixes([]string{
+		fixes: buildErrorFixes([]string{
 			"use goav.Write(...), goav.URI(...), or goav.Sink(...) for a real destination",
 			"wrap shared outputs with goav.Mux(name, destination)",
 			"use distinct destination values for independent outputs",

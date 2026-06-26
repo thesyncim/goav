@@ -13,9 +13,10 @@ import (
 // TestBuildErrorContractPinned enforces the error contract at the source
 // level: every &BuildError{...} literal in the package carries a Family
 // derived from its Code, a typed Code value (never a raw string), an Operation,
-// a Reason, and either Fixes (a user-fixable refusal's concrete fixes) or
-// Fields (an internal invariant's explanation). The contract is what makes
-// goav errors uniformly actionable; this pin makes regressions impossible.
+// a Reason, and either private fixes (a user-fixable refusal's concrete fixes)
+// or private fields (an internal invariant's explanation). The public read
+// path stays BuildError.Detail, DetailLines, and FixLines so implementation
+// DTOs do not expand the root API. This pin makes regressions impossible.
 func TestBuildErrorContractPinned(t *testing.T) {
 	files := parsePackageSourceFiles(t)
 	for filename, file := range files {
@@ -64,14 +65,16 @@ func TestBuildErrorContractPinned(t *testing.T) {
 			_, hasFixes := fields["Fixes"]
 			_, hasDetails := fields["Details"]
 			_, hasFields := fields["Fields"]
-			if hasSuggestions {
-				t.Errorf("%s: BuildError literal uses Suggestions; use Fixes with typed goav.Fix values", filename)
+			_, hasPrivateFixes := fields["fixes"]
+			_, hasPrivateFields := fields["fields"]
+			if hasSuggestions || hasFixes {
+				t.Errorf("%s: BuildError literal uses public Suggestions/Fixes; use private fixes with buildErrorFix values", filename)
 			}
-			if hasDetails {
-				t.Errorf("%s: BuildError literal uses Details; use Fields with typed goav.Detail values", filename)
+			if hasDetails || hasFields {
+				t.Errorf("%s: BuildError literal uses public Details/Fields; use private fields with buildErrorDetail values", filename)
 			}
-			if !hasFixes && !hasFields {
-				t.Errorf("%s: BuildError literal carries neither Fixes (the fix) nor Fields (what happened)", filename)
+			if !hasPrivateFixes && !hasPrivateFields {
+				t.Errorf("%s: BuildError literal carries neither fixes (the fix) nor fields (what happened)", filename)
 			}
 			return true
 		})

@@ -92,10 +92,10 @@ func TestOutputFormatProbeErrorContract(t *testing.T) {
 	if got, ok := buildErr.Detail("mime"); !ok || got != "video/custom" {
 		t.Fatalf("mime detail = %#v, %v; want video/custom, true", got, ok)
 	}
-	if len(buildErr.Fields) != len(wantDetails) {
-		t.Fatalf("typed fields = %#v, want one field per rendered detail", buildErr.Fields)
+	if len(buildErr.fields) != len(wantDetails) {
+		t.Fatalf("typed fields = %#v, want one field per rendered detail", buildErr.fields)
 	}
-	if len(buildErr.Fixes) == 0 {
+	if len(buildErr.fixes) == 0 {
 		t.Fatal("typed fixes are empty")
 	}
 

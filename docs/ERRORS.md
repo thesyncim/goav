@@ -20,12 +20,12 @@ The contract is enforced by a source-scanning pin test (`errors_pin_test.go`):
 - **Reason**: one line saying why, including actual vs expected where it
   applies (`mix arm "b" cannot be converted to the join format (audio 44.1kHz
   1ch s16 -> audio 48kHz 2ch s16)`).
-- **Fields**: typed `goav.Detail` facts for applications, rendered as
-  `key=value` detail lines for humans (`codec=opus`, `format=webm`,
+- **Fields**: typed facts for applications, read with `Detail(key)` and
+  rendered with `DetailLines()` for humans (`codec=opus`, `format=webm`,
   `actual_shape=...`). Internal invariants that are not user-fixable carry a
   detail explaining what happened instead of a fix.
-- **Fixes**: typed `goav.Fix` values for tools, rendered as suggestion text for
-  humans. Fix messages should be real API calls:
+- **Fixes**: repair actions rendered with `FixLines()` for tools and
+  suggestion text for humans. Fix messages should be real API calls:
   `add .Auto(shape.AllowResample())`, `insert .Resample(48000, 2) explicitly`,
   `encode the mixed audio first: goav.Mix(a, b).Encode(codec.Opus(...))`.
 - **Cause**: a sentinel (`goav.ErrUnsupportedBuild`, `goav.ErrNilSink`,

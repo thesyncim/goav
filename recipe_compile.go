@@ -193,7 +193,7 @@ func (c recipeIntentCompiler) Compile(state recipeCompileState) (recipeResolved,
 				Code:      compilerPassInvalidCode,
 				Operation: state.operation,
 				Reason:    fmt.Sprintf("recipe compiler pass %d is nil", i),
-				Fields:    buildErrorFields([]string{"internal invariant: the recipe compiler was assembled with a nil pass"}),
+				fields:    buildErrorFields([]string{"internal invariant: the recipe compiler was assembled with a nil pass"}),
 				Cause:     ErrUnsupportedBuild,
 			}
 		}
@@ -234,10 +234,10 @@ func compilerPassError(operation string, pass string, err error) error {
 		Code:      compilerPassFailedCode,
 		Operation: firstNonEmpty(buildErr.Operation, operation),
 		Reason:    "recipe compiler pass failed without a diagnostic",
-		Fields: buildErrorFields([]string{
+		fields: buildErrorFields([]string{
 			"pass=" + pass,
 		}),
-		Fixes: buildErrorFixes([]string{
+		fixes: buildErrorFixes([]string{
 			"run Explain(ctx) to inspect the partial plan",
 			"report the pass name with the recipe shape",
 		}),
@@ -464,7 +464,7 @@ func nilRecipeError(operation string, reason string) error {
 		Code:      errcode.JobInvalid,
 		Operation: operation,
 		Reason:    reason,
-		Fields:    buildErrorFields([]string{"internal invariant: the compiler was invoked without its recipe attachment (recipes are constructed with goav.From(...))"}),
+		fields:    buildErrorFields([]string{"internal invariant: the compiler was invoked without its recipe attachment (recipes are constructed with goav.From(...))"}),
 		Cause:     ErrUnsupportedBuild,
 	}
 }
@@ -475,7 +475,7 @@ func unconstructedJobError() error {
 		Code:      errcode.JobInvalid,
 		Operation: "build job",
 		Reason:    "empty job",
-		Fixes: buildErrorFixes([]string{
+		fixes: buildErrorFixes([]string{
 			"start the recipe with goav.From(input)",
 			"use goav.From(goav.FileInput(\"in.webm\", reader)) for reader-backed input",
 			"use goav.From(goav.Source(name, shape, fn)) for application-pushed input",
@@ -491,7 +491,7 @@ func runtimeMissingError(operation string) error {
 		Code:      errcode.RuntimeMissing,
 		Operation: operation,
 		Reason:    "no runtime is configured",
-		Fixes: buildErrorFixes([]string{
+		fixes: buildErrorFixes([]string{
 			"pass a non-nil runtime with .UseRuntime(goav.MustNew(...))",
 			"import github.com/thesyncim/goav/bundle and build with bundle.MustNew(...), bundle.Build(ctx, job), or bundle.Run(ctx, job)",
 		}),
@@ -666,7 +666,7 @@ func validateJobIntentShape(operation string, intent intent, jobOutputCount int)
 			Code:      errcode.InputMissing,
 			Operation: operation,
 			Reason:    "no input is configured",
-			Fixes: buildErrorFixes([]string{
+			fixes: buildErrorFixes([]string{
 				"start the recipe from an input: goav.From(goav.FileInput(\"in.webm\", reader))",
 			}),
 			Cause: ErrUnsupportedBuild,
@@ -679,7 +679,7 @@ func validateJobIntentShape(operation string, intent intent, jobOutputCount int)
 			Code:      errcode.OutputMissing,
 			Operation: operation,
 			Reason:    "no output is configured",
-			Fixes: buildErrorFixes([]string{
+			fixes: buildErrorFixes([]string{
 				"route the job to a destination: .To(goav.Write(\"out.webm\", writer))",
 				"deliver frames to code with .To(goav.Sink(sink))",
 			}),
@@ -724,7 +724,7 @@ func jobStreamDestinationMissingError(operation string, stream streamIntent) err
 		Operation: operation,
 		Node:      jobStreamIntentName(stream),
 		Reason:    "stream chain has no destination",
-		Fixes: buildErrorFixes([]string{
+		fixes: buildErrorFixes([]string{
 			"finish each chain with .To(destination) before starting the next .Audio()/.Video()/.Stream()",
 			"pass goav.Mux(name, destination) across chains to mux them together",
 		}),
@@ -749,7 +749,7 @@ func jobOutputScopeMixedError(operation string, stream streamIntent) error {
 		Operation: operation,
 		Node:      jobStreamIntentName(stream),
 		Reason:    "stream recipes use stream-local outputs",
-		Fixes: buildErrorFixes([]string{
+		fixes: buildErrorFixes([]string{
 			"attach outputs to the selected stream chain with .Audio()...To(...) or .Video()...To(...)",
 			"use goav.From(input).Copy().To(output...) for packet-preserving record/remux",
 			"use goav.From(input).Video().Decode().Branches(goav.Branch(name).Encode(codec.VP9(...)).To(output)) for named branches",
@@ -765,7 +765,7 @@ func jobDestinationReferenceMissingError(operation string, stream streamIntent, 
 		Operation: operation,
 		Node:      jobStreamIntentName(stream),
 		Reason:    "stream route output " + label + " is not attached",
-		Fixes: buildErrorFixes([]string{
+		fixes: buildErrorFixes([]string{
 			"attach outputs to the selected stream chain with .Audio()...To(...) or .Video()...To(...)",
 			"use goav.From(input).Copy().To(output...) for packet-preserving record/remux",
 			"finish each branch with a typed destination such as .To(output)",
@@ -809,7 +809,7 @@ func validateJobStreamTransformIntentShape(operation string, stream streamIntent
 				Operation: operation,
 				Node:      node,
 				Reason:    "one stream transform cannot be both resize and resample",
-				Fixes:     buildErrorFixes([]string{"declare two separate steps instead: .Resize(width, height).Resample(rate, channels)"}),
+				fixes:     buildErrorFixes([]string{"declare two separate steps instead: .Resize(width, height).Resample(rate, channels)"}),
 				Cause:     ErrUnsupportedBuild,
 			}
 		case transform.resize != nil:
@@ -827,7 +827,7 @@ func validateJobStreamTransformIntentShape(operation string, stream streamIntent
 				Operation: operation,
 				Node:      node,
 				Reason:    "empty stream transform",
-				Fixes: buildErrorFixes([]string{
+				fixes: buildErrorFixes([]string{
 					"call .Resize(width, height) for video streams",
 					"call .Resample(sampleRate, channels) for audio streams",
 				}),
@@ -845,7 +845,7 @@ func operationSpecMissingError(operation string, node string) error {
 		Operation: operation,
 		Node:      node,
 		Reason:    "the stream was selected but no decode, processing stage, or encoder was requested",
-		Fixes: buildErrorFixes([]string{
+		fixes: buildErrorFixes([]string{
 			"call .Decode().To(goav.Sink(...)) to receive decoded frames",
 			"call .Decode().Encode(codec.Opus(...)), .Decode().Encode(codec.VP8(...)), or .Decode().Encode(codec.VP9(...)) before writing to a file output",
 			"use .Copy().To(output) for packet-preserving record or remux",
@@ -1093,11 +1093,11 @@ func recipeAttachmentMismatchError(operation string, kind string, intentCount in
 		Code:      recipeAttachmentMismatchCode,
 		Operation: operation,
 		Reason:    kind + " intent and concrete attachments disagree",
-		Fields: buildErrorFields([]string{
+		fields: buildErrorFields([]string{
 			fmt.Sprintf("intent %s: %d", kind, intentCount),
 			fmt.Sprintf("attached %s: %d", kind, attachmentCount),
 		}),
-		Fixes: buildErrorFixes([]string{
+		fixes: buildErrorFixes([]string{
 			"build recipes through goav.From(input)",
 			"keep custom compiler passes aligned with the public intent and captured attachments",
 		}),
@@ -1450,12 +1450,12 @@ func destinationShapeMismatchError(operation string, node string, destinationNam
 		Operation: operation,
 		Node:      firstNonEmpty(node, label, "destination"),
 		Reason:    "byte or mux destination requires packet-domain media",
-		Fields: buildErrorFields([]string{
+		fields: buildErrorFields([]string{
 			"destination=" + label,
 			"expected_shape=" + shape.New(shape.Domain(shape.DomainPacket), shape.Media(spec.MediaKind)).String(),
 			"actual_shape=" + spec.String(),
 		}),
-		Fixes: buildErrorFixes([]string{
+		fixes: buildErrorFixes([]string{
 			"call .Encode(codec.Opus(...)), .Encode(codec.VP8(...)), or .Encode(codec.VP9(...)) before writing to file, URI, or writer destinations",
 			"use .Copy() from a packet-domain stream point for packet-preserving output",
 			"send frame-domain media to goav.Sink(...) instead of a byte destination",
@@ -1516,14 +1516,14 @@ func shapeRequirementUnmetError(operation string, node string, index int, step o
 		Node:      node,
 		Reason: fmt.Sprintf(".Require(...) is not satisfied: the stream is %s, required %s",
 			humanizeShape(actual), humanizeShape(required)),
-		Fields: buildErrorFields([]string{
+		fields: buildErrorFields([]string{
 			fmt.Sprintf("operation_index=%d", index),
 			"operation=require",
 			"source=" + humanizeShape(actual),
 			"actual_shape=" + actual.String(),
 			"expected_shape=" + shapeSetString(expected),
 		}),
-		Fixes: buildErrorFixes([]string{
+		fixes: buildErrorFixes([]string{
 			"adjust the chain so the stream satisfies the required shape before .Require(...)",
 			"relax or remove the .Require(...) assertion",
 		}),
@@ -1547,13 +1547,13 @@ func operationShapeMismatchError(operation string, node string, index int, step 
 		Operation: operation,
 		Node:      node,
 		Reason:    component + " cannot consume the current media shape",
-		Fields: buildErrorFields([]string{
+		fields: buildErrorFields([]string{
 			fmt.Sprintf("operation_index=%d", index),
 			"operation=" + string(step.Kind),
 			"expected_shape=" + shapeSetString(expected),
 			"actual_shape=" + actual.String(),
 		}),
-		Fixes: buildErrorFixes(operationShapeMismatchSuggestions(step)),
+		fixes: buildErrorFixes(operationShapeMismatchSuggestions(step)),
 		Cause: ErrUnsupportedBuild,
 	}
 }
@@ -1654,8 +1654,8 @@ func recipeGraphUnsupportedError(operation string, intent intent) error {
 		Code:      errcode.RecipeGraphUnsupported,
 		Operation: operation,
 		Reason:    "recipe intent did not match a supported graph plan",
-		Fields:    buildErrorFields(details),
-		Fixes: buildErrorFixes([]string{
+		fields:    buildErrorFields(details),
+		fixes: buildErrorFixes([]string{
 			"use goav.From(input).Copy().To(output...) for packet-preserving record or remux",
 			"use goav.From(input).Audio().Decode().To(goav.Sink(...)) or .Video().Decode().To(...) for decoded frames",
 			"use goav.From(input).Video().Decode().Branches(goav.Branch(name).Encode(codec.VP9(...)).To(output)) for named branches",

@@ -207,7 +207,7 @@ func validateBranchCompositionIntentShape(operation string, intent intent) error
 			Code:      errcode.InputMissing,
 			Operation: operation,
 			Reason:    "no input is configured",
-			Fixes: buildErrorFixes([]string{
+			fixes: buildErrorFixes([]string{
 				"start the recipe from an input: goav.From(goav.FileInput(\"in.webm\", reader))",
 			}),
 			Cause: ErrUnsupportedBuild,
@@ -219,10 +219,10 @@ func validateBranchCompositionIntentShape(operation string, intent intent) error
 			Code:      errcode.InputCountUnsupported,
 			Operation: operation,
 			Reason:    "transcode recipes currently take one input",
-			Fields: buildErrorFields([]string{
+			fields: buildErrorFields([]string{
 				fmt.Sprintf("inputs=%d", len(intent.Inputs)),
 			}),
-			Fixes: buildErrorFixes([]string{
+			fixes: buildErrorFixes([]string{
 				"use one goav.From(input) source per composed job",
 				"use the expert graph API when multiple sources must be composed manually",
 			}),
@@ -369,7 +369,7 @@ func branchStreamMissingError() error {
 		Code:      errcode.StreamMissing,
 		Operation: branchCompositionOperation,
 		Reason:    "no audio or video branches are configured",
-		Fixes: buildErrorFixes([]string{
+		fixes: buildErrorFixes([]string{
 			"add a video branch such as .Video(\"720p\").Resize(...).Encode(codec.VP9(...)).To(...)",
 			"add an audio branch such as .Audio(\"main\").Resample(...).Encode(codec.Opus(...)).To(...)",
 		}),
@@ -384,11 +384,11 @@ func branchEncodeMissingError(stream streamIntent) error {
 		Operation: branchCompositionOperation,
 		Node:      stream.Name,
 		Reason:    "branch needs an encoder before writing to a muxed destination",
-		Fields: buildErrorFields([]string{
+		fields: buildErrorFields([]string{
 			"expected_shape=" + shape.New(shape.Domain(shape.DomainPacket), shape.Media(stream.Select.Type)).String(),
 			"actual_shape=" + shape.Frame(stream.Select.Type).String(),
 		}),
-		Fixes: buildErrorFixes([]string{
+		fixes: buildErrorFixes([]string{
 			"call .Encode(codec.Opus(...)), .Encode(codec.VP8(...)), or .Encode(codec.VP9(...)) before .To(...)",
 			"route raw frames to goav.Sink(...) when the branch should stay decoded",
 		}),
@@ -403,7 +403,7 @@ func branchCopyUnsupportedError(stream streamIntent) error {
 		Operation: branchCompositionOperation,
 		Node:      branchIntentName(stream),
 		Reason:    "copy branches require a packet-domain stream point",
-		Fixes: buildErrorFixes([]string{
+		fixes: buildErrorFixes([]string{
 			"use goav.From(input).Copy().Branches(...) for packet-preserving planned branches",
 			"attach a runtime branch from a packet tap and call .Copy() when packet-domain fanout is needed",
 			"omit .Copy() when the branch should deliver decoded frames to goav.Sink(...)",
@@ -420,7 +420,7 @@ func branchIntentDestinationMissingError(stream streamIntent) error {
 		Operation: branchCompositionOperation,
 		Node:      firstNonEmpty(stream.Name, string(selector.Type), "stream"),
 		Reason:    "branch has no destination",
-		Fixes: buildErrorFixes([]string{
+		fixes: buildErrorFixes([]string{
 			"finish the branch with .To(goav.Write(\"web.ivf\", writer)) or .To(goav.Sink(sink))",
 			"pass goav.Mux(name, destination) when branches should share one mux group",
 		}),
@@ -435,7 +435,7 @@ func branchDestinationReferenceMissingError(stream streamIntent, label string) e
 		Operation: branchCompositionOperation,
 		Node:      stream.Name,
 		Reason:    "destination " + label + " is referenced but not defined",
-		Fixes: buildErrorFixes([]string{
+		fixes: buildErrorFixes([]string{
 			"pass a named goav.Write(...), goav.URI(...), or goav.Sink(...) destination to the branch .To(...) call",
 			"pass goav.Mux(name, destination) when helpers construct matching grouped destinations",
 		}),
@@ -449,7 +449,7 @@ func transcodeUnsupportedLiveInputError() error {
 		Code:      errcode.UnsupportedInput,
 		Operation: branchCompositionOperation,
 		Reason:    "live provider transcode recipes are not supported by the transcode recipe compiler yet",
-		Fixes: buildErrorFixes([]string{
+		fixes: buildErrorFixes([]string{
 			"use From(...).Copy().To(...) for packet recording",
 			"use From(...).Audio().Decode() or From(...).Video().Decode() for one selected receive path",
 		}),
@@ -464,10 +464,10 @@ func branchDestinationNameEmptyError(stream streamBuild, index int) error {
 		Operation: branchCompositionOperation,
 		Node:      firstNonEmpty(stream.name, string(stream.selector.Type), "stream"),
 		Reason:    "branch destinations must be non-empty",
-		Fields: buildErrorFields([]string{
+		fields: buildErrorFields([]string{
 			fmt.Sprintf("destination index: %d", index),
 		}),
-		Fixes: buildErrorFixes([]string{
+		fixes: buildErrorFixes([]string{
 			"call .To(goav.Write(\"web.ivf\", writer)) with a non-empty destination name",
 			"pass goav.Sink(component.SinkFunc(name, fn)) for sink destinations",
 		}),
@@ -482,7 +482,7 @@ func branchDestinationDuplicateError(name string) error {
 		Operation: branchCompositionOperation,
 		Node:      name,
 		Reason:    fmt.Sprintf("destination %q is defined more than once with different destination handles", name),
-		Fixes: buildErrorFixes([]string{
+		fixes: buildErrorFixes([]string{
 			"pass goav.Mux(name, destination) when multiple branches should share one mux group",
 			"use distinct destination names when branches should write to different destinations",
 		}),
@@ -497,11 +497,11 @@ func branchIntentDuplicateError(name string, firstIndex int, secondIndex int) er
 		Operation: branchCompositionOperation,
 		Node:      name,
 		Reason:    fmt.Sprintf("branch name %q is defined more than once", name),
-		Fields: buildErrorFields([]string{
+		fields: buildErrorFields([]string{
 			fmt.Sprintf("first branch index: %d", firstIndex),
 			fmt.Sprintf("second branch index: %d", secondIndex),
 		}),
-		Fixes: buildErrorFixes([]string{
+		fixes: buildErrorFixes([]string{
 			"use unique names such as .Video(\"720p\") and .Video(\"360p\")",
 			"route one branch to multiple destinations by calling .To(destination, otherDestination)",
 			"route different branches to the same destination with goav.Mux(name, destination)",
@@ -517,10 +517,10 @@ func branchIntentNameMissingError(index int, stream streamIntent) error {
 		Operation: branchCompositionOperation,
 		Node:      fmt.Sprintf("branch-%d", index),
 		Reason:    "branches need stable names",
-		Fields: buildErrorFields([]string{
+		fields: buildErrorFields([]string{
 			"media type: " + firstNonEmpty(string(stream.Select.Type), "unknown"),
 		}),
-		Fixes: buildErrorFixes([]string{
+		fixes: buildErrorFixes([]string{
 			"call .Video(\"720p\") for video branches",
 			"call .Audio(\"main\") for audio branches",
 			"use branch names as handles for graph inspection and destination planning",
@@ -547,11 +547,11 @@ func duplicateBranchDestinationError(stream streamIntent, target string, firstIn
 		Operation: branchCompositionOperation,
 		Node:      branchIntentName(stream),
 		Reason:    fmt.Sprintf("branch routes to destination %q more than once", target),
-		Fields: buildErrorFields([]string{
+		fields: buildErrorFields([]string{
 			fmt.Sprintf("first destination index: %d", firstIndex),
 			fmt.Sprintf("second destination index: %d", secondIndex),
 		}),
-		Fixes: buildErrorFixes([]string{
+		fixes: buildErrorFixes([]string{
 			"list each destination once in .To(...)",
 			"route one branch to multiple destinations with distinct values such as .To(archive, preview)",
 			"pass goav.Mux(name, destination) when repeated destination names should form one group",
@@ -575,7 +575,7 @@ func validateBranchTransforms(stream streamIntent) error {
 				Operation: branchCompositionOperation,
 				Node:      branchIntentName(stream),
 				Reason:    "one transform cannot be both resize and resample",
-				Fixes:     buildErrorFixes([]string{"declare two separate steps instead: .Resize(width, height).Resample(rate, channels)"}),
+				fixes:     buildErrorFixes([]string{"declare two separate steps instead: .Resize(width, height).Resample(rate, channels)"}),
 				Cause:     ErrUnsupportedBuild,
 			}
 		case transform.resize != nil, transform.resample != nil:
@@ -587,7 +587,7 @@ func validateBranchTransforms(stream streamIntent) error {
 				Operation: branchCompositionOperation,
 				Node:      branchIntentName(stream),
 				Reason:    "empty stream transform",
-				Fixes: buildErrorFixes([]string{
+				fixes: buildErrorFixes([]string{
 					"call .Resize(width, height) on video branches",
 					"call .Resample(sampleRate, channels) on audio branches",
 				}),

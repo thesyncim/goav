@@ -159,7 +159,7 @@ func resolveJoinProfile(spec *joinSpec) (joinProfile, error) {
 			Operation: "build " + kind,
 			Node:      kind,
 			Reason:    "unknown join kind",
-			Fields:    buildErrorFields([]string{"declared join kinds: mix, composite, select; custom kinds go through goav.Join"}),
+			fields:    buildErrorFields([]string{"declared join kinds: mix, composite, select; custom kinds go through goav.Join"}),
 			Cause:     ErrUnsupportedBuild,
 		}
 	}
@@ -346,7 +346,7 @@ func joinArmError(name string, node string, reason string, suggestions ...string
 		Operation: "build " + name,
 		Node:      node,
 		Reason:    reason,
-		Fixes:     buildErrorFixes(suggestions),
+		fixes:     buildErrorFixes(suggestions),
 		Cause:     ErrUnsupportedBuild,
 	}
 }
@@ -370,7 +370,7 @@ func joinInputsError(kind string, node string) error {
 		Operation: "build " + kind,
 		Node:      node,
 		Reason:    kind + " requires at least two source arms",
-		Fixes: buildErrorFixes([]string{
+		fixes: buildErrorFixes([]string{
 			"pass at least two arms: " + joinTwoArmExample(kind),
 			"route the single chain directly when nothing converges",
 		}),
@@ -436,7 +436,7 @@ func newJoinPlan(input joinPlanInput) (*joinPlan, error) {
 					Operation: "build " + name,
 					Node:      name,
 					Reason:    profile.sinkOnlyReason,
-					Fixes:     buildErrorFixes(append([]string(nil), profile.sinkOnlySuggestions...)),
+					fixes:     buildErrorFixes(append([]string(nil), profile.sinkOnlySuggestions...)),
 					Cause:     ErrUnsupportedBuild,
 				}
 			}
@@ -607,7 +607,7 @@ func resolveJoinDestinations(name string, spec *joinSpec) ([]destinationSpec, er
 			Operation: "build " + name,
 			Node:      name,
 			Reason:    "no output is configured",
-			Fixes: buildErrorFixes([]string{
+			fixes: buildErrorFixes([]string{
 				"route the join to one or more destinations: .To(goav.Sink(sink))",
 				"fan the joined stream out with .Branches(...) when branches need their own chains",
 			}),
@@ -1100,7 +1100,7 @@ func joinPlanTaps(spec *joinSpec, name string, joined av.Stream, domain shape.Me
 				Operation: "build " + name,
 				Node:      name,
 				Reason:    "tap name is empty",
-				Fixes: buildErrorFixes([]string{
+				fixes: buildErrorFixes([]string{
 					"call .Tap(goav.FrameTap(\"" + name + ".out\")) or another stable tap ref",
 					"omit .Tap(...) when no runtime branch should attach at that point",
 				}),

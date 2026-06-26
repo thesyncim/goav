@@ -38,14 +38,13 @@ methodology changes, and migration notes.
   still pass directly to recipe constructors and `.With(...)`.
 - Removed exported `goav.InputStream`; `InputSpec.Stream(stream)` still returns
   the attach anchor used with `Branch(...).From(...)`.
-- Removed unused `goav.RecipePatch`; `BuildError.Fixes` now carry typed fix
-  messages without an edit-patch DTO.
+- Removed unused `goav.RecipePatch`; `BuildError` fix messages now read
+  through `FixLines()` without an edit-patch DTO.
 - Stream chains now require an explicit `.Decode()` before frame-domain
   consumers (`.Do`, `.Resize`, `.Resample`, real `.Encode`, frame taps, and
   decoded-frame sinks). Use `.Copy()` when a chain should stay packet-domain.
 - Removed legacy `BuildError.Details` and `BuildError.Suggestions` fields;
-  callers should use typed `Fields`/`Fixes`, `Detail(key)`, `DetailLines()`,
-  and `FixLines()`.
+  callers should use `Detail(key)`, `DetailLines()`, and `FixLines()`.
 - Removed exported `goav.TransformSpec`; callers still use `Resize` and
   `Resample` constructors, but the transform value type is no longer part of
   the root contract.

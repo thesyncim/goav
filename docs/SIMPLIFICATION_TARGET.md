@@ -197,8 +197,10 @@ explicitly so public tap handles always state their media domain.
 
 Error-contract progress: `BuildError` no longer exposes legacy
 `Details`/`Suggestions` fields or parses rendered strings in `Detail(key)`;
-typed `Fields` and `Fixes` are the public contract. The unused
-`goav.RecipePatch` edit-hint DTO was also removed from the root surface.
+typed detail/fix records are now package-private, with public reads through
+`Detail(key)`, `DetailLines()`, and `FixLines()`. The unused
+`goav.RecipePatch` edit-hint DTO was also removed from the root surface, as
+were the exported `goav.Detail` and `goav.Fix` DTO names.
 Runtime-branch mutation leaf codes are no longer exported `errcode` constants;
 they remain typed internally and still map to `FamilyRuntimeBranch`, but the
 experimental mutation surface no longer expands the public refusal catalog.

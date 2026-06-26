@@ -658,7 +658,7 @@ func branchComposePlanEmptyError(kind string) error {
 		Operation: "build branch composition",
 		Node:      kind,
 		Reason:    reason,
-		Fixes:     buildErrorFixes(suggestions),
+		fixes:     buildErrorFixes(suggestions),
 		Cause:     ErrUnsupportedBuild,
 	}
 }
@@ -967,11 +967,11 @@ func branchComposeDecodeConfigConflictError(first string, second string) error {
 		Operation: "build branch composition",
 		Node:      second,
 		Reason:    "branches that share one decoder declared different decode configs",
-		Fields: buildErrorFields([]string{
+		fields: buildErrorFields([]string{
 			"first branch: " + first,
 			"conflicting branch: " + second,
 		}),
-		Fixes: buildErrorFixes([]string{
+		fixes: buildErrorFixes([]string{
 			"move shared decode config to the stream chain with .Decode(...)",
 			"use the same decode config for branches that share a decoder",
 		}),
@@ -985,11 +985,11 @@ func branchComposeCodecChangeConflictError(first string, second string) error {
 		Operation: "build branch composition",
 		Node:      second,
 		Reason:    "branches that share one decoder declared different codec-change policies",
-		Fields: buildErrorFields([]string{
+		fields: buildErrorFields([]string{
 			"first branch: " + first,
 			"conflicting branch: " + second,
 		}),
-		Fixes: buildErrorFixes([]string{
+		fixes: buildErrorFixes([]string{
 			"use the same codec-change policy for branches that share a decoder",
 			"split branches by stream selector when policies must differ",
 		}),
@@ -1004,10 +1004,10 @@ func branchComposeDuplicateBranchError(name string, index int) error {
 		Operation: "build branch composition",
 		Node:      name,
 		Reason:    "branch name is defined more than once",
-		Fields: buildErrorFields([]string{
+		fields: buildErrorFields([]string{
 			"duplicate index: " + strconv.Itoa(index),
 		}),
-		Fixes: buildErrorFixes([]string{
+		fixes: buildErrorFixes([]string{
 			"give each branch a stable unique name",
 			"use distinct branch names when multiple branches share one selected stream",
 		}),
@@ -1172,7 +1172,7 @@ func branchChainStepError(name string, reason string) error {
 		Operation: "build branch composition",
 		Node:      name,
 		Reason:    reason,
-		Fixes: buildErrorFixes([]string{
+		fixes: buildErrorFixes([]string{
 			"use one operation per branch call",
 			"use resize on video branches and resample on audio branches",
 			"use goav.Branch(name).Do(stage).Resize(...).Encode(codec.VP9(...)).To(output) for recipe branch operations",
@@ -1312,8 +1312,8 @@ func mediaTransformMismatchError(transform mediaTransform, stream av.Stream, ope
 		Operation: "build branch composition",
 		Node:      transform.name,
 		Reason:    operation + " applies to " + media + " streams",
-		Fields:    buildErrorFields(details),
-		Fixes: buildErrorFixes([]string{
+		fields:    buildErrorFields(details),
+		fixes: buildErrorFixes([]string{
 			"use resize on video branches",
 			"use resample on audio branches",
 			"check the branch selector",
@@ -1376,8 +1376,8 @@ func branchComposeTargetUnmatchedError(output branchComposeTarget, destination f
 		Operation: "build branch composition",
 		Node:      node,
 		Reason:    "destination selects no branches",
-		Fields:    buildErrorFields(details),
-		Fixes: buildErrorFixes([]string{
+		fields:    buildErrorFields(details),
+		fixes: buildErrorFixes([]string{
 			"reference a branch name",
 			"reference a destination name listed on the branch",
 			"omit explicit branch filters when the destination should receive every branch",
@@ -1393,7 +1393,7 @@ func branchComposeTargetDestinationInvalidError(output branchComposeTarget, reas
 		Operation: "build branch composition",
 		Node:      branchComposeTargetNodeName(output, "output"),
 		Reason:    reason,
-		Fixes: buildErrorFixes([]string{
+		fixes: buildErrorFixes([]string{
 			"use goav.Sink(sink) for frame or packet sink destinations",
 			"use goav.Write(...) or goav.URI(...) for muxed destinations",
 		}),
@@ -1408,10 +1408,10 @@ func branchComposeTargetEncodeMissingError(output branchComposeTarget, destinati
 		Operation: "build branch composition",
 		Node:      firstNonEmpty(branch.name, branch.branch.Name, branchComposeTargetNodeName(output, "output")),
 		Reason:    "muxed destinations require encoded branches",
-		Fields: buildErrorFields([]string{
+		fields: buildErrorFields([]string{
 			"destination: " + firstNonEmpty(output.Name, destination.Name, destination.URI, "output"),
 		}),
-		Fixes: buildErrorFixes([]string{
+		fixes: buildErrorFixes([]string{
 			"encode the branch before routing it to a mux destination",
 			"route raw decoded branches to goav.Sink(sink)",
 		}),
@@ -1574,7 +1574,7 @@ func transcodeResizeConfigError(stream av.Stream, mode filter.ResizeMode, config
 		Operation: "build transcode",
 		Node:      node,
 		Reason:    reason,
-		Fields: buildErrorFields([]string{
+		fields: buildErrorFields([]string{
 			"mode: " + string(mode),
 			"stream id: " + string(stream.ID),
 			"input width: " + strconv.Itoa(stream.Codec.Width),
@@ -1582,7 +1582,7 @@ func transcodeResizeConfigError(stream av.Stream, mode filter.ResizeMode, config
 			"target width: " + strconv.Itoa(config.Width),
 			"target height: " + strconv.Itoa(config.Height),
 		}),
-		Fixes: buildErrorFixes([]string{
+		fixes: buildErrorFixes([]string{
 			"use resize mode exact, fit, fill, or passthrough",
 			"provide positive target dimensions for fit and fill",
 			"use exact resize when input dimensions are not known before filtering",

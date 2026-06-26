@@ -117,8 +117,8 @@ Move or keep outside the front door:
    - Move implementation-specific errcodes behind compatibility aliases or
      internal details.
    - Replace string-only production errors with typed details and fixes:
-     `BuildError` carries typed `Fields []Detail`, `Fixes []Fix`,
-     `Detail(key)`, `DetailLines()`, and `FixLines()`.
+     `BuildError` exposes `Detail(key)`, `DetailLines()`, and `FixLines()`,
+     while the backing detail/fix records stay package-private.
      The legacy `Details`/`Suggestions` fields have been removed from
      `BuildError`.
 
