@@ -22,7 +22,7 @@ import (
 // through exactly this machinery; a custom join is their equal: it plans
 // through the one recipe compile (Describe() ≡ Build(), plan.OpJoin in
 // Explain), its joined output is a normal stream point (.Tap, .Branches,
-// .To), and the result is itself a JoinArm, so custom joins nest inside and
+// .To), and the result is itself a joinArm, so custom joins nest inside and
 // around the built-ins (Mix(Join("pair", stage, a, b), c)).
 //
 // The stage contract (audioMixStage in audio_mix.go is the reference
@@ -68,17 +68,17 @@ import (
 // Without a contract the join is a media-agnostic passthrough (Select-shaped).
 // Custom joins carry no .Encode — deliver frames to sinks with .To, or fan
 // out with .Branches where branches encode for muxed destinations.
-func Join(name string, stage pipeline.Stage, arms ...JoinArm) *joinStream {
+func Join(name string, stage pipeline.Stage, arms ...joinArm) *joinStream {
 	return &joinStream{name: name, stage: stage, arms: arms}
 }
 
 // joinStream is the builder a custom Join returns: the same grammar surface
-// the built-in join builders expose (Tap/Branches/To), plus JoinArm so a
+// the built-in join builders expose (Tap/Branches/To), plus joinArm so a
 // custom join nests like any other arm.
 type joinStream struct {
 	name  string
 	stage pipeline.Stage
-	arms  []JoinArm
+	arms  []joinArm
 	taps  []tapRef
 }
 

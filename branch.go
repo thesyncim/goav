@@ -256,7 +256,7 @@ func (b *branchBuilder) Decode(options ...codec.Option) *branchBuilder {
 	return b
 }
 
-func (b *branchBuilder) Apply(flow Chain) *branchBuilder {
+func (b *branchBuilder) Apply(flow chain) *branchBuilder {
 	if b == nil {
 		return b
 	}

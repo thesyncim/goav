@@ -200,7 +200,7 @@ func TestNorthStarBranchesAfterDecodeShareOneDecoder(t *testing.T) {
 // chain type may grow To or any other destination-carrying verb.
 func TestNorthStarFlowExposesNoDestinations(t *testing.T) {
 	forbidden := []string{"To", "Branches", "Output", "Outputs", "Destination", "Destinations", "Target", "Targets", "Path", "Paths"}
-	for label, chain := range map[string]Chain{
+	for label, chain := range map[string]chain{
 		"audio": Flow("guard").Audio(),
 		"video": Flow("guard").Video(),
 	} {

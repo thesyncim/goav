@@ -11,12 +11,12 @@ import (
 	"github.com/thesyncim/goav/shape"
 )
 
-// Chain is a reusable stream-local recipe fragment.
+// chain is a reusable stream-local recipe fragment.
 //
 // Build chains with Flow(name).Audio() or Flow(name).Video(), then apply them
 // to one stream chain or to a Branch. A chain is only an operation sequence;
 // branches own destinations.
-type Chain interface {
+type chain interface {
 	Name() string
 	InputShapes() shape.Set
 	OutputShapes(shape.Spec) shape.Set
@@ -214,7 +214,7 @@ func (b *audioChain) Prefer(spec shape.Spec) *audioChain {
 // directly declared operations. Apply copies the other flow's operation list
 // by value at call time, so cycles are unrepresentable — a flow applied to
 // itself only splices its operations as declared so far.
-func (b *audioChain) Apply(flow Chain) *audioChain {
+func (b *audioChain) Apply(flow chain) *audioChain {
 	if b == nil {
 		return b
 	}
@@ -325,7 +325,7 @@ func (b *videoChain) Prefer(spec shape.Spec) *videoChain {
 // directly declared operations. Apply copies the other flow's operation list
 // by value at call time, so cycles are unrepresentable — a flow applied to
 // itself only splices its operations as declared so far.
-func (b *videoChain) Apply(flow Chain) *videoChain {
+func (b *videoChain) Apply(flow chain) *videoChain {
 	if b == nil {
 		return b
 	}
@@ -510,7 +510,7 @@ func (b *chainBuilder) prefer(spec shape.Spec) {
 // operation, and an applied packet copy refuses frame-domain prefixes. The
 // applied operations are cloned values, so later mutation of either flow
 // cannot reach the other (and self-application cannot recurse).
-func (b *chainBuilder) apply(flow Chain) {
+func (b *chainBuilder) apply(flow chain) {
 	if b == nil {
 		return
 	}
@@ -610,7 +610,7 @@ func (b *chainBuilder) setErr(err error) {
 	}
 }
 
-func chainSpecFrom(flow Chain) (chainSpec, error) {
+func chainSpecFrom(flow chain) (chainSpec, error) {
 	if flow == nil {
 		return chainSpec{}, nilFlowError()
 	}

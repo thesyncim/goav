@@ -15,7 +15,7 @@ import (
 // output. Arms must have distinct stream ids; the first arm is active by
 // default and SelectActive switches live through the control plane. This
 // reuses the existing Job, so .To/Build/Run are unchanged.
-func Select(arms ...JoinArm) *selectorStream {
+func Select(arms ...joinArm) *selectorStream {
 	return &selectorStream{arms: arms}
 }
 
@@ -25,7 +25,7 @@ func Select(arms ...JoinArm) *selectorStream {
 const selectBufferCapacity = 32
 
 type selectorStream struct {
-	arms   []JoinArm
+	arms   []joinArm
 	taps   []tapRef
 	region *compositeRegion
 }

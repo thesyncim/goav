@@ -65,7 +65,7 @@ refusals" lists the error families a caller should expect to handle.
 ## Join Constructors
 
 Joins are the N-to-1 side of the same grammar: each constructor consumes two or
-more `JoinArm` values, lowers to one planned convergence node, and returns a
+more join arms, lowers to one planned convergence node, and returns a
 normal stream point. Arms are intentionally narrower than stream chains: arm
 chains support stream selection, `.Decode()`, `.Tap(...)`, and `Region(...)`
 when they feed `Composite`; transforms and encode belong after the join unless

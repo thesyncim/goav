@@ -30,7 +30,7 @@ func TestFlowChainAccessorsAndNilSafety(t *testing.T) {
 	if got := video.Name(); got != "preview" {
 		t.Fatalf("video Name() = %q, want preview", got)
 	}
-	var chain Chain = audio
+	var chain chain = audio
 	chain.isChain()
 	chain = video
 	chain.isChain()
@@ -280,7 +280,7 @@ func TestFlowBuilderRejectsInvalidCompositionContracts(t *testing.T) {
 
 	tests := []struct {
 		name string
-		flow Chain
+		flow chain
 		code errcode.Code
 	}{
 		{

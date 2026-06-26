@@ -185,10 +185,9 @@ func TestErrorAcceptanceFrameSourceDecodeMismatch(t *testing.T) {
 // TestErrorAcceptanceNilFlow is snippet 0g: applying a nil flow. The refusal
 // keeps Flow(name).Audio/Video as the only creation path.
 func TestErrorAcceptanceNilFlow(t *testing.T) {
-	var flow goav.Chain
 	_, err := goav.From(opusPacketInput()).
 		Audio().
-		Apply(flow).
+		Apply(nil).
 		To(goavtest.NewCollector().Sink()).
 		Describe()
 	requireBuildError(t, err, errcode.Code("flow_invalid"), "build flow", "",

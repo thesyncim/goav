@@ -47,7 +47,7 @@ func joinStagePreallocDepth(rt *runtime) int {
 // and past named taps on the joined stream.
 type joinSpec struct {
 	kind   joinKind
-	arms   []JoinArm
+	arms   []joinArm
 	dests  []Destination
 	encode *codec.CodecSpec // mix/composite only; nil delivers the raw join output
 	// operations are joined-stream annotations (Auto/Require/Prefer) that run
@@ -69,20 +69,20 @@ type joinSpec struct {
 	custom *customJoinSpec
 }
 
-// JoinArm is one source arm of a join: an ordinary source chain such as
+// joinArm is one source arm of a join: an ordinary source chain such as
 // From(x).Audio(), another join whose joined output feeds the outer join —
 // Mix(Mix(a, b), c) sub-mixes two arms and mixes the result with a third, and
 // Select(Mix(a, b), Mix(c, d)) switches between two live mixes — or a tap reference
 // naming a tap an earlier arm declared, so one decoded stream converges
 // mid-graph without opening its source again. It is a sealed interface: only
 // goav builders implement it.
-type JoinArm interface {
+type joinArm interface {
 	// joinArm resolves the arm to its internal spec; unexported so the set of
 	// arm shapes stays closed (source chains, nested joins, and tap refs).
 	joinArm() joinArmSpec
 }
 
-// joinArmSpec is the resolved arm behind the sealed JoinArm interface:
+// joinArmSpec is the resolved arm behind the sealed joinArm interface:
 // exactly one of chain (a single-input source chain), join (a nested join),
 // or tap (a reference to a tap declared by an earlier arm) is set. region
 // carries the arm's composite placement, when declared.
@@ -794,7 +794,7 @@ func claimJoinName(used map[string]struct{}, kind string) string {
 // validateNestedJoinArm rejects terminal state on a join used as an arm: an
 // arm contributes its joined output to the outer join, so it cannot carry its
 // own encoder. (.To and .Branches already return a *Job, which is not a
-// JoinArm — those stay impossible at compile time.)
+// joinArm — those stay impossible at compile time.)
 func validateNestedJoinArm(outer string, sub *joinSpec) error {
 	if sub.encode != nil {
 		return joinArmError(outer, string(sub.kind),

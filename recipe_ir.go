@@ -567,7 +567,7 @@ func cloneJoinSpec(spec *joinSpec) *joinSpec {
 		return nil
 	}
 	out := *spec
-	out.arms = append([]JoinArm(nil), spec.arms...)
+	out.arms = append([]joinArm(nil), spec.arms...)
 	out.dests = append([]Destination(nil), spec.dests...)
 	if spec.encode != nil {
 		encode := cloneCodecSpec(*spec.encode)

@@ -29,7 +29,7 @@ The normal path should feel small even when the runtime is doing serious work:
 The public grammar remains:
 
 ```text
-From(input) -> Chain -> operations -> Tap -> Branch -> Destination -> Task
+From(input) -> chain -> operations -> Tap -> Branch -> Destination -> Task
 ```
 
 A flow is reusable operations. It has no destination, source, runtime state, or

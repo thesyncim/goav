@@ -15,12 +15,12 @@ import (
 // like any arm. Arms must have distinct stream ids and I420 video format, and
 // each may declare its canvas position with .Region(x, y). This reuses the
 // existing Job, so .To/Build/Run are unchanged (see docs/MULTI_INPUT.md).
-func Composite(arms ...JoinArm) *compositeStream {
+func Composite(arms ...joinArm) *compositeStream {
 	return &compositeStream{arms: arms}
 }
 
 type compositeStream struct {
-	arms       []JoinArm
+	arms       []joinArm
 	encode     *codec.CodecSpec
 	taps       []tapRef
 	operations []operationSpec

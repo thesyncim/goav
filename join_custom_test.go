@@ -105,19 +105,19 @@ func TestJoinRejectsInvalidNames(t *testing.T) {
 // a stage whose Name() differs from the join name refuse with
 // join_stage_invalid — the stage IS the node, so the names must agree.
 func TestJoinRejectsStageMismatch(t *testing.T) {
-	arms := func() []goav.JoinArm {
-		return []goav.JoinArm{
+	describe := func(stage pipeline.Stage) error {
+		_, err := goav.Join("funnel", stage,
 			goav.From(goavtest.Audio(8000, 1, []int16{1})).Audio(),
 			goav.From(goavtest.Audio(8000, 1, []int16{2})).Audio(),
-		}
+		).
+			To(goavtest.NewCollector().Sink()).UseRuntime(goavtest.Runtime()).Describe()
+		return err
 	}
-	_, err := goav.Join("funnel", nil, arms()...).
-		To(goavtest.NewCollector().Sink()).UseRuntime(goavtest.Runtime()).Describe()
+	err := describe(nil)
 	if code := buildErrorCode(t, err); code != errcode.JoinStageInvalid {
 		t.Fatalf("nil stage code = %s, want %s", code, errcode.JoinStageInvalid)
 	}
-	_, err = goav.Join("funnel", newFunnelStage("other", 2), arms()...).
-		To(goavtest.NewCollector().Sink()).UseRuntime(goavtest.Runtime()).Describe()
+	err = describe(newFunnelStage("other", 2))
 	if code := buildErrorCode(t, err); code != errcode.JoinStageInvalid {
 		t.Fatalf("name-mismatch code = %s, want %s", code, errcode.JoinStageInvalid)
 	}
@@ -128,13 +128,16 @@ func TestJoinRejectsStageMismatch(t *testing.T) {
 // id), so two custom joins of one name in the same tree refuse instead of
 // silently suffixing.
 func TestJoinRejectsDuplicateNameInTree(t *testing.T) {
-	pair := func() goav.JoinArm {
-		return goav.Join("dup", newFunnelStage("dup", 2),
+	_, err := goav.Mix(
+		goav.Join("dup", newFunnelStage("dup", 2),
 			goav.From(goavtest.Audio(8000, 1, []int16{1})).Audio(),
 			goav.From(goavtest.Audio(8000, 1, []int16{2})).Audio(),
-		)
-	}
-	_, err := goav.Mix(pair(), pair()).
+		),
+		goav.Join("dup", newFunnelStage("dup", 2),
+			goav.From(goavtest.Audio(8000, 1, []int16{3})).Audio(),
+			goav.From(goavtest.Audio(8000, 1, []int16{4})).Audio(),
+		),
+	).
 		To(goavtest.NewCollector().Sink()).UseRuntime(goavtest.Runtime()).Describe()
 	if code := buildErrorCode(t, err); code != errcode.JoinNameInvalid {
 		t.Fatalf("duplicate custom name code = %s, want %s", code, errcode.JoinNameInvalid)

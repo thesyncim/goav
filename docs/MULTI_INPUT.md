@@ -63,8 +63,8 @@ or to every planned branch.
 Taps converge mid-graph: an arm chain keeps its declared `.Decode()`/`.Tap(...)`.
 The tap installs on the task anchored at the arm's decode (or source) node,
 so one decode feeds the join and any other consumer (runtime attach, a later
-arm). A value returned by `goav.FrameTap` or `goav.PacketTap` is itself a
-`JoinArm`: it anchors on a tap declared by an
+arm). A value returned by `goav.FrameTap` or `goav.PacketTap` can stand as a
+join arm: it anchors on a tap declared by an
 earlier arm of the same join expression (no source re-opened) and re-stamps
 the tapped media under the tap name as the arm's id (`<join>-tap-<name>`
 restamp node; join stages identify arms by stream id). Composite tap arms
@@ -83,14 +83,13 @@ passthrough like Select; one fact-carrying input shape -> solver-planned arm
 conversions; declared output -> the joined stream, else first-arm facts) and
 from the join's snake-safe name (node name, joined output stream id,
 `<name>_*` error-code family). A custom join is a full citizen: `.Tap`,
-`.Branches`, `.To`, itself a `JoinArm`, `Describe() == Build()`; proven from
+`.Branches`, `.To`, nesting as a join arm, `Describe() == Build()`; proven from
 outside the core in `adapterproof/join_proof_test.go`, including a
 re-expression of Select's passthrough semantics. The stage contract is
 documented on `goav.Join`; `audioMixStage` (audio_mix.go) is the reference
 implementation.
 
-Joins nest: an arm is a `JoinArm` - a source chain, a declared tap, or another
-join - so
+Joins nest: an arm is a source chain, a declared tap, or another join, so
 `Mix(Mix(a, b), c)` sub-mixes two arms and mixes the result with a third,
 `Select(Mix(a, b), Mix(c, d))` switches between two live mixes (arm ids are
 the sub-joins' output ids: mix, mix-2), and composites nest as sub-canvases

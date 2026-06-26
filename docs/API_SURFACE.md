@@ -103,8 +103,8 @@ use [`docs/ADAPTERS.md`](ADAPTERS.md) and [`docs/COMPONENTS.md`](COMPONENTS.md).
   solver-planned per-arm conversions; the contract's output -> the joined
   stream, falling back to first-arm facts) and from the join's snake-safe
   name (node name, output stream id, `<name>_*` error-code family). The
-  result is a full citizen: `.Tap/.Branches/.To`, itself a `JoinArm`
-  (nesting), `Describe() == Build()`.
+  result is a full citizen: `.Tap/.Branches/.To`, it can nest as a join arm,
+  and `Describe() == Build()`.
 - **Destinations**: use these when your application owns the output boundary.
   `provider.Destination` + `provider.Contract`/
   `provider.Info`, `goav.Writer` (`provider.OpenFunc`), transactional uploads

@@ -307,12 +307,12 @@ func (s *audioMixStage) recycleMixFrame(frame *av.Frame) {
 // distinct stream ids; mismatched formats resample to the first arm's format
 // through the implicit arm policy. This reuses the existing Job, so
 // .To/Build/Run are unchanged (see docs/MULTI_INPUT.md).
-func Mix(arms ...JoinArm) *mixStream {
+func Mix(arms ...joinArm) *mixStream {
 	return &mixStream{arms: arms}
 }
 
 type mixStream struct {
-	arms       []JoinArm
+	arms       []joinArm
 	encode     *codec.CodecSpec
 	taps       []tapRef
 	operations []operationSpec

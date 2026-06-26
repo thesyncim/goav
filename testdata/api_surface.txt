@@ -58,7 +58,6 @@ goav.Attachment
 goav.Branch
 goav.BranchSpec
 goav.BuildError
-goav.Chain
 goav.Composite
 goav.Custom
 goav.Destination
@@ -74,7 +73,6 @@ goav.InputName
 goav.InputSpec
 goav.Job
 goav.Join
-goav.JoinArm
 goav.LiveTask
 goav.MIME
 goav.Metadata

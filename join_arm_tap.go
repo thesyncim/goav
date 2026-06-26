@@ -30,12 +30,12 @@ func (t tapRef) joinArm() joinArmSpec {
 // Region places this tap arm's frames at (x, y) on the composite canvas —
 // the tap-arm form of the chain arm's .Region(x, y). It has no effect on arms
 // outside a Composite.
-func (t tapRef) Region(x, y int) JoinArm {
+func (t tapRef) Region(x, y int) joinArm {
 	return tapArmRef{tap: t, region: compositeRegion{x: x, y: y}}
 }
 
 // tapArmRef is a tap-reference arm carrying its composite placement; it stays behind
-// the sealed JoinArm interface like every other arm shape.
+// the sealed joinArm interface like every other arm shape.
 type tapArmRef struct {
 	tap    tapRef
 	region compositeRegion

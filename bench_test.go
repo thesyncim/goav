@@ -333,13 +333,28 @@ func BenchmarkMix(b *testing.B) {
 			if per < 1 {
 				per = 1
 			}
-			arms := make([]goav.JoinArm, n)
-			for i := range arms {
-				arms[i] = goav.From(benchAudioFrames("arm-"+strconv.Itoa(i), per, 48_000, 1, benchAudioSamples)).Audio()
+			switch n {
+			case 2:
+				runBenchTask(b, goav.Mix(
+					goav.From(benchAudioFrames("arm-0", per, 48_000, 1, benchAudioSamples)).Audio(),
+					goav.From(benchAudioFrames("arm-1", per, 48_000, 1, benchAudioSamples)).Audio(),
+				).
+					To(benchSink("mixed")).
+					UseRuntime(benchRuntime(goavruntime.WithBufferPolicy(flow.Blocking(64).PipelinePolicy()))))
+			case 8:
+				runBenchTask(b, goav.Mix(
+					goav.From(benchAudioFrames("arm-0", per, 48_000, 1, benchAudioSamples)).Audio(),
+					goav.From(benchAudioFrames("arm-1", per, 48_000, 1, benchAudioSamples)).Audio(),
+					goav.From(benchAudioFrames("arm-2", per, 48_000, 1, benchAudioSamples)).Audio(),
+					goav.From(benchAudioFrames("arm-3", per, 48_000, 1, benchAudioSamples)).Audio(),
+					goav.From(benchAudioFrames("arm-4", per, 48_000, 1, benchAudioSamples)).Audio(),
+					goav.From(benchAudioFrames("arm-5", per, 48_000, 1, benchAudioSamples)).Audio(),
+					goav.From(benchAudioFrames("arm-6", per, 48_000, 1, benchAudioSamples)).Audio(),
+					goav.From(benchAudioFrames("arm-7", per, 48_000, 1, benchAudioSamples)).Audio(),
+				).
+					To(benchSink("mixed")).
+					UseRuntime(benchRuntime(goavruntime.WithBufferPolicy(flow.Blocking(64).PipelinePolicy()))))
 			}
-			runBenchTask(b, goav.Mix(arms...).
-				To(benchSink("mixed")).
-				UseRuntime(benchRuntime(goavruntime.WithBufferPolicy(flow.Blocking(64).PipelinePolicy()))))
 		})
 	}
 }

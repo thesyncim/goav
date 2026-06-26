@@ -252,7 +252,7 @@ func (b *jobStreamBuilder) Region(x, y int) *jobStreamBuilder {
 
 // joinArm lets a source chain stand as one arm of a join (Mix, Composite,
 // Select) — the original arm shape, kept compiling unchanged behind the
-// sealed JoinArm interface.
+// sealed joinArm interface.
 func (b *jobStreamBuilder) joinArm() joinArmSpec {
 	if b == nil {
 		return joinArmSpec{}
@@ -366,7 +366,7 @@ func frameSourceCopyError(operation string, node string) error {
 	}
 }
 
-func (b *jobStreamBuilder) Apply(flow Chain) *jobStreamBuilder {
+func (b *jobStreamBuilder) Apply(flow chain) *jobStreamBuilder {
 	spec, err := chainSpecFrom(flow)
 	if err != nil {
 		b.job.setErr(err)
