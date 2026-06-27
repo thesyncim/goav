@@ -1519,11 +1519,12 @@ func validateKnownProbeStreamSelection(probe format.ProbeResult, stream streamIn
 func validateRecipeOperationShapesPass() recipeCompilePass {
 	return recipeCompilePassFunc{name: "validate recipe operation shapes", fn: func(state *recipeCompileState) error {
 		rt := state.runtime
-		streams := streamIntentsFromRecipeIR(state.recipe.Streams)
+		streams := state.recipe.Streams
 		for i := range streams {
 			stream := streams[i]
+			streamIntent := streamIntentFromRecipeIR(stream)
 			initial := recipeInitialStreamShape(state, stream)
-			solved, diagnostics, err := solveOperationSpecShapes(state.operation, rt, stream, initial)
+			solved, diagnostics, err := solveOperationSpecShapes(state.operation, rt, streamIntent, initial)
 			if err != nil {
 				return err
 			}
@@ -1577,12 +1578,13 @@ func validateRecipeDestinationShapesPass() recipeCompilePass {
 			return nil
 		}
 		kinds := state.recipeDestinationKindSet()
-		streams := streamIntentsFromRecipeIR(state.recipe.Streams)
+		streams := state.recipe.Streams
 		for i := range streams {
 			stream := streams[i]
 			shape := recipeFinalStreamShape(state, stream)
-			node := firstNonEmpty(stream.Name, string(stream.Select.ID), string(stream.Select.Type), "stream")
-			for _, label := range stream.Destinations {
+			node := recipeIRStreamName(stream)
+			for _, output := range stream.Outputs {
+				label := string(output)
 				destination, ok := outputs[label]
 				if !ok {
 					continue
@@ -1626,10 +1628,11 @@ func (s *recipeCompileState) recipeDestinationKindSet() map[string]recipeir.Dest
 	return recipeIRDestinationKindSet(s.recipe.Destinations)
 }
 
-func recipeInitialStreamShape(state *recipeCompileState, stream streamIntent) shape.Spec {
+func recipeInitialStreamShape(state *recipeCompileState, stream recipeir.Stream) shape.Spec {
 	var spec shape.Spec
-	sourceShape, sourceShapeOK := jobStreamCustomSourceShape(state, stream)
-	if selected, ok := planSelectedStream(state, stream); ok {
+	streamIntent := streamIntentFromRecipeIR(stream)
+	sourceShape, sourceShapeOK := jobStreamCustomSourceShape(state, streamIntent)
+	if selected, ok := planSelectedStream(state, streamIntent); ok {
 		domain := shape.DomainPacket
 		if sourceShapeOK && sourceShape.Domain != "" {
 			domain = sourceShape.Domain
@@ -1640,24 +1643,46 @@ func recipeInitialStreamShape(state *recipeCompileState, stream streamIntent) sh
 		}
 	}
 	if state != nil {
-		spec = normalizePlanBranchShape(spec, stream, planStreamInput(state, stream))
+		spec = normalizeRecipeIRPlanBranchShape(spec, stream, planStreamInput(state, streamIntent))
 	} else {
-		spec = normalizePlanBranchShape(spec, stream, inputIntent{})
+		spec = normalizeRecipeIRPlanBranchShape(spec, stream, inputIntent{})
 	}
 	return spec
 }
 
-func recipeFinalStreamShape(state *recipeCompileState, stream streamIntent) shape.Spec {
+func normalizeRecipeIRPlanBranchShape(spec shape.Spec, stream recipeir.Stream, input inputIntent) shape.Spec {
+	inputShape := mediaShapeFromCodecSpec(input.Codec, firstNonEmptyDomain(spec.Domain, shape.DomainPacket))
+	inputShape.Realtime = input.Realtime
+	spec = shape.Merge(inputShape, spec)
+	if spec.Domain == "" {
+		spec.Domain = shape.DomainPacket
+	}
+	if spec.MediaKind == "" {
+		spec.MediaKind = firstNonEmptyMedia(stream.Selector.Type, recipeIRStreamEncodeSpec(stream).Type, input.Codec.Type)
+	}
+	if spec.StreamID == "" {
+		spec.StreamID = stream.Selector.ID
+	}
+	if spec.Codec == "" {
+		spec.Codec = firstNonEmptyCodec(stream.Selector.Codec, input.Codec.ID)
+	}
+	if input.Realtime {
+		spec.Realtime = true
+	}
+	return spec
+}
+
+func recipeFinalStreamShape(state *recipeCompileState, stream recipeir.Stream) shape.Spec {
 	shape := recipeInitialStreamShape(state, stream)
 	shape = normalizeTapShape(shape)
 	if shape.MediaKind == "" {
-		shape.MediaKind = stream.Select.Type
+		shape.MediaKind = stream.Selector.Type
 	}
 	if shape.Codec == "" {
-		shape.Codec = stream.Select.Codec
+		shape.Codec = stream.Selector.Codec
 	}
 	for i := range stream.Operations {
-		shape = operationSpecOutputShape(shape, stream.Operations[i])
+		shape = recipeIROperationOutputShape(shape, stream.Operations[i])
 	}
 	return shape
 }
