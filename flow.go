@@ -241,7 +241,11 @@ func (b *audioChain) Encode(codec codec.CodecSpec) *audioChain {
 }
 
 func (b *audioChain) Copy() *audioChain {
-	return b.Encode(codec.Copy())
+	if b == nil {
+		return b
+	}
+	b.chainBuilder.copy()
+	return b
 }
 
 func (b *audioChain) chainSpec() chainSpec {
@@ -352,7 +356,11 @@ func (b *videoChain) Encode(codec codec.CodecSpec) *videoChain {
 }
 
 func (b *videoChain) Copy() *videoChain {
-	return b.Encode(codec.Copy())
+	if b == nil {
+		return b
+	}
+	b.chainBuilder.copy()
+	return b
 }
 
 func (b *videoChain) chainSpec() chainSpec {
@@ -590,11 +598,26 @@ func (b *chainBuilder) encode(codec codec.CodecSpec) {
 		b.setErr(duplicateFlowEncodeError(b.spec.name, chainEncodeSpec(b.spec.operations), codec))
 		return
 	}
-	if codec.Copy && (chainHasDecode(b.spec.operations) || operationSpecsContainChainStep(b.spec.operations)) {
-		b.setErr(flowCopyDomainError("build flow", firstNonEmpty(b.spec.name, "flow")))
+	if codec.Copy {
+		b.setErr(copyEncodeSpellingError("build flow", firstNonEmpty(b.spec.name, "flow")))
 		return
 	}
 	b.spec.operations = append(b.spec.operations, operationSpecForEncode(cloneCodecSpec(codec)))
+}
+
+func (b *chainBuilder) copy() {
+	if b == nil {
+		return
+	}
+	if codecIntentSet(chainEncodeSpec(b.spec.operations)) {
+		b.setErr(duplicateFlowEncodeError(b.spec.name, chainEncodeSpec(b.spec.operations), codec.Copy()))
+		return
+	}
+	if chainHasDecode(b.spec.operations) || operationSpecsContainChainStep(b.spec.operations) {
+		b.setErr(flowCopyDomainError("build flow", firstNonEmpty(b.spec.name, "flow")))
+		return
+	}
+	b.spec.operations = append(b.spec.operations, operationSpecForCopy(codec.Copy()))
 }
 
 func (b *chainBuilder) snapshot() chainSpec {

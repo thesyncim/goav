@@ -160,6 +160,21 @@ func duplicateStreamEncodeError(operation string, node string, first codec.Codec
 	}
 }
 
+func copyEncodeSpellingError(operation string, node string) error {
+	return &BuildError{
+		Family:    errcode.FamilyForCode(encodeParameterInvalidCode),
+		Code:      encodeParameterInvalidCode,
+		Operation: operation,
+		Node:      firstNonEmpty(node, "stream"),
+		Reason:    "codec.Copy() is the internal packet-copy codec; recipe chains use .Copy()",
+		fixes: buildErrorFixes([]string{
+			"replace .Encode(codec.Copy()) with .Copy()",
+			"use .Encode(codec.Opus(...)), .Encode(codec.VP8(...)), or .Encode(codec.VP9(...)) for real encoders",
+		}),
+		cause: errUnsupportedBuild,
+	}
+}
+
 func codecIntentName(spec codec.CodecSpec) string {
 	switch {
 	case spec.Auto:
@@ -604,14 +619,8 @@ func (b *jobStreamBuilder) Encode(codec codec.CodecSpec) *jobStreamBuilder {
 		return b
 	}
 	if codec.Copy {
-		if b.sourceStartsFrameDomain() {
-			b.job.setErr(frameSourceCopyError("build stream", jobStreamName(stream)))
-			return b
-		}
-		if chainHasDecode(stream.operations) || operationSpecsContainChainStep(stream.operations) {
-			b.job.setErr(flowCopyDomainError("build stream", jobStreamName(stream)))
-			return b
-		}
+		b.job.setErr(copyEncodeSpellingError("build stream", jobStreamName(stream)))
+		return b
 	} else if !b.requireFrameInput(stream, "encode") {
 		return b
 	}

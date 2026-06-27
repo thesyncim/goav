@@ -3415,6 +3415,47 @@ func TestStreamRecipeRequiresExplicitDomainForPacketStreamSink(t *testing.T) {
 	}
 }
 
+func TestEncodeCopyRequiresCopyVerb(t *testing.T) {
+	tests := []struct {
+		name string
+		job  *goav.Job
+	}{
+		{
+			name: "stream",
+			job: goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
+				Audio().
+				Encode(codec.Copy()).
+				To(goav.Write("archive.ogg", io.Discard)),
+		},
+		{
+			name: "branch",
+			job: goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
+				Audio().
+				Copy().
+				Branches(goav.Branch("archive").Encode(codec.Copy()).To(goav.Write("archive.ogg", io.Discard))),
+		},
+		{
+			name: "flow",
+			job: goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
+				Audio().
+				Apply(goav.Flow("archive").Audio().Encode(codec.Copy())).
+				To(goav.Write("archive.ogg", io.Discard)),
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := tt.job.Describe()
+			var buildErr *goav.BuildError
+			if !errors.As(err, &buildErr) || buildErr.Code != "encode_parameter_invalid" {
+				t.Fatalf("err = %v, want encode_parameter_invalid", err)
+			}
+			if !strings.Contains(err.Error(), "replace .Encode(codec.Copy()) with .Copy()") {
+				t.Fatalf("err = %v, want .Copy() guidance", err)
+			}
+		})
+	}
+}
+
 func TestStreamRecipeRejectsGenericAndStreamOutputs(t *testing.T) {
 	_, err := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
 		To(goav.Write("archive.ogg", io.Discard)).

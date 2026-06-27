@@ -485,18 +485,8 @@ func (b *branchBuilder) Encode(codec codec.CodecSpec) *branchBuilder {
 		return b
 	}
 	if codec.Copy {
-		if b.sourceStartsFrameDomain() {
-			b.setErr(frameSourceCopyError("build branch", firstNonEmpty(b.spec.name, "branch")))
-			return b
-		}
-		if chainHasDecode(b.spec.operations) {
-			b.setErr(branchDecodeCopyError(firstNonEmpty(b.spec.name, "branch")))
-			return b
-		}
-		if branchOperationSpecsContainStep(b.spec.operations) {
-			b.setErr(flowCopyDomainError("build branch", firstNonEmpty(b.spec.name, "branch")))
-			return b
-		}
+		b.setErr(copyEncodeSpellingError("build branch", firstNonEmpty(b.spec.name, "branch")))
+		return b
 	} else if !b.requireFrameInput("encode") {
 		return b
 	}
@@ -505,7 +495,27 @@ func (b *branchBuilder) Encode(codec codec.CodecSpec) *branchBuilder {
 }
 
 func (b *branchBuilder) Copy() *branchBuilder {
-	return b.Encode(codec.Copy())
+	if b == nil {
+		return b
+	}
+	if codecIntentSet(chainEncodeSpec(b.spec.operations)) {
+		b.setErr(duplicateStreamEncodeError("build branch", firstNonEmpty(b.spec.name, "branch"), chainEncodeSpec(b.spec.operations), codec.Copy()))
+		return b
+	}
+	if b.sourceStartsFrameDomain() {
+		b.setErr(frameSourceCopyError("build branch", firstNonEmpty(b.spec.name, "branch")))
+		return b
+	}
+	if chainHasDecode(b.spec.operations) {
+		b.setErr(branchDecodeCopyError(firstNonEmpty(b.spec.name, "branch")))
+		return b
+	}
+	if branchOperationSpecsContainStep(b.spec.operations) {
+		b.setErr(flowCopyDomainError("build branch", firstNonEmpty(b.spec.name, "branch")))
+		return b
+	}
+	b.spec.operations = append(b.spec.operations, operationSpecForCopy(codec.Copy()))
+	return b
 }
 
 func (b *branchBuilder) To(destinations ...Destination) BranchSpec {
