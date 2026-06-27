@@ -13,47 +13,49 @@ import (
 	"github.com/thesyncim/goav/internal/recipeir"
 )
 
-func validateRecipeDecodeAdapters(operation string, rt *Runtime, inputs []inputIntent, streams []streamIntent) error {
+func validateRecipeIRDecodeAdapters(operation string, rt *Runtime, inputs []inputIntent, streams []recipeir.Stream) error {
 	if rt == nil {
 		return nil
 	}
 	for i := range streams {
 		stream := streams[i]
-		if !streamNeedsDecode(stream) {
+		if !recipeIRStreamNeedsDecode(stream) {
 			continue
 		}
-		request, ok := liveDecodeAdapterRequest(inputs, stream)
+		streamIntent := streamIntentFromRecipeIR(stream)
+		request, ok := liveDecodeAdapterRequest(inputs, streamIntent)
 		if !ok || request.Codec == "" {
 			continue
 		}
 		if _, err := rt.codecs.DecoderFactory(request.Codec); err != nil {
-			return recipeDecodeAdapterError(operation, stream, request.Codec, rt.codecs, err)
+			return recipeDecodeAdapterError(operation, streamIntent, request.Codec, rt.codecs, err)
 		}
-		if err := validateDecodeAdapterDescriptors(operation, stream, rt.codecs, request); err != nil {
+		if err := validateDecodeAdapterDescriptors(operation, streamIntent, rt.codecs, request); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func validateKnownRecipeDecodeAdapters(operation string, rt *Runtime, probes []format.ProbeResult, streams []streamIntent) error {
+func validateKnownRecipeIRDecodeAdapters(operation string, rt *Runtime, probes []format.ProbeResult, streams []recipeir.Stream) error {
 	if rt == nil {
 		return nil
 	}
 	for i := range streams {
 		stream := streams[i]
-		if !streamNeedsDecode(stream) {
+		if !recipeIRStreamNeedsDecode(stream) {
 			continue
 		}
-		selected, ok := knownProbeDecodeStream(probes, stream)
+		streamIntent := streamIntentFromRecipeIR(stream)
+		selected, ok := knownProbeDecodeStream(probes, streamIntent)
 		if !ok || selected.Codec.ID == "" {
 			continue
 		}
 		if _, err := rt.codecs.DecoderFactory(selected.Codec.ID); err != nil {
-			return recipeDecodeAdapterError(operation, stream, selected.Codec.ID, rt.codecs, err)
+			return recipeDecodeAdapterError(operation, streamIntent, selected.Codec.ID, rt.codecs, err)
 		}
-		request := decodeAdapterRequestFromStream(selected, stream)
-		if err := validateDecodeAdapterDescriptors(operation, stream, rt.codecs, request); err != nil {
+		request := decodeAdapterRequestFromStream(selected, streamIntent)
+		if err := validateDecodeAdapterDescriptors(operation, streamIntent, rt.codecs, request); err != nil {
 			return err
 		}
 	}

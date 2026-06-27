@@ -1009,17 +1009,11 @@ func validateJobDecodeAdaptersPass() recipeCompilePass {
 		if !state.options.preflightDecodeAdapters {
 			return nil
 		}
-		streams := streamIntentsFromRecipeIR(state.recipe.Streams)
-		decodeStreams := make([]streamIntent, 0, len(streams))
-		for i := range streams {
-			if streamNeedsDecodeForState(state, streams[i]) {
-				decodeStreams = append(decodeStreams, streams[i])
-			}
-		}
+		decodeStreams := recipeIRStreamsNeedingDecodeForState(state)
 		if len(decodeStreams) == 0 {
 			return nil
 		}
-		return validateRecipeDecodeAdapters(state.operation, state.adapterRuntime(), state.recipeInputIntents(), decodeStreams)
+		return validateRecipeIRDecodeAdapters(state.operation, state.adapterRuntime(), state.recipeInputIntents(), decodeStreams)
 	}}
 }
 
@@ -1401,19 +1395,39 @@ func validateJobKnownInputDecodeAdaptersPass() recipeCompilePass {
 		if !state.options.preflightDecodeAdapters {
 			return nil
 		}
-		recipeStreams := streamIntentsFromRecipeIR(state.recipe.Streams)
-		streams := make([]streamIntent, 0, len(recipeStreams))
-		for i := range recipeStreams {
-			if !streamNeedsDecodeForState(state, recipeStreams[i]) {
-				continue
-			}
-			streams = append(streams, recipeStreams[i])
-		}
+		streams := recipeIRStreamsNeedingDecodeForState(state)
 		if len(streams) == 0 {
 			return nil
 		}
-		return validateKnownRecipeDecodeAdapters(state.operation, state.adapterRuntime(), state.inputProbes, streams)
+		return validateKnownRecipeIRDecodeAdapters(state.operation, state.adapterRuntime(), state.inputProbes, streams)
 	}}
+}
+
+func recipeIRStreamsNeedingDecodeForState(state *recipeCompileState) []recipeir.Stream {
+	if state == nil || len(state.recipe.Streams) == 0 {
+		return nil
+	}
+	out := make([]recipeir.Stream, 0, len(state.recipe.Streams))
+	for i := range state.recipe.Streams {
+		stream := state.recipe.Streams[i]
+		if recipeIRStreamNeedsDecodeForState(state, stream) {
+			out = append(out, stream)
+		}
+	}
+	return out
+}
+
+func recipeIRStreamNeedsDecodeForState(state *recipeCompileState, stream recipeir.Stream) bool {
+	if spec, ok := jobRecipeIRStreamCustomSourceShape(state, stream); ok && spec.Domain == shape.DomainFrame {
+		return false
+	}
+	return recipeIRStreamNeedsDecode(stream)
+}
+
+func recipeIRStreamNeedsDecode(stream recipeir.Stream) bool {
+	return recipeIRStreamHasDecode(stream) ||
+		len(recipeIRStreamTransforms(stream)) != 0 ||
+		recipeIRStreamEncodeSpec(stream).ID != ""
 }
 
 func streamNeedsDecodeForState(state *recipeCompileState, stream streamIntent) bool {
@@ -1427,6 +1441,14 @@ func streamNeedsDecodeForState(state *recipeCompileState, stream streamIntent) b
 // stream chain: the single input's shape on single-input jobs, or the shape of
 // the input the chain's selector binds to on multi-input jobs.
 func jobStreamCustomSourceShape(state *recipeCompileState, stream streamIntent) (shape.Spec, bool) {
+	return jobStreamCustomSourceShapeForSelector(state, streamIntentSelector(stream), stream.Select.Input)
+}
+
+func jobRecipeIRStreamCustomSourceShape(state *recipeCompileState, stream recipeir.Stream) (shape.Spec, bool) {
+	return jobStreamCustomSourceShapeForSelector(state, recipeIRStreamSelector(stream), stream.Selector.Input)
+}
+
+func jobStreamCustomSourceShapeForSelector(state *recipeCompileState, selector av.StreamSelector, input string) (shape.Spec, bool) {
 	if state == nil {
 		return shape.Spec{}, false
 	}
@@ -1434,7 +1456,7 @@ func jobStreamCustomSourceShape(state *recipeCompileState, stream streamIntent) 
 		return compileStateCustomSourceShape(state)
 	}
 	sets := jobInputStreamSetsFromRecipeIR(state.recipeInputIntents(), state.inputFacts, state.inputProbes)
-	index, ok := resolveInputSetIndex(sets, streamIntentSelector(stream), stream.Select.Input)
+	index, ok := resolveInputSetIndex(sets, selector, input)
 	if !ok {
 		return shape.Spec{}, false
 	}
@@ -1484,10 +1506,11 @@ func validateKnownBranchInputDecodeAdaptersPass() recipeCompilePass {
 		if !state.options.preflightDecodeAdapters || !state.branchInputProbeReady || len(state.branchInputProbe.Streams) == 0 {
 			return nil
 		}
-		if spec, ok := state.inputSourceShape(0); ok && spec.Domain == shape.DomainFrame {
+		streams := recipeIRStreamsNeedingDecodeForState(state)
+		if len(streams) == 0 {
 			return nil
 		}
-		return validateKnownRecipeDecodeAdapters(state.operation, state.adapterRuntime(), []format.ProbeResult{state.branchInputProbe}, streamIntentsFromRecipeIR(state.recipe.Streams))
+		return validateKnownRecipeIRDecodeAdapters(state.operation, state.adapterRuntime(), []format.ProbeResult{state.branchInputProbe}, streams)
 	}}
 }
 
