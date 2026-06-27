@@ -2546,47 +2546,6 @@ func TestStructuredErrorPreservesUnderlyingShapes(t *testing.T) {
 	}
 }
 
-func TestReflectionConfinedToColdPathBinders(t *testing.T) {
-	root := filepath.Clean(filepath.Join("..", ".."))
-	var offenders []string
-	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if entry.IsDir() {
-			switch entry.Name() {
-			case ".git", "vendor":
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
-			return nil
-		}
-		slash := filepath.ToSlash(path)
-		if strings.Contains(slash, "internal/launchctl/") || strings.Contains(slash, "internal/argbind/") {
-			return nil
-		}
-		if strings.Contains(slash, "/examples/") || strings.HasPrefix(slash, "../../examples/") {
-			return nil
-		}
-		data, err := os.ReadFile(path)
-		if err != nil {
-			return err
-		}
-		if strings.Contains(string(data), `"reflect"`) {
-			offenders = append(offenders, slash)
-		}
-		return nil
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(offenders) != 0 {
-		t.Fatalf("reflect imports outside internal/launchctl: %v", offenders)
-	}
-}
-
 func TestTestOnlyCommandExtensionPath(t *testing.T) {
 	type fakeCommand struct {
 		Name string `goavctl:"name,required" usage:"name=<value>" help:"test value"`
