@@ -91,6 +91,31 @@ func TestBuildErrorAndCompilerPassErrorContracts(t *testing.T) {
 	if !errors.Is(buildErr, cause) {
 		t.Fatalf("BuildError did not unwrap cause: %v", buildErr)
 	}
+	if got := nilBuildErr.EffectivePhase(); got != "" {
+		t.Fatalf("nil BuildError phase = %q, want empty", got)
+	}
+	phaseTests := []struct {
+		name string
+		err  *BuildError
+		want string
+	}{
+		{name: "default build", err: &BuildError{}, want: phaseBuild},
+		{name: "derived build", err: &BuildError{Operation: "build stream"}, want: phaseBuild},
+		{name: "derived open", err: &BuildError{Operation: "open input"}, want: phaseOpen},
+		{name: "derived run", err: &BuildError{Operation: "run task"}, want: phaseRun},
+		{name: "derived attach", err: &BuildError{Operation: "attach runtime branch"}, want: phaseRun},
+		{name: "derived detach", err: &BuildError{Operation: "detach runtime branch"}, want: phaseRun},
+		{name: "derived control", err: &BuildError{Operation: "control bitrate"}, want: phaseRun},
+		{name: "derived close", err: &BuildError{Operation: "close graph"}, want: phaseClose},
+		{name: "explicit", err: &BuildError{Phase: phaseOpen, Operation: "build stream"}, want: phaseOpen},
+	}
+	for _, tt := range phaseTests {
+		t.Run("phase/"+tt.name, func(t *testing.T) {
+			if got := tt.err.EffectivePhase(); got != tt.want {
+				t.Fatalf("EffectivePhase() = %q, want %q", got, tt.want)
+			}
+		})
+	}
 
 	plain := errors.New("plain")
 	if got := compilerPassError("compile", "lower", plain); got != plain {

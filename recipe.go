@@ -39,15 +39,24 @@ func (f buildErrorFix) String() string {
 	return f.Message
 }
 
+const (
+	phaseBuild = "build"
+	phaseOpen  = "open"
+	phaseRun   = "run"
+	phaseClose = "close"
+)
+
 // BuildError is the one structured refusal goav raises from build,
 // validation, attach, and explain paths. Family identifies the stable
 // application branch key, Code identifies the detailed diagnostic leaf (see the
-// errcode package), Operation/Node say where, Reason says why, Detail exposes
-// typed machine-readable facts, and DetailLines and FixLines expose rendered
-// details and repair actions. Match build-shape refusals through Family and
-// Code; Unwrap preserves low-level causes for errors.Is where a pipeline or
-// runtime sentinel is still part of that lower-level contract.
+// errcode package), Phase says when in the lifecycle it happened,
+// Operation/Node say where, Reason says why, Detail exposes typed
+// machine-readable facts, and DetailLines and FixLines expose rendered details
+// and repair actions. Match build-shape refusals through Family and Code;
+// Unwrap preserves low-level causes for errors.Is where a pipeline or runtime
+// sentinel is still part of that lower-level contract.
 type BuildError struct {
+	Phase     string
 	Family    errcode.Family
 	Code      errcode.Code
 	Operation string
@@ -128,6 +137,34 @@ func (e *BuildError) Unwrap() error {
 		return nil
 	}
 	return e.cause
+}
+
+// EffectivePhase returns the explicit phase when present, otherwise derives one
+// of "build", "open", "run", or "close" from the operation verb. Older call
+// sites that only set Operation keep a stable lifecycle phase while the
+// codebase migrates to explicit Phase fields.
+func (e *BuildError) EffectivePhase() string {
+	if e == nil {
+		return ""
+	}
+	if e.Phase != "" {
+		return e.Phase
+	}
+	return phaseFromOperation(e.Operation)
+}
+
+func phaseFromOperation(operation string) string {
+	verb, _, _ := strings.Cut(strings.TrimSpace(strings.ToLower(operation)), " ")
+	switch verb {
+	case "open":
+		return phaseOpen
+	case "run", "attach", "detach", "control":
+		return phaseRun
+	case "close":
+		return phaseClose
+	default:
+		return phaseBuild
+	}
 }
 
 func (e *BuildError) detailLines() []string {

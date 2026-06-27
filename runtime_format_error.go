@@ -19,6 +19,7 @@ func inputFormatProbeError(input format.Input, cause error) error {
 		"use goav.Input(provider) for realtime packet receive",
 	}
 	return &BuildError{
+		Phase:     phaseOpen,
 		Family:    errcode.FamilyForCode(inputFormatUnknownCode),
 		Code:      inputFormatUnknownCode,
 		Operation: "open input",
@@ -40,6 +41,7 @@ func inputDemuxerMissingError(input format.Input, id av.FormatID, cause error) e
 		"call .UseRuntime(runtime) with a goav.New(goavruntime.WithFormatAdapter(...)) runtime when using a custom adapter bundle",
 	}
 	return &BuildError{
+		Phase:     phaseOpen,
 		Family:    errcode.FamilyForCode(inputDemuxerMissingCode),
 		Code:      inputDemuxerMissingCode,
 		Operation: "open input",
@@ -61,6 +63,7 @@ func outputFormatProbeError(output format.Output, index int, cause error) error 
 		"register a format adapter with goav.New(goavruntime.WithFormatAdapter(...))",
 	}
 	return &BuildError{
+		Phase:     phaseOpen,
 		Family:    errcode.FamilyForCode(outputFormatUnknownCode),
 		Code:      outputFormatUnknownCode,
 		Operation: "open output",
@@ -82,6 +85,7 @@ func outputMuxerMissingError(output format.Output, index int, id av.FormatID, ca
 		"call .UseRuntime(runtime) with a goav.New(goavruntime.WithFormatAdapter(...)) runtime when using a custom adapter bundle",
 	}
 	return &BuildError{
+		Phase:     phaseOpen,
 		Family:    errcode.FamilyForCode(outputMuxerMissingCode),
 		Code:      outputMuxerMissingCode,
 		Operation: "open output",
@@ -103,6 +107,7 @@ func destinationFormatProbeError(node string, output format.Output, cause error)
 		"register a format adapter with goav.New(goavruntime.WithFormatAdapter(...))",
 	}
 	return &BuildError{
+		Phase:     phaseOpen,
 		Family:    errcode.FamilyForCode(destinationFormatUnknownCode),
 		Code:      destinationFormatUnknownCode,
 		Operation: "open destination",
@@ -124,6 +129,7 @@ func destinationMuxerMissingError(node string, output format.Output, id av.Forma
 		"call .UseRuntime(runtime) with a goav.New(goavruntime.WithFormatAdapter(...)) runtime when using a custom adapter bundle",
 	}
 	return &BuildError{
+		Phase:     phaseOpen,
 		Family:    errcode.FamilyForCode(destinationMuxerMissingCode),
 		Code:      destinationMuxerMissingCode,
 		Operation: "open destination",

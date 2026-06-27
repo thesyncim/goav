@@ -312,6 +312,9 @@ func TestCopyContractCopyNeverIsSafeOnly(t *testing.T) {
 		if !errors.As(err, &buildErr) || buildErr.Code != bufferPayloadUnsafeCode || !errors.Is(err, pipeline.ErrBufferedMessageUnsafe) {
 			t.Fatalf("run err = %v, want buffer_payload_unsafe wrapping ErrBufferedMessageUnsafe", err)
 		}
+		if buildErr.Phase != phaseRun || buildErr.EffectivePhase() != phaseRun {
+			t.Fatalf("run err phase = %q effective=%q, want %q", buildErr.Phase, buildErr.EffectivePhase(), phaseRun)
+		}
 		if got, ok := buildErr.Detail("cause"); !ok || got != "pipeline.ErrBufferedMessageUnsafe" {
 			t.Fatalf("cause detail = %#v, %v; want pipeline.ErrBufferedMessageUnsafe, true", got, ok)
 		}
@@ -398,6 +401,9 @@ func TestCopyContractTooSmallBoundsAreStructured(t *testing.T) {
 	var buildErr *BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != bufferPayloadTooLargeCode || !errors.Is(err, pipeline.ErrMessageTooLarge) {
 		t.Fatalf("run err = %v, want buffer_payload_too_large wrapping ErrMessageTooLarge", err)
+	}
+	if buildErr.Phase != phaseRun || buildErr.EffectivePhase() != phaseRun {
+		t.Fatalf("run err phase = %q effective=%q, want %q", buildErr.Phase, buildErr.EffectivePhase(), phaseRun)
 	}
 	if got, ok := buildErr.Detail("cause"); !ok || got != "pipeline.ErrMessageTooLarge" {
 		t.Fatalf("cause detail = %#v, %v; want pipeline.ErrMessageTooLarge, true", got, ok)

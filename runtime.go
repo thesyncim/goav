@@ -541,6 +541,7 @@ func (t *task) bufferedPayloadRunError(cause error, code errcode.Code, reason st
 		fields = append(fields, buildErrorDetail{Key: "copy_never_branches", Value: strings.Join(branches, ",")})
 	}
 	return &BuildError{
+		Phase:     phaseRun,
 		Family:    errcode.FamilyForCode(code),
 		Code:      code,
 		Operation: "run task",
@@ -718,6 +719,7 @@ func (t *task) detachRuntimeAttachment(ctx context.Context, input runtimeDetachI
 
 func nilAttachmentDetachError() error {
 	return &BuildError{
+		Phase:     phaseRun,
 		Family:    errcode.FamilyForCode(runtimeBranchInvalidCode),
 		Code:      runtimeBranchInvalidCode,
 		Operation: "detach runtime branch",
