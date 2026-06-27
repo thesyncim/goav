@@ -2,6 +2,7 @@ package goav
 
 import (
 	"context"
+	"errors"
 	"io"
 	"reflect"
 	"testing"
@@ -252,6 +253,31 @@ func TestBranchBuilderNilAndErrorContracts(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			assertBuildErrorCode(t, tt.spec.err, tt.code)
 		})
+	}
+}
+
+func TestBranchConstructionErrorsAreJoined(t *testing.T) {
+	spec := Branch("bad").
+		Encode(codec.Opus()).
+		Encode(codec.Opus()).
+		To(Destination{})
+	assertBuildErrorCode(t, spec.err, encodeDuplicateCode)
+	err := spec.recipeErr()
+	joined, ok := err.(interface{ Unwrap() []error })
+	if !ok {
+		t.Fatalf("branch err = %T, want joined construction errors", err)
+	}
+	codes := make(map[errcode.Code]bool)
+	for _, cause := range joined.Unwrap() {
+		var buildErr *BuildError
+		if errors.As(cause, &buildErr) {
+			codes[buildErr.Code] = true
+		}
+	}
+	for _, code := range []errcode.Code{encodeDuplicateCode, destinationInvalidCode} {
+		if !codes[code] {
+			t.Fatalf("joined branch codes = %v, want %s", codes, code)
+		}
 	}
 }
 

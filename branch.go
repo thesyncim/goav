@@ -1,6 +1,7 @@
 package goav
 
 import (
+	"errors"
 	"fmt"
 	"sync/atomic"
 
@@ -123,7 +124,8 @@ type BranchSpec struct {
 	source       branchSourceBinding
 	branchBuffer flow.BranchBuffer
 
-	err error
+	err  error
+	errs []error
 }
 
 type branchSpecOrigin uint8
@@ -452,13 +454,13 @@ func (b *branchBuilder) To(destinations ...Destination) BranchSpec {
 	}
 	spec := b.snapshot()
 	if len(destinations) == 0 {
-		spec.err = branchDestinationMissingError(spec.name)
+		spec.setErr(branchDestinationMissingError(spec.name))
 		return spec
 	}
 	for i := range destinations {
 		direct, err := destinationSpecFromDestination(destinations[i])
 		if err != nil {
-			spec.err = branchDestinationInvalidError(spec.name, err.Error())
+			spec.setErr(branchDestinationInvalidError(spec.name, err.Error()))
 			return spec
 		}
 		appendDestination(&spec, direct, i)
@@ -470,13 +472,29 @@ func (b *branchBuilder) snapshot() BranchSpec {
 	spec := b.spec
 	spec.operations = cloneOperationSpecs(spec.operations)
 	spec.destinations = cloneDestinationRefs(spec.destinations)
+	spec.errs = append([]error(nil), spec.errs...)
 	return spec
 }
 
 func (b *branchBuilder) setErr(err error) {
-	if b.spec.err == nil {
-		b.spec.err = err
+	b.spec.setErr(err)
+}
+
+func (s *BranchSpec) setErr(err error) {
+	if err == nil {
+		return
 	}
+	if s.err == nil {
+		s.err = err
+	}
+	s.errs = append(s.errs, err)
+}
+
+func (s BranchSpec) recipeErr() error {
+	if len(s.errs) == 0 {
+		return s.err
+	}
+	return errors.Join(s.errs...)
 }
 
 // appendDestination resolves the destination's routing name — its declared
@@ -550,8 +568,8 @@ func (b *jobStreamBuilder) Branches(branches ...BranchSpec) *Job {
 }
 
 func validateBranchSpec(selected av.MediaType, parentPacket bool, index int, spec BranchSpec) error {
-	if spec.err != nil {
-		return spec.err
+	if err := spec.recipeErr(); err != nil {
+		return err
 	}
 	if spec.origin != branchSpecOriginBranch {
 		return branchSpecOriginError(index, selected)
