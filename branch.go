@@ -626,8 +626,9 @@ func (b *jobStreamBuilder) Branches(branches ...BranchSpec) *Job {
 		return job
 	}
 
+	parentFrame := b.sourceStartsFrameDomain() || chainHasDecode(stream.operations)
 	for i := range branches {
-		if err := validateBranchSpec(stream.selector.Type, parentPacket, i, branches[i]); err != nil {
+		if err := validateBranchSpec(stream.selector.Type, parentPacket, parentFrame, i, branches[i]); err != nil {
 			job.setErr(err)
 			return job
 		}
@@ -635,7 +636,7 @@ func (b *jobStreamBuilder) Branches(branches ...BranchSpec) *Job {
 			job.setErr(err)
 			return job
 		}
-		decode := !parentPacket || chainHasDecode(branches[i].operations)
+		decode := chainHasDecode(branches[i].operations)
 		_, from, err := plannedBranchAnchor(stream, branches[i], parentPacket)
 		if err != nil {
 			job.setErr(err)
@@ -662,7 +663,7 @@ func (b *jobStreamBuilder) Branches(branches ...BranchSpec) *Job {
 	return job
 }
 
-func validateBranchSpec(selected av.MediaType, parentPacket bool, index int, spec BranchSpec) error {
+func validateBranchSpec(selected av.MediaType, parentPacket bool, parentFrame bool, index int, spec BranchSpec) error {
 	if err := spec.recipeErr(); err != nil {
 		return err
 	}
@@ -682,28 +683,23 @@ func validateBranchSpec(selected av.MediaType, parentPacket bool, index int, spe
 		return branchIntentDestinationMissingError(streamIntent{Name: spec.name, Select: plan.StreamSelect{Type: selected}})
 	}
 	stream := streamIntent{Name: spec.name, Select: plan.StreamSelect{Type: selected}}
-	if chainHasDecode(spec.operations) && !parentPacket {
+	branchHasDecode := chainHasDecode(spec.operations)
+	if branchHasDecode && parentFrame {
 		return branchDecodeDomainError(stream.Name)
 	}
 	if chainEncodeSpec(spec.operations).Copy {
-		if chainHasDecode(spec.operations) {
+		if branchHasDecode {
 			return branchDecodeCopyError(stream.Name)
 		}
 		if !parentPacket {
 			return branchCopyUnsupportedError(stream)
 		}
-	} else if parentPacket && codecIntentSet(chainEncodeSpec(spec.operations)) && !chainHasDecode(spec.operations) {
+	} else if !parentFrame && !branchHasDecode && codecIntentSet(chainEncodeSpec(spec.operations)) {
 		return branchPacketEncodeUnsupportedError(stream, chainEncodeSpec(spec.operations))
 	}
-	if parentPacket && !chainHasDecode(spec.operations) {
-		transforms := transformSpecsFromOperationSpecs(spec.operations)
-		for i := range transforms {
-			if err := validateTransformSpec("build branches", spec.name, transforms[i]); err != nil {
-				return err
-			}
-		}
-		if len(transforms) > 0 {
-			return branchPacketTransformUnsupportedError(stream)
+	if !parentFrame && !branchHasDecode {
+		if err := validatePacketDomainPlannedBranch(stream, spec, parentPacket); err != nil {
+			return err
 		}
 	}
 	if err := validateBranchStepTapDomains(spec, parentPacket); err != nil {
@@ -730,6 +726,32 @@ func validateBranchSpec(selected av.MediaType, parentPacket bool, index int, spe
 			)
 		}
 		seen[destinationName] = i
+	}
+	return nil
+}
+
+func validatePacketDomainPlannedBranch(stream streamIntent, spec BranchSpec, parentPacket bool) error {
+	transforms := transformSpecsFromOperationSpecs(spec.operations)
+	for i := range transforms {
+		if err := validateTransformSpec("build branches", spec.name, transforms[i]); err != nil {
+			return err
+		}
+	}
+	if len(transforms) > 0 {
+		return branchPacketTransformUnsupportedError(stream)
+	}
+	for _, step := range branchSpecChainSteps(spec) {
+		switch {
+		case step.stage != nil:
+			return chainFrameInputRequiredError("build branches", branchIntentName(stream), "custom stage")
+		case step.tap != "" && step.tapDomain == shape.DomainFrame:
+			return chainFrameInputRequiredError("build branches", branchIntentName(stream), "tap")
+		case !mediaShapeEmpty(step.shape) && step.shape.Domain == shape.DomainFrame:
+			return chainFrameInputRequiredError("build branches", branchIntentName(stream), "shape")
+		}
+	}
+	if !parentPacket && branchDestinationsAllSinkDestinations(spec.destinations) && !codecIntentSet(chainEncodeSpec(spec.operations)) {
+		return sinkDomainRequiredError("build branches", branchIntentName(stream))
 	}
 	return nil
 }

@@ -343,14 +343,33 @@ func TestStoredOperationListsMirrorFlowBranchAndDirectStreamWork(t *testing.T) {
 	}
 }
 
-func TestPlannedBranchSplitOperationsInsertImplicitDecode(t *testing.T) {
+func TestPlannedBranchSplitOperationsRequireExplicitDecode(t *testing.T) {
 	voice := Flow("voice").Audio().
 		Resample(16_000, codec.Mono).
 		Encode(codec.Opus(codec.Bitrate(32_000), codec.Channels(codec.Mono)))
 
-	job := From(FileInput("input.ogg", strings.NewReader(""))).
+	implicitJob := From(FileInput("input.ogg", strings.NewReader(""))).
 		Audio().
 		Branches(Branch("voice").Apply(voice).To(Write("voice.ogg", io.Discard)))
+	if implicitJob.err == nil {
+		t.Fatal("implicit branch decode error = nil, want packet branch encode refusal")
+	}
+	var buildErr *BuildError
+	if !errors.As(implicitJob.err, &buildErr) || buildErr.Code != packetBranchEncodeUnsupportedCode {
+		t.Fatalf("implicit branch decode error = %v, want %s", implicitJob.err, packetBranchEncodeUnsupportedCode)
+	}
+	if !strings.Contains(implicitJob.err.Error(), "packet-domain planned branches cannot encode without decoding first") ||
+		!strings.Contains(implicitJob.err.Error(), "use .Decode().Branches") {
+		t.Fatalf("implicit branch decode error = %v, want explicit decode guidance", implicitJob.err)
+	}
+
+	explicit := Flow("voice").Audio().
+		Decode().
+		Resample(16_000, codec.Mono).
+		Encode(codec.Opus(codec.Bitrate(32_000), codec.Channels(codec.Mono)))
+	job := From(FileInput("input.ogg", strings.NewReader(""))).
+		Audio().
+		Branches(Branch("voice").Apply(explicit).To(Write("voice.ogg", io.Discard)))
 	if job.err != nil {
 		t.Fatal(job.err)
 	}
@@ -359,13 +378,38 @@ func TestPlannedBranchSplitOperationsInsertImplicitDecode(t *testing.T) {
 	}
 	stream := job.branchStreams[0]
 	if len(stream.sharedOps) != 0 {
-		t.Fatalf("shared operations = %+v, want none before normalized decode", stream.sharedOps)
+		t.Fatalf("shared operations = %+v, want none for branch-local decode", stream.sharedOps)
 	}
-	if got, want := operationSpecKindsForTest(stream.privateOps), []plan.OperationKind{plan.OpTransform, plan.OpEncode}; !reflect.DeepEqual(got, want) {
+	if got, want := operationSpecKindsForTest(stream.privateOps), []plan.OperationKind{plan.OpDecode, plan.OpTransform, plan.OpEncode}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("private operations = %+v, want %+v", got, want)
 	}
 	if got, want := operationSpecKindsForTest(streamBuildOperationSpecs(stream)), []plan.OperationKind{plan.OpDecode, plan.OpTransform, plan.OpEncode}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("normalized operations = %+v, want %+v", got, want)
+	}
+}
+
+func TestPlannedBranchSinkRequiresExplicitDomain(t *testing.T) {
+	monitor := Sink(SinkFunc("monitor", func(context.Context, Message) error {
+		return nil
+	}))
+	job := From(FileInput("input.ogg", strings.NewReader(""))).
+		Audio().
+		Branches(Branch("monitor").To(monitor))
+	if job.err == nil {
+		t.Fatal("branch sink error = nil, want explicit domain refusal")
+	}
+	var buildErr *BuildError
+	if !errors.As(job.err, &buildErr) || buildErr.Code != operationShapeMismatchCode {
+		t.Fatalf("branch sink error = %v, want %s", job.err, operationShapeMismatchCode)
+	}
+	for _, want := range []string{
+		"sink output from a packet stream needs an explicit domain",
+		"decode frames before the sink: .Decode().To(goav.Sink(...))",
+		"preserve packets before the sink: .Copy().To(goav.Sink(...))",
+	} {
+		if !strings.Contains(job.err.Error(), want) {
+			t.Fatalf("branch sink error = %v, want %q", job.err, want)
+		}
 	}
 }
 
@@ -3360,8 +3404,8 @@ func TestCompileLiveFlowBranchesRecipeUsesMediaPlanBranchComposer(t *testing.T) 
 	job := From(Input(liveAudioOpusProvider("audio"))).
 		Audio().
 		Branches(
-			Branch("voice").Apply(Flow("voice").Audio().Encode(codec.Opus(codec.Bitrate(32_000), codec.Channels(codec.Mono)))).To(voice),
-			Branch("archive").Apply(Flow("archive").Audio().Encode(codec.Opus(codec.Bitrate(128_000), codec.Channels(codec.Stereo)))).To(archive),
+			Branch("voice").Apply(Flow("voice").Audio().Decode().Encode(codec.Opus(codec.Bitrate(32_000), codec.Channels(codec.Mono)))).To(voice),
+			Branch("archive").Apply(Flow("archive").Audio().Decode().Encode(codec.Opus(codec.Bitrate(128_000), codec.Channels(codec.Stereo)))).To(archive),
 		)
 
 	resolved, err := compileJobRecipe(job)

@@ -2089,10 +2089,12 @@ func TestFlowCopyAppliesToStreamRecipeIntent(t *testing.T) {
 func TestFlowBranchesStayOnJobAndBuildIntent(t *testing.T) {
 	voice := goav.Flow("voice").
 		Audio().
+		Decode().
 		Resample(16_000, codec.Mono).
 		Encode(codec.Opus(codec.Bitrate(32_000), codec.Channels(codec.Mono)))
 	archive := goav.Flow("archive").
 		Audio().
+		Decode().
 		Resample(48_000, codec.Stereo).
 		Encode(codec.Opus(codec.Bitrate(128_000), codec.Channels(codec.Stereo)))
 	voiceOut := goav.Write("voice.ogg", io.Discard)
@@ -2516,6 +2518,7 @@ func TestBranchRejectsConflictingFlowMedia(t *testing.T) {
 func TestFlowBranchSnapshotsBuilderState(t *testing.T) {
 	flow := goav.Flow("voice").
 		Audio().
+		Decode().
 		Resample(16_000, codec.Mono).
 		Encode(codec.Opus(codec.Bitrate(32_000), codec.Channels(codec.Mono)))
 	branch := goav.Branch("voice").
@@ -2726,7 +2729,7 @@ func TestNilFlowBranchIsActionable(t *testing.T) {
 }
 
 func TestBranchesRejectOuterOutputsAndDuplicateDestinations(t *testing.T) {
-	voice := goav.Flow("voice").Audio().Encode(codec.Opus(codec.Bitrate(32_000), codec.Channels(codec.Mono)))
+	voice := goav.Flow("voice").Audio().Decode().Encode(codec.Opus(codec.Bitrate(32_000), codec.Channels(codec.Mono)))
 	voiceOut := goav.Write("voice.ogg", io.Discard)
 
 	_, err := goav.From(goav.FileInput("input.webm", strings.NewReader(""))).

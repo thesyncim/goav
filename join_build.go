@@ -1132,7 +1132,7 @@ func (p *joinPlan) planJoinBranches() error {
 	recipe := recipeir.Recipe{Kind: recipeir.KindBranchComposition, Name: name}
 	for i := range p.tree.branches {
 		branch := p.tree.branches[i]
-		if err := validateBranchSpec(p.joined.Type, parentPacket, i, branch); err != nil {
+		if err := validateBranchSpec(p.joined.Type, parentPacket, !parentPacket, i, branch); err != nil {
 			return err
 		}
 		if err := p.validateJoinBranchAnchor(branch); err != nil {
