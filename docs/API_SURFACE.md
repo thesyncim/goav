@@ -299,8 +299,9 @@ tomorrow is governed the day it lands.
 - `doc_pin_test.go`: every exported symbol in every discovered public
   package carries a doc comment.
 - `errors_pin_test.go`: every `BuildError` uses a catalog-derived
-  `errcode.Family`, a catalog `errcode.Code`, and carries typed `Fields` or
-  `Fixes`; legacy rendered details/fixes remain compatibility only.
+  `errcode.Family`, a catalog `errcode.Code`, and carries package-private
+  detail or fix records exposed through `Detail(key)`, `DetailLines()`, and
+  `FixLines()`.
 - README front door: opening examples stay on the grammar
   (`TestReadmeFirstScreenAvoidsGraphInternals`); advanced knobs stay out of
   the guide (`TestReadmeKeepsAdvancedRuntimeKnobsOutOfFrontDoor`).

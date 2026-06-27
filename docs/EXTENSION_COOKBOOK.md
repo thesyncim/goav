@@ -331,8 +331,8 @@ expect.S16(t, out, [][]int16{{1, 2}})
 
 `goavtest/expect` uses `github.com/google/go-cmp/cmp` for structural diffs and
 keeps the custom layer to goav-specific checks: collector samples, golden
-output files, and `*goav.BuildError` code, operation, node, cause, typed
-fields/fixes, and rendered details/suggestions. The standalone example modules
+output files, and `*goav.BuildError` family, code, operation, node, cause,
+detail lookups, and rendered detail/fix lines. The standalone example modules
 use this pattern so adapter authors can copy tests without importing internals
 or writing local `errors.As` and golden-file helpers.
 

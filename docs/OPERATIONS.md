@@ -109,6 +109,7 @@ build:
   `stream_rule`: planner decisions about domain and dynamic stream handling.
 
 Every refusal that happens before resources open should be a `*goav.BuildError`
-with an `errcode.Code`, operation, node, reason, typed fields/fixes, rendered
-details/suggestions, and a sentinel cause when one exists. The checked catalog is
+with a stable family, detailed code, operation, node, reason, machine-readable
+details through `Detail(key)`, rendered detail/fix lines, and a sentinel cause
+when one exists. The checked catalog is
 [`docs/ERROR_CATALOG.md`](ERROR_CATALOG.md).

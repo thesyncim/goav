@@ -67,7 +67,7 @@ message path simple.
   worker, so per-message state needs no locking. Factories may serve several
   builds; keep them stateless or guard shared state.
 - **Errors**: build-time refusals reach users as `*goav.BuildError` with a
-  `errcode.Code`, typed fields/fixes, and rendered details/suggestions;
+  stable family, detailed code, `Detail(key)`, and rendered detail/fix lines;
   preflight checks descriptors and registries before anything opens
   (`FamilyCodec`, `FamilyTransform`, `FamilyInput`, `FamilyDestination`, ...).
   Return typed sentinels for unsupported config at open

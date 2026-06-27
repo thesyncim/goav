@@ -19,8 +19,9 @@ compatibility it is promising and what evidence backs that promise.
   nested-module split is justified by SBOM or scanner pressure.
 - Structured errors: applications should switch on `BuildError.Family` first.
   `BuildError.Code` remains a detailed diagnostic leaf that may grow within a
-  family before v1; rendered details and suggestions are compatibility output,
-  while typed `Fields` and `Fixes` are the production data model.
+  family before v1. Callers read machine facts with `Detail(key)` and render
+  diagnostics with `DetailLines()` / `FixLines()`; the backing detail/fix
+  records are intentionally not public DTOs.
 - Nested modules: `rtpav` and `webrtcav` tag independently with
   `rtpav/vX.Y.Z` and `webrtcav/vX.Y.Z`. A root release does not freeze the
   transport modules, and a transport release must name the root version it was
@@ -45,8 +46,8 @@ explicitly retain, not as an automatic v1 promise:
   destinations` workflows named in `docs/SIMPLIFICATION_TARGET.md`;
 - `Describe`/`Explain` before `Build`, plus `Task.Run`/`Task.Close` for built
   tasks;
-- structured `*goav.BuildError` refusals with stable families and typed
-  fields/fixes;
+- structured `*goav.BuildError` refusals with stable families, `Detail(key)`,
+  and rendered detail/fix lines;
 - custom source and custom sink seams needed by the supported workflows.
 
 Runtime mutation (`Attach`, `Detach`, `Rebranch`), control-plane hosts, raw
@@ -76,7 +77,7 @@ Module scope:
 - Tag order remains root first, then `rtpav`, then `webrtcav`.
 
 API surface:
-- Added exported symbols: typed `BuildError` helpers/fields, `BuildLive`,
+- Added exported symbols: `BuildError` helper methods, `BuildLive`,
   task capability vocabulary, `Mux(name, destination)`, `Write(name, writer)`,
   `bundle.Describe`, inspect helpers, sync policy options, and media-time
   rebranch boundaries.

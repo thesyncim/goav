@@ -21,7 +21,7 @@ The contract is enforced by a source-scanning pin test (`errors_pin_test.go`):
 - **Reason**: one line saying why, including actual vs expected where it
   applies (`mix arm "b" cannot be converted to the join format (audio 44.1kHz
   1ch s16 -> audio 48kHz 2ch s16)`).
-- **Fields**: typed facts for applications, read with `Detail(key)` and
+- **Details**: typed facts for applications, read with `Detail(key)` and
   rendered with `DetailLines()` for humans (`codec=opus`, `format=webm`,
   `actual_shape=...`). Internal invariants that are not user-fixable carry a
   detail explaining what happened instead of a fix.

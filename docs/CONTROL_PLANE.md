@@ -233,8 +233,8 @@ if err := ctl.ValidateCapabilities(capabilities); err != nil {
 ```
 
 Use `ctl.NewError` from custom command, step, or encoder callbacks when a
-custom value is missing or invalid. The structured code, node, typed
-fields/fixes, rendered details/suggestions, and cause are preserved in the
+custom value is missing or invalid. The structured family, code, node,
+detail/fix records, rendered detail/fix lines, and cause are preserved in the
 CLI/socket response.
 
 Start the socket after the task is built. The same options apply whether the

@@ -55,7 +55,8 @@ identifiers (`api_surface_pin_test.go` + `testdata/api_surface.txt`: 40 root,
   controls (`Control`), and observation (`Watch`; unfiltered `Watch()` observes
   every task event);
   `New`/`UseRuntime` and the `bundle` runtime helpers;
-  structured `BuildError` with stable families, detailed codes, typed fields/fixes;
+  structured `BuildError` with stable families, detailed codes,
+  `Detail(key)`, `DetailLines()`, and `FixLines()`;
   the `plan`, `snapshot`, `lifecycle`, `shape`, `flow`, and `av` vocabulary
   packages. Runtime mutation/control/advanced observation and joined-stream
   breadth are governed pre-v1 behavior, not normal v1 promises unless the
