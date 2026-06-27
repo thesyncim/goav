@@ -58,7 +58,7 @@ if err != nil {
         }
         switch buildErr.Code {
         case errcode.Code("encode_adapter_missing"):
-            // register an adapter, or fall back to Copy()
+            // register an adapter, or fall back to .Copy()
         case errcode.Code("shape_conversion_refused"):
             // widen the .Auto(...) policy
         }

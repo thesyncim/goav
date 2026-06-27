@@ -49,7 +49,7 @@ func scenarioOpusLadder(ctx context.Context) scenarioResult {
 	if err != nil {
 		return scenarioError(err)
 	}
-	return scenarioOK(report, "decode PCM, resample to 48 kHz stereo, encode Opus at 96 kbps")
+	return scenarioOK(report, "frame PCM, resample to 48 kHz stereo, encode Opus at 96 kbps")
 }
 
 func scenarioMixResample(ctx context.Context) scenarioResult {

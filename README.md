@@ -34,6 +34,8 @@ return bundle.Run(ctx, goav.From(goav.FileInput("input.ivf", in)).
 The normal path is visible in the recipe: call `.Decode()` before frame work,
 use `.Copy()` to stay packet-domain, and route results to `goav.Write(...)`,
 `goav.Writer(...)`, `goav.URI(...)`, `goav.Custom(...)`, or `goav.Sink(...)`.
+Frame-domain custom sources are already decoded and can go straight to frame
+stages, sinks, or encoders without `.Decode()`.
 
 ## Common Recipes
 
@@ -42,7 +44,7 @@ use `.Copy()` to stay packet-domain, and route results to `goav.Write(...)`,
 | Packet record/remux | `From(input).Copy().To(goav.Write(...))` | [Use cases](docs/USE_CASES.md) |
 | Decode to app code | `From(input).Audio().Decode().To(goav.Sink(...))` | [Operations](docs/OPERATIONS.md) |
 | Transform and encode | `.Decode().Resize(...).Encode(codec)` or `.Decode().Resample(...).Encode(codec)` | [Operations](docs/OPERATIONS.md) |
-| Fan out one stream | `.Branches(goav.Branch("archive").To(...), goav.Branch("preview").To(...))` | [Use cases](docs/USE_CASES.md) |
+| Fan out one stream | `.Copy().Branches(...)` for packets, `.Decode().Branches(...)` for frame work | [Use cases](docs/USE_CASES.md) |
 | Custom media boundary | `goav.Source(...)`, `goav.Input(provider)`, `goav.Sink(...)`, `goav.Custom(...)` | [Extension cookbook](docs/EXTENSION_COOKBOOK.md) |
 
 Use `goav.Mux(name, destination)` when several branches should feed one mux,
