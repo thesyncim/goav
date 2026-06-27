@@ -1245,41 +1245,38 @@ func validateBranchDestinationKindsPass() recipeCompilePass {
 }
 
 func validateBranchRecipeDestinationBindings(recipe recipeir.Recipe) error {
-	streams := streamIntentsFromRecipeIR(recipe.Streams)
 	destinations := recipeIRDestinationLabelSet(recipe.Destinations)
-	for i := range streams {
-		stream := streams[i]
-		for _, label := range stream.Destinations {
-			if _, ok := destinations[label]; ok {
+	for i := range recipe.Streams {
+		stream := recipe.Streams[i]
+		for _, output := range stream.Outputs {
+			destinationName := string(output)
+			if _, ok := destinations[destinationName]; ok {
 				continue
 			}
-			return branchDestinationReferenceMissingError(stream, label)
+			return branchDestinationReferenceMissingError(streamIntentFromRecipeIR(stream), destinationName)
 		}
 	}
 	return nil
 }
 
 func validateBranchRecipeDestinationKinds(recipe recipeir.Recipe) error {
-	streams := streamIntentsFromRecipeIR(recipe.Streams)
 	kindByName := recipeIRDestinationKindSet(recipe.Destinations)
-	for i := range streams {
-		stream := streams[i]
-		hasMuxDestination := false
-		for _, label := range stream.Destinations {
-			kind, ok := kindByName[label]
-			if !ok {
-				continue
-			}
-			if kind != recipeir.DestinationKindSink {
-				hasMuxDestination = true
-				break
-			}
-		}
-		if hasMuxDestination && !codecIntentSet(chainEncodeSpec(stream.Operations)) {
-			return branchEncodeMissingError(stream)
+	for i := range recipe.Streams {
+		stream := recipe.Streams[i]
+		if branchRecipeStreamHasMuxDestination(stream, kindByName) && !codecIntentSet(recipeIRStreamEncodeSpec(stream)) {
+			return branchEncodeMissingError(streamIntentFromRecipeIR(stream))
 		}
 	}
 	return nil
+}
+
+func branchRecipeStreamHasMuxDestination(stream recipeir.Stream, kindByName map[string]recipeir.DestinationKind) bool {
+	for _, kind := range recipeIRDestinationKindsForStream(stream, kindByName) {
+		if kind != recipeir.DestinationKindSink {
+			return true
+		}
+	}
+	return false
 }
 
 func validateRecipeAttachmentConsistencyPass() recipeCompilePass {
