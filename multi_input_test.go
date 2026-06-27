@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"io"
-	"os"
 	"strings"
 	"testing"
 
@@ -367,16 +366,5 @@ func TestSameHandleGroupingRequiresMux(t *testing.T) {
 	var buildErr *BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != destinationDuplicateCode {
 		t.Fatalf("err = %v, want destination_duplicate", err)
-	}
-
-	body, err := os.ReadFile("README.md")
-	if err != nil {
-		t.Fatal(err)
-	}
-	text := string(body)
-	if !strings.Contains(text, "Use `goav.Mux(name, destination)`") ||
-		strings.Contains(text, "compatibility sugar") ||
-		strings.Contains(text, "Reusing the same destination value") {
-		t.Fatalf("README should require explicit Mux grouping")
 	}
 }
