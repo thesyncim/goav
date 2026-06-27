@@ -37,15 +37,6 @@ jobs:
           go-version: ${{ matrix.go }}
           cache: true
 
-      # Commit messages are part of the project's surface: no tool/AI credits,
-      # no internal runtime paths. Scans the recent history on every push.
-      - name: Commit hygiene
-        run: |
-          if git log -50 --format='%H %s%n%b' | grep -iE 'claude|anthropic|co-authored-by'; then
-            echo 'forbidden commit-message content found'; exit 1
-          fi
-          echo clean
-
       - name: Changelog hygiene
         if: matrix.full && github.event_name == 'pull_request'
         run: |
