@@ -31,7 +31,7 @@ func TestBranchBuilderSnapshotContracts(t *testing.T) {
 	require := shape.Frame(av.MediaVideo, shape.Video(320, 180, av.PixelFormatI420))
 	prefer := shape.Frame(av.MediaVideo, shape.Video(0, 0, av.PixelFormatI420))
 	builder := Branch("preview").
-		From(FrameTap("decoded")).
+		From(PacketTap("encoded")).
 		Buffer(flow.Blocking(4, flow.BufferCopyBounds(128, 4096))).
 		Decode(codec.Profile("main")).
 		Apply(Flow("thumbnail").Video().
@@ -54,8 +54,8 @@ func TestBranchBuilderSnapshotContracts(t *testing.T) {
 	if snapshot.name != "preview" || snapshot.media != av.MediaVideo {
 		t.Fatalf("snapshot identity = name %q media %q, want preview video", snapshot.name, snapshot.media)
 	}
-	if snapshot.source.tap != "decoded" || snapshot.source.tapDomain != shape.DomainFrame {
-		t.Fatalf("source = %+v, want decoded frame tap", snapshot.source)
+	if snapshot.source.tap != "encoded" || snapshot.source.tapDomain != shape.DomainPacket {
+		t.Fatalf("source = %+v, want encoded packet tap", snapshot.source)
 	}
 	if snapshot.branchBuffer.Mode != flow.BufferBlocking ||
 		snapshot.branchBuffer.Capacity != 4 ||
@@ -244,6 +244,7 @@ func TestBranchBuilderNilAndErrorContracts(t *testing.T) {
 		{name: "media mismatch through apply", spec: Branch("bad").Apply(Flow("voice").Audio()).Apply(Flow("preview").Video()).To(branchBuilderTestSink("out")), code: flowMediaMismatchCode},
 		{name: "decode then copy", spec: Branch("bad").Decode().Copy().To(branchBuilderTestSink("out")), code: branchDecodeCopyInvalidCode},
 		{name: "frame step after copy", spec: Branch("bad").Copy().Resample(48_000, codec.Mono).To(branchBuilderTestSink("out")), code: operationShapeMismatchCode},
+		{name: "copy after frame step", spec: Branch("bad").Do(meter).Copy().To(branchBuilderTestSink("out")), code: flowCopyDomainMismatchCode},
 		{name: "packet tap flow without decode", spec: Branch("bad").From(PacketTap("packets")).Apply(Flow("meter").Audio().Do(meter)).To(branchBuilderTestSink("out")), code: operationShapeMismatchCode},
 		{name: "packet tap stage without decode", spec: Branch("bad").From(PacketTap("packets")).Do(meter).To(branchBuilderTestSink("out")), code: operationShapeMismatchCode},
 		{name: "packet tap resize without decode", spec: Branch("bad").From(PacketTap("packets")).Resize(320, 180).To(branchBuilderTestSink("out")), code: operationShapeMismatchCode},
@@ -251,6 +252,12 @@ func TestBranchBuilderNilAndErrorContracts(t *testing.T) {
 		{name: "packet tap frame tap without decode", spec: Branch("bad").From(PacketTap("packets")).Tap(FrameTap("frames")).To(branchBuilderTestSink("out")), code: operationShapeMismatchCode},
 		{name: "packet tap encode without decode", spec: Branch("bad").From(PacketTap("packets")).Encode(codec.Opus()).To(branchBuilderTestSink("out")), code: operationShapeMismatchCode},
 		{name: "packet tap sink without domain", spec: Branch("bad").From(PacketTap("packets")).To(branchBuilderTestSink("out")), code: operationShapeMismatchCode},
+		{name: "frame tap decode", spec: Branch("bad").From(FrameTap("frames")).Decode().To(branchBuilderTestSink("out")), code: sourceShapeMismatchCode},
+		{name: "frame tap decode flow", spec: Branch("bad").From(FrameTap("frames")).Apply(Flow("decode").Audio().Decode()).To(branchBuilderTestSink("out")), code: sourceShapeMismatchCode},
+		{name: "frame tap copy", spec: Branch("bad").From(FrameTap("frames")).Copy().To(branchBuilderTestSink("out")), code: sourceShapeMismatchCode},
+		{name: "frame tap copy flow", spec: Branch("bad").From(FrameTap("frames")).Apply(Flow("copy").Audio().Copy()).To(branchBuilderTestSink("out")), code: sourceShapeMismatchCode},
+		{name: "frame tap packet tap before encode", spec: Branch("bad").From(FrameTap("frames")).Tap(PacketTap("packets")).To(branchBuilderTestSink("out")), code: errcode.TapDomainMismatch},
+		{name: "decode then packet tap before encode", spec: Branch("bad").Decode().Tap(PacketTap("packets")).To(branchBuilderTestSink("out")), code: errcode.TapDomainMismatch},
 		{name: "duplicate encode", spec: Branch("bad").Encode(codec.Opus()).Encode(codec.Opus()).To(branchBuilderTestSink("out")), code: encodeDuplicateCode},
 		{name: "empty tap", spec: Branch("bad").Tap(FrameTap("")).To(branchBuilderTestSink("out")), code: errcode.TapInvalid},
 		{name: "typed frame tap after encode", spec: Branch("bad").Encode(codec.Opus()).Tap(FrameTap("frames")).To(branchBuilderTestSink("out")), code: errcode.TapDomainMismatch},
@@ -285,11 +292,11 @@ func TestBranchBuilderExplicitPacketSourceAllowsExplicitDomains(t *testing.T) {
 				To(branchBuilderTestSink("out")),
 		},
 		{
-			name: "packet tap before copy",
+			name: "packet tap after copy",
 			spec: Branch("observe").
 				From(PacketTap("packets")).
-				Tap(PacketTap("packets.branch")).
 				Copy().
+				Tap(PacketTap("packets.branch")).
 				To(branchBuilderTestSink("out")),
 		},
 		{
@@ -297,6 +304,14 @@ func TestBranchBuilderExplicitPacketSourceAllowsExplicitDomains(t *testing.T) {
 			spec: Branch("frames").
 				From(FrameTap("frames")).
 				Do(branchBuilderTestMeter("meter")).
+				To(branchBuilderTestSink("out")),
+		},
+		{
+			name: "frame tap encode then packet tap",
+			spec: Branch("archive").
+				From(FrameTap("frames")).
+				Encode(codec.Opus()).
+				Tap(PacketTap("packets")).
 				To(branchBuilderTestSink("out")),
 		},
 	}

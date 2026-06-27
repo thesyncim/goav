@@ -248,6 +248,10 @@ func (b *branchBuilder) Decode(options ...codec.Option) *branchBuilder {
 	if b == nil {
 		return b
 	}
+	if b.sourceStartsFrameDomain() {
+		b.setErr(frameSourceDecodeError("build branch", firstNonEmpty(b.spec.name, "branch")))
+		return b
+	}
 	if codecIntentSet(chainEncodeSpec(b.spec.operations)) {
 		b.setErr(chainStepAfterEncodeError("build branch", firstNonEmpty(b.spec.name, "branch"), "decode", chainEncodeSpec(b.spec.operations)))
 		return b
@@ -288,6 +292,10 @@ func (b *branchBuilder) Apply(flow chain) *branchBuilder {
 		}
 	}
 	if chainHasDecode(spec.operations) {
+		if b.sourceStartsFrameDomain() {
+			b.setErr(frameSourceDecodeError("build branch", firstNonEmpty(b.spec.name, "branch")))
+			return b
+		}
 		if chainHasDecode(b.spec.operations) {
 			b.setErr(duplicateBranchDecodeError(firstNonEmpty(b.spec.name, "branch")))
 			return b
@@ -299,6 +307,10 @@ func (b *branchBuilder) Apply(flow chain) *branchBuilder {
 	}
 	if chainEncodeSpec(spec.operations).Copy && (chainHasDecode(b.spec.operations) || branchOperationSpecsContainStep(b.spec.operations)) {
 		b.setErr(flowCopyDomainError("build branch", firstNonEmpty(spec.name, b.spec.name, "flow")))
+		return b
+	}
+	if chainEncodeSpec(spec.operations).Copy && b.sourceStartsFrameDomain() {
+		b.setErr(frameSourceCopyError("build branch", firstNonEmpty(b.spec.name, "branch")))
 		return b
 	}
 	if len(specSteps) != 0 && !chainHasDecode(spec.operations) {
@@ -453,6 +465,10 @@ func (b *branchBuilder) Tap(tap tapRef) *branchBuilder {
 		b.spec.operations = append(b.spec.operations, operationSpecForTap(tap, b.spec.media, operationSpecAfter(b.spec.operations, plan.OpEncode)))
 		return b
 	}
+	if err := b.validateFrameTapDomain(tap); err != nil {
+		b.setErr(err)
+		return b
+	}
 	if tap.domain == shape.DomainFrame && !b.requireFrameInput("tap") {
 		return b
 	}
@@ -468,11 +484,20 @@ func (b *branchBuilder) Encode(codec codec.CodecSpec) *branchBuilder {
 		b.setErr(duplicateStreamEncodeError("build branch", firstNonEmpty(b.spec.name, "branch"), chainEncodeSpec(b.spec.operations), codec))
 		return b
 	}
-	if codec.Copy && chainHasDecode(b.spec.operations) {
-		b.setErr(branchDecodeCopyError(firstNonEmpty(b.spec.name, "branch")))
-		return b
-	}
-	if !codec.Copy && !b.requireFrameInput("encode") {
+	if codec.Copy {
+		if b.sourceStartsFrameDomain() {
+			b.setErr(frameSourceCopyError("build branch", firstNonEmpty(b.spec.name, "branch")))
+			return b
+		}
+		if chainHasDecode(b.spec.operations) {
+			b.setErr(branchDecodeCopyError(firstNonEmpty(b.spec.name, "branch")))
+			return b
+		}
+		if branchOperationSpecsContainStep(b.spec.operations) {
+			b.setErr(flowCopyDomainError("build branch", firstNonEmpty(b.spec.name, "branch")))
+			return b
+		}
+	} else if !b.requireFrameInput("encode") {
 		return b
 	}
 	b.spec.operations = append(b.spec.operations, operationSpecForEncode(cloneCodecSpec(codec)))
@@ -523,6 +548,11 @@ func (b *branchBuilder) setErr(err error) {
 	b.spec.setErr(err)
 }
 
+func (b *branchBuilder) sourceStartsFrameDomain() bool {
+	domain, ok := branchExplicitSourceDomain(b.spec.source)
+	return ok && domain == shape.DomainFrame
+}
+
 func (b *branchBuilder) requireFrameInput(step string) bool {
 	if chainHasDecode(b.spec.operations) {
 		return true
@@ -536,6 +566,13 @@ func (b *branchBuilder) requireFrameInput(step string) bool {
 		return false
 	}
 	return true
+}
+
+func (b *branchBuilder) validateFrameTapDomain(tap tapRef) error {
+	if !chainHasDecode(b.spec.operations) && !b.sourceStartsFrameDomain() {
+		return nil
+	}
+	return validateTapDomain("build branch", firstNonEmpty(b.spec.name, "branch"), tap, shape.DomainFrame)
 }
 
 func (s *BranchSpec) setErr(err error) {
