@@ -853,27 +853,60 @@ func TestExplainReportsOperationShapeThroughResizeAndEncode(t *testing.T) {
 }
 
 func TestShapeAnnotationCannotBreakOperationContract(t *testing.T) {
-	_, err := goav.From(goav.FileInput("input.ivf", strings.NewReader(""))).
-		UseRuntime(bundle.MustNew()).
-		Video().
-		Decode().
-		Shape(shape.New(shape.Domain(shape.DomainPacket), shape.Media(av.MediaVideo))).
-		Encode(codec.VP9(codec.Bitrate(2_000_000))).
-		To(goav.Write("preview.ivf", io.Discard)).
-		Describe()
-	var buildErr *goav.BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "operation_shape_mismatch" {
-		t.Fatalf("err = %v, want operation_shape_mismatch", err)
+	tests := []struct {
+		name string
+		job  *goav.Job
+		want []string
+	}{
+		{
+			name: "frame to packet",
+			job: goav.From(goav.FileInput("input.ivf", strings.NewReader(""))).
+				UseRuntime(bundle.MustNew()).
+				Video().
+				Decode().
+				Shape(shape.New(shape.Domain(shape.DomainPacket), shape.Media(av.MediaVideo))).
+				Encode(codec.VP9(codec.Bitrate(2_000_000))).
+				To(goav.Write("preview.ivf", io.Discard)),
+			want: []string{
+				"shape annotation cannot change packet/frame domain",
+				"operation_index=1",
+				"expected_shape=domain=frame media=video",
+				"actual_shape=domain=packet media=video",
+				"keep .Shape(...) annotations in the current packet/frame domain",
+			},
+		},
+		{
+			name: "packet to frame",
+			job: goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
+				UseRuntime(bundle.MustNew()).
+				Audio().
+				Shape(shape.Frame(av.MediaAudio)).
+				Copy().
+				To(goav.Sink(component.SinkFunc("packets", func(context.Context, component.Message) error {
+					return nil
+				}))),
+			want: []string{
+				"shape annotation cannot change packet/frame domain",
+				"operation_index=0",
+				"expected_shape=domain=packet media=audio",
+				"actual_shape=domain=frame media=audio",
+				"keep .Shape(...) annotations in the current packet/frame domain",
+			},
+		},
 	}
-	for _, want := range []string{
-		"vp9 cannot consume the current media shape",
-		"expected_shape=domain=frame media=video",
-		"actual_shape=domain=packet media=video",
-		"keep .Shape(...) annotations in the frame domain before encoders",
-	} {
-		if !strings.Contains(err.Error(), want) {
-			t.Fatalf("err = %v, want %q", err, want)
-		}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := tt.job.Describe()
+			var buildErr *goav.BuildError
+			if !errors.As(err, &buildErr) || buildErr.Code != "operation_shape_mismatch" {
+				t.Fatalf("err = %v, want operation_shape_mismatch", err)
+			}
+			for _, want := range tt.want {
+				if !strings.Contains(err.Error(), want) {
+					t.Fatalf("err = %v, want %q", err, want)
+				}
+			}
+		})
 	}
 }
 

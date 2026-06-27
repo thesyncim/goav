@@ -2393,11 +2393,31 @@ func TestRecipeOperationShapePassRejectsInvalidOrderedOperations(t *testing.T) {
 			},
 			code: "operation_shape_mismatch",
 			want: []string{
-				"vp9 cannot consume the current media shape",
-				"operation_index=2",
+				"shape annotation cannot change packet/frame domain",
+				"operation_index=1",
 				"expected_shape=domain=frame media=video",
 				"actual_shape=domain=packet media=video",
-				"keep .Shape(...) annotations in the frame domain before encoders",
+				"keep .Shape(...) annotations in the current packet/frame domain",
+			},
+		},
+		{
+			name: "copy after frame annotation",
+			stream: streamIntent{
+				Name:   "audio",
+				Select: plan.StreamSelect{Type: av.MediaAudio, Codec: av.CodecOpus},
+				Operations: []operationSpec{
+					{Kind: plan.OpShape, Component: "shape", Shape: shape.Frame(av.MediaAudio)},
+					{Kind: plan.OpCopy, Component: "packet-copy", Encode: codec.Copy()},
+				},
+				Destinations: []string{"packets"},
+			},
+			code: "operation_shape_mismatch",
+			want: []string{
+				"shape annotation cannot change packet/frame domain",
+				"operation_index=0",
+				"expected_shape=domain=packet media=audio",
+				"actual_shape=domain=frame media=audio",
+				"keep .Shape(...) annotations in the current packet/frame domain",
 			},
 		},
 		{

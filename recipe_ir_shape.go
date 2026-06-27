@@ -23,7 +23,14 @@ func validateRecipeIROperationShapes(operation string, stream recipeir.Stream, o
 	node := firstNonEmpty(stream.Name, string(stream.Selector.ID), string(stream.Selector.Type), "stream")
 	for i := range operations {
 		next := operations[i]
-		if next.Kind == plan.OpTap || (next.Kind == plan.OpShape && next.Require == nil) {
+		if next.Kind == plan.OpTap {
+			shape = recipeIROperationOutputShape(shape, next)
+			continue
+		}
+		if next.Kind == plan.OpShape && next.Require == nil {
+			if err := validateShapeAnnotationDomain(operation, node, i, shape, next.Shape); err != nil {
+				return err
+			}
 			shape = recipeIROperationOutputShape(shape, next)
 			continue
 		}

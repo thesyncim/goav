@@ -1749,9 +1749,16 @@ func validateOperationSpecShapes(operation string, stream streamIntent, initial 
 	node := firstNonEmpty(stream.Name, string(stream.Select.ID), string(stream.Select.Type), "stream")
 	for i := range stream.Operations {
 		next := stream.Operations[i]
-		// Taps and shape annotations advance the lineage unchecked; a
+		// Taps and same-domain shape annotations advance the lineage; a
 		// .Require(...) assertion falls through to the contract check below.
-		if next.Kind == plan.OpTap || (next.Kind == plan.OpShape && next.Require == nil) {
+		if next.Kind == plan.OpTap {
+			shape = operationSpecOutputShape(shape, next)
+			continue
+		}
+		if next.Kind == plan.OpShape && next.Require == nil {
+			if err := validateShapeAnnotationDomain(operation, node, i, shape, next.Shape); err != nil {
+				return err
+			}
 			shape = operationSpecOutputShape(shape, next)
 			continue
 		}
@@ -1828,6 +1835,46 @@ func operationShapeMismatchError(operation string, node string, index int, step 
 			"actual_shape=" + actual.String(),
 		}),
 		fixes: buildErrorFixes(operationShapeMismatchSuggestions(step)),
+		cause: errUnsupportedBuild,
+	}
+}
+
+func validateShapeAnnotationDomain(operation string, node string, index int, current shape.Spec, annotation shape.Spec) error {
+	if annotation.Domain == "" || current.Domain == "" || annotation.Domain == current.Domain {
+		return nil
+	}
+	if !packetOrFrameDomain(annotation.Domain) || !packetOrFrameDomain(current.Domain) {
+		return nil
+	}
+	return shapeAnnotationDomainMismatchError(operation, node, index, current, annotation)
+}
+
+func packetOrFrameDomain(domain shape.MediaDomain) bool {
+	return domain == shape.DomainPacket || domain == shape.DomainFrame
+}
+
+func shapeAnnotationDomainMismatchError(operation string, node string, index int, current shape.Spec, annotation shape.Spec) error {
+	after := shape.Merge(current, annotation)
+	media := firstNonEmptyMedia(after.MediaKind, current.MediaKind)
+	expected := shape.New(shape.Domain(current.Domain), shape.Media(media))
+	actual := shape.New(shape.Domain(after.Domain), shape.Media(media))
+	return &BuildError{
+		Family:    errcode.FamilyForCode(operationShapeMismatchCode),
+		Code:      operationShapeMismatchCode,
+		Operation: operation,
+		Node:      firstNonEmpty(node, "stream"),
+		Reason:    "shape annotation cannot change packet/frame domain",
+		fields: buildErrorFields([]string{
+			fmt.Sprintf("operation_index=%d", index),
+			"operation=shape",
+			"expected_shape=" + expected.String(),
+			"actual_shape=" + actual.String(),
+		}),
+		fixes: buildErrorFixes([]string{
+			"keep .Shape(...) annotations in the current packet/frame domain",
+			"use .Decode() to move packets to decoded frames",
+			"use .Copy() or .Encode(codec...) to move frames back to packets",
+		}),
 		cause: errUnsupportedBuild,
 	}
 }

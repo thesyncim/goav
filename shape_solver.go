@@ -53,9 +53,17 @@ func solveOperationSpecShapes(operation string, rt *runtime, stream streamIntent
 	inserted := false
 	for i := range stream.Operations {
 		next := stream.Operations[i]
-		// Taps and shape annotations advance the lineage unchecked; a
+		// Taps and same-domain shape annotations advance the lineage; a
 		// .Require(...) assertion falls through to the contract check below.
-		if next.Kind == plan.OpTap || (next.Kind == plan.OpShape && next.Require == nil) {
+		if next.Kind == plan.OpTap {
+			solved = append(solved, next)
+			current = operationSpecOutputShape(current, next)
+			continue
+		}
+		if next.Kind == plan.OpShape && next.Require == nil {
+			if err := validateShapeAnnotationDomain(operation, node, i, current, next.Shape); err != nil {
+				return nil, nil, err
+			}
 			solved = append(solved, next)
 			current = operationSpecOutputShape(current, next)
 			continue

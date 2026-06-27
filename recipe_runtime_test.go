@@ -2049,10 +2049,11 @@ func TestRuntimeAttachShapeAnnotationCannotBreakOperationContract(t *testing.T) 
 		t.Fatalf("err = %v, want operation_shape_mismatch with matching BuildError code", err)
 	}
 	for _, want := range []string{
-		"opus cannot consume the current media shape",
+		"shape annotation cannot change packet/frame domain",
+		"operation_index=0",
 		"expected_shape=domain=frame media=audio",
 		"actual_shape=domain=packet media=audio",
-		"keep .Shape(...) annotations in the frame domain before encoders",
+		"keep .Shape(...) annotations in the current packet/frame domain",
 	} {
 		if !strings.Contains(err.Error(), want) {
 			t.Fatalf("err = %v, want %q", err, want)

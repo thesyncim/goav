@@ -201,6 +201,9 @@ func (t *task) planAttachBranchSteps(ctx context.Context, input runtimeAttachBra
 				out = recipeIROperationOutputShape(patchShape, operation)
 				break
 			}
+			if err := validateShapeAnnotationDomain("attach runtime branch", branchName, i, currentShape, operation.Shape); err != nil {
+				return fail(err)
+			}
 			currentShape = shape.Merge(currentShape, operation.Shape)
 			out = attachStepShape(currentShape, patchShape)
 		case plan.OpTransform:
