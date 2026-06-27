@@ -295,25 +295,8 @@ func (b *jobStreamBuilder) sourceFrameShape() (shape.Spec, bool) {
 	return spec, true
 }
 
-func (b *jobStreamBuilder) ensureFrameSourceShapeOperation() {
-	stream := b.current()
-	if stream == nil {
-		return
-	}
-	shapeSpec, ok := b.sourceFrameShape()
-	if !ok {
-		return
-	}
-	operation := operationSpecForShape(shapeSpec)
-	if len(stream.operations) != 0 && stream.operations[0].Kind == plan.OpShape && stream.operations[0].Shape == shapeSpec {
-		return
-	}
-	stream.operations = append([]operationSpec{operation}, stream.operations...)
-}
-
 func (b *jobStreamBuilder) requireFrameInput(stream *jobStreamBuild, step string) bool {
 	if b.sourceStartsFrameDomain() {
-		b.ensureFrameSourceShapeOperation()
 		return true
 	}
 	if chainHasDecode(stream.operations) {
@@ -660,9 +643,7 @@ func (b *jobStreamBuilder) To(destinations ...Destination) *Job {
 		outputs = append(outputs, output)
 	}
 	if outputsContainSinkDestination(outputs) && !codecIntentSet(chainEncodeSpec(stream.operations)) {
-		if b.sourceStartsFrameDomain() {
-			b.ensureFrameSourceShapeOperation()
-		} else if !chainHasDecode(stream.operations) {
+		if !b.sourceStartsFrameDomain() && !chainHasDecode(stream.operations) {
 			b.job.setErr(sinkDomainRequiredError("build stream", jobStreamName(stream)))
 			return b.job
 		}

@@ -712,7 +712,7 @@ func validateJobRecipeIntentShape(operation string, recipe recipeir.Recipe, jobO
 		}
 	}
 	if len(streams) > 1 {
-		return validateMultiStreamJobRecipeShape(operation, streams, jobOutputCount)
+		return validateMultiStreamJobRecipeShape(operation, recipe, streams, jobOutputCount)
 	}
 	if err := validateJobRecipeOutputScope(operation, len(recipe.Destinations), jobOutputCount, stream, hasStream); err != nil {
 		return err
@@ -720,13 +720,13 @@ func validateJobRecipeIntentShape(operation string, recipe recipeir.Recipe, jobO
 	if !hasStream {
 		return nil
 	}
-	return validateJobRecipeStreamShape(operation, stream)
+	return validateJobRecipeStreamShape(operation, recipe, stream)
 }
 
 // validateMultiStreamJobRecipeShape checks a job with several stream chains:
 // every chain carries its own operations and stream-local destinations, and
 // the job-level output scope stays empty (the chains own the routing).
-func validateMultiStreamJobRecipeShape(operation string, streams []recipeir.Stream, jobOutputCount int) error {
+func validateMultiStreamJobRecipeShape(operation string, recipe recipeir.Recipe, streams []recipeir.Stream, jobOutputCount int) error {
 	if jobOutputCount != 0 {
 		return jobOutputScopeMixedError(operation, streams[0])
 	}
@@ -735,7 +735,7 @@ func validateMultiStreamJobRecipeShape(operation string, streams []recipeir.Stre
 		if len(stream.Outputs) == 0 {
 			return jobStreamDestinationMissingError(operation, stream)
 		}
-		if err := validateJobRecipeStreamShape(operation, stream); err != nil {
+		if err := validateJobRecipeStreamShape(operation, recipe, stream); err != nil {
 			return err
 		}
 	}
@@ -806,10 +806,10 @@ func jobDestinationReferenceMissingError(operation string, stream recipeir.Strea
 	}
 }
 
-func validateJobRecipeStreamShape(operation string, stream recipeir.Stream) error {
+func validateJobRecipeStreamShape(operation string, recipe recipeir.Recipe, stream recipeir.Stream) error {
 	selector := recipeIRStreamSelector(stream)
 	node := recipeIRStreamName(stream)
-	if !recipeIRStreamHasOperation(stream) {
+	if !recipeIRStreamHasOperation(stream) && !recipeIRStreamCanDeliverFrameSourceToSink(recipe, stream) {
 		return operationSpecMissingError(operation, node)
 	}
 	if err := validateRecipeStreamSelector(operation, node, selector); err != nil {
@@ -822,6 +822,34 @@ func validateJobRecipeStreamShape(operation string, stream recipeir.Stream) erro
 		return err
 	}
 	return validateJobRecipeStreamTransformShape(operation, stream)
+}
+
+func recipeIRStreamCanDeliverFrameSourceToSink(recipe recipeir.Recipe, stream recipeir.Stream) bool {
+	if len(stream.Outputs) == 0 || len(recipe.Inputs) == 0 {
+		return false
+	}
+	kinds := recipeIRDestinationKindsForStream(stream, recipeIRDestinationKindSet(recipe.Destinations))
+	if len(kinds) != len(stream.Outputs) || !recipeIRDestinationKindsContainSink(kinds) || recipeIRDestinationKindsContainMux(kinds) {
+		return false
+	}
+	spec, ok := recipeIRStreamSourceShape(recipe, stream)
+	return ok && spec.Domain == shape.DomainFrame
+}
+
+func recipeIRStreamSourceShape(recipe recipeir.Recipe, stream recipeir.Stream) (shape.Spec, bool) {
+	if len(recipe.Inputs) == 1 {
+		return recipeIRInputSourceShape(recipe.Inputs[0])
+	}
+	intents := make([]inputIntent, 0, len(recipe.Inputs))
+	for i := range recipe.Inputs {
+		intents = append(intents, inputIntentFromRecipeIR(recipe.Inputs[i]))
+	}
+	sets := jobInputStreamSetsFromRecipeIR(intents, recipe.Inputs, nil)
+	index, ok := resolveInputSetIndex(sets, recipeIRStreamSelector(stream), stream.Selector.Input)
+	if !ok {
+		return shape.Spec{}, false
+	}
+	return recipeIRInputSourceShape(recipe.Inputs[index])
 }
 
 func validateJobRecipeStreamTransformShape(operation string, stream recipeir.Stream) error {

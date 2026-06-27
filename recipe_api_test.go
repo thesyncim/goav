@@ -3350,6 +3350,14 @@ func TestStreamRecipeRequiresExplicitDecodeBeforeFrameConsumers(t *testing.T) {
 				To(goav.Write("archive.ogg", io.Discard)),
 			fix: ".Decode().Encode(...)",
 		},
+		{
+			name: "frame tap",
+			job: goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
+				Audio().
+				Tap(goav.FrameTap("audio.decoded")).
+				To(goav.Sink(component.SinkFunc("frames", func(context.Context, component.Message) error { return nil }))),
+			fix: ".Decode().Tap(...)",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -3362,6 +3370,33 @@ func TestStreamRecipeRequiresExplicitDecodeBeforeFrameConsumers(t *testing.T) {
 				t.Fatalf("err = %v, want explicit decode guidance %q", err, tt.fix)
 			}
 		})
+	}
+}
+
+func TestFrameSourceDoesNotInjectSyntheticShapeOperation(t *testing.T) {
+	frameSink := goav.From(goavtest.Audio(48_000, codec.Mono, []int16{1, 2})).
+		Audio().
+		To(goav.Sink(component.SinkFunc("frames", func(context.Context, component.Message) error {
+			return nil
+		})))
+	intent := goav.JobPlanForTest(frameSink)
+	if len(intent.Streams) != 1 {
+		t.Fatalf("intent streams = %+v, want one frame source stream", intent.Streams)
+	}
+	if got := goav.OperationSpecKindsForTest(intent.Streams[0].Operations); len(got) != 0 {
+		t.Fatalf("frame source operations = %+v, want no synthetic shape operation", got)
+	}
+
+	encoded := goav.From(goavtest.Audio(48_000, codec.Mono, []int16{3, 4})).
+		Audio().
+		Encode(codec.Opus(codec.Bitrate(96_000))).
+		To(goav.Write("archive.ogg", io.Discard))
+	intent = goav.JobPlanForTest(encoded)
+	if len(intent.Streams) != 1 {
+		t.Fatalf("encoded intent streams = %+v, want one frame source stream", intent.Streams)
+	}
+	if got, want := goav.OperationSpecKindsForTest(intent.Streams[0].Operations), []plan.OperationKind{plan.OpEncode}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("frame source encode operations = %+v, want %+v", got, want)
 	}
 }
 
