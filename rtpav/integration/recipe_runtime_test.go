@@ -839,7 +839,11 @@ func TestFromAndRecordRecipeMultipleRTPInputsRuns(t *testing.T) {
 	if muxer.streamCount != 2 || muxer.writes != 2 {
 		t.Fatalf("streamCount=%d writes=%d", muxer.streamCount, muxer.writes)
 	}
-	if len(muxer.writtenStreams) != 2 || muxer.writtenStreams[0] != "audio" || muxer.writtenStreams[1] != "video" {
+	writtenStreams := map[av.StreamID]bool{}
+	for _, id := range muxer.writtenStreams {
+		writtenStreams[id] = true
+	}
+	if len(muxer.writtenStreams) != 2 || !writtenStreams["audio"] || !writtenStreams["video"] {
 		t.Fatalf("written streams=%v", muxer.writtenStreams)
 	}
 	if err := task.Close(); err != nil {
