@@ -12,6 +12,11 @@ and examples. Normal users should not need graph handles, string routing, or a
 separate workflow API for recording, transcoding, preview, diagnostics, or late
 attachment.
 
+This page is broader than the v1 front door. When it names runtime mutation,
+control, observation, dynamic streams, or joins, it is documenting the shared
+architecture for governed advanced features, not promoting every feature into
+the automatic v1 promise.
+
 ## Contract
 
 - A direct stream is an implicit `Branch("main")`.
@@ -25,8 +30,9 @@ attachment.
   destinations all participate in the same compatibility check.
 - Build and Attach share the same lowering model: `WorkPlan` for a full task,
   `WorkPatch` for a runtime branch update.
-- Runtime observation is composition: `Branch + Do + Sink`, plus `Events`,
-  `Watch`, `Snapshot`, `Stats`, `Explain`, and graph rendering.
+- Runtime observation is composition: `Branch + Do + Sink`, plus
+  `Watch(...).Events()` subscriptions, `Snapshot`, `Stats`, `Explain`, and
+  graph rendering.
 - Runtime controls lower into `task.Control`, `Mutable.Attach`,
   `Attachment.Rebranch`, `Mutable.Detach`, `Watch`, `Snapshot`, `Stats`, or
   `Close`; the control-plane binder never calls arbitrary methods.
@@ -81,7 +87,7 @@ Done:
   assertions use `.Require(...)`; preferences use `.Prefer(...)`.
 - Dynamic streams attach through the normal branch planner.
 - Watch, Snapshot, Stats, Attach, Rebranch, Detach, and task controls are
-  public task capabilities.
+  explicit `BuildLive` task capabilities.
 - `Mutable.Detach` has explicit drain/abort outcomes, and branch attach/detach
   events are watchable without graph handles.
 - Destination commit, abort, and commit-error events are watchable for task and

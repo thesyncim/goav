@@ -16,15 +16,16 @@ The normal path should feel small even when the runtime is doing serious work:
 - Composition starts from `From(inputs...)`, narrows by stream selectors, and
   then applies ordered operations: `Decode`, `Copy`, `Shape`, `Auto`,
   `Require`, `Prefer`, `Resize`, `Resample`, `Do`, `Encode`, and `Tap`.
-- Branching is the one split model. Direct streams, planned branches, runtime
-  branches, and flows share one ordered operation list. A direct stream is
-  syntax for the same branch model.
+- Branching is the one split model. Direct streams, planned branches, flows,
+  and governed runtime branches share one ordered operation list. A direct
+  stream is syntax for the same branch model.
 - `Mux(name, destination)` is the first-class way to group branches into one
   mux or sink group; reusing one ungrouped destination value is rejected.
-- Initial builds and live edits lower through the same vocabulary: full jobs
-  become `WorkPlan`; runtime attachment becomes `WorkPatch`.
-- Observation stays ordinary composition: `Branch + Do + Sink`, `Events`,
-  `Watch`, `Snapshot`, `Stats`, `Explain`, and graph rendering.
+- Initial builds and advanced live edits lower through the same vocabulary:
+  full jobs become `WorkPlan`; runtime attachment becomes `WorkPatch`.
+- Observation stays ordinary composition: `Branch + Do + Sink`,
+  `Watch(...).Events()` subscriptions, `Snapshot`, `Stats`, `Explain`, and
+  graph rendering.
 
 The public grammar remains:
 
@@ -39,8 +40,8 @@ to hide topology.
 Compatibility pins:
 
 - normal workflows lower from `input -> stream -> operations -> tap -> branch -> destination` into `WorkPlan -> pipeline.Graph -> Task`.
-- runtime attach lowers the same branch model into `WorkPatch`, carrying branch
-  stream facts as recipe IR through patch planning.
+- governed runtime attach lowers the same branch model into `WorkPatch`,
+  carrying branch stream facts as recipe IR through patch planning.
 - direct streams are syntax sugar for an implicit `Branch("main")`.
 - `Mux(name, destination)` groups branches into one sink or mux destination;
   reusing the same ungrouped `Destination` value is rejected.
@@ -53,17 +54,26 @@ Compatibility pins:
   refs were migration markers, not extension points.
 - `shape.Spec` carries the media contract, including custom source facts.
 
-## Working Today
+## Normal Workflows Today
 
 - Recipe entry points cover variadic `From(inputs...)`, `InputName`,
   `StreamID`, and `StreamIndex` narrowing.
 - Audio/video workflows can select streams, preserve packets, decode/encode,
   resize/resample, run custom stages, tap typed media, fan out branches, share
   destinations, and reuse flows.
-- Combining media is part of the front door: Mix, Composite, Select, nested
-  joins, tap-backed join arms, and custom joins all describe their shape.
-- Live control is now a first-class path: atomic grouped `Mutable.Attach`,
-  dependent-branch detach, pause/resume/stop, and gapless
+- Deterministic testing comes from `goavtest` sources, collectors, fake codecs,
+  fake containers, and fake clocks.
+
+## Governed Advanced Surface
+
+These paths work and have evidence, but they are not automatic v1 promises.
+The release decision in `docs/SIMPLIFICATION_TARGET.md` must either retain
+them explicitly or keep them advanced/non-v1:
+
+- Combining media is governed and shape-described: Mix, Composite, Select,
+  nested joins, tap-backed join arms, and custom joins all describe their shape.
+- Live mutation is an explicit `BuildLive` path: atomic grouped
+  `Mutable.Attach`, dependent-branch detach, pause/resume/stop, and gapless
   `Attachment.Rebranch`, including media-time switch boundaries.
 - BranchBuffer policies cover `flow.Blocking`, `DropOldest`, `DropNewest`,
   `Latest`, `Unbounded`, MaxLatency, MaxBytes, and branch-local drop counters.
@@ -76,8 +86,6 @@ Compatibility pins:
   automatic discovery.
 - Destination commit/abort/error lifecycle events are watchable for task and
   runtime-branch destinations.
-- Deterministic testing comes from `goavtest` sources, collectors, fake codecs,
-  fake containers, and fake clocks.
 - Generated-source CLI pipelines and `goav ctl` sockets support live
   inspection, attach, rebranch, detach, controls, and graph rendering.
 
@@ -122,7 +130,7 @@ Compatibility pins:
   root dependency allowlist remains limited to sibling modules plus the
   reviewed modernc runtime set used by the built-in AAC backend.
 - shape validation is central across inputs, operations, flows, taps, branches,
-  joins, destinations, runtime attach, and controls.
+  joins, destinations, governed runtime attach, and controls.
 - Normal workflows use the recipe grammar. Expert graph handles remain off the
   front door.
 
