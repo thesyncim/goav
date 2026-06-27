@@ -84,23 +84,19 @@ func planOutputsFromRecipeIR(outputs []recipeir.Destination, formats map[string]
 	return planOutputs(intents, formats)
 }
 
-// planBranchFromStreamIntent plans one branch from a resolved stream intent —
-// the single per-branch planning body. Both planning sources (direct streams
-// and a branchComposePlan converted via streamIntentsFromBranchComposePlan)
-// reach it through planBranchesFromStreamIntents, so the work plan has one
-// branch planner (NORTH_STAR step 3).
-func planBranchFromStreamIntent(state *recipeCompileState, stream streamIntent, index int, outputs []planOutput) (planBranch, []planDecision) {
+func planBranchFromRecipeIRStream(state *recipeCompileState, stream recipeir.Stream, index int, outputs []planOutput) (planBranch, []planDecision) {
 	var spec shape.Spec
-	sourceShape, sourceShapeOK := jobStreamCustomSourceShape(state, stream)
-	input, inputName := planStreamInputBinding(state, stream)
+	sourceShape, sourceShapeOK := jobRecipeIRStreamCustomSourceShape(state, stream)
+	input, inputName := planRecipeIRStreamInputBinding(state, stream)
 	// The select node is named from the DECLARED selector (the chain's scope,
 	// e.g. select-audio), exactly like the planned graph spec — stream
 	// resolution below enriches shapes and reports, never node names.
-	selectComponent := selectorComponent(stream.Select)
-	if selected, ok := planSelectedStream(state, stream); ok {
+	selectComponent := selectorComponent(stream.Selector)
+	plannedStream := stream
+	if selected, ok := planSelectedRecipeIRStream(state, stream); ok {
 		resolved := streamSelectFromStream(selected)
-		resolved.Input = stream.Select.Input
-		stream.Select = resolved
+		resolved.Input = stream.Selector.Input
+		plannedStream.Selector = resolved
 		domain := shape.DomainPacket
 		if sourceShapeOK && sourceShape.Domain != "" {
 			domain = sourceShape.Domain
@@ -110,18 +106,33 @@ func planBranchFromStreamIntent(state *recipeCompileState, stream streamIntent, 
 			spec = shape.Merge(spec, sourceShape)
 		}
 	}
-	spec = normalizePlanBranchShape(spec, stream, input)
-	branchName := firstNonEmpty(stream.Name, string(stream.Select.Type), fmt.Sprintf("branch-%d", index))
-	operations, branchDecisions := planOperationSpecs(input, stream, branchName, spec, selectComponent)
+	spec = normalizeRecipeIRPlanBranchShape(spec, plannedStream, input)
+	branchName := firstNonEmpty(plannedStream.Name, string(plannedStream.Selector.Type), fmt.Sprintf("branch-%d", index))
+	operations, branchDecisions := planRecipeIROperationSpecs(input, plannedStream, branchName, spec, selectComponent)
 	operations = planOperationsWithShape(branchName, spec, operations)
 	return planBranch{
 		Name:       branchName,
 		Input:      inputName,
-		Stream:     stream.Select,
+		Stream:     plannedStream.Selector,
 		Shape:      spec,
 		Operations: operations,
-		Outputs:    planBranchDestinations(stream.Destinations, outputs),
+		Outputs:    planBranchDestinations(recipeIROutputRefsToStrings(plannedStream.Outputs), outputs),
 	}, branchDecisions
+}
+
+func planRecipeIRStreamInputBinding(state *recipeCompileState, stream recipeir.Stream) (inputIntent, string) {
+	if state == nil {
+		return inputIntent{}, "input"
+	}
+	inputs := state.recipeInputIntents()
+	if len(inputs) <= 1 {
+		return firstInput(inputs), firstInputName(inputs)
+	}
+	sets := jobInputStreamSetsFromRecipeIR(inputs, state.inputFacts, state.inputProbes)
+	if index, ok := resolveInputSetIndex(sets, recipeIRStreamSelector(stream), stream.Selector.Input); ok && index < len(inputs) {
+		return inputs[index], sets[index].name
+	}
+	return firstInput(inputs), firstInputName(inputs)
 }
 
 // planStreamInputBinding resolves which job input feeds one stream chain: the
@@ -153,28 +164,10 @@ func planBranchesFromRecipeIR(state *recipeCompileState, recipe recipeir.Recipe,
 	if len(recipe.Streams) == 0 {
 		return planCopyBranchesFromRecipeIR(state, recipe, outputs)
 	}
-	return planBranchesFromStreamIntents(state, streamIntentsFromRecipeIR(recipe.Streams), outputs)
-}
-
-func streamIntentsFromRecipeIR(streams []recipeir.Stream) []streamIntent {
-	if len(streams) == 0 {
-		return nil
-	}
-	out := make([]streamIntent, 0, len(streams))
-	for i := range streams {
-		out = append(out, streamIntentFromRecipeIR(streams[i]))
-	}
-	return out
-}
-
-// planBranchesFromStreamIntents plans every branch from a resolved streamIntent
-// list — shared by the recipe stream path and the branch-composition path
-// after each has crossed the recipe-IR boundary. One planner, two sources.
-func planBranchesFromStreamIntents(state *recipeCompileState, streams []streamIntent, outputs []planOutput) ([]planBranch, []planDecision) {
-	branches := make([]planBranch, 0, len(streams))
-	decisions := make([]planDecision, 0, len(streams))
-	for i := range streams {
-		branch, branchDecisions := planBranchFromStreamIntent(state, streams[i], i, outputs)
+	branches := make([]planBranch, 0, len(recipe.Streams))
+	decisions := make([]planDecision, 0, len(recipe.Streams))
+	for i := range recipe.Streams {
+		branch, branchDecisions := planBranchFromRecipeIRStream(state, recipe.Streams[i], i, outputs)
 		branches = append(branches, branch)
 		decisions = append(decisions, branchDecisions...)
 	}
@@ -232,6 +225,74 @@ func planSelectedStream(state *recipeCompileState, stream streamIntent) (av.Stre
 	// Declared sources expose their stream shape statically. Compiles without
 	// preflight probes (Describe-time) resolve from the declaration, so the
 	// shape solver sees the same facts in Describe and Build.
+	for i := range state.inputFacts {
+		if spec, ok := recipeIRInputSourceShape(state.inputFacts[i]); ok {
+			selected, err := selectStream([]av.Stream{recipeIRInputDeclaredStream(state.inputFacts[i], spec)}, selector)
+			if err == nil {
+				return selected, true
+			}
+		}
+	}
+	if state.branchCompositionPresent {
+		if declared := declaredSourceStreams(state.branchInputAttachment); len(declared) != 0 {
+			selected, err := selectStream(declared, selector)
+			if err == nil {
+				return selected, true
+			}
+		}
+	} else if len(state.inputFacts) == 0 {
+		for i := range state.inputAttachments {
+			declared := declaredSourceStreams(state.inputAttachments[i])
+			if len(declared) == 0 {
+				continue
+			}
+			selected, err := selectStream(declared, selector)
+			if err == nil {
+				return selected, true
+			}
+		}
+	}
+	return av.Stream{}, false
+}
+
+func planSelectedRecipeIRStream(state *recipeCompileState, stream recipeir.Stream) (av.Stream, bool) {
+	if state == nil {
+		return av.Stream{}, false
+	}
+	selector := recipeIRStreamSelector(stream)
+	if jobRecipeIRStreamSelectionNeedsUnion(state, stream) {
+		sets := jobInputStreamSetsFromRecipeIR(state.recipeInputIntents(), state.inputFacts, state.inputProbes)
+		selected, ok, err := selectStreamAcrossInputSets(sets, selector, stream.Selector.Input)
+		if err != nil || !ok {
+			return av.Stream{}, false
+		}
+		return selected.stream, true
+	}
+	probes := state.inputProbes
+	if state.branchInputProbeReady {
+		probes = []format.ProbeResult{state.branchInputProbe}
+	}
+	sourceShape, sourceShapeOK := compileStateCustomSourceShape(state)
+	for i := range probes {
+		if len(probes[i].Streams) == 0 {
+			continue
+		}
+		selected, err := selectDecodeStream(probes[i].Streams, selector)
+		if sourceShapeOK && sourceShape.Domain == shape.DomainFrame {
+			selected, err = selectStream(probes[i].Streams, selector)
+		}
+		if err != nil {
+			continue
+		}
+		return selected, true
+	}
+	streams := liveIntentStreams(state.recipeInputIntents())
+	if len(streams) != 0 {
+		selected, err := selectDecodeStream(streams, selector)
+		if err == nil {
+			return selected, true
+		}
+	}
 	for i := range state.inputFacts {
 		if spec, ok := recipeIRInputSourceShape(state.inputFacts[i]); ok {
 			selected, err := selectStream([]av.Stream{recipeIRInputDeclaredStream(state.inputFacts[i], spec)}, selector)
@@ -370,6 +431,53 @@ func planOperationSpecs(input inputIntent, stream streamIntent, branchName strin
 	return operations, decisions
 }
 
+func planRecipeIROperationSpecs(input inputIntent, stream recipeir.Stream, branchName string, initial shape.Spec, selectComponent string) ([]planOperation, []planDecision) {
+	operations := planInputOperationsForShape(input, initial)
+	if initial.Domain == shape.DomainEvent && stream.Selector == (plan.StreamSelect{}) && len(stream.Operations) == 0 {
+		operations = append(operations, planOperation{
+			Kind:      plan.OpShape,
+			Component: "shape",
+			Detail:    "event source",
+			Shape:     initial,
+		})
+		return operations, []planDecision{{
+			Code:    diagnosticEventSource,
+			Branch:  branchName,
+			Message: "source produces events for sink destinations",
+		}}
+	}
+	operations = append(operations, planOperation{
+		Kind:      plan.OpSelect,
+		Component: firstNonEmpty(selectComponent, selectorComponent(stream.Selector)),
+		Detail:    "select stream",
+	})
+	if len(stream.Operations) != 0 {
+		operationSpecs, decisions := planRecipeIRStreamOperations(stream, branchName)
+		operations = append(operations, operationSpecs...)
+		return operations, decisions
+	}
+	var decisions []planDecision
+	if initial.Domain == shape.DomainFrame {
+		decisions = append(decisions, planDecision{
+			Code:    diagnosticFrameSource,
+			Branch:  branchName,
+			Message: "source already produces decoded frames",
+		})
+		return operations, decisions
+	}
+	operations = append(operations, planOperation{
+		Kind:      plan.OpCopy,
+		Component: "packet-copy",
+		Detail:    "no frame operation requested",
+	})
+	decisions = append(decisions, planDecision{
+		Code:    diagnosticPacketCopy,
+		Branch:  branchName,
+		Message: "stream can remain packet encoded",
+	})
+	return operations, decisions
+}
+
 func planStreamIntentOperations(stream streamIntent, branchName string) ([]planOperation, []planDecision) {
 	operations := make([]planOperation, 0, len(stream.Operations))
 	var decisions []planDecision
@@ -391,6 +499,36 @@ func planStreamIntentOperations(stream streamIntent, branchName string) ([]planO
 		})
 	}
 	if operationSpecKindPresent(stream.Operations, plan.OpEncode) {
+		decisions = append(decisions, planDecision{
+			Code:    diagnosticEncodeRequired,
+			Branch:  branchName,
+			Message: "muxed stream output requires encoded packets",
+		})
+	}
+	return operations, decisions
+}
+
+func planRecipeIRStreamOperations(stream recipeir.Stream, branchName string) ([]planOperation, []planDecision) {
+	operations := make([]planOperation, 0, len(stream.Operations))
+	var decisions []planDecision
+	for i := range stream.Operations {
+		operation := stream.Operations[i]
+		operations = append(operations, planOperationFromRecipeIROperation(operation))
+	}
+	if recipeIROperationKindPresent(stream.Operations, plan.OpDecode) {
+		decisions = append(decisions, planDecision{
+			Code:    diagnosticDecodeRequired,
+			Branch:  branchName,
+			Message: "operation specs require decoded frames",
+		})
+	} else if recipeIROperationKindPresent(stream.Operations, plan.OpCopy) {
+		decisions = append(decisions, planDecision{
+			Code:    diagnosticPacketCopy,
+			Branch:  branchName,
+			Message: "stream can remain packet encoded",
+		})
+	}
+	if recipeIROperationKindPresent(stream.Operations, plan.OpEncode) {
 		decisions = append(decisions, planDecision{
 			Code:    diagnosticEncodeRequired,
 			Branch:  branchName,
@@ -471,7 +609,85 @@ func planOperationFromOperationSpec(operation operationSpec) planOperation {
 	}
 }
 
+func planOperationFromRecipeIROperation(operation recipeir.Operation) planOperation {
+	switch operation.Kind {
+	case plan.OpTransform:
+		op := planRecipeIRTransformOperation(operation.Transform)
+		op.Shared = operation.Shared
+		op.Component = firstNonEmpty(operation.Component, op.Component)
+		return op
+	case plan.OpShape:
+		detail := "media shape annotation"
+		switch {
+		case operation.Auto != nil:
+			detail = "shape solver policy"
+		case operation.Require != nil:
+			detail = "shape requirement"
+		case operation.Prefer != nil:
+			detail = "shape preference"
+		}
+		return planOperation{
+			Kind:      plan.OpShape,
+			Component: firstNonEmpty(operation.Component, "shape"),
+			Detail:    detail,
+			Shape:     operation.Shape,
+			Shared:    operation.Shared,
+		}
+	case plan.OpTap:
+		op := planRecipeIRTapOperation(operation.Tap)
+		op.Shared = operation.Shared
+		return op
+	case plan.OpEncode:
+		return planOperation{
+			Kind:      plan.OpEncode,
+			Component: string(operation.Encode.ID),
+			Detail:    "frames to packets",
+			Codec:     cloneCodecSpec(operation.Encode),
+			Shape:     mediaShapeFromCodecSpec(operation.Encode, shape.DomainPacket),
+			Shared:    operation.Shared,
+		}
+	case plan.OpDecode:
+		return planOperation{
+			Kind:      plan.OpDecode,
+			Component: firstNonEmpty(string(operation.Decode.ID), operation.Component),
+			Detail:    "packets to frames",
+			Codec:     cloneCodecSpec(operation.Decode),
+			Shared:    operation.Shared,
+		}
+	case plan.OpStage:
+		return planOperation{
+			Kind:      plan.OpStage,
+			Component: operation.Component,
+			Detail:    "custom stage",
+			Shared:    operation.Shared,
+		}
+	case plan.OpCopy:
+		return planOperation{
+			Kind:      plan.OpCopy,
+			Component: firstNonEmpty(operation.Component, "packet-copy"),
+			Detail:    firstNonEmpty(operation.Detail, "no frame operation requested"),
+			Codec:     cloneCodecSpec(operation.Encode),
+			Shared:    operation.Shared,
+		}
+	default:
+		return planOperation{
+			Kind:      operation.Kind,
+			Component: operation.Component,
+			Shared:    operation.Shared,
+		}
+	}
+}
+
 func operationSpecKindPresent(operations []operationSpec, kind plan.OperationKind) bool {
+	for i := range operations {
+		if operations[i].Kind == kind {
+			return true
+		}
+	}
+	return false
+}
+
+func recipeIROperationKindPresent(operations []recipeir.Operation, kind plan.OperationKind) bool {
 	for i := range operations {
 		if operations[i].Kind == kind {
 			return true
@@ -516,7 +732,26 @@ func planTransformOperation(transform transformSpec) planOperation {
 	}
 }
 
+func planRecipeIRTransformOperation(transform recipeir.Transform) planOperation {
+	name := recipeIRTransformFactoryName(transform)
+	return planOperation{
+		Kind:      plan.OpTransform,
+		Component: firstNonEmpty(name, "transform"),
+		Detail:    firstNonEmpty(name, "transform frames"),
+		Shape:     mediaShapeFromRecipeIRTransform(transform),
+	}
+}
+
 func planTapOperation(tap tapIntent) planOperation {
+	return planOperation{
+		Kind:      plan.OpTap,
+		Component: firstNonEmpty(tap.Name, "tap"),
+		Detail:    "named media outlet",
+		After:     tap.After,
+	}
+}
+
+func planRecipeIRTapOperation(tap recipeir.Tap) planOperation {
 	return planOperation{
 		Kind:      plan.OpTap,
 		Component: firstNonEmpty(tap.Name, "tap"),
@@ -646,28 +881,6 @@ func normalizeTapShape(spec shape.Spec) shape.Spec {
 	return spec
 }
 
-func normalizePlanBranchShape(spec shape.Spec, stream streamIntent, input inputIntent) shape.Spec {
-	inputShape := mediaShapeFromCodecSpec(input.Codec, firstNonEmptyDomain(spec.Domain, shape.DomainPacket))
-	inputShape.Realtime = input.Realtime
-	spec = shape.Merge(inputShape, spec)
-	if spec.Domain == "" {
-		spec.Domain = shape.DomainPacket
-	}
-	if spec.MediaKind == "" {
-		spec.MediaKind = firstNonEmptyMedia(stream.Select.Type, chainEncodeSpec(stream.Operations).Type, input.Codec.Type)
-	}
-	if spec.StreamID == "" {
-		spec.StreamID = stream.Select.ID
-	}
-	if spec.Codec == "" {
-		spec.Codec = firstNonEmptyCodec(stream.Select.Codec, input.Codec.ID)
-	}
-	if input.Realtime {
-		spec.Realtime = true
-	}
-	return spec
-}
-
 func mediaShapeFromPlanStream(stream av.Stream, domain shape.MediaDomain) shape.Spec {
 	return shape.FromStream(stream, domain)
 }
@@ -707,6 +920,29 @@ func mediaShapeFromTransform(transform transformSpec) shape.Spec {
 		}
 	}
 	return shape.Spec{}
+}
+
+func mediaShapeFromRecipeIRTransform(transform recipeir.Transform) shape.Spec {
+	switch transform.Kind {
+	case recipeir.TransformResize:
+		return shape.Spec{
+			Domain:      shape.DomainFrame,
+			MediaKind:   av.MediaVideo,
+			Width:       transform.Resize.Width,
+			Height:      transform.Resize.Height,
+			PixelFormat: transform.Resize.PixelFormat,
+		}
+	case recipeir.TransformResample:
+		return shape.Spec{
+			Domain:       shape.DomainFrame,
+			MediaKind:    av.MediaAudio,
+			SampleRate:   transform.Resample.SampleRate,
+			Channels:     transform.Resample.Channels,
+			SampleFormat: transform.Resample.SampleFormat,
+		}
+	default:
+		return shape.Spec{}
+	}
 }
 
 func mediaShapeEmpty(shape shape.Spec) bool {
