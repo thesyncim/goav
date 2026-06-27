@@ -377,6 +377,33 @@ func TestFlowDuplicateEncodeAndDecodeErrors(t *testing.T) {
 	assertBuildErrorCode(t, err, flowDecodeDuplicateCode)
 }
 
+func TestFlowConstructionErrorsAreJoined(t *testing.T) {
+	flow := Flow("bad").Audio().
+		Encode(codec.Opus()).
+		Encode(codec.Opus()).
+		Tap(FrameTap("voice.frames"))
+	spec := flow.chainSpec()
+	assertBuildErrorCode(t, spec.err, encodeDuplicateCode)
+
+	_, err := chainSpecFrom(flow)
+	joined, ok := err.(interface{ Unwrap() []error })
+	if !ok {
+		t.Fatalf("flow err = %T, want joined construction errors", err)
+	}
+	codes := make(map[errcode.Code]bool)
+	for _, cause := range joined.Unwrap() {
+		var buildErr *BuildError
+		if errors.As(cause, &buildErr) {
+			codes[buildErr.Code] = true
+		}
+	}
+	for _, code := range []errcode.Code{encodeDuplicateCode, errcode.TapDomainMismatch} {
+		if !codes[code] {
+			t.Fatalf("joined flow codes = %v, want %s", codes, code)
+		}
+	}
+}
+
 type nonSnapshotFlow struct{}
 
 func (nonSnapshotFlow) Name() string { return "foreign" }

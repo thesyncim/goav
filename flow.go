@@ -1,6 +1,7 @@
 package goav
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/thesyncim/goav/av"
@@ -29,6 +30,7 @@ type chainSpec struct {
 	media      av.MediaType
 	operations []operationSpec
 	err        error
+	errs       []error
 }
 
 type chainBuilder struct {
@@ -601,13 +603,29 @@ func (b *chainBuilder) snapshot() chainSpec {
 	}
 	spec := b.spec
 	spec.operations = cloneOperationSpecs(spec.operations)
+	spec.errs = append([]error(nil), spec.errs...)
 	return spec
 }
 
 func (b *chainBuilder) setErr(err error) {
-	if b.spec.err == nil {
-		b.spec.err = err
+	b.spec.setErr(err)
+}
+
+func (s *chainSpec) setErr(err error) {
+	if err == nil {
+		return
 	}
+	if s.err == nil {
+		s.err = err
+	}
+	s.errs = append(s.errs, err)
+}
+
+func (s chainSpec) recipeErr() error {
+	if len(s.errs) == 0 {
+		return s.err
+	}
+	return errors.Join(s.errs...)
 }
 
 func chainSpecFrom(flow chain) (chainSpec, error) {
@@ -619,8 +637,8 @@ func chainSpecFrom(flow chain) (chainSpec, error) {
 		return chainSpec{}, nilFlowError()
 	}
 	spec := snapshotter.chainSpec()
-	if spec.err != nil {
-		return spec, spec.err
+	if err := spec.recipeErr(); err != nil {
+		return spec, err
 	}
 	return spec, nil
 }
