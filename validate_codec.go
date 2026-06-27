@@ -62,12 +62,12 @@ func validateKnownRecipeIRDecodeAdapters(operation string, rt *Runtime, probes [
 	return nil
 }
 
-func validateLiveStreamSelection(inputs []inputIntent, stream streamIntent) error {
+func validateLiveRecipeStreamSelection(inputs []inputIntent, stream recipeir.Stream) error {
 	streams := liveIntentStreams(inputs)
 	if len(streams) == 0 {
 		return nil
 	}
-	_, err := selectDecodeStream(streams, streamIntentSelector(stream))
+	_, err := selectDecodeStream(streams, recipeIRStreamSelector(stream))
 	return err
 }
 
@@ -125,12 +125,6 @@ func knownProbeDecodeStream(probes []format.ProbeResult, stream streamIntent) (a
 		return av.Stream{}, false
 	}
 	return candidates[0], true
-}
-
-func streamNeedsDecode(stream streamIntent) bool {
-	return chainHasDecode(stream.Operations) ||
-		len(streamIntentTransformSpecs(stream)) != 0 ||
-		chainEncodeSpec(stream.Operations).ID != ""
 }
 
 func liveDecodeAdapterRequest(inputs []inputIntent, stream streamIntent) (codecAdapterRequest, bool) {

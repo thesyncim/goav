@@ -1328,19 +1328,19 @@ func validateJobLiveStreamSelectionPass() recipeCompilePass {
 		if !state.options.preflightLiveStreams {
 			return nil
 		}
-		streams := streamIntentsFromRecipeIR(state.recipe.Streams)
+		streams := state.recipe.Streams
 		for i := range streams {
 			stream := streams[i]
-			if jobStreamSelectionNeedsUnion(state, stream) {
-				if err := validateJobStreamSelectionAcrossInputs(state, stream); err != nil {
+			if jobRecipeIRStreamSelectionNeedsUnion(state, stream) {
+				if err := validateJobRecipeIRStreamSelectionAcrossInputs(state, stream); err != nil {
 					return err
 				}
 				continue
 			}
-			if !streamNeedsDecodeForState(state, stream) {
+			if !recipeIRStreamNeedsDecodeForState(state, stream) {
 				continue
 			}
-			if err := validateLiveStreamSelection(state.recipeInputIntents(), stream); err != nil {
+			if err := validateLiveRecipeStreamSelection(state.recipeInputIntents(), stream); err != nil {
 				return err
 			}
 		}
@@ -1350,19 +1350,19 @@ func validateJobLiveStreamSelectionPass() recipeCompilePass {
 
 func validateJobKnownInputStreamSelectionPass() recipeCompilePass {
 	return recipeCompilePassFunc{name: "validate job known input stream selection", fn: func(state *recipeCompileState) error {
-		streams := streamIntentsFromRecipeIR(state.recipe.Streams)
+		streams := state.recipe.Streams
 		for i := range streams {
 			stream := streams[i]
-			if jobStreamSelectionNeedsUnion(state, stream) {
-				if err := validateJobStreamSelectionAcrossInputs(state, stream); err != nil {
+			if jobRecipeIRStreamSelectionNeedsUnion(state, stream) {
+				if err := validateJobRecipeIRStreamSelectionAcrossInputs(state, stream); err != nil {
 					return err
 				}
 				continue
 			}
-			if !streamNeedsDecodeForState(state, stream) {
+			if !recipeIRStreamNeedsDecodeForState(state, stream) {
 				continue
 			}
-			if err := validateKnownInputStreamSelection(state.inputProbes, stream); err != nil {
+			if err := validateKnownRecipeInputStreamSelection(state.inputProbes, stream); err != nil {
 				return err
 			}
 		}
@@ -1380,13 +1380,16 @@ func jobStreamSelectionNeedsUnion(state *recipeCompileState, stream streamIntent
 	return len(state.recipeInputIntents()) > 1 || stream.Select.Input != ""
 }
 
-// validateJobStreamSelectionAcrossInputs resolves one stream chain against the
-// union of all input streams. Exactly one match is required; several matches
-// fail with the candidate list (input + stream id + media kind) and
-// InputName/StreamID narrowing suggestions.
-func validateJobStreamSelectionAcrossInputs(state *recipeCompileState, stream streamIntent) error {
+func jobRecipeIRStreamSelectionNeedsUnion(state *recipeCompileState, stream recipeir.Stream) bool {
+	if state == nil || !state.jobPresent {
+		return false
+	}
+	return len(state.recipeInputIntents()) > 1 || stream.Selector.Input != ""
+}
+
+func validateJobRecipeIRStreamSelectionAcrossInputs(state *recipeCompileState, stream recipeir.Stream) error {
 	sets := jobInputStreamSetsFromRecipeIR(state.recipeInputIntents(), state.inputFacts, state.inputProbes)
-	_, _, err := selectStreamAcrossInputSets(sets, streamIntentSelector(stream), stream.Select.Input)
+	_, _, err := selectStreamAcrossInputSets(sets, recipeIRStreamSelector(stream), stream.Selector.Input)
 	return err
 }
 
@@ -1428,13 +1431,6 @@ func recipeIRStreamNeedsDecode(stream recipeir.Stream) bool {
 	return recipeIRStreamHasDecode(stream) ||
 		len(recipeIRStreamTransforms(stream)) != 0 ||
 		recipeIRStreamEncodeSpec(stream).ID != ""
-}
-
-func streamNeedsDecodeForState(state *recipeCompileState, stream streamIntent) bool {
-	if spec, ok := jobStreamCustomSourceShape(state, stream); ok && spec.Domain == shape.DomainFrame {
-		return false
-	}
-	return streamNeedsDecode(stream)
 }
 
 // jobStreamCustomSourceShape resolves the declared source shape feeding one
@@ -1483,17 +1479,17 @@ func validateKnownBranchInputStreamSelectionPass() recipeCompilePass {
 		if !state.branchInputProbeReady || len(state.branchInputProbe.Streams) == 0 {
 			return nil
 		}
-		streams := streamIntentsFromRecipeIR(state.recipe.Streams)
+		streams := state.recipe.Streams
 		if spec, ok := state.inputSourceShape(0); ok && spec.Domain == shape.DomainFrame {
 			for i := range streams {
-				if _, err := selectStream(state.branchInputProbe.Streams, streamIntentSelector(streams[i])); err != nil {
+				if _, err := selectStream(state.branchInputProbe.Streams, recipeIRStreamSelector(streams[i])); err != nil {
 					return err
 				}
 			}
 			return nil
 		}
 		for i := range streams {
-			if err := validateKnownProbeStreamSelection(state.branchInputProbe, streams[i]); err != nil {
+			if err := validateKnownProbeRecipeStreamSelection(state.branchInputProbe, streams[i]); err != nil {
 				return err
 			}
 		}
@@ -1514,20 +1510,20 @@ func validateKnownBranchInputDecodeAdaptersPass() recipeCompilePass {
 	}}
 }
 
-func validateKnownInputStreamSelection(probes []format.ProbeResult, stream streamIntent) error {
+func validateKnownRecipeInputStreamSelection(probes []format.ProbeResult, stream recipeir.Stream) error {
 	for i := range probes {
-		if err := validateKnownProbeStreamSelection(probes[i], stream); err != nil {
+		if err := validateKnownProbeRecipeStreamSelection(probes[i], stream); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func validateKnownProbeStreamSelection(probe format.ProbeResult, stream streamIntent) error {
+func validateKnownProbeRecipeStreamSelection(probe format.ProbeResult, stream recipeir.Stream) error {
 	if len(probe.Streams) == 0 {
 		return nil
 	}
-	_, err := selectDecodeStream(probe.Streams, streamIntentSelector(stream))
+	_, err := selectDecodeStream(probe.Streams, recipeIRStreamSelector(stream))
 	return err
 }
 
