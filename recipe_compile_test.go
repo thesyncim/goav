@@ -609,6 +609,39 @@ func TestRecipeCompileStateDoesNotCarryRecipeBuilders(t *testing.T) {
 	}
 }
 
+func TestJobConstructionErrorsAreJoined(t *testing.T) {
+	_, err := From(FileInput("input.ogg", strings.NewReader(""))).
+		Audio().
+		Decode().
+		Encode(codec.Opus()).
+		Encode(codec.Opus()).
+		To(Destination{}).
+		Describe()
+	if err == nil {
+		t.Fatal("Describe() err = nil, want joined construction errors")
+	}
+	var first *BuildError
+	if !errors.As(err, &first) || first.Code != encodeDuplicateCode {
+		t.Fatalf("err = %v, want first BuildError code %s", err, encodeDuplicateCode)
+	}
+	joined, ok := err.(interface{ Unwrap() []error })
+	if !ok {
+		t.Fatalf("err = %T, want joined construction errors", err)
+	}
+	codes := make(map[errcode.Code]bool)
+	for _, cause := range joined.Unwrap() {
+		var buildErr *BuildError
+		if errors.As(cause, &buildErr) {
+			codes[buildErr.Code] = true
+		}
+	}
+	for _, code := range []errcode.Code{encodeDuplicateCode, destinationInvalidCode} {
+		if !codes[code] {
+			t.Fatalf("joined codes = %v, want %s", codes, code)
+		}
+	}
+}
+
 func TestRecipeCompilePhaseSequencesArePinned(t *testing.T) {
 	tests := []struct {
 		name   string

@@ -259,6 +259,7 @@ type Job struct {
 	streamRules        []streamRule
 	join               *joinSpec
 	err                error
+	errs               []error
 }
 
 type jobOrigin uint8
@@ -346,9 +347,23 @@ func (j *Job) runtimeOrNil() *Runtime {
 }
 
 func (j *Job) setErr(err error) {
+	if err == nil {
+		return
+	}
 	if j.err == nil {
 		j.err = err
 	}
+	j.errs = append(j.errs, err)
+}
+
+func (j *Job) recipeErr() error {
+	if j == nil {
+		return nil
+	}
+	if len(j.errs) == 0 {
+		return j.err
+	}
+	return errors.Join(j.errs...)
 }
 
 // To routes the whole job to one or more destinations (a fanout when several
@@ -447,7 +462,7 @@ func (j *Job) streamBuilder(name string, media av.MediaType, options ...streamOp
 		if len(last.outputs) == 0 {
 			// A new chain may only start once the previous one is routed; an
 			// unfinished chain followed by another selection is still an error.
-			j.err = duplicateJobStreamError(last, stream)
+			j.setErr(duplicateJobStreamError(last, stream))
 			return &jobStreamBuilder{job: j, stream: stream}
 		}
 	}

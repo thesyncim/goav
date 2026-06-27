@@ -52,7 +52,7 @@ func newLinearJobRecipeSnapshot(job *Job) recipeCompileSnapshot {
 	annotateRecipeIRInputsFromSpecs(&recipe, job.inputs)
 	annotateRecipeIRDestinationsFromSpecs(&recipe, outputs)
 	recipe.StreamRules = recipeIRStreamRulesFromRoot(job.streamRules)
-	recipeErr := job.err
+	recipeErr := job.recipeErr()
 	if job.origin != jobOriginConstructed && recipeErr == nil {
 		recipeErr = unconstructedJobError()
 	}
@@ -84,7 +84,7 @@ func newJoinRecipeSnapshot(job *Job) recipeCompileSnapshot {
 		recipe:                 recipe,
 		runtime:                job.runtimeOrNil(),
 		runtimeExplicit:        job.runtimeSet,
-		recipeErr:              job.err,
+		recipeErr:              job.recipeErr(),
 		inputAttachments:       inputs,
 		outputAttachments:      outputs,
 		outputDestinationNames: names,
@@ -95,7 +95,7 @@ func newJoinRecipeSnapshot(job *Job) recipeCompileSnapshot {
 
 func newBranchJobRecipeSnapshot(job *Job) recipeCompileSnapshot {
 	input := InputSpec{}
-	recipeErr := job.err
+	recipeErr := job.recipeErr()
 	if len(job.inputs) == 1 {
 		input = job.inputs[0]
 	} else if recipeErr == nil {
