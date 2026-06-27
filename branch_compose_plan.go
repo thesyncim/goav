@@ -52,7 +52,7 @@ func destinationsShareExplicitGroup(first namedDestinationSpec, second namedDest
 const branchCompositionOperation = "build branch composition"
 
 func planBranchCompositionRecipe(recipe recipeir.Recipe, input InputSpec, namedOutputs []namedDestinationSpec) (branchComposePlan, error) {
-	streams := streamIntentsFromRecipeIR(recipe.Streams)
+	streams := recipe.Streams
 	outputs, outputOrder := branchDestinationAttachmentSet(namedOutputs)
 
 	branches := make([]branchComposeBranch, 0, len(streams))
@@ -63,27 +63,28 @@ func planBranchCompositionRecipe(recipe recipeir.Recipe, input InputSpec, namedO
 	for i := range streams {
 		stream := streams[i]
 		branchName := stream.Name
-		selector := streamIntentSelector(stream)
-		operations := cloneOperationSpecs(stream.Operations)
+		selector := recipeIRStreamSelector(stream)
+		operations := operationSpecsFromRecipeIROperations(stream.Operations)
 		sharedOperations, privateOperations := splitOperationSpecsByShared(operations)
 		encode := chainEncodeSpec(operations)
+		labels := recipeIROutputRefsToStrings(stream.Outputs)
 		branch := branchComposeBranch{
 			Name:              branchName,
 			Selector:          selector,
-			Input:             stream.Select.Input,
+			Input:             stream.Selector.Input,
 			Copy:              encode.Copy,
 			Operations:        cloneOperationSpecs(operations),
 			SharedOperations:  sharedOperations,
 			PrivateOperations: privateOperations,
 			DecodeConfig:      cloneCodecSpec(chainDecodeCodec(operations)),
-			CodecChange:       stream.CodecChange,
+			CodecChange:       rootCodecChangeFromRecipeIR(stream.CodecChange),
 			Encode:            encodeConfigFromSpec(encode),
-			Labels:            append([]string(nil), stream.Destinations...),
+			Labels:            labels,
 		}
-		for _, label := range stream.Destinations {
+		for _, label := range labels {
 			outputBranches[label] = append(outputBranches[label], branchName)
 		}
-		if err := validateBranchTransforms(stream); err != nil {
+		if err := validateBranchRecipeTransforms(stream); err != nil {
 			return branchComposePlan{}, err
 		}
 		branches = append(branches, branch)
@@ -193,17 +194,17 @@ func validateBranchCompositionRecipeShape(operation string, recipe recipeir.Reci
 			cause: errUnsupportedBuild,
 		}
 	}
-	streams := streamIntentsFromRecipeIR(recipe.Streams)
+	streams := recipe.Streams
 	if len(streams) == 0 {
 		return branchStreamMissingError()
 	}
 	branchNames := make(map[string]int, len(streams))
 	for i := range streams {
 		stream := streams[i]
-		if err := validateBranchIntentShape(stream, i); err != nil {
+		if err := validateBranchRecipeStreamShape(stream, i); err != nil {
 			return err
 		}
-		if err := validateBranchTransforms(stream); err != nil {
+		if err := validateBranchRecipeTransforms(stream); err != nil {
 			return err
 		}
 		branchName := stream.Name
@@ -215,30 +216,44 @@ func validateBranchCompositionRecipeShape(operation string, recipe recipeir.Reci
 	return nil
 }
 
-func validateBranchIntentShape(stream streamIntent, index int) error {
-	selector := streamIntentSelector(stream)
+func validateBranchRecipeStreamShape(stream recipeir.Stream, index int) error {
+	streamIntent := streamIntentFromRecipeIR(stream)
+	selector := recipeIRStreamSelector(stream)
 	if stream.Name == "" {
-		return branchIntentNameMissingError(index, stream)
+		return branchIntentNameMissingError(index, streamIntent)
 	}
-	if err := validateRecipeStreamSelector(branchCompositionOperation, branchIntentName(stream), selector); err != nil {
+	if err := validateRecipeStreamSelector(branchCompositionOperation, branchRecipeStreamName(stream), selector); err != nil {
 		return err
 	}
-	encode := chainEncodeSpec(stream.Operations)
+	encode := recipeIRStreamEncodeSpec(stream)
 	if codecIntentSet(encode) {
-		if encode.Copy && chainHasDecode(stream.Operations) {
-			return branchCopyUnsupportedError(stream)
+		if encode.Copy && recipeIRStreamHasDecode(stream) {
+			return branchCopyUnsupportedError(streamIntent)
 		}
-		if encode.Copy && len(streamIntentTransformSpecs(stream)) != 0 {
-			return branchPacketTransformUnsupportedError(stream)
+		if encode.Copy && len(recipeIRStreamTransforms(stream)) != 0 {
+			return branchPacketTransformUnsupportedError(streamIntent)
 		}
 		if err := validateRecipeEncode(encode, branchCompositionOperation, stream.Name); err != nil {
 			return err
 		}
 	}
-	if len(stream.Destinations) == 0 {
-		return branchIntentDestinationMissingError(stream)
+	if len(stream.Outputs) == 0 {
+		return branchIntentDestinationMissingError(streamIntent)
 	}
-	return validateBranchDestinations(stream)
+	return validateBranchRecipeDestinations(stream)
+}
+
+func branchRecipeStreamName(stream recipeir.Stream) string {
+	return firstNonEmpty(stream.Name, string(stream.Selector.Type), "stream")
+}
+
+func recipeIRStreamHasDecode(stream recipeir.Stream) bool {
+	for i := range stream.Operations {
+		if stream.Operations[i].Kind == plan.OpDecode {
+			return true
+		}
+	}
+	return false
 }
 
 func validateBranchCompositionAttachments(input InputSpec, namedOutputs []namedDestinationSpec, fromBranchSplit bool) error {
@@ -441,11 +456,13 @@ func branchIntentNameMissingError(index int, stream streamIntent) error {
 	}
 }
 
-func validateBranchDestinations(stream streamIntent) error {
-	seen := make(map[string]int, len(stream.Destinations))
-	for i, target := range stream.Destinations {
+func validateBranchRecipeDestinations(stream recipeir.Stream) error {
+	streamIntent := streamIntentFromRecipeIR(stream)
+	seen := make(map[string]int, len(stream.Outputs))
+	for i, output := range stream.Outputs {
+		target := string(output)
 		if firstIndex, ok := seen[target]; ok {
-			return duplicateBranchDestinationError(stream, target, firstIndex, i)
+			return duplicateBranchDestinationError(streamIntent, target, firstIndex, i)
 		}
 		seen[target] = i
 	}
@@ -472,10 +489,10 @@ func duplicateBranchDestinationError(stream streamIntent, target string, firstIn
 	}
 }
 
-func validateBranchTransforms(stream streamIntent) error {
-	transforms := streamIntentTransformSpecs(stream)
+func validateBranchRecipeTransforms(stream recipeir.Stream) error {
+	transforms := recipeIRStreamTransforms(stream)
 	for i := range transforms {
-		if err := validateTransformSpec(branchCompositionOperation, branchIntentName(stream), transforms[i]); err != nil {
+		if err := validateRecipeIRTransform(branchCompositionOperation, branchRecipeStreamName(stream), transforms[i]); err != nil {
 			return err
 		}
 	}
