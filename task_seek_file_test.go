@@ -238,6 +238,7 @@ func TestTaskSegmentExportsRealMatroskaWindow(t *testing.T) {
 	// destination — the seam destination snapshots report on.
 	if _, err := task.Attach(ctx, Branch("rec").
 		From(PacketTap("audio.packets")).
+		Copy().
 		To(lifecycleTestSink("rec"))); err != nil {
 		t.Fatal(err)
 	}

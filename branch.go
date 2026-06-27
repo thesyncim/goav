@@ -153,6 +153,16 @@ type branchSourceBinding struct {
 	streamDomain shape.MediaDomain
 }
 
+func branchExplicitSourceDomain(source branchSourceBinding) (shape.MediaDomain, bool) {
+	if source.tap != "" && source.tapDomain != "" {
+		return source.tapDomain, true
+	}
+	if source.stream != nil && source.streamDomain != "" {
+		return source.streamDomain, true
+	}
+	return "", false
+}
+
 // branchSource is the anchor a branch hangs from: a tap reference names a stable
 // tap, input.Stream(...) names one stream from a recipe input, and an expert graph
 // handle (expert.GraphNode, expert.GraphOutlet) names a graph node through its
@@ -291,6 +301,16 @@ func (b *branchBuilder) Apply(flow chain) *branchBuilder {
 		b.setErr(flowCopyDomainError("build branch", firstNonEmpty(spec.name, b.spec.name, "flow")))
 		return b
 	}
+	if len(specSteps) != 0 && !chainHasDecode(spec.operations) {
+		if !b.requireFrameInput("flow") {
+			return b
+		}
+	}
+	if codecIntentSet(chainEncodeSpec(spec.operations)) && !chainEncodeSpec(spec.operations).Copy && !chainHasDecode(spec.operations) {
+		if !b.requireFrameInput("flow") {
+			return b
+		}
+	}
 	b.spec.operations = append(b.spec.operations, cloneOperationSpecs(spec.operations)...)
 	return b
 }
@@ -306,6 +326,9 @@ func (b *branchBuilder) Do(stages ...pipeline.Stage) *branchBuilder {
 		}
 		if err := validateStageComponent(stages[i]); err != nil {
 			b.setErr(streamStageMissingError(streamIntent{Name: firstNonEmpty(b.spec.name, "branch")}, err))
+			return b
+		}
+		if !b.requireFrameInput("custom stage") {
 			return b
 		}
 		b.spec.operations = append(b.spec.operations, operationSpecForStage(stages[i]))
@@ -379,6 +402,9 @@ func (b *branchBuilder) Resize(width int, height int, options ...resizeOption) *
 		b.setErr(chainStepAfterEncodeError("build branch", firstNonEmpty(b.spec.name, "branch"), "resize", chainEncodeSpec(b.spec.operations)))
 		return b
 	}
+	if !b.requireFrameInput("resize") {
+		return b
+	}
 	transform := Resize(width, height, options...)
 	b.spec.operations = append(b.spec.operations, operationSpecForTransform(transform))
 	return b
@@ -390,6 +416,9 @@ func (b *branchBuilder) Resample(sampleRate int, channels int, options ...audioO
 	}
 	if codecIntentSet(chainEncodeSpec(b.spec.operations)) {
 		b.setErr(chainStepAfterEncodeError("build branch", firstNonEmpty(b.spec.name, "branch"), "resample", chainEncodeSpec(b.spec.operations)))
+		return b
+	}
+	if !b.requireFrameInput("resample") {
 		return b
 	}
 	transform := Resample(sampleRate, channels, options...)
@@ -424,6 +453,9 @@ func (b *branchBuilder) Tap(tap tapRef) *branchBuilder {
 		b.spec.operations = append(b.spec.operations, operationSpecForTap(tap, b.spec.media, operationSpecAfter(b.spec.operations, plan.OpEncode)))
 		return b
 	}
+	if tap.domain == shape.DomainFrame && !b.requireFrameInput("tap") {
+		return b
+	}
 	b.spec.operations = append(b.spec.operations, operationSpecForTap(tap, b.spec.media, operationSpecAfter(b.spec.operations, initialStepAfter(chainHasDecode(b.spec.operations)))))
 	return b
 }
@@ -438,6 +470,9 @@ func (b *branchBuilder) Encode(codec codec.CodecSpec) *branchBuilder {
 	}
 	if codec.Copy && chainHasDecode(b.spec.operations) {
 		b.setErr(branchDecodeCopyError(firstNonEmpty(b.spec.name, "branch")))
+		return b
+	}
+	if !codec.Copy && !b.requireFrameInput("encode") {
 		return b
 	}
 	b.spec.operations = append(b.spec.operations, operationSpecForEncode(cloneCodecSpec(codec)))
@@ -465,6 +500,14 @@ func (b *branchBuilder) To(destinations ...Destination) BranchSpec {
 		}
 		appendDestination(&spec, direct, i)
 	}
+	if branchDestinationsContainSinkDestination(spec.destinations) &&
+		!codecIntentSet(chainEncodeSpec(spec.operations)) &&
+		!chainHasDecode(spec.operations) {
+		if domain, ok := branchExplicitSourceDomain(spec.source); ok && domain == shape.DomainPacket {
+			spec.setErr(sinkDomainRequiredError("build branch", firstNonEmpty(spec.name, "branch")))
+			return spec
+		}
+	}
 	return spec
 }
 
@@ -478,6 +521,21 @@ func (b *branchBuilder) snapshot() BranchSpec {
 
 func (b *branchBuilder) setErr(err error) {
 	b.spec.setErr(err)
+}
+
+func (b *branchBuilder) requireFrameInput(step string) bool {
+	if chainHasDecode(b.spec.operations) {
+		return true
+	}
+	domain, ok := branchExplicitSourceDomain(b.spec.source)
+	if !ok || domain == shape.DomainFrame {
+		return true
+	}
+	if domain == shape.DomainPacket {
+		b.setErr(chainFrameInputRequiredError("build branch", firstNonEmpty(b.spec.name, "branch"), step))
+		return false
+	}
+	return true
 }
 
 func (s *BranchSpec) setErr(err error) {
@@ -818,7 +876,7 @@ func branchEncodeParentOperationError(node string, encode codec.CodecSpec) error
 		fixes: buildErrorFixes([]string{
 			"move .Branches(...) before the stream encoder",
 			"put .Encode(codec.Opus(...)), .Encode(codec.VP8(...)), or .Encode(codec.VP9(...)) on each goav.Branch(...) that writes a destination",
-			"attach post-encode packet branches at runtime with Mutable.Attach(ctx, goav.Branch(name).From(goav.PacketTap(name))...)",
+			"attach post-encode packet-copy branches at runtime with Mutable.Attach(ctx, goav.Branch(name).From(goav.PacketTap(name)).Copy()...)",
 		}),
 		cause: errUnsupportedBuild,
 	}
@@ -970,6 +1028,15 @@ func branchDestinationsAllSinkDestinations(destinations []destinationRef) bool {
 		}
 	}
 	return true
+}
+
+func branchDestinationsContainSinkDestination(destinations []destinationRef) bool {
+	for i := range destinations {
+		if destinations[i].dest.sink != nil {
+			return true
+		}
+	}
+	return false
 }
 
 func cloneDestinationRefs(destinations []destinationRef) []destinationRef {

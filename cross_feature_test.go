@@ -454,6 +454,7 @@ func TestSegmentAttachMidWindowCommitsAtEOS(t *testing.T) {
 	var recorded atomic.Int32
 	if _, err := task.Attach(ctx, Branch("rec").
 		From(PacketTap("audio.packets")).
+		Copy().
 		To(Sink(SinkFunc("rec", func(_ context.Context, msg Message) error {
 			if msg.Kind == pipeline.MessagePacket {
 				recorded.Add(1)

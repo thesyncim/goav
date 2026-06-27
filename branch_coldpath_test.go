@@ -134,6 +134,7 @@ func TestBranchesAnchorOnDeclaredAndDefaultPacketTaps(t *testing.T) {
 		Audio().Copy().Tap(PacketTap("recorded")).
 		Branches(
 			Branch("a").From(PacketTap("recorded")).
+				Copy().
 				To(Sink(SinkFunc("a", func(_ context.Context, msg Message) error {
 					if msg.Kind == pipeline.MessagePacket {
 						declared++
@@ -141,6 +142,7 @@ func TestBranchesAnchorOnDeclaredAndDefaultPacketTaps(t *testing.T) {
 					return nil
 				}))),
 			Branch("b").From(PacketTap("audio.packets")).
+				Copy().
 				To(Sink(SinkFunc("b", func(_ context.Context, msg Message) error {
 					if msg.Kind == pipeline.MessagePacket {
 						fallback++

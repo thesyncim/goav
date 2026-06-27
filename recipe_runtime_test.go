@@ -1883,7 +1883,7 @@ func TestStreamRecipeTaskAttachesAfterCustomStageAndEncodeTaps(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	packetAttachment, err := task.Attach(ctx, Branch("packets").From(PacketTap("audio.encoded")).To(Sink(SinkFunc("packets", func(context.Context, Message) error {
+	packetAttachment, err := task.Attach(ctx, Branch("packets").From(PacketTap("audio.encoded")).Copy().To(Sink(SinkFunc("packets", func(context.Context, Message) error {
 		return nil
 	}))))
 	if err != nil {
@@ -3247,6 +3247,7 @@ func TestTaskAttachRuntimeFlowCustomEncodeMuxBranch(t *testing.T) {
 	packetMessages := 0
 	packetAttachment, err := builtTask.Attach(ctx, Branch("packets").
 		From(PacketTap("audio.voice.packets")).
+		Copy().
 		To(Sink(SinkFunc("packets", func(_ context.Context, msg Message) error {
 			if msg.Kind != pipeline.MessagePacket {
 				return errors.New("packet tap delivered non-packet message")

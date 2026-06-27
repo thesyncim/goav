@@ -397,6 +397,7 @@ func TestTaskAttachRuntimeBranchGroupCanUsePendingTap(t *testing.T) {
 			To(Sink(parentSink)),
 		Branch("screenshots").
 			From(PacketTap("video.sampled")).
+			Copy().
 			To(Sink(childSink)),
 	)
 	if err != nil {
@@ -868,7 +869,7 @@ func TestTaskAttachRuntimeBranchExposesNestedTap(t *testing.T) {
 		t.Fatalf("tap = %+v, ok=%v, want sampler/sample", tap, ok)
 	}
 
-	child, err := task.Attach(ctx, Branch("screenshots").From(PacketTap("video.sampled")).To(Sink(childSink)))
+	child, err := task.Attach(ctx, Branch("screenshots").From(PacketTap("video.sampled")).Copy().To(Sink(childSink)))
 	if err != nil {
 		t.Fatal(err)
 	}

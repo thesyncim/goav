@@ -149,6 +149,7 @@ func TestTaskSnapshotReportsCommittedDestinationAfterRun(t *testing.T) {
 
 	attachment, err := task.Attach(ctx, Branch("rec").
 		From(PacketTap("audio.packets")).
+		Copy().
 		To(lifecycleTestSink("rec")))
 	if err != nil {
 		t.Fatal(err)
@@ -210,6 +211,7 @@ func TestTaskAttachDetachPublishesBranchLifecycleEvents(t *testing.T) {
 	events := task.Watch(inspect.WatchTypes(av.EventBranchAttached, av.EventBranchDetached)).Events()
 	attachment, err := task.Attach(ctx, Branch("rec").
 		From(PacketTap("audio.packets")).
+		Copy().
 		To(lifecycleTestSink("rec")))
 	if err != nil {
 		t.Fatal(err)
@@ -255,6 +257,7 @@ func TestTaskDetachPublishesDestinationLifecycleEvents(t *testing.T) {
 	events := task.Watch(inspect.WatchTypes(av.EventDestinationCommitted, av.EventDestinationAborted, av.EventDestinationCommitError)).Events()
 	attachment, err := task.Attach(ctx, Branch("rec").
 		From(PacketTap("audio.packets")).
+		Copy().
 		To(lifecycleTestSink("rec")))
 	if err != nil {
 		t.Fatal(err)
@@ -315,6 +318,7 @@ func TestTaskDetachOptionsReportDestinationOutcome(t *testing.T) {
 	for _, tt := range tests {
 		attachment, err := task.Attach(ctx, Branch(tt.name).
 			From(PacketTap("audio.packets")).
+			Copy().
 			To(lifecycleTestSink(tt.dest)))
 		if err != nil {
 			t.Fatalf("%s attach: %v", tt.name, err)
@@ -349,6 +353,7 @@ func TestTaskSnapshotReportsFailedTaskAndAbortedDestination(t *testing.T) {
 
 	if _, err := task.Attach(ctx, Branch("rec").
 		From(PacketTap("audio.packets")).
+		Copy().
 		To(lifecycleTestSink("rec"))); err != nil {
 		t.Fatal(err)
 	}
