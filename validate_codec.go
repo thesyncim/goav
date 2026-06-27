@@ -10,6 +10,7 @@ import (
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/format"
+	"github.com/thesyncim/goav/internal/recipeir"
 )
 
 func validateRecipeDecodeAdapters(operation string, rt *Runtime, inputs []inputIntent, streams []streamIntent) error {
@@ -242,21 +243,22 @@ func decodeAdapterIncompatibleError(operation string, stream streamIntent, reque
 	}
 }
 
-func validateRecipeEncodeAdapters(operation string, rt *Runtime, streams []streamIntent) error {
+func validateRecipeIREncodeAdapters(operation string, rt *Runtime, streams []recipeir.Stream) error {
 	if rt == nil {
 		return nil
 	}
 	for i := range streams {
 		stream := streams[i]
-		codecID := chainEncodeSpec(stream.Operations).ID
+		codecID := recipeIRStreamEncodeSpec(stream).ID
 		if codecID == "" {
 			continue
 		}
+		streamIntent := streamIntentFromRecipeIR(stream)
 		if _, err := rt.codecs.EncoderFactory(codecID); err != nil {
-			return recipeEncodeAdapterError(operation, stream, rt.codecs, err)
+			return recipeEncodeAdapterError(operation, streamIntent, rt.codecs, err)
 		}
-		request := encodeAdapterRequestFromStreamIntent(stream)
-		if err := validateEncodeAdapterDescriptors(operation, stream, rt.codecs, request); err != nil {
+		request := encodeAdapterRequestFromRecipeIRStream(stream)
+		if err := validateEncodeAdapterDescriptors(operation, streamIntent, rt.codecs, request); err != nil {
 			return err
 		}
 	}
@@ -270,13 +272,13 @@ type codecAdapterRequest struct {
 	PixelFormat  string
 }
 
-func encodeAdapterRequestFromStreamIntent(stream streamIntent) codecAdapterRequest {
-	encode := chainEncodeSpec(stream.Operations)
+func encodeAdapterRequestFromRecipeIRStream(stream recipeir.Stream) codecAdapterRequest {
+	encode := recipeIRStreamEncodeSpec(stream)
 	return codecAdapterRequest{
 		Codec:        encode.ID,
-		Media:        firstNonEmptyMedia(encode.Type, encode.Parameters.Type, stream.Select.Type, codecMedia(encode.ID)),
-		SampleFormat: firstNonEmpty(encode.Parameters.SampleFormat, streamIntentSampleFormat(stream)),
-		PixelFormat:  firstNonEmpty(encode.Parameters.PixelFormat, streamIntentPixelFormat(stream)),
+		Media:        firstNonEmptyMedia(encode.Type, encode.Parameters.Type, stream.Selector.Type, codecMedia(encode.ID)),
+		SampleFormat: firstNonEmpty(encode.Parameters.SampleFormat, recipeIRStreamSampleFormat(stream)),
+		PixelFormat:  firstNonEmpty(encode.Parameters.PixelFormat, recipeIRStreamPixelFormat(stream)),
 	}
 }
 
@@ -289,21 +291,21 @@ func encodeAdapterRequestFromPreparedStream(spec codec.CodecSpec, stream av.Stre
 	}
 }
 
-func streamIntentSampleFormat(stream streamIntent) string {
-	transforms := streamIntentTransformSpecs(stream)
+func recipeIRStreamSampleFormat(stream recipeir.Stream) string {
+	transforms := recipeIRStreamTransforms(stream)
 	for i := len(transforms) - 1; i >= 0; i-- {
-		if transforms[i].resample != nil && transforms[i].resample.SampleFormat != "" {
-			return transforms[i].resample.SampleFormat
+		if transforms[i].Kind == recipeir.TransformResample && transforms[i].Resample.SampleFormat != "" {
+			return transforms[i].Resample.SampleFormat
 		}
 	}
 	return ""
 }
 
-func streamIntentPixelFormat(stream streamIntent) string {
-	transforms := streamIntentTransformSpecs(stream)
+func recipeIRStreamPixelFormat(stream recipeir.Stream) string {
+	transforms := recipeIRStreamTransforms(stream)
 	for i := len(transforms) - 1; i >= 0; i-- {
-		if transforms[i].resize != nil && transforms[i].resize.PixelFormat != "" {
-			return transforms[i].resize.PixelFormat
+		if transforms[i].Kind == recipeir.TransformResize && transforms[i].Resize.PixelFormat != "" {
+			return transforms[i].Resize.PixelFormat
 		}
 	}
 	return ""

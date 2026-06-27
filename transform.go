@@ -10,6 +10,7 @@ import (
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/filter"
+	"github.com/thesyncim/goav/internal/recipeir"
 	"github.com/thesyncim/goav/shape"
 )
 
@@ -50,24 +51,25 @@ func Resample(sampleRate int, channels int, options ...audioOption) transformSpe
 	return transformSpec{resample: &config}
 }
 
-func validateRecipeTransformAdapters(operation string, rt *Runtime, streams []streamIntent) error {
+func validateRecipeIRTransformAdapters(operation string, rt *Runtime, streams []recipeir.Stream) error {
 	if rt == nil {
 		return nil
 	}
 	for i := range streams {
 		stream := streams[i]
-		transforms := streamIntentTransformSpecs(stream)
+		streamIntent := streamIntentFromRecipeIR(stream)
+		transforms := recipeIRStreamTransforms(stream)
 		for j := range transforms {
-			name := transformFactoryName(transforms[j])
+			name := recipeIRTransformFactoryName(transforms[j])
 			if name == "" {
 				continue
 			}
 			if _, err := rt.filters.Factory(name); err != nil {
-				return recipeTransformAdapterError(operation, stream, name, err)
+				return recipeTransformAdapterError(operation, streamIntent, name, err)
 			}
 			desc, err := rt.filters.Descriptor(name)
 			if err == nil {
-				if err := validateTransformAdapterDescriptor(operation, stream, transforms[j], name, desc); err != nil {
+				if err := validateRecipeIRTransformAdapterDescriptor(operation, streamIntent, transforms[j], name, desc); err != nil {
 					return err
 				}
 			}
@@ -105,6 +107,30 @@ func validateTransformAdapterDescriptor(operation string, stream streamIntent, s
 	}
 	if spec.resample != nil {
 		if format := spec.resample.SampleFormat; format != "" && len(desc.SampleFormats) != 0 && !stringAllowed(desc.SampleFormats, format) {
+			return transformAdapterCapabilityError(operation, stream, name, "sample_format", format, desc.SampleFormats)
+		}
+	}
+	return nil
+}
+
+func validateRecipeIRTransformAdapterDescriptor(operation string, stream streamIntent, spec recipeir.Transform, name string, desc filter.Descriptor) error {
+	expectedInput, expectedOutput := transformAdapterExpectedMedia(name)
+	if expectedInput != "" && desc.Input != "" && desc.Input != expectedInput {
+		return transformAdapterIncompatibleError(operation, stream, name, desc, expectedInput, expectedOutput)
+	}
+	if expectedOutput != "" && desc.Output != "" && desc.Output != expectedOutput {
+		return transformAdapterIncompatibleError(operation, stream, name, desc, expectedInput, expectedOutput)
+	}
+	switch spec.Kind {
+	case recipeir.TransformResize:
+		if mode := resizeModeWithDefault(spec.Resize.Mode); mode != "" && len(desc.ResizeModes) != 0 && !resizeModeAllowed(desc.ResizeModes, mode) {
+			return transformAdapterCapabilityError(operation, stream, name, "resize_mode", string(mode), resizeModesToStrings(desc.ResizeModes))
+		}
+		if format := spec.Resize.PixelFormat; format != "" && len(desc.PixelFormats) != 0 && !stringAllowed(desc.PixelFormats, format) {
+			return transformAdapterCapabilityError(operation, stream, name, "pixel_format", format, desc.PixelFormats)
+		}
+	case recipeir.TransformResample:
+		if format := spec.Resample.SampleFormat; format != "" && len(desc.SampleFormats) != 0 && !stringAllowed(desc.SampleFormats, format) {
 			return transformAdapterCapabilityError(operation, stream, name, "sample_format", format, desc.SampleFormats)
 		}
 	}

@@ -1028,7 +1028,7 @@ func validateJobEncodeAdaptersPass() recipeCompilePass {
 		if !state.options.preflightEncodeAdapters {
 			return nil
 		}
-		return validateRecipeEncodeAdapters(state.operation, state.adapterRuntime(), streamIntentsFromRecipeIR(state.recipe.Streams))
+		return validateRecipeIREncodeAdapters(state.operation, state.adapterRuntime(), state.recipe.Streams)
 	}}
 }
 
@@ -1037,7 +1037,7 @@ func validateJobTransformAdaptersPass() recipeCompilePass {
 		if !state.options.preflightTransformAdapters {
 			return nil
 		}
-		return validateRecipeTransformAdapters(state.operation, state.adapterRuntime(), streamIntentsFromRecipeIR(state.recipe.Streams))
+		return validateRecipeIRTransformAdapters(state.operation, state.adapterRuntime(), state.recipe.Streams)
 	}}
 }
 
@@ -1219,7 +1219,7 @@ func validateBranchEncodeAdaptersPass() recipeCompilePass {
 		if !state.options.preflightEncodeAdapters {
 			return nil
 		}
-		return validateRecipeEncodeAdapters(state.operation, state.adapterRuntime(), streamIntentsFromRecipeIR(state.recipe.Streams))
+		return validateRecipeIREncodeAdapters(state.operation, state.adapterRuntime(), state.recipe.Streams)
 	}}
 }
 
@@ -1228,7 +1228,7 @@ func validateBranchTransformAdaptersPass() recipeCompilePass {
 		if !state.options.preflightTransformAdapters {
 			return nil
 		}
-		return validateRecipeTransformAdapters(state.operation, state.adapterRuntime(), streamIntentsFromRecipeIR(state.recipe.Streams))
+		return validateRecipeIRTransformAdapters(state.operation, state.adapterRuntime(), state.recipe.Streams)
 	}}
 }
 
