@@ -880,30 +880,24 @@ func TestRTPInputsSyncFromTimestampsAndDropLatePreview(t *testing.T) {
 			Height:    16,
 		},
 	}
-	audioReceiver := &runtimeRTPReceiver{
-		streams: []av.Stream{audio},
+	receiver := &runtimeRTPReceiver{
+		streams: []av.Stream{audio, video},
 		payload: rtpav.NewStaticPayloadMap(0, []rtpav.PayloadCodec{{
 			PayloadType: 111,
 			Parameters:  audio.Codec,
 			MIMEType:    av.MIMEOpus,
 			ClockRate:   48000,
 			Channels:    codec.Stereo,
-		}}),
-		packets: []*rtp.Packet{{
-			Header:  rtp.Header{PayloadType: 111, Timestamp: 48000},
-			Payload: []byte{1, 2, 3},
-		}},
-		events: make(chan av.Event),
-	}
-	videoReceiver := &runtimeRTPReceiver{
-		streams: []av.Stream{video},
-		payload: rtpav.NewStaticPayloadMap(0, []rtpav.PayloadCodec{{
+		}, {
 			PayloadType: 96,
 			Parameters:  video.Codec,
 			MIMEType:    av.MIMEVP8,
 			ClockRate:   90000,
 		}}),
 		packets: []*rtp.Packet{{
+			Header:  rtp.Header{PayloadType: 111, Timestamp: 48000},
+			Payload: []byte{1, 2, 3},
+		}, {
 			Header:  rtp.Header{PayloadType: 96, Marker: true, Timestamp: 90},
 			Payload: []byte{0x10, 0x00, 0x11, 0x22},
 		}},
@@ -919,11 +913,13 @@ func TestRTPInputsSyncFromTimestampsAndDropLatePreview(t *testing.T) {
 	})))
 	policy := flow.Sync("rtp-room", flow.SyncTolerance(5*time.Millisecond), flow.SyncDropLate())
 	task, err := goav.From(
-		goav.Input(rtpav.Receive(audioReceiver, rtpav.WithName("audio"), rtpav.WithCodec(codec.Opus()), rtpav.WithBufferLimits(rtpav.BufferLimits{MaxPackets: 2}))),
-		goav.Input(rtpav.Receive(videoReceiver, rtpav.WithName("video"), rtpav.WithCodec(codec.VP8()), rtpav.WithBufferLimits(rtpav.BufferLimits{MaxPackets: 2}))),
+		goav.Input(rtpav.Receive(receiver,
+			rtpav.WithDepacketizers(rtpav.NewOpusDepacketizer(audio), rtpav.NewVP8Depacketizer(video)),
+			rtpav.WithBufferLimits(rtpav.BufferLimits{MaxPackets: 2}),
+		)),
 	).
-		Audio(goav.InputName("audio")).Sync(policy).Copy().To(sink).
-		Video(goav.InputName("video")).Sync(policy).Copy().To(sink).
+		Audio(goav.StreamID("audio")).Sync(policy).Copy().To(sink).
+		Video(goav.StreamID("video")).Sync(policy).Copy().To(sink).
 		BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
