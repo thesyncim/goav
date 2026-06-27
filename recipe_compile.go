@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/thesyncim/goav/av"
+	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/internal/recipeir"
@@ -695,8 +696,8 @@ func validateJobRecipeIntentShape(operation string, recipe recipeir.Recipe, jobO
 			cause: errUnsupportedBuild,
 		}
 	}
-	streams := streamIntentsFromRecipeIR(recipe.Streams)
-	stream, hasStream := jobRecipeIntentStream(streams)
+	streams := recipe.Streams
+	stream, hasStream := jobRecipeIRStream(streams)
 	if len(recipe.Destinations) == 0 {
 		return &BuildError{
 			Family:    errcode.FamilyForCode(outputMissingCode),
@@ -719,41 +720,41 @@ func validateJobRecipeIntentShape(operation string, recipe recipeir.Recipe, jobO
 	if !hasStream {
 		return nil
 	}
-	return validateJobStreamIntentShape(operation, stream)
+	return validateJobRecipeStreamShape(operation, stream)
 }
 
 // validateMultiStreamJobRecipeShape checks a job with several stream chains:
 // every chain carries its own operations and stream-local destinations, and
 // the job-level output scope stays empty (the chains own the routing).
-func validateMultiStreamJobRecipeShape(operation string, streams []streamIntent, jobOutputCount int) error {
+func validateMultiStreamJobRecipeShape(operation string, streams []recipeir.Stream, jobOutputCount int) error {
 	if jobOutputCount != 0 {
 		return jobOutputScopeMixedError(operation, streams[0])
 	}
 	for i := range streams {
 		stream := streams[i]
-		if len(stream.Destinations) == 0 {
+		if len(stream.Outputs) == 0 {
 			return jobStreamDestinationMissingError(operation, stream)
 		}
-		if err := validateJobStreamIntentShape(operation, stream); err != nil {
+		if err := validateJobRecipeStreamShape(operation, stream); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func jobRecipeIntentStream(streams []streamIntent) (streamIntent, bool) {
+func jobRecipeIRStream(streams []recipeir.Stream) (recipeir.Stream, bool) {
 	if len(streams) == 0 {
-		return streamIntent{}, false
+		return recipeir.Stream{}, false
 	}
 	return streams[0], true
 }
 
-func jobStreamDestinationMissingError(operation string, stream streamIntent) error {
+func jobStreamDestinationMissingError(operation string, stream recipeir.Stream) error {
 	return &BuildError{
 		Family:    errcode.FamilyForCode(outputMissingCode),
 		Code:      outputMissingCode,
 		Operation: operation,
-		Node:      jobStreamIntentName(stream),
+		Node:      recipeIRStreamName(stream),
 		Reason:    "stream chain has no destination",
 		fixes: buildErrorFixes([]string{
 			"finish each chain with .To(destination) before starting the next .Audio()/.Video()/.Stream()",
@@ -763,22 +764,22 @@ func jobStreamDestinationMissingError(operation string, stream streamIntent) err
 	}
 }
 
-func validateJobRecipeOutputScope(operation string, destinationCount int, jobOutputCount int, stream streamIntent, hasStream bool) error {
+func validateJobRecipeOutputScope(operation string, destinationCount int, jobOutputCount int, stream recipeir.Stream, hasStream bool) error {
 	if !hasStream {
 		return nil
 	}
-	if jobOutputCount == 0 && destinationCount == len(stream.Destinations) {
+	if jobOutputCount == 0 && destinationCount == len(stream.Outputs) {
 		return nil
 	}
 	return jobOutputScopeMixedError(operation, stream)
 }
 
-func jobOutputScopeMixedError(operation string, stream streamIntent) error {
+func jobOutputScopeMixedError(operation string, stream recipeir.Stream) error {
 	return &BuildError{
 		Family:    errcode.FamilyForCode(outputScopeMixedCode),
 		Code:      outputScopeMixedCode,
 		Operation: operation,
-		Node:      jobStreamIntentName(stream),
+		Node:      recipeIRStreamName(stream),
 		Reason:    "stream recipes use stream-local outputs",
 		fixes: buildErrorFixes([]string{
 			"attach outputs to the selected stream chain with .Audio()...To(...) or .Video()...To(...)",
@@ -789,12 +790,12 @@ func jobOutputScopeMixedError(operation string, stream streamIntent) error {
 	}
 }
 
-func jobDestinationReferenceMissingError(operation string, stream streamIntent, label string) error {
+func jobDestinationReferenceMissingError(operation string, stream recipeir.Stream, label string) error {
 	return &BuildError{
 		Family:    errcode.FamilyForCode(outputMissingCode),
 		Code:      outputMissingCode,
 		Operation: operation,
-		Node:      jobStreamIntentName(stream),
+		Node:      recipeIRStreamName(stream),
 		Reason:    "stream route output " + label + " is not attached",
 		fixes: buildErrorFixes([]string{
 			"attach outputs to the selected stream chain with .Audio()...To(...) or .Video()...To(...)",
@@ -805,39 +806,39 @@ func jobDestinationReferenceMissingError(operation string, stream streamIntent, 
 	}
 }
 
-func validateJobStreamIntentShape(operation string, stream streamIntent) error {
-	selector := streamIntentSelector(stream)
-	node := jobStreamIntentName(stream)
-	if !streamIntentHasOperation(stream) {
+func validateJobRecipeStreamShape(operation string, stream recipeir.Stream) error {
+	selector := recipeIRStreamSelector(stream)
+	node := recipeIRStreamName(stream)
+	if !recipeIRStreamHasOperation(stream) {
 		return operationSpecMissingError(operation, node)
 	}
 	if err := validateRecipeStreamSelector(operation, node, selector); err != nil {
 		return err
 	}
-	if err := validateRecipeEncode(chainEncodeSpec(stream.Operations), operation, stream.Name); err != nil {
+	if err := validateRecipeEncode(recipeIRStreamEncodeSpec(stream), operation, stream.Name); err != nil {
 		return err
 	}
-	if err := validateCodecChangePolicy(operation, node, stream.CodecChange); err != nil {
+	if err := validateCodecChangePolicy(operation, node, rootCodecChangeFromRecipeIR(stream.CodecChange)); err != nil {
 		return err
 	}
-	return validateJobStreamTransformIntentShape(operation, stream)
+	return validateJobRecipeStreamTransformShape(operation, stream)
 }
 
-func validateJobStreamTransformIntentShape(operation string, stream streamIntent) error {
-	selector := streamIntentSelector(stream)
-	node := jobStreamIntentName(stream)
-	transforms := streamIntentTransformSpecs(stream)
+func validateJobRecipeStreamTransformShape(operation string, stream recipeir.Stream) error {
+	selector := recipeIRStreamSelector(stream)
+	node := recipeIRStreamName(stream)
+	transforms := recipeIRStreamTransforms(stream)
 	for i := range transforms {
 		transform := transforms[i]
-		if err := validateTransformSpec(operation, node, transform); err != nil {
+		if err := validateRecipeIRTransform(operation, node, transform); err != nil {
 			return err
 		}
 		switch {
-		case transform.resize != nil:
+		case transform.Kind == recipeir.TransformResize:
 			if selector.Type == av.MediaAudio {
 				return transformMediaError(node, "resize", av.MediaVideo, selector.Type)
 			}
-		case transform.resample != nil:
+		case transform.Kind == recipeir.TransformResample:
 			if selector.Type == av.MediaVideo {
 				return transformMediaError(node, "resample", av.MediaAudio, selector.Type)
 			}
@@ -846,6 +847,108 @@ func validateJobStreamTransformIntentShape(operation string, stream streamIntent
 		}
 	}
 	return nil
+}
+
+func recipeIRStreamName(stream recipeir.Stream) string {
+	return firstNonEmpty(stream.Name, string(stream.Selector.ID), string(stream.Selector.Type), "stream")
+}
+
+func recipeIRStreamSelector(stream recipeir.Stream) av.StreamSelector {
+	return av.StreamSelector{
+		ID:       stream.Selector.ID,
+		Index:    stream.Selector.Index,
+		UseIndex: stream.Selector.UseIndex,
+		Type:     stream.Selector.Type,
+		Codec:    stream.Selector.Codec,
+		Name:     stream.Selector.Name,
+	}
+}
+
+func recipeIRStreamHasOperation(stream recipeir.Stream) bool {
+	for i := range stream.Operations {
+		if !recipeIROperationIsAnnotation(stream.Operations[i]) {
+			return true
+		}
+	}
+	return false
+}
+
+// recipeIROperationIsAnnotation mirrors operationSpecIsAnnotation across the
+// recipe boundary: Auto/Require/Prefer constrain planning but lower no node.
+func recipeIROperationIsAnnotation(operation recipeir.Operation) bool {
+	return operation.Kind == plan.OpShape && mediaShapeEmpty(operation.Shape) &&
+		(operation.Auto != nil || operation.Require != nil || operation.Prefer != nil)
+}
+
+func recipeIRStreamEncodeSpec(stream recipeir.Stream) codec.CodecSpec {
+	for i := range stream.Operations {
+		operation := stream.Operations[i]
+		if operation.Kind == plan.OpEncode || operation.Kind == plan.OpCopy {
+			return cloneCodecSpec(operation.Encode)
+		}
+	}
+	return codec.CodecSpec{}
+}
+
+func recipeIRStreamTransforms(stream recipeir.Stream) []recipeir.Transform {
+	if len(stream.Operations) == 0 {
+		return nil
+	}
+	transforms := make([]recipeir.Transform, 0)
+	for i := range stream.Operations {
+		if stream.Operations[i].Kind != plan.OpTransform {
+			continue
+		}
+		transforms = append(transforms, stream.Operations[i].Transform)
+	}
+	return transforms
+}
+
+func validateRecipeIRTransform(operation string, node string, transform recipeir.Transform) error {
+	switch transform.Kind {
+	case recipeir.TransformResize:
+		if transform.Resize.Width > 0 && transform.Resize.Height > 0 {
+			return nil
+		}
+		return &BuildError{
+			Family:    errcode.FamilyForCode(transformInvalidCode),
+			Code:      transformInvalidCode,
+			Operation: operation,
+			Node:      node,
+			Reason:    "resize requires positive width and height",
+			fields: buildErrorFields([]string{
+				fmt.Sprintf("width=%d", transform.Resize.Width),
+				fmt.Sprintf("height=%d", transform.Resize.Height),
+			}),
+			fixes: buildErrorFixes([]string{
+				"call .Resize(width, height) with positive dimensions",
+				"remove .Resize(...) when no video scaling is needed",
+			}),
+			cause: errUnsupportedBuild,
+		}
+	case recipeir.TransformResample:
+		if transform.Resample.SampleRate > 0 && transform.Resample.Channels > 0 {
+			return nil
+		}
+		return &BuildError{
+			Family:    errcode.FamilyForCode(transformInvalidCode),
+			Code:      transformInvalidCode,
+			Operation: operation,
+			Node:      node,
+			Reason:    "resample requires positive sample rate and channels",
+			fields: buildErrorFields([]string{
+				fmt.Sprintf("sample_rate=%d", transform.Resample.SampleRate),
+				fmt.Sprintf("channels=%d", transform.Resample.Channels),
+			}),
+			fixes: buildErrorFixes([]string{
+				"call .Resample(sampleRate, channels) with positive values",
+				"remove .Resample(...) when no audio conversion is needed",
+			}),
+			cause: errUnsupportedBuild,
+		}
+	default:
+		return emptyTransformSpecError(operation, node)
+	}
 }
 
 func operationSpecMissingError(operation string, node string) error {
@@ -951,11 +1054,11 @@ func validateJobStreamOutputKindsPass() recipeCompilePass {
 }
 
 func validateJobRecipeOutputBindings(operation string, recipe recipeir.Recipe) error {
-	streams := streamIntentsFromRecipeIR(recipe.Streams)
 	destinations := recipeIRDestinationLabelSet(recipe.Destinations)
-	for i := range streams {
-		stream := streams[i]
-		for _, destinationName := range stream.Destinations {
+	for i := range recipe.Streams {
+		stream := recipe.Streams[i]
+		for _, output := range stream.Outputs {
+			destinationName := string(output)
 			if _, ok := destinations[destinationName]; ok {
 				continue
 			}
@@ -966,36 +1069,37 @@ func validateJobRecipeOutputBindings(operation string, recipe recipeir.Recipe) e
 }
 
 func validateJobRecipeStreamOutputKinds(operation string, recipe recipeir.Recipe) error {
-	streams := streamIntentsFromRecipeIR(recipe.Streams)
+	streams := recipe.Streams
 	if len(streams) == 1 {
-		return validateJobStreamOutputKindsByKind(operation, streams[0], recipeIRDestinationKinds(recipe))
+		return validateJobRecipeStreamOutputKindsByKind(operation, streams[0], recipeIRDestinationKinds(recipe))
 	}
 	// Multiple chains may mix kinds across destinations (one chain to a mux
 	// file, another to a sink); each chain is checked against its own output refs.
 	kindByName := recipeIRDestinationKindSet(recipe.Destinations)
 	for i := range streams {
 		stream := streams[i]
-		if err := validateJobStreamOutputKindsByKind(operation, stream, recipeIRDestinationKindsForStream(stream, kindByName)); err != nil {
+		if err := validateJobRecipeStreamOutputKindsByKind(operation, stream, recipeIRDestinationKindsForStream(stream, kindByName)); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func validateJobStreamOutputKindsByKind(operation string, stream streamIntent, kinds []recipeir.DestinationKind) error {
-	encode := chainEncodeSpec(stream.Operations)
+func validateJobRecipeStreamOutputKindsByKind(operation string, stream recipeir.Stream, kinds []recipeir.DestinationKind) error {
+	encode := recipeIRStreamEncodeSpec(stream)
 	if recipeIRDestinationKindsContainSink(kinds) && recipeIRDestinationKindsContainMux(kinds) && !codecIntentSet(encode) {
-		return mixedStreamOutputError(operation, stream)
+		return mixedStreamOutputError(operation, streamIntentFromRecipeIR(stream))
 	}
 	if encode.ID == "" && !encode.Copy && recipeIRDestinationKindsContainMux(kinds) {
-		return streamEncodeMissingError(operation, stream)
+		return streamEncodeMissingError(operation, streamIntentFromRecipeIR(stream))
 	}
 	return nil
 }
 
-func recipeIRDestinationKindsForStream(stream streamIntent, kindByName map[string]recipeir.DestinationKind) []recipeir.DestinationKind {
-	kinds := make([]recipeir.DestinationKind, 0, len(stream.Destinations))
-	for _, name := range stream.Destinations {
+func recipeIRDestinationKindsForStream(stream recipeir.Stream, kindByName map[string]recipeir.DestinationKind) []recipeir.DestinationKind {
+	kinds := make([]recipeir.DestinationKind, 0, len(stream.Outputs))
+	for _, output := range stream.Outputs {
+		name := string(output)
 		kind, ok := kindByName[name]
 		if !ok {
 			continue

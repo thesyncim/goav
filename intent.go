@@ -556,19 +556,6 @@ func duplicateJobStreamError(existing *jobStreamBuild, next *jobStreamBuild) err
 	}
 }
 
-func streamIntentHasOperation(stream streamIntent) bool {
-	for i := range stream.Operations {
-		// Annotation carriers (.Auto/.Require/.Prefer) opt into solving or
-		// assert shapes but do no work; a chain holding only annotations still
-		// has no operation. Decode, copy, and encode are ordinary operations
-		// (plan.OpDecode/plan.OpCopy/plan.OpEncode) on the same list.
-		if !operationSpecIsAnnotation(stream.Operations[i]) {
-			return true
-		}
-	}
-	return false
-}
-
 func jobStreamChainSteps(stream *jobStreamBuild) []chainStep {
 	if stream == nil {
 		return nil
