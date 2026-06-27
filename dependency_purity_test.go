@@ -1,7 +1,7 @@
 package goav_test
 
 import (
-	"os"
+	"encoding/json"
 	"os/exec"
 	"strings"
 	"testing"
@@ -22,10 +22,7 @@ import (
 // Replace directives are refused too: the root module must be consumable as
 // published, with no local-path indirection.
 func TestRootModuleDependencyPurity(t *testing.T) {
-	data, err := os.ReadFile("go.mod")
-	if err != nil {
-		t.Fatal(err)
-	}
+	mod := readRootModuleFile(t)
 
 	const allowedPrefix = "github.com/thesyncim/"
 	allowedThirdParty := map[string]string{
@@ -40,52 +37,62 @@ func TestRootModuleDependencyPurity(t *testing.T) {
 		"modernc.org/memory":               "goaac modernc runtime dependency",
 	}
 
-	inRequire := false
-	inReplace := false
-	for lineNumber, raw := range strings.Split(string(data), "\n") {
-		line := strings.TrimSpace(raw)
-		if comment := strings.Index(line, "//"); comment >= 0 {
-			line = strings.TrimSpace(line[:comment])
-		}
-		if line == "" {
-			continue
-		}
-		switch {
-		case line == ")":
-			inRequire = false
-			inReplace = false
-			continue
-		case strings.HasPrefix(line, "require ("):
-			inRequire = true
-			continue
-		case strings.HasPrefix(line, "replace (") || strings.HasPrefix(line, "replace "):
-			t.Errorf("go.mod line %d: replace directive %q; the root module must build as published", lineNumber+1, line)
-			if strings.HasPrefix(line, "replace (") {
-				inReplace = true
-			}
-			continue
-		case inReplace:
-			t.Errorf("go.mod line %d: replace directive %q; the root module must build as published", lineNumber+1, line)
-			continue
-		case strings.HasPrefix(line, "require "):
-			line = strings.TrimSpace(strings.TrimPrefix(line, "require "))
-		case !inRequire:
-			continue
-		}
+	for _, replacement := range mod.Replace {
+		t.Errorf("go.mod replace directive %s => %s; the root module must build as published", moduleRef(replacement.Old), moduleRef(replacement.New))
+	}
 
-		fields := strings.Fields(line)
-		if len(fields) < 2 {
-			t.Errorf("go.mod line %d: unexpected require line %q", lineNumber+1, raw)
-			continue
-		}
-		module := fields[0]
+	for _, requirement := range mod.Require {
+		module := requirement.Path
 		if !strings.HasPrefix(module, allowedPrefix) {
 			if _, ok := allowedThirdParty[module]; ok {
 				continue
 			}
-			t.Errorf("go.mod line %d: third-party dependency %s; the root module may require only %s* plus the reviewed AAC runtime allowlist", lineNumber+1, module, allowedPrefix)
+			t.Errorf("go.mod requires third-party dependency %s; the root module may require only %s* plus the reviewed AAC runtime allowlist", module, allowedPrefix)
 		}
 	}
+}
+
+type moduleEditFile struct {
+	Require []moduleRequirement `json:"Require"`
+	Replace []moduleReplacement `json:"Replace"`
+}
+
+type moduleRequirement struct {
+	Path string `json:"Path"`
+}
+
+type moduleReplacement struct {
+	Old modulePathVersion `json:"Old"`
+	New modulePathVersion `json:"New"`
+}
+
+type modulePathVersion struct {
+	Path    string `json:"Path"`
+	Version string `json:"Version"`
+}
+
+func readRootModuleFile(t *testing.T) moduleEditFile {
+	t.Helper()
+	cmd := exec.Command("go", "mod", "edit", "-json")
+	out, err := cmd.Output()
+	if err != nil {
+		if exit, ok := err.(*exec.ExitError); ok {
+			t.Fatalf("go mod edit -json failed: %v\n%s", err, exit.Stderr)
+		}
+		t.Fatalf("go mod edit -json failed: %v", err)
+	}
+	var mod moduleEditFile
+	if err := json.Unmarshal(out, &mod); err != nil {
+		t.Fatalf("decode go mod edit -json: %v", err)
+	}
+	return mod
+}
+
+func moduleRef(module modulePathVersion) string {
+	if module.Version == "" {
+		return module.Path
+	}
+	return module.Path + " " + module.Version
 }
 
 func TestRootImportDoesNotPullBundledAdapters(t *testing.T) {
