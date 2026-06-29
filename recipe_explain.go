@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/thesyncim/goav/av"
@@ -141,10 +142,89 @@ func explainOperationSpecs(operations []operationSpec) []plan.Operation {
 			Component: operations[i].Component,
 			Detail:    operationSpecDetail(operations[i]),
 			Shape:     operationSpecShape(operations[i]),
+			Adapter:   operationSpecAdapter(operations[i]),
+			Config:    operationSpecConfig(operations[i]),
 			Shared:    operations[i].Shared,
 		})
 	}
 	return reports
+}
+
+// operationSpecAdapter names the implementation an operation lowers to: the
+// codec id for decode/encode, the filter factory for a transform, or the
+// component name for a custom stage. Empty when the operation lowers to no
+// adapter (shape annotations, taps).
+func operationSpecAdapter(operation operationSpec) string {
+	switch operation.Kind {
+	case plan.OpDecode:
+		return string(operation.Decode.ID)
+	case plan.OpEncode:
+		return string(operation.Encode.ID)
+	case plan.OpTransform:
+		return transformFactoryName(operation.Transform)
+	case plan.OpStage:
+		return operation.Component
+	default:
+		return ""
+	}
+}
+
+// operationSpecConfig reports an operation's small typed settings as stable
+// key/value strings: transform geometry/rate and encoder settings. Nil when the
+// operation carries no settings worth reporting.
+func operationSpecConfig(operation operationSpec) map[string]string {
+	switch operation.Kind {
+	case plan.OpTransform:
+		return transformSpecConfig(operation.Transform)
+	case plan.OpEncode:
+		return codecSpecConfig(operation.Encode)
+	default:
+		return nil
+	}
+}
+
+func transformSpecConfig(transform transformSpec) map[string]string {
+	config := map[string]string{}
+	if transform.resize != nil {
+		putConfigInt(config, "width", transform.resize.Width)
+		putConfigInt(config, "height", transform.resize.Height)
+		putConfigString(config, "pixelFormat", transform.resize.PixelFormat)
+	}
+	if transform.resample != nil {
+		putConfigInt(config, "sampleRate", transform.resample.SampleRate)
+		putConfigInt(config, "channels", transform.resample.Channels)
+		putConfigString(config, "sampleFormat", transform.resample.SampleFormat)
+	}
+	if len(config) == 0 {
+		return nil
+	}
+	return config
+}
+
+func codecSpecConfig(spec codec.CodecSpec) map[string]string {
+	config := map[string]string{}
+	putConfigInt(config, "bitrate", spec.Settings.Bitrate)
+	putConfigInt(config, "keyframeInterval", spec.Settings.KeyframeInterval)
+	putConfigInt(config, "sampleRate", spec.Settings.SampleRate)
+	putConfigInt(config, "channels", spec.Settings.Channels)
+	putConfigString(config, "profile", spec.Settings.Profile)
+	putConfigString(config, "level", spec.Settings.Level)
+	if len(config) == 0 {
+		return nil
+	}
+	return config
+}
+
+func putConfigInt(config map[string]string, key string, value int) {
+	if value != 0 {
+		config[key] = strconv.Itoa(value)
+	}
+}
+
+func putConfigString(config map[string]string, key, value string) {
+	if value != "" {
+		config[key] = value
+	}
 }
 
 func operationSpecShape(operation operationSpec) shape.Spec {
@@ -226,10 +306,37 @@ func explainBranchOperations(branch workBranch, operations map[string]workOperat
 			Component: operation.Component,
 			Detail:    operation.Detail,
 			Shape:     operation.ShapeOut,
+			Adapter:   workOperationAdapter(operation),
+			Config:    workOperationConfig(operation),
 			Shared:    operation.Shared,
 		})
 	}
 	return reports
+}
+
+// workOperationAdapter names the implementation a planned branch operation
+// lowers to: the codec id for decode/encode or the component name otherwise.
+func workOperationAdapter(operation workOperation) string {
+	switch operation.Kind {
+	case plan.OpDecode, plan.OpEncode:
+		if id := string(operation.Codec.ID); id != "" {
+			return id
+		}
+		return operation.Component
+	case plan.OpStage, plan.OpTransform:
+		return operation.Component
+	default:
+		return ""
+	}
+}
+
+// workOperationConfig reports a planned branch operation's encoder settings as
+// stable key/value strings. Nil when the operation carries no settings.
+func workOperationConfig(operation workOperation) map[string]string {
+	if operation.Kind == plan.OpEncode {
+		return codecSpecConfig(operation.Codec)
+	}
+	return nil
 }
 
 func explainDecisions(decisions []planDecision) []plan.Decision {

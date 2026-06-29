@@ -26,18 +26,18 @@ const (
 // Spec is the core media-format descriptor: the shape of a stream at a point in
 // a pipeline. A zero Spec matches anything; populated fields constrain the match.
 type Spec struct {
-	Domain       MediaDomain
-	MediaKind    av.MediaType
-	StreamID     av.StreamID
-	Codec        av.CodecID
-	Format       av.FormatID
-	Width        int
-	Height       int
-	PixelFormat  string
-	SampleRate   int
-	Channels     int
-	SampleFormat string
-	Realtime     bool
+	Domain       MediaDomain  `json:"domain,omitempty"`
+	MediaKind    av.MediaType `json:"mediaKind,omitempty"`
+	StreamID     av.StreamID  `json:"streamID,omitempty"`
+	Codec        av.CodecID   `json:"codec,omitempty"`
+	Format       av.FormatID  `json:"format,omitempty"`
+	Width        int          `json:"width,omitempty"`
+	Height       int          `json:"height,omitempty"`
+	PixelFormat  string       `json:"pixelFormat,omitempty"`
+	SampleRate   int          `json:"sampleRate,omitempty"`
+	Channels     int          `json:"channels,omitempty"`
+	SampleFormat string       `json:"sampleFormat,omitempty"`
+	Realtime     bool         `json:"realtime,omitempty"`
 }
 
 // Set is a collection of acceptable Specs. An empty Set accepts any Spec.

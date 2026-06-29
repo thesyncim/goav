@@ -1,0 +1,63 @@
+{
+  "name": "goav",
+  "realtime": true,
+  "nodes": [
+    {
+      "name": "input.webm",
+      "kind": "source",
+      "detail": "demux, protocol=file"
+    },
+    {
+      "name": "select-video",
+      "kind": "stage",
+      "detail": "select, type=video"
+    },
+    {
+      "name": "decode-video",
+      "kind": "stage",
+      "detail": "packets -\u003e frames, type=video"
+    },
+    {
+      "name": "resize-video",
+      "kind": "stage",
+      "detail": "resize, 1280x720, exact"
+    },
+    {
+      "name": "encode-video",
+      "kind": "stage",
+      "detail": "frames -\u003e packets, codec=vp9"
+    },
+    {
+      "name": "preview.webm",
+      "kind": "stage",
+      "detail": "mux, protocol=file"
+    }
+  ],
+  "edges": [
+    {
+      "from": "input.webm",
+      "to": "select-video",
+      "policy": "all"
+    },
+    {
+      "from": "select-video",
+      "to": "decode-video",
+      "policy": "all"
+    },
+    {
+      "from": "decode-video",
+      "to": "resize-video",
+      "policy": "all"
+    },
+    {
+      "from": "resize-video",
+      "to": "encode-video",
+      "policy": "all"
+    },
+    {
+      "from": "encode-video",
+      "to": "preview.webm",
+      "policy": "all"
+    }
+  ]
+}

@@ -151,7 +151,7 @@ type CodecSettings struct {
 	// type-assert to the real type and apply anything the library exposes. Nothing
 	// is ever unreachable. A non-nil error from Control fails the open. This single
 	// callback replaces a separate typed-config blob — it is strictly more capable.
-	Control func(any) error `goavctl:"-"`
+	Control func(any) error `goavctl:"-" json:"-"`
 }
 
 // DecodeConfig is everything a decoder needs at open: the stream's declared

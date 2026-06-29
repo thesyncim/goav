@@ -45,12 +45,12 @@ const (
 
 // StreamSelect reports how a stream chain selects its source stream.
 type StreamSelect struct {
-	ID       av.StreamID
-	Index    int
-	UseIndex bool
-	Type     av.MediaType
-	Codec    av.CodecID
-	Name     string
+	ID       av.StreamID  `json:"id,omitempty"`
+	Index    int          `json:"index,omitempty"`
+	UseIndex bool         `json:"useIndex,omitempty"`
+	Type     av.MediaType `json:"type,omitempty"`
+	Codec    av.CodecID   `json:"codec,omitempty"`
+	Name     string       `json:"name,omitempty"`
 	// Input narrows the selection to the named job input (goav.InputName).
-	Input string
+	Input string `json:"input,omitempty"`
 }

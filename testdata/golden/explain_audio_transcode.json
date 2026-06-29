@@ -1,0 +1,307 @@
+{
+  "summary": "from audio-1 through 1 stream branch(es) to packets",
+  "operation": "build job",
+  "inputs": [
+    {
+      "name": "audio-1",
+      "protocol": "custom",
+      "streams": [
+        {
+          "ID": "audio-1",
+          "Index": 0,
+          "Type": "audio",
+          "Codec": {
+            "ID": "",
+            "Type": "audio",
+            "Profile": "",
+            "Level": "",
+            "ClockRate": 44100,
+            "SampleRate": 44100,
+            "Channels": 1,
+            "ChannelLayout": "mono",
+            "Width": 0,
+            "Height": 0,
+            "PixelFormat": "",
+            "SampleFormat": "s16",
+            "ExtraData": {
+              "Bytes": null,
+              "Ownership": "",
+              "Owner": null
+            },
+            "Attributes": null
+          },
+          "TimeBase": {
+            "Num": 0,
+            "Den": 0
+          },
+          "Language": "",
+          "Name": "audio-1",
+          "Epoch": 0,
+          "Metadata": null
+        }
+      ]
+    }
+  ],
+  "streams": [
+    {
+      "name": "audio",
+      "select": {
+        "type": "audio"
+      },
+      "operations": [
+        {
+          "kind": "transform",
+          "component": "resample",
+          "detail": "resample",
+          "shape": {
+            "domain": "frame",
+            "mediaKind": "audio",
+            "sampleRate": 48000,
+            "channels": 2
+          },
+          "adapter": "resample",
+          "config": {
+            "channels": "2",
+            "sampleRate": "48000"
+          }
+        },
+        {
+          "kind": "encode",
+          "component": "opus",
+          "detail": "frames to packets",
+          "shape": {
+            "domain": "packet",
+            "mediaKind": "audio",
+            "codec": "opus",
+            "sampleRate": 48000,
+            "channels": 2
+          },
+          "adapter": "opus",
+          "config": {
+            "bitrate": "96000"
+          }
+        }
+      ],
+      "encode": {
+        "ID": "opus",
+        "Type": "audio",
+        "Parameters": {
+          "ID": "opus",
+          "Type": "audio",
+          "Profile": "",
+          "Level": "",
+          "ClockRate": 48000,
+          "SampleRate": 48000,
+          "Channels": 2,
+          "ChannelLayout": "stereo",
+          "Width": 0,
+          "Height": 0,
+          "PixelFormat": "",
+          "SampleFormat": "",
+          "ExtraData": {
+            "Bytes": null,
+            "Ownership": "",
+            "Owner": null
+          },
+          "Attributes": null
+        },
+        "Settings": {
+          "Bitrate": 96000,
+          "Framerate": {
+            "Value": 0,
+            "Base": {
+              "Num": 0,
+              "Den": 0
+            }
+          },
+          "KeyframeInterval": 0,
+          "Profile": "",
+          "Level": "",
+          "Channels": 0,
+          "SampleRate": 0,
+          "ClockRate": 0,
+          "ChannelLayout": "",
+          "ChannelsSet": false,
+          "SampleRateSet": false,
+          "Custom": null
+        },
+        "Copy": false,
+        "Auto": false
+      },
+      "destinations": [
+        "packets"
+      ]
+    }
+  ],
+  "branches": [
+    {
+      "name": "audio",
+      "input": "audio-1",
+      "stream": {
+        "id": "audio-1",
+        "type": "audio",
+        "name": "audio-1"
+      },
+      "shape": {
+        "domain": "frame",
+        "mediaKind": "audio",
+        "streamID": "audio-1",
+        "sampleRate": 44100,
+        "channels": 1,
+        "sampleFormat": "s16"
+      },
+      "operations": [
+        {
+          "kind": "select",
+          "component": "audio",
+          "detail": "select stream",
+          "shape": {
+            "domain": "frame",
+            "mediaKind": "audio",
+            "streamID": "audio-1",
+            "sampleRate": 44100,
+            "channels": 1,
+            "sampleFormat": "s16"
+          }
+        },
+        {
+          "kind": "transform",
+          "component": "resample",
+          "detail": "resample",
+          "shape": {
+            "domain": "frame",
+            "mediaKind": "audio",
+            "streamID": "audio-1",
+            "sampleRate": 48000,
+            "channels": 2,
+            "sampleFormat": "s16"
+          },
+          "adapter": "resample"
+        },
+        {
+          "kind": "encode",
+          "component": "opus",
+          "detail": "frames to packets",
+          "shape": {
+            "domain": "packet",
+            "mediaKind": "audio",
+            "streamID": "audio",
+            "codec": "opus",
+            "sampleRate": 48000,
+            "channels": 2,
+            "sampleFormat": "s16"
+          },
+          "adapter": "opus",
+          "config": {
+            "bitrate": "96000"
+          }
+        }
+      ],
+      "destinations": [
+        "packets"
+      ]
+    }
+  ],
+  "destinations": [
+    {
+      "name": "packets",
+      "kind": "sink",
+      "branches": [
+        "audio"
+      ]
+    }
+  ],
+  "decisions": [
+    {
+      "code": "encode_required",
+      "branch": "audio",
+      "message": "muxed stream output requires encoded packets"
+    }
+  ],
+  "requiredAdapters": [
+    {
+      "kind": "filter",
+      "name": "resample",
+      "transform": "resample",
+      "input": "audio",
+      "output": "audio",
+      "sampleFormats": [
+        "s16"
+      ],
+      "realtime": true,
+      "stateless": true,
+      "metadata": {
+        "backend": "resample",
+        "sample_format": "s16"
+      },
+      "requiredBy": "audio",
+      "status": "available"
+    },
+    {
+      "kind": "encoder",
+      "name": "opus",
+      "codec": "opus",
+      "media": [
+        "audio"
+      ],
+      "sampleFormats": [
+        "s16"
+      ],
+      "realtime": true,
+      "requiredBy": "audio",
+      "status": "available"
+    }
+  ],
+  "graph": {
+    "name": "goav",
+    "realtime": true,
+    "nodes": [
+      {
+        "name": "audio-1",
+        "kind": "source",
+        "detail": "custom source, domain=frame, media=audio"
+      },
+      {
+        "name": "select-audio",
+        "kind": "stage",
+        "detail": "select, type=audio"
+      },
+      {
+        "name": "resample-audio",
+        "kind": "stage",
+        "detail": "resample, 48000 Hz, 2 ch"
+      },
+      {
+        "name": "encode-audio",
+        "kind": "stage",
+        "detail": "frames -\u003e packets, codec=opus"
+      },
+      {
+        "name": "packets",
+        "kind": "sink"
+      }
+    ],
+    "edges": [
+      {
+        "from": "audio-1",
+        "to": "select-audio",
+        "policy": "all"
+      },
+      {
+        "from": "select-audio",
+        "to": "resample-audio",
+        "policy": "all"
+      },
+      {
+        "from": "resample-audio",
+        "to": "encode-audio",
+        "policy": "all"
+      },
+      {
+        "from": "encode-audio",
+        "to": "packets",
+        "policy": "all"
+      }
+    ]
+  }
+}
