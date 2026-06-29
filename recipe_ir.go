@@ -345,9 +345,27 @@ func recipeIRStreamRulesFromRoot(rules []streamRule) []recipeir.StreamRule {
 	return out
 }
 
+// branchSpecsRequireRuntime / branchSpecRequiresRuntime live at the builder→IR
+// capture boundary: they read the mutable BranchSpec here, where translation to
+// recipe IR is the whole job, so the planner never has to. The result is
+// captured onto recipeir.StreamRule.RequiresRuntime.
+func branchSpecsRequireRuntime(branches []BranchSpec) bool {
+	for i := range branches {
+		if branchSpecRequiresRuntime(branches[i]) {
+			return true
+		}
+	}
+	return false
+}
+
+func branchSpecRequiresRuntime(branch BranchSpec) bool {
+	return operationSpecsRequireRuntime(branch.operations) || destinationRefsRequireRuntime(branch.destinations)
+}
+
 func recipeIRStreamRuleFromRoot(rule streamRule) recipeir.StreamRule {
 	out := recipeir.StreamRule{
 		MatchDescription: rule.match.Description(),
+		RequiresRuntime:  branchSpecsRequireRuntime(rule.branches),
 	}
 	for i := range rule.branches {
 		operations := make([]recipeir.Operation, 0, len(rule.branches[i].operations))
@@ -689,6 +707,7 @@ func cloneRecipeIRStreamRules(rules []recipeir.StreamRule) []recipeir.StreamRule
 		out[i] = recipeir.StreamRule{
 			MatchDescription: rules[i].MatchDescription,
 			Branches:         append([]recipeir.StreamRuleBranch(nil), rules[i].Branches...),
+			RequiresRuntime:  rules[i].RequiresRuntime,
 		}
 		for j := range out[i].Branches {
 			out[i].Branches[j].Operations = cloneRecipeIROperations(rules[i].Branches[j].Operations)

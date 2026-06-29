@@ -563,7 +563,7 @@ func (state *recipeCompileState) requiresExplicitRuntime() bool {
 	if destinationSpecsRequireRuntime(state.outputAttachments) || namedDestinationSpecsRequireRuntime(state.branchDestinationAttachments) {
 		return true
 	}
-	if streamRulesRequireRuntime(state.streamRules) {
+	if recipeStreamRulesRequireRuntime(state.recipe.StreamRules) {
 		return true
 	}
 	return recipeIRStreamsRequireRuntime(state.recipe.Streams)
@@ -649,26 +649,17 @@ func operationSpecsRequireRuntime(operations []operationSpec) bool {
 	return false
 }
 
-func streamRulesRequireRuntime(rules []streamRule) bool {
+// recipeStreamRulesRequireRuntime reads the immutable recipe IR rather than the
+// mutable builder branch specs: the requires-runtime fact was captured at the
+// builder→IR boundary (see recipeIRStreamRuleFromRoot), so the planner never
+// reaches back into a BranchSpec.
+func recipeStreamRulesRequireRuntime(rules []recipeir.StreamRule) bool {
 	for i := range rules {
-		if branchSpecsRequireRuntime(rules[i].branches) {
+		if rules[i].RequiresRuntime {
 			return true
 		}
 	}
 	return false
-}
-
-func branchSpecsRequireRuntime(branches []BranchSpec) bool {
-	for i := range branches {
-		if branchSpecRequiresRuntime(branches[i]) {
-			return true
-		}
-	}
-	return false
-}
-
-func branchSpecRequiresRuntime(branch BranchSpec) bool {
-	return operationSpecsRequireRuntime(branch.operations) || destinationRefsRequireRuntime(branch.destinations)
 }
 
 func destinationRefsRequireRuntime(destinations []destinationRef) bool {

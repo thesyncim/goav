@@ -192,6 +192,20 @@ planning. Root-only attachments
 and graph lowering details) still travel beside the IR until later slices move
 those facts into stable recipe/plan data.
 
+The boundary is pinned by executable tests. `TestPlannerFilesDoNotReadBuilderInternals`
+AST-scans the pure planner/lowerer files (`recipe_compile`, `media_plan_*`,
+`work_*`, `shape_solver`, `branch_compose_*`) and fails if any reads a mutable
+builder struct (`BranchSpec`, `jobStreamBuild`); the stream-rule
+requires-runtime check now carries its fact across the boundary on
+`recipeir.StreamRule.RequiresRuntime`, captured at the builder→IR edge, so the
+compiler no longer reads `BranchSpec`. `TestRecipeIRImportsOnlyLeafPackages`
+pins that `internal/recipeir` imports only leaf vocabulary packages, never the
+root or a builder. **Remaining boundary debt:** `join_build.go` carries both the
+join grammar (which constructs `BranchSpec`) and the join planner in one file,
+so the join planner still reads `BranchSpec`; that file is deliberately excluded
+from the pin until the join planner is separated and fed immutable join-branch
+facts (an extension of `recipeir.Join`, currently counts only).
+
 Why the planner internals cannot move to `internal/` packages today (measured
 on the type-checked cross-file reference graph, 2026-06): the ~20 root files
 with no exported API (`media_plan*`, `recipe_compile`, `branch_compose_*`,

@@ -105,6 +105,11 @@ type Destination struct {
 type StreamRule struct {
 	MatchDescription string
 	Branches         []StreamRuleBranch
+	// RequiresRuntime records, at the builder→IR boundary, whether any rule
+	// branch needs an explicit runtime (it decodes, encodes, transforms, or
+	// writes to an adapter-backed destination). The planner reads this fact
+	// instead of the mutable builder branch specs.
+	RequiresRuntime bool
 }
 
 // StreamRuleBranch is one branch template visible to Explain/validation.
