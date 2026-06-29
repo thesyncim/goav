@@ -439,12 +439,13 @@ func muxCompatibilitySuggestions(formatID av.FormatID) []string {
 
 func muxCompatibilityBuildError(operation string, issue muxCompatibilityIssue) error {
 	return &BuildError{
+		Phase:     phaseBuild,
 		Family:    errcode.FamilyForCode(issue.Code),
 		Code:      issue.Code,
 		Operation: operation,
 		Node:      issue.Destination,
 		Reason:    issue.Reason,
-		fields:    buildErrorFields(append([]string(nil), issue.Details...)),
+		fields:    errDetailLines(append([]string(nil), issue.Details...)),
 		fixes:     buildErrorFixes(append([]string(nil), issue.Suggestions...)),
 		cause:     errUnsupportedBuild,
 	}

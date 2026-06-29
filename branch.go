@@ -444,6 +444,7 @@ func (b *branchBuilder) Tap(tap tapRef) *branchBuilder {
 	}
 	if tap.name == "" {
 		b.setErr(&BuildError{
+			Phase:     phaseBuild,
 			Family:    errcode.FamilyForCode(errcode.TapInvalid),
 			Code:      errcode.TapInvalid,
 			Operation: "build branch",
@@ -918,6 +919,7 @@ func chainStepsThroughTap(steps []chainStep, tap string) ([]chainStep, bool) {
 
 func branchCopyParentOperationError(node string) error {
 	return &BuildError{
+		Phase:     phaseBuild,
 		Family:    errcode.FamilyForCode(copyBranchSourceInvalidCode),
 		Code:      copyBranchSourceInvalidCode,
 		Operation: "build branches",
@@ -934,14 +936,13 @@ func branchCopyParentOperationError(node string) error {
 
 func branchEncodeParentOperationError(node string, encode codec.CodecSpec) error {
 	return &BuildError{
+		Phase:     phaseBuild,
 		Family:    errcode.FamilyForCode(encodeBranchSourceInvalidCode),
 		Code:      encodeBranchSourceInvalidCode,
 		Operation: "build branches",
 		Node:      node,
 		Reason:    "stream encoders are terminal for planned branches",
-		fields: buildErrorFields([]string{
-			"encoder: " + codecIntentName(encode),
-		}),
+		fields:    errDetails(errNote("encoder: " + codecIntentName(encode))),
 		fixes: buildErrorFixes([]string{
 			"move .Branches(...) before the stream encoder",
 			"put .Encode(codec.Opus(...)), .Encode(codec.VP8(...)), or .Encode(codec.VP9(...)) on each goav.Branch(...) that writes a destination",
@@ -953,14 +954,13 @@ func branchEncodeParentOperationError(node string, encode codec.CodecSpec) error
 
 func plannedBranchNodeSourceError(name string, source string) error {
 	return &BuildError{
+		Phase:     phaseBuild,
 		Family:    errcode.FamilyForCode(branchSourceInvalidCode),
 		Code:      branchSourceInvalidCode,
 		Operation: "build branches",
 		Node:      firstNonEmpty(name, "branch"),
 		Reason:    "planned branches do not anchor from graph handles",
-		fields: buildErrorFields([]string{
-			"source: " + source,
-		}),
+		fields:    errDetails(errNote("source: " + source)),
 		fixes: buildErrorFixes([]string{
 			"use .From(goav.FrameTap(name)) or .From(goav.PacketTap(name)) to branch from a stable tap",
 			"omit .From(...) to branch from the current stream point",
@@ -972,15 +972,13 @@ func plannedBranchNodeSourceError(name string, source string) error {
 
 func plannedBranchTapMissingError(stream string, branch string, tap string) error {
 	return &BuildError{
+		Phase:     phaseBuild,
 		Family:    errcode.FamilyForCode(branchTapMissingCode),
 		Code:      branchTapMissingCode,
 		Operation: "build branches",
 		Node:      firstNonEmpty(branch, "branch"),
 		Reason:    "branch tap is not declared on the parent stream",
-		fields: buildErrorFields([]string{
-			"stream: " + firstNonEmpty(stream, "stream"),
-			"tap: " + tap,
-		}),
+		fields:    errDetails(errNote("stream: "+firstNonEmpty(stream, "stream")), errNote("tap: "+tap)),
 		fixes: buildErrorFixes([]string{
 			"add .Tap(goav.FrameTap(\"" + tap + "\")) before .Branches(...) on the selected stream",
 			"use .From(goav.FrameTap(\"audio.decoded\")) or .From(goav.FrameTap(\"video.decoded\")) after .Decode() when branching from decoded frames",
@@ -992,6 +990,7 @@ func plannedBranchTapMissingError(stream string, branch string, tap string) erro
 
 func duplicateBranchDecodeError(node string) error {
 	return &BuildError{
+		Phase:     phaseBuild,
 		Family:    errcode.FamilyForCode(branchDecodeDuplicateCode),
 		Code:      branchDecodeDuplicateCode,
 		Operation: "build branch",
@@ -1007,6 +1006,7 @@ func duplicateBranchDecodeError(node string) error {
 
 func branchDecodeOrderError(node string) error {
 	return &BuildError{
+		Phase:     phaseBuild,
 		Family:    errcode.FamilyForCode(branchDecodeOrderInvalidCode),
 		Code:      branchDecodeOrderInvalidCode,
 		Operation: "build branch",
@@ -1022,6 +1022,7 @@ func branchDecodeOrderError(node string) error {
 
 func branchDecodeDomainError(node string) error {
 	return &BuildError{
+		Phase:     phaseBuild,
 		Family:    errcode.FamilyForCode(branchDecodeDomainMismatchCode),
 		Code:      branchDecodeDomainMismatchCode,
 		Operation: "build branches",
@@ -1038,6 +1039,7 @@ func branchDecodeDomainError(node string) error {
 
 func branchDecodeCopyError(node string) error {
 	return &BuildError{
+		Phase:     phaseBuild,
 		Family:    errcode.FamilyForCode(branchDecodeCopyInvalidCode),
 		Code:      branchDecodeCopyInvalidCode,
 		Operation: "build branch",
@@ -1054,14 +1056,13 @@ func branchDecodeCopyError(node string) error {
 
 func branchPacketEncodeUnsupportedError(stream streamIntent, encode codec.CodecSpec) error {
 	return &BuildError{
+		Phase:     phaseBuild,
 		Family:    errcode.FamilyForCode(packetBranchEncodeUnsupportedCode),
 		Code:      packetBranchEncodeUnsupportedCode,
 		Operation: "build branches",
 		Node:      branchIntentName(stream),
 		Reason:    "packet-domain planned branches cannot encode without decoding first",
-		fields: buildErrorFields([]string{
-			"encoder: " + codecIntentName(encode),
-		}),
+		fields:    errDetails(errNote("encoder: " + codecIntentName(encode))),
 		fixes: buildErrorFixes([]string{
 			"use .Decode().Branches(goav.Branch(name).Encode(codec.Opus(...)).To(destination)) for encoded variants",
 			"use .Copy().Branches(goav.Branch(name).To(destination)) for packet-preserving variants",
@@ -1073,6 +1074,7 @@ func branchPacketEncodeUnsupportedError(stream streamIntent, encode codec.CodecS
 
 func branchPacketTransformUnsupportedError(stream streamIntent) error {
 	return &BuildError{
+		Phase:     phaseBuild,
 		Family:    errcode.FamilyForCode(packetBranchTransformUnsupportedCode),
 		Code:      packetBranchTransformUnsupportedCode,
 		Operation: "build branches",
@@ -1130,6 +1132,7 @@ func cloneDestinationSpec(dest destinationSpec) destinationSpec {
 
 func branchMissingError(node string) error {
 	return &BuildError{
+		Phase:     phaseBuild,
 		Family:    errcode.FamilyForCode(branchMissingCode),
 		Code:      branchMissingCode,
 		Operation: "build branches",
@@ -1145,6 +1148,7 @@ func branchMissingError(node string) error {
 
 func nilBranchError() error {
 	return &BuildError{
+		Phase:     phaseBuild,
 		Family:    errcode.FamilyForCode(branchInvalidCode),
 		Code:      branchInvalidCode,
 		Operation: "build branch",
@@ -1158,14 +1162,13 @@ func nilBranchError() error {
 
 func branchSpecOriginError(index int, selected av.MediaType) error {
 	return &BuildError{
+		Phase:     phaseBuild,
 		Family:    errcode.FamilyForCode(branchInvalidCode),
 		Code:      branchInvalidCode,
 		Operation: "build branches",
 		Node:      fmt.Sprintf("branch-%d", index),
 		Reason:    "branch spec was not constructed with goav.Branch(name)",
-		fields: buildErrorFields([]string{
-			"media=" + string(selected),
-		}),
+		fields:    errDetails(errDetail("media", string(selected))),
 		fixes: buildErrorFixes([]string{
 			"construct branches with goav.Branch(name).To(destination)",
 		}),
@@ -1175,6 +1178,7 @@ func branchSpecOriginError(index int, selected av.MediaType) error {
 
 func branchDestinationMissingError(name string) error {
 	return &BuildError{
+		Phase:     phaseBuild,
 		Family:    errcode.FamilyForCode(destinationMissingCode),
 		Code:      destinationMissingCode,
 		Operation: "build branch",
@@ -1202,6 +1206,7 @@ func jobDestinationInvalidError(name string, reason string) error {
 
 func destinationInvalidError(operation string, node string, reason string) error {
 	return &BuildError{
+		Phase:     phaseBuild,
 		Family:    errcode.FamilyForCode(destinationInvalidCode),
 		Code:      destinationInvalidCode,
 		Operation: operation,

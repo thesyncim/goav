@@ -257,18 +257,15 @@ func bufferBudgetMissingError(operation workOperation, err error) error {
 	fact := err.Error()
 	node := firstNonEmpty(operation.Node.String(), operation.Name, operation.Branch, "node")
 	return &BuildError{
+		Phase:     phaseBuild,
 		Family:    errcode.FamilyForCode(bufferBudgetMissingCode),
 		Code:      bufferBudgetMissingCode,
 		Operation: "configure graph buffer",
 		Node:      node,
 		Reason:    "buffered recipe graph cannot derive a copy budget: " + fact,
-		fields: buildErrorFields([]string{
-			"branch=" + operation.Branch,
-			"kind=" + string(operation.Kind),
-			"shape=" + operation.ShapeIn.String(),
-		}),
-		fixes: buildErrorFixes(bufferBudgetSuggestions(operation, fact)),
-		cause: errUnsupportedBuild,
+		fields:    errDetails(errDetail("branch", operation.Branch), errDetail("kind", string(operation.Kind)), errDetail("shape", operation.ShapeIn.String())),
+		fixes:     buildErrorFixes(bufferBudgetSuggestions(operation, fact)),
+		cause:     errUnsupportedBuild,
 	}
 }
 

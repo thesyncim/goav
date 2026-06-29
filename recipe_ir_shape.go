@@ -195,19 +195,14 @@ func recipeIRShapeRequirementUnmetError(operation string, node string, index int
 		required = *step.Require
 	}
 	return &BuildError{
+		Phase:     phaseBuild,
 		Family:    errcode.FamilyForCode(shapeRequirementUnmetCode),
 		Code:      shapeRequirementUnmetCode,
 		Operation: operation,
 		Node:      node,
 		Reason: fmt.Sprintf(".Require(...) is not satisfied: the stream is %s, required %s",
 			humanizeShape(actual), humanizeShape(required)),
-		fields: buildErrorFields([]string{
-			fmt.Sprintf("operation_index=%d", index),
-			"operation=require",
-			"source=" + humanizeShape(actual),
-			"actual_shape=" + actual.String(),
-			"expected_shape=" + shapeSetString(expected),
-		}),
+		fields: errDetails(errNote(fmt.Sprintf("operation_index=%d", index)), errDetail("operation", "require"), errDetail("source", humanizeShape(actual)), errDetail("actual_shape", actual.String()), errDetail("expected_shape", shapeSetString(expected))),
 		fixes: buildErrorFixes([]string{
 			"adjust the chain so the stream satisfies the required shape before .Require(...)",
 			"relax or remove the .Require(...) assertion",
@@ -219,19 +214,15 @@ func recipeIRShapeRequirementUnmetError(operation string, node string, index int
 func recipeIROperationShapeMismatchError(operation string, node string, index int, step recipeir.Operation, expected shape.Set, actual shape.Spec) error {
 	component := firstNonEmpty(step.Component, recipeIROperationComponent(step), string(step.Kind), "operation")
 	return &BuildError{
+		Phase:     phaseBuild,
 		Family:    errcode.FamilyForCode(operationShapeMismatchCode),
 		Code:      operationShapeMismatchCode,
 		Operation: operation,
 		Node:      node,
 		Reason:    component + " cannot consume the current media shape",
-		fields: buildErrorFields([]string{
-			fmt.Sprintf("operation_index=%d", index),
-			"operation=" + string(step.Kind),
-			"expected_shape=" + shapeSetString(expected),
-			"actual_shape=" + actual.String(),
-		}),
-		fixes: buildErrorFixes(recipeIROperationShapeMismatchSuggestions(step)),
-		cause: errUnsupportedBuild,
+		fields:    errDetails(errNote(fmt.Sprintf("operation_index=%d", index)), errDetail("operation", string(step.Kind)), errDetail("expected_shape", shapeSetString(expected)), errDetail("actual_shape", actual.String())),
+		fixes:     buildErrorFixes(recipeIROperationShapeMismatchSuggestions(step)),
+		cause:     errUnsupportedBuild,
 	}
 }
 

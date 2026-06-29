@@ -168,6 +168,7 @@ func chainStepsFromChainOperations(operations []operationSpec) []chainStep {
 func validateBranchCompositionRecipeShape(operation string, recipe recipeir.Recipe) error {
 	if len(recipe.Inputs) == 0 {
 		return &BuildError{
+			Phase:     phaseBuild,
 			Family:    errcode.FamilyForCode(inputMissingCode),
 			Code:      inputMissingCode,
 			Operation: operation,
@@ -180,13 +181,12 @@ func validateBranchCompositionRecipeShape(operation string, recipe recipeir.Reci
 	}
 	if len(recipe.Inputs) > 1 {
 		return &BuildError{
+			Phase:     phaseBuild,
 			Family:    errcode.FamilyForCode(inputCountUnsupportedCode),
 			Code:      inputCountUnsupportedCode,
 			Operation: operation,
 			Reason:    "transcode recipes currently take one input",
-			fields: buildErrorFields([]string{
-				fmt.Sprintf("inputs=%d", len(recipe.Inputs)),
-			}),
+			fields:    errDetails(errNote(fmt.Sprintf("inputs=%d", len(recipe.Inputs)))),
 			fixes: buildErrorFixes([]string{
 				"use one goav.From(input) source per composed job",
 				"use the expert graph API when multiple sources must be composed manually",
@@ -292,6 +292,7 @@ func branchDestinationAttachmentSet(namedOutputs []namedDestinationSpec) (map[st
 
 func branchStreamMissingError() error {
 	return &BuildError{
+		Phase:     phaseBuild,
 		Family:    errcode.FamilyForCode(streamMissingCode),
 		Code:      streamMissingCode,
 		Operation: branchCompositionOperation,
@@ -306,15 +307,13 @@ func branchStreamMissingError() error {
 
 func branchEncodeMissingError(stream streamIntent) error {
 	return &BuildError{
+		Phase:     phaseBuild,
 		Family:    errcode.FamilyForCode(encodeMissingCode),
 		Code:      encodeMissingCode,
 		Operation: branchCompositionOperation,
 		Node:      stream.Name,
 		Reason:    "branch needs an encoder before writing to a muxed destination",
-		fields: buildErrorFields([]string{
-			"expected_shape=" + shape.New(shape.Domain(shape.DomainPacket), shape.Media(stream.Select.Type)).String(),
-			"actual_shape=" + shape.Frame(stream.Select.Type).String(),
-		}),
+		fields:    errDetails(errDetail("expected_shape", shape.New(shape.Domain(shape.DomainPacket), shape.Media(stream.Select.Type)).String()), errDetail("actual_shape", shape.Frame(stream.Select.Type).String())),
 		fixes: buildErrorFixes([]string{
 			"call .Encode(codec.Opus(...)), .Encode(codec.VP8(...)), or .Encode(codec.VP9(...)) before .To(...)",
 			"route raw frames to goav.Sink(...) when the branch should stay decoded",
@@ -325,6 +324,7 @@ func branchEncodeMissingError(stream streamIntent) error {
 
 func branchCopyUnsupportedError(stream streamIntent) error {
 	return &BuildError{
+		Phase:     phaseBuild,
 		Family:    errcode.FamilyForCode(copyUnsupportedCode),
 		Code:      copyUnsupportedCode,
 		Operation: branchCompositionOperation,
@@ -342,6 +342,7 @@ func branchCopyUnsupportedError(stream streamIntent) error {
 func branchIntentDestinationMissingError(stream streamIntent) error {
 	selector := streamIntentSelector(stream)
 	return &BuildError{
+		Phase:     phaseBuild,
 		Family:    errcode.FamilyForCode(destinationMissingCode),
 		Code:      destinationMissingCode,
 		Operation: branchCompositionOperation,
@@ -357,6 +358,7 @@ func branchIntentDestinationMissingError(stream streamIntent) error {
 
 func branchDestinationReferenceMissingError(stream streamIntent, label string) error {
 	return &BuildError{
+		Phase:     phaseBuild,
 		Family:    errcode.FamilyForCode(destinationMissingCode),
 		Code:      destinationMissingCode,
 		Operation: branchCompositionOperation,
@@ -372,6 +374,7 @@ func branchDestinationReferenceMissingError(stream streamIntent, label string) e
 
 func transcodeUnsupportedLiveInputError() error {
 	return &BuildError{
+		Phase:     phaseBuild,
 		Family:    errcode.FamilyForCode(unsupportedInputCode),
 		Code:      unsupportedInputCode,
 		Operation: branchCompositionOperation,
@@ -386,14 +389,13 @@ func transcodeUnsupportedLiveInputError() error {
 
 func branchDestinationNameEmptyError(stream streamIntent, index int) error {
 	return &BuildError{
+		Phase:     phaseBuild,
 		Family:    errcode.FamilyForCode(destinationInvalidCode),
 		Code:      destinationInvalidCode,
 		Operation: branchCompositionOperation,
 		Node:      firstNonEmpty(stream.Name, string(stream.Select.Type), "stream"),
 		Reason:    "branch destinations must be non-empty",
-		fields: buildErrorFields([]string{
-			fmt.Sprintf("destination index: %d", index),
-		}),
+		fields:    errDetails(errNote(fmt.Sprintf("destination index: %d", index))),
 		fixes: buildErrorFixes([]string{
 			"call .To(goav.Write(\"web.ivf\", writer)) with a non-empty destination name",
 			"pass goav.Sink(component.SinkFunc(name, fn)) for sink destinations",
@@ -404,6 +406,7 @@ func branchDestinationNameEmptyError(stream streamIntent, index int) error {
 
 func branchDestinationDuplicateError(name string) error {
 	return &BuildError{
+		Phase:     phaseBuild,
 		Family:    errcode.FamilyForCode(destinationDuplicateCode),
 		Code:      destinationDuplicateCode,
 		Operation: branchCompositionOperation,
@@ -419,15 +422,13 @@ func branchDestinationDuplicateError(name string) error {
 
 func branchIntentDuplicateError(name string, firstIndex int, secondIndex int) error {
 	return &BuildError{
+		Phase:     phaseBuild,
 		Family:    errcode.FamilyForCode(streamDuplicateCode),
 		Code:      streamDuplicateCode,
 		Operation: branchCompositionOperation,
 		Node:      name,
 		Reason:    fmt.Sprintf("branch name %q is defined more than once", name),
-		fields: buildErrorFields([]string{
-			fmt.Sprintf("first branch index: %d", firstIndex),
-			fmt.Sprintf("second branch index: %d", secondIndex),
-		}),
+		fields:    errDetails(errNote(fmt.Sprintf("first branch index: %d", firstIndex)), errNote(fmt.Sprintf("second branch index: %d", secondIndex))),
 		fixes: buildErrorFixes([]string{
 			"use unique names such as .Video(\"720p\") and .Video(\"360p\")",
 			"route one branch to multiple destinations by calling .To(destination, otherDestination)",
@@ -439,14 +440,13 @@ func branchIntentDuplicateError(name string, firstIndex int, secondIndex int) er
 
 func branchIntentNameMissingError(index int, stream streamIntent) error {
 	return &BuildError{
+		Phase:     phaseBuild,
 		Family:    errcode.FamilyForCode(streamNameMissingCode),
 		Code:      streamNameMissingCode,
 		Operation: branchCompositionOperation,
 		Node:      fmt.Sprintf("branch-%d", index),
 		Reason:    "branches need stable names",
-		fields: buildErrorFields([]string{
-			"media type: " + firstNonEmpty(string(stream.Select.Type), "unknown"),
-		}),
+		fields:    errDetails(errNote("media type: " + firstNonEmpty(string(stream.Select.Type), "unknown"))),
 		fixes: buildErrorFixes([]string{
 			"call .Video(\"720p\") for video branches",
 			"call .Audio(\"main\") for audio branches",
@@ -471,15 +471,13 @@ func validateBranchRecipeDestinations(stream recipeir.Stream) error {
 
 func duplicateBranchDestinationError(stream streamIntent, target string, firstIndex int, secondIndex int) error {
 	return &BuildError{
+		Phase:     phaseBuild,
 		Family:    errcode.FamilyForCode(destinationDuplicateCode),
 		Code:      destinationDuplicateCode,
 		Operation: branchCompositionOperation,
 		Node:      branchIntentName(stream),
 		Reason:    fmt.Sprintf("branch routes to destination %q more than once", target),
-		fields: buildErrorFields([]string{
-			fmt.Sprintf("first destination index: %d", firstIndex),
-			fmt.Sprintf("second destination index: %d", secondIndex),
-		}),
+		fields:    errDetails(errNote(fmt.Sprintf("first destination index: %d", firstIndex)), errNote(fmt.Sprintf("second destination index: %d", secondIndex))),
 		fixes: buildErrorFixes([]string{
 			"list each destination once in .To(...)",
 			"route one branch to multiple destinations with distinct values such as .To(archive, preview)",

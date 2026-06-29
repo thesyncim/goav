@@ -201,11 +201,12 @@ func (c recipeIntentCompiler) Compile(state recipeCompileState) (recipeResolved,
 		pass := c.passes[i]
 		if pass == nil {
 			return recipeResolved{}, &BuildError{
+				Phase:     phaseBuild,
 				Family:    errcode.FamilyForCode(compilerPassInvalidCode),
 				Code:      compilerPassInvalidCode,
 				Operation: state.operation,
 				Reason:    fmt.Sprintf("recipe compiler pass %d is nil", i),
-				fields:    buildErrorFields([]string{"internal invariant: the recipe compiler was assembled with a nil pass"}),
+				fields:    errDetails(errNote("internal invariant: the recipe compiler was assembled with a nil pass")),
 				cause:     errUnsupportedBuild,
 			}
 		}
@@ -243,13 +244,12 @@ func compilerPassError(operation string, pass string, err error) error {
 		return err
 	}
 	return &BuildError{
+		Phase:     phaseBuild,
 		Family:    errcode.FamilyForCode(compilerPassFailedCode),
 		Code:      compilerPassFailedCode,
 		Operation: firstNonEmpty(buildErr.Operation, operation),
 		Reason:    "recipe compiler pass failed without a diagnostic",
-		fields: buildErrorFields([]string{
-			"pass=" + pass,
-		}),
+		fields:    errDetails(errDetail("pass", pass)),
 		fixes: buildErrorFixes([]string{
 			"run Explain(ctx) to inspect the partial plan",
 			"report the pass name with the recipe shape",
@@ -473,17 +473,19 @@ func branchCompositionRecipeCompilePhases() recipeCompilePhaseSet {
 // attachment — an internal invariant, not a user-fixable refusal.
 func nilRecipeError(operation string, reason string) error {
 	return &BuildError{
+		Phase:     phaseBuild,
 		Family:    errcode.FamilyForCode(errcode.JobInvalid),
 		Code:      errcode.JobInvalid,
 		Operation: operation,
 		Reason:    reason,
-		fields:    buildErrorFields([]string{"internal invariant: the compiler was invoked without its recipe attachment (recipes are constructed with goav.From(...))"}),
+		fields:    errDetails(errNote("internal invariant: the compiler was invoked without its recipe attachment (recipes are constructed with goav.From(...))")),
 		cause:     errUnsupportedBuild,
 	}
 }
 
 func unconstructedJobError() error {
 	return &BuildError{
+		Phase:     phaseBuild,
 		Family:    errcode.FamilyForCode(errcode.JobInvalid),
 		Code:      errcode.JobInvalid,
 		Operation: "build job",
@@ -500,6 +502,7 @@ func unconstructedJobError() error {
 // runtimeMissingError is the no-runtime refusal shared by every recipe form.
 func runtimeMissingError(operation string) error {
 	return &BuildError{
+		Phase:     phaseBuild,
 		Family:    errcode.FamilyForCode(errcode.RuntimeMissing),
 		Code:      errcode.RuntimeMissing,
 		Operation: operation,
@@ -686,6 +689,7 @@ func validateJobIntentShapePass() recipeCompilePass {
 func validateJobRecipeIntentShape(operation string, recipe recipeir.Recipe, jobOutputCount int) error {
 	if len(recipe.Inputs) == 0 {
 		return &BuildError{
+			Phase:     phaseBuild,
 			Family:    errcode.FamilyForCode(inputMissingCode),
 			Code:      inputMissingCode,
 			Operation: operation,
@@ -700,6 +704,7 @@ func validateJobRecipeIntentShape(operation string, recipe recipeir.Recipe, jobO
 	stream, hasStream := jobRecipeIRStream(streams)
 	if len(recipe.Destinations) == 0 {
 		return &BuildError{
+			Phase:     phaseBuild,
 			Family:    errcode.FamilyForCode(outputMissingCode),
 			Code:      outputMissingCode,
 			Operation: operation,
@@ -751,6 +756,7 @@ func jobRecipeIRStream(streams []recipeir.Stream) (recipeir.Stream, bool) {
 
 func jobStreamDestinationMissingError(operation string, stream recipeir.Stream) error {
 	return &BuildError{
+		Phase:     phaseBuild,
 		Family:    errcode.FamilyForCode(outputMissingCode),
 		Code:      outputMissingCode,
 		Operation: operation,
@@ -776,6 +782,7 @@ func validateJobRecipeOutputScope(operation string, destinationCount int, jobOut
 
 func jobOutputScopeMixedError(operation string, stream recipeir.Stream) error {
 	return &BuildError{
+		Phase:     phaseBuild,
 		Family:    errcode.FamilyForCode(outputScopeMixedCode),
 		Code:      outputScopeMixedCode,
 		Operation: operation,
@@ -792,6 +799,7 @@ func jobOutputScopeMixedError(operation string, stream recipeir.Stream) error {
 
 func jobDestinationReferenceMissingError(operation string, stream recipeir.Stream, label string) error {
 	return &BuildError{
+		Phase:     phaseBuild,
 		Family:    errcode.FamilyForCode(outputMissingCode),
 		Code:      outputMissingCode,
 		Operation: operation,
@@ -939,15 +947,13 @@ func validateRecipeIRTransform(operation string, node string, transform recipeir
 			return nil
 		}
 		return &BuildError{
+			Phase:     phaseBuild,
 			Family:    errcode.FamilyForCode(transformInvalidCode),
 			Code:      transformInvalidCode,
 			Operation: operation,
 			Node:      node,
 			Reason:    "resize requires positive width and height",
-			fields: buildErrorFields([]string{
-				fmt.Sprintf("width=%d", transform.Resize.Width),
-				fmt.Sprintf("height=%d", transform.Resize.Height),
-			}),
+			fields:    errDetails(errNote(fmt.Sprintf("width=%d", transform.Resize.Width)), errNote(fmt.Sprintf("height=%d", transform.Resize.Height))),
 			fixes: buildErrorFixes([]string{
 				"call .Resize(width, height) with positive dimensions",
 				"remove .Resize(...) when no video scaling is needed",
@@ -959,15 +965,13 @@ func validateRecipeIRTransform(operation string, node string, transform recipeir
 			return nil
 		}
 		return &BuildError{
+			Phase:     phaseBuild,
 			Family:    errcode.FamilyForCode(transformInvalidCode),
 			Code:      transformInvalidCode,
 			Operation: operation,
 			Node:      node,
 			Reason:    "resample requires positive sample rate and channels",
-			fields: buildErrorFields([]string{
-				fmt.Sprintf("sample_rate=%d", transform.Resample.SampleRate),
-				fmt.Sprintf("channels=%d", transform.Resample.Channels),
-			}),
+			fields:    errDetails(errNote(fmt.Sprintf("sample_rate=%d", transform.Resample.SampleRate)), errNote(fmt.Sprintf("channels=%d", transform.Resample.Channels))),
 			fixes: buildErrorFixes([]string{
 				"call .Resample(sampleRate, channels) with positive values",
 				"remove .Resample(...) when no audio conversion is needed",
@@ -981,6 +985,7 @@ func validateRecipeIRTransform(operation string, node string, transform recipeir
 
 func operationSpecMissingError(operation string, node string) error {
 	return &BuildError{
+		Phase:     phaseBuild,
 		Family:    errcode.FamilyForCode(streamOperationMissingCode),
 		Code:      streamOperationMissingCode,
 		Operation: operation,
@@ -1329,14 +1334,12 @@ func validateRecipeAttachmentConsistencyPass() recipeCompilePass {
 
 func recipeAttachmentMismatchError(operation string, kind string, intentCount int, attachmentCount int) error {
 	return &BuildError{
+		Phase:     phaseBuild,
 		Family:    errcode.FamilyForCode(recipeAttachmentMismatchCode),
 		Code:      recipeAttachmentMismatchCode,
 		Operation: operation,
 		Reason:    kind + " intent and concrete attachments disagree",
-		fields: buildErrorFields([]string{
-			fmt.Sprintf("intent %s: %d", kind, intentCount),
-			fmt.Sprintf("attached %s: %d", kind, attachmentCount),
-		}),
+		fields:    errDetails(errNote(fmt.Sprintf("intent %s: %d", kind, intentCount)), errNote(fmt.Sprintf("attached %s: %d", kind, attachmentCount))),
 		fixes: buildErrorFixes([]string{
 			"build recipes through goav.From(input)",
 			"keep custom compiler passes aligned with the public intent and captured attachments",
@@ -1747,16 +1750,13 @@ func validateRecipeDestinationShape(operation string, node string, destinationNa
 func destinationShapeMismatchError(operation string, node string, destinationName string, destination destinationSpec, spec shape.Spec) error {
 	label := firstNonEmpty(destinationName, destination.label("destination"))
 	return &BuildError{
+		Phase:     phaseBuild,
 		Family:    errcode.FamilyForCode(destinationShapeMismatchCode),
 		Code:      destinationShapeMismatchCode,
 		Operation: operation,
 		Node:      firstNonEmpty(node, label, "destination"),
 		Reason:    "byte or mux destination requires packet-domain media",
-		fields: buildErrorFields([]string{
-			"destination=" + label,
-			"expected_shape=" + shape.New(shape.Domain(shape.DomainPacket), shape.Media(spec.MediaKind)).String(),
-			"actual_shape=" + spec.String(),
-		}),
+		fields:    errDetails(errDetail("destination", label), errDetail("expected_shape", shape.New(shape.Domain(shape.DomainPacket), shape.Media(spec.MediaKind)).String()), errDetail("actual_shape", spec.String())),
 		fixes: buildErrorFixes([]string{
 			"call .Encode(codec.Opus(...)), .Encode(codec.VP8(...)), or .Encode(codec.VP9(...)) before writing to file, URI, or writer destinations",
 			"use .Copy() from a packet-domain stream point for packet-preserving output",
@@ -1819,19 +1819,14 @@ func shapeRequirementUnmetError(operation string, node string, index int, step o
 		required = *step.Require
 	}
 	return &BuildError{
+		Phase:     phaseBuild,
 		Family:    errcode.FamilyForCode(shapeRequirementUnmetCode),
 		Code:      shapeRequirementUnmetCode,
 		Operation: operation,
 		Node:      node,
 		Reason: fmt.Sprintf(".Require(...) is not satisfied: the stream is %s, required %s",
 			humanizeShape(actual), humanizeShape(required)),
-		fields: buildErrorFields([]string{
-			fmt.Sprintf("operation_index=%d", index),
-			"operation=require",
-			"source=" + humanizeShape(actual),
-			"actual_shape=" + actual.String(),
-			"expected_shape=" + shapeSetString(expected),
-		}),
+		fields: errDetails(errNote(fmt.Sprintf("operation_index=%d", index)), errDetail("operation", "require"), errDetail("source", humanizeShape(actual)), errDetail("actual_shape", actual.String()), errDetail("expected_shape", shapeSetString(expected))),
 		fixes: buildErrorFixes([]string{
 			"adjust the chain so the stream satisfies the required shape before .Require(...)",
 			"relax or remove the .Require(...) assertion",
@@ -1851,19 +1846,15 @@ func operationSpecOutputShape(input shape.Spec, operation operationSpec) shape.S
 func operationShapeMismatchError(operation string, node string, index int, step operationSpec, expected shape.Set, actual shape.Spec) error {
 	component := firstNonEmpty(step.Component, operationSpecComponent(step), string(step.Kind), "operation")
 	return &BuildError{
+		Phase:     phaseBuild,
 		Family:    errcode.FamilyForCode(operationShapeMismatchCode),
 		Code:      operationShapeMismatchCode,
 		Operation: operation,
 		Node:      node,
 		Reason:    component + " cannot consume the current media shape",
-		fields: buildErrorFields([]string{
-			fmt.Sprintf("operation_index=%d", index),
-			"operation=" + string(step.Kind),
-			"expected_shape=" + shapeSetString(expected),
-			"actual_shape=" + actual.String(),
-		}),
-		fixes: buildErrorFixes(operationShapeMismatchSuggestions(step)),
-		cause: errUnsupportedBuild,
+		fields:    errDetails(errNote(fmt.Sprintf("operation_index=%d", index)), errDetail("operation", string(step.Kind)), errDetail("expected_shape", shapeSetString(expected)), errDetail("actual_shape", actual.String())),
+		fixes:     buildErrorFixes(operationShapeMismatchSuggestions(step)),
+		cause:     errUnsupportedBuild,
 	}
 }
 
@@ -1887,17 +1878,13 @@ func shapeAnnotationDomainMismatchError(operation string, node string, index int
 	expected := shape.New(shape.Domain(current.Domain), shape.Media(media))
 	actual := shape.New(shape.Domain(after.Domain), shape.Media(media))
 	return &BuildError{
+		Phase:     phaseBuild,
 		Family:    errcode.FamilyForCode(operationShapeMismatchCode),
 		Code:      operationShapeMismatchCode,
 		Operation: operation,
 		Node:      firstNonEmpty(node, "stream"),
 		Reason:    "shape annotation cannot change packet/frame domain",
-		fields: buildErrorFields([]string{
-			fmt.Sprintf("operation_index=%d", index),
-			"operation=shape",
-			"expected_shape=" + expected.String(),
-			"actual_shape=" + actual.String(),
-		}),
+		fields:    errDetails(errNote(fmt.Sprintf("operation_index=%d", index)), errDetail("operation", "shape"), errDetail("expected_shape", expected.String()), errDetail("actual_shape", actual.String())),
 		fixes: buildErrorFixes([]string{
 			"keep .Shape(...) annotations in the current packet/frame domain",
 			"use .Decode() to move packets to decoded frames",
@@ -2004,11 +1991,12 @@ func recipeGraphUnsupportedRecipeError(operation string, recipe recipeir.Recipe)
 		fmt.Sprintf("destinations: %d", len(recipe.Destinations)),
 	}
 	return &BuildError{
+		Phase:     phaseBuild,
 		Family:    errcode.FamilyForCode(errcode.RecipeGraphUnsupported),
 		Code:      errcode.RecipeGraphUnsupported,
 		Operation: operation,
 		Reason:    "recipe intent did not match a supported graph plan",
-		fields:    buildErrorFields(details),
+		fields:    errDetailLines(details),
 		fixes: buildErrorFixes([]string{
 			"use goav.From(input).Copy().To(output...) for packet-preserving record or remux",
 			"use goav.From(input).Audio().Decode().To(goav.Sink(...)) or .Video().Decode().To(...) for decoded frames",

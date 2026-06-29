@@ -94,20 +94,21 @@ func TestBuildErrorAndCompilerPassErrorContracts(t *testing.T) {
 	if got := nilBuildErr.EffectivePhase(); got != "" {
 		t.Fatalf("nil BuildError phase = %q, want empty", got)
 	}
+	// Phase is now a stated fact, never inferred from the operation string:
+	// EffectivePhase reads the explicit Phase (empty for an unset/zero error).
 	phaseTests := []struct {
 		name string
 		err  *BuildError
 		want string
 	}{
-		{name: "default build", err: &BuildError{}, want: phaseBuild},
-		{name: "derived build", err: &BuildError{Operation: "build stream"}, want: phaseBuild},
-		{name: "derived open", err: &BuildError{Operation: "open input"}, want: phaseOpen},
-		{name: "derived run", err: &BuildError{Operation: "run task"}, want: phaseRun},
-		{name: "derived attach", err: &BuildError{Operation: "attach runtime branch"}, want: phaseRun},
-		{name: "derived detach", err: &BuildError{Operation: "detach runtime branch"}, want: phaseRun},
-		{name: "derived control", err: &BuildError{Operation: "control bitrate"}, want: phaseRun},
-		{name: "derived close", err: &BuildError{Operation: "close graph"}, want: phaseClose},
-		{name: "explicit", err: &BuildError{Phase: phaseOpen, Operation: "build stream"}, want: phaseOpen},
+		{name: "unset", err: &BuildError{}, want: ""},
+		{name: "build", err: &BuildError{Phase: phaseBuild, Operation: "build stream"}, want: phaseBuild},
+		{name: "open", err: &BuildError{Phase: phaseOpen, Operation: "open input"}, want: phaseOpen},
+		{name: "run", err: &BuildError{Phase: phaseRun, Operation: "run task"}, want: phaseRun},
+		{name: "close", err: &BuildError{Phase: phaseClose, Operation: "close graph"}, want: phaseClose},
+		{name: "explicit overrides operation verb", err: &BuildError{
+			Phase:     phaseOpen,
+			Operation: "build stream"}, want: phaseOpen},
 	}
 	for _, tt := range phaseTests {
 		t.Run("phase/"+tt.name, func(t *testing.T) {

@@ -185,11 +185,12 @@ func graphPlanOperationDestinationsRequired(kind plan.OperationKind) bool {
 
 func graphPlanInvalidError(reason string, details []string) error {
 	return &BuildError{
+		Phase:     phaseBuild,
 		Family:    errcode.FamilyForCode(graphPlanInvalidCode),
 		Code:      graphPlanInvalidCode,
 		Operation: "build graph plan",
 		Reason:    reason,
-		fields:    buildErrorFields(append([]string(nil), details...)),
+		fields:    errDetailLines(append([]string(nil), details...)),
 		fixes: buildErrorFixes([]string{
 			"compile recipes through goav.From(...), chains, branches, and destinations",
 			"keep graph-plan nodes, edges, operations, and destinations in sync",

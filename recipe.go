@@ -4,6 +4,7 @@ package goav
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -139,32 +140,51 @@ func (e *BuildError) Unwrap() error {
 	return e.cause
 }
 
-// EffectivePhase returns the explicit phase when present, otherwise derives one
-// of "build", "open", "run", or "close" from the operation verb. Older call
-// sites that only set Operation keep a stable lifecycle phase while the
-// codebase migrates to explicit Phase fields.
+// MarshalJSON renders the BuildError as a stable machine-readable document:
+// phase, family, code, operation, node, reason, typed key/value details, and
+// concrete fixes. It is the JSON contract consumed by tooling and pinned by the
+// golden error tests; Detail values keep their real type.
+func (e *BuildError) MarshalJSON() ([]byte, error) {
+	if e == nil {
+		return []byte("null"), nil
+	}
+	type detailJSON struct {
+		Key   string `json:"key,omitempty"`
+		Value any    `json:"value,omitempty"`
+	}
+	doc := struct {
+		Phase     string         `json:"phase,omitempty"`
+		Family    errcode.Family `json:"family,omitempty"`
+		Code      errcode.Code   `json:"code,omitempty"`
+		Operation string         `json:"operation,omitempty"`
+		Node      string         `json:"node,omitempty"`
+		Reason    string         `json:"reason,omitempty"`
+		Details   []detailJSON   `json:"details,omitempty"`
+		Fixes     []string       `json:"fixes,omitempty"`
+	}{
+		Phase:     e.Phase,
+		Family:    e.Family,
+		Code:      e.Code,
+		Operation: e.Operation,
+		Node:      e.Node,
+		Reason:    e.Reason,
+		Fixes:     e.suggestionLines(),
+	}
+	for i := range e.fields {
+		doc.Details = append(doc.Details, detailJSON{Key: e.fields[i].Key, Value: e.fields[i].Value})
+	}
+	return json.Marshal(doc)
+}
+
+// EffectivePhase returns the BuildError's lifecycle phase. Every BuildError now
+// sets Phase explicitly (pinned by TestEveryBuildErrorHasPhaseFamilyCodeReason),
+// so this is a nil-safe reader of that stated fact — no inference from the
+// operation string.
 func (e *BuildError) EffectivePhase() string {
 	if e == nil {
 		return ""
 	}
-	if e.Phase != "" {
-		return e.Phase
-	}
-	return phaseFromOperation(e.Operation)
-}
-
-func phaseFromOperation(operation string) string {
-	verb, _, _ := strings.Cut(strings.TrimSpace(strings.ToLower(operation)), " ")
-	switch verb {
-	case "open":
-		return phaseOpen
-	case "run", "attach", "detach", "control":
-		return phaseRun
-	case "close":
-		return phaseClose
-	default:
-		return phaseBuild
-	}
+	return e.Phase
 }
 
 func (e *BuildError) detailLines() []string {
@@ -191,7 +211,40 @@ func (e *BuildError) suggestionLines() []string {
 	return out
 }
 
-func buildErrorFields(lines []string) []buildErrorDetail {
+// errDetail builds one typed machine-readable BuildError detail from an explicit
+// key and value. It replaces splitting a "key=value" string at construction:
+// the value keeps its real type (int, string, ...) and is read back through
+// BuildError.Detail(key).
+func errDetail(key string, value any) buildErrorDetail {
+	return buildErrorDetail{Key: key, Value: value}
+}
+
+// errNote builds one keyless detail: a machine-readable note with no key.
+func errNote(message string) buildErrorDetail {
+	return buildErrorDetail{Value: message}
+}
+
+// errDetails collects typed details, dropping empties. It is the typed builder
+// that replaced buildErrorFields([]string{"key=value"}).
+func errDetails(details ...buildErrorDetail) []buildErrorDetail {
+	if len(details) == 0 {
+		return nil
+	}
+	out := make([]buildErrorDetail, 0, len(details))
+	for _, d := range details {
+		if d.Key == "" && (d.Value == nil || d.Value == "") {
+			continue
+		}
+		out = append(out, d)
+	}
+	return out
+}
+
+// errDetailLines converts a dynamically-built slice of "key=value" (or plain)
+// lines into typed details, splitting each at the first '='. It is the runtime
+// path for call sites whose detail keys are not known statically; literal detail
+// lists use errDetail/errNote instead.
+func errDetailLines(lines []string) []buildErrorDetail {
 	if len(lines) == 0 {
 		return nil
 	}

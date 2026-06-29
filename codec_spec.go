@@ -243,6 +243,7 @@ func cloneBuffer(buffer av.Buffer) av.Buffer {
 func validateRecipeEncode(spec codec.CodecSpec, operation string, node string) error {
 	if spec.Auto {
 		return &BuildError{
+			Phase:     phaseBuild,
 			Family:    errcode.FamilyForCode(encodeAutoUnresolvedCode),
 			Code:      encodeAutoUnresolvedCode,
 			Operation: operation,
@@ -267,14 +268,13 @@ func validateRecipeEncodeValues(spec codec.CodecSpec, operation string, node str
 	switch {
 	case spec.Settings.Bitrate < 0:
 		return &BuildError{
+			Phase:     phaseBuild,
 			Family:    errcode.FamilyForCode(encodeParameterInvalidCode),
 			Code:      encodeParameterInvalidCode,
 			Operation: operation,
 			Node:      node,
 			Reason:    "encode bitrate must be non-negative",
-			fields: buildErrorFields([]string{
-				fmt.Sprintf("bitrate=%d", spec.Settings.Bitrate),
-			}),
+			fields:    errDetails(errNote(fmt.Sprintf("bitrate=%d", spec.Settings.Bitrate))),
 			fixes: buildErrorFixes([]string{
 				"pass a positive value to codec.Bitrate(...)",
 				"omit codec.Bitrate(...) when the encoder should choose its default",
@@ -283,14 +283,13 @@ func validateRecipeEncodeValues(spec codec.CodecSpec, operation string, node str
 		}
 	case spec.Settings.Framerate.Value < 0 || spec.Settings.Framerate.Base.Num < 0 || spec.Settings.Framerate.Base.Den < 0:
 		return &BuildError{
+			Phase:     phaseBuild,
 			Family:    errcode.FamilyForCode(encodeParameterInvalidCode),
 			Code:      encodeParameterInvalidCode,
 			Operation: operation,
 			Node:      node,
 			Reason:    "encode FPS must be positive",
-			fields: buildErrorFields([]string{
-				fmt.Sprintf("fps_duration=%d/%d/%d", spec.Settings.Framerate.Value, spec.Settings.Framerate.Base.Num, spec.Settings.Framerate.Base.Den),
-			}),
+			fields:    errDetails(errNote(fmt.Sprintf("fps_duration=%d/%d/%d", spec.Settings.Framerate.Value, spec.Settings.Framerate.Base.Num, spec.Settings.Framerate.Base.Den))),
 			fixes: buildErrorFixes([]string{
 				"pass a positive value to goav.FPS(...)",
 				"omit goav.FPS(...) when the encoder should infer frame cadence",
@@ -299,14 +298,13 @@ func validateRecipeEncodeValues(spec codec.CodecSpec, operation string, node str
 		}
 	case spec.Settings.KeyframeInterval < 0:
 		return &BuildError{
+			Phase:     phaseBuild,
 			Family:    errcode.FamilyForCode(encodeParameterInvalidCode),
 			Code:      encodeParameterInvalidCode,
 			Operation: operation,
 			Node:      node,
 			Reason:    "encode keyframe interval must be non-negative",
-			fields: buildErrorFields([]string{
-				fmt.Sprintf("keyframe_interval=%d", spec.Settings.KeyframeInterval),
-			}),
+			fields:    errDetails(errNote(fmt.Sprintf("keyframe_interval=%d", spec.Settings.KeyframeInterval))),
 			fixes: buildErrorFixes([]string{
 				"pass a positive value to goav.KeyframeInterval(...)",
 				"omit goav.KeyframeInterval(...) when the encoder should choose its default cadence",
@@ -315,14 +313,13 @@ func validateRecipeEncodeValues(spec codec.CodecSpec, operation string, node str
 		}
 	case spec.Settings.SampleRateSet && spec.Parameters.SampleRate <= 0:
 		return &BuildError{
+			Phase:     phaseBuild,
 			Family:    errcode.FamilyForCode(encodeParameterInvalidCode),
 			Code:      encodeParameterInvalidCode,
 			Operation: operation,
 			Node:      node,
 			Reason:    "explicit encode sample rate must be positive",
-			fields: buildErrorFields([]string{
-				fmt.Sprintf("sample_rate=%d", spec.Parameters.SampleRate),
-			}),
+			fields:    errDetails(errNote(fmt.Sprintf("sample_rate=%d", spec.Parameters.SampleRate))),
 			fixes: buildErrorFixes([]string{
 				"use codec.SampleRate(rate) with a positive rate",
 				"omit codec.SampleRate(...) to use the selected stream rate",
@@ -331,14 +328,13 @@ func validateRecipeEncodeValues(spec codec.CodecSpec, operation string, node str
 		}
 	case spec.Settings.ChannelsSet && spec.Parameters.Channels <= 0:
 		return &BuildError{
+			Phase:     phaseBuild,
 			Family:    errcode.FamilyForCode(encodeParameterInvalidCode),
 			Code:      encodeParameterInvalidCode,
 			Operation: operation,
 			Node:      node,
 			Reason:    "explicit encode channel count must be positive",
-			fields: buildErrorFields([]string{
-				fmt.Sprintf("channels=%d", spec.Parameters.Channels),
-			}),
+			fields:    errDetails(errNote(fmt.Sprintf("channels=%d", spec.Parameters.Channels))),
 			fixes: buildErrorFixes([]string{
 				"use codec.Channels(codec.Mono), codec.Channels(codec.Stereo), or another positive channel count",
 				"omit codec.Channels(...) to use the selected stream channel count",
@@ -355,15 +351,13 @@ func validateCodecChangePolicy(operation string, node string, policy codecChange
 		return nil
 	}
 	return &BuildError{
+		Phase:     phaseBuild,
 		Family:    errcode.FamilyForCode(codecChangePolicyUnsupportedCode),
 		Code:      codecChangePolicyUnsupportedCode,
 		Operation: operation,
 		Node:      node,
 		Reason:    "custom codec-change policies are not implemented yet",
-		fields: buildErrorFields([]string{
-			"supported: " + codecChangePolicyDetail(defaultCodecChangePolicy()),
-			"requested: " + codecChangePolicyDetail(policy),
-		}),
+		fields:    errDetails(errNote("supported: "+codecChangePolicyDetail(defaultCodecChangePolicy())), errNote("requested: "+codecChangePolicyDetail(policy))),
 		fixes: buildErrorFixes([]string{
 			"omit .OnCodecChange(...) to use the default live receive behavior",
 			"use packet-preserving goav.From(input).Copy().To(output) when codec changes should stay encoded",

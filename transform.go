@@ -185,18 +185,13 @@ func transformAdapterExpectedMedia(name string) (av.MediaType, av.MediaType) {
 
 func transformAdapterIncompatibleError(operation string, stream streamIntent, name string, desc filter.Descriptor, expectedInput av.MediaType, expectedOutput av.MediaType) error {
 	return &BuildError{
+		Phase:     phaseBuild,
 		Family:    errcode.FamilyForCode(transformAdapterIncompatibleCode),
 		Code:      transformAdapterIncompatibleCode,
 		Operation: operation,
 		Node:      jobStreamIntentName(stream),
 		Reason:    name + " filter adapter declares incompatible media",
-		fields: buildErrorFields([]string{
-			"transform=" + name,
-			"expected_input=" + string(expectedInput),
-			"expected_output=" + string(expectedOutput),
-			"actual_input=" + string(desc.Input),
-			"actual_output=" + string(desc.Output),
-		}),
+		fields:    errDetails(errDetail("transform", name), errDetail("expected_input", string(expectedInput)), errDetail("expected_output", string(expectedOutput)), errDetail("actual_input", string(desc.Input)), errDetail("actual_output", string(desc.Output))),
 		fixes: buildErrorFixes([]string{
 			"register a " + name + " filter adapter whose descriptor declares " + string(expectedInput) + " input and " + string(expectedOutput) + " output",
 			"use .Video().Resize(...) with video resize adapters and .Audio().Resample(...) with audio resample adapters",
@@ -208,17 +203,13 @@ func transformAdapterIncompatibleError(operation string, stream streamIntent, na
 
 func transformAdapterCapabilityError(operation string, stream streamIntent, name string, field string, requested string, supported []string) error {
 	return &BuildError{
+		Phase:     phaseBuild,
 		Family:    errcode.FamilyForCode(transformAdapterIncompatibleCode),
 		Code:      transformAdapterIncompatibleCode,
 		Operation: operation,
 		Node:      jobStreamIntentName(stream),
 		Reason:    name + " filter adapter does not support the requested " + strings.ReplaceAll(field, "_", " "),
-		fields: buildErrorFields([]string{
-			"transform=" + name,
-			"field=" + field,
-			"requested=" + requested,
-			"supported=" + strings.Join(supported, ","),
-		}),
+		fields:    errDetails(errDetail("transform", name), errDetail("field", field), errDetail("requested", requested), errDetail("supported", strings.Join(supported, ","))),
 		fixes: buildErrorFixes([]string{
 			"choose one of the supported " + strings.ReplaceAll(field, "_", " ") + " values",
 			"register a " + name + " filter adapter whose descriptor supports this transform config",
@@ -233,14 +224,13 @@ func recipeTransformAdapterError(operation string, stream streamIntent, name str
 		return cause
 	}
 	return &BuildError{
+		Phase:     phaseBuild,
 		Family:    errcode.FamilyForCode(transformAdapterMissingCode),
 		Code:      transformAdapterMissingCode,
 		Operation: operation,
 		Node:      jobStreamIntentName(stream),
 		Reason:    "no " + name + " filter adapter is registered",
-		fields: buildErrorFields([]string{
-			"transform=" + name,
-		}),
+		fields:    errDetails(errDetail("transform", name)),
 		fixes: buildErrorFixes([]string{
 			"register a filter adapter that provides " + name,
 			"import github.com/thesyncim/goav/bundle and build with bundle.MustNewFilters(...) for bundled resize and resample adapters",
@@ -305,15 +295,13 @@ func validateTransformSpec(operation string, node string, spec transformSpec) er
 			return nil
 		}
 		return &BuildError{
+			Phase:     phaseBuild,
 			Family:    errcode.FamilyForCode(transformInvalidCode),
 			Code:      transformInvalidCode,
 			Operation: operation,
 			Node:      node,
 			Reason:    "resize requires positive width and height",
-			fields: buildErrorFields([]string{
-				fmt.Sprintf("width=%d", spec.resize.Width),
-				fmt.Sprintf("height=%d", spec.resize.Height),
-			}),
+			fields:    errDetails(errNote(fmt.Sprintf("width=%d", spec.resize.Width)), errNote(fmt.Sprintf("height=%d", spec.resize.Height))),
 			fixes: buildErrorFixes([]string{
 				"call .Resize(width, height) with positive dimensions",
 				"remove .Resize(...) when no video scaling is needed",
@@ -325,15 +313,13 @@ func validateTransformSpec(operation string, node string, spec transformSpec) er
 			return nil
 		}
 		return &BuildError{
+			Phase:     phaseBuild,
 			Family:    errcode.FamilyForCode(transformInvalidCode),
 			Code:      transformInvalidCode,
 			Operation: operation,
 			Node:      node,
 			Reason:    "resample requires positive sample rate and channels",
-			fields: buildErrorFields([]string{
-				fmt.Sprintf("sample_rate=%d", spec.resample.SampleRate),
-				fmt.Sprintf("channels=%d", spec.resample.Channels),
-			}),
+			fields:    errDetails(errNote(fmt.Sprintf("sample_rate=%d", spec.resample.SampleRate)), errNote(fmt.Sprintf("channels=%d", spec.resample.Channels))),
 			fixes: buildErrorFixes([]string{
 				"call .Resample(sampleRate, channels) with positive values",
 				"remove .Resample(...) when no audio conversion is needed",
@@ -347,6 +333,7 @@ func validateTransformSpec(operation string, node string, spec transformSpec) er
 
 func combinedTransformSpecError(operation string, node string) error {
 	return &BuildError{
+		Phase:     phaseBuild,
 		Family:    errcode.FamilyForCode(transformInvalidCode),
 		Code:      transformInvalidCode,
 		Operation: operation,
@@ -359,6 +346,7 @@ func combinedTransformSpecError(operation string, node string) error {
 
 func emptyTransformSpecError(operation string, node string) error {
 	return &BuildError{
+		Phase:     phaseBuild,
 		Family:    errcode.FamilyForCode(transformInvalidCode),
 		Code:      transformInvalidCode,
 		Operation: operation,
@@ -374,15 +362,13 @@ func emptyTransformSpecError(operation string, node string) error {
 
 func transformMediaError(stream string, transform string, expected av.MediaType, actual av.MediaType) error {
 	return &BuildError{
+		Phase:     phaseBuild,
 		Family:    errcode.FamilyForCode(transformMediaMismatchCode),
 		Code:      transformMediaMismatchCode,
 		Operation: "build stream",
 		Node:      stream,
 		Reason:    transform + " applies to " + string(expected) + " streams",
-		fields: buildErrorFields([]string{
-			"expected_shape=" + shape.Frame(expected).String(),
-			"actual_shape=" + shape.Frame(actual).String(),
-		}),
+		fields:    errDetails(errDetail("expected_shape", shape.Frame(expected).String()), errDetail("actual_shape", shape.Frame(actual).String())),
 		fixes: buildErrorFixes([]string{
 			"use .Video().Resize(...) for video scaling",
 			"use .Audio().Resample(...) for audio sample-rate or channel conversion",

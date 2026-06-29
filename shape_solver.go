@@ -492,13 +492,14 @@ func shapeSolverAdapterError(operation string, node string, index int, step oper
 	}
 	if selection.cause == errShapeAdapterAmbiguous {
 		return &BuildError{
+			Phase:     phaseBuild,
 			Family:    errcode.FamilyForCode(shapeAdapterAmbiguousCode),
 			Code:      shapeAdapterAmbiguousCode,
 			Operation: operation,
 			Node:      node,
 			Reason: fmt.Sprintf("several registered filters can perform the %s conversion before %s: %s",
 				selection.needed.String(), operationSpecLabel(step), strings.Join(selection.candidates, ", ")),
-			fields: buildErrorFields(append(details, "candidates="+strings.Join(selection.candidates, ","))),
+			fields: errDetailLines(append(details, "candidates="+strings.Join(selection.candidates, ","))),
 			fixes: buildErrorFixes([]string{
 				"keep one " + string(selection.media) + " conversion filter registered per runtime",
 				"build the runtime with only the intended conversion filter via goav.New(goavruntime.WithFilter(...))",
@@ -508,13 +509,14 @@ func shapeSolverAdapterError(operation string, node string, index int, step oper
 		}
 	}
 	return &BuildError{
+		Phase:     phaseBuild,
 		Family:    errcode.FamilyForCode(shapeAdapterMissingCode),
 		Code:      shapeAdapterMissingCode,
 		Operation: operation,
 		Node:      node,
 		Reason: fmt.Sprintf("no registered filter can perform the %s conversion before %s",
 			selection.needed.String(), operationSpecLabel(step)),
-		fields: buildErrorFields(details),
+		fields: errDetailLines(details),
 		fixes: buildErrorFixes([]string{
 			"register a " + string(selection.media) + " conversion filter with goavruntime.WithFilter(filter.Descriptor{Input: ..., Output: ...}, factory)",
 			"import github.com/thesyncim/goav/bundle and build with bundle.MustNewFilters(...) for the bundled resample and resize adapters",
@@ -529,21 +531,14 @@ func shapeSolverAdapterError(operation string, node string, index int, step oper
 func shapeConversionRefusedError(operation string, node string, index int, step operationSpec, allowed shape.Policy, conversion shapeConversionPlan, actual shape.Spec, expected shape.Spec) error {
 	missing := allowed.Missing(conversion.needed)
 	return &BuildError{
+		Phase:     phaseBuild,
 		Family:    errcode.FamilyForCode(shapeConversionRefusedCode),
 		Code:      shapeConversionRefusedCode,
 		Operation: operation,
 		Node:      node,
 		Reason: fmt.Sprintf("%s needs %s but the chain policy (%s) does not allow it",
 			operationSpecLabel(step), conversion.detail, allowed.String()),
-		fields: buildErrorFields([]string{
-			fmt.Sprintf("operation_index=%d", index),
-			"operation=" + string(step.Kind),
-			"source=" + humanizeShape(actual),
-			"actual_shape=" + actual.String(),
-			"expected_shape=" + expected.String(),
-			"needed=" + conversion.needed.String(),
-			"allowed=" + allowed.String(),
-		}),
+		fields: errDetails(errNote(fmt.Sprintf("operation_index=%d", index)), errDetail("operation", string(step.Kind)), errDetail("source", humanizeShape(actual)), errDetail("actual_shape", actual.String()), errDetail("expected_shape", expected.String()), errDetail("needed", conversion.needed.String()), errDetail("allowed", allowed.String())),
 		fixes: buildErrorFixes(append(
 			[]string{fmt.Sprintf("add .Auto(%s) to the chain to let the planner insert the conversion", strings.Join(missing.Constructors(), ", "))},
 			explicitConversionSuggestion(conversion.operation.Transform, step)...,

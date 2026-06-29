@@ -170,12 +170,13 @@ func encodeStreamMismatchError(request encodeRequest, stream av.Stream) error {
 
 func encodeTargetMissingError(request encodeRequest, stream av.Stream) error {
 	return &BuildError{
+		Phase:     phaseBuild,
 		Family:    errcode.FamilyForCode(encodeDestinationMissingCode),
 		Code:      encodeDestinationMissingCode,
 		Operation: "configure encode",
 		Node:      encodeNodeName(request),
 		Reason:    "no target codec was provided",
-		fields:    buildErrorFields([]string{"selected: " + streamDiagnostic(stream, 0)}),
+		fields:    errDetails(errNote("selected: " + streamDiagnostic(stream, 0))),
 		fixes: buildErrorFixes([]string{
 			"use .Encode(codec.Opus(...)), .Encode(codec.VP8(...)), or .Encode(codec.VP9(...)) in recipe encode paths",
 			"set codec.EncodeConfig.Parameters.ID in the expert builder",

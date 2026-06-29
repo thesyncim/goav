@@ -123,14 +123,13 @@ func syncTimebaseError(policy flow.SyncPolicy, msg *pipeline.Message) error {
 		kind = "frame"
 	}
 	return &BuildError{
+		Phase:     phaseBuild,
 		Family:    errcode.FamilyForCode(runtimeBranchInvalidCode),
 		Code:      runtimeBranchInvalidCode,
 		Operation: "sync media timeline",
 		Node:      node,
 		Reason:    "media message has no valid PTS timebase",
-		fields: buildErrorFields([]string{
-			"message=" + firstNonEmpty(kind, "unknown"),
-		}),
+		fields:    errDetails(errDetail("message", firstNonEmpty(kind, "unknown"))),
 		fixes: buildErrorFixes([]string{
 			"set Packet.PTS or Frame.PTS with a valid av.TimeBase before the sync gate",
 			"declare live stream TimeBase facts on the input or discovered stream",
@@ -162,6 +161,7 @@ func validateSyncPolicyForBranch(operation string, branchName string, stream av.
 		return nil
 	}
 	return &BuildError{
+		Phase:     phaseBuild,
 		Family:    errcode.FamilyForCode(runtimeBranchInvalidCode),
 		Code:      runtimeBranchInvalidCode,
 		Operation: operation,

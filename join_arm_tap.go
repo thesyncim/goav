@@ -243,12 +243,13 @@ func joinTapArmMissingError(join string, tap tapRef, declared []string) error {
 		details = append(details, "declared taps: none")
 	}
 	return &BuildError{
+		Phase:     phaseBuild,
 		Family:    errcode.FamilyForCode(joinErrorCode(join, "tap_arm")),
 		Code:      joinErrorCode(join, "tap_arm"),
 		Operation: "build " + join,
 		Node:      firstNonEmpty(tap.name, join),
 		Reason:    "tap arm references a tap that no earlier arm declares",
-		fields:    buildErrorFields(details),
+		fields:    errDetailLines(details),
 		fixes: buildErrorFixes([]string{
 			"declare the tap on an arm chain: goav.From(input).Audio().Decode().Tap(goav.FrameTap(" + strconv.Quote(tap.name) + "))",
 			"order arms so the tap-declaring chain comes before the tap arm",

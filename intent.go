@@ -475,6 +475,7 @@ func streamStageMissingError(stream streamIntent, cause error) error {
 		cause = errNilStage
 	}
 	return &BuildError{
+		Phase:     phaseBuild,
 		Family:    errcode.FamilyForCode(stageMissingCode),
 		Code:      stageMissingCode,
 		Operation: "build stream",
@@ -491,6 +492,7 @@ func streamStageMissingError(stream streamIntent, cause error) error {
 
 func mixedStreamOutputError(operation string, stream streamIntent) error {
 	return &BuildError{
+		Phase:     phaseBuild,
 		Family:    errcode.FamilyForCode(outputKindMixedCode),
 		Code:      outputKindMixedCode,
 		Operation: operation,
@@ -507,15 +509,13 @@ func mixedStreamOutputError(operation string, stream streamIntent) error {
 
 func streamEncodeMissingError(operation string, stream streamIntent) error {
 	return &BuildError{
+		Phase:     phaseBuild,
 		Family:    errcode.FamilyForCode(encodeMissingCode),
 		Code:      encodeMissingCode,
 		Operation: operation,
 		Node:      jobStreamIntentName(stream),
 		Reason:    "decoded frames cannot be written to a muxed output without an encoder",
-		fields: buildErrorFields([]string{
-			"expected_shape=" + shape.New(shape.Domain(shape.DomainPacket), shape.Media(stream.Select.Type)).String(),
-			"actual_shape=" + shape.Frame(stream.Select.Type).String(),
-		}),
+		fields:    errDetails(errDetail("expected_shape", shape.New(shape.Domain(shape.DomainPacket), shape.Media(stream.Select.Type)).String()), errDetail("actual_shape", shape.Frame(stream.Select.Type).String())),
 		fixes: buildErrorFixes([]string{
 			"call .Encode(codec.Opus(...)), .Encode(codec.VP8(...)), or .Encode(codec.VP9(...)) before .To(goav.Write(...))",
 			"send decoded frames to goav.Sink(...)",
@@ -538,15 +538,13 @@ func jobStreamName(stream *jobStreamBuild) string {
 
 func duplicateJobStreamError(existing *jobStreamBuild, next *jobStreamBuild) error {
 	return &BuildError{
+		Phase:     phaseBuild,
 		Family:    errcode.FamilyForCode(streamDuplicateCode),
 		Code:      streamDuplicateCode,
 		Operation: "build job",
 		Node:      jobStreamName(next),
 		Reason:    "ordinary stream recipes select one audio or video stream",
-		fields: buildErrorFields([]string{
-			"first stream: " + jobStreamName(existing),
-			"second stream: " + jobStreamName(next),
-		}),
+		fields:    errDetails(errNote("first stream: "+jobStreamName(existing)), errNote("second stream: "+jobStreamName(next))),
 		fixes: buildErrorFixes([]string{
 			"keep one .Audio(...) or .Video(...) chain on goav.From(...)",
 			"use goav.From(input).Video().Decode().Branches(...) for multiple branches from one stream",

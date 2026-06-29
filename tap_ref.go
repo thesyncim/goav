@@ -48,16 +48,13 @@ func validateTapDomain(operation string, node string, tap tapRef, actual shape.M
 		return nil
 	}
 	return &BuildError{
+		Phase:     phaseBuild,
 		Family:    errcode.FamilyForCode(errcode.TapDomainMismatch),
 		Code:      errcode.TapDomainMismatch,
 		Operation: operation,
 		Node:      firstNonEmpty(node, "tap"),
 		Reason:    "typed tap domain does not match this chain point",
-		fields: buildErrorFields([]string{
-			"tap=" + tap.name,
-			"wanted=" + string(tap.domain),
-			"actual=" + string(actual),
-		}),
+		fields:    errDetails(errDetail("tap", tap.name), errDetail("wanted", string(tap.domain)), errDetail("actual", string(actual))),
 		fixes: buildErrorFixes([]string{
 			"use goav.FrameTap(name) after decode, resize, resample, or custom frame stages",
 			"use goav.PacketTap(name) after .Copy() or an encoder",
@@ -68,6 +65,7 @@ func validateTapDomain(operation string, node string, tap tapRef, actual shape.M
 
 func branchSourceInvalidError(node string) error {
 	return &BuildError{
+		Phase:     phaseBuild,
 		Family:    errcode.FamilyForCode(branchSourceInvalidCode),
 		Code:      branchSourceInvalidCode,
 		Operation: "build branch",

@@ -117,12 +117,13 @@ func selectStreamWithCodecRequirement(streams []av.Stream, selector av.StreamSel
 	}
 	if requireCodec && selected.Codec.ID == "" {
 		return av.Stream{}, &BuildError{
+			Phase:     phaseBuild,
 			Family:    errcode.FamilyForCode(streamCodecMissingCode),
 			Code:      streamCodecMissingCode,
 			Operation: "select stream",
 			Node:      selectorDetail(selector),
 			Reason:    "selected stream has no codec id",
-			fields:    buildErrorFields([]string{streamDiagnostic(selected, 0)}),
+			fields:    errDetails(errNote(streamDiagnostic(selected, 0))),
 			fixes: buildErrorFixes([]string{
 				"provide codec metadata on the input stream",
 				"declare the receive codec on the source provider (e.g. a codec intent option)",
@@ -164,12 +165,13 @@ func streamSelectionError(code errcode.Code, selector av.StreamSelector, streams
 		reason = "multiple streams match " + readableSelector(selector)
 	}
 	return &BuildError{
+		Phase:     phaseBuild,
 		Family:    errcode.FamilyForCode(code),
 		Code:      code,
 		Operation: operation,
 		Node:      node,
 		Reason:    reason,
-		fields:    buildErrorFields(streamDiagnostics(streams)),
+		fields:    errDetailLines(streamDiagnostics(streams)),
 		fixes:     buildErrorFixes(streamSelectionSuggestions(selector, streams)),
 		cause:     errUnsupportedBuild,
 	}
@@ -177,17 +179,15 @@ func streamSelectionError(code errcode.Code, selector av.StreamSelector, streams
 
 func streamRequestMismatchError(code errcode.Code, operation string, node string, selector av.StreamSelector, stream av.Stream, suggestions []string) error {
 	return &BuildError{
+		Phase:     phaseBuild,
 		Family:    errcode.FamilyForCode(code),
 		Code:      code,
 		Operation: operation,
 		Node:      node,
 		Reason:    "requested " + readableSelector(selector) + " does not match selected stream",
-		fields: buildErrorFields([]string{
-			"selected: " + streamDiagnostic(stream, 0),
-			"requested: " + readableSelector(selector),
-		}),
-		fixes: buildErrorFixes(suggestions),
-		cause: errUnsupportedBuild,
+		fields:    errDetails(errNote("selected: "+streamDiagnostic(stream, 0)), errNote("requested: "+readableSelector(selector))),
+		fixes:     buildErrorFixes(suggestions),
+		cause:     errUnsupportedBuild,
 	}
 }
 

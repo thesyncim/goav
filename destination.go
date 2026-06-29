@@ -397,6 +397,7 @@ func (s destinationSpec) validate(operation string, fallback string) error {
 	if s.err != nil {
 		if errors.Is(s.err, errNilWriter) && s.output.Protocol == av.ProtocolFile {
 			return &BuildError{
+				Phase:     phaseBuild,
 				Family:    errcode.FamilyForCode(outputWriterMissingCode),
 				Code:      outputWriterMissingCode,
 				Operation: operation,
@@ -426,6 +427,7 @@ func (s destinationSpec) validate(operation string, fallback string) error {
 			}
 		}
 		return &BuildError{
+			Phase:     phaseBuild,
 			Family:    errcode.FamilyForCode(outputInvalidCode),
 			Code:      outputInvalidCode,
 			Operation: operation,
@@ -438,6 +440,7 @@ func (s destinationSpec) validate(operation string, fallback string) error {
 	if s.sink != nil {
 		if err := validateSinkComponent(s.sink); err != nil {
 			return &BuildError{
+				Phase:     phaseBuild,
 				Family:    errcode.FamilyForCode(outputInvalidCode),
 				Code:      outputInvalidCode,
 				Operation: operation,
@@ -455,6 +458,7 @@ func (s destinationSpec) validate(operation string, fallback string) error {
 	}
 	if s.output.Name == "" && s.output.URI == "" && s.output.Protocol == "" && s.output.MIMEType == "" && s.output.Writer == nil && s.custom == nil && s.format == "" {
 		return &BuildError{
+			Phase:     phaseBuild,
 			Family:    errcode.FamilyForCode(outputInvalidCode),
 			Code:      outputInvalidCode,
 			Operation: operation,
@@ -469,6 +473,7 @@ func (s destinationSpec) validate(operation string, fallback string) error {
 	}
 	if s.output.Protocol == av.ProtocolFile && s.output.Writer == nil && s.custom == nil {
 		return &BuildError{
+			Phase:     phaseBuild,
 			Family:    errcode.FamilyForCode(outputWriterMissingCode),
 			Code:      outputWriterMissingCode,
 			Operation: operation,
@@ -483,6 +488,7 @@ func (s destinationSpec) validate(operation string, fallback string) error {
 	}
 	if s.output.Protocol == av.ProtocolFile && s.output.Writer != nil && s.output.Name == "" && s.output.URI == "" && s.output.MIMEType == "" && s.format == "" {
 		return &BuildError{
+			Phase:     phaseBuild,
 			Family:    errcode.FamilyForCode(outputFormatMissingCode),
 			Code:      outputFormatMissingCode,
 			Operation: operation,
@@ -497,6 +503,7 @@ func (s destinationSpec) validate(operation string, fallback string) error {
 	}
 	if s.output.URI == "" && s.output.Protocol != av.ProtocolFile && s.output.Writer == nil && s.custom == nil {
 		return &BuildError{
+			Phase:     phaseBuild,
 			Family:    errcode.FamilyForCode(outputDestinationMissingCode),
 			Code:      outputDestinationMissingCode,
 			Operation: operation,
@@ -586,6 +593,7 @@ func destinationNodeName(output format.Output, index int, destinationNames []str
 
 func duplicateOutputError(operation string, name string) error {
 	return &BuildError{
+		Phase:     phaseBuild,
 		Family:    errcode.FamilyForCode(outputDuplicateCode),
 		Code:      outputDuplicateCode,
 		Operation: operation,
@@ -602,6 +610,7 @@ func duplicateOutputError(operation string, name string) error {
 
 func duplicateDestinationHandleError(operation string, name string) error {
 	return &BuildError{
+		Phase:     phaseBuild,
 		Family:    errcode.FamilyForCode(destinationDuplicateCode),
 		Code:      destinationDuplicateCode,
 		Operation: operation,

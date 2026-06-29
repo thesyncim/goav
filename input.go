@@ -144,6 +144,7 @@ func (s InputSpec) validate() error {
 			}
 		}
 		return &BuildError{
+			Phase:     phaseBuild,
 			Family:    errcode.FamilyForCode(inputInvalidCode),
 			Code:      inputInvalidCode,
 			Operation: "build input",
@@ -155,6 +156,7 @@ func (s InputSpec) validate() error {
 	}
 	if s.origin != inputSpecOriginConstructed {
 		return &BuildError{
+			Phase:     phaseBuild,
 			Family:    errcode.FamilyForCode(inputInvalidCode),
 			Code:      inputInvalidCode,
 			Operation: "build input",
@@ -181,6 +183,7 @@ func (s InputSpec) validateCustomSource() error {
 	node := firstNonEmpty(s.name, s.input.Name, "source")
 	if s.source.fn == nil {
 		return &BuildError{
+			Phase:     phaseBuild,
 			Family:    errcode.FamilyForCode(sourceCallbackMissingCode),
 			Code:      sourceCallbackMissingCode,
 			Operation: "build input",
@@ -196,14 +199,13 @@ func (s InputSpec) validateCustomSource() error {
 	spec := normalizeCustomSourceShape(node, s.source.shape)
 	if spec.Domain != shape.DomainPacket && spec.Domain != shape.DomainFrame && spec.Domain != shape.DomainEvent {
 		return &BuildError{
+			Phase:     phaseBuild,
 			Family:    errcode.FamilyForCode(sourceShapeUnsupportedCode),
 			Code:      sourceShapeUnsupportedCode,
 			Operation: "build input",
 			Node:      node,
 			Reason:    "custom recipe sources currently produce packet-domain, frame-domain, or event-domain media",
-			fields: buildErrorFields([]string{
-				"actual_shape=" + spec.String(),
-			}),
+			fields:    errDetails(errDetail("actual_shape", spec.String())),
 			fixes: buildErrorFixes([]string{
 				"declare the source with shape.Packet(media, codec, ...)",
 				"declare raw generated media with shape.Frame(media, ...)",
@@ -215,6 +217,7 @@ func (s InputSpec) validateCustomSource() error {
 	}
 	if spec.Domain != shape.DomainEvent && spec.MediaKind == "" {
 		return &BuildError{
+			Phase:     phaseBuild,
 			Family:    errcode.FamilyForCode(sourceShapeInvalidCode),
 			Code:      sourceShapeInvalidCode,
 			Operation: "build input",
@@ -241,6 +244,7 @@ func (s InputSpec) validatePlainInput() error {
 		return nil
 	}
 	return &BuildError{
+		Phase:     phaseBuild,
 		Family:    errcode.FamilyForCode(inputInvalidCode),
 		Code:      inputInvalidCode,
 		Operation: "build input",
@@ -296,6 +300,7 @@ func validateJobInputs(inputs []InputSpec) error {
 			continue
 		}
 		return &BuildError{
+			Phase:     phaseBuild,
 			Family:    errcode.FamilyForCode(multiInputUnsupportedCode),
 			Code:      multiInputUnsupportedCode,
 			Operation: "build job",
@@ -331,15 +336,13 @@ func validateRealtimeInputNames(inputs []InputSpec) error {
 
 func duplicateInputNameError(name string, firstIndex int, secondIndex int) error {
 	return &BuildError{
+		Phase:     phaseBuild,
 		Family:    errcode.FamilyForCode(inputDuplicateCode),
 		Code:      inputDuplicateCode,
 		Operation: "build job",
 		Node:      name,
 		Reason:    fmt.Sprintf("realtime input name %q is defined more than once", name),
-		fields: buildErrorFields([]string{
-			fmt.Sprintf("first input index: %d", firstIndex),
-			fmt.Sprintf("second input index: %d", secondIndex),
-		}),
+		fields:    errDetails(errNote(fmt.Sprintf("first input index: %d", firstIndex)), errNote(fmt.Sprintf("second input index: %d", secondIndex))),
 		fixes: buildErrorFixes([]string{
 			"give each repeated realtime input a distinct goav.Name(...) option",
 			"use stable names such as \"audio\" and \"video\" for separate live streams",

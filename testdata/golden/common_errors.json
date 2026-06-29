@@ -1,0 +1,163 @@
+[
+  {
+    "name": "unconstructed-job",
+    "error": {
+      "phase": "build",
+      "family": "compiler",
+      "code": "job_invalid",
+      "operation": "build job",
+      "reason": "empty job",
+      "fixes": [
+        "start the recipe with goav.From(input)",
+        "use goav.From(goav.FileInput(\"in.webm\", reader)) for reader-backed input",
+        "use goav.From(goav.Source(name, shape, fn)) for application-pushed input"
+      ]
+    }
+  },
+  {
+    "name": "input-missing",
+    "error": {
+      "phase": "build",
+      "family": "input",
+      "code": "input_missing",
+      "operation": "build job",
+      "reason": "no input is configured",
+      "fixes": [
+        "start the recipe from an input: goav.From(goav.FileInput(\"in.webm\", reader))"
+      ]
+    }
+  },
+  {
+    "name": "encode-missing",
+    "error": {
+      "phase": "build",
+      "family": "encode",
+      "code": "encode_missing",
+      "operation": "build job",
+      "node": "video",
+      "reason": "decoded frames cannot be written to a muxed output without an encoder",
+      "details": [
+        {
+          "key": "expected_shape",
+          "value": "domain=packet media=video"
+        },
+        {
+          "key": "actual_shape",
+          "value": "domain=frame media=video"
+        }
+      ],
+      "fixes": [
+        "call .Encode(codec.Opus(...)), .Encode(codec.VP8(...)), or .Encode(codec.VP9(...)) before .To(goav.Write(...))",
+        "send decoded frames to goav.Sink(...)",
+        "use .Copy().To(output) if you want to copy packets without decoding"
+      ]
+    }
+  },
+  {
+    "name": "copy-after-decode",
+    "error": {
+      "phase": "build",
+      "family": "transform",
+      "code": "operation_shape_mismatch",
+      "operation": "build job",
+      "node": "video",
+      "reason": "packet-copy cannot consume the current media shape",
+      "details": [
+        {
+          "value": "operation_index=1"
+        },
+        {
+          "key": "operation",
+          "value": "copy"
+        },
+        {
+          "key": "expected_shape",
+          "value": "domain=packet"
+        },
+        {
+          "key": "actual_shape",
+          "value": "domain=frame media=video"
+        }
+      ],
+      "fixes": [
+        "copy only consumes packet-domain media",
+        "move .Copy() before decode or start from goav.PacketTap(name)",
+        "use .Encode(codec...) instead of .Copy() to turn decoded frames back into packets",
+        "use a sink destination when the branch should remain decoded"
+      ]
+    }
+  },
+  {
+    "name": "resize-on-copy",
+    "error": {
+      "phase": "build",
+      "family": "transform",
+      "code": "operation_shape_mismatch",
+      "operation": "build stream",
+      "node": "video",
+      "reason": "resize needs decoded frames, but .Copy() keeps the stream packet-encoded",
+      "details": [
+        {
+          "value": "step: resize"
+        },
+        {
+          "key": "actual_shape",
+          "value": "domain=packet"
+        },
+        {
+          "key": "expected_shape",
+          "value": "domain=frame"
+        }
+      ],
+      "fixes": [
+        "call .Decode() before .Resize(...), .Resample(...), or .Do(...) — transforms run on decoded frames",
+        "remove the processing step to keep a pure packet copy",
+        "use .Branches(...) when one input needs both a packet copy and a processed branch"
+      ]
+    }
+  },
+  {
+    "name": "packet-tap-at-frame",
+    "error": {
+      "phase": "build",
+      "family": "tap",
+      "code": "tap_domain_mismatch",
+      "operation": "build stream",
+      "node": "video",
+      "reason": "typed tap domain does not match this chain point",
+      "details": [
+        {
+          "key": "tap",
+          "value": "frames"
+        },
+        {
+          "key": "wanted",
+          "value": "packet"
+        },
+        {
+          "key": "actual",
+          "value": "frame"
+        }
+      ],
+      "fixes": [
+        "use goav.FrameTap(name) after decode, resize, resample, or custom frame stages",
+        "use goav.PacketTap(name) after .Copy() or an encoder"
+      ]
+    }
+  },
+  {
+    "name": "runtime-missing",
+    "error": {
+      "phase": "build",
+      "family": "compiler",
+      "code": "runtime_missing",
+      "operation": "build job",
+      "reason": "no runtime is configured",
+      "fixes": [
+        "pass a non-nil runtime with .UseRuntime(runtime)",
+        "build a bare runtime with goav.New(...)",
+        "import github.com/thesyncim/goav/bundle and build with bundle.MustNew(...), bundle.Build(ctx, job), or bundle.Run(ctx, job)"
+      ]
+    }
+  }
+]

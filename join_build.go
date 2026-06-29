@@ -184,13 +184,18 @@ func resolveJoinProfile(tree *joinTreeSnapshot) (joinProfile, error) {
 	if !ok {
 		kind := string(tree.kind)
 		return joinProfile{}, &BuildError{
+			Phase:     phaseBuild,
 			Family:    errcode.FamilyForCode(joinErrorCode(kind, "kind")),
 			Code:      joinErrorCode(kind, "kind"),
 			Operation: "build " + kind,
 			Node:      kind,
 			Reason:    "unknown join kind",
-			fields:    buildErrorFields([]string{"declared join kinds: mix, composite, select; custom kinds go through goav.Join"}),
-			cause:     errUnsupportedBuild,
+			fields:    errDetails(errNote("declared join kinds: mix, composite, select; custom kinds go through goav.Join")),
+			fixes: buildErrorFixes([]string{
+				"use Mix, Composite, or Select for the built-in convergence profiles",
+				"use goav.Join(name, stage, arms...) for a custom convergence stage",
+			}),
+			cause: errUnsupportedBuild,
 		}
 	}
 	return profile, nil
@@ -464,6 +469,7 @@ func cloneOutputFormatMap(formats map[string]av.FormatID) map[string]av.FormatID
 
 func joinArmError(name string, node string, reason string, suggestions ...string) error {
 	return &BuildError{
+		Phase:     phaseBuild,
 		Family:    errcode.FamilyForCode(joinErrorCode(name, "arm")),
 		Code:      joinErrorCode(name, "arm"),
 		Operation: "build " + name,
@@ -488,6 +494,7 @@ func validateJoinArmDomain(name string, arm string, profile joinProfile, domain 
 // again by the planner for nested joins.
 func joinInputsError(kind string, node string) error {
 	return &BuildError{
+		Phase:     phaseBuild,
 		Family:    errcode.FamilyForCode(joinErrorCode(kind, "inputs")),
 		Code:      joinErrorCode(kind, "inputs"),
 		Operation: "build " + kind,
@@ -557,6 +564,7 @@ func newJoinPlan(input joinPlanInput) (*joinPlan, error) {
 		for i := range destinations {
 			if destinations[i].sink == nil {
 				return nil, &BuildError{
+					Phase:     phaseBuild,
 					Family:    errcode.FamilyForCode(joinErrorCode(name, "destination")),
 					Code:      joinErrorCode(name, "destination"),
 					Operation: "build " + name,
@@ -728,6 +736,7 @@ func explicitEncodeSoftInputShape(operation operationSpec) shape.Spec {
 func resolveJoinDestinations(name string, tree *joinTreeSnapshot) ([]destinationSpec, error) {
 	if len(tree.dests) == 0 {
 		return nil, &BuildError{
+			Phase:     phaseBuild,
 			Family:    errcode.FamilyForCode(outputMissingCode),
 			Code:      outputMissingCode,
 			Operation: "build " + name,
@@ -1216,6 +1225,7 @@ func joinPlanTaps(joinTaps []tapRef, name string, joined av.Stream, domain shape
 	for _, tap := range joinTaps {
 		if tap.name == "" {
 			return nil, &BuildError{
+				Phase:     phaseBuild,
 				Family:    errcode.FamilyForCode(errcode.TapInvalid),
 				Code:      errcode.TapInvalid,
 				Operation: "build " + name,

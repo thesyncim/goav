@@ -562,6 +562,7 @@ func (b *chainBuilder) tap(tap tapRef) {
 	}
 	if tap.name == "" {
 		b.setErr(&BuildError{
+			Phase:     phaseBuild,
 			Family:    errcode.FamilyForCode(errcode.TapInvalid),
 			Code:      errcode.TapInvalid,
 			Operation: "build flow",
@@ -723,6 +724,7 @@ func duplicateFlowEncodeError(name string, first codec.CodecSpec, second codec.C
 
 func duplicateFlowDecodeError(node string) error {
 	return &BuildError{
+		Phase:     phaseBuild,
 		Family:    errcode.FamilyForCode(flowDecodeDuplicateCode),
 		Code:      flowDecodeDuplicateCode,
 		Operation: "build flow",
@@ -738,6 +740,7 @@ func duplicateFlowDecodeError(node string) error {
 
 func flowDecodeOrderError(node string) error {
 	return &BuildError{
+		Phase:     phaseBuild,
 		Family:    errcode.FamilyForCode(flowDecodeOrderInvalidCode),
 		Code:      flowDecodeOrderInvalidCode,
 		Operation: "build flow",
@@ -753,6 +756,7 @@ func flowDecodeOrderError(node string) error {
 
 func flowDecodeDomainError(operation string, node string) error {
 	return &BuildError{
+		Phase:     phaseBuild,
 		Family:    errcode.FamilyForCode(flowDecodeDomainMismatchCode),
 		Code:      flowDecodeDomainMismatchCode,
 		Operation: operation,
@@ -769,6 +773,7 @@ func flowDecodeDomainError(operation string, node string) error {
 
 func flowCopyDomainError(operation string, node string) error {
 	return &BuildError{
+		Phase:     phaseBuild,
 		Family:    errcode.FamilyForCode(flowCopyDomainMismatchCode),
 		Code:      flowCopyDomainMismatchCode,
 		Operation: operation,
@@ -785,6 +790,7 @@ func flowCopyDomainError(operation string, node string) error {
 
 func nilFlowError() error {
 	return &BuildError{
+		Phase:     phaseBuild,
 		Family:    errcode.FamilyForCode(flowInvalidCode),
 		Code:      flowInvalidCode,
 		Operation: "build flow",
@@ -801,6 +807,7 @@ func validateChainMedia(operation string, node string, selected av.MediaType, sp
 		return nil
 	}
 	return &BuildError{
+		Phase:     phaseBuild,
 		Family:    errcode.FamilyForCode(flowMediaMismatchCode),
 		Code:      flowMediaMismatchCode,
 		Operation: operation,
@@ -816,14 +823,13 @@ func validateChainMedia(operation string, node string, selected av.MediaType, sp
 
 func branchInputCountError(node string, count int) error {
 	return &BuildError{
+		Phase:     phaseBuild,
 		Family:    errcode.FamilyForCode(inputCountUnsupportedCode),
 		Code:      inputCountUnsupportedCode,
 		Operation: "build branches",
 		Node:      node,
 		Reason:    "branches currently compose from one input",
-		fields: buildErrorFields([]string{
-			fmt.Sprintf("inputs=%d", count),
-		}),
+		fields:    errDetails(errNote(fmt.Sprintf("inputs=%d", count))),
 		fixes: buildErrorFixes([]string{
 			"start branches from goav.From(input).Audio() or goav.From(input).Video() with one input",
 			"use the expert graph API when combining several sources manually",
@@ -834,6 +840,7 @@ func branchInputCountError(node string, count int) error {
 
 func branchOutputScopeError(node string) error {
 	return &BuildError{
+		Phase:     phaseBuild,
 		Family:    errcode.FamilyForCode(outputScopeMixedCode),
 		Code:      outputScopeMixedCode,
 		Operation: "build branches",

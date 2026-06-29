@@ -564,16 +564,13 @@ func validateRuntimeBranchGroupDestinations(branches []runtimeAttachBranchInput)
 					}
 				}
 				return group, &BuildError{
+					Phase:     phaseRun,
 					Family:    errcode.FamilyForCode(destinationDuplicateCode),
 					Code:      destinationDuplicateCode,
 					Operation: "attach runtime branches",
 					Node:      firstNonEmpty(recipe.branch.Name, "branch"),
 					Reason:    "runtime branch group reuses one destination name",
-					fields: buildErrorFields([]string{
-						"destination: " + label,
-						"first branch: " + seenBranch[label],
-						"second branch: " + branchName,
-					}),
+					fields:    errDetails(errNote("destination: "+label), errNote("first branch: "+seenBranch[label]), errNote("second branch: "+branchName)),
 					fixes: buildErrorFixes([]string{
 						"wrap each branch destination with goav.Mux(name, destination) for a shared runtime destination group",
 						"create distinct destination values with distinct names for independent runtime destinations",
@@ -1919,6 +1916,7 @@ func specHasNode(spec pipeline.Spec, name string) bool {
 
 func runtimeBranchInvalidError(reason string, suggestion string) error {
 	return &BuildError{
+		Phase:     phaseRun,
 		Family:    errcode.FamilyForCode(runtimeBranchInvalidCode),
 		Code:      runtimeBranchInvalidCode,
 		Operation: "attach runtime branch",
@@ -1932,6 +1930,7 @@ func runtimeBranchInvalidError(reason string, suggestion string) error {
 
 func runtimeBranchAnchorMissingError(node string) error {
 	return &BuildError{
+		Phase:     phaseRun,
 		Family:    errcode.FamilyForCode(runtimeBranchAnchorMissingCode),
 		Code:      runtimeBranchAnchorMissingCode,
 		Operation: "attach runtime branch",
@@ -1952,12 +1951,13 @@ func runtimeBranchTapMissingError(name string, taps []snapshot.Tap) error {
 		details = append(details, taps[i].Name+": "+string(taps[i].Domain)+" "+string(taps[i].MediaKind))
 	}
 	return &BuildError{
+		Phase:     phaseRun,
 		Family:    errcode.FamilyForCode(runtimeBranchTapMissingCode),
 		Code:      runtimeBranchTapMissingCode,
 		Operation: "attach runtime branch",
 		Node:      name,
 		Reason:    "branch source tap does not exist in the running task",
-		fields:    buildErrorFields(details),
+		fields:    errDetailLines(details),
 		fixes: buildErrorFixes([]string{
 			"add .Tap(goav.FrameTap(" + strconv.Quote(name) + ")) or .Tap(goav.PacketTap(" + strconv.Quote(name) + ")) at the point you want to attach",
 			"call Inspectable.Taps() before attaching runtime branches",
@@ -1969,6 +1969,7 @@ func runtimeBranchTapMissingError(name string, taps []snapshot.Tap) error {
 
 func runtimeBranchNodeDuplicateError(node string) error {
 	return &BuildError{
+		Phase:     phaseRun,
 		Family:    errcode.FamilyForCode(runtimeBranchNodeDuplicateCode),
 		Code:      runtimeBranchNodeDuplicateCode,
 		Operation: "attach runtime branch",
@@ -1984,15 +1985,13 @@ func runtimeBranchNodeDuplicateError(node string) error {
 
 func duplicateRuntimeBranchDestinationRefError(branch string, label string, firstIndex int, secondIndex int) error {
 	return &BuildError{
+		Phase:     phaseRun,
 		Family:    errcode.FamilyForCode(destinationDuplicateCode),
 		Code:      destinationDuplicateCode,
 		Operation: "attach runtime branch",
 		Node:      firstNonEmpty(branch, "branch"),
 		Reason:    fmt.Sprintf("branch routes to destination %q more than once", label),
-		fields: buildErrorFields([]string{
-			fmt.Sprintf("first destination index: %d", firstIndex),
-			fmt.Sprintf("second destination index: %d", secondIndex),
-		}),
+		fields:    errDetails(errNote(fmt.Sprintf("first destination index: %d", firstIndex)), errNote(fmt.Sprintf("second destination index: %d", secondIndex))),
 		fixes: buildErrorFixes([]string{
 			"list each destination once in .To(...)",
 			"route one runtime branch to multiple destinations with distinct values such as .To(archive, monitor)",
@@ -2004,6 +2003,7 @@ func duplicateRuntimeBranchDestinationRefError(branch string, label string, firs
 
 func runtimeBranchTapDuplicateError(name string) error {
 	return &BuildError{
+		Phase:     phaseRun,
 		Family:    errcode.FamilyForCode(runtimeBranchTapDuplicateCode),
 		Code:      runtimeBranchTapDuplicateCode,
 		Operation: "attach runtime branch",
@@ -2019,15 +2019,13 @@ func runtimeBranchTapDuplicateError(name string) error {
 
 func runtimeBranchTransformMediaError(branch string, transform string, expected av.MediaType, actual av.MediaType) error {
 	return &BuildError{
+		Phase:     phaseRun,
 		Family:    errcode.FamilyForCode(transformMediaMismatchCode),
 		Code:      transformMediaMismatchCode,
 		Operation: "attach runtime branch",
 		Node:      branch,
 		Reason:    transform + " applies to " + string(expected) + " frame taps",
-		fields: buildErrorFields([]string{
-			"expected_shape=" + shape.Frame(expected).String(),
-			"actual_shape=" + shape.Frame(actual).String(),
-		}),
+		fields:    errDetails(errDetail("expected_shape", shape.Frame(expected).String()), errDetail("actual_shape", shape.Frame(actual).String())),
 		fixes: buildErrorFixes([]string{
 			"use .Video().Decode().Tap(goav.FrameTap(name)) or a video transform tap before attaching .Resize(...)",
 			"use .Audio().Decode().Tap(goav.FrameTap(name)) or an audio transform tap before attaching .Resample(...)",
@@ -2042,6 +2040,7 @@ func runtimeBranchTransformError(node string, cause error) error {
 		return nil
 	}
 	return &BuildError{
+		Phase:     phaseRun,
 		Family:    errcode.FamilyForCode(runtimeBranchTransformErrorCode),
 		Code:      runtimeBranchTransformErrorCode,
 		Operation: "attach runtime branch",
@@ -2058,6 +2057,7 @@ func runtimeBranchTransformError(node string, cause error) error {
 
 func runtimeBranchEncodeMissingError(branch string) error {
 	return &BuildError{
+		Phase:     phaseRun,
 		Family:    errcode.FamilyForCode(runtimeBranchEncodeMissingCode),
 		Code:      runtimeBranchEncodeMissingCode,
 		Operation: "attach runtime branch",
@@ -2074,12 +2074,13 @@ func runtimeBranchEncodeMissingError(branch string) error {
 
 func runtimeBranchEncodeDomainError(branch string, shape shape.Spec) error {
 	return &BuildError{
+		Phase:     phaseRun,
 		Family:    errcode.FamilyForCode(runtimeBranchEncodeDomainMismatchCode),
 		Code:      runtimeBranchEncodeDomainMismatchCode,
 		Operation: "attach runtime branch",
 		Node:      firstNonEmpty(branch, "branch"),
 		Reason:    "runtime branch encoding requires a frame tap",
-		fields:    buildErrorFields(runtimeBranchShapeDetails(shape)),
+		fields:    errDetailLines(runtimeBranchShapeDetails(shape)),
 		fixes: buildErrorFixes([]string{
 			"attach from a tap declared after Decode, Resize, Resample, or a frame-stage .Do(...)",
 			"use .Copy() from a packet tap when no re-encode is intended",
@@ -2091,12 +2092,13 @@ func runtimeBranchEncodeDomainError(branch string, shape shape.Spec) error {
 
 func runtimeBranchDecodeDomainError(branch string, shape shape.Spec) error {
 	return &BuildError{
+		Phase:     phaseRun,
 		Family:    errcode.FamilyForCode(runtimeBranchDecodeDomainMismatchCode),
 		Code:      runtimeBranchDecodeDomainMismatchCode,
 		Operation: "attach runtime branch",
 		Node:      firstNonEmpty(branch, "branch"),
 		Reason:    "runtime branch decoding requires a packet tap",
-		fields:    buildErrorFields(runtimeBranchShapeDetails(shape)),
+		fields:    errDetailLines(runtimeBranchShapeDetails(shape)),
 		fixes: buildErrorFixes([]string{
 			"attach from a tap declared after Copy, packet receive, or Encode",
 			"omit .Decode() when attaching from a frame tap",
@@ -2108,12 +2110,13 @@ func runtimeBranchDecodeDomainError(branch string, shape shape.Spec) error {
 
 func runtimeBranchDecodeCodecMissingError(branch string, shape shape.Spec) error {
 	return &BuildError{
+		Phase:     phaseRun,
 		Family:    errcode.FamilyForCode(runtimeBranchDecodeCodecMissingCode),
 		Code:      runtimeBranchDecodeCodecMissingCode,
 		Operation: "attach runtime branch",
 		Node:      firstNonEmpty(branch, "branch"),
 		Reason:    "runtime branch decode needs packet codec metadata",
-		fields:    buildErrorFields(runtimeBranchShapeDetails(shape)),
+		fields:    errDetailLines(runtimeBranchShapeDetails(shape)),
 		fixes: buildErrorFixes([]string{
 			"attach from a recipe tap with codec shape",
 			"declare the input codec (provider codec intent or file metadata) before building the task",
@@ -2125,12 +2128,13 @@ func runtimeBranchDecodeCodecMissingError(branch string, shape shape.Spec) error
 
 func runtimeBranchCopyDomainError(branch string, shape shape.Spec) error {
 	return &BuildError{
+		Phase:     phaseRun,
 		Family:    errcode.FamilyForCode(runtimeBranchCopyDomainMismatchCode),
 		Code:      runtimeBranchCopyDomainMismatchCode,
 		Operation: "attach runtime branch",
 		Node:      firstNonEmpty(branch, "branch"),
 		Reason:    "runtime branch packet copy requires a packet tap",
-		fields:    buildErrorFields(runtimeBranchShapeDetails(shape)),
+		fields:    errDetailLines(runtimeBranchShapeDetails(shape)),
 		fixes: buildErrorFixes([]string{
 			"attach from a tap declared after Copy or Encode",
 			"encode frame taps with .Encode(codec.Opus(...)), .Encode(codec.VP8(...)), or .Encode(codec.VP9(...)) before writing a muxed destination",
@@ -2142,12 +2146,13 @@ func runtimeBranchCopyDomainError(branch string, shape shape.Spec) error {
 
 func runtimeBranchMuxCodecMissingError(branch string, shape shape.Spec) error {
 	return &BuildError{
+		Phase:     phaseRun,
 		Family:    errcode.FamilyForCode(runtimeBranchMuxCodecMissingCode),
 		Code:      runtimeBranchMuxCodecMissingCode,
 		Operation: "attach runtime branch",
 		Node:      firstNonEmpty(branch, "branch"),
 		Reason:    "runtime branch mux destination needs codec metadata",
-		fields:    buildErrorFields(runtimeBranchShapeDetails(shape)),
+		fields:    errDetailLines(runtimeBranchShapeDetails(shape)),
 		fixes: buildErrorFixes([]string{
 			"attach from a recipe tap with codec shape",
 			"set an explicit encoder with .Encode(codec.Opus(...)), .Encode(codec.VP8(...)), or .Encode(codec.VP9(...))",
@@ -2173,6 +2178,7 @@ func runtimeBranchShapeDetails(shape shape.Spec) []string {
 
 func runtimeBranchGraphError(operation string, node string, cause error) error {
 	return &BuildError{
+		Phase:     phaseBuild,
 		Family:    errcode.FamilyForCode(runtimeBranchGraphErrorCode),
 		Code:      runtimeBranchGraphErrorCode,
 		Operation: operation,

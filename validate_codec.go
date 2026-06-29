@@ -162,12 +162,13 @@ func recipeDecodeAdapterError(operation string, stream streamIntent, codecID av.
 		}
 	}
 	return &BuildError{
+		Phase:     phaseBuild,
 		Family:    errcode.FamilyForCode(code),
 		Code:      code,
 		Operation: operation,
 		Node:      jobStreamIntentName(stream),
 		Reason:    reason,
-		fields:    buildErrorFields(details),
+		fields:    errDetailLines(details),
 		fixes: buildErrorFixes([]string{
 			"register a codec adapter that provides a " + string(codecID) + " decoder",
 			"enable the adapter build tag or choose a runtime with a concrete decoder",
@@ -224,12 +225,13 @@ func decodeAdapterIncompatibleError(operation string, stream streamIntent, reque
 		details = append(details, "supported_pixel_formats="+strings.Join(pixelFormats, ","))
 	}
 	return &BuildError{
+		Phase:     phaseBuild,
 		Family:    errcode.FamilyForCode(decodeAdapterIncompatibleCode),
 		Code:      decodeAdapterIncompatibleCode,
 		Operation: operation,
 		Node:      jobStreamIntentName(stream),
 		Reason:    string(request.Codec) + " decoder adapter does not support the requested " + label,
-		fields:    buildErrorFields(details),
+		fields:    errDetailLines(details),
 		fixes: buildErrorFixes([]string{
 			"choose a decoder adapter that supports this " + label,
 			"fix the input stream metadata if it describes the wrong media or frame format",
@@ -358,12 +360,13 @@ func encodeAdapterIncompatibleError(operation string, stream streamIntent, reque
 		details = append(details, "supported_pixel_formats="+strings.Join(pixelFormats, ","))
 	}
 	return &BuildError{
+		Phase:     phaseBuild,
 		Family:    errcode.FamilyForCode(encodeAdapterIncompatibleCode),
 		Code:      encodeAdapterIncompatibleCode,
 		Operation: operation,
 		Node:      jobStreamIntentName(stream),
 		Reason:    string(request.Codec) + " encoder adapter does not support the requested " + label,
-		fields:    buildErrorFields(details),
+		fields:    errDetailLines(details),
 		fixes: buildErrorFixes([]string{
 			"choose an encoder adapter that supports this " + label,
 			"change the operation spec chain so the encoder receives one of the supported formats",
@@ -496,12 +499,13 @@ func recipeEncodeAdapterCodecError(operation string, stream streamIntent, codecI
 		}
 	}
 	return &BuildError{
+		Phase:     phaseBuild,
 		Family:    errcode.FamilyForCode(code),
 		Code:      code,
 		Operation: operation,
 		Node:      jobStreamIntentName(stream),
 		Reason:    reason,
-		fields:    buildErrorFields(details),
+		fields:    errDetailLines(details),
 		fixes: buildErrorFixes([]string{
 			"register a " + string(codecID) + " encoder with goav.New(goavruntime.WithEncoder(...)) or a codec adapter that provides one",
 			"use .Decode().To(goav.Sink(...)) to receive decoded frames without encoding",
