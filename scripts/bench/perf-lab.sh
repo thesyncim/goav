@@ -2,7 +2,8 @@
 # Runs the performance-lab smoke benchmarks and saves the output under the
 # checked bench-results/ layout. The Go benchmarks report p50/p95/p99,
 # heap/runtime memory, live-room sync drift/drop smoke,
-# pressure/control/fanout/container smoke, and real Opus throughput; OS time
+# pressure/control/fanout/container smoke, real Opus and video codec
+# (VP8/VP9/AV1 encode, VP8 decode) throughput, and a soak-drift harness; OS time
 # output adds max RSS where the platform's /usr/bin/time exposes it.
 #
 # Usage:
@@ -47,6 +48,14 @@ export CGO_ENABLED
   go test -run '^$' -bench 'BenchmarkLatencyRecordPackets|BenchmarkLiveRoomSync|BenchmarkSustainedRecordMemory|BenchmarkRealOpus(Encode|Decode)$' \
     -benchmem -benchtime "${benchtime}" \
     -cpuprofile "${pprof_dir}/cpu.out" -memprofile "${pprof_dir}/mem.out" .
+  echo
+  echo "real video codec throughput:"
+  go test -run '^$' -bench 'BenchmarkReal(VP8|VP9|H264|AV1)Encode$|BenchmarkRealVP8Decode$' \
+    -benchmem -benchtime "${benchtime}" .
+  echo
+  echo "soak drift (run with a large PERF_BENCHTIME for an extended-stability artifact):"
+  go test -run '^$' -bench 'BenchmarkSoakRecordDrift$' \
+    -benchmem -benchtime "${benchtime}" .
   echo
   echo "pressure and hot control:"
   go test -run '^$' -bench 'Benchmark(SourcePush|AttachDetachUnderLoad)$' \

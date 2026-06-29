@@ -112,6 +112,10 @@ ns/op as their steady-state timing proxy.
 | `BenchmarkLatencyRecordPackets` | packet-record path with p50/p95/p99 `source.Push.Packet` acceptance metrics |
 | `BenchmarkSustainedRecordMemory` | bounded packet-record memory smoke, reporting live heap and runtime-reserved memory |
 | `BenchmarkRealOpusEncode` / `BenchmarkRealOpusDecode` | standard Opus adapter throughput path, not the goavtest fake codec |
+| `BenchmarkRealVP8Encode` / `BenchmarkRealVP9Encode` / `BenchmarkRealAV1Encode` | standard video encoder throughput (real `govpx`/`goav1` adapters, deterministic I420 frames) |
+| `BenchmarkRealH264Encode` | skips: the bundle ships H.264 decode-only, so there is no encoder to measure (honest gap, not a fake number) |
+| `BenchmarkRealVP8Decode` | standard VP8 decoder throughput, decoding a real keyframe captured from the encoder |
+| `BenchmarkSoakRecordDrift` | soak harness: long offline-paced record reporting heap drift, GC cycles, and total GC pause; run with a large `-benchtime` for an extended-stability artifact |
 
 The `pipeline` package adds the executor-level fanout sweeps
 (`BenchmarkDirectFanout`, `BenchmarkDirectFanoutParallel`,
@@ -179,10 +183,14 @@ Stated plainly so the docs never imply otherwise:
   evidence.
 - **RSS under sustained load** (1h/6h). The perf-lab script captures bounded
   max RSS/heap smoke only.
-- **Real-codec throughput on reference hardware** beyond the Opus adapter
-  smoke path. VP8/VP9/AV1/H264 throughput needs committed methodology and
-  artifacts before it becomes a claim.
-- **Sustained-load soak** (hours-long stability, fragmentation, drift).
+- **Real-codec throughput on reference hardware**. The harnesses now exist
+  (`BenchmarkReal{VP8,VP9,AV1}Encode`, `BenchmarkRealVP8Decode`,
+  `BenchmarkRealOpus*`), so per-codec throughput is now *measurable and
+  reproducible*; it becomes a *claim* only once same-machine artifacts are
+  committed. H.264 encode is not measurable here — the bundle is decode-only.
+- **Sustained-load soak** (hours-long stability, fragmentation, drift). The
+  `BenchmarkSoakRecordDrift` harness exists and reports heap drift / GC cost;
+  an extended `-benchtime` run produces the artifact, which is not yet committed.
 - **Multi-core scaling** targets: `BenchmarkDirectFanoutParallel` measures
   scaling but no specific ratio is promised.
 - Comparative leadership claims. Comparative claims require committed
@@ -202,3 +210,22 @@ go tool pprof -alloc_space mem.out
 
 Use `-benchtime=Nx` for a fixed message count and `-cpu 1,2,4,8` on the
 pipeline fanout benches for contention analysis.
+
+## Releasing artifacts
+
+`scripts/bench/perf-lab.sh` generates the JSON artifact set (latency
+percentiles, RSS/heap, pressure, control, fanout, real Opus and video codec
+throughput, soak drift) into `bench-results/`. Those files are machine-specific
+and `.gitignored` by design — a number is only evidence on the machine that
+produced it. To release an artifact, run the harness on the target hardware and
+attach the output to the release, naming the host and Go version:
+
+```sh
+PERF_BENCHTIME=2000x scripts/bench/perf-lab.sh           # full smoke
+go test -run '^$' -bench BenchmarkSoakRecordDrift \
+  -benchtime=10m -benchmem .                             # extended soak artifact
+```
+
+A throughput, tail-latency, soak, or scaling claim is only valid with the
+matching committed artifact; until then PERFORMANCE.md lists it under
+"Not proven".
