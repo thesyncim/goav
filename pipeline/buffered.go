@@ -96,20 +96,25 @@ type bufferedMessage struct {
 }
 
 type bufferedRunner struct {
-	config   GraphConfig
-	mu       sync.RWMutex
-	index    map[string]int
-	nodes    []*bufferedNode
-	sources  []int
-	events   chan av.Event
-	pending  sync.WaitGroup
-	workers  sync.WaitGroup
-	cold     coldStats
-	runCtx   context.Context
-	runErrs  chan<- error
-	running  bool
-	draining bool
-	closed   bool
+	config  GraphConfig
+	mu      sync.RWMutex
+	index   map[string]int
+	nodes   []*bufferedNode
+	sources []int
+	events  chan av.Event
+	// eventsMu guards the event channel close against the lock-free publishEvent
+	// path, so a concurrent emit cannot send on a closed channel (matches the
+	// direct runner). Hot-path emits take it only for the observer send.
+	eventsMu     sync.Mutex
+	eventsClosed bool
+	pending      sync.WaitGroup
+	workers      sync.WaitGroup
+	cold         coldStats
+	runCtx       context.Context
+	runErrs      chan<- error
+	running      bool
+	draining     bool
+	closed       bool
 	// closing is the lock-free mirror of closed, set under g.mu at Close so the
 	// lock-free worker path sheds messages once the graph is closing.
 	closing atomic.Bool
@@ -534,7 +539,12 @@ func (g *bufferedRunner) CloseContext(ctx context.Context) error {
 			first = err
 		}
 	}
+	// Close events under eventsMu so a concurrent lock-free emit cannot send on
+	// the channel after it is closed.
+	g.eventsMu.Lock()
+	g.eventsClosed = true
 	close(g.events)
+	g.eventsMu.Unlock()
 	return first
 }
 
@@ -905,31 +915,57 @@ func (g *bufferedRunner) enqueue(ctx context.Context, node *bufferedNode, msg *M
 	}
 }
 
-// enqueueBlocking implements true backpressure for DropBlock: it waits for a free
-// slot and for queue space, so a full queue paces the producer instead of
-// erroring. It holds node.queueMutex but no g.mu (FC-1), and the lock-free worker
-// drains the queue, so the wait always makes progress; ctx cancellation is the
-// only escape.
+// bufferedBackpressurePoll bounds how long a paced DropBlock producer waits
+// before it re-checks teardown while blocked on capacity. The primary wakeups
+// are the free-slot channel and the queue-send retry; this fallback only caps
+// how long a producer can stay parked after the queue is torn down, so Close
+// stays prompt instead of waiting on a blocked producer.
+const bufferedBackpressurePoll = 100 * time.Microsecond
+
+// enqueueBlocking implements true backpressure for DropBlock: it paces the
+// producer until the node has both queue space and a free slot, then admits the
+// message atomically. The slot is acquired only when the send is about to
+// happen — never held across a wait — so a paced producer cannot starve the
+// node's free pool for other producers (which would make their admit path
+// observe space yet no slot). The admit (slot bind + queue send) runs under
+// node.queueMutex; only the lock-free worker drains the queue, so a space
+// checked under the mutex cannot vanish before the send, and the send stays
+// serialized with close(node.queue). The wait between attempts releases the
+// mutex, so a concurrent Close/Remove (which needs the mutex to tear the queue
+// down) is never stuck behind a paced producer. The caller holds
+// node.queueMutex on entry and this returns with it held.
 func (g *bufferedRunner) enqueueBlocking(ctx context.Context, node *bufferedNode, msg *Message) error {
-	var slot *bufferedMessage
-	select {
-	case slot = <-node.free:
-	case <-ctx.Done():
-		return ctx.Err()
-	}
-	if err := slot.bind(msg, node.policy); err != nil {
-		node.releaseSlot(slot)
-		return err
-	}
-	g.pending.Add(1)
-	node.accountQueuedBytes(slot, msg)
-	select {
-	case node.queue <- slot:
-		return nil
-	case <-ctx.Done():
-		g.pending.Done()
-		node.releaseSlot(slot)
-		return ctx.Err()
+	for {
+		if node.queueClosed {
+			// Queue torn down (Remove/Close): shed.
+			return nil
+		}
+		if len(node.queue) < cap(node.queue) {
+			select {
+			case slot := <-node.free:
+				if err := slot.bind(msg, node.policy); err != nil {
+					node.releaseSlot(slot)
+					return err
+				}
+				g.pending.Add(1)
+				node.accountQueuedBytes(slot, msg)
+				node.queue <- slot
+				return nil
+			default:
+				// Free pool momentarily empty though the queue has space; wait.
+			}
+		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		node.queueMutex.Unlock()
+		select {
+		case <-ctx.Done():
+			node.queueMutex.Lock()
+			return ctx.Err()
+		case <-time.After(bufferedBackpressurePoll):
+			node.queueMutex.Lock()
+		}
 	}
 }
 
@@ -1044,6 +1080,11 @@ func (g *bufferedRunner) deliver(ctx context.Context, node *bufferedNode, msg *M
 
 func (g *bufferedRunner) publishEvent(msg *Message, counters *nodeCounters) {
 	if msg.Kind != MessageEvent || msg.Event == nil {
+		return
+	}
+	g.eventsMu.Lock()
+	defer g.eventsMu.Unlock()
+	if g.eventsClosed {
 		return
 	}
 	select {

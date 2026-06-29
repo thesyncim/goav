@@ -1320,7 +1320,11 @@ func TestGraphBufferedRemoveReportsStuckNode(t *testing.T) {
 	close(stop)
 	cancel()
 	_ = graph.Close()
-	if err := <-runErr; err != nil && !errors.Is(err, context.Canceled) {
+	// Shutdown can surface either context.Canceled (the source observes the
+	// cancel first) or ErrClosed (Close wins the race while the source is still
+	// emitting); both are valid teardown signals. The source no longer wedges
+	// node.queueMutex while blocked, so the close path is not gated on it.
+	if err := <-runErr; err != nil && !errors.Is(err, context.Canceled) && !errors.Is(err, ErrClosed) {
 		t.Fatalf("Run err = %v", err)
 	}
 }

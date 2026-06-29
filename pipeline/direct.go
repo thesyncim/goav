@@ -385,24 +385,34 @@ func (g *directRunner) Run(ctx context.Context) error {
 		return run.source.Start(ctx, run.emitter)
 	}
 
-	errs := make(chan error, len(sources))
-	var runs sync.WaitGroup
+	// Run every source under a shared cancelable context so the first fatal
+	// error cancels its siblings instead of leaving them running until they end
+	// on their own. The triggering error is captured once and returned; siblings
+	// that observe the cancellation and return context.Canceled do not overwrite
+	// it. We still wait for every source goroutine before returning so no source
+	// outlives Run.
+	runCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	var (
+		once     sync.Once
+		firstErr error
+		runs     sync.WaitGroup
+	)
 	for i := range sources {
 		run := sources[i]
 		runs.Add(1)
 		go func() {
 			defer runs.Done()
-			if err := run.source.Start(ctx, run.emitter); err != nil {
-				errs <- err
+			if err := run.source.Start(runCtx, run.emitter); err != nil {
+				once.Do(func() {
+					firstErr = err
+					cancel()
+				})
 			}
 		}()
 	}
 	runs.Wait()
-	close(errs)
-	for err := range errs {
-		return err
-	}
-	return nil
+	return firstErr
 }
 
 func (g *directRunner) Spec() Spec {
