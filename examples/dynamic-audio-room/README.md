@@ -1,5 +1,8 @@
 # Dynamic audio room
 
+> Demonstrates runtime `Attach`/`Detach` and broad `OnStream` rules — governed
+> pre-v1 features, not the v1 front door. See [V1 scope](../../docs/V1_SCOPE.md).
+
 This example models a real application room where participants can join,
 leave, or reconnect while downstream goav work sees each participant as its
 own audio stream.

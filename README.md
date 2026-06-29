@@ -14,6 +14,10 @@ resources open, then run it with explicit adapters.
 operations, fanout branches, destinations, and task lifecycle. Bundled adapters
 live in `goav/bundle`; advanced runtime and extension topics are linked below.
 
+The recipes below are the v1-supported workflows. Live mutation, control
+sockets, converged streams, and the expert graph are governed pre-v1 features —
+real and tested, but not the beginner path. See [V1 scope](docs/V1_SCOPE.md).
+
 ## Install
 
 ```sh
@@ -70,5 +74,5 @@ rejected so sharing is explicit.
 | Recipes, branches, live rooms, RTP, WebRTC | [Use cases](docs/USE_CASES.md) |
 | Extension authoring | [Extension cookbook](docs/EXTENSION_COOKBOOK.md), [Adapter authoring](docs/ADAPTER_AUTHORING.md), [Adapters](docs/ADAPTERS.md) |
 | Copyable examples | [custom source](examples/custom-source), [provider source](examples/provider-source), [custom destination](examples/custom-destination), [custom filter](examples/custom-filter), [transactional writer](examples/transactional-writer), [custom codec](examples/custom-codec), [custom join](examples/custom-join) |
-| Runtime control and observation | [Control plane](docs/CONTROL_PLANE.md), [control-plane host](examples/control-plane-host), [Components](docs/COMPONENTS.md) |
+| Runtime control and observation (governed pre-v1) | [Control plane](docs/CONTROL_PLANE.md), [control-plane host](examples/control-plane-host), [Components](docs/COMPONENTS.md) |
 | Performance and release trust | [Performance](docs/PERFORMANCE.md), [Releasing](docs/RELEASING.md), [Compatibility](docs/COMPATIBILITY.md), [Repository trust](docs/REPOSITORY_TRUST.md), [V1 audit](docs/V1_CREDIBILITY_AUDIT.md) |

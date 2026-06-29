@@ -64,6 +64,13 @@ refusals" lists the error families a caller should expect to handle.
 
 ## Join Constructors
 
+> **Governed pre-v1.** `Mix`, `Composite`, `Select`, and custom `Join` are
+> implemented, tested, and governed, but they are not part of the v1 front-door
+> promise. See [`V1_SCOPE.md`](V1_SCOPE.md). The same applies to runtime
+> `Attach`/`Detach`/`Rebranch` referenced in the "Runtime attach" column — that
+> column documents behaviour available through `BuildLive`/`LiveTask`, which is
+> advanced surface, not the `Build` front door.
+
 Joins are the N-to-1 side of the same grammar: each constructor consumes two or
 more join arms, lowers to one planned convergence node, and returns a
 normal stream point. Arms are intentionally narrower than stream chains: arm

@@ -22,6 +22,13 @@ The tiers are a reader map:
 - **D. Leakage**: public things that should not be public. This section should
   stay empty.
 
+The tiers also map onto the v1 freeze in [`V1_SCOPE.md`](V1_SCOPE.md): the tier-A
+front-door grammar plus the custom source/sink/codec/format extension points are
+v1-supported; the expert tier (C), the control-plane socket host, runtime
+`Attach`/`Detach`/`Rebranch`, and `Mix`/`Composite`/`Select`/custom `Join` are
+**governed pre-v1** — implemented and tested, but not part of the v1 promise
+until a release decision retains them. Those rows are flagged inline below.
+
 ## A. Front-door Grammar
 
 Most users should be able to stop here. A recipe starts with media, narrows to
@@ -93,7 +100,8 @@ use [`docs/ADAPTERS.md`](ADAPTERS.md) and [`docs/COMPONENTS.md`](COMPONENTS.md).
   constructor takes a caller-held value (io.Writer for `Write`,
   `provider.Destination` for `Custom`/`Writer`, `pipeline.Sink` for `Sink`)
   that callers wrap before passing.
-- **Joins**: use these when several streams become one. `goav.Join(name, stage,
+- **Joins** (governed pre-v1, see [`V1_SCOPE.md`](V1_SCOPE.md)): use these when
+  several streams become one. `goav.Join(name, stage,
   arms...)` is N->1 convergence with a
   caller-supplied `pipeline.Stage` as the convergence node. Mix, Composite,
   and Select are profiles over this same machinery; the per-kind behaviors
@@ -119,7 +127,8 @@ use [`docs/ADAPTERS.md`](ADAPTERS.md) and [`docs/COMPONENTS.md`](COMPONENTS.md).
 - **Codecs**: `codec` Descriptor/Decoder/Encoder/factories, caller-owned
   results, `goavruntime.WithDecoder`/`WithEncoder`/`WithCodecAdapter`/
   `WithCodecDescriptor`.
-- **Control hosts**: `ctl` is the supported package for applications that
+- **Control hosts** (governed pre-v1, see [`V1_SCOPE.md`](V1_SCOPE.md)): `ctl`
+  is the supported package for applications that
   run a task and expose it to `goav ctl --control unix://...`. It reuses the
   same allowlisted command framework as the bundled command: external hosts
   pass `CommandSpec` for app-specific control verbs, `PipelineRegistry` for
@@ -187,7 +196,9 @@ implement, with the executable evidence:
 
 ## C. Expert tier
 
-Handle-based graph work, deliberately off the grammar:
+Handle-based graph work, deliberately off the grammar. This whole tier is
+**governed pre-v1** (see [`V1_SCOPE.md`](V1_SCOPE.md)): normal recipes never need
+it, and v1 does not freeze its shape.
 
 - `expert.Graph(runtime)` -> `expert.GraphBuilder`/`GraphNode`/`GraphInlet`/
   `GraphOutlet`; `expert.ErrRuntimeRequired`. The package reaches the runtime
@@ -249,7 +260,8 @@ against the constructors in `input.go`/`provider.go`/`source.go`,
 - **Flow vs Branch**: a `Flow` is a reusable operation list and owns no
   destination (`TestNorthStarFlowExposesNoDestinations`); a `Branch` routes
   fanout and owns its destinations.
-- **Attach vs Detach vs Rebranch**: `task.Attach` adds ordinary branch specs
+- **Attach vs Detach vs Rebranch** (governed pre-v1, see
+  [`V1_SCOPE.md`](V1_SCOPE.md)): `task.Attach` adds ordinary branch specs
   to a running task; `task.Detach(ctx, h)` removes that attached branch, with
   `lifecycle.DrainBranch()` and `lifecycle.AbortBranch()` selecting whether branch destinations
   commit or abort; `Attachment.Rebranch` is attach-new-then-detach-old, with
@@ -322,10 +334,13 @@ example modules. The module boundary is the dependency boundary:
   seams. Importing this package does not import bundled adapter packages.
 - **root module**: contains the root package, `goav/bundle`, bundled adapter
   packages, and pure-Go implementations. `goav/bundle` is a package, not a
-  nested module; the root module still lists bundled backend requirements
-  until/unless `goav/bundle` becomes a nested module. `TestRootModuleDependencyPurity`
-  pins that module requirements stay inside `github.com/thesyncim/*` with no
-  third-party requires and no `replace` directives.
+  nested module — a deliberate v1 decision (see [`V1_SCOPE.md`](V1_SCOPE.md)):
+  package-level purity is enough because `TestRootImportDoesNotPullBundledAdapters`
+  proves importing the root package pulls no bundled adapter, and
+  `TestRootModuleDependencyPurity` pins that module requirements stay inside
+  `github.com/thesyncim/*` with no third-party requires and no `replace`
+  directives. A nested `bundle` module would add a `go.mod` and per-module tags
+  for no isolation the package boundary does not already provide.
 - **`rtpav`, `webrtcav`**: nested modules carrying the Pion ecosystem. They
   require the root module (never the reverse), so importing goav pulls in no
   transport dependencies. Import paths are unchanged

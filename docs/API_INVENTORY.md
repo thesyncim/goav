@@ -65,7 +65,15 @@ Current result after the `goav/bundle` split: no matches for the root package.
 `goav/bundle` is a package in the root module, not a nested module. Importing
 `github.com/thesyncim/goav` does not pull bundled adapter packages into the
 root package dependency graph. The root module still carries bundled backend
-requirements until/unless `goav/bundle` becomes a nested module.
+requirements (all `github.com/thesyncim/*`), which is acceptable because
+package-level purity already isolates the root package.
+
+**Decision (v1):** `goav/bundle` stays a package. Package-level purity, pinned
+by `TestRootImportDoesNotPullBundledAdapters` and `TestRootModuleDependencyPurity`,
+is sufficient; a nested `bundle` module would add a `go.mod` and per-module tags
+for no isolation the package boundary does not already provide. See
+[`V1_SCOPE.md`](V1_SCOPE.md). Revisit only if module-level isolation of the
+bundled backends becomes a hard requirement.
 
 ## Documentation Baseline
 
@@ -73,8 +81,8 @@ Current line counts:
 
 | File | Lines |
 | --- | ---: |
-| `README.md` | 72 |
-| `docs/API_SURFACE.md` | 358 |
+| `README.md` | 78 |
+| `docs/API_SURFACE.md` | 374 |
 | `docs/ROADMAP.md` | 247 |
 | `docs/PROGRESS.md` | 147 |
 | `docs/API_REDUCTION_PLAN.md` | 212 |
