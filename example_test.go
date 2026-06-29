@@ -452,7 +452,7 @@ func ExampleBuildError() {
 		Video().
 		Decode().
 		To(goav.Write("frames.ivf", io.Discard)).
-		BuildLive(context.Background())
+		Build(context.Background())
 
 	var buildErr *goav.BuildError
 	if errors.As(err, &buildErr) {
