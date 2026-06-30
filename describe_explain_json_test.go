@@ -14,6 +14,7 @@ import (
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/component"
 	"github.com/thesyncim/goav/goavtest"
+	"github.com/thesyncim/goav/plan"
 )
 
 // These golden tests prove Describe and Explain are machine-consumable: their
@@ -87,7 +88,33 @@ func TestExplainGoldenJSON(t *testing.T) {
 			t.Fatalf("Explain JSON missing typed metadata %q:\n%s", want, got)
 		}
 	}
+	// Transform and encode operations carry typed config consistently whether
+	// they sit on a stream or a branch (a substring check would miss a branch
+	// operation silently losing its config).
+	assertOperationsHaveConfig(t, report.Streams, "stream")
+	for _, b := range report.Branches {
+		assertOperationConfig(t, b.Operations, "branch")
+	}
 	assertGolden(t, "explain_audio_transcode.json", got)
+}
+
+func assertOperationsHaveConfig(t *testing.T, streams []plan.Stream, where string) {
+	t.Helper()
+	for _, s := range streams {
+		assertOperationConfig(t, s.Operations, where)
+	}
+}
+
+func assertOperationConfig(t *testing.T, operations []plan.Operation, where string) {
+	t.Helper()
+	for _, op := range operations {
+		switch op.Kind {
+		case plan.OpTransform, plan.OpEncode:
+			if len(op.Config) == 0 {
+				t.Fatalf("%s %s operation has no typed config (machine consumers expect it)", where, op.Kind)
+			}
+		}
+	}
 }
 
 // TestDescribeExplainJSONIsStable proves the encodings are deterministic, so a

@@ -330,13 +330,41 @@ func workOperationAdapter(operation workOperation) string {
 	}
 }
 
-// workOperationConfig reports a planned branch operation's encoder settings as
-// stable key/value strings. Nil when the operation carries no settings.
+// workOperationConfig reports a planned branch operation's typed settings as
+// stable key/value strings — encoder settings for encode, and geometry/rate for
+// a transform (from its output shape, the only transform fact a work operation
+// carries). It mirrors the stream path's operationSpecConfig so transform and
+// encode operations report config consistently whether they sit on a stream or
+// a branch. Nil when the operation carries no settings.
 func workOperationConfig(operation workOperation) map[string]string {
-	if operation.Kind == plan.OpEncode {
+	switch operation.Kind {
+	case plan.OpTransform:
+		return shapeTransformConfig(operation.ShapeOut)
+	case plan.OpEncode:
 		return codecSpecConfig(operation.Codec)
+	default:
+		return nil
 	}
-	return nil
+}
+
+// shapeTransformConfig reports a frame transform's geometry (video) or rate
+// (audio) from its output shape, as stable key/value strings.
+func shapeTransformConfig(spec shape.Spec) map[string]string {
+	config := map[string]string{}
+	switch spec.MediaKind {
+	case av.MediaVideo:
+		putConfigInt(config, "width", spec.Width)
+		putConfigInt(config, "height", spec.Height)
+		putConfigString(config, "pixelFormat", spec.PixelFormat)
+	case av.MediaAudio:
+		putConfigInt(config, "sampleRate", spec.SampleRate)
+		putConfigInt(config, "channels", spec.Channels)
+		putConfigString(config, "sampleFormat", spec.SampleFormat)
+	}
+	if len(config) == 0 {
+		return nil
+	}
+	return config
 }
 
 func explainDecisions(decisions []planDecision) []plan.Decision {

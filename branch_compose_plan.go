@@ -186,7 +186,7 @@ func validateBranchCompositionRecipeShape(operation string, recipe recipeir.Reci
 			Code:      inputCountUnsupportedCode,
 			Operation: operation,
 			Reason:    "transcode recipes currently take one input",
-			fields:    errDetails(errNote(fmt.Sprintf("inputs=%d", len(recipe.Inputs)))),
+			fields:    errDetails(errDetail("inputs", fmt.Sprintf("%d", len(recipe.Inputs)))),
 			fixes: buildErrorFixes([]string{
 				"use one goav.From(input) source per composed job",
 				"use the expert graph API when multiple sources must be composed manually",

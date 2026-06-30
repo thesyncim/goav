@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -84,6 +85,75 @@ func scanBuildErrorLiterals(t *testing.T) []buildErrorLiteral {
 		t.Fatal("no BuildError literals found; the scanner is broken")
 	}
 	return literals
+}
+
+// TestErrNoteCarriesNoKeyedDetail pins that errNote (a keyless detail) is never
+// handed a "key=value" string: those must use errDetail(key, value) so the value
+// stays reachable through BuildError.Detail(key). It guards against the typed
+// migration silently dropping a queryable key into a rendered-only note.
+func TestErrNoteCarriesNoKeyedDetail(t *testing.T) {
+	keyedNote := func(format string) bool {
+		key, _, ok := strings.Cut(format, "=")
+		if !ok || key == "" {
+			return false
+		}
+		for _, r := range key {
+			if !(r == '_' || (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9')) {
+				return false
+			}
+		}
+		return true
+	}
+	entries, err := os.ReadDir(".")
+	if err != nil {
+		t.Fatalf("read package dir: %v", err)
+	}
+	fset := token.NewFileSet()
+	var violations []string
+	for _, entry := range entries {
+		name := entry.Name()
+		if entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		file, err := parser.ParseFile(fset, name, nil, 0)
+		if err != nil {
+			t.Fatalf("parse %s: %v", name, err)
+		}
+		ast.Inspect(file, func(n ast.Node) bool {
+			call, ok := n.(*ast.CallExpr)
+			if !ok {
+				return true
+			}
+			if id, ok := call.Fun.(*ast.Ident); !ok || id.Name != "errNote" || len(call.Args) != 1 {
+				return true
+			}
+			// The note's rendered string comes either from a string literal or a
+			// fmt.Sprintf format string; both reveal a "key=" prefix statically.
+			var format string
+			switch arg := call.Args[0].(type) {
+			case *ast.BasicLit:
+				if arg.Kind == token.STRING {
+					format, _ = strconv.Unquote(arg.Value)
+				}
+			case *ast.CallExpr:
+				if len(arg.Args) != 0 {
+					if lit, ok := arg.Args[0].(*ast.BasicLit); ok && lit.Kind == token.STRING {
+						format, _ = strconv.Unquote(lit.Value)
+					}
+				}
+			}
+			if keyedNote(format) {
+				violations = append(violations,
+					name+":"+strconv.Itoa(fset.Position(call.Pos()).Line)+" errNote("+strconv.Quote(format)+")")
+			}
+			return true
+		})
+	}
+	if len(violations) != 0 {
+		sort.Strings(violations)
+		t.Fatalf("errNote carries a key=value string; use errDetail(key, value) so Detail(key) works:\n%s",
+			strings.Join(violations, "\n"))
+	}
 }
 
 // TestEveryUserActionableBuildErrorHasFix pins that every user-actionable

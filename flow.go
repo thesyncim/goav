@@ -829,7 +829,7 @@ func branchInputCountError(node string, count int) error {
 		Operation: "build branches",
 		Node:      node,
 		Reason:    "branches currently compose from one input",
-		fields:    errDetails(errNote(fmt.Sprintf("inputs=%d", count))),
+		fields:    errDetails(errDetail("inputs", fmt.Sprintf("%d", count))),
 		fixes: buildErrorFixes([]string{
 			"start branches from goav.From(input).Audio() or goav.From(input).Video() with one input",
 			"use the expert graph API when combining several sources manually",

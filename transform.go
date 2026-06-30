@@ -301,7 +301,7 @@ func validateTransformSpec(operation string, node string, spec transformSpec) er
 			Operation: operation,
 			Node:      node,
 			Reason:    "resize requires positive width and height",
-			fields:    errDetails(errNote(fmt.Sprintf("width=%d", spec.resize.Width)), errNote(fmt.Sprintf("height=%d", spec.resize.Height))),
+			fields:    errDetails(errDetail("width", fmt.Sprintf("%d", spec.resize.Width)), errDetail("height", fmt.Sprintf("%d", spec.resize.Height))),
 			fixes: buildErrorFixes([]string{
 				"call .Resize(width, height) with positive dimensions",
 				"remove .Resize(...) when no video scaling is needed",
@@ -319,7 +319,7 @@ func validateTransformSpec(operation string, node string, spec transformSpec) er
 			Operation: operation,
 			Node:      node,
 			Reason:    "resample requires positive sample rate and channels",
-			fields:    errDetails(errNote(fmt.Sprintf("sample_rate=%d", spec.resample.SampleRate)), errNote(fmt.Sprintf("channels=%d", spec.resample.Channels))),
+			fields:    errDetails(errDetail("sample_rate", fmt.Sprintf("%d", spec.resample.SampleRate)), errDetail("channels", fmt.Sprintf("%d", spec.resample.Channels))),
 			fixes: buildErrorFixes([]string{
 				"call .Resample(sampleRate, channels) with positive values",
 				"remove .Resample(...) when no audio conversion is needed",

@@ -202,7 +202,7 @@ func recipeIRShapeRequirementUnmetError(operation string, node string, index int
 		Node:      node,
 		Reason: fmt.Sprintf(".Require(...) is not satisfied: the stream is %s, required %s",
 			humanizeShape(actual), humanizeShape(required)),
-		fields: errDetails(errNote(fmt.Sprintf("operation_index=%d", index)), errDetail("operation", "require"), errDetail("source", humanizeShape(actual)), errDetail("actual_shape", actual.String()), errDetail("expected_shape", shapeSetString(expected))),
+		fields: errDetails(errDetail("operation_index", fmt.Sprintf("%d", index)), errDetail("operation", "require"), errDetail("source", humanizeShape(actual)), errDetail("actual_shape", actual.String()), errDetail("expected_shape", shapeSetString(expected))),
 		fixes: buildErrorFixes([]string{
 			"adjust the chain so the stream satisfies the required shape before .Require(...)",
 			"relax or remove the .Require(...) assertion",
@@ -220,7 +220,7 @@ func recipeIROperationShapeMismatchError(operation string, node string, index in
 		Operation: operation,
 		Node:      node,
 		Reason:    component + " cannot consume the current media shape",
-		fields:    errDetails(errNote(fmt.Sprintf("operation_index=%d", index)), errDetail("operation", string(step.Kind)), errDetail("expected_shape", shapeSetString(expected)), errDetail("actual_shape", actual.String())),
+		fields:    errDetails(errDetail("operation_index", fmt.Sprintf("%d", index)), errDetail("operation", string(step.Kind)), errDetail("expected_shape", shapeSetString(expected)), errDetail("actual_shape", actual.String())),
 		fixes:     buildErrorFixes(recipeIROperationShapeMismatchSuggestions(step)),
 		cause:     errUnsupportedBuild,
 	}

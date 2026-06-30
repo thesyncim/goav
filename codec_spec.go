@@ -274,7 +274,7 @@ func validateRecipeEncodeValues(spec codec.CodecSpec, operation string, node str
 			Operation: operation,
 			Node:      node,
 			Reason:    "encode bitrate must be non-negative",
-			fields:    errDetails(errNote(fmt.Sprintf("bitrate=%d", spec.Settings.Bitrate))),
+			fields:    errDetails(errDetail("bitrate", fmt.Sprintf("%d", spec.Settings.Bitrate))),
 			fixes: buildErrorFixes([]string{
 				"pass a positive value to codec.Bitrate(...)",
 				"omit codec.Bitrate(...) when the encoder should choose its default",
@@ -289,7 +289,7 @@ func validateRecipeEncodeValues(spec codec.CodecSpec, operation string, node str
 			Operation: operation,
 			Node:      node,
 			Reason:    "encode FPS must be positive",
-			fields:    errDetails(errNote(fmt.Sprintf("fps_duration=%d/%d/%d", spec.Settings.Framerate.Value, spec.Settings.Framerate.Base.Num, spec.Settings.Framerate.Base.Den))),
+			fields:    errDetails(errDetail("fps_duration", fmt.Sprintf("%d/%d/%d", spec.Settings.Framerate.Value, spec.Settings.Framerate.Base.Num, spec.Settings.Framerate.Base.Den))),
 			fixes: buildErrorFixes([]string{
 				"pass a positive value to goav.FPS(...)",
 				"omit goav.FPS(...) when the encoder should infer frame cadence",
@@ -304,7 +304,7 @@ func validateRecipeEncodeValues(spec codec.CodecSpec, operation string, node str
 			Operation: operation,
 			Node:      node,
 			Reason:    "encode keyframe interval must be non-negative",
-			fields:    errDetails(errNote(fmt.Sprintf("keyframe_interval=%d", spec.Settings.KeyframeInterval))),
+			fields:    errDetails(errDetail("keyframe_interval", fmt.Sprintf("%d", spec.Settings.KeyframeInterval))),
 			fixes: buildErrorFixes([]string{
 				"pass a positive value to goav.KeyframeInterval(...)",
 				"omit goav.KeyframeInterval(...) when the encoder should choose its default cadence",
@@ -319,7 +319,7 @@ func validateRecipeEncodeValues(spec codec.CodecSpec, operation string, node str
 			Operation: operation,
 			Node:      node,
 			Reason:    "explicit encode sample rate must be positive",
-			fields:    errDetails(errNote(fmt.Sprintf("sample_rate=%d", spec.Parameters.SampleRate))),
+			fields:    errDetails(errDetail("sample_rate", fmt.Sprintf("%d", spec.Parameters.SampleRate))),
 			fixes: buildErrorFixes([]string{
 				"use codec.SampleRate(rate) with a positive rate",
 				"omit codec.SampleRate(...) to use the selected stream rate",
@@ -334,7 +334,7 @@ func validateRecipeEncodeValues(spec codec.CodecSpec, operation string, node str
 			Operation: operation,
 			Node:      node,
 			Reason:    "explicit encode channel count must be positive",
-			fields:    errDetails(errNote(fmt.Sprintf("channels=%d", spec.Parameters.Channels))),
+			fields:    errDetails(errDetail("channels", fmt.Sprintf("%d", spec.Parameters.Channels))),
 			fixes: buildErrorFixes([]string{
 				"use codec.Channels(codec.Mono), codec.Channels(codec.Stereo), or another positive channel count",
 				"omit codec.Channels(...) to use the selected stream channel count",

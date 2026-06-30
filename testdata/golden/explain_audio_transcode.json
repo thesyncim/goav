@@ -176,7 +176,12 @@
             "channels": 2,
             "sampleFormat": "s16"
           },
-          "adapter": "resample"
+          "adapter": "resample",
+          "config": {
+            "channels": "2",
+            "sampleFormat": "s16",
+            "sampleRate": "48000"
+          }
         },
         {
           "kind": "encode",

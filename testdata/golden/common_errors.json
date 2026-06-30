@@ -64,7 +64,8 @@
       "reason": "packet-copy cannot consume the current media shape",
       "details": [
         {
-          "value": "operation_index=1"
+          "key": "operation_index",
+          "value": "1"
         },
         {
           "key": "operation",

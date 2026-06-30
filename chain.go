@@ -25,7 +25,7 @@ func validateRecipeStreamSelector(operation string, node string, selector av.Str
 		Operation: operation,
 		Node:      node,
 		Reason:    "stream index must be non-negative",
-		fields:    errDetails(errNote(fmt.Sprintf("index=%d", selector.Index))),
+		fields:    errDetails(errDetail("index", fmt.Sprintf("%d", selector.Index))),
 		fixes: buildErrorFixes([]string{
 			"use goav.StreamIndex(0) for the first matching stream",
 			"use goav.StreamID(...) when stream metadata is stable",

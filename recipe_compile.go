@@ -944,7 +944,7 @@ func validateRecipeIRTransform(operation string, node string, transform recipeir
 			Operation: operation,
 			Node:      node,
 			Reason:    "resize requires positive width and height",
-			fields:    errDetails(errNote(fmt.Sprintf("width=%d", transform.Resize.Width)), errNote(fmt.Sprintf("height=%d", transform.Resize.Height))),
+			fields:    errDetails(errDetail("width", fmt.Sprintf("%d", transform.Resize.Width)), errDetail("height", fmt.Sprintf("%d", transform.Resize.Height))),
 			fixes: buildErrorFixes([]string{
 				"call .Resize(width, height) with positive dimensions",
 				"remove .Resize(...) when no video scaling is needed",
@@ -962,7 +962,7 @@ func validateRecipeIRTransform(operation string, node string, transform recipeir
 			Operation: operation,
 			Node:      node,
 			Reason:    "resample requires positive sample rate and channels",
-			fields:    errDetails(errNote(fmt.Sprintf("sample_rate=%d", transform.Resample.SampleRate)), errNote(fmt.Sprintf("channels=%d", transform.Resample.Channels))),
+			fields:    errDetails(errDetail("sample_rate", fmt.Sprintf("%d", transform.Resample.SampleRate)), errDetail("channels", fmt.Sprintf("%d", transform.Resample.Channels))),
 			fixes: buildErrorFixes([]string{
 				"call .Resample(sampleRate, channels) with positive values",
 				"remove .Resample(...) when no audio conversion is needed",
@@ -1817,7 +1817,7 @@ func shapeRequirementUnmetError(operation string, node string, index int, step o
 		Node:      node,
 		Reason: fmt.Sprintf(".Require(...) is not satisfied: the stream is %s, required %s",
 			humanizeShape(actual), humanizeShape(required)),
-		fields: errDetails(errNote(fmt.Sprintf("operation_index=%d", index)), errDetail("operation", "require"), errDetail("source", humanizeShape(actual)), errDetail("actual_shape", actual.String()), errDetail("expected_shape", shapeSetString(expected))),
+		fields: errDetails(errDetail("operation_index", fmt.Sprintf("%d", index)), errDetail("operation", "require"), errDetail("source", humanizeShape(actual)), errDetail("actual_shape", actual.String()), errDetail("expected_shape", shapeSetString(expected))),
 		fixes: buildErrorFixes([]string{
 			"adjust the chain so the stream satisfies the required shape before .Require(...)",
 			"relax or remove the .Require(...) assertion",
@@ -1843,7 +1843,7 @@ func operationShapeMismatchError(operation string, node string, index int, step 
 		Operation: operation,
 		Node:      node,
 		Reason:    component + " cannot consume the current media shape",
-		fields:    errDetails(errNote(fmt.Sprintf("operation_index=%d", index)), errDetail("operation", string(step.Kind)), errDetail("expected_shape", shapeSetString(expected)), errDetail("actual_shape", actual.String())),
+		fields:    errDetails(errDetail("operation_index", fmt.Sprintf("%d", index)), errDetail("operation", string(step.Kind)), errDetail("expected_shape", shapeSetString(expected)), errDetail("actual_shape", actual.String())),
 		fixes:     buildErrorFixes(operationShapeMismatchSuggestions(step)),
 		cause:     errUnsupportedBuild,
 	}
@@ -1875,7 +1875,7 @@ func shapeAnnotationDomainMismatchError(operation string, node string, index int
 		Operation: operation,
 		Node:      firstNonEmpty(node, "stream"),
 		Reason:    "shape annotation cannot change packet/frame domain",
-		fields:    errDetails(errNote(fmt.Sprintf("operation_index=%d", index)), errDetail("operation", "shape"), errDetail("expected_shape", expected.String()), errDetail("actual_shape", actual.String())),
+		fields:    errDetails(errDetail("operation_index", fmt.Sprintf("%d", index)), errDetail("operation", "shape"), errDetail("expected_shape", expected.String()), errDetail("actual_shape", actual.String())),
 		fixes: buildErrorFixes([]string{
 			"keep .Shape(...) annotations in the current packet/frame domain",
 			"use .Decode() to move packets to decoded frames",
