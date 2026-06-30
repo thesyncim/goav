@@ -397,8 +397,11 @@ func recipeIRJoinFromTree(tree *joinTreeSnapshot, inputCount int) recipeir.Join 
 		HasEncode:      tree.encode != nil,
 		Custom:         tree.custom != nil,
 	}
+	for i := range tree.branches {
+		join.Branches = append(join.Branches, tree.branches[i].recipe)
+	}
 	if len(tree.branches) != 0 {
-		named, _ := joinBranchNamedDestinations(tree.branches)
+		named, _ := joinBranchSnapshotDestinations(tree.branches)
 		join.DestinationCount = len(named)
 	} else {
 		join.DestinationCount = len(tree.dests)
@@ -626,7 +629,7 @@ func joinIntentFromTree(job *Job, tree *joinTreeSnapshot) intent {
 		in.Inputs = append(in.Inputs, input.intent())
 	}
 	if len(tree.branches) != 0 {
-		named, _ := joinBranchNamedDestinations(tree.branches)
+		named, _ := joinBranchSnapshotDestinations(tree.branches)
 		for i := range named {
 			in.Destinations = append(in.Destinations, named[i].output.intentWithName(named[i].name))
 		}

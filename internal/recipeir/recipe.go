@@ -167,6 +167,21 @@ type Join struct {
 	TapCount         int
 	HasEncode        bool
 	Custom           bool
+	// Branches carries the immutable fanout branches declared off the joined
+	// stream, so the join planner reads recipe facts instead of the mutable
+	// builder branch specs. Concrete destination handles stay outside the IR.
+	Branches []JoinBranch
+}
+
+// JoinBranch is one immutable fanout branch off a join's joined stream: its
+// name, media, the .From(...) anchor, and ordered operations. The concrete
+// destination handles travel beside the IR as the documented exception, so they
+// are not part of this DTO.
+type JoinBranch struct {
+	Name       string
+	Media      av.MediaType
+	Source     TapRef
+	Operations []Operation
 }
 
 // Policies are recipe-wide planning flags.

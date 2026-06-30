@@ -73,6 +73,55 @@ func TestPlannerFilesDoNotReadBuilderInternals(t *testing.T) {
 	}
 }
 
+// TestJoinPlannerReadsRecipeIRNotBuilderInternals pins that the join planner —
+// every method on joinPlan — consumes the captured recipe IR (recipeir.Join
+// branches and the joinBranchSnapshot record) and never the mutable BranchSpec
+// builder struct. join_build.go mixes the join grammar/capture (which legitimately
+// constructs and reads BranchSpec) with the planner in one file, so this is a
+// receiver-scoped pin rather than a file-scoped one: the planner's state machine
+// must stay BranchSpec-free even though the file is not physically split.
+func TestJoinPlannerReadsRecipeIRNotBuilderInternals(t *testing.T) {
+	const file = "join_build.go"
+	fset := token.NewFileSet()
+	parsed, err := parser.ParseFile(fset, file, nil, 0)
+	if err != nil {
+		t.Fatalf("parse %s: %v", file, err)
+	}
+	methods := 0
+	var violations []string
+	for _, decl := range parsed.Decls {
+		fn, ok := decl.(*ast.FuncDecl)
+		if !ok || fn.Recv == nil || len(fn.Recv.List) == 0 {
+			continue
+		}
+		recv := fn.Recv.List[0].Type
+		if star, ok := recv.(*ast.StarExpr); ok {
+			recv = star.X
+		}
+		ident, ok := recv.(*ast.Ident)
+		if !ok || ident.Name != "joinPlan" {
+			continue
+		}
+		methods++
+		ast.Inspect(fn.Body, func(n ast.Node) bool {
+			id, ok := n.(*ast.Ident)
+			if ok && id.Name == "BranchSpec" {
+				violations = append(violations,
+					fn.Name.Name+":"+strconv.Itoa(fset.Position(id.Pos()).Line))
+			}
+			return true
+		})
+	}
+	if methods == 0 {
+		t.Fatal("found no joinPlan methods; the scanner is broken")
+	}
+	if len(violations) != 0 {
+		sort.Strings(violations)
+		t.Fatalf("join planner methods reach into BranchSpec (read the captured recipe IR instead):\n%s",
+			strings.Join(violations, "\n"))
+	}
+}
+
 // TestRecipeIRImportsOnlyLeafPackages pins that the immutable recipe IR package
 // imports only leaf vocabulary packages — never the root goav package or a
 // builder. That import discipline is what lets builders lower into the IR

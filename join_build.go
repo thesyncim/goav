@@ -108,9 +108,65 @@ type joinTreeSnapshot struct {
 	encode     *codec.CodecSpec
 	operations []operationSpec
 	taps       []tapRef
-	branches   []BranchSpec
+	branches   []joinBranchSnapshot
 	sync       joinSyncMode
 	custom     *customJoinSpec
+}
+
+// joinBranchSnapshot is the planner-facing capture of one join fanout branch:
+// the immutable recipe-IR facts (name, media, anchor, operations) plus the
+// concrete destination handles that stay outside the IR by design, and the
+// builder-construction error captured at snapshot time. The join planner reads
+// it instead of the mutable BranchSpec.
+type joinBranchSnapshot struct {
+	recipe       recipeir.JoinBranch
+	destinations []destinationRef
+	construction error
+}
+
+// joinBranchSnapshotsFromSpecs captures the join fanout branches at the
+// builder→IR boundary: each branch's recipe facts become immutable recipe IR,
+// its concrete destinations are cloned as the IR exception, and its
+// builder-construction error is validated here (the only place that reads the
+// mutable BranchSpec) so the planner never has to.
+func joinBranchSnapshotsFromSpecs(branches []BranchSpec, selected av.MediaType) []joinBranchSnapshot {
+	if len(branches) == 0 {
+		return nil
+	}
+	out := make([]joinBranchSnapshot, 0, len(branches))
+	for i := range branches {
+		out = append(out, joinBranchSnapshot{
+			recipe: recipeir.JoinBranch{
+				Name:       branches[i].name,
+				Media:      branches[i].media,
+				Source:     recipeir.TapRef{Name: branches[i].source.tap, Domain: branches[i].source.tapDomain},
+				Operations: recipeIROperationsFromSpecs(branches[i].operations),
+			},
+			destinations: append([]destinationRef(nil), branches[i].destinations...),
+			construction: validateBranchConstruction(i, selected, branches[i]),
+		})
+	}
+	return out
+}
+
+func cloneJoinBranchSnapshots(branches []joinBranchSnapshot) []joinBranchSnapshot {
+	if len(branches) == 0 {
+		return nil
+	}
+	out := make([]joinBranchSnapshot, len(branches))
+	for i := range branches {
+		out[i] = joinBranchSnapshot{
+			recipe: recipeir.JoinBranch{
+				Name:       branches[i].recipe.Name,
+				Media:      branches[i].recipe.Media,
+				Source:     branches[i].recipe.Source,
+				Operations: append([]recipeir.Operation(nil), branches[i].recipe.Operations...),
+			},
+			destinations: append([]destinationRef(nil), branches[i].destinations...),
+			construction: branches[i].construction,
+		}
+	}
+	return out
 }
 
 type joinArmSnapshot struct {
@@ -361,7 +417,7 @@ func joinTreeSnapshotFromSpec(spec *joinSpec) *joinTreeSnapshot {
 		dests:      append([]Destination(nil), spec.dests...),
 		operations: cloneOperationSpecs(spec.operations),
 		taps:       append([]tapRef(nil), spec.taps...),
-		branches:   cloneBranchSpecs(spec.branches),
+		branches:   joinBranchSnapshotsFromSpecs(spec.branches, joinProfiles[spec.kind].media),
 		sync:       spec.sync,
 		custom:     spec.custom,
 	}
@@ -409,7 +465,7 @@ func cloneJoinTreeSnapshot(tree *joinTreeSnapshot) *joinTreeSnapshot {
 		dests:      append([]Destination(nil), tree.dests...),
 		operations: cloneOperationSpecs(tree.operations),
 		taps:       append([]tapRef(nil), tree.taps...),
-		branches:   cloneBranchSpecs(tree.branches),
+		branches:   cloneJoinBranchSnapshots(tree.branches),
 		sync:       tree.sync,
 		custom:     tree.custom,
 	}
@@ -1134,28 +1190,40 @@ func (p *joinPlan) deriveJoinedDomain() shape.MediaDomain {
 func (p *joinPlan) planJoinBranches() error {
 	name := p.name
 	parentPacket := p.joinedDomain == shape.DomainPacket
-	destinations, err := joinBranchNamedDestinations(p.tree.branches)
+	destinations, err := joinBranchSnapshotDestinations(p.tree.branches)
 	if err != nil {
 		return err
 	}
 	recipe := recipeir.Recipe{Kind: recipeir.KindBranchComposition, Name: name}
 	for i := range p.tree.branches {
 		branch := p.tree.branches[i]
-		if err := validateBranchSpec(p.joined.Type, parentPacket, !parentPacket, i, branch); err != nil {
+		// The branch's builder-construction error was captured at the recipe
+		// boundary; surface it before validating the captured domain facts.
+		if branch.construction != nil {
+			return branch.construction
+		}
+		branchOps := operationSpecsFromRecipeIROperations(branch.recipe.Operations)
+		facts := branchDomainFacts{
+			name:         branch.recipe.Name,
+			media:        branch.recipe.Media,
+			operations:   branchOps,
+			destinations: branch.destinations,
+		}
+		if err := validateBranchDomainFacts(p.joined.Type, parentPacket, !parentPacket, i, facts.name, facts.media, facts.operations, facts.destinations); err != nil {
 			return err
 		}
-		if err := p.validateJoinBranchAnchor(branch); err != nil {
+		if err := p.validateJoinBranchAnchor(branch.recipe); err != nil {
 			return err
 		}
 		operations := cloneOperationSpecs(p.tree.operations)
-		operations = append(operations, joinBranchOperationSpecs(parentPacket, branch)...)
-		solved, err := p.solveJoinedOperations(branch.name, operations)
+		operations = append(operations, joinBranchOperationSpecs(parentPacket, branchOps)...)
+		solved, err := p.solveJoinedOperations(branch.recipe.Name, operations)
 		if err != nil {
 			return err
 		}
 		operations = solved
 		recipe.Streams = append(recipe.Streams, recipeIRStreamFromIntent(streamIntent{
-			Name:         branch.name,
+			Name:         branch.recipe.Name,
 			Select:       plan.StreamSelect{Type: p.joined.Type},
 			Operations:   operations,
 			Destinations: append([]string(nil), branchDestinationNames(branch.destinations)...),
@@ -1183,34 +1251,50 @@ func (p *joinPlan) planJoinBranches() error {
 	return nil
 }
 
-func joinBranchOperationSpecs(parentPacket bool, branch BranchSpec) []operationSpec {
-	if !parentPacket || chainHasDecode(branch.operations) || codecIntentSet(chainEncodeSpec(branch.operations)) {
-		return cloneOperationSpecs(branch.operations)
+func joinBranchOperationSpecs(parentPacket bool, operations []operationSpec) []operationSpec {
+	if !parentPacket || chainHasDecode(operations) || codecIntentSet(chainEncodeSpec(operations)) {
+		return cloneOperationSpecs(operations)
 	}
-	if operationSpecsContainKind(branch.operations, plan.OpCopy) {
-		return cloneOperationSpecs(branch.operations)
+	if operationSpecsContainKind(operations, plan.OpCopy) {
+		return cloneOperationSpecs(operations)
 	}
 	out := []operationSpec{operationSpecForCopy(codec.Copy())}
-	out = append(out, cloneOperationSpecs(branch.operations)...)
+	out = append(out, cloneOperationSpecs(operations)...)
 	return out
 }
 
 // validateJoinBranchAnchor resolves a branch's .From(...) against the join: the
 // joined stream is the only planned anchor a join offers, so an explicit tap
 // must name one of the join-level taps (which alias the join node); anything
-// else raises the same branch_tap_missing error the chain path raises.
-func (p *joinPlan) validateJoinBranchAnchor(branch BranchSpec) error {
-	if branch.source.tap == "" {
+// else raises the same branch_tap_missing error the chain path raises. It reads
+// the captured recipe IR, not the mutable branch spec.
+func (p *joinPlan) validateJoinBranchAnchor(branch recipeir.JoinBranch) error {
+	if branch.Source.Name == "" {
 		return nil
 	}
 	for _, tap := range p.tree.taps {
-		if tap.name != branch.source.tap {
+		if tap.name != branch.Source.Name {
 			continue
 		}
-		from := tapRef{name: branch.source.tap, domain: branch.source.tapDomain}
-		return validateTapDomain("build branches", firstNonEmpty(branch.name, "branch"), from, p.joinedDomain)
+		from := tapRef{name: branch.Source.Name, domain: branch.Source.Domain}
+		return validateTapDomain("build branches", firstNonEmpty(branch.Name, "branch"), from, p.joinedDomain)
 	}
-	return plannedBranchTapMissingError(p.name, branch.name, branch.source.tap)
+	return plannedBranchTapMissingError(p.name, branch.Name, branch.Source.Name)
+}
+
+// joinBranchSnapshotDestinations collects the concrete destinations declared
+// across the captured join branches, deduplicated by name, for the join's
+// branch-composition planner. The handles stay concrete (the IR exception).
+func joinBranchSnapshotDestinations(branches []joinBranchSnapshot) ([]namedDestinationSpec, error) {
+	var out []namedDestinationSpec
+	var err error
+	for i := range branches {
+		out, err = appendNamedBranchDestinations(out, branches[i].destinations...)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return out, nil
 }
 
 // joinPlanTaps validates the join-level taps and converts them into the same

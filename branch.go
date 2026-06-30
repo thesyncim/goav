@@ -674,7 +674,31 @@ func (b *jobStreamBuilder) Branches(branches ...BranchSpec) *Job {
 	return job
 }
 
+// branchDomainFacts are the captured recipe facts a branch's domain validation
+// needs — no mutable BranchSpec. The builder branch path and the join planner
+// both build it (the join planner from its captured recipe IR) and validate it
+// through validateBranchDomainFacts.
+type branchDomainFacts struct {
+	name         string
+	media        av.MediaType
+	operations   []operationSpec
+	destinations []destinationRef
+}
+
 func validateBranchSpec(selected av.MediaType, parentPacket bool, parentFrame bool, index int, spec BranchSpec) error {
+	if err := validateBranchConstruction(index, selected, spec); err != nil {
+		return err
+	}
+	return validateBranchDomainFacts(selected, parentPacket, parentFrame, index, spec.name, spec.media, spec.operations, spec.destinations)
+}
+
+// validateBranchConstruction checks the builder-construction facts of a branch
+// spec — its deferred recipe error, constructor origin, and that it does not
+// anchor a planned branch on a graph node. It reads the mutable BranchSpec, so
+// it runs at the builder→IR boundary (the normal branch path and the join
+// capture), never in the planner; the planner validates the captured facts
+// through validateBranchDomainFacts.
+func validateBranchConstruction(index int, selected av.MediaType, spec BranchSpec) error {
 	if err := spec.recipeErr(); err != nil {
 		return err
 	}
@@ -684,17 +708,25 @@ func validateBranchSpec(selected av.MediaType, parentPacket bool, parentFrame bo
 	if spec.source.from != "" {
 		return plannedBranchNodeSourceError(spec.name, spec.source.from)
 	}
-	if err := validateChainMedia("build branches", firstNonEmpty(spec.name, "branch"), selected, chainSpec{name: spec.name, media: spec.media}); err != nil {
+	return nil
+}
+
+// validateBranchDomainFacts validates a branch's media, name, destinations, and
+// packet/frame-domain operation rules from captured facts — no BranchSpec — so
+// both the builder branch path and the join planner share one domain contract.
+func validateBranchDomainFacts(selected av.MediaType, parentPacket bool, parentFrame bool, index int, name string, media av.MediaType, operations []operationSpec, destinations []destinationRef) error {
+	spec := branchDomainFacts{name: name, media: media, operations: operations, destinations: destinations}
+	if err := validateChainMedia("build branches", firstNonEmpty(name, "branch"), selected, chainSpec{name: name, media: media}); err != nil {
 		return err
 	}
-	if spec.name == "" {
+	if name == "" {
 		return branchIntentNameMissingError(index, streamIntent{Select: plan.StreamSelect{Type: selected}})
 	}
-	if len(spec.destinations) == 0 {
-		return branchIntentDestinationMissingError(streamIntent{Name: spec.name, Select: plan.StreamSelect{Type: selected}})
+	if len(destinations) == 0 {
+		return branchIntentDestinationMissingError(streamIntent{Name: name, Select: plan.StreamSelect{Type: selected}})
 	}
-	stream := streamIntent{Name: spec.name, Select: plan.StreamSelect{Type: selected}}
-	branchHasDecode := chainHasDecode(spec.operations)
+	stream := streamIntent{Name: name, Select: plan.StreamSelect{Type: selected}}
+	branchHasDecode := chainHasDecode(operations)
 	if branchHasDecode && parentFrame {
 		return branchDecodeDomainError(stream.Name)
 	}
@@ -741,7 +773,7 @@ func validateBranchSpec(selected av.MediaType, parentPacket bool, parentFrame bo
 	return nil
 }
 
-func validatePacketDomainPlannedBranch(stream streamIntent, spec BranchSpec, parentPacket bool) error {
+func validatePacketDomainPlannedBranch(stream streamIntent, spec branchDomainFacts, parentPacket bool) error {
 	transforms := transformSpecsFromOperationSpecs(spec.operations)
 	for i := range transforms {
 		if err := validateTransformSpec("build branches", spec.name, transforms[i]); err != nil {
@@ -767,7 +799,7 @@ func validatePacketDomainPlannedBranch(stream streamIntent, spec BranchSpec, par
 	return nil
 }
 
-func validateBranchStepTapDomains(spec BranchSpec, parentPacket bool) error {
+func validateBranchStepTapDomains(spec branchDomainFacts, parentPacket bool) error {
 	domain := shape.DomainFrame
 	if parentPacket && !chainHasDecode(spec.operations) {
 		domain = shape.DomainPacket
@@ -785,7 +817,7 @@ func validateBranchStepTapDomains(spec BranchSpec, parentPacket bool) error {
 	return nil
 }
 
-func branchSpecChainSteps(spec BranchSpec) []chainStep {
+func branchSpecChainSteps(spec branchDomainFacts) []chainStep {
 	return branchChainStepsFromOperationSpecs(spec.operations)
 }
 

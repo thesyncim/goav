@@ -200,11 +200,23 @@ requires-runtime check now carries its fact across the boundary on
 `recipeir.StreamRule.RequiresRuntime`, captured at the builder→IR edge, so the
 compiler no longer reads `BranchSpec`. `TestRecipeIRImportsOnlyLeafPackages`
 pins that `internal/recipeir` imports only leaf vocabulary packages, never the
-root or a builder. **Remaining boundary debt:** `join_build.go` carries both the
-join grammar (which constructs `BranchSpec`) and the join planner in one file,
-so the join planner still reads `BranchSpec`; that file is deliberately excluded
-from the pin until the join planner is separated and fed immutable join-branch
-facts (an extension of `recipeir.Join`, currently counts only).
+root or a builder.
+
+The join planner reads the captured recipe IR too. `recipeir.Join` carries the
+fanout branches as immutable `recipeir.JoinBranch` facts (name, media, anchor,
+operations), captured at the builder→IR edge into a `joinBranchSnapshot` that
+pairs them with the concrete destination handles (the documented IR exception)
+and the branch's construction error. The join planner consumes that snapshot;
+branch domain validation is shared with the ordinary branch path through
+`validateBranchDomainFacts`, which takes captured facts rather than a
+`BranchSpec`. `join_build.go` still mixes the join grammar/capture (which
+legitimately constructs and reads `BranchSpec`) with the planner in one file, so
+the boundary is pinned at receiver scope rather than file scope:
+`TestJoinPlannerReadsRecipeIRNotBuilderInternals` fails if any `joinPlan` method
+reaches into `BranchSpec`. **Remaining nicety:** physically splitting the join
+grammar and planner into separate files would let the planner side join the
+file-scoped pin; the receiver-scoped pin already guarantees the planner stays
+BranchSpec-free.
 
 Why the planner internals cannot move to `internal/` packages today (measured
 on the type-checked cross-file reference graph, 2026-06): the ~20 root files
