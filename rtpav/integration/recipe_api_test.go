@@ -322,6 +322,7 @@ func TestFlowBranchesDescribeLiveInputBranches(t *testing.T) {
 
 	job := goav.From(goav.Input(rtpav.Receive(recipeAPIRTPReader{}, rtpav.WithName("audio"), rtpav.WithCodec(codec.Opus())))).
 		Audio().
+		Decode().
 		Branches(
 			goav.Branch("voice").Apply(voice).To(voiceOut),
 			goav.Branch("archive").Apply(archive).To(archiveOut),

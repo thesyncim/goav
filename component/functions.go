@@ -215,6 +215,14 @@ func (s mediaFuncStage) Handle(ctx context.Context, msg *pipeline.Message, emitt
 	return emitter.Emit(ctx, msg)
 }
 
+// FrameOnlyInput reports whether the stage consumes only decoded frames, so a
+// packet-domain recipe must .Decode() before it. A PacketFunc consumes packets
+// and an EventFunc consumes events directly, so they return false and run on a
+// packet-domain chain without a decode; only a FrameFunc requires frames.
+func (s mediaFuncStage) FrameOnlyInput() bool {
+	return s.frame != nil && s.packet == nil && s.event == nil
+}
+
 func (s mediaFuncStage) Close() error {
 	return nil
 }

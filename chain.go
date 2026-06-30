@@ -298,6 +298,20 @@ func (b *jobStreamBuilder) sourceFrameShape() (shape.Spec, bool) {
 	return spec, true
 }
 
+// stageRequiresFrameInput reports whether a custom .Do(stage) needs decoded
+// frames, so a packet-domain chain must .Decode() first. Per the operation
+// contract only frame stages do: a PacketFunc consumes packets and an EventFunc
+// consumes events directly. Stages that declare FrameOnlyInput (the component
+// func stages) answer for themselves; any other custom stage keeps the
+// conservative default of requiring frames, since its domain is unknown here
+// and the shape solver still validates it.
+func stageRequiresFrameInput(stage pipeline.Stage) bool {
+	if domained, ok := stage.(interface{ FrameOnlyInput() bool }); ok {
+		return domained.FrameOnlyInput()
+	}
+	return true
+}
+
 func (b *jobStreamBuilder) requireFrameInput(stream *jobStreamBuild, step string) bool {
 	if b.sourceStartsFrameDomain() {
 		return true
@@ -506,7 +520,7 @@ func (b *jobStreamBuilder) Do(stages ...pipeline.Stage) *jobStreamBuilder {
 			b.job.setErr(streamStageMissingError(streamIntent{Name: jobStreamName(stream)}, err))
 			return b
 		}
-		if !b.requireFrameInput(stream, "custom stage") {
+		if stageRequiresFrameInput(stages[i]) && !b.requireFrameInput(stream, "custom stage") {
 			return b
 		}
 		stream.operations = append(stream.operations, operationSpecForStage(stages[i]))

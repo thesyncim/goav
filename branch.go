@@ -340,7 +340,7 @@ func (b *branchBuilder) Do(stages ...pipeline.Stage) *branchBuilder {
 			b.setErr(streamStageMissingError(streamIntent{Name: firstNonEmpty(b.spec.name, "branch")}, err))
 			return b
 		}
-		if !b.requireFrameInput("custom stage") {
+		if stageRequiresFrameInput(stages[i]) && !b.requireFrameInput("custom stage") {
 			return b
 		}
 		b.spec.operations = append(b.spec.operations, operationSpecForStage(stages[i]))
@@ -792,7 +792,14 @@ func branchSpecChainSteps(spec BranchSpec) []chainStep {
 func branchOperationSpecsContainStep(operations []operationSpec) bool {
 	for i := range operations {
 		switch operations[i].Kind {
-		case plan.OpStage, plan.OpTransform:
+		case plan.OpStage:
+			// A packet/event custom stage (PacketFunc/EventFunc) keeps the stream
+			// packet-domain, so a later .Copy() is valid; only a frame stage breaks
+			// packet copying (and a frame stage already implies a decode upstream).
+			if operations[i].Stage == nil || stageRequiresFrameInput(operations[i].Stage) {
+				return true
+			}
+		case plan.OpTransform:
 			return true
 		case plan.OpShape:
 			// Empty shape annotations (the .Auto(...) policy carrier) lower to
