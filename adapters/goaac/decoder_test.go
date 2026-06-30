@@ -292,15 +292,21 @@ func decodeResult(frameCapacity int, planeCapacity int) codec.DecodeResult {
 
 func audioSpecificConfig(t *testing.T, sampleRate int, channelConfig int) []byte {
 	t.Helper()
-	private, err := (aaclib.Config{
-		ObjectType:    aaclib.AOTAACLC,
-		SampleRate:    sampleRate,
-		ChannelConfig: channelConfig,
-	}).AudioSpecificConfig()
-	if err != nil {
-		t.Fatal(err)
+	index, ok := aaclib.SampleRateIndex(sampleRate)
+	if !ok {
+		t.Fatalf("no AAC sample-rate index for %d", sampleRate)
 	}
-	return private
+	// MPEG-4 AudioSpecificConfig: 5-bit object type, 4-bit sample-rate index,
+	// 4-bit channel configuration (AAC-LC, the test fixture).
+	objectType := int(aaclib.AOTAACLC)
+	asc := []byte{
+		byte(objectType<<3) | byte(index>>1),
+		byte((index&1)<<7) | byte(channelConfig<<3),
+	}
+	if _, err := aaclib.ParseAudioSpecificConfig(asc); err != nil {
+		t.Fatalf("built invalid AudioSpecificConfig: %v", err)
+	}
+	return asc
 }
 
 func ffmpegADTSFrames(t *testing.T) [][]byte {
