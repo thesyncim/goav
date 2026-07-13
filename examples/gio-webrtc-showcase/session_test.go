@@ -180,6 +180,10 @@ func (t *controlCaptureTask) Control(_ context.Context, ctrl control.Control) er
 
 func (t *controlCaptureTask) Run(context.Context) error { return nil }
 
+func (t *controlCaptureTask) Pause(context.Context) error { return nil }
+
+func (t *controlCaptureTask) Resume(context.Context) error { return nil }
+
 func (t *controlCaptureTask) Events() <-chan av.Event { return nil }
 
 func (t *controlCaptureTask) Watch(...inspect.EventFilter) inspect.Subscription { return nil }
