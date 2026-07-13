@@ -74,10 +74,34 @@ func TestGraphBufferedSteadyEmitAllocs(t *testing.T) {
 	}
 }
 
-// TestBufferedFanoutRefcountAllocs pins the refcounted borrowed-packet fanout
+// gateSink blocks every delivery until its gate closes, so an allocation
+// measurement can observe the producer enqueue path alone: with all sink
+// workers parked inside Handle, no worker-side activity (wakeups, releases,
+// lazy stat inits) can leak into testing.AllocsPerRun's global malloc count.
+// Shared CI runners made that leak real — see TestBufferedFanoutRefcountAllocs.
+type gateSink struct {
+	name string
+	gate chan struct{}
+}
+
+func (s *gateSink) Name() string { return s.name }
+
+func (s *gateSink) Handle(context.Context, *Message) error {
+	<-s.gate
+	return nil
+}
+
+func (s *gateSink) Close() error { return nil }
+
+// TestBufferedFanoutRefcountAllocs pins the refcounted borrowed-packet enqueue
 // path at zero allocations across the SFU-width sweep. The first target copies
 // the producer-borrowed payload into graph-owned backing once; sibling targets
-// bind refcounted views into their own preallocated slots.
+// bind refcounted views into their own preallocated slots. Sinks are gated
+// shut during the measurement so the pinned window is purely producer-driven
+// and deterministic on loaded runners: AllocsPerRun's warmup emit plus its 50
+// measured emits stay within the 64-slot queues, so no drop or delivery runs
+// concurrently. Steady-state recycle allocs are covered by
+// BenchmarkBufferedFanout/refcount and the committed baseline ratchet.
 func TestBufferedFanoutRefcountAllocs(t *testing.T) {
 	ctx := context.Background()
 	for _, n := range fanoutSizes {
@@ -97,10 +121,11 @@ func TestBufferedFanoutRefcountAllocs(t *testing.T) {
 			if _, err := graph.AddSource(source, BufferPolicy{}); err != nil {
 				t.Fatal(err)
 			}
+			gate := make(chan struct{})
 			names := make([]string, n)
 			for i := 0; i < n; i++ {
 				names[i] = "sink-" + strconv.Itoa(i)
-				if _, err := graph.AddSink(&benchSink{name: names[i]}, BufferPolicy{}); err != nil {
+				if _, err := graph.AddSink(&gateSink{name: names[i], gate: gate}, BufferPolicy{}); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -121,6 +146,7 @@ func TestBufferedFanoutRefcountAllocs(t *testing.T) {
 				t.Fatalf("borrowed buffered fanout emit allocs = %v, want 0", allocs)
 			}
 
+			close(gate)
 			close(source.release)
 			if err := <-runDone; err != nil {
 				t.Fatal(err)

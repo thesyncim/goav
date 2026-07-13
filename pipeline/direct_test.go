@@ -646,11 +646,14 @@ func TestGraphDirectRemoveDrainsInFlightDeliveries(t *testing.T) {
 }
 
 // directLoopSource emits the same packet in a tight loop until stop closes.
+// emits counts completed Emit calls so tests can observe producer progress
+// (and its stall, once the producer parks on a full DropBlock queue).
 type directLoopSource struct {
 	name   string
 	packet *av.Packet
 	stop   <-chan struct{}
 	msg    Message
+	emits  atomic.Int64
 }
 
 func (s *directLoopSource) Name() string {
@@ -673,6 +676,7 @@ func (s *directLoopSource) Start(ctx context.Context, emitter Emitter) error {
 		if err := emitter.Emit(ctx, &s.msg); err != nil {
 			return err
 		}
+		s.emits.Add(1)
 	}
 }
 

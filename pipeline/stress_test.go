@@ -3,7 +3,9 @@ package pipeline
 import (
 	"context"
 	"errors"
+	"runtime"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -13,6 +15,53 @@ import (
 // errSourceFatal is the sentinel a stress source returns to model a fatal node
 // failure.
 var errSourceFatal = errors.New("stress: fatal source error")
+
+// signalBlockSink closes entered when its first Handle begins, then blocks
+// until release closes (or the context cancels), so a test can verify the
+// "consumer is holding a message" precondition instead of guessing with time.
+type signalBlockSink struct {
+	name    string
+	entered chan struct{}
+	release chan struct{}
+	once    sync.Once
+}
+
+func (s *signalBlockSink) Name() string { return s.name }
+
+func (s *signalBlockSink) Handle(ctx context.Context, _ *Message) error {
+	s.once.Do(func() { close(s.entered) })
+	select {
+	case <-s.release:
+	case <-ctx.Done():
+	}
+	return nil
+}
+
+func (s *signalBlockSink) Close() error { return nil }
+
+// waitForStalledEmits waits until the producer's completed-emit counter stops
+// advancing across consecutive observations — on a full DropBlock queue that
+// means the next Emit has parked in enqueueBlocking. It fails the test if the
+// counter never stalls before the deadline.
+func waitForStalledEmits(t *testing.T, emits *atomic.Int64, timeout time.Duration) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	last := emits.Load()
+	stable := 0
+	for stable < 10 {
+		if time.Now().After(deadline) {
+			t.Fatal("producer emit counter never stalled; DropBlock never parked the producer")
+		}
+		time.Sleep(100 * time.Microsecond)
+		now := emits.Load()
+		if now == last {
+			stable++
+		} else {
+			stable = 0
+			last = now
+		}
+	}
+}
 
 // directErrorSource fails immediately from Start.
 type directErrorSource struct {
@@ -128,7 +177,7 @@ func TestStressBufferedDropBlockCloseWhileProducerBlocked(t *testing.T) {
 		packet := &av.Packet{StreamID: "live", Payload: av.Buffer{Bytes: []byte{1}, Ownership: av.BufferImmutable}}
 		stop := make(chan struct{})
 		source := &directLoopSource{name: "src", packet: packet, stop: stop}
-		sink := &blockUntilSink{name: "sink", release: make(chan struct{})}
+		sink := &signalBlockSink{name: "sink", entered: make(chan struct{}), release: make(chan struct{})}
 
 		graph, err := NewGraph(GraphConfig{
 			Name:             "stress-dropblock-close",
@@ -153,8 +202,16 @@ func TestStressBufferedDropBlockCloseWhileProducerBlocked(t *testing.T) {
 		runErr := make(chan error, 1)
 		go func() { runErr <- graph.Run(ctx) }()
 
-		// Let the source fill the queue and park in enqueueBlocking.
-		time.Sleep(2 * time.Millisecond)
+		// Wait for the observable precondition instead of a timed guess: the
+		// sink holds the first message, the producer has completed exactly one
+		// more Emit (filling the capacity-1 queue), and its emit counter has
+		// stalled — the next Emit is parked in enqueueBlocking.
+		select {
+		case <-sink.entered:
+		case <-time.After(5 * time.Second):
+			t.Fatal("sink never received the first message")
+		}
+		waitForStalledEmits(t, &source.emits, 5*time.Second)
 
 		closed := make(chan error, 1)
 		go func() { closed <- graph.Close() }()
@@ -202,19 +259,30 @@ func TestStressEventStormDuringClose(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		// Drain the event stream so the publish path keeps doing real sends.
+		// Drain the event stream so the publish path keeps doing real sends,
+		// counting deliveries so the test can see the storm is live.
+		var delivered atomic.Int64
 		var drain sync.WaitGroup
 		drain.Add(1)
 		go func() {
 			defer drain.Done()
 			for range graph.Events() {
+				delivered.Add(1)
 			}
 		}()
 
 		runErr := make(chan error, 1)
 		go func() { runErr <- graph.Run(context.Background()) }()
 
-		time.Sleep(time.Millisecond)
+		// Wait until at least one event has flowed through publishEvent, so
+		// Close genuinely races an active storm rather than a warming-up one.
+		deadline := time.Now().Add(5 * time.Second)
+		for delivered.Load() == 0 {
+			if time.Now().After(deadline) {
+				t.Fatal("event storm never delivered an event")
+			}
+			runtime.Gosched()
+		}
 		// Close while the source is still storming events through publishEvent.
 		if err := graph.Close(); err != nil && !errors.Is(err, ErrCloseWait) {
 			t.Fatalf("Close err = %v", err)

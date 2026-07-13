@@ -7,10 +7,12 @@ This page answers two practical questions:
   runtime?"
 
 The public surface is governed, but not for bureaucracy's sake. Every exported
-identifier belongs to one tier, the root and vocabulary surfaces are pinned
-against silent growth (`api_surface_pin_test.go` + `testdata/api_surface.txt`),
-and every exported symbol must be documented (`doc_pin_test.go`). If a new
-export appears, the diff has to say so out loud.
+identifier belongs to one tier, and this document is the approved list: a new
+export lands in the same change that adds its tier row here. The
+source-scanning growth pins that used to enforce this mechanically were
+removed on 2026-06-27; governance is review-driven now, and the doc-honesty
+pins (`docs_citation_contract_test.go`) keep this page from citing enforcement
+that no longer exists.
 
 The tiers are a reader map:
 
@@ -300,34 +302,30 @@ against the constructors in `input.go`/`provider.go`/`source.go`,
 
 ## Enforcement
 
-Package discovery is dynamic: the pins walk the module (skipping hidden
-directories, `testdata`, `internal`, nested modules, and test-only
-directories) instead of trusting a hardcoded list, so a package added
-tomorrow is governed the day it lands.
+The source-scanning surface pins (approved-identifier lists, doc-comment
+scanners, error-source scanners) were deliberately removed on 2026-06-27;
+surface growth is now enforced in review against this document. What remains
+executable:
 
-- `api_surface_pin_test.go` / `testdata/api_surface.txt`: exported
-  package-level identifiers of root + `errcode`/`graphrender`/`lifecycle`/
-  `plan`/`snapshot` must match the approved list exactly (both directions,
-  sorted, no dups).
-- `TestEveryPublicPackageIsGoverned`: every discovered package must be
-  classified: frozen surface, doc-pin-governed extension point, or
-  implementation subtree. An unclassified package fails the build.
-- `doc_pin_test.go`: every exported symbol in every discovered public
-  package carries a doc comment.
-- `errors_pin_test.go`: every `BuildError` uses a catalog-derived
-  `errcode.Family`, a catalog `errcode.Code`, and carries package-private
-  detail or fix records exposed through `Detail(key)`, `DetailLines()`, and
-  `FixLines()`.
-- README front door: opening examples stay on the grammar
-  (`TestReadmeFirstScreenAvoidsGraphInternals`); advanced knobs stay out of
-  the guide (`TestReadmeKeepsAdvancedRuntimeKnobsOutOfFrontDoor`).
+- This document is the approved list: a new export lands with its tier row in
+  the same change, and review rejects diffs that grow the surface silently.
+- CI "Package documentation smoke" (`.github/workflows/ci.yml`): every public
+  package must carry a package doc comment.
+- `docs_citation_contract_test.go`: living docs may only cite tests, test
+  files, and scripts that exist (`TestDocsCiteOnlyLivingArtifacts`), and
+  `docs/ERROR_CATALOG.md` stays in lockstep with `errcode/errcode.go`
+  (`TestErrorCatalogDocMatchesErrcodeCatalog`).
+- README front door: every README Go block compiles against the current API
+  as an external consumer (`TestReadmeGoExamplesCompile`).
+- Error contract behavior: `error_acceptance_test.go` pins that refusals
+  carry catalog codes and name their fixes.
 - Composability laws: `docs/COMPOSABILITY_LAWS.md` maps the front-door
   invariants to executable tests.
 
 `adapters/*` and `container/*` are implementations behind the `codec`/`format`
 extension points (registered by `bundle.MustNew`), outside the core import
-graph and not part of the governed surface: an explicit, asserted exclusion
-(`docPinImplementationSubtrees`), not a forgotten one.
+graph and not part of the governed surface: a deliberate exclusion, not a
+forgotten one.
 
 ## Module boundaries
 
@@ -376,4 +374,4 @@ are `inspect` (`EventFilter`, `WatchTypes`, `WatchStream`, `Subscribe`,
 `Info`, `OpenFunc`), and the expert graph layer is `expert` (`Graph`,
 `GraphBuilder`, handles, `ErrRuntimeRequired`) bridged structurally so the
 root imports neither. New exported symbols in governed packages require a
-matching `testdata/api_surface.txt` entry in the same change.
+matching tier entry in this document in the same change.

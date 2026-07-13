@@ -4,7 +4,10 @@ When a recipe is wrong, goav should tell the caller what failed, where it
 failed, and how to fix it. Build, validation, attach, rebranch, and explain
 paths use one structured shape for that job: `goav.BuildError`.
 
-The contract is enforced by a source-scanning pin test (`errors_pin_test.go`):
+The contract is enforced behaviorally: `error_acceptance_test.go` builds the
+bad recipes and asserts the rendered refusals, and
+`TestErrorCatalogDocMatchesErrcodeCatalog` keeps the public catalog in
+lockstep with `errcode/errcode.go`. The fields:
 
 - **Family**: a typed `errcode.Family` identifying the stable broad class
   (`destination`, `runtime_branch`, `codec`, ...). Switch on this when a caller

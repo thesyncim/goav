@@ -187,11 +187,11 @@ func selectStreamAcrossInputSets(sets []inputStreamSet, selector av.StreamSelect
 		}
 		return selected, true, nil
 	case len(matches) > 1:
-		return inputBoundStream{}, false, multiInputStreamSelectionError(streamAmbiguousCode, selector, inputName, matches, sets)
+		return inputBoundStream{}, false, multiInputStreamSelectionError(streamAmbiguousCode, selector, inputName, matches)
 	case unknown:
 		return inputBoundStream{}, false, nil
 	default:
-		return inputBoundStream{}, false, multiInputStreamSelectionError(streamMissingCode, selector, inputName, allInputBoundStreams(sets), sets)
+		return inputBoundStream{}, false, multiInputStreamSelectionError(streamMissingCode, selector, inputName, allInputBoundStreams(sets))
 	}
 }
 
@@ -219,7 +219,7 @@ func allInputBoundStreams(sets []inputStreamSet) []inputBoundStream {
 	return out
 }
 
-func multiInputStreamSelectionError(code errcode.Code, selector av.StreamSelector, inputName string, candidates []inputBoundStream, sets []inputStreamSet) error {
+func multiInputStreamSelectionError(code errcode.Code, selector av.StreamSelector, inputName string, candidates []inputBoundStream) error {
 	reason := "no stream across the inputs matches " + readableSelector(selector)
 	if code == streamAmbiguousCode {
 		reason = "multiple streams across the inputs match " + readableSelector(selector)

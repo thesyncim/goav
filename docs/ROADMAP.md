@@ -36,12 +36,12 @@ ungrouped handle is rejected; grouping is explicit (`TestMuxPreferredOverHandleI
 ## Governed pre-v1 surface
 
 Governed here means "changes are deliberate, tested, and recorded", not "this
-whole surface is the v1 promise." The governed surface is 162 approved
-identifiers (`api_surface_pin_test.go` + `testdata/api_surface.txt`: 40 root,
-22 `control`, 8 `inspect`, 27 `errcode`, 28 `plan`, 24 `lifecycle`,
-4 `snapshot`, 9 `graphrender`), every exported symbol is documented
-(`doc_pin_test.go`), and the current inventory is tiered in
-`docs/API_SURFACE.md`:
+whole surface is the v1 promise." The governed surface is the tier inventory
+in `docs/API_SURFACE.md`, reviewed on every change: the machine-enforced
+approved-identifier pins were deliberately removed on 2026-06-27, CI still
+requires a doc comment on every public package, and the doc-citation pins
+(`docs_citation_contract_test.go`) keep the governance docs from citing
+enforcement that no longer exists. The inventory:
 
 - **Tier A inventory: the grammar and task capabilities.** `From`/stream
   selection/operations
@@ -70,8 +70,9 @@ identifiers (`api_surface_pin_test.go` + `testdata/api_surface.txt`: 40 root,
   machinery, prebuilt codec/format/filter stages. These are off the grammar,
   governed as escape hatches, and advanced/non-v1 unless explicitly retained.
 
-The error contract (`errors_pin_test.go`, `error_acceptance_test.go`,
-`docs/ERRORS.md`) and runtime invariants are pinned current contracts: close
+The error contract (`error_acceptance_test.go`,
+`TestErrorCatalogDocMatchesErrcodeCatalog`, `docs/ERRORS.md`) and runtime
+invariants are pinned current contracts: close
 idempotency, close during run, race-safe snapshots under attach/detach,
 commit-failure propagation (`task_invariants_test.go`), watcher isolation
 (`watch_test.go`), and drop observability
@@ -187,11 +188,11 @@ this list:
 - **GStreamer plugin parity.** goav is not a general multimedia framework;
   matching element-for-element would reproduce the surface the grammar
   exists to avoid (`docs/GSTREAMER_ALTERNATIVE.md`).
-- **Hardware codec backends in core.** Core stays pure Go, pinned by
-  `TestNoCGOImports` (`hygiene_test.go`); acceleration belongs in external
-  adapters behind the `codec` extension points, where cgo is the adapter's
-  choice.
-- **cgo in core.** Same pin; single-binary `CGO_ENABLED=0` deployment is a
+- **Hardware codec backends in core.** Core stays pure Go — every CI build
+  and test runs `CGO_ENABLED=0`, so a cgo import cannot land; acceleration
+  belongs in external adapters behind the `codec` extension points, where cgo
+  is the adapter's choice.
+- **cgo in core.** Same gate; single-binary `CGO_ENABLED=0` deployment is a
   headline property (`.github/workflows/ci.yml` builds with it).
 - **Global registries.** Registries are per-runtime; two runtimes in one
   process must never see each other's adapters (`docs/ARCHITECTURE.md`:
@@ -209,22 +210,22 @@ retained exception.
 
 The checklist below gates the tag. Each item names its current evidence.
 
-- [x] **Approved API surface**: `api_surface_pin_test.go` +
-  `testdata/api_surface.txt` (both-direction pin), with dynamic package
-  discovery asserting every module package is governed
-  (`TestEveryPublicPackageIsGoverned`).
+- [x] **Approved API surface**: the tier inventory in `docs/API_SURFACE.md`,
+  updated in the same change as any new export and enforced in review. The
+  mechanical both-direction pin was removed 2026-06-27; the doc-citation pins
+  (`docs_citation_contract_test.go`) keep the inventory's evidence honest.
 - [x] **Compile-tested examples**: root `Example*` functions run under
   `go test` (`example_test.go`); the `examples/webrtc-runtime-ladder` module
   builds and tests in CI.
 - [x] **Operation reference**: `docs/OPERATIONS.md` covers the front-door
   chain operations by input shape, output shape, domain, inserted conversions,
-  primary refusals, and runtime attach behavior; `operations_doc_test.go` pins
-  the required sections and front-door links.
-- [x] **Structured errors enforced**: `errors_pin_test.go` (catalog-code
-  pin) + complete acceptance coverage rows in `docs/ERROR_CATALOG.md`
-  generated from `error_catalog_pin_test.go`; every current errcode names a
-  bad recipe, rendered-error assertion or golden-equivalent coverage, a fix,
-  a cause/sentinel when present, and the test that owns it.
+  primary refusals, and runtime attach behavior. Its former section pin was
+  removed with the doc source pins (2026-06-27); accuracy is review-owned.
+- [x] **Structured errors enforced**: `error_acceptance_test.go` builds the
+  bad recipes and asserts rendered refusals, and
+  `TestErrorCatalogDocMatchesErrcodeCatalog` keeps `docs/ERROR_CATALOG.md` in
+  lockstep with `errcode/errcode.go`; every current errcode names a bad
+  recipe, coverage assertion, a fix, and the test that owns it.
 - [x] **Benchmarks present**: 16 measured workloads (`bench_test.go`) +
   pipeline/container suites plus perf-lab latency/RSS/pressure/control/fanout/
   container/real-Opus smoke; bench artifacts run in CI; methodology in
@@ -240,8 +241,8 @@ The checklist below gates the tag. Each item names its current evidence.
   equivalence, flow restraint, Build/Attach parity, Describe/Build equality,
   Explain diagnostics, destination handles, branch isolation, rollback, and
   external parity to executable tests.
-- [x] **Race tests pass**: CI runs `go test -race` on root, `pipeline`,
-  `goavtest`, `format` (`.github/workflows/ci.yml`).
+- [x] **Race tests pass**: CI runs `go test -race ./...` across the whole
+  root module plus each nested module (`.github/workflows/ci.yml`).
 - [x] **Container fuzz/corpus**: `FuzzDemuxerMalformedInputs` with seed
   corpora (`container/matroska`, `container/webm` `fuzz_test.go` +
   `testdata/fuzz`) plus external field-corpus tests
@@ -250,10 +251,11 @@ The checklist below gates the tag. Each item names its current evidence.
   (`docs/ARCHITECTURE.md`); audited 2026-06: remaining package-level vars
   are error sentinels, immutable profile tables, and atomic ID counters.
   No pin test exists for this; the audit is repeated at review.
-- [x] **No undocumented exported symbols**: `doc_pin_test.go` across every
-  discovered public package (dynamic module walk; `adapters/*` and
-  `container/*` sit behind the codec/format extension points and are excluded by the
-  decision recorded in `docs/API_SURFACE.md`).
+- [x] **Documented public packages**: CI's package-documentation smoke fails
+  any public package without a package doc; per-symbol doc comments are
+  review-enforced since the per-symbol scanner was removed 2026-06-27
+  (`adapters/*` and `container/*` sit behind the codec/format extension
+  points and are excluded by the decision recorded in `docs/API_SURFACE.md`).
 - [x] **Dependency purity**: importing the root package does not pull bundled
   adapter packages into its dependency graph. The root module still carries
   bundled backend requirements because `goav/bundle` is not a nested module;

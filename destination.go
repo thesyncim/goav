@@ -98,7 +98,7 @@ func branchDestinationFactsFromSpec(name string, output destinationSpec) branchD
 	return branchDestinationFacts{
 		routingName:        name,
 		label:              output.label(""),
-		shareKey:           destinationShareKey(output, output.id),
+		shareKey:           destinationShareKey(output),
 		sink:               output.sink != nil,
 		sinkComponentName:  destinationSinkName(output),
 		outputName:         output.output.Name,

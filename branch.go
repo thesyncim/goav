@@ -17,7 +17,7 @@ import (
 var destinationRefSeq atomic.Uint64
 var destinationSpecSeq atomic.Uint64
 
-func destinationShareKey(dest destinationSpec, id uint64) string {
+func destinationShareKey(dest destinationSpec) string {
 	if dest.group != "" {
 		return "group:" + dest.group
 	}

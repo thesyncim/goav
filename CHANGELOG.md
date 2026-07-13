@@ -11,9 +11,45 @@ methodology changes, and migration notes.
 
 ## Unreleased
 
-- No unreleased changes.
+- **Breaking**: renamed the `runtime` config package to `runconfig` and the
+  `ctl` socket-host package to `ctlserver`; a contract test now rejects any
+  package named `runtime` or `ctl` in the module.
+- Added the `playoutav` nested module: scheduled packet/frame/event playout
+  through the `provider.Source` seam with zero core changes.
+- Added NEON (arm64) and SSE2 (amd64) audio-mix kernels behind CPU dispatch
+  with byte-exact scalar equivalence tests; composite/resample/resize keep
+  measured scalar fast paths until an asm prototype beats them >=1.5x.
+- Added opt-in per-runtime media pools (`runconfig.WithMediaPools`),
+  refcounted zero-copy buffered fanout for borrowed packets, a committed PGO
+  profile with a CI freshness check, and committed alloc/byte benchmark
+  baselines with a CI ratchet (`scripts/bench/baseline.sh`).
+- Closed five composability asymmetries: join-arm taps, branch auto-insert
+  parity with direct chains, nested Select routing via `AtTap`, the
+  attach-after-sibling-detach refusal now names its fix, and join outputs fan
+  out through `.Branches(...)`; a generated-recipe corpus pins the laws.
+- Opened the solver-delta boundary (`shape.AllowCustom` +
+  `runconfig.WithShapeDelta`) and added stateful `OnStream` matchers
+  (`source.MatchFirst/MatchAfter/MatchWithin`).
+- Documented the `goav run` CLI schema (`docs/CLI.md`), indexed the living
+  docs (`docs/README.md`), and moved finished campaign artifacts to
+  `docs/history/`.
+- Fixed a linux/amd64 SIGSEGV in VP9 encode: govpx's SSE2 kernels used
+  aligned stores against Go's 8-byte-aligned stack; goav now pins the fixed
+  govpx, and all codec backends are bumped to their latest commits.
+- Replaced the removed source-scanning pin tests' stale doc citations with
+  living evidence, and added doc-honesty pins: living docs may only cite
+  tests/scripts that exist, `docs/ERROR_CATALOG.md` stays in lockstep with
+  `errcode/errcode.go`, and every README Go block must compile.
+- CI now runs the race detector across every package, resolves the latest Go
+  patch release (fixes a stale-toolchain govulncheck failure), collects
+  coverage without running the suite twice, and honors the `skip-changelog`
+  label regardless of label order.
 
-## v0.1.0 - 2026-06-26
+## Pre-v1 consolidation - 2026-06-26
+
+These notes were previously mislabeled as a `v0.1.0` release. No tag has been
+cut; goav has never been released. They remain the consolidated record of the
+pre-v1 API reduction.
 
 - Shrank the README under the pre-v1 120-line target and moved long
   live/runtime walkthrough expectations into focused docs.

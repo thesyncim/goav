@@ -32,12 +32,8 @@ func TestMixSIMDMatchesScalar(t *testing.T) {
 		{arms: 2, samples: 8, pattern: func(arm int, sample int) int16 {
 			return int16((arm+1)*1000 - sample*200)
 		}},
-		{arms: 2, samples: 8, pattern: func(arm int, sample int) int16 {
-			if arm == 0 {
-				return 30000
-			}
-			return 30000
-		}},
+		// Saturation case: both arms at +30000 forces the positive clamp.
+		{arms: 2, samples: 8, pattern: func(int, int) int16 { return 30000 }},
 		{arms: 2, samples: 17, pattern: func(arm int, sample int) int16 {
 			if arm == 0 {
 				return int16(32000 - sample*17)

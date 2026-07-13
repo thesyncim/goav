@@ -185,7 +185,8 @@ func Segment(start, end time.Duration) (Control, error) {
 	return Control{typ: SegmentType, position: start, end: end}, nil
 }
 
-// Must unwraps a control constructor in tests and static configurations.
+// Must unwraps a control constructor in tests and static configurations. It
+// panics if err is non-nil; production code should handle the error instead.
 func Must(ctrl Control, err error) Control {
 	if err != nil {
 		panic(err)

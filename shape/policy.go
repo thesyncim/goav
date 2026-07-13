@@ -1,6 +1,7 @@
 package shape
 
 import (
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -178,12 +179,7 @@ func missingCustomPolicyNames(allowed []string, needed []string) []string {
 }
 
 func customPolicyContains(names []string, name string) bool {
-	for _, current := range names {
-		if current == name {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(names, name)
 }
 
 // Conversions reports the conversion classes required to make actual satisfy

@@ -1,8 +1,8 @@
 # Error Catalog
 
-<!-- Code generated from errcode/errcode.go by TestErrorCatalogDocMatchesErrcodeCatalog; DO NOT EDIT BY HAND. -->
+<!-- Kept in lockstep with errcode/errcode.go by TestErrorCatalogDocMatchesErrcodeCatalog; update both together. -->
 
-This catalog is the checked index of goav's public BuildError refusal codes. The `Code`, `Constant`, `Section`, `Kind`, and `When it fires` columns are generated from `errcode/errcode.go` plus checked derived-code tables, so a new code must update the source catalog and this checked document together.
+This catalog is the checked index of goav's public BuildError refusal codes. `TestErrorCatalogDocMatchesErrcodeCatalog` verifies, both directions, that every `Code` constant in `errcode/errcode.go` has a Full Code Index row here (with its constant name and an existing coverage test) and that every row resolves to a declared constant or derived join code, so a new code must update the source catalog and this checked document together.
 
 Every current catalog row names coverage. If a future row is marked `catalog-only`, it still needs a dedicated bad recipe, rendered golden error, fixed recipe, public contract check, and test name before the v1 error catalog is complete. Rows naming tests already have public grammar snippets, rendered-error assertions, fix coverage, or BuildError field checks in the named test.
 

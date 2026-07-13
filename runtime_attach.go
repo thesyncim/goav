@@ -595,7 +595,7 @@ func runtimeBranchDestinationCanShareMux(destination attachDestination) bool {
 }
 
 func runtimeBranchSharedDestinationKey(target destinationRef) string {
-	return destinationShareKey(target.dest, target.id)
+	return destinationShareKey(target.dest)
 }
 
 func newRuntimeAttachGroup(destinations runtimeBranchGroupDestinations) *runtimeAttachGroup {

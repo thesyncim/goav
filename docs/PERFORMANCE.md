@@ -106,23 +106,35 @@ ns/op and allocs/op are per-message steady state. The perf lab adds explicit
 p50/p95/p99 metrics for the packet-record path; other benchmark rows still use
 ns/op as their steady-state timing proxy.
 
+One allocation is honest arithmetic, not noise: every push-fed workload pays
+exactly one steady-state allocation per message — the deliberately heap-owned
+`pipeline.Message` that gives each delivery independent ownership so a
+retaining emitter can never observe a later push mutating an earlier message.
+That safety cost is pinned at a ceiling of one by
+`TestSourcePushDeliveryAllocs`; everything downstream of the source is
+allocation-free per message. `BenchmarkRemuxPackets` has no push producer and
+measures 0 allocs/op end to end. The committed ratchet
+(`bench-results/reference/root.json`, `-benchtime=100x`) also rounds one-time
+cold-start costs into a few rows (Mix 2–3, Composite 2, SelectPassthrough 2);
+at `-benchtime=1s` those converge to the per-push allocation alone.
+
 | Benchmark | Workload |
 |---|---|
-| `BenchmarkRecordPackets` | RTP-style record: packet source -> Copy -> fake-container file (0 allocs/op measured) |
+| `BenchmarkRecordPackets` | RTP-style record: packet source -> Copy -> fake-container file (1 alloc/op steady state: the pinned per-push message) |
 | `BenchmarkRemuxPackets` | file->file packet remux (demux -> Copy -> mux, 0 allocs/op measured) |
-| `BenchmarkDecodeToFrameSink` | packets -> decode (fake) -> frame sink (0 allocs/op measured) |
-| `BenchmarkDecodeEncode` | decode -> re-encode (fake) -> sink (0 allocs/op measured) |
-| `BenchmarkResample` | real bundled filter, 44.1kHz stereo -> 48kHz mono (0 allocs/op measured) |
+| `BenchmarkDecodeToFrameSink` | packets -> decode (fake) -> frame sink (1 alloc/op steady state) |
+| `BenchmarkDecodeEncode` | decode -> re-encode (fake) -> sink (1 alloc/op steady state) |
+| `BenchmarkResample` | real bundled filter, 44.1kHz stereo -> 48kHz mono (1 alloc/op steady state) |
 | `BenchmarkResampleS16Kernel`, `BenchmarkResampleS16KernelDurations` | adapter-local S16 resample inner-loop benches: rate conversion, channel remap, equal-rate copy, and duration scaling |
-| `BenchmarkResize` | real bundled filter, 320x180 -> 160x90 I420 (0 allocs/op measured) |
+| `BenchmarkResize` | real bundled filter, 320x180 -> 160x90 I420 (1 alloc/op steady state) |
 | `BenchmarkScalePlaneNearestKernel`, `BenchmarkScaleI420Kernel` | adapter-local I420 nearest-neighbor resize inner-loop benches: luma/chroma scale, passthrough row copy, fill crop, and whole-I420 half-scale |
-| `BenchmarkBranchFanout/branches=2,8` | one decode, N planned branches to sinks (0 allocs/op measured) |
-| `BenchmarkSharedMuxGroup` | audio+video chains sharing one mux destination (0 allocs/op measured) |
-| `BenchmarkMix/arms=2,8` | N-arm audio mix on a blocking buffered graph (0 allocs/op measured) |
+| `BenchmarkBranchFanout/branches=2,8` | one decode, N planned branches to sinks (1 alloc/op steady state) |
+| `BenchmarkSharedMuxGroup` | audio+video chains sharing one mux destination (1 alloc/op steady state) |
+| `BenchmarkMix/arms=2,8` | N-arm audio mix on a blocking buffered graph (1 alloc/op steady state per push) |
 | `BenchmarkMixS16Kernel` | audio mix inner-loop kernel microbench; arm64/two-arm rows use NEON `SQADD`, amd64/two-arm rows use SSE2 `PADDSW`, and other rows fall back to scalar until measured asm kernels earn dispatch |
-| `BenchmarkComposite` | 2-arm video composite (0 allocs/op measured) |
+| `BenchmarkComposite` | 2-arm video composite (1 alloc/op steady state per push) |
 | `BenchmarkCopyPlaneKernel`, `BenchmarkCompositeI420BlitKernel` | root-local I420 composite blit benches: clipped row copy, inside-canvas row copy, and two-arm canvas paint |
-| `BenchmarkSelectPassthrough` | one-of-N selector forwarding the active arm (0 allocs/op measured) |
+| `BenchmarkSelectPassthrough` | one-of-N selector forwarding the active arm (1 alloc/op steady state per push) |
 | `BenchmarkAttachDetachUnderLoad` | runtime branch attach+detach per op while live traffic flows (a cold-path control operation, measured against load) |
 | `BenchmarkLiveRoomAttachDetachSoak` | live-room sync plus attach/detach churn: packet taps stay live while monitor branches attach/detach; reports p50/p95/p99, source/sync/graph drops, delivered messages, max A/V drift, and `max_rss_B` in the perf-lab JSON when the OS memory wrapper exposes it |
 | `BenchmarkSourcePush/dropping,blocking` | the flow-control hot path: source.Push into a DropOldest vs Blocking queue (bounded by `TestSourcePushDeliveryAllocs`) |

@@ -45,10 +45,12 @@ go get github.com/thesyncim/goav
 ```
 
 The bundled pure-Go adapters — VP8/VP9, AV1, Opus, AAC, H.264 decode, and
-Matroska/WebM/MP4/IVF containers — live in `goav/bundle`. `bundle.Run` and
-`bundle.Build` give you a runtime with the standard set; build your own with
-`goav.New(...)` to register exactly the adapters you need, per service, with no
-global state.
+Matroska/WebM/IVF containers plus MP4 (read) — live in `goav/bundle`.
+`bundle.Run` and `bundle.Build` give you a runtime with the standard set;
+build your own with `goav.New(...)` to register exactly the adapters you
+need, per service, with no global state. The codec backends are pure-Go
+ports of the reference implementations (libvpx and friends), maintained as
+separate `thesyncim/*` modules — no cgo anywhere in the dependency graph.
 
 ## Common recipes
 

@@ -3,8 +3,9 @@
 //
 // The grammar is small. From(input) selects streams (.Audio(), .Video());
 // operations are methods on the chain (.Decode(), .Copy(), .Resize(),
-// .Encode(codec.VP9(...))); .To(destination) ends a chain at a File, URI,
-// Writer, Object, or Sink. Branches fan one stream point out, Mix, Composite,
+// .Encode(codec.VP9(...))); .To(destination) ends a chain at a destination
+// built by Write, URI, Writer, Custom, or Sink. Branches fan one stream
+// point out, Mix, Composite,
 // and Select converge N arms into one, Tap names attach points, Flow reuses
 // operation lists, and Build(ctx) returns a Task with only Run and Close.
 // BuildLive(ctx) opts into events, snapshots, runtime Attach/Detach, and live
