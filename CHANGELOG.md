@@ -11,6 +11,14 @@ methodology changes, and migration notes.
 
 ## Unreleased
 
+- Task pause and readiness: `LiveTask` gained `Pause(ctx)`/`Resume(ctx)` —
+  Pause freezes the shared task timeline (paced sources and playout gates
+  stall coherently), Resume continues from the frozen reading. Pause pauses
+  time, not the data plane: free-running tasks are refused with
+  `format.ErrRateUnsupported` like `control.Rate`. `snapshot.Task` gained
+  `Paused`, and the new `av.EventTaskReady` arrives through `Watch` when
+  every sink received its first media message (see `docs/FLOW_CONTROL.md`).
+
 - Synchronized sink playout: `flow.Playout(name)` (options as self-methods
   `WithOffset`/`WithDropLate`) is a deliver-when-due policy for the sink
   boundary — `.Playout(policy)` on a stream chain or branch holds each

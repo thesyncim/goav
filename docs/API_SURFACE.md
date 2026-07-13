@@ -245,7 +245,7 @@ the pinned package-level surface is the contract.
 Near-miss names are deliberate distinctions, one line each (each verified
 against the constructors in `input.go`/`provider.go`/`source.go`,
 `destination.go`, `tap_ref.go`, `flow.go`/`branch.go`, `chain.go`,
-`watch.go`, `task_control.go`, `expert/expert.go`):
+`watch.go`, `task_control.go`, `task_pause.go`, `expert/expert.go`):
 
 - **Input vs Source vs provider.Source**: `FileInput` is the value input over
   media you already hold; `Source(name, shape, fn)` is the custom-push input
@@ -307,6 +307,11 @@ against the constructors in `input.go`/`provider.go`/`source.go`,
   constructors, not public struct fields;
   `Deliver(event)` is the escape hatch handing a verbatim event to a stage
   that interprets it itself.
+- **Pause/Resume vs Rate** (governed pre-v1, `LiveTask` methods):
+  `Pause(ctx)`/`Resume(ctx)` freeze/continue the shared task timeline that
+  `control.Rate` scales; nothing-paced tasks refuse like Rate.
+  `snapshot.Task.Paused` reports the fact; `av.EventTaskReady` on `Watch` is
+  the readiness (preroll) signal. Contract prose: `docs/FLOW_CONTROL.md`.
 - **recipe vs expert**: the recipe grammar (tier A) is the normal surface;
   `expert.Graph(runtime)` opens the handle-based graph layer (tier C) for
   compositions the grammar cannot express.

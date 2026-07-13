@@ -24,7 +24,10 @@ type Tap struct {
 // Task is an immutable point-in-time view of a task's graph, taps, active
 // runtime branches, and counters.
 type Task struct {
-	State        lifecycle.TaskState
+	State lifecycle.TaskState
+	// Paused reports whether the task timeline is frozen by Task.Pause. It is
+	// orthogonal to State: a paused task still reports its run progress.
+	Paused       bool
 	Spec         pipeline.Spec
 	Stats        pipeline.GraphStats
 	Taps         []Tap

@@ -78,6 +78,21 @@ type LiveTask interface {
 	// target node on its serial worker — the control-plane entry point for live
 	// switching (a selector), keyframe requests, and flushes.
 	Control(context.Context, control.Control) error
+	// Pause freezes the task timeline at its current reading: paced sources
+	// stall on their next due wait and playout gates hold delivery, coherently,
+	// until Resume. Pause pauses TIME, not the data plane — a free-running task
+	// (no paced source, no playout gate) would not stall, so Pause refuses it
+	// with format.ErrRateUnsupported exactly like control.Rate does. Pausing a
+	// paused task is a no-op; pausing before Run is allowed (the timeline is
+	// anchored at build); pausing a closed task is refused with
+	// control.ErrNotRunning. Rate changes while paused are accepted and take
+	// effect on Resume; seek/segment controls are accepted while paused and
+	// apply at the source's next read boundary.
+	Pause(context.Context) error
+	// Resume continues a paused task timeline from its frozen reading at the
+	// current rate — no pause gap enters media time. Resuming a running task is
+	// a no-op; the refusal contract mirrors Pause.
+	Resume(context.Context) error
 	// Watch returns an independent, filtered subscription to the task's event
 	// stream. Filters AND together; with zero filters every event is delivered.
 	// Each subscription owns a buffered channel sized like the task's event

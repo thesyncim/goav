@@ -638,6 +638,7 @@ func (t *task) Snapshot() snapshot.Task {
 	}
 	return snapshot.Task{
 		State:        state,
+		Paused:       t.timeline != nil && t.timeline.pausedNow(),
 		Spec:         t.Describe(),
 		Stats:        stats,
 		Taps:         t.tapsLocked(),

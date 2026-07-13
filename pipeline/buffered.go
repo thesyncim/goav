@@ -43,6 +43,10 @@ type bufferedNode struct {
 	// paused, when set, makes the lock-free producer skip this node so a single
 	// branch can be paused without touching the source or its siblings.
 	paused atomic.Bool
+	// sawMedia is set (once) when a sink node receives its first packet or
+	// frame; the readiness signal counts sinks out through it. The worker's
+	// delivery path pays one atomic load per media message, nothing more.
+	sawMedia atomic.Bool
 }
 
 // bufferedTopo is an immutable producer-side routing snapshot read lock-free by
@@ -135,6 +139,11 @@ type bufferedRunner struct {
 	// topo is the immutable producer-side routing snapshot; emit reads it without
 	// g.mu. nil means closed.
 	topo atomic.Pointer[bufferedTopo]
+	// readyRemaining counts the sinks that had not yet received media when Run
+	// started; when it reaches zero the graph publishes av.EventTaskReady.
+	// readyFired guards the publish so readiness reports at most once.
+	readyRemaining atomic.Int64
+	readyFired     atomic.Bool
 }
 
 // rebuildTopoLocked publishes a fresh producer-side routing snapshot. Caller must
@@ -367,6 +376,7 @@ func (g *bufferedRunner) Run(ctx context.Context) error {
 
 	errs := make(chan error, len(g.nodes)+len(g.sources)+16)
 	g.openQueuesLocked()
+	g.armReadinessLocked()
 	g.running = true
 	g.draining = false
 	g.runCtx = ctx
@@ -586,6 +596,10 @@ func (g *bufferedRunner) Remove(ref NodeRef) error {
 	node.active = false
 	node.removed.Store(true)
 	node.routes = nil
+	if node.kind == nodeSink && running {
+		// A sink leaving before its first media message stops gating readiness.
+		g.noteSinkMedia(&node.sawMedia)
+	}
 	delete(g.index, ref.String())
 	for i := range g.nodes {
 		if !g.nodes[i].active {
@@ -1092,9 +1106,65 @@ func (g *bufferedRunner) deliver(ctx context.Context, node *bufferedNode, msg *M
 	case nodeStage:
 		return node.stage.Handle(ctx, msg, &node.emitter)
 	case nodeSink:
+		if (msg.Kind == MessagePacket || msg.Kind == MessageFrame) && !node.sawMedia.Load() {
+			g.noteSinkMedia(&node.sawMedia)
+		}
 		return node.sink.Handle(ctx, msg)
 	default:
 		return ErrInvalidLink
+	}
+}
+
+// armReadinessLocked snapshots the readiness set at Run start: the active
+// sinks that have not yet seen media. Caller must hold g.mu. With no sinks
+// to wait for there is nothing to report; with sinks all fed already the
+// graph is ready as it starts.
+func (g *bufferedRunner) armReadinessLocked() {
+	var sinks, unfed int64
+	for i := range g.nodes {
+		node := g.nodes[i]
+		if !node.active || node.kind != nodeSink {
+			continue
+		}
+		sinks++
+		if !node.sawMedia.Load() {
+			unfed++
+		}
+	}
+	g.readyRemaining.Store(unfed)
+	if sinks > 0 && unfed == 0 {
+		g.publishReady()
+	}
+}
+
+// noteSinkMedia counts a sink out of the readiness set exactly once (first
+// media delivery, or removal before any media). The CAS keeps the countdown
+// single-shot per sink; the last count publishes readiness.
+func (g *bufferedRunner) noteSinkMedia(sawMedia *atomic.Bool) {
+	if !sawMedia.CompareAndSwap(false, true) {
+		return
+	}
+	if g.readyRemaining.Add(-1) == 0 {
+		g.publishReady()
+	}
+}
+
+// publishReady reports av.EventTaskReady on the graph's observer stream, at
+// most once. Cold path: it runs once per graph, never per message.
+func (g *bufferedRunner) publishReady() {
+	if !g.readyFired.CompareAndSwap(false, true) {
+		return
+	}
+	event := av.Event{Type: av.EventTaskReady, Reason: "every sink received its first media message"}
+	g.eventsMu.Lock()
+	defer g.eventsMu.Unlock()
+	if g.eventsClosed {
+		return
+	}
+	select {
+	case g.events <- event:
+	default:
+		observeDrop(nil, DropObserver, &g.cold)
 	}
 }
 

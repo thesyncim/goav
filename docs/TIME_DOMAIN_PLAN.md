@@ -76,16 +76,19 @@ GStreamer calls sink sync. Acceptance: `TestPlayoutSinkDeliversWhenDue`,
 (`TestPlayoutGateRequiresValidMediaTimebase`,
 `TestPlayoutAttachRefusesStreamWithoutTimebase`).
 
-### T3. Task state: Pause/Resume and readiness
+### T3. Task state: Pause/Resume and readiness — LANDED
 
-`task.Pause(ctx)`/`Resume(ctx)` (capability interface, same pattern as
-Mutable): pauses the timeline, so paced sources stall on their next due wait
-and playout sinks freeze coherently; buffered branches keep draining to their
-gates (documented: free-running unsynced pipelines do not stall — honesty
-over pretending). Readiness: the task emits a watchable lifecycle event when
-every sink has received its first message (the sane preroll analog).
-Acceptance: TestTaskPauseFreezesPacedFlow (planned), TestTaskReadinessEventFires (planned),
-snapshot reflects paused state.
+`Pause(ctx)`/`Resume(ctx)` on `LiveTask` freeze/continue the shared timeline
+(paced sources and playout sinks stall coherently); Pause pauses TIME, not
+the data plane — free-running tasks refuse like `control.Rate`;
+`snapshot.Task.Paused` reports the fact; `av.EventTaskReady` through `Watch`
+is the readiness signal. Contract prose: `docs/FLOW_CONTROL.md`. Acceptance:
+`TestTaskPauseFreezesPacedFlow`, `TestTaskReadinessEventFires`,
+`TestGraphReadinessReportsOnceAfterEverySinkFed`,
+`TestTaskPauseRefusesFreeRunning`, `TestTaskPauseSnapshotAndCloseContract`,
+`TestTaskRateChangeWhilePausedAppliesOnResume`, and
+`TestTaskSeekWhilePausedAppliesAtNextReadBoundary` (seek while paused applies
+at the pump's next read boundary; re-anchored media delivers even paused).
 
 ### T4. Seek with flush
 

@@ -2750,6 +2750,10 @@ func (t *fakeTask) Control(_ context.Context, ctrl control.Control) error {
 
 func (t *fakeTask) Run(context.Context) error { return nil }
 
+func (t *fakeTask) Pause(context.Context) error { return nil }
+
+func (t *fakeTask) Resume(context.Context) error { return nil }
+
 func (t *fakeTask) Events() <-chan av.Event {
 	ch := make(chan av.Event, len(t.events))
 	for _, event := range t.events {

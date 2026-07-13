@@ -69,6 +69,10 @@ type directNode struct {
 	// older routing snapshot before it closes the node. One atomic add/sub per
 	// delivery — the same budget class as the per-node counters.
 	gate *atomic.Int64
+	// sawMedia is set (once) when a sink node receives its first packet or
+	// frame; the readiness signal counts sinks out through it. The delivery
+	// path pays one atomic load per media message, nothing more.
+	sawMedia *atomic.Bool
 }
 
 // nodeClosingBit marks a node's delivery gate as closing: deliveries that
@@ -101,6 +105,7 @@ type directTopoNode struct {
 	paused   *atomic.Bool
 	handleMu *sync.Mutex
 	gate     *atomic.Int64
+	sawMedia *atomic.Bool
 	routes   []directRoute
 }
 
@@ -146,6 +151,11 @@ type directRunner struct {
 	eventsClosed bool
 	cold         coldStats
 	closed       bool
+	// readyRemaining counts the sinks that had not yet received media when Run
+	// started; when it reaches zero the graph publishes av.EventTaskReady.
+	// readyFired guards the publish so readiness reports at most once.
+	readyRemaining atomic.Int64
+	readyFired     atomic.Bool
 }
 
 // rebuildTopoLocked publishes a fresh immutable routing snapshot from the current
@@ -169,6 +179,7 @@ func (g *directRunner) rebuildTopoLocked() {
 		tn.paused = n.paused
 		tn.handleMu = n.handleMu
 		tn.gate = n.gate
+		tn.sawMedia = n.sawMedia
 		if len(n.routes) == 0 {
 			continue
 		}
@@ -356,6 +367,7 @@ func (g *directRunner) Run(ctx context.Context) error {
 		g.mu.RUnlock()
 		return ErrClosed
 	}
+	g.armReadinessRLocked()
 	var sourceStack [8]directSourceRun
 	sources := sourceStack[:0]
 	for i := range g.sources {
@@ -558,6 +570,10 @@ func (g *directRunner) Remove(ref NodeRef) error {
 	node := &g.nodes[index]
 	node.active = false
 	node.routes = nil
+	if node.kind == nodeSink && node.sawMedia != nil {
+		// A sink leaving before its first media message stops gating readiness.
+		g.noteSinkMedia(node.sawMedia)
+	}
 	delete(g.index, ref.String())
 	for i := range g.nodes {
 		if !g.nodes[i].active {
@@ -647,6 +663,7 @@ func (g *directRunner) addNode(node directNode) (int, error) {
 	node.paused = &atomic.Bool{}
 	node.handleMu = &sync.Mutex{}
 	node.gate = &atomic.Int64{}
+	node.sawMedia = &atomic.Bool{}
 	g.index[node.name] = index
 	g.nodes = append(g.nodes, node)
 	g.rebuildTopoLocked()
@@ -738,12 +755,68 @@ func (g *directRunner) deliverTopo(ctx context.Context, dst *directTopoNode, msg
 		}
 		return true, nil
 	case nodeSink:
+		if (msg.Kind == MessagePacket || msg.Kind == MessageFrame) && dst.sawMedia != nil && !dst.sawMedia.Load() {
+			g.noteSinkMedia(dst.sawMedia)
+		}
 		if err := dst.sink.Handle(ctx, msg); err != nil {
 			return false, err
 		}
 		return true, nil
 	default:
 		return false, ErrInvalidLink
+	}
+}
+
+// armReadinessRLocked snapshots the readiness set at Run start: the active
+// sinks that have not yet seen media. Caller must hold g.mu (read). With no
+// sinks to wait for there is nothing to report; with sinks all fed already
+// the graph is ready as it starts.
+func (g *directRunner) armReadinessRLocked() {
+	var sinks, unfed int64
+	for i := range g.nodes {
+		node := &g.nodes[i]
+		if !node.active || node.kind != nodeSink {
+			continue
+		}
+		sinks++
+		if node.sawMedia == nil || !node.sawMedia.Load() {
+			unfed++
+		}
+	}
+	g.readyRemaining.Store(unfed)
+	if sinks > 0 && unfed == 0 {
+		g.publishReady()
+	}
+}
+
+// noteSinkMedia counts a sink out of the readiness set exactly once (first
+// media delivery, or removal before any media). The CAS keeps the countdown
+// single-shot per sink; the last count publishes readiness.
+func (g *directRunner) noteSinkMedia(sawMedia *atomic.Bool) {
+	if !sawMedia.CompareAndSwap(false, true) {
+		return
+	}
+	if g.readyRemaining.Add(-1) == 0 {
+		g.publishReady()
+	}
+}
+
+// publishReady reports av.EventTaskReady on the graph's observer stream, at
+// most once. Cold path: it runs once per graph, never per message.
+func (g *directRunner) publishReady() {
+	if !g.readyFired.CompareAndSwap(false, true) {
+		return
+	}
+	event := av.Event{Type: av.EventTaskReady, Reason: "every sink received its first media message"}
+	g.eventsMu.Lock()
+	defer g.eventsMu.Unlock()
+	if g.eventsClosed {
+		return
+	}
+	select {
+	case g.events <- event:
+	default:
+		observeDrop(nil, DropObserver, &g.cold)
 	}
 }
 

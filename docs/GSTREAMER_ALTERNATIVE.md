@@ -83,10 +83,11 @@ the remaining time-domain slices live in `docs/TIME_DOMAIN_PLAN.md`.
   scope; goav assumes the application owns its endpoints.
 - Pull scheduling. The task-wide timeline clock
   (`TestTaskTimelineRateReanchorsAllSources`), branch-local live-room
-  `flow.SyncPolicy` gates, and sink-side `flow.Playout` deliver-when-due gates
-  (`TestPlayoutSinkDeliversWhenDue`) exist; the remaining time-domain work
-  (task pause/readiness, seek flush, QoS, the latency model) is planned in
-  `docs/TIME_DOMAIN_PLAN.md` (`docs/NORTH_STAR.md`, `docs/ROADMAP.md`).
+  `flow.SyncPolicy` gates, sink-side `flow.Playout` deliver-when-due gates
+  (`TestPlayoutSinkDeliversWhenDue`), and task Pause/Resume with
+  `av.EventTaskReady` readiness exist; the remaining time-domain work (seek
+  flush, QoS, the latency model) is planned in `docs/TIME_DOMAIN_PLAN.md`
+  (`docs/NORTH_STAR.md`, `docs/ROADMAP.md`).
 
 ## On performance comparisons
 

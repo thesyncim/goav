@@ -36,6 +36,20 @@ What holds today (all `-race` clean, with tests):
   same `pipeline.DropSync` accounting
   (`TestPlayoutDropLateShedsOverdueMedia`). Events pass through ungated, and
   `EventDiscontinuity` resets the shared anchor.
+- Task pause is timeline control, not a data-plane gate: `LiveTask.Pause(ctx)`
+  freezes the shared task timeline so paced sources and playout gates stall
+  coherently; `Resume(ctx)` continues from the frozen reading with no pause
+  gap in media time (`TestTaskPauseFreezesPacedFlow`). Free-running tasks
+  refuse Pause with `format.ErrRateUnsupported` exactly like `control.Rate`
+  (`TestTaskPauseRefusesFreeRunning`); already-due or seek-re-anchored media
+  still delivers while paused (pause holds waits, it does not gate delivery);
+  rate while paused lands on resume, seeks apply at the source's next read
+  boundary, and `snapshot.Task.Paused` reports the frozen fact.
+  Readiness is the preroll analog: `av.EventTaskReady` arrives through
+  `Watch` exactly once, when every sink present at run start received its
+  first media message (`TestTaskReadinessEventFires`; scope details live on
+  the `av` constant); one atomic load on the sink delivery path,
+  `TestGraphBufferedSteadyEmitAllocs` stays at zero.
 - Custom sources see flow control per push: `push.X(...)` returns
   `(source.Result, error)` where deliberate sheds are `Dropped` with a nil error
   and `ErrBackpressure` keeps its flow-control meaning.

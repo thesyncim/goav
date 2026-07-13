@@ -159,6 +159,11 @@ func (t *timeline) paced() bool {
 	return t.consumers.Load()
 }
 
+// pausedNow reports whether the timeline is currently frozen at its reading.
+func (t *timeline) pausedNow() bool {
+	return t.epoch.Load().paused
+}
+
 // Sleep blocks until d of timeline time has elapsed or ctx is done. d is a
 // timeline duration: at rate 2 a 100ms sleep costs 50ms of inner time, and a
 // rate or pause change mid-sleep re-derives the remaining wall wait instead of

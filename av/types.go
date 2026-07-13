@@ -577,6 +577,16 @@ const (
 	// second. An encoder that cannot apply a live retarget must return an
 	// error from HandleEvent so the failure is visible, never silent.
 	EventBitrateChanged EventType = "bitrate_changed"
+	// EventTaskReady reports task readiness — the sane preroll analog: every
+	// sink that was present when the running graph started has received its
+	// first media message (packet or frame; events do not count). The graph
+	// emits it at most once, on the observer stream tasks expose through
+	// Watch — it never rides the data path. Scope is honest, not padded:
+	// sinks attached at runtime are not waited for, a task with no sinks
+	// never reports ready, and a sink whose stream never delivers media keeps
+	// the event from firing. A sink removed before its first media message
+	// stops gating readiness.
+	EventTaskReady EventType = "task_ready"
 )
 
 // Event is one out-of-band signal: its type, the stream it concerns, and the
