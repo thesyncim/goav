@@ -1,0 +1,114 @@
+# Time-domain plan: GStreamer-class power, goav-sane surface
+
+Status: in progress (started 2026-07-13). Owner: maintainer. This plan moves
+to `docs/history/` when its slices close; `docs/ROADMAP.md` absorbs the
+survivors. Follows repo culture: every slice names its executable evidence.
+
+## Goal
+
+Close the remaining structural gaps against GStreamer — the ones that make
+GStreamer a *framework* rather than a library — without importing its
+complexity: pipeline clock, synchronized playout, task state, accurate seek,
+QoS feedback, and a latency model. Sanity rules: the grammar stays small,
+capabilities are discovered by type assertion, the data plane stays lock-free
+(atomics on the hot path, mutexes cold-side only), and every claim lands with
+a pin.
+
+## Baseline (verified 2026-07-13)
+
+- `av.Clock` (Now/Sleep) is injected per-runtime and consumed only by the
+  realtime demux pacer (`format/pace.go`); `playoutav` uses a hardcoded
+  timer. Rate is a per-source atomic; there is no shared timeline.
+- `flow.SyncPolicy` gates align branches on a shared per-policy scheduler
+  keyed by max-PTS per stream; sink-side synchronized playout does not exist.
+- `control.Seek/Segment/Rate` reach `ControllableSource.Control`; the source
+  re-anchors and emits `EventDiscontinuity`, but nothing flushes in-flight
+  buffered messages — a seek drains stale media downstream first.
+- Pause exists per-node (`pipeline.NodePauser`, buffered runner only), used
+  by runtime attachments; there is no task-level pause and no preroll or
+  readiness signal.
+- Drop stats and `DropReporter` are observable post-hoc; nothing feeds
+  lateness back upstream, though the event vocabulary already exists
+  (`EventKeyframeRequired`, `EventBackpressure`, `EventBitrateChanged`).
+- Latency pieces exist in isolation (BufferPolicy.MaxLatency, sync
+  tolerance, the RTP jitter buffer); no model composes them.
+
+## Slices
+
+### T1. Task timeline (shared clock service)
+
+One `av.Timeline` per task: wraps the runtime `av.Clock` with an atomically
+readable rate and pause epoch, mapping media time to run time. The realtime
+demux pacer, sync gates, and (T2) playout sinks consult the timeline instead
+of private anchors; `control.Rate` moves the shared timeline so every paced
+source re-anchors coherently; `playoutav` gains clock injection and drops its
+hardcoded timer. Acceptance: `TestTaskTimelineRateReanchorsAllSources`,
+`TestPlayoutUsesRuntimeClock`; existing pacer/sync tests stay green.
+
+### T2. Synchronized sink playout
+
+Opt-in deliver-when-due at the sink boundary: `flow.Playout(...)` (vocabulary
+sibling of `flow.Sync`) declares that a destination's messages are held until
+`pts + latency offset` is due on the task timeline, with hold-late/drop-late
+modes and drop stats via the existing `DropReporter` shape. The
+planner inserts the playout gate before the sink exactly like sync gates.
+`playoutav` remains the external proof that scheduled *sources* need no core
+support; this slice is the *sink* half GStreamer calls sink sync.
+Acceptance: `TestPlayoutSinkDeliversWhenDue`, `TestPlayoutSinkFreezesOnPause`,
+A/V alignment test across two branches sharing one timeline.
+
+### T3. Task state: Pause/Resume and readiness
+
+`task.Pause(ctx)`/`Resume(ctx)` (capability interface, same pattern as
+Mutable): pauses the timeline, so paced sources stall on their next due wait
+and playout sinks freeze coherently; buffered branches keep draining to their
+gates (documented: free-running unsynced pipelines do not stall — honesty
+over pretending). Readiness: the task emits a watchable lifecycle event when
+every sink has received its first message (the sane preroll analog).
+Acceptance: `TestTaskPauseFreezesPacedFlow`, `TestTaskReadinessEventFires`,
+snapshot reflects paused state.
+
+### T4. Seek with flush
+
+`task.Control(seek)` gains flush semantics: pause emission at the source,
+flush every buffered node downstream of it (new `pipeline.NodeFlusher`
+capability on the buffered runner; drops recorded under a new `DropFlush`
+reason), reset sync-gate and join pending state (they already reset on
+`EventDiscontinuity`), inject the seek, resume. Segment keeps its existing
+window semantics on top. Acceptance: `TestSeekFlushesInFlightMedia` (no
+pre-seek PTS reaches a sink after the discontinuity),
+`TestSeekWithoutFlushableNodesStillSeeks` (direct runner path).
+
+### T5. QoS feedback
+
+Playout/sync gates and MaxLatency shedding produce typed QoS reports
+(lateness, drop pressure) as watchable events; an opt-in
+`runconfig.WithQoSPolicy` maps reports to the existing control vocabulary
+(SetBitrate, keyframe request, Rate) per task — the automatic path is exactly
+what an application could do by hand with `Watch` + `Control`, packaged.
+Acceptance: `TestQoSReportsLateness`, `TestQoSPolicyDrivesBitrateControl`
+(fake encoder observes the control).
+
+### T6. Latency model + claims flip
+
+Compose declared latencies (jitter buffer delay, sync tolerance, playout
+offset, queue depth × observed pacing) into a per-path latency figure exposed
+through `Explain` diagnostics and snapshots; playout sinks default their
+offset from it. Then flip the deferred rows in
+`docs/GSTREAMER_ALTERNATIVE.md` (clock service, sink sync, pull-scheduling
+note) to cited tests, update `docs/ROADMAP.md` deferred list, tier rows in
+`docs/API_SURFACE.md`, and `CHANGELOG.md`. Acceptance: doc pins green;
+`TestExplainReportsPathLatency`.
+
+## Sequencing
+
+T1 → T2 → T3 → T4 can land independently after T1; T5 needs T2's lateness
+source; T6 last. Each slice: full gate (build/vet/test/race subset/
+staticcheck/doc pins), commit, push — one safe point per slice.
+
+## Non-goals (unchanged)
+
+No cgo, no JIT, no global registries, no GStreamer element parity, no plugin
+loading. Container/codec breadth (MP4 mux, MPEG-TS, H.264 encode) stays
+demand-driven roadmap — power here means the time domain, not the format
+matrix.
