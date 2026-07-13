@@ -20,7 +20,7 @@ require (
 	github.com/thesyncim/goaac v0.0.0-20260616210027-501df73f9728 // indirect
 	github.com/thesyncim/goh264 v0.0.0-20260630205627-5ed6a4334be7 // indirect
 	github.com/thesyncim/gopus v0.1.1 // indirect
-	github.com/thesyncim/govpx v0.0.0-20260711094643-7eb7b4c8dc86 // indirect
+	github.com/thesyncim/govpx v0.0.0-20260713173815-a8f2d0665f2e // indirect
 	golang.org/x/sys v0.44.0 // indirect
 	modernc.org/libc v1.73.1 // indirect
 	modernc.org/mathutil v1.7.1 // indirect

@@ -34,7 +34,7 @@ require (
 	github.com/thesyncim/goav1 v0.0.0-20260707172135-a28b7c8d41f1 // indirect
 	github.com/thesyncim/goh264 v0.0.0-20260630205627-5ed6a4334be7 // indirect
 	github.com/thesyncim/gopus v0.1.1 // indirect
-	github.com/thesyncim/govpx v0.0.0-20260711094643-7eb7b4c8dc86 // indirect
+	github.com/thesyncim/govpx v0.0.0-20260713173815-a8f2d0665f2e // indirect
 	github.com/wlynxg/anet v0.0.5 // indirect
 	golang.org/x/crypto v0.48.0 // indirect
 	golang.org/x/net v0.50.0 // indirect
