@@ -70,8 +70,11 @@ BenchmarkCold-8 100 10 ns/op 2000 B/op 200 allocs/op
 	if got := records["BenchmarkHot"].Ceilings["B/op"]; got != 1024 {
 		t.Fatalf("hot byte ceiling = %v, want 1024", got)
 	}
-	if got := records["BenchmarkCold"].Ceilings["allocs/op"]; got != 264 {
-		t.Fatalf("cold alloc ceiling = %v, want 264", got)
+	if got := records["BenchmarkCold"].Ceilings["allocs/op"]; got != 300 {
+		t.Fatalf("cold alloc ceiling = %v, want 300 (200 + 200*0.5 cold slack)", got)
+	}
+	if got := records["BenchmarkCold"].Ceilings["B/op"]; got != 3024 {
+		t.Fatalf("cold byte ceiling = %v, want 3024 (2000 + max(1024, 2000*0.25))", got)
 	}
 }
 

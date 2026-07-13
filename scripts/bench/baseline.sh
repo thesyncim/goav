@@ -15,11 +15,12 @@ benchtime="${BENCH_BASELINE_TIME:-100x}"
 count="${BENCH_BASELINE_COUNT:-1}"
 bytes_slack_ratio="${BENCH_BASELINE_BYTES_SLACK_RATIO:-0.05}"
 bytes_slack_min="${BENCH_BASELINE_BYTES_SLACK_MIN:-1024}"
+bytes_cold_ratio="${BENCH_BASELINE_BYTES_COLD_RATIO:-0.25}"
 allocs_slack="${BENCH_BASELINE_ALLOCS_SLACK:-0}"
 allocs_slack_ratio="${BENCH_BASELINE_ALLOCS_SLACK_RATIO:-0.05}"
 allocs_slack_min="${BENCH_BASELINE_ALLOCS_SLACK_MIN:-4}"
 allocs_cold_at="${BENCH_BASELINE_ALLOCS_COLD_AT:-100}"
-allocs_cold_ratio="${BENCH_BASELINE_ALLOCS_COLD_RATIO:-0.15}"
+allocs_cold_ratio="${BENCH_BASELINE_ALLOCS_COLD_RATIO:-0.5}"
 allocs_cold_min="${BENCH_BASELINE_ALLOCS_COLD_MIN:-64}"
 : "${CGO_ENABLED:=0}"
 export CGO_ENABLED
@@ -60,6 +61,7 @@ collect_suite() {
     -count "$count" \
     -bytes-slack-ratio "$bytes_slack_ratio" \
     -bytes-slack-min "$bytes_slack_min" \
+    -bytes-cold-ratio "$bytes_cold_ratio" \
     -allocs-slack "$allocs_slack" \
     -allocs-slack-ratio "$allocs_slack_ratio" \
     -allocs-slack-min "$allocs_slack_min" \

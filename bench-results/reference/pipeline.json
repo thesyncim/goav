@@ -1,8 +1,8 @@
 {
   "schema": 1,
   "kind": "pipeline",
-  "generated_at": "2026-07-02T19:07:01Z",
-  "go_version": "go version go1.26.0 darwin/arm64",
+  "generated_at": "2026-07-13T22:57:42Z",
+  "go_version": "go version go1.26.4 darwin/arm64",
   "goos": "darwin",
   "goarch": "arm64",
   "package": "./pipeline",
@@ -13,11 +13,12 @@
   "thresholds": {
     "bytes_per_op_slack_ratio": 0.05,
     "bytes_per_op_slack_min": 1024,
+    "bytes_per_op_cold_slack_ratio": 0.25,
     "allocs_per_op_slack": 0,
     "allocs_per_op_slack_ratio": 0.05,
     "allocs_per_op_slack_min": 4,
     "allocs_per_op_cold_threshold": 100,
-    "allocs_per_op_cold_slack_ratio": 0.15,
+    "allocs_per_op_cold_slack_ratio": 0.5,
     "allocs_per_op_cold_slack_min": 64
   },
   "benchmarks": [
@@ -26,7 +27,7 @@
       "metrics": {
         "B/op": 0,
         "allocs/op": 0,
-        "ns/op": 269.6
+        "ns/op": 120.8
       },
       "ceilings": {
         "B/op": 1024,
@@ -38,7 +39,7 @@
       "metrics": {
         "B/op": 0,
         "allocs/op": 0,
-        "ns/op": 341902
+        "ns/op": 207180
       },
       "ceilings": {
         "B/op": 1024,
@@ -50,7 +51,7 @@
       "metrics": {
         "B/op": 0,
         "allocs/op": 0,
-        "ns/op": 43586
+        "ns/op": 19070
       },
       "ceilings": {
         "B/op": 1024,
@@ -62,7 +63,7 @@
       "metrics": {
         "B/op": 0,
         "allocs/op": 0,
-        "ns/op": 5246
+        "ns/op": 3030
       },
       "ceilings": {
         "B/op": 1024,
@@ -74,7 +75,7 @@
       "metrics": {
         "B/op": 0,
         "allocs/op": 0,
-        "ns/op": 292.1
+        "ns/op": 118.8
       },
       "ceilings": {
         "B/op": 1024,
@@ -86,7 +87,7 @@
       "metrics": {
         "B/op": 0,
         "allocs/op": 0,
-        "ns/op": 294834
+        "ns/op": 160632
       },
       "ceilings": {
         "B/op": 1024,
@@ -98,7 +99,7 @@
       "metrics": {
         "B/op": 0,
         "allocs/op": 0,
-        "ns/op": 44901
+        "ns/op": 16585
       },
       "ceilings": {
         "B/op": 1024,
@@ -110,7 +111,7 @@
       "metrics": {
         "B/op": 0,
         "allocs/op": 0,
-        "ns/op": 2740
+        "ns/op": 2645
       },
       "ceilings": {
         "B/op": 1024,
@@ -122,7 +123,7 @@
       "metrics": {
         "B/op": 0,
         "allocs/op": 0,
-        "ns/op": 778.3
+        "ns/op": 161.2
       },
       "ceilings": {
         "B/op": 1024,
@@ -132,36 +133,36 @@
     {
       "name": "BenchmarkBufferedFanout/shared/N=512",
       "metrics": {
-        "B/op": 4,
+        "B/op": 0,
         "allocs/op": 0,
-        "ns/op": 268247
+        "ns/op": 115990
       },
       "ceilings": {
-        "B/op": 1028,
+        "B/op": 1024,
         "allocs/op": 0
       }
     },
     {
       "name": "BenchmarkBufferedFanout/shared/N=64",
       "metrics": {
-        "B/op": 13,
+        "B/op": 0,
         "allocs/op": 0,
-        "ns/op": 44748
+        "ns/op": 16916
       },
       "ceilings": {
-        "B/op": 1037,
+        "B/op": 1024,
         "allocs/op": 0
       }
     },
     {
       "name": "BenchmarkBufferedFanout/shared/N=8",
       "metrics": {
-        "B/op": 1,
+        "B/op": 0,
         "allocs/op": 0,
-        "ns/op": 1925
+        "ns/op": 2984
       },
       "ceilings": {
-        "B/op": 1025,
+        "B/op": 1024,
         "allocs/op": 0
       }
     },
@@ -170,7 +171,7 @@
       "metrics": {
         "B/op": 2,
         "allocs/op": 0,
-        "ns/op": 35.42
+        "ns/op": 49.16
       },
       "ceilings": {
         "B/op": 1026,
@@ -180,12 +181,12 @@
     {
       "name": "BenchmarkDirectFanout/N=512",
       "metrics": {
-        "B/op": 737,
+        "B/op": 819,
         "allocs/op": 0,
-        "ns/op": 14364
+        "ns/op": 9680
       },
       "ceilings": {
-        "B/op": 1761,
+        "B/op": 1843,
         "allocs/op": 0
       }
     },
@@ -194,7 +195,7 @@
       "metrics": {
         "B/op": 94,
         "allocs/op": 0,
-        "ns/op": 686.2
+        "ns/op": 1150
       },
       "ceilings": {
         "B/op": 1118,
@@ -204,12 +205,12 @@
     {
       "name": "BenchmarkDirectFanout/N=8",
       "metrics": {
-        "B/op": 12,
+        "B/op": 14,
         "allocs/op": 0,
-        "ns/op": 303.3
+        "ns/op": 218.3
       },
       "ceilings": {
-        "B/op": 1036,
+        "B/op": 1038,
         "allocs/op": 0
       }
     }

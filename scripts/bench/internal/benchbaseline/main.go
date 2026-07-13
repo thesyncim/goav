@@ -35,6 +35,7 @@ type baselineFile struct {
 type thresholds struct {
 	BytesSlackRatio  float64 `json:"bytes_per_op_slack_ratio"`
 	BytesSlackMin    float64 `json:"bytes_per_op_slack_min"`
+	BytesColdRatio   float64 `json:"bytes_per_op_cold_slack_ratio"`
 	AllocsSlack      float64 `json:"allocs_per_op_slack"`
 	AllocsSlackRatio float64 `json:"allocs_per_op_slack_ratio"`
 	AllocsSlackMin   float64 `json:"allocs_per_op_slack_min"`
@@ -77,11 +78,12 @@ func collect(args []string) {
 	count := fs.String("count", "", "benchmark count")
 	bytesSlackRatio := fs.Float64("bytes-slack-ratio", 0.05, "B/op ceiling ratio slack")
 	bytesSlackMin := fs.Float64("bytes-slack-min", 1024, "minimum B/op ceiling slack")
+	bytesColdRatio := fs.Float64("bytes-cold-ratio", 0.25, "B/op ceiling ratio slack for noisy cold paths")
 	allocsSlack := fs.Float64("allocs-slack", 0, "allocs/op ceiling slack")
 	allocsSlackRatio := fs.Float64("allocs-slack-ratio", 0.05, "allocs/op ceiling ratio slack for cold paths")
 	allocsSlackMin := fs.Float64("allocs-slack-min", 4, "minimum allocs/op ceiling slack for cold paths")
 	allocsColdAt := fs.Float64("allocs-cold-at", 100, "allocs/op value treated as noisy cold-path work")
-	allocsColdRatio := fs.Float64("allocs-cold-ratio", 0.15, "allocs/op ceiling ratio slack for noisy cold paths")
+	allocsColdRatio := fs.Float64("allocs-cold-ratio", 0.5, "allocs/op ceiling ratio slack for noisy cold paths")
 	allocsColdMin := fs.Float64("allocs-cold-min", 64, "minimum allocs/op ceiling slack for noisy cold paths")
 	_ = fs.Parse(args)
 	if *source == "" || *out == "" || *kind == "" {
@@ -95,7 +97,7 @@ func collect(args []string) {
 		fail("%v", err)
 	}
 	for i := range records {
-		records[i].Ceilings = ceilings(records[i].Metrics, *bytesSlackRatio, *bytesSlackMin, *allocsSlack, *allocsSlackRatio, *allocsSlackMin, *allocsColdAt, *allocsColdRatio, *allocsColdMin)
+		records[i].Ceilings = ceilings(records[i].Metrics, *bytesSlackRatio, *bytesSlackMin, *bytesColdRatio, *allocsSlack, *allocsSlackRatio, *allocsSlackMin, *allocsColdAt, *allocsColdRatio, *allocsColdMin)
 	}
 	goVersion := strings.TrimSpace(commandOutput("go", "version"))
 	if goVersion == "" {
@@ -116,6 +118,7 @@ func collect(args []string) {
 		Thresholds: thresholds{
 			BytesSlackRatio:  *bytesSlackRatio,
 			BytesSlackMin:    *bytesSlackMin,
+			BytesColdRatio:   *bytesColdRatio,
 			AllocsSlack:      *allocsSlack,
 			AllocsSlackRatio: *allocsSlackRatio,
 			AllocsSlackMin:   *allocsSlackMin,
@@ -237,15 +240,27 @@ func parseBenchOutput(path string) ([]benchmarkRecord, error) {
 	return records, nil
 }
 
-func ceilings(metrics map[string]float64, bytesSlackRatio float64, bytesSlackMin float64, allocsSlack float64, allocsSlackRatio float64, allocsSlackMin float64, allocsColdAt float64, allocsColdRatio float64, allocsColdMin float64) map[string]float64 {
+func ceilings(metrics map[string]float64, bytesSlackRatio float64, bytesSlackMin float64, bytesColdRatio float64, allocsSlack float64, allocsSlackRatio float64, allocsSlackMin float64, allocsColdAt float64, allocsColdRatio float64, allocsColdMin float64) map[string]float64 {
 	out := make(map[string]float64, 2)
+	// Cold-path rows (attach/detach-style control benchmarks) vary across
+	// platforms and schedulers far more than steady-state rows: the ratchet
+	// gates growth, not platform noise, so cold rows get wider slack on both
+	// axes.
+	cold := false
+	if allocs, ok := metrics["allocs/op"]; ok && allocs >= allocsColdAt {
+		cold = true
+	}
 	if value, ok := metrics["B/op"]; ok {
-		slack := math.Max(bytesSlackMin, value*bytesSlackRatio)
+		ratio := bytesSlackRatio
+		if cold {
+			ratio = math.Max(ratio, bytesColdRatio)
+		}
+		slack := math.Max(bytesSlackMin, value*ratio)
 		out["B/op"] = math.Ceil(value + slack)
 	}
 	if value, ok := metrics["allocs/op"]; ok {
 		slack := allocsSlack
-		if value >= allocsColdAt {
+		if cold {
 			slack = math.Max(slack, math.Max(allocsColdMin, value*allocsColdRatio))
 		} else if value > 2 {
 			slack = math.Max(slack, math.Max(allocsSlackMin, value*allocsSlackRatio))

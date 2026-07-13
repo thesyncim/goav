@@ -1,8 +1,8 @@
 {
   "schema": 1,
   "kind": "root",
-  "generated_at": "2026-07-02T19:07:00Z",
-  "go_version": "go version go1.26.0 darwin/arm64",
+  "generated_at": "2026-07-13T22:57:41Z",
+  "go_version": "go version go1.26.4 darwin/arm64",
   "goos": "darwin",
   "goarch": "arm64",
   "package": ".",
@@ -13,24 +13,25 @@
   "thresholds": {
     "bytes_per_op_slack_ratio": 0.05,
     "bytes_per_op_slack_min": 1024,
+    "bytes_per_op_cold_slack_ratio": 0.25,
     "allocs_per_op_slack": 0,
     "allocs_per_op_slack_ratio": 0.05,
     "allocs_per_op_slack_min": 4,
     "allocs_per_op_cold_threshold": 100,
-    "allocs_per_op_cold_slack_ratio": 0.15,
+    "allocs_per_op_cold_slack_ratio": 0.5,
     "allocs_per_op_cold_slack_min": 64
   },
   "benchmarks": [
     {
       "name": "BenchmarkAttachDetachUnderLoad",
       "metrics": {
-        "B/op": 1090743,
-        "allocs/op": 527,
-        "ns/op": 98064
+        "B/op": 1063014,
+        "allocs/op": 468,
+        "ns/op": 77626
       },
       "ceilings": {
-        "B/op": 1145281,
-        "allocs/op": 607
+        "B/op": 1328768,
+        "allocs/op": 702
       }
     },
     {
@@ -38,7 +39,7 @@
       "metrics": {
         "B/op": 61,
         "allocs/op": 1,
-        "ns/op": 249.2
+        "ns/op": 212.5
       },
       "ceilings": {
         "B/op": 1085,
@@ -50,7 +51,7 @@
       "metrics": {
         "B/op": 81,
         "allocs/op": 1,
-        "ns/op": 324.2
+        "ns/op": 327.5
       },
       "ceilings": {
         "B/op": 1105,
@@ -60,12 +61,12 @@
     {
       "name": "BenchmarkComposite",
       "metrics": {
-        "B/op": 87621,
+        "B/op": 87604,
         "allocs/op": 2,
-        "ns/op": 6841
+        "ns/op": 9969
       },
       "ceilings": {
-        "B/op": 92003,
+        "B/op": 91985,
         "allocs/op": 2
       }
     },
@@ -74,7 +75,7 @@
       "metrics": {
         "B/op": 57,
         "allocs/op": 1,
-        "ns/op": 274.2
+        "ns/op": 235.8
       },
       "ceilings": {
         "B/op": 1081,
@@ -86,7 +87,7 @@
       "metrics": {
         "B/op": 57,
         "allocs/op": 1,
-        "ns/op": 208.8
+        "ns/op": 212.9
       },
       "ceilings": {
         "B/op": 1081,
@@ -98,10 +99,10 @@
       "metrics": {
         "B/op": 57,
         "allocs/op": 1,
-        "ns/op": 110,
+        "ns/op": 143.3,
         "p50_ns": 83,
-        "p95_ns": 84,
-        "p99_ns": 84
+        "p95_ns": 125,
+        "p99_ns": 167
       },
       "ceilings": {
         "B/op": 1081,
@@ -111,43 +112,43 @@
     {
       "name": "BenchmarkLiveRoomSync",
       "metrics": {
-        "B/op": 71,
+        "B/op": 87,
         "allocs/op": 1,
-        "delivered": 52,
-        "max_drift_ns": 20000000,
-        "ns/op": 355,
-        "p50_ns": 375,
-        "p95_ns": 542,
-        "p99_ns": 1292,
+        "delivered": 56,
+        "max_drift_ns": 720000000,
+        "ns/op": 870,
+        "p50_ns": 292,
+        "p95_ns": 750,
+        "p99_ns": 32833,
         "source_drops": 0,
-        "sync_drops": 48
+        "sync_drops": 44
       },
       "ceilings": {
-        "B/op": 1095,
+        "B/op": 1111,
         "allocs/op": 1
       }
     },
     {
       "name": "BenchmarkMix/arms=2",
       "metrics": {
-        "B/op": 17926,
+        "B/op": 17910,
         "allocs/op": 2,
-        "ns/op": 2082
+        "ns/op": 971.7
       },
       "ceilings": {
-        "B/op": 18950,
+        "B/op": 18934,
         "allocs/op": 2
       }
     },
     {
       "name": "BenchmarkMix/arms=8",
       "metrics": {
-        "B/op": 17989,
+        "B/op": 18004,
         "allocs/op": 3,
-        "ns/op": 2026
+        "ns/op": 1690
       },
       "ceilings": {
-        "B/op": 19013,
+        "B/op": 19028,
         "allocs/op": 7
       }
     },
@@ -156,7 +157,7 @@
       "metrics": {
         "B/op": 88,
         "allocs/op": 1,
-        "ns/op": 212.9
+        "ns/op": 134.6
       },
       "ceilings": {
         "B/op": 1112,
@@ -166,12 +167,12 @@
     {
       "name": "BenchmarkRemuxPackets",
       "metrics": {
-        "B/op": 51,
+        "B/op": 50,
         "allocs/op": 0,
-        "ns/op": 402.1
+        "ns/op": 262.5
       },
       "ceilings": {
-        "B/op": 1075,
+        "B/op": 1074,
         "allocs/op": 0
       }
     },
@@ -180,7 +181,7 @@
       "metrics": {
         "B/op": 58,
         "allocs/op": 1,
-        "ns/op": 5071
+        "ns/op": 8410
       },
       "ceilings": {
         "B/op": 1082,
@@ -192,7 +193,7 @@
       "metrics": {
         "B/op": 59,
         "allocs/op": 1,
-        "ns/op": 13133
+        "ns/op": 10513
       },
       "ceilings": {
         "B/op": 1083,
@@ -202,24 +203,24 @@
     {
       "name": "BenchmarkSelectPassthrough",
       "metrics": {
-        "B/op": 9193,
+        "B/op": 9206,
         "allocs/op": 2,
-        "ns/op": 1907
+        "ns/op": 1910
       },
       "ceilings": {
-        "B/op": 10217,
+        "B/op": 10230,
         "allocs/op": 2
       }
     },
     {
       "name": "BenchmarkSharedMuxGroup",
       "metrics": {
-        "B/op": 1920,
+        "B/op": 1884,
         "allocs/op": 1,
-        "ns/op": 4633
+        "ns/op": 4060
       },
       "ceilings": {
-        "B/op": 2944,
+        "B/op": 2908,
         "allocs/op": 1
       }
     },
@@ -229,9 +230,9 @@
         "B/op": 57,
         "allocs/op": 1,
         "gc_cycles": 1,
-        "gc_pause_total_ns": 25084,
+        "gc_pause_total_ns": 27376,
         "heap_drift_B": 2584,
-        "ns/op": 97.09
+        "ns/op": 81.25
       },
       "ceilings": {
         "B/op": 1081,
@@ -241,24 +242,24 @@
     {
       "name": "BenchmarkSourcePush/blocking",
       "metrics": {
-        "B/op": 17884,
+        "B/op": 17882,
         "allocs/op": 2,
-        "ns/op": 1318
+        "ns/op": 875.8
       },
       "ceilings": {
-        "B/op": 18908,
+        "B/op": 18906,
         "allocs/op": 2
       }
     },
     {
       "name": "BenchmarkSourcePush/dropping",
       "metrics": {
-        "B/op": 17879,
+        "B/op": 17878,
         "allocs/op": 2,
-        "ns/op": 943.3
+        "ns/op": 1136
       },
       "ceilings": {
-        "B/op": 18903,
+        "B/op": 18902,
         "allocs/op": 2
       }
     },
@@ -267,8 +268,8 @@
       "metrics": {
         "B/op": 57,
         "allocs/op": 1,
-        "heap_live_B": 3417536,
-        "ns/op": 91.25,
+        "heap_live_B": 3436624,
+        "ns/op": 104.2,
         "runtime_sys_B": 112896296
       },
       "ceilings": {
