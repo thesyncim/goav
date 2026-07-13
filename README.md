@@ -73,6 +73,8 @@ group; repeated ungrouped destination names are rejected so sharing stays explic
   opens — both machine-consumable as stable JSON.
 - **Errors you can act on.** Every build refusal is a `*goav.BuildError` with a
   stable family and code, the failing operation, and concrete fixes — not a string.
+- **Live timing built in.** One shared clock per task: synchronized playout,
+  pause/seek/rate controls, and QoS lateness reports — see [Flow control](docs/FLOW_CONTROL.md).
 - **Explicit, app-owned extension.** Sources, sinks, destinations, codecs,
   formats, and filters plug in through exported interfaces, per runtime.
 

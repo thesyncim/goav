@@ -78,7 +78,7 @@ That is the important constraint: runtime attach is not a separate graph
 language. The `runtimeBranch` and `mediaPlan` parallel IRs are deleted and
 collapsed onto the work-plan model, along with the per-workflow builder
 compilers. The remaining internal debt (the `streamIntent` normalization
-layer) is tracked in `docs/NORTH_STAR.md`.
+layer) is tracked in `docs/ROADMAP.md`.
 
 Inputs and destinations open through one extension point per side: every input
 kind (file, URI, RTP, WebRTC, custom source) resolves through one source

@@ -4,8 +4,7 @@ Read this when you need to choose the right goav document without archaeology.
 
 ## Start Here
 
-- [`ROADMAP.md`](ROADMAP.md): reliability tiers, release gates, planned work, and non-goals.
-- [`NORTH_STAR.md`](NORTH_STAR.md): design contract and evidence scoreboard.
+- [`ROADMAP.md`](ROADMAP.md): design contract, evidence scoreboard, reliability tiers, release gates, planned work, and non-goals.
 - [`V1_SCOPE.md`](V1_SCOPE.md): what the v1 front door promises, and what remains governed pre-v1.
 - [`API_SURFACE.md`](API_SURFACE.md): governed exported surface and extension boundaries.
 - [`ARCHITECTURE.md`](ARCHITECTURE.md): internal layering, recipe IR, planner, runtime, and graph model.

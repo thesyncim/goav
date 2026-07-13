@@ -12,6 +12,7 @@ import (
 	"github.com/thesyncim/goav/control"
 	"github.com/thesyncim/goav/flow"
 	"github.com/thesyncim/goav/pipeline"
+	"github.com/thesyncim/goav/plan"
 	"github.com/thesyncim/goav/shape"
 )
 
@@ -419,5 +420,69 @@ func TestPlayoutAttachRefusesStreamWithoutTimebase(t *testing.T) {
 	withTimebase := av.Stream{ID: "cam", TimeBase: av.TimeBase{Num: 1, Den: 90000}}
 	if err := validatePlayoutPolicyForStream("attach stream rule branch", "preview", withTimebase, operations); err != nil {
 		t.Fatalf("stream with timebase refused: %v", err)
+	}
+}
+
+// TestExplainReportsPathLatency pins the plan-time latency model: Explain
+// composes the declared latency contributions along a gated path — sync
+// tolerance, playout offset, and the runtime's declared buffered queue
+// MaxLatency — into one path_latency_budget decision. Every figure is
+// declared policy (no runtime measurement), and queue capacity is reported
+// as a message count, never converted into a fake duration. Ungated paths
+// get no row.
+func TestExplainReportsPathLatency(t *testing.T) {
+	ctx := context.Background()
+	rt := mustNew(WithBufferPolicy(pipeline.BufferPolicy{
+		Capacity:   16,
+		Drop:       pipeline.DropBlock,
+		MaxLatency: 50 * time.Millisecond,
+	}))
+	report, err := From(playoutFrameSource("cam", av.MediaVideo, nil, 0)).
+		UseRuntime(rt).
+		Video().
+		Sync(flow.Sync("room", flow.SyncTolerance(40*time.Millisecond))).
+		Playout(flow.Playout("preview").WithOffset(200 * time.Millisecond)).
+		To(Sink(SinkFunc("preview", func(context.Context, Message) error { return nil }))).
+		Explain(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var budgets []plan.Decision
+	for _, decision := range report.Decisions {
+		if decision.Code == diagnosticPathLatencyBudget {
+			budgets = append(budgets, decision)
+		}
+	}
+	if len(budgets) != 1 {
+		t.Fatalf("path_latency_budget decisions = %+v, want exactly one", budgets)
+	}
+	if budgets[0].Branch != "video" {
+		t.Fatalf("budget branch = %q, want %q", budgets[0].Branch, "video")
+	}
+	for _, fragment := range []string{
+		"declared latency budget 290ms",
+		"sync tolerance 40ms",
+		"playout offset 200ms",
+		"queue max latency 50ms",
+		"queue capacity 16 messages",
+		"a count, not a duration",
+	} {
+		if !strings.Contains(budgets[0].Message, fragment) {
+			t.Fatalf("budget message missing %q: %s", fragment, budgets[0].Message)
+		}
+	}
+
+	ungated, err := From(playoutFrameSource("cam", av.MediaVideo, nil, 0)).
+		UseRuntime(rt).
+		Video().
+		To(Sink(SinkFunc("preview", func(context.Context, Message) error { return nil }))).
+		Explain(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, decision := range ungated.Decisions {
+		if decision.Code == diagnosticPathLatencyBudget {
+			t.Fatalf("ungated path reported a latency budget: %+v", decision)
+		}
 	}
 }

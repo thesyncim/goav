@@ -110,6 +110,13 @@ func planBranchFromRecipeIRStream(state *recipeCompileState, stream recipeir.Str
 	branchName := firstNonEmpty(plannedStream.Name, string(plannedStream.Selector.Type), fmt.Sprintf("branch-%d", index))
 	operations, branchDecisions := planRecipeIROperationSpecs(input, plannedStream, branchName, spec, selectComponent)
 	operations = planOperationsWithShape(branchName, spec, operations)
+	var stateRuntime *runtime
+	if state != nil {
+		stateRuntime = state.runtime
+	}
+	if latency, ok := planPathLatencyDecision(stateRuntime, branchName, plannedStream.Operations); ok {
+		branchDecisions = append(branchDecisions, latency)
+	}
 	return planBranch{
 		Name:       branchName,
 		Input:      inputName,

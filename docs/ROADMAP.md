@@ -1,17 +1,85 @@
-# Roadmap: stability tiers and the road to v1
+# Roadmap: the design contract, stability tiers, and the road to v1
 
 goav is pre-v1. Use this roadmap to answer a human question: what can I rely
 on today, what is still allowed to move, and what would be dishonest to imply
-as done? It separates stable, experimental, deliberately deferred, planned,
-and non-goal work, then names the checks that must hold before a v1 tag. Every
-claim cites the test, benchmark, or document that backs it, or is marked
-**roadmap**.
+as done? It states the design contract, separates stable, experimental,
+deliberately deferred, planned, and non-goal work, then names the checks that
+must hold before a v1 tag. Every claim cites the test, benchmark, or document
+that backs it, or is marked **roadmap**.
 
-The nearby docs split the work by reader need: `docs/NORTH_STAR.md` keeps the
-evidence-cited acceptance scoreboard, `docs/V1_SCOPE.md` names the release
-scope, `docs/REPOSITORY_TRUST.md` records the GitHub metadata and release
-posture, and `docs/GSTREAMER_ALTERNATIVE.md` explains how goav relates to
-GStreamer. Earlier planning artifacts now live in `docs/history/`.
+The nearby docs split the work by reader need: `docs/V1_SCOPE.md` names the
+release scope, `docs/REPOSITORY_TRUST.md` records the GitHub metadata and
+release posture, and `docs/GSTREAMER_ALTERNATIVE.md` explains how goav
+relates to GStreamer. Earlier planning artifacts live in `docs/history/`.
+`docs/NORTH_STAR.md` was folded into this document (2026-07-13); its numbered
+evidence map continues below unchanged.
+
+## The design contract
+
+goav has one user-facing model, and it must hold for initial builds, runtime
+attach, diagnostics, control, and examples:
+
+```text
+From(inputs...) -> stream selection -> operations -> taps -> branches -> destinations -> task
+```
+
+Normal users should not need graph handles, string routing, or a separate
+workflow API for recording, transcoding, preview, diagnostics, or late
+attachment. Internally every recipe lowers the same way —
+`BranchSpec -> operationSpec list -> WorkPlan / WorkPatch -> executable task`
+— and each fluent operation appends exactly one internal operation record
+(`Decode` → OpDecode, `Copy` → OpCopy, `Shape`/`Auto`/`Require`/`Prefer` →
+shape, `Resize`/`Resample` → transform, `Do` → stage, `Encode` → encode,
+`Tap` → tap).
+
+- A direct stream is an implicit `Branch("main")`.
+- A branch is an ordered operation list plus destinations, source/tap anchor,
+  media kind, buffer policy, and detach policy.
+- A flow is reusable operations; it owns no source, destination, runtime state,
+  or lifecycle.
+- `Mux(name, destination)` is the first-class way to group branches into one
+  mux or sink group; reusing one ungrouped destination value is rejected.
+- Shape validation is central. Inputs, operations, taps, flows, branches, and
+  destinations all participate in the same compatibility check.
+- Build and Attach share the same lowering model: `WorkPlan` for a full task,
+  `WorkPatch` for a runtime branch update.
+- Runtime observation is composition: `Branch + Do + Sink`, plus
+  `Watch(...).Events()` subscriptions, `Snapshot`, `Stats`, `Explain`, and
+  graph rendering.
+- Runtime controls lower into `task.Control`, `Mutable.Attach`,
+  `Attachment.Rebranch`, `Mutable.Detach`, `Watch`, `Snapshot`, `Stats`, or
+  `Close`; the control-plane binder never calls arbitrary methods.
+
+This contract is broader than the v1 front door: where it names runtime
+mutation, control, observation, dynamic streams, or joins, it documents the
+shared architecture for governed advanced features, not an automatic v1
+promise.
+
+The working rule: new functionality belongs in the grammar only when it can
+answer, without special cases — what operation record it appends; what shape
+facts it consumes and produces; how it appears in `Explain`, `Describe`, and
+`Snapshot`; how the same branch attaches at runtime; how it fails before
+resources open; and how a test source or external adapter exercises it end to
+end. If those answers require a separate workflow path, keep the feature out
+of the front-door API until the shared planner can express it.
+
+## Evidence map
+
+The acceptance tests keep the design honest. The numbers below are the stable
+labels used in test failure messages (`NORTH_STAR #n`); use them as a map when
+reviewing whether a new feature strengthens the grammar or bypasses it.
+
+| Area | Current evidence |
+| --- | --- |
+| Grammar | #1 README and docs guards keep the adoption vocabulary on Input, Stream, Branch, Destination, and Task; deeper docs own Tap and Flow. #2 direct chains lower like `Branch("main")`. #3 flows expose no destinations. #4 destination grouping is explicit with `Mux(name, destination)`; ungrouped handle reuse is rejected. |
+| Planner | #5 Build and Attach share canonical operation lowering. #6 Attach emits `WorkPatch` downstream of taps. #7 Explain reads from `WorkPlan`. #8 Snapshot reflects plan plus patches. #9 legacy workflow packages are gone. #10 workflow-kind dispatch is gone from normal recipes. |
+| Shape | #11 Resize requires video frames. #12 Resample requires audio frames. #13 frames cannot go to byte destinations without Encode. #14 packet Copy to File succeeds. #15 decoded frames can end in Sink. #16 errors include operation, actual/expected shape, and fix. #17 conversions are inserted only under an explicit policy. |
+| Branches | #18 branches after Decode share one decoder. #19 dropping preview branches do not stall archive branches. #20 Blocking backpressures. #21 branch drop counters are visible. #22 mutable branch output cannot corrupt siblings. |
+| Runtime mutation | #23 Attach opens destinations before mutation. #24 attach failure rolls back. #25/#26 drain and abort are pinned for Rebranch and standalone `Mutable.Detach`. #27 Rebranch starts replacement before old detach. #28 failed Rebranch keeps the old branch. #29 Pause/Resume affects one branch. |
+| Events and control | #30 Watch filters and stream/attach/backpressure events are pinned; `EventBranchAttached`/`EventBranchDetached` report runtime branch lifecycle, and destination commit/abort/error events report finalization. #31 Snapshot reports typed task, branch, destination, tap, and drop state. #32 Keyframe reaches adapters or fails clearly. #33 SetBitrate reaches encoders or fails clearly. |
+| Sources | #34 custom packet source Copy to File. #35 custom frame source Encode to File. #36 source.Push reports Accepted/Dropped. #37 source EOS commits destinations. |
+| Dynamic streams | #38 late streams attach branches. #39 ambiguous stream selection lists candidates and fixes. #40 removal drains rule-created branches. |
+| Multi-input and joins | #41 multiple inputs can share one destination. #42 codec/format/timebase mux compatibility is checked. #43 Mix joins audio branches. #44 join shape mismatch is solved or refused before mutation. |
 
 ## The settled model
 
@@ -33,6 +101,13 @@ one shared mux/sink group when branches build matching destinations
 independently. Reusing one ungrouped handle is rejected; grouping is explicit
 (`TestMuxPreferredOverHandleIdentity`, `TestMuxSurvivesWithAndCopy`,
 `TestSameHandleGroupingRequiresMux`).
+
+The time domain is settled too (landed 2026-07-13): one shared timeline per
+task with task-wide `control.Rate`, synchronized sink playout, task
+Pause/Resume with readiness, seek with flush, QoS feedback, and declared
+per-path latency budgets in `Explain`. Contract prose lives in
+`docs/FLOW_CONTROL.md`; the slice-by-slice record is
+`docs/history/TIME_DOMAIN_PLAN.md`.
 
 ## Governed pre-v1 surface
 
@@ -131,19 +206,11 @@ this list:
   caller-owned output buffers and allocation pins. Applications that need H.264
   encode register their chosen backend explicitly with `runconfig.WithEncoder`
   (or a codec adapter) instead of getting an unproven bundled path.
-- **A/V sink sync, pull scheduling**: branch-local `flow.SyncPolicy` gates now
-  align or shed packet/frame messages on shared live timelines, and the
-  task-wide clock service ships: every task owns one timeline the realtime
-  pacer, clock-aware sources, and playout gates sleep on, moved by task-wide
-  `control.Rate` (`docs/TIME_DOMAIN_PLAN.md` T1,
-  `TestTaskTimelineRateReanchorsAllSources`). Sink-level A/V synchronization
-  ships too: `.Playout(flow.Playout(name))` delivers when due on the task
-  timeline (TIME_DOMAIN_PLAN T2, `TestPlayoutSinkDeliversWhenDue`). The
-  theme-C endgame is still pull scheduling. The time-axis controls
-  (`Seek`/`Rate`/`Segment`) and clock-paced realtime file playback already
-  ship (`task_seek_test.go`, `task_time_control_test.go`); the rest is
-  analysed in `docs/NORTH_STAR.md` ("Time/sync", attack-plan stage 7).
-  Roadmap.
+- **Pull scheduling**: the one time-domain gap left open, deferred with a
+  reason — consumer backpressure already bounds producers
+  (`flow.Blocking`, `TestBufferedFanoutDropBlockBackpressuresSource`), so a
+  pull scheduler would duplicate flow control the graph already has. The rest
+  of the time domain is landed and cited in "The settled model" above.
 - **Internal-package layering**: measured on the cross-file reference graph
   and still not ready for a package split. The data-transfer boundary has
   started with `internal/recipeir`; normal recipe work-plan handoffs,
@@ -158,8 +225,8 @@ this list:
   stream-rule removals drain rule-created branches.
 - **`streamIntent` normalization fold**: Explain stream rows and adapter
   requirements, plus mux compatibility, now consume codec facts from `WorkPlan`
-  operations. Remaining validation/planning readers are tracked in
-  `docs/NORTH_STAR.md` "Execution order".
+  operations. Remaining validation/planning readers still consume the intent
+  layer; fold them as they are touched.
 
 ## Planned
 

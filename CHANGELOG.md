@@ -11,6 +11,16 @@ methodology changes, and migration notes.
 
 ## Unreleased
 
+- Plan-time latency budgets and docs consolidation: `Explain` now reports one
+  `path_latency_budget` decision per synced/playout path — the declared sync
+  tolerance, playout offset, and the runtime's declared buffered `MaxLatency`
+  summed into a per-path figure, with queue capacity reported as a message
+  count, not a duration (playout offsets stay independent of sync tolerance;
+  no defaulting). The time-domain program is complete: its plan moved to
+  `docs/history/TIME_DOMAIN_PLAN.md`, `docs/NORTH_STAR.md` folded into
+  `docs/ROADMAP.md`, and `docs/FLOW_CONTROL.md` owns the
+  sync/playout/pause/flush/QoS/latency contract prose.
+
 - QoS feedback: overdue playout admits, sync-gate sheds, and buffered
   `MaxLatency` sheds now publish `av.EventQoS` through `Watch` (stream, node,
   lateness, delivered-or-dropped via `av.QoSMetadata`/`av.EventQoSReport`),

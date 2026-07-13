@@ -12,4 +12,5 @@ const (
 	diagnosticDecodeRequired          = "decode_required"
 	diagnosticEncodeRequired          = "encode_required"
 	diagnosticStreamRule              = "stream_rule"
+	diagnosticPathLatencyBudget       = "path_latency_budget"
 )

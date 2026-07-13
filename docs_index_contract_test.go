@@ -15,7 +15,6 @@ func TestDocsIndexAndHistoryReferences(t *testing.T) {
 	indexText := string(index)
 	for _, fragment := range []string{
 		"[`ROADMAP.md`](ROADMAP.md)",
-		"[`NORTH_STAR.md`](NORTH_STAR.md)",
 		"[`CLI.md`](CLI.md)",
 		"[`CONTROL_PLANE.md`](CONTROL_PLANE.md)",
 		"[`history/`](history/)",
@@ -32,6 +31,7 @@ func TestDocsIndexAndHistoryReferences(t *testing.T) {
 		"PROGRESS.md",
 		"V1_CREDIBILITY_AUDIT.md",
 		"V1_CREDIBILITY_PR.md",
+		"TIME_DOMAIN_PLAN.md",
 	}
 	entries, err := os.ReadDir("docs")
 	if err != nil {

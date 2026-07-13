@@ -42,34 +42,28 @@ claims are made.
 
 The useful lesson from GStreamer is not "copy pads into the public API"; it is
 that real media applications need mutation, negotiation, time alignment, and
-bus-visible state changes to be ordinary workflows. The current goav answer is:
+bus-visible state changes to be ordinary workflows. Mutation, lifecycle and
+destination events, explicit detach outcomes, mux preflight, and branch-local
+`flow.SyncPolicy` alignment are covered in the table above; their contract
+prose lives in `docs/FLOW_CONTROL.md` and `docs/OPERATIONS.md`.
 
-- Runtime branch lifecycle is observable without graph handles:
-  `av.EventBranchAttached` and `av.EventBranchDetached` are delivered through
-  task `Watch`, carrying the attachment id/name and detach disposition.
-- Destination finalization is observable too:
-  `av.EventDestinationCommitted`, `av.EventDestinationAborted`, and
-  `av.EventDestinationCommitError` report task and runtime-branch destination
-  outcomes.
-- Standalone detach has an explicit outcome:
-  `Mutable.Detach(ctx, attachment, lifecycle.DrainBranch())` commits branch destinations,
-  `lifecycle.AbortBranch()` aborts them, and the no-option form remains a plain detach.
-- Mux preflight now validates declared timebase facts along with stream count,
-  codec, and media compatibility. Unknown facts still defer; malformed facts
-  fail before resources open.
-- Branch-local live-room synchronization is part of the grammar:
-  applying the same `flow.SyncPolicy` to audio/video branches aligns messages by
-  normalized PTS, while `flow.SyncDropLate()` lets preview branches shed late media
-  without stalling recording branches.
-
-The intentionally deferred gap is narrower now: pull scheduling. The
-task-wide clock service exists — every task owns one shared timeline that the
-realtime pacer, clock-aware sources, and playout gates sleep on, moved by
-task-wide `control.Rate` (`TestTaskTimelineRateReanchorsAllSources`,
-`TestPlayoutUsesRuntimeClock`) — branch-local live-room alignment exists, and
-sink-level A/V synchronization is `.Playout(flow.Playout(name))`
-(`TestPlayoutSinkDeliversWhenDue`, `TestPlayoutAlignsBranchesSharingPolicy`);
-the remaining time-domain slices live in `docs/TIME_DOMAIN_PLAN.md`.
+The time domain GStreamer treats as framework machinery is now landed goav
+capability, each piece cited: the task-wide clock service — one shared
+timeline per task that the realtime pacer, clock-aware sources, and playout
+gates sleep on, moved by task-wide `control.Rate`
+(`TestTaskTimelineRateReanchorsAllSources`, `TestPlayoutUsesRuntimeClock`);
+sink sync as `.Playout(flow.Playout(name))` deliver-when-due with
+shared-anchor A/V alignment (`TestPlayoutSinkDeliversWhenDue`,
+`TestPlayoutAlignsBranchesSharingPolicy`); task state as `Pause`/`Resume` on
+the timeline plus the `av.EventTaskReady` readiness signal
+(`TestTaskPauseFreezesPacedFlow`, `TestTaskReadinessEventFires`); accurate
+seek that flushes the stale downstream backlog
+(`TestSeekFlushesInFlightMedia`); QoS lateness reports with an opt-in
+corrective policy (`TestQoSReportsLateness`); and a declared per-path latency
+budget in `Explain` (`TestExplainReportsPathLatency`). Contract prose:
+`docs/FLOW_CONTROL.md`; the program record is
+`docs/history/TIME_DOMAIN_PLAN.md`. The one intentionally deferred gap is
+pull scheduling.
 
 ## What goav deliberately does not have
 
@@ -81,13 +75,10 @@ the remaining time-domain slices live in `docs/TIME_DOMAIN_PLAN.md`.
   for core (`docs/ROADMAP.md`).
 - Playback/display stacks, device discovery, auto-pluggers. These are out of
   scope; goav assumes the application owns its endpoints.
-- Pull scheduling. The task-wide timeline clock
-  (`TestTaskTimelineRateReanchorsAllSources`), branch-local live-room
-  `flow.SyncPolicy` gates, sink-side `flow.Playout` deliver-when-due gates
-  (`TestPlayoutSinkDeliversWhenDue`), and task Pause/Resume with
-  `av.EventTaskReady` readiness exist; the remaining time-domain work (seek
-  flush, QoS, the latency model) is planned in `docs/TIME_DOMAIN_PLAN.md`
-  (`docs/NORTH_STAR.md`, `docs/ROADMAP.md`).
+- Pull scheduling. Deferred with a reason: consumer backpressure already
+  bounds producers (`flow.Blocking`,
+  `TestBufferedFanoutDropBlockBackpressuresSource`), so a pull scheduler
+  would duplicate flow control the graph already has (`docs/ROADMAP.md`).
 
 ## On performance comparisons
 

@@ -1,8 +1,8 @@
 # Time-domain plan: GStreamer-class power, goav-sane surface
 
-Status: in progress (started 2026-07-13). Owner: maintainer. This plan moves
-to `docs/history/` when its slices close; `docs/ROADMAP.md` absorbs the
-survivors. Follows repo culture: every slice names its executable evidence.
+Status: complete (started and landed 2026-07-13, all six slices). Historical
+record; `docs/ROADMAP.md` absorbed the survivors and `docs/FLOW_CONTROL.md`
+owns the contract prose. Every slice names its executable evidence.
 
 ## Goal
 
@@ -122,16 +122,23 @@ and rate limit), `TestQoSPolicyDrivesBitrateControl`,
 `TestGraphBufferedMaxLatencyShedReportsQoS`, and
 `TestQoSPolicyRefusalSurfacesThroughWatch`.
 
-### T6. Latency model + claims flip
+### T6. Latency model + claims flip — LANDED
 
-Compose declared latencies (jitter buffer delay, sync tolerance, playout
-offset, queue depth × observed pacing) into a per-path latency figure exposed
-through `Explain` diagnostics and snapshots; playout sinks default their
-offset from it. Then flip the deferred rows in
-`docs/GSTREAMER_ALTERNATIVE.md` (clock service, sink sync, pull-scheduling
-note) to cited tests, update `docs/ROADMAP.md` deferred list, tier rows in
-`docs/API_SURFACE.md`, and `CHANGELOG.md`. Acceptance: doc pins green;
-TestExplainReportsPathLatency (planned).
+`Explain` composes the declared latency contributions along each synced or
+playout path into one `path_latency_budget` decision: sync tolerance +
+playout offset + the runtime's declared buffered `MaxLatency`, with queue
+capacity reported as a message count, not a fake duration — declared policy
+only, no runtime measurement, zero new exports (the code is a plan-decision
+string). Two honesty deviations from the plan text above: playout offsets do
+NOT default from the latency figure (independent declared budgets; inheriting
+one would silently move delivery timing — `docs/FLOW_CONTROL.md` records
+why), and jitter-buffer delay is absent because no provider seam declares
+latency to the root (rtpav is a nested module). Claims flipped:
+`docs/GSTREAMER_ALTERNATIVE.md` cites landed tests for clock service, sink
+sync, task state, seek accuracy, and QoS; pull scheduling stays deferred
+(backpressure covers it); `docs/NORTH_STAR.md` folded into
+`docs/ROADMAP.md`. Acceptance: `TestExplainReportsPathLatency`; doc pins
+green.
 
 ## Sequencing
 

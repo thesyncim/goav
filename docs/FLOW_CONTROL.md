@@ -59,6 +59,18 @@ What holds today (all `-race` clean, with tests):
   `runconfig.WithQoSPolicy` turns reports into ordinary `task.Control` calls
   (`TestQoSPolicyDrivesBitrateControl`); refusals come back as `av.EventQoS`
   with `Cause` (`TestQoSPolicyRefusalSurfacesThroughWatch`).
+- The latency budget is plan-time and declared, never measured: `Explain`
+  emits one `path_latency_budget` decision per synced or playout path, summing
+  the path's declared sync tolerance, playout offset, and the runtime's
+  declared buffered queue `MaxLatency`; queue capacity rides along as a
+  message count, never converted into a fake duration
+  (`TestExplainReportsPathLatency`). A playout policy without `WithOffset`
+  keeps offset zero rather than defaulting from a sync tolerance: the two
+  declare different budgets (inter-branch skew allowance vs render-latency
+  headroom), and inheriting one from the other would silently move delivery
+  timing whenever an unrelated declaration changes. Transport-internal delays
+  (the rtpav jitter buffer lives in a nested module) are not composed — no
+  provider seam declares latency to the root today.
 - Seek is flush-accurate on buffered tasks: once a source records a
   `control.Seek`/`control.Segment`, `task.Control` drains the stale pre-seek
   media queued downstream of it instead of letting it play out first — shed
