@@ -46,6 +46,24 @@ func (t *task) Control(ctx context.Context, ctrl control.Control) error {
 	}
 	var errs []error
 	for _, node := range targets {
+		if ctrl.TargetsSources() {
+			// Probe, flush, then deliver — see flushSeekBacklog for why this
+			// order is the one that never sheds post-seek media.
+			if err := t.probeSourceControl(node); err != nil {
+				if errors.Is(err, pipeline.ErrDynamicGraphUnsupported) {
+					return control.ErrNotRunning
+				}
+				if errors.Is(err, pipeline.ErrInvalidLink) {
+					errs = append(errs, fmt.Errorf("goav: control to %q: source does not accept live control (implement pipeline.ControllableSource): %w", node, err))
+					continue
+				}
+				errs = append(errs, fmt.Errorf("goav: control to %q: %w", node, err))
+				continue
+			}
+			if err := t.flushSeekBacklog(node); err != nil {
+				errs = append(errs, fmt.Errorf("goav: flush before %s control to %q: %w", ctrl.Type(), node, err))
+			}
+		}
 		if err := deliver(ctx, node, msg); err != nil {
 			if errors.Is(err, pipeline.ErrDynamicGraphUnsupported) {
 				return control.ErrNotRunning
@@ -57,36 +75,48 @@ func (t *task) Control(ctx context.Context, ctrl control.Control) error {
 			errs = append(errs, fmt.Errorf("goav: control to %q: %w", node, err))
 			continue
 		}
-		if ctrl.TargetsSources() {
-			if err := t.flushSeekBacklog(node); err != nil {
-				errs = append(errs, fmt.Errorf("goav: flush after %s control to %q: %w", ctrl.Type(), node, err))
-			}
-		}
 	}
 	return errors.Join(errs...)
 }
 
-// flushSeekBacklog is the flush half of a reposition control: once a source
-// recorded a seek or segment, the media already queued downstream of it is
-// backlog from the old position and would otherwise drain to the sinks first.
-// The graph's structural flush capability (buffered runner only) empties those
-// queues, shedding packets/frames under pipeline.DropFlush and preserving
-// queued events; a graph without the capability (direct runner) buffers
-// nothing, so there is nothing to flush and seek behaves as before.
+// probeSourceControl asks the graph whether a source control would be
+// accepted, without delivering one. Graphs without the capability (the direct
+// runner) probe as accepted: they also have nothing to flush, so ordering is
+// moot and delivery reports the real refusal.
+func (t *task) probeSourceControl(node pipeline.NodeRef) error {
+	prober, ok := t.graph.(interface {
+		CanControlSource(pipeline.NodeRef) error
+	})
+	if !ok {
+		return nil
+	}
+	return prober.CanControlSource(node)
+}
+
+// flushSeekBacklog is the flush half of a reposition control: the media queued
+// downstream of a seeking source is backlog from the old position and would
+// otherwise drain to the sinks first. The graph's structural flush capability
+// (buffered runner only) empties those queues, shedding packets/frames under
+// pipeline.DropFlush and preserving queued events; a graph without the
+// capability (direct runner) buffers nothing, so there is nothing to flush and
+// seek behaves as before.
 //
-// The ordering closes the reposition race honestly:
-//   - Deliver first, flush second: a refused control (unknown source, no
-//     ControllableSource) must not cost queued media, so nothing is flushed
-//     until the source accepted the request.
-//   - The source's pump applies the request between reads, so after delivery
-//     it emits at most its in-flight read before repositioning. That bounded
-//     tail — like any message already handed to a worker or sink — cannot be
-//     recalled, but it precedes the av.EventDiscontinuity the source emits at
-//     the new position, so once the discontinuity reaches a sink no pre-seek
-//     media follows it (queues are FIFO and the flush never drops events).
-//   - The flush preserves everything from a queued discontinuity on, so a
-//     pump that repositions faster than the flush runs never loses post-seek
-//     media to it.
+// The probe -> flush -> deliver ordering closes the reposition race by
+// construction:
+//   - Probe first: a refused control (unknown source, no ControllableSource)
+//     must not cost queued media, so nothing is flushed unless delivery would
+//     be accepted — CanControlSource runs the same validation delivery runs.
+//   - Flush before deliver: the source cannot apply a seek it has not received,
+//     so nothing the flush sheds can ever be post-seek media. Flushing after
+//     delivery had a real hole: a fast pump could reposition, emit its
+//     discontinuity, and have it consumed by the sink before the flush ran —
+//     leaving post-seek media alone in the queue for the flush to shed.
+//   - What the pump emits between the flush and the seek applying is a bounded
+//     pre-seek tail (at most the queue refill), and it precedes the
+//     av.EventDiscontinuity the source emits at the new position, so once the
+//     discontinuity reaches a sink no pre-seek media follows it (queues are
+//     FIFO and the flush never drops events). The flush's stop-at-discontinuity
+//     rule remains as a belt for repeated seeks landing close together.
 func (t *task) flushSeekBacklog(node pipeline.NodeRef) error {
 	flusher, ok := t.graph.(interface {
 		FlushDownstream(pipeline.NodeRef) error

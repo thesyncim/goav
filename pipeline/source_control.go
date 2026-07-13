@@ -92,6 +92,35 @@ func (g *bufferedRunner) InjectSource(ctx context.Context, ref NodeRef, msg *Mes
 	return controllable.Control(ctx, msg)
 }
 
+// CanControlSource reports, without delivering anything, whether InjectSource
+// would accept a control for ref — the same validation, the same errors. A
+// reposition caller uses it to refuse early, so it can flush the source's
+// downstream backlog BEFORE the source learns of the seek: flushing first is
+// what guarantees post-seek media is never shed, and probing first is what
+// keeps a refused seek from costing queued media.
+func (g *bufferedRunner) CanControlSource(ref NodeRef) error {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	if g.closed {
+		return ErrClosed
+	}
+	if !g.running {
+		return ErrDynamicGraphUnsupported
+	}
+	index, ok := g.index[ref.String()]
+	if !ok || index < 0 || index >= len(g.nodes) || !g.nodes[index].active {
+		return ErrUnknownNode
+	}
+	node := g.nodes[index]
+	if node.kind != nodeSource {
+		return ErrInvalidLink
+	}
+	if _, ok := node.source.(ControllableSource); !ok {
+		return ErrInvalidLink
+	}
+	return nil
+}
+
 // InjectSource delivers an out-of-band control message to a source in a direct
 // graph by calling the source's Control method synchronously on the caller's
 // goroutine. The direct runner tracks no running state — sources execute inside
