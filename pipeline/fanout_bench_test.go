@@ -2,8 +2,10 @@ package pipeline
 
 import (
 	"context"
+	"runtime"
 	"strconv"
 	"testing"
+	"time"
 
 	"github.com/thesyncim/goav/av"
 )
@@ -203,6 +205,19 @@ func runBufferedFanout(b *testing.B, n int, immutable bool, copyAlways bool) {
 	runDone := make(chan error, 1)
 	go func() { runDone <- g.Run(context.Background()) }()
 	<-src.ready
+	// Warm the graph before the timed window: the first delivery per sink wakes
+	// its worker and completes the once-per-graph readiness cascade, one-time
+	// costs that would otherwise land in the measurement on a loaded runner.
+	if err := src.emitter.Emit(context.Background(), msg); err != nil {
+		b.Fatal(err)
+	}
+	warmDeadline := time.Now().Add(10 * time.Second)
+	for g.Stats().Delivered < uint64(n) {
+		if time.Now().After(warmDeadline) {
+			b.Fatal("warmup message never drained through every sink")
+		}
+		runtime.Gosched()
+	}
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
