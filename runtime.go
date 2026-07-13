@@ -10,6 +10,7 @@ import (
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
+	"github.com/thesyncim/goav/control"
 	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/filter"
 	"github.com/thesyncim/goav/format"
@@ -83,6 +84,7 @@ func New(options ...runconfig.Option) (*Runtime, error) {
 		closeWaitTimeout: config.CloseWaitTimeout,
 		mediaPools:       pools,
 		shapeDeltas:      append([]runconfig.ShapeDeltaContributor(nil), config.ShapeDeltas...),
+		qosPolicy:        config.QoSPolicy,
 	}, nil
 }
 
@@ -105,6 +107,12 @@ type runtime struct {
 	closeWaitTimeout time.Duration
 	mediaPools       *mediaPools
 	shapeDeltas      []runconfig.ShapeDeltaContributor
+	// qosPolicy is the opt-in per-runtime QoS policy started on every task
+	// this runtime builds (runconfig.WithQoSPolicy).
+	qosPolicy func(av.Event) []control.Control
+	// qos is the per-task reporter recipe builds thread to lowering-time gates
+	// next to the timeline; nil on the shared runtime and explicit-graph paths.
+	qos *qosReporter
 }
 
 func (r *runtime) Probe(ctx context.Context, request format.ProbeRequest) (format.ProbeResult, error) {
@@ -203,6 +211,9 @@ func (b *builder) Build(ctx context.Context) (LiveTask, error) {
 	// Explicit-graph sources are caller-built and pace themselves, so the
 	// task timeline has no paced consumers; it exists for uniform task shape.
 	task.timeline = newTimeline(b.runtime.clock)
+	// Explicit graphs lower no gates, but buffered MaxLatency shedding still
+	// reports QoS on the graph event stream, so the policy applies here too.
+	task.startQoSPolicy(b.runtime.qosPolicy)
 	return task, nil
 }
 

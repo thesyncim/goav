@@ -50,6 +50,15 @@ What holds today (all `-race` clean, with tests):
   first media message (`TestTaskReadinessEventFires`; scope details live on
   the `av` constant); one atomic load on the sink delivery path,
   `TestGraphBufferedSteadyEmitAllocs` stays at zero.
+- Lateness is watchable QoS data: an overdue playout admit (delivered late or
+  shed), a sync-gate shed, and a `MaxLatency` queue shed each publish
+  `av.EventQoS` through `Watch` — stream, gate/node, lateness, delivered-or-dropped
+  (`av.EventQoSReport`), one report per producer per second
+  (`TestQoSReportsLateness`, `TestGraphBufferedMaxLatencyShedReportsQoS`) —
+  the task's delivery view, not network conditions. Opt-in
+  `runconfig.WithQoSPolicy` turns reports into ordinary `task.Control` calls
+  (`TestQoSPolicyDrivesBitrateControl`); refusals come back as `av.EventQoS`
+  with `Cause` (`TestQoSPolicyRefusalSurfacesThroughWatch`).
 - Seek is flush-accurate on buffered tasks: once a source records a
   `control.Seek`/`control.Segment`, `task.Control` drains the stale pre-seek
   media queued downstream of it instead of letting it play out first — shed

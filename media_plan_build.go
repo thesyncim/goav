@@ -62,6 +62,10 @@ func buildGraphPlanTask(ctx context.Context, gp graphPlan) (LiveTask, error) {
 	// re-anchors all of them together.
 	timeline := newTimeline(runtime.clock)
 	runtime = runtimeWithClock(runtime, timeline)
+	// The QoS reporter rides the same clone: lowering binds it into playout
+	// and sync gates next to the timeline, and the finished task attaches
+	// itself below so gate reports reach its Watch surface.
+	runtime.qos = newQoSReporter()
 	gp = graphPlanWithRuntime(gp, runtime)
 	if err := validateGraphPlanLowering(gp); err != nil {
 		return nil, err
@@ -90,6 +94,8 @@ func buildGraphPlanTask(ctx context.Context, gp graphPlan) (LiveTask, error) {
 	}
 	task := newTaskWithRootDestinations(graph, runtime, gp.work.Destinations, service.destinationTxs...)
 	task.timeline = timeline
+	runtime.qos.attach(task)
+	task.startQoSPolicy(runtime.qosPolicy)
 	return task, nil
 }
 

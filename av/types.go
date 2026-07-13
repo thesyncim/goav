@@ -577,6 +577,19 @@ const (
 	// second. An encoder that cannot apply a live retarget must return an
 	// error from HandleEvent so the failure is visible, never silent.
 	EventBitrateChanged EventType = "bitrate_changed"
+	// EventQoS reports that media ran late at a delivery gate: a playout or
+	// sync gate admitted a message past due (delivered late or shed), or a
+	// buffered queue shed a message under BufferPolicy.MaxLatency. StreamID
+	// names the late stream, Reason the producing gate or node, and the
+	// lateness plus shed disposition ride Event.Metadata — build with
+	// QoSMetadata, read with EventQoSReport. Reports describe the sink/gate
+	// view (delivery lateness on the task timeline), not network conditions,
+	// and are rate-limited per producer so a persistently late stream reports
+	// about once per second. It never rides the data path: producers publish
+	// it straight on the observer stream tasks expose through Watch. A task
+	// whose QoS policy issued a control the task refused publishes EventQoS
+	// with the refusal on Cause and no lateness payload.
+	EventQoS EventType = "qos"
 	// EventTaskReady reports task readiness — the sane preroll analog: every
 	// sink that was present when the running graph started has received its
 	// first media message (packet or frame; events do not count). The graph

@@ -47,6 +47,9 @@ type bufferedNode struct {
 	// frame; the readiness signal counts sinks out through it. The worker's
 	// delivery path pays one atomic load per media message, nothing more.
 	sawMedia atomic.Bool
+	// qosLast rate-limits MaxLatency-shed QoS reports to one per node per
+	// qosReportWindow (0 = never reported). Touched only on the shed path.
+	qosLast atomic.Int64
 }
 
 // bufferedTopo is an immutable producer-side routing snapshot read lock-free by
@@ -1070,6 +1073,7 @@ func (g *bufferedRunner) runNode(ctx context.Context, node *bufferedNode, queue 
 			// A prior delivery failed; drain without delivering.
 		case g.staleByLatency(node, msg):
 			observeDrop(node.counters, DropStale, &g.cold)
+			g.reportStaleQoS(node, msg)
 		default:
 			if err := g.deliver(ctx, node, &msg.message); err != nil {
 				first = err
@@ -1165,6 +1169,66 @@ func (g *bufferedRunner) publishReady() {
 	case g.events <- event:
 	default:
 		observeDrop(nil, DropObserver, &g.cold)
+	}
+}
+
+// qosReportWindow rate-limits MaxLatency-shed QoS reports to one per node per
+// window, so a persistently stale queue cannot storm the observer stream. The
+// window runs on the process monotonic clock (time.Since a fixed origin, like
+// staleByLatency's measurement); 0 in qosLast means "never reported", and the
+// origin bias below keeps a stored stamp from ever being 0.
+const qosReportWindow = time.Second
+
+var qosWindowOrigin = time.Now()
+
+// reportStaleQoS publishes one rate-limited av.EventQoS for a message shed
+// under BufferPolicy.MaxLatency: lateness is how long past the budget it
+// waited, dropped is always true. Runs only on the shed path — never per
+// delivered message — with one atomic load when suppressed and the cold
+// observer send when claiming.
+func (g *bufferedRunner) reportStaleQoS(node *bufferedNode, msg *bufferedMessage) {
+	now := time.Since(qosWindowOrigin)
+	last := node.qosLast.Load()
+	if last != 0 && now-time.Duration(last) < qosReportWindow {
+		return
+	}
+	stamp := int64(now)
+	if stamp == 0 {
+		stamp = 1
+	}
+	if !node.qosLast.CompareAndSwap(last, stamp) {
+		return
+	}
+	event := av.Event{
+		Type:     av.EventQoS,
+		StreamID: qosStreamID(&msg.message),
+		Reason:   node.name,
+		Metadata: av.QoSMetadata(time.Since(msg.enqueuedAt)-node.policy.MaxLatency, true),
+	}
+	g.eventsMu.Lock()
+	defer g.eventsMu.Unlock()
+	if g.eventsClosed {
+		return
+	}
+	select {
+	case g.events <- event:
+	default:
+		observeDrop(node.counters, DropObserver, &g.cold)
+	}
+}
+
+func qosStreamID(msg *Message) av.StreamID {
+	switch {
+	case msg == nil:
+		return ""
+	case msg.Packet != nil:
+		return msg.Packet.StreamID
+	case msg.Frame != nil:
+		return msg.Frame.StreamID
+	case msg.Event != nil:
+		return msg.Event.StreamID
+	default:
+		return ""
 	}
 }
 

@@ -1156,6 +1156,71 @@ func TestGraphBufferedShedsStaleUnderMaxLatency(t *testing.T) {
 	}
 }
 
+// TestGraphBufferedMaxLatencyShedReportsQoS pins the QoS report behind
+// MaxLatency shedding: every stale shed produces at most one av.EventQoS per
+// node per window on the observer stream, naming the shedding node and the
+// stream, with a positive lateness and the dropped disposition — so the whole
+// burst behind one stall yields exactly one report.
+func TestGraphBufferedMaxLatencyShedReportsQoS(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	const n = 20
+	source := &benchDrainSource{name: "src", n: n, msg: benchPacketMessage(64, true)}
+	slow := &countingSink{name: "slow", delay: 5 * time.Millisecond}
+
+	graph, err := NewGraph(GraphConfig{
+		Name:   "stale-qos",
+		Buffer: BufferPolicy{Capacity: n, Drop: DropOldest, MaxLatency: 2 * time.Millisecond},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := graph.AddSource(source, BufferPolicy{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := graph.AddSink(slow, BufferPolicy{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := graph.Connect(Route{From: "src", To: []string{"slow"}}); err != nil {
+		t.Fatal(err)
+	}
+
+	var reports []av.Event
+	collected := make(chan struct{})
+	go func() {
+		defer close(collected)
+		for event := range graph.Events() {
+			if event.Type == av.EventQoS {
+				reports = append(reports, event)
+			}
+		}
+	}()
+
+	if err := graph.Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	stats := graph.Stats()
+	if stats.DropReasons[DropStale] < 2 {
+		t.Fatalf("expected a burst of stale drops, got %+v", stats.DropReasons)
+	}
+	if err := graph.Close(); err != nil {
+		t.Fatal(err)
+	}
+	<-collected
+
+	if len(reports) != 1 {
+		t.Fatalf("QoS reports = %d (%v), want exactly 1 per node per window for the whole burst", len(reports), reports)
+	}
+	report := reports[0]
+	if report.StreamID != "v" || report.Reason != "slow" {
+		t.Fatalf("QoS report stream/node = %q/%q, want v/slow", report.StreamID, report.Reason)
+	}
+	lateness, dropped, ok := av.EventQoSReport(&report)
+	if !ok || !dropped || lateness <= 0 {
+		t.Fatalf("QoS report payload = (%v, %v, %v), want positive lateness and dropped", lateness, dropped, ok)
+	}
+}
+
 // TestGraphBufferedShedsOverflowUnderMaxBytes proves MaxBytes caps the queued
 // payload bytes: behind a slow consumer, messages that would exceed the byte
 // budget are shed (DropOverflow) instead of queued past the bound.

@@ -1463,6 +1463,7 @@ func (p *joinPlan) joinNodeBufferPolicy(policy pipeline.BufferPolicy, work workP
 // insertJoinArmStage appends a per-arm stage after upstream and returns its ref.
 func insertJoinArmStage(graph pipeline.Graph, rt *runtime, stage pipeline.Stage, upstream string) (string, error) {
 	bindPlayoutClock(stage, rt.clock)
+	bindQoSReport(stage, rt.qosReportFunc())
 	ref, err := graph.AddStage(stage, rt.buffer)
 	if err != nil {
 		return "", err

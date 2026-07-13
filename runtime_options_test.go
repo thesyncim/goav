@@ -21,6 +21,7 @@ var (
 	WithMediaPools       = runconfig.WithMediaPools
 	WithMuxer            = runconfig.WithMuxer
 	WithProber           = runconfig.WithProber
+	WithQoSPolicy        = runconfig.WithQoSPolicy
 	WithRealtime         = runconfig.WithRealtime
 	WithShapeDelta       = runconfig.WithShapeDelta
 )

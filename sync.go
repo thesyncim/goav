@@ -21,11 +21,19 @@ func operationSpecForSync(policy flow.SyncPolicy) operationSpec {
 }
 
 func newSyncGate(policy flow.SyncPolicy) *syncGate {
-	return &syncGate{policy: policy.Normalize()}
+	gate := &syncGate{policy: policy.Normalize()}
+	gate.qosLast.Store(qosWindowUnset)
+	return gate
 }
 
+// syncGate aligns a branch on its policy's shared media timeline. Sheds — a
+// message trailing the timeline past tolerance — produce rate-limited EventQoS
+// reports through the reporter bound at lowering time; admitted media pays
+// nothing.
 type syncGate struct {
 	policy  flow.SyncPolicy
+	report  func(av.Event)
+	qosLast atomic.Int64
 	dropped atomic.Uint64
 }
 
@@ -58,14 +66,32 @@ func (g *syncGate) Handle(ctx context.Context, msg *pipeline.Message, emit pipel
 	if !ok {
 		return syncTimebaseError(g.policy, msg)
 	}
-	drop, err := g.policy.Admit(ctx, stream, pts)
+	late, drop, err := g.policy.Admit(ctx, stream, pts)
 	if err != nil || drop {
 		if drop {
 			g.dropped.Add(1)
+			if late > 0 {
+				g.reportLate(stream, late)
+			}
 		}
 		return err
 	}
 	return emit.Emit(ctx, msg)
+}
+
+// reportLate publishes one rate-limited QoS report for a shed message. Sync
+// gates have no bound timeline, so the window runs on the process monotonic
+// clock; the lateness itself is media time behind the shared sync timeline.
+func (g *syncGate) reportLate(stream av.StreamID, late time.Duration) {
+	if g.report == nil || !claimQoSWindow(&g.qosLast, qosWindowClock.Now()) {
+		return
+	}
+	g.report(av.Event{
+		Type:     av.EventQoS,
+		StreamID: stream,
+		Reason:   g.Name(),
+		Metadata: av.QoSMetadata(late, true),
+	})
 }
 
 func (g *syncGate) Close() error {

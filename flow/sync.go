@@ -96,10 +96,13 @@ func (p SyncPolicy) DropLate() bool {
 }
 
 // Admit updates the shared timeline and reports whether the message should be
-// dropped before it reaches the branch.
-func (p SyncPolicy) Admit(ctx context.Context, stream av.StreamID, pts time.Duration) (bool, error) {
+// dropped before it reaches the branch. The returned lateness is how far the
+// message trailed the policy's shared timeline in media time when it was
+// dropped — the measurement QoS reports carry — and zero for admitted media
+// (hold-late gates hold early media, never late media).
+func (p SyncPolicy) Admit(ctx context.Context, stream av.StreamID, pts time.Duration) (time.Duration, bool, error) {
 	if p.scheduler == nil {
-		return false, nil
+		return 0, false, nil
 	}
 	return p.scheduler.admit(ctx, stream, pts, p.tolerance, p.mode)
 }
@@ -131,9 +134,9 @@ func syncSchedulerWait(ctx context.Context) error {
 	}
 }
 
-func (s *syncScheduler) admit(ctx context.Context, stream av.StreamID, pts time.Duration, tolerance time.Duration, mode syncMode) (bool, error) {
+func (s *syncScheduler) admit(ctx context.Context, stream av.StreamID, pts time.Duration, tolerance time.Duration, mode syncMode) (time.Duration, bool, error) {
 	if s == nil {
-		return false, nil
+		return 0, false, nil
 	}
 	if stream == "" {
 		stream = "_"
@@ -144,22 +147,22 @@ func (s *syncScheduler) admit(ctx context.Context, stream av.StreamID, pts time.
 		s.latest = make(map[av.StreamID]time.Duration)
 	}
 	if s.closed {
-		return false, pipeline.ErrClosed
+		return 0, false, pipeline.ErrClosed
 	}
 	if previous, ok := s.latest[stream]; ok && pts+tolerance < previous {
-		return true, nil
+		return previous - pts, true, nil
 	}
 	if mode == syncDropLate {
 		if max, ok := s.maxLocked(); ok && pts+tolerance < max {
-			return true, nil
+			return max - pts, true, nil
 		}
 		s.latest[stream] = pts
-		return false, nil
+		return 0, false, nil
 	}
 	s.latest[stream] = pts
 	for s.tooEarlyLocked(stream, pts, tolerance) {
 		if err := ctx.Err(); err != nil {
-			return false, err
+			return 0, false, err
 		}
 		wait := s.wait
 		if wait == nil {
@@ -169,13 +172,13 @@ func (s *syncScheduler) admit(ctx context.Context, stream av.StreamID, pts time.
 		err := wait(ctx)
 		s.mu.Lock()
 		if err != nil {
-			return false, err
+			return 0, false, err
 		}
 		if s.closed {
-			return false, pipeline.ErrClosed
+			return 0, false, pipeline.ErrClosed
 		}
 	}
-	return false, nil
+	return 0, false, nil
 }
 
 func (s *syncScheduler) observeEvent(event *av.Event) {

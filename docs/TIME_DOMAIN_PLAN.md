@@ -107,15 +107,20 @@ discontinuity), `TestSegmentFlushesLikeSeek`,
 `pipeline/flush_test.go` queue-semantics pins, and
 `TestSeekFlushUnderLiveTraffic` (race).
 
-### T5. QoS feedback
+### T5. QoS feedback — LANDED
 
-Playout/sync gates and MaxLatency shedding produce typed QoS reports
-(lateness, drop pressure) as watchable events; an opt-in
-`runconfig.WithQoSPolicy` maps reports to the existing control vocabulary
-(SetBitrate, keyframe request, Rate) per task — the automatic path is exactly
-what an application could do by hand with `Watch` + `Control`, packaged.
-Acceptance: TestQoSReportsLateness (planned), TestQoSPolicyDrivesBitrateControl (planned)
-(fake encoder observes the control).
+Overdue playout admits (delivered late or shed), sync-gate sheds, and
+buffered MaxLatency sheds publish `av.EventQoS` on the task's Watch stream
+(payload via `av.QoSMetadata`/`av.EventQoSReport`), rate-limited per producer
+to one report per second; on-time media pays nothing. Opt-in
+`runconfig.WithQoSPolicy` maps reports to `control.Control` values the task
+issues to itself — `Watch` + `Control`, packaged; no built-in policy is
+exported (the func signature is the whole contract); refused controls surface
+as `EventQoS` with `Cause`, payload-free so the policy never loops. Contract
+prose: `docs/FLOW_CONTROL.md`. Acceptance: `TestQoSReportsLateness` (fields
+and rate limit), `TestQoSPolicyDrivesBitrateControl`,
+`TestGraphBufferedMaxLatencyShedReportsQoS`, and
+`TestQoSPolicyRefusalSurfacesThroughWatch`.
 
 ### T6. Latency model + claims flip
 

@@ -97,10 +97,13 @@ func (p PlayoutPolicy) DropLate() bool {
 // Admit blocks on clock until the message with media time pts is due, and
 // reports whether it should be dropped instead. Branches sharing this policy
 // value share the anchor, so their deliveries interleave by PTS on the one
-// clock.
-func (p PlayoutPolicy) Admit(ctx context.Context, clock av.Clock, pts time.Duration) (bool, error) {
+// clock. The returned lateness is how far past due the message already was
+// when it reached the gate — positive for messages delivered late (hold-late)
+// or shed (drop-late), non-positive for on-time media — the measurement QoS
+// reports carry.
+func (p PlayoutPolicy) Admit(ctx context.Context, clock av.Clock, pts time.Duration) (time.Duration, bool, error) {
 	if p.scheduler == nil || clock == nil {
-		return false, nil
+		return 0, false, nil
 	}
 	return p.scheduler.admit(ctx, clock, pts, p.offset, p.tolerance, p.mode)
 }
@@ -129,7 +132,7 @@ func newPlayoutScheduler() *playoutScheduler {
 	return &playoutScheduler{}
 }
 
-func (s *playoutScheduler) admit(ctx context.Context, clock av.Clock, pts time.Duration, offset time.Duration, tolerance time.Duration, mode playoutMode) (bool, error) {
+func (s *playoutScheduler) admit(ctx context.Context, clock av.Clock, pts time.Duration, offset time.Duration, tolerance time.Duration, mode playoutMode) (time.Duration, bool, error) {
 	s.mu.Lock()
 	if !s.anchored {
 		s.anchored = true
@@ -139,19 +142,20 @@ func (s *playoutScheduler) admit(ctx context.Context, clock av.Clock, pts time.D
 	due := s.now0 + (pts - s.pts0) + offset
 	s.mu.Unlock()
 	now := clock.Now()
-	if mode == playoutDropLate && now-due > tolerance {
-		return true, nil
+	late := now - due
+	if mode == playoutDropLate && late > tolerance {
+		return late, true, nil
 	}
 	// A rate or pause change mid-wait re-derives the remaining wall wait
 	// inside the timeline's Sleep; the loop only guards clocks that may wake
 	// before the requested duration elapsed.
 	for now < due {
 		if err := clock.Sleep(ctx, due-now); err != nil {
-			return false, err
+			return late, false, err
 		}
 		now = clock.Now()
 	}
-	return false, nil
+	return late, false, nil
 }
 
 // observeEvent clears the anchor on discontinuities. The anchor is

@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"sync/atomic"
+	"time"
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/errcode"
@@ -20,17 +21,22 @@ func operationSpecForPlayout(policy flow.PlayoutPolicy) operationSpec {
 }
 
 func newPlayoutGate(policy flow.PlayoutPolicy) *playoutGate {
-	return &playoutGate{policy: policy.Normalize()}
+	gate := &playoutGate{policy: policy.Normalize()}
+	gate.qosLast.Store(qosWindowUnset)
+	return gate
 }
 
 // playoutGate is the sink-side deliver-when-due stage: it holds packets and
 // frames until their media time is due on the task timeline (plus the policy
-// offset) and lets events through ungated. The clock is bound to the shared
-// task timeline at lowering time, before the graph runs, so Handle reads it
-// without synchronization.
+// offset) and lets events through ungated. The clock and QoS reporter are
+// bound to the task at lowering time, before the graph runs, so Handle reads
+// them without synchronization. Overdue admits — delivered late or shed —
+// produce rate-limited EventQoS reports; on-time media pays nothing.
 type playoutGate struct {
 	policy  flow.PlayoutPolicy
 	clock   av.Clock
+	report  func(av.Event)
+	qosLast atomic.Int64
 	dropped atomic.Uint64
 }
 
@@ -79,18 +85,37 @@ func (g *playoutGate) Handle(ctx context.Context, msg *pipeline.Message, emit pi
 		g.policy.ObserveEvent(msg.Event)
 		return emit.Emit(ctx, msg)
 	}
-	_, pts, ok := syncMessageTime(msg)
+	stream, pts, ok := syncMessageTime(msg)
 	if !ok {
 		return playoutTimebaseError(g.policy, msg)
 	}
-	drop, err := g.policy.Admit(ctx, g.timeSource(), pts)
-	if err != nil || drop {
-		if drop {
-			g.dropped.Add(1)
-		}
+	late, drop, err := g.policy.Admit(ctx, g.timeSource(), pts)
+	if err != nil {
 		return err
 	}
+	if late > 0 {
+		g.reportLate(stream, late, drop)
+	}
+	if drop {
+		g.dropped.Add(1)
+		return nil
+	}
 	return emit.Emit(ctx, msg)
+}
+
+// reportLate publishes one rate-limited QoS report for an overdue admit. Cold
+// side of the gate: it runs only when a message was already late, at most once
+// per window.
+func (g *playoutGate) reportLate(stream av.StreamID, late time.Duration, dropped bool) {
+	if g.report == nil || !claimQoSWindow(&g.qosLast, g.timeSource().Now()) {
+		return
+	}
+	g.report(av.Event{
+		Type:     av.EventQoS,
+		StreamID: stream,
+		Reason:   g.Name(),
+		Metadata: av.QoSMetadata(late, dropped),
+	})
 }
 
 func (g *playoutGate) Close() error {

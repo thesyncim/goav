@@ -11,6 +11,13 @@ methodology changes, and migration notes.
 
 ## Unreleased
 
+- QoS feedback: overdue playout admits, sync-gate sheds, and buffered
+  `MaxLatency` sheds now publish `av.EventQoS` through `Watch` (stream, node,
+  lateness, delivered-or-dropped via `av.QoSMetadata`/`av.EventQoSReport`),
+  one report per producer per second. The new `runconfig.WithQoSPolicy(policy)`
+  maps each report to `control.Control` values the task issues to itself;
+  refused controls surface as `av.EventQoS` with `Cause`.
+
 - Accurate seek: `task.Control` with `control.Seek`/`control.Segment` now
   flushes the stale media queued downstream of the repositioned source on
   buffered tasks, so a seek repositions promptly instead of draining the old

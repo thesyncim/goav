@@ -12,6 +12,7 @@ import (
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
+	"github.com/thesyncim/goav/control"
 	"github.com/thesyncim/goav/filter"
 	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/pipeline"
@@ -33,6 +34,7 @@ type Config struct {
 	CloseWaitTimeout time.Duration
 	MediaPools       bool
 	ShapeDeltas      []ShapeDeltaContributor
+	QoSPolicy        func(av.Event) []control.Control
 }
 
 // ShapeDeltaRequest is passed to a runtime-registered shape solver extension
@@ -313,6 +315,25 @@ func WithShapeDelta(contributor ShapeDeltaContributor) Option {
 			return errors.New("shape delta contributor is nil")
 		}
 		config.ShapeDeltas = append(config.ShapeDeltas, contributor)
+		return nil
+	}
+}
+
+// WithQoSPolicy sets the opt-in, per-runtime QoS policy: every task this
+// runtime builds feeds each av.EventQoS report (read it with
+// av.EventQoSReport) to the policy on the task's cold event-delivery path and
+// issues the returned controls through the task's own Control seam — exactly
+// what an application could do by hand with Watch + Control, packaged. A
+// control the task refuses is published back through Watch as an av.EventQoS
+// carrying the error on Cause. Reports describe delivery lateness at the
+// task's gates and queues, not network conditions; transports keep their own
+// congestion control.
+func WithQoSPolicy(policy func(av.Event) []control.Control) Option {
+	return func(config *Config) error {
+		if policy == nil {
+			return errors.New("qos policy is nil")
+		}
+		config.QoSPolicy = policy
 		return nil
 	}
 }

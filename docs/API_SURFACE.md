@@ -308,6 +308,10 @@ against the constructors in `input.go`/`provider.go`/`source.go`,
   constructors, not public struct fields;
   `Deliver(event)` is the escape hatch handing a verbatim event to a stage
   that interprets it itself.
+- **QoS**: `av.EventQoS` on `Watch` reports overdue delivery at playout/sync
+  gates and `MaxLatency` queues (`av.QoSMetadata`/`av.EventQoSReport`);
+  `runconfig.WithQoSPolicy` maps reports to controls the task issues to
+  itself. Contract prose: `docs/FLOW_CONTROL.md`.
 - **Pause/Resume vs Rate** (governed pre-v1, `LiveTask` methods):
   `Pause(ctx)`/`Resume(ctx)` freeze/continue the shared task timeline that
   `control.Rate` scales; nothing-paced tasks refuse like Rate.
