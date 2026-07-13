@@ -90,16 +90,22 @@ is the readiness signal. Contract prose: `docs/FLOW_CONTROL.md`. Acceptance:
 `TestTaskSeekWhilePausedAppliesAtNextReadBoundary` (seek while paused applies
 at the pump's next read boundary; re-anchored media delivers even paused).
 
-### T4. Seek with flush
+### T4. Seek with flush — LANDED
 
-`task.Control(seek)` gains flush semantics: pause emission at the source,
-flush every buffered node downstream of it (new `pipeline.NodeFlusher`
-capability on the buffered runner; drops recorded under a new `DropFlush`
-reason), reset sync-gate and join pending state (they already reset on
-`EventDiscontinuity`), inject the seek, resume. Segment keeps its existing
-window semantics on top. Acceptance: TestSeekFlushesInFlightMedia (planned) (no
-pre-seek PTS reaches a sink after the discontinuity),
-TestSeekWithoutFlushableNodesStillSeeks (planned) (direct runner path).
+`task.Control(seek/segment)` is an accurate seek: the control is delivered to
+the source first (a refused seek costs no media), then every buffered queue
+downstream of it is drained — packets/frames shed under the new
+`pipeline.DropFlush` reason, queued events preserved, and from a queued
+`EventDiscontinuity` on everything kept (post-seek media is never flushed).
+The capability stayed internal — no `NodeFlusher` export: the root asserts
+`FlushDownstream(NodeRef)` structurally on the buffered runner, like
+`UseClock`, over the live routing table. The direct runner buffers nothing
+and seeks unchanged; segment keeps its window semantics on top. Acceptance:
+`TestSeekFlushesInFlightMedia` (backlog counted, no pre-seek PTS after the
+discontinuity), `TestSegmentFlushesLikeSeek`,
+`TestSeekWithoutFlushableNodesStillSeeks`, the
+`pipeline/flush_test.go` queue-semantics pins, and
+`TestSeekFlushUnderLiveTraffic` (race).
 
 ### T5. QoS feedback
 

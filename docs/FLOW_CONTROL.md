@@ -50,6 +50,13 @@ What holds today (all `-race` clean, with tests):
   first media message (`TestTaskReadinessEventFires`; scope details live on
   the `av` constant); one atomic load on the sink delivery path,
   `TestGraphBufferedSteadyEmitAllocs` stays at zero.
+- Seek is flush-accurate on buffered tasks: once a source records a
+  `control.Seek`/`control.Segment`, `task.Control` drains the stale pre-seek
+  media queued downstream of it instead of letting it play out first — shed
+  packets/frames are honest stats under `pipeline.DropFlush`, queued events
+  survive, and nothing from a queued `EventDiscontinuity` on is touched
+  (`TestSeekFlushesInFlightMedia`). Direct tasks buffer nothing and seek
+  unchanged (`TestSeekWithoutFlushableNodesStillSeeks`).
 - Custom sources see flow control per push: `push.X(...)` returns
   `(source.Result, error)` where deliberate sheds are `Dropped` with a nil error
   and `ErrBackpressure` keeps its flow-control meaning.

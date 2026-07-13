@@ -11,6 +11,13 @@ methodology changes, and migration notes.
 
 ## Unreleased
 
+- Accurate seek: `task.Control` with `control.Seek`/`control.Segment` now
+  flushes the stale media queued downstream of the repositioned source on
+  buffered tasks, so a seek repositions promptly instead of draining the old
+  position's backlog to sinks. Flushed packets/frames are counted under the
+  new `pipeline.DropFlush` stats reason; queued events always survive. Direct
+  (unbuffered) tasks seek exactly as before.
+
 - Task pause and readiness: `LiveTask` gained `Pause(ctx)`/`Resume(ctx)` —
   Pause freezes the shared task timeline (paced sources and playout gates
   stall coherently), Resume continues from the frozen reading. Pause pauses

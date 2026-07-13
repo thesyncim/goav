@@ -217,7 +217,8 @@ it, and v1 does not freeze its shape.
 - `Control.At(pipeline.NodeRef)`: node-targeted controls (grammar callers use
   `.AtTap`).
 - `pipeline` graph machinery: `NewGraph`, `Graph`, `Spec`/`NodeSpec`/
-  `EdgeSpec`/`Route`, `GraphStats`/`NodeStats`, node/route kind enums.
+  `EdgeSpec`/`Route`, `GraphStats`/`NodeStats`, node/route kind and
+  drop-reason enums (`DropFlush` is the seek-flush shed).
 - Prebuilt graph components: `codec.DecoderStage`/`EncoderStage`,
   `format.DemuxSource`/`MuxStage`, `filter.Stage` (what the compiler itself
   assembles; usable directly under `expert.Graph`).

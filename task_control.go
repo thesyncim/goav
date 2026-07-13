@@ -16,9 +16,12 @@ import (
 // call concurrently with Run: the control rides the target node's normal queue, so
 // the node's Handle still sees one message at a time and needs no extra locking.
 // Reposition controls (seek, segment) are the exception: sources have no queue,
-// so they are handed to each source's Control method synchronously. Rate is
-// task-wide: it scales the task's shared timeline, which every paced consumer
-// (clock-aware sources and playout gates) sleeps on, and never targets a node.
+// so they are handed to each source's Control method synchronously — and once a
+// source accepted one, the stale media queued downstream of it is flushed
+// (flushSeekBacklog) so a seek repositions promptly instead of draining the
+// old position's backlog to sinks first. Rate is task-wide: it scales the
+// task's shared timeline, which every paced consumer (clock-aware sources and
+// playout gates) sleeps on, and never targets a node.
 func (t *task) Control(ctx context.Context, ctrl control.Control) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -52,9 +55,46 @@ func (t *task) Control(ctx context.Context, ctrl control.Control) error {
 				continue
 			}
 			errs = append(errs, fmt.Errorf("goav: control to %q: %w", node, err))
+			continue
+		}
+		if ctrl.TargetsSources() {
+			if err := t.flushSeekBacklog(node); err != nil {
+				errs = append(errs, fmt.Errorf("goav: flush after %s control to %q: %w", ctrl.Type(), node, err))
+			}
 		}
 	}
 	return errors.Join(errs...)
+}
+
+// flushSeekBacklog is the flush half of a reposition control: once a source
+// recorded a seek or segment, the media already queued downstream of it is
+// backlog from the old position and would otherwise drain to the sinks first.
+// The graph's structural flush capability (buffered runner only) empties those
+// queues, shedding packets/frames under pipeline.DropFlush and preserving
+// queued events; a graph without the capability (direct runner) buffers
+// nothing, so there is nothing to flush and seek behaves as before.
+//
+// The ordering closes the reposition race honestly:
+//   - Deliver first, flush second: a refused control (unknown source, no
+//     ControllableSource) must not cost queued media, so nothing is flushed
+//     until the source accepted the request.
+//   - The source's pump applies the request between reads, so after delivery
+//     it emits at most its in-flight read before repositioning. That bounded
+//     tail — like any message already handed to a worker or sink — cannot be
+//     recalled, but it precedes the av.EventDiscontinuity the source emits at
+//     the new position, so once the discontinuity reaches a sink no pre-seek
+//     media follows it (queues are FIFO and the flush never drops events).
+//   - The flush preserves everything from a queued discontinuity on, so a
+//     pump that repositions faster than the flush runs never loses post-seek
+//     media to it.
+func (t *task) flushSeekBacklog(node pipeline.NodeRef) error {
+	flusher, ok := t.graph.(interface {
+		FlushDownstream(pipeline.NodeRef) error
+	})
+	if !ok {
+		return nil
+	}
+	return flusher.FlushDownstream(node)
 }
 
 // controlRate applies a task-wide playback-rate change: it re-anchors the

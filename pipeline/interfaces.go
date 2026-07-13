@@ -86,6 +86,12 @@ const (
 	// These drops happen inside the node, not in its queue, so they reach the
 	// counters through the optional DropReporter capability at snapshot time.
 	DropSync DropPolicy = "sync"
+	// DropFlush is the reason recorded when a queued packet/frame is shed by a
+	// reposition flush: after a seek or segment control is recorded at a
+	// source, the buffered runner drains the stale pre-seek media queued
+	// downstream of it instead of letting it play out to sinks first. Queued
+	// events are never flushed.
+	DropFlush DropPolicy = "flush"
 	// DropObserver is the reason recorded when the graph's cold-side observer
 	// event channel is full. Media/event delivery to graph routes still
 	// continues; only the raw observer copy is shed.
