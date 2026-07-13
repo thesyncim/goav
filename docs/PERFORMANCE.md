@@ -29,9 +29,8 @@ Hot paths must keep allocation explicit and bounded:
 Once running, lower-level stages reuse caller-owned result structs, frame
 planes, packet buffers, and scratch storage, and take no per-message mutex
 (per-node atomics plus atomically-swapped routing snapshots; mutexes on cold
-paths only). The intended shape is
-one cold-path executable `WorkPlan` and runtime `WorkPatch`;
-packet, frame, event, and mux/demux loops must not route
+paths only). The intended shape is one cold-path executable `WorkPlan` and
+runtime `WorkPatch`; packet, frame, event, and mux/demux loops must not route
 through fluent recipe objects or workflow-specific compiler dispatch.
 
 Rules for hot-path code:
@@ -179,46 +178,54 @@ variants) with optional external-tool comparisons (ffprobe/ffmpeg/mkvmerge,
 skipped when not installed).
 
 `scripts/bench/perf-lab.sh` runs the performance-lab subset and saves a
-timestamped artifact under the checked layout in
+timestamped artifact set under the checked layout in
 [`bench-results/README.md`](../bench-results/README.md):
-`bench-results/baseline/<timestamp>/<machine>.txt` for the full transcript,
-`bench-results/latency/<scenario>-<timestamp>.json` for p50/p95/p99 summaries,
-`bench-results/rss/<scenario>-<timestamp>.json` for heap/sys/RSS summaries,
-`bench-results/soak/<scenario>-<timestamp>.json` for heap drift / GC summaries
-and live-room attach/detach churn,
-`bench-results/pressure/<scenario>-<timestamp>.json` for drop/backpressure
-smoke, `bench-results/control/<scenario>-<timestamp>.json` for attach/detach
-under load, `bench-results/fanout/<scenario>-<timestamp>.json` for 1/8/64/512
-fanout, `bench-results/live-sync/<scenario>-<timestamp>.json` for
-live-room sync latency, drift, and drop smoke,
-`bench-results/container/<scenario>-<timestamp>.json` for Matroska/WebM corpus smoke,
-and `bench-results/pprof/<scenario>-<timestamp>/cpu.out` plus `mem.out` for
-profiles, and `bench-results/manifest/perf-lab-<timestamp>.json` for the
-host/toolchain/git provenance and generated-artifact index. The Go benchmarks
-report latency quantiles, heap/sys metrics, drop/backpressure costs,
-attach/detach under load, fanout sweep costs, real Opus encode/decode
-throughput, live-room sync drift/drops (`BenchmarkLiveRoomSync`), live-room
-attach/detach churn (`BenchmarkLiveRoomAttachDetachSoak`), and container corpus
-smoke. Optional external field-corpus benches stay skipped unless
-`GOAV_MATROSKA_FIELD_CORPUS` or `GOAV_WEBM_FIELD_CORPUS` is set. The
-script wraps the memory benchmark with `/usr/bin/time` on Linux and macOS so
-max RSS lands in the artifact when the host exposes it. CI runs a
-`PERF_BENCHTIME=1x` smoke to catch bit rot and uploads the generated benchmark
-artifacts, soak summaries, and manifest with `release_quality=false`. Serious
-performance claims still need same-machine, longer-run artifacts attached to a
-release with `PERF_RELEASE_QUALITY=true`; use `PERF_SOAK_BENCHTIME` and
-`PERF_LIVE_ROOM_CHURN_BENCHTIME` to make the two soak scenarios long-running
-without stretching every throughput smoke benchmark. Release-quality mode
-defaults `PERF_GO_TEST_TIMEOUT` to `0` so duration-based soaks are not killed
-by Go's default test timeout; set it explicitly when you want a bounded
-watchdog. For those release-quality soaks, the script runs
-`TestPerformanceLabRecordDriftSoak` and
+
+- `bench-results/baseline/<timestamp>/<machine>.txt` — full transcript
+- `bench-results/latency/<scenario>-<timestamp>.json` — p50/p95/p99 summaries
+- `bench-results/rss/<scenario>-<timestamp>.json` — heap/sys/RSS summaries
+- `bench-results/soak/<scenario>-<timestamp>.json` — heap drift / GC summaries
+  and live-room attach/detach churn
+- `bench-results/pressure/<scenario>-<timestamp>.json` — drop/backpressure
+  smoke
+- `bench-results/control/<scenario>-<timestamp>.json` — attach/detach under
+  load
+- `bench-results/fanout/<scenario>-<timestamp>.json` — 1/8/64/512 fanout
+- `bench-results/live-sync/<scenario>-<timestamp>.json` — live-room sync
+  latency, drift, and drop smoke
+- `bench-results/container/<scenario>-<timestamp>.json` — Matroska/WebM corpus
+  smoke
+- `bench-results/pprof/<scenario>-<timestamp>/cpu.out` plus `mem.out` —
+  profiles
+- `bench-results/manifest/perf-lab-<timestamp>.json` — host/toolchain/git
+  provenance and the generated-artifact index
+
+The Go benchmarks report latency quantiles, heap/sys metrics,
+drop/backpressure costs, attach/detach under load, fanout sweep costs, real
+Opus encode/decode throughput, live-room sync drift/drops
+(`BenchmarkLiveRoomSync`), live-room attach/detach churn
+(`BenchmarkLiveRoomAttachDetachSoak`), and container corpus smoke. Optional
+external field-corpus benches stay skipped unless `GOAV_MATROSKA_FIELD_CORPUS`
+or `GOAV_WEBM_FIELD_CORPUS` is set. The script wraps the memory benchmark with
+`/usr/bin/time` on Linux and macOS so max RSS lands in the artifact when the
+host exposes it.
+
+CI runs a `PERF_BENCHTIME=1x` smoke to catch bit rot and uploads the generated
+benchmark artifacts, soak summaries, and manifest with `release_quality=false`.
+Serious performance claims still need same-machine, longer-run artifacts
+attached to a release with `PERF_RELEASE_QUALITY=true`; use
+`PERF_SOAK_BENCHTIME` and `PERF_LIVE_ROOM_CHURN_BENCHTIME` to make the two
+soak scenarios long-running without stretching every throughput smoke
+benchmark. Release-quality mode defaults `PERF_GO_TEST_TIMEOUT` to `0` so
+duration-based soaks are not killed by Go's default test timeout; set it
+explicitly when you want a bounded watchdog. For those release-quality soaks,
+the script runs `TestPerformanceLabRecordDriftSoak` and
 `TestPerformanceLabLiveRoomAttachDetachSoak` with
 `GOAV_PERF_RECORD_DRIFT_SOAK_DURATION` and
 `GOAV_PERF_LIVE_ROOM_CHURN_SOAK_DURATION`, so the artifact duration is
 wall-clock controlled instead of subject to Go benchmark calibration.
-`PERF_LIVE_ROOM_CHURN_INTERVAL` defaults to `100ms` in release-quality mode and
-is recorded as `churn_interval` / `churn_interval_ns` in the churn JSON.
+`PERF_LIVE_ROOM_CHURN_INTERVAL` defaults to `100ms` in release-quality mode
+and is recorded as `churn_interval` / `churn_interval_ns` in the churn JSON.
 
 On pull requests, CI also runs `scripts/bench/ci-compare.sh` against the PR base
 commit and uploads `bench-base.txt`, `bench-current.txt`, and
@@ -281,7 +288,7 @@ Stated plainly so the docs never imply otherwise:
 - **Sustained-load soak** (hours-long stability, fragmentation, drift). The
   `BenchmarkSoakRecordDrift` and `BenchmarkLiveRoomAttachDetachSoak` harnesses
   exist and report drift / GC / p99 / drop / RSS fields; in release-quality
-mode their wall-clock test counterparts produce the artifacts from
+  mode their wall-clock test counterparts produce the artifacts from
   `PERF_SOAK_BENCHTIME` plus `PERF_LIVE_ROOM_CHURN_BENCHTIME`, with the churn
   cadence controlled by `PERF_LIVE_ROOM_CHURN_INTERVAL`. Those files are not
   release-candidate evidence until attached to a release.

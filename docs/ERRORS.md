@@ -78,7 +78,8 @@ The public checked refusal-code list lives in
 [`docs/ERROR_CATALOG.md`](ERROR_CATALOG.md), generated from
 [`errcode/errcode.go`](../errcode/errcode.go) and the checked derived-code
 tables: autocompletable for exported constants (`errcode.`), greppable by
-value (`rg encode_missing`), and grouped under a stable family. Every current catalog row names coverage.
+value (`rg encode_missing`), and grouped under a stable family. Every current
+catalog row names coverage.
 If a future row appears as `catalog-only`, the pin test fails until it gets a
 bad recipe, rendered error coverage, fixed recipe guidance, public contract
 coverage, and test name.
@@ -98,7 +99,8 @@ collected as `goav: control to "node": ...`. Attach/Rebranch refusals are full
 strings remain typed internally while runtime mutation stays experimental.
 Failed stream-rule branch attachments surface as `av.EventAttachError` events
 carrying the stream id, branch name, and cause. Join stages name the offending
-arm (`goav: audio mix requires s16, got f32 on arm "b"`). Buffered payload safety backstops are also
+arm (`goav: audio mix requires s16, got f32 on arm "b"`). Buffered payload
+safety backstops are also
 structured at the task boundary: a mutable payload reaching `flow.CopyNever`
 returns `FamilyBuffer` with `Code("buffer_payload_unsafe")`, the `CopyNever`
 branch names, and still matches `pipeline.ErrBufferedMessageUnsafe`; a payload

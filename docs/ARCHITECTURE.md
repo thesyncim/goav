@@ -38,13 +38,11 @@ filter registries; there are no global registries. `bundle.MustNew(opts...)`
 registers the bundled in-repo adapters and then applies caller options
 last-wins, so one call can add or override implementations.
 
-`From(input)` is the beginner-facing front door. The surface is small: `From`, stream selection, ordered operations, taps, branches, destinations, flows, and
-tasks. `Branch`, `Destination`, and operation composition is the normal
-user-facing model.
-
-| Layer | Vocabulary |
-| --- | --- |
-| Simple high-level API | `From`, stream selection, ordered operations, direct `File`/`URI`/`Sink` destinations, custom `Writer` destinations with `provider.Info`, and `Mux(name, destination)` for shared mux/sink groups |
+`From(input)` is the beginner-facing front door, and the surface is small:
+`From`, stream selection, ordered operations, taps, branches, flows, tasks,
+and destinations — direct `File`/`URI`/`Sink` destinations, custom `Writer`
+destinations with `provider.Info`, and `Mux(name, destination)` for shared
+mux/sink groups.
 
 One media work planner owns the cold path. It:
 
@@ -89,11 +87,11 @@ does not branch on input/output kind.
 
 `Destination` is the public routing handle and extension surface for files,
 byte writers, object-store uploads, URI-backed outputs, frame/packet/event
-sinks, and shared mux/sink groups. `Mux(name, destination)` is the preferred
-first-class grouping model when branches construct matching destinations
-separately; reusing one ungrouped destination value is rejected. The work plan keeps concrete
-destination openers cold until stream list, format, MIME, metadata, and
-realtime policy are known.
+sinks, and shared mux/sink groups. `Mux(name, destination)` is the first-class
+grouping model when branches construct matching destinations separately;
+reusing one ungrouped destination value is rejected. The work plan keeps
+concrete destination openers cold until stream list, format, MIME, metadata,
+and realtime policy are known.
 
 The handle-based graph builder remains available only as the explicit advanced
 layer through `expert.Graph(runtime)`; it is not on the public `Runtime`
@@ -174,8 +172,9 @@ Root reaches back only through structural interfaces
 (`ExpertGraph() any`, the branch-anchor `Route` capability), never an import.
 
 What is convention only: inside the root package, the grammar -> plan -> build
-boundaries (recipe/branch grammar, `mediaPlan`/`WorkPlan` planning,
-graph/attach lowering) are file-naming conventions, not import-checked. The
+boundaries (recipe/branch grammar, `media_plan_*.go`/`WorkPlan` planning,
+graph/attach lowering) are file-naming conventions, not import-checked — the
+`mediaPlan` aggregate type itself is gone, only the file prefix survives. The
 root package is deliberately one compilation unit.
 
 The pre-v1 simplification work has started the data boundary without claiming

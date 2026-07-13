@@ -1,12 +1,10 @@
 # Control plane
 
-`goav ctl` is the cold-path control surface for a running task. Use it when an
-application wants operators, tests, or automation to inspect and steer a live
-graph without handing them arbitrary access to application internals.
-
-The application owns the task and exposes a Unix socket with package
-`ctlserver`;
-operators or automation talk to that socket with structured requests.
+`goav ctl` is the cold-path control surface for a running task: operators,
+tests, and automation inspect and steer a live graph without arbitrary access
+to application internals. The application owns the task and exposes a Unix
+socket with package `ctlserver`; clients talk to that socket with structured
+requests.
 
 ```sh
 goav ctl --control unix:///tmp/goav-live.sock control bitrate stream=video value=1200k
@@ -23,8 +21,8 @@ this cold path to bind known command structs, validate fields, parse JSON, and
 generate help from tags. There is no global registry and no user-provided
 method name dispatch.
 
-The useful mental model: the CLI is a typed remote for the grammar, not a
-second workflow API.
+The mental model: the CLI is a typed remote for the grammar, not a second
+workflow API.
 
 ## No-Code Generated Source
 
@@ -157,18 +155,18 @@ type SetRate struct {
     Source string  `goavctl:"source,required" usage:"source=<source-name>" help:"source node to retime"`
 }
 
-	rateCommand := ctlserver.NewCommand[SetRate](
-	    "vendor.rate",
-	    "vendor playback-rate control",
-	    func(ctx context.Context, task goav.LiveTask, cmd SetRate) (ctlserver.ControlResponse, error) {
-	        ctrl, err := control.Rate(cmd.Value)
-	        if err != nil {
-	            return ctlserver.ControlResponse{}, err
-	        }
-	        if err := task.Control(ctx, ctrl.At(pipeline.NodeRef(cmd.Source))); err != nil {
-	            return ctlserver.ControlResponse{}, err
-	        }
-	        return ctlserver.ControlResponse{
+rateCommand := ctlserver.NewCommand[SetRate](
+    "vendor.rate",
+    "vendor playback-rate control",
+    func(ctx context.Context, task goav.LiveTask, cmd SetRate) (ctlserver.ControlResponse, error) {
+        ctrl, err := control.Rate(cmd.Value)
+        if err != nil {
+            return ctlserver.ControlResponse{}, err
+        }
+        if err := task.Control(ctx, ctrl.At(pipeline.NodeRef(cmd.Source))); err != nil {
+            return ctlserver.ControlResponse{}, err
+        }
+        return ctlserver.ControlResponse{
             Operation: "control vendor.rate",
             Result:    map[string]any{"value": cmd.Value, "source": cmd.Source},
         }, nil
@@ -301,15 +299,8 @@ fields before anything is applied; use `stream_id`, `bitrate`, `rate`,
 `start`, `end`, and `active` rather than CLI-only field names such as `stream`
 or `value`.
 
-Render a live flowchart from the same running task:
-
-```sh
-goav ctl --control unix:///tmp/goav-live.sock graph
-goav ctl --control unix:///tmp/goav-live.sock graph format=dot
-goav ctl --control unix:///tmp/goav-live.sock graph format=text
-```
-
-Or from host code:
+Render a live flowchart from the same running task with
+`graph [format=mermaid|dot|text]` (shown above), or from host code:
 
 ```go
 flowchart, err := graphrender.RenderTaskFlowchart(task)
@@ -376,25 +367,21 @@ explicit `at=`, `selector=`, `source=`, or `node=` argument.
 ## Custom Codecs
 
 Register the codec implementation on the runtime, then call it in an attach or
-rebranch pipeline with the generic `encode` step. This is the default path for
-custom encoders and does not require a custom encoder spelling. Use
-`bundle.MustNew(...)` when you want the bundled codecs, formats, and filters plus
-your adapter; use `goav.New(...)` only when you are intentionally registering
-every required codec, filter, prober, demuxer, and muxer yourself.
+rebranch pipeline with the generic `encode` step — the default path for custom
+encoders, no custom encoder spelling required. Use `bundle.MustNew(...)` when
+you want the bundled codecs, formats, and filters plus your adapter; use
+`goav.New(...)` only when you are intentionally registering every required
+codec, filter, prober, demuxer, and muxer yourself.
 
 Opus, VP8, VP9, and AV1 are full encode/decode recipe verticals. Encoder
 behavior has one typed settings contract everywhere: package options mutate
 `codec.CodecSettings`, and the string/control-plane frontends reflect the same
-tagged fields into `encode ... key=value` syntax. Custom runtime encoders work
-through the generic `encode codec=<id> media=<kind>` step immediately; any key
-not claimed by a typed field is preserved in `CodecSettings.Custom` for the
-adapter to validate. Use `codec.Control(...)` when an adapter needs the
-concrete native encoder or config object. The generated reference is the
-running host itself; `goav ctl help attach` is human-readable, and
-`goav ctl capabilities` is machine-readable. In normal application code,
-workflows should be expressible through declarative recipes; the public grammar
-stays Input, Stream, Tap, Branch, Destination, Flow, Task, and opt-in task
-capabilities.
+tagged fields into `encode ... key=value` syntax, so custom runtime encoders
+work through `encode codec=<id> media=<kind>` immediately. Use
+`codec.Control(...)` when an adapter needs the concrete native encoder or
+config object. In normal application code, workflows should be expressible
+through declarative recipes; the public grammar stays Input, Stream, Tap,
+Branch, Destination, Flow, Task, and opt-in task capabilities.
 
 ```go
 rt := bundle.MustNew(
@@ -413,23 +400,24 @@ goav ctl --control unix:///tmp/goav-live.sock attach frames as record \
 ```
 
 The generic encoder step is documented by generated help, not by a hand-written
-option list. Run `goav ctl help attach` or `goav ctl capabilities` against the
-host to see the reflected `codec.CodecSettings` fields (`bitrate`, `fps`,
-`keyframe_interval`, `profile`, `level`, `channels`, `sample_rate`,
-`clock_rate`, `channel_layout`, and any future tagged fields). Adapter-owned
-native keys such as `dither=triangular`, `lookahead=deep`, or
+option list: `goav ctl help attach` against the host is human-readable and
+`goav ctl capabilities` is machine-readable. Both show the reflected
+`codec.CodecSettings` fields (`bitrate`, `fps`, `keyframe_interval`,
+`profile`, `level`, `channels`, `sample_rate`, `clock_rate`, `channel_layout`,
+and any future tagged fields). Adapter-owned native keys such as
+`dither=triangular`, `lookahead=deep`, or
 `min_qindex=20 max_qindex=180 tune=zerolatency` fall through to
-`CodecSettings.Custom`. Ambiguous or duplicate spellings such as `rate`,
-`framerate`, `keyint`, `gop`, `samplerate`, `ch`, `clockrate`, and
-`bitrate_bps` are rejected with suggestions; use the canonical names from
-generated help.
+`CodecSettings.Custom` for the adapter to validate. Ambiguous or duplicate
+spellings such as `rate`, `framerate`, `keyint`, `gop`, `samplerate`, `ch`,
+`clockrate`, and `bitrate_bps` are rejected with suggestions; use the
+canonical names from generated help.
+
 File sinks follow the same rule: use `filesink location=<path> [format=<id>]`.
 Transform steps use one spelling as well: `resize width=<px> height=<px>` and
-`resample sample_rate=<hz> channels=<n>`.
-Generated `goav run` sources use `testsrc video` with
-`width=<px> height=<px> fps=<n>` and either `frames=<n>` or `duration=<d>`;
-duplicate aliases such as `w`, `h`, `size`, `framerate`, `live`, `pix_fmt`,
-and `pixel_format` are rejected with suggestions.
+`resample sample_rate=<hz> channels=<n>`. Generated `goav run` sources use
+`testsrc video` with `width=<px> height=<px> fps=<n>` and either `frames=<n>`
+or `duration=<d>`; duplicate aliases such as `w`, `h`, `size`, `framerate`,
+`live`, `pix_fmt`, and `pixel_format` are rejected with suggestions.
 
 The destination container must accept the selected codec. Standard codecs can
 often use the bundled containers registered by `bundle.MustNew`; a private codec
@@ -448,29 +436,11 @@ goav ctl --control unix:///tmp/goav-live.sock attach frames as archive \
 
 ## Custom Branch Components
 
-Custom branch steps can add external stages, sinks, or compound branch grammar:
-
-```go
-type MeterSettings struct {
-    Window time.Duration `goavctl:"window,duration" usage:"[window=<duration>]" help:"observation window"`
-}
-
-meter := ctlserver.NewBranchStep[MeterSettings](
-    "meter",
-    "observe frames before encoding",
-    func(branch *ctlserver.BranchPipeline, _ MeterSettings) error {
-        branch.Do(component.FrameFunc("meter", func(ctx context.Context, frame *av.Frame, emit component.Emit) error {
-            recordLevel(frame)
-            return emit.Frame(frame)
-        }))
-        return nil
-    },
-)
-```
-
-Custom destination steps call `branch.Destination(...)`. This is the pattern for
-object stores, upload services, analytics queues, or any app-owned sink that is
-not a local file:
+Custom branch steps can add external stages, sinks, or compound branch grammar;
+the `meter` step in [Bootstrap Host](#bootstrap-host) is the frame-stage
+pattern. Custom destination steps call `branch.Destination(...)` — the pattern
+for object stores, upload services, analytics queues, or any app-owned sink
+that is not a local file:
 
 ```go
 type ObjectSinkSettings struct {

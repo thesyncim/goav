@@ -36,10 +36,8 @@ err := goav.From(goav.Input(webrtcav.Track(track))).
     Run(ctx)
 ```
 
-Several realtime inputs compose through `From(inputs...)`. Use
-`goav.InputName(...)` to say which chain reads which input, and wrap matching
-destinations with `goav.Mux(name, destination)` when the encoded streams should
-land in the same mux.
+Several realtime inputs compose through `From(inputs...)`; use
+`goav.InputName(...)` to say which chain reads which input.
 
 ## RTP Receive
 
@@ -201,9 +199,8 @@ err := goav.From(input).
 ```
 
 One destination can be a mux group: several encoded branches feed matching
-`goav.Mux(name, destination)` values. Reusing the same ungrouped destination
-value is rejected. A destination can also be a sink after any branch operation
-(no encode needed for frame-domain ends).
+`goav.Mux(name, destination)` values. A destination can also be a sink after
+any branch operation (no encode needed for frame-domain ends).
 
 Branches normally start from the current stream point. When one branch needs an
 earlier operation boundary, name that boundary with a typed tap and anchor the
@@ -360,9 +357,9 @@ defer recordingHandle.Close(ctx)
 ```
 
 Attach several late branches in one call when they should appear or disappear
-together. A later branch in the same call can anchor from a tap published by an
-earlier branch, and one explicit destination group
-can receive several sink or mux branch outputs:
+together. A later branch in the same call can anchor from a tap published by
+an earlier branch, and one explicit destination group can receive several sink
+or mux branch outputs:
 
 ```go
 audioEncoded := goav.PacketTap("audio.encoded")

@@ -21,17 +21,18 @@ composer:
 `input -> stream -> operations -> tap -> branch -> destination` lowers into
 `WorkPlan -> pipeline.Graph -> Task`.
 
-Live mutation follows the same promise. Make runtime attachment a patch of the same plan model:
-`Mutable.Attach` compiles the same branch grammar into `WorkPatch`, validates
-before graph mutation, and rolls back fully on failure
+Live mutation follows the same promise: runtime attachment is a patch of the
+same plan model. `Mutable.Attach` compiles the same branch grammar into
+`WorkPatch`, validates before graph mutation, and rolls back fully on failure
 (`TestTaskAttachRuntimeBranchGroupRollsBackOnLaterFailure`).
 
-The destination model has also been simplified. Collapse `Target` into `Destination` is done: `Write`, `URI`, `Writer`,
-`Sink`, and `Custom` return stable goav-owned destination handles.
-`Mux(name, destination)` is the preferred way to declare one shared mux/sink
-group when branches build matching destinations independently. Reusing one
-ungrouped handle is rejected; grouping is explicit (`TestMuxPreferredOverHandleIdentity`,
-`TestMuxSurvivesWithAndCopy`, `TestSameHandleGroupingRequiresMux`).
+The destination model is also settled: `Target` collapsed into `Destination`,
+and `Write`, `URI`, `Writer`, `Sink`, and `Custom` return stable goav-owned
+destination handles. `Mux(name, destination)` is the preferred way to declare
+one shared mux/sink group when branches build matching destinations
+independently. Reusing one ungrouped handle is rejected; grouping is explicit
+(`TestMuxPreferredOverHandleIdentity`, `TestMuxSurvivesWithAndCopy`,
+`TestSameHandleGroupingRequiresMux`).
 
 ## Governed pre-v1 surface
 
@@ -48,18 +49,17 @@ enforcement that no longer exists. The inventory:
   (`Decode`/`Copy`/`Resize`/`Resample`/`Do`/`Encode`)/`Shape`/`Auto`/
   `Require`/`Prefer`/`Tap`/`Branches`/`To`/`OnStream`; `Mix`/`Composite`/
   `Select`; `Flow`; `Task` lifecycle (`Run`/`Close`) plus structural
-  built-task `CloseContext(ctx)`; opt-in task capability
-  interfaces for `Explain`, inspection (`Describe`/`Taps`/`Snapshot`/`Stats`),
-  mutation (`Attach`/`Detach` with `DrainBranch`/`AbortBranch`, `Rebranch`),
-  controls (`Control`), and observation (`Watch`; unfiltered `Watch()` observes
-  every task event);
-  `New`/`UseRuntime` and the `bundle` runtime helpers;
-  structured `BuildError` with stable families, detailed codes,
-  `Detail(key)`, `DetailLines()`, and `FixLines()`;
-  the `plan`, `snapshot`, `lifecycle`, `shape`, `flow`, and `av` vocabulary
-  packages. Runtime mutation/control/advanced observation and joined-stream
-  breadth are governed pre-v1 behavior, not normal v1 promises unless the
-  release decision explicitly retains them.
+  built-task `CloseContext(ctx)`; opt-in task capability interfaces for
+  `Explain`, inspection (`Describe`/`Taps`/`Snapshot`/`Stats`), mutation
+  (`Attach`/`Detach` with `DrainBranch`/`AbortBranch`, `Rebranch`), controls
+  (`Control`), and observation (`Watch`; unfiltered `Watch()` observes every
+  task event); `New`/`UseRuntime` and the `bundle` runtime helpers; structured
+  `BuildError` with stable families, detailed codes, `Detail(key)`,
+  `DetailLines()`, and `FixLines()`; the `plan`, `snapshot`, `lifecycle`,
+  `shape`, `flow`, and `av` vocabulary packages. Runtime
+  mutation/control/advanced observation and joined-stream breadth are governed
+  pre-v1 behavior, not normal v1 promises unless the release decision
+  explicitly retains them.
 - **Tier B: extension points.** `provider.Source` and `Source(fn)` push
   sources; `provider.Destination`/`Writer`/`Sink` destinations;
   `EventFunc`/`FrameFunc`/`PacketFunc`/`SinkFunc` hooks; codec/format/filter

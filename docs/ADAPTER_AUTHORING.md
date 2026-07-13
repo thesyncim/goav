@@ -314,8 +314,8 @@ scratch). `rtpav.Receive`, `webrtcav.Track`, and `playoutav.New` are
 providers; yours plugs in identically via `goav.From(goav.Input(provider))`.
 
 Lifecycle (from `provider/provider.go`, `provider.go`, `source.go`):
-`SourceShape()` is read before
-opening. Declare domain/media/codec/format/realtime precisely, for example
+`SourceShape()` is read before opening. Declare
+domain/media/codec/format/realtime precisely, for example
 `shape.Packet(media, codecID, shape.Audio(...),
 shape.Format(av.FormatID("vendor.format")), shape.Realtime(true))`. The
 planner selects streams and decoders from it. Use `shape.Format` when an
@@ -323,7 +323,7 @@ external source has custom framing that downstream validation should see.
 `OpenSource` runs once per build; the returned streams must carry full
 `av.Stream.Codec` parameters. The returned
 `pipeline.Source.Start(ctx, emitter)` runs on the task: emit
-`av.EventStreamAdded` announces, then media, then `av.EventEndOfStream`;
+`av.EventStreamAdded` announcements, then media, then `av.EventEndOfStream`;
 return cleanly on `ctx` cancellation or `pipeline.ErrClosed`, slow down on
 `pipeline.ErrBackpressure`. Implement `pipeline.ControllableSource` to accept
 seek/rate controls (record the request; apply it from the Start loop). A
@@ -374,10 +374,10 @@ routing handle branches share.
    `*Allocs` test); an end-to-end grammar test (`goavtest.Audio/Video/Packets`
    inputs, `goavtest.NewCollector()` output, `goavtest.Runtime()` plus your
    `With*` option). Use `goavtest/expect` for assertions: it delegates
-   structural diffs to `github.com/google/go-cmp/cmp` and adds
-   `BuildError` fields/fixes, `S16`, and golden-output checks for goav tests. Use
-   `goavtest.NewTestSource` when the adapter needs a
-   provider-shaped, controllable source fixture; use
+   structural diffs to `github.com/google/go-cmp/cmp` and adds `BuildError`
+   fields/fixes, `S16`, and golden-output checks for goav tests. Use
+   `goavtest.NewTestSource` when the adapter needs a provider-shaped,
+   controllable source fixture; use
    `goavtest.TestSourceScript(goavtest.TestSourcePacket(...),
    goavtest.TestSourceEvent(...))` for mixed media/control scripts.
    `adapterproof/adapter_compat_test.go` is a complete worked example of all

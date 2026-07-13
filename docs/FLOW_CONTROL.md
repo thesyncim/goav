@@ -1,4 +1,4 @@
-# Flow control: current state
+# Flow control
 
 Flow control answers one question: when a live branch cannot keep up, who pays
 the cost? In goav the answer is branch-local by default. A slow preview branch

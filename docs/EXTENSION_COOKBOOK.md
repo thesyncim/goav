@@ -76,7 +76,10 @@ Rules:
 
 When the source needs seek/rate control, late stream discovery, decode bounds,
 or a transport-owned open phase, implement `provider.Source` and pass it with
-`goav.Input(provider)`.
+`goav.Input(provider)`. The runnable module `examples/provider-source` verifies
+the provider-owned open phase, declared shape facts, stream discovery, a
+running `pipeline.Source`, and a nil-provider failure — the copyable module
+for transport packages such as SRT, NDI, RTP variants, or proprietary ingest.
 
 The runnable module `examples/custom-source` verifies the happy path and a
 pre-open nil-callback failure. It is the smallest copyable module for packages
@@ -124,11 +127,6 @@ return nil
 
 Use `OnStream` instead when the source discovers streams internally and the
 application does not need a join-time first-frame boundary.
-
-The runnable module `examples/provider-source` verifies the provider-owned open
-phase, declared shape facts, stream discovery, a running `pipeline.Source`, and
-a nil-provider failure. It is the copyable module for transport packages such
-as SRT, NDI, RTP variants, or proprietary ingest.
 
 ## Custom Destination
 
@@ -278,17 +276,17 @@ Use `ctlserver` when your application owns a running task and wants to expose
 app-specific verbs, branch steps, or encoder names through `goav ctl`.
 
 ```go
-	command := ctlserver.NewCommand[setRate](
-	    "vendor.rate",
-	    "demo playback-rate control",
-	    func(ctx context.Context, task goav.LiveTask, cmd setRate) (ctlserver.ControlResponse, error) {
-	        ctrl, err := control.Rate(cmd.Value)
-	        if err != nil {
-	            return ctlserver.ControlResponse{}, err
-	        }
-	        if err := task.Control(ctx, ctrl.At(pipeline.NodeRef(cmd.Source))); err != nil {
-	            return ctlserver.ControlResponse{}, err
-	        }
+command := ctlserver.NewCommand[setRate](
+    "vendor.rate",
+    "demo playback-rate control",
+    func(ctx context.Context, task goav.LiveTask, cmd setRate) (ctlserver.ControlResponse, error) {
+        ctrl, err := control.Rate(cmd.Value)
+        if err != nil {
+            return ctlserver.ControlResponse{}, err
+        }
+        if err := task.Control(ctx, ctrl.At(pipeline.NodeRef(cmd.Source))); err != nil {
+            return ctlserver.ControlResponse{}, err
+        }
         return ctlserver.ControlResponse{Operation: "control vendor.rate"}, nil
     },
 )

@@ -8,11 +8,8 @@ This page answers two practical questions:
 
 The public surface is governed, but not for bureaucracy's sake. Every exported
 identifier belongs to one tier, and this document is the approved list: a new
-export lands in the same change that adds its tier row here. The
-source-scanning growth pins that used to enforce this mechanically were
-removed on 2026-06-27; governance is review-driven now, and the doc-honesty
-pins (`docs_citation_contract_test.go`) keep this page from citing enforcement
-that no longer exists.
+export lands in the same change that adds its tier row here. See
+[Enforcement](#enforcement) for what is executable versus review-driven.
 
 The tiers are a reader map:
 
@@ -105,50 +102,47 @@ use [`docs/ADAPTERS.md`](ADAPTERS.md) and [`docs/COMPONENTS.md`](COMPONENTS.md).
   TrackAdapter). `goav.WrapSource(spec, wrap)` is the decoration point: every
   input kind opens through one internal source boundary into a running
   `pipeline.Source`, and wrap intercepts it there, so externals decorate
-  built-in inputs (count, mirror,
-  transform the message stream) without reimplementing them. Node identity is
-  pinned after wrapping (Describe == Build); a `provider.Source`-level wrap
-  was rejected because file/URI inputs have no provider view before the
-  runtime opens them. Destinations need no analog: every destination
-  constructor takes a caller-held value (io.Writer for `Write`,
-  `provider.Destination` for `Custom`/`Writer`, `pipeline.Sink` for `Sink`)
-  that callers wrap before passing.
+  built-in inputs (count, mirror, transform the message stream) without
+  reimplementing them. Node identity is pinned after wrapping
+  (Describe == Build); a `provider.Source`-level wrap was rejected because
+  file/URI inputs have no provider view before the runtime opens them.
+  Destinations need no analog: every destination constructor takes a
+  caller-held value (io.Writer for `Write`, `provider.Destination` for
+  `Custom`/`Writer`, `pipeline.Sink` for `Sink`) that callers wrap before
+  passing.
 - **Joins** (governed pre-v1, see [`V1_SCOPE.md`](V1_SCOPE.md)): use these when
-  several streams become one. `goav.Join(name, stage,
-  arms...)` is N->1 convergence with a
-  caller-supplied `pipeline.Stage` as the convergence node. Mix, Composite,
-  and Select are profiles over this same machinery; the per-kind behaviors
-  the internal profile table carries are derived for externals from the
-  stage's `shape.Contract` (frame-domain inputs -> explicit decoded arms like Mix,
-  packet/any -> passthrough like Select; a single fact-carrying input shape ->
-  solver-planned per-arm conversions; the contract's output -> the joined
-  stream, falling back to first-arm facts) and from the join's snake-safe
-  name (node name, output stream id, `<name>_*` error-code family). The
-  result is a full citizen: `.Tap/.Branches/.To`, it can nest as a join arm,
-  and `Describe() == Build()`.
+  several streams become one. `goav.Join(name, stage, arms...)` is N->1
+  convergence with a caller-supplied `pipeline.Stage` as the convergence node.
+  Mix, Composite, and Select are profiles over this same machinery; the
+  per-kind behaviors the internal profile table carries are derived for
+  externals from the stage's `shape.Contract` (frame-domain inputs -> explicit
+  decoded arms like Mix, packet/any -> passthrough like Select; a single
+  fact-carrying input shape -> solver-planned per-arm conversions; the
+  contract's output -> the joined stream, falling back to first-arm facts) and
+  from the join's snake-safe name (node name, output stream id, `<name>_*`
+  error-code family). The result is a full citizen: `.Tap/.Branches/.To`, it
+  can nest as a join arm, and `Describe() == Build()`.
 - **Destinations**: use these when your application owns the output boundary.
-  `provider.Destination` + `provider.Contract`/
-  `provider.Info`, `goav.Writer` (`provider.OpenFunc`), transactional uploads
-  via `provider.TransactionalWriter`, frame/packet sinks via `goav.Sink` +
+  `provider.Destination` + `provider.Contract`/`provider.Info`, `goav.Writer`
+  (`provider.OpenFunc`), transactional uploads via
+  `provider.TransactionalWriter`, frame/packet sinks via `goav.Sink` +
   `component.SinkFunc`, and `goav.Mux(name, destination)` when independently
   built destinations should share one mux/sink group.
 - **Custom stages**: use these for in-process inspection or transformation.
   `component.EventFunc`/`component.FrameFunc`/`component.PacketFunc`
-  (+`component.Emit`) for
-  `.Do(...)`; the node contracts live in `pipeline` (Source/Stage/Sink,
-  Emitter, Message, Scratch, capability interfaces).
+  (+`component.Emit`) for `.Do(...)`; the node contracts live in `pipeline`
+  (Source/Stage/Sink, Emitter, Message, Scratch, capability interfaces).
 - **Codecs**: `codec` Descriptor/Decoder/Encoder/factories, caller-owned
   results, `runconfig.WithDecoder`/`WithEncoder`/`WithCodecAdapter`/
   `WithCodecDescriptor`.
-- **Control hosts** (governed pre-v1, see [`V1_SCOPE.md`](V1_SCOPE.md)): `ctlserver`
-  is the supported package for applications that
-  run a task and expose it to `goav ctl --control unix://...`. It reuses the
-  same allowlisted command framework as the bundled command: external hosts
-  pass `CommandSpec` for app-specific control verbs, `PipelineRegistry` for
-  custom branch-pipeline steps and encoder names, `ValidateCapabilities` to
-  preflight host-owned names/aliases/settings metadata, and
-  `ServeUnixWithOptions` to put those hooks behind a socket. Generic branch
-  pipelines can also encode
+- **Control hosts** (governed pre-v1, see [`V1_SCOPE.md`](V1_SCOPE.md)):
+  `ctlserver` is the supported package for applications that run a task and
+  expose it to `goav ctl --control unix://...`. It reuses the same allowlisted
+  command framework as the bundled command: external hosts pass `CommandSpec`
+  for app-specific control verbs, `PipelineRegistry` for custom
+  branch-pipeline steps and encoder names, `ValidateCapabilities` to preflight
+  host-owned names/aliases/settings metadata, and `ServeUnixWithOptions` to
+  put those hooks behind a socket. Generic branch pipelines can also encode
   runtime-registered custom codecs with `encode codec=<id> media=<kind> ...`.
   The same socket renders live graph diagnostics through `goav ctl graph`
   (`format=mermaid|dot|text`).
@@ -350,7 +344,8 @@ example modules. The module boundary is the dependency boundary:
   package-level purity is enough because `TestRootImportDoesNotPullBundledAdapters`
   proves importing the root package pulls no bundled adapter, and
   `TestRootModuleDependencyPurity` pins that module requirements stay inside
-  `github.com/thesyncim/*` with no third-party requires and no `replace`
+  `github.com/thesyncim/*` plus an exact allowlist of the goaac backend's
+  modernc runtime dependencies (see `docs/ADAPTERS.md`), with no `replace`
   directives. A nested `bundle` module would add a `go.mod` and per-module tags
   for no isolation the package boundary does not already provide.
 - **`rtpav`, `webrtcav`, `playoutav`**: nested transport/provider modules.
