@@ -97,11 +97,15 @@ func (s *gateSink) Close() error { return nil }
 // path at zero allocations across the SFU-width sweep. The first target copies
 // the producer-borrowed payload into graph-owned backing once; sibling targets
 // bind refcounted views into their own preallocated slots. Sinks are gated
-// shut during the measurement so the pinned window is purely producer-driven
-// and deterministic on loaded runners: AllocsPerRun's warmup emit plus its 50
-// measured emits stay within the 64-slot queues, so no drop or delivery runs
-// concurrently. Steady-state recycle allocs are covered by
-// BenchmarkBufferedFanout/refcount and the committed baseline ratchet.
+// shut during the measurement so the pinned window is purely producer-driven:
+// the warmup emit plus the measured emits stay within the 64-slot queues, so
+// no drop or delivery runs concurrently. The pin takes the minimum over a few
+// measurement windows because one-time runtime costs — each of the N parked
+// worker goroutines allocates its first sudog when it blocks on the gate, and
+// on a slow runner those parks straggle past the warmup — land only in early
+// windows, while a real per-emit allocation repeats in every window.
+// Steady-state recycle allocs are covered by BenchmarkBufferedFanout/refcount
+// and the committed baseline ratchet.
 func TestBufferedFanoutRefcountAllocs(t *testing.T) {
 	ctx := context.Background()
 	for _, n := range fanoutSizes {
@@ -138,12 +142,17 @@ func TestBufferedFanoutRefcountAllocs(t *testing.T) {
 			<-source.ready
 
 			msg := benchPacketMessage(fanoutPayload, false)
-			if allocs := testing.AllocsPerRun(50, func() {
+			emit := func() {
 				if err := source.emitter.Emit(ctx, msg); err != nil {
 					t.Fatal(err)
 				}
-			}); allocs != 0 {
-				t.Fatalf("borrowed buffered fanout emit allocs = %v, want 0", allocs)
+			}
+			allocs := testing.AllocsPerRun(10, emit)
+			for attempt := 0; allocs != 0 && attempt < 3; attempt++ {
+				allocs = testing.AllocsPerRun(10, emit)
+			}
+			if allocs != 0 {
+				t.Fatalf("borrowed buffered fanout emit allocs = %v in every window, want 0", allocs)
 			}
 
 			close(gate)
