@@ -579,6 +579,9 @@ func branchComposeSharedStepPlanRefs(sharedStepPlan map[string][]pipeline.NodeRe
 
 func (b *builder) newBranchComposeStepStageNamed(ctx context.Context, name string, transform mediaTransform, stream av.Stream, realtime bool) (pipeline.Stage, av.Stream, error) {
 	if transform.stage != nil {
+		// Playout gates pace on the task timeline the runtime clone carries
+		// as its clock; binding here keeps the gate internal to the lowering.
+		bindPlayoutClock(transform.stage, b.taskClock())
 		if name != "" && name != transform.stage.Name() {
 			return namedStage{name: name, stage: transform.stage}, stream, nil
 		}

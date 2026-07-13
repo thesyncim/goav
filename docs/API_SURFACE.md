@@ -281,6 +281,13 @@ against the constructors in `input.go`/`provider.go`/`source.go`,
   returns a shared timeline policy. Reuse one `flow.SyncPolicy` across audio/video chains or
   branches; `.Sync(policy)` inserts a packet/frame gate that can hold early
   media or drop late media and reports sync drops through normal branch stats.
+- **Playout vs Sync**: `flow.Playout(name)` (options as self-methods
+  `WithOffset`/`WithDropLate`) returns a deliver-when-due policy for the sink
+  boundary: `.Playout(policy)` on a chain or branch holds each packet/frame
+  until its media time is due on the task timeline, so real-time destinations
+  render on time and `control.Rate`/pause retime delivery. `.Sync` aligns
+  branches against each other; `.Playout` aligns delivery against the task
+  clock. Drop-late sheds report through the same drop stats as sync gates.
 - **Shape vs Require vs Auto vs Prefer**: `Shape` states a fact about the
   current media point; `Require` asserts a contract that fails the build
   when unmet; `Auto` grants the solver permission to insert conversions;

@@ -185,6 +185,9 @@ func (t *task) streamRuleAttachBranches(rule streamRule, stream av.Stream) ([]ru
 		if err := validateSyncPolicyForStream("attach stream rule branch", spec.name, stream, spec.operations); err != nil {
 			return nil, err
 		}
+		if err := validatePlayoutPolicyForStream("attach stream rule branch", spec.name, stream, spec.operations); err != nil {
+			return nil, err
+		}
 		intent := streamIntent{
 			Name: spec.name,
 			Select: plan.StreamSelect{

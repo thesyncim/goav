@@ -17,8 +17,8 @@ import (
 // the node's Handle still sees one message at a time and needs no extra locking.
 // Reposition controls (seek, segment) are the exception: sources have no queue,
 // so they are handed to each source's Control method synchronously. Rate is
-// task-wide: it scales the task's shared timeline, which every paced source
-// sleeps on, and never targets a node.
+// task-wide: it scales the task's shared timeline, which every paced consumer
+// (clock-aware sources and playout gates) sleeps on, and never targets a node.
 func (t *task) Control(ctx context.Context, ctrl control.Control) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -58,13 +58,14 @@ func (t *task) Control(ctx context.Context, ctrl control.Control) error {
 }
 
 // controlRate applies a task-wide playback-rate change: it re-anchors the
-// task's shared timeline, so every paced source changes pace together —
-// mid-sleep included. It refuses targets (rate has no per-node meaning) and
-// tasks with nothing paced to scale (an offline task pumps as fast as the
-// graph drains), preserving the format.ErrRateUnsupported contract.
+// task's shared timeline, so every paced consumer changes pace together —
+// mid-sleep included, playout gates included. It refuses targets (rate has no
+// per-node meaning) and tasks with nothing paced to scale (an offline task
+// pumps as fast as the graph drains), preserving the
+// format.ErrRateUnsupported contract.
 func (t *task) controlRate(ctrl control.Control) error {
 	if ctrl.Node() != "" || ctrl.Tap() != "" {
-		return fmt.Errorf("goav: rate is task-wide: it scales the shared task timeline for every paced source; send control.Rate without At/AtTap: %w", control.ErrInvalid)
+		return fmt.Errorf("goav: rate is task-wide: it scales the shared task timeline for every paced consumer; send control.Rate without At/AtTap: %w", control.ErrInvalid)
 	}
 	if t.timeline == nil || !t.timeline.paced() {
 		return fmt.Errorf("goav: rate control: %w", format.ErrRateUnsupported)

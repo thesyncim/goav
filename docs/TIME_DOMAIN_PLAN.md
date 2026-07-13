@@ -55,17 +55,26 @@ for T3 (no public wiring yet). Acceptance:
 `timeline_test.go` (rate change mid-sleep wakes early, pause freezes Now,
 concurrent readers under race); existing pacer/sync tests stay green.
 
-### T2. Synchronized sink playout
+### T2. Synchronized sink playout — LANDED
 
-Opt-in deliver-when-due at the sink boundary: `flow.Playout(...)` (vocabulary
-sibling of `flow.Sync`) declares that a destination's messages are held until
-`pts + latency offset` is due on the task timeline, with hold-late/drop-late
-modes and drop stats via the existing `DropReporter` shape. The
-planner inserts the playout gate before the sink exactly like sync gates.
-`playoutav` remains the external proof that scheduled *sources* need no core
-support; this slice is the *sink* half GStreamer calls sink sync.
-Acceptance: TestPlayoutSinkDeliversWhenDue (planned), TestPlayoutSinkFreezesOnPause (planned),
-A/V alignment test across two branches sharing one timeline.
+Opt-in deliver-when-due at the sink boundary: `flow.Playout(name)` (vocabulary
+sibling of `flow.Sync`, options as self-methods `WithOffset`/`WithDropLate`)
+declares that a destination's messages are held until `pts + latency offset`
+is due on the task timeline, with hold-late (default) and drop-late modes and
+drop stats via the existing `DropReporter` shape (folded under
+`pipeline.DropSync`). `.Playout(policy)` attaches to stream chains and
+branches exactly like `.Sync(policy)`; the internal gate lowers like a sync
+gate, receives the task timeline through the runtime-clone clock seam, and
+marks the timeline paced so `control.Rate` retimes playout. Branches reusing
+one policy value share the first-message anchor (the A/V alignment), and
+`EventDiscontinuity` resets it. `playoutav` remains the external proof that
+scheduled *sources* need no core support; this slice is the *sink* half
+GStreamer calls sink sync. Acceptance: `TestPlayoutSinkDeliversWhenDue`,
+`TestPlayoutSinkFreezesOnPause`, `TestPlayoutAlignsBranchesSharingPolicy`,
+`TestPlayoutDropLateShedsOverdueMedia`, `TestPlayoutRateChangeRetimesDelivery`,
+`TestPlayoutDiscontinuityResetsAnchor`, refusal pins
+(`TestPlayoutGateRequiresValidMediaTimebase`,
+`TestPlayoutAttachRefusesStreamWithoutTimebase`).
 
 ### T3. Task state: Pause/Resume and readiness
 

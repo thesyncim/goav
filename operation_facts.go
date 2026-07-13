@@ -381,6 +381,12 @@ func branchComposeRouteOperationTransform(branchName string, transformIndex int,
 				stage: operation.Stage,
 			}, nil
 		}
+		if _, ok := operation.Stage.(*playoutGate); ok {
+			return mediaTransform{
+				name:  playoutStageOperationName(operation, branchName),
+				stage: operation.Stage,
+			}, nil
+		}
 		return mediaTransform{
 			name:  operation.Stage.Name(),
 			stage: operation.Stage,

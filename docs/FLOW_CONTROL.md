@@ -25,6 +25,17 @@ What holds today (all `-race` clean, with tests):
 - Branch-local `flow.SyncPolicy` gates can align live audio/video branches without
   changing unsynced delivery. When `flow.SyncDropLate()` sheds a message, stats use
   the existing drop accounting with `pipeline.DropSync`.
+- Sink playout is opt-in deliver-when-due: `.Playout(flow.Playout(name))` holds
+  a chain's or branch's packets/frames until their media time (plus a
+  `WithOffset` latency budget) is due on the task timeline, so real-time
+  destinations render on time, branches sharing one policy value align by PTS
+  on the shared anchor, and pausing the timeline freezes delivery coherently
+  (`TestPlayoutSinkDeliversWhenDue`, `TestPlayoutAlignsBranchesSharingPolicy`,
+  `TestPlayoutSinkFreezesOnPause`). Hold-late is the default;
+  `WithDropLate(tolerance)` sheds overdue media instead, reported through the
+  same `pipeline.DropSync` accounting
+  (`TestPlayoutDropLateShedsOverdueMedia`). Events pass through ungated, and
+  `EventDiscontinuity` resets the shared anchor.
 - Custom sources see flow control per push: `push.X(...)` returns
   `(source.Result, error)` where deliberate sheds are `Dropped` with a nil error
   and `ErrBackpressure` keeps its flow-control meaning.

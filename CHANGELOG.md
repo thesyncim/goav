@@ -11,6 +11,19 @@ methodology changes, and migration notes.
 
 ## Unreleased
 
+- Synchronized sink playout: `flow.Playout(name)` (options as self-methods
+  `WithOffset`/`WithDropLate`) is a deliver-when-due policy for the sink
+  boundary — `.Playout(policy)` on a stream chain or branch holds each
+  packet/frame until its media time (plus the offset) is due on the task
+  timeline, the sink-sync half of GStreamer. Branches reusing one policy value
+  share the first-message anchor so audio/video delivery interleaves by PTS;
+  `EventDiscontinuity` resets the anchor; events pass ungated. Hold-late is
+  the default, `WithDropLate(tolerance)` sheds overdue media and reports the
+  drops through normal branch stats (`pipeline.DropSync`). Playout gates count
+  as paced timeline consumers, so an untargeted `control.Rate` retimes playout
+  gaps (2x halves the wall gap) and pausing the internal timeline freezes
+  delivery coherently.
+
 - Task-wide timeline: every task owns one shared clock service (an internal
   timeline consumed as `av.Clock`) that the realtime demux pacer and
   clock-aware sources sleep on; `control.Rate` re-anchors it so every paced

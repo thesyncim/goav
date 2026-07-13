@@ -106,10 +106,11 @@ Still planned:
   mux compatibility, already consume codec facts from `WorkPlan` operations.
 - Expand `lifecycle.SwitchAt` boundaries beyond frame/keyframe/media-time if future
   runtime replacement modes need them.
-- Finish the time-shape work: A/V sink sync and pull scheduling beyond
-  branch-local `flow.SyncPolicy` gates. The task-wide clock service landed
+- Finish the time-shape work: pull scheduling beyond branch-local
+  `flow.SyncPolicy` gates. The task-wide clock service landed
   (`docs/TIME_DOMAIN_PLAN.md` T1: one timeline per task, task-wide
-  `control.Rate`).
+  `control.Rate`), and A/V sink sync landed as `flow.Playout`
+  deliver-when-due gates (T2).
 - Decide the release minimum Go version before v1.
 
 ## Working Rule

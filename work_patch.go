@@ -155,6 +155,9 @@ func (t *task) planAttachBranchSteps(ctx context.Context, input runtimeAttachBra
 	if err := validateSyncPolicyForRecipeIROperations("attach runtime branch", branchName, currentStream, operations); err != nil {
 		return nil, err
 	}
+	if err := validatePlayoutPolicyForRecipeIROperations("attach runtime branch", branchName, currentStream, operations); err != nil {
+		return nil, err
+	}
 	steps := make([]attachStep, 0, len(operations)+len(destinations))
 	fail := func(err error) ([]attachStep, error) {
 		for i := range steps {
@@ -194,6 +197,9 @@ func (t *task) planAttachBranchSteps(ctx context.Context, input runtimeAttachBra
 				out = recipeIROperationOutputShape(patchShape, operation)
 				break
 			}
+			// Attached playout gates pace on the running task's timeline,
+			// bound here before the branch's graph nodes start.
+			bindPlayoutClock(operation.Stage, t.playoutClock())
 			step.component = attachComponent{stage: operation.Stage}
 			out = attachStepShape(currentShape, patchShape)
 		case plan.OpShape:

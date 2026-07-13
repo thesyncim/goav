@@ -33,7 +33,7 @@ claims are made.
 | Error reporting | `GError` messages on the pipeline bus, element-defined | One structured `BuildError` everywhere: a typed code from the `errcode` catalog, failing operation/node, typed details/fixes rendered for humans, and a checked catalog row with named coverage (`docs/ERRORS.md`, `docs/ERROR_CATALOG.md`, `TestErrorCatalogDocMatchesErrcodeCatalog`, `error_acceptance_test.go`) |
 | Graph inspection | `GST_DEBUG_BIN_TO_DOT_FILE` dot dumps; bus messages | `Explain(ctx)`/`Describe()` before any resource opens: plans, decisions, diagnostics as data (`plan.Report`); described and built graphs are guarded equal (`TestJoinDescribeEqualsBuild*` in `join_plan_test.go`, `join_nested_test.go`) |
 | Runtime mutation | Pad probes and blocking for dynamic relinking; powerful, manual | Atomic grouped `Attach` with full rollback (`TestTaskAttachRuntimeBranchGroupRollsBackOnLaterFailure`), `Mutable.Detach(ctx, h, lifecycle.DrainBranch()/lifecycle.AbortBranch())`, gapless boundary-gated `Rebranch` including media-time switches (`runtime_branch_control_test.go`), per-branch `Pause`/`Resume`, and watchable branch plus destination lifecycle events (`lifecycle_test.go`); race-safe snapshots (`task_invariants_test.go`) |
-| Live-room sync | Clock selection, live pipelines, queues, and sink synchronization are part of the framework model | Grammar-shaped `flow.SyncPolicy` gates align or shed packet/frame messages on shared live timelines for selected stream chains or branches; unsynced branches keep direct/buffered behavior, and sync drops use normal drop stats (`sync_test.go`, `join_sync_test.go`, `rtpav/integration/recipe_runtime_test.go`, `BenchmarkLiveRoomSync`) |
+| Live-room sync | Clock selection, live pipelines, queues, and sink synchronization are part of the framework model | Grammar-shaped `flow.SyncPolicy` gates align or shed packet/frame messages on shared live timelines for selected stream chains or branches; unsynced branches keep direct/buffered behavior, and sync drops use normal drop stats (`sync_test.go`, `join_sync_test.go`, `rtpav/integration/recipe_runtime_test.go`, `BenchmarkLiveRoomSync`); sink sync is `.Playout(flow.Playout(name))` — deliver-when-due on the task timeline with shared-anchor A/V alignment (`TestPlayoutSinkDeliversWhenDue`, `TestPlayoutAlignsBranchesSharingPolicy`) |
 | Deployment model | Shared C libraries plus runtime plugin scanning; system or bundled installs | Pure Go, `CGO_ENABLED=0`, one static binary; every CI build and test runs with CGO disabled (`.github/workflows/ci.yml`), so a cgo import cannot land |
 | Performance proof status | Mature C implementation, decades of production tuning; no claim measured here | Contract + benchmarks present: allocation pins in plain `go test`, 16 measured workloads (`bench_test.go`, `perf_pin_test.go`, `docs/PERFORMANCE.md`); **no cross-framework comparison performed** |
 | Ecosystem maturity | Decades old; hundreds of plugins across the base/good/bad/ugly modules; hardware backends (VA-API, NVDEC, V4L2, ...); large community | Young; the bundled adapter set is IVF, Annex B, Matroska/WebM, Opus, VP8/VP9 (full verticals), H264/AV1 (decode-first), resize/resample (`docs/ADAPTERS.md`) |
@@ -62,14 +62,14 @@ bus-visible state changes to be ordinary workflows. The current goav answer is:
   normalized PTS, while `flow.SyncDropLate()` lets preview branches shed late media
   without stalling recording branches.
 
-The intentionally deferred gap is narrower now: pull scheduling and
-sink-level A/V synchronization. The task-wide clock service exists — every
-task owns one shared timeline that the realtime pacer and clock-aware sources
-sleep on, moved by task-wide `control.Rate`
-(`TestTaskTimelineRateReanchorsAllSources`, `TestPlayoutUsesRuntimeClock`) —
-and branch-local live-room alignment exists; global playout policy still
-belongs in the scheduler/time model, not as extra branch flags or a graph API
-escape hatch.
+The intentionally deferred gap is narrower now: pull scheduling. The
+task-wide clock service exists — every task owns one shared timeline that the
+realtime pacer, clock-aware sources, and playout gates sleep on, moved by
+task-wide `control.Rate` (`TestTaskTimelineRateReanchorsAllSources`,
+`TestPlayoutUsesRuntimeClock`) — branch-local live-room alignment exists, and
+sink-level A/V synchronization is `.Playout(flow.Playout(name))`
+(`TestPlayoutSinkDeliversWhenDue`, `TestPlayoutAlignsBranchesSharingPolicy`);
+the remaining time-domain slices live in `docs/TIME_DOMAIN_PLAN.md`.
 
 ## What goav deliberately does not have
 
@@ -81,10 +81,12 @@ escape hatch.
   for core (`docs/ROADMAP.md`).
 - Playback/display stacks, device discovery, auto-pluggers. These are out of
   scope; goav assumes the application owns its endpoints.
-- Pull scheduling and sink-level A/V synchronization. The task-wide timeline
-  clock (`TestTaskTimelineRateReanchorsAllSources`) and branch-local live-room
-  `flow.SyncPolicy` gates exist, but global playout policy remains roadmap
-  work (`docs/NORTH_STAR.md`, `docs/ROADMAP.md`, `docs/TIME_DOMAIN_PLAN.md`).
+- Pull scheduling. The task-wide timeline clock
+  (`TestTaskTimelineRateReanchorsAllSources`), branch-local live-room
+  `flow.SyncPolicy` gates, and sink-side `flow.Playout` deliver-when-due gates
+  (`TestPlayoutSinkDeliversWhenDue`) exist; the remaining time-domain work
+  (task pause/readiness, seek flush, QoS, the latency model) is planned in
+  `docs/TIME_DOMAIN_PLAN.md` (`docs/NORTH_STAR.md`, `docs/ROADMAP.md`).
 
 ## On performance comparisons
 

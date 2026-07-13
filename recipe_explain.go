@@ -977,6 +977,9 @@ func cloneOperationSpecs(operations []operationSpec) []operationSpec {
 		if gate, ok := operation.Stage.(*syncGate); ok {
 			operation.Stage = newSyncGate(gate.policy)
 		}
+		if gate, ok := operation.Stage.(*playoutGate); ok {
+			operation.Stage = newPlayoutGate(gate.policy)
+		}
 		if operation.Auto != nil {
 			policy := *operation.Auto
 			operation.Auto = &policy

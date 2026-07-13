@@ -363,6 +363,18 @@ func (b *BranchBuilder) Sync(policy flow.SyncPolicy) *BranchBuilder {
 	return b
 }
 
+// Playout holds this branch's messages at the sink boundary until each
+// message's media time is due on the task timeline — the branch-side twin of
+// the stream chain's .Playout(...). Reuse one flow.PlayoutPolicy value across
+// audio/video branches to align their delivery on the shared anchor.
+func (b *BranchBuilder) Playout(policy flow.PlayoutPolicy) *BranchBuilder {
+	if b == nil {
+		return b
+	}
+	b.spec.operations = append(b.spec.operations, operationSpecForPlayout(policy))
+	return b
+}
+
 // Auto opts the branch into shape solving with the given conversion policies —
 // the branch-side twin of the stream chain's .Auto(...): needed conversions an
 // active policy allows are inserted from the runtime's filter registry as real

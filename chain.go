@@ -540,6 +540,16 @@ func (b *jobStreamBuilder) Sync(policy flow.SyncPolicy) *jobStreamBuilder {
 	return b
 }
 
+// Playout holds this stream chain's messages at the sink boundary until each
+// message's media time is due on the task timeline, so real-time destinations
+// render on time. Reuse one flow.PlayoutPolicy value across audio/video chains
+// or branches to align their delivery on the shared anchor.
+func (b *jobStreamBuilder) Playout(policy flow.PlayoutPolicy) *jobStreamBuilder {
+	stream := b.current()
+	stream.operations = append(stream.operations, operationSpecForPlayout(policy))
+	return b
+}
+
 // Auto opts the chain into shape solving with the given conversion policies:
 // when a downstream operation pins format facts (an encoder's sample rate, a
 // stage contract's geometry) the current media does not satisfy, the planner

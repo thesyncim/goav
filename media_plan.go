@@ -1000,6 +1000,9 @@ func planOperationNodeName(branch planBranch, operation planOperation, index int
 		if strings.HasPrefix(operation.Component, "sync-") {
 			return syncStageName(planBranchOperationScopeName(branch) + "-" + strings.TrimPrefix(operation.Component, "sync-"))
 		}
+		if strings.HasPrefix(operation.Component, "playout-") {
+			return playoutStageName(planBranchOperationScopeName(branch) + "-" + strings.TrimPrefix(operation.Component, "playout-"))
+		}
 		return operation.Component
 	case plan.OpEncode:
 		return "encode-" + branchEncodeOwnerName(branch)

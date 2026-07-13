@@ -134,10 +134,12 @@ this list:
 - **A/V sink sync, pull scheduling**: branch-local `flow.SyncPolicy` gates now
   align or shed packet/frame messages on shared live timelines, and the
   task-wide clock service ships: every task owns one timeline the realtime
-  pacer and clock-aware sources sleep on, moved by task-wide `control.Rate`
-  (`docs/TIME_DOMAIN_PLAN.md` T1, `TestTaskTimelineRateReanchorsAllSources`).
-  The theme-C endgame is still pull scheduling and sink-level A/V
-  synchronization (TIME_DOMAIN_PLAN T2). The time-axis controls
+  pacer, clock-aware sources, and playout gates sleep on, moved by task-wide
+  `control.Rate` (`docs/TIME_DOMAIN_PLAN.md` T1,
+  `TestTaskTimelineRateReanchorsAllSources`). Sink-level A/V synchronization
+  ships too: `.Playout(flow.Playout(name))` delivers when due on the task
+  timeline (TIME_DOMAIN_PLAN T2, `TestPlayoutSinkDeliversWhenDue`). The
+  theme-C endgame is still pull scheduling. The time-axis controls
   (`Seek`/`Rate`/`Segment`) and clock-paced realtime file playback already
   ship (`task_seek_test.go`, `task_time_control_test.go`); the rest is
   analysed in `docs/NORTH_STAR.md` ("Time/sync", attack-plan stage 7).

@@ -172,8 +172,9 @@ func Seek(pos time.Duration) Control {
 }
 
 // Rate builds a control that changes the task-wide playback rate. Rate is not
-// targeted: it re-anchors the task's shared timeline so every paced source
-// changes pace together. Tasks with nothing paced to scale refuse it.
+// targeted: it re-anchors the task's shared timeline so every paced consumer
+// — clock-aware sources and playout gates — changes pace together. Tasks with
+// nothing paced to scale refuse it.
 func Rate(r float64) (Control, error) {
 	if !(r > 0) || math.IsInf(r, 0) {
 		return Control{}, invalidControl("Rate needs a positive, finite playback rate (reverse playback is not supported), got %v", r)
