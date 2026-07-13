@@ -1961,6 +1961,7 @@ func runtimeBranchTapMissingError(name string, taps []snapshot.Tap) error {
 		fixes: buildErrorFixes([]string{
 			"add .Tap(goav.FrameTap(" + strconv.Quote(name) + ")) or .Tap(goav.PacketTap(" + strconv.Quote(name) + ")) at the point you want to attach",
 			"call Inspectable.Taps() before attaching runtime branches",
+			"if the tap came from a detached runtime branch, reattach that branch or choose a tap still listed by Inspectable.Taps()",
 			"use .From(graphNode) only for expert graph-node attachments",
 		}),
 		cause: pipeline.ErrUnknownNode,

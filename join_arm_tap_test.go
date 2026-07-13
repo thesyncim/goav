@@ -84,6 +84,25 @@ func tapArmTestPacketSource(id av.StreamID, codecID av.CodecID, samples ...int16
 		})
 }
 
+func TestJoinArmTapComposes(t *testing.T) {
+	ctx := context.Background()
+	var got [][]int16
+	task, err := Mix(
+		From(mixTestAudioSource("dry", 100, 200)).Audio().Tap(FrameTap("dry.frames")),
+		FrameTap("dry.frames"),
+	).To(joinTestCollectSink("out", &got)).BuildLive(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer task.Close()
+	if err := task.Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || !reflect.DeepEqual(got[0], []int16{200, 400}) {
+		t.Fatalf("mixed = %v, want tapped arm to compose as a second join arm", got)
+	}
+}
+
 // TestMixChainArmTapDecodesOnceAndMixes is the headline: decode a packet
 // chain ONCE, tap the decoded point mid-graph, and mix it with a live frame
 // source in one task. The tap is a first-class task tap (runtime branches

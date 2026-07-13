@@ -196,6 +196,39 @@ func recipeCompilePhaseSequence(phases recipeCompilePhaseSet) []recipeCompilePas
 	return passes
 }
 
+func validateStreamRulesPass() recipeCompilePass {
+	return recipeCompilePassFunc{name: "validate stream rules", fn: func(state *recipeCompileState) error {
+		return validateStreamRulesForCompile(state)
+	}}
+}
+
+func (state *recipeCompileState) streamRuleCount() int {
+	if state == nil {
+		return 0
+	}
+	if len(state.streamRuleFacts) != 0 {
+		return len(state.streamRuleFacts)
+	}
+	return len(state.streamRules)
+}
+
+func (state *recipeCompileState) streamRuleInputCount() int {
+	if state == nil {
+		return 0
+	}
+	if state.branchCompositionPresent {
+		return 1
+	}
+	if len(state.inputFacts) != 0 {
+		return len(state.inputFacts)
+	}
+	return len(state.inputAttachments)
+}
+
+func (state *recipeCompileState) streamRuleJoinPresent() bool {
+	return state != nil && state.joinTree != nil
+}
+
 func (c recipeIntentCompiler) Compile(state recipeCompileState) (recipeResolved, error) {
 	for i := range c.passes {
 		pass := c.passes[i]
@@ -630,16 +663,6 @@ func recipeIRStreamsRequireRuntime(streams []recipeir.Stream) bool {
 }
 
 func recipeIROperationsRequireRuntime(operations []recipeir.Operation) bool {
-	for i := range operations {
-		switch operations[i].Kind {
-		case plan.OpDecode, plan.OpEncode, plan.OpTransform:
-			return true
-		}
-	}
-	return false
-}
-
-func operationSpecsRequireRuntime(operations []operationSpec) bool {
 	for i := range operations {
 		switch operations[i].Kind {
 		case plan.OpDecode, plan.OpEncode, plan.OpTransform:
@@ -1481,6 +1504,25 @@ func jobStreamCustomSourceShapeForSelector(state *recipeCompileState, selector a
 	return state.inputSourceShape(index)
 }
 
+func (state *recipeCompileState) customSourceShapeForCompile() (shape.Spec, bool) {
+	if state == nil {
+		return shape.Spec{}, false
+	}
+	if state.branchCompositionPresent {
+		if spec, ok := state.inputSourceShape(0); ok {
+			return spec, true
+		}
+		return declaredSourceShape(state.branchInputAttachment)
+	}
+	if len(state.inputFacts) == 1 {
+		return state.inputSourceShape(0)
+	}
+	if len(state.inputAttachments) != 1 {
+		return shape.Spec{}, false
+	}
+	return state.inputSourceShape(0)
+}
+
 func (state *recipeCompileState) inputSourceShape(index int) (shape.Spec, bool) {
 	if state == nil || index < 0 {
 		return shape.Spec{}, false
@@ -1560,9 +1602,8 @@ func validateRecipeOperationShapesPass() recipeCompilePass {
 		streams := state.recipe.Streams
 		for i := range streams {
 			stream := streams[i]
-			streamIntent := streamIntentFromRecipeIR(stream)
 			initial := recipeInitialStreamShape(state, stream)
-			solved, diagnostics, err := solveOperationSpecShapes(state.operation, rt, streamIntent, initial)
+			solved, diagnostics, err := solveRecipeIROperationShapes(state.operation, rt, stream, initial)
 			if err != nil {
 				return err
 			}
@@ -1577,23 +1618,23 @@ func validateRecipeOperationShapesPass() recipeCompilePass {
 	}}
 }
 
-func (s *recipeCompileState) setSolvedStreamOperations(index int, solved []operationSpec) {
+func (s *recipeCompileState) setSolvedStreamOperations(index int, solved []recipeir.Operation) {
 	if s == nil || index < 0 {
 		return
 	}
-	solved = cloneOperationSpecs(solved)
+	solved = append([]recipeir.Operation(nil), solved...)
 	if index < len(s.intent.Streams) {
-		s.intent.Streams[index].Operations = cloneOperationSpecs(solved)
+		s.intent.Streams[index].Operations = operationSpecsFromRecipeIROperations(solved)
 	}
 	if index < len(s.recipe.Streams) {
-		s.recipe.Streams[index].Operations = recipeIROperationsFromSpecs(solved)
+		s.recipe.Streams[index].Operations = append([]recipeir.Operation(nil), solved...)
 	}
 }
 
 // patchBranchComposeOperations re-points a pre-planned branch composition at
 // the solved operation list, so the Build-side lowerer executes exactly the
 // operations the solver planned (Describe ≡ Build).
-func (s *recipeCompileState) patchBranchComposeOperations(name string, solved []operationSpec) {
+func (s *recipeCompileState) patchBranchComposeOperations(name string, solved []recipeir.Operation) {
 	if s == nil || !branchComposePlanReady(s.plan) {
 		return
 	}
@@ -1601,10 +1642,9 @@ func (s *recipeCompileState) patchBranchComposeOperations(name string, solved []
 		if s.plan.Branches[i].Name != name {
 			continue
 		}
-		shared, private := splitOperationSpecsByShared(solved)
-		s.plan.Branches[i].Operations = cloneOperationSpecs(solved)
-		s.plan.Branches[i].SharedOperations = shared
-		s.plan.Branches[i].PrivateOperations = private
+		operations := recipeIROperationFacts(solved)
+		s.plan.Branches[i].SharedOperations = operations.SharedFacts()
+		s.plan.Branches[i].PrivateOperations = operations.PrivateFacts()
 		return
 	}
 }
@@ -1757,98 +1797,6 @@ func destinationShapeMismatchError(operation string, node string, destinationNam
 	}
 }
 
-func validateOperationSpecShapes(operation string, stream streamIntent, initial shape.Spec) error {
-	shape := normalizeTapShape(initial)
-	if shape.MediaKind == "" {
-		shape.MediaKind = stream.Select.Type
-	}
-	if shape.Codec == "" {
-		shape.Codec = stream.Select.Codec
-	}
-	node := firstNonEmpty(stream.Name, string(stream.Select.ID), string(stream.Select.Type), "stream")
-	for i := range stream.Operations {
-		next := stream.Operations[i]
-		// Taps and same-domain shape annotations advance the lineage; a
-		// .Require(...) assertion falls through to the contract check below.
-		if next.Kind == plan.OpTap {
-			shape = operationSpecOutputShape(shape, next)
-			continue
-		}
-		if next.Kind == plan.OpShape && next.Require == nil {
-			if err := validateShapeAnnotationDomain(operation, node, i, shape, next.Shape); err != nil {
-				return err
-			}
-			shape = operationSpecOutputShape(shape, next)
-			continue
-		}
-		expected := next.InputShapes()
-		if len(expected) != 0 && !expected.Accepts(shape) {
-			return operationShapeFailureError(operation, node, i, next, expected, shape)
-		}
-		shape = operationSpecOutputShape(shape, next)
-	}
-	return nil
-}
-
-// operationShapeFailureError dispatches a failed shape contract to its
-// surface: a .Require(...) assertion gets the requirement-specific refusal,
-// every other operation keeps the established mismatch error.
-func operationShapeFailureError(operation string, node string, index int, step operationSpec, expected shape.Set, actual shape.Spec) error {
-	if step.Kind == plan.OpShape && step.Require != nil {
-		return shapeRequirementUnmetError(operation, node, index, step, expected, actual)
-	}
-	return operationShapeMismatchError(operation, node, index, step, expected, actual)
-}
-
-// shapeRequirementUnmetError is the hard .Require(...) refusal: the stream at
-// this chain position does not satisfy the asserted shape. It carries the
-// actual and required shapes in the established refusal format; the solver
-// appends the exact .Auto(...) fix when a conversion could satisfy it.
-func shapeRequirementUnmetError(operation string, node string, index int, step operationSpec, expected shape.Set, actual shape.Spec) error {
-	required := shape.Spec{}
-	if step.Require != nil {
-		required = *step.Require
-	}
-	return &BuildError{
-		Phase:     phaseBuild,
-		Family:    errcode.FamilyForCode(shapeRequirementUnmetCode),
-		Code:      shapeRequirementUnmetCode,
-		Operation: operation,
-		Node:      node,
-		Reason: fmt.Sprintf(".Require(...) is not satisfied: the stream is %s, required %s",
-			humanizeShape(actual), humanizeShape(required)),
-		fields: errDetails(errDetail("operation_index", fmt.Sprintf("%d", index)), errDetail("operation", "require"), errDetail("source", humanizeShape(actual)), errDetail("actual_shape", actual.String()), errDetail("expected_shape", shapeSetString(expected))),
-		fixes: buildErrorFixes([]string{
-			"adjust the chain so the stream satisfies the required shape before .Require(...)",
-			"relax or remove the .Require(...) assertion",
-		}),
-		cause: errUnsupportedBuild,
-	}
-}
-
-func operationSpecOutputShape(input shape.Spec, operation operationSpec) shape.Spec {
-	out := operation.OutputShapes(input)
-	if len(out) == 0 {
-		return input
-	}
-	return out[0]
-}
-
-func operationShapeMismatchError(operation string, node string, index int, step operationSpec, expected shape.Set, actual shape.Spec) error {
-	component := firstNonEmpty(step.Component, operationSpecComponent(step), string(step.Kind), "operation")
-	return &BuildError{
-		Phase:     phaseBuild,
-		Family:    errcode.FamilyForCode(operationShapeMismatchCode),
-		Code:      operationShapeMismatchCode,
-		Operation: operation,
-		Node:      node,
-		Reason:    component + " cannot consume the current media shape",
-		fields:    errDetails(errDetail("operation_index", fmt.Sprintf("%d", index)), errDetail("operation", string(step.Kind)), errDetail("expected_shape", shapeSetString(expected)), errDetail("actual_shape", actual.String())),
-		fixes:     buildErrorFixes(operationShapeMismatchSuggestions(step)),
-		cause:     errUnsupportedBuild,
-	}
-}
-
 func validateShapeAnnotationDomain(operation string, node string, index int, current shape.Spec, annotation shape.Spec) error {
 	if annotation.Domain == "" || current.Domain == "" || annotation.Domain == current.Domain {
 		return nil
@@ -1885,21 +1833,6 @@ func shapeAnnotationDomainMismatchError(operation string, node string, index int
 	}
 }
 
-func operationSpecComponent(operation operationSpec) string {
-	switch operation.Kind {
-	case plan.OpDecode:
-		return firstNonEmpty(string(operation.Decode.ID), operation.Component, "decode")
-	case plan.OpTransform:
-		return firstNonEmpty(transformFactoryName(operation.Transform), "transform")
-	case plan.OpEncode:
-		return firstNonEmpty(string(operation.Encode.ID), operation.Component, "encode")
-	case plan.OpCopy:
-		return "packet-copy"
-	default:
-		return operation.Component
-	}
-}
-
 func shapeSetString(shapes shape.Set) string {
 	if len(shapes) == 0 {
 		return "any"
@@ -1909,41 +1842,6 @@ func shapeSetString(shapes shape.Set) string {
 		parts = append(parts, shapes[i].String())
 	}
 	return strings.Join(parts, " | ")
-}
-
-func operationShapeMismatchSuggestions(operation operationSpec) []string {
-	switch operation.Kind {
-	case plan.OpDecode:
-		return []string{
-			"decode only consumes packet-domain media",
-			"remove duplicate .Decode() calls after a frame tap",
-			"start from goav.PacketTap(name) when a runtime branch should decode",
-		}
-	case plan.OpTransform:
-		return []string{
-			"call .Decode() before frame transforms when starting from packets",
-			"use .Video().Resize(...) for video frames",
-			"use .Audio().Resample(...) for audio frames",
-		}
-	case plan.OpEncode:
-		return []string{
-			"call .Decode() before encoding when starting from packets",
-			"keep .Shape(...) annotations in the frame domain before encoders",
-			"use .Copy() instead of an encoder for packet-preserving fanout",
-		}
-	case plan.OpCopy:
-		return []string{
-			"copy only consumes packet-domain media",
-			"move .Copy() before decode or start from goav.PacketTap(name)",
-			"use .Encode(codec...) instead of .Copy() to turn decoded frames back into packets",
-			"use a sink destination when the branch should remain decoded",
-		}
-	default:
-		return []string{
-			"inspect Explain(ctx) to see operation shapes",
-			"keep structural facts in goav.Shape(...) and codec behavior in codec.CodecSpec options",
-		}
-	}
 }
 
 func planBranchCompositionIntentPass() recipeCompilePass {

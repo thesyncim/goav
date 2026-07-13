@@ -147,7 +147,7 @@ var compositeJoinProfile = joinProfile{
 		return nil, nil
 	},
 	newStage: func(p *joinPlan, armIDs []av.StreamID) (pipeline.Stage, *pipeline.BufferPolicy) {
-		return newVideoCompositeStageWithPrealloc(p.name, armIDs, av.StreamID(p.name), p.layouts, p.tree.sync, joinStagePreallocDepth(p.runtime)), nil
+		return newVideoCompositeStageWithPreallocAndPools(p.name, armIDs, av.StreamID(p.name), p.layouts, p.tree.sync, joinStagePreallocDepth(p.runtime), runtimeMediaPools(p.runtime)), nil
 	},
 	// The output id is the join's planned node name (composite, or composite-2
 	// when nested); the geometry facts are the full Region bounding box over

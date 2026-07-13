@@ -49,7 +49,7 @@ goav.From(input)                          inputs: FileInput, Input(provider), So
   .To(Write|URI|Writer|Custom|Sink|Mux)   destinations; Mux(name, destination) = explicit mux/sink group
 job.Describe(); adapter-backed Explain/Build/Run use job.UseRuntime(rt), bundle.Describe/Build/Run
 Task: Run, Close
-goav.New(goavruntime.Option...) -> (*Runtime, error); bundle.MustNew(...) -> bundled Runtime; job.UseRuntime(rt)
+goav.New(runconfig.Option...) -> (*Runtime, error); bundle.MustNew(...) -> bundled Runtime; job.UseRuntime(rt)
 errors: *goav.BuildError matched with errors.As; branch on Family first; Detail(key) for typed facts; DetailLines/FixLines for rendered diagnostics
 ```
 
@@ -62,16 +62,17 @@ Normal recipes also read these vocabulary packages:
 
 - `errcode`: the error-code catalog (stable `Family` categories plus one
   detailed `Code` per refusal class).
-- `shape`: shape specs and `.Auto` policies (`AllowResample`, ...);
-  `shape.Format` pins open-ended container or transport ids for custom
-  adapters.
+- `shape`: shape specs and `.Auto` policies (`AllowResample`, `AllowResize`,
+  `AllowConvert`, `AllowCustom`); `shape.Format` pins open-ended container or
+  transport ids for custom adapters.
 - `component`: custom `.Do(...)` and direct sink adapters
   (`PacketFunc`, `FrameFunc`, `EventFunc`, `SinkFunc`, `Emit`, `Message`).
 - `source`: custom source callbacks (`Func`, `Push`, `Result`).
 - `av` identifiers: media/codec/format/protocol ids, event types, metadata.
 
 Advanced governed vocabulary lives in the focused docs where it is needed:
-`control`, `inspect`, `plan`, `snapshot`, `lifecycle`, `flow`, and `runtime`.
+`control`, `ctlserver`, `inspect`, `plan`, `snapshot`, `lifecycle`, `flow`,
+and `runconfig`.
 
 ## B. Extension Points
 
@@ -125,9 +126,9 @@ use [`docs/ADAPTERS.md`](ADAPTERS.md) and [`docs/COMPONENTS.md`](COMPONENTS.md).
   `.Do(...)`; the node contracts live in `pipeline` (Source/Stage/Sink,
   Emitter, Message, Scratch, capability interfaces).
 - **Codecs**: `codec` Descriptor/Decoder/Encoder/factories, caller-owned
-  results, `goavruntime.WithDecoder`/`WithEncoder`/`WithCodecAdapter`/
+  results, `runconfig.WithDecoder`/`WithEncoder`/`WithCodecAdapter`/
   `WithCodecDescriptor`.
-- **Control hosts** (governed pre-v1, see [`V1_SCOPE.md`](V1_SCOPE.md)): `ctl`
+- **Control hosts** (governed pre-v1, see [`V1_SCOPE.md`](V1_SCOPE.md)): `ctlserver`
   is the supported package for applications that
   run a task and expose it to `goav ctl --control unix://...`. It reuses the
   same allowlisted command framework as the bundled command: external hosts
@@ -140,13 +141,13 @@ use [`docs/ADAPTERS.md`](ADAPTERS.md) and [`docs/COMPONENTS.md`](COMPONENTS.md).
   The same socket renders live graph diagnostics through `goav ctl graph`
   (`format=mermaid|dot|text`).
 - **Containers**: `format` Prober/Demuxer/Muxer/factories, Seeker for
-  seekable inputs, `goavruntime.WithDemuxer`/`WithMuxer`/`WithFormatAdapter`/
+  seekable inputs, `runconfig.WithDemuxer`/`WithMuxer`/`WithFormatAdapter`/
   `WithProber`.
 - **Filters**: `filter` FrameFilter/Factory/Descriptor,
-  `goavruntime.WithFilter`/`WithFilterAdapter`.
-- **Runtime config**: `goav.New`, `bundle.MustNew`, `goavruntime.WithClock`,
+  `runconfig.WithFilter`/`WithFilterAdapter`.
+- **Runtime config**: `goav.New`, `bundle.MustNew`, `runconfig.WithClock`,
   `WithRealtime`, `WithBufferPolicy`, `WithEventCapacity`,
-  `WithCloseWaitTimeout`.
+  `WithCloseWaitTimeout`, `WithMediaPools`, `WithShapeDelta`.
 - **Media vocabulary**: `av` frames/packets/buffers (`Buffer`,
   `BufferOwnership`, `Plane`), timing (`TimeBase`, `Timestamp`, `Duration`,
   rescaling), `Clock`.
@@ -167,7 +168,7 @@ implement, with the executable evidence:
   outside the repo, with built-ins as unprivileged users of the same extension
   points:
   codecs, containers, probers, filters, source providers, transactional
-  destinations (`adapterproof/adapter_compat_test.go` - the five-extension-point proof),
+  destinations (`adapterproof/adapter_compat_test.go` - the external adapter proof),
   custom `.Do` stages, custom push sources, and custom joins
   (`adapterproof/join_proof_test.go` - an external interleaver runs with
   explicit decoded arms, taps, branches, and nested inside Mix, and
@@ -176,13 +177,16 @@ implement, with the executable evidence:
   `goav.WrapSource`; destination decoration was already closed by value
   passing.
 - **The solver's conversion-class boundary.** External filters are selectable
-  by the shape solver within the declared delta classes: sample-rate/channel
-  (resample), width/height (resize), pixel/sample-format (convert), the
-  vocabulary of `shape.Conversions`, by registering under the bundled factory
-  names (`filter.FactoryResample`, ...; adapterproof's toy upsampler is the
-  bundled resample slot). A new delta class (say colorspace or channel-layout as
-  a distinct class) is core work: `shape.Conversions` and `shape.Policy`
-  enumerate the classes, and externals cannot extend that enumeration.
+  by the shape solver within the built-in delta classes:
+  sample-rate/channel (resample), width/height (resize), and
+  pixel/sample-format (convert), by registering under the bundled factory names
+  (`filter.FactoryResample`, ...; adapterproof's toy upsampler is the bundled
+  resample slot). External adapters can also add explicit custom classes with
+  `shape.AllowCustom("name")` plus a per-runtime `runconfig.WithShapeDelta`
+  contributor that returns a fresh stage operation; `adapterproof` pins this
+  through `TestExternalShapeDeltaContributorAppearsInExplain`. Built-in
+  classes still come from `shape.Conversions`, so custom classes are opt-in and
+  never global.
 - **Controls.** The typed verbs (`Keyframe`, `Seek`, `Rate`, `SetBitrate`,
   `SelectActive`, ...) are core vocabulary, but the control value is opaque:
   payload-bearing constructors validate immediately, and callers target copies
@@ -190,7 +194,7 @@ implement, with the executable evidence:
   `Deliver(event).AtTap(name)` to receive arbitrary custom events. Untargeted
   controls only infer a destination when exactly one valid target exists;
   otherwise callers use `.AtTap(...)`, `.At(...)`, `source=...`, or `node=...`.
-  Hosts that need CLI access import `ctl`, add explicit `CommandSpec` rows for
+  Hosts that need CLI access import `ctlserver`, add explicit `CommandSpec` rows for
   new verbs, and add `PipelineRegistry` rows for custom runtime branch
   components. There is no global registry and no arbitrary method invocation.
 
@@ -341,13 +345,14 @@ example modules. The module boundary is the dependency boundary:
   `github.com/thesyncim/*` with no third-party requires and no `replace`
   directives. A nested `bundle` module would add a `go.mod` and per-module tags
   for no isolation the package boundary does not already provide.
-- **`rtpav`, `webrtcav`**: nested modules carrying the Pion ecosystem. They
-  require the root module (never the reverse), so importing goav pulls in no
-  transport dependencies. Import paths are unchanged
-  (`github.com/thesyncim/goav/rtpav`, `.../webrtcav`). Each runs its own doc
-  pin (`doc_pin_test.go` per module) and its RTP/WebRTC-flavored integration
-  tests (`rtpav/integration`, `webrtcav/integration`); the root module's
-  dynamic package walk correctly stops at their `go.mod`.
+- **`rtpav`, `webrtcav`, `playoutav`**: nested transport/provider modules.
+  They require the root module (never the reverse), so importing goav pulls in
+  no transport dependencies. RTP/WebRTC carry the Pion ecosystem; `playoutav`
+  is dependency-light and proves scheduled playout through the same
+  `provider.Source` seam. Import paths are unchanged
+  (`github.com/thesyncim/goav/rtpav`, `.../webrtcav`, `.../playoutav`).
+  Each module owns its integration tests; the root module's dynamic package
+  walk correctly stops at their `go.mod`.
 - **runnable examples**: `examples/webrtc-runtime-ladder`,
   `examples/custom-source`, `examples/provider-source`,
   `examples/custom-destination`, `examples/custom-filter`,

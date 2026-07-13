@@ -1,5 +1,7 @@
 # Simplification Target
 
+Historical campaign artifact; current release scope lives in `docs/ROADMAP.md` and `docs/V1_SCOPE.md`.
+
 This is the pre-v1 target freeze. The current surface is governed and tested,
 but governed does not mean ready to freeze as v1. The v1 product should be the
 small media recipe layer, with advanced runtime and graph features available

@@ -2,7 +2,7 @@
 
 This module shows a third-party frame filter registered from outside the root
 module. The filter implements `filter.Factory`, is registered with
-`goavruntime.WithFilter`, and is selected by the normal `.Resample(...)` grammar.
+`runconfig.WithFilter`, and is selected by the normal `.Resample(...)` grammar.
 
 Copy this when a frame transform should be shape-aware, explainable, and usable
 from both build-time recipes and runtime branches.

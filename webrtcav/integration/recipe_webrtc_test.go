@@ -20,7 +20,7 @@ import (
 	"github.com/thesyncim/goav/graphrender"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/rtpav"
-	goavruntime "github.com/thesyncim/goav/runtime"
+	runconfig "github.com/thesyncim/goav/runconfig"
 	"github.com/thesyncim/goav/webrtcav"
 )
 
@@ -75,7 +75,7 @@ func webRTCRemote(t *testing.T, remote webrtcav.RemoteTrack) goav.InputSpec {
 }
 
 func webRTCTestRuntime() *goav.Runtime {
-	return bundle.MustNew(goavruntime.WithRealtime(false))
+	return bundle.MustNew(runconfig.WithRealtime(false))
 }
 
 func TestWebRTCTrackRecordRecipeUsesCodecIntent(t *testing.T) {

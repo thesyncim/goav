@@ -1,4 +1,4 @@
-package ctl_test
+package ctlserver_test
 
 import (
 	"context"
@@ -14,12 +14,12 @@ import (
 	goav "github.com/thesyncim/goav"
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
-	"github.com/thesyncim/goav/ctl"
+	"github.com/thesyncim/goav/ctlserver"
 	"github.com/thesyncim/goav/goavtest"
 	"github.com/thesyncim/goav/graphrender"
 	"github.com/thesyncim/goav/lifecycle"
 	"github.com/thesyncim/goav/pipeline"
-	goavruntime "github.com/thesyncim/goav/runtime"
+	runconfig "github.com/thesyncim/goav/runconfig"
 	"github.com/thesyncim/goav/shape"
 )
 
@@ -37,7 +37,7 @@ func Example_bootstrapControlPlaneHost() {
 	task, err := goav.From(source.Input()).
 		Audio().Decode().Tap(goav.FrameTap("frames")).
 		To(goavtest.NewCollector().Sink()).
-		UseRuntime(goavtest.Runtime(goavruntime.WithEncoder(encoderFactory.descriptor, encoderFactory))).
+		UseRuntime(goavtest.Runtime(runconfig.WithEncoder(encoderFactory.descriptor, encoderFactory))).
 		BuildLive(ctx)
 	if err != nil {
 		fmt.Println(err)
@@ -65,18 +65,18 @@ func Example_bootstrapControlPlaneHost() {
 		Value  float64 `goavctl:"value,required" usage:"value=<float>" help:"playback rate"`
 		Source string  `goavctl:"source,required" usage:"source=<source-name>" help:"source node to retime"`
 	}
-	command := ctl.NewCommand[SetRate](
+	command := ctlserver.NewCommand[SetRate](
 		"vendor.rate",
 		"vendor playback-rate control",
-		func(ctx context.Context, task goav.LiveTask, cmd SetRate) (ctl.ControlResponse, error) {
+		func(ctx context.Context, task goav.LiveTask, cmd SetRate) (ctlserver.ControlResponse, error) {
 			ctrl, err := control.Rate(cmd.Value)
 			if err != nil {
-				return ctl.ControlResponse{}, err
+				return ctlserver.ControlResponse{}, err
 			}
 			if err := task.Control(ctx, ctrl.At(pipeline.NodeRef(cmd.Source))); err != nil {
-				return ctl.ControlResponse{}, err
+				return ctlserver.ControlResponse{}, err
 			}
-			return ctl.ControlResponse{
+			return ctlserver.ControlResponse{
 				Operation: "control vendor.rate",
 				Result:    map[string]any{"value": cmd.Value},
 			}, nil
@@ -86,10 +86,10 @@ func Example_bootstrapControlPlaneHost() {
 	type MeterSettings struct {
 		Window time.Duration `goavctl:"window,duration" usage:"[window=<duration>]" help:"observation window"`
 	}
-	meter := ctl.NewBranchStep[MeterSettings](
+	meter := ctlserver.NewBranchStep[MeterSettings](
 		"meter",
 		"observe frames before encoding",
-		func(branch *ctl.BranchPipeline, _ MeterSettings) error {
+		func(branch *ctlserver.BranchPipeline, _ MeterSettings) error {
 			branch.Do(component.FrameFunc("meter", func(_ context.Context, frame *av.Frame, emit component.Emit) error {
 				return emit.Frame(frame)
 			}))
@@ -102,7 +102,7 @@ func Example_bootstrapControlPlaneHost() {
 		Quality   string `goavctl:"quality" usage:"[quality=<profile>]" help:"native quality profile"`
 		Lookahead string `goavctl:"lookahead" usage:"[lookahead=<mode>]" help:"native lookahead mode"`
 	}
-	acme := ctl.NewEncoderSpec[ACMESettings](
+	acme := ctlserver.NewEncoderSpec[ACMESettings](
 		"acmeenc",
 		"ACME audio encoder with native settings",
 		func(args ACMESettings) (codec.CodecSpec, error) {
@@ -117,26 +117,26 @@ func Example_bootstrapControlPlaneHost() {
 			), nil
 		},
 	)
-	capabilities := ctl.CapabilitySet{
-		Commands: []ctl.CommandSpec{command},
-		Pipeline: ctl.PipelineRegistry{
-			Steps:    []ctl.BranchPipelineStepSpec{meter},
-			Encoders: []ctl.EncoderSpec{acme},
+	capabilities := ctlserver.CapabilitySet{
+		Commands: []ctlserver.CommandSpec{command},
+		Pipeline: ctlserver.PipelineRegistry{
+			Steps:    []ctlserver.BranchPipelineStepSpec{meter},
+			Encoders: []ctlserver.EncoderSpec{acme},
 		},
 	}
-	if err := ctl.ValidateCapabilities(capabilities); err != nil {
+	if err := ctlserver.ValidateCapabilities(capabilities); err != nil {
 		fmt.Println(err)
 		return
 	}
-	server := ctl.Server{Task: task}
-	ctl.WithCapabilities(capabilities)(&server)
+	server := ctlserver.Server{Task: task}
+	ctlserver.WithCapabilities(capabilities)(&server)
 
-	rateRequest, _ := ctl.RequestFromCLI([]string{"control", "vendor.rate", "value=0.5", "source=fixture"})
+	rateRequest, _ := ctlserver.RequestFromCLI([]string{"control", "vendor.rate", "value=0.5", "source=fixture"})
 	rateResponse := server.Handle(ctx, rateRequest)
 
 	out := filepath.Join(os.TempDir(), "goav-control-plane-bootstrap.ogg")
 	defer os.Remove(out)
-	attachRequest, _ := ctl.RequestFromCLI([]string{
+	attachRequest, _ := ctlserver.RequestFromCLI([]string{
 		"attach", "frames", "as", "archive",
 		"meter ! acmeenc bitrate=128k quality=voice lookahead=deep ! filesink location=" + out + " format=ogg",
 	})
@@ -169,7 +169,7 @@ func ExampleNewEncoderSpec_customEncoder() {
 	type ACMESettings struct {
 		Profile string `goavctl:"profile,required" usage:"profile=<name>" help:"native profile"`
 	}
-	acme := ctl.NewEncoderSpec[ACMESettings](
+	acme := ctlserver.NewEncoderSpec[ACMESettings](
 		"acmeenc",
 		"ACME audio encoder with native settings",
 		func(args ACMESettings) (codec.CodecSpec, error) {
@@ -184,11 +184,11 @@ func ExampleNewEncoderSpec_customEncoder() {
 			), nil
 		},
 	)
-	_ = ctl.WithCapabilities(ctl.CapabilitySet{
-		Pipeline: ctl.PipelineRegistry{Encoders: []ctl.EncoderSpec{acme}},
+	_ = ctlserver.WithCapabilities(ctlserver.CapabilitySet{
+		Pipeline: ctlserver.PipelineRegistry{Encoders: []ctlserver.EncoderSpec{acme}},
 	})
 
-	request, _ := ctl.RequestFromCLI([]string{
+	request, _ := ctlserver.RequestFromCLI([]string{
 		"attach", "frames", "as", "archive",
 		"acmeenc profile=cinema ! filesink location=archive.ogg",
 	})

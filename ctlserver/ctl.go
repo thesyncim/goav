@@ -1,13 +1,13 @@
-// Package ctl exposes the safe host-side control-plane surface for applications
-// that run goav tasks and want the goav command line to inspect or control
-// them over a Unix socket.
+// Package ctlserver exposes the socket control-plane surface for applications
+// that run goav tasks; for in-process media control values, see package
+// control.
 //
 // The package is deliberately allowlist-based. Reflection is used by the
 // underlying command binder only to fill known command structs and generate
 // help; callers expose additional behavior by passing CommandSpec,
 // BranchPipelineStepSpec, and EncoderSpec values to one Server or ServeUnix
 // instance.
-package ctl
+package ctlserver
 
 import (
 	"context"
@@ -20,10 +20,10 @@ import (
 	"github.com/thesyncim/goav/internal/launchctl"
 )
 
-// Request is the JSON request shape spoken over a goav ctl control socket.
+// Request is the JSON request shape spoken over a goav ctlserver control socket.
 type Request = launchctl.Request
 
-// Response is the JSON response envelope returned by a goav ctl control socket.
+// Response is the JSON response envelope returned by a goav ctlserver control socket.
 type Response = launchctl.Response
 
 // Error is the structured control-plane refusal shape.

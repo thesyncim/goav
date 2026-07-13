@@ -12,7 +12,7 @@ import (
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/rtpav"
-	goavruntime "github.com/thesyncim/goav/runtime"
+	runconfig "github.com/thesyncim/goav/runconfig"
 	av1backend "github.com/thesyncim/goav1"
 )
 
@@ -51,7 +51,7 @@ func TestRecipeRTPAV1DecodeSink(t *testing.T) {
 		rtpav.WithName("av1-rtp"),
 		rtpav.WithDepacketizers(rtpav.NewAV1Depacketizer(stream, rtpav.WithMaxVideoFrameSize(128))),
 	))).
-		UseRuntime(mustGoAVRuntime(goavruntime.WithCodecAdapter(goav1adapter.Register))).
+		UseRuntime(mustGoAVRuntime(runconfig.WithCodecAdapter(goav1adapter.Register))).
 		Video().
 		Decode().
 		To(goav.Sink(sink))
@@ -135,7 +135,7 @@ func testRecipeRTPAV1DecodeSink420(t *testing.T, pixelFormat string) {
 		rtpav.WithName("av1-rtp"),
 		rtpav.WithDepacketizers(rtpav.NewAV1Depacketizer(stream, rtpav.WithMaxVideoFrameSize(128))),
 	))).
-		UseRuntime(mustGoAVRuntime(goavruntime.WithCodecAdapter(goav1adapter.Register))).
+		UseRuntime(mustGoAVRuntime(runconfig.WithCodecAdapter(goav1adapter.Register))).
 		Video().
 		Decode().
 		To(goav.Sink(sink)).
@@ -204,7 +204,7 @@ func TestRecipeRTPAV1CodecChangedDropsUntilSync(t *testing.T) {
 		rtpav.WithDepacketizers(rtpav.NewAV1Depacketizer(initial, rtpav.WithMaxVideoFrameSize(128))),
 		rtpav.WithBufferLimits(rtpav.BufferLimits{MaxPackets: 1, MaxEvents: 2}),
 	))).
-		UseRuntime(mustGoAVRuntime(goavruntime.WithCodecAdapter(goav1adapter.Register))).
+		UseRuntime(mustGoAVRuntime(runconfig.WithCodecAdapter(goav1adapter.Register))).
 		Video().
 		Decode().
 		To(goav.Sink(sink)).
@@ -294,7 +294,7 @@ func testRecipeRTPAV1CodecChangedReplacementStream(t *testing.T, oldIDTarget boo
 		rtpav.WithDepacketizers(rtpav.NewAV1Depacketizer(initial, rtpav.WithMaxVideoFrameSize(128))),
 		rtpav.WithBufferLimits(rtpav.BufferLimits{MaxPackets: 1, MaxEvents: 2}),
 	))).
-		UseRuntime(mustGoAVRuntime(goavruntime.WithCodecAdapter(goav1adapter.Register))).
+		UseRuntime(mustGoAVRuntime(runconfig.WithCodecAdapter(goav1adapter.Register))).
 		Video().
 		Decode().
 		To(goav.Sink(sink)).

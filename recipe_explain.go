@@ -125,9 +125,9 @@ func explainStreams(streams []workStream) []plan.Stream {
 		reports = append(reports, plan.Stream{
 			Name:         stream.Name,
 			Select:       stream.Select,
-			Decode:       chainHasDecode(stream.Operations),
-			Operations:   explainOperationSpecs(stream.Operations),
-			Encode:       chainEncodeSpec(stream.Operations),
+			Decode:       stream.Operations.HasKind(plan.OpDecode),
+			Operations:   explainOperationSpecs(stream.Operations.Operations()),
+			Encode:       stream.Operations.Encode(),
 			Destinations: append([]string(nil), stream.Destinations...),
 		})
 	}

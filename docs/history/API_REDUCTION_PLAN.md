@@ -1,5 +1,7 @@
 # API Reduction Plan
 
+Historical campaign artifact; current forward-looking release scope lives in `docs/ROADMAP.md` and `docs/V1_SCOPE.md`.
+
 `goav` is pre-release, so the public API should be shaped for the library it
 wants to be instead of preserving every exported convenience already present.
 Before this reduction, the root package mixed recipe grammar, runtime

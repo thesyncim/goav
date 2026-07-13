@@ -1,0 +1,280 @@
+{
+  "schema": 1,
+  "kind": "root",
+  "generated_at": "2026-07-02T19:07:00Z",
+  "go_version": "go version go1.26.0 darwin/arm64",
+  "goos": "darwin",
+  "goarch": "arm64",
+  "package": ".",
+  "bench_regex": "Benchmark(RecordPackets|RemuxPackets|DecodeToFrameSink|DecodeEncode|Resample|Resize|BranchFanout|SharedMuxGroup|Mix|Composite|SelectPassthrough|LatencyRecordPackets|SustainedRecordMemory|SourcePush|AttachDetachUnderLoad|SoakRecordDrift|LiveRoomSync)$",
+  "benchtime": "100x",
+  "count": "1",
+  "source": "scripts/bench/baseline.sh root .",
+  "thresholds": {
+    "bytes_per_op_slack_ratio": 0.05,
+    "bytes_per_op_slack_min": 1024,
+    "allocs_per_op_slack": 0,
+    "allocs_per_op_slack_ratio": 0.05,
+    "allocs_per_op_slack_min": 4,
+    "allocs_per_op_cold_threshold": 100,
+    "allocs_per_op_cold_slack_ratio": 0.15,
+    "allocs_per_op_cold_slack_min": 64
+  },
+  "benchmarks": [
+    {
+      "name": "BenchmarkAttachDetachUnderLoad",
+      "metrics": {
+        "B/op": 1090743,
+        "allocs/op": 527,
+        "ns/op": 98064
+      },
+      "ceilings": {
+        "B/op": 1145281,
+        "allocs/op": 607
+      }
+    },
+    {
+      "name": "BenchmarkBranchFanout/branches=2",
+      "metrics": {
+        "B/op": 61,
+        "allocs/op": 1,
+        "ns/op": 249.2
+      },
+      "ceilings": {
+        "B/op": 1085,
+        "allocs/op": 1
+      }
+    },
+    {
+      "name": "BenchmarkBranchFanout/branches=8",
+      "metrics": {
+        "B/op": 81,
+        "allocs/op": 1,
+        "ns/op": 324.2
+      },
+      "ceilings": {
+        "B/op": 1105,
+        "allocs/op": 1
+      }
+    },
+    {
+      "name": "BenchmarkComposite",
+      "metrics": {
+        "B/op": 87621,
+        "allocs/op": 2,
+        "ns/op": 6841
+      },
+      "ceilings": {
+        "B/op": 92003,
+        "allocs/op": 2
+      }
+    },
+    {
+      "name": "BenchmarkDecodeEncode",
+      "metrics": {
+        "B/op": 57,
+        "allocs/op": 1,
+        "ns/op": 274.2
+      },
+      "ceilings": {
+        "B/op": 1081,
+        "allocs/op": 1
+      }
+    },
+    {
+      "name": "BenchmarkDecodeToFrameSink",
+      "metrics": {
+        "B/op": 57,
+        "allocs/op": 1,
+        "ns/op": 208.8
+      },
+      "ceilings": {
+        "B/op": 1081,
+        "allocs/op": 1
+      }
+    },
+    {
+      "name": "BenchmarkLatencyRecordPackets",
+      "metrics": {
+        "B/op": 57,
+        "allocs/op": 1,
+        "ns/op": 110,
+        "p50_ns": 83,
+        "p95_ns": 84,
+        "p99_ns": 84
+      },
+      "ceilings": {
+        "B/op": 1081,
+        "allocs/op": 1
+      }
+    },
+    {
+      "name": "BenchmarkLiveRoomSync",
+      "metrics": {
+        "B/op": 71,
+        "allocs/op": 1,
+        "delivered": 52,
+        "max_drift_ns": 20000000,
+        "ns/op": 355,
+        "p50_ns": 375,
+        "p95_ns": 542,
+        "p99_ns": 1292,
+        "source_drops": 0,
+        "sync_drops": 48
+      },
+      "ceilings": {
+        "B/op": 1095,
+        "allocs/op": 1
+      }
+    },
+    {
+      "name": "BenchmarkMix/arms=2",
+      "metrics": {
+        "B/op": 17926,
+        "allocs/op": 2,
+        "ns/op": 2082
+      },
+      "ceilings": {
+        "B/op": 18950,
+        "allocs/op": 2
+      }
+    },
+    {
+      "name": "BenchmarkMix/arms=8",
+      "metrics": {
+        "B/op": 17989,
+        "allocs/op": 3,
+        "ns/op": 2026
+      },
+      "ceilings": {
+        "B/op": 19013,
+        "allocs/op": 7
+      }
+    },
+    {
+      "name": "BenchmarkRecordPackets",
+      "metrics": {
+        "B/op": 88,
+        "allocs/op": 1,
+        "ns/op": 212.9
+      },
+      "ceilings": {
+        "B/op": 1112,
+        "allocs/op": 1
+      }
+    },
+    {
+      "name": "BenchmarkRemuxPackets",
+      "metrics": {
+        "B/op": 51,
+        "allocs/op": 0,
+        "ns/op": 402.1
+      },
+      "ceilings": {
+        "B/op": 1075,
+        "allocs/op": 0
+      }
+    },
+    {
+      "name": "BenchmarkResample",
+      "metrics": {
+        "B/op": 58,
+        "allocs/op": 1,
+        "ns/op": 5071
+      },
+      "ceilings": {
+        "B/op": 1082,
+        "allocs/op": 1
+      }
+    },
+    {
+      "name": "BenchmarkResize",
+      "metrics": {
+        "B/op": 59,
+        "allocs/op": 1,
+        "ns/op": 13133
+      },
+      "ceilings": {
+        "B/op": 1083,
+        "allocs/op": 1
+      }
+    },
+    {
+      "name": "BenchmarkSelectPassthrough",
+      "metrics": {
+        "B/op": 9193,
+        "allocs/op": 2,
+        "ns/op": 1907
+      },
+      "ceilings": {
+        "B/op": 10217,
+        "allocs/op": 2
+      }
+    },
+    {
+      "name": "BenchmarkSharedMuxGroup",
+      "metrics": {
+        "B/op": 1920,
+        "allocs/op": 1,
+        "ns/op": 4633
+      },
+      "ceilings": {
+        "B/op": 2944,
+        "allocs/op": 1
+      }
+    },
+    {
+      "name": "BenchmarkSoakRecordDrift",
+      "metrics": {
+        "B/op": 57,
+        "allocs/op": 1,
+        "gc_cycles": 1,
+        "gc_pause_total_ns": 25084,
+        "heap_drift_B": 2584,
+        "ns/op": 97.09
+      },
+      "ceilings": {
+        "B/op": 1081,
+        "allocs/op": 1
+      }
+    },
+    {
+      "name": "BenchmarkSourcePush/blocking",
+      "metrics": {
+        "B/op": 17884,
+        "allocs/op": 2,
+        "ns/op": 1318
+      },
+      "ceilings": {
+        "B/op": 18908,
+        "allocs/op": 2
+      }
+    },
+    {
+      "name": "BenchmarkSourcePush/dropping",
+      "metrics": {
+        "B/op": 17879,
+        "allocs/op": 2,
+        "ns/op": 943.3
+      },
+      "ceilings": {
+        "B/op": 18903,
+        "allocs/op": 2
+      }
+    },
+    {
+      "name": "BenchmarkSustainedRecordMemory",
+      "metrics": {
+        "B/op": 57,
+        "allocs/op": 1,
+        "heap_live_B": 3417536,
+        "ns/op": 91.25,
+        "runtime_sys_B": 112896296
+      },
+      "ceilings": {
+        "B/op": 1081,
+        "allocs/op": 1
+      }
+    }
+  ]
+}

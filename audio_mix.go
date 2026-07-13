@@ -2,7 +2,6 @@ package goav
 
 import (
 	"context"
-	"encoding/binary"
 	"fmt"
 
 	"github.com/thesyncim/goav/av"
@@ -31,6 +30,9 @@ type audioMixStage struct {
 	out     av.StreamID
 	sync    *joinSyncState
 	free    map[av.StreamID][]*av.Frame
+	pools   *mediaPools
+	closed  bool
+	inputs  [][]byte
 	output  av.Frame
 	audio   av.AudioFrame
 	message pipeline.Message
@@ -41,23 +43,29 @@ func newAudioMixStage(name string, inputs []av.StreamID, out av.StreamID, mode j
 }
 
 func newAudioMixStageWithPrealloc(name string, inputs []av.StreamID, out av.StreamID, mode joinSyncMode, preallocDepth int) *audioMixStage {
+	return newAudioMixStageWithPreallocAndPools(name, inputs, out, mode, preallocDepth, nil)
+}
+
+func newAudioMixStageWithPreallocAndPools(name string, inputs []av.StreamID, out av.StreamID, mode joinSyncMode, preallocDepth int, pools *mediaPools) *audioMixStage {
 	if preallocDepth < 1 {
 		preallocDepth = 1
 	}
 	stage := &audioMixStage{
-		name: name,
-		out:  out,
-		sync: newJoinSyncStateWithPendingCap(mode, inputs, preallocDepth),
-		free: make(map[av.StreamID][]*av.Frame, len(inputs)),
+		name:   name,
+		out:    out,
+		sync:   newJoinSyncStateWithPendingCap(mode, inputs, preallocDepth),
+		free:   make(map[av.StreamID][]*av.Frame, len(inputs)),
+		pools:  pools,
+		inputs: make([][]byte, 0, len(inputs)),
 	}
-	stage.output.Planes = make([]av.Plane, 1)
+	stage.output.Planes = takeMediaPlanes(pools, 1)
 	stage.sync.recycle = stage.recycleMixFrame
 	for i := range inputs {
 		free := make([]*av.Frame, 0, preallocDepth)
 		for j := 0; j < preallocDepth; j++ {
 			free = append(free, &av.Frame{
 				Audio:  &av.AudioFrame{},
-				Planes: make([]av.Plane, 1),
+				Planes: takeMediaPlanes(pools, 1),
 			})
 		}
 		stage.free[inputs[i]] = free
@@ -79,6 +87,9 @@ func (s *audioMixStage) DescribeNode() pipeline.NodeSpec {
 func (s *audioMixStage) DroppedMessages() uint64 { return s.sync.droppedFrames() }
 
 func (s *audioMixStage) Handle(ctx context.Context, msg *pipeline.Message, emitter pipeline.Emitter) error {
+	if s.closed {
+		return pipeline.ErrClosed
+	}
 	switch msg.Kind {
 	case pipeline.MessageFrame:
 		if msg.Frame == nil || msg.Frame.Audio == nil {
@@ -128,7 +139,27 @@ func (s *audioMixStage) Handle(ctx context.Context, msg *pipeline.Message, emitt
 	}
 }
 
-func (s *audioMixStage) Close() error { return nil }
+func (s *audioMixStage) Close() error {
+	if s.closed {
+		return nil
+	}
+	s.closed = true
+	if s.sync != nil {
+		s.sync.recyclePending()
+	}
+	for id, free := range s.free {
+		for i := range free {
+			s.releaseMixFrame(free[i])
+			free[i] = nil
+		}
+		delete(s.free, id)
+	}
+	if s.pools != nil {
+		s.pools.putPlanes(s.output.Planes)
+		s.output.Planes = nil
+	}
+	return nil
+}
 
 func (s *audioMixStage) drain(ctx context.Context, emitter pipeline.Emitter) error {
 	for {
@@ -136,7 +167,7 @@ func (s *audioMixStage) drain(ctx context.Context, emitter pipeline.Emitter) err
 		if !ok {
 			return nil
 		}
-		mixed, err := mixS16FramesInto(frames, s.out, &s.output, &s.audio)
+		mixed, err := mixS16FramesInto(frames, s.out, &s.output, &s.audio, s.inputs)
 		if err != nil {
 			s.recycleStepFrames(frames)
 			return err
@@ -157,7 +188,7 @@ func (s *audioMixStage) drain(ctx context.Context, emitter pipeline.Emitter) err
 }
 
 // mixS16Frames sums S16-interleaved audio frames sample-by-sample with clamping.
-func mixS16FramesInto(frames []*av.Frame, out av.StreamID, dst *av.Frame, audio *av.AudioFrame) (*av.Frame, error) {
+func mixS16FramesInto(frames []*av.Frame, out av.StreamID, dst *av.Frame, audio *av.AudioFrame, inputs [][]byte) (*av.Frame, error) {
 	base := firstMixFrame(frames)
 	if base == nil {
 		return nil, fmt.Errorf("goav: audio mix has no participating frames")
@@ -166,6 +197,11 @@ func mixS16FramesInto(frames []*av.Frame, out av.StreamID, dst *av.Frame, audio 
 		return nil, fmt.Errorf("goav: mix arm %q delivered a frame with no audio plane", base.StreamID)
 	}
 	n := len(base.Planes[0].Buffer.Bytes)
+	if cap(inputs) < len(frames) {
+		inputs = make([][]byte, 0, len(frames))
+	} else {
+		inputs = inputs[:0]
+	}
 	for i := range frames {
 		f := frames[i]
 		if f == nil {
@@ -184,6 +220,7 @@ func mixS16FramesInto(frames []*av.Frame, out av.StreamID, dst *av.Frame, audio 
 		if l := len(f.Planes[0].Buffer.Bytes); l < n {
 			n = l
 		}
+		inputs = append(inputs, f.Planes[0].Buffer.Bytes)
 	}
 	n -= n % 2 // whole int16 samples
 	if cap(dst.Planes) < 1 {
@@ -196,21 +233,7 @@ func mixS16FramesInto(frames []*av.Frame, out av.StreamID, dst *av.Frame, audio 
 	} else {
 		mixed = mixed[:n]
 	}
-	for off := 0; off < n; off += 2 {
-		var sum int32
-		for i := range frames {
-			if frames[i] == nil {
-				continue
-			}
-			sum += int32(int16(binary.LittleEndian.Uint16(frames[i].Planes[0].Buffer.Bytes[off:])))
-		}
-		if sum > 32767 {
-			sum = 32767
-		} else if sum < -32768 {
-			sum = -32768
-		}
-		binary.LittleEndian.PutUint16(mixed[off:], uint16(int16(sum)))
-	}
+	mixS16Into(mixed, inputs, n)
 	*audio = *base.Audio
 	audio.Samples = n / 2 / maxInt(base.Audio.Channels, 1)
 	dst.StreamID = out
@@ -276,7 +299,10 @@ func (s *audioMixStage) cloneMixFrame(frame *av.Frame) *av.Frame {
 func (s *audioMixStage) takeMixFrame(id av.StreamID) *av.Frame {
 	free := s.free[id]
 	if len(free) == 0 {
-		return &av.Frame{}
+		return &av.Frame{
+			Audio:  &av.AudioFrame{},
+			Planes: takeMediaPlanes(s.pools, 1),
+		}
 	}
 	index := len(free) - 1
 	frame := free[index]
@@ -298,6 +324,16 @@ func (s *audioMixStage) recycleMixFrame(frame *av.Frame) {
 	}
 	id := frame.StreamID
 	s.free[id] = append(s.free[id], frame)
+}
+
+func (s *audioMixStage) releaseMixFrame(frame *av.Frame) {
+	if frame == nil {
+		return
+	}
+	if s.pools != nil {
+		s.pools.putPlanes(frame.Planes)
+		frame.Planes = nil
+	}
 }
 
 // Mix sums N synchronized audio arms into one stream delivered to its
@@ -424,7 +460,7 @@ var mixJoinProfile = joinProfile{
 	},
 	armPolicy: shape.AllowResample().Union(shape.AllowConvert()),
 	newStage: func(p *joinPlan, armIDs []av.StreamID) (pipeline.Stage, *pipeline.BufferPolicy) {
-		return newAudioMixStageWithPrealloc(p.name, armIDs, av.StreamID(p.name), p.tree.sync, joinStagePreallocDepth(p.runtime)), nil
+		return newAudioMixStageWithPreallocAndPools(p.name, armIDs, av.StreamID(p.name), p.tree.sync, joinStagePreallocDepth(p.runtime), runtimeMediaPools(p.runtime)), nil
 	},
 	// The output id is the join's planned node name (mix, or mix-2 when
 	// nested under another mix); the format facts come from the first arm —

@@ -305,7 +305,7 @@ func bufferBudgetSuggestions(operation workOperation, fact string) []string {
 	default:
 		return []string{
 			"declare complete shape facts on the input or transform before this buffered point",
-			"set an explicit runtime buffer with copy bounds large enough for the stream: goavruntime.WithBufferPolicy(pipeline.BufferPolicy{Capacity: " + strconv.Itoa(realtimeRecipeBufferCapacity) + ", Drop: pipeline.DropBlock, CopyPacketBytes: ..., CopyFrameBytes: ...})",
+			"set an explicit runtime buffer with copy bounds large enough for the stream: runconfig.WithBufferPolicy(pipeline.BufferPolicy{Capacity: " + strconv.Itoa(realtimeRecipeBufferCapacity) + ", Drop: pipeline.DropBlock, CopyPacketBytes: ..., CopyFrameBytes: ...})",
 		}
 	}
 }

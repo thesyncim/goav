@@ -33,7 +33,9 @@ const (
 // own preallocated slots, so a payload that is copied belongs to that branch
 // alone — a consumer that mutates its delivered bytes can never corrupt the
 // producer's bytes or a sibling branch's view. Payloads that are shared by
-// reference instead of copied must never be written by any consumer.
+// reference instead of copied must never be written by any consumer. Borrowed
+// packet fanout may share one graph-owned copy across read-only subscribers;
+// owned packets, frames, and CopyAlways paths still keep branch-local copies.
 //
 // Copying is bounded, never allocated per message: BufferCopyBounds sizes the
 // per-slot backing, and a payload that needs a copy but cannot get one (bounds

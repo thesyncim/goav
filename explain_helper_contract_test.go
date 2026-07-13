@@ -65,10 +65,10 @@ func TestExplainStreamsUseWorkStreamOperations(t *testing.T) {
 	streams := explainStreams([]workStream{{
 		Name:   "preview",
 		Select: plan.StreamSelect{Type: av.MediaVideo},
-		Operations: []operationSpec{
+		Operations: operationFactsFromSpecs([]operationSpec{
 			operationSpecForDecode(codec.VP8(), string(av.CodecVP8)),
 			operationSpecForEncode(codec.VP9()),
-		},
+		}),
 		Destinations: []string{"webm"},
 	}})
 	if len(streams) != 1 {

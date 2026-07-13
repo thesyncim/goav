@@ -69,13 +69,13 @@ func TestValidateBranchComposeBranchOperationContracts(t *testing.T) {
 		{name: "missing copy", route: copyRoute, operations: branchComposeOps(plan.OpSelect), reason: "no copy operation"},
 		{
 			name:       "shared operation count mismatch",
-			route:      branchComposeRoute{name: "shared", copy: true, sourceDomain: shape.DomainPacket, sharedOperations: []operationSpec{{Kind: plan.OpStage, Stage: sharedStage}}},
+			route:      branchComposeRoute{name: "shared", copy: true, sourceDomain: shape.DomainPacket, sharedOperations: operationFactsFromSpecs([]operationSpec{{Kind: plan.OpStage, Stage: sharedStage}})},
 			operations: branchComposeOps(plan.OpSelect, plan.OpCopy),
 			reason:     "shared operations do not match",
 		},
 		{
 			name:       "private operation count mismatch",
-			route:      branchComposeRoute{name: "private", copy: true, sourceDomain: shape.DomainPacket, privateOperations: []operationSpec{{Kind: plan.OpStage, Stage: privateStage}}},
+			route:      branchComposeRoute{name: "private", copy: true, sourceDomain: shape.DomainPacket, privateOperations: operationFactsFromSpecs([]operationSpec{{Kind: plan.OpStage, Stage: privateStage}})},
 			operations: branchComposeOps(plan.OpSelect, plan.OpCopy),
 			reason:     "operations do not match",
 		},

@@ -41,7 +41,7 @@ type workInput struct {
 type workStream struct {
 	Name         string
 	Select       plan.StreamSelect
-	Operations   []operationSpec
+	Operations   operationFacts
 	Destinations []string
 }
 
@@ -257,20 +257,9 @@ func workStreamsFromRecipeIR(streams []recipeir.Stream) []workStream {
 		out = append(out, workStream{
 			Name:         stream.Name,
 			Select:       stream.Selector,
-			Operations:   operationSpecsFromRecipeIROperations(stream.Operations),
+			Operations:   recipeIROperationFacts(stream.Operations),
 			Destinations: recipeIROutputRefsToStrings(stream.Outputs),
 		})
-	}
-	return out
-}
-
-func operationSpecsFromRecipeIROperations(operations []recipeir.Operation) []operationSpec {
-	if len(operations) == 0 {
-		return nil
-	}
-	out := make([]operationSpec, 0, len(operations))
-	for i := range operations {
-		out = append(out, operationSpecFromRecipeIR(operations[i]))
 	}
 	return out
 }
@@ -581,7 +570,7 @@ func cloneWorkStreams(streams []workStream) []workStream {
 	out := make([]workStream, 0, len(streams))
 	for i := range streams {
 		stream := streams[i]
-		stream.Operations = cloneOperationSpecs(stream.Operations)
+		stream.Operations = stream.Operations.Clone()
 		stream.Destinations = append([]string(nil), stream.Destinations...)
 		out = append(out, stream)
 	}

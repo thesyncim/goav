@@ -29,7 +29,7 @@ import (
 	"github.com/thesyncim/goav/component"
 	"github.com/thesyncim/goav/flow"
 	"github.com/thesyncim/goav/goavtest"
-	goavruntime "github.com/thesyncim/goav/runtime"
+	runconfig "github.com/thesyncim/goav/runconfig"
 	"github.com/thesyncim/goav/shape"
 	"github.com/thesyncim/goav/source"
 )
@@ -42,8 +42,8 @@ const (
 // benchRuntime is the deterministic offline runtime every benchmark uses:
 // goavtest fakes plus WithRealtime(false), so nothing paces on a clock and the
 // fake clock records no sleep trace while b.N grows.
-func benchRuntime(opts ...goavruntime.Option) *goav.Runtime {
-	return goavtest.Runtime(append([]goavruntime.Option{goavruntime.WithRealtime(false)}, opts...)...)
+func benchRuntime(opts ...runconfig.Option) *goav.Runtime {
+	return goavtest.Runtime(append([]runconfig.Option{runconfig.WithRealtime(false)}, opts...)...)
 }
 
 // benchSink is a no-op message destination, so sink work never pollutes the
@@ -312,7 +312,7 @@ func BenchmarkSharedMuxGroup(b *testing.B) {
 	if half < 1 {
 		half = 1
 	}
-	out := goav.Write("call.webm", io.Discard)
+	out := goav.Mux("call", goav.Write("call.webm", io.Discard))
 	runBenchTask(b, goav.From(
 		benchVideoFrames("cam", half, 320, 180),
 		benchAudioFrames("mic", half, 48_000, 1, benchAudioSamples),
@@ -340,7 +340,7 @@ func BenchmarkMix(b *testing.B) {
 					goav.From(benchAudioFrames("arm-1", per, 48_000, 1, benchAudioSamples)).Audio(),
 				).
 					To(benchSink("mixed")).
-					UseRuntime(benchRuntime(goavruntime.WithBufferPolicy(flow.Blocking(64).PipelinePolicy()))))
+					UseRuntime(benchRuntime(runconfig.WithBufferPolicy(flow.Blocking(64).PipelinePolicy()))))
 			case 8:
 				runBenchTask(b, goav.Mix(
 					goav.From(benchAudioFrames("arm-0", per, 48_000, 1, benchAudioSamples)).Audio(),
@@ -353,7 +353,7 @@ func BenchmarkMix(b *testing.B) {
 					goav.From(benchAudioFrames("arm-7", per, 48_000, 1, benchAudioSamples)).Audio(),
 				).
 					To(benchSink("mixed")).
-					UseRuntime(benchRuntime(goavruntime.WithBufferPolicy(flow.Blocking(64).PipelinePolicy()))))
+					UseRuntime(benchRuntime(runconfig.WithBufferPolicy(flow.Blocking(64).PipelinePolicy()))))
 			}
 		})
 	}
@@ -371,7 +371,7 @@ func BenchmarkComposite(b *testing.B) {
 		goav.From(benchVideoFrames("screen", per, 160, 90)).Video().Region(160, 0),
 	).
 		To(benchSink("canvas")).
-		UseRuntime(benchRuntime(goavruntime.WithBufferPolicy(flow.Blocking(64).PipelinePolicy()))))
+		UseRuntime(benchRuntime(runconfig.WithBufferPolicy(flow.Blocking(64).PipelinePolicy()))))
 }
 
 // BenchmarkSelectPassthrough is the one-of-N live switch in its steady state:
@@ -402,7 +402,7 @@ func BenchmarkAttachDetachUnderLoad(b *testing.B) {
 		Audio().
 		Tap(goav.FrameTap("live.frames")).
 		To(benchSink("main")).
-		UseRuntime(benchRuntime(goavruntime.WithBufferPolicy(flow.DropOldest(64).PipelinePolicy()))).
+		UseRuntime(benchRuntime(runconfig.WithBufferPolicy(flow.DropOldest(64).PipelinePolicy()))).
 		BuildLive(ctx)
 	if err != nil {
 		b.Fatal(err)
@@ -449,7 +449,7 @@ func BenchmarkSourcePush(b *testing.B) {
 			runBenchTask(b, goav.From(benchAudioFrames("mic", b.N, 48_000, 1, benchAudioSamples)).
 				Audio().
 				To(benchSink("out")).
-				UseRuntime(benchRuntime(goavruntime.WithBufferPolicy(mode.buffer.PipelinePolicy()))))
+				UseRuntime(benchRuntime(runconfig.WithBufferPolicy(mode.buffer.PipelinePolicy()))))
 		})
 	}
 }

@@ -111,6 +111,10 @@ WebRTC: stable. `webrtcav.TrackReader` (Pion TrackRemote as a packet reader).
 Experimental: `webrtcav.TrackSet` (track acceptance, same-stream replacement,
 codec updates), the codec-update boundary, and the track replacement boundary.
 
+Playout: experimental. `playoutav.Input` schedules packets, frames, and events
+through the same `provider.Source` seam as live transports. It is a nested
+module so scheduled playout does not widen the root dependency graph.
+
 Adapters: see `docs/ADAPTERS.md` for the per-adapter catalog. Stable:
 `adapters/gopus`, `adapters/goaac`, `adapters/ivf`, `adapters/annexb`; experimental
 `adapters/govpx`, `adapters/goav1`, `adapters/goh264` (descriptor-only in

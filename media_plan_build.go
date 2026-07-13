@@ -22,7 +22,7 @@ func (r recipeResolved) singleStreamIntent() (streamIntent, bool) {
 type mediaPlanStreamGraph struct {
 	runtime        *runtime
 	inputs         []InputSpec
-	outputs        []destinationSpec
+	outputs        []destinationAttachment
 	stream         streamIntent
 	copyPackets    bool
 	selectedStream bool
@@ -182,7 +182,7 @@ func (p mediaPlanStreamGraph) lower(ctx context.Context, gp graphPlan, graph pip
 }
 
 func (p mediaPlanStreamGraph) hasSingleSinkDestination() bool {
-	return len(p.outputs) == 1 && p.outputs[0].sink != nil
+	return len(p.outputs) == 1 && p.outputs[0].details.sink
 }
 
 func newMediaPlanDecodeStreamGraph(rt *Runtime, inputs []InputSpec, outputs []destinationSpec, stream streamIntent) (mediaPlanStreamGraph, bool, error) {
@@ -193,7 +193,7 @@ func newMediaPlanDecodeStreamGraph(rt *Runtime, inputs []InputSpec, outputs []de
 	sg := mediaPlanStreamGraph{
 		runtime:      rt,
 		inputs:       append([]InputSpec(nil), inputs...),
-		outputs:      append([]destinationSpec(nil), outputs...),
+		outputs:      destinationAttachmentsFromSpecs(outputs),
 		stream:       stream,
 		sourceDomain: mediaPlanStreamInputDomain(inputs, stream),
 		decode: decodeRequest{
@@ -264,7 +264,7 @@ func newMediaPlanPacketCopyStreamGraph(rt *Runtime, inputs []InputSpec, outputs 
 	return mediaPlanStreamGraph{
 		runtime:        rt,
 		inputs:         append([]InputSpec(nil), inputs...),
-		outputs:        append([]destinationSpec(nil), outputs...),
+		outputs:        destinationAttachmentsFromSpecs(outputs),
 		stream:         stream,
 		copyPackets:    true,
 		selectedStream: selectedStream,
@@ -285,7 +285,7 @@ func (p mediaPlanStreamGraph) packetCopySpec() (pipeline.Spec, error) {
 		branches, outputs := p.selectedPacketCopyBranchComposeRoutes()
 		return planBranchComposeRoutes(spec, nodes, sourceRefs, branches, outputs)
 	}
-	if mediaPlanInputsContainDomain(p.inputs, shape.DomainEvent) && outputsContainMuxDestination(p.outputs) {
+	if mediaPlanInputsContainDomain(p.inputs, shape.DomainEvent) && destinationAttachmentsContainMuxDestination(p.outputs) {
 		return pipeline.Spec{}, graphPlanInvalidError("event source destination must be a sink", nil)
 	}
 	upstreamRefs := sourceRefs
@@ -1063,12 +1063,12 @@ func (p mediaPlanStreamGraph) preparePacketCopyDestinations(gp graphPlan, operat
 			target.Matches = matches
 		}
 		output := p.outputs[outputIndex]
-		if !p.selectedStream && packetCopyTargetMatchesDomain(gp.work.Branches, target.Matches, shape.DomainEvent) && output.sink == nil {
+		if !p.selectedStream && packetCopyTargetMatchesDomain(gp.work.Branches, target.Matches, shape.DomainEvent) && !output.details.sink {
 			return nil, graphPlanInvalidError("event source destination must be a sink", []string{
 				"destination=" + target.Name,
 			})
 		}
-		if output.sink != nil {
+		if output.details.sink {
 			if target.Kind != plan.OpSink {
 				return nil, graphPlanInvalidError("packet-copy destination operation kind does not match sink destination", []string{
 					"destination=" + target.Name,
@@ -1149,8 +1149,9 @@ func (p mediaPlanStreamGraph) lowerPacketCopyDestinations(
 			return err
 		}
 		output := p.outputs[target.OutputIndex]
-		if output.sink != nil {
-			sinkRef, err := graph.AddSink(namedSinkForGraphPlanDestination(target, output.sink), p.runtime.buffer)
+		if output.details.sink {
+			sink := destinationAttachmentSink(output)
+			sinkRef, err := graph.AddSink(namedSinkForGraphPlanDestination(target, sink), p.runtime.buffer)
 			if err != nil {
 				return err
 			}
@@ -1165,7 +1166,8 @@ func (p mediaPlanStreamGraph) lowerPacketCopyDestinations(
 		if err != nil {
 			return err
 		}
-		stage, err := service.openMuxDestinationStage(ctx, output, target.OutputIndex, targetStreams, destinationOpenFormat(output), destinationGraphFormat(output))
+		destination := destinationAttachmentDestination(output)
+		stage, err := service.openMuxDestinationStage(ctx, destination, target.OutputIndex, targetStreams, destinationAttachmentOpenFormat(output), destinationAttachmentGraphFormat(output))
 		if err != nil {
 			return err
 		}
@@ -1460,7 +1462,7 @@ func (p mediaPlanStreamGraph) prepareFrameStreamDestinations(operations []workOp
 		target.OutputIndex = outputIndex
 		destinations[i] = target
 		output := p.outputs[outputIndex]
-		if output.sink != nil {
+		if output.details.sink {
 			if target.Kind != plan.OpSink {
 				return nil, graphPlanInvalidError("frame stream destination operation kind does not match sink destination", []string{
 					"destination=" + target.Name,
@@ -1549,25 +1551,26 @@ func (p mediaPlanStreamGraph) frameStreamBranchComposeRoutes() ([]branchComposeR
 	return branches, mediaPlanBranchComposeTargetRoutes(p.outputs, branchName), nil
 }
 
-func mediaPlanBranchComposeTargetRoutes(outputs []destinationSpec, branchName string) []branchComposeTargetRoute {
+func mediaPlanBranchComposeTargetRoutes(outputs []destinationAttachment, branchName string) []branchComposeTargetRoute {
 	routes := make([]branchComposeTargetRoute, len(outputs))
 	for i := range outputs {
 		output := outputs[i]
+		facts := output.details
 		target := branchComposeTarget{
-			Name:        output.label("output"),
-			Destination: cloneDestinationSpec(output),
-			Target:      output.output,
-			Sink:        output.sink,
-			Format:      destinationGraphFormat(output),
+			Name:        firstNonEmpty(facts.label, facts.routingName, "output"),
+			Destination: destinationAttachmentDestination(output),
+			Target:      destinationAttachmentOutput(output),
+			Sink:        destinationAttachmentSink(output),
+			Format:      facts.requestedContainer,
 			Branches:    []string{branchName},
 		}
-		if output.resolvedFormat != "" {
-			target = resolveBranchComposeTargetFormat(target, output.resolvedFormat)
+		if facts.resolvedContainer != "" {
+			target = resolveBranchComposeTargetFormat(target, facts.resolvedContainer)
 		}
 		routes[i] = branchComposeTargetRoute{
 			output:  target,
 			target:  branchComposeFormatTarget(branchComposePlan{}, target),
-			sink:    output.sink,
+			sink:    destinationAttachmentSink(output),
 			matches: []int{0},
 		}
 	}
@@ -1585,43 +1588,6 @@ func (p mediaPlanStreamGraph) specWithSources() (pipeline.Spec, []pipeline.NodeR
 		return pipeline.Spec{}, nil, nil, recipeGraphUnsupportedError("describe job", intent{Streams: []streamIntent{p.stream}})
 	}
 	return spec, sourceRefs, nodes, nil
-}
-
-func mediaPlanFilterRouteOperations(filters []filterRequest) ([]operationSpec, error) {
-	operations := make([]operationSpec, 0, len(filters))
-	for i := range filters {
-		filter := filters[i]
-		switch {
-		case filter.stage != nil:
-			if err := validateStageComponent(filter.stage); err != nil {
-				return nil, err
-			}
-			operations = append(operations, operationSpecForStage(filter.stage))
-		case filter.transform != nil:
-			operation := operationSpecForTransform(transformSpecFromMediaTransform(*filter.transform))
-			// Keep the (possibly solver-selected) adapter as the component, so
-			// the route operations name and instantiate the same filter.
-			operation.Component = firstNonEmpty(filter.transform.factory, operation.Component)
-			operations = append(operations, operation)
-		default:
-			return nil, errNilStage
-		}
-	}
-	return operations, nil
-}
-
-// applyTransformComponentOverride re-points a lowered transform at the
-// solver-selected adapter when the operation's component differs from the
-// standard factory: the component is both the node-name prefix and the filter
-// registry key, so the planned spec and the built graph stay identical.
-func applyTransformComponentOverride(transform mediaTransform, operation operationSpec) mediaTransform {
-	factory := operation.Component
-	if operation.Kind != plan.OpTransform || factory == "" || factory == transform.factory {
-		return transform
-	}
-	transform.name = factory + strings.TrimPrefix(transform.name, transform.factory)
-	transform.factory = factory
-	return transform
 }
 
 func transformSpecFromMediaTransform(transform mediaTransform) transformSpec {

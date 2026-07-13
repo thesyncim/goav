@@ -1,6 +1,10 @@
 package shape
 
-import "strings"
+import (
+	"sort"
+	"strconv"
+	"strings"
+)
 
 // Policy is the shape solver's conversion vocabulary: which classes of
 // automatic conversion a chain allows the planner to insert when an operation
@@ -12,6 +16,7 @@ type Policy struct {
 	resample bool
 	resize   bool
 	convert  bool
+	custom   []string
 }
 
 // AllowResample permits inserting audio sample-rate and channel conversions.
@@ -23,12 +28,24 @@ func AllowResize() Policy { return Policy{resize: true} }
 // AllowConvert permits inserting pixel-format and sample-format conversions.
 func AllowConvert() Policy { return Policy{convert: true} }
 
+// AllowCustom permits an application-registered solver delta by name. Custom
+// names are matched against per-runtime delta contributors registered with
+// runconfig; empty names allow nothing.
+func AllowCustom(name string) Policy {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return Policy{}
+	}
+	return Policy{custom: []string{name}}
+}
+
 // Union combines two policies; the result allows everything either allows.
 func (p Policy) Union(other Policy) Policy {
 	return Policy{
 		resample: p.resample || other.resample,
 		resize:   p.resize || other.resize,
 		convert:  p.convert || other.convert,
+		custom:   mergeCustomPolicyNames(p.custom, other.custom),
 	}
 }
 
@@ -42,7 +59,7 @@ func (p Policy) AllowsResize() bool { return p.resize }
 func (p Policy) AllowsConvert() bool { return p.convert }
 
 // Empty reports whether the policy allows nothing.
-func (p Policy) Empty() bool { return !p.resample && !p.resize && !p.convert }
+func (p Policy) Empty() bool { return !p.resample && !p.resize && !p.convert && len(p.custom) == 0 }
 
 // Covers reports whether the policy allows every conversion class in needed.
 func (p Policy) Covers(needed Policy) bool {
@@ -55,6 +72,11 @@ func (p Policy) Covers(needed Policy) bool {
 	if needed.convert && !p.convert {
 		return false
 	}
+	for _, name := range needed.custom {
+		if !customPolicyContains(p.custom, name) {
+			return false
+		}
+	}
 	return true
 }
 
@@ -65,6 +87,7 @@ func (p Policy) Missing(needed Policy) Policy {
 		resample: needed.resample && !p.resample,
 		resize:   needed.resize && !p.resize,
 		convert:  needed.convert && !p.convert,
+		custom:   missingCustomPolicyNames(p.custom, needed.custom),
 	}
 }
 
@@ -81,6 +104,9 @@ func (p Policy) Constructors() []string {
 	if p.convert {
 		out = append(out, "shape.AllowConvert()")
 	}
+	for _, name := range normalizedCustomPolicyNames(p.custom) {
+		out = append(out, "shape.AllowCustom("+strconv.Quote(name)+")")
+	}
 	return out
 }
 
@@ -96,10 +122,70 @@ func (p Policy) String() string {
 	if p.convert {
 		parts = append(parts, "convert")
 	}
+	for _, name := range normalizedCustomPolicyNames(p.custom) {
+		parts = append(parts, name)
+	}
 	if len(parts) == 0 {
 		return "none"
 	}
 	return strings.Join(parts, "+")
+}
+
+func mergeCustomPolicyNames(a []string, b []string) []string {
+	if len(a) == 0 {
+		return normalizedCustomPolicyNames(b)
+	}
+	if len(b) == 0 {
+		return normalizedCustomPolicyNames(a)
+	}
+	merged := make([]string, 0, len(a)+len(b))
+	merged = append(merged, a...)
+	merged = append(merged, b...)
+	return normalizedCustomPolicyNames(merged)
+}
+
+func normalizedCustomPolicyNames(names []string) []string {
+	if len(names) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(names))
+	out := make([]string, 0, len(names))
+	for _, name := range names {
+		name = strings.TrimSpace(name)
+		if name == "" {
+			continue
+		}
+		if _, ok := seen[name]; ok {
+			continue
+		}
+		seen[name] = struct{}{}
+		out = append(out, name)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func missingCustomPolicyNames(allowed []string, needed []string) []string {
+	needed = normalizedCustomPolicyNames(needed)
+	if len(needed) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(needed))
+	for _, name := range needed {
+		if !customPolicyContains(allowed, name) {
+			out = append(out, name)
+		}
+	}
+	return out
+}
+
+func customPolicyContains(names []string, name string) bool {
+	for _, current := range names {
+		if current == name {
+			return true
+		}
+	}
+	return false
 }
 
 // Conversions reports the conversion classes required to make actual satisfy

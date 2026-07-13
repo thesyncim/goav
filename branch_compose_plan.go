@@ -4,7 +4,6 @@ package goav
 
 import (
 	"fmt"
-	"strings"
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/errcode"
@@ -13,47 +12,11 @@ import (
 	"github.com/thesyncim/goav/shape"
 )
 
-type namedDestinationSpec struct {
-	name   string
-	output destinationSpec
-}
-
-func destinationIdentity(destination namedDestinationSpec) string {
-	output := destination.output
-	shareKey := destinationShareKey(output, output.id)
-	if shareKey == "" {
-		return ""
-	}
-	return strings.Join([]string{
-		destination.name,
-		shareKey,
-		output.label(""),
-		destinationSinkName(output),
-		output.output.Name,
-		output.output.URI,
-		string(output.output.Protocol),
-		output.output.MIMEType,
-		string(output.format),
-		string(output.resolvedFormat),
-	}, "\x00")
-}
-
-func destinationSinkName(output destinationSpec) string {
-	if output.sink == nil {
-		return ""
-	}
-	return output.sink.Name()
-}
-
-func destinationsShareExplicitGroup(first namedDestinationSpec, second namedDestinationSpec) bool {
-	return destinationIdentity(first) != "" && destinationIdentity(first) == destinationIdentity(second)
-}
-
 const branchCompositionOperation = "build branch composition"
 
-func planBranchCompositionRecipe(recipe recipeir.Recipe, input InputSpec, namedOutputs []namedDestinationSpec) (branchComposePlan, error) {
+func planBranchCompositionSnapshot(recipe recipeir.Recipe, input InputSpec, attachments []branchDestinationAttachment) (branchComposePlan, error) {
 	streams := recipe.Streams
-	outputs, outputOrder := branchDestinationAttachmentSet(namedOutputs)
+	outputs, outputOrder := branchDestinationAttachmentSet(attachments)
 
 	branches := make([]branchComposeBranch, 0, len(streams))
 	outputBranches := make(map[string][]string, len(outputs))
@@ -64,19 +27,17 @@ func planBranchCompositionRecipe(recipe recipeir.Recipe, input InputSpec, namedO
 		stream := streams[i]
 		branchName := stream.Name
 		selector := recipeIRStreamSelector(stream)
-		operations := operationSpecsFromRecipeIROperations(stream.Operations)
-		sharedOperations, privateOperations := splitOperationSpecsByShared(operations)
-		encode := chainEncodeSpec(operations)
+		operations := recipeIROperationFacts(stream.Operations)
+		encode := operations.Encode()
 		labels := recipeIROutputRefsToStrings(stream.Outputs)
 		branch := branchComposeBranch{
 			Name:              branchName,
 			Selector:          selector,
 			Input:             stream.Selector.Input,
 			Copy:              encode.Copy,
-			Operations:        cloneOperationSpecs(operations),
-			SharedOperations:  sharedOperations,
-			PrivateOperations: privateOperations,
-			DecodeConfig:      cloneCodecSpec(chainDecodeCodec(operations)),
+			SharedOperations:  operations.SharedFacts(),
+			PrivateOperations: operations.PrivateFacts(),
+			DecodeConfig:      operations.Decode(),
 			CodecChange:       rootCodecChangeFromRecipeIR(stream.CodecChange),
 			Encode:            encodeConfigFromSpec(encode),
 			Labels:            labels,
@@ -93,17 +54,18 @@ func planBranchCompositionRecipe(recipe recipeir.Recipe, input InputSpec, namedO
 	planDestinations := make([]branchComposeTarget, 0, len(outputOrder))
 	for i := range outputOrder {
 		name := outputOrder[i]
-		output := outputs[name]
+		attachment := outputs[name]
+		facts := attachment.details
 		planTarget := branchComposeTarget{
-			Name:        name,
-			Destination: cloneDestinationSpec(output),
-			Target:      output.output,
-			Sink:        output.sink,
-			Format:      output.format,
+			Name:        facts.routingName,
+			Destination: branchDestinationAttachmentDestination(attachment),
+			Target:      branchDestinationAttachmentOutput(attachment),
+			Sink:        branchDestinationAttachmentSink(attachment),
+			Format:      facts.requestedContainer,
 			Branches:    append([]string(nil), outputBranches[name]...),
 		}
-		if output.resolvedFormat != "" {
-			planTarget = resolveBranchComposeTargetFormat(planTarget, output.resolvedFormat)
+		if facts.resolvedContainer != "" {
+			planTarget = resolveBranchComposeTargetFormat(planTarget, facts.resolvedContainer)
 		}
 		planDestinations = append(planDestinations, planTarget)
 	}
@@ -117,52 +79,6 @@ func planBranchCompositionRecipe(recipe recipeir.Recipe, input InputSpec, namedO
 
 func branchComposePlanReady(composePlan branchComposePlan) bool {
 	return len(composePlan.Branches) != 0 || len(composePlan.Destinations) != 0
-}
-
-func splitOperationSpecsByShared(operations []operationSpec) ([]operationSpec, []operationSpec) {
-	if len(operations) == 0 {
-		return nil, nil
-	}
-	shared := make([]operationSpec, 0)
-	private := make([]operationSpec, 0, len(operations))
-	for i := range operations {
-		operation := operations[i]
-		if operation.Shared {
-			shared = append(shared, operation)
-			continue
-		}
-		private = append(private, operation)
-	}
-	return cloneOperationSpecs(shared), cloneOperationSpecs(private)
-}
-
-func chainStepsFromChainOperations(operations []operationSpec) []chainStep {
-	if len(operations) == 0 {
-		return nil
-	}
-	steps := make([]chainStep, 0, len(operations))
-	for i := range operations {
-		operation := operations[i]
-		switch operation.Kind {
-		case plan.OpStage:
-			if operation.Stage != nil {
-				steps = append(steps, chainStep{stage: operation.Stage})
-			}
-		case plan.OpShape:
-			if !mediaShapeEmpty(operation.Shape) {
-				steps = append(steps, chainStep{shape: operation.Shape})
-			}
-		case plan.OpTransform:
-			if operation.Transform.resize != nil || operation.Transform.resample != nil {
-				steps = append(steps, chainStep{transform: cloneTransformSpec(operation.Transform)})
-			}
-		case plan.OpTap:
-			if operation.Tap.Name != "" && operation.Tap.Domain != shape.DomainPacket {
-				steps = append(steps, chainStep{tap: operation.Tap.Name, tapDomain: operation.Tap.Domain})
-			}
-		}
-	}
-	return steps
 }
 
 func validateBranchCompositionRecipeShape(operation string, recipe recipeir.Recipe) error {
@@ -254,40 +170,6 @@ func recipeIRStreamHasDecode(stream recipeir.Stream) bool {
 		}
 	}
 	return false
-}
-
-func validateBranchCompositionAttachments(input InputSpec, namedOutputs []namedDestinationSpec, fromBranchSplit bool) error {
-	if err := input.validate(); err != nil {
-		return err
-	}
-	if input.provider != nil {
-		if !fromBranchSplit {
-			return transcodeUnsupportedLiveInputError()
-		}
-	}
-	seen := make(map[string]struct{}, len(namedOutputs))
-	for i := range namedOutputs {
-		if err := namedOutputs[i].output.validate(branchCompositionOperation, fmt.Sprintf("output-%d", i)); err != nil {
-			return err
-		}
-		name := namedOutputs[i].name
-		if _, ok := seen[name]; ok {
-			return branchDestinationDuplicateError(name)
-		}
-		seen[name] = struct{}{}
-	}
-	return nil
-}
-
-func branchDestinationAttachmentSet(namedOutputs []namedDestinationSpec) (map[string]destinationSpec, []string) {
-	outputs := make(map[string]destinationSpec, len(namedOutputs))
-	outputOrder := make([]string, 0, len(namedOutputs))
-	for i := range namedOutputs {
-		name := namedOutputs[i].name
-		outputOrder = append(outputOrder, name)
-		outputs[name] = namedOutputs[i].output.withName(firstNonEmpty(namedOutputs[i].output.name, name))
-	}
-	return outputs, outputOrder
 }
 
 func branchStreamMissingError() error {
@@ -495,25 +377,6 @@ func validateBranchRecipeTransforms(stream recipeir.Stream) error {
 		}
 	}
 	return nil
-}
-
-func streamIntentTransformSpecs(stream streamIntent) []transformSpec {
-	return transformSpecsFromOperationSpecs(stream.Operations)
-}
-
-func transformSpecsFromOperationSpecs(operations []operationSpec) []transformSpec {
-	if len(operations) == 0 {
-		return nil
-	}
-	transforms := make([]transformSpec, 0)
-	for i := range operations {
-		if operations[i].Kind != plan.OpTransform {
-			continue
-		}
-		transform := cloneTransformSpec(operations[i].Transform)
-		transforms = append(transforms, transform)
-	}
-	return transforms
 }
 
 func streamIntentSelector(stream streamIntent) av.StreamSelector {

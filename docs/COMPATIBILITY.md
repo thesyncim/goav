@@ -22,10 +22,10 @@ compatibility it is promising and what evidence backs that promise.
   family before v1. Callers read machine facts with `Detail(key)` and render
   diagnostics with `DetailLines()` / `FixLines()`; the backing detail/fix
   records are intentionally not public DTOs.
-- Nested modules: `rtpav` and `webrtcav` tag independently with
-  `rtpav/vX.Y.Z` and `webrtcav/vX.Y.Z`. A root release does not freeze the
-  transport modules, and a transport release must name the root version it was
-  tested against.
+- Nested modules: `rtpav`, `webrtcav`, and `playoutav` tag independently with
+  `rtpav/vX.Y.Z`, `webrtcav/vX.Y.Z`, and `playoutav/vX.Y.Z`. A root release
+  does not freeze the transport modules, and a transport release must name the
+  root version it was tested against.
 - Example modules: `examples/*` are copyable adoption artifacts, not imported
   library APIs. They should keep building, but they do not carry compatibility
   promises beyond the public APIs they demonstrate.
@@ -38,12 +38,12 @@ compatibility it is promising and what evidence backs that promise.
 ## V1 promise draft
 
 A v1 tag should promise the smaller normal-user workflows targeted by
-`docs/SIMPLIFICATION_TARGET.md`, not the entire current governed inventory.
+`docs/history/SIMPLIFICATION_TARGET.md`, not the entire current governed inventory.
 Use the Tier A surface in `docs/API_SURFACE.md` as an inventory to shrink or
 explicitly retain, not as an automatic v1 promise:
 
 - the supported `From(...) -> stream selection -> operations -> branches ->
-  destinations` workflows named in `docs/SIMPLIFICATION_TARGET.md`;
+  destinations` workflows named in `docs/history/SIMPLIFICATION_TARGET.md`;
 - `Describe`/`Explain` before `Build`, plus `Task.Run`/`Task.Close` for built
   tasks;
 - structured `*goav.BuildError` refusals with stable families, `Detail(key)`,
@@ -53,7 +53,7 @@ explicitly retain, not as an automatic v1 promise:
 Runtime mutation (`Attach`, `Detach`, `Rebranch`), control-plane hosts, raw
 controls, advanced observation, `OnStream` breadth, `Mix`/`Composite`/`Select`,
 and `expert.Graph` are advanced/non-v1 unless the release compatibility note
-explicitly retains them and records the exception to `docs/SIMPLIFICATION_TARGET.md`.
+explicitly retains them and records the exception to `docs/history/SIMPLIFICATION_TARGET.md`.
 
 The extension seams remain documented and tested, but they may grow as new
 adapters require additional capability. New exported symbols still require the
@@ -72,9 +72,10 @@ Minimum Go version:
 
 Module scope:
 - Root module tag: `v0.1.0`.
-- Nested modules are not included in the root tag. `rtpav` and `webrtcav`
-  require separate prefixed tags if released.
-- Tag order remains root first, then `rtpav`, then `webrtcav`.
+- Nested modules are not included in the root tag. `rtpav`, `webrtcav`, and
+  `playoutav` require separate prefixed tags if released.
+- Tag order remains root first, then `rtpav`, then `webrtcav`/`playoutav` as
+  needed.
 
 API surface:
 - Added exported symbols: `BuildError` helper methods, `BuildLive`,
@@ -88,7 +89,7 @@ API surface:
   `BuildError.Suggestions`, path-style writer destinations, same-handle
   destination grouping, and graph-node-prefix tap fallback.
 - API-restraint links for additions: `docs/API_SURFACE.md`,
-  `docs/SIMPLIFICATION_TARGET.md`, and `docs/V1_CREDIBILITY_AUDIT.md`.
+  `docs/history/SIMPLIFICATION_TARGET.md`, and `docs/history/V1_CREDIBILITY_AUDIT.md`.
 
 Behavior changes:
 - Normal `Build` returns the narrow `Task` lifecycle; callers that need
@@ -130,7 +131,7 @@ Evidence:
 - Local patched-toolchain tests: `GOTOOLCHAIN=go1.26.3 go test -p 1 ./...`.
 - Local pure-Go tests: `CGO_ENABLED=0 go test -p 1 ./...`.
 - Local race subset: `CGO_ENABLED=1 go test -race -count=1 . ./pipeline
-  ./goavtest ./format ./cmd/goav ./ctl ./internal/launchctl ./graphrender`.
+  ./goavtest ./format ./cmd/goav ./ctlserver ./internal/launchctl ./graphrender`.
 - Local static checks: `go vet ./...` and
   `go run honnef.co/go/tools/cmd/staticcheck@latest ./...`.
 - Local formatting check: `test -z "$(gofmt -l .)"`.
@@ -141,9 +142,9 @@ Evidence:
   `BENCH_COUNT=1 scripts/bench/run.sh -bench 'BenchmarkLatencyRecordPackets|BenchmarkSourcePush' .`.
 - Local perf-lab smoke: `PERF_BENCHTIME=1x scripts/bench/perf-lab.sh`.
 - Nested module tests: every `examples/*/go.mod`, `goavtest/expect`, `rtpav`,
-  and `webrtcav` passed `go test -p 1 ./...`.
+  `webrtcav`, and `playoutav` passed `go test -p 1 ./...`.
 - Root dependency check: `go list -deps github.com/thesyncim/goav` had no
-  adapter, container, `rtpav`, or `webrtcav` package leak.
+  adapter, container, `rtpav`, `webrtcav`, or `playoutav` package leak.
 - CI release workflow, signed-tag validation, and release-quality benchmark
   artifacts still need release-day evidence.
 
@@ -166,7 +167,7 @@ Minimum Go version:
 - go <version>
 
 Module scope:
-- Root / rtpav / webrtcav / other:
+- Root / rtpav / webrtcav / playoutav / other:
 - Dependency/tag order:
 
 API surface:
@@ -207,4 +208,4 @@ Deferred / not claimed:
 Do not cut v1 until the compatibility note above is filled for the tag, the
 release workflow has validated the signed tag, the release decision item in
 `docs/ROADMAP.md` has been closed by the maintainer, and every exception to
-`docs/SIMPLIFICATION_TARGET.md` is written down.
+`docs/history/SIMPLIFICATION_TARGET.md` is written down.

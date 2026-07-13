@@ -16,7 +16,7 @@ import (
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/rtpav"
-	goavruntime "github.com/thesyncim/goav/runtime"
+	runconfig "github.com/thesyncim/goav/runconfig"
 )
 
 func TestRecipeRTPDecodeUsesProviderDecodeBounds(t *testing.T) {
@@ -207,7 +207,7 @@ func TestRecipeRTPAV1RecordIVF(t *testing.T) {
 	var recording bytes.Buffer
 
 	task, err := goav.From(goav.Input(rtpav.Receive(receiver, rtpav.WithDepacketizers(rtpav.NewAV1Depacketizer(stream))))).
-		UseRuntime(mustGoAVRuntime(goavruntime.WithFormatAdapter(ivfadapter.Register))).
+		UseRuntime(mustGoAVRuntime(runconfig.WithFormatAdapter(ivfadapter.Register))).
 		Copy().
 		To(goav.Write("recording.ivf", &recording)).
 		Build(ctx)
@@ -273,7 +273,7 @@ func TestRecipeRTPH264RecordAnnexB(t *testing.T) {
 	var recording bytes.Buffer
 
 	task, err := goav.From(goav.Input(rtpav.Receive(receiver, rtpav.WithDepacketizers(rtpav.NewH264Depacketizer(stream))))).
-		UseRuntime(mustGoAVRuntime(goavruntime.WithFormatAdapter(annexbadapter.Register))).
+		UseRuntime(mustGoAVRuntime(runconfig.WithFormatAdapter(annexbadapter.Register))).
 		Copy().
 		To(goav.Write("recording.h264", &recording)).
 		Build(ctx)

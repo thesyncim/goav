@@ -8,6 +8,8 @@ coverage.out
 bench-results/*
 !bench-results/
 !bench-results/README.md
+!bench-results/reference/
+!bench-results/reference/*.json
 /examples/webrtc-runtime-ladder/webrtc-runtime-ladder
 /examples/custom-source/custom-source
 /examples/custom-destination/custom-destination
@@ -17,3 +19,5 @@ bench-results/*
 /examples/custom-join/custom-join
 /examples/control-plane-host/control-plane-host
 /examples/provider-source/provider-source
+/examples/dynamic-audio-room/dynamic-audio-room
+/examples/gio-webrtc-showcase/gio-webrtc-showcase

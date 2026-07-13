@@ -5,15 +5,16 @@ import graph. Use this page to see what ships today, which paths are narrow by
 design, and where to start if you need to add another implementation.
 
 Core packages (`av`, `codec`, `format`, `filter`, `pipeline`, `rtpav`,
-`webrtcav`) do not import sibling codec modules; concrete integrations live
-under `adapters/...` and `container/...`.
+`webrtcav`, `playoutav`) do not import sibling codec modules; concrete
+integrations live under `adapters/...` and `container/...`.
 
 The root module keeps third-party dependencies pinned by
 `TestRootModuleDependencyPurity`: only the narrow modernc runtime set required
 by the built-in pure-Go AAC backend is allowed outside `github.com/thesyncim/*`
-and the standard library. `rtpav` and `webrtcav` are nested modules with their
-own `go.mod`; they carry the Pion dependency tree, and importing goav alone
-never pulls it in. Import paths are unchanged.
+and the standard library. `rtpav`, `webrtcav`, and `playoutav` are nested
+modules with their own `go.mod`; RTP/WebRTC carry the Pion dependency tree,
+while playout is dependency-light. Importing goav alone never pulls transport
+modules in. Import paths are unchanged.
 
 To write an adapter, use `docs/ADAPTER_AUTHORING.md` for the extension
 interfaces, lifecycle rules, error and ownership contracts, and required
@@ -24,7 +25,7 @@ is `adapterproof/adapter_compat_test.go`.
 
 - Implement `codec.DecoderFactory`, `codec.EncoderFactory`,
   `format.DemuxerFactory`, `format.MuxerFactory`, or `filter.Factory`.
-- Application-local factories register with `goavruntime.WithDecoder`, `WithEncoder`,
+- Application-local factories register with `runconfig.WithDecoder`, `WithEncoder`,
   `WithFilter`, `WithMuxer`, `WithDemuxer`, and `WithProber`. Adapter packages
   should still expose an explicit `Register(...)` hook for runtime bundles.
 - Allocate only during construction or `Open`. Hot-path methods use
@@ -48,6 +49,10 @@ For codecs outside the built-in Opus, VP8, VP9, H264, and AV1 specs, use
 same as built-ins.
 
 ## Current Adapters
+
+`playoutav` is the third source-provider proof: it adapts scheduled packets,
+frames, and events through `provider.Source` as a nested module, with no core
+runtime/provider changes beyond docs and CI enumeration.
 
 <!-- BEGIN GENERATED BUNDLE CAPABILITIES -->
 The tables below are generated from `bundle.Options()` and the descriptors registered by the bundled adapters. Update the descriptors, not this section by hand.
@@ -101,4 +106,7 @@ Default-build `govpx`, `goav1`, and `goh264` expose descriptors without
 importing concrete implementations, so applications can see planned media
 compatibility and build registries without forcing tagged code paths. Concrete
 factories replace descriptor-only registrations once each path has caller-owned
-output buffers and allocation tests.
+output buffers and allocation tests. `goh264` remains decode-only in the
+default bundle for recipe encode: applications that need H.264 encoding must
+register a vetted encoder explicitly with `runconfig.WithEncoder` or a codec
+adapter.

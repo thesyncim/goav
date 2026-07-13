@@ -16,7 +16,7 @@ import (
 	"github.com/thesyncim/goav/lifecycle"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/plan"
-	runtimecfg "github.com/thesyncim/goav/runtime"
+	runconfig "github.com/thesyncim/goav/runconfig"
 	"github.com/thesyncim/goav/snapshot"
 )
 
@@ -62,11 +62,15 @@ var (
 // New builds a bare runtime: per-runtime registries with no adapters beyond
 // content sniffing, realtime pacing on. Import github.com/thesyncim/goav/bundle
 // for a runtime with the bundled adapters already registered. Runtime options
-// live in github.com/thesyncim/goav/runtime.
-func New(options ...runtimecfg.Option) (*Runtime, error) {
-	config, err := runtimecfg.NewConfig(options...)
+// live in github.com/thesyncim/goav/runconfig.
+func New(options ...runconfig.Option) (*Runtime, error) {
+	config, err := runconfig.NewConfig(options...)
 	if err != nil {
 		return nil, err
+	}
+	var pools *mediaPools
+	if config.MediaPools {
+		pools = newMediaPools()
 	}
 	return &runtime{
 		codecs:           config.Codecs,
@@ -77,10 +81,12 @@ func New(options ...runtimecfg.Option) (*Runtime, error) {
 		clock:            config.Clock,
 		eventCapacity:    config.EventCapacity,
 		closeWaitTimeout: config.CloseWaitTimeout,
+		mediaPools:       pools,
+		shapeDeltas:      append([]runconfig.ShapeDeltaContributor(nil), config.ShapeDeltas...),
 	}, nil
 }
 
-func mustNew(options ...runtimecfg.Option) *Runtime {
+func mustNew(options ...runconfig.Option) *Runtime {
 	runtime, err := New(options...)
 	if err != nil {
 		panic(err)
@@ -97,6 +103,8 @@ type runtime struct {
 	clock            av.Clock
 	eventCapacity    int
 	closeWaitTimeout time.Duration
+	mediaPools       *mediaPools
+	shapeDeltas      []runconfig.ShapeDeltaContributor
 }
 
 func (r *runtime) Probe(ctx context.Context, request format.ProbeRequest) (format.ProbeResult, error) {
@@ -551,7 +559,7 @@ func (t *task) bufferedPayloadRunError(cause error, code errcode.Code, reason st
 		fixes: []buildErrorFix{
 			{Message: "for branch buffers, use flow.BufferCopyBounds(packetBytes, frameBytes) with bounds large enough for the payload"},
 			{Message: "when using flow.CopyNever, emit av.BufferImmutable payloads only or switch to flow.CopyIfMutable/flow.CopyAlways"},
-			{Message: "for runtime-level buffers, set goavruntime.WithBufferPolicy(pipeline.BufferPolicy{Capacity: ..., Drop: pipeline.DropBlock, CopyPacketBytes: ..., CopyFrameBytes: ...})"},
+			{Message: "for runtime-level buffers, set runconfig.WithBufferPolicy(pipeline.BufferPolicy{Capacity: ..., Drop: pipeline.DropBlock, CopyPacketBytes: ..., CopyFrameBytes: ...})"},
 		},
 		cause: cause,
 	}

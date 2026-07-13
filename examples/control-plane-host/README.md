@@ -51,7 +51,7 @@ $CTL taps
 spellings, reflected generic `encode` settings, and the encoders and muxers
 discovered from the running task runtime. The ACME encoder is available
 immediately through the generic `encode codec=x_acme_video media=video ...`
-step because the host registered it with `goavruntime.WithEncoder`. Generic `encode`
+step because the host registered it with `runconfig.WithEncoder`. Generic `encode`
 binds the tagged `codec.CodecSettings` fields and leaves adapter-owned keys in
 `CodecSettings.Custom`; registered muxers are available through
 `filesink location=<path> [format=<id>]`.
@@ -162,6 +162,6 @@ $CTL detach acme-preview
 The emitted command list printed by the host is generated from the same strings
 this guide uses, and the example tests drive both the socket request shape and
 the actual `goav ctl` binary. The host adds controls, steps, sinks, and encoder
-spellings through one explicit `ctl.CapabilitySet`; reflection only binds known
-structs and generates help. The host calls `ctl.ValidateCapabilities` before
+spellings through one explicit `ctlserver.CapabilitySet`; reflection only binds known
+structs and generates help. The host calls `ctlserver.ValidateCapabilities` before
 opening the socket so bad names, aliases, or settings structs fail at startup.

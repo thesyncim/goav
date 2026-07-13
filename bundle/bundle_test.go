@@ -7,7 +7,7 @@ import (
 
 	"github.com/thesyncim/goav"
 	"github.com/thesyncim/goav/goavtest"
-	goavruntime "github.com/thesyncim/goav/runtime"
+	runconfig "github.com/thesyncim/goav/runconfig"
 )
 
 func TestNilJobReturnsErrNilJob(t *testing.T) {
@@ -26,8 +26,8 @@ func TestNilJobReturnsErrNilJob(t *testing.T) {
 }
 
 func TestBuildSignaturesSplitNarrowAndLiveTask(t *testing.T) {
-	var _ func(context.Context, *goav.Job, ...goavruntime.Option) (goav.Task, error) = Build
-	var _ func(context.Context, *goav.Job, ...goavruntime.Option) (goav.LiveTask, error) = BuildLive
+	var _ func(context.Context, *goav.Job, ...runconfig.Option) (goav.Task, error) = Build
+	var _ func(context.Context, *goav.Job, ...runconfig.Option) (goav.LiveTask, error) = BuildLive
 }
 
 func TestDescribeUsesBundledRuntimeForStructuralPlan(t *testing.T) {

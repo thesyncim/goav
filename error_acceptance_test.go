@@ -438,23 +438,6 @@ func TestErrorAcceptancePacketBranchEncodeUnsupported(t *testing.T) {
 	)
 }
 
-// TestErrorAcceptancePacketBranchTransformUnsupported is snippet 0u: a packet
-// branch resamples without decoding first.
-func TestErrorAcceptancePacketBranchTransformUnsupported(t *testing.T) {
-	_, err := goav.From(opusPacketInput()).
-		Audio().Copy().
-		Branches(
-			goav.Branch("bad").
-				Resample(16_000, codec.Mono).
-				To(goavtest.NewCollector().Sink()),
-		).
-		BuildLive(context.Background())
-	requireBuildError(t, err, errcode.Code("packet_branch_transform_unsupported"), "build branches", "bad",
-		"use .Decode().Branches(...) when branch variants need frame transforms",
-		"use .Copy().Branches(...) only for packet-preserving branches",
-	)
-}
-
 func TestBuildAndAttachReturnSameErrorForSameInvalidBranch(t *testing.T) {
 	_, err := goav.From(opusPacketInput()).
 		UseRuntime(goavtest.Runtime()).
@@ -565,7 +548,7 @@ func TestErrorAcceptanceDestinationFormatUnknown(t *testing.T) {
 
 // TestErrorAcceptanceDestinationMuxerMissing is snippet 4b: the format is
 // detected but the runtime has no muxer registered for it. The fix names
-// goavruntime.WithMuxer(...).
+// runconfig.WithMuxer(...).
 func TestErrorAcceptanceDestinationMuxerMissing(t *testing.T) {
 	_, err := goav.From(goavtest.Audio(48000, 1, []int16{1})).
 		Audio().Encode(codec.Opus()).
@@ -573,7 +556,7 @@ func TestErrorAcceptanceDestinationMuxerMissing(t *testing.T) {
 		UseRuntime(bundle.MustNewFilters(goavtest.Codec(av.CodecOpus))).
 		BuildLive(context.Background())
 	requireBuildError(t, err, errcode.Code("destination_muxer_missing"), "open destination", "out.ogg",
-		"goavruntime.WithMuxer(...)",
+		"runconfig.WithMuxer(...)",
 	)
 }
 
@@ -652,7 +635,7 @@ func TestErrorAcceptanceTypedTapAtWrongDomain(t *testing.T) {
 
 // TestErrorAcceptanceEncoderAdapterMissing is snippet 8: .Encode with a codec
 // no registered encoder provides. The refusal names the codec and the
-// goavruntime.WithEncoder(...) registration fix.
+// runconfig.WithEncoder(...) registration fix.
 func TestErrorAcceptanceEncoderAdapterMissing(t *testing.T) {
 	_, err := goav.From(goavtest.Audio(48000, 1, []int16{1})).
 		Audio().Encode(codec.Codec("weird", av.MediaAudio)).
@@ -660,7 +643,7 @@ func TestErrorAcceptanceEncoderAdapterMissing(t *testing.T) {
 		UseRuntime(goavtest.Runtime()).
 		BuildLive(context.Background())
 	buildErr := requireBuildError(t, err, errcode.Code("encode_adapter_missing"), "build job", "audio",
-		"goavruntime.WithEncoder(...)",
+		"runconfig.WithEncoder(...)",
 	)
 	if !strings.Contains(buildErr.Reason, "weird") || !detailsContain(buildErr.DetailLines(), "codec=weird") {
 		t.Fatalf("refusal should name the codec, err = %v", err)

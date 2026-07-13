@@ -119,6 +119,32 @@ func TestMixBranchesFanOutMixedStream(t *testing.T) {
 	}
 }
 
+func TestJoinOutputBranches(t *testing.T) {
+	ctx := context.Background()
+	var encoded, monitor [][]int16
+	task, err := Mix(
+		From(mixTestAudioSource("a", 30, 40)).Audio(),
+		From(mixTestAudioSource("b", 5, 6)).Audio(),
+	).Branches(
+		Branch("encoded").To(joinTestCollectSink("encoded", &encoded)),
+		Branch("monitor").To(joinTestCollectSink("monitor", &monitor)),
+	).BuildLive(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer task.Close()
+	if err := task.Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	want := []int16{35, 46}
+	if len(encoded) != 1 || !reflect.DeepEqual(encoded[0], want) {
+		t.Fatalf("encoded branch = %v, want %v", encoded, want)
+	}
+	if len(monitor) != 1 || !reflect.DeepEqual(monitor[0], want) {
+		t.Fatalf("monitor branch = %v, want %v", monitor, want)
+	}
+}
+
 func TestMixBranchesEncodeAndMonitorIndependently(t *testing.T) {
 	ctx := context.Background()
 	muxers := &remuxTestMuxerFactory{}

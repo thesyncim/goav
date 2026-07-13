@@ -1,24 +1,26 @@
 package goav
 
-import goavruntime "github.com/thesyncim/goav/runtime"
+import runconfig "github.com/thesyncim/goav/runconfig"
 
-type Config = goavruntime.Config
-type Option = goavruntime.Option
+type Config = runconfig.Config
+type Option = runconfig.Option
 
 var (
-	WithBufferPolicy     = goavruntime.WithBufferPolicy
-	WithClock            = goavruntime.WithClock
-	WithCodecAdapter     = goavruntime.WithCodecAdapter
-	WithCodecDescriptor  = goavruntime.WithCodecDescriptor
-	WithCloseWaitTimeout = goavruntime.WithCloseWaitTimeout
-	WithDecoder          = goavruntime.WithDecoder
-	WithDemuxer          = goavruntime.WithDemuxer
-	WithEncoder          = goavruntime.WithEncoder
-	WithEventCapacity    = goavruntime.WithEventCapacity
-	WithFilter           = goavruntime.WithFilter
-	WithFilterAdapter    = goavruntime.WithFilterAdapter
-	WithFormatAdapter    = goavruntime.WithFormatAdapter
-	WithMuxer            = goavruntime.WithMuxer
-	WithProber           = goavruntime.WithProber
-	WithRealtime         = goavruntime.WithRealtime
+	WithBufferPolicy     = runconfig.WithBufferPolicy
+	WithClock            = runconfig.WithClock
+	WithCodecAdapter     = runconfig.WithCodecAdapter
+	WithCodecDescriptor  = runconfig.WithCodecDescriptor
+	WithCloseWaitTimeout = runconfig.WithCloseWaitTimeout
+	WithDecoder          = runconfig.WithDecoder
+	WithDemuxer          = runconfig.WithDemuxer
+	WithEncoder          = runconfig.WithEncoder
+	WithEventCapacity    = runconfig.WithEventCapacity
+	WithFilter           = runconfig.WithFilter
+	WithFilterAdapter    = runconfig.WithFilterAdapter
+	WithFormatAdapter    = runconfig.WithFormatAdapter
+	WithMediaPools       = runconfig.WithMediaPools
+	WithMuxer            = runconfig.WithMuxer
+	WithProber           = runconfig.WithProber
+	WithRealtime         = runconfig.WithRealtime
+	WithShapeDelta       = runconfig.WithShapeDelta
 )

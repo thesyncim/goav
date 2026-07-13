@@ -647,14 +647,14 @@ func (b *jobStreamBuilder) Branches(branches ...BranchSpec) *Job {
 			job.setErr(err)
 			return job
 		}
-		decode := chainHasDecode(branches[i].operations)
+		decode := chainHasDecode(branches[i].operations) || (!parentFrame && branchOperationsNeedImplicitDecode(branches[i].operations))
 		_, from, err := plannedBranchAnchor(stream, branches[i], parentPacket)
 		if err != nil {
 			job.setErr(err)
 			return job
 		}
 		sharedOps := plannedBranchSharedOperationSpecs(stream, branches[i], parentPacket)
-		privateOps := plannedBranchPrivateOperationSpecs(stream, branches[i], parentPacket)
+		privateOps := plannedBranchPrivateOperationSpecs(stream, branches[i], parentPacket, parentFrame)
 		operations := append(cloneOperationSpecs(sharedOps), cloneOperationSpecs(privateOps)...)
 		// encode is derived from operations (chainEncodeSpec) at every reader —
 		// plannedBranchPrivateOperationSpecs already injects the plan.OpCopy for the
@@ -727,6 +727,8 @@ func validateBranchDomainFacts(selected av.MediaType, parentPacket bool, parentF
 	}
 	stream := streamIntent{Name: name, Select: plan.StreamSelect{Type: selected}}
 	branchHasDecode := chainHasDecode(operations)
+	branchImplicitDecode := !parentFrame && !branchHasDecode && branchOperationsNeedImplicitDecode(operations)
+	branchDecodes := branchHasDecode || branchImplicitDecode
 	if branchHasDecode && parentFrame {
 		return branchDecodeDomainError(stream.Name)
 	}
@@ -737,19 +739,19 @@ func validateBranchDomainFacts(selected av.MediaType, parentPacket bool, parentF
 		if !parentPacket {
 			return branchCopyUnsupportedError(stream)
 		}
-	} else if !parentFrame && !branchHasDecode && codecIntentSet(chainEncodeSpec(spec.operations)) {
+	} else if !parentFrame && !branchDecodes && codecIntentSet(chainEncodeSpec(spec.operations)) {
 		return branchPacketEncodeUnsupportedError(stream, chainEncodeSpec(spec.operations))
 	}
-	if !parentFrame && !branchHasDecode {
+	if !parentFrame && !branchDecodes {
 		if err := validatePacketDomainPlannedBranch(stream, spec, parentPacket); err != nil {
 			return err
 		}
 	}
-	if err := validateBranchStepTapDomains(spec, parentPacket); err != nil {
+	if err := validateBranchStepTapDomains(spec, parentPacket, branchDecodes); err != nil {
 		return err
 	}
 	effectiveEncode := chainEncodeSpec(spec.operations)
-	if parentPacket && !chainHasDecode(spec.operations) && !codecIntentSet(effectiveEncode) {
+	if parentPacket && !branchDecodes && !codecIntentSet(effectiveEncode) {
 		effectiveEncode = codec.Copy()
 	}
 	if !codecIntentSet(effectiveEncode) && !branchDestinationsAllSinkDestinations(spec.destinations) {
@@ -771,6 +773,29 @@ func validateBranchDomainFacts(selected av.MediaType, parentPacket bool, parentF
 		seen[destinationName] = i
 	}
 	return nil
+}
+
+func branchOperationsNeedImplicitDecode(operations []operationSpec) bool {
+	for i := range operations {
+		operation := operations[i]
+		switch operation.Kind {
+		case plan.OpTransform:
+			return true
+		case plan.OpStage:
+			if operation.Stage == nil || stageRequiresFrameInput(operation.Stage) {
+				return true
+			}
+		case plan.OpShape:
+			if !mediaShapeEmpty(operation.Shape) && operation.Shape.Domain == shape.DomainFrame {
+				return true
+			}
+		case plan.OpTap:
+			if operation.Tap.Domain == shape.DomainFrame {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func validatePacketDomainPlannedBranch(stream streamIntent, spec branchDomainFacts, parentPacket bool) error {
@@ -799,9 +824,9 @@ func validatePacketDomainPlannedBranch(stream streamIntent, spec branchDomainFac
 	return nil
 }
 
-func validateBranchStepTapDomains(spec branchDomainFacts, parentPacket bool) error {
+func validateBranchStepTapDomains(spec branchDomainFacts, parentPacket bool, branchDecodes bool) error {
 	domain := shape.DomainFrame
-	if parentPacket && !chainHasDecode(spec.operations) {
+	if parentPacket && !branchDecodes {
 		domain = shape.DomainPacket
 	}
 	steps := branchSpecChainSteps(spec)

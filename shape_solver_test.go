@@ -345,7 +345,7 @@ func TestAutoFailsWithoutRegisteredAdapter(t *testing.T) {
 	}
 	for _, want := range []string{
 		"no registered filter can perform the resample conversion before encode-opus",
-		"goavruntime.WithFilter(",
+		"runconfig.WithFilter(",
 		"bundle.MustNewFilters",
 	} {
 		if !strings.Contains(err.Error(), want) {
@@ -426,6 +426,62 @@ func TestAutoSolvesBranchChains(t *testing.T) {
 	defer task.Close()
 	if specText(task.Describe()) != specText(planned) {
 		t.Fatalf("Describe() != BuildLive():\nplanned:\n%s\nbuilt:\n%s", specText(planned), specText(task.Describe()))
+	}
+}
+
+// TestBranchAutoInsertMatchesDirectChain pins B2: a packet-domain branch with
+// frame transforms plans the same decode+resample lowerer shape as the direct
+// decoded chain. Pure packet branches still need explicit Decode before encode;
+// this is the transform path where the branch is an ordinary stream point.
+func TestBranchAutoInsertMatchesDirectChain(t *testing.T) {
+	pcm := av.CodecID("x_pcm_s16")
+	source := Source("mic",
+		shape.Packet(av.MediaAudio, pcm, shape.Audio(44_100, codec.Stereo, av.SampleFormatS16), shape.Stream("mic")),
+		func(_ context.Context, push SourcePush) error {
+			if _, err := push.Packet(&av.Packet{StreamID: "mic", Type: av.MediaAudio, Payload: av.Buffer{Bytes: []byte{0, 0}, Ownership: av.BufferImmutable}}); err != nil {
+				return err
+			}
+			return push.EOS()
+		})
+	rt := solverTestOpusRuntime(
+		testBundleFilters(),
+		WithDecoder(codec.Descriptor{ID: pcm, Name: "PCM", Type: av.MediaAudio, Capabilities: codec.Capabilities{SampleFormats: []string{av.SampleFormatS16}}}, recipePCMDecoderFactory{decoder: &recipePCMDecoder{}}),
+	)
+
+	direct := From(source).
+		Audio().
+		Decode().
+		Resample(48_000, codec.Stereo).
+		Encode(codec.Opus(codec.Bitrate(96_000))).
+		To(Sink(SinkFunc("direct", func(context.Context, Message) error { return nil }))).
+		UseRuntime(rt)
+	branch := From(source).
+		Audio().
+		Branches(
+			Branch("main").
+				Resample(48_000, codec.Stereo).
+				Encode(codec.Opus(codec.Bitrate(96_000))).
+				To(Sink(SinkFunc("branch", func(context.Context, Message) error { return nil }))),
+		).
+		UseRuntime(rt)
+
+	directPlan, err := direct.Describe()
+	if err != nil {
+		t.Fatalf("direct Describe(): %v", err)
+	}
+	branchPlan, err := branch.Describe()
+	if err != nil {
+		t.Fatalf("branch Describe(): %v", err)
+	}
+	directText := specText(directPlan)
+	branchText := specText(branchPlan)
+	for _, want := range []string{"decode", "resample"} {
+		if !strings.Contains(directText, want) {
+			t.Fatalf("direct plan missing %q:\n%s", want, directText)
+		}
+		if !strings.Contains(branchText, want) {
+			t.Fatalf("branch plan missing %q:\n%s", want, branchText)
+		}
 	}
 }
 

@@ -38,6 +38,8 @@ type videoCompositeStage struct {
 	sizes   map[av.StreamID]compositeArmSize
 	sync    *joinSyncState
 	free    map[av.StreamID][]*av.Frame
+	pools   *mediaPools
+	closed  bool
 	output  av.Frame
 	video   av.VideoFrame
 	message pipeline.Message
@@ -52,6 +54,10 @@ func newVideoCompositeStage(name string, inputs []av.StreamID, out av.StreamID, 
 }
 
 func newVideoCompositeStageWithPrealloc(name string, inputs []av.StreamID, out av.StreamID, layout []compositeLayout, mode joinSyncMode, preallocDepth int) *videoCompositeStage {
+	return newVideoCompositeStageWithPreallocAndPools(name, inputs, out, layout, mode, preallocDepth, nil)
+}
+
+func newVideoCompositeStageWithPreallocAndPools(name string, inputs []av.StreamID, out av.StreamID, layout []compositeLayout, mode joinSyncMode, preallocDepth int, pools *mediaPools) *videoCompositeStage {
 	if preallocDepth < 1 {
 		preallocDepth = 1
 	}
@@ -62,15 +68,16 @@ func newVideoCompositeStageWithPrealloc(name string, inputs []av.StreamID, out a
 		sizes:  make(map[av.StreamID]compositeArmSize, len(inputs)),
 		sync:   newJoinSyncStateWithPendingCap(mode, inputs, preallocDepth),
 		free:   make(map[av.StreamID][]*av.Frame, len(inputs)),
+		pools:  pools,
 	}
-	stage.output.Planes = make([]av.Plane, 3)
+	stage.output.Planes = takeMediaPlanes(pools, 3)
 	stage.sync.recycle = stage.recycleCompositeFrame
 	for i := range inputs {
 		free := make([]*av.Frame, 0, preallocDepth)
 		for j := 0; j < preallocDepth; j++ {
 			free = append(free, &av.Frame{
 				Video:  &av.VideoFrame{},
-				Planes: make([]av.Plane, 3),
+				Planes: takeMediaPlanes(pools, 3),
 			})
 		}
 		stage.free[inputs[i]] = free
@@ -92,6 +99,9 @@ func (s *videoCompositeStage) DescribeNode() pipeline.NodeSpec {
 func (s *videoCompositeStage) DroppedMessages() uint64 { return s.sync.droppedFrames() }
 
 func (s *videoCompositeStage) Handle(ctx context.Context, msg *pipeline.Message, emitter pipeline.Emitter) error {
+	if s.closed {
+		return pipeline.ErrClosed
+	}
 	switch msg.Kind {
 	case pipeline.MessageFrame:
 		if msg.Frame == nil || msg.Frame.Video == nil {
@@ -141,7 +151,27 @@ func (s *videoCompositeStage) Handle(ctx context.Context, msg *pipeline.Message,
 	}
 }
 
-func (s *videoCompositeStage) Close() error { return nil }
+func (s *videoCompositeStage) Close() error {
+	if s.closed {
+		return nil
+	}
+	s.closed = true
+	if s.sync != nil {
+		s.sync.recyclePending()
+	}
+	for id, free := range s.free {
+		for i := range free {
+			s.releaseCompositeFrame(free[i])
+			free[i] = nil
+		}
+		delete(s.free, id)
+	}
+	if s.pools != nil {
+		s.pools.putPlanes(s.output.Planes)
+		s.output.Planes = nil
+	}
+	return nil
+}
 
 func (s *videoCompositeStage) drain(ctx context.Context, emitter pipeline.Emitter) error {
 	for {
@@ -277,6 +307,9 @@ func copyPlane(dst []byte, dstW, dstH int, src *av.Plane, srcW, srcH, dstX, dstY
 		srcStride = srcW
 	}
 	srcBytes := src.Buffer.Bytes
+	if dstX >= 0 && dstY >= 0 && dstX+srcW <= dstW && dstY+srcH <= dstH && copyPlaneInside(dst, dstW, srcBytes, srcStride, src.Offset, srcW, srcH, dstX, dstY) {
+		return
+	}
 	for row := 0; row < srcH; row++ {
 		dy := dstY + row
 		if dy < 0 || dy >= dstH {
@@ -305,6 +338,30 @@ func copyPlane(dst []byte, dstW, dstH int, src *av.Plane, srcW, srcH, dstX, dstY
 		dstStart := dy*dstW + dx
 		copy(dst[dstStart:dstStart+copyW], srcBytes[srcStart:srcStart+copyW])
 	}
+}
+
+func copyPlaneInside(dst []byte, dstW int, src []byte, srcStride int, srcOffset int, srcW int, srcH int, dstX int, dstY int) bool {
+	if srcW <= 0 || srcH <= 0 || dstW <= 0 || srcStride < srcW || srcOffset < 0 {
+		return false
+	}
+	srcEnd := srcOffset + (srcH-1)*srcStride + srcW
+	if srcEnd > len(src) {
+		return false
+	}
+	dstEnd := (dstY+srcH-1)*dstW + dstX + srcW
+	if dstEnd > len(dst) {
+		return false
+	}
+	if srcStride == srcW && dstX == 0 && dstW == srcW {
+		copy(dst[dstY*dstW:dstY*dstW+srcW*srcH], src[srcOffset:srcOffset+srcW*srcH])
+		return true
+	}
+	for row := 0; row < srcH; row++ {
+		srcStart := srcOffset + row*srcStride
+		dstStart := (dstY+row)*dstW + dstX
+		copy(dst[dstStart:dstStart+srcW], src[srcStart:srcStart+srcW])
+	}
+	return true
 }
 
 // cloneCompositeFrame deep-copies a frame into a reusable per-arm slot so
@@ -348,7 +405,10 @@ func (s *videoCompositeStage) cloneCompositeFrame(frame *av.Frame) *av.Frame {
 func (s *videoCompositeStage) takeCompositeFrame(id av.StreamID) *av.Frame {
 	free := s.free[id]
 	if len(free) == 0 {
-		return &av.Frame{}
+		return &av.Frame{
+			Video:  &av.VideoFrame{},
+			Planes: takeMediaPlanes(s.pools, 3),
+		}
 	}
 	index := len(free) - 1
 	frame := free[index]
@@ -370,4 +430,14 @@ func (s *videoCompositeStage) recycleCompositeFrame(frame *av.Frame) {
 	}
 	id := frame.StreamID
 	s.free[id] = append(s.free[id], frame)
+}
+
+func (s *videoCompositeStage) releaseCompositeFrame(frame *av.Frame) {
+	if frame == nil {
+		return
+	}
+	if s.pools != nil {
+		s.pools.putPlanes(frame.Planes)
+		frame.Planes = nil
+	}
 }

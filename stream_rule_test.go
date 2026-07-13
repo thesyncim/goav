@@ -175,6 +175,56 @@ func lateStreamSource(late av.Stream, payload byte, stopLate <-chan struct{}, fi
 	)
 }
 
+func multiLateStreamSource(lates []av.Stream, stopLate <-chan struct{}, finish <-chan struct{}) InputSpec {
+	return Source("mic",
+		shape.Packet(av.MediaAudio, av.CodecOpus, shape.Audio(48_000, codec.Stereo, av.SampleFormatS16)),
+		func(sctx context.Context, push SourcePush) error {
+			declared := av.Packet{StreamID: "mic", Type: av.MediaAudio, Payload: av.Buffer{Bytes: []byte{1}, Ownership: av.BufferImmutable}}
+			if _, err := push.Packet(&declared); err != nil {
+				return err
+			}
+			for i := range lates {
+				announced := lates[i]
+				if _, err := push.Event(av.Event{Type: av.EventStreamAdded, StreamID: announced.ID, Stream: &announced}); err != nil {
+					return err
+				}
+			}
+			ticker := time.NewTicker(time.Millisecond)
+			defer ticker.Stop()
+			for done := false; !done; {
+				select {
+				case <-stopLate:
+					done = true
+				case <-sctx.Done():
+					return sctx.Err()
+				case <-ticker.C:
+					for i := range lates {
+						packet := av.Packet{
+							StreamID: lates[i].ID,
+							Type:     av.MediaAudio,
+							Keyframe: true,
+							Payload:  av.Buffer{Bytes: []byte{byte(i + 2)}, Ownership: av.BufferImmutable},
+						}
+						if _, err := push.Packet(&packet); err != nil {
+							return err
+						}
+					}
+				}
+			}
+			for i := range lates {
+				if _, err := push.Event(av.Event{Type: av.EventStreamRemoved, StreamID: lates[i].ID}); err != nil {
+					return err
+				}
+			}
+			select {
+			case <-finish:
+			case <-sctx.Done():
+			}
+			return push.EOS()
+		},
+	)
+}
+
 type taskSnapshotter interface {
 	Snapshot() snapshot.Task
 }
@@ -620,6 +670,62 @@ func TestOnStreamMultipleRulesAllApply(t *testing.T) {
 	waitForCount(t, "codec rule", 1, byCodec.Load)
 	close(stopLate)
 	waitForCondition(t, "both branches detached", func() bool {
+		return len(task.Snapshot().Branches) == 0
+	})
+	close(finish)
+	if err := <-runErr; err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestOnStreamMatchFirstLimitsRuntimeAttachments pins E3's stateful stream
+// condition: one installed rule matcher owns the first-N counter for this task,
+// so later matching stream announces do not attach branches.
+func TestOnStreamMatchFirstLimitsRuntimeAttachments(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	stopLate := make(chan struct{})
+	finish := make(chan struct{})
+	first := lateOpusStream("first-late")
+	second := lateOpusStream("second-late")
+	input := multiLateStreamSource([]av.Stream{first, second}, stopLate, finish)
+
+	var firstCount, secondCount atomic.Int32
+	limitedSink := Sink(SinkFunc("limited-sink", func(_ context.Context, msg Message) error {
+		if msg.Kind != pipeline.MessagePacket || msg.Packet == nil {
+			return nil
+		}
+		switch msg.Packet.StreamID {
+		case first.ID:
+			firstCount.Add(1)
+		case second.ID:
+			secondCount.Add(1)
+		}
+		return nil
+	}))
+
+	task, err := From(input).
+		OnStream(MatchMedia(av.MediaAudio).First(1), Branch("limited").Copy().To(limitedSink)).
+		Audio().Copy().To(Sink(SinkFunc("main", func(context.Context, Message) error { return nil }))).
+		BuildLive(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer task.Close()
+
+	runErr := make(chan error, 1)
+	go func() { runErr <- task.Run(ctx) }()
+
+	waitForCount(t, "first limited stream", 3, firstCount.Load)
+	if secondCount.Load() != 0 {
+		t.Fatalf("second stream received %d packets; MatchFirst(1) should not attach it", secondCount.Load())
+	}
+	if taskHasBranch(task, "limited-second-late") {
+		t.Fatal("second stream branch attached despite MatchFirst(1)")
+	}
+	close(stopLate)
+	waitForCondition(t, "limited branch detached", func() bool {
 		return len(task.Snapshot().Branches) == 0
 	})
 	close(finish)

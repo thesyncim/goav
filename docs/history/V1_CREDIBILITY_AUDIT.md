@@ -1,5 +1,7 @@
 # V1 Credibility Audit
 
+Historical campaign artifact; current release readiness guidance lives in `docs/ROADMAP.md` and `docs/RELEASING.md`.
+
 This is the reviewer map for the v1-credibility pass. Read it when you want to
 check the claim "this repo is close to release-ready" without spelunking
 through the whole tree. Each section points a requested improvement at the

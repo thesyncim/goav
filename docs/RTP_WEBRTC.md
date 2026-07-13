@@ -66,9 +66,9 @@ RTP sources observe the codec-change event without rebuilding the graph.
 
 The recipe layer also accepts raw RTP packet readers directly through the
 generic provider extension point: `goav.Input(provider)` adapts any source
-provider. `rtpav.Receive` and `webrtcav.Track` are the built-in ones, and
-external transports (SRT, NDI, ...) plug in the same way with zero goav
-changes. Declare codec intent on the provider so it can choose the
+provider. `rtpav.Receive`, `webrtcav.Track`, and the nested `playoutav` module
+use that seam; external transports (SRT, NDI, ...) plug in the same way with
+zero goav changes. Declare codec intent on the provider so it can choose the
 depacketizer:
 
 ```go

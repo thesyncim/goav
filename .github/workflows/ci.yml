@@ -7,6 +7,7 @@ on:
       - 'v*'
       - 'rtpav/v*'
       - 'webrtcav/v*'
+      - 'playoutav/v*'
   pull_request:
 
 permissions:
@@ -69,7 +70,7 @@ jobs:
 
       - name: Race
         if: matrix.full
-        run: CGO_ENABLED=1 go test -race -count=1 . ./pipeline ./goavtest ./format ./cmd/goav ./ctl ./internal/launchctl ./graphrender
+        run: CGO_ENABLED=1 go test -race -count=1 . ./pipeline ./goavtest ./format ./cmd/goav ./ctlserver ./internal/launchctl ./graphrender
 
       # One iteration per benchmark: catches bench bit-rot (compile/run errors)
       # without asserting timing, which would flake on shared runners.
@@ -78,6 +79,14 @@ jobs:
         run: |
           mkdir -p bench-results
           CGO_ENABLED=0 go test -run '^$' -bench . -benchmem -benchtime=1x ./... | tee bench-results/bench-smoke.txt
+
+      - name: PGO profile freshness
+        if: matrix.full
+        run: scripts/bench/check-pgo.sh
+
+      - name: Benchmark baseline ratchet
+        if: matrix.full
+        run: scripts/bench/baseline.sh check
 
       - name: Performance lab smoke
         if: matrix.full
@@ -100,11 +109,13 @@ jobs:
             bench-results/baseline/**/*.txt
             bench-results/latency/*.json
             bench-results/rss/*.json
+            bench-results/soak/*.json
             bench-results/pressure/*.json
             bench-results/control/*.json
             bench-results/fanout/*.json
             bench-results/live-sync/*.json
             bench-results/container/*.json
+            bench-results/manifest/*.json
             bench-results/pprof/**
             bench-results/bench-base.txt
             bench-results/bench-current.txt
@@ -154,8 +165,8 @@ jobs:
           staticcheck ./...
           govulncheck ./...
 
-      # The transport modules carry the pion dependencies the root module
-      # refuses (TestRootModuleDependencyPurity); each is gated like the root.
+      # Transport modules stay outside the root module graph
+      # (TestRootModuleDependencyPurity); each is gated like the root.
       - name: rtpav module
         if: matrix.full
         working-directory: rtpav
@@ -178,6 +189,17 @@ jobs:
           staticcheck ./...
           govulncheck ./...
 
+      - name: playoutav module
+        if: matrix.full
+        working-directory: playoutav
+        run: |
+          CGO_ENABLED=0 go build ./...
+          CGO_ENABLED=0 go test -count=1 ./...
+          CGO_ENABLED=1 go test -race -count=1 ./...
+          CGO_ENABLED=0 go vet ./...
+          staticcheck ./...
+          govulncheck ./...
+
       - name: Examples modules
         if: matrix.full
         run: |
@@ -192,7 +214,7 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/')
         run: |
           case "${GITHUB_REF_NAME}" in
-            v[0-9]*.[0-9]*.[0-9]*|rtpav/v[0-9]*.[0-9]*.[0-9]*|webrtcav/v[0-9]*.[0-9]*.[0-9]*)
+            v[0-9]*.[0-9]*.[0-9]*|rtpav/v[0-9]*.[0-9]*.[0-9]*|webrtcav/v[0-9]*.[0-9]*.[0-9]*|playoutav/v[0-9]*.[0-9]*.[0-9]*)
               ;;
             *)
               echo "unexpected tag shape: ${GITHUB_REF_NAME}" >&2

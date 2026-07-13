@@ -187,6 +187,22 @@ func TestPolicyConversionsMissingAndConstructors(t *testing.T) {
 	if shape.AllowResample().Covers(shape.AllowConvert()) {
 		t.Fatalf("resample policy should not cover convert")
 	}
+	custom := shape.AllowCustom("tone").Union(shape.AllowCustom("loudness")).Union(shape.AllowCustom("tone"))
+	if got, want := custom.String(), "loudness+tone"; got != want {
+		t.Fatalf("custom policy string = %q, want %q", got, want)
+	}
+	if got, want := custom.Constructors(), []string{`shape.AllowCustom("loudness")`, `shape.AllowCustom("tone")`}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("custom constructors = %#v, want %#v", got, want)
+	}
+	if !custom.Covers(shape.AllowCustom("tone")) || custom.Covers(shape.AllowCustom("meter")) {
+		t.Fatalf("custom policy coverage mismatch: %s", custom)
+	}
+	if got, want := custom.Missing(shape.AllowCustom("tone").Union(shape.AllowCustom("meter"))).Constructors(), []string{`shape.AllowCustom("meter")`}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("custom missing constructors = %#v, want %#v", got, want)
+	}
+	if !shape.AllowCustom(" ").Empty() {
+		t.Fatal("empty custom policy name should allow nothing")
+	}
 	if got := shape.Conversions(shape.Frame(av.MediaAudio), shape.Frame(av.MediaAudio)); !got.Empty() {
 		t.Fatalf("open expected facts should not require conversions, got %s", got)
 	}

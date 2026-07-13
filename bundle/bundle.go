@@ -23,7 +23,7 @@ import (
 	mp4adapter "github.com/thesyncim/goav/container/mp4"
 	webmadapter "github.com/thesyncim/goav/container/webm"
 	"github.com/thesyncim/goav/pipeline"
-	goavruntime "github.com/thesyncim/goav/runtime"
+	runconfig "github.com/thesyncim/goav/runconfig"
 )
 
 // ErrNilJob reports a nil recipe passed to Build or Run.
@@ -32,42 +32,42 @@ var ErrNilJob = errors.New("goav/bundle: nil job")
 // New builds a runtime with the bundled formats, codecs, and filters already
 // registered, then applies opts on top. Registration is last-wins, so opts can
 // add or override bundled implementations.
-func New(opts ...goavruntime.Option) (*goav.Runtime, error) {
+func New(opts ...runconfig.Option) (*goav.Runtime, error) {
 	return goav.New(appendOptions(Options(), opts...)...)
 }
 
 // MustNew is New for package-level setup and tests.
-func MustNew(opts ...goavruntime.Option) *goav.Runtime {
+func MustNew(opts ...runconfig.Option) *goav.Runtime {
 	return mustRuntime(New(opts...))
 }
 
 // NewFormats builds a runtime with only the bundled container-format adapters.
-func NewFormats(opts ...goavruntime.Option) (*goav.Runtime, error) {
+func NewFormats(opts ...runconfig.Option) (*goav.Runtime, error) {
 	return goav.New(appendOptions(FormatOptions(), opts...)...)
 }
 
 // MustNewFormats is NewFormats for package-level setup and tests.
-func MustNewFormats(opts ...goavruntime.Option) *goav.Runtime {
+func MustNewFormats(opts ...runconfig.Option) *goav.Runtime {
 	return mustRuntime(NewFormats(opts...))
 }
 
 // NewCodecs builds a runtime with only the bundled codec adapters.
-func NewCodecs(opts ...goavruntime.Option) (*goav.Runtime, error) {
+func NewCodecs(opts ...runconfig.Option) (*goav.Runtime, error) {
 	return goav.New(appendOptions(CodecOptions(), opts...)...)
 }
 
 // MustNewCodecs is NewCodecs for package-level setup and tests.
-func MustNewCodecs(opts ...goavruntime.Option) *goav.Runtime {
+func MustNewCodecs(opts ...runconfig.Option) *goav.Runtime {
 	return mustRuntime(NewCodecs(opts...))
 }
 
 // NewFilters builds a runtime with only the bundled frame-filter adapters.
-func NewFilters(opts ...goavruntime.Option) (*goav.Runtime, error) {
+func NewFilters(opts ...runconfig.Option) (*goav.Runtime, error) {
 	return goav.New(appendOptions(FilterOptions(), opts...)...)
 }
 
 // MustNewFilters is NewFilters for package-level setup and tests.
-func MustNewFilters(opts ...goavruntime.Option) *goav.Runtime {
+func MustNewFilters(opts ...runconfig.Option) *goav.Runtime {
 	return mustRuntime(NewFilters(opts...))
 }
 
@@ -82,13 +82,13 @@ func mustRuntime(runtime *goav.Runtime, err error) *goav.Runtime {
 // is the batteries-included counterpart to
 // job.UseRuntime(bundle.MustNew(...)).Build(ctx), while preserving New option
 // errors as returned errors.
-func Build(ctx context.Context, job *goav.Job, opts ...goavruntime.Option) (goav.Task, error) {
+func Build(ctx context.Context, job *goav.Job, opts ...runconfig.Option) (goav.Task, error) {
 	return BuildLive(ctx, job, opts...)
 }
 
 // BuildLive compiles job with a bundled runtime into the full live task
 // capability surface for inspection, watches, controls, and runtime mutation.
-func BuildLive(ctx context.Context, job *goav.Job, opts ...goavruntime.Option) (goav.LiveTask, error) {
+func BuildLive(ctx context.Context, job *goav.Job, opts ...runconfig.Option) (goav.LiveTask, error) {
 	if job == nil {
 		return nil, ErrNilJob
 	}
@@ -102,7 +102,7 @@ func BuildLive(ctx context.Context, job *goav.Job, opts ...goavruntime.Option) (
 // Describe compiles job's graph shape with a bundled runtime without opening
 // resources. It is the batteries-included counterpart to
 // job.UseRuntime(bundle.MustNew(...)).Describe().
-func Describe(ctx context.Context, job *goav.Job, opts ...goavruntime.Option) (pipeline.Spec, error) {
+func Describe(ctx context.Context, job *goav.Job, opts ...runconfig.Option) (pipeline.Spec, error) {
 	if job == nil {
 		return pipeline.Spec{}, ErrNilJob
 	}
@@ -120,7 +120,7 @@ func Describe(ctx context.Context, job *goav.Job, opts ...goavruntime.Option) (p
 }
 
 // Run compiles and runs job with a bundled runtime, then closes it.
-func Run(ctx context.Context, job *goav.Job, opts ...goavruntime.Option) error {
+func Run(ctx context.Context, job *goav.Job, opts ...runconfig.Option) error {
 	if job == nil {
 		return ErrNilJob
 	}
@@ -133,8 +133,8 @@ func Run(ctx context.Context, job *goav.Job, opts ...goavruntime.Option) error {
 
 // Options returns fresh runtime options for all bundled formats, codecs, and
 // filters. The returned slice is safe for callers to append to.
-func Options() []goavruntime.Option {
-	options := make([]goavruntime.Option, 0, len(formatOptions)+len(codecOptions)+len(filterOptions))
+func Options() []runconfig.Option {
+	options := make([]runconfig.Option, 0, len(formatOptions)+len(codecOptions)+len(filterOptions))
 	options = append(options, FormatOptions()...)
 	options = append(options, CodecOptions()...)
 	options = append(options, FilterOptions()...)
@@ -143,45 +143,45 @@ func Options() []goavruntime.Option {
 
 // FormatOptions returns fresh options for the bundled container adapters: IVF,
 // Annex B, Matroska, WebM, and MP4.
-func FormatOptions() []goavruntime.Option {
+func FormatOptions() []runconfig.Option {
 	return appendOptions(formatOptions)
 }
 
 // CodecOptions returns fresh options for the bundled pure-Go codec adapters:
 // Opus, AAC, VP8/VP9, AV1, and H264.
-func CodecOptions() []goavruntime.Option {
+func CodecOptions() []runconfig.Option {
 	return appendOptions(codecOptions)
 }
 
 // FilterOptions returns fresh options for the bundled frame filters: resample
 // and resize.
-func FilterOptions() []goavruntime.Option {
+func FilterOptions() []runconfig.Option {
 	return appendOptions(filterOptions)
 }
 
-var formatOptions = []goavruntime.Option{
-	goavruntime.WithFormatAdapter(ivfadapter.Register),
-	goavruntime.WithFormatAdapter(annexbadapter.Register),
-	goavruntime.WithFormatAdapter(matroskaadapter.Register),
-	goavruntime.WithFormatAdapter(webmadapter.Register),
-	goavruntime.WithFormatAdapter(mp4adapter.Register),
+var formatOptions = []runconfig.Option{
+	runconfig.WithFormatAdapter(ivfadapter.Register),
+	runconfig.WithFormatAdapter(annexbadapter.Register),
+	runconfig.WithFormatAdapter(matroskaadapter.Register),
+	runconfig.WithFormatAdapter(webmadapter.Register),
+	runconfig.WithFormatAdapter(mp4adapter.Register),
 }
 
-var codecOptions = []goavruntime.Option{
-	goavruntime.WithCodecAdapter(gopusadapter.Register),
-	goavruntime.WithCodecAdapter(goaacadapter.Register),
-	goavruntime.WithCodecAdapter(govpxadapter.Register),
-	goavruntime.WithCodecAdapter(goav1adapter.Register),
-	goavruntime.WithCodecAdapter(goh264adapter.Register),
+var codecOptions = []runconfig.Option{
+	runconfig.WithCodecAdapter(gopusadapter.Register),
+	runconfig.WithCodecAdapter(goaacadapter.Register),
+	runconfig.WithCodecAdapter(govpxadapter.Register),
+	runconfig.WithCodecAdapter(goav1adapter.Register),
+	runconfig.WithCodecAdapter(goh264adapter.Register),
 }
 
-var filterOptions = []goavruntime.Option{
-	goavruntime.WithFilterAdapter(resampleadapter.Register),
-	goavruntime.WithFilterAdapter(resizeadapter.Register),
+var filterOptions = []runconfig.Option{
+	runconfig.WithFilterAdapter(resampleadapter.Register),
+	runconfig.WithFilterAdapter(resizeadapter.Register),
 }
 
-func appendOptions(base []goavruntime.Option, extra ...goavruntime.Option) []goavruntime.Option {
-	options := make([]goavruntime.Option, 0, len(base)+len(extra))
+func appendOptions(base []runconfig.Option, extra ...runconfig.Option) []runconfig.Option {
+	options := make([]runconfig.Option, 0, len(base)+len(extra))
 	options = append(options, base...)
 	options = append(options, extra...)
 	return options

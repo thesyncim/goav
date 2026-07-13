@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
@@ -62,6 +63,50 @@ func TestStreamMatchContracts(t *testing.T) {
 	}
 	if custom.Description() != "custom" || (StreamMatch{}).Description() != "none" {
 		t.Fatalf("matcher descriptions = %q / %q", custom.Description(), (StreamMatch{}).Description())
+	}
+
+	limited := MatchMedia(av.MediaAudio).First(2)
+	if limited.Description() != "media=audio, first=2" {
+		t.Fatalf("limited matcher description = %q", limited.Description())
+	}
+	limitedRuntime := limited.Matcher()
+	video := stream
+	video.Type = av.MediaVideo
+	video.Codec.Type = av.MediaVideo
+	if limitedRuntime.Matches(video) {
+		t.Fatal("limited media matcher matched the wrong media")
+	}
+	if !limitedRuntime.Matches(stream) || !limitedRuntime.Matches(stream) {
+		t.Fatal("limited matcher did not match its first two audio streams")
+	}
+	if limitedRuntime.Matches(stream) {
+		t.Fatal("limited matcher matched past its first-stream budget")
+	}
+	firstAny := MatchFirst(1).Matcher()
+	if !firstAny.Matches(stream) || firstAny.Matches(stream) {
+		t.Fatal("MatchFirst(1) did not limit the runtime matcher to one stream")
+	}
+	if MatchFirst(0).Matches(stream) {
+		t.Fatal("MatchFirst(0) should be an empty matcher")
+	}
+	window := MatchMedia(av.MediaAudio).After(2 * time.Second).Within(5 * time.Second)
+	if window.Description() != "media=audio, after=2s, within=5s" {
+		t.Fatalf("window matcher description = %q", window.Description())
+	}
+	start := time.Unix(10, 0)
+	windowRuntime := window.MatcherAt(start)
+	if windowRuntime.MatchesAt(stream, start.Add(time.Second)) {
+		t.Fatal("window matcher matched before its after boundary")
+	}
+	if !windowRuntime.MatchesAt(stream, start.Add(2*time.Second)) ||
+		!windowRuntime.MatchesAt(stream, start.Add(5*time.Second)) {
+		t.Fatal("window matcher did not match inside its inclusive window")
+	}
+	if windowRuntime.MatchesAt(stream, start.Add(5*time.Second+time.Nanosecond)) {
+		t.Fatal("window matcher matched after its within boundary")
+	}
+	if MatchAfter(0).Matches(stream) || MatchWithin(0).Matches(stream) {
+		t.Fatal("zero-duration time matchers should be empty")
 	}
 }
 

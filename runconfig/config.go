@@ -1,9 +1,9 @@
-// Package runtime owns goav runtime construction options.
+// Package runconfig owns goav runtime construction options.
 //
 // The root goav package stays focused on recipe grammar. Import this package
 // when an application needs to configure a bare runtime, register custom
 // codecs, formats, or filters, change buffering, or inject clocks.
-package runtime
+package runconfig
 
 import (
 	"errors"
@@ -15,6 +15,7 @@ import (
 	"github.com/thesyncim/goav/filter"
 	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/pipeline"
+	"github.com/thesyncim/goav/shape"
 )
 
 // Config is the mutable runtime construction state passed to Option values.
@@ -30,12 +31,53 @@ type Config struct {
 	Clock            av.Clock
 	EventCapacity    int
 	CloseWaitTimeout time.Duration
+	MediaPools       bool
+	ShapeDeltas      []ShapeDeltaContributor
+}
+
+// ShapeDeltaRequest is passed to a runtime-registered shape solver extension
+// when a chain's .Auto(...) policy is active and the next operation needs a
+// shape the current stream does not satisfy.
+type ShapeDeltaRequest struct {
+	Actual     shape.Spec
+	Expected   shape.Spec
+	Preference shape.Spec
+	Realtime   bool
+}
+
+// ShapeDeltaPlan is one custom solver insertion. Stage must be a fresh
+// pipeline.Stage for this planning call; stages that implement shape.Contract
+// teach the planner the output shape after insertion.
+type ShapeDeltaPlan struct {
+	Component string
+	Detail    string
+	Needed    shape.Policy
+	Stage     pipeline.Stage
+}
+
+// ShapeDeltaContributor teaches one runtime how to plan a custom .Auto(...)
+// conversion class. Return planned=false when this contributor does not apply
+// to the request.
+type ShapeDeltaContributor interface {
+	ShapeDelta(ShapeDeltaRequest) (ShapeDeltaPlan, bool, error)
+}
+
+// ShapeDeltaFunc adapts a function into a ShapeDeltaContributor.
+type ShapeDeltaFunc func(ShapeDeltaRequest) (ShapeDeltaPlan, bool, error)
+
+// ShapeDelta calls f(request).
+func (f ShapeDeltaFunc) ShapeDelta(request ShapeDeltaRequest) (ShapeDeltaPlan, bool, error) {
+	if f == nil {
+		return ShapeDeltaPlan{}, false, nil
+	}
+	return f(request)
 }
 
 // Option configures a runtime under construction: registries (codecs, formats,
-// filters), pacing (WithRealtime, WithClock), and graph policy
-// (WithBufferPolicy, WithEventCapacity, WithCloseWaitTimeout). Invalid options
-// return an error from goav.New instead of silently no-oping.
+// filters), pacing (WithRealtime, WithClock), graph policy
+// (WithBufferPolicy, WithEventCapacity, WithCloseWaitTimeout), and optional
+// runtime-owned scratch pooling. Invalid options return an error from goav.New
+// instead of silently no-oping.
 type Option func(*Config) error
 
 // NewConfig builds the default bare runtime configuration, applies options in
@@ -247,6 +289,30 @@ func WithCloseWaitTimeout(timeout time.Duration) Option {
 			return fmt.Errorf("close wait timeout must be non-negative: %s", timeout)
 		}
 		config.CloseWaitTimeout = timeout
+		return nil
+	}
+}
+
+// WithMediaPools enables runtime-scoped scratch pools for cold attach/detach
+// churn. Pools are owned by one Runtime, never shared globally, and only
+// recycle internal media scratch whose lifetime the runtime controls.
+func WithMediaPools(enabled bool) Option {
+	return func(config *Config) error {
+		config.MediaPools = enabled
+		return nil
+	}
+}
+
+// WithShapeDelta registers one per-runtime shape-solver extension. The
+// contributor is consulted only when .Auto(...) is active; use
+// shape.AllowCustom("name") in the policy returned by the contributor and in
+// caller recipes to make a custom class explicit.
+func WithShapeDelta(contributor ShapeDeltaContributor) Option {
+	return func(config *Config) error {
+		if contributor == nil {
+			return errors.New("shape delta contributor is nil")
+		}
+		config.ShapeDeltas = append(config.ShapeDeltas, contributor)
 		return nil
 	}
 }

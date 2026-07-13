@@ -2885,6 +2885,88 @@ func TestTaskAttachRuntimeDecodeBranchFromPacketTap(t *testing.T) {
 	}
 }
 
+func TestAttachAfterSiblingDetachRefusalNamesFix(t *testing.T) {
+	ctx := context.Background()
+	frame := av.Frame{
+		StreamID: "audio",
+		Type:     av.MediaAudio,
+		Audio: &av.AudioFrame{
+			SampleRate:   48000,
+			Channels:     codec.Stereo,
+			SampleFormat: av.SampleFormatS16,
+			Samples:      1,
+		},
+		Planes: []av.Plane{{Buffer: av.Buffer{Bytes: []byte{1, 0}, Ownership: av.BufferImmutable}}},
+	}
+	source := &runtimeTestSource{
+		name:    "source",
+		message: pipeline.Message{Kind: pipeline.MessageFrame, Frame: &frame},
+	}
+	base := &runtimeTestSink{name: "base"}
+	graph := expertGraph(mustNew())
+	src := graph.Source("source", source)
+	graph.Connect(src.Out(), graph.Sink("base", base).In())
+	builtTask, err := graph.Build(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtimeTask := builtTask.(*task)
+	runtimeTask.taps = []snapshot.Tap{{
+		Name:      "audio.frames",
+		MediaKind: av.MediaAudio,
+		Domain:    shape.DomainFrame,
+		Shape: shape.Spec{
+			Domain:       shape.DomainFrame,
+			MediaKind:    av.MediaAudio,
+			StreamID:     "audio",
+			Codec:        av.CodecPCM,
+			SampleRate:   48000,
+			Channels:     codec.Stereo,
+			SampleFormat: av.SampleFormatS16,
+		},
+		Node: "source",
+	}}
+	defer builtTask.Close()
+
+	parent, err := builtTask.Attach(ctx, Branch("parent").
+		From(FrameTap("audio.frames")).
+		Tap(FrameTap("parent.frames")).
+		To(Sink(&runtimeTestSink{name: "parent"})))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := findTap(builtTask.Taps(), "parent.frames"); !ok {
+		t.Fatalf("taps = %+v, want parent.frames", builtTask.Taps())
+	}
+	child, err := builtTask.Attach(ctx, Branch("child").
+		From(FrameTap("parent.frames")).
+		To(Sink(&runtimeTestSink{name: "child"})))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := builtTask.Detach(ctx, parent); err != nil {
+		t.Fatal(err)
+	}
+	if err := child.Close(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = builtTask.Attach(ctx, Branch("late").
+		From(FrameTap("parent.frames")).
+		To(Sink(&runtimeTestSink{name: "late"})))
+	var buildErr *BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != runtimeBranchTapMissingCode || !errors.Is(err, pipeline.ErrUnknownNode) {
+		t.Fatalf("err = %v, want runtime_branch_tap_missing wrapping ErrUnknownNode", err)
+	}
+	if !strings.Contains(strings.Join(buildErr.FixLines(), "\n"), "reattach that branch") {
+		t.Fatalf("fixes = %v, want detached-runtime-branch guidance", buildErr.FixLines())
+	}
+	details := strings.Join(buildErr.DetailLines(), "\n")
+	if !strings.Contains(details, "audio.frames") || strings.Contains(details, "parent.frames") {
+		t.Fatalf("details = %q, want surviving taps only", details)
+	}
+}
+
 func TestTaskAttachRuntimeFlowDecodeBranchFromPacketTap(t *testing.T) {
 	ctx := context.Background()
 	decoder := &decodeTestDecoder{}

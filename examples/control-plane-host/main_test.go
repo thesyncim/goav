@@ -16,7 +16,7 @@ import (
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
-	"github.com/thesyncim/goav/ctl"
+	"github.com/thesyncim/goav/ctlserver"
 	"github.com/thesyncim/goav/pipeline"
 )
 
@@ -34,7 +34,7 @@ func TestRunHostServesCustomHelpAndAttach(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	help := sendDemoRequest(t, socket, ctl.Request{
+	help := sendDemoRequest(t, socket, ctlserver.Request{
 		Op:   "help",
 		Args: map[string]string{"topic": "attach"},
 	})
@@ -64,7 +64,7 @@ func TestRunHostServesCustomHelpAndAttach(t *testing.T) {
 		}
 	}
 
-	for _, request := range []ctl.Request{
+	for _, request := range []ctlserver.Request{
 		{Op: "control", Verb: "rate", Args: map[string]string{"value": "0.5", "source": "fixture"}},
 		{Op: "control", Verb: "seek", Args: map[string]string{"position": "2s", "source": "fixture"}},
 		{Op: "control", Verb: "segment", Args: map[string]string{"start": "1s", "end": "3s", "source": "fixture"}},
@@ -74,12 +74,12 @@ func TestRunHostServesCustomHelpAndAttach(t *testing.T) {
 			t.Fatalf("source control %s = %+v", request.Verb, response)
 		}
 	}
-	controls := sendDemoRequest(t, socket, ctl.Request{Op: "control", Verb: "fixture.controls"})
+	controls := sendDemoRequest(t, socket, ctlserver.Request{Op: "control", Verb: "fixture.controls"})
 	controlMap := responseMap(t, controls)
 	if got := int(controlMap["count"].(float64)); got != 3 {
 		t.Fatalf("fixture.controls count = %d, want 3; response=%+v", got, controls)
 	}
-	rateControls := sendDemoRequest(t, socket, ctl.Request{
+	rateControls := sendDemoRequest(t, socket, ctlserver.Request{
 		Op:   "control",
 		Verb: "fixture.controls",
 		Args: map[string]string{"type": string(av.EventRate)},
@@ -90,7 +90,7 @@ func TestRunHostServesCustomHelpAndAttach(t *testing.T) {
 	}
 
 	out := filepath.Join(t.TempDir(), "archive copy.webm")
-	attach := sendDemoRequest(t, socket, ctl.Request{
+	attach := sendDemoRequest(t, socket, ctlserver.Request{
 		Op:     "attach",
 		Tap:    "frames",
 		Branch: "archive",
@@ -102,7 +102,7 @@ func TestRunHostServesCustomHelpAndAttach(t *testing.T) {
 	}
 
 	thumbOut := filepath.Join(t.TempDir(), "thumbnails.ivf")
-	thumbs := sendDemoRequest(t, socket, ctl.Request{
+	thumbs := sendDemoRequest(t, socket, ctlserver.Request{
 		Op:     "attach",
 		Tap:    "frames",
 		Branch: "thumbnails",
@@ -113,7 +113,7 @@ func TestRunHostServesCustomHelpAndAttach(t *testing.T) {
 		t.Fatalf("thumbnail attach = %+v", thumbs)
 	}
 
-	memory := sendDemoRequest(t, socket, ctl.Request{
+	memory := sendDemoRequest(t, socket, ctlserver.Request{
 		Op:       "attach",
 		Tap:      "frames",
 		Branch:   "memory",
@@ -123,7 +123,7 @@ func TestRunHostServesCustomHelpAndAttach(t *testing.T) {
 		t.Fatalf("memory attach = %+v", memory)
 	}
 
-	generic := sendDemoRequest(t, socket, ctl.Request{
+	generic := sendDemoRequest(t, socket, ctlserver.Request{
 		Op:       "attach",
 		Tap:      "frames",
 		Branch:   "acme-generic",
@@ -134,7 +134,7 @@ func TestRunHostServesCustomHelpAndAttach(t *testing.T) {
 	}
 
 	genericFileOut := filepath.Join(t.TempDir(), "acme generic.webm")
-	genericFile := sendDemoRequest(t, socket, ctl.Request{
+	genericFile := sendDemoRequest(t, socket, ctlserver.Request{
 		Op:     "attach",
 		Tap:    "frames",
 		Branch: "acme-file",
@@ -145,7 +145,7 @@ func TestRunHostServesCustomHelpAndAttach(t *testing.T) {
 		t.Fatalf("generic custom encoder file attach = %+v", genericFile)
 	}
 
-	custom := sendDemoRequest(t, socket, ctl.Request{
+	custom := sendDemoRequest(t, socket, ctlserver.Request{
 		Op:       "attach",
 		Tap:      "frames",
 		Branch:   "acme-preview",
@@ -155,7 +155,7 @@ func TestRunHostServesCustomHelpAndAttach(t *testing.T) {
 		t.Fatalf("custom encoder attach = %+v", custom)
 	}
 
-	badThumb := sendDemoRequest(t, socket, ctl.Request{
+	badThumb := sendDemoRequest(t, socket, ctlserver.Request{
 		Op:       "attach",
 		Tap:      "frames",
 		Branch:   "bad-thumb",
@@ -165,7 +165,7 @@ func TestRunHostServesCustomHelpAndAttach(t *testing.T) {
 		t.Fatalf("bad thumbnail response = %+v", badThumb)
 	}
 
-	graph := sendDemoRequest(t, socket, ctl.Request{Op: "graph"})
+	graph := sendDemoRequest(t, socket, ctlserver.Request{Op: "graph"})
 	flowchart, ok := graph.Result.(string)
 	if !graph.OK || graph.Error != nil || !ok {
 		t.Fatalf("graph = %+v", graph)
@@ -188,7 +188,7 @@ func TestRunHostServesCustomHelpAndAttach(t *testing.T) {
 		}
 	}
 
-	rebranch := sendDemoRequest(t, socket, ctl.Request{
+	rebranch := sendDemoRequest(t, socket, ctlserver.Request{
 		Op:       "rebranch",
 		Branch:   "memory",
 		Pipeline: `thumbnail every=10 label=slow ! memorysink name=slow-preview`,
@@ -198,7 +198,7 @@ func TestRunHostServesCustomHelpAndAttach(t *testing.T) {
 	}
 
 	for _, branch := range []string{"archive", "thumbnails", "memory", "acme-generic", "acme-file", "acme-preview"} {
-		detach := sendDemoRequest(t, socket, ctl.Request{Op: "detach", Branch: branch})
+		detach := sendDemoRequest(t, socket, ctlserver.Request{Op: "detach", Branch: branch})
 		if !detach.OK || detach.Error != nil {
 			t.Fatalf("detach %s = %+v", branch, detach)
 		}
@@ -497,7 +497,7 @@ func TestStartReadySourcePreservesControl(t *testing.T) {
 	}
 }
 
-func sendDemoRequest(t *testing.T, socket string, request ctl.Request) ctl.Response {
+func sendDemoRequest(t *testing.T, socket string, request ctlserver.Request) ctlserver.Response {
 	t.Helper()
 	conn, err := net.Dial("unix", socket)
 	if err != nil {
@@ -507,7 +507,7 @@ func sendDemoRequest(t *testing.T, socket string, request ctl.Request) ctl.Respo
 	if err := json.NewEncoder(conn).Encode(request); err != nil {
 		t.Fatal(err)
 	}
-	var response ctl.Response
+	var response ctlserver.Response
 	if err := json.NewDecoder(conn).Decode(&response); err != nil {
 		t.Fatal(err)
 	}
@@ -525,7 +525,7 @@ func runDemoCLI(t *testing.T, socket string, args ...string) string {
 	return string(output)
 }
 
-func responseMap(t *testing.T, response ctl.Response) map[string]any {
+func responseMap(t *testing.T, response ctlserver.Response) map[string]any {
 	t.Helper()
 	result, ok := response.Result.(map[string]any)
 	if !response.OK || response.Error != nil || !ok {

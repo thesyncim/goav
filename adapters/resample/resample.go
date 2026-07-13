@@ -238,6 +238,14 @@ func resampledSampleCount(inputSamples int, inputRate int, outputRate int) int {
 }
 
 func resampleS16(dst []byte, src []byte, inputSamples int, inputRate int, inputChannels int, outputSamples int, outputRate int, outputChannels int) {
+	if inputRate == outputRate && inputSamples == outputSamples {
+		if inputChannels == outputChannels {
+			copy(dst[:inputSamples*inputChannels*2], src[:inputSamples*inputChannels*2])
+			return
+		}
+		remapS16Channels(dst, src, inputSamples, inputChannels, outputChannels)
+		return
+	}
 	for sample := 0; sample < outputSamples; sample++ {
 		position := sample * inputRate
 		base := position / outputRate
@@ -254,6 +262,15 @@ func resampleS16(dst []byte, src []byte, inputSamples int, inputRate int, inputC
 			if frac != 0 {
 				value = (a*(outputRate-frac) + b*frac) / outputRate
 			}
+			putS16(dst, (sample*outputChannels+channel)*2, int16(value))
+		}
+	}
+}
+
+func remapS16Channels(dst []byte, src []byte, samples int, inputChannels int, outputChannels int) {
+	for sample := 0; sample < samples; sample++ {
+		for channel := 0; channel < outputChannels; channel++ {
+			value := mixedSampleS16(src, sample, inputChannels, channel, outputChannels)
 			putS16(dst, (sample*outputChannels+channel)*2, int16(value))
 		}
 	}

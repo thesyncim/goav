@@ -3,11 +3,13 @@ package goav
 import (
 	"context"
 	"sync"
+	"time"
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/inspect"
 	"github.com/thesyncim/goav/plan"
 	"github.com/thesyncim/goav/shape"
+	sourcepkg "github.com/thesyncim/goav/source"
 )
 
 // streamRuleEventCapacity sizes the rule engine's internal watch buffer.
@@ -27,6 +29,7 @@ type taskStreamRules struct {
 	domain shape.MediaDomain
 	rules  []streamRule
 
+	matchers []sourcepkg.StreamMatcher
 	mu       sync.Mutex
 	attached map[av.StreamID][]streamRuleAttachment
 }
@@ -59,10 +62,16 @@ func (t *task) installStreamRules(sourceNode string, domain shape.MediaDomain, r
 	if t == nil || len(rules) == 0 {
 		return
 	}
+	started := time.Now()
+	matchers := make([]sourcepkg.StreamMatcher, len(rules))
+	for i := range rules {
+		matchers[i] = rules[i].match.MatcherAt(started)
+	}
 	t.rules = &taskStreamRules{
 		source:   sourceNode,
 		domain:   domain,
 		rules:    rules,
+		matchers: matchers,
 		attached: make(map[av.StreamID][]streamRuleAttachment),
 	}
 	events := t.watch.subscribe(
@@ -103,13 +112,17 @@ func (t *task) handleStreamAdded(event av.Event) {
 		t.publishStreamRuleError(event.StreamID, "", errStreamRuleStreamID)
 		return
 	}
+	announcedAt := event.At
+	if announcedAt.IsZero() {
+		announcedAt = time.Now()
+	}
 	ctx := context.Background()
 	for index := range t.rules.rules {
 		rule := t.rules.rules[index]
-		if !rule.match.Matches(stream) {
+		if t.streamRuleAttached(stream.ID, index) {
 			continue
 		}
-		if t.streamRuleAttached(stream.ID, index) {
+		if !t.rules.matchStream(index, stream, announcedAt) {
 			continue
 		}
 		input, err := t.streamRuleAttachInput(rule, stream)
@@ -124,6 +137,20 @@ func (t *task) handleStreamAdded(event av.Event) {
 		}
 		t.trackStreamRuleAttachment(stream.ID, index, attachment)
 	}
+}
+
+func (r *taskStreamRules) matchStream(index int, stream av.Stream, announcedAt time.Time) bool {
+	if r == nil || index < 0 {
+		return false
+	}
+	if index < len(r.matchers) {
+		return r.matchers[index].MatchesAt(stream, announcedAt)
+	}
+	if index < len(r.rules) {
+		matcher := r.rules[index].match.MatcherAt(announcedAt)
+		return matcher.MatchesAt(stream, announcedAt)
+	}
+	return false
 }
 
 func (t *task) streamRuleAttachInput(rule streamRule, stream av.Stream) (streamRuleAttachInput, error) {

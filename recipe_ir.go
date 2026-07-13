@@ -138,6 +138,10 @@ func newBranchJobRecipeSnapshot(job *Job) recipeCompileSnapshot {
 	}
 }
 
+func planBranchCompositionRecipe(recipe recipeir.Recipe, input InputSpec, namedOutputs []namedDestinationSpec) (branchComposePlan, error) {
+	return planBranchCompositionSnapshot(recipe, input, branchDestinationAttachmentsFromSpecs(namedOutputs))
+}
+
 func recipeIRFromIntent(in intent, kind recipeir.Kind) recipeir.Recipe {
 	out := recipeir.Recipe{
 		Kind: kind,

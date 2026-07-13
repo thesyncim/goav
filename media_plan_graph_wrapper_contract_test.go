@@ -68,7 +68,7 @@ func TestMediaPlanPacketCopyStreamLowererRefusalContracts(t *testing.T) {
 	}
 }
 
-func TestStreamIntentPacketCopyOnlyContracts(t *testing.T) {
+func TestRecipeIRStreamPacketCopyOnlyContracts(t *testing.T) {
 	copyOp := operationSpec{Kind: plan.OpCopy, Encode: codec.Copy()}
 	packetTap := operationSpec{Kind: plan.OpTap, Tap: tapIntent{Domain: shape.DomainPacket, After: plan.OpCopy}}
 	annotation := operationSpec{Kind: plan.OpShape, Auto: &shape.Policy{}}
@@ -123,8 +123,8 @@ func TestStreamIntentPacketCopyOnlyContracts(t *testing.T) {
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
-			if got := streamIntentPacketCopyOnly(tc.stream); got != tc.want {
-				t.Fatalf("streamIntentPacketCopyOnly() = %v, want %v", got, tc.want)
+			if got := recipeIRStreamPacketCopyOnly(recipeIRStreamFromIntent(tc.stream)); got != tc.want {
+				t.Fatalf("recipeIRStreamPacketCopyOnly() = %v, want %v", got, tc.want)
 			}
 		})
 	}

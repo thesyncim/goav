@@ -10,7 +10,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/thesyncim/goav/ctl"
+	"github.com/thesyncim/goav/ctlserver"
 )
 
 func main() {
@@ -44,7 +44,7 @@ func runCtlCommand(argv []string, stdout io.Writer, stderr io.Writer) int {
 		if len(topic) != 0 {
 			topic = topic[1:]
 		}
-		text, err := ctl.Help(topic)
+		text, err := ctlserver.Help(topic)
 		if err != nil {
 			printErr(stderr, err)
 			return 2
@@ -52,7 +52,7 @@ func runCtlCommand(argv []string, stdout io.Writer, stderr io.Writer) int {
 		fmt.Fprint(stdout, text)
 		return 0
 	}
-	request, err := ctl.RequestFromCLI(args)
+	request, err := ctlserver.RequestFromCLI(args)
 	if err != nil {
 		printErr(stderr, err)
 		return 2
@@ -89,11 +89,11 @@ func parseCtlArgs(argv []string) (string, []string, error) {
 	return control, args, nil
 }
 
-func send(address string, request ctl.Request) error {
+func send(address string, request ctlserver.Request) error {
 	return sendWithOutput(address, request, os.Stdout)
 }
 
-func sendWithOutput(address string, request ctl.Request, stdout io.Writer) error {
+func sendWithOutput(address string, request ctlserver.Request, stdout io.Writer) error {
 	path, ok := strings.CutPrefix(address, "unix://")
 	if !ok || path == "" {
 		return fmt.Errorf("unsupported control address %q: expected unix://PATH", address)
@@ -107,7 +107,7 @@ func sendWithOutput(address string, request ctl.Request, stdout io.Writer) error
 	if err := encoder.Encode(request); err != nil {
 		return err
 	}
-	var response ctl.Response
+	var response ctlserver.Response
 	if follows(request) {
 		decoder := json.NewDecoder(conn)
 		for {
@@ -149,7 +149,7 @@ func sendWithOutput(address string, request ctl.Request, stdout io.Writer) error
 	return json.NewEncoder(stdout).Encode(response.Result)
 }
 
-func follows(request ctl.Request) bool {
+func follows(request ctlserver.Request) bool {
 	switch request.Op {
 	case "events", "watch":
 		return request.Args["follow"] == "true"
@@ -158,7 +158,7 @@ func follows(request ctl.Request) bool {
 	}
 }
 
-func rawText(request ctl.Request) bool {
+func rawText(request ctlserver.Request) bool {
 	switch request.Op {
 	case "help", "graph", "flowchart":
 		return true

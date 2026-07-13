@@ -7,7 +7,9 @@ import (
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/filter"
+	"github.com/thesyncim/goav/internal/recipeir"
 	"github.com/thesyncim/goav/plan"
+	runconfig "github.com/thesyncim/goav/runconfig"
 	"github.com/thesyncim/goav/shape"
 )
 
@@ -24,31 +26,32 @@ import (
 // transform operation, the registry adapter that performs it, the conversion
 // classes it needed, and the human delta for errors and diagnostics.
 type shapeConversionPlan struct {
-	operation operationSpec
+	operation recipeir.Operation
+	transform transformSpec
 	factory   string
 	needed    shape.Policy
 	detail    string
 }
 
-// solveOperationSpecShapes walks one stream chain's operations with the shape
+// solveRecipeIROperationShapes walks one stream chain's operations with the shape
 // solver. It returns the solved operation list (nil when nothing was inserted)
 // and one diagnostic per insertion.
-func solveOperationSpecShapes(operation string, rt *runtime, stream streamIntent, initial shape.Spec) ([]operationSpec, []plan.Diagnostic, error) {
+func solveRecipeIROperationShapes(operation string, rt *runtime, stream recipeir.Stream, initial shape.Spec) ([]recipeir.Operation, []plan.Diagnostic, error) {
 	if rt == nil {
 		// No bundled runtime (expert or test states): keep the validate-only walk.
-		return nil, nil, validateOperationSpecShapes(operation, stream, initial)
+		return nil, nil, validateRecipeIROperationShapes(operation, stream, stream.Operations, initial)
 	}
 	current := normalizeTapShape(initial)
 	if current.MediaKind == "" {
-		current.MediaKind = stream.Select.Type
+		current.MediaKind = stream.Selector.Type
 	}
 	if current.Codec == "" {
-		current.Codec = stream.Select.Codec
+		current.Codec = stream.Selector.Codec
 	}
-	node := firstNonEmpty(stream.Name, string(stream.Select.ID), string(stream.Select.Type), "stream")
-	policy, policyActive := chainAutoPolicy(stream.Operations)
-	preference, preferenceActive := chainPreference(stream.Operations)
-	solved := make([]operationSpec, 0, len(stream.Operations)+1)
+	node := firstNonEmpty(stream.Name, string(stream.Selector.ID), string(stream.Selector.Type), "stream")
+	policy, policyActive := recipeIRChainAutoPolicy(stream.Operations)
+	preference, preferenceActive := recipeIRChainPreference(stream.Operations)
+	solved := make([]recipeir.Operation, 0, len(stream.Operations)+1)
 	var diagnostics []plan.Diagnostic
 	inserted := false
 	for i := range stream.Operations {
@@ -57,7 +60,7 @@ func solveOperationSpecShapes(operation string, rt *runtime, stream streamIntent
 		// .Require(...) assertion falls through to the contract check below.
 		if next.Kind == plan.OpTap {
 			solved = append(solved, next)
-			current = operationSpecOutputShape(current, next)
+			current = recipeIROperationOutputShape(current, next)
 			continue
 		}
 		if next.Kind == plan.OpShape && next.Require == nil {
@@ -65,34 +68,34 @@ func solveOperationSpecShapes(operation string, rt *runtime, stream streamIntent
 				return nil, nil, err
 			}
 			solved = append(solved, next)
-			current = operationSpecOutputShape(current, next)
+			current = recipeIROperationOutputShape(current, next)
 			continue
 		}
-		expected := next.InputShapes()
+		expected := recipeIROperationInputShapes(next)
 		if len(expected) != 0 && !expected.Accepts(current) {
 			target, fixable := shapeConversionTargetFromSet(current, expected)
 			if !fixable {
-				return nil, nil, operationShapeFailureError(operation, node, i, next, expected, current)
+				return nil, nil, recipeIROperationShapeFailureError(operation, node, i, next, expected, current)
 			}
 			if !policyActive {
 				// A conversion would fix the chain, but solving is off: fail with
 				// the actual/expected shapes and the exact .Auto(...) to add.
-				mismatch := operationShapeFailureError(operation, node, i, next, expected, current)
-				return nil, nil, appendAutoFixSuggestions(mismatch, current, target, next)
+				mismatch := recipeIROperationShapeFailureError(operation, node, i, next, expected, current)
+				return nil, nil, appendRecipeIRAutoFixSuggestions(mismatch, current, target, next)
 			}
 			conversion, planned, prefDiags, err := planShapeConversionPreferred(rt, current, target, rt.realtime, policy, preference, preferenceActive, node)
 			if err != nil {
-				return nil, nil, shapeSolverAdapterError(operation, node, i, next, current, target, err)
+				return nil, nil, recipeIRShapeSolverAdapterError(operation, node, i, next, current, target, err)
 			}
 			if !planned {
-				return nil, nil, operationShapeFailureError(operation, node, i, next, expected, current)
+				return nil, nil, recipeIROperationShapeFailureError(operation, node, i, next, expected, current)
 			}
 			if !policy.Covers(conversion.needed) {
-				return nil, nil, shapeConversionRefusedError(operation, node, i, next, policy, conversion, current, target)
+				return nil, nil, recipeIRShapeConversionRefusedError(operation, node, i, next, policy, conversion, current, target)
 			}
-			after := operationSpecOutputShape(current, conversion.operation)
+			after := recipeIROperationOutputShape(current, conversion.operation)
 			if !expected.Accepts(after) {
-				return nil, nil, operationShapeFailureError(operation, node, i, next, expected, current)
+				return nil, nil, recipeIROperationShapeFailureError(operation, node, i, next, expected, current)
 			}
 			conversion.operation.Shared = next.Shared
 			solved = append(solved, conversion.operation)
@@ -102,27 +105,27 @@ func solveOperationSpecShapes(operation string, rt *runtime, stream streamIntent
 			current = after
 		}
 		if policyActive {
-			desired := operationSoftInputShape(next)
+			desired := recipeIROperationSoftInputShape(next)
 			if !mediaShapeEmpty(desired) && !shape.Conversions(current, desired).Empty() {
 				conversion, planned, prefDiags, err := planShapeConversionPreferred(rt, current, desired, rt.realtime, policy, preference, preferenceActive, node)
 				if err != nil {
-					return nil, nil, shapeSolverAdapterError(operation, node, i, next, current, desired, err)
+					return nil, nil, recipeIRShapeSolverAdapterError(operation, node, i, next, current, desired, err)
 				}
 				if planned {
 					if !policy.Covers(conversion.needed) {
-						return nil, nil, shapeConversionRefusedError(operation, node, i, next, policy, conversion, current, desired)
+						return nil, nil, recipeIRShapeConversionRefusedError(operation, node, i, next, policy, conversion, current, desired)
 					}
 					conversion.operation.Shared = next.Shared
 					solved = append(solved, conversion.operation)
 					diagnostics = append(diagnostics, shapeConversionDiagnostic(node, conversion, next, current, desired))
 					diagnostics = append(diagnostics, prefDiags...)
 					inserted = true
-					current = operationSpecOutputShape(current, conversion.operation)
+					current = recipeIROperationOutputShape(current, conversion.operation)
 				}
 			}
 		}
 		solved = append(solved, next)
-		current = operationSpecOutputShape(current, next)
+		current = recipeIROperationOutputShape(current, next)
 	}
 	if !inserted {
 		return nil, nil, nil
@@ -130,9 +133,22 @@ func solveOperationSpecShapes(operation string, rt *runtime, stream streamIntent
 	return solved, diagnostics, nil
 }
 
-// chainPreference merges the chain's .Prefer(...) specs (later facts win) and
+func recipeIRChainAutoPolicy(operations []recipeir.Operation) (shape.Policy, bool) {
+	var policy shape.Policy
+	active := false
+	for i := range operations {
+		if operations[i].Auto == nil {
+			continue
+		}
+		active = true
+		policy = policy.Union(*operations[i].Auto)
+	}
+	return policy, active
+}
+
+// recipeIRChainPreference merges the chain's .Prefer(...) specs (later facts win) and
 // reports whether any preference operation is present.
-func chainPreference(operations []operationSpec) (shape.Spec, bool) {
+func recipeIRChainPreference(operations []recipeir.Operation) (shape.Spec, bool) {
 	var preference shape.Spec
 	active := false
 	for i := range operations {
@@ -145,11 +161,11 @@ func chainPreference(operations []operationSpec) (shape.Spec, bool) {
 	return preference, active
 }
 
-// operationSoftInputShape derives the format facts an operation pins for its
+// recipeIROperationSoftInputShape derives the format facts an operation pins for its
 // input beyond its hard domain/media contract: an encoder's configured output
 // caps are the shape its input frames must already have. Operations without
 // pinned facts return the zero Spec.
-func operationSoftInputShape(operation operationSpec) shape.Spec {
+func recipeIROperationSoftInputShape(operation recipeir.Operation) shape.Spec {
 	if operation.Kind != plan.OpEncode || operation.Encode.Copy || operation.Encode.ID == "" {
 		return shape.Spec{}
 	}
@@ -244,10 +260,14 @@ func planShapeConversionFor(rt *runtime, actual shape.Spec, expected shape.Spec,
 	if err != nil {
 		return shapeConversionPlan{}, false, false, &shapeAdapterSelectionError{media: media, needed: needed, candidates: candidates, cause: err}
 	}
-	operation := operationSpecForTransform(transform)
-	operation.Component = descriptor.Name
+	operation := recipeir.Operation{
+		Kind:      plan.OpTransform,
+		Component: descriptor.Name,
+		Transform: recipeIRTransformFromRoot(transform),
+	}
 	return shapeConversionPlan{
 		operation: operation,
+		transform: transform,
 		factory:   descriptor.Name,
 		needed:    needed,
 		detail:    shapeConversionDetailText(descriptor.Name, actual, transform),
@@ -263,6 +283,14 @@ func planShapeConversionFor(rt *runtime, actual shape.Spec, expected shape.Spec,
 // active preference the call is exactly planShapeConversion.
 func planShapeConversionPreferred(rt *runtime, actual shape.Spec, expected shape.Spec, realtime bool, policy shape.Policy, pref shape.Spec, prefActive bool, node string) (shapeConversionPlan, bool, []plan.Diagnostic, error) {
 	media := firstNonEmptyMedia(expected.MediaKind, actual.MediaKind)
+	custom, customPlanned, err := planCustomShapeConversion(rt, actual, expected, realtime, pref)
+	if err != nil {
+		return shapeConversionPlan{}, false, nil, err
+	}
+	baseNeeded := shape.Conversions(actual, expected)
+	if customPlanned && (policy.Covers(custom.needed) || !policy.Covers(baseNeeded)) {
+		return custom, true, nil, nil
+	}
 	if !prefActive || mediaShapeEmpty(pref) || (pref.MediaKind != "" && pref.MediaKind != media) {
 		conversion, planned, err := planShapeConversion(rt, actual, expected, realtime)
 		return conversion, planned, nil, err
@@ -292,6 +320,50 @@ func planShapeConversionPreferred(rt *runtime, actual shape.Spec, expected shape
 		return basePlan, basePlanned, nil, baseErr
 	}
 	return basePlan, basePlanned, []plan.Diagnostic{shapePreferenceIgnoredDiagnostic(node, pref, reason)}, nil
+}
+
+func planCustomShapeConversion(rt *runtime, actual shape.Spec, expected shape.Spec, realtime bool, pref shape.Spec) (shapeConversionPlan, bool, error) {
+	if rt == nil || len(rt.shapeDeltas) == 0 {
+		return shapeConversionPlan{}, false, nil
+	}
+	request := runconfig.ShapeDeltaRequest{
+		Actual:     actual,
+		Expected:   expected,
+		Preference: pref,
+		Realtime:   realtime,
+	}
+	for i := range rt.shapeDeltas {
+		planned, ok, err := rt.shapeDeltas[i].ShapeDelta(request)
+		if err != nil {
+			return shapeConversionPlan{}, false, fmt.Errorf("goav: shape delta contributor %d rejected conversion: %w", i, err)
+		}
+		if !ok {
+			continue
+		}
+		if planned.Stage == nil {
+			return shapeConversionPlan{}, false, fmt.Errorf("goav: shape delta contributor %d returned a nil stage", i)
+		}
+		if planned.Needed.Empty() {
+			return shapeConversionPlan{}, false, fmt.Errorf("goav: shape delta contributor %d returned an empty policy", i)
+		}
+		component := firstNonEmpty(planned.Component, planned.Stage.Name())
+		if component == "" {
+			return shapeConversionPlan{}, false, fmt.Errorf("goav: shape delta contributor %d returned an unnamed stage", i)
+		}
+		detail := firstNonEmpty(planned.Detail, component)
+		return shapeConversionPlan{
+			operation: recipeir.Operation{
+				Kind:      plan.OpStage,
+				Component: component,
+				Detail:    detail,
+				Stage:     planned.Stage,
+			},
+			factory: component,
+			needed:  planned.Needed,
+			detail:  detail,
+		}, true, nil
+	}
+	return shapeConversionPlan{}, false, nil
 }
 
 // preferredConversionTarget overlays the preference onto the conversion target
@@ -473,10 +545,10 @@ func narrowAdaptersByPreference(matched []filter.Descriptor, media av.MediaType,
 
 // --- errors and diagnostics ---
 
-// shapeSolverAdapterError renders adapter-selection failures with the chain
+// recipeIRShapeSolverAdapterError renders adapter-selection failures with the chain
 // context: which operation needed the conversion, the source and expected
 // shapes, and the registration (or disambiguation) that fixes it.
-func shapeSolverAdapterError(operation string, node string, index int, step operationSpec, actual shape.Spec, expected shape.Spec, err error) error {
+func recipeIRShapeSolverAdapterError(operation string, node string, index int, step recipeir.Operation, actual shape.Spec, expected shape.Spec, err error) error {
 	selection, ok := err.(*shapeAdapterSelectionError)
 	if !ok {
 		return err
@@ -498,11 +570,11 @@ func shapeSolverAdapterError(operation string, node string, index int, step oper
 			Operation: operation,
 			Node:      node,
 			Reason: fmt.Sprintf("several registered filters can perform the %s conversion before %s: %s",
-				selection.needed.String(), operationSpecLabel(step), strings.Join(selection.candidates, ", ")),
+				selection.needed.String(), recipeIROperationLabel(step), strings.Join(selection.candidates, ", ")),
 			fields: errDetailLines(append(details, "candidates="+strings.Join(selection.candidates, ","))),
 			fixes: buildErrorFixes([]string{
 				"keep one " + string(selection.media) + " conversion filter registered per runtime",
-				"build the runtime with only the intended conversion filter via goav.New(goavruntime.WithFilter(...))",
+				"build the runtime with only the intended conversion filter via goav.New(runconfig.WithFilter(...))",
 				"bias the choice with .Prefer(shape.New(...)) toward a capability only one candidate declares",
 			}),
 			cause: errUnsupportedBuild,
@@ -515,20 +587,20 @@ func shapeSolverAdapterError(operation string, node string, index int, step oper
 		Operation: operation,
 		Node:      node,
 		Reason: fmt.Sprintf("no registered filter can perform the %s conversion before %s",
-			selection.needed.String(), operationSpecLabel(step)),
+			selection.needed.String(), recipeIROperationLabel(step)),
 		fields: errDetailLines(details),
 		fixes: buildErrorFixes([]string{
-			"register a " + string(selection.media) + " conversion filter with goavruntime.WithFilter(filter.Descriptor{Input: ..., Output: ...}, factory)",
+			"register a " + string(selection.media) + " conversion filter with runconfig.WithFilter(filter.Descriptor{Input: ..., Output: ...}, factory)",
 			"import github.com/thesyncim/goav/bundle and build with bundle.MustNewFilters(...) for the bundled resample and resize adapters",
 		}),
 		cause: errUnsupportedBuild,
 	}
 }
 
-// shapeConversionRefusedError is the solver's refusal: a conversion would fix
+// recipeIRShapeConversionRefusedError is the solver's refusal: a conversion would fix
 // the chain, but the active .Auto(...) policy does not allow it. The error
 // carries the source shape, the expected shape, and the exact policy to add.
-func shapeConversionRefusedError(operation string, node string, index int, step operationSpec, allowed shape.Policy, conversion shapeConversionPlan, actual shape.Spec, expected shape.Spec) error {
+func recipeIRShapeConversionRefusedError(operation string, node string, index int, step recipeir.Operation, allowed shape.Policy, conversion shapeConversionPlan, actual shape.Spec, expected shape.Spec) error {
 	missing := allowed.Missing(conversion.needed)
 	return &BuildError{
 		Phase:     phaseBuild,
@@ -537,20 +609,20 @@ func shapeConversionRefusedError(operation string, node string, index int, step 
 		Operation: operation,
 		Node:      node,
 		Reason: fmt.Sprintf("%s needs %s but the chain policy (%s) does not allow it",
-			operationSpecLabel(step), conversion.detail, allowed.String()),
+			recipeIROperationLabel(step), conversion.detail, allowed.String()),
 		fields: errDetails(errDetail("operation_index", fmt.Sprintf("%d", index)), errDetail("operation", string(step.Kind)), errDetail("source", humanizeShape(actual)), errDetail("actual_shape", actual.String()), errDetail("expected_shape", expected.String()), errDetail("needed", conversion.needed.String()), errDetail("allowed", allowed.String())),
 		fixes: buildErrorFixes(append(
 			[]string{fmt.Sprintf("add .Auto(%s) to the chain to let the planner insert the conversion", strings.Join(missing.Constructors(), ", "))},
-			explicitConversionSuggestion(conversion.operation.Transform, step)...,
+			recipeIRExplicitConversionSuggestion(conversion.transform, step)...,
 		)),
 		cause: errUnsupportedBuild,
 	}
 }
 
-// appendAutoFixSuggestions upgrades the plain shape mismatch error with the
+// appendRecipeIRAutoFixSuggestions upgrades the plain shape mismatch error with the
 // exact fix when a conversion could solve it: the .Auto(...) policy to add and
 // the explicit operation to write instead.
-func appendAutoFixSuggestions(err error, actual shape.Spec, expected shape.Spec, step operationSpec) error {
+func appendRecipeIRAutoFixSuggestions(err error, actual shape.Spec, expected shape.Spec, step recipeir.Operation) error {
 	buildErr, ok := err.(*BuildError)
 	if !ok || buildErr == nil {
 		return err
@@ -560,15 +632,15 @@ func appendAutoFixSuggestions(err error, actual shape.Spec, expected shape.Spec,
 		buildErrorFix{Message: fmt.Sprintf("add .Auto(%s) to the chain to let the planner insert the conversion", strings.Join(needed.Constructors(), ", "))})
 	media := firstNonEmptyMedia(expected.MediaKind, actual.MediaKind)
 	if transform, ok := synthesizeConversionTransform(media, actual, expected); ok {
-		buildErr.fixes = append(buildErr.fixes, buildErrorFixes(explicitConversionSuggestion(transform, step))...)
+		buildErr.fixes = append(buildErr.fixes, buildErrorFixes(recipeIRExplicitConversionSuggestion(transform, step))...)
 	}
 	return buildErr
 }
 
-func explicitConversionSuggestion(transform transformSpec, step operationSpec) []string {
+func recipeIRExplicitConversionSuggestion(transform transformSpec, step recipeir.Operation) []string {
 	target := ""
 	if step.Kind != "" {
-		target = " before " + operationSpecLabel(step)
+		target = " before " + recipeIROperationLabel(step)
 	}
 	switch {
 	case transform.resample != nil:
@@ -615,11 +687,11 @@ func shapePreferenceIgnoredDiagnostic(node string, pref shape.Spec, reason strin
 
 // shapeConversionDiagnostic records one insertion on the plan, e.g.
 // "inserted resample 44.1kHz→48kHz before encode-opus (AllowResample)".
-func shapeConversionDiagnostic(node string, conversion shapeConversionPlan, step operationSpec, actual shape.Spec, expected shape.Spec) plan.Diagnostic {
+func shapeConversionDiagnostic(node string, conversion shapeConversionPlan, step recipeir.Operation, actual shape.Spec, expected shape.Spec) plan.Diagnostic {
 	return plan.Diagnostic{
 		Code:    diagnosticShapeConversionInserted,
 		Node:    node,
-		Message: fmt.Sprintf("inserted %s before %s (%s)", conversion.detail, operationSpecLabel(step), shapePolicyLabel(conversion.needed)),
+		Message: fmt.Sprintf("inserted %s before %s (%s)", conversion.detail, recipeIROperationLabel(step), shapePolicyLabel(conversion.needed)),
 		Details: []string{
 			"adapter=" + conversion.factory,
 			"source=" + humanizeShape(actual),
@@ -642,9 +714,9 @@ func shapePolicyLabel(policy shape.Policy) string {
 	return strings.Join(constructors, "+")
 }
 
-// operationSpecLabel names an operation for solver errors and diagnostics:
+// recipeIROperationLabel names an operation for solver errors and diagnostics:
 // "encode-opus", "decode-vp8", "stage-visualizer", "resample".
-func operationSpecLabel(operation operationSpec) string {
+func recipeIROperationLabel(operation recipeir.Operation) string {
 	switch operation.Kind {
 	case plan.OpEncode:
 		return "encode-" + firstNonEmpty(string(operation.Encode.ID), operation.Component, "encoder")
@@ -653,7 +725,7 @@ func operationSpecLabel(operation operationSpec) string {
 	case plan.OpStage:
 		return "stage-" + firstNonEmpty(operation.Component, "custom")
 	case plan.OpTransform:
-		return firstNonEmpty(operationSpecComponent(operation), "transform")
+		return firstNonEmpty(recipeIROperationComponent(operation), "transform")
 	default:
 		return firstNonEmpty(operation.Component, string(operation.Kind), "operation")
 	}

@@ -1,5 +1,7 @@
 # API Inventory
 
+Historical campaign artifact; current governed-surface guidance lives in `docs/API_SURFACE.md`.
+
 This started as the baseline taken before the API reduction work. It should move
 downward as symbols leave the root package, bundled adapters move behind
 `goav/bundle`, and implementation-specific error codes collapse into stable error

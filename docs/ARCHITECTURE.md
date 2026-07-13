@@ -117,7 +117,8 @@ anchor with `goav.Branch("name").From(tap)`. Late branches can run custom
 stages, apply flows, resize/resample from frame taps, encode Opus/VP8/VP9/AV1
 from frame taps, copy or decode packet taps, and expose their own typed taps
 for later attachments. Detaching a parent removes dependent branches anchored
-from its taps. H264 recipe encoding remains work in progress.
+from its taps. H.264 recipe encoding is intentionally descriptor-only in the
+default bundle until an encoder backend is registered explicitly.
 
 Design direction: a tap is not a second data path. It is a named stream point
 that later consumers can bind to. Planned branches, runtime branches, join-arm
@@ -163,9 +164,9 @@ transforms.
 
 What the compiler enforces today: the sibling packages (`av`, `errcode`,
 `plan`, `shape`, `flow`, `provider`, `pipeline`, `codec`, `format`, `filter`,
-`container`, `lifecycle`, `snapshot`, `rtpav`, `webrtcav`, `adapters`,
-`graphrender`) are leaves; none of them imports the root `goav` package. Root
-depends on leaves, never the reverse.
+`container`, `lifecycle`, `snapshot`, `rtpav`, `webrtcav`, `playoutav`,
+`adapters`, `graphrender`) are leaves; none of them imports the root `goav`
+package. Root depends on leaves, never the reverse.
 
 The one exception is `expert`: it sits above root because it imports `goav` to
 return `Task` on the normal build path and `LiveTask` through `BuildLive`.
@@ -209,31 +210,33 @@ pairs them with the concrete destination handles (the documented IR exception)
 and the branch's construction error. The join planner consumes that snapshot;
 branch domain validation is shared with the ordinary branch path through
 `validateBranchDomainFacts`, which takes captured facts rather than a
-`BranchSpec`. `join_build.go` still mixes the join grammar/capture (which
-legitimately constructs and reads `BranchSpec`) with the planner in one file, so
-the boundary is pinned at receiver scope rather than file scope:
-`TestJoinPlannerReadsRecipeIRNotBuilderInternals` fails if any `joinPlan` method
-reaches into `BranchSpec`. **Remaining nicety:** physically splitting the join
-grammar and planner into separate files would let the planner side join the
-file-scoped pin; the receiver-scoped pin already guarantees the planner stays
-BranchSpec-free.
+`BranchSpec`. `join_build.go` owns the join grammar/capture side (which
+legitimately constructs and reads `BranchSpec`); `join_plan.go` owns the
+planner/lowering side. `TestJoinPlannerReadsRecipeIRNotBuilderInternals`
+file-scans `join_plan.go` and fails if the planner file reaches into
+`BranchSpec`.
 
-Why the planner internals cannot move to `internal/` packages today (measured
-on the type-checked cross-file reference graph, 2026-06): the ~20 root files
-with no exported API (`media_plan*`, `recipe_compile`, `branch_compose_*`,
-`work_*`, `shape_solver`/`shape_glue`, `join_build`, `runtime_attach`/
-`_decode`/`_encode`/`_demux`, `mux_destination`, `multi_input`, ~14.8k lines)
-reference identifiers defined in 31 grammar files, including unexported fields
-of the public types (`Branch.operations`, `Branch.dest`, `Runtime` and
-`Recipe` internals).
+Why the planner internals still cannot move to `internal/` packages today:
+after the A1-A4 boundary slices, the package graph was re-measured on
+2026-07-02 with a type-checked cross-file reference graph. The 22-file
+planner/lowerer seed (`recipe_compile`, `media_plan*`, `work_*`,
+`shape_solver`/`shape_glue`, `branch_compose_*`, `join_plan`, runtime
+lowerers, `mux_destination`, `multi_input`) is 15,955 non-test LOC. Its
+closed set is 63 of the root package's 64 non-test files, or 31,921 LOC
+of 32,071 total (99.5%). The only root file outside the closure is
+`task_control.go`, so moving the closure would effectively move the root
+package rather than create a useful planner package.
 
-The coupling is bidirectional at field granularity: grammar files equally read
-unexported fields of planner structs (`recipe.go`, `source.go`,
-`stream_rule.go` into `recipe_compile.go` state; `audio_mix.go`,
-`video_composite_build.go`, `select_build.go` into 46 `join_build.go`
-identifiers). Computing the largest file set closed under intra-package
-dependencies leaves only `join_sync.go` (+`tap.go` at best) movable, which is
-not a useful package boundary.
+The largest non-seed pull-ins show what remains: grammar/API files such as
+`recipe.go`, `branch.go`, `destination.go`, `source.go`, `stream_rule.go`,
+runtime state in `runtime.go`, shared intent/IR helpers in `intent.go`,
+`recipe_ir.go`, `operation_facts.go`, and join grammar/capture in
+`join_build.go`. The original reverse coupling has been narrowed: grammar
+compile-state reads are pinned behind query interfaces by
+`TestGrammarFilesDoNotReadPlannerState`, and join grammar/planner code is
+physically split with a file-scoped join planner pin. Those pins deliver the
+reasoning benefit, but the package boundary is still an honest NO-GO until the
+remaining root-only facts are converted to stable recipe/plan data.
 
 What it would take to finish enforcing the layering: continue the data-transfer
 boundary so planner passes consume and return plain recipe/plan data instead
@@ -286,14 +289,18 @@ more messages. The default executor is a synchronous direct-call graph with no
 goroutines or channels per packet; fanout shares message and payload
 references. With a buffered policy, the factory builds a bounded buffered graph
 instead: per-node queues with a single serial worker each, the shared drop
-controller for backpressure/drop behavior, shared immutable media buffers, and
-preallocated copy slots for borrowed payloads under explicit byte bounds.
-Borrowed media without a copy bound fails early. The data plane is lock-free by
-design: per-node atomic stats and atomically-swapped routing snapshots, with
-mutexes only on cold paths. The allocation side of that contract is
-test-enforced (`TestGraphDirectRunAllocs`, `TestGraphBufferedSteadyEmitAllocs`)
-and measured by the fanout benchmarks; see `docs/PERFORMANCE.md` for what is
-proven versus not proven.
+controller for backpressure/drop behavior, shared immutable media buffers, a
+refcounted graph-owned copy for borrowed packet fanout, and preallocated copy
+slots for mutable payloads under explicit byte bounds. Borrowed media without a
+copy bound fails early. The data plane is lock-free by design: per-node atomic
+stats and atomically-swapped routing snapshots, with mutexes only on cold paths.
+Runtime-owned scratch pools are likewise per-runtime and opt-in through
+`runconfig.WithMediaPools(true)`, so attach/detach churn can reuse internal
+metadata maps and join plane slices without creating a process-global recycler.
+The allocation side of that contract is test-enforced
+(`TestGraphDirectRunAllocs`, `TestGraphBufferedSteadyEmitAllocs`,
+`TestBufferedFanoutRefcountAllocs`) and measured by the fanout benchmarks; see
+`docs/PERFORMANCE.md` for what is proven versus not proven.
 
 Builders and graphs produce a `pipeline.Spec`: structured nodes and edges with
 short workflow details (`rtp receive`, `packets -> frames`, `resize`, `mux`)

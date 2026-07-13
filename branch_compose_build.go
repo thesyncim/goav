@@ -12,7 +12,6 @@ import (
 	"github.com/thesyncim/goav/filter"
 	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/pipeline"
-	"github.com/thesyncim/goav/plan"
 	"github.com/thesyncim/goav/shape"
 )
 
@@ -35,9 +34,8 @@ type branchComposeBranch struct {
 	// (goav.InputName); empty means select across all inputs.
 	Input             string
 	Copy              bool
-	Operations        []operationSpec
-	SharedOperations  []operationSpec
-	PrivateOperations []operationSpec
+	SharedOperations  operationFacts
+	PrivateOperations operationFacts
 	DecodeConfig      codec.CodecSpec
 	CodecChange       codecChangePolicy
 	Encode            codec.EncodeConfig
@@ -72,9 +70,8 @@ func cloneBranchComposeBranches(branches []branchComposeBranch) []branchComposeB
 	out := make([]branchComposeBranch, 0, len(branches))
 	for i := range branches {
 		branch := branches[i]
-		branch.Operations = cloneOperationSpecs(branch.Operations)
-		branch.SharedOperations = cloneOperationSpecs(branch.SharedOperations)
-		branch.PrivateOperations = cloneOperationSpecs(branch.PrivateOperations)
+		branch.SharedOperations = branch.SharedOperations.Clone()
+		branch.PrivateOperations = branch.PrivateOperations.Clone()
 		branch.DecodeConfig = cloneCodecSpec(branch.DecodeConfig)
 		branch.Encode = cloneEncodeConfig(branch.Encode)
 		branch.Labels = append([]string(nil), branch.Labels...)
@@ -120,8 +117,8 @@ type branchComposeRoute struct {
 	codecChange       codecChangePolicy
 	dropDecodeEvents  bool
 	sourceDomain      shape.MediaDomain
-	sharedOperations  []operationSpec
-	privateOperations []operationSpec
+	sharedOperations  operationFacts
+	privateOperations operationFacts
 	request           encodeRequest
 }
 
@@ -155,7 +152,7 @@ type branchComposeStreamGroup struct {
 }
 
 type branchComposeSharedStepGroup struct {
-	operations []operationSpec
+	operations operationFacts
 	branches   []int
 }
 
@@ -844,8 +841,8 @@ func branchComposeRoutes(composePlan branchComposePlan) ([]branchComposeRoute, e
 			decode:            cloneCodecSpec(branch.DecodeConfig),
 			codecChange:       branch.CodecChange,
 			dropDecodeEvents:  false,
-			sharedOperations:  cloneOperationSpecs(sharedOperations),
-			privateOperations: cloneOperationSpecs(privateOperations),
+			sharedOperations:  sharedOperations.Clone(),
+			privateOperations: privateOperations.Clone(),
 			request: encodeRequest{
 				name:     encodeName,
 				selector: branch.Selector,
@@ -856,8 +853,8 @@ func branchComposeRoutes(composePlan branchComposePlan) ([]branchComposeRoute, e
 	return branches, nil
 }
 
-func branchComposeSharedRouteOperations(branch branchComposeBranch) []operationSpec {
-	return cloneOperationSpecs(branch.SharedOperations)
+func branchComposeSharedRouteOperations(branch branchComposeBranch) operationFacts {
+	return branch.SharedOperations.Clone()
 }
 
 func branchComposeRouteNeedsEncode(branch branchComposeRoute) bool {
@@ -1015,74 +1012,8 @@ func branchComposeDuplicateBranchError(name string, index int) error {
 // canonical operation list is the only source of branch transforms; the old
 // ad-hoc resize/resample synthesis from parallel plan fields is gone (the shape
 // solver inserts conversions as real operations upstream).
-func branchComposeRouteOperations(branch branchComposeBranch) []operationSpec {
-	return cloneOperationSpecs(branch.PrivateOperations)
-}
-
-func branchComposeRouteOperationTransformsForName(name string, operations []operationSpec) ([]mediaTransform, error) {
-	out := make([]mediaTransform, 0, len(operations))
-	transformIndex := 0
-	for i := range operations {
-		step, err := branchComposeRouteOperationTransform(name, transformIndex, operations[i])
-		if err != nil {
-			return nil, err
-		}
-		if operations[i].Kind == plan.OpTransform && (operations[i].Transform.resize != nil || operations[i].Transform.resample != nil) {
-			transformIndex++
-		}
-		if !mediaTransformEmpty(step) {
-			out = append(out, step)
-		}
-	}
-	return out, nil
-}
-
-func branchComposeRouteOperationTransform(branchName string, transformIndex int, operation operationSpec) (mediaTransform, error) {
-	suffix := ""
-	if transformIndex > 0 {
-		suffix = "-" + strconv.Itoa(transformIndex+1)
-	}
-	switch operation.Kind {
-	case plan.OpStage:
-		if operation.Stage == nil {
-			return mediaTransform{}, branchChainStepError(branchName, "branch stage operation has no stage")
-		}
-		if _, ok := operation.Stage.(*syncGate); ok {
-			return mediaTransform{
-				name:  syncStageOperationName(operation, branchName),
-				stage: operation.Stage,
-			}, nil
-		}
-		return mediaTransform{
-			name:  operation.Stage.Name(),
-			stage: operation.Stage,
-		}, nil
-	case plan.OpTransform:
-		if operation.Transform.resize != nil && operation.Transform.resample != nil {
-			return mediaTransform{}, branchChainStepError(branchName, "branch transform operation cannot combine resize and resample")
-		}
-		if operation.Transform.resize != nil {
-			resize := *operation.Transform.resize
-			factory := firstNonEmpty(operation.Component, filter.FactoryResize)
-			return mediaTransform{
-				name:    factory + "-" + branchName + suffix,
-				factory: factory,
-				video:   &resize,
-			}, nil
-		}
-		if operation.Transform.resample != nil {
-			resample := *operation.Transform.resample
-			factory := firstNonEmpty(operation.Component, filter.FactoryResample)
-			return mediaTransform{
-				name:    factory + "-" + branchName + suffix,
-				factory: factory,
-				audio:   &resample,
-			}, nil
-		}
-		return mediaTransform{}, branchChainStepError(branchName, "branch transform operation is empty")
-	default:
-		return mediaTransform{}, nil
-	}
+func branchComposeRouteOperations(branch branchComposeBranch) operationFacts {
+	return branch.PrivateOperations.Clone()
 }
 
 func mediaTransformEmpty(transform mediaTransform) bool {
@@ -1091,59 +1022,6 @@ func mediaTransformEmpty(transform mediaTransform) bool {
 		transform.stage == nil &&
 		transform.video == nil &&
 		transform.audio == nil
-}
-
-func branchComposeRouteStageOperationCount(operations []operationSpec) int {
-	count := 0
-	for i := range operations {
-		switch operations[i].Kind {
-		case plan.OpStage:
-			if operations[i].Stage != nil {
-				count++
-			}
-		case plan.OpTransform:
-			if operations[i].Transform.resize != nil || operations[i].Transform.resample != nil {
-				count++
-			}
-		}
-	}
-	return count
-}
-
-func branchComposeRouteStageOperations(operations []operationSpec) []operationSpec {
-	if len(operations) == 0 {
-		return nil
-	}
-	out := make([]operationSpec, 0, len(operations))
-	for i := range operations {
-		operation := operations[i]
-		switch operation.Kind {
-		case plan.OpStage:
-			if operation.Stage != nil {
-				out = append(out, operation)
-			}
-		case plan.OpTransform:
-			if operation.Transform.resize != nil || operation.Transform.resample != nil {
-				out = append(out, operation)
-			}
-		}
-	}
-	return cloneOperationSpecs(out)
-}
-
-func branchComposeRouteOperationsKey(operations []operationSpec) string {
-	return mediaTransformsKeyFromOperations(branchComposeRouteStageOperations(operations))
-}
-
-func mediaTransformsKeyFromOperations(operations []operationSpec) string {
-	if len(operations) == 0 {
-		return ""
-	}
-	transforms, err := branchComposeRouteOperationTransformsForName("", operations)
-	if err != nil {
-		return ""
-	}
-	return mediaTransformsKey(transforms)
 }
 
 func branchComposeSharedOperationName(branch branchComposeRoute) string {
@@ -1201,7 +1079,7 @@ func branchComposeSharedStepGroups(indices []int, branches []branchComposeRoute)
 			position = len(groups)
 			positions[key] = position
 			groups = append(groups, branchComposeSharedStepGroup{
-				operations: cloneOperationSpecs(branches[index].sharedOperations),
+				operations: branches[index].sharedOperations.Clone(),
 			})
 		}
 		groups[position].branches = append(groups[position].branches, index)
@@ -1225,7 +1103,7 @@ func branchComposeRuntimeSharedStepGroups(branches []branchComposeRoute, inputs 
 			position = len(groups)
 			positions[key] = position
 			groups = append(groups, branchComposeSharedStepGroup{
-				operations: cloneOperationSpecs(branches[i].sharedOperations),
+				operations: branches[i].sharedOperations.Clone(),
 			})
 		}
 		groups[position].branches = append(groups[position].branches, i)
@@ -1350,7 +1228,7 @@ func branchComposeDestinations(composePlan branchComposePlan, branches []branchC
 }
 
 func branchComposeTargetHasMuxDestination(output branchComposeTarget) bool {
-	if !destinationSpecEmpty(output.Destination) && output.Destination.sink == nil {
+	if !destinationSpecEmpty(output.Destination) && !destinationSpecIsSink(output.Destination) {
 		return true
 	}
 	return output.Target.Name != "" ||
@@ -1459,7 +1337,7 @@ func runtimeBranchComposeBranchName(branch branchComposeBranch, index int, total
 func branchComposeFormatTarget(composePlan branchComposePlan, output branchComposeTarget) format.Output {
 	target := output.Target
 	if !destinationSpecEmpty(output.Destination) {
-		target = output.Destination.output
+		target = destinationSpecOutput(output.Destination)
 	}
 	if target.Name == "" {
 		target.Name = output.Name

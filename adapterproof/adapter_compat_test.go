@@ -3,7 +3,7 @@
 // (descriptor+encoder+decoder), container (muxer+demuxer+prober), filter,
 // source provider, and transactional destination provider — defined entirely
 // in this test package, registered through the public value options
-// (goavruntime.WithEncoder/WithDecoder/WithFilter/WithMuxer/WithDemuxer/WithProber)
+// (runconfig.WithEncoder/WithDecoder/WithFilter/WithMuxer/WithDemuxer/WithProber)
 // or passed as values (goav.Input, goav.Custom), and run end to end through
 // the public recipe grammar.
 //
@@ -21,6 +21,7 @@ import (
 	"errors"
 	"io"
 	"reflect"
+	"strings"
 	"sync"
 	"testing"
 
@@ -32,8 +33,9 @@ import (
 	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/provider"
-	goavruntime "github.com/thesyncim/goav/runtime"
+	runconfig "github.com/thesyncim/goav/runconfig"
 	"github.com/thesyncim/goav/shape"
+	sourcepkg "github.com/thesyncim/goav/source"
 )
 
 // The made-up identities. Nothing in core knows them.
@@ -643,13 +645,13 @@ var _ filter.Factory = toyFilterFactory{}
 // runtime — value options only, no registry callbacks, no core knowledge.
 func toyRuntime() *goav.Runtime {
 	runtime, err := goav.New(
-		goavruntime.WithRealtime(false),
-		goavruntime.WithDecoder(toyCodecDescriptor(), toyCodecFactory{}),
-		goavruntime.WithEncoder(toyCodecDescriptor(), toyCodecFactory{}),
-		goavruntime.WithFilter(toyFilterDescriptor(), toyFilterFactory{}),
-		goavruntime.WithMuxer(toyFormatID, toyContainerFactory{}),
-		goavruntime.WithDemuxer(toyFormatID, toyContainerFactory{}),
-		goavruntime.WithProber(toyProber{}),
+		runconfig.WithRealtime(false),
+		runconfig.WithDecoder(toyCodecDescriptor(), toyCodecFactory{}),
+		runconfig.WithEncoder(toyCodecDescriptor(), toyCodecFactory{}),
+		runconfig.WithFilter(toyFilterDescriptor(), toyFilterFactory{}),
+		runconfig.WithMuxer(toyFormatID, toyContainerFactory{}),
+		runconfig.WithDemuxer(toyFormatID, toyContainerFactory{}),
+		runconfig.WithProber(toyProber{}),
 	)
 	if err != nil {
 		panic(err)
@@ -760,6 +762,75 @@ func TestExternalDestinationAbortsOnFailure(t *testing.T) {
 	defer dest.mu.Unlock()
 	if dest.commits != 0 || dest.aborts != 1 {
 		t.Fatalf("destination commits=%d aborts=%d, want 0 commits and 1 abort", dest.commits, dest.aborts)
+	}
+}
+
+const toyLevelDelta = "toy-level"
+
+type toyLevelStage struct{ name string }
+
+func (s *toyLevelStage) Name() string { return s.name }
+
+func (s *toyLevelStage) InputShapes() shape.Set {
+	return shape.Set{shape.Frame(av.MediaAudio, shape.Audio(0, 0, av.SampleFormatS16))}
+}
+
+func (s *toyLevelStage) OutputShapes(input shape.Spec) shape.Set {
+	input.Domain = shape.DomainFrame
+	input.MediaKind = av.MediaAudio
+	input.SampleFormat = av.SampleFormatF32
+	return shape.Set{input}
+}
+
+func (s *toyLevelStage) Handle(ctx context.Context, msg *pipeline.Message, emitter pipeline.Emitter) error {
+	return emitter.Emit(ctx, msg)
+}
+
+func (s *toyLevelStage) Close() error { return nil }
+
+func toyLevelShapeDelta(request runconfig.ShapeDeltaRequest) (runconfig.ShapeDeltaPlan, bool, error) {
+	if request.Actual.MediaKind != av.MediaAudio || request.Expected.SampleFormat != av.SampleFormatF32 {
+		return runconfig.ShapeDeltaPlan{}, false, nil
+	}
+	return runconfig.ShapeDeltaPlan{
+		Component: toyLevelDelta,
+		Detail:    "toy-level s16 to f32",
+		Needed:    shape.AllowCustom(toyLevelDelta),
+		Stage:     &toyLevelStage{name: toyLevelDelta},
+	}, true, nil
+}
+
+func TestExternalShapeDeltaContributorAppearsInExplain(t *testing.T) {
+	ctx := context.Background()
+	runtime, err := goav.New(runconfig.WithShapeDelta(runconfig.ShapeDeltaFunc(toyLevelShapeDelta)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	input := goav.Source("mic",
+		shape.Frame(av.MediaAudio, shape.Stream("mic"), shape.Audio(8000, 1, av.SampleFormatS16)),
+		sourcepkg.Func(func(_ context.Context, push sourcepkg.Push) error {
+			return push.EOS()
+		}))
+	report, err := goav.From(input).
+		Audio().
+		Auto(shape.AllowCustom(toyLevelDelta)).
+		Require(shape.Frame(av.MediaAudio, shape.Audio(8000, 1, av.SampleFormatF32))).
+		To(goav.Sink(component.SinkFunc("frames", func(context.Context, component.Message) error { return nil }))).
+		UseRuntime(runtime).
+		Explain(ctx)
+	if err != nil {
+		t.Fatalf("Explain(): %v", err)
+	}
+	found := false
+	for _, warning := range report.Warnings {
+		if warning.Code == "shape_conversion_inserted" &&
+			strings.Contains(warning.Message, "toy-level s16 to f32") &&
+			strings.Contains(warning.Message, `AllowCustom("toy-level")`) {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("Explain warnings = %+v, want custom shape delta insertion", report.Warnings)
 	}
 }
 

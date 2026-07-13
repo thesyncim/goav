@@ -21,7 +21,7 @@ import (
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
 	matroskaadapter "github.com/thesyncim/goav/container/matroska"
-	"github.com/thesyncim/goav/ctl"
+	"github.com/thesyncim/goav/ctlserver"
 	"github.com/thesyncim/goav/goavtest"
 )
 
@@ -33,12 +33,12 @@ func TestCLIInvokesCustomControlCommand(t *testing.T) {
 		Value string `goavctl:"value,required" usage:"value=<text>" help:"custom CLI value"`
 	}
 	var applied string
-	command := ctl.NewCommand[customCommand](
+	command := ctlserver.NewCommand[customCommand](
 		"vendor.cli",
 		"custom CLI command",
-		func(_ context.Context, _ goav.LiveTask, args customCommand) (ctl.ControlResponse, error) {
+		func(_ context.Context, _ goav.LiveTask, args customCommand) (ctlserver.ControlResponse, error) {
 			applied = args.Value
-			return ctl.ControlResponse{Operation: "control vendor.cli", Result: applied}, nil
+			return ctlserver.ControlResponse{Operation: "control vendor.cli", Result: applied}, nil
 		},
 	)
 	task, err := goav.From(goavtest.Audio(48000, 1, []int16{1})).
@@ -55,8 +55,8 @@ func TestCLIInvokesCustomControlCommand(t *testing.T) {
 	t.Cleanup(func() { _ = os.Remove(socket) })
 	errC := make(chan error, 1)
 	go func() {
-		errC <- ctl.ServeUnixWithOptions(ctx, task, "unix://"+socket, ctl.WithCapabilities(ctl.CapabilitySet{
-			Commands: []ctl.CommandSpec{command},
+		errC <- ctlserver.ServeUnixWithOptions(ctx, task, "unix://"+socket, ctlserver.WithCapabilities(ctlserver.CapabilitySet{
+			Commands: []ctlserver.CommandSpec{command},
 		}))
 	}()
 	waitForCLISocket(t, socket, errC)
@@ -88,28 +88,28 @@ func TestCLIHelpListsCustomPipelineRegistry(t *testing.T) {
 	type meterSettings struct {
 		Window time.Duration `goavctl:"window,duration" usage:"[window=<duration>]" help:"observation window"`
 	}
-	meter := ctl.NewBranchStep[meterSettings](
+	meter := ctlserver.NewBranchStep[meterSettings](
 		"meter",
 		"custom level meter",
-		func(*ctl.BranchPipeline, meterSettings) error { return nil },
-		ctl.Aliases("levelmeter"),
+		func(*ctlserver.BranchPipeline, meterSettings) error { return nil },
+		ctlserver.Aliases("levelmeter"),
 	)
 	type acmeSettings struct {
 		Bitrate int    `goavctl:"bitrate,required,rate" usage:"bitrate=<rate>" help:"target bitrate"`
 		Quality string `goavctl:"quality" usage:"[quality=<name>]" help:"native quality"`
 	}
-	acme := ctl.NewEncoderSpec[acmeSettings](
+	acme := ctlserver.NewEncoderSpec[acmeSettings](
 		"acmeenc",
 		"ACME native encoder",
 		func(args acmeSettings) (codec.CodecSpec, error) {
 			return codec.Codec("acme", av.MediaAudio, codec.Bitrate(args.Bitrate), codec.Profile(args.Quality)), nil
 		},
-		ctl.Aliases("acme"),
+		ctlserver.Aliases("acme"),
 	)
-	capabilities := ctl.CapabilitySet{
-		Pipeline: ctl.PipelineRegistry{
-			Steps:    []ctl.BranchPipelineStepSpec{meter},
-			Encoders: []ctl.EncoderSpec{acme},
+	capabilities := ctlserver.CapabilitySet{
+		Pipeline: ctlserver.PipelineRegistry{
+			Steps:    []ctlserver.BranchPipelineStepSpec{meter},
+			Encoders: []ctlserver.EncoderSpec{acme},
 		},
 	}
 
@@ -117,7 +117,7 @@ func TestCLIHelpListsCustomPipelineRegistry(t *testing.T) {
 	t.Cleanup(func() { _ = os.Remove(socket) })
 	errC := make(chan error, 1)
 	go func() {
-		errC <- ctl.ServeUnixWithOptions(ctx, task, "unix://"+socket, ctl.WithCapabilities(capabilities))
+		errC <- ctlserver.ServeUnixWithOptions(ctx, task, "unix://"+socket, ctlserver.WithCapabilities(capabilities))
 	}()
 	waitForCLISocket(t, socket, errC)
 
@@ -174,7 +174,7 @@ func TestCLIPrintsGraphAsRawText(t *testing.T) {
 	t.Cleanup(func() { _ = os.Remove(socket) })
 	errC := make(chan error, 1)
 	go func() {
-		errC <- ctl.ServeUnixWithOptions(ctx, task, "unix://"+socket)
+		errC <- ctlserver.ServeUnixWithOptions(ctx, task, "unix://"+socket)
 	}()
 	waitForCLISocket(t, socket, errC)
 
@@ -208,7 +208,7 @@ func TestCLIAttachRebranchDetachAndDotGraph(t *testing.T) {
 	t.Cleanup(func() { _ = os.Remove(socket) })
 	errC := make(chan error, 1)
 	go func() {
-		errC <- ctl.ServeUnixWithOptions(ctx, task, "unix://"+socket)
+		errC <- ctlserver.ServeUnixWithOptions(ctx, task, "unix://"+socket)
 	}()
 	waitForCLISocket(t, socket, errC)
 
@@ -242,7 +242,7 @@ func TestCLIWatchFollowPrintsStreamingResponses(t *testing.T) {
 	socket := filepath.Join(os.TempDir(), fmt.Sprintf("goav-cli-watch-%d.sock", time.Now().UnixNano()))
 	t.Cleanup(func() { _ = os.Remove(socket) })
 	errC := serveOneShot(t, socket, func(conn net.Conn) error {
-		var request ctl.Request
+		var request ctlserver.Request
 		if err := json.NewDecoder(conn).Decode(&request); err != nil {
 			return err
 		}
@@ -251,7 +251,7 @@ func TestCLIWatchFollowPrintsStreamingResponses(t *testing.T) {
 		}
 		encoder := json.NewEncoder(conn)
 		for i := 0; i < 2; i++ {
-			if err := encoder.Encode(ctl.SuccessResponse(map[string]string{"type": "stats"})); err != nil {
+			if err := encoder.Encode(ctlserver.SuccessResponse(map[string]string{"type": "stats"})); err != nil {
 				return err
 			}
 		}
@@ -871,14 +871,14 @@ func TestRunSendsRawTextRequest(t *testing.T) {
 	socket := filepath.Join(os.TempDir(), fmt.Sprintf("goav-run-graph-%d.sock", time.Now().UnixNano()))
 	t.Cleanup(func() { _ = os.Remove(socket) })
 	errC := serveOneShot(t, socket, func(conn net.Conn) error {
-		var request ctl.Request
+		var request ctlserver.Request
 		if err := json.NewDecoder(conn).Decode(&request); err != nil {
 			return err
 		}
 		if request.Op != "graph" {
 			return fmt.Errorf("request = %+v", request)
 		}
-		return json.NewEncoder(conn).Encode(ctl.SuccessResponse("flowchart LR\n"))
+		return json.NewEncoder(conn).Encode(ctlserver.SuccessResponse("flowchart LR\n"))
 	})
 
 	var stdout bytes.Buffer
@@ -894,17 +894,17 @@ func TestRunSendsRawTextRequest(t *testing.T) {
 
 func TestRawTextRequests(t *testing.T) {
 	for _, op := range []string{"help", "graph", "flowchart"} {
-		if !rawText(ctl.Request{Op: op}) {
+		if !rawText(ctlserver.Request{Op: op}) {
 			t.Fatalf("%s should be raw text", op)
 		}
 	}
-	if rawText(ctl.Request{Op: "control"}) {
+	if rawText(ctlserver.Request{Op: "control"}) {
 		t.Fatal("control response should stay JSON encoded")
 	}
 }
 
 func TestSendRejectsUnsupportedAddress(t *testing.T) {
-	err := send("tcp://127.0.0.1:9", ctl.Request{Op: "graph"})
+	err := send("tcp://127.0.0.1:9", ctlserver.Request{Op: "graph"})
 	if err == nil || !strings.Contains(err.Error(), "expected unix://PATH") {
 		t.Fatalf("send error = %v", err)
 	}
@@ -914,14 +914,14 @@ func TestSendReturnsStructuredError(t *testing.T) {
 	socket := filepath.Join(os.TempDir(), fmt.Sprintf("goav-error-%d.sock", time.Now().UnixNano()))
 	t.Cleanup(func() { _ = os.Remove(socket) })
 	errC := serveOneShot(t, socket, func(conn net.Conn) error {
-		var request ctl.Request
+		var request ctlserver.Request
 		if err := json.NewDecoder(conn).Decode(&request); err != nil {
 			return err
 		}
-		return json.NewEncoder(conn).Encode(ctl.ErrorResponse(request.Op, fmt.Errorf("boom")))
+		return json.NewEncoder(conn).Encode(ctlserver.ErrorResponse(request.Op, fmt.Errorf("boom")))
 	})
 
-	err := send("unix://"+socket, ctl.Request{Op: "graph"})
+	err := send("unix://"+socket, ctlserver.Request{Op: "graph"})
 	if err == nil || !strings.Contains(err.Error(), "boom") {
 		t.Fatalf("send error = %v", err)
 	}
@@ -934,14 +934,14 @@ func TestSendRawTextRejectsNonStringResult(t *testing.T) {
 	socket := filepath.Join(os.TempDir(), fmt.Sprintf("goav-raw-type-%d.sock", time.Now().UnixNano()))
 	t.Cleanup(func() { _ = os.Remove(socket) })
 	errC := serveOneShot(t, socket, func(conn net.Conn) error {
-		var request ctl.Request
+		var request ctlserver.Request
 		if err := json.NewDecoder(conn).Decode(&request); err != nil {
 			return err
 		}
-		return json.NewEncoder(conn).Encode(ctl.SuccessResponse(12))
+		return json.NewEncoder(conn).Encode(ctlserver.SuccessResponse(12))
 	})
 
-	err := send("unix://"+socket, ctl.Request{Op: "graph"})
+	err := send("unix://"+socket, ctlserver.Request{Op: "graph"})
 	if err == nil || !strings.Contains(err.Error(), "want text") {
 		t.Fatalf("send error = %v", err)
 	}
@@ -967,7 +967,7 @@ func TestSendFollowReturnsDecodeError(t *testing.T) {
 			return
 		}
 		defer conn.Close()
-		var request ctl.Request
+		var request ctlserver.Request
 		if err := json.NewDecoder(conn).Decode(&request); err != nil {
 			errC <- err
 			return
@@ -987,7 +987,7 @@ func TestSendFollowReturnsDecodeError(t *testing.T) {
 		errC <- nil
 	}()
 
-	err = send("unix://"+socket, ctl.Request{Op: "watch", Args: map[string]string{"follow": "true"}})
+	err = send("unix://"+socket, ctlserver.Request{Op: "watch", Args: map[string]string{"follow": "true"}})
 	if err == nil || !strings.Contains(err.Error(), "unexpected EOF") {
 		t.Fatalf("send error = %v, want unexpected EOF", err)
 	}

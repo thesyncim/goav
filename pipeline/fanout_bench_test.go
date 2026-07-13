@@ -152,35 +152,37 @@ func BenchmarkDirectFanoutParallel(b *testing.B) {
 	}
 }
 
-// BenchmarkBufferedFanout measures end-to-end buffered 1->N throughput with
-// workers draining concurrently. "shared" uses an immutable payload (current
-// code shares the slice header); "copy" uses a borrowed payload so bind() copies
-// the payload into each per-node slot per target — the per-target copy that P3's
-// refcounted zero-copy fanout removes. DropOldest avoids spurious backpressure
-// teardown (itself a P3 finding) so the baseline is stable.
+// BenchmarkBufferedFanout measures steady buffered 1->N throughput with workers
+// draining concurrently. "shared" uses an immutable payload and shares the slice
+// header; "copy" uses a borrowed payload with defensive per-target copies;
+// "refcount" uses a borrowed payload and copies it once into graph-owned backing
+// for refcounted fanout. DropOldest avoids spurious backpressure teardown so the
+// baseline is stable.
 func BenchmarkBufferedFanout(b *testing.B) {
 	for _, mode := range []struct {
-		name      string
-		immutable bool
+		name       string
+		immutable  bool
+		copyAlways bool
 	}{
-		{"shared", true},
-		{"copy", false},
+		{"shared", true, false},
+		{"copy", false, true},
+		{"refcount", false, false},
 	} {
 		for _, n := range fanoutSizes {
 			b.Run(mode.name+"/N="+strconv.Itoa(n), func(b *testing.B) {
-				runBufferedFanout(b, n, mode.immutable)
+				runBufferedFanout(b, n, mode.immutable, mode.copyAlways)
 			})
 		}
 	}
 }
 
-func runBufferedFanout(b *testing.B, n int, immutable bool) {
-	policy := BufferPolicy{Capacity: 1024, Drop: DropOldest}
+func runBufferedFanout(b *testing.B, n int, immutable bool, copyAlways bool) {
+	policy := BufferPolicy{Capacity: 1024, Drop: DropOldest, CopyAlways: copyAlways}
 	if !immutable {
 		policy.CopyPacketBytes = fanoutPayload
 	}
 	msg := benchPacketMessage(fanoutPayload, immutable)
-	src := &benchDrainSource{name: "src", n: b.N, msg: msg}
+	src := &holdSource{name: "src", ready: make(chan struct{}), release: make(chan struct{})}
 	g, err := NewGraph(GraphConfig{Name: "bench", Buffer: policy})
 	if err != nil {
 		b.Fatal(err)
@@ -198,12 +200,21 @@ func runBufferedFanout(b *testing.B, n int, immutable bool) {
 	if err := g.Connect(Route{From: "src", To: names}); err != nil {
 		b.Fatal(err)
 	}
+	runDone := make(chan error, 1)
+	go func() { runDone <- g.Run(context.Background()) }()
+	<-src.ready
 	b.ReportAllocs()
 	b.ResetTimer()
-	if err := g.Run(context.Background()); err != nil { // emits b.N msgs, drains
-		b.Fatal(err)
+	for i := 0; i < b.N; i++ {
+		if err := src.emitter.Emit(context.Background(), msg); err != nil {
+			b.Fatal(err)
+		}
 	}
 	b.StopTimer()
+	close(src.release)
+	if err := <-runDone; err != nil {
+		b.Fatal(err)
+	}
 	if err := g.Close(); err != nil {
 		b.Fatal(err)
 	}

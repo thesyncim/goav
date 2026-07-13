@@ -4,7 +4,8 @@
 application wants operators, tests, or automation to inspect and steer a live
 graph without handing them arbitrary access to application internals.
 
-The application owns the task and exposes a Unix socket with package `ctl`;
+The application owns the task and exposes a Unix socket with package
+`ctlserver`;
 operators or automation talk to that socket with structured requests.
 
 ```sh
@@ -71,16 +72,16 @@ This is the smallest production shape:
 1. Build a normal task and name stable taps with `FrameTap` or `PacketTap`.
 2. Declare host-owned capabilities with typed settings structs.
 3. Group commands, branch steps, sinks, and native encoder spellings in one
-   `ctl.CapabilitySet`.
-4. Call `ctl.ValidateCapabilities` in startup/tests to catch empty names,
+   `ctlserver.CapabilitySet`.
+4. Call `ctlserver.ValidateCapabilities` in startup/tests to catch empty names,
    alias collisions, and non-struct settings before opening a socket.
-5. Start `ctl.ServeUnixWithOptions`.
+5. Start `ctlserver.ServeUnixWithOptions`.
 6. Use `goav ctl --control unix://...` to inspect, control, attach, rebranch,
    detach, and render diagnostics from the same running graph.
 
 The default branch grammar is intentionally useful before a host adds any
 custom CLI grammar. If a task runtime has an encoder registered with
-`goavruntime.WithEncoder`, it is callable from attach/rebranch as:
+`runconfig.WithEncoder`, it is callable from attach/rebranch as:
 
 ```sh
 goav ctl --control unix:///tmp/goav-live.sock attach frames as preview \
@@ -92,18 +93,18 @@ runtime-discovered encoders and muxers from the running task. Generic `encode`
 reflects over `codec.CodecSettings`, so adding a tagged setting field makes it
 CLI-visible and documented by generated help. Keys not claimed by those typed
 fields are left in `CodecSettings.Custom` for the adapter. Add a typed encoder
-spelling with `ctl.NewEncoderSpec[T]` when you want a friendly name, richer
+spelling with `ctlserver.NewEncoderSpec[T]` when you want a friendly name, richer
 validation, or `codec.Control` host code for native handles; it uses the same
 reflected field binder.
 
 The executable local harness is
-`Example_bootstrapControlPlaneHost` in `ctl/example_test.go`. It builds a live
+`Example_bootstrapControlPlaneHost` in `ctlserver/example_test.go`. It builds a live
 fixture task, starts `Run` in the background, calls a custom control, attaches a
 custom branch step plus custom encoder settings into a temp filesink, and
 renders a flowchart from the live task. Run it with:
 
 ```sh
-go test ./ctl -run Example_bootstrapControlPlaneHost -count=1
+go test ./ctlserver -run Example_bootstrapControlPlaneHost -count=1
 ```
 
 For a long-running host process that you can keep open in one terminal while
@@ -138,7 +139,7 @@ task, err := goav.From(liveInput).
     Audio().Decode().Tap(goav.FrameTap("frames")).
     To(primaryDestination).
     UseRuntime(bundle.MustNew(
-        goavruntime.WithEncoder(encoderFactory.Descriptor, encoderFactory),
+        runconfig.WithEncoder(encoderFactory.Descriptor, encoderFactory),
     )).
     BuildLive(ctx)
 if err != nil {
@@ -156,18 +157,18 @@ type SetRate struct {
     Source string  `goavctl:"source,required" usage:"source=<source-name>" help:"source node to retime"`
 }
 
-	rateCommand := ctl.NewCommand[SetRate](
+	rateCommand := ctlserver.NewCommand[SetRate](
 	    "vendor.rate",
 	    "vendor playback-rate control",
-	    func(ctx context.Context, task goav.LiveTask, cmd SetRate) (ctl.ControlResponse, error) {
+	    func(ctx context.Context, task goav.LiveTask, cmd SetRate) (ctlserver.ControlResponse, error) {
 	        ctrl, err := control.Rate(cmd.Value)
 	        if err != nil {
-	            return ctl.ControlResponse{}, err
+	            return ctlserver.ControlResponse{}, err
 	        }
 	        if err := task.Control(ctx, ctrl.At(pipeline.NodeRef(cmd.Source))); err != nil {
-	            return ctl.ControlResponse{}, err
+	            return ctlserver.ControlResponse{}, err
 	        }
-	        return ctl.ControlResponse{
+	        return ctlserver.ControlResponse{
             Operation: "control vendor.rate",
             Result:    map[string]any{"value": cmd.Value, "source": cmd.Source},
         }, nil
@@ -185,10 +186,10 @@ type MeterSettings struct {
     Window time.Duration `goavctl:"window,duration" usage:"[window=<duration>]" help:"observation window"`
 }
 
-meter := ctl.NewBranchStep[MeterSettings](
+meter := ctlserver.NewBranchStep[MeterSettings](
     "meter",
     "observe frames before encoding",
-    func(branch *ctl.BranchPipeline, _ MeterSettings) error {
+    func(branch *ctlserver.BranchPipeline, _ MeterSettings) error {
         branch.Do(component.FrameFunc("meter", func(ctx context.Context, frame *av.Frame, emit component.Emit) error {
             recordLevel(frame)
             return emit.Frame(frame)
@@ -203,7 +204,7 @@ type ACMESettings struct {
     Lookahead string `goavctl:"lookahead" usage:"[lookahead=<mode>]" help:"native lookahead mode"`
 }
 
-acme := ctl.NewEncoderSpec[ACMESettings](
+acme := ctlserver.NewEncoderSpec[ACMESettings](
     "acmeenc",
     "ACME audio encoder with native settings",
     func(args ACMESettings) (codec.CodecSpec, error) {
@@ -219,20 +220,20 @@ acme := ctl.NewEncoderSpec[ACMESettings](
     },
 )
 
-capabilities := ctl.CapabilitySet{
-    Commands: []ctl.CommandSpec{rateCommand},
-    Pipeline: ctl.PipelineRegistry{
-        Steps:    []ctl.BranchPipelineStepSpec{meter},
-        Encoders: []ctl.EncoderSpec{acme},
+capabilities := ctlserver.CapabilitySet{
+    Commands: []ctlserver.CommandSpec{rateCommand},
+    Pipeline: ctlserver.PipelineRegistry{
+        Steps:    []ctlserver.BranchPipelineStepSpec{meter},
+        Encoders: []ctlserver.EncoderSpec{acme},
     },
 }
 
-if err := ctl.ValidateCapabilities(capabilities); err != nil {
+if err := ctlserver.ValidateCapabilities(capabilities); err != nil {
     return err
 }
 ```
 
-Use `ctl.NewError` from custom command, step, or encoder callbacks when a
+Use `ctlserver.NewError` from custom command, step, or encoder callbacks when a
 custom value is missing or invalid. The structured family, code, node,
 detail/fix records, rendered detail/fix lines, and cause are preserved in the
 CLI/socket response.
@@ -241,8 +242,8 @@ Start the socket after the task is built. The same options apply whether the
 socket is used by humans, scripts, supervisors, or tests.
 
 ```go
-err = ctl.ServeUnixWithOptions(ctx, task, "unix:///tmp/goav-live.sock",
-    ctl.WithCapabilities(capabilities),
+err = ctlserver.ServeUnixWithOptions(ctx, task, "unix:///tmp/goav-live.sock",
+    ctlserver.WithCapabilities(capabilities),
 )
 ```
 
@@ -343,7 +344,7 @@ The socket protocol is JSON. The CLI is the normal human entry point, but hosts
 and tests can use the same request shape directly:
 
 ```go
-request, err := ctl.RequestFromCLI([]string{
+request, err := ctlserver.RequestFromCLI([]string{
     "control", "bitrate", "stream=video", "value=1200k", "at=encoded",
 })
 if err != nil {
@@ -397,12 +398,12 @@ capabilities.
 
 ```go
 rt := bundle.MustNew(
-    goavruntime.WithEncoder(codec.Descriptor{
+    runconfig.WithEncoder(codec.Descriptor{
         ID:   av.CodecID("x_pcm_s16"),
         Name: "ACME PCM S16",
         Type: av.MediaAudio,
     }, acmeEncoderFactory),
-    goavruntime.WithFormatAdapter(acmecontainer.Register), // if no stock container accepts the codec
+    runconfig.WithFormatAdapter(acmecontainer.Register), // if no stock container accepts the codec
 )
 ```
 
@@ -432,12 +433,12 @@ and `pixel_format` are rejected with suggestions.
 
 The destination container must accept the selected codec. Standard codecs can
 often use the bundled containers registered by `bundle.MustNew`; a private codec
-usually needs a matching `goavruntime.WithFormatAdapter`, `WithMuxer`, or an app-owned
+usually needs a matching `runconfig.WithFormatAdapter`, `WithMuxer`, or an app-owned
 custom destination step. Runtime muxers registered with `WithMuxer` are callable
 by `filesink location=<path> [format=<id>]` and appear in `help attach`.
 
 When an encoder needs host-side validation or direct native handle setup,
-expose a named encoder step with `ctl.NewEncoderSpec`. The CLI spelling stays
+expose a named encoder step with `ctlserver.NewEncoderSpec`. The CLI spelling stays
 short and the host keeps full control over validation and native adapter calls:
 
 ```sh
@@ -454,10 +455,10 @@ type MeterSettings struct {
     Window time.Duration `goavctl:"window,duration" usage:"[window=<duration>]" help:"observation window"`
 }
 
-meter := ctl.NewBranchStep[MeterSettings](
+meter := ctlserver.NewBranchStep[MeterSettings](
     "meter",
     "observe frames before encoding",
-    func(branch *ctl.BranchPipeline, _ MeterSettings) error {
+    func(branch *ctlserver.BranchPipeline, _ MeterSettings) error {
         branch.Do(component.FrameFunc("meter", func(ctx context.Context, frame *av.Frame, emit component.Emit) error {
             recordLevel(frame)
             return emit.Frame(frame)
@@ -477,10 +478,10 @@ type ObjectSinkSettings struct {
     Key    string `goavctl:"key,required" usage:"key=<path>" help:"object key"`
 }
 
-objectSink := ctl.NewBranchStep[ObjectSinkSettings](
+objectSink := ctlserver.NewBranchStep[ObjectSinkSettings](
     "objectsink",
     "upload branch messages to object storage",
-    func(branch *ctl.BranchPipeline, args ObjectSinkSettings) error {
+    func(branch *ctlserver.BranchPipeline, args ObjectSinkSettings) error {
         writer := objectStoreWriter(args.Bucket, args.Key)
         branch.Destination(goav.Writer(writer,
             goav.Name("object:"+args.Key),

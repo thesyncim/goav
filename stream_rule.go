@@ -132,48 +132,29 @@ func branchSpecForDiscoveredStream(spec BranchSpec, sourceNode string, domain sh
 	return out
 }
 
-// validateStreamRulesPass checks the structural prerequisites of declared
-// dynamic-stream rules: a single input to anchor on (the per-rule statics are
-// validated by OnStream itself).
-func validateStreamRulesPass() recipeCompilePass {
-	return recipeCompilePassFunc{name: "validate stream rules", fn: func(state *recipeCompileState) error {
-		if state.streamRuleCount() == 0 {
-			return nil
-		}
-		if state.joinTree != nil {
-			return streamRuleInvalidError("", "stream rules are not supported on Mix/Composite/Select jobs",
-				"declare OnStream rules on single-input goav.From(input) jobs")
-		}
-		inputs := state.streamRuleInputCount()
-		if inputs != 1 {
-			return streamRuleInvalidError("", fmt.Sprintf("stream rules require exactly one input, got %d", inputs),
-				"declare OnStream rules on single-input goav.From(input) jobs")
-		}
+// validateStreamRulesForCompile checks the structural prerequisites of
+// declared dynamic-stream rules: a single input to anchor on (the per-rule
+// statics are validated by OnStream itself).
+func validateStreamRulesForCompile(state streamRuleValidationState) error {
+	if state == nil || state.streamRuleCount() == 0 {
 		return nil
-	}}
+	}
+	if state.streamRuleJoinPresent() {
+		return streamRuleInvalidError("", "stream rules are not supported on Mix/Composite/Select jobs",
+			"declare OnStream rules on single-input goav.From(input) jobs")
+	}
+	inputs := state.streamRuleInputCount()
+	if inputs != 1 {
+		return streamRuleInvalidError("", fmt.Sprintf("stream rules require exactly one input, got %d", inputs),
+			"declare OnStream rules on single-input goav.From(input) jobs")
+	}
+	return nil
 }
 
-func (state *recipeCompileState) streamRuleCount() int {
-	if state == nil {
-		return 0
-	}
-	if len(state.streamRuleFacts) != 0 {
-		return len(state.streamRuleFacts)
-	}
-	return len(state.streamRules)
-}
-
-func (state *recipeCompileState) streamRuleInputCount() int {
-	if state == nil {
-		return 0
-	}
-	if state.branchCompositionPresent {
-		return 1
-	}
-	if len(state.inputFacts) != 0 {
-		return len(state.inputFacts)
-	}
-	return len(state.inputAttachments)
+type streamRuleValidationState interface {
+	streamRuleCount() int
+	streamRuleInputCount() int
+	streamRuleJoinPresent() bool
 }
 
 func explainStreamRuleFacts(rules []recipeir.StreamRule) []plan.Decision {

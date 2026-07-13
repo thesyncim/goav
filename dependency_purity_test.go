@@ -11,9 +11,9 @@ import (
 // the core may depend on github.com/thesyncim/* modules, the standard library,
 // and the narrow third-party runtime set required by the built-in pure-Go AAC
 // backend. Other third-party code (pion, compression backends, comparison
-// libraries) lives in nested modules — rtpav, webrtcav, examples — each with
-// its own go.mod, so importing goav never pulls a transport ecosystem into the
-// consumer's module graph.
+// libraries) lives in nested modules — rtpav, webrtcav, playoutav, examples —
+// each with its own go.mod, so importing goav never pulls a transport
+// ecosystem into the consumer's module graph.
 //
 // The allowlist below is intentionally exact: if the AAC backend's generated
 // runtime changes its transitive set, this test asks for an explicit review

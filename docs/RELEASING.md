@@ -13,19 +13,27 @@ exists, and what automation is expected after the tag is pushed.
 
    ```sh
    CGO_ENABLED=0 go test ./...
-   CGO_ENABLED=1 go test -race -count=1 . ./pipeline ./goavtest ./format ./cmd/goav ./ctl ./internal/launchctl ./graphrender
+   CGO_ENABLED=1 go test -race -count=1 . ./pipeline ./goavtest ./format ./cmd/goav ./ctlserver ./internal/launchctl ./graphrender
    CGO_ENABLED=0 go vet ./...
    staticcheck ./...
    govulncheck ./...
    test -z "$(gofmt -l .)"
    scripts/bench/run.sh
-   scripts/bench/perf-lab.sh
+   PERF_RELEASE_QUALITY=true PERF_BENCHTIME=2000x PERF_SOAK_BENCHTIME=1h PERF_LIVE_ROOM_CHURN_BENCHTIME=1h PERF_LIVE_ROOM_CHURN_INTERVAL=100ms scripts/bench/perf-lab.sh
    ```
+
+   `PERF_RELEASE_QUALITY=true` rejects fixed-count soak benchtimes; keep the
+   soak knobs duration-based so the manifest cannot label a smoke run as
+   release evidence. In release-quality mode those knobs feed wall-clock soak
+   tests, and `PERF_GO_TEST_TIMEOUT` defaults to `0` so Go's default 10-minute
+   test timeout does not kill hour-scale soaks; set it explicitly when you want
+   a bounded watchdog. `PERF_LIVE_ROOM_CHURN_INTERVAL` paces the attach/detach
+   churn loop and is recorded in the generated JSON.
 
 3. Run nested modules and examples:
 
    ```sh
-   for mod in goavtest/expect rtpav webrtcav; do
+   for mod in goavtest/expect rtpav webrtcav playoutav; do
      (cd "$mod" && CGO_ENABLED=0 go test ./... && CGO_ENABLED=1 go test -race ./... && CGO_ENABLED=0 go vet ./...)
    done
    for mod in examples/*/go.mod; do
@@ -47,7 +55,7 @@ say why.
 
 | Gate | Required evidence |
 |---|---|
-| Pure-Go runtime tests | `CGO_ENABLED=0 go test ./...` passes in the root module, plus pure-Go tests in `goavtest/expect`, `rtpav`, `webrtcav`, and every `examples/*/go.mod` module. |
+| Pure-Go runtime tests | `CGO_ENABLED=0 go test ./...` passes in the root module, plus pure-Go tests in `goavtest/expect`, `rtpav`, `webrtcav`, `playoutav`, and every `examples/*/go.mod` module. |
 | Race coverage | `CGO_ENABLED=1 go test -race` passes for the governed runtime packages and nested transport modules. |
 | Static analysis and formatting | `CGO_ENABLED=0 go vet ./...`, `staticcheck ./...`, `govulncheck ./...`, and `test -z "$(gofmt -l .)"` pass. |
 | README and docs examples | `TestReadmeGoBlocksCompileAsExternalConsumer`, doc pins, package-doc smoke, and example-module tests pass. |
@@ -55,7 +63,7 @@ say why.
 | Hot-path allocations | Allocation guard tests and benchmark smoke pass without documented regressions. |
 | Public API restraint | `api_surface_pin_test.go`, `doc_pin_test.go`, `docs/API_SURFACE.md`, and the PR template show no ungoverned public package or undocumented export. Any new export needs the API-restraint checklist. |
 | CI artifacts | Coverage, fuzz-smoke, benchmark/perf-lab, benchstat, CodeQL, govulncheck, and release artifacts are present for the release candidate. |
-| Performance claims | `docs/PERFORMANCE.md` classifies claims as proven, measured, experimental, or not proven; release notes avoid comparative leadership without reproducible numbers. |
+| Performance claims | `docs/PERFORMANCE.md` classifies claims as proven, measured, experimental, or not proven; release notes avoid comparative leadership without reproducible numbers; any release performance claim cites a perf-lab manifest generated with `PERF_RELEASE_QUALITY=true`. |
 
 ## Tags
 
@@ -71,9 +79,11 @@ Nested modules use prefixed tags:
 ```sh
 git tag -s rtpav/v0.1.0 -m "rtpav v0.1.0"
 git tag -s webrtcav/v0.1.0 -m "webrtcav v0.1.0"
+git tag -s playoutav/v0.1.0 -m "playoutav v0.1.0"
 ```
 
-Tag order follows dependencies: root first, then `rtpav`, then `webrtcav`.
+Tag order follows dependencies: root first, then `rtpav`, `webrtcav`, and
+`playoutav` when those modules are released.
 
 ## Automation
 

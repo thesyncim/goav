@@ -1,0 +1,217 @@
+{
+  "schema": 1,
+  "kind": "pipeline",
+  "generated_at": "2026-07-02T19:07:01Z",
+  "go_version": "go version go1.26.0 darwin/arm64",
+  "goos": "darwin",
+  "goarch": "arm64",
+  "package": "./pipeline",
+  "bench_regex": "Benchmark(DirectFanout|BufferedFanout)$",
+  "benchtime": "100x",
+  "count": "1",
+  "source": "scripts/bench/baseline.sh pipeline ./pipeline",
+  "thresholds": {
+    "bytes_per_op_slack_ratio": 0.05,
+    "bytes_per_op_slack_min": 1024,
+    "allocs_per_op_slack": 0,
+    "allocs_per_op_slack_ratio": 0.05,
+    "allocs_per_op_slack_min": 4,
+    "allocs_per_op_cold_threshold": 100,
+    "allocs_per_op_cold_slack_ratio": 0.15,
+    "allocs_per_op_cold_slack_min": 64
+  },
+  "benchmarks": [
+    {
+      "name": "BenchmarkBufferedFanout/copy/N=1",
+      "metrics": {
+        "B/op": 0,
+        "allocs/op": 0,
+        "ns/op": 269.6
+      },
+      "ceilings": {
+        "B/op": 1024,
+        "allocs/op": 0
+      }
+    },
+    {
+      "name": "BenchmarkBufferedFanout/copy/N=512",
+      "metrics": {
+        "B/op": 0,
+        "allocs/op": 0,
+        "ns/op": 341902
+      },
+      "ceilings": {
+        "B/op": 1024,
+        "allocs/op": 0
+      }
+    },
+    {
+      "name": "BenchmarkBufferedFanout/copy/N=64",
+      "metrics": {
+        "B/op": 0,
+        "allocs/op": 0,
+        "ns/op": 43586
+      },
+      "ceilings": {
+        "B/op": 1024,
+        "allocs/op": 0
+      }
+    },
+    {
+      "name": "BenchmarkBufferedFanout/copy/N=8",
+      "metrics": {
+        "B/op": 0,
+        "allocs/op": 0,
+        "ns/op": 5246
+      },
+      "ceilings": {
+        "B/op": 1024,
+        "allocs/op": 0
+      }
+    },
+    {
+      "name": "BenchmarkBufferedFanout/refcount/N=1",
+      "metrics": {
+        "B/op": 0,
+        "allocs/op": 0,
+        "ns/op": 292.1
+      },
+      "ceilings": {
+        "B/op": 1024,
+        "allocs/op": 0
+      }
+    },
+    {
+      "name": "BenchmarkBufferedFanout/refcount/N=512",
+      "metrics": {
+        "B/op": 0,
+        "allocs/op": 0,
+        "ns/op": 294834
+      },
+      "ceilings": {
+        "B/op": 1024,
+        "allocs/op": 0
+      }
+    },
+    {
+      "name": "BenchmarkBufferedFanout/refcount/N=64",
+      "metrics": {
+        "B/op": 0,
+        "allocs/op": 0,
+        "ns/op": 44901
+      },
+      "ceilings": {
+        "B/op": 1024,
+        "allocs/op": 0
+      }
+    },
+    {
+      "name": "BenchmarkBufferedFanout/refcount/N=8",
+      "metrics": {
+        "B/op": 0,
+        "allocs/op": 0,
+        "ns/op": 2740
+      },
+      "ceilings": {
+        "B/op": 1024,
+        "allocs/op": 0
+      }
+    },
+    {
+      "name": "BenchmarkBufferedFanout/shared/N=1",
+      "metrics": {
+        "B/op": 0,
+        "allocs/op": 0,
+        "ns/op": 778.3
+      },
+      "ceilings": {
+        "B/op": 1024,
+        "allocs/op": 0
+      }
+    },
+    {
+      "name": "BenchmarkBufferedFanout/shared/N=512",
+      "metrics": {
+        "B/op": 4,
+        "allocs/op": 0,
+        "ns/op": 268247
+      },
+      "ceilings": {
+        "B/op": 1028,
+        "allocs/op": 0
+      }
+    },
+    {
+      "name": "BenchmarkBufferedFanout/shared/N=64",
+      "metrics": {
+        "B/op": 13,
+        "allocs/op": 0,
+        "ns/op": 44748
+      },
+      "ceilings": {
+        "B/op": 1037,
+        "allocs/op": 0
+      }
+    },
+    {
+      "name": "BenchmarkBufferedFanout/shared/N=8",
+      "metrics": {
+        "B/op": 1,
+        "allocs/op": 0,
+        "ns/op": 1925
+      },
+      "ceilings": {
+        "B/op": 1025,
+        "allocs/op": 0
+      }
+    },
+    {
+      "name": "BenchmarkDirectFanout/N=1",
+      "metrics": {
+        "B/op": 2,
+        "allocs/op": 0,
+        "ns/op": 35.42
+      },
+      "ceilings": {
+        "B/op": 1026,
+        "allocs/op": 0
+      }
+    },
+    {
+      "name": "BenchmarkDirectFanout/N=512",
+      "metrics": {
+        "B/op": 737,
+        "allocs/op": 0,
+        "ns/op": 14364
+      },
+      "ceilings": {
+        "B/op": 1761,
+        "allocs/op": 0
+      }
+    },
+    {
+      "name": "BenchmarkDirectFanout/N=64",
+      "metrics": {
+        "B/op": 94,
+        "allocs/op": 0,
+        "ns/op": 686.2
+      },
+      "ceilings": {
+        "B/op": 1118,
+        "allocs/op": 0
+      }
+    },
+    {
+      "name": "BenchmarkDirectFanout/N=8",
+      "metrics": {
+        "B/op": 12,
+        "allocs/op": 0,
+        "ns/op": 303.3
+      },
+      "ceilings": {
+        "B/op": 1036,
+        "allocs/op": 0
+      }
+    }
+  ]
+}

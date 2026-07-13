@@ -18,7 +18,7 @@ import (
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/bundle"
 	"github.com/thesyncim/goav/codec"
-	"github.com/thesyncim/goav/ctl"
+	"github.com/thesyncim/goav/ctlserver"
 	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/goavtest"
 	"github.com/thesyncim/goav/internal/cliargs"
@@ -27,7 +27,7 @@ import (
 	"github.com/thesyncim/goav/internal/sourceargs"
 	"github.com/thesyncim/goav/internal/transformargs"
 	"github.com/thesyncim/goav/pipeline"
-	goavruntime "github.com/thesyncim/goav/runtime"
+	runconfig "github.com/thesyncim/goav/runconfig"
 	"github.com/thesyncim/goav/shape"
 )
 
@@ -150,6 +150,7 @@ func parseRunPipelineArgs(argv []string) (runPipelineConfig, error) {
 
 func runPipelineHelp() string {
 	return "usage: goav run [--runtime demo|default|test] [--control unix://PATH] '<pipeline>'\n\n" +
+		"schema: docs/CLI.md\n\n" +
 		"examples:\n" +
 		"  goav run '" + defaultRunPipeline + "'\n" +
 		"  goav run 'testsrc video width=1280 height=720 fps=30 duration=3s realtime=true pattern=bars ! encode codec=av1 media=video bitrate=1200k fps=30 keyframe_interval=60 min_qindex=20 max_qindex=180 tune=zerolatency ! filesink location=/tmp/goav-av1.ivf'\n\n" +
@@ -308,7 +309,7 @@ func runPipelineTaskWithControl(ctx context.Context, task goav.LiveTask, control
 		errC <- task.Run(runCtx)
 	}()
 	go func() {
-		errC <- ctl.ServeUnix(runCtx, task, control)
+		errC <- ctlserver.ServeUnix(runCtx, task, control)
 	}()
 	var first error
 	for i := 0; i < 2; i++ {
@@ -342,11 +343,11 @@ func runtimeForRun(name string, plan runPipelinePlan) (*goav.Runtime, string, er
 	codecIDs := plan.encodeCodecIDs()
 	switch name {
 	case "demo":
-		return bundle.MustNew(goavruntime.WithClock(goavtest.NewClock())), "demo", nil
+		return bundle.MustNew(runconfig.WithClock(goavtest.NewClock())), "demo", nil
 	case "default", "bundle":
 		return bundle.MustNew(), "bundle", nil
 	case "test", "fake", "deterministic":
-		opts := make([]goavruntime.Option, 0, len(codecIDs))
+		opts := make([]runconfig.Option, 0, len(codecIDs))
 		for _, id := range codecIDs {
 			if !wellKnownTestCodec(id) {
 				opts = append(opts, goavtest.Codec(id))

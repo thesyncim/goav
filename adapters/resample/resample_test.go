@@ -79,6 +79,51 @@ func TestFilterUpsamplesWithLinearInterpolation(t *testing.T) {
 	}
 }
 
+func TestFilterSameRateFastPaths(t *testing.T) {
+	for _, tt := range []struct {
+		name           string
+		inputChannels  int
+		outputChannels int
+		samples        []int16
+		want           []int16
+	}{
+		{
+			name:           "copy",
+			inputChannels:  1,
+			outputChannels: 1,
+			samples:        []int16{100, -200, 300},
+			want:           []int16{100, -200, 300},
+		},
+		{
+			name:           "downmix",
+			inputChannels:  2,
+			outputChannels: 1,
+			samples:        []int16{100, 300, 300, 500},
+			want:           []int16{200, 400},
+		},
+		{
+			name:           "upmix",
+			inputChannels:  1,
+			outputChannels: 2,
+			samples:        []int16{100, -200},
+			want:           []int16{100, 100, -200, -200},
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			resampler := newTestFilter(t, filter.ResampleConfig{SampleRate: 48000, Channels: tt.outputChannels}, audioStream(48000, tt.inputChannels))
+			frame := audioFrame("audio", 48000, tt.inputChannels, tt.samples)
+			result := filter.Result{Frames: []av.Frame{preallocAudioFrame(len(tt.want) * 2)}[:0]}
+
+			if err := resampler.FilterInto(context.Background(), &frame, &result); err != nil {
+				t.Fatal(err)
+			}
+			if got := samplesFromFrame(&result.Frames[0]); !s16Equal(got, tt.want) {
+				t.Fatalf("samples = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestFilterRejectsUnsupportedFormat(t *testing.T) {
 	stream := audioStream(48000, 2)
 	stream.Codec.SampleFormat = av.SampleFormatF32

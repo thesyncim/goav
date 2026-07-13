@@ -16,11 +16,9 @@ import (
 // immutable recipe IR (internal/recipeir) and never reach back into the mutable
 // fluent-builder structs. They are pinned by the boundary tests below.
 //
-// join_build.go is deliberately NOT in this list: it carries both the join
-// grammar (a builder that constructs BranchSpec values) and the join planner in
-// one file, so a file-level pin cannot separate the two. Moving the join
-// planner off BranchSpec is tracked as remaining boundary work in
-// docs/ARCHITECTURE.md.
+// join_plan.go has a dedicated file-scope pin below. The join planner still
+// carries a few root-only operation/destination handles while the remaining
+// join boundary slices are tracked separately from this general file set.
 var plannerLowererFiles = []string{
 	"recipe_compile.go",
 	"media_plan_build.go",
@@ -73,51 +71,204 @@ func TestPlannerFilesDoNotReadBuilderInternals(t *testing.T) {
 	}
 }
 
-// TestJoinPlannerReadsRecipeIRNotBuilderInternals pins that the join planner —
-// every method on joinPlan — consumes the captured recipe IR (recipeir.Join
-// branches and the joinBranchSnapshot record) and never the mutable BranchSpec
-// builder struct. join_build.go mixes the join grammar/capture (which legitimately
-// constructs and reads BranchSpec) with the planner in one file, so this is a
-// receiver-scoped pin rather than a file-scoped one: the planner's state machine
-// must stay BranchSpec-free even though the file is not physically split.
+// TestPlannerNeverReadsDestinationSpecFields pins the A2 boundary slice:
+// planner files consume captured destination facts and carry concrete
+// destination handles opaquely. Opening a writer or sink still needs
+// destinationSpec later, but planner decisions must not inspect its fields.
+func TestPlannerNeverReadsDestinationSpecFields(t *testing.T) {
+	files := map[string]bool{
+		"branch_compose_build.go": true,
+		"branch_compose_plan.go":  true,
+		"media_plan_build.go":     true,
+		"media_plan_spec.go":      true,
+	}
+	destinationSpecFields := map[string]bool{
+		"custom":         true,
+		"err":            true,
+		"format":         true,
+		"group":          true,
+		"id":             true,
+		"name":           true,
+		"output":         true,
+		"resolvedFormat": true,
+		"sink":           true,
+	}
+	fset := token.NewFileSet()
+	var violations []string
+	for file := range files {
+		parsed, err := parser.ParseFile(fset, file, nil, 0)
+		if err != nil {
+			t.Fatalf("parse %s: %v", file, err)
+		}
+		ast.Inspect(parsed, func(n ast.Node) bool {
+			selector, ok := n.(*ast.SelectorExpr)
+			if !ok || !destinationSpecFields[selector.Sel.Name] {
+				return true
+			}
+			if !destinationSpecSelectorLooksConcrete(file, selector.X) {
+				return true
+			}
+			violations = append(violations,
+				file+":"+strconv.Itoa(fset.Position(selector.Sel.Pos()).Line)+" reads ."+selector.Sel.Name)
+			return true
+		})
+	}
+	if len(violations) != 0 {
+		sort.Strings(violations)
+		t.Fatalf("planner files read destinationSpec internals:\n%s\n"+
+			"capture destination facts at the builder/compile edge instead",
+			strings.Join(violations, "\n"))
+	}
+}
+
+// TestPlannerLowersOperationsViaIR pins A3: planner/lowerer files read recipe
+// IR operation facts through the resolver layer, not root operationSpec
+// directly. Root operation compatibility stays in operation_facts.go while
+// planner files consume the lowered DTO/facts surface.
+func TestPlannerLowersOperationsViaIR(t *testing.T) {
+	files := plannerLowererFiles
+	fset := token.NewFileSet()
+	var violations []string
+	for _, file := range files {
+		parsed, err := parser.ParseFile(fset, file, nil, 0)
+		if err != nil {
+			t.Fatalf("parse %s: %v", file, err)
+		}
+		ast.Inspect(parsed, func(n ast.Node) bool {
+			ident, ok := n.(*ast.Ident)
+			if !ok || ident.Name != "operationSpec" {
+				return true
+			}
+			violations = append(violations, file+":"+strconv.Itoa(fset.Position(ident.Pos()).Line))
+			return true
+		})
+	}
+	if len(violations) != 0 {
+		t.Fatalf("planner/lowerer files read operationSpec directly:\n%s\n"+
+			"consume recipe IR operation facts instead",
+			strings.Join(violations, "\n"))
+	}
+}
+
+var grammarCompileBoundaryFiles = []string{
+	"recipe.go",
+	"source.go",
+	"stream_rule.go",
+}
+
+var plannerStateIdentifiers = map[string]bool{
+	"recipeCompileState":       true,
+	"branchCompositionPresent": true,
+	"branchInputAttachment":    true,
+	"branchInputProbe":         true,
+	"branchInputProbeReady":    true,
+	"inputAttachments":         true,
+	"inputFacts":               true,
+	"inputProbes":              true,
+	"joinFacts":                true,
+	"joinTree":                 true,
+	"streamRuleFacts":          true,
+}
+
+// TestGrammarFilesDoNotReadPlannerState pins the reverse A4 boundary:
+// grammar files may declare recipes and small query interfaces, but concrete
+// recipeCompileState internals live in recipe_compile.go.
+func TestGrammarFilesDoNotReadPlannerState(t *testing.T) {
+	fset := token.NewFileSet()
+	var violations []string
+	for _, file := range grammarCompileBoundaryFiles {
+		parsed, err := parser.ParseFile(fset, file, nil, 0)
+		if err != nil {
+			t.Fatalf("parse %s: %v", file, err)
+		}
+		ast.Inspect(parsed, func(n ast.Node) bool {
+			ident, ok := n.(*ast.Ident)
+			if !ok || !plannerStateIdentifiers[ident.Name] {
+				return true
+			}
+			violations = append(violations,
+				file+":"+strconv.Itoa(fset.Position(ident.Pos()).Line)+" references "+ident.Name)
+			return true
+		})
+	}
+	if len(violations) != 0 {
+		sort.Strings(violations)
+		t.Fatalf("grammar files read planner compile state:\n%s\n"+
+			"move concrete recipeCompileState reads behind query methods in recipe_compile.go",
+			strings.Join(violations, "\n"))
+	}
+}
+
+func destinationSpecSelectorLooksConcrete(file string, expr ast.Expr) bool {
+	if selectorPathContains(expr, "details") {
+		return false
+	}
+	if selectorPathContains(expr, "Destination") {
+		return true
+	}
+	root, ok := selectorRootIdent(expr)
+	if !ok {
+		return false
+	}
+	switch root {
+	case "destination", "destinations", "namedOutputs":
+		return true
+	case "output", "outputs":
+		return file != "branch_compose_build.go"
+	default:
+		return false
+	}
+}
+
+func selectorRootIdent(expr ast.Expr) (string, bool) {
+	switch expr := expr.(type) {
+	case *ast.Ident:
+		return expr.Name, true
+	case *ast.IndexExpr:
+		return selectorRootIdent(expr.X)
+	case *ast.SelectorExpr:
+		return selectorRootIdent(expr.X)
+	default:
+		return "", false
+	}
+}
+
+func selectorPathContains(expr ast.Expr, name string) bool {
+	switch expr := expr.(type) {
+	case *ast.Ident:
+		return expr.Name == name
+	case *ast.IndexExpr:
+		return selectorPathContains(expr.X, name)
+	case *ast.SelectorExpr:
+		return expr.Sel.Name == name || selectorPathContains(expr.X, name)
+	default:
+		return false
+	}
+}
+
+// TestJoinPlannerReadsRecipeIRNotBuilderInternals pins that the join planner
+// file consumes the captured recipe IR (recipeir.Join branches and the
+// joinBranchSnapshot record) and never the mutable BranchSpec builder struct.
+// join_build.go owns grammar/capture; join_plan.go owns planner/lowering.
 func TestJoinPlannerReadsRecipeIRNotBuilderInternals(t *testing.T) {
-	const file = "join_build.go"
+	const file = "join_plan.go"
 	fset := token.NewFileSet()
 	parsed, err := parser.ParseFile(fset, file, nil, 0)
 	if err != nil {
 		t.Fatalf("parse %s: %v", file, err)
 	}
-	methods := 0
 	var violations []string
-	for _, decl := range parsed.Decls {
-		fn, ok := decl.(*ast.FuncDecl)
-		if !ok || fn.Recv == nil || len(fn.Recv.List) == 0 {
-			continue
+	ast.Inspect(parsed, func(n ast.Node) bool {
+		id, ok := n.(*ast.Ident)
+		if ok && id.Name == "BranchSpec" {
+			violations = append(violations,
+				file+":"+strconv.Itoa(fset.Position(id.Pos()).Line))
 		}
-		recv := fn.Recv.List[0].Type
-		if star, ok := recv.(*ast.StarExpr); ok {
-			recv = star.X
-		}
-		ident, ok := recv.(*ast.Ident)
-		if !ok || ident.Name != "joinPlan" {
-			continue
-		}
-		methods++
-		ast.Inspect(fn.Body, func(n ast.Node) bool {
-			id, ok := n.(*ast.Ident)
-			if ok && id.Name == "BranchSpec" {
-				violations = append(violations,
-					fn.Name.Name+":"+strconv.Itoa(fset.Position(id.Pos()).Line))
-			}
-			return true
-		})
-	}
-	if methods == 0 {
-		t.Fatal("found no joinPlan methods; the scanner is broken")
-	}
+		return true
+	})
 	if len(violations) != 0 {
 		sort.Strings(violations)
-		t.Fatalf("join planner methods reach into BranchSpec (read the captured recipe IR instead):\n%s",
+		t.Fatalf("join planner file reaches into BranchSpec (read the captured recipe IR instead):\n%s",
 			strings.Join(violations, "\n"))
 	}
 }

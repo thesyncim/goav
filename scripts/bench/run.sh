@@ -7,8 +7,9 @@
 #   BENCH_COUNT=10 scripts/bench/run.sh  # more repetitions (better benchstat CIs)
 #   scripts/bench/run.sh -bench Mix .    # extra `go test` args narrow the run
 #
-# No baseline files are committed: benchmark numbers are machine-dependent, so
-# the only meaningful comparison is old-vs-new output from the SAME machine.
+# Timing numbers are machine-dependent, so the meaningful timing comparison is
+# old-vs-new output from the SAME machine. Committed reference JSON covers only
+# allocation and byte ceilings; see scripts/bench/baseline.sh.
 set -euo pipefail
 
 cd "$(dirname "$0")/../.."

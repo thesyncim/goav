@@ -12,7 +12,7 @@ import (
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/goavtest"
-	goavruntime "github.com/thesyncim/goav/runtime"
+	runconfig "github.com/thesyncim/goav/runconfig"
 	"github.com/thesyncim/goav/shape"
 	"github.com/thesyncim/goav/source"
 )
@@ -26,7 +26,7 @@ import (
 const benchVideoW, benchVideoH = 128, 96
 
 func benchRealCodecRuntime() *goav.Runtime {
-	return bundle.MustNew(goavruntime.WithRealtime(false))
+	return bundle.MustNew(runconfig.WithRealtime(false))
 }
 
 func benchRealVideoEncode(b *testing.B, spec codec.CodecSpec) {

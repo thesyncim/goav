@@ -130,6 +130,51 @@ func TestSelectOfMixesSwitchesLive(t *testing.T) {
 	}
 }
 
+func TestNestedSelectRoutingPinned(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	sink := newSelectSwitchSink("out")
+	tk, err := Select(
+		Select(
+			From(selectTestLiveSource("a", 100)).Audio(),
+			From(selectTestLiveSource("b", 200)).Audio(),
+		).Tap(FrameTap("left.select")),
+		Select(
+			From(selectTestLiveSource("c", 30)).Audio(),
+			From(selectTestLiveSource("d", 40)).Audio(),
+		).Tap(FrameTap("right.select")),
+	).To(Sink(sink)).BuildLive(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = tk.Close() })
+
+	runErr := make(chan error, 1)
+	go func() { runErr <- tk.Run(ctx) }()
+
+	if err := sink.waitFor(ctx, 100); err != nil {
+		t.Fatalf("default nested select arm never forwarded: %v", err)
+	}
+
+	sink.resetSeen()
+	if err := controlUntilAccepted(ctx, tk.(*task), control.SelectActive("b").AtTap("left.select")); err != nil {
+		t.Fatalf("SelectActive to inner left select by tap: %v", err)
+	}
+	if err := sink.waitFor(ctx, 200); err != nil {
+		t.Fatalf("after inner switch, b never forwarded: %v", err)
+	}
+
+	if err := tk.Control(ctx, control.SelectActive("d")); !errors.Is(err, control.ErrAmbiguousTarget) {
+		t.Fatalf("untargeted nested select control err = %v, want ambiguous target", err)
+	}
+
+	cancel()
+	if err := <-runErr; err != nil && !errors.Is(err, context.Canceled) {
+		t.Fatalf("Run err = %v", err)
+	}
+}
+
 func joinNestedTestFrameSink(name string, into *[]*av.Frame) Destination {
 	return Sink(SinkFunc(name, func(_ context.Context, m Message) error {
 		if m.Kind == pipeline.MessageFrame && m.Frame != nil && m.Frame.Video != nil {

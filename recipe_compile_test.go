@@ -206,7 +206,7 @@ func TestGraphPlanCarriesCloneSafeWorkPlan(t *testing.T) {
 				Type:  av.MediaVideo,
 				Codec: av.CodecVP8,
 			},
-			Operations:   []operationSpec{operationSpecForEncode(codec.VP9())},
+			Operations:   operationFactsFromSpecs([]operationSpec{operationSpecForEncode(codec.VP9())}),
 			Destinations: []string{"frames"},
 		}},
 		branches,
@@ -225,7 +225,7 @@ func TestGraphPlanCarriesCloneSafeWorkPlan(t *testing.T) {
 	if work.Inputs[0].CodecSpec.ID != av.CodecVP8 || work.Inputs[0].CodecSpec.Parameters.ClockRate != 90_000 {
 		t.Fatalf("work input codec spec = %+v, want VP8 90kHz", work.Inputs[0].CodecSpec)
 	}
-	if len(work.Streams) != 1 || work.Streams[0].Name != "video" || work.Streams[0].Operations[0].Encode.ID != av.CodecVP9 {
+	if len(work.Streams) != 1 || work.Streams[0].Name != "video" || work.Streams[0].Operations.Encode().ID != av.CodecVP9 {
 		t.Fatalf("work streams = %+v, want video stream with VP9 operation facts", work.Streams)
 	}
 	if len(work.Branches) != 1 || work.Branches[0].Name != "preview" {
@@ -242,7 +242,7 @@ func TestGraphPlanCarriesCloneSafeWorkPlan(t *testing.T) {
 	}
 
 	work.Inputs[0].CodecSpec.ID = av.CodecAV1
-	work.Streams[0].Operations[0].Encode.ID = av.CodecAV1
+	work.Streams[0].Operations.operations[0].Encode.ID = av.CodecAV1
 	work.Streams[0].Destinations[0] = "mutated"
 	work.Branches[0].Operations[0] = "mutated"
 	work.Operations[0].Destinations = append(work.Operations[0].Destinations, "mutated")
@@ -252,7 +252,7 @@ func TestGraphPlanCarriesCloneSafeWorkPlan(t *testing.T) {
 	if next.Inputs[0].CodecSpec.ID != av.CodecVP8 {
 		t.Fatal("graphPlan.workPlan() exposed input codec spec")
 	}
-	if next.Streams[0].Operations[0].Encode.ID != av.CodecVP9 {
+	if next.Streams[0].Operations.Encode().ID != av.CodecVP9 {
 		t.Fatal("graphPlan.workPlan() exposed stream operation slice")
 	}
 	if next.Streams[0].Destinations[0] == "mutated" {
@@ -269,21 +269,38 @@ func TestGraphPlanCarriesCloneSafeWorkPlan(t *testing.T) {
 	}
 }
 
-func TestBranchPacketTransformWithoutDecodeFails(t *testing.T) {
-	_, err := From(FileInput("input.ogg", strings.NewReader(""))).
-		UseRuntime(northStarTranscodeRuntime()).
+func TestBranchPacketTransformWithoutDecodeBuilds(t *testing.T) {
+	pcm := av.CodecID("x_pcm_s16")
+	source := Source("mic",
+		shape.Packet(av.MediaAudio, pcm, shape.Audio(44_100, codec.Stereo, av.SampleFormatS16), shape.Stream("mic")),
+		func(_ context.Context, push SourcePush) error {
+			if _, err := push.Packet(&av.Packet{StreamID: "mic", Type: av.MediaAudio, Payload: av.Buffer{Bytes: []byte{0, 0}, Ownership: av.BufferImmutable}}); err != nil {
+				return err
+			}
+			return push.EOS()
+		})
+	rt := solverTestOpusRuntime(
+		testBundleFilters(),
+		WithDecoder(codec.Descriptor{ID: pcm, Name: "PCM", Type: av.MediaAudio, Capabilities: codec.Capabilities{SampleFormats: []string{av.SampleFormatS16}}}, recipePCMDecoderFactory{decoder: &recipePCMDecoder{}}),
+	)
+
+	task, err := From(source).
+		UseRuntime(rt).
 		Audio().
 		Copy().
 		Branches(Branch("resampled").
-			Resample(48_000, 2).
+			Resample(16_000, codec.Mono).
 			To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil })))).
-		Build(context.Background())
-	if err == nil {
-		t.Fatal("expected a packet branch with a transform (no decode) to be rejected")
+		BuildLive(context.Background())
+	if err != nil {
+		t.Fatalf("BuildLive(): %v", err)
 	}
-	var buildErr *BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "packet_branch_transform_unsupported" || !errors.Is(err, errUnsupportedBuild) {
-		t.Fatalf("error = %v, want packet_branch_transform_unsupported BuildError", err)
+	defer task.Close()
+	text := specText(task.Describe())
+	for _, want := range []string{"decode", "resample"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("built graph missing %q:\n%s", want, text)
+		}
 	}
 }
 
@@ -343,7 +360,7 @@ func TestStoredOperationListsMirrorFlowBranchAndDirectStreamWork(t *testing.T) {
 	}
 }
 
-func TestPlannedBranchSplitOperationsRequireExplicitDecode(t *testing.T) {
+func TestPlannedBranchSplitOperationsInsertImplicitDecode(t *testing.T) {
 	voice := Flow("voice").Audio().
 		Resample(16_000, codec.Mono).
 		Encode(codec.Opus(codec.Bitrate(32_000), codec.Channels(codec.Mono)))
@@ -351,16 +368,15 @@ func TestPlannedBranchSplitOperationsRequireExplicitDecode(t *testing.T) {
 	implicitJob := From(FileInput("input.ogg", strings.NewReader(""))).
 		Audio().
 		Branches(Branch("voice").Apply(voice).To(Write("voice.ogg", io.Discard)))
-	if implicitJob.err == nil {
-		t.Fatal("implicit branch decode error = nil, want packet branch encode refusal")
+	if implicitJob.err != nil {
+		t.Fatal(implicitJob.err)
 	}
-	var buildErr *BuildError
-	if !errors.As(implicitJob.err, &buildErr) || buildErr.Code != packetBranchEncodeUnsupportedCode {
-		t.Fatalf("implicit branch decode error = %v, want %s", implicitJob.err, packetBranchEncodeUnsupportedCode)
+	if len(implicitJob.branchStreams) != 1 {
+		t.Fatalf("implicit branch streams = %d, want 1", len(implicitJob.branchStreams))
 	}
-	if !strings.Contains(implicitJob.err.Error(), "packet-domain planned branches cannot encode without decoding first") ||
-		!strings.Contains(implicitJob.err.Error(), "use .Decode().Branches") {
-		t.Fatalf("implicit branch decode error = %v, want explicit decode guidance", implicitJob.err)
+	implicit := implicitJob.branchStreams[0]
+	if got, want := operationSpecKindsForTest(implicit.privateOps), []plan.OperationKind{plan.OpDecode, plan.OpTransform, plan.OpEncode}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("implicit private operations = %+v, want %+v", got, want)
 	}
 
 	explicit := Flow("voice").Audio().
@@ -461,12 +477,13 @@ func TestPlannedBranchSplitOperationsTreatParentCopyAsPacketAnchor(t *testing.T)
 	if len(copyPlan.Branches) != 1 {
 		t.Fatalf("copy plan branches = %d, want 1", len(copyPlan.Branches))
 	}
-	if got, want := operationSpecKindsForTest(copyPlan.Branches[0].Operations), []plan.OperationKind{plan.OpCopy, plan.OpTap}; !reflect.DeepEqual(got, want) {
+	copyPrivate := copyPlan.Branches[0].PrivateOperations.Operations()
+	if got, want := operationSpecKindsForTest(copyPrivate), []plan.OperationKind{plan.OpCopy, plan.OpTap}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("copy plan operations = %+v, want %+v", got, want)
 	}
-	if len(copyPlan.Branches[0].PrivateOperations) != 2 ||
-		copyPlan.Branches[0].PrivateOperations[1].Tap.Name != "packets.branch" {
-		t.Fatalf("copy private operations = %+v, want copy and packet tap", copyPlan.Branches[0].PrivateOperations)
+	if len(copyPrivate) != 2 ||
+		copyPrivate[1].Tap.Name != "packets.branch" {
+		t.Fatalf("copy private operations = %+v, want copy and packet tap", copyPrivate)
 	}
 }
 
@@ -533,23 +550,27 @@ func TestPlannedBranchSplitOperationsRespectEarlierTapAnchors(t *testing.T) {
 	if len(gp.Branches) != 2 {
 		t.Fatalf("plan branches = %d, want 2", len(gp.Branches))
 	}
-	if len(gp.Branches[0].SharedOperations) != 2 ||
-		len(gp.Branches[0].PrivateOperations) != 1 ||
-		gp.Branches[0].PrivateOperations[0].Transform.resize == nil ||
-		gp.Branches[0].PrivateOperations[0].Transform.resize.Width != 320 {
+	rawShared := gp.Branches[0].SharedOperations.Operations()
+	rawPrivate := gp.Branches[0].PrivateOperations.Operations()
+	webShared := gp.Branches[1].SharedOperations.Operations()
+	webPrivate := gp.Branches[1].PrivateOperations.Operations()
+	if len(rawShared) != 2 ||
+		len(rawPrivate) != 1 ||
+		rawPrivate[0].Transform.resize == nil ||
+		rawPrivate[0].Transform.resize.Width != 320 {
 		t.Fatalf("raw plan branch = %+v, want private thumbnail resize from operation split", gp.Branches[0])
 	}
-	if len(gp.Branches[1].SharedOperations) != 4 ||
-		gp.Branches[1].SharedOperations[2].Transform.resize == nil ||
-		gp.Branches[1].SharedOperations[2].Transform.resize.Width != 1280 ||
-		len(gp.Branches[1].PrivateOperations) != 1 {
+	if len(webShared) != 4 ||
+		webShared[2].Transform.resize == nil ||
+		webShared[2].Transform.resize.Width != 1280 ||
+		len(webPrivate) != 1 {
 		t.Fatalf("web plan branch = %+v, want shared 720p resize from operation split", gp.Branches[1])
 	}
 
-	if got, want := operationSpecKindsForTest(gp.Branches[0].Operations), []plan.OperationKind{plan.OpDecode, plan.OpTap, plan.OpTransform}; !reflect.DeepEqual(got, want) {
+	if got, want := operationSpecKindsForTest(append(append([]operationSpec(nil), rawShared...), rawPrivate...)), []plan.OperationKind{plan.OpDecode, plan.OpTap, plan.OpTransform}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("raw plan operations = %+v, want %+v", got, want)
 	}
-	if got, want := operationSpecKindsForTest(gp.Branches[1].Operations), []plan.OperationKind{plan.OpDecode, plan.OpTap, plan.OpTransform, plan.OpTap, plan.OpEncode}; !reflect.DeepEqual(got, want) {
+	if got, want := operationSpecKindsForTest(append(append([]operationSpec(nil), webShared...), webPrivate...)), []plan.OperationKind{plan.OpDecode, plan.OpTap, plan.OpTransform, plan.OpTap, plan.OpEncode}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("web plan operations = %+v, want %+v", got, want)
 	}
 
@@ -560,22 +581,22 @@ func TestPlannedBranchSplitOperationsRespectEarlierTapAnchors(t *testing.T) {
 	if len(routes) != 2 {
 		t.Fatalf("routes = %d, want 2", len(routes))
 	}
-	rawShared := branchComposeRouteStageOperations(routes[0].sharedOperations)
-	rawPrivate := branchComposeRouteStageOperations(routes[0].privateOperations)
-	if len(rawShared) != 0 ||
-		len(rawPrivate) != 1 ||
-		rawPrivate[0].Kind != plan.OpTransform ||
-		rawPrivate[0].Transform.resize == nil ||
-		rawPrivate[0].Transform.resize.Width != 320 {
+	rawRouteShared := branchComposeRouteStageOperations(routes[0].sharedOperations).Operations()
+	rawRoutePrivate := branchComposeRouteStageOperations(routes[0].privateOperations).Operations()
+	if len(rawRouteShared) != 0 ||
+		len(rawRoutePrivate) != 1 ||
+		rawRoutePrivate[0].Kind != plan.OpTransform ||
+		rawRoutePrivate[0].Transform.resize == nil ||
+		rawRoutePrivate[0].Transform.resize.Width != 320 {
 		t.Fatalf("raw route = %+v, want private thumbnail resize from operation fields", routes[0])
 	}
-	webShared := branchComposeRouteStageOperations(routes[1].sharedOperations)
-	webPrivate := branchComposeRouteStageOperations(routes[1].privateOperations)
-	if len(webShared) != 1 ||
-		webShared[0].Kind != plan.OpTransform ||
-		webShared[0].Transform.resize == nil ||
-		webShared[0].Transform.resize.Width != 1280 ||
-		len(webPrivate) != 0 {
+	webRouteShared := branchComposeRouteStageOperations(routes[1].sharedOperations).Operations()
+	webRoutePrivate := branchComposeRouteStageOperations(routes[1].privateOperations).Operations()
+	if len(webRouteShared) != 1 ||
+		webRouteShared[0].Kind != plan.OpTransform ||
+		webRouteShared[0].Transform.resize == nil ||
+		webRouteShared[0].Transform.resize.Width != 1280 ||
+		len(webRoutePrivate) != 0 {
 		t.Fatalf("web route = %+v, want shared 720p resize from operation fields", routes[1])
 	}
 

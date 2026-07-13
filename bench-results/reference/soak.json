@@ -1,0 +1,71 @@
+{
+  "schema": 1,
+  "kind": "soak",
+  "generated_at": "2026-07-02T19:07:02Z",
+  "go_version": "go version go1.26.0 darwin/arm64",
+  "goos": "darwin",
+  "goarch": "arm64",
+  "package": ".",
+  "bench_regex": "Benchmark(SoakRecordDrift|LiveRoomSync|AttachDetachUnderLoad)$",
+  "benchtime": "100x",
+  "count": "1",
+  "source": "scripts/bench/baseline.sh soak .",
+  "thresholds": {
+    "bytes_per_op_slack_ratio": 0.05,
+    "bytes_per_op_slack_min": 1024,
+    "allocs_per_op_slack": 0,
+    "allocs_per_op_slack_ratio": 0.05,
+    "allocs_per_op_slack_min": 4,
+    "allocs_per_op_cold_threshold": 100,
+    "allocs_per_op_cold_slack_ratio": 0.15,
+    "allocs_per_op_cold_slack_min": 64
+  },
+  "benchmarks": [
+    {
+      "name": "BenchmarkAttachDetachUnderLoad",
+      "metrics": {
+        "B/op": 1083517,
+        "allocs/op": 511,
+        "ns/op": 109418
+      },
+      "ceilings": {
+        "B/op": 1137693,
+        "allocs/op": 588
+      }
+    },
+    {
+      "name": "BenchmarkLiveRoomSync",
+      "metrics": {
+        "B/op": 79,
+        "allocs/op": 1,
+        "delivered": 56,
+        "max_drift_ns": 380000000,
+        "ns/op": 477.9,
+        "p50_ns": 250,
+        "p95_ns": 667,
+        "p99_ns": 8959,
+        "source_drops": 0,
+        "sync_drops": 44
+      },
+      "ceilings": {
+        "B/op": 1103,
+        "allocs/op": 1
+      }
+    },
+    {
+      "name": "BenchmarkSoakRecordDrift",
+      "metrics": {
+        "B/op": 57,
+        "allocs/op": 1,
+        "gc_cycles": 1,
+        "gc_pause_total_ns": 48375,
+        "heap_drift_B": 2584,
+        "ns/op": 140.4
+      },
+      "ceilings": {
+        "B/op": 1081,
+        "allocs/op": 1
+      }
+    }
+  ]
+}

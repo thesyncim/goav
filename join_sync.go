@@ -262,6 +262,23 @@ func (s *joinSyncState) recycleFrame(frame *av.Frame) {
 	}
 }
 
+func (s *joinSyncState) recyclePending() {
+	if s == nil {
+		return
+	}
+	for _, id := range s.inputs {
+		queue := s.pending[id]
+		for i := range queue {
+			s.recycleFrame(queue[i])
+			queue[i] = nil
+		}
+		s.pending[id] = queue[:0]
+	}
+	for i := range s.frames {
+		s.frames[i] = nil
+	}
+}
+
 func popJoinFrame(queue []*av.Frame) ([]*av.Frame, *av.Frame) {
 	if len(queue) == 0 {
 		return queue, nil

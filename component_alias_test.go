@@ -30,4 +30,7 @@ var (
 	MatchCodec    = sourcepkg.MatchCodec
 	MatchStreamID = sourcepkg.MatchStreamID
 	MatchStream   = sourcepkg.MatchStream
+	MatchFirst    = sourcepkg.MatchFirst
+	MatchAfter    = sourcepkg.MatchAfter
+	MatchWithin   = sourcepkg.MatchWithin
 )

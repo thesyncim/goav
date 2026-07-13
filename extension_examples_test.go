@@ -15,7 +15,7 @@ import (
 	"github.com/thesyncim/goav/goavtest"
 	"github.com/thesyncim/goav/graphrender"
 	"github.com/thesyncim/goav/provider"
-	goavruntime "github.com/thesyncim/goav/runtime"
+	runconfig "github.com/thesyncim/goav/runconfig"
 	"github.com/thesyncim/goav/shape"
 	"github.com/thesyncim/goav/source"
 )
@@ -214,7 +214,7 @@ func ExampleWithEncoder_customSettings() {
 			}),
 		)).
 		To(out.Sink()).
-		UseRuntime(goavtest.Runtime(goavruntime.WithEncoder(factory.desc, factory))).
+		UseRuntime(goavtest.Runtime(runconfig.WithEncoder(factory.desc, factory))).
 		Run(ctx)
 
 	fmt.Println("err:", err)

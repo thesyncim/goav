@@ -10,11 +10,13 @@ import (
 	"testing"
 
 	"github.com/thesyncim/goav"
+	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/bundle"
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/component"
-	"github.com/thesyncim/goav/goavtest"
 	"github.com/thesyncim/goav/plan"
+	"github.com/thesyncim/goav/shape"
+	"github.com/thesyncim/goav/source"
 )
 
 // These golden tests prove Describe and Explain are machine-consumable: their
@@ -36,7 +38,10 @@ func explainJSONRecipe() *goav.Job {
 	sink := goav.Sink(component.SinkFunc("packets", func(context.Context, component.Message) error {
 		return nil
 	}))
-	return goav.From(goavtest.Audio(44_100, 1, []int16{1, 2, 3, 4})).
+	input := goav.Source("audio-1", shape.Frame(av.MediaAudio, shape.Audio(44_100, 1, av.SampleFormatS16)), func(context.Context, source.Push) error {
+		return nil
+	})
+	return goav.From(input).
 		UseRuntime(bundle.MustNew()).
 		Audio().
 		Resample(48_000, 2).

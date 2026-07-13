@@ -4,7 +4,6 @@ import (
 	"context"
 	"strconv"
 
-	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/internal/recipeir"
 	"github.com/thesyncim/goav/pipeline"
@@ -379,17 +378,18 @@ func mediaPlanPacketCopyRecipeStream(jobPresent bool, recipe recipeir.Recipe) (s
 	case 0:
 		return streamIntent{}, false, true
 	case 1:
-		stream := streamIntentFromRecipeIR(recipe.Streams[0])
-		if streamIntentPacketCopyOnly(stream) {
-			return stream, true, true
+		stream := recipe.Streams[0]
+		if recipeIRStreamPacketCopyOnly(stream) {
+			return streamIntentFromRecipeIR(stream), true, true
 		}
 	}
 	return streamIntent{}, false, false
 }
 
-func streamIntentPacketCopyOnly(stream streamIntent) bool {
-	encode := chainEncodeSpec(stream.Operations)
-	if !encode.Copy || chainHasDecode(stream.Operations) || encode.ID != "" || encode.Auto {
+func recipeIRStreamPacketCopyOnly(stream recipeir.Stream) bool {
+	operations := recipeIROperationFacts(stream.Operations)
+	encode := operations.Encode()
+	if !encode.Copy || operations.HasKind(plan.OpDecode) || encode.ID != "" || encode.Auto {
 		return false
 	}
 	hasCopy := false
@@ -408,7 +408,7 @@ func streamIntentPacketCopyOnly(stream streamIntent) bool {
 		case plan.OpShape:
 			// Annotation carriers (.Auto/.Require/.Prefer) lower to nothing;
 			// they do not change a packet-copy-only chain.
-			if !operationSpecIsAnnotation(op) {
+			if !recipeIROperationIsAnnotation(op) {
 				return false
 			}
 		default:
@@ -458,7 +458,7 @@ func mediaPlanDecodeStreamShape(stream streamIntent, outputs []destinationSpec, 
 
 func mediaPlanSinkDestinationShape(stream streamIntent, outputs []destinationSpec, frameSource bool) bool {
 	return len(outputs) == 1 &&
-		outputs[0].sink != nil &&
+		destinationSpecIsSink(outputs[0]) &&
 		(chainHasDecode(stream.Operations) || frameSource) &&
 		len(stream.Destinations) == 1 &&
 		!chainEncodeSpec(stream.Operations).Copy
@@ -516,34 +516,27 @@ func mediaPlanSourceSpecs(spec *pipeline.Spec, nodes map[string]plannedNode, inp
 	return refs, true, nil
 }
 
-func mediaPlanPacketCopyDestinations(spec *pipeline.Spec, nodes map[string]plannedNode, outputs []destinationSpec) ([]pipeline.NodeRef, error) {
+func mediaPlanPacketCopyDestinations(spec *pipeline.Spec, nodes map[string]plannedNode, outputs []destinationAttachment) ([]pipeline.NodeRef, error) {
 	refs := make([]pipeline.NodeRef, 0, len(outputs))
 	for i := range outputs {
-		if outputs[i].sink != nil {
-			name := firstNonEmpty(outputs[i].sink.Name(), outputs[i].label("sink"))
+		if outputs[i].details.sink {
+			sink := destinationAttachmentSink(outputs[i])
+			name := firstNonEmpty(outputs[i].details.sinkComponentName, outputs[i].details.label, "sink")
 			ref := pipeline.NodeRef(name)
-			if err := addPlannedNode(nodes, spec, name, pipeline.NodeSink, ref, describedNodeDetail(outputs[i].sink)); err != nil {
+			if err := addPlannedNode(nodes, spec, name, pipeline.NodeSink, ref, describedNodeDetail(sink)); err != nil {
 				return nil, err
 			}
 			refs = append(refs, ref)
 			continue
 		}
-		output := outputs[i].output
+		output := destinationAttachmentOutput(outputs[i])
 		name := muxNodeName(output, i)
 		ref := pipeline.NodeRef(name)
-		detail := outputNodeDetailWithFormat(output, destinationGraphFormat(outputs[i]))
+		detail := outputNodeDetailWithFormat(output, destinationAttachmentGraphFormat(outputs[i]))
 		if err := addPlannedNode(nodes, spec, name, pipeline.NodeStage, ref, detail); err != nil {
 			return nil, err
 		}
 		refs = append(refs, ref)
 	}
 	return refs, nil
-}
-
-func destinationGraphFormat(output destinationSpec) av.FormatID {
-	return output.format
-}
-
-func destinationOpenFormat(output destinationSpec) av.FormatID {
-	return destinationSpecFormat(output)
 }

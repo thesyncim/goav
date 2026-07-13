@@ -20,7 +20,7 @@ import (
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/provider"
 	"github.com/thesyncim/goav/rtpav"
-	goavruntime "github.com/thesyncim/goav/runtime"
+	runconfig "github.com/thesyncim/goav/runconfig"
 	"github.com/thesyncim/goav/snapshot"
 )
 
@@ -164,16 +164,16 @@ func audioOpusTestStream() av.Stream {
 
 // Runtime registry options mirroring the root module's test fixtures: build a
 // goav runtime whose codec/format registries carry exactly the test doubles.
-func withTestCodecs(configure ...func(*codec.SimpleRegistry)) goavruntime.Option {
-	return goavruntime.WithCodecAdapter(func(registry *codec.SimpleRegistry) {
+func withTestCodecs(configure ...func(*codec.SimpleRegistry)) runconfig.Option {
+	return runconfig.WithCodecAdapter(func(registry *codec.SimpleRegistry) {
 		for i := range configure {
 			configure[i](registry)
 		}
 	})
 }
 
-func withTestFormats(configure ...func(*format.SimpleRegistry)) goavruntime.Option {
-	return goavruntime.WithFormatAdapter(func(registry *format.SimpleRegistry) {
+func withTestFormats(configure ...func(*format.SimpleRegistry)) runconfig.Option {
+	return runconfig.WithFormatAdapter(func(registry *format.SimpleRegistry) {
 		for i := range configure {
 			configure[i](registry)
 		}

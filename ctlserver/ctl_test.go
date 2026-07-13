@@ -1,4 +1,4 @@
-package ctl_test
+package ctlserver_test
 
 import (
 	"context"
@@ -18,10 +18,10 @@ import (
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/component"
-	"github.com/thesyncim/goav/ctl"
+	"github.com/thesyncim/goav/ctlserver"
 	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/goavtest"
-	goavruntime "github.com/thesyncim/goav/runtime"
+	runconfig "github.com/thesyncim/goav/runconfig"
 )
 
 func TestExternalHostCustomCommandOverSocket(t *testing.T) {
@@ -32,20 +32,20 @@ func TestExternalHostCustomCommandOverSocket(t *testing.T) {
 		Value string `goavctl:"value,required" usage:"value=<text>" help:"external value"`
 	}
 	var applied string
-	command := ctl.CommandSpec{
+	command := ctlserver.CommandSpec{
 		Name:     "vendor.external",
 		Summary:  "external command",
 		ArgsType: reflect.TypeOf(vendorCommand{}),
-		Apply: func(_ context.Context, _ goav.LiveTask, args any) (ctl.ControlResponse, error) {
+		Apply: func(_ context.Context, _ goav.LiveTask, args any) (ctlserver.ControlResponse, error) {
 			applied = args.(vendorCommand).Value
-			return ctl.ControlResponse{Operation: "control vendor.external", Result: applied}, nil
+			return ctlserver.ControlResponse{Operation: "control vendor.external", Result: applied}, nil
 		},
 	}
 	task := newExternalTask(t, goavtest.Runtime())
 	defer task.Close()
 
-	socket := startUnixServer(t, ctx, task, ctl.WithCommands(command))
-	response := sendRequest(t, socket, ctl.Request{
+	socket := startUnixServer(t, ctx, task, ctlserver.WithCommands(command))
+	response := sendRequest(t, socket, ctlserver.Request{
 		Op:   "control",
 		Verb: "vendor.external",
 		Args: map[string]string{"value": "from-socket"},
@@ -54,7 +54,7 @@ func TestExternalHostCustomCommandOverSocket(t *testing.T) {
 		t.Fatalf("response=%+v applied=%q", response, applied)
 	}
 
-	help := sendRequest(t, socket, ctl.Request{
+	help := sendRequest(t, socket, ctlserver.Request{
 		Op:   "help",
 		Args: map[string]string{"topic": "control", "command": "vendor.external"},
 	})
@@ -72,17 +72,17 @@ func TestExternalHostCustomCodecOptionsAndStageOverSocket(t *testing.T) {
 	factory := &recordingEncoderFactory{
 		descriptor: codec.Descriptor{ID: customCodec, Name: "CLI PCM", Type: av.MediaAudio},
 	}
-	task := newExternalTask(t, goavtest.Runtime(goavruntime.WithEncoder(factory.descriptor, factory)))
+	task := newExternalTask(t, goavtest.Runtime(runconfig.WithEncoder(factory.descriptor, factory)))
 	defer task.Close()
 
 	var metered atomic.Int64
 	var captured atomic.Int64
-	registry := ctl.PipelineRegistry{
-		Steps: []ctl.BranchPipelineStepSpec{
+	registry := ctlserver.PipelineRegistry{
+		Steps: []ctlserver.BranchPipelineStepSpec{
 			{
 				Name:    "meter",
 				Summary: "external frame meter",
-				Apply: func(branch *ctl.BranchPipeline, _ ctl.StepArgs) error {
+				Apply: func(branch *ctlserver.BranchPipeline, _ ctlserver.StepArgs) error {
 					branch.Do(component.FrameFunc("meter", func(_ context.Context, frame *av.Frame, emit component.Emit) error {
 						metered.Add(1)
 						return emit.Frame(frame)
@@ -93,7 +93,7 @@ func TestExternalHostCustomCodecOptionsAndStageOverSocket(t *testing.T) {
 			{
 				Name:    "memorysink",
 				Summary: "external in-process sink",
-				Apply: func(branch *ctl.BranchPipeline, args ctl.StepArgs) error {
+				Apply: func(branch *ctlserver.BranchPipeline, args ctlserver.StepArgs) error {
 					name := args["name"]
 					if name == "" {
 						name = "memory"
@@ -108,8 +108,8 @@ func TestExternalHostCustomCodecOptionsAndStageOverSocket(t *testing.T) {
 		},
 	}
 
-	socket := startUnixServer(t, ctx, task, ctl.WithPipelineRegistry(registry))
-	response := sendRequest(t, socket, ctl.Request{
+	socket := startUnixServer(t, ctx, task, ctlserver.WithPipelineRegistry(registry))
+	response := sendRequest(t, socket, ctlserver.Request{
 		Op:     "attach",
 		Tap:    "frames",
 		Branch: "record",
@@ -160,8 +160,8 @@ func TestExternalHostHelpListsRuntimeRegisteredComponents(t *testing.T) {
 		descriptor: codec.Descriptor{ID: customCodec, Name: "Help PCM", Type: av.MediaAudio},
 	}
 	task := newExternalTask(t, goavtest.Runtime(
-		goavruntime.WithEncoder(factory.descriptor, factory),
-		goavruntime.WithFormatAdapter(func(registry *format.SimpleRegistry) {
+		runconfig.WithEncoder(factory.descriptor, factory),
+		runconfig.WithFormatAdapter(func(registry *format.SimpleRegistry) {
 			registry.RegisterMuxerDescriptor(format.Descriptor{
 				Format: customFormat,
 				Codecs: []av.CodecID{customCodec},
@@ -171,7 +171,7 @@ func TestExternalHostHelpListsRuntimeRegisteredComponents(t *testing.T) {
 	defer task.Close()
 
 	socket := startUnixServer(t, ctx, task)
-	help := sendRequest(t, socket, ctl.Request{
+	help := sendRequest(t, socket, ctlserver.Request{
 		Op:   "help",
 		Args: map[string]string{"topic": "attach"},
 	})
@@ -201,16 +201,16 @@ func TestExternalHostCustomEncoderSpecCanMapArbitrarySettings(t *testing.T) {
 	factory := &recordingEncoderFactory{
 		descriptor: codec.Descriptor{ID: customCodec, Name: "Fancy Audio", Type: av.MediaAudio},
 	}
-	task := newExternalTask(t, goavtest.Runtime(goavruntime.WithEncoder(factory.descriptor, factory)))
+	task := newExternalTask(t, goavtest.Runtime(runconfig.WithEncoder(factory.descriptor, factory)))
 	defer task.Close()
 
 	var controlCalled atomic.Bool
-	registry := ctl.PipelineRegistry{
-		Encoders: []ctl.EncoderSpec{{
+	registry := ctlserver.PipelineRegistry{
+		Encoders: []ctlserver.EncoderSpec{{
 			Name: "fancyenc",
-			Apply: func(args ctl.StepArgs) (codec.CodecSpec, error) {
+			Apply: func(args ctlserver.StepArgs) (codec.CodecSpec, error) {
 				if args["bitrate"] == "" {
-					return codec.CodecSpec{}, ctl.NewError(
+					return codec.CodecSpec{}, ctlserver.NewError(
 						"missing_required",
 						"parse branch pipeline",
 						"bitrate",
@@ -222,7 +222,7 @@ func TestExternalHostCustomEncoderSpecCanMapArbitrarySettings(t *testing.T) {
 				}
 				bitrate, err := parseTestRate(args["bitrate"])
 				if err != nil {
-					return codec.CodecSpec{}, ctl.NewError(
+					return codec.CodecSpec{}, ctlserver.NewError(
 						"invalid_value",
 						"parse branch pipeline",
 						"bitrate",
@@ -244,8 +244,8 @@ func TestExternalHostCustomEncoderSpecCanMapArbitrarySettings(t *testing.T) {
 		}},
 	}
 
-	socket := startUnixServer(t, ctx, task, ctl.WithPipelineRegistry(registry))
-	missing := sendRequest(t, socket, ctl.Request{
+	socket := startUnixServer(t, ctx, task, ctlserver.WithPipelineRegistry(registry))
+	missing := sendRequest(t, socket, ctlserver.Request{
 		Op:       "attach",
 		Tap:      "frames",
 		Branch:   "bad-fancy",
@@ -259,7 +259,7 @@ func TestExternalHostCustomEncoderSpecCanMapArbitrarySettings(t *testing.T) {
 	}
 
 	out := filepath.Join(t.TempDir(), "fancy.ogg")
-	response := sendRequest(t, socket, ctl.Request{
+	response := sendRequest(t, socket, ctlserver.Request{
 		Op:       "attach",
 		Tap:      "frames",
 		Branch:   "fancy",
@@ -282,27 +282,27 @@ func TestPublicValidateCapabilitiesPreflightsCustomMetadata(t *testing.T) {
 	type commandSettings struct {
 		Value string `goavctl:"value,required" usage:"value=<text>" help:"custom value"`
 	}
-	command := ctl.NewCommand[commandSettings](
+	command := ctlserver.NewCommand[commandSettings](
 		"vendor.preflight",
 		"preflight command",
-		func(context.Context, goav.LiveTask, commandSettings) (ctl.ControlResponse, error) {
-			return ctl.ControlResponse{Operation: "control vendor.preflight"}, nil
+		func(context.Context, goav.LiveTask, commandSettings) (ctlserver.ControlResponse, error) {
+			return ctlserver.ControlResponse{Operation: "control vendor.preflight"}, nil
 		},
 	)
 
 	type stepSettings struct {
 		Window time.Duration `goavctl:"window,duration" usage:"[window=<duration>]" help:"observation window"`
 	}
-	step := ctl.NewBranchStep[stepSettings](
+	step := ctlserver.NewBranchStep[stepSettings](
 		"meter",
 		"preflight meter",
-		func(*ctl.BranchPipeline, stepSettings) error { return nil },
+		func(*ctlserver.BranchPipeline, stepSettings) error { return nil },
 	)
 
 	type encoderSettings struct {
 		Bitrate int `goavctl:"bitrate,required,rate" usage:"bitrate=<rate>" help:"target bitrate"`
 	}
-	encoder := ctl.NewEncoderSpec[encoderSettings](
+	encoder := ctlserver.NewEncoderSpec[encoderSettings](
 		"acmeenc",
 		"preflight encoder",
 		func(args encoderSettings) (codec.CodecSpec, error) {
@@ -310,36 +310,36 @@ func TestPublicValidateCapabilitiesPreflightsCustomMetadata(t *testing.T) {
 		},
 	)
 
-	err := ctl.ValidateCapabilities(ctl.CapabilitySet{
-		Commands: []ctl.CommandSpec{command},
-		Pipeline: ctl.PipelineRegistry{
-			Steps:    []ctl.BranchPipelineStepSpec{step},
-			Encoders: []ctl.EncoderSpec{encoder},
+	err := ctlserver.ValidateCapabilities(ctlserver.CapabilitySet{
+		Commands: []ctlserver.CommandSpec{command},
+		Pipeline: ctlserver.PipelineRegistry{
+			Steps:    []ctlserver.BranchPipelineStepSpec{step},
+			Encoders: []ctlserver.EncoderSpec{encoder},
 		},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	err = ctl.ValidateCapabilities(ctl.CapabilitySet{
-		Pipeline: ctl.PipelineRegistry{
-			Steps: []ctl.BranchPipelineStepSpec{ctl.NewBranchStep[stepSettings](
+	err = ctlserver.ValidateCapabilities(ctlserver.CapabilitySet{
+		Pipeline: ctlserver.PipelineRegistry{
+			Steps: []ctlserver.BranchPipelineStepSpec{ctlserver.NewBranchStep[stepSettings](
 				"custom-copy",
 				"bad alias",
-				func(*ctl.BranchPipeline, stepSettings) error { return nil },
-				ctl.Aliases("copy"),
+				func(*ctlserver.BranchPipeline, stepSettings) error { return nil },
+				ctlserver.Aliases("copy"),
 			)},
 		},
 	})
-	var structured *ctl.Error
+	var structured *ctlserver.Error
 	if !errors.As(err, &structured) ||
 		structured.Code != "invalid_registry" ||
 		structured.Node != "copy" {
 		t.Fatalf("alias collision err = %+v", structured)
 	}
 
-	err = ctl.ValidateCapabilities(ctl.CapabilitySet{
-		Commands: []ctl.CommandSpec{{
+	err = ctlserver.ValidateCapabilities(ctlserver.CapabilitySet{
+		Commands: []ctlserver.CommandSpec{{
 			Name:     "vendor.pointer",
 			ArgsType: reflect.TypeOf(&commandSettings{}),
 		}},
@@ -353,38 +353,38 @@ func TestPublicValidateCapabilitiesPreflightsCustomMetadata(t *testing.T) {
 }
 
 func TestPublicWrapperHelpersDelegateToControlSurface(t *testing.T) {
-	success := ctl.SuccessResponse("done")
+	success := ctlserver.SuccessResponse("done")
 	if !success.OK || success.Result != "done" || success.Error != nil {
 		t.Fatalf("success = %+v", success)
 	}
-	failed := ctl.ErrorResponse("test", fmt.Errorf("boom"))
+	failed := ctlserver.ErrorResponse("test", fmt.Errorf("boom"))
 	if failed.OK || failed.Error == nil || !strings.Contains(failed.Error.Message, "boom") {
 		t.Fatalf("error = %+v", failed)
 	}
 
-	manifest := ctl.ControlManifest()
-	bitrate, ok := ctl.LookupControlCommand("bitrate")
+	manifest := ctlserver.ControlManifest()
+	bitrate, ok := ctlserver.LookupControlCommand("bitrate")
 	if !ok {
 		t.Fatal("missing bitrate command")
 	}
-	if found, ok := ctl.LookupCommand(manifest, "bitrate"); !ok || found.Name != bitrate.Name {
+	if found, ok := ctlserver.LookupCommand(manifest, "bitrate"); !ok || found.Name != bitrate.Name {
 		t.Fatalf("lookup = %+v ok=%v", found, ok)
 	}
-	if usage := ctl.CommandUsage(bitrate); !strings.Contains(usage, "value=<rate>") {
+	if usage := ctlserver.CommandUsage(bitrate); !strings.Contains(usage, "value=<rate>") {
 		t.Fatalf("usage = %s", usage)
 	}
-	if help := ctl.CommandHelp(bitrate); !strings.Contains(help, "bits per second") {
+	if help := ctlserver.CommandHelp(bitrate); !strings.Contains(help, "bits per second") {
 		t.Fatalf("help = %s", help)
 	}
 
-	args, err := ctl.BindArgs(bitrate, []string{"stream=video", "value=1200k"})
+	args, err := ctlserver.BindArgs(bitrate, []string{"stream=video", "value=1200k"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(fmt.Sprintf("%+v", args), "1200000") {
 		t.Fatalf("args = %+v", args)
 	}
-	args, err = ctl.BindJSON(bitrate, []byte(`{"stream":"video","value":"900k"}`))
+	args, err = ctlserver.BindJSON(bitrate, []byte(`{"stream":"video","value":"900k"}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -392,14 +392,14 @@ func TestPublicWrapperHelpersDelegateToControlSurface(t *testing.T) {
 		t.Fatalf("json args = %+v", args)
 	}
 
-	control, err := ctl.DecodeRawControl([]byte(`{"type":"bitrate","stream_id":"video","bitrate":1200000}`))
+	control, err := ctlserver.DecodeRawControl([]byte(`{"type":"bitrate","stream_id":"video","bitrate":1200000}`))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if control.Bitrate() != 1_200_000 {
 		t.Fatalf("control = %+v", control)
 	}
-	event, err := ctl.DecodeRawEvent([]byte(`{"type":"vendor.force_idr","stream_id":"video"}`))
+	event, err := ctlserver.DecodeRawEvent([]byte(`{"type":"vendor.force_idr","stream_id":"video"}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -407,7 +407,7 @@ func TestPublicWrapperHelpersDelegateToControlSurface(t *testing.T) {
 		t.Fatalf("event = %+v", event)
 	}
 
-	rootHelp, err := ctl.Help([]string{"graph"})
+	rootHelp, err := ctlserver.Help([]string{"graph"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -419,24 +419,24 @@ func TestPublicWrapperHelpersDelegateToControlSurface(t *testing.T) {
 		Value string `goavctl:"value,required" usage:"value=<text>" help:"wrapper value"`
 	}
 	var applied string
-	custom := ctl.CommandSpec{
+	custom := ctlserver.CommandSpec{
 		Name:     "wrapper",
 		Summary:  "wrapper command",
 		ArgsType: reflect.TypeOf(wrapperCommand{}),
-		Apply: func(_ context.Context, _ goav.LiveTask, args any) (ctl.ControlResponse, error) {
+		Apply: func(_ context.Context, _ goav.LiveTask, args any) (ctlserver.ControlResponse, error) {
 			applied = args.(wrapperCommand).Value
-			return ctl.ControlResponse{Operation: "control wrapper", Result: applied}, nil
+			return ctlserver.ControlResponse{Operation: "control wrapper", Result: applied}, nil
 		},
 	}
-	customHelp, err := ctl.HelpWithCommands([]string{"control", "wrapper"}, []ctl.CommandSpec{custom})
+	customHelp, err := ctlserver.HelpWithCommands([]string{"control", "wrapper"}, []ctlserver.CommandSpec{custom})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(customHelp, "wrapper command") {
 		t.Fatalf("custom help = %s", customHelp)
 	}
-	registryHelp, err := ctl.HelpWithRegistry([]string{"attach"}, nil, ctl.PipelineRegistry{
-		Steps: []ctl.BranchPipelineStepSpec{{
+	registryHelp, err := ctlserver.HelpWithRegistry([]string{"attach"}, nil, ctlserver.PipelineRegistry{
+		Steps: []ctlserver.BranchPipelineStepSpec{{
 			Name:    "meter",
 			Summary: "wrapper meter",
 			Usage:   "[label=<text>]",
@@ -449,7 +449,7 @@ func TestPublicWrapperHelpersDelegateToControlSurface(t *testing.T) {
 		t.Fatalf("registry help = %s", registryHelp)
 	}
 
-	response, err := ctl.Invoke(context.Background(), nil, custom, []string{"value=called"})
+	response, err := ctlserver.Invoke(context.Background(), nil, custom, []string{"value=called"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -464,7 +464,7 @@ func TestPublicExecuteAndServeUnixWrappers(t *testing.T) {
 	task := newExternalTask(t, goavtest.Runtime())
 	defer task.Close()
 
-	response := ctl.ExecuteRequest(ctx, task, ctl.Request{
+	response := ctlserver.ExecuteRequest(ctx, task, ctlserver.Request{
 		Op:   "help",
 		Args: map[string]string{"topic": "graph"},
 	})
@@ -472,7 +472,7 @@ func TestPublicExecuteAndServeUnixWrappers(t *testing.T) {
 	if !response.OK || response.Error != nil || !ok || !strings.Contains(text, "Mermaid") {
 		t.Fatalf("execute request = %+v", response)
 	}
-	direct, err := ctl.Execute(ctx, task, []string{"help", "attach"})
+	direct, err := ctlserver.Execute(ctx, task, []string{"help", "attach"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -485,11 +485,11 @@ func TestPublicExecuteAndServeUnixWrappers(t *testing.T) {
 	t.Cleanup(func() { _ = os.Remove(socket) })
 	errC := make(chan error, 1)
 	go func() {
-		errC <- ctl.ServeUnix(ctx, task, "unix://"+socket)
+		errC <- ctlserver.ServeUnix(ctx, task, "unix://"+socket)
 	}()
 	waitForSocket(t, socket, errC)
 
-	served := sendRequest(t, socket, ctl.Request{
+	served := sendRequest(t, socket, ctlserver.Request{
 		Op:   "help",
 		Args: map[string]string{"topic": "graph"},
 	})
@@ -522,13 +522,13 @@ func newExternalTask(t *testing.T, runtime *goav.Runtime) goav.LiveTask {
 	return task
 }
 
-func startUnixServer(t *testing.T, ctx context.Context, task goav.LiveTask, options ...ctl.ServerOption) string {
+func startUnixServer(t *testing.T, ctx context.Context, task goav.LiveTask, options ...ctlserver.ServerOption) string {
 	t.Helper()
 	socket := filepath.Join(os.TempDir(), fmt.Sprintf("goav-ctl-%d.sock", time.Now().UnixNano()))
 	t.Cleanup(func() { _ = os.Remove(socket) })
 	errC := make(chan error, 1)
 	go func() {
-		errC <- ctl.ServeUnixWithOptions(ctx, task, "unix://"+socket, options...)
+		errC <- ctlserver.ServeUnixWithOptions(ctx, task, "unix://"+socket, options...)
 	}()
 	waitForSocket(t, socket, errC)
 	t.Cleanup(func() {
@@ -543,7 +543,7 @@ func startUnixServer(t *testing.T, ctx context.Context, task goav.LiveTask, opti
 	return socket
 }
 
-func sendRequest(t *testing.T, socket string, request ctl.Request) ctl.Response {
+func sendRequest(t *testing.T, socket string, request ctlserver.Request) ctlserver.Response {
 	t.Helper()
 	conn, err := net.Dial("unix", socket)
 	if err != nil {
@@ -553,7 +553,7 @@ func sendRequest(t *testing.T, socket string, request ctl.Request) ctl.Response 
 	if err := json.NewEncoder(conn).Encode(request); err != nil {
 		t.Fatal(err)
 	}
-	var response ctl.Response
+	var response ctlserver.Response
 	if err := json.NewDecoder(conn).Decode(&response); err != nil {
 		t.Fatal(err)
 	}

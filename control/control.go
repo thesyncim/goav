@@ -1,4 +1,5 @@
-// Package control defines the opt-in live task control vocabulary.
+// Package control defines the in-process live task control vocabulary; for
+// exposing those controls over a socket, see package ctlserver.
 package control
 
 import (

@@ -366,7 +366,18 @@ func plannedBranchSharedOperationSpecs(stream *jobStreamBuild, spec BranchSpec, 
 	return nil
 }
 
-func plannedBranchPrivateOperationSpecs(stream *jobStreamBuild, spec BranchSpec, parentPacket bool) []operationSpec {
+func plannedBranchPrivateOperationSpecs(stream *jobStreamBuild, spec BranchSpec, parentPacket bool, parentFrame bool) []operationSpec {
+	if !parentFrame && !chainHasDecode(spec.operations) && branchOperationsNeedImplicitDecode(spec.operations) {
+		decodeCodec := codec.CodecSpec{}
+		component := ""
+		if stream != nil {
+			decodeCodec = chainDecodeCodec(stream.operations)
+			component = string(stream.selector.Codec)
+		}
+		out := []operationSpec{operationSpecForDecode(decodeCodec, component)}
+		out = append(out, cloneOperationSpecs(spec.operations)...)
+		return out
+	}
 	if !parentPacket || chainHasDecode(spec.operations) || codecIntentSet(chainEncodeSpec(spec.operations)) {
 		return cloneOperationSpecs(spec.operations)
 	}

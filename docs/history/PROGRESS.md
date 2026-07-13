@@ -1,5 +1,7 @@
 # Progress
 
+Historical campaign artifact; current forward status lives in `docs/ROADMAP.md` and evidence lives in `docs/NORTH_STAR.md`.
+
 Read this when you want the current shape without archaeology.
 `docs/NORTH_STAR.md` says where the project is trying to go.
 `docs/ROADMAP.md` separates stable, experimental, deferred, planned, and
@@ -115,9 +117,9 @@ them explicitly or keep them advanced/non-v1:
   `goav.Custom(...)`, `provider.Info`, and `provider.TransactionalWriter`.
 - Add in-process hooks through `EventFunc`, `FrameFunc`, `PacketFunc`, and
   `SinkFunc`.
-- Register runtime adapters per runtime with `goavruntime.WithDecoder`,
+- Register runtime adapters per runtime with `runconfig.WithDecoder`,
   `WithEncoder`, `WithFilter`, `WithMuxer`, `WithDemuxer`, and `WithProber`.
-- Host controls through package `ctl`: explicit command manifests, custom
+- Host controls through package `ctlserver`: explicit command manifests, custom
   branch-pipeline steps, custom encoder spellings, capabilities reports, and
   generated help.
 

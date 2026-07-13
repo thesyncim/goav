@@ -12,6 +12,7 @@ import (
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/pipeline"
+	runconfig "github.com/thesyncim/goav/runconfig"
 	sourcepkg "github.com/thesyncim/goav/source"
 )
 
@@ -191,6 +192,102 @@ func TestVideoCompositeStepAllocs(t *testing.T) {
 	})
 	if allocs != 0 {
 		t.Fatalf("video composite step allocs = %v, want 0", allocs)
+	}
+}
+
+// TestMetadataPoolAllocs pins the opt-in runtime media pool's metadata map
+// reuse at zero allocations after warm-up. Public event metadata can escape to
+// watchers, so this pool is only for runtime-owned scratch with explicit
+// take/put lifetime.
+func TestMetadataPoolAllocs(t *testing.T) {
+	rt := mustNew(runconfig.WithMediaPools(true))
+	pools := rt.mediaPools
+	if pools == nil {
+		t.Fatal("WithMediaPools(true) did not install runtime media pools")
+	}
+	metadata := pools.takeMetadata()
+	metadata["stream"] = "audio"
+	pools.putMetadata(metadata)
+
+	metadata = pools.takeMetadata()
+	if len(metadata) != 0 {
+		t.Fatalf("pooled metadata was not cleared: %#v", metadata)
+	}
+	pools.putMetadata(metadata)
+
+	if allocs := testing.AllocsPerRun(1000, func() {
+		metadata := pools.takeMetadata()
+		metadata["stream"] = "audio"
+		pools.putMetadata(metadata)
+	}); allocs != 0 {
+		t.Fatalf("metadata pool allocs = %v, want 0", allocs)
+	}
+}
+
+// TestFramePlanePoolAllocs pins runtime media-pool reuse for the 1-plane audio
+// and 3-plane I420 slices the built-in join stages borrow across attach/detach
+// cycles.
+func TestFramePlanePoolAllocs(t *testing.T) {
+	rt := mustNew(runconfig.WithMediaPools(true))
+	pools := rt.mediaPools
+	if pools == nil {
+		t.Fatal("WithMediaPools(true) did not install runtime media pools")
+	}
+	for _, tt := range []struct {
+		name  string
+		count int
+	}{
+		{name: "audio", count: 1},
+		{name: "i420", count: 3},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			planes := pools.takePlanes(tt.count)
+			for i := range planes {
+				planes[i].Buffer.Bytes = make([]byte, 0, 64)
+				planes[i].Stride = 8
+			}
+			pools.putPlanes(planes)
+
+			if allocs := testing.AllocsPerRun(1000, func() {
+				planes := pools.takePlanes(tt.count)
+				for i := range planes {
+					planes[i].Buffer.Bytes = append(planes[i].Buffer.Bytes, byte(i))
+					planes[i].Stride = i + 1
+				}
+				pools.putPlanes(planes)
+			}); allocs != 0 {
+				t.Fatalf("frame plane pool allocs = %v, want 0", allocs)
+			}
+		})
+	}
+}
+
+func TestRuntimeMediaPoolsRecycleJoinStagePlanes(t *testing.T) {
+	rt := mustNew(runconfig.WithMediaPools(true))
+	pools := rt.mediaPools
+	if pools == nil {
+		t.Fatal("WithMediaPools(true) did not install runtime media pools")
+	}
+
+	mix := newAudioMixStageWithPreallocAndPools("mix", []av.StreamID{"a", "b"}, "out", joinSyncArrival, 2, pools)
+	if err := mix.Close(); err != nil {
+		t.Fatal(err)
+	}
+	composite := newVideoCompositeStageWithPreallocAndPools("composite", []av.StreamID{"a", "b"}, "out",
+		[]compositeLayout{{X: 0, Y: 0}, {X: 4, Y: 0}}, joinSyncArrival, 2, pools)
+	if err := composite.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	pools.mu.Lock()
+	audioPlaneSets := len(pools.audioPlanes)
+	videoPlaneSets := len(pools.videoPlanes)
+	pools.mu.Unlock()
+	if audioPlaneSets < 5 {
+		t.Fatalf("audio join returned %d plane sets, want at least 5", audioPlaneSets)
+	}
+	if videoPlaneSets < 5 {
+		t.Fatalf("video join returned %d plane sets, want at least 5", videoPlaneSets)
 	}
 }
 

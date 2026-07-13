@@ -26,17 +26,17 @@ The copyable, separate-module examples are:
   `pipeline.Source`, and feeds goav through `goav.Input(provider)`.
 - **`examples/custom-destination`**: opens a plain byte destination with
   `goav.Writer` and checks the resolved `provider.Info`.
-- **`examples/custom-filter`**: registers a frame filter with `goavruntime.WithFilter`
+- **`examples/custom-filter`**: registers a frame filter with `runconfig.WithFilter`
   and drives it through `.Resample(...)`.
-- **`examples/custom-codec`**: registers a codec with `goavruntime.WithEncoder` and
-  `goavruntime.WithDecoder`, then round-trips packets through `.Encode(...)` and
+- **`examples/custom-codec`**: registers a codec with `runconfig.WithEncoder` and
+  `runconfig.WithDecoder`, then round-trips packets through `.Encode(...)` and
   `.Decode()`.
 - **`examples/custom-join`**: implements a `pipeline.Stage` consumed by
   `goav.Join(...)`.
 - **`examples/transactional-writer`**: opens a destination with `goav.Writer`
   and demonstrates `provider.TransactionalWriter` commit/abort semantics.
 - **`examples/control-plane-host`**: exposes app-owned controls, branch steps,
-  sinks, and encoder spellings through a validated `ctl.CapabilitySet`.
+  sinks, and encoder spellings through a validated `ctlserver.CapabilitySet`.
 
 When writing your adapter, start from the smallest shipped implementation that
 matches the kind of boundary you own:
@@ -132,9 +132,9 @@ reflect exported `CodecSettings` fields tagged with `goavctl`, `usage`, and
 `Control func(any) error` escape hatch with your concrete native handle when a
 setting truly belongs to the native library; a non-nil error fails the open.
 
-Register with `goavruntime.WithDecoder(desc, factory)`, `goavruntime.WithEncoder(desc,
-factory)`, `goavruntime.WithCodecDescriptor(desc)` (capability-only), or a bundle
-via `goavruntime.WithCodecAdapter(func(*codec.SimpleRegistry))`; adapter packages
+Register with `runconfig.WithDecoder(desc, factory)`, `runconfig.WithEncoder(desc,
+factory)`, `runconfig.WithCodecDescriptor(desc)` (capability-only), or a bundle
+via `runconfig.WithCodecAdapter(func(*codec.SimpleRegistry))`; adapter packages
 should export `Register(*codec.SimpleRegistry)`.
 
 ## Container (`format` package)
@@ -181,9 +181,9 @@ Lifecycle (from `format/stage.go`, `runtime_demux.go`, `mux_destination.go`):
    finalizes exactly once; a `Write`/`Close` error marks the destination
    transaction failed (transactional writers abort instead of committing).
 
-Register with `goavruntime.WithDemuxer(id, factory)`,
-`goavruntime.WithMuxer(id, factory)`, `goavruntime.WithProber(prober)`, or bundles via
-`goavruntime.WithFormatAdapter(...)`; `Register{Muxer,Demuxer}Descriptor` attaches a
+Register with `runconfig.WithDemuxer(id, factory)`,
+`runconfig.WithMuxer(id, factory)`, `runconfig.WithProber(prober)`, or bundles via
+`runconfig.WithFormatAdapter(...)`; `Register{Muxer,Demuxer}Descriptor` attaches a
 capability `format.Descriptor` (media kinds, codecs, stream counts) that
 destination validation reads.
 
@@ -216,7 +216,7 @@ validation checks `Descriptor.Input/Output` media and the capability lists
 caller-owned `filter.Result`; sentinels `filter.ErrResultFull`,
 `filter.ErrOutputBufferTooSmall`, `filter.ErrUnsupportedFormat`.
 
-Register: `goavruntime.WithFilter(desc, factory)` or `goavruntime.WithFilterAdapter(...)`.
+Register: `runconfig.WithFilter(desc, factory)` or `runconfig.WithFilterAdapter(...)`.
 Use the well-known descriptor name for the conversion class you are replacing;
 the last registration wins, so build from `bundle.MustNewFilters(...)` and pass your
 adapter option after the standard filters:
@@ -269,7 +269,7 @@ func (*passthroughResamplerFilter) HandleEvent(context.Context, *av.Event) error
 func (*passthroughResamplerFilter) Close() error                                    { return nil }
 
 runtime := bundle.MustNewFilters(
-    goavruntime.WithFilter(passthroughResampler, passthroughResamplerFactory{}),
+    runconfig.WithFilter(passthroughResampler, passthroughResamplerFactory{}),
 )
 ```
 
@@ -278,6 +278,23 @@ runtime := bundle.MustNewFilters(
 after `HandleEvent`, and flushes before forwarding `av.EventEndOfStream`.
 External hosts that want a new CLI-visible branch primitive should wrap the
 filter in an allowlisted `PipelineRegistry` step; see `docs/CONTROL_PLANE.md`.
+
+## Custom solver deltas
+
+Use `runconfig.WithShapeDelta` when `.Auto(...)` should insert a conversion
+class that is not one of the built-ins (`shape.AllowResample`,
+`shape.AllowResize`, `shape.AllowConvert`). The recipe must opt in with
+`shape.AllowCustom("name")`; the runtime option registers a contributor that
+receives the actual and expected `shape.Spec` values and returns a fresh
+`pipeline.Stage` for that planning call.
+
+The returned stage should implement `shape.Contract`; its `OutputShapes` is how
+the planner proves the inserted stage satisfies the next operation. Keep the
+stage normal: one serial stream, caller-owned buffers, idempotent `Close`, no
+global registry. `adapterproof.TestExternalShapeDeltaContributorAppearsInExplain`
+is the minimal external proof: a test package registers a toy custom delta and
+asserts `Explain(ctx)` reports the inserted stage through the standard
+`shape_conversion_inserted` diagnostic.
 
 ## Source provider (`provider` package)
 
@@ -293,8 +310,8 @@ type Source interface {
 Optional capabilities, discovered by type assertion: `Name() string` (node
 name in Describe; duplicates get "-1" suffixes), `Detail() string`, and
 `DecodeBounds(av.StreamID) codec.DecodeBounds` (seeds downstream decoder
-scratch). `rtpav.Receive` and `webrtcav.Track` are providers; yours plugs in
-identically via `goav.From(goav.Input(provider))`.
+scratch). `rtpav.Receive`, `webrtcav.Track`, and `playoutav.New` are
+providers; yours plugs in identically via `goav.From(goav.Input(provider))`.
 
 Lifecycle (from `provider/provider.go`, `provider.go`, `source.go`):
 `SourceShape()` is read before

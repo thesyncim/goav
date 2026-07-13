@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/errcode"
@@ -12,6 +13,7 @@ import (
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/plan"
 	"github.com/thesyncim/goav/shape"
+	sourcepkg "github.com/thesyncim/goav/source"
 )
 
 func TestTapIsPostEncodeAnchorContracts(t *testing.T) {
@@ -120,6 +122,33 @@ func TestHandleStreamAddedGuardContracts(t *testing.T) {
 		buildErr.Code != errcode.StreamRuleInvalid ||
 		buildErr.Reason != "discovered stream has no id" {
 		t.Fatalf("missing-id cause = %v", event.Cause)
+	}
+}
+
+func TestStreamRuleMatcherUsesAnnouncementTime(t *testing.T) {
+	start := time.Unix(100, 0)
+	match := MatchMedia(av.MediaAudio).After(time.Second).Within(3 * time.Second)
+	taskRules := &taskStreamRules{
+		rules:    []streamRule{{match: match}},
+		matchers: []sourcepkg.StreamMatcher{match.MatcherAt(start)},
+	}
+	stream := av.Stream{
+		ID:   "voice",
+		Type: av.MediaAudio,
+		Codec: av.CodecParameters{
+			ID:   av.CodecOpus,
+			Type: av.MediaAudio,
+		},
+	}
+	if taskRules.matchStream(0, stream, start.Add(500*time.Millisecond)) {
+		t.Fatal("time-window rule matched before its after boundary")
+	}
+	if !taskRules.matchStream(0, stream, start.Add(time.Second)) ||
+		!taskRules.matchStream(0, stream, start.Add(3*time.Second)) {
+		t.Fatal("time-window rule did not match inside its inclusive event-time window")
+	}
+	if taskRules.matchStream(0, stream, start.Add(3*time.Second+time.Nanosecond)) {
+		t.Fatal("time-window rule matched after its within boundary")
 	}
 }
 
