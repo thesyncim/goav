@@ -8,9 +8,9 @@ import (
 )
 
 // mediaShapeFromCodecSpec is the shape.Spec view of a codec spec. It stays in
-// goav (not the shape package) because it crosses codec.CodecSpec and the codecMedia/
+// goav (not the shape package) because it crosses codec.Spec and the codecMedia/
 // firstNonEmptyMedia helpers that live in the goav root.
-func mediaShapeFromCodecSpec(spec codec.CodecSpec, domain shape.MediaDomain) shape.Spec {
+func mediaShapeFromCodecSpec(spec codec.Spec, domain shape.MediaDomain) shape.Spec {
 	out := shape.FromCodecParameters(spec.Parameters)
 	out.Domain = domain
 	if out.MediaKind == "" {
@@ -23,9 +23,9 @@ func mediaShapeFromCodecSpec(spec codec.CodecSpec, domain shape.MediaDomain) sha
 }
 
 // codecSpecInputShapes is the shape.Set view of a codec spec's input. It is a
-// goav function (not a method) because codec.CodecSpec's data lives in the codec
+// goav function (not a method) because codec.Spec's data lives in the codec
 // package and shape.Set is reached through the goav-only codecMedia helper.
-func codecSpecInputShapes(spec codec.CodecSpec) shape.Set {
+func codecSpecInputShapes(spec codec.Spec) shape.Set {
 	if spec.Copy {
 		return shape.Set{shape.New(shape.Domain(shape.DomainPacket))}
 	}
@@ -36,7 +36,7 @@ func codecSpecInputShapes(spec codec.CodecSpec) shape.Set {
 	return shape.Set{shape.Frame(media)}
 }
 
-func codecSpecOutputShapes(spec codec.CodecSpec, input shape.Spec) shape.Set {
+func codecSpecOutputShapes(spec codec.Spec, input shape.Spec) shape.Set {
 	if spec.Copy {
 		input.Domain = shape.DomainPacket
 		return shape.Set{input}

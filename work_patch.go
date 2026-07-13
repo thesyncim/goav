@@ -337,7 +337,7 @@ func (t *task) planAttachBranchSteps(ctx context.Context, input runtimeAttachBra
 
 // planAttachEncode opens the branch encoder against the live frame shape with
 // the same validation and stage construction the build path uses.
-func (t *task) planAttachEncode(ctx context.Context, input runtimeAttachBranchPlanInput, encode codec.CodecSpec, currentStream av.Stream, currentShape shape.Spec) (pipeline.Stage, av.Stream, error) {
+func (t *task) planAttachEncode(ctx context.Context, input runtimeAttachBranchPlanInput, encode codec.Spec, currentStream av.Stream, currentShape shape.Spec) (pipeline.Stage, av.Stream, error) {
 	branchName := firstNonEmpty(input.branch.recipe.branch.Name, "branch")
 	if t.runtime == nil {
 		return nil, av.Stream{}, runtimeBranchInvalidError(

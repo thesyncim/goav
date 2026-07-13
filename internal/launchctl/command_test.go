@@ -862,7 +862,7 @@ func TestBranchPipelineExtensionHandleCallsConfiguredHooks(t *testing.T) {
 			calls = append(calls, fmt.Sprintf("resample:%d:%d", sampleRate, channels))
 		},
 		doFn: func(...pipeline.Stage) { calls = append(calls, "do") },
-		encodeFn: func(spec codec.CodecSpec) {
+		encodeFn: func(spec codec.Spec) {
 			calls = append(calls, "encode:"+string(spec.ID))
 		},
 		destinationFn: func(goav.Destination) { calls = append(calls, "destination") },
@@ -901,7 +901,7 @@ func TestBranchPipelineExtensionHandleCallsConfiguredHooks(t *testing.T) {
 	nilHandle.Resize(1, 1)
 	nilHandle.Resample(1, 1)
 	nilHandle.Do()
-	nilHandle.Encode(codec.CodecSpec{})
+	nilHandle.Encode(codec.Spec{})
 	nilHandle.Destination(goav.Destination{})
 	_ = nilHandle.finish()
 }
@@ -1295,11 +1295,11 @@ func TestParseBranchPipelineWithRegistryUsesCustomAliases(t *testing.T) {
 		Encoders: []EncoderSpec{{
 			Name:    "AcmeEnc",
 			Aliases: []string{"acme"},
-			Apply: func(args StepArgs) (codec.CodecSpec, error) {
+			Apply: func(args StepArgs) (codec.Spec, error) {
 				calls = append(calls, "encoder:"+args["quality"])
 				bitrate, err := parseRate(args["bitrate"])
 				if err != nil {
-					return codec.CodecSpec{}, err
+					return codec.Spec{}, err
 				}
 				return codec.Codec("vendor_audio", av.MediaAudio, codec.Bitrate(bitrate), codec.Profile(args["quality"])), nil
 			},
@@ -1353,7 +1353,7 @@ func TestParseBranchPipelineWithRegistryStructuredErrors(t *testing.T) {
 			tap:      "raw_video",
 			branch:   "archive",
 			pipeline: "badenc",
-			registry: PipelineRegistry{Encoders: []EncoderSpec{{Name: "badenc", Apply: func(StepArgs) (codec.CodecSpec, error) { return codec.CodecSpec{}, encoderErr }}}},
+			registry: PipelineRegistry{Encoders: []EncoderSpec{{Name: "badenc", Apply: func(StepArgs) (codec.Spec, error) { return codec.Spec{}, encoderErr }}}},
 			code:     "control_failed",
 		},
 		{name: "unsupported step", tap: "raw_video", branch: "archive", pipeline: "bogus", code: "unsupported_pipeline_step", node: "bogus"},
@@ -1972,7 +1972,7 @@ func TestTypedCapabilityHelpersBindAndReport(t *testing.T) {
 	encoder := NewEncoderSpec[acmeEncoder](
 		"acmeenc",
 		"typed native encoder settings",
-		func(args acmeEncoder) (codec.CodecSpec, error) {
+		func(args acmeEncoder) (codec.Spec, error) {
 			return codec.Codec("vendor_video", av.MediaVideo,
 				codec.Bitrate(args.Bitrate),
 				codec.Profile(args.Quality),
@@ -2142,10 +2142,10 @@ func TestServerSupportsCustomEncoderSettings(t *testing.T) {
 		Pipeline: PipelineRegistry{
 			Encoders: []EncoderSpec{{
 				Name: "fancyenc",
-				Apply: func(args StepArgs) (codec.CodecSpec, error) {
+				Apply: func(args StepArgs) (codec.Spec, error) {
 					bitrate, err := parseRate(args["bitrate"])
 					if err != nil {
-						return codec.CodecSpec{}, err
+						return codec.Spec{}, err
 					}
 					return codec.Codec(customCodec, av.MediaAudio,
 						codec.Bitrate(bitrate),

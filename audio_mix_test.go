@@ -211,7 +211,7 @@ func TestMixRawFramesRequireSinkDestination(t *testing.T) {
 func errorsAsMix(err error, target **BuildError) bool { return errors.As(err, target) }
 
 func TestMixBuilderOptionsCarryIntoJoinSpec(t *testing.T) {
-	var nilMix *mixStream
+	var nilMix *MixStream
 	if arm := nilMix.joinArm(); arm.join != nil || arm.region != nil {
 		t.Fatalf("nil mix join arm = %+v, want zero", arm)
 	}

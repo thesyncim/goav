@@ -6,7 +6,7 @@ settings for portable behavior, plus one raw escape hatch for native adapter
 details.
 
 **Tier 1: common typed settings (portable across codecs).** Options in the
-`codec` package mutate `codec.CodecSettings` (carried by `CodecSpec.Settings`
+`codec` package mutate `codec.CodecSettings` (carried by `Spec.Settings`
 and the decode/encode configs): `Bitrate`, `FPS`, `KeyframeInterval`,
 `Profile`, `Level`, audio shape overrides, and future tagged fields as they
 land. The control plane and string launcher reflect over `CodecSettings`, so a
@@ -29,4 +29,4 @@ duplicate structural fields. Codec constructors set sensible caps defaults
 **Package boundary.** Encoder settings do not live in the goav root (no
 `goav.Bitrate`): `codec` owns the option type and every option func; `goav`
 keeps the grammar plus the codec constructors `Opus/VP8/VP9/H264/AV1/Codec`,
-each `func(...codec.Option) codec.CodecSpec`.
+each `func(...codec.Option) codec.Spec`.

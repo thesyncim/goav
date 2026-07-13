@@ -112,7 +112,7 @@ func NewBranchStep[T any](name string, summary string, apply func(*BranchPipelin
 
 // NewEncoderSpec builds a typed custom encoder spelling for native adapter
 // settings.
-func NewEncoderSpec[T any](name string, summary string, apply func(T) (codec.CodecSpec, error), options ...CapabilityOption) EncoderSpec {
+func NewEncoderSpec[T any](name string, summary string, apply func(T) (codec.Spec, error), options ...CapabilityOption) EncoderSpec {
 	return launchctl.NewEncoderSpec(name, summary, apply, options...)
 }
 

@@ -191,7 +191,7 @@ func TestReceiveCodecIntentDerivesDepacketizerForNamedStream(t *testing.T) {
 		}},
 		events: make(chan av.Event),
 	}
-	input := Receive(receiver, WithCodec(codec.CodecSpec{ID: av.CodecVP8, Type: av.MediaVideo}))
+	input := Receive(receiver, WithCodec(codec.Spec{ID: av.CodecVP8, Type: av.MediaVideo}))
 
 	source, streams, err := input.OpenSource(ctx)
 	if err != nil {
@@ -220,7 +220,7 @@ func TestReceiveCodecIntentRenamesUnmatchedStream(t *testing.T) {
 	})
 	input := Receive(receiver,
 		WithName("mic"),
-		WithCodec(codec.CodecSpec{ID: av.CodecOpus, Type: av.MediaAudio}),
+		WithCodec(codec.Spec{ID: av.CodecOpus, Type: av.MediaAudio}),
 	)
 	source, _, err := input.OpenSource(ctx)
 	if err != nil {
@@ -291,7 +291,7 @@ func TestReceiveNameAndDetailMatchGoavRoot(t *testing.T) {
 	full := Receive(&inputTestReceiver{},
 		WithName("remote-audio"),
 		WithJitter(jitter),
-		WithCodec(codec.CodecSpec{ID: av.CodecOpus, Type: av.MediaAudio}),
+		WithCodec(codec.Spec{ID: av.CodecOpus, Type: av.MediaAudio}),
 		WithFeedback(&fakeFeedbackWriter{}),
 		WithDecodeBounds(codec.DecodeBounds{MaxPayloadBytes: 4096}),
 		WithMaxTimestampGap(av.SamplesDuration(960, 48000)),
@@ -312,7 +312,7 @@ func TestReceiveSourceShape(t *testing.T) {
 	}
 
 	stream := inputTestOpusStream()
-	spec := Receive(&inputTestReceiver{}, WithCodec(codec.CodecSpec{
+	spec := Receive(&inputTestReceiver{}, WithCodec(codec.Spec{
 		ID:         av.CodecOpus,
 		Type:       av.MediaAudio,
 		Parameters: stream.Codec,

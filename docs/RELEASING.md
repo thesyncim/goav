@@ -85,6 +85,17 @@ git tag -s playoutav/v0.1.0 -m "playoutav v0.1.0"
 Tag order follows dependencies: root first, then `rtpav`, `webrtcav`, and
 `playoutav` when those modules are released.
 
+Nested-module tags need the standard multi-module dance, because consumers
+ignore `replace` directives: in-repo the nested `go.mod` files require the
+placeholder `github.com/thesyncim/goav v0.0.0` plus `replace ... => ../` for
+day-to-day development, and a tag cut in that state would be unresolvable for
+everyone else. Before tagging a nested module: tag the root first, update the
+nested `go.mod` to require the real root tag, drop the `replace` line, run the
+module's tests against the published root, commit, then tag. The release
+workflow refuses nested-module tags whose `go.mod` still carries a `replace`
+or the `v0.0.0` placeholder. After tagging, the `replace` can return on main
+for development convenience.
+
 ## Automation
 
 `.github/workflows/release.yml` runs on release tags and on manual dispatch for
@@ -93,7 +104,9 @@ that tag, runs tests and vet in the tagged module directory, then creates a
 GitHub release with generated notes.
 
 For root tags (`vX.Y.Z`) the workflow also builds pure-Go `goav` CLI archives
-for Linux and macOS on amd64/arm64. It uploads:
+for Linux and macOS on amd64/arm64. The CLI is a deliberately narrow demo and
+smoke-test utility (`docs/CLI.md`) — the library is the product; the archives
+exist so the release pipeline exercises real cross-platform builds. It uploads:
 
 - `SHA256SUMS`
 - `sbom-go-modules.json` from `go list -m -json all`

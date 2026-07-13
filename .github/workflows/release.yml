@@ -69,6 +69,23 @@ jobs:
       - name: Verify changelog entry point
         run: test -s CHANGELOG.md
 
+      # A nested-module tag is only useful if consumers can resolve it:
+      # the module's go.mod must not lean on a replace directive and must
+      # require a real, tagged root version (not the v0.0.0 dev placeholder).
+      - name: Verify tagged module is consumer-resolvable
+        if: steps.release.outputs.module_dir != '.'
+        working-directory: ${{ steps.release.outputs.module_dir }}
+        run: |
+          if grep -q '^replace' go.mod; then
+            echo "go.mod still carries a replace directive; consumers ignore replaces, so this tag would not resolve." >&2
+            echo "Pin a tagged root version and drop the replace before tagging (see docs/RELEASING.md)." >&2
+            exit 1
+          fi
+          if grep -q 'github.com/thesyncim/goav v0\.0\.0$' go.mod; then
+            echo "go.mod requires the v0.0.0 dev placeholder of the root module; pin a real tagged version." >&2
+            exit 1
+          fi
+
       - name: Test tagged module
         working-directory: ${{ steps.release.outputs.module_dir }}
         run: CGO_ENABLED=0 go test -count=1 ./...

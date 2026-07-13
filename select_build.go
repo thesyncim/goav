@@ -15,8 +15,8 @@ import (
 // output. Arms must have distinct stream ids; the first arm is active by
 // default and SelectActive switches live through the control plane. This
 // reuses the existing Job, so .To/Build/Run are unchanged.
-func Select(arms ...joinArm) *selectorStream {
-	return &selectorStream{arms: arms}
+func Select(arms ...JoinArm) *SelectStream {
+	return &SelectStream{arms: arms}
 }
 
 // selectBufferCapacity sizes the non-lossy queues on the Select graph. It is small
@@ -24,15 +24,19 @@ func Select(arms ...joinArm) *selectorStream {
 // SelectActive control rides alongside live arm traffic without forcing a stall.
 const selectBufferCapacity = 32
 
-type selectorStream struct {
-	arms   []joinArm
+// SelectStream is the builder Select returns: the join grammar surface
+// (Region/Tap/Branches/To), plus the unexported joinArm method so a select
+// nests as an arm of an outer join. It is sealed — its fields are unexported,
+// so the grammar methods are the only mutation surface.
+type SelectStream struct {
+	arms   []JoinArm
 	taps   []tapRef
 	region *compositeRegion
 }
 
 // joinArm lets a Select stand as an arm of an outer join: the outer join
 // consumes the SWITCHED output stream under the selector's output id.
-func (s *selectorStream) joinArm() joinArmSpec {
+func (s *SelectStream) joinArm() joinArmSpec {
 	if s == nil {
 		return joinArmSpec{}
 	}
@@ -43,7 +47,7 @@ func (s *selectorStream) joinArm() joinArmSpec {
 // arm of an outer Composite — an active-speaker switch as one canvas tile,
 // mirroring .Region on source chains and nested composites. It has no effect
 // outside a Composite.
-func (s *selectorStream) Region(x, y int) *selectorStream {
+func (s *SelectStream) Region(x, y int) *SelectStream {
 	s.region = &compositeRegion{x: x, y: y}
 	return s
 }
@@ -52,7 +56,7 @@ func (s *selectorStream) Region(x, y int) *selectorStream {
 // normal chain declares: it appears in task.Taps() and runtime branches can
 // Attach from it later. Its domain follows the arms (frame arms switch frames,
 // packet arms switch packets).
-func (s *selectorStream) Tap(tap tapRef) *selectorStream {
+func (s *SelectStream) Tap(tap tapRef) *SelectStream {
 	s.taps = append(s.taps, tap)
 	return s
 }
@@ -60,7 +64,7 @@ func (s *selectorStream) Tap(tap tapRef) *selectorStream {
 // Branches fans the switched stream out to planned branch chains, each with its
 // own destinations — the same goav.Branch specs an ordinary stream chain
 // accepts at this stream point.
-func (s *selectorStream) Branches(branches ...BranchSpec) *Job {
+func (s *SelectStream) Branches(branches ...BranchSpec) *Job {
 	return newJoinBranchesJob(joinSelect, joinSpec{arms: s.arms, taps: s.taps}, branches)
 }
 
@@ -70,7 +74,7 @@ func (s *selectorStream) Branches(branches ...BranchSpec) *Job {
 // recipe. Select stays sink-only: it forwards the active arm as-is, so muxed
 // destinations need .Branches(...) with an encoding branch. It lowers to the
 // one joinSpec shared by every convergence builder.
-func (s *selectorStream) To(destinations ...Destination) *Job {
+func (s *SelectStream) To(destinations ...Destination) *Job {
 	return newJoinJob(joinSelect, joinSpec{arms: s.arms, dests: destinations, taps: s.taps})
 }
 

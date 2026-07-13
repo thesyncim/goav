@@ -16,8 +16,8 @@ github.com/thesyncim/goh264 v0.0.0-20260630205627-5ed6a4334be7 h1:UAdArnqJmrHvKH
 github.com/thesyncim/goh264 v0.0.0-20260630205627-5ed6a4334be7/go.mod h1:/4BzjdI5P2Yf5ZG1ZuDRucRQAiKmXhAw/bj58zIO+Ec=
 github.com/thesyncim/gopus v0.1.1 h1:SM58S7VZGnEZ3ZR0pX5AoC33//LBxJhKkvm15MbBmik=
 github.com/thesyncim/gopus v0.1.1/go.mod h1:orRqwrGs5gqYRRnhqwI0Y3liqQTeDkreUpra+Kv9bQc=
-github.com/thesyncim/govpx v0.0.0-20260711094643-7eb7b4c8dc86 h1:qM4JjJtY1VtalIogK4tQcYIP4H1hwxARj4n+i0vVcXA=
-github.com/thesyncim/govpx v0.0.0-20260711094643-7eb7b4c8dc86/go.mod h1:NtVLM5omlmx4IstMc/Rx+YsHQ4sAVq3VQ25wnMl43L4=
+github.com/thesyncim/govpx v0.0.0-20260713173815-a8f2d0665f2e h1:XAnI438iCvzK43CpRrhUQtGaQLpzOjtlYKrIB/Qdqvo=
+github.com/thesyncim/govpx v0.0.0-20260713173815-a8f2d0665f2e/go.mod h1:NtVLM5omlmx4IstMc/Rx+YsHQ4sAVq3VQ25wnMl43L4=
 golang.org/x/sys v0.44.0 h1:ildZl3J4uzeKP07r2F++Op7E9B29JRUy+a27EibtBTQ=
 golang.org/x/sys v0.44.0/go.mod h1:4GL1E5IUh+htKOUEOaiffhrAeqysfVGipDYzABqnCmw=
 modernc.org/libc v1.73.1 h1:HMa/TQJY2Z8ZjqBRbVJMLjBhmxTOwN2aMcxNrT01Dbc=

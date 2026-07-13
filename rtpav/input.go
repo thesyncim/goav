@@ -32,7 +32,7 @@ type Input struct {
 	feedback      FeedbackWriter
 	jitter        JitterBuffer
 	depacketizers []Depacketizer
-	codec         codec.CodecSpec
+	codec         codec.Spec
 	limits        BufferLimits
 	decodeBounds  codec.DecodeBounds
 	maxTSGap      av.Duration
@@ -86,7 +86,7 @@ func WithDepacketizers(depacketizers ...Depacketizer) ReceiveOption {
 
 // WithCodec declares the codec carried by this input; a matching default
 // depacketizer (Opus, VP8, VP9, H264, AV1) is derived at open.
-func WithCodec(spec codec.CodecSpec) ReceiveOption {
+func WithCodec(spec codec.Spec) ReceiveOption {
 	return func(input *Input) {
 		input.codec = cloneCodecSpec(spec)
 	}
@@ -377,7 +377,7 @@ func decodeBoundsConfigured(bounds codec.DecodeBounds) bool {
 		bounds.MaxHeight > 0
 }
 
-func cloneCodecSpec(spec codec.CodecSpec) codec.CodecSpec {
+func cloneCodecSpec(spec codec.Spec) codec.Spec {
 	spec.Parameters.Attributes = cloneMetadata(spec.Parameters.Attributes)
 	spec.Parameters.ExtraData.Bytes = append([]byte(nil), spec.Parameters.ExtraData.Bytes...)
 	return spec

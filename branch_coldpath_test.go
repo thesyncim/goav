@@ -84,10 +84,10 @@ func TestBranchesRefusePacketBranchEncode(t *testing.T) {
 }
 
 // TestNilBranchBuilderToIsRefused pins the nil-builder refusal: a nil
-// *branchBuilder (a zeroed variable of the inferred builder type) still
+// *BranchBuilder (a zeroed variable of the inferred builder type) still
 // finishes into a spec that fails the build instead of panicking.
 func TestNilBranchBuilderToIsRefused(t *testing.T) {
-	var builder *branchBuilder // what `b := Branch("late"); b = nil` leaves behind
+	var builder *BranchBuilder // what `b := Branch("late"); b = nil` leaves behind
 	spec := builder.To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil })))
 	_, err := From(coldPathPacketSource("mic", []byte{1})).
 		Audio().Copy().

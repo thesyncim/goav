@@ -35,7 +35,7 @@ type workInput struct {
 	Protocol  av.ProtocolID
 	Realtime  bool
 	Codec     av.CodecID
-	CodecSpec codec.CodecSpec
+	CodecSpec codec.Spec
 }
 
 type workStream struct {
@@ -56,7 +56,7 @@ type workOperation struct {
 	Node         pipeline.NodeRef
 	Component    string
 	Detail       string
-	Codec        codec.CodecSpec
+	Codec        codec.Spec
 	Shared       bool
 	ShapeIn      shape.Spec
 	ShapeOut     shape.Spec

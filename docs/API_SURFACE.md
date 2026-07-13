@@ -72,6 +72,16 @@ Normal recipes also read these vocabulary packages:
 - `source`: custom source callbacks (`Func`, `Push`, `Result`).
 - `av` identifiers: media/codec/format/protocol ids, event types, metadata.
 
+The grammar's builder handles and option values are exported, sealed
+vocabulary: `BranchBuilder` (Branch), `FlowBuilder` (Flow), `MixStream` (Mix),
+`CompositeStream` (Composite), `SelectStream` (Select), `JoinStream` (Join),
+the `JoinArm` interface (a source chain, nested join, or tap reference
+standing as a join arm), and the option types `StreamOption`
+(StreamID/StreamIndex/InputName), `InputOption`, `DestinationOption`, and
+`MediaOption` (Name/MIME/Metadata). They are exported so godoc can link them
+and callers can name variables and helpers; each is sealed — unexported
+fields or methods — so the constructors remain the only construction surface.
+
 Advanced governed vocabulary lives in the focused docs where it is needed:
 `control`, `ctlserver`, `inspect`, `plan`, `snapshot`, `lifecycle`, `flow`,
 and `runconfig`.
@@ -282,7 +292,7 @@ against the constructors in `input.go`/`provider.go`/`source.go`,
   when unmet; `Auto` grants the solver permission to insert conversions;
   `Prefer` hints an open solver choice and never fails.
 - **Copy**: `.Copy()` is the recipe spelling for packet-preserving passthrough.
-  `codec.Copy()` is the internal `CodecSpec` value used by lowerers and helper
+  `codec.Copy()` is the internal `Spec` value used by lowerers and helper
   code; user-facing recipes should write the verb.
 - **Watch**: `Watch(filters...)` gives each consumer an independent filtered
   subscription with an explicit close handle. An unfiltered `Watch()` observes

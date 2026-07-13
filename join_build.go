@@ -42,9 +42,9 @@ func joinStagePreallocDepth(rt *runtime) int {
 // and past named taps on the joined stream.
 type joinSpec struct {
 	kind   joinKind
-	arms   []joinArm
+	arms   []JoinArm
 	dests  []Destination
-	encode *codec.CodecSpec // mix/composite only; nil delivers the raw join output
+	encode *codec.Spec // mix/composite only; nil delivers the raw join output
 	// operations are joined-stream annotations (Auto/Require/Prefer) that run
 	// before the terminal encode or planned branches.
 	operations []operationSpec
@@ -64,20 +64,20 @@ type joinSpec struct {
 	custom *customJoinSpec
 }
 
-// joinArm is one source arm of a join: an ordinary source chain such as
+// JoinArm is one source arm of a join: an ordinary source chain such as
 // From(x).Audio(), another join whose joined output feeds the outer join —
 // Mix(Mix(a, b), c) sub-mixes two arms and mixes the result with a third, and
 // Select(Mix(a, b), Mix(c, d)) switches between two live mixes — or a tap reference
 // naming a tap an earlier arm declared, so one decoded stream converges
 // mid-graph without opening its source again. It is a sealed interface: only
 // goav builders implement it.
-type joinArm interface {
+type JoinArm interface {
 	// joinArm resolves the arm to its internal spec; unexported so the set of
 	// arm shapes stays closed (source chains, nested joins, and tap refs).
 	joinArm() joinArmSpec
 }
 
-// joinArmSpec is the resolved arm behind the sealed joinArm interface:
+// joinArmSpec is the resolved arm behind the sealed JoinArm interface:
 // exactly one of captured source-chain facts, join (a nested join), or tap
 // (a reference to a tap declared by an earlier arm) is set. region carries the
 // arm's composite placement, when declared.
@@ -99,7 +99,7 @@ type joinTreeSnapshot struct {
 	kind       joinKind
 	arms       []joinArmSnapshot
 	dests      []Destination
-	encode     *codec.CodecSpec
+	encode     *codec.Spec
 	operations []operationSpec
 	taps       []tapRef
 	branches   []joinBranchSnapshot

@@ -1675,7 +1675,7 @@ func destinationSpecHasOutput(dest destinationSpec) bool {
 		dest.resolvedFormat != ""
 }
 
-func (t *task) prepareRuntimeBranchDecode(ctx context.Context, input runtimeAttachBranchPlanInput, currentStream av.Stream, currentShape shape.Spec, spec codec.CodecSpec) (pipeline.Stage, error) {
+func (t *task) prepareRuntimeBranchDecode(ctx context.Context, input runtimeAttachBranchPlanInput, currentStream av.Stream, currentShape shape.Spec, spec codec.Spec) (pipeline.Stage, error) {
 	branchName := firstNonEmpty(input.branch.recipe.branch.Name, "branch")
 	if t.runtime == nil {
 		return nil, runtimeBranchInvalidError(
@@ -1782,7 +1782,7 @@ func streamFromRuntimeBranchShape(name string, shape shape.Spec) av.Stream {
 	return stream
 }
 
-func runtimeBranchEncodeRequest(name string, encode codec.CodecSpec, stream av.Stream) encodeRequest {
+func runtimeBranchEncodeRequest(name string, encode codec.Spec, stream av.Stream) encodeRequest {
 	config := encodeConfigFromSpec(encode)
 	if config.Stream.ID == "" {
 		config.Stream.ID = av.StreamID(firstNonEmpty(name, string(stream.ID), "branch"))
@@ -1807,7 +1807,7 @@ func runtimeBranchEncodeRequest(name string, encode codec.CodecSpec, stream av.S
 	}
 }
 
-func runtimeBranchDecodeRequest(branchName string, stream av.Stream, spec codec.CodecSpec) decodeRequest {
+func runtimeBranchDecodeRequest(branchName string, stream av.Stream, spec codec.Spec) decodeRequest {
 	selector := av.StreamSelector{
 		Name:  firstNonEmpty(branchName, stream.Name),
 		Type:  stream.Type,

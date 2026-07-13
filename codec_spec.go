@@ -14,8 +14,8 @@ import (
 
 // codecSpecFromOptions builds a spec carrying only the Settings configured by
 // decode options (decode does not set output caps).
-func codecSpecFromOptions(options ...codec.Option) codec.CodecSpec {
-	var spec codec.CodecSpec
+func codecSpecFromOptions(options ...codec.Option) codec.Spec {
+	var spec codec.Spec
 	for i := range options {
 		if options[i] != nil {
 			options[i](&spec.Settings)
@@ -24,14 +24,14 @@ func codecSpecFromOptions(options ...codec.Option) codec.CodecSpec {
 	return spec
 }
 
-func cloneCodecSpec(spec codec.CodecSpec) codec.CodecSpec {
+func cloneCodecSpec(spec codec.Spec) codec.Spec {
 	spec.Parameters.Attributes = cloneMetadata(spec.Parameters.Attributes)
 	spec.Parameters.ExtraData = cloneBuffer(spec.Parameters.ExtraData)
 	spec.Settings = cloneCodecSettings(spec.Settings)
 	return spec
 }
 
-func codecSpecEqual(a, b codec.CodecSpec) bool {
+func codecSpecEqual(a, b codec.Spec) bool {
 	return a.ID == b.ID &&
 		a.Type == b.Type &&
 		codecParametersEqual(a.Parameters, b.Parameters) &&
@@ -142,7 +142,7 @@ func mergeCodecSettings(base codec.CodecSettings, override codec.CodecSettings) 
 	return base
 }
 
-func mergeDecodeCodecSpec(base codec.CodecSpec, override codec.CodecSpec) codec.CodecSpec {
+func mergeDecodeCodecSpec(base codec.Spec, override codec.Spec) codec.Spec {
 	if override.ID != "" {
 		base.ID = override.ID
 	}
@@ -154,7 +154,7 @@ func mergeDecodeCodecSpec(base codec.CodecSpec, override codec.CodecSpec) codec.
 	return base
 }
 
-func codecSpecHasParameters(spec codec.CodecSpec) bool {
+func codecSpecHasParameters(spec codec.Spec) bool {
 	parameters := spec.Parameters
 	return parameters.ID != "" ||
 		parameters.Type != "" ||
@@ -172,7 +172,7 @@ func codecSpecHasParameters(spec codec.CodecSpec) bool {
 		len(parameters.Attributes) != 0
 }
 
-func encodeConfigFromSpec(spec codec.CodecSpec) codec.EncodeConfig {
+func encodeConfigFromSpec(spec codec.Spec) codec.EncodeConfig {
 	parameters := spec.Parameters
 	if spec.ID == av.CodecOpus {
 		if !spec.Settings.SampleRateSet {
@@ -190,7 +190,7 @@ func encodeConfigFromSpec(spec codec.CodecSpec) codec.EncodeConfig {
 	}
 }
 
-func codecSpecFromEncodeConfig(config codec.EncodeConfig) codec.CodecSpec {
+func codecSpecFromEncodeConfig(config codec.EncodeConfig) codec.Spec {
 	parameters := config.Parameters
 	if parameters.ID == "" {
 		parameters = config.Stream.Codec
@@ -203,7 +203,7 @@ func codecSpecFromEncodeConfig(config codec.EncodeConfig) codec.CodecSpec {
 	if parameters.Type == "" {
 		parameters.Type = media
 	}
-	return cloneCodecSpec(codec.CodecSpec{
+	return cloneCodecSpec(codec.Spec{
 		ID:         id,
 		Type:       media,
 		Parameters: parameters,
@@ -211,14 +211,14 @@ func codecSpecFromEncodeConfig(config codec.EncodeConfig) codec.CodecSpec {
 	})
 }
 
-func codecSpecFromStream(stream av.Stream) codec.CodecSpec {
+func codecSpecFromStream(stream av.Stream) codec.Spec {
 	parameters := stream.Codec
 	id := parameters.ID
 	media := firstNonEmptyMedia(parameters.Type, stream.Type, codecMedia(id))
 	if parameters.Type == "" {
 		parameters.Type = media
 	}
-	return cloneCodecSpec(codec.CodecSpec{
+	return cloneCodecSpec(codec.Spec{
 		ID:         id,
 		Type:       media,
 		Parameters: parameters,
@@ -240,7 +240,7 @@ func cloneBuffer(buffer av.Buffer) av.Buffer {
 	return buffer
 }
 
-func validateRecipeEncode(spec codec.CodecSpec, operation string, node string) error {
+func validateRecipeEncode(spec codec.Spec, operation string, node string) error {
 	if spec.Auto {
 		return &BuildError{
 			Phase:     phaseBuild,
@@ -264,7 +264,7 @@ func validateRecipeEncode(spec codec.CodecSpec, operation string, node string) e
 	return validateRecipeEncodeValues(spec, operation, node)
 }
 
-func validateRecipeEncodeValues(spec codec.CodecSpec, operation string, node string) error {
+func validateRecipeEncodeValues(spec codec.Spec, operation string, node string) error {
 	switch {
 	case spec.Settings.Bitrate < 0:
 		return &BuildError{

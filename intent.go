@@ -29,7 +29,7 @@ type inputIntent struct {
 	URI      string
 	Protocol av.ProtocolID
 	MIMEType string
-	Codec    codec.CodecSpec
+	Codec    codec.Spec
 	Realtime bool
 }
 
@@ -66,8 +66,8 @@ type operationSpec struct {
 	Shape     shape.Spec
 	Transform transformSpec
 	Tap       tapIntent
-	Decode    codec.CodecSpec
-	Encode    codec.CodecSpec
+	Decode    codec.Spec
+	Encode    codec.Spec
 	Shared    bool
 	// Auto carries the chain's shape-solving policy: .Auto(policies...) appends
 	// one plan.OpShape operation with Auto set, and the solver unions every Auto
@@ -117,15 +117,15 @@ func defaultCodecChangePolicy() codecChangePolicy {
 	}
 }
 
-func operationSpecForDecode(codec codec.CodecSpec, component string) operationSpec {
+func operationSpecForDecode(codec codec.Spec, component string) operationSpec {
 	return operationSpec{Kind: plan.OpDecode, Component: component, Decode: cloneCodecSpec(codec)}
 }
 
-func operationSpecForCopy(codec codec.CodecSpec) operationSpec {
+func operationSpecForCopy(codec codec.Spec) operationSpec {
 	return operationSpec{Kind: plan.OpCopy, Component: "packet-copy", Detail: "explicit packet copy", Encode: cloneCodecSpec(codec)}
 }
 
-func operationSpecForEncode(codec codec.CodecSpec) operationSpec {
+func operationSpecForEncode(codec codec.Spec) operationSpec {
 	if codec.Copy {
 		return operationSpecForCopy(codec)
 	}
@@ -368,7 +368,7 @@ func plannedBranchSharedOperationSpecs(stream *jobStreamBuild, spec BranchSpec, 
 
 func plannedBranchPrivateOperationSpecs(stream *jobStreamBuild, spec BranchSpec, parentPacket bool, parentFrame bool) []operationSpec {
 	if !parentFrame && !chainHasDecode(spec.operations) && branchOperationsNeedImplicitDecode(spec.operations) {
-		decodeCodec := codec.CodecSpec{}
+		decodeCodec := codec.Spec{}
 		component := ""
 		if stream != nil {
 			decodeCodec = chainDecodeCodec(stream.operations)

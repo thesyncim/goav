@@ -194,7 +194,7 @@ func probedMuxInputFacts(probes []format.ProbeResult, branch workBranch) (av.Cod
 	return stream.Codec.ID, media, muxStreamTimeBase(stream), true
 }
 
-func codecSpecMuxTimeBase(spec codec.CodecSpec) av.TimeBase {
+func codecSpecMuxTimeBase(spec codec.Spec) av.TimeBase {
 	if spec.Parameters.ClockRate != 0 {
 		return av.RTPTimeBase(spec.Parameters.ClockRate)
 	}

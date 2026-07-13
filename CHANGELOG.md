@@ -11,6 +11,16 @@ methodology changes, and migration notes.
 
 ## Unreleased
 
+- Exported the grammar's sealed builder and option types — `BranchBuilder`
+  (Branch), `FlowBuilder` (Flow), `MixStream` (Mix), `CompositeStream`
+  (Composite), `SelectStream` (Select), `JoinStream` (Join), the `JoinArm`
+  join-arm interface, `StreamOption`, `InputOption`, `DestinationOption`, and
+  `MediaOption` — so godoc/pkg.go.dev can link them and callers can name
+  variables and helpers. All stay sealed (unexported fields or methods): the
+  constructors remain the only construction surface.
+- **Breaking**: renamed `codec.CodecSpec` to `codec.Spec`; the constructors
+  (`codec.VP9`, `codec.Opus`, `codec.Copy`, `codec.Auto`, ...) are unchanged,
+  so only code naming the type spells the new name.
 - **Breaking**: renamed the `runtime` config package to `runconfig` and the
   `ctl` socket-host package to `ctlserver`; a contract test now rejects any
   package named `runtime` or `ctl` in the module.
@@ -100,7 +110,7 @@ pre-v1 API reduction.
 - Typed resize/resample data in the immutable recipe IR instead of carrying
   root transform wrappers through the planner boundary.
 - Clarified front-door docs so `.Copy()` is the packet-preserving recipe
-  spelling; `codec.Copy()` remains an internal/lowering `CodecSpec` value.
+  spelling; `codec.Copy()` remains an internal/lowering `Spec` value.
 - Renamed writer-backed destinations to `Write(name, writer)` so output recipes
   do not imply that the constructor opens filesystem paths; `URI(uri)` keeps
   the adapter-opened output path and `FileInput` remains the reader-side file

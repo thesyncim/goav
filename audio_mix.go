@@ -343,13 +343,18 @@ func (s *audioMixStage) releaseMixFrame(frame *av.Frame) {
 // distinct stream ids; mismatched formats resample to the first arm's format
 // through the implicit arm policy. This reuses the existing Job, so
 // .To/Build/Run are unchanged (see docs/MULTI_INPUT.md).
-func Mix(arms ...joinArm) *mixStream {
-	return &mixStream{arms: arms}
+func Mix(arms ...JoinArm) *MixStream {
+	return &MixStream{arms: arms}
 }
 
-type mixStream struct {
-	arms       []joinArm
-	encode     *codec.CodecSpec
+// MixStream is the builder Mix returns: the join grammar surface
+// (SyncByPTS/Auto/Require/Prefer/Encode/Tap/Branches/To), plus the unexported
+// joinArm method so a mix nests as an arm of an outer join. It is sealed —
+// its fields are unexported, so the grammar methods are the only mutation
+// surface.
+type MixStream struct {
+	arms       []JoinArm
+	encode     *codec.Spec
 	taps       []tapRef
 	operations []operationSpec
 	sync       joinSyncMode
@@ -358,7 +363,7 @@ type mixStream struct {
 // joinArm lets a Mix stand as an arm of an outer join: the outer join consumes
 // the MIXED output stream under the sub-mix's output id. A nested mix may not
 // carry .Encode(...) — encode belongs to the outer join or its chain.
-func (m *mixStream) joinArm() joinArmSpec {
+func (m *MixStream) joinArm() joinArmSpec {
 	if m == nil {
 		return joinArmSpec{}
 	}
@@ -374,7 +379,7 @@ func (m *mixStream) joinArm() joinArmSpec {
 // re-syncs at its new position. Use it when arms are files starting at
 // different offsets, after a Seek on one arm, or under drift; the arrival
 // default pairs frames one-per-arm and is right for live same-clock sources.
-func (m *mixStream) SyncByPTS() *mixStream {
+func (m *MixStream) SyncByPTS() *MixStream {
 	m.sync = joinSyncPTS
 	return m
 }
@@ -382,27 +387,27 @@ func (m *mixStream) SyncByPTS() *mixStream {
 // Auto lets the planner insert format conversions on the mixed output before a
 // terminal .Encode(...) or planned branches, using the same shape solver as a
 // normal stream chain.
-func (m *mixStream) Auto(policies ...shape.Policy) *mixStream {
+func (m *MixStream) Auto(policies ...shape.Policy) *MixStream {
 	m.operations = append(m.operations, operationSpecForAutoPolicy(policies))
 	return m
 }
 
 // Require asserts shape facts on the mixed output before the terminal encode or
 // planned branches.
-func (m *mixStream) Require(spec shape.Spec) *mixStream {
+func (m *MixStream) Require(spec shape.Spec) *MixStream {
 	m.operations = append(m.operations, operationSpecForRequire(spec))
 	return m
 }
 
 // Prefer biases automatic conversion adapter selection on the mixed output.
-func (m *mixStream) Prefer(spec shape.Spec) *mixStream {
+func (m *MixStream) Prefer(spec shape.Spec) *MixStream {
 	m.operations = append(m.operations, operationSpecForPreference(spec))
 	return m
 }
 
 // Encode encodes the mixed stream before the destination, so a Mix can record to
 // a File/mux (not only a frame Sink). Without it the mix delivers frames.
-func (m *mixStream) Encode(spec codec.CodecSpec) *mixStream {
+func (m *MixStream) Encode(spec codec.Spec) *MixStream {
 	m.encode = &spec
 	return m
 }
@@ -410,7 +415,7 @@ func (m *mixStream) Encode(spec codec.CodecSpec) *mixStream {
 // Tap names the mixed stream as a stable frame-domain attach point — the same
 // tap a normal chain declares: it appears in task.Taps() and runtime branches
 // can Attach from it later.
-func (m *mixStream) Tap(tap tapRef) *mixStream {
+func (m *MixStream) Tap(tap tapRef) *MixStream {
 	m.taps = append(m.taps, tap)
 	return m
 }
@@ -419,7 +424,7 @@ func (m *mixStream) Tap(tap tapRef) *mixStream {
 // own destinations — the same goav.Branch specs an ordinary stream chain
 // accepts after decode. The mix output is a normal stream point: branches may
 // transform, encode, tap, and deliver independently.
-func (m *mixStream) Branches(branches ...BranchSpec) *Job {
+func (m *MixStream) Branches(branches ...BranchSpec) *Job {
 	return newJoinBranchesJob(joinMix, joinSpec{arms: m.arms, encode: m.encode, operations: cloneOperationSpecs(m.operations), taps: m.taps, sync: m.sync}, branches)
 }
 
@@ -428,7 +433,7 @@ func (m *mixStream) Branches(branches ...BranchSpec) *Job {
 // like a chain's multi-destination .To) and returns a Job, so the mix runs
 // through the same Build/Run as every other recipe. It lowers to the one
 // joinSpec shared by every convergence builder.
-func (m *mixStream) To(destinations ...Destination) *Job {
+func (m *MixStream) To(destinations ...Destination) *Job {
 	return newJoinJob(joinMix, joinSpec{arms: m.arms, dests: destinations, encode: m.encode, operations: cloneOperationSpecs(m.operations), taps: m.taps, sync: m.sync})
 }
 

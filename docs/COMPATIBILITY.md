@@ -80,14 +80,18 @@ Module scope:
 API surface:
 - Added exported symbols: `BuildError` helper methods, `BuildLive`,
   task capability vocabulary, `Mux(name, destination)`, `Write(name, writer)`,
-  `bundle.Describe`, inspect helpers, sync policy options, and media-time
-  rebranch boundaries.
+  `bundle.Describe`, inspect helpers, sync policy options, media-time
+  rebranch boundaries, and the sealed grammar builder/option types
+  (`BranchBuilder`, `FlowBuilder`, `MixStream`, `CompositeStream`,
+  `SelectStream`, `JoinStream`, `JoinArm`, `StreamOption`, `InputOption`,
+  `DestinationOption`, `MediaOption`) exported for godoc linkability and
+  nameability while constructors remain the only construction surface.
 - Removed or renamed exported symbols: `ContextCloser`, `Observable`,
-  `Controllable`, `Explainer`, `Inspectable`, `Mutable`, `MediaOption`,
-  `InputOption`, `DestinationOption`, `InputStream`, `RecipePatch`,
-  `TransformSpec`, legacy `BuildError.Details`, legacy
-  `BuildError.Suggestions`, path-style writer destinations, same-handle
-  destination grouping, and graph-node-prefix tap fallback.
+  `Controllable`, `Explainer`, `Inspectable`, `Mutable`, `InputStream`,
+  `RecipePatch`, `TransformSpec`, legacy `BuildError.Details`, legacy
+  `BuildError.Suggestions`, `codec.CodecSpec` (now `codec.Spec`), path-style
+  writer destinations, same-handle destination grouping, and
+  graph-node-prefix tap fallback.
 - API-restraint links for additions: `docs/API_SURFACE.md`,
   `docs/history/SIMPLIFICATION_TARGET.md`, and `docs/history/V1_CREDIBILITY_AUDIT.md`.
 

@@ -30,7 +30,7 @@ type planOperation struct {
 	Kind      plan.OperationKind
 	Component string
 	Detail    string
-	Codec     codec.CodecSpec
+	Codec     codec.Spec
 	After     plan.OperationKind
 	Shape     shape.Spec
 	Shared    bool

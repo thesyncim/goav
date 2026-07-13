@@ -198,7 +198,7 @@ func TestBranchOperationStepDetectionContracts(t *testing.T) {
 }
 
 func TestBranchBuilderNilAndErrorContracts(t *testing.T) {
-	var nilBuilder *branchBuilder
+	var nilBuilder *BranchBuilder
 	if nilBuilder.From(FrameTap("tap")) != nil ||
 		nilBuilder.Stream("stream") != nil ||
 		nilBuilder.Event(av.EventEndOfStream) != nil ||

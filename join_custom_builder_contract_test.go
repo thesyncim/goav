@@ -59,7 +59,7 @@ func (s *customJoinBuilderStage) Close() error { return nil }
 
 func TestCustomJoinBuilderTapBranchesAndJoinArmContracts(t *testing.T) {
 	ctx := context.Background()
-	var nilJoin *joinStream
+	var nilJoin *JoinStream
 	if arm := nilJoin.joinArm(); arm.join != nil {
 		t.Fatalf("nil custom join arm = %+v, want zero", arm)
 	}

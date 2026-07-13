@@ -58,7 +58,7 @@ func webRTCRemote(t *testing.T, remote webrtcav.RemoteTrack) goav.InputSpec {
 		options = append(options, rtpav.WithName(name))
 	}
 	if stream.Codec.ID != "" {
-		spec := codec.CodecSpec{
+		spec := codec.Spec{
 			ID:         stream.Codec.ID,
 			Type:       stream.Codec.Type,
 			Parameters: stream.Codec,

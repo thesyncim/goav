@@ -240,7 +240,7 @@ func destinationHandle(spec destinationSpec) Destination {
 
 // applyDestinationOptions is the destination twin of applyInputOptions: one
 // option-application path shared by every constructor and Destination.With.
-func applyDestinationOptions(spec destinationSpec, opts []destinationOptionValue) destinationSpec {
+func applyDestinationOptions(spec destinationSpec, opts []DestinationOption) destinationSpec {
 	for i := range opts {
 		if opts[i] != nil {
 			opts[i].applyDestination(&spec)
@@ -253,7 +253,7 @@ func applyDestinationOptions(spec destinationSpec, opts []destinationOptionValue
 // the writer also implements io.Closer it is closed exactly once when the
 // destination finalizes (run end, drained detach, or failure); a plain writer
 // is left open for the caller.
-func Write(name string, writer io.Writer, opts ...destinationOptionValue) Destination {
+func Write(name string, writer io.Writer, opts ...DestinationOption) Destination {
 	return destinationHandle(applyDestinationOptions(fileDestination(name, writer), opts))
 }
 
@@ -274,7 +274,7 @@ func fileDestination(name string, writer io.Writer) destinationSpec {
 }
 
 // URI creates a URI destination opened by a registered format adapter.
-func URI(uri string, opts ...destinationOptionValue) Destination {
+func URI(uri string, opts ...DestinationOption) Destination {
 	return destinationHandle(applyDestinationOptions(uriDestination(uri), opts))
 }
 
@@ -293,7 +293,7 @@ func uriDestination(uri string) destinationSpec {
 // Like every destination constructor it accepts options; Name overrides the
 // label outputs group and dedupe by (byte-stream options such as Format and
 // MIME state nothing about a sink).
-func Sink(sink pipeline.Sink, opts ...destinationOptionValue) Destination {
+func Sink(sink pipeline.Sink, opts ...DestinationOption) Destination {
 	return destinationHandle(applyDestinationOptions(sinkDestination(sink), opts))
 }
 
@@ -311,7 +311,7 @@ func sinkDestination(sink pipeline.Sink) destinationSpec {
 // Custom wraps a reusable provider.Destination as a destination value: the
 // provider owns naming, contract, and opening, while the returned Destination
 // stays the stable routing handle branches share.
-func Custom(name string, dest provider.Destination, opts ...destinationOptionValue) Destination {
+func Custom(name string, dest provider.Destination, opts ...DestinationOption) Destination {
 	return destinationHandle(applyDestinationOptions(customDestination(name, dest), opts))
 }
 
@@ -350,7 +350,7 @@ func customDestination(name string, dest provider.Destination) destinationSpec {
 // the returned writer also implements provider.TransactionalWriter, Commit
 // runs after a successful run or drained detach and Abort runs on failure —
 // the seam for object-store uploads with an explicit commit boundary.
-func Writer(name string, open provider.OpenFunc, opts ...destinationOptionValue) Destination {
+func Writer(name string, open provider.OpenFunc, opts ...DestinationOption) Destination {
 	spec := destinationSpec{
 		id:     destinationSpecSeq.Add(1),
 		custom: writerDestination{name: name, open: open},
@@ -405,14 +405,14 @@ func (w nopDestinationWriter) Close() error {
 	return nil
 }
 
-// mediaOptionValue is a direction-agnostic option accepted by both input and
+// MediaOption is a direction-agnostic option accepted by both input and
 // destination constructors. Name, MIME, and Metadata state the same fact
 // about either end of a recipe, so goav.FileInput(name, r, goav.MIME(...))
 // and goav.Write(name, w, goav.MIME(...)) share one vocabulary. It is sealed:
 // only goav option constructors implement it.
-type mediaOptionValue interface {
-	inputOptionValue
-	destinationOptionValue
+type MediaOption interface {
+	InputOption
+	DestinationOption
 }
 
 // mediaOption is the concrete direction-agnostic option: one apply function
@@ -446,7 +446,7 @@ func (o destinationOption) applyDestination(spec *destinationSpec) {
 // Name overrides the value's label. On an input it is the name selector
 // narrowing (InputName), errors, and Explain use; on a destination it is the
 // label outputs group and dedupe by.
-func Name(name string) mediaOptionValue {
+func Name(name string) MediaOption {
 	return mediaOption{
 		input: func(spec *InputSpec) {
 			spec.name = name
@@ -461,7 +461,7 @@ func Name(name string) mediaOptionValue {
 // MIME sets the value's MIME type, which drives format probing when the name
 // carries no extension: input MIME selects the demuxer, destination MIME
 // selects the output format and is reported to destination openers.
-func MIME(mimeType string) mediaOptionValue {
+func MIME(mimeType string) MediaOption {
 	return mediaOption{
 		input: func(spec *InputSpec) {
 			spec.input.MIMEType = mimeType
@@ -475,7 +475,7 @@ func MIME(mimeType string) mediaOptionValue {
 // Metadata attaches caller metadata to the value: input metadata rides
 // format.Input to the opening adapter, destination metadata reaches openers
 // on provider.Info (an uploader can store it as object metadata).
-func Metadata(metadata av.Metadata) mediaOptionValue {
+func Metadata(metadata av.Metadata) MediaOption {
 	return mediaOption{
 		input: func(spec *InputSpec) {
 			spec.input.Metadata = cloneMetadata(metadata)
@@ -489,7 +489,7 @@ func Metadata(metadata av.Metadata) mediaOptionValue {
 // Format pins the destination's container format explicitly instead of
 // probing it from the name or MIME type. It is destination-only: input
 // containers are always probed from the name, MIME type, or leading bytes.
-func Format(format av.FormatID) destinationOptionValue {
+func Format(format av.FormatID) DestinationOption {
 	return destinationOption(func(spec *destinationSpec) {
 		*spec = spec.withFormat(format)
 	})
@@ -497,7 +497,7 @@ func Format(format av.FormatID) destinationOptionValue {
 
 // destinationGroup marks destinations as the same logical mux/sink group for
 // Mux. It stays internal so the public grouping model has one constructor.
-func destinationGroup(name string) destinationOptionValue {
+func destinationGroup(name string) DestinationOption {
 	return destinationOption(func(spec *destinationSpec) {
 		if name == "" {
 			if spec.err == nil {
@@ -519,7 +519,7 @@ func Mux(name string, destination Destination) Destination {
 // With returns a copy of the destination with the options applied — the same
 // option vocabulary the constructors take, for layering config onto an
 // already-constructed value. The copy keeps the original's routing identity.
-func (d Destination) With(opts ...destinationOptionValue) Destination {
+func (d Destination) With(opts ...DestinationOption) Destination {
 	return Destination{origin: d.origin, spec: applyDestinationOptions(cloneDestinationSpec(d.spec), opts)}
 }
 

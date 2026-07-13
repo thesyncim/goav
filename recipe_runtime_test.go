@@ -2618,7 +2618,7 @@ func TestTaskAttachRuntimeEncodeMuxBranchRejectsMissingH264Encoder(t *testing.T)
 
 	cases := []struct {
 		name   string
-		codec  codec.CodecSpec
+		codec  codec.Spec
 		output Destination
 	}{
 		{name: "h264", codec: codec.H264(codec.Bitrate(2_000_000)), output: destinationHandle(fileDestination("archive.h264", io.Discard))},

@@ -272,7 +272,7 @@ func TestNewDecodeStageNamedPassesCustomDecoderSettings(t *testing.T) {
 	control := func(any) error { return nil }
 	request := decodeRequest{
 		selector: testSelectAudio(),
-		config: codec.CodecSpec{
+		config: codec.Spec{
 			Settings: codec.CodecSettings{
 				Bitrate: 48_000,
 				Profile: "analysis",

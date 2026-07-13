@@ -208,9 +208,9 @@ func TestExternalHostCustomEncoderSpecCanMapArbitrarySettings(t *testing.T) {
 	registry := ctlserver.PipelineRegistry{
 		Encoders: []ctlserver.EncoderSpec{{
 			Name: "fancyenc",
-			Apply: func(args ctlserver.StepArgs) (codec.CodecSpec, error) {
+			Apply: func(args ctlserver.StepArgs) (codec.Spec, error) {
 				if args["bitrate"] == "" {
-					return codec.CodecSpec{}, ctlserver.NewError(
+					return codec.Spec{}, ctlserver.NewError(
 						"missing_required",
 						"parse branch pipeline",
 						"bitrate",
@@ -222,7 +222,7 @@ func TestExternalHostCustomEncoderSpecCanMapArbitrarySettings(t *testing.T) {
 				}
 				bitrate, err := parseTestRate(args["bitrate"])
 				if err != nil {
-					return codec.CodecSpec{}, ctlserver.NewError(
+					return codec.Spec{}, ctlserver.NewError(
 						"invalid_value",
 						"parse branch pipeline",
 						"bitrate",
@@ -305,7 +305,7 @@ func TestPublicValidateCapabilitiesPreflightsCustomMetadata(t *testing.T) {
 	encoder := ctlserver.NewEncoderSpec[encoderSettings](
 		"acmeenc",
 		"preflight encoder",
-		func(args encoderSettings) (codec.CodecSpec, error) {
+		func(args encoderSettings) (codec.Spec, error) {
 			return codec.Codec("acme", av.MediaAudio, codec.Bitrate(args.Bitrate)), nil
 		},
 	)

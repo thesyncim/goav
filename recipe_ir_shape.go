@@ -133,14 +133,14 @@ func recipeIRTransformOutputShapes(transform recipeir.Transform, input shape.Spe
 	return shape.Set{out}
 }
 
-func recipeIROperationCodec(operation recipeir.Operation) codec.CodecSpec {
+func recipeIROperationCodec(operation recipeir.Operation) codec.Spec {
 	switch operation.Kind {
 	case plan.OpDecode:
 		return cloneCodecSpec(operation.Decode)
 	case plan.OpEncode, plan.OpCopy:
 		return cloneCodecSpec(operation.Encode)
 	default:
-		return codec.CodecSpec{}
+		return codec.Spec{}
 	}
 }
 
@@ -256,7 +256,7 @@ func recipeIROperationShapeMismatchSuggestions(operation recipeir.Operation) []s
 	default:
 		return []string{
 			"inspect Explain(ctx) to see operation shapes",
-			"keep structural facts in goav.Shape(...) and codec behavior in codec.CodecSpec options",
+			"keep structural facts in goav.Shape(...) and codec behavior in codec.Spec options",
 		}
 	}
 }

@@ -29,7 +29,7 @@ type InputSpec struct {
 	input    format.Input
 	provider provider.Source
 	source   *sourceInputSpec
-	codec    codec.CodecSpec
+	codec    codec.Spec
 	name     string
 	realtime bool
 	// wraps decorate the opened pipeline source (WrapSource), applied in
@@ -83,22 +83,22 @@ func WrapSource(spec InputSpec, wrap func(pipeline.Source) pipeline.Source) Inpu
 	return spec
 }
 
-// inputOptionValue configures an input value (FileInput, Source, Input, or
+// InputOption configures an input value (FileInput, Source, Input, or
 // InputSpec.With). The direction-agnostic media options (Name, MIME,
 // Metadata) satisfy it. It is sealed — only goav option constructors implement
 // it.
-type inputOptionValue interface {
+type InputOption interface {
 	applyInput(*InputSpec)
 }
 
 // With returns a copy of the input with the options applied — the same option
 // vocabulary the constructors take, for layering config onto an
 // already-constructed value (renaming a generated test input, say).
-func (s InputSpec) With(opts ...inputOptionValue) InputSpec {
+func (s InputSpec) With(opts ...InputOption) InputSpec {
 	return applyInputOptions(s, opts)
 }
 
-func applyInputOptions(spec InputSpec, opts []inputOptionValue) InputSpec {
+func applyInputOptions(spec InputSpec, opts []InputOption) InputSpec {
 	for i := range opts {
 		if opts[i] != nil {
 			opts[i].applyInput(&spec)
@@ -109,7 +109,7 @@ func applyInputOptions(spec InputSpec, opts []inputOptionValue) InputSpec {
 
 // FileInput declares a file-like input read from reader; name carries the
 // extension format probing uses (a .ivf name selects the IVF demuxer).
-func FileInput(name string, reader io.Reader, opts ...inputOptionValue) InputSpec {
+func FileInput(name string, reader io.Reader, opts ...InputOption) InputSpec {
 	spec := InputSpec{
 		input: format.Input{
 			Name:     name,

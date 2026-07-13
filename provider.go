@@ -29,7 +29,7 @@ type (
 //
 //	goav.From(goav.Input(rtpav.Receive(reader, rtpav.WithCodec(codec.Opus())))).
 //		Copy().To(out)
-func Input(src provider.Source, opts ...inputOptionValue) InputSpec {
+func Input(src provider.Source, opts ...InputOption) InputSpec {
 	if src == nil {
 		return inputSpecHandle(InputSpec{err: errNilSource})
 	}

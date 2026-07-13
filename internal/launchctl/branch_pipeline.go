@@ -39,7 +39,7 @@ type BranchPipelineStepSpec struct {
 
 // EncoderSpec is one allowlisted encoder factory for branch pipelines. It is
 // how custom encoder settings become callable from the CLI: the server owns the
-// factory and maps key=value settings into real codec.CodecSpec values.
+// factory and maps key=value settings into real codec.Spec values.
 type EncoderSpec struct {
 	Name    string
 	Aliases []string
@@ -48,7 +48,7 @@ type EncoderSpec struct {
 	// ArgsType optionally records the typed settings struct used by helper
 	// constructors. It is cold-path metadata for help and capabilities output.
 	ArgsType reflect.Type
-	Apply    func(StepArgs) (codec.CodecSpec, error)
+	Apply    func(StepArgs) (codec.Spec, error)
 }
 
 // PipelineRegistry is the explicit allowlist for branch-pipeline parsing.
@@ -65,7 +65,7 @@ type BranchPipeline struct {
 	resizeFn      func(int, int)
 	resampleFn    func(int, int)
 	doFn          func(...pipeline.Stage)
-	encodeFn      func(codec.CodecSpec)
+	encodeFn      func(codec.Spec)
 	destinationFn func(goav.Destination)
 	finishFn      func() goav.BranchSpec
 }
@@ -101,7 +101,7 @@ func (p *BranchPipeline) Do(stages ...pipeline.Stage) {
 	}
 }
 
-func (p *BranchPipeline) Encode(spec codec.CodecSpec) {
+func (p *BranchPipeline) Encode(spec codec.Spec) {
 	if p != nil && p.encodeFn != nil {
 		p.encodeFn(spec)
 	}
@@ -159,7 +159,7 @@ func parseBranchPipelineWithRegistry(task goav.LiveTask, tapName string, branchN
 		resizeFn:   func(width int, height int) { builder = builder.Resize(width, height) },
 		resampleFn: func(sampleRate int, channels int) { builder = builder.Resample(sampleRate, channels) },
 		doFn:       func(stages ...pipeline.Stage) { builder = builder.Do(stages...) },
-		encodeFn:   func(spec codec.CodecSpec) { builder = builder.Encode(spec) },
+		encodeFn:   func(spec codec.Spec) { builder = builder.Encode(spec) },
 		destinationFn: func(dest goav.Destination) {
 			destinations = append(destinations, dest)
 		},
@@ -423,27 +423,27 @@ func transformOptionError(err error) error {
 	return commandError("invalid_value", "parse branch pipeline", "transform", err.Error(), nil, nil, err)
 }
 
-func parseEncoder(id av.CodecID, media av.MediaType, args map[string]string) (codec.CodecSpec, error) {
+func parseEncoder(id av.CodecID, media av.MediaType, args map[string]string) (codec.Spec, error) {
 	if _, ok := args["id"]; ok {
-		return codec.CodecSpec{}, commandError("invalid_value", "parse branch pipeline", "id", "id duplicates codec", nil, []string{"use codec=<codec-id>"}, nil)
+		return codec.Spec{}, commandError("invalid_value", "parse branch pipeline", "id", "id duplicates codec", nil, []string{"use codec=<codec-id>"}, nil)
 	}
 	if _, ok := args["type"]; ok {
-		return codec.CodecSpec{}, commandError("invalid_value", "parse branch pipeline", "type", "type duplicates media", nil, []string{"use media=<audio|video|subtitle>"}, nil)
+		return codec.Spec{}, commandError("invalid_value", "parse branch pipeline", "type", "type duplicates media", nil, []string{"use media=<audio|video|subtitle>"}, nil)
 	}
 	if id == "" {
-		return codec.CodecSpec{}, commandError("missing_required", "parse branch pipeline", "codec", "encode needs codec=<codec-id>", nil, []string{"use `encode codec=x_pcm_s16 media=audio`"}, nil)
+		return codec.Spec{}, commandError("missing_required", "parse branch pipeline", "codec", "encode needs codec=<codec-id>", nil, []string{"use `encode codec=x_pcm_s16 media=audio`"}, nil)
 	}
 	if media == "" {
-		return codec.CodecSpec{}, commandError("missing_required", "parse branch pipeline", "media", "encode needs media=audio, media=video, or media=subtitle", []string{"codec=" + string(id)}, []string{"use `encode codec=" + string(id) + " media=audio`", "use `encode codec=" + string(id) + " media=video`"}, nil)
+		return codec.Spec{}, commandError("missing_required", "parse branch pipeline", "media", "encode needs media=audio, media=video, or media=subtitle", []string{"codec=" + string(id)}, []string{"use `encode codec=" + string(id) + " media=audio`", "use `encode codec=" + string(id) + " media=video`"}, nil)
 	}
 	switch media {
 	case av.MediaAudio, av.MediaVideo, av.MediaSubtitle:
 	default:
-		return codec.CodecSpec{}, commandError("invalid_value", "parse branch pipeline", "media", "media must be audio, video, or subtitle", []string{"value=" + string(media)}, []string{"use media=audio", "use media=video"}, nil)
+		return codec.Spec{}, commandError("invalid_value", "parse branch pipeline", "media", "media must be audio, video, or subtitle", []string{"value=" + string(media)}, []string{"use media=audio", "use media=video"}, nil)
 	}
 	options, err := codecargs.ParseOptionsMap(args)
 	if err != nil {
-		return codec.CodecSpec{}, codecOptionError(err)
+		return codec.Spec{}, codecOptionError(err)
 	}
 	return codecargs.BuildSpec(id, media, options...), nil
 }

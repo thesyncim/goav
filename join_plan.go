@@ -152,7 +152,7 @@ func joinTreeSnapshotFromSpec(spec *joinSpec) *joinTreeSnapshot {
 	return tree
 }
 
-func joinArmSnapshotFromArm(arm joinArm) joinArmSnapshot {
+func joinArmSnapshotFromArm(arm JoinArm) joinArmSnapshot {
 	if arm == nil {
 		return joinArmSnapshot{}
 	}
@@ -704,7 +704,7 @@ func claimJoinName(used map[string]struct{}, kind string) string {
 // validateNestedJoinArm rejects terminal state on a join used as an arm: an
 // arm contributes its joined output to the outer join, so it cannot carry its
 // own encoder. (.To and .Branches already return a *Job, which is not a
-// joinArm — those stay impossible at compile time.)
+// JoinArm — those stay impossible at compile time.)
 func validateNestedJoinArm(outer string, sub *joinTreeSnapshot) error {
 	if sub.encode != nil {
 		return joinArmError(outer, string(sub.kind),

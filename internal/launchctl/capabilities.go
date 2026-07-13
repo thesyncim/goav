@@ -120,7 +120,7 @@ func NewBranchStep[T any](name string, summary string, apply func(*BranchPipelin
 // settings. Prefer generic `encode codec=<id> ...` when pass-through custom
 // settings are enough; use this when host code must apply codec.Control or
 // richer validation.
-func NewEncoderSpec[T any](name string, summary string, apply func(T) (codec.CodecSpec, error), options ...CapabilityOption) EncoderSpec {
+func NewEncoderSpec[T any](name string, summary string, apply func(T) (codec.Spec, error), options ...CapabilityOption) EncoderSpec {
 	opts := collectCapabilityOptions(options)
 	argsType := typedArgsType[T]()
 	usage := firstNonEmpty(opts.usage, ArgsUsage(argsType))
@@ -132,14 +132,14 @@ func NewEncoderSpec[T any](name string, summary string, apply func(T) (codec.Cod
 		ArgsType: argsType,
 	}
 	if apply != nil {
-		spec.Apply = func(args StepArgs) (codec.CodecSpec, error) {
+		spec.Apply = func(args StepArgs) (codec.Spec, error) {
 			bound, err := bindStepArgs(name, argsType, args, usage)
 			if err != nil {
-				return codec.CodecSpec{}, err
+				return codec.Spec{}, err
 			}
 			typed, ok := bound.(T)
 			if !ok {
-				return codec.CodecSpec{}, commandError("invalid_pipeline_step", "parse branch pipeline", name, "bound encoder args have unexpected type", nil, nil, nil)
+				return codec.Spec{}, commandError("invalid_pipeline_step", "parse branch pipeline", name, "bound encoder args have unexpected type", nil, nil, nil)
 			}
 			return apply(typed)
 		}

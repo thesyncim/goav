@@ -17,8 +17,8 @@ type operationFacts struct {
 	operations        []operationSpec
 	sharedOperations  []operationSpec
 	privateOperations []operationSpec
-	encode            codec.CodecSpec
-	decode            codec.CodecSpec
+	encode            codec.Spec
+	decode            codec.Spec
 }
 
 func recipeIROperationFacts(operations []recipeir.Operation) operationFacts {
@@ -164,7 +164,7 @@ func operationShapeMismatchSuggestions(operation operationSpec) []string {
 	default:
 		return []string{
 			"inspect Explain(ctx) to see operation shapes",
-			"keep structural facts in goav.Shape(...) and codec behavior in codec.CodecSpec options",
+			"keep structural facts in goav.Shape(...) and codec behavior in codec.Spec options",
 		}
 	}
 }
@@ -221,11 +221,11 @@ func (f operationFacts) PrivateFacts() operationFacts {
 	return operationFactsFromSpecs(f.privateOperations)
 }
 
-func (f operationFacts) Encode() codec.CodecSpec {
+func (f operationFacts) Encode() codec.Spec {
 	return cloneCodecSpec(f.encode)
 }
 
-func (f operationFacts) Decode() codec.CodecSpec {
+func (f operationFacts) Decode() codec.Spec {
 	return cloneCodecSpec(f.decode)
 }
 

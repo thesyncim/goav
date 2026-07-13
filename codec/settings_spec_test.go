@@ -142,7 +142,7 @@ func TestCodecSpecsApplyTypedSettingsToParameters(t *testing.T) {
 func TestVideoCodecSpecsUseVideoDefaultsAndOptions(t *testing.T) {
 	tests := []struct {
 		name string
-		spec CodecSpec
+		spec Spec
 		id   av.CodecID
 	}{
 		{name: "vp8", spec: VP8(Bitrate(1)), id: av.CodecVP8},

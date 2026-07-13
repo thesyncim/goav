@@ -48,12 +48,12 @@ type Input struct {
 // Stream reports one declared stream chain: its selection, decode intent,
 // ordered operations, encode target, and destination bindings.
 type Stream struct {
-	Name         string          `json:"name,omitempty"`
-	Select       StreamSelect    `json:"select,omitzero"`
-	Decode       bool            `json:"decode,omitempty"`
-	Operations   []Operation     `json:"operations,omitempty"`
-	Encode       codec.CodecSpec `json:"encode,omitzero"`
-	Destinations []string        `json:"destinations,omitempty"`
+	Name         string       `json:"name,omitempty"`
+	Select       StreamSelect `json:"select,omitzero"`
+	Decode       bool         `json:"decode,omitempty"`
+	Operations   []Operation  `json:"operations,omitempty"`
+	Encode       codec.Spec   `json:"encode,omitzero"`
+	Destinations []string     `json:"destinations,omitempty"`
 }
 
 // Destination reports one planned destination and the branches feeding it.

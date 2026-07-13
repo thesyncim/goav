@@ -22,7 +22,7 @@ import (
 // through exactly this machinery; a custom join is their equal: it plans
 // through the one recipe compile (Describe() ≡ Build(), plan.OpJoin in
 // Explain), its joined output is a normal stream point (.Tap, .Branches,
-// .To), and the result is itself a joinArm, so custom joins nest inside and
+// .To), and the result is itself a JoinArm, so custom joins nest inside and
 // around the built-ins (Mix(Join("pair", stage, a, b), c)).
 //
 // The stage contract (audioMixStage in audio_mix.go is the reference
@@ -68,17 +68,18 @@ import (
 // Without a contract the join is a media-agnostic passthrough (Select-shaped).
 // Custom joins carry no .Encode — deliver frames to sinks with .To, or fan
 // out with .Branches where branches encode for muxed destinations.
-func Join(name string, stage pipeline.Stage, arms ...joinArm) *joinStream {
-	return &joinStream{name: name, stage: stage, arms: arms}
+func Join(name string, stage pipeline.Stage, arms ...JoinArm) *JoinStream {
+	return &JoinStream{name: name, stage: stage, arms: arms}
 }
 
-// joinStream is the builder a custom Join returns: the same grammar surface
+// JoinStream is the builder a custom Join returns: the same grammar surface
 // the built-in join builders expose (Tap/Branches/To), plus joinArm so a
-// custom join nests like any other arm.
-type joinStream struct {
+// custom join nests like any other arm. It is sealed — its fields are
+// unexported, so the grammar methods are the only mutation surface.
+type JoinStream struct {
 	name  string
 	stage pipeline.Stage
-	arms  []joinArm
+	arms  []JoinArm
 	taps  []tapRef
 }
 
@@ -91,7 +92,7 @@ type customJoinSpec struct {
 
 // spec lowers the builder to the one joinSpec shared by every convergence
 // builder; the join kind is the custom name.
-func (s *joinStream) spec() joinSpec {
+func (s *JoinStream) spec() joinSpec {
 	return joinSpec{
 		kind:   joinKind(s.name),
 		arms:   s.arms,
@@ -103,7 +104,7 @@ func (s *joinStream) spec() joinSpec {
 // joinArm lets a custom join stand as an arm of an outer join: the outer join
 // consumes the JOINED output stream under the custom join's output id (its
 // name), exactly like a nested Mix contributes its mixed stream.
-func (s *joinStream) joinArm() joinArmSpec {
+func (s *JoinStream) joinArm() joinArmSpec {
 	if s == nil {
 		return joinArmSpec{}
 	}
@@ -115,7 +116,7 @@ func (s *joinStream) joinArm() joinArmSpec {
 // normal chain declares: it appears in task.Taps() and runtime branches can
 // Attach from it later. Its domain follows the join's output (frame-domain
 // for decode-arm joins, the arms' domain for passthrough joins).
-func (s *joinStream) Tap(tap tapRef) *joinStream {
+func (s *JoinStream) Tap(tap tapRef) *JoinStream {
 	s.taps = append(s.taps, tap)
 	return s
 }
@@ -124,7 +125,7 @@ func (s *joinStream) Tap(tap tapRef) *joinStream {
 // own destinations — the same goav.Branch specs an ordinary stream chain
 // accepts at this stream point. Branches that encode reach muxed
 // destinations; the join itself stays sink-only.
-func (s *joinStream) Branches(branches ...BranchSpec) *Job {
+func (s *JoinStream) Branches(branches ...BranchSpec) *Job {
 	spec := s.spec()
 	if job, refused := s.refuse(spec); refused {
 		return job
@@ -136,7 +137,7 @@ func (s *joinStream) Branches(branches ...BranchSpec) *Job {
 // when several are given) and returns a Job, so the custom join runs through
 // the same Build/Run as every other recipe. It lowers to the one joinSpec
 // shared by every convergence builder.
-func (s *joinStream) To(destinations ...Destination) *Job {
+func (s *JoinStream) To(destinations ...Destination) *Job {
 	spec := s.spec()
 	spec.dests = destinations
 	if job, refused := s.refuse(spec); refused {
@@ -149,7 +150,7 @@ func (s *joinStream) To(destinations ...Destination) *Job {
 // Join surfaces its precise refusal (join_name_invalid / join_stage_invalid)
 // instead of a derived one; nested arms hit the same validation through
 // resolveJoinProfile at plan time.
-func (s *joinStream) refuse(spec joinSpec) (*Job, bool) {
+func (s *JoinStream) refuse(spec joinSpec) (*Job, bool) {
 	if _, err := customJoinProfile(spec.custom); err != nil {
 		job := newJob(firstNonEmpty(s.name, "join"))
 		job.setErr(err)

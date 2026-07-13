@@ -107,7 +107,7 @@ func ParseOptionsMap(args map[string]string) ([]codec.Option, error) {
 
 // BuildSpec builds the standard typed codec specs before falling back to the
 // generic custom-codec constructor.
-func BuildSpec(id av.CodecID, media av.MediaType, options ...codec.Option) codec.CodecSpec {
+func BuildSpec(id av.CodecID, media av.MediaType, options ...codec.Option) codec.Spec {
 	switch id {
 	case av.CodecAV1:
 		return codec.AV1(options...)

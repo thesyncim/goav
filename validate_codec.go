@@ -280,7 +280,7 @@ func encodeAdapterRequestFromRecipeIRStream(stream recipeir.Stream) codecAdapter
 	}
 }
 
-func encodeAdapterRequestFromPreparedStream(spec codec.CodecSpec, stream av.Stream) codecAdapterRequest {
+func encodeAdapterRequestFromPreparedStream(spec codec.Spec, stream av.Stream) codecAdapterRequest {
 	return codecAdapterRequest{
 		Codec:        spec.ID,
 		Media:        firstNonEmptyMedia(spec.Type, spec.Parameters.Type, stream.Type, stream.Codec.Type, codecMedia(spec.ID)),

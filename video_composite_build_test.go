@@ -110,7 +110,7 @@ func TestCompositeRawFramesRequireSinkDestination(t *testing.T) {
 }
 
 func TestCompositeBuilderOptionsCarryIntoJoinSpec(t *testing.T) {
-	var nilComposite *compositeStream
+	var nilComposite *CompositeStream
 	if arm := nilComposite.joinArm(); arm.join != nil || arm.region != nil {
 		t.Fatalf("nil composite join arm = %+v, want zero", arm)
 	}

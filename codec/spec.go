@@ -2,10 +2,10 @@ package codec
 
 import "github.com/thesyncim/goav/av"
 
-// CodecSpec is a fully-resolved codec choice: the codec id and media type, the
+// Spec is a fully-resolved codec choice: the codec id and media type, the
 // structural Parameters, the encoder Settings, and the Copy/Auto modes. Build it
 // with the constructors (VP9, VP8, Opus, H264, AV1, Codec) or Copy/Auto.
-type CodecSpec struct {
+type Spec struct {
 	ID         av.CodecID
 	Type       av.MediaType
 	Parameters av.CodecParameters
@@ -15,18 +15,18 @@ type CodecSpec struct {
 }
 
 // Auto selects the codec automatically from the resolved stream.
-func Auto() CodecSpec { return CodecSpec{Auto: true} }
+func Auto() Spec { return Spec{Auto: true} }
 
 // Copy preserves packets without re-encoding.
-func Copy() CodecSpec { return CodecSpec{Copy: true} }
+func Copy() Spec { return Spec{Copy: true} }
 
 // Codec builds a spec for an explicit codec id and media type.
-func Codec(id av.CodecID, media av.MediaType, options ...Option) CodecSpec {
+func Codec(id av.CodecID, media av.MediaType, options ...Option) Spec {
 	return newCodecSpec(id, media, av.CodecParameters{ID: id, Type: media}, options...)
 }
 
 // Opus builds an Opus encoder spec (defaults to 48kHz stereo).
-func Opus(options ...Option) CodecSpec {
+func Opus(options ...Option) Spec {
 	return newCodecSpec(av.CodecOpus, av.MediaAudio, av.CodecParameters{
 		ID:            av.CodecOpus,
 		Type:          av.MediaAudio,
@@ -38,7 +38,7 @@ func Opus(options ...Option) CodecSpec {
 }
 
 // VP8 builds a VP8 encoder spec.
-func VP8(options ...Option) CodecSpec {
+func VP8(options ...Option) Spec {
 	return newCodecSpec(av.CodecVP8, av.MediaVideo, av.CodecParameters{
 		ID:        av.CodecVP8,
 		Type:      av.MediaVideo,
@@ -47,7 +47,7 @@ func VP8(options ...Option) CodecSpec {
 }
 
 // VP9 builds a VP9 encoder spec.
-func VP9(options ...Option) CodecSpec {
+func VP9(options ...Option) Spec {
 	return newCodecSpec(av.CodecVP9, av.MediaVideo, av.CodecParameters{
 		ID:        av.CodecVP9,
 		Type:      av.MediaVideo,
@@ -56,7 +56,7 @@ func VP9(options ...Option) CodecSpec {
 }
 
 // H264 builds an H.264 codec spec.
-func H264(options ...Option) CodecSpec {
+func H264(options ...Option) Spec {
 	return newCodecSpec(av.CodecH264, av.MediaVideo, av.CodecParameters{
 		ID:        av.CodecH264,
 		Type:      av.MediaVideo,
@@ -65,7 +65,7 @@ func H264(options ...Option) CodecSpec {
 }
 
 // AV1 builds an AV1 codec spec.
-func AV1(options ...Option) CodecSpec {
+func AV1(options ...Option) Spec {
 	return newCodecSpec(av.CodecAV1, av.MediaVideo, av.CodecParameters{
 		ID:        av.CodecAV1,
 		Type:      av.MediaVideo,
@@ -76,7 +76,7 @@ func AV1(options ...Option) CodecSpec {
 // applyEncodeCaps maps the audio caps set through options (Channels / SampleRate
 // / ClockRate, carried on CodecSettings) onto the structural Parameters the rest
 // of the pipeline reads.
-func applyEncodeCaps(spec *CodecSpec) {
+func applyEncodeCaps(spec *Spec) {
 	s := spec.Settings
 	if s.ChannelsSet {
 		spec.Parameters.Channels = s.Channels
@@ -92,8 +92,8 @@ func applyEncodeCaps(spec *CodecSpec) {
 	}
 }
 
-func newCodecSpec(id av.CodecID, media av.MediaType, params av.CodecParameters, options ...Option) CodecSpec {
-	spec := CodecSpec{ID: id, Type: media, Parameters: params}
+func newCodecSpec(id av.CodecID, media av.MediaType, params av.CodecParameters, options ...Option) Spec {
+	spec := Spec{ID: id, Type: media, Parameters: params}
 	for i := range options {
 		if options[i] != nil {
 			options[i](&spec.Settings)

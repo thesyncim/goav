@@ -68,7 +68,7 @@ type runOperation struct {
 	name   string
 	width  int
 	height int
-	codec  codec.CodecSpec
+	codec  codec.Spec
 }
 
 type fileDestination struct {
@@ -276,11 +276,11 @@ func reportedFileDestinationFormat(ctx context.Context, runtime *goav.Runtime, d
 	return result.Format
 }
 
-func buildRunPipelineTask(ctx context.Context, runtime *goav.Runtime, plan runPipelinePlan, dest goav.Destination) (goav.LiveTask, codec.CodecSpec, error) {
+func buildRunPipelineTask(ctx context.Context, runtime *goav.Runtime, plan runPipelinePlan, dest goav.Destination) (goav.LiveTask, codec.Spec, error) {
 	source := plan.source.input()
 	job := goav.From(source)
 	stream := job.Video(goav.InputName(plan.source.name))
-	var encoded codec.CodecSpec
+	var encoded codec.Spec
 	for _, op := range plan.ops {
 		switch op.kind {
 		case "tap":
@@ -291,12 +291,12 @@ func buildRunPipelineTask(ctx context.Context, runtime *goav.Runtime, plan runPi
 			encoded = op.codec
 			stream = stream.Encode(op.codec)
 		default:
-			return nil, codec.CodecSpec{}, fmt.Errorf("goav run: unsupported operation %q", op.kind)
+			return nil, codec.Spec{}, fmt.Errorf("goav run: unsupported operation %q", op.kind)
 		}
 	}
 	task, err := stream.To(dest).UseRuntime(runtime).BuildLive(ctx)
 	if err != nil {
-		return nil, codec.CodecSpec{}, err
+		return nil, codec.Spec{}, err
 	}
 	return task, encoded, nil
 }

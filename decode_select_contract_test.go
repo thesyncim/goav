@@ -39,11 +39,11 @@ func TestDecodeStreamWithSpecMergesExternalCodecMetadata(t *testing.T) {
 			Channels:   1,
 		},
 	}
-	if got := decodeStreamWithSpec(stream, codec.CodecSpec{}); !reflect.DeepEqual(got, stream) {
+	if got := decodeStreamWithSpec(stream, codec.Spec{}); !reflect.DeepEqual(got, stream) {
 		t.Fatalf("empty spec changed stream: got %+v want %+v", got, stream)
 	}
 
-	got := decodeStreamWithSpec(stream, codec.CodecSpec{
+	got := decodeStreamWithSpec(stream, codec.Spec{
 		ID:   av.CodecID("x-external"),
 		Type: av.MediaAudio,
 		Parameters: av.CodecParameters{

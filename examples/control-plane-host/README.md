@@ -105,7 +105,7 @@ $CTL attach frames as memory \
 
 Attach the runtime-registered custom encoder through the default generic encode
 step to an in-process sink. This needs no custom CLI encoder registry entry;
-the reflected `codec.CodecSettings` fields are mapped into the `codec.CodecSpec`
+the reflected `codec.CodecSettings` fields are mapped into the `codec.Spec`
 that the runtime already understands, while native keys such as `lookahead`
 remain in `CodecSettings.Custom` for the adapter:
 
@@ -124,7 +124,7 @@ $CTL attach frames as acme-file \
 
 Attach a custom encoder spelling only when native settings need host code. The
 CLI spelling is short, but it is still generated from the same struct tags: the
-host maps `bitrate`, `quality`, and `lookahead` into a real `codec.CodecSpec`
+host maps `bitrate`, `quality`, and `lookahead` into a real `codec.Spec`
 and native adapter settings:
 
 ```sh

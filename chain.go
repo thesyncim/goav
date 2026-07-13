@@ -34,11 +34,11 @@ func validateRecipeStreamSelector(operation string, node string, selector av.Str
 	}
 }
 
-func codecIntentSet(spec codec.CodecSpec) bool {
+func codecIntentSet(spec codec.Spec) bool {
 	return spec.ID != "" || spec.Auto || spec.Copy
 }
 
-func chainStepAfterEncodeError(operation string, node string, step string, encode codec.CodecSpec) error {
+func chainStepAfterEncodeError(operation string, node string, step string, encode codec.Spec) error {
 	if encode.Copy && step != "decode" {
 		return chainStepOnPacketCopyError(operation, node, step)
 	}
@@ -130,7 +130,7 @@ func sinkDomainRequiredError(operation string, node string) error {
 	}
 }
 
-func duplicateStreamEncodeError(operation string, node string, first codec.CodecSpec, second codec.CodecSpec) error {
+func duplicateStreamEncodeError(operation string, node string, first codec.Spec, second codec.Spec) error {
 	return &BuildError{
 		Phase:     phaseBuild,
 		Family:    errcode.FamilyForCode(encodeDuplicateCode),
@@ -163,7 +163,7 @@ func copyEncodeSpellingError(operation string, node string) error {
 	}
 }
 
-func codecIntentName(spec codec.CodecSpec) string {
+func codecIntentName(spec codec.Spec) string {
 	switch {
 	case spec.Auto:
 		return "auto"
@@ -176,14 +176,18 @@ func codecIntentName(spec codec.CodecSpec) string {
 	}
 }
 
-type streamOption func(*streamSelectConfig)
+// StreamOption narrows the stream selection made by the chain selectors
+// (.Audio, .Video, ...); construct values with StreamID, StreamIndex, or
+// InputName. It is sealed: the config it acts on is unexported, so those
+// constructors are the only way to build one.
+type StreamOption func(*streamSelectConfig)
 
 type streamSelectConfig struct {
 	selector av.StreamSelector
 	input    string
 }
 
-func newStreamSelectConfig(media av.MediaType, options ...streamOption) streamSelectConfig {
+func newStreamSelectConfig(media av.MediaType, options ...StreamOption) streamSelectConfig {
 	config := streamSelectConfig{selector: av.StreamSelector{Type: media}}
 	for i := range options {
 		if options[i] != nil {
@@ -198,7 +202,7 @@ type streamBuild struct {
 	selector         av.StreamSelector
 	from             tapRef
 	decode           bool
-	decodeCodec      codec.CodecSpec
+	decodeCodec      codec.Spec
 	operations       []operationSpec
 	sharedOps        []operationSpec
 	privateOps       []operationSpec
@@ -207,7 +211,7 @@ type streamBuild struct {
 
 // StreamID narrows a stream selection to the stream with the given id, as
 // probed or declared by the input.
-func StreamID(id av.StreamID) streamOption {
+func StreamID(id av.StreamID) StreamOption {
 	return func(config *streamSelectConfig) {
 		config.selector.ID = id
 	}
@@ -215,7 +219,7 @@ func StreamID(id av.StreamID) streamOption {
 
 // StreamIndex narrows a stream selection to the stream at the given probe
 // index (0-based).
-func StreamIndex(index int) streamOption {
+func StreamIndex(index int) StreamOption {
 	return func(config *streamSelectConfig) {
 		config.selector.Index = index
 		config.selector.UseIndex = true
@@ -226,7 +230,7 @@ func StreamIndex(index int) streamOption {
 // job: goav.From(camera, mic).Video(goav.InputName("camera")). Names come from
 // the input constructors (goav.Source(name, ...), goav.FileInput(name, ...))
 // or the goav.Name(...) option.
-func InputName(name string) streamOption {
+func InputName(name string) StreamOption {
 	return func(config *streamSelectConfig) {
 		config.input = name
 	}
@@ -247,7 +251,7 @@ func (b *jobStreamBuilder) Region(x, y int) *jobStreamBuilder {
 
 // joinArm lets a source chain stand as one arm of a join (Mix, Composite,
 // Select) — the original arm shape, kept compiling unchanged behind the
-// sealed joinArm interface.
+// sealed JoinArm interface.
 func (b *jobStreamBuilder) joinArm() joinArmSpec {
 	if b == nil {
 		return joinArmSpec{}
@@ -611,7 +615,7 @@ func (b *jobStreamBuilder) Resample(sampleRate int, channels int, options ...aud
 	return b
 }
 
-func (b *jobStreamBuilder) Encode(codec codec.CodecSpec) *jobStreamBuilder {
+func (b *jobStreamBuilder) Encode(codec codec.Spec) *jobStreamBuilder {
 	stream := b.current()
 	if codecIntentSet(chainEncodeSpec(stream.operations)) {
 		b.job.setErr(duplicateStreamEncodeError("build stream", jobStreamName(stream), chainEncodeSpec(stream.operations), codec))

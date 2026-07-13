@@ -57,7 +57,7 @@ type Input struct {
 	URI      string
 	Protocol av.ProtocolID
 	MIMEType string
-	Codec    codec.CodecSpec
+	Codec    codec.Spec
 	Realtime bool
 	Kind     InputKind
 	// SourceShape is set for provider and custom-source inputs whose stream
@@ -215,8 +215,8 @@ type Operation struct {
 	Shape     shape.Spec
 	Transform Transform
 	Tap       Tap
-	Decode    codec.CodecSpec
-	Encode    codec.CodecSpec
+	Decode    codec.Spec
+	Encode    codec.Spec
 	Shared    bool
 	Auto      *shape.Policy
 	Require   *shape.Spec

@@ -32,7 +32,7 @@ type inputStreamAnchor struct {
 // on the task pushing through source.Push. Custom sources participate in
 // streams, branches, taps, explain, and runtime attach exactly like built-in
 // inputs.
-func Source(name string, spec shape.Spec, fn sourcepkg.Func, opts ...inputOptionValue) InputSpec {
+func Source(name string, spec shape.Spec, fn sourcepkg.Func, opts ...InputOption) InputSpec {
 	spec = normalizeCustomSourceShape(name, spec)
 	return applyInputOptions(inputSpecHandle(InputSpec{
 		input: format.Input{
@@ -87,8 +87,8 @@ func normalizeCustomSourceShape(name string, spec shape.Spec) shape.Spec {
 	return spec
 }
 
-func codecSpecFromSourceShape(shape shape.Spec) codec.CodecSpec {
-	return codec.CodecSpec{
+func codecSpecFromSourceShape(shape shape.Spec) codec.Spec {
+	return codec.Spec{
 		ID:   shape.Codec,
 		Type: shape.MediaKind,
 		Parameters: av.CodecParameters{
@@ -204,7 +204,7 @@ func declaredSourceStream(input InputSpec, spec shape.Spec) av.Stream {
 // fillStreamCodecParameters overlays shape-derived codec parameters onto a
 // declared source stream: the declared stream stays authoritative, and the
 // source shape fills only facts the stream left open.
-func fillStreamCodecParameters(stream *av.Stream, spec codec.CodecSpec) {
+func fillStreamCodecParameters(stream *av.Stream, spec codec.Spec) {
 	if spec.ID != "" && stream.Codec.ID != "" && spec.ID != stream.Codec.ID {
 		return
 	}

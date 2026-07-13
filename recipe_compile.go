@@ -930,14 +930,14 @@ func recipeIROperationIsAnnotation(operation recipeir.Operation) bool {
 		(operation.Auto != nil || operation.Require != nil || operation.Prefer != nil)
 }
 
-func recipeIRStreamEncodeSpec(stream recipeir.Stream) codec.CodecSpec {
+func recipeIRStreamEncodeSpec(stream recipeir.Stream) codec.Spec {
 	for i := range stream.Operations {
 		operation := stream.Operations[i]
 		if operation.Kind == plan.OpEncode || operation.Kind == plan.OpCopy {
 			return cloneCodecSpec(operation.Encode)
 		}
 	}
-	return codec.CodecSpec{}
+	return codec.Spec{}
 }
 
 func recipeIRStreamTransforms(stream recipeir.Stream) []recipeir.Transform {

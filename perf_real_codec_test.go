@@ -29,7 +29,7 @@ func benchRealCodecRuntime() *goav.Runtime {
 	return bundle.MustNew(runconfig.WithRealtime(false))
 }
 
-func benchRealVideoEncode(b *testing.B, spec codec.CodecSpec) {
+func benchRealVideoEncode(b *testing.B, spec codec.Spec) {
 	job := goav.From(benchVideoFrames("real-video-in", b.N, benchVideoW, benchVideoH)).
 		Video().
 		Encode(spec).

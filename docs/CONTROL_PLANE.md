@@ -178,7 +178,7 @@ type SetRate struct {
 
 Expose custom branch components and custom encoder settings through typed
 helpers. Every `key=value` token is bound into your struct, the same tags drive
-help output, and the host returns normal Go values or the real `codec.CodecSpec`
+help output, and the host returns normal Go values or the real `codec.Spec`
 the runtime already understands.
 
 ```go
@@ -207,7 +207,7 @@ type ACMESettings struct {
 acme := ctlserver.NewEncoderSpec[ACMESettings](
     "acmeenc",
     "ACME audio encoder with native settings",
-    func(args ACMESettings) (codec.CodecSpec, error) {
+    func(args ACMESettings) (codec.Spec, error) {
         return codec.Codec(customCodec, av.MediaAudio,
             codec.Bitrate(args.Bitrate),
             codec.Profile(args.Quality),

@@ -105,7 +105,7 @@ func Example_bootstrapControlPlaneHost() {
 	acme := ctlserver.NewEncoderSpec[ACMESettings](
 		"acmeenc",
 		"ACME audio encoder with native settings",
-		func(args ACMESettings) (codec.CodecSpec, error) {
+		func(args ACMESettings) (codec.Spec, error) {
 			return codec.Codec(customCodec, av.MediaAudio,
 				codec.Bitrate(args.Bitrate),
 				codec.Profile(args.Quality),
@@ -172,7 +172,7 @@ func ExampleNewEncoderSpec_customEncoder() {
 	acme := ctlserver.NewEncoderSpec[ACMESettings](
 		"acmeenc",
 		"ACME audio encoder with native settings",
-		func(args ACMESettings) (codec.CodecSpec, error) {
+		func(args ACMESettings) (codec.Spec, error) {
 			return codec.Codec(customCodec, av.MediaAudio,
 				codec.Profile(args.Profile),
 				codec.Control(func(native any) error {

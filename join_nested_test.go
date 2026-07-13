@@ -17,7 +17,7 @@ import (
 	"github.com/thesyncim/goav/shape"
 )
 
-// These tests pin nested joins: a join is a joinArm, so it can stand as an arm
+// These tests pin nested joins: a join is a JoinArm, so it can stand as an arm
 // of another join — Mix(Mix(a, b), c) sub-mixes two arms and mixes the result
 // with a third, Select(Mix(a, b), Mix(c, d)) switches between two live mixes,
 // and composites nest as sub-canvases. A nested join contributes its JOINED

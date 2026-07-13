@@ -92,10 +92,10 @@ func TestRecipeIRStreamPacketCopyOnlyContracts(t *testing.T) {
 			stream: streamIntent{Operations: []operationSpec{{Kind: plan.OpDecode}, copyOp}},
 		},
 		"explicit codec": {
-			stream: streamIntent{Operations: []operationSpec{{Kind: plan.OpCopy, Encode: codec.CodecSpec{ID: av.CodecOpus, Copy: true}}}},
+			stream: streamIntent{Operations: []operationSpec{{Kind: plan.OpCopy, Encode: codec.Spec{ID: av.CodecOpus, Copy: true}}}},
 		},
 		"auto codec": {
-			stream: streamIntent{Operations: []operationSpec{{Kind: plan.OpCopy, Encode: codec.CodecSpec{Auto: true, Copy: true}}}},
+			stream: streamIntent{Operations: []operationSpec{{Kind: plan.OpCopy, Encode: codec.Spec{Auto: true, Copy: true}}}},
 		},
 		"copy operation without copy spec": {
 			stream: streamIntent{Operations: []operationSpec{{Kind: plan.OpCopy}}},

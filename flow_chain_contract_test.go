@@ -14,7 +14,7 @@ import (
 )
 
 func TestFlowChainAccessorsAndNilSafety(t *testing.T) {
-	var root *flowRoot
+	var root *FlowBuilder
 	if got := root.Audio().Name(); got != "" {
 		t.Fatalf("nil root Audio().Name() = %q, want empty", got)
 	}

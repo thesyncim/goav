@@ -22,7 +22,7 @@ func StreamHasDecodeForTest(stream streamIntent) bool {
 	return chainHasDecode(stream.Operations)
 }
 
-func StreamEncodeForTest(stream streamIntent) codec.CodecSpec {
+func StreamEncodeForTest(stream streamIntent) codec.Spec {
 	return chainEncodeSpec(stream.Operations)
 }
 

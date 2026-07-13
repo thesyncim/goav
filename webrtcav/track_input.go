@@ -46,7 +46,7 @@ func trackReceiveOptions(stream av.Stream) []rtpav.ReceiveOption {
 	if name != "" {
 		options = append(options, rtpav.WithName(name))
 	}
-	spec := codec.CodecSpec{
+	spec := codec.Spec{
 		ID:         stream.Codec.ID,
 		Type:       firstMediaType(stream.Codec.Type, stream.Type),
 		Parameters: stream.Codec,

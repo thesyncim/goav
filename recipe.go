@@ -479,25 +479,25 @@ func (j *Job) And(inputs ...InputSpec) *Job {
 // Audio starts a chain on the job's audio stream. With several candidates the
 // selector options (InputName, StreamID, StreamIndex) narrow the
 // match; an ambiguous selection fails the build listing the candidates.
-func (j *Job) Audio(options ...streamOption) *jobStreamBuilder {
+func (j *Job) Audio(options ...StreamOption) *jobStreamBuilder {
 	return j.streamBuilder("audio", av.MediaAudio, options...)
 }
 
 // Video starts a chain on the job's video stream. With several candidates the
 // selector options (InputName, StreamID, StreamIndex) narrow the
 // match; an ambiguous selection fails the build listing the candidates.
-func (j *Job) Video(options ...streamOption) *jobStreamBuilder {
+func (j *Job) Video(options ...StreamOption) *jobStreamBuilder {
 	return j.streamBuilder("video", av.MediaVideo, options...)
 }
 
 // Stream starts a chain on any media type — useful when the input carries one
 // stream whose kind the recipe does not care about. Selector options narrow
 // the match exactly as for Audio and Video.
-func (j *Job) Stream(options ...streamOption) *jobStreamBuilder {
+func (j *Job) Stream(options ...StreamOption) *jobStreamBuilder {
 	return j.streamBuilder("stream", "", options...)
 }
 
-func (j *Job) streamBuilder(name string, media av.MediaType, options ...streamOption) *jobStreamBuilder {
+func (j *Job) streamBuilder(name string, media av.MediaType, options ...StreamOption) *jobStreamBuilder {
 	config := newStreamSelectConfig(media, options...)
 	stream := &jobStreamBuild{
 		name:     name,

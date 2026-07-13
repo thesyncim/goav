@@ -232,7 +232,7 @@ func newDemoHost(ctx context.Context) (*demoHost, error) {
 	acmeEncoder := ctlserver.NewEncoderSpec[acmeSettings](
 		"acmeenc",
 		"demo video encoder that maps native ACME settings",
-		func(args acmeSettings) (codec.CodecSpec, error) {
+		func(args acmeSettings) (codec.Spec, error) {
 			return codec.Codec(demoCodec, av.MediaVideo,
 				codec.Bitrate(args.Bitrate),
 				codec.Profile(args.Quality),

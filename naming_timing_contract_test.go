@@ -11,13 +11,13 @@ import (
 func TestCodecAndTapNamingContracts(t *testing.T) {
 	tests := []struct {
 		name string
-		spec codec.CodecSpec
+		spec codec.Spec
 		want string
 	}{
 		{name: "auto", spec: codec.Auto(), want: "auto"},
 		{name: "copy", spec: codec.Copy(), want: "copy"},
 		{name: "custom", spec: codec.Codec(av.CodecID("x_custom"), av.MediaAudio), want: "x_custom"},
-		{name: "zero", spec: codec.CodecSpec{}, want: "none"},
+		{name: "zero", spec: codec.Spec{}, want: "none"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

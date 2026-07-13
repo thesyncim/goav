@@ -32,12 +32,12 @@ func TestMergeDecodeCodecSpecContracts(t *testing.T) {
 	base.Parameters.Attributes = av.Metadata{"base": "keep"}
 	base.Parameters.ExtraData = av.Buffer{Bytes: []byte{0x01}, Ownership: av.BufferImmutable}
 
-	if got := mergeDecodeCodecSpec(base, codec.CodecSpec{}); !codecSpecEqual(got, base) {
+	if got := mergeDecodeCodecSpec(base, codec.Spec{}); !codecSpecEqual(got, base) {
 		t.Fatalf("zero override = %#v, want base %#v", got, base)
 	}
 
 	control := func(any) error { return nil }
-	override := codec.CodecSpec{
+	override := codec.Spec{
 		ID:   av.CodecID("x-custom-audio"),
 		Type: av.MediaAudio,
 		Parameters: av.CodecParameters{

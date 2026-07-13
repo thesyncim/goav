@@ -385,7 +385,7 @@ type testTranscodeBranch struct {
 	name         string
 	media        av.MediaType
 	transforms   []testTransform
-	encode       codec.CodecSpec
+	encode       codec.Spec
 	destinations []goav.Destination
 }
 
@@ -495,7 +495,7 @@ func (b *testTranscodeBranchBuilder) Resample(sampleRate int, channels int) *tes
 	return b
 }
 
-func (b *testTranscodeBranchBuilder) Encode(spec codec.CodecSpec) *testTranscodeBranchBuilder {
+func (b *testTranscodeBranchBuilder) Encode(spec codec.Spec) *testTranscodeBranchBuilder {
 	b.current().encode = spec
 	return b
 }
@@ -1518,10 +1518,10 @@ func TestTypedBranchTapDomainMismatchIsActionable(t *testing.T) {
 }
 
 func TestCodecSettingsOwnTuningAndAdapterOptions(t *testing.T) {
-	codecSpec := reflect.TypeOf(codec.CodecSpec{})
+	codecSpec := reflect.TypeOf(codec.Spec{})
 	settingsType := reflect.TypeOf(codec.CodecSettings{})
 	if field, ok := codecSpec.FieldByName("Settings"); !ok || field.Type != settingsType {
-		t.Fatalf("CodecSpec.Settings = %v %v, want codec.CodecSettings", field.Type, ok)
+		t.Fatalf("Spec.Settings = %v %v, want codec.CodecSettings", field.Type, ok)
 	}
 	for _, field := range []string{
 		"Bitrate",
@@ -1534,7 +1534,7 @@ func TestCodecSettingsOwnTuningAndAdapterOptions(t *testing.T) {
 		"Controls",
 	} {
 		if _, ok := codecSpec.FieldByName(field); ok {
-			t.Fatalf("CodecSpec should not duplicate codec setting field %s", field)
+			t.Fatalf("Spec should not duplicate codec setting field %s", field)
 		}
 	}
 
@@ -3741,7 +3741,7 @@ func TestStreamRecipeRejectsDuplicateEncoder(t *testing.T) {
 func TestStreamRecipeAllowsRuntimeRegisteredRecipeEncoders(t *testing.T) {
 	tests := []struct {
 		name  string
-		codec codec.CodecSpec
+		codec codec.Spec
 	}{
 		{name: "h264", codec: codec.H264(codec.Bitrate(2_000_000))},
 		{name: "av1", codec: codec.AV1(codec.Bitrate(2_000_000))},
@@ -4038,7 +4038,7 @@ func TestStreamRecipeReportsIncompatibleTransformAdapterBeforeOpeningInput(t *te
 func TestStreamRecipeRejectsUnresolvedEncodeIntents(t *testing.T) {
 	tests := []struct {
 		name string
-		spec codec.CodecSpec
+		spec codec.Spec
 		code errcode.Code
 	}{
 		{name: "auto", spec: codec.Auto(), code: "encode_auto_unresolved"},

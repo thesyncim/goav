@@ -101,7 +101,7 @@ func TestCLIHelpListsCustomPipelineRegistry(t *testing.T) {
 	acme := ctlserver.NewEncoderSpec[acmeSettings](
 		"acmeenc",
 		"ACME native encoder",
-		func(args acmeSettings) (codec.CodecSpec, error) {
+		func(args acmeSettings) (codec.Spec, error) {
 			return codec.Codec("acme", av.MediaAudio, codec.Bitrate(args.Bitrate), codec.Profile(args.Quality)), nil
 		},
 		ctlserver.Aliases("acme"),

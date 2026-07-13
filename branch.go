@@ -42,11 +42,11 @@ const (
 	destinationOriginConstructed
 )
 
-// destinationOptionValue configures a destination value (Write, URI, Writer,
+// DestinationOption configures a destination value (Write, URI, Writer,
 // Custom, or Destination.With): Format pins the container, and the
 // direction-agnostic media options (Name, MIME, Metadata) satisfy it too. It is
 // sealed — only goav option constructors implement it.
-type destinationOptionValue interface {
+type DestinationOption interface {
 	applyDestination(*destinationSpec)
 }
 
@@ -135,7 +135,12 @@ const (
 	branchSpecOriginBranch
 )
 
-type branchBuilder struct {
+// BranchBuilder accumulates one branch's grammar; construct it with Branch.
+// Operations chain onto it exactly like a stream chain, .From(tap) anchors it
+// at an earlier point, and .To finishes it into a BranchSpec. It is sealed —
+// its fields are unexported, so the grammar methods are the only mutation
+// surface.
+type BranchBuilder struct {
 	spec BranchSpec
 }
 
@@ -190,11 +195,11 @@ type tapAnchor interface {
 // like a stream chain (.Decode, .Resize, .Encode, .Do, ...), .From(tap)
 // anchors it at an earlier point, and .To(destinations...) finishes it into a
 // BranchSpec. Names must be unique within one Branches or Attach call.
-func Branch(name string) *branchBuilder {
-	return &branchBuilder{spec: BranchSpec{origin: branchSpecOriginBranch, name: name}}
+func Branch(name string) *BranchBuilder {
+	return &BranchBuilder{spec: BranchSpec{origin: branchSpecOriginBranch, name: name}}
 }
 
-func (b *branchBuilder) From(source branchSource) *branchBuilder {
+func (b *BranchBuilder) From(source branchSource) *BranchBuilder {
 	if b == nil {
 		return b
 	}
@@ -214,7 +219,7 @@ func (b *branchBuilder) From(source branchSource) *branchBuilder {
 	return b
 }
 
-func (b *branchBuilder) Stream(stream av.StreamID) *branchBuilder {
+func (b *BranchBuilder) Stream(stream av.StreamID) *BranchBuilder {
 	if b == nil {
 		return b
 	}
@@ -223,7 +228,7 @@ func (b *branchBuilder) Stream(stream av.StreamID) *branchBuilder {
 	return b
 }
 
-func (b *branchBuilder) Event(event av.EventType) *branchBuilder {
+func (b *BranchBuilder) Event(event av.EventType) *BranchBuilder {
 	if b == nil {
 		return b
 	}
@@ -232,7 +237,7 @@ func (b *branchBuilder) Event(event av.EventType) *branchBuilder {
 	return b
 }
 
-func (b *branchBuilder) Buffer(buffer flow.BranchBuffer) *branchBuilder {
+func (b *BranchBuilder) Buffer(buffer flow.BranchBuffer) *BranchBuilder {
 	if b == nil {
 		return b
 	}
@@ -244,7 +249,7 @@ func (b *branchBuilder) Buffer(buffer flow.BranchBuffer) *branchBuilder {
 	return b
 }
 
-func (b *branchBuilder) Decode(options ...codec.Option) *branchBuilder {
+func (b *BranchBuilder) Decode(options ...codec.Option) *BranchBuilder {
 	if b == nil {
 		return b
 	}
@@ -264,12 +269,12 @@ func (b *branchBuilder) Decode(options ...codec.Option) *branchBuilder {
 		b.setErr(branchDecodeOrderError(firstNonEmpty(b.spec.name, "branch")))
 		return b
 	}
-	decodeCodec := mergeDecodeCodecSpec(codec.CodecSpec{}, codecSpecFromOptions(options...))
+	decodeCodec := mergeDecodeCodecSpec(codec.Spec{}, codecSpecFromOptions(options...))
 	b.spec.operations = append(b.spec.operations, operationSpecForDecode(decodeCodec, string(decodeCodec.ID)))
 	return b
 }
 
-func (b *branchBuilder) Apply(flow chain) *branchBuilder {
+func (b *BranchBuilder) Apply(flow chain) *BranchBuilder {
 	if b == nil {
 		return b
 	}
@@ -327,7 +332,7 @@ func (b *branchBuilder) Apply(flow chain) *branchBuilder {
 	return b
 }
 
-func (b *branchBuilder) Do(stages ...pipeline.Stage) *branchBuilder {
+func (b *BranchBuilder) Do(stages ...pipeline.Stage) *BranchBuilder {
 	if b == nil {
 		return b
 	}
@@ -350,7 +355,7 @@ func (b *branchBuilder) Do(stages ...pipeline.Stage) *branchBuilder {
 
 // Sync places this branch on a shared media timeline. Reuse one flow.SyncPolicy
 // value across live-room branches when recording or preview paths should align.
-func (b *branchBuilder) Sync(policy flow.SyncPolicy) *branchBuilder {
+func (b *BranchBuilder) Sync(policy flow.SyncPolicy) *BranchBuilder {
 	if b == nil {
 		return b
 	}
@@ -362,7 +367,7 @@ func (b *branchBuilder) Sync(policy flow.SyncPolicy) *branchBuilder {
 // the branch-side twin of the stream chain's .Auto(...): needed conversions an
 // active policy allows are inserted from the runtime's filter registry as real
 // planned operations; everything else is refused with the exact policy to add.
-func (b *branchBuilder) Auto(policies ...shape.Policy) *branchBuilder {
+func (b *BranchBuilder) Auto(policies ...shape.Policy) *BranchBuilder {
 	if b == nil {
 		return b
 	}
@@ -374,7 +379,7 @@ func (b *branchBuilder) Auto(policies ...shape.Policy) *branchBuilder {
 // branch-side twin of the stream chain's .Require(...): the stream MUST
 // satisfy the given spec here, or the build fails with the actual and required
 // shapes and the exact fix. It lowers to no runtime node.
-func (b *branchBuilder) Require(spec shape.Spec) *branchBuilder {
+func (b *BranchBuilder) Require(spec shape.Spec) *BranchBuilder {
 	if b == nil {
 		return b
 	}
@@ -386,7 +391,7 @@ func (b *branchBuilder) Require(spec shape.Spec) *branchBuilder {
 // branch-side twin of the stream chain's .Prefer(...). Soft by definition: a
 // preference that cannot be honored is dropped with an Explain diagnostic,
 // never an error. It lowers to no runtime node.
-func (b *branchBuilder) Prefer(spec shape.Spec) *branchBuilder {
+func (b *BranchBuilder) Prefer(spec shape.Spec) *BranchBuilder {
 	if b == nil {
 		return b
 	}
@@ -394,7 +399,7 @@ func (b *branchBuilder) Prefer(spec shape.Spec) *branchBuilder {
 	return b
 }
 
-func (b *branchBuilder) Shape(shape shape.Spec) *branchBuilder {
+func (b *BranchBuilder) Shape(shape shape.Spec) *BranchBuilder {
 	if b == nil {
 		return b
 	}
@@ -406,7 +411,7 @@ func (b *branchBuilder) Shape(shape shape.Spec) *branchBuilder {
 	return b
 }
 
-func (b *branchBuilder) Resize(width int, height int, options ...resizeOption) *branchBuilder {
+func (b *BranchBuilder) Resize(width int, height int, options ...resizeOption) *BranchBuilder {
 	if b == nil {
 		return b
 	}
@@ -422,7 +427,7 @@ func (b *branchBuilder) Resize(width int, height int, options ...resizeOption) *
 	return b
 }
 
-func (b *branchBuilder) Resample(sampleRate int, channels int, options ...audioOption) *branchBuilder {
+func (b *BranchBuilder) Resample(sampleRate int, channels int, options ...audioOption) *BranchBuilder {
 	if b == nil {
 		return b
 	}
@@ -438,7 +443,7 @@ func (b *branchBuilder) Resample(sampleRate int, channels int, options ...audioO
 	return b
 }
 
-func (b *branchBuilder) Tap(tap tapRef) *branchBuilder {
+func (b *BranchBuilder) Tap(tap tapRef) *BranchBuilder {
 	if b == nil {
 		return b
 	}
@@ -477,7 +482,7 @@ func (b *branchBuilder) Tap(tap tapRef) *branchBuilder {
 	return b
 }
 
-func (b *branchBuilder) Encode(codec codec.CodecSpec) *branchBuilder {
+func (b *BranchBuilder) Encode(codec codec.Spec) *BranchBuilder {
 	if b == nil {
 		return b
 	}
@@ -495,7 +500,7 @@ func (b *branchBuilder) Encode(codec codec.CodecSpec) *branchBuilder {
 	return b
 }
 
-func (b *branchBuilder) Copy() *branchBuilder {
+func (b *BranchBuilder) Copy() *BranchBuilder {
 	if b == nil {
 		return b
 	}
@@ -519,7 +524,7 @@ func (b *branchBuilder) Copy() *branchBuilder {
 	return b
 }
 
-func (b *branchBuilder) To(destinations ...Destination) BranchSpec {
+func (b *BranchBuilder) To(destinations ...Destination) BranchSpec {
 	if b == nil {
 		return BranchSpec{err: nilBranchError()}
 	}
@@ -547,7 +552,7 @@ func (b *branchBuilder) To(destinations ...Destination) BranchSpec {
 	return spec
 }
 
-func (b *branchBuilder) snapshot() BranchSpec {
+func (b *BranchBuilder) snapshot() BranchSpec {
 	spec := b.spec
 	spec.operations = cloneOperationSpecs(spec.operations)
 	spec.destinations = cloneDestinationRefs(spec.destinations)
@@ -555,16 +560,16 @@ func (b *branchBuilder) snapshot() BranchSpec {
 	return spec
 }
 
-func (b *branchBuilder) setErr(err error) {
+func (b *BranchBuilder) setErr(err error) {
 	b.spec.setErr(err)
 }
 
-func (b *branchBuilder) sourceStartsFrameDomain() bool {
+func (b *BranchBuilder) sourceStartsFrameDomain() bool {
 	domain, ok := branchExplicitSourceDomain(b.spec.source)
 	return ok && domain == shape.DomainFrame
 }
 
-func (b *branchBuilder) requireFrameInput(step string) bool {
+func (b *BranchBuilder) requireFrameInput(step string) bool {
 	if chainHasDecode(b.spec.operations) {
 		return true
 	}
@@ -579,7 +584,7 @@ func (b *branchBuilder) requireFrameInput(step string) bool {
 	return true
 }
 
-func (b *branchBuilder) validateFrameTapDomain(tap tapRef) error {
+func (b *BranchBuilder) validateFrameTapDomain(tap tapRef) error {
 	if !chainHasDecode(b.spec.operations) && !b.sourceStartsFrameDomain() {
 		return nil
 	}
@@ -998,7 +1003,7 @@ func branchCopyParentOperationError(node string) error {
 	}
 }
 
-func branchEncodeParentOperationError(node string, encode codec.CodecSpec) error {
+func branchEncodeParentOperationError(node string, encode codec.Spec) error {
 	return &BuildError{
 		Phase:     phaseBuild,
 		Family:    errcode.FamilyForCode(encodeBranchSourceInvalidCode),
@@ -1118,7 +1123,7 @@ func branchDecodeCopyError(node string) error {
 	}
 }
 
-func branchPacketEncodeUnsupportedError(stream streamIntent, encode codec.CodecSpec) error {
+func branchPacketEncodeUnsupportedError(stream streamIntent, encode codec.Spec) error {
 	return &BuildError{
 		Phase:     phaseBuild,
 		Family:    errcode.FamilyForCode(packetBranchEncodeUnsupportedCode),

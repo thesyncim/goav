@@ -24,14 +24,14 @@ import (
 // build streamIntent fixtures the way the builders do: decode, copy, and encode
 // requests are operations on the chain's operation list, not parallel fields.
 func decodeIntentOperations() []operationSpec {
-	return []operationSpec{operationSpecForDecode(codec.CodecSpec{}, "")}
+	return []operationSpec{operationSpecForDecode(codec.Spec{}, "")}
 }
 
-func encodeIntentOperations(spec codec.CodecSpec) []operationSpec {
+func encodeIntentOperations(spec codec.Spec) []operationSpec {
 	return []operationSpec{operationSpecForEncode(spec)}
 }
 
-func decodeEncodeIntentOperations(spec codec.CodecSpec) []operationSpec {
+func decodeEncodeIntentOperations(spec codec.Spec) []operationSpec {
 	return append(decodeIntentOperations(), operationSpecForEncode(spec))
 }
 
@@ -2023,7 +2023,7 @@ func TestEncodeAdapterPassesRejectIncompatibleDescriptors(t *testing.T) {
 				intent: intent{Streams: []streamIntent{{
 					Name:   "voice",
 					Select: plan.StreamSelect{Type: av.MediaAudio},
-					Operations: encodeIntentOperations(codec.CodecSpec{ID: audioCodec, Type: av.MediaAudio, Parameters: av.CodecParameters{
+					Operations: encodeIntentOperations(codec.Spec{ID: audioCodec, Type: av.MediaAudio, Parameters: av.CodecParameters{
 						ID:           audioCodec,
 						Type:         av.MediaAudio,
 						SampleFormat: av.SampleFormatF32,

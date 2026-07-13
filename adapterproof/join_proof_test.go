@@ -385,7 +385,7 @@ func TestExternalJoinFansOutThroughBranches(t *testing.T) {
 }
 
 // TestExternalJoinNestsInsideBuiltinMix proves a custom join is a full
-// joinArm: the external interleaver stands as an arm of the built-in Mix, the
+// JoinArm: the external interleaver stands as an arm of the built-in Mix, the
 // outer mix consumes its joined output under the join's output id, and the
 // contract-derived output facts (S16 8kHz mono) feed the mix's first-arm
 // format reference.

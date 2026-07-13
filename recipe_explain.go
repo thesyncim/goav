@@ -201,7 +201,7 @@ func transformSpecConfig(transform transformSpec) map[string]string {
 	return config
 }
 
-func codecSpecConfig(spec codec.CodecSpec) map[string]string {
+func codecSpecConfig(spec codec.Spec) map[string]string {
 	config := map[string]string{}
 	putConfigInt(config, "bitrate", spec.Settings.Bitrate)
 	putConfigInt(config, "keyframeInterval", spec.Settings.KeyframeInterval)
