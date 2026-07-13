@@ -585,15 +585,6 @@ func cloneChainSteps(steps []chainStep) []chainStep {
 	return out
 }
 
-func outputsContainMuxDestination(outputs []destinationSpec) bool {
-	for i := range outputs {
-		if outputs[i].sink == nil {
-			return true
-		}
-	}
-	return false
-}
-
 func outputsContainSinkDestination(outputs []destinationSpec) bool {
 	for i := range outputs {
 		if outputs[i].sink != nil {

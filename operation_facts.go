@@ -60,39 +60,6 @@ func operationSpecsRequireRuntime(operations []operationSpec) bool {
 	return false
 }
 
-func validateOperationSpecShapes(operation string, stream streamIntent, initial shape.Spec) error {
-	shape := normalizeTapShape(initial)
-	if shape.MediaKind == "" {
-		shape.MediaKind = stream.Select.Type
-	}
-	if shape.Codec == "" {
-		shape.Codec = stream.Select.Codec
-	}
-	node := firstNonEmpty(stream.Name, string(stream.Select.ID), string(stream.Select.Type), "stream")
-	for i := range stream.Operations {
-		next := stream.Operations[i]
-		// Taps and same-domain shape annotations advance the lineage; a
-		// .Require(...) assertion falls through to the contract check below.
-		if next.Kind == plan.OpTap {
-			shape = operationSpecOutputShape(shape, next)
-			continue
-		}
-		if next.Kind == plan.OpShape && next.Require == nil {
-			if err := validateShapeAnnotationDomain(operation, node, i, shape, next.Shape); err != nil {
-				return err
-			}
-			shape = operationSpecOutputShape(shape, next)
-			continue
-		}
-		expected := next.InputShapes()
-		if len(expected) != 0 && !expected.Accepts(shape) {
-			return operationShapeFailureError(operation, node, i, next, expected, shape)
-		}
-		shape = operationSpecOutputShape(shape, next)
-	}
-	return nil
-}
-
 // operationShapeFailureError dispatches a failed shape contract to its
 // surface: a .Require(...) assertion gets the requirement-specific refusal,
 // every other operation keeps the established mismatch error.

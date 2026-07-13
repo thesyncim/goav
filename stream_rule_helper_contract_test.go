@@ -76,8 +76,10 @@ func TestStreamMatchContracts(t *testing.T) {
 	if limitedRuntime.Matches(video) {
 		t.Fatal("limited media matcher matched the wrong media")
 	}
-	if !limitedRuntime.Matches(stream) || !limitedRuntime.Matches(stream) {
-		t.Fatal("limited matcher did not match its first two audio streams")
+	for i := 1; i <= 2; i++ {
+		if !limitedRuntime.Matches(stream) {
+			t.Fatalf("limited matcher did not match audio stream %d of its budget", i)
+		}
 	}
 	if limitedRuntime.Matches(stream) {
 		t.Fatal("limited matcher matched past its first-stream budget")

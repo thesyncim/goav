@@ -122,9 +122,7 @@ func (p Policy) String() string {
 	if p.convert {
 		parts = append(parts, "convert")
 	}
-	for _, name := range normalizedCustomPolicyNames(p.custom) {
-		parts = append(parts, name)
-	}
+	parts = append(parts, normalizedCustomPolicyNames(p.custom)...)
 	if len(parts) == 0 {
 		return "none"
 	}
