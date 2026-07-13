@@ -2,12 +2,10 @@ package goav
 
 import (
 	"context"
-	"strings"
 	"sync/atomic"
 	"time"
 
 	"github.com/thesyncim/goav/av"
-	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/flow"
 	"github.com/thesyncim/goav/internal/recipeir"
 	"github.com/thesyncim/goav/pipeline"
@@ -85,7 +83,7 @@ func (g *playoutGate) Handle(ctx context.Context, msg *pipeline.Message, emit pi
 		g.policy.ObserveEvent(msg.Event)
 		return emit.Emit(ctx, msg)
 	}
-	stream, pts, ok := syncMessageTime(msg)
+	stream, pts, ok := gateMessageTime(msg)
 	if !ok {
 		return playoutTimebaseError(g.policy, msg)
 	}
@@ -143,58 +141,16 @@ func (t *task) playoutClock() av.Clock {
 	return t.timeline
 }
 
-// bindPlayoutClock threads the task timeline into a playout gate at lowering
-// time — the stage twin of the provider UseClock seam — and marks the timeline
-// paced so task rate controls apply when playout gates are the only paced
-// consumers.
-func bindPlayoutClock(stage pipeline.Stage, clock av.Clock) {
-	if named, ok := stage.(namedStage); ok {
-		stage = named.stage
-	}
-	gate, ok := stage.(*playoutGate)
-	if !ok || clock == nil {
-		return
-	}
-	gate.bindClock(clock)
-	if timeline, ok := clock.(*timeline); ok {
-		timeline.markPaced()
-	}
-}
-
 func playoutStageName(name string) string {
-	name = strings.TrimSpace(name)
-	if name == "" {
-		name = "playout"
-	}
-	replacer := strings.NewReplacer(" ", "-", "/", "-", "\\", "-", "\t", "-", "\n", "-")
-	return "playout-" + replacer.Replace(name)
+	return gateStageName("playout", name)
 }
 
 func playoutTimebaseError(policy flow.PlayoutPolicy, msg *pipeline.Message) error {
-	node := playoutStageName(policy.Name())
-	kind := ""
-	switch {
-	case msg == nil:
-	case msg.Packet != nil:
-		kind = "packet"
-	case msg.Frame != nil:
-		kind = "frame"
-	}
-	return &BuildError{
-		Phase:     phaseBuild,
-		Family:    errcode.FamilyForCode(runtimeBranchInvalidCode),
-		Code:      runtimeBranchInvalidCode,
-		Operation: "schedule playout delivery",
-		Node:      node,
-		Reason:    "media message has no valid PTS timebase",
-		fields:    errDetails(errDetail("message", firstNonEmpty(kind, "unknown"))),
-		fixes: buildErrorFixes([]string{
-			"set Packet.PTS or Frame.PTS with a valid av.TimeBase before the playout gate",
-			"declare live stream TimeBase facts on the input or discovered stream",
-			"remove .Playout(...) from branches that cannot carry media timestamps",
-		}),
-		cause: errUnsupportedBuild,
-	}
+	return gateTimebaseError("schedule playout delivery", playoutStageName(policy.Name()), msg, []string{
+		"set Packet.PTS or Frame.PTS with a valid av.TimeBase before the playout gate",
+		"declare live stream TimeBase facts on the input or discovered stream",
+		"remove .Playout(...) from branches that cannot carry media timestamps",
+	})
 }
 
 func validatePlayoutPolicyForStream(operation string, branchName string, stream av.Stream, operations []operationSpec) error {
@@ -212,26 +168,12 @@ func validatePlayoutPolicyForRecipeIROperations(operation string, branchName str
 }
 
 func validatePlayoutPolicyForBranch(operation string, branchName string, stream av.Stream) error {
-	if stream.TimeBase.Valid() {
-		return nil
-	}
-	if stream.Codec.ClockRate != 0 {
-		return nil
-	}
-	return &BuildError{
-		Phase:     phaseBuild,
-		Family:    errcode.FamilyForCode(runtimeBranchInvalidCode),
-		Code:      runtimeBranchInvalidCode,
-		Operation: operation,
-		Node:      firstNonEmpty(branchName, string(stream.ID), "branch"),
-		Reason:    "playout branches need stream timebase facts before graph mutation",
-		fixes: buildErrorFixes([]string{
+	return validateGatePolicyForBranch(operation, branchName, stream,
+		"playout branches need stream timebase facts before graph mutation", []string{
 			"set av.Stream.TimeBase on the input.Stream(...) anchor or discovered stream",
 			"set Codec.ClockRate so RTP-style timestamps can derive a timebase",
 			"remove .Playout(...) from dynamic branches whose source has no media timeline",
-		}),
-		cause: errUnsupportedBuild,
-	}
+		})
 }
 
 func operationSpecsContainPlayout(operations []operationSpec) bool {

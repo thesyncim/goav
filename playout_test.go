@@ -126,11 +126,7 @@ func TestPlayoutSinkDeliversWhenDue(t *testing.T) {
 		{stream: "cam", reading: 20 * time.Millisecond},
 		{stream: "cam", reading: 40 * time.Millisecond},
 	})
-	want := []time.Duration{20 * time.Millisecond, 20 * time.Millisecond}
-	got := clock.Sleeps()
-	if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
-		t.Fatalf("clock sleeps = %v, want %v", got, want)
-	}
+	assertClockSleeps(t, clock, 20*time.Millisecond, 20*time.Millisecond)
 }
 
 // TestPlayoutSinkFreezesOnPause pins pause coherence at the sink boundary:
@@ -268,11 +264,7 @@ func TestPlayoutRateChangeRetimesDelivery(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	want := []time.Duration{100 * time.Millisecond, 50 * time.Millisecond}
-	got := clock.Sleeps()
-	if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
-		t.Fatalf("clock sleeps = %v, want %v", got, want)
-	}
+	assertClockSleeps(t, clock, 100*time.Millisecond, 50*time.Millisecond)
 }
 
 // TestPlayoutDropLateShedsOverdueMedia pins drop-late shedding: a stalled
@@ -305,9 +297,8 @@ func TestPlayoutDropLateShedsOverdueMedia(t *testing.T) {
 	if got := emit.Count(); got != 2 {
 		t.Fatalf("emitted = %d, want anchor and in-tolerance messages only", got)
 	}
-	if got := clock.Sleeps(); len(got) != 0 {
-		t.Fatalf("clock sleeps = %v, want none for overdue media", got)
-	}
+	// Overdue media never sleeps.
+	assertClockSleeps(t, clock)
 }
 
 // TestPlayoutDiscontinuityResetsAnchor pins the seek interaction: an
@@ -331,9 +322,8 @@ func TestPlayoutDiscontinuityResetsAnchor(t *testing.T) {
 	if err := gate.Handle(context.Background(), syncPacketMessage("v", time.Second), emit); err != nil {
 		t.Fatal(err)
 	}
-	if got := clock.Sleeps(); len(got) != 0 {
-		t.Fatalf("clock sleeps = %v, want none after re-anchor", got)
-	}
+	// No sleep after the re-anchor.
+	assertClockSleeps(t, clock)
 	if got := emit.Count(); got != 3 {
 		t.Fatalf("emitted = %d, want both packets and the event", got)
 	}

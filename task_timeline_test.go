@@ -208,18 +208,9 @@ func TestTaskTimelineRateReanchorsAllSources(t *testing.T) {
 	// asked for: 100ms intervals at 1x, then 60ms intervals at 2x from mic,
 	// then 100ms intervals at 2x from cam — both sources re-anchored by the
 	// one task-wide control.
-	want := []time.Duration{
-		100 * time.Millisecond, 100 * time.Millisecond, 100 * time.Millisecond,
-		30 * time.Millisecond, 30 * time.Millisecond, 30 * time.Millisecond,
-		50 * time.Millisecond, 50 * time.Millisecond, 50 * time.Millisecond,
-	}
-	got := clock.Sleeps()
-	if len(got) != len(want) {
-		t.Fatalf("clock sleeps = %v, want %v", got, want)
-	}
-	for i := range want {
-		if got[i] != want[i] {
-			t.Fatalf("clock sleeps = %v, want %v", got, want)
-		}
-	}
+	assertClockSleeps(t, clock,
+		100*time.Millisecond, 100*time.Millisecond, 100*time.Millisecond,
+		30*time.Millisecond, 30*time.Millisecond, 30*time.Millisecond,
+		50*time.Millisecond, 50*time.Millisecond, 50*time.Millisecond,
+	)
 }

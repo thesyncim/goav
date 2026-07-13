@@ -74,11 +74,7 @@ func TestTaskPauseFreezesPacedFlow(t *testing.T) {
 	})
 	// The pause itself costs no wall wait: the parked gate re-derives its
 	// remaining 20ms after Resume, so the trace is the two media gaps only.
-	want := []time.Duration{20 * time.Millisecond, 20 * time.Millisecond}
-	got := clock.Sleeps()
-	if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
-		t.Fatalf("clock sleeps = %v, want %v", got, want)
-	}
+	assertClockSleeps(t, clock, 20*time.Millisecond, 20*time.Millisecond)
 }
 
 // TestTaskPauseSnapshotAndCloseContract pins the cold-side contract: the task

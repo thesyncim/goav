@@ -151,11 +151,8 @@ type directRunner struct {
 	eventsClosed bool
 	cold         coldStats
 	closed       bool
-	// readyRemaining counts the sinks that had not yet received media when Run
-	// started; when it reaches zero the graph publishes av.EventTaskReady.
-	// readyFired guards the publish so readiness reports at most once.
-	readyRemaining atomic.Int64
-	readyFired     atomic.Bool
+	// ready is the once-per-run av.EventTaskReady countdown (readiness.go).
+	ready readiness
 }
 
 // rebuildTopoLocked publishes a fresh immutable routing snapshot from the current
@@ -768,9 +765,7 @@ func (g *directRunner) deliverTopo(ctx context.Context, dst *directTopoNode, msg
 }
 
 // armReadinessRLocked snapshots the readiness set at Run start: the active
-// sinks that have not yet seen media. Caller must hold g.mu (read). With no
-// sinks to wait for there is nothing to report; with sinks all fed already
-// the graph is ready as it starts.
+// sinks that have not yet seen media. Caller must hold g.mu (read).
 func (g *directRunner) armReadinessRLocked() {
 	var sinks, unfed int64
 	for i := range g.nodes {
@@ -783,20 +778,15 @@ func (g *directRunner) armReadinessRLocked() {
 			unfed++
 		}
 	}
-	g.readyRemaining.Store(unfed)
-	if sinks > 0 && unfed == 0 {
+	if g.ready.arm(sinks, unfed) {
 		g.publishReady()
 	}
 }
 
-// noteSinkMedia counts a sink out of the readiness set exactly once (first
-// media delivery, or removal before any media). The CAS keeps the countdown
-// single-shot per sink; the last count publishes readiness.
+// noteSinkMedia counts a sink out of the readiness set (first media delivery,
+// or removal before any media); the last count publishes readiness.
 func (g *directRunner) noteSinkMedia(sawMedia *atomic.Bool) {
-	if !sawMedia.CompareAndSwap(false, true) {
-		return
-	}
-	if g.readyRemaining.Add(-1) == 0 {
+	if g.ready.note(sawMedia) {
 		g.publishReady()
 	}
 }
@@ -804,17 +794,16 @@ func (g *directRunner) noteSinkMedia(sawMedia *atomic.Bool) {
 // publishReady reports av.EventTaskReady on the graph's observer stream, at
 // most once. Cold path: it runs once per graph, never per message.
 func (g *directRunner) publishReady() {
-	if !g.readyFired.CompareAndSwap(false, true) {
+	if !g.ready.claim() {
 		return
 	}
-	event := av.Event{Type: av.EventTaskReady, Reason: "every sink received its first media message"}
 	g.eventsMu.Lock()
 	defer g.eventsMu.Unlock()
 	if g.eventsClosed {
 		return
 	}
 	select {
-	case g.events <- event:
+	case g.events <- taskReadyEvent():
 	default:
 		observeDrop(nil, DropObserver, &g.cold)
 	}

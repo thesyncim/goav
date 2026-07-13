@@ -159,6 +159,16 @@ func (t *timeline) paced() bool {
 	return t.consumers.Load()
 }
 
+// markTimelinePaced records a paced consumer on clock when it is the task
+// timeline — the one call every seam that hands out the clock (provider open,
+// realtime demux, gate lowering) makes so task-wide rate and pause controls
+// have a consumer to scale. Non-timeline clocks (unit-test fakes) are ignored.
+func markTimelinePaced(clock av.Clock) {
+	if timeline, ok := clock.(*timeline); ok {
+		timeline.markPaced()
+	}
+}
+
 // pausedNow reports whether the timeline is currently frozen at its reading.
 func (t *timeline) pausedNow() bool {
 	return t.epoch.Load().paused

@@ -2,12 +2,10 @@ package goav
 
 import (
 	"context"
-	"strings"
 	"sync/atomic"
 	"time"
 
 	"github.com/thesyncim/goav/av"
-	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/flow"
 	"github.com/thesyncim/goav/internal/recipeir"
 	"github.com/thesyncim/goav/pipeline"
@@ -62,7 +60,7 @@ func (g *syncGate) Handle(ctx context.Context, msg *pipeline.Message, emit pipel
 		g.policy.ObserveEvent(msg.Event)
 		return emit.Emit(ctx, msg)
 	}
-	stream, pts, ok := syncMessageTime(msg)
+	stream, pts, ok := gateMessageTime(msg)
 	if !ok {
 		return syncTimebaseError(g.policy, msg)
 	}
@@ -110,59 +108,16 @@ func (g *syncGate) OutputShapes(input shape.Spec) shape.Set {
 	return shape.Set{input}
 }
 
-func syncMessageTime(msg *pipeline.Message) (av.StreamID, time.Duration, bool) {
-	switch msg.Kind {
-	case pipeline.MessagePacket:
-		if msg.Packet == nil || !msg.Packet.PTS.Base.Valid() {
-			return "", 0, false
-		}
-		pts, ok := msg.Packet.PTS.ToDuration()
-		return msg.Packet.StreamID, pts, ok
-	case pipeline.MessageFrame:
-		if msg.Frame == nil || !msg.Frame.PTS.Base.Valid() {
-			return "", 0, false
-		}
-		pts, ok := msg.Frame.PTS.ToDuration()
-		return msg.Frame.StreamID, pts, ok
-	default:
-		return "", 0, false
-	}
-}
-
 func syncStageName(name string) string {
-	name = strings.TrimSpace(name)
-	if name == "" {
-		name = "sync"
-	}
-	replacer := strings.NewReplacer(" ", "-", "/", "-", "\\", "-", "\t", "-", "\n", "-")
-	return "sync-" + replacer.Replace(name)
+	return gateStageName("sync", name)
 }
 
 func syncTimebaseError(policy flow.SyncPolicy, msg *pipeline.Message) error {
-	node := syncStageName(policy.Name())
-	kind := ""
-	switch {
-	case msg == nil:
-	case msg.Packet != nil:
-		kind = "packet"
-	case msg.Frame != nil:
-		kind = "frame"
-	}
-	return &BuildError{
-		Phase:     phaseBuild,
-		Family:    errcode.FamilyForCode(runtimeBranchInvalidCode),
-		Code:      runtimeBranchInvalidCode,
-		Operation: "sync media timeline",
-		Node:      node,
-		Reason:    "media message has no valid PTS timebase",
-		fields:    errDetails(errDetail("message", firstNonEmpty(kind, "unknown"))),
-		fixes: buildErrorFixes([]string{
-			"set Packet.PTS or Frame.PTS with a valid av.TimeBase before the sync gate",
-			"declare live stream TimeBase facts on the input or discovered stream",
-			"remove .Sync(...) from branches that cannot carry media timestamps",
-		}),
-		cause: errUnsupportedBuild,
-	}
+	return gateTimebaseError("sync media timeline", syncStageName(policy.Name()), msg, []string{
+		"set Packet.PTS or Frame.PTS with a valid av.TimeBase before the sync gate",
+		"declare live stream TimeBase facts on the input or discovered stream",
+		"remove .Sync(...) from branches that cannot carry media timestamps",
+	})
 }
 
 func validateSyncPolicyForStream(operation string, branchName string, stream av.Stream, operations []operationSpec) error {
@@ -180,26 +135,12 @@ func validateSyncPolicyForRecipeIROperations(operation string, branchName string
 }
 
 func validateSyncPolicyForBranch(operation string, branchName string, stream av.Stream) error {
-	if stream.TimeBase.Valid() {
-		return nil
-	}
-	if stream.Codec.ClockRate != 0 {
-		return nil
-	}
-	return &BuildError{
-		Phase:     phaseBuild,
-		Family:    errcode.FamilyForCode(runtimeBranchInvalidCode),
-		Code:      runtimeBranchInvalidCode,
-		Operation: operation,
-		Node:      firstNonEmpty(branchName, string(stream.ID), "branch"),
-		Reason:    "sync branches need stream timebase facts before graph mutation",
-		fixes: buildErrorFixes([]string{
+	return validateGatePolicyForBranch(operation, branchName, stream,
+		"sync branches need stream timebase facts before graph mutation", []string{
 			"set av.Stream.TimeBase on the input.Stream(...) anchor or discovered stream",
 			"set Codec.ClockRate so RTP-style timestamps can derive a timebase",
 			"remove .Sync(...) from dynamic branches whose source has no media timeline",
-		}),
-		cause: errUnsupportedBuild,
-	}
+		})
 }
 
 func operationSpecsContainSync(operations []operationSpec) bool {

@@ -49,6 +49,21 @@ func (c *recordingTestClock) Sleeps() []time.Duration {
 	return append([]time.Duration(nil), c.sleeps...)
 }
 
+// assertClockSleeps pins the exact wall-wait trace the fake clock recorded;
+// call with no wants to pin that nothing slept.
+func assertClockSleeps(t *testing.T, clock *recordingTestClock, want ...time.Duration) {
+	t.Helper()
+	got := clock.Sleeps()
+	if len(got) != len(want) {
+		t.Fatalf("clock sleeps = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("clock sleeps = %v, want %v", got, want)
+		}
+	}
+}
+
 // blockingTestClock is an inner av.Clock whose Sleep parks until the test
 // releases it, so a test can hold a timeline.Sleep mid-wait and change the
 // epoch underneath it. Every Sleep call reports its requested wall duration on

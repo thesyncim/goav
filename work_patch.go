@@ -200,8 +200,7 @@ func (t *task) planAttachBranchSteps(ctx context.Context, input runtimeAttachBra
 			// Attached playout gates pace on the running task's timeline,
 			// bound here before the branch's graph nodes start; QoS reports
 			// go straight to this task's Watch surface.
-			bindPlayoutClock(operation.Stage, t.playoutClock())
-			bindQoSReport(operation.Stage, t.qosReportFunc())
+			bindGateDeps(operation.Stage, t.playoutClock(), t.qosReportFunc())
 			step.component = attachComponent{stage: operation.Stage}
 			out = attachStepShape(currentShape, patchShape)
 		case plan.OpShape:

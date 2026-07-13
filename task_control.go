@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/thesyncim/goav/control"
-	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/pipeline"
 )
 
@@ -130,15 +129,16 @@ func (t *task) flushSeekBacklog(node pipeline.NodeRef) error {
 // controlRate applies a task-wide playback-rate change: it re-anchors the
 // task's shared timeline, so every paced consumer changes pace together —
 // mid-sleep included, playout gates included. It refuses targets (rate has no
-// per-node meaning) and tasks with nothing paced to scale (an offline task
-// pumps as fast as the graph drains), preserving the
-// format.ErrRateUnsupported contract.
+// per-node meaning) and shares the timeline-control refusal gate with
+// Pause/Resume: tasks with nothing paced to scale (an offline task pumps as
+// fast as the graph drains) keep the format.ErrRateUnsupported contract, and
+// closed tasks refuse with control.ErrNotRunning.
 func (t *task) controlRate(ctrl control.Control) error {
 	if ctrl.Node() != "" || ctrl.Tap() != "" {
 		return fmt.Errorf("goav: rate is task-wide: it scales the shared task timeline for every paced consumer; send control.Rate without At/AtTap: %w", control.ErrInvalid)
 	}
-	if t.timeline == nil || !t.timeline.paced() {
-		return fmt.Errorf("goav: rate control: %w", format.ErrRateUnsupported)
+	if err := t.timelineControlRefusal("rate control"); err != nil {
+		return err
 	}
 	return t.timeline.SetRate(ctrl.Rate())
 }

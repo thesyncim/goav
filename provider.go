@@ -93,11 +93,7 @@ func openProviderSource(ctx context.Context, src provider.Source, name string, c
 	}
 	if aware, ok := source.(interface{ UseClock(av.Clock) }); ok && clock != nil {
 		aware.UseClock(clock)
-		if timeline, ok := clock.(*timeline); ok {
-			// The source paces on the task timeline, so task-wide rate
-			// controls have a consumer to scale.
-			timeline.markPaced()
-		}
+		markTimelinePaced(clock)
 	}
 	spec := src.SourceShape()
 	domain := spec.Domain

@@ -582,8 +582,7 @@ func (b *builder) newBranchComposeStepStageNamed(ctx context.Context, name strin
 		// Playout gates pace on the task timeline the runtime clone carries
 		// as its clock; binding here keeps the gate internal to the lowering.
 		// The QoS reporter rides the same clone so late admits reach Watch.
-		bindPlayoutClock(transform.stage, b.taskClock())
-		bindQoSReport(transform.stage, b.runtime.qosReportFunc())
+		bindGateDeps(transform.stage, b.taskClock(), b.runtime.qosReportFunc())
 		if name != "" && name != transform.stage.Name() {
 			return namedStage{name: name, stage: transform.stage}, stream, nil
 		}

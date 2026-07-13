@@ -43,10 +43,11 @@ func (t *task) Resume(ctx context.Context) error {
 	return nil
 }
 
-// timelineControlRefusal is the shared gate for timeline pause controls: a
-// closed task has no timeline to control (the not-running shape), and a task
-// with no paced consumer refuses like control.Rate does — the timeline exists
-// but nothing reads it, so the control would be a silent no-op.
+// timelineControlRefusal is the shared gate for every timeline control
+// (pause, resume, rate): a closed task has no timeline to control (the
+// not-running shape), and a task with no paced consumer is refused — the
+// timeline exists but nothing reads it, so the control would be a silent
+// no-op.
 func (t *task) timelineControlRefusal(operation string) error {
 	t.lifecycleMu.Lock()
 	closed := t.closed
@@ -55,7 +56,7 @@ func (t *task) timelineControlRefusal(operation string) error {
 		return fmt.Errorf("goav: %s: task is closed: %w", operation, control.ErrNotRunning)
 	}
 	if t.timeline == nil || !t.timeline.paced() {
-		return fmt.Errorf("goav: %s: nothing on this task is paced, so freezing the timeline would be a silent no-op; keep the runtime realtime for file inputs, implement UseClock(av.Clock) on the source, or add .Playout(flow.Playout(name)) before the destination: %w", operation, format.ErrRateUnsupported)
+		return fmt.Errorf("goav: %s: nothing on this task is paced, so a timeline control would be a silent no-op; keep the runtime realtime for file inputs, implement UseClock(av.Clock) on the source, or add .Playout(flow.Playout(name)) before the destination: %w", operation, format.ErrRateUnsupported)
 	}
 	return nil
 }

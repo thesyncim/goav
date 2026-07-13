@@ -63,11 +63,7 @@ func (b *builder) openDemuxSource(ctx context.Context, input format.Input) (demu
 		return demuxBuild{}, err
 	}
 	if realtime {
-		if timeline, ok := b.runtime.clock.(*timeline); ok {
-			// The pump paces on the task timeline, so task-wide rate controls
-			// have a consumer to scale.
-			timeline.markPaced()
-		}
+		markTimelinePaced(b.runtime.clock)
 	}
 	return demuxBuild{source: source, streams: streams}, nil
 }

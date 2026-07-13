@@ -186,7 +186,7 @@ func switchBoundaryReachedAt(boundary switchBoundaryKind, mediaTime time.Duratio
 		}
 		return msg.Kind == pipeline.MessagePacket && msg.Packet != nil && msg.Packet.Keyframe
 	case switchMediaTime:
-		_, pts, ok := syncMessageTime(msg)
+		_, pts, ok := gateMessageTime(msg)
 		return ok && pts >= mediaTime
 	default:
 		return true

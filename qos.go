@@ -92,21 +92,27 @@ func (t *task) qosReportFunc() func(av.Event) {
 	return func(event av.Event) { t.watch.publish(event) }
 }
 
-// bindQoSReport threads the task's cold-path event publisher into a playout or
-// sync gate. Called only during lowering or attach planning, which
-// happen-before the node's goroutines start — the twin of bindPlayoutClock.
-func bindQoSReport(stage pipeline.Stage, report func(av.Event)) {
-	if report == nil {
-		return
-	}
+// bindGateDeps threads the task-scoped dependencies into a lowered playout or
+// sync gate: the pacing clock (playout only — the stage twin of the provider
+// UseClock seam, marking the timeline paced so task rate controls apply) and
+// the cold-path QoS publisher. Called only during lowering or attach planning,
+// which happen-before the node's goroutines start, so gates read both without
+// synchronization.
+func bindGateDeps(stage pipeline.Stage, clock av.Clock, report func(av.Event)) {
 	if named, ok := stage.(namedStage); ok {
 		stage = named.stage
 	}
 	switch gate := stage.(type) {
 	case *playoutGate:
-		gate.report = report
+		gate.bindClock(clock)
+		markTimelinePaced(clock)
+		if report != nil {
+			gate.report = report
+		}
 	case *syncGate:
-		gate.report = report
+		if report != nil {
+			gate.report = report
+		}
 	}
 }
 
