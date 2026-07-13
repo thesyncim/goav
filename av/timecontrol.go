@@ -14,8 +14,9 @@ import (
 // metadata strings.
 
 // MetadataRate is the Event.Metadata key carrying a requested playback rate as
-// a decimal string (1 = realtime). It is the payload of EventRate events;
-// build it with RateMetadata and read it with EventRateValue.
+// a decimal string (1 = realtime). It is the payload of EventRate events —
+// the wire form of task-wide rate controls; build it with RateMetadata and
+// read it with EventRateValue.
 const MetadataRate = "rate"
 
 // MetadataSegmentEnd is the Event.Metadata key carrying a segment's exclusive
@@ -33,7 +34,7 @@ func RateMetadata(rate float64) Metadata {
 
 // EventRateValue extracts the requested playback rate from an EventRate
 // event. It reports false when the event carries no positive, finite decimal
-// MetadataRate entry, so a source can reject a malformed rate change
+// MetadataRate entry, so a consumer can reject a malformed rate change
 // explicitly instead of applying garbage.
 func EventRateValue(event *Event) (float64, bool) {
 	if event == nil {

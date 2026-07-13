@@ -61,24 +61,21 @@ func Example_bootstrapControlPlaneHost() {
 		return
 	}
 
-	type SetRate struct {
-		Value  float64 `goavctl:"value,required" usage:"value=<float>" help:"playback rate"`
-		Source string  `goavctl:"source,required" usage:"source=<source-name>" help:"source node to retime"`
+	type SetPosition struct {
+		Position time.Duration `goavctl:"position,required,duration" usage:"position=<duration>" help:"media position"`
+		Source   string        `goavctl:"source,required" usage:"source=<source-name>" help:"source node to reposition"`
 	}
-	command := ctlserver.NewCommand[SetRate](
-		"vendor.rate",
-		"vendor playback-rate control",
-		func(ctx context.Context, task goav.LiveTask, cmd SetRate) (ctlserver.ControlResponse, error) {
-			ctrl, err := control.Rate(cmd.Value)
-			if err != nil {
-				return ctlserver.ControlResponse{}, err
-			}
+	command := ctlserver.NewCommand[SetPosition](
+		"vendor.seek",
+		"vendor reposition control",
+		func(ctx context.Context, task goav.LiveTask, cmd SetPosition) (ctlserver.ControlResponse, error) {
+			ctrl := control.Seek(cmd.Position)
 			if err := task.Control(ctx, ctrl.At(pipeline.NodeRef(cmd.Source))); err != nil {
 				return ctlserver.ControlResponse{}, err
 			}
 			return ctlserver.ControlResponse{
-				Operation: "control vendor.rate",
-				Result:    map[string]any{"value": cmd.Value},
+				Operation: "control vendor.seek",
+				Result:    map[string]any{"position": cmd.Position.String()},
 			}, nil
 		},
 	)
@@ -131,8 +128,8 @@ func Example_bootstrapControlPlaneHost() {
 	server := ctlserver.Server{Task: task}
 	ctlserver.WithCapabilities(capabilities)(&server)
 
-	rateRequest, _ := ctlserver.RequestFromCLI([]string{"control", "vendor.rate", "value=0.5", "source=fixture"})
-	rateResponse := server.Handle(ctx, rateRequest)
+	seekRequest, _ := ctlserver.RequestFromCLI([]string{"control", "vendor.seek", "position=2s", "source=fixture"})
+	seekResponse := server.Handle(ctx, seekRequest)
 
 	out := filepath.Join(os.TempDir(), "goav-control-plane-bootstrap.ogg")
 	defer os.Remove(out)
@@ -148,7 +145,7 @@ func Example_bootstrapControlPlaneHost() {
 		return
 	}
 
-	fmt.Println("custom control ok:", rateResponse.OK)
+	fmt.Println("custom control ok:", seekResponse.OK)
 	fmt.Println("custom branch ok:", attachResponse.OK)
 	fmt.Println("encoder bitrate:", encoderFactory.config.Settings.Bitrate)
 	fmt.Println("encoder quality:", encoderFactory.config.Settings.Profile)

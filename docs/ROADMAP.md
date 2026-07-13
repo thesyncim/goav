@@ -131,14 +131,17 @@ this list:
   caller-owned output buffers and allocation pins. Applications that need H.264
   encode register their chosen backend explicitly with `runconfig.WithEncoder`
   (or a codec adapter) instead of getting an unproven bundled path.
-- **A/V sink sync, pipeline-wide clock service, pull scheduling**: branch-local
-  `flow.SyncPolicy` gates now align or shed packet/frame messages on shared live
-  timelines. That closes the live-room branch-local problem, but the theme-C
-  endgame is still pull scheduling and sink-level A/V synchronization. The
-  time-axis controls (`Seek`/`Rate`/`Segment`) and clock-paced realtime file
-  playback already ship (`task_seek_test.go`, `task_time_control_test.go`);
-  the rest is analysed in `docs/NORTH_STAR.md` ("Time/sync", attack-plan
-  stage 7). Roadmap.
+- **A/V sink sync, pull scheduling**: branch-local `flow.SyncPolicy` gates now
+  align or shed packet/frame messages on shared live timelines, and the
+  task-wide clock service ships: every task owns one timeline the realtime
+  pacer and clock-aware sources sleep on, moved by task-wide `control.Rate`
+  (`docs/TIME_DOMAIN_PLAN.md` T1, `TestTaskTimelineRateReanchorsAllSources`).
+  The theme-C endgame is still pull scheduling and sink-level A/V
+  synchronization (TIME_DOMAIN_PLAN T2). The time-axis controls
+  (`Seek`/`Rate`/`Segment`) and clock-paced realtime file playback already
+  ship (`task_seek_test.go`, `task_time_control_test.go`); the rest is
+  analysed in `docs/NORTH_STAR.md` ("Time/sync", attack-plan stage 7).
+  Roadmap.
 - **Internal-package layering**: measured on the cross-file reference graph
   and still not ready for a package split. The data-transfer boundary has
   started with `internal/recipeir`; normal recipe work-plan handoffs,

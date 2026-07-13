@@ -77,13 +77,27 @@ func disambiguateSourceNodeName(seen map[string]struct{}, name string, provider 
 // the running source (renamed to the resolved node name when disambiguation or
 // a job-level name applies), its streams, the declared shape domain and
 // realtime policy, and the optional decode-bounds capability.
-func openProviderSource(ctx context.Context, src provider.Source, name string) (graphSourceBuild, error) {
+//
+// Clock-aware sources — those implementing `UseClock(av.Clock)` — receive the
+// task clock (the shared timeline) right after opening, before any wrapping,
+// so scheduled emission paces on the task timeline: fake clocks make it
+// deterministic in tests and task-wide rate changes scale it live. The seam is
+// structural (a type assertion), so providers stay free of goav internals.
+func openProviderSource(ctx context.Context, src provider.Source, name string, clock av.Clock) (graphSourceBuild, error) {
 	if src == nil {
 		return graphSourceBuild{}, errNilSource
 	}
 	source, streams, err := src.OpenSource(ctx)
 	if err != nil {
 		return graphSourceBuild{}, err
+	}
+	if aware, ok := source.(interface{ UseClock(av.Clock) }); ok && clock != nil {
+		aware.UseClock(clock)
+		if timeline, ok := clock.(*timeline); ok {
+			// The source paces on the task timeline, so task-wide rate
+			// controls have a consumer to scale.
+			timeline.markPaced()
+		}
 	}
 	spec := src.SourceShape()
 	domain := spec.Domain

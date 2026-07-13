@@ -976,11 +976,11 @@ func TestInputAndProviderSourceContracts(t *testing.T) {
 		t.Fatalf("nil provider validate error = %v, want errNilSource", err)
 	}
 
-	if _, err := openProviderSource(context.Background(), nil, "nil"); !errors.Is(err, errNilSource) {
+	if _, err := openProviderSource(context.Background(), nil, "nil", nil); !errors.Is(err, errNilSource) {
 		t.Fatalf("nil provider err = %v, want errNilSource", err)
 	}
 	openErr := errors.New("open source failed")
-	if _, err := openProviderSource(context.Background(), &componentSourceProvider{err: openErr}, "broken"); !errors.Is(err, openErr) {
+	if _, err := openProviderSource(context.Background(), &componentSourceProvider{err: openErr}, "broken", nil); !errors.Is(err, openErr) {
 		t.Fatalf("provider open err = %v, want openErr", err)
 	}
 
@@ -997,7 +997,7 @@ func TestInputAndProviderSourceContracts(t *testing.T) {
 	if got := providerNodeName(provider); got != "source" {
 		t.Fatalf("providerNodeName empty = %q, want source", got)
 	}
-	build, err := openProviderSource(context.Background(), provider, "renamed")
+	build, err := openProviderSource(context.Background(), provider, "renamed", nil)
 	if err != nil {
 		t.Fatal(err)
 	}

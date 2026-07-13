@@ -65,7 +65,6 @@ func TestRunHostServesCustomHelpAndAttach(t *testing.T) {
 	}
 
 	for _, request := range []ctlserver.Request{
-		{Op: "control", Verb: "rate", Args: map[string]string{"value": "0.5", "source": "fixture"}},
 		{Op: "control", Verb: "seek", Args: map[string]string{"position": "2s", "source": "fixture"}},
 		{Op: "control", Verb: "segment", Args: map[string]string{"start": "1s", "end": "3s", "source": "fixture"}},
 	} {
@@ -76,17 +75,17 @@ func TestRunHostServesCustomHelpAndAttach(t *testing.T) {
 	}
 	controls := sendDemoRequest(t, socket, ctlserver.Request{Op: "control", Verb: "fixture.controls"})
 	controlMap := responseMap(t, controls)
-	if got := int(controlMap["count"].(float64)); got != 3 {
-		t.Fatalf("fixture.controls count = %d, want 3; response=%+v", got, controls)
+	if got := int(controlMap["count"].(float64)); got != 2 {
+		t.Fatalf("fixture.controls count = %d, want 2; response=%+v", got, controls)
 	}
-	rateControls := sendDemoRequest(t, socket, ctlserver.Request{
+	seekControls := sendDemoRequest(t, socket, ctlserver.Request{
 		Op:   "control",
 		Verb: "fixture.controls",
-		Args: map[string]string{"type": string(av.EventRate)},
+		Args: map[string]string{"type": string(av.EventSeek)},
 	})
-	rateMap := responseMap(t, rateControls)
-	if got := int(rateMap["count"].(float64)); got != 1 {
-		t.Fatalf("fixture.controls type=rate count = %d, want 1; response=%+v", got, rateControls)
+	seekMap := responseMap(t, seekControls)
+	if got := int(seekMap["count"].(float64)); got != 1 {
+		t.Fatalf("fixture.controls type=seek count = %d, want 1; response=%+v", got, seekControls)
 	}
 
 	out := filepath.Join(t.TempDir(), "archive copy.webm")
@@ -243,17 +242,17 @@ func TestRunHostAcceptsDocumentedCLICommands(t *testing.T) {
 	}
 	controlHelp := runDemoCLI(t, socket, "help", "control", "fixture.controls")
 	if !strings.Contains(controlHelp, "controls recorded by the fixture test source") ||
-		!strings.Contains(controlHelp, "[type=rate|seek|segment]") {
+		!strings.Contains(controlHelp, "[type=seek|segment]") {
 		t.Fatalf("fixture.controls help:\n%s", controlHelp)
 	}
 
-	runDemoCLI(t, socket, "control", "rate", "value=0.5", "source=fixture")
-	runDemoCLI(t, socket, "control", "--json", `{"type":"rate","rate":0.75,"node":"fixture"}`)
+	runDemoCLI(t, socket, "control", "seek", "position=4s", "source=fixture")
+	runDemoCLI(t, socket, "control", "--json", `{"type":"seek","position":"1.5s","node":"fixture"}`)
 	runDemoCLI(t, socket, "control", "deliver", "--json", `{"type":"vendor.force_idr","stream_id":"video","reason":"manual","metadata":{"source":"cli","attempt":1,"ok":true}}`, "at=frames")
-	controls := runDemoCLI(t, socket, "control", "fixture.controls", "type=rate")
+	controls := runDemoCLI(t, socket, "control", "fixture.controls", "type=seek")
 	if !strings.Contains(controls, `"count":2`) ||
-		!strings.Contains(controls, `"rate":0.5`) ||
-		!strings.Contains(controls, `"rate":0.75`) {
+		!strings.Contains(controls, `"position":"4s"`) ||
+		!strings.Contains(controls, `"position":"1.5s"`) {
 		t.Fatalf("fixture.controls CLI output:\n%s", controls)
 	}
 	runDemoCLI(t, socket, "attach", "frames", "as", "memory", `thumbnail every=3 label=preview ! memorysink name=preview`)
@@ -288,17 +287,16 @@ func TestPrintUsageIncludesCompleteBootstrapLoop(t *testing.T) {
 	text := out.String()
 	for _, fragment := range []string{
 		"help attach",
-		"help control vendor.rate",
+		"help control vendor.seek",
 		"help control fixture.controls",
 		"capabilities",
 		"taps",
 		"fake source: live VP8 camera",
-		"control rate value=0.5 source=fixture",
 		"control seek position=2s source=fixture",
 		"control segment start=1s end=3s source=fixture",
-		"control fixture.controls type=rate",
-		"control vendor.rate value=0.5 source=fixture",
-		"control --json '{\"type\":\"rate\",\"rate\":0.75,\"node\":\"fixture\"}'",
+		"control fixture.controls type=seek",
+		"control vendor.seek position=2s source=fixture",
+		"control --json '{\"type\":\"seek\",\"position\":\"1.5s\",\"node\":\"fixture\"}'",
 		"control deliver --json '{\"type\":\"vendor.force_idr\"",
 		"resize width=640 height=360",
 		"filesink location=\"/tmp/goav archive.webm\"",

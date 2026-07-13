@@ -57,6 +57,11 @@ type graphPlanGraphConfigurer interface {
 
 func buildGraphPlanTask(ctx context.Context, gp graphPlan) (LiveTask, error) {
 	runtime := runtimeForGraphExecution(gp.runtime)
+	// One shared timeline per task: the runtime clone carries it as the clock
+	// every lowering step threads to paced sources, so a task-wide rate change
+	// re-anchors all of them together.
+	timeline := newTimeline(runtime.clock)
+	runtime = runtimeWithClock(runtime, timeline)
 	gp = graphPlanWithRuntime(gp, runtime)
 	if err := validateGraphPlanLowering(gp); err != nil {
 		return nil, err
@@ -83,7 +88,9 @@ func buildGraphPlanTask(ctx context.Context, gp graphPlan) (LiveTask, error) {
 		graph.Close()
 		return nil, err
 	}
-	return newTaskWithRootDestinations(graph, runtime, gp.work.Destinations, service.destinationTxs...), nil
+	task := newTaskWithRootDestinations(graph, runtime, gp.work.Destinations, service.destinationTxs...)
+	task.timeline = timeline
+	return task, nil
 }
 
 func runtimeForGraphExecution(rt *runtime) *runtime {
@@ -106,6 +113,18 @@ func runtimeWithBuffer(rt *runtime, buffer pipeline.BufferPolicy) *runtime {
 	}
 	clone := *rt
 	clone.buffer = buffer
+	return &clone
+}
+
+// runtimeWithClock clones the runtime with the task's timeline as its clock,
+// so every builder a lowering step creates hands paced sources the shared
+// timeline instead of the raw runtime clock.
+func runtimeWithClock(rt *runtime, clock av.Clock) *runtime {
+	if rt == nil {
+		return nil
+	}
+	clone := *rt
+	clone.clock = clock
 	return &clone
 }
 

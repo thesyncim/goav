@@ -29,7 +29,9 @@ const (
 	EventType Type = "event"
 	// SeekType asks task sources to reposition.
 	SeekType Type = "seek"
-	// RateType asks task sources to change playback rate.
+	// RateType changes the task-wide playback rate: it scales the task's
+	// shared timeline, which every paced source sleeps on, so it takes no
+	// node or tap target.
 	RateType Type = "rate"
 	// SegmentType asks task sources to play one [start, end) window.
 	SegmentType Type = "segment"
@@ -169,7 +171,9 @@ func Seek(pos time.Duration) Control {
 	return Control{typ: SeekType, position: pos}
 }
 
-// Rate builds a control that asks task sources to change playback rate.
+// Rate builds a control that changes the task-wide playback rate. Rate is not
+// targeted: it re-anchors the task's shared timeline so every paced source
+// changes pace together. Tasks with nothing paced to scale refuse it.
 func Rate(r float64) (Control, error) {
 	if !(r > 0) || math.IsInf(r, 0) {
 		return Control{}, invalidControl("Rate needs a positive, finite playback rate (reverse playback is not supported), got %v", r)
@@ -263,10 +267,11 @@ func (c Control) Message() (*pipeline.Message, error) {
 }
 
 // TargetsSources reports whether the control is delivered through source
-// Control methods instead of node queues.
+// Control methods instead of node queues. Rate is neither: it is task-wide
+// and applies to the task timeline without touching the graph.
 func (c Control) TargetsSources() bool {
 	switch c.typ {
-	case SeekType, RateType, SegmentType:
+	case SeekType, SegmentType:
 		return true
 	default:
 		return false

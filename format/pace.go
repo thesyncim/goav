@@ -2,8 +2,6 @@ package format
 
 import (
 	"context"
-	"math"
-	"sync/atomic"
 	"time"
 
 	"github.com/thesyncim/goav/av"
@@ -17,43 +15,30 @@ import (
 // immediately (normal catch-up after a slow read) and the anchor holds.
 const maxPacingSleep = time.Second
 
-// demuxPacer paces a realtime demux pump on a clock: it anchors wall time t0
+// demuxPacer paces a realtime demux pump on a clock: it anchors clock time t0
 // to media time m0 and, before each packet at media time m, sleeps until
-// t0 + (m-m0)/rate. Packets are paced on the emission timeline the demuxer
-// already interleaved — never reordered — using DTS when the container carries
-// one (the monotone decode timeline) and PTS otherwise.
+// t0 + (m-m0). Packets are paced on the emission timeline the demuxer already
+// interleaved — never reordered — using DTS when the container carries one
+// (the monotone decode timeline) and PTS otherwise.
 //
-// Concurrency: rate is the only field shared with Control (an atomic the Start
-// loop reads); the anchor fields are Start-loop-local. A rate change observed
-// by the loop re-anchors at the next packet, so playback continues from the
-// current position at the new pace — pure pacing, no discontinuity.
+// The pacer holds no rate: it paces media deltas 1:1 against whatever clock it
+// is given. Playback rate lives on the task's shared timeline clock, which
+// scales every paced consumer together; a rate change re-derives in-flight
+// sleeps there, so the pacer never re-anchors for pacing changes.
+//
+// Concurrency: every field is Start-loop-local; Control communicates with the
+// loop only through DemuxSource.pending. reset (seek/segment/discontinuity)
+// clears the anchor so the next packet re-anchors instead of sleeping toward a
+// stale timeline.
 type demuxPacer struct {
-	clock av.Clock
-	rate  atomic.Uint64 // math.Float64bits of the playback-rate multiplier
-
-	// Start-loop-local anchor: wall0/media0 pair plus the rate it was anchored
-	// at. anchored is cleared by reset (seek/segment/discontinuity) so the next
-	// packet re-anchors instead of sleeping toward a stale timeline.
+	clock    av.Clock
 	anchored bool
 	wall0    time.Duration
 	media0   time.Duration
-	atRate   float64
 }
 
 func newDemuxPacer(clock av.Clock) *demuxPacer {
-	p := &demuxPacer{clock: clock}
-	p.rate.Store(math.Float64bits(1))
-	return p
-}
-
-// setRate records a new playback-rate multiplier from Control. The Start loop
-// observes it on the next packet and re-anchors there.
-func (p *demuxPacer) setRate(rate float64) {
-	p.rate.Store(math.Float64bits(rate))
-}
-
-func (p *demuxPacer) currentRate() float64 {
-	return math.Float64frombits(p.rate.Load())
+	return &demuxPacer{clock: clock}
 }
 
 // reset drops the anchor so the next packet re-anchors at its own media time.
@@ -72,13 +57,11 @@ func (p *demuxPacer) pace(ctx context.Context, packet *av.Packet) error {
 	if !ok {
 		return nil
 	}
-	rate := p.currentRate()
-	if !p.anchored || rate != p.atRate {
-		p.anchor(media, rate)
+	if !p.anchored {
+		p.anchor(media)
 		return nil
 	}
-	elapsed := time.Duration(float64(media-p.media0) / rate)
-	wait := p.wall0 + elapsed - p.clock.Now()
+	wait := p.wall0 + (media - p.media0) - p.clock.Now()
 	switch {
 	case wait > maxPacingSleep:
 		// Pathological forward gap: sleep the cap, then treat the gap as a
@@ -86,14 +69,14 @@ func (p *demuxPacer) pace(ctx context.Context, packet *av.Packet) error {
 		if err := p.clock.Sleep(ctx, maxPacingSleep); err != nil {
 			return err
 		}
-		p.anchor(media, rate)
+		p.anchor(media)
 		return nil
 	case wait > 0:
 		return p.clock.Sleep(ctx, wait)
 	case wait < -maxPacingSleep:
 		// Far behind schedule (a backward timeline jump the demuxer did not
 		// flag): emit now and re-anchor so following packets pace normally.
-		p.anchor(media, rate)
+		p.anchor(media)
 		return nil
 	default:
 		// Slightly late: emit immediately and let delivery catch up against
@@ -102,10 +85,9 @@ func (p *demuxPacer) pace(ctx context.Context, packet *av.Packet) error {
 	}
 }
 
-func (p *demuxPacer) anchor(media time.Duration, rate float64) {
+func (p *demuxPacer) anchor(media time.Duration) {
 	p.wall0 = p.clock.Now()
 	p.media0 = media
-	p.atRate = rate
 	p.anchored = true
 }
 

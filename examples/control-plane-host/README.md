@@ -9,7 +9,9 @@ to a frame tap named `frames`, and exposes a Unix control socket.
 
 It demonstrates:
 
-- built-in source controls against the test source: `rate`, `seek`, `segment`;
+- built-in source controls against the test source: `seek`, `segment`
+  (playback `rate` is task-wide now: it scales the shared task timeline and
+  takes no source target);
 - a custom `fixture.controls` command that reports what the test source
   recorded;
 - server-aware `help attach` output for app-owned branch components;
@@ -41,7 +43,7 @@ Inspect the host-owned grammar:
 
 ```sh
 $CTL help attach
-$CTL help control vendor.rate
+$CTL help control vendor.seek
 $CTL help control fixture.controls
 $CTL capabilities
 $CTL taps
@@ -60,7 +62,6 @@ Control the fake source. These are normal built-in source controls targeting
 the `fixture` source node:
 
 ```sh
-$CTL control rate value=0.5 source=fixture
 $CTL control seek position=2s source=fixture
 $CTL control segment start=1s end=3s source=fixture
 ```
@@ -69,7 +70,7 @@ Prove the controls reached the test source:
 
 ```sh
 $CTL control fixture.controls
-$CTL control fixture.controls type=rate
+$CTL control fixture.controls type=seek
 ```
 
 If automation already has the structured control/event payload, use the raw
@@ -78,7 +79,7 @@ constructors; the second decodes into an `av.Event` and delivers it at the
 `frames` tap:
 
 ```sh
-$CTL control --json '{"type":"rate","rate":0.75,"node":"fixture"}'
+$CTL control --json '{"type":"seek","position":"1.5s","node":"fixture"}'
 $CTL control deliver --json '{"type":"vendor.force_idr","stream_id":"video","reason":"manual","metadata":{"source":"cli"}}' at=frames
 ```
 

@@ -131,29 +131,26 @@ func newDemoHost(ctx context.Context) (*demoHost, error) {
 		return nil, err
 	}
 
-	type setRate struct {
-		Value  float64 `goavctl:"value,required" usage:"value=<float>" help:"playback rate"`
-		Source string  `goavctl:"source,required" usage:"source=<source-name>" help:"source node to retime"`
+	type setPosition struct {
+		Position time.Duration `goavctl:"position,required,duration" usage:"position=<duration>" help:"media position"`
+		Source   string        `goavctl:"source,required" usage:"source=<source-name>" help:"source node to reposition"`
 	}
-	command := ctlserver.NewCommand[setRate](
-		"vendor.rate",
-		"demo playback-rate control",
-		func(ctx context.Context, task goav.LiveTask, cmd setRate) (ctlserver.ControlResponse, error) {
-			ctrl, err := control.Rate(cmd.Value)
-			if err != nil {
-				return ctlserver.ControlResponse{}, err
-			}
+	command := ctlserver.NewCommand[setPosition](
+		"vendor.seek",
+		"demo reposition control",
+		func(ctx context.Context, task goav.LiveTask, cmd setPosition) (ctlserver.ControlResponse, error) {
+			ctrl := control.Seek(cmd.Position)
 			if err := task.Control(ctx, ctrl.At(pipeline.NodeRef(cmd.Source))); err != nil {
 				return ctlserver.ControlResponse{}, err
 			}
 			return ctlserver.ControlResponse{
-				Operation: "control vendor.rate",
-				Result:    map[string]any{"source": cmd.Source, "value": cmd.Value},
+				Operation: "control vendor.seek",
+				Result:    map[string]any{"source": cmd.Source, "position": cmd.Position.String()},
 			}, nil
 		},
 	)
 	type controlHistory struct {
-		Type av.EventType `goavctl:"type" usage:"[type=rate|seek|segment]" help:"optional source-control event type filter"`
+		Type av.EventType `goavctl:"type" usage:"[type=seek|segment]" help:"optional source-control event type filter"`
 	}
 	controlsCommand := ctlserver.NewCommand[controlHistory](
 		"fixture.controls",
@@ -268,19 +265,18 @@ func printUsage(out io.Writer, address string) {
 	fmt.Fprintf(out, "# fake source: live VP8 camera -> decode -> frame tap named frames\n")
 	fmt.Fprintf(out, "# inspect the server-aware grammar\n")
 	fmt.Fprintf(out, "goav ctl --control %s help attach\n", address)
-	fmt.Fprintf(out, "goav ctl --control %s help control vendor.rate\n", address)
+	fmt.Fprintf(out, "goav ctl --control %s help control vendor.seek\n", address)
 	fmt.Fprintf(out, "goav ctl --control %s help control fixture.controls\n", address)
 	fmt.Fprintf(out, "goav ctl --control %s capabilities\n", address)
 	fmt.Fprintf(out, "goav ctl --control %s taps\n", address)
 	fmt.Fprintf(out, "# drive the goavtest TestSource through normal source controls\n")
-	fmt.Fprintf(out, "goav ctl --control %s control rate value=0.5 source=fixture\n", address)
 	fmt.Fprintf(out, "goav ctl --control %s control seek position=2s source=fixture\n", address)
 	fmt.Fprintf(out, "goav ctl --control %s control segment start=1s end=3s source=fixture\n", address)
 	fmt.Fprintf(out, "goav ctl --control %s control fixture.controls\n", address)
-	fmt.Fprintf(out, "goav ctl --control %s control fixture.controls type=rate\n", address)
-	fmt.Fprintf(out, "goav ctl --control %s control vendor.rate value=0.5 source=fixture\n", address)
+	fmt.Fprintf(out, "goav ctl --control %s control fixture.controls type=seek\n", address)
+	fmt.Fprintf(out, "goav ctl --control %s control vendor.seek position=2s source=fixture\n", address)
 	fmt.Fprintf(out, "# use the raw JSON fallback when automation already has a control protocol or av.Event payload\n")
-	fmt.Fprintf(out, "goav ctl --control %s control --json '{\"type\":\"rate\",\"rate\":0.75,\"node\":\"fixture\"}'\n", address)
+	fmt.Fprintf(out, "goav ctl --control %s control --json '{\"type\":\"seek\",\"position\":\"1.5s\",\"node\":\"fixture\"}'\n", address)
 	fmt.Fprintf(out, "goav ctl --control %s control deliver --json '{\"type\":\"vendor.force_idr\",\"stream_id\":\"video\",\"reason\":\"manual\",\"metadata\":{\"source\":\"cli\"}}' at=frames\n", address)
 	fmt.Fprintf(out, "# attach a stock VP8/WebM transcode from the decoded frame tap\n")
 	fmt.Fprintf(out, "goav ctl --control %s attach frames as archive 'meter label=\"left ! right\" ! resize width=640 height=360 ! encode codec=vp8 media=video bitrate=900k fps=30 keyframe_interval=30 ! filesink location=\"/tmp/goav archive.webm\"'\n", address)

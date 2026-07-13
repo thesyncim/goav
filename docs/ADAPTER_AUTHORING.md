@@ -326,8 +326,22 @@ external source has custom framing that downstream validation should see.
 `av.EventStreamAdded` announcements, then media, then `av.EventEndOfStream`;
 return cleanly on `ctx` cancellation or `pipeline.ErrClosed`, slow down on
 `pipeline.ErrBackpressure`. Implement `pipeline.ControllableSource` to accept
-seek/rate controls (record the request; apply it from the Start loop). A
-single-stream push source needs no provider: `goav.Source(name, shape, fn)`.
+seek/segment controls (record the request; apply it from the Start loop);
+playback rate is task-wide, never a source control. A single-stream push
+source needs no provider: `goav.Source(name, shape, fn)`.
+
+### Clock-aware sources
+
+A source that schedules its own emission (a playout schedule, a generator)
+should not hardcode wall timers. Implement `UseClock(av.Clock)` on the opened
+`pipeline.Source`; after `OpenSource` the runtime hands it the task's shared
+timeline clock, called once before `Start`. Derive every wait from
+`clock.Sleep(ctx, d)` where `d` is media (timeline) time: a fake
+`goavtest.Clock` then drives the schedule deterministically in tests, and
+task-wide `control.Rate` scales the pace live — a clock-aware source is what
+makes a source-only task accept rate controls at all. `playoutav` is the
+reference implementation (`TestPlayoutUsesRuntimeClock` in
+`playoutav/playout_test.go`).
 
 ## Destination provider (`provider` package)
 

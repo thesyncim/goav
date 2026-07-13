@@ -23,13 +23,13 @@ type DemuxSourceConfig struct {
 	// Result owns the packet pointer and event slice reused for every read.
 	Result ReadResult
 	// Realtime paces the pump on a clock: each packet is delivered when its
-	// media time is due (PTS-paced playback), and av.EventRate scales the pace
-	// live. False (offline) pumps as fast as the sink drains — a transcode job
-	// must not run at 1x — and rejects rate controls with ErrRateUnsupported.
+	// media time is due (PTS-paced playback). False (offline) pumps as fast as
+	// the sink drains — a transcode job must not run at 1x.
 	Realtime bool
-	// Clock is the time source realtime pacing runs on; nil defaults to
-	// av.MonotonicClock(). Tests inject a fake so nothing sleeps for real.
-	// Ignored when Realtime is false.
+	// Clock is the time source realtime pacing runs on — for recipe-built
+	// tasks the task's shared timeline, so task-wide rate changes scale the
+	// pace; nil defaults to av.MonotonicClock(). Tests inject a fake so
+	// nothing sleeps for real. Ignored when Realtime is false.
 	Clock av.Clock
 }
 
@@ -110,9 +110,10 @@ var _ pipeline.ControllableSource = (*controllableDemuxSource)(nil)
 // a silent ignore.
 //
 // With Realtime set the pump paces delivery on the configured clock — each
-// packet emits when its media time is due, av.EventRate scales the pace — and
-// every reposition (seek, segment start, demuxer discontinuity) re-anchors the
-// pacing timeline so playback resumes paced at the new position.
+// packet emits when its media time is due — and every reposition (seek,
+// segment start, demuxer discontinuity) re-anchors the pacing anchor so
+// playback resumes paced at the new position. Playback rate is not a source
+// control: it scales the task's shared timeline clock instead.
 func NewDemuxSource(config DemuxSourceConfig) (pipeline.Source, error) {
 	if config.Demuxer == nil {
 		return nil, ErrNilDemuxer
@@ -157,10 +158,9 @@ type controllableDemuxSource struct {
 // Control records a time-axis request for the Start loop to apply between
 // reads (the ControllableSource contract: record, don't touch loop state).
 // av.EventSeek and av.EventSegment are honoured through the demuxer's Seeker.
-// av.EventRate is honoured when the pump paces delivery (Realtime): the rate
-// multiplier swaps atomically and the loop re-anchors its pacing timeline at
-// the next packet — pure pacing, no discontinuity. An offline pump runs
-// unpaced and rejects rate controls with ErrRateUnsupported.
+// Playback rate is not a source control — it scales the task-wide timeline
+// clock the pacer sleeps on — so av.EventRate is refused like any other
+// unsupported source control.
 func (s *controllableDemuxSource) Control(_ context.Context, msg *pipeline.Message) error {
 	if msg == nil || msg.Kind != pipeline.MessageEvent || msg.Event == nil {
 		return fmt.Errorf("format: %s: only event controls are supported", s.name)
@@ -183,16 +183,6 @@ func (s *controllableDemuxSource) Control(_ context.Context, msg *pipeline.Messa
 			return fmt.Errorf("format: %s: segment needs an exclusive end after start (build it with av.SegmentEndMetadata)", s.name)
 		}
 		s.pending.Store(&timeControlRequest{position: start, end: end})
-		return nil
-	case av.EventRate:
-		if s.pacer == nil {
-			return fmt.Errorf("%s: %w", s.name, ErrRateUnsupported)
-		}
-		rate, ok := av.EventRateValue(msg.Event)
-		if !ok {
-			return fmt.Errorf("format: %s: rate needs a positive, finite value on Event.Metadata (build it with av.RateMetadata)", s.name)
-		}
-		s.pacer.setRate(rate)
 		return nil
 	default:
 		return fmt.Errorf("format: %s: unsupported source control %q", s.name, msg.Event.Type)

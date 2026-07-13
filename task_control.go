@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/thesyncim/goav/control"
+	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/pipeline"
 )
 
@@ -14,8 +15,10 @@ import (
 // it to the node named by ctrl.Node() on that node's serial worker. It is safe to
 // call concurrently with Run: the control rides the target node's normal queue, so
 // the node's Handle still sees one message at a time and needs no extra locking.
-// Time-axis controls (seek, rate, segment) are the exception: sources have no
-// queue, so they are handed to each source's Control method synchronously.
+// Reposition controls (seek, segment) are the exception: sources have no queue,
+// so they are handed to each source's Control method synchronously. Rate is
+// task-wide: it scales the task's shared timeline, which every paced source
+// sleeps on, and never targets a node.
 func (t *task) Control(ctx context.Context, ctrl control.Control) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -26,6 +29,9 @@ func (t *task) Control(ctx context.Context, ctrl control.Control) error {
 	}
 	if msg == nil || msg.Event == nil {
 		return control.ErrNil
+	}
+	if ctrl.Type() == control.RateType {
+		return t.controlRate(ctrl)
 	}
 	targets, err := t.controlTargets(ctrl)
 	if err != nil {
@@ -51,7 +57,22 @@ func (t *task) Control(ctx context.Context, ctrl control.Control) error {
 	return errors.Join(errs...)
 }
 
-// controlDeliver picks the delivery seam for a control. Time-axis controls
+// controlRate applies a task-wide playback-rate change: it re-anchors the
+// task's shared timeline, so every paced source changes pace together —
+// mid-sleep included. It refuses targets (rate has no per-node meaning) and
+// tasks with nothing paced to scale (an offline task pumps as fast as the
+// graph drains), preserving the format.ErrRateUnsupported contract.
+func (t *task) controlRate(ctrl control.Control) error {
+	if ctrl.Node() != "" || ctrl.Tap() != "" {
+		return fmt.Errorf("goav: rate is task-wide: it scales the shared task timeline for every paced source; send control.Rate without At/AtTap: %w", control.ErrInvalid)
+	}
+	if t.timeline == nil || !t.timeline.paced() {
+		return fmt.Errorf("goav: rate control: %w", format.ErrRateUnsupported)
+	}
+	return t.timeline.SetRate(ctrl.Rate())
+}
+
+// controlDeliver picks the delivery seam for a control. Reposition controls
 // target source nodes, which have no queue or serial worker, so they go through
 // the graph's SourceInjector. Everything else rides the target node's queue
 // through NodeInjector.

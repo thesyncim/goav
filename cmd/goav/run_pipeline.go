@@ -165,7 +165,7 @@ func runPipelineHelp() string {
 		"  goav run --control unix:///tmp/goav-live.sock 'testsrc video name=fixture width=1280 height=720 fps=30 duration=30s realtime=true pattern=bars ! tap name=frames ! encode codec=av1 media=video bitrate=1200k fps=30 keyframe_interval=60 min_qindex=20 max_qindex=180 tune=zerolatency ! filesink location=/tmp/goav-av1.mkv format=matroska'\n" +
 		"  goav ctl --control unix:///tmp/goav-live.sock taps\n" +
 		"  goav ctl --control unix:///tmp/goav-live.sock graph\n" +
-		"  goav ctl --control unix:///tmp/goav-live.sock control rate value=0.5 source=fixture\n" +
+		"  goav ctl --control unix:///tmp/goav-live.sock control rate value=0.5\n" +
 		"  goav ctl --control unix:///tmp/goav-live.sock control seek position=2s source=fixture\n" +
 		"  goav ctl --control unix:///tmp/goav-live.sock attach frames as preview 'resize width=320 height=180 ! encode codec=av1 media=video bitrate=300k fps=2 keyframe_interval=1 ! filesink location=/tmp/goav-preview.ivf'\n" +
 		"  goav ctl --control unix:///tmp/goav-live.sock stop\n"
@@ -449,11 +449,11 @@ func (p generatedVideoProvider) OpenSource(context.Context) (pipeline.Source, []
 
 type generatedVideoPipelineSource struct {
 	source generatedVideoSource
+	clock  av.Clock
 	mu     sync.Mutex
 
 	next          int
 	segmentEnd    int
-	rate          float64
 	discontinuity bool
 	closed        bool
 }
@@ -463,9 +463,19 @@ var _ pipeline.ControllableSource = (*generatedVideoPipelineSource)(nil)
 func newGeneratedVideoPipelineSource(source generatedVideoSource) *generatedVideoPipelineSource {
 	return &generatedVideoPipelineSource{
 		source:     source,
+		clock:      av.MonotonicClock(),
 		segmentEnd: source.frames,
-		rate:       1,
 	}
+}
+
+// UseClock switches realtime frame waits onto the injected clock. The goav
+// runtime hands the task's shared timeline here after opening the provider,
+// so `goav ctl control rate` scales generated playback task-wide.
+func (s *generatedVideoPipelineSource) UseClock(clock av.Clock) {
+	if clock == nil {
+		return
+	}
+	s.clock = clock
 }
 
 func (s *generatedVideoPipelineSource) Name() string {
@@ -484,7 +494,7 @@ func (s *generatedVideoPipelineSource) Start(ctx context.Context, emitter pipeli
 		return nil
 	}
 	for {
-		index, discontinuity, rate, done := s.nextFrame()
+		index, discontinuity, done := s.nextFrame()
 		if done {
 			return s.emitEOS(ctx, emitter)
 		}
@@ -499,7 +509,9 @@ func (s *generatedVideoPipelineSource) Start(ctx context.Context, emitter pipeli
 			return err
 		}
 		if s.source.realtime {
-			if err := waitGeneratedFrame(ctx, s.source.frameDuration(rate)); err != nil {
+			// One frame interval on the clock — the task timeline when the
+			// runtime injected it, so task-wide rate changes scale the pace.
+			if err := s.clock.Sleep(ctx, s.source.frameDuration()); err != nil {
 				return nil
 			}
 		}
@@ -517,12 +529,6 @@ func (s *generatedVideoPipelineSource) Control(_ context.Context, msg *pipeline.
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	switch event.Type {
-	case av.EventRate:
-		rate, ok := av.EventRateValue(&event)
-		if !ok {
-			return fmt.Errorf("goav run: malformed rate control")
-		}
-		s.rate = rate
 	case av.EventSeek:
 		position, ok := event.Timestamp.ToDuration()
 		if !ok {
@@ -561,14 +567,11 @@ func (s *generatedVideoPipelineSource) Close() error {
 	return nil
 }
 
-func (s *generatedVideoPipelineSource) nextFrame() (int, bool, float64, bool) {
+func (s *generatedVideoPipelineSource) nextFrame() (int, bool, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.closed {
-		return 0, false, 1, true
-	}
-	if s.rate <= 0 || math.IsInf(s.rate, 1) || math.IsNaN(s.rate) {
-		s.rate = 1
+		return 0, false, true
 	}
 	end := s.segmentEnd
 	if end <= 0 || end > s.source.frames {
@@ -576,13 +579,13 @@ func (s *generatedVideoPipelineSource) nextFrame() (int, bool, float64, bool) {
 		s.segmentEnd = end
 	}
 	if s.next >= end {
-		return 0, false, s.rate, true
+		return 0, false, true
 	}
 	index := s.next
 	s.next++
 	discontinuity := s.discontinuity
 	s.discontinuity = false
-	return index, discontinuity, s.rate, false
+	return index, discontinuity, false
 }
 
 func (s *generatedVideoPipelineSource) emitEOS(ctx context.Context, emitter pipeline.Emitter) error {
@@ -609,25 +612,11 @@ func (s *generatedVideoPipelineSource) emit(ctx context.Context, emitter pipelin
 	}
 }
 
-func waitGeneratedFrame(ctx context.Context, duration time.Duration) error {
-	if duration <= 0 {
-		return nil
+func (s generatedVideoSource) frameDuration() time.Duration {
+	if s.fps.num <= 0 {
+		return 0
 	}
-	timer := time.NewTimer(duration)
-	defer timer.Stop()
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-timer.C:
-		return nil
-	}
-}
-
-func (s generatedVideoSource) frameDuration(rate float64) time.Duration {
-	if rate <= 0 || math.IsInf(rate, 1) || math.IsNaN(rate) || s.fps.num <= 0 {
-		rate = 1
-	}
-	seconds := float64(s.fps.den) / float64(s.fps.num) / rate
+	seconds := float64(s.fps.den) / float64(s.fps.num)
 	return time.Duration(seconds * float64(time.Second))
 }
 

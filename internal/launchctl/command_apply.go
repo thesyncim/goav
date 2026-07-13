@@ -130,11 +130,10 @@ type SeekCommand struct {
 	Node     string        `goavctl:"node" usage:"[node=<node-name>]" help:"expert graph node name reported by inspect"`
 }
 
-// RateCommand is the args struct for control rate.
+// RateCommand is the args struct for control rate. Rate is task-wide — it
+// scales the task's shared timeline — so it takes no source or node target.
 type RateCommand struct {
-	Value  float64 `goavctl:"value,required" usage:"value=<float>" help:"positive playback rate, for example 0.5 or 2"`
-	Source string  `goavctl:"source" usage:"[source=<source-name>]" help:"source node name reported by inspect"`
-	Node   string  `goavctl:"node" usage:"[node=<node-name>]" help:"expert graph node name reported by inspect"`
+	Value float64 `goavctl:"value,required" usage:"value=<float>" help:"positive playback rate, for example 0.5 or 2"`
 }
 
 // SegmentCommand is the args struct for control segment.
@@ -213,10 +212,6 @@ func applyRate(ctx context.Context, task goav.LiveTask, args any) (ControlRespon
 	ctrl, err := control.Rate(cmd.Value)
 	if err != nil {
 		return ControlResponse{}, structuredError("control rate", err)
-	}
-	ctrl, err = applySourceOrNodeTarget(task, "control rate", ctrl, cmd.Source, cmd.Node)
-	if err != nil {
-		return ControlResponse{}, err
 	}
 	if err := task.Control(ctx, ctrl); err != nil {
 		return ControlResponse{}, structuredError("control rate", err)
@@ -409,7 +404,7 @@ func DecodeRawControl(data []byte) (control.Control, error) {
 		}
 		ctrl = control.Seek(position)
 	case control.RateType:
-		if err := validateRawFields("control --json", obj, "type", "rate", "tap", "node", "reason"); err != nil {
+		if err := validateRawFields("control --json", obj, "type", "rate", "reason"); err != nil {
 			return control.Control{}, err
 		}
 		rate, ok := fieldFloat(obj, "rate")

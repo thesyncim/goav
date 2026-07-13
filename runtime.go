@@ -156,6 +156,16 @@ type filterRequest struct {
 	transform *mediaTransform
 }
 
+// taskClock returns the clock the build hands to paced sources — on recipe
+// builds the task's shared timeline, which the runtime clone carries as its
+// clock.
+func (b *builder) taskClock() av.Clock {
+	if b == nil || b.runtime == nil {
+		return nil
+	}
+	return b.runtime.clock
+}
+
 func (b *builder) Source(source pipeline.Source) *builder {
 	b.sources = append(b.sources, source)
 	return b
@@ -189,7 +199,11 @@ func (b *builder) Build(ctx context.Context) (LiveTask, error) {
 			return nil, err
 		}
 	}
-	return newTask(graph, b.runtime, b.destinationTxs...), nil
+	task := newTask(graph, b.runtime, b.destinationTxs...)
+	// Explicit-graph sources are caller-built and pace themselves, so the
+	// task timeline has no paced consumers; it exists for uniform task shape.
+	task.timeline = newTimeline(b.runtime.clock)
+	return task, nil
 }
 
 func (b *builder) hasExplicitGraph() bool {
@@ -324,8 +338,12 @@ func connectRefs(graph pipeline.Graph, from pipeline.NodeRef, to pipeline.NodeRe
 }
 
 type task struct {
-	graph              pipeline.Graph
-	runtime            *runtime
+	graph   pipeline.Graph
+	runtime *runtime
+	// timeline is the task-wide clock service every paced source sleeps on;
+	// control.Rate scales it so all paced delivery re-anchors together. Nil
+	// only for tasks assembled outside the build paths (unit-test graphs).
+	timeline           *timeline
 	destinations       []*destinationTransaction
 	rootDestinations   []workDestination
 	taps               []snapshot.Tap

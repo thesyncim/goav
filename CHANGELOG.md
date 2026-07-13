@@ -11,6 +11,18 @@ methodology changes, and migration notes.
 
 ## Unreleased
 
+- Task-wide timeline: every task owns one shared clock service (an internal
+  timeline consumed as `av.Clock`) that the realtime demux pacer and
+  clock-aware sources sleep on; `control.Rate` re-anchors it so every paced
+  source changes pace together, mid-sleep included, and `playoutav` schedules
+  on the injected clock instead of wall timers (sources implementing
+  `UseClock(av.Clock)` receive the task clock after open). **Breaking**: rate
+  controls are task-wide and no longer target sources — `control.Rate` with
+  `At`/`AtTap` is refused, `av.EventRate` is no longer delivered to
+  `pipeline.ControllableSource.Control` (sources keep seek/segment), and
+  `goav ctl control rate` drops its `source=`/`node=` arguments. Tasks with
+  nothing paced to scale still refuse rate with `format.ErrRateUnsupported`.
+
 - Exported the grammar's sealed builder and option types — `BranchBuilder`
   (Branch), `FlowBuilder` (Flow), `MixStream` (Mix), `CompositeStream`
   (Composite), `SelectStream` (Select), `JoinStream` (Join), the `JoinArm`

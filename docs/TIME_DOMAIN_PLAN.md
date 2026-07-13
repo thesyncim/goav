@@ -39,15 +39,21 @@ of new packages.
 
 ## Slices
 
-### T1. Task timeline (shared clock service)
+### T1. Task timeline (shared clock service) — LANDED
 
-One `av.Timeline` per task: wraps the runtime `av.Clock` with an atomically
-readable rate and pause epoch, mapping media time to run time. The realtime
-demux pacer, sync gates, and (T2) playout sinks consult the timeline instead
-of private anchors; `control.Rate` moves the shared timeline so every paced
-source re-anchors coherently; `playoutav` gains clock injection and drops its
-hardcoded timer. Acceptance: TestTaskTimelineRateReanchorsAllSources (planned),
-TestPlayoutUsesRuntimeClock (planned); existing pacer/sync tests stay green.
+One timeline per task (internal `timeline` in `timeline.go`, consumed as
+`av.Clock` — zero new exports): wraps the runtime `av.Clock` with an
+atomically readable rate and pause epoch, mapping media time to run time. The
+realtime demux pacer paces in timeline units instead of a private rate atom;
+clock-aware sources receive the timeline through a structural
+`UseClock(av.Clock)` assertion at provider open; `control.Rate` is task-wide —
+it moves the shared timeline so every paced source re-anchors coherently, and
+it no longer targets sources (breaking); `playoutav` gained clock injection
+and dropped its hardcoded timer. Pause/Resume mechanics exist on the timeline
+for T3 (no public wiring yet). Acceptance:
+`TestTaskTimelineRateReanchorsAllSources`, `TestPlayoutUsesRuntimeClock`,
+`timeline_test.go` (rate change mid-sleep wakes early, pause freezes Now,
+concurrent readers under race); existing pacer/sync tests stay green.
 
 ### T2. Synchronized sink playout
 

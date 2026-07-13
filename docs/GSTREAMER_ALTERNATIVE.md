@@ -62,10 +62,14 @@ bus-visible state changes to be ordinary workflows. The current goav answer is:
   normalized PTS, while `flow.SyncDropLate()` lets preview branches shed late media
   without stalling recording branches.
 
-The intentionally deferred gap is narrower now: pipeline-wide clock service,
-pull scheduling, and sink-level A/V synchronization. Branch-local live-room
-alignment exists; global playout policy still belongs in the scheduler/time
-model, not as extra branch flags or a graph API escape hatch.
+The intentionally deferred gap is narrower now: pull scheduling and
+sink-level A/V synchronization. The task-wide clock service exists — every
+task owns one shared timeline that the realtime pacer and clock-aware sources
+sleep on, moved by task-wide `control.Rate`
+(`TestTaskTimelineRateReanchorsAllSources`, `TestPlayoutUsesRuntimeClock`) —
+and branch-local live-room alignment exists; global playout policy still
+belongs in the scheduler/time model, not as extra branch flags or a graph API
+escape hatch.
 
 ## What goav deliberately does not have
 
@@ -77,10 +81,10 @@ model, not as extra branch flags or a graph API escape hatch.
   for core (`docs/ROADMAP.md`).
 - Playback/display stacks, device discovery, auto-pluggers. These are out of
   scope; goav assumes the application owns its endpoints.
-- Pipeline-wide clock service, pull scheduling, and sink-level A/V
-  synchronization. Branch-local live-room `flow.SyncPolicy` gates exist, but global
-  playout policy remains roadmap work (`docs/NORTH_STAR.md`,
-  `docs/ROADMAP.md`).
+- Pull scheduling and sink-level A/V synchronization. The task-wide timeline
+  clock (`TestTaskTimelineRateReanchorsAllSources`) and branch-local live-room
+  `flow.SyncPolicy` gates exist, but global playout policy remains roadmap
+  work (`docs/NORTH_STAR.md`, `docs/ROADMAP.md`, `docs/TIME_DOMAIN_PLAN.md`).
 
 ## On performance comparisons
 

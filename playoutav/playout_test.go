@@ -14,6 +14,7 @@ import (
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/playoutav"
 	"github.com/thesyncim/goav/provider"
+	"github.com/thesyncim/goav/runconfig"
 	"github.com/thesyncim/goav/shape"
 )
 
@@ -78,6 +79,43 @@ func TestScheduledPlayoutPacketProviderKeepsTransportOutOfCore(t *testing.T) {
 		spec.Format != playoutav.FormatPlayout ||
 		!spec.Realtime {
 		t.Fatalf("SourceShape() = %+v", spec)
+	}
+}
+
+// TestPlayoutUsesRuntimeClock pins the clock seam: the runtime hands the
+// opened playout source its task clock (through the structural UseClock
+// capability), so a fake clock drives scheduled emission deterministically —
+// the exact schedule gaps are recorded as clock waits and nothing sleeps on a
+// wall timer.
+func TestPlayoutUsesRuntimeClock(t *testing.T) {
+	input := playoutav.New(
+		[]av.Stream{audioStream("mic")},
+		[]playoutav.Message{
+			playoutav.Frame(0, s16Frame("mic", 0, 1)),
+			playoutav.Frame(20*time.Millisecond, s16Frame("mic", 20*time.Millisecond, 2)),
+			playoutav.Frame(50*time.Millisecond, s16Frame("mic", 50*time.Millisecond, 3)),
+		},
+	)
+
+	clock := goavtest.NewClock()
+	out := goavtest.NewCollector()
+	start := time.Now()
+	err := goav.From(goav.Input(input)).Audio().To(out.Sink()).
+		UseRuntime(goavtest.Runtime(runconfig.WithClock(clock))).
+		Run(context.Background())
+	if err != nil {
+		t.Fatalf("run clocked playout input: %v", err)
+	}
+	if elapsed := time.Since(start); elapsed > 5*time.Second {
+		t.Fatalf("clocked playout took %v; the schedule must run on the fake clock, not wall timers", elapsed)
+	}
+	if got, want := out.S16(), [][]int16{{1}, {2}, {3}}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("collected S16 = %v, want %v", got, want)
+	}
+	// The schedule's gaps — 20ms then 30ms — were waited on the injected
+	// clock: recorded, not slept.
+	if got, want := clock.Sleeps(), []time.Duration{20 * time.Millisecond, 30 * time.Millisecond}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("clock sleeps = %v, want %v", got, want)
 	}
 }
 

@@ -295,14 +295,14 @@ func TestDemuxSourceControlRejections(t *testing.T) {
 	controllable := source.(pipeline.ControllableSource)
 	ctx := context.Background()
 
-	// Rate is rejected honestly on an offline pump: it runs unpaced, so there
-	// is no pacing to scale (realtime pumps accept it — see the pacing tests).
+	// Rate is not a source control: it scales the task-wide timeline, so the
+	// pump refuses it like any other unsupported control.
 	rate := &pipeline.Message{Kind: pipeline.MessageEvent, Event: &av.Event{
 		Type:     av.EventRate,
 		Metadata: av.RateMetadata(2),
 	}}
-	if err := controllable.Control(ctx, rate); !errors.Is(err, ErrRateUnsupported) {
-		t.Fatalf("rate err = %v, want ErrRateUnsupported", err)
+	if err := controllable.Control(ctx, rate); err == nil || !strings.Contains(err.Error(), "unsupported source control") {
+		t.Fatalf("rate err = %v, want unsupported-control rejection", err)
 	}
 
 	// Malformed payloads are rejected at Control, before anything repositions.

@@ -294,7 +294,7 @@ func (s InputSpec) openGraphSourceBuildKind(ctx context.Context, service *builde
 			realtime: shapeSpec.Realtime,
 		}, nil
 	case s.provider != nil:
-		return openProviderSource(ctx, s.provider, name)
+		return openProviderSource(ctx, s.provider, name, service.taskClock())
 	default:
 		input := s.formatInput()
 		build, err := service.openDemuxSource(ctx, input)

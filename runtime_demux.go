@@ -53,7 +53,7 @@ func (b *builder) openDemuxSource(ctx context.Context, input format.Input) (demu
 			Events: make([]av.Event, 0, 1),
 		},
 		// A realtime task plays files paced — packets deliver when their media
-		// time is due on the runtime clock, which is what makes control.Rate work
+		// time is due on the task timeline, which is what makes control.Rate work
 		// on file inputs. Offline tasks pump at full speed.
 		Realtime: realtime,
 		Clock:    b.runtime.clock,
@@ -61,6 +61,13 @@ func (b *builder) openDemuxSource(ctx context.Context, input format.Input) (demu
 	if err != nil {
 		demuxer.Close()
 		return demuxBuild{}, err
+	}
+	if realtime {
+		if timeline, ok := b.runtime.clock.(*timeline); ok {
+			// The pump paces on the task timeline, so task-wide rate controls
+			// have a consumer to scale.
+			timeline.markPaced()
+		}
 	}
 	return demuxBuild{source: source, streams: streams}, nil
 }

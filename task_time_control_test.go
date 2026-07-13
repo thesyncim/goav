@@ -14,65 +14,11 @@ import (
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
+	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/lifecycle"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/shape"
 )
-
-// rateTickSource is a pipeline.ControllableSource for goav-level rate tests:
-// its Start loop emits frames whose PTS advances by 1000*rate per emit — the
-// media time a paced realtime source covers per fixed wall tick — so a rate
-// change shows up in the output cadence deterministically, with no wall clocks
-// in the test. control.Control(av.EventRate) records the rate in one atomic the loop
-// reads; per the ControllableSource contract a pure pacing change emits NO
-// discontinuity.
-type rateTickSource struct {
-	name string
-	rate atomic.Uint64 // math.Float64bits of the applied playback rate
-}
-
-func newRateTickSource(name string) *rateTickSource {
-	s := &rateTickSource{name: name}
-	s.rate.Store(math.Float64bits(1))
-	return s
-}
-
-func (s *rateTickSource) Name() string { return s.name }
-
-func (s *rateTickSource) applied() float64 { return math.Float64frombits(s.rate.Load()) }
-
-func (s *rateTickSource) Start(ctx context.Context, emitter pipeline.Emitter) error {
-	pos := int64(0)
-	for {
-		if ctx.Err() != nil {
-			return nil
-		}
-		msg := &pipeline.Message{Kind: pipeline.MessageFrame, Frame: &av.Frame{
-			PTS: av.Timestamp{Value: pos, Base: av.TimeBase{Num: 1, Den: int64(time.Second)}},
-		}}
-		if err := emitter.Emit(ctx, msg); err != nil {
-			if errors.Is(err, pipeline.ErrBackpressure) {
-				continue
-			}
-			return nil
-		}
-		pos += int64(1000 * s.applied())
-	}
-}
-
-func (s *rateTickSource) Control(_ context.Context, msg *pipeline.Message) error {
-	if msg == nil || msg.Kind != pipeline.MessageEvent || msg.Event == nil || msg.Event.Type != av.EventRate {
-		return errors.New("rateTickSource: unsupported control")
-	}
-	rate, ok := av.EventRateValue(msg.Event)
-	if !ok {
-		return errors.New("rateTickSource: bad rate")
-	}
-	s.rate.Store(math.Float64bits(rate))
-	return nil
-}
-
-func (s *rateTickSource) Close() error { return nil }
 
 // segmentWindow is one [start, end) request in nanosecond ticks.
 type segmentWindow struct {
@@ -176,31 +122,6 @@ func (s *timeControlSink) snapshot() []int64 {
 	return append([]int64(nil), s.log...)
 }
 
-// waitForLog polls until predicate holds for a snapshot of the log.
-func (s *timeControlSink) waitForLog(ctx context.Context, predicate func([]int64) bool) error {
-	for {
-		if predicate(s.snapshot()) {
-			return nil
-		}
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(time.Millisecond):
-		}
-	}
-}
-
-// hasDelta reports whether the log contains two consecutive frames whose PTS
-// differ by exactly delta.
-func hasDelta(log []int64, delta int64) bool {
-	for i := 1; i < len(log); i++ {
-		if log[i-1] >= 0 && log[i]-log[i-1] == delta {
-			return true
-		}
-	}
-	return false
-}
-
 func newTimeControlGraph(t *testing.T, buffer pipeline.BufferPolicy, sources ...pipeline.Source) (pipeline.Graph, *timeControlSink) {
 	t.Helper()
 	graph, err := pipeline.NewGraph(pipeline.GraphConfig{Name: "time-control", Buffer: buffer})
@@ -224,63 +145,34 @@ func newTimeControlGraph(t *testing.T, buffer pipeline.BufferPolicy, sources ...
 	return graph, sink
 }
 
-func TestTaskRateChangesSourcePacingMidRun(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
+func TestTaskRateIsTaskWide(t *testing.T) {
+	ctx := context.Background()
 
-	ticker := newRateTickSource("ticker")
-	plain := &seekPlainSource{name: "plain"}
-	// DropBlock keeps every frame so the cadence change cannot be shed away.
-	graph, sink := newTimeControlGraph(t, pipeline.BufferPolicy{Capacity: 8, Drop: pipeline.DropBlock}, ticker, plain)
-
+	ticker := &segmentTickSource{name: "ticker"}
+	graph, _ := newTimeControlGraph(t, pipeline.BufferPolicy{}, ticker)
 	task := newTask(graph, nil)
 	t.Cleanup(func() { _ = task.Close() })
-	runErr := make(chan error, 1)
-	go func() { runErr <- task.Run(ctx) }()
 
-	// Let 1x frames flow first: PTS deltas of 1000 per tick.
-	if err := sink.waitForLog(ctx, func(log []int64) bool { return hasDelta(log, 1000) }); err != nil {
-		t.Fatalf("pre-rate frames never arrived: %v", err)
-	}
-
-	if err := task.Control(ctx, control.Must(control.Rate(2.0)).At("ticker")); err != nil {
-		t.Fatalf("Rate controllable source: %v", err)
-	}
-
-	err := task.Control(ctx, control.Must(control.Rate(2.0)).At("plain"))
-	if !errors.Is(err, pipeline.ErrInvalidLink) {
-		t.Fatalf("Rate err = %v, want ErrInvalidLink for the uncontrollable source", err)
-	}
-	if !strings.Contains(err.Error(), `"plain"`) || !strings.Contains(err.Error(), "ControllableSource") {
-		t.Fatalf("Rate err = %v, want it to name the source and the missing capability", err)
-	}
-	if strings.Contains(err.Error(), `"ticker"`) {
-		t.Fatalf("Rate err = %v, must not blame the adjustable source", err)
-	}
-
-	// control.Control records the rate synchronously before returning, so this is
-	// deterministic — no sleeps.
-	if applied := ticker.applied(); applied != 2.0 {
-		t.Fatalf("applied rate = %v, want 2.0", applied)
-	}
-
-	// The cadence change is observable in the output: the loop reads the atomic,
-	// so frames eventually advance 2000 per tick instead of 1000 — flow
-	// continued at the new pace.
-	if err := sink.waitForLog(ctx, func(log []int64) bool { return hasDelta(log, 2000) }); err != nil {
-		t.Fatalf("post-rate cadence never appeared: %v", err)
-	}
-	cancel()
-	if err := <-runErr; err != nil && !errors.Is(err, context.Canceled) {
-		t.Fatalf("Run err = %v", err)
-	}
-
-	// A pure pacing change repositions nothing, so the contract forbids any
-	// discontinuity (and nothing ended the stream).
-	for _, entry := range sink.snapshot() {
-		if entry < 0 {
-			t.Fatalf("rate change must not emit discontinuities or EOS, log = %v", sink.snapshot())
+	// Rate scales the shared task timeline, so a node or tap target has no
+	// meaning; the refusal names the fix.
+	for name, ctrl := range map[string]control.Control{
+		"node": control.Must(control.Rate(2.0)).At("ticker"),
+		"tap":  control.Must(control.Rate(2.0)).AtTap("tap"),
+	} {
+		err := task.Control(ctx, ctrl)
+		if !errors.Is(err, control.ErrInvalid) {
+			t.Fatalf("targeted rate (%s) err = %v, want control.ErrInvalid", name, err)
 		}
+		if !strings.Contains(err.Error(), "task-wide") || !strings.Contains(err.Error(), "without At/AtTap") {
+			t.Fatalf("targeted rate (%s) err = %v, want it to say rate is task-wide and name the fix", name, err)
+		}
+	}
+
+	// A task with nothing paced to scale (no realtime demux pacer, no
+	// clock-aware source) refuses rate honestly instead of pretending.
+	err := task.Control(ctx, control.Must(control.Rate(2.0)))
+	if !errors.Is(err, format.ErrRateUnsupported) {
+		t.Fatalf("rate on unpaced task err = %v, want format.ErrRateUnsupported", err)
 	}
 }
 
@@ -356,14 +248,15 @@ func TestTaskTimeControlRejectionMatrix(t *testing.T) {
 	}
 
 	// A source without the ControllableSource capability reports clearly when
-	// targeted directly (the direct runner delivers before Run; the buffered
-	// runner's mid-run collection is proven in the rate test above).
+	// a reposition control targets it directly (the direct runner delivers
+	// before Run). Rate is not in this family: it is task-wide and never
+	// targets a source (TestTaskRateIsTaskWide).
 	ticker := &segmentTickSource{name: "ticker"}
 	plain := &seekPlainSource{name: "plain"}
 	graph, _ := newTimeControlGraph(t, pipeline.BufferPolicy{}, ticker, plain)
 	task := newTask(graph, nil)
 	t.Cleanup(func() { _ = task.Close() })
-	for _, control := range []control.Control{control.Must(control.Rate(2.0)), control.Must(control.Segment(0, time.Second))} {
+	for _, control := range []control.Control{control.Seek(time.Second), control.Must(control.Segment(0, time.Second))} {
 		err := task.Control(ctx, control.At("plain"))
 		if !errors.Is(err, pipeline.ErrInvalidLink) {
 			t.Fatalf("%s at plain err = %v, want ErrInvalidLink", control.Type(), err)

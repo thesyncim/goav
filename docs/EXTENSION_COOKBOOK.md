@@ -74,7 +74,7 @@ Rules:
 - Treat `goav.ErrBackpressure` as pacing feedback; the graph owns shedding and
   delivery policy.
 
-When the source needs seek/rate control, late stream discovery, decode bounds,
+When the source needs seek/segment control, late stream discovery, decode bounds,
 or a transport-owned open phase, implement `provider.Source` and pass it with
 `goav.Input(provider)`. The runnable module `examples/provider-source` verifies
 the provider-owned open phase, declared shape facts, stream discovery, a
@@ -276,18 +276,15 @@ Use `ctlserver` when your application owns a running task and wants to expose
 app-specific verbs, branch steps, or encoder names through `goav ctl`.
 
 ```go
-command := ctlserver.NewCommand[setRate](
-    "vendor.rate",
-    "demo playback-rate control",
-    func(ctx context.Context, task goav.LiveTask, cmd setRate) (ctlserver.ControlResponse, error) {
-        ctrl, err := control.Rate(cmd.Value)
-        if err != nil {
-            return ctlserver.ControlResponse{}, err
-        }
+command := ctlserver.NewCommand[setPosition](
+    "vendor.seek",
+    "demo reposition control",
+    func(ctx context.Context, task goav.LiveTask, cmd setPosition) (ctlserver.ControlResponse, error) {
+        ctrl := control.Seek(cmd.Position)
         if err := task.Control(ctx, ctrl.At(pipeline.NodeRef(cmd.Source))); err != nil {
             return ctlserver.ControlResponse{}, err
         }
-        return ctlserver.ControlResponse{Operation: "control vendor.rate"}, nil
+        return ctlserver.ControlResponse{Operation: "control vendor.seek"}, nil
     },
 )
 

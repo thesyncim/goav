@@ -50,7 +50,7 @@ func ControlManifest() []CommandSpec {
 		},
 		{
 			Name:     "rate",
-			Summary:  "change source playback rate",
+			Summary:  "change task-wide playback rate",
 			ArgsType: reflect.TypeOf(RateCommand{}),
 			Apply:    applyRate,
 		},

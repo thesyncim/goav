@@ -42,7 +42,7 @@ Then drive the running graph from another shell:
 ```sh
 goav ctl --control unix:///tmp/goav-live.sock taps
 goav ctl --control unix:///tmp/goav-live.sock graph
-goav ctl --control unix:///tmp/goav-live.sock control rate value=0.5 source=fixture
+goav ctl --control unix:///tmp/goav-live.sock control rate value=0.5
 goav ctl --control unix:///tmp/goav-live.sock control seek position=2s source=fixture
 goav ctl --control unix:///tmp/goav-live.sock attach frames as preview \
   'resize width=320 height=180 ! encode codec=av1 media=video bitrate=300k fps=2 keyframe_interval=1 ! filesink location=/tmp/goav-preview.ivf'
@@ -115,7 +115,7 @@ go run . --control unix:///tmp/goav-control-plane-host.sock
 
 That example is a self-contained playground: it starts a live
 `goavtest.TestSource` named `fixture`, accepts normal source controls such as
-`goav ctl control rate value=0.5 source=fixture`, reports the controls captured
+`goav ctl control seek position=2s source=fixture`, reports the controls captured
 by that test source with `goav ctl control fixture.controls`, and demonstrates
 stock transcode branches, thumbnail branches, custom branch steps, custom
 encoder settings, graph rendering, rebranching, and detach. The complete
@@ -150,25 +150,22 @@ Add a custom command by declaring the argument struct and handler. The struct
 tags drive CLI parsing, JSON binding, validation, and generated help.
 
 ```go
-type SetRate struct {
-    Value  float64 `goavctl:"value,required" usage:"value=<float>" help:"playback rate"`
-    Source string  `goavctl:"source,required" usage:"source=<source-name>" help:"source node to retime"`
+type SetPosition struct {
+    Position time.Duration `goavctl:"position,required,duration" usage:"position=<duration>" help:"media position"`
+    Source   string        `goavctl:"source,required" usage:"source=<source-name>" help:"source node to reposition"`
 }
 
-rateCommand := ctlserver.NewCommand[SetRate](
-    "vendor.rate",
-    "vendor playback-rate control",
-    func(ctx context.Context, task goav.LiveTask, cmd SetRate) (ctlserver.ControlResponse, error) {
-        ctrl, err := control.Rate(cmd.Value)
-        if err != nil {
-            return ctlserver.ControlResponse{}, err
-        }
+seekCommand := ctlserver.NewCommand[SetPosition](
+    "vendor.seek",
+    "vendor reposition control",
+    func(ctx context.Context, task goav.LiveTask, cmd SetPosition) (ctlserver.ControlResponse, error) {
+        ctrl := control.Seek(cmd.Position)
         if err := task.Control(ctx, ctrl.At(pipeline.NodeRef(cmd.Source))); err != nil {
             return ctlserver.ControlResponse{}, err
         }
         return ctlserver.ControlResponse{
-            Operation: "control vendor.rate",
-            Result:    map[string]any{"value": cmd.Value, "source": cmd.Source},
+            Operation: "control vendor.seek",
+            Result:    map[string]any{"position": cmd.Position.String(), "source": cmd.Source},
         }, nil
     },
 )
@@ -219,7 +216,7 @@ acme := ctlserver.NewEncoderSpec[ACMESettings](
 )
 
 capabilities := ctlserver.CapabilitySet{
-    Commands: []ctlserver.CommandSpec{rateCommand},
+    Commands: []ctlserver.CommandSpec{seekCommand},
     Pipeline: ctlserver.PipelineRegistry{
         Steps:    []ctlserver.BranchPipelineStepSpec{meter},
         Encoders: []ctlserver.EncoderSpec{acme},
@@ -250,12 +247,12 @@ not a hidden scripting language:
 
 ```sh
 goav ctl --control unix:///tmp/goav-live.sock help
-goav ctl --control unix:///tmp/goav-live.sock help control vendor.rate
+goav ctl --control unix:///tmp/goav-live.sock help control vendor.seek
 goav ctl --control unix:///tmp/goav-live.sock help attach
 goav ctl --control unix:///tmp/goav-live.sock capabilities
 goav ctl --control unix:///tmp/goav-live.sock taps
-goav ctl --control unix:///tmp/goav-live.sock control vendor.rate value=0.5 source=fixture
-goav ctl --control unix:///tmp/goav-live.sock control --json '{"type":"rate","rate":0.75,"node":"fixture"}'
+goav ctl --control unix:///tmp/goav-live.sock control vendor.seek position=2s source=fixture
+goav ctl --control unix:///tmp/goav-live.sock control --json '{"type":"seek","position":"1.5s","node":"fixture"}'
 goav ctl --control unix:///tmp/goav-live.sock control deliver --json '{"type":"vendor.force_idr","stream_id":"video","metadata":{"source":"cli"}}' at=frames
 goav ctl --control unix:///tmp/goav-live.sock attach frames as archive \
   'meter ! acmeenc bitrate=128k quality=voice lookahead=deep ! filesink location=/tmp/archive.ogg'
@@ -349,7 +346,7 @@ Supported built-ins include:
 - `control keyframe stream=<stream-id> [at=<tap>]`
 - `control bitrate stream=<stream-id> value=<rate> [at=<tap>]`
 - `control seek position=<duration> [source=<source>|node=<node>]`
-- `control rate value=<float> [source=<source>|node=<node>]`
+- `control rate value=<float>` (task-wide: scales the shared task timeline)
 - `control segment start=<duration> end=<duration> [source=<source>|node=<node>]`
 - `control select active=<arm-or-stream-id> [selector=<name>|at=<tap>]`
 - `control deliver ...` and `control deliver --json '<av.Event JSON>'`

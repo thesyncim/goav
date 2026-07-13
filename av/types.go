@@ -552,13 +552,15 @@ const (
 	// acknowledges by emitting EventDiscontinuity before the first message at
 	// the new position.
 	EventSeek EventType = "seek"
-	// EventRate asks a source to change its playback rate (1 = realtime,
-	// 2 = double speed, 0.5 = half; positive only). The rate rides
-	// Event.Metadata under MetadataRate — build it with RateMetadata, read it
-	// with EventRateValue. Like EventSeek it is delivered to a source's
-	// control seam, not routed downstream. A rate change is pure pacing: the
-	// source keeps delivering from its current position and must NOT emit
-	// EventDiscontinuity unless applying the rate makes it reposition.
+	// EventRate carries a playback-rate change (1 = realtime, 2 = double
+	// speed, 0.5 = half; positive only). The rate rides Event.Metadata under
+	// MetadataRate — build it with RateMetadata, read it with EventRateValue.
+	// Rate is task-wide: control.Rate re-anchors the task's shared timeline
+	// (which every paced source sleeps on), so this event is the control
+	// wire form, not a per-source control — it is never delivered to a
+	// source's control seam or routed downstream. A rate change is pure
+	// pacing: sources keep delivering from their current position and no
+	// EventDiscontinuity is emitted.
 	EventRate EventType = "rate"
 	// EventSegment asks a source to play one window [start, end) and then end
 	// its stream naturally. The start rides Event.Timestamp exactly like

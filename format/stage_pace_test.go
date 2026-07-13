@@ -124,72 +124,37 @@ func TestDemuxSourceOfflinePumpRunsUnpaced(t *testing.T) {
 		t.Fatalf("offline pump slept %v, want no pacing", clock.sleeps)
 	}
 
-	// And rate control stays honestly rejected: there is no pacing to scale.
+	// And rate control stays honestly rejected: rate is task-wide (it scales
+	// the shared task timeline), never a source control.
 	controllable := source.(pipeline.ControllableSource)
 	err = controllable.Control(context.Background(), rateMessage(2))
-	if !errors.Is(err, ErrRateUnsupported) {
-		t.Fatalf("offline rate err = %v, want ErrRateUnsupported", err)
-	}
-	if !strings.Contains(err.Error(), "unpaced") {
-		t.Fatalf("offline rate err = %v, want it to say offline pumps run unpaced", err)
+	if err == nil || !strings.Contains(err.Error(), "unsupported source control") {
+		t.Fatalf("offline rate err = %v, want unsupported-control rejection", err)
 	}
 }
 
-func TestDemuxSourceRateControlScalesPacing(t *testing.T) {
+func TestDemuxSourceRefusesRateControl(t *testing.T) {
 	clock := &fakePaceClock{}
-	source := pacedTimeline(t, clock,
-		0, 20*time.Millisecond, 40*time.Millisecond, 60*time.Millisecond)
+	source := pacedTimeline(t, clock, 0)
 
-	// Double speed after the first packet: the loop observes the new rate at
-	// the next packet and re-anchors there (no sleep), then paces 20ms of
-	// media per 10ms of clock.
-	emitter := &seekLogEmitter{}
-	emitter.onPacket = func(ptsNS int64) {
-		if ptsNS == 0 {
-			if err := source.Control(context.Background(), rateMessage(2)); err != nil {
-				t.Errorf("rate control: %v", err)
-			}
-		}
+	// Rate is not a source control on paced pumps either: the pacer sleeps
+	// media deltas on the task timeline, and control.Rate re-anchors that
+	// timeline task-wide instead of touching individual sources.
+	err := source.Control(context.Background(), rateMessage(2))
+	if err == nil || !strings.Contains(err.Error(), "unsupported source control") {
+		t.Fatalf("realtime rate err = %v, want unsupported-control rejection", err)
 	}
-	if err := source.Start(context.Background(), emitter); err != nil {
-		t.Fatal(err)
-	}
-	assertSleeps(t, clock.sleeps, []time.Duration{10 * time.Millisecond, 10 * time.Millisecond})
-	// A pure pacing change never repositions: full timeline, no discontinuity.
-	assertSeekLog(t, emitter.log, []int64{
-		0, int64(20 * time.Millisecond), int64(40 * time.Millisecond), int64(60 * time.Millisecond), -2,
-	})
 }
 
-func TestDemuxSourceRateBeforeStartPacesFromFirstPacket(t *testing.T) {
-	clock := &fakePaceClock{}
-	source := pacedTimeline(t, clock, 0, 20*time.Millisecond, 40*time.Millisecond)
-
-	// A rate recorded before Start (the direct runner delivers pre-Run
-	// controls) paces the whole playback at half speed: 20ms of media per
-	// 40ms of clock.
-	if err := source.Control(context.Background(), rateMessage(0.5)); err != nil {
-		t.Fatal(err)
-	}
-	emitter := &seekLogEmitter{}
-	if err := source.Start(context.Background(), emitter); err != nil {
-		t.Fatal(err)
-	}
-	assertSleeps(t, clock.sleeps, []time.Duration{40 * time.Millisecond, 40 * time.Millisecond})
-}
-
-func TestDemuxSourceSeekReanchorsPacingComposedWithRate(t *testing.T) {
+func TestDemuxSourceSeekReanchorsPacingMidPump(t *testing.T) {
 	clock := &fakePaceClock{}
 	source := pacedTimeline(t, clock,
 		0, 20*time.Millisecond, 40*time.Millisecond, 60*time.Millisecond,
 		80*time.Millisecond, 100*time.Millisecond)
 
-	// Rate and Seek compose: at 2x, packets pace 10ms apart; the seek resets
-	// the anchor, so the first packet at the new position emits immediately
-	// (no giant sleep, no burst) and playback resumes paced at 2x.
-	if err := source.Control(context.Background(), rateMessage(2)); err != nil {
-		t.Fatal(err)
-	}
+	// A mid-pump seek resets the anchor: the first packet at the new position
+	// emits immediately (no giant sleep, no burst) and playback resumes paced
+	// at the 20ms cadence.
 	emitter := &seekLogEmitter{}
 	emitter.onPacket = func(ptsNS int64) {
 		if ptsNS == int64(20*time.Millisecond) {
@@ -201,7 +166,7 @@ func TestDemuxSourceSeekReanchorsPacingComposedWithRate(t *testing.T) {
 	if err := source.Start(context.Background(), emitter); err != nil {
 		t.Fatal(err)
 	}
-	assertSleeps(t, clock.sleeps, []time.Duration{10 * time.Millisecond, 10 * time.Millisecond})
+	assertSleeps(t, clock.sleeps, []time.Duration{20 * time.Millisecond, 20 * time.Millisecond})
 	assertSeekLog(t, emitter.log, []int64{
 		0, int64(20 * time.Millisecond), -1, int64(80 * time.Millisecond), int64(100 * time.Millisecond), -2,
 	})
@@ -316,25 +281,6 @@ func TestDemuxSourceReanchorsOnDemuxerDiscontinuity(t *testing.T) {
 	assertSeekLog(t, emitter.log, []int64{
 		0, int64(20 * time.Millisecond), -1, int64(10 * time.Second), int64(10020 * time.Millisecond), -2,
 	})
-}
-
-func TestDemuxSourceRealtimeRateControlValidation(t *testing.T) {
-	clock := &fakePaceClock{}
-	source := pacedTimeline(t, clock, 0)
-	ctx := context.Background()
-
-	// A realtime pump accepts a well-formed rate...
-	if err := source.Control(ctx, rateMessage(2)); err != nil {
-		t.Fatalf("realtime rate err = %v, want acceptance", err)
-	}
-	// ...and rejects a malformed one before anything changes pace.
-	bad := &pipeline.Message{Kind: pipeline.MessageEvent, Event: &av.Event{
-		Type:     av.EventRate,
-		Metadata: av.Metadata{av.MetadataRate: "-1"},
-	}}
-	if err := source.Control(ctx, bad); err == nil || !strings.Contains(err.Error(), "positive, finite") {
-		t.Fatalf("malformed rate err = %v, want positive-finite rejection", err)
-	}
 }
 
 // cancellingClock simulates a task shutdown landing mid-sleep: the Sleep

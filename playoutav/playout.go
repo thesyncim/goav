@@ -192,6 +192,18 @@ type source struct {
 
 func (s *source) Name() string { return s.name }
 
+// UseClock switches scheduled waits onto the injected clock. The goav runtime
+// discovers it by type assertion after OpenSource and hands the task's shared
+// timeline, so playout paces on the same clock as every other paced source:
+// fake clocks drive the schedule deterministically in tests and task-wide
+// rate changes scale it live. Called once at build, before Start.
+func (s *source) UseClock(clock av.Clock) {
+	if clock == nil {
+		return
+	}
+	s.sleep = clock.Sleep
+}
+
 func (s *source) DescribeNode() pipeline.NodeSpec {
 	return pipeline.NodeSpec{Name: s.name, Kind: pipeline.NodeSource, Detail: s.detail}
 }

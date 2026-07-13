@@ -30,9 +30,10 @@ type Seeker interface {
 // input.
 var ErrNotSeekable = errors.New("format: input is not seekable")
 
-// ErrRateUnsupported reports a playback-rate control sent to a demux pump
-// that is not pacing delivery: an offline (non-realtime) task pumps as fast
-// as the graph drains, so there is no pacing to scale and av.EventRate is
-// rejected honestly instead of pretending to change speed. A realtime pump
-// paces packets on a clock and accepts the control.
+// ErrRateUnsupported reports a playback-rate control sent to a task with no
+// paced delivery to scale: an offline (non-realtime) task pumps as fast as
+// the graph drains, so control.Rate is rejected honestly instead of
+// pretending to change speed. Task.Control wraps it when the task's shared
+// timeline has no paced consumer (no realtime demux pacer, no clock-aware
+// source).
 var ErrRateUnsupported = errors.New("format: offline demux pump runs unpaced; rate control needs a realtime (paced) task")

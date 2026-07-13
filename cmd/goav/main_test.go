@@ -437,7 +437,10 @@ func TestRunGeneratedVideoWithControlSocket(t *testing.T) {
 	var stderr bytes.Buffer
 	done := make(chan int, 1)
 	go func() {
-		done <- run([]string{"run", "--runtime", "test", "--control", "unix://" + socket, pipeline}, &stdout, &stderr)
+		// The default (real-clock) runtime keeps the paced source running for
+		// the whole control conversation: with a fake clock the clock-aware
+		// test source would finish its schedule instantly.
+		done <- run([]string{"run", "--runtime", "default", "--control", "unix://" + socket, pipeline}, &stdout, &stderr)
 	}()
 	waitForRunSocket(t, socket, done, &stdout, &stderr)
 
@@ -449,7 +452,9 @@ func TestRunGeneratedVideoWithControlSocket(t *testing.T) {
 	if !strings.Contains(graph, "flowchart LR") || !strings.Contains(graph, "frames") {
 		t.Fatalf("graph output = %s", graph)
 	}
-	runLocalCtl(t, socket, "control", "rate", "value=0.5", "source=fixture")
+	// Rate is task-wide (it scales the shared task timeline); seek still
+	// targets the source.
+	runLocalCtl(t, socket, "control", "rate", "value=0.5")
 	runLocalCtl(t, socket, "control", "seek", "position=100ms", "source=fixture")
 
 	branchOut := filepath.Join(t.TempDir(), "preview.ivf")
@@ -477,7 +482,7 @@ func TestRunGeneratedVideoWithControlSocket(t *testing.T) {
 	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
 		t.Fatalf("run result JSON: %v\nstdout=%s\nstderr=%s", err, stdout.String(), stderr.String())
 	}
-	if result.Control != "unix://"+socket || result.Runtime != "test" || result.Codec != "av1" {
+	if result.Control != "unix://"+socket || result.Runtime != "bundle" || result.Codec != "av1" {
 		t.Fatalf("run result = %+v", result)
 	}
 }

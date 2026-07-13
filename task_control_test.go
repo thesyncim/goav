@@ -397,9 +397,9 @@ func TestTaskControlUntargetedSourceControlsRejectAmbiguousSources(t *testing.T)
 	task := newTask(graph, nil)
 	t.Cleanup(func() { _ = task.Close() })
 
-	err = task.Control(context.Background(), control.Must(control.Rate(1)))
+	err = task.Control(context.Background(), control.Seek(time.Second))
 	if !errors.Is(err, control.ErrAmbiguousTarget) {
-		t.Fatalf("untargeted rate err = %v, want ErrAmbiguousTarget", err)
+		t.Fatalf("untargeted seek err = %v, want ErrAmbiguousTarget", err)
 	}
 	if err == nil || !strings.Contains(err.Error(), "implicit source targets") {
 		t.Fatalf("err = %v, want source target guidance", err)

@@ -270,13 +270,17 @@ func TestBindJSONParsesNumericFieldsAndMetadata(t *testing.T) {
 	}
 
 	rateSpec, _ := LookupControlCommand("rate")
-	args, err = BindJSON(rateSpec, []byte(`{"value":0.5,"source":"fixture"}`))
+	args, err = BindJSON(rateSpec, []byte(`{"value":0.5}`))
 	if err != nil {
 		t.Fatal(err)
 	}
 	rate := args.(RateCommand)
-	if rate.Value != 0.5 || rate.Source != "fixture" {
+	if rate.Value != 0.5 {
 		t.Fatalf("rate = %+v", rate)
+	}
+	// Rate is task-wide: it no longer accepts a source or node target.
+	if _, err := BindJSON(rateSpec, []byte(`{"value":0.5,"source":"fixture"}`)); err == nil {
+		t.Fatal("rate with source target bound, want unknown-field rejection")
 	}
 
 	deliverSpec, _ := LookupControlCommand("deliver")
@@ -415,19 +419,23 @@ func TestDecodeRawControlCanonicalFieldsAndRefusals(t *testing.T) {
 }
 
 func TestDecodeRawControlParsesFloatAndDurationFields(t *testing.T) {
-	rate, err := DecodeRawControl([]byte(`{"type":"rate","rate":"1.5","node":"source"}`))
+	rate, err := DecodeRawControl([]byte(`{"type":"rate","rate":"1.5"}`))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if rate.Type() != control.RateType || rate.Rate() != 1.5 || rate.Node() != "source" {
+	if rate.Type() != control.RateType || rate.Rate() != 1.5 || rate.Node() != "" {
 		t.Fatalf("rate = %+v", rate)
 	}
+	// Rate is task-wide: node/tap targets are unknown fields on the raw form.
+	if _, err := DecodeRawControl([]byte(`{"type":"rate","rate":"1.5","node":"source"}`)); err == nil {
+		t.Fatal("raw rate with node decoded, want unknown-field rejection")
+	}
 
-	seek, err := DecodeRawControl([]byte(`{"type":"seek","position":"250ms"}`))
+	seek, err := DecodeRawControl([]byte(`{"type":"seek","position":"250ms","node":"source"}`))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if seek.Type() != control.SeekType || seek.Position() != 250*time.Millisecond {
+	if seek.Type() != control.SeekType || seek.Position() != 250*time.Millisecond || seek.Node() != "source" {
 		t.Fatalf("seek = %+v", seek)
 	}
 
@@ -525,8 +533,9 @@ func TestControlTargetingVariantsAndRefusals(t *testing.T) {
 		node string
 	}{
 		{name: "selector at conflict", args: []string{"control", "select", "active=camera_b", "selector=program", "at=raw_video"}, code: "target_conflict", node: "program,raw_video"},
-		{name: "source node conflict", args: []string{"control", "rate", "value=1", "source=source", "node=program"}, code: "target_conflict", node: "source,program"},
-		{name: "wrong source kind", args: []string{"control", "rate", "value=1", "source=raw-node"}, code: "wrong_target_kind", node: "raw-node"},
+		{name: "source node conflict", args: []string{"control", "segment", "start=10s", "end=20s", "source=source", "node=program"}, code: "target_conflict", node: "source,program"},
+		{name: "wrong source kind", args: []string{"control", "segment", "start=10s", "end=20s", "source=raw-node"}, code: "wrong_target_kind", node: "raw-node"},
+		{name: "rate refuses target", args: []string{"control", "rate", "value=1", "source=source"}, code: "unknown_field", node: "source"},
 		{name: "unknown source", args: []string{"control", "seek", "position=1s", "source=soruce"}, code: "unknown_node", node: "soruce"},
 		{name: "unknown node", args: []string{"control", "seek", "position=1s", "node=progra"}, code: "unknown_node", node: "progra"},
 		{name: "deliver missing at", args: []string{"control", "deliver", "type=vendor.force_idr"}, code: "missing_target"},
@@ -2331,26 +2340,26 @@ func TestExecuteControlAgainstRealControllableTestSource(t *testing.T) {
 	}
 	defer task.Close()
 
-	if _, err := Execute(ctx, task, []string{"control", "rate", "value=0.5", "source=fixture"}); err != nil {
-		t.Fatal(err)
-	}
-	event, err := source.WaitControl(ctx, av.EventRate)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if rate, ok := av.EventRateValue(&event); !ok || rate != 0.5 {
-		t.Fatalf("rate event = %+v, parsed=%v ok=%v", event, rate, ok)
-	}
-
 	if _, err := Execute(ctx, task, []string{"control", "seek", "position=12.5s", "source=fixture"}); err != nil {
 		t.Fatal(err)
 	}
-	event, err = source.WaitControl(ctx, av.EventSeek)
+	event, err := source.WaitControl(ctx, av.EventSeek)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if position, ok := event.Timestamp.ToDuration(); !ok || position != 12500*time.Millisecond {
 		t.Fatalf("seek event = %+v, parsed=%v ok=%v", event, position, ok)
+	}
+
+	// Rate is task-wide and never reaches the source; a task with nothing
+	// paced to scale refuses it through the CLI seam too.
+	_, err = Execute(ctx, task, []string{"control", "rate", "value=0.5"})
+	var structured *Error
+	if !errors.As(err, &structured) || structured.Code != "control_failed" {
+		t.Fatalf("rate on unpaced task err = %+v, want control_failed", err)
+	}
+	if !strings.Contains(structured.Message, "unpaced") {
+		t.Fatalf("rate refusal message = %q, want the unpaced-task contract", structured.Message)
 	}
 }
 
