@@ -4,10 +4,10 @@ go 1.26
 
 require (
 	github.com/thesyncim/goaac v0.0.0-20260616210027-501df73f9728
-	github.com/thesyncim/goav1 v0.0.0-20260630121001-3ccb50777b8e
-	github.com/thesyncim/goh264 v0.0.0-20260629203945-d0bdff984647
+	github.com/thesyncim/goav1 v0.0.0-20260707172135-a28b7c8d41f1
+	github.com/thesyncim/goh264 v0.0.0-20260630205627-5ed6a4334be7
 	github.com/thesyncim/gopus v0.1.1
-	github.com/thesyncim/govpx v0.0.0-20260629210133-4ce2eb33e3c6
+	github.com/thesyncim/govpx v0.0.0-20260711094643-7eb7b4c8dc86
 )
 
 require (

@@ -36,10 +36,10 @@ require (
 	github.com/pion/turn/v5 v5.0.7 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	github.com/thesyncim/goaac v0.0.0-20260616210027-501df73f9728 // indirect
-	github.com/thesyncim/goav1 v0.0.0-20260630121001-3ccb50777b8e // indirect
-	github.com/thesyncim/goh264 v0.0.0-20260629203945-d0bdff984647 // indirect
+	github.com/thesyncim/goav1 v0.0.0-20260707172135-a28b7c8d41f1 // indirect
+	github.com/thesyncim/goh264 v0.0.0-20260630205627-5ed6a4334be7 // indirect
 	github.com/thesyncim/gopus v0.1.1 // indirect
-	github.com/thesyncim/govpx v0.0.0-20260629210133-4ce2eb33e3c6 // indirect
+	github.com/thesyncim/govpx v0.0.0-20260711094643-7eb7b4c8dc86 // indirect
 	github.com/wlynxg/anet v0.0.5 // indirect
 	golang.org/x/crypto v0.48.0 // indirect
 	golang.org/x/exp/shiny v0.0.0-20250408133849-7e4ce0ab07d0 // indirect
