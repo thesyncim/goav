@@ -11,6 +11,12 @@ methodology changes, and migration notes.
 
 ## Unreleased
 
+- README rewritten around a runnable quick start: the CLI generates the
+  input clip and the Go snippet transcodes it with default options, executed
+  by `TestReadmeHeadlineRecipeRunsWithDefaults`. It also shows the real
+  `Describe` output and `BuildError` text, a capability matrix, recipes,
+  live/performance highlights with measured SIMD numbers, and the module map.
+
 - File jobs run as fast as the machine allows (**behavior change**). Realtime
   now follows the inputs. A job is realtime (paced, buffered between stages,
   low-latency encoder presets) when one of its inputs is live: RTP, WebRTC,
