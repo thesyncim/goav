@@ -511,7 +511,7 @@ func mixedStreamOutputError(operation string, stream streamIntent) error {
 		Reason:    "stream recipes cannot mix sinks and muxed outputs",
 		fixes: buildErrorFixes([]string{
 			"use .Decode().To(goav.Sink(...)) for decoded frames",
-			"call .Encode(codec.Opus(...)), .Encode(codec.VP8(...)), or .Encode(codec.VP9(...)) before .To(goav.Write(...)) for encoded output",
+			"call " + encodeHint(stream.Select.Type) + " before .To(goav.Write(...)) for encoded output",
 			"use .Branches(...) when one stream needs separate decoded and encoded branches",
 		}),
 		cause: errUnsupportedBuild,
@@ -528,7 +528,7 @@ func streamEncodeMissingError(operation string, stream streamIntent) error {
 		Reason:    "decoded frames cannot be written to a muxed output without an encoder",
 		fields:    errDetails(errDetail("expected_shape", shape.New(shape.Domain(shape.DomainPacket), shape.Media(stream.Select.Type)).String()), errDetail("actual_shape", shape.Frame(stream.Select.Type).String())),
 		fixes: buildErrorFixes([]string{
-			"call .Encode(codec.Opus(...)), .Encode(codec.VP8(...)), or .Encode(codec.VP9(...)) before .To(goav.Write(...))",
+			"call " + encodeHint(stream.Select.Type) + " before .To(goav.Write(...))",
 			"send decoded frames to goav.Sink(...)",
 			"use .Copy().To(output) if you want to copy packets without decoding",
 		}),

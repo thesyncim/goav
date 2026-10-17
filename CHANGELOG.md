@@ -11,6 +11,15 @@ methodology changes, and migration notes.
 
 ## Unreleased
 
+- Refusal and diagnostics fixes: "add an encoder" suggestions now follow the
+  stream's media. Video refusals name `codec.VP8`/`VP9`/`AV1` and never an
+  audio codec; audio refusals name `codec.Opus`. Twelve copy-pasted hint
+  strings collapse into one helper, and the hints now include the bundled AV1
+  encoder, which they previously left out. Mermaid output from `graphrender` and
+  `inspect.Render` now uses Mermaid's own label syntax (`<br>` line breaks,
+  `#quot;`/`#35;` entities) instead of Go escapes, which rendered as literal
+  `\n` text.
+
 - Go SIMD by default in the gate: CI, the bench scripts, and release
   binaries now build with `GOEXPERIMENT=simd`. That lights up goav's own mix
   kernel and the SIMD paths in the `goav1`, `gopus`, and `govpx` backends.

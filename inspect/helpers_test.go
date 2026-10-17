@@ -70,6 +70,9 @@ func TestHelpersBridgeStructuralTaskCapabilities(t *testing.T) {
 	if !strings.Contains(rendered, "flowchart") || !strings.Contains(rendered, "source") {
 		t.Fatalf("Render() = %q, want Mermaid flowchart with source node", rendered)
 	}
+	if strings.Contains(rendered, `\`) {
+		t.Fatalf("Render() = %q, want Mermaid <br> line breaks, not backslash escapes", rendered)
+	}
 }
 
 func TestSubscribeNilTaskReturnsClosedSubscription(t *testing.T) {

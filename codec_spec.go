@@ -250,7 +250,7 @@ func validateRecipeEncode(spec codec.Spec, operation string, node string) error 
 			Node:      node,
 			Reason:    "automatic codec selection is not implemented for stream recipes yet",
 			fixes: buildErrorFixes([]string{
-				"choose an explicit recipe encoder with .Encode(codec.Opus(...)), .Encode(codec.VP8(...)), or .Encode(codec.VP9(...))",
+				"choose an explicit recipe encoder with " + encodeHint(spec.Type),
 			}),
 			cause: errUnsupportedBuild,
 		}
