@@ -11,6 +11,15 @@ methodology changes, and migration notes.
 
 ## Unreleased
 
+- Builder coherence: the stream chain type is exported as `goav.Chain`,
+  so helpers can package reusable steps
+  (`func normalize(c *goav.Chain) *goav.Chain`). Before, it was the one
+  grammar builder users could not name. Reusing a chain value after it ended
+  at `.To(...)`, a common attempt to fork one stream, used to fail with
+  "recipe intent did not match a supported graph plan". It is now refused as
+  `stream_step_after_destination`, with the two real forks as fixes:
+  `.Branches(...)`, or a new `.Audio()`/`.Video()` stream.
+
 - Destination identity (**breaking**). A destination handle is now the
   output's identity: pass the same value to several chains or branches and
   they feed one mux or sink. The one-file recipe is simply

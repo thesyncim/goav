@@ -21,6 +21,7 @@ import (
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/bundle"
 	"github.com/thesyncim/goav/codec"
+	"github.com/thesyncim/goav/component"
 	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/goavtest"
 	"github.com/thesyncim/goav/shape"
@@ -682,5 +683,22 @@ func TestErrorAcceptanceShapeConversionRefused(t *testing.T) {
 	requireBuildError(t, err, errcode.Code("shape_conversion_refused"), "build job", "audio",
 		"add .Auto(shape.AllowResample())",
 		"insert .Resample(48000, 2) explicitly",
+	)
+}
+
+// TestErrorAcceptanceChainReusedAfterTo: reusing one chain value as a fork —
+// a second operation on a chain that already ended at .To(...) — used to
+// surface as "recipe intent did not match a supported graph plan". It now
+// names the slip and the two real forks.
+func TestErrorAcceptanceChainReusedAfterTo(t *testing.T) {
+	base := goav.From(opusPacketInput()).Audio().Decode()
+	base.Resample(16_000, codec.Mono).To(goav.Sink(component.SinkFunc("narrow", func(context.Context, component.Message) error { return nil })))
+	_, err := base.Resample(8_000, codec.Mono).
+		To(goav.Sink(component.SinkFunc("phone", func(context.Context, component.Message) error { return nil }))).
+		UseRuntime(goavtest.Runtime()).
+		BuildLive(context.Background())
+	requireBuildError(t, err, errcode.Code("stream_step_after_destination"), "build stream", "audio",
+		".Branches(",
+		".Audio() or .Video()",
 	)
 }

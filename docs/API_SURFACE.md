@@ -70,7 +70,8 @@ Normal recipes also read these vocabulary packages:
 - `av` identifiers: media/codec/format/protocol ids, event types, metadata.
 
 The grammar's builder handles and option values are exported, sealed
-vocabulary: `BranchBuilder` (Branch), `FlowBuilder` (Flow), `MixStream` (Mix),
+vocabulary: `Chain` (a job stream from Audio/Video), `BranchBuilder` (Branch),
+`FlowBuilder` (Flow), `MixStream` (Mix),
 `CompositeStream` (Composite), `SelectStream` (Select), `JoinStream` (Join),
 the `JoinArm` interface (a source chain, nested join, or tap reference
 standing as a join arm), and the option types `StreamOption`

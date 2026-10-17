@@ -632,7 +632,7 @@ func appendDestination(spec *BranchSpec, destination destinationSpec, index int)
 	spec.destinations = append(spec.destinations, newDirectDestinationRef(destinationName, destination))
 }
 
-func (b *jobStreamBuilder) Branches(branches ...BranchSpec) *Job {
+func (b *Chain) Branches(branches ...BranchSpec) *Job {
 	stream := b.current()
 	job := b.job
 	if len(branches) == 0 {

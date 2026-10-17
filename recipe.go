@@ -505,25 +505,25 @@ func (j *Job) And(inputs ...InputSpec) *Job {
 // Audio starts a chain on the job's audio stream. With several candidates the
 // selector options (InputName, StreamID, StreamIndex) narrow the
 // match; an ambiguous selection fails the build listing the candidates.
-func (j *Job) Audio(options ...StreamOption) *jobStreamBuilder {
+func (j *Job) Audio(options ...StreamOption) *Chain {
 	return j.streamBuilder("audio", av.MediaAudio, options...)
 }
 
 // Video starts a chain on the job's video stream. With several candidates the
 // selector options (InputName, StreamID, StreamIndex) narrow the
 // match; an ambiguous selection fails the build listing the candidates.
-func (j *Job) Video(options ...StreamOption) *jobStreamBuilder {
+func (j *Job) Video(options ...StreamOption) *Chain {
 	return j.streamBuilder("video", av.MediaVideo, options...)
 }
 
 // Stream starts a chain on any media type — useful when the input carries one
 // stream whose kind the recipe does not care about. Selector options narrow
 // the match exactly as for Audio and Video.
-func (j *Job) Stream(options ...StreamOption) *jobStreamBuilder {
+func (j *Job) Stream(options ...StreamOption) *Chain {
 	return j.streamBuilder("stream", "", options...)
 }
 
-func (j *Job) streamBuilder(name string, media av.MediaType, options ...StreamOption) *jobStreamBuilder {
+func (j *Job) streamBuilder(name string, media av.MediaType, options ...StreamOption) *Chain {
 	config := newStreamSelectConfig(media, options...)
 	stream := &jobStreamBuild{
 		name:     name,
@@ -536,17 +536,17 @@ func (j *Job) streamBuilder(name string, media av.MediaType, options ...StreamOp
 	if last := j.currentStream(); last != nil {
 		if len(j.branchStreams) != 0 {
 			j.streams = []*jobStreamBuild{stream}
-			return &jobStreamBuilder{job: j, stream: stream}
+			return &Chain{job: j, stream: stream}
 		}
 		if len(last.outputs) == 0 {
 			// A new chain may only start once the previous one is routed; an
 			// unfinished chain followed by another selection is still an error.
 			j.setErr(duplicateJobStreamError(last, stream))
-			return &jobStreamBuilder{job: j, stream: stream}
+			return &Chain{job: j, stream: stream}
 		}
 	}
 	j.streams = append(j.streams, stream)
-	return &jobStreamBuilder{job: j, stream: stream}
+	return &Chain{job: j, stream: stream}
 }
 
 func (j *Job) currentStream() *jobStreamBuild {

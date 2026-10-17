@@ -81,7 +81,8 @@ func FamilyForCode(code Code) Family {
 		return FamilyInput
 	case Code("stream_missing"), Code("stream_ambiguous"), Code("stream_duplicate"),
 		Code("stream_name_missing"), Code("stream_selector_invalid"), Code("stream_codec_missing"),
-		Code("stream_operation_missing"), Code("stream_step_after_encode"), Code("stage_missing"):
+		Code("stream_operation_missing"), Code("stream_step_after_encode"), Code("stream_step_after_destination"),
+		Code("stage_missing"):
 		return FamilyStream
 	case Code("flow_invalid"), Code("flow_media_mismatch"), Code("flow_decode_duplicate"),
 		Code("flow_decode_order_invalid"), Code("flow_decode_domain_mismatch"), Code("flow_copy_domain_mismatch"):

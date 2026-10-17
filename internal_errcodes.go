@@ -104,6 +104,7 @@ const (
 	streamCodecMissingCode         errcode.Code = "stream_codec_missing"
 	streamOperationMissingCode     errcode.Code = "stream_operation_missing"
 	streamStepAfterEncodeCode      errcode.Code = "stream_step_after_encode"
+	streamStepAfterDestinationCode errcode.Code = "stream_step_after_destination"
 	stageMissingCode               errcode.Code = "stage_missing"
 
 	runtimeBranchInvalidCode              errcode.Code = "runtime_branch_invalid"

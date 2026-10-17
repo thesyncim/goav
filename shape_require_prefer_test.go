@@ -205,7 +205,7 @@ func TestPreferResolvesAdapterAmbiguity(t *testing.T) {
 		WithFilter(rtCapable, &shapeSolverTestFilterFactory{}),
 		WithFilter(offline, &shapeSolverTestFilterFactory{}),
 	)
-	chain := func() *jobStreamBuilder {
+	chain := func() *Chain {
 		return From(solverTestAudioSource("mic", 44_100, codec.Stereo, av.SampleFormatS16)).
 			Audio().
 			Auto(shape.AllowResample())
