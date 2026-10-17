@@ -22,6 +22,13 @@ What holds today (all `-race` clean, with tests):
   itself without stalling siblings or the source; per-branch drop counters and
   reasons (`DropOldest`, `DropOverflow`, latency shedding) are reported through
   stats and snapshots.
+- A branch buffer holds wherever the branch is declared: recipe
+  `Branches(...)` as well as runtime `Attach`
+  (`TestBuildTimeBranchBufferIsHonored`). On an offline job a declared buffer
+  promotes the graph to buffered, so the branch runs on its own worker instead
+  of inside its upstream's call (`TestBranchBufferPromotesOfflineGraph`): give
+  each rung of an encode ladder `.Buffer(flow.Blocking(4))` to encode the rungs
+  in parallel.
 - Branch-local `flow.SyncPolicy` gates can align live audio/video branches without
   changing unsynced delivery. When `flow.SyncDropLate()` sheds a message, stats use
   the existing drop accounting with `pipeline.DropSync`.

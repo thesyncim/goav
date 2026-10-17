@@ -3,6 +3,7 @@ package goav
 import (
 	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/flow"
+	"github.com/thesyncim/goav/pipeline"
 )
 
 // validateBranchBuffer rejects branch buffers the runtime cannot install, in
@@ -70,4 +71,48 @@ func branchBufferInvalidError(operation string, node string, reason string) erro
 		}),
 		cause: errUnsupportedBuild,
 	}
+}
+
+// promotedGraphBufferCapacity is the trunk queue depth of a graph that runs
+// buffered only because a branch declared .Buffer(...): deep enough to keep
+// each branch's worker busy, small enough that the per-slot copy backing
+// stays modest.
+const promotedGraphBufferCapacity = 4
+
+// branchComposeBufferPolicy lowers a planned branch's declared buffer to the
+// node policy its exclusively owned nodes run behind. Copy bounds the caller
+// left unset are sized from the branch's own shapes, as Attach does, so a
+// buffered branch carries mutable decoded frames without a redundant
+// flow.BufferCopyBounds; CopyNever keeps zero bounds, which is its contract.
+// An undeclared buffer stays direct and inherits the graph's policy.
+func branchComposeBufferPolicy(buffer flow.BranchBuffer, operations []workOperation) (pipeline.BufferPolicy, error) {
+	policy := buffer.PipelinePolicy()
+	if policy.IsDirect() || buffer.CopyMode == flow.CopyNever {
+		return policy, nil
+	}
+	return bufferPolicyWithShapeBudgetsForOperations(policy, operations)
+}
+
+// branchComposeOutputBuffer is the policy of an output node: the feeding
+// branch's queue when one branch owns the output, the graph default when
+// several branches share it.
+func branchComposeOutputBuffer(graphDefault pipeline.BufferPolicy, matches []int, branches []branchComposeRoute, plan map[string]graphPlanBranchComposeBranchOperation) pipeline.BufferPolicy {
+	if len(matches) != 1 {
+		return graphDefault
+	}
+	if buffer := plan[branches[matches[0]].name].buffer; !buffer.IsDirect() {
+		return buffer
+	}
+	return graphDefault
+}
+
+// branchComposeDeclaresBuffer reports whether any planned branch declared a
+// queue, which makes the whole graph run buffered.
+func branchComposeDeclaresBuffer(branches []branchComposeRoute) bool {
+	for i := range branches {
+		if !branches[i].branch.Buffer.PipelinePolicy().IsDirect() {
+			return true
+		}
+	}
+	return false
 }

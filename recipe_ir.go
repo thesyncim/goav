@@ -280,6 +280,7 @@ func recipeIRStreamFromIntent(in streamIntent) recipeir.Stream {
 		Name:     in.Name,
 		Selector: in.Select,
 		From:     recipeIRTapRefFromRoot(in.From),
+		Buffer:   in.Buffer,
 	}
 	for i := range in.Operations {
 		out.Operations = append(out.Operations, recipeIROperationFromSpec(in.Operations[i]))
@@ -295,6 +296,7 @@ func streamIntentFromRecipeIR(in recipeir.Stream) streamIntent {
 		Name:   in.Name,
 		Select: in.Selector,
 		From:   rootTapRefFromRecipeIR(in.From),
+		Buffer: in.Buffer,
 	}
 	for i := range in.Operations {
 		out.Operations = append(out.Operations, operationSpecFromRecipeIR(in.Operations[i]))

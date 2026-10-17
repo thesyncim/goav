@@ -6,6 +6,7 @@ import (
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/errcode"
+	"github.com/thesyncim/goav/flow"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/plan"
 	"github.com/thesyncim/goav/shape"
@@ -50,6 +51,7 @@ type streamIntent struct {
 	From         tapRef
 	Operations   []operationSpec
 	Destinations []string
+	Buffer       flow.BranchBuffer
 }
 
 // operationSpec is one chain operation in normalized form — the single
@@ -272,6 +274,7 @@ func branchStreamIntent(stream streamBuild) streamIntent {
 		From:         stream.from,
 		Operations:   streamBuildOperationSpecs(stream),
 		Destinations: append([]string(nil), stream.destinationNames...),
+		Buffer:       stream.buffer,
 	}
 }
 

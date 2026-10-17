@@ -72,6 +72,9 @@ type Stream struct {
 	From       TapRef
 	Operations []Operation
 	Outputs    []OutputRef
+	// Buffer is a planned branch's declared queue (.Buffer(...)); zero for
+	// ordinary streams.
+	Buffer flow.BranchBuffer
 }
 
 // OutputRef names a destination declared on the recipe.

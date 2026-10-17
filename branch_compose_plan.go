@@ -40,6 +40,7 @@ func planBranchCompositionSnapshot(recipe recipeir.Recipe, input InputSpec, atta
 			DecodeConfig:      operations.Decode(),
 			Encode:            encodeConfigFromSpec(encode),
 			Labels:            labels,
+			Buffer:            stream.Buffer,
 		}
 		for _, label := range labels {
 			outputBranches[label] = append(outputBranches[label], branchName)
