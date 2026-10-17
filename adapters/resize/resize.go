@@ -59,6 +59,10 @@ type Filter struct {
 	outputFormat string
 	mode         filter.ResizeMode
 	outputVideo  av.VideoFrame
+	// luma and chroma hold each plane kind's axis filters, and scratch the
+	// shared intermediate, all built on the first frame and reused.
+	luma, chroma planeScaler
+	scratch      []uint16
 }
 
 type geometry struct {
@@ -202,7 +206,7 @@ func (f *Filter) FilterInto(ctx context.Context, frame *av.Frame, out *filter.Re
 		return filter.ErrOutputBufferTooSmall
 	}
 
-	scaleI420(output.Planes, frame.Planes, g)
+	f.scaleI420(output.Planes, frame.Planes, g)
 
 	f.outputVideo.Width = g.outputWidth
 	f.outputVideo.Height = g.outputHeight
@@ -397,10 +401,22 @@ func prepareOutputPlane(plane *av.Plane, width int, height int) bool {
 	return true
 }
 
-func scaleI420(dst []av.Plane, src []av.Plane, g geometry) {
-	scalePlaneNearest(dst[0].Buffer.Bytes, dst[0].Stride, src[0].Buffer.Bytes, inputStride(&src[0], g.inputWidth), g.cropX, g.cropY, g.cropWidth, g.cropHeight, g.outputWidth, g.outputHeight)
-	scalePlaneNearest(dst[1].Buffer.Bytes, dst[1].Stride, src[1].Buffer.Bytes, inputStride(&src[1], g.inputWidth/2), g.cropX/2, g.cropY/2, g.cropWidth/2, g.cropHeight/2, g.outputWidth/2, g.outputHeight/2)
-	scalePlaneNearest(dst[2].Buffer.Bytes, dst[2].Stride, src[2].Buffer.Bytes, inputStride(&src[2], g.inputWidth/2), g.cropX/2, g.cropY/2, g.cropWidth/2, g.cropHeight/2, g.outputWidth/2, g.outputHeight/2)
+func (f *Filter) scaleI420(dst []av.Plane, src []av.Plane, g geometry) {
+	f.scalePlane(&f.luma, &dst[0], &src[0], g.inputWidth, g.cropX, g.cropY, g.cropWidth, g.cropHeight, g.outputWidth, g.outputHeight)
+	for i := 1; i < 3; i++ {
+		f.scalePlane(&f.chroma, &dst[i], &src[i], g.inputWidth/2, g.cropX/2, g.cropY/2, g.cropWidth/2, g.cropHeight/2, g.outputWidth/2, g.outputHeight/2)
+	}
+}
+
+// scalePlane copies a plane whose region keeps its size and resamples any
+// other.
+func (f *Filter) scalePlane(scaler *planeScaler, dst, src *av.Plane, width, srcX, srcY, srcWidth, srcHeight, dstWidth, dstHeight int) {
+	srcStride := inputStride(src, width)
+	srcBytes := src.Buffer.Bytes[srcY*srcStride+srcX:]
+	if srcWidth == dstWidth && srcHeight == dstHeight && copyPlaneRows(dst.Buffer.Bytes, dst.Stride, srcBytes, srcStride, dstWidth, dstHeight) {
+		return
+	}
+	f.scratch = scaler.scale(dst.Buffer.Bytes, dst.Stride, src.Buffer.Bytes, srcStride, srcX, srcY, srcWidth, srcHeight, dstWidth, dstHeight, f.scratch)
 }
 
 func inputStride(plane *av.Plane, width int) int {
@@ -408,25 +424,6 @@ func inputStride(plane *av.Plane, width int) int {
 		return plane.Stride
 	}
 	return width
-}
-
-func scalePlaneNearest(dst []byte, dstStride int, src []byte, srcStride int, srcX int, srcY int, srcWidth int, srcHeight int, dstWidth int, dstHeight int) {
-	if srcX == 0 && srcY == 0 && srcWidth == dstWidth && srcHeight == dstHeight && copyPlaneRows(dst, dstStride, src, srcStride, dstWidth, dstHeight) {
-		return
-	}
-	if srcWidth > 0 && srcHeight > 0 && dstWidth > 0 && dstHeight > 0 && srcWidth%dstWidth == 0 && srcHeight%dstHeight == 0 {
-		scalePlaneNearestInteger(dst, dstStride, src, srcStride, srcX, srcY, srcWidth/dstWidth, srcHeight/dstHeight, dstWidth, dstHeight)
-		return
-	}
-	for y := range dstHeight {
-		sourceY := srcY + (y*srcHeight)/dstHeight
-		sourceRow := sourceY * srcStride
-		targetRow := y * dstStride
-		for x := range dstWidth {
-			sourceX := srcX + (x*srcWidth)/dstWidth
-			dst[targetRow+x] = src[sourceRow+sourceX]
-		}
-	}
 }
 
 func copyPlaneRows(dst []byte, dstStride int, src []byte, srcStride int, width int, height int) bool {
@@ -446,14 +443,4 @@ func copyPlaneRows(dst []byte, dstStride int, src []byte, srcStride int, width i
 		copy(dst[row*dstStride:row*dstStride+width], src[row*srcStride:row*srcStride+width])
 	}
 	return true
-}
-
-func scalePlaneNearestInteger(dst []byte, dstStride int, src []byte, srcStride int, srcX int, srcY int, xScale int, yScale int, dstWidth int, dstHeight int) {
-	for y := range dstHeight {
-		sourceRow := (srcY + y*yScale) * srcStride
-		targetRow := y * dstStride
-		for x := range dstWidth {
-			dst[targetRow+x] = src[sourceRow+srcX+x*xScale]
-		}
-	}
 }

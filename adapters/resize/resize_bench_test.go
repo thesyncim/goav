@@ -3,9 +3,11 @@ package resize
 import (
 	"fmt"
 	"testing"
+
+	"github.com/thesyncim/goav/av"
 )
 
-func BenchmarkScalePlaneNearestKernel(b *testing.B) {
+func BenchmarkScalePlaneKernel(b *testing.B) {
 	for _, tt := range []struct {
 		name      string
 		srcW      int
@@ -34,12 +36,13 @@ func BenchmarkScalePlaneNearestKernel(b *testing.B) {
 			if dstStride == 0 {
 				dstStride = tt.dstW
 			}
-			src := resizeBenchPlane(tt.srcH, srcStride)
-			dst := make([]byte, tt.dstH*dstStride)
+			src := av.Plane{Buffer: av.Buffer{Bytes: resizeBenchPlane(tt.srcH, srcStride)}, Stride: srcStride}
+			dst := av.Plane{Buffer: av.Buffer{Bytes: make([]byte, tt.dstH*dstStride)}, Stride: dstStride}
+			var f Filter
 			b.ReportAllocs()
 			b.SetBytes(int64(tt.dstW * tt.dstH))
 			for i := 0; i < b.N; i++ {
-				scalePlaneNearest(dst, dstStride, src, srcStride, tt.srcX, tt.srcY, tt.cropW, tt.cropH, tt.dstW, tt.dstH)
+				f.scalePlane(&f.luma, &dst, &src, tt.srcW, tt.srcX, tt.srcY, tt.cropW, tt.cropH, tt.dstW, tt.dstH)
 			}
 		})
 	}
@@ -51,26 +54,20 @@ func BenchmarkScaleI420Kernel(b *testing.B) {
 		b.Run(fmt.Sprintf("%dx%d_to_half", width, height), func(b *testing.B) {
 			src := resizeBenchI420Planes(width, height)
 			dstW, dstH := width/2, height/2
-			dst := []planeBench{
-				{bytes: make([]byte, dstW*dstH), stride: dstW},
-				{bytes: make([]byte, dstW*dstH/4), stride: dstW / 2},
-				{bytes: make([]byte, dstW*dstH/4), stride: dstW / 2},
+			dst := []av.Plane{
+				{Buffer: av.Buffer{Bytes: make([]byte, dstW*dstH)}, Stride: dstW},
+				{Buffer: av.Buffer{Bytes: make([]byte, dstW*dstH/4)}, Stride: dstW / 2},
+				{Buffer: av.Buffer{Bytes: make([]byte, dstW*dstH/4)}, Stride: dstW / 2},
 			}
 			g := geometry{inputWidth: width, outputWidth: dstW, outputHeight: dstH, cropWidth: width, cropHeight: height}
+			var f Filter
 			b.ReportAllocs()
 			b.SetBytes(int64(dstW * dstH * 3 / 2))
 			for i := 0; i < b.N; i++ {
-				scalePlaneNearest(dst[0].bytes, dst[0].stride, src[0].bytes, src[0].stride, g.cropX, g.cropY, g.cropWidth, g.cropHeight, g.outputWidth, g.outputHeight)
-				scalePlaneNearest(dst[1].bytes, dst[1].stride, src[1].bytes, src[1].stride, g.cropX/2, g.cropY/2, g.cropWidth/2, g.cropHeight/2, g.outputWidth/2, g.outputHeight/2)
-				scalePlaneNearest(dst[2].bytes, dst[2].stride, src[2].bytes, src[2].stride, g.cropX/2, g.cropY/2, g.cropWidth/2, g.cropHeight/2, g.outputWidth/2, g.outputHeight/2)
+				f.scaleI420(dst, src, g)
 			}
 		})
 	}
-}
-
-type planeBench struct {
-	bytes  []byte
-	stride int
 }
 
 func resizeBenchPlane(height int, stride int) []byte {
@@ -81,11 +78,11 @@ func resizeBenchPlane(height int, stride int) []byte {
 	return plane
 }
 
-func resizeBenchI420Planes(width int, height int) []planeBench {
+func resizeBenchI420Planes(width int, height int) []av.Plane {
 	chromaW, chromaH := width/2, height/2
-	return []planeBench{
-		{bytes: resizeBenchPlane(height, width), stride: width},
-		{bytes: resizeBenchPlane(chromaH, chromaW), stride: chromaW},
-		{bytes: resizeBenchPlane(chromaH, chromaW), stride: chromaW},
+	return []av.Plane{
+		{Buffer: av.Buffer{Bytes: resizeBenchPlane(height, width)}, Stride: width},
+		{Buffer: av.Buffer{Bytes: resizeBenchPlane(chromaH, chromaW)}, Stride: chromaW},
+		{Buffer: av.Buffer{Bytes: resizeBenchPlane(chromaH, chromaW)}, Stride: chromaW},
 	}
 }

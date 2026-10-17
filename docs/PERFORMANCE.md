@@ -126,7 +126,7 @@ at `-benchtime=1s` those converge to the per-push allocation alone.
 | `BenchmarkResample` | real bundled filter, 44.1kHz stereo -> 48kHz mono (1 alloc/op steady state) |
 | `BenchmarkResampleS16Kernel`, `BenchmarkResampleS16KernelDurations` | adapter-local S16 resample inner-loop benches: rate conversion, channel remap, equal-rate copy, and duration scaling |
 | `BenchmarkResize` | real bundled filter, 320x180 -> 160x90 I420 (1 alloc/op steady state) |
-| `BenchmarkScalePlaneNearestKernel`, `BenchmarkScaleI420Kernel` | adapter-local I420 nearest-neighbor resize inner-loop benches: luma/chroma scale, passthrough row copy, fill crop, and whole-I420 half-scale |
+| `BenchmarkScalePlaneKernel`, `BenchmarkScaleI420Kernel` | adapter-local I420 resize inner-loop benches (area averaging when shrinking, linear when growing): luma/chroma scale, passthrough row copy, fill crop, and whole-I420 half-scale |
 | `BenchmarkBranchFanout/branches=2,8` | one decode, N planned branches to sinks (1 alloc/op steady state) |
 | `BenchmarkSharedMuxGroup` | audio+video chains sharing one mux destination (1 alloc/op steady state) |
 | `BenchmarkMix/arms=2,8` | N-arm audio mix on a blocking buffered graph (1 alloc/op steady state per push) |
@@ -166,14 +166,16 @@ real-codec time by a 45% geomean: `BenchmarkRealVP8Decode` 59.5→16.5 us/op,
 The composite/resample/resize D4 decision is scalar-retain until a Go SIMD
 prototype beats the measured scalar rows by at least 1.5x. The current scalar
 baseline includes no-clipping composite row-copy, equal-rate resample
-copy/channel-remap, and integer-scale nearest-neighbor resize fast paths. On
+copy/channel-remap, and identity-copy resize fast paths. On
 the same arm64 host (`-benchtime=300ms -count=3`), representative rows measured:
 `BenchmarkCompositeI420BlitKernel/two_arms/160x90` about 1.4-1.5 us/op,
 `BenchmarkResampleS16Kernel/stereo44100_to_mono48000/20ms` about
 4.8-5.1 us/op, and `BenchmarkScaleI420Kernel/320x180_to_half` about
-10.1-10.5 us/op, all at 0 allocs/op. The amd64 VirtualApple runs measured
-about 2.0 us/op, 8.9-10.0 us/op, and 15.4-15.8 us/op for those same rows,
-also at 0 allocs/op.
+62 us/op, all at 0 allocs/op. The amd64 VirtualApple runs measured
+about 2.0 us/op, 8.9-10.0 us/op, and 68 us/op for those same rows,
+also at 0 allocs/op. Resize replaced point sampling with area averaging (6x
+the old nearest-neighbor time) so downscaled renditions do not alias; it is
+the strongest SIMD candidate of the three.
 
 The `pipeline` package adds the executor-level fanout sweeps
 (`BenchmarkDirectFanout`, `BenchmarkDirectFanoutParallel`,

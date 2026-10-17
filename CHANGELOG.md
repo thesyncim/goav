@@ -11,6 +11,16 @@ methodology changes, and migration notes.
 
 ## Unreleased
 
+- Resize no longer aliases. The bundled resize filter point-sampled
+  (nearest neighbor), so every downscaled rendition of a ladder showed
+  jagged edges, moiré, and shimmer in motion. Each plane is now resampled
+  separably: an axis that shrinks averages area, so each output sample is
+  the coverage-weighted mean of the source it covers, and an axis that grows
+  interpolates linearly. Coefficients are fixed point, built once per
+  geometry, so the steady state stays allocation-free. A same-size plane is
+  still copied. The kernel costs about 6x point sampling (62 µs for a
+  320x180 I420 half-scale on an M4 Max), which is small next to encoding.
+
 - The default event buffer is 256 events, up from 16, for the task event
   stream and for each `Watch` subscriber. Events never block the data
   plane, so a full buffer sheds. At 16, a single teardown burst (every
