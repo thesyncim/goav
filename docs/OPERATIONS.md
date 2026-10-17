@@ -114,6 +114,9 @@ build:
   still succeeded.
 - `packet_copy`, `frame_source`, `decode_required`, `encode_required`, and
   `stream_rule`: planner decisions about domain and dynamic stream handling.
+- `buffered_execution`: the build runs the graph buffered although the runtime's
+  own policy is direct (live inputs, a join, a declared branch buffer, or an
+  encode ladder), so branches and arms run in parallel.
 
 Every refusal that happens before resources open should be a `*goav.BuildError`
 with a stable family, detailed code, operation, node, reason, machine-readable

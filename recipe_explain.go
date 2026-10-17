@@ -55,6 +55,9 @@ func newPlanReport(operation string, resolved recipeResolved) (plan.Report, erro
 	report.Destinations = explainDestinations(resolved.intent.Destinations, resolved.outputFormats, work.Destinations)
 	report.Decisions = explainDecisions(work.Decisions)
 	report.Decisions = append(report.Decisions, explainStreamRuleFacts(resolved.streamRuleFacts)...)
+	if decision, ok := explainExecutionDecision(resolved); ok {
+		report.Decisions = append(report.Decisions, decision)
+	}
 	report.RequiredAdapters, report.Warnings = explainRequirements(resolved, work, report)
 	report.Warnings = appendPlanDiagnostics(report.Warnings, work.Diagnostics...)
 	report.Warnings = appendPlanDiagnostics(report.Warnings, muxCompatibilityDiagnostics(resolvedMuxCompatibilityIssues(resolved))...)
@@ -994,4 +997,26 @@ func cloneOperationSpecs(operations []operationSpec) []operationSpec {
 		out = append(out, operation)
 	}
 	return out
+}
+
+// explainExecutionDecision reports when the planner runs the graph buffered
+// although the runtime's own policy is direct: live inputs, a join that needs
+// concurrent arms, a declared branch queue, or a fanout of goav-owned encode
+// work. Buffered execution gives every node its own worker and queue, so
+// branches and join arms run in parallel. Describe's graph shape is the same
+// either way, so Explain says which one the build will run.
+func explainExecutionDecision(resolved recipeResolved) (plan.Decision, bool) {
+	gp := resolved.graphPlan
+	configurer, ok := gp.lowerer.(graphPlanGraphConfigurer)
+	if !ok || gp.runtime == nil || !gp.runtime.buffer.IsDirect() {
+		return plan.Decision{}, false
+	}
+	config, err := configurer.graphConfig(gp)
+	if err != nil || config.Buffer.IsDirect() {
+		return plan.Decision{}, false
+	}
+	return plan.Decision{
+		Code:    diagnosticBufferedExecution,
+		Message: "the graph runs buffered: every node gets its own worker and queue, so branches and join arms run in parallel",
+	}, true
 }

@@ -11,6 +11,12 @@ methodology changes, and migration notes.
 
 ## Unreleased
 
+- `Explain` reports a `buffered_execution` decision when the build runs the
+  graph buffered although the runtime's own policy is direct: live inputs, a
+  join, a declared branch buffer, or an encode ladder. `Describe` shows the
+  same graph shape either way, so the report now says when branches and join
+  arms run in parallel.
+
 - Resize no longer aliases. The bundled resize filter point-sampled
   (nearest neighbor), so every downscaled rendition of a ladder showed
   jagged edges, moiré, and shimmer in motion. Each plane is now resampled
