@@ -4,8 +4,11 @@
 //
 // The demuxer is random-access: it walks the top-level boxes to locate moov
 // (which may follow mdat in non-faststart files), parses each track's sample
-// tables into a flat sample index, and reads samples in interleaved decode
-// order by file offset. Fragmented (fMP4/CMAF) files are supported too: when a
+// tables into a flat sample index, and reads samples in decode-time order
+// across tracks (ties by file offset). Edit lists are honored as encoders
+// write them: a leading empty edit delays a track and the first media edit
+// starts its presentation (hiding B-frame delay and AAC priming), then every
+// track lifts together so no sample presents before zero. Fragmented (fMP4/CMAF) files are supported too: when a
 // track carries no moov sample table, its samples are read from the moof/traf/
 // trun fragment runs using the mvex/trex defaults. It needs an io.ReaderAt; a
 // plain io.Reader is buffered in memory as a fallback.

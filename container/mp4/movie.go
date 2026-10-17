@@ -2,6 +2,7 @@ package mp4
 
 import (
 	"io"
+	"math"
 
 	"github.com/thesyncim/goav/av"
 )
@@ -20,6 +21,21 @@ type track struct {
 	defaultSampleDuration uint32
 	defaultSampleSize     uint32
 	defaultSampleFlags    uint32
+	// edit is the track's edit list as goav honors it; shift is its effect in
+	// media ticks (delay minus media start), resolved once the movie timescale
+	// is known.
+	edit  trackEdit
+	shift int64
+}
+
+// trackEdit is the part of an edit list (edts/elst) goav honors: leading
+// empty edits delay the track by delay movie ticks, and the first media edit
+// starts presentation at mediaTime media ticks. Encoders write that edit to
+// hide B-frame composition delay and AAC priming. Later edits (multi-segment
+// cuts) are ignored.
+type trackEdit struct {
+	delay     int64
+	mediaTime int64
 }
 
 // parseMovie locates the moov box and parses every supported track into a flat
@@ -41,10 +57,15 @@ func parseMovie(r io.ReaderAt, size int64, budget *sampleBudget) ([]*track, erro
 		return nil, ErrNoMovie
 	}
 
+	var movieTimescale uint32
 	var tracks []*track
 	trex := map[uint32]trexDefaults{}
 	if err := walkBoxes(r, moov.PayloadOffset, moov.end(), func(h boxHeader) error {
 		switch h.Type {
+		case "mvhd":
+			if pl, err := readPayload(r, h); err == nil {
+				movieTimescale = parseMdhdTimescale(pl) // mvhd shares mdhd's timescale layout
+			}
 		case "trak":
 			tr, err := parseTrak(r, h, budget)
 			if err != nil {
@@ -77,6 +98,7 @@ func parseMovie(r io.ReaderAt, size int64, budget *sampleBudget) ([]*track, erro
 			tr.defaultSampleSize = d.sampleSize
 			tr.defaultSampleFlags = d.sampleFlags
 		}
+		tr.shift = tr.edit.shift(movieTimescale, tr.timescale)
 	}
 	return tracks, nil
 }
@@ -105,6 +127,15 @@ func parseTrak(r io.ReaderAt, trak boxHeader, budget *sampleBudget) (*track, err
 			if pl, err := readPayload(r, h); err == nil {
 				tr.id = parseTkhdTrackID(pl)
 			}
+		case "edts":
+			return walkBoxes(r, h.PayloadOffset, h.end(), func(e boxHeader) error {
+				if e.Type == "elst" {
+					if pl, err := readPayload(r, e); err == nil {
+						tr.edit = parseElst(pl)
+					}
+				}
+				return nil
+			})
 		case "mdia":
 			return walkBoxes(r, h.PayloadOffset, h.end(), func(m boxHeader) error {
 				switch m.Type {
@@ -491,4 +522,48 @@ func fits(p *parser, count uint32, entrySize int) bool {
 		return false
 	}
 	return int64(count)*int64(entrySize) <= int64(p.remaining())
+}
+
+// parseElst reads an edit list into the trackEdit goav honors: the summed
+// leading empty edits (media_time -1) and the first media edit's start.
+// Malformed entries (negative durations or media times other than -1) void
+// the whole list, leaving the track on its media timeline.
+func parseElst(payload []byte) trackEdit {
+	p := newParser(payload)
+	version, _ := p.fullBox()
+	count := p.u32()
+	var edit trackEdit
+	for i := uint32(0); i < count; i++ {
+		var duration, mediaTime int64
+		if version == 1 {
+			duration = int64(p.u64())
+			mediaTime = int64(p.u64())
+		} else {
+			duration = int64(p.u32())
+			mediaTime = int64(p.i32())
+		}
+		p.skip(4) // media_rate_integer, media_rate_fraction
+		if p.err() != nil || duration < 0 || mediaTime < -1 || edit.delay > math.MaxInt64-duration {
+			return trackEdit{}
+		}
+		if mediaTime == -1 {
+			edit.delay += duration
+			continue
+		}
+		edit.mediaTime = mediaTime
+		return edit
+	}
+	return edit
+}
+
+// shift is the edit's effect in media ticks: the empty-edit delay converted
+// from the movie timescale, minus the media start. A delay is dropped when the
+// movie timescale is unknown.
+func (e trackEdit) shift(movieTimescale, mediaTimescale uint32) int64 {
+	delay := int64(0)
+	if e.delay > 0 && movieTimescale != 0 {
+		m, t := int64(movieTimescale), int64(mediaTimescale)
+		delay = e.delay/m*t + e.delay%m*t/m
+	}
+	return delay - e.mediaTime
 }

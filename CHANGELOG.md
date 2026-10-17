@@ -11,6 +11,15 @@ methodology changes, and migration notes.
 
 ## Unreleased
 
+- MP4 edit lists are honored. Encoders write an `elst` that starts
+  presentation past B-frame composition delay and AAC priming, and the
+  demuxer ignored it. In the ffmpeg-written fixture, audio content trailed
+  the video by the 23 ms of priming; such offsets reach tens of milliseconds
+  on typical B-frame files. Leading empty edits now delay a track and the
+  first media edit starts its presentation. All tracks then lift together so
+  nothing presents before zero, because muxers refuse negative presentation
+  times. Malformed lists are ignored.
+
 - Offline joins backpressure each arm. Mix and Composite buffered arm
   frames without bound while waiting for a slower sibling, so an offline
   composite of a fast-decoding small file and a slow large one pulled the
