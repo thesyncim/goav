@@ -2,7 +2,10 @@ package goav
 
 import (
 	"context"
+	"errors"
+	"slices"
 	"strconv"
+	"strings"
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
@@ -78,11 +81,20 @@ func (b *builder) newEncodeStageNamed(ctx context.Context, name string, request 
 	if err != nil {
 		return nil, err
 	}
+	name = firstNonEmpty(name, encodeNodeName(request))
+	// File inputs reveal their rate and geometry only once opened, so the
+	// descriptor check planning could not run happens here, before the
+	// adapter turns an unsupported config into a bare sentinel.
+	adapterRequest := encodeAdapterRequestFromPreparedStream(codec.Spec{ID: config.Parameters.ID, Type: config.Parameters.Type, Parameters: config.Parameters}, config.Stream)
+	if descriptors, findErr := b.runtime.codecs.Find(config.Parameters.ID, codec.ModeEncode); findErr == nil && !slices.ContainsFunc(descriptors, func(desc codec.Descriptor) bool {
+		return codecDescriptorSupports(desc, adapterRequest)
+	}) {
+		return nil, encodeAdapterIncompatibleErrorAt("configure encode", name, adapterRequest, descriptors)
+	}
 	encoder, err := factory.NewEncoder(ctx, config)
 	if err != nil {
-		return nil, err
+		return nil, encodeOpenError(name, adapterRequest, err)
 	}
-	name = firstNonEmpty(name, encodeNodeName(request))
 	stage, err := codec.NewEncoderStage(codec.EncoderStageConfig{
 		Name:              name,
 		Detail:            encodeNodeDetail(request),
@@ -272,16 +284,29 @@ func mergeCodecParameters(base av.CodecParameters, override av.CodecParameters) 
 	return out
 }
 
+// audioEncodeResultPackets is the packet slots an audio encode result
+// preallocates: re-framing encoders (Opus takes fixed 2.5-120 ms frames)
+// emit every whole frame one input frame completes, and 8 slots cover a
+// 120 ms input at the shortest common 20 ms output with room to spare.
+const audioEncodeResultPackets = 8
+
 func encodeResultForStream(stream av.Stream) codec.EncodeResult {
-	packet := av.Packet{
-		StreamID:   stream.ID,
-		CodecEpoch: stream.Epoch,
-		Payload: av.Buffer{
-			Bytes: make([]byte, 0, encodePacketBufferSize(stream)),
-		},
+	slots := 1
+	if stream.Type == av.MediaAudio || stream.Codec.Type == av.MediaAudio {
+		slots = audioEncodeResultPackets
+	}
+	packets := make([]av.Packet, slots)
+	for i := range packets {
+		packets[i] = av.Packet{
+			StreamID:   stream.ID,
+			CodecEpoch: stream.Epoch,
+			Payload: av.Buffer{
+				Bytes: make([]byte, 0, encodePacketBufferSize(stream)),
+			},
+		}
 	}
 	return codec.EncodeResult{
-		Packets: []av.Packet{packet}[:0],
+		Packets: packets[:0],
 		Events:  make([]av.Event, 0, 1),
 	}
 }
@@ -340,4 +365,41 @@ func encodeNodeName(request encodeRequest) string {
 		return "encode-" + string(codecID)
 	}
 	return "encode"
+}
+
+// encodeOpenError reports an encoder adapter rejecting its config at open as a
+// BuildError naming the node and the stream it was given; errors.Is still
+// reaches the adapter's cause.
+func encodeOpenError(node string, request codecAdapterRequest, cause error) error {
+	var buildErr *BuildError
+	if errors.As(cause, &buildErr) {
+		return cause
+	}
+	details := []string{"codec=" + string(request.Codec)}
+	if request.SampleRate > 0 {
+		details = append(details, "sample_rate="+strconv.Itoa(request.SampleRate))
+	}
+	if request.Channels > 0 {
+		details = append(details, "channels="+strconv.Itoa(request.Channels))
+	}
+	if request.SampleFormat != "" {
+		details = append(details, "sample_format="+request.SampleFormat)
+	}
+	if request.PixelFormat != "" {
+		details = append(details, "pixel_format="+request.PixelFormat)
+	}
+	return &BuildError{
+		Phase:     phaseBuild,
+		Family:    errcode.FamilyForCode(encodeAdapterIncompatibleCode),
+		Code:      encodeAdapterIncompatibleCode,
+		Operation: "configure encode",
+		Node:      node,
+		Reason:    string(request.Codec) + " encoder rejected the stream: " + cause.Error(),
+		fields:    errDetailLines(details),
+		fixes: buildErrorFixes([]string{
+			"convert the stream to a format the encoder accepts (.Resample(...) for audio, .Resize(...) for video) before .Encode(...)",
+			"check the encoder settings passed to codec." + strings.ToUpper(string(request.Codec)) + "(...)",
+		}),
+		cause: cause,
+	}
 }

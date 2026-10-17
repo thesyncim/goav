@@ -22,7 +22,6 @@ func Descriptor() filter.Descriptor {
 		Output:        av.MediaAudio,
 		SampleFormats: []string{av.SampleFormatS16},
 		Realtime:      true,
-		Stateless:     true,
 		Metadata: av.Metadata{
 			"backend":       backendName,
 			"sample_format": av.SampleFormatS16,
@@ -53,6 +52,23 @@ type Filter struct {
 	outputAudio     av.AudioFrame
 	outputTimeBase  av.TimeBase
 	outputFrameType av.MediaType
+
+	// Rate conversion streams across frames: inPos and outPos are the global
+	// indexes of the next input and output samples, last holds the previous
+	// input sample per output channel (after channel mapping), and startPTS is
+	// the output timeline origin. Output sample k sits at input position
+	// k*inputRate/outputRate and interpolates its two neighbors, so a frame
+	// emits only the samples whose right neighbor has arrived (at most one
+	// input sample of latency) and FlushInto emits the rest. Frame boundaries
+	// are seamless and the total count is exact, whatever the frame sizes.
+	inPos    int64
+	outPos   int64
+	last     []int
+	started  bool
+	startPTS av.Timestamp
+	// identity carries the stream id and codec epoch of the latest input frame
+	// onto the flushed tail.
+	identity av.Frame
 }
 
 func (f *Filter) Descriptor() filter.Descriptor {
@@ -130,7 +146,16 @@ func (f *Filter) Open(ctx context.Context, config filter.Config) error {
 		ChannelLayout: outputLayout,
 		SampleFormat:  outputFormat,
 	}
+	f.last = make([]int, outputChannels)
+	f.resetStream()
 	return nil
+}
+
+// resetStream restarts the rate-conversion timeline: the next frame becomes
+// the new origin.
+func (f *Filter) resetStream() {
+	f.inPos, f.outPos, f.started = 0, 0, false
+	clear(f.last)
 }
 
 func (f *Filter) FilterInto(ctx context.Context, frame *av.Frame, out *filter.Result) error {
@@ -149,54 +174,162 @@ func (f *Filter) FilterInto(ctx context.Context, frame *av.Frame, out *filter.Re
 	if len(frame.Planes) == 0 {
 		return filter.ErrUnsupportedFormat
 	}
-	inputChannels := f.inputChannels
-	inputRate := f.inputRate
-	inputSamples := inputSampleCount(frame, inputChannels)
+	inputSamples := inputSampleCount(frame, f.inputChannels)
 	if inputSamples == 0 {
 		return nil
 	}
+	input := frame.Planes[0].Buffer.Bytes
 
-	outputSamples := resampledSampleCount(inputSamples, inputRate, f.outputRate)
-	outputBytes := outputSamples * f.outputChannels * 2
+	if f.inputRate == f.outputRate {
+		// Equal rates need no interpolation, so they stay stateless and keep
+		// the input's timestamps.
+		dst, err := f.nextOutput(frame, out, inputSamples, frame.PTS)
+		if err != nil {
+			return err
+		}
+		resampleS16(dst, input, inputSamples, f.inputRate, f.inputChannels, inputSamples, f.outputRate, f.outputChannels)
+		return nil
+	}
+
+	if !f.started {
+		f.startPTS = f.outputTimeline(frame.PTS)
+		f.started = true
+	}
+	f.identity.StreamID, f.identity.CodecEpoch = frame.StreamID, frame.CodecEpoch
+	end := f.inPos + int64(inputSamples)
+	// Emit the outputs whose right neighbor (input end-1) has arrived.
+	count := int(ceilDiv((end-1)*int64(f.outputRate), int64(f.inputRate)) - f.outPos)
+	if count > 0 {
+		dst, err := f.nextOutput(frame, out, count, f.positionPTS())
+		if err != nil {
+			return err
+		}
+		f.convert(dst, input, count)
+	}
+	for channel := range f.outputChannels {
+		f.last[channel] = mixedSampleS16(input, inputSamples-1, f.inputChannels, channel, f.outputChannels)
+	}
+	f.inPos = end
+	return nil
+}
+
+// convert writes count output samples starting at outPos, interpolating
+// between the previous frame's last sample and this frame's samples.
+func (f *Filter) convert(dst []byte, input []byte, count int) {
+	inRate, outRate := int64(f.inputRate), int64(f.outputRate)
+	for j := range count {
+		position := (f.outPos + int64(j)) * inRate
+		base := position / outRate
+		frac := int(position % outRate)
+		for channel := range f.outputChannels {
+			a := f.inputSample(input, base, channel)
+			value := a
+			if frac != 0 {
+				b := f.inputSample(input, base+1, channel)
+				value = (a*(f.outputRate-frac) + b*frac) / f.outputRate
+			}
+			putS16(dst, (j*f.outputChannels+channel)*2, int16(value))
+		}
+	}
+	f.outPos += int64(count)
+}
+
+// inputSample returns global input sample index for one output channel: the
+// carried last sample just before this frame, else a sample of this frame.
+func (f *Filter) inputSample(input []byte, index int64, channel int) int {
+	if index < f.inPos {
+		return f.last[channel]
+	}
+	return mixedSampleS16(input, int(index-f.inPos), f.inputChannels, channel, f.outputChannels)
+}
+
+// nextOutput reserves the next result frame for samples output samples and
+// returns its sample bytes.
+func (f *Filter) nextOutput(frame *av.Frame, out *filter.Result, samples int, pts av.Timestamp) ([]byte, error) {
+	outputBytes := samples * f.outputChannels * 2
 	index := len(out.Frames)
 	out.Frames = out.Frames[:index+1]
 	output := &out.Frames[index]
 	output.Reset()
 	if cap(output.Planes) < 1 {
 		out.Frames = out.Frames[:index]
-		return filter.ErrOutputBufferTooSmall
+		return nil, filter.ErrOutputBufferTooSmall
 	}
 	output.Planes = output.Planes[:1]
 	plane := &output.Planes[0]
 	if cap(plane.Buffer.Bytes) < outputBytes {
 		out.Frames = out.Frames[:index]
-		return filter.ErrOutputBufferTooSmall
+		return nil, filter.ErrOutputBufferTooSmall
 	}
-
-	input := frame.Planes[0].Buffer.Bytes
-	dst := plane.Buffer.Bytes[:outputBytes]
-	resampleS16(dst, input, inputSamples, inputRate, inputChannels, outputSamples, f.outputRate, f.outputChannels)
-	plane.Buffer.Bytes = dst
+	plane.Buffer.Bytes = plane.Buffer.Bytes[:outputBytes]
 	plane.Buffer.Ownership = av.BufferOwned
 	plane.Stride = f.outputChannels * 2
 
-	f.outputAudio.Samples = outputSamples
+	f.outputAudio.Samples = samples
 	output.StreamID = frame.StreamID
 	output.CodecEpoch = frame.CodecEpoch
 	output.Type = f.outputFrameType
-	output.PTS = frame.PTS
-	output.Duration = av.SamplesDuration(outputSamples, f.outputRate)
+	output.PTS = pts
+	output.Duration = av.SamplesDuration(samples, f.outputRate)
 	output.Audio = &f.outputAudio
 	output.Metadata = frame.Metadata
+	return plane.Buffer.Bytes, nil
+}
+
+// outputTimeline maps an input timestamp onto the 1/outputRate timeline.
+func (f *Filter) outputTimeline(pts av.Timestamp) av.Timestamp {
+	if rescaled, ok := pts.Rescale(f.outputTimeBase); ok {
+		return rescaled
+	}
+	return av.Timestamp{Base: f.outputTimeBase}
+}
+
+// positionPTS is the timestamp of output sample outPos.
+func (f *Filter) positionPTS() av.Timestamp {
+	return av.Timestamp{Value: f.startPTS.Value + f.outPos, Base: f.outputTimeBase}
+}
+
+// FlushInto emits the outputs held back for a right neighbor that will never
+// arrive, holding the final input sample, so the stream's total output count
+// is exactly ceil(inputs*outputRate/inputRate).
+func (f *Filter) FlushInto(ctx context.Context, out *filter.Result) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if !f.started || f.inPos == 0 || out == nil || len(out.Frames) == cap(out.Frames) {
+		return nil
+	}
+	count := int(ceilDiv(f.inPos*int64(f.outputRate), int64(f.inputRate)) - f.outPos)
+	if count <= 0 {
+		return nil
+	}
+	dst, err := f.nextOutput(&f.identity, out, count, f.positionPTS())
+	if err != nil {
+		return err
+	}
+	for j := range count {
+		for channel := range f.outputChannels {
+			putS16(dst, (j*f.outputChannels+channel)*2, int16(f.last[channel]))
+		}
+	}
+	f.outPos += int64(count)
 	return nil
 }
 
-func (f *Filter) FlushInto(context.Context, *filter.Result) error {
+// HandleEvent restarts the conversion timeline when the input jumps, so a
+// discontinuity never interpolates across unrelated audio.
+func (f *Filter) HandleEvent(_ context.Context, event *av.Event) error {
+	if event != nil && (event.Type == av.EventDiscontinuity || event.Type == av.EventCodecChanged) {
+		f.resetStream()
+	}
 	return nil
 }
 
-func (f *Filter) HandleEvent(context.Context, *av.Event) error {
-	return nil
+func ceilDiv(a, b int64) int64 {
+	if a <= 0 {
+		return 0
+	}
+	return (a + b - 1) / b
 }
 
 func (f *Filter) Close() error {

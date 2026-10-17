@@ -38,8 +38,12 @@ type Descriptor struct {
 type Capabilities struct {
 	SampleFormats []string
 	PixelFormats  []string
-	RTPPayloads   []string
-	BuildTags     []string
+	// SampleRates lists the audio rates the codec accepts; empty means any.
+	// Planning refuses other rates with the .Resample(...) fix instead of
+	// letting the encoder fail at open.
+	SampleRates []int
+	RTPPayloads []string
+	BuildTags   []string
 }
 
 // Backend names the implementation behind an adapter (the Go module and
