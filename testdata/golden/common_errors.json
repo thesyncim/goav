@@ -47,7 +47,7 @@
         }
       ],
       "fixes": [
-        "call .Encode(codec.Opus(...)), .Encode(codec.VP8(...)), or .Encode(codec.VP9(...)) before .To(goav.Write(...))",
+        "call .Encode(codec.VP8(...)), .Encode(codec.VP9(...)), or .Encode(codec.AV1(...)) before .To(goav.Write(...))",
         "send decoded frames to goav.Sink(...)",
         "use .Copy().To(output) if you want to copy packets without decoding"
       ]

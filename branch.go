@@ -1026,7 +1026,7 @@ func branchEncodeParentOperationError(node string, encode codec.Spec) error {
 		fields:    errDetails(errNote("encoder: " + codecIntentName(encode))),
 		fixes: buildErrorFixes([]string{
 			"move .Branches(...) before the stream encoder",
-			"put .Encode(codec.Opus(...)), .Encode(codec.VP8(...)), or .Encode(codec.VP9(...)) on each goav.Branch(...) that writes a destination",
+			"put " + encodeHint(encode.Type) + " on each goav.Branch(...) that writes a destination",
 			"attach post-encode packet-copy branches at runtime with Mutable.Attach(ctx, goav.Branch(name).From(goav.PacketTap(name)).Copy()...)",
 		}),
 		cause: errUnsupportedBuild,

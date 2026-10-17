@@ -65,7 +65,7 @@ func TestRenderURITextDOTAndMermaid(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !strings.Contains(mermaid, "flowchart LR") ||
-		!strings.Contains(mermaid, "n0([\"source\\nsource\\nrtp receive\"])") ||
+		!strings.Contains(mermaid, "n0([\"source<br>source<br>rtp receive\"])") ||
 		!strings.Contains(mermaid, "n1 -- \"stream=audio\" --> n2") {
 		t.Fatalf("mermaid spec:\n%s", mermaid)
 	}
@@ -473,4 +473,33 @@ type snapshotTask struct {
 
 func (t snapshotTask) Snapshot() snapshot.Task {
 	return t.snap
+}
+
+// TestRenderMermaidEscapesLabels pins Mermaid's quoted-label syntax: line
+// breaks are <br> and quotes and '#' are entity codes. Mermaid has no
+// backslash escapes, so a Go-quoted label would render "\n" literally and
+// could end the label early at an escaped quote.
+func TestRenderMermaidEscapesLabels(t *testing.T) {
+	spec := pipeline.Spec{
+		Nodes: []pipeline.NodeSpec{
+			{Name: "in", Kind: pipeline.NodeSource, Detail: `file "a.webm" #1`},
+			{Name: "out", Kind: pipeline.NodeSink},
+		},
+		Edges: []pipeline.EdgeSpec{{From: "in", To: "out", Policy: pipeline.RouteByStream, Label: `say "hi"`}},
+	}
+	mermaid, err := RenderURI(spec, "goav:graph?format=mermaid")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		`n0(["in<br>source<br>file #quot;a.webm#quot; #35;1"])`,
+		`n0 -- "stream=say #quot;hi#quot;" --> n1`,
+	} {
+		if !strings.Contains(mermaid, want) {
+			t.Fatalf("mermaid missing %q:\n%s", want, mermaid)
+		}
+	}
+	if strings.Contains(mermaid, `\`) {
+		t.Fatalf("mermaid contains backslash escapes:\n%s", mermaid)
+	}
 }
