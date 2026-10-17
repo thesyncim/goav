@@ -2,6 +2,7 @@ package mp4
 
 import (
 	"io"
+	"math"
 	"sort"
 	"time"
 
@@ -78,6 +79,7 @@ func NewDemuxer(r io.ReaderAt, size int64) (*Demuxer, error) {
 	if len(kept) == 0 {
 		return nil, ErrNoTracks
 	}
+	applyEdits(kept)
 	d := &Demuxer{r: r, size: size, tracks: kept}
 	d.buildOrder()
 	if len(d.order) == 0 {
@@ -210,4 +212,39 @@ func (d *Demuxer) seek(position time.Duration) {
 		}
 	}
 	d.pos = 0
+}
+
+// applyEdits moves every track onto the presentation timeline its edit list
+// declares, then lifts all tracks together so the earliest presentation time
+// is zero. An edit that starts presentation past AAC priming or B-frame
+// pre-roll leaves those samples before zero, and muxers refuse negative
+// presentation times; lifting every track by one amount keeps the relative
+// sync the edit lists encode. Decode times may stay negative (pre-roll).
+func applyEdits(tracks []*track) {
+	minNS := int64(math.MaxInt64)
+	for _, tr := range tracks {
+		for i := range tr.samples {
+			tr.samples[i].dts += tr.shift
+			tr.samples[i].cts += tr.shift
+			minNS = min(minNS, timescaleNS(tr.samples[i].cts, tr.timescale))
+		}
+	}
+	if minNS >= 0 {
+		return
+	}
+	for _, tr := range tracks {
+		lift := ceilTicks(-minNS, tr.timescale)
+		for i := range tr.samples {
+			tr.samples[i].dts += lift
+			tr.samples[i].cts += lift
+		}
+	}
+}
+
+// ceilTicks converts a positive nanosecond span to ticks of a track timescale,
+// rounding up so a lifted presentation time never lands below zero.
+func ceilTicks(ns int64, timescale uint32) int64 {
+	ts := int64(timescale)
+	second := int64(time.Second)
+	return ns/second*ts + (ns%second*ts+second-1)/second
 }
