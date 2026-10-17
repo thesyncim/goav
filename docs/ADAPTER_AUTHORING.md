@@ -218,7 +218,7 @@ caller-owned `filter.Result`; sentinels `filter.ErrResultFull`,
 
 Register: `runconfig.WithFilter(desc, factory)` or `runconfig.WithFilterAdapter(...)`.
 Use the well-known descriptor name for the conversion class you are replacing;
-the last registration wins, so build from `bundle.MustNewFilters(...)` and pass your
+the last registration wins, so build from `bundle.MustNew(...)` and pass your
 adapter option after the standard filters:
 
 ```go
@@ -268,7 +268,7 @@ func (*passthroughResamplerFilter) FlushInto(context.Context, *filter.Result) er
 func (*passthroughResamplerFilter) HandleEvent(context.Context, *av.Event) error    { return nil }
 func (*passthroughResamplerFilter) Close() error                                    { return nil }
 
-runtime := bundle.MustNewFilters(
+runtime := bundle.MustNew(
     runconfig.WithFilter(passthroughResampler, passthroughResamplerFactory{}),
 )
 ```

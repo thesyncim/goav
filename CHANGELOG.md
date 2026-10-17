@@ -11,6 +11,17 @@ methodology changes, and migration notes.
 
 ## Unreleased
 
+- `bundle` surface, 17 exports to 10 (**breaking**). The partial-runtime
+  constructors (`NewFormats`/`NewCodecs`/`NewFilters` and their `MustNew*`
+  twins), the three `*Options` slices, and `BuildLive` are replaced by three
+  composable options: `bundle.Formats()`, `bundle.Codecs()`, and
+  `bundle.Filters()`. A partial runtime is now `goav.New(bundle.Filters(),
+  myCodec)`.
+  - Migration: `bundle.MustNewFilters(x)` becomes
+    `goav.New(bundle.Filters(), x)`, or `bundle.MustNew(x)`, since
+    registration is last-wins. `bundle.BuildLive(ctx, job)` becomes
+    `job.UseRuntime(bundle.MustNew()).BuildLive(ctx)`.
+
 - Builder coherence: the stream chain type is exported as `goav.Chain`,
   so helpers can package reusable steps
   (`func normalize(c *goav.Chain) *goav.Chain`). Before, it was the one

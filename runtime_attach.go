@@ -2049,7 +2049,7 @@ func runtimeBranchTransformError(node string, cause error) error {
 		Reason:    "runtime branch transform could not be opened",
 		fixes: buildErrorFixes([]string{
 			"register a matching resize or resample filter adapter",
-			"import github.com/thesyncim/goav/bundle and use bundle.MustNewFilters(...) for bundled filters",
+			"import github.com/thesyncim/goav/bundle and build with bundle.MustNew(...), or goav.New(bundle.Filters(), ...) for the bundled filters alone",
 			"attach from a frame tap with media shape that match the requested transform",
 		}),
 		cause: cause,

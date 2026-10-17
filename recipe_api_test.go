@@ -614,7 +614,7 @@ func TestExplainReturnsPartialReportForMissingMuxer(t *testing.T) {
 
 func TestExplainReturnsPartialReportForMissingTransformAdapter(t *testing.T) {
 	report, err := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
-		UseRuntime(bundle.MustNewCodecs()).
+		UseRuntime(mustRuntime(bundle.Codecs())).
 		Audio().
 		Decode().
 		Resample(16_000, codec.Mono).
@@ -3865,7 +3865,7 @@ func TestStreamRecipeRejectsInvalidEncodeSampleRate(t *testing.T) {
 
 func TestStreamRecipeReportsMissingEncodeAdapterBeforeOpeningInput(t *testing.T) {
 	_, err := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
-		UseRuntime(bundle.MustNewFormats()).
+		UseRuntime(mustRuntime(bundle.Formats())).
 		Audio().
 		Decode().
 		Encode(codec.Opus(codec.Bitrate(96_000))).
@@ -3967,7 +3967,7 @@ func TestStreamRecipeReportsProbedFileMissingDecoderBeforeOpeningInput(t *testin
 
 func TestStreamRecipeReportsMissingTransformAdapterBeforeOpeningInput(t *testing.T) {
 	_, err := goav.From(goav.FileInput("input.ogg", strings.NewReader(""))).
-		UseRuntime(bundle.MustNewCodecs()).
+		UseRuntime(mustRuntime(bundle.Codecs())).
 		Audio().
 		Decode().
 		Resample(16_000, codec.Mono).
@@ -3980,7 +3980,7 @@ func TestStreamRecipeReportsMissingTransformAdapterBeforeOpeningInput(t *testing
 		t.Fatalf("err = %v, want transform_adapter_missing wrapping filter.ErrNotFound", err)
 	}
 	if !strings.Contains(err.Error(), "transform=resample") ||
-		!strings.Contains(err.Error(), "bundle.MustNewFilters") ||
+		!strings.Contains(err.Error(), "bundle.Filters()") ||
 		strings.Contains(err.Error(), "input_demuxer_missing") ||
 		strings.Contains(err.Error(), "cannot open input") {
 		t.Fatalf("err = %v, want transform adapter guidance before input diagnostics", err)

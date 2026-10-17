@@ -17,9 +17,6 @@ func TestNilJobReturnsErrNilJob(t *testing.T) {
 	if _, err := Build(context.Background(), nil); !errors.Is(err, ErrNilJob) {
 		t.Fatalf("Build(nil) error = %v, want ErrNilJob", err)
 	}
-	if _, err := BuildLive(context.Background(), nil); !errors.Is(err, ErrNilJob) {
-		t.Fatalf("BuildLive(nil) error = %v, want ErrNilJob", err)
-	}
 	if err := Run(context.Background(), nil); !errors.Is(err, ErrNilJob) {
 		t.Fatalf("Run(nil) error = %v, want ErrNilJob", err)
 	}
@@ -27,7 +24,6 @@ func TestNilJobReturnsErrNilJob(t *testing.T) {
 
 func TestBuildSignaturesSplitNarrowAndLiveTask(t *testing.T) {
 	var _ func(context.Context, *goav.Job, ...runconfig.Option) (goav.Task, error) = Build
-	var _ func(context.Context, *goav.Job, ...runconfig.Option) (goav.LiveTask, error) = BuildLive
 }
 
 func TestDescribeUsesBundledRuntimeForStructuralPlan(t *testing.T) {
@@ -50,5 +46,25 @@ func TestDescribeHonorsCanceledContext(t *testing.T) {
 		To(goavtest.NewCollector().Sink()))
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("Describe() error = %v, want context.Canceled", err)
+	}
+}
+
+// TestFamilyOptionsCompose pins the partial-runtime model: each family is one
+// option, they compose with goav.New and with each other, and Options is the
+// three together.
+func TestFamilyOptionsCompose(t *testing.T) {
+	for name, opts := range map[string][]runconfig.Option{
+		"formats":  {Formats()},
+		"codecs":   {Codecs()},
+		"filters":  {Filters()},
+		"all":      Options(),
+		"repeated": {Filters(), Filters()},
+	} {
+		if _, err := goav.New(opts...); err != nil {
+			t.Fatalf("%s: goav.New: %v", name, err)
+		}
+	}
+	if got := len(Options()); got != 3 {
+		t.Fatalf("Options() = %d options, want the three families", got)
 	}
 }

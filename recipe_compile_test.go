@@ -2102,7 +2102,7 @@ func TestTransformAdapterPassesRejectMissingFilters(t *testing.T) {
 					Operations: []operationSpec{operationSpecForTransform(resampleSpec(16_000, codec.Mono))},
 				}}},
 			},
-			want: []string{"no resample filter adapter", "transform=resample", "bundle.MustNewFilters", ".Resample"},
+			want: []string{"no resample filter adapter", "transform=resample", "bundle.Filters()", ".Resample"},
 		},
 		{
 			name: "transcode missing resize filter",
@@ -2117,7 +2117,7 @@ func TestTransformAdapterPassesRejectMissingFilters(t *testing.T) {
 					Operations: []operationSpec{operationSpecForTransform(resizeSpec(1280, 720))},
 				}}},
 			},
-			want: []string{"no resize filter adapter", "transform=resize", "bundle.MustNewFilters", ".Resize"},
+			want: []string{"no resize filter adapter", "transform=resize", "bundle.Filters()", ".Resize"},
 		},
 	}
 	for _, tt := range tests {

@@ -41,36 +41,6 @@ func MustNew(opts ...runconfig.Option) *goav.Runtime {
 	return mustRuntime(New(opts...))
 }
 
-// NewFormats builds a runtime with only the bundled container-format adapters.
-func NewFormats(opts ...runconfig.Option) (*goav.Runtime, error) {
-	return goav.New(appendOptions(FormatOptions(), opts...)...)
-}
-
-// MustNewFormats is NewFormats for package-level setup and tests.
-func MustNewFormats(opts ...runconfig.Option) *goav.Runtime {
-	return mustRuntime(NewFormats(opts...))
-}
-
-// NewCodecs builds a runtime with only the bundled codec adapters.
-func NewCodecs(opts ...runconfig.Option) (*goav.Runtime, error) {
-	return goav.New(appendOptions(CodecOptions(), opts...)...)
-}
-
-// MustNewCodecs is NewCodecs for package-level setup and tests.
-func MustNewCodecs(opts ...runconfig.Option) *goav.Runtime {
-	return mustRuntime(NewCodecs(opts...))
-}
-
-// NewFilters builds a runtime with only the bundled frame-filter adapters.
-func NewFilters(opts ...runconfig.Option) (*goav.Runtime, error) {
-	return goav.New(appendOptions(FilterOptions(), opts...)...)
-}
-
-// MustNewFilters is NewFilters for package-level setup and tests.
-func MustNewFilters(opts ...runconfig.Option) *goav.Runtime {
-	return mustRuntime(NewFilters(opts...))
-}
-
 func mustRuntime(runtime *goav.Runtime, err error) *goav.Runtime {
 	if err != nil {
 		panic(err)
@@ -81,14 +51,9 @@ func mustRuntime(runtime *goav.Runtime, err error) *goav.Runtime {
 // Build compiles job with a bundled runtime into the narrow runnable Task. It
 // is the batteries-included counterpart to
 // job.UseRuntime(bundle.MustNew(...)).Build(ctx), while preserving New option
-// errors as returned errors.
+// errors as returned errors. For live control, build with
+// job.UseRuntime(bundle.MustNew(...)).BuildLive(ctx).
 func Build(ctx context.Context, job *goav.Job, opts ...runconfig.Option) (goav.Task, error) {
-	return BuildLive(ctx, job, opts...)
-}
-
-// BuildLive compiles job with a bundled runtime into the full live task
-// capability surface for inspection, watches, controls, and runtime mutation.
-func BuildLive(ctx context.Context, job *goav.Job, opts ...runconfig.Option) (goav.LiveTask, error) {
 	if job == nil {
 		return nil, ErrNilJob
 	}
@@ -134,29 +99,33 @@ func Run(ctx context.Context, job *goav.Job, opts ...runconfig.Option) error {
 // Options returns fresh runtime options for all bundled formats, codecs, and
 // filters. The returned slice is safe for callers to append to.
 func Options() []runconfig.Option {
-	options := make([]runconfig.Option, 0, len(formatOptions)+len(codecOptions)+len(filterOptions))
-	options = append(options, FormatOptions()...)
-	options = append(options, CodecOptions()...)
-	options = append(options, FilterOptions()...)
-	return options
+	return []runconfig.Option{Formats(), Codecs(), Filters()}
 }
 
-// FormatOptions returns fresh options for the bundled container adapters: IVF,
-// Annex B, Matroska, WebM, and MP4.
-func FormatOptions() []runconfig.Option {
-	return appendOptions(formatOptions)
-}
+// Formats, Codecs, and Filters are each one runtime option registering one
+// bundled family, for runtimes that pair part of the bundle with their own
+// adapters:
+//
+//	rt, err := goav.New(bundle.Filters(), myCodecOption)
+//
+// Formats registers the container adapters: IVF, Annex B, Matroska, WebM, MP4.
+func Formats() runconfig.Option { return group(formatOptions) }
 
-// CodecOptions returns fresh options for the bundled pure-Go codec adapters:
-// Opus, AAC, VP8/VP9, AV1, and H264.
-func CodecOptions() []runconfig.Option {
-	return appendOptions(codecOptions)
-}
+// Codecs registers the pure-Go codec adapters: Opus, AAC, VP8/VP9, AV1, H.264.
+func Codecs() runconfig.Option { return group(codecOptions) }
 
-// FilterOptions returns fresh options for the bundled frame filters: resample
-// and resize.
-func FilterOptions() []runconfig.Option {
-	return appendOptions(filterOptions)
+// Filters registers the frame filters: resample and resize.
+func Filters() runconfig.Option { return group(filterOptions) }
+
+func group(options []runconfig.Option) runconfig.Option {
+	return func(config *runconfig.Config) error {
+		for _, option := range options {
+			if err := option(config); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
 }
 
 var formatOptions = []runconfig.Option{
