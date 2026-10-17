@@ -30,7 +30,7 @@ func FuzzDemuxerMalformedInputs(f *testing.F) {
 			BlockAdditions:         make([]BlockAddition, 0, 4),
 			UnknownClusterElements: make([]UnknownElement, 0, 4),
 		}
-		for i := 0; i < 16; i++ {
+		for range 16 {
 			err := demuxer.ReadPacket(&packet)
 			switch {
 			case err == nil:

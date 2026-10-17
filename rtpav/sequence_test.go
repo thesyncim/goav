@@ -10,13 +10,13 @@ func TestSequenceDetectorDetectsGap(t *testing.T) {
 	var detector SequenceDetector
 	missing := make([]uint16, 0, 4)
 
-	first := rtp.Packet{Header: rtp.Header{SSRC: 1, SequenceNumber: 10}}
+	first := rtp.Packet{SSRC: 1, SequenceNumber: 10}
 	state := detector.Push(&first, missing)
 	if state.LossBefore || state.Expected != 11 {
 		t.Fatalf("first state = %+v", state)
 	}
 
-	next := rtp.Packet{Header: rtp.Header{SSRC: 1, SequenceNumber: 13}}
+	next := rtp.Packet{SSRC: 1, SequenceNumber: 13}
 	state = detector.Push(&next, missing)
 	if !state.LossBefore || state.Expected != 14 {
 		t.Fatalf("gap state = %+v", state)
@@ -29,8 +29,8 @@ func TestSequenceDetectorDetectsGap(t *testing.T) {
 func TestSequenceDetectorAllocs(t *testing.T) {
 	var detector SequenceDetector
 	missing := make([]uint16, 0, 4)
-	first := rtp.Packet{Header: rtp.Header{SSRC: 1, SequenceNumber: 10}}
-	next := rtp.Packet{Header: rtp.Header{SSRC: 1, SequenceNumber: 13}}
+	first := rtp.Packet{SSRC: 1, SequenceNumber: 10}
+	next := rtp.Packet{SSRC: 1, SequenceNumber: 13}
 
 	if allocs := testing.AllocsPerRun(1000, func() {
 		detector.Reset()

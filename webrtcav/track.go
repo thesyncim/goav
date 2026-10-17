@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"maps"
 	"strconv"
 	"strings"
 	"sync"
@@ -533,11 +534,7 @@ func mergeMetadata(base av.Metadata, overlay av.Metadata) av.Metadata {
 		return av.Metadata{}
 	}
 	out := make(av.Metadata, len(base)+len(overlay))
-	for key, value := range base {
-		out[key] = value
-	}
-	for key, value := range overlay {
-		out[key] = value
-	}
+	maps.Copy(out, base)
+	maps.Copy(out, overlay)
 	return out
 }

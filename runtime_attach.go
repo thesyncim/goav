@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -1130,8 +1132,8 @@ func attachConnectOperation(operation workOperation, route pipeline.Route, from 
 }
 
 func (t *task) rollbackRuntimeBranch(nodes []pipeline.NodeRef) {
-	for i := len(nodes) - 1; i >= 0; i-- {
-		_ = t.graph.Remove(nodes[i])
+	for _, node := range slices.Backward(nodes) {
+		_ = t.graph.Remove(node)
 	}
 }
 
@@ -1604,8 +1606,8 @@ func (a *runtimeAttachment) stopLocked(graph pipeline.Graph) error {
 			first = err
 		}
 	}
-	for i := len(a.nodes) - 1; i >= 0; i-- {
-		if err := graph.Remove(a.nodes[i]); err != nil && !isStoppedAttachmentError(err) && first == nil {
+	for _, v := range slices.Backward(a.nodes) {
+		if err := graph.Remove(v); err != nil && !isStoppedAttachmentError(err) && first == nil {
 			first = err
 		}
 	}
@@ -1654,9 +1656,7 @@ func clonePublicNodeStats(stats pipeline.NodeStats) pipeline.NodeStats {
 	cloned := stats
 	if stats.DropReasons != nil {
 		cloned.DropReasons = make(map[pipeline.DropPolicy]uint64, len(stats.DropReasons))
-		for reason, count := range stats.DropReasons {
-			cloned.DropReasons[reason] = count
-		}
+		maps.Copy(cloned.DropReasons, stats.DropReasons)
 	}
 	return cloned
 }

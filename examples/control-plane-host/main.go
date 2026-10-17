@@ -356,7 +356,7 @@ func waitForHostSource(ctx context.Context, ready <-chan struct{}, errC <-chan e
 
 func drainHost(ctx context.Context, errC <-chan error) error {
 	var first error
-	for i := 0; i < 2; i++ {
+	for range 2 {
 		select {
 		case err := <-errC:
 			if first == nil && err != nil && !expectedHostShutdownError(err) && !errors.Is(err, pipeline.ErrClosed) {

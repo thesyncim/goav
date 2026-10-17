@@ -150,7 +150,7 @@ func TestWatchSlowWatcherShedsForItselfOnly(t *testing.T) {
 	slow := task.Watch().Events()
 
 	var fastGot []av.Event
-	for i := 0; i < total; i++ {
+	for i := range total {
 		graph.events <- av.Event{Type: av.EventStats, Reason: strconv.Itoa(i)}
 		// Drain the fast watcher in lockstep so its buffer never fills; the
 		// slow watcher is never read, so it keeps only its buffered prefix.
@@ -262,19 +262,19 @@ func TestWatchSubscribePublishDistributeConcurrently(t *testing.T) {
 	wg.Add(3)
 	go func() {
 		defer wg.Done()
-		for i := 0; i < watchers; i++ {
+		for range watchers {
 			channels <- task.Watch(inspect.WatchTypes(av.EventStats)).Events()
 		}
 	}()
 	go func() {
 		defer wg.Done()
-		for i := 0; i < events; i++ {
+		for i := range events {
 			graph.events <- av.Event{Type: av.EventStats, Reason: strconv.Itoa(i)}
 		}
 	}()
 	go func() {
 		defer wg.Done()
-		for i := 0; i < events; i++ {
+		for i := range events {
 			task.watch.publish(av.Event{Type: av.EventEndOfStream, Reason: strconv.Itoa(i)})
 		}
 	}()

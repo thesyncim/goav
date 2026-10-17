@@ -318,7 +318,7 @@ func parseStts(payload []byte) []sttsEntry {
 		return nil
 	}
 	out := make([]sttsEntry, 0, count)
-	for i := uint32(0); i < count; i++ {
+	for range count {
 		out = append(out, sttsEntry{count: p.u32(), delta: p.u32()})
 	}
 	if p.err() != nil {
@@ -335,7 +335,7 @@ func parseCtts(payload []byte) []cttsEntry {
 		return nil
 	}
 	out := make([]cttsEntry, 0, count)
-	for i := uint32(0); i < count; i++ {
+	for range count {
 		out = append(out, cttsEntry{count: p.u32(), offset: p.i32()})
 	}
 	if p.err() != nil {
@@ -352,7 +352,7 @@ func parseStsc(payload []byte) []stscEntry {
 		return nil
 	}
 	out := make([]stscEntry, 0, count)
-	for i := uint32(0); i < count; i++ {
+	for range count {
 		first := p.u32()
 		perChunk := p.u32()
 		p.u32() // sample_description_index
@@ -374,7 +374,7 @@ func parseStsz(payload []byte) []uint32 {
 	}
 	out := make([]uint32, 0, count)
 	if uniform != 0 {
-		for i := uint32(0); i < count; i++ {
+		for range count {
 			out = append(out, uniform)
 		}
 		return out
@@ -382,7 +382,7 @@ func parseStsz(payload []byte) []uint32 {
 	if !fits(p, count, 4) {
 		return nil
 	}
-	for i := uint32(0); i < count; i++ {
+	for range count {
 		out = append(out, p.u32())
 	}
 	if p.err() != nil {
@@ -403,11 +403,11 @@ func parseStz2(payload []byte) []uint32 {
 	out := make([]uint32, 0, count)
 	switch fieldSize {
 	case 16:
-		for i := uint32(0); i < count; i++ {
+		for range count {
 			out = append(out, uint32(p.u16()))
 		}
 	case 8:
-		for i := uint32(0); i < count; i++ {
+		for range count {
 			out = append(out, uint32(p.u8()))
 		}
 	case 4:
@@ -435,7 +435,7 @@ func parseStco(payload []byte) []int64 {
 		return nil
 	}
 	out := make([]int64, 0, count)
-	for i := uint32(0); i < count; i++ {
+	for range count {
 		out = append(out, int64(p.u32()))
 	}
 	if p.err() != nil {
@@ -452,7 +452,7 @@ func parseCo64(payload []byte) []int64 {
 		return nil
 	}
 	out := make([]int64, 0, count)
-	for i := uint32(0); i < count; i++ {
+	for range count {
 		out = append(out, int64(p.u64()))
 	}
 	if p.err() != nil {
@@ -469,7 +469,7 @@ func parseStss(payload []byte) []uint32 {
 		return nil
 	}
 	out := make([]uint32, 0, count)
-	for i := uint32(0); i < count; i++ {
+	for range count {
 		out = append(out, p.u32())
 	}
 	if p.err() != nil {

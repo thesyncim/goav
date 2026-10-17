@@ -92,7 +92,7 @@ func TestRecordRecipeRTPAutoCodecRuns(t *testing.T) {
 			Channels:    codec.Stereo,
 		}}),
 		packets: []*rtp.Packet{{
-			Header:  rtp.Header{PayloadType: 111, Timestamp: 960},
+			PayloadType: 111, Timestamp: 960,
 			Payload: []byte{1, 2, 3},
 		}},
 		events: make(chan av.Event),
@@ -147,7 +147,7 @@ func TestRecordRecipeCopyToTypedDestinationRuns(t *testing.T) {
 			Channels:    codec.Stereo,
 		}}),
 		packets: []*rtp.Packet{{
-			Header:  rtp.Header{PayloadType: 111, Timestamp: 960},
+			PayloadType: 111, Timestamp: 960,
 			Payload: []byte{1, 2, 3},
 		}},
 		events: make(chan av.Event),
@@ -222,7 +222,7 @@ func TestRecordRecipeCopyToCustomWriterDestinationRuns(t *testing.T) {
 			Channels:    codec.Stereo,
 		}}),
 		packets: []*rtp.Packet{{
-			Header:  rtp.Header{PayloadType: 111, Timestamp: 960},
+			PayloadType: 111, Timestamp: 960,
 			Payload: []byte{7, 8, 9},
 		}},
 		events: make(chan av.Event),
@@ -292,7 +292,7 @@ func TestRecordRecipeCopyToTransactionalWriterDestinationRuns(t *testing.T) {
 			Channels:    codec.Stereo,
 		}}),
 		packets: []*rtp.Packet{{
-			Header:  rtp.Header{PayloadType: 111, Timestamp: 960},
+			PayloadType: 111, Timestamp: 960,
 			Payload: []byte{9, 8, 7},
 		}},
 		events: make(chan av.Event),
@@ -357,7 +357,7 @@ func TestFileDestinationClosesCloserWriterOnce(t *testing.T) {
 			Channels:    codec.Stereo,
 		}}),
 		packets: []*rtp.Packet{{
-			Header:  rtp.Header{PayloadType: 111, Timestamp: 960},
+			PayloadType: 111, Timestamp: 960,
 			Payload: []byte{4, 5, 6},
 		}},
 		events: make(chan av.Event),
@@ -407,22 +407,20 @@ func TestRecordRecipeCustomWriterDestinationAbortsOnRunError(t *testing.T) {
 	}
 	runErr := errors.New("rtp read failed")
 	receiver := &runtimeRTPErrorReceiver{
-		runtimeRTPReceiver: runtimeRTPReceiver{
-			streams: []av.Stream{stream},
-			payload: rtpav.NewStaticPayloadMap(0, []rtpav.PayloadCodec{{
-				PayloadType: 111,
-				Parameters:  stream.Codec,
-				MIMEType:    av.MIMEOpus,
-				ClockRate:   48000,
-				Channels:    codec.Stereo,
-			}}),
-			packets: []*rtp.Packet{{
-				Header:  rtp.Header{PayloadType: 111, Timestamp: 960},
-				Payload: []byte{7, 8, 9},
-			}},
-			events: make(chan av.Event),
-		},
-		err: runErr,
+		streams: []av.Stream{stream},
+		payload: rtpav.NewStaticPayloadMap(0, []rtpav.PayloadCodec{{
+			PayloadType: 111,
+			Parameters:  stream.Codec,
+			MIMEType:    av.MIMEOpus,
+			ClockRate:   48000,
+			Channels:    codec.Stereo,
+		}}),
+		packets: []*rtp.Packet{{
+			PayloadType: 111, Timestamp: 960,
+			Payload: []byte{7, 8, 9},
+		}},
+		events: make(chan av.Event),
+		err:    runErr,
 	}
 	state := &writerDestinationState{}
 	muxer := &writerDestinationMuxer{}
@@ -484,7 +482,7 @@ func TestTaskAttachCustomWriterDestinationRuns(t *testing.T) {
 			Channels:    codec.Stereo,
 		}}),
 		packets: []*rtp.Packet{{
-			Header:  rtp.Header{PayloadType: 111, Timestamp: 960},
+			PayloadType: 111, Timestamp: 960,
 			Payload: []byte{4, 5, 6},
 		}},
 		events: make(chan av.Event),
@@ -661,7 +659,7 @@ func TestRecordRecipeRTPCodecUsesReaderStreamWhenUnnamed(t *testing.T) {
 			Channels:    codec.Stereo,
 		}}),
 		packets: []*rtp.Packet{{
-			Header:  rtp.Header{PayloadType: 111, Timestamp: 960},
+			PayloadType: 111, Timestamp: 960,
 			Payload: []byte{1, 2, 3},
 		}},
 		events: make(chan av.Event),
@@ -715,7 +713,7 @@ func TestDefaultRecordRecipeRTPVP8Runs(t *testing.T) {
 			ClockRate:   90000,
 		}}),
 		packets: []*rtp.Packet{{
-			Header:  rtp.Header{PayloadType: 96, Marker: true, Timestamp: 90},
+			PayloadType: 96, Marker: true, Timestamp: 90,
 			Payload: []byte{0x10, 0x00, 0x11, 0x22},
 		}},
 		events: make(chan av.Event),
@@ -795,7 +793,7 @@ func TestFromAndRecordRecipeMultipleRTPInputsRuns(t *testing.T) {
 			Channels:    codec.Stereo,
 		}}),
 		packets: []*rtp.Packet{{
-			Header:  rtp.Header{PayloadType: 111, Timestamp: 960},
+			PayloadType: 111, Timestamp: 960,
 			Payload: []byte{1, 2, 3},
 		}},
 		events: make(chan av.Event),
@@ -809,7 +807,7 @@ func TestFromAndRecordRecipeMultipleRTPInputsRuns(t *testing.T) {
 			ClockRate:   90000,
 		}}),
 		packets: []*rtp.Packet{{
-			Header:  rtp.Header{PayloadType: 96, Marker: true, Timestamp: 90},
+			PayloadType: 96, Marker: true, Timestamp: 90,
 			Payload: []byte{0x10, 0x00, 0x11, 0x22},
 		}},
 		events: make(chan av.Event),
@@ -895,10 +893,10 @@ func TestRTPInputsSyncFromTimestampsAndDropLatePreview(t *testing.T) {
 			ClockRate:   90000,
 		}}),
 		packets: []*rtp.Packet{{
-			Header:  rtp.Header{PayloadType: 111, Timestamp: 48000},
+			PayloadType: 111, Timestamp: 48000,
 			Payload: []byte{1, 2, 3},
 		}, {
-			Header:  rtp.Header{PayloadType: 96, Marker: true, Timestamp: 90},
+			PayloadType: 96, Marker: true, Timestamp: 90,
 			Payload: []byte{0x10, 0x00, 0x11, 0x22},
 		}},
 		events: make(chan av.Event),
@@ -963,7 +961,7 @@ func TestStreamRecipeCopyTapCanAttachRuntimeMuxDestination(t *testing.T) {
 			Channels:    codec.Stereo,
 		}}),
 		packets: []*rtp.Packet{{
-			Header:  rtp.Header{PayloadType: 111, Timestamp: 960},
+			PayloadType: 111, Timestamp: 960,
 			Payload: []byte{1, 2, 3},
 		}},
 		events: make(chan av.Event),

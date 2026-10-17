@@ -235,10 +235,7 @@ func audioFrameCopyBudget(spec shape.Spec) (int, error) {
 	if !ok {
 		return 0, fmt.Errorf("unsupported sample_format %q", spec.SampleFormat)
 	}
-	samples := sampleRate * 120 / 1000
-	if samples < 960 {
-		samples = 960
-	}
+	samples := max(sampleRate*120/1000, 960)
 	return samples * channels * bytesPerSample, nil
 }
 

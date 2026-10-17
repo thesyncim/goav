@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/thesyncim/goav/av"
@@ -603,12 +604,7 @@ func (state *recipeCompileState) requiresExplicitRuntime() bool {
 }
 
 func inputSpecsRequireRuntime(inputs []InputSpec) bool {
-	for i := range inputs {
-		if inputSpecRequiresRuntime(inputs[i]) {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc(inputs, inputSpecRequiresRuntime)
 }
 
 func inputSpecRequiresRuntime(input InputSpec) bool {
@@ -624,12 +620,7 @@ func inputSpecRequiresRuntime(input InputSpec) bool {
 }
 
 func destinationSpecsRequireRuntime(destinations []destinationSpec) bool {
-	for i := range destinations {
-		if destinationSpecRequiresRuntime(destinations[i]) {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc(destinations, destinationSpecRequiresRuntime)
 }
 
 func namedDestinationSpecsRequireRuntime(destinations []namedDestinationSpec) bool {
@@ -1171,12 +1162,7 @@ func recipeIRDestinationLabel(destination recipeir.Destination, index int) strin
 }
 
 func recipeIRDestinationKindsContainSink(kinds []recipeir.DestinationKind) bool {
-	for i := range kinds {
-		if kinds[i] == recipeir.DestinationKindSink {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(kinds, recipeir.DestinationKindSink)
 }
 
 func recipeIRDestinationKindsContainMux(kinds []recipeir.DestinationKind) bool {

@@ -66,7 +66,7 @@ func benchVideoPackets(name string, n int) goav.InputSpec {
 				Type:    av.MediaVideo,
 				Payload: av.Buffer{Bytes: payload, Ownership: av.BufferImmutable},
 			}
-			for i := 0; i < n; i++ {
+			for i := range n {
 				packet.PTS = av.Timestamp{Value: int64(i) * 3000, Base: base}
 				packet.DTS = packet.PTS
 				packet.Duration = av.Duration{Value: 3000, Base: base}
@@ -90,7 +90,7 @@ func benchAudioPackets(name string, n int, payload []byte) goav.InputSpec {
 				Type:    av.MediaAudio,
 				Payload: av.Buffer{Bytes: payload, Ownership: av.BufferImmutable},
 			}
-			for i := 0; i < n; i++ {
+			for i := range n {
 				packet.PTS = av.Timestamp{Value: int64(i) * benchAudioSamples, Base: base}
 				packet.DTS = packet.PTS
 				packet.Duration = av.Duration{Value: benchAudioSamples, Base: base}
@@ -124,7 +124,7 @@ func benchAudioFrames(name string, n, sampleRate, channels, samplesPerChannel in
 				},
 				Planes: []av.Plane{{Buffer: av.Buffer{Bytes: payload, Ownership: av.BufferImmutable}}},
 			}
-			for i := 0; i < n; i++ {
+			for i := range n {
 				frame.PTS = av.Timestamp{Value: int64(i) * int64(samplesPerChannel), Base: base}
 				frame.Duration = av.Duration{Value: int64(samplesPerChannel), Base: base}
 				if _, err := push.Frame(&frame); err != nil {
@@ -154,7 +154,7 @@ func benchVideoFrames(name string, n, width, height int) goav.InputSpec {
 					{Buffer: av.Buffer{Bytes: cr, Ownership: av.BufferImmutable}, Stride: chromaW},
 				},
 			}
-			for i := 0; i < n; i++ {
+			for i := range n {
 				frame.PTS = av.Timestamp{Value: int64(i), Base: base}
 				frame.Duration = av.Duration{Value: 1, Base: base}
 				if _, err := push.Frame(&frame); err != nil {
@@ -308,10 +308,7 @@ func BenchmarkBranchFanout(b *testing.B) {
 // chain encode (fake passthrough) and explicit mux grouping, muxing both
 // streams into a single (fake-container) file. Sources split b.N between them.
 func BenchmarkSharedMuxGroup(b *testing.B) {
-	half := b.N / 2
-	if half < 1 {
-		half = 1
-	}
+	half := max(b.N/2, 1)
 	out := goav.Mux("call", goav.Write("call.webm", io.Discard))
 	runBenchTask(b, goav.From(
 		benchVideoFrames("cam", half, 320, 180),
@@ -329,10 +326,7 @@ func BenchmarkSharedMuxGroup(b *testing.B) {
 func BenchmarkMix(b *testing.B) {
 	for _, n := range []int{2, 8} {
 		b.Run("arms="+strconv.Itoa(n), func(b *testing.B) {
-			per := b.N / n
-			if per < 1 {
-				per = 1
-			}
+			per := max(b.N/n, 1)
 			switch n {
 			case 2:
 				runBenchTask(b, goav.Mix(
@@ -362,10 +356,7 @@ func BenchmarkMix(b *testing.B) {
 // BenchmarkComposite paints two video arms onto one canvas per step. ns/op is
 // per input frame; one composed canvas costs roughly twice that.
 func BenchmarkComposite(b *testing.B) {
-	per := b.N / 2
-	if per < 1 {
-		per = 1
-	}
+	per := max(b.N/2, 1)
 	runBenchTask(b, goav.Composite(
 		goav.From(benchVideoFrames("cam", per, 160, 90)).Video().Region(0, 0),
 		goav.From(benchVideoFrames("screen", per, 160, 90)).Video().Region(160, 0),
@@ -378,10 +369,7 @@ func BenchmarkComposite(b *testing.B) {
 // two arms push concurrently, the selector forwards the active arm and sheds
 // the other at the gate. ns/op is per pushed frame across both arms.
 func BenchmarkSelectPassthrough(b *testing.B) {
-	per := b.N / 2
-	if per < 1 {
-		per = 1
-	}
+	per := max(b.N/2, 1)
 	runBenchTask(b, goav.Select(
 		goav.From(benchAudioFrames("live", per, 48_000, 1, benchAudioSamples)).Audio(),
 		goav.From(benchAudioFrames("standby", per, 48_000, 1, benchAudioSamples)).Audio(),

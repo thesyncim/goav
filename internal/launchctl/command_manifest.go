@@ -3,6 +3,7 @@ package launchctl
 import (
 	"context"
 	"reflect"
+	"slices"
 	"sort"
 
 	goav "github.com/thesyncim/goav"
@@ -33,43 +34,43 @@ func ControlManifest() []CommandSpec {
 		{
 			Name:     "keyframe",
 			Summary:  "request a keyframe for a stream",
-			ArgsType: reflect.TypeOf(KeyframeCommand{}),
+			ArgsType: reflect.TypeFor[KeyframeCommand](),
 			Apply:    applyKeyframe,
 		},
 		{
 			Name:     "bitrate",
 			Summary:  "retarget live encoders to a bitrate",
-			ArgsType: reflect.TypeOf(BitrateCommand{}),
+			ArgsType: reflect.TypeFor[BitrateCommand](),
 			Apply:    applyBitrate,
 		},
 		{
 			Name:     "seek",
 			Summary:  "seek task sources to a media position",
-			ArgsType: reflect.TypeOf(SeekCommand{}),
+			ArgsType: reflect.TypeFor[SeekCommand](),
 			Apply:    applySeek,
 		},
 		{
 			Name:     "rate",
 			Summary:  "change task-wide playback rate",
-			ArgsType: reflect.TypeOf(RateCommand{}),
+			ArgsType: reflect.TypeFor[RateCommand](),
 			Apply:    applyRate,
 		},
 		{
 			Name:     "segment",
 			Summary:  "play one source time window",
-			ArgsType: reflect.TypeOf(SegmentCommand{}),
+			ArgsType: reflect.TypeFor[SegmentCommand](),
 			Apply:    applySegment,
 		},
 		{
 			Name:     "select",
 			Summary:  "switch a live select arm",
-			ArgsType: reflect.TypeOf(SelectCommand{}),
+			ArgsType: reflect.TypeFor[SelectCommand](),
 			Apply:    applySelect,
 		},
 		{
 			Name:     "deliver",
 			Summary:  "deliver an allowlisted event control at a tap",
-			ArgsType: reflect.TypeOf(DeliverCommand{}),
+			ArgsType: reflect.TypeFor[DeliverCommand](),
 			Apply:    applyDeliver,
 		},
 	}
@@ -86,10 +87,8 @@ func LookupCommand(manifest []CommandSpec, name string) (CommandSpec, bool) {
 		if spec.Name == name {
 			return spec, true
 		}
-		for _, alias := range spec.Aliases {
-			if alias == name {
-				return spec, true
-			}
+		if slices.Contains(spec.Aliases, name) {
+			return spec, true
 		}
 	}
 	return CommandSpec{}, false

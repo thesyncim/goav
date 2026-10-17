@@ -89,9 +89,9 @@ func BenchmarkMixS16Kernel(b *testing.B) {
 
 func mixKernelCorpusInputs(arms int, samples int, pattern func(arm int, sample int) int16) [][]byte {
 	inputs := make([][]byte, arms)
-	for arm := 0; arm < arms; arm++ {
+	for arm := range arms {
 		payload := make([]byte, samples*2)
-		for sample := 0; sample < samples; sample++ {
+		for sample := range samples {
 			binary.LittleEndian.PutUint16(payload[sample*2:], uint16(pattern(arm, sample)))
 		}
 		inputs[arm] = payload

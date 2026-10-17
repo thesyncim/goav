@@ -44,7 +44,7 @@ func DecodeIDVINT(src []byte) (ID, int, error) {
 		return 0, 0, io.ErrUnexpectedEOF
 	}
 	var id uint64
-	for i := 0; i < width; i++ {
+	for i := range width {
 		id = (id << 8) | uint64(src[i])
 	}
 	return ID(id), width, nil

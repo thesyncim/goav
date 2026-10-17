@@ -33,7 +33,7 @@ func FuzzDemuxerMalformedInputs(f *testing.F) {
 		_ = demuxer.Tracks()
 		buf := make([]byte, 0, 1<<16)
 		var sample Sample
-		for i := 0; i < 256; i++ {
+		for range 256 {
 			// Any error (EOF, ErrInvalidData, a reader io error) ends this input;
 			// the fuzz target only asserts the demuxer never panics or hangs.
 			if err := demuxer.ReadInto(buf, &sample); err != nil {

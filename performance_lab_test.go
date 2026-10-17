@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"os"
 	"runtime"
-	"sort"
+	"slices"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -126,10 +126,7 @@ func realOpusPayload(b *testing.B) []byte {
 // sources share one SyncPolicy, report source-push latency quantiles, expose
 // sync drops through graph stats, and record delivered A/V drift at the sink.
 func BenchmarkLiveRoomSync(b *testing.B) {
-	perStream := b.N / 2
-	if perStream < 1 {
-		perStream = 1
-	}
+	perStream := max(b.N/2, 1)
 	latencies := make([]int64, perStream*2)
 	var latencyIndex atomic.Int64
 	var sourceDrops atomic.Uint64
@@ -159,10 +156,7 @@ func BenchmarkLiveRoomSync(b *testing.B) {
 		b.Fatal(err)
 	}
 
-	used := int(latencyIndex.Load())
-	if used > len(latencies) {
-		used = len(latencies)
-	}
+	used := min(int(latencyIndex.Load()), len(latencies))
 	reportLatencyQuantiles(b, latencies[:used])
 	delivered, maxDrift := sink.snapshot()
 	b.ReportMetric(float64(sourceDrops.Load()), "source_drops")
@@ -248,10 +242,7 @@ func BenchmarkLiveRoomAttachDetachSoak(b *testing.B) {
 		b.Fatal(err)
 	}
 
-	used := int(latencyIndex.Load())
-	if used > len(latencies) {
-		used = len(latencies)
-	}
+	used := min(int(latencyIndex.Load()), len(latencies))
 	reportLatencyQuantiles(b, latencies[:used])
 	delivered, maxDrift := sink.snapshot()
 	b.ReportMetric(float64(sourceDrops.Load()), "source_drops")
@@ -421,10 +412,7 @@ func TestPerformanceLabLiveRoomAttachDetachSoak(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	used := int(latencyIndex.Load())
-	if used > len(latencies) {
-		used = len(latencies)
-	}
+	used := min(int(latencyIndex.Load()), len(latencies))
 	p50, p95, p99 := latencyQuantiles(latencies[:used])
 	delivered, maxDrift := sink.snapshot()
 	nsPerOp := int64(0)
@@ -459,7 +447,7 @@ func liveRoomWallMonitorNames(kind string, n int) ([]string, []goav.Destination)
 
 func benchLiveRoomEmitChurnTicks(ctx context.Context, b *testing.B, videoTicks chan<- int, audioTicks chan<- int, start int, count int) int {
 	b.Helper()
-	for i := 0; i < count; i++ {
+	for i := range count {
 		seq := start + i
 		select {
 		case videoTicks <- seq:
@@ -477,7 +465,7 @@ func benchLiveRoomEmitChurnTicks(ctx context.Context, b *testing.B, videoTicks c
 
 func testLiveRoomEmitChurnTicks(ctx context.Context, t *testing.T, videoTicks chan<- int, audioTicks chan<- int, start int, count int) int {
 	t.Helper()
-	for i := 0; i < count; i++ {
+	for i := range count {
 		seq := start + i
 		select {
 		case videoTicks <- seq:
@@ -553,7 +541,7 @@ func benchLiveRoomVideoPackets(name string, n int, latencies []int64, index *ato
 				Type:     av.MediaVideo,
 				Payload:  av.Buffer{Bytes: payload, Ownership: av.BufferImmutable},
 			}
-			for i := 0; i < n; i++ {
+			for i := range n {
 				packet.PTS = av.Timestamp{Value: int64(i) * 1800, Base: base}
 				packet.DTS = packet.PTS
 				packet.Duration = av.Duration{Value: 1800, Base: base}
@@ -578,7 +566,7 @@ func benchLiveRoomAudioPackets(name string, n int, latencies []int64, index *ato
 				Payload:  av.Buffer{Bytes: payload, Ownership: av.BufferImmutable},
 				Keyframe: true,
 			}
-			for i := 0; i < n; i++ {
+			for i := range n {
 				packet.PTS = av.Timestamp{Value: int64(i) * benchAudioSamples, Base: base}
 				packet.DTS = packet.PTS
 				packet.Duration = av.Duration{Value: benchAudioSamples, Base: base}
@@ -696,7 +684,7 @@ func latencyQuantiles(values []int64) (int64, int64, int64) {
 		return 0, 0, 0
 	}
 	sorted := append([]int64(nil), values...)
-	sort.Slice(sorted, func(i, j int) bool { return sorted[i] < sorted[j] })
+	slices.Sort(sorted)
 	return percentile(sorted, 0.50), percentile(sorted, 0.95), percentile(sorted, 0.99)
 }
 

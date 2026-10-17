@@ -47,7 +47,7 @@ func TestSourcePushReportsShedsPerPush(t *testing.T) {
 		shape.Frame(av.MediaAudio, shape.Audio(48000, codec.Mono, av.SampleFormatS16), shape.Stream("push")),
 		func(ctx context.Context, push SourcePush) error {
 			payload := []byte{1, 0}
-			for i := 0; i < pushes; i++ {
+			for range pushes {
 				if ctx.Err() != nil {
 					return nil
 				}

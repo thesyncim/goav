@@ -54,7 +54,7 @@ func TestRuntimeBranchAttachDetachChurnDoesNotLeak(t *testing.T) {
 	waitFrameCount(ctx, &main.count, 1)
 
 	const cycles = 30
-	for i := 0; i < cycles; i++ {
+	for i := range cycles {
 		sink := &frameCountSink{name: fmt.Sprintf("churn-%d", i)}
 		attachment := attachDropBranch(t, ctx, task, fmt.Sprintf("churn-%d", i), sink)
 		waitFrameCount(ctx, &sink.count, 1)

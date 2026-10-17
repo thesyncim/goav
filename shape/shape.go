@@ -7,6 +7,7 @@ package shape
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/thesyncim/goav/av"
@@ -185,12 +186,7 @@ func (s Set) Accepts(actual Spec) bool {
 	if len(s) == 0 {
 		return true
 	}
-	for i := range s {
-		if actual.CompatibleWith(s[i]) {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc(s, actual.CompatibleWith)
 }
 
 // CompatibleWith reports whether the receiver satisfies the non-empty fields of

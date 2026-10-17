@@ -41,7 +41,7 @@ func TestComponentRTPOpusDecodeGraph(t *testing.T) {
 		}}),
 		packets: []*rtp.Packet{
 			{
-				Header:  rtp.Header{PayloadType: 111, Timestamp: 960},
+				PayloadType: 111, Timestamp: 960,
 				Payload: componentCELTPacket(),
 			},
 		},

@@ -1,6 +1,7 @@
 package pipeline
 
 import (
+	"maps"
 	"sync"
 	"sync/atomic"
 
@@ -154,22 +155,18 @@ func snapshotStats(cold *coldStats, names []string, nodes []*nodeCounters, repor
 	defer cold.mu.Unlock()
 	if len(cold.eventsByType) > 0 {
 		stats.EventsByType = make(map[av.EventType]uint64, len(cold.eventsByType))
-		for key, value := range cold.eventsByType {
-			stats.EventsByType[key] = value
-		}
+		maps.Copy(stats.EventsByType, cold.eventsByType)
 	}
 	if len(cold.dropReasons) > 0 {
 		stats.DropReasons = make(map[DropPolicy]uint64, len(cold.dropReasons))
-		for key, value := range cold.dropReasons {
-			stats.DropReasons[key] = value
-		}
+		maps.Copy(stats.DropReasons, cold.dropReasons)
 	}
 	stats.LastEvent = cold.lastEvent
 	stats.LastEventPresent = cold.lastEventPresent
 
 	count := min(len(names), len(nodes))
 	var nodeStats map[string]NodeStats
-	for i := 0; i < count; i++ {
+	for i := range count {
 		if nodes[i] == nil {
 			continue
 		}
@@ -244,9 +241,7 @@ func (n *nodeCounters) snapshotLocked() NodeStats {
 	}
 	if len(n.dropReasons) > 0 {
 		stats.DropReasons = make(map[DropPolicy]uint64, len(n.dropReasons))
-		for key, value := range n.dropReasons {
-			stats.DropReasons[key] = value
-		}
+		maps.Copy(stats.DropReasons, n.dropReasons)
 	}
 	return stats
 }

@@ -3,6 +3,7 @@ package playoutav
 import (
 	"context"
 	"errors"
+	"maps"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -593,8 +594,6 @@ func cloneMetadata(metadata av.Metadata) av.Metadata {
 		return nil
 	}
 	clone := make(av.Metadata, len(metadata))
-	for key, value := range metadata {
-		clone[key] = value
-	}
+	maps.Copy(clone, metadata)
 	return clone
 }

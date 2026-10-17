@@ -424,9 +424,7 @@ func TestSeekFlushUnderLiveTraffic(t *testing.T) {
 
 	var stats sync.WaitGroup
 	statsDone := make(chan struct{})
-	stats.Add(1)
-	go func() {
-		defer stats.Done()
+	stats.Go(func() {
 		for {
 			select {
 			case <-statsDone:
@@ -436,7 +434,7 @@ func TestSeekFlushUnderLiveTraffic(t *testing.T) {
 				_ = task.Snapshot()
 			}
 		}
-	}()
+	})
 
 	const seeks = 50
 	final := int64(time.Hour) + int64(seeks)*int64(time.Minute)

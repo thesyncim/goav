@@ -385,13 +385,13 @@ func patternedVP8Image(width, height int) govpxlib.Image {
 		UStride: chromaWidth,
 		VStride: chromaWidth,
 	}
-	for y := 0; y < height; y++ {
-		for x := 0; x < width; x++ {
+	for y := range height {
+		for x := range width {
 			img.Y[y*img.YStride+x] = byte((x*11 + y*17 + 3) & 0xff)
 		}
 	}
-	for y := 0; y < chromaHeight; y++ {
-		for x := 0; x < chromaWidth; x++ {
+	for y := range chromaHeight {
+		for x := range chromaWidth {
 			img.U[y*img.UStride+x] = byte((x*19 + y*7 + 41) & 0xff)
 			img.V[y*img.VStride+x] = byte((x*5 + y*23 + 109) & 0xff)
 		}

@@ -40,7 +40,7 @@ func TestRecipeRTPAV1DecodeSink(t *testing.T) {
 			ClockRate:   90000,
 		}}),
 		packets: []*rtp.Packet{{
-			Header:  rtp.Header{PayloadType: 96, Marker: true, Timestamp: 3000},
+			PayloadType: 96, Marker: true, Timestamp: 3000,
 			Payload: runtimeAV1RTPPayload(),
 		}},
 		events: make(chan av.Event),
@@ -124,7 +124,7 @@ func testRecipeRTPAV1DecodeSink420(t *testing.T, pixelFormat string) {
 			ClockRate:   90000,
 		}}),
 		packets: []*rtp.Packet{{
-			Header:  rtp.Header{PayloadType: 96, Marker: true, Timestamp: 3000},
+			PayloadType: 96, Marker: true, Timestamp: 3000,
 			Payload: runtimeAV1I420RTPPayload(),
 		}},
 		events: make(chan av.Event),
@@ -185,15 +185,15 @@ func TestRecipeRTPAV1CodecChangedDropsUntilSync(t *testing.T) {
 
 	receiver := newRuntimeAV1SwitchReceiver(initial, updated, []*rtp.Packet{
 		{
-			Header:  rtp.Header{PayloadType: 96, Marker: true, Timestamp: 3000},
+			PayloadType: 96, Marker: true, Timestamp: 3000,
 			Payload: runtimeAV1RTPPayload(),
 		},
 		{
-			Header:  rtp.Header{PayloadType: 97, Marker: true, Timestamp: 6000},
+			PayloadType: 97, Marker: true, Timestamp: 6000,
 			Payload: []byte{0x10, 0x30, 0xcc},
 		},
 		{
-			Header:  rtp.Header{PayloadType: 97, Marker: true, Timestamp: 9000},
+			PayloadType: 97, Marker: true, Timestamp: 9000,
 			Payload: runtimeAV1RTPPayload(),
 		},
 	})
@@ -275,15 +275,15 @@ func testRecipeRTPAV1CodecChangedReplacementStream(t *testing.T, oldIDTarget boo
 
 	receiver := newRuntimeAV1SwitchReceiverWithEventStreamID(initial, updated, eventStreamID, []*rtp.Packet{
 		{
-			Header:  rtp.Header{PayloadType: 96, Marker: true, Timestamp: 3000},
+			PayloadType: 96, Marker: true, Timestamp: 3000,
 			Payload: runtimeAV1RTPPayload(),
 		},
 		{
-			Header:  rtp.Header{PayloadType: 97, Marker: true, Timestamp: 6000},
+			PayloadType: 97, Marker: true, Timestamp: 6000,
 			Payload: []byte{0x10, 0x30, 0xcc},
 		},
 		{
-			Header:  rtp.Header{PayloadType: 97, Marker: true, Timestamp: 9000},
+			PayloadType: 97, Marker: true, Timestamp: 9000,
 			Payload: runtimeAV1RTPPayload(),
 		},
 	})

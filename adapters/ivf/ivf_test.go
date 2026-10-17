@@ -188,7 +188,7 @@ func TestMuxerWritesPlayableTimingAndFrameCount(t *testing.T) {
 	}
 
 	packetBase := av.TimeBase{Num: 1, Den: 90000}
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		if err := muxer.Write(ctx, &av.Packet{
 			StreamID: stream.ID,
 			Type:     av.MediaVideo,
@@ -221,7 +221,7 @@ func TestMuxerWritesPlayableTimingAndFrameCount(t *testing.T) {
 	}
 
 	offset := fileHeaderSize
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		if offset+frameHeaderSize > len(data) {
 			t.Fatalf("truncated frame header %d at offset %d", i, offset)
 		}

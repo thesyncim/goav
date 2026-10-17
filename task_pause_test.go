@@ -313,7 +313,7 @@ func TestTaskSeekWhilePausedAppliesAtNextReadBoundary(t *testing.T) {
 	if err := task.Resume(ctx); err != nil {
 		t.Fatalf("Resume err = %v", err)
 	}
-	for i := 0; i < 6; i++ { // 500..900 and EOS
+	for range 6 { // 500..900 and EOS
 		step.step(t)
 	}
 	if err := <-runErr; err != nil {

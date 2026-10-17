@@ -406,11 +406,9 @@ func (g *bufferedRunner) Run(ctx context.Context) error {
 	for i := range sourceRuns {
 		source := sourceRuns[i].source
 		emitter := sourceRuns[i].emitter
-		sources.Add(1)
-		go func() {
-			defer sources.Done()
+		sources.Go(func() {
 			reportBufferedError(errs, source.Start(ctx, &emitter))
-		}()
+		})
 	}
 
 	sources.Wait()
@@ -758,12 +756,10 @@ func (g *bufferedRunner) startWorkerLocked(index int) {
 	node.done = done
 	ctx := g.runCtx
 	errs := g.runErrs
-	g.workers.Add(1)
-	go func() {
-		defer g.workers.Done()
+	g.workers.Go(func() {
 		defer close(done)
 		reportBufferedError(errs, g.runNode(ctx, node, queue))
-	}()
+	})
 }
 
 func reportBufferedError(errs chan<- error, err error) {

@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -80,7 +81,7 @@ func TestInvokeCustomCommandContracts(t *testing.T) {
 	var got vendorCommand
 	spec := CommandSpec{
 		Name:     "vendor",
-		ArgsType: reflect.TypeOf(vendorCommand{}),
+		ArgsType: reflect.TypeFor[vendorCommand](),
 		Apply: func(_ context.Context, _ goav.LiveTask, args any) (ControlResponse, error) {
 			got = args.(vendorCommand)
 			return ControlResponse{
@@ -99,7 +100,7 @@ func TestInvokeCustomCommandContracts(t *testing.T) {
 
 	response, err = Invoke(context.Background(), newFakeTask(), CommandSpec{
 		Name:     "vendor",
-		ArgsType: reflect.TypeOf(vendorCommand{}),
+		ArgsType: reflect.TypeFor[vendorCommand](),
 	}, []string{"stream=audio", "gain=7"})
 	var structured *Error
 	if response.Operation != "" ||
@@ -212,7 +213,7 @@ func TestBindArgsRejectsDuplicateFields(t *testing.T) {
 	type boolCommand struct {
 		Enabled bool `goavctl:"enabled" usage:"[enabled=<bool>]" help:"feature flag"`
 	}
-	boolSpec := CommandSpec{Name: "vendor.bool", ArgsType: reflect.TypeOf(boolCommand{})}
+	boolSpec := CommandSpec{Name: "vendor.bool", ArgsType: reflect.TypeFor[boolCommand]()}
 	for _, tc := range []struct {
 		name string
 		spec CommandSpec
@@ -242,7 +243,7 @@ func TestBindJSONParsesBoolFields(t *testing.T) {
 	type boolCommand struct {
 		Enabled bool `goavctl:"enabled,required" usage:"enabled=<bool>" help:"feature flag"`
 	}
-	spec := CommandSpec{Name: "vendor.bool", ArgsType: reflect.TypeOf(boolCommand{})}
+	spec := CommandSpec{Name: "vendor.bool", ArgsType: reflect.TypeFor[boolCommand]()}
 	args, err := BindJSON(spec, []byte(`{"enabled":true}`))
 	if err != nil {
 		t.Fatal(err)
@@ -1710,7 +1711,7 @@ func TestServeUnixWithOptionsHandlesCustomCommand(t *testing.T) {
 	spec := CommandSpec{
 		Name:     "vendor.socket",
 		Summary:  "socket custom command",
-		ArgsType: reflect.TypeOf(socketCommand{}),
+		ArgsType: reflect.TypeFor[socketCommand](),
 		Apply: func(_ context.Context, _ goav.LiveTask, args any) (ControlResponse, error) {
 			applied = args.(socketCommand).Value
 			return ControlResponse{Operation: "control vendor.socket", Result: applied}, nil
@@ -1887,7 +1888,7 @@ func TestServerSupportsCustomControlCommand(t *testing.T) {
 		Commands: []CommandSpec{{
 			Name:     "vendor.custom",
 			Summary:  "custom vendor command",
-			ArgsType: reflect.TypeOf(vendorCommand{}),
+			ArgsType: reflect.TypeFor[vendorCommand](),
 			Apply: func(_ context.Context, _ goav.LiveTask, args any) (ControlResponse, error) {
 				applied = args.(vendorCommand).Value
 				return ControlResponse{Operation: "control vendor.custom", Result: applied}, nil
@@ -2068,7 +2069,7 @@ func TestServerRejectsCommandRegistryCollisions(t *testing.T) {
 	type vendorCommand struct {
 		Value string `goavctl:"value" usage:"value=<text>" help:"custom value"`
 	}
-	argType := reflect.TypeOf(vendorCommand{})
+	argType := reflect.TypeFor[vendorCommand]()
 	tests := []struct {
 		name     string
 		commands []CommandSpec
@@ -2474,7 +2475,7 @@ func TestHelpRendersRootStaticAndCustomControlTopics(t *testing.T) {
 	manifest := []CommandSpec{{
 		Name:     "vendor.tune",
 		Summary:  "custom tuning command",
-		ArgsType: reflect.TypeOf(vendorCommand{}),
+		ArgsType: reflect.TypeFor[vendorCommand](),
 	}}
 	control, err := HelpWithCommands([]string{"control"}, manifest)
 	if err != nil {
@@ -2563,7 +2564,7 @@ func TestTestOnlyCommandExtensionPath(t *testing.T) {
 	spec := CommandSpec{
 		Name:     "fake",
 		Summary:  "fake extension",
-		ArgsType: reflect.TypeOf(fakeCommand{}),
+		ArgsType: reflect.TypeFor[fakeCommand](),
 		Apply: func(_ context.Context, _ goav.LiveTask, args any) (ControlResponse, error) {
 			applied = args.(fakeCommand).Name
 			return ControlResponse{Operation: "control fake", Result: applied}, nil
@@ -2617,12 +2618,7 @@ func assertRegistryError(t *testing.T, err error, node string, first string, sec
 }
 
 func stringSliceContains(values []string, want string) bool {
-	for _, value := range values {
-		if value == want {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(values, want)
 }
 
 func capabilityEntryNamed(entries []CapabilityEntry, name string) (CapabilityEntry, bool) {

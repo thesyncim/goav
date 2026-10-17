@@ -94,7 +94,7 @@ func buildDirectFanout(b *testing.B, n int) (*benchCaptureSource, Graph) {
 		b.Fatal(err)
 	}
 	names := make([]string, n)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		names[i] = "sink-" + strconv.Itoa(i)
 		if _, err := g.AddSink(&benchSink{name: names[i]}, BufferPolicy{}); err != nil {
 			b.Fatal(err)
@@ -193,7 +193,7 @@ func runBufferedFanout(b *testing.B, n int, immutable bool, copyAlways bool) {
 		b.Fatal(err)
 	}
 	names := make([]string, n)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		names[i] = "sink-" + strconv.Itoa(i)
 		if _, err := g.AddSink(&benchSink{name: names[i]}, BufferPolicy{}); err != nil {
 			b.Fatal(err)

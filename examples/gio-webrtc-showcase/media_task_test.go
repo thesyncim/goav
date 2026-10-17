@@ -13,8 +13,7 @@ import (
 )
 
 func TestDecodedTapTasksNormalizeBrowserTrackShapes(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	audioTask, err := goav.From(goav.Source("mic",
 		shape.Packet(av.MediaAudio, av.CodecOpus, shape.Audio(48_000, codec.Stereo, ""), shape.Realtime(true)),

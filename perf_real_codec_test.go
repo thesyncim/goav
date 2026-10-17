@@ -107,7 +107,7 @@ func benchVideoPacketsPayload(name string, n int, codecID av.CodecID, payload []
 				Payload:  av.Buffer{Bytes: payload, Ownership: av.BufferImmutable},
 				Keyframe: true,
 			}
-			for i := 0; i < n; i++ {
+			for i := range n {
 				packet.PTS = av.Timestamp{Value: int64(i) * 3000, Base: base}
 				packet.DTS = packet.PTS
 				packet.Duration = av.Duration{Value: 3000, Base: base}

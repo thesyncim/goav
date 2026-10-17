@@ -130,18 +130,16 @@ func TestSelectorActiveStoreIsRaceClean(t *testing.T) {
 	ctx := context.Background()
 
 	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		for i := 0; i < 1000; i++ {
+	wg.Go(func() {
+		for i := range 1000 {
 			if i%2 == 0 {
 				_ = sel.SetActive("a")
 			} else {
 				_ = sel.SetActive("b")
 			}
 		}
-	}()
-	for i := 0; i < 1000; i++ {
+	})
+	for range 1000 {
 		if err := sel.Handle(ctx, &pipeline.Message{Kind: pipeline.MessageFrame, Frame: selectorTestFrame("a", 1)}, emit); err != nil {
 			t.Fatal(err)
 		}

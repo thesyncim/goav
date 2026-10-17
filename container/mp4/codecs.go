@@ -163,7 +163,7 @@ func audioSpecificConfigFromESDS(payload []byte) []byte {
 // the descriptors above are read by their fixed field layout.
 func descriptor(p *parser) (tag uint8, ok bool) {
 	tag = p.u8()
-	for i := 0; i < 4; i++ {
+	for range 4 {
 		b := p.u8()
 		if b&0x80 == 0 {
 			break

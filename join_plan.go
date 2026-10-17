@@ -3,6 +3,8 @@ package goav
 import (
 	"context"
 	"fmt"
+	"maps"
+	"slices"
 	"sort"
 	"strconv"
 
@@ -238,9 +240,7 @@ func cloneOutputFormatMap(formats map[string]av.FormatID) map[string]av.FormatID
 		return nil
 	}
 	out := make(map[string]av.FormatID, len(formats))
-	for name, formatID := range formats {
-		out[name] = formatID
-	}
+	maps.Copy(out, formats)
 	return out
 }
 
@@ -1879,10 +1879,5 @@ func joinFanoutTargetNodeName(target branchComposeTargetRoute, index int) string
 }
 
 func intInSlice(needle int, haystack []int) bool {
-	for i := range haystack {
-		if haystack[i] == needle {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(haystack, needle)
 }

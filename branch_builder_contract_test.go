@@ -118,10 +118,10 @@ func TestBranchBuilderSnapshotContracts(t *testing.T) {
 }
 
 func TestBranchSpecOriginContracts(t *testing.T) {
-	typ := reflect.TypeOf(BranchSpec{})
-	for i := 0; i < typ.NumField(); i++ {
-		if typ.Field(i).IsExported() {
-			t.Fatalf("BranchSpec field %s is exported; use constructors instead", typ.Field(i).Name)
+	typ := reflect.TypeFor[BranchSpec]()
+	for field := range typ.Fields() {
+		if field.IsExported() {
+			t.Fatalf("BranchSpec field %s is exported; use constructors instead", field.Name)
 		}
 	}
 
@@ -337,8 +337,7 @@ func TestBranchConstructionErrorsAreJoined(t *testing.T) {
 	}
 	codes := make(map[errcode.Code]bool)
 	for _, cause := range joined.Unwrap() {
-		var buildErr *BuildError
-		if errors.As(cause, &buildErr) {
+		if buildErr, ok := errors.AsType[*BuildError](cause); ok {
 			codes[buildErr.Code] = true
 		}
 	}

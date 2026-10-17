@@ -22,7 +22,7 @@ func TestBindReflectsTypedFieldsAndUnknownMetadata(t *testing.T) {
 	result, err := Bind(Context{
 		Name:                 "settings",
 		Operation:            "test bind",
-		ArgsType:             reflect.TypeOf(settings{}),
+		ArgsType:             reflect.TypeFor[settings](),
 		Usage:                "settings name=<value>",
 		UnknownMetadataField: "custom",
 	}, []string{"name=encoder", "bitrate=1.5M", "fps=30000/1001", "delay=12.5s", "lookahead=deep"})
@@ -47,7 +47,7 @@ func TestBindRejectsDuplicateAndUnknownFields(t *testing.T) {
 	type settings struct {
 		Name string `goavctl:"name,required"`
 	}
-	ctx := Context{Name: "settings", Operation: "test bind", ArgsType: reflect.TypeOf(settings{})}
+	ctx := Context{Name: "settings", Operation: "test bind", ArgsType: reflect.TypeFor[settings]()}
 	for _, tc := range []struct {
 		name string
 		args []string
@@ -75,7 +75,7 @@ func TestArgsUsageSkipsUnknownFieldWithoutUsage(t *testing.T) {
 		Name   string      `goavctl:"name,required"`
 		Custom av.Metadata `goavctl:"custom,unknown"`
 	}
-	if got, want := ArgsUsage(reflect.TypeOf(settings{})), "name=<value>"; got != want {
+	if got, want := ArgsUsage(reflect.TypeFor[settings]()), "name=<value>"; got != want {
 		t.Fatalf("ArgsUsage = %q, want %q", got, want)
 	}
 }

@@ -326,13 +326,13 @@ func patternedVP9Image(width, height int) *image.YCbCr {
 	img := image.NewYCbCr(image.Rect(0, 0, width, height), image.YCbCrSubsampleRatio420)
 	chromaWidth := (width + 1) / 2
 	chromaHeight := (height + 1) / 2
-	for y := 0; y < height; y++ {
-		for x := 0; x < width; x++ {
+	for y := range height {
+		for x := range width {
 			img.Y[y*img.YStride+x] = byte((x*11 + y*17 + 3) & 0xff)
 		}
 	}
-	for y := 0; y < chromaHeight; y++ {
-		for x := 0; x < chromaWidth; x++ {
+	for y := range chromaHeight {
+		for x := range chromaWidth {
 			img.Cb[y*img.CStride+x] = byte((x*19 + y*7 + 41) & 0xff)
 			img.Cr[y*img.CStride+x] = byte((x*5 + y*23 + 109) & 0xff)
 		}

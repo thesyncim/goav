@@ -344,7 +344,6 @@ func (ui *controlRoom) branchPanel(gtx layout.Context, state stateResponse) layo
 func (ui *controlRoom) branchRows(branches []branchView) []layout.FlexChild {
 	rows := make([]layout.FlexChild, 0, len(branches))
 	for _, branch := range branches {
-		branch := branch
 		rows = append(rows, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			return ui.branchRow(gtx, branch)
 		}))
@@ -418,7 +417,6 @@ func (ui *controlRoom) scenarioPanel(gtx layout.Context, state stateResponse) la
 		}
 		children := make([]layout.FlexChild, 0, len(state.Scenarios))
 		for _, scenario := range state.Scenarios {
-			scenario := scenario
 			children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				return ui.scenarioRow(gtx, scenario)
 			}))
@@ -466,7 +464,6 @@ func (ui *controlRoom) eventPanel(gtx layout.Context, state stateResponse) layou
 		}
 		children := make([]layout.FlexChild, 0, len(events))
 		for _, event := range events {
-			event := event
 			children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				return ui.eventRow(gtx, event)
 			}))
@@ -581,7 +578,6 @@ type metric struct {
 func (ui *controlRoom) metricRow(gtx layout.Context, metrics []metric) layout.Dimensions {
 	children := make([]layout.FlexChild, 0, len(metrics))
 	for _, m := range metrics {
-		m := m
 		children = append(children, layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 			return ui.surface(gtx, uiPanelAlt, func(gtx layout.Context) layout.Dimensions {
 				return layout.Flex{Axis: layout.Vertical, Gap: gtx.Dp(3)}.Layout(gtx,
@@ -608,7 +604,7 @@ func (ui *controlRoom) waveform(gtx layout.Context, wave []float32, rms, peak fl
 	rect := image.Rectangle{Max: size}
 	paint.FillShape(gtx.Ops, color.NRGBA{R: 13, G: 17, B: 19, A: 255}, clip.UniformRRect(rect, gtx.Dp(8)).Op(gtx.Ops))
 	mid := float32(size.Y) * 0.58
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		y := float32(16 + i*(size.Y-32)/4)
 		ui.stroke(gtx, uiLine, 1, func(path *clip.Path) {
 			path.MoveTo(f32.Pt(12, y))
@@ -648,7 +644,7 @@ func (ui *controlRoom) graph(gtx layout.Context, label string, graph graphView) 
 	}
 	sort.Slice(nodes, func(i, j int) bool { return nodes[i].Name < nodes[j].Name })
 	depth := make(map[string]int, len(nodes))
-	for i := 0; i < len(nodes); i++ {
+	for range nodes {
 		for _, edge := range edges {
 			if depth[edge.To] < depth[edge.From]+1 {
 				depth[edge.To] = depth[edge.From] + 1

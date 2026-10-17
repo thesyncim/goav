@@ -14,10 +14,10 @@ import (
 )
 
 func TestTransformSpecIsOpaque(t *testing.T) {
-	typ := reflect.TypeOf(transformSpec{})
-	for i := 0; i < typ.NumField(); i++ {
-		if typ.Field(i).IsExported() {
-			t.Fatalf("transformSpec field %s is exported; use constructors instead", typ.Field(i).Name)
+	typ := reflect.TypeFor[transformSpec]()
+	for field := range typ.Fields() {
+		if field.IsExported() {
+			t.Fatalf("transformSpec field %s is exported; use constructors instead", field.Name)
 		}
 	}
 }

@@ -454,8 +454,7 @@ func ExampleBuildError() {
 		To(goav.Write("frames.ivf", io.Discard)).
 		Build(context.Background())
 
-	var buildErr *goav.BuildError
-	if errors.As(err, &buildErr) {
+	if buildErr, ok := errors.AsType[*goav.BuildError](err); ok {
 		fmt.Println("code:", buildErr.Code)
 		fmt.Println("family match:", buildErr.Family == errcode.FamilyEncode)
 		fmt.Println("has fixes:", len(buildErr.FixLines()) > 0)

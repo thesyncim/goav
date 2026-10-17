@@ -162,7 +162,7 @@ func typedArgsType[T any]() reflect.Type {
 	if typ := reflect.TypeOf(zero); typ != nil {
 		return typ
 	}
-	return reflect.TypeOf((*T)(nil)).Elem()
+	return reflect.TypeFor[T]()
 }
 
 func bindStepArgs(name string, argsType reflect.Type, args StepArgs, usage string) (any, error) {

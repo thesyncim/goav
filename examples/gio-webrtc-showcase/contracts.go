@@ -40,7 +40,7 @@ type stateResponse struct {
 	AudioCodec  string             `json:"audioCodec,omitempty"`
 	LastError   string             `json:"lastError,omitempty"`
 	BrowserURL  string             `json:"browserUrl,omitempty"`
-	Renegotiate renegotiateCommand `json:"renegotiate,omitempty"`
+	Renegotiate renegotiateCommand `json:"renegotiate"`
 	NativeAudio nativeAudioStatus  `json:"nativeAudio"`
 	Branches    []branchView       `json:"branches"`
 	VideoGraph  graphView          `json:"videoGraph"`

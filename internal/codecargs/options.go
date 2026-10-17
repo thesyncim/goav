@@ -172,8 +172,7 @@ func normalizeSettings(settings *codec.CodecSettings, seen map[string]struct{}) 
 }
 
 func codecBindError(err error) error {
-	var bindErr *argbind.Error
-	if errors.As(err, &bindErr) {
+	if bindErr, ok := errors.AsType[*argbind.Error](err); ok {
 		message := bindErr.Message
 		switch bindErr.Node {
 		case "bitrate":

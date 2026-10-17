@@ -3,6 +3,7 @@ package format
 import (
 	"context"
 	"errors"
+	"maps"
 	"sort"
 
 	"github.com/thesyncim/goav/av"
@@ -184,9 +185,7 @@ func cloneDescriptor(desc Descriptor) Descriptor {
 	}
 	if desc.Metadata != nil {
 		cloned.Metadata = make(av.Metadata, len(desc.Metadata))
-		for key, value := range desc.Metadata {
-			cloned.Metadata[key] = value
-		}
+		maps.Copy(cloned.Metadata, desc.Metadata)
 	}
 	return cloned
 }

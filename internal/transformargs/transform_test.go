@@ -2,6 +2,7 @@ package transformargs
 
 import (
 	"errors"
+	"slices"
 	"testing"
 )
 
@@ -146,10 +147,5 @@ func TestParseResampleRejectsDuplicateForms(t *testing.T) {
 }
 
 func stringSliceContains(values []string, want string) bool {
-	for _, value := range values {
-		if value == want {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(values, want)
 }

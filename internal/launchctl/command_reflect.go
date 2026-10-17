@@ -11,10 +11,10 @@ import (
 )
 
 var (
-	streamIDType  = reflect.TypeOf(av.StreamID(""))
-	eventTypeType = reflect.TypeOf(av.EventType(""))
-	metadataType  = reflect.TypeOf(av.Metadata{})
-	durationType  = reflect.TypeOf(time.Duration(0))
+	streamIDType  = reflect.TypeFor[av.StreamID]()
+	eventTypeType = reflect.TypeFor[av.EventType]()
+	metadataType  = reflect.TypeFor[av.Metadata]()
+	durationType  = reflect.TypeFor[time.Duration]()
 )
 
 type fieldSpec struct {
@@ -81,8 +81,7 @@ func BindJSON(spec CommandSpec, data []byte) (any, error) {
 }
 
 func bindStructuredError(err error) error {
-	var bindErr *argbind.Error
-	if errors.As(err, &bindErr) {
+	if bindErr, ok := errors.AsType[*argbind.Error](err); ok {
 		return commandError(
 			bindErr.Code,
 			bindErr.Operation,

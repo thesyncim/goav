@@ -127,7 +127,7 @@ func TestBufferedFanoutRefcountAllocs(t *testing.T) {
 			}
 			gate := make(chan struct{})
 			names := make([]string, n)
-			for i := 0; i < n; i++ {
+			for i := range n {
 				names[i] = "sink-" + strconv.Itoa(i)
 				if _, err := graph.AddSink(&gateSink{name: names[i], gate: gate}, BufferPolicy{}); err != nil {
 					t.Fatal(err)

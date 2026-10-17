@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -531,7 +532,7 @@ func TestPlannedBranchSplitOperationsRespectEarlierTapAnchors(t *testing.T) {
 	if got, want := operationSpecKindsForTest(webOps), []plan.OperationKind{plan.OpDecode, plan.OpTap, plan.OpTransform, plan.OpTap, plan.OpEncode}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("web operations = %+v, want %+v", got, want)
 	}
-	for i := 0; i < 4; i++ {
+	for i := range 4 {
 		if !webOps[i].Shared {
 			t.Fatalf("web operations = %+v, want parent operation %d shared", webOps, i)
 		}
@@ -655,15 +656,15 @@ func workPlanOperationKindsForBranch(operations []workOperation, branch string) 
 }
 
 func TestRecipeCompileStateDoesNotCarryRecipeBuilders(t *testing.T) {
-	stateType := reflect.TypeOf(recipeCompileState{})
+	stateType := reflect.TypeFor[recipeCompileState]()
 	forbidden := map[reflect.Type]string{
-		reflect.TypeOf((*Job)(nil)):            "*Job",
-		reflect.TypeOf((*jobStreamBuild)(nil)): "*jobStreamBuild",
-		reflect.TypeOf([]streamBuild(nil)):     "[]streamBuild",
-		reflect.TypeOf((*builder)(nil)):        "*builder",
+		reflect.TypeFor[*Job]():            "*Job",
+		reflect.TypeFor[*jobStreamBuild](): "*jobStreamBuild",
+		reflect.TypeFor[[]streamBuild]():   "[]streamBuild",
+		reflect.TypeFor[*builder]():        "*builder",
 	}
-	for i := 0; i < stateType.NumField(); i++ {
-		field := stateType.Field(i)
+	for field := range stateType.Fields() {
+		field := field
 		if name, ok := forbidden[field.Type]; ok {
 			t.Fatalf("recipeCompileState field %s carries %s; compiler passes should use captured intent attachments", field.Name, name)
 		}
@@ -695,8 +696,7 @@ func TestJobConstructionErrorsAreJoined(t *testing.T) {
 	}
 	codes := make(map[errcode.Code]bool)
 	for _, cause := range joined.Unwrap() {
-		var buildErr *BuildError
-		if errors.As(cause, &buildErr) {
+		if buildErr, ok := errors.AsType[*BuildError](cause); ok {
 			codes[buildErr.Code] = true
 		}
 	}
@@ -3228,10 +3228,8 @@ func graphPlanOperationNodePresent(operations []workOperation, node pipeline.Nod
 func graphPlanOperationTargetPresent(operations []workOperation, target string) bool {
 	id := workDestinationID(target)
 	for i := range operations {
-		for _, next := range operations[i].Destinations {
-			if next == id {
-				return true
-			}
+		if slices.Contains(operations[i].Destinations, id) {
+			return true
 		}
 	}
 	return false
@@ -3730,10 +3728,8 @@ func graphPlanDestinationOperationNode(operations []workOperation, target string
 		if !graphPlanOperationDestinationsRequired(operations[i].Kind) {
 			continue
 		}
-		for _, next := range operations[i].Destinations {
-			if next == id {
-				return operations[i].Node, true
-			}
+		if slices.Contains(operations[i].Destinations, id) {
+			return operations[i].Node, true
 		}
 	}
 	return "", false

@@ -16,9 +16,9 @@ func TestJitterRingOrdersPackets(t *testing.T) {
 		t.Fatal(err)
 	}
 	result := JitterResult{Ready: make([]*rtp.Packet, 0, 4), Events: make([]av.Event, 0, 2)}
-	p10 := rtp.Packet{Header: rtp.Header{SSRC: 1, SequenceNumber: 10}}
-	p11 := rtp.Packet{Header: rtp.Header{SSRC: 1, SequenceNumber: 11}}
-	p12 := rtp.Packet{Header: rtp.Header{SSRC: 1, SequenceNumber: 12}}
+	p10 := rtp.Packet{SSRC: 1, SequenceNumber: 10}
+	p11 := rtp.Packet{SSRC: 1, SequenceNumber: 11}
+	p12 := rtp.Packet{SSRC: 1, SequenceNumber: 12}
 
 	if err := jitter.PushInto(ctx, &p10, &result); err != nil {
 		t.Fatal(err)
@@ -51,8 +51,8 @@ func TestJitterRingLargeGapEmitsLoss(t *testing.T) {
 		t.Fatal(err)
 	}
 	result := JitterResult{Ready: make([]*rtp.Packet, 0, 2), Events: make([]av.Event, 0, 1)}
-	p10 := rtp.Packet{Header: rtp.Header{SSRC: 1, SequenceNumber: 10}}
-	p14 := rtp.Packet{Header: rtp.Header{SSRC: 1, SequenceNumber: 14}}
+	p10 := rtp.Packet{SSRC: 1, SequenceNumber: 10}
+	p14 := rtp.Packet{SSRC: 1, SequenceNumber: 14}
 
 	if err := jitter.PushInto(ctx, &p10, &result); err != nil {
 		t.Fatal(err)
@@ -81,7 +81,7 @@ func TestJitterRingResultCapacity(t *testing.T) {
 		t.Fatal(err)
 	}
 	result := JitterResult{}
-	p10 := rtp.Packet{Header: rtp.Header{SSRC: 1, SequenceNumber: 10}}
+	p10 := rtp.Packet{SSRC: 1, SequenceNumber: 10}
 
 	if err := jitter.PushInto(context.Background(), &p10, &result); !errors.Is(err, ErrResultFull) {
 		t.Fatalf("err = %v, want ErrResultFull", err)
@@ -95,8 +95,8 @@ func TestJitterRingSSRCChangeEmitsDiscontinuity(t *testing.T) {
 		t.Fatal(err)
 	}
 	result := JitterResult{Ready: make([]*rtp.Packet, 0, 2), Events: make([]av.Event, 0, 1)}
-	p10 := rtp.Packet{Header: rtp.Header{SSRC: 1, SequenceNumber: 10}}
-	p20 := rtp.Packet{Header: rtp.Header{SSRC: 2, SequenceNumber: 20}}
+	p10 := rtp.Packet{SSRC: 1, SequenceNumber: 10}
+	p20 := rtp.Packet{SSRC: 2, SequenceNumber: 20}
 
 	if err := jitter.PushInto(ctx, &p10, &result); err != nil {
 		t.Fatal(err)
@@ -120,8 +120,8 @@ func TestJitterRingAllocs(t *testing.T) {
 		t.Fatal(err)
 	}
 	result := JitterResult{Ready: make([]*rtp.Packet, 0, 4), Events: make([]av.Event, 0, 2)}
-	p10 := rtp.Packet{Header: rtp.Header{SSRC: 1, SequenceNumber: 10}}
-	p11 := rtp.Packet{Header: rtp.Header{SSRC: 1, SequenceNumber: 11}}
+	p10 := rtp.Packet{SSRC: 1, SequenceNumber: 10}
+	p11 := rtp.Packet{SSRC: 1, SequenceNumber: 11}
 
 	if allocs := testing.AllocsPerRun(1000, func() {
 		jitter.Reset()

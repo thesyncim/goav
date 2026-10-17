@@ -177,7 +177,7 @@ func TestSourceDepacketizesRTPIntoPipelinePackets(t *testing.T) {
 			ClockRate:   48000,
 		}}),
 		packets: []*rtp.Packet{
-			{Header: rtp.Header{PayloadType: 111, Timestamp: 960}, Payload: []byte{1, 2, 3}},
+			{PayloadType: 111, Timestamp: 960, Payload: []byte{1, 2, 3}},
 		},
 		events: make(chan av.Event),
 	}
@@ -303,7 +303,7 @@ func TestSourceCodecChangedUpdatesDestinedStreamInMultiStreamSource(t *testing.T
 			ClockRate:   90000,
 		}}),
 		packets: []*rtp.Packet{{
-			Header:  rtp.Header{PayloadType: 97, Marker: true, Timestamp: 9000},
+			PayloadType: 97, Marker: true, Timestamp: 9000,
 			Payload: []byte{0x10, 0x00, 0xcc},
 		}},
 		events: events,
@@ -377,7 +377,7 @@ func TestSourceCodecChangedCanSwitchDepacketizerCodec(t *testing.T) {
 			ClockRate:   90000,
 		}}),
 		packets: []*rtp.Packet{{
-			Header:  rtp.Header{PayloadType: 97, Marker: true, Timestamp: 9000},
+			PayloadType: 97, Marker: true, Timestamp: 9000,
 			Payload: []byte{0x65, 0xcc},
 		}},
 		events: events,
@@ -441,8 +441,8 @@ func TestSourceEmitsTimestampDiscontinuityOnBackwardPTS(t *testing.T) {
 			ClockRate:   48000,
 		}}),
 		packets: []*rtp.Packet{
-			{Header: rtp.Header{PayloadType: 111, Timestamp: 960}, Payload: []byte{1}},
-			{Header: rtp.Header{PayloadType: 111, Timestamp: 480}, Payload: []byte{2}},
+			{PayloadType: 111, Timestamp: 960, Payload: []byte{1}},
+			{PayloadType: 111, Timestamp: 480, Payload: []byte{2}},
 		},
 		events: make(chan av.Event),
 	}
@@ -502,8 +502,8 @@ func TestSourceEmitsTimestampDiscontinuityOnLargeGap(t *testing.T) {
 			ClockRate:   48000,
 		}}),
 		packets: []*rtp.Packet{
-			{Header: rtp.Header{PayloadType: 111, Timestamp: 0}, Payload: []byte{1}},
-			{Header: rtp.Header{PayloadType: 111, Timestamp: 48000}, Payload: []byte{2}},
+			{PayloadType: 111, Timestamp: 0, Payload: []byte{1}},
+			{PayloadType: 111, Timestamp: 48000, Payload: []byte{2}},
 		},
 		events: make(chan av.Event),
 	}
@@ -555,9 +555,9 @@ func TestSourceJitterOrdersPackets(t *testing.T) {
 			ClockRate:   48000,
 		}}),
 		packets: []*rtp.Packet{
-			{Header: rtp.Header{SSRC: 1, PayloadType: 111, SequenceNumber: 10, Timestamp: 10}, Payload: []byte{10}},
-			{Header: rtp.Header{SSRC: 1, PayloadType: 111, SequenceNumber: 12, Timestamp: 12}, Payload: []byte{12}},
-			{Header: rtp.Header{SSRC: 1, PayloadType: 111, SequenceNumber: 11, Timestamp: 11}, Payload: []byte{11}},
+			{SSRC: 1, PayloadType: 111, SequenceNumber: 10, Timestamp: 10, Payload: []byte{10}},
+			{SSRC: 1, PayloadType: 111, SequenceNumber: 12, Timestamp: 12, Payload: []byte{12}},
+			{SSRC: 1, PayloadType: 111, SequenceNumber: 11, Timestamp: 11, Payload: []byte{11}},
 		},
 		events: make(chan av.Event),
 	}
@@ -613,7 +613,7 @@ func TestSourceRoutesFeedbackToExplicitWriter(t *testing.T) {
 			MIMEType:    av.MIMEOpus,
 			ClockRate:   48000,
 		}}),
-		packets: []*rtp.Packet{{Header: rtp.Header{PayloadType: 111}}},
+		packets: []*rtp.Packet{{PayloadType: 111}},
 		events:  make(chan av.Event),
 	}
 	writer := &fakeFeedbackWriter{}
@@ -731,7 +731,7 @@ func TestSourceCodecChangedRefreshesPayloadMapAndEpoch(t *testing.T) {
 			ClockRate:   48000,
 		}}),
 		packets: []*rtp.Packet{{
-			Header:  rtp.Header{PayloadType: 112, Timestamp: 960},
+			PayloadType: 112, Timestamp: 960,
 			Payload: []byte{9, 8, 7},
 		}},
 		events: events,
@@ -785,7 +785,7 @@ func TestSourceErrors(t *testing.T) {
 
 	receiver := &fakeReceiver{
 		payloads: NewStaticPayloadMap(1, nil),
-		packets:  []*rtp.Packet{{Header: rtp.Header{PayloadType: 111}}},
+		packets:  []*rtp.Packet{{PayloadType: 111}},
 		events:   make(chan av.Event),
 	}
 	source, err := NewSource(SourceConfig{Receiver: receiver})
@@ -810,7 +810,7 @@ func TestSourceStartAllocs(t *testing.T) {
 			ClockRate:   48000,
 		}}),
 		packets: []*rtp.Packet{
-			{Header: rtp.Header{PayloadType: 111, Timestamp: 960}, Payload: []byte{1, 2, 3}},
+			{PayloadType: 111, Timestamp: 960, Payload: []byte{1, 2, 3}},
 		},
 		events: make(chan av.Event),
 	}
@@ -858,8 +858,8 @@ func TestSourceStreamAddedDerivesLateStreamDepacketizer(t *testing.T) {
 			{PayloadType: 96, Parameters: video.Codec, MIMEType: av.MIMEVP8, ClockRate: 90000},
 		}),
 		packets: []*rtp.Packet{
-			{Header: rtp.Header{PayloadType: 111, Timestamp: 960}, Payload: []byte{1, 2, 3}},
-			{Header: rtp.Header{PayloadType: 96, Marker: true, Timestamp: 90}, Payload: []byte{0x10, 0x00, 0x11, 0x22}},
+			{PayloadType: 111, Timestamp: 960, Payload: []byte{1, 2, 3}},
+			{PayloadType: 96, Marker: true, Timestamp: 90, Payload: []byte{0x10, 0x00, 0x11, 0x22}},
 		},
 		events: events,
 	}

@@ -559,10 +559,7 @@ func decoderEventScratchFits(have, need backend.DecoderFrameWorkResidualEventScr
 }
 
 func decoderPlanHasSync(plan backend.DecoderFrameWorkResidualStreamPlan, events []backend.DecoderEvent) bool {
-	eventCount := plan.Size.Events
-	if eventCount > len(events) {
-		eventCount = len(events)
-	}
+	eventCount := min(plan.Size.Events, len(events))
 	haveSequence := false
 	for i := 0; i < eventCount; i++ {
 		event := &events[i]
@@ -581,10 +578,7 @@ func decoderPlanHasSync(plan backend.DecoderFrameWorkResidualStreamPlan, events 
 }
 
 func decoderPlanHasKeyFrame(plan backend.DecoderFrameWorkResidualStreamPlan, events []backend.DecoderEvent) bool {
-	eventCount := plan.Size.Events
-	if eventCount > len(events) {
-		eventCount = len(events)
-	}
+	eventCount := min(plan.Size.Events, len(events))
 	for i := 0; i < eventCount; i++ {
 		event := &events[i]
 		switch event.Kind {

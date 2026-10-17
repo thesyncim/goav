@@ -2,6 +2,7 @@ package codec
 
 import (
 	"errors"
+	"slices"
 
 	"github.com/thesyncim/goav/av"
 )
@@ -126,12 +127,7 @@ func (r *SimpleRegistry) hasDescriptor(id av.CodecID, mode Mode) bool {
 
 // Supports reports whether the descriptor lists the given mode.
 func (d Descriptor) Supports(mode Mode) bool {
-	for _, candidate := range d.Modes {
-		if candidate == mode {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(d.Modes, mode)
 }
 
 func (r *SimpleRegistry) upsertDescriptor(desc Descriptor) {
@@ -215,13 +211,7 @@ func mergeBackend(existing Backend, next Backend) Backend {
 
 func mergeModes(existing []Mode, next []Mode) []Mode {
 	for _, candidate := range next {
-		found := false
-		for _, current := range existing {
-			if current == candidate {
-				found = true
-				break
-			}
-		}
+		found := slices.Contains(existing, candidate)
 		if !found {
 			existing = append(existing, candidate)
 		}
@@ -231,13 +221,7 @@ func mergeModes(existing []Mode, next []Mode) []Mode {
 
 func mergeStrings(existing []string, next []string) []string {
 	for _, candidate := range next {
-		found := false
-		for _, current := range existing {
-			if current == candidate {
-				found = true
-				break
-			}
-		}
+		found := slices.Contains(existing, candidate)
 		if !found {
 			existing = append(existing, candidate)
 		}

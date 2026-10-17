@@ -15,7 +15,7 @@ func TestVP8DepacketizerSinglePacket(t *testing.T) {
 	depacketizer := NewVP8Depacketizer(stream, WithMaxVideoFrameSize(16))
 	payload := PayloadCodec{ClockRate: 90000}
 	packet := &rtp.Packet{
-		Header:  rtp.Header{Marker: true, Timestamp: 90},
+		Marker: true, Timestamp: 90,
 		Payload: []byte{0x10, 0x00, 0x11, 0x22},
 	}
 	out := DepacketizeResult{Packets: make([]av.Packet, 0, 1)}
@@ -42,8 +42,8 @@ func TestVP8DepacketizerAssemblesFragments(t *testing.T) {
 	out := DepacketizeResult{Packets: make([]av.Packet, 0, 1)}
 
 	if err := depacketizer.PushInto(context.Background(), &rtp.Packet{
-		Header:  rtp.Header{Timestamp: 7},
-		Payload: []byte{0x10, 0xaa},
+		Timestamp: 7,
+		Payload:   []byte{0x10, 0xaa},
 	}, payload, &out); err != nil {
 		t.Fatal(err)
 	}
@@ -52,7 +52,7 @@ func TestVP8DepacketizerAssemblesFragments(t *testing.T) {
 	}
 	out.Reset()
 	if err := depacketizer.PushInto(context.Background(), &rtp.Packet{
-		Header:  rtp.Header{Marker: true, Timestamp: 7},
+		Marker: true, Timestamp: 7,
 		Payload: []byte{0x00, 0xbb},
 	}, payload, &out); err != nil {
 		t.Fatal(err)
@@ -72,7 +72,7 @@ func TestVP9DepacketizerSinglePacket(t *testing.T) {
 	out := DepacketizeResult{Packets: make([]av.Packet, 0, 1)}
 
 	if err := depacketizer.PushInto(context.Background(), &rtp.Packet{
-		Header:  rtp.Header{Marker: true, Timestamp: 99},
+		Marker: true, Timestamp: 99,
 		Payload: []byte{0x0c, 0x81, 0x82},
 	}, payload, &out); err != nil {
 		t.Fatal(err)
@@ -92,14 +92,14 @@ func TestVP9DepacketizerAssemblesFragments(t *testing.T) {
 	out := DepacketizeResult{Packets: make([]av.Packet, 0, 1)}
 
 	if err := depacketizer.PushInto(context.Background(), &rtp.Packet{
-		Header:  rtp.Header{Timestamp: 9},
-		Payload: []byte{0x08, 0xaa},
+		Timestamp: 9,
+		Payload:   []byte{0x08, 0xaa},
 	}, payload, &out); err != nil {
 		t.Fatal(err)
 	}
 	out.Reset()
 	if err := depacketizer.PushInto(context.Background(), &rtp.Packet{
-		Header:  rtp.Header{Marker: true, Timestamp: 9},
+		Marker: true, Timestamp: 9,
 		Payload: []byte{0x04, 0xbb},
 	}, payload, &out); err != nil {
 		t.Fatal(err)
@@ -119,8 +119,8 @@ func TestVideoDepacketizerLossRequestsKeyframeAndDropsUntilSync(t *testing.T) {
 	}
 
 	if err := depacketizer.PushInto(context.Background(), &rtp.Packet{
-		Header:  rtp.Header{Timestamp: 1},
-		Payload: []byte{0x10, 0xaa},
+		Timestamp: 1,
+		Payload:   []byte{0x10, 0xaa},
 	}, payload, &out); err != nil {
 		t.Fatal(err)
 	}
@@ -129,7 +129,7 @@ func TestVideoDepacketizerLossRequestsKeyframeAndDropsUntilSync(t *testing.T) {
 	}
 	out.Reset()
 	if err := depacketizer.PushInto(context.Background(), &rtp.Packet{
-		Header:  rtp.Header{Marker: true, Timestamp: 1},
+		Marker: true, Timestamp: 1,
 		Payload: []byte{0x00, 0xbb},
 	}, payload, &out); err != nil {
 		t.Fatal(err)
@@ -140,7 +140,7 @@ func TestVideoDepacketizerLossRequestsKeyframeAndDropsUntilSync(t *testing.T) {
 
 	out.Reset()
 	if err := depacketizer.PushInto(context.Background(), &rtp.Packet{
-		Header:  rtp.Header{Marker: true, Timestamp: 2},
+		Marker: true, Timestamp: 2,
 		Payload: []byte{0x10, 0x01, 0xcc},
 	}, payload, &out); err != nil {
 		t.Fatal(err)
@@ -151,7 +151,7 @@ func TestVideoDepacketizerLossRequestsKeyframeAndDropsUntilSync(t *testing.T) {
 
 	out.Reset()
 	if err := depacketizer.PushInto(context.Background(), &rtp.Packet{
-		Header:  rtp.Header{Marker: true, Timestamp: 3},
+		Marker: true, Timestamp: 3,
 		Payload: []byte{0x10, 0x00, 0xcc},
 	}, payload, &out); err != nil {
 		t.Fatal(err)
@@ -174,8 +174,8 @@ func TestVideoDepacketizerCodecChangedUpdatesEpochAndDropsUntilSync(t *testing.T
 	}
 
 	if err := depacketizer.PushInto(context.Background(), &rtp.Packet{
-		Header:  rtp.Header{Timestamp: 1},
-		Payload: []byte{0x10, 0xaa},
+		Timestamp: 1,
+		Payload:   []byte{0x10, 0xaa},
 	}, payload, &out); err != nil {
 		t.Fatal(err)
 	}
@@ -193,7 +193,7 @@ func TestVideoDepacketizerCodecChangedUpdatesEpochAndDropsUntilSync(t *testing.T
 
 	out.Reset()
 	if err := depacketizer.PushInto(context.Background(), &rtp.Packet{
-		Header:  rtp.Header{Marker: true, Timestamp: 1},
+		Marker: true, Timestamp: 1,
 		Payload: []byte{0x00, 0xbb},
 	}, payload, &out); err != nil {
 		t.Fatal(err)
@@ -205,7 +205,7 @@ func TestVideoDepacketizerCodecChangedUpdatesEpochAndDropsUntilSync(t *testing.T
 
 	out.Reset()
 	if err := depacketizer.PushInto(context.Background(), &rtp.Packet{
-		Header:  rtp.Header{Marker: true, Timestamp: 2},
+		Marker: true, Timestamp: 2,
 		Payload: []byte{0x10, 0x00, 0xcc},
 	}, payload, &out); err != nil {
 		t.Fatal(err)
@@ -242,7 +242,7 @@ func TestVideoDepacketizerCodecChangedAdoptsReplacementStream(t *testing.T) {
 	}
 
 	if err := depacketizer.PushInto(context.Background(), &rtp.Packet{
-		Header:  rtp.Header{Marker: true, Timestamp: 2},
+		Marker: true, Timestamp: 2,
 		Payload: []byte{0x10, 0x00, 0xcc},
 	}, payload, &out); err != nil {
 		t.Fatal(err)
@@ -267,8 +267,8 @@ func TestVideoDepacketizerIgnoresUnrelatedCodecChanged(t *testing.T) {
 	}
 
 	if err := depacketizer.PushInto(context.Background(), &rtp.Packet{
-		Header:  rtp.Header{Timestamp: 1},
-		Payload: []byte{0x10, 0xaa},
+		Timestamp: 1,
+		Payload:   []byte{0x10, 0xaa},
 	}, payload, &out); err != nil {
 		t.Fatal(err)
 	}
@@ -282,7 +282,7 @@ func TestVideoDepacketizerIgnoresUnrelatedCodecChanged(t *testing.T) {
 
 	out.Reset()
 	if err := depacketizer.PushInto(context.Background(), &rtp.Packet{
-		Header:  rtp.Header{Marker: true, Timestamp: 1},
+		Marker: true, Timestamp: 1,
 		Payload: []byte{0x00, 0xbb},
 	}, payload, &out); err != nil {
 		t.Fatal(err)
@@ -301,8 +301,8 @@ func TestVideoDepacketizerFrameTooLarge(t *testing.T) {
 	out := DepacketizeResult{Packets: make([]av.Packet, 0, 1)}
 
 	err := depacketizer.PushInto(context.Background(), &rtp.Packet{
-		Header:  rtp.Header{Timestamp: 1},
-		Payload: []byte{0x10, 0xaa, 0xbb},
+		Timestamp: 1,
+		Payload:   []byte{0x10, 0xaa, 0xbb},
 	}, PayloadCodec{ClockRate: 90000}, &out)
 	if !errors.Is(err, ErrFrameTooLarge) {
 		t.Fatalf("err = %v, want ErrFrameTooLarge", err)
@@ -314,7 +314,7 @@ func TestVP8DepacketizerAllocs(t *testing.T) {
 	depacketizer := NewVP8Depacketizer(stream, WithMaxVideoFrameSize(16))
 	payload := PayloadCodec{ClockRate: 90000}
 	packet := &rtp.Packet{
-		Header:  rtp.Header{Marker: true, Timestamp: 1},
+		Marker: true, Timestamp: 1,
 		Payload: []byte{0x10, 0x00, 0x11},
 	}
 	out := DepacketizeResult{Packets: make([]av.Packet, 0, 1)}
@@ -335,7 +335,7 @@ func TestVP9DepacketizerAllocs(t *testing.T) {
 	depacketizer := NewVP9Depacketizer(stream, WithMaxVideoFrameSize(16))
 	payload := PayloadCodec{ClockRate: 90000}
 	packet := &rtp.Packet{
-		Header:  rtp.Header{Marker: true, Timestamp: 1},
+		Marker: true, Timestamp: 1,
 		Payload: []byte{0x0c, 0x11},
 	}
 	out := DepacketizeResult{Packets: make([]av.Packet, 0, 1)}

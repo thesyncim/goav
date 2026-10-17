@@ -321,7 +321,7 @@ func writePacketOracleWebM(t testing.TB) (string, []externalWebMPacket) {
 		}
 	}
 	want := make([]externalWebMPacket, 0, len(tracks)*2)
-	for cycle := 0; cycle < 2; cycle++ {
+	for cycle := range 2 {
 		timeNS := int64(cycle) * 20_000_000
 		for i := range tracks {
 			keyframe := true
@@ -705,7 +705,7 @@ func readWebMTimestampsV2(t testing.TB, file string) []int64 {
 		t.Fatal(err)
 	}
 	var timestamps []int64
-	for _, line := range strings.Split(string(data), "\n") {
+	for line := range strings.SplitSeq(string(data), "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
@@ -751,7 +751,7 @@ func readWebMCues(t testing.TB, file string) []externalWebMCue {
 		t.Fatal(err)
 	}
 	var cues []externalWebMCue
-	for _, line := range strings.Split(string(data), "\n") {
+	for line := range strings.SplitSeq(string(data), "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
@@ -767,7 +767,7 @@ func readWebMCues(t testing.TB, file string) []externalWebMCue {
 
 func parseWebMCueLine(line string) (externalWebMCue, error) {
 	fields := make(map[string]string)
-	for _, field := range strings.Fields(line) {
+	for field := range strings.FieldsSeq(line) {
 		key, value, ok := strings.Cut(field, "=")
 		if !ok {
 			return externalWebMCue{}, fmt.Errorf("invalid cue field %q", field)

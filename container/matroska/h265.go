@@ -138,7 +138,7 @@ func parseHEVCDecoderConfigurationRecord(private []byte) (h265DecoderConfigurati
 	if arrayCount == 0 {
 		return h265DecoderConfigurationRecord{}, ErrInvalidData
 	}
-	for i := 0; i < arrayCount; i++ {
+	for range arrayCount {
 		if offset+3 > len(private) {
 			return h265DecoderConfigurationRecord{}, ErrInvalidData
 		}
@@ -152,7 +152,7 @@ func parseHEVCDecoderConfigurationRecord(private []byte) (h265DecoderConfigurati
 			return h265DecoderConfigurationRecord{}, ErrInvalidData
 		}
 		offset += 3
-		for j := 0; j < count; j++ {
+		for range count {
 			nal, next, err := readHEVCConfigNALU(private, offset)
 			if err != nil {
 				return h265DecoderConfigurationRecord{}, err
