@@ -17,6 +17,7 @@ import (
 	"github.com/thesyncim/goav/flow"
 	"github.com/thesyncim/goav/goavtest"
 	"github.com/thesyncim/goav/lifecycle"
+	"github.com/thesyncim/goav/runconfig"
 	"github.com/thesyncim/goav/shape"
 	"github.com/thesyncim/goav/source"
 )
@@ -136,7 +137,11 @@ func runRoomScript(ctx context.Context, script func(context.Context, *RoomPipeli
 	task, err := goav.From(input).
 		Audio().
 		To(main).
-		UseRuntime(goavtest.Runtime()).
+		// Watch sheds an event when a buffer is full, so the data plane never
+		// blocks on an observer. The demo reports every lifecycle event, and
+		// room teardown publishes them in a burst, so it sizes the event
+		// buffers above that burst.
+		UseRuntime(goavtest.Runtime(runconfig.WithEventCapacity(256))).
 		BuildLive(ctx)
 	if err != nil {
 		return DemoResult{}, err
