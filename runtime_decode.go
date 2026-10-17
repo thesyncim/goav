@@ -2,6 +2,7 @@ package goav
 
 import (
 	"context"
+	"errors"
 	"strconv"
 	"strings"
 
@@ -61,7 +62,7 @@ func (b *builder) newDecodeStageNamed(ctx context.Context, name string, request 
 		if stateFromFactory {
 			closeDecodeState(config.OpaqueState)
 		}
-		return nil, err
+		return nil, decodeOpenError(name, stream, err)
 	}
 	stage, err := codec.NewDecoderStage(codec.DecoderStageConfig{
 		Name:            name,
@@ -396,4 +397,41 @@ func decodeNodeName(selector av.StreamSelector) string {
 		return "decode-" + strconv.Itoa(selector.Index)
 	}
 	return "decode"
+}
+
+// decodeOpenError reports a decoder adapter refusing to open as a BuildError
+// naming the node and stream; errors.Is still reaches the adapter's cause, so
+// callers can tell a backend that is unavailable on this platform
+// (codec.ErrUnavailable) from a stream it rejects.
+func decodeOpenError(node string, stream av.Stream, cause error) error {
+	var buildErr *BuildError
+	if errors.As(cause, &buildErr) {
+		return cause
+	}
+	id := string(stream.Codec.ID)
+	code := decodeAdapterIncompatibleCode
+	reason := id + " decoder rejected the stream: " + cause.Error()
+	fixes := []string{
+		"check the stream's codec parameters (extradata, profile, geometry) reach the decoder",
+		"use .Copy() to keep packets without decoding",
+	}
+	if errors.Is(cause, codec.ErrUnavailable) {
+		code = decodeAdapterUnavailableCode
+		reason = id + " decoder is unavailable in this build: " + cause.Error()
+		fixes = []string{
+			"run on a platform the " + id + " backend supports, or register another " + id + " decoder with runconfig.WithDecoder(...)",
+			"use .Copy() to keep packets without decoding",
+		}
+	}
+	return &BuildError{
+		Phase:     phaseBuild,
+		Family:    errcode.FamilyForCode(code),
+		Code:      code,
+		Operation: "build decode stage",
+		Node:      node,
+		Reason:    reason,
+		fields:    errDetails(errNote("selected: " + streamDiagnostic(stream, 0))),
+		fixes:     buildErrorFixes(fixes),
+		cause:     cause,
+	}
 }

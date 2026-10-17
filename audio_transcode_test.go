@@ -36,6 +36,9 @@ func TestAACToOpusTranscodesEndToEnd(t *testing.T) {
 		Encode(codec.Opus()).
 		To(goav.Write("out.webm", &out)).
 		Run(ctx); err != nil {
+		if errors.Is(err, codec.ErrUnavailable) {
+			t.Skip("goaac backend unavailable on this target")
+		}
 		t.Fatalf("run: %v", err)
 	}
 
@@ -78,6 +81,9 @@ func TestOpusRefusesUnsupportedRateWithResampleFix(t *testing.T) {
 		Encode(codec.Opus()).
 		To(goav.Write("out.webm", &bytes.Buffer{})).
 		Run(ctx)
+	if errors.Is(err, codec.ErrUnavailable) {
+		t.Skip("goaac backend unavailable on this target")
+	}
 	var buildErr *goav.BuildError
 	if !errors.As(err, &buildErr) {
 		t.Fatalf("err = %v, want a *goav.BuildError", err)

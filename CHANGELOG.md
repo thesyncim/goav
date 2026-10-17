@@ -27,6 +27,9 @@ methodology changes, and migration notes.
     instead of the adapter's bare `codec: unsupported format`. Any other
     encoder-open failure is also wrapped as a typed error with the stream's
     format.
+    Decoder-open failures are typed the same way; a backend unavailable on
+    the platform (goaac builds for darwin/arm64 and linux/arm64) reports
+    `decode_adapter_unavailable`, and `errors.Is` still reaches the cause.
 
 - Media correctness and hardening:
   - The MP4 demuxer now bounds sample tables with a file-wide budget tied to
