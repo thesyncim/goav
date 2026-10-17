@@ -154,6 +154,14 @@ jobs:
       - name: Vet
         run: CGO_ENABLED=0 go vet ./...
 
+      # H.264 decode is opt-in (patent-sensitive), so the tagged build gets its
+      # own lane; without it the tagged adapter bit-rots unseen.
+      - name: H.264 build tag (goav_goh264)
+        if: matrix.full
+        run: |
+          CGO_ENABLED=0 go vet -tags goav_goh264 ./...
+          CGO_ENABLED=0 go test -count=1 -tags goav_goh264 . ./adapters/goh264 ./bundle ./container/...
+
       - name: Package documentation smoke
         if: matrix.full
         run: |

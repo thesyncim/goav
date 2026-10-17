@@ -8,6 +8,7 @@ import (
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/format"
+	"github.com/thesyncim/goav/internal/h264"
 )
 
 type Prober struct{}
@@ -18,6 +19,13 @@ type Muxer struct {
 	writer   io.Writer
 	streamID av.StreamID
 	closed   bool
+	// paramSets are the stream's SPS/PPS as Annex B, written ahead of every
+	// keyframe that does not carry them in band, so the output decodes from
+	// its first byte and from every keyframe. lengthSize is the avcC NAL
+	// length width, used to convert length-prefixed (AVCC) payloads.
+	paramSets  []byte
+	lengthSize int
+	scratch    []byte
 }
 
 func Register(registry *format.SimpleRegistry) {
@@ -90,6 +98,13 @@ func (m *Muxer) Open(ctx context.Context, output format.Output, streams []av.Str
 	m.writer = output.Writer
 	m.streamID = stream.ID
 	m.closed = false
+	m.paramSets, m.lengthSize = nil, 0
+	if extra := stream.Codec.ExtraData.Bytes; hasStartCode(extra) {
+		m.paramSets = append(m.paramSets, extra...)
+	} else if config, err := h264.ParseConfig(extra); err == nil {
+		m.paramSets = config.AppendParameterSets(nil)
+		m.lengthSize = config.LengthSize
+	}
 	return nil
 }
 
@@ -109,7 +124,21 @@ func (m *Muxer) Write(ctx context.Context, packet *av.Packet, _ *format.WriteRes
 	if m.streamID != "" && packet.StreamID != "" && packet.StreamID != m.streamID {
 		return nil
 	}
-	return writeFull(m.writer, packet.Payload.Bytes)
+	data := packet.Payload.Bytes
+	if m.lengthSize > 0 && !hasStartCode(data) {
+		converted, err := h264.AppendAnnexB(m.scratch[:0], data, m.lengthSize)
+		if err != nil {
+			return err
+		}
+		m.scratch = converted
+		data = converted
+	}
+	if packet.Keyframe && len(m.paramSets) != 0 && !h264.ContainsNAL(data, h264.NALSPS) {
+		if err := writeFull(m.writer, m.paramSets); err != nil {
+			return err
+		}
+	}
+	return writeFull(m.writer, data)
 }
 
 func (m *Muxer) Close() error {
