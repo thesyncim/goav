@@ -317,7 +317,7 @@ func TestErrorAcceptanceBranchMissing(t *testing.T) {
 		Describe()
 	requireBuildError(t, err, errcode.Code("branch_missing"), "build branches", "audio",
 		"pass branches with goav.Branch(name).Encode",
-		"goav.Mux(name, destination)",
+		"same destination value",
 	)
 }
 

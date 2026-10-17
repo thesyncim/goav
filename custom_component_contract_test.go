@@ -626,7 +626,6 @@ func TestDestinationOriginContracts(t *testing.T) {
 		"sink":   Sink(SinkFunc("frames", func(context.Context, Message) error { return nil })),
 		"custom": Custom("custom", custom),
 		"writer": Writer("writer.ogg", writer),
-		"mux":    Mux("archive", Write("archive.ogg", io.Discard)),
 	} {
 		if destination.origin != destinationOriginConstructed {
 			t.Fatalf("%s destination origin = %v, want constructed", name, destination.origin)

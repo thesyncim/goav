@@ -45,7 +45,7 @@ goav.From(input)                          inputs: FileInput, Input(provider), So
   .Resize() / .Resample() / .Do(stage)    frame-domain operations after Decode
   .Encode(codec.VP9(codec.Bitrate(...)))  codec specs from the codec package
   .Branches(goav.Branch("x")...To(dst))   explicit fanout when work diverges
-  .To(Write|URI|Writer|Custom|Sink|Mux)   destinations; Mux(name, destination) = explicit mux/sink group
+  .To(Write|URI|Writer|Custom|Sink)       destinations; reuse one value to share a mux/sink
 job.Describe(); adapter-backed Explain/Build/Run use job.UseRuntime(rt), bundle.Describe/Build/Run
 Task: Run, Close
 goav.New(runconfig.Option...) -> (*Runtime, error); bundle.MustNew(...) -> bundled Runtime; job.UseRuntime(rt)
@@ -126,8 +126,8 @@ use [`docs/ADAPTERS.md`](ADAPTERS.md) and [`docs/COMPONENTS.md`](COMPONENTS.md).
   `provider.Destination` + `provider.Contract`/`provider.Info`, `goav.Writer`
   (`provider.OpenFunc`), transactional uploads via
   `provider.TransactionalWriter`, frame/packet sinks via `goav.Sink` +
-  `component.SinkFunc`, and `goav.Mux(name, destination)` when independently
-  built destinations should share one mux/sink group.
+  `component.SinkFunc`; reuse one destination value when several chains should
+  share one mux/sink.
 - **Custom stages**: use these for in-process inspection or transformation.
   `component.EventFunc`/`component.FrameFunc`/`component.PacketFunc`
   (+`component.Emit`) for `.Do(...)`; the node contracts live in `pipeline`
@@ -259,8 +259,7 @@ against the constructors in `input.go`/`provider.go`/`source.go`,
   `Branch(...).From(...)` and `task.Attach` instead of adding a room/session
   workflow API.
 - **Destination vs Sink vs Writer vs Write**: `Destination` is the routing
-  handle every constructor returns; `Mux(name, destination)` is the explicit
-  shared mux/sink group. `Write` wraps an `io.Writer` you already opened;
+  handle every constructor returns, and reusing it shares one mux/sink. `Write` wraps an `io.Writer` you already opened;
   `Writer` lets goav open the writer on demand with final `provider.Info`
   (and transactional commit/abort); `Sink` ends the branch in frames/packets
   instead of muxed bytes.

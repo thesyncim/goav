@@ -37,8 +37,8 @@ shape, `Resize`/`Resample` → transform, `Do` → stage, `Encode` → encode,
   media kind, buffer policy, and detach policy.
 - A flow is reusable operations; it owns no source, destination, runtime state,
   or lifecycle.
-- `Mux(name, destination)` is the first-class way to group branches into one
-  mux or sink group; reusing one ungrouped destination value is rejected.
+- A destination handle is its identity: reusing one value from several
+  branches feeds one mux or sink; same-name copies are rejected.
 - Shape validation is central. Inputs, operations, taps, flows, branches, and
   destinations all participate in the same compatibility check.
 - Build and Attach share the same lowering model: `WorkPlan` for a full task,
@@ -71,7 +71,7 @@ reviewing whether a new feature strengthens the grammar or bypasses it.
 
 | Area | Current evidence |
 | --- | --- |
-| Grammar | #1 README and docs guards keep the adoption vocabulary on Input, Stream, Branch, Destination, and Task; deeper docs own Tap and Flow. #2 direct chains lower like `Branch("main")`. #3 flows expose no destinations. #4 destination grouping is explicit with `Mux(name, destination)`; ungrouped handle reuse is rejected. |
+| Grammar | #1 README and docs guards keep the adoption vocabulary on Input, Stream, Branch, Destination, and Task; deeper docs own Tap and Flow. #2 direct chains lower like `Branch("main")`. #3 flows expose no destinations. #4 destination sharing is explicit: one reused handle feeds one mux; same-name copies are rejected. |
 | Planner | #5 Build and Attach share canonical operation lowering. #6 Attach emits `WorkPatch` downstream of taps. #7 Explain reads from `WorkPlan`. #8 Snapshot reflects plan plus patches. #9 legacy workflow packages are gone. #10 workflow-kind dispatch is gone from normal recipes. |
 | Shape | #11 Resize requires video frames. #12 Resample requires audio frames. #13 frames cannot go to byte destinations without Encode. #14 packet Copy to File succeeds. #15 decoded frames can end in Sink. #16 errors include operation, actual/expected shape, and fix. #17 conversions are inserted only under an explicit policy. |
 | Branches | #18 branches after Decode share one decoder. #19 dropping preview branches do not stall archive branches. #20 Blocking backpressures. #21 branch drop counters are visible. #22 mutable branch output cannot corrupt siblings. |
@@ -96,11 +96,11 @@ same plan model. `Mutable.Attach` compiles the same branch grammar into
 
 The destination model is also settled: `Target` collapsed into `Destination`,
 and `Write`, `URI`, `Writer`, `Sink`, and `Custom` return stable goav-owned
-destination handles. `Mux(name, destination)` is the preferred way to declare
-one shared mux/sink group when branches build matching destinations
-independently. Reusing one ungrouped handle is rejected; grouping is explicit
-(`TestMuxPreferredOverHandleIdentity`, `TestMuxSurvivesWithAndCopy`,
-`TestSameHandleGroupingRequiresMux`).
+destination handles. The handle is the output's identity: reusing one value
+from several chains or branches feeds one mux or sink, and separately
+constructed same-name handles are refused, so sharing stays explicit
+(`TestSameHandleSharesOneMux`, `TestWithKeepsHandleIdentity`,
+`TestDistinctHandlesWithOneNameAreRefused`).
 
 The time domain is settled too (landed 2026-07-13): one shared timeline per
 task with task-wide `control.Rate`, synchronized sink playout, task

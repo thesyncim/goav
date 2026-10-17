@@ -146,7 +146,7 @@ func ExampleFrom() {
 func ExampleFrom_multipleInputs() {
 	camera := i420Source("camera", 16, 16, 100)
 	mic := pcmSource("mic", 48_000, 1, make([]int16, 960))
-	out := goav.Mux("call", goav.Write("call.webm", io.Discard))
+	out := goav.Write("call.webm", io.Discard)
 
 	job := goav.From(camera, mic).
 		Video(goav.InputName("camera")).Encode(codec.VP8(codec.Bitrate(1_000_000))).To(out).

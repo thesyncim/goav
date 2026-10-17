@@ -24,7 +24,7 @@ func TestFromMultiInputChainsShareOneMuxDestination(t *testing.T) {
 		WithEncoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &encodeTestEncoderFactory{encoder: &encodeTestEncoder{}}),
 	)
 
-	out := Mux("call", Write("call.ogg", io.Discard, Format(av.FormatOgg)))
+	out := Write("call.ogg", io.Discard, Format(av.FormatOgg))
 	task, err := From(
 		compositeTestVideoSource("camera", 4, 4, 100, 10, 20),
 		mixTestAudioSource("mic", 100, 200),
@@ -103,7 +103,7 @@ func TestFromMultiInputHeadlineDecodeShape(t *testing.T) {
 		WithEncoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &encodeTestEncoderFactory{encoder: &encodeTestEncoder{}}),
 	)
 
-	out := Mux("call", Write("call.webm", io.Discard, Format(av.FormatWebM)))
+	out := Write("call.webm", io.Discard, Format(av.FormatWebM))
 	err := From(
 		packetSource("camera", av.MediaVideo, cameraCodec, shape.Video(4, 4, av.PixelFormatI420)),
 		packetSource("mic", av.MediaAudio, micCodec, shape.Audio(48000, codec.Mono, av.SampleFormatS16)),
@@ -240,7 +240,7 @@ func TestFromMultiInputRejectsConflictingDestinationHandles(t *testing.T) {
 // The Plan intent for a multi-chain job lists every chain and dedupes the
 // explicit Mux destination to one entry.
 func TestFromMultiInputPlanDedupesMuxDestination(t *testing.T) {
-	out := Mux("call", Write("call.ogg", io.Discard, Format(av.FormatOgg)))
+	out := Write("call.ogg", io.Discard, Format(av.FormatOgg))
 	job := From(
 		compositeTestVideoSource("camera", 4, 4, 100, 10, 20),
 		mixTestAudioSource("mic", 1),
@@ -278,30 +278,12 @@ func TestFromMultiInputPlanDedupesMuxDestination(t *testing.T) {
 	}
 }
 
-func TestMuxPreferredOverHandleIdentity(t *testing.T) {
-	videoOut := Mux("call", Write("call.ogg", io.Discard, Format(av.FormatOgg)))
-	audioOut := Mux("call", Write("call.ogg", io.Discard, Format(av.FormatOgg)))
-	job := From(
-		compositeTestVideoSource("camera", 4, 4, 100, 10, 20),
-		mixTestAudioSource("mic", 1),
-	).
-		Video().Encode(codec.VP9()).To(videoOut).
-		Audio().Encode(codec.Opus()).To(audioOut)
-
-	intent := job.plan()
-	if len(intent.Destinations) != 1 || intent.Destinations[0].Name != "call.ogg" {
-		t.Fatalf("destinations = %+v, want one explicit mux group", intent.Destinations)
-	}
-	for i := range intent.Streams {
-		if len(intent.Streams[i].Destinations) != 1 || intent.Streams[i].Destinations[0] != "call.ogg" {
-			t.Fatalf("stream %d destinations = %v", i, intent.Streams[i].Destinations)
-		}
-	}
-}
-
-func TestMuxSurvivesWithAndCopy(t *testing.T) {
-	videoOut := Mux("call", Write("call.ogg", io.Discard, Format(av.FormatOgg)))
-	audioOut := Mux("call", Write("call.ogg", io.Discard)).With(Format(av.FormatOgg))
+// TestWithKeepsHandleIdentity pins that With copies keep the handle's
+// identity: two configured copies of one destination still feed one mux.
+func TestWithKeepsHandleIdentity(t *testing.T) {
+	out := Write("call.ogg", io.Discard)
+	videoOut := out.With(Format(av.FormatOgg))
+	audioOut := out.With(Format(av.FormatOgg))
 	job := From(
 		compositeTestVideoSource("camera", 4, 4, 100, 10, 20),
 		mixTestAudioSource("mic", 1),
@@ -333,9 +315,12 @@ func TestMuxSurvivesWithAndCopy(t *testing.T) {
 	}
 }
 
-func TestMuxSameNameDifferentConfigFailsClearly(t *testing.T) {
-	videoOut := Mux("call", Write("call.ogg", io.Discard, Format(av.FormatOgg)))
-	audioOut := Mux("call", Write("call.ogg", io.Discard, Format(av.FormatWebM)))
+// TestOneHandleWithConflictingConfigFailsClearly: copies of one handle that
+// disagree on the container cannot share a mux.
+func TestOneHandleWithConflictingConfigFailsClearly(t *testing.T) {
+	out := Write("call.ogg", io.Discard)
+	videoOut := out.With(Format(av.FormatOgg))
+	audioOut := out.With(Format(av.FormatWebM))
 	_, err := From(
 		compositeTestVideoSource("camera", 4, 4, 100, 10, 20),
 		mixTestAudioSource("mic", 1),
@@ -348,19 +333,52 @@ func TestMuxSameNameDifferentConfigFailsClearly(t *testing.T) {
 	if !errors.As(err, &buildErr) || buildErr.Code != destinationDuplicateCode {
 		t.Fatalf("err = %v, want destination_duplicate", err)
 	}
-	if !strings.Contains(err.Error(), "Mux") {
-		t.Fatalf("err = %v, want explicit mux guidance", err)
+	if !strings.Contains(err.Error(), "same destination value") {
+		t.Fatalf("err = %v, want shared-handle guidance", err)
 	}
 }
 
-func TestSameHandleGroupingRequiresMux(t *testing.T) {
+// TestSameHandleSharesOneMux pins destination identity: reusing one handle
+// from the video and audio chains writes both into one mux — the common
+// "one output file" recipe needs no grouping call.
+func TestSameHandleSharesOneMux(t *testing.T) {
 	out := Write("call.ogg", io.Discard, Format(av.FormatOgg))
-	_, err := From(
+	spec, err := From(
 		compositeTestVideoSource("camera", 4, 4, 100, 10, 20),
 		mixTestAudioSource("mic", 1),
 	).
 		Video().Encode(codec.VP9()).To(out).
 		Audio().Encode(codec.Opus()).To(out).
+		Describe()
+	if err != nil {
+		t.Fatalf("Describe: %v", err)
+	}
+	muxes, inbound := 0, 0
+	for _, node := range spec.Nodes {
+		if node.Name == "call.ogg" {
+			muxes++
+		}
+	}
+	for _, edge := range spec.Edges {
+		if edge.To == "call.ogg" {
+			inbound++
+		}
+	}
+	if muxes != 1 || inbound != 2 {
+		t.Fatalf("call.ogg nodes=%d inbound edges=%d, want one mux fed by both streams\n%s", muxes, inbound, specText(spec))
+	}
+}
+
+// TestDistinctHandlesWithOneNameAreRefused keeps sharing explicit: two
+// separately constructed destinations that happen to share a name are a
+// mistake, not a mux.
+func TestDistinctHandlesWithOneNameAreRefused(t *testing.T) {
+	_, err := From(
+		compositeTestVideoSource("camera", 4, 4, 100, 10, 20),
+		mixTestAudioSource("mic", 1),
+	).
+		Video().Encode(codec.VP9()).To(Write("call.ogg", io.Discard, Format(av.FormatOgg))).
+		Audio().Encode(codec.Opus()).To(Write("call.ogg", io.Discard, Format(av.FormatOgg))).
 		Describe()
 
 	var buildErr *BuildError

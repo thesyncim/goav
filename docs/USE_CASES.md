@@ -22,9 +22,9 @@ err := goav.From(goav.Input(webrtcav.Track(track))).
     Run(ctx)
 ```
 
-Give matching file, URI, writer, object upload, or sink destinations the same
-`goav.Mux(name, destination)` when several branches should feed one mux or sink
-group. Reusing one ungrouped destination value is rejected.
+Pass the same destination value to every chain or branch that should feed one
+mux or sink. Separately constructed destinations with the same name are
+rejected, so sharing is always explicit.
 
 Decoded preview:
 
@@ -198,8 +198,8 @@ err := goav.From(input).
     Run(ctx)
 ```
 
-One destination can be a mux group: several encoded branches feed matching
-`goav.Mux(name, destination)` values. A destination can also be a sink after
+One destination can be shared: several encoded branches feed one mux when
+they are given the same destination value. A destination can also be a sink after
 any branch operation (no encode needed for frame-domain ends).
 
 Branches normally start from the current stream point. When one branch needs an
@@ -364,7 +364,7 @@ or mux branch outputs:
 ```go
 audioEncoded := goav.PacketTap("audio.encoded")
 videoEncoded := goav.PacketTap("video.encoded")
-recording := goav.Mux("recording", goav.Write("recording.webm", file))
+recording := goav.Write("recording.webm", file)
 
 group, err := task.Attach(ctx,
     goav.Branch("audio").From(audioEncoded).Copy().To(recording),

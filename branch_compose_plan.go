@@ -231,7 +231,7 @@ func branchIntentDestinationMissingError(stream streamIntent) error {
 		Reason:    "branch has no destination",
 		fixes: buildErrorFixes([]string{
 			"finish the branch with .To(goav.Write(\"web.ivf\", writer)) or .To(goav.Sink(sink))",
-			"pass goav.Mux(name, destination) when branches should share one mux group",
+			"pass the same destination value to every branch that should share one mux",
 		}),
 		cause: errUnsupportedBuild,
 	}
@@ -247,7 +247,7 @@ func branchDestinationReferenceMissingError(stream streamIntent, label string) e
 		Reason:    "destination " + label + " is referenced but not defined",
 		fixes: buildErrorFixes([]string{
 			"pass a named goav.Write(...), goav.URI(...), or goav.Sink(...) destination to the branch .To(...) call",
-			"pass goav.Mux(name, destination) when helpers construct matching grouped destinations",
+			"construct the destination once and pass that value to every helper that writes it",
 		}),
 		cause: errUnsupportedBuild,
 	}
@@ -294,7 +294,7 @@ func branchDestinationDuplicateError(name string) error {
 		Node:      name,
 		Reason:    fmt.Sprintf("destination %q is defined more than once with different destination handles", name),
 		fixes: buildErrorFixes([]string{
-			"pass goav.Mux(name, destination) when multiple branches should share one mux group",
+			"pass the same destination value to every branch that should share one mux",
 			"use distinct destination names when branches should write to different destinations",
 		}),
 		cause: errUnsupportedBuild,
@@ -313,7 +313,7 @@ func branchIntentDuplicateError(name string, firstIndex int, secondIndex int) er
 		fixes: buildErrorFixes([]string{
 			"use unique names such as .Video(\"720p\") and .Video(\"360p\")",
 			"route one branch to multiple destinations by calling .To(destination, otherDestination)",
-			"route different branches to the same destination with goav.Mux(name, destination)",
+			"route different branches to one output by passing them the same destination value",
 		}),
 		cause: errUnsupportedBuild,
 	}
@@ -362,7 +362,7 @@ func duplicateBranchDestinationError(stream streamIntent, target string, firstIn
 		fixes: buildErrorFixes([]string{
 			"list each destination once in .To(...)",
 			"route one branch to multiple destinations with distinct values such as .To(archive, preview)",
-			"pass goav.Mux(name, destination) when repeated destination names should form one group",
+			"reuse one destination value instead of constructing the same name twice",
 		}),
 		cause: errUnsupportedBuild,
 	}

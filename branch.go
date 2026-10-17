@@ -3,6 +3,7 @@ package goav
 import (
 	"errors"
 	"fmt"
+	"strconv"
 	"sync/atomic"
 
 	"github.com/thesyncim/goav/av"
@@ -17,19 +18,23 @@ import (
 var destinationRefSeq atomic.Uint64
 var destinationSpecSeq atomic.Uint64
 
+// destinationShareKey is the identity under which outputs share one mux or
+// sink: the handle itself. Reusing one destination value from several streams
+// or branches feeds one mux; separately constructed destinations stay
+// distinct even when they share a name, so sharing is always explicit.
 func destinationShareKey(dest destinationSpec) string {
-	if dest.group != "" {
-		return "group:" + dest.group
+	if dest.id != 0 {
+		return "handle:" + strconv.FormatUint(dest.id, 10)
 	}
 	return ""
 }
 
-// Destination is an opaque handle for a file, URI, writer, media sink, or
-// shared mux/sink group. Built-in constructors and Custom return destination
-// values with goav-owned routing identity; Mux can make that grouping identity
-// explicit across separately constructed values. The zero value is intentionally
-// not a valid destination; construct destination handles with Write, URI, Sink,
-// Writer, Custom, or Mux.
+// Destination is an opaque handle for a file, URI, writer, or media sink. The
+// handle is the output's identity: pass the same value to .To(...) from
+// several streams or branches and they feed one mux or sink (With keeps that
+// identity); separately constructed handles are separate outputs. The zero
+// value is intentionally not a valid destination; construct handles with
+// Write, URI, Sink, Writer, or Custom.
 type Destination struct {
 	origin destinationOrigin
 	spec   destinationSpec
@@ -1221,7 +1226,7 @@ func branchMissingError(node string) error {
 		Reason:    "Branches requires at least one encoded branch",
 		fixes: buildErrorFixes([]string{
 			"pass branches with goav.Branch(name).Encode(codec.VP9(...)).To(goav.Write(name, writer))",
-			"pass goav.Mux(name, destination) when branches should share one mux group",
+			"pass the same destination value to every branch that should share one mux",
 		}),
 		cause: errUnsupportedBuild,
 	}
@@ -1267,7 +1272,7 @@ func branchDestinationMissingError(name string) error {
 		Reason:    "branch has no destination",
 		fixes: buildErrorFixes([]string{
 			"finish the branch with .To(goav.Write(\"web.ivf\", writer)) or .To(goav.Sink(sink))",
-			"pass goav.Mux(name, destination) when several branches should share one mux or sink group",
+			"pass the same destination value to every branch that should share one mux or sink",
 		}),
 		cause: errUnsupportedBuild,
 	}
@@ -1295,7 +1300,7 @@ func destinationInvalidError(operation string, node string, reason string) error
 		Reason:    reason,
 		fixes: buildErrorFixes([]string{
 			"use goav.Write(...), goav.URI(...), or goav.Sink(...) for a real destination",
-			"wrap shared outputs with goav.Mux(name, destination)",
+			"pass one destination value to every chain that should share it",
 			"use distinct destination values for independent outputs",
 		}),
 		cause: errUnsupportedBuild,

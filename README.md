@@ -101,6 +101,7 @@ set); there is no global registry. Full matrix: [Adapters](docs/ADAPTERS.md).
 | Need | Shape |
 | --- | --- |
 | Remux without decoding (H.264 too, in any build) | `goav.From(input).Copy().To(goav.Write("out.mkv", w))` |
+| Audio and video into one file | `out := goav.Write("out.webm", w)`, then `.Video()…To(out).Audio()…To(out)`: one handle, one mux |
 | Decoded frames into your code | `.Video().Decode().To(goav.Sink(component.SinkFunc("frames", fn)))` |
 | Normalize audio | `.Audio().Decode().Resample(48000, 2).Encode(codec.Opus())` |
 | One decode, many renditions | `.Decode().Branches(goav.Branch("720p").Resize(1280, 720).Encode(...).To(...), ...)` |

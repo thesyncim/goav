@@ -41,8 +41,8 @@ last-wins, so one call can add or override implementations.
 `From(input)` is the beginner-facing front door, and the surface is small:
 `From`, stream selection, ordered operations, taps, branches, flows, tasks,
 and destinations — direct `File`/`URI`/`Sink` destinations, custom `Writer`
-destinations with `provider.Info`, and `Mux(name, destination)` for shared
-mux/sink groups.
+destinations with `provider.Info`, and shared mux/sink outputs by reusing one
+destination value.
 
 One media work planner owns the cold path. It:
 
@@ -87,9 +87,9 @@ does not branch on input/output kind.
 
 `Destination` is the public routing handle and extension surface for files,
 byte writers, object-store uploads, URI-backed outputs, frame/packet/event
-sinks, and shared mux/sink groups. `Mux(name, destination)` is the first-class
-grouping model when branches construct matching destinations separately;
-reusing one ungrouped destination value is rejected. The work plan keeps
+sinks, and shared mux/sink outputs. The handle is the identity: one value reused
+across chains or branches feeds one mux or sink, and separately constructed
+same-name handles are rejected. The work plan keeps
 concrete destination openers cold until stream list, format, MIME, metadata,
 and realtime policy are known.
 

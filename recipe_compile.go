@@ -769,7 +769,7 @@ func jobStreamDestinationMissingError(operation string, stream recipeir.Stream) 
 		Reason:    "stream chain has no destination",
 		fixes: buildErrorFixes([]string{
 			"finish each chain with .To(destination) before starting the next .Audio()/.Video()/.Stream()",
-			"pass goav.Mux(name, destination) across chains to mux them together",
+			"pass the same destination value to each chain to mux them together",
 		}),
 		cause: errUnsupportedBuild,
 	}

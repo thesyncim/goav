@@ -79,7 +79,7 @@ Module scope:
 
 API surface:
 - Added exported symbols: `BuildError` helper methods, `BuildLive`,
-  task capability vocabulary, `Mux(name, destination)`, `Write(name, writer)`,
+  task capability vocabulary, `Write(name, writer)`,
   `bundle.Describe`, inspect helpers, sync policy options, media-time
   rebranch boundaries, and the sealed grammar builder/option types
   (`BranchBuilder`, `FlowBuilder`, `MixStream`, `CompositeStream`,
@@ -100,8 +100,8 @@ Behavior changes:
   inspection, watches, controls, or runtime mutation use `BuildLive`.
 - Stream chains require explicit `.Decode()` before frame-domain consumers;
   `.Copy()` keeps packet-domain recipes packet preserving.
-- Reused destination handles no longer imply grouping; shared outputs require
-  explicit `Mux(name, destination)`.
+- A reused destination handle is the shared output: one value passed to
+  several chains or branches feeds one mux or sink (`Mux` was removed).
 - Compile-time planning now uses captured immutable recipe IR for inputs,
   streams, destinations, joins, stream rules, graph lowerers, and work-plan
   rendering.
@@ -123,8 +123,8 @@ Migration notes:
   or explicit `BuildLive` capabilities.
 - Replace `Writer`/path-style output spelling with `Write(name, writer)` or
   `URI(uri)` as appropriate.
-- Replace repeated destination handles with `Mux(name, destination)` for shared
-  mux/sink grouping.
+- Replace `Mux(name, destination)` with the destination value itself, passed
+  to every chain that shares it.
 - Switch structured-error callers from legacy details/suggestions fields to
   `Detail(key)`, `DetailLines()`, and `FixLines()`.
 - Add explicit `.Decode()` before frame transforms, real encoders, frame taps,
