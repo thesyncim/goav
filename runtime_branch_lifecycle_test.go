@@ -89,7 +89,7 @@ func (s *packetCountSink) Close() error { return nil }
 // The passthrough decoder turns each foreign packet into a fresh mutable frame.
 func liveMutableVideoPackets(name string, width, height int, tick time.Duration) goav.InputSpec {
 	return goav.Source(name,
-		shape.Packet(av.MediaVideo, av.CodecVP8, shape.Video(width, height, av.PixelFormatI420)),
+		shape.Packet(av.MediaVideo, av.CodecVP8, shape.Video(width, height, av.PixelFormatI420), shape.Realtime(true)),
 		func(ctx context.Context, push source.Push) error {
 			base := av.TimeBase{Num: 1, Den: 90_000}
 			for n := 0; ; n++ {

@@ -41,8 +41,9 @@ Design properties:
   has a single serial worker, so join stages need no internal locking.
 - Select defaults a direct runtime to a non-lossy buffered graph so
   `SelectActive` can be injected. Realtime Mix/Composite do the same so live
-  arms start concurrently, while offline (`WithRealtime(false)`) Mix/Composite
-  keep direct-runner speed unless the runtime explicitly opts into a buffer.
+  arms start concurrently, while offline Mix/Composite (file arms, the default
+  without a live input) keep direct-runner speed unless the runtime opts into a
+  buffer.
 - Select pins active-arm passthrough at zero allocations
   (`TestSelectorPassthroughAllocs`), and Mix and Composite pin their two-arm
   per-step hot paths at zero allocations (`TestAudioMixStepAllocs`,

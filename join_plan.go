@@ -1073,7 +1073,7 @@ func (p *joinPlan) runtimeRef() *runtime {
 // injection works no matter where the Select sits (root or nested arm).
 func (p *joinPlan) graphConfig(gp graphPlan) (pipeline.GraphConfig, error) {
 	buffer := p.runtime.buffer
-	if pinned, realtimeOnly := p.treeGraphBuffer(); pinned != nil && buffer.IsDirect() && (!realtimeOnly || p.runtime.realtime) {
+	if pinned := p.treeGraphBuffer(p.runtime.realtime); pinned != nil && buffer.IsDirect() {
 		buffer = *pinned
 	}
 	if !buffer.IsDirect() {
@@ -1093,21 +1093,22 @@ func (p *joinPlan) graphConfig(gp graphPlan) (pipeline.GraphConfig, error) {
 }
 
 // treeGraphBuffer returns the first profile-pinned graph buffer in the join
-// tree: a nested Select still needs the buffered per-node workers its control
-// plane injects through.
-func (p *joinPlan) treeGraphBuffer() (*pipeline.BufferPolicy, bool) {
-	if p.profile.graphBuffer != nil {
-		return p.profile.graphBuffer, p.profile.graphBufferRealtimeOnly
+// tree that applies at this realtime setting: a nested Select still needs the
+// buffered per-node workers its control plane injects through, even under an
+// offline root whose own realtime-only pin (Mix/Composite) does not apply.
+func (p *joinPlan) treeGraphBuffer(realtime bool) *pipeline.BufferPolicy {
+	if p.profile.graphBuffer != nil && (!p.profile.graphBufferRealtimeOnly || realtime) {
+		return p.profile.graphBuffer
 	}
 	for i := range p.arms {
 		if p.arms[i].sub == nil {
 			continue
 		}
-		if buffer, realtimeOnly := p.arms[i].sub.treeGraphBuffer(); buffer != nil {
-			return buffer, realtimeOnly
+		if buffer := p.arms[i].sub.treeGraphBuffer(realtime); buffer != nil {
+			return buffer
 		}
 	}
-	return nil, false
+	return nil
 }
 
 // spec emits the planned join graph: per-arm sub-chains (a source or a

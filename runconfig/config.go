@@ -101,15 +101,15 @@ func NewConfig(options ...Option) (*Config, error) {
 }
 
 // DefaultConfig returns a new bare runtime configuration: per-runtime
-// registries with no adapters beyond content sniffing and realtime pacing on.
+// registries with no adapters beyond content sniffing. Realtime is off, so a
+// job paces only when one of its inputs is live (see WithRealtime).
 func DefaultConfig() *Config {
 	formats := format.NewRegistry()
 	formats.RegisterProber(format.DefaultProber())
 	return &Config{
-		Codecs:   codec.NewRegistry(),
-		Filters:  filter.NewRegistry(),
-		Formats:  formats,
-		Realtime: true,
+		Codecs:  codec.NewRegistry(),
+		Filters: filter.NewRegistry(),
+		Formats: formats,
 	}
 }
 
@@ -338,8 +338,13 @@ func WithQoSPolicy(policy func(av.Event) []control.Control) Option {
 	}
 }
 
-// WithRealtime selects pacing: true (the default) delivers file media when its
-// media time is due on the runtime clock; false pumps at full speed.
+// WithRealtime(true) makes every job on the runtime realtime: file media is
+// delivered when its media time is due on the runtime clock (simulating a live
+// feed), graphs buffer between stages, and encoders use their low-latency
+// presets. Without it (the default) realtime follows the inputs: a job is
+// realtime when an input is live — a provider or push source whose shape
+// declares Realtime, such as RTP or WebRTC receive — and file-to-file work
+// runs as fast as the machine allows.
 func WithRealtime(realtime bool) Option {
 	return func(config *Config) error {
 		config.Realtime = realtime

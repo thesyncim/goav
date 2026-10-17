@@ -16,8 +16,8 @@ func TestDefaultConfigIsValidAndBare(t *testing.T) {
 	if err := Validate(config); err != nil {
 		t.Fatalf("DefaultConfig does not validate: %v", err)
 	}
-	if !config.Realtime {
-		t.Fatal("DefaultConfig must default to realtime pacing")
+	if config.Realtime {
+		t.Fatal("DefaultConfig must leave realtime off: jobs pace only when an input is live")
 	}
 	if config.Codecs == nil || config.Filters == nil || config.Formats == nil {
 		t.Fatal("DefaultConfig must construct per-runtime registries")

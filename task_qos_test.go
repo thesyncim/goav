@@ -97,7 +97,7 @@ func qosEncodeVideoSource(id av.StreamID, release chan struct{}, pts ...time.Dur
 	uPlane := bytes.Repeat([]byte{0x80}, chromaW*chromaH)
 	vPlane := bytes.Repeat([]byte{0x80}, chromaW*chromaH)
 	return Source(string(id),
-		shape.Frame(av.MediaVideo, shape.Video(width, height, av.PixelFormatI420), shape.Stream(id)),
+		shape.Frame(av.MediaVideo, shape.Video(width, height, av.PixelFormatI420), shape.Stream(id), shape.Realtime(true)),
 		func(sctx context.Context, push SourcePush) error {
 			for i := range pts {
 				select {

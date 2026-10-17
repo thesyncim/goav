@@ -260,7 +260,7 @@ func TestRecipeGraphConfigBufferContracts(t *testing.T) {
 	if _, err := recipeGraphConfig(nil, "", workPlan{}, false); err == nil {
 		t.Fatal("recipeGraphConfig nil runtime error = nil")
 	}
-	rt := mustNew(WithEventCapacity(7), WithCloseWaitTimeout(15*time.Millisecond))
+	rt := mustNew(WithRealtime(true), WithEventCapacity(7), WithCloseWaitTimeout(15*time.Millisecond))
 	config, err := recipeGraphConfig(rt, "", workPlan{Name: "camera"}, true)
 	if err != nil {
 		t.Fatalf("recipeGraphConfig error = %v", err)

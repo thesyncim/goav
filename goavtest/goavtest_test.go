@@ -272,7 +272,7 @@ func TestRuntimePacesFileInputOnFakeClock(t *testing.T) {
 	err = goav.From(goav.FileInput("paced.ogg", bytes.NewReader(file.Bytes()))).
 		Audio().Copy().
 		To(out.Sink()).
-		UseRuntime(goavtest.Runtime(runconfig.WithClock(clock))).
+		UseRuntime(goavtest.Runtime(runconfig.WithRealtime(true), runconfig.WithClock(clock))).
 		Run(ctx)
 	if err != nil {
 		t.Fatal(err)

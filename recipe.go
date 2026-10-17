@@ -413,6 +413,30 @@ func (j *Job) runtimeOrNil() *Runtime {
 	return nil
 }
 
+// compileRuntime is the runtime a job plans and builds against. Realtime
+// follows the inputs unless the runtime forces it with WithRealtime(true): a
+// job with a live input (a provider or push source whose shape declares
+// Realtime) compiles against a realtime view of its runtime, so its graph
+// buffers between stages and encoders pick low-latency presets, while
+// file-to-file jobs keep the offline runtime and run at full speed.
+func (j *Job) compileRuntime(inputs []InputSpec) *Runtime {
+	rt := j.runtimeOrNil()
+	if rt == nil || rt.realtime || !inputsAreLive(inputs) {
+		return rt
+	}
+	return runtimeWithRealtime(rt, true)
+}
+
+// inputsAreLive reports whether any input delivers on its own clock.
+func inputsAreLive(inputs []InputSpec) bool {
+	for i := range inputs {
+		if inputs[i].realtime || inputs[i].input.Realtime {
+			return true
+		}
+	}
+	return false
+}
+
 func (j *Job) setErr(err error) {
 	if err == nil {
 		return
@@ -575,7 +599,7 @@ func (j *Job) checkSharedStreamDestination(current *jobStreamBuild, output desti
 func (j *Job) plan() intent {
 	intent := intent{Name: j.name, Copy: j.copy}
 	if j.runtime != nil {
-		intent.Policies.Realtime = j.runtime.realtime
+		intent.Policies.Realtime = j.runtime.realtime || inputsAreLive(j.inputs)
 	}
 	for i := range j.inputs {
 		intent.Inputs = append(intent.Inputs, j.inputs[i].intent())

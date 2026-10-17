@@ -158,10 +158,17 @@ func recipeDecodeAdapterError(operation string, stream streamIntent, codecID av.
 		reason = string(codecID) + " decoder adapter is descriptor-only in this build"
 	}
 	details := []string{"codec=" + string(codecID)}
+	tagFix := "enable the adapter build tag or choose a runtime with a concrete decoder"
 	if registry != nil {
 		descriptors, err := registry.Find(codecID, codec.ModeDecode)
 		if err == nil {
 			details = append(details, codecDescriptorDetails(descriptors)...)
+			for i := range descriptors {
+				if tags := descriptors[i].Capabilities.BuildTags; len(tags) != 0 {
+					tagFix = "build with -tags " + strings.Join(tags, ",") + " to include the " + string(codecID) + " decoder"
+					break
+				}
+			}
 		}
 	}
 	return &BuildError{
@@ -173,8 +180,8 @@ func recipeDecodeAdapterError(operation string, stream streamIntent, codecID av.
 		Reason:    reason,
 		fields:    errDetailLines(details),
 		fixes: buildErrorFixes([]string{
+			tagFix,
 			"register a codec adapter that provides a " + string(codecID) + " decoder",
-			"enable the adapter build tag or choose a runtime with a concrete decoder",
 			"use goav.From(input).Copy().To(output) for packet-preserving receive when decoding is not needed",
 		}),
 		cause: cause,

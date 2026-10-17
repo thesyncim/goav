@@ -60,7 +60,7 @@ func newLinearJobRecipeSnapshot(job *Job) recipeCompileSnapshot {
 	}
 	return recipeCompileSnapshot{
 		recipe:                 recipe,
-		runtime:                job.runtimeOrNil(),
+		runtime:                job.compileRuntime(job.inputs),
 		runtimeExplicit:        job.runtimeSet,
 		recipeErr:              recipeErr,
 		jobPresent:             true,
@@ -84,7 +84,7 @@ func newJoinRecipeSnapshot(job *Job) recipeCompileSnapshot {
 	recipe.StreamRules = recipeIRStreamRulesFromRoot(job.streamRules)
 	return recipeCompileSnapshot{
 		recipe:                 recipe,
-		runtime:                job.runtimeOrNil(),
+		runtime:                job.compileRuntime(inputs),
 		runtimeExplicit:        job.runtimeSet,
 		recipeErr:              job.recipeErr(),
 		inputAttachments:       inputs,
@@ -103,7 +103,7 @@ func newBranchJobRecipeSnapshot(job *Job) recipeCompileSnapshot {
 	} else if recipeErr == nil {
 		recipeErr = branchInputCountError("branches", len(job.inputs))
 	}
-	runtime := job.runtimeOrNil()
+	runtime := job.compileRuntime(job.inputs)
 	destinations := cloneNamedDestinationSpecs(job.branchDestinations)
 	recipe := recipeir.Recipe{
 		Kind: recipeir.KindBranchComposition,
@@ -624,7 +624,7 @@ func joinIntentFromTree(job *Job, tree *joinTreeSnapshot) intent {
 	}
 	in := intent{Name: string(tree.kind)}
 	if job.runtime != nil {
-		in.Policies.Realtime = job.runtime.realtime
+		in.Policies.Realtime = job.runtime.realtime || inputsAreLive(joinLeafInputSpecs(tree))
 	}
 	for _, input := range joinLeafInputSpecs(tree) {
 		in.Inputs = append(in.Inputs, input.intent())

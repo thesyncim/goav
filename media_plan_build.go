@@ -113,6 +113,17 @@ func runtimeRealtime(rt *runtime) bool {
 	return rt.realtime
 }
 
+// runtimeWithRealtime is a view of rt with realtime pacing set, sharing its
+// registries and pools.
+func runtimeWithRealtime(rt *runtime, realtime bool) *runtime {
+	if rt == nil {
+		return nil
+	}
+	clone := *rt
+	clone.realtime = realtime
+	return &clone
+}
+
 func runtimeWithBuffer(rt *runtime, buffer pipeline.BufferPolicy) *runtime {
 	if rt == nil {
 		return nil

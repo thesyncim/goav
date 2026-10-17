@@ -56,7 +56,7 @@ func (t *task) timelineControlRefusal(operation string) error {
 		return fmt.Errorf("goav: %s: task is closed: %w", operation, control.ErrNotRunning)
 	}
 	if t.timeline == nil || !t.timeline.paced() {
-		return fmt.Errorf("goav: %s: nothing on this task is paced, so a timeline control would be a silent no-op; keep the runtime realtime for file inputs, implement UseClock(av.Clock) on the source, or add .Playout(flow.Playout(name)) before the destination: %w", operation, format.ErrRateUnsupported)
+		return fmt.Errorf("goav: %s: nothing on this task is paced, so a timeline control would be a silent no-op; build the runtime with runconfig.WithRealtime(true) to pace file inputs, implement UseClock(av.Clock) on the source, or add .Playout(flow.Playout(name)) before the destination: %w", operation, format.ErrRateUnsupported)
 	}
 	return nil
 }

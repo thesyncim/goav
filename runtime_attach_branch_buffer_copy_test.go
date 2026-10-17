@@ -68,7 +68,7 @@ func TestRuntimeBranchExplicitDropBufferInheritsCopyBounds(t *testing.T) {
 // into the branch's own backing rather than shared by reference.
 func mutableFrameVideoPackets(name string, width, height, count int) goav.InputSpec {
 	return goav.Source(name,
-		shape.Packet(av.MediaVideo, av.CodecVP8, shape.Video(width, height, av.PixelFormatI420)),
+		shape.Packet(av.MediaVideo, av.CodecVP8, shape.Video(width, height, av.PixelFormatI420), shape.Realtime(true)),
 		func(_ context.Context, push source.Push) error {
 			base := av.TimeBase{Num: 1, Den: 90_000}
 			for n := range count {

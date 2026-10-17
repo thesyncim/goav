@@ -2178,6 +2178,17 @@ func runtimeBranchShapeDetails(shape shape.Spec) []string {
 }
 
 func runtimeBranchGraphError(operation string, node string, cause error) error {
+	fixes := []string{
+		"build the branch before Run when using buffered execution",
+	}
+	if errors.Is(cause, pipeline.ErrBufferedEdgesUnsupported) {
+		// A buffered branch (.Buffer(...)) needs a buffered task graph; offline
+		// file tasks run direct.
+		fixes = []string{
+			"drop the branch's .Buffer(...) policy: this task runs a direct (offline) graph",
+			"or make the task realtime: a live input, or a runtime built with runconfig.WithRealtime(true)",
+		}
+	}
 	return &BuildError{
 		Phase:     phaseBuild,
 		Family:    errcode.FamilyForCode(runtimeBranchGraphErrorCode),
@@ -2185,11 +2196,7 @@ func runtimeBranchGraphError(operation string, node string, cause error) error {
 		Operation: operation,
 		Node:      node,
 		Reason:    "runtime graph rejected the branch attachment",
-		fixes: buildErrorFixes([]string{
-			"runtime branches are supported on direct task graphs today",
-			"use a direct buffer policy for live runtime branch experiments",
-			"build the branch before Run when using buffered execution",
-		}),
-		cause: cause,
+		fixes:     buildErrorFixes(fixes),
+		cause:     cause,
 	}
 }

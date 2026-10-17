@@ -241,7 +241,7 @@ func TestDecodeUsesFactoryStateProvider(t *testing.T) {
 	sink := &runtimeTestSink{name: "frames"}
 
 	task, err := From(FileInput("input.ivf", strings.NewReader(""))).
-		UseRuntime(mustNew(formats, codecs)).
+		UseRuntime(mustNew(WithRealtime(true), formats, codecs)).
 		Video().
 		Decode().
 		To(Sink(sink)).
