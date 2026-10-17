@@ -545,35 +545,10 @@ func TestTaskAttachRuntimeBranchGroupRollsBackOnLaterFailure(t *testing.T) {
 	}
 }
 
-func TestTaskAttachRuntimeBranchGroupRejectsSharedSinkDestinationWithoutMux(t *testing.T) {
-	ctx := context.Background()
-	graph := expertGraph(mustNew())
-	src := graph.Source("source", &runtimeTestSource{name: "source"})
-	graph.Connect(src.Out(), graph.Sink("base", &runtimeTestSink{name: "base"}).In())
-	task, err := graph.Build(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer task.Close()
-	shared := SinkFunc("shared", func(context.Context, Message) error {
-		return nil
-	})
-	destination := Sink(shared)
-
-	_, err = task.Attach(ctx,
-		Branch("left").From(src).To(destination),
-		Branch("right").From(src).To(destination),
-	)
-	var buildErr *BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "destination_duplicate" {
-		t.Fatalf("err = %v, want destination_duplicate", err)
-	}
-	if !strings.Contains(err.Error(), "goav.Mux(name, destination)") {
-		t.Fatalf("err = %v, want mux guidance", err)
-	}
-}
-
-func TestTaskAttachRuntimeBranchGroupSharesMuxSinkDestination(t *testing.T) {
+// TestTaskAttachRuntimeBranchGroupSharesOneSinkHandle pins destination
+// identity at attach time: two branches attached together to one sink handle
+// share a single sink node.
+func TestTaskAttachRuntimeBranchGroupSharesOneSinkHandle(t *testing.T) {
 	ctx := context.Background()
 	graph := expertGraph(mustNew())
 	src := graph.Source("source", &runtimeTestSource{name: "source"})
@@ -584,39 +559,32 @@ func TestTaskAttachRuntimeBranchGroupSharesMuxSinkDestination(t *testing.T) {
 	}
 	defer task.Close()
 	sharedCount := 0
-	left := Mux("diagnostics", Sink(SinkFunc("shared", func(context.Context, Message) error {
+	destination := Sink(SinkFunc("shared", func(context.Context, Message) error {
 		sharedCount++
 		return nil
-	})))
-	right := Mux("diagnostics", Sink(SinkFunc("shared", func(context.Context, Message) error {
-		return fmt.Errorf("explicit mux destination should open one shared sink")
-	})))
+	}))
 
 	attachment, err := task.Attach(ctx,
-		Branch("left").From(src).To(left),
-		Branch("right").From(src).To(right),
+		Branch("left").From(src).To(destination),
+		Branch("right").From(src).To(destination),
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	spec := attachment.Spec()
 	sharedNodes := 0
-	for i := range spec.Nodes {
-		if spec.Nodes[i].Name == "shared" {
+	for _, node := range attachment.Spec().Nodes {
+		if node.Name == "shared" {
 			sharedNodes++
-		}
-		if strings.Contains(spec.Nodes[i].Name, "left/") || strings.Contains(spec.Nodes[i].Name, "right/") {
-			t.Fatalf("grouped destination created branch-owned sink node: %+v", spec.Nodes[i])
 		}
 	}
 	if sharedNodes != 1 {
-		t.Fatalf("grouped sink nodes = %d, want 1 in %+v", sharedNodes, spec.Nodes)
+		t.Fatalf("shared sink nodes = %d, want 1", sharedNodes)
 	}
 	if err := task.Run(ctx); err != nil {
 		t.Fatal(err)
 	}
 	if sharedCount != 2 {
-		t.Fatalf("grouped sink count = %d, want one message per branch", sharedCount)
+		t.Fatalf("shared sink count = %d, want one message per branch", sharedCount)
 	}
 }
 
@@ -646,8 +614,8 @@ func TestTaskAttachRuntimeBranchGroupRejectsDuplicateSinkDestinationNames(t *tes
 	if !errors.As(err, &buildErr) || buildErr.Code != "destination_duplicate" || !errors.Is(err, errUnsupportedBuild) {
 		t.Fatalf("err = %v, want destination_duplicate with matching BuildError code", err)
 	}
-	if !strings.Contains(err.Error(), "goav.Mux(name, destination)") {
-		t.Fatalf("err = %v, want shared mux guidance", err)
+	if !strings.Contains(err.Error(), "same sink destination value") && !strings.Contains(err.Error(), "same destination value") {
+		t.Fatalf("err = %v, want shared-handle guidance", err)
 	}
 	text := specText(task.Describe())
 	if strings.Contains(text, "left/") || strings.Contains(text, "right/") || strings.Contains(text, "shared") {
@@ -677,8 +645,7 @@ func TestTaskAttachRuntimeBranchGroupRejectsDuplicateMuxDestinations(t *testing.
 		t.Fatalf("err = %v, want destination_duplicate with matching BuildError code", err)
 	}
 	if !strings.Contains(err.Error(), "runtime branch group reuses one destination name") ||
-		!strings.Contains(err.Error(), "runtime destination group") ||
-		!strings.Contains(err.Error(), "mux destination") {
+		!strings.Contains(err.Error(), "same destination value") {
 		t.Fatalf("err = %v, want grouped destination guidance", err)
 	}
 	text := specText(task.Describe())
@@ -742,7 +709,7 @@ func TestTaskAttachRuntimeBranchGroupSharesMuxDestination(t *testing.T) {
 		},
 	}
 	defer builtTask.Close()
-	destination := Mux("recording", Write("recording.ogg", io.Discard, Format(av.FormatOgg)))
+	destination := Write("recording.ogg", io.Discard, Format(av.FormatOgg))
 
 	attachment, err := builtTask.Attach(ctx,
 		Branch("audio").From(PacketTap("audio.packets")).Copy().To(destination),

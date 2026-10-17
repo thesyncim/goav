@@ -11,6 +11,18 @@ methodology changes, and migration notes.
 
 ## Unreleased
 
+- Destination identity (**breaking**). A destination handle is now the
+  output's identity: pass the same value to several chains or branches and
+  they feed one mux or sink. The one-file recipe is simply
+  `out := goav.Write("out.webm", w)` then `.Video()…To(out).Audio()…To(out)`;
+  before, it was refused with "attached more than once" unless wrapped in
+  `goav.Mux`. `Mux` is removed. Separately constructed handles that share a
+  name are still refused, so sharing stays explicit, and `With` copies keep
+  their handle's identity. Runtime `Attach` groups share by handle the same
+  way. Refusal fixes now say to reuse the destination value.
+  - Migration: replace `goav.Mux(name, dst)` with `dst`, passed to every
+    chain or branch that shares it.
+
 - API purge (**breaking**): removed exports that could not be used or only
   restated something else.
   - `inspect.Render`, `Snapshot`, `Stats`, `Subscribe`: one-line wrappers.

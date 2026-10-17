@@ -3,6 +3,7 @@ package goav_test
 import (
 	"bytes"
 	"context"
+	"os"
 	"testing"
 	"time"
 
@@ -10,6 +11,7 @@ import (
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/bundle"
 	"github.com/thesyncim/goav/codec"
+	"github.com/thesyncim/goav/container/matroska"
 	"github.com/thesyncim/goav/container/webm"
 	"github.com/thesyncim/goav/filter"
 	"github.com/thesyncim/goav/shape"
@@ -120,5 +122,40 @@ func TestResizeFitKeepsAspectRatio(t *testing.T) {
 	}
 	if tracks := demuxer.Tracks(); len(tracks) != 1 || tracks[0].Video.Width != 32 || tracks[0].Video.Height != 24 {
 		t.Fatalf("output tracks = %+v, want one 32x24 track", tracks)
+	}
+}
+
+// TestOneOutputHandleMuxesAudioAndVideo is the "one output file" recipe:
+// reuse one destination handle from both chains and both streams land in
+// one container, with no grouping call.
+func TestOneOutputHandleMuxesAudioAndVideo(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	data, err := os.ReadFile(mp4Fixture)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var file bytes.Buffer
+	out := goav.Write("out.mkv", &file)
+	if err := bundle.Run(ctx, goav.From(goav.FileInput("in.mp4", bytes.NewReader(data))).
+		Video().Copy().To(out).
+		Audio().Copy().To(out)); err != nil {
+		t.Fatalf("remux: %v", err)
+	}
+	demuxer, err := matroska.NewDemuxer(bytes.NewReader(file.Bytes()), matroska.DemuxerOptions{})
+	if err != nil {
+		t.Fatalf("demux output: %v", err)
+	}
+	tracks := demuxer.Tracks()
+	if len(tracks) != 2 {
+		t.Fatalf("output has %d tracks, want video and audio in one file: %+v", len(tracks), tracks)
+	}
+	packet := matroska.Packet{Data: make([]byte, 0, 1<<16)}
+	perTrack := map[uint32]int{}
+	for demuxer.ReadPacket(&packet) == nil {
+		perTrack[packet.TrackID]++
+	}
+	if len(perTrack) != 2 {
+		t.Fatalf("packets per track = %v, want both tracks populated", perTrack)
 	}
 }

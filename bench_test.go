@@ -309,7 +309,7 @@ func BenchmarkBranchFanout(b *testing.B) {
 // streams into a single (fake-container) file. Sources split b.N between them.
 func BenchmarkSharedMuxGroup(b *testing.B) {
 	half := max(b.N/2, 1)
-	out := goav.Mux("call", goav.Write("call.webm", io.Discard))
+	out := goav.Write("call.webm", io.Discard)
 	runBenchTask(b, goav.From(
 		benchVideoFrames("cam", half, 320, 180),
 		benchAudioFrames("mic", half, 48_000, 1, benchAudioSamples),

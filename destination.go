@@ -19,7 +19,6 @@ import (
 // destinationSpec describes a concrete file, URI, writer, or sink destination.
 type destinationSpec struct {
 	id             uint64
-	group          string
 	output         format.Output
 	sink           pipeline.Sink
 	custom         provider.Destination
@@ -495,27 +494,6 @@ func Format(format av.FormatID) DestinationOption {
 	})
 }
 
-// destinationGroup marks destinations as the same logical mux/sink group for
-// Mux. It stays internal so the public grouping model has one constructor.
-func destinationGroup(name string) DestinationOption {
-	return destinationOption(func(spec *destinationSpec) {
-		if name == "" {
-			if spec.err == nil {
-				spec.err = fmt.Errorf("destination group name is empty")
-			}
-			return
-		}
-		spec.group = name
-	})
-}
-
-// Mux marks destination as a first-class logical mux/sink group. Independently
-// built destinations wrapped with the same non-empty group name share one
-// planned output when their destination settings are compatible.
-func Mux(name string, destination Destination) Destination {
-	return destination.With(destinationGroup(name))
-}
-
 // With returns a copy of the destination with the options applied — the same
 // option vocabulary the constructors take, for layering config onto an
 // already-constructed value. The copy keeps the original's routing identity.
@@ -825,7 +803,7 @@ func duplicateDestinationHandleError(operation string, name string) error {
 		fixes: buildErrorFixes([]string{
 			"list each destination value once in .To(...)",
 			"use distinct destination names when writing to separate destinations",
-			"wrap grouped destinations with goav.Mux(name, destination)",
+			"pass the same destination value to each .To(...) that should share one output",
 		}),
 		cause: errUnsupportedBuild,
 	}

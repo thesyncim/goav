@@ -574,7 +574,7 @@ func validateRuntimeBranchGroupDestinations(branches []runtimeAttachBranchInput)
 					Reason:    "runtime branch group reuses one destination name",
 					fields:    errDetails(errNote("destination: "+label), errNote("first branch: "+seenBranch[label]), errNote("second branch: "+branchName)),
 					fixes: buildErrorFixes([]string{
-						"wrap each branch destination with goav.Mux(name, destination) for a shared runtime destination group",
+						"pass the same destination value to each branch in one Attach call to share it",
 						"create distinct destination values with distinct names for independent runtime destinations",
 						"use a sink destination for runtime diagnostic groups or a mux destination for runtime recording groups",
 					}),
@@ -661,11 +661,11 @@ func (g *runtimeAttachGroup) reserveSharedSink(spec pipeline.Spec, key string, d
 
 func (g *runtimeAttachGroup) sharedSinkRef(graph pipeline.Graph, key string) (pipeline.NodeRef, bool, error) {
 	if g == nil || !g.isSharedSink(key) {
-		return "", false, runtimeBranchInvalidError("shared sink destination is not registered", "wrap matching sink destinations with goav.Mux(name, destination) inside one Mutable.Attach call")
+		return "", false, runtimeBranchInvalidError("shared sink destination is not registered", "pass the same sink destination value to each branch inside one Attach call")
 	}
 	target := g.sharedSinks[key]
 	if target == nil {
-		return "", false, runtimeBranchInvalidError("shared sink destination is not reserved", "wrap matching sink destinations with goav.Mux(name, destination) inside one Mutable.Attach call")
+		return "", false, runtimeBranchInvalidError("shared sink destination is not reserved", "pass the same sink destination value to each branch inside one Attach call")
 	}
 	if target.ref != "" {
 		return target.ref, false, nil
@@ -729,11 +729,11 @@ func (g *runtimeAttachGroup) sharedMuxKeyForNode(node pipeline.NodeRef) (string,
 
 func (g *runtimeAttachGroup) addSharedMuxRoute(key string, route pipeline.Route) error {
 	if g == nil || !g.isSharedMux(key) {
-		return runtimeBranchInvalidError("shared mux destination is not registered", "wrap matching byte destinations with goav.Mux(name, destination) inside one Mutable.Attach call")
+		return runtimeBranchInvalidError("shared mux destination is not registered", "pass the same byte destination value to each branch inside one Attach call")
 	}
 	target := g.sharedMuxes[key]
 	if target == nil {
-		return runtimeBranchInvalidError("shared mux destination is not reserved", "wrap matching byte destinations with goav.Mux(name, destination) inside one Mutable.Attach call")
+		return runtimeBranchInvalidError("shared mux destination is not reserved", "pass the same byte destination value to each branch inside one Attach call")
 	}
 	route.To = []string{target.name}
 	target.routes = append(target.routes, route)
@@ -1996,7 +1996,7 @@ func duplicateRuntimeBranchDestinationRefError(branch string, label string, firs
 		fixes: buildErrorFixes([]string{
 			"list each destination once in .To(...)",
 			"route one runtime branch to multiple destinations with distinct values such as .To(archive, monitor)",
-			"wrap each grouped attachment destination with goav.Mux(name, destination)",
+			"pass the same destination value to each grouped attachment branch",
 		}),
 		cause: errUnsupportedBuild,
 	}
