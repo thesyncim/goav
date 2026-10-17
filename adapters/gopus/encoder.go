@@ -31,7 +31,22 @@ type Encoder struct {
 	sampleRate int
 	channels   int
 	closed     bool
+
+	// Re-framing: Opus encodes only fixed frame durations (2.5-120 ms), but
+	// decoders and resamplers deliver whatever they produce (AAC's 1024
+	// samples, a resampled 1115). frameSize is chosen at the first frame — its
+	// own size when Opus accepts it, else 20 ms — and pending carries the
+	// interleaved samples not yet encoded. pendingPTS stamps pending[0] on the
+	// encoder's 1/sampleRate timeline, so packet times advance by exact sample
+	// counts instead of inheriting the input frames' cadence.
+	frameSize  int
+	pending    []int16
+	pendingPTS av.Timestamp
 }
+
+// opusDefaultFrameMS is the re-framing duration when the input frame size is
+// not itself a valid Opus frame: 20 ms, the codec's standard operating point.
+const opusDefaultFrameMS = 20
 
 func (e *Encoder) Descriptor() codec.Descriptor {
 	return Descriptor()
@@ -70,6 +85,11 @@ func (e *Encoder) Open(ctx context.Context, config codec.EncodeConfig) error {
 	e.sampleRate = sampleRate
 	e.channels = channels
 	e.closed = false
+	e.frameSize = 0
+	// Room for the longest Opus-sized input (120 ms) plus one partial frame,
+	// so steady-state re-framing never grows the buffer.
+	e.pending = make([]int16, 0, sampleRate*(120+opusDefaultFrameMS)/1000*channels)
+	e.pendingPTS = av.Timestamp{Base: stream.TimeBase}
 	return nil
 }
 
@@ -96,12 +116,72 @@ func (e *Encoder) EncodeInto(ctx context.Context, frame *av.Frame, out *codec.En
 	if err != nil {
 		return err
 	}
-	if samples != e.encoder.FrameSize() {
-		if err := e.encoder.SetFrameSize(samples); err != nil {
-			return mapEncodeError(err)
+	if e.frameSize == 0 {
+		if err := e.chooseFrameSize(samples); err != nil {
+			return err
 		}
 	}
+	// An exact frame with nothing pending encodes in place and keeps the
+	// input's own timestamps — the zero-copy path for Opus-native sources.
+	if len(e.pending) == 0 && samples == e.frameSize {
+		duration := frame.Duration
+		if duration.Value == 0 {
+			duration = av.SamplesDuration(samples, e.sampleRate)
+		}
+		return e.encodePacket(pcm, frame.PTS, duration, frame.Metadata, out)
+	}
+	if len(e.pending) == 0 {
+		e.pendingPTS = e.timelinePTS(frame.PTS)
+	}
+	e.pending = append(e.pending, pcm...)
+	return e.drain(frame.Metadata, out)
+}
 
+// chooseFrameSize fixes the Opus frame duration: the first frame's own size
+// when Opus accepts it, otherwise 20 ms with the input re-framed to fit.
+func (e *Encoder) chooseFrameSize(samples int) error {
+	if samples > 0 && e.encoder.SetFrameSize(samples) == nil {
+		e.frameSize = samples
+		return nil
+	}
+	frameSize := e.sampleRate * opusDefaultFrameMS / 1000
+	if err := e.encoder.SetFrameSize(frameSize); err != nil {
+		return mapEncodeError(err)
+	}
+	e.frameSize = frameSize
+	return nil
+}
+
+// timelinePTS maps an input timestamp onto the encoder's 1/sampleRate
+// timeline; an input without a usable time base continues the running one.
+func (e *Encoder) timelinePTS(pts av.Timestamp) av.Timestamp {
+	if rescaled, ok := pts.Rescale(e.stream.TimeBase); ok {
+		return rescaled
+	}
+	return av.Timestamp{Value: e.pendingPTS.Value, Base: e.stream.TimeBase}
+}
+
+// drain encodes every whole frame in pending while the result has room, so
+// the remainder stays below one frame whenever the runtime's result slots
+// cover the input frame size.
+func (e *Encoder) drain(metadata av.Metadata, out *codec.EncodeResult) error {
+	step := e.frameSize * e.channels
+	duration := av.SamplesDuration(e.frameSize, e.sampleRate)
+	consumed := 0
+	for len(e.pending)-consumed >= step && len(out.Packets) < cap(out.Packets) {
+		if err := e.encodePacket(e.pending[consumed:consumed+step], e.pendingPTS, duration, metadata, out); err != nil {
+			return err
+		}
+		consumed += step
+		e.pendingPTS.Value += int64(e.frameSize)
+	}
+	e.pending = e.pending[:copy(e.pending, e.pending[consumed:])]
+	return nil
+}
+
+// encodePacket encodes one Opus frame of interleaved pcm into the next result
+// slot.
+func (e *Encoder) encodePacket(pcm []int16, pts av.Timestamp, duration av.Duration, metadata av.Metadata, out *codec.EncodeResult) error {
 	index := len(out.Packets)
 	out.Packets = out.Packets[:index+1]
 	packet := &out.Packets[index]
@@ -126,15 +206,15 @@ func (e *Encoder) EncodeInto(ctx context.Context, frame *av.Frame, out *codec.En
 	packet.CodecEpoch = e.stream.Epoch
 	packet.Payload.Bytes = dst[:n]
 	packet.Payload.Ownership = av.BufferOwned
-	packet.PTS = frame.PTS
-	packet.Duration = frame.Duration
-	if packet.Duration.Value == 0 {
-		packet.Duration = av.SamplesDuration(samples, e.sampleRate)
-	}
-	packet.Metadata = frame.Metadata
+	packet.PTS = pts
+	packet.Duration = duration
+	packet.Metadata = metadata
 	return nil
 }
 
+// FlushInto encodes the final partial frame at end of stream, padded with
+// silence to a whole Opus frame; its packet duration is the real sample
+// count, so the stream ends where the input did.
 func (e *Encoder) FlushInto(ctx context.Context, out *codec.EncodeResult) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -145,7 +225,19 @@ func (e *Encoder) FlushInto(ctx context.Context, out *codec.EncodeResult) error 
 	if e.closed {
 		return codec.ErrClosed
 	}
-	return nil
+	if err := e.drain(nil, out); err != nil {
+		return err
+	}
+	if len(e.pending) == 0 || len(out.Packets) == cap(out.Packets) {
+		return nil
+	}
+	remaining := len(e.pending) / e.channels
+	for len(e.pending) < e.frameSize*e.channels {
+		e.pending = append(e.pending, 0)
+	}
+	err := e.encodePacket(e.pending, e.pendingPTS, av.SamplesDuration(remaining, e.sampleRate), nil, out)
+	e.pending = e.pending[:0]
+	return err
 }
 
 func (e *Encoder) HandleEvent(ctx context.Context, event *av.Event) error {
@@ -172,7 +264,10 @@ func (e *Encoder) HandleEvent(ctx context.Context, event *av.Event) error {
 			return fmt.Errorf("gopus: live bitrate retarget to %d bps rejected: %w", bitsPerSecond, mapEncodeError(err))
 		}
 	case av.EventCodecChanged, av.EventDiscontinuity:
+		// A partial frame belongs to the old timeline; the next frame restarts
+		// the re-framing timeline from its own timestamp.
 		e.encoder.Reset()
+		e.pending = e.pending[:0]
 	}
 	return nil
 }

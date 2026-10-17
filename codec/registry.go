@@ -150,13 +150,16 @@ func cloneDescriptor(desc Descriptor) Descriptor {
 	return cloned
 }
 
+// cloneCapabilities copies the struct first, so a field added later is
+// carried even before it gets a deep copy here.
 func cloneCapabilities(capabilities Capabilities) Capabilities {
-	return Capabilities{
-		SampleFormats: append([]string(nil), capabilities.SampleFormats...),
-		PixelFormats:  append([]string(nil), capabilities.PixelFormats...),
-		RTPPayloads:   append([]string(nil), capabilities.RTPPayloads...),
-		BuildTags:     append([]string(nil), capabilities.BuildTags...),
-	}
+	cloned := capabilities
+	cloned.SampleFormats = append([]string(nil), capabilities.SampleFormats...)
+	cloned.PixelFormats = append([]string(nil), capabilities.PixelFormats...)
+	cloned.SampleRates = append([]int(nil), capabilities.SampleRates...)
+	cloned.RTPPayloads = append([]string(nil), capabilities.RTPPayloads...)
+	cloned.BuildTags = append([]string(nil), capabilities.BuildTags...)
+	return cloned
 }
 
 func sameDescriptorSlot(a Descriptor, b Descriptor) bool {

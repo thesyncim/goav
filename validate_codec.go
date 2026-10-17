@@ -5,11 +5,13 @@ package goav
 import (
 	"errors"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/errcode"
+	"github.com/thesyncim/goav/filter"
 	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/internal/recipeir"
 )
@@ -269,6 +271,8 @@ type codecAdapterRequest struct {
 	Media        av.MediaType
 	SampleFormat string
 	PixelFormat  string
+	SampleRate   int
+	Channels     int
 }
 
 func encodeAdapterRequestFromRecipeIRStream(stream recipeir.Stream) codecAdapterRequest {
@@ -278,6 +282,8 @@ func encodeAdapterRequestFromRecipeIRStream(stream recipeir.Stream) codecAdapter
 		Media:        firstNonEmptyMedia(encode.Type, encode.Parameters.Type, stream.Selector.Type, codecMedia(encode.ID)),
 		SampleFormat: firstNonEmpty(encode.Parameters.SampleFormat, recipeIRStreamSampleFormat(stream)),
 		PixelFormat:  firstNonEmpty(encode.Parameters.PixelFormat, recipeIRStreamPixelFormat(stream)),
+		SampleRate:   firstPositiveInt(encode.Parameters.SampleRate, recipeIRStreamResample(stream).SampleRate),
+		Channels:     firstPositiveInt(encode.Parameters.Channels, recipeIRStreamResample(stream).Channels),
 	}
 }
 
@@ -287,7 +293,21 @@ func encodeAdapterRequestFromPreparedStream(spec codec.Spec, stream av.Stream) c
 		Media:        firstNonEmptyMedia(spec.Type, spec.Parameters.Type, stream.Type, stream.Codec.Type, codecMedia(spec.ID)),
 		SampleFormat: firstNonEmpty(spec.Parameters.SampleFormat, stream.Codec.SampleFormat),
 		PixelFormat:  firstNonEmpty(spec.Parameters.PixelFormat, stream.Codec.PixelFormat),
+		SampleRate:   firstPositiveInt(spec.Parameters.SampleRate, stream.Codec.SampleRate),
+		Channels:     firstPositiveInt(spec.Parameters.Channels, stream.Codec.Channels),
 	}
+}
+
+// recipeIRStreamResample is the stream's last resample request: the plan-time
+// source of the encoder's input rate when the input shape does not declare it.
+func recipeIRStreamResample(stream recipeir.Stream) filter.ResampleConfig {
+	transforms := recipeIRStreamTransforms(stream)
+	for _, transform := range slices.Backward(transforms) {
+		if transform.Kind == recipeir.TransformResample {
+			return transform.Resample
+		}
+	}
+	return filter.ResampleConfig{}
 }
 
 func recipeIRStreamSampleFormat(stream recipeir.Stream) string {
@@ -336,10 +356,20 @@ func codecDescriptorSupports(desc codec.Descriptor, request codecAdapterRequest)
 	if request.PixelFormat != "" && len(desc.Capabilities.PixelFormats) != 0 && !stringAllowed(desc.Capabilities.PixelFormats, request.PixelFormat) {
 		return false
 	}
+	if request.SampleRate > 0 && len(desc.Capabilities.SampleRates) != 0 && !slices.Contains(desc.Capabilities.SampleRates, request.SampleRate) {
+		return false
+	}
 	return true
 }
 
 func encodeAdapterIncompatibleError(operation string, stream streamIntent, request codecAdapterRequest, descriptors []codec.Descriptor) error {
+	return encodeAdapterIncompatibleErrorAt(operation, jobStreamIntentName(stream), request, descriptors)
+}
+
+// encodeAdapterIncompatibleErrorAt is the encoder-descriptor refusal for one
+// node: planning reports it from shape facts, and encoder open reports it
+// from the real stream when facts arrive only with the opened input.
+func encodeAdapterIncompatibleErrorAt(operation string, node string, request codecAdapterRequest, descriptors []codec.Descriptor) error {
 	field, requested, supported := codecAdapterIncompatibilityField(request, descriptors)
 	label := strings.ReplaceAll(field, "_", " ")
 	details := []string{
@@ -365,10 +395,11 @@ func encodeAdapterIncompatibleError(operation string, stream streamIntent, reque
 		Family:    errcode.FamilyForCode(encodeAdapterIncompatibleCode),
 		Code:      encodeAdapterIncompatibleCode,
 		Operation: operation,
-		Node:      jobStreamIntentName(stream),
+		Node:      node,
 		Reason:    string(request.Codec) + " encoder adapter does not support the requested " + label,
 		fields:    errDetailLines(details),
 		fixes: buildErrorFixes([]string{
+			resampleFixHint(field, request, descriptors),
 			"choose an encoder adapter that supports this " + label,
 			"change the operation spec chain so the encoder receives one of the supported formats",
 			"fix the codec descriptor if the implementation already supports this config",
@@ -388,6 +419,9 @@ func codecAdapterIncompatibilityField(request codecAdapterRequest, descriptors [
 	}
 	if request.PixelFormat != "" && !codecDescriptorsPixelFormatCompatible(mediaDescriptors, request.PixelFormat) {
 		return "pixel_format", request.PixelFormat, strings.Join(descriptorSupportedPixelFormats(mediaDescriptors), ",")
+	}
+	if rates := descriptorSupportedSampleRates(mediaDescriptors); request.SampleRate > 0 && len(rates) != 0 && !slices.Contains(rates, request.SampleRate) {
+		return "sample_rate", strconv.Itoa(request.SampleRate), joinInts(rates)
 	}
 	return "codec", string(request.Codec), string(request.Codec)
 }
@@ -530,4 +564,45 @@ func codecDescriptorDetails(descriptors []codec.Descriptor) []string {
 		}
 	}
 	return details
+}
+
+// resampleFixHint names the exact conversion for a sample-rate refusal: the
+// supported rate closest above the requested one (else the highest), at the
+// stream's channel count. Other fields get no hint (an empty fix is dropped).
+func resampleFixHint(field string, request codecAdapterRequest, descriptors []codec.Descriptor) string {
+	rates := descriptorSupportedSampleRates(descriptors)
+	if field != "sample_rate" || len(rates) == 0 {
+		return ""
+	}
+	target := rates[len(rates)-1]
+	for _, rate := range rates {
+		if rate >= request.SampleRate {
+			target = rate
+			break
+		}
+	}
+	channels := max(request.Channels, 1)
+	return "insert .Resample(" + strconv.Itoa(target) + ", " + strconv.Itoa(channels) + ") before .Encode(...)"
+}
+
+// descriptorSupportedSampleRates is the sorted union of declared rates; empty
+// when any descriptor accepts every rate.
+func descriptorSupportedSampleRates(descriptors []codec.Descriptor) []int {
+	var rates []int
+	for i := range descriptors {
+		if len(descriptors[i].Capabilities.SampleRates) == 0 {
+			return nil
+		}
+		rates = append(rates, descriptors[i].Capabilities.SampleRates...)
+	}
+	slices.Sort(rates)
+	return slices.Compact(rates)
+}
+
+func joinInts(values []int) string {
+	parts := make([]string, len(values))
+	for i, value := range values {
+		parts[i] = strconv.Itoa(value)
+	}
+	return strings.Join(parts, ",")
 }

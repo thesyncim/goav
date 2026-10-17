@@ -234,7 +234,6 @@
         "s16"
       ],
       "realtime": true,
-      "stateless": true,
       "metadata": {
         "backend": "resample",
         "sample_format": "s16"

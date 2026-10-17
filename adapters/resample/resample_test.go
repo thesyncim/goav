@@ -72,10 +72,78 @@ func TestFilterUpsamplesWithLinearInterpolation(t *testing.T) {
 	if err := resampler.FilterInto(context.Background(), &frame, &result); err != nil {
 		t.Fatal(err)
 	}
-	got := samplesFromFrame(&result.Frames[0])
-	want := []int16{0, 500, 1000, 1000}
-	if !s16Equal(got, want) {
+	// The last two outputs wait for a right neighbor; end of stream flushes
+	// them holding the final sample.
+	if got, want := samplesFromFrame(&result.Frames[0]), []int16{0, 500}; !s16Equal(got, want) {
 		t.Fatalf("samples = %v, want %v", got, want)
+	}
+	result.Frames = result.Frames[:0]
+	if err := resampler.FlushInto(context.Background(), &result); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := samplesFromFrame(&result.Frames[0]), []int16{1000, 1000}; !s16Equal(got, want) {
+		t.Fatalf("flushed samples = %v, want %v", got, want)
+	}
+}
+
+// TestFilterIsFrameSplitInvariant pins streaming rate conversion: one second
+// of 44.1 kHz stereo converted to 48 kHz mono produces the same samples
+// whether it arrives as one frame or in irregular pieces, the total is
+// exactly 48000 (a stateless per-frame ceil drifted by about half a sample
+// per frame), and output timestamps advance contiguously by sample count.
+func TestFilterIsFrameSplitInvariant(t *testing.T) {
+	const inputRate, outputRate, seconds = 44100, 48000, 1
+	samples := make([]int16, inputRate*seconds*2)
+	for i := range samples {
+		samples[i] = int16((i*7919)%20000 - 10000)
+	}
+	run := func(splits []int) ([]int16, []av.Timestamp, []int) {
+		resampler := newTestFilter(t, filter.ResampleConfig{SampleRate: outputRate, Channels: 1}, audioStream(inputRate, 2))
+		var out []int16
+		var pts []av.Timestamp
+		var counts []int
+		collect := func(result *filter.Result) {
+			for i := range result.Frames {
+				frameSamples := samplesFromFrame(&result.Frames[i])
+				out = append(out, frameSamples...)
+				pts = append(pts, result.Frames[i].PTS)
+				counts = append(counts, len(frameSamples))
+			}
+		}
+		position := 0
+		for i := 0; position < len(samples)/2; i++ {
+			n := min(splits[i%len(splits)], len(samples)/2-position)
+			frame := audioFrame("audio", inputRate, 2, samples[position*2:(position+n)*2])
+			frame.PTS = av.Timestamp{Value: int64(position), Base: av.TimeBase{Num: 1, Den: inputRate}}
+			result := filter.Result{Frames: []av.Frame{preallocAudioFrame(outputRate * 2)}[:0]}
+			if err := resampler.FilterInto(context.Background(), &frame, &result); err != nil {
+				t.Fatal(err)
+			}
+			collect(&result)
+			position += n
+		}
+		result := filter.Result{Frames: []av.Frame{preallocAudioFrame(outputRate * 2)}[:0]}
+		if err := resampler.FlushInto(context.Background(), &result); err != nil {
+			t.Fatal(err)
+		}
+		collect(&result)
+		return out, pts, counts
+	}
+
+	whole, _, _ := run([]int{inputRate * seconds})
+	if len(whole) != outputRate*seconds {
+		t.Fatalf("one-frame conversion produced %d samples, want exactly %d", len(whole), outputRate*seconds)
+	}
+	pieces, pts, counts := run([]int{1024, 1000, 7, 2000, 1})
+	if !s16Equal(pieces, whole) {
+		t.Fatalf("split conversion differs from one-frame conversion (%d vs %d samples)", len(pieces), len(whole))
+	}
+	emitted := int64(0)
+	for i := range pts {
+		if pts[i] != (av.Timestamp{Value: emitted, Base: av.TimeBase{Num: 1, Den: outputRate}}) {
+			t.Fatalf("frame %d pts = %+v, want %d at 1/%d (contiguous by sample count)", i, pts[i], emitted, outputRate)
+		}
+		emitted += int64(counts[i])
 	}
 }
 

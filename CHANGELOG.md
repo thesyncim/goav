@@ -11,6 +11,26 @@ methodology changes, and migration notes.
 
 ## Unreleased
 
+- Audio transcodes work end to end:
+  - The Opus encoder re-frames its input. Any decoder or resampler frame
+    size (AAC's 1024 samples, a resampled 1115) becomes fixed 20 ms packets
+    on an exact sample-count timeline. Opus-sized input still encodes in
+    place. End of stream flushes the tail. Audio encode results now carry
+    eight packet slots.
+  - `Resample` streams across frames: it carries the interpolation phase and
+    the last input sample. Frame boundaries no longer click, the output count
+    is exact, and output timestamps are contiguous. A stateless per-frame
+    ceil had drifted by about half a sample per frame, roughly 1.4 s per hour.
+  - Encoders declare accepted sample rates (`codec.Capabilities.SampleRates`;
+    Opus: 8/12/16/24/48 kHz). An unsupported rate is refused as a
+    `*BuildError` naming the exact `.Resample(rate, channels)` to insert,
+    instead of the adapter's bare `codec: unsupported format`. Any other
+    encoder-open failure is also wrapped as a typed error with the stream's
+    format.
+    Decoder-open failures are typed the same way; a backend unavailable on
+    the platform (goaac builds for darwin/arm64 and linux/arm64) reports
+    `decode_adapter_unavailable`, and `errors.Is` still reaches the cause.
+
 - Media correctness and hardening:
   - The MP4 demuxer now bounds sample tables with a file-wide budget tied to
     the file size. A few hundred crafted bytes could previously force

@@ -55,7 +55,7 @@ frames, and events through `provider.Source` as a nested module, with no core
 runtime/provider changes beyond docs and CI enumeration.
 
 <!-- BEGIN GENERATED BUNDLE CAPABILITIES -->
-The tables below are generated from `bundle.Options()` and the descriptors registered by the bundled adapters. Update the descriptors, not this section by hand.
+The tables below mirror `bundle.Options()` and the descriptors registered by the bundled adapters; change them together with the descriptors.
 
 ### Container Formats
 
@@ -78,7 +78,7 @@ The tables below are generated from `bundle.Options()` and the descriptors regis
 | `av1` | video | decode | `goav1` | pixels=gray8, i420, i422, i444, yuv420p, yuv422p, yuv444p; rtp=video/av1; realtime; experimental | - | active |
 | `av1` | video | encode | `goav1-encoder` | pixels=i420, yuv420p; rtp=video/av1; realtime; experimental | - | active |
 | `h264` | video | decode | `goh264` | pixels=yuv420p; rtp=video/h264; realtime; experimental | goav_goh264 | planned-build-tagged |
-| `opus` | audio | decode, encode | `gopus` | samples=s16; rtp=audio/opus; realtime | - | active |
+| `opus` | audio | decode, encode | `gopus` | samples=s16; rates=8000,12000,16000,24000,48000; rtp=audio/opus; realtime | - | active |
 | `vp8` | video | decode, encode | `govpx` | pixels=i420; rtp=video/vp8; realtime; experimental | - | active |
 | `vp9` | video | decode, encode | `govpx` | pixels=i420; rtp=video/vp9; realtime; experimental | - | active |
 
@@ -86,7 +86,7 @@ The tables below are generated from `bundle.Options()` and the descriptors regis
 
 | Filter | Media | Formats | Modes | Traits |
 | --- | --- | --- | --- | --- |
-| `resample` | audio -> audio | samples=s16 | - | backend=resample; realtime; stateless |
+| `resample` | audio -> audio | samples=s16 | - | backend=resample; realtime |
 | `resize` | video -> video | pixels=i420, yuv420p | exact, fill, fit, passthrough | backend=resize; realtime; stateless |
 <!-- END GENERATED BUNDLE CAPABILITIES -->
 

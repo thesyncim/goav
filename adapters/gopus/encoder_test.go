@@ -55,3 +55,62 @@ func TestOpusEncoderBitrateChangedRejectsMalformedEvent(t *testing.T) {
 		}
 	}
 }
+
+// TestOpusEncoderReframesArbitraryFrameSizes pins re-framing: AAC decoders
+// deliver 1024-sample frames and resamplers deliver whatever the rate ratio
+// gives, while Opus encodes only fixed durations. 1024-sample input becomes
+// 960-sample (20 ms) packets whose timestamps advance by exactly 960, and end
+// of stream flushes the partial tail with its real duration.
+func TestOpusEncoderReframesArbitraryFrameSizes(t *testing.T) {
+	ctx := context.Background()
+	encoder := &Encoder{}
+	if err := encoder.Open(ctx, opusEncodeConfig()); err != nil {
+		t.Fatal(err)
+	}
+	const inputFrames, frameSamples = 10, 1024
+	var packets []av.Packet
+	collect := func(result *codec.EncodeResult) {
+		for i := range result.Packets {
+			packet := result.Packets[i]
+			packet.Payload.Bytes = append([]byte(nil), packet.Payload.Bytes...)
+			packets = append(packets, packet)
+		}
+	}
+	for i := range inputFrames {
+		frame := opusTestFrame()
+		pcm := make([]byte, frameSamples*2)
+		for s := range frameSamples {
+			pcm[s*2] = byte(s)
+		}
+		frame.Planes[0].Buffer.Bytes = pcm
+		frame.Audio.Samples = frameSamples
+		frame.PTS = av.Timestamp{Value: int64(i * frameSamples), Base: av.TimeBase{Num: 1, Den: 48000}}
+		frame.Duration = av.SamplesDuration(frameSamples, 48000)
+		result := opusEncodeResult(8, 4000)
+		if err := encoder.EncodeInto(ctx, &frame, &result); err != nil {
+			t.Fatalf("frame %d: %v", i, err)
+		}
+		collect(&result)
+	}
+	result := opusEncodeResult(8, 4000)
+	if err := encoder.FlushInto(ctx, &result); err != nil {
+		t.Fatal(err)
+	}
+	collect(&result)
+
+	total := inputFrames * frameSamples // 10240 = 10 whole 960-sample packets + 640
+	if want := total/960 + 1; len(packets) != want {
+		t.Fatalf("packets = %d, want %d", len(packets), want)
+	}
+	for i, packet := range packets {
+		if want := int64(i * 960); packet.PTS.Value != want || packet.PTS.Base.Den != 48000 {
+			t.Fatalf("packet %d pts = %+v, want %d at 1/48000", i, packet.PTS, want)
+		}
+		if len(packet.Payload.Bytes) == 0 {
+			t.Fatalf("packet %d is empty", i)
+		}
+	}
+	if last := packets[len(packets)-1]; last.Duration != av.SamplesDuration(total%960, 48000) {
+		t.Fatalf("tail duration = %+v, want %d samples", last.Duration, total%960)
+	}
+}
