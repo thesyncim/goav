@@ -3,6 +3,7 @@ package mp4
 import (
 	"io"
 	"sort"
+	"time"
 
 	"github.com/thesyncim/goav/av"
 )
@@ -31,10 +32,14 @@ type demuxItem struct {
 	track  int
 	sample int
 	offset int64
+	// ns is the sample's decode time on a shared nanosecond clock, so items
+	// from tracks with different timescales order together.
+	ns int64
 }
 
-// Demuxer reads samples from a parsed MP4 in interleaved decode order (by file
-// offset, the order the data is laid out in mdat).
+// Demuxer reads samples from a parsed MP4 in decode-time order across tracks
+// (ties broken by file offset), so files whose chunks are not interleaved by
+// time still deliver audio and video together.
 type Demuxer struct {
 	r      io.ReaderAt
 	size   int64
@@ -89,10 +94,15 @@ func (d *Demuxer) buildOrder() {
 	d.order = make([]demuxItem, 0, total)
 	for ti, tr := range d.tracks {
 		for si := range tr.samples {
-			d.order = append(d.order, demuxItem{track: ti, sample: si, offset: tr.samples[si].offset})
+			d.order = append(d.order, demuxItem{track: ti, sample: si, offset: tr.samples[si].offset, ns: timescaleNS(tr.samples[si].dts, tr.timescale)})
 		}
 	}
-	sort.SliceStable(d.order, func(i, j int) bool { return d.order[i].offset < d.order[j].offset })
+	sort.SliceStable(d.order, func(i, j int) bool {
+		if d.order[i].ns != d.order[j].ns {
+			return d.order[i].ns < d.order[j].ns
+		}
+		return d.order[i].offset < d.order[j].offset
+	})
 }
 
 // Tracks returns the track set in declaration order; the index into this slice
@@ -146,4 +156,58 @@ func cloneParams(p av.CodecParameters) av.CodecParameters {
 		p.ExtraData.Bytes = append([]byte(nil), p.ExtraData.Bytes...)
 	}
 	return p
+}
+
+// nextTrack reports the track index of the sample the next ReadInto returns.
+func (d *Demuxer) nextTrack() (int, bool) {
+	if d.pos >= len(d.order) {
+		return 0, false
+	}
+	return d.order[d.pos].track, true
+}
+
+// timescaleNS converts ticks of a track timescale to nanoseconds without
+// overflowing for long media.
+func timescaleNS(ticks int64, timescale uint32) int64 {
+	if timescale == 0 {
+		return 0
+	}
+	ts := int64(timescale)
+	return ticks/ts*int64(time.Second) + ticks%ts*int64(time.Second)/ts
+}
+
+// seek repositions the read cursor so the next ReadInto resumes at the
+// latest keyframe at or before position on the first video track (the
+// latest sample at or before it when the file has no video), clamped to the
+// first sample. Every track resumes from that point in time order.
+func (d *Demuxer) seek(position time.Duration) {
+	anchor := 0
+	for i := range d.tracks {
+		if d.tracks[i].media == av.MediaVideo {
+			anchor = i
+			break
+		}
+	}
+	tr := d.tracks[anchor]
+	video := tr.media == av.MediaVideo
+	target := int64(position)
+	best := 0
+	// Samples are in decode order and DTS <= CTS, so once a decode time
+	// passes the target no later sample can present at or before it.
+	for si := range tr.samples {
+		s := &tr.samples[si]
+		if timescaleNS(s.dts, tr.timescale) > target {
+			break
+		}
+		if (s.keyframe || !video) && timescaleNS(s.cts, tr.timescale) <= target {
+			best = si
+		}
+	}
+	for pos := range d.order {
+		if d.order[pos].track == anchor && d.order[pos].sample == best {
+			d.pos = pos
+			return
+		}
+	}
+	d.pos = 0
 }

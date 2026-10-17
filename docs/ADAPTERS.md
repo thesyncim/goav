@@ -32,6 +32,9 @@ is `adapterproof/adapter_compat_test.go`.
   caller-owned result structs and preallocated output buffers.
 - Do not register encode/decode factories until the path is real. Optional
   modules stay behind build tags or compile-safe descriptor packages.
+- H.264 packets travel as Annex B inside goav: demuxers of length-prefixed
+  containers (MP4, Matroska) convert on read, their muxers convert back, and
+  the Annex B muxer writes the avcC parameter sets ahead of keyframes.
 - Descriptors own codec identity, media type, modes, realtime, and experimental
   status; capability fields list concrete sample/pixel formats, RTP payloads,
   and build tags. Discovery comes from registered descriptors, not a central
@@ -63,7 +66,7 @@ The tables below mirror `bundle.Options()` and the descriptors registered by the
 | --- | --- | --- | --- | --- | --- |
 | `ivf` | demux | video | av1, vp8, vp9 | 1 | IVF destinations support one VP8, VP9, or AV1 video stream |
 | `matroska` | demux | audio, subtitle, video | aac, av1, flac, h264, opus, pcm, text_utf8, vorbis, vp8, vp9 | 1+ | Matroska supports multi-track audio, video, and subtitle packets without codec conversion |
-| `mp4` | demux | audio, video | aac, av1, flac, h264, opus, vp8, vp9 | 1+ | MP4 demux reads common ISO BMFF audio and video sample entries |
+| `mp4` | demux | audio, video | aac, av1, flac, h264, opus, vp8, vp9 | 1+ | MP4 demux reads common ISO BMFF audio and video sample entries in decode-time order, with keyframe seek |
 | `webm` | demux | audio, video | av1, opus, vorbis, vp8, vp9 | 1+ | WebM supports Opus/Vorbis audio and VP8/VP9/AV1 video packets without codec conversion |
 | `annexb` | mux | video | h264 | 1 | Annex B destinations support one H264 video stream |
 | `ivf` | mux | video | av1, vp8, vp9 | 1 | IVF destinations support one VP8, VP9, or AV1 video stream |

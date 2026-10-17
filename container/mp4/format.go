@@ -6,9 +6,11 @@ import (
 	"io"
 	"math"
 	"strconv"
+	"time"
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/format"
+	"github.com/thesyncim/goav/internal/h264"
 )
 
 // DemuxerFactory opens MP4 demuxers behind the goav format extension point.
@@ -61,6 +63,12 @@ type FormatDemuxer struct {
 	demuxer *Demuxer
 	streams []av.Stream
 	closed  bool
+	// avccLength is the NAL length-prefix width per stream index for H.264
+	// tracks (0 for every other codec): goav carries H.264 as Annex B, so
+	// those samples are converted on read through scratch, like the Matroska
+	// demuxer does.
+	avccLength []int
+	scratch    []byte
 }
 
 func (d *FormatDemuxer) Format() av.FormatID { return av.FormatMP4 }
@@ -79,8 +87,17 @@ func (d *FormatDemuxer) Open(ctx context.Context, input format.Input, _ format.O
 	}
 	d.demuxer = demuxer
 	d.streams = d.streams[:0]
+	d.avccLength = d.avccLength[:0]
 	for i, tr := range demuxer.Tracks() {
-		d.streams = append(d.streams, streamFromTrack(tr, i))
+		stream := streamFromTrack(tr, i)
+		d.streams = append(d.streams, stream)
+		length := 0
+		if stream.Codec.ID == av.CodecH264 {
+			if config, err := h264.ParseConfig(stream.Codec.ExtraData.Bytes); err == nil {
+				length = config.LengthSize
+			}
+		}
+		d.avccLength = append(d.avccLength, length)
 	}
 	d.closed = false
 	return nil
@@ -108,8 +125,24 @@ func (d *FormatDemuxer) ReadInto(ctx context.Context, out *format.ReadResult) er
 		return io.EOF
 	}
 	var sample Sample
-	if err := d.demuxer.ReadInto(out.Packet.Payload.Bytes[:0], &sample); err != nil {
-		return err
+	length := 0
+	if next, ok := d.demuxer.nextTrack(); ok && next < len(d.avccLength) {
+		length = d.avccLength[next]
+	}
+	if length == 0 {
+		if err := d.demuxer.ReadInto(out.Packet.Payload.Bytes[:0], &sample); err != nil {
+			return err
+		}
+	} else {
+		if err := d.demuxer.ReadInto(d.scratch[:0], &sample); err != nil {
+			return err
+		}
+		d.scratch = sample.Data
+		converted, err := h264.AppendAnnexB(out.Packet.Payload.Bytes[:0], sample.Data, length)
+		if err != nil {
+			return err
+		}
+		sample.Data = converted
 	}
 	if sample.TrackIndex < 0 || sample.TrackIndex >= len(d.streams) {
 		return ErrInvalidData
@@ -125,6 +158,25 @@ func (d *FormatDemuxer) ReadInto(ctx context.Context, out *format.ReadResult) er
 	out.Packet.DTS = av.Timestamp{Value: sample.DTS, Base: base}
 	out.Packet.Keyframe = sample.Keyframe
 	out.PacketReady = true
+	return nil
+}
+
+// Seek implements format.Seeker. The sample tables are in memory and every
+// input is random-access (a ReaderAt or a buffered reader), so MP4 inputs are
+// always seekable: the next ReadInto resumes at the latest video keyframe that
+// presents at or before position (the latest sample, for audio-only files),
+// with every track continuing from there in time order.
+func (d *FormatDemuxer) Seek(ctx context.Context, position time.Duration) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if d.closed || d.demuxer == nil {
+		return ErrClosed
+	}
+	if position < 0 {
+		return ErrInvalidData
+	}
+	d.demuxer.seek(position)
 	return nil
 }
 

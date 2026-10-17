@@ -7,10 +7,13 @@ import (
 	"context"
 	"crypto/md5"
 	"errors"
+	"os"
 	"testing"
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
+	"github.com/thesyncim/goav/container/mp4"
+	"github.com/thesyncim/goav/internal/h264"
 	goh264lib "github.com/thesyncim/goh264"
 )
 
@@ -58,7 +61,7 @@ func TestDecodeAnnexBIntoBorrowedVideoFrame(t *testing.T) {
 	if frame.StreamID != "video" || frame.CodecEpoch != 3 || frame.Type != av.MediaVideo {
 		t.Fatalf("frame identity = %+v", frame)
 	}
-	if frame.Video == nil || frame.Video.Width != 16 || frame.Video.Height != 16 || frame.Video.PixelFormat != av.PixelFormatYUV420P {
+	if frame.Video == nil || frame.Video.Width != 64 || frame.Video.Height != 48 || frame.Video.PixelFormat != av.PixelFormatYUV420P {
 		t.Fatalf("video = %+v", frame.Video)
 	}
 	if frame.PTS.Value != 90 || frame.PTS.Base != av.RTPTimeBase(90000) {
@@ -74,8 +77,8 @@ func TestDecodeAnnexBIntoBorrowedVideoFrame(t *testing.T) {
 	}
 
 	got := appendI420FromFrame(nil, frame)
-	if !bytes.Equal(got, want) {
-		t.Fatalf("decoded raw md5 = %x, want %x", md5.Sum(got), md5.Sum(want))
+	if sum := md5.Sum(got); sum != want {
+		t.Fatalf("decoded raw md5 = %x, want %x", sum, want)
 	}
 }
 
@@ -269,8 +272,8 @@ func h264TestStream() av.Stream {
 			ID:          av.CodecH264,
 			Type:        av.MediaVideo,
 			ClockRate:   90000,
-			Width:       16,
-			Height:      16,
+			Width:       64,
+			Height:      48,
 			PixelFormat: av.PixelFormatYUV420P,
 		},
 	}
@@ -293,70 +296,55 @@ func decodedH264TestFrame(t *testing.T) *goh264lib.Frame {
 	return nil
 }
 
-func encodedAnnexBTestFrame(t *testing.T) ([]byte, []byte) {
+// h264FixtureDecodedMD5 pins the decoded I420 bytes of the fixture's first
+// access unit. The fixture is a real encoder's output, so the decoder's own
+// output is the oracle: a change here is a decoder behavior change.
+var h264FixtureDecodedMD5 = [16]byte{0xdf, 0x81, 0x68, 0xe3, 0xf4, 0x92, 0xce, 0xdd, 0x3a, 0x33, 0xeb, 0x79, 0x2f, 0xf6, 0x0b, 0x26}
+
+// encodedAnnexBTestFrame returns the first H.264 access unit of the repo's MP4
+// fixture as Annex B — the avcC parameter sets, then the IDR sample — and the
+// MD5 its decode is pinned to.
+func encodedAnnexBTestFrame(t *testing.T) ([]byte, [16]byte) {
 	t.Helper()
-	cfg := goh264lib.DefaultEncoderConfig(16, 16)
-	cfg.OutputFormat = goh264lib.EncoderOutputAnnexB
-	cfg.DeblockMode = goh264lib.EncoderDeblockDisabled
-	cfg.FrameDrop = goh264lib.EncoderFrameDropDisabled
-	cfg.RTPMaxPayloadSize = 0
-	encoder, err := goh264lib.NewEncoder(cfg)
+	data, err := os.ReadFile("../../container/mp4/testdata/h264_aac.mp4")
 	if err != nil {
-		t.Fatalf("NewEncoder: %v", err)
+		t.Fatal(err)
 	}
-	frame := patternedI420EncoderFrame(16, 16)
-	encoded, err := encoder.Encode(frame)
+	demuxer, err := mp4.NewDemuxer(bytes.NewReader(data), int64(len(data)))
 	if err != nil {
-		t.Fatalf("Encode: %v", err)
+		t.Fatal(err)
 	}
-	if len(encoded.Data) == 0 {
-		t.Fatal("empty encoded data")
-	}
-	return encoded.Data, appendI420EncoderFrame(nil, frame)
-}
-
-func patternedI420EncoderFrame(width, height int) goh264lib.EncoderFrame {
-	chromaWidth := width / 2
-	chromaHeight := height / 2
-	frame := goh264lib.EncoderFrame{
-		Y:        make([]byte, width*height),
-		Cb:       make([]byte, chromaWidth*chromaHeight),
-		Cr:       make([]byte, chromaWidth*chromaHeight),
-		StrideY:  width,
-		StrideCb: chromaWidth,
-		StrideCr: chromaWidth,
-		Width:    width,
-		Height:   height,
-		PTS:      3000,
-		Duration: 3000,
-	}
-	for y := 0; y < height; y++ {
-		for x := 0; x < width; x++ {
-			frame.Y[y*frame.StrideY+x] = byte((x*11 + y*17 + 3) & 0xff)
+	video := -1
+	var config h264.Config
+	for i, track := range demuxer.Tracks() {
+		if track.Codec.ID == av.CodecH264 {
+			video = i
+			if config, err = h264.ParseConfig(track.Codec.ExtraData.Bytes); err != nil {
+				t.Fatalf("fixture avcC: %v", err)
+			}
+			break
 		}
 	}
-	for y := 0; y < chromaHeight; y++ {
-		for x := 0; x < chromaWidth; x++ {
-			frame.Cb[y*frame.StrideCb+x] = byte((x*19 + y*7 + 41) & 0xff)
-			frame.Cr[y*frame.StrideCr+x] = byte((x*5 + y*23 + 109) & 0xff)
+	if video < 0 {
+		t.Fatal("fixture has no H.264 track")
+	}
+	var sample mp4.Sample
+	for {
+		if err := demuxer.ReadInto(nil, &sample); err != nil {
+			t.Fatalf("no H.264 sample in fixture: %v", err)
+		}
+		if sample.TrackIndex == video {
+			break
 		}
 	}
-	return frame
-}
-
-func appendI420EncoderFrame(dst []byte, frame goh264lib.EncoderFrame) []byte {
-	for y := 0; y < frame.Height; y++ {
-		dst = append(dst, frame.Y[y*frame.StrideY:y*frame.StrideY+frame.Width]...)
+	if !sample.Keyframe {
+		t.Fatal("fixture's first H.264 sample is not a keyframe")
 	}
-	chromaWidth := frame.Width / 2
-	chromaHeight := frame.Height / 2
-	for y := 0; y < chromaHeight; y++ {
-		dst = append(dst, frame.Cb[y*frame.StrideCb:y*frame.StrideCb+chromaWidth]...)
+	annexB, err := h264.AppendAnnexB(config.AppendParameterSets(nil), sample.Data, config.LengthSize)
+	if err != nil {
+		t.Fatal(err)
 	}
-	for y := 0; y < chromaHeight; y++ {
-		dst = append(dst, frame.Cr[y*frame.StrideCr:y*frame.StrideCr+chromaWidth]...)
-	}
-	return dst
+	return annexB, h264FixtureDecodedMD5
 }
 
 func appendI420FromFrame(dst []byte, frame av.Frame) []byte {

@@ -11,6 +11,24 @@ methodology changes, and migration notes.
 
 ## Unreleased
 
+- MP4 and H.264 correctness:
+  - The MP4 demuxer converts H.264 samples from length-prefixed (AVCC) to
+    Annex B on read, which is the convention inside goav and what Matroska
+    already does. MP4 `Copy()` to `.h264` used to write a file that started
+    with a raw length prefix and had no parameter sets; the Annex B muxer now
+    writes the avcC SPS/PPS ahead of keyframes that lack them, and it converts
+    any length-prefixed payload it is handed.
+  - MP4 samples are delivered in decode-time order across tracks. Before,
+    they came in file-offset order, so non-interleaved files delivered all
+    video and then all audio.
+  - MP4 inputs implement `format.Seeker`, so `control.Seek`/`Segment` work on
+    the most common container. The next read resumes at the latest video
+    keyframe that presents at or before the target.
+  - The `goav_goh264` build had not compiled: its tests used a goh264 encoder
+    API that no longer exists. The tests now take their input from the MP4
+    fixture, and CI builds and tests the tag, so the H.264 decoder cannot rot
+    unseen again. With the tag, H.264 MP4 decode transcodes end to end.
+
 - README rewritten around a runnable quick start: the CLI generates the
   input clip and the Go snippet transcodes it with default options, executed
   by `TestReadmeHeadlineRecipeRunsWithDefaults`. It also shows the real
