@@ -18,6 +18,7 @@ type bufferedNode struct {
 	active     bool
 	source     Source
 	stage      Stage
+	admit      Admitter
 	sink       Sink
 	policy     BufferPolicy
 	drop       dropController
@@ -712,6 +713,9 @@ func (g *bufferedRunner) addNode(node *bufferedNode) (int, error) {
 	node.active = true
 	node.policy = normalizeBufferedPolicy(node.policy)
 	node.drop = newDropController(node.policy)
+	if admit, ok := node.stage.(Admitter); ok {
+		node.admit = admit
+	}
 	node.emitter = bufferedEmitter{graph: g, from: index}
 	node.counters = &nodeCounters{}
 	g.index[node.name] = index
@@ -897,6 +901,13 @@ func (g *bufferedRunner) enqueue(ctx context.Context, node *bufferedNode, msg *M
 	}
 	if err := validateBufferedMessage(msg, node.policy); err != nil {
 		return false, err
+	}
+	if node.admit != nil {
+		// Admission runs on the producer's goroutine before it takes the queue
+		// lock or a slot, so holding one upstream back blocks nothing else.
+		if err := node.admit.Admit(ctx, msg); err != nil {
+			return false, err
+		}
 	}
 
 	node.queueMutex.Lock()

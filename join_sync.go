@@ -1,11 +1,14 @@
 package goav
 
 import (
+	"context"
 	"math"
+	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/thesyncim/goav/av"
+	"github.com/thesyncim/goav/pipeline"
 )
 
 // joinSyncMode selects how a convergent join (Mix/Composite) aligns its arms.
@@ -65,6 +68,92 @@ type joinSyncState struct {
 	// poll concurrently at snapshot time (Stats/Snapshot show it as the join
 	// node's Dropped count under the "sync" reason).
 	dropped atomic.Uint64
+
+	// gates hold each arm back once it leads the join by joinArmLeadFrames
+	// buffered frames (see admit); nil when admission is off. Built once and
+	// only read afterwards, so producers read the map without a lock.
+	gates map[av.StreamID]*joinArmGate
+	// released frees every waiting producer when the stage closes.
+	released     chan struct{}
+	releasedOnce sync.Once
+}
+
+// joinArmLeadFrames is how many buffered frames an arm may lead the join by
+// before its producer waits: enough slack for PTS alignment across arms of
+// different cadences, small enough that a fast arm cannot pull its whole
+// stream into memory while a slow sibling catches up.
+const joinArmLeadFrames = 16
+
+// joinArmGate is one arm's admission state. depth mirrors len(pending[arm])
+// for the producer's goroutine; wake carries a single "room freed" token, so a
+// producer that saw a full arm and then waits cannot miss the pop that frees
+// it.
+type joinArmGate struct {
+	depth atomic.Int64
+	wake  chan struct{}
+}
+
+// enableAdmission turns on per-arm backpressure. The planner enables it only
+// when every arm has its own upstream: an arm that shares an upstream with a
+// sibling (a tap arm) could otherwise block the very producer the sibling
+// needs to deliver the frame that frees it.
+func (s *joinSyncState) enableAdmission() {
+	s.gates = make(map[av.StreamID]*joinArmGate, len(s.inputs))
+	for _, id := range s.inputs {
+		s.gates[id] = &joinArmGate{wake: make(chan struct{}, 1)}
+	}
+	s.released = make(chan struct{})
+}
+
+// admit runs on an arm producer's goroutine (pipeline.Admitter): it waits
+// while the frame's arm already leads the join by joinArmLeadFrames, so the
+// arm's upstream backpressures instead of the join buffering without bound.
+// Events and frames of unknown arms pass. Frames in flight between admit and
+// Handle are not counted, so the bound is the lead plus the join's input
+// queue, and nothing leaks when a delivery is shed.
+func (s *joinSyncState) admit(ctx context.Context, msg *pipeline.Message) error {
+	if s.gates == nil || msg == nil || msg.Kind != pipeline.MessageFrame || msg.Frame == nil {
+		return nil
+	}
+	gate := s.gates[msg.Frame.StreamID]
+	if gate == nil {
+		return nil
+	}
+	for gate.depth.Load() >= joinArmLeadFrames {
+		select {
+		case <-gate.wake:
+		case <-s.released:
+			return nil
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+	return nil
+}
+
+// publishDepths mirrors each arm's pending depth for admit and wakes an arm
+// whose depth fell below the lead. The stages call it after every Handle.
+func (s *joinSyncState) publishDepths() {
+	for _, id := range s.inputs {
+		gate := s.gates[id]
+		if gate == nil {
+			continue
+		}
+		depth := int64(len(s.pending[id]))
+		if gate.depth.Swap(depth) >= joinArmLeadFrames && depth < joinArmLeadFrames {
+			select {
+			case gate.wake <- struct{}{}:
+			default:
+			}
+		}
+	}
+}
+
+// releaseAdmission frees every waiting producer; the stages call it on Close.
+func (s *joinSyncState) releaseAdmission() {
+	if s.released != nil {
+		s.releasedOnce.Do(func() { close(s.released) })
+	}
 }
 
 func newJoinSyncStateWithPendingCap(mode joinSyncMode, inputs []av.StreamID, pendingCap int) *joinSyncState {

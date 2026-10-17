@@ -107,6 +107,16 @@ type DropReporter interface {
 	DroppedMessages() uint64
 }
 
+// Admitter is an optional Stage capability for converging stages: the runners
+// call Admit on the producer's goroutine before delivering a message to the
+// stage, outside the stage's own serialization, so the stage can hold one
+// upstream back (block until it has room, or until ctx ends) without stalling
+// the siblings it is waiting on. A non-nil error fails the delivery like a
+// Handle error. Admit runs concurrently with Handle.
+type Admitter interface {
+	Admit(context.Context, *Message) error
+}
+
 // BufferPolicy configures one node's queue: capacity, overflow behavior
 // (Drop), staleness and byte budgets, and the copy bounds buffered execution
 // uses to keep branch payloads isolated. The zero value means direct

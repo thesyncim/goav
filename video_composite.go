@@ -98,10 +98,17 @@ func (s *videoCompositeStage) DescribeNode() pipeline.NodeSpec {
 // the join node's Dropped count (reason "sync") in Stats and snapshots.
 func (s *videoCompositeStage) DroppedMessages() uint64 { return s.sync.droppedFrames() }
 
+// Admit implements pipeline.Admitter: an arm that leads the composite by
+// joinArmLeadFrames waits on its own goroutine until the composite catches up.
+func (s *videoCompositeStage) Admit(ctx context.Context, msg *pipeline.Message) error {
+	return s.sync.admit(ctx, msg)
+}
+
 func (s *videoCompositeStage) Handle(ctx context.Context, msg *pipeline.Message, emitter pipeline.Emitter) error {
 	if s.closed {
 		return pipeline.ErrClosed
 	}
+	defer s.sync.publishDepths()
 	switch msg.Kind {
 	case pipeline.MessageFrame:
 		if msg.Frame == nil || msg.Frame.Video == nil {
@@ -157,6 +164,7 @@ func (s *videoCompositeStage) Close() error {
 	}
 	s.closed = true
 	if s.sync != nil {
+		s.sync.releaseAdmission()
 		s.sync.recyclePending()
 	}
 	for id, free := range s.free {
@@ -461,3 +469,5 @@ func fillPlane(plane []byte, value byte) {
 		copy(plane[filled:], plane[:filled])
 	}
 }
+
+func (s *videoCompositeStage) enableAdmission() { s.sync.enableAdmission() }
