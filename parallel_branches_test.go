@@ -155,3 +155,42 @@ func encodedFrames(t *testing.T, webm []byte) [][]byte {
 	}
 	return frames
 }
+
+// TestExplainReportsBufferedExecution pins that Explain says when the build
+// runs branches in parallel: an encode ladder reports buffered_execution,
+// while a single chain and a fanout to caller sinks, which stay serial, do
+// not.
+func TestExplainReportsBufferedExecution(t *testing.T) {
+	sink := func(name string) goav.Destination {
+		return goav.Sink(component.SinkFunc(name, func(context.Context, component.Message) error { return nil }))
+	}
+	for _, tt := range []struct {
+		name string
+		job  *goav.Job
+		want bool
+	}{
+		{"encode ladder", goav.From(goavtest.Video(64, 48, 1)).Video().Branches(
+			goav.Branch("high").Encode(codec.VP8()).To(goav.Write("high.webm", io.Discard)),
+			goav.Branch("low").Resize(32, 24).Encode(codec.VP8()).To(goav.Write("low.webm", io.Discard)),
+		), true},
+		{"single chain", goav.From(goavtest.Video(64, 48, 1)).Video().Encode(codec.VP8()).To(goav.Write("one.webm", io.Discard)), false},
+		{"sink fanout", goav.From(goavtest.Video(64, 48, 1)).Video().Branches(
+			goav.Branch("a").To(sink("a")),
+			goav.Branch("b").Resize(32, 24).To(sink("b")),
+		), false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			report, err := tt.job.UseRuntime(goavtest.Runtime()).Explain(context.Background())
+			if err != nil {
+				t.Fatalf("Explain: %v", err)
+			}
+			got := false
+			for _, decision := range report.Decisions {
+				got = got || decision.Code == "buffered_execution"
+			}
+			if got != tt.want {
+				t.Fatalf("buffered_execution reported = %v, want %v (decisions %+v)", got, tt.want, report.Decisions)
+			}
+		})
+	}
+}
