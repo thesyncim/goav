@@ -20,6 +20,13 @@ and it landed as:
   capability (polled at snapshot time with an atomic counter on the hot path).
   With `BuildLive`, they appear as `task.Stats().Nodes["mix"].Dropped` under
   the `"sync"` reason, and in `task.Snapshot()`.
+- Offline arms backpressure independently: an arm may lead a Mix or Composite
+  by 16 buffered frames before its upstream waits (the optional
+  `pipeline.Admitter` capability), so a fast arm cannot pull its stream into
+  memory while a slow sibling catches up (`TestJoinBackpressuresFastArm`).
+  Live joins keep buffering, so a sparse arm never costs a live camera frames
+  (`TestLiveJoinKeepsBufferingFastArm`), and so does a tree with a tap arm,
+  which shares an upstream with another arm.
 - `Select(arms...)`: passthrough one-of-N switch (no decode/encode); the first
   arm is active by default and, with `BuildLive`,
   `task.Control(ctx, control.SelectActive(id))` switches live through the

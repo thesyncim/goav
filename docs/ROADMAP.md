@@ -208,7 +208,8 @@ this list:
   (or a codec adapter) instead of getting an unproven bundled path.
 - **Pull scheduling**: the one time-domain gap left open, deferred with a
   reason — consumer backpressure already bounds producers
-  (`flow.Blocking`, `TestBufferedFanoutDropBlockBackpressuresSource`), so a
+  (`flow.Blocking`, `TestBufferedFanoutDropBlockBackpressuresSource`; joins hold
+  a leading arm back, `TestJoinBackpressuresFastArm`), so a
   pull scheduler would duplicate flow control the graph already has. The rest
   of the time domain is landed and cited in "The settled model" above.
 - **Internal-package layering**: measured on the cross-file reference graph

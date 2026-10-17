@@ -99,6 +99,7 @@ type directTopoNode struct {
 	active   bool
 	kind     nodeKind
 	stage    Stage
+	admit    Admitter
 	sink     Sink
 	emitter  *directEmitter
 	counters *nodeCounters
@@ -170,6 +171,9 @@ func (g *directRunner) rebuildTopoLocked() {
 		tn.active = n.active
 		tn.kind = n.kind
 		tn.stage = n.stage
+		if admit, ok := n.stage.(Admitter); ok {
+			tn.admit = admit
+		}
 		tn.sink = n.sink
 		tn.emitter = n.emitter
 		tn.counters = n.counters
@@ -726,6 +730,14 @@ func (g *directRunner) deliverTopo(ctx context.Context, dst *directTopoNode, msg
 	if dst.paused != nil && dst.paused.Load() {
 		// Branch paused: skip this node; the source and siblings keep flowing.
 		return false, nil
+	}
+	if dst.admit != nil {
+		// Admission runs on the producer's goroutine before the delivery
+		// registers or takes the node's handle lock, so a converging stage can
+		// hold one upstream back without holding anything its siblings need.
+		if err := dst.admit.Admit(ctx, msg); err != nil {
+			return false, err
+		}
 	}
 	if dst.gate != nil {
 		// Register this delivery before checking the tombstone: Remove sets

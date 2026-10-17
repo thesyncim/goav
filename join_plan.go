@@ -1292,7 +1292,12 @@ func (p *joinPlan) planDestinationNodes(spec *pipeline.Spec, nodes map[string]pl
 // the plan, so the built graph equals the planned spec.
 func (p *joinPlan) lower(ctx context.Context, gp graphPlan, graph pipeline.Graph, service *builder) error {
 	rt := p.runtime
-	joinRef, err := p.lowerJoinTree(ctx, gp, graph, service)
+	// Arm backpressure is for offline joins, where holding a fast arm back is
+	// lossless and its unbounded lead is the memory risk. A live join keeps
+	// buffering: a sparse arm (a slide feed beside a camera) needs the fast
+	// arm to lead by its whole period, and holding a live source back would
+	// drop its frames at capture.
+	joinRef, err := p.lowerJoinTree(ctx, gp, graph, service, !rt.realtime && !p.treeHasTapArm())
 	if err != nil {
 		return err
 	}
@@ -1343,8 +1348,9 @@ func (p *joinPlan) lower(ctx context.Context, gp graphPlan, graph pipeline.Graph
 // recursively lowers its nested join), the planned per-arm decode/transform
 // stages are inserted, and the kind's convergence stage is built and connected
 // to the N arm upstreams. It returns the join node's ref — the upstream a
-// nested join hands its outer arm.
-func (p *joinPlan) lowerJoinTree(ctx context.Context, gp graphPlan, graph pipeline.Graph, service *builder) (pipeline.NodeRef, error) {
+// nested join hands its outer arm. admission enables per-arm backpressure
+// on the convergence stages; the root decides it once for the whole tree.
+func (p *joinPlan) lowerJoinTree(ctx context.Context, gp graphPlan, graph pipeline.Graph, service *builder, admission bool) (pipeline.NodeRef, error) {
 	rt := p.runtime
 	armRefs := make([]string, 0, len(p.arms))
 	armIDs := make([]av.StreamID, 0, len(p.arms))
@@ -1355,7 +1361,7 @@ func (p *joinPlan) lowerJoinTree(ctx context.Context, gp graphPlan, graph pipeli
 		stream := arm.stream
 		switch {
 		case arm.sub != nil:
-			subRef, err := arm.sub.lowerJoinTree(ctx, gp, graph, service)
+			subRef, err := arm.sub.lowerJoinTree(ctx, gp, graph, service, admission)
 			if err != nil {
 				return "", err
 			}
@@ -1431,6 +1437,9 @@ func (p *joinPlan) lowerJoinTree(ctx context.Context, gp graphPlan, graph pipeli
 		armIDs = append(armIDs, stream.ID)
 	}
 	stage, pinned := p.profile.newStage(p, armIDs)
+	if admitting, ok := stage.(interface{ enableAdmission() }); ok && admission {
+		admitting.enableAdmission()
+	}
 	stageBuffer := rt.buffer
 	if pinned != nil {
 		stageBuffer = *pinned
@@ -1881,4 +1890,17 @@ func joinFanoutTargetNodeName(target branchComposeTargetRoute, index int) string
 
 func intInSlice(needle int, haystack []int) bool {
 	return slices.Contains(haystack, needle)
+}
+
+// treeHasTapArm reports whether any join in the tree takes a tap arm. A tap
+// arm hangs off another arm's node, so the two share an upstream, and holding
+// one back could block the producer the other needs: such trees keep
+// unbounded arm buffering instead of per-arm backpressure.
+func (p *joinPlan) treeHasTapArm() bool {
+	for i := range p.arms {
+		if p.arms[i].tapArm != nil || (p.arms[i].sub != nil && p.arms[i].sub.treeHasTapArm()) {
+			return true
+		}
+	}
+	return false
 }

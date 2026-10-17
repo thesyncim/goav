@@ -86,10 +86,17 @@ func (s *audioMixStage) DescribeNode() pipeline.NodeSpec {
 // the join node's Dropped count (reason "sync") in Stats and snapshots.
 func (s *audioMixStage) DroppedMessages() uint64 { return s.sync.droppedFrames() }
 
+// Admit implements pipeline.Admitter: an arm that leads the mix by
+// joinArmLeadFrames waits on its own goroutine until the mix catches up.
+func (s *audioMixStage) Admit(ctx context.Context, msg *pipeline.Message) error {
+	return s.sync.admit(ctx, msg)
+}
+
 func (s *audioMixStage) Handle(ctx context.Context, msg *pipeline.Message, emitter pipeline.Emitter) error {
 	if s.closed {
 		return pipeline.ErrClosed
 	}
+	defer s.sync.publishDepths()
 	switch msg.Kind {
 	case pipeline.MessageFrame:
 		if msg.Frame == nil || msg.Frame.Audio == nil {
@@ -145,6 +152,7 @@ func (s *audioMixStage) Close() error {
 	}
 	s.closed = true
 	if s.sync != nil {
+		s.sync.releaseAdmission()
 		s.sync.recyclePending()
 	}
 	for id, free := range s.free {
@@ -490,3 +498,5 @@ var mixJoinProfile = joinProfile{
 		"deliver raw mixed frames with .To(goav.Sink(sink)) instead",
 	},
 }
+
+func (s *audioMixStage) enableAdmission() { s.sync.enableAdmission() }
