@@ -75,7 +75,7 @@ func buildVideoMP4() []byte {
 
 func TestParseMovieVideoTrack(t *testing.T) {
 	data := buildVideoMP4()
-	tracks, err := parseMovie(bytes.NewReader(data), int64(len(data)))
+	tracks, err := parseMovie(bytes.NewReader(data), int64(len(data)), newSampleBudget(int64(len(data))))
 	if err != nil {
 		t.Fatalf("parseMovie: %v", err)
 	}
@@ -115,19 +115,19 @@ func TestParseMovieVideoTrack(t *testing.T) {
 
 func TestParseMovieRejectsNoMoov(t *testing.T) {
 	data := box("ftyp", cat([]byte("isom"), u32b(0))...)
-	if _, err := parseMovie(bytes.NewReader(data), int64(len(data))); err == nil {
+	if _, err := parseMovie(bytes.NewReader(data), int64(len(data)), newSampleBudget(int64(len(data)))); err == nil {
 		t.Fatal("parseMovie accepted a file with no moov")
 	}
 }
 
 func TestParseStszUniformAndExplicit(t *testing.T) {
 	uniform := fullBox("stsz", 0, 0, cat(u32b(7), u32b(4)))
-	sizes := parseStsz(uniform[8:])
+	sizes := parseStsz(uniform[8:], newSampleBudget(1<<30))
 	if len(sizes) != 4 || sizes[0] != 7 || sizes[3] != 7 {
 		t.Fatalf("uniform stsz = %v, want four 7s", sizes)
 	}
 	explicit := fullBox("stsz", 0, 0, cat(u32b(0), u32b(2), u32b(11), u32b(22)))
-	sizes = parseStsz(explicit[8:])
+	sizes = parseStsz(explicit[8:], newSampleBudget(1<<30))
 	if len(sizes) != 2 || sizes[0] != 11 || sizes[1] != 22 {
 		t.Fatalf("explicit stsz = %v, want [11 22]", sizes)
 	}
@@ -136,7 +136,7 @@ func TestParseStszUniformAndExplicit(t *testing.T) {
 func TestParseStszRefusesHugeCount(t *testing.T) {
 	// sample_size 0, count claims far more entries than the payload holds.
 	bad := fullBox("stsz", 0, 0, cat(u32b(0), u32b(1<<30)))
-	if sizes := parseStsz(bad[8:]); sizes != nil {
+	if sizes := parseStsz(bad[8:], newSampleBudget(1<<30)); sizes != nil {
 		t.Fatalf("parseStsz accepted an oversized count: %d entries", len(sizes))
 	}
 }

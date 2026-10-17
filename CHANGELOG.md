@@ -11,6 +11,17 @@ methodology changes, and migration notes.
 
 ## Unreleased
 
+- Media correctness and hardening:
+  - The MP4 demuxer now bounds sample tables with a file-wide budget tied to
+    the file size. A few hundred crafted bytes could previously force
+    gigabyte allocations (field-less `trun` runs, uniform `stsz`, unbounded
+    `stz2`). The sample bounds check is overflow-safe, and the MP4 fuzz target
+    runs in CI.
+  - `Composite` paints uncovered canvas black (Y=16, U=V=128) instead of
+    green.
+  - The IVF demuxer keeps a refused frame's header, so retrying after
+    `ErrPayloadTooSmall` reads the same frame instead of desynchronizing.
+
 - Refusal and diagnostics fixes: "add an encoder" suggestions now follow the
   stream's media. Video refusals name `codec.VP8`/`VP9`/`AV1` and never an
   audio codec; audio refusals name `codec.Opus`. Twelve copy-pasted hint

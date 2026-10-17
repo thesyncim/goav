@@ -50,7 +50,8 @@ func NewDemuxer(r io.ReaderAt, size int64) (*Demuxer, error) {
 	if r == nil {
 		return nil, ErrNilReader
 	}
-	tracks, err := parseMovie(r, size)
+	budget := newSampleBudget(size)
+	tracks, err := parseMovie(r, size, budget)
 	if err != nil {
 		return nil, err
 	}
@@ -58,7 +59,7 @@ func NewDemuxer(r io.ReaderAt, size int64) (*Demuxer, error) {
 	for _, tr := range tracks {
 		byID[tr.id] = tr
 	}
-	if err := parseFragments(r, size, byID); err != nil {
+	if err := parseFragments(r, size, byID, budget); err != nil {
 		return nil, err
 	}
 	// Keep only tracks that produced samples — from the progressive sample tables
@@ -115,8 +116,9 @@ func (d *Demuxer) ReadInto(dst []byte, out *Sample) error {
 	tr := d.tracks[item.track]
 	s := tr.samples[item.sample]
 	// A sample cannot extend past the file; reject before allocating so a
-	// crafted sample size cannot exhaust memory.
-	if s.size < 0 || s.offset < 0 || s.offset+int64(s.size) > d.size {
+	// crafted sample size cannot exhaust memory. The comparison is written so
+	// it cannot overflow for an offset near MaxInt64.
+	if s.size < 0 || s.offset < 0 || s.offset > d.size || int64(s.size) > d.size-s.offset {
 		return ErrInvalidData
 	}
 	if cap(dst) < s.size {

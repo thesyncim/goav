@@ -45,6 +45,12 @@ func compositeTestYAt(frame *av.Frame, x, y int) byte {
 	return frame.Planes[0].Buffer.Bytes[y*frame.Video.Width+x]
 }
 
+// compositeTestChromaAt reads the U and V samples at chroma coordinates (x, y).
+func compositeTestChromaAt(frame *av.Frame, x, y int) (byte, byte) {
+	chromaW := (frame.Video.Width + 1) / 2
+	return frame.Planes[1].Buffer.Bytes[y*chromaW+x], frame.Planes[2].Buffer.Bytes[y*chromaW+x]
+}
+
 func TestVideoCompositeOverlaysTwoI420Frames(t *testing.T) {
 	stage := newVideoCompositeStage("composite", []av.StreamID{"a", "b"}, "out",
 		[]compositeLayout{{X: 0, Y: 0}, {X: 4, Y: 0}}, joinSyncArrival)

@@ -32,8 +32,12 @@ type Demuxer struct {
 	stream      av.Stream
 	streams     [1]av.Stream
 	frameHeader [frameHeaderSize]byte
-	opened      bool
-	closed      bool
+	// headerPending keeps a frame header that ReadInto consumed but could not
+	// deliver (ErrPayloadTooSmall), so a retry with a larger buffer reads the
+	// same frame instead of parsing payload bytes as the next header.
+	headerPending bool
+	opened        bool
+	closed        bool
 }
 
 type Muxer struct {
@@ -168,13 +172,17 @@ func (d *Demuxer) ReadInto(ctx context.Context, out *format.ReadResult) error {
 	out.Packet.Reset()
 
 	header := d.frameHeader[:]
-	if _, err := io.ReadFull(d.reader, header); err != nil {
-		return err
+	if !d.headerPending {
+		if _, err := io.ReadFull(d.reader, header); err != nil {
+			return err
+		}
 	}
 	size := binary.LittleEndian.Uint32(header[:4])
 	if uint64(size) > uint64(cap(out.Packet.Payload.Bytes)) {
+		d.headerPending = true
 		return ErrPayloadTooSmall
 	}
+	d.headerPending = false
 	payloadSize := int(size)
 
 	packet := out.Packet

@@ -330,6 +330,16 @@ func TestDemuxerReadIntoRequiresPayloadCapacity(t *testing.T) {
 	if err := demuxer.ReadInto(ctx, &result); !errors.Is(err, ErrPayloadTooSmall) {
 		t.Fatalf("err = %v, want ErrPayloadTooSmall", err)
 	}
+
+	// The refused frame is still the next one: a retry with room reads it
+	// rather than treating its payload bytes as a frame header.
+	result.Packet.Payload.Bytes = make([]byte, 0, 16)
+	if err := demuxer.ReadInto(ctx, &result); err != nil {
+		t.Fatalf("retry with a larger buffer: %v", err)
+	}
+	if got := result.Packet.Payload.Bytes; !bytes.Equal(got, []byte{1, 2, 3}) || result.Packet.PTS.Value != 1 {
+		t.Fatalf("retry read payload=%v pts=%d, want [1 2 3] at pts 1", got, result.Packet.PTS.Value)
+	}
 }
 
 func TestMuxerRejectsUnsupportedStreamLayouts(t *testing.T) {
