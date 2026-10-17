@@ -2,6 +2,7 @@ package goav_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -135,4 +136,60 @@ func tinyFrame(kind string, name string, i int) *av.Frame {
 		Audio:    &av.AudioFrame{SampleRate: 48_000, Channels: 1, SampleFormat: av.SampleFormatS16, Samples: 1},
 		Planes:   []av.Plane{{Buffer: av.Buffer{Bytes: []byte{1, 0}, Ownership: av.BufferImmutable}}},
 	}
+}
+
+// TestLiveJoinKeepsBufferingFastArm pins that admission is offline-only: a
+// live mix whose sibling withholds every frame until the fast arm has pushed
+// its whole stream must not hold the fast arm back, because live sources would
+// drop frames at capture and sparse arms need the fast arm to lead.
+func TestLiveJoinKeepsBufferingFastArm(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	const frames = 200
+	fastDone := make(chan struct{})
+	fast := liveArmSource("fast", frames, nil, fastDone)
+	slow := liveArmSource("slow", frames, fastDone, nil)
+	out := goavtest.NewCollector()
+	task, err := goav.Mix(goav.From(fast).Audio(), goav.From(slow).Audio()).
+		To(out.Sink()).UseRuntime(goavtest.Runtime()).BuildLive(ctx)
+	if err != nil {
+		t.Fatalf("BuildLive: %v", err)
+	}
+	defer task.Close()
+	if err := task.Run(ctx); err != nil {
+		t.Fatalf("Run: %v (a live arm was held back behind its withholding sibling)", err)
+	}
+	if got := len(out.Frames()); got != frames {
+		t.Fatalf("mixed frames = %d, want %d", got, frames)
+	}
+}
+
+// liveArmSource is gatedArmSource as a live source that retries on
+// backpressure.
+func liveArmSource(name string, frames int, release <-chan struct{}, done chan<- struct{}) goav.InputSpec {
+	return goav.Source(name, shape.Frame(av.MediaAudio, shape.Audio(48_000, 1, av.SampleFormatS16), shape.Realtime(true)),
+		func(ctx context.Context, push source.Push) error {
+			if done != nil {
+				defer close(done)
+			}
+			if release != nil {
+				select {
+				case <-release:
+				case <-ctx.Done():
+					return ctx.Err()
+				}
+			}
+			for i := range frames {
+				for {
+					_, err := push.Frame(tinyFrame("mix", name, i))
+					if err == nil {
+						break
+					}
+					if !errors.Is(err, goav.ErrBackpressure) || ctx.Err() != nil {
+						return err
+					}
+				}
+			}
+			return push.EOS()
+		})
 }

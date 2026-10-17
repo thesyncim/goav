@@ -1292,7 +1292,12 @@ func (p *joinPlan) planDestinationNodes(spec *pipeline.Spec, nodes map[string]pl
 // the plan, so the built graph equals the planned spec.
 func (p *joinPlan) lower(ctx context.Context, gp graphPlan, graph pipeline.Graph, service *builder) error {
 	rt := p.runtime
-	joinRef, err := p.lowerJoinTree(ctx, gp, graph, service, !p.treeHasTapArm())
+	// Arm backpressure is for offline joins, where holding a fast arm back is
+	// lossless and its unbounded lead is the memory risk. A live join keeps
+	// buffering: a sparse arm (a slide feed beside a camera) needs the fast
+	// arm to lead by its whole period, and holding a live source back would
+	// drop its frames at capture.
+	joinRef, err := p.lowerJoinTree(ctx, gp, graph, service, !rt.realtime && !p.treeHasTapArm())
 	if err != nil {
 		return err
 	}

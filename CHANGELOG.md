@@ -11,17 +11,20 @@ methodology changes, and migration notes.
 
 ## Unreleased
 
-- Joins backpressure each arm. Mix and Composite buffered arm frames
-  without bound while waiting for a slower sibling. An offline composite
-  of a fast-decoding small file and a slow large one pulled the whole fast
-  stream into memory, and a live arm whose sibling stalled grew forever. An
-  arm may now lead the join by 16 buffered frames before its upstream waits.
+- Offline joins backpressure each arm. Mix and Composite buffered arm
+  frames without bound while waiting for a slower sibling, so an offline
+  composite of a fast-decoding small file and a slow large one pulled the
+  whole fast stream into memory. An offline arm may now lead the join by 16
+  buffered frames before its upstream waits.
   The wait runs on the arm's own goroutine through a new optional
   `pipeline.Admitter` stage capability, which both runners call before
   delivery takes the target's lock, so the sibling the join waits on keeps
   flowing. Output is unchanged. Cancelling or closing the task frees a
-  waiting arm. A tree with a tap arm, which shares an upstream with another
-  arm, keeps unbounded buffering, because holding it back could deadlock.
+  waiting arm. Live joins keep buffering: a sparse arm (a slide feed beside
+  a camera) needs the fast arm to lead by its whole period, and holding a
+  live source back would drop its frames. A tree with a tap arm, which
+  shares an upstream with another arm, also keeps buffering, because holding
+  it back could deadlock.
 
 - Buffered graphs no longer reserve worst-case copy budgets per queue slot.
   Every slot of every node used to preallocate the graph-wide packet and frame
