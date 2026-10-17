@@ -597,8 +597,7 @@ func TestGraphDirectRemoveReportsStuckNode(t *testing.T) {
 // removing a node while a source goroutine is emitting never closes the node
 // under an in-flight Handle, and deliveries racing the removal are shed.
 func TestGraphDirectRemoveDrainsInFlightDeliveries(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	graph, err := NewGraph(GraphConfig{Name: "live-remove"})
 	if err != nil {
 		t.Fatal(err)

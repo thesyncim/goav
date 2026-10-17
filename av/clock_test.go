@@ -10,7 +10,7 @@ import (
 func TestMonotonicClockNowNeverGoesBackwards(t *testing.T) {
 	clock := MonotonicClock()
 	previous := clock.Now()
-	for i := 0; i < 100; i++ {
+	for range 100 {
 		now := clock.Now()
 		if now < previous {
 			t.Fatalf("Now went backwards: %v after %v", now, previous)

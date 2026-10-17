@@ -2050,7 +2050,7 @@ func TestTaskAttachDetachBufferedBranchStress(t *testing.T) {
 	go func() {
 		runErr <- task.Run(ctx)
 	}()
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		late := &runtimeStressSink{name: "late", received: make(chan struct{}, 1)}
 		attachment, err := task.Attach(ctx, Branch(fmt.Sprintf("late-%d", i)).
 			From(src).

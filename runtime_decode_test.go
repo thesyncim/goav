@@ -235,7 +235,7 @@ func TestDecodeUsesFactoryStateProvider(t *testing.T) {
 	)
 	decoder := &decodeTestDecoder{}
 	factory := &decodeStateTestFactory{
-		decodeTestDecoderFactory: decodeTestDecoderFactory{decoder: decoder},
+		decoder: decoder,
 	}
 	codecs := withTestCodecs(testCodecDecoder(codec.Descriptor{ID: av.CodecVP8, Type: av.MediaVideo}, factory))
 	sink := &runtimeTestSink{name: "frames"}

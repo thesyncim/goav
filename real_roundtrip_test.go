@@ -35,12 +35,12 @@ func TestRealOpusWebMRoundTripThroughGrammar(t *testing.T) {
 	pcm := Source("mic",
 		shape.Frame(av.MediaAudio, shape.Audio(rate, channels, av.SampleFormatS16), shape.Stream("mic")),
 		func(_ context.Context, push SourcePush) error {
-			for i := 0; i < frames; i++ {
+			for i := range frames {
 				b := make([]byte, samples*channels*2)
-				for s := 0; s < samples; s++ {
+				for s := range samples {
 					n := i*samples + s
 					v := int16(amp * math.Sin(2*math.Pi*freqHz*float64(n)/rate))
-					for c := 0; c < channels; c++ {
+					for c := range channels {
 						binary.LittleEndian.PutUint16(b[(s*channels+c)*2:], uint16(v))
 					}
 				}

@@ -277,10 +277,8 @@ func TestTimelineConcurrentNowUnderEpochChanges(t *testing.T) {
 
 	stop := make(chan struct{})
 	var wg sync.WaitGroup
-	for reader := 0; reader < 4; reader++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range 4 {
+		wg.Go(func() {
 			for {
 				select {
 				case <-stop:
@@ -297,9 +295,9 @@ func TestTimelineConcurrentNowUnderEpochChanges(t *testing.T) {
 					return
 				}
 			}
-		}()
+		})
 	}
-	for i := 0; i < 200; i++ {
+	for i := range 200 {
 		if err := timeline.SetRate(float64(1 + i%3)); err != nil {
 			t.Fatal(err)
 		}

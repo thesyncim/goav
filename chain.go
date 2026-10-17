@@ -4,6 +4,7 @@ package goav
 
 import (
 	"fmt"
+	"slices"
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
@@ -493,18 +494,18 @@ func lastStreamTapRef(stream *jobStreamBuild) tapRef {
 	if stream == nil {
 		return tapRef{}
 	}
-	for i := len(stream.operations) - 1; i >= 0; i-- {
-		if operationSpecTapIsTerminalPacket(stream.operations[i]) {
-			return PacketTap(stream.operations[i].Tap.Name)
+	for _, v := range slices.Backward(stream.operations) {
+		if operationSpecTapIsTerminalPacket(v) {
+			return PacketTap(v.Tap.Name)
 		}
 	}
 	steps := jobStreamChainSteps(stream)
 	if chainEncodeSpec(stream.operations).Copy && len(steps) == 0 && stream.selector.Type != "" {
 		return PacketTap(defaultPacketTapName(stream.selector.Type, 0))
 	}
-	for i := len(steps) - 1; i >= 0; i-- {
-		if steps[i].tap != "" {
-			return tapWithDomain(tapRef{name: steps[i].tap, domain: steps[i].tapDomain}, shape.DomainFrame)
+	for _, step := range slices.Backward(steps) {
+		if step.tap != "" {
+			return tapWithDomain(tapRef{name: step.tap, domain: step.tapDomain}, shape.DomainFrame)
 		}
 	}
 	if len(steps) == 0 && stream.selector.Type != "" && chainHasDecode(stream.operations) {

@@ -117,7 +117,7 @@ func TestReceiveOpenSourceFeedsPipeline(t *testing.T) {
 	ctx := context.Background()
 	stream := inputTestOpusStream()
 	receiver := inputTestOpusReceiver(stream, &rtp.Packet{
-		Header:  rtp.Header{PayloadType: 111, Timestamp: 960},
+		PayloadType: 111, Timestamp: 960,
 		Payload: []byte{1, 2, 3},
 	})
 	receiver.events <- av.Event{Type: av.EventPacketLoss, StreamID: stream.ID}
@@ -186,7 +186,7 @@ func TestReceiveCodecIntentDerivesDepacketizerForNamedStream(t *testing.T) {
 			ClockRate:   90000,
 		}}),
 		packets: []*rtp.Packet{{
-			Header:  rtp.Header{PayloadType: 96, Marker: true, Timestamp: 3000},
+			PayloadType: 96, Marker: true, Timestamp: 3000,
 			Payload: []byte{0x10, 0x00, 0xaa},
 		}},
 		events: make(chan av.Event),
@@ -215,7 +215,7 @@ func TestReceiveCodecIntentRenamesUnmatchedStream(t *testing.T) {
 	ctx := context.Background()
 	stream := inputTestOpusStream()
 	receiver := inputTestOpusReceiver(stream, &rtp.Packet{
-		Header:  rtp.Header{PayloadType: 111, Timestamp: 960},
+		PayloadType: 111, Timestamp: 960,
 		Payload: []byte{4, 5},
 	})
 	input := Receive(receiver,
@@ -239,8 +239,8 @@ func TestReceiveExplicitDepacketizersAndTimestampGap(t *testing.T) {
 	ctx := context.Background()
 	stream := inputTestOpusStream()
 	receiver := inputTestOpusReceiver(stream,
-		&rtp.Packet{Header: rtp.Header{PayloadType: 111, Timestamp: 960}, Payload: []byte{1}},
-		&rtp.Packet{Header: rtp.Header{PayloadType: 111, Timestamp: 960 * 4}, Payload: []byte{2}},
+		&rtp.Packet{PayloadType: 111, Timestamp: 960, Payload: []byte{1}},
+		&rtp.Packet{PayloadType: 111, Timestamp: 960 * 4, Payload: []byte{2}},
 	)
 	input := Receive(receiver,
 		WithDepacketizers(NewOpusDepacketizer(stream), nil),

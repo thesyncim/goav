@@ -68,7 +68,7 @@ func muxSeekFileMKV(t *testing.T) []byte {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		if err := muxer.WritePacket(matroskaadapter.Packet{
 			TrackID:    trackID,
 			TimeNS:     int64(i) * int64(100*time.Millisecond),

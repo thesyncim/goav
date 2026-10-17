@@ -3,6 +3,7 @@ package goav
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync/atomic"
 
 	"github.com/thesyncim/goav/av"
@@ -70,14 +71,14 @@ func (s *selectorStage) SetActive(id av.StreamID) error {
 
 // joinStreamIDs renders the configured arm ids for the SetActive refusal.
 func joinStreamIDs(ids []av.StreamID) string {
-	out := ""
+	var out strings.Builder
 	for i := range ids {
 		if i > 0 {
-			out += ", "
+			out.WriteString(", ")
 		}
-		out += string(ids[i])
+		out.WriteString(string(ids[i]))
 	}
-	return out
+	return out.String()
 }
 
 // activeID returns the currently active input id (empty if none configured).

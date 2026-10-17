@@ -2,6 +2,7 @@ package goav
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/thesyncim/goav/av"
@@ -316,21 +317,11 @@ func descriptorMuxReason(formatID av.FormatID, desc format.Descriptor) string {
 }
 
 func mediaAllowed(allowed []av.MediaType, media av.MediaType) bool {
-	for i := range allowed {
-		if allowed[i] == media {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(allowed, media)
 }
 
 func codecAllowed(allowed []av.CodecID, codecID av.CodecID) bool {
-	for i := range allowed {
-		if allowed[i] == codecID {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(allowed, codecID)
 }
 
 func joinMediaTypes(values []av.MediaType) string {

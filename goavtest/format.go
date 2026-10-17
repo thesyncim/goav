@@ -151,7 +151,7 @@ func (d *containerDemuxer) Open(_ context.Context, input format.Input, _ format.
 		return errors.New("goavtest: corrupt container header")
 	}
 	d.streams = make([]av.Stream, 0, count)
-	for i := 0; i < count; i++ {
+	for range count {
 		d.streams = append(d.streams, parseContainerStream(&r))
 	}
 	if !r.ok {

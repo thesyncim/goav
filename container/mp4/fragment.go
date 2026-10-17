@@ -161,7 +161,7 @@ func parseTrun(r io.ReaderAt, run boxHeader, tr *track, baseOffset, dts int64, d
 		firstFlags = p.u32()
 	}
 	offset := baseOffset + dataOffset
-	for i := uint32(0); i < count; i++ {
+	for i := range count {
 		d := defDur
 		if flags&trunSampleDuration != 0 {
 			d = p.u32()

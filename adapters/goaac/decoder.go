@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"strings"
 	"unsafe"
 
@@ -475,9 +476,7 @@ func cloneCodecSettings(settings codec.CodecSettings) codec.CodecSettings {
 	cloned := settings
 	if settings.Custom != nil {
 		cloned.Custom = make(av.Metadata, len(settings.Custom))
-		for key, value := range settings.Custom {
-			cloned.Custom[key] = value
-		}
+		maps.Copy(cloned.Custom, settings.Custom)
 	}
 	return cloned
 }

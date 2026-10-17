@@ -535,7 +535,7 @@ func FuzzReaderHeaders(f *testing.F) {
 		_, _ = DecodeSizeVINT(data)
 
 		reader := NewReader(bytes.NewReader(data), ReaderOptions{MaxElementSize: 1 << 16})
-		for i := 0; i < 16; i++ {
+		for range 16 {
 			header, err := reader.ReadHeader()
 			if err != nil {
 				return
@@ -571,7 +571,7 @@ func BenchmarkDecodeSizeVINT(b *testing.B) {
 func BenchmarkElementScan(b *testing.B) {
 	var out bytes.Buffer
 	writer := NewWriter(&out)
-	for i := 0; i < 1024; i++ {
+	for range 1024 {
 		if err := writer.WriteElement(0x4282, []byte("matroska")); err != nil {
 			b.Fatal(err)
 		}

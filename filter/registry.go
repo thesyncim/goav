@@ -1,5 +1,7 @@
 package filter
 
+import "maps"
+
 import "sort"
 
 // SimpleRegistry is the per-runtime filter registry: factories and
@@ -72,8 +74,6 @@ func cloneDescriptor(desc Descriptor) Descriptor {
 		return cloned
 	}
 	cloned.Metadata = make(map[string]string, len(desc.Metadata))
-	for key, value := range desc.Metadata {
-		cloned.Metadata[key] = value
-	}
+	maps.Copy(cloned.Metadata, desc.Metadata)
 	return cloned
 }

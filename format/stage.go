@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
 	"sync/atomic"
 	"time"
 
@@ -363,12 +364,7 @@ func (s *DemuxSource) windowAdmits(packet *av.Packet) (emit bool, finished bool)
 }
 
 func (s *DemuxSource) windowStreamDone(id av.StreamID) bool {
-	for i := range s.window.done {
-		if s.window.done[i] == id {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(s.window.done, id)
 }
 
 func (s *DemuxSource) markWindowStreamDone(id av.StreamID) {

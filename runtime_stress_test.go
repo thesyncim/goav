@@ -53,12 +53,12 @@ func TestStressConcurrentSourcePushMutableBuffers(t *testing.T) {
 		shape.Frame(av.MediaAudio, shape.Audio(48000, codec.Mono, av.SampleFormatS16), shape.Stream("push")),
 		func(ctx context.Context, push SourcePush) error {
 			var writersDone sync.WaitGroup
-			for w := 0; w < writers; w++ {
+			for w := range writers {
 				writersDone.Add(1)
 				go func(w int) {
 					defer writersDone.Done()
 					payload := make([]byte, payloadLen) // reused, mutated between pushes
-					for j := 0; j < perWriter; j++ {
+					for j := range perWriter {
 						if ctx.Err() != nil {
 							return
 						}
@@ -156,13 +156,11 @@ func TestStressAttachDetachUnderLoadWithSlowWatchers(t *testing.T) {
 	// data plane or wedging the event close path.
 	sub := task.Watch()
 	var watcher sync.WaitGroup
-	watcher.Add(1)
-	go func() {
-		defer watcher.Done()
+	watcher.Go(func() {
 		for range sub.Events() {
 			time.Sleep(time.Millisecond)
 		}
-	}()
+	})
 
 	runDone := make(chan error, 1)
 	go func() { runDone <- task.Run(ctx) }()
@@ -170,11 +168,11 @@ func TestStressAttachDetachUnderLoadWithSlowWatchers(t *testing.T) {
 	const churners = 4
 	const cycles = 40
 	var churn sync.WaitGroup
-	for g := 0; g < churners; g++ {
+	for g := range churners {
 		churn.Add(1)
 		go func(g int) {
 			defer churn.Done()
-			for i := 0; i < cycles; i++ {
+			for i := range cycles {
 				attachment, err := task.Attach(ctx, Branch(fmt.Sprintf("mon-%d-%d", g, i)).
 					From(FrameTap("load.frames")).
 					To(Sink(SinkFunc("watch", func(context.Context, Message) error { return nil }))))

@@ -310,7 +310,7 @@ func copyPlane(dst []byte, dstW, dstH int, src *av.Plane, srcW, srcH, dstX, dstY
 	if dstX >= 0 && dstY >= 0 && dstX+srcW <= dstW && dstY+srcH <= dstH && copyPlaneInside(dst, dstW, srcBytes, srcStride, src.Offset, srcW, srcH, dstX, dstY) {
 		return
 	}
-	for row := 0; row < srcH; row++ {
+	for row := range srcH {
 		dy := dstY + row
 		if dy < 0 || dy >= dstH {
 			continue
@@ -356,7 +356,7 @@ func copyPlaneInside(dst []byte, dstW int, src []byte, srcStride int, srcOffset 
 		copy(dst[dstY*dstW:dstY*dstW+srcW*srcH], src[srcOffset:srcOffset+srcW*srcH])
 		return true
 	}
-	for row := 0; row < srcH; row++ {
+	for row := range srcH {
 		srcStart := srcOffset + row*srcStride
 		dstStart := (dstY+row)*dstW + dstX
 		copy(dst[dstStart:dstStart+srcW], src[srcStart:srcStart+srcW])

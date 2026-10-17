@@ -1,6 +1,8 @@
 package goav
 
 import (
+	"slices"
+
 	"github.com/thesyncim/goav/internal/recipeir"
 	"github.com/thesyncim/goav/plan"
 	"github.com/thesyncim/goav/shape"
@@ -354,12 +356,7 @@ func recipeIRStreamRulesFromRoot(rules []streamRule) []recipeir.StreamRule {
 // recipe IR is the whole job, so the planner never has to. The result is
 // captured onto recipeir.StreamRule.RequiresRuntime.
 func branchSpecsRequireRuntime(branches []BranchSpec) bool {
-	for i := range branches {
-		if branchSpecRequiresRuntime(branches[i]) {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc(branches, branchSpecRequiresRuntime)
 }
 
 func branchSpecRequiresRuntime(branch BranchSpec) bool {

@@ -128,7 +128,7 @@ func (s *blockUntilStage) Close() error { return nil }
 // sibling sources on the first fatal error instead of waiting for them to end
 // on their own.
 func TestStressDirectMultiSourceErrorCancellation(t *testing.T) {
-	for i := 0; i < 50; i++ {
+	for range 50 {
 		failing := &directErrorSource{name: "failing", err: errSourceFatal}
 		started := make(chan struct{})
 		blocking := &directBlockingStartSource{name: "blocking", started: started, release: make(chan struct{})}
@@ -172,7 +172,7 @@ func TestStressDirectMultiSourceErrorCancellation(t *testing.T) {
 // promptly when a DropBlock producer is blocked on capacity: the producer must
 // not hold node.queueMutex while parked, or the close path would wedge.
 func TestStressBufferedDropBlockCloseWhileProducerBlocked(t *testing.T) {
-	for i := 0; i < 25; i++ {
+	for range 25 {
 		ctx, cancel := context.WithCancel(context.Background())
 		packet := &av.Packet{StreamID: "live", Payload: av.Buffer{Bytes: []byte{1}, Ownership: av.BufferImmutable}}
 		stop := make(chan struct{})
@@ -238,7 +238,7 @@ func TestStressBufferedDropBlockCloseWhileProducerBlocked(t *testing.T) {
 // a concurrent lock-free publish storm: no send-on-closed panic (run with -race
 // for the data-race check).
 func TestStressEventStormDuringClose(t *testing.T) {
-	for i := 0; i < 25; i++ {
+	for range 25 {
 		stop := make(chan struct{})
 		source := &loopEventSource{name: "storm", event: av.Event{Type: av.EventType("stress")}, stop: stop}
 		sink := &directTestSink{name: "sink"}
@@ -263,13 +263,11 @@ func TestStressEventStormDuringClose(t *testing.T) {
 		// counting deliveries so the test can see the storm is live.
 		var delivered atomic.Int64
 		var drain sync.WaitGroup
-		drain.Add(1)
-		go func() {
-			defer drain.Done()
+		drain.Go(func() {
 			for range graph.Events() {
 				delivered.Add(1)
 			}
-		}()
+		})
 
 		runErr := make(chan error, 1)
 		go func() { runErr <- graph.Run(context.Background()) }()

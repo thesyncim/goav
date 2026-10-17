@@ -52,7 +52,7 @@ func TestRecipeRTPDecodeUsesProviderDecodeBounds(t *testing.T) {
 			ClockRate:   90000,
 		}}),
 		packets: []*rtp.Packet{{
-			Header:  rtp.Header{PayloadType: 96, Marker: true, Timestamp: 3000},
+			PayloadType: 96, Marker: true, Timestamp: 3000,
 			Payload: []byte{0x10, 0x00, 0xaa},
 		}},
 		events: make(chan av.Event),
@@ -134,11 +134,11 @@ func TestRecipeRTPDecodeRejectsDifferentCodecSwitch(t *testing.T) {
 	}
 	receiver := newRuntimeRTPSwitchReceiver(initial, updated, []*rtp.Packet{
 		{
-			Header:  rtp.Header{PayloadType: 96, Marker: true, Timestamp: 3000},
+			PayloadType: 96, Marker: true, Timestamp: 3000,
 			Payload: []byte{0x10, 0x00, 0xaa},
 		},
 		{
-			Header:  rtp.Header{PayloadType: 97, Marker: true, Timestamp: 6000},
+			PayloadType: 97, Marker: true, Timestamp: 6000,
 			Payload: []byte{0x65, 0xbb},
 		},
 	})
@@ -199,7 +199,7 @@ func TestRecipeRTPAV1RecordIVF(t *testing.T) {
 			ClockRate:   90000,
 		}}),
 		packets: []*rtp.Packet{{
-			Header:  rtp.Header{PayloadType: 96, Marker: true, Timestamp: 90},
+			PayloadType: 96, Marker: true, Timestamp: 90,
 			Payload: []byte{0x18, 0x30, 0xaa, 0xbb},
 		}},
 		events: make(chan av.Event),
@@ -265,7 +265,7 @@ func TestRecipeRTPH264RecordAnnexB(t *testing.T) {
 			ClockRate:   90000,
 		}}),
 		packets: []*rtp.Packet{{
-			Header:  rtp.Header{PayloadType: 96, Marker: true, Timestamp: 90},
+			PayloadType: 96, Marker: true, Timestamp: 90,
 			Payload: []byte{0x65, 0xaa, 0xbb},
 		}},
 		events: make(chan av.Event),

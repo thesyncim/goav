@@ -78,7 +78,7 @@ func (a *audioAnalyzer) observeFrame(frame *av.Frame) {
 	}
 	var sumSquares float64
 	var peak float64
-	for i := 0; i < sampleCount; i++ {
+	for i := range sampleCount {
 		v := float64(int16(binary.LittleEndian.Uint16(data[i*2:]))) / 32768.0
 		if v < 0 {
 			v = -v
@@ -131,7 +131,7 @@ func (a *audioAnalyzer) view() audioMetricsView {
 	if start < len(a.waveform) {
 		start = 0
 	}
-	for i := 0; i < len(a.waveform); i++ {
+	for i := range len(a.waveform) {
 		idx := (start + i) % len(a.waveform)
 		if a.waveIndex < len(a.waveform) && idx >= a.waveIndex {
 			continue

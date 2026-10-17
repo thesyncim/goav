@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"io"
 	"math"
+	"slices"
 	"sort"
 
 	"github.com/thesyncim/goav/container/ebml"
@@ -1168,10 +1169,8 @@ func validateChapter(chapter Chapter) error {
 	if chapter.UID == 0 || chapter.StartNS < 0 || (chapter.EndSet && chapter.EndNS < chapter.StartNS) {
 		return ErrInvalidData
 	}
-	for _, uid := range chapter.TrackUIDs {
-		if uid == 0 {
-			return ErrInvalidData
-		}
+	if slices.Contains(chapter.TrackUIDs, 0) {
+		return ErrInvalidData
 	}
 	for i := range chapter.Displays {
 		if chapter.Displays[i].String == "" {
@@ -1958,11 +1957,11 @@ func cueReferenceTimeNS(packetTimeNS int64, offsetNS int64) (int64, bool) {
 }
 
 func (m *Muxer) cuePositionForReference(trackID uint32, timeNS int64) (CueTrackPosition, bool) {
-	for i := len(m.cues) - 1; i >= 0; i-- {
-		if m.cues[i].TimeNS != timeNS {
+	for _, v := range slices.Backward(m.cues) {
+		if v.TimeNS != timeNS {
 			continue
 		}
-		if position, ok := cuePositionForTrack(m.cues[i], trackID); ok {
+		if position, ok := cuePositionForTrack(v, trackID); ok {
 			return position, true
 		}
 	}
@@ -3007,7 +3006,7 @@ func maxBlockAdditionMappingID(mappings []BlockAdditionMapping) (uint64, error) 
 		if id < 2 {
 			return 0, ErrInvalidData
 		}
-		for j := 0; j < i; j++ {
+		for j := range i {
 			if mappings[j].IDValue == id {
 				return 0, ErrInvalidData
 			}
@@ -3588,10 +3587,7 @@ func writeVoidTotal(w *ebml.Writer, total int) error {
 	}
 	var zero [64]byte
 	for payloadSize > 0 {
-		n := payloadSize
-		if n > len(zero) {
-			n = len(zero)
-		}
+		n := min(payloadSize, len(zero))
 		if _, err := w.Write(zero[:n]); err != nil {
 			return err
 		}
@@ -3621,10 +3617,7 @@ func writeVoidTotalRaw(writer io.Writer, total int) error {
 	}
 	var zero [64]byte
 	for payloadSize > 0 {
-		n := payloadSize
-		if n > len(zero) {
-			n = len(zero)
-		}
+		n := min(payloadSize, len(zero))
 		if err := writeFull(writer, zero[:n]); err != nil {
 			return err
 		}
@@ -4290,10 +4283,8 @@ func validateTrack(track Track) error {
 	if err := validateTrackTiming(track); err != nil {
 		return err
 	}
-	for i := range track.TrackOverlays {
-		if track.TrackOverlays[i] == 0 {
-			return ErrInvalidTrack
-		}
+	if slices.Contains(track.TrackOverlays, 0) {
+		return ErrInvalidTrack
 	}
 	for i := range track.TrackTranslates {
 		if err := validateTrackTranslate(track.TrackTranslates[i]); err != nil {

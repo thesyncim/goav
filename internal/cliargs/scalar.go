@@ -70,8 +70,8 @@ func ParseRate(value string) (int, error) {
 		{text: "m", mult: 1_000_000},
 		{text: "k", mult: 1_000},
 	} {
-		if strings.HasSuffix(raw, suffix.text) {
-			raw = strings.TrimSuffix(raw, suffix.text)
+		if before, ok := strings.CutSuffix(raw, suffix.text); ok {
+			raw = before
 			multiplier = suffix.mult
 			break
 		}

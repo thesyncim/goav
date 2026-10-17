@@ -375,10 +375,7 @@ func audioDecodeBufferSize(stream av.Stream) int {
 	if channels == 0 {
 		channels = 2
 	}
-	maxSamples := sampleRate * 120 / 1000
-	if maxSamples < 960 {
-		maxSamples = 960
-	}
+	maxSamples := max(sampleRate*120/1000, 960)
 	return maxSamples * channels * 2
 }
 

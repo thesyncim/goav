@@ -30,7 +30,7 @@ func trackInputTestReader(packets ...*rtp.Packet) TrackReader {
 func TestTrackInputDerivesCodecIntent(t *testing.T) {
 	ctx := context.Background()
 	input := trackInput(trackInputTestReader(&rtp.Packet{
-		Header:  rtp.Header{PayloadType: 111, Timestamp: 960},
+		PayloadType: 111, Timestamp: 960,
 		Payload: []byte{1, 2, 3},
 	}))
 

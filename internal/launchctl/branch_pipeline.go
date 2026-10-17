@@ -346,8 +346,7 @@ func pipelineFields(step string) ([]string, error) {
 func pipelineSyntaxError(node string, err error) error {
 	offset := 0
 	message := err.Error()
-	var syntax *cliargs.PipelineSyntaxError
-	if errors.As(err, &syntax) {
+	if syntax, ok := errors.AsType[*cliargs.PipelineSyntaxError](err); ok {
 		offset = syntax.Offset
 		message = syntax.Message
 	}
@@ -412,8 +411,7 @@ func pipelineTransformArgs(words []string) []transformargs.Arg {
 }
 
 func transformOptionError(err error) error {
-	var optErr *transformargs.Error
-	if errors.As(err, &optErr) {
+	if optErr, ok := errors.AsType[*transformargs.Error](err); ok {
 		details := []string(nil)
 		if optErr.Value != "" {
 			details = []string{"value=" + optErr.Value}
@@ -449,8 +447,7 @@ func parseEncoder(id av.CodecID, media av.MediaType, args map[string]string) (co
 }
 
 func codecOptionError(err error) error {
-	var optErr *codecargs.Error
-	if errors.As(err, &optErr) {
+	if optErr, ok := errors.AsType[*codecargs.Error](err); ok {
 		details := []string(nil)
 		if optErr.Value != "" {
 			details = []string{"value=" + optErr.Value}
@@ -476,8 +473,7 @@ func parseFileSink(args map[string]string) (goav.Destination, error) {
 }
 
 func fileSinkOptionError(err error) error {
-	var optErr *fileargs.Error
-	if errors.As(err, &optErr) {
+	if optErr, ok := errors.AsType[*fileargs.Error](err); ok {
 		details := []string(nil)
 		if optErr.Value != "" {
 			details = []string{"value=" + optErr.Value}

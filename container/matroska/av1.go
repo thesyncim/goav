@@ -358,7 +358,7 @@ func skipAV1SequenceHeaderUntilColorConfig(br *av1BitReader, seqProfile int, red
 }
 
 func skipAV1FeatureFlags(br *av1BitReader) error {
-	for i := 0; i < 7; i++ {
+	for range 7 {
 		if _, err := br.readBool(); err != nil {
 			return err
 		}
@@ -508,7 +508,7 @@ func (r *av1BitReader) readBits(n int) (uint64, error) {
 		return 0, ErrInvalidData
 	}
 	var value uint64
-	for i := 0; i < n; i++ {
+	for range n {
 		byteIndex := r.bit >> 3
 		shift := 7 - (r.bit & 7)
 		value = (value << 1) | uint64((r.data[byteIndex]>>shift)&1)

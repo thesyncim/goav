@@ -2,6 +2,7 @@ package rtpav
 
 import (
 	"context"
+	"maps"
 	"strings"
 
 	"github.com/thesyncim/goav/av"
@@ -388,9 +389,7 @@ func cloneMetadata(metadata av.Metadata) av.Metadata {
 		return nil
 	}
 	cloned := make(av.Metadata, len(metadata))
-	for key, value := range metadata {
-		cloned[key] = value
-	}
+	maps.Copy(cloned, metadata)
 	return cloned
 }
 

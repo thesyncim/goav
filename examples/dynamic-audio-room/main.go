@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
+	"maps"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -609,9 +611,7 @@ func (m *TrackMeter) Counts() map[string]int {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	out := make(map[string]int, len(m.counts))
-	for stream, count := range m.counts {
-		out[stream] = count
-	}
+	maps.Copy(out, m.counts)
 	return out
 }
 
@@ -717,7 +717,7 @@ func (m *OutputMixer) Mixed() [][]int16 {
 	for pts := range m.completed {
 		keys = append(keys, pts)
 	}
-	sort.Slice(keys, func(i, j int) bool { return keys[i] < keys[j] })
+	slices.Sort(keys)
 	out := make([][]int16, 0, len(keys))
 	for _, pts := range keys {
 		out = append(out, append([]int16(nil), m.completed[pts]...))
@@ -871,8 +871,6 @@ func cloneMetadata(metadata av.Metadata) av.Metadata {
 		return nil
 	}
 	out := make(av.Metadata, len(metadata))
-	for key, value := range metadata {
-		out[key] = value
-	}
+	maps.Copy(out, metadata)
 	return out
 }

@@ -52,8 +52,8 @@ func TestDecodeRTPDepacketizedOpusIntoPreallocatedFrame(t *testing.T) {
 	depacketizer := rtpav.NewOpusDepacketizer(gopusTestStream())
 	depacketized := rtpav.DepacketizeResult{Packets: make([]av.Packet, 0, 1)}
 	rtpPacket := rtp.Packet{
-		Header:  rtp.Header{Timestamp: 960},
-		Payload: gopusCELTPacket(),
+		Timestamp: 960,
+		Payload:   gopusCELTPacket(),
 	}
 
 	if err := depacketizer.PushInto(ctx, &rtpPacket, rtpav.PayloadCodec{ClockRate: 48000}, &depacketized); err != nil {
@@ -85,8 +85,8 @@ func Example_rtpOpusDecode() {
 
 	depacketizer := rtpav.NewOpusDepacketizer(stream)
 	packet := rtp.Packet{
-		Header:  rtp.Header{Timestamp: 960},
-		Payload: gopusCELTPacket(),
+		Timestamp: 960,
+		Payload:   gopusCELTPacket(),
 	}
 	depacketized := rtpav.DepacketizeResult{Packets: make([]av.Packet, 0, 1)}
 	if err := depacketizer.PushInto(ctx, &packet, rtpav.PayloadCodec{ClockRate: 48000}, &depacketized); err != nil {

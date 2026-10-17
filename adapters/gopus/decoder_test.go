@@ -298,7 +298,7 @@ func opusEncodeResult(capacity int, payloadCapacity int) codec.EncodeResult {
 func opusTestFrame() av.Frame {
 	const samples = 960
 	pcm := make([]byte, samples*2)
-	for i := 0; i < samples; i++ {
+	for i := range samples {
 		v := int16((i%64 - 32) * 320)
 		binary.LittleEndian.PutUint16(pcm[i*2:], uint16(v))
 	}

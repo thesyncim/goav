@@ -14,8 +14,8 @@ func TestOpusDepacketizerProducesBorrowedPacket(t *testing.T) {
 	depacketizer := NewOpusDepacketizer(stream)
 	payload := []byte{0xf8, 0xff, 0xfe}
 	packet := rtp.Packet{
-		Header:  rtp.Header{Timestamp: 960},
-		Payload: payload,
+		Timestamp: 960,
+		Payload:   payload,
 	}
 	result := DepacketizeResult{Packets: make([]av.Packet, 0, 1)}
 
@@ -53,7 +53,7 @@ func TestOpusDepacketizerResultCapacity(t *testing.T) {
 func TestOpusDepacketizerAllocs(t *testing.T) {
 	ctx := context.Background()
 	depacketizer := NewOpusDepacketizer(av.Stream{ID: "audio", Codec: av.CodecParameters{ClockRate: 48000}})
-	packet := rtp.Packet{Header: rtp.Header{Timestamp: 960}, Payload: []byte{1, 2, 3}}
+	packet := rtp.Packet{Timestamp: 960, Payload: []byte{1, 2, 3}}
 	result := DepacketizeResult{Packets: make([]av.Packet, 0, 1), Events: make([]av.Event, 0, 1)}
 	payload := PayloadCodec{ClockRate: 48000}
 

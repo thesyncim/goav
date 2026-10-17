@@ -246,7 +246,7 @@ func resampleS16(dst []byte, src []byte, inputSamples int, inputRate int, inputC
 		remapS16Channels(dst, src, inputSamples, inputChannels, outputChannels)
 		return
 	}
-	for sample := 0; sample < outputSamples; sample++ {
+	for sample := range outputSamples {
 		position := sample * inputRate
 		base := position / outputRate
 		frac := position % outputRate
@@ -255,7 +255,7 @@ func resampleS16(dst []byte, src []byte, inputSamples int, inputRate int, inputC
 			next = base
 			frac = 0
 		}
-		for channel := 0; channel < outputChannels; channel++ {
+		for channel := range outputChannels {
 			a := mixedSampleS16(src, base, inputChannels, channel, outputChannels)
 			b := mixedSampleS16(src, next, inputChannels, channel, outputChannels)
 			value := a
@@ -268,8 +268,8 @@ func resampleS16(dst []byte, src []byte, inputSamples int, inputRate int, inputC
 }
 
 func remapS16Channels(dst []byte, src []byte, samples int, inputChannels int, outputChannels int) {
-	for sample := 0; sample < samples; sample++ {
-		for channel := 0; channel < outputChannels; channel++ {
+	for sample := range samples {
+		for channel := range outputChannels {
 			value := mixedSampleS16(src, sample, inputChannels, channel, outputChannels)
 			putS16(dst, (sample*outputChannels+channel)*2, int16(value))
 		}
@@ -282,7 +282,7 @@ func mixedSampleS16(src []byte, sample int, inputChannels int, outputChannel int
 		return int(getS16(src, (sample*inputChannels+outputChannel)*2))
 	case outputChannels == 1:
 		sum := 0
-		for channel := 0; channel < inputChannels; channel++ {
+		for channel := range inputChannels {
 			sum += int(getS16(src, (sample*inputChannels+channel)*2))
 		}
 		return sum / inputChannels

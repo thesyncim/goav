@@ -409,16 +409,14 @@ func (g *directRunner) Run(ctx context.Context) error {
 	)
 	for i := range sources {
 		run := sources[i]
-		runs.Add(1)
-		go func() {
-			defer runs.Done()
+		runs.Go(func() {
 			if err := run.source.Start(runCtx, run.emitter); err != nil {
 				once.Do(func() {
 					firstErr = err
 					cancel()
 				})
 			}
-		}()
+		})
 	}
 	runs.Wait()
 	return firstErr

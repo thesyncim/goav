@@ -11,9 +11,9 @@ import (
 )
 
 func TestControlHasNoExportedFields(t *testing.T) {
-	typ := reflect.TypeOf(control.Control{})
-	for i := 0; i < typ.NumField(); i++ {
-		field := typ.Field(i)
+	typ := reflect.TypeFor[control.Control]()
+	for field := range typ.Fields() {
+		field := field
 		if field.IsExported() {
 			t.Fatalf("control.Control field %s is exported; use typed constructors and accessors", field.Name)
 		}

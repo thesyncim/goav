@@ -20,20 +20,20 @@ jobs:
       matrix:
         include:
           - os: ubuntu-latest
-            go: '1.26.x'
+            go: '1.27.x'
             full: true
           - os: ubuntu-latest
             go: stable
             full: false
           - os: macos-latest
-            go: '1.26.x'
+            go: '1.27.x'
             full: false
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 50
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@v7
         with:
           go-version: ${{ matrix.go }}
           # Without check-latest a stale runner image can pin an older patch
@@ -69,7 +69,7 @@ jobs:
 
       - name: Upload coverage artifact
         if: matrix.full
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: coverage-${{ matrix.os }}-${{ matrix.go }}
           path: coverage.out
@@ -106,7 +106,7 @@ jobs:
 
       - name: Upload benchmark artifact
         if: matrix.full
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: bench-smoke-${{ matrix.os }}-${{ matrix.go }}
           path: |
@@ -149,7 +149,7 @@ jobs:
       - name: Staticcheck
         if: matrix.full
         run: |
-          go install honnef.co/go/tools/cmd/staticcheck@v0.7.0
+          go install honnef.co/go/tools/cmd/staticcheck@v0.8.2
           staticcheck ./...
 
       - name: Govulncheck

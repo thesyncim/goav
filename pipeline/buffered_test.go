@@ -1525,7 +1525,7 @@ func TestGraphBufferedRemoveDrainsInFlightDeliveries(t *testing.T) {
 
 	runErr := make(chan error, 1)
 	go func() { runErr <- graph.Run(ctx) }()
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		sink := &removableTestSink{name: fmt.Sprintf("tap-%d", i)}
 		ref, err := graph.AddSink(sink, BufferPolicy{Capacity: 1, Drop: DropBlock})
 		if err != nil {

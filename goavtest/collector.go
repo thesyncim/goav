@@ -5,6 +5,7 @@ package goavtest
 import (
 	"context"
 	"encoding/binary"
+	"maps"
 	"sync"
 	"time"
 
@@ -229,8 +230,6 @@ func cloneMetadata(metadata av.Metadata) av.Metadata {
 		return nil
 	}
 	clone := make(av.Metadata, len(metadata))
-	for key, value := range metadata {
-		clone[key] = value
-	}
+	maps.Copy(clone, metadata)
 	return clone
 }

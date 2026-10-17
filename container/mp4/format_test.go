@@ -35,7 +35,7 @@ func TestFormatDemuxerReadsGoBuiltFixture(t *testing.T) {
 	wantSizes := []int{10, 20, 30}
 	wantDTS := []int64{0, 512, 1024}
 	wantKey := []bool{true, false, false}
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		out.Reset()
 		if err := d.ReadInto(context.Background(), &out); err != nil {
 			t.Fatalf("ReadInto %d: %v", i, err)

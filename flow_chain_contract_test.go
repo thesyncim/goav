@@ -392,8 +392,7 @@ func TestFlowConstructionErrorsAreJoined(t *testing.T) {
 	}
 	codes := make(map[errcode.Code]bool)
 	for _, cause := range joined.Unwrap() {
-		var buildErr *BuildError
-		if errors.As(cause, &buildErr) {
+		if buildErr, ok := errors.AsType[*BuildError](cause); ok {
 			codes[buildErr.Code] = true
 		}
 	}

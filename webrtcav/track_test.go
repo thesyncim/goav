@@ -261,7 +261,7 @@ func TestTrackReaderUpdateCodecFeedsRTPSource(t *testing.T) {
 		Stream: initial,
 	}, &fakeTrackRTPReader{
 		packets: []*rtp.Packet{{
-			Header:  rtp.Header{PayloadType: 112, Timestamp: 960},
+			PayloadType: 112, Timestamp: 960,
 			Payload: []byte{9, 8, 7},
 		}},
 	})
@@ -338,13 +338,13 @@ func TestTrackReaderUpdateTrackReplacesReaderAndFeedsRTPSource(t *testing.T) {
 		Stream: initial,
 	}, &fakeTrackRTPReader{
 		packets: []*rtp.Packet{{
-			Header:  rtp.Header{PayloadType: 96, Timestamp: 1},
+			PayloadType: 96, Timestamp: 1,
 			Payload: []byte{0x65, 0x00},
 		}},
 	})
 	replacement := &fakeTrackRTPReader{
 		packets: []*rtp.Packet{{
-			Header:  rtp.Header{PayloadType: 97, Marker: true, Timestamp: 90},
+			PayloadType: 97, Marker: true, Timestamp: 90,
 			Payload: []byte{0x65, 0xaa},
 		}},
 	}
@@ -413,7 +413,7 @@ func TestTrackReaderUpdateTrackReplacesReaderAndFeedsRTPSource(t *testing.T) {
 }
 
 func TestTrackReaderReadRTPAndClose(t *testing.T) {
-	packet := &rtp.Packet{Header: rtp.Header{SSRC: 1, SequenceNumber: 10}}
+	packet := &rtp.Packet{SSRC: 1, SequenceNumber: 10}
 	reader := newTrackReader(RemoteTrack{Stream: av.Stream{ID: "video"}}, &fakeTrackRTPReader{
 		packets: []*rtp.Packet{packet},
 	})
@@ -478,7 +478,7 @@ func TestTrackReaderRoutesSourceFeedback(t *testing.T) {
 		Feedback: writer,
 	}, &fakeTrackRTPReader{
 		packets: []*rtp.Packet{{
-			Header:  rtp.Header{PayloadType: 111, Timestamp: 1},
+			PayloadType: 111, Timestamp: 1,
 			Payload: []byte{1},
 		}},
 	})

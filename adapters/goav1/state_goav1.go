@@ -146,10 +146,7 @@ func DecoderFrameFormatFromStream(stream av.Stream, bounds codec.DecodeBounds) (
 // from parsed sequence and frame events.
 func DecoderScratchSizeFromBounds(bounds codec.DecodeBounds) backend.DecoderFrameWorkResidualStreamScratchSize {
 	bounds = normalizeDecoderBounds(bounds)
-	retainedAndPayload := bounds.MaxRetainedBytes + bounds.MaxPayloadBytes
-	if retainedAndPayload < bounds.MaxRetainedBytes {
-		retainedAndPayload = bounds.MaxRetainedBytes
-	}
+	retainedAndPayload := max(bounds.MaxRetainedBytes+bounds.MaxPayloadBytes, bounds.MaxRetainedBytes)
 	return backend.DecoderFrameWorkResidualStreamScratchSize{
 		Events:    bounds.MaxEventsPerInput,
 		RTPBuffer: retainedAndPayload,
@@ -172,23 +169,14 @@ func RuntimeDecoderScratchSizeFromBounds(bounds codec.DecodeBounds, workers int)
 		workers = defaultDecoderWorker
 	}
 	size := DecoderScratchSizeFromBounds(bounds)
-	tileScratch := backend.MaxTiles
-	if tileScratch < 1 {
-		tileScratch = 1
-	}
+	tileScratch := max(backend.MaxTiles, 1)
 	size.Event.Plan = backend.DecoderTileWorkPlan{
 		SpanCount:  tileScratch,
 		JobCount:   tileScratch,
 		BatchCount: tileScratch,
 	}
-	framePixels := bounds.MaxWidth * bounds.MaxHeight
-	if framePixels < 4096 {
-		framePixels = 4096
-	}
-	sideEntries := framePixels / 16
-	if sideEntries < 64 {
-		sideEntries = 64
-	}
+	framePixels := max(bounds.MaxWidth*bounds.MaxHeight, 4096)
+	sideEntries := max(framePixels/16, 64)
 	size.Event.SideData = backend.DecoderFrameWorkSideDataScratchSize{
 		CDEFIndexMap:             sideEntries,
 		CDEFReadMap:              sideEntries,

@@ -448,8 +448,8 @@ func patternedAV1Frame(width, height, n int) *av.Frame {
 	chromaW := width / 2
 	chromaH := height / 2
 	y := make([]byte, width*height)
-	for row := 0; row < height; row++ {
-		for col := 0; col < width; col++ {
+	for row := range height {
+		for col := range width {
 			y[row*width+col] = byte((row*7 + col*5 + n) % 256)
 		}
 	}

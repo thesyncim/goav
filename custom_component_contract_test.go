@@ -591,10 +591,10 @@ func TestDestinationContractsAndOpeners(t *testing.T) {
 }
 
 func TestDestinationOriginContracts(t *testing.T) {
-	typ := reflect.TypeOf(Destination{})
-	for i := 0; i < typ.NumField(); i++ {
-		if typ.Field(i).IsExported() {
-			t.Fatalf("Destination field %s is exported; use constructors instead", typ.Field(i).Name)
+	typ := reflect.TypeFor[Destination]()
+	for field := range typ.Fields() {
+		if field.IsExported() {
+			t.Fatalf("Destination field %s is exported; use constructors instead", field.Name)
 		}
 	}
 
@@ -916,10 +916,10 @@ func (p *componentSourceProvider) DecodeBounds(av.StreamID) codec.DecodeBounds {
 }
 
 func TestInputAndProviderSourceContracts(t *testing.T) {
-	typ := reflect.TypeOf(InputSpec{})
-	for i := 0; i < typ.NumField(); i++ {
-		if typ.Field(i).IsExported() {
-			t.Fatalf("InputSpec field %s is exported; use constructors instead", typ.Field(i).Name)
+	typ := reflect.TypeFor[InputSpec]()
+	for field := range typ.Fields() {
+		if field.IsExported() {
+			t.Fatalf("InputSpec field %s is exported; use constructors instead", field.Name)
 		}
 	}
 

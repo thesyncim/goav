@@ -192,7 +192,6 @@ func (s *coldPathRoutedSource) Start(ctx context.Context, emitter pipeline.Emitt
 		{Kind: pipeline.MessageEvent, Event: &av.Event{Type: av.EventPacketLoss, StreamID: "a"}},
 		{Kind: pipeline.MessageEvent, Event: &av.Event{Type: av.EventStats, StreamID: "b"}},
 	} {
-		msg := msg
 		if err := emitter.Emit(ctx, &msg); err != nil {
 			return err
 		}

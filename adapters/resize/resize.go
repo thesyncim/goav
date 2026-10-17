@@ -418,11 +418,11 @@ func scalePlaneNearest(dst []byte, dstStride int, src []byte, srcStride int, src
 		scalePlaneNearestInteger(dst, dstStride, src, srcStride, srcX, srcY, srcWidth/dstWidth, srcHeight/dstHeight, dstWidth, dstHeight)
 		return
 	}
-	for y := 0; y < dstHeight; y++ {
+	for y := range dstHeight {
 		sourceY := srcY + (y*srcHeight)/dstHeight
 		sourceRow := sourceY * srcStride
 		targetRow := y * dstStride
-		for x := 0; x < dstWidth; x++ {
+		for x := range dstWidth {
 			sourceX := srcX + (x*srcWidth)/dstWidth
 			dst[targetRow+x] = src[sourceRow+sourceX]
 		}
@@ -442,17 +442,17 @@ func copyPlaneRows(dst []byte, dstStride int, src []byte, srcStride int, width i
 		copy(dst[:width*height], src[:width*height])
 		return true
 	}
-	for row := 0; row < height; row++ {
+	for row := range height {
 		copy(dst[row*dstStride:row*dstStride+width], src[row*srcStride:row*srcStride+width])
 	}
 	return true
 }
 
 func scalePlaneNearestInteger(dst []byte, dstStride int, src []byte, srcStride int, srcX int, srcY int, xScale int, yScale int, dstWidth int, dstHeight int) {
-	for y := 0; y < dstHeight; y++ {
+	for y := range dstHeight {
 		sourceRow := (srcY + y*yScale) * srcStride
 		targetRow := y * dstStride
-		for x := 0; x < dstWidth; x++ {
+		for x := range dstWidth {
 			dst[targetRow+x] = src[sourceRow+srcX+x*xScale]
 		}
 	}

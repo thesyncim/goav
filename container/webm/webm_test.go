@@ -2967,7 +2967,7 @@ func BenchmarkReadWebMCorpus(b *testing.B) {
 			}
 			cyclesRead = 0
 		}
-		for frame := 0; frame < benchmarkWebMTrackCount; frame++ {
+		for range benchmarkWebMTrackCount {
 			if err := demuxer.ReadPacket(&packet); err != nil {
 				b.Fatal(err)
 			}
@@ -3089,7 +3089,7 @@ func makeBenchmarkWebMCorpusData(tb testing.TB, cycles int, payloads benchmarkWe
 		tb.Fatal(err)
 	}
 	tracks := addBenchmarkWebMTracks(tb, muxer)
-	for i := 0; i < cycles; i++ {
+	for i := range cycles {
 		writeBenchmarkWebMCorpus(tb, muxer, tracks, payloads, i)
 	}
 	if err := muxer.Close(); err != nil {
@@ -3110,7 +3110,7 @@ func makeBenchmarkWebMSeekableCorpusData(tb testing.TB, cycles int, payloads ben
 		tb.Fatal(err)
 	}
 	tracks := addBenchmarkWebMTracks(tb, muxer)
-	for i := 0; i < cycles; i++ {
+	for i := range cycles {
 		writeBenchmarkWebMCorpus(tb, muxer, tracks, payloads, i)
 	}
 	if err := muxer.Close(); err != nil {

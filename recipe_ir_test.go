@@ -441,11 +441,11 @@ func TestRecipeDestinationShapeUsesIRKind(t *testing.T) {
 }
 
 func TestRecipeIROperationTransformIsTyped(t *testing.T) {
-	field, ok := reflect.TypeOf(recipeir.Operation{}).FieldByName("Transform")
+	field, ok := reflect.TypeFor[recipeir.Operation]().FieldByName("Transform")
 	if !ok {
 		t.Fatal("recipeir.Operation.Transform missing")
 	}
-	if field.Type != reflect.TypeOf(recipeir.Transform{}) {
+	if field.Type != reflect.TypeFor[recipeir.Transform]() {
 		t.Fatalf("recipeir.Operation.Transform type = %s, want recipeir.Transform", field.Type)
 	}
 }

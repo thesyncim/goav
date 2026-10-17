@@ -2,6 +2,7 @@ package fileargs
 
 import (
 	"errors"
+	"slices"
 	"testing"
 
 	"github.com/thesyncim/goav/av"
@@ -93,10 +94,5 @@ func TestParseFileSinkMapUsesStableKeys(t *testing.T) {
 }
 
 func stringSliceContains(values []string, want string) bool {
-	for _, value := range values {
-		if value == want {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(values, want)
 }

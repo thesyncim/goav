@@ -108,8 +108,7 @@ func scenarioError(err error) scenarioResult {
 		Status: "error",
 		Error:  err.Error(),
 	}
-	var buildErr *goav.BuildError
-	if errors.As(err, &buildErr) {
+	if buildErr, ok := errors.AsType[*goav.BuildError](err); ok {
 		result.Summary = string(buildErr.Code)
 		result.Fixes = buildErr.FixLines()
 	}

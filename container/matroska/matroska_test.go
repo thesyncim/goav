@@ -3650,8 +3650,22 @@ func TestMuxerDemuxerAppliesZlibContentEncodingToH264(t *testing.T) {
 	if err := muxer.Close(); err != nil {
 		t.Fatal(err)
 	}
-	if bytes.Contains(buffer.Bytes(), annexB) || bytes.Contains(buffer.Bytes(), h264AVCSampleWithLengthSize2()) {
-		t.Fatalf("file still contains uncompressed h264 sample")
+	if bytes.Contains(buffer.Bytes(), annexB) {
+		t.Fatalf("file still contains the Annex B access unit")
+	}
+	// Assert the zlib stream itself rather than the absence of raw bytes:
+	// deflate may emit a stored block for tiny inputs (Go 1.27 does for this
+	// 9-byte sample), so raw sample bytes inside the stream are legitimate.
+	var want bytes.Buffer
+	zw := zlib.NewWriter(&want)
+	if _, err := zw.Write(h264AVCSampleWithLengthSize2()); err != nil {
+		t.Fatal(err)
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(buffer.Bytes(), want.Bytes()) {
+		t.Fatalf("file does not carry the zlib-encoded AVC sample")
 	}
 
 	demuxer, err := NewDemuxer(bytes.NewReader(buffer.Bytes()), DemuxerOptions{})
@@ -4120,7 +4134,7 @@ func TestDemuxerRejectsTruncatedZlibContentEncodingPayload(t *testing.T) {
 func zlibTestPayload(label string) []byte {
 	prefix := []byte("zlib content encoding test payload: " + label + ":")
 	payload := make([]byte, 0, len(prefix)*16)
-	for i := 0; i < 16; i++ {
+	for range 16 {
 		payload = append(payload, prefix...)
 	}
 	return payload
@@ -4138,7 +4152,7 @@ func lzoContentEncodings(t testing.TB) []byte {
 func lzoTestPayload(label string) []byte {
 	prefix := []byte("lzo1x content encoding test payload: " + label + ":")
 	payload := make([]byte, 0, len(prefix)*16)
-	for i := 0; i < 16; i++ {
+	for range 16 {
 		payload = append(payload, prefix...)
 	}
 	return payload
@@ -4147,7 +4161,7 @@ func lzoTestPayload(label string) []byte {
 func chainedContentPayload(label string) []byte {
 	prefix := []byte("ordered content encoding test payload: " + label + ":")
 	payload := make([]byte, 0, len(prefix)*16)
-	for i := 0; i < 16; i++ {
+	for range 16 {
 		payload = append(payload, prefix...)
 	}
 	return payload
@@ -4250,7 +4264,7 @@ func bzlibContentEncodings(t testing.TB) []byte {
 func bzlibTestPayload(label string) []byte {
 	prefix := []byte("bzip2 content encoding test payload: " + label + ":")
 	payload := make([]byte, 0, len(prefix)*8)
-	for i := 0; i < 8; i++ {
+	for range 8 {
 		payload = append(payload, prefix...)
 	}
 	return payload
@@ -4353,7 +4367,7 @@ func aesCTRContentEncryptionContentEncodings(t testing.TB, keyID []byte) []byte 
 func encryptedTestPayload(label string) []byte {
 	prefix := []byte("aes ctr content encryption test payload: " + label + ":")
 	payload := make([]byte, 0, len(prefix)*12)
-	for i := 0; i < 12; i++ {
+	for range 12 {
 		payload = append(payload, prefix...)
 	}
 	return payload
@@ -10534,7 +10548,7 @@ func TestDemuxerRejectsDuplicateTopLevelSegmentMetadata(t *testing.T) {
 		{
 			name: "third seekhead",
 			writeMetadata: func(w *ebml.Writer) error {
-				for i := 0; i < 3; i++ {
+				for range 3 {
 					if err := w.WriteElement(idSeekHead, nil); err != nil {
 						return err
 					}
@@ -13066,7 +13080,7 @@ func FuzzDemuxer(f *testing.F) {
 			return
 		}
 		packet := Packet{Data: make([]byte, 0, 64)}
-		for i := 0; i < 16; i++ {
+		for range 16 {
 			err := demuxer.ReadPacket(&packet)
 			if err != nil {
 				return
@@ -13339,7 +13353,7 @@ func BenchmarkReadWebRTCCorpus(b *testing.B) {
 			}
 			cyclesRead = 0
 		}
-		for frame := 0; frame < benchmarkWebRTCTrackCount; frame++ {
+		for range benchmarkWebRTCTrackCount {
 			if err := demuxer.ReadPacket(&packet); err != nil {
 				b.Fatal(err)
 			}
@@ -13389,7 +13403,7 @@ func BenchmarkReadSeekableWebRTCCorpus(b *testing.B) {
 			}
 			cyclesRead = 0
 		}
-		for frame := 0; frame < benchmarkWebRTCTrackCount; frame++ {
+		for range benchmarkWebRTCTrackCount {
 			if err := demuxer.ReadPacket(&packet); err != nil {
 				b.Fatal(err)
 			}
@@ -13756,7 +13770,7 @@ func writeBenchmarkWebRTCCorpusFileWithOptionsAndCueRewrite(tb testing.TB, muxer
 	tb.Helper()
 	muxer.init(writer, opts)
 	tracks := addBenchmarkWebRTCTracks(tb, muxer)
-	for i := 0; i < cycles; i++ {
+	for i := range cycles {
 		writeBenchmarkWebRTCCorpus(tb, muxer, tracks, payloads, i)
 	}
 	if rewrite != nil {
@@ -13806,7 +13820,7 @@ func makeMatroskaData(tb testing.TB, packets int) []byte {
 	if err != nil {
 		tb.Fatal(err)
 	}
-	for i := 0; i < packets; i++ {
+	for i := range packets {
 		if err := muxer.WritePacket(Packet{
 			TrackID:  id,
 			TimeNS:   int64(i) * 20_000_000,
@@ -13839,7 +13853,7 @@ func makeH264AVCMatroskaData(tb testing.TB, packets int) []byte {
 		tb.Fatal(err)
 	}
 	data := h264AnnexBAccessUnit()
-	for i := 0; i < packets; i++ {
+	for i := range packets {
 		if err := muxer.WritePacket(Packet{
 			TrackID:  id,
 			TimeNS:   int64(i) * 20_000_000,
@@ -13872,7 +13886,7 @@ func makeH265HEVCMatroskaData(tb testing.TB, packets int) []byte {
 		tb.Fatal(err)
 	}
 	data := h265AnnexBAccessUnit()
-	for i := 0; i < packets; i++ {
+	for i := range packets {
 		if err := muxer.WritePacket(Packet{
 			TrackID:  id,
 			TimeNS:   int64(i) * 20_000_000,
@@ -13910,7 +13924,7 @@ func makeRepeatedLacedMatroskaData(tb testing.TB, lacing byte, frames [][]byte, 
 	if err := muxer.startCluster(0); err != nil {
 		tb.Fatal(err)
 	}
-	for i := 0; i < blocks; i++ {
+	for range blocks {
 		if err := writeLacedSimpleBlock(muxer.ebml, trackID, lacing, frames); err != nil {
 			tb.Fatal(err)
 		}
@@ -16005,7 +16019,7 @@ func makeDeferredOptionalMetadataMatroskaData(tb testing.TB, requiredMetadataBef
 	}
 	var seekHeadElement []byte
 	seekHeadConverged := false
-	for attempt := 0; attempt < 8; attempt++ {
+	for range 8 {
 		positions := make([]uint64, len(lateElements))
 		position := uint64(len(seekHeadElement) + positionPrefix)
 		for i := range lateElements {
@@ -16069,7 +16083,7 @@ func segmentChildElementBytes(tb testing.TB, writeElement func(*ebml.Writer) err
 func seekHeadElementForDeferredMetadata(tb testing.TB, clusterElementSize int, infoElementSize int) []byte {
 	tb.Helper()
 	var seekHead []byte
-	for attempt := 0; attempt < 8; attempt++ {
+	for range 8 {
 		infoPosition := uint64(len(seekHead) + clusterElementSize)
 		tracksPosition := infoPosition + uint64(infoElementSize)
 		next := segmentChildElementBytes(tb, func(w *ebml.Writer) error {
@@ -17334,10 +17348,7 @@ func (m *memoryWriteSeeker) Write(p []byte) (int, error) {
 			m.bytes = m.bytes[:endLen]
 			clear(m.bytes[oldLen:])
 		} else {
-			nextCap := cap(m.bytes) * 2
-			if nextCap < endLen {
-				nextCap = endLen
-			}
+			nextCap := max(cap(m.bytes)*2, endLen)
 			next := make([]byte, endLen, nextCap)
 			copy(next, m.bytes)
 			m.bytes = next

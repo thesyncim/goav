@@ -4,6 +4,7 @@ package goav
 
 import (
 	"errors"
+	"slices"
 	"strings"
 
 	"github.com/thesyncim/goav/av"
@@ -291,9 +292,9 @@ func encodeAdapterRequestFromPreparedStream(spec codec.Spec, stream av.Stream) c
 
 func recipeIRStreamSampleFormat(stream recipeir.Stream) string {
 	transforms := recipeIRStreamTransforms(stream)
-	for i := len(transforms) - 1; i >= 0; i-- {
-		if transforms[i].Kind == recipeir.TransformResample && transforms[i].Resample.SampleFormat != "" {
-			return transforms[i].Resample.SampleFormat
+	for _, transform := range slices.Backward(transforms) {
+		if transform.Kind == recipeir.TransformResample && transform.Resample.SampleFormat != "" {
+			return transform.Resample.SampleFormat
 		}
 	}
 	return ""
@@ -301,9 +302,9 @@ func recipeIRStreamSampleFormat(stream recipeir.Stream) string {
 
 func recipeIRStreamPixelFormat(stream recipeir.Stream) string {
 	transforms := recipeIRStreamTransforms(stream)
-	for i := len(transforms) - 1; i >= 0; i-- {
-		if transforms[i].Kind == recipeir.TransformResize && transforms[i].Resize.PixelFormat != "" {
-			return transforms[i].Resize.PixelFormat
+	for _, transform := range slices.Backward(transforms) {
+		if transform.Kind == recipeir.TransformResize && transform.Resize.PixelFormat != "" {
+			return transform.Resize.PixelFormat
 		}
 	}
 	return ""

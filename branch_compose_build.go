@@ -3,6 +3,7 @@ package goav
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -1381,10 +1382,8 @@ func branchComposeTargetSelectsRoute(output branchComposeTarget, branch branchCo
 		if name == branch.name || name == branch.branch.Name {
 			return true
 		}
-		for j := range branch.branch.Labels {
-			if name == branch.branch.Labels[j] {
-				return true
-			}
+		if slices.Contains(branch.branch.Labels, name) {
+			return true
 		}
 	}
 	return false

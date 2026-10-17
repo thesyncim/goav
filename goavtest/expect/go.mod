@@ -1,6 +1,8 @@
 module github.com/thesyncim/goav/goavtest/expect
 
-go 1.26
+go 1.27.0
+
+toolchain go1.27.2
 
 require (
 	github.com/google/go-cmp v0.7.0

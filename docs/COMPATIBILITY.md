@@ -29,9 +29,9 @@ compatibility it is promising and what evidence backs that promise.
 - Example modules: `examples/*` are copyable adoption artifacts, not imported
   library APIs. They should keep building, but they do not carry compatibility
   promises beyond the public APIs they demonstrate.
-- Minimum Go version: the current module directive is `go 1.26`. First-party
-  codec backends currently require Go 1.26, so the release floor is a minor
-  version, not a patch-level local toolchain pin. Before a tag, the maintainer
+- Minimum Go version: the current module directive is `go 1.27.0`. First-party
+  codec backends (`goav1`, `gopus`) require Go 1.27, so the release floor is a
+  minor version, not a patch-level local toolchain pin. Before a tag, the maintainer
   must confirm that directive is the intended supported minimum for every
   module being released.
 
@@ -64,11 +64,11 @@ API-restraint checklist in `docs/API_SURFACE.md`.
 Compatibility note for root v0.1.0
 
 Minimum Go version:
-- go 1.26. The root module, nested transport modules, and standalone example
-  modules use the 1.26 module floor as of 2026-06-26. The maintainer still
+- go 1.27.0. The root module, nested transport modules, and standalone example
+  modules use the 1.27 module floor as of 2026-10-17. The maintainer still
   needs to confirm this floor before signing the tag. Release security evidence
-  should use the latest Go 1.26 patch toolchain; the local govulncheck pass
-  below used Go 1.26.3.
+  should use the latest Go 1.27 patch toolchain; the local govulncheck pass
+  below used Go 1.27.2.
 
 Module scope:
 - Root module tag: `v0.1.0`.
@@ -132,7 +132,7 @@ Migration notes:
 
 Evidence:
 - Local root tests: `go test -p 1 ./...`.
-- Local patched-toolchain tests: `GOTOOLCHAIN=go1.26.3 go test -p 1 ./...`.
+- Local patched-toolchain tests: `GOTOOLCHAIN=go1.27.2 go test -p 1 ./...`.
 - Local pure-Go tests: `CGO_ENABLED=0 go test -p 1 ./...`.
 - Local race subset: `CGO_ENABLED=1 go test -race -count=1 . ./pipeline
   ./goavtest ./format ./cmd/goav ./ctlserver ./internal/launchctl ./graphrender`.
@@ -140,7 +140,7 @@ Evidence:
   `go run honnef.co/go/tools/cmd/staticcheck@latest ./...`.
 - Local formatting check: `test -z "$(gofmt -l .)"`.
 - Local security scan:
-  `GOTOOLCHAIN=go1.26.3 go run golang.org/x/vuln/cmd/govulncheck@latest ./...`
+  `GOTOOLCHAIN=go1.27.2 go run golang.org/x/vuln/cmd/govulncheck@latest ./...`
   reported no called vulnerabilities.
 - Local benchmark smoke:
   `BENCH_COUNT=1 scripts/bench/run.sh -bench 'BenchmarkLatencyRecordPackets|BenchmarkSourcePush' .`.

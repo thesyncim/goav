@@ -2,6 +2,7 @@ package goav
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/thesyncim/goav/av"
@@ -1004,11 +1005,11 @@ func planOperationNodeName(branch planBranch, operation planOperation, index int
 		}
 		return operation.Component + "-" + name
 	case plan.OpStage:
-		if strings.HasPrefix(operation.Component, "sync-") {
-			return syncStageName(planBranchOperationScopeName(branch) + "-" + strings.TrimPrefix(operation.Component, "sync-"))
+		if after, ok := strings.CutPrefix(operation.Component, "sync-"); ok {
+			return syncStageName(planBranchOperationScopeName(branch) + "-" + after)
 		}
-		if strings.HasPrefix(operation.Component, "playout-") {
-			return playoutStageName(planBranchOperationScopeName(branch) + "-" + strings.TrimPrefix(operation.Component, "playout-"))
+		if after, ok := strings.CutPrefix(operation.Component, "playout-"); ok {
+			return playoutStageName(planBranchOperationScopeName(branch) + "-" + after)
 		}
 		return operation.Component
 	case plan.OpEncode:
@@ -1160,10 +1161,5 @@ func codecComponent(codecID av.CodecID) string {
 }
 
 func stringInSlice(needle string, haystack []string) bool {
-	for i := range haystack {
-		if haystack[i] == needle {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(haystack, needle)
 }

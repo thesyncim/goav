@@ -71,7 +71,7 @@ func mutableFrameVideoPackets(name string, width, height, count int) goav.InputS
 		shape.Packet(av.MediaVideo, av.CodecVP8, shape.Video(width, height, av.PixelFormatI420)),
 		func(_ context.Context, push source.Push) error {
 			base := av.TimeBase{Num: 1, Den: 90_000}
-			for n := 0; n < count; n++ {
+			for n := range count {
 				packet := &av.Packet{
 					StreamID: av.StreamID(name),
 					Type:     av.MediaVideo,

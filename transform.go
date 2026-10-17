@@ -5,6 +5,7 @@ package goav
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/thesyncim/goav/av"
@@ -145,21 +146,11 @@ func resizeModeWithDefault(mode filter.ResizeMode) filter.ResizeMode {
 }
 
 func resizeModeAllowed(allowed []filter.ResizeMode, mode filter.ResizeMode) bool {
-	for i := range allowed {
-		if allowed[i] == mode {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(allowed, mode)
 }
 
 func stringAllowed(allowed []string, value string) bool {
-	for i := range allowed {
-		if allowed[i] == value {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(allowed, value)
 }
 
 func resizeModesToStrings(modes []filter.ResizeMode) []string {

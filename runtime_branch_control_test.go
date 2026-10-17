@@ -27,7 +27,7 @@ func TestRuntimeBranchControlPlaneOnLiveTask(t *testing.T) {
 	input := Source("generated",
 		shape.Packet(av.MediaAudio, av.CodecOpus, shape.Audio(48_000, codec.Stereo, av.SampleFormatS16)),
 		func(sctx context.Context, push SourcePush) error {
-			for i := 0; i < phases; i++ {
+			for i := range phases {
 				select {
 				case <-release:
 				case <-sctx.Done():
@@ -117,7 +117,7 @@ func TestRuntimeBranchRebranchSwapsLiveBranch(t *testing.T) {
 	input := Source("generated",
 		shape.Packet(av.MediaAudio, av.CodecOpus, shape.Audio(48_000, codec.Stereo, av.SampleFormatS16)),
 		func(sctx context.Context, push SourcePush) error {
-			for i := 0; i < phases; i++ {
+			for i := range phases {
 				select {
 				case <-release:
 				case <-sctx.Done():
@@ -347,7 +347,7 @@ func TestRebranchSwitchAtNextFrameOnFrameStream(t *testing.T) {
 	input := Source("pcm",
 		shape.Frame(av.MediaAudio, shape.Audio(48_000, codec.Stereo, av.SampleFormatS16)),
 		func(sctx context.Context, push SourcePush) error {
-			for i := 0; i < frames; i++ {
+			for i := range frames {
 				select {
 				case <-release:
 				case <-sctx.Done():

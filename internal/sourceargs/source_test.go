@@ -2,6 +2,7 @@ package sourceargs
 
 import (
 	"errors"
+	"slices"
 	"testing"
 
 	"github.com/thesyncim/goav/av"
@@ -120,10 +121,5 @@ func TestParseGeneratedVideoRejectsDuplicateForms(t *testing.T) {
 }
 
 func stringSliceContains(values []string, want string) bool {
-	for _, value := range values {
-		if value == want {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(values, want)
 }

@@ -242,7 +242,7 @@ func parseFramePayload(payload []byte, frame *av.Frame, audioScratch *av.AudioFr
 		return false
 	}
 	frame.Planes = resizePlanes(frame.Planes, planes)
-	for i := 0; i < planes; i++ {
+	for i := range planes {
 		frame.Planes[i].Stride = int(r.u32())
 		frame.Planes[i].Offset = int(r.u32())
 		frame.Planes[i].Buffer.Bytes = append(frame.Planes[i].Buffer.Bytes[:0], r.blob()...)

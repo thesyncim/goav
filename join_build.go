@@ -26,10 +26,7 @@ func joinStagePreallocDepth(rt *runtime) int {
 	if rt == nil || rt.buffer.IsDirect() {
 		return 1
 	}
-	depth := rt.buffer.Capacity
-	if depth < 1 {
-		depth = 1
-	}
+	depth := max(rt.buffer.Capacity, 1)
 	if depth > joinStagePreallocDepthLimit {
 		return joinStagePreallocDepthLimit
 	}

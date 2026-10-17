@@ -16,12 +16,12 @@ import (
 )
 
 var (
-	streamIDType    = reflect.TypeOf(av.StreamID(""))
-	eventTypeType   = reflect.TypeOf(av.EventType(""))
-	metadataType    = reflect.TypeOf(av.Metadata{})
-	durationType    = reflect.TypeOf(time.Duration(0))
-	avDurationType  = reflect.TypeOf(av.Duration{})
-	errInterfaceTyp = reflect.TypeOf((*error)(nil)).Elem()
+	streamIDType    = reflect.TypeFor[av.StreamID]()
+	eventTypeType   = reflect.TypeFor[av.EventType]()
+	metadataType    = reflect.TypeFor[av.Metadata]()
+	durationType    = reflect.TypeFor[time.Duration]()
+	avDurationType  = reflect.TypeFor[av.Duration]()
+	errInterfaceTyp = reflect.TypeFor[error]()
 )
 
 // Field describes one exported struct field bindable from key=value args.
@@ -63,7 +63,7 @@ func TypeOf[T any]() reflect.Type {
 	if typ := reflect.TypeOf(zero); typ != nil {
 		return typ
 	}
-	return reflect.TypeOf((*T)(nil)).Elem()
+	return reflect.TypeFor[T]()
 }
 
 // Error describes one binding refusal without depending on any outer command
@@ -104,8 +104,8 @@ func Bind(ctx Context, args []string) (Result, error) {
 		if arg == "" {
 			continue
 		}
-		if strings.HasPrefix(arg, "--") {
-			name := strings.ToLower(strings.TrimSpace(strings.TrimPrefix(arg, "--")))
+		if after, ok := strings.CutPrefix(arg, "--"); ok {
+			name := strings.ToLower(strings.TrimSpace(after))
 			if ignored(ctx, name) {
 				continue
 			}
@@ -539,8 +539,8 @@ func metadataPrefixField(fields map[string]Field, key string) (Field, string, bo
 			continue
 		}
 		prefix := field.Name + "."
-		if strings.HasPrefix(key, prefix) {
-			return field, strings.TrimPrefix(key, prefix), true
+		if after, ok := strings.CutPrefix(key, prefix); ok {
+			return field, after, true
 		}
 	}
 	return Field{}, "", false

@@ -89,10 +89,10 @@ func TestBranchBufferIsNormalBranchAPI(t *testing.T) {
 		t.Fatal("Branch should expose Buffer")
 	}
 	got := method.Type.In(1)
-	if got != reflect.TypeOf(flow.BranchBuffer{}) {
+	if got != reflect.TypeFor[flow.BranchBuffer]() {
 		t.Fatalf("Branch.Buffer argument = %s, want flow.BranchBuffer", got)
 	}
-	if got == reflect.TypeOf(pipeline.BufferPolicy{}) {
+	if got == reflect.TypeFor[pipeline.BufferPolicy]() {
 		t.Fatalf("Branch.Buffer must not expose pipeline.BufferPolicy")
 	}
 }

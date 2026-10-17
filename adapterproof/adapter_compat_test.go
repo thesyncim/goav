@@ -290,7 +290,7 @@ func (d *toyDemuxer) Open(_ context.Context, input format.Input, _ format.OpenOp
 		return err
 	}
 	d.streams = make([]av.Stream, 0, count)
-	for i := uint32(0); i < count; i++ {
+	for i := range count {
 		id, err := readString(d.reader)
 		if err != nil {
 			return err
@@ -459,7 +459,7 @@ func (f *toyUpsampler) FilterInto(_ context.Context, frame *av.Frame, out *filte
 	}
 	output.Planes = output.Planes[:1]
 	dst := output.Planes[0].Buffer.Bytes[:0]
-	for sample := 0; sample < samples; sample++ {
+	for sample := range samples {
 		group := src[sample*width : (sample+1)*width]
 		dst = append(dst, group...)
 		dst = append(dst, group...)

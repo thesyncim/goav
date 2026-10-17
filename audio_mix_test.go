@@ -474,7 +474,7 @@ func mixTestAudioSourceRate(id av.StreamID, rate int) InputSpec {
 		shape.Frame(av.MediaAudio, shape.Audio(rate, codec.Mono, av.SampleFormatS16), shape.Stream(id)),
 		func(_ context.Context, push SourcePush) error {
 			b := make([]byte, 960*2) // 960 mono S16 samples
-			for i := 0; i < 960; i++ {
+			for i := range 960 {
 				binary.LittleEndian.PutUint16(b[i*2:], uint16(int16(100)))
 			}
 			frame := &av.Frame{

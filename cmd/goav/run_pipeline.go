@@ -312,7 +312,7 @@ func runPipelineTaskWithControl(ctx context.Context, task goav.LiveTask, control
 		errC <- ctlserver.ServeUnix(runCtx, task, control)
 	}()
 	var first error
-	for i := 0; i < 2; i++ {
+	for i := range 2 {
 		err := <-errC
 		if expectedRunShutdownError(err) {
 			err = nil

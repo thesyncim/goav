@@ -225,7 +225,7 @@ func (r *aacConfigBitReader) read(bits int) (uint32, error) {
 		return 0, ErrInvalidData
 	}
 	var value uint32
-	for i := 0; i < bits; i++ {
+	for range bits {
 		byteIndex := r.bit / 8
 		bitIndex := 7 - r.bit%8
 		value = (value << 1) | uint32((r.data[byteIndex]>>bitIndex)&1)
@@ -563,7 +563,7 @@ func parseAVCDecoderConfigurationRecord(private []byte) (avcDecoderConfiguration
 	if spsCount == 0 {
 		return avcDecoderConfigurationRecord{}, ErrInvalidData
 	}
-	for i := 0; i < spsCount; i++ {
+	for range spsCount {
 		nal, next, err := readAVCParameterSet(private, offset)
 		if err != nil {
 			return avcDecoderConfigurationRecord{}, err
@@ -581,7 +581,7 @@ func parseAVCDecoderConfigurationRecord(private []byte) (avcDecoderConfiguration
 	if ppsCount == 0 {
 		return avcDecoderConfigurationRecord{}, ErrInvalidData
 	}
-	for i := 0; i < ppsCount; i++ {
+	for range ppsCount {
 		nal, next, err := readAVCParameterSet(private, offset)
 		if err != nil {
 			return avcDecoderConfigurationRecord{}, err
@@ -721,7 +721,7 @@ func readAV1ConfigOBU(private []byte, offset int) (int, int, error) {
 
 func readAV1LEB128(data []byte, offset int) (uint64, int, error) {
 	var value uint64
-	for i := 0; i < av1MaxLEB128Bytes; i++ {
+	for i := range av1MaxLEB128Bytes {
 		if offset+i >= len(data) {
 			return 0, 0, ErrInvalidData
 		}
@@ -775,7 +775,7 @@ func parseOpusHead(private []byte) (opusHead, error) {
 	if decodedChannels > 255 {
 		return opusHead{}, ErrInvalidData
 	}
-	for i := 0; i < channels; i++ {
+	for i := range channels {
 		index := private[21+i]
 		if index != 255 && int(index) >= decodedChannels {
 			return opusHead{}, ErrInvalidData

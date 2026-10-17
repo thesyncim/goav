@@ -267,8 +267,8 @@ func argsMap(operation string, argv []string) (map[string]string, error) {
 	out := make(map[string]string)
 	for _, arg := range argv {
 		var key, value string
-		if strings.HasPrefix(arg, "--") {
-			key = strings.TrimPrefix(arg, "--")
+		if after, ok := strings.CutPrefix(arg, "--"); ok {
+			key = after
 			value = "true"
 		} else {
 			var ok bool

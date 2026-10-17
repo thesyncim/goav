@@ -96,7 +96,7 @@ func (f *doubleRateFilter) FilterInto(_ context.Context, frame *av.Frame, out *f
 	}
 	dstFrame.Planes = dstFrame.Planes[:1]
 	dst := dstFrame.Planes[0].Buffer.Bytes[:0]
-	for sample := 0; sample < samples; sample++ {
+	for sample := range samples {
 		group := src[sample*width : (sample+1)*width]
 		dst = append(dst, group...)
 		dst = append(dst, group...)

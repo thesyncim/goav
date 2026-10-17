@@ -25,8 +25,7 @@ import (
 )
 
 func TestExternalHostCustomCommandOverSocket(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	type vendorCommand struct {
 		Value string `goavctl:"value,required" usage:"value=<text>" help:"external value"`
@@ -35,7 +34,7 @@ func TestExternalHostCustomCommandOverSocket(t *testing.T) {
 	command := ctlserver.CommandSpec{
 		Name:     "vendor.external",
 		Summary:  "external command",
-		ArgsType: reflect.TypeOf(vendorCommand{}),
+		ArgsType: reflect.TypeFor[vendorCommand](),
 		Apply: func(_ context.Context, _ goav.LiveTask, args any) (ctlserver.ControlResponse, error) {
 			applied = args.(vendorCommand).Value
 			return ctlserver.ControlResponse{Operation: "control vendor.external", Result: applied}, nil
@@ -65,8 +64,7 @@ func TestExternalHostCustomCommandOverSocket(t *testing.T) {
 }
 
 func TestExternalHostCustomCodecOptionsAndStageOverSocket(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	const customCodec = av.CodecID("x_cli_pcm")
 	factory := &recordingEncoderFactory{
@@ -151,8 +149,7 @@ func TestExternalHostCustomCodecOptionsAndStageOverSocket(t *testing.T) {
 }
 
 func TestExternalHostHelpListsRuntimeRegisteredComponents(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	const customCodec = av.CodecID("x_help_pcm")
 	const customFormat = av.FormatID("x_helpmux")
@@ -194,8 +191,7 @@ func TestExternalHostHelpListsRuntimeRegisteredComponents(t *testing.T) {
 }
 
 func TestExternalHostCustomEncoderSpecCanMapArbitrarySettings(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	const customCodec = av.CodecID("x_fancy_audio")
 	factory := &recordingEncoderFactory{
@@ -341,7 +337,7 @@ func TestPublicValidateCapabilitiesPreflightsCustomMetadata(t *testing.T) {
 	err = ctlserver.ValidateCapabilities(ctlserver.CapabilitySet{
 		Commands: []ctlserver.CommandSpec{{
 			Name:     "vendor.pointer",
-			ArgsType: reflect.TypeOf(&commandSettings{}),
+			ArgsType: reflect.TypeFor[*commandSettings](),
 		}},
 	})
 	if !errors.As(err, &structured) ||
@@ -422,7 +418,7 @@ func TestPublicWrapperHelpersDelegateToControlSurface(t *testing.T) {
 	custom := ctlserver.CommandSpec{
 		Name:     "wrapper",
 		Summary:  "wrapper command",
-		ArgsType: reflect.TypeOf(wrapperCommand{}),
+		ArgsType: reflect.TypeFor[wrapperCommand](),
 		Apply: func(_ context.Context, _ goav.LiveTask, args any) (ctlserver.ControlResponse, error) {
 			applied = args.(wrapperCommand).Value
 			return ctlserver.ControlResponse{Operation: "control wrapper", Result: applied}, nil

@@ -44,7 +44,7 @@ func (r *onStreamRTPReceiver) ReadRTP(ctx context.Context) (*rtp.Packet, error) 
 		announced := r.video
 		r.events <- av.Event{Type: av.EventStreamAdded, StreamID: announced.ID, Stream: &announced}
 		return &rtp.Packet{
-			Header:  rtp.Header{PayloadType: 111, Timestamp: 960},
+			PayloadType: 111, Timestamp: 960,
 			Payload: []byte{1, 2, 3},
 		}, nil
 	}
@@ -56,7 +56,7 @@ func (r *onStreamRTPReceiver) ReadRTP(ctx context.Context) (*rtp.Packet, error) 
 	case <-time.After(time.Millisecond):
 		r.sent++
 		return &rtp.Packet{
-			Header:  rtp.Header{PayloadType: 96, Marker: true, Timestamp: uint32(90 * r.sent), SequenceNumber: uint16(r.sent)},
+			PayloadType: 96, Marker: true, Timestamp: uint32(90 * r.sent), SequenceNumber: uint16(r.sent),
 			Payload: []byte{0x10, 0x00, 0x11, 0x22},
 		}, nil
 	}

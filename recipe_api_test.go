@@ -543,11 +543,11 @@ func TestExpertGraphRequiresRuntime(t *testing.T) {
 }
 
 func TestRecipesExposeStructuredExplain(t *testing.T) {
-	jobType := reflect.TypeOf((*goav.Job)(nil))
+	jobType := reflect.TypeFor[*goav.Job]()
 	if _, ok := jobType.MethodByName("Explain"); !ok {
 		t.Fatal("Job should expose Explain for structured workflow reports")
 	}
-	reportType := reflect.TypeOf(plan.Report{})
+	reportType := reflect.TypeFor[plan.Report]()
 	for _, method := range []string{"Text", "Mermaid", "DOT", "Render"} {
 		if _, ok := reportType.MethodByName(method); ok {
 			t.Fatalf("plan.Report exposes renderer method %s; keep rendering outside core", method)
@@ -556,10 +556,10 @@ func TestRecipesExposeStructuredExplain(t *testing.T) {
 }
 
 func TestZeroJobRejectsPublicConstruction(t *testing.T) {
-	typ := reflect.TypeOf(goav.Job{})
-	for i := 0; i < typ.NumField(); i++ {
-		if typ.Field(i).IsExported() {
-			t.Fatalf("Job field %s is exported; use goav.From instead", typ.Field(i).Name)
+	typ := reflect.TypeFor[goav.Job]()
+	for field := range typ.Fields() {
+		if field.IsExported() {
+			t.Fatalf("Job field %s is exported; use goav.From instead", field.Name)
 		}
 	}
 
@@ -1379,7 +1379,7 @@ func TestBuildRejectsIncompatibleAnnexBMuxGroup(t *testing.T) {
 }
 
 func TestInputSpecKeepsManualDepacketizersOutOfRecipeFrontDoor(t *testing.T) {
-	inputType := reflect.TypeOf(goav.InputSpec{})
+	inputType := reflect.TypeFor[goav.InputSpec]()
 	if _, ok := inputType.MethodByName("Depacketize"); ok {
 		t.Fatal("InputSpec exposes manual depacketizer wiring; RTP recipes should use codec intent")
 	}
@@ -1518,8 +1518,8 @@ func TestTypedBranchTapDomainMismatchIsActionable(t *testing.T) {
 }
 
 func TestCodecSettingsOwnTuningAndAdapterOptions(t *testing.T) {
-	codecSpec := reflect.TypeOf(codec.Spec{})
-	settingsType := reflect.TypeOf(codec.CodecSettings{})
+	codecSpec := reflect.TypeFor[codec.Spec]()
+	settingsType := reflect.TypeFor[codec.CodecSettings]()
 	if field, ok := codecSpec.FieldByName("Settings"); !ok || field.Type != settingsType {
 		t.Fatalf("Spec.Settings = %v %v, want codec.CodecSettings", field.Type, ok)
 	}
@@ -1542,8 +1542,8 @@ func TestCodecSettingsOwnTuningAndAdapterOptions(t *testing.T) {
 		name string
 		typ  reflect.Type
 	}{
-		{name: "decode", typ: reflect.TypeOf(codec.DecodeConfig{})},
-		{name: "encode", typ: reflect.TypeOf(codec.EncodeConfig{})},
+		{name: "decode", typ: reflect.TypeFor[codec.DecodeConfig]()},
+		{name: "encode", typ: reflect.TypeFor[codec.EncodeConfig]()},
 	} {
 		if field, ok := tt.typ.FieldByName("Settings"); !ok || field.Type != settingsType {
 			t.Fatalf("%s config Settings = %v %v, want codec.CodecSettings", tt.name, field.Type, ok)
@@ -1592,8 +1592,8 @@ func TestReportsUseDestinations(t *testing.T) {
 		name string
 		typ  reflect.Type
 	}{
-		{name: "plan.Report", typ: reflect.TypeOf(plan.Report{})},
-		{name: "plan.Branch", typ: reflect.TypeOf(plan.Branch{})},
+		{name: "plan.Report", typ: reflect.TypeFor[plan.Report]()},
+		{name: "plan.Branch", typ: reflect.TypeFor[plan.Branch]()},
 	} {
 		if _, ok := tt.typ.FieldByName("Targets"); ok {
 			t.Fatalf("%s exposes Targets; use Destinations as the public routing field", tt.name)
@@ -1605,8 +1605,8 @@ func TestReportsUseDestinations(t *testing.T) {
 }
 
 func TestRecipeConstructorsDoNotExposeRuntimeOptions(t *testing.T) {
-	inputType := reflect.TypeOf(goav.InputSpec{})
-	jobType := reflect.TypeOf((*goav.Job)(nil))
+	inputType := reflect.TypeFor[goav.InputSpec]()
+	jobType := reflect.TypeFor[*goav.Job]()
 
 	cases := []struct {
 		name string
@@ -1947,7 +1947,7 @@ func TestDuplicateDestinationNameRequiresMux(t *testing.T) {
 }
 
 func TestDestinationConstructorsReturnDestination(t *testing.T) {
-	destinationType := reflect.TypeOf((*goav.Destination)(nil)).Elem()
+	destinationType := reflect.TypeFor[goav.Destination]()
 	for name, fn := range map[string]any{
 		"Custom": goav.Custom,
 		"URI":    goav.URI,
@@ -1966,8 +1966,8 @@ func TestDestinationConstructorsReturnDestination(t *testing.T) {
 }
 
 func TestDestinationProviderIsWrappedByCustomHandle(t *testing.T) {
-	providerType := reflect.TypeOf((*provider.Destination)(nil)).Elem()
-	impl := reflect.TypeOf(recipeAPICustomDestination{})
+	providerType := reflect.TypeFor[provider.Destination]()
+	impl := reflect.TypeFor[recipeAPICustomDestination]()
 	if !impl.Implements(providerType) {
 		t.Fatalf("%v should implement provider.Destination", impl)
 	}
@@ -2107,7 +2107,7 @@ func TestFlowBranchesStayOnJobAndBuildIntent(t *testing.T) {
 			goav.Branch("archive").Apply(archive).To(archiveOut),
 		)
 
-	if reflect.TypeOf(job) != reflect.TypeOf((*goav.Job)(nil)) {
+	if reflect.TypeOf(job) != reflect.TypeFor[*goav.Job]() {
 		t.Fatalf("Branches returned %T, want *goav.Job", job)
 	}
 	intent := goav.JobPlanForTest(job)

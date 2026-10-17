@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"sort"
 	"strconv"
 	"strings"
@@ -91,12 +92,10 @@ func structuredError(operation string, err error) *Error {
 	if err == nil {
 		return nil
 	}
-	var ctlErr *Error
-	if errors.As(err, &ctlErr) {
+	if ctlErr, ok := errors.AsType[*Error](err); ok {
 		return ctlErr
 	}
-	var buildErr *goav.BuildError
-	if errors.As(err, &buildErr) {
+	if buildErr, ok := errors.AsType[*goav.BuildError](err); ok {
 		return commandError(
 			string(buildErr.Code),
 			firstNonEmpty(buildErr.Operation, operation),
@@ -883,9 +882,7 @@ func cloneMetadata(metadata av.Metadata) av.Metadata {
 		return nil
 	}
 	out := make(av.Metadata, len(metadata))
-	for key, value := range metadata {
-		out[key] = value
-	}
+	maps.Copy(out, metadata)
 	return out
 }
 

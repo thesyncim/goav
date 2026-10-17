@@ -26,8 +26,7 @@ import (
 )
 
 func TestCLIInvokesCustomControlCommand(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	type customCommand struct {
 		Value string `goavctl:"value,required" usage:"value=<text>" help:"custom CLI value"`
@@ -72,8 +71,7 @@ func TestCLIInvokesCustomControlCommand(t *testing.T) {
 }
 
 func TestCLIHelpListsCustomPipelineRegistry(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	task, err := goav.From(goavtest.Audio(48000, 1, []int16{1})).
 		Audio().
@@ -157,8 +155,7 @@ func TestCLIHelpListsCustomPipelineRegistry(t *testing.T) {
 }
 
 func TestCLIPrintsGraphAsRawText(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	task, err := goav.From(goavtest.Audio(48000, 1, []int16{1})).
 		Audio().
@@ -190,8 +187,7 @@ func TestCLIPrintsGraphAsRawText(t *testing.T) {
 }
 
 func TestCLIAttachRebranchDetachAndDotGraph(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	packet := av.Packet{Payload: av.Buffer{Bytes: []byte{1}, Ownership: av.BufferImmutable}}
 	task, err := goav.From(goavtest.Packets(av.CodecOpus, packet)).
@@ -250,7 +246,7 @@ func TestCLIWatchFollowPrintsStreamingResponses(t *testing.T) {
 			return fmt.Errorf("request = %+v", request)
 		}
 		encoder := json.NewEncoder(conn)
-		for i := 0; i < 2; i++ {
+		for range 2 {
 			if err := encoder.Encode(ctlserver.SuccessResponse(map[string]string{"type": "stats"})); err != nil {
 				return err
 			}

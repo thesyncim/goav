@@ -22,7 +22,7 @@ func TestComponentWebRTCTrackSetFeedsRTPSource(t *testing.T) {
 	session := &componentWebRTCSession{tracks: []webrtcav.RemoteTrack{initial, replacement}}
 	adapter := &componentTrackAdapter{
 		packets: []*rtp.Packet{{
-			Header:  rtp.Header{PayloadType: 111, Timestamp: 480},
+			PayloadType: 111, Timestamp: 480,
 			Payload: []byte{0xf8},
 		}},
 	}

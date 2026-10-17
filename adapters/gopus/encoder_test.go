@@ -49,7 +49,6 @@ func TestOpusEncoderBitrateChangedRejectsMalformedEvent(t *testing.T) {
 		"garbage rate":  {Type: av.EventBitrateChanged, StreamID: "encoded-audio", Metadata: av.Metadata{av.MetadataBitrate: "loud"}},
 		"negative rate": {Type: av.EventBitrateChanged, StreamID: "encoded-audio", Metadata: av.Metadata{av.MetadataBitrate: "-1"}},
 	} {
-		event := event
 		err := encoder.HandleEvent(ctx, &event)
 		if err == nil || !strings.Contains(err.Error(), av.MetadataBitrate) {
 			t.Fatalf("%s: err = %v, want a clear %s rejection", name, err, av.MetadataBitrate)

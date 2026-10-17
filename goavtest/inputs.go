@@ -87,7 +87,7 @@ func Video(width, height, frames int) goav.InputSpec {
 	return goav.Source(name,
 		shape.Frame(av.MediaVideo, shape.Video(width, height, av.PixelFormatI420)),
 		func(_ context.Context, push source.Push) error {
-			for n := 0; n < frames; n++ {
+			for n := range frames {
 				if _, err := push.Frame(i420Frame(name, width, height, n)); err != nil {
 					return err
 				}

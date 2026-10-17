@@ -6296,7 +6296,7 @@ func (d *Demuxer) readLacedBlockPayload(track Track, trackID uint32, timeNS int6
 	if frameCount < 2 || frameCount > len(d.laceFrames) {
 		return ErrLaceTooLarge
 	}
-	for i := 0; i < frameCount; i++ {
+	for i := range frameCount {
 		d.laceFrames[i] = laceFrame{}
 	}
 	switch lacing {
@@ -6326,7 +6326,7 @@ func (d *Demuxer) readLacedBlockPayload(track Track, trackID uint32, timeNS int6
 		return err
 	}
 	offset := 0
-	for i := 0; i < frameCount; i++ {
+	for i := range frameCount {
 		d.laceFrames[i].offset = offset
 		offset += d.laceFrames[i].size
 	}
@@ -6402,7 +6402,7 @@ func (d *Demuxer) readFixedLaceSizes(frameCount int) error {
 		return ErrInvalidData
 	}
 	size := int(d.blockLimit.N) / frameCount
-	for i := 0; i < frameCount; i++ {
+	for i := range frameCount {
 		d.laceFrames[i].size = size
 	}
 	return nil
@@ -6453,7 +6453,7 @@ func (d *Demuxer) readSignedLaceVINT() (int64, error) {
 
 func (d *Demuxer) validateLacePayloadSize(frameCount int, payloadSize int) error {
 	total := 0
-	for i := 0; i < frameCount; i++ {
+	for i := range frameCount {
 		if d.laceFrames[i].size < 0 {
 			return ErrInvalidData
 		}

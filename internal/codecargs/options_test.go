@@ -2,6 +2,7 @@ package codecargs
 
 import (
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 
@@ -145,10 +146,5 @@ func TestBuildSpecUsesStandardConstructors(t *testing.T) {
 }
 
 func stringSliceContains(values []string, want string) bool {
-	for _, value := range values {
-		if value == want {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(values, want)
 }

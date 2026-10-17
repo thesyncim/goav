@@ -344,7 +344,7 @@ The checklist below gates the tag. Each item names its current evidence.
   CLI archives, and creates GitHub release notes; root CLI releases include
   checksums, Go module SBOM, per-binary buildinfo, and provenance metadata.
   `docs/RELEASING.md` documents signed-tag ownership and tag order.
-- [ ] **Release decision**: confirm the `go 1.26` directive in `go.mod` is the
+- [ ] **Release decision**: confirm the `go 1.27.0` directive in `go.mod` is the
   intended minimum supported Go, close or explicitly waive every item in
   `docs/history/SIMPLIFICATION_TARGET.md`, fill the compatibility note template in
   `docs/COMPATIBILITY.md`, and cut v1. Not done; this is a maintainer product

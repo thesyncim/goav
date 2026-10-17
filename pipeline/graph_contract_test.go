@@ -253,9 +253,9 @@ func TestGraphSpecsUseNodeDescribersForDirectAndBuffered(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			source := &describedSource{directTestSource: directTestSource{name: "source", msg: &message}, detail: "fixture source"}
+			source := &describedSource{name: "source", msg: &message, detail: "fixture source"}
 			stage := &directPassStage{name: "stage", detail: "meter"}
-			sink := &describedSink{directTestSink: directTestSink{name: "sink"}, detail: "fixture sink"}
+			sink := &describedSink{name: "sink", detail: "fixture sink"}
 			if _, err := graph.AddSource(source, BufferPolicy{}); err != nil {
 				t.Fatal(err)
 			}
