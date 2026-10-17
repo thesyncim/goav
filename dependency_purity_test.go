@@ -2,7 +2,9 @@ package goav_test
 
 import (
 	"encoding/json"
+	"io/fs"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -93,6 +95,29 @@ func moduleRef(module modulePathVersion) string {
 		return module.Path
 	}
 	return module.Path + " " + module.Version
+}
+
+// TestNoRepositoryAssembly pins the asm-free policy shared with the
+// thesyncim/* codec backends: vector kernels are Go SIMD behind
+// GOEXPERIMENT=simd with a scalar fallback, so every build configuration is
+// plain, checkable Go. The walk is filesystem-wide, not per-GOARCH, so a
+// kernel for any architecture is caught.
+func TestNoRepositoryAssembly(t *testing.T) {
+	err := filepath.WalkDir(".", func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.IsDir() && (entry.Name() == ".git" || entry.Name() == "testdata" || entry.Name() == "bench-results") {
+			return filepath.SkipDir
+		}
+		if !entry.IsDir() && (strings.HasSuffix(path, ".s") || strings.HasSuffix(path, ".S")) {
+			t.Errorf("assembly file %s; write the kernel with the Go simd package (GOEXPERIMENT=simd) and keep a scalar fallback", path)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestRootImportDoesNotPullBundledAdapters(t *testing.T) {

@@ -3,26 +3,19 @@ package goav
 import (
 	"encoding/binary"
 	"fmt"
+	"math/rand/v2"
 	"reflect"
-	goruntime "runtime"
 	"strings"
 	"testing"
 )
 
 func TestMixS16KernelDispatch(t *testing.T) {
-	switch goruntime.GOARCH {
-	case "arm64":
-		if !strings.HasPrefix(mixS16KernelName(), "arm64/") {
-			t.Fatalf("mix kernel = %q, want arm64 dispatch", mixS16KernelName())
-		}
-	case "amd64":
-		if !strings.HasPrefix(mixS16KernelName(), "amd64/") {
-			t.Fatalf("mix kernel = %q, want amd64 dispatch", mixS16KernelName())
-		}
+	if want := wantMixS16KernelPrefix(); !strings.HasPrefix(mixS16KernelName(), want) {
+		t.Fatalf("mix kernel = %q, want prefix %q", mixS16KernelName(), want)
 	}
 }
 
-func TestMixSIMDMatchesScalar(t *testing.T) {
+func TestMixS16KernelMatchesScalar(t *testing.T) {
 	corpus := []struct {
 		arms    int
 		samples int
@@ -43,27 +36,71 @@ func TestMixSIMDMatchesScalar(t *testing.T) {
 		{arms: 3, samples: 17, pattern: func(arm int, sample int) int16 {
 			return int16((arm-1)*12000 + sample*137 - 2000)
 		}},
+		// Three arms where an early pairwise saturation would differ from the
+		// clamped full sum: 30000 + 30000 - 30000 must mix to 30000.
+		{arms: 3, samples: 64, pattern: func(arm int, _ int) int16 {
+			if arm == 2 {
+				return -30000
+			}
+			return 30000
+		}},
 		{arms: 8, samples: 32, pattern: func(arm int, sample int) int16 {
 			return int16((sample%7)*2048 - arm*700 - 4096)
 		}},
 	}
 	for _, tt := range corpus {
 		t.Run(fmt.Sprintf("arms=%d/samples=%d/kernel=%s", tt.arms, tt.samples, mixS16KernelName()), func(t *testing.T) {
-			inputs := mixKernelCorpusInputs(tt.arms, tt.samples, tt.pattern)
-			n := len(inputs[0])
-			got := make([]byte, n)
-			want := make([]byte, n)
-			mixS16Into(got, inputs, n)
-			mixS16ScalarKernel(want, inputs, n)
-			if !reflect.DeepEqual(got, want) {
-				t.Fatalf("kernel output = %v, scalar = %v", mixKernelReadS16(got), mixKernelReadS16(want))
-			}
+			assertMixMatchesScalar(t, mixKernelCorpusInputs(tt.arms, tt.samples, tt.pattern))
 		})
 	}
 }
 
+// TestMixS16KernelMatchesScalarRandom sweeps arm counts, lengths that land on
+// and around every vector width, extreme sample values, and byte offsets that
+// leave the buffers unaligned.
+func TestMixS16KernelMatchesScalarRandom(t *testing.T) {
+	rng := rand.New(rand.NewPCG(1, 2))
+	extremes := []int16{-32768, -32767, -1, 0, 1, 32766, 32767}
+	for arms := 1; arms <= 9; arms++ {
+		for _, samples := range []int{0, 1, 7, 8, 9, 15, 16, 17, 31, 32, 33, 63, 64, 65, 129, 480, 961} {
+			for offset := range 3 {
+				inputs := make([][]byte, arms)
+				for arm := range inputs {
+					backing := make([]byte, offset+samples*2)
+					payload := backing[offset:]
+					for sample := range samples {
+						value := int16(rng.Uint32())
+						if rng.IntN(3) == 0 {
+							value = extremes[rng.IntN(len(extremes))]
+						}
+						binary.LittleEndian.PutUint16(payload[sample*2:], uint16(value))
+					}
+					inputs[arm] = payload
+				}
+				if !t.Run(fmt.Sprintf("arms=%d/samples=%d/offset=%d", arms, samples, offset), func(t *testing.T) {
+					assertMixMatchesScalar(t, inputs)
+				}) {
+					return
+				}
+			}
+		}
+	}
+}
+
+func assertMixMatchesScalar(t *testing.T, inputs [][]byte) {
+	t.Helper()
+	n := len(inputs[0])
+	got := make([]byte, n)
+	want := make([]byte, n)
+	mixS16Into(got, inputs, n)
+	mixS16ScalarKernel(want, inputs, n)
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("kernel %s output = %v, scalar = %v", mixS16KernelName(), mixKernelReadS16(got), mixKernelReadS16(want))
+	}
+}
+
 func BenchmarkMixS16Kernel(b *testing.B) {
-	for _, arms := range []int{2, 8} {
+	for _, arms := range []int{2, 3, 8} {
 		inputs := mixKernelCorpusInputs(arms, 960, func(arm int, sample int) int16 {
 			return int16((sample%257)*64 - arm*97 - 8192)
 		})
@@ -72,7 +109,7 @@ func BenchmarkMixS16Kernel(b *testing.B) {
 			dst := make([]byte, n)
 			b.ReportAllocs()
 			b.SetBytes(int64(n * arms))
-			for i := 0; i < b.N; i++ {
+			for b.Loop() {
 				mixS16Into(dst, inputs, n)
 			}
 		})
@@ -80,7 +117,7 @@ func BenchmarkMixS16Kernel(b *testing.B) {
 			dst := make([]byte, n)
 			b.ReportAllocs()
 			b.SetBytes(int64(n * arms))
-			for i := 0; i < b.N; i++ {
+			for b.Loop() {
 				mixS16ScalarKernel(dst, inputs, n)
 			}
 		})

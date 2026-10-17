@@ -14,6 +14,11 @@
 #   PERF_RELEASE_QUALITY=true PERF_GO_TEST_TIMEOUT=2h PERF_BENCHTIME=2000x PERF_SOAK_BENCHTIME=1h PERF_LIVE_ROOM_CHURN_BENCHTIME=1h scripts/bench/perf-lab.sh
 set -euo pipefail
 
+# Benchmarks build with the Go SIMD experiment, matching CI. Set GOEXPERIMENT=
+# (empty) to measure the scalar build importers get by default.
+: "${GOEXPERIMENT=simd}"
+export GOEXPERIMENT
+
 cd "$(dirname "$0")/../.."
 stamp="$(date -u +%Y%m%dT%H%M%SZ)"
 machine="$(hostname -s 2>/dev/null || hostname || echo unknown)-$(uname -s)-$(uname -m)"
@@ -106,6 +111,7 @@ json_string() {
   echo "live_room_churn_interval: ${live_room_churn_interval:-none}"
   echo "go_test_timeout: ${go_test_timeout}"
   echo "go_version: ${go_version}"
+  echo "goexperiment: ${GOEXPERIMENT}"
   echo "goos: ${goos}"
   echo "goarch: ${goarch}"
   echo "cgo_enabled: ${CGO_ENABLED}"

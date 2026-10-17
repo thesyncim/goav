@@ -11,6 +11,16 @@ methodology changes, and migration notes.
 
 ## Unreleased
 
+- Go SIMD by default in the gate: CI, the bench scripts, and release
+  binaries now build with `GOEXPERIMENT=simd`. That lights up goav's own mix
+  kernel and the SIMD paths in the `goav1`, `gopus`, and `govpx` backends.
+  The hand-written amd64/arm64 assembly mix kernels are gone; a single
+  portable `simd` kernel replaces them (NEON, AVX/AVX2/AVX-512, wasm SIMD128)
+  and now covers any arm count, where the assembly only handled two arms. It
+  stays bit-exact with the scalar loop, which remains the default and
+  `-tags purego` path for importers. A new test keeps the repository free of
+  assembly, and a scalar CI lane covers builds without the experiment.
+
 - Go 1.27 floor and dependency refresh: every module now declares
   `go 1.27.0` (pinning `toolchain go1.27.2` for contributors), because the
   first-party `goav1` and `gopus` backends now require Go 1.27. The

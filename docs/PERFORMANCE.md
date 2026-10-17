@@ -130,7 +130,7 @@ at `-benchtime=1s` those converge to the per-push allocation alone.
 | `BenchmarkBranchFanout/branches=2,8` | one decode, N planned branches to sinks (1 alloc/op steady state) |
 | `BenchmarkSharedMuxGroup` | audio+video chains sharing one mux destination (1 alloc/op steady state) |
 | `BenchmarkMix/arms=2,8` | N-arm audio mix on a blocking buffered graph (1 alloc/op steady state per push) |
-| `BenchmarkMixS16Kernel` | audio mix inner-loop kernel microbench; arm64/two-arm rows use NEON `SQADD`, amd64/two-arm rows use SSE2 `PADDSW`, and other rows fall back to scalar until measured asm kernels earn dispatch |
+| `BenchmarkMixS16Kernel` | audio mix inner-loop kernel microbench (2/3/8 arms); `GOEXPERIMENT=simd` builds select the portable Go `simd` kernel (`simd/<bits>`), default and `purego` builds the scalar loop |
 | `BenchmarkComposite` | 2-arm video composite (1 alloc/op steady state per push) |
 | `BenchmarkCopyPlaneKernel`, `BenchmarkCompositeI420BlitKernel` | root-local I420 composite blit benches: clipped row copy, inside-canvas row copy, and two-arm canvas paint |
 | `BenchmarkSelectPassthrough` | one-of-N selector forwarding the active arm (1 alloc/op steady state per push) |
@@ -145,16 +145,25 @@ at `-benchtime=1s` those converge to the per-push allocation alone.
 | `BenchmarkRealVP8Decode` | standard VP8 decoder throughput, decoding a real keyframe captured from the encoder |
 | `BenchmarkSoakRecordDrift` | soak harness: long offline-paced record reporting heap drift, GC cycles, and total GC pause; run with a large `-benchtime` for an extended-stability artifact |
 
-Local D4 kernel note (not a release claim): on Apple M4 Max
-(`darwin/arm64`, `go test -run '^$' -bench BenchmarkMixS16Kernel -benchmem
--benchtime=300ms -count=3`), the two-arm S16 selected row measured about
-38.6-41.3 ns/op vs about 1.76-1.88 us/op for the scalar row, both at
-0 allocs/op. The same host can execute the amd64 test binary under
-VirtualApple/Rosetta; with `GOARCH=amd64` the `amd64/paddsw2` row measured
-about 41.0-44.9 ns/op vs about 1.85-1.87 us/op for scalar, both at
-0 allocs/op.
+SIMD builds: `GOEXPERIMENT=simd` (Go 1.27) is the gate's default build — CI,
+`scripts/bench/*`, and release binaries — and the repository carries no
+assembly (`TestNoRepositoryAssembly`). It selects goav's portable `simd` mix
+kernel, bit-exact with scalar (`TestMixS16KernelMatchesScalarRandom`), and the
+Go SIMD paths in the `goav1`, `gopus`, and `govpx` backends. Importers that
+build without the experiment, and `-tags purego` builds, get the scalar paths,
+which CI keeps in their own lanes.
 
-The composite/resample/resize D4 decision is scalar-retain until a future asm
+Local SIMD note (not a release claim): on Apple M4 Max (`darwin/arm64`,
+go1.27.2, `-benchtime=2s -count=5`, benchstat p=0.008), the experiment cut
+real-codec time by a 45% geomean: `BenchmarkRealVP8Decode` 59.5→16.5 us/op,
+`BenchmarkRealVP8Encode` 562→263, `BenchmarkRealVP9Encode` 220→114,
+`BenchmarkRealAV1Encode` 146→105, `BenchmarkRealOpusEncode` 62.5→47.0,
+`BenchmarkRealOpusDecode` 14.6→10.8, all with unchanged allocs/op. The
+`BenchmarkMixS16Kernel` rows (`-benchtime=300ms -count=3`) measured about
+56 ns/op (2 arms), 313 ns/op (3 arms), and 675 ns/op (8 arms), against
+1.68, 2.24, and 5.3 us/op for scalar, all at 0 allocs/op.
+
+The composite/resample/resize D4 decision is scalar-retain until a Go SIMD
 prototype beats the measured scalar rows by at least 1.5x. The current scalar
 baseline includes no-clipping composite row-copy, equal-rate resample
 copy/channel-remap, and integer-scale nearest-neighbor resize fast paths. On
