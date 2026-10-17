@@ -9,6 +9,7 @@ clearer, and leave evidence for any behavior users might depend on.
 Run the local gates that match CI before opening a pull request:
 
 ```sh
+export GOEXPERIMENT=simd   # the CI default (Go 1.27 SIMD); unset it to check the scalar build
 CGO_ENABLED=0 go test ./...
 CGO_ENABLED=0 go vet ./...
 gofmt -w .
@@ -17,7 +18,8 @@ scripts/bench/run.sh
 
 Use `staticcheck ./...` and `govulncheck ./...` when those tools are
 installed. Transport modules are nested modules; run their checks from
-`rtpav/` and `webrtcav/` when a change touches them.
+`rtpav/`, `webrtcav/`, and `playoutav/` when a change touches them. Vector
+kernels use the Go `simd` package with a scalar fallback — no assembly.
 
 Update `CHANGELOG.md` for user-visible work. Internal-only pull requests may
 use the `skip-changelog` label; CI treats the label as an explicit reviewer

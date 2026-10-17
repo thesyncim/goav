@@ -9,6 +9,11 @@
 #   BENCH_COMPARE_COUNT=5 scripts/bench/ci-compare.sh FETCH_HEAD
 set -euo pipefail
 
+# Benchmarks build with the Go SIMD experiment, matching CI. Set GOEXPERIMENT=
+# (empty) to measure the scalar build importers get by default.
+: "${GOEXPERIMENT=simd}"
+export GOEXPERIMENT
+
 cd "$(dirname "$0")/../.."
 
 base_ref="${1:-origin/main}"
