@@ -11,6 +11,16 @@ methodology changes, and migration notes.
 
 ## Unreleased
 
+- Buffered graphs no longer reserve worst-case copy budgets per queue slot.
+  Every slot of every node used to preallocate the graph-wide packet and frame
+  budgets. A video packet budget starts at 4 MB, so a slot carrying 10 KB
+  encoded packets reserved megabytes, and a 720p three-rung ladder on 32-deep
+  (realtime-default) queues peaked at 1.9 GB of heap. Budgets up to 64 KiB
+  (RTP, audio) are still reserved up front for an allocation-free cold path.
+  Larger ones grow to fit the payloads each slot actually carries, then copy
+  without allocating. The same ladder now peaks at ~450 MB, with unchanged
+  output and wall time.
+
 - Branch buffers declared in a recipe are honored. `Branch(name).Buffer(...)`
   inside `Branches(...)` used to reach only the recipe report: every built
   node ran on the runtime default, so a preview branch's `flow.DropNewest`
