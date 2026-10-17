@@ -4,6 +4,7 @@ import (
 	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/flow"
 	"github.com/thesyncim/goav/pipeline"
+	"github.com/thesyncim/goav/plan"
 )
 
 // validateBranchBuffer rejects branch buffers the runtime cannot install, in
@@ -111,6 +112,56 @@ func branchComposeOutputBuffer(graphDefault pipeline.BufferPolicy, matches []int
 func branchComposeDeclaresBuffer(branches []branchComposeRoute) bool {
 	for i := range branches {
 		if !branches[i].branch.Buffer.PipelinePolicy().IsDirect() {
+			return true
+		}
+	}
+	return false
+}
+
+// branchComposeRunsParallel reports whether a fanout runs its branches on
+// their own workers by default: one source fans out to at least two encoding
+// branches (separate inputs already run concurrently), every operation is
+// built in (no custom .Do stage), and every output is a goav-owned muxer
+// (Write or File, no Sink or provider destination) fed by exactly one branch.
+// Such a graph runs no caller code inside a branch, and each output still
+// receives one branch's packets in order, so concurrency changes only the wall
+// time: an encode ladder's rungs encode in parallel instead of one after
+// another, and the files are byte-identical to a serial run.
+func branchComposeRunsParallel(branches []branchComposeRoute, outputs []branchComposeTargetRoute, inputs int) bool {
+	encoding := make(map[string]int, len(branches))
+	shared := false
+	for i := range branches {
+		if operationsHaveStage(branches[i].sharedOperations.operations) || operationsHaveStage(branches[i].privateOperations.operations) {
+			return false
+		}
+		if !branchComposeRouteNeedsEncode(branches[i]) {
+			continue
+		}
+		source := branches[i].branch.Input
+		if inputs != 1 && source == "" {
+			continue // selects across several inputs: no known shared source
+		}
+		if inputs == 1 {
+			source = ""
+		}
+		encoding[source]++
+		shared = shared || encoding[source] >= 2
+	}
+	if !shared {
+		return false
+	}
+	for i := range outputs {
+		destination := outputs[i].output.Destination
+		if outputs[i].sink != nil || destination.sink != nil || destination.custom != nil || len(outputs[i].matches) != 1 {
+			return false
+		}
+	}
+	return true
+}
+
+func operationsHaveStage(operations []operationSpec) bool {
+	for i := range operations {
+		if operations[i].Kind == plan.OpStage {
 			return true
 		}
 	}

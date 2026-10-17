@@ -11,6 +11,24 @@ methodology changes, and migration notes.
 
 ## Unreleased
 
+- Encode ladders run their rungs in parallel by default. A fanout used to
+  run every branch inside its upstream's call, so a three-rung VP9 ladder
+  encoded one rung after another. A fanout where two or more branches
+  encode, with only built-in operations and goav-owned outputs (Write/File),
+  now runs each branch on its own worker when one source feeds those
+  branches and every output is fed by a single branch. A 720p three-rung
+  ladder from a WebM file dropped from ~370 ms to ~130 ms on an M4 Max, and
+  each rung carries exactly the frames it carries when built alone. A Sink or `.Do` stage keeps the fanout serial,
+  because the caller would see the concurrency. A shared output also keeps
+  it serial, because parallel writers would interleave its packets
+  nondeterministically.
+- Buffered branches work on file inputs. A buffered graph refused to build
+  when geometry or audio format was unknown before Build ("cannot derive a
+  copy budget: missing width"), which is every decoded file stream without
+  a Resize. Copy backing now grows to fit, so unknown facts fall back to
+  ceilings that cost nothing until used: 8K UHD 4:4:4 for video, and
+  192 kHz, 8 channels of f32 for audio.
+
 - MP4 edit lists are honored. Encoders write an `elst` that starts
   presentation past B-frame composition delay and AAC priming, and the
   demuxer ignored it. In the ffmpeg-written fixture, audio content trailed

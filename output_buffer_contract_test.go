@@ -73,14 +73,19 @@ func TestBufferBudgetHelperContracts(t *testing.T) {
 	if got, err := videoFrameCopyBudget(shape.Frame(av.MediaVideo, shape.Video(1, 1, av.PixelFormatGray8))); err != nil || got != 4096 {
 		t.Fatalf("gray8 budget = %d, %v; want 4096", got, err)
 	}
-	if _, err := videoFrameCopyBudget(shape.Frame(av.MediaVideo, shape.Video(0, 1, av.PixelFormatI420))); err == nil || err.Error() != "missing width" {
-		t.Fatalf("missing width err = %v", err)
+	// Facts unknown before Build fall back to ceilings: 8K UHD geometry, and
+	// 4:4:4 for an unknown pixel format.
+	uhd, _ := videoFrameCopyBudget(shape.Frame(av.MediaVideo, shape.Video(unknownVideoWidth, unknownVideoHeight, av.PixelFormatI420)))
+	for _, spec := range []shape.Spec{
+		shape.Frame(av.MediaVideo, shape.Video(0, 1, av.PixelFormatI420)),
+		shape.Frame(av.MediaVideo, shape.Video(1, 0, av.PixelFormatI420)),
+	} {
+		if got, err := videoFrameCopyBudget(spec); err != nil || got != uhd {
+			t.Fatalf("unknown geometry budget = %d, %v; want the 8K ceiling %d", got, err, uhd)
+		}
 	}
-	if _, err := videoFrameCopyBudget(shape.Frame(av.MediaVideo, shape.Video(1, 0, av.PixelFormatI420))); err == nil || err.Error() != "missing height" {
-		t.Fatalf("missing height err = %v", err)
-	}
-	if _, err := videoFrameCopyBudget(shape.Frame(av.MediaVideo, shape.Video(1, 1, ""))); err == nil || err.Error() != "missing pixel_format" {
-		t.Fatalf("missing pixel format err = %v", err)
+	if got, err := videoFrameCopyBudget(shape.Frame(av.MediaVideo, shape.Video(1, 1, ""))); err != nil || got != 12288 {
+		t.Fatalf("unknown pixel format budget = %d, %v; want the 4:4:4 budget 12288", got, err)
 	}
 	if _, err := videoFrameCopyBudget(shape.Frame(av.MediaVideo, shape.Video(1, 1, "rgb24"))); err == nil || !strings.Contains(err.Error(), "unsupported pixel_format") {
 		t.Fatalf("unsupported pixel format err = %v", err)
@@ -91,22 +96,8 @@ func TestBufferBudgetHelperContracts(t *testing.T) {
 		Kind:    plan.OpStage,
 		ShapeIn: shape.Frame(av.MediaVideo, shape.Video(1920, 1080, "rgb24")),
 	}
-	if got := bufferBudgetSuggestions(operation, "missing width"); !strings.Contains(got[0], "declare video geometry") {
-		t.Fatalf("missing width suggestions = %#v", got)
-	}
-	if got := bufferBudgetSuggestions(operation, "missing pixel_format"); !strings.Contains(got[0], "pixel format") {
-		t.Fatalf("missing pixel format suggestions = %#v", got)
-	}
 	if got := bufferBudgetSuggestions(operation, "unsupported pixel_format \"rgb24\""); !strings.Contains(got[0], "I420") || !strings.Contains(got[2], "rgb24") {
 		t.Fatalf("unsupported pixel suggestions = %#v", got)
-	}
-	audioOp := workOperation{
-		Branch:  "voice",
-		Kind:    plan.OpStage,
-		ShapeIn: shape.Frame(av.MediaAudio, shape.Audio(0, codec.Stereo, "")),
-	}
-	if got := bufferBudgetSuggestions(audioOp, "missing sample_rate"); !strings.Contains(got[0], "complete audio shape") {
-		t.Fatalf("audio suggestions = %#v", got)
 	}
 	if got := bufferBudgetSuggestions(operation, "mystery"); !strings.Contains(got[1], "CopyPacketBytes") {
 		t.Fatalf("fallback suggestions = %#v", got)
@@ -235,14 +226,15 @@ func TestBufferBudgetMathHelperContracts(t *testing.T) {
 	if got, err := audioFrameCopyBudget(shape.Frame(av.MediaAudio, shape.Audio(48000, codec.Stereo, av.SampleFormatS16))); err != nil || got != 23040 {
 		t.Fatalf("s16 stereo audio budget = %d, %v; want 23040", got, err)
 	}
+	// Unknown audio facts fall back to the 192 kHz, 8-channel f32 ceiling.
+	if got, err := audioFrameCopyBudget(shape.Frame(av.MediaAudio, shape.Audio(0, 0, ""))); err != nil || got != 192_000*120/1000*8*4 {
+		t.Fatalf("unknown audio budget = %d, %v; want the ceiling", got, err)
+	}
 	for _, tt := range []struct {
 		name string
 		spec shape.Spec
 		want string
 	}{
-		{name: "missing rate", spec: shape.Frame(av.MediaAudio, shape.Audio(0, codec.Stereo, av.SampleFormatS16)), want: "missing sample_rate"},
-		{name: "missing channels", spec: shape.Frame(av.MediaAudio, shape.Audio(48000, 0, av.SampleFormatS16)), want: "missing channels"},
-		{name: "missing format", spec: shape.Frame(av.MediaAudio, shape.Audio(48000, codec.Stereo, "")), want: "missing sample_format"},
 		{name: "unsupported format", spec: shape.Frame(av.MediaAudio, shape.Audio(48000, codec.Stereo, "flt_planar")), want: `unsupported sample_format "flt_planar"`},
 	} {
 		t.Run(tt.name, func(t *testing.T) {

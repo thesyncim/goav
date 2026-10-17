@@ -46,7 +46,11 @@ func TestRealtimeEncodeRecipeRefusesUnsupportedBufferBudgetFact(t *testing.T) {
 	}
 }
 
-func TestRealtimeDecodeRecipeRefusesMissingBufferBudgetFact(t *testing.T) {
+// TestRealtimeDecodeRecipeBuildsWithUnknownBufferBudgetFact pins that a fact
+// the planner cannot know before Build (here the decoded sample format) no
+// longer refuses a buffered graph: the copy budget falls back to a ceiling,
+// which costs nothing because slot backing grows to the frames it carries.
+func TestRealtimeDecodeRecipeBuildsWithUnknownBufferBudgetFact(t *testing.T) {
 	ctx := context.Background()
 	rt := mustNew(WithRealtime(true), WithDecoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &decodeTestDecoderFactory{decoder: &decodeTestDecoder{}}))
 	source := Source("audio",
@@ -54,25 +58,13 @@ func TestRealtimeDecodeRecipeRefusesMissingBufferBudgetFact(t *testing.T) {
 		func(context.Context, SourcePush) error { return nil },
 	)
 
-	_, err := From(source).
+	task, err := From(source).
 		Audio().Decode().
 		To(Sink(SinkFunc("frames", func(context.Context, Message) error { return nil }))).
 		UseRuntime(rt).
 		Build(ctx)
-	if err == nil {
-		t.Fatal("Build() error = nil, want buffer_budget_missing")
+	if err != nil {
+		t.Fatalf("Build() error = %v, want the buffered graph to build with a ceiling budget", err)
 	}
-	var buildErr *BuildError
-	if !errors.As(err, &buildErr) {
-		t.Fatalf("err = %v, want *BuildError", err)
-	}
-	if buildErr.Code != bufferBudgetMissingCode {
-		t.Fatalf("code = %q, want %q", buildErr.Code, bufferBudgetMissingCode)
-	}
-	if !strings.Contains(buildErr.Reason, "missing sample_format") {
-		t.Fatalf("reason = %q, want missing sample_format fact", buildErr.Reason)
-	}
-	if len(buildErr.FixLines()) == 0 {
-		t.Fatalf("suggestions = nil, want user fix")
-	}
+	_ = task.Close()
 }
