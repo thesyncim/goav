@@ -165,7 +165,7 @@ func TestOfflineEncodeRecipeKeepsDirectRunnerForEncoderControls(t *testing.T) {
 		WithRealtime(false),
 		WithEncoder(codec.Descriptor{ID: av.CodecVP8, Type: av.MediaVideo}, &controlRecordingEncoderFactory{}),
 	)
-	built, err := From(controlLiveVideoSource("cam")).
+	built, err := From(controlVideoSource("cam", false)).
 		Video().
 		Encode(codec.VP8(codec.Bitrate(600_000))).
 		To(Sink(SinkFunc("packets", func(context.Context, Message) error { return nil }))).
@@ -228,7 +228,14 @@ func (e *controlRecordingEncoder) waitForEvent(ctx context.Context, eventType av
 	}
 }
 
+// controlLiveVideoSource is a live (Realtime) push video source.
 func controlLiveVideoSource(id av.StreamID) InputSpec {
+	return controlVideoSource(id, true)
+}
+
+// controlVideoSource is a push video source; live sources declare Realtime,
+// which makes their jobs realtime without a runtime option.
+func controlVideoSource(id av.StreamID, live bool) InputSpec {
 	const (
 		width  = 16
 		height = 16
@@ -239,7 +246,7 @@ func controlLiveVideoSource(id av.StreamID) InputSpec {
 	uPlane := bytes.Repeat([]byte{0x80}, chromaW*chromaH)
 	vPlane := bytes.Repeat([]byte{0x80}, chromaW*chromaH)
 	return Source(string(id),
-		shape.Frame(av.MediaVideo, shape.Video(width, height, av.PixelFormatI420), shape.Stream(id)),
+		shape.Frame(av.MediaVideo, shape.Video(width, height, av.PixelFormatI420), shape.Stream(id), shape.Realtime(live)),
 		func(ctx context.Context, push SourcePush) error {
 			frame := &av.Frame{
 				StreamID: id,

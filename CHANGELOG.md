@@ -11,6 +11,31 @@ methodology changes, and migration notes.
 
 ## Unreleased
 
+- File jobs run as fast as the machine allows (**behavior change**). Realtime
+  now follows the inputs. A job is realtime (paced, buffered between stages,
+  low-latency encoder presets) when one of its inputs is live: RTP, WebRTC,
+  or playout providers, and push sources whose shape declares
+  `shape.Realtime(true)`. File-to-file work runs offline. Before, every
+  runtime defaulted to realtime: a two-hour remux took two hours, and
+  decode/resize/encode of a file failed outright with `missing width`,
+  because realtime graphs pre-size copy buffers from plan-time geometry that
+  file probes don't carry. `runconfig.WithRealtime(true)` still paces file
+  inputs on purpose, for example to simulate a live feed.
+  `TestReadmeHeadlineRecipeRunsWithDefaults` executes the README's headline
+  recipe with no options.
+  - Migration: a job that relied on file pacing, or on Pause/Rate/Seek over
+    a file, builds its runtime with `runconfig.WithRealtime(true)`. A custom
+    `goav.Source` that is live declares `shape.Realtime(true)`.
+  - Fixed: a `Select` nested in a `Composite` under an offline runtime failed
+    with `buffered edges unsupported by direct graph`. The root's
+    realtime-only buffer pin shadowed the nested Select's unconditional one.
+  - The runtime-branch refusal for a buffered branch on a direct task now
+    names the real fixes instead of claiming branches only work on direct
+    graphs.
+  - Decoding a file whose codec is descriptor-only in the build (H.264 without
+    `-tags goav_goh264`) is refused as a typed `decode_adapter_unavailable`
+    error that names the tag, instead of a bare `codec: unavailable`.
+
 - Audio transcodes work end to end:
   - The Opus encoder re-frames its input. Any decoder or resampler frame
     size (AAC's 1024 samples, a resampled 1115) becomes fixed 20 ms packets

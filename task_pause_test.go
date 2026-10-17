@@ -158,7 +158,7 @@ func TestTaskRateChangeWhilePausedAppliesOnResume(t *testing.T) {
 	data := muxSeekFileMKV(t)
 	sink := &seekFileSink{}
 	clock := &paceFileClock{}
-	task := seekFileTask(t, bytes.NewReader(data), sink, WithClock(clock))
+	task := seekFileTask(t, bytes.NewReader(data), sink, WithRealtime(true), WithClock(clock))
 
 	if err := task.Pause(ctx); err != nil {
 		t.Fatalf("Pause err = %v", err)
@@ -266,7 +266,7 @@ func TestTaskSeekWhilePausedAppliesAtNextReadBoundary(t *testing.T) {
 	step := newPauseStepSink()
 	clock := &paceFileClock{}
 	task, err := From(FileInput("seek.mkv", bytes.NewReader(data))).
-		UseRuntime(mustNew(WithFormatAdapter(matroskaadapter.Register), WithClock(clock))).
+		UseRuntime(mustNew(WithRealtime(true), WithFormatAdapter(matroskaadapter.Register), WithClock(clock))).
 		Audio().Copy().
 		To(Sink(SinkFunc("rec", step.record))).
 		BuildLive(ctx)

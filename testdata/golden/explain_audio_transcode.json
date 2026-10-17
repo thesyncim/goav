@@ -258,7 +258,6 @@
   ],
   "graph": {
     "name": "goav",
-    "realtime": true,
     "nodes": [
       {
         "name": "audio-1",

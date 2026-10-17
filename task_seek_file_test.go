@@ -287,14 +287,14 @@ func TestTaskSeekNonSeekableFileReaderFailsClearly(t *testing.T) {
 	}
 }
 
-func TestTaskRealtimeFilePlaybackPacedByDefault(t *testing.T) {
+func TestTaskRealtimeFilePlaybackIsPaced(t *testing.T) {
 	ctx := context.Background()
 	data := muxSeekFileMKV(t)
 	sink := &seekFileSink{}
 	clock := &paceFileClock{}
-	// A realtime task (the default) playing a file gets PTS pacing without
-	// asking: that is the point of a clock-driven pump.
-	task := seekFileTask(t, bytes.NewReader(data), sink, WithClock(clock))
+	// A realtime runtime playing a file gets PTS pacing: that is the point of
+	// a clock-driven pump, and how a file stands in for a live feed.
+	task := seekFileTask(t, bytes.NewReader(data), sink, WithRealtime(true), WithClock(clock))
 
 	if err := task.Run(ctx); err != nil {
 		t.Fatalf("Run err = %v", err)
@@ -316,9 +316,9 @@ func TestTaskOfflineFileTaskPumpsUnpaced(t *testing.T) {
 	data := muxSeekFileMKV(t)
 	sink := &seekFileSink{}
 	clock := &paceFileClock{}
-	// WithRealtime(false) is the offline transcode shape: full-speed pumping,
-	// the clock is never consulted.
-	task := seekFileTask(t, bytes.NewReader(data), sink, WithRealtime(false), WithClock(clock))
+	// A file job with no live input is the offline transcode shape by default:
+	// full-speed pumping, the clock is never consulted.
+	task := seekFileTask(t, bytes.NewReader(data), sink, WithClock(clock))
 
 	// With no pacing there is nothing for Rate to scale — the typed rejection
 	// says offline tasks run unpaced instead of lying about playback speed.
@@ -339,7 +339,7 @@ func TestTaskRateOnFileScalesPacing(t *testing.T) {
 	data := muxSeekFileMKV(t)
 	sink := &seekFileSink{}
 	clock := &paceFileClock{}
-	task := seekFileTask(t, bytes.NewReader(data), sink, WithClock(clock))
+	task := seekFileTask(t, bytes.NewReader(data), sink, WithRealtime(true), WithClock(clock))
 
 	// Rate on a file is a pacing multiplier now: at 2x the 100ms cadence
 	// plays in 50ms steps of clock time. Delivered before Run, the control
@@ -367,7 +367,7 @@ func TestTaskSeekAndRateComposeOnFile(t *testing.T) {
 	data := muxSeekFileMKV(t)
 	sink := &seekFileSink{}
 	clock := &paceFileClock{}
-	task := seekFileTask(t, bytes.NewReader(data), sink, WithClock(clock))
+	task := seekFileTask(t, bytes.NewReader(data), sink, WithRealtime(true), WithClock(clock))
 
 	// Seek and Rate compose: playback resumes at the 400ms keyframe (anchor
 	// reset — the first packet after the discontinuity emits immediately) and

@@ -21,14 +21,17 @@ func (b *builder) newDecodeStage(ctx context.Context, request decodeRequest, str
 }
 
 func (b *builder) newDecodeStageNamed(ctx context.Context, name string, request decodeRequest, stream av.Stream, realtime bool, dropInputEvents bool, bounds codec.DecodeBounds) (*codec.DecoderStage, error) {
-	factory, err := b.runtime.codecs.DecoderFactory(stream.Codec.ID)
-	if err != nil {
-		return nil, err
-	}
 	name = firstNonEmpty(name, decodeNodeName(request.selector))
 	intent := streamIntent{
 		Name:   name,
 		Select: streamSelectFromAV(request.selector),
+	}
+	factory, err := b.runtime.codecs.DecoderFactory(stream.Codec.ID)
+	if err != nil {
+		// A file's codec is known only once it opens, so this is where a
+		// descriptor-only decoder (H.264 without -tags goav_goh264) surfaces:
+		// typed, naming the build tag, instead of a bare codec sentinel.
+		return nil, recipeDecodeAdapterError("build decode stage", intent, stream.Codec.ID, b.runtime.codecs, err)
 	}
 	if err := validateDecodeAdapterDescriptors("build decode stage", intent, b.runtime.codecs, decodeAdapterRequestFromStream(stream, intent)); err != nil {
 		return nil, err
