@@ -220,6 +220,9 @@ methodology changes, and migration notes.
   patch release (fixes a stale-toolchain govulncheck failure), collects
   coverage without running the suite twice, and honors the `skip-changelog`
   label regardless of label order.
+- The dynamic audio room example sizes its event buffers above its teardown
+  burst. Watch sheds when a buffer is full, and the demo asserts every
+  lifecycle event, so it failed intermittently under load.
 
 ## Pre-v1 consolidation - 2026-06-26
 
