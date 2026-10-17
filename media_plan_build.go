@@ -431,18 +431,31 @@ func (p mediaPlanBranchComposeGraph) runtimeRef() *runtime {
 }
 
 func (p mediaPlanBranchComposeGraph) graphConfig(gp graphPlan) (pipeline.GraphConfig, error) {
-	if _, err := p.prepareBranchComposeOperationLowering(gp); err != nil {
+	lowering, err := p.prepareBranchComposeOperationLowering(gp)
+	if err != nil {
 		return pipeline.GraphConfig{}, err
 	}
 	config, err := recipeGraphConfig(p.runtime, gp.name, gp.work, p.needsRealtimeBufferedGraph())
-	if err != nil || !config.Buffer.IsDirect() || !branchComposeDeclaresBuffer(p.branches) {
+	if err != nil || !config.Buffer.IsDirect() {
 		return config, err
 	}
-	// A declared branch queue needs a buffered graph: each branch then runs on
-	// its own workers instead of in its upstream's call, and the trunk runs
-	// behind modest blocking queues.
-	config.Buffer, err = bufferPolicyWithShapeBudgets(pipeline.BufferPolicy{Capacity: promotedGraphBufferCapacity, Drop: pipeline.DropBlock}, gp.work)
-	return config, err
+	declared := branchComposeDeclaresBuffer(p.branches)
+	if !declared && !branchComposeRunsParallel(p.branches, lowering.destinations, len(p.inputs)) {
+		return config, nil
+	}
+	// A declared branch queue needs a buffered graph, and a fanout of
+	// goav-owned encode work earns one: each branch then runs on its own
+	// workers instead of in its upstream's call, and the trunk runs behind
+	// modest blocking queues.
+	buffer, err := bufferPolicyWithShapeBudgets(pipeline.BufferPolicy{Capacity: promotedGraphBufferCapacity, Drop: pipeline.DropBlock}, gp.work)
+	if err != nil {
+		if declared {
+			return config, err
+		}
+		return config, nil // parallelism is an optimization: stay direct
+	}
+	config.Buffer = buffer
+	return config, nil
 }
 
 func (p mediaPlanBranchComposeGraph) needsRealtimeBufferedGraph() bool {

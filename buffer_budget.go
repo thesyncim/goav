@@ -182,32 +182,43 @@ func frameCopyBudget(spec shape.Spec) (int, error) {
 	}
 }
 
+// Facts the planner cannot know before Build (a decoded file input is probed
+// only while the graph is built) fall back to ceilings. Copy backing grows to
+// the payloads a slot actually carries, so a ceiling is a limit rather than an
+// allocation: unknown video geometry allows 8K UHD at 4:4:4, unknown audio
+// 192 kHz, 8 channels of f32.
+const (
+	unknownVideoWidth      = 7680
+	unknownVideoHeight     = 4320
+	unknownAudioSampleRate = 192_000
+	unknownAudioChannels   = 8
+)
+
 func videoFrameCopyBudget(spec shape.Spec) (int, error) {
-	if spec.Width <= 0 {
-		return 0, fmt.Errorf("missing width")
+	w, h := spec.Width, spec.Height
+	if w <= 0 || h <= 0 {
+		w, h = unknownVideoWidth, unknownVideoHeight
 	}
-	if spec.Height <= 0 {
-		return 0, fmt.Errorf("missing height")
+	pixelFormat := spec.PixelFormat
+	if pixelFormat == "" {
+		pixelFormat = av.PixelFormatI444
 	}
-	if spec.PixelFormat == "" {
-		return 0, fmt.Errorf("missing pixel_format")
-	}
-	width := alignedVideoCopyDimension(spec.Width)
-	height := alignedVideoCopyDimension(spec.Height)
-	switch spec.PixelFormat {
+	width := alignedVideoCopyDimension(w)
+	height := alignedVideoCopyDimension(h)
+	switch pixelFormat {
 	case av.PixelFormatI420, av.PixelFormatYUV420P:
-		chromaWidth := alignedVideoCopyDimension((spec.Width + 1) / 2)
-		chromaHeight := alignedVideoCopyDimension((spec.Height + 1) / 2)
+		chromaWidth := alignedVideoCopyDimension((w + 1) / 2)
+		chromaHeight := alignedVideoCopyDimension((h + 1) / 2)
 		return width*height + 2*chromaWidth*chromaHeight, nil
 	case av.PixelFormatGray8:
 		return width * height, nil
 	case av.PixelFormatI422, av.PixelFormatYUV422P:
-		chromaWidth := alignedVideoCopyDimension((spec.Width + 1) / 2)
+		chromaWidth := alignedVideoCopyDimension((w + 1) / 2)
 		return width*height + 2*chromaWidth*height, nil
 	case av.PixelFormatI444, av.PixelFormatYUV444P:
 		return width * height * 3, nil
 	default:
-		return 0, fmt.Errorf("unsupported pixel_format %q", spec.PixelFormat)
+		return 0, fmt.Errorf("unsupported pixel_format %q", pixelFormat)
 	}
 }
 
@@ -222,16 +233,17 @@ func alignedVideoCopyDimension(value int) int {
 func audioFrameCopyBudget(spec shape.Spec) (int, error) {
 	sampleRate := spec.SampleRate
 	if sampleRate <= 0 {
-		return 0, fmt.Errorf("missing sample_rate")
+		sampleRate = unknownAudioSampleRate
 	}
 	channels := spec.Channels
 	if channels <= 0 {
-		return 0, fmt.Errorf("missing channels")
+		channels = unknownAudioChannels
 	}
-	if spec.SampleFormat == "" {
-		return 0, fmt.Errorf("missing sample_format")
+	sampleFormat := spec.SampleFormat
+	if sampleFormat == "" {
+		sampleFormat = av.SampleFormatF32
 	}
-	bytesPerSample, ok := audioSampleBytes(spec.SampleFormat)
+	bytesPerSample, ok := audioSampleBytes(sampleFormat)
 	if !ok {
 		return 0, fmt.Errorf("unsupported sample_format %q", spec.SampleFormat)
 	}
@@ -269,24 +281,6 @@ func bufferBudgetMissingError(operation workOperation, err error) error {
 func bufferBudgetSuggestions(operation workOperation, fact string) []string {
 	shapeText := operation.ShapeIn.String()
 	switch {
-	case fact == "missing width" || fact == "missing height":
-		return []string{
-			"declare video geometry on the source shape, for example shape.Frame(av.MediaVideo, shape.Video(width, height, av.PixelFormatI420))",
-			"insert .Resize(width, height) before the buffered branch point or encoder",
-			"if the maximum size is known only by an adapter, expose it through stream codec parameters before Build",
-		}
-	case fact == "missing pixel_format":
-		return []string{
-			"declare the video pixel format on the source shape, for example shape.Video(width, height, av.PixelFormatI420)",
-			"insert a format-converting filter before this buffered edge",
-			"if the adapter fixes the pixel format, expose it through stream codec parameters before Build",
-		}
-	case fact == "missing sample_rate" || fact == "missing channels" || fact == "missing sample_format":
-		return []string{
-			"declare complete audio shape facts, for example shape.Audio(48000, codec.Stereo, av.SampleFormatS16)",
-			"insert .Resample(rate, channels) before this buffered edge when the branch should normalize audio",
-			"if the adapter fixes the audio format, expose it through stream codec parameters before Build",
-		}
 	case strings.HasPrefix(fact, "unsupported pixel_format"):
 		return []string{
 			"use an I420/YUV420P, I422/YUV422P, I444/YUV444P, or Gray8 frame shape",

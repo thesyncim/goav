@@ -26,9 +26,15 @@ What holds today (all `-race` clean, with tests):
   `Branches(...)` as well as runtime `Attach`
   (`TestBuildTimeBranchBufferIsHonored`). On an offline job a declared buffer
   promotes the graph to buffered, so the branch runs on its own worker instead
-  of inside its upstream's call (`TestBranchBufferPromotesOfflineGraph`): give
-  each rung of an encode ladder `.Buffer(flow.Blocking(4))` to encode the rungs
-  in parallel.
+  of inside its upstream's call (`TestBranchBufferPromotesOfflineGraph`).
+- Encode ladders run their rungs in parallel by default: when one source fans
+  out to two or more encoding branches, with only built-in operations and
+  goav-owned outputs (Write/File) each fed by one branch, each branch runs on
+  its own worker. No caller code runs inside such a branch and each file still
+  receives one branch's packets in order, so only wall time changes; a Sink,
+  a `.Do` stage, or a shared output keeps the fanout serial unless a branch
+  declares `.Buffer`
+  (`TestEncodeLadderRunsRungsConcurrently`, `TestParallelLadderMatchesSerialRungs`).
 - Branch-local `flow.SyncPolicy` gates can align live audio/video branches without
   changing unsynced delivery. When `flow.SyncDropLate()` sheds a message, stats use
   the existing drop accounting with `pipeline.DropSync`.

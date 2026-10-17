@@ -104,7 +104,7 @@ set); there is no global registry. Full matrix: [Adapters](docs/ADAPTERS.md).
 | Audio and video into one file | `out := goav.Write("out.webm", w)`, then `.Video()…To(out).Audio()…To(out)`: one handle, one mux |
 | Decoded frames into your code | `.Video().Decode().To(goav.Sink(component.SinkFunc("frames", fn)))` |
 | Normalize audio | `.Audio().Decode().Resample(48000, 2).Encode(codec.Opus())` |
-| One decode, many renditions | `.Decode().Branches(goav.Branch("720p").Resize(1280, 720).Encode(...).To(...), ...)` |
+| One decode, many renditions, encoded in parallel | `.Decode().Branches(goav.Branch("720p").Resize(1280, 720).Encode(...).To(...), ...)` |
 | Ingest RTP or WebRTC | `goav.Input(rtpav.Receive(r, rtpav.WithCodec(codec.Opus())))`, `goav.Input(webrtcav.Track(t))` |
 | Your own source, sink, or codec | `goav.Source(...)`, `goav.Input(provider)`, `goav.Custom(...)`, `runconfig.WithEncoder(...)` |
 | Test a pipeline | [`goavtest`](goavtest): deterministic sources, a recording sink, a fake clock |
