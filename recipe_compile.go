@@ -998,7 +998,7 @@ func operationSpecMissingError(operation string, node string) error {
 		Reason:    "the stream was selected but no decode, processing stage, or encoder was requested",
 		fixes: buildErrorFixes([]string{
 			"call .Decode().To(goav.Sink(...)) to receive decoded frames",
-			"call .Decode().Encode(codec.Opus(...)), .Decode().Encode(codec.VP8(...)), or .Decode().Encode(codec.VP9(...)) before writing to a file output",
+			"call .Decode() then " + encodeHint("") + " before writing to a file output",
 			"use .Copy().To(output) for packet-preserving record or remux",
 		}),
 		cause: errUnsupportedBuild,
@@ -1775,7 +1775,7 @@ func destinationShapeMismatchError(operation string, node string, destinationNam
 		Reason:    "byte or mux destination requires packet-domain media",
 		fields:    errDetails(errDetail("destination", label), errDetail("expected_shape", shape.New(shape.Domain(shape.DomainPacket), shape.Media(spec.MediaKind)).String()), errDetail("actual_shape", spec.String())),
 		fixes: buildErrorFixes([]string{
-			"call .Encode(codec.Opus(...)), .Encode(codec.VP8(...)), or .Encode(codec.VP9(...)) before writing to file, URI, or writer destinations",
+			"call " + encodeHint(spec.MediaKind) + " before writing to file, URI, or writer destinations",
 			"use .Copy() from a packet-domain stream point for packet-preserving output",
 			"send frame-domain media to goav.Sink(...) instead of a byte destination",
 		}),

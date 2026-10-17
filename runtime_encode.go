@@ -162,7 +162,7 @@ func encodeStreamMismatchError(request encodeRequest, stream av.Stream) error {
 		stream,
 		[]string{
 			"use the same stream selector for Decode and Encode in the expert builder",
-			"use .Audio().Decode().Encode(codec.Opus(...)) for audio streams or .Video().Decode().Encode(codec.VP8(...))/.Encode(codec.VP9(...)) for video streams in recipes",
+			"use .Audio().Decode().Encode(codec.Opus(...)) for audio streams or .Video().Decode().Encode(codec.VP8(...))/.Encode(codec.VP9(...))/.Encode(codec.AV1(...)) for video streams in recipes",
 			"narrow ambiguous inputs with StreamID or StreamIndex(0)",
 		},
 	)
@@ -178,7 +178,7 @@ func encodeTargetMissingError(request encodeRequest, stream av.Stream) error {
 		Reason:    "no target codec was provided",
 		fields:    errDetails(errNote("selected: " + streamDiagnostic(stream, 0))),
 		fixes: buildErrorFixes([]string{
-			"use .Encode(codec.Opus(...)), .Encode(codec.VP8(...)), or .Encode(codec.VP9(...)) in recipe encode paths",
+			"use " + encodeHint(stream.Type) + " in recipe encode paths",
 			"set codec.EncodeConfig.Parameters.ID in the expert builder",
 			"use codec.Copy() or .Copy().To(...) when no encode step is intended",
 		}),

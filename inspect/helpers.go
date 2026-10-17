@@ -90,10 +90,13 @@ func renderLabel(parts ...string) string {
 			filtered = append(filtered, parts[i])
 		}
 	}
-	return strings.Join(filtered, "\\n")
+	return strings.Join(filtered, "\n")
 }
 
+// mermaidLabelEscaper matches graphrender: Mermaid quoted labels take <br> for
+// line breaks and entity codes for '"' and '#'; backslash escapes render literally.
+var mermaidLabelEscaper = strings.NewReplacer("#", "#35;", `"`, "#quot;", "\n", "<br>")
+
 func escapeMermaidLabel(label string) string {
-	label = strings.ReplaceAll(label, "\\", "\\\\")
-	return strings.ReplaceAll(label, `"`, `\"`)
+	return mermaidLabelEscaper.Replace(label)
 }

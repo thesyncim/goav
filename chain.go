@@ -158,7 +158,7 @@ func copyEncodeSpellingError(operation string, node string) error {
 		Reason:    "codec.Copy() is the internal packet-copy codec; recipe chains use .Copy()",
 		fixes: buildErrorFixes([]string{
 			"replace .Encode(codec.Copy()) with .Copy()",
-			"use .Encode(codec.Opus(...)), .Encode(codec.VP8(...)), or .Encode(codec.VP9(...)) for real encoders",
+			"use " + encodeHint("") + " for real encoders",
 		}),
 		cause: errUnsupportedBuild,
 	}

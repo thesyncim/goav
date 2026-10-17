@@ -197,7 +197,7 @@ func branchEncodeMissingError(stream streamIntent) error {
 		Reason:    "branch needs an encoder before writing to a muxed destination",
 		fields:    errDetails(errDetail("expected_shape", shape.New(shape.Domain(shape.DomainPacket), shape.Media(stream.Select.Type)).String()), errDetail("actual_shape", shape.Frame(stream.Select.Type).String())),
 		fixes: buildErrorFixes([]string{
-			"call .Encode(codec.Opus(...)), .Encode(codec.VP8(...)), or .Encode(codec.VP9(...)) before .To(...)",
+			"call " + encodeHint(stream.Select.Type) + " before .To(...)",
 			"route raw frames to goav.Sink(...) when the branch should stay decoded",
 		}),
 		cause: errUnsupportedBuild,

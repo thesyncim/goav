@@ -263,6 +263,20 @@ func errDetailLines(lines []string) []buildErrorDetail {
 	return out
 }
 
+// encodeHint is the encoder phrase refusals suggest: the bundled recipe
+// encoders for the stream's media, so a video refusal never offers an audio
+// codec, and every encoder when the media is unknown.
+func encodeHint(media av.MediaType) string {
+	switch media {
+	case av.MediaAudio:
+		return ".Encode(codec.Opus(...))"
+	case av.MediaVideo:
+		return ".Encode(codec.VP8(...)), .Encode(codec.VP9(...)), or .Encode(codec.AV1(...))"
+	default:
+		return ".Encode(codec.Opus(...)) for audio or .Encode(codec.VP8(...)), .Encode(codec.VP9(...)), or .Encode(codec.AV1(...)) for video"
+	}
+}
+
 func buildErrorFixes(lines []string) []buildErrorFix {
 	if len(lines) == 0 {
 		return nil

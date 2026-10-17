@@ -308,8 +308,13 @@ func quoteDOT(value string) string {
 	return strconv.Quote(value)
 }
 
+// mermaidLabelEscaper rewrites label text into Mermaid quoted-label syntax:
+// line breaks become <br>, and '"' and '#' become entity codes. Mermaid has no
+// backslash escapes, so Go quoting would render "\n" literally.
+var mermaidLabelEscaper = strings.NewReplacer("#", "#35;", `"`, "#quot;", "\n", "<br>")
+
 func quoteMermaid(value string) string {
-	return strconv.Quote(value)
+	return `"` + mermaidLabelEscaper.Replace(value) + `"`
 }
 
 func mermaidNodeID(ids map[string]string, name string) string {

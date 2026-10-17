@@ -509,10 +509,28 @@ func TestErrorAcceptanceFramesIntoContainerWithoutEncode(t *testing.T) {
 		To(goav.Write("out.ogg", io.Discard)).
 		UseRuntime(goavtest.Runtime()).
 		BuildLive(context.Background())
-	requireBuildError(t, err, errcode.Code("encode_missing"), "build job", "audio",
+	audioErr := requireBuildError(t, err, errcode.Code("encode_missing"), "build job", "audio",
 		".Encode(codec.Opus(...))",
 		"goav.Sink(...)",
 	)
+	if suggestionsContain(audioErr.FixLines(), "codec.VP8") {
+		t.Fatalf("audio refusal suggests a video encoder\nerr = %v", err)
+	}
+
+	// The suggested encoders follow the stream's media: a video refusal
+	// names every bundled video encoder and never an audio codec.
+	_, err = goav.From(goavtest.Packets(av.CodecVP8, av.Packet{Payload: av.Buffer{Bytes: []byte{1}}})).
+		Video().Decode().
+		To(goav.Write("out.webm", io.Discard)).
+		UseRuntime(goavtest.Runtime()).
+		BuildLive(context.Background())
+	videoErr := requireBuildError(t, err, errcode.Code("encode_missing"), "build job", "video",
+		".Encode(codec.VP9(...))",
+		".Encode(codec.AV1(...))",
+	)
+	if suggestionsContain(videoErr.FixLines(), "codec.Opus") {
+		t.Fatalf("video refusal suggests an audio encoder\nerr = %v", err)
+	}
 }
 
 // TestErrorAcceptanceTransformAfterCopy is snippet 3: .Copy().Resize(...)

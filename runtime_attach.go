@@ -2066,7 +2066,7 @@ func runtimeBranchEncodeMissingError(branch string) error {
 		Reason:    "muxed runtime branches need packet copy or an encoder",
 		fixes: buildErrorFixes([]string{
 			"call .Copy() when attaching from a packet tap",
-			"call .Encode(codec.Opus(...)), .Encode(codec.VP8(...)), or .Encode(codec.VP9(...)) when attaching from a frame tap",
+			"call " + encodeHint("") + " when attaching from a frame tap",
 			"use .To(goav.Sink(...)) when the runtime branch should receive raw frames",
 		}),
 		cause: errUnsupportedBuild,
@@ -2138,7 +2138,7 @@ func runtimeBranchCopyDomainError(branch string, shape shape.Spec) error {
 		fields:    errDetailLines(runtimeBranchShapeDetails(shape)),
 		fixes: buildErrorFixes([]string{
 			"attach from a tap declared after Copy or Encode",
-			"encode frame taps with .Encode(codec.Opus(...)), .Encode(codec.VP8(...)), or .Encode(codec.VP9(...)) before writing a muxed destination",
+			"encode frame taps with " + encodeHint(shape.MediaKind) + " before writing a muxed destination",
 			"call Inspectable.Taps() and choose a tap with domain=packet",
 		}),
 		cause: errUnsupportedBuild,
@@ -2156,7 +2156,7 @@ func runtimeBranchMuxCodecMissingError(branch string, shape shape.Spec) error {
 		fields:    errDetailLines(runtimeBranchShapeDetails(shape)),
 		fixes: buildErrorFixes([]string{
 			"attach from a recipe tap with codec shape",
-			"set an explicit encoder with .Encode(codec.Opus(...)), .Encode(codec.VP8(...)), or .Encode(codec.VP9(...))",
+			"set an explicit encoder with " + encodeHint(shape.MediaKind),
 			"use .To(goav.Sink(...)) when the branch should stay raw",
 		}),
 		cause: errUnsupportedBuild,
