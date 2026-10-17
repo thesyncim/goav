@@ -24,8 +24,8 @@ github.com/thesyncim/goav1 v0.0.0-20261017161534-cf11a8d2fa8c h1:Y6f8Qx3j5wCUFGE
 github.com/thesyncim/goav1 v0.0.0-20261017161534-cf11a8d2fa8c/go.mod h1:AptOp9vmEvj7Mag6wW7X0aXbrc721rxYZif2270NN2c=
 github.com/thesyncim/goh264 v0.0.0-20260714162114-14b36a2bfcc4 h1:pKFSWDSops9ge0HEWNOFPk6a9g6WL+/wZxd36o+P6sE=
 github.com/thesyncim/goh264 v0.0.0-20260714162114-14b36a2bfcc4/go.mod h1:/4BzjdI5P2Yf5ZG1ZuDRucRQAiKmXhAw/bj58zIO+Ec=
-github.com/thesyncim/gopus v0.2.2 h1:Ib8mmsLBon6ylXVk6p7fLxuZNnBzfPA4wT4GBzfWqCI=
-github.com/thesyncim/gopus v0.2.2/go.mod h1:uENpqeR6V8WrMhH5vLJARzFgpMgXJBl5M0cg54LgoA0=
+github.com/thesyncim/gopus v0.2.3-0.20261017175526-c210548e8a92 h1:rdXkVZLgWJq7RZvWJ6bCVZIiYOk293jTfQB5j33shGs=
+github.com/thesyncim/gopus v0.2.3-0.20261017175526-c210548e8a92/go.mod h1:uENpqeR6V8WrMhH5vLJARzFgpMgXJBl5M0cg54LgoA0=
 github.com/thesyncim/govpx v0.0.0-20261017170224-928b4e082477 h1:kDOEjgiUsz+JaFxc7qDS0TglDAZDu2/EHL+q0epl+aU=
 github.com/thesyncim/govpx v0.0.0-20261017170224-928b4e082477/go.mod h1:bxZZI6FtuU7RhnMFkJifbnI46berKKUYFf5mC2k+984=
 go.yaml.in/yaml/v3 v3.0.5 h1:N6y/pJk8buWs9NY5ERU2HSMfm+IuD/OtfdAnq6kESPw=
