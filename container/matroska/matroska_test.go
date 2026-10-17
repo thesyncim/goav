@@ -3650,8 +3650,22 @@ func TestMuxerDemuxerAppliesZlibContentEncodingToH264(t *testing.T) {
 	if err := muxer.Close(); err != nil {
 		t.Fatal(err)
 	}
-	if bytes.Contains(buffer.Bytes(), annexB) || bytes.Contains(buffer.Bytes(), h264AVCSampleWithLengthSize2()) {
-		t.Fatalf("file still contains uncompressed h264 sample")
+	if bytes.Contains(buffer.Bytes(), annexB) {
+		t.Fatalf("file still contains the Annex B access unit")
+	}
+	// Assert the zlib stream itself rather than the absence of raw bytes:
+	// deflate may emit a stored block for tiny inputs (Go 1.27 does for this
+	// 9-byte sample), so raw sample bytes inside the stream are legitimate.
+	var want bytes.Buffer
+	zw := zlib.NewWriter(&want)
+	if _, err := zw.Write(h264AVCSampleWithLengthSize2()); err != nil {
+		t.Fatal(err)
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(buffer.Bytes(), want.Bytes()) {
+		t.Fatalf("file does not carry the zlib-encoded AVC sample")
 	}
 
 	demuxer, err := NewDemuxer(bytes.NewReader(buffer.Bytes()), DemuxerOptions{})

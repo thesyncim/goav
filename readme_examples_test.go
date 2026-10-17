@@ -58,7 +58,7 @@ func TestReadmeGoExamplesCompile(t *testing.T) {
 		}
 
 		dir := t.TempDir()
-		gomod := "module readmecheck\n\ngo 1.26\n\nrequire github.com/thesyncim/goav v0.0.0\n\nreplace github.com/thesyncim/goav => " + repoRoot + "\n"
+		gomod := "module readmecheck\n\ngo 1.27.0\n\nrequire github.com/thesyncim/goav v0.0.0\n\nreplace github.com/thesyncim/goav => " + repoRoot + "\n"
 		if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte(gomod), 0o644); err != nil {
 			t.Fatal(err)
 		}

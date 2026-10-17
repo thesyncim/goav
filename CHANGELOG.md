@@ -11,6 +11,16 @@ methodology changes, and migration notes.
 
 ## Unreleased
 
+- Go 1.27 floor and dependency refresh: every module now declares
+  `go 1.27.0` (pinning `toolchain go1.27.2` for contributors), because the
+  first-party `goav1` and `gopus` backends now require Go 1.27. The
+  `thesyncim/*` codec backends move to their latest revisions (`gopus`
+  v0.2.2), and the transport and example modules pick up current `pion/*`
+  releases, including a fix for the retracted `pion/dtls/v3` v3.1.3. CI runs on
+  Go 1.27 with staticcheck 2026.2 and current GitHub Actions. The modules are
+  also modernized with Go 1.27 `go fix`, and the PGO profile is regenerated
+  for the new compiler.
+
 - Plan-time latency budgets and docs consolidation: `Explain` now reports one
   `path_latency_budget` decision per synced/playout path — the declared sync
   tolerance, playout offset, and the runtime's declared buffered `MaxLatency`
