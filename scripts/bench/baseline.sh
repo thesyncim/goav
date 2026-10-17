@@ -6,6 +6,11 @@
 #   scripts/bench/baseline.sh check      # CI/local allocation + B/op ratchet
 set -euo pipefail
 
+# Benchmarks build with the Go SIMD experiment, matching CI. Set GOEXPERIMENT=
+# (empty) to measure the scalar build importers get by default.
+: "${GOEXPERIMENT=simd}"
+export GOEXPERIMENT
+
 cd "$(dirname "$0")/../.."
 
 mode="${1:-check}"

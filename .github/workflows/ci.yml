@@ -18,17 +18,30 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        # The gate builds with the Go SIMD experiment, like the thesyncim/*
+        # codec backends. The scalar lane is what importers get without
+        # GOEXPERIMENT=simd; the purego lane is the scalar fallback under it.
         include:
           - os: ubuntu-latest
             go: '1.27.x'
             full: true
+            goexperiment: simd
           - os: ubuntu-latest
             go: stable
             full: false
+            goexperiment: simd
           - os: macos-latest
             go: '1.27.x'
             full: false
+            goexperiment: simd
+            purego: true
+          - os: ubuntu-latest
+            go: '1.27.x'
+            full: false
+            goexperiment: ''
     runs-on: ${{ matrix.os }}
+    env:
+      GOEXPERIMENT: ${{ matrix.goexperiment }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -62,6 +75,10 @@ jobs:
       - name: Test
         if: ${{ !matrix.full }}
         run: CGO_ENABLED=0 go test -count=1 ./...
+
+      - name: Test purego fallback
+        if: matrix.purego
+        run: CGO_ENABLED=0 go test -count=1 -tags purego ./...
 
       - name: Test with coverage
         if: matrix.full

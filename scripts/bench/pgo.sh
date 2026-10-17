@@ -10,6 +10,11 @@
 # deterministic goavtest codecs and containers.
 set -euo pipefail
 
+# Benchmarks build with the Go SIMD experiment, matching CI. Set GOEXPERIMENT=
+# (empty) to measure the scalar build importers get by default.
+: "${GOEXPERIMENT=simd}"
+export GOEXPERIMENT
+
 cd "$(dirname "$0")/../.."
 
 profile="${PGO_PROFILE:-default.pgo}"
@@ -44,6 +49,7 @@ bench_test_sha256=$bench_hash
 pgo_script_sha256=$script_hash
 generated_at=$generated_at
 go_version=$go_version
+goexperiment=$GOEXPERIMENT
 EOF
 
 echo "wrote $profile"

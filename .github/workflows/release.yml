@@ -23,6 +23,10 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-latest
+    # Release binaries carry the Go SIMD kernels (goav and the codec
+    # backends); the tests below run under the same experiment.
+    env:
+      GOEXPERIMENT: simd
     steps:
       - uses: actions/checkout@v7
         with:
@@ -106,6 +110,7 @@ jobs:
             echo "run_id=${GITHUB_RUN_ID}"
             echo "run_attempt=${GITHUB_RUN_ATTEMPT}"
             echo "go=$(go version)"
+            echo "goexperiment=${GOEXPERIMENT}"
             echo "created_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           } > dist/provenance.txt
           go list -m -json all > dist/sbom-go-modules.json

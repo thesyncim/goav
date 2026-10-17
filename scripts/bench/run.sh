@@ -12,6 +12,11 @@
 # allocation and byte ceilings; see scripts/bench/baseline.sh.
 set -euo pipefail
 
+# Benchmarks build with the Go SIMD experiment, matching CI. Set GOEXPERIMENT=
+# (empty) to measure the scalar build importers get by default.
+: "${GOEXPERIMENT=simd}"
+export GOEXPERIMENT
+
 cd "$(dirname "$0")/../.."
 mkdir -p bench-results
 out="bench-results/bench-$(date +%Y%m%d-%H%M%S).txt"
