@@ -204,7 +204,7 @@ desc := filter.Descriptor{
     SampleFormats: []string{av.SampleFormatS16},
 }
 
-rt := bundle.MustNewFilters(
+rt := bundle.MustNew(
     runconfig.WithFilter(desc, myFactory{}),
 )
 ```

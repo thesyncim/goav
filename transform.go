@@ -225,7 +225,7 @@ func recipeTransformAdapterError(operation string, stream streamIntent, name str
 		fields:    errDetails(errDetail("transform", name)),
 		fixes: buildErrorFixes([]string{
 			"register a filter adapter that provides " + name,
-			"import github.com/thesyncim/goav/bundle and build with bundle.MustNewFilters(...) for bundled resize and resample adapters",
+			"import github.com/thesyncim/goav/bundle and build with bundle.MustNew(...), or goav.New(bundle.Filters(), ...) for the bundled resize and resample adapters",
 			"remove ." + transformMethodName(name) + "(...) when that conversion is not needed",
 		}),
 		cause: cause,

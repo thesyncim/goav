@@ -591,7 +591,7 @@ func recipeIRShapeSolverAdapterError(operation string, node string, index int, s
 		fields: errDetailLines(details),
 		fixes: buildErrorFixes([]string{
 			"register a " + string(selection.media) + " conversion filter with runconfig.WithFilter(filter.Descriptor{Input: ..., Output: ...}, factory)",
-			"import github.com/thesyncim/goav/bundle and build with bundle.MustNewFilters(...) for the bundled resample and resize adapters",
+			"import github.com/thesyncim/goav/bundle and build with bundle.MustNew(...), or goav.New(bundle.Filters(), ...) for the bundled resample and resize adapters",
 		}),
 		cause: errUnsupportedBuild,
 	}
