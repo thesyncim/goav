@@ -227,6 +227,7 @@ type streamBuild struct {
 	sharedOps        []operationSpec
 	privateOps       []operationSpec
 	destinationNames []string
+	buffer           flow.BranchBuffer
 }
 
 // StreamID narrows a stream selection to the stream with the given id, as

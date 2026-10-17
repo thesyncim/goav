@@ -434,7 +434,15 @@ func (p mediaPlanBranchComposeGraph) graphConfig(gp graphPlan) (pipeline.GraphCo
 	if _, err := p.prepareBranchComposeOperationLowering(gp); err != nil {
 		return pipeline.GraphConfig{}, err
 	}
-	return recipeGraphConfig(p.runtime, gp.name, gp.work, p.needsRealtimeBufferedGraph())
+	config, err := recipeGraphConfig(p.runtime, gp.name, gp.work, p.needsRealtimeBufferedGraph())
+	if err != nil || !config.Buffer.IsDirect() || !branchComposeDeclaresBuffer(p.branches) {
+		return config, err
+	}
+	// A declared branch queue needs a buffered graph: each branch then runs on
+	// its own workers instead of in its upstream's call, and the trunk runs
+	// behind modest blocking queues.
+	config.Buffer, err = bufferPolicyWithShapeBudgets(pipeline.BufferPolicy{Capacity: promotedGraphBufferCapacity, Drop: pipeline.DropBlock}, gp.work)
+	return config, err
 }
 
 func (p mediaPlanBranchComposeGraph) needsRealtimeBufferedGraph() bool {
@@ -485,6 +493,9 @@ type graphPlanBranchComposeBranchOperation struct {
 	privateStageNodes []pipeline.NodeRef
 	encodeNode        pipeline.NodeRef
 	encodeShape       shape.Spec
+	// buffer is the branch's declared queue lowered to a node policy, its copy
+	// bounds sized from the branch's shapes; direct when none was declared.
+	buffer pipeline.BufferPolicy
 }
 
 func (p mediaPlanBranchComposeGraph) prepareBranchComposeOperationLowering(gp graphPlan) (graphPlanBranchComposeLowering, error) {
@@ -648,10 +659,15 @@ func (p mediaPlanBranchComposeGraph) prepareBranchComposeBranchOperations(branch
 			encodeNode = operation.Node
 			encodeShape = operation.ShapeOut
 		}
+		buffer, err := branchComposeBufferPolicy(branch.branch.Buffer, operations)
+		if err != nil {
+			return nil, err
+		}
 		out[branch.name] = graphPlanBranchComposeBranchOperation{
 			privateStageNodes: privateStageNodes,
 			encodeNode:        encodeNode,
 			encodeShape:       encodeShape,
+			buffer:            buffer,
 		}
 	}
 	return out, nil

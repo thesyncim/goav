@@ -691,6 +691,7 @@ func (b *Chain) Branches(branches ...BranchSpec) *Job {
 			sharedOps:        sharedOps,
 			privateOps:       privateOps,
 			destinationNames: append([]string(nil), branchDestinationNames(branches[i].destinations)...),
+			buffer:           branches[i].branchBuffer,
 		})
 	}
 	return job

@@ -11,6 +11,16 @@ methodology changes, and migration notes.
 
 ## Unreleased
 
+- Branch buffers declared in a recipe are honored. `Branch(name).Buffer(...)`
+  inside `Branches(...)` used to reach only the recipe report: every built
+  node ran on the runtime default, so a preview branch's `flow.DropNewest`
+  stalled the record branch beside it instead of shedding. The branch's own
+  nodes now run behind its declared queue, with copy bounds sized from its
+  shapes as in `Attach`. On an offline job a declared buffer promotes the
+  graph to buffered, so the branch runs on its own worker. Giving each rung of
+  an encode ladder `.Buffer(flow.Blocking(4))` encodes the rungs in parallel:
+  a three-rung 720p VP9 ladder ran 2.7× faster on an M4 Max.
+
 - `bundle` surface, 17 exports to 10 (**breaking**). The partial-runtime
   constructors (`NewFormats`/`NewCodecs`/`NewFilters` and their `MustNew*`
   twins), the three `*Options` slices, and `BuildLive` are replaced by three

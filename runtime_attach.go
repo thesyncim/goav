@@ -2186,7 +2186,7 @@ func runtimeBranchGraphError(operation string, node string, cause error) error {
 		// file tasks run direct.
 		fixes = []string{
 			"drop the branch's .Buffer(...) policy: this task runs a direct (offline) graph",
-			"or make the task realtime: a live input, or a runtime built with runconfig.WithRealtime(true)",
+			"or build the task buffered: declare the branch in the recipe's Branches(...), or build the runtime with runconfig.WithBufferPolicy(...)",
 		}
 	}
 	return &BuildError{

@@ -11,6 +11,7 @@ import (
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/filter"
+	"github.com/thesyncim/goav/flow"
 	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/shape"
@@ -41,6 +42,9 @@ type branchComposeBranch struct {
 	Encode            codec.EncodeConfig
 	Labels            []string
 	Metadata          av.Metadata
+	// Buffer is the branch's declared queue; its exclusively owned nodes run
+	// behind it.
+	Buffer flow.BranchBuffer
 }
 
 type branchComposeTarget struct {
@@ -473,7 +477,7 @@ func compileBranchComposeRoutes(
 			if err != nil {
 				return err
 			}
-			stageRef, err := graph.AddStage(stage, runtime.buffer)
+			stageRef, err := graph.AddStage(stage, planned.buffer)
 			if err != nil {
 				stage.Close()
 				return err
@@ -491,7 +495,7 @@ func compileBranchComposeRoutes(
 			if err != nil {
 				return err
 			}
-			encodeRef, err := service.compileEncodeStageNamed(ctx, graph, planned.encodeNode.String(), branchRef, request, config)
+			encodeRef, err := service.compileEncodeStageNamed(ctx, graph, planned.encodeNode.String(), branchRef, request, config, planned.buffer)
 			if err != nil {
 				return err
 			}
@@ -503,12 +507,13 @@ func compileBranchComposeRoutes(
 	}
 
 	for i := range outputs {
+		buffer := branchComposeOutputBuffer(runtime.buffer, outputs[i].matches, branches, branchPlan)
 		if outputs[i].sink != nil {
 			sink := outputs[i].sink
 			if outputs[i].node != "" {
 				sink = namedSink{name: outputs[i].node.String(), sink: sink}
 			}
-			sinkRef, err := graph.AddSink(sink, runtime.buffer)
+			sinkRef, err := graph.AddSink(sink, buffer)
 			if err != nil {
 				return err
 			}
@@ -539,7 +544,7 @@ func compileBranchComposeRoutes(
 		if outputs[i].node != "" {
 			stage = namedStage{name: outputs[i].node.String(), stage: muxStage}
 		}
-		muxRef, err := graph.AddStage(stage, runtime.buffer)
+		muxRef, err := graph.AddStage(stage, buffer)
 		if err != nil {
 			muxStage.Close()
 			return err

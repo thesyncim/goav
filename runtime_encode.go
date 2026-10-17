@@ -49,19 +49,19 @@ func compileEncodeDestinationPath(ctx context.Context, service *builder, graph p
 }
 
 func compileEncodeStage(ctx context.Context, runtime *runtime, graph pipeline.Graph, upstream pipeline.NodeRef, request encodeRequest, config codec.EncodeConfig) (pipeline.NodeRef, error) {
-	return compileEncodeStageNamed(ctx, runtime, graph, "", upstream, request, config)
+	return compileEncodeStageNamed(ctx, runtime, graph, "", upstream, request, config, runtime.buffer)
 }
 
-func (b *builder) compileEncodeStageNamed(ctx context.Context, graph pipeline.Graph, name string, upstream pipeline.NodeRef, request encodeRequest, config codec.EncodeConfig) (pipeline.NodeRef, error) {
-	return compileEncodeStageNamed(ctx, b.runtime, graph, name, upstream, request, config)
+func (b *builder) compileEncodeStageNamed(ctx context.Context, graph pipeline.Graph, name string, upstream pipeline.NodeRef, request encodeRequest, config codec.EncodeConfig, buffer pipeline.BufferPolicy) (pipeline.NodeRef, error) {
+	return compileEncodeStageNamed(ctx, b.runtime, graph, name, upstream, request, config, buffer)
 }
 
-func compileEncodeStageNamed(ctx context.Context, runtime *runtime, graph pipeline.Graph, name string, upstream pipeline.NodeRef, request encodeRequest, config codec.EncodeConfig) (pipeline.NodeRef, error) {
+func compileEncodeStageNamed(ctx context.Context, runtime *runtime, graph pipeline.Graph, name string, upstream pipeline.NodeRef, request encodeRequest, config codec.EncodeConfig, buffer pipeline.BufferPolicy) (pipeline.NodeRef, error) {
 	stage, err := (&builder{runtime: runtime}).newEncodeStageNamed(ctx, name, request, config)
 	if err != nil {
 		return "", err
 	}
-	encodeRef, err := graph.AddStage(stage, runtime.buffer)
+	encodeRef, err := graph.AddStage(stage, buffer)
 	if err != nil {
 		stage.Close()
 		return "", err
