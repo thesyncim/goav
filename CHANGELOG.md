@@ -11,6 +11,13 @@ methodology changes, and migration notes.
 
 ## Unreleased
 
+- The default event buffer is 256 events, up from 16, for the task event
+  stream and for each `Watch` subscriber. Events never block the data
+  plane, so a full buffer sheds. At 16, a single teardown burst (every
+  branch detaching and each destination committing) overflowed it, and
+  callers lost lifecycle events such as the final end of stream. An event is
+  a small struct, so the deeper default costs about 40 KB per buffer.
+
 - Encode ladders run their rungs in parallel by default. A fanout used to
   run every branch inside its upstream's call, so a three-rung VP9 ladder
   encoded one rung after another. A fanout where two or more branches

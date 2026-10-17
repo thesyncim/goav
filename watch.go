@@ -11,7 +11,7 @@ import (
 // defaultWatchCapacity mirrors the pipeline's default event channel capacity so
 // an unconfigured task gives every watcher the same buffer depth as the graph
 // event stream.
-const defaultWatchCapacity = 16
+const defaultWatchCapacity = 256
 
 // Watch returns an independent, filtered subscription to the task's event
 // stream. See LiveTask.Watch for the delivery, overflow, and closure contract.

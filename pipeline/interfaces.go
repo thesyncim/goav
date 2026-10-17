@@ -98,6 +98,13 @@ const (
 	DropObserver DropPolicy = "observer"
 )
 
+// defaultEventCapacity is the event channel depth of a graph that sets none.
+// Events are published without blocking, so a full channel sheds (counted as
+// DropObserver); the default leaves room for the lifecycle bursts a task emits
+// at once, such as every branch detaching and its destination committing at
+// teardown. An event is a small struct, so the depth costs little.
+const defaultEventCapacity = 256
+
 // DropReporter is an optional Source/Stage/Sink capability: a node that sheds
 // messages internally (rather than through its queue policy) reports its
 // running total, and the runners fold it into the node's NodeStats.Dropped
@@ -293,7 +300,8 @@ type NodeStats struct {
 
 // GraphConfig configures a new graph: its name, realtime pacing, the default
 // node buffer policy, event channel capacity, and diagnostic close/remove wait
-// timeout. A zero CloseWaitTimeout keeps the default 30s budget.
+// timeout. A zero EventCapacity keeps the default 256 events, and a zero
+// CloseWaitTimeout the default 30s budget.
 type GraphConfig struct {
 	Name             string
 	Realtime         bool

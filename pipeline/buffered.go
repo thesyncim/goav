@@ -189,7 +189,7 @@ func newBufferedRunner(config GraphConfig) (*bufferedRunner, error) {
 	config.Buffer = normalizeBufferedPolicy(config.Buffer)
 	eventCapacity := config.EventCapacity
 	if eventCapacity < 1 {
-		eventCapacity = 16
+		eventCapacity = defaultEventCapacity
 	}
 	return &bufferedRunner{
 		config: config,

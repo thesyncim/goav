@@ -271,7 +271,8 @@ func WithBufferPolicy(policy pipeline.BufferPolicy) Option {
 }
 
 // WithEventCapacity sets the buffered capacity of the task event stream and of
-// each Watch subscriber's channel.
+// each Watch subscriber's channel (default 256). Events never block the data
+// plane: a full buffer sheds the event and counts the drop.
 func WithEventCapacity(capacity int) Option {
 	return func(config *Config) error {
 		if capacity < 0 {

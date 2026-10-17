@@ -203,7 +203,7 @@ func newDirectRunner(config GraphConfig) (*directRunner, error) {
 	}
 	eventCapacity := config.EventCapacity
 	if eventCapacity < 1 {
-		eventCapacity = 16
+		eventCapacity = defaultEventCapacity
 	}
 	return &directRunner{
 		config: config,
