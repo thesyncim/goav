@@ -95,8 +95,7 @@ func FamilyForCode(code Code) Family {
 		return FamilyShape
 	case Code("decode_adapter_missing"), Code("decode_adapter_unavailable"),
 		Code("decode_adapter_incompatible"), Code("encode_adapter_missing"),
-		Code("encode_adapter_unavailable"), Code("encode_adapter_incompatible"),
-		Code("codec_change_policy_unsupported"):
+		Code("encode_adapter_unavailable"), Code("encode_adapter_incompatible"):
 		return FamilyCodec
 	case Code("encode_missing"), Code("encode_duplicate"), Code("encode_parameter_invalid"),
 		Code("encode_auto_unresolved"), Code("encode_stream_mismatch"),
@@ -117,7 +116,7 @@ func FamilyForCode(code Code) Family {
 		Code("branch_operation_chain_unsupported"), branchComposePlanEmpty,
 		Code("copy_branch_source_invalid"), Code("copy_unsupported"),
 		Code("packet_branch_encode_unsupported"), Code("packet_branch_transform_unsupported"),
-		Code("decode_config_conflict"), Code("decode_policy_conflict"):
+		Code("decode_config_conflict"):
 		return FamilyBranch
 	case Code("branch_buffer_invalid"), Code("branch_buffer_unsupported"),
 		Code("buffer_payload_unsafe"), Code("buffer_payload_too_large"), bufferBudgetMissing:

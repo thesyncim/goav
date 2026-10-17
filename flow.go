@@ -156,7 +156,7 @@ func (b *audioChain) Resample(sampleRate int, channels int, options ...audioOpti
 	if b == nil {
 		return b
 	}
-	b.chainBuilder.transform(Resample(sampleRate, channels, options...))
+	b.chainBuilder.transform(resampleSpec(sampleRate, channels, options...))
 	return b
 }
 
@@ -271,7 +271,7 @@ func (b *videoChain) Resize(width int, height int, options ...resizeOption) *vid
 	if b == nil {
 		return b
 	}
-	b.chainBuilder.transform(Resize(width, height, options...))
+	b.chainBuilder.transform(resizeSpec(width, height, options...))
 	return b
 }
 

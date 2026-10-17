@@ -49,7 +49,6 @@ type streamIntent struct {
 	Select       plan.StreamSelect
 	From         tapRef
 	Operations   []operationSpec
-	CodecChange  codecChangePolicy
 	Destinations []string
 }
 
@@ -95,26 +94,6 @@ type destinationIntent struct {
 
 type policyIntent struct {
 	Realtime bool
-}
-
-// codecChangePolicy says how a decoding chain reacts when a live source
-// renegotiates its codec mid-stream. The zero value selects the supported
-// live receive behavior. Custom nonzero policies are rejected during build
-// until dynamic decoder rebind is implemented.
-type codecChangePolicy struct {
-	RebindCompatible     bool
-	RequestKeyframe      bool
-	DropUntilSync        bool
-	FailOnDifferentCodec bool
-}
-
-func defaultCodecChangePolicy() codecChangePolicy {
-	return codecChangePolicy{
-		RebindCompatible:     true,
-		RequestKeyframe:      true,
-		DropUntilSync:        true,
-		FailOnDifferentCodec: true,
-	}
 }
 
 func operationSpecForDecode(codec codec.Spec, component string) operationSpec {
@@ -282,7 +261,6 @@ func jobStreamIntent(stream *jobStreamBuild) streamIntent {
 		Name:         stream.name,
 		Select:       selected,
 		Operations:   jobOperationSpecs(stream),
-		CodecChange:  stream.codecChange,
 		Destinations: destinationNamesWithOverrides(stream.outputs, stream.outputNames),
 	}
 }

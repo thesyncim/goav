@@ -19,7 +19,6 @@ func TestBranchComposeStructuredErrorContracts(t *testing.T) {
 		code errcode.Code
 	}{
 		{name: "empty plan", err: branchComposePlanEmptyError("branches"), code: branchComposePlanEmptyCode},
-		{name: "codec change conflict", err: branchComposeCodecChangeConflictError("main", "backup"), code: decodePolicyConflictCode},
 		{name: "duplicate branch", err: branchComposeDuplicateBranchError("preview", 2), code: branchDuplicateCode},
 		{name: "branch chain step", err: branchChainStepError("preview", "stage and resize were grouped"), code: branchOperationChainUnsupportedCode},
 		{

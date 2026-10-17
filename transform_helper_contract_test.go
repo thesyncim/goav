@@ -23,7 +23,7 @@ func TestTransformSpecIsOpaque(t *testing.T) {
 }
 
 func TestTransformSpecConstructorsApplyOptions(t *testing.T) {
-	resize := Resize(640, 360, nil, func(config *filter.ResizeConfig) {
+	resize := resizeSpec(640, 360, nil, func(config *filter.ResizeConfig) {
 		config.PixelFormat = av.PixelFormatI420
 		config.Mode = filter.ResizeFit
 	})
@@ -36,7 +36,7 @@ func TestTransformSpecConstructorsApplyOptions(t *testing.T) {
 		t.Fatalf("Resize spec = %+v", resize)
 	}
 
-	resample := Resample(48_000, codec.Stereo, nil, func(config *filter.ResampleConfig) {
+	resample := resampleSpec(48_000, codec.Stereo, nil, func(config *filter.ResampleConfig) {
 		config.ChannelLayout = "stereo"
 		config.SampleFormat = av.SampleFormatF32
 	})
@@ -58,7 +58,7 @@ func TestTransformSpecConstructorsApplyOptions(t *testing.T) {
 }
 
 func TestStreamTransformContracts(t *testing.T) {
-	resize, err := streamTransform("", av.StreamSelector{ID: "cam", Type: av.MediaVideo}, Resize(320, 180), 1)
+	resize, err := streamTransform("", av.StreamSelector{ID: "cam", Type: av.MediaVideo}, resizeSpec(320, 180), 1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -70,7 +70,7 @@ func TestStreamTransformContracts(t *testing.T) {
 		t.Fatalf("resize transform = %+v", resize)
 	}
 
-	resample, err := streamTransform("voice", av.StreamSelector{Type: av.MediaAudio}, Resample(16_000, codec.Mono), 0)
+	resample, err := streamTransform("voice", av.StreamSelector{Type: av.MediaAudio}, resampleSpec(16_000, codec.Mono), 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -98,8 +98,8 @@ func TestStreamTransformContracts(t *testing.T) {
 		resize:   &filter.ResizeConfig{Width: 320, Height: 180},
 		resample: &filter.ResampleConfig{SampleRate: 48_000, Channels: codec.Stereo},
 	}, av.StreamSelector{Type: av.MediaAudio}, transformInvalidCode, "cannot be both")
-	assertTransformBuildError("audio", Resize(320, 180), av.StreamSelector{Type: av.MediaAudio}, transformMediaMismatchCode, "resize applies to video")
-	assertTransformBuildError("video", Resample(48_000, codec.Stereo), av.StreamSelector{Type: av.MediaVideo}, transformMediaMismatchCode, "resample applies to audio")
+	assertTransformBuildError("audio", resizeSpec(320, 180), av.StreamSelector{Type: av.MediaAudio}, transformMediaMismatchCode, "resize applies to video")
+	assertTransformBuildError("video", resampleSpec(48_000, codec.Stereo), av.StreamSelector{Type: av.MediaVideo}, transformMediaMismatchCode, "resample applies to audio")
 }
 
 func TestTransformHelperErrorContracts(t *testing.T) {

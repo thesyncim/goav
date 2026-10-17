@@ -537,3 +537,15 @@ func TestStageAllocs(t *testing.T) {
 		t.Fatalf("stage allocs = %v, want 0", allocs)
 	}
 }
+
+func TestResizeModeOptions(t *testing.T) {
+	var config ResizeConfig
+	Fit(&config)
+	if config.Mode != ResizeFit {
+		t.Fatalf("Fit mode = %q", config.Mode)
+	}
+	Fill(&config)
+	if config.Mode != ResizeFill {
+		t.Fatalf("Fill mode = %q", config.Mode)
+	}
+}

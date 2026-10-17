@@ -78,6 +78,13 @@ func CopyOperationContractForTest() shape.Contract {
 	return operationSpecForCopy(codec.Copy())
 }
 
+// ResizeSpecForTest and ResampleSpecForTest expose the transform specs the
+// chain methods build, for shape-contract tests.
+var (
+	ResizeSpecForTest   = resizeSpec
+	ResampleSpecForTest = resampleSpec
+)
+
 func TransformOperationContractForTest(transform transformSpec) shape.Contract {
 	return operationSpecForTransform(transform)
 }

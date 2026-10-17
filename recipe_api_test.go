@@ -231,7 +231,7 @@ func TestMediaShapePublicContract(t *testing.T) {
 		t.Fatalf("frame shape set accepted packet shape: %s", packet)
 	}
 
-	var resizeContract shape.Contract = goav.Resize(1280, 720)
+	var resizeContract shape.Contract = goav.ResizeSpecForTest(1280, 720)
 	if !resizeContract.InputShapes().Accepts(shape.Frame(av.MediaVideo)) {
 		t.Fatalf("resize input shapes=%+v, want video frame", resizeContract.InputShapes())
 	}
@@ -256,7 +256,7 @@ func TestMediaShapePublicContract(t *testing.T) {
 		t.Fatalf("copied shape=%+v, want preserved packet %+v", copied, packet)
 	}
 
-	operationContract := goav.TransformOperationContractForTest(goav.Resample(16_000, codec.Mono))
+	operationContract := goav.TransformOperationContractForTest(goav.ResampleSpecForTest(16_000, codec.Mono))
 	resampled := operationContract.OutputShapes(shape.Frame(
 		av.MediaAudio,
 		shape.Audio(48_000, codec.Stereo, av.SampleFormatS16),

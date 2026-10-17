@@ -38,7 +38,6 @@ type branchComposeBranch struct {
 	SharedOperations  operationFacts
 	PrivateOperations operationFacts
 	DecodeConfig      codec.Spec
-	CodecChange       codecChangePolicy
 	Encode            codec.EncodeConfig
 	Labels            []string
 	Metadata          av.Metadata
@@ -115,7 +114,6 @@ type branchComposeRoute struct {
 	branch            branchComposeBranch
 	copy              bool
 	decode            codec.Spec
-	codecChange       codecChangePolicy
 	dropDecodeEvents  bool
 	sourceDomain      shape.MediaDomain
 	sharedOperations  operationFacts
@@ -191,13 +189,9 @@ func planBranchComposeRoutes(
 		if err != nil {
 			return pipeline.Spec{}, err
 		}
-		codecChange, err := branchComposeGroupCodecChangePolicy(decodedBranches, branches)
-		if err != nil {
-			return pipeline.Spec{}, err
-		}
 		decodeName := branchComposeInputNodeName(decodeNodeName(groups[i].selector), groups[i].input)
 		decodeRef := pipeline.NodeRef(decodeName)
-		decodeDetail := decodeRequestDetail(decodeRequest{selector: groups[i].selector, config: decodeConfig, codecChange: codecChange})
+		decodeDetail := decodeRequestDetail(decodeRequest{selector: groups[i].selector, config: decodeConfig})
 		if err := addPlannedNode(nodes, &spec, decodeName, pipeline.NodeStage, decodeRef, decodeDetail); err != nil {
 			return pipeline.Spec{}, err
 		}
@@ -384,13 +378,9 @@ func compileBranchComposeInputs(
 		if err != nil {
 			return nil, nil, err
 		}
-		codecChange, err := branchComposeGroupCodecChangePolicy(decodedBranches, branches)
-		if err != nil {
-			return nil, nil, err
-		}
 		dropDecodeEvents := branchComposeGroupDropDecodeEvents(decodedBranches, branches)
 		decodeName := firstNonEmpty(planned.decodeNode.String(), decodeNodeName(selector))
-		decodeStage, err := service.newDecodeStageNamed(ctx, decodeName, decodeRequest{selector: selector, config: decodeConfig, codecChange: codecChange}, selected, realtime, dropDecodeEvents, decodeBounds)
+		decodeStage, err := service.newDecodeStageNamed(ctx, decodeName, decodeRequest{selector: selector, config: decodeConfig}, selected, realtime, dropDecodeEvents, decodeBounds)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -844,7 +834,6 @@ func branchComposeRoutes(composePlan branchComposePlan) ([]branchComposeRoute, e
 			branch:            branch,
 			copy:              branch.Copy,
 			decode:            cloneCodecSpec(branch.DecodeConfig),
-			codecChange:       branch.CodecChange,
 			dropDecodeEvents:  false,
 			sharedOperations:  sharedOperations.Clone(),
 			privateOperations: privateOperations.Clone(),
@@ -911,31 +900,6 @@ func branchComposeGroupDecodeConfig(indices []int, branches []branchComposeRoute
 	return config, nil
 }
 
-func branchComposeGroupCodecChangePolicy(indices []int, branches []branchComposeRoute) (codecChangePolicy, error) {
-	var policy codecChangePolicy
-	var owner string
-	havePolicy := false
-	for _, index := range indices {
-		if index < 0 || index >= len(branches) {
-			continue
-		}
-		candidate := branches[index].codecChange
-		if !codecChangePolicySet(candidate) {
-			continue
-		}
-		if !havePolicy {
-			policy = candidate
-			owner = branches[index].name
-			havePolicy = true
-			continue
-		}
-		if policy != candidate {
-			return codecChangePolicy{}, branchComposeCodecChangeConflictError(owner, branches[index].name)
-		}
-	}
-	return policy, nil
-}
-
 func branchComposeGroupDropDecodeEvents(indices []int, branches []branchComposeRoute) bool {
 	if len(indices) == 0 {
 		return false
@@ -976,23 +940,6 @@ func branchComposeDecodeConfigConflictError(first string, second string) error {
 			"move shared decode config to the stream chain with .Decode(...)",
 			"use the same decode config for branches that share a decoder",
 		}),
-	}
-}
-
-func branchComposeCodecChangeConflictError(first string, second string) error {
-	return &BuildError{
-		Phase:     phaseBuild,
-		Family:    errcode.FamilyForCode(decodePolicyConflictCode),
-		Code:      decodePolicyConflictCode,
-		Operation: "build branch composition",
-		Node:      second,
-		Reason:    "branches that share one decoder declared different codec-change policies",
-		fields:    errDetails(errNote("first branch: "+first), errNote("conflicting branch: "+second)),
-		fixes: buildErrorFixes([]string{
-			"use the same codec-change policy for branches that share a decoder",
-			"split branches by stream selector when policies must differ",
-		}),
-		cause: errUnsupportedBuild,
 	}
 }
 

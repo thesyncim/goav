@@ -176,17 +176,6 @@ func (e *BuildError) MarshalJSON() ([]byte, error) {
 	return json.Marshal(doc)
 }
 
-// EffectivePhase returns the BuildError's lifecycle phase. Every BuildError now
-// sets Phase explicitly (pinned by TestEveryBuildErrorHasPhaseFamilyCodeReason),
-// so this is a nil-safe reader of that stated fact — no inference from the
-// operation string.
-func (e *BuildError) EffectivePhase() string {
-	if e == nil {
-		return ""
-	}
-	return e.Phase
-}
-
 func (e *BuildError) detailLines() []string {
 	if e == nil {
 		return nil
@@ -341,7 +330,6 @@ type jobStreamBuild struct {
 	selector    av.StreamSelector
 	input       string
 	operations  []operationSpec
-	codecChange codecChangePolicy
 	outputs     []destinationSpec
 	outputNames []string
 }

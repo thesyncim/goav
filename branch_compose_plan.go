@@ -38,7 +38,6 @@ func planBranchCompositionSnapshot(recipe recipeir.Recipe, input InputSpec, atta
 			SharedOperations:  operations.SharedFacts(),
 			PrivateOperations: operations.PrivateFacts(),
 			DecodeConfig:      operations.Decode(),
-			CodecChange:       rootCodecChangeFromRecipeIR(stream.CodecChange),
 			Encode:            encodeConfigFromSpec(encode),
 			Labels:            labels,
 		}

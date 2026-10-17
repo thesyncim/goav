@@ -831,9 +831,6 @@ func validateJobRecipeStreamShape(operation string, recipe recipeir.Recipe, stre
 	if err := validateRecipeEncode(recipeIRStreamEncodeSpec(stream), operation, stream.Name); err != nil {
 		return err
 	}
-	if err := validateCodecChangePolicy(operation, node, rootCodecChangeFromRecipeIR(stream.CodecChange)); err != nil {
-		return err
-	}
 	return validateJobRecipeStreamTransformShape(operation, stream)
 }
 

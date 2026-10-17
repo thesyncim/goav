@@ -526,8 +526,8 @@ const (
 	// EventDestinationCommitError reports a failed destination finalization.
 	EventDestinationCommitError EventType = "destination_commit_error"
 	// EventCodecChanged announces that a stream's codec parameters changed
-	// mid-run; Event.Codec carries the new parameters and decode chains apply
-	// their codec-change policy.
+	// mid-run; Event.Codec carries the new parameters, and decoders reset to
+	// them.
 	EventCodecChanged EventType = "codec_changed"
 	// EventDiscontinuity marks a timeline break (a seek landed, a receiver
 	// reset): downstream decoders reset and consumers re-sync on it.

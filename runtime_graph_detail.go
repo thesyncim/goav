@@ -75,11 +75,7 @@ func decodeNodeDetail(selector av.StreamSelector) string {
 }
 
 func decodeRequestDetail(request decodeRequest) string {
-	detail := decodeNodeDetail(request.selector)
-	if !codecChangePolicySet(request.codecChange) {
-		return detail
-	}
-	return joinSpecDetail(detail, codecChangePolicyDetail(request.codecChange))
+	return decodeNodeDetail(request.selector)
 }
 
 func encodeNodeDetail(request encodeRequest) string {

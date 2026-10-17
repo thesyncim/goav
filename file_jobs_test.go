@@ -11,6 +11,7 @@ import (
 	"github.com/thesyncim/goav/bundle"
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/container/webm"
+	"github.com/thesyncim/goav/filter"
 	"github.com/thesyncim/goav/shape"
 	"github.com/thesyncim/goav/source"
 )
@@ -95,5 +96,29 @@ func TestReadmeHeadlineRecipeRunsWithDefaults(t *testing.T) {
 	}
 	if got != frames {
 		t.Fatalf("output has %d packets, want %d", got, frames)
+	}
+}
+
+// TestResizeFitKeepsAspectRatio pins the resize-mode options from user code:
+// a 64x48 input fit into a 32x32 box keeps its 4:3 shape as 32x24.
+func TestResizeFitKeepsAspectRatio(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	in := encodeTestWebM(t, 3)
+	var out bytes.Buffer
+	if err := bundle.Run(ctx, goav.From(goav.FileInput("in.webm", bytes.NewReader(in))).
+		Video().
+		Decode().
+		Resize(32, 32, filter.Fit).
+		Encode(codec.VP8()).
+		To(goav.Write("out.webm", &out))); err != nil {
+		t.Fatalf("fit resize: %v", err)
+	}
+	demuxer, err := webm.NewDemuxer(bytes.NewReader(out.Bytes()), webm.DemuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tracks := demuxer.Tracks(); len(tracks) != 1 || tracks[0].Video.Width != 32 || tracks[0].Video.Height != 24 {
+		t.Fatalf("output tracks = %+v, want one 32x24 track", tracks)
 	}
 }

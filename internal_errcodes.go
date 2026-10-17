@@ -39,7 +39,6 @@ const (
 	packetBranchEncodeUnsupportedCode    errcode.Code = "packet_branch_encode_unsupported"
 	packetBranchTransformUnsupportedCode errcode.Code = "packet_branch_transform_unsupported"
 	decodeConfigConflictCode             errcode.Code = "decode_config_conflict"
-	decodePolicyConflictCode             errcode.Code = "decode_policy_conflict"
 
 	outputInvalidCode              errcode.Code = "output_invalid"
 	outputMissingCode              errcode.Code = "output_missing"
@@ -75,7 +74,6 @@ const (
 	encodeAdapterMissingCode         errcode.Code = "encode_adapter_missing"
 	encodeAdapterUnavailableCode     errcode.Code = "encode_adapter_unavailable"
 	encodeAdapterIncompatibleCode    errcode.Code = "encode_adapter_incompatible"
-	codecChangePolicyUnsupportedCode errcode.Code = "codec_change_policy_unsupported"
 	encodeMissingCode                errcode.Code = "encode_missing"
 	encodeDuplicateCode              errcode.Code = "encode_duplicate"
 	encodeParameterInvalidCode       errcode.Code = "encode_parameter_invalid"

@@ -434,7 +434,7 @@ func (b *BranchBuilder) Resize(width int, height int, options ...resizeOption) *
 	if !b.requireFrameInput("resize") {
 		return b
 	}
-	transform := Resize(width, height, options...)
+	transform := resizeSpec(width, height, options...)
 	b.spec.operations = append(b.spec.operations, operationSpecForTransform(transform))
 	return b
 }
@@ -450,7 +450,7 @@ func (b *BranchBuilder) Resample(sampleRate int, channels int, options ...audioO
 	if !b.requireFrameInput("resample") {
 		return b
 	}
-	transform := Resample(sampleRate, channels, options...)
+	transform := resampleSpec(sampleRate, channels, options...)
 	b.spec.operations = append(b.spec.operations, operationSpecForTransform(transform))
 	return b
 }

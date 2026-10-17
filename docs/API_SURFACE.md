@@ -389,8 +389,8 @@ Pre-v1, breaking renames land without aliases. The surface-hygiene wave moved
 five clusters off the root: the live control vocabulary is `control`
 (`Control`, `Keyframe`, `Rate`, `Seek`, `Segment`, `SetBitrate`,
 `SelectActive`, `Deliver`, `Must`), event subscription and structural helpers
-are `inspect` (`EventFilter`, `WatchTypes`, `WatchStream`, `Subscribe`,
-`Snapshot`, `Stats`, `Render`), the error catalog is `errcode` (renamed from
+are `inspect` (`EventFilter`, `Subscription`, `WatchTypes`, `WatchStream`;
+render graphs with `graphrender`), the error catalog is `errcode` (renamed from
 `codes`), the source/destination extension contracts are `provider`
 (`Source`, `Destination`, `Writer`, `TransactionalWriter`, `Contract`,
 `Info`, `OpenFunc`), and the expert graph layer is `expert` (`Graph`,

@@ -233,9 +233,8 @@ func newMediaPlanDecodeStreamGraph(rt *Runtime, inputs []InputSpec, outputs []de
 		stream:       stream,
 		sourceDomain: mediaPlanStreamInputDomain(inputs, stream),
 		decode: decodeRequest{
-			selector:    selector,
-			codecChange: stream.CodecChange,
-			config:      cloneCodecSpec(chainDecodeCodec(stream.Operations)),
+			selector: selector,
+			config:   cloneCodecSpec(chainDecodeCodec(stream.Operations)),
 		},
 	}
 	filters, err := mediaPlanStreamFilters(stream)
@@ -1576,10 +1575,8 @@ func (p mediaPlanStreamGraph) frameStreamBranchComposeRoutes() ([]branchComposeR
 			Selector:     p.decode.selector,
 			Input:        p.stream.Select.Input,
 			DecodeConfig: cloneCodecSpec(p.decode.config),
-			CodecChange:  p.decode.codecChange,
 		},
 		decode:           cloneCodecSpec(p.decode.config),
-		codecChange:      p.decode.codecChange,
 		dropDecodeEvents: p.encode == nil,
 		sourceDomain:     p.sourceDomain,
 		request:          request,
