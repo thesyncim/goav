@@ -1,11 +1,10 @@
-// Codec spec handling: merging, cloning, and encode and codec-change value validation.
+// Codec spec handling: merging, cloning, and encode value validation.
 
 package goav
 
 import (
 	"bytes"
 	"fmt"
-	"strings"
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
@@ -344,52 +343,4 @@ func validateRecipeEncodeValues(spec codec.Spec, operation string, node string) 
 	default:
 		return nil
 	}
-}
-
-func validateCodecChangePolicy(operation string, node string, policy codecChangePolicy) error {
-	if !codecChangePolicySet(policy) || policy == defaultCodecChangePolicy() {
-		return nil
-	}
-	return &BuildError{
-		Phase:     phaseBuild,
-		Family:    errcode.FamilyForCode(codecChangePolicyUnsupportedCode),
-		Code:      codecChangePolicyUnsupportedCode,
-		Operation: operation,
-		Node:      node,
-		Reason:    "custom codec-change policies are not implemented yet",
-		fields:    errDetails(errNote("supported: "+codecChangePolicyDetail(defaultCodecChangePolicy())), errNote("requested: "+codecChangePolicyDetail(policy))),
-		fixes: buildErrorFixes([]string{
-			"omit .OnCodecChange(...) to use the default live receive behavior",
-			"use packet-preserving goav.From(input).Copy().To(output) when codec changes should stay encoded",
-			"rebuild the job when a live stream switches to a different decoder codec",
-		}),
-		cause: errUnsupportedBuild,
-	}
-}
-
-func codecChangePolicySet(policy codecChangePolicy) bool {
-	return policy.RebindCompatible || policy.RequestKeyframe || policy.DropUntilSync || policy.FailOnDifferentCodec
-}
-
-func codecChangePolicyDetail(policy codecChangePolicy) string {
-	if !codecChangePolicySet(policy) {
-		return "codec-change=default"
-	}
-	parts := make([]string, 0, 4)
-	if policy.RebindCompatible {
-		parts = append(parts, "rebind-compatible")
-	}
-	if policy.RequestKeyframe {
-		parts = append(parts, "request-keyframe")
-	}
-	if policy.DropUntilSync {
-		parts = append(parts, "drop-until-sync")
-	}
-	if policy.FailOnDifferentCodec {
-		parts = append(parts, "fail-different-codec")
-	}
-	if len(parts) == 0 {
-		return "codec-change=custom"
-	}
-	return "codec-change=" + strings.Join(parts, ",")
 }

@@ -2099,7 +2099,7 @@ func TestTransformAdapterPassesRejectMissingFilters(t *testing.T) {
 				intent: intent{Streams: []streamIntent{{
 					Name:       "audio",
 					Select:     plan.StreamSelect{Type: av.MediaAudio},
-					Operations: []operationSpec{operationSpecForTransform(Resample(16_000, codec.Mono))},
+					Operations: []operationSpec{operationSpecForTransform(resampleSpec(16_000, codec.Mono))},
 				}}},
 			},
 			want: []string{"no resample filter adapter", "transform=resample", "bundle.MustNewFilters", ".Resample"},
@@ -2114,7 +2114,7 @@ func TestTransformAdapterPassesRejectMissingFilters(t *testing.T) {
 				intent: intent{Streams: []streamIntent{{
 					Name:       "720p",
 					Select:     plan.StreamSelect{Type: av.MediaVideo},
-					Operations: []operationSpec{operationSpecForTransform(Resize(1280, 720))},
+					Operations: []operationSpec{operationSpecForTransform(resizeSpec(1280, 720))},
 				}}},
 			},
 			want: []string{"no resize filter adapter", "transform=resize", "bundle.MustNewFilters", ".Resize"},
@@ -2163,7 +2163,7 @@ func TestTransformAdapterPassesRejectIncompatibleDescriptors(t *testing.T) {
 				intent: intent{Streams: []streamIntent{{
 					Name:       "audio",
 					Select:     plan.StreamSelect{Type: av.MediaAudio},
-					Operations: []operationSpec{operationSpecForTransform(Resample(16_000, codec.Mono))},
+					Operations: []operationSpec{operationSpecForTransform(resampleSpec(16_000, codec.Mono))},
 				}}},
 			},
 			want: []string{"resample filter adapter declares incompatible media", "expected_input=audio", "actual_input=video", "Audio().Resample"},
@@ -2182,7 +2182,7 @@ func TestTransformAdapterPassesRejectIncompatibleDescriptors(t *testing.T) {
 				intent: intent{Streams: []streamIntent{{
 					Name:       "720p",
 					Select:     plan.StreamSelect{Type: av.MediaVideo},
-					Operations: []operationSpec{operationSpecForTransform(Resize(1280, 720))},
+					Operations: []operationSpec{operationSpecForTransform(resizeSpec(1280, 720))},
 				}}},
 			},
 			want: []string{"resize filter adapter declares incompatible media", "expected_input=video", "actual_input=audio", "Video().Resize"},
@@ -2202,7 +2202,7 @@ func TestTransformAdapterPassesRejectIncompatibleDescriptors(t *testing.T) {
 				intent: intent{Streams: []streamIntent{{
 					Name:       "video",
 					Select:     plan.StreamSelect{Type: av.MediaVideo},
-					Operations: []operationSpec{operationSpecForTransform(Resize(1280, 720))},
+					Operations: []operationSpec{operationSpecForTransform(resizeSpec(1280, 720))},
 				}}},
 			},
 			want: []string{"does not support the requested resize mode", "field=resize_mode", "requested=exact", "supported=fill"},
@@ -2383,7 +2383,7 @@ func TestShapeErrorsReportExpectedAndActualShape(t *testing.T) {
 					Streams: []streamIntent{{
 						Name:         "audio",
 						Select:       plan.StreamSelect{Type: av.MediaAudio},
-						Operations:   append(decodeIntentOperations(), operationSpecForTransform(Resize(320, 180))),
+						Operations:   append(decodeIntentOperations(), operationSpecForTransform(resizeSpec(320, 180))),
 						Destinations: []string{"frames"},
 					}},
 					Destinations: []destinationIntent{{Name: "frames"}},
@@ -2403,7 +2403,7 @@ func TestShapeErrorsReportExpectedAndActualShape(t *testing.T) {
 						Name:   "video",
 						Select: plan.StreamSelect{Type: av.MediaVideo},
 						Operations: append(
-							append(decodeIntentOperations(), operationSpecForTransform(Resample(48_000, codec.Stereo))),
+							append(decodeIntentOperations(), operationSpecForTransform(resampleSpec(48_000, codec.Stereo))),
 							operationSpecForEncode(codec.VP9(codec.Bitrate(2_000_000))),
 						),
 						Destinations: []string{"web"},
@@ -2493,7 +2493,7 @@ func TestRecipeOperationShapePassRejectsInvalidOrderedOperations(t *testing.T) {
 				Operations: []operationSpec{
 					{Kind: plan.OpDecode, Decode: codec.VP8()},
 					{Kind: plan.OpShape, Component: "shape", Shape: shape.New(shape.Media(av.MediaAudio))},
-					{Kind: plan.OpTransform, Component: filter.FactoryResize, Transform: Resize(640, 360)},
+					{Kind: plan.OpTransform, Component: filter.FactoryResize, Transform: resizeSpec(640, 360)},
 				},
 				Destinations: []string{"frames"},
 			},
@@ -2716,7 +2716,7 @@ func TestJobIntentShapePassRejectsOperationTransforms(t *testing.T) {
 			stream: streamIntent{
 				Name:         "video",
 				Select:       plan.StreamSelect{Type: av.MediaVideo},
-				Operations:   append(decodeIntentOperations(), operationSpecForTransform(Resize(0, 720))),
+				Operations:   append(decodeIntentOperations(), operationSpecForTransform(resizeSpec(0, 720))),
 				Destinations: []string{"frames"},
 			},
 			code: "transform_invalid",
@@ -2727,7 +2727,7 @@ func TestJobIntentShapePassRejectsOperationTransforms(t *testing.T) {
 			stream: streamIntent{
 				Name:         "audio",
 				Select:       plan.StreamSelect{Type: av.MediaAudio},
-				Operations:   append(decodeIntentOperations(), operationSpecForTransform(Resize(320, 180))),
+				Operations:   append(decodeIntentOperations(), operationSpecForTransform(resizeSpec(320, 180))),
 				Destinations: []string{"frames"},
 			},
 			code: "transform_media_mismatch",
@@ -2774,7 +2774,7 @@ func TestMediaPlanTransformFiltersUseOperationSpecs(t *testing.T) {
 		Name:   "preview",
 		Select: plan.StreamSelect{Type: av.MediaVideo},
 		Operations: []operationSpec{
-			operationSpecForTransform(Resize(320, 180)),
+			operationSpecForTransform(resizeSpec(320, 180)),
 		},
 	}
 	filters, err := mediaPlanStreamTransformFilters(stream, av.StreamSelector{Type: av.MediaVideo})

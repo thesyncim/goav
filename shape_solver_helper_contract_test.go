@@ -113,7 +113,7 @@ func TestShapeSolverDiagnosticHelperContracts(t *testing.T) {
 		{name: "decode component", operation: operationSpec{Kind: plan.OpDecode, Component: "custom-decoder"}, want: "decode-custom-decoder"},
 		{name: "stage component", operation: operationSpec{Kind: plan.OpStage, Component: "meter"}, want: "stage-meter"},
 		{name: "stage fallback", operation: operationSpec{Kind: plan.OpStage}, want: "stage-custom"},
-		{name: "transform", operation: operationSpecForTransform(Resample(48_000, codec.Stereo)), want: "resample"},
+		{name: "transform", operation: operationSpecForTransform(resampleSpec(48_000, codec.Stereo)), want: "resample"},
 		{name: "default component", operation: operationSpec{Kind: plan.OpTap, Component: "tap"}, want: "tap"},
 		{name: "default kind", operation: operationSpec{Kind: plan.OpTap}, want: "tap"},
 		{name: "default fallback", operation: operationSpec{}, want: "operation"},
@@ -126,11 +126,11 @@ func TestShapeSolverDiagnosticHelperContracts(t *testing.T) {
 		})
 	}
 
-	if got, want := explicitConversionSuggestion(Resample(16_000, codec.Mono), operationSpecForEncode(codec.Opus())),
+	if got, want := explicitConversionSuggestion(resampleSpec(16_000, codec.Mono), operationSpecForEncode(codec.Opus())),
 		[]string{"insert .Resample(16000, 1) explicitly before encode-opus"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("resample suggestion = %#v, want %#v", got, want)
 	}
-	if got, want := explicitConversionSuggestion(Resize(640, 360), operationSpec{}),
+	if got, want := explicitConversionSuggestion(resizeSpec(640, 360), operationSpec{}),
 		[]string{"insert .Resize(640, 360) explicitly"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("resize suggestion = %#v, want %#v", got, want)
 	}

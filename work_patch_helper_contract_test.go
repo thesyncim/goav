@@ -22,7 +22,7 @@ func TestAttachOperationComponentContracts(t *testing.T) {
 		want      string
 	}{
 		{name: "decode codec", operation: operationSpec{Kind: plan.OpDecode, Decode: codec.Codec(av.CodecID("x_decode"), av.MediaAudio)}, want: "x_decode"},
-		{name: "transform factory", operation: operationSpec{Kind: plan.OpTransform, Transform: Resize(320, 180)}, want: "resize"},
+		{name: "transform factory", operation: operationSpec{Kind: plan.OpTransform, Transform: resizeSpec(320, 180)}, want: "resize"},
 		{name: "encode codec", operation: operationSpec{Kind: plan.OpEncode, Encode: codec.Codec(av.CodecID("x_encode"), av.MediaVideo)}, want: "x_encode"},
 		{name: "copy", operation: operationSpec{Kind: plan.OpCopy}, want: "packet-copy"},
 		{name: "explicit component", operation: operationSpec{Kind: plan.OpStage, Component: "custom-stage"}, stage: stage, want: "custom-stage"},

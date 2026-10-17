@@ -67,12 +67,11 @@ type Input struct {
 
 // Stream is one selected stream chain with ordered operations and output refs.
 type Stream struct {
-	Name        string
-	Selector    plan.StreamSelect
-	From        TapRef
-	Operations  []Operation
-	CodecChange CodecChangePolicy
-	Outputs     []OutputRef
+	Name       string
+	Selector   plan.StreamSelect
+	From       TapRef
+	Operations []Operation
+	Outputs    []OutputRef
 }
 
 // OutputRef names a destination declared on the recipe.
@@ -236,15 +235,6 @@ type Tap struct {
 type TapRef struct {
 	Name   string
 	Domain shape.MediaDomain
-}
-
-// CodecChangePolicy mirrors the recipe codec-change data without importing
-// the root package.
-type CodecChangePolicy struct {
-	RebindCompatible     bool
-	RequestKeyframe      bool
-	DropUntilSync        bool
-	FailOnDifferentCodec bool
 }
 
 // Path is a stable recipe location for future diagnostics.

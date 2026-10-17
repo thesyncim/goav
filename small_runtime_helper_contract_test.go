@@ -91,32 +91,6 @@ func TestBuildErrorAndCompilerPassErrorContracts(t *testing.T) {
 	if !errors.Is(buildErr, cause) {
 		t.Fatalf("BuildError did not unwrap cause: %v", buildErr)
 	}
-	if got := nilBuildErr.EffectivePhase(); got != "" {
-		t.Fatalf("nil BuildError phase = %q, want empty", got)
-	}
-	// Phase is now a stated fact, never inferred from the operation string:
-	// EffectivePhase reads the explicit Phase (empty for an unset/zero error).
-	phaseTests := []struct {
-		name string
-		err  *BuildError
-		want string
-	}{
-		{name: "unset", err: &BuildError{}, want: ""},
-		{name: "build", err: &BuildError{Phase: phaseBuild, Operation: "build stream"}, want: phaseBuild},
-		{name: "open", err: &BuildError{Phase: phaseOpen, Operation: "open input"}, want: phaseOpen},
-		{name: "run", err: &BuildError{Phase: phaseRun, Operation: "run task"}, want: phaseRun},
-		{name: "close", err: &BuildError{Phase: phaseClose, Operation: "close graph"}, want: phaseClose},
-		{name: "explicit overrides operation verb", err: &BuildError{
-			Phase:     phaseOpen,
-			Operation: "build stream"}, want: phaseOpen},
-	}
-	for _, tt := range phaseTests {
-		t.Run("phase/"+tt.name, func(t *testing.T) {
-			if got := tt.err.EffectivePhase(); got != tt.want {
-				t.Fatalf("EffectivePhase() = %q, want %q", got, tt.want)
-			}
-		})
-	}
 
 	plain := errors.New("plain")
 	if got := compilerPassError("compile", "lower", plain); got != plain {

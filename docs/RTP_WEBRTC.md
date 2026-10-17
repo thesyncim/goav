@@ -123,8 +123,8 @@ err := goav.From(goav.Input(webrtcav.Track(track))).
     Run(ctx)
 ```
 
-Custom codec-change policies remain internal and fail during recipe build until
-dynamic decoder rebind exists. Session-level code owns when renegotiation calls
+Decoders handle a codec change with one built-in behavior (dynamic decoder
+rebind is not implemented). Session-level code owns when renegotiation calls
 `UpdateCodec`.
 
 ## Feedback

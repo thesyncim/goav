@@ -153,9 +153,8 @@ type encodeRequest struct {
 }
 
 type decodeRequest struct {
-	selector    av.StreamSelector
-	codecChange codecChangePolicy
-	config      codec.Spec
+	selector av.StreamSelector
+	config   codec.Spec
 }
 
 type filterRequest struct {

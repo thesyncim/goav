@@ -22,7 +22,7 @@ func TestOperationSpecsContainChainStepContracts(t *testing.T) {
 		{name: "prefer annotation is not a chain step", operation: operationSpecForPreference(shape.Frame(av.MediaVideo))},
 		{name: "shape facts are a chain step", operation: operationSpecForShape(shape.Frame(av.MediaVideo)), wantIsStep: true},
 		{name: "custom stage is a chain step", operation: operationSpec{Kind: plan.OpStage}, wantIsStep: true},
-		{name: "transform is a chain step", operation: operationSpecForTransform(Resize(320, 180)), wantIsStep: true},
+		{name: "transform is a chain step", operation: operationSpecForTransform(resizeSpec(320, 180)), wantIsStep: true},
 		{name: "packet tap is not a frame chain step", operation: operationSpecForTap(PacketTap("packets"), av.MediaAudio, plan.OpEncode)},
 		{name: "frame tap is a chain step", operation: operationSpecForTap(FrameTap("frames"), av.MediaAudio, plan.OpDecode), wantIsStep: true},
 		{name: "typed frame tap is a chain step", operation: operationSpecForTap(FrameTap("decoded"), av.MediaAudio, plan.OpDecode), wantIsStep: true},
@@ -52,7 +52,7 @@ func TestJobStreamOperationHelperContracts(t *testing.T) {
 		selector: av.StreamSelector{Type: av.MediaAudio, ID: "a0", Codec: av.CodecOpus},
 		operations: []operationSpec{
 			operationSpecForDecode(codec.Opus(), "opus"),
-			operationSpecForTransform(Resample(16_000, codec.Mono)),
+			operationSpecForTransform(resampleSpec(16_000, codec.Mono)),
 			operationSpecForAutoPolicy([]shape.Policy{shape.AllowResample()}),
 			operationSpecForRequire(shape.Frame(av.MediaAudio, shape.Audio(16_000, codec.Mono, ""))),
 			operationSpecForPreference(shape.Frame(av.MediaAudio, shape.Audio(0, 0, av.SampleFormatF32))),
@@ -116,7 +116,7 @@ func TestJobStreamNameAndChainStepContracts(t *testing.T) {
 	}
 	stream := &jobStreamBuild{
 		operations: []operationSpec{
-			operationSpecForTransform(Resize(160, 90)),
+			operationSpecForTransform(resizeSpec(160, 90)),
 			operationSpecForTap(FrameTap("preview.frames"), av.MediaVideo, plan.OpTransform),
 			operationSpecForTap(PacketTap("preview.packets"), av.MediaVideo, plan.OpEncode),
 		},
@@ -142,7 +142,7 @@ func TestPlannedBranchSharedOperationSpecsContracts(t *testing.T) {
 		selector: av.StreamSelector{Type: av.MediaAudio, Codec: av.CodecOpus},
 		operations: []operationSpec{
 			operationSpecForDecode(codec.Opus(), "opus"),
-			operationSpecForTransform(Resample(16_000, codec.Mono)),
+			operationSpecForTransform(resampleSpec(16_000, codec.Mono)),
 			operationSpecForTap(FrameTap("voice.frames"), av.MediaAudio, plan.OpTransform),
 			operationSpecForEncode(codec.Opus(codec.Bitrate(64_000))),
 		},

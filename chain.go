@@ -607,7 +607,7 @@ func (b *jobStreamBuilder) Resize(width int, height int, options ...resizeOption
 	if !b.requireFrameInput(stream, "resize") {
 		return b
 	}
-	transform := Resize(width, height, options...)
+	transform := resizeSpec(width, height, options...)
 	stream.operations = append(stream.operations, operationSpecForTransform(transform))
 	return b
 }
@@ -621,7 +621,7 @@ func (b *jobStreamBuilder) Resample(sampleRate int, channels int, options ...aud
 	if !b.requireFrameInput(stream, "resample") {
 		return b
 	}
-	transform := Resample(sampleRate, channels, options...)
+	transform := resampleSpec(sampleRate, channels, options...)
 	stream.operations = append(stream.operations, operationSpecForTransform(transform))
 	return b
 }
@@ -639,12 +639,6 @@ func (b *jobStreamBuilder) Encode(codec codec.Spec) *jobStreamBuilder {
 		return b
 	}
 	stream.operations = append(stream.operations, operationSpecForEncode(cloneCodecSpec(codec)))
-	return b
-}
-
-func (b *jobStreamBuilder) OnCodecChange(policy codecChangePolicy) *jobStreamBuilder {
-	stream := b.current()
-	stream.codecChange = policy
 	return b
 }
 

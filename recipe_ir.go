@@ -277,10 +277,9 @@ func inputIntentsFromRecipeIR(inputs []recipeir.Input) []inputIntent {
 
 func recipeIRStreamFromIntent(in streamIntent) recipeir.Stream {
 	out := recipeir.Stream{
-		Name:        in.Name,
-		Selector:    in.Select,
-		From:        recipeIRTapRefFromRoot(in.From),
-		CodecChange: recipeIRCodecChangeFromRoot(in.CodecChange),
+		Name:     in.Name,
+		Selector: in.Select,
+		From:     recipeIRTapRefFromRoot(in.From),
 	}
 	for i := range in.Operations {
 		out.Operations = append(out.Operations, recipeIROperationFromSpec(in.Operations[i]))
@@ -293,10 +292,9 @@ func recipeIRStreamFromIntent(in streamIntent) recipeir.Stream {
 
 func streamIntentFromRecipeIR(in recipeir.Stream) streamIntent {
 	out := streamIntent{
-		Name:        in.Name,
-		Select:      in.Selector,
-		From:        rootTapRefFromRecipeIR(in.From),
-		CodecChange: rootCodecChangeFromRecipeIR(in.CodecChange),
+		Name:   in.Name,
+		Select: in.Selector,
+		From:   rootTapRefFromRecipeIR(in.From),
 	}
 	for i := range in.Operations {
 		out.Operations = append(out.Operations, operationSpecFromRecipeIR(in.Operations[i]))
@@ -526,24 +524,6 @@ func recipeIRRuntimeBranchSourceFromRoot(in branchSourceBinding) recipeir.Runtim
 		out.StreamPresent = true
 	}
 	return out
-}
-
-func recipeIRCodecChangeFromRoot(in codecChangePolicy) recipeir.CodecChangePolicy {
-	return recipeir.CodecChangePolicy{
-		RebindCompatible:     in.RebindCompatible,
-		RequestKeyframe:      in.RequestKeyframe,
-		DropUntilSync:        in.DropUntilSync,
-		FailOnDifferentCodec: in.FailOnDifferentCodec,
-	}
-}
-
-func rootCodecChangeFromRecipeIR(in recipeir.CodecChangePolicy) codecChangePolicy {
-	return codecChangePolicy{
-		RebindCompatible:     in.RebindCompatible,
-		RequestKeyframe:      in.RequestKeyframe,
-		DropUntilSync:        in.DropUntilSync,
-		FailOnDifferentCodec: in.FailOnDifferentCodec,
-	}
 }
 
 func recipeIRTransformFromRoot(in transformSpec) recipeir.Transform {

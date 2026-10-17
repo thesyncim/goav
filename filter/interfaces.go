@@ -106,6 +106,16 @@ const (
 	ResizePassthrough ResizeMode = "passthrough"
 )
 
+// Fit and Fill are .Resize options that pick the scaling mode; exact (stretch
+// to the target) is the default:
+//
+//	.Resize(1280, 720, filter.Fit)  // keep the aspect ratio inside 1280x720
+//	.Resize(1280, 720, filter.Fill) // keep the aspect ratio, crop to cover it
+func Fit(config *ResizeConfig) { config.Mode = ResizeFit }
+
+// Fill is the .Resize option for crop-to-cover scaling; see Fit.
+func Fill(config *ResizeConfig) { config.Mode = ResizeFill }
+
 // ResampleConfig is an audio conversion target: output rate, channels, and
 // optional layout and sample format.
 type ResampleConfig struct {

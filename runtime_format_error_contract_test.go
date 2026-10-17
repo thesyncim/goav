@@ -127,8 +127,8 @@ func TestRuntimeFormatErrorContracts(t *testing.T) {
 			if buildErr.Operation != tt.operation || buildErr.Node != tt.node || buildErr.Reason != tt.reason {
 				t.Fatalf("BuildError = %+v, want operation=%q node=%q reason=%q", buildErr, tt.operation, tt.node, tt.reason)
 			}
-			if buildErr.Phase != phaseOpen || buildErr.EffectivePhase() != phaseOpen {
-				t.Fatalf("phase = %q effective=%q, want %q", buildErr.Phase, buildErr.EffectivePhase(), phaseOpen)
+			if buildErr.Phase != phaseOpen {
+				t.Fatalf("phase = %q, want %q", buildErr.Phase, phaseOpen)
 			}
 			if !errors.Is(buildErr, cause) {
 				t.Fatalf("BuildError does not unwrap %v: %+v", cause, buildErr)

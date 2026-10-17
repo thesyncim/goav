@@ -105,7 +105,7 @@ func TestFlowChainAccessorsAndNilSafety(t *testing.T) {
 		t.Fatalf("nil builder taps() = %#v, want nil", got)
 	}
 	builder.decode()
-	builder.transform(Resize(16, 16))
+	builder.transform(resizeSpec(16, 16))
 	builder.stage(nil)
 	builder.shape(shape.Frame(av.MediaVideo))
 	builder.auto([]shape.Policy{shape.AllowResize()})
@@ -247,10 +247,10 @@ func TestAudioFlowShapePreferenceCopyAndTapContracts(t *testing.T) {
 	if got := chainTransformStepName(transformSpec{}); got != "transform" {
 		t.Fatalf("chainTransformStepName(empty) = %q, want transform", got)
 	}
-	if got := chainTransformStepName(Resize(320, 180)); got != "resize" {
+	if got := chainTransformStepName(resizeSpec(320, 180)); got != "resize" {
 		t.Fatalf("chainTransformStepName(resize) = %q, want resize", got)
 	}
-	if got := chainTransformStepName(Resample(48_000, codec.Stereo)); got != "resample" {
+	if got := chainTransformStepName(resampleSpec(48_000, codec.Stereo)); got != "resample" {
 		t.Fatalf("chainTransformStepName(resample) = %q, want resample", got)
 	}
 }

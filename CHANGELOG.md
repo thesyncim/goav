@@ -11,6 +11,20 @@ methodology changes, and migration notes.
 
 ## Unreleased
 
+- API purge (**breaking**): removed exports that could not be used or only
+  restated something else.
+  - `inspect.Render`, `Snapshot`, `Stats`, `Subscribe`: one-line wrappers.
+    Use the task's own methods, and `graphrender` for flowcharts.
+  - `BuildError.EffectivePhase`: it returned `Phase`.
+  - `OnCodecChange`: its parameter type could not be constructed outside the
+    package. The never-settable codec-change policy plumbing behind it, and
+    its two unreachable refusal codes, are gone too.
+  - Top-level `goav.Resize`/`goav.Resample`: they returned a type no public
+    API accepted. The `.Resize`/`.Resample` chain methods are unchanged.
+  - Resize modes are now first-class options:
+    `.Resize(1280, 720, filter.Fit)` keeps the aspect ratio inside the box,
+    and `filter.Fill` crops to cover it.
+
 - MP4 and H.264 correctness:
   - The MP4 demuxer converts H.264 samples from length-prefixed (AVCC) to
     Annex B on read, which is the convention inside goav and what Matroska

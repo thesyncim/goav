@@ -90,7 +90,7 @@ func TestPlanOperationSpecsContracts(t *testing.T) {
 				Select: plan.StreamSelect{Type: av.MediaAudio},
 				Operations: []operationSpec{
 					operationSpecForDecode(codec.Opus(), "custom-opus-decoder"),
-					operationSpecForTransform(Resample(16_000, codec.Mono)),
+					operationSpecForTransform(resampleSpec(16_000, codec.Mono)),
 					operationSpecForEncode(codec.Opus(codec.Bitrate(64_000))),
 				},
 			},
