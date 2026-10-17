@@ -91,7 +91,7 @@ Match with `errors.As` and switch on `Family` (`encode`), then `Code` (`encode_m
 | Audio | Opus, AAC-LC | Opus |
 | Containers | Matroska, WebM, IVF, MP4 | Matroska, WebM, IVF, Annex B (H.264) |
 
-Filters: `Resize` (I420, nearest-neighbor today) and `Resample` (S16 PCM). Backends are separate
+Filters: `Resize` (I420, area-averaged downscale) and `Resample` (S16 PCM). Backends are separate
 pure-Go modules (`govpx`, `goav1`, `gopus`, `goaac`, `goh264`). `goav.New(...)` builds a
 per-service runtime with exactly the adapters you register (`bundle.New(...)` starts from this
 set); there is no global registry. Full matrix: [Adapters](docs/ADAPTERS.md).

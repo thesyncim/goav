@@ -71,13 +71,15 @@ func TestFilterResizesI420Exact(t *testing.T) {
 	if output.Video == nil || output.Video.Width != 2 || output.Video.Height != 2 || output.Video.PixelFormat != av.PixelFormatYUV420P {
 		t.Fatalf("video = %+v", output.Video)
 	}
-	if got, want := output.Planes[0].Buffer.Bytes, []byte{0, 2, 8, 10}; !bytes.Equal(got, want) {
+	// Downscaling averages area: each output sample is its 2x2 block's mean,
+	// rounded half up.
+	if got, want := output.Planes[0].Buffer.Bytes, []byte{3, 5, 11, 13}; !bytes.Equal(got, want) {
 		t.Fatalf("y = %v, want %v", got, want)
 	}
-	if got, want := output.Planes[1].Buffer.Bytes, []byte{100}; !bytes.Equal(got, want) {
+	if got, want := output.Planes[1].Buffer.Bytes, []byte{102}; !bytes.Equal(got, want) {
 		t.Fatalf("u = %v, want %v", got, want)
 	}
-	if got, want := output.Planes[2].Buffer.Bytes, []byte{200}; !bytes.Equal(got, want) {
+	if got, want := output.Planes[2].Buffer.Bytes, []byte{202}; !bytes.Equal(got, want) {
 		t.Fatalf("v = %v, want %v", got, want)
 	}
 	for i := range output.Planes {

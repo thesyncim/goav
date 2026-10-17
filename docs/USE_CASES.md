@@ -477,5 +477,5 @@ recording after RTP depacketization.
 Audio filters express sample rate, channel count/layout, and sample format; the
 first concrete adapter covers interleaved `s16` PCM with linear conversion.
 Video filters express exact, fit, fill, and passthrough modes; the first
-concrete adapter covers planar 8-bit 4:2:0 frames with nearest-neighbor scaling
-and caller-owned output planes.
+concrete adapter covers planar 8-bit 4:2:0 frames with area-averaged
+downscaling, linear upscaling, and caller-owned output planes.
