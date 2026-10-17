@@ -28,13 +28,13 @@ func TestStreamSelectorOptionsCarryStableMetadata(t *testing.T) {
 }
 
 func TestJobStreamBuilderJoinArmAndCurrentContracts(t *testing.T) {
-	var nilBuilder *jobStreamBuilder
+	var nilBuilder *Chain
 	if arm := nilBuilder.joinArm(); arm.chainInputOK || arm.chainErr != nil || len(arm.chainOperations) != 0 || arm.join != nil || arm.tap != nil || arm.region != nil {
 		t.Fatalf("nil stream join arm = %+v, want zero", arm)
 	}
 
 	job := &Job{}
-	builder := &jobStreamBuilder{job: job}
+	builder := &Chain{job: job}
 	first := builder.current()
 	if first == nil || len(job.streams) != 1 || job.streams[0] != first {
 		t.Fatalf("first current stream = %+v job streams=%d", first, len(job.streams))
@@ -45,7 +45,7 @@ func TestJobStreamBuilderJoinArmAndCurrentContracts(t *testing.T) {
 
 	existing := &jobStreamBuild{name: "existing"}
 	job = &Job{streams: []*jobStreamBuild{existing}}
-	builder = &jobStreamBuilder{job: job}
+	builder = &Chain{job: job}
 	created := builder.current()
 	if created == nil || created == existing || len(job.streams) != 1 || job.streams[0] != existing {
 		t.Fatalf("current with existing job stream = created %+v job streams=%+v", created, job.streams)

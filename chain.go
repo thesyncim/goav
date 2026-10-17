@@ -1,4 +1,4 @@
-// The per-stream chain builder: stream selection options and the jobStreamBuilder fluent methods.
+// The per-stream chain builder: stream selection options and the Chain fluent methods.
 
 package goav
 
@@ -37,6 +37,25 @@ func validateRecipeStreamSelector(operation string, node string, selector av.Str
 
 func codecIntentSet(spec codec.Spec) bool {
 	return spec.ID != "" || spec.Auto || spec.Copy
+}
+
+// chainEndedError refuses an operation on a chain that already ended at
+// .To(...): the step would land after the destinations. It is how reusing one
+// chain value as a fork shows up, so the fixes name the two real forks.
+func chainEndedError(node string) error {
+	return &BuildError{
+		Phase:     phaseBuild,
+		Family:    errcode.FamilyForCode(streamStepAfterDestinationCode),
+		Code:      streamStepAfterDestinationCode,
+		Operation: "build stream",
+		Node:      node,
+		Reason:    "this chain already ended at .To(...); operations cannot follow its destinations",
+		fixes: buildErrorFixes([]string{
+			"fan one stream out with .Branches(goav.Branch(name)...To(dst), ...) instead of reusing a chain value",
+			"start another stream from the job with .Audio() or .Video() for separate work",
+		}),
+		cause: errUnsupportedBuild,
+	}
 }
 
 func chainStepAfterEncodeError(operation string, node string, step string, encode codec.Spec) error {
@@ -237,7 +256,13 @@ func InputName(name string) StreamOption {
 	}
 }
 
-type jobStreamBuilder struct {
+// Chain is one stream's operation list under construction: Audio() or Video()
+// on a job starts it, operations extend it in order, and To(...) or
+// Branches(...) ends it. Helpers can take and return *Chain to package reusable
+// steps. Methods extend the chain in place and return it for chaining; a chain
+// that already ended at To(...) refuses further operations, so fork one
+// stream with Branches(...) rather than by reusing a chain value.
+type Chain struct {
 	job    *Job
 	stream *jobStreamBuild
 	region *compositeRegion
@@ -245,7 +270,7 @@ type jobStreamBuilder struct {
 
 // Region places this arm's frame at (x, y) on the composite canvas. It is
 // composite-only — it has no effect on arms outside a Composite.
-func (b *jobStreamBuilder) Region(x, y int) *jobStreamBuilder {
+func (b *Chain) Region(x, y int) *Chain {
 	b.region = &compositeRegion{x: x, y: y}
 	return b
 }
@@ -253,7 +278,7 @@ func (b *jobStreamBuilder) Region(x, y int) *jobStreamBuilder {
 // joinArm lets a source chain stand as one arm of a join (Mix, Composite,
 // Select) — the original arm shape, kept compiling unchanged behind the
 // sealed JoinArm interface.
-func (b *jobStreamBuilder) joinArm() joinArmSpec {
+func (b *Chain) joinArm() joinArmSpec {
 	if b == nil {
 		return joinArmSpec{}
 	}
@@ -271,12 +296,12 @@ func (b *jobStreamBuilder) joinArm() joinArmSpec {
 	return spec
 }
 
-func (b *jobStreamBuilder) sourceStartsFrameDomain() bool {
+func (b *Chain) sourceStartsFrameDomain() bool {
 	spec, ok := b.sourceFrameShape()
 	return ok && spec.Domain == shape.DomainFrame
 }
 
-func (b *jobStreamBuilder) sourceFrameShape() (shape.Spec, bool) {
+func (b *Chain) sourceFrameShape() (shape.Spec, bool) {
 	if b == nil || b.job == nil || len(b.job.inputs) == 0 {
 		return shape.Spec{}, false
 	}
@@ -317,7 +342,7 @@ func stageRequiresFrameInput(stage pipeline.Stage) bool {
 	return true
 }
 
-func (b *jobStreamBuilder) requireFrameInput(stream *jobStreamBuild, step string) bool {
+func (b *Chain) requireFrameInput(stream *jobStreamBuild, step string) bool {
 	if b.sourceStartsFrameDomain() {
 		return true
 	}
@@ -328,7 +353,7 @@ func (b *jobStreamBuilder) requireFrameInput(stream *jobStreamBuild, step string
 	return false
 }
 
-func (b *jobStreamBuilder) requireFrameTapInput(stream *jobStreamBuild) bool {
+func (b *Chain) requireFrameTapInput(stream *jobStreamBuild) bool {
 	if b.sourceStartsFrameDomain() || chainHasDecode(stream.operations) {
 		return true
 	}
@@ -370,13 +395,13 @@ func frameSourceCopyError(operation string, node string) error {
 	}
 }
 
-func (b *jobStreamBuilder) Apply(flow chain) *jobStreamBuilder {
+func (b *Chain) Apply(flow chain) *Chain {
 	spec, err := chainSpecFrom(flow)
 	if err != nil {
 		b.job.setErr(err)
 		return b
 	}
-	stream := b.current()
+	stream := b.step()
 	if err := validateChainMedia("build stream", jobStreamName(stream), stream.selector.Type, spec); err != nil {
 		b.job.setErr(err)
 		return b
@@ -421,8 +446,8 @@ func (b *jobStreamBuilder) Apply(flow chain) *jobStreamBuilder {
 	return b
 }
 
-func (b *jobStreamBuilder) Decode(options ...codec.Option) *jobStreamBuilder {
-	stream := b.current()
+func (b *Chain) Decode(options ...codec.Option) *Chain {
+	stream := b.step()
 	if b.sourceStartsFrameDomain() {
 		b.job.setErr(frameSourceDecodeError("build stream", jobStreamName(stream)))
 		return b
@@ -432,8 +457,8 @@ func (b *jobStreamBuilder) Decode(options ...codec.Option) *jobStreamBuilder {
 	return b
 }
 
-func (b *jobStreamBuilder) Copy() *jobStreamBuilder {
-	stream := b.current()
+func (b *Chain) Copy() *Chain {
+	stream := b.step()
 	if b.sourceStartsFrameDomain() {
 		b.job.setErr(frameSourceCopyError("build stream", jobStreamName(stream)))
 		return b
@@ -442,8 +467,8 @@ func (b *jobStreamBuilder) Copy() *jobStreamBuilder {
 	return b
 }
 
-func (b *jobStreamBuilder) Tap(tap tapRef) *jobStreamBuilder {
-	stream := b.current()
+func (b *Chain) Tap(tap tapRef) *Chain {
+	stream := b.step()
 	if tap.name == "" {
 		b.job.setErr(&BuildError{
 			Phase:     phaseBuild,
@@ -514,8 +539,8 @@ func lastStreamTapRef(stream *jobStreamBuild) tapRef {
 	return tapRef{}
 }
 
-func (b *jobStreamBuilder) Do(stages ...pipeline.Stage) *jobStreamBuilder {
-	stream := b.current()
+func (b *Chain) Do(stages ...pipeline.Stage) *Chain {
+	stream := b.step()
 	for i := range stages {
 		if codecIntentSet(chainEncodeSpec(stream.operations)) {
 			b.job.setErr(chainStepAfterEncodeError("build stream", jobStreamName(stream), "custom stage", chainEncodeSpec(stream.operations)))
@@ -535,8 +560,8 @@ func (b *jobStreamBuilder) Do(stages ...pipeline.Stage) *jobStreamBuilder {
 
 // Sync places this stream chain on a shared media timeline. Reuse one
 // flow.SyncPolicy value across audio/video chains or branches to align them.
-func (b *jobStreamBuilder) Sync(policy flow.SyncPolicy) *jobStreamBuilder {
-	stream := b.current()
+func (b *Chain) Sync(policy flow.SyncPolicy) *Chain {
+	stream := b.step()
 	stream.operations = append(stream.operations, operationSpecForSync(policy))
 	return b
 }
@@ -545,8 +570,8 @@ func (b *jobStreamBuilder) Sync(policy flow.SyncPolicy) *jobStreamBuilder {
 // message's media time is due on the task timeline, so real-time destinations
 // render on time. Reuse one flow.PlayoutPolicy value across audio/video chains
 // or branches to align their delivery on the shared anchor.
-func (b *jobStreamBuilder) Playout(policy flow.PlayoutPolicy) *jobStreamBuilder {
-	stream := b.current()
+func (b *Chain) Playout(policy flow.PlayoutPolicy) *Chain {
+	stream := b.step()
 	stream.operations = append(stream.operations, operationSpecForPlayout(policy))
 	return b
 }
@@ -558,8 +583,8 @@ func (b *jobStreamBuilder) Playout(policy flow.PlayoutPolicy) *jobStreamBuilder 
 // planned operation — visible in Describe and reported as an Explain
 // diagnostic. The policy applies to the whole chain; zero policies allow
 // nothing, so every needed conversion is refused with the exact policy to add.
-func (b *jobStreamBuilder) Auto(policies ...shape.Policy) *jobStreamBuilder {
-	stream := b.current()
+func (b *Chain) Auto(policies ...shape.Policy) *Chain {
+	stream := b.step()
 	stream.operations = append(stream.operations, operationSpecForAutoPolicy(policies))
 	return b
 }
@@ -570,8 +595,8 @@ func (b *jobStreamBuilder) Auto(policies ...shape.Policy) *jobStreamBuilder {
 // including the .Auto(...) policy to add when a conversion could satisfy it
 // (an active policy that covers the conversion inserts it, and the
 // requirement holds by construction). The assertion lowers to no runtime node.
-func (b *jobStreamBuilder) Require(spec shape.Spec) *jobStreamBuilder {
-	stream := b.current()
+func (b *Chain) Require(spec shape.Spec) *Chain {
+	stream := b.step()
 	stream.operations = append(stream.operations, operationSpecForRequire(spec))
 	return b
 }
@@ -582,14 +607,14 @@ func (b *jobStreamBuilder) Require(spec shape.Spec) *jobStreamBuilder {
 // adapters whose declared capabilities cover the preference. A preference is
 // soft by definition — it never fails the build; one that cannot be honored is
 // dropped and surfaced as an Explain diagnostic. It lowers to no runtime node.
-func (b *jobStreamBuilder) Prefer(spec shape.Spec) *jobStreamBuilder {
-	stream := b.current()
+func (b *Chain) Prefer(spec shape.Spec) *Chain {
+	stream := b.step()
 	stream.operations = append(stream.operations, operationSpecForPreference(spec))
 	return b
 }
 
-func (b *jobStreamBuilder) Shape(shape shape.Spec) *jobStreamBuilder {
-	stream := b.current()
+func (b *Chain) Shape(shape shape.Spec) *Chain {
+	stream := b.step()
 	if codecIntentSet(chainEncodeSpec(stream.operations)) {
 		b.job.setErr(chainStepAfterEncodeError("build stream", jobStreamName(stream), "shape", chainEncodeSpec(stream.operations)))
 		return b
@@ -598,8 +623,8 @@ func (b *jobStreamBuilder) Shape(shape shape.Spec) *jobStreamBuilder {
 	return b
 }
 
-func (b *jobStreamBuilder) Resize(width int, height int, options ...resizeOption) *jobStreamBuilder {
-	stream := b.current()
+func (b *Chain) Resize(width int, height int, options ...resizeOption) *Chain {
+	stream := b.step()
 	if codecIntentSet(chainEncodeSpec(stream.operations)) {
 		b.job.setErr(chainStepAfterEncodeError("build stream", jobStreamName(stream), "resize", chainEncodeSpec(stream.operations)))
 		return b
@@ -612,8 +637,8 @@ func (b *jobStreamBuilder) Resize(width int, height int, options ...resizeOption
 	return b
 }
 
-func (b *jobStreamBuilder) Resample(sampleRate int, channels int, options ...audioOption) *jobStreamBuilder {
-	stream := b.current()
+func (b *Chain) Resample(sampleRate int, channels int, options ...audioOption) *Chain {
+	stream := b.step()
 	if codecIntentSet(chainEncodeSpec(stream.operations)) {
 		b.job.setErr(chainStepAfterEncodeError("build stream", jobStreamName(stream), "resample", chainEncodeSpec(stream.operations)))
 		return b
@@ -626,8 +651,8 @@ func (b *jobStreamBuilder) Resample(sampleRate int, channels int, options ...aud
 	return b
 }
 
-func (b *jobStreamBuilder) Encode(codec codec.Spec) *jobStreamBuilder {
-	stream := b.current()
+func (b *Chain) Encode(codec codec.Spec) *Chain {
+	stream := b.step()
 	if codecIntentSet(chainEncodeSpec(stream.operations)) {
 		b.job.setErr(duplicateStreamEncodeError("build stream", jobStreamName(stream), chainEncodeSpec(stream.operations), codec))
 		return b
@@ -642,7 +667,7 @@ func (b *jobStreamBuilder) Encode(codec codec.Spec) *jobStreamBuilder {
 	return b
 }
 
-func (b *jobStreamBuilder) To(destinations ...Destination) *Job {
+func (b *Chain) To(destinations ...Destination) *Job {
 	stream := b.current()
 	outputs := make([]destinationSpec, 0, len(destinations))
 	for i := range destinations {
@@ -668,7 +693,19 @@ func (b *jobStreamBuilder) To(destinations ...Destination) *Job {
 	return b.job
 }
 
-func (b *jobStreamBuilder) current() *jobStreamBuild {
+// step returns the stream an operation extends. A chain that already ended at
+// .To(...) cannot grow: the operation is refused, and it lands on a detached
+// scratch stream so the job's real stream stays intact.
+func (b *Chain) step() *jobStreamBuild {
+	stream := b.current()
+	if len(stream.outputs) == 0 {
+		return stream
+	}
+	b.job.setErr(chainEndedError(jobStreamName(stream)))
+	return &jobStreamBuild{selector: stream.selector, name: stream.name}
+}
+
+func (b *Chain) current() *jobStreamBuild {
 	if b.stream != nil {
 		return b.stream
 	}

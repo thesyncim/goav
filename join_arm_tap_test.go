@@ -496,7 +496,7 @@ func TestJoinTapHelperCollectionContracts(t *testing.T) {
 
 	root := Mix(
 		nil,
-		&jobStreamBuilder{stream: &jobStreamBuild{operations: []operationSpec{{Kind: plan.OpTap, Tap: tapIntent{Name: ""}}}}},
+		&Chain{stream: &jobStreamBuild{operations: []operationSpec{{Kind: plan.OpTap, Tap: tapIntent{Name: ""}}}}},
 		From(mixTestAudioSource("a", 1)).Audio().Tap(FrameTap("dry")),
 		From(mixTestAudioSource("b", 1)).Audio().Tap(FrameTap("dry")),
 		Mix(
