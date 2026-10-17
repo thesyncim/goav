@@ -249,9 +249,11 @@ func compositeI420FramesInto(frames []*av.Frame, layout []compositeLayout, floor
 	yPlane := compositePlaneBytes(dst.Planes[0].Buffer.Bytes, canvasW*canvasH)
 	uPlane := compositePlaneBytes(dst.Planes[1].Buffer.Bytes, chromaW*chromaH)
 	vPlane := compositePlaneBytes(dst.Planes[2].Buffer.Bytes, chromaW*chromaH)
-	clear(yPlane)
-	clear(uPlane)
-	clear(vPlane)
+	// Paint the uncovered canvas video black (Y=16, U=V=128 in limited range).
+	// Zeroed chroma would render every gap between arms green.
+	fillPlane(yPlane, compositeBlackLuma)
+	fillPlane(uPlane, compositeNeutralChroma)
+	fillPlane(vPlane, compositeNeutralChroma)
 
 	for i := range frames {
 		f := frames[i]
@@ -439,5 +441,23 @@ func (s *videoCompositeStage) releaseCompositeFrame(frame *av.Frame) {
 	if s.pools != nil {
 		s.pools.putPlanes(frame.Planes)
 		frame.Planes = nil
+	}
+}
+
+// Limited-range I420 black: the canvas color wherever no arm paints.
+const (
+	compositeBlackLuma     = 16
+	compositeNeutralChroma = 128
+)
+
+// fillPlane sets every byte of plane to value. Doubling copies keep it a few
+// memmoves per plane rather than a per-byte loop.
+func fillPlane(plane []byte, value byte) {
+	if len(plane) == 0 {
+		return
+	}
+	plane[0] = value
+	for filled := 1; filled < len(plane); filled *= 2 {
+		copy(plane[filled:], plane[:filled])
 	}
 }

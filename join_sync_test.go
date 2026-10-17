@@ -292,8 +292,8 @@ func TestVideoCompositeSyncByPTSPaintsPresentArms(t *testing.T) {
 	if got := compositeTestYAt(gap, 0, 0); got != 100 {
 		t.Fatalf("Y at (0,0)=%d, want 100 (arm a painted)", got)
 	}
-	if got := compositeTestYAt(gap, 5, 1); got != 0 {
-		t.Fatalf("Y at (5,1)=%d, want 0 (absent arm b not painted)", got)
+	if got := compositeTestYAt(gap, 5, 1); got != compositeBlackLuma {
+		t.Fatalf("Y at (5,1)=%d, want %d (absent arm b not painted)", got, compositeBlackLuma)
 	}
 
 	if err := stage.Handle(ctx, frameMsg(compositeSyncTestFrame("a", 20, 4, 4, 100, 10, 20)), emit); err != nil {

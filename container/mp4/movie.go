@@ -25,7 +25,7 @@ type track struct {
 // parseMovie locates the moov box and parses every supported track into a flat
 // sample index. Tracks with no codec goav can decode, or with unusable sample
 // tables, are skipped rather than failing the whole file.
-func parseMovie(r io.ReaderAt, size int64) ([]*track, error) {
+func parseMovie(r io.ReaderAt, size int64, budget *sampleBudget) ([]*track, error) {
 	var moov boxHeader
 	found := false
 	if err := walkBoxes(r, 0, size, func(h boxHeader) error {
@@ -46,7 +46,7 @@ func parseMovie(r io.ReaderAt, size int64) ([]*track, error) {
 	if err := walkBoxes(r, moov.PayloadOffset, moov.end(), func(h boxHeader) error {
 		switch h.Type {
 		case "trak":
-			tr, err := parseTrak(r, h)
+			tr, err := parseTrak(r, h, budget)
 			if err != nil {
 				return err
 			}
@@ -95,7 +95,7 @@ func parseTrex(payload []byte) (uint32, trexDefaults) {
 	}
 }
 
-func parseTrak(r io.ReaderAt, trak boxHeader) (*track, error) {
+func parseTrak(r io.ReaderAt, trak boxHeader, budget *sampleBudget) (*track, error) {
 	tr := &track{}
 	var stblBox boxHeader
 	haveStbl := false
@@ -136,7 +136,7 @@ func parseTrak(r io.ReaderAt, trak boxHeader) (*track, error) {
 		return nil, nil
 	}
 
-	tables, codecID, media, params, err := parseStbl(r, stblBox)
+	tables, codecID, media, params, err := parseStbl(r, stblBox, budget)
 	if err != nil {
 		return nil, err
 	}
@@ -159,7 +159,7 @@ func parseTrak(r io.ReaderAt, trak boxHeader) (*track, error) {
 	return tr, nil
 }
 
-func parseStbl(r io.ReaderAt, stbl boxHeader) (*sampleTables, av.CodecID, av.MediaType, av.CodecParameters, error) {
+func parseStbl(r io.ReaderAt, stbl boxHeader, budget *sampleBudget) (*sampleTables, av.CodecID, av.MediaType, av.CodecParameters, error) {
 	tables := &sampleTables{}
 	var codecID av.CodecID
 	var media av.MediaType
@@ -196,13 +196,13 @@ func parseStbl(r io.ReaderAt, stbl boxHeader) (*sampleTables, av.CodecID, av.Med
 			if err != nil {
 				return err
 			}
-			tables.sizes = parseStsz(pl)
+			tables.sizes = parseStsz(pl, budget)
 		case "stz2":
 			pl, err := readPayload(r, h)
 			if err != nil {
 				return err
 			}
-			tables.sizes = parseStz2(pl)
+			tables.sizes = parseStz2(pl, budget)
 		case "stco":
 			pl, err := readPayload(r, h)
 			if err != nil {
@@ -364,12 +364,15 @@ func parseStsc(payload []byte) []stscEntry {
 	return out
 }
 
-func parseStsz(payload []byte) []uint32 {
+func parseStsz(payload []byte, budget *sampleBudget) []uint32 {
 	p := newParser(payload)
 	p.fullBox()
 	uniform := p.u32()
 	count := p.u32()
-	if count > maxSamples {
+	if uniform == 0 && !fits(p, count, 4) {
+		return nil
+	}
+	if !budget.claim(count, uniform) {
 		return nil
 	}
 	out := make([]uint32, 0, count)
@@ -378,9 +381,6 @@ func parseStsz(payload []byte) []uint32 {
 			out = append(out, uniform)
 		}
 		return out
-	}
-	if !fits(p, count, 4) {
-		return nil
 	}
 	for range count {
 		out = append(out, p.u32())
@@ -391,13 +391,18 @@ func parseStsz(payload []byte) []uint32 {
 	return out
 }
 
-func parseStz2(payload []byte) []uint32 {
+func parseStz2(payload []byte, budget *sampleBudget) []uint32 {
 	p := newParser(payload)
 	p.fullBox()
 	p.skip(3) // reserved
 	fieldSize := int(p.u8())
 	count := p.u32()
-	if count > maxSamples {
+	// The packed entries must come from the payload, like fits for whole-byte
+	// tables; an unsupported field size is refused by the switch below.
+	if fieldSize > 0 && int64(count)*int64(fieldSize) > 8*int64(p.remaining()) {
+		return nil
+	}
+	if !budget.claim(count, 0) {
 		return nil
 	}
 	out := make([]uint32, 0, count)

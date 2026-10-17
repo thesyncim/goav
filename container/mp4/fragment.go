@@ -36,25 +36,25 @@ const sampleNonSync = 0x00010000
 // parseFragments walks the top-level moof boxes and appends every track run's
 // samples to the matching track, so fragmented (fMP4/CMAF) files demux through
 // the same flat sample index as progressive files.
-func parseFragments(r io.ReaderAt, size int64, byID map[uint32]*track) error {
+func parseFragments(r io.ReaderAt, size int64, byID map[uint32]*track, budget *sampleBudget) error {
 	return walkBoxes(r, 0, size, func(h boxHeader) error {
 		if h.Type != "moof" {
 			return nil
 		}
-		return parseMoof(r, h, byID)
+		return parseMoof(r, h, byID, budget)
 	})
 }
 
-func parseMoof(r io.ReaderAt, moof boxHeader, byID map[uint32]*track) error {
+func parseMoof(r io.ReaderAt, moof boxHeader, byID map[uint32]*track, budget *sampleBudget) error {
 	return walkBoxes(r, moof.PayloadOffset, moof.end(), func(h boxHeader) error {
 		if h.Type != "traf" {
 			return nil
 		}
-		return parseTraf(r, h, moof.Offset, byID)
+		return parseTraf(r, h, moof.Offset, byID, budget)
 	})
 }
 
-func parseTraf(r io.ReaderAt, traf boxHeader, moofOffset int64, byID map[uint32]*track) error {
+func parseTraf(r io.ReaderAt, traf boxHeader, moofOffset int64, byID map[uint32]*track, budget *sampleBudget) error {
 	var (
 		tr           *track
 		baseOffset   = moofOffset // default-base-is-moof and the common case
@@ -130,7 +130,7 @@ func parseTraf(r io.ReaderAt, traf boxHeader, moofOffset int64, byID map[uint32]
 
 	dts := baseDTS
 	for _, run := range runs {
-		next, err := parseTrun(r, run, tr, baseOffset, dts, dur, size, flags)
+		next, err := parseTrun(r, run, tr, baseOffset, dts, dur, size, flags, budget)
 		if err != nil {
 			return err
 		}
@@ -141,7 +141,7 @@ func parseTraf(r io.ReaderAt, traf boxHeader, moofOffset int64, byID map[uint32]
 
 // parseTrun appends one run's samples to tr and returns the decode time that
 // the next run continues from.
-func parseTrun(r io.ReaderAt, run boxHeader, tr *track, baseOffset, dts int64, defDur, defSize, defFlags uint32) (int64, error) {
+func parseTrun(r io.ReaderAt, run boxHeader, tr *track, baseOffset, dts int64, defDur, defSize, defFlags uint32, budget *sampleBudget) (int64, error) {
 	pl, err := readPayload(r, run)
 	if err != nil {
 		return dts, err
@@ -159,6 +159,25 @@ func parseTrun(r io.ReaderAt, run boxHeader, tr *track, baseOffset, dts int64, d
 	firstFlags := defFlags
 	if flags&trunFirstSampleFlags != 0 {
 		firstFlags = p.u32()
+	}
+	// Per-sample fields must come from the run's payload, and the samples,
+	// sized by the field or the default, must fit the file-wide budget — a
+	// field-less run otherwise declares a million samples in a few bytes.
+	fieldBytes := 0
+	for _, field := range []uint32{trunSampleDuration, trunSampleSize, trunSampleFlags, trunSampleCompOffset} {
+		if flags&field != 0 {
+			fieldBytes += 4
+		}
+	}
+	if fieldBytes > 0 && !fits(p, count, fieldBytes) {
+		return dts, ErrInvalidData
+	}
+	sizeEach := defSize
+	if flags&trunSampleSize != 0 {
+		sizeEach = 0
+	}
+	if !budget.claim(count, sizeEach) {
+		return dts, ErrInvalidData
 	}
 	offset := baseOffset + dataOffset
 	for i := range count {

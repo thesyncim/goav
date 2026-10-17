@@ -217,8 +217,11 @@ func TestCompositeOfCompositesPaintsNestedCanvas(t *testing.T) {
 	if y := compositeTestYAt(out, 0, 4); y != 50 {
 		t.Fatalf("Y at (0,4) = %d, want 50 (outer leaf c)", y)
 	}
-	if y := compositeTestYAt(out, 4, 4); y != 0 {
-		t.Fatalf("Y at (4,4) = %d, want 0 (black canvas)", y)
+	if y := compositeTestYAt(out, 4, 4); y != compositeBlackLuma {
+		t.Fatalf("Y at (4,4) = %d, want %d (black canvas)", y, compositeBlackLuma)
+	}
+	if u, v := compositeTestChromaAt(out, 2, 2); u != compositeNeutralChroma || v != compositeNeutralChroma {
+		t.Fatalf("chroma at (2,2) = U %d V %d, want %d (black, not green)", u, v, compositeNeutralChroma)
 	}
 }
 

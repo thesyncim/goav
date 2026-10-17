@@ -149,6 +149,7 @@ jobs:
         run: |
           CGO_ENABLED=0 go test ./container/matroska -run '^$' -fuzz=FuzzDemuxerMalformedInputs -fuzztime=10s
           CGO_ENABLED=0 go test ./container/webm -run '^$' -fuzz=FuzzDemuxerMalformedInputs -fuzztime=10s
+          CGO_ENABLED=0 go test ./container/mp4 -run '^$' -fuzz=FuzzDemuxerMalformedInputs -fuzztime=10s
 
       - name: Vet
         run: CGO_ENABLED=0 go vet ./...
