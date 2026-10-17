@@ -1265,14 +1265,33 @@ func (n *bufferedNode) releaseSlot(slot *bufferedMessage) {
 	n.free <- slot
 }
 
+// slotReserveBytes is the largest copy budget a slot reserves up front. Small
+// budgets (RTP, audio packets and frames) are reserved at init so a cold queue
+// fills without allocating; larger ones (video frames and packets, whose
+// worst-case budgets run to megabytes per slot) grow to fit the payloads the
+// slot actually carries, so the budget is a limit rather than a per-slot
+// allocation.
+const slotReserveBytes = 64 << 10
+
 func (m *bufferedMessage) init(policy BufferPolicy) {
-	if policy.CopyPacketBytes > 0 && cap(m.packetBacking) < policy.CopyPacketBytes {
-		m.packetBacking = make([]byte, policy.CopyPacketBytes)
+	if policy.CopyPacketBytes <= slotReserveBytes {
+		m.packetBacking = growBacking(m.packetBacking, policy.CopyPacketBytes, policy.CopyPacketBytes)
 	}
-	if policy.CopyFrameBytes > 0 && cap(m.frameBacking) < policy.CopyFrameBytes {
-		m.frameBacking = make([]byte, policy.CopyFrameBytes)
+	if policy.CopyFrameBytes <= slotReserveBytes {
+		m.frameBacking = growBacking(m.frameBacking, policy.CopyFrameBytes, policy.CopyFrameBytes)
 	}
 	m.Reset()
+}
+
+// growBacking returns backing with room for n bytes, n <= budget. A slot
+// that outgrows its backing doubles it (capped at the budget), so payloads
+// of varying size settle after a few messages and the steady state copies
+// without allocating.
+func growBacking(backing []byte, n int, budget int) []byte {
+	if cap(backing) >= n {
+		return backing[:cap(backing)]
+	}
+	return make([]byte, min(max(n, 2*cap(backing)), budget))
 }
 
 func (m *bufferedMessage) bind(src *Message, policy BufferPolicy) error {
@@ -1293,20 +1312,20 @@ func (m *bufferedMessage) bindFanout(src *Message, policy BufferPolicy, owner *b
 		if src.Packet == nil {
 			return nil
 		}
-		packetBacking := m.packetBacking
 		m.packet = *src.Packet
 		if !bufferSafe(src.Packet.Payload, policy) {
 			if policy.CopyPacketBytes <= 0 {
 				return ErrBufferedMessageUnsafe
 			}
-			if len(src.Packet.Payload.Bytes) > cap(packetBacking) {
+			if len(src.Packet.Payload.Bytes) > policy.CopyPacketBytes {
 				return ErrMessageTooLarge
 			}
 			if m.bindSharedBorrowedPacket(src.Packet.Payload, policy, owner, fanout) {
 				m.message.Packet = &m.packet
 				return nil
 			}
-			m.packet.Payload.Bytes = packetBacking[:len(src.Packet.Payload.Bytes)]
+			m.packetBacking = growBacking(m.packetBacking, len(src.Packet.Payload.Bytes), policy.CopyPacketBytes)
+			m.packet.Payload.Bytes = m.packetBacking[:len(src.Packet.Payload.Bytes)]
 			copy(m.packet.Payload.Bytes, src.Packet.Payload.Bytes)
 			m.packet.Payload.Ownership = av.BufferBorrowed
 			m.packet.Payload.Owner = nil
@@ -1318,6 +1337,21 @@ func (m *bufferedMessage) bindFanout(src *Message, policy BufferPolicy, owner *b
 		}
 		if len(src.Frame.Planes) > len(m.planes) {
 			return ErrMessageTooLarge
+		}
+		needed := 0
+		for i := range src.Frame.Planes {
+			if !bufferSafe(src.Frame.Planes[i].Buffer, policy) {
+				needed += len(src.Frame.Planes[i].Buffer.Bytes)
+			}
+		}
+		if needed > 0 {
+			if policy.CopyFrameBytes <= 0 {
+				return ErrBufferedMessageUnsafe
+			}
+			if needed > policy.CopyFrameBytes {
+				return ErrMessageTooLarge
+			}
+			m.frameBacking = growBacking(m.frameBacking, needed, policy.CopyFrameBytes)
 		}
 		frameBacking := m.frameBacking
 		m.frame = *src.Frame
@@ -1333,12 +1367,6 @@ func (m *bufferedMessage) bindFanout(src *Message, policy BufferPolicy, owner *b
 		for i := range src.Frame.Planes {
 			plane := src.Frame.Planes[i]
 			if !bufferSafe(plane.Buffer, policy) {
-				if policy.CopyFrameBytes <= 0 {
-					return ErrBufferedMessageUnsafe
-				}
-				if len(plane.Buffer.Bytes) > cap(frameBacking)-offset {
-					return ErrMessageTooLarge
-				}
 				dst := frameBacking[offset : offset+len(plane.Buffer.Bytes)]
 				copy(dst, plane.Buffer.Bytes)
 				plane.Buffer.Bytes = dst
@@ -1367,6 +1395,7 @@ func (m *bufferedMessage) bindSharedBorrowedPacket(buffer av.Buffer, policy Buff
 		return false
 	}
 	if fanout.packet == nil {
+		m.packetBacking = growBacking(m.packetBacking, len(buffer.Bytes), policy.CopyPacketBytes)
 		m.packet.Payload.Bytes = m.packetBacking[:len(buffer.Bytes)]
 		copy(m.packet.Payload.Bytes, buffer.Bytes)
 		m.packet.Payload.Ownership = av.BufferBorrowed

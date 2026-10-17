@@ -1609,3 +1609,52 @@ func TestGraphBufferedRemoveReportsStuckNode(t *testing.T) {
 		t.Fatalf("Run err = %v", err)
 	}
 }
+
+// TestBufferedSlotBackingGrowsToFit pins that a copy budget is a limit, not a
+// per-slot allocation: a slot with megabyte budgets reserves nothing up front,
+// grows only to the payload it carries, and then copies without allocating.
+// Budgets that fit slotReserveBytes are still reserved at init so small
+// payloads fill a cold queue without allocating.
+func TestBufferedSlotBackingGrowsToFit(t *testing.T) {
+	big := BufferPolicy{CopyPacketBytes: 4 << 20, CopyFrameBytes: 8 << 20}
+	var slot bufferedMessage
+	slot.init(big)
+	if cap(slot.packetBacking) != 0 || cap(slot.frameBacking) != 0 {
+		t.Fatalf("init reserved packet=%d frame=%d bytes, want none for megabyte budgets", cap(slot.packetBacking), cap(slot.frameBacking))
+	}
+	packet := Message{Kind: MessagePacket, Packet: &av.Packet{Payload: av.Buffer{Bytes: make([]byte, 1000), Ownership: av.BufferBorrowed}}}
+	frame := Message{Kind: MessageFrame, Frame: &av.Frame{Type: av.MediaVideo, Planes: []av.Plane{
+		{Buffer: av.Buffer{Bytes: make([]byte, 3000), Ownership: av.BufferBorrowed}},
+		{Buffer: av.Buffer{Bytes: make([]byte, 7000), Ownership: av.BufferImmutable}},
+	}}}
+	for _, msg := range []*Message{&packet, &frame} {
+		if err := slot.bind(msg, big); err != nil {
+			t.Fatal(err)
+		}
+		slot.Reset()
+	}
+	if got := cap(slot.packetBacking); got != 1000 {
+		t.Fatalf("packet backing = %d bytes, want the 1000-byte payload", got)
+	}
+	if got := cap(slot.frameBacking); got != 3000 {
+		t.Fatalf("frame backing = %d bytes, want the 3000 mutable bytes (immutable planes share)", got)
+	}
+	allocs := testing.AllocsPerRun(10, func() {
+		for _, msg := range []*Message{&packet, &frame} {
+			if err := slot.bind(msg, big); err != nil {
+				t.Fatal(err)
+			}
+			slot.Reset()
+		}
+	})
+	if allocs != 0 {
+		t.Fatalf("steady re-bind allocs = %v, want 0", allocs)
+	}
+
+	small := BufferPolicy{CopyPacketBytes: 1200, CopyFrameBytes: 3840}
+	var cold bufferedMessage
+	cold.init(small)
+	if cap(cold.packetBacking) != 1200 || cap(cold.frameBacking) != 3840 {
+		t.Fatalf("init reserved packet=%d frame=%d, want small budgets reserved up front", cap(cold.packetBacking), cap(cold.frameBacking))
+	}
+}
