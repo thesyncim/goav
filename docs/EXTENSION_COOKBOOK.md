@@ -11,7 +11,7 @@ problem.
 Every recipe here stays on the front-door grammar:
 
 ```go
-rt.Run(ctx, input.Audio().Decode().Do(stage).Encode(codec).To(destination))
+rt.Run(ctx, input.Audio().Decode().Do(stage).Encode(spec).To(destination))
 ```
 
 External code should not need graph handles, string routing, package internals,

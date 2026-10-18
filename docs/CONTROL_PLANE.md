@@ -447,10 +447,10 @@ objectSink := ctlserver.NewBranchStep[ObjectSinkSettings](
     "objectsink",
     "upload branch messages to object storage",
     func(branch *ctlserver.BranchPipeline, args ObjectSinkSettings) error {
-        writer := objectStoreWriter(args.Bucket, args.Key)
-        branch.Destination(goav.Writer(writer,
-            goav.Name("object:"+args.Key),
-            goav.Format(av.FormatID("ogg")),
+        // objectStoreOpen returns a provider.OpenFunc that opens the upload.
+        branch.Destination(goav.Writer("object:"+args.Key,
+            objectStoreOpen(args.Bucket, args.Key),
+            goav.Format(av.FormatOgg),
         ))
         return nil
     },

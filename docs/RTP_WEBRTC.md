@@ -42,7 +42,7 @@ The session-level shape is:
 session, err := webrtcav.NewSession(ctx, webrtcav.SessionConfig{})
 answer, err := session.SetRemoteDescription(ctx, offer)
 remote, err := session.AcceptTrack(ctx)
-err := rt.Run(ctx, goav.Input(webrtcav.Track(remote.Track)).To(goav.Write("recording.ivf", file)))
+err = rt.Run(ctx, goav.Input(webrtcav.Track(remote.Track)).To(goav.Write("recording.ivf", file)))
 ```
 
 For multiple tracks, route each input's stream to one shared destination value;
@@ -53,7 +53,7 @@ tracks, err := webrtcav.NewTrackSet(webrtcav.TrackSetConfig{Session: session})
 audio, err := tracks.Accept(ctx)
 video, err := tracks.Accept(ctx)
 rec := goav.Write("recording.webm", file)
-err := rt.Run(ctx,
+err = rt.Run(ctx,
     goav.Input(rtpav.Receive(audio.Reader)).Audio().To(rec),
     goav.Input(rtpav.Receive(video.Reader)).Video().To(rec),
 )
