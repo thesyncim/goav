@@ -1311,11 +1311,7 @@ func (p *joinPlan) lower(ctx context.Context, gp graphPlan, graph pipeline.Graph
 		if err != nil {
 			return err
 		}
-		branchInputs, branchStreams, err := compileBranchComposeInputs(ctx, rt, graph, []pipeline.NodeRef{joinRef}, groups, nil, p.branchRoutes, nil, rt.realtime)
-		if err != nil {
-			return err
-		}
-		return compileBranchComposeRoutes(ctx, service, graph, p.branchRoutes, p.branchTargets, branchInputs, branchStreams, nil, nil, rt.realtime)
+		return lowerBranchCompose(ctx, service, graph, []pipeline.NodeRef{joinRef}, groups, nil, p.branchRoutes, p.branchTargets, nil, rt.realtime)
 	case p.encode != nil:
 		upstream := string(joinRef)
 		for i := range p.downstream {

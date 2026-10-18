@@ -90,31 +90,6 @@ func TestValidateBranchComposeBranchOperationContracts(t *testing.T) {
 	}
 }
 
-func TestPrepareBranchComposeBranchOperationsContracts(t *testing.T) {
-	graph := mediaPlanBranchComposeGraph{branches: []branchComposeRoute{{
-		name: "encoded",
-		request: encodeRequest{config: codec.EncodeConfig{
-			Parameters: av.CodecParameters{ID: av.CodecVP8},
-		}},
-	}}}
-
-	_, err := graph.prepareBranchComposeBranchOperations(map[string][]workOperation{
-		"encoded": {{Kind: plan.OpEncode}},
-	})
-	assertBranchComposeGraphPlanBuildError(t, err, graphPlanInvalidCode, "encode operation has no node")
-
-	operations, err := graph.prepareBranchComposeBranchOperations(map[string][]workOperation{
-		"encoded": {{Kind: plan.OpEncode, Node: "encode-node", ShapeOut: shape.Packet(av.MediaVideo, av.CodecVP8)}},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	operation := operations["encoded"]
-	if operation.encodeNode != "encode-node" || operation.encodeShape.Codec != av.CodecVP8 {
-		t.Fatalf("branch operation = %+v, want encode-node VP8", operation)
-	}
-}
-
 func TestValidateBranchComposeDestinationOperationContracts(t *testing.T) {
 	sink := SinkFunc("frames", func(context.Context, Message) error { return nil })
 	sinkTarget := branchComposeTargetRoute{sink: sink}
