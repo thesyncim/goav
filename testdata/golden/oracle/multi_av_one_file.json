@@ -18,21 +18,6 @@
         "detail": "select, type=audio"
       },
       {
-        "name": "decode-audio",
-        "kind": "stage",
-        "detail": "packets -\u003e frames, type=audio"
-      },
-      {
-        "name": "resample-audio",
-        "kind": "stage",
-        "detail": "resample, 48000 Hz, 2 ch"
-      },
-      {
-        "name": "encode-audio",
-        "kind": "stage",
-        "detail": "frames -\u003e packets, codec=opus"
-      },
-      {
         "name": "out.mkv",
         "kind": "stage",
         "detail": "mux, protocol=file"
@@ -56,21 +41,6 @@
       },
       {
         "from": "select-audio",
-        "to": "decode-audio",
-        "policy": "all"
-      },
-      {
-        "from": "decode-audio",
-        "to": "resample-audio",
-        "policy": "all"
-      },
-      {
-        "from": "resample-audio",
-        "to": "encode-audio",
-        "policy": "all"
-      },
-      {
-        "from": "encode-audio",
         "to": "out.mkv",
         "policy": "all"
       }
@@ -153,59 +123,24 @@
         "select": {
           "type": "audio"
         },
-        "decode": true,
         "operations": [
           {
-            "kind": "decode",
-            "detail": "packets to frames"
-          },
-          {
-            "kind": "shape",
-            "component": "auto",
-            "detail": "shape solver policy"
-          },
-          {
-            "kind": "transform",
-            "component": "resample",
-            "detail": "resample",
-            "shape": {
-              "domain": "frame",
-              "mediaKind": "audio",
-              "sampleRate": 48000,
-              "channels": 2
-            },
-            "adapter": "resample",
-            "config": {
-              "channels": "2",
-              "sampleRate": "48000"
-            }
-          },
-          {
-            "kind": "encode",
-            "component": "opus",
-            "detail": "frames to packets",
-            "shape": {
-              "domain": "packet",
-              "mediaKind": "audio",
-              "codec": "opus",
-              "sampleRate": 48000,
-              "channels": 2
-            },
-            "adapter": "opus"
+            "kind": "copy",
+            "component": "packet-copy"
           }
         ],
         "encode": {
-          "ID": "opus",
-          "Type": "audio",
+          "ID": "",
+          "Type": "",
           "Parameters": {
-            "ID": "opus",
-            "Type": "audio",
+            "ID": "",
+            "Type": "",
             "Profile": "",
             "Level": "",
-            "ClockRate": 48000,
-            "SampleRate": 48000,
-            "Channels": 2,
-            "ChannelLayout": "stereo",
+            "ClockRate": 0,
+            "SampleRate": 0,
+            "Channels": 0,
+            "ChannelLayout": "",
             "Width": 0,
             "Height": 0,
             "PixelFormat": "",
@@ -237,7 +172,7 @@
             "SampleRateSet": false,
             "Custom": null
           },
-          "Copy": false,
+          "Copy": true,
           "Auto": false
         },
         "destinations": [
@@ -319,51 +254,13 @@
             }
           },
           {
-            "kind": "decode",
-            "detail": "packets to frames",
-            "shape": {
-              "domain": "frame",
-              "mediaKind": "audio"
-            }
-          },
-          {
-            "kind": "shape",
-            "component": "auto",
-            "detail": "shape solver policy",
-            "shape": {
-              "domain": "frame",
-              "mediaKind": "audio"
-            }
-          },
-          {
-            "kind": "transform",
-            "component": "resample",
-            "detail": "resample",
-            "shape": {
-              "domain": "frame",
-              "mediaKind": "audio",
-              "sampleRate": 48000,
-              "channels": 2
-            },
-            "adapter": "resample",
-            "config": {
-              "channels": "2",
-              "sampleRate": "48000"
-            }
-          },
-          {
-            "kind": "encode",
-            "component": "opus",
-            "detail": "frames to packets",
+            "kind": "copy",
+            "component": "packet-copy",
+            "detail": "explicit packet copy",
             "shape": {
               "domain": "packet",
-              "mediaKind": "audio",
-              "streamID": "audio",
-              "codec": "opus",
-              "sampleRate": 48000,
-              "channels": 2
-            },
-            "adapter": "opus"
+              "mediaKind": "audio"
+            }
           }
         ],
         "destinations": [
@@ -390,14 +287,9 @@
         "message": "stream can remain packet encoded"
       },
       {
-        "code": "decode_required",
+        "code": "packet_copy",
         "branch": "audio",
-        "message": "operation specs require decoded frames"
-      },
-      {
-        "code": "encode_required",
-        "branch": "audio",
-        "message": "muxed stream output requires encoded packets"
+        "message": "stream can remain packet encoded"
       }
     ],
     "requiredAdapters": [
@@ -452,59 +344,6 @@
         },
         "requiredBy": "out.mkv",
         "status": "available"
-      },
-      {
-        "kind": "filter",
-        "name": "resample",
-        "transform": "resample",
-        "input": "audio",
-        "output": "audio",
-        "sampleFormats": [
-          "s16"
-        ],
-        "realtime": true,
-        "metadata": {
-          "backend": "resample",
-          "sample_format": "s16"
-        },
-        "requiredBy": "audio",
-        "status": "available"
-      },
-      {
-        "kind": "encoder",
-        "name": "opus",
-        "codec": "opus",
-        "media": [
-          "audio"
-        ],
-        "sampleFormats": [
-          "s16"
-        ],
-        "realtime": true,
-        "requiredBy": "audio",
-        "status": "available"
-      }
-    ],
-    "warnings": [
-      {
-        "code": "decode_codec_deferred",
-        "node": "audio",
-        "message": "decode codec will be resolved when the input opens",
-        "suggestions": [
-          "declare the provider codec intent when the receive codec is already known",
-          "use input metadata or a format adapter that reports streams during probing"
-        ]
-      },
-      {
-        "code": "shape_conversion_inserted",
-        "node": "audio",
-        "message": "inserted resample unknown rate→48kHz unknown channels→2ch before encode-opus (AllowResample)",
-        "details": [
-          "adapter=resample",
-          "source=frame audio",
-          "actual_shape=domain=frame media=audio",
-          "expected_shape=domain=frame media=audio sample_rate=48000 channels=2"
-        ]
       }
     ],
     "graph": {
@@ -524,21 +363,6 @@
           "name": "select-audio",
           "kind": "stage",
           "detail": "select, type=audio"
-        },
-        {
-          "name": "decode-audio",
-          "kind": "stage",
-          "detail": "packets -\u003e frames, type=audio"
-        },
-        {
-          "name": "resample-audio",
-          "kind": "stage",
-          "detail": "resample, 48000 Hz, 2 ch"
-        },
-        {
-          "name": "encode-audio",
-          "kind": "stage",
-          "detail": "frames -\u003e packets, codec=opus"
         },
         {
           "name": "out.mkv",
@@ -564,21 +388,6 @@
         },
         {
           "from": "select-audio",
-          "to": "decode-audio",
-          "policy": "all"
-        },
-        {
-          "from": "decode-audio",
-          "to": "resample-audio",
-          "policy": "all"
-        },
-        {
-          "from": "resample-audio",
-          "to": "encode-audio",
-          "policy": "all"
-        },
-        {
-          "from": "encode-audio",
           "to": "out.mkv",
           "policy": "all"
         }

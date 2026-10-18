@@ -91,6 +91,14 @@ func oracleAudio44() goav.InputSpec {
 }
 func oracleVideo() goav.InputSpec { return oracleVideoSized(64, 48) }
 
+// oracleVP8 is a VP8 packet source: decoding it needs no platform-specific
+// backend, so the goldens hold on every CI target.
+func oracleVP8() goav.InputSpec {
+	return oracleSource("vp8", func(name string) shape.Spec {
+		return shape.Packet(av.MediaVideo, av.CodecVP8, shape.Video(64, 48, ""), shape.Stream(av.StreamID(name)))
+	})
+}
+
 var oracleFrameStage = component.FrameFunc("grade", func(_ context.Context, f *av.Frame, emit component.Emit) error {
 	return emit.Frame(f)
 })
@@ -110,7 +118,7 @@ func oracleCorpus(t *testing.T) map[string]func() *goav.Job {
 			return goav.From(oracleAudio44()).Audio().Auto(shape.AllowResample()).Encode(codec.Opus()).To(oracleSink("packets"))
 		},
 		"stream_decode_to_sink": func() *goav.Job {
-			return goav.From(oracleMP4(t)).Audio().Decode().To(oracleSink("frames"))
+			return goav.From(oracleVP8()).Video().Decode().To(oracleSink("frames"))
 		},
 		"stream_custom_stage_tap": func() *goav.Job {
 			return goav.From(oracleVideo()).Video().Do(oracleFrameStage).Tap(goav.FrameTap("graded")).Encode(codec.VP8()).To(w("out.webm"))
@@ -131,7 +139,7 @@ func oracleCorpus(t *testing.T) map[string]func() *goav.Job {
 		// Multi-stream jobs.
 		"multi_av_one_file": func() *goav.Job {
 			out := w("out.mkv")
-			return goav.From(oracleMP4(t)).Video().Copy().To(out).Audio().Decode().Auto(shape.AllowResample()).Encode(codec.Opus()).To(out)
+			return goav.From(oracleMP4(t)).Video().Copy().To(out).Audio().Copy().To(out)
 		},
 		"multi_two_inputs_one_mux": func() *goav.Job {
 			out := w("call.webm")
@@ -205,7 +213,7 @@ func oracleCorpus(t *testing.T) map[string]func() *goav.Job {
 		},
 		// Refusals.
 		"error_frames_into_mux": func() *goav.Job {
-			return goav.From(oracleMP4(t)).Audio().Decode().To(w("out.webm"))
+			return goav.From(oracleVP8()).Video().Decode().To(w("out.webm"))
 		},
 		"error_resize_after_copy": func() *goav.Job {
 			return goav.From(oracleMP4(t)).Video().Copy().Resize(32, 24).To(w("out.mkv"))

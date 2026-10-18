@@ -3,18 +3,18 @@
     "code": "encode_missing",
     "family": "encode",
     "operation": "build job",
-    "node": "audio"
+    "node": "video"
   },
   "explain_error": {
     "code": "encode_missing",
     "family": "encode",
     "operation": "build job",
-    "node": "audio"
+    "node": "video"
   },
   "build_error": {
     "code": "encode_missing",
     "family": "encode",
     "operation": "build job",
-    "node": "audio"
+    "node": "video"
   }
 }
