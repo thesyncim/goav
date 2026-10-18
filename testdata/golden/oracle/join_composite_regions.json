@@ -1,0 +1,298 @@
+{
+  "describe": {
+    "name": "goav-composite",
+    "nodes": [
+      {
+        "name": "video-1",
+        "kind": "source",
+        "detail": "custom source, domain=frame, media=video"
+      },
+      {
+        "name": "video-2",
+        "kind": "source",
+        "detail": "custom source, domain=frame, media=video"
+      },
+      {
+        "name": "composite",
+        "kind": "stage"
+      },
+      {
+        "name": "encode-composite-encode",
+        "kind": "stage",
+        "detail": "frames -\u003e packets, codec=vp8"
+      },
+      {
+        "name": "pip.webm",
+        "kind": "stage",
+        "detail": "mux, protocol=file"
+      }
+    ],
+    "edges": [
+      {
+        "from": "video-1",
+        "to": "composite",
+        "policy": "all"
+      },
+      {
+        "from": "video-2",
+        "to": "composite",
+        "policy": "all"
+      },
+      {
+        "from": "composite",
+        "to": "encode-composite-encode",
+        "policy": "all"
+      },
+      {
+        "from": "encode-composite-encode",
+        "to": "pip.webm",
+        "policy": "all"
+      }
+    ]
+  },
+  "explain": {
+    "summary": "composite 2 inputs to pip.webm",
+    "operation": "build job",
+    "inputs": [
+      {
+        "name": "video-1",
+        "protocol": "custom",
+        "streams": [
+          {
+            "ID": "video-1",
+            "Index": 0,
+            "Type": "video",
+            "Codec": {
+              "ID": "",
+              "Type": "video",
+              "Profile": "",
+              "Level": "",
+              "ClockRate": 90000,
+              "SampleRate": 0,
+              "Channels": 0,
+              "ChannelLayout": "",
+              "Width": 64,
+              "Height": 48,
+              "PixelFormat": "i420",
+              "SampleFormat": "",
+              "ExtraData": {
+                "Bytes": null,
+                "Ownership": "",
+                "Owner": null
+              },
+              "Attributes": null
+            },
+            "TimeBase": {
+              "Num": 0,
+              "Den": 0
+            },
+            "Language": "",
+            "Name": "video-1",
+            "Epoch": 0,
+            "Metadata": null
+          }
+        ]
+      },
+      {
+        "name": "video-2",
+        "protocol": "custom",
+        "streams": [
+          {
+            "ID": "video-2",
+            "Index": 0,
+            "Type": "video",
+            "Codec": {
+              "ID": "",
+              "Type": "video",
+              "Profile": "",
+              "Level": "",
+              "ClockRate": 90000,
+              "SampleRate": 0,
+              "Channels": 0,
+              "ChannelLayout": "",
+              "Width": 16,
+              "Height": 16,
+              "PixelFormat": "i420",
+              "SampleFormat": "",
+              "ExtraData": {
+                "Bytes": null,
+                "Ownership": "",
+                "Owner": null
+              },
+              "Attributes": null
+            },
+            "TimeBase": {
+              "Num": 0,
+              "Den": 0
+            },
+            "Language": "",
+            "Name": "video-2",
+            "Epoch": 0,
+            "Metadata": null
+          }
+        ]
+      }
+    ],
+    "branches": [
+      {
+        "name": "video-1",
+        "input": "video-1",
+        "stream": {
+          "id": "video-1",
+          "type": "video",
+          "name": "video-1"
+        },
+        "shape": {
+          "domain": "frame",
+          "mediaKind": "video",
+          "streamID": "video-1",
+          "width": 64,
+          "height": 48,
+          "pixelFormat": "i420"
+        }
+      },
+      {
+        "name": "video-2",
+        "input": "video-2",
+        "stream": {
+          "id": "video-2",
+          "type": "video",
+          "name": "video-2"
+        },
+        "shape": {
+          "domain": "frame",
+          "mediaKind": "video",
+          "streamID": "video-2",
+          "width": 16,
+          "height": 16,
+          "pixelFormat": "i420"
+        }
+      },
+      {
+        "name": "composite",
+        "stream": {
+          "id": "composite",
+          "type": "video"
+        },
+        "shape": {
+          "domain": "frame",
+          "mediaKind": "video",
+          "streamID": "composite",
+          "width": 64,
+          "height": 48,
+          "pixelFormat": "i420"
+        },
+        "operations": [
+          {
+            "kind": "join",
+            "component": "composite",
+            "detail": "converge 2 arms",
+            "shape": {
+              "domain": "frame",
+              "mediaKind": "video",
+              "streamID": "composite",
+              "width": 64,
+              "height": 48,
+              "pixelFormat": "i420"
+            }
+          },
+          {
+            "kind": "encode",
+            "component": "vp8",
+            "detail": "frames to packets",
+            "shape": {
+              "domain": "packet",
+              "mediaKind": "video",
+              "streamID": "composite",
+              "codec": "vp8",
+              "width": 64,
+              "height": 48,
+              "pixelFormat": "i420"
+            },
+            "adapter": "vp8"
+          }
+        ],
+        "destinations": [
+          "pip.webm"
+        ]
+      }
+    ],
+    "destinations": [
+      {
+        "name": "pip.webm",
+        "protocol": "file",
+        "kind": "mux",
+        "branches": [
+          "composite"
+        ]
+      }
+    ],
+    "requiredAdapters": [
+      {
+        "kind": "encoder",
+        "name": "vp8",
+        "codec": "vp8",
+        "media": [
+          "video"
+        ],
+        "pixelFormats": [
+          "i420"
+        ],
+        "realtime": true,
+        "requiredBy": "composite",
+        "status": "available"
+      }
+    ],
+    "graph": {
+      "name": "goav-composite",
+      "nodes": [
+        {
+          "name": "video-1",
+          "kind": "source",
+          "detail": "custom source, domain=frame, media=video"
+        },
+        {
+          "name": "video-2",
+          "kind": "source",
+          "detail": "custom source, domain=frame, media=video"
+        },
+        {
+          "name": "composite",
+          "kind": "stage"
+        },
+        {
+          "name": "encode-composite-encode",
+          "kind": "stage",
+          "detail": "frames -\u003e packets, codec=vp8"
+        },
+        {
+          "name": "pip.webm",
+          "kind": "stage",
+          "detail": "mux, protocol=file"
+        }
+      ],
+      "edges": [
+        {
+          "from": "video-1",
+          "to": "composite",
+          "policy": "all"
+        },
+        {
+          "from": "video-2",
+          "to": "composite",
+          "policy": "all"
+        },
+        {
+          "from": "composite",
+          "to": "encode-composite-encode",
+          "policy": "all"
+        },
+        {
+          "from": "encode-composite-encode",
+          "to": "pip.webm",
+          "policy": "all"
+        }
+      ]
+    }
+  }
+}

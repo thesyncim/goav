@@ -1,0 +1,162 @@
+{
+  "describe": {
+    "name": "goav",
+    "nodes": [
+      {
+        "name": "in.mp4",
+        "kind": "source",
+        "detail": "demux, protocol=file"
+      },
+      {
+        "name": "out.mkv",
+        "kind": "stage",
+        "detail": "mux, protocol=file"
+      }
+    ],
+    "edges": [
+      {
+        "from": "in.mp4",
+        "to": "out.mkv",
+        "policy": "all"
+      }
+    ]
+  },
+  "explain": {
+    "summary": "from in.mp4 to out.mkv",
+    "operation": "build job",
+    "inputs": [
+      {
+        "name": "in.mp4",
+        "protocol": "file",
+        "format": "mp4"
+      }
+    ],
+    "branches": [
+      {
+        "name": "in.mp4",
+        "input": "in.mp4",
+        "shape": {
+          "domain": "packet",
+          "streamID": "in.mp4"
+        },
+        "operations": [
+          {
+            "kind": "demux",
+            "component": "container",
+            "detail": "read packets from input",
+            "shape": {
+              "domain": "packet",
+              "streamID": "in.mp4"
+            }
+          },
+          {
+            "kind": "copy",
+            "component": "packet-copy",
+            "detail": "explicit packet copy",
+            "shape": {
+              "domain": "packet",
+              "streamID": "in.mp4"
+            }
+          }
+        ],
+        "destinations": [
+          "out.mkv"
+        ]
+      }
+    ],
+    "destinations": [
+      {
+        "name": "out.mkv",
+        "protocol": "file",
+        "format": "matroska",
+        "kind": "mux",
+        "branches": [
+          "in.mp4"
+        ]
+      }
+    ],
+    "decisions": [
+      {
+        "code": "packet_copy",
+        "branch": "in.mp4",
+        "message": ".Copy requested; packets are copied to outputs"
+      }
+    ],
+    "requiredAdapters": [
+      {
+        "kind": "demuxer",
+        "name": "mp4",
+        "format": "mp4",
+        "media": [
+          "audio",
+          "video"
+        ],
+        "codecs": [
+          "h264",
+          "av1",
+          "vp8",
+          "vp9",
+          "aac",
+          "opus",
+          "flac"
+        ],
+        "minStreams": 1,
+        "metadata": {
+          "summary": "MP4 demux reads common ISO BMFF audio and video sample entries"
+        },
+        "requiredBy": "in.mp4",
+        "status": "available"
+      },
+      {
+        "kind": "muxer",
+        "name": "matroska",
+        "format": "matroska",
+        "media": [
+          "audio",
+          "video",
+          "subtitle"
+        ],
+        "codecs": [
+          "opus",
+          "vorbis",
+          "flac",
+          "aac",
+          "vp8",
+          "vp9",
+          "av1",
+          "h264",
+          "pcm",
+          "text_utf8"
+        ],
+        "minStreams": 1,
+        "metadata": {
+          "summary": "Matroska supports multi-track audio, video, and subtitle packets without codec conversion"
+        },
+        "requiredBy": "out.mkv",
+        "status": "available"
+      }
+    ],
+    "graph": {
+      "name": "goav",
+      "nodes": [
+        {
+          "name": "in.mp4",
+          "kind": "source",
+          "detail": "demux, protocol=file"
+        },
+        {
+          "name": "out.mkv",
+          "kind": "stage",
+          "detail": "mux, protocol=file"
+        }
+      ],
+      "edges": [
+        {
+          "from": "in.mp4",
+          "to": "out.mkv",
+          "policy": "all"
+        }
+      ]
+    }
+  }
+}

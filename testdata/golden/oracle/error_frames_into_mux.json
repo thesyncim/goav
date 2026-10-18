@@ -1,0 +1,20 @@
+{
+  "describe_error": {
+    "code": "encode_missing",
+    "family": "encode",
+    "operation": "build job",
+    "node": "video"
+  },
+  "explain_error": {
+    "code": "encode_missing",
+    "family": "encode",
+    "operation": "build job",
+    "node": "video"
+  },
+  "build_error": {
+    "code": "encode_missing",
+    "family": "encode",
+    "operation": "build job",
+    "node": "video"
+  }
+}

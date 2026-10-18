@@ -1,0 +1,20 @@
+{
+  "describe_error": {
+    "code": "stream_step_after_encode",
+    "family": "stream",
+    "operation": "build stream",
+    "node": "video"
+  },
+  "explain_error": {
+    "code": "stream_step_after_encode",
+    "family": "stream",
+    "operation": "build stream",
+    "node": "video"
+  },
+  "build_error": {
+    "code": "stream_step_after_encode",
+    "family": "stream",
+    "operation": "build stream",
+    "node": "video"
+  }
+}

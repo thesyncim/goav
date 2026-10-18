@@ -11,6 +11,17 @@ methodology changes, and migration notes.
 
 ## Unreleased
 
+- `Describe` names a playout or sync gate as the built graph does,
+  `playout-<branch>-<policy>` and `sync-<branch>-<policy>`; it reported
+  `playout-<branch>`, so a described graph did not match the task it built.
+  `TestCompilerOracle` caught it: it pins `Describe`, `Explain`, and each
+  refusal's code, family, operation, and node for a 35-recipe corpus that
+  crosses every lowering path (single stream, packet copy, multi-stream,
+  branches, stream rules, every join kind), as goldens under
+  `testdata/golden/oracle`, and checks the built graph equals `Describe` for
+  every recipe that builds. It is the safety net for replacing the recipe
+  lowerers with one compiler.
+
 - The WebM format adapter is the Matroska one driving WebM's profile-checked
   muxer and demuxer, instead of a 300-line copy of it, so the two cannot drift
   (the Opus `CodecDelay` fix had to land twice). `matroska.NewFormatMuxer` and

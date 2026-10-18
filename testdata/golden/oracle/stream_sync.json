@@ -1,0 +1,215 @@
+{
+  "describe": {
+    "name": "goav",
+    "nodes": [
+      {
+        "name": "audio-1",
+        "kind": "source",
+        "detail": "custom source, domain=frame, media=audio"
+      },
+      {
+        "name": "select-audio",
+        "kind": "stage",
+        "detail": "select, type=audio"
+      },
+      {
+        "name": "sync-audio-lip",
+        "kind": "stage",
+        "detail": "sync hold-late"
+      },
+      {
+        "name": "speaker",
+        "kind": "sink"
+      }
+    ],
+    "edges": [
+      {
+        "from": "audio-1",
+        "to": "select-audio",
+        "policy": "all"
+      },
+      {
+        "from": "select-audio",
+        "to": "sync-audio-lip",
+        "policy": "all"
+      },
+      {
+        "from": "sync-audio-lip",
+        "to": "speaker",
+        "policy": "all"
+      }
+    ]
+  },
+  "explain": {
+    "summary": "from audio-1 through 1 stream branch(es) to speaker",
+    "operation": "build job",
+    "inputs": [
+      {
+        "name": "audio-1",
+        "protocol": "custom",
+        "streams": [
+          {
+            "ID": "audio-1",
+            "Index": 0,
+            "Type": "audio",
+            "Codec": {
+              "ID": "",
+              "Type": "audio",
+              "Profile": "",
+              "Level": "",
+              "ClockRate": 48000,
+              "SampleRate": 48000,
+              "Channels": 2,
+              "ChannelLayout": "stereo",
+              "Width": 0,
+              "Height": 0,
+              "PixelFormat": "",
+              "SampleFormat": "s16",
+              "ExtraData": {
+                "Bytes": null,
+                "Ownership": "",
+                "Owner": null
+              },
+              "Attributes": null
+            },
+            "TimeBase": {
+              "Num": 0,
+              "Den": 0
+            },
+            "Language": "",
+            "Name": "audio-1",
+            "Epoch": 0,
+            "Metadata": null
+          }
+        ]
+      }
+    ],
+    "streams": [
+      {
+        "name": "audio",
+        "select": {
+          "type": "audio"
+        },
+        "operations": [
+          {
+            "kind": "stage",
+            "component": "sync-lip",
+            "detail": "custom stage",
+            "adapter": "sync-lip"
+          }
+        ],
+        "destinations": [
+          "speaker"
+        ]
+      }
+    ],
+    "branches": [
+      {
+        "name": "audio",
+        "input": "audio-1",
+        "stream": {
+          "id": "audio-1",
+          "type": "audio",
+          "name": "audio-1"
+        },
+        "shape": {
+          "domain": "frame",
+          "mediaKind": "audio",
+          "streamID": "audio-1",
+          "sampleRate": 48000,
+          "channels": 2,
+          "sampleFormat": "s16"
+        },
+        "operations": [
+          {
+            "kind": "select",
+            "component": "audio",
+            "detail": "select stream",
+            "shape": {
+              "domain": "frame",
+              "mediaKind": "audio",
+              "streamID": "audio-1",
+              "sampleRate": 48000,
+              "channels": 2,
+              "sampleFormat": "s16"
+            }
+          },
+          {
+            "kind": "stage",
+            "component": "sync-lip",
+            "detail": "custom stage",
+            "shape": {
+              "domain": "frame",
+              "mediaKind": "audio",
+              "streamID": "audio-1",
+              "sampleRate": 48000,
+              "channels": 2,
+              "sampleFormat": "s16"
+            },
+            "adapter": "sync-lip"
+          }
+        ],
+        "destinations": [
+          "speaker"
+        ]
+      }
+    ],
+    "destinations": [
+      {
+        "name": "speaker",
+        "kind": "sink",
+        "branches": [
+          "audio"
+        ]
+      }
+    ],
+    "decisions": [
+      {
+        "code": "path_latency_budget",
+        "branch": "audio",
+        "message": "declared latency budget 0s"
+      }
+    ],
+    "graph": {
+      "name": "goav",
+      "nodes": [
+        {
+          "name": "audio-1",
+          "kind": "source",
+          "detail": "custom source, domain=frame, media=audio"
+        },
+        {
+          "name": "select-audio",
+          "kind": "stage",
+          "detail": "select, type=audio"
+        },
+        {
+          "name": "sync-audio-lip",
+          "kind": "stage",
+          "detail": "sync hold-late"
+        },
+        {
+          "name": "speaker",
+          "kind": "sink"
+        }
+      ],
+      "edges": [
+        {
+          "from": "audio-1",
+          "to": "select-audio",
+          "policy": "all"
+        },
+        {
+          "from": "select-audio",
+          "to": "sync-audio-lip",
+          "policy": "all"
+        },
+        {
+          "from": "sync-audio-lip",
+          "to": "speaker",
+          "policy": "all"
+        }
+      ]
+    }
+  }
+}

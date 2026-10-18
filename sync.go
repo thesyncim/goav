@@ -161,14 +161,18 @@ func recipeIROperationsContainSync(operations []recipeir.Operation) bool {
 	return false
 }
 
+// syncStageOperationName is the planned node name of a sync gate: the gate
+// scoped by its branch, sync-<branch>-<policy>, exactly as the lowering and
+// the work plan name it, so Describe matches the built graph.
 func syncStageOperationName(operation operationSpec, branchName string) string {
-	if _, ok := operation.Stage.(*syncGate); !ok {
+	gate, ok := operation.Stage.(*syncGate)
+	if !ok {
 		if operation.Stage != nil {
 			return operation.Stage.Name()
 		}
 		return operation.Component
 	}
-	return syncStageName(firstNonEmpty(branchName, operation.Component, "branch"))
+	return syncStageName(firstNonEmpty(branchName, "branch") + "-" + gate.policy.Name())
 }
 
 var _ pipeline.Stage = (*syncGate)(nil)

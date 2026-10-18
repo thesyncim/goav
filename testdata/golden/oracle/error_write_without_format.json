@@ -1,0 +1,56 @@
+{
+  "describe": {
+    "name": "goav",
+    "nodes": [
+      {
+        "name": "video-1",
+        "kind": "source",
+        "detail": "custom source, domain=frame, media=video"
+      },
+      {
+        "name": "select-video",
+        "kind": "stage",
+        "detail": "select, type=video"
+      },
+      {
+        "name": "encode-video",
+        "kind": "stage",
+        "detail": "frames -\u003e packets, codec=vp8"
+      },
+      {
+        "name": "out",
+        "kind": "stage",
+        "detail": "mux, protocol=file"
+      }
+    ],
+    "edges": [
+      {
+        "from": "video-1",
+        "to": "select-video",
+        "policy": "all"
+      },
+      {
+        "from": "select-video",
+        "to": "encode-video",
+        "policy": "all"
+      },
+      {
+        "from": "encode-video",
+        "to": "out",
+        "policy": "all"
+      }
+    ]
+  },
+  "explain_error": {
+    "code": "destination_format_unknown",
+    "family": "destination",
+    "operation": "open destination",
+    "node": "out"
+  },
+  "build_error": {
+    "code": "destination_format_unknown",
+    "family": "destination",
+    "operation": "open destination",
+    "node": "out"
+  }
+}

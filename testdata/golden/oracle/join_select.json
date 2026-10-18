@@ -1,0 +1,251 @@
+{
+  "describe": {
+    "name": "goav-select",
+    "nodes": [
+      {
+        "name": "audio-1",
+        "kind": "source",
+        "detail": "custom source, domain=frame, media=audio"
+      },
+      {
+        "name": "audio-2",
+        "kind": "source",
+        "detail": "custom source, domain=frame, media=audio"
+      },
+      {
+        "name": "select",
+        "kind": "stage"
+      },
+      {
+        "name": "active",
+        "kind": "sink"
+      }
+    ],
+    "edges": [
+      {
+        "from": "audio-1",
+        "to": "select",
+        "policy": "all"
+      },
+      {
+        "from": "audio-2",
+        "to": "select",
+        "policy": "all"
+      },
+      {
+        "from": "select",
+        "to": "active",
+        "policy": "all"
+      }
+    ]
+  },
+  "explain": {
+    "summary": "select 2 inputs to active",
+    "operation": "build job",
+    "inputs": [
+      {
+        "name": "audio-1",
+        "protocol": "custom",
+        "streams": [
+          {
+            "ID": "audio-1",
+            "Index": 0,
+            "Type": "audio",
+            "Codec": {
+              "ID": "",
+              "Type": "audio",
+              "Profile": "",
+              "Level": "",
+              "ClockRate": 48000,
+              "SampleRate": 48000,
+              "Channels": 2,
+              "ChannelLayout": "stereo",
+              "Width": 0,
+              "Height": 0,
+              "PixelFormat": "",
+              "SampleFormat": "s16",
+              "ExtraData": {
+                "Bytes": null,
+                "Ownership": "",
+                "Owner": null
+              },
+              "Attributes": null
+            },
+            "TimeBase": {
+              "Num": 0,
+              "Den": 0
+            },
+            "Language": "",
+            "Name": "audio-1",
+            "Epoch": 0,
+            "Metadata": null
+          }
+        ]
+      },
+      {
+        "name": "audio-2",
+        "protocol": "custom",
+        "streams": [
+          {
+            "ID": "audio-2",
+            "Index": 0,
+            "Type": "audio",
+            "Codec": {
+              "ID": "",
+              "Type": "audio",
+              "Profile": "",
+              "Level": "",
+              "ClockRate": 48000,
+              "SampleRate": 48000,
+              "Channels": 2,
+              "ChannelLayout": "stereo",
+              "Width": 0,
+              "Height": 0,
+              "PixelFormat": "",
+              "SampleFormat": "s16",
+              "ExtraData": {
+                "Bytes": null,
+                "Ownership": "",
+                "Owner": null
+              },
+              "Attributes": null
+            },
+            "TimeBase": {
+              "Num": 0,
+              "Den": 0
+            },
+            "Language": "",
+            "Name": "audio-2",
+            "Epoch": 0,
+            "Metadata": null
+          }
+        ]
+      }
+    ],
+    "branches": [
+      {
+        "name": "audio-1",
+        "input": "audio-1",
+        "stream": {
+          "id": "audio-1",
+          "type": "audio",
+          "name": "audio-1"
+        },
+        "shape": {
+          "domain": "frame",
+          "mediaKind": "audio",
+          "streamID": "audio-1",
+          "sampleRate": 48000,
+          "channels": 2,
+          "sampleFormat": "s16"
+        }
+      },
+      {
+        "name": "audio-2",
+        "input": "audio-2",
+        "stream": {
+          "id": "audio-2",
+          "type": "audio",
+          "name": "audio-2"
+        },
+        "shape": {
+          "domain": "frame",
+          "mediaKind": "audio",
+          "streamID": "audio-2",
+          "sampleRate": 48000,
+          "channels": 2,
+          "sampleFormat": "s16"
+        }
+      },
+      {
+        "name": "select",
+        "stream": {
+          "id": "select",
+          "type": "audio",
+          "name": "audio-1"
+        },
+        "shape": {
+          "domain": "frame",
+          "mediaKind": "audio",
+          "streamID": "select",
+          "sampleRate": 48000,
+          "channels": 2,
+          "sampleFormat": "s16"
+        },
+        "operations": [
+          {
+            "kind": "join",
+            "component": "select",
+            "detail": "converge 2 arms",
+            "shape": {
+              "domain": "frame",
+              "mediaKind": "audio",
+              "streamID": "select",
+              "sampleRate": 48000,
+              "channels": 2,
+              "sampleFormat": "s16"
+            }
+          }
+        ],
+        "destinations": [
+          "active"
+        ]
+      }
+    ],
+    "destinations": [
+      {
+        "name": "active",
+        "kind": "sink",
+        "branches": [
+          "select"
+        ]
+      }
+    ],
+    "decisions": [
+      {
+        "code": "buffered_execution",
+        "message": "the graph runs buffered: every node gets its own worker and queue, so branches and join arms run in parallel"
+      }
+    ],
+    "graph": {
+      "name": "goav-select",
+      "nodes": [
+        {
+          "name": "audio-1",
+          "kind": "source",
+          "detail": "custom source, domain=frame, media=audio"
+        },
+        {
+          "name": "audio-2",
+          "kind": "source",
+          "detail": "custom source, domain=frame, media=audio"
+        },
+        {
+          "name": "select",
+          "kind": "stage"
+        },
+        {
+          "name": "active",
+          "kind": "sink"
+        }
+      ],
+      "edges": [
+        {
+          "from": "audio-1",
+          "to": "select",
+          "policy": "all"
+        },
+        {
+          "from": "audio-2",
+          "to": "select",
+          "policy": "all"
+        },
+        {
+          "from": "select",
+          "to": "active",
+          "policy": "all"
+        }
+      ]
+    }
+  }
+}

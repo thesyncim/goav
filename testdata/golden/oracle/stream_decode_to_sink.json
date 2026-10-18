@@ -1,0 +1,230 @@
+{
+  "describe": {
+    "name": "goav",
+    "nodes": [
+      {
+        "name": "vp8-1",
+        "kind": "source",
+        "detail": "custom source, domain=packet, media=video, codec=vp8"
+      },
+      {
+        "name": "select-video",
+        "kind": "stage",
+        "detail": "select, type=video"
+      },
+      {
+        "name": "decode-video",
+        "kind": "stage",
+        "detail": "packets -\u003e frames, type=video"
+      },
+      {
+        "name": "frames",
+        "kind": "sink"
+      }
+    ],
+    "edges": [
+      {
+        "from": "vp8-1",
+        "to": "select-video",
+        "policy": "all"
+      },
+      {
+        "from": "select-video",
+        "to": "decode-video",
+        "policy": "all"
+      },
+      {
+        "from": "decode-video",
+        "to": "frames",
+        "policy": "all"
+      }
+    ]
+  },
+  "explain": {
+    "summary": "from vp8-1 through 1 stream branch(es) to frames",
+    "operation": "build job",
+    "inputs": [
+      {
+        "name": "vp8-1",
+        "protocol": "custom",
+        "codec": "vp8",
+        "streams": [
+          {
+            "ID": "vp8-1",
+            "Index": 0,
+            "Type": "video",
+            "Codec": {
+              "ID": "vp8",
+              "Type": "video",
+              "Profile": "",
+              "Level": "",
+              "ClockRate": 90000,
+              "SampleRate": 0,
+              "Channels": 0,
+              "ChannelLayout": "",
+              "Width": 64,
+              "Height": 48,
+              "PixelFormat": "",
+              "SampleFormat": "",
+              "ExtraData": {
+                "Bytes": null,
+                "Ownership": "",
+                "Owner": null
+              },
+              "Attributes": null
+            },
+            "TimeBase": {
+              "Num": 0,
+              "Den": 0
+            },
+            "Language": "",
+            "Name": "vp8-1",
+            "Epoch": 0,
+            "Metadata": null
+          }
+        ]
+      }
+    ],
+    "streams": [
+      {
+        "name": "video",
+        "select": {
+          "type": "video"
+        },
+        "decode": true,
+        "operations": [
+          {
+            "kind": "decode",
+            "detail": "packets to frames"
+          }
+        ],
+        "destinations": [
+          "frames"
+        ]
+      }
+    ],
+    "branches": [
+      {
+        "name": "video",
+        "input": "vp8-1",
+        "stream": {
+          "id": "vp8-1",
+          "type": "video",
+          "codec": "vp8",
+          "name": "vp8-1"
+        },
+        "shape": {
+          "domain": "packet",
+          "mediaKind": "video",
+          "streamID": "vp8-1",
+          "codec": "vp8",
+          "width": 64,
+          "height": 48
+        },
+        "operations": [
+          {
+            "kind": "select",
+            "component": "video",
+            "detail": "select stream",
+            "shape": {
+              "domain": "packet",
+              "mediaKind": "video",
+              "streamID": "vp8-1",
+              "codec": "vp8",
+              "width": 64,
+              "height": 48
+            }
+          },
+          {
+            "kind": "decode",
+            "detail": "packets to frames",
+            "shape": {
+              "domain": "frame",
+              "mediaKind": "video",
+              "streamID": "vp8-1",
+              "codec": "vp8",
+              "width": 64,
+              "height": 48
+            }
+          }
+        ],
+        "destinations": [
+          "frames"
+        ]
+      }
+    ],
+    "destinations": [
+      {
+        "name": "frames",
+        "kind": "sink",
+        "branches": [
+          "video"
+        ]
+      }
+    ],
+    "decisions": [
+      {
+        "code": "decode_required",
+        "branch": "video",
+        "message": "operation specs require decoded frames"
+      }
+    ],
+    "requiredAdapters": [
+      {
+        "kind": "decoder",
+        "name": "vp8",
+        "codec": "vp8",
+        "media": [
+          "video"
+        ],
+        "pixelFormats": [
+          "i420"
+        ],
+        "realtime": true,
+        "requiredBy": "video",
+        "status": "available"
+      }
+    ],
+    "graph": {
+      "name": "goav",
+      "nodes": [
+        {
+          "name": "vp8-1",
+          "kind": "source",
+          "detail": "custom source, domain=packet, media=video, codec=vp8"
+        },
+        {
+          "name": "select-video",
+          "kind": "stage",
+          "detail": "select, type=video"
+        },
+        {
+          "name": "decode-video",
+          "kind": "stage",
+          "detail": "packets -\u003e frames, type=video"
+        },
+        {
+          "name": "frames",
+          "kind": "sink"
+        }
+      ],
+      "edges": [
+        {
+          "from": "vp8-1",
+          "to": "select-video",
+          "policy": "all"
+        },
+        {
+          "from": "select-video",
+          "to": "decode-video",
+          "policy": "all"
+        },
+        {
+          "from": "decode-video",
+          "to": "frames",
+          "policy": "all"
+        }
+      ]
+    }
+  }
+}
