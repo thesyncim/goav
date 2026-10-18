@@ -207,7 +207,7 @@ func TestGraphDirectDisconnectPauseAndRemoveContracts(t *testing.T) {
 }
 
 func TestRouteMatchingCoversFrameAndEventStreams(t *testing.T) {
-	streamRoute := directRoute{policy: RouteByStream, label: "video"}
+	streamRoute := nodeRoute{policy: RouteByStream, label: "video"}
 	packet := av.Packet{StreamID: "video"}
 	frame := av.Frame{StreamID: "video"}
 	event := av.Event{StreamID: "video", Type: av.EventStats}
@@ -222,17 +222,17 @@ func TestRouteMatchingCoversFrameAndEventStreams(t *testing.T) {
 		t.Fatal("stream route matched empty payloads")
 	}
 
-	allStreams := directRoute{policy: RouteByStream}
+	allStreams := nodeRoute{policy: RouteByStream}
 	if !allStreams.matches(&Message{}) {
 		t.Fatal("empty stream label should match all messages")
 	}
-	eventRoute := directRoute{policy: RouteByEvent, label: string(av.EventStats)}
+	eventRoute := nodeRoute{policy: RouteByEvent, label: string(av.EventStats)}
 	if !eventRoute.matches(&Message{Kind: MessageEvent, Event: &event}) ||
 		eventRoute.matches(&Message{Kind: MessagePacket, Packet: &packet}) ||
 		eventRoute.matches(&Message{Kind: MessageEvent}) {
 		t.Fatal("event route matching changed")
 	}
-	unknownRoute := directRoute{policy: RoutePolicy("future")}
+	unknownRoute := nodeRoute{policy: RoutePolicy("future")}
 	if unknownRoute.matches(&Message{Kind: MessagePacket, Packet: &packet}) {
 		t.Fatal("unsupported route policy matched")
 	}

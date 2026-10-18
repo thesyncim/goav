@@ -144,13 +144,12 @@ func (g *directRunner) InjectSource(ctx context.Context, ref NodeRef, msg *Messa
 		g.mu.RUnlock()
 		return ErrUnknownNode
 	}
-	node := &g.nodes[index]
+	node := g.nodes[index]
 	if node.kind != nodeSource {
 		g.mu.RUnlock()
 		return ErrInvalidLink
 	}
-	// Copy the interface value before releasing g.mu: g.nodes may be reallocated
-	// by a concurrent AddSource/AddStage, but the source itself is stable.
+	// Copy the interface value before releasing g.mu; the source itself is stable.
 	source := node.source
 	g.mu.RUnlock()
 	controllable, ok := source.(ControllableSource)
