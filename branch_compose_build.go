@@ -27,6 +27,9 @@ type branchComposePlan struct {
 	Branches     []branchComposeBranch
 	Destinations []branchComposeTarget
 	Metadata     av.Metadata
+	// keepStreamIdentity encodes each branch under the stream it encodes, as
+	// a lone chain does, instead of naming the output after the branch.
+	keepStreamIdentity bool
 }
 
 type branchComposeBranch struct {
@@ -444,10 +447,10 @@ func branchComposeRoutes(composePlan branchComposePlan) ([]branchComposeRoute, e
 		privateOperations := branchComposeRouteOperations(branch)
 
 		config := cloneEncodeConfig(branch.Encode)
-		if config.Stream.ID == "" {
+		if config.Stream.ID == "" && !composePlan.keepStreamIdentity {
 			config.Stream.ID = av.StreamID(name)
 		}
-		if config.Stream.Name == "" {
+		if config.Stream.Name == "" && !composePlan.keepStreamIdentity {
 			config.Stream.Name = name
 		}
 		if config.Stream.Metadata == nil && branch.Metadata != nil {

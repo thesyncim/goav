@@ -99,6 +99,10 @@ func oracleVP8() goav.InputSpec {
 	})
 }
 
+var oraclePacketStage = component.PacketFunc("bsf", func(_ context.Context, p *av.Packet, emit component.Emit) error {
+	return emit.Packet(p)
+})
+
 var oracleFrameStage = component.FrameFunc("grade", func(_ context.Context, f *av.Frame, emit component.Emit) error {
 	return emit.Frame(f)
 })
@@ -129,7 +133,13 @@ func oracleCorpus(t *testing.T) map[string]func() *goav.Job {
 		"stream_sync": func() *goav.Job {
 			return goav.From(oracleAudio()).Audio().Sync(flow.Sync("lip")).To(oracleSink("speaker"))
 		},
+		"stream_encode_packet_stage": func() *goav.Job {
+			return goav.From(oracleVideo()).Video().Encode(codec.VP8()).Do(oraclePacketStage).To(w("out.webm"))
+		},
 		// Packet copy.
+		"copy_packet_stage": func() *goav.Job {
+			return goav.From(oracleMP4(t)).Video().Copy().Do(oraclePacketStage).To(w("out.mkv"))
+		},
 		"copy_remux_all": func() *goav.Job {
 			return goav.From(oracleMP4(t)).Copy().To(w("out.mkv"))
 		},
@@ -230,7 +240,7 @@ func oracleCorpus(t *testing.T) map[string]func() *goav.Job {
 		"error_mix_one_arm": func() *goav.Job {
 			return goav.Mix(goav.From(oracleAudio()).Audio()).To(oracleSink("mixed"))
 		},
-		"error_copy_playout": func() *goav.Job {
+		"stream_copy_playout": func() *goav.Job {
 			return goav.From(oracleMP4(t)).Video().Copy().Playout(flow.Playout("p")).To(oracleSink("p"))
 		},
 		"error_stage_after_encode": func() *goav.Job {

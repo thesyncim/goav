@@ -1,0 +1,266 @@
+{
+  "describe": {
+    "name": "goav",
+    "nodes": [
+      {
+        "name": "in.mp4",
+        "kind": "source",
+        "detail": "demux, protocol=file"
+      },
+      {
+        "name": "select-video",
+        "kind": "stage",
+        "detail": "select, type=video"
+      },
+      {
+        "name": "playout-video-p",
+        "kind": "stage",
+        "detail": "playout hold-late"
+      },
+      {
+        "name": "p",
+        "kind": "sink"
+      }
+    ],
+    "edges": [
+      {
+        "from": "in.mp4",
+        "to": "select-video",
+        "policy": "all"
+      },
+      {
+        "from": "select-video",
+        "to": "playout-video-p",
+        "policy": "all"
+      },
+      {
+        "from": "playout-video-p",
+        "to": "p",
+        "policy": "all"
+      }
+    ]
+  },
+  "explain": {
+    "summary": "from in.mp4 through 1 stream branch(es) to p",
+    "operation": "build job",
+    "inputs": [
+      {
+        "name": "in.mp4",
+        "protocol": "file",
+        "format": "mp4"
+      }
+    ],
+    "streams": [
+      {
+        "name": "video",
+        "select": {
+          "type": "video"
+        },
+        "operations": [
+          {
+            "kind": "copy",
+            "component": "packet-copy"
+          },
+          {
+            "kind": "stage",
+            "component": "playout-p",
+            "detail": "custom stage",
+            "adapter": "playout-p"
+          }
+        ],
+        "encode": {
+          "ID": "",
+          "Type": "",
+          "Parameters": {
+            "ID": "",
+            "Type": "",
+            "Profile": "",
+            "Level": "",
+            "ClockRate": 0,
+            "SampleRate": 0,
+            "Channels": 0,
+            "ChannelLayout": "",
+            "Width": 0,
+            "Height": 0,
+            "PixelFormat": "",
+            "SampleFormat": "",
+            "ExtraData": {
+              "Bytes": null,
+              "Ownership": "",
+              "Owner": null
+            },
+            "Attributes": null
+          },
+          "Settings": {
+            "Bitrate": 0,
+            "Framerate": {
+              "Value": 0,
+              "Base": {
+                "Num": 0,
+                "Den": 0
+              }
+            },
+            "KeyframeInterval": 0,
+            "Profile": "",
+            "Level": "",
+            "Channels": 0,
+            "SampleRate": 0,
+            "ClockRate": 0,
+            "ChannelLayout": "",
+            "ChannelsSet": false,
+            "SampleRateSet": false,
+            "Custom": null
+          },
+          "Copy": true,
+          "Auto": false
+        },
+        "destinations": [
+          "p"
+        ]
+      }
+    ],
+    "branches": [
+      {
+        "name": "video",
+        "input": "in.mp4",
+        "stream": {
+          "type": "video"
+        },
+        "shape": {
+          "domain": "packet",
+          "mediaKind": "video"
+        },
+        "operations": [
+          {
+            "kind": "demux",
+            "component": "container",
+            "detail": "read packets from input",
+            "shape": {
+              "domain": "packet",
+              "mediaKind": "video"
+            }
+          },
+          {
+            "kind": "select",
+            "component": "video",
+            "detail": "select stream",
+            "shape": {
+              "domain": "packet",
+              "mediaKind": "video"
+            }
+          },
+          {
+            "kind": "copy",
+            "component": "packet-copy",
+            "detail": "explicit packet copy",
+            "shape": {
+              "domain": "packet",
+              "mediaKind": "video"
+            }
+          },
+          {
+            "kind": "stage",
+            "component": "playout-p",
+            "detail": "custom stage",
+            "shape": {
+              "domain": "packet",
+              "mediaKind": "video"
+            },
+            "adapter": "playout-p"
+          }
+        ],
+        "destinations": [
+          "p"
+        ]
+      }
+    ],
+    "destinations": [
+      {
+        "name": "p",
+        "kind": "sink",
+        "branches": [
+          "video"
+        ]
+      }
+    ],
+    "decisions": [
+      {
+        "code": "packet_copy",
+        "branch": "video",
+        "message": "stream can remain packet encoded"
+      },
+      {
+        "code": "path_latency_budget",
+        "branch": "video",
+        "message": "declared latency budget 0s"
+      }
+    ],
+    "requiredAdapters": [
+      {
+        "kind": "demuxer",
+        "name": "mp4",
+        "format": "mp4",
+        "media": [
+          "audio",
+          "video"
+        ],
+        "codecs": [
+          "h264",
+          "av1",
+          "vp8",
+          "vp9",
+          "aac",
+          "opus",
+          "flac"
+        ],
+        "minStreams": 1,
+        "metadata": {
+          "summary": "MP4 demux reads common ISO BMFF audio and video sample entries"
+        },
+        "requiredBy": "in.mp4",
+        "status": "available"
+      }
+    ],
+    "graph": {
+      "name": "goav",
+      "nodes": [
+        {
+          "name": "in.mp4",
+          "kind": "source",
+          "detail": "demux, protocol=file"
+        },
+        {
+          "name": "select-video",
+          "kind": "stage",
+          "detail": "select, type=video"
+        },
+        {
+          "name": "playout-video-p",
+          "kind": "stage",
+          "detail": "playout hold-late"
+        },
+        {
+          "name": "p",
+          "kind": "sink"
+        }
+      ],
+      "edges": [
+        {
+          "from": "in.mp4",
+          "to": "select-video",
+          "policy": "all"
+        },
+        {
+          "from": "select-video",
+          "to": "playout-video-p",
+          "policy": "all"
+        },
+        {
+          "from": "playout-video-p",
+          "to": "p",
+          "policy": "all"
+        }
+      ]
+    }
+  }
+}

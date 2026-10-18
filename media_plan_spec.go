@@ -268,7 +268,7 @@ func mediaPlanMultiStreamJobLowererForState(state *recipeCompileState) (graphPla
 }
 
 func mediaPlanMultiStreamJobInputFromCompileState(state *recipeCompileState) (mediaPlanMultiStreamJobInput, bool) {
-	if state == nil || !state.jobPresent || len(state.recipe.Streams) < 2 {
+	if state == nil || !state.jobPresent || len(state.recipe.Streams) == 0 {
 		return mediaPlanMultiStreamJobInput{}, false
 	}
 	namedOutputs := make([]namedDestinationSpec, 0, len(state.outputAttachments))
@@ -293,13 +293,17 @@ func mediaPlanMultiStreamJobInputFromCompileState(state *recipeCompileState) (me
 
 func newMediaPlanMultiStreamJobLowerer(input mediaPlanMultiStreamJobInput) (graphPlanLowerer, bool, error) {
 	recipe := input.recipe
-	if len(recipe.Streams) < 2 {
+	if len(recipe.Streams) == 0 {
 		return nil, false, nil
 	}
 	gp, err := planBranchCompositionRecipe(recipe, input.input, input.namedOutputs)
 	if err != nil {
 		return nil, false, err
 	}
+	// A lone chain that lowers as one branch (a copy with steps, a stage after
+	// the encoder) keeps the identity of the stream it encodes, exactly as the
+	// single-stream route does.
+	gp.keepStreamIdentity = len(recipe.Streams) == 1
 	graph, ok, err := newMediaPlanBranchComposeGraph(input.runtime, input.inputs, gp)
 	if err != nil || !ok {
 		return nil, ok, err

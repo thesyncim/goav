@@ -168,7 +168,7 @@ func (p streamRoutes) hasSingleSinkDestination() bool {
 }
 
 func newMediaPlanDecodeStreamGraph(rt *Runtime, inputs []InputSpec, outputs []destinationSpec, stream streamIntent) (composeLowerer, bool, error) {
-	if !mediaPlanStreamInputsSupported(inputs) {
+	if !mediaPlanStreamInputsSupported(inputs) || operationsHaveStepAfterEncode(stream.Operations) {
 		return composeLowerer{}, false, nil
 	}
 	selector := streamIntentSelector(stream)
