@@ -22,6 +22,14 @@ methodology changes, and migration notes.
   ask a fragmenting muxer for a fragment length with `provider.Contract.Fragment`
   (carried on `format.Output.Fragment`); the MP4 muxer cuts before a fragment
   would pass it.
+  Playlists also carry delta updates (`CAN-SKIP-UNTIL` six target durations,
+  `_HLS_skip=YES` answered with a version 9 playlist whose old segments are one
+  `EXT-X-SKIP`), and an LL ladder's playlists carry `EXT-X-RENDITION-REPORT`s
+  of where the other renditions stand, so players switch without a reload. The
+  server refuses a reload more than two segments ahead (400), lets CDNs cache
+  blocking answers for six target durations, wakes only the requests waiting
+  on what was published, and hints the next segment's first part once a
+  segment reaches its target. Live playlists date every segment.
 
 - Joins take file inputs: `goav.Mix(a.Audio().Decode(), b.Audio().Decode())`
   and `goav.Composite(...)` over files plan, describe, and run, instead of

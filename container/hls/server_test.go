@@ -4,6 +4,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"testing"
 	"time"
 )
@@ -61,5 +62,57 @@ func TestServerBlocking(t *testing.T) {
 	}
 	if r := <-get("p.m3u8?_HLS_part=1"); r.code != http.StatusBadRequest {
 		t.Fatalf("_HLS_part alone = %+v, want 400", r)
+	}
+}
+
+func TestServerDeltaAndBounds(t *testing.T) {
+	srv := NewServer()
+	web := httptest.NewServer(srv)
+	defer web.Close()
+	f, _ := srv.Create("p.m3u8")
+	io.WriteString(f, "full")
+	f.Close()
+	srv.announce("p.m3u8", edge{msn: 5, part: 1, complete: 4, target: time.Second, delta: []byte("delta")})
+	get := func(path string) (int, string, string) {
+		resp, err := http.Get(web.URL + "/" + path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		b, _ := io.ReadAll(resp.Body)
+		return resp.StatusCode, string(b), resp.Header.Get("Cache-Control")
+	}
+	if code, body, _ := get("p.m3u8?_HLS_skip=YES"); code != http.StatusOK || body != "delta" {
+		t.Fatalf("delta request = %d %q", code, body)
+	}
+	if code, body, cache := get("p.m3u8?_HLS_msn=5&_HLS_part=1&_HLS_skip=YES"); code != http.StatusOK || body != "delta" || cache != "max-age=6" {
+		t.Fatalf("blocking delta = %d %q %q, want the delta cached for six targets", code, body, cache)
+	}
+	if code, body, cache := get("p.m3u8"); body != "full" || cache != "no-cache" || code != http.StatusOK {
+		t.Fatalf("plain = %d %q %q", code, body, cache)
+	}
+	if code, _, _ := get("p.m3u8?_HLS_msn=7"); code != http.StatusBadRequest {
+		t.Fatalf("a reload three segments past the last = %d, want 400", code)
+	}
+}
+
+// TestServerForgetsUnknownNames: a request for a name nothing will publish
+// leaves nothing behind.
+func TestServerForgetsUnknownNames(t *testing.T) {
+	srv := NewServer()
+	web := httptest.NewServer(srv)
+	defer web.Close()
+	for i := range 100 {
+		resp, err := http.Get(web.URL + "/nope-" + strconv.Itoa(i) + ".m4s")
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusNotFound {
+			t.Fatalf("unknown name = %d", resp.StatusCode)
+		}
+	}
+	if n := len(srv.waiting); n != 0 {
+		t.Fatalf("%d wait channels left for names nothing publishes", n)
 	}
 }

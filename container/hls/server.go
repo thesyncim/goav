@@ -25,8 +25,10 @@ type Server struct {
 	mu    sync.Mutex
 	files map[string][]byte
 	edges map[string]edge
-	// changed is closed, and replaced, whenever a file or an edge changes.
-	changed chan struct{}
+	// waiting holds, per name, the channel the requests waiting on it
+	// block on; publishing or announcing the name closes it, so a part
+	// wakes only the players waiting for that part.
+	waiting map[string]chan struct{}
 }
 
 // edge is where a packager's playlist stands: msn is its newest segment,
@@ -37,6 +39,9 @@ type edge struct {
 	hint                string
 	ended               bool
 	target              time.Duration
+	// delta is the playlist's delta update, for _HLS_skip, when it has
+	// segments past the skip boundary.
+	delta []byte
 }
 
 // announcer is a Store that hears where each playlist stands, so it can
@@ -47,7 +52,7 @@ type announcer interface {
 
 // NewServer returns an empty server.
 func NewServer() *Server {
-	return &Server{files: map[string][]byte{}, edges: map[string]edge{}, changed: make(chan struct{})}
+	return &Server{files: map[string][]byte{}, edges: map[string]edge{}, waiting: map[string]chan struct{}{}}
 }
 
 // Create returns a writer whose Close publishes name.
@@ -72,21 +77,37 @@ type serverFile struct {
 func (f *serverFile) Close() error {
 	f.server.mu.Lock()
 	f.server.files[f.name] = f.Bytes()
-	f.server.wakeLocked()
+	f.server.wakeLocked(f.name)
 	f.server.mu.Unlock()
 	return nil
 }
 
 func (s *Server) announce(playlist string, e edge) {
 	s.mu.Lock()
+	if old, ok := s.edges[playlist]; ok && old.hint != e.hint {
+		// Requests for the old hint learn it will not come.
+		s.wakeLocked(old.hint)
+	}
 	s.edges[playlist] = e
-	s.wakeLocked()
+	s.wakeLocked(playlist)
 	s.mu.Unlock()
 }
 
-func (s *Server) wakeLocked() {
-	close(s.changed)
-	s.changed = make(chan struct{})
+func (s *Server) wakeLocked(name string) {
+	if ch, ok := s.waiting[name]; ok {
+		close(ch)
+		delete(s.waiting, name)
+	}
+}
+
+// waitLocked is the channel a request for name blocks on.
+func (s *Server) waitLocked(name string) chan struct{} {
+	ch, ok := s.waiting[name]
+	if !ok {
+		ch = make(chan struct{})
+		s.waiting[name] = ch
+	}
+	return ch
 }
 
 // ServeHTTP serves the file the path names, relative to where the server
@@ -98,7 +119,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	name := strings.TrimPrefix(path.Clean("/"+r.URL.Path), "/")
-	ready, err := s.blockingRequest(name, r.URL.Query())
+	query := r.URL.Query()
+	ready, err := s.blockingRequest(name, query)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -109,12 +131,18 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	for {
 		s.mu.Lock()
 		data, have := s.files[name]
-		wait := s.changed
 		ok := have && ready()
+		if e := s.edges[name]; ok && wantsDelta(query) && e.delta != nil {
+			data = e.delta
+		}
 		pending := !ok && s.pendingLocked(name)
+		var wait chan struct{}
+		if pending {
+			wait = s.waitLocked(name)
+		}
 		s.mu.Unlock()
 		if ok {
-			s.write(w, r, name, data)
+			s.write(w, r, name, data, query.Has("_HLS_msn"))
 			return
 		}
 		if !pending {
@@ -147,6 +175,12 @@ func (s *Server) blockingRequest(name string, query map[string][]string) (func()
 	msn, err := strconv.Atoi(msnText)
 	if err != nil || msn < 0 {
 		return nil, errBadRequest("_HLS_msn is a segment number")
+	}
+	s.mu.Lock()
+	e, known := s.edges[name]
+	s.mu.Unlock()
+	if known && !e.ended && msn > e.complete+2 {
+		return nil, errBadRequest("_HLS_msn " + msnText + " is more than two segments past the playlist's last")
 	}
 	wantPart := -1
 	if part != "" {
@@ -200,13 +234,18 @@ func (s *Server) targetFor(name string) time.Duration {
 	return 4 * time.Second
 }
 
-func (s *Server) write(w http.ResponseWriter, r *http.Request, name string, data []byte) {
+func (s *Server) write(w http.ResponseWriter, r *http.Request, name string, data []byte, blocking bool) {
 	switch path.Ext(name) {
 	case ".m3u8":
 		w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
-		// A playlist changes every part; a blocking reload asks for the
-		// version it needs.
-		w.Header().Set("Cache-Control", "no-cache")
+		if blocking {
+			// The answer to a blocking reload is keyed by its query: a CDN
+			// can serve it to every player that asks the same.
+			w.Header().Set("Cache-Control", "max-age="+strconv.Itoa(int(6*s.targetFor(name).Seconds())))
+		} else {
+			// A plain playlist changes every part.
+			w.Header().Set("Cache-Control", "no-cache")
+		}
 	case ".mp4", ".m4s":
 		w.Header().Set("Content-Type", "video/mp4")
 		w.Header().Set("Cache-Control", "max-age=3600")
@@ -224,3 +263,9 @@ func first(values []string) string {
 type errBadRequest string
 
 func (e errBadRequest) Error() string { return string(e) }
+
+// wantsDelta reports whether a request asks for a delta update.
+func wantsDelta(query map[string][]string) bool {
+	skip := first(query["_HLS_skip"])
+	return skip == "YES" || skip == "v2"
+}

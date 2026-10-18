@@ -67,7 +67,7 @@ testsrc audio duration=3s live ! encode opus ! out`, launch.Use(out))
 	if waited := time.Since(start); waited < 800*time.Millisecond {
 		t.Fatalf("the reload came back after %v, before segment 1 had parts", waited)
 	}
-	for _, tag := range []string{"#EXT-X-SERVER-CONTROL:CAN-BLOCK-RELOAD=YES,PART-HOLD-BACK=0.600", "#EXT-X-PART-INF:PART-TARGET=0.200", "#EXT-X-PROGRAM-DATE-TIME:"} {
+	for _, tag := range []string{"#EXT-X-SERVER-CONTROL:CAN-BLOCK-RELOAD=YES,CAN-SKIP-UNTIL=6.0,PART-HOLD-BACK=0.600", "#EXT-X-PART-INF:PART-TARGET=0.200", "#EXT-X-PROGRAM-DATE-TIME:"} {
 		if !strings.Contains(playlist, tag) {
 			t.Fatalf("playlist lacks %s:\n%s", tag, playlist)
 		}
@@ -108,5 +108,53 @@ func TestLowLatencyNeedsTheServer(t *testing.T) {
 	_, err := hls.New("ll.m3u8", store, hls.Parts(200*time.Millisecond)).Open(context.Background(), provider.Info{})
 	if err == nil || !strings.Contains(err.Error(), "hls.NewServer()") {
 		t.Fatalf("LL-HLS into a plain store: %v", err)
+	}
+}
+
+// TestLowLatencyLadder: each rendition's LL playlist reports where the
+// other stands, so a player switches without first reloading it.
+func TestLowLatencyLadder(t *testing.T) {
+	srv := hls.NewServer()
+	web := httptest.NewServer(srv)
+	defer web.Close()
+	ladder := hls.NewLadder("master.m3u8", srv)
+	hd := goav.Custom("hd", ladder.Variant("hd.m3u8", hls.SegmentDuration(time.Second), hls.Parts(200*time.Millisecond)))
+	sd := goav.Custom("sd", ladder.Variant("sd.m3u8", hls.SegmentDuration(time.Second), hls.Parts(200*time.Millisecond)))
+	sink := func(name string, d goav.Destination) launch.Element {
+		return launch.Sink(name, "a variant", func(struct{}) (goav.Destination, error) { return d, nil })
+	}
+	outs, err := launch.Compile(`testsrc video size=128x96 fps=25 duration=2s live ! encode vp8 bitrate=300k keyframe_interval=25 ! hd
+testsrc video size=64x48 fps=25 duration=2s live ! encode vp8 bitrate=80k keyframe_interval=25 ! sd`, launch.Use(sink("hd", hd), sink("sd", sd)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() { done <- bundle.Run(context.Background(), outs...) }()
+	var playlist string
+	for deadline := time.Now().Add(5 * time.Second); ; {
+		resp, err := http.Get(web.URL + "/hd.m3u8?_HLS_msn=1&_HLS_part=0")
+		if err == nil {
+			b, _ := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			if resp.StatusCode == http.StatusOK {
+				playlist = string(b)
+				break
+			}
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("hd.m3u8 never reached segment 1")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	report := regexp.MustCompile(`#EXT-X-RENDITION-REPORT:URI="sd.m3u8",LAST-MSN=(\d+),LAST-PART=(\d+)`).FindStringSubmatch(playlist)
+	if report == nil || strings.Contains(playlist, `URI="hd.m3u8"`) {
+		t.Fatalf("hd's playlist reports:\n%s", playlist)
+	}
+	// Both encode the same cadence: sd stands within a segment of hd.
+	if msn, _ := strconv.Atoi(report[1]); msn < 0 || msn > 2 {
+		t.Fatalf("sd reported at segment %d while hd is at 1", msn)
+	}
+	if err := <-done; err != nil {
+		t.Fatal(err)
 	}
 }
