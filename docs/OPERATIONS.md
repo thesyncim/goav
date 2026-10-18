@@ -62,10 +62,11 @@ not the root (there is no `goav.Bitrate`), and come in two tiers:
   control plane bind the tagged fields, so `goav ctl help attach` and
   `goav ctl capabilities` are the generated option list; do not copy it into
   docs.
-- **`codec.Control(func(native any) error)`.** The adapter calls it at open
-  with its concrete native encoder, decoder, or construction config; the
-  caller type-asserts and applies anything the backend exposes, and an error
-  fails the open. Each adapter documents the type it passes.
+- **`codec.Control(func(e *gopus.Encoder) error { ... })`.** The adapter calls it
+  at open with its concrete native encoder, decoder, or construction config,
+  typed as the callback asks: anything the backend exposes is one call away,
+  and a callback for another type, or an error from it, fails the open. Each
+  adapter documents the type it passes.
 
 Structure is shape, not settings: `shape.Spec` owns codec, resolution,
 pixel/sample format, rate, and channels. Constructors set structural defaults
@@ -141,7 +142,7 @@ build:
 
 Every refusal that happens before resources open should be a `*goav.BuildError`
 with a stable family, detailed code, operation, node, reason, machine-readable
-details through `Detail(key)`, rendered detail/fix lines, and a sentinel cause
+details through `Detail[T](key)`, rendered detail/fix lines, and a sentinel cause
 when one exists. The checked catalog is
 [`docs/ERROR_CATALOG.md`](ERROR_CATALOG.md).
 

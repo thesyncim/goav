@@ -13,6 +13,9 @@ goav elements
 goav ctl      [--control unix://PATH] <command> [args...]
 ```
 
+Install it with `GOEXPERIMENT=simd go install github.com/thesyncim/goav/cmd/goav@latest`;
+the SIMD codec paths run about twice as fast.
+
 ## The language
 
 A program is pipelines, one per line or separated by `;`, with `#` comments.

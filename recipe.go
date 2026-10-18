@@ -109,17 +109,22 @@ func (e *BuildError) Error() string {
 	return out.String()
 }
 
-// Detail returns the typed value for key when the BuildError carries it.
-func (e *BuildError) Detail(key string) (any, bool) {
+// Detail returns the detail named key as a T, reporting false when the error
+// carries no such detail or it is not a T:
+//
+//	format, ok := buildErr.Detail[av.FormatID]("format")
+func (e *BuildError) Detail[T any](key string) (T, bool) {
+	var zero T
 	if e == nil || key == "" {
-		return nil, false
+		return zero, false
 	}
 	for i := range e.fields {
 		if e.fields[i].Key == key {
-			return e.fields[i].Value, true
+			v, ok := e.fields[i].Value.(T)
+			return v, ok
 		}
 	}
-	return nil, false
+	return zero, false
 }
 
 // DetailLines returns the human-readable detail lines rendered in Error.

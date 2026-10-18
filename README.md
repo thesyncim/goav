@@ -14,7 +14,11 @@ your service still ships as one static binary.
 
 ```sh
 go get github.com/thesyncim/goav@latest   # Go 1.27+
+GOEXPERIMENT=simd go build ./...         # always: SIMD codec paths, about 2x faster
 ```
+
+Build, test, and run with `GOEXPERIMENT=simd`. It switches the codecs onto Go 1.27's
+portable SIMD paths; without it they fall back to scalar code.
 
 ## Quick start
 
@@ -58,7 +62,7 @@ the writer when the run ends.
 <summary>No WebM handy? Make a test clip with the CLI.</summary>
 
 ```sh
-go run github.com/thesyncim/goav/cmd/goav@latest run \
+GOEXPERIMENT=simd go run github.com/thesyncim/goav/cmd/goav@latest run \
   'testsrc video size=1920x1080 duration=2s ! encode vp9 ! file in.webm
    testsrc audio duration=2s ! encode opus ! file in.webm'
 ```
@@ -91,6 +95,7 @@ The same recipe as text, for a command line, a config file, or a control socket.
 identical graph ([`launch`](launch), [CLI](docs/CLI.md)):
 
 ```sh
+GOEXPERIMENT=simd go install github.com/thesyncim/goav/cmd/goav@latest
 goav run 'v := file in.webm ! video ! decode
           v ! resize 1280x720 ! encode vp9 ! as hd ! file hd.webm
           v ! resize 640x360 ! encode vp9 ! as sd ! file sd.webm
@@ -166,7 +171,8 @@ your own sources, codecs, and sinks plug in through small interfaces
 - **Change it while it runs.** Attach and detach outputs, switch inputs, and drive it all
   over a control socket ([Control plane](docs/CONTROL_PLANE.md)).
 - **Fast without assembly.** Graph, codec, and filter stages allocate nothing per message,
-  and Go 1.27's SIMD paths cut real-codec time by about 45%. See [Performance](docs/PERFORMANCE.md).
+  and with `GOEXPERIMENT=simd` Go 1.27's SIMD paths cut real-codec time by about 45%.
+  See [Performance](docs/PERFORMANCE.md).
 
 ## Modules
 

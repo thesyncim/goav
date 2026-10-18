@@ -116,7 +116,7 @@ baseline.
   land before v1 when they are recorded in `CHANGELOG.md`.
 - Structured errors: switch on `BuildError.Family` first. `BuildError.Code` is
   a detailed diagnostic leaf that may grow within a family before v1. Read
-  machine facts with `Detail(key)` and render diagnostics with
+  machine facts with `Detail[T](key)` and render diagnostics with
   `DetailLines()` / `FixLines()`; the backing detail/fix records are
   intentionally not public DTOs.
 - Extension seams stay documented and tested but may grow as new adapters need
@@ -202,7 +202,7 @@ Migration notes:
 - Replace `Mux(name, destination)` with the destination value itself, passed
   to every Output that shares it.
 - Switch structured-error callers from legacy details/suggestions fields to
-  `Detail(key)`, `DetailLines()`, and `FixLines()`.
+  `Detail[T](key)`, `DetailLines()`, and `FixLines()`.
 - Add explicit `.Decode()` before frame transforms, real encoders, frame taps,
   or decoded-frame sinks; leave `.Decode()` out for packet-preserving flows.
 

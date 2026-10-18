@@ -146,3 +146,22 @@ func TestReadmeProgramsCompile(t *testing.T) {
 		}
 	}
 }
+
+var readmeGoCommandPattern = regexp.MustCompile(`(?m)^.*\bgo (run|build|install|test)\b.*$`)
+
+// TestReadmeGoCommandsUseSIMD pins the README's build advice: every command
+// that compiles goav carries GOEXPERIMENT=simd.
+func TestReadmeGoCommandsUseSIMD(t *testing.T) {
+	readme, err := os.ReadFile("README.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, line := range readmeGoCommandPattern.FindAllString(string(readme), -1) {
+		if strings.Contains(line, "`") {
+			continue // prose, not a command
+		}
+		if !strings.Contains(line, "GOEXPERIMENT=simd") {
+			t.Errorf("README command lacks GOEXPERIMENT=simd: %s", line)
+		}
+	}
+}

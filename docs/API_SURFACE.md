@@ -50,7 +50,7 @@ in.To(dst)                                copy every stream of the input
 rt.Run(ctx, outputs...); rt.Build/Describe/Explain; bundle.Run/Build/Describe/Explain (default bundle)
 Task: Run, Close
 goav.New(runconfig.Option...) -> (*Runtime, error); bundle.MustNew(...) -> bundled Runtime
-errors: *goav.BuildError matched with errors.As; branch on Family first; Detail(key) for typed facts; DetailLines/FixLines for rendered diagnostics
+errors: *goav.BuildError matched with errors.As; branch on Family first; Detail[T](key) for typed facts; DetailLines/FixLines for rendered diagnostics
 ```
 
 The checked operation reference is

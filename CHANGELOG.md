@@ -11,6 +11,14 @@ methodology changes, and migration notes.
 
 ## Unreleased
 
+- Go 1.27 generic methods where they remove assertions. Breaking:
+  `BuildError.Detail[T](key) (T, bool)` returns the detail typed
+  (`buildErr.Detail[av.CodecID]("codec")`), and `codec.Control[T](func(T)
+  error)` hands the callback the adapter's native value typed
+  (`codec.Control(func(e *gopus.Encoder) error {...})`; a mismatch fails the
+  open naming both types). The README builds, runs, and installs with
+  `GOEXPERIMENT=simd` throughout, pinned by a test.
+
 - `launch` is goav's pipeline language: recipes as text for command lines,
   config files, and control sockets. `launch.Compile(program, options...)`
   returns ordinary Outputs, the same graph the Go recipe builds (pinned node
