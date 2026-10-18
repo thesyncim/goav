@@ -3,6 +3,7 @@ package webm
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
@@ -35,10 +36,15 @@ type FormatDemuxer struct {
 	closed  bool
 }
 
+// formatTrack maps a goav stream to its WebM track. codecDelayNS is the
+// track's CodecDelay, which block timestamps run ahead of presentation by:
+// the demuxer subtracts it and the muxer adds it back, so a packet's PTS is
+// the time of its first decoded sample (an Opus pre-skip presents before zero).
 type formatTrack struct {
-	streamID av.StreamID
-	trackID  uint32
-	media    av.MediaType
+	streamID     av.StreamID
+	trackID      uint32
+	media        av.MediaType
+	codecDelayNS int64
 }
 
 func Register(registry *format.SimpleRegistry) {
@@ -131,7 +137,7 @@ func (m *FormatMuxer) Open(ctx context.Context, output format.Output, streams []
 		if err != nil {
 			return err
 		}
-		m.tracks = append(m.tracks, formatTrack{streamID: streams[i].ID, trackID: trackID})
+		m.tracks = append(m.tracks, formatTrack{streamID: streams[i].ID, trackID: trackID, codecDelayNS: track.CodecDelayNS})
 	}
 	m.closed = false
 	return nil
@@ -150,7 +156,7 @@ func (m *FormatMuxer) Write(ctx context.Context, packet *av.Packet, _ *format.Wr
 	if m.muxer == nil {
 		return matroska.ErrNilWriter
 	}
-	trackID, ok := m.trackID(packet.StreamID)
+	track, ok := m.track(packet.StreamID)
 	if !ok {
 		return nil
 	}
@@ -167,8 +173,8 @@ func (m *FormatMuxer) Write(ctx context.Context, packet *av.Packet, _ *format.Wr
 		durationNS = int64(durationValue)
 	}
 	return m.muxer.WritePacket(Packet{
-		TrackID:    trackID,
-		TimeNS:     int64(timeValue),
+		TrackID:    track.trackID,
+		TimeNS:     int64(timeValue) + track.codecDelayNS,
 		DurationNS: durationNS,
 		Keyframe:   packet.Keyframe,
 		Data:       packet.Payload.Bytes,
@@ -186,13 +192,13 @@ func (m *FormatMuxer) Close() error {
 	return m.muxer.Close()
 }
 
-func (m *FormatMuxer) trackID(streamID av.StreamID) (uint32, bool) {
+func (m *FormatMuxer) track(streamID av.StreamID) (formatTrack, bool) {
 	for i := range m.tracks {
 		if m.tracks[i].streamID == streamID {
-			return m.tracks[i].trackID, true
+			return m.tracks[i], true
 		}
 	}
-	return 0, false
+	return formatTrack{}, false
 }
 
 func (d *FormatDemuxer) Format() av.FormatID {
@@ -217,7 +223,7 @@ func (d *FormatDemuxer) Open(ctx context.Context, input format.Input, _ format.O
 	for i := range tracks {
 		stream := streamFromTrack(tracks[i], i)
 		d.streams = append(d.streams, stream)
-		d.tracks = append(d.tracks, formatTrack{streamID: stream.ID, trackID: tracks[i].ID, media: stream.Type})
+		d.tracks = append(d.tracks, formatTrack{streamID: stream.ID, trackID: tracks[i].ID, media: stream.Type, codecDelayNS: tracks[i].CodecDelayNS})
 	}
 	d.closed = false
 	return nil
@@ -267,7 +273,7 @@ func (d *FormatDemuxer) ReadInto(ctx context.Context, out *format.ReadResult) er
 	out.Packet.Type = track.media
 	out.Packet.Payload.Bytes = packet.Data
 	out.Packet.Payload.Ownership = av.BufferOwned
-	out.Packet.PTS = av.Timestamp{Value: packet.TimeNS, Base: av.TimeBase{Num: 1, Den: 1000000000}}
+	out.Packet.PTS = av.Timestamp{Value: packet.TimeNS - track.codecDelayNS, Base: av.TimeBase{Num: 1, Den: 1000000000}}
 	if packet.DurationNS > 0 {
 		out.Packet.Duration = av.Duration{Value: packet.DurationNS, Base: av.TimeBase{Num: 1, Den: 1000000000}}
 	}
@@ -350,6 +356,9 @@ func trackFromAVStream(stream av.Stream, fallbackID uint32) (Track, error) {
 	default:
 		return Track{}, ErrUnsupportedWebMCodec
 	}
+	if track.Codec == matroska.CodecOpus {
+		track.CodecDelayNS = opusCodecDelayNS(track.CodecPrivate)
+	}
 	track.Audio = AudioConfig{SampleRate: stream.Codec.SampleRate, Channels: stream.Codec.Channels}
 	track.Video = VideoConfig{Width: stream.Codec.Width, Height: stream.Codec.Height}
 	if err := validateTrack(track); err != nil {
@@ -402,4 +411,13 @@ func matchWebMMIME(value string) bool {
 
 func hasWebMExtension(name string) bool {
 	return strings.EqualFold(filepath.Ext(name), ".webm")
+}
+
+// opusCodecDelayNS is the CodecDelay an OpusHead's pre-skip declares (48 kHz
+// samples), so the muxer writes it and the adapter shifts blocks by it.
+func opusCodecDelayNS(head []byte) int64 {
+	if len(head) < 19 || string(head[:8]) != "OpusHead" {
+		return 0
+	}
+	return int64(binary.LittleEndian.Uint16(head[10:])) * 1_000_000_000 / 48000
 }

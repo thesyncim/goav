@@ -34,10 +34,16 @@ type FormatDemuxer struct {
 	closed  bool
 }
 
+// formatTrack maps a goav stream to its Matroska track. codecDelayNS is the
+// track's CodecDelay: block timestamps run that far ahead of presentation
+// time (the spec has readers subtract it), so the demuxer subtracts it and the
+// muxer adds it back, and a packet's PTS is the time of its first decoded
+// sample either way. For Opus that puts the pre-skip before zero.
 type formatTrack struct {
-	streamID av.StreamID
-	trackID  uint32
-	media    av.MediaType
+	streamID     av.StreamID
+	trackID      uint32
+	media        av.MediaType
+	codecDelayNS int64
 }
 
 func Register(registry *format.SimpleRegistry) {
@@ -127,11 +133,15 @@ func (m *FormatMuxer) Open(ctx context.Context, output format.Output, streams []
 		if err != nil {
 			return err
 		}
+		codecDelayNS, _, err := trackCodecTiming(track, track.CodecPrivate)
+		if err != nil {
+			return err
+		}
 		trackID, err := muxer.AddTrack(track)
 		if err != nil {
 			return err
 		}
-		m.tracks = append(m.tracks, formatTrack{streamID: streams[i].ID, trackID: trackID})
+		m.tracks = append(m.tracks, formatTrack{streamID: streams[i].ID, trackID: trackID, codecDelayNS: codecDelayNS})
 	}
 	m.closed = false
 	return nil
@@ -150,7 +160,7 @@ func (m *FormatMuxer) Write(ctx context.Context, packet *av.Packet, _ *format.Wr
 	if m.muxer == nil {
 		return ErrNilWriter
 	}
-	trackID, ok := m.trackID(packet.StreamID)
+	track, ok := m.track(packet.StreamID)
 	if !ok {
 		return nil
 	}
@@ -167,8 +177,8 @@ func (m *FormatMuxer) Write(ctx context.Context, packet *av.Packet, _ *format.Wr
 		durationNS = int64(durationValue)
 	}
 	return m.muxer.WritePacket(Packet{
-		TrackID:    trackID,
-		TimeNS:     int64(timeValue),
+		TrackID:    track.trackID,
+		TimeNS:     int64(timeValue) + track.codecDelayNS,
 		DurationNS: durationNS,
 		Keyframe:   packet.Keyframe,
 		Data:       packet.Payload.Bytes,
@@ -186,13 +196,13 @@ func (m *FormatMuxer) Close() error {
 	return m.muxer.Close()
 }
 
-func (m *FormatMuxer) trackID(streamID av.StreamID) (uint32, bool) {
+func (m *FormatMuxer) track(streamID av.StreamID) (formatTrack, bool) {
 	for i := range m.tracks {
 		if m.tracks[i].streamID == streamID {
-			return m.tracks[i].trackID, true
+			return m.tracks[i], true
 		}
 	}
-	return 0, false
+	return formatTrack{}, false
 }
 
 func (d *FormatDemuxer) Format() av.FormatID {
@@ -217,7 +227,7 @@ func (d *FormatDemuxer) Open(ctx context.Context, input format.Input, _ format.O
 	for i := range tracks {
 		stream := streamFromTrack(tracks[i], i)
 		d.streams = append(d.streams, stream)
-		d.tracks = append(d.tracks, formatTrack{streamID: stream.ID, trackID: tracks[i].ID, media: stream.Type})
+		d.tracks = append(d.tracks, formatTrack{streamID: stream.ID, trackID: tracks[i].ID, media: stream.Type, codecDelayNS: tracks[i].CodecDelayNS})
 	}
 	d.closed = false
 	return nil
@@ -267,7 +277,7 @@ func (d *FormatDemuxer) ReadInto(ctx context.Context, out *format.ReadResult) er
 	out.Packet.Type = track.media
 	out.Packet.Payload.Bytes = packet.Data
 	out.Packet.Payload.Ownership = av.BufferOwned
-	out.Packet.PTS = av.Timestamp{Value: packet.TimeNS, Base: av.TimeBase{Num: 1, Den: timeNS}}
+	out.Packet.PTS = av.Timestamp{Value: packet.TimeNS - track.codecDelayNS, Base: av.TimeBase{Num: 1, Den: timeNS}}
 	if packet.DurationNS > 0 {
 		out.Packet.Duration = av.Duration{Value: packet.DurationNS, Base: av.TimeBase{Num: 1, Den: timeNS}}
 	}

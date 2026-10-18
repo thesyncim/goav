@@ -134,7 +134,7 @@ use [`docs/ADAPTERS.md`](ADAPTERS.md) and [`docs/COMPONENTS.md`](COMPONENTS.md).
   (+`component.Emit`) for `.Do(...)`; the node contracts live in `pipeline`
   (Source/Stage/Sink, Emitter, Message, Scratch, capability interfaces).
 - **Codecs**: `codec` Descriptor/Decoder/Encoder/factories, caller-owned
-  results, `runconfig.WithDecoder`/`WithEncoder`/`WithCodecAdapter`/
+  results, `codec.ParameterReporter` for encoder-reported parameters, `runconfig.WithDecoder`/`WithEncoder`/`WithCodecAdapter`/
   `WithCodecDescriptor`.
 - **Control hosts** (governed pre-v1, see [`V1_SCOPE.md`](V1_SCOPE.md)):
   `ctlserver` is the supported package for applications that run a task and

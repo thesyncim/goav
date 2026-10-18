@@ -2,6 +2,8 @@ package mp4
 
 import (
 	"bytes"
+	"encoding/binary"
+	"time"
 
 	"github.com/thesyncim/goav/av"
 )
@@ -69,7 +71,9 @@ func parseVisualSampleEntry(payload []byte) (width, height int, extradata []byte
 
 // parseAudioSampleEntry reads channel count and sample rate from an audio
 // sample entry and extracts its codec configuration as ExtraData: the
-// AudioSpecificConfig from esds for AAC, or the dOps payload for Opus.
+// AudioSpecificConfig from esds for AAC, or for Opus the RFC 7845
+// identification header (OpusHead) rebuilt from dOps, the form Matroska and Ogg
+// carry, so Opus ExtraData means one thing whatever the container.
 func parseAudioSampleEntry(payload []byte) (channels, sampleRate int, extradata []byte) {
 	p := newParser(payload)
 	p.skip(6)               // reserved
@@ -103,7 +107,7 @@ func parseAudioSampleEntry(payload []byte) (channels, sampleRate int, extradata 
 			}
 		case "dOps":
 			if pl, err := readPayload(reader, h); err == nil {
-				extradata = append([]byte(nil), pl...)
+				extradata = opusHeadFromDOps(pl)
 			}
 		}
 		return nil
@@ -170,4 +174,40 @@ func descriptor(p *parser) (tag uint8, ok bool) {
 		}
 	}
 	return tag, p.err() == nil
+}
+
+// opusHeadFromDOps rebuilds the OpusHead an Opus sample entry's dOps box
+// encodes (ISO/IEC 23003-5): the same fields, big-endian and without the
+// magic, so the conversion is a byte-order swap. A malformed dOps yields nil.
+func opusHeadFromDOps(dops []byte) []byte {
+	if len(dops) < 11 || dops[0] != 0 {
+		return nil
+	}
+	channels, family := int(dops[1]), dops[10]
+	size := 19
+	if family != 0 {
+		size = 21 + channels
+	}
+	if len(dops) < size-8 {
+		return nil
+	}
+	head := make([]byte, size)
+	copy(head, "OpusHead")
+	head[8] = 1
+	head[9] = dops[1]
+	binary.LittleEndian.PutUint16(head[10:], binary.BigEndian.Uint16(dops[2:]))
+	binary.LittleEndian.PutUint32(head[12:], binary.BigEndian.Uint32(dops[4:]))
+	binary.LittleEndian.PutUint16(head[16:], binary.BigEndian.Uint16(dops[8:]))
+	head[18] = family
+	copy(head[19:], dops[11:size-8])
+	return head
+}
+
+// opusPreSkipNS is the decoder delay an Opus track's OpusHead declares.
+func opusPreSkipNS(params av.CodecParameters) int64 {
+	head := params.ExtraData.Bytes
+	if params.ID != av.CodecOpus || len(head) < 19 || string(head[:8]) != "OpusHead" {
+		return 0
+	}
+	return int64(binary.LittleEndian.Uint16(head[10:])) * int64(time.Second) / 48000
 }

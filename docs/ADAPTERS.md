@@ -35,6 +35,12 @@ is `adapterproof/adapter_compat_test.go`.
 - H.264 packets travel as Annex B inside goav: demuxers of length-prefixed
   containers (MP4, Matroska) convert on read, their muxers convert back, and
   the Annex B muxer writes the avcC parameter sets ahead of keyframes.
+- A packet's PTS is the time of its first decoded sample, so codec delay shows
+  before zero: an Opus stream's first packet sits one pre-skip early. Opus
+  ExtraData is always an RFC 7845 OpusHead (MP4 `dOps` converts on read);
+  Matroska and WebM subtract `CodecDelay` on read and add it back on write;
+  the Opus decoder drops the pre-skip, and the encoder reports its lookahead
+  as pre-skip through the optional `codec.ParameterReporter`.
 - Descriptors own codec identity, media type, modes, realtime, and experimental
   status; capability fields list concrete sample/pixel formats, RTP payloads,
   and build tags. Discovery comes from registered descriptors, not a central

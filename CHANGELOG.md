@@ -11,6 +11,20 @@ methodology changes, and migration notes.
 
 ## Unreleased
 
+- Opus audio starts on time. A packet's PTS is now the time of its first
+  decoded sample, so an Opus stream's first packet presents one pre-skip
+  (6.5 ms at 48 kHz) before zero, as in FFmpeg. The decoder drops the
+  pre-skip, so decoded audio no longer starts with 6.5 ms of encoder
+  lookahead and no longer trails video by that much. The encoder declares
+  its lookahead as pre-skip, so goav-written Opus no longer plays 6.5 ms
+  late in every player, and the flush drains the lookahead, so the last
+  6.5 ms of input is no longer dropped. Matroska and WebM subtract
+  `CodecDelay` on read and add it back on write; MP4 Opus `ExtraData` is the
+  RFC 7845 OpusHead instead of raw `dOps`, so MP4 Opus remuxes into
+  Matroska. Encoders can report parameters known only once open through the
+  new optional `codec.ParameterReporter`. Breaking: code that read Opus
+  packet PTS or MP4 Opus `ExtraData` directly sees the new values.
+
 - `Explain` reports a `buffered_execution` decision when the build runs the
   graph buffered although the runtime's own policy is direct: live inputs, a
   join, a declared branch buffer, or an encode ladder. `Describe` shows the

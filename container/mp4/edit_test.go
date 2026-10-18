@@ -5,6 +5,8 @@ import (
 	"os"
 	"testing"
 	"time"
+
+	"github.com/thesyncim/goav/av"
 )
 
 // elstBox builds an edit list; each entry is {segment duration, media time}.
@@ -145,5 +147,39 @@ func TestEditListRealFileAlignsAACPriming(t *testing.T) {
 	const videoTickNS = int64(time.Second) / 12288
 	if diff := videoNS - audioNS; diff < -videoTickNS || diff > videoTickNS {
 		t.Fatalf("first video at %d ns, first real audio at %d ns: want them together", videoNS, audioNS)
+	}
+}
+
+// opusEntryWithPreSkip is an Opus sample entry whose dOps declares preSkip.
+func opusEntryWithPreSkip(preSkip uint16) []byte {
+	p := cat(make([]byte, 6), u16b(1), make([]byte, 8), u16b(2), u16b(16), make([]byte, 4), u32b(48000<<16))
+	dops := cat([]byte{0, 2}, u16b(preSkip), u32b(48000), u16b(0), []byte{0})
+	return box("Opus", cat(p, box("dOps", dops...))...)
+}
+
+// TestOpusPreSkipStaysBeforeZero pins the Opus side of the edit lift: dOps
+// becomes the OpusHead every Opus decoder and muxer reads, and the edit that
+// hides the pre-skip leaves those 6 ms before zero instead of lifting every
+// track; the decoder drops them, so audio and video both start at zero.
+func TestOpusPreSkipStaysBeforeZero(t *testing.T) {
+	ftyp := box("ftyp", cat([]byte("isom"), u32b(0x200), []byte("isom"))...)
+	const payload = 20 + 8
+	mdat := box("mdat", make([]byte, 40)...)
+	video := editedTrak(1, "vide", avc1Entry(64, 48, nil), 4, 5, 100, payload, 0, nil)
+	audio := editedTrak(2, "soun", opusEntryWithPreSkip(312), 4, 5, 100, payload+20, 0, elstBox([2]int32{400, 6}))
+	data := cat(ftyp, mdat, container("moov", movieHeader(1000), video, audio))
+	got := firstTimes(t, data)
+	if got[1][0] != 0 || got[2][0] != -6 {
+		t.Fatalf("first presentation video=%d audio=%d, want 0 and -6 (pre-skip before zero, no lift)", got[1][0], got[2][0])
+	}
+	d, err := NewDemuxer(bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := cat([]byte("OpusHead"), []byte{1, 2}, []byte{0x38, 0x01}, []byte{0x80, 0xbb, 0, 0}, []byte{0, 0}, []byte{0})
+	for _, tr := range d.tracks {
+		if tr.codec == av.CodecOpus && !bytes.Equal(tr.params.ExtraData.Bytes, want) {
+			t.Fatalf("Opus ExtraData = % x, want the OpusHead % x", tr.params.ExtraData.Bytes, want)
+		}
 	}
 }

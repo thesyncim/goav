@@ -108,7 +108,10 @@ Lifecycle (from `codec/stage.go` + `runtime_decode.go`/`runtime_encode.go`):
    (cold) and must return an opened instance; call your own `Open` inside the
    factory; the runtime never calls `Open` separately. Optional
    `codec.DecodeStateFactory` provisions `DecodeConfig.OpaqueState` first; if
-   `NewDecoder` then fails, state with a `Close()` is closed.
+   `NewDecoder` then fails, state with a `Close()` is closed. An encoder whose
+   output parameters exist only once open (an Opus header carrying its
+   lookahead) implements `codec.ParameterReporter`; the runtime folds them
+   into the stream muxers open with.
 3. Per message: `DecodeInto` per packet / `EncodeInto` per frame.
    `HandleEvent` sees every in-band event before it is forwarded;
    `av.EventEndOfStream` then triggers `FlushInto`; `av.EventPacketLoss` then

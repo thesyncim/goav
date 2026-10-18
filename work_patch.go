@@ -370,7 +370,7 @@ func (t *task) planAttachEncode(ctx context.Context, input runtimeAttachBranchPl
 	if err := validateEncodeAdapterDescriptors("attach runtime branch", stream, t.runtime.codecs, encodeAdapterRequestFromPreparedStream(encode, encodedStream)); err != nil {
 		return nil, av.Stream{}, err
 	}
-	stage, err := (&builder{runtime: t.runtime}).newEncodeStage(ctx, request, config)
+	stage, encodedStream, err := (&builder{runtime: t.runtime}).newEncodeStage(ctx, request, config)
 	if err != nil {
 		return nil, av.Stream{}, err
 	}

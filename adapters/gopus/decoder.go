@@ -58,6 +58,17 @@ type Decoder struct {
 	channels   int
 	audio      av.AudioFrame
 	pendingPLC int
+
+	// Pre-skip (RFC 7845 §4.2): the first samples a stream decodes are encoder
+	// lookahead, not audio. Packet PTS is the time of a packet's first decoded
+	// sample, so those samples present before the audio starts; the decoder
+	// drops them and stamps each frame with the time of its first kept sample.
+	// preSkip is the header's pre-skip at the output rate, skip what is still
+	// to drop, and resync marks a discontinuity whose next packet re-derives
+	// skip from its own time: a seek back to the start presents before zero.
+	preSkip int
+	skip    int
+	resync  bool
 }
 
 func (d *Decoder) Descriptor() codec.Descriptor {
@@ -108,6 +119,9 @@ func (d *Decoder) Open(ctx context.Context, config codec.DecodeConfig) error {
 		SampleFormat:  av.SampleFormatS16,
 	}
 	d.pendingPLC = 0
+	d.preSkip = int(int64(opusPreSkip(config.Stream.Codec.ExtraData.Bytes)) * int64(sampleRate) / opusHeadRate)
+	d.skip = d.preSkip
+	d.resync = false
 	return nil
 }
 
@@ -127,6 +141,10 @@ func (d *Decoder) DecodeInto(ctx context.Context, pkt *av.Packet, out *codec.Dec
 	if pkt == nil {
 		return nil
 	}
+	if d.resync {
+		d.resync = false
+		d.skip = d.samplesBeforeZero(pkt.PTS)
+	}
 	return d.decodeOne(pkt.Payload.Bytes, pkt.PTS, out)
 }
 
@@ -144,11 +162,18 @@ func (d *Decoder) HandleEvent(ctx context.Context, event *av.Event) error {
 	switch event.Type {
 	case av.EventPacketLoss:
 		d.pendingPLC++
-	case av.EventCodecChanged, av.EventDiscontinuity:
+	case av.EventCodecChanged:
 		if d.decoder != nil {
 			d.decoder.Reset()
 		}
 		d.pendingPLC = 0
+		d.skip, d.resync = d.preSkip, false
+	case av.EventDiscontinuity:
+		if d.decoder != nil {
+			d.decoder.Reset()
+		}
+		d.pendingPLC = 0
+		d.skip, d.resync = 0, d.preSkip > 0
 	}
 	return nil
 }
@@ -191,6 +216,19 @@ func (d *Decoder) decodeOne(data []byte, pts av.Timestamp, out *codec.DecodeResu
 		return err
 	}
 
+	if d.skip > 0 {
+		drop := min(d.skip, samples)
+		d.skip -= drop
+		samples -= drop
+		copy(pcm, pcm[drop*d.channels:(drop+samples)*d.channels])
+		if shift, ok := av.RescaleValue(int64(drop), av.TimeBase{Num: 1, Den: int64(d.sampleRate)}, pts.Base); ok {
+			pts.Value += shift
+		}
+		if samples == 0 {
+			out.Frames = out.Frames[:index]
+			return nil
+		}
+	}
 	used := samples * d.channels * 2
 	plane.Buffer.Bytes = pcmBytes[:used]
 	plane.Buffer.Ownership = av.BufferOwned
@@ -211,4 +249,17 @@ func bytesAsInt16(data []byte) []int16 {
 		return nil
 	}
 	return unsafe.Slice((*int16)(unsafe.Pointer(unsafe.SliceData(data))), len(data)/2)
+}
+
+// samplesBeforeZero is how much of a packet starting at pts presents before
+// time zero, at the output rate and capped at the header's pre-skip.
+func (d *Decoder) samplesBeforeZero(pts av.Timestamp) int {
+	if pts.Value >= 0 {
+		return 0
+	}
+	before, ok := av.RescaleValue(-pts.Value, pts.Base, av.TimeBase{Num: 1, Den: int64(d.sampleRate)})
+	if !ok {
+		return 0
+	}
+	return int(min(before, int64(d.preSkip)))
 }
