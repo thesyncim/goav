@@ -41,6 +41,7 @@ import (
 	"io/fs"
 	"math"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"time"
@@ -137,18 +138,24 @@ func (p *packager) Open(ctx context.Context, info provider.Info) (provider.Write
 		// The playlist is coming: requests for it wait instead of failing.
 		a.announce(p.playlist, edge{msn: -1, part: -1, complete: -1, target: p.target})
 	}
-	base := strings.TrimSuffix(p.playlist, filepath.Ext(p.playlist))
-	return &writer{packager: p, base: base, timescales: map[uint32]uint32{}}, nil
+	// Files live beside the playlist, and the playlist names them relative to
+	// itself: hd/index.m3u8 lists index-00000.m4s, stored as
+	// hd/index-00000.m4s.
+	dir, file := path.Split(p.playlist)
+	base := strings.TrimSuffix(file, path.Ext(file))
+	return &writer{packager: p, dir: dir, file: file, base: base, timescales: map[uint32]uint32{}}, nil
 }
 
 // writer splits the fragmented MP4 byte stream into the init segment and
 // media segments, and keeps the playlist.
 type writer struct {
 	*packager
-	base string
-	buf  []byte
-	init []byte
-	err  error
+	// dir is the store directory of the playlist and its files, file the
+	// playlist's name in it, base what its files' names start with.
+	dir, file, base string
+	buf             []byte
+	init            []byte
+	err             error
 
 	// timescales maps each track to its media timescale; anchor is the
 	// track whose times place fragments: the first video track, else the
@@ -325,7 +332,7 @@ func (w *writer) finishSegment() error {
 		s := &w.segments[i]
 		if !s.partsGone && len(s.parts) != 0 && done.end-s.end > 4*w.target.Seconds() {
 			for _, p := range s.parts {
-				if err := w.store.Remove(p.name); err != nil {
+				if err := w.store.Remove(w.dir + p.name); err != nil {
 					return err
 				}
 			}
@@ -338,12 +345,12 @@ func (w *writer) finishSegment() error {
 func (w *writer) removeSegment(s segment) error {
 	if !s.partsGone {
 		for _, p := range s.parts {
-			if err := w.store.Remove(p.name); err != nil {
+			if err := w.store.Remove(w.dir + p.name); err != nil {
 				return err
 			}
 		}
 	}
-	return w.store.Remove(s.name)
+	return w.store.Remove(w.dir + s.name)
 }
 
 func (w *writer) publishPlaylist(end bool) error {
@@ -360,7 +367,7 @@ func (w *writer) publishPlaylist(end bool) error {
 		}
 	}
 	full, _ := w.render(end, false)
-	if err := w.publishFile(w.playlist, []byte(full)); err != nil {
+	if err := w.publishFile(w.file, []byte(full)); err != nil {
 		return err
 	}
 	if a, ok := w.store.(announcer); ok {
@@ -461,7 +468,7 @@ func (w *writer) render(end, skip bool) (string, bool) {
 		// Where the other renditions stand, so a player switches to one
 		// without first reloading its playlist.
 		for _, r := range w.ladder.reports(w.variant) {
-			fmt.Fprintf(&b, "#EXT-X-RENDITION-REPORT:URI=%q,LAST-MSN=%d", r.playlist, r.msn)
+			fmt.Fprintf(&b, "#EXT-X-RENDITION-REPORT:URI=%q,LAST-MSN=%d", relativeURI(w.dir, r.playlist), r.msn)
 			if r.part >= 0 {
 				fmt.Fprintf(&b, ",LAST-PART=%d", r.part)
 			}
@@ -513,13 +520,14 @@ func (w *writer) edgeState(end bool) edge {
 	if w.open != nil {
 		e.complete = w.open.number - 1
 		e.part = len(w.open.parts) - 1
-		e.hint = w.hint()
+		e.hint = w.dir + w.hint()
 	}
 	return e
 }
 
+// publishFile publishes name, a URI relative to the playlist, to the store.
 func (w *writer) publishFile(name string, data []byte) error {
-	f, err := w.store.Create(name)
+	f, err := w.store.Create(w.dir + name)
 	if err != nil {
 		return err
 	}
@@ -706,18 +714,19 @@ func Dir(path string) Store { return dirStore(path) }
 type dirStore string
 
 func (d dirStore) Create(name string) (io.WriteCloser, error) {
-	if err := os.MkdirAll(string(d), 0o755); err != nil {
+	final := filepath.Join(string(d), filepath.FromSlash(name))
+	if err := os.MkdirAll(filepath.Dir(final), 0o755); err != nil {
 		return nil, err
 	}
-	f, err := os.CreateTemp(string(d), "."+name+".*")
+	f, err := os.CreateTemp(filepath.Dir(final), "."+filepath.Base(final)+".*")
 	if err != nil {
 		return nil, err
 	}
-	return &publishing{File: f, final: filepath.Join(string(d), name)}, nil
+	return &publishing{File: f, final: final}, nil
 }
 
 func (d dirStore) Remove(name string) error {
-	if err := os.Remove(filepath.Join(string(d), name)); err != nil && !errors.Is(err, fs.ErrNotExist) {
+	if err := os.Remove(filepath.Join(string(d), filepath.FromSlash(name))); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return err
 	}
 	return nil
@@ -869,4 +878,23 @@ func aacObjectType(esds []byte) (byte, bool) {
 		return 0, false
 	}
 	return p[0] >> 3, true
+}
+
+// relativeURI is the URI of the store name target as a playlist in the store
+// directory dir names it: sd/index.m3u8 from hd/ is ../sd/index.m3u8.
+func relativeURI(dir, target string) string {
+	from := strings.Split(strings.TrimSuffix(dir, "/"), "/")
+	to := strings.Split(target, "/")
+	if dir == "" {
+		from = nil
+	}
+	common := 0
+	for common < len(from) && common < len(to)-1 && from[common] == to[common] {
+		common++
+	}
+	parts := make([]string, 0, len(from)-common+len(to)-common)
+	for range from[common:] {
+		parts = append(parts, "..")
+	}
+	return strings.Join(append(parts, to[common:]...), "/")
 }

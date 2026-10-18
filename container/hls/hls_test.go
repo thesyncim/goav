@@ -240,3 +240,42 @@ func atoi(t *testing.T, s string) int {
 	}
 	return n
 }
+
+// TestLadderInDirectories lays a ladder out the way origins do, a directory
+// per rendition: files land beside their playlist, and every URI resolves
+// from the playlist that names it.
+func TestLadderInDirectories(t *testing.T) {
+	dir := t.TempDir()
+	ladder := hls.NewLadder("master.m3u8", hls.Dir(dir))
+	hd := goav.Custom("hd", ladder.Variant("hd/index.m3u8", hls.SegmentDuration(time.Second)))
+	sd := goav.Custom("sd", ladder.Variant("sd/index.m3u8", hls.SegmentDuration(time.Second)))
+	sink := func(name string, d goav.Destination) launch.Element {
+		return launch.Sink(name, "a variant", func(struct{}) (goav.Destination, error) { return d, nil })
+	}
+	outs, err := launch.Compile(`testsrc video size=128x96 fps=25 frames=50 ! encode vp8 keyframe_interval=25 ! hd
+testsrc video size=64x48 fps=25 frames=50 ! encode vp8 keyframe_interval=25 ! sd`, launch.Use(sink("hd", hd), sink("sd", sd)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := bundle.Run(context.Background(), outs...); err != nil {
+		t.Fatal(err)
+	}
+	master, err := os.ReadFile(filepath.Join(dir, "master.m3u8"))
+	if err != nil || !strings.Contains(string(master), "\nhd/index.m3u8\n") || !strings.Contains(string(master), "\nsd/index.m3u8\n") {
+		t.Fatalf("master = %s, %v", master, err)
+	}
+	playlist, err := os.ReadFile(filepath.Join(dir, "hd", "index.m3u8"))
+	if err != nil || !strings.Contains(string(playlist), `#EXT-X-MAP:URI="index-init.mp4"`) || !strings.Contains(string(playlist), "\nindex-00001.m4s\n") {
+		t.Fatalf("hd playlist = %s, %v", playlist, err)
+	}
+	for _, name := range []string{"hd/index-init.mp4", "hd/index-00000.m4s", "sd/index-00001.m4s"} {
+		if _, err := os.Stat(filepath.Join(dir, name)); err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+	}
+	if ffmpeg, err := exec.LookPath("ffmpeg"); err == nil {
+		if out, err := exec.Command(ffmpeg, "-v", "error", "-i", filepath.Join(dir, "master.m3u8"), "-map", "0", "-f", "null", "-").CombinedOutput(); err != nil || len(bytes.TrimSpace(out)) != 0 {
+			t.Fatalf("ffmpeg could not play the ladder: %v\n%s", err, out)
+		}
+	}
+}

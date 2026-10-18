@@ -17,7 +17,7 @@ func TestCLIDocumentationPinsTheLanguage(t *testing.T) {
 	}
 	text := string(doc)
 	for _, fragment := range []string{
-		"goav run      [--runtime default|demo|test] [--control unix://PATH] [-f FILE] '<program>'",
+		"goav run      [--runtime default|demo|test] [--control unix://PATH] [--serve ADDR] [-f FILE] '<program>'",
 		"goav describe [--runtime ...] [--format text|dot|mermaid|json] [-f FILE] '<program>'",
 		"goav elements",
 		"goav ctl      --control unix://PATH <method> [key=value...]",

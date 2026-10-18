@@ -6,7 +6,7 @@ program is the same recipe the Go library builds, written as text: the CLI and
 the library produce the same graph.
 
 ```text
-goav run      [--runtime default|demo|test] [--control unix://PATH] [-f FILE] '<program>'
+goav run      [--runtime default|demo|test] [--control unix://PATH] [--serve ADDR] [-f FILE] '<program>'
 goav describe [--runtime ...] [--format text|dot|mermaid|json] [-f FILE] '<program>'
 goav explain  [--runtime ...] [-f FILE] '<program>'
 goav elements
@@ -43,7 +43,7 @@ the one above.
 | Selection | `video`, `audio`, `stream` `[id= index=]` |
 | Operations | `decode`, `encode CODEC [bitrate= fps= keyframe_interval= ...]`, `resize WxH [mode=]`, `resample RATE CHANNELS`, `tap NAME`, `as NAME`, `buffer MODE [N]`, `sync NAME`, `playout`, `auto`, `syncbypts` |
 | Joins | `mix(a, b)`, `composite(a, b ! at X Y)`, `select(a, b)` |
-| Destinations | `file PATH [format=]`, `hls PATH [segment= window=]`, `null` |
+| Destinations | `file PATH [format=]`, `hls PATH [segment= window= parts=]`, `null` |
 
 `goav elements` lists every element with its settings. Native adapter settings
 pass through `encode` (`encode av1 tune=zerolatency`). A mistake is refused
@@ -75,6 +75,20 @@ Runtimes: `default` is the bundled adapters; `demo` adds a deterministic clock,
 so `live` test sources run as fast as the graph allows; `test` is the
 `goavtest` runtime with fake codecs. `goav describe` prints the graph a program
 builds and `goav explain` its plan, without opening or creating any file.
+
+## Serving HLS
+
+With `--serve ADDR`, `goav run` packages the program's `hls` outputs into an
+in-memory HLS server and serves it over HTTP while the program runs. That is
+what low-latency HLS (`parts=`) needs, since the server holds the blocking
+requests LL-HLS players make:
+
+```text
+goav run --serve :8080 'testsrc video live ! encode vp8 keyframe_interval=30 ! hls live.m3u8 segment=2s parts=250ms window=6'
+```
+
+Players open `http://HOST:8080/live.m3u8`. Put a TLS proxy or CDN in front
+for HTTP/2, which LL-HLS players expect.
 
 ## Control
 

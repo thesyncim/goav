@@ -9,10 +9,13 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -473,4 +476,55 @@ func TestRunServesTheControlPlane(t *testing.T) {
 	if code := run([]string{"ctl", "--control", "unix:///nonexistent.sock", "stats"}, &ctlOut, &ctlErr); code != 1 {
 		t.Fatalf("ctl against a missing socket: code %d", code)
 	}
+}
+
+// TestRunServesLowLatencyHLS: goav run --serve is an LL-HLS origin in one
+// command: a blocking reload for a part of the live program comes back once
+// the part exists.
+func TestRunServesLowLatencyHLS(t *testing.T) {
+	var stdout, stderr syncBuffer
+	done := make(chan int, 1)
+	go func() {
+		done <- run([]string{"run", "--serve", "127.0.0.1:0",
+			"testsrc video size=64x48 fps=25 duration=2s live ! encode vp8 keyframe_interval=25 ! hls live.m3u8 segment=1s parts=200ms"}, &stdout, &stderr)
+	}()
+	var base string
+	for deadline := time.Now().Add(5 * time.Second); base == ""; {
+		if m := regexp.MustCompile(`serving HLS at (http://\S+/)`).FindStringSubmatch(stderr.String()); m != nil {
+			base = m[1]
+		} else if time.Now().After(deadline) {
+			t.Fatalf("no serving address; stderr=%q", stderr.String())
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	resp, err := http.Get(base + "live.m3u8?_HLS_msn=1&_HLS_part=0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK || !strings.Contains(string(body), `#EXT-X-PART:DURATION=0.200,URI="live-00001.0.m4s",INDEPENDENT=YES`) {
+		t.Fatalf("blocking reload = %d:\n%s", resp.StatusCode, body)
+	}
+	if code := <-done; code != 0 {
+		t.Fatalf("goav run = %d; stderr=%q", code, stderr.String())
+	}
+}
+
+// syncBuffer is a bytes.Buffer safe to read while run writes it.
+type syncBuffer struct {
+	mu sync.Mutex
+	b  bytes.Buffer
+}
+
+func (s *syncBuffer) Write(p []byte) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.b.Write(p)
+}
+
+func (s *syncBuffer) String() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.b.String()
 }

@@ -7,6 +7,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
+	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -14,9 +16,11 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/thesyncim/goav"
 	"github.com/thesyncim/goav/bundle"
+	"github.com/thesyncim/goav/container/hls"
 	"github.com/thesyncim/goav/ctlserver"
 	"github.com/thesyncim/goav/goavtest"
 	"github.com/thesyncim/goav/graphrender"
@@ -30,6 +34,7 @@ import (
 type programArgs struct {
 	runtime string
 	control string
+	serve   string
 	format  string
 	program string
 }
@@ -62,6 +67,8 @@ func parseProgramArgs(verb string, argv []string) (programArgs, bool, error) {
 			args.runtime, err = take()
 		case name == "--control" && verb == "run":
 			args.control, err = take()
+		case name == "--serve" && verb == "run":
+			args.serve, err = take()
 		case name == "--format" && verb == "describe":
 			args.format, err = take()
 		case name == "-f":
@@ -172,6 +179,7 @@ const runFlags = `
 flags:
   --runtime default|demo|test   adapters to run with (default: the bundle)
   --control unix://PATH         serve the running task to goav ctl
+  --serve ADDR                  serve the program's hls outputs over HTTP (LL-HLS too)
   -f FILE                       read the program from FILE
 `
 
@@ -186,7 +194,24 @@ func runCommand(argv []string, stdout, stderr io.Writer) int {
 		return 0
 	}
 	files := &cliFiles{}
-	outs, err := launch.Compile(args.program, launch.Files(files))
+	options := []launch.Option{launch.Files(files)}
+	var served *http.Server
+	if args.serve != "" {
+		// The program's hls outputs package into a server, served while the
+		// program runs: an LL-HLS origin in one command.
+		srv := hls.NewServer()
+		l, err := net.Listen("tcp", args.serve)
+		if err != nil {
+			printErr(stderr, err)
+			return 2
+		}
+		served = &http.Server{Handler: srv, ReadHeaderTimeout: 10 * time.Second}
+		go served.Serve(l)
+		defer served.Close()
+		fmt.Fprintf(stderr, "serving HLS at http://%s/\n", l.Addr())
+		options = append(options, launch.HLS(srv))
+	}
+	outs, err := launch.Compile(args.program, options...)
 	if err != nil {
 		printErr(stderr, err)
 		return 2
