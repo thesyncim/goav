@@ -39,16 +39,17 @@ outside this first-screen map.
 One-screen shape:
 
 ```
-goav.From(input)                          inputs: FileInput, Input(provider), Source(fn)
-  .Audio() / .Video() / .Stream()         select a stream (InputName/StreamID/StreamIndex)
-  .Decode() or .Copy()                    make packet/frame domain explicit
+in := goav.FileInput(name, r)             inputs: FileInput, Input(provider), Source(fn)
+in.Audio() / .Video() / .Stream()         a goav.Stream value (StreamID/StreamIndex narrow it)
+  .Decode()                               packets -> frames; leave it out to copy packets
   .Resize() / .Resample() / .Do(stage)    frame-domain operations after Decode
   .Encode(codec.VP9(codec.Bitrate(...)))  codec specs from the codec package
-  .Branches(goav.Branch("x")...To(dst))   explicit fanout when work diverges
-  .To(Write|URI|Writer|Custom|Sink)       destinations; reuse one value to share a mux/sink
-job.Describe(); adapter-backed Explain/Build/Run use job.UseRuntime(rt), bundle.Describe/Build/Run
+  reuse a Stream value, .As("hd")         fanout when work diverges; shared work runs once
+  .To(Write|URI|Writer|Custom|Sink)       an Output; reuse one Destination to share a mux/sink
+in.To(dst)                                copy every stream of the input
+rt.Run(ctx, outputs...); rt.Build/Describe/Explain; bundle.Run/Build/Describe/Explain (default bundle)
 Task: Run, Close
-goav.New(runconfig.Option...) -> (*Runtime, error); bundle.MustNew(...) -> bundled Runtime; job.UseRuntime(rt)
+goav.New(runconfig.Option...) -> (*Runtime, error); bundle.MustNew(...) -> bundled Runtime
 errors: *goav.BuildError matched with errors.As; branch on Family first; Detail(key) for typed facts; DetailLines/FixLines for rendered diagnostics
 ```
 
@@ -69,16 +70,17 @@ Normal recipes also read these vocabulary packages:
 - `source`: custom source callbacks (`Func`, `Push`, `Result`).
 - `av` identifiers: media/codec/format/protocol ids, event types, metadata.
 
-The grammar's builder handles and option values are exported, sealed
-vocabulary: `Chain` (a job stream from Audio/Video), `BranchBuilder` (Branch),
-`FlowBuilder` (Flow), `MixStream` (Mix),
-`CompositeStream` (Composite), `SelectStream` (Select), `JoinStream` (Join),
-the `JoinArm` interface (a source chain, nested join, or tap reference
-standing as a join arm), and the option types `StreamOption`
-(StreamID/StreamIndex/InputName), `InputOption`, `DestinationOption`, and
-`MediaOption` (Name/MIME/Metadata). They are exported so godoc can link them
-and callers can name variables and helpers; each is sealed — unexported
-fields or methods — so the constructors remain the only construction surface.
+The grammar's values and option types are exported, sealed vocabulary:
+`InputSpec` (an input), `Stream` (an immutable stream value from an input, a
+join — `Mix`/`Composite`/`Select`/`Join` — or an operation), `Output` (a
+Stream routed to destinations), the `Layer` interface (a Stream, or
+`At(stream, x, y)`, as a Composite input), and the option types `StreamOption`
+(StreamID/StreamIndex), `InputOption`, `DestinationOption`, and `MediaOption`
+(Name/MIME/Metadata). They are exported so godoc can link them and callers can
+name variables and helpers; each is sealed — unexported fields or methods — so
+the constructors remain the only construction surface. The previous builder
+handles (`Chain`, `BranchBuilder`, `FlowBuilder`, `JoinArm`, ...) stay exported
+only until callers migrate; they are not front door.
 
 Advanced governed vocabulary lives in the focused docs where it is needed:
 `control`, `ctlserver`, `inspect`, `plan`, `snapshot`, `lifecycle`, `flow`,
@@ -112,7 +114,7 @@ use [`docs/ADAPTERS.md`](ADAPTERS.md) and [`docs/COMPONENTS.md`](COMPONENTS.md).
   `Custom`/`Writer`, `pipeline.Sink` for `Sink`) that callers wrap before
   passing.
 - **Joins** (governed pre-v1, see [`V1_SCOPE.md`](V1_SCOPE.md)): use these when
-  several streams become one. `goav.Join(name, stage, arms...)` is N->1
+  several streams become one. `goav.Join(name, stage, streams...)` is N->1
   convergence with a caller-supplied `pipeline.Stage` as the convergence node.
   Mix, Composite, and Select are profiles over this same machinery; the
   per-kind behaviors the internal profile table carries are derived for
@@ -121,13 +123,14 @@ use [`docs/ADAPTERS.md`](ADAPTERS.md) and [`docs/COMPONENTS.md`](COMPONENTS.md).
   fact-carrying input shape -> solver-planned per-arm conversions; the
   contract's output -> the joined stream, falling back to first-arm facts) and
   from the join's snake-safe name (node name, output stream id, `<name>_*`
-  error-code family). The result is a full citizen: `.Tap/.Branches/.To`, it
-  can nest as a join arm, and `Describe() == Build()`.
+  error-code family). The result is a full citizen: a Stream that takes
+  `.Tap`, forks, and `.To`, it can nest as a join arm, and
+  `Describe() == Build()`.
 - **Destinations**: use these when your application owns the output boundary.
   `provider.Destination` + `provider.Contract`/`provider.Info`, `goav.Writer`
   (`provider.OpenFunc`), transactional uploads via
   `provider.TransactionalWriter`, frame/packet sinks via `goav.Sink` +
-  `component.SinkFunc`; reuse one destination value when several chains should
+  `component.SinkFunc`; reuse one destination value when several Outputs should
   share one mux/sink.
 - **Custom stages**: use these for in-process inspection or transformation.
   `component.EventFunc`/`component.FrameFunc`/`component.PacketFunc`
@@ -200,7 +203,7 @@ implement, with the executable evidence:
   with `.AtTap(...)` or `.At(...)`. In-process stages still use
   `Deliver(event).AtTap(name)` to receive arbitrary custom events. `SetBitrate(stream, bps)`
   and `Keyframe(stream)` reach the encoder that emits `stream`, so a ladder rung
-  or simulcast layer is addressed by its branch name; a source stream id reaches
+  or simulcast layer is addressed by its `.As(name)`; a source stream id reaches
   every encoder of that source. Untargeted
   controls only infer a destination when exactly one valid target exists;
   otherwise callers use `.AtTap(...)`, `.At(...)`, `source=...`, or `node=...`.
@@ -240,16 +243,15 @@ No current root-package tier-D leakage is approved. The internal `intent` and
 `operationSpec` records are unexported; external callers use `Explain`/`plan.Report`
 for inspection, and tests reach normalization through test-only helpers.
 
-Not leakage, by decision: builder funcs returning unexported types
-(`Branch`, `Flow`, `Mix`, `Composite`, `Select`, stream/transform options):
-the methods on those builders are the grammar; the types stay unexported so
-the pinned package-level surface is the contract.
+Not leakage, by decision: transform option funcs returning unexported types
+(the `Resize`/`Resample` options): the option values are the grammar; the
+types stay unexported so the pinned package-level surface is the contract.
 
 ## Naming vocabulary
 
 Near-miss names are deliberate distinctions, one line each (each verified
 against the constructors in `input.go`/`provider.go`/`source.go`,
-`destination.go`, `tap_ref.go`, `flow.go`/`branch.go`, `chain.go`,
+`destination.go`, `stream.go`, `stream_compile.go`,
 `watch.go`, `task_control.go`, `task_pause.go`, `expert/expert.go`):
 
 - **Input vs Source vs provider.Source**: `FileInput` is the value input over
@@ -258,47 +260,45 @@ against the constructors in `input.go`/`provider.go`/`source.go`,
   `source.Push`; `provider.Source` is the transport extension point
   (`OpenSource`) that `Input(p)` turns into a recipe input. Value inputs,
   custom push sources, and transport providers are three doors into one
-  `InputSpec`. `InputSpec.Stream(av.Stream)` returns a branch attach
-  anchor for app-owned dynamic tracks; it deliberately reuses
-  `Branch(...).From(...)` and `task.Attach` instead of adding a room/session
-  workflow API.
+  `InputSpec`. `task.Track(input, av.Stream)` is the attach anchor for
+  app-owned dynamic tracks; it deliberately reuses ordinary Outputs and
+  `task.Attach` instead of adding a room/session workflow API.
 - **Destination vs Sink vs Writer vs Write**: `Destination` is the routing
   handle every constructor returns, and reusing it shares one mux/sink. `Write` wraps an `io.Writer` you already opened;
   `Writer` lets goav open the writer on demand with final `provider.Info`
-  (and transactional commit/abort); `Sink` ends the branch in frames/packets
+  (and transactional commit/abort); `Sink` ends the stream in frames/packets
   instead of muxed bytes.
-- **FrameTap vs PacketTap**: `.Tap(...)` takes an explicit typed tap handle.
-  Use `FrameTap` after decode, transforms, or frame stages, and `PacketTap`
-  after `.Copy()` or an encoder. A mismatch is a build error naming the typed
-  constructor to use.
-- **Flow vs Branch**: a `Flow` is a reusable operation list and owns no
-  destination (`TestNorthStarFlowExposesNoDestinations`); a `Branch` routes
-  fanout and owns its destinations.
+- **Tap**: `.Tap(name)` names a stable point whose domain follows its
+  position: frames after decode, transforms, or frame stages; packets after an
+  encoder or on a stream that never decodes. `task.Tap(name)` reads it.
+- **Function vs fork**: a reusable operation list is a plain
+  `func(goav.Stream) goav.Stream` and owns no destination; reusing a Stream
+  value forks it, and each fork's `.To(...)` owns its destinations.
 - **Attach vs Detach vs Rebranch** (governed pre-v1, see
-  [`V1_SCOPE.md`](V1_SCOPE.md)): `task.Attach` adds ordinary branch specs
-  to a running task; `task.Detach(ctx, h)` removes that attached branch, with
+  [`V1_SCOPE.md`](V1_SCOPE.md)): `task.Attach` adds ordinary Outputs (from
+  `task.Tap`/`task.Track`) to a running task; `task.Detach(ctx, h)` removes that attached branch, with
   `lifecycle.DrainBranch()` and `lifecycle.AbortBranch()` selecting whether branch destinations
-  commit or abort; `Attachment.Rebranch` is attach-new-then-detach-old, with
-  lifecycle boundary options (`NextFrame`, `NextKeyframe`, `AtMediaTime`) and
+  commit or abort; `Attachment.Rebranch(ctx, outputs..., options...)` takes the same
+  Outputs and is attach-new-then-detach-old, with lifecycle boundary options (`NextFrame`, `NextKeyframe`, `AtMediaTime`) and
   old-branch outcome options.
 - **Sync**: `flow.Sync(name, flow.SyncTolerance(...), flow.SyncDropLate())`
-  returns a shared timeline policy. Reuse one `flow.SyncPolicy` across audio/video chains or
-  branches; `.Sync(policy)` inserts a packet/frame gate that can hold early
+  returns a shared timeline policy. Reuse one `flow.SyncPolicy` across audio/video
+  streams; `.Sync(policy)` inserts a packet/frame gate that can hold early
   media or drop late media and reports sync drops through normal branch stats.
 - **Playout vs Sync**: `flow.Playout(name)` (options as self-methods
   `WithOffset`/`WithDropLate`) returns a deliver-when-due policy for the sink
-  boundary: `.Playout(policy)` on a chain or branch holds each packet/frame
+  boundary: `.Playout(policy)` on a stream holds each packet/frame
   until its media time is due on the task timeline, so real-time destinations
   render on time and `control.Rate`/pause retime delivery. `.Sync` aligns
-  branches against each other; `.Playout` aligns delivery against the task
+  streams against each other; `.Playout` aligns delivery against the task
   clock. Drop-late sheds report through the same drop stats as sync gates.
 - **Shape vs Require vs Auto vs Prefer**: `Shape` states a fact about the
   current media point; `Require` asserts a contract that fails the build
   when unmet; `Auto` grants the solver permission to insert conversions;
   `Prefer` hints an open solver choice and never fails.
-- **Copy**: `.Copy()` is the recipe spelling for packet-preserving passthrough.
-  `codec.Copy()` is the internal `Spec` value used by lowerers and helper
-  code; user-facing recipes should write the verb.
+- **Copy**: a packet stream routed `.To(...)` without `.Decode()` copies, and
+  `input.To(...)` copies every stream; there is no copy verb. `codec.Copy()` is
+  the internal `Spec` value used by lowerers and helper code.
 - **Watch**: `Watch(filters...)` gives each consumer an independent filtered
   subscription with an explicit close handle. An unfiltered `Watch()` observes
   every task event. Each subscription sheds for itself only.

@@ -49,7 +49,7 @@ Suggestions:
 ## Matching programmatically
 
 ```go
-task, err := job.Build(ctx)
+task, err := rt.Build(ctx, outputs...)
 if err != nil {
     var buildErr *goav.BuildError
     if errors.As(err, &buildErr) {
@@ -61,7 +61,7 @@ if err != nil {
         }
         switch buildErr.Code {
         case errcode.Code("encode_adapter_missing"):
-            // register an adapter, or fall back to .Copy()
+            // register an adapter, or leave out .Decode() to copy the packets
         case errcode.Code("shape_conversion_refused"):
             // widen the .Auto(...) policy
         }

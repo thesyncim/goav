@@ -11,7 +11,7 @@ problem.
 Every recipe here stays on the front-door grammar:
 
 ```go
-goav.From(input).Audio().Decode().Do(stage).Encode(codec).To(destination)
+rt.Run(ctx, input.Audio().Decode().Do(stage).Encode(codec).To(destination))
 ```
 
 External code should not need graph handles, string routing, package internals,
@@ -29,13 +29,13 @@ stage concern.
 | Need | Use | Copy from | Failure to test |
 |---|---|---|---|
 | Push media already owned by the app | `goav.Source(name, shape, fn)` | `examples/custom-source` | missing callback or wrong shape refuses before work starts |
-| Publish dynamic app-owned tracks and optionally mix an output | `goav.Source` plus `task.Attach(...From(input.Track(track)))` | `examples/dynamic-audio-room` | inactive participant frames fail instead of silently corrupting the mix |
+| Publish dynamic app-owned tracks and optionally mix an output | `goav.Source` plus `task.Attach(ctx, task.Track(input, track)...To(sink))` | `examples/dynamic-audio-room` | inactive participant frames fail instead of silently corrupting the mix |
 | Open a transport or live provider | `provider.Source` via `goav.Input(provider)` | `examples/provider-source` | nil provider or missing codec/stream facts refuse before work starts |
 | Write bytes after format resolution | `goav.Writer(name, open, opts...)` | `examples/custom-destination` | nil opener or writer open error fails the task |
 | Commit or abort object-store uploads | `provider.TransactionalWriter` | `examples/transactional-writer` | induced pipeline error calls `Abort`, not `Commit` |
 | Replace a frame transform | `filter.Factory` + `runconfig.WithFilter` | `examples/custom-filter` | unsupported target returns `filter.ErrUnsupportedFormat` |
 | Add a codec | `codec.EncoderFactory` / `DecoderFactory` + `runconfig.WithEncoder` / `WithDecoder` | `examples/custom-codec` | descriptor-only registration reports adapter unavailable |
-| Converge several arms | `goav.Join(name, pipeline.Stage, arms...)` | `examples/custom-join` | incompatible arm media refuses at build time |
+| Converge several arms | `goav.Join(name, pipeline.Stage, streams...)` | `examples/custom-join` | incompatible arm media refuses at build time |
 | Expose app-specific control | `ctlserver.CommandSpec`, branch steps, encoder specs | `examples/control-plane-host` | invalid settings fail before branch attach |
 
 ## Custom Source
@@ -89,20 +89,21 @@ that already own media buffers and only need to push them into goav.
 
 When application state owns track membership, keep the source itself simple:
 emit one stream per participant, and attach downstream work with the same
-runtime branch grammar used everywhere else.
+stream grammar used everywhere else.
 
 ```go
 input := room.Input() // goav.Source(..., shape.Frame(...), ...)
-task, err := goav.From(input).Audio().To(anchor).BuildLive(ctx)
+task, err := rt.Build(ctx, input.Audio().To(anchor))
 if err != nil {
     return err
 }
 
 track := av.Stream{ID: "host", Type: av.MediaAudio, Codec: hostCodec}
 attachments := map[string]goav.Attachment{}
+host := task.Track(input, track)
 attachment, err := task.Attach(ctx,
-    goav.Branch("track-host").From(input.Track(track)).To(perTrack),
-    goav.Branch("mix-host").From(input.Track(track)).To(sharedMixer),
+    host.As("track-host").To(perTrack),
+    host.As("mix-host").To(sharedMixer),
 )
 if err != nil {
     return err
@@ -114,7 +115,7 @@ if err := room.Join(ctx, "host"); err != nil {
 attachments["host"] = attachment
 
 // Later, when the participant leaves, remove the source stream and then
-// drain the downstream branches that were anchored to it.
+// drain the downstream Outputs that were anchored to it.
 if err := room.Leave(ctx, "host"); err != nil {
     return err
 }
@@ -125,7 +126,7 @@ delete(attachments, "host")
 return nil
 ```
 
-Use `OnStream` instead when the source discovers streams internally and the
+Use `input.OnStream(match)` instead when the source discovers streams internally and the
 application does not need a join-time first-frame boundary.
 
 ## Custom Destination
@@ -146,7 +147,7 @@ dest := goav.Writer("mem://voice.ogg",
     goav.Metadata(av.Metadata{"kind": "voice"}),
 )
 
-err := goav.From(input).Audio().Decode().Encode(codec.Opus()).To(dest).Run(ctx)
+err := rt.Run(ctx, input.Audio().Decode().Encode(codec.Opus()).To(dest))
 ```
 
 Use `goav.Sink(component.SinkFunc(...))` instead when the destination consumes
@@ -256,11 +257,11 @@ Use `goav.Join` when several arms converge into one stream and built-in
 
 ```go
 joined := goav.Join("interleave", newInterleaveStage("interleave", "left", "right"),
-    goav.From(left).Audio().Decode(),
-    goav.From(right).Audio().Decode(),
+    left.Audio().Decode(),
+    right.Audio().Decode(),
 )
 
-err := joined.To(out).Run(ctx)
+err := rt.Run(ctx, joined.To(out))
 ```
 
 The stage is a normal `pipeline.Stage`. Its `InputShapes` and `OutputShapes`
@@ -314,11 +315,8 @@ Use `goavtest` for fixtures and `goavtest/expect` for assertions:
 
 ```go
 out := goavtest.NewCollector()
-err := goav.From(goavtest.Audio(48000, 1, []int16{1, 2})).
-    Audio().
-    To(out.Sink()).
-    UseRuntime(goavtest.Runtime(runconfig.WithFilter(desc, factory))).
-    Run(ctx)
+rt := goavtest.Runtime(runconfig.WithFilter(desc, factory))
+err := rt.Run(ctx, goavtest.Audio(48000, 1, []int16{1, 2}).Audio().To(out.Sink()))
 
 expect.NoError(t, err)
 expect.S16(t, out, [][]int16{{1, 2}})

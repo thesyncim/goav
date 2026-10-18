@@ -13,9 +13,9 @@ expert graphs compose those components directly
 ```
 
 There is no separate "components" API layer: reusable pieces live in the domain
-packages that own their contracts. Reusable `Flow(name).Audio()/Video()` chains
-are ordered intent fragments, not graph components; they expand into the same
-stream intents that recipes, branch composers, and runtime attachments compile.
+packages that own their contracts. A reusable `func(goav.Stream) goav.Stream`
+is an ordered intent fragment, not a graph component; it expands into the same
+stream intents that recipes, forks, and runtime attachments compile.
 
 ## Status
 
@@ -82,8 +82,8 @@ return `ErrNilStageCallback` or `ErrNilSinkCallback` immediately. The shorter
 `PacketFunc`, `FrameFunc`, `EventFunc`, and `SinkFunc` helpers remain useful
 inside examples and tests, but invalid callbacks are reported later by graph or
 recipe validation.
-A packet stage runs wherever the chain carries packets, after `.Copy()` or as
-a bitstream filter after the encoder: `.Encode(codec.VP8()).Do(sei)`. A frame
+A packet stage runs wherever the stream carries packets, on an undecoded
+stream or as a bitstream filter after the encoder: `.Encode(codec.VP8()).Do(sei)`. A frame
 stage there is refused.
 
 RTP: stable. `rtpav.Source` (Pion RTP reader -> packets/events with payload

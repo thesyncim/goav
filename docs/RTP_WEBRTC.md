@@ -42,22 +42,21 @@ The session-level shape is:
 session, err := webrtcav.NewSession(ctx, webrtcav.SessionConfig{})
 answer, err := session.SetRemoteDescription(ctx, offer)
 remote, err := session.AcceptTrack(ctx)
-err := goav.From(goav.Input(webrtcav.Track(remote.Track))).
-    Copy().
-    To(goav.Write("recording.ivf", file)).
-    Run(ctx)
+err := rt.Run(ctx, goav.Input(webrtcav.Track(remote.Track)).To(goav.Write("recording.ivf", file)))
 ```
 
-For multiple tracks, pass several inputs to the variadic `From`; writing them
-to one container requires a muxer adapter for that container:
+For multiple tracks, route each input's stream to one shared destination value;
+writing them to one container requires a muxer adapter for that container:
 
 ```go
 tracks, err := webrtcav.NewTrackSet(webrtcav.TrackSetConfig{Session: session})
 audio, err := tracks.Accept(ctx)
 video, err := tracks.Accept(ctx)
-err := goav.From(goav.Input(rtpav.Receive(audio.Reader)), goav.Input(rtpav.Receive(video.Reader))).
-    To(goav.Write("recording.webm", file)).
-    Run(ctx)
+rec := goav.Write("recording.webm", file)
+err := rt.Run(ctx,
+    goav.Input(rtpav.Receive(audio.Reader)).Audio().To(rec),
+    goav.Input(rtpav.Receive(video.Reader)).Video().To(rec),
+)
 ```
 
 When a later accepted track has the same stream ID, `TrackSet` calls
@@ -72,10 +71,8 @@ zero goav changes. Declare codec intent on the provider so it can choose the
 depacketizer:
 
 ```go
-err := goav.From(goav.Input(rtpav.Receive(video, rtpav.WithName("video"), rtpav.WithCodec(codec.VP8())))).
-    Copy().
-    To(goav.Write("recording.ivf", file)).
-    Run(ctx)
+in := goav.Input(rtpav.Receive(video, rtpav.WithName("video"), rtpav.WithCodec(codec.VP8())))
+err := rt.Run(ctx, in.To(goav.Write("recording.ivf", file)))
 ```
 
 Each reader can be a raw RTP receiver or a `webrtcav.TrackReader`. A track
@@ -117,10 +114,9 @@ decoder factory; dynamic rebind is a future policy.
 Stream recipes use the supported live receive policy by default:
 
 ```go
-err := goav.From(goav.Input(webrtcav.Track(track))).
-    Video().
-    To(goav.Sink(frames)).
-    Run(ctx)
+err := rt.Run(ctx, goav.Input(webrtcav.Track(track)).Video().
+    Decode().
+    To(goav.Sink(frames)))
 ```
 
 Decoders handle a codec change with one built-in behavior (dynamic decoder

@@ -42,10 +42,10 @@ A v1 tag should promise the smaller normal-user workflows targeted by
 Use the Tier A surface in `docs/API_SURFACE.md` as an inventory to shrink or
 explicitly retain, not as an automatic v1 promise:
 
-- the supported `From(...) -> stream selection -> operations -> branches ->
-  destinations` workflows named in `docs/history/SIMPLIFICATION_TARGET.md`;
-- `Describe`/`Explain` before `Build`, plus `Task.Run`/`Task.Close` for built
-  tasks;
+- the supported `input stream -> operations -> forks -> .To(destinations)`
+  workflows named in `docs/history/SIMPLIFICATION_TARGET.md`;
+- `rt.Describe`/`rt.Explain` before `rt.Run`/`rt.Build`, plus
+  `Task.Run`/`Task.Close` for built tasks;
 - structured `*goav.BuildError` refusals with stable families, `Detail(key)`,
   and rendered detail/fix lines;
 - custom source and custom sink seams needed by the supported workflows.
@@ -78,14 +78,13 @@ Module scope:
   needed.
 
 API surface:
-- Added exported symbols: `BuildError` helper methods, `BuildLive`,
-  task capability vocabulary, `Write(name, writer)`,
-  `bundle.Describe`, inspect helpers, sync policy options, media-time
-  rebranch boundaries, and the sealed grammar builder/option types
-  (`BranchBuilder`, `FlowBuilder`, `MixStream`, `CompositeStream`,
-  `SelectStream`, `JoinStream`, `JoinArm`, `StreamOption`, `InputOption`,
-  `DestinationOption`, `MediaOption`) exported for godoc linkability and
-  nameability while constructors remain the only construction surface.
+- Added exported symbols: `BuildError` helper methods, the value grammar
+  (`Stream`, `Output`, `Layer`, `At`, `Runtime.Run`/`Build`/`Describe`/`Explain`,
+  `LiveTask.Tap`/`Track`/`Attach`), task capability vocabulary,
+  `Write(name, writer)`, `bundle.Describe`, inspect helpers, sync policy
+  options, media-time rebranch boundaries, and the sealed option types
+  (`StreamOption`, `InputOption`, `DestinationOption`, `MediaOption`) exported
+  for godoc linkability while constructors remain the only construction surface.
 - Removed or renamed exported symbols: `ContextCloser`, `Observable`,
   `Controllable`, `Explainer`, `Inspectable`, `Mutable`, `InputStream`,
   `RecipePatch`, `TransformSpec`, legacy `BuildError.Details`, legacy
@@ -96,12 +95,12 @@ API surface:
   `docs/history/SIMPLIFICATION_TARGET.md`, and `docs/history/V1_CREDIBILITY_AUDIT.md`.
 
 Behavior changes:
-- Normal `Build` returns the narrow `Task` lifecycle; callers that need
-  inspection, watches, controls, or runtime mutation use `BuildLive`.
-- Stream chains require explicit `.Decode()` before frame-domain consumers;
-  `.Copy()` keeps packet-domain recipes packet preserving.
+- `rt.Run(ctx, outputs...)` runs a recipe to completion; `rt.Build` returns a
+  `LiveTask` for inspection, watches, controls, or runtime mutation.
+- Streams require explicit `.Decode()` before frame-domain consumers; a stream
+  routed without `.Decode()` copies, keeping packet-domain recipes packet preserving.
 - A reused destination handle is the shared output: one value passed to
-  several chains or branches feeds one mux or sink (`Mux` was removed).
+  several Outputs feeds one mux or sink (`Mux` was removed).
 - Compile-time planning now uses captured immutable recipe IR for inputs,
   streams, destinations, joins, stream rules, graph lowerers, and work-plan
   rendering.
@@ -120,15 +119,17 @@ Adapter and extension changes:
 
 Migration notes:
 - Replace root lifecycle/control interfaces with local structural interfaces
-  or explicit `BuildLive` capabilities.
+  or the explicit `LiveTask` capabilities `rt.Build` returns.
+- Replace builder chains (`goav.From(in)...To(out).Run(ctx)`, `.Branches(...)`)
+  with Stream values: `rt.Run(ctx, in.Video()...To(out))`, forks by reuse and `.As(name)`.
 - Replace `Writer`/path-style output spelling with `Write(name, writer)` or
   `URI(uri)` as appropriate.
 - Replace `Mux(name, destination)` with the destination value itself, passed
-  to every chain that shares it.
+  to every Output that shares it.
 - Switch structured-error callers from legacy details/suggestions fields to
   `Detail(key)`, `DetailLines()`, and `FixLines()`.
 - Add explicit `.Decode()` before frame transforms, real encoders, frame taps,
-  or decoded-frame sinks; use `.Copy()` for packet-preserving flows.
+  or decoded-frame sinks; leave `.Decode()` out for packet-preserving flows.
 
 Evidence:
 - Local root tests: `go test -p 1 ./...`.

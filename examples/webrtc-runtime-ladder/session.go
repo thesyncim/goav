@@ -65,13 +65,11 @@ func (s *session) startVideoTrack(track *webrtc.TrackRemote) {
 	}
 	s.mu.Unlock()
 
-	task, err := goav.From(goav.Input(webrtcav.Track(track, rtpav.WithFeedback(peerFeedback{s.pc})))).
-		UseRuntime(s.runtime).
+	task, err := s.runtime.Build(s.ctx, goav.Input(webrtcav.Track(track, rtpav.WithFeedback(peerFeedback{s.pc}))).
 		Video().
 		Decode().
-		Tap(goav.FrameTap(videoTapName)).
-		To(goav.Sink(discardSink("video-decoded"))).
-		BuildLive(s.ctx)
+		Tap(videoTapName).
+		To(goav.Sink(discardSink("video-decoded"))))
 	if err != nil {
 		s.setError(err.Error())
 		return
@@ -104,13 +102,11 @@ func (s *session) startAudioTrack(track *webrtc.TrackRemote) {
 	}
 	s.mu.Unlock()
 
-	task, err := goav.From(goav.Input(webrtcav.Track(track, rtpav.WithFeedback(peerFeedback{s.pc})))).
-		UseRuntime(s.runtime).
+	task, err := s.runtime.Build(s.ctx, goav.Input(webrtcav.Track(track, rtpav.WithFeedback(peerFeedback{s.pc}))).
 		Audio().
 		Decode().
-		Tap(goav.FrameTap(audioTapName)).
-		To(goav.Sink(discardSink("audio-decoded"))).
-		BuildLive(s.ctx)
+		Tap(audioTapName).
+		To(goav.Sink(discardSink("audio-decoded"))))
 	if err != nil {
 		s.setError(err.Error())
 		return

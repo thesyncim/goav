@@ -15,37 +15,33 @@ import (
 func TestDecodedTapTasksNormalizeBrowserTrackShapes(t *testing.T) {
 	ctx := t.Context()
 
-	audioTask, err := goav.From(goav.Source("mic",
+	audioTask, err := bundle.MustNew().Build(ctx, goav.Source("mic",
 		shape.Packet(av.MediaAudio, av.CodecOpus, shape.Audio(48_000, codec.Stereo, ""), shape.Realtime(true)),
 		func(context.Context, source.Push) error { return nil },
-	)).
-		UseRuntime(bundle.MustNew()).
+	).
 		Audio().
 		Decode().
 		Shape(shape.Frame(av.MediaAudio, shape.Audio(48_000, codec.Stereo, av.SampleFormatS16))).
 		Resample(48_000, codec.Stereo).
 		Shape(shape.Frame(av.MediaAudio, shape.Audio(48_000, codec.Stereo, av.SampleFormatS16))).
-		Tap(goav.FrameTap(audioTapName)).
-		To(goav.Sink(newAudioMonitorSink(newAudioAnalyzer(), nil))).
-		Build(ctx)
+		Tap(audioTapName).
+		To(goav.Sink(newAudioMonitorSink(newAudioAnalyzer(), nil))))
 	if err != nil {
 		t.Fatalf("audio task build error = %v", err)
 	}
 	defer audioTask.Close()
 
-	videoTask, err := goav.From(goav.Source("camera",
+	videoTask, err := bundle.MustNew().Build(ctx, goav.Source("camera",
 		shape.Packet(av.MediaVideo, av.CodecVP8, shape.Realtime(true)),
 		func(context.Context, source.Push) error { return nil },
-	)).
-		UseRuntime(bundle.MustNew()).
+	).
 		Video().
 		Decode().
 		Shape(shape.Frame(av.MediaVideo, shape.Video(decodedVideoMaxWidth, decodedVideoMaxHeight, av.PixelFormatI420))).
 		Resize(videoTapWidth, videoTapHeight).
 		Shape(shape.Frame(av.MediaVideo, shape.Video(videoTapWidth, videoTapHeight, av.PixelFormatI420))).
-		Tap(goav.FrameTap(videoTapName)).
-		To(goav.Sink(newVideoAnalyzer())).
-		Build(ctx)
+		Tap(videoTapName).
+		To(goav.Sink(newVideoAnalyzer())))
 	if err != nil {
 		t.Fatalf("video task build error = %v", err)
 	}

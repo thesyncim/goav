@@ -34,12 +34,7 @@ func (staticRTPReader) Close() error { return nil }
 func ExampleInput() {
 	mic := goav.Input(rtpav.Receive(staticRTPReader{}, rtpav.WithName("mic"), rtpav.WithCodec(codec.Opus())))
 
-	report, err := goav.From(mic).
-		UseRuntime(bundle.MustNew()).
-		Audio().
-		Copy().
-		To(goav.Write("mic.webm", io.Discard)).
-		Explain(context.Background())
+	report, err := bundle.Explain(context.Background(), mic.Audio().To(goav.Write("mic.webm", io.Discard)))
 	if err != nil {
 		fmt.Println(err)
 		return

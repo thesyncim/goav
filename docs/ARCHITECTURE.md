@@ -38,9 +38,9 @@ filter registries; there are no global registries. `bundle.MustNew(opts...)`
 registers the bundled in-repo adapters and then applies caller options
 last-wins, so one call can add or override implementations.
 
-`From(input)` is the beginner-facing front door, and the surface is small:
-`From`, stream selection, ordered operations, taps, branches, flows, tasks,
-and destinations — direct `File`/`URI`/`Sink` destinations, custom `Writer`
+Stream values are the beginner-facing front door, and the surface is small:
+input stream selection (`input.Video()`), ordered operations, taps, forks by
+reuse, `rt.Run`/`rt.Build`, tasks, and destinations — direct `File`/`URI`/`Sink` destinations, custom `Writer`
 destinations with `provider.Info`, and shared mux/sink outputs by reusing one
 destination value.
 
@@ -105,23 +105,23 @@ diverging. A route carries all media by default, or matches one stream or event
 type.
 
 `task.Attach` is the runtime control-plane operation for late branches. It
-plans a private graph patch from one or more named downstream branches,
+plans a private graph patch from one or more Outputs (named downstream branches),
 prepares destinations and components before graph mutation, applies the patch
 with rollback on failure, and returns an attachment handle with `Close(ctx)`.
 
-Stable outlets come from typed `.Tap(goav.FrameTap(name))` or
-`.Tap(goav.PacketTap(name))` calls listed by `task.Taps()`; runtime branches
-anchor with `goav.Branch("name").From(tap)`. Late branches can run custom
-stages, apply flows, resize/resample from frame taps, encode Opus/VP8/VP9/AV1
+Stable outlets come from `.Tap(name)` calls, listed by `task.Taps()`, whose
+frame or packet domain follows their position; attached Outputs start from
+`task.Tap(name)` or `task.Track(input, stream)`. Late branches can run custom
+stages, resize/resample from frame taps, encode Opus/VP8/VP9/AV1
 from frame taps, copy or decode packet taps, and expose their own typed taps
 for later attachments. Detaching a parent removes dependent branches anchored
 from its taps. H.264 recipe encoding is intentionally descriptor-only in the
 default bundle until an encoder backend is registered explicitly.
 
 Design direction: a tap is not a second data path. It is a named stream point
-that later consumers can bind to. Planned branches, runtime branches, join-arm
-tap references, and `Control.AtTap` should keep sharing that one internal anchor
-model: `.Tap(...)` declares the point, `.From(tap)` consumes it, and the
+that later consumers can bind to. Planned forks, attached Outputs, join arms,
+and `Control.AtTap` should keep sharing that one internal anchor
+model: `.Tap(name)` declares the point, `task.Tap(name)` consumes it, and the
 planner owns the node/domain/shape facts. That gives the useful part of "tap
 at any point" while preserving the small public grammar and avoiding a second
 branch API.
@@ -167,7 +167,7 @@ What the compiler enforces today: the sibling packages (`av`, `errcode`,
 package. Root depends on leaves, never the reverse.
 
 The one exception is `expert`: it sits above root because it imports `goav` to
-return `Task` on the normal build path and `LiveTask` through `BuildLive`.
+return the `LiveTask` its `Build` produces.
 Root reaches back only through structural interfaces
 (`ExpertGraph() any`, the branch-anchor `Route` capability), never an import.
 
@@ -317,10 +317,11 @@ depacketizers, loss/timestamp tracking, and stream-scoped EOS.
 
 ## Multi-output media planning
 
-Branch composition lowers into one work-plan branch shape: input ref, stream
-selector, operation sequence, destinations, and mux groups. Branches selecting
-the same stream share upstream demux, selection, and decode; operations
-declared before `.Branches(...)` form a shared prefix. Naming a point with
+Fork composition lowers into one work-plan branch shape: input ref, stream
+selector, operation sequence, destinations, and mux groups. Forks of the same
+stream share upstream demux, selection, and decode; operations before the first
+fork form a shared prefix (work shared below the first fork is duplicated per
+fork today). Naming a point with
 `.Tap(...)` is only required when a stable runtime attach handle should appear
 in `task.Taps()`. Typical uses: live receive to several outputs, WebRTC receive
 to recording plus preview plus analysis, one decode feeding several

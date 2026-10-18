@@ -314,7 +314,7 @@ Optional capabilities, discovered by type assertion: `Name() string` (node
 name in Describe; duplicates get "-1" suffixes), `Detail() string`, and
 `DecodeBounds(av.StreamID) codec.DecodeBounds` (seeds downstream decoder
 scratch). `rtpav.Receive`, `webrtcav.Track`, and `playoutav.New` are
-providers; yours plugs in identically via `goav.From(goav.Input(provider))`.
+providers; yours plugs in identically via `goav.Input(provider).Video()`.
 
 Lifecycle (from `provider/provider.go`, `provider.go`, `source.go`):
 `SourceShape()` is read before opening. Declare

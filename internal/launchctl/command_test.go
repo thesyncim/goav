@@ -865,7 +865,6 @@ func TestExecuteUnsupportedRebranchReportsKnownBranches(t *testing.T) {
 func TestBranchPipelineExtensionHandleCallsConfiguredHooks(t *testing.T) {
 	var calls []string
 	handle := &BranchPipeline{
-		copyFn:   func() { calls = append(calls, "copy") },
 		decodeFn: func() { calls = append(calls, "decode") },
 		resizeFn: func(width int, height int) { calls = append(calls, fmt.Sprintf("resize:%dx%d", width, height)) },
 		resampleFn: func(sampleRate int, channels int) {
@@ -876,13 +875,12 @@ func TestBranchPipelineExtensionHandleCallsConfiguredHooks(t *testing.T) {
 			calls = append(calls, "encode:"+string(spec.ID))
 		},
 		destinationFn: func(goav.Destination) { calls = append(calls, "destination") },
-		finishFn: func() goav.BranchSpec {
+		finishFn: func() goav.Output {
 			calls = append(calls, "finish")
-			return goav.Branch("custom").To()
+			return goav.Output{}
 		},
 	}
 
-	handle.Copy()
 	handle.Decode()
 	handle.Resize(320, 180)
 	handle.Resample(16000, 1)
@@ -892,7 +890,6 @@ func TestBranchPipelineExtensionHandleCallsConfiguredHooks(t *testing.T) {
 	_ = handle.finish()
 
 	want := []string{
-		"copy",
 		"decode",
 		"resize:320x180",
 		"resample:16000:1",
@@ -906,7 +903,6 @@ func TestBranchPipelineExtensionHandleCallsConfiguredHooks(t *testing.T) {
 	}
 
 	var nilHandle *BranchPipeline
-	nilHandle.Copy()
 	nilHandle.Decode()
 	nilHandle.Resize(1, 1)
 	nilHandle.Resample(1, 1)
@@ -1548,11 +1544,10 @@ func TestExecuteRequestAppliesAttachRequest(t *testing.T) {
 	defer cancel()
 
 	packet := av.Packet{Payload: av.Buffer{Bytes: []byte{1}, Ownership: av.BufferImmutable}}
-	task, err := goav.From(goavtest.Packets(av.CodecOpus, packet)).
-		Audio().Copy().Tap(goav.PacketTap("pkts")).
-		To(goavtest.NewCollector().Sink()).
-		UseRuntime(goavtest.Runtime()).
-		BuildLive(ctx)
+	task, err := goavtest.Runtime().Build(ctx, goavtest.Packets(av.CodecOpus, packet).
+		Audio().
+		Tap("pkts").
+		To(goavtest.NewCollector().Sink()))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1579,11 +1574,10 @@ func TestExecuteAppliesAttachCommand(t *testing.T) {
 	defer cancel()
 
 	packet := av.Packet{Payload: av.Buffer{Bytes: []byte{1}, Ownership: av.BufferImmutable}}
-	task, err := goav.From(goavtest.Packets(av.CodecOpus, packet)).
-		Audio().Copy().Tap(goav.PacketTap("pkts")).
-		To(goavtest.NewCollector().Sink()).
-		UseRuntime(goavtest.Runtime()).
-		BuildLive(ctx)
+	task, err := goavtest.Runtime().Build(ctx, goavtest.Packets(av.CodecOpus, packet).
+		Audio().
+		Tap("pkts").
+		To(goavtest.NewCollector().Sink()))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1840,11 +1834,10 @@ func TestServerAttachRebranchDetachUsesAttachmentTable(t *testing.T) {
 	defer cancel()
 
 	packet := av.Packet{Payload: av.Buffer{Bytes: []byte{1}, Ownership: av.BufferImmutable}}
-	task, err := goav.From(goavtest.Packets(av.CodecOpus, packet)).
-		Audio().Copy().Tap(goav.PacketTap("pkts")).
-		To(goavtest.NewCollector().Sink()).
-		UseRuntime(goavtest.Runtime()).
-		BuildLive(ctx)
+	task, err := goavtest.Runtime().Build(ctx, goavtest.Packets(av.CodecOpus, packet).
+		Audio().
+		Tap("pkts").
+		To(goavtest.NewCollector().Sink()))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2136,11 +2129,10 @@ func TestServerSupportsCustomEncoderSettings(t *testing.T) {
 
 	const customCodec = av.CodecID("vendor_audio")
 	factory := &recordingEncoderFactory{descriptor: codec.Descriptor{ID: customCodec, Type: av.MediaAudio}}
-	task, err := goav.From(goavtest.Audio(48000, 1, []int16{1})).
-		Audio().Tap(goav.FrameTap("frames")).
-		To(goavtest.NewCollector().Sink()).
-		UseRuntime(goavtest.Runtime(runconfig.WithEncoder(factory.descriptor, factory))).
-		BuildLive(ctx)
+	task, err := goavtest.Runtime(runconfig.WithEncoder(factory.descriptor, factory)).Build(ctx, goavtest.Audio(48000, 1, []int16{1}).
+		Audio().
+		Tap("frames").
+		To(goavtest.NewCollector().Sink()))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2262,11 +2254,10 @@ func TestServerGenericEncodeStepCarriesCommonCodecOptions(t *testing.T) {
 
 	const customCodec = av.CodecID("vendor_generic_audio")
 	factory := &recordingEncoderFactory{descriptor: codec.Descriptor{ID: customCodec, Name: "Vendor generic audio", Type: av.MediaAudio}}
-	task, err := goav.From(goavtest.Audio(48000, 1, []int16{1})).
-		Audio().Tap(goav.FrameTap("frames")).
-		To(goavtest.NewCollector().Sink()).
-		UseRuntime(goavtest.Runtime(runconfig.WithEncoder(factory.descriptor, factory))).
-		BuildLive(ctx)
+	task, err := goavtest.Runtime(runconfig.WithEncoder(factory.descriptor, factory)).Build(ctx, goavtest.Audio(48000, 1, []int16{1}).
+		Audio().
+		Tap("frames").
+		To(goavtest.NewCollector().Sink()))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2331,11 +2322,9 @@ func TestExecuteControlAgainstRealControllableTestSource(t *testing.T) {
 	source := goavtest.NewTestSource("fixture",
 		shape.Packet(av.MediaAudio, av.CodecOpus, shape.Audio(48000, 1, av.SampleFormatS16)),
 	)
-	task, err := goav.From(source.Input()).
-		Audio().Copy().
-		To(goavtest.NewCollector().Sink()).
-		UseRuntime(goavtest.Runtime()).
-		BuildLive(ctx)
+	task, err := goavtest.Runtime().Build(ctx, source.Input().
+		Audio().
+		To(goavtest.NewCollector().Sink()))
 	if err != nil {
 		t.Fatal(err)
 	}

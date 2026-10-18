@@ -107,10 +107,17 @@ func (g *composeGraph) planBranches(sources []pipeline.NodeRef, branches []branc
 			group:  i,
 		})
 		decoded := branchComposeDecodedBranchIndices(group.branches, branches)
+		var undecoded []int
 		for _, b := range group.branches {
 			if !branchComposeRouteNeedsDecode(branches[b]) {
 				g.branchOut[b] = selectRef
+				undecoded = append(undecoded, b)
 			}
+		}
+		// Frames from a frame-domain input and copied packets need no decode:
+		// their shared steps run on the selected stream.
+		if err := g.planSharedSteps(selectRef, undecoded, branches); err != nil {
+			return err
 		}
 		if len(decoded) == 0 {
 			continue
@@ -130,28 +137,8 @@ func (g *composeGraph) planBranches(sources []pipeline.NodeRef, branches []branc
 		for _, b := range decoded {
 			g.branchOut[b] = decodeRef
 		}
-		for _, prefix := range branchComposeSharedStepGroups(decoded, branches) {
-			if len(prefix.branches) == 0 {
-				continue
-			}
-			transforms, err := branchComposeRouteOperationTransformsForName(branchComposeSharedOperationName(branches[prefix.branches[0]]), prefix.operations)
-			if err != nil {
-				return err
-			}
-			upstream := decodeRef
-			for _, transform := range transforms {
-				upstream = g.add(composeNode{
-					kind:      composeSharedStep,
-					name:      transform.name,
-					detail:    mediaTransformDetail(transform),
-					inputs:    []pipeline.NodeRef{upstream},
-					branches:  prefix.branches,
-					transform: transform,
-				})
-			}
-			for _, b := range prefix.branches {
-				g.branchOut[b] = upstream
-			}
+		if err := g.planSharedSteps(decodeRef, decoded, branches); err != nil {
+			return err
 		}
 	}
 	for b := range branches {
@@ -467,4 +454,34 @@ func composeBranchStreams(groups []branchComposeStreamGroup, branches int) []av.
 		}
 	}
 	return streams
+}
+
+// planSharedSteps adds, per group of branches with one shared operation
+// prefix, that prefix's steps once after from, and points the branches at
+// the last of them.
+func (g *composeGraph) planSharedSteps(from pipeline.NodeRef, indices []int, branches []branchComposeRoute) error {
+	for _, prefix := range branchComposeSharedStepGroups(indices, branches) {
+		if len(prefix.branches) == 0 {
+			continue
+		}
+		transforms, err := branchComposeRouteOperationTransformsForName(branchComposeSharedOperationName(branches[prefix.branches[0]]), prefix.operations)
+		if err != nil {
+			return err
+		}
+		upstream := from
+		for _, transform := range transforms {
+			upstream = g.add(composeNode{
+				kind:      composeSharedStep,
+				name:      transform.name,
+				detail:    mediaTransformDetail(transform),
+				inputs:    []pipeline.NodeRef{upstream},
+				branches:  prefix.branches,
+				transform: transform,
+			})
+		}
+		for _, b := range prefix.branches {
+			g.branchOut[b] = upstream
+		}
+	}
+	return nil
 }

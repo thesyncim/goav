@@ -113,21 +113,18 @@ func (s *demoPipelineSource) Close() error {
 func runProviderSource(ctx context.Context) ([][]int16, *demoProvider, error) {
 	src := newDemoProvider()
 	out := goavtest.NewCollector()
-	err := goav.From(goav.Input(src)).
+	err := goavtest.Runtime().Run(ctx, goav.Input(src).
 		Audio().
-		To(out.Sink()).
-		UseRuntime(goavtest.Runtime()).
-		Run(ctx)
+		To(out.Sink()))
 	return out.S16(), src, err
 }
 
 func buildBrokenProvider(ctx context.Context) error {
 	out := goavtest.NewCollector()
-	_, err := goav.From(goav.Input(nil)).
+	_, err := goavtest.Runtime().Build(ctx, goav.Input(nil).
 		Audio().
 		Decode().
-		To(out.Sink()).
-		Build(ctx)
+		To(out.Sink()))
 	return err
 }
 

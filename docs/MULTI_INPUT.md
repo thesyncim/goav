@@ -3,13 +3,13 @@
 Multi-input work is what you reach for when several media arms need to become
 one stream point: audio mixing, video compositing, active-arm selection, or a
 custom convergence stage. Older goav recipes were structurally a tree (one
-input fanning out via `Branches`); convergence (N streams -> one) is the dual,
+input fanning out by reusing a Stream); convergence (N streams -> one) is the dual,
 and it landed as:
 
-- `Mix(arms...)`: sums S16 audio arms (per-arm buffering by StreamID, clamping,
+- `Mix(streams...)`: sums S16 audio arms (per-arm buffering by StreamID, clamping,
   one output EOS after all arms end). Packet arms call `.Decode()` explicitly;
   mismatched rates auto-resample to the first arm's format.
-- `Composite(arms...)`: paints video arms onto a canvas at `.Region(x, y)` offsets.
+- `Composite(layers...)`: paints video arms onto a canvas at `goav.At(stream, x, y)` offsets.
 - `.SyncByPTS()` on Mix/Composite: opt-in timestamp alignment (default stays
   arrival order): per step the minimum head PTS on a common ns clock leads,
   arms within half a frame join it, ahead arms sit the step out (silence /
@@ -18,32 +18,33 @@ and it landed as:
   ended arm stops gating so the rest keep joining (both modes). Catch-up drops
   surface on the join node's counters via the optional `pipeline.DropReporter`
   capability (polled at snapshot time with an atomic counter on the hot path).
-  With `BuildLive`, they appear as `task.Stats().Nodes["mix"].Dropped` under
+  On a task from `rt.Build`, they appear as `task.Stats().Nodes["mix"].Dropped` under
   the `"sync"` reason, and in `task.Snapshot()`.
 - Offline arms backpressure independently: an arm may lead a Mix or Composite
   by 16 buffered frames before its upstream waits (the optional
   `pipeline.Admitter` capability), so a fast arm cannot pull its stream into
   memory while a slow sibling catches up (`TestJoinBackpressuresFastArm`).
   Live joins keep buffering, so a sparse arm never costs a live camera frames
-  (`TestLiveJoinKeepsBufferingFastArm`), and so does a tree with a tap arm,
-  which shares an upstream with another arm.
-- `Select(arms...)`: passthrough one-of-N switch (no decode/encode); the first
-  arm is active by default and, with `BuildLive`,
+  (`TestLiveJoinKeepsBufferingFastArm`).
+- `Select(streams...)`: passthrough one-of-N switch (no decode/encode); the first
+  arm is active by default and, on a task from `rt.Build`,
   `task.Control(ctx, control.SelectActive(id))` switches live through the
   control plane.
-- Variadic `From(inputs...)`: N inputs, per-chain `InputName(...)` narrowing,
-  one shared `Destination` value muxing the encoded chains.
+- Several inputs in one run: each Output starts from its own input value
+  (`mic.Audio()`, `cam.Video()`), and one shared `Destination` value muxes the
+  encoded streams. Forks across several inputs in one run are refused today.
 
 Design properties:
 
-- Joins are entry points parallel to `From`; single-input chains are untouched.
-- The join output is a normal stream point (`.Tap`, `.Branches`,
-  `.Encode().To(...)`, runtime attach from join taps).
+- Joins are Streams parallel to `input.Video()`; single-input streams are untouched.
+- The join output is a normal Stream (`.Tap`, forks, `.Encode().To(...)`,
+  runtime attach from join taps). It runs alone in one run today: other
+  Outputs beside it are refused with `stream_beside_join`.
 - Built-in joins are thin faces over one join operation with N input arms.
-- `.To(destinations...)` is variadic with chain semantics: each destination
+- `.To(destinations...)` is variadic with stream semantics: each destination
   receives the joined stream. Mix/Composite mux fanout after `.Encode`; Select
   fans out to several sinks.
-- One handle listed twice raises the same duplicate refusal a chain does.
+- One handle listed twice raises the same duplicate refusal a stream does.
 - The pipeline already supported N input edges per node, and each buffered node
   has a single serial worker, so join stages need no internal locking.
 - Select defaults a direct runtime to a non-lossy buffered graph so
@@ -64,73 +65,66 @@ the joinProfiles table.
 
 Arm shape-solving goes through the central solver (`armExpected`/`armPolicy`).
 The joined output runs through that same solver before terminal `.Encode(...)`
-and before planned `.Branches(...)`, seeded with the joined stream's shape:
-branch-local `.Auto(...)` can insert conversions on that branch, and
-`.Auto(...)` on the Mix/Composite output applies to the terminal encode path
-or to every planned branch.
+and before planned forks, seeded with the joined stream's shape: fork-local
+`.Auto(...)` can insert conversions on that fork, and `.Auto(...)` on the
+Mix/Composite output applies to the terminal encode path or to every planned
+fork.
 
-Taps converge mid-graph: an arm chain keeps its declared `.Decode()`/`.Tap(...)`.
+Taps converge mid-graph: an arm keeps its declared `.Decode()`/`.Tap(name)`.
 The tap installs on the task anchored at the arm's decode (or source) node,
-so one decode feeds the join and any other consumer (runtime attach, a later
-arm). A value returned by `goav.FrameTap` or `goav.PacketTap` can stand as a
-join arm: it anchors on a tap declared by an
-earlier arm of the same join expression (no source re-opened) and re-stamps
-the tapped media under the tap name as the arm's id (`<join>-tap-<name>`
-restamp node; join stages identify arms by stream id). Composite tap arms
-place with `goav.FrameTap("cam").Region(x, y)`. Unresolvable refs fail before
-any source opens, listing the declared taps; arm ordering (declare before
-reference) makes cycles unrepresentable. Other arm-chain operations
-(transform/encode/copy/stages) are rejected with the supported alternatives
-instead of being silently dropped.
+so one decode feeds the join and any other consumer (an Output attached from
+`task.Tap(name)`). Join stages identify arms by stream id. Other arm
+operations (transform/encode/stages) are rejected with the supported
+alternatives instead of being silently dropped.
 
-Joins are an extension point: `goav.Join(name, stage, arms...)` lowers a
+Joins are an extension point: `goav.Join(name, stage, streams...)` lowers a
 caller-supplied convergence stage through the same joinSpec/joinProfile
-machinery, so a third party can ship `Crossfade(arms...)` without core changes.
+machinery, so a third party can ship `Crossfade(streams...)` without core changes.
 The per-kind behaviors the profile table carries are derived from the stage's
 `shape.Contract` (frame-domain inputs -> explicit decoded arms like Mix; packet/any ->
 passthrough like Select; one fact-carrying input shape -> solver-planned arm
 conversions; declared output -> the joined stream, else first-arm facts) and
 from the join's snake-safe name (node name, joined output stream id,
 `<name>_*` error-code family). A custom join is a full citizen: `.Tap`,
-`.Branches`, `.To`, nesting as a join arm, `Describe() == Build()`; proven from
+forks, `.To`, nesting as a join arm, `Describe() == Build()`; proven from
 outside the core in `adapterproof/join_proof_test.go`, including a
 re-expression of Select's passthrough semantics. The stage contract is
 documented on `goav.Join`; `audioMixStage` (audio_mix.go) is the reference
 implementation.
 
-Joins nest: an arm is a source chain, a declared tap, or another join, so
+Joins nest: an arm is an input's stream or another join, so
 `Mix(Mix(a, b), c)` sub-mixes two arms and mixes the result with a third,
 `Select(Mix(a, b), Mix(c, d))` switches between two live mixes (arm ids are
 the sub-joins' output ids: mix, mix-2), and composites nest as sub-canvases
-(placed with the nested composite's `.Region(x, y)`). A nested join
+(placed with `goav.At(Composite(...), x, y)`). A nested join
 contributes its joined output stream; `joinPlan` recurses through the one
 compile, the solver converts a sub-join's output like any arm (an outer mix
 resamples a 24kHz sub-mix to its 48kHz target), `.SyncByPTS()` on a nested
 join scopes to its own arms, mix clamping applies independently at each stage,
-and a nested join may not carry `.Encode/.To/.Branches` (it is an arm, not a
+and a nested join may not carry `.Encode(...)` or forks (it is an arm, not a
 terminal; this is reported through `mix_arm`-family errors).
 
 ## Dynamic Membership Boundary
 
-`Mix(arms...)`, `Composite(arms...)`, and `Select(arms...)` are recipe-time
-convergence: their upstream arms are part of the planned graph. Runtime
-`task.Attach` and `OnStream` add downstream work from taps or discovered
-streams; they do not mutate the arm set of an existing join.
+`Mix(streams...)`, `Composite(layers...)`, and `Select(streams...)` are
+recipe-time convergence: their upstream arms are part of the planned graph.
+Runtime `task.Attach` and `input.OnStream` add downstream work from taps or
+discovered streams; they do not mutate the arm set of an existing join.
 
 For live audio rooms where tracks join and leave continuously, the supported
 pattern today is source-owned track lifecycle: an application source owns the
-participant registry, attaches ordinary runtime branches from
-`input.Track(participantStream)` before accepting media for that participant,
-and emits `EventStreamAdded` / `EventStreamRemoved` for observability. One
-branch can process the track independently while another branch feeds a shared
-output mixer sink. `OnStream` is still available for sources that truly
+participant registry, attaches ordinary Outputs from
+`task.Track(input, participantStream)` before accepting media for that
+participant, and emits `EventStreamAdded` / `EventStreamRemoved` for
+observability. One Output can process the track independently while another
+feeds a shared output mixer sink. `OnStream` is still available for sources that truly
 discover streams automatically, but app-owned membership should use the
 explicit input-stream anchor so the first frame is deterministic. The copyable
 reference is `examples/dynamic-audio-room`.
 
 A future first-class dynamic upstream mix API should be judged against a higher
 bar than a convenience helper: it should preserve per-track routes, produce a
-normal mixed stream that can itself be encoded or branched, and handle dynamic
+normal mixed stream that can itself be encoded or forked, and handle dynamic
 source routing, per-track format validation/conversion, stream lifecycle
 events, backpressure behavior, snapshots/stats, and detach/close semantics in
 one coherent design. Until those pieces exist together, keeping the root

@@ -176,7 +176,8 @@ type Attachment interface {
 	// attached and start receiving before this branch is detached (no gap), so a
 	// live subscriber can be switched (e.g. to a different simulcast layer)
 	// without rebuilding the task. On attach failure this branch is left intact
-	// by default. Pass replacement BranchSpec values plus lifecycle policies:
+	// by default. Pass replacement Outputs (built from task.Tap or task.Track,
+	// like Attach) plus lifecycle policies:
 	// lifecycle.SwitchAt(lifecycle.NextFrame()/lifecycle.NextKeyframe()) delays
 	// the switch to that stream boundary — the replacements shed media until the
 	// boundary and this branch detaches at it — and
@@ -269,7 +270,7 @@ func validateRuntimeBranchSpecOrigin(spec BranchSpec) error {
 func runtimeRebranchInputFromArgs(ctx context.Context, args []lifecycle.RebranchArg) (runtimeRebranchInput, error) {
 	policy := rebranchPolicyFromOptions(args)
 	if len(policy.specs) == 0 {
-		return runtimeRebranchInput{}, runtimeBranchInvalidError("rebranch runtime branch", "pass one or more replacement goav.Branch(name)...To(destination) specs")
+		return runtimeRebranchInput{}, runtimeBranchInvalidError("rebranch runtime branch", "pass one or more replacement Outputs built from task.Tap(name) or task.Track(input, stream)")
 	}
 	if policy.invalid != "" {
 		return runtimeRebranchInput{}, runtimeBranchInvalidError(policy.invalid, "pass lifecycle.SwitchAt(lifecycle.AtMediaTime(position)) with position >= 0")
@@ -1526,6 +1527,10 @@ func (a *runtimeAttachment) setPaused(ctx context.Context, paused bool) error {
 func (a *runtimeAttachment) Rebranch(ctx context.Context, options ...lifecycle.RebranchArg) (Attachment, error) {
 	if a == nil || a.owner == nil {
 		return nil, runtimeBranchInvalidError("rebranch runtime branch", "attachment has no owning task")
+	}
+	options, err := a.owner.rebranchArgs(options)
+	if err != nil {
+		return nil, err
 	}
 	input, err := runtimeRebranchInputFromArgs(ctx, options)
 	if err != nil {

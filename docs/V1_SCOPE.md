@@ -15,12 +15,12 @@ This page records *what the v1 promise covers*.
 The v1 product is a small, composable, explicit, pure-Go media recipe layer:
 
 ```text
-From(inputs...) -> stream selection -> operations -> taps -> branches -> destinations -> Task
+input.Video/Audio/Stream() -> operations -> taps -> forks -> .To(destinations) -> rt.Run
 ```
 
 The normal user model is `Input -> Stream -> Operations -> Output -> Task`. A
-recipe is inert Go data until `Describe`, `Explain`, `Build`, or `Run` compiles
-it; failures surface as structured `*goav.BuildError` values before resources
+recipe is inert Go data until `rt.Describe`, `rt.Explain`, `rt.Build`, or `rt.Run`
+compiles it; failures surface as structured `*goav.BuildError` values before resources
 open.
 
 ## v1-supported workflows
@@ -30,12 +30,12 @@ working, and the beginner docs teach only these.
 
 | Workflow | Spelling | Frozen because |
 | --- | --- | --- |
-| Packet copy (record/remux) | `From(input).Copy().To(goav.Write(...))` | The simplest correct path; no decode, no codec adapter. |
-| Decode to sink | `From(input).Audio().Decode().To(goav.Sink(...))` | Hands decoded frames to application code with one operation. |
+| Packet copy (record/remux) | `input.To(goav.Write(...))`, `input.Video().To(...)` | The simplest correct path; no decode, no codec adapter. |
+| Decode to sink | `input.Audio().Decode().To(goav.Sink(...))` | Hands decoded frames to application code with one operation. |
 | Decode -> transform -> encode -> mux | `.Decode().Resize(...).Encode(codec).To(...)` | The canonical transcode; the shape solver inserts conversions explicitly. |
-| Explicit fanout | `.Copy().Branches(...)` / `.Decode().Branches(...)` | One stream point fans out with each branch owning its destinations. |
+| Explicit fanout | reuse a Stream: `v := input.Video().Decode()`, then `v.Resize(...).Encode(...).To(a)` and `v.Encode(...).To(b)` | One stream point fans out with each fork owning its destinations. |
 | Custom source and custom sink | `goav.Source(...)`, `goav.Sink(...)`, `goav.Custom(...)` | Application-owned media boundaries plug in with no global process state. |
-| Describe / Explain before Build | `job.Describe()`, `job.Explain(ctx)` | The plan is inspectable before any resource opens. |
+| Describe / Explain before Run | `rt.Describe(outputs...)`, `rt.Explain(ctx, outputs...)` | The plan is inspectable before any resource opens. |
 | Structured build errors | `*goav.BuildError` (Family, Code, Phase, fixes) | Every user-actionable refusal is machine-readable and carries a fix. |
 
 A new contributor can implement a custom source, a custom sink, and a simple
@@ -54,30 +54,30 @@ depend on them and v1 does not commit to their shape.
 | Feature | Lives in | Why it is not yet frozen |
 | --- | --- | --- |
 | Expert graph | [`expert`](API_SURFACE.md) (tier C), `graphrender` | Handle-based graph escape hatch off the grammar; not needed for the normal path. |
-| Runtime Attach / Detach / Rebranch | [`OPERATIONS.md`](OPERATIONS.md), `LiveTask` | Live graph mutation; depends on `BuildLive`, outside the `Build` front door. |
+| Runtime Attach / Detach / Rebranch | [`OPERATIONS.md`](OPERATIONS.md), `LiveTask` | Live graph mutation; depends on the `LiveTask` from `rt.Build`, outside the `rt.Run` front door. |
 | Control-plane socket host | [`CONTROL_PLANE.md`](CONTROL_PLANE.md), `ctlserver` | Out-of-band live control over a socket; an application-hosting concern. |
 | Broad `OnStream` dynamic rules | [`USE_CASES.md`](USE_CASES.md) | Only identity stream-rule cases are v1; broader dynamic breadth stays governed. |
 | `Mix` / `Composite` / `Select` / custom `Join` | [`MULTI_INPUT.md`](MULTI_INPUT.md), [`OPERATIONS.md`](OPERATIONS.md) | N-to-1 convergence; powerful but not a beginner workflow. |
 | Live provider transcode | [`USE_CASES.md`](USE_CASES.md) | Held until compiler support for live transcode is real, not just wired. |
 
 Reaching for one of these is fine — they are first-class, governed features.
-The point of the freeze is that the *beginner* surface (`Build` -> `Task` with
-`Run`/`Close`) never forces a user through them.
+The point of the freeze is that the *beginner* surface (`rt.Run(ctx, outputs...)`)
+never forces a user through them.
 
 ## v1 guarantees
 
 These invariants hold across the v1 surface and are enforced by tests:
 
-1. **Front-door model is stable.** `From(inputs...) -> streams -> operations ->
-   taps -> branches -> destinations -> task` does not change shape.
+1. **Front-door model is stable.** `input streams -> operations -> taps -> forks ->
+   .To(destinations) -> rt.Run` does not change shape.
 2. **No required graph handles.** Normal users never need graph handles, string
    routing, runtime internals, or workflow-specific APIs.
-3. **One lowering path.** `Describe`, `Explain`, and `Build` lower through the
+3. **One lowering path.** `rt.Describe`, `rt.Explain`, and `rt.Build` lower through the
    same plan; there is no hidden second path. Runtime `Attach` shares the same
    operation validation and lowering.
-4. **`Build` returns the narrow `Task`** (`Run`/`Close`). Inspection, events,
-   live control, and runtime mutation are opt-in through `BuildLive` /
-   `LiveTask` — advanced surface only.
+4. **`rt.Run` is the narrow front door**: it runs Outputs to completion.
+   Inspection, events, live control, and runtime mutation are opt-in through
+   `rt.Build` / `LiveTask` — advanced surface only.
 5. **Structured errors.** Every user-actionable failure is a `*goav.BuildError`
    with stable `Family`/`Code`, an explicit `Phase`, operation/node context,
    machine-readable details, and concrete fixes.

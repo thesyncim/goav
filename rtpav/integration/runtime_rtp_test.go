@@ -62,16 +62,16 @@ func TestRecipeRTPDecodeUsesProviderDecodeBounds(t *testing.T) {
 	codecs := withTestCodecs(testCodecDecoder(codec.Descriptor{ID: av.CodecVP8, Type: av.MediaVideo}, decoderFactory))
 	sink := &runtimeTestSink{name: "frames"}
 
-	job := goav.From(goav.Input(rtpav.Receive(receiver,
+	rt := mustGoAVRuntime(codecs)
+	job := goav.Input(rtpav.Receive(receiver,
 		rtpav.WithName("video-rtp"),
 		rtpav.WithDepacketizers(rtpav.NewVP8Depacketizer(stream, rtpav.WithMaxVideoFrameSize(4096))),
 		rtpav.WithDecodeBounds(requested),
-	))).
-		UseRuntime(mustGoAVRuntime(codecs)).
+	)).
 		Video().
 		Decode().
 		To(goav.Sink(sink))
-	planned, err := job.Describe()
+	planned, err := rt.Describe(job)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -79,7 +79,7 @@ func TestRecipeRTPDecodeUsesProviderDecodeBounds(t *testing.T) {
 		t.Fatalf("planned:\n%s", specText(planned))
 	}
 
-	task, err := job.Build(ctx)
+	task, err := rt.Build(ctx, job)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -146,19 +146,17 @@ func TestRecipeRTPDecodeRejectsDifferentCodecSwitch(t *testing.T) {
 	codecs := withTestCodecs(testCodecDecoder(codec.Descriptor{ID: av.CodecVP8, Type: av.MediaVideo}, &decodeTestDecoderFactory{decoder: decoder}))
 	sink := &runtimeTestSink{name: "frames"}
 
-	task, err := goav.From(goav.Input(rtpav.Receive(receiver,
+	task, err := mustGoAVRuntime(codecs).Build(ctx, goav.Input(rtpav.Receive(receiver,
 		rtpav.WithName("video-rtp"),
 		rtpav.WithDepacketizers(
 			rtpav.NewVP8Depacketizer(initial, rtpav.WithMaxVideoFrameSize(16)),
 			rtpav.NewH264Depacketizer(initial, rtpav.WithMaxVideoFrameSize(16)),
 		),
 		rtpav.WithBufferLimits(rtpav.BufferLimits{MaxPackets: 1, MaxEvents: 2}),
-	))).
-		UseRuntime(mustGoAVRuntime(codecs)).
+	)).
 		Video().
 		Decode().
-		To(goav.Sink(sink)).
-		Build(ctx)
+		To(goav.Sink(sink)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -206,11 +204,8 @@ func TestRecipeRTPAV1RecordIVF(t *testing.T) {
 	}
 	var recording bytes.Buffer
 
-	task, err := goav.From(goav.Input(rtpav.Receive(receiver, rtpav.WithDepacketizers(rtpav.NewAV1Depacketizer(stream))))).
-		UseRuntime(mustGoAVRuntime(runconfig.WithFormatAdapter(ivfadapter.Register))).
-		Copy().
-		To(goav.Write("recording.ivf", &recording)).
-		Build(ctx)
+	task, err := mustGoAVRuntime(runconfig.WithFormatAdapter(ivfadapter.Register)).Build(ctx, goav.Input(rtpav.Receive(receiver, rtpav.WithDepacketizers(rtpav.NewAV1Depacketizer(stream)))).
+		To(goav.Write("recording.ivf", &recording)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -272,11 +267,8 @@ func TestRecipeRTPH264RecordAnnexB(t *testing.T) {
 	}
 	var recording bytes.Buffer
 
-	task, err := goav.From(goav.Input(rtpav.Receive(receiver, rtpav.WithDepacketizers(rtpav.NewH264Depacketizer(stream))))).
-		UseRuntime(mustGoAVRuntime(runconfig.WithFormatAdapter(annexbadapter.Register))).
-		Copy().
-		To(goav.Write("recording.h264", &recording)).
-		Build(ctx)
+	task, err := mustGoAVRuntime(runconfig.WithFormatAdapter(annexbadapter.Register)).Build(ctx, goav.Input(rtpav.Receive(receiver, rtpav.WithDepacketizers(rtpav.NewH264Depacketizer(stream)))).
+		To(goav.Write("recording.h264", &recording)))
 	if err != nil {
 		t.Fatal(err)
 	}

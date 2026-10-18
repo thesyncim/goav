@@ -25,7 +25,8 @@ func TestBuildReturnsLiveTask(t *testing.T) {
 }
 
 func TestDefaultIsShared(t *testing.T) {
-	if Default() != Default() {
+	first, second := Default(), Default()
+	if first != second {
 		t.Fatal("Default() built a second runtime")
 	}
 }

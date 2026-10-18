@@ -38,14 +38,12 @@ func runPlannerScenarios(ctx context.Context) []scenarioResult {
 
 func scenarioOpusLadder(ctx context.Context) scenarioResult {
 	out := goavtest.NewCollector()
-	report, err := goav.From(goavtest.Audio(48_000, codec.Mono, toneFrame(220), toneFrame(330))).
+	report, err := goavtest.Runtime().Explain(ctx, goavtest.Audio(48_000, codec.Mono, toneFrame(220), toneFrame(330)).
 		Audio().
 		Auto(shape.AllowResample()).
 		Resample(48_000, codec.Stereo).
 		Encode(codec.Opus(codec.Bitrate(96_000), codec.Channels(codec.Stereo), codec.SampleRate(48_000))).
-		To(out.Sink()).
-		UseRuntime(goavtest.Runtime()).
-		Explain(ctx)
+		To(out.Sink()))
 	if err != nil {
 		return scenarioError(err)
 	}
@@ -54,15 +52,13 @@ func scenarioOpusLadder(ctx context.Context) scenarioResult {
 
 func scenarioMixResample(ctx context.Context) scenarioResult {
 	out := goavtest.NewCollector()
-	report, err := goav.LegacyMix(
-		goav.From(goavtest.Audio(48_000, codec.Mono, toneFrame(140), toneFrame(180))).Audio(),
-		goav.From(goavtest.Audio(24_000, codec.Mono, toneFrame(90), toneFrame(120))).Audio(),
+	report, err := goavtest.Runtime().Explain(ctx, goav.Mix(
+		goavtest.Audio(48_000, codec.Mono, toneFrame(140), toneFrame(180)).Audio(),
+		goavtest.Audio(24_000, codec.Mono, toneFrame(90), toneFrame(120)).Audio(),
 	).
 		SyncByPTS().
 		Require(shape.Frame(av.MediaAudio, shape.Audio(48_000, codec.Mono, av.SampleFormatS16))).
-		To(out.Sink()).
-		UseRuntime(goavtest.Runtime()).
-		Explain(ctx)
+		To(out.Sink()))
 	if err != nil {
 		return scenarioError(err)
 	}
@@ -70,12 +66,10 @@ func scenarioMixResample(ctx context.Context) scenarioResult {
 }
 
 func scenarioInvalidShape(ctx context.Context) scenarioResult {
-	_, err := goav.From(goavtest.Video(320, 180, 1)).
+	_, err := goavtest.Runtime().Explain(ctx, goavtest.Video(320, 180, 1).
 		Video().
 		Resample(48_000, codec.Stereo).
-		To(goavtest.NewCollector().Sink()).
-		UseRuntime(goavtest.Runtime()).
-		Explain(ctx)
+		To(goavtest.NewCollector().Sink()))
 	if err == nil {
 		return scenarioResult{Status: "error", Summary: "invalid video resample scenario unexpectedly succeeded"}
 	}

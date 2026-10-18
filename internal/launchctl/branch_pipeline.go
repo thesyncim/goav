@@ -60,20 +60,13 @@ type PipelineRegistry struct {
 // BranchPipeline is the safe builder handle custom pipeline steps receive.
 // It exposes only goav branch grammar operations, not arbitrary task methods.
 type BranchPipeline struct {
-	copyFn        func()
 	decodeFn      func()
 	resizeFn      func(int, int)
 	resampleFn    func(int, int)
 	doFn          func(...pipeline.Stage)
 	encodeFn      func(codec.Spec)
 	destinationFn func(goav.Destination)
-	finishFn      func() goav.BranchSpec
-}
-
-func (p *BranchPipeline) Copy() {
-	if p != nil && p.copyFn != nil {
-		p.copyFn()
-	}
+	finishFn      func() goav.Output
 }
 
 func (p *BranchPipeline) Decode() {
@@ -113,58 +106,52 @@ func (p *BranchPipeline) Destination(dest goav.Destination) {
 	}
 }
 
-func (p *BranchPipeline) finish() goav.BranchSpec {
+func (p *BranchPipeline) finish() goav.Output {
 	if p == nil || p.finishFn == nil {
-		return goav.Branch("").To()
+		return goav.Output{}
 	}
 	return p.finishFn()
 }
 
-func parseBranchPipelineWithRegistry(task goav.LiveTask, tapName string, branchName string, pipelineText string, registry PipelineRegistry) (goav.BranchSpec, error) {
+func parseBranchPipelineWithRegistry(task goav.LiveTask, tapName string, branchName string, pipelineText string, registry PipelineRegistry) (goav.Output, error) {
 	if err := validatePipelineRegistry(registry); err != nil {
-		return goav.BranchSpec{}, err
+		return goav.Output{}, err
 	}
 	if branchName == "" {
-		return goav.BranchSpec{}, commandError("missing_required", "attach", "branch", "branch name is required", nil, []string{"use attach <tap-name> as <branch-name> '<branch-pipeline>'"}, nil)
+		return goav.Output{}, commandError("missing_required", "attach", "branch", "branch name is required", nil, []string{"use attach <tap-name> as <branch-name> '<branch-pipeline>'"}, nil)
 	}
 	tapDomain, err := resolveBranchTapDomain(task, "attach", tapName)
 	if err != nil {
-		return goav.BranchSpec{}, err
+		return goav.Output{}, err
 	}
 	steps, err := splitPipeline(pipelineText)
 	if err != nil {
-		return goav.BranchSpec{}, err
+		return goav.Output{}, err
 	}
-	builder := goav.Branch(branchName)
-	switch tapDomain {
-	case shape.DomainFrame:
-		builder = builder.From(goav.FrameTap(tapName))
-	case shape.DomainPacket:
-		builder = builder.From(goav.PacketTap(tapName))
-	default:
-		return goav.BranchSpec{}, commandError(
+	if tapDomain != shape.DomainFrame && tapDomain != shape.DomainPacket {
+		return goav.Output{}, commandError(
 			"invalid_value",
 			"attach",
 			"tap",
 			"tap domain is unknown",
 			[]string{"tap=" + tapName},
-			[]string{"declare attach points with goav.FrameTap(name) or goav.PacketTap(name)"},
+			[]string{"declare attach points with stream.Tap(name)"},
 			nil,
 		)
 	}
+	stream := task.Tap(tapName)
 	var destinations []goav.Destination
 	branch := &BranchPipeline{
-		copyFn:     func() { builder = builder.Copy() },
-		decodeFn:   func() { builder = builder.Decode() },
-		resizeFn:   func(width int, height int) { builder = builder.Resize(width, height) },
-		resampleFn: func(sampleRate int, channels int) { builder = builder.Resample(sampleRate, channels) },
-		doFn:       func(stages ...pipeline.Stage) { builder = builder.Do(stages...) },
-		encodeFn:   func(spec codec.Spec) { builder = builder.Encode(spec) },
+		decodeFn:   func() { stream = stream.Decode() },
+		resizeFn:   func(width int, height int) { stream = stream.Resize(width, height) },
+		resampleFn: func(sampleRate int, channels int) { stream = stream.Resample(sampleRate, channels) },
+		doFn:       func(stages ...pipeline.Stage) { stream = stream.Do(stages...) },
+		encodeFn:   func(spec codec.Spec) { stream = stream.Encode(spec) },
 		destinationFn: func(dest goav.Destination) {
 			destinations = append(destinations, dest)
 		},
-		finishFn: func() goav.BranchSpec {
-			return builder.To(destinations...)
+		finishFn: func() goav.Output {
+			return stream.As(branchName).To(destinations...)
 		},
 	}
 	stepsByName := pipelineStepMap(registry.Steps)
@@ -172,7 +159,7 @@ func parseBranchPipelineWithRegistry(task goav.LiveTask, tapName string, branchN
 	for _, step := range steps {
 		words, err := pipelineFields(step)
 		if err != nil {
-			return goav.BranchSpec{}, err
+			return goav.Output{}, err
 		}
 		if len(words) == 0 {
 			continue
@@ -180,23 +167,23 @@ func parseBranchPipelineWithRegistry(task goav.LiveTask, tapName string, branchN
 		name := strings.ToLower(words[0])
 		args, err := stepArgs(words[1:])
 		if err != nil {
-			return goav.BranchSpec{}, err
+			return goav.Output{}, err
 		}
 		switch name {
 		case "copy":
-			branch.Copy()
+			// A pipeline without decode copies the packets.
 		case "decode":
 			branch.Decode()
 		case "resize":
 			width, height, err := parseResizeArgs(words[1:])
 			if err != nil {
-				return goav.BranchSpec{}, err
+				return goav.Output{}, err
 			}
 			branch.Resize(width, height)
 		case "resample":
 			rate, channels, err := parseResampleArgs(words[1:])
 			if err != nil {
-				return goav.BranchSpec{}, err
+				return goav.Output{}, err
 			}
 			branch.Resample(rate, channels)
 		case "encode":
@@ -204,34 +191,34 @@ func parseBranchPipelineWithRegistry(task goav.LiveTask, tapName string, branchN
 			media := av.MediaType(strings.TrimSpace(args["media"]))
 			enc, err := parseEncoder(id, media, args)
 			if err != nil {
-				return goav.BranchSpec{}, err
+				return goav.Output{}, err
 			}
 			branch.Encode(enc)
 		case "filesink":
 			destination, err := parseFileSink(args)
 			if err != nil {
-				return goav.BranchSpec{}, err
+				return goav.Output{}, err
 			}
 			branch.Destination(destination)
 		default:
 			if encoder, ok := encodersByName[name]; ok {
 				spec, err := encoder.Apply(StepArgs(args))
 				if err != nil {
-					return goav.BranchSpec{}, structuredError("parse branch pipeline", err)
+					return goav.Output{}, structuredError("parse branch pipeline", err)
 				}
 				branch.Encode(spec)
 				continue
 			}
 			if custom, ok := stepsByName[name]; ok {
 				if custom.Apply == nil {
-					return goav.BranchSpec{}, commandError("invalid_pipeline_step", "parse branch pipeline", name, "custom pipeline step has no Apply function", nil, nil, nil)
+					return goav.Output{}, commandError("invalid_pipeline_step", "parse branch pipeline", name, "custom pipeline step has no Apply function", nil, nil, nil)
 				}
 				if err := custom.Apply(branch, StepArgs(args)); err != nil {
-					return goav.BranchSpec{}, structuredError("parse branch pipeline", err)
+					return goav.Output{}, structuredError("parse branch pipeline", err)
 				}
 				continue
 			}
-			return goav.BranchSpec{}, commandError(
+			return goav.Output{}, commandError(
 				"unsupported_pipeline_step",
 				"parse branch pipeline",
 				name,
@@ -243,7 +230,7 @@ func parseBranchPipelineWithRegistry(task goav.LiveTask, tapName string, branchN
 		}
 	}
 	if len(destinations) == 0 {
-		return goav.BranchSpec{}, commandError("missing_required", "parse branch pipeline", "filesink", "branch pipeline needs a destination", nil, []string{"append `! filesink location=out.webm`"}, nil)
+		return goav.Output{}, commandError("missing_required", "parse branch pipeline", "filesink", "branch pipeline needs a destination", nil, []string{"append `! filesink location=out.webm`"}, nil)
 	}
 	return branch.finish(), nil
 }

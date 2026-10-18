@@ -278,13 +278,12 @@ func reportedFileDestinationFormat(ctx context.Context, runtime *goav.Runtime, d
 
 func buildRunPipelineTask(ctx context.Context, runtime *goav.Runtime, plan runPipelinePlan, dest goav.Destination) (goav.LiveTask, codec.Spec, error) {
 	source := plan.source.input()
-	job := goav.From(source)
-	stream := job.Video(goav.InputName(plan.source.name))
+	stream := source.Video()
 	var encoded codec.Spec
 	for _, op := range plan.ops {
 		switch op.kind {
 		case "tap":
-			stream = stream.Tap(goav.FrameTap(op.name))
+			stream = stream.Tap(op.name)
 		case "resize":
 			stream = stream.Resize(op.width, op.height)
 		case "encode":
@@ -294,7 +293,7 @@ func buildRunPipelineTask(ctx context.Context, runtime *goav.Runtime, plan runPi
 			return nil, codec.Spec{}, fmt.Errorf("goav run: unsupported operation %q", op.kind)
 		}
 	}
-	task, err := stream.To(dest).UseRuntime(runtime).BuildLive(ctx)
+	task, err := runtime.Build(ctx, stream.To(dest))
 	if err != nil {
 		return nil, codec.Spec{}, err
 	}
