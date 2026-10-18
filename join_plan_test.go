@@ -17,7 +17,7 @@ import (
 // equal the built graph node-for-node and edge-for-edge. No hand-assembled
 // join graph exists to drift from the plan.
 
-func joinPlanGuard(t *testing.T, job *Job) pipeline.Spec {
+func joinPlanGuard(t *testing.T, job *recipeJob) pipeline.Spec {
 	t.Helper()
 	planned, err := job.Describe()
 	if err != nil {
@@ -56,10 +56,10 @@ func TestJoinDescribeEqualsBuildMix(t *testing.T) {
 			return push.EOS()
 		})
 
-	job := LegacyMix(
-		From(packetArm).Audio().Decode(),
-		From(mixTestAudioSourceRate("b", 24000)).Audio(),
-	).Tap(FrameTap("mixed")).
+	job := legacyMix(
+		recipeFrom(packetArm).Audio().Decode(),
+		recipeFrom(mixTestAudioSourceRate("b", 24000)).Audio(),
+	).Tap(frameTapRef("mixed")).
 		Encode(codec.Opus()).
 		To(Write("mix.ogg", io.Discard, Format(av.FormatOgg))).
 		UseRuntime(rt)
@@ -89,9 +89,9 @@ func TestJoinDescribeEqualsBuildMixMultiDestination(t *testing.T) {
 		withTestFormats(testFormatMuxer(av.FormatOgg, &remuxTestMuxerFactory{})),
 	)
 
-	job := LegacyMix(
-		From(mixTestAudioSource("a", 100)).Audio(),
-		From(mixTestAudioSource("b", 50)).Audio(),
+	job := legacyMix(
+		recipeFrom(mixTestAudioSource("a", 100)).Audio(),
+		recipeFrom(mixTestAudioSource("b", 50)).Audio(),
 	).Encode(codec.Opus()).
 		To(
 			Write("first.ogg", io.Discard, Format(av.FormatOgg)),
@@ -112,9 +112,9 @@ func TestJoinDescribeEqualsBuildMixMultiDestination(t *testing.T) {
 }
 
 func TestJoinDescribeEqualsBuildComposite(t *testing.T) {
-	job := LegacyComposite(
-		From(compositeTestVideoSource("a", 4, 4, 100, 10, 20)).Video().Region(0, 0),
-		From(compositeTestVideoSource("b", 4, 4, 200, 30, 40)).Video().Region(4, 0),
+	job := legacyComposite(
+		recipeFrom(compositeTestVideoSource("a", 4, 4, 100, 10, 20)).Video().Region(0, 0),
+		recipeFrom(compositeTestVideoSource("b", 4, 4, 200, 30, 40)).Video().Region(4, 0),
 	).To(Sink(SinkFunc("canvas", func(context.Context, Message) error { return nil })))
 
 	planned := joinPlanGuard(t, job)
@@ -129,10 +129,10 @@ func TestJoinDescribeEqualsBuildComposite(t *testing.T) {
 // feeding the selector directly (the control entry row SelectActive broadcasts
 // to) and equal the built graph.
 func TestJoinDescribeEqualsBuildSelect(t *testing.T) {
-	job := LegacySelect(
-		From(selectTestOneShotSource("a", 100)).Audio(),
-		From(selectTestOneShotSource("b", 200)).Audio(),
-	).Tap(FrameTap("switched")).
+	job := legacySelect(
+		recipeFrom(selectTestOneShotSource("a", 100)).Audio(),
+		recipeFrom(selectTestOneShotSource("b", 200)).Audio(),
+	).Tap(frameTapRef("switched")).
 		To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil })))
 
 	planned := joinPlanGuard(t, job)

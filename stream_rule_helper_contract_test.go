@@ -172,7 +172,7 @@ func TestSourceEventDomainContracts(t *testing.T) {
 
 func TestBranchSpecForDiscoveredStreamClonesAndAnchors(t *testing.T) {
 	dest := Sink(SinkFunc("monitor", func(context.Context, Message) error { return nil }))
-	spec := Branch("watch").Copy().To(dest)
+	spec := newBranch("watch").Copy().To(dest)
 	stream := av.Stream{ID: "late", Type: av.MediaVideo, Codec: av.CodecParameters{ID: av.CodecVP8, Type: av.MediaVideo}}
 
 	got := branchSpecForDiscoveredStream(spec, "source", shape.DomainFrame, stream)

@@ -1,9 +1,10 @@
 // Package expert is the handle-based graph layer deliberately kept off the
 // goav grammar: Graph(runtime) wires caller-provided pipeline Sources,
 // Stages, and Sinks into a goav Task through explicit routes — for
-// compositions the From/To grammar cannot express. Graph handles also anchor
-// runtime branches: pass a GraphNode or GraphOutlet to goav.Branch(...).From.
-// Most applications should start with goav.From and never need this package.
+// compositions the Stream grammar cannot express. Graph handles also anchor
+// runtime Outputs: task.Attach(ctx, task.Route(node.Out().Route()).To(sink)).
+// Most applications should start with input.Video() or input.Audio() and never
+// need this package.
 package expert
 
 import (
@@ -62,8 +63,8 @@ type graphCore interface {
 }
 
 // GraphNode is an expert-graph handle to one added source, stage, or sink;
-// its outlets and inlets wire Connect routes, and the handle itself anchors
-// runtime branches through goav.Branch(...).From.
+// its outlets and inlets wire Connect routes, and its Route anchors runtime
+// Outputs through task.Route.
 type GraphNode struct {
 	name string
 }
@@ -86,8 +87,8 @@ func (n GraphNode) Name() string {
 	return n.name
 }
 
-// Route reports the route the handle anchors for goav.Branch(...).From:
-// every message the node emits.
+// Route reports the route the handle anchors for task.Route: every message
+// the node emits.
 func (n GraphNode) Route() pipeline.Route {
 	return pipeline.Route{From: n.name, Policy: pipeline.RouteAll}
 }
@@ -117,8 +118,8 @@ func (o GraphOutlet) Name() string {
 	return o.name
 }
 
-// Route reports the route the outlet anchors for goav.Branch(...).From: the
-// node plus the outlet's stream or event narrowing.
+// Route reports the route the outlet anchors for task.Route: the node plus
+// the outlet's stream or event narrowing.
 func (o GraphOutlet) Route() pipeline.Route {
 	policy := o.policy
 	if policy == "" {

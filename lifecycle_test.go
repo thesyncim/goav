@@ -37,7 +37,7 @@ func TestTaskSnapshotReportsTypedTaskLifecycle(t *testing.T) {
 	ctx := context.Background()
 	started := make(chan struct{})
 	release := make(chan struct{})
-	task, err := From(lifecycleTestSource(func(_ context.Context, push SourcePush) error {
+	task, err := recipeFrom(lifecycleTestSource(func(_ context.Context, push SourcePush) error {
 		close(started)
 		<-release
 		return lifecycleTestPush(push)
@@ -73,7 +73,7 @@ func TestTaskSnapshotReportsTypedTaskLifecycle(t *testing.T) {
 
 func TestTaskSnapshotReportsClosedStateWithoutRun(t *testing.T) {
 	ctx := context.Background()
-	task, err := From(lifecycleTestSource(func(_ context.Context, push SourcePush) error {
+	task, err := recipeFrom(lifecycleTestSource(func(_ context.Context, push SourcePush) error {
 		return lifecycleTestPush(push)
 	})).Audio().Copy().To(lifecycleTestSink("packets")).BuildLive(ctx)
 	if err != nil {
@@ -89,7 +89,7 @@ func TestTaskSnapshotReportsClosedStateWithoutRun(t *testing.T) {
 
 func TestTaskSnapshotReportsRootDestinationLifecycle(t *testing.T) {
 	ctx := context.Background()
-	task, err := From(lifecycleTestSource(func(_ context.Context, push SourcePush) error {
+	task, err := recipeFrom(lifecycleTestSource(func(_ context.Context, push SourcePush) error {
 		return lifecycleTestPush(push)
 	})).Audio().Copy().To(lifecycleTestSink("base")).BuildLive(ctx)
 	if err != nil {
@@ -114,7 +114,7 @@ func TestTaskSnapshotReportsRootDestinationLifecycle(t *testing.T) {
 func TestTaskSnapshotReportsFailedRootDestination(t *testing.T) {
 	ctx := context.Background()
 	sourceErr := errors.New("source failed")
-	task, err := From(lifecycleTestSource(func(_ context.Context, push SourcePush) error {
+	task, err := recipeFrom(lifecycleTestSource(func(_ context.Context, push SourcePush) error {
 		packet := av.Packet{Payload: av.Buffer{Bytes: []byte{1}, Ownership: av.BufferImmutable}}
 		if _, err := push.Packet(&packet); err != nil {
 			return err
@@ -137,18 +137,18 @@ func TestTaskSnapshotReportsFailedRootDestination(t *testing.T) {
 
 func TestTaskSnapshotReportsCommittedDestinationAfterRun(t *testing.T) {
 	ctx := context.Background()
-	task, err := From(lifecycleTestSource(func(_ context.Context, push SourcePush) error {
+	task, err := recipeFrom(lifecycleTestSource(func(_ context.Context, push SourcePush) error {
 		return lifecycleTestPush(push)
 	})).Audio().Copy().
-		Tap(PacketTap("audio.packets")).
+		Tap(packetTapRef("audio.packets")).
 		To(lifecycleTestSink("base")).BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer task.Close()
 
-	attachment, err := task.LegacyAttach(ctx, Branch("rec").
-		From(PacketTap("audio.packets")).
+	attachment, err := legacyAttach(task, ctx, newBranch("rec").
+		From(packetTapRef("audio.packets")).
 		Copy().
 		To(lifecycleTestSink("rec")))
 	if err != nil {
@@ -198,10 +198,10 @@ func TestTaskSnapshotReportsCommittedDestinationAfterRun(t *testing.T) {
 
 func TestTaskAttachDetachPublishesBranchLifecycleEvents(t *testing.T) {
 	ctx := context.Background()
-	task, err := From(lifecycleTestSource(func(_ context.Context, push SourcePush) error {
+	task, err := recipeFrom(lifecycleTestSource(func(_ context.Context, push SourcePush) error {
 		return lifecycleTestPush(push)
 	})).Audio().Copy().
-		Tap(PacketTap("audio.packets")).
+		Tap(packetTapRef("audio.packets")).
 		To(lifecycleTestSink("base")).BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -209,8 +209,8 @@ func TestTaskAttachDetachPublishesBranchLifecycleEvents(t *testing.T) {
 	defer task.Close()
 
 	events := task.Watch(inspect.WatchTypes(av.EventBranchAttached, av.EventBranchDetached)).Events()
-	attachment, err := task.LegacyAttach(ctx, Branch("rec").
-		From(PacketTap("audio.packets")).
+	attachment, err := legacyAttach(task, ctx, newBranch("rec").
+		From(packetTapRef("audio.packets")).
 		Copy().
 		To(lifecycleTestSink("rec")))
 	if err != nil {
@@ -244,10 +244,10 @@ func TestTaskAttachDetachPublishesBranchLifecycleEvents(t *testing.T) {
 
 func TestTaskDetachPublishesDestinationLifecycleEvents(t *testing.T) {
 	ctx := context.Background()
-	task, err := From(lifecycleTestSource(func(_ context.Context, push SourcePush) error {
+	task, err := recipeFrom(lifecycleTestSource(func(_ context.Context, push SourcePush) error {
 		return lifecycleTestPush(push)
 	})).Audio().Copy().
-		Tap(PacketTap("audio.packets")).
+		Tap(packetTapRef("audio.packets")).
 		To(lifecycleTestSink("base")).BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -255,8 +255,8 @@ func TestTaskDetachPublishesDestinationLifecycleEvents(t *testing.T) {
 	defer task.Close()
 
 	events := task.Watch(inspect.WatchTypes(av.EventDestinationCommitted, av.EventDestinationAborted, av.EventDestinationCommitError)).Events()
-	attachment, err := task.LegacyAttach(ctx, Branch("rec").
-		From(PacketTap("audio.packets")).
+	attachment, err := legacyAttach(task, ctx, newBranch("rec").
+		From(packetTapRef("audio.packets")).
 		Copy().
 		To(lifecycleTestSink("rec")))
 	if err != nil {
@@ -296,10 +296,10 @@ func TestTaskFinishPublishesRootDestinationCommitError(t *testing.T) {
 
 func TestTaskDetachOptionsReportDestinationOutcome(t *testing.T) {
 	ctx := context.Background()
-	task, err := From(lifecycleTestSource(func(_ context.Context, push SourcePush) error {
+	task, err := recipeFrom(lifecycleTestSource(func(_ context.Context, push SourcePush) error {
 		return lifecycleTestPush(push)
 	})).Audio().Copy().
-		Tap(PacketTap("audio.packets")).
+		Tap(packetTapRef("audio.packets")).
 		To(lifecycleTestSink("base")).BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -316,8 +316,8 @@ func TestTaskDetachOptionsReportDestinationOutcome(t *testing.T) {
 		{name: "rec-abort", dest: "rec-abort", options: []lifecycle.DetachOption{lifecycle.AbortBranch()}, want: lifecycle.DestinationAborted},
 	}
 	for _, tt := range tests {
-		attachment, err := task.LegacyAttach(ctx, Branch(tt.name).
-			From(PacketTap("audio.packets")).
+		attachment, err := legacyAttach(task, ctx, newBranch(tt.name).
+			From(packetTapRef("audio.packets")).
 			Copy().
 			To(lifecycleTestSink(tt.dest)))
 		if err != nil {
@@ -337,22 +337,22 @@ func TestTaskDetachOptionsReportDestinationOutcome(t *testing.T) {
 func TestTaskSnapshotReportsFailedTaskAndAbortedDestination(t *testing.T) {
 	ctx := context.Background()
 	sourceErr := errors.New("source failed")
-	task, err := From(lifecycleTestSource(func(_ context.Context, push SourcePush) error {
+	task, err := recipeFrom(lifecycleTestSource(func(_ context.Context, push SourcePush) error {
 		packet := av.Packet{Payload: av.Buffer{Bytes: []byte{1}, Ownership: av.BufferImmutable}}
 		if _, err := push.Packet(&packet); err != nil {
 			return err
 		}
 		return sourceErr
 	})).Audio().Copy().
-		Tap(PacketTap("audio.packets")).
+		Tap(packetTapRef("audio.packets")).
 		To(lifecycleTestSink("base")).BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer task.Close()
 
-	if _, err := task.LegacyAttach(ctx, Branch("rec").
-		From(PacketTap("audio.packets")).
+	if _, err := legacyAttach(task, ctx, newBranch("rec").
+		From(packetTapRef("audio.packets")).
 		Copy().
 		To(lifecycleTestSink("rec"))); err != nil {
 		t.Fatal(err)

@@ -97,7 +97,7 @@ func explicitGraphMissingSourceError() error {
 		Reason:    "explicit graph has no source node",
 		fixes: buildErrorFixes([]string{
 			"add at least one Source(...) before Stage(...) or Sink(...)",
-			"use the goav.From(input) grammar (.Audio()/.Video(), .Copy(), .To(...)) when you want recipe lowering instead of explicit graph wiring",
+			"use the Stream grammar (input.Audio()/.Video(), .Decode(), .To(...)) when you want recipe lowering instead of explicit graph wiring",
 		}),
 		cause: errUnsupportedBuild,
 	}

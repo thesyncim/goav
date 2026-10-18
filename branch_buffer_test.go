@@ -84,7 +84,7 @@ func TestBranchBufferRejectsInvalidPolicies(t *testing.T) {
 }
 
 func TestBranchBufferIsNormalBranchAPI(t *testing.T) {
-	method, ok := reflect.TypeOf(Branch("preview")).MethodByName("Buffer")
+	method, ok := reflect.TypeOf(newBranch("preview")).MethodByName("Buffer")
 	if !ok {
 		t.Fatal("Branch should expose Buffer")
 	}

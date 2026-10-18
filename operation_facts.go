@@ -140,7 +140,7 @@ func operationShapeMismatchSuggestions(operation operationSpec) []string {
 		return []string{
 			"decode only consumes packet-domain media",
 			"remove duplicate .Decode() calls after a frame tap",
-			"start from goav.PacketTap(name) when a runtime branch should decode",
+			"attach from a packet tap (before .Decode()) when a runtime branch should decode",
 		}
 	case plan.OpTransform:
 		return []string{
@@ -152,13 +152,13 @@ func operationShapeMismatchSuggestions(operation operationSpec) []string {
 		return []string{
 			"call .Decode() before encoding when starting from packets",
 			"keep .Shape(...) annotations in the frame domain before encoders",
-			"use .Copy() instead of an encoder for packet-preserving fanout",
+			"leave out .Decode() and the encoder for packet-preserving fanout",
 		}
 	case plan.OpCopy:
 		return []string{
 			"copy only consumes packet-domain media",
-			"move .Copy() before decode or start from goav.PacketTap(name)",
-			"use .Encode(codec...) instead of .Copy() to turn decoded frames back into packets",
+			"leave out .Decode() to copy, or attach from a packet tap (before .Decode())",
+			"use .Encode(codec...) to turn decoded frames back into packets",
 			"use a sink destination when the branch should remain decoded",
 		}
 	default:

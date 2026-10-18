@@ -29,12 +29,12 @@ import (
 func TestMixOfMixSumsBothStages(t *testing.T) {
 	ctx := context.Background()
 	var got [][]int16
-	task, err := LegacyMix(
-		LegacyMix(
-			From(mixTestAudioSource("a", 100, 200)).Audio(),
-			From(mixTestAudioSource("b", 50, -50)).Audio(),
+	task, err := legacyMix(
+		legacyMix(
+			recipeFrom(mixTestAudioSource("a", 100, 200)).Audio(),
+			recipeFrom(mixTestAudioSource("b", 50, -50)).Audio(),
 		),
-		From(mixTestAudioSource("c", 5, 5)).Audio(),
+		recipeFrom(mixTestAudioSource("c", 5, 5)).Audio(),
 	).To(joinTestCollectSink("out", &got)).BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -55,12 +55,12 @@ func TestMixOfMixSumsBothStages(t *testing.T) {
 func TestNestedMixClampsPerStage(t *testing.T) {
 	ctx := context.Background()
 	var got [][]int16
-	task, err := LegacyMix(
-		LegacyMix(
-			From(mixTestAudioSource("a", 30000)).Audio(),
-			From(mixTestAudioSource("b", 30000)).Audio(),
+	task, err := legacyMix(
+		legacyMix(
+			recipeFrom(mixTestAudioSource("a", 30000)).Audio(),
+			recipeFrom(mixTestAudioSource("b", 30000)).Audio(),
 		),
-		From(mixTestAudioSource("c", -30000)).Audio(),
+		recipeFrom(mixTestAudioSource("c", -30000)).Audio(),
 	).To(joinTestCollectSink("out", &got)).BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -83,14 +83,14 @@ func TestSelectOfMixesSwitchesLive(t *testing.T) {
 	defer cancel()
 
 	sink := newSelectSwitchSink("out")
-	tk, err := LegacySelect(
-		LegacyMix(
-			From(selectTestLiveSource("a", 100)).Audio(),
-			From(selectTestLiveSource("b", 50)).Audio(),
+	tk, err := legacySelect(
+		legacyMix(
+			recipeFrom(selectTestLiveSource("a", 100)).Audio(),
+			recipeFrom(selectTestLiveSource("b", 50)).Audio(),
 		),
-		LegacyMix(
-			From(selectTestLiveSource("c", 10)).Audio(),
-			From(selectTestLiveSource("d", 20)).Audio(),
+		legacyMix(
+			recipeFrom(selectTestLiveSource("c", 10)).Audio(),
+			recipeFrom(selectTestLiveSource("d", 20)).Audio(),
 		),
 	).To(Sink(sink)).BuildLive(ctx)
 	if err != nil {
@@ -135,15 +135,15 @@ func TestNestedSelectRoutingPinned(t *testing.T) {
 	defer cancel()
 
 	sink := newSelectSwitchSink("out")
-	tk, err := LegacySelect(
-		LegacySelect(
-			From(selectTestLiveSource("a", 100)).Audio(),
-			From(selectTestLiveSource("b", 200)).Audio(),
-		).Tap(FrameTap("left.select")),
-		LegacySelect(
-			From(selectTestLiveSource("c", 30)).Audio(),
-			From(selectTestLiveSource("d", 40)).Audio(),
-		).Tap(FrameTap("right.select")),
+	tk, err := legacySelect(
+		legacySelect(
+			recipeFrom(selectTestLiveSource("a", 100)).Audio(),
+			recipeFrom(selectTestLiveSource("b", 200)).Audio(),
+		).Tap(frameTapRef("left.select")),
+		legacySelect(
+			recipeFrom(selectTestLiveSource("c", 30)).Audio(),
+			recipeFrom(selectTestLiveSource("d", 40)).Audio(),
+		).Tap(frameTapRef("right.select")),
 	).To(Sink(sink)).BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -190,12 +190,12 @@ func joinNestedTestFrameSink(name string, into *[]*av.Frame) Destination {
 func TestCompositeOfCompositesPaintsNestedCanvas(t *testing.T) {
 	ctx := context.Background()
 	var got []*av.Frame
-	task, err := LegacyComposite(
-		LegacyComposite(
-			From(compositeTestVideoSource("a", 4, 4, 100, 10, 20)).Video().Region(0, 0),
-			From(compositeTestVideoSource("b", 4, 4, 200, 30, 40)).Video().Region(4, 0),
+	task, err := legacyComposite(
+		legacyComposite(
+			recipeFrom(compositeTestVideoSource("a", 4, 4, 100, 10, 20)).Video().Region(0, 0),
+			recipeFrom(compositeTestVideoSource("b", 4, 4, 200, 30, 40)).Video().Region(4, 0),
 		),
-		From(compositeTestVideoSource("c", 4, 4, 50, 10, 20)).Video().Region(0, 4),
+		recipeFrom(compositeTestVideoSource("c", 4, 4, 50, 10, 20)).Video().Region(0, 4),
 	).To(joinNestedTestFrameSink("out", &got)).BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -230,11 +230,11 @@ func TestCompositeOfCompositesPaintsNestedCanvas(t *testing.T) {
 func TestNestedCompositeRegionPlacesSubCanvas(t *testing.T) {
 	ctx := context.Background()
 	var got []*av.Frame
-	task, err := LegacyComposite(
-		From(compositeTestVideoSource("c", 4, 4, 50, 10, 20)).Video().Region(0, 0),
-		LegacyComposite(
-			From(compositeTestVideoSource("a", 4, 4, 100, 10, 20)).Video().Region(0, 0),
-			From(compositeTestVideoSource("b", 4, 4, 200, 30, 40)).Video().Region(4, 0),
+	task, err := legacyComposite(
+		recipeFrom(compositeTestVideoSource("c", 4, 4, 50, 10, 20)).Video().Region(0, 0),
+		legacyComposite(
+			recipeFrom(compositeTestVideoSource("a", 4, 4, 100, 10, 20)).Video().Region(0, 0),
+			recipeFrom(compositeTestVideoSource("b", 4, 4, 200, 30, 40)).Video().Region(4, 0),
 		).Region(0, 4),
 	).To(joinNestedTestFrameSink("out", &got)).BuildLive(ctx)
 	if err != nil {
@@ -282,11 +282,11 @@ func TestSelectRegionPlacesSwitchedArmOnComposite(t *testing.T) {
 		}
 		return nil
 	}))
-	task, err := LegacyComposite(
-		From(compositeTestVideoSource("c", 4, 4, 50, 10, 20)).Video().Region(0, 0),
-		LegacySelect(
-			From(compositeTestVideoSource("a", 4, 4, 100, 10, 20)).Video(),
-			From(compositeTestVideoSource("b", 4, 4, 200, 30, 40)).Video(),
+	task, err := legacyComposite(
+		recipeFrom(compositeTestVideoSource("c", 4, 4, 50, 10, 20)).Video().Region(0, 0),
+		legacySelect(
+			recipeFrom(compositeTestVideoSource("a", 4, 4, 100, 10, 20)).Video(),
+			recipeFrom(compositeTestVideoSource("b", 4, 4, 200, 30, 40)).Video(),
 		).Region(0, 4),
 	).To(sink).BuildLive(ctx)
 	if err != nil {
@@ -326,11 +326,11 @@ func TestMixResamplesNestedMixOutput(t *testing.T) {
 		return nil
 	}))
 
-	job := LegacyMix(
-		From(mixTestAudioSourceRate("a", 48000)).Audio(),
-		LegacyMix(
-			From(mixTestAudioSourceRate("b", 24000)).Audio(),
-			From(mixTestAudioSourceRate("c", 24000)).Audio(),
+	job := legacyMix(
+		recipeFrom(mixTestAudioSourceRate("a", 48000)).Audio(),
+		legacyMix(
+			recipeFrom(mixTestAudioSourceRate("b", 24000)).Audio(),
+			recipeFrom(mixTestAudioSourceRate("c", 24000)).Audio(),
 		),
 	).To(sink).UseRuntime(rt)
 
@@ -359,11 +359,11 @@ func TestMixResamplesNestedMixOutput(t *testing.T) {
 // guard: a sub-mix arm (with its own SyncByPTS) under an outer mix that
 // resamples the sub-mix output, planned and built from the one plan.
 func TestJoinDescribeEqualsBuildNestedMix(t *testing.T) {
-	job := LegacyMix(
-		From(mixTestAudioSourceRate("a", 48000)).Audio(),
-		LegacyMix(
-			From(mixTestAudioSourceRate("b", 24000)).Audio(),
-			From(mixTestAudioSourceRate("c", 24000)).Audio(),
+	job := legacyMix(
+		recipeFrom(mixTestAudioSourceRate("a", 48000)).Audio(),
+		legacyMix(
+			recipeFrom(mixTestAudioSourceRate("b", 24000)).Audio(),
+			recipeFrom(mixTestAudioSourceRate("c", 24000)).Audio(),
 		).SyncByPTS(),
 	).To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))).
 		UseRuntime(mustNew(testBundleFilters()))
@@ -388,14 +388,14 @@ func TestJoinDescribeEqualsBuildNestedMix(t *testing.T) {
 // TestJoinDescribeEqualsBuildSelectOfMixes guards the planned shape of a
 // Select switching between two sub-mixes.
 func TestJoinDescribeEqualsBuildSelectOfMixes(t *testing.T) {
-	job := LegacySelect(
-		LegacyMix(
-			From(mixTestAudioSource("a", 1)).Audio(),
-			From(mixTestAudioSource("b", 1)).Audio(),
+	job := legacySelect(
+		legacyMix(
+			recipeFrom(mixTestAudioSource("a", 1)).Audio(),
+			recipeFrom(mixTestAudioSource("b", 1)).Audio(),
 		),
-		LegacyMix(
-			From(mixTestAudioSource("c", 1)).Audio(),
-			From(mixTestAudioSource("d", 1)).Audio(),
+		legacyMix(
+			recipeFrom(mixTestAudioSource("c", 1)).Audio(),
+			recipeFrom(mixTestAudioSource("d", 1)).Audio(),
 		),
 	).To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil })))
 
@@ -418,12 +418,12 @@ func TestJoinDescribeEqualsBuildSelectOfMixes(t *testing.T) {
 func TestNestedMixTapAnchorsOnSubJoinNode(t *testing.T) {
 	ctx := context.Background()
 	var main [][]int16
-	task, err := LegacyMix(
-		LegacyMix(
-			From(mixTestAudioSource("a", 100, 200)).Audio(),
-			From(mixTestAudioSource("b", 50, -50)).Audio(),
-		).Tap(FrameTap("submix")),
-		From(mixTestAudioSource("c", 5, 5)).Audio(),
+	task, err := legacyMix(
+		legacyMix(
+			recipeFrom(mixTestAudioSource("a", 100, 200)).Audio(),
+			recipeFrom(mixTestAudioSource("b", 50, -50)).Audio(),
+		).Tap(frameTapRef("submix")),
+		recipeFrom(mixTestAudioSource("c", 5, 5)).Audio(),
 	).To(joinTestCollectSink("out", &main)).BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -439,8 +439,8 @@ func TestNestedMixTapAnchorsOnSubJoinNode(t *testing.T) {
 	}
 
 	var tapped [][]int16
-	attachment, err := task.LegacyAttach(ctx, Branch("monitor").
-		From(FrameTap("submix")).
+	attachment, err := legacyAttach(task, ctx, newBranch("monitor").
+		From(frameTapRef("submix")).
 		To(joinTestCollectSink("monitor", &tapped)))
 	if err != nil {
 		t.Fatal(err)
@@ -469,12 +469,12 @@ func TestNestedMixEncodesToFile(t *testing.T) {
 		WithEncoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &encodeTestEncoderFactory{encoder: &encodeTestEncoder{}}),
 	)
 
-	task, err := LegacyMix(
-		LegacyMix(
-			From(mixTestAudioSource("a", 100, 200)).Audio(),
-			From(mixTestAudioSource("b", 50, -50)).Audio(),
+	task, err := legacyMix(
+		legacyMix(
+			recipeFrom(mixTestAudioSource("a", 100, 200)).Audio(),
+			recipeFrom(mixTestAudioSource("b", 50, -50)).Audio(),
 		),
-		From(mixTestAudioSource("c", 5, 5)).Audio(),
+		recipeFrom(mixTestAudioSource("c", 5, 5)).Audio(),
 	).Encode(codec.Opus()).To(Write("mix.ogg", io.Discard, Format(av.FormatOgg))).UseRuntime(rt).BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -491,12 +491,12 @@ func TestNestedMixEncodesToFile(t *testing.T) {
 // TestNestedJoinArmRejectsEncode pins that a join used as an arm is not a
 // terminal: it cannot carry its own encoder.
 func TestNestedJoinArmRejectsEncode(t *testing.T) {
-	_, err := LegacyMix(
-		LegacyMix(
-			From(mixTestAudioSource("a", 1)).Audio(),
-			From(mixTestAudioSource("b", 1)).Audio(),
+	_, err := legacyMix(
+		legacyMix(
+			recipeFrom(mixTestAudioSource("a", 1)).Audio(),
+			recipeFrom(mixTestAudioSource("b", 1)).Audio(),
 		).Encode(codec.Opus()),
-		From(mixTestAudioSource("c", 1)).Audio(),
+		recipeFrom(mixTestAudioSource("c", 1)).Audio(),
 	).To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))).
 		BuildLive(context.Background())
 	var buildErr *BuildError
@@ -508,13 +508,13 @@ func TestNestedJoinArmRejectsEncode(t *testing.T) {
 // TestNestedJoinArmsRequireDistinctOutputIDs pins that a nested join's output
 // id participates in the sibling distinct-id check.
 func TestNestedJoinArmsRequireDistinctOutputIDs(t *testing.T) {
-	_, err := LegacyMix(
-		LegacyMix(
-			From(mixTestAudioSource("a", 1)).Audio(),
-			From(mixTestAudioSource("b", 1)).Audio(),
+	_, err := legacyMix(
+		legacyMix(
+			recipeFrom(mixTestAudioSource("a", 1)).Audio(),
+			recipeFrom(mixTestAudioSource("b", 1)).Audio(),
 		),
 		// The leaf arm collides with the nested mix's auto-assigned output id.
-		From(mixTestAudioSource("mix-2", 1)).Audio(),
+		recipeFrom(mixTestAudioSource("mix-2", 1)).Audio(),
 	).To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))).
 		BuildLive(context.Background())
 	var buildErr *BuildError
@@ -525,9 +525,9 @@ func TestNestedJoinArmsRequireDistinctOutputIDs(t *testing.T) {
 
 // TestNestedJoinRequiresTwoArms pins the arm-count rule on nested joins.
 func TestNestedJoinRequiresTwoArms(t *testing.T) {
-	_, err := LegacyMix(
-		LegacyMix(From(mixTestAudioSource("a", 1)).Audio()),
-		From(mixTestAudioSource("c", 1)).Audio(),
+	_, err := legacyMix(
+		legacyMix(recipeFrom(mixTestAudioSource("a", 1)).Audio()),
+		recipeFrom(mixTestAudioSource("c", 1)).Audio(),
 	).To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))).
 		BuildLive(context.Background())
 	var buildErr *BuildError
@@ -539,12 +539,12 @@ func TestNestedJoinRequiresTwoArms(t *testing.T) {
 // TestMixRejectsNestedCompositeArm pins the media discipline: a Mix arm must
 // produce audio, so a nested composite (video) is rejected with the arm error.
 func TestMixRejectsNestedCompositeArm(t *testing.T) {
-	_, err := LegacyMix(
-		LegacyComposite(
-			From(compositeTestVideoSource("a", 4, 4, 100, 10, 20)).Video(),
-			From(compositeTestVideoSource("b", 4, 4, 200, 30, 40)).Video(),
+	_, err := legacyMix(
+		legacyComposite(
+			recipeFrom(compositeTestVideoSource("a", 4, 4, 100, 10, 20)).Video(),
+			recipeFrom(compositeTestVideoSource("b", 4, 4, 200, 30, 40)).Video(),
 		),
-		From(mixTestAudioSource("c", 1)).Audio(),
+		recipeFrom(mixTestAudioSource("c", 1)).Audio(),
 	).To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))).
 		BuildLive(context.Background())
 	var buildErr *BuildError

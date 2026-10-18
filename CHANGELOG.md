@@ -11,6 +11,17 @@ methodology changes, and migration notes.
 
 ## Unreleased
 
+- Breaking: the builder grammar is internal. `From`, `Job`, `Chain`, `Branch`,
+  `BranchSpec`, `Flow`, `JoinArm`, `LegacyMix`/`LegacyComposite`/
+  `LegacySelect`/`LegacyJoin` and their stream types, `FrameTap`/`PacketTap`,
+  `InputName`, and `LiveTask.LegacyAttach` are no longer exported: build
+  recipes as values. `task.Route(route)` anchors attached Outputs on an expert
+  graph route (`task.Route(node.Out().Route())`). Refusal fixes and doc
+  comments use the value grammar. Fixed: an encoder after Select or a custom Join
+  ran nowhere or was refused, operations a nested join cannot apply were
+  dropped, and a tap inside a join's planned branch was dropped (now refused
+  until joins publish branch taps).
+
 - The root package's tests and benchmarks build recipes as values; tests that
   pin builder-only refusals keep the builder until it goes internal.
 

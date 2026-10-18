@@ -199,14 +199,14 @@ func TestCopyContractMutableFanoutBranchCannotCorruptSibling(t *testing.T) {
 	case <-ctx.Done():
 		t.Fatal(ctx.Err())
 	}
-	if _, err := contractTask.LegacyAttach(ctx, Branch("mutate").
-		From(FrameTap("video.frames")).
+	if _, err := legacyAttach(contractTask, ctx, newBranch("mutate").
+		From(frameTapRef("video.frames")).
 		Buffer(flow.Blocking(2, flow.BufferCopyBounds(0, 64))).
 		To(Sink(mutator))); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := contractTask.LegacyAttach(ctx, Branch("observe").
-		From(FrameTap("video.frames")).
+	if _, err := legacyAttach(contractTask, ctx, newBranch("observe").
+		From(frameTapRef("video.frames")).
 		Buffer(flow.Blocking(2, flow.BufferCopyBounds(0, 64))).
 		To(Sink(observer))); err != nil {
 		t.Fatal(err)
@@ -247,8 +247,8 @@ func TestCopyContractCopyAlwaysCopiesImmutableFrames(t *testing.T) {
 	case <-ctx.Done():
 		t.Fatal(ctx.Err())
 	}
-	if _, err := contractTask.LegacyAttach(ctx, Branch("defensive").
-		From(FrameTap("video.frames")).
+	if _, err := legacyAttach(contractTask, ctx, newBranch("defensive").
+		From(frameTapRef("video.frames")).
 		Buffer(flow.Blocking(2,
 			flow.BufferCopyMode(flow.CopyAlways),
 			flow.BufferCopyBounds(0, 64),
@@ -256,8 +256,8 @@ func TestCopyContractCopyAlwaysCopiesImmutableFrames(t *testing.T) {
 		To(Sink(defensive))); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := contractTask.LegacyAttach(ctx, Branch("shared").
-		From(FrameTap("video.frames")).
+	if _, err := legacyAttach(contractTask, ctx, newBranch("shared").
+		From(frameTapRef("video.frames")).
 		Buffer(flow.Blocking(2)).
 		To(Sink(shared))); err != nil {
 		t.Fatal(err)
@@ -300,8 +300,8 @@ func TestCopyContractCopyNeverIsSafeOnly(t *testing.T) {
 		case <-ctx.Done():
 			t.Fatal(ctx.Err())
 		}
-		if _, err := contractTask.LegacyAttach(ctx, Branch("readonly").
-			From(FrameTap("video.frames")).
+		if _, err := legacyAttach(contractTask, ctx, newBranch("readonly").
+			From(frameTapRef("video.frames")).
 			Buffer(flow.Latest(flow.BufferCopyMode(flow.CopyNever))).
 			To(Sink(readonly))); err != nil {
 			t.Fatal(err)
@@ -354,8 +354,8 @@ func TestCopyContractCopyNeverIsSafeOnly(t *testing.T) {
 		case <-ctx.Done():
 			t.Fatal(ctx.Err())
 		}
-		if _, err := contractTask.LegacyAttach(ctx, Branch("readonly").
-			From(FrameTap("video.frames")).
+		if _, err := legacyAttach(contractTask, ctx, newBranch("readonly").
+			From(frameTapRef("video.frames")).
 			Buffer(flow.Latest(flow.BufferCopyMode(flow.CopyNever))).
 			To(Sink(readonly))); err != nil {
 			t.Fatal(err)
@@ -390,8 +390,8 @@ func TestCopyContractTooSmallBoundsAreStructured(t *testing.T) {
 	case <-ctx.Done():
 		t.Fatal(ctx.Err())
 	}
-	if _, err := contractTask.LegacyAttach(ctx, Branch("tiny").
-		From(FrameTap("video.frames")).
+	if _, err := legacyAttach(contractTask, ctx, newBranch("tiny").
+		From(frameTapRef("video.frames")).
 		Buffer(flow.Latest(flow.BufferCopyBounds(0, 1))).
 		To(Sink(readonly))); err != nil {
 		t.Fatal(err)

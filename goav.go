@@ -72,14 +72,13 @@ type LiveTask interface {
 	// Track is a stream one of the task's inputs produces or will produce, for
 	// Outputs Attach adds before that stream's first media arrives.
 	Track(input InputSpec, stream av.Stream) Stream
-	// Attach adds Outputs to the running task, each fed from a task.Tap or
-	// task.Track stream. One call applies them atomically: a later Output may
+	// Route is the stream a graph route carries, for Outputs Attach anchors on
+	// an expert graph node: task.Route(node.Out().Route()).
+	Route(route pipeline.Route) Stream
+	// Attach adds Outputs to the running task, each fed from a task.Tap,
+	// task.Track, or task.Route stream. One call applies them atomically: a later Output may
 	// read a tap an earlier one declares, and a failure rolls the group back.
 	Attach(context.Context, ...Output) (Attachment, error)
-	// LegacyAttach adds late branches to the running graph from typed taps. One call
-	// applies all branches atomically: later branches may anchor on taps
-	// published by earlier ones, and a failure rolls the whole group back.
-	LegacyAttach(context.Context, ...BranchSpec) (Attachment, error)
 	// Detach removes a runtime branch and any dependent branches anchored on
 	// its taps. By default destinations finalize as closed; DrainBranch or
 	// AbortBranch records a commit/abort outcome for the detached branch.

@@ -170,7 +170,7 @@ func TestTaskTimelineRateReanchorsAllSources(t *testing.T) {
 	video := &countingPacketSink{}
 	audio := &countingPacketSink{}
 
-	task, err := From(Input(&timelinePacedProvider{source: cam}), Input(&timelinePacedProvider{source: mic})).
+	task, err := recipeFrom(Input(&timelinePacedProvider{source: cam}), Input(&timelinePacedProvider{source: mic})).
 		UseRuntime(mustNew(WithClock(clock))).
 		Video().Copy().To(Sink(SinkFunc("video", video.record))).
 		Audio().Copy().To(Sink(SinkFunc("audio", audio.record))).

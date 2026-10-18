@@ -17,14 +17,13 @@ import (
 )
 
 func TestBuildErrorChecksStructuredFields(t *testing.T) {
-	_, err := goav.From(goav.Source("bytes",
+	_, err := goavtest.Runtime().Describe(goav.Source("bytes",
 		shape.New(shape.Domain(shape.MediaDomain("bytes")), shape.Media(av.MediaAudio)),
 		func(context.Context, source.Push) error { return nil },
-	)).
+	).
 		Audio().
 		Decode().
-		To(goavtest.NewCollector().Sink()).
-		Describe()
+		To(goavtest.NewCollector().Sink()))
 	err = fmt.Errorf("wrapped: %w", err)
 
 	buildErr := expect.BuildError(t, err, errcode.Code("source_shape_unsupported"),

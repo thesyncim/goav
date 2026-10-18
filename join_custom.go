@@ -23,7 +23,7 @@ import (
 // through the one recipe compile (Describe() ≡ Build(), plan.OpJoin in
 // Explain), its joined output is a normal stream point (.Tap, .Branches,
 // .To), and the result is itself a JoinArm, so custom joins nest inside and
-// around the built-ins (LegacyMix(LegacyJoin("pair", stage, a, b), c)).
+// around the built-ins (LegacyMix(legacyJoin("pair", stage, a, b), c)).
 //
 // The stage contract (audioMixStage in audio_mix.go is the reference
 // implementation the built-ins follow):
@@ -68,18 +68,18 @@ import (
 // Without a contract the join is a media-agnostic passthrough (Select-shaped).
 // Custom joins carry no .Encode — deliver frames to sinks with .To, or fan
 // out with .Branches where branches encode for muxed destinations.
-func LegacyJoin(name string, stage pipeline.Stage, arms ...JoinArm) *JoinStream {
-	return &JoinStream{name: name, stage: stage, arms: arms}
+func legacyJoin(name string, stage pipeline.Stage, arms ...recipeArm) *joinStreamBuilder {
+	return &joinStreamBuilder{name: name, stage: stage, arms: arms}
 }
 
-// JoinStream is the builder a custom Join returns: the same grammar surface
+// joinStreamBuilder is the builder a custom Join returns: the same grammar surface
 // the built-in join builders expose (Tap/Branches/To), plus joinArm so a
 // custom join nests like any other arm. It is sealed — its fields are
 // unexported, so the grammar methods are the only mutation surface.
-type JoinStream struct {
+type joinStreamBuilder struct {
 	name  string
 	stage pipeline.Stage
-	arms  []JoinArm
+	arms  []recipeArm
 	taps  []tapRef
 }
 
@@ -92,7 +92,7 @@ type customJoinSpec struct {
 
 // spec lowers the builder to the one joinSpec shared by every convergence
 // builder; the join kind is the custom name.
-func (s *JoinStream) spec() joinSpec {
+func (s *joinStreamBuilder) spec() joinSpec {
 	return joinSpec{
 		kind:   joinKind(s.name),
 		arms:   s.arms,
@@ -104,7 +104,7 @@ func (s *JoinStream) spec() joinSpec {
 // joinArm lets a custom join stand as an arm of an outer join: the outer join
 // consumes the JOINED output stream under the custom join's output id (its
 // name), exactly like a nested Mix contributes its mixed stream.
-func (s *JoinStream) joinArm() joinArmSpec {
+func (s *joinStreamBuilder) joinArm() joinArmSpec {
 	if s == nil {
 		return joinArmSpec{}
 	}
@@ -116,7 +116,7 @@ func (s *JoinStream) joinArm() joinArmSpec {
 // normal chain declares: it appears in task.Taps() and runtime branches can
 // Attach from it later. Its domain follows the join's output (frame-domain
 // for decode-arm joins, the arms' domain for passthrough joins).
-func (s *JoinStream) Tap(tap tapRef) *JoinStream {
+func (s *joinStreamBuilder) Tap(tap tapRef) *joinStreamBuilder {
 	s.taps = append(s.taps, tap)
 	return s
 }
@@ -125,7 +125,7 @@ func (s *JoinStream) Tap(tap tapRef) *JoinStream {
 // own destinations — the same goav.Branch specs an ordinary stream chain
 // accepts at this stream point. Branches that encode reach muxed
 // destinations; the join itself stays sink-only.
-func (s *JoinStream) Branches(branches ...BranchSpec) *Job {
+func (s *joinStreamBuilder) Branches(branches ...branchRecipe) *recipeJob {
 	spec := s.spec()
 	if job, refused := s.refuse(spec); refused {
 		return job
@@ -137,7 +137,7 @@ func (s *JoinStream) Branches(branches ...BranchSpec) *Job {
 // when several are given) and returns a Job, so the custom join runs through
 // the same Build/Run as every other recipe. It lowers to the one joinSpec
 // shared by every convergence builder.
-func (s *JoinStream) To(destinations ...Destination) *Job {
+func (s *joinStreamBuilder) To(destinations ...Destination) *recipeJob {
 	spec := s.spec()
 	spec.dests = destinations
 	if job, refused := s.refuse(spec); refused {
@@ -150,7 +150,7 @@ func (s *JoinStream) To(destinations ...Destination) *Job {
 // Join surfaces its precise refusal (join_name_invalid / join_stage_invalid)
 // instead of a derived one; nested arms hit the same validation through
 // resolveJoinProfile at plan time.
-func (s *JoinStream) refuse(spec joinSpec) (*Job, bool) {
+func (s *joinStreamBuilder) refuse(spec joinSpec) (*recipeJob, bool) {
 	if _, err := customJoinProfile(spec.custom); err != nil {
 		job := newJob(firstNonEmpty(s.name, "join"))
 		job.setErr(err)
@@ -196,7 +196,7 @@ func customJoinProfile(custom *customJoinSpec) (joinProfile, error) {
 		sinkOnlyReason: name + " to a non-Sink destination is not supported (a custom join carries no .Encode)",
 		sinkOnlySuggestions: []string{
 			"deliver the joined stream with .To(goav.Sink(sink))",
-			"fan the joined stream out with .Branches(goav.Branch(\"out\").Encode(codec...).To(...)) when it must reach muxed destinations",
+			"encode the joined stream in its own fork when it must reach muxed destinations: goav.Join(...).Buffer(flow.Blocking(8)).Encode(codec...).To(...)",
 		},
 	}
 	if expected, ok := customJoinArmExpected(inputs); ok {
@@ -219,7 +219,7 @@ func validateCustomJoinName(name string) error {
 			Node:      firstNonEmpty(name, "join"),
 			Reason:    "custom join name " + strconv.Quote(name) + " is not snake-safe ([a-z][a-z0-9_]*)",
 			fixes: buildErrorFixes([]string{
-				"name the join with lowercase letters, digits, and underscores: goav.LegacyJoin(\"crossfade\", stage, arms...)",
+				"name the join with lowercase letters, digits, and underscores: goav.Join(\"crossfade\", stage, streams...)",
 			}),
 			cause: errUnsupportedBuild,
 		}
@@ -272,7 +272,7 @@ func customJoinStageError(name string, reason string) error {
 		Node:      firstNonEmpty(name, "join"),
 		Reason:    reason,
 		fixes: buildErrorFixes([]string{
-			"pass a pipeline.Stage whose Name() equals the join name: goav.LegacyJoin(\"crossfade\", stage, arms...)",
+			"pass a pipeline.Stage whose Name() equals the join name: goav.Join(\"crossfade\", stage, streams...)",
 			"see the Join doc for the convergence-stage contract (audio mix is the reference implementation)",
 		}),
 		cause: errUnsupportedBuild,

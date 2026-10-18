@@ -19,10 +19,10 @@ import (
 
 func TestRecipeIRSnapshotRoundTripsJobIntent(t *testing.T) {
 	var out bytes.Buffer
-	job := From(FileInput("input.ivf", strings.NewReader(""))).
+	job := recipeFrom(FileInput("input.ivf", strings.NewReader(""))).
 		Video().
 		Decode().
-		Tap(FrameTap("frames")).
+		Tap(frameTapRef("frames")).
 		Resize(320, 180).
 		Encode(codec.VP8()).
 		To(Write("output.ivf", &out))
@@ -58,7 +58,7 @@ func TestRecipeIRSnapshotRoundTripsJobIntent(t *testing.T) {
 
 func TestRecipeIRSnapshotCapturesCustomSourceShape(t *testing.T) {
 	input := Source("camera", shape.Frame(av.MediaVideo), SourceFunc(func(context.Context, source.Push) error { return nil }))
-	snapshot := newJobRecipeSnapshot(From(input))
+	snapshot := newJobRecipeSnapshot(recipeFrom(input))
 	if len(snapshot.recipe.Inputs) != 1 ||
 		snapshot.recipe.Inputs[0].Kind != recipeir.InputKindCustomSource ||
 		snapshot.recipe.Inputs[0].SourceShape.Domain != shape.DomainFrame ||
@@ -75,10 +75,10 @@ func TestRecipeIRSnapshotCapturesCustomSourceShape(t *testing.T) {
 }
 
 func TestRecipeIRSnapshotCapturesStreamRules(t *testing.T) {
-	job := From(FileInput("input.ivf", strings.NewReader(""))).
+	job := recipeFrom(FileInput("input.ivf", strings.NewReader(""))).
 		OnStream(
 			MatchMedia(av.MediaAudio),
-			Branch("record").Apply(Flow("audio").Audio()).Copy().Buffer(flow.DropOldest(4)).To(Sink(SinkFunc("late", func(context.Context, Message) error { return nil }))),
+			newBranch("record").Apply(newFlow("audio").Audio()).Copy().Buffer(flow.DropOldest(4)).To(Sink(SinkFunc("late", func(context.Context, Message) error { return nil }))),
 		)
 
 	snapshot := newJobRecipeSnapshot(job)
@@ -118,9 +118,9 @@ func TestRecipeIRSnapshotCapturesStreamRules(t *testing.T) {
 }
 
 func TestRecipeIRSnapshotCapturesJoinFacts(t *testing.T) {
-	job := LegacyMix(
-		From(FileInput("a.ogg", strings.NewReader(""))).Audio(),
-		From(FileInput("b.ogg", strings.NewReader(""))).Audio(),
+	job := legacyMix(
+		recipeFrom(FileInput("a.ogg", strings.NewReader(""))).Audio(),
+		recipeFrom(FileInput("b.ogg", strings.NewReader(""))).Audio(),
 	).Encode(codec.Opus()).To(Write("mixed.ogg", &bytes.Buffer{}))
 
 	snapshot := newJobRecipeSnapshot(job)
@@ -143,9 +143,9 @@ func TestRecipeIRSnapshotCapturesJoinFacts(t *testing.T) {
 }
 
 func TestJoinPlannerConsumesRecipeIRInput(t *testing.T) {
-	job := LegacyMix(
-		From(mixTestAudioSource("a", 1)).Audio(),
-		From(mixTestAudioSource("b", 1)).Audio(),
+	job := legacyMix(
+		recipeFrom(mixTestAudioSource("a", 1)).Audio(),
+		recipeFrom(mixTestAudioSource("b", 1)).Audio(),
 	).To(Sink(SinkFunc("mixed", func(context.Context, Message) error { return nil })))
 
 	state := recipeCompileStateFromSnapshot(newJobRecipeSnapshot(job), recipeCompileOptions{})
@@ -188,7 +188,7 @@ func TestJoinPlannerConsumesRecipeIRInput(t *testing.T) {
 
 func TestNormalWorkPlanConsumesHandoff(t *testing.T) {
 	var out bytes.Buffer
-	job := From(FileInput("input.ivf", strings.NewReader(""))).
+	job := recipeFrom(FileInput("input.ivf", strings.NewReader(""))).
 		Video().
 		Decode().
 		Resize(320, 180).
@@ -231,12 +231,12 @@ func TestNormalWorkPlanConsumesHandoff(t *testing.T) {
 }
 
 func TestMultiStreamGraphLowererConsumesHandoff(t *testing.T) {
-	job := From(
+	job := recipeFrom(
 		mixTestAudioSource("mic-a", 11, 22),
 		mixTestAudioSource("mic-b", 33, 44),
 	).
-		Audio(InputName("mic-a")).To(Sink(SinkFunc("sink-a", func(context.Context, Message) error { return nil }))).
-		Audio(InputName("mic-b")).To(Sink(SinkFunc("sink-b", func(context.Context, Message) error { return nil })))
+		Audio(selectInputName("mic-a")).To(Sink(SinkFunc("sink-a", func(context.Context, Message) error { return nil }))).
+		Audio(selectInputName("mic-b")).To(Sink(SinkFunc("sink-b", func(context.Context, Message) error { return nil })))
 
 	state := recipeCompileStateFromSnapshot(newJobRecipeSnapshot(job), recipeCompileOptions{})
 	input, ok := mediaPlanMultiStreamJobInputFromCompileState(&state)
@@ -274,7 +274,7 @@ func TestMultiStreamGraphLowererConsumesHandoff(t *testing.T) {
 func TestSingleStreamGraphLowerersConsumeHandoffs(t *testing.T) {
 	t.Run("packet copy", func(t *testing.T) {
 		var out bytes.Buffer
-		job := From(FileInput("input.ivf", strings.NewReader(""))).
+		job := recipeFrom(FileInput("input.ivf", strings.NewReader(""))).
 			Video().
 			Copy().
 			To(Write("output.ivf", &out))
@@ -309,7 +309,7 @@ func TestSingleStreamGraphLowerersConsumeHandoffs(t *testing.T) {
 	})
 
 	t.Run("decode", func(t *testing.T) {
-		job := From(mixTestAudioSource("mic", 11, 22)).
+		job := recipeFrom(mixTestAudioSource("mic", 11, 22)).
 			Audio().
 			To(Sink(SinkFunc("frames", func(context.Context, Message) error { return nil })))
 
@@ -345,9 +345,9 @@ func TestSingleStreamGraphLowerersConsumeHandoffs(t *testing.T) {
 }
 
 func TestBranchComposerGraphLowererConsumesHandoff(t *testing.T) {
-	job := From(mixTestAudioSource("mic", 11, 22)).
+	job := recipeFrom(mixTestAudioSource("mic", 11, 22)).
 		Audio().
-		Branches(Branch("monitor").To(Sink(SinkFunc("frames", func(context.Context, Message) error { return nil }))))
+		Branches(newBranch("monitor").To(Sink(SinkFunc("frames", func(context.Context, Message) error { return nil }))))
 
 	state := recipeCompileStateFromSnapshot(newJobRecipeSnapshot(job), recipeCompileOptions{})
 	input, ok := mediaPlanBranchComposerInputFromCompileState(&state)
@@ -380,11 +380,11 @@ func TestBranchComposerGraphLowererConsumesHandoff(t *testing.T) {
 }
 
 func TestMediaPlannerConsumesRecipeIRInputFacts(t *testing.T) {
-	job := From(
+	job := recipeFrom(
 		compositeTestVideoSource("camera", 4, 4, 100, 10, 20),
 		mixTestAudioSource("mic", 1),
 	).
-		Audio(InputName("mic")).
+		Audio(selectInputName("mic")).
 		To(Sink(SinkFunc("audio", func(context.Context, Message) error { return nil })))
 
 	state := recipeCompileStateFromSnapshot(newJobRecipeSnapshot(job), recipeCompileOptions{})
@@ -405,7 +405,7 @@ func TestMediaPlannerConsumesRecipeIRInputFacts(t *testing.T) {
 }
 
 func TestCopyPlannerConsumesRecipeIRInputFacts(t *testing.T) {
-	job := From(Source("events", shape.Event(), SourceFunc(func(context.Context, source.Push) error { return nil }))).
+	job := recipeFrom(Source("events", shape.Event(), SourceFunc(func(context.Context, source.Push) error { return nil }))).
 		To(Sink(SinkFunc("events", func(context.Context, Message) error { return nil })))
 
 	state := recipeCompileStateFromSnapshot(newJobRecipeSnapshot(job), recipeCompileOptions{})
@@ -420,7 +420,7 @@ func TestCopyPlannerConsumesRecipeIRInputFacts(t *testing.T) {
 }
 
 func TestRecipeIRSnapshotCapturesSinkDestinationKind(t *testing.T) {
-	job := From(FileInput("input.ivf", strings.NewReader(""))).
+	job := recipeFrom(FileInput("input.ivf", strings.NewReader(""))).
 		Video().
 		Decode().
 		To(Sink(SinkFunc("frames", func(context.Context, Message) error { return nil })))

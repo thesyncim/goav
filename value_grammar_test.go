@@ -16,6 +16,7 @@ import (
 	"github.com/thesyncim/goav/container/webm"
 	"github.com/thesyncim/goav/goavtest"
 	"github.com/thesyncim/goav/pipeline"
+	"github.com/thesyncim/goav/shape"
 )
 
 func specNodeNames(spec pipeline.Spec) []string {
@@ -376,5 +377,71 @@ func TestValueGrammarNamesASingleStream(t *testing.T) {
 	}
 	if got := countNodesWithPrefix(spec, "encode-hd"); got != 1 {
 		t.Fatalf("nodes = %v, want encode-hd", specNodeNames(spec))
+	}
+}
+
+// TestValueGrammarJoinOperationsAreNeverDropped pins that every operation on a
+// join's output runs: what the join itself cannot take runs in a planned
+// branch, a tap the backend cannot publish is refused, and a nested join
+// refuses operations it cannot apply instead of dropping them.
+func TestValueGrammarJoinOperationsAreNeverDropped(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	var packets, frames int
+	sink := goav.Sink(component.SinkFunc("out", func(_ context.Context, msg component.Message) error {
+		if msg.Packet != nil {
+			packets++
+		}
+		if msg.Frame != nil {
+			frames++
+		}
+		return nil
+	}))
+	selected := goav.Select(
+		goavtest.Audio(48_000, 1, make([]int16, 960), make([]int16, 960)).Audio(),
+		goavtest.Audio(48_000, 1, make([]int16, 960)).Audio(),
+	)
+	if err := offlineRuntime().Run(ctx, selected.Encode(codec.Opus()).To(sink)); err != nil {
+		t.Fatalf("select then encode: %v", err)
+	}
+	if packets == 0 || frames != 0 {
+		t.Fatalf("select then encode delivered %d packets and %d frames, want packets only", packets, frames)
+	}
+
+	joined := goav.Join("funnel", newFunnelStage("funnel", 2),
+		goavtest.Audio(8000, 1, []int16{1}).Audio(),
+		goavtest.Audio(8000, 1, []int16{2}).Audio(),
+	)
+	spec, err := goavtest.Runtime().Describe(joined.Resample(48_000, 1).Encode(codec.Opus()).To(goav.Write("funnel.webm", new(bytes.Buffer))))
+	if err != nil {
+		t.Fatalf("custom join then encode: %v", err)
+	}
+	if countNodesWithPrefix(spec, "encode-") != 1 || countNodesWithPrefix(spec, "resample") != 1 {
+		t.Fatalf("custom join nodes = %v, want its resample and encoder", specNodeNames(spec))
+	}
+
+	mixed := goav.Mix(goavtest.Audio(48_000, 1, []int16{1}).Audio(), goavtest.Audio(48_000, 1, []int16{2}).Audio())
+	task, err := offlineRuntime().Build(ctx, mixed.Tap("mixed").Encode(codec.Opus()).To(sink))
+	if err != nil {
+		t.Fatalf("mix tap encode: %v", err)
+	}
+	defer task.Close()
+	var tapped bool
+	for _, tap := range task.Taps() {
+		if tap.Name == "mixed" {
+			tapped = tap.Domain == shape.DomainFrame
+		}
+	}
+	if !tapped {
+		t.Fatalf("taps = %+v, want mixed as a frame tap", task.Taps())
+	}
+	var buildErr *goav.BuildError
+	if _, err := offlineRuntime().Describe(mixed.Encode(codec.Opus()).Tap("mixed.opus").To(sink)); !errors.As(err, &buildErr) || buildErr.Code != "stream_invalid" {
+		t.Fatalf("tap after a join's encoder: err = %v, want stream_invalid until join branches publish taps", err)
+	}
+
+	_, err = offlineRuntime().Describe(goav.Mix(mixed.Resample(24_000, 1), goavtest.Audio(48_000, 1, []int16{3}).Audio()).To(sink))
+	if !errors.As(err, &buildErr) || buildErr.Code != "stream_invalid" {
+		t.Fatalf("nested join with a resample: err = %v, want stream_invalid", err)
 	}
 }

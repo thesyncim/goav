@@ -142,7 +142,7 @@ func TestErrorAcceptanceMissingInput(t *testing.T) {
 		To(goav.Write("out.ogg", io.Discard)).
 		Describe()
 	requireBuildError(t, err, errcode.Code("input_missing"), "build job", "",
-		"goav.From(goav.FileInput",
+		`goav.FileInput("in.webm", reader).Video()`,
 	)
 }
 
@@ -224,7 +224,7 @@ func TestErrorAcceptanceNilFlow(t *testing.T) {
 		To(goavtest.NewCollector().Sink()).
 		Describe()
 	requireBuildError(t, err, errcode.Code("flow_invalid"), "build flow", "",
-		"build flows with goav.Flow(name).Audio() or goav.Flow(name).Video()",
+		"write reusable work as a Go function: func(s goav.Stream) goav.Stream",
 	)
 }
 
@@ -237,8 +237,8 @@ func TestErrorAcceptanceFlowMediaMismatch(t *testing.T) {
 		To(goavtest.NewCollector().Sink()).
 		Describe()
 	requireBuildError(t, err, errcode.Code("flow_media_mismatch"), "build stream", "thumbs",
-		"use goav.Flow(name).Audio() with .Audio()",
-		"use goav.Flow(name).Video() with .Video()",
+		"apply audio steps such as .Resample(...) to input.Audio() streams",
+		"apply video steps such as .Resize(...) to input.Video() streams",
 	)
 }
 
@@ -265,8 +265,8 @@ func TestErrorAcceptanceFlowDecodeOrderInvalid(t *testing.T) {
 		To(goavtest.NewCollector().Sink()).
 		Describe()
 	requireBuildError(t, err, errcode.Code("flow_decode_order_invalid"), "build flow", "voice",
-		"write goav.Flow(name).Audio().Decode().Resample(...)",
-		"omit .Decode() when the flow is only applied after stream decode",
+		"decode first in the reusable function",
+		"omit .Decode() when the function is only applied after the stream's .Decode()",
 	)
 }
 
@@ -279,8 +279,8 @@ func TestErrorAcceptanceFlowDecodeDomainMismatch(t *testing.T) {
 		To(goavtest.NewCollector().Sink()).
 		Describe()
 	requireBuildError(t, err, errcode.Code("flow_decode_domain_mismatch"), "build stream", "voice",
-		"omit .Decode() when applying the flow after stream decode",
-		"use the flow from a packet branch or packet tap",
+		"omit .Decode() when applying the reusable function after the stream's .Decode()",
+		"apply it to a packet stream (before .Decode(), or a packet tap)",
 	)
 }
 
@@ -294,7 +294,7 @@ func TestErrorAcceptanceFlowCopyDomainMismatch(t *testing.T) {
 		To(goav.Write("copy.ogg", io.Discard)).
 		Describe()
 	requireBuildError(t, err, errcode.Code("flow_copy_domain_mismatch"), "build flow", "packets",
-		"start packet-preserving reusable work with goav.Flow(name).Audio().Copy()",
+		"keep packet-preserving reusable work free of .Decode()",
 		"use .Decode().Resample(...).Encode(codec.Opus(...))",
 	)
 }
@@ -307,7 +307,7 @@ func TestErrorAcceptanceBranchMissing(t *testing.T) {
 		Branches().
 		Describe()
 	requireBuildError(t, err, errcode.Code("branch_missing"), "build branches", "audio",
-		"pass branches with goav.Branch(name).Encode",
+		"route each fork with v.Encode(",
 		"same destination value",
 	)
 }
@@ -320,7 +320,7 @@ func TestErrorAcceptanceBranchSpecUnconstructed(t *testing.T) {
 		Branches(goav.BranchSpec{}).
 		Describe()
 	requireBuildError(t, err, errcode.Code("branch_invalid"), "build branches", "branch-0",
-		"construct branches with goav.Branch(name).To(destination)",
+		"build each fork from a Stream routed with .To(destination)",
 	)
 }
 
@@ -336,8 +336,8 @@ func TestErrorAcceptanceBranchTapMissing(t *testing.T) {
 		).
 		Describe()
 	requireBuildError(t, err, errcode.Code("branch_tap_missing"), "build branches", "levels",
-		`add .Tap(goav.FrameTap("audio.missing"))`,
-		"omit .From(...) to branch from the current stream point",
+		`add .Tap("audio.missing") on the selected stream`,
+		"reuse the Stream value to fork from its current point",
 	)
 }
 
@@ -366,8 +366,8 @@ func TestErrorAcceptanceBranchDecodeOrderInvalid(t *testing.T) {
 		As("bad").
 		To(goavtest.NewCollector().Sink()))
 	requireBuildError(t, err, errcode.Code("branch_decode_order_invalid"), "build branch", "bad",
-		"write goav.Branch(name).Decode().Resample(...).To(target)",
-		"start from a frame tap",
+		"write in.Audio().Decode().Resample(...).To(target)",
+		"attach from a tap after .Decode()",
 	)
 }
 
@@ -383,8 +383,8 @@ func TestErrorAcceptanceBranchDecodeDomainMismatch(t *testing.T) {
 		).
 		Describe()
 	requireBuildError(t, err, errcode.Code("branch_decode_domain_mismatch"), "build branches", "bad",
-		"omit .Decode() when the branch already starts after stream decode",
-		"use .Copy().Branches",
+		"omit .Decode() when the fork already starts after the stream's .Decode()",
+		"fork before .Decode() when a packet copy and a decoding fork share the stream",
 	)
 }
 
@@ -401,7 +401,7 @@ func TestErrorAcceptanceBranchDecodeCopyInvalid(t *testing.T) {
 		).
 		Describe()
 	requireBuildError(t, err, errcode.Code("branch_decode_copy_invalid"), "build branch", "bad",
-		"use .Copy() for packet-preserving branches",
+		"leave out .Decode() to copy the packets",
 		"use .Decode().Encode(codec).To(destination)",
 	)
 }
@@ -415,8 +415,8 @@ func TestErrorAcceptancePacketBranchEncodeUnsupported(t *testing.T) {
 		As("bad").
 		To(goav.Write("bad.ogg", io.Discard)))
 	requireBuildError(t, err, errcode.Code("packet_branch_encode_unsupported"), "build branches", "bad",
-		"use .Decode().Branches",
-		"use .Copy().Branches",
+		"decode before encoding: s.Decode().Encode(",
+		"route s.To(destination) without .Decode()",
 	)
 }
 
@@ -468,8 +468,8 @@ func TestErrorAcceptanceCopyAfterDecode(t *testing.T) {
 		BuildLive(context.Background())
 	buildErr := requireBuildError(t, err, errcode.Code("operation_shape_mismatch"), "build job", "audio",
 		"copy only consumes packet-domain media",
-		"move .Copy() before decode",
-		"use .Encode(codec...) instead of .Copy()",
+		"leave out .Decode() to copy",
+		"use .Encode(codec...) to turn decoded frames back into packets",
 	)
 	if !detailsContain(buildErr.DetailLines(), "actual_shape=domain=frame") {
 		t.Fatalf("details should carry the frame-domain shape, err = %v", err)
@@ -518,7 +518,7 @@ func TestErrorAcceptanceTransformAfterCopy(t *testing.T) {
 	buildErr := requireBuildError(t, err, errcode.Code("operation_shape_mismatch"), "build stream", "video",
 		"call .Decode() before .Resize(...)",
 	)
-	if !strings.Contains(buildErr.Reason, ".Copy() keeps the stream packet-encoded") {
+	if !strings.Contains(buildErr.Reason, "a stream without .Decode() copies its packets") {
 		t.Fatalf("reason should state the packet-domain rule, err = %v", err)
 	}
 }
@@ -570,8 +570,8 @@ func TestErrorAcceptanceAmbiguousStreamSelectionListsCandidates(t *testing.T) {
 	if !strings.Contains(msg, "input=mic-a") || !strings.Contains(msg, "input=mic-b") {
 		t.Fatalf("err = %v, want candidates listed with their inputs", err)
 	}
-	if !suggestionsContain(buildErr.FixLines(), `.Audio(goav.InputName("mic-a"))`) {
-		t.Fatalf("err = %v, want InputName narrowing suggestion", err)
+	if !suggestionsContain(buildErr.FixLines(), `select from the input named "mic-a" directly: input.Audio()`) {
+		t.Fatalf("err = %v, want per-input selection suggestion", err)
 	}
 	if !suggestionsContain(buildErr.FixLines(), "goav.StreamID(") {
 		t.Fatalf("err = %v, want StreamID narrowing suggestion", err)
@@ -595,7 +595,7 @@ func TestErrorAcceptanceAttachUnknownTapListsDeclaredTaps(t *testing.T) {
 
 	_, err = task.Attach(ctx, task.Tap("nope").As("late").To(goavtest.NewCollector().Sink()))
 	buildErr := requireBuildError(t, err, errcode.Code("runtime_branch_tap_missing"), "attach runtime branch", "nope",
-		`add .Tap(goav.FrameTap("nope"))`,
+		`add .Tap("nope") at the point you want to attach`,
 		"call task.Taps() before attaching",
 	)
 	if !detailsContain(buildErr.DetailLines(), "audio.decoded") {
@@ -613,8 +613,8 @@ func TestErrorAcceptanceTypedTapAtWrongDomain(t *testing.T) {
 		UseRuntime(goavtest.Runtime()).
 		BuildLive(context.Background())
 	buildErr := requireBuildError(t, err, errcode.TapDomainMismatch, "build stream", "audio",
-		"use goav.PacketTap(name) after .Copy() or an encoder",
-		"use goav.FrameTap(name) after decode",
+		"move .Tap(name) before .Decode() or after an encoder to tap packets",
+		"move .Tap(name) after decode",
 	)
 	if !detailsContain(buildErr.DetailLines(), "tap=post-encode") {
 		t.Fatalf("details should name the tap, err = %v", err)
@@ -666,7 +666,7 @@ func TestErrorAcceptanceChainReusedAfterTo(t *testing.T) {
 		UseRuntime(goavtest.Runtime()).
 		BuildLive(context.Background())
 	requireBuildError(t, err, errcode.Code("stream_step_after_destination"), "build stream", "audio",
-		".Branches(",
-		".Audio() or .Video()",
+		"by reusing its Stream value",
+		"input.Audio() or input.Video()",
 	)
 }

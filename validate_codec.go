@@ -182,7 +182,7 @@ func recipeDecodeAdapterError(operation string, stream streamIntent, codecID av.
 		fixes: buildErrorFixes([]string{
 			tagFix,
 			"register a codec adapter that provides a " + string(codecID) + " decoder",
-			"use goav.From(input).Copy().To(output) for packet-preserving receive when decoding is not needed",
+			"use input.To(output) for packet-preserving receive when decoding is not needed",
 		}),
 		cause: cause,
 	}
@@ -551,7 +551,7 @@ func recipeEncodeAdapterCodecError(operation string, stream streamIntent, codecI
 		fixes: buildErrorFixes([]string{
 			"register a " + string(codecID) + " encoder with goav.New(runconfig.WithEncoder(...)) or a codec adapter that provides one",
 			"use .Decode().To(goav.Sink(...)) to receive decoded frames without encoding",
-			"use .Copy().To(output) for packet-preserving output when re-encoding is not needed",
+			"leave out .Decode() for packet-preserving output when re-encoding is not needed: input.Video().To(output)",
 		}),
 		cause: cause,
 	}

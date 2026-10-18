@@ -15,7 +15,7 @@ func TestStreamSelectorOptionsCarryStableMetadata(t *testing.T) {
 		av.MediaAudio,
 		StreamID("eng"),
 		StreamIndex(2),
-		InputName("mic"),
+		selectInputName("mic"),
 		nil,
 	)
 	if config.selector.Type != av.MediaAudio ||
@@ -28,13 +28,13 @@ func TestStreamSelectorOptionsCarryStableMetadata(t *testing.T) {
 }
 
 func TestJobStreamBuilderJoinArmAndCurrentContracts(t *testing.T) {
-	var nilBuilder *Chain
+	var nilBuilder *streamChain
 	if arm := nilBuilder.joinArm(); arm.chainInputOK || arm.chainErr != nil || len(arm.chainOperations) != 0 || arm.join != nil || arm.tap != nil || arm.region != nil {
 		t.Fatalf("nil stream join arm = %+v, want zero", arm)
 	}
 
-	job := &Job{}
-	builder := &Chain{job: job}
+	job := &recipeJob{}
+	builder := &streamChain{job: job}
 	first := builder.current()
 	if first == nil || len(job.streams) != 1 || job.streams[0] != first {
 		t.Fatalf("first current stream = %+v job streams=%d", first, len(job.streams))
@@ -44,8 +44,8 @@ func TestJobStreamBuilderJoinArmAndCurrentContracts(t *testing.T) {
 	}
 
 	existing := &jobStreamBuild{name: "existing"}
-	job = &Job{streams: []*jobStreamBuild{existing}}
-	builder = &Chain{job: job}
+	job = &recipeJob{streams: []*jobStreamBuild{existing}}
+	builder = &streamChain{job: job}
 	created := builder.current()
 	if created == nil || created == existing || len(job.streams) != 1 || job.streams[0] != existing {
 		t.Fatalf("current with existing job stream = created %+v job streams=%+v", created, job.streams)
@@ -58,40 +58,40 @@ func TestFrameDomainSourceRejectsDecodeAndCopy(t *testing.T) {
 	sink := Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))
 	tests := []struct {
 		name string
-		job  *Job
+		job  *recipeJob
 		code errcode.Code
 	}{
 		{
 			name: "direct decode",
-			job: From(source).Audio().
+			job: recipeFrom(source).Audio().
 				Decode().
 				To(sink),
 			code: sourceShapeMismatchCode,
 		},
 		{
 			name: "direct copy",
-			job: From(source).Audio().
+			job: recipeFrom(source).Audio().
 				Copy().
 				To(sink),
 			code: sourceShapeMismatchCode,
 		},
 		{
 			name: "flow decode",
-			job: From(source).Audio().
-				Apply(Flow("decode").Audio().Decode()).
+			job: recipeFrom(source).Audio().
+				Apply(newFlow("decode").Audio().Decode()).
 				To(sink),
 			code: sourceShapeMismatchCode,
 		},
 		{
 			name: "flow copy",
-			job: From(source).Audio().
-				Apply(Flow("copy").Audio().Copy()).
+			job: recipeFrom(source).Audio().
+				Apply(newFlow("copy").Audio().Copy()).
 				To(sink),
 			code: sourceShapeMismatchCode,
 		},
 		{
 			name: "copy through encode helper",
-			job: From(source).Audio().
+			job: recipeFrom(source).Audio().
 				Encode(codec.Copy()).
 				To(sink),
 			code: encodeParameterInvalidCode,
@@ -114,19 +114,19 @@ func TestStreamChainRejectsInvalidPostEncodeAndTapContracts(t *testing.T) {
 	})
 	tests := []struct {
 		name string
-		job  *Job
+		job  *recipeJob
 		code errcode.Code
 	}{
 		{
 			name: "nil stage",
-			job: From(source).Audio().
+			job: recipeFrom(source).Audio().
 				Do(nil).
 				To(sink),
 			code: stageMissingCode,
 		},
 		{
 			name: "shape after encode",
-			job: From(source).Audio().
+			job: recipeFrom(source).Audio().
 				Encode(codec.Opus()).
 				Shape(shape.Frame(av.MediaAudio)).
 				To(sink),
@@ -134,7 +134,7 @@ func TestStreamChainRejectsInvalidPostEncodeAndTapContracts(t *testing.T) {
 		},
 		{
 			name: "stage after encode",
-			job: From(source).Audio().
+			job: recipeFrom(source).Audio().
 				Encode(codec.Opus()).
 				Do(meter).
 				To(sink),
@@ -142,16 +142,16 @@ func TestStreamChainRejectsInvalidPostEncodeAndTapContracts(t *testing.T) {
 		},
 		{
 			name: "empty tap",
-			job: From(source).Audio().
-				Tap(FrameTap("")).
+			job: recipeFrom(source).Audio().
+				Tap(frameTapRef("")).
 				To(sink),
 			code: errcode.TapInvalid,
 		},
 		{
 			name: "frame tap after encode",
-			job: From(source).Audio().
+			job: recipeFrom(source).Audio().
 				Encode(codec.Opus()).
-				Tap(FrameTap("encoded.frames")).
+				Tap(frameTapRef("encoded.frames")).
 				To(sink),
 			code: errcode.TapDomainMismatch,
 		},

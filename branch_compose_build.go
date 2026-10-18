@@ -276,7 +276,7 @@ func branchComposePlanEmptyError(kind string) error {
 	suggestions := []string{
 		"add at least one branch with a selector and encoder",
 		"add at least one target destination",
-		"use goav.From(input).Video().Decode().Branches(goav.Branch(name).Encode(codec.VP9(...)).To(output)) for the recipe API",
+		"use in.Video().Decode().Encode(codec.VP9(...)).To(output) for the recipe API",
 	}
 	reason := "branch composition has no " + kind
 	return &BuildError{
@@ -637,7 +637,7 @@ func branchChainStepError(name string, reason string) error {
 		fixes: buildErrorFixes([]string{
 			"use one operation per branch call",
 			"use resize on video branches and resample on audio branches",
-			"use goav.Branch(name).Do(stage).Resize(...).Encode(codec.VP9(...)).To(output) for recipe branch operations",
+			"use v.Do(stage).Resize(...).Encode(codec.VP9(...)).To(output) for recipe stream operations",
 		}),
 		cause: errUnsupportedBuild,
 	}

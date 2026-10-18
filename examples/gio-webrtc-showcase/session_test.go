@@ -158,9 +158,7 @@ func (t *controlCaptureTask) Explain(context.Context) (plan.Report, error) {
 	return plan.Report{}, nil
 }
 
-func (t *controlCaptureTask) LegacyAttach(context.Context, ...goav.BranchSpec) (goav.Attachment, error) {
-	return nil, nil
-}
+func (t *controlCaptureTask) Route(pipeline.Route) goav.Stream { return goav.Stream{} }
 
 func (t *controlCaptureTask) Attach(context.Context, ...goav.Output) (goav.Attachment, error) {
 	return nil, nil

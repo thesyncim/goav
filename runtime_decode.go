@@ -416,14 +416,14 @@ func decodeOpenError(node string, stream av.Stream, cause error) error {
 	reason := id + " decoder rejected the stream: " + cause.Error()
 	fixes := []string{
 		"check the stream's codec parameters (extradata, profile, geometry) reach the decoder",
-		"use .Copy() to keep packets without decoding",
+		"leave out .Decode() to keep packets without decoding",
 	}
 	if errors.Is(cause, codec.ErrUnavailable) {
 		code = decodeAdapterUnavailableCode
 		reason = id + " decoder is unavailable in this build: " + cause.Error()
 		fixes = []string{
 			"run on a platform the " + id + " backend supports, or register another " + id + " decoder with runconfig.WithDecoder(...)",
-			"use .Copy() to keep packets without decoding",
+			"leave out .Decode() to keep packets without decoding",
 		}
 	}
 	return &BuildError{

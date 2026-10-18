@@ -59,7 +59,7 @@ func TestRealOpusWebMRoundTripThroughGrammar(t *testing.T) {
 		})
 
 	var webm bytes.Buffer
-	encodeTask, err := From(pcm).
+	encodeTask, err := recipeFrom(pcm).
 		Audio().
 		Encode(codec.Opus(codec.Bitrate(96_000))).
 		To(Write("roundtrip.webm", &webm)).
@@ -108,7 +108,7 @@ func TestRealOpusWebMRoundTripThroughGrammar(t *testing.T) {
 		}
 		return nil
 	}))
-	decodeTask, err := From(FileInput("roundtrip.webm", bytes.NewReader(data))).
+	decodeTask, err := recipeFrom(FileInput("roundtrip.webm", bytes.NewReader(data))).
 		Audio().
 		Decode().
 		To(sink).

@@ -8,9 +8,9 @@
       "operation": "build job",
       "reason": "empty job",
       "fixes": [
-        "start the recipe with goav.From(input)",
-        "use goav.From(goav.FileInput(\"in.webm\", reader)) for reader-backed input",
-        "use goav.From(goav.Source(name, shape, fn)) for application-pushed input"
+        "start the recipe from an input: input.Video() or input.Audio()",
+        "use goav.FileInput(\"in.webm\", reader) for reader-backed input",
+        "use goav.Source(name, shape, fn) for application-pushed input"
       ]
     }
   },
@@ -23,7 +23,7 @@
       "operation": "build job",
       "reason": "no input is configured",
       "fixes": [
-        "start the recipe from an input: goav.From(goav.FileInput(\"in.webm\", reader))"
+        "start the recipe from an input: goav.FileInput(\"in.webm\", reader).Video()"
       ]
     }
   },
@@ -82,8 +82,8 @@
       ],
       "fixes": [
         "copy only consumes packet-domain media",
-        "move .Copy() before decode or start from goav.PacketTap(name)",
-        "use .Encode(codec...) instead of .Copy() to turn decoded frames back into packets",
+        "leave out .Decode() to copy, or attach from a packet tap (before .Decode())",
+        "use .Encode(codec...) to turn decoded frames back into packets",
         "use a sink destination when the branch should remain decoded"
       ]
     }
@@ -96,7 +96,7 @@
       "code": "operation_shape_mismatch",
       "operation": "build stream",
       "node": "video",
-      "reason": "resize needs decoded frames, but .Copy() keeps the stream packet-encoded",
+      "reason": "resize needs decoded frames, but a stream without .Decode() copies its packets",
       "details": [
         {
           "value": "step: resize"
@@ -113,7 +113,7 @@
       "fixes": [
         "call .Decode() before .Resize(...), .Resample(...), or .Do(...) — transforms run on decoded frames",
         "remove the processing step to keep a pure packet copy",
-        "use .Branches(...) when one input needs both a packet copy and a processed branch"
+        "reuse the Stream to fork a packet copy and a processed stream: s.To(copy), s.Decode()...To(out)"
       ]
     }
   },
@@ -125,7 +125,7 @@
       "code": "tap_domain_mismatch",
       "operation": "build stream",
       "node": "video",
-      "reason": "typed tap domain does not match this chain point",
+      "reason": "tap domain does not match this stream point",
       "details": [
         {
           "key": "tap",
@@ -141,8 +141,8 @@
         }
       ],
       "fixes": [
-        "use goav.FrameTap(name) after decode, resize, resample, or custom frame stages",
-        "use goav.PacketTap(name) after .Copy() or an encoder"
+        "move .Tap(name) after decode, resize, resample, or custom frame stages to tap frames",
+        "move .Tap(name) before .Decode() or after an encoder to tap packets"
       ]
     }
   },
@@ -155,9 +155,9 @@
       "operation": "build job",
       "reason": "no runtime is configured",
       "fixes": [
-        "pass a non-nil runtime with .UseRuntime(runtime)",
+        "run the Outputs on a runtime: rt.Run(ctx, outputs...)",
         "build a bare runtime with goav.New(...)",
-        "import github.com/thesyncim/goav/bundle and build with bundle.MustNew(...), bundle.Build(ctx, job), or bundle.Run(ctx, job)"
+        "import github.com/thesyncim/goav/bundle and build with bundle.MustNew(...), bundle.Build(ctx, outputs...), or bundle.Run(ctx, outputs...)"
       ]
     }
   }

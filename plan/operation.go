@@ -51,6 +51,7 @@ type StreamSelect struct {
 	Type     av.MediaType `json:"type,omitempty"`
 	Codec    av.CodecID   `json:"codec,omitempty"`
 	Name     string       `json:"name,omitempty"`
-	// Input narrows the selection to the named job input (goav.InputName).
+	// Input narrows the selection to the named recipe input: the input a
+	// Stream was selected from (mic.Audio()).
 	Input string `json:"input,omitempty"`
 }

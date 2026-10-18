@@ -2517,14 +2517,13 @@ func TestStructuredErrorPreservesUnderlyingShapes(t *testing.T) {
 		t.Fatalf("structuredError(existing) = %+v, want same pointer", got)
 	}
 
-	_, buildErr := goav.From(goav.Source("bytes",
+	_, buildErr := goavtest.Runtime().Describe(goav.Source("bytes",
 		shape.New(shape.Domain(shape.MediaDomain("bytes")), shape.Media(av.MediaAudio)),
 		func(context.Context, source.Push) error { return nil },
-	)).
+	).
 		Audio().
 		Decode().
-		To(goavtest.NewCollector().Sink()).
-		Describe()
+		To(goavtest.NewCollector().Sink()))
 	wrapped := structuredError("fallback", buildErr)
 	if wrapped.Code != string(errcode.Code("source_shape_unsupported")) ||
 		wrapped.Operation != "build input" ||
@@ -2713,9 +2712,7 @@ func (t *fakeTask) Explain(context.Context) (plan.Report, error) {
 	return plan.Report{Graph: t.spec}, nil
 }
 
-func (t *fakeTask) LegacyAttach(context.Context, ...goav.BranchSpec) (goav.Attachment, error) {
-	return nil, errors.New("not implemented")
-}
+func (t *fakeTask) Route(pipeline.Route) goav.Stream { return goav.Stream{} }
 
 func (t *fakeTask) Attach(context.Context, ...goav.Output) (goav.Attachment, error) {
 	return nil, errors.New("not implemented")

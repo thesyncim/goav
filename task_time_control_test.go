@@ -353,17 +353,17 @@ func TestTaskSegmentExportCommitsDestination(t *testing.T) {
 	// and its transactional destination commits on the natural EOS — the
 	// trim-to-file shape, with a recording branch attached at runtime.
 	source := &segmentPacketSource{stream: "audio"}
-	task, err := From(Input(&segmentProvider{source: source})).
+	task, err := recipeFrom(Input(&segmentProvider{source: source})).
 		Audio().Copy().
-		Tap(PacketTap("audio.packets")).
+		Tap(packetTapRef("audio.packets")).
 		To(lifecycleTestSink("base")).BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer task.Close()
 
-	if _, err := task.LegacyAttach(ctx, Branch("rec").
-		From(PacketTap("audio.packets")).
+	if _, err := legacyAttach(task, ctx, newBranch("rec").
+		From(packetTapRef("audio.packets")).
 		Copy().
 		To(lifecycleTestSink("rec"))); err != nil {
 		t.Fatal(err)

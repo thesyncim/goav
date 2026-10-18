@@ -20,7 +20,7 @@ func TestJobAllOutputsContracts(t *testing.T) {
 	stream := Write("stream.webm", io.Discard).spec
 	branch := Write("branch.webm", io.Discard).spec
 
-	job := &Job{
+	job := &recipeJob{
 		outputs: []destinationSpec{root},
 		streams: []*jobStreamBuild{{
 			outputs:     []destinationSpec{stream},

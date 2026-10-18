@@ -113,7 +113,7 @@ func TestPlayoutSinkDeliversWhenDue(t *testing.T) {
 	clock := &recordingTestClock{}
 	log := newPlayoutArrivalLog(clock)
 
-	err := From(playoutFrameSource("cam", av.MediaVideo, nil, 0, 20*time.Millisecond, 40*time.Millisecond)).
+	err := recipeFrom(playoutFrameSource("cam", av.MediaVideo, nil, 0, 20*time.Millisecond, 40*time.Millisecond)).
 		UseRuntime(mustNew(WithClock(clock))).
 		Video().Playout(flow.Playout("preview")).To(log.sink("preview")).
 		Run(ctx)
@@ -139,7 +139,7 @@ func TestPlayoutSinkFreezesOnPause(t *testing.T) {
 	log := newPlayoutArrivalLog(clock)
 	release := make(chan struct{})
 
-	live, err := From(playoutFrameSource("cam", av.MediaVideo, release, 0, 20*time.Millisecond, 40*time.Millisecond)).
+	live, err := recipeFrom(playoutFrameSource("cam", av.MediaVideo, release, 0, 20*time.Millisecond, 40*time.Millisecond)).
 		UseRuntime(mustNew(WithClock(clock))).
 		Video().Playout(flow.Playout("preview")).To(log.sink("preview")).
 		BuildLive(ctx)
@@ -194,7 +194,7 @@ func TestPlayoutAlignsBranchesSharingPolicy(t *testing.T) {
 	audio := make(chan struct{})
 	policy := flow.Playout("room")
 
-	live, err := From(
+	live, err := recipeFrom(
 		playoutFrameSource("cam", av.MediaVideo, video, 0, 40*time.Millisecond, 80*time.Millisecond),
 		playoutFrameSource("mic", av.MediaAudio, audio, 20*time.Millisecond, 60*time.Millisecond),
 	).
@@ -237,7 +237,7 @@ func TestPlayoutRateChangeRetimesDelivery(t *testing.T) {
 	log := newPlayoutArrivalLog(clock)
 	release := make(chan struct{})
 
-	live, err := From(playoutFrameSource("cam", av.MediaVideo, release, 0, 100*time.Millisecond, 200*time.Millisecond)).
+	live, err := recipeFrom(playoutFrameSource("cam", av.MediaVideo, release, 0, 100*time.Millisecond, 200*time.Millisecond)).
 		UseRuntime(mustNew(WithClock(clock))).
 		Video().Playout(flow.Playout("preview")).To(log.sink("preview")).
 		BuildLive(ctx)
@@ -427,7 +427,7 @@ func TestExplainReportsPathLatency(t *testing.T) {
 		Drop:       pipeline.DropBlock,
 		MaxLatency: 50 * time.Millisecond,
 	}))
-	report, err := From(playoutFrameSource("cam", av.MediaVideo, nil, 0)).
+	report, err := recipeFrom(playoutFrameSource("cam", av.MediaVideo, nil, 0)).
 		UseRuntime(rt).
 		Video().
 		Sync(flow.Sync("room", flow.SyncTolerance(40*time.Millisecond))).
@@ -462,7 +462,7 @@ func TestExplainReportsPathLatency(t *testing.T) {
 		}
 	}
 
-	ungated, err := From(playoutFrameSource("cam", av.MediaVideo, nil, 0)).
+	ungated, err := recipeFrom(playoutFrameSource("cam", av.MediaVideo, nil, 0)).
 		UseRuntime(rt).
 		Video().
 		To(Sink(SinkFunc("preview", func(context.Context, Message) error { return nil }))).

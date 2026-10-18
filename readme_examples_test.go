@@ -53,7 +53,7 @@ func TestReadmeGoExamplesCompile(t *testing.T) {
 				"\treturn err\n" +
 				"}\n\n" +
 				"var _ = codec.Opus // keep the harness imports referenced even if a block narrows\n" +
-				"var _ = goav.From\n" +
+				"var _ = goav.Mix\n" +
 				"var _ = bundle.Run\n"
 		}
 

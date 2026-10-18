@@ -35,7 +35,7 @@ type recipeCompileSnapshot struct {
 	joinTree *joinTreeSnapshot
 }
 
-func newJobRecipeSnapshot(job *Job) recipeCompileSnapshot {
+func newJobRecipeSnapshot(job *recipeJob) recipeCompileSnapshot {
 	switch {
 	case job == nil:
 		return recipeCompileSnapshot{recipe: recipeir.Recipe{Kind: recipeir.KindJob}}
@@ -48,7 +48,7 @@ func newJobRecipeSnapshot(job *Job) recipeCompileSnapshot {
 	}
 }
 
-func newLinearJobRecipeSnapshot(job *Job) recipeCompileSnapshot {
+func newLinearJobRecipeSnapshot(job *recipeJob) recipeCompileSnapshot {
 	streamOutputs, _ := job.streamOutputsAndNames()
 	outputs := jobAllOutputs(job.outputs, streamOutputs)
 	outputNames := job.allOutputNames()
@@ -74,7 +74,7 @@ func newLinearJobRecipeSnapshot(job *Job) recipeCompileSnapshot {
 	}
 }
 
-func newJoinRecipeSnapshot(job *Job) recipeCompileSnapshot {
+func newJoinRecipeSnapshot(job *recipeJob) recipeCompileSnapshot {
 	spec := cloneJoinSpec(job.join)
 	recipeErr := job.recipeErr()
 	if len(job.streams) != 0 && recipeErr == nil {
@@ -101,7 +101,7 @@ func newJoinRecipeSnapshot(job *Job) recipeCompileSnapshot {
 	}
 }
 
-func newBranchJobRecipeSnapshot(job *Job) recipeCompileSnapshot {
+func newBranchJobRecipeSnapshot(job *recipeJob) recipeCompileSnapshot {
 	input := InputSpec{}
 	recipeErr := job.recipeErr()
 	if len(job.inputs) == 1 {
@@ -364,11 +364,11 @@ func recipeIRStreamRulesFromRoot(rules []streamRule) []recipeir.StreamRule {
 // capture boundary: they read the mutable BranchSpec here, where translation to
 // recipe IR is the whole job, so the planner never has to. The result is
 // captured onto recipeir.StreamRule.RequiresRuntime.
-func branchSpecsRequireRuntime(branches []BranchSpec) bool {
+func branchSpecsRequireRuntime(branches []branchRecipe) bool {
 	return slices.ContainsFunc(branches, branchSpecRequiresRuntime)
 }
 
-func branchSpecRequiresRuntime(branch BranchSpec) bool {
+func branchSpecRequiresRuntime(branch branchRecipe) bool {
 	return operationSpecsRequireRuntime(branch.operations) || destinationRefsRequireRuntime(branch.destinations)
 }
 
@@ -597,7 +597,7 @@ func cloneJoinSpec(spec *joinSpec) *joinSpec {
 		return nil
 	}
 	out := *spec
-	out.arms = append([]JoinArm(nil), spec.arms...)
+	out.arms = append([]recipeArm(nil), spec.arms...)
 	out.dests = append([]Destination(nil), spec.dests...)
 	if spec.encode != nil {
 		encode := cloneCodecSpec(*spec.encode)
@@ -609,7 +609,7 @@ func cloneJoinSpec(spec *joinSpec) *joinSpec {
 	return &out
 }
 
-func joinIntentFromTree(job *Job, tree *joinTreeSnapshot) intent {
+func joinIntentFromTree(job *recipeJob, tree *joinTreeSnapshot) intent {
 	if tree == nil {
 		return intent{}
 	}
@@ -782,7 +782,7 @@ func recipeIRHasFrameTap(recipe recipeir.Recipe) bool {
 // branch, then each plain chain as a stream with one branch, named apart
 // from the branches. A plain chain's destinations join the branch
 // destinations by name, so a handle both write is one mux group.
-func (j *Job) branchJobStreams() ([]streamIntent, []namedDestinationSpec, error) {
+func (j *recipeJob) branchJobStreams() ([]streamIntent, []namedDestinationSpec, error) {
 	destinations := cloneNamedDestinationSpecs(j.branchDestinations)
 	taken := make(map[string]bool, len(j.branchStreams)+len(j.streams))
 	streams := make([]streamIntent, 0, len(j.branchStreams)+len(j.streams))
@@ -823,7 +823,7 @@ func streamBesideJoinError(node string, kind joinKind) error {
 		Node:      node,
 		Reason:    fmt.Sprintf("a %s job builds only its joined stream; this chain would be dropped", kind),
 		fixes: buildErrorFixes([]string{
-			"build the chain as its own job: goav.From(input).Video()...To(destination)",
+			"run the stream in its own rt.Run call: input.Video()...To(destination)",
 			"make the stream an arm of the join when it should be joined",
 		}),
 		cause: errUnsupportedBuild,

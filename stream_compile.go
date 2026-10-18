@@ -27,7 +27,7 @@ func (p streamPath) root() *streamRoot { return p.nodes[0].root }
 // that fans out becomes a trunk and planned branches split where the paths
 // part; outputs that route the same Stream merge into one multi-destination
 // chain; a join's arms become its arm chains.
-func compileOutputs(outs []Output) (*Job, error) {
+func compileOutputs(outs []Output) (*recipeJob, error) {
 	if len(outs) == 0 {
 		return nil, streamInvalidError("", "a recipe needs at least one Output: route a stream with stream.To(destination)")
 	}
@@ -105,7 +105,7 @@ func streamNodes(s Stream) ([]*streamNode, error) {
 // compileRemuxOutputs copies every stream of each input.To Output. Several
 // inputs copy together when they share their destinations; one input may
 // route to several Outputs.
-func compileRemuxOutputs(remux []Output, paths []streamPath) (*Job, error) {
+func compileRemuxOutputs(remux []Output, paths []streamPath) (*recipeJob, error) {
 	if len(paths) != 0 {
 		return nil, streamInvalidError("", "input.To(...) copies every stream; route single streams with input.Video().To(...) instead")
 	}
@@ -129,7 +129,7 @@ func compileRemuxOutputs(remux []Output, paths []streamPath) (*Job, error) {
 			}
 		}
 	}
-	return From(inputs...).Copy().To(dests...), nil
+	return recipeFrom(inputs...).Copy().To(dests...), nil
 }
 
 func sameDestinations(a, b []Destination) bool {
@@ -181,15 +181,15 @@ func commonPrefix(groups []leafGroup) int {
 	return n
 }
 
-func compileInputOutputs(paths []streamPath) (*Job, error) {
+func compileInputOutputs(paths []streamPath) (*recipeJob, error) {
 	var inputs []InputSpec
 	seen := map[*inputIdentity]bool{}
 	var roots []*streamRoot
 	byRoot := map[*streamRoot][]streamPath{}
 	for _, path := range paths {
 		root := path.root()
-		if root.tap != "" || root.track != nil {
-			return nil, streamInvalidError(root.tap, "a stream from task.Tap or task.Track attaches to that running task: task.Attach(ctx, outputs...)")
+		if root.tap != "" || root.track != nil || root.route != nil {
+			return nil, streamInvalidError(root.tap, "a stream from task.Tap, task.Track, or task.Route attaches to that running task: task.Attach(ctx, outputs...)")
 		}
 		if root.input.id == nil {
 			return nil, streamInvalidError("", "the stream's input was not constructed: use goav.FileInput, goav.Input, or goav.Source")
@@ -203,7 +203,7 @@ func compileInputOutputs(paths []streamPath) (*Job, error) {
 		}
 		byRoot[root] = append(byRoot[root], path)
 	}
-	job := From(inputs...)
+	job := recipeFrom(inputs...)
 	names := newStreamBranchNames()
 	for _, root := range roots {
 		if root.rule != nil {
@@ -212,9 +212,9 @@ func compileInputOutputs(paths []streamPath) (*Job, error) {
 		}
 		options := append([]StreamOption(nil), root.options...)
 		if len(inputs) > 1 {
-			options = append(options, InputName(root.input.inputName(root.input.graphSourceNodeName())))
+			options = append(options, selectInputName(root.input.inputName(root.input.graphSourceNodeName())))
 		}
-		var chain *Chain
+		var chain *streamChain
 		switch root.media {
 		case "video":
 			chain = job.Video(options...)
@@ -252,10 +252,10 @@ func compileInputOutputs(paths []streamPath) (*Job, error) {
 			chain.Copy()
 		}
 		trunkFrames := applyChainOps(chain, trunk, frames)
-		branches := make([]BranchSpec, 0, len(leaves))
+		branches := make([]branchRecipe, 0, len(leaves))
 		for _, leaf := range leaves {
 			suffix := leaf.nodes[shared:]
-			branch := Branch(names.next(leaf))
+			branch := newBranch(names.next(leaf))
 			if !allCopy && !trunkFrames && !pathHasOp(suffix, streamOpDecode) {
 				branch.Copy()
 			}
@@ -283,7 +283,7 @@ func pathHasOp(nodes []*streamNode, kind streamOpKind) bool {
 
 // applyChainOps records the operations on a chain and reports whether the
 // stream carries frames after them.
-func applyChainOps(chain *Chain, nodes []*streamNode, frames bool) bool {
+func applyChainOps(chain *streamChain, nodes []*streamNode, frames bool) bool {
 	for _, n := range nodes {
 		op := n.op
 		switch op.kind {
@@ -318,7 +318,7 @@ func applyChainOps(chain *Chain, nodes []*streamNode, frames bool) bool {
 	return frames
 }
 
-func applyBranchOps(branch *BranchBuilder, nodes []*streamNode, frames bool) {
+func applyBranchOps(branch *branchBuilder, nodes []*streamNode, frames bool) {
 	for _, n := range nodes {
 		op := n.op
 		switch op.kind {
@@ -356,9 +356,9 @@ func applyBranchOps(branch *BranchBuilder, nodes []*streamNode, frames bool) {
 
 func streamTapRef(name string, frames bool) tapRef {
 	if frames {
-		return FrameTap(name)
+		return frameTapRef(name)
 	}
-	return PacketTap(name)
+	return packetTapRef(name)
 }
 
 // streamBranchNames names the forks of a recipe: a fork is named by its last
@@ -418,7 +418,7 @@ func streamNameDuplicateError(name string) error {
 	}
 }
 
-func compileJoinOutputs(root *streamRoot, paths []streamPath) (*Job, error) {
+func compileJoinOutputs(root *streamRoot, paths []streamPath) (*recipeJob, error) {
 	join, err := legacyJoinFromRoot(root)
 	if err != nil {
 		return nil, err
@@ -429,22 +429,35 @@ func compileJoinOutputs(root *streamRoot, paths []streamPath) (*Job, error) {
 		shared = commonPrefix(leaves)
 	}
 	trunk := leaves[0].nodes[1:shared]
-	// A Select forwards its active arm to a sink as-is; anything else it feeds
-	// runs in a planned branch.
-	selectIntoMux := root.join.kind == joinSelect && len(leaves) == 1 && !allSinks(leaves[0].dests)
-	if len(leaves) == 1 && joinStreamTakes(trunk) && !selectIntoMux {
-		applyJoinOps(join, trunk)
+	// The join's own builder takes the leading operations it supports; the
+	// rest, and every fork, runs in planned branches. A Select reaches a muxed
+	// destination only through a branch.
+	taken := joinTakes(root.join.kind, trunk)
+	if root.join.kind == joinSelect && !allSinks(leaves[0].dests) {
+		taken = 0
+	}
+	// A join's own encoder ends its stream: it is taken only when nothing
+	// follows it; otherwise the encoder runs in the planned branch.
+	if len(leaves) > 1 || taken < len(trunk) {
+		for i := range trunk[:taken] {
+			if trunk[i].op.kind == streamOpEncode {
+				taken = i
+				break
+			}
+		}
+	}
+	frames := applyJoinOps(join, trunk[:taken], joinOutputFrames(root.join))
+	if len(leaves) == 1 && taken == len(trunk) && (root.join.kind != joinSelect || allSinks(leaves[0].dests)) {
 		return join.To(leaves[0].dests...), nil
 	}
-	if !joinStreamTakes(trunk) || selectIntoMux {
-		shared, trunk = 1, nil
-	}
-	applyJoinOps(join, trunk)
 	names := newStreamBranchNames()
-	branches := make([]BranchSpec, 0, len(leaves))
+	branches := make([]branchRecipe, 0, len(leaves))
 	for _, leaf := range leaves {
-		branch := Branch(names.next(leaf))
-		applyBranchOps(branch, leaf.nodes[shared:], true)
+		if pathHasOp(leaf.nodes[1+taken:], streamOpTap) {
+			return nil, streamInvalidError("", "a join's output takes a tap only right after the join, before its other operations: goav.Mix(a, b).Tap(name).Encode(...)")
+		}
+		branch := newBranch(names.next(leaf))
+		applyBranchOps(branch, leaf.nodes[1+taken:], frames)
 		branches = append(branches, branch.To(leaf.dests...))
 	}
 	if names.err != nil {
@@ -453,32 +466,52 @@ func compileJoinOutputs(root *streamRoot, paths []streamPath) (*Job, error) {
 	return join.Branches(branches...), nil
 }
 
-// legacyJoin is a join builder: its output takes taps and routes to
+// joinBuilder is a join builder: its output takes taps and routes to
 // destinations or planned branches.
-type legacyJoin interface {
-	JoinArm
-	Branches(...BranchSpec) *Job
-	To(...Destination) *Job
+type joinBuilder interface {
+	recipeArm
+	Branches(...branchRecipe) *recipeJob
+	To(...Destination) *recipeJob
 }
 
-// joinStreamTakes reports whether a join's own builder accepts ops directly;
-// any other operation runs inside a planned branch.
-func joinStreamTakes(nodes []*streamNode) bool {
-	for _, n := range nodes {
+// joinTakes counts the leading operations a join's own builder applies: Mix
+// and Composite take shape policies, frame taps, and their encoder; Select
+// and custom joins take taps. A name, and anything after what the builder
+// takes, runs in a planned branch.
+func joinTakes(kind joinKind, nodes []*streamNode) int {
+	encoded := false
+	for i, n := range nodes {
 		switch n.op.kind {
-		case streamOpAuto, streamOpRequire, streamOpPrefer, streamOpEncode, streamOpTap, streamOpName:
+		case streamOpTap:
+			if encoded {
+				return i
+			}
+		case streamOpAuto, streamOpRequire, streamOpPrefer:
+			if encoded || (kind != joinMix && kind != joinComposite) {
+				return i
+			}
+		case streamOpEncode:
+			if encoded || (kind != joinMix && kind != joinComposite) {
+				return i
+			}
+			encoded = true
 		default:
-			return false
+			return i
 		}
 	}
-	return true
+	return len(nodes)
 }
 
-func applyJoinOps(join legacyJoin, nodes []*streamNode) {
+// applyJoinOps applies operations joinTakes accepted and reports whether the
+// join's output still carries frames after them.
+func applyJoinOps(join joinBuilder, nodes []*streamNode, frames bool) bool {
 	for _, n := range nodes {
 		op := n.op
+		if op.kind == streamOpEncode {
+			frames = false
+		}
 		switch j := join.(type) {
-		case *MixStream:
+		case *mixStream:
 			switch op.kind {
 			case streamOpAuto:
 				j.Auto(op.policies...)
@@ -489,9 +522,9 @@ func applyJoinOps(join legacyJoin, nodes []*streamNode) {
 			case streamOpEncode:
 				j.Encode(op.encode)
 			case streamOpTap:
-				j.Tap(FrameTap(op.name))
+				j.Tap(streamTapRef(op.name, frames))
 			}
-		case *CompositeStream:
+		case *compositeStream:
 			switch op.kind {
 			case streamOpAuto:
 				j.Auto(op.policies...)
@@ -502,25 +535,60 @@ func applyJoinOps(join legacyJoin, nodes []*streamNode) {
 			case streamOpEncode:
 				j.Encode(op.encode)
 			case streamOpTap:
-				j.Tap(FrameTap(op.name))
+				j.Tap(streamTapRef(op.name, frames))
 			}
-		case *SelectStream:
+		case *legacySelectStream:
 			if op.kind == streamOpTap {
-				j.Tap(FrameTap(op.name))
+				j.Tap(streamTapRef(op.name, frames))
 			}
-		case *JoinStream:
+		case *joinStreamBuilder:
 			if op.kind == streamOpTap {
-				j.Tap(FrameTap(op.name))
+				j.Tap(streamTapRef(op.name, frames))
 			}
 		}
 	}
+	return frames
+}
+
+// joinOutputFrames reports whether a join emits frames: Mix and Composite do;
+// Select and custom joins forward their first input's domain.
+func joinOutputFrames(join *streamJoin) bool {
+	if join.kind == joinMix || join.kind == joinComposite || len(join.layers) == 0 {
+		return true
+	}
+	stream, _, _, _ := join.layers[0].compositeLayer()
+	return streamEndsFrames(stream)
+}
+
+// streamEndsFrames reports whether a stream carries frames at its end.
+func streamEndsFrames(s Stream) bool {
+	nodes, err := streamNodes(s)
+	if err != nil {
+		return true
+	}
+	root := nodes[0].root
+	frames := true
+	if root.join != nil {
+		frames = joinOutputFrames(root.join)
+	} else if root.tap == "" && root.track == nil && root.route == nil {
+		frames = inputStartsFrameDomain(root.input)
+	}
+	for _, n := range nodes[1:] {
+		switch n.op.kind {
+		case streamOpDecode:
+			frames = true
+		case streamOpEncode:
+			frames = false
+		}
+	}
+	return frames
 }
 
 // legacyJoinFromRoot builds a join and its arms: each arm Stream is a chain
 // from its input (or a nested join), placed at its Layer position.
-func legacyJoinFromRoot(root *streamRoot) (legacyJoin, error) {
+func legacyJoinFromRoot(root *streamRoot) (joinBuilder, error) {
 	spec := root.join
-	arms := make([]JoinArm, 0, len(spec.layers))
+	arms := make([]recipeArm, 0, len(spec.layers))
 	for _, layer := range spec.layers {
 		stream, x, y, placed := layer.compositeLayer()
 		arm, err := legacyJoinArm(stream, placed, x, y)
@@ -531,13 +599,13 @@ func legacyJoinFromRoot(root *streamRoot) (legacyJoin, error) {
 	}
 	switch spec.kind {
 	case joinMix:
-		mix := LegacyMix(arms...)
+		mix := legacyMix(arms...)
 		if spec.sync {
 			mix.SyncByPTS()
 		}
 		return mix, nil
 	case joinComposite:
-		composite := LegacyComposite(arms...)
+		composite := legacyComposite(arms...)
 		if spec.sync {
 			composite.SyncByPTS()
 		}
@@ -546,16 +614,16 @@ func legacyJoinFromRoot(root *streamRoot) (legacyJoin, error) {
 		if spec.sync {
 			return nil, streamSyncByPTSError()
 		}
-		return LegacySelect(arms...), nil
+		return legacySelect(arms...), nil
 	default:
 		if spec.sync {
 			return nil, streamSyncByPTSError()
 		}
-		return LegacyJoin(spec.name, spec.stage, arms...), nil
+		return legacyJoin(spec.name, spec.stage, arms...), nil
 	}
 }
 
-func legacyJoinArm(stream Stream, placed bool, x, y int) (JoinArm, error) {
+func legacyJoinArm(stream Stream, placed bool, x, y int) (recipeArm, error) {
 	nodes, err := streamNodes(stream)
 	if err != nil {
 		return nil, err
@@ -567,19 +635,28 @@ func legacyJoinArm(stream Stream, placed bool, x, y int) (JoinArm, error) {
 		if err != nil {
 			return nil, err
 		}
-		applyJoinOps(join, ops)
+		var armOps []*streamNode
+		for _, n := range ops {
+			if n.op.kind != streamOpName {
+				armOps = append(armOps, n)
+			}
+		}
+		if joinTakes(root.join.kind, armOps) < len(armOps) {
+			return nil, streamInvalidError("", "a join used as another join's input takes only .Tap(...), and for Mix and Composite .Auto, .Require, .Prefer, and .Encode; apply other operations to its inputs or after the outer join")
+		}
+		applyJoinOps(join, armOps, joinOutputFrames(root.join))
 		if placed {
 			switch j := join.(type) {
-			case *CompositeStream:
+			case *compositeStream:
 				j.Region(x, y)
-			case *SelectStream:
+			case *legacySelectStream:
 				j.Region(x, y)
 			}
 		}
 		return join, nil
 	}
-	var chain *Chain
-	job := From(root.input)
+	var chain *streamChain
+	job := recipeFrom(root.input)
 	switch root.media {
 	case "video":
 		chain = job.Video(root.options...)
@@ -684,12 +761,12 @@ func workLeaf(nodes []*streamNode) *streamNode {
 // streamBranchSpecs lowers the Outputs of a stream that starts at a branch
 // anchor (a discovered stream, a live tap) into one branch per distinct work
 // leaf. A packet branch that never decodes copies.
-func streamBranchSpecs(paths []streamPath, frames bool, names *streamBranchNames, from branchSource) []BranchSpec {
+func streamBranchSpecs(paths []streamPath, frames bool, names *streamBranchNames, from branchSource) []branchRecipe {
 	leaves := groupLeaves(paths)
-	branches := make([]BranchSpec, 0, len(leaves))
+	branches := make([]branchRecipe, 0, len(leaves))
 	for _, leaf := range leaves {
 		ops := leaf.nodes[1:]
-		branch := Branch(names.next(leaf))
+		branch := newBranch(names.next(leaf))
 		if from != nil {
 			branch.From(from)
 		}
@@ -712,19 +789,31 @@ func (t *task) Track(input InputSpec, stream av.Stream) Stream {
 	return Stream{node: &streamNode{root: &streamRoot{input: input, track: &stream}}}
 }
 
+// Route is the stream a graph route carries.
+func (t *task) Route(route pipeline.Route) Stream {
+	return Stream{node: &streamNode{root: &streamRoot{route: &route}}}
+}
+
+// routeAnchor anchors an attached branch on a graph route.
+type routeAnchor pipeline.Route
+
+func (r routeAnchor) Name() string { return r.From }
+
+func (r routeAnchor) Route() pipeline.Route { return pipeline.Route(r) }
+
 // Attach adds Outputs fed from the task's taps and tracks to the running task.
 func (t *task) Attach(ctx context.Context, outs ...Output) (Attachment, error) {
 	branches, err := t.outputBranchSpecs(outs)
 	if err != nil {
 		return nil, err
 	}
-	return t.LegacyAttach(ctx, branches...)
+	return t.attachBranches(ctx, branches...)
 }
 
 // outputBranchSpecs lowers Outputs rooted at the task's taps and tracks onto
 // runtime branches. A tap an earlier Output of the group declares is known by
 // the domain at its position.
-func (t *task) outputBranchSpecs(outs []Output) ([]BranchSpec, error) {
+func (t *task) outputBranchSpecs(outs []Output) ([]branchRecipe, error) {
 	if len(outs) == 0 {
 		return nil, streamInvalidError("", "attach Outputs built from task.Tap(name) or task.Track(input, stream), each routed with .To(destination)")
 	}
@@ -733,7 +822,7 @@ func (t *task) outputBranchSpecs(outs []Output) ([]BranchSpec, error) {
 		taps[tap.Name] = tap.Domain == shape.DomainFrame
 	}
 	names := newStreamBranchNames()
-	var branches []BranchSpec
+	var branches []branchRecipe
 	for i := range outs {
 		if outs[i].remux != nil || len(outs[i].dests) == 0 {
 			return nil, streamInvalidError("", "attach Outputs built from task.Tap(name) or task.Track(input, stream), each routed with .To(destination)")
@@ -753,8 +842,12 @@ func (t *task) outputBranchSpecs(outs []Output) ([]BranchSpec, error) {
 		case root.track != nil:
 			frames = inputStartsFrameDomain(root.input)
 			from = root.input.Track(*root.track)
+		case root.route != nil:
+			// A graph route's domain is the graph's: no packet copy is implied.
+			frames = true
+			from = routeAnchor(*root.route)
 		default:
-			return nil, streamInvalidError("", "a running task attaches streams from its taps and tracks: task.Tap(name), task.Track(input, stream)")
+			return nil, streamInvalidError("", "a running task attaches streams from its taps, tracks, and graph routes: task.Tap(name), task.Track(input, stream), task.Route(route)")
 		}
 		recordStreamTaps(nodes[1:], frames, taps)
 		branches = append(branches, streamBranchSpecs(path, frames, names, from)...)

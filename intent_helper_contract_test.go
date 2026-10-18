@@ -23,9 +23,9 @@ func TestOperationSpecsContainChainStepContracts(t *testing.T) {
 		{name: "shape facts are a chain step", operation: operationSpecForShape(shape.Frame(av.MediaVideo)), wantIsStep: true},
 		{name: "custom stage is a chain step", operation: operationSpec{Kind: plan.OpStage}, wantIsStep: true},
 		{name: "transform is a chain step", operation: operationSpecForTransform(resizeSpec(320, 180)), wantIsStep: true},
-		{name: "packet tap is not a frame chain step", operation: operationSpecForTap(PacketTap("packets"), av.MediaAudio, plan.OpEncode)},
-		{name: "frame tap is a chain step", operation: operationSpecForTap(FrameTap("frames"), av.MediaAudio, plan.OpDecode), wantIsStep: true},
-		{name: "typed frame tap is a chain step", operation: operationSpecForTap(FrameTap("decoded"), av.MediaAudio, plan.OpDecode), wantIsStep: true},
+		{name: "packet tap is not a frame chain step", operation: operationSpecForTap(packetTapRef("packets"), av.MediaAudio, plan.OpEncode)},
+		{name: "frame tap is a chain step", operation: operationSpecForTap(frameTapRef("frames"), av.MediaAudio, plan.OpDecode), wantIsStep: true},
+		{name: "typed frame tap is a chain step", operation: operationSpecForTap(frameTapRef("decoded"), av.MediaAudio, plan.OpDecode), wantIsStep: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -117,8 +117,8 @@ func TestJobStreamNameAndChainStepContracts(t *testing.T) {
 	stream := &jobStreamBuild{
 		operations: []operationSpec{
 			operationSpecForTransform(resizeSpec(160, 90)),
-			operationSpecForTap(FrameTap("preview.frames"), av.MediaVideo, plan.OpTransform),
-			operationSpecForTap(PacketTap("preview.packets"), av.MediaVideo, plan.OpEncode),
+			operationSpecForTap(frameTapRef("preview.frames"), av.MediaVideo, plan.OpTransform),
+			operationSpecForTap(packetTapRef("preview.packets"), av.MediaVideo, plan.OpEncode),
 		},
 	}
 	steps := jobStreamChainSteps(stream)
@@ -143,22 +143,22 @@ func TestPlannedBranchSharedOperationSpecsContracts(t *testing.T) {
 		operations: []operationSpec{
 			operationSpecForDecode(codec.Opus(), "opus"),
 			operationSpecForTransform(resampleSpec(16_000, codec.Mono)),
-			operationSpecForTap(FrameTap("voice.frames"), av.MediaAudio, plan.OpTransform),
+			operationSpecForTap(frameTapRef("voice.frames"), av.MediaAudio, plan.OpTransform),
 			operationSpecForEncode(codec.Opus(codec.Bitrate(64_000))),
 		},
 	}
 
-	if got := plannedBranchSharedOperationSpecs(nil, BranchSpec{}, false); got != nil {
+	if got := plannedBranchSharedOperationSpecs(nil, branchRecipe{}, false); got != nil {
 		t.Fatalf("nil stream shared ops = %#v, want nil", got)
 	}
-	if got := plannedBranchSharedOperationSpecs(parent, BranchSpec{}, true); got != nil {
+	if got := plannedBranchSharedOperationSpecs(parent, branchRecipe{}, true); got != nil {
 		t.Fatalf("parent packet shared ops = %#v, want nil", got)
 	}
-	if got := plannedBranchSharedOperationSpecs(&jobStreamBuild{}, BranchSpec{}, false); got != nil {
+	if got := plannedBranchSharedOperationSpecs(&jobStreamBuild{}, branchRecipe{}, false); got != nil {
 		t.Fatalf("empty stream shared ops = %#v, want nil", got)
 	}
 
-	all := plannedBranchSharedOperationSpecs(parent, BranchSpec{}, false)
+	all := plannedBranchSharedOperationSpecs(parent, branchRecipe{}, false)
 	if got, want := operationKindsForFlowTest(all), []plan.OperationKind{
 		plan.OpDecode,
 		plan.OpTransform,
@@ -172,7 +172,7 @@ func TestPlannedBranchSharedOperationSpecsContracts(t *testing.T) {
 		t.Fatal("shared operation clone mutated parent operation")
 	}
 
-	throughTap := plannedBranchSharedOperationSpecs(parent, BranchSpec{
+	throughTap := plannedBranchSharedOperationSpecs(parent, branchRecipe{
 		source: branchSourceBinding{tap: "voice.frames"},
 	}, false)
 	if got, want := operationKindsForFlowTest(throughTap), []plan.OperationKind{
@@ -184,7 +184,7 @@ func TestPlannedBranchSharedOperationSpecsContracts(t *testing.T) {
 	}
 	assertSharedOperations(t, throughTap)
 
-	decoded := plannedBranchSharedOperationSpecs(parent, BranchSpec{
+	decoded := plannedBranchSharedOperationSpecs(parent, branchRecipe{
 		source: branchSourceBinding{tap: defaultDecodedTapName(av.MediaAudio)},
 	}, false)
 	if got, want := operationKindsForFlowTest(decoded), []plan.OperationKind{plan.OpDecode}; !reflect.DeepEqual(got, want) {
@@ -192,7 +192,7 @@ func TestPlannedBranchSharedOperationSpecsContracts(t *testing.T) {
 	}
 	assertSharedOperations(t, decoded)
 
-	if got := plannedBranchSharedOperationSpecs(parent, BranchSpec{
+	if got := plannedBranchSharedOperationSpecs(parent, branchRecipe{
 		source: branchSourceBinding{tap: "missing"},
 	}, false); got != nil {
 		t.Fatalf("missing tap shared ops = %#v, want nil", got)

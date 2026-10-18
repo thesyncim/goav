@@ -9,15 +9,15 @@ import (
 )
 
 func TestSelectJoinArmContracts(t *testing.T) {
-	var nilSelect *SelectStream
+	var nilSelect *legacySelectStream
 	if arm := nilSelect.joinArm(); arm.chainInputOK || arm.chainErr != nil || len(arm.chainOperations) != 0 || arm.join != nil || arm.tap != nil || arm.region != nil {
 		t.Fatalf("nil selector join arm = %+v, want zero", arm)
 	}
 
-	selector := LegacySelect(
-		From(selectTestOneShotSource("a", 1)).Audio(),
-		From(selectTestOneShotSource("b", 2)).Audio(),
-	).Tap(FrameTap("selected.frames")).Region(3, 4)
+	selector := legacySelect(
+		recipeFrom(selectTestOneShotSource("a", 1)).Audio(),
+		recipeFrom(selectTestOneShotSource("b", 2)).Audio(),
+	).Tap(frameTapRef("selected.frames")).Region(3, 4)
 	arm := selector.joinArm()
 	if arm.join == nil || arm.join.kind != joinSelect || len(arm.join.arms) != 2 || len(arm.join.taps) != 1 {
 		t.Fatalf("selector join arm = %+v, want select join with arms and tap", arm)

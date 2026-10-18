@@ -351,7 +351,7 @@ func planCopyBranches(state *recipeCompileState, inputs []inputIntent, copyReque
 		copyMessage := "no decode, transform, or encode requested; packets are copied to outputs"
 		if copyRequested {
 			copyDetail = "explicit packet copy"
-			copyMessage = ".Copy requested; packets are copied to outputs"
+			copyMessage = "packet copy requested; packets are copied to outputs"
 		}
 		decision := planDecision{
 			Code:    diagnosticPacketCopy,

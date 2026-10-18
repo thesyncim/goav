@@ -59,16 +59,16 @@ func (s *customJoinBuilderStage) Close() error { return nil }
 
 func TestCustomJoinBuilderTapBranchesAndJoinArmContracts(t *testing.T) {
 	ctx := context.Background()
-	var nilJoin *JoinStream
+	var nilJoin *joinStreamBuilder
 	if arm := nilJoin.joinArm(); arm.join != nil {
 		t.Fatalf("nil custom join arm = %+v, want zero", arm)
 	}
 
 	stage := newCustomJoinBuilderStage("funnel", 2)
-	joined := LegacyJoin("funnel", stage,
-		From(mixTestAudioSource("a", 100)).Audio(),
-		From(mixTestAudioSource("b", 50)).Audio(),
-	).Tap(FrameTap("funnel.frames"))
+	joined := legacyJoin("funnel", stage,
+		recipeFrom(mixTestAudioSource("a", 100)).Audio(),
+		recipeFrom(mixTestAudioSource("b", 50)).Audio(),
+	).Tap(frameTapRef("funnel.frames"))
 
 	spec := joined.spec()
 	if spec.kind != "funnel" ||
@@ -96,7 +96,7 @@ func TestCustomJoinBuilderTapBranchesAndJoinArmContracts(t *testing.T) {
 		return nil
 	}))
 	task, err := joined.Branches(
-		Branch("monitor").From(FrameTap("funnel.frames")).To(collect),
+		newBranch("monitor").From(frameTapRef("funnel.frames")).To(collect),
 	).BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -128,11 +128,11 @@ func TestCustomJoinBuilderTapBranchesAndJoinArmContracts(t *testing.T) {
 }
 
 func TestCustomJoinBranchesRejectInvalidBuilder(t *testing.T) {
-	_, err := LegacyJoin("bad-name", newCustomJoinBuilderStage("bad-name", 2),
-		From(mixTestAudioSource("a", 100)).Audio(),
-		From(mixTestAudioSource("b", 50)).Audio(),
+	_, err := legacyJoin("bad-name", newCustomJoinBuilderStage("bad-name", 2),
+		recipeFrom(mixTestAudioSource("a", 100)).Audio(),
+		recipeFrom(mixTestAudioSource("b", 50)).Audio(),
 	).Branches(
-		Branch("monitor").To(branchBuilderTestSink("monitor")),
+		newBranch("monitor").To(branchBuilderTestSink("monitor")),
 	).BuildLive(context.Background())
 	assertBuildErrorCode(t, err, errcode.JoinNameInvalid)
 

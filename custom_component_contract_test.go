@@ -292,7 +292,7 @@ func TestInputStreamAnchorRequiresStreamID(t *testing.T) {
 		shape.Frame(av.MediaAudio, shape.Audio(48_000, codec.Mono, av.SampleFormatS16)),
 		func(context.Context, SourcePush) error { return nil },
 	)
-	spec := Branch("bad").
+	spec := newBranch("bad").
 		From(input.Track(av.Stream{Type: av.MediaAudio, Codec: av.CodecParameters{Type: av.MediaAudio}})).
 		To(Sink(SinkFunc("discard", func(context.Context, Message) error { return nil })))
 

@@ -1,6 +1,8 @@
 package goav
 
 import (
+	"context"
+
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/filter"
 	"github.com/thesyncim/goav/plan"
@@ -10,7 +12,7 @@ import (
 // JobPlanForTest exposes the unexported intent normalization to the external
 // API tests. The production surface does not export Job.Plan: the intent it
 // returns is the compiler's input, not a caller-facing report (Explain is).
-func JobPlanForTest(j *Job) intent {
+func JobPlanForTest(j *recipeJob) intent {
 	return j.plan()
 }
 
@@ -95,3 +97,38 @@ func TransformOperationContractForTest(transform transformSpec) shape.Contract {
 func expertGraph(rt *Runtime) *graphBuilder {
 	return newExpertGraph(rt)
 }
+
+// legacyAttach attaches builder branches to a built task, for the tests that
+// pin the branch attach path the value grammar lowers onto.
+func legacyAttach(live LiveTask, ctx context.Context, specs ...branchRecipe) (Attachment, error) {
+	return live.(*task).attachBranches(ctx, specs...)
+}
+
+// The builder grammar the value grammar compiles onto, under its former
+// exported names, for the external tests that pin its refusals and plans.
+type (
+	Job             = recipeJob
+	Chain           = streamChain
+	BranchBuilder   = branchBuilder
+	BranchSpec      = branchRecipe
+	FlowBuilder     = flowBuilder
+	JoinArm         = recipeArm
+	MixStream       = mixStream
+	CompositeStream = compositeStream
+	SelectStream    = legacySelectStream
+	JoinStream      = joinStreamBuilder
+)
+
+var (
+	From            = recipeFrom
+	Branch          = newBranch
+	Flow            = newFlow
+	LegacyMix       = legacyMix
+	LegacyComposite = legacyComposite
+	LegacySelect    = legacySelect
+	LegacyJoin      = legacyJoin
+	FrameTap        = frameTapRef
+	PacketTap       = packetTapRef
+	InputName       = selectInputName
+	LegacyAttach    = legacyAttach
+)

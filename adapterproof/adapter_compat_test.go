@@ -669,14 +669,12 @@ func TestExternalAdaptersComposeThroughPublicGrammar(t *testing.T) {
 	dest := &toyDestination{}
 	provider := newToyProvider([]int16{100, 200}, []int16{300, 400})
 
-	err := goav.From(goav.Input(provider)).
+	err := toyRuntime().Run(ctx, goav.Input(provider).
 		Audio().
 		Decode().
 		Resample(16000, 1).
 		Encode(codec.Codec(toyCodecID, av.MediaAudio)).
-		To(goav.Custom("out.toyfmt", dest)).
-		UseRuntime(toyRuntime()).
-		Run(ctx)
+		To(goav.Custom("out.toyfmt", dest)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -718,12 +716,10 @@ func TestExternalAdaptersComposeThroughPublicGrammar(t *testing.T) {
 		mu.Unlock()
 		return nil
 	})
-	err = goav.From(goav.FileInput("roundtrip.toyfmt", bytes.NewReader(file))).
+	err = toyRuntime().Run(ctx, goav.FileInput("roundtrip.toyfmt", bytes.NewReader(file)).
 		Audio().
 		Decode().
-		To(goav.Sink(collect)).
-		UseRuntime(toyRuntime()).
-		Run(ctx)
+		To(goav.Sink(collect)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -747,14 +743,12 @@ func TestExternalDestinationAbortsOnFailure(t *testing.T) {
 		return errors.New("adapterproof: induced failure")
 	})
 
-	err := goav.From(goav.Input(provider)).
+	err := toyRuntime().Run(ctx, goav.Input(provider).
 		Audio().
 		Decode().
 		Do(failing).
 		Encode(codec.Codec(toyCodecID, av.MediaAudio)).
-		To(goav.Custom("out.toyfmt", dest)).
-		UseRuntime(toyRuntime()).
-		Run(ctx)
+		To(goav.Custom("out.toyfmt", dest)))
 	if err == nil {
 		t.Fatal("run should fail through the failing stage")
 	}
@@ -811,13 +805,11 @@ func TestExternalShapeDeltaContributorAppearsInExplain(t *testing.T) {
 		sourcepkg.Func(func(_ context.Context, push sourcepkg.Push) error {
 			return push.EOS()
 		}))
-	report, err := goav.From(input).
+	report, err := runtime.Explain(ctx, input.
 		Audio().
 		Auto(shape.AllowCustom(toyLevelDelta)).
 		Require(shape.Frame(av.MediaAudio, shape.Audio(8000, 1, av.SampleFormatF32))).
-		To(goav.Sink(component.SinkFunc("frames", func(context.Context, component.Message) error { return nil }))).
-		UseRuntime(runtime).
-		Explain(ctx)
+		To(goav.Sink(component.SinkFunc("frames", func(context.Context, component.Message) error { return nil }))))
 	if err != nil {
 		t.Fatalf("Explain(): %v", err)
 	}

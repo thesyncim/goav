@@ -396,8 +396,8 @@ func TestRuntimeWithFilterAdapter(t *testing.T) {
 
 func TestTaskExplainReportsLiveGraphAndTaps(t *testing.T) {
 	ctx := context.Background()
-	job := From(mixTestAudioSource("frames", 100)).Audio().
-		Tap(FrameTap("frames.decoded")).
+	job := recipeFrom(mixTestAudioSource("frames", 100)).Audio().
+		Tap(frameTapRef("frames.decoded")).
 		To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil })))
 	planned, err := job.Explain(ctx)
 	if err != nil {

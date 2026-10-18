@@ -77,9 +77,9 @@ func TestSelectForwardsDefaultArmToSink(t *testing.T) {
 		return nil
 	}))
 
-	task, err := LegacySelect(
-		From(selectTestOneShotSource("a", 100)).Audio(),
-		From(selectTestOneShotSource("b", 200)).Audio(),
+	task, err := legacySelect(
+		recipeFrom(selectTestOneShotSource("a", 100)).Audio(),
+		recipeFrom(selectTestOneShotSource("b", 200)).Audio(),
 	).To(sink).Build(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -118,9 +118,9 @@ func TestSelectFansOutToMultipleSinks(t *testing.T) {
 		return nil
 	}))
 
-	task, err := LegacySelect(
-		From(selectTestOneShotSource("a", 100)).Audio(),
-		From(selectTestOneShotSource("b", 200)).Audio(),
+	task, err := legacySelect(
+		recipeFrom(selectTestOneShotSource("a", 100)).Audio(),
+		recipeFrom(selectTestOneShotSource("b", 200)).Audio(),
 	).To(firstSink, secondSink).Build(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -138,7 +138,7 @@ func TestSelectFansOutToMultipleSinks(t *testing.T) {
 }
 
 func TestSelectRequiresTwoArms(t *testing.T) {
-	_, err := LegacySelect(From(selectTestOneShotSource("a", 1)).Audio()).
+	_, err := legacySelect(recipeFrom(selectTestOneShotSource("a", 1)).Audio()).
 		To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))).
 		Build(context.Background())
 	var buildErr *BuildError
@@ -148,9 +148,9 @@ func TestSelectRequiresTwoArms(t *testing.T) {
 }
 
 func TestSelectRequiresDistinctArmIDs(t *testing.T) {
-	_, err := LegacySelect(
-		From(selectTestOneShotSource("dup", 1)).Audio(),
-		From(selectTestOneShotSource("dup", 2)).Audio(),
+	_, err := legacySelect(
+		recipeFrom(selectTestOneShotSource("dup", 1)).Audio(),
+		recipeFrom(selectTestOneShotSource("dup", 2)).Audio(),
 	).To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))).
 		Build(context.Background())
 	var buildErr *BuildError
@@ -160,9 +160,9 @@ func TestSelectRequiresDistinctArmIDs(t *testing.T) {
 }
 
 func TestSelectRequiresSinkDestination(t *testing.T) {
-	_, err := LegacySelect(
-		From(selectTestOneShotSource("a", 1)).Audio(),
-		From(selectTestOneShotSource("b", 2)).Audio(),
+	_, err := legacySelect(
+		recipeFrom(selectTestOneShotSource("a", 1)).Audio(),
+		recipeFrom(selectTestOneShotSource("b", 2)).Audio(),
 	).To(Write("selected.ogg", io.Discard)).
 		Build(context.Background())
 	var buildErr *BuildError
@@ -170,8 +170,8 @@ func TestSelectRequiresSinkDestination(t *testing.T) {
 		t.Fatalf("err = %v, want select_destination with matching BuildError code", err)
 	}
 	if !strings.Contains(err.Error(), "goav.Sink") ||
-		!strings.Contains(err.Error(), ".Branches") {
-		t.Fatalf("err = %v, want sink-or-branches guidance", err)
+		!strings.Contains(err.Error(), "goav.Select(a, b).Encode(") {
+		t.Fatalf("err = %v, want sink-or-encode guidance", err)
 	}
 }
 

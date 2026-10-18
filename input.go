@@ -17,7 +17,7 @@ import (
 	"github.com/thesyncim/goav/shape"
 )
 
-// InputSpec is one declared job input: a file-like reader, custom source, or
+// InputSpec is one declared recipe input: a file-like reader, custom source, or
 // source provider, plus the optional name and MIME facts the planner uses
 // before opening it. Construct one with FileInput, Source, or
 // Input; configure it with options (Name, MIME, Metadata) and decorate the
@@ -318,7 +318,7 @@ func validateJobInputs(inputs []InputSpec) error {
 			Node:      firstNonEmpty(inputs[i].name, inputs[i].input.Name, inputs[i].input.URI, fmt.Sprintf("input-%d", i)),
 			Reason:    "multiple recipe inputs currently require realtime source providers or custom sources",
 			fixes: buildErrorFixes([]string{
-				"use goav.From(goav.Input(...)).And(goav.Input(...)) for repeated live inputs",
+				"declare each repeated live input with goav.Input(...) or goav.Source(...)",
 				"build an explicit graph when combining multiple file or protocol sources",
 			}),
 			cause: errUnsupportedBuild,

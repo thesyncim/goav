@@ -8,11 +8,11 @@
 // A complete pipeline test is three values and one Run:
 //
 //	out := goavtest.NewCollector()
-//	task, _ := goav.LegacyMix(
-//	    goav.From(goavtest.Audio(48000, 1, []int16{100}, []int16{200})).Audio(),
-//	    goav.From(goavtest.Audio(48000, 1, []int16{50}, []int16{-50})).Audio(),
-//	).To(out.Sink()).UseRuntime(goavtest.Runtime()).Build(ctx)
-//	_ = task.Run(ctx)
+//	mix := goav.Mix(
+//	    goavtest.Audio(48000, 1, []int16{100}, []int16{200}).Audio(),
+//	    goavtest.Audio(48000, 1, []int16{50}, []int16{-50}).Audio(),
+//	)
+//	_ = goavtest.Runtime().Run(ctx, mix.To(out.Sink()))
 //	// out.S16() == [[150] [150]]
 //
 // The sources (Audio, Video, Packets, LiveAudio, NewTestSource with

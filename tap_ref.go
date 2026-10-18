@@ -15,13 +15,13 @@ func (t tapRef) branchSource() branchSourceBinding {
 	return branchSourceBinding{tap: t.name, tapDomain: t.domain}
 }
 
-// FrameTap names a frame-domain attach point.
-func FrameTap(name string) tapRef {
+// frameTapRef names a frame-domain attach point.
+func frameTapRef(name string) tapRef {
 	return tapRef{name: name, domain: shape.DomainFrame}
 }
 
-// PacketTap names a packet-domain attach point.
-func PacketTap(name string) tapRef {
+// packetTapRef names a packet-domain attach point.
+func packetTapRef(name string) tapRef {
 	return tapRef{name: name, domain: shape.DomainPacket}
 }
 
@@ -53,11 +53,11 @@ func validateTapDomain(operation string, node string, tap tapRef, actual shape.M
 		Code:      errcode.TapDomainMismatch,
 		Operation: operation,
 		Node:      firstNonEmpty(node, "tap"),
-		Reason:    "typed tap domain does not match this chain point",
+		Reason:    "tap domain does not match this stream point",
 		fields:    errDetails(errDetail("tap", tap.name), errDetail("wanted", string(tap.domain)), errDetail("actual", string(actual))),
 		fixes: buildErrorFixes([]string{
-			"use goav.FrameTap(name) after decode, resize, resample, or custom frame stages",
-			"use goav.PacketTap(name) after .Copy() or an encoder",
+			"move .Tap(name) after decode, resize, resample, or custom frame stages to tap frames",
+			"move .Tap(name) before .Decode() or after an encoder to tap packets",
 		}),
 		cause: errUnsupportedBuild,
 	}
@@ -70,10 +70,10 @@ func branchSourceInvalidError(node string) error {
 		Code:      branchSourceInvalidCode,
 		Operation: "build branch",
 		Node:      firstNonEmpty(node, "branch"),
-		Reason:    "branch source must be a typed tap or expert graph handle",
+		Reason:    "branch source must be a task tap, track, or expert graph route",
 		fixes: buildErrorFixes([]string{
-			"use .From(goav.FrameTap(name)) or .From(goav.PacketTap(name)) for tap branches",
-			"use .From(graphNode) only for expert graph-handle attachments",
+			"start the Output from task.Tap(name) for tap branches",
+			"use task.Route(node.Out().Route()) only for expert graph-handle attachments",
 		}),
 		cause: errUnsupportedBuild,
 	}

@@ -441,7 +441,7 @@ func TestStreamRecipeReportsMissingDecodeAdapterBeforeOpeningLiveInput(t *testin
 		t.Fatalf("err = %v, want decode_adapter_unavailable wrapping codec.ErrUnavailable", err)
 	}
 	if !strings.Contains(err.Error(), "codec=h264") ||
-		!strings.Contains(err.Error(), "goav.From") ||
+		!strings.Contains(err.Error(), "input.To(output)") ||
 		strings.Contains(err.Error(), "stream") ||
 		strings.Contains(err.Error(), "cannot open input") {
 		t.Fatalf("err = %v, want decode adapter guidance before live input diagnostics", err)

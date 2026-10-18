@@ -47,11 +47,11 @@ func Source(name string, spec shape.Spec, fn sourcepkg.Func, opts ...InputOption
 }
 
 // Track returns a runtime branch anchor for a stream that this input produces
-// or will produce. It keeps applications with explicit dynamic tracks on the
-// main grammar:
+// or will produce; task.Track(input, stream) anchors on it, which keeps
+// applications with explicit dynamic tracks on the main grammar:
 //
 //	track := av.Stream{ID: "host", Type: av.MediaAudio, Codec: ...}
-//	task.Attach(ctx, goav.Branch("track-host").From(input.Track(track)).To(out))
+//	task.Attach(ctx, task.Track(input, track).As("track-host").To(out))
 //
 // The av.Stream supplies the branch's source shape facts, so this is the
 // deterministic sibling of OnStream: use it when the application already owns

@@ -8,7 +8,6 @@ import (
 
 	"github.com/thesyncim/goav/control"
 
-	"github.com/thesyncim/goav"
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/shape"
@@ -484,11 +483,9 @@ func TestTestSourceRecordsSourceControlsThroughRealTask(t *testing.T) {
 	source := NewTestSource("fixture",
 		shape.Packet(av.MediaAudio, av.CodecOpus, shape.Audio(48000, 1, av.SampleFormatS16)),
 	)
-	task, err := goav.From(source.Input()).
-		Audio().Copy().
-		To(NewCollector().Sink()).
-		UseRuntime(Runtime()).
-		BuildLive(ctx)
+	task, err := Runtime().Build(ctx, source.Input().
+		Audio().
+		To(NewCollector().Sink()))
 	if err != nil {
 		t.Fatal(err)
 	}

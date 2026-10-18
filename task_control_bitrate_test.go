@@ -119,7 +119,7 @@ func TestDefaultRealtimeEncodeRecipeSupportsLiveEncoderControls(t *testing.T) {
 
 	encoder := &controlRecordingEncoder{}
 	rt := mustNew(WithEncoder(codec.Descriptor{ID: av.CodecVP8, Type: av.MediaVideo}, &controlRecordingEncoderFactory{encoder: encoder}))
-	built, err := From(controlLiveVideoSource("cam")).
+	built, err := recipeFrom(controlLiveVideoSource("cam")).
 		Video().
 		Encode(codec.VP8(codec.Bitrate(600_000))).
 		To(Sink(SinkFunc("packets", func(context.Context, Message) error { return nil }))).
@@ -165,7 +165,7 @@ func TestOfflineEncodeRecipeKeepsDirectRunnerForEncoderControls(t *testing.T) {
 		WithRealtime(false),
 		WithEncoder(codec.Descriptor{ID: av.CodecVP8, Type: av.MediaVideo}, &controlRecordingEncoderFactory{}),
 	)
-	built, err := From(controlVideoSource("cam", false)).
+	built, err := recipeFrom(controlVideoSource("cam", false)).
 		Video().
 		Encode(codec.VP8(codec.Bitrate(600_000))).
 		To(Sink(SinkFunc("packets", func(context.Context, Message) error { return nil }))).
@@ -321,11 +321,11 @@ func TestSetBitrateTargetsOneRendition(t *testing.T) {
 	sink := func(name string) Destination {
 		return Sink(SinkFunc(name, func(context.Context, Message) error { return nil }))
 	}
-	built, err := From(controlLiveVideoSource("cam")).
+	built, err := recipeFrom(controlLiveVideoSource("cam")).
 		Video().
 		Branches(
-			Branch("hd").Encode(codec.VP8(codec.Bitrate(2_000_000))).To(sink("hd-out")),
-			Branch("sd").Encode(codec.VP8(codec.Bitrate(500_000))).To(sink("sd-out")),
+			newBranch("hd").Encode(codec.VP8(codec.Bitrate(2_000_000))).To(sink("hd-out")),
+			newBranch("sd").Encode(codec.VP8(codec.Bitrate(500_000))).To(sink("sd-out")),
 		).
 		UseRuntime(rt).
 		Build(ctx)

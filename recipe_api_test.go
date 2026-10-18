@@ -572,7 +572,7 @@ func TestZeroJobRejectsPublicConstruction(t *testing.T) {
 		t.Fatalf("err = %v, want job_invalid with matching BuildError code", err)
 	}
 	if !strings.Contains(err.Error(), "empty job") ||
-		!strings.Contains(err.Error(), "goav.From(input)") {
+		!strings.Contains(err.Error(), "input.Video() or input.Audio()") {
 		t.Fatalf("err = %v, want From constructor guidance", err)
 	}
 
@@ -1416,7 +1416,7 @@ func TestExpertGraphNodeNamesDoNotCreateTapAnchors(t *testing.T) {
 	if !errors.As(err, &buildErr) || buildErr.Code != errcode.Code("runtime_branch_tap_missing") {
 		t.Fatalf("err = %v, want runtime_branch_tap_missing", err)
 	}
-	attachment, err := task.LegacyAttach(context.Background(),
+	attachment, err := goav.LegacyAttach(task, context.Background(),
 		goav.Branch("levels").
 			From(decode).
 			To(goav.Sink(component.SinkFunc("levels", func(context.Context, component.Message) error {
@@ -1474,8 +1474,8 @@ func TestTypedTapDomainMismatchIsActionable(t *testing.T) {
 	if !errors.As(err, &buildErr) || buildErr.Code != "tap_domain_mismatch" {
 		t.Fatalf("err = %v, want tap_domain_mismatch with matching BuildError code", err)
 	}
-	if !strings.Contains(err.Error(), "FrameTap") ||
-		!strings.Contains(err.Error(), "PacketTap") {
+	if !strings.Contains(err.Error(), "to tap frames") ||
+		!strings.Contains(err.Error(), "to tap packets") {
 		t.Fatalf("err = %v, want typed tap guidance", err)
 	}
 }
@@ -1497,8 +1497,8 @@ func TestTypedBranchTapDomainMismatchIsActionable(t *testing.T) {
 	if !errors.As(err, &buildErr) || buildErr.Code != "tap_domain_mismatch" {
 		t.Fatalf("err = %v, want tap_domain_mismatch with matching BuildError code", err)
 	}
-	if !strings.Contains(err.Error(), "FrameTap") ||
-		!strings.Contains(err.Error(), "PacketTap") {
+	if !strings.Contains(err.Error(), "to tap frames") ||
+		!strings.Contains(err.Error(), "to tap packets") {
 		t.Fatalf("err = %v, want typed tap guidance", err)
 	}
 }
@@ -2442,8 +2442,8 @@ func TestFlowApplyMediaMismatchIsActionable(t *testing.T) {
 		t.Fatalf("err = %v, want flow_media_mismatch with matching BuildError code", err)
 	}
 	if !strings.Contains(err.Error(), "video flow cannot be applied to audio stream") ||
-		!strings.Contains(err.Error(), "Flow(name).Audio") ||
-		!strings.Contains(err.Error(), "Flow(name).Video") {
+		!strings.Contains(err.Error(), "to input.Audio() streams") ||
+		!strings.Contains(err.Error(), "to input.Video() streams") {
 		t.Fatalf("err = %v, want flow-on-flow media guidance", err)
 	}
 }
@@ -2459,7 +2459,7 @@ func TestFlowMediaMismatchIsActionable(t *testing.T) {
 	if !errors.As(err, &buildErr) || buildErr.Code != "flow_media_mismatch" {
 		t.Fatalf("err = %v, want flow_media_mismatch", err)
 	}
-	if !strings.Contains(err.Error(), "Flow(name).Audio") || !strings.Contains(err.Error(), "Flow(name).Video") {
+	if !strings.Contains(err.Error(), "to input.Audio() streams") || !strings.Contains(err.Error(), "to input.Video() streams") {
 		t.Fatalf("err = %v, want flow guidance", err)
 	}
 }
@@ -2479,8 +2479,8 @@ func TestFlowBranchMediaMismatchIsActionable(t *testing.T) {
 		t.Fatalf("err = %v, want flow_media_mismatch with matching BuildError code", err)
 	}
 	if !strings.Contains(err.Error(), "audio flow cannot be applied to video stream") ||
-		!strings.Contains(err.Error(), "Flow(name).Audio") ||
-		!strings.Contains(err.Error(), "Flow(name).Video") {
+		!strings.Contains(err.Error(), "to input.Audio() streams") ||
+		!strings.Contains(err.Error(), "to input.Video() streams") {
 		t.Fatalf("err = %v, want branch flow media guidance", err)
 	}
 }
@@ -2501,8 +2501,8 @@ func TestBranchRejectsConflictingFlowMedia(t *testing.T) {
 		t.Fatalf("err = %v, want flow_media_mismatch with matching BuildError code", err)
 	}
 	if !strings.Contains(err.Error(), "video flow cannot be applied to audio stream") ||
-		!strings.Contains(err.Error(), "Flow(name).Audio") ||
-		!strings.Contains(err.Error(), "Flow(name).Video") {
+		!strings.Contains(err.Error(), "to input.Audio() streams") ||
+		!strings.Contains(err.Error(), "to input.Video() streams") {
 		t.Fatalf("err = %v, want conflicting flow media guidance", err)
 	}
 }
@@ -2620,7 +2620,7 @@ func TestFlowDecodeRejectsAfterStreamDecode(t *testing.T) {
 		t.Fatalf("err = %v, want flow_decode_domain_mismatch with matching BuildError code", err)
 	}
 	if !strings.Contains(err.Error(), "requires a packet-domain stream point") ||
-		!strings.Contains(err.Error(), "after stream decode") {
+		!strings.Contains(err.Error(), "after the stream's .Decode()") {
 		t.Fatalf("err = %v, want flow decode domain guidance", err)
 	}
 }
@@ -2688,7 +2688,7 @@ func TestFlowCopyRequiresPacketDomain(t *testing.T) {
 				t.Fatalf("err = %v, want flow_copy_domain_mismatch with matching BuildError code", err)
 			}
 			if !strings.Contains(err.Error(), "requires a packet-domain stream point") ||
-				!strings.Contains(err.Error(), ".Copy().Tap") {
+				!strings.Contains(err.Error(), "with .Tap(name)") {
 				t.Fatalf("err = %v, want flow copy domain guidance", err)
 			}
 		})
@@ -3391,7 +3391,7 @@ func TestStreamRecipeRequiresExplicitDomainForPacketStreamSink(t *testing.T) {
 		t.Fatalf("err = %v, want operation_shape_mismatch with matching BuildError code", err)
 	}
 	if !strings.Contains(err.Error(), ".Decode().To(goav.Sink(...))") ||
-		!strings.Contains(err.Error(), ".Copy().To(goav.Sink(...))") {
+		!strings.Contains(err.Error(), "input.Video().To(goav.Sink(...))") {
 		t.Fatalf("err = %v, want explicit sink-domain guidance", err)
 	}
 }
@@ -3430,7 +3430,7 @@ func TestEncodeCopyRequiresCopyVerb(t *testing.T) {
 			if !errors.As(err, &buildErr) || buildErr.Code != "encode_parameter_invalid" {
 				t.Fatalf("err = %v, want encode_parameter_invalid", err)
 			}
-			if !strings.Contains(err.Error(), "replace .Encode(codec.Copy()) with .Copy()") {
+			if !strings.Contains(err.Error(), "drop .Decode() and .Encode(codec.Copy())") {
 				t.Fatalf("err = %v, want .Copy() guidance", err)
 			}
 		})
@@ -3451,8 +3451,8 @@ func TestStreamRecipeRejectsGenericAndStreamOutputs(t *testing.T) {
 		t.Fatalf("err = %v, want output_scope_mixed with matching BuildError code", err)
 	}
 	if !strings.Contains(err.Error(), "stream recipes use stream-local outputs") ||
-		!strings.Contains(err.Error(), ".Copy().To") ||
-		!strings.Contains(err.Error(), ".Branches") {
+		!strings.Contains(err.Error(), "input.To(output...)") ||
+		!strings.Contains(err.Error(), ".As(name)") {
 		t.Fatalf("err = %v, want output scope guidance", err)
 	}
 }
@@ -3488,7 +3488,7 @@ func TestStreamRecipeRejectsSecondStreamSelectionBeforeRouting(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "first stream: audio") ||
 		!strings.Contains(err.Error(), "second stream: video") ||
-		!strings.Contains(err.Error(), ".Branches") {
+		!strings.Contains(err.Error(), "by reusing its value") {
 		t.Fatalf("err = %v, want duplicate stream guidance", err)
 	}
 }
@@ -3624,7 +3624,7 @@ func TestStreamRecipeRejectsMixedSinkAndFile(t *testing.T) {
 		t.Fatalf("err = %v, want output_kind_mixed with matching BuildError code", err)
 	}
 	if !strings.Contains(err.Error(), "cannot mix sinks and muxed outputs") ||
-		!strings.Contains(err.Error(), ".Branches") {
+		!strings.Contains(err.Error(), "fork the decoded Stream") {
 		t.Fatalf("err = %v, want mixed output guidance", err)
 	}
 }
@@ -3911,7 +3911,7 @@ func TestStreamRecipeReportsProbedFileMissingDecoderBeforeOpeningInput(t *testin
 		t.Fatal("demuxer opened before known decoder preflight failed")
 	}
 	if !strings.Contains(err.Error(), "codec=opus") ||
-		!strings.Contains(err.Error(), "goav.From") ||
+		!strings.Contains(err.Error(), "input.To(output)") ||
 		strings.Contains(err.Error(), "cannot open input") ||
 		strings.Contains(err.Error(), "stream_ambiguous") {
 		t.Fatalf("err = %v, want probed decoder guidance before input diagnostics", err)
@@ -4525,8 +4525,8 @@ func TestBranchCompositionRejectsMissingPlannedTap(t *testing.T) {
 	if !errors.As(err, &buildErr) || buildErr.Code != "branch_tap_missing" {
 		t.Fatalf("err = %v, want branch_tap_missing with matching BuildError code", err)
 	}
-	if !strings.Contains(err.Error(), `Tap(goav.FrameTap("video.missing"))`) ||
-		!strings.Contains(err.Error(), "current stream point") {
+	if !strings.Contains(err.Error(), `.Tap("video.missing") on the selected stream`) ||
+		!strings.Contains(err.Error(), "from its current point") {
 		t.Fatalf("err = %v, want planned tap guidance", err)
 	}
 }
@@ -4553,7 +4553,7 @@ func TestBranchCompositionRejectsGraphNodeSource(t *testing.T) {
 		t.Fatalf("err = %v, want branch_source_invalid with matching BuildError code", err)
 	}
 	if !strings.Contains(err.Error(), "graph handles") ||
-		!strings.Contains(err.Error(), "From(goav.FrameTap") {
+		!strings.Contains(err.Error(), "task.Tap(name)") {
 		t.Fatalf("err = %v, want planned branch source guidance", err)
 	}
 }
@@ -4762,7 +4762,7 @@ func TestBranchCompositionRejectsDecodeThenCopy(t *testing.T) {
 		t.Fatalf("err = %v, want branch_decode_copy_invalid with matching BuildError code", err)
 	}
 	if !strings.Contains(err.Error(), "cannot decode packets and then copy") ||
-		!strings.Contains(err.Error(), ".Copy() for packet-preserving branches") {
+		!strings.Contains(err.Error(), "leave out .Decode() to copy the packets") {
 		t.Fatalf("err = %v, want decode/copy guidance", err)
 	}
 }
@@ -4785,7 +4785,7 @@ func TestBranchCompositionRejectsDecodeFromFrameBranchPoint(t *testing.T) {
 		t.Fatalf("err = %v, want branch_decode_domain_mismatch with matching BuildError code", err)
 	}
 	if !strings.Contains(err.Error(), "requires a packet-domain stream point") ||
-		!strings.Contains(err.Error(), "already starts after stream decode") {
+		!strings.Contains(err.Error(), "already starts after the stream's .Decode()") {
 		t.Fatalf("err = %v, want decode domain guidance", err)
 	}
 }
@@ -4908,7 +4908,7 @@ func TestBranchRecipeRejectsDuplicateEncoder(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "first encoder: vp9") ||
 		!strings.Contains(err.Error(), "second encoder: vp8") ||
-		!strings.Contains(err.Error(), "multiple encoded branches") {
+		!strings.Contains(err.Error(), "several encodings") {
 		t.Fatalf("err = %v, want duplicate transcode encoder guidance", err)
 	}
 }
