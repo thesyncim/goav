@@ -640,15 +640,6 @@ func branchChainStepError(name string, reason string) error {
 	}
 }
 
-func branchComposeOperationStageCount(branches []branchComposeRoute) int {
-	count := 0
-	for i := range branches {
-		count += branchComposeRouteStageOperationCount(branches[i].sharedOperations) +
-			branchComposeRouteStageOperationCount(branches[i].privateOperations)
-	}
-	return count
-}
-
 func branchComposeSharedStepName(branch branchComposeBranch) string {
 	return firstNonEmpty(string(branch.Selector.Type), string(branch.Selector.ID), branch.Selector.Name, "stream")
 }

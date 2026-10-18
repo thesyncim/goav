@@ -2,12 +2,9 @@ package goav
 
 import (
 	"errors"
-	"strings"
 	"testing"
 
 	"github.com/thesyncim/goav/errcode"
-	"github.com/thesyncim/goav/pipeline"
-	"github.com/thesyncim/goav/plan"
 )
 
 func TestRecipeResolvedSingleStreamIntentContracts(t *testing.T) {
@@ -57,63 +54,13 @@ func TestMediaPlanPacketCopyStreamGraphConstructionContracts(t *testing.T) {
 	}
 }
 
-func TestGraphPlanDestinationOperationNodeContracts(t *testing.T) {
-	target := graphPlanDestinationOperation{
-		Name: "archive",
-		Kind: plan.OpMux,
-	}
-	err := validateGraphPlanDestinationOperationNode("packet-copy", target)
-	var buildErr *BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != graphPlanInvalidCode ||
-		!strings.Contains(buildErr.Reason, "packet-copy destination operation has no node") {
-		t.Fatalf("validateGraphPlanDestinationOperationNode() error = %v; want graph-plan node error", err)
-	}
-
-	target.Node = "plan-archive"
-	if err := validateGraphPlanDestinationOperationNode("packet-copy", target); err != nil {
-		t.Fatalf("validateGraphPlanDestinationOperationNode() error = %v", err)
-	}
-}
-
-func TestGraphPlanDestinationOperationNamesComponentsFromPlannerNodes(t *testing.T) {
-	sink := &runtimeTestSink{name: "component-sink"}
-	stage := &runtimeTestStage{name: "component-stage"}
-
-	if got := namedSinkForGraphPlanDestination(graphPlanDestinationOperation{}, sink); got != sink {
-		t.Fatalf("unnamed sink wrapper = %T, want original sink", got)
-	}
-	if got := namedStageForGraphPlanDestination(graphPlanDestinationOperation{}, stage); got != stage {
-		t.Fatalf("unnamed stage wrapper = %T, want original stage", got)
-	}
-
-	target := graphPlanDestinationOperation{Node: "planner-node"}
-	if got := namedSinkForGraphPlanDestination(target, sink); got.Name() != "planner-node" {
-		t.Fatalf("named sink Name() = %q, want planner-node", got.Name())
-	}
-	if got := namedStageForGraphPlanDestination(target, stage); got.Name() != "planner-node" {
-		t.Fatalf("named stage Name() = %q, want planner-node", got.Name())
-	}
-}
-
-func TestPipelineNodeRefsEqualContracts(t *testing.T) {
-	if !pipelineNodeRefsEqual(nil, nil) {
-		t.Fatal("pipelineNodeRefsEqual(nil, nil) = false, want true")
-	}
-	if !pipelineNodeRefsEqual([]pipeline.NodeRef{"source", "sink"}, []pipeline.NodeRef{"source", "sink"}) {
-		t.Fatal("pipelineNodeRefsEqual(equal refs) = false, want true")
-	}
-	if pipelineNodeRefsEqual([]pipeline.NodeRef{"source"}, []pipeline.NodeRef{"source", "sink"}) {
-		t.Fatal("pipelineNodeRefsEqual(length mismatch) = true, want false")
-	}
-	if pipelineNodeRefsEqual([]pipeline.NodeRef{"source", "left"}, []pipeline.NodeRef{"source", "right"}) {
-		t.Fatal("pipelineNodeRefsEqual(value mismatch) = true, want false")
-	}
-}
-
-func TestMediaPlanEncodeOutputSpecRequiresEncode(t *testing.T) {
-	_, err := (mediaPlanStreamGraph{stream: streamIntent{Name: "audio"}}).encodeOutputSpec()
+// TestComposeLowererRefusesFramesToOutputsWithoutEncoder pins the fallback
+// refusal for decoded frames routed to an output that is not a sink with no
+// encoder: no compose graph lowers it.
+func TestComposeLowererRefusesFramesToOutputsWithoutEncoder(t *testing.T) {
+	_, err := (composeLowerer{describe: "describe job", unsupported: true}).spec()
 	var buildErr *BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != errcode.RecipeGraphUnsupported {
-		t.Fatalf("encodeOutputSpec() error = %v; want recipe graph unsupported", err)
+		t.Fatalf("spec() error = %v; want recipe graph unsupported", err)
 	}
 }

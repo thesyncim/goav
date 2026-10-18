@@ -515,28 +515,3 @@ func mediaPlanSourceSpecs(spec *pipeline.Spec, nodes map[string]plannedNode, inp
 	}
 	return refs, true, nil
 }
-
-func mediaPlanPacketCopyDestinations(spec *pipeline.Spec, nodes map[string]plannedNode, outputs []destinationAttachment) ([]pipeline.NodeRef, error) {
-	refs := make([]pipeline.NodeRef, 0, len(outputs))
-	for i := range outputs {
-		if outputs[i].details.sink {
-			sink := destinationAttachmentSink(outputs[i])
-			name := firstNonEmpty(outputs[i].details.sinkComponentName, outputs[i].details.label, "sink")
-			ref := pipeline.NodeRef(name)
-			if err := addPlannedNode(nodes, spec, name, pipeline.NodeSink, ref, describedNodeDetail(sink)); err != nil {
-				return nil, err
-			}
-			refs = append(refs, ref)
-			continue
-		}
-		output := destinationAttachmentOutput(outputs[i])
-		name := muxNodeName(output, i)
-		ref := pipeline.NodeRef(name)
-		detail := outputNodeDetailWithFormat(output, destinationAttachmentGraphFormat(outputs[i]))
-		if err := addPlannedNode(nodes, spec, name, pipeline.NodeStage, ref, detail); err != nil {
-			return nil, err
-		}
-		refs = append(refs, ref)
-	}
-	return refs, nil
-}

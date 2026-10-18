@@ -1163,7 +1163,7 @@ func TestResolvedJobOutputFormatsEnterMediaPlanBuild(t *testing.T) {
 	if err != nil {
 		t.Fatalf("compileJobRecipeForBuild() error = %v", err)
 	}
-	requireGraphPlanLowerer[mediaPlanStreamGraph](t, resolved)
+	requireGraphPlanLowerer[composeLowerer](t, resolved)
 	if len(resolved.outputAttachments) != 1 {
 		t.Fatalf("resolved output attachments = %d, want 1", len(resolved.outputAttachments))
 	}
@@ -3099,7 +3099,7 @@ func TestCompileJobRecipeCarriesIntentAndGraphPlanBuild(t *testing.T) {
 	if resolved.specOrigin != graphSpecOriginGraphPlan {
 		t.Fatalf("resolved spec origin = %q, want %q", resolved.specOrigin, graphSpecOriginGraphPlan)
 	}
-	requireGraphPlanLowerer[mediaPlanStreamGraph](t, resolved)
+	requireGraphPlanLowerer[composeLowerer](t, resolved)
 	if resolved.intent.Name != "from" {
 		t.Fatalf("intent name = %q, want from", resolved.intent.Name)
 	}
@@ -3235,78 +3235,6 @@ func graphPlanOperationTargetPresent(operations []workOperation, target string) 
 	return false
 }
 
-func graphPlanOperationsWithoutDestinations(operations []workOperation) []workOperation {
-	out := make([]workOperation, 0, len(operations))
-	for i := range operations {
-		if graphPlanOperationDestinationsRequired(operations[i].Kind) {
-			continue
-		}
-		out = append(out, operations[i])
-	}
-	return out
-}
-
-func graphPlanOperationsWithoutKind(operations []workOperation, kind plan.OperationKind) []workOperation {
-	out := make([]workOperation, 0, len(operations))
-	for i := range operations {
-		if operations[i].Kind == kind {
-			continue
-		}
-		out = append(out, operations[i])
-	}
-	return out
-}
-
-func graphPlanOperationsWithoutBranch(operations []workOperation, branch string) []workOperation {
-	out := make([]workOperation, 0, len(operations))
-	for i := range operations {
-		if operations[i].Branch == branch {
-			continue
-		}
-		out = append(out, operations[i])
-	}
-	return out
-}
-
-func graphPlanOperationsWithoutBranchTarget(operations []workOperation, branch string, target string) []workOperation {
-	id := workDestinationID(target)
-	out := make([]workOperation, 0, len(operations))
-	for i := range operations {
-		operation := operations[i]
-		if operation.Branch != branch || !graphPlanOperationDestinationsRequired(operation.Kind) {
-			out = append(out, operation)
-			continue
-		}
-		destinations := make([]string, 0, len(operation.Destinations))
-		for _, next := range operation.Destinations {
-			if next != id {
-				destinations = append(destinations, next)
-			}
-		}
-		if len(destinations) == 0 {
-			continue
-		}
-		operation.Destinations = destinations
-		out = append(out, operation)
-	}
-	return out
-}
-
-func graphPlanOperationsWithBranchTargetNode(operations []workOperation, branch string, target string, node pipeline.NodeRef) []workOperation {
-	out := cloneWorkOperations(operations)
-	for i := range out {
-		operation := out[i]
-		if operation.Branch != branch || !graphPlanOperationDestinationsRequired(operation.Kind) {
-			continue
-		}
-		if !stringInSlice(workDestinationID(target), operation.Destinations) {
-			continue
-		}
-		out[i].Node = node
-	}
-	return out
-}
-
 func TestGraphPlanSpecPassPlansFileCopy(t *testing.T) {
 	job := From(
 		FileInput("input.ivf", strings.NewReader("")),
@@ -3395,7 +3323,7 @@ func TestCompileBranchCompositionRecipeCarriesIntentAndPlan(t *testing.T) {
 	if len(resolved.plan.Branches) != 1 || resolved.plan.Branches[0].Name != "360p" {
 		t.Fatalf("resolved plan branches = %+v, want 360p branch", resolved.plan.Branches)
 	}
-	requireGraphPlanLowerer[mediaPlanBranchComposeGraph](t, resolved)
+	requireGraphPlanLowerer[composeLowerer](t, resolved)
 	if !resolved.specReady {
 		t.Fatal("compileJobRecipe() did not emit a planned graph spec")
 	}
@@ -3437,7 +3365,7 @@ func TestCompileLiveFlowBranchesRecipeUsesMediaPlanBranchComposer(t *testing.T) 
 	if len(resolved.plan.Branches) != 2 {
 		t.Fatalf("resolved plan branches = %+v, want two live flow branches", resolved.plan.Branches)
 	}
-	requireGraphPlanLowerer[mediaPlanBranchComposeGraph](t, resolved)
+	requireGraphPlanLowerer[composeLowerer](t, resolved)
 	spec, err := resolved.Describe()
 	if err != nil {
 		t.Fatalf("resolved.Describe() error = %v", err)
@@ -3472,7 +3400,7 @@ func TestRecipeResolvedBuildUsesMediaPlanBranchComposer(t *testing.T) {
 	if err != nil {
 		t.Fatalf("compileJobRecipeForBuildContext() error = %v", err)
 	}
-	requireGraphPlanLowerer[mediaPlanBranchComposeGraph](t, resolved)
+	requireGraphPlanLowerer[composeLowerer](t, resolved)
 	planned, err := resolved.Describe()
 	if err != nil {
 		t.Fatalf("resolved.Describe() error = %v", err)
@@ -3519,86 +3447,6 @@ func TestBranchComposeGraphPlanOperationsUseSharedNodeRefs(t *testing.T) {
 	}
 }
 
-func TestBranchComposeLowererRequiresBranchOperationsBeforeSources(t *testing.T) {
-	web := destinationHandle(fileDestination("web.ivf", io.Discard))
-	mobile := destinationHandle(fileDestination("mobile.ivf", io.Discard))
-	job := From(FileInput("input.ivf", strings.NewReader(""))).
-		Video().
-		Decode().
-		Branches(
-			Branch("720p").Resize(1280, 720).Encode(codec.VP9(codec.Bitrate(2_000_000))).To(web),
-			Branch("360p").Resize(640, 360).Encode(codec.VP8(codec.Bitrate(600_000))).To(mobile),
-		)
-
-	resolved, err := compileJobRecipe(job)
-	if err != nil {
-		t.Fatalf("compileJobRecipe() error = %v", err)
-	}
-	resolved.graphPlan.work.Operations = graphPlanOperationsWithoutBranch(resolved.graphPlan.work.Operations, "360p")
-	task, err := resolved.Build(context.Background())
-	if err == nil {
-		task.Close()
-		t.Fatal("resolved.Build() error = nil, want graph_plan_invalid")
-	}
-	var buildErr *BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != graphPlanInvalidCode ||
-		!strings.Contains(err.Error(), "branch composition graph plan has no operations for branch") {
-		t.Fatalf("err = %v, want missing branch-operation graph-plan error", err)
-	}
-}
-
-func TestBranchComposeLowererRequiresDecodeOperationBeforeSources(t *testing.T) {
-	web := destinationHandle(fileDestination("web.ivf", io.Discard))
-	job := From(FileInput("input.ivf", strings.NewReader(""))).
-		Video().
-		Decode().
-		Branches(
-			Branch("720p").Resize(1280, 720).Encode(codec.VP9(codec.Bitrate(2_000_000))).To(web),
-		)
-
-	resolved, err := compileJobRecipe(job)
-	if err != nil {
-		t.Fatalf("compileJobRecipe() error = %v", err)
-	}
-	resolved.graphPlan.work.Operations = graphPlanOperationsWithoutKind(resolved.graphPlan.work.Operations, plan.OpDecode)
-	task, err := resolved.Build(context.Background())
-	if err == nil {
-		task.Close()
-		t.Fatal("resolved.Build() error = nil, want graph_plan_invalid")
-	}
-	var buildErr *BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != graphPlanInvalidCode ||
-		!strings.Contains(err.Error(), "branch composition graph plan has no decode operation for branch") {
-		t.Fatalf("err = %v, want missing decode-operation graph-plan error", err)
-	}
-}
-
-func TestBranchComposeLowererRequiresDestinationOperationsBeforeSources(t *testing.T) {
-	web := destinationHandle(fileDestination("web.ivf", io.Discard))
-	job := From(FileInput("input.ivf", strings.NewReader(""))).
-		Video().
-		Decode().
-		Branches(
-			Branch("720p").Resize(1280, 720).Encode(codec.VP9(codec.Bitrate(2_000_000))).To(web),
-		)
-
-	resolved, err := compileJobRecipe(job)
-	if err != nil {
-		t.Fatalf("compileJobRecipe() error = %v", err)
-	}
-	resolved.graphPlan.work.Operations = graphPlanOperationsWithoutDestinations(resolved.graphPlan.work.Operations)
-	task, err := resolved.Build(context.Background())
-	if err == nil {
-		task.Close()
-		t.Fatal("resolved.Build() error = nil, want graph_plan_invalid")
-	}
-	var buildErr *BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != graphPlanInvalidCode ||
-		!strings.Contains(err.Error(), "branch composition graph plan has no destination operations") {
-		t.Fatalf("err = %v, want missing destination-operation graph-plan error", err)
-	}
-}
-
 func TestRecipeResolvedBuildUsesMediaPlanPacketCopy(t *testing.T) {
 	job := From(
 		Input(liveVideoVP8Provider("video")),
@@ -3608,7 +3456,7 @@ func TestRecipeResolvedBuildUsesMediaPlanPacketCopy(t *testing.T) {
 	if err != nil {
 		t.Fatalf("compileJobRecipe() error = %v", err)
 	}
-	requireGraphPlanLowerer[mediaPlanStreamGraph](t, resolved)
+	requireGraphPlanLowerer[composeLowerer](t, resolved)
 	planned, err := resolved.Describe()
 	if err != nil {
 		t.Fatalf("resolved.Describe() error = %v", err)
@@ -3621,98 +3469,6 @@ func TestRecipeResolvedBuildUsesMediaPlanPacketCopy(t *testing.T) {
 	built := task.Describe()
 	if len(planned.Nodes) != len(built.Nodes) || len(planned.Edges) != len(built.Edges) {
 		t.Fatalf("planned = %+v, built = %+v", planned, built)
-	}
-}
-
-func TestPacketCopyLowererRequiresDestinationOperationsBeforeSources(t *testing.T) {
-	job := From(
-		FileInput("input.ivf", strings.NewReader("")),
-	).Copy().To(destinationHandle(fileDestination("recording.ivf", io.Discard)))
-
-	resolved, err := compileJobRecipe(job)
-	if err != nil {
-		t.Fatalf("compileJobRecipe() error = %v", err)
-	}
-	resolved.graphPlan.work.Operations = graphPlanOperationsWithoutDestinations(resolved.graphPlan.work.Operations)
-	task, err := resolved.Build(context.Background())
-	if err == nil {
-		task.Close()
-		t.Fatal("resolved.Build() error = nil, want graph_plan_invalid")
-	}
-	var buildErr *BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != graphPlanInvalidCode ||
-		!strings.Contains(err.Error(), "packet-copy graph plan has no destination operations") {
-		t.Fatalf("err = %v, want missing destination-operation graph-plan error", err)
-	}
-}
-
-func TestPacketCopyLowererRequiresCopyOperationBeforeSources(t *testing.T) {
-	job := From(
-		FileInput("input.ivf", strings.NewReader("")),
-	).Copy().To(destinationHandle(fileDestination("recording.ivf", io.Discard)))
-
-	resolved, err := compileJobRecipe(job)
-	if err != nil {
-		t.Fatalf("compileJobRecipe() error = %v", err)
-	}
-	resolved.graphPlan.work.Operations = graphPlanOperationsWithoutKind(resolved.graphPlan.work.Operations, plan.OpCopy)
-	task, err := resolved.Build(context.Background())
-	if err == nil {
-		task.Close()
-		t.Fatal("resolved.Build() error = nil, want graph_plan_invalid")
-	}
-	var buildErr *BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != graphPlanInvalidCode ||
-		!strings.Contains(err.Error(), "packet-copy graph plan has no copy operation for branch") {
-		t.Fatalf("err = %v, want missing copy-operation graph-plan error", err)
-	}
-}
-
-func TestPacketCopyLowererRequiresTargetBranchBindingsBeforeSources(t *testing.T) {
-	job := From(
-		Input(liveAudioOpusProvider("left")),
-	).And(
-		Input(liveAudioOpusProvider("right")),
-	).Copy().To(Sink(&runtimeTestSink{name: "packets"}))
-
-	resolved, err := compileJobRecipe(job)
-	if err != nil {
-		t.Fatalf("compileJobRecipe() error = %v", err)
-	}
-	resolved.graphPlan.work.Operations = graphPlanOperationsWithoutBranchTarget(resolved.graphPlan.work.Operations, "right", "packets")
-	task, err := resolved.Build(context.Background())
-	if err == nil {
-		task.Close()
-		t.Fatal("resolved.Build() error = nil, want graph_plan_invalid")
-	}
-	var buildErr *BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != graphPlanInvalidCode ||
-		!strings.Contains(err.Error(), "packet-copy destination operation branches do not match output branches") {
-		t.Fatalf("err = %v, want packet-copy destination branch binding graph-plan error", err)
-	}
-}
-
-func TestPacketCopyLowererRequiresConsistentDestinationOperationsBeforeSources(t *testing.T) {
-	job := From(
-		Input(liveAudioOpusProvider("left")),
-	).And(
-		Input(liveAudioOpusProvider("right")),
-	).Copy().To(Sink(&runtimeTestSink{name: "packets"}))
-
-	resolved, err := compileJobRecipe(job)
-	if err != nil {
-		t.Fatalf("compileJobRecipe() error = %v", err)
-	}
-	resolved.graphPlan.work.Operations = graphPlanOperationsWithBranchTargetNode(resolved.graphPlan.work.Operations, "right", "packets", "packets-right")
-	task, err := resolved.Build(context.Background())
-	if err == nil {
-		task.Close()
-		t.Fatal("resolved.Build() error = nil, want graph_plan_invalid")
-	}
-	var buildErr *BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != graphPlanInvalidCode ||
-		!strings.Contains(err.Error(), "packet-copy destination operation is not consistent across branches") {
-		t.Fatalf("err = %v, want duplicate target consistency graph-plan error", err)
 	}
 }
 
@@ -3799,7 +3555,7 @@ func TestRecipeResolvedBuildUsesMediaPlanFileSinkDestination(t *testing.T) {
 	if err != nil {
 		t.Fatalf("compileJobRecipeForBuildContext() error = %v", err)
 	}
-	requireGraphPlanLowerer[mediaPlanStreamGraph](t, resolved)
+	requireGraphPlanLowerer[composeLowerer](t, resolved)
 	planned, err := resolved.Describe()
 	if err != nil {
 		t.Fatalf("resolved.Describe() error = %v", err)
@@ -3811,79 +3567,6 @@ func TestRecipeResolvedBuildUsesMediaPlanFileSinkDestination(t *testing.T) {
 	defer task.Close()
 	if built := task.Describe(); !reflect.DeepEqual(planned, built) {
 		t.Fatalf("planned = %+v, built = %+v", planned, built)
-	}
-}
-
-func TestFrameStreamLowererRequiresDecodeOperationBeforeSources(t *testing.T) {
-	job := From(FileInput("input.ogg", strings.NewReader(""))).
-		Audio().
-		Decode().
-		To(Sink(&runtimeTestSink{name: "frames"}))
-
-	resolved, err := compileJobRecipe(job)
-	if err != nil {
-		t.Fatalf("compileJobRecipe() error = %v", err)
-	}
-	resolved.graphPlan.work.Operations = graphPlanOperationsWithoutKind(resolved.graphPlan.work.Operations, plan.OpDecode)
-	task, err := resolved.Build(context.Background())
-	if err == nil {
-		task.Close()
-		t.Fatal("resolved.Build() error = nil, want graph_plan_invalid")
-	}
-	var buildErr *BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != graphPlanInvalidCode ||
-		!strings.Contains(err.Error(), "frame stream graph plan has no decode operation") {
-		t.Fatalf("err = %v, want missing decode-operation graph-plan error", err)
-	}
-}
-
-func TestFrameStreamLowererRequiresDestinationOperationsBeforeSources(t *testing.T) {
-	job := From(FileInput("input.ogg", strings.NewReader(""))).
-		Audio().
-		Decode().
-		To(Sink(&runtimeTestSink{name: "frames"}))
-
-	resolved, err := compileJobRecipe(job)
-	if err != nil {
-		t.Fatalf("compileJobRecipe() error = %v", err)
-	}
-	resolved.graphPlan.work.Operations = graphPlanOperationsWithoutDestinations(resolved.graphPlan.work.Operations)
-	task, err := resolved.Build(context.Background())
-	if err == nil {
-		task.Close()
-		t.Fatal("resolved.Build() error = nil, want graph_plan_invalid")
-	}
-	var buildErr *BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != graphPlanInvalidCode ||
-		!strings.Contains(err.Error(), "frame stream graph plan has no destination operations") {
-		t.Fatalf("err = %v, want missing destination-operation graph-plan error", err)
-	}
-}
-
-func TestFrameStreamLowererRequiresSingleBranchOperationSet(t *testing.T) {
-	job := From(FileInput("input.ogg", strings.NewReader(""))).
-		Audio().
-		Decode().
-		To(Sink(&runtimeTestSink{name: "frames"}))
-
-	resolved, err := compileJobRecipe(job)
-	if err != nil {
-		t.Fatalf("compileJobRecipe() error = %v", err)
-	}
-	resolved.graphPlan.work.Operations = append(resolved.graphPlan.work.Operations, workOperation{
-		Branch: "other",
-		Node:   "select-other",
-		Kind:   plan.OpSelect,
-	})
-	task, err := resolved.Build(context.Background())
-	if err == nil {
-		task.Close()
-		t.Fatal("resolved.Build() error = nil, want graph_plan_invalid")
-	}
-	var buildErr *BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != graphPlanInvalidCode ||
-		!strings.Contains(err.Error(), "frame stream graph plan must have exactly one branch operation set") {
-		t.Fatalf("err = %v, want single-branch graph-plan error", err)
 	}
 }
 
@@ -3908,7 +3591,7 @@ func TestRecipeResolvedMediaPlanSinkDestinationPreservesCustomStage(t *testing.T
 	if err != nil {
 		t.Fatalf("compileJobRecipeForBuildContext() error = %v", err)
 	}
-	requireGraphPlanLowerer[mediaPlanStreamGraph](t, resolved)
+	requireGraphPlanLowerer[composeLowerer](t, resolved)
 	task, err := resolved.Build(ctx)
 	if err != nil {
 		t.Fatalf("resolved.Build() error = %v", err)
@@ -3932,7 +3615,7 @@ func TestRecipeResolvedBuildUsesMediaPlanRTPSinkDestination(t *testing.T) {
 	if err != nil {
 		t.Fatalf("compileJobRecipeForBuildContext() error = %v", err)
 	}
-	requireGraphPlanLowerer[mediaPlanStreamGraph](t, resolved)
+	requireGraphPlanLowerer[composeLowerer](t, resolved)
 	planned, err := resolved.Describe()
 	if err != nil {
 		t.Fatalf("resolved.Describe() error = %v", err)
@@ -3966,7 +3649,7 @@ func TestRecipeResolvedBuildUsesMediaPlanSelectedPacketSinkDestination(t *testin
 	if err != nil {
 		t.Fatalf("compileJobRecipeForBuildContext() error = %v", err)
 	}
-	requireGraphPlanLowerer[mediaPlanStreamGraph](t, resolved)
+	requireGraphPlanLowerer[composeLowerer](t, resolved)
 	planned, err := resolved.Describe()
 	if err != nil {
 		t.Fatalf("resolved.Describe() error = %v", err)
@@ -3978,106 +3661,6 @@ func TestRecipeResolvedBuildUsesMediaPlanSelectedPacketSinkDestination(t *testin
 	defer task.Close()
 	if built := task.Describe(); !reflect.DeepEqual(planned, built) {
 		t.Fatalf("planned = %+v, built = %+v", planned, built)
-	}
-}
-
-func TestSelectedPacketCopyLowererRequiresSelectOperationBeforeSources(t *testing.T) {
-	ctx := context.Background()
-	streams := []av.Stream{audioOpusTestStream()}
-	demuxer := &decodeTestDemuxer{streams: streams}
-	runtime := mustNew(
-		withTestFormats(
-			testFormatProber(remuxTestProber{streams: streams}),
-			testFormatDemuxer(av.FormatOgg, decodeTestDemuxerFactory{demuxer: demuxer}),
-		),
-	)
-	job := From(FileInput("input.ogg", strings.NewReader(""))).UseRuntime(runtime).
-		Audio().
-		Copy().
-		To(Sink(&runtimeTestSink{name: "packets"}))
-
-	resolved, err := compileJobRecipeForBuildContext(ctx, job)
-	if err != nil {
-		t.Fatalf("compileJobRecipeForBuildContext() error = %v", err)
-	}
-	resolved.graphPlan.work.Operations = graphPlanOperationsWithoutKind(resolved.graphPlan.work.Operations, plan.OpSelect)
-	task, err := resolved.Build(ctx)
-	if err == nil {
-		task.Close()
-		t.Fatal("resolved.Build() error = nil, want graph_plan_invalid")
-	}
-	var buildErr *BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != graphPlanInvalidCode ||
-		!strings.Contains(err.Error(), "selected packet-copy graph plan has no select operation") {
-		t.Fatalf("err = %v, want missing select-operation graph-plan error", err)
-	}
-}
-
-func TestSelectedPacketCopyLowererRequiresCopyOperationBeforeSources(t *testing.T) {
-	ctx := context.Background()
-	streams := []av.Stream{audioOpusTestStream()}
-	demuxer := &decodeTestDemuxer{streams: streams}
-	runtime := mustNew(
-		withTestFormats(
-			testFormatProber(remuxTestProber{streams: streams}),
-			testFormatDemuxer(av.FormatOgg, decodeTestDemuxerFactory{demuxer: demuxer}),
-		),
-	)
-	job := From(FileInput("input.ogg", strings.NewReader(""))).UseRuntime(runtime).
-		Audio().
-		Copy().
-		To(Sink(&runtimeTestSink{name: "packets"}))
-
-	resolved, err := compileJobRecipeForBuildContext(ctx, job)
-	if err != nil {
-		t.Fatalf("compileJobRecipeForBuildContext() error = %v", err)
-	}
-	resolved.graphPlan.work.Operations = graphPlanOperationsWithoutKind(resolved.graphPlan.work.Operations, plan.OpCopy)
-	task, err := resolved.Build(ctx)
-	if err == nil {
-		task.Close()
-		t.Fatal("resolved.Build() error = nil, want graph_plan_invalid")
-	}
-	var buildErr *BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != graphPlanInvalidCode ||
-		!strings.Contains(err.Error(), "selected packet-copy graph plan has no copy operation") {
-		t.Fatalf("err = %v, want selected copy-operation graph-plan error", err)
-	}
-}
-
-func TestSelectedPacketCopyLowererRequiresSingleBranchOperationSet(t *testing.T) {
-	ctx := context.Background()
-	streams := []av.Stream{audioOpusTestStream()}
-	demuxer := &decodeTestDemuxer{streams: streams}
-	runtime := mustNew(
-		withTestFormats(
-			testFormatProber(remuxTestProber{streams: streams}),
-			testFormatDemuxer(av.FormatOgg, decodeTestDemuxerFactory{demuxer: demuxer}),
-		),
-	)
-	job := From(FileInput("input.ogg", strings.NewReader(""))).UseRuntime(runtime).
-		Audio().
-		Copy().
-		To(Sink(&runtimeTestSink{name: "packets"}))
-
-	resolved, err := compileJobRecipeForBuildContext(ctx, job)
-	if err != nil {
-		t.Fatalf("compileJobRecipeForBuildContext() error = %v", err)
-	}
-	resolved.graphPlan.work.Operations = append(resolved.graphPlan.work.Operations, workOperation{
-		Branch: "other",
-		Node:   "select-other",
-		Kind:   plan.OpSelect,
-	})
-	task, err := resolved.Build(ctx)
-	if err == nil {
-		task.Close()
-		t.Fatal("resolved.Build() error = nil, want graph_plan_invalid")
-	}
-	var buildErr *BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != graphPlanInvalidCode ||
-		!strings.Contains(err.Error(), "selected packet-copy graph plan must have exactly one branch operation set") {
-		t.Fatalf("err = %v, want single-branch graph-plan error", err)
 	}
 }
 
@@ -4107,7 +3690,7 @@ func TestRecipeResolvedBuildUsesMediaPlanFileEncodeOutput(t *testing.T) {
 	if err != nil {
 		t.Fatalf("compileJobRecipeForBuildContext() error = %v", err)
 	}
-	requireGraphPlanLowerer[mediaPlanStreamGraph](t, resolved)
+	requireGraphPlanLowerer[composeLowerer](t, resolved)
 	planned, err := resolved.Describe()
 	if err != nil {
 		t.Fatalf("resolved.Describe() error = %v", err)
@@ -4123,30 +3706,6 @@ func TestRecipeResolvedBuildUsesMediaPlanFileEncodeOutput(t *testing.T) {
 	}
 	if !specHasNode(built, "meter") || !specHasNode(built, "encode-audio") || !specHasNode(built, "archive.ogg") {
 		t.Fatalf("built spec = %+v, want meter, encode, and mux nodes", built)
-	}
-}
-
-func TestEncodedFrameStreamLowererRequiresEncodeOperationBeforeSources(t *testing.T) {
-	job := From(FileInput("input.ogg", strings.NewReader(""))).
-		Audio().
-		Decode().
-		Encode(codec.Opus(codec.Bitrate(96_000))).
-		To(destinationHandle(fileDestination("archive.ogg", io.Discard)))
-
-	resolved, err := compileJobRecipe(job)
-	if err != nil {
-		t.Fatalf("compileJobRecipe() error = %v", err)
-	}
-	resolved.graphPlan.work.Operations = graphPlanOperationsWithoutKind(resolved.graphPlan.work.Operations, plan.OpEncode)
-	task, err := resolved.Build(context.Background())
-	if err == nil {
-		task.Close()
-		t.Fatal("resolved.Build() error = nil, want graph_plan_invalid")
-	}
-	var buildErr *BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != graphPlanInvalidCode ||
-		!strings.Contains(err.Error(), "encoded frame stream graph plan has no encode operation") {
-		t.Fatalf("err = %v, want missing encode-operation graph-plan error", err)
 	}
 }
 
@@ -4184,9 +3743,9 @@ func TestMediaPlanDirectStreamUsesResolvedAttachments(t *testing.T) {
 	if err != nil || !ok {
 		t.Fatalf("newMediaPlanDecodeStreamGraph ok=%v err=%v", ok, err)
 	}
-	spec, err := gp.encodeOutputSpec()
+	spec, err := gp.spec()
 	if err != nil {
-		t.Fatalf("encodeOutputSpec() error = %v", err)
+		t.Fatalf("spec() error = %v", err)
 	}
 	planned, err := resolved.Describe()
 	if err != nil {
@@ -4229,7 +3788,7 @@ func TestRecipeResolvedBuildUsesMediaPlanFileEncodeSinkDestination(t *testing.T)
 	if err != nil {
 		t.Fatalf("compileJobRecipeForBuildContext() error = %v", err)
 	}
-	requireGraphPlanLowerer[mediaPlanStreamGraph](t, resolved)
+	requireGraphPlanLowerer[composeLowerer](t, resolved)
 	planned, err := resolved.Describe()
 	if err != nil {
 		t.Fatalf("resolved.Describe() error = %v", err)
@@ -4276,7 +3835,7 @@ func TestRecipeResolvedBuildUsesMediaPlanEncodeMuxAndSinkDestinations(t *testing
 	if err != nil {
 		t.Fatalf("compileJobRecipeForBuildContext() error = %v", err)
 	}
-	requireGraphPlanLowerer[mediaPlanStreamGraph](t, resolved)
+	requireGraphPlanLowerer[composeLowerer](t, resolved)
 	planned, err := resolved.Describe()
 	if err != nil {
 		t.Fatalf("resolved.Describe() error = %v", err)
@@ -4317,7 +3876,7 @@ func TestRecipeResolvedBuildUsesMediaPlanRTPEncodeOutput(t *testing.T) {
 	if err != nil {
 		t.Fatalf("compileJobRecipeForBuildContext() error = %v", err)
 	}
-	requireGraphPlanLowerer[mediaPlanStreamGraph](t, resolved)
+	requireGraphPlanLowerer[composeLowerer](t, resolved)
 	planned, err := resolved.Describe()
 	if err != nil {
 		t.Fatalf("resolved.Describe() error = %v", err)

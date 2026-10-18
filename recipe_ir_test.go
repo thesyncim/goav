@@ -257,17 +257,17 @@ func TestMultiStreamGraphLowererConsumesHandoff(t *testing.T) {
 	if !ok {
 		t.Fatal("multi-stream graph lowerer was not built from captured input")
 	}
-	graph, ok := lowerer.(mediaPlanBranchComposeGraph)
+	graph, ok := lowerer.(composeLowerer)
 	if !ok {
-		t.Fatalf("lowerer = %T, want mediaPlanBranchComposeGraph", lowerer)
+		t.Fatalf("lowerer = %T, want composeLowerer", lowerer)
 	}
 	if len(graph.inputs) != 2 ||
-		len(graph.plan.Branches) != 2 ||
-		len(graph.plan.Destinations) != 2 ||
-		graph.plan.Branches[0].Input != "mic-a" ||
-		graph.plan.Branches[1].Input != "mic-b" {
-		t.Fatalf("multi-stream graph = inputs:%+v branches:%+v destinations:%+v, want captured handoff data",
-			graph.inputs, graph.plan.Branches, graph.plan.Destinations)
+		len(graph.branches) != 2 ||
+		len(graph.outputs) != 2 ||
+		graph.branches[0].branch.Input != "mic-a" ||
+		graph.branches[1].branch.Input != "mic-b" {
+		t.Fatalf("multi-stream graph = inputs:%+v branches:%+v outputs:%+v, want captured handoff data",
+			graph.inputs, graph.branches, graph.outputs)
 	}
 }
 
@@ -295,14 +295,15 @@ func TestSingleStreamGraphLowerersConsumeHandoffs(t *testing.T) {
 		if !ok {
 			t.Fatal("packet-copy graph lowerer was not built from captured input")
 		}
-		graph, ok := lowerer.(mediaPlanStreamGraph)
+		graph, ok := lowerer.(composeLowerer)
 		if !ok {
-			t.Fatalf("lowerer = %T, want mediaPlanStreamGraph", lowerer)
+			t.Fatalf("lowerer = %T, want composeLowerer", lowerer)
 		}
-		if !graph.copyPackets ||
-			len(graph.inputs) != 1 ||
+		if len(graph.inputs) != 1 ||
 			len(graph.outputs) != 1 ||
-			graph.stream.Name != "video" {
+			len(graph.branches) != 1 ||
+			!graph.branches[0].copy ||
+			graph.branches[0].name != "video" {
 			t.Fatalf("packet-copy graph = %+v, want captured packet-copy stream data", graph)
 		}
 	})
@@ -328,15 +329,16 @@ func TestSingleStreamGraphLowerersConsumeHandoffs(t *testing.T) {
 		if !ok {
 			t.Fatal("decode graph lowerer was not built from captured input")
 		}
-		graph, ok := lowerer.(mediaPlanStreamGraph)
+		graph, ok := lowerer.(composeLowerer)
 		if !ok {
-			t.Fatalf("lowerer = %T, want mediaPlanStreamGraph", lowerer)
+			t.Fatalf("lowerer = %T, want composeLowerer", lowerer)
 		}
-		if graph.copyPackets ||
-			len(graph.inputs) != 1 ||
+		if len(graph.inputs) != 1 ||
 			len(graph.outputs) != 1 ||
-			graph.stream.Name != "audio" ||
-			graph.sourceDomain != shape.DomainFrame {
+			len(graph.branches) != 1 ||
+			graph.branches[0].copy ||
+			graph.branches[0].name != "audio" ||
+			graph.branches[0].sourceDomain != shape.DomainFrame {
 			t.Fatalf("decode graph = %+v, want captured frame-domain stream data", graph)
 		}
 	})
@@ -364,16 +366,16 @@ func TestBranchComposerGraphLowererConsumesHandoff(t *testing.T) {
 	if !ok {
 		t.Fatal("branch-composer graph lowerer was not built from captured input")
 	}
-	graph, ok := lowerer.(mediaPlanBranchComposeGraph)
+	graph, ok := lowerer.(composeLowerer)
 	if !ok {
-		t.Fatalf("lowerer = %T, want mediaPlanBranchComposeGraph", lowerer)
+		t.Fatalf("lowerer = %T, want composeLowerer", lowerer)
 	}
 	if len(graph.inputs) != 1 ||
-		len(graph.plan.Branches) != 1 ||
-		graph.plan.Branches[0].Name != "monitor" ||
-		len(graph.plan.Destinations) != 1 {
-		t.Fatalf("branch-compose graph = inputs:%+v branches:%+v destinations:%+v, want captured handoff data",
-			graph.inputs, graph.plan.Branches, graph.plan.Destinations)
+		len(graph.branches) != 1 ||
+		graph.branches[0].name != "monitor" ||
+		len(graph.outputs) != 1 {
+		t.Fatalf("branch-compose graph = inputs:%+v branches:%+v outputs:%+v, want captured handoff data",
+			graph.inputs, graph.branches, graph.outputs)
 	}
 }
 
