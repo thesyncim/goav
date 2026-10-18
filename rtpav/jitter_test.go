@@ -137,3 +137,26 @@ func TestJitterRingAllocs(t *testing.T) {
 		t.Fatalf("jitter allocs = %v, want 0", allocs)
 	}
 }
+
+func TestJitterRingLostExcludesBuffered(t *testing.T) {
+	ctx := context.Background()
+	jitter, err := NewJitterRing(JitterConfig{Capacity: 4})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := JitterResult{Ready: make([]*rtp.Packet, 0, 8), Events: make([]av.Event, 0, 4)}
+	push := func(seq uint16) {
+		t.Helper()
+		result.Reset()
+		if err := jitter.PushInto(ctx, &rtp.Packet{SSRC: 1, SequenceNumber: seq}, &result); err != nil {
+			t.Fatal(err)
+		}
+	}
+	push(10) // expected 11
+	push(12) // buffered, 11 missing
+	push(13) // buffered
+	push(20) // delta 9 past the ring; 12 and 13 arrived, so 7 are lost
+	if stats := jitter.Stats(); stats.Lost != 7 {
+		t.Fatalf("lost = %d, want 7 (buffered 12 and 13 are not lost)", stats.Lost)
+	}
+}

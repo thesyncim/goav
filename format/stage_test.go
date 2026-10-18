@@ -353,3 +353,18 @@ func TestMuxStageAllocs(t *testing.T) {
 		t.Fatalf("mux stage allocs = %v, want 0", allocs)
 	}
 }
+
+func TestMuxStageRefusesFrames(t *testing.T) {
+	stage, err := NewMuxStage(MuxStageConfig{Muxer: &fakeMuxer{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	message := pipeline.Message{Kind: pipeline.MessageFrame}
+	emitter := &formatEmitter{}
+	if err := stage.Handle(context.Background(), &message, emitter); err == nil {
+		t.Fatal("frame message accepted by a muxer")
+	}
+	if emitter.events != 0 {
+		t.Fatalf("emitted %d, want nothing forwarded", emitter.events)
+	}
+}

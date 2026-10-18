@@ -32,7 +32,7 @@ ctx ends, then waits for calls in flight to answer. A unix socket is
 owner-only from the moment it exists; a stale socket is replaced, and a path
 another server is serving, or one that is not a socket, is refused rather
 than deleted. TCP has no authentication of its own: bind it to loopback, or
-serve over HTTP behind yours. `Serve(ctx, listener)` takes a listener you made.
+serve over HTTP behind yours. TCP is a trusted-network interface, never an exposed one; the CLI's `--control` takes a bare path as `unix://`. `Serve(ctx, listener)` takes a listener you made.
 
 A `*Server` is an `http.Handler`, for mounting in a service you already run,
 behind its own authentication:

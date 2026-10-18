@@ -174,3 +174,12 @@ Propose a front-door feature by adding its law here before adding a public
 symbol. If it cannot be stated as input shape, ordered operation, tap, fork,
 destination, task, or runtime attachment behavior, it belongs outside the
 public grammar.
+
+## Metrics
+
+`metrics.Handler(task)` is an `http.Handler` serving the task's `Stats()` and
+`Snapshot()` in Prometheus text format: `goav_node_{in,out}_{messages,packets,frames}_total{node}`,
+`goav_node_dropped_total{node,reason}`, graph totals, and one-hot
+`goav_task_state`, `goav_branch_state`, `goav_destination_state` gauges.
+`metrics.Publish(name, task)` exposes the same data through `expvar`. Scrapes
+are lock-free reads and cost the data plane nothing.

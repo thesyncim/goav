@@ -92,7 +92,7 @@ for HTTP/2, which LL-HLS players expect.
 
 ## Control
 
-With `--control unix://PATH` (or `tcp://host:port`), `goav run` serves the
+With `--control unix://PATH` (a bare path means unix; `tcp://host:port` is a trusted-network interface), `goav run` serves the
 running task through [`ctlserver`](CONTROL_PLANE.md) until it stops, and
 `goav ctl` calls its methods, one per invocation:
 

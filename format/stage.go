@@ -397,7 +397,8 @@ func (s *DemuxSource) windowFinished() bool {
 	return true
 }
 
-// Handle writes one packet message to the muxer; events pass downstream.
+// Handle writes one packet message to the muxer. A muxer consumes packets, so a
+// frame message is refused (a decoded frame reaching a muxer is a wiring bug).
 func (s *MuxStage) Handle(ctx context.Context, msg *pipeline.Message, emitter pipeline.Emitter) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -424,7 +425,7 @@ func (s *MuxStage) Handle(ctx context.Context, msg *pipeline.Message, emitter pi
 	case pipeline.MessageEvent:
 		return nil
 	case pipeline.MessageFrame:
-		return emitter.Emit(ctx, msg)
+		return errMuxFrame
 	default:
 		return nil
 	}
@@ -544,3 +545,5 @@ func (s *MuxStage) emitEvents(ctx context.Context, emitter pipeline.Emitter) err
 	}
 	return nil
 }
+
+var errMuxFrame = errors.New("format: mux stage: frame messages are not accepted; a muxer consumes packets (encode first)")
