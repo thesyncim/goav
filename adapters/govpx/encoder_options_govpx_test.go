@@ -97,3 +97,20 @@ func TestPickVP9ThreadsMatchesTileColumns(t *testing.T) {
 		}
 	}
 }
+
+// TestOfflineEncodesKeepTheirKeyframeInterval pins that an offline (not
+// realtime) encode honors CodecSettings.KeyframeInterval, and that VP8 keys
+// at least every 128 frames without one, as libvpx does: a file keyed only
+// at its first frame can be neither seeked nor segmented.
+func TestOfflineEncodesKeepTheirKeyframeInterval(t *testing.T) {
+	set := codec.EncodeConfig{Settings: codec.CodecSettings{KeyframeInterval: 50}}
+	if got := vp8EncoderOptions(set, 640, 360).KeyFrameInterval; got != 50 {
+		t.Errorf("VP8 offline keyframe interval = %d, want 50", got)
+	}
+	if got := vp8EncoderOptions(codec.EncodeConfig{}, 640, 360).KeyFrameInterval; got != 128 {
+		t.Errorf("VP8 offline default keyframe interval = %d, want 128", got)
+	}
+	if got := vp9EncoderOptions(set, 640, 360).MaxKeyframeInterval; got != 50 {
+		t.Errorf("VP9 offline keyframe interval = %d, want 50", got)
+	}
+}
