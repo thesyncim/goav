@@ -1,0 +1,20 @@
+{
+  "describe_error": {
+    "code": "input_count_unsupported",
+    "family": "input",
+    "operation": "build branches",
+    "node": "video"
+  },
+  "explain_error": {
+    "code": "input_count_unsupported",
+    "family": "input",
+    "operation": "build branches",
+    "node": "video"
+  },
+  "build_error": {
+    "code": "input_count_unsupported",
+    "family": "input",
+    "operation": "build branches",
+    "node": "video"
+  }
+}

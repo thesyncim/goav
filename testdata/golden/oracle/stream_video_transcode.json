@@ -1,0 +1,390 @@
+{
+  "describe": {
+    "name": "goav",
+    "nodes": [
+      {
+        "name": "video-1",
+        "kind": "source",
+        "detail": "custom source, domain=frame, media=video"
+      },
+      {
+        "name": "select-video",
+        "kind": "stage",
+        "detail": "select, type=video"
+      },
+      {
+        "name": "resize-video",
+        "kind": "stage",
+        "detail": "resize, 32x24, exact"
+      },
+      {
+        "name": "encode-video",
+        "kind": "stage",
+        "detail": "frames -\u003e packets, codec=vp8"
+      },
+      {
+        "name": "out.webm",
+        "kind": "stage",
+        "detail": "mux, protocol=file"
+      }
+    ],
+    "edges": [
+      {
+        "from": "video-1",
+        "to": "select-video",
+        "policy": "all"
+      },
+      {
+        "from": "select-video",
+        "to": "resize-video",
+        "policy": "all"
+      },
+      {
+        "from": "resize-video",
+        "to": "encode-video",
+        "policy": "all"
+      },
+      {
+        "from": "encode-video",
+        "to": "out.webm",
+        "policy": "all"
+      }
+    ]
+  },
+  "explain": {
+    "summary": "from video-1 through 1 stream branch(es) to out.webm",
+    "operation": "build job",
+    "inputs": [
+      {
+        "name": "video-1",
+        "protocol": "custom",
+        "streams": [
+          {
+            "ID": "video-1",
+            "Index": 0,
+            "Type": "video",
+            "Codec": {
+              "ID": "",
+              "Type": "video",
+              "Profile": "",
+              "Level": "",
+              "ClockRate": 90000,
+              "SampleRate": 0,
+              "Channels": 0,
+              "ChannelLayout": "",
+              "Width": 64,
+              "Height": 48,
+              "PixelFormat": "i420",
+              "SampleFormat": "",
+              "ExtraData": {
+                "Bytes": null,
+                "Ownership": "",
+                "Owner": null
+              },
+              "Attributes": null
+            },
+            "TimeBase": {
+              "Num": 0,
+              "Den": 0
+            },
+            "Language": "",
+            "Name": "video-1",
+            "Epoch": 0,
+            "Metadata": null
+          }
+        ]
+      }
+    ],
+    "streams": [
+      {
+        "name": "video",
+        "select": {
+          "type": "video"
+        },
+        "operations": [
+          {
+            "kind": "transform",
+            "component": "resize",
+            "detail": "resize",
+            "shape": {
+              "domain": "frame",
+              "mediaKind": "video",
+              "width": 32,
+              "height": 24
+            },
+            "adapter": "resize",
+            "config": {
+              "height": "24",
+              "width": "32"
+            }
+          },
+          {
+            "kind": "encode",
+            "component": "vp8",
+            "detail": "frames to packets",
+            "shape": {
+              "domain": "packet",
+              "mediaKind": "video",
+              "codec": "vp8"
+            },
+            "adapter": "vp8"
+          }
+        ],
+        "encode": {
+          "ID": "vp8",
+          "Type": "video",
+          "Parameters": {
+            "ID": "vp8",
+            "Type": "video",
+            "Profile": "",
+            "Level": "",
+            "ClockRate": 90000,
+            "SampleRate": 0,
+            "Channels": 0,
+            "ChannelLayout": "",
+            "Width": 0,
+            "Height": 0,
+            "PixelFormat": "",
+            "SampleFormat": "",
+            "ExtraData": {
+              "Bytes": null,
+              "Ownership": "",
+              "Owner": null
+            },
+            "Attributes": null
+          },
+          "Settings": {
+            "Bitrate": 0,
+            "Framerate": {
+              "Value": 0,
+              "Base": {
+                "Num": 0,
+                "Den": 0
+              }
+            },
+            "KeyframeInterval": 0,
+            "Profile": "",
+            "Level": "",
+            "Channels": 0,
+            "SampleRate": 0,
+            "ClockRate": 0,
+            "ChannelLayout": "",
+            "ChannelsSet": false,
+            "SampleRateSet": false,
+            "Custom": null
+          },
+          "Copy": false,
+          "Auto": false
+        },
+        "destinations": [
+          "out.webm"
+        ]
+      }
+    ],
+    "branches": [
+      {
+        "name": "video",
+        "input": "video-1",
+        "stream": {
+          "id": "video-1",
+          "type": "video",
+          "name": "video-1"
+        },
+        "shape": {
+          "domain": "frame",
+          "mediaKind": "video",
+          "streamID": "video-1",
+          "width": 64,
+          "height": 48,
+          "pixelFormat": "i420"
+        },
+        "operations": [
+          {
+            "kind": "select",
+            "component": "video",
+            "detail": "select stream",
+            "shape": {
+              "domain": "frame",
+              "mediaKind": "video",
+              "streamID": "video-1",
+              "width": 64,
+              "height": 48,
+              "pixelFormat": "i420"
+            }
+          },
+          {
+            "kind": "transform",
+            "component": "resize",
+            "detail": "resize",
+            "shape": {
+              "domain": "frame",
+              "mediaKind": "video",
+              "streamID": "video-1",
+              "width": 32,
+              "height": 24,
+              "pixelFormat": "i420"
+            },
+            "adapter": "resize",
+            "config": {
+              "height": "24",
+              "pixelFormat": "i420",
+              "width": "32"
+            }
+          },
+          {
+            "kind": "encode",
+            "component": "vp8",
+            "detail": "frames to packets",
+            "shape": {
+              "domain": "packet",
+              "mediaKind": "video",
+              "streamID": "video",
+              "codec": "vp8",
+              "width": 32,
+              "height": 24,
+              "pixelFormat": "i420"
+            },
+            "adapter": "vp8"
+          }
+        ],
+        "destinations": [
+          "out.webm"
+        ]
+      }
+    ],
+    "destinations": [
+      {
+        "name": "out.webm",
+        "protocol": "file",
+        "format": "webm",
+        "kind": "mux",
+        "branches": [
+          "video"
+        ]
+      }
+    ],
+    "decisions": [
+      {
+        "code": "encode_required",
+        "branch": "video",
+        "message": "muxed stream output requires encoded packets"
+      }
+    ],
+    "requiredAdapters": [
+      {
+        "kind": "muxer",
+        "name": "webm",
+        "format": "webm",
+        "media": [
+          "audio",
+          "video"
+        ],
+        "codecs": [
+          "opus",
+          "vorbis",
+          "vp8",
+          "vp9",
+          "av1"
+        ],
+        "minStreams": 1,
+        "metadata": {
+          "summary": "WebM supports Opus/Vorbis audio and VP8/VP9/AV1 video packets without codec conversion"
+        },
+        "requiredBy": "out.webm",
+        "status": "available"
+      },
+      {
+        "kind": "filter",
+        "name": "resize",
+        "transform": "resize",
+        "input": "video",
+        "output": "video",
+        "pixelFormats": [
+          "i420",
+          "yuv420p"
+        ],
+        "resizeModes": [
+          "exact",
+          "fit",
+          "fill",
+          "passthrough"
+        ],
+        "realtime": true,
+        "stateless": true,
+        "metadata": {
+          "backend": "resize",
+          "modes": "exact,fit,fill,passthrough",
+          "pixel_formats": "i420,yuv420p"
+        },
+        "requiredBy": "video",
+        "status": "available"
+      },
+      {
+        "kind": "encoder",
+        "name": "vp8",
+        "codec": "vp8",
+        "media": [
+          "video"
+        ],
+        "pixelFormats": [
+          "i420"
+        ],
+        "realtime": true,
+        "requiredBy": "video",
+        "status": "available"
+      }
+    ],
+    "graph": {
+      "name": "goav",
+      "nodes": [
+        {
+          "name": "video-1",
+          "kind": "source",
+          "detail": "custom source, domain=frame, media=video"
+        },
+        {
+          "name": "select-video",
+          "kind": "stage",
+          "detail": "select, type=video"
+        },
+        {
+          "name": "resize-video",
+          "kind": "stage",
+          "detail": "resize, 32x24, exact"
+        },
+        {
+          "name": "encode-video",
+          "kind": "stage",
+          "detail": "frames -\u003e packets, codec=vp8"
+        },
+        {
+          "name": "out.webm",
+          "kind": "stage",
+          "detail": "mux, protocol=file"
+        }
+      ],
+      "edges": [
+        {
+          "from": "video-1",
+          "to": "select-video",
+          "policy": "all"
+        },
+        {
+          "from": "select-video",
+          "to": "resize-video",
+          "policy": "all"
+        },
+        {
+          "from": "resize-video",
+          "to": "encode-video",
+          "policy": "all"
+        },
+        {
+          "from": "encode-video",
+          "to": "out.webm",
+          "policy": "all"
+        }
+      ]
+    }
+  }
+}

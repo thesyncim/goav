@@ -1,0 +1,390 @@
+{
+  "describe": {
+    "name": "goav",
+    "nodes": [
+      {
+        "name": "mic44",
+        "kind": "source",
+        "detail": "custom source, domain=frame, media=audio"
+      },
+      {
+        "name": "select-audio",
+        "kind": "stage",
+        "detail": "select, type=audio"
+      },
+      {
+        "name": "resample-audio",
+        "kind": "stage",
+        "detail": "resample, 48000 Hz, 2 ch, samplefmt=s16"
+      },
+      {
+        "name": "encode-audio",
+        "kind": "stage",
+        "detail": "frames -\u003e packets, codec=opus"
+      },
+      {
+        "name": "packets",
+        "kind": "sink"
+      }
+    ],
+    "edges": [
+      {
+        "from": "mic44",
+        "to": "select-audio",
+        "policy": "all"
+      },
+      {
+        "from": "select-audio",
+        "to": "resample-audio",
+        "policy": "all"
+      },
+      {
+        "from": "resample-audio",
+        "to": "encode-audio",
+        "policy": "all"
+      },
+      {
+        "from": "encode-audio",
+        "to": "packets",
+        "policy": "all"
+      }
+    ]
+  },
+  "explain": {
+    "summary": "from mic44 through 1 stream branch(es) to packets",
+    "operation": "build job",
+    "inputs": [
+      {
+        "name": "mic44",
+        "protocol": "custom",
+        "streams": [
+          {
+            "ID": "mic44",
+            "Index": 0,
+            "Type": "audio",
+            "Codec": {
+              "ID": "",
+              "Type": "audio",
+              "Profile": "",
+              "Level": "",
+              "ClockRate": 44100,
+              "SampleRate": 44100,
+              "Channels": 1,
+              "ChannelLayout": "mono",
+              "Width": 0,
+              "Height": 0,
+              "PixelFormat": "",
+              "SampleFormat": "s16",
+              "ExtraData": {
+                "Bytes": null,
+                "Ownership": "",
+                "Owner": null
+              },
+              "Attributes": null
+            },
+            "TimeBase": {
+              "Num": 0,
+              "Den": 0
+            },
+            "Language": "",
+            "Name": "mic44",
+            "Epoch": 0,
+            "Metadata": null
+          }
+        ]
+      }
+    ],
+    "streams": [
+      {
+        "name": "audio",
+        "select": {
+          "type": "audio"
+        },
+        "operations": [
+          {
+            "kind": "shape",
+            "component": "auto",
+            "detail": "shape solver policy"
+          },
+          {
+            "kind": "transform",
+            "component": "resample",
+            "detail": "resample",
+            "shape": {
+              "domain": "frame",
+              "mediaKind": "audio",
+              "sampleRate": 48000,
+              "channels": 2,
+              "sampleFormat": "s16"
+            },
+            "adapter": "resample",
+            "config": {
+              "channels": "2",
+              "sampleFormat": "s16",
+              "sampleRate": "48000"
+            }
+          },
+          {
+            "kind": "encode",
+            "component": "opus",
+            "detail": "frames to packets",
+            "shape": {
+              "domain": "packet",
+              "mediaKind": "audio",
+              "codec": "opus",
+              "sampleRate": 48000,
+              "channels": 2
+            },
+            "adapter": "opus"
+          }
+        ],
+        "encode": {
+          "ID": "opus",
+          "Type": "audio",
+          "Parameters": {
+            "ID": "opus",
+            "Type": "audio",
+            "Profile": "",
+            "Level": "",
+            "ClockRate": 48000,
+            "SampleRate": 48000,
+            "Channels": 2,
+            "ChannelLayout": "stereo",
+            "Width": 0,
+            "Height": 0,
+            "PixelFormat": "",
+            "SampleFormat": "",
+            "ExtraData": {
+              "Bytes": null,
+              "Ownership": "",
+              "Owner": null
+            },
+            "Attributes": null
+          },
+          "Settings": {
+            "Bitrate": 0,
+            "Framerate": {
+              "Value": 0,
+              "Base": {
+                "Num": 0,
+                "Den": 0
+              }
+            },
+            "KeyframeInterval": 0,
+            "Profile": "",
+            "Level": "",
+            "Channels": 0,
+            "SampleRate": 0,
+            "ClockRate": 0,
+            "ChannelLayout": "",
+            "ChannelsSet": false,
+            "SampleRateSet": false,
+            "Custom": null
+          },
+          "Copy": false,
+          "Auto": false
+        },
+        "destinations": [
+          "packets"
+        ]
+      }
+    ],
+    "branches": [
+      {
+        "name": "audio",
+        "input": "mic44",
+        "stream": {
+          "id": "mic44",
+          "type": "audio",
+          "name": "mic44"
+        },
+        "shape": {
+          "domain": "frame",
+          "mediaKind": "audio",
+          "streamID": "mic44",
+          "sampleRate": 44100,
+          "channels": 1,
+          "sampleFormat": "s16"
+        },
+        "operations": [
+          {
+            "kind": "select",
+            "component": "audio",
+            "detail": "select stream",
+            "shape": {
+              "domain": "frame",
+              "mediaKind": "audio",
+              "streamID": "mic44",
+              "sampleRate": 44100,
+              "channels": 1,
+              "sampleFormat": "s16"
+            }
+          },
+          {
+            "kind": "shape",
+            "component": "auto",
+            "detail": "shape solver policy",
+            "shape": {
+              "domain": "frame",
+              "mediaKind": "audio",
+              "streamID": "mic44",
+              "sampleRate": 44100,
+              "channels": 1,
+              "sampleFormat": "s16"
+            }
+          },
+          {
+            "kind": "transform",
+            "component": "resample",
+            "detail": "resample",
+            "shape": {
+              "domain": "frame",
+              "mediaKind": "audio",
+              "streamID": "mic44",
+              "sampleRate": 48000,
+              "channels": 2,
+              "sampleFormat": "s16"
+            },
+            "adapter": "resample",
+            "config": {
+              "channels": "2",
+              "sampleFormat": "s16",
+              "sampleRate": "48000"
+            }
+          },
+          {
+            "kind": "encode",
+            "component": "opus",
+            "detail": "frames to packets",
+            "shape": {
+              "domain": "packet",
+              "mediaKind": "audio",
+              "streamID": "audio",
+              "codec": "opus",
+              "sampleRate": 48000,
+              "channels": 2,
+              "sampleFormat": "s16"
+            },
+            "adapter": "opus"
+          }
+        ],
+        "destinations": [
+          "packets"
+        ]
+      }
+    ],
+    "destinations": [
+      {
+        "name": "packets",
+        "kind": "sink",
+        "branches": [
+          "audio"
+        ]
+      }
+    ],
+    "decisions": [
+      {
+        "code": "encode_required",
+        "branch": "audio",
+        "message": "muxed stream output requires encoded packets"
+      }
+    ],
+    "requiredAdapters": [
+      {
+        "kind": "filter",
+        "name": "resample",
+        "transform": "resample",
+        "input": "audio",
+        "output": "audio",
+        "sampleFormats": [
+          "s16"
+        ],
+        "realtime": true,
+        "metadata": {
+          "backend": "resample",
+          "sample_format": "s16"
+        },
+        "requiredBy": "audio",
+        "status": "available"
+      },
+      {
+        "kind": "encoder",
+        "name": "opus",
+        "codec": "opus",
+        "media": [
+          "audio"
+        ],
+        "sampleFormats": [
+          "s16"
+        ],
+        "realtime": true,
+        "requiredBy": "audio",
+        "status": "available"
+      }
+    ],
+    "warnings": [
+      {
+        "code": "shape_conversion_inserted",
+        "node": "audio",
+        "message": "inserted resample 44.1kHz→48kHz 1ch→2ch before encode-opus (AllowResample)",
+        "details": [
+          "adapter=resample",
+          "source=frame audio 44.1kHz 1ch s16",
+          "actual_shape=domain=frame media=audio stream=mic44 sample_rate=44100 channels=1 sample_format=s16",
+          "expected_shape=domain=frame media=audio sample_rate=48000 channels=2"
+        ]
+      }
+    ],
+    "graph": {
+      "name": "goav",
+      "nodes": [
+        {
+          "name": "mic44",
+          "kind": "source",
+          "detail": "custom source, domain=frame, media=audio"
+        },
+        {
+          "name": "select-audio",
+          "kind": "stage",
+          "detail": "select, type=audio"
+        },
+        {
+          "name": "resample-audio",
+          "kind": "stage",
+          "detail": "resample, 48000 Hz, 2 ch, samplefmt=s16"
+        },
+        {
+          "name": "encode-audio",
+          "kind": "stage",
+          "detail": "frames -\u003e packets, codec=opus"
+        },
+        {
+          "name": "packets",
+          "kind": "sink"
+        }
+      ],
+      "edges": [
+        {
+          "from": "mic44",
+          "to": "select-audio",
+          "policy": "all"
+        },
+        {
+          "from": "select-audio",
+          "to": "resample-audio",
+          "policy": "all"
+        },
+        {
+          "from": "resample-audio",
+          "to": "encode-audio",
+          "policy": "all"
+        },
+        {
+          "from": "encode-audio",
+          "to": "packets",
+          "policy": "all"
+        }
+      ]
+    }
+  }
+}

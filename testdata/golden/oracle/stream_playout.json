@@ -1,0 +1,215 @@
+{
+  "describe": {
+    "name": "goav",
+    "nodes": [
+      {
+        "name": "video-1",
+        "kind": "source",
+        "detail": "custom source, domain=frame, media=video"
+      },
+      {
+        "name": "select-video",
+        "kind": "stage",
+        "detail": "select, type=video"
+      },
+      {
+        "name": "playout-video-screen",
+        "kind": "stage",
+        "detail": "playout hold-late"
+      },
+      {
+        "name": "screen",
+        "kind": "sink"
+      }
+    ],
+    "edges": [
+      {
+        "from": "video-1",
+        "to": "select-video",
+        "policy": "all"
+      },
+      {
+        "from": "select-video",
+        "to": "playout-video-screen",
+        "policy": "all"
+      },
+      {
+        "from": "playout-video-screen",
+        "to": "screen",
+        "policy": "all"
+      }
+    ]
+  },
+  "explain": {
+    "summary": "from video-1 through 1 stream branch(es) to screen",
+    "operation": "build job",
+    "inputs": [
+      {
+        "name": "video-1",
+        "protocol": "custom",
+        "streams": [
+          {
+            "ID": "video-1",
+            "Index": 0,
+            "Type": "video",
+            "Codec": {
+              "ID": "",
+              "Type": "video",
+              "Profile": "",
+              "Level": "",
+              "ClockRate": 90000,
+              "SampleRate": 0,
+              "Channels": 0,
+              "ChannelLayout": "",
+              "Width": 64,
+              "Height": 48,
+              "PixelFormat": "i420",
+              "SampleFormat": "",
+              "ExtraData": {
+                "Bytes": null,
+                "Ownership": "",
+                "Owner": null
+              },
+              "Attributes": null
+            },
+            "TimeBase": {
+              "Num": 0,
+              "Den": 0
+            },
+            "Language": "",
+            "Name": "video-1",
+            "Epoch": 0,
+            "Metadata": null
+          }
+        ]
+      }
+    ],
+    "streams": [
+      {
+        "name": "video",
+        "select": {
+          "type": "video"
+        },
+        "operations": [
+          {
+            "kind": "stage",
+            "component": "playout-screen",
+            "detail": "custom stage",
+            "adapter": "playout-screen"
+          }
+        ],
+        "destinations": [
+          "screen"
+        ]
+      }
+    ],
+    "branches": [
+      {
+        "name": "video",
+        "input": "video-1",
+        "stream": {
+          "id": "video-1",
+          "type": "video",
+          "name": "video-1"
+        },
+        "shape": {
+          "domain": "frame",
+          "mediaKind": "video",
+          "streamID": "video-1",
+          "width": 64,
+          "height": 48,
+          "pixelFormat": "i420"
+        },
+        "operations": [
+          {
+            "kind": "select",
+            "component": "video",
+            "detail": "select stream",
+            "shape": {
+              "domain": "frame",
+              "mediaKind": "video",
+              "streamID": "video-1",
+              "width": 64,
+              "height": 48,
+              "pixelFormat": "i420"
+            }
+          },
+          {
+            "kind": "stage",
+            "component": "playout-screen",
+            "detail": "custom stage",
+            "shape": {
+              "domain": "frame",
+              "mediaKind": "video",
+              "streamID": "video-1",
+              "width": 64,
+              "height": 48,
+              "pixelFormat": "i420"
+            },
+            "adapter": "playout-screen"
+          }
+        ],
+        "destinations": [
+          "screen"
+        ]
+      }
+    ],
+    "destinations": [
+      {
+        "name": "screen",
+        "kind": "sink",
+        "branches": [
+          "video"
+        ]
+      }
+    ],
+    "decisions": [
+      {
+        "code": "path_latency_budget",
+        "branch": "video",
+        "message": "declared latency budget 0s"
+      }
+    ],
+    "graph": {
+      "name": "goav",
+      "nodes": [
+        {
+          "name": "video-1",
+          "kind": "source",
+          "detail": "custom source, domain=frame, media=video"
+        },
+        {
+          "name": "select-video",
+          "kind": "stage",
+          "detail": "select, type=video"
+        },
+        {
+          "name": "playout-video-screen",
+          "kind": "stage",
+          "detail": "playout hold-late"
+        },
+        {
+          "name": "screen",
+          "kind": "sink"
+        }
+      ],
+      "edges": [
+        {
+          "from": "video-1",
+          "to": "select-video",
+          "policy": "all"
+        },
+        {
+          "from": "select-video",
+          "to": "playout-video-screen",
+          "policy": "all"
+        },
+        {
+          "from": "playout-video-screen",
+          "to": "screen",
+          "policy": "all"
+        }
+      ]
+    }
+  }
+}

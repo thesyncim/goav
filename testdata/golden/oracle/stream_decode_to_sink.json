@@ -1,0 +1,210 @@
+{
+  "describe": {
+    "name": "goav",
+    "nodes": [
+      {
+        "name": "in.mp4",
+        "kind": "source",
+        "detail": "demux, protocol=file"
+      },
+      {
+        "name": "select-audio",
+        "kind": "stage",
+        "detail": "select, type=audio"
+      },
+      {
+        "name": "decode-audio",
+        "kind": "stage",
+        "detail": "packets -\u003e frames, type=audio"
+      },
+      {
+        "name": "frames",
+        "kind": "sink"
+      }
+    ],
+    "edges": [
+      {
+        "from": "in.mp4",
+        "to": "select-audio",
+        "policy": "all"
+      },
+      {
+        "from": "select-audio",
+        "to": "decode-audio",
+        "policy": "all"
+      },
+      {
+        "from": "decode-audio",
+        "to": "frames",
+        "policy": "all"
+      }
+    ]
+  },
+  "explain": {
+    "summary": "from in.mp4 through 1 stream branch(es) to frames",
+    "operation": "build job",
+    "inputs": [
+      {
+        "name": "in.mp4",
+        "protocol": "file",
+        "format": "mp4"
+      }
+    ],
+    "streams": [
+      {
+        "name": "audio",
+        "select": {
+          "type": "audio"
+        },
+        "decode": true,
+        "operations": [
+          {
+            "kind": "decode",
+            "detail": "packets to frames"
+          }
+        ],
+        "destinations": [
+          "frames"
+        ]
+      }
+    ],
+    "branches": [
+      {
+        "name": "audio",
+        "input": "in.mp4",
+        "stream": {
+          "type": "audio"
+        },
+        "shape": {
+          "domain": "packet",
+          "mediaKind": "audio"
+        },
+        "operations": [
+          {
+            "kind": "demux",
+            "component": "container",
+            "detail": "read packets from input",
+            "shape": {
+              "domain": "packet",
+              "mediaKind": "audio"
+            }
+          },
+          {
+            "kind": "select",
+            "component": "audio",
+            "detail": "select stream",
+            "shape": {
+              "domain": "packet",
+              "mediaKind": "audio"
+            }
+          },
+          {
+            "kind": "decode",
+            "detail": "packets to frames",
+            "shape": {
+              "domain": "frame",
+              "mediaKind": "audio"
+            }
+          }
+        ],
+        "destinations": [
+          "frames"
+        ]
+      }
+    ],
+    "destinations": [
+      {
+        "name": "frames",
+        "kind": "sink",
+        "branches": [
+          "audio"
+        ]
+      }
+    ],
+    "decisions": [
+      {
+        "code": "decode_required",
+        "branch": "audio",
+        "message": "operation specs require decoded frames"
+      }
+    ],
+    "requiredAdapters": [
+      {
+        "kind": "demuxer",
+        "name": "mp4",
+        "format": "mp4",
+        "media": [
+          "audio",
+          "video"
+        ],
+        "codecs": [
+          "h264",
+          "av1",
+          "vp8",
+          "vp9",
+          "aac",
+          "opus",
+          "flac"
+        ],
+        "minStreams": 1,
+        "metadata": {
+          "summary": "MP4 demux reads common ISO BMFF audio and video sample entries"
+        },
+        "requiredBy": "in.mp4",
+        "status": "available"
+      }
+    ],
+    "warnings": [
+      {
+        "code": "decode_codec_deferred",
+        "node": "audio",
+        "message": "decode codec will be resolved when the input opens",
+        "suggestions": [
+          "declare the provider codec intent when the receive codec is already known",
+          "use input metadata or a format adapter that reports streams during probing"
+        ]
+      }
+    ],
+    "graph": {
+      "name": "goav",
+      "nodes": [
+        {
+          "name": "in.mp4",
+          "kind": "source",
+          "detail": "demux, protocol=file"
+        },
+        {
+          "name": "select-audio",
+          "kind": "stage",
+          "detail": "select, type=audio"
+        },
+        {
+          "name": "decode-audio",
+          "kind": "stage",
+          "detail": "packets -\u003e frames, type=audio"
+        },
+        {
+          "name": "frames",
+          "kind": "sink"
+        }
+      ],
+      "edges": [
+        {
+          "from": "in.mp4",
+          "to": "select-audio",
+          "policy": "all"
+        },
+        {
+          "from": "select-audio",
+          "to": "decode-audio",
+          "policy": "all"
+        },
+        {
+          "from": "decode-audio",
+          "to": "frames",
+          "policy": "all"
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,563 @@
+{
+  "describe": {
+    "name": "goav",
+    "nodes": [
+      {
+        "name": "in.mp4",
+        "kind": "source",
+        "detail": "demux, protocol=file"
+      },
+      {
+        "name": "select-video",
+        "kind": "stage",
+        "detail": "select, type=video"
+      },
+      {
+        "name": "select-audio",
+        "kind": "stage",
+        "detail": "select, type=audio"
+      },
+      {
+        "name": "a.mkv",
+        "kind": "stage",
+        "detail": "mux, protocol=file"
+      },
+      {
+        "name": "b.mkv",
+        "kind": "stage",
+        "detail": "mux, protocol=file"
+      }
+    ],
+    "edges": [
+      {
+        "from": "in.mp4",
+        "to": "select-video",
+        "policy": "all"
+      },
+      {
+        "from": "in.mp4",
+        "to": "select-audio",
+        "policy": "all"
+      },
+      {
+        "from": "select-video",
+        "to": "a.mkv",
+        "policy": "all"
+      },
+      {
+        "from": "select-video",
+        "to": "b.mkv",
+        "policy": "all"
+      },
+      {
+        "from": "select-audio",
+        "to": "a.mkv",
+        "policy": "all"
+      }
+    ]
+  },
+  "explain": {
+    "summary": "from in.mp4 through 3 stream branch(es) to 2 destinations",
+    "operation": "build job",
+    "inputs": [
+      {
+        "name": "in.mp4",
+        "protocol": "file",
+        "format": "mp4"
+      }
+    ],
+    "streams": [
+      {
+        "name": "a",
+        "select": {
+          "type": "video"
+        },
+        "operations": [
+          {
+            "kind": "copy",
+            "component": "packet-copy"
+          }
+        ],
+        "encode": {
+          "ID": "",
+          "Type": "",
+          "Parameters": {
+            "ID": "",
+            "Type": "",
+            "Profile": "",
+            "Level": "",
+            "ClockRate": 0,
+            "SampleRate": 0,
+            "Channels": 0,
+            "ChannelLayout": "",
+            "Width": 0,
+            "Height": 0,
+            "PixelFormat": "",
+            "SampleFormat": "",
+            "ExtraData": {
+              "Bytes": null,
+              "Ownership": "",
+              "Owner": null
+            },
+            "Attributes": null
+          },
+          "Settings": {
+            "Bitrate": 0,
+            "Framerate": {
+              "Value": 0,
+              "Base": {
+                "Num": 0,
+                "Den": 0
+              }
+            },
+            "KeyframeInterval": 0,
+            "Profile": "",
+            "Level": "",
+            "Channels": 0,
+            "SampleRate": 0,
+            "ClockRate": 0,
+            "ChannelLayout": "",
+            "ChannelsSet": false,
+            "SampleRateSet": false,
+            "Custom": null
+          },
+          "Copy": true,
+          "Auto": false
+        },
+        "destinations": [
+          "a.mkv"
+        ]
+      },
+      {
+        "name": "b",
+        "select": {
+          "type": "video"
+        },
+        "operations": [
+          {
+            "kind": "copy",
+            "component": "packet-copy"
+          }
+        ],
+        "encode": {
+          "ID": "",
+          "Type": "",
+          "Parameters": {
+            "ID": "",
+            "Type": "",
+            "Profile": "",
+            "Level": "",
+            "ClockRate": 0,
+            "SampleRate": 0,
+            "Channels": 0,
+            "ChannelLayout": "",
+            "Width": 0,
+            "Height": 0,
+            "PixelFormat": "",
+            "SampleFormat": "",
+            "ExtraData": {
+              "Bytes": null,
+              "Ownership": "",
+              "Owner": null
+            },
+            "Attributes": null
+          },
+          "Settings": {
+            "Bitrate": 0,
+            "Framerate": {
+              "Value": 0,
+              "Base": {
+                "Num": 0,
+                "Den": 0
+              }
+            },
+            "KeyframeInterval": 0,
+            "Profile": "",
+            "Level": "",
+            "Channels": 0,
+            "SampleRate": 0,
+            "ClockRate": 0,
+            "ChannelLayout": "",
+            "ChannelsSet": false,
+            "SampleRateSet": false,
+            "Custom": null
+          },
+          "Copy": true,
+          "Auto": false
+        },
+        "destinations": [
+          "b.mkv"
+        ]
+      },
+      {
+        "name": "audio",
+        "select": {
+          "type": "audio"
+        },
+        "operations": [
+          {
+            "kind": "copy",
+            "component": "packet-copy"
+          }
+        ],
+        "encode": {
+          "ID": "",
+          "Type": "",
+          "Parameters": {
+            "ID": "",
+            "Type": "",
+            "Profile": "",
+            "Level": "",
+            "ClockRate": 0,
+            "SampleRate": 0,
+            "Channels": 0,
+            "ChannelLayout": "",
+            "Width": 0,
+            "Height": 0,
+            "PixelFormat": "",
+            "SampleFormat": "",
+            "ExtraData": {
+              "Bytes": null,
+              "Ownership": "",
+              "Owner": null
+            },
+            "Attributes": null
+          },
+          "Settings": {
+            "Bitrate": 0,
+            "Framerate": {
+              "Value": 0,
+              "Base": {
+                "Num": 0,
+                "Den": 0
+              }
+            },
+            "KeyframeInterval": 0,
+            "Profile": "",
+            "Level": "",
+            "Channels": 0,
+            "SampleRate": 0,
+            "ClockRate": 0,
+            "ChannelLayout": "",
+            "ChannelsSet": false,
+            "SampleRateSet": false,
+            "Custom": null
+          },
+          "Copy": true,
+          "Auto": false
+        },
+        "destinations": [
+          "a.mkv"
+        ]
+      }
+    ],
+    "branches": [
+      {
+        "name": "a",
+        "input": "in.mp4",
+        "stream": {
+          "type": "video"
+        },
+        "shape": {
+          "domain": "packet",
+          "mediaKind": "video"
+        },
+        "operations": [
+          {
+            "kind": "demux",
+            "component": "container",
+            "detail": "read packets from input",
+            "shape": {
+              "domain": "packet",
+              "mediaKind": "video"
+            }
+          },
+          {
+            "kind": "select",
+            "component": "video",
+            "detail": "select stream",
+            "shape": {
+              "domain": "packet",
+              "mediaKind": "video"
+            }
+          },
+          {
+            "kind": "copy",
+            "component": "packet-copy",
+            "detail": "explicit packet copy",
+            "shape": {
+              "domain": "packet",
+              "mediaKind": "video"
+            }
+          }
+        ],
+        "destinations": [
+          "a.mkv"
+        ]
+      },
+      {
+        "name": "b",
+        "input": "in.mp4",
+        "stream": {
+          "type": "video"
+        },
+        "shape": {
+          "domain": "packet",
+          "mediaKind": "video"
+        },
+        "operations": [
+          {
+            "kind": "demux",
+            "component": "container",
+            "detail": "read packets from input",
+            "shape": {
+              "domain": "packet",
+              "mediaKind": "video"
+            }
+          },
+          {
+            "kind": "select",
+            "component": "video",
+            "detail": "select stream",
+            "shape": {
+              "domain": "packet",
+              "mediaKind": "video"
+            }
+          },
+          {
+            "kind": "copy",
+            "component": "packet-copy",
+            "detail": "explicit packet copy",
+            "shape": {
+              "domain": "packet",
+              "mediaKind": "video"
+            }
+          }
+        ],
+        "destinations": [
+          "b.mkv"
+        ]
+      },
+      {
+        "name": "audio",
+        "input": "in.mp4",
+        "stream": {
+          "type": "audio"
+        },
+        "shape": {
+          "domain": "packet",
+          "mediaKind": "audio"
+        },
+        "operations": [
+          {
+            "kind": "demux",
+            "component": "container",
+            "detail": "read packets from input",
+            "shape": {
+              "domain": "packet",
+              "mediaKind": "audio"
+            }
+          },
+          {
+            "kind": "select",
+            "component": "audio",
+            "detail": "select stream",
+            "shape": {
+              "domain": "packet",
+              "mediaKind": "audio"
+            }
+          },
+          {
+            "kind": "copy",
+            "component": "packet-copy",
+            "detail": "explicit packet copy",
+            "shape": {
+              "domain": "packet",
+              "mediaKind": "audio"
+            }
+          }
+        ],
+        "destinations": [
+          "a.mkv"
+        ]
+      }
+    ],
+    "destinations": [
+      {
+        "name": "a.mkv",
+        "protocol": "file",
+        "format": "matroska",
+        "kind": "mux",
+        "branches": [
+          "a",
+          "audio"
+        ]
+      },
+      {
+        "name": "b.mkv",
+        "protocol": "file",
+        "format": "matroska",
+        "kind": "mux",
+        "branches": [
+          "b"
+        ]
+      }
+    ],
+    "decisions": [
+      {
+        "code": "packet_copy",
+        "branch": "a",
+        "message": "stream can remain packet encoded"
+      },
+      {
+        "code": "packet_copy",
+        "branch": "b",
+        "message": "stream can remain packet encoded"
+      },
+      {
+        "code": "packet_copy",
+        "branch": "audio",
+        "message": "stream can remain packet encoded"
+      }
+    ],
+    "requiredAdapters": [
+      {
+        "kind": "demuxer",
+        "name": "mp4",
+        "format": "mp4",
+        "media": [
+          "audio",
+          "video"
+        ],
+        "codecs": [
+          "h264",
+          "av1",
+          "vp8",
+          "vp9",
+          "aac",
+          "opus",
+          "flac"
+        ],
+        "minStreams": 1,
+        "metadata": {
+          "summary": "MP4 demux reads common ISO BMFF audio and video sample entries"
+        },
+        "requiredBy": "in.mp4",
+        "status": "available"
+      },
+      {
+        "kind": "muxer",
+        "name": "matroska",
+        "format": "matroska",
+        "media": [
+          "audio",
+          "video",
+          "subtitle"
+        ],
+        "codecs": [
+          "opus",
+          "vorbis",
+          "flac",
+          "aac",
+          "vp8",
+          "vp9",
+          "av1",
+          "h264",
+          "pcm",
+          "text_utf8"
+        ],
+        "minStreams": 1,
+        "metadata": {
+          "summary": "Matroska supports multi-track audio, video, and subtitle packets without codec conversion"
+        },
+        "requiredBy": "a.mkv",
+        "status": "available"
+      },
+      {
+        "kind": "muxer",
+        "name": "matroska",
+        "format": "matroska",
+        "media": [
+          "audio",
+          "video",
+          "subtitle"
+        ],
+        "codecs": [
+          "opus",
+          "vorbis",
+          "flac",
+          "aac",
+          "vp8",
+          "vp9",
+          "av1",
+          "h264",
+          "pcm",
+          "text_utf8"
+        ],
+        "minStreams": 1,
+        "metadata": {
+          "summary": "Matroska supports multi-track audio, video, and subtitle packets without codec conversion"
+        },
+        "requiredBy": "b.mkv",
+        "status": "available"
+      }
+    ],
+    "graph": {
+      "name": "goav",
+      "nodes": [
+        {
+          "name": "in.mp4",
+          "kind": "source",
+          "detail": "demux, protocol=file"
+        },
+        {
+          "name": "select-video",
+          "kind": "stage",
+          "detail": "select, type=video"
+        },
+        {
+          "name": "select-audio",
+          "kind": "stage",
+          "detail": "select, type=audio"
+        },
+        {
+          "name": "a.mkv",
+          "kind": "stage",
+          "detail": "mux, protocol=file"
+        },
+        {
+          "name": "b.mkv",
+          "kind": "stage",
+          "detail": "mux, protocol=file"
+        }
+      ],
+      "edges": [
+        {
+          "from": "in.mp4",
+          "to": "select-video",
+          "policy": "all"
+        },
+        {
+          "from": "in.mp4",
+          "to": "select-audio",
+          "policy": "all"
+        },
+        {
+          "from": "select-video",
+          "to": "a.mkv",
+          "policy": "all"
+        },
+        {
+          "from": "select-video",
+          "to": "b.mkv",
+          "policy": "all"
+        },
+        {
+          "from": "select-audio",
+          "to": "a.mkv",
+          "policy": "all"
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "describe_error": {
+    "code": "operation_shape_mismatch",
+    "family": "transform",
+    "operation": "build stream",
+    "node": "video"
+  },
+  "explain_error": {
+    "code": "operation_shape_mismatch",
+    "family": "transform",
+    "operation": "build stream",
+    "node": "video"
+  },
+  "build_error": {
+    "code": "operation_shape_mismatch",
+    "family": "transform",
+    "operation": "build stream",
+    "node": "video"
+  }
+}

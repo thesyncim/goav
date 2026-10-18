@@ -194,14 +194,18 @@ func recipeIROperationsContainPlayout(operations []recipeir.Operation) bool {
 	return false
 }
 
+// playoutStageOperationName is the planned node name of a playout gate:
+// playout-<branch>-<policy>, exactly as the lowering and the work plan name
+// it, so Describe matches the built graph.
 func playoutStageOperationName(operation operationSpec, branchName string) string {
-	if _, ok := operation.Stage.(*playoutGate); !ok {
+	gate, ok := operation.Stage.(*playoutGate)
+	if !ok {
 		if operation.Stage != nil {
 			return operation.Stage.Name()
 		}
 		return operation.Component
 	}
-	return playoutStageName(firstNonEmpty(branchName, operation.Component, "branch"))
+	return playoutStageName(firstNonEmpty(branchName, "branch") + "-" + gate.policy.Name())
 }
 
 var _ pipeline.Stage = (*playoutGate)(nil)

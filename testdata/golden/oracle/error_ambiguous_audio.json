@@ -1,0 +1,20 @@
+{
+  "describe_error": {
+    "code": "stream_ambiguous",
+    "family": "stream",
+    "operation": "select stream",
+    "node": "type=audio"
+  },
+  "explain_error": {
+    "code": "stream_ambiguous",
+    "family": "stream",
+    "operation": "select stream",
+    "node": "type=audio"
+  },
+  "build_error": {
+    "code": "stream_ambiguous",
+    "family": "stream",
+    "operation": "select stream",
+    "node": "type=audio"
+  }
+}
