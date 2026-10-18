@@ -305,6 +305,7 @@
       {
         "name": "room.webm",
         "protocol": "file",
+        "format": "webm",
         "kind": "mux",
         "branches": [
           "room"
@@ -319,6 +320,28 @@
       }
     ],
     "requiredAdapters": [
+      {
+        "kind": "muxer",
+        "name": "webm",
+        "format": "webm",
+        "media": [
+          "audio",
+          "video"
+        ],
+        "codecs": [
+          "opus",
+          "vorbis",
+          "vp8",
+          "vp9",
+          "av1"
+        ],
+        "minStreams": 1,
+        "metadata": {
+          "summary": "WebM supports Opus/Vorbis audio and VP8/VP9/AV1 video packets without codec conversion"
+        },
+        "requiredBy": "room.webm",
+        "status": "available"
+      },
       {
         "kind": "encoder",
         "name": "opus",

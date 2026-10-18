@@ -762,7 +762,7 @@ func validateOutputFormatAdapters(ctx context.Context, rt *Runtime, outputs []de
 			resolved[i] = resolved[i].withResolvedFormat(formatID)
 		}
 		if _, err := rt.formats.MuxerFactory(formatID); err != nil {
-			return nil, destinationMuxerMissingError(destinationNodeName(resolved[i].output, i, destinationNames), resolved[i].output, formatID, err)
+			return nil, destinationMuxerMissingError(destinationNodeName(resolved[i].output, i, destinationNames), resolved[i].output, formatID, containerChoices(rt.formats), err)
 		}
 	}
 	return resolved, nil

@@ -554,6 +554,11 @@ func (t *task) Run(ctx context.Context) error {
 	t.lifecycleMu.Unlock()
 	err := t.structuredRunError(t.graph.Run(ctx))
 	t.finishDestinations(err)
+	// A task stopped by its context reports why, whether or not its sources
+	// returned the context error themselves.
+	if ctxErr := ctx.Err(); ctxErr != nil && (err == nil || errors.Is(err, ctxErr)) {
+		err = ctxErr
+	}
 	t.lifecycleMu.Lock()
 	t.finished = true
 	t.runErr = err

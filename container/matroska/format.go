@@ -82,6 +82,9 @@ type formatTrack struct {
 	trackID      uint32
 	media        av.MediaType
 	codecDelayNS int64
+	// opus marks an Opus track: a final packet shorter than its frames
+	// carries the rest as DiscardPadding, the Matroska end-trim signal.
+	opus bool
 }
 
 func Register(registry *format.SimpleRegistry) {
@@ -183,7 +186,7 @@ func (m *FormatMuxer) Open(ctx context.Context, output format.Output, streams []
 		if err != nil {
 			return err
 		}
-		m.tracks = append(m.tracks, formatTrack{streamID: streams[i].ID, trackID: trackID, codecDelayNS: codecDelayNS})
+		m.tracks = append(m.tracks, formatTrack{streamID: streams[i].ID, trackID: trackID, codecDelayNS: codecDelayNS, opus: track.Codec == CodecOpus})
 	}
 	m.closed = false
 	return nil
@@ -218,13 +221,20 @@ func (m *FormatMuxer) Write(ctx context.Context, packet *av.Packet, _ *format.Wr
 		}
 		durationNS = int64(durationValue)
 	}
-	return m.muxer.WritePacket(Packet{
+	out := Packet{
 		TrackID:    track.trackID,
 		TimeNS:     int64(timeValue) + track.codecDelayNS,
 		DurationNS: durationNS,
 		Keyframe:   packet.Keyframe,
 		Data:       packet.Payload.Bytes,
-	})
+	}
+	if track.opus {
+		if padding := opusDiscardPaddingNS(packet.Payload.Bytes, durationNS); padding > 0 {
+			out.DurationNS += padding
+			out.DiscardPaddingNS = padding
+		}
+	}
+	return m.muxer.WritePacket(out)
 }
 
 func (m *FormatMuxer) Close() error {
@@ -273,7 +283,7 @@ func (d *FormatDemuxer) Open(ctx context.Context, input format.Input, _ format.O
 	for i := range tracks {
 		stream := streamFromTrack(tracks[i], i)
 		d.streams = append(d.streams, stream)
-		d.tracks = append(d.tracks, formatTrack{streamID: stream.ID, trackID: tracks[i].ID, media: stream.Type, codecDelayNS: tracks[i].CodecDelayNS})
+		d.tracks = append(d.tracks, formatTrack{streamID: stream.ID, trackID: tracks[i].ID, media: stream.Type, codecDelayNS: tracks[i].CodecDelayNS, opus: tracks[i].Codec == CodecOpus})
 	}
 	d.closed = false
 	return nil
@@ -324,8 +334,15 @@ func (d *FormatDemuxer) ReadInto(ctx context.Context, out *format.ReadResult) er
 	out.Packet.Payload.Bytes = packet.Data
 	out.Packet.Payload.Ownership = av.BufferOwned
 	out.Packet.PTS = av.Timestamp{Value: packet.TimeNS - track.codecDelayNS, Base: av.TimeBase{Num: 1, Den: timeNS}}
-	if packet.DurationNS > 0 {
-		out.Packet.Duration = av.Duration{Value: packet.DurationNS, Base: av.TimeBase{Num: 1, Den: timeNS}}
+	durationNS := packet.DurationNS
+	if track.opus && packet.DiscardPaddingNS > 0 {
+		if durationNS <= 0 {
+			durationNS, _ = opusPacketDurationNS(packet.Data)
+		}
+		durationNS -= packet.DiscardPaddingNS
+	}
+	if durationNS > 0 {
+		out.Packet.Duration = av.Duration{Value: durationNS, Base: av.TimeBase{Num: 1, Den: timeNS}}
 	}
 	out.Packet.Keyframe = packet.Keyframe
 	out.PacketReady = true

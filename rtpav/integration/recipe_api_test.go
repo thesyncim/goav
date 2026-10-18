@@ -464,7 +464,7 @@ func TestBranchCompositionAcceptsRTPInputThenReportsMissingMuxer(t *testing.T) {
 	if buildErr.Node != "archive.ogg" {
 		t.Fatalf("node = %q, want archive.ogg destination", buildErr.Node)
 	}
-	if !strings.Contains(err.Error(), "ogg muxer") {
+	if !strings.Contains(err.Error(), `muxer for "ogg"`) {
 		t.Fatalf("err = %v, want Ogg adapter guidance", err)
 	}
 }

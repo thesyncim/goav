@@ -3,6 +3,7 @@ package goav
 import (
 	"errors"
 	"strconv"
+	"strings"
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/errcode"
@@ -75,13 +76,13 @@ func outputFormatProbeError(output format.Output, index int, cause error) error 
 	}
 }
 
-func outputMuxerMissingError(output format.Output, index int, id av.FormatID, cause error) error {
+func outputMuxerMissingError(output format.Output, index int, id av.FormatID, choices string, cause error) error {
 	if !errors.Is(cause, format.ErrNotFound) {
 		return cause
 	}
 	suggestions := []string{
-		"register a " + string(id) + " muxer with goav.New(runconfig.WithMuxer(...)) or a format adapter that provides one",
-		"choose an output container supported by the runtime, such as .ivf for VP8/VP9/AV1 packet recording or .h264 for H264 packet recording",
+		"register a muxer for " + quoteFormat(id) + " with goav.New(runconfig.WithMuxer(...)) or a format adapter that provides one",
+		containerChoiceFix(choices),
 		"run the Outputs on a goav.New(runconfig.WithFormatAdapter(...)) runtime when using a custom adapter bundle",
 	}
 	return &BuildError{
@@ -119,13 +120,13 @@ func destinationFormatProbeError(node string, output format.Output, cause error)
 	}
 }
 
-func destinationMuxerMissingError(node string, output format.Output, id av.FormatID, cause error) error {
+func destinationMuxerMissingError(node string, output format.Output, id av.FormatID, choices string, cause error) error {
 	if !errors.Is(cause, format.ErrNotFound) {
 		return cause
 	}
 	suggestions := []string{
-		"register a " + string(id) + " muxer with goav.New(runconfig.WithMuxer(...)) or a format adapter that provides one",
-		"choose a destination container supported by the runtime, such as .ivf for VP8/VP9/AV1 packet recording or .h264 for H264 packet recording",
+		"register a muxer for " + quoteFormat(id) + " with goav.New(runconfig.WithMuxer(...)) or a format adapter that provides one",
+		containerChoiceFix(choices),
 		"run the Outputs on a goav.New(runconfig.WithFormatAdapter(...)) runtime when using a custom adapter bundle",
 	}
 	return &BuildError{
@@ -177,4 +178,33 @@ func outputFormatFields(output format.Output) []buildErrorDetail {
 
 func quoteFormat(id av.FormatID) string {
 	return strconv.Quote(string(id))
+}
+
+// containerChoices lists the containers a registry can write and the codecs
+// each carries, for a refusal that has to name a different one.
+func containerChoices(registry *format.SimpleRegistry) string {
+	if registry == nil {
+		return ""
+	}
+	descriptors := registry.MuxerDescriptors()
+	parts := make([]string, 0, len(descriptors))
+	for _, d := range descriptors {
+		codecs := make([]string, 0, len(d.Codecs))
+		for _, id := range d.Codecs {
+			codecs = append(codecs, string(id))
+		}
+		part := string(d.Format)
+		if len(codecs) > 0 {
+			part += " (" + strings.Join(codecs, ", ") + ")"
+		}
+		parts = append(parts, part)
+	}
+	return strings.Join(parts, "; ")
+}
+
+func containerChoiceFix(choices string) string {
+	if choices == "" {
+		return "register a format adapter: this runtime has no muxers"
+	}
+	return "write a container this runtime has a muxer for: " + choices
 }

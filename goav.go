@@ -40,8 +40,9 @@ type Runtime = runtime
 // Task is the minimal runnable media composition accepted by code that only
 // needs lifecycle control.
 type Task interface {
-	// Run drives the graph until every source ends or ctx cancels; it returns
-	// the first fatal node error. Media does not flow before Run.
+	// Run drives the graph until every source ends or ctx is done. It returns
+	// the first fatal node error; otherwise nil when every source ended, or
+	// ctx.Err() when ctx stopped the task. Media does not flow before Run.
 	Run(context.Context) error
 	// Close releases the task's resources and finalizes destinations; it is
 	// idempotent and safe to call while Run is still in flight.
