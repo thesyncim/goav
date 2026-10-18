@@ -11,6 +11,15 @@ methodology changes, and migration notes.
 
 ## Unreleased
 
+- Several file and protocol inputs run in one task, beside providers and
+  `goav.Source` inputs: `a.Video().To(out), b.Audio().To(out)` copies from two
+  files into one mux, and `file a.webm ! ... ! file x.webm` beside
+  `file b.webm ! ... ! file y.webm` runs as one program. Each select reads only
+  its own input's source. With several inputs a file's stream ids carry its
+  input name (`1@a.webm`), so the same track number in two files stays two
+  streams through muxes and sinks. Breaking: the `multi_input_unsupported`
+  code is gone, and a repeated input name is `input_duplicate` for every input
+  kind.
 - HLS ladders. `hls.NewLadder("master.m3u8", store)` hands out a packager per
   rendition (`ladder.Variant("hd.m3u8", ...)`) and writes the multivariant
   playlist over them: each variant's peak and average bandwidth, measured from

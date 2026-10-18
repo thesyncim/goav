@@ -18,6 +18,9 @@ err = task.Control(ctx, control.SelectActive("cam-b"))
 // Several inputs into one file: Outputs that share a Destination share its mux.
 rec := goav.Write("call.webm", w)
 err = rt.Run(ctx, mic.Audio().Decode().Encode(codec.Opus()).To(rec), cam.Video().To(rec))
+
+// Several files in one run: each stream reads its own file.
+err = rt.Run(ctx, a.Video().To(rec), b.Audio().To(rec))
 ```
 
 | Join | Inputs | Output |
@@ -29,6 +32,10 @@ err = rt.Run(ctx, mic.Audio().Decode().Encode(codec.Opus()).To(rec), cam.Video()
 
 ## Behavior
 
+- **Several files.** Files, providers, and `goav.Source` inputs share one run;
+  each stream reads only its own input. With several inputs a file's stream
+  ids carry its name (`1@a.webm`), so track 1 of two files stays two tracks in
+  one mux (`TestCopyFromTwoFilesIntoOneMux`).
 - **Timing.** Joins combine in arrival order. `.SyncByPTS()` on a Mix or
   Composite aligns inputs by presentation time instead: the earliest input
   leads, inputs within half a frame join it, inputs ahead sit the step out,

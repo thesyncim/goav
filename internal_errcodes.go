@@ -89,7 +89,6 @@ const (
 	inputCountUnsupportedCode        errcode.Code = "input_count_unsupported"
 	inputFormatUnknownCode           errcode.Code = "input_format_unknown"
 	inputDemuxerMissingCode          errcode.Code = "input_demuxer_missing"
-	multiInputUnsupportedCode        errcode.Code = "multi_input_unsupported"
 	unsupportedInputCode             errcode.Code = "unsupported_input"
 	sourceCallbackMissingCode        errcode.Code = "source_callback_missing"
 	sourceShapeInvalidCode           errcode.Code = "source_shape_invalid"

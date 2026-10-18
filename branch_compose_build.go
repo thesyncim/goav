@@ -167,10 +167,11 @@ func planBranchComposeRoutes(
 	spec pipeline.Spec,
 	nodes map[string]plannedNode,
 	sourceRefs []pipeline.NodeRef,
+	sourceInputs []string,
 	branches []branchComposeRoute,
 	outputs []branchComposeTargetRoute,
 ) (pipeline.Spec, error) {
-	g, err := planComposeGraph(sourceRefs, branches, outputs)
+	g, err := planComposeGraph(sourceRefs, sourceInputs, branches, outputs)
 	if err != nil {
 		return pipeline.Spec{}, err
 	}
@@ -184,6 +185,7 @@ func lowerBranchCompose(
 	service *builder,
 	graph pipeline.Graph,
 	sourceRefs []pipeline.NodeRef,
+	sourceInputs []string,
 	groups []branchComposeStreamGroup,
 	bounds []decodeBoundsProvider,
 	branches []branchComposeRoute,
@@ -191,7 +193,7 @@ func lowerBranchCompose(
 	branchPlan map[string]graphPlanBranchComposeBranchOperation,
 	realtime bool,
 ) error {
-	g, err := planComposeGraph(sourceRefs, branches, outputs)
+	g, err := planComposeGraph(sourceRefs, sourceInputs, branches, outputs)
 	if err != nil {
 		return err
 	}
@@ -340,7 +342,7 @@ func resolveBranchComposeStreamGroupsForInputs(sources mediaPlanCompiledSources,
 			if !ok {
 				return nil, streamSelectionError(streamMissingCode, branches[i].branch.Selector, sources.streams)
 			}
-			stream = selected.stream
+			stream = qualifyStream(selected.stream, sources.qualifiers[selected.inputIndex])
 		} else {
 			stream, err = selectDecodeStream(sources.streams, branches[i].branch.Selector)
 			if branches[i].sourceDomain == shape.DomainFrame {
@@ -387,7 +389,7 @@ func runtimeInputStreamSets(inputs []InputSpec, groups [][]av.Stream) []inputStr
 			known:   true,
 		}
 		if i < len(inputs) {
-			set.name = inputs[i].inputName(fmt.Sprintf("input-%d", i))
+			set.name = jobInputName(inputs[i], i)
 			if spec, ok := declaredSourceShape(inputs[i]); ok && spec.Domain != "" {
 				set.domain = spec.Domain
 			}

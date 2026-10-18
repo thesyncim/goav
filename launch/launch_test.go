@@ -136,6 +136,31 @@ func TestProgramsBuildTheGraphTheirGoBuilds(t *testing.T) {
 			},
 		},
 		{
+			name: "several files",
+			program: `
+				file a.webm ! video ! decode ! encode vp9 ! file x.webm
+				file b.webm ! video ! decode ! encode vp9 ! file y.webm
+			`,
+			gofor: func() []goav.Output {
+				a, b := goav.FileInput("a.webm", r()), goav.FileInput("b.webm", r())
+				return []goav.Output{
+					a.Video().Decode().Encode(codec.VP9()).To(goav.Write("x.webm", w())),
+					b.Video().Decode().Encode(codec.VP9()).To(goav.Write("y.webm", w())),
+				}
+			},
+		},
+		{
+			name: "two files into one mux",
+			program: `
+				file a.webm ! video ! file m.webm
+				file b.webm ! audio ! file m.webm
+			`,
+			gofor: func() []goav.Output {
+				out := goav.Write("m.webm", w())
+				return []goav.Output{goav.FileInput("a.webm", r()).Video().To(out), goav.FileInput("b.webm", r()).Audio().To(out)}
+			},
+		},
+		{
 			name:    "mix",
 			program: `mix(mic ! audio, music ! audio) ! encode opus bitrate=96k ! file mix.webm`,
 			gofor: func() []goav.Output {
@@ -211,6 +236,56 @@ func TestProgramRunsEndToEnd(t *testing.T) {
 	}
 	if len(demuxer.Tracks()) != 2 || len(perTrack) != 2 {
 		t.Fatalf("av.webm tracks = %d, packets per track = %v; want video and audio in one file", len(demuxer.Tracks()), perTrack)
+	}
+}
+
+// TestProgramMixesFileProviderAndSourceInputs runs a file, a generated
+// (provider) input, and an application source in one task, all into one WebM.
+func TestProgramMixesFileProviderAndSourceInputs(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	fs := newMemFS()
+	fixture, err := launch.Compile(`testsrc video size=64x48 frames=5 ! encode vp8 ! file a.webm`, launch.Files(fs))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := bundle.Run(ctx, fixture...); err != nil {
+		t.Fatalf("fixture: %v", err)
+	}
+	fs.inputs["a.webm"] = fs.outputs["a.webm"].Bytes()
+	mic := launch.Source("mic", "a test input", func(struct{}) (goav.InputSpec, error) {
+		return goavtest.Audio(48_000, 2, make([]int16, 1920), make([]int16, 1920)), nil
+	})
+	outs, err := launch.Compile(`
+		file a.webm ! video ! decode ! encode vp9 ! file o.webm
+		testsrc audio frames=5 ! encode opus ! file o.webm
+		mic ! audio ! encode opus ! file o.webm
+	`, launch.Files(fs), launch.Use(mic))
+	if err != nil {
+		t.Fatalf("compile: %v", err)
+	}
+	if err := bundle.Run(ctx, outs...); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	out := fs.outputs["o.webm"].Bytes()
+	demuxer, err := matroska.NewDemuxer(bytes.NewReader(out), matroska.DemuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	perTrack := map[uint32]int{}
+	packet := matroska.Packet{Data: make([]byte, 0, 1<<16)}
+	for demuxer.ReadPacket(&packet) == nil {
+		perTrack[packet.TrackID]++
+	}
+	if len(demuxer.Tracks()) != 3 || len(perTrack) != 3 {
+		t.Fatalf("o.webm tracks = %d, packets per track = %v; want the file's video and two audio tracks", len(demuxer.Tracks()), perTrack)
+	}
+	frames := goavtest.NewCollector()
+	if err := bundle.Run(ctx, goav.FileInput("o.webm", bytes.NewReader(out)).Video().Decode().To(frames.Sink())); err != nil {
+		t.Fatal(err)
+	}
+	if got := len(frames.Frames()); got != 5 {
+		t.Fatalf("o.webm video decodes to %d frames, want the file's 5", got)
 	}
 }
 

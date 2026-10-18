@@ -16,7 +16,7 @@ func (p *joinPlan) dag() (composeGraph, error) {
 	joinRef := p.planDAG(&g)
 	switch {
 	case len(p.branchRoutes) != 0:
-		if err := g.planBranches([]pipeline.NodeRef{joinRef}, p.branchRoutes, p.branchTargets); err != nil {
+		if err := g.planBranches([]pipeline.NodeRef{joinRef}, nil, p.branchRoutes, p.branchTargets); err != nil {
 			return composeGraph{}, err
 		}
 	case p.encode != nil:

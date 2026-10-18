@@ -2,6 +2,7 @@ package goav
 
 import (
 	"context"
+	"slices"
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
@@ -80,9 +81,9 @@ type composeGraph struct {
 	external []pipeline.NodeRef
 }
 
-func planComposeGraph(sources []pipeline.NodeRef, branches []branchComposeRoute, outputs []branchComposeTargetRoute) (composeGraph, error) {
+func planComposeGraph(sources []pipeline.NodeRef, sourceInputs []string, branches []branchComposeRoute, outputs []branchComposeTargetRoute) (composeGraph, error) {
 	g := composeGraph{external: sources}
-	if err := g.planBranches(sources, branches, outputs); err != nil {
+	if err := g.planBranches(sources, sourceInputs, branches, outputs); err != nil {
 		return composeGraph{}, err
 	}
 	return g, nil
@@ -91,7 +92,9 @@ func planComposeGraph(sources []pipeline.NodeRef, branches []branchComposeRoute,
 // planBranches appends a branch composition fed by sources: per selector
 // group a select, its decode, and shared steps; then each branch's private
 // steps and encoder; then the outputs. A graph holds one composition.
-func (g *composeGraph) planBranches(sources []pipeline.NodeRef, branches []branchComposeRoute, outputs []branchComposeTargetRoute) error {
+// sourceInputs names the input each source reads: a select bound to one input
+// is fed by that input's source alone.
+func (g *composeGraph) planBranches(sources []pipeline.NodeRef, sourceInputs []string, branches []branchComposeRoute, outputs []branchComposeTargetRoute) error {
 	g.sources = sources
 	g.groups = branchComposeSelectorGroups(branches)
 	g.branches = branches
@@ -103,7 +106,7 @@ func (g *composeGraph) planBranches(sources []pipeline.NodeRef, branches []branc
 			kind:   composeSelect,
 			name:   branchComposeInputNodeName(selectNodeName(group.selector), group.input),
 			detail: selectNodeDetail(group.selector),
-			inputs: sources,
+			inputs: boundSources(sources, sourceInputs, group.input),
 			group:  i,
 		})
 		decoded := branchComposeDecodedBranchIndices(group.branches, branches)
@@ -484,4 +487,16 @@ func (g *composeGraph) planSharedSteps(from pipeline.NodeRef, indices []int, bra
 		}
 	}
 	return nil
+}
+
+// boundSources are the sources a select reads: the source of the input it is
+// bound to, or every source when it selects across the inputs.
+func boundSources(sources []pipeline.NodeRef, sourceInputs []string, input string) []pipeline.NodeRef {
+	if input == "" || len(sources) < 2 {
+		return sources
+	}
+	if i := slices.Index(sourceInputs, input); i >= 0 && i < len(sources) {
+		return sources[i : i+1]
+	}
+	return sources
 }

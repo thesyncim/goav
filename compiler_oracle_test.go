@@ -108,6 +108,18 @@ var oracleFrameStage = component.FrameFunc("grade", func(_ context.Context, f *a
 // oracleCorpus is ordered by lowering path; each entry builds a fresh job.
 func oracleCorpus(t *testing.T) map[string]func() *goav.Job {
 	w := func(name string) goav.Destination { return goav.Write(name, io.Discard) }
+	// Value-grammar entries compile through the same front door Run takes.
+	outputs := func(outs ...goav.Output) *goav.Job {
+		job, err := goav.CompileOutputs(outs)
+		if err != nil {
+			t.Fatalf("compile outputs: %v", err)
+		}
+		return job
+	}
+	webmA, webmB := mfWebM(t, 64, 48, 3, 48_000, 2, 3), mfWebM(t, 32, 24, 3, 24_000, 1, 3)
+	files := func() (goav.InputSpec, goav.InputSpec) {
+		return goav.FileInput("a.webm", bytes.NewReader(webmA)), goav.FileInput("b.webm", bytes.NewReader(webmB))
+	}
 	return map[string]func() *goav.Job{
 		// Single stream.
 		"stream_video_transcode": func() *goav.Job {
@@ -157,6 +169,28 @@ func oracleCorpus(t *testing.T) map[string]func() *goav.Job {
 			return goav.From(oracleVideo(), oracleAudio()).
 				Video().Encode(codec.VP8()).To(out).
 				Audio().Encode(codec.Opus()).To(out)
+		},
+		"multi_files_transcode": func() *goav.Job {
+			a, b := files()
+			return outputs(
+				a.Video().Decode().Encode(codec.VP9()).To(w("x.webm")),
+				b.Video().Decode().Encode(codec.VP9()).To(w("y.webm")),
+			)
+		},
+		"multi_files_copy_one_mux": func() *goav.Job {
+			a, b := files()
+			out := w("m.webm")
+			return outputs(a.Video().To(out), b.Video().To(out), b.Audio().To(out))
+		},
+		"multi_files_remux": func() *goav.Job {
+			a, b := files()
+			out := w("r.webm")
+			return outputs(a.To(out), b.To(out))
+		},
+		"multi_file_and_source": func() *goav.Job {
+			a, _ := files()
+			out := w("o.webm")
+			return outputs(a.Video().To(out), oracleAudio().Audio().Encode(codec.Opus()).To(out))
 		},
 		// Branches.
 		"branches_ladder": func() *goav.Job {

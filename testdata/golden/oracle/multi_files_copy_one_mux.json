@@ -1,0 +1,443 @@
+{
+  "describe": {
+    "name": "goav",
+    "nodes": [
+      {
+        "name": "a.webm",
+        "kind": "source",
+        "detail": "demux, protocol=file"
+      },
+      {
+        "name": "b.webm",
+        "kind": "source",
+        "detail": "demux, protocol=file"
+      },
+      {
+        "name": "select-video@a.webm",
+        "kind": "stage",
+        "detail": "select, type=video"
+      },
+      {
+        "name": "select-video@b.webm",
+        "kind": "stage",
+        "detail": "select, type=video"
+      },
+      {
+        "name": "select-audio@b.webm",
+        "kind": "stage",
+        "detail": "select, type=audio"
+      },
+      {
+        "name": "m.webm",
+        "kind": "stage",
+        "detail": "mux, protocol=file"
+      }
+    ],
+    "edges": [
+      {
+        "from": "a.webm",
+        "to": "select-video@a.webm",
+        "policy": "all"
+      },
+      {
+        "from": "b.webm",
+        "to": "select-video@b.webm",
+        "policy": "all"
+      },
+      {
+        "from": "b.webm",
+        "to": "select-audio@b.webm",
+        "policy": "all"
+      },
+      {
+        "from": "select-video@a.webm",
+        "to": "m.webm",
+        "policy": "all"
+      },
+      {
+        "from": "select-video@b.webm",
+        "to": "m.webm",
+        "policy": "all"
+      },
+      {
+        "from": "select-audio@b.webm",
+        "to": "m.webm",
+        "policy": "all"
+      }
+    ]
+  },
+  "explain": {
+    "summary": "from 2 inputs through 3 stream branch(es) to m.webm",
+    "operation": "build job",
+    "inputs": [
+      {
+        "name": "a.webm",
+        "protocol": "file",
+        "format": "webm"
+      },
+      {
+        "name": "b.webm",
+        "protocol": "file",
+        "format": "webm"
+      }
+    ],
+    "streams": [
+      {
+        "name": "video",
+        "select": {
+          "type": "video",
+          "input": "a.webm"
+        },
+        "operations": [
+          {
+            "kind": "copy",
+            "component": "packet-copy"
+          }
+        ],
+        "encode": {
+          "copy": true
+        },
+        "destinations": [
+          "m.webm"
+        ]
+      },
+      {
+        "name": "video-2",
+        "select": {
+          "type": "video",
+          "input": "b.webm"
+        },
+        "operations": [
+          {
+            "kind": "copy",
+            "component": "packet-copy"
+          }
+        ],
+        "encode": {
+          "copy": true
+        },
+        "destinations": [
+          "m.webm"
+        ]
+      },
+      {
+        "name": "audio",
+        "select": {
+          "type": "audio",
+          "input": "b.webm"
+        },
+        "operations": [
+          {
+            "kind": "copy",
+            "component": "packet-copy"
+          }
+        ],
+        "encode": {
+          "copy": true
+        },
+        "destinations": [
+          "m.webm"
+        ]
+      }
+    ],
+    "branches": [
+      {
+        "name": "video",
+        "input": "a.webm",
+        "stream": {
+          "type": "video",
+          "input": "a.webm"
+        },
+        "shape": {
+          "domain": "packet",
+          "mediaKind": "video"
+        },
+        "operations": [
+          {
+            "kind": "demux",
+            "component": "container",
+            "detail": "read packets from input",
+            "shape": {
+              "domain": "packet",
+              "mediaKind": "video"
+            }
+          },
+          {
+            "kind": "select",
+            "component": "video",
+            "detail": "select stream",
+            "shape": {
+              "domain": "packet",
+              "mediaKind": "video"
+            }
+          },
+          {
+            "kind": "copy",
+            "component": "packet-copy",
+            "detail": "explicit packet copy",
+            "shape": {
+              "domain": "packet",
+              "mediaKind": "video"
+            }
+          }
+        ],
+        "destinations": [
+          "m.webm"
+        ]
+      },
+      {
+        "name": "video-2",
+        "input": "b.webm",
+        "stream": {
+          "type": "video",
+          "input": "b.webm"
+        },
+        "shape": {
+          "domain": "packet",
+          "mediaKind": "video"
+        },
+        "operations": [
+          {
+            "kind": "demux",
+            "component": "container",
+            "detail": "read packets from input",
+            "shape": {
+              "domain": "packet",
+              "mediaKind": "video"
+            }
+          },
+          {
+            "kind": "select",
+            "component": "video",
+            "detail": "select stream",
+            "shape": {
+              "domain": "packet",
+              "mediaKind": "video"
+            }
+          },
+          {
+            "kind": "copy",
+            "component": "packet-copy",
+            "detail": "explicit packet copy",
+            "shape": {
+              "domain": "packet",
+              "mediaKind": "video"
+            }
+          }
+        ],
+        "destinations": [
+          "m.webm"
+        ]
+      },
+      {
+        "name": "audio",
+        "input": "b.webm",
+        "stream": {
+          "type": "audio",
+          "input": "b.webm"
+        },
+        "shape": {
+          "domain": "packet",
+          "mediaKind": "audio"
+        },
+        "operations": [
+          {
+            "kind": "demux",
+            "component": "container",
+            "detail": "read packets from input",
+            "shape": {
+              "domain": "packet",
+              "mediaKind": "audio"
+            }
+          },
+          {
+            "kind": "select",
+            "component": "audio",
+            "detail": "select stream",
+            "shape": {
+              "domain": "packet",
+              "mediaKind": "audio"
+            }
+          },
+          {
+            "kind": "copy",
+            "component": "packet-copy",
+            "detail": "explicit packet copy",
+            "shape": {
+              "domain": "packet",
+              "mediaKind": "audio"
+            }
+          }
+        ],
+        "destinations": [
+          "m.webm"
+        ]
+      }
+    ],
+    "destinations": [
+      {
+        "name": "m.webm",
+        "protocol": "file",
+        "format": "webm",
+        "kind": "mux",
+        "branches": [
+          "video",
+          "video-2",
+          "audio"
+        ]
+      }
+    ],
+    "decisions": [
+      {
+        "code": "packet_copy",
+        "branch": "video",
+        "message": "stream can remain packet encoded"
+      },
+      {
+        "code": "packet_copy",
+        "branch": "video-2",
+        "message": "stream can remain packet encoded"
+      },
+      {
+        "code": "packet_copy",
+        "branch": "audio",
+        "message": "stream can remain packet encoded"
+      }
+    ],
+    "requiredAdapters": [
+      {
+        "kind": "demuxer",
+        "name": "webm",
+        "format": "webm",
+        "media": [
+          "audio",
+          "video"
+        ],
+        "codecs": [
+          "opus",
+          "vorbis",
+          "vp8",
+          "vp9",
+          "av1"
+        ],
+        "minStreams": 1,
+        "metadata": {
+          "summary": "WebM supports Opus/Vorbis audio and VP8/VP9/AV1 video packets without codec conversion"
+        },
+        "requiredBy": "a.webm",
+        "status": "available"
+      },
+      {
+        "kind": "demuxer",
+        "name": "webm",
+        "format": "webm",
+        "media": [
+          "audio",
+          "video"
+        ],
+        "codecs": [
+          "opus",
+          "vorbis",
+          "vp8",
+          "vp9",
+          "av1"
+        ],
+        "minStreams": 1,
+        "metadata": {
+          "summary": "WebM supports Opus/Vorbis audio and VP8/VP9/AV1 video packets without codec conversion"
+        },
+        "requiredBy": "b.webm",
+        "status": "available"
+      },
+      {
+        "kind": "muxer",
+        "name": "webm",
+        "format": "webm",
+        "media": [
+          "audio",
+          "video"
+        ],
+        "codecs": [
+          "opus",
+          "vorbis",
+          "vp8",
+          "vp9",
+          "av1"
+        ],
+        "minStreams": 1,
+        "metadata": {
+          "summary": "WebM supports Opus/Vorbis audio and VP8/VP9/AV1 video packets without codec conversion"
+        },
+        "requiredBy": "m.webm",
+        "status": "available"
+      }
+    ],
+    "graph": {
+      "name": "goav",
+      "nodes": [
+        {
+          "name": "a.webm",
+          "kind": "source",
+          "detail": "demux, protocol=file"
+        },
+        {
+          "name": "b.webm",
+          "kind": "source",
+          "detail": "demux, protocol=file"
+        },
+        {
+          "name": "select-video@a.webm",
+          "kind": "stage",
+          "detail": "select, type=video"
+        },
+        {
+          "name": "select-video@b.webm",
+          "kind": "stage",
+          "detail": "select, type=video"
+        },
+        {
+          "name": "select-audio@b.webm",
+          "kind": "stage",
+          "detail": "select, type=audio"
+        },
+        {
+          "name": "m.webm",
+          "kind": "stage",
+          "detail": "mux, protocol=file"
+        }
+      ],
+      "edges": [
+        {
+          "from": "a.webm",
+          "to": "select-video@a.webm",
+          "policy": "all"
+        },
+        {
+          "from": "b.webm",
+          "to": "select-video@b.webm",
+          "policy": "all"
+        },
+        {
+          "from": "b.webm",
+          "to": "select-audio@b.webm",
+          "policy": "all"
+        },
+        {
+          "from": "select-video@a.webm",
+          "to": "m.webm",
+          "policy": "all"
+        },
+        {
+          "from": "select-video@b.webm",
+          "to": "m.webm",
+          "policy": "all"
+        },
+        {
+          "from": "select-audio@b.webm",
+          "to": "m.webm",
+          "policy": "all"
+        }
+      ]
+    }
+  }
+}

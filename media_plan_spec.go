@@ -504,7 +504,7 @@ func newMediaPlanBranchComposerLowerer(input mediaPlanBranchComposerInput) (grap
 }
 
 func mediaPlanSourceSpecs(spec *pipeline.Spec, nodes map[string]plannedNode, inputs []InputSpec) ([]pipeline.NodeRef, bool, error) {
-	if !mediaPlanStreamInputsSupported(inputs) {
+	if len(inputs) == 0 {
 		return nil, false, nil
 	}
 	refs := make([]pipeline.NodeRef, 0, len(inputs))

@@ -11,7 +11,7 @@ import (
 	"github.com/thesyncim/goav/shape"
 )
 
-func TestDuplicateRealtimeInputNameErrorContract(t *testing.T) {
+func TestDuplicateInputNameErrorContract(t *testing.T) {
 	err := duplicateInputNameError("mic", 0, 2)
 	assertBuildErrorCode(t, err, inputDuplicateCode)
 	if !errors.Is(err, errUnsupportedBuild) {
@@ -29,13 +29,13 @@ func TestDuplicateRealtimeInputNameErrorContract(t *testing.T) {
 	}
 
 	source := func(context.Context, SourcePush) error { return nil }
-	err = validateRealtimeInputNames([]InputSpec{
+	err = validateInputNames([]InputSpec{
 		Source("mic", shape.Frame(av.MediaAudio), source),
 		Source("camera", shape.Frame(av.MediaVideo), source),
 		Source("mic", shape.Frame(av.MediaAudio), source),
 	})
 	assertBuildErrorCode(t, err, inputDuplicateCode)
-	if !strings.Contains(err.Error(), "realtime input name \"mic\" is defined more than once") {
+	if !strings.Contains(err.Error(), "input name \"mic\" is defined more than once") {
 		t.Fatalf("err = %v, want duplicate name reason", err)
 	}
 }

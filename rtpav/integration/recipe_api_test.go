@@ -382,7 +382,7 @@ func TestRecipeAndRejectsDuplicateRealtimeInputNames(t *testing.T) {
 	if !errors.As(err, &buildErr) || buildErr.Code != "input_duplicate" {
 		t.Fatalf("err = %v, want input_duplicate with matching BuildError code", err)
 	}
-	if !strings.Contains(err.Error(), `realtime input name "media"`) ||
+	if !strings.Contains(err.Error(), `input name "media"`) ||
 		!strings.Contains(err.Error(), "second input index: 1") ||
 		!strings.Contains(err.Error(), "distinct goav.Name") {
 		t.Fatalf("err = %v, want duplicate input guidance", err)

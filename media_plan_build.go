@@ -32,11 +32,24 @@ type streamRoutes struct {
 }
 
 type mediaPlanCompiledSources struct {
-	refs         []pipeline.NodeRef
+	refs []pipeline.NodeRef
+	// streams and streamGroups keep each input's own stream ids, the ids
+	// selection matches; qualifiers[i] is what source i stamps on them.
 	streams      []av.Stream
 	streamGroups [][]av.Stream
+	qualifiers   []string
 	bounds       []decodeBoundsProvider
 	realtime     bool
+}
+
+// emittedStreamGroups are the streams each source emits, under the ids the
+// graph sees.
+func (s mediaPlanCompiledSources) emittedStreamGroups() [][]av.Stream {
+	out := make([][]av.Stream, len(s.streamGroups))
+	for i := range s.streamGroups {
+		out[i] = qualifyStreams(s.streamGroups[i], s.qualifiers[i])
+	}
+	return out
 }
 
 // graphPlanGraphConfigurer lets a lowerer pin its graph identity and buffer
@@ -169,7 +182,7 @@ func (p streamRoutes) hasSingleSinkDestination() bool {
 }
 
 func newMediaPlanDecodeStreamGraph(rt *Runtime, inputs []InputSpec, outputs []destinationSpec, stream streamIntent) (composeLowerer, bool, error) {
-	if !mediaPlanStreamInputsSupported(inputs) || operationsHaveStepAfterEncode(stream.Operations) {
+	if len(inputs) == 0 || operationsHaveStepAfterEncode(stream.Operations) {
 		return composeLowerer{}, false, nil
 	}
 	selector := streamIntentSelector(stream)
@@ -235,25 +248,8 @@ func mediaPlanStreamInputDomain(inputs []InputSpec, stream streamIntent) shape.M
 	return shape.DomainPacket
 }
 
-func mediaPlanStreamInputsSupported(inputs []InputSpec) bool {
-	if len(inputs) == 1 {
-		return true
-	}
-	if len(inputs) == 0 {
-		return false
-	}
-	// Several inputs converge on one job only for independently-running
-	// realtime providers and custom sources (mirrors validateJobInputs).
-	for i := range inputs {
-		if inputs[i].provider == nil && inputs[i].source == nil {
-			return false
-		}
-	}
-	return true
-}
-
 func newMediaPlanPacketCopyStreamGraph(rt *Runtime, inputs []InputSpec, outputs []destinationSpec, stream streamIntent, selectedStream bool) (composeLowerer, bool, error) {
-	if len(inputs) == 0 || len(outputs) == 0 || !mediaPlanStreamInputsSupported(inputs) {
+	if len(inputs) == 0 || len(outputs) == 0 {
 		return composeLowerer{}, false, nil
 	}
 	sg := streamRoutes{
@@ -497,13 +493,11 @@ func compileMediaPlanSources(
 	operation string,
 	intent intent,
 ) (mediaPlanCompiledSources, error) {
-	if runtime == nil {
-		return mediaPlanCompiledSources{}, recipeGraphUnsupportedError(operation, intent)
-	}
-	if !mediaPlanStreamInputsSupported(inputs) {
+	if runtime == nil || len(inputs) == 0 {
 		return mediaPlanCompiledSources{}, recipeGraphUnsupportedError(operation, intent)
 	}
 	service := &builder{runtime: runtime}
+	qualifiers := make([]string, 0, len(inputs))
 	sourceRefs := make([]pipeline.NodeRef, 0, len(inputs))
 	streams := make([]av.Stream, 0, len(inputs))
 	streamGroups := make([][]av.Stream, 0, len(inputs))
@@ -511,7 +505,7 @@ func compileMediaPlanSources(
 	realtime := runtime.realtime
 	names := graphSourceNodeNames(inputs)
 	for i := range inputs {
-		build, err := inputs[i].openGraphSourceBuild(ctx, service, names[i])
+		build, err := inputs[i].openGraphSourceBuild(ctx, service, names[i], len(inputs) > 1)
 		if err != nil {
 			return mediaPlanCompiledSources{}, err
 		}
@@ -524,6 +518,7 @@ func compileMediaPlanSources(
 		sourceStreams := append([]av.Stream(nil), build.streams...)
 		streams = append(streams, sourceStreams...)
 		streamGroups = append(streamGroups, sourceStreams)
+		qualifiers = append(qualifiers, build.qualifier)
 		realtime = realtime || build.realtime
 		if build.bounds != nil {
 			bounds = append(bounds, build.bounds)
@@ -533,6 +528,7 @@ func compileMediaPlanSources(
 		refs:         sourceRefs,
 		streams:      streams,
 		streamGroups: streamGroups,
+		qualifiers:   qualifiers,
 		bounds:       bounds,
 		realtime:     realtime,
 	}, nil

@@ -297,40 +297,19 @@ func (s InputSpec) inputName(fallback string) string {
 	return firstNonEmpty(s.name, s.input.Name, s.input.URI, s.providerName(), fallback)
 }
 
+// validateJobInputs checks each input and that several inputs of one run carry
+// distinct names: a stream binds to its input by name, and a file input names
+// the stream ids it qualifies.
 func validateJobInputs(inputs []InputSpec) error {
 	for i := range inputs {
 		if err := inputs[i].validate(); err != nil {
 			return err
 		}
 	}
-	if len(inputs) <= 1 {
-		return nil
-	}
-	for i := range inputs {
-		if inputs[i].provider != nil || inputs[i].source != nil {
-			continue
-		}
-		return &BuildError{
-			Phase:     phaseBuild,
-			Family:    errcode.FamilyForCode(multiInputUnsupportedCode),
-			Code:      multiInputUnsupportedCode,
-			Operation: "build job",
-			Node:      firstNonEmpty(inputs[i].name, inputs[i].input.Name, inputs[i].input.URI, fmt.Sprintf("input-%d", i)),
-			Reason:    "multiple recipe inputs currently require realtime source providers or custom sources",
-			fixes: buildErrorFixes([]string{
-				"declare each repeated live input with goav.Input(...) or goav.Source(...)",
-				"build an explicit graph when combining multiple file or protocol sources",
-			}),
-			cause: errUnsupportedBuild,
-		}
-	}
-	if err := validateRealtimeInputNames(inputs); err != nil {
-		return err
-	}
-	return nil
+	return validateInputNames(inputs)
 }
 
-func validateRealtimeInputNames(inputs []InputSpec) error {
+func validateInputNames(inputs []InputSpec) error {
 	seen := make(map[string]int, len(inputs))
 	for i := range inputs {
 		name := inputs[i].inputName("")
@@ -352,10 +331,10 @@ func duplicateInputNameError(name string, firstIndex int, secondIndex int) error
 		Code:      inputDuplicateCode,
 		Operation: "build job",
 		Node:      name,
-		Reason:    fmt.Sprintf("realtime input name %q is defined more than once", name),
+		Reason:    fmt.Sprintf("input name %q is defined more than once", name),
 		fields:    errDetails(errNote(fmt.Sprintf("first input index: %d", firstIndex)), errNote(fmt.Sprintf("second input index: %d", secondIndex))),
 		fixes: buildErrorFixes([]string{
-			"give each repeated realtime input a distinct goav.Name(...) option",
+			"give each input a distinct goav.Name(...), or distinct file names: goav.FileInput(\"a.webm\", ra) and goav.FileInput(\"b.webm\", rb)",
 			"use stable names such as \"audio\" and \"video\" for separate live streams",
 		}),
 		cause: errUnsupportedBuild,

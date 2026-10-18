@@ -131,4 +131,5 @@ var (
 	PacketTap       = packetTapRef
 	InputName       = selectInputName
 	LegacyAttach    = legacyAttach
+	CompileOutputs  = compileOutputs
 )
