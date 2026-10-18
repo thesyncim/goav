@@ -62,7 +62,7 @@ const ctlUsage = `usage: goav ctl --control unix://PATH <method> [key=value...]
   goav ctl ... bitrate stream=hd bitrate=1M | keyframe stream=hd | seek position=2s
   goav ctl ... rate value=0.5 | pause | resume | stop
 
---control also takes tcp://host:port. Values are JSON-free: 1M, 2s, a,b.
+--control takes a socket path (unix:// is the default) or tcp://host:port, a trusted-network interface. Values are JSON-free: 1M, 2s, a,b.
 `
 
 // positional names the params a method takes without key=: attach's
@@ -168,10 +168,10 @@ func parseCtlArgs(argv []string) (string, []string, error) {
 			if i+1 >= len(argv) {
 				return "", nil, errors.New("goav ctl: --control needs unix://PATH or tcp://host:port")
 			}
-			control = argv[i+1]
+			control = controlAddress(argv[i+1])
 			i++
 		case strings.HasPrefix(arg, "--control="):
-			control = strings.TrimPrefix(arg, "--control=")
+			control = controlAddress(strings.TrimPrefix(arg, "--control="))
 		default:
 			args = append(args, arg)
 		}
@@ -181,4 +181,13 @@ func parseCtlArgs(argv []string) (string, []string, error) {
 
 func printErr(stderr io.Writer, err error) {
 	fmt.Fprintln(stderr, err)
+}
+
+// controlAddress defaults --control to a unix socket: a bare path means
+// unix://path. Anything with a scheme (unix://, tcp://) passes through.
+func controlAddress(s string) string {
+	if s == "" || strings.Contains(s, "://") {
+		return s
+	}
+	return "unix://" + s
 }

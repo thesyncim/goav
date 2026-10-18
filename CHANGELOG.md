@@ -11,6 +11,17 @@ methodology changes, and migration notes.
 
 ## Unreleased
 
+- New: package `metrics` bridges a running task to monitoring.
+  `metrics.Handler(task)` serves Stats and Snapshot as Prometheus text
+  (`goav_` per-node messages, packets, frames, drops by reason, branch and
+  destination states); `metrics.Publish(name, task)` exposes the same through
+  expvar. Standard library only.
+
+- Fix: the RTP jitter ring no longer counts buffered packets as lost when a
+  packet lands past the ring; the mux stage refuses frame messages instead of
+  forwarding them; the CLI's `--control` takes a bare socket path as `unix://`
+  (TCP stays a documented trusted-network interface).
+
 - Fix: the control server answers malformed JSON before it hangs up (it
   half-closes and drains, so the client is not reset before the error lands),
   and an MP4 Opus track of a single packet keeps its pre-skip on read. Both

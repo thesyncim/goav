@@ -528,3 +528,17 @@ func (s *syncBuffer) String() string {
 	defer s.mu.Unlock()
 	return s.b.String()
 }
+
+func TestControlAddressDefaultsToUnix(t *testing.T) {
+	for in, want := range map[string]string{
+		"/run/goav.sock":        "unix:///run/goav.sock",
+		"ctl.sock":              "unix://ctl.sock",
+		"unix:///run/goav.sock": "unix:///run/goav.sock",
+		"tcp://127.0.0.1:7000":  "tcp://127.0.0.1:7000",
+		"":                      "",
+	} {
+		if got := controlAddress(in); got != want {
+			t.Errorf("controlAddress(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

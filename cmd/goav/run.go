@@ -67,6 +67,7 @@ func parseProgramArgs(verb string, argv []string) (programArgs, bool, error) {
 			args.runtime, err = take()
 		case name == "--control" && verb == "run":
 			args.control, err = take()
+			args.control = controlAddress(args.control)
 		case name == "--serve" && verb == "run":
 			args.serve, err = take()
 		case name == "--format" && verb == "describe":
@@ -178,7 +179,7 @@ examples:
 const runFlags = `
 flags:
   --runtime default|demo|test   adapters to run with (default: the bundle)
-  --control unix://PATH         serve the running task to goav ctl
+  --control unix://PATH         serve the running task to goav ctl (bare PATH = unix)
   --serve ADDR                  serve the program's hls outputs over HTTP (LL-HLS too)
   -f FILE                       read the program from FILE
 `
