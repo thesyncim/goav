@@ -90,37 +90,17 @@
         "protocol": "custom",
         "streams": [
           {
-            "ID": "video-1",
-            "Index": 0,
-            "Type": "video",
-            "Codec": {
-              "ID": "",
-              "Type": "video",
-              "Profile": "",
-              "Level": "",
-              "ClockRate": 90000,
-              "SampleRate": 0,
-              "Channels": 0,
-              "ChannelLayout": "",
-              "Width": 64,
-              "Height": 48,
-              "PixelFormat": "i420",
-              "SampleFormat": "",
-              "ExtraData": {
-                "Bytes": null,
-                "Ownership": "",
-                "Owner": null
-              },
-              "Attributes": null
+            "id": "video-1",
+            "index": 0,
+            "type": "video",
+            "codec": {
+              "type": "video",
+              "clockRate": 90000,
+              "width": 64,
+              "height": 48,
+              "pixelFormat": "i420"
             },
-            "TimeBase": {
-              "Num": 0,
-              "Den": 0
-            },
-            "Language": "",
-            "Name": "video-1",
-            "Epoch": 0,
-            "Metadata": null
+            "name": "video-1"
           }
         ]
       },
@@ -129,37 +109,18 @@
         "protocol": "custom",
         "streams": [
           {
-            "ID": "audio-2",
-            "Index": 0,
-            "Type": "audio",
-            "Codec": {
-              "ID": "",
-              "Type": "audio",
-              "Profile": "",
-              "Level": "",
-              "ClockRate": 48000,
-              "SampleRate": 48000,
-              "Channels": 2,
-              "ChannelLayout": "stereo",
-              "Width": 0,
-              "Height": 0,
-              "PixelFormat": "",
-              "SampleFormat": "s16",
-              "ExtraData": {
-                "Bytes": null,
-                "Ownership": "",
-                "Owner": null
-              },
-              "Attributes": null
+            "id": "audio-2",
+            "index": 0,
+            "type": "audio",
+            "codec": {
+              "type": "audio",
+              "clockRate": 48000,
+              "sampleRate": 48000,
+              "channels": 2,
+              "channelLayout": "stereo",
+              "sampleFormat": "s16"
             },
-            "TimeBase": {
-              "Num": 0,
-              "Den": 0
-            },
-            "Language": "",
-            "Name": "audio-2",
-            "Epoch": 0,
-            "Metadata": null
+            "name": "audio-2"
           }
         ]
       }
@@ -184,50 +145,13 @@
           }
         ],
         "encode": {
-          "ID": "vp8",
-          "Type": "video",
-          "Parameters": {
-            "ID": "vp8",
-            "Type": "video",
-            "Profile": "",
-            "Level": "",
-            "ClockRate": 90000,
-            "SampleRate": 0,
-            "Channels": 0,
-            "ChannelLayout": "",
-            "Width": 0,
-            "Height": 0,
-            "PixelFormat": "",
-            "SampleFormat": "",
-            "ExtraData": {
-              "Bytes": null,
-              "Ownership": "",
-              "Owner": null
-            },
-            "Attributes": null
-          },
-          "Settings": {
-            "Bitrate": 0,
-            "Framerate": {
-              "Value": 0,
-              "Base": {
-                "Num": 0,
-                "Den": 0
-              }
-            },
-            "KeyframeInterval": 0,
-            "Profile": "",
-            "Level": "",
-            "Channels": 0,
-            "SampleRate": 0,
-            "ClockRate": 0,
-            "ChannelLayout": "",
-            "ChannelsSet": false,
-            "SampleRateSet": false,
-            "Custom": null
-          },
-          "Copy": false,
-          "Auto": false
+          "id": "vp8",
+          "type": "video",
+          "parameters": {
+            "id": "vp8",
+            "type": "video",
+            "clockRate": 90000
+          }
         },
         "destinations": [
           "call.webm"
@@ -254,50 +178,16 @@
           }
         ],
         "encode": {
-          "ID": "opus",
-          "Type": "audio",
-          "Parameters": {
-            "ID": "opus",
-            "Type": "audio",
-            "Profile": "",
-            "Level": "",
-            "ClockRate": 48000,
-            "SampleRate": 48000,
-            "Channels": 2,
-            "ChannelLayout": "stereo",
-            "Width": 0,
-            "Height": 0,
-            "PixelFormat": "",
-            "SampleFormat": "",
-            "ExtraData": {
-              "Bytes": null,
-              "Ownership": "",
-              "Owner": null
-            },
-            "Attributes": null
-          },
-          "Settings": {
-            "Bitrate": 0,
-            "Framerate": {
-              "Value": 0,
-              "Base": {
-                "Num": 0,
-                "Den": 0
-              }
-            },
-            "KeyframeInterval": 0,
-            "Profile": "",
-            "Level": "",
-            "Channels": 0,
-            "SampleRate": 0,
-            "ClockRate": 0,
-            "ChannelLayout": "",
-            "ChannelsSet": false,
-            "SampleRateSet": false,
-            "Custom": null
-          },
-          "Copy": false,
-          "Auto": false
+          "id": "opus",
+          "type": "audio",
+          "parameters": {
+            "id": "opus",
+            "type": "audio",
+            "clockRate": 48000,
+            "sampleRate": 48000,
+            "channels": 2,
+            "channelLayout": "stereo"
+          }
         },
         "destinations": [
           "call.webm"

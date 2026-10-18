@@ -10,7 +10,7 @@ goav run      [--runtime default|demo|test] [--control unix://PATH] [-f FILE] '<
 goav describe [--runtime ...] [--format text|dot|mermaid|json] [-f FILE] '<program>'
 goav explain  [--runtime ...] [-f FILE] '<program>'
 goav elements
-goav ctl      [--control unix://PATH] <command> [args...]
+goav ctl      --control unix://PATH <method> [key=value...]
 ```
 
 Install it with `GOEXPERIMENT=simd go install github.com/thesyncim/goav/cmd/goav@latest`;
@@ -78,18 +78,23 @@ builds and `goav explain` its plan, without opening or creating any file.
 
 ## Control
 
-With `--control unix://PATH`, `goav run` serves the running task through
-`ctlserver` until it stops:
+With `--control unix://PATH` (or `tcp://host:port`), `goav run` serves the
+running task through [`ctlserver`](CONTROL_PLANE.md) until it stops, and
+`goav ctl` calls its methods, one per invocation:
 
 ```text
-goav run --control unix:///tmp/goav.sock 'testsrc video live ! tap frames ! encode vp8 ! file live.webm'
-goav ctl --control unix:///tmp/goav.sock taps
-goav ctl --control unix:///tmp/goav.sock control seek position=2s source=video
+goav run --control unix:///tmp/goav.sock 'testsrc video live ! tap live ! encode vp8 ! as cam ! file live.webm'
+goav ctl --control unix:///tmp/goav.sock seek position=2s source=video
+goav ctl --control unix:///tmp/goav.sock attach 'tap live ! resize 320x180 ! encode vp8 ! as preview ! file p.webm'
+goav ctl --control unix:///tmp/goav.sock detach preview outcome=drain
 goav ctl --control unix:///tmp/goav.sock stop
 ```
 
-`goav ctl help` prints the built-in command set; against a live socket,
-`help attach` and `capabilities` include the host's `ctlserver.CapabilitySet`.
-Use `goav ctl` for cold-path operations: graph inspection, stats and events,
-controls, attach, rebranch, detach, and stop. Hot-path media logic belongs in
+Params are `key=value`, in the CLI's spelling (`bitrate=1M`, `position=2s`,
+`types=a,b`); `attach` takes its program, `detach` its attachment, and
+`rebranch` both, positionally. A JSON result prints indented, a text result
+(`describe format=text`) prints as is, and `watch` prints events as JSON lines
+until Ctrl-C; a refusal prints to stderr and exits 1. `capabilities` lists a
+server's methods, the host's own included, and its elements. Use `goav ctl`
+for inspection, controls, and attach. Hot-path media logic belongs in
 the Go library.

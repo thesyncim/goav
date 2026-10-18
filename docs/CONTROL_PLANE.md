@@ -1,474 +1,263 @@
 # Control plane
 
-`goav ctl` is the cold-path control surface for a running task: operators,
-tests, and automation inspect and steer a live graph without arbitrary access
-to application internals. The application owns the task and exposes a Unix
-socket with package `ctlserver`; clients talk to that socket with structured
-requests.
+Package `ctlserver` serves a running task to clients outside the process: an
+operator at a shell, a dashboard, a supervisor, or a test. A client inspects
+the task, watches its events, drives its controls, and attaches, rebranches,
+and detaches outputs written in the [pipeline language](CLI.md), all while
+media flows. `goav ctl` is its command-line client.
 
-```sh
-goav ctl --control unix:///tmp/goav-live.sock control bitrate stream=video value=1200k
-goav ctl --control unix:///tmp/goav-live.sock watch type=stats --follow
-goav ctl --control unix:///tmp/goav-live.sock attach frames as archive \
-  'encode codec=opus media=audio bitrate=128k ! filesink location=archive.webm'
-```
+Use it when something outside your code must steer a live task: add a
+preview or a recording on demand, retarget a bitrate, seek, watch QoS, or stop
+cleanly. Keep media logic in Go: a stage, encoder, or sink your clients need
+is a host element (below), not a script. Everything the control plane does is
+a `LiveTask` call your Go code could make; it adds a wire, not a second API.
 
-The control layer is allowlisted and lowers into the same task capabilities
-normal Go code uses: `task.Control`, `task.Attach`,
-`Attachment.Rebranch`, `task.Detach`, `task.Snapshot`,
-`task.Stats`, task `Watch`, and `Task.Close`. Reflection is used only on
-this cold path to bind known command structs, validate fields, parse JSON, and
-generate help from tags. There is no global registry and no user-provided
-method name dispatch.
-
-The mental model: the CLI is a typed remote for the grammar, not a second
-workflow API.
-
-## No-Code Generated Source
-
-For a self-contained control-plane playground, `goav run --control` can host a
-generated source and a real encoder directly from one string. Start a live AV1
-pipeline:
-
-```sh
-goav run --control unix:///tmp/goav-live.sock \
-  'testsrc video name=fixture size=1280x720 duration=30s live pattern=bars ! tap frames ! encode av1 bitrate=1200k fps=30 keyframe_interval=60 min_qindex=20 max_qindex=180 tune=zerolatency ! file /tmp/goav-av1.mkv'
-```
-
-Then drive the running graph from another shell:
-
-![Runtime pipeline debugging](assets/pipeline-debug.svg)
-
-```sh
-goav ctl --control unix:///tmp/goav-live.sock taps
-goav ctl --control unix:///tmp/goav-live.sock graph
-goav ctl --control unix:///tmp/goav-live.sock control rate value=0.5
-goav ctl --control unix:///tmp/goav-live.sock control seek position=2s source=fixture
-goav ctl --control unix:///tmp/goav-live.sock attach frames as preview \
-  'resize width=320 height=180 ! encode codec=av1 media=video bitrate=300k fps=2 keyframe_interval=1 ! filesink location=/tmp/goav-preview.ivf'
-goav ctl --control unix:///tmp/goav-live.sock graph format=text
-goav ctl --control unix:///tmp/goav-live.sock detach preview
-goav ctl --control unix:///tmp/goav-live.sock stop
-```
-
-That flow needs no application code. `goav run` speaks the whole pipeline
-language ([CLI](CLI.md)); file extensions pick the container, and
-`format=<id>` overrides one.
-
-## Bootstrap Host
-
-This is the smallest production shape:
-
-1. Build a normal task with `rt.Build` and name stable taps with `.Tap(name)`.
-2. Declare host-owned capabilities with typed settings structs.
-3. Group commands, branch steps, sinks, and native encoder spellings in one
-   `ctlserver.CapabilitySet`.
-4. Call `ctlserver.ValidateCapabilities` in startup/tests to catch empty names,
-   alias collisions, and non-struct settings before opening a socket.
-5. Start `ctlserver.ServeUnixWithOptions`.
-6. Use `goav ctl --control unix://...` to inspect, control, attach, rebranch,
-   detach, and render diagnostics from the same running graph.
-
-The default branch grammar is intentionally useful before a host adds any
-custom CLI grammar. If a task runtime has an encoder registered with
-`runconfig.WithEncoder`, it is callable from attach/rebranch as:
-
-```sh
-goav ctl --control unix:///tmp/goav-live.sock attach frames as preview \
-  'encode codec=x_acme_video media=video bitrate=900k fps=30 lookahead=deep ! filesink location=preview.webm'
-```
-
-`help attach`, `help rebranch`, and `capabilities` list those
-runtime-discovered encoders and muxers from the running task. Generic `encode`
-reflects over `codec.CodecSettings`, so adding a tagged setting field makes it
-CLI-visible and documented by generated help. Keys not claimed by those typed
-fields are left in `CodecSettings.Custom` for the adapter. Add a typed encoder
-spelling with `ctlserver.NewEncoderSpec[T]` when you want a friendly name, richer
-validation, or `codec.Control` host code for native handles; it uses the same
-reflected field binder.
-
-The executable local harness is
-`Example_bootstrapControlPlaneHost` in `ctlserver/example_test.go`. It builds a live
-fixture task, starts `Run` in the background, calls a custom control, attaches a
-custom branch step plus custom encoder settings into a temp filesink, and
-renders a flowchart from the live task. Run it with:
-
-```sh
-go test ./ctlserver -run Example_bootstrapControlPlaneHost -count=1
-```
-
-For a long-running host process that you can keep open in one terminal while
-driving it from another, run:
-
-```sh
-cd examples/control-plane-host
-go run . --control unix:///tmp/goav-control-plane-host.sock
-```
-
-That example is a self-contained playground: it starts a live
-`goavtest.TestSource` named `fixture`, accepts normal source controls such as
-`goav ctl control seek position=2s source=fixture`, reports the controls captured
-by that test source with `goav ctl control fixture.controls`, and demonstrates
-stock transcode branches, thumbnail branches, custom branch steps, custom
-encoder settings, graph rendering, rebranching, and detach. The complete
-copyable command sequence lives in `examples/control-plane-host/README.md`.
+## Serving a task
 
 ```go
-ctx := context.Background()
-const customCodec = av.CodecID("x_acme_audio")
-
-encoderFactory := &acmeEncoderFactory{
-    Descriptor: codec.Descriptor{
-        ID:   customCodec,
-        Name: "ACME audio",
-        Type: av.MediaAudio,
-    },
-}
-
-rt := bundle.MustNew(runconfig.WithEncoder(encoderFactory.Descriptor, encoderFactory))
-task, err := rt.Build(ctx, liveInput.Audio().
-    Decode().
-    Tap("frames").
-    To(primaryDestination))
+files, err := launch.Dir("/srv/recordings") // attached programs may touch nothing else
 if err != nil {
-    return err
+	return err
 }
-defer task.Close()
-```
-
-Add a custom command by declaring the argument struct and handler. The struct
-tags drive CLI parsing, JSON binding, validation, and generated help.
-
-```go
-type SetPosition struct {
-    Position time.Duration `goavctl:"position,required,duration" usage:"position=<duration>" help:"media position"`
-    Source   string        `goavctl:"source,required" usage:"source=<source-name>" help:"source node to reposition"`
-}
-
-seekCommand := ctlserver.NewCommand[SetPosition](
-    "vendor.seek",
-    "vendor reposition control",
-    func(ctx context.Context, task goav.LiveTask, cmd SetPosition) (ctlserver.ControlResponse, error) {
-        ctrl := control.Seek(cmd.Position)
-        if err := task.Control(ctx, ctrl.At(pipeline.NodeRef(cmd.Source))); err != nil {
-            return ctlserver.ControlResponse{}, err
-        }
-        return ctlserver.ControlResponse{
-            Operation: "control vendor.seek",
-            Result:    map[string]any{"position": cmd.Position.String(), "source": cmd.Source},
-        }, nil
-    },
-)
-```
-
-Expose custom branch components and custom encoder settings through typed
-helpers. Every `key=value` token is bound into your struct, the same tags drive
-help output, and the host returns normal Go values or the real `codec.Spec`
-the runtime already understands.
-
-```go
-type MeterSettings struct {
-    Window time.Duration `goavctl:"window,duration" usage:"[window=<duration>]" help:"observation window"`
-}
-
-meter := ctlserver.NewBranchStep[MeterSettings](
-    "meter",
-    "observe frames before encoding",
-    func(branch *ctlserver.BranchPipeline, _ MeterSettings) error {
-        branch.Do(component.FrameFunc("meter", func(ctx context.Context, frame *av.Frame, emit component.Emit) error {
-            recordLevel(frame)
-            return emit.Frame(frame)
-        }))
-        return nil
-    },
-)
-
-type ACMESettings struct {
-    Bitrate   int    `goavctl:"bitrate,required,rate" usage:"bitrate=<rate>" help:"target bitrate"`
-    Quality   string `goavctl:"quality" usage:"[quality=<profile>]" help:"native quality profile"`
-    Lookahead string `goavctl:"lookahead" usage:"[lookahead=<mode>]" help:"native lookahead mode"`
-}
-
-acme := ctlserver.NewEncoderSpec[ACMESettings](
-    "acmeenc",
-    "ACME audio encoder with native settings",
-    func(args ACMESettings) (codec.Spec, error) {
-        return codec.Codec(customCodec, av.MediaAudio,
-            codec.Bitrate(args.Bitrate),
-            codec.Profile(args.Quality),
-            codec.Control(func(native any) error {
-                options := native.(*acme.Options)
-                options.Lookahead = args.Lookahead
-                return nil
-            }),
-        ), nil
-    },
-)
-
-capabilities := ctlserver.CapabilitySet{
-    Commands: []ctlserver.CommandSpec{seekCommand},
-    Pipeline: ctlserver.PipelineRegistry{
-        Steps:    []ctlserver.BranchPipelineStepSpec{meter},
-        Encoders: []ctlserver.EncoderSpec{acme},
-    },
-}
-
-if err := ctlserver.ValidateCapabilities(capabilities); err != nil {
-    return err
-}
-```
-
-Use `ctlserver.NewError` from custom command, step, or encoder callbacks when a
-custom value is missing or invalid. The structured family, code, node,
-detail/fix records, rendered detail/fix lines, and cause are preserved in the
-CLI/socket response.
-
-Start the socket after the task is built. The same options apply whether the
-socket is used by humans, scripts, supervisors, or tests.
-
-```go
-err = ctlserver.ServeUnixWithOptions(ctx, task, "unix:///tmp/goav-live.sock",
-    ctlserver.WithCapabilities(capabilities),
-)
-```
-
-Operate it from the CLI. These examples are intentionally ordinary commands,
-not a hidden scripting language:
-
-```sh
-goav ctl --control unix:///tmp/goav-live.sock help
-goav ctl --control unix:///tmp/goav-live.sock help control vendor.seek
-goav ctl --control unix:///tmp/goav-live.sock help attach
-goav ctl --control unix:///tmp/goav-live.sock capabilities
-goav ctl --control unix:///tmp/goav-live.sock taps
-goav ctl --control unix:///tmp/goav-live.sock control vendor.seek position=2s source=fixture
-goav ctl --control unix:///tmp/goav-live.sock control --json '{"type":"seek","position":"1.5s","node":"fixture"}'
-goav ctl --control unix:///tmp/goav-live.sock control deliver --json '{"type":"vendor.force_idr","stream_id":"video","metadata":{"source":"cli"}}' at=frames
-goav ctl --control unix:///tmp/goav-live.sock attach frames as archive \
-  'meter ! acmeenc bitrate=128k quality=voice lookahead=deep ! filesink location=/tmp/archive.ogg'
-goav ctl --control unix:///tmp/goav-live.sock graph
-goav ctl --control unix:///tmp/goav-live.sock graph format=dot
-goav ctl --control unix:///tmp/goav-live.sock rebranch archive \
-  'meter ! acmeenc bitrate=96k quality=voice lookahead=shallow ! filesink location=/tmp/archive-low.ogg'
-goav ctl --control unix:///tmp/goav-live.sock detach archive
-```
-
-`help attach`, `help rebranch`, and `capabilities` are server-aware: responses
-include the built-in branch-pipeline grammar, runtime-discovered encoders and
-muxers, plus every command, branch step, sink, and encoder spelling registered
-on that server, including aliases, summaries, usage strings, and typed fields.
-That makes app-owned branch components discoverable from the same CLI surface
-that invokes them.
-
-Custom names and aliases are validated as one namespace per server. A custom
-control cannot reuse a built-in control verb or another custom alias, and a
-custom branch step or encoder cannot shadow built-in branch-pipeline spellings
-such as `copy`, `encode`, `resize`, or `filesink`. Collisions fail with
-`invalid_registry` before a socket starts or a branch pipeline mutates the
-running graph.
-
-Branch-pipeline values can be quoted with single or double quotes. Use quotes
-for paths or custom settings that contain spaces, `!`, or `=`:
-
-```sh
-goav ctl --control unix:///tmp/goav-live.sock attach frames as archive \
-  'meter label="left ! right" ! filesink location="/tmp/archive copy.ogg" format=ogg'
-```
-
-Raw JSON is for automation that already has the protocol object. `control
---json` validates the object through the typed `control.Control` constructors;
-`control deliver --json` decodes into `av.Event` and then lowers to
-`control.Deliver(event)`.
-Nested event metadata is rejected instead of being stringified silently, so a
-caller must choose the exact conversion before sending the request. Raw JSON
-uses the documented canonical field names and rejects unknown or duplicate
-fields before anything is applied; use `stream_id`, `bitrate`, `rate`,
-`start`, `end`, and `active` rather than CLI-only field names such as `stream`
-or `value`.
-
-Render a live flowchart from the same running task with
-`graph [format=mermaid|dot|text]` (shown above), or from host code:
-
-```go
-flowchart, err := graphrender.RenderTaskFlowchart(task)
+server, err := ctlserver.New(task, ctlserver.Files(files))
 if err != nil {
-    return err
+	return err
 }
-fmt.Println(flowchart)
-
-snap := task.Snapshot()
-flowchart, err = graphrender.RenderSnapshotFlowchart(snap)
-if err != nil {
-    return err
-}
-
-attachmentFlowchart, err := graphrender.RenderBranchFlowchart(attachment.Snapshot())
-if err != nil {
-    return err
-}
-fmt.Println(attachmentFlowchart)
+go func() { _ = task.Run(ctx) }()
+return server.ListenAndServe(ctx, "unix:///run/goav/ctl.sock")
 ```
 
-The render helpers read only public snapshot data. Runtime branch-owned nodes
-are annotated with the branch name and lifecycle state, for example
-`branch=archive (attached)`. Use `graphrender.RenderTaskURI(task,
-"goav://graph/dot")`, `RenderSnapshotURI(snap, "goav:graph")`, or
-`RenderBranchURI(attachment.Snapshot(), "goav://graph/dot")` when DOT or text
-is easier to feed into other tooling.
+`ListenAndServe` takes `unix:///path` or `tcp://host:port` and serves until
+ctx ends, then waits for calls in flight to answer. A unix socket is
+owner-only from the moment it exists; a stale socket is replaced, and a path
+another server is serving, or one that is not a socket, is refused rather
+than deleted. TCP has no authentication of its own: bind it to loopback, or
+serve over HTTP behind yours. `Serve(ctx, listener)` takes a listener you made.
 
-## Built-In Requests
-
-The socket protocol is JSON. The CLI is the normal human entry point, but hosts
-and tests can use the same request shape directly:
+A `*Server` is an `http.Handler`, for mounting in a service you already run,
+behind its own authentication:
 
 ```go
-request, err := ctlserver.RequestFromCLI([]string{
-    "control", "bitrate", "stream=video", "value=1200k", "at=encoded",
+mux := http.NewServeMux()
+mux.Handle("/goav/", requireOperator(server)) // your auth middleware
+```
+
+POST a JSON-RPC request to any path under the mount and the response comes
+back as the body; GET a path ending in `/events` for server-sent events,
+filtered by `?types=a,b` and `?stream=id`. `watch` needs a connection, so over
+HTTP it is refused in favor of `/events`.
+
+## Methods
+
+| Method | Params | Does |
+| --- | --- | --- |
+| `describe` | `[format=json\|text\|dot\|mermaid]` | the task's graph (`pipeline.Spec` as JSON, or rendered text) |
+| `explain` | | the task's plan (`plan.Report`) |
+| `snapshot` | | nodes, branches, taps, destinations (`snapshot.Task`) |
+| `stats` | | per-node counters and drops by reason (`pipeline.GraphStats`) |
+| `taps` | | the attach points (`[]snapshot.Tap`) |
+| `capabilities` | | protocol version, every method with its params, every element |
+| `watch` | `[types=a,b] [stream=]` | events as notifications; returns `{"subscription": "w1"}` |
+| `unwatch` | `subscription=` | stop a watch |
+| `bitrate` | `stream= bitrate=` | retarget the encoder of an encoded stream (its `as` name) |
+| `keyframe` | `stream=` | ask an encoded stream for a keyframe |
+| `select` | `active=` | switch a select to another input |
+| `seek` | `position= [source=]` | reposition the sources, or one source node |
+| `rate` | `value=` | scale the task's timeline |
+| `segment` | `start= end= [source=]` | play one window of the sources |
+| `pause`, `resume` | | freeze and continue the task's timeline |
+| `attach` | `program=` | add a program's outputs; returns `{"attachment": NAME}` |
+| `rebranch` | `attachment= program= [switch=] [old=]` | replace an attachment gaplessly; returns the new name |
+| `detach` | `attachment= [outcome=close\|drain\|abort]` | remove an attachment and finalize its destinations |
+| `stop` | | close the task |
+
+`switch` is `now` (default), `next-frame`, `next-keyframe`, or a media
+position such as `2s`; `old` is `close` (default), `drain`, or `abort` for the
+replaced destinations. A param value is JSON of its type or a string in the
+CLI's spelling: `"bitrate": 1000000` and `"bitrate": "1M"` are the same, as
+are `"types": ["qos"]` and `"types": "qos"`; durations are Go durations.
+`capabilities` lists each param's type, whether it is required, and its help.
+`bitrate` and `keyframe` travel the data path from the source, so one
+addressed to a stream nothing encodes is accepted and has no effect.
+
+## The wire
+
+JSON-RPC 2.0, one JSON value per message, on one connection. Requests carry
+ids and run concurrently; past 32 in flight on one connection the server stops
+reading it, which backpressures the client. A request without an id is a
+notification and gets no answer. A batch, a JSON array of requests, runs them
+in order and answers every one but its notifications. The notification
+`{"jsonrpc":"2.0","method":"$/cancelRequest","params":{"id":7}}` cancels call
+7; the Go client sends it when a `Call`'s ctx ends. `capabilities` returns
+`"protocol": 1`, which changes only when the wire breaks. A call and its
+answer:
+
+```json
+{"jsonrpc":"2.0","id":4,"method":"watch","params":{"types":["discontinuity"]}}
+{"jsonrpc":"2.0","id":4,"result":{"subscription":"w1"}}
+```
+
+A refusal is an error with a JSON-RPC code: `-32700` malformed JSON,
+`-32600` not a request, `-32601` unknown method, `-32602` bad params, and
+`-32000` for a call goav refused, whose `data` carries the structured detail.
+A request too broken to read is answered with `"id": null`. A program
+refusal carries its position and the fix, and, when an element refused with a
+`*goav.BuildError`, that error under `build`:
+
+```json
+{"jsonrpc":"2.0","id":2,"error":{"code":-32000,
+  "message":"launch: 1:12: unknown element \"resise\"\n    tap live ! resise 320x180 ! null\n               ^^^^^^\n    did you mean \"resize\"?",
+  "data":{"kind":"program","line":1,"column":12,"message":"unknown element \"resise\"","hint":"did you mean \"resize\"?"}}}
+```
+
+A build refusal carries the `*goav.BuildError`: `phase`, `family`, `code`,
+`operation`, `node`, `reason`, `details`, and `fixes`, as in
+[`ERRORS.md`](ERRORS.md). Bad params name the param and, for a near miss,
+the spelling meant:
+
+```json
+{"jsonrpc":"2.0","id":3,"error":{"code":-32602,"message":"bitrate: missing param \"bitrate\" (integer)"}}
+```
+
+A watch pushes its events as notifications on the same connection. An event
+carries its type, stream, epoch, time, media position, reason, and metadata;
+`stream_added` and `codec_changed` also carry the `track`: its index, type,
+codec, profile, size, sample rate, channels, language, and name.
+
+```json
+{"jsonrpc":"2.0","method":"event","params":{"subscription":"w1","event":{"type":"stream_added","stream":"cam",
+  "at":"2026-10-18T15:20:01.5Z","track":{"index":0,"type":"video","codec":"vp8","width":1280,"height":720}}}}
+```
+
+## Attaching programs
+
+An attached program starts at one of the task's taps and ends at
+destinations, in the same language `goav run` speaks:
+
+```text
+tap live ! resize 640x360 ! encode vp8 bitrate=800k ! as preview ! file preview.webm
+```
+
+One `attach` applies a program's outputs atomically; a refusal leaves the
+task as it was. The answer names the attachment, after its `as` name or else
+its first destination; `rebranch` and `detach` take that name, and `detach`
+finalizes the attachment's files. They address only attachments made through
+the server: the host's own attachments stay the host's.
+
+Files are the server's policy, not the client's. Without `Files`, an attached
+program reads and writes nothing, and a `file` destination is refused.
+`Files` given a `launch.Dir(root)` confines programs to root: a path that
+escapes it, through `..` or a symlink, is refused. `launch.OS()` grants the
+process's files; `goav run --control` grants it, because its client is the
+user who started it. Serve untrusted clients a `launch.Dir`, or nothing.
+
+## Host methods and elements
+
+A host extends the server two ways, both typed, both listed by
+`capabilities`. `ctlserver.Method[T]` adds a method whose params are T's
+fields: `json` names them, `ctl:"required"` requires one, and `help`
+describes it. Param types are strings, bools, integers, floats,
+`time.Duration`, and `[]string`. The result is any JSON value, and an error
+is a refusal.
+
+```go
+type cueParams struct {
+	Name   string        `json:"name" ctl:"required" help:"intro, chorus, or outro"`
+	Offset time.Duration `json:"offset" help:"how far past the cue: 500ms"`
+}
+cue := ctlserver.Method("cue", "seek the player to a named cue",
+	func(ctx context.Context, task goav.LiveTask, p cueParams) (any, error) {
+		at, ok := cues[p.Name]
+		if !ok {
+			return nil, fmt.Errorf("no cue %q", p.Name)
+		}
+		return struct{}{}, task.Control(ctx, control.Seek(at+p.Offset).At(pipeline.NodeRef("player")))
+	})
+```
+
+`ctlserver.Elements` adds pipeline elements for attached programs to use:
+`launch.Source`, `launch.Stage`, `launch.Encoder`, `launch.Sink`, and
+`launch.Join`, typed by `launch:"..."` settings. A constructor's error refuses
+the program at attach, pointing at the element:
+
+```go
+type thumbnailArgs struct {
+	Every int    `launch:"every,required" help:"keep one frame in every N"`
+	Name  string `launch:"name"`
+}
+type acmeArgs struct {
+	Bitrate int `launch:"bitrate,required"`
+}
+thumbnail := launch.Sink("thumbnail", "keep one frame in every N",
+	func(a thumbnailArgs) (goav.Destination, error) {
+		if a.Every < 1 {
+			return goav.Destination{}, fmt.Errorf("every=%d keeps no frames; write every=1 or more", a.Every)
+		}
+		return goav.Sink(newThumbnailer(a.Name, a.Every)), nil
+	})
+acme := launch.Encoder("acme", "encode with the host's ACME codec",
+	func(a acmeArgs) (codec.Spec, error) {
+		return codec.Codec("x_acme_video", av.MediaVideo, codec.Bitrate(a.Bitrate)), nil
+	})
+server, err := ctlserver.New(task, ctlserver.Elements(thumbnail, acme), cue)
+```
+
+A client then attaches `tap live ! thumbnail every=30` or
+`tap live ! acme bitrate=250k ! as acme ! null`. A method name is one word and
+unique: a host method cannot shadow a built-in. The runnable host is
+[`examples/control-plane-host`](../examples/control-plane-host): a typed
+`cue` method, a control-history method, a meter stage, thumbnail and memory
+sinks, and a custom encoder whose native settings arrive through
+`codec.Control`.
+
+## The Go client
+
+```go
+client, err := ctlserver.Dial(ctx, "unix:///run/goav/ctl.sock")
+if err != nil {
+	return err
+}
+defer client.Close()
+
+stats, err := client.Call[pipeline.GraphStats](ctx, "stats", nil)
+att, err := client.Call[ctlserver.Attached](ctx, "attach", map[string]string{
+	"program": "tap live ! encode vp8 ! as preview ! file preview.webm",
 })
-if err != nil {
-    return err
-}
-response := server.Handle(ctx, request)
-```
-
-Supported built-ins include:
-
-- `control keyframe stream=<stream-id> [at=<tap>]`
-- `control bitrate stream=<stream-id> value=<rate> [at=<tap>]`
-- `control seek position=<duration> [source=<source>|node=<node>]`
-- `control rate value=<float>` (task-wide: scales the shared task timeline)
-- `control segment start=<duration> end=<duration> [source=<source>|node=<node>]`
-- `control select active=<arm-or-stream-id> [selector=<name>|at=<tap>]`
-- `control deliver ...` and `control deliver --json '<av.Event JSON>'`
-- `control --json '<control protocol JSON>'`
-- `inspect`, `snapshot`, `stats`, `taps`, `streams`, `branches`,
-  `destinations`, `capabilities`
-
-Untargeted controls infer a destination only when the running task has exactly
-one valid target for that verb. Multi-source or multi-entry graphs require an
-explicit `at=`, `selector=`, `source=`, or `node=` argument.
-- `graph [format=mermaid|dot|text]` and `flowchart [format=mermaid|dot|text]`
-- `events --follow`, `watch [type=<event-type>] [stream=<stream-id>] --follow`
-- `attach`, `rebranch`, `detach`, `stop`
-
-## Custom Codecs
-
-Register the codec implementation on the runtime, then call it in an attach or
-rebranch pipeline with the generic `encode` step — the default path for custom
-encoders, no custom encoder spelling required. Use `bundle.MustNew(...)` when
-you want the bundled codecs, formats, and filters plus your adapter; use
-`goav.New(...)` only when you are intentionally registering every required
-codec, filter, prober, demuxer, and muxer yourself.
-
-Opus, VP8, VP9, and AV1 are full encode/decode recipe verticals. Encoder
-behavior has one typed settings contract everywhere: package options mutate
-`codec.CodecSettings`, and the string/control-plane frontends reflect the same
-tagged fields into `encode ... key=value` syntax, so custom runtime encoders
-work through `encode codec=<id> media=<kind>` immediately. Use
-`codec.Control(...)` when an adapter needs the concrete native encoder or
-config object. In normal application code, workflows should be expressible
-through declarative recipes; the public grammar stays Input, Stream, Tap,
-Branch, Destination, Flow, Task, and opt-in task capabilities.
-
-```go
-rt := bundle.MustNew(
-    runconfig.WithEncoder(codec.Descriptor{
-        ID:   av.CodecID("x_pcm_s16"),
-        Name: "ACME PCM S16",
-        Type: av.MediaAudio,
-    }, acmeEncoderFactory),
-    runconfig.WithFormatAdapter(acmecontainer.Register), // if no stock container accepts the codec
-)
-```
-
-```sh
-goav ctl --control unix:///tmp/goav-live.sock attach frames as record \
-  'encode codec=x_pcm_s16 media=audio bitrate=128k sample_rate=16000 channels=1 profile=voice dither=triangular ! filesink location=record.ogg format=ogg'
-```
-
-The generic encoder step is documented by generated help, not by a hand-written
-option list: `goav ctl help attach` against the host is human-readable and
-`goav ctl capabilities` is machine-readable. Both show the reflected
-`codec.CodecSettings` fields (`bitrate`, `fps`, `keyframe_interval`,
-`profile`, `level`, `channels`, `sample_rate`, `clock_rate`, `channel_layout`,
-and any future tagged fields). Adapter-owned native keys such as
-`dither=triangular`, `lookahead=deep`, or
-`min_qindex=20 max_qindex=180 tune=zerolatency` fall through to
-`CodecSettings.Custom` for the adapter to validate. Ambiguous or duplicate
-spellings such as `rate`, `framerate`, `keyint`, `gop`, `samplerate`, `ch`,
-`clockrate`, and `bitrate_bps` are rejected with suggestions; use the
-canonical names from generated help.
-
-File sinks follow the same rule: use `filesink location=<path> [format=<id>]`.
-Transform steps use one spelling as well: `resize width=<px> height=<px>` and
-`resample sample_rate=<hz> channels=<n>`.
-
-The destination container must accept the selected codec. Standard codecs can
-often use the bundled containers registered by `bundle.MustNew`; a private codec
-usually needs a matching `runconfig.WithFormatAdapter`, `WithMuxer`, or an app-owned
-custom destination step. Runtime muxers registered with `WithMuxer` are callable
-by `filesink location=<path> [format=<id>]` and appear in `help attach`.
-
-When an encoder needs host-side validation or direct native handle setup,
-expose a named encoder step with `ctlserver.NewEncoderSpec`. The CLI spelling stays
-short and the host keeps full control over validation and native adapter calls:
-
-```sh
-goav ctl --control unix:///tmp/goav-live.sock attach frames as archive \
-  'acmeenc bitrate=128k quality=cinema lookahead=deep ! filesink location=archive.ogg'
-```
-
-## Custom Branch Components
-
-Custom branch steps can add external stages, sinks, or compound branch grammar;
-the `meter` step in [Bootstrap Host](#bootstrap-host) is the frame-stage
-pattern. Custom destination steps call `branch.Destination(...)` — the pattern
-for object stores, upload services, analytics queues, or any app-owned sink
-that is not a local file:
-
-```go
-type ObjectSinkSettings struct {
-    Bucket string `goavctl:"bucket,required" usage:"bucket=<name>" help:"object bucket"`
-    Key    string `goavctl:"key,required" usage:"key=<path>" help:"object key"`
+var refused *ctlserver.Error
+if errors.As(err, &refused) {
+	fmt.Println(refused.Code, refused.Message, string(refused.Data))
 }
 
-objectSink := ctlserver.NewBranchStep[ObjectSinkSettings](
-    "objectsink",
-    "upload branch messages to object storage",
-    func(branch *ctlserver.BranchPipeline, args ObjectSinkSettings) error {
-        // objectStoreOpen returns a provider.OpenFunc that opens the upload.
-        branch.Destination(goav.Writer("object:"+args.Key,
-            objectStoreOpen(args.Bucket, args.Key),
-            goav.Format(av.FormatOgg),
-        ))
-        return nil
-    },
-)
+events, err := client.Watch(ctx, map[string][]string{"types": {"qos", "stream_added"}})
+for e := range events {
+	fmt.Println(e.Type, e.Stream, e.Reason)
+}
 ```
 
-```sh
-goav ctl --control unix:///tmp/goav-live.sock attach frames as monitored \
-  'meter ! encode codec=x_pcm_s16 media=audio ! filesink location=monitored.ogg format=ogg'
+`Call[T]` decodes the result into T (`json.RawMessage` keeps it raw); calls
+on one client may run concurrently, and one whose ctx ends is cancelled on
+the server too. `Watch` streams `ctlserver.Event` values until ctx ends or
+the connection closes; a reader that falls behind loses events, never the
+task's media.
 
-goav ctl --control unix:///tmp/goav-live.sock attach frames as upload \
-  'meter ! acmeenc bitrate=128k quality=voice lookahead=deep ! objectsink bucket=archive key=session-001.ogg'
+## goav ctl
+
+```text
+goav ctl --control unix:///run/goav/ctl.sock stats
+goav ctl --control unix:///run/goav/ctl.sock attach 'tap live ! encode vp8 ! as preview ! file p.webm'
+goav ctl --control unix:///run/goav/ctl.sock bitrate stream=preview bitrate=500k
+goav ctl --control unix:///run/goav/ctl.sock watch types=qos
 ```
 
-Unknown commands, fields, taps, branches, nodes, and pipeline steps return
-structured errors with available names and suggestions.
+`goav ctl <method> key=value...` calls any method, the host's included;
+`attach`, `rebranch`, and `detach` take their attachment and program
+positionally. [`CLI.md`](CLI.md#control) has the details, and `goav run
+--control` serves any program with no Go at all.
 
-## Safety Model
+## Cost
 
-- Reflection is confined to argument binding, validation, and help generation.
-- No arbitrary method names, unexported internals, or global registries are
-  exposed.
-- Commands lower into existing task/control APIs.
-- Raw JSON fallback validates through the typed `control.Control` constructors
-  or `av.Event` shape instead of introducing a second control model.
-- Custom controls, custom branch steps, custom codec names, custom sinks, and
-  custom encoder names are per-server allowlists.
-- Custom command, branch-step, encoder, and alias names must be unique in that
-  server's allowlists; built-in branch-pipeline spellings are reserved.
-- Branch-pipeline strings are parsed by the allowlisted cold-path parser; custom
-  behavior is callable only through explicit `CapabilitySet` entries chosen by
-  the host application.
+Serving costs the task's data plane nothing. Calls run on connection
+goroutines, `stats` reads atomic counters, and a watch is an `inspect`
+subscription that sheds events when its client falls behind rather than block
+media. `TestServingCostsTheDataPlaneNothing` pins it: a task allocates the
+same per frame with a server, a connected client, and a watch as with none.

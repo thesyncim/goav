@@ -1,168 +1,68 @@
-# Control-plane host playground
+# Control-plane host
 
-> Demonstrates the control-plane socket host — a governed pre-v1 feature, not
-> the v1 front door. See [V1 scope](../../docs/COMPATIBILITY.md#v1-scope).
+> Demonstrates the control plane, a governed pre-v1 feature rather than the
+> v1 front door. See [V1 scope](../../docs/COMPATIBILITY.md#v1-scope).
 
-This is a self-contained `goav ctl` playground. The host builds a live
-`goavtest.TestSource` named `fixture` that behaves like a VP8 camera, decodes it
-to a frame tap named `frames`, and exposes a Unix control socket.
+An application that serves its running task with `ctlserver`, adding methods
+and pipeline elements of its own. The task plays a stand-in deck, `player` (a
+fade from black to white at 30 fps that applies seek and records every
+control), through a tap named `live`. The host adds:
 
-It demonstrates:
+- methods: `cue name= [offset=]` seeks the player to a named cue,
+  `controls [type=]` reports the controls the player received, and
+  `collected` reports what the host's elements measured and kept;
+- elements: a `meter` stage (mean luma per frame), a `thumbnail every=N` sink
+  that keeps one frame in N, a `memory` sink, and an `acme` encoder that maps
+  its typed settings onto the host's own codec, reaching native settings
+  through `codec.Control`.
 
-- built-in source controls against the test source: `seek`, `segment`
-  (playback `rate` is task-wide now: it scales the shared task timeline and
-  takes no source target);
-- a custom `fixture.controls` command that reports what the test source
-  recorded;
-- server-aware `help attach` output for app-owned branch components;
-- machine-readable `capabilities` output for scripts and humans;
-- generated help for app-owned control commands;
-- raw JSON fallback for control protocol and `av.Event` payloads;
-- stock CLI transcode branches (`resize`, `encode codec=vp8 media=video`, `filesink`);
-- thumbnail/sample branches from the same running tap;
-- an in-process app sink (`memorysink`);
-- a runtime-registered custom encoder through the default generic `encode`
-  step, including reflected typed settings and adapter-owned custom settings;
-- an optional custom video encoder spelling (`acmeenc`) with native settings;
-- graph rendering, rebranching, and detach.
-
-Start the host:
+Attached programs may write files only under `--files` (default: the temp
+directory), through `launch.Dir`. See [CONTROL_PLANE.md](../../docs/CONTROL_PLANE.md)
+for the API and the protocol.
 
 ```sh
 cd examples/control-plane-host
-go run . --control unix:///tmp/goav-control-plane-host.sock
+GOEXPERIMENT=simd go run . --control unix:///tmp/goav-host.sock
 ```
 
-In another shell, set a shorter variable:
+From another shell, with `goav` built from this checkout
+(`GOEXPERIMENT=simd go install ./cmd/goav` at the repository root):
 
 ```sh
-CTL='goav ctl --control unix:///tmp/goav-control-plane-host.sock'
+ctl() { goav ctl --control unix:///tmp/goav-host.sock "$@"; }
+ctl capabilities                      # every method and element, with params
+ctl seek position=2s source=player    # a built-in control
+ctl cue name=chorus offset=500ms      # the host's: {"cue": "chorus", "position": "42.5s"}
+ctl controls type=seek                # what reached the player
+ctl attach 'tap live ! meter name=cam ! thumbnail every=30 name=thumbs'
+ctl attach 'tap live ! resize 160x90 ! encode vp8 ! as preview ! file preview.webm'
+ctl attach 'tap live ! acme bitrate=250k lookahead=deep ! as acme ! memory name=acme'
+ctl collected
+ctl describe format=text
+ctl rebranch thumbs 'tap live ! thumbnail every=90 name=slow' switch=next-keyframe
+ctl detach preview                    # finalizes preview.webm
+ctl stop
 ```
 
-Inspect the host-owned grammar:
+`attach` answers `{"attachment": "thumbs"}`, the name `rebranch` and `detach`
+take. `collected` shows the host's state:
 
-```sh
-$CTL help attach
-$CTL help control vendor.seek
-$CTL help control fixture.controls
-$CTL capabilities
-$CTL taps
+```json
+{
+  "levels": {"cam": 136},
+  "kept": {"acme": 60, "thumbs": 3},
+  "opened": ["acme bitrate=250000 lookahead=deep"]
+}
 ```
 
-`help attach` and `capabilities` list the custom branch steps, custom encoder
-spellings, reflected generic `encode` settings, and the encoders and muxers
-discovered from the running task runtime. The ACME encoder is available
-immediately through the generic `encode codec=x_acme_video media=video ...`
-step because the host registered it with `runconfig.WithEncoder`. Generic `encode`
-binds the tagged `codec.CodecSettings` fields and leaves adapter-owned keys in
-`CodecSettings.Custom`; registered muxers are available through
-`filesink location=<path> [format=<id>]`.
+A bad setting is refused at attach, before the task changes, and the error
+points at the element; over the wire its `data` carries the line and column:
 
-Control the fake source. These are normal built-in source controls targeting
-the `fixture` source node:
-
-```sh
-$CTL control seek position=2s source=fixture
-$CTL control segment start=1s end=3s source=fixture
+```text
+$ ctl attach 'tap live ! thumbnail every=0'
+launch: 1:12: thumbnail: every=0 keeps no frames; write every=1 or more
+    tap live ! thumbnail every=0
+               ^^^^^^^^^^^^^^^^^
 ```
 
-Prove the controls reached the test source:
-
-```sh
-$CTL control fixture.controls
-$CTL control fixture.controls type=seek
-```
-
-If automation already has the structured control/event payload, use the raw
-JSON fallback. The first command validates through the typed `control.Control`
-constructors; the second decodes into an `av.Event` and delivers it at the
-`frames` tap:
-
-```sh
-$CTL control --json '{"type":"seek","position":"1.5s","node":"fixture"}'
-$CTL control deliver --json '{"type":"vendor.force_idr","stream_id":"video","reason":"manual","metadata":{"source":"cli"}}' at=frames
-```
-
-Attach a stock VP8/WebM transcode from the decoded `frames` tap:
-
-```sh
-$CTL attach frames as archive \
-  'meter label="left ! right" ! resize width=640 height=360 ! encode codec=vp8 media=video bitrate=900k fps=30 keyframe_interval=30 ! filesink location="/tmp/goav archive.webm"'
-```
-
-Attach a low-rate thumbnail recording:
-
-```sh
-$CTL attach frames as thumbnails \
-  'thumbnail every=5 label=sample ! resize width=160 height=90 ! encode codec=vp8 media=video bitrate=160k fps=1 keyframe_interval=1 ! filesink location="/tmp/goav thumbnails.ivf"'
-```
-
-Attach an app-owned in-process preview sink:
-
-```sh
-$CTL attach frames as memory \
-  'thumbnail every=3 label=preview ! memorysink name=preview'
-```
-
-Attach the runtime-registered custom encoder through the default generic encode
-step to an in-process sink. This needs no custom CLI encoder registry entry;
-the reflected `codec.CodecSettings` fields are mapped into the `codec.Spec`
-that the runtime already understands, while native keys such as `lookahead`
-remain in `CodecSettings.Custom` for the adapter:
-
-```sh
-$CTL attach frames as acme-generic \
-  'thumbnail every=4 label=generic ! encode codec=x_acme_video media=video bitrate=220k profile=preview fps=2 keyframe_interval=1 lookahead=deep ! memorysink name=acme-generic'
-```
-
-Attach the same runtime-registered custom encoder to a file through a
-runtime-registered muxer:
-
-```sh
-$CTL attach frames as acme-file \
-  'thumbnail every=6 label=file ! encode codec=x_acme_video media=video bitrate=320k profile=file fps=2 keyframe_interval=1 lookahead=file ! filesink location="/tmp/goav acme.webm"'
-```
-
-Attach a custom encoder spelling only when native settings need host code. The
-CLI spelling is short, but it is still generated from the same struct tags: the
-host maps `bitrate`, `quality`, and `lookahead` into a real `codec.Spec`
-and native adapter settings:
-
-```sh
-$CTL attach frames as acme-preview \
-  'thumbnail every=2 label=acme ! acmeenc bitrate=250k quality=preview lookahead=shallow ! memorysink name=acme-preview'
-```
-
-Render the running graph:
-
-![Runtime pipeline debugging](../../docs/assets/pipeline-debug.svg)
-
-```sh
-$CTL graph
-$CTL graph format=text
-```
-
-Retarget the live in-process thumbnail branch without restarting the host:
-
-```sh
-$CTL rebranch memory \
-  'thumbnail every=10 label=slow ! memorysink name=slow-preview'
-```
-
-Detach the branches:
-
-```sh
-$CTL detach archive
-$CTL detach thumbnails
-$CTL detach memory
-$CTL detach acme-generic
-$CTL detach acme-file
-$CTL detach acme-preview
-```
-
-The emitted command list printed by the host is generated from the same strings
-this guide uses, and the example tests drive both the socket request shape and
-the actual `goav ctl` binary. The host adds controls, steps, sinks, and encoder
-spellings through one explicit `ctlserver.CapabilitySet`; reflection only binds known
-structs and generates help. The host calls `ctlserver.ValidateCapabilities` before
-opening the socket so bad names, aliases, or settings structs fail at startup.
+`main_test.go` drives the same sequence through a `ctlserver.Client`.

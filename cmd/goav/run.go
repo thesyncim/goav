@@ -179,7 +179,7 @@ func runCommand(argv []string, stdout, stderr io.Writer) int {
 	}
 	defer task.Close()
 	if args.control != "" {
-		err = runServed(ctx, task, args.control)
+		err = runServed(ctx, task, args.control, files)
 	} else {
 		err = task.Run(ctx)
 	}
@@ -202,13 +202,18 @@ func runCommand(argv []string, stdout, stderr io.Writer) int {
 }
 
 // runServed runs the task while a control socket serves it; the first to
-// stop stops both.
-func runServed(ctx context.Context, task goav.LiveTask, control string) error {
+// stop stops both. The CLI's own user is the client, so attached programs
+// use the user's files, and the summary lists what they write.
+func runServed(ctx context.Context, task goav.LiveTask, control string, files launch.FileSystem) error {
+	server, err := ctlserver.New(task, ctlserver.Files(files))
+	if err != nil {
+		return err
+	}
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	errC := make(chan error, 2)
 	go func() { errC <- task.Run(runCtx) }()
-	go func() { errC <- ctlserver.ServeUnix(runCtx, task, control) }()
+	go func() { errC <- server.ListenAndServe(runCtx, control) }()
 	var first error
 	for range 2 {
 		err := <-errC

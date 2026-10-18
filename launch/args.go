@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/thesyncim/goav/internal/spelling"
 )
 
 // Size is a width and height, written WxH: resize 1280x720.
@@ -318,22 +320,19 @@ func setArg(dst reflect.Value, f argField, a argNode) *Error {
 	case reflect.String:
 		dst.SetString(a.value)
 	case reflect.Bool:
-		switch strings.ToLower(a.value) {
-		case "true", "yes", "1", "on":
-			dst.SetBool(true)
-		case "false", "no", "0", "off":
-			dst.SetBool(false)
-		default:
+		b, ok := spelling.Bool(a.value)
+		if !ok {
 			return bad("true or false")
 		}
+		dst.SetBool(b)
 	case reflect.Int, reflect.Int64:
-		n, ok := parseQuantity(a.value)
-		if !ok || n > math.MaxInt64 {
+		n, ok := spelling.Quantity(a.value)
+		if !ok {
 			return bad("a whole number (k and M suffixes multiply by 1000)")
 		}
 		dst.SetInt(int64(n))
 	case reflect.Uint, reflect.Uint32, reflect.Uint64:
-		n, ok := parseQuantity(a.value)
+		n, ok := spelling.Quantity(a.value)
 		if !ok || n < 0 || dst.OverflowUint(uint64(n)) {
 			return bad("a non-negative whole number")
 		}
@@ -348,28 +347,6 @@ func setArg(dst reflect.Value, f argField, a argNode) *Error {
 	return nil
 }
 
-// parseQuantity reads an integer with an optional SI suffix: 96k, 2M, 1G.
-func parseQuantity(s string) (float64, bool) {
-	mult := 1.0
-	switch {
-	case strings.HasSuffix(s, "k") || strings.HasSuffix(s, "K"):
-		mult, s = 1e3, s[:len(s)-1]
-	case strings.HasSuffix(s, "M"):
-		mult, s = 1e6, s[:len(s)-1]
-	case strings.HasSuffix(s, "G"):
-		mult, s = 1e9, s[:len(s)-1]
-	}
-	n, err := strconv.ParseFloat(s, 64)
-	if err != nil {
-		return 0, false
-	}
-	n *= mult
-	if n != math.Trunc(n) {
-		return 0, false
-	}
-	return n, true
-}
-
 func firstNonEmpty(values ...string) string {
 	for _, v := range values {
 		if v != "" {
@@ -377,4 +354,35 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+// rate is a frame rate as a fraction: 30/1, 30000/1001.
+type rate struct{ num, den int }
+
+// parseRate reads a frame rate written as 30, 29.97, or 30000/1001.
+func parseRate(s string) (rate, bool) {
+	if left, right, ok := strings.Cut(s, "/"); ok {
+		num, err1 := strconv.Atoi(left)
+		den, err2 := strconv.Atoi(right)
+		if err1 != nil || err2 != nil || num <= 0 || den <= 0 {
+			return rate{}, false
+		}
+		return reduced(rate{num, den}), true
+	}
+	f, err := strconv.ParseFloat(s, 64)
+	if err != nil || f <= 0 || math.IsInf(f, 0) {
+		return rate{}, false
+	}
+	if f == math.Trunc(f) {
+		return rate{int(f), 1}, true
+	}
+	return reduced(rate{int(math.Round(f * 1000)), 1000}), true
+}
+
+func reduced(r rate) rate {
+	a, b := r.num, r.den
+	for b != 0 {
+		a, b = b, a%b
+	}
+	return rate{r.num / a, r.den / a}
 }

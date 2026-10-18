@@ -1,6 +1,9 @@
 package av
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+)
 
 // MediaType is the kind of media a stream, packet, or frame carries.
 type MediaType string
@@ -122,21 +125,21 @@ const (
 // TimeBase is the rational unit (Num/Den seconds) timestamp and duration
 // values are measured in — 1/48000 for 48kHz audio, 1/90000 for RTP video.
 type TimeBase struct {
-	Num int64
-	Den int64
+	Num int64 `json:"num"`
+	Den int64 `json:"den"`
 }
 
 // Timestamp is a media position: Value counted in Base units. Convert with
 // Rescale/ToDuration instead of mixing bases arithmetically.
 type Timestamp struct {
-	Value int64
-	Base  TimeBase
+	Value int64    `json:"value"`
+	Base  TimeBase `json:"base"`
 }
 
 // Duration is a media time span: Value counted in Base units.
 type Duration struct {
-	Value int64
-	Base  TimeBase
+	Value int64    `json:"value"`
+	Base  TimeBase `json:"base"`
 }
 
 // Valid reports whether the timebase can convert values.
@@ -321,6 +324,20 @@ type Buffer struct {
 	Owner     BufferOwner
 }
 
+// MarshalJSON writes the bytes, base64-encoded like a []byte; ownership is
+// a runtime fact and stays out of the JSON.
+func (b Buffer) MarshalJSON() ([]byte, error) { return json.Marshal(b.Bytes) }
+
+// UnmarshalJSON reads bytes MarshalJSON wrote into a buffer the caller owns.
+func (b *Buffer) UnmarshalJSON(data []byte) error {
+	var bytes []byte
+	if err := json.Unmarshal(data, &bytes); err != nil {
+		return err
+	}
+	*b = Buffer{Bytes: bytes, Ownership: BufferOwned}
+	return nil
+}
+
 // Reset clears the buffer for reuse, keeping the backing array.
 func (b *Buffer) Reset() {
 	b.Bytes = b.Bytes[:0]
@@ -332,35 +349,35 @@ func (b *Buffer) Reset() {
 // timing, audio/video geometry, formats, and codec-specific extradata.
 // Decoders are configured from these; the planner reads them as shape facts.
 type CodecParameters struct {
-	ID            CodecID
-	Type          MediaType
-	Profile       string
-	Level         string
-	ClockRate     uint32
-	SampleRate    int
-	Channels      int
-	ChannelLayout string
-	Width         int
-	Height        int
-	PixelFormat   string
-	SampleFormat  string
-	ExtraData     Buffer
-	Attributes    Metadata
+	ID            CodecID   `json:"id,omitempty"`
+	Type          MediaType `json:"type,omitempty"`
+	Profile       string    `json:"profile,omitempty"`
+	Level         string    `json:"level,omitempty"`
+	ClockRate     uint32    `json:"clockRate,omitempty"`
+	SampleRate    int       `json:"sampleRate,omitempty"`
+	Channels      int       `json:"channels,omitempty"`
+	ChannelLayout string    `json:"channelLayout,omitempty"`
+	Width         int       `json:"width,omitempty"`
+	Height        int       `json:"height,omitempty"`
+	PixelFormat   string    `json:"pixelFormat,omitempty"`
+	SampleFormat  string    `json:"sampleFormat,omitempty"`
+	ExtraData     Buffer    `json:"extraData,omitzero"`
+	Attributes    Metadata  `json:"attributes,omitempty"`
 }
 
 // Stream describes one media stream an input carries: identity, kind, codec
 // parameters, timing, and labels. Probers and source providers produce
 // streams; selectors match against them.
 type Stream struct {
-	ID       StreamID
-	Index    int
-	Type     MediaType
-	Codec    CodecParameters
-	TimeBase TimeBase
-	Language string
-	Name     string
-	Epoch    Epoch
-	Metadata Metadata
+	ID       StreamID        `json:"id,omitempty"`
+	Index    int             `json:"index"`
+	Type     MediaType       `json:"type,omitempty"`
+	Codec    CodecParameters `json:"codec,omitzero"`
+	TimeBase TimeBase        `json:"timeBase,omitzero"`
+	Language string          `json:"language,omitempty"`
+	Name     string          `json:"name,omitempty"`
+	Epoch    Epoch           `json:"epoch,omitempty"`
+	Metadata Metadata        `json:"metadata,omitempty"`
 }
 
 // StreamSelector matches streams by any combination of id, probe index

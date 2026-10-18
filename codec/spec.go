@@ -6,12 +6,12 @@ import "github.com/thesyncim/goav/av"
 // structural Parameters, the encoder Settings, and the Copy/Auto modes. Build it
 // with the constructors (VP9, VP8, Opus, H264, AV1, Codec) or Copy/Auto.
 type Spec struct {
-	ID         av.CodecID
-	Type       av.MediaType
-	Parameters av.CodecParameters
-	Settings   CodecSettings
-	Copy       bool
-	Auto       bool
+	ID         av.CodecID         `json:"id,omitempty"`
+	Type       av.MediaType       `json:"type,omitempty"`
+	Parameters av.CodecParameters `json:"parameters,omitzero"`
+	Settings   CodecSettings      `json:"settings,omitzero"`
+	Copy       bool               `json:"copy,omitempty"`
+	Auto       bool               `json:"auto,omitempty"`
 }
 
 // Auto selects the codec automatically from the resolved stream.

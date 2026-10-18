@@ -59,37 +59,18 @@
         "protocol": "custom",
         "streams": [
           {
-            "ID": "mic44",
-            "Index": 0,
-            "Type": "audio",
-            "Codec": {
-              "ID": "",
-              "Type": "audio",
-              "Profile": "",
-              "Level": "",
-              "ClockRate": 44100,
-              "SampleRate": 44100,
-              "Channels": 1,
-              "ChannelLayout": "mono",
-              "Width": 0,
-              "Height": 0,
-              "PixelFormat": "",
-              "SampleFormat": "s16",
-              "ExtraData": {
-                "Bytes": null,
-                "Ownership": "",
-                "Owner": null
-              },
-              "Attributes": null
+            "id": "mic44",
+            "index": 0,
+            "type": "audio",
+            "codec": {
+              "type": "audio",
+              "clockRate": 44100,
+              "sampleRate": 44100,
+              "channels": 1,
+              "channelLayout": "mono",
+              "sampleFormat": "s16"
             },
-            "TimeBase": {
-              "Num": 0,
-              "Den": 0
-            },
-            "Language": "",
-            "Name": "mic44",
-            "Epoch": 0,
-            "Metadata": null
+            "name": "mic44"
           }
         ]
       }
@@ -139,50 +120,16 @@
           }
         ],
         "encode": {
-          "ID": "opus",
-          "Type": "audio",
-          "Parameters": {
-            "ID": "opus",
-            "Type": "audio",
-            "Profile": "",
-            "Level": "",
-            "ClockRate": 48000,
-            "SampleRate": 48000,
-            "Channels": 2,
-            "ChannelLayout": "stereo",
-            "Width": 0,
-            "Height": 0,
-            "PixelFormat": "",
-            "SampleFormat": "",
-            "ExtraData": {
-              "Bytes": null,
-              "Ownership": "",
-              "Owner": null
-            },
-            "Attributes": null
-          },
-          "Settings": {
-            "Bitrate": 0,
-            "Framerate": {
-              "Value": 0,
-              "Base": {
-                "Num": 0,
-                "Den": 0
-              }
-            },
-            "KeyframeInterval": 0,
-            "Profile": "",
-            "Level": "",
-            "Channels": 0,
-            "SampleRate": 0,
-            "ClockRate": 0,
-            "ChannelLayout": "",
-            "ChannelsSet": false,
-            "SampleRateSet": false,
-            "Custom": null
-          },
-          "Copy": false,
-          "Auto": false
+          "id": "opus",
+          "type": "audio",
+          "parameters": {
+            "id": "opus",
+            "type": "audio",
+            "clockRate": 48000,
+            "sampleRate": 48000,
+            "channels": 2,
+            "channelLayout": "stereo"
+          }
         },
         "destinations": [
           "packets"

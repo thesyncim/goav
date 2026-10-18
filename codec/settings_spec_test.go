@@ -46,7 +46,7 @@ func TestCodecSettingsOptionsAreLastWinsAndCustomFriendly(t *testing.T) {
 	Channels(6)(&settings)
 	SampleRate(48000)(&settings)
 	ClockRate(90000)(&settings)
-	Control(nil)(&settings)
+	Control[any](nil)(&settings)
 	Control(func(value any) error {
 		native = value
 		return controlErr

@@ -12,7 +12,6 @@ import (
 
 	"github.com/thesyncim/goav"
 	"github.com/thesyncim/goav/av"
-	"github.com/thesyncim/goav/internal/cliargs"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/shape"
 )
@@ -74,7 +73,7 @@ type testSource struct {
 	video    bool
 	width    int
 	height   int
-	fps      cliargs.FPS
+	fps      rate
 	pattern  string
 	rate     int
 	channels int
@@ -92,10 +91,10 @@ func newTestSource(a testsrcArgs) (testSource, error) {
 		if a.Size.Width > 0 {
 			s.width, s.height = a.Size.Width, a.Size.Height
 		}
-		s.fps = cliargs.FPS{Num: 30, Den: 1}
+		s.fps = rate{30, 1}
 		if a.FPS != "" {
-			fps, err := cliargs.ParseFPS(a.FPS)
-			if err != nil {
+			fps, ok := parseRate(a.FPS)
+			if !ok {
 				return s, &Error{Pos: -1, Msg: "fps " + quote(a.FPS) + " is not a frame rate", Hint: "write fps=30 or fps=30000/1001"}
 			}
 			s.fps = fps
@@ -120,7 +119,7 @@ func newTestSource(a testsrcArgs) (testSource, error) {
 		if a.Tone > 0 {
 			s.tone = a.Tone
 		}
-		s.fps = cliargs.FPS{Num: 1000, Den: audioFrameMS}
+		s.fps = rate{1000, audioFrameMS}
 		if a.Size.Width != 0 || a.FPS != "" || a.Pattern != "" {
 			return s, &Error{Pos: -1, Msg: "size, fps, and pattern set testsrc video", Hint: "drop them from testsrc audio"}
 		}
@@ -133,13 +132,13 @@ func newTestSource(a testsrcArgs) (testSource, error) {
 	case a.Frames > 0:
 		s.frames = a.Frames
 	case a.Duration > 0:
-		s.frames = int(math.Ceil(a.Duration.Seconds() * float64(s.fps.Num) / float64(s.fps.Den)))
+		s.frames = int(math.Ceil(a.Duration.Seconds() * float64(s.fps.num) / float64(s.fps.den)))
 	}
 	return s, nil
 }
 
 func (s testSource) frameDuration() time.Duration {
-	return time.Duration(float64(time.Second) * float64(s.fps.Den) / float64(s.fps.Num))
+	return time.Duration(float64(time.Second) * float64(s.fps.den) / float64(s.fps.num))
 }
 
 func (s testSource) stream() av.Stream {
@@ -147,7 +146,7 @@ func (s testSource) stream() av.Stream {
 		return av.Stream{
 			ID:       av.StreamID(s.name),
 			Type:     av.MediaVideo,
-			TimeBase: av.TimeBase{Num: int64(s.fps.Den), Den: int64(s.fps.Num)},
+			TimeBase: av.TimeBase{Num: int64(s.fps.den), Den: int64(s.fps.num)},
 			Codec:    av.CodecParameters{ID: rawVideoCodec, Type: av.MediaVideo, Width: s.width, Height: s.height, PixelFormat: av.PixelFormatI420},
 			Name:     s.name,
 		}
@@ -187,7 +186,7 @@ func (s testSource) videoFrame(n int) *av.Frame {
 	for i := range chroma {
 		chroma[i] = 128
 	}
-	base := av.TimeBase{Num: int64(s.fps.Den), Den: int64(s.fps.Num)}
+	base := av.TimeBase{Num: int64(s.fps.den), Den: int64(s.fps.num)}
 	return &av.Frame{
 		StreamID: av.StreamID(s.name),
 		Type:     av.MediaVideo,
@@ -236,7 +235,7 @@ func (s testSource) audioFrame(n int) *av.Frame {
 }
 
 func (s testSource) frameIndex(position time.Duration, ceil bool) int {
-	exact := position.Seconds() * float64(s.fps.Num) / float64(s.fps.Den)
+	exact := position.Seconds() * float64(s.fps.num) / float64(s.fps.den)
 	index := int(math.Floor(exact))
 	if ceil {
 		index = int(math.Ceil(exact))

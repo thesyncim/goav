@@ -58,10 +58,10 @@ not the root (there is no `goav.Bitrate`), and come in two tiers:
 - **Common typed settings.** `codec.Bitrate`, `FPS`, `KeyframeInterval`,
   `Profile`, `Level`, and the audio output overrides `Channels`, `SampleRate`,
   and `ClockRate` fill `codec.CodecSettings` (`Spec.Settings`);
-  `codec.Setting(key, value)` carries adapter-owned string knobs. The CLI and
-  control plane bind the tagged fields, so `goav ctl help attach` and
-  `goav ctl capabilities` are the generated option list; do not copy it into
-  docs.
+  `codec.Setting(key, value)` carries adapter-owned string knobs. The pipeline
+  language's `encode` binds these and passes any other key through as a
+  `codec.Setting`; `goav elements` prints the option list, so do not copy it
+  into docs.
 - **`codec.Control(func(e *gopus.Encoder) error { ... })`.** The adapter calls it
   at open with its concrete native encoder, decoder, or construction config,
   typed as the callback asks: anything the backend exposes is one call away,

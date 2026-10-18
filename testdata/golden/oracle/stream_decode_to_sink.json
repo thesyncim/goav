@@ -50,37 +50,17 @@
         "codec": "vp8",
         "streams": [
           {
-            "ID": "vp8-1",
-            "Index": 0,
-            "Type": "video",
-            "Codec": {
-              "ID": "vp8",
-              "Type": "video",
-              "Profile": "",
-              "Level": "",
-              "ClockRate": 90000,
-              "SampleRate": 0,
-              "Channels": 0,
-              "ChannelLayout": "",
-              "Width": 64,
-              "Height": 48,
-              "PixelFormat": "",
-              "SampleFormat": "",
-              "ExtraData": {
-                "Bytes": null,
-                "Ownership": "",
-                "Owner": null
-              },
-              "Attributes": null
+            "id": "vp8-1",
+            "index": 0,
+            "type": "video",
+            "codec": {
+              "id": "vp8",
+              "type": "video",
+              "clockRate": 90000,
+              "width": 64,
+              "height": 48
             },
-            "TimeBase": {
-              "Num": 0,
-              "Den": 0
-            },
-            "Language": "",
-            "Name": "vp8-1",
-            "Epoch": 0,
-            "Metadata": null
+            "name": "vp8-1"
           }
         ]
       }
