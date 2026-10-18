@@ -18,7 +18,6 @@ const (
 	decodeConfigConflictCode            errcode.Code = "decode_config_conflict"
 
 	outputInvalidCode              errcode.Code = "output_invalid"
-	outputMissingCode              errcode.Code = "output_missing"
 	outputDuplicateCode            errcode.Code = "output_duplicate"
 	outputKindMixedCode            errcode.Code = "output_kind_mixed"
 	outputWriterMissingCode        errcode.Code = "output_writer_missing"
@@ -57,7 +56,6 @@ const (
 	encodeDestinationMissingCode     errcode.Code = "encode_destination_missing"
 
 	inputInvalidCode               errcode.Code = "input_invalid"
-	inputMissingCode               errcode.Code = "input_missing"
 	inputDuplicateCode             errcode.Code = "input_duplicate"
 	inputUnknownCode               errcode.Code = "input_unknown"
 	inputFormatUnknownCode         errcode.Code = "input_format_unknown"
@@ -71,7 +69,6 @@ const (
 	streamAmbiguousCode            errcode.Code = "stream_ambiguous"
 	streamSelectorInvalidCode      errcode.Code = "stream_selector_invalid"
 	streamCodecMissingCode         errcode.Code = "stream_codec_missing"
-	streamOperationMissingCode     errcode.Code = "stream_operation_missing"
 	streamStepAfterEncodeCode      errcode.Code = "stream_step_after_encode"
 	streamInvalidCode              errcode.Code = "stream_invalid"
 	stageMissingCode               errcode.Code = "stage_missing"

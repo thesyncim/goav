@@ -455,3 +455,34 @@ func TestErrorAcceptanceShapeConversionRefused(t *testing.T) {
 		"insert .Resample(48000, 2) explicitly",
 	)
 }
+
+// TestErrorAcceptanceStreamMissing: a stream the input does not carry is
+// refused by name, with the streams it does carry.
+func TestErrorAcceptanceStreamMissing(t *testing.T) {
+	_, err := goavtest.Runtime().Build(context.Background(),
+		goavtest.Audio(48_000, 1, []int16{1}).Video().To(goavtest.NewCollector().Sink()))
+	requireBuildError(t, err, errcode.Code("stream_missing"), "select stream", "type=video",
+		"select one it has: input.Audio()",
+	)
+}
+
+// TestErrorAcceptanceInputFormatUnknown: an input no prober recognizes is
+// refused before anything opens.
+func TestErrorAcceptanceInputFormatUnknown(t *testing.T) {
+	_, err := mustRuntime().Build(context.Background(),
+		goav.FileInput("in.unknown", strings.NewReader("")).Video().Decode().To(goavtest.NewCollector().Sink()))
+	requireBuildError(t, err, errcode.Code("input_format_unknown"), "open input", "in.unknown",
+		"a name, URI, or MIME type a registered prober can recognize",
+	)
+}
+
+// TestErrorAcceptanceFramesIntoFileNeedAnEncoder: a frame source written to a
+// file needs an encoder, the same refusal decoded frames get.
+func TestErrorAcceptanceFramesIntoFileNeedAnEncoder(t *testing.T) {
+	_, err := goavtest.Runtime().Describe(
+		goavtest.Audio(48_000, 1, []int16{1}).Audio().To(goav.Write("out.ogg", io.Discard)))
+	requireBuildError(t, err, errcode.Code("encode_missing"), "build job", "audio",
+		"call .Encode(codec.Opus(...)) before .To(goav.Write(...))",
+		"send decoded frames to goav.Sink(...)",
+	)
+}

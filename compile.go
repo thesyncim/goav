@@ -401,42 +401,12 @@ func tapInfosFromPlan(taps []workTap) []snapshot.Tap {
 // --- recipe shape ---
 
 // validateRecipeShape checks what every branch must carry before any adapter
-// is consulted: an input to read, a destination to reach, work to do, a valid
-// selector, encoder, and transforms.
+// is consulted: a valid selector, encoder, and transforms. The DAG already
+// gives every branch an input and a destination.
 func (s *recipeCompileState) validateRecipeShape() error {
-	if len(s.recipe.Inputs) == 0 {
-		return &BuildError{
-			Phase:     phaseBuild,
-			Family:    errcode.FamilyForCode(inputMissingCode),
-			Code:      inputMissingCode,
-			Operation: s.operation,
-			Reason:    "no input is configured",
-			fixes: buildErrorFixes([]string{
-				"start the recipe from an input: goav.FileInput(\"in.webm\", reader).Video()",
-			}),
-			cause: errUnsupportedBuild,
-		}
-	}
-	if len(s.recipe.Destinations) == 0 && len(s.streamRules) == 0 {
-		return &BuildError{
-			Phase:     phaseBuild,
-			Family:    errcode.FamilyForCode(outputMissingCode),
-			Code:      outputMissingCode,
-			Operation: s.operation,
-			Reason:    "no output is configured",
-			fixes: buildErrorFixes([]string{
-				"route the stream to a destination: .To(goav.Write(\"out.webm\", writer))",
-				"deliver frames to code with .To(goav.Sink(sink))",
-			}),
-			cause: errUnsupportedBuild,
-		}
-	}
 	for i := range s.recipe.Streams {
 		stream := s.recipe.Streams[i]
 		node := recipeIRStreamName(stream)
-		if stream.Input >= 0 && !recipeIRStreamHasOperation(stream) && !s.streamDeliversFramesToSinks(i) {
-			return operationSpecMissingError(s.operation, node)
-		}
 		if err := validateRecipeStreamSelector(s.operation, node, recipeIRStreamSelector(stream)); err != nil {
 			return err
 		}
@@ -450,21 +420,6 @@ func (s *recipeCompileState) validateRecipeShape() error {
 		}
 	}
 	return nil
-}
-
-// streamDeliversFramesToSinks reports a frame-domain branch routed only to
-// sinks: it needs no operation to be useful.
-func (s *recipeCompileState) streamDeliversFramesToSinks(index int) bool {
-	facts := s.facts[index]
-	if !facts.frames || len(facts.dests) == 0 {
-		return false
-	}
-	for _, dest := range facts.dests {
-		if s.outputAttachments[dest].sink == nil {
-			return false
-		}
-	}
-	return true
 }
 
 func recipeIRStreamName(stream recipeir.Stream) string {
@@ -485,15 +440,6 @@ func recipeIRSelector(selector plan.StreamSelect) av.StreamSelector {
 		Codec:    selector.Codec,
 		Name:     selector.Name,
 	}
-}
-
-func recipeIRStreamHasOperation(stream recipeir.Stream) bool {
-	for i := range stream.Operations {
-		if !recipeIROperationIsAnnotation(stream.Operations[i]) {
-			return true
-		}
-	}
-	return false
 }
 
 // recipeIROperationIsAnnotation reports an operation that constrains or
@@ -580,23 +526,6 @@ func validateRecipeIRTransform(operation string, node string, transform recipeir
 		}
 	default:
 		return emptyTransformSpecError(operation, node)
-	}
-}
-
-func operationSpecMissingError(operation string, node string) error {
-	return &BuildError{
-		Phase:     phaseBuild,
-		Family:    errcode.FamilyForCode(streamOperationMissingCode),
-		Code:      streamOperationMissingCode,
-		Operation: operation,
-		Node:      node,
-		Reason:    "the stream was selected but no decode, processing stage, or encoder was requested",
-		fixes: buildErrorFixes([]string{
-			"call .Decode().To(goav.Sink(...)) to receive decoded frames",
-			"call .Decode() then " + encodeHint("") + " before writing to a file output",
-			"use input.To(output) for packet-preserving record or remux",
-		}),
-		cause: errUnsupportedBuild,
 	}
 }
 
