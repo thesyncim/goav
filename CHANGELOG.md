@@ -11,6 +11,10 @@ methodology changes, and migration notes.
 
 ## Unreleased
 
+- The attach-under-load allocation ceiling is twice its baseline: the benchmark
+  counts the concurrent load's allocations too, which vary with scheduling
+  (Linux CI measured 681-703 where the attach path itself measures ~510).
+
 - One compiler: Outputs compile into one recipe DAG, and Describe, Explain,
   Build, and `task.Attach` all read it. A Stream used twice is one node, so
   work before a fork runs once at any depth. Lifted restrictions: a join runs
