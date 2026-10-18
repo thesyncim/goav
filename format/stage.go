@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/thesyncim/goav/av"
+	"github.com/thesyncim/goav/internal/interleave"
 	"github.com/thesyncim/goav/pipeline"
 )
 
@@ -100,6 +101,7 @@ var _ pipeline.Stage = (*MuxStage)(nil)
 var _ pipeline.NodeDescriber = (*DemuxSource)(nil)
 var _ pipeline.NodeDescriber = (*MuxStage)(nil)
 var _ pipeline.ControllableSource = (*controllableDemuxSource)(nil)
+var _ interleave.Source = (*DemuxSource)(nil)
 
 // NewDemuxSource builds the pump that drives Demuxer.ReadInto into a pipeline.
 // When the demuxer implements Seeker the returned source also implements
@@ -215,6 +217,13 @@ func (s *DemuxSource) Name() string {
 // Name returns the stage's node name.
 func (s *MuxStage) Name() string {
 	return s.name
+}
+
+// ByTime marks an offline pump as one a direct graph may interleave by
+// packet time with its sibling file sources (the module-internal
+// interleave contract); a paced, realtime pump runs on its own.
+func (s *DemuxSource) ByTime(interleave.Token) bool {
+	return s.pacer == nil
 }
 
 // DescribeNode reports the source's spec entry for Describe.

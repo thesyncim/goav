@@ -296,3 +296,95 @@ func TestFileMixFeedsForksAndNests(t *testing.T) {
 	mfRun(t, goav.Mix(mfTone(16_000, 1, 10).Audio(), file("a.webm", stereo)).Encode(codec.Opus()).To(goav.Write("sourced.webm", &sourced)))
 	check("source-first mix", sourced.Bytes(), 16_000, 1)
 }
+
+// TestSeveralFileInputsInterleaveDeterministically pins the offline
+// multi-source scheduler: several files into one mux, copied or transcoded,
+// produce the same bytes on every run, with packets in time order.
+func TestSeveralFileInputsInterleaveDeterministically(t *testing.T) {
+	// Single-track fixtures: each file is in time order by construction, so
+	// any disorder in the mux is the scheduler's.
+	aData := mfWebM(t, 64, 48, 10, 0, 0, 0)
+	bData := mfWebM(t, 0, 0, 0, 24_000, 1, 8)
+	cData := mfWebM(t, 48, 32, 8, 0, 0, 0)
+	in := func(name string, data []byte) goav.InputSpec {
+		return goav.FileInput(name, bytes.NewReader(data))
+	}
+	for _, tc := range []struct {
+		name string
+		// monotonic says the mux sees packets in global time order. A copy
+		// does; a transcode holds each track back by its codecs' delay, so
+		// only each track is in order.
+		monotonic bool
+		outputs   func(out goav.Destination) []goav.Output
+	}{
+		{"copy two files", true, func(out goav.Destination) []goav.Output {
+			return []goav.Output{in("a.webm", aData).Video().To(out), in("b.webm", bData).Audio().To(out)}
+		}},
+		{"copy three files", true, func(out goav.Destination) []goav.Output {
+			return []goav.Output{in("a.webm", aData).To(out), in("b.webm", bData).To(out), in("c.webm", cData).To(out)}
+		}},
+		{"transcode two files", false, func(out goav.Destination) []goav.Output {
+			return []goav.Output{
+				in("a.webm", aData).Video().Decode().Encode(codec.VP8()).To(out),
+				in("b.webm", bData).Audio().Decode().Encode(codec.Opus()).To(out),
+			}
+		}},
+		{"transcode three files", false, func(out goav.Destination) []goav.Output {
+			return []goav.Output{
+				in("a.webm", aData).Video().Decode().Encode(codec.VP8()).To(out),
+				in("b.webm", bData).Audio().Decode().Encode(codec.Opus()).To(out),
+				in("c.webm", cData).Video().Decode().Encode(codec.VP8()).To(out),
+			}
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var first []byte
+			for run := range 5 {
+				var m bytes.Buffer
+				mfRun(t, tc.outputs(goav.Write("m.webm", &m))...)
+				if run == 0 {
+					first = m.Bytes()
+					mfAssertTimeOrder(t, first, tc.monotonic)
+					continue
+				}
+				if !bytes.Equal(m.Bytes(), first) {
+					t.Fatalf("run %d wrote %d bytes that differ from run 0's %d", run, m.Len(), len(first))
+				}
+			}
+		})
+	}
+}
+
+// mfAssertTimeOrder reads a WebM's packets in file order and checks each
+// track's time never goes back and, when global, that no packet precedes an
+// earlier one of any track.
+func mfAssertTimeOrder(t *testing.T, data []byte, global bool) {
+	t.Helper()
+	demuxer, err := webm.NewDemuxer(bytes.NewReader(data), webm.DemuxerOptions{})
+	if err != nil {
+		t.Fatalf("demux: %v", err)
+	}
+	last := map[uint32]int64{}
+	lastAny := int64(math.MinInt64)
+	packets := 0
+	for {
+		packet := webm.Packet{Data: make([]byte, 0, 1<<20)}
+		if err := demuxer.ReadPacket(&packet); err == io.EOF {
+			break
+		} else if err != nil {
+			t.Fatalf("read packet %d: %v", packets, err)
+		}
+		if prev, ok := last[packet.TrackID]; ok && packet.TimeNS < prev {
+			t.Fatalf("packet %d of track %d at %d ns follows %d ns", packets, packet.TrackID, packet.TimeNS, prev)
+		}
+		if global && packet.TimeNS < lastAny {
+			t.Fatalf("packet %d (track %d) at %d ns follows a packet at %d ns", packets, packet.TrackID, packet.TimeNS, lastAny)
+		}
+		last[packet.TrackID] = packet.TimeNS
+		lastAny = max(lastAny, packet.TimeNS)
+		packets++
+	}
+	if packets == 0 {
+		t.Fatal("mux wrote no packets")
+	}
+}

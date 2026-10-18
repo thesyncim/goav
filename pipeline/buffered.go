@@ -34,8 +34,9 @@ type bufferedNode struct {
 	// maintained only when policy.MaxBytes > 0: the producer adds before queuing
 	// (under queueMutex), the lock-free worker subtracts in releaseSlot.
 	queuedBytes atomic.Int64
-	// removed is set (once) when the node is torn down by Remove, so the
-	// lock-free worker can shed in-flight messages without taking g.mu.
+	// removed is set (once) when Remove retires the node: after its queue
+	// drained, or when the drain could not start, so a worker still running
+	// sheds without taking g.mu.
 	removed atomic.Bool
 	// queueClosed guards the queue channel against the lock-free producer: it is
 	// set under queueMutex before the queue is closed, so enqueue (which holds
@@ -600,14 +601,47 @@ func (g *bufferedRunner) Remove(ref NodeRef) error {
 		return ErrInvalidLink
 	}
 	node := g.nodes[index]
-	node.active = false
-	node.removed.Store(true)
-	node.routes = nil
 	if node.kind == nodeSink && running {
 		// A sink leaving before its first media message stops gating readiness.
 		g.noteSinkMedia(&node.sawMedia)
 	}
 	delete(g.index, ref.String())
+	g.unrouteLocked(index)
+	if !running || node.queue == nil {
+		g.retireLocked(node)
+		g.mu.Unlock()
+		return closeBufferedNode(node)
+	}
+	// Nothing new reaches the node now; what it already queued is delivered
+	// before it closes. Its own routes stay up while it drains, so a stage
+	// hands its tail downstream instead of losing it. The drain is bounded by
+	// the queue's capacity and the close-wait budget.
+	if err := g.closeNodeQueue("remove", node); err != nil {
+		g.retireLocked(node)
+		g.mu.Unlock()
+		go forceCloseNodeQueue(node)
+		return err
+	}
+	done := node.done
+	g.rebuildTopoLocked()
+	g.mu.Unlock()
+	err := waitCloseDone("remove", node.name, done, g.config.CloseWaitTimeout)
+	g.mu.Lock()
+	if !node.active {
+		// Close took the graph down mid-drain and closed the node itself.
+		g.mu.Unlock()
+		return err
+	}
+	g.retireLocked(node)
+	g.mu.Unlock()
+	if err != nil {
+		return err
+	}
+	return closeBufferedNode(node)
+}
+
+// unrouteLocked drops every route into the node at index. Caller holds g.mu.
+func (g *bufferedRunner) unrouteLocked(index int) {
 	for i := range g.nodes {
 		if !g.nodes[i].active {
 			continue
@@ -632,24 +666,15 @@ func (g *bufferedRunner) Remove(ref NodeRef) error {
 		}
 		g.nodes[i].routes = routes
 	}
-	closeNode := node
-	if running && node.queue != nil {
-		if err := g.closeNodeQueue("remove", node); err != nil {
-			g.rebuildTopoLocked()
-			g.mu.Unlock()
-			go forceCloseNodeQueue(node)
-			return err
-		}
-	}
-	done := node.done
+}
+
+// retireLocked takes a removed node out of the graph: inactive, routeless,
+// and shedding whatever its worker still holds. Caller holds g.mu.
+func (g *bufferedRunner) retireLocked(node *bufferedNode) {
+	node.active = false
+	node.removed.Store(true)
+	node.routes = nil
 	g.rebuildTopoLocked()
-	g.mu.Unlock()
-	if running && done != nil {
-		if err := waitCloseDone("remove", closeNode.name, done, g.config.CloseWaitTimeout); err != nil {
-			return err
-		}
-	}
-	return closeBufferedNode(closeNode)
 }
 
 // closeNodeQueue closes a node's queue exactly once, serialized with the
@@ -1113,8 +1138,8 @@ func (g *bufferedRunner) staleByLatency(node *bufferedNode, msg *bufferedMessage
 // deliver runs lock-free: the worker owns a stable *bufferedNode whose
 // kind/stage/sink/emitter/counters/free are immutable after the queue opens, so
 // no g.mu is taken per delivered message. Teardown is observed via two atomics:
-// g.closing (graph Close) sheds with ErrClosed; node.removed (Remove) sheds
-// silently — matching the prior locked behavior exactly.
+// g.closing (graph Close) sheds with ErrClosed; node.removed (a node Remove
+// retired before its queue drained) sheds silently.
 func (g *bufferedRunner) deliver(ctx context.Context, node *bufferedNode, msg *Message) error {
 	if g.closing.Load() {
 		return ErrClosed

@@ -249,7 +249,9 @@ type NodePauser interface {
 // Graph is the executable node graph: add nodes, connect routes, run, and
 // inspect. Mutations (Connect/Disconnect/Remove) are atomic with respect to
 // the running data plane — the runtime swaps routing snapshots, never locks
-// the message path.
+// the message path. Remove stops deliveries into a node, delivers what it
+// already queued (bounded by its queue and the close-wait budget), then
+// closes it; remove a chain upstream first to keep its tail.
 type Graph interface {
 	AddSource(Source, BufferPolicy) (NodeRef, error)
 	AddStage(Stage, BufferPolicy) (NodeRef, error)
@@ -263,6 +265,10 @@ type Graph interface {
 	// sibling sources and stops the run promptly in both runners; Run returns
 	// that error, never the context.Canceled it caused. A shed (drop policy,
 	// paused or removed branch, isolated fanout backpressure) is not a failure.
+	//
+	// Sources run concurrently, except in a direct graph that is not realtime:
+	// there the format package's file pumps interleave by packet time (the
+	// earliest next packet goes first), so a run is reproducible.
 	Run(context.Context) error
 	Events() <-chan av.Event
 	Stats() GraphStats

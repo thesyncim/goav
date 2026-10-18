@@ -307,3 +307,78 @@ func TestRuntimeBranchEncodesVP9ThroughDropBuffer(t *testing.T) {
 		t.Fatalf("Run() error = %v", err)
 	}
 }
+
+// TestRuntimeBranchDrainDetachDeliversQueuedFrames pins that a drain detach
+// loses nothing the branch already queued: the branch sink is gated while the
+// source finishes, so every frame waits in the branch's resize and sink
+// queues when Detach starts, and all of them arrive before Detach returns.
+func TestRuntimeBranchDrainDetachDeliversQueuedFrames(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+
+	// frames, then one marker frame: the tap emits frames in order, so once the
+	// main sink has the marker, every earlier frame is in the branch's queue.
+	const frames = 10
+	main := &frameCountSink{name: "main"}
+	task := decodedVideoTapTask(t, ctx, idleAfterVideoPackets("camera", 64, 64, frames+1), main)
+	defer task.Close()
+
+	release := make(chan struct{})
+	rec := &gateFrameSink{name: "rec", release: release}
+	attachment, err := task.Attach(ctx, task.Tap(lifecycleTapName).
+		Buffer(flow.Blocking(16)).
+		Resize(64, 64).
+		As("rec").
+		To(goav.Sink(rec)))
+	if err != nil {
+		t.Fatalf("Attach() error = %v", err)
+	}
+
+	runDone := make(chan error, 1)
+	go func() { runDone <- task.Run(ctx) }()
+	waitFrameCount(ctx, &main.count, frames+1)
+
+	detached := make(chan error, 1)
+	go func() { detached <- task.Detach(ctx, attachment, lifecycle.DrainBranch()) }()
+	// Open the gate once Detach is under way. Removal waits for the drain, so
+	// the count below holds whenever the gate opens; the pause only makes the
+	// test catch a removal that sheds instead.
+	time.Sleep(50 * time.Millisecond)
+	close(release)
+	if err := <-detached; err != nil {
+		t.Fatalf("Detach(drain) error = %v", err)
+	}
+	if got := rec.count.Load(); got < frames {
+		t.Fatalf("drained branch delivered %d frames, want all %d it had queued", got, frames)
+	}
+	cancel()
+	if err := <-runDone; err != nil && !errors.Is(err, context.Canceled) {
+		t.Fatalf("Run() error = %v", err)
+	}
+}
+
+// idleAfterVideoPackets is a live packet-domain video source that sends count
+// packets and then stays open with nothing to send until its context ends.
+func idleAfterVideoPackets(name string, width, height, count int) goav.InputSpec {
+	return goav.Source(name,
+		shape.Packet(av.MediaVideo, av.CodecVP8, shape.Video(width, height, av.PixelFormatI420), shape.Realtime(true)),
+		func(ctx context.Context, push source.Push) error {
+			base := av.TimeBase{Num: 1, Den: 90_000}
+			for n := range count {
+				packet := &av.Packet{
+					StreamID: av.StreamID(name),
+					Type:     av.MediaVideo,
+					Keyframe: true,
+					PTS:      av.Timestamp{Value: int64(n) * 3000, Base: base},
+					DTS:      av.Timestamp{Value: int64(n) * 3000, Base: base},
+					Duration: av.Duration{Value: 3000, Base: base},
+					Payload:  av.Buffer{Bytes: []byte{byte(n)}, Ownership: av.BufferImmutable},
+				}
+				if _, err := push.Packet(packet); err != nil {
+					return err
+				}
+			}
+			<-ctx.Done()
+			return nil
+		})
+}

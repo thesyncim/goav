@@ -1605,19 +1605,52 @@ func (a *runtimeAttachment) Close(ctx context.Context) error {
 	return nil
 }
 
+// stopLocked takes the branch out of the graph without losing its tail: the
+// routes into it are cut first, then its nodes are removed upstream first.
+// Removing a node delivers what it already queued (pipeline.Graph.Remove), so
+// each node drains into downstream nodes that are still attached. An abort
+// detach has marked its destinations failed already, so what drains into them
+// is discarded with the aborted write.
 func (a *runtimeAttachment) stopLocked(graph pipeline.Graph) error {
 	var first error
 	for i := range a.routes {
+		if slices.Contains(a.nodes, pipeline.NodeRef(a.routes[i].From)) {
+			continue // leaves with its node
+		}
 		if err := graph.Disconnect(a.routes[i]); err != nil && !isStoppedAttachmentError(err) && first == nil {
 			first = err
 		}
 	}
-	for _, v := range slices.Backward(a.nodes) {
+	for _, v := range upstreamFirst(a.nodes, a.routes) {
 		if err := graph.Remove(v); err != nil && !isStoppedAttachmentError(err) && first == nil {
 			first = err
 		}
 	}
 	return first
+}
+
+// upstreamFirst orders a branch's nodes so that none comes before a node
+// routed into it; ties, and a cycle should one exist, keep the attach order.
+func upstreamFirst(nodes []pipeline.NodeRef, routes []pipeline.Route) []pipeline.NodeRef {
+	left := slices.Clone(nodes)
+	out := make([]pipeline.NodeRef, 0, len(nodes))
+	fed := func(node pipeline.NodeRef) bool {
+		for _, route := range routes {
+			if route.From != node.String() && slices.Contains(left, pipeline.NodeRef(route.From)) && slices.Contains(route.To, node.String()) {
+				return true
+			}
+		}
+		return false
+	}
+	for len(left) > 0 {
+		next := slices.IndexFunc(left, func(node pipeline.NodeRef) bool { return !fed(node) })
+		if next < 0 {
+			next = 0
+		}
+		out = append(out, left[next])
+		left = slices.Delete(left, next, next+1)
+	}
+	return out
 }
 
 func branchStatsForNodes(stats pipeline.GraphStats, nodes []pipeline.NodeRef) pipeline.GraphStats {

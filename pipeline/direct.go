@@ -416,11 +416,27 @@ func (g *directRunner) Run(ctx context.Context) error {
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	g.fail.reset(cancel)
+	// Offline file sources interleave by time instead of racing (time_order.go);
+	// the rest run freely, as every source of a realtime graph does.
+	ordered := timeOrderedSources(g.config.Realtime, g.topo.Load(), sources)
+	var order *timeOrder
+	if ordered != nil {
+		order = newTimeOrder(ordered)
+	}
 	var runs sync.WaitGroup
 	for i := range sources {
 		run := sources[i]
+		if ordered == nil || !ordered[i] {
+			runs.Go(func() {
+				g.fail.report(run.source.Start(runCtx, run.emitter))
+			})
+			continue
+		}
+		emitter := &timeOrderedEmitter{emitter: run.emitter, order: order, index: i}
 		runs.Go(func() {
-			g.fail.report(run.source.Start(runCtx, run.emitter))
+			defer order.leave(i)
+			order.enter(runCtx, i)
+			g.fail.report(run.source.Start(runCtx, emitter))
 		})
 	}
 	runs.Wait()

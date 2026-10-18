@@ -210,7 +210,9 @@ this list:
   reason — consumer backpressure already bounds producers
   (`flow.Blocking`, `TestBufferedFanoutDropBlockBackpressuresSource`; joins hold
   a leading arm back, `TestJoinBackpressuresFastArm`), so a
-  pull scheduler would duplicate flow control the graph already has. The rest
+  pull scheduler would duplicate flow control the graph already has. Ordering
+  offline file inputs by time, which backpressure cannot do, is an internal
+  runner policy, not an API (`TestSeveralFileInputsInterleaveDeterministically`). The rest
   of the time domain is landed and cited in "The settled model" above.
 - **Internal-package layering**: measured on the cross-file reference graph
   and still not ready for a package split. The data-transfer boundary has

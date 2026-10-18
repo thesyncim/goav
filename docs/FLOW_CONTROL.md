@@ -108,7 +108,8 @@ leaving.
 - `task.Detach(ctx, attachment)` removes the branch and reports its
   destinations as closed.
 - `task.Detach(ctx, attachment, lifecycle.DrainBranch())` drains/finalizes the branch as
-  committed. Use this for ordinary recording or participant-leave flows where
+  committed: every message already queued in the branch is delivered before
+  it closes (`TestRuntimeBranchDrainDetachDeliversQueuedFrames`). Use this for ordinary recording or participant-leave flows where
   the output should be kept.
 - `task.Detach(ctx, attachment, lifecycle.AbortBranch())` marks the branch output as
   abandoned. Use this after failed admission or diagnostic captures that should

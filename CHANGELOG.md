@@ -11,6 +11,18 @@ methodology changes, and migration notes.
 
 ## Unreleased
 
+- Fix: several file inputs in one offline run write the same bytes on every
+  run. A direct, non-realtime graph interleaves its file sources by time, the
+  way ffmpeg picks its next input: the file whose next packet is earliest
+  (DTS, else PTS) goes next, so a shared mux sees packets in time order
+  instead of whatever the goroutines produced. Live inputs, custom sources,
+  providers, joins (which pace their own arms), and buffered graphs run
+  concurrently as before. No new API.
+- Fix: removing a node from a running buffered graph delivers what it already
+  queued instead of shedding it, and `task.Detach` removes a branch upstream
+  first, so a detached branch keeps its tail. An abort detach still aborts its
+  destinations. Removal waits for the drain, bounded by the queue and the
+  close-wait budget.
 - `OnStream` branches see a discovered stream from its first packet. The
   attach now runs on the source's emit path, as GStreamer's pad-added does:
   the source's Emit of `stream_added` returns once the matching branches
