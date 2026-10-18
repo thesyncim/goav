@@ -1,7 +1,6 @@
 package webm
 
 import (
-	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/container/matroska"
 )
 
@@ -418,38 +417,4 @@ func validateContentEncryption(encryption ContentEncryption) error {
 		return ErrUnsupportedWebMContentEncoding
 	}
 	return nil
-}
-
-func codecFromAV(id av.CodecID) matroska.Codec {
-	switch id {
-	case av.CodecOpus:
-		return matroska.CodecOpus
-	case av.CodecVorbis:
-		return matroska.CodecVorbis
-	case av.CodecVP8:
-		return matroska.CodecVP8
-	case av.CodecVP9:
-		return matroska.CodecVP9
-	case av.CodecAV1:
-		return matroska.CodecAV1
-	default:
-		return matroska.CodecUnknown
-	}
-}
-
-func codecToAV(codec matroska.Codec) av.CodecID {
-	switch codec {
-	case matroska.CodecOpus:
-		return av.CodecOpus
-	case matroska.CodecVorbis:
-		return av.CodecVorbis
-	case matroska.CodecVP8:
-		return av.CodecVP8
-	case matroska.CodecVP9:
-		return av.CodecVP9
-	case matroska.CodecAV1:
-		return av.CodecAV1
-	default:
-		return av.CodecUnknown
-	}
 }

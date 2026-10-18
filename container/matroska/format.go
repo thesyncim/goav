@@ -2,6 +2,7 @@ package matroska
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -21,17 +22,54 @@ type DemuxerFactory struct{}
 
 type MuxerFactory struct{}
 
+// TrackMuxer is the packet muxer the av adapter writes through: *Muxer, or a
+// profile's muxer, such as WebM's, that checks tracks against the profile.
+type TrackMuxer interface {
+	AddTrack(Track) (uint32, error)
+	WritePacket(Packet) error
+	Close() error
+}
+
+// TrackDemuxer is the packet demuxer the av adapter reads through: *Demuxer,
+// or a profile's demuxer.
+type TrackDemuxer interface {
+	Tracks() []Track
+	ReadPacket(*Packet) error
+	SeekToTime(int64) error
+}
+
+// FormatMuxer adapts a Matroska-family muxer to format.Muxer. The zero value
+// writes Matroska; NewFormatMuxer writes a profile through its own muxer.
 type FormatMuxer struct {
-	muxer  *Muxer
+	format av.FormatID
+	open   func(io.Writer) (TrackMuxer, error)
+	muxer  TrackMuxer
 	tracks []formatTrack
 	closed bool
 }
 
+// FormatDemuxer adapts a Matroska-family demuxer to format.Demuxer. The zero
+// value reads Matroska; NewFormatDemuxer reads a profile through its own
+// demuxer.
 type FormatDemuxer struct {
-	demuxer *Demuxer
+	format  av.FormatID
+	open    func(io.Reader) (TrackDemuxer, error)
+	demuxer TrackDemuxer
 	streams []av.Stream
 	tracks  []formatTrack
 	closed  bool
+}
+
+// NewFormatMuxer returns the adapter writing format through the muxer open
+// returns for each output.
+func NewFormatMuxer(format av.FormatID, open func(io.Writer) (TrackMuxer, error)) *FormatMuxer {
+	return &FormatMuxer{format: format, open: open}
+}
+
+// NewFormatDemuxer returns the adapter reading format through the demuxer
+// open returns for each input.
+func NewFormatDemuxer(format av.FormatID, open func(io.Reader) (TrackDemuxer, error)) *FormatDemuxer {
+	return &FormatDemuxer{format: format, open: open}
 }
 
 // formatTrack maps a goav stream to its Matroska track. codecDelayNS is the
@@ -112,7 +150,7 @@ func (MuxerFactory) NewMuxer(ctx context.Context, id av.FormatID) (format.Muxer,
 }
 
 func (m *FormatMuxer) Format() av.FormatID {
-	return av.FormatMatroska
+	return cmp.Or(m.format, av.FormatMatroska)
 }
 
 func (m *FormatMuxer) Open(ctx context.Context, output format.Output, streams []av.Stream, _ format.OpenOptions) error {
@@ -122,7 +160,11 @@ func (m *FormatMuxer) Open(ctx context.Context, output format.Output, streams []
 	if output.Writer == nil {
 		return ErrNilWriter
 	}
-	muxer, err := NewMuxer(output.Writer, MuxerOptions{})
+	open := m.open
+	if open == nil {
+		open = openMatroskaMuxer
+	}
+	muxer, err := open(output.Writer)
 	if err != nil {
 		return err
 	}
@@ -206,7 +248,7 @@ func (m *FormatMuxer) track(streamID av.StreamID) (formatTrack, bool) {
 }
 
 func (d *FormatDemuxer) Format() av.FormatID {
-	return av.FormatMatroska
+	return cmp.Or(d.format, av.FormatMatroska)
 }
 
 func (d *FormatDemuxer) Open(ctx context.Context, input format.Input, _ format.OpenOptions) error {
@@ -216,7 +258,11 @@ func (d *FormatDemuxer) Open(ctx context.Context, input format.Input, _ format.O
 	if input.Reader == nil {
 		return ErrNilReader
 	}
-	demuxer, err := NewDemuxer(input.Reader, DemuxerOptions{})
+	open := d.open
+	if open == nil {
+		open = openMatroskaDemuxer
+	}
+	demuxer, err := open(input.Reader)
 	if err != nil {
 		return err
 	}
@@ -428,4 +474,20 @@ func hasMatroskaExtension(name string) bool {
 	default:
 		return false
 	}
+}
+
+func openMatroskaMuxer(w io.Writer) (TrackMuxer, error) {
+	muxer, err := NewMuxer(w, MuxerOptions{})
+	if err != nil {
+		return nil, err
+	}
+	return muxer, nil
+}
+
+func openMatroskaDemuxer(r io.Reader) (TrackDemuxer, error) {
+	demuxer, err := NewDemuxer(r, DemuxerOptions{})
+	if err != nil {
+		return nil, err
+	}
+	return demuxer, nil
 }

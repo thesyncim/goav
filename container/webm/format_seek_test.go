@@ -81,7 +81,7 @@ func TestFormatDemuxerSeekRepositionsAtOrBefore(t *testing.T) {
 	ctx := context.Background()
 	data := muxWebMSeekFixture(t)
 
-	demuxer := &FormatDemuxer{}
+	demuxer := NewFormatDemuxer()
 	if err := demuxer.Open(ctx, format.Input{Name: "seek.webm", Reader: bytes.NewReader(data)}, format.OpenOptions{}); err != nil {
 		t.Fatal(err)
 	}
@@ -118,7 +118,7 @@ func TestFormatDemuxerSeekNonSeekableReader(t *testing.T) {
 	ctx := context.Background()
 	data := muxWebMSeekFixture(t)
 
-	demuxer := &FormatDemuxer{}
+	demuxer := NewFormatDemuxer()
 	// Hide the reader's Seek method: a pure io.Reader cannot reposition.
 	reader := struct{ io.Reader }{bytes.NewReader(data)}
 	if err := demuxer.Open(ctx, format.Input{Name: "pipe.webm", Reader: reader}, format.OpenOptions{}); err != nil {
