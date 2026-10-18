@@ -2795,17 +2795,6 @@ func TestFlowRejectsNonTapOperationsAfterEncode(t *testing.T) {
 	}
 }
 
-func TestRecipeAndRejectsMultipleFileInputs(t *testing.T) {
-	_, err := goav.From(goav.FileInput("a.ivf", strings.NewReader(""))).
-		And(goav.FileInput("b.ivf", strings.NewReader(""))).
-		To(goav.Write("out.ivf", io.Discard)).
-		BuildLive(context.Background())
-	var buildErr *goav.BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "multi_input_unsupported" {
-		t.Fatalf("err = %v, want multi_input_unsupported with matching BuildError code", err)
-	}
-}
-
 // TestMediaOptionsConfigureBothDirections pins the direction-agnostic option
 // vocabulary: the same goav.MIME / goav.Name / goav.Metadata values configure
 // input and destination constructors, while Format stays destination-typed.

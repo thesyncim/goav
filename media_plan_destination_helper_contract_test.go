@@ -41,9 +41,8 @@ func TestMediaPlanPacketCopyStreamGraphConstructionContracts(t *testing.T) {
 		inputs  []InputSpec
 		outputs []destinationSpec
 	}{
-		"no inputs":              {outputs: []destinationSpec{{name: "out"}}},
-		"no outputs":             {inputs: []InputSpec{{}}},
-		"unsupported multiinput": {inputs: []InputSpec{{}, {}}, outputs: []destinationSpec{{name: "out"}}},
+		"no inputs":  {outputs: []destinationSpec{{name: "out"}}},
+		"no outputs": {inputs: []InputSpec{{}}},
 	} {
 		t.Run(name, func(t *testing.T) {
 			graph, ok, err := newMediaPlanPacketCopyStreamGraph(rt, tc.inputs, tc.outputs, streamIntent{Name: "audio"}, true)

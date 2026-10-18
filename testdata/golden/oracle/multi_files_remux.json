@@ -1,0 +1,238 @@
+{
+  "describe": {
+    "name": "goav",
+    "nodes": [
+      {
+        "name": "a.webm",
+        "kind": "source",
+        "detail": "demux, protocol=file"
+      },
+      {
+        "name": "b.webm",
+        "kind": "source",
+        "detail": "demux, protocol=file"
+      },
+      {
+        "name": "r.webm",
+        "kind": "stage",
+        "detail": "mux, protocol=file"
+      }
+    ],
+    "edges": [
+      {
+        "from": "a.webm",
+        "to": "r.webm",
+        "policy": "all"
+      },
+      {
+        "from": "b.webm",
+        "to": "r.webm",
+        "policy": "all"
+      }
+    ]
+  },
+  "explain": {
+    "summary": "from 2 inputs to r.webm",
+    "operation": "build job",
+    "inputs": [
+      {
+        "name": "a.webm",
+        "protocol": "file",
+        "format": "webm"
+      },
+      {
+        "name": "b.webm",
+        "protocol": "file",
+        "format": "webm"
+      }
+    ],
+    "branches": [
+      {
+        "name": "a.webm",
+        "input": "a.webm",
+        "shape": {
+          "domain": "packet",
+          "streamID": "a.webm"
+        },
+        "operations": [
+          {
+            "kind": "demux",
+            "component": "container",
+            "detail": "read packets from input",
+            "shape": {
+              "domain": "packet",
+              "streamID": "a.webm"
+            }
+          },
+          {
+            "kind": "copy",
+            "component": "packet-copy",
+            "detail": "explicit packet copy",
+            "shape": {
+              "domain": "packet",
+              "streamID": "a.webm"
+            }
+          }
+        ],
+        "destinations": [
+          "r.webm"
+        ]
+      },
+      {
+        "name": "b.webm",
+        "input": "b.webm",
+        "shape": {
+          "domain": "packet",
+          "streamID": "b.webm"
+        },
+        "operations": [
+          {
+            "kind": "demux",
+            "component": "container",
+            "detail": "read packets from input",
+            "shape": {
+              "domain": "packet",
+              "streamID": "b.webm"
+            }
+          },
+          {
+            "kind": "copy",
+            "component": "packet-copy",
+            "detail": "explicit packet copy",
+            "shape": {
+              "domain": "packet",
+              "streamID": "b.webm"
+            }
+          }
+        ],
+        "destinations": [
+          "r.webm"
+        ]
+      }
+    ],
+    "destinations": [
+      {
+        "name": "r.webm",
+        "protocol": "file",
+        "format": "webm",
+        "kind": "mux",
+        "branches": [
+          "a.webm",
+          "b.webm"
+        ]
+      }
+    ],
+    "decisions": [
+      {
+        "code": "packet_copy",
+        "branch": "a.webm",
+        "message": "packet copy requested; packets are copied to outputs"
+      },
+      {
+        "code": "packet_copy",
+        "branch": "b.webm",
+        "message": "packet copy requested; packets are copied to outputs"
+      }
+    ],
+    "requiredAdapters": [
+      {
+        "kind": "demuxer",
+        "name": "webm",
+        "format": "webm",
+        "media": [
+          "audio",
+          "video"
+        ],
+        "codecs": [
+          "opus",
+          "vorbis",
+          "vp8",
+          "vp9",
+          "av1"
+        ],
+        "minStreams": 1,
+        "metadata": {
+          "summary": "WebM supports Opus/Vorbis audio and VP8/VP9/AV1 video packets without codec conversion"
+        },
+        "requiredBy": "a.webm",
+        "status": "available"
+      },
+      {
+        "kind": "demuxer",
+        "name": "webm",
+        "format": "webm",
+        "media": [
+          "audio",
+          "video"
+        ],
+        "codecs": [
+          "opus",
+          "vorbis",
+          "vp8",
+          "vp9",
+          "av1"
+        ],
+        "minStreams": 1,
+        "metadata": {
+          "summary": "WebM supports Opus/Vorbis audio and VP8/VP9/AV1 video packets without codec conversion"
+        },
+        "requiredBy": "b.webm",
+        "status": "available"
+      },
+      {
+        "kind": "muxer",
+        "name": "webm",
+        "format": "webm",
+        "media": [
+          "audio",
+          "video"
+        ],
+        "codecs": [
+          "opus",
+          "vorbis",
+          "vp8",
+          "vp9",
+          "av1"
+        ],
+        "minStreams": 1,
+        "metadata": {
+          "summary": "WebM supports Opus/Vorbis audio and VP8/VP9/AV1 video packets without codec conversion"
+        },
+        "requiredBy": "r.webm",
+        "status": "available"
+      }
+    ],
+    "graph": {
+      "name": "goav",
+      "nodes": [
+        {
+          "name": "a.webm",
+          "kind": "source",
+          "detail": "demux, protocol=file"
+        },
+        {
+          "name": "b.webm",
+          "kind": "source",
+          "detail": "demux, protocol=file"
+        },
+        {
+          "name": "r.webm",
+          "kind": "stage",
+          "detail": "mux, protocol=file"
+        }
+      ],
+      "edges": [
+        {
+          "from": "a.webm",
+          "to": "r.webm",
+          "policy": "all"
+        },
+        {
+          "from": "b.webm",
+          "to": "r.webm",
+          "policy": "all"
+        }
+      ]
+    }
+  }
+}

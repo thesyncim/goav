@@ -1,0 +1,340 @@
+{
+  "describe": {
+    "name": "goav-mix",
+    "nodes": [
+      {
+        "name": "mic44",
+        "kind": "source",
+        "detail": "custom source, domain=frame, media=audio"
+      },
+      {
+        "name": "a.webm",
+        "kind": "source",
+        "detail": "demux, protocol=file"
+      },
+      {
+        "name": "mix-select-a.webm",
+        "kind": "stage",
+        "detail": "bind on open, type=audio"
+      },
+      {
+        "name": "mix-decode-a.webm",
+        "kind": "stage",
+        "detail": "packets -\u003e frames, type=audio"
+      },
+      {
+        "name": "mix-conform-a.webm",
+        "kind": "stage",
+        "detail": "conform, rate=44100, channels=1, format=s16"
+      },
+      {
+        "name": "mix",
+        "kind": "stage"
+      },
+      {
+        "name": "mixed",
+        "kind": "sink"
+      }
+    ],
+    "edges": [
+      {
+        "from": "mic44",
+        "to": "mix",
+        "policy": "all"
+      },
+      {
+        "from": "a.webm",
+        "to": "mix-select-a.webm",
+        "policy": "all"
+      },
+      {
+        "from": "mix-select-a.webm",
+        "to": "mix-decode-a.webm",
+        "policy": "all"
+      },
+      {
+        "from": "mix-decode-a.webm",
+        "to": "mix-conform-a.webm",
+        "policy": "all"
+      },
+      {
+        "from": "mix-conform-a.webm",
+        "to": "mix",
+        "policy": "all"
+      },
+      {
+        "from": "mix",
+        "to": "mixed",
+        "policy": "all"
+      }
+    ]
+  },
+  "explain": {
+    "summary": "mix 2 inputs to mixed",
+    "operation": "build job",
+    "inputs": [
+      {
+        "name": "mic44",
+        "protocol": "custom",
+        "streams": [
+          {
+            "id": "mic44",
+            "index": 0,
+            "type": "audio",
+            "codec": {
+              "type": "audio",
+              "clockRate": 44100,
+              "sampleRate": 44100,
+              "channels": 1,
+              "channelLayout": "mono",
+              "sampleFormat": "s16"
+            },
+            "name": "mic44"
+          }
+        ]
+      },
+      {
+        "name": "a.webm",
+        "protocol": "file",
+        "format": "webm"
+      }
+    ],
+    "branches": [
+      {
+        "name": "mic44",
+        "input": "mic44",
+        "stream": {
+          "id": "mic44",
+          "type": "audio",
+          "name": "mic44"
+        },
+        "shape": {
+          "domain": "frame",
+          "mediaKind": "audio",
+          "streamID": "mic44",
+          "sampleRate": 44100,
+          "channels": 1,
+          "sampleFormat": "s16"
+        }
+      },
+      {
+        "name": "a.webm",
+        "input": "a.webm",
+        "stream": {
+          "type": "audio"
+        },
+        "shape": {
+          "domain": "packet",
+          "mediaKind": "audio",
+          "streamID": "a.webm"
+        },
+        "operations": [
+          {
+            "kind": "select",
+            "component": "audio",
+            "detail": "select stream when the input opens",
+            "shape": {
+              "domain": "packet",
+              "mediaKind": "audio",
+              "streamID": "a.webm"
+            }
+          },
+          {
+            "kind": "decode",
+            "component": "decoder",
+            "detail": "packets to frames",
+            "shape": {
+              "domain": "frame",
+              "mediaKind": "audio",
+              "streamID": "a.webm"
+            },
+            "adapter": "decoder"
+          },
+          {
+            "kind": "transform",
+            "component": "resample",
+            "detail": "convert frames to the join format as they arrive",
+            "shape": {
+              "domain": "frame",
+              "mediaKind": "audio",
+              "streamID": "a.webm",
+              "sampleRate": 44100,
+              "channels": 1,
+              "sampleFormat": "s16"
+            },
+            "adapter": "resample",
+            "config": {
+              "channels": "1",
+              "sampleFormat": "s16",
+              "sampleRate": "44100"
+            }
+          }
+        ]
+      },
+      {
+        "name": "mix",
+        "stream": {
+          "id": "mix",
+          "type": "audio"
+        },
+        "shape": {
+          "domain": "frame",
+          "mediaKind": "audio",
+          "streamID": "mix",
+          "sampleRate": 44100,
+          "channels": 1,
+          "sampleFormat": "s16"
+        },
+        "operations": [
+          {
+            "kind": "join",
+            "component": "mix",
+            "detail": "converge 2 arms",
+            "shape": {
+              "domain": "frame",
+              "mediaKind": "audio",
+              "streamID": "mix",
+              "sampleRate": 44100,
+              "channels": 1,
+              "sampleFormat": "s16"
+            }
+          }
+        ],
+        "destinations": [
+          "mixed"
+        ]
+      }
+    ],
+    "destinations": [
+      {
+        "name": "mixed",
+        "kind": "sink",
+        "branches": [
+          "mix"
+        ]
+      }
+    ],
+    "requiredAdapters": [
+      {
+        "kind": "demuxer",
+        "name": "webm",
+        "format": "webm",
+        "media": [
+          "audio",
+          "video"
+        ],
+        "codecs": [
+          "opus",
+          "vorbis",
+          "vp8",
+          "vp9",
+          "av1"
+        ],
+        "minStreams": 1,
+        "metadata": {
+          "summary": "WebM supports Opus/Vorbis audio and VP8/VP9/AV1 video packets without codec conversion"
+        },
+        "requiredBy": "a.webm",
+        "status": "available"
+      },
+      {
+        "kind": "filter",
+        "name": "resample",
+        "transform": "resample",
+        "input": "audio",
+        "output": "audio",
+        "sampleFormats": [
+          "s16"
+        ],
+        "realtime": true,
+        "metadata": {
+          "backend": "resample",
+          "sample_format": "s16"
+        },
+        "requiredBy": "a.webm",
+        "status": "available"
+      }
+    ],
+    "warnings": [
+      {
+        "code": "decode_codec_deferred",
+        "node": "a.webm",
+        "message": "decode codec will be resolved when the input opens",
+        "suggestions": [
+          "declare the provider codec intent when the receive codec is already known",
+          "use input metadata or a format adapter that reports streams during probing"
+        ]
+      }
+    ],
+    "graph": {
+      "name": "goav-mix",
+      "nodes": [
+        {
+          "name": "mic44",
+          "kind": "source",
+          "detail": "custom source, domain=frame, media=audio"
+        },
+        {
+          "name": "a.webm",
+          "kind": "source",
+          "detail": "demux, protocol=file"
+        },
+        {
+          "name": "mix-select-a.webm",
+          "kind": "stage",
+          "detail": "bind on open, type=audio"
+        },
+        {
+          "name": "mix-decode-a.webm",
+          "kind": "stage",
+          "detail": "packets -\u003e frames, type=audio"
+        },
+        {
+          "name": "mix-conform-a.webm",
+          "kind": "stage",
+          "detail": "conform, rate=44100, channels=1, format=s16"
+        },
+        {
+          "name": "mix",
+          "kind": "stage"
+        },
+        {
+          "name": "mixed",
+          "kind": "sink"
+        }
+      ],
+      "edges": [
+        {
+          "from": "mic44",
+          "to": "mix",
+          "policy": "all"
+        },
+        {
+          "from": "a.webm",
+          "to": "mix-select-a.webm",
+          "policy": "all"
+        },
+        {
+          "from": "mix-select-a.webm",
+          "to": "mix-decode-a.webm",
+          "policy": "all"
+        },
+        {
+          "from": "mix-decode-a.webm",
+          "to": "mix-conform-a.webm",
+          "policy": "all"
+        },
+        {
+          "from": "mix-conform-a.webm",
+          "to": "mix",
+          "policy": "all"
+        },
+        {
+          "from": "mix",
+          "to": "mixed",
+          "policy": "all"
+        }
+      ]
+    }
+  }
+}

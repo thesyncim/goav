@@ -103,7 +103,7 @@ var selectJoinProfile = joinProfile{
 	// the arm's codec and format facts describe the joined stream. A nested
 	// join arm contributes its joined stream the same way.
 	joinedStream: func(p *joinPlan) av.Stream {
-		stream := p.arms[0].stream
+		stream := p.arms[0].joinStream()
 		stream.ID = av.StreamID(p.name)
 		return stream
 	},

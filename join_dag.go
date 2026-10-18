@@ -16,7 +16,7 @@ func (p *joinPlan) dag() (composeGraph, error) {
 	joinRef := p.planDAG(&g)
 	switch {
 	case len(p.branchRoutes) != 0:
-		if err := g.planBranches([]pipeline.NodeRef{joinRef}, p.branchRoutes, p.branchTargets); err != nil {
+		if err := g.planBranches([]pipeline.NodeRef{joinRef}, nil, p.branchRoutes, p.branchTargets); err != nil {
 			return composeGraph{}, err
 		}
 	case p.encode != nil:
@@ -30,6 +30,7 @@ func (p *joinPlan) dag() (composeGraph, error) {
 				transform: p.downstream[i].transform,
 				stream:    p.downstream[i].stream,
 				join:      p,
+				resolved:  p.late,
 			})
 		}
 		encodeRef := g.add(composeNode{
@@ -76,6 +77,16 @@ func (p *joinPlan) planDAG(g *composeGraph) pipeline.NodeRef {
 				arm:    i,
 			})
 		}
+		if arm.bind != nil {
+			upstream = g.add(composeNode{
+				kind:   composeArmBind,
+				name:   arm.bind.node,
+				detail: bindArmNodeDetail(arm.bind.selector),
+				inputs: []pipeline.NodeRef{upstream},
+				join:   p,
+				arm:    i,
+			})
+		}
 		if arm.decodeNode != "" {
 			upstream = g.add(composeNode{
 				kind:   composeArmDecode,
@@ -96,6 +107,20 @@ func (p *joinPlan) planDAG(g *composeGraph) pipeline.NodeRef {
 				stream:    arm.stage.stream,
 				join:      p,
 			})
+		}
+		if arm.conform != nil {
+			node := composeNode{
+				kind:   composeArmConform,
+				name:   arm.conform.node,
+				detail: conformNodeDetail(arm.conform.target),
+				inputs: []pipeline.NodeRef{upstream},
+				join:   p,
+				arm:    i,
+			}
+			if i > 0 && p.profile.conformFollowsFirstArm {
+				node.target = armRefs[0]
+			}
+			upstream = g.add(node)
 		}
 		armRefs = append(armRefs, upstream)
 	}
@@ -138,7 +163,11 @@ func lowerJoinNode(ctx context.Context, service *builder, graph pipeline.Graph, 
 		if err != nil {
 			return av.Stream{}, err
 		}
-		stream, err := selectStream(opened, av.StreamSelector{Type: p.profile.media})
+		selector := av.StreamSelector{Type: p.profile.media}
+		if arm.bind != nil {
+			selector = arm.bind.selector
+		}
+		stream, err := selectStream(opened, selector)
 		if err != nil {
 			source.Close()
 			return av.Stream{}, err
@@ -148,6 +177,13 @@ func lowerJoinNode(ctx context.Context, service *builder, graph pipeline.Graph, 
 			return av.Stream{}, err
 		}
 		return stream, nil
+	case composeArmBind:
+		// The selected stream republishes under the arm id: two files carry
+		// the same track ids.
+		stream := streams[node.inputs[0]]
+		stage := newArmRestampStage(node.name, node.detail, stream.ID, p.arms[node.arm].stream.ID)
+		stream.ID = p.arms[node.arm].stream.ID
+		return stream, addComposeStage(graph, stage, rt.buffer, node.inputs)
 	case composeArmDecode:
 		stream := streams[node.inputs[0]]
 		// Arm events must flow through decode (dropInputEvents=false): the
@@ -158,18 +194,37 @@ func lowerJoinNode(ctx context.Context, service *builder, graph pipeline.Graph, 
 			return av.Stream{}, err
 		}
 		return stream, addComposeStage(graph, stage, rt.buffer, node.inputs)
+	case composeArmConform:
+		stream := streams[node.inputs[0]]
+		first := stream
+		if node.target != "" {
+			first = streams[node.target]
+		}
+		target := p.profile.conformTarget(p, first)
+		stage := newJoinConformStage(service, node.name, node.detail, target, rt.realtime)
+		return conformedStream(stream, target), addComposeStage(graph, stage, rt.buffer, node.inputs)
 	case composeTransform:
-		stage, _, err := service.newMediaTransformStageNamed(ctx, node.name, node.transform, node.stream, rt.realtime)
+		stream := node.stream
+		if node.resolved {
+			stream = streams[node.inputs[0]]
+		}
+		stage, out, err := service.newMediaTransformStageNamed(ctx, node.name, node.transform, stream, rt.realtime)
 		if err != nil {
 			return av.Stream{}, err
 		}
-		return streams[node.inputs[0]], addComposeStage(graph, stage, rt.buffer, node.inputs)
+		out.ID = streams[node.inputs[0]].ID
+		return out, addComposeStage(graph, stage, rt.buffer, node.inputs)
 	case composeTapRestamp:
 		arm := p.arms[node.arm]
 		// No source opens: the restamp republishes the tapped media under
 		// the tap name, hung off the node the declaring arm built.
-		stage := newTapArmStage(node.name, av.StreamID(arm.tapArm.tap.name))
-		return arm.stream, addComposeStage(graph, stage, rt.buffer, node.inputs)
+		stream := streams[node.inputs[0]]
+		if stream.Type == "" {
+			stream = arm.stream
+		}
+		stream.ID = av.StreamID(arm.tapArm.tap.name)
+		stage := newArmRestampStage(node.name, node.detail, "", stream.ID)
+		return stream, addComposeStage(graph, stage, rt.buffer, node.inputs)
 	case composeJoin:
 		armIDs := make([]av.StreamID, 0, len(node.inputs))
 		seen := make(map[av.StreamID]struct{}, len(node.inputs))
@@ -196,9 +251,21 @@ func lowerJoinNode(ctx context.Context, service *builder, graph pipeline.Graph, 
 				}
 			}
 		}
-		return p.joined, addComposeStage(graph, stage, buffer, node.inputs)
+		joined := p.joined
+		if p.late {
+			joined = p.resolvedJoinedStream(streams, node.inputs)
+		}
+		return joined, addComposeStage(graph, stage, buffer, node.inputs)
 	case composeJoinEncode:
-		_, encoded, err := compileEncodeStage(ctx, service, graph, node.inputs[0], *p.encode, p.encodeConfig)
+		config := p.encodeConfig
+		if p.late {
+			// The joined format is known now its arms opened: encode it.
+			var err error
+			if config, _, err = prepareEncodeConfig(streams[node.inputs[0]], *p.encode, rt.realtime); err != nil {
+				return av.Stream{}, err
+			}
+		}
+		_, encoded, err := compileEncodeStage(ctx, service, graph, node.inputs[0], *p.encode, config)
 		return encoded, err
 	case composeJoinDestination:
 		destination := p.destinations[node.output]

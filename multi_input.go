@@ -302,3 +302,17 @@ func unknownInputNameError(selector av.StreamSelector, inputName string, sets []
 		cause: errUnsupportedBuild,
 	}
 }
+
+// jobInputName is the name a stream chain binds its input by
+// (goav.InputName, and the value grammar on several inputs).
+func jobInputName(input InputSpec, index int) string {
+	return input.inputName(fmt.Sprintf("input-%d", index))
+}
+
+func jobInputNames(inputs []InputSpec) []string {
+	names := make([]string, len(inputs))
+	for i := range inputs {
+		names[i] = jobInputName(inputs[i], i)
+	}
+	return names
+}

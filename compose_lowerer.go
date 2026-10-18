@@ -48,7 +48,7 @@ func (l composeLowerer) spec() (pipeline.Spec, error) {
 		}
 		return planRemuxGraph(sourceRefs, l.remux).emit(spec, nodes)
 	}
-	return planBranchComposeRoutes(spec, nodes, sourceRefs, l.branches, l.outputs)
+	return planBranchComposeRoutes(spec, nodes, sourceRefs, jobInputNames(l.inputs), l.branches, l.outputs)
 }
 
 func (l composeLowerer) lower(ctx context.Context, gp graphPlan, graph pipeline.Graph, service *builder) error {
@@ -63,7 +63,7 @@ func (l composeLowerer) lower(ctx context.Context, gp graphPlan, graph pipeline.
 		if err := l.validateRemux(); err != nil {
 			return err
 		}
-		return planRemuxGraph(sources.refs, l.remux).lower(ctx, service, graph, composeLowering{sourceStreams: sources.streamGroups})
+		return planRemuxGraph(sources.refs, l.remux).lower(ctx, service, graph, composeLowering{sourceStreams: sources.emittedStreamGroups()})
 	}
 	groups, err := resolveBranchComposeStreamGroupsForInputs(sources, l.inputs, l.branches)
 	if err != nil {
@@ -73,7 +73,7 @@ func (l composeLowerer) lower(ctx context.Context, gp graphPlan, graph pipeline.
 	if err != nil {
 		return err
 	}
-	return lowerBranchCompose(ctx, service, graph, sources.refs, groups, sources.bounds, l.branches, l.outputs, buffers, sources.realtime)
+	return lowerBranchCompose(ctx, service, graph, sources.refs, jobInputNames(l.inputs), groups, sources.bounds, l.branches, l.outputs, buffers, sources.realtime)
 }
 
 // validateRemux refuses a whole-job copy of event sources into a container:

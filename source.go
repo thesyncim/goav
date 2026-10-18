@@ -254,11 +254,14 @@ func firstCodecID(ids ...av.CodecID) av.CodecID {
 // that provider inputs may declare. Carrying everything in one value lets the
 // recipe build path iterate inputs without branching on the input kind.
 type graphSourceBuild struct {
-	source   pipeline.Source
-	streams  []av.Stream
-	domain   shape.MediaDomain
-	realtime bool
-	bounds   decodeBoundsProvider
+	source pipeline.Source
+	// streams keep the input's own ids, the ids selection matches; the
+	// running source stamps qualifier on them (qualifyStreamID).
+	streams   []av.Stream
+	qualifier string
+	domain    shape.MediaDomain
+	realtime  bool
+	bounds    decodeBoundsProvider
 }
 
 // openGraphSourceBuild is the single source-opening seam: every input kind (custom
@@ -268,8 +271,11 @@ type graphSourceBuild struct {
 // (graphSourceNodeNames) so repeated provider names stay disambiguated. Returning
 // all streams keeps it composable — the caller selects what it needs. WrapSource
 // decorators apply here, after the open, so they see every input kind uniformly.
-func (s InputSpec) openGraphSourceBuild(ctx context.Context, service *builder, name string) (graphSourceBuild, error) {
-	build, err := s.openGraphSourceBuildKind(ctx, service, name)
+// With qualify, a demuxed input stamps its stream ids with its node name, which
+// keeps several file inputs of one run apart; declared ids (custom sources,
+// providers) are the application's and stay as they are.
+func (s InputSpec) openGraphSourceBuild(ctx context.Context, service *builder, name string, qualify bool) (graphSourceBuild, error) {
+	build, err := s.openGraphSourceBuildKind(ctx, service, name, qualify)
 	if err != nil {
 		return graphSourceBuild{}, err
 	}
@@ -279,7 +285,7 @@ func (s InputSpec) openGraphSourceBuild(ctx context.Context, service *builder, n
 
 // openGraphSourceBuildKind opens the input by kind; openGraphSourceBuild
 // layers the WrapSource decoration on top.
-func (s InputSpec) openGraphSourceBuildKind(ctx context.Context, service *builder, name string) (graphSourceBuild, error) {
+func (s InputSpec) openGraphSourceBuildKind(ctx context.Context, service *builder, name string, qualify bool) (graphSourceBuild, error) {
 	switch {
 	case s.source != nil:
 		source, streams, err := newCustomSource(s)
@@ -297,15 +303,20 @@ func (s InputSpec) openGraphSourceBuildKind(ctx context.Context, service *builde
 		return openProviderSource(ctx, s.provider, name, service.taskClock())
 	default:
 		input := s.formatInput()
-		build, err := service.openDemuxSource(ctx, input)
+		qualifier := ""
+		if qualify {
+			qualifier = "@" + name
+		}
+		build, err := service.openDemuxSource(ctx, input, qualifier)
 		if err != nil {
 			return graphSourceBuild{}, err
 		}
 		return graphSourceBuild{
-			source:   build.source,
-			streams:  build.streams,
-			domain:   shape.DomainPacket,
-			realtime: input.Realtime,
+			source:    build.source,
+			streams:   build.streams,
+			qualifier: qualifier,
+			domain:    shape.DomainPacket,
+			realtime:  input.Realtime,
 		}, nil
 	}
 }
@@ -336,7 +347,7 @@ func (s InputSpec) applySourceWraps(source pipeline.Source) pipeline.Source {
 // Composite arms; it delegates to openGraphSourceBuild so all opening goes through
 // one seam.
 func (s InputSpec) openGraphSource(ctx context.Context, service *builder, name string) (pipeline.Source, []av.Stream, shape.MediaDomain, error) {
-	build, err := s.openGraphSourceBuild(ctx, service, name)
+	build, err := s.openGraphSourceBuild(ctx, service, name, false)
 	if err != nil {
 		return nil, nil, "", err
 	}

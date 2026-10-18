@@ -515,8 +515,8 @@ func TestJoinTapHelperCollectionContracts(t *testing.T) {
 	}
 }
 
-func TestTapArmStageRestampContracts(t *testing.T) {
-	stage := newTapArmStage("mix-tap-dry", "dry")
+func TestArmRestampStageContracts(t *testing.T) {
+	stage := newArmRestampStage("mix-tap-dry", tapArmNodeDetail("dry"), "", "dry")
 	if stage.Name() != "mix-tap-dry" {
 		t.Fatalf("Name() = %q", stage.Name())
 	}
@@ -580,6 +580,27 @@ func TestTapArmStageRestampContracts(t *testing.T) {
 	}
 	if err := stage.Close(); err != nil {
 		t.Fatalf("Close error = %v", err)
+	}
+
+	// A bound file arm passes only its stream and stream-less events.
+	bound := newArmRestampStage("mix-select-a.webm", bindArmNodeDetail(av.StreamSelector{Type: av.MediaAudio}), "2", "a.webm")
+	filtered := &tapArmStageTestEmitter{}
+	for _, msg := range []*pipeline.Message{
+		{Kind: pipeline.MessagePacket, Packet: &av.Packet{StreamID: "1"}},
+		{Kind: pipeline.MessagePacket, Packet: &av.Packet{StreamID: "2"}},
+		{Kind: pipeline.MessageEvent, Event: &av.Event{Type: av.EventStreamAdded, StreamID: "1"}},
+		{Kind: pipeline.MessageEvent, Event: &av.Event{Type: av.EventStreamAdded, StreamID: "2", Stream: &av.Stream{ID: "2"}}},
+		{Kind: pipeline.MessageEvent, Event: &av.Event{Type: av.EventEndOfStream}},
+	} {
+		if err := bound.Handle(ctx, msg, filtered); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if len(filtered.packets) != 1 || filtered.packets[0].StreamID != "a.webm" {
+		t.Fatalf("bound packets = %+v, want stream 2 as a.webm", filtered.packets)
+	}
+	if len(filtered.events) != 2 || filtered.events[0].Stream.ID != "a.webm" || filtered.events[1].StreamID != "a.webm" {
+		t.Fatalf("bound events = %+v, want stream 2's and the stream-less end, as a.webm", filtered.events)
 	}
 }
 

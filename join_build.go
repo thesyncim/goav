@@ -79,8 +79,11 @@ type recipeArm interface {
 // (a reference to a tap declared by an earlier arm) is set. region carries the
 // arm's composite placement, when declared.
 type joinArmSpec struct {
-	chainInput      InputSpec
-	chainInputOK    bool
+	chainInput   InputSpec
+	chainInputOK bool
+	// chainSelector is the chain's selection; an arm whose streams are known
+	// only once it opens binds by it.
+	chainSelector   av.StreamSelector
 	chainErr        error
 	chainOperations []operationSpec
 	join            *joinSpec
@@ -163,6 +166,7 @@ func cloneJoinBranchSnapshots(branches []joinBranchSnapshot) []joinBranchSnapsho
 type joinArmSnapshot struct {
 	chainInput      InputSpec
 	chainInputOK    bool
+	chainSelector   av.StreamSelector
 	chainErr        error
 	chainOperations []operationSpec
 	join            *joinTreeSnapshot
@@ -201,6 +205,14 @@ type joinProfile struct {
 	// and lowered as real per-arm transform stages.
 	armExpected func(p *joinPlan, stream av.Stream) shape.Spec
 	armPolicy   shape.Policy
+	// conformTarget is the frame shape an arm whose format is known only once
+	// it opens converts to at run time, given the first arm's resolved stream
+	// (zero facts are kept from the arriving frame). Nil joins forward arms
+	// as they arrive.
+	conformTarget func(p *joinPlan, first av.Stream) shape.Spec
+	// conformFollowsFirstArm marks a join whose format is its first arm's
+	// (Mix): when that arm is late, every arm converts at run time.
+	conformFollowsFirstArm bool
 	// newStage builds the convergence stage at lowering time. A non-nil buffer
 	// pins the stage's input queue (Select: non-lossy DropBlock so injected
 	// controls survive).

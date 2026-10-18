@@ -18,6 +18,9 @@ err = task.Control(ctx, control.SelectActive("cam-b"))
 // Several inputs into one file: Outputs that share a Destination share its mux.
 rec := goav.Write("call.webm", w)
 err = rt.Run(ctx, mic.Audio().Decode().Encode(codec.Opus()).To(rec), cam.Video().To(rec))
+
+// Several files in one run: each stream reads its own file.
+err = rt.Run(ctx, a.Video().To(rec), b.Audio().To(rec))
 ```
 
 | Join | Inputs | Output |
@@ -29,6 +32,10 @@ err = rt.Run(ctx, mic.Audio().Decode().Encode(codec.Opus()).To(rec), cam.Video()
 
 ## Behavior
 
+- **Several files.** Files, providers, and `goav.Source` inputs share one run;
+  each stream reads only its own input. With several inputs a file's stream
+  ids carry its name (`1@a.webm`), so track 1 of two files stays two tracks in
+  one mux (`TestCopyFromTwoFilesIntoOneMux`).
 - **Timing.** Joins combine in arrival order. `.SyncByPTS()` on a Mix or
   Composite aligns inputs by presentation time instead: the earliest input
   leads, inputs within half a frame join it, inputs ahead sit the step out,
@@ -50,6 +57,13 @@ err = rt.Run(ctx, mic.Audio().Decode().Encode(codec.Opus()).To(rec), cam.Video()
   `Crossfade(streams...)` without core changes, proven from outside the core
   in `adapterproof/join_proof_test.go`. The stage contract is documented on
   `goav.Join`.
+- **Files as inputs.** A join input that is a file binds its stream by kind
+  when the file opens and converts as frames arrive: a Mix input to the first
+  input's rate and channels (the encoder's explicit ones win when the first
+  input is a file too), a Composite input to I420 at its own size. So a 24 kHz
+  mono file mixes with a 48 kHz stereo one, and Describe still shows each
+  input's bind, decode, and conform without opening anything
+  (`TestMixFilesOfDifferentFormats`).
 - **Joins nest.** A join's input can be another join: `goav.Mix(goav.Mix(a, b), c)`
   sub-mixes two inputs, `goav.Select(goav.Mix(a, b), goav.Mix(c, d))` switches
   between two live mixes (their ids are the sub-joins' names: `mix`, `mix-2`),
@@ -60,9 +74,6 @@ err = rt.Run(ctx, mic.Audio().Decode().Encode(codec.Opus()).To(rec), cam.Video()
 
 ## Limits today
 
-- Joins plan their inputs' streams up front, so join inputs must declare them:
-  live and provider inputs (`goav.Input`) or `goav.Source`. Joining files is not
-  supported yet (`mix_arm`).
 - A join's output runs alone in one run: other Outputs beside it are refused
   with `stream_beside_join`.
 - Forks across several inputs in one run are refused.
