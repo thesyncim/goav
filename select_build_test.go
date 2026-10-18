@@ -77,7 +77,7 @@ func TestSelectForwardsDefaultArmToSink(t *testing.T) {
 		return nil
 	}))
 
-	task, err := Select(
+	task, err := LegacySelect(
 		From(selectTestOneShotSource("a", 100)).Audio(),
 		From(selectTestOneShotSource("b", 200)).Audio(),
 	).To(sink).Build(ctx)
@@ -118,7 +118,7 @@ func TestSelectFansOutToMultipleSinks(t *testing.T) {
 		return nil
 	}))
 
-	task, err := Select(
+	task, err := LegacySelect(
 		From(selectTestOneShotSource("a", 100)).Audio(),
 		From(selectTestOneShotSource("b", 200)).Audio(),
 	).To(firstSink, secondSink).Build(ctx)
@@ -138,7 +138,7 @@ func TestSelectFansOutToMultipleSinks(t *testing.T) {
 }
 
 func TestSelectRequiresTwoArms(t *testing.T) {
-	_, err := Select(From(selectTestOneShotSource("a", 1)).Audio()).
+	_, err := LegacySelect(From(selectTestOneShotSource("a", 1)).Audio()).
 		To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))).
 		Build(context.Background())
 	var buildErr *BuildError
@@ -148,7 +148,7 @@ func TestSelectRequiresTwoArms(t *testing.T) {
 }
 
 func TestSelectRequiresDistinctArmIDs(t *testing.T) {
-	_, err := Select(
+	_, err := LegacySelect(
 		From(selectTestOneShotSource("dup", 1)).Audio(),
 		From(selectTestOneShotSource("dup", 2)).Audio(),
 	).To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))).
@@ -160,7 +160,7 @@ func TestSelectRequiresDistinctArmIDs(t *testing.T) {
 }
 
 func TestSelectRequiresSinkDestination(t *testing.T) {
-	_, err := Select(
+	_, err := LegacySelect(
 		From(selectTestOneShotSource("a", 1)).Audio(),
 		From(selectTestOneShotSource("b", 2)).Audio(),
 	).To(Write("selected.ogg", io.Discard)).

@@ -547,7 +547,7 @@ func TestReadmeAutoResampleExampleBuilds(t *testing.T) {
 // arms keep auto-solving with zero opt-in (the implicit arm policy) and the
 // insertion is reported through Explain like every other conversion.
 func TestMixArmSolvingReportsDiagnostic(t *testing.T) {
-	job := Mix(
+	job := LegacyMix(
 		From(mixTestAudioSourceRate("a", 48_000)).Audio(),
 		From(mixTestAudioSourceRate("b", 24_000)).Audio(),
 	).To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))).

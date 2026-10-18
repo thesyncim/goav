@@ -56,7 +56,7 @@ func TestJoinDescribeEqualsBuildMix(t *testing.T) {
 			return push.EOS()
 		})
 
-	job := Mix(
+	job := LegacyMix(
 		From(packetArm).Audio().Decode(),
 		From(mixTestAudioSourceRate("b", 24000)).Audio(),
 	).Tap(FrameTap("mixed")).
@@ -89,7 +89,7 @@ func TestJoinDescribeEqualsBuildMixMultiDestination(t *testing.T) {
 		withTestFormats(testFormatMuxer(av.FormatOgg, &remuxTestMuxerFactory{})),
 	)
 
-	job := Mix(
+	job := LegacyMix(
 		From(mixTestAudioSource("a", 100)).Audio(),
 		From(mixTestAudioSource("b", 50)).Audio(),
 	).Encode(codec.Opus()).
@@ -112,7 +112,7 @@ func TestJoinDescribeEqualsBuildMixMultiDestination(t *testing.T) {
 }
 
 func TestJoinDescribeEqualsBuildComposite(t *testing.T) {
-	job := Composite(
+	job := LegacyComposite(
 		From(compositeTestVideoSource("a", 4, 4, 100, 10, 20)).Video().Region(0, 0),
 		From(compositeTestVideoSource("b", 4, 4, 200, 30, 40)).Video().Region(4, 0),
 	).To(Sink(SinkFunc("canvas", func(context.Context, Message) error { return nil })))
@@ -129,7 +129,7 @@ func TestJoinDescribeEqualsBuildComposite(t *testing.T) {
 // feeding the selector directly (the control entry row SelectActive broadcasts
 // to) and equal the built graph.
 func TestJoinDescribeEqualsBuildSelect(t *testing.T) {
-	job := Select(
+	job := LegacySelect(
 		From(selectTestOneShotSource("a", 100)).Audio(),
 		From(selectTestOneShotSource("b", 200)).Audio(),
 	).Tap(FrameTap("switched")).

@@ -152,7 +152,7 @@ func runRoomScript(ctx context.Context, script func(context.Context, *RoomPipeli
 		attachments: make(map[string]goav.Attachment),
 		attach: func(ctx context.Context, participant string) (goav.Attachment, error) {
 			stream := *room.participantStream(participant)
-			anchor := input.Stream(stream)
+			anchor := input.Track(stream)
 			return task.Attach(ctx,
 				goav.Branch("track-"+participant).
 					From(anchor).

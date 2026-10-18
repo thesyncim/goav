@@ -135,7 +135,7 @@ func (s *audioMixStage) Handle(ctx context.Context, msg *pipeline.Message, emitt
 		if msg.Event.Reason == selectorActiveReason {
 			// Control-plane events ride the data path through joins unchanged:
 			// a SelectActive heading for a selector downstream of this join
-			// (Select(Mix(a, b), Mix(c, d))) carries its target arm in
+			// (LegacySelect(LegacyMix(a, b), LegacyMix(c, d))) carries its target arm in
 			// Event.StreamID and is consumed by the selector — re-stamping it
 			// to the mix output would erase the target.
 			return emitter.Emit(ctx, msg)
@@ -346,12 +346,12 @@ func (s *audioMixStage) releaseMixFrame(frame *av.Frame) {
 
 // Mix sums N synchronized audio arms into one stream delivered to its
 // destinations — the convergent dual of Branches (N→1). Each arm is a source chain such as
-// From(frameSource).Audio() or another audio-producing join — Mix(Mix(a, b), c)
+// From(frameSource).Audio() or another audio-producing join — LegacyMix(LegacyMix(a, b), c)
 // sub-mixes two arms and mixes the result with a third. Arms must have
 // distinct stream ids; mismatched formats resample to the first arm's format
 // through the implicit arm policy. This reuses the existing Job, so
 // .To/Build/Run are unchanged (see docs/MULTI_INPUT.md).
-func Mix(arms ...JoinArm) *MixStream {
+func LegacyMix(arms ...JoinArm) *MixStream {
 	return &MixStream{arms: arms}
 }
 
@@ -494,7 +494,7 @@ var mixJoinProfile = joinProfile{
 	},
 	sinkOnlyReason: "mix to a non-Sink destination requires .Encode(...)",
 	sinkOnlySuggestions: []string{
-		"encode the mixed audio first: goav.Mix(a, b).Encode(codec.Opus(codec.Bitrate(96_000))).To(out)",
+		"encode the mixed audio first: goav.LegacyMix(a, b).Encode(codec.Opus(codec.Bitrate(96_000))).To(out)",
 		"deliver raw mixed frames with .To(goav.Sink(sink)) instead",
 	},
 }

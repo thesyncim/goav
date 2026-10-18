@@ -30,7 +30,7 @@ func joinTestCollectSink(name string, into *[][]int16) Destination {
 func TestMixTapDeliversMixedFramesToRuntimeBranch(t *testing.T) {
 	ctx := context.Background()
 	var main [][]int16
-	task, err := Mix(
+	task, err := LegacyMix(
 		From(mixTestAudioSource("a", 100, 200)).Audio(),
 		From(mixTestAudioSource("b", 50, -50)).Audio(),
 	).Tap(FrameTap("mixed")).To(joinTestCollectSink("out", &main)).BuildLive(ctx)
@@ -76,7 +76,7 @@ func TestMixTapDeliversMixedFramesToRuntimeBranch(t *testing.T) {
 func TestMixBranchesFanOutMixedStream(t *testing.T) {
 	ctx := context.Background()
 	var xs, ys [][]int16
-	task, err := Mix(
+	task, err := LegacyMix(
 		From(mixTestAudioSource("a", 100, 200)).Audio(),
 		From(mixTestAudioSource("b", 50, -50)).Audio(),
 	).Branches(
@@ -122,7 +122,7 @@ func TestMixBranchesFanOutMixedStream(t *testing.T) {
 func TestJoinOutputBranches(t *testing.T) {
 	ctx := context.Background()
 	var encoded, monitor [][]int16
-	task, err := Mix(
+	task, err := LegacyMix(
 		From(mixTestAudioSource("a", 30, 40)).Audio(),
 		From(mixTestAudioSource("b", 5, 6)).Audio(),
 	).Branches(
@@ -154,7 +154,7 @@ func TestMixBranchesEncodeAndMonitorIndependently(t *testing.T) {
 	)
 
 	var monitor [][]int16
-	task, err := Mix(
+	task, err := LegacyMix(
 		From(mixTestAudioSource("a", 100, 200)).Audio(),
 		From(mixTestAudioSource("b", 50, -50)).Audio(),
 	).Branches(
@@ -179,7 +179,7 @@ func TestMixBranchesEncodeAndMonitorIndependently(t *testing.T) {
 func TestMixBranchAnchorsFromJoinTap(t *testing.T) {
 	ctx := context.Background()
 	var got [][]int16
-	task, err := Mix(
+	task, err := LegacyMix(
 		From(mixTestAudioSource("a", 100, 200)).Audio(),
 		From(mixTestAudioSource("b", 50, -50)).Audio(),
 	).Tap(FrameTap("mixed")).Branches(
@@ -201,7 +201,7 @@ func TestMixBranchAnchorsFromJoinTap(t *testing.T) {
 }
 
 func TestMixBranchesRequireAtLeastOneBranch(t *testing.T) {
-	_, err := Mix(
+	_, err := LegacyMix(
 		From(mixTestAudioSource("a", 1)).Audio(),
 		From(mixTestAudioSource("b", 1)).Audio(),
 	).Branches().BuildLive(context.Background())
@@ -212,7 +212,7 @@ func TestMixBranchesRequireAtLeastOneBranch(t *testing.T) {
 }
 
 func TestMixEncodeIsTerminalForBranches(t *testing.T) {
-	_, err := Mix(
+	_, err := LegacyMix(
 		From(mixTestAudioSource("a", 1)).Audio(),
 		From(mixTestAudioSource("b", 1)).Audio(),
 	).Encode(codec.Opus()).Branches(
@@ -225,7 +225,7 @@ func TestMixEncodeIsTerminalForBranches(t *testing.T) {
 }
 
 func TestMixBranchesPreserveArmCountError(t *testing.T) {
-	_, err := Mix(From(mixTestAudioSource("a", 1)).Audio()).Branches(
+	_, err := LegacyMix(From(mixTestAudioSource("a", 1)).Audio()).Branches(
 		Branch("x").To(Sink(SinkFunc("x", func(context.Context, Message) error { return nil }))),
 	).BuildLive(context.Background())
 	var buildErr *BuildError
@@ -235,7 +235,7 @@ func TestMixBranchesPreserveArmCountError(t *testing.T) {
 }
 
 func TestMixBranchFromUnknownTapRejected(t *testing.T) {
-	_, err := Mix(
+	_, err := LegacyMix(
 		From(mixTestAudioSource("a", 1)).Audio(),
 		From(mixTestAudioSource("b", 1)).Audio(),
 	).Branches(
@@ -248,7 +248,7 @@ func TestMixBranchFromUnknownTapRejected(t *testing.T) {
 }
 
 func TestMixBranchMuxDestinationRequiresEncode(t *testing.T) {
-	_, err := Mix(
+	_, err := LegacyMix(
 		From(mixTestAudioSource("a", 1)).Audio(),
 		From(mixTestAudioSource("b", 1)).Audio(),
 	).Branches(
@@ -261,7 +261,7 @@ func TestMixBranchMuxDestinationRequiresEncode(t *testing.T) {
 }
 
 func TestMixBranchesThenToRejected(t *testing.T) {
-	_, err := Mix(
+	_, err := LegacyMix(
 		From(mixTestAudioSource("a", 1)).Audio(),
 		From(mixTestAudioSource("b", 1)).Audio(),
 	).Branches(
@@ -275,7 +275,7 @@ func TestMixBranchesThenToRejected(t *testing.T) {
 }
 
 func TestMixTapRejectsPacketDomain(t *testing.T) {
-	_, err := Mix(
+	_, err := LegacyMix(
 		From(mixTestAudioSource("a", 1)).Audio(),
 		From(mixTestAudioSource("b", 1)).Audio(),
 	).Tap(PacketTap("mixed")).
@@ -298,7 +298,7 @@ func TestCompositeBranchesFanOutCompositedStream(t *testing.T) {
 			return nil
 		}))
 	}
-	task, err := Composite(
+	task, err := LegacyComposite(
 		From(compositeTestVideoSource("a", 4, 4, 100, 10, 20)).Video().Region(0, 0),
 		From(compositeTestVideoSource("b", 4, 4, 200, 30, 40)).Video().Region(4, 0),
 	).Branches(
@@ -328,7 +328,7 @@ func TestCompositeBranchesFanOutCompositedStream(t *testing.T) {
 func TestSelectTapNamesSwitchedStream(t *testing.T) {
 	ctx := context.Background()
 	var got [][]int16
-	task, err := Select(
+	task, err := LegacySelect(
 		From(selectTestOneShotSource("a", 100)).Audio(),
 		From(selectTestOneShotSource("b", 200)).Audio(),
 	).Tap(FrameTap("switched")).To(joinTestCollectSink("out", &got)).BuildLive(ctx)

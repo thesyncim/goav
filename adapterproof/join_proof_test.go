@@ -293,7 +293,7 @@ func TestExternalJoinComposesThroughPublicGrammar(t *testing.T) {
 	var ids []av.StreamID
 	var frames [][]int16
 
-	job := goav.Join("interleave", newInterleaveStage("interleave", "left", "right"),
+	job := goav.LegacyJoin("interleave", newInterleaveStage("interleave", "left", "right"),
 		goav.From(toyPacketArm("left", []int16{10}, []int16{30})).Audio().Decode(),
 		goav.From(toyPacketArm("right", []int16{20}, []int16{40})).Audio().Decode(),
 	).Tap(goav.FrameTap("interleaved")).
@@ -367,7 +367,7 @@ func TestExternalJoinFansOutThroughBranches(t *testing.T) {
 	var xIDs, yIDs []av.StreamID
 	var xs, ys [][]int16
 
-	err := goav.Join("zipper", newInterleaveStage("zipper", "one", "two"),
+	err := goav.LegacyJoin("zipper", newInterleaveStage("zipper", "one", "two"),
 		goav.From(s16FrameArm("one", []int16{1})).Audio(),
 		goav.From(s16FrameArm("two", []int16{2})).Audio(),
 	).Branches(
@@ -395,8 +395,8 @@ func TestExternalJoinNestsInsideBuiltinMix(t *testing.T) {
 	var ids []av.StreamID
 	var frames [][]int16
 
-	err := goav.Mix(
-		goav.Join("pair", newInterleaveStage("pair", "left", "right"),
+	err := goav.LegacyMix(
+		goav.LegacyJoin("pair", newInterleaveStage("pair", "left", "right"),
 			goav.From(s16FrameArm("left", []int16{10}, []int16{30})).Audio(),
 			goav.From(s16FrameArm("right", []int16{20}, []int16{40})).Audio(),
 		),
@@ -437,7 +437,7 @@ func TestExternalJoinReproducesSelectPassthrough(t *testing.T) {
 		return nil
 	}))
 
-	job := goav.Join("firstof", newFirstArmStage("firstof", "left", 2),
+	job := goav.LegacyJoin("firstof", newFirstArmStage("firstof", "left", 2),
 		goav.From(toyPacketArm("left", []int16{100}, []int16{200})).Audio(),
 		goav.From(toyPacketArm("right", []int16{900})).Audio(),
 	).To(sink).UseRuntime(toyRuntime())

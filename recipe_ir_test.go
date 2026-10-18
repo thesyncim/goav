@@ -118,7 +118,7 @@ func TestRecipeIRSnapshotCapturesStreamRules(t *testing.T) {
 }
 
 func TestRecipeIRSnapshotCapturesJoinFacts(t *testing.T) {
-	job := Mix(
+	job := LegacyMix(
 		From(FileInput("a.ogg", strings.NewReader(""))).Audio(),
 		From(FileInput("b.ogg", strings.NewReader(""))).Audio(),
 	).Encode(codec.Opus()).To(Write("mixed.ogg", &bytes.Buffer{}))
@@ -143,7 +143,7 @@ func TestRecipeIRSnapshotCapturesJoinFacts(t *testing.T) {
 }
 
 func TestJoinPlannerConsumesRecipeIRInput(t *testing.T) {
-	job := Mix(
+	job := LegacyMix(
 		From(mixTestAudioSource("a", 1)).Audio(),
 		From(mixTestAudioSource("b", 1)).Audio(),
 	).To(Sink(SinkFunc("mixed", func(context.Context, Message) error { return nil })))

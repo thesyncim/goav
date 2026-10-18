@@ -40,7 +40,7 @@ func TestMixAcceptsRTPArmsViaUnifiedOpener(t *testing.T) {
 	// be special-rejected as an unsupported source kind (it may still fail later
 	// for fixture reasons, which is fine; the point is it is no longer a special
 	// case in the opener).
-	_, err := goav.Mix(
+	_, err := goav.LegacyMix(
 		goav.From(mixTestAudioSource("a", 1)).Audio(),
 		goav.From(goav.Input(rtpav.Receive(&runtimeRTPReceiver{streams: []av.Stream{{ID: "rtp-b", Type: av.MediaAudio}}}))).Audio(),
 	).To(goav.Sink(component.SinkFunc("out", func(context.Context, component.Message) error { return nil }))).

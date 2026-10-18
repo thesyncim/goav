@@ -79,9 +79,9 @@ func joinOf(kind string, a, b goav.InputSpec) interface {
 	To(...goav.Destination) *goav.Job
 } {
 	if kind == "composite" {
-		return goav.Composite(goav.From(a).Video(), goav.From(b).Video())
+		return goav.LegacyComposite(goav.From(a).Video(), goav.From(b).Video())
 	}
-	return goav.Mix(goav.From(a).Audio(), goav.From(b).Audio())
+	return goav.LegacyMix(goav.From(a).Audio(), goav.From(b).Audio())
 }
 
 // gatedArmSource pushes frames tiny frames of the join kind's media, first
@@ -150,7 +150,7 @@ func TestLiveJoinKeepsBufferingFastArm(t *testing.T) {
 	fast := liveArmSource("fast", frames, nil, fastDone)
 	slow := liveArmSource("slow", frames, fastDone, nil)
 	out := goavtest.NewCollector()
-	task, err := goav.Mix(goav.From(fast).Audio(), goav.From(slow).Audio()).
+	task, err := goav.LegacyMix(goav.From(fast).Audio(), goav.From(slow).Audio()).
 		To(out.Sink()).UseRuntime(goavtest.Runtime()).BuildLive(ctx)
 	if err != nil {
 		t.Fatalf("BuildLive: %v", err)

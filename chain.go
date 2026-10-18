@@ -735,7 +735,7 @@ func regionOutsideCompositeError(node string) error {
 		Node:      node,
 		Reason:    ".Region(x, y) positions a Composite arm; this stream is not one",
 		fixes: buildErrorFixes([]string{
-			"pass the chain to goav.Composite(base, chain.Region(x, y)) to place it on a canvas",
+			"pass the chain to goav.LegacyComposite(base, chain.Region(x, y)) to place it on a canvas",
 			"remove .Region(...) from a chain that is not a Composite arm",
 		}),
 		cause: errUnsupportedBuild,

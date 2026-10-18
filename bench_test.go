@@ -329,14 +329,14 @@ func BenchmarkMix(b *testing.B) {
 			per := max(b.N/n, 1)
 			switch n {
 			case 2:
-				runBenchTask(b, goav.Mix(
+				runBenchTask(b, goav.LegacyMix(
 					goav.From(benchAudioFrames("arm-0", per, 48_000, 1, benchAudioSamples)).Audio(),
 					goav.From(benchAudioFrames("arm-1", per, 48_000, 1, benchAudioSamples)).Audio(),
 				).
 					To(benchSink("mixed")).
 					UseRuntime(benchRuntime(runconfig.WithBufferPolicy(flow.Blocking(64).PipelinePolicy()))))
 			case 8:
-				runBenchTask(b, goav.Mix(
+				runBenchTask(b, goav.LegacyMix(
 					goav.From(benchAudioFrames("arm-0", per, 48_000, 1, benchAudioSamples)).Audio(),
 					goav.From(benchAudioFrames("arm-1", per, 48_000, 1, benchAudioSamples)).Audio(),
 					goav.From(benchAudioFrames("arm-2", per, 48_000, 1, benchAudioSamples)).Audio(),
@@ -357,7 +357,7 @@ func BenchmarkMix(b *testing.B) {
 // per input frame; one composed canvas costs roughly twice that.
 func BenchmarkComposite(b *testing.B) {
 	per := max(b.N/2, 1)
-	runBenchTask(b, goav.Composite(
+	runBenchTask(b, goav.LegacyComposite(
 		goav.From(benchVideoFrames("cam", per, 160, 90)).Video().Region(0, 0),
 		goav.From(benchVideoFrames("screen", per, 160, 90)).Video().Region(160, 0),
 	).
@@ -370,7 +370,7 @@ func BenchmarkComposite(b *testing.B) {
 // the other at the gate. ns/op is per pushed frame across both arms.
 func BenchmarkSelectPassthrough(b *testing.B) {
 	per := max(b.N/2, 1)
-	runBenchTask(b, goav.Select(
+	runBenchTask(b, goav.LegacySelect(
 		goav.From(benchAudioFrames("live", per, 48_000, 1, benchAudioSamples)).Audio(),
 		goav.From(benchAudioFrames("standby", per, 48_000, 1, benchAudioSamples)).Audio(),
 	).

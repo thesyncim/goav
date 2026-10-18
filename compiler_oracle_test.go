@@ -191,38 +191,38 @@ func oracleCorpus(t *testing.T) map[string]func() *goav.Job {
 		},
 		// Joins.
 		"join_mix_sink": func() *goav.Job {
-			return goav.Mix(goav.From(oracleAudio()).Audio(), goav.From(oracleAudio44()).Audio()).To(oracleSink("mixed"))
+			return goav.LegacyMix(goav.From(oracleAudio()).Audio(), goav.From(oracleAudio44()).Audio()).To(oracleSink("mixed"))
 		},
 		"join_mix_encode": func() *goav.Job {
-			return goav.Mix(goav.From(oracleAudio()).Audio(), goav.From(oracleAudio()).Audio()).Encode(codec.Opus()).To(w("mix.webm"))
+			return goav.LegacyMix(goav.From(oracleAudio()).Audio(), goav.From(oracleAudio()).Audio()).Encode(codec.Opus()).To(w("mix.webm"))
 		},
 		"join_composite_regions": func() *goav.Job {
-			return goav.Composite(
+			return goav.LegacyComposite(
 				goav.From(oracleVideo()).Video(),
 				goav.From(oracleVideoSized(16, 16)).Video().Region(8, 8),
 			).Encode(codec.VP8()).To(w("pip.webm"))
 		},
 		"join_select": func() *goav.Job {
-			return goav.Select(goav.From(oracleAudio()).Audio(), goav.From(oracleAudio()).Audio()).To(oracleSink("active"))
+			return goav.LegacySelect(goav.From(oracleAudio()).Audio(), goav.From(oracleAudio()).Audio()).To(oracleSink("active"))
 		},
 		"join_nested_mix": func() *goav.Job {
-			inner := goav.Mix(goav.From(oracleAudio()).Audio(), goav.From(oracleAudio()).Audio())
-			return goav.Mix(inner, goav.From(oracleAudio()).Audio()).To(oracleSink("mixed"))
+			inner := goav.LegacyMix(goav.From(oracleAudio()).Audio(), goav.From(oracleAudio()).Audio())
+			return goav.LegacyMix(inner, goav.From(oracleAudio()).Audio()).To(oracleSink("mixed"))
 		},
 		"join_tap_arm": func() *goav.Job {
-			return goav.Mix(
+			return goav.LegacyMix(
 				goav.From(oracleAudio()).Audio().Tap(goav.FrameTap("dry")),
 				goav.FrameTap("dry"),
 			).To(oracleSink("mixed"))
 		},
 		"join_branches": func() *goav.Job {
-			return goav.Mix(goav.From(oracleAudio()).Audio(), goav.From(oracleAudio()).Audio()).Branches(
+			return goav.LegacyMix(goav.From(oracleAudio()).Audio(), goav.From(oracleAudio()).Audio()).Branches(
 				goav.Branch("room").Encode(codec.Opus()).To(w("room.webm")),
 				goav.Branch("monitor").To(oracleSink("monitor")),
 			)
 		},
 		"join_custom": func() *goav.Job {
-			return goav.Join("ducker", component.FrameFunc("ducker", func(_ context.Context, f *av.Frame, emit component.Emit) error { return emit.Frame(f) }), goav.From(oracleAudio()).Audio(), goav.From(oracleAudio()).Audio()).To(oracleSink("ducked"))
+			return goav.LegacyJoin("ducker", component.FrameFunc("ducker", func(_ context.Context, f *av.Frame, emit component.Emit) error { return emit.Frame(f) }), goav.From(oracleAudio()).Audio(), goav.From(oracleAudio()).Audio()).To(oracleSink("ducked"))
 		},
 		// Refusals.
 		"error_frames_into_mux": func() *goav.Job {
@@ -238,10 +238,10 @@ func oracleCorpus(t *testing.T) map[string]func() *goav.Job {
 			return goav.From(oracleAudio(), oracleAudio()).Audio().Decode().To(oracleSink("frames"))
 		},
 		"error_unknown_tap_arm": func() *goav.Job {
-			return goav.Mix(goav.From(oracleAudio()).Audio(), goav.FrameTap("nope")).To(oracleSink("mixed"))
+			return goav.LegacyMix(goav.From(oracleAudio()).Audio(), goav.FrameTap("nope")).To(oracleSink("mixed"))
 		},
 		"error_mix_one_arm": func() *goav.Job {
-			return goav.Mix(goav.From(oracleAudio()).Audio()).To(oracleSink("mixed"))
+			return goav.LegacyMix(goav.From(oracleAudio()).Audio()).To(oracleSink("mixed"))
 		},
 		"stream_copy_playout": func() *goav.Job {
 			return goav.From(oracleMP4(t)).Video().Copy().Playout(flow.Playout("p")).To(oracleSink("p"))
@@ -253,7 +253,7 @@ func oracleCorpus(t *testing.T) map[string]func() *goav.Job {
 			return goav.From(oracleVideo(), oracleAudio()).Video().Branches(goav.Branch("a").Encode(codec.VP8()).To(w("a.webm")))
 		},
 		"error_stream_beside_join": func() *goav.Job {
-			job := goav.Mix(goav.From(oracleAudio()).Audio(), goav.From(oracleAudio()).Audio()).To(oracleSink("mixed"))
+			job := goav.LegacyMix(goav.From(oracleAudio()).Audio(), goav.From(oracleAudio()).Audio()).To(oracleSink("mixed"))
 			return job.And(oracleVideo()).Video().To(oracleSink("video"))
 		},
 		"error_region_outside_composite": func() *goav.Job {

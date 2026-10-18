@@ -191,7 +191,7 @@ func TestFromMultiInputUnambiguousChainJustWorks(t *testing.T) {
 }
 
 func TestJoinArmsRejectMultiInputChains(t *testing.T) {
-	_, err := Mix(
+	_, err := LegacyMix(
 		From(mixTestAudioSource("a", 1), mixTestAudioSource("b", 1)).Audio(),
 		From(mixTestAudioSource("c", 1)).Audio(),
 	).To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))).

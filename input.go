@@ -36,7 +36,14 @@ type InputSpec struct {
 	// declaration order after the input opens through the one source seam.
 	wraps []func(pipeline.Source) pipeline.Source
 	err   error
+	// id is the input's identity in a value recipe: in.Video() and in.Audio()
+	// read the same input because they share it. Copies made by With or
+	// WrapSource are new inputs.
+	id *inputIdentity
 }
+
+// inputIdentity is a non-empty type so every allocation is a distinct pointer.
+type inputIdentity struct{ _ byte }
 
 type inputSpecOrigin uint8
 
@@ -47,6 +54,7 @@ const (
 
 func inputSpecHandle(spec InputSpec) InputSpec {
 	spec.origin = inputSpecOriginConstructed
+	spec.id = &inputIdentity{}
 	return spec
 }
 
@@ -80,6 +88,7 @@ func WrapSource(spec InputSpec, wrap func(pipeline.Source) pipeline.Source) Inpu
 	wraps := make([]func(pipeline.Source) pipeline.Source, 0, len(spec.wraps)+1)
 	wraps = append(wraps, spec.wraps...)
 	spec.wraps = append(wraps, wrap)
+	spec.id = &inputIdentity{}
 	return spec
 }
 
@@ -95,7 +104,9 @@ type InputOption interface {
 // vocabulary the constructors take, for layering config onto an
 // already-constructed value (renaming a generated test input, say).
 func (s InputSpec) With(opts ...InputOption) InputSpec {
-	return applyInputOptions(s, opts)
+	spec := applyInputOptions(s, opts)
+	spec.id = &inputIdentity{}
+	return spec
 }
 
 func applyInputOptions(spec InputSpec, opts []InputOption) InputSpec {

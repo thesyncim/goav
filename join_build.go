@@ -63,8 +63,8 @@ type joinSpec struct {
 
 // JoinArm is one source arm of a join: an ordinary source chain such as
 // From(x).Audio(), another join whose joined output feeds the outer join —
-// Mix(Mix(a, b), c) sub-mixes two arms and mixes the result with a third, and
-// Select(Mix(a, b), Mix(c, d)) switches between two live mixes — or a tap reference
+// LegacyMix(LegacyMix(a, b), c) sub-mixes two arms and mixes the result with a third, and
+// LegacySelect(LegacyMix(a, b), LegacyMix(c, d)) switches between two live mixes — or a tap reference
 // naming a tap an earlier arm declared, so one decoded stream converges
 // mid-graph without opening its source again. It is a sealed interface: only
 // goav builders implement it.
@@ -243,7 +243,7 @@ func resolveJoinProfile(tree *joinTreeSnapshot) (joinProfile, error) {
 			fields:    errDetails(errNote("declared join kinds: mix, composite, select; custom kinds go through goav.Join")),
 			fixes: buildErrorFixes([]string{
 				"use Mix, Composite, or Select for the built-in convergence profiles",
-				"use goav.Join(name, stage, arms...) for a custom convergence stage",
+				"use goav.LegacyJoin(name, stage, arms...) for a custom convergence stage",
 			}),
 			cause: errUnsupportedBuild,
 		}

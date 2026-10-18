@@ -23,7 +23,7 @@ func main() {
 
 func runCustomJoin(ctx context.Context) ([][]int16, error) {
 	out := goavtest.NewCollector()
-	err := goav.Join("interleave", newInterleaveStage("interleave", "left", "right"),
+	err := goav.LegacyJoin("interleave", newInterleaveStage("interleave", "left", "right"),
 		goav.From(s16Source("left", []int16{1}, []int16{3})).Audio(),
 		goav.From(s16Source("right", []int16{2}, []int16{4})).Audio(),
 	).To(out.Sink()).

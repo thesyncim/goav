@@ -75,7 +75,7 @@ func TestPlainChainBesideJoinIsRefused(t *testing.T) {
 	sink := func(name string) goav.Destination {
 		return goav.Sink(component.SinkFunc(name, func(context.Context, component.Message) error { return nil }))
 	}
-	job := goav.Mix(
+	job := goav.LegacyMix(
 		goav.From(goavtest.Audio(48000, 1, []int16{1, 2})).Audio(),
 		goav.From(goavtest.Audio(48000, 1, []int16{3, 4})).Audio(),
 	).To(sink("mixed"))
@@ -101,21 +101,21 @@ func TestRegionOutsideCompositeIsRefused(t *testing.T) {
 			code: "stream_region_outside_composite",
 		},
 		"mix arm": {
-			job: goav.Mix(
+			job: goav.LegacyMix(
 				goav.From(goavtest.Audio(48000, 1, []int16{1, 2})).Audio().Region(4, 4),
 				goav.From(goavtest.Audio(48000, 1, []int16{3, 4})).Audio(),
 			).To(sink),
 			code: "mix_arm",
 		},
 		"top-level composite": {
-			job: goav.Composite(
+			job: goav.LegacyComposite(
 				goav.From(goavtest.Video(64, 64, 3)).Video(),
 				goav.From(goavtest.Video(32, 32, 3)).Video().Region(4, 4),
 			).Region(8, 8).To(sink),
 			code: "stream_region_outside_composite",
 		},
 		"select arm": {
-			job: goav.Select(
+			job: goav.LegacySelect(
 				goav.From(goavtest.Audio(48000, 1, []int16{1, 2})).Audio().Region(4, 4),
 				goav.From(goavtest.Audio(48000, 1, []int16{3, 4})).Audio(),
 			).To(sink),

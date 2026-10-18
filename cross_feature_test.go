@@ -212,7 +212,7 @@ func TestMixSyncByPTSSeekArmMidRun(t *testing.T) {
 		return nil
 	}))
 
-	task, err := Mix(
+	task, err := LegacyMix(
 		From(Input(&crossSeekArmProvider{source: seekable, codec: pcm})).Audio().Decode(),
 		From(mixSyncTestSource("b", []int64{0, 1000}, [][]int16{{1, 1}, {2, 2}})).Audio(),
 	).SyncByPTS().To(sink).UseRuntime(rt).BuildLive(ctx)
@@ -293,7 +293,7 @@ func TestMixDecodedArmEOSStopsGatingEndToEnd(t *testing.T) {
 		}
 		return nil
 	}))
-	task, err := Mix(
+	task, err := LegacyMix(
 		From(tapArmTestPacketSource("a", pcm, 100, 100)).Audio().Decode(),
 		From(crossGatedFrameSource("b", release, []int16{1, 1}, []int16{2, 2})).Audio(),
 	).To(sink).UseRuntime(rt).BuildLive(ctx)
@@ -319,7 +319,7 @@ func TestMixDecodedArmEOSStopsGatingEndToEnd(t *testing.T) {
 // is a typed refusal, not a silent no-op.
 func TestOnStreamRefusedOnJoinJobs(t *testing.T) {
 	monitor := Sink(SinkFunc("monitor", func(context.Context, Message) error { return nil }))
-	_, err := Mix(
+	_, err := LegacyMix(
 		From(mixTestAudioSource("a", 100)).Audio(),
 		From(mixTestAudioSource("b", 50)).Audio(),
 	).To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))).
@@ -581,7 +581,7 @@ func TestRebranchSwapsBranchOnJoinTap(t *testing.T) {
 	releaseA := make(chan struct{}, 2)
 	releaseB := make(chan struct{}, 2)
 	var main, old, replacement crossLockedFrames
-	task, err := Mix(
+	task, err := LegacyMix(
 		From(crossGatedFrameSource("a", releaseA, []int16{100, 100}, []int16{200, 200})).Audio(),
 		From(crossGatedFrameSource("b", releaseB, []int16{1, 1}, []int16{2, 2})).Audio(),
 	).Tap(FrameTap("mixed")).To(main.sink("out")).UseRuntime(crossLiveJoinRuntime()).BuildLive(ctx)
@@ -650,7 +650,7 @@ func TestPauseResumeBranchOnJoinTap(t *testing.T) {
 	releaseA := make(chan struct{}, 3)
 	releaseB := make(chan struct{}, 3)
 	var main, watched crossLockedFrames
-	task, err := Mix(
+	task, err := LegacyMix(
 		From(crossGatedFrameSource("a", releaseA, []int16{10}, []int16{20}, []int16{30})).Audio(),
 		From(crossGatedFrameSource("b", releaseB, []int16{1}, []int16{2}, []int16{3})).Audio(),
 	).Tap(FrameTap("mixed")).To(main.sink("out")).UseRuntime(crossLiveJoinRuntime()).BuildLive(ctx)
@@ -720,7 +720,7 @@ func TestDetachBranchOnTapArmAnchorKeepsJoin(t *testing.T) {
 	defer cancel()
 	release := make(chan struct{}, 1)
 	var got, monitored [][]int16
-	task, err := Mix(
+	task, err := LegacyMix(
 		From(crossGatedFrameSource("a", release, []int16{100, 200})).Audio().Tap(FrameTap("dry")),
 		FrameTap("dry"),
 		From(mixTestAudioSource("live", 50, -50)).Audio(),
@@ -769,7 +769,7 @@ func TestSelectActiveSwitchToEndedArm(t *testing.T) {
 	releaseA := make(chan struct{}, 2)
 	bEnded := make(chan struct{})
 	var got crossLockedFrames
-	task, err := Select(
+	task, err := LegacySelect(
 		From(crossGatedFrameSource("a", releaseA, []int16{100}, []int16{200})).Audio(),
 		From(crossSignaledFrameSource("b", bEnded, 7)).Audio(),
 	).To(got.sink("out")).BuildLive(ctx)
@@ -881,7 +881,7 @@ func TestFromMultiInputChainsKeepIndependentAutoPolicies(t *testing.T) {
 func TestMixBranchesAutoSolvesJoinedOutput(t *testing.T) {
 	rt := solverTestOpusRuntime(testBundleFilters())
 	var packets int
-	job := Mix(
+	job := LegacyMix(
 		From(mixTestAudioSourceRate("a", 44_100)).Audio(),
 		From(mixTestAudioSourceRate("b", 44_100)).Audio(),
 	).Branches(
@@ -923,7 +923,7 @@ func TestMixBranchesAutoSolvesJoinedOutput(t *testing.T) {
 }
 
 func TestMixEncodeRequiresAutoForJoinedOutput(t *testing.T) {
-	_, err := Mix(
+	_, err := LegacyMix(
 		From(mixTestAudioSourceRate("a", 44_100)).Audio(),
 		From(mixTestAudioSourceRate("b", 44_100)).Audio(),
 	).
@@ -951,7 +951,7 @@ func TestMixEncodeRequiresAutoForJoinedOutput(t *testing.T) {
 func TestMixEncodeAutoSolvesJoinedOutput(t *testing.T) {
 	rt := solverTestOpusRuntime(testBundleFilters())
 	var packets int
-	job := Mix(
+	job := LegacyMix(
 		From(mixTestAudioSourceRate("a", 44_100)).Audio(),
 		From(mixTestAudioSourceRate("b", 44_100)).Audio(),
 	).

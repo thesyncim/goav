@@ -74,7 +74,7 @@ func TestDecodeStreamWithSpecMergesExternalCodecMetadata(t *testing.T) {
 func TestSelectBranchesBuildsPlannedBranchFanout(t *testing.T) {
 	ctx := context.Background()
 	var got [][]int16
-	job := Select(
+	job := LegacySelect(
 		From(selectTestOneShotSource("a", 100)).Audio(),
 		From(selectTestOneShotSource("b", 200)).Audio(),
 	).Branches(

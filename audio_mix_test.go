@@ -156,7 +156,7 @@ func mixTestAudioSource(id av.StreamID, samples ...int16) InputSpec {
 // now the consumer-side Mix acceptance test written against goavtest.
 
 func TestMixDescribeShowsConvergentJoin(t *testing.T) {
-	spec, err := Mix(
+	spec, err := LegacyMix(
 		From(mixTestAudioSource("a", 1)).Audio(),
 		From(mixTestAudioSource("b", 1)).Audio(),
 	).To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))).BuildLive(context.Background())
@@ -183,7 +183,7 @@ func TestMixDescribeShowsConvergentJoin(t *testing.T) {
 }
 
 func TestMixRequiresTwoArms(t *testing.T) {
-	_, err := Mix(From(mixTestAudioSource("a", 1)).Audio()).
+	_, err := LegacyMix(From(mixTestAudioSource("a", 1)).Audio()).
 		To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))).
 		Build(context.Background())
 	var buildErr *BuildError
@@ -193,7 +193,7 @@ func TestMixRequiresTwoArms(t *testing.T) {
 }
 
 func TestMixRawFramesRequireSinkDestination(t *testing.T) {
-	_, err := Mix(
+	_, err := LegacyMix(
 		From(mixTestAudioSource("a", 1)).Audio(),
 		From(mixTestAudioSource("b", 2)).Audio(),
 	).To(Write("mix.ogg", io.Discard)).
@@ -218,7 +218,7 @@ func TestMixBuilderOptionsCarryIntoJoinSpec(t *testing.T) {
 
 	require := shape.Frame(av.MediaAudio, shape.Audio(48000, codec.Stereo, av.SampleFormatS16))
 	prefer := shape.Frame(av.MediaAudio, shape.Audio(0, 0, av.SampleFormatF32))
-	mix := Mix(
+	mix := LegacyMix(
 		From(mixTestAudioSource("a", 100, 200)).Audio(),
 		From(mixTestAudioSource("b", 50, -50)).Audio(),
 	).
@@ -282,7 +282,7 @@ func TestMixRequiresExplicitDecodeForPacketArms(t *testing.T) {
 		shape.Packet(av.MediaAudio, av.CodecOpus, shape.Audio(48000, codec.Stereo, av.SampleFormatS16), shape.Stream("a")),
 		func(context.Context, SourcePush) error { return nil })
 
-	_, err := Mix(
+	_, err := LegacyMix(
 		From(packetArm).Audio(),
 		From(mixTestAudioSource("b", 1)).Audio(),
 	).To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))).Describe()
@@ -319,7 +319,7 @@ func TestMixUsesExplicitlyDecodedPacketArmsBeforeMixing(t *testing.T) {
 		return nil
 	}))
 
-	task, err := Mix(
+	task, err := LegacyMix(
 		From(packetSrc("a")).Audio().Decode(),
 		From(packetSrc("b")).Audio().Decode(),
 	).To(sink).UseRuntime(rt).BuildLive(ctx)
@@ -347,7 +347,7 @@ func TestMixEncodesMixedOutput(t *testing.T) {
 		return nil
 	}))
 
-	task, err := Mix(
+	task, err := LegacyMix(
 		From(mixTestAudioSource("a", 100, 200)).Audio(),
 		From(mixTestAudioSource("b", 50, -50)).Audio(),
 	).Encode(codec.Opus()).To(sink).UseRuntime(rt).BuildLive(ctx)
@@ -371,7 +371,7 @@ func TestMixEncodesToFile(t *testing.T) {
 		WithEncoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &encodeTestEncoderFactory{encoder: &encodeTestEncoder{}}),
 	)
 
-	task, err := Mix(
+	task, err := LegacyMix(
 		From(mixTestAudioSource("a", 100, 200)).Audio(),
 		From(mixTestAudioSource("b", 50, -50)).Audio(),
 	).Encode(codec.Opus()).To(Write("mix.ogg", io.Discard, Format(av.FormatOgg))).UseRuntime(rt).BuildLive(ctx)
@@ -427,7 +427,7 @@ func TestMixEncodesToMultipleFileDestinations(t *testing.T) {
 	)
 
 	var first, second bytes.Buffer
-	task, err := Mix(
+	task, err := LegacyMix(
 		From(mixTestAudioSource("a", 100, 200)).Audio(),
 		From(mixTestAudioSource("b", 50, -50)).Audio(),
 	).Encode(codec.Opus()).To(
@@ -456,7 +456,7 @@ func TestMixRejectsSameDestinationHandleTwice(t *testing.T) {
 	)
 	out := Write("mix.ogg", io.Discard, Format(av.FormatOgg))
 
-	_, err := Mix(
+	_, err := LegacyMix(
 		From(mixTestAudioSource("a", 100)).Audio(),
 		From(mixTestAudioSource("b", 50)).Audio(),
 	).Encode(codec.Opus()).To(out, out).UseRuntime(rt).BuildLive(context.Background())
@@ -513,7 +513,7 @@ func TestMixResamplesMismatchedArms(t *testing.T) {
 	}))
 
 	// arm "a" is 48kHz (the target); arm "b" is 24kHz and must auto-resample.
-	task, err := Mix(
+	task, err := LegacyMix(
 		From(mixTestAudioSourceRate("a", 48000)).Audio(),
 		From(mixTestAudioSourceRate("b", 24000)).Audio(),
 	).To(sink).UseRuntime(rt).BuildLive(ctx)

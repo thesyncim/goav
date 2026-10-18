@@ -14,7 +14,7 @@ func TestSelectJoinArmContracts(t *testing.T) {
 		t.Fatalf("nil selector join arm = %+v, want zero", arm)
 	}
 
-	selector := Select(
+	selector := LegacySelect(
 		From(selectTestOneShotSource("a", 1)).Audio(),
 		From(selectTestOneShotSource("b", 2)).Audio(),
 	).Tap(FrameTap("selected.frames")).Region(3, 4)

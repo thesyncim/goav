@@ -288,13 +288,13 @@ func joinInputsError(kind string, node string) error {
 func joinTwoArmExample(kind string) string {
 	switch joinKind(kind) {
 	case joinMix:
-		return "goav.Mix(goav.From(a).Audio(), goav.From(b).Audio())"
+		return "goav.LegacyMix(goav.From(a).Audio(), goav.From(b).Audio())"
 	case joinComposite:
-		return "goav.Composite(goav.From(a).Video(), goav.From(b).Video())"
+		return "goav.LegacyComposite(goav.From(a).Video(), goav.From(b).Video())"
 	case joinSelect:
-		return "goav.Select(goav.From(a).Video(), goav.From(b).Video())"
+		return "goav.LegacySelect(goav.From(a).Video(), goav.From(b).Video())"
 	default:
-		return "goav.Join(" + strconv.Quote(kind) + ", stage, goav.From(a).Audio(), goav.From(b).Audio())"
+		return "goav.LegacyJoin(" + strconv.Quote(kind) + ", stage, goav.From(a).Audio(), goav.From(b).Audio())"
 	}
 }
 
@@ -628,7 +628,7 @@ func planJoinTree(input joinPlanInput, tree *joinTreeSnapshot, cursor int, used 
 		seen[armPlan.stream.ID] = struct{}{}
 		if armSpec.region != nil && !profile.placesArms {
 			return nil, 0, joinArmError(name, firstNonEmpty(armPlan.inputName, name), kind+" arms have no canvas; .Region(x, y) positions Composite arms only",
-				"remove .Region(...) from the arm, or pass it to goav.Composite(...) to place it")
+				"remove .Region(...) from the arm, or pass it to goav.LegacyComposite(...) to place it")
 		}
 		armOps := cloneOperationSpecs(armSpec.chainOperations)
 		if err := validateJoinArmDomain(name, armPlan.inputName, profile, armPlan.domain, armOps); err != nil {

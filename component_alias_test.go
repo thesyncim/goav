@@ -12,7 +12,6 @@ type (
 	Packet  = av.Packet
 	Frame   = av.Frame
 	Event   = av.Event
-	Stream  = av.Stream
 
 	SourceFunc  = sourcepkg.Func
 	SourcePush  = sourcepkg.Push
