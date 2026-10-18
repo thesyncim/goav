@@ -137,9 +137,11 @@ func MustStage(stage pipeline.Stage, err error) pipeline.Stage {
 }
 
 // SinkFunc wraps a function as a terminal sink for goav.Sink(...): fn receives
-// every delivered message. Returning an error fails the task. Nil callbacks
-// produce a sink that validates later; use NewSink when construction should
-// fail immediately.
+// every delivered message, one call at a time, never concurrently. A
+// payload's bytes are valid for the call unless its Buffer.Ownership says
+// otherwise (av.BufferImmutable may be kept): copy what you keep. Returning an
+// error fails the task. Nil callbacks produce a sink that validates later; use
+// NewSink when construction should fail immediately.
 func SinkFunc(name string, fn func(context.Context, Message) error) pipeline.Sink {
 	return mediaFuncSink{name: name, fn: fn}
 }

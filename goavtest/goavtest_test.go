@@ -163,7 +163,7 @@ func TestCodecRoundTripIsByteFaithful(t *testing.T) {
 }
 
 // TestFormatRoundTripThroughFile proves the fake container contract: encode
-// and mux into a bytes.Buffer through goav.File, then demux and decode it
+// and mux into a bytes.Buffer through goav.Write, then demux and decode it
 // back through goav.FileInput — no real container anywhere.
 func TestFormatRoundTripThroughFile(t *testing.T) {
 	ctx := context.Background()
@@ -352,3 +352,26 @@ func (countingEncoder) EncodeInto(_ context.Context, frame *av.Frame, out *codec
 func (countingEncoder) FlushInto(context.Context, *codec.EncodeResult) error { return nil }
 func (countingEncoder) HandleEvent(context.Context, *av.Event) error         { return nil }
 func (countingEncoder) Close() error                                         { return nil }
+
+// TestLiveVideoRunsUntilStopped pins LiveVideo: a never-ending frame source
+// whose task keeps delivering until its context stops it.
+func TestLiveVideoRunsUntilStopped(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	out := goavtest.NewCollector()
+	task, err := goavtest.Runtime().Build(ctx, goavtest.LiveVideo("cam", 16, 16).Video().To(out.Sink()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer task.Close()
+	done := make(chan error, 1)
+	go func() { done <- task.Run(ctx) }()
+	waitCtx, waitCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer waitCancel()
+	if err := out.Wait(waitCtx, func(c *goavtest.Collector) bool { return len(c.Frames()) >= 3 }); err != nil {
+		t.Fatalf("live video delivered %d frames: %v", len(out.Frames()), err)
+	}
+	cancel()
+	if err := <-done; !errors.Is(err, context.Canceled) {
+		t.Fatalf("Run = %v, want context.Canceled", err)
+	}
+}

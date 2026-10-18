@@ -19,14 +19,40 @@ go get github.com/thesyncim/goav@latest   # Go 1.27+
 ## Quick start
 
 ```go
+package main
+
+import (
+	"context"
+	"log"
+	"os"
+
+	"github.com/thesyncim/goav"
+	"github.com/thesyncim/goav/bundle"
+	"github.com/thesyncim/goav/codec"
+)
+
 // Scale a WebM to 720p and re-encode it as VP9.
-// src is any io.Reader (an *os.File works), dst any io.Writer.
-video := goav.FileInput("in.webm", src).Video().
-    Decode().
-    Resize(1280, 720).
-    Encode(codec.VP9(codec.Bitrate(2_000_000)))
-err := bundle.Run(ctx, video.To(goav.Write("out.webm", dst)))
+func main() {
+	src, err := os.Open("in.webm")
+	if err != nil {
+		log.Fatal(err)
+	}
+	dst, err := os.Create("out.webm")
+	if err != nil {
+		log.Fatal(err)
+	}
+	video := goav.FileInput("in.webm", src).Video().
+		Decode().
+		Resize(1280, 720).
+		Encode(codec.VP9(codec.Bitrate(2_000_000)))
+	if err := bundle.Run(context.Background(), video.To(goav.Write("out.webm", dst))); err != nil {
+		log.Fatal(err)
+	}
+}
 ```
+
+`goav.FileInput` takes any `io.Reader` and `goav.Write` any `io.Writer`; `bundle.Run` closes
+the writer when the run ends.
 
 <details>
 <summary>No WebM handy? Make a test clip with the CLI.</summary>
@@ -40,8 +66,8 @@ go run github.com/thesyncim/goav/cmd/goav@latest run 'testsrc video width=1920 h
 ## Fan out by reuse
 
 Every operation returns a new `goav.Stream`, so a stream you use twice forks, and the work
-before the fork runs once. Here one decode feeds two renditions, and one Opus encode is muxed
-into both files:
+before the fork runs once. Here one decode feeds two renditions, and one Opus encode of the
+input's audio track is muxed into both files:
 
 ```go
 in := goav.FileInput("in.webm", src)
@@ -62,7 +88,8 @@ codecs and containers; a runtime of your own runs them the same way: `rt.Run(ctx
 ## See the plan first
 
 A recipe is data until it runs. `bundle.Describe(outputs...)` returns the exact graph a run
-would build, without opening anything. Here is the quick start's graph:
+would build, without opening anything, and `graphrender.RenderURI(spec, "goav:graph")` prints
+it. The quick start's nodes:
 
 ```text
 pipeline goav
@@ -73,6 +100,8 @@ pipeline goav
   stage encode-video [frames -> packets, codec=vp9]
   stage out.webm [mux, protocol=file]
 ```
+
+## Errors name the fix
 
 A mistake comes back before anything opens, as a `*goav.BuildError` with a stable code and
 the fix. Leave out the encoder and you get:
@@ -85,15 +114,15 @@ Suggestions:
   - leave out .Decode() to copy the packets: input.Video().To(output)
 ```
 
-See [Errors](docs/ERRORS.md) for matching on codes, and [`graphrender`](graphrender) for DOT
-and Mermaid output.
+See [Errors](docs/ERRORS.md) for matching on codes; [`graphrender`](graphrender) also renders
+DOT and Mermaid.
 
 ## What's in the box
 
 | | Decode / demux | Encode / mux |
 | --- | --- | --- |
 | Video | VP8, VP9, AV1, H.264 (`goav_goh264` build tag) | VP8, VP9, AV1 |
-| Audio | Opus, AAC-LC | Opus |
+| Audio | Opus, AAC-LC | Opus (in WebM or Matroska) |
 | Containers | Matroska, WebM, IVF, MP4 | Matroska, WebM, IVF, Annex B (H.264) |
 
 Plus `Resize` and `Resample`. `bundle` registers all of these; `goav.New(...)` builds a
@@ -109,13 +138,13 @@ See [Adapters](docs/ADAPTERS.md).
 | Frames into your code | `in.Video().Decode().To(goav.Sink(component.SinkFunc("frames", fn)))` |
 | Mix, composite, switch | `goav.Mix(a, b)`, `goav.Composite(cam, goav.At(screen, 960, 540))`, `goav.Select(a, b)` |
 | Change a running task | `task.Attach(ctx, task.Tap("live").Encode(codec.VP8()).To(preview))` |
-| RTP or WebRTC input | `goav.Input(rtpav.Receive(r, ...))`, `goav.Input(webrtcav.Track(t))` |
-| Your own source, codec, or sink | `goav.Source(...)`, `goav.Input(provider)`, `runconfig.WithEncoder(...)`, `goav.Sink(...)` |
 | Test a pipeline | [`goavtest`](goavtest): deterministic sources, a recording sink, a fake clock |
 
-More in [Use cases](docs/USE_CASES.md), [Operations](docs/OPERATIONS.md), and
-[`examples/`](examples), including a browser [WebRTC ladder](examples/webrtc-runtime-ladder)
-and a native [Gio control room](examples/gio-webrtc-showcase).
+RTP and WebRTC inputs live in their own modules ([RTP & WebRTC](docs/RTP_WEBRTC.md)), and
+your own sources, codecs, and sinks plug in through small interfaces
+([Extension cookbook](docs/EXTENSION_COOKBOOK.md)). More in [Use cases](docs/USE_CASES.md),
+[Operations](docs/OPERATIONS.md), and [`examples/`](examples), including a browser
+[WebRTC ladder](examples/webrtc-runtime-ladder) and a native [Gio control room](examples/gio-webrtc-showcase).
 
 ## Built for live services
 

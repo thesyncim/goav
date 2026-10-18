@@ -10,7 +10,7 @@ requests.
 goav ctl --control unix:///tmp/goav-live.sock control bitrate stream=video value=1200k
 goav ctl --control unix:///tmp/goav-live.sock watch type=stats --follow
 goav ctl --control unix:///tmp/goav-live.sock attach frames as archive \
-  'encode codec=opus media=audio bitrate=128k ! filesink location=archive.ogg'
+  'encode codec=opus media=audio bitrate=128k ! filesink location=archive.webm'
 ```
 
 The control layer is allowlisted and lowers into the same task capabilities

@@ -72,7 +72,7 @@ var runtimeFormats = []av.FormatID{
 //     encoder;
 //   - Format(id) for every well-known container av.Format* id (flv, ogg, ivf,
 //     annexb, matroska, webm, mp4) — the byte-faithful fake container, so
-//     goav.File destinations and goav.FileInput sources work without real
+//     goav.Write destinations and goav.FileInput sources work without real
 //     containers;
 //   - runconfig.WithClock(NewClock()), so realtime pacing advances a fake clock
 //     instead of sleeping.

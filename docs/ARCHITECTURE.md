@@ -326,3 +326,44 @@ fork today). Naming a point with
 in `task.Taps()`. Typical uses: live receive to several outputs, WebRTC receive
 to recording plus preview plus analysis, one decode feeding several
 resize/resample branches, and per-output codec/bitrate/container decisions.
+
+## Joins
+
+How `Mix`, `Composite`, `Select`, and `Join` plan and build (the user-facing
+side is [Multi-input](MULTI_INPUT.md)).
+
+All three plan through the same recipe compile. The joinSpec normalizes into
+the compile state, `joinPlan` plans N arm sub-chains converging into an
+`OpJoin` node (workPlan edges carry the N-to-1), and `Describe()` == `Build()`
+is guard-tested per kind, nested case included. Per-kind behavior lives only in
+the joinProfiles table.
+
+Arm shape-solving goes through the central solver (`armExpected`/`armPolicy`).
+The joined output runs through that same solver before terminal `.Encode(...)`
+and before planned forks, seeded with the joined stream's shape: fork-local
+`.Auto(...)` can insert conversions on that fork, and `.Auto(...)` on the
+Mix/Composite output applies to the terminal encode path or to every planned
+fork.
+
+Taps converge mid-graph: an arm keeps its declared `.Decode()`/`.Tap(name)`.
+The tap installs on the task anchored at the arm's decode (or source) node,
+so one decode feeds the join and any other consumer (an Output attached from
+`task.Tap(name)`). Join stages identify arms by stream id. Other arm
+operations (transform/encode/stages) are rejected with the supported
+alternatives instead of being silently dropped.
+
+Joins are an extension point: `goav.Join(name, stage, streams...)` lowers a
+caller-supplied convergence stage through the same joinSpec/joinProfile
+machinery, so a third party can ship `Crossfade(streams...)` without core changes.
+The per-kind behaviors the profile table carries are derived from the stage's
+`shape.Contract` (frame-domain inputs -> explicit decoded arms like Mix; packet/any ->
+passthrough like Select; one fact-carrying input shape -> solver-planned arm
+conversions; declared output -> the joined stream, else first-arm facts) and
+from the join's snake-safe name (node name, joined output stream id,
+`<name>_*` error-code family). A custom join is a full citizen: `.Tap`,
+forks, `.To`, nesting as a join arm, `Describe() == Build()`; proven from
+outside the core in `adapterproof/join_proof_test.go`, including a
+re-expression of Select's passthrough semantics. The stage contract is
+documented on `goav.Join`; `audioMixStage` (audio_mix.go) is the reference
+implementation.
+

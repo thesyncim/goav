@@ -36,7 +36,7 @@ func (b *builder) openDestinationOutput(ctx context.Context, destination destina
 		formatID = outputProbe.Format
 	}
 	if output.Writer != nil {
-		// goav.File close contract: a writer that also implements io.Closer is
+		// goav.Write close contract: a writer that also implements io.Closer is
 		// closed exactly once when the destination finalizes; a plain writer
 		// stays the caller's to close.
 		if closer, ok := output.Writer.(io.WriteCloser); ok {
