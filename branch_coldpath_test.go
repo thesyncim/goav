@@ -258,7 +258,7 @@ func TestAttachedBranchStreamAndEventNarrowRoutes(t *testing.T) {
 
 	onlyA := newColdPathCountSink("only-a")
 	stats := newColdPathCountSink("stats")
-	if _, err := task.Attach(ctx,
+	if _, err := task.LegacyAttach(ctx,
 		Branch("only-a").From(src).Stream("a").To(Sink(onlyA)),
 		Branch("stats").From(src).Event(av.EventStats).To(Sink(stats)),
 	); err != nil {

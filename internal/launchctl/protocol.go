@@ -119,7 +119,7 @@ func attachRequest(ctx context.Context, task goav.LiveTask, request Request, reg
 	if err != nil {
 		return ControlResponse{}, nil, err
 	}
-	attachment, err := task.Attach(ctx, spec)
+	attachment, err := task.LegacyAttach(ctx, spec)
 	if err != nil {
 		return ControlResponse{}, nil, structuredError("attach", err)
 	}

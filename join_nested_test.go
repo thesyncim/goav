@@ -439,7 +439,7 @@ func TestNestedMixTapAnchorsOnSubJoinNode(t *testing.T) {
 	}
 
 	var tapped [][]int16
-	attachment, err := task.Attach(ctx, Branch("monitor").
+	attachment, err := task.LegacyAttach(ctx, Branch("monitor").
 		From(FrameTap("submix")).
 		To(joinTestCollectSink("monitor", &tapped)))
 	if err != nil {

@@ -158,9 +158,17 @@ func (t *controlCaptureTask) Explain(context.Context) (plan.Report, error) {
 	return plan.Report{}, nil
 }
 
-func (t *controlCaptureTask) Attach(context.Context, ...goav.BranchSpec) (goav.Attachment, error) {
+func (t *controlCaptureTask) LegacyAttach(context.Context, ...goav.BranchSpec) (goav.Attachment, error) {
 	return nil, nil
 }
+
+func (t *controlCaptureTask) Attach(context.Context, ...goav.Output) (goav.Attachment, error) {
+	return nil, nil
+}
+
+func (t *controlCaptureTask) Tap(string) goav.Stream { return goav.Stream{} }
+
+func (t *controlCaptureTask) Track(goav.InputSpec, av.Stream) goav.Stream { return goav.Stream{} }
 
 func (t *controlCaptureTask) Detach(context.Context, goav.Attachment, ...lifecycle.DetachOption) error {
 	return nil

@@ -29,7 +29,7 @@ const videoBranchBufferDepth = 12
 var branchSeq atomic.Uint64
 
 type branchMutator interface {
-	Attach(context.Context, ...goav.BranchSpec) (goav.Attachment, error)
+	LegacyAttach(context.Context, ...goav.BranchSpec) (goav.Attachment, error)
 	Detach(context.Context, goav.Attachment, ...lifecycle.DetachOption) error
 }
 
@@ -319,7 +319,7 @@ func (s *session) attachBranchLocked(ctx context.Context, r *branch) error {
 			s.recordLocked("debug", "branch", "video branch waiting for input track", "video", r.Spec.ID, branchMeta(r.Spec))
 			return nil
 		}
-		attachment, err := s.videoTask.Attach(ctx, spec)
+		attachment, err := s.videoTask.LegacyAttach(ctx, spec)
 		if err != nil {
 			return err
 		}
@@ -329,7 +329,7 @@ func (s *session) attachBranchLocked(ctx context.Context, r *branch) error {
 			s.recordLocked("debug", "branch", "audio branch waiting for input track", "audio", r.Spec.ID, branchMeta(r.Spec))
 			return nil
 		}
-		attachment, err := s.audioTask.Attach(ctx, spec)
+		attachment, err := s.audioTask.LegacyAttach(ctx, spec)
 		if err != nil {
 			return err
 		}

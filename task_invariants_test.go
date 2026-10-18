@@ -193,7 +193,7 @@ func TestTaskSnapshotIsRaceSafeDuringAttachDetach(t *testing.T) {
 		defer wg.Done()
 		defer close(mutated)
 		for i := range iterations {
-			attachment, err := task.Attach(ctx,
+			attachment, err := task.LegacyAttach(ctx,
 				goav.Branch("stress").From(goav.FrameTap("audio.decoded")).To(goavtest.NewCollector().Sink()))
 			if err != nil {
 				t.Errorf("Attach %d: %v", i, err)

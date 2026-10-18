@@ -219,7 +219,7 @@ func BenchmarkLiveRoomAttachDetachSoak(b *testing.B) {
 		if i%2 != 0 {
 			tap = goav.PacketTap("live.audio.packets")
 		}
-		attachment, err := task.Attach(ctx, goav.Branch("live-room-monitor-"+strconv.Itoa(i)).
+		attachment, err := task.LegacyAttach(ctx, goav.Branch("live-room-monitor-"+strconv.Itoa(i)).
 			From(tap).
 			Copy().
 			To(benchSink("live-room-monitor-sink-"+strconv.Itoa(i))))
@@ -380,7 +380,7 @@ func TestPerformanceLabLiveRoomAttachDetachSoak(t *testing.T) {
 			branchName = audioBranchNames[operations%nameSlots]
 			sink = audioSinks[operations%nameSlots]
 		}
-		attachment, err := task.Attach(ctx, goav.Branch(branchName).
+		attachment, err := task.LegacyAttach(ctx, goav.Branch(branchName).
 			From(tap).
 			Copy().
 			To(sink))

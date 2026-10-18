@@ -149,7 +149,7 @@ func TestMixChainArmTapDecodesOnceAndMixes(t *testing.T) {
 
 	// A runtime branch attached from the arm tap receives the DECODED music.
 	var tapped [][]int16
-	attachment, err := task.Attach(ctx, Branch("monitor").
+	attachment, err := task.LegacyAttach(ctx, Branch("monitor").
 		From(FrameTap("music")).
 		To(joinTestCollectSink("monitor", &tapped)))
 	if err != nil {

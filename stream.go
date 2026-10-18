@@ -6,6 +6,7 @@ import (
 	"github.com/thesyncim/goav/flow"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/shape"
+	sourcepkg "github.com/thesyncim/goav/source"
 )
 
 // Stream is one media stream of a recipe: an input's selected stream, a join's
@@ -38,6 +39,11 @@ type streamRoot struct {
 	media   av.MediaType
 	options []StreamOption
 	join    *streamJoin
+	// rule roots a stream the input discovers while it runs (OnStream); tap
+	// and track root a stream of a running task (task.Tap, task.Track).
+	rule  *sourcepkg.StreamMatch
+	tap   string
+	track *av.Stream
 }
 
 type streamJoin struct {
@@ -96,6 +102,13 @@ func (s InputSpec) Video(options ...StreamOption) Stream {
 // StreamIndex narrows the choice.
 func (s InputSpec) Audio(options ...StreamOption) Stream {
 	return s.selectStream(av.MediaAudio, options)
+}
+
+// OnStream is each stream the input discovers while it runs that match
+// selects: Outputs built from it attach for every such stream, named per
+// stream, and detach when the stream ends.
+func (s InputSpec) OnStream(match sourcepkg.StreamMatch) Stream {
+	return Stream{node: &streamNode{root: &streamRoot{input: s, rule: &match}}}
 }
 
 // Stream selects one stream of any media kind, narrowed by StreamID or

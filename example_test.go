@@ -322,7 +322,7 @@ func ExampleTask_attach() {
 	}
 	defer task.Close()
 
-	if _, err := task.Attach(ctx, goav.Branch("monitor").
+	if _, err := task.LegacyAttach(ctx, goav.Branch("monitor").
 		From(goav.FrameTap("mic.frames")).
 		To(countInto(&monitorFrames))); err != nil {
 		fmt.Println(err)
@@ -357,7 +357,7 @@ func ExampleAttachment_rebranch() {
 	}
 	defer task.Close()
 
-	rec, err := task.Attach(ctx, goav.Branch("rec").
+	rec, err := task.LegacyAttach(ctx, goav.Branch("rec").
 		From(goav.PacketTap("video.encoded")).
 		Copy().
 		To(goav.Write("part-001.ivf", &part1)))

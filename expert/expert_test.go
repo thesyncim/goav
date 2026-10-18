@@ -132,7 +132,7 @@ func TestGraphHandlesAnchorRuntimeBranches(t *testing.T) {
 	defer task.Close()
 
 	late := &expertTestSink{name: "late"}
-	attachment, err := task.Attach(context.Background(),
+	attachment, err := task.LegacyAttach(context.Background(),
 		goav.Branch("late").From(source).To(goav.Sink(late)))
 	if err != nil {
 		t.Fatal(err)

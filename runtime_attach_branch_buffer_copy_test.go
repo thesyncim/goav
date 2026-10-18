@@ -43,7 +43,7 @@ func TestRuntimeBranchExplicitDropBufferInheritsCopyBounds(t *testing.T) {
 	t.Cleanup(func() { _ = task.Close() })
 
 	preview := goavtest.NewCollector()
-	if _, err := task.Attach(ctx,
+	if _, err := task.LegacyAttach(ctx,
 		goav.Branch("preview").
 			From(goav.FrameTap("video.decoded")).
 			Buffer(flow.DropOldest(8)).

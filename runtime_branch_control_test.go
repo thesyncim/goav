@@ -64,7 +64,7 @@ func TestRuntimeBranchControlPlaneOnLiveTask(t *testing.T) {
 		}
 		return nil
 	}))
-	att, err := task.Attach(ctx, Branch("watch").From(PacketTap("pkts")).Copy().To(branchSink))
+	att, err := task.LegacyAttach(ctx, Branch("watch").From(PacketTap("pkts")).Copy().To(branchSink))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -146,7 +146,7 @@ func TestRuntimeBranchRebranchSwapsLiveBranch(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer task.Close()
-	attA, err := task.Attach(ctx, Branch("a").From(PacketTap("pkts")).Copy().To(count(&aCount)))
+	attA, err := task.LegacyAttach(ctx, Branch("a").From(PacketTap("pkts")).Copy().To(count(&aCount)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -269,7 +269,7 @@ func TestRebranchSwitchAtNextKeyframeOnPacketStream(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer task.Close()
-	attA, err := task.Attach(ctx, Branch("a").From(PacketTap("pkts")).Copy().To(aSink))
+	attA, err := task.LegacyAttach(ctx, Branch("a").From(PacketTap("pkts")).Copy().To(aSink))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -393,7 +393,7 @@ func TestRebranchSwitchAtNextFrameOnFrameStream(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer task.Close()
-	attA, err := task.Attach(ctx, Branch("a").From(FrameTap("frames")).To(aSink))
+	attA, err := task.LegacyAttach(ctx, Branch("a").From(FrameTap("frames")).To(aSink))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -459,7 +459,7 @@ func TestRebranchFailureKeepsOldBranchAttached(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer task.Close()
-	attA, err := task.Attach(ctx, Branch("a").From(PacketTap("pkts")).Copy().To(aSink))
+	attA, err := task.LegacyAttach(ctx, Branch("a").From(PacketTap("pkts")).Copy().To(aSink))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -513,7 +513,7 @@ func TestRebranchOldBranchDispositionReportsDestinationStates(t *testing.T) {
 	}
 	defer task.Close()
 
-	attA, err := task.Attach(ctx, Branch("a").From(PacketTap("pkts")).Copy().To(sink("a-sink")))
+	attA, err := task.LegacyAttach(ctx, Branch("a").From(PacketTap("pkts")).Copy().To(sink("a-sink")))
 	if err != nil {
 		t.Fatal(err)
 	}

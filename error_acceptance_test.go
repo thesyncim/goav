@@ -465,7 +465,7 @@ func TestBuildAndAttachReturnSameErrorForSameInvalidBranch(t *testing.T) {
 	}
 	defer task.Close()
 
-	_, err = task.Attach(context.Background(),
+	_, err = task.LegacyAttach(context.Background(),
 		goav.Branch("bad").
 			From(goav.FrameTap("audio.frames")).
 			Resize(640, 360).
@@ -624,7 +624,7 @@ func TestErrorAcceptanceAttachUnknownTapListsDeclaredTaps(t *testing.T) {
 	}
 	defer task.Close()
 
-	_, err = task.Attach(ctx, goav.Branch("late").From(goav.FrameTap("nope")).To(goavtest.NewCollector().Sink()))
+	_, err = task.LegacyAttach(ctx, goav.Branch("late").From(goav.FrameTap("nope")).To(goavtest.NewCollector().Sink()))
 	buildErr := requireBuildError(t, err, errcode.Code("runtime_branch_tap_missing"), "attach runtime branch", "nope",
 		`add .Tap(goav.FrameTap("nope"))`,
 		"call task.Taps() before attaching",

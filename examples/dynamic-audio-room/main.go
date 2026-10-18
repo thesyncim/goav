@@ -29,7 +29,7 @@ const (
 )
 
 type branchMutator interface {
-	Attach(context.Context, ...goav.BranchSpec) (goav.Attachment, error)
+	LegacyAttach(context.Context, ...goav.BranchSpec) (goav.Attachment, error)
 	Detach(context.Context, goav.Attachment, ...lifecycle.DetachOption) error
 }
 
@@ -153,7 +153,7 @@ func runRoomScript(ctx context.Context, script func(context.Context, *RoomPipeli
 		attach: func(ctx context.Context, participant string) (goav.Attachment, error) {
 			stream := *room.participantStream(participant)
 			anchor := input.Track(stream)
-			return task.Attach(ctx,
+			return task.LegacyAttach(ctx,
 				goav.Branch("track-"+participant).
 					From(anchor).
 					Sync(roomSync).

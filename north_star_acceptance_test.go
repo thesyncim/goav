@@ -177,7 +177,7 @@ func TestNorthStarBranchesAfterDecodeShareOneDecoder(t *testing.T) {
 	}
 	defer task.Close()
 	sinkC := &runtimeTestSink{name: "c"}
-	if _, err := task.Attach(context.Background(),
+	if _, err := task.LegacyAttach(context.Background(),
 		Branch("c").From(FrameTap("audio.decoded")).To(Sink(sinkC))); err != nil {
 		t.Fatalf("Attach() at the decode tap: %v", err)
 	}
