@@ -104,13 +104,13 @@ when branches reuse decode, transform, stage, or tap boundaries before
 diverging. A route carries all media by default, or matches one stream or event
 type.
 
-`Mutable.Attach` is the runtime control-plane operation for late branches. It
+`task.Attach` is the runtime control-plane operation for late branches. It
 plans a private graph patch from one or more named downstream branches,
 prepares destinations and components before graph mutation, applies the patch
 with rollback on failure, and returns an attachment handle with `Close(ctx)`.
 
 Stable outlets come from typed `.Tap(goav.FrameTap(name))` or
-`.Tap(goav.PacketTap(name))` calls listed by `Inspectable.Taps()`; runtime branches
+`.Tap(goav.PacketTap(name))` calls listed by `task.Taps()`; runtime branches
 anchor with `goav.Branch("name").From(tap)`. Late branches can run custom
 stages, apply flows, resize/resample from frame taps, encode Opus/VP8/VP9/AV1
 from frame taps, copy or decode packet taps, and expose their own typed taps
@@ -322,6 +322,6 @@ selector, operation sequence, destinations, and mux groups. Branches selecting
 the same stream share upstream demux, selection, and decode; operations
 declared before `.Branches(...)` form a shared prefix. Naming a point with
 `.Tap(...)` is only required when a stable runtime attach handle should appear
-in `Inspectable.Taps()`. Typical uses: live receive to several outputs, WebRTC receive
+in `task.Taps()`. Typical uses: live receive to several outputs, WebRTC receive
 to recording plus preview plus analysis, one decode feeding several
 resize/resample branches, and per-output codec/bitrate/container decisions.

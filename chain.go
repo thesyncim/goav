@@ -270,7 +270,7 @@ type Chain struct {
 }
 
 // Region places this arm's frame at (x, y) on the composite canvas. It is
-// composite-only — it has no effect on arms outside a Composite.
+// composite-only: a chain that ends in To or Branches, or a Mix arm, refuses it.
 func (b *Chain) Region(x, y int) *Chain {
 	b.region = &compositeRegion{x: x, y: y}
 	return b
@@ -670,6 +670,10 @@ func (b *Chain) Encode(codec codec.Spec) *Chain {
 
 func (b *Chain) To(destinations ...Destination) *Job {
 	stream := b.current()
+	if b.region != nil {
+		b.job.setErr(regionOutsideCompositeError(jobStreamName(stream)))
+		return b.job
+	}
 	outputs := make([]destinationSpec, 0, len(destinations))
 	for i := range destinations {
 		output, err := destinationSpecFromDestination(destinations[i])
@@ -715,4 +719,31 @@ func (b *Chain) current() *jobStreamBuild {
 		b.job.streams = append(b.job.streams, b.stream)
 	}
 	return b.stream
+}
+
+// regionOutsideCompositeError refuses a Region on a stream no Composite
+// places: the position would otherwise be dropped without a word.
+func regionOutsideCompositeError(node string) error {
+	return &BuildError{
+		Phase:     phaseBuild,
+		Family:    errcode.FamilyForCode(streamRegionOutsideCompositeCode),
+		Code:      streamRegionOutsideCompositeCode,
+		Operation: "build stream",
+		Node:      node,
+		Reason:    ".Region(x, y) positions a Composite arm; this stream is not one",
+		fixes: buildErrorFixes([]string{
+			"pass the chain to goav.Composite(base, chain.Region(x, y)) to place it on a canvas",
+			"remove .Region(...) from a chain that is not a Composite arm",
+		}),
+		cause: errUnsupportedBuild,
+	}
+}
+
+// refuseTopLevelRegion fails a join job whose own Region no outer Composite
+// reads: only a join standing as a Composite arm has a canvas position.
+func refuseTopLevelRegion(job *Job, region *compositeRegion, node string) *Job {
+	if region != nil {
+		job.setErr(regionOutsideCompositeError(node))
+	}
+	return job
 }

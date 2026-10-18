@@ -48,7 +48,7 @@ func (c *CompositeStream) joinArm() joinArmSpec {
 }
 
 // Region places this composite's canvas at (x, y) when the composite is used
-// as an arm of an outer Composite. It has no effect on a top-level composite.
+// as an arm of an outer Composite; a top-level composite refuses it.
 func (c *CompositeStream) Region(x, y int) *CompositeStream {
 	c.region = &compositeRegion{x: x, y: y}
 	return c
@@ -116,7 +116,7 @@ func (c *CompositeStream) Tap(tap tapRef) *CompositeStream {
 // its own destinations — the same goav.Branch specs an ordinary stream chain
 // accepts after decode.
 func (c *CompositeStream) Branches(branches ...BranchSpec) *Job {
-	return newJoinBranchesJob(joinComposite, joinSpec{arms: c.arms, encode: c.encode, operations: cloneOperationSpecs(c.operations), taps: c.taps, sync: c.sync}, branches)
+	return refuseTopLevelRegion(newJoinBranchesJob(joinComposite, joinSpec{arms: c.arms, encode: c.encode, operations: cloneOperationSpecs(c.operations), taps: c.taps, sync: c.sync}, branches), c.region, "composite")
 }
 
 // To delivers the composited stream to one or more destinations (a fanout
@@ -125,7 +125,7 @@ func (c *CompositeStream) Branches(branches ...BranchSpec) *Job {
 // composite runs through the same Build/Run as every other recipe. It lowers
 // to the one joinSpec shared by every convergence builder.
 func (c *CompositeStream) To(destinations ...Destination) *Job {
-	return newJoinJob(joinComposite, joinSpec{arms: c.arms, dests: destinations, encode: c.encode, operations: cloneOperationSpecs(c.operations), taps: c.taps, sync: c.sync})
+	return refuseTopLevelRegion(newJoinJob(joinComposite, joinSpec{arms: c.arms, dests: destinations, encode: c.encode, operations: cloneOperationSpecs(c.operations), taps: c.taps, sync: c.sync}), c.region, "composite")
 }
 
 // compositeJoinProfile is Composite's entry in the join table: video arms,
@@ -133,6 +133,7 @@ func (c *CompositeStream) To(destinations ...Destination) *Job {
 // videoCompositeStage convergence, and an encodable output stream derived from
 // the Region bounding box over every arm's frame shape.
 var compositeJoinProfile = joinProfile{
+	placesArms: true,
 	media:      av.MediaVideo,
 	decodeArms: true,
 	graphBuffer: &pipeline.BufferPolicy{

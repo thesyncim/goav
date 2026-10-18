@@ -290,8 +290,8 @@ func validateRecipeEncodeValues(spec codec.Spec, operation string, node string) 
 			Reason:    "encode FPS must be positive",
 			fields:    errDetails(errDetail("fps_duration", fmt.Sprintf("%d/%d/%d", spec.Settings.Framerate.Value, spec.Settings.Framerate.Base.Num, spec.Settings.Framerate.Base.Den))),
 			fixes: buildErrorFixes([]string{
-				"pass a positive value to goav.FPS(...)",
-				"omit goav.FPS(...) when the encoder should infer frame cadence",
+				"pass a positive value to codec.FPS(...)",
+				"omit codec.FPS(...) when the encoder should infer frame cadence",
 			}),
 			cause: errUnsupportedBuild,
 		}
@@ -305,8 +305,8 @@ func validateRecipeEncodeValues(spec codec.Spec, operation string, node string) 
 			Reason:    "encode keyframe interval must be non-negative",
 			fields:    errDetails(errDetail("keyframe_interval", fmt.Sprintf("%d", spec.Settings.KeyframeInterval))),
 			fixes: buildErrorFixes([]string{
-				"pass a positive value to goav.KeyframeInterval(...)",
-				"omit goav.KeyframeInterval(...) when the encoder should choose its default cadence",
+				"pass a positive value to codec.KeyframeInterval(...)",
+				"omit codec.KeyframeInterval(...) when the encoder should choose its default cadence",
 			}),
 			cause: errUnsupportedBuild,
 		}

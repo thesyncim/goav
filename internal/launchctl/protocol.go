@@ -487,7 +487,7 @@ func executeUnsupportedDetach(task goav.LiveTask, args []string) (ControlRespons
 				name,
 				"detaching by branch name requires a control server handle table for goav.Attachment",
 				nil,
-				[]string{"keep the goav.Attachment returned by Mutable.Attach and call task.Detach(ctx, attachment)", "run `goav ctl branches` to inspect branch state"},
+				[]string{"keep the goav.Attachment returned by task.Attach and call task.Detach(ctx, attachment)", "run `goav ctl branches` to inspect branch state"},
 				nil,
 			)
 		}

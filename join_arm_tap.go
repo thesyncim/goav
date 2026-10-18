@@ -28,8 +28,8 @@ func (t tapRef) joinArm() joinArmSpec {
 }
 
 // Region places this tap arm's frames at (x, y) on the composite canvas —
-// the tap-arm form of the chain arm's .Region(x, y). It has no effect on arms
-// outside a Composite.
+// the tap-arm form of the chain arm's .Region(x, y). A Mix or Select refuses
+// a positioned arm.
 func (t tapRef) Region(x, y int) JoinArm {
 	return tapArmRef{tap: t, region: compositeRegion{x: x, y: y}}
 }

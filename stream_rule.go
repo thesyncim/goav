@@ -24,7 +24,7 @@ type streamRule struct {
 // source announces a stream (av.EventStreamAdded carrying the full av.Stream)
 // that matches, the branches are attached at runtime — anchored on the source
 // node and routed by the discovered stream's id — through the same planner,
-// atomic apply, and rollback as Mutable.Attach. Branch names are templated per
+// atomic apply, and rollback as task.Attach. Branch names are templated per
 // matched stream (suffixed "-<stream id>") so repeated discoveries stay
 // unique. On av.EventStreamRemoved the rule's branches for that stream detach
 // with drain semantics: their destinations commit and the branch snapshot

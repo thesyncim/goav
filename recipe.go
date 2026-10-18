@@ -534,10 +534,6 @@ func (j *Job) streamBuilder(name string, media av.MediaType, options ...StreamOp
 		stream.operations = append(stream.operations, cloneOperationSpecs(j.syncOperations)...)
 	}
 	if last := j.currentStream(); last != nil {
-		if len(j.branchStreams) != 0 {
-			j.streams = []*jobStreamBuild{stream}
-			return &Chain{job: j, stream: stream}
-		}
 		if len(last.outputs) == 0 {
 			// A new chain may only start once the previous one is routed; an
 			// unfinished chain followed by another selection is still an error.
@@ -593,11 +589,10 @@ func (j *Job) plan() intent {
 		intent.Inputs = append(intent.Inputs, j.inputs[i].intent())
 	}
 	if len(j.branchStreams) != 0 {
-		for i := range j.branchStreams {
-			intent.Streams = append(intent.Streams, branchStreamIntent(j.branchStreams[i]))
-		}
-		for i := range j.branchDestinations {
-			intent.Destinations = append(intent.Destinations, j.branchDestinations[i].output.intentWithName(j.branchDestinations[i].name))
+		streams, destinations, _ := j.branchJobStreams()
+		intent.Streams = streams
+		for i := range destinations {
+			intent.Destinations = append(intent.Destinations, destinations[i].output.intentWithName(destinations[i].name))
 		}
 		return intent
 	} else if len(j.streams) == 1 {

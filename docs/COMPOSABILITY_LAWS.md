@@ -9,7 +9,7 @@ the grammar. The tests below are executable evidence; this document is the map.
 |---|---|
 | A direct stream chain is syntax sugar for `Branch("main")`. | `TestNorthStarDirectChainEqualsExplicitMainBranch`, `TestNorthStarDirectChainEqualsExplicitMainBranchWithTransform` |
 | `Flow` owns ordered operations only; sources, destinations, runtime, lifecycle, and branch ownership stay outside flows. | `TestStoredOperationListsMirrorFlowBranchAndDirectStreamWork`, `TestFlowBranchesStayOnJobAndBuildIntent`, `TestFlowReportsShapeContractAndTaps` |
-| Build-time branches and runtime `Mutable.Attach` use the same branch grammar and operation lowering. | `TestTaskAttachRuntimeFlowCopyBranchFromPacketTap`, `TestTaskAttachRuntimeDecodeResampleEncodeMuxBranchFromPacketTap`, `TestTaskAttachRuntimeFlowCustomEncodeMuxBranch` |
+| Build-time branches and runtime `task.Attach` use the same branch grammar and operation lowering. | `TestTaskAttachRuntimeFlowCopyBranchFromPacketTap`, `TestTaskAttachRuntimeDecodeResampleEncodeMuxBranchFromPacketTap`, `TestTaskAttachRuntimeFlowCustomEncodeMuxBranch` |
 | `Describe()` is the graph shape that `Build()` installs. | `TestStreamRecipeDescribeMatchesBuiltGraph`, `TestBranchCompositionRecipeDescribeMatchesBuiltGraph`, `TestJoinDescribeEqualsBuildMix`, `TestJoinDescribeEqualsBuildNestedMix` |
 | Generated recipe cases preserve structural laws under a deterministic corpus: `Describe()` equals the built graph, a direct chain equals `Branch("main")`, runtime `Attach` installs the same branch subgraph as build-time branches, and nested mixes match their flat equivalent where no per-stage clamp occurs. | `TestCompositionLawsHoldForGeneratedRecipes` |
 | `Explain()` reports solver insertions and soft preferences without opening resources. | `TestAutoInsertsFormatConvertThroughRegisteredAdapter`, `TestRequireSatisfiedByAutoConversion`, `TestPreferUnsatisfiableIgnoredWithDiagnostic` |
@@ -20,7 +20,7 @@ the grammar. The tests below are executable evidence; this document is the map.
 | Join arm taps compose as ordinary stream points: an arm may declare `.Tap(...)`, and a later tap-reference arm can converge that same point. | `TestJoinArmTapComposes`, `TestMixChainArmTapDecodesOnceAndMixes`, `TestJoinDescribeEqualsBuildTapArm` |
 | Branch frame transforms from packet-domain parents request the same decode+transform lowerer shape as an equivalent direct decoded chain. | `TestBranchAutoInsertMatchesDirectChain` |
 | Nested select routing is explicit: target an inner decision point with `control.SelectActive(...).AtTap(name)` on a tap declared at that select output; untargeted nested select controls refuse as ambiguous. | `TestNestedSelectRoutingPinned` |
-| Runtime taps owned by a detached branch disappear with that branch; future attaches must use a surviving `Inspectable.Taps()` entry or reattach the publishing branch. | `TestAttachAfterSiblingDetachRefusalNamesFix` |
+| Runtime taps owned by a detached branch disappear with that branch; future attaches must use a surviving `task.Taps()` entry or reattach the publishing branch. | `TestAttachAfterSiblingDetachRefusalNamesFix` |
 | Join outputs are ordinary stream points and may fan out through `.Branches(...)` with independent branch chains. | `TestJoinOutputBranches`, `TestMixBranchesFanOutMixedStream`, `TestMixBranchesEncodeAndMonitorIndependently` |
 
 When a new front-door feature is proposed, add its law here before adding a

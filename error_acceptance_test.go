@@ -610,7 +610,7 @@ func TestErrorAcceptanceAmbiguousStreamSelectionListsCandidates(t *testing.T) {
 
 // TestErrorAcceptanceAttachUnknownTapListsDeclaredTaps is snippet 6: a
 // runtime Branch anchored on a tap the task never declared. The refusal lists
-// the taps that DO exist and points at Inspectable.Taps().
+// the taps that DO exist and points at task.Taps().
 func TestErrorAcceptanceAttachUnknownTapListsDeclaredTaps(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -627,7 +627,7 @@ func TestErrorAcceptanceAttachUnknownTapListsDeclaredTaps(t *testing.T) {
 	_, err = task.Attach(ctx, goav.Branch("late").From(goav.FrameTap("nope")).To(goavtest.NewCollector().Sink()))
 	buildErr := requireBuildError(t, err, errcode.Code("runtime_branch_tap_missing"), "attach runtime branch", "nope",
 		`add .Tap(goav.FrameTap("nope"))`,
-		"call Inspectable.Taps() before attaching",
+		"call task.Taps() before attaching",
 	)
 	if !detailsContain(buildErr.DetailLines(), "audio.decoded") {
 		t.Fatalf("details should list the declared taps, err = %v", err)
