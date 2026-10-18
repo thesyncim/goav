@@ -271,7 +271,7 @@ func (*passthroughResamplerFilter) FlushInto(context.Context, *filter.Result) er
 func (*passthroughResamplerFilter) HandleEvent(context.Context, *av.Event) error    { return nil }
 func (*passthroughResamplerFilter) Close() error                                    { return nil }
 
-runtime := bundle.MustNew(
+var rt = bundle.MustNew(
     runconfig.WithFilter(passthroughResampler, passthroughResamplerFactory{}),
 )
 ```

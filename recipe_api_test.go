@@ -3068,7 +3068,7 @@ func TestRecordRecipeReportsMissingDestinationMuxer(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), `format "mp4"`) ||
 		!strings.Contains(err.Error(), "no muxer is registered") ||
-		!strings.Contains(err.Error(), ".ivf") {
+		!strings.Contains(err.Error(), "this runtime has no muxers") {
 		t.Fatalf("err = %v, want muxer adapter guidance", err)
 	}
 }

@@ -96,6 +96,33 @@ func Video(width, height, frames int) goav.InputSpec {
 		})
 }
 
+// LiveVideo returns an I420 video source that never ends: it emits frames
+// at 30fps PTS (frame n carries luma byte(n), like Video) until the task
+// stops, for tests that attach, switch, or control a running video task. The
+// caller names it because the name is the stream id controls target. The
+// source retries on backpressure and returns cleanly when the task stops.
+func LiveVideo(name string, width, height int) goav.InputSpec {
+	return goav.Source(name,
+		shape.Frame(av.MediaVideo, shape.Video(width, height, av.PixelFormatI420), shape.Realtime(true)),
+		func(ctx context.Context, push source.Push) error {
+			for n := 0; ; n++ {
+				frame := i420Frame(name, width, height, n)
+				for {
+					if ctx.Err() != nil {
+						return nil
+					}
+					_, err := push.Frame(frame)
+					if err == nil {
+						break
+					}
+					if !errors.Is(err, goav.ErrBackpressure) {
+						return nil
+					}
+				}
+			}
+		})
+}
+
 // Packets returns a deterministic packet-domain source: it pushes the given
 // packets in order, then ends the stream. Keyframe flags, PTS/DTS, durations,
 // and payload bytes are honored verbatim — never restamped. Each packet's

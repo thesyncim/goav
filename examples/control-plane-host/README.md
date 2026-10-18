@@ -1,7 +1,7 @@
 # Control-plane host playground
 
 > Demonstrates the control-plane socket host — a governed pre-v1 feature, not
-> the v1 front door. See [V1 scope](../../docs/V1_SCOPE.md).
+> the v1 front door. See [V1 scope](../../docs/COMPATIBILITY.md#v1-scope).
 
 This is a self-contained `goav ctl` playground. The host builds a live
 `goavtest.TestSource` named `fixture` that behaves like a VP8 camera, decodes it

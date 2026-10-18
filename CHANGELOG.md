@@ -11,6 +11,14 @@ methodology changes, and migration notes.
 
 ## Unreleased
 
+- Opus in WebM/Matroska trims its end the standard way: a final packet
+  shorter than its frame carries the rest as DiscardPadding, so players
+  (ffmpeg, browsers) stop where the input did, and the demuxer reads it back.
+  A join's destinations are checked at build like any stream's, and a
+  missing muxer names the containers the runtime can write with their codecs.
+  Asking an input for a kind of stream it lacks names the kinds it has.
+  `Task.Run` returns `ctx.Err()` whenever the context stopped the task.
+
 - Breaking: the builder grammar is internal. `From`, `Job`, `Chain`, `Branch`,
   `BranchSpec`, `Flow`, `JoinArm`, `LegacyMix`/`LegacyComposite`/
   `LegacySelect`/`LegacyJoin` and their stream types, `FrameTap`/`PacketTap`,

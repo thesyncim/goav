@@ -7,9 +7,9 @@ deliberately deferred, planned, and non-goal work, then names the checks that
 must hold before a v1 tag. Every claim cites the test, benchmark, or document
 that backs it, or is marked **roadmap**.
 
-The nearby docs split the work by reader need: `docs/V1_SCOPE.md` names the
-release scope, `docs/REPOSITORY_TRUST.md` records the GitHub metadata and
-release posture, and `docs/GSTREAMER_ALTERNATIVE.md` explains how goav
+The nearby docs split the work by reader need: `docs/COMPATIBILITY.md` names the
+release scope, `docs/RELEASING.md` records the release process and repository
+trust posture, and `docs/GSTREAMER_ALTERNATIVE.md` explains how goav
 relates to GStreamer. Earlier planning artifacts live in `docs/history/`.
 `docs/NORTH_STAR.md` was folded into this document (2026-07-13); its numbered
 evidence map continues below unchanged.
@@ -310,7 +310,7 @@ The checklist below gates the tag. Each item names its current evidence.
 - [x] **Extension cookbook**: `docs/EXTENSION_COOKBOOK.md` maps source,
   destination, transactional writer, filter, codec, join, and control-plane
   host seams to copyable code shapes and example modules.
-- [x] **Composability laws**: `docs/COMPOSABILITY_LAWS.md` maps direct stream
+- [x] **Composability laws**: `docs/OPERATIONS.md` (Composition laws) maps direct stream
   equivalence, flow restraint, Build/Attach parity, Describe/Build equality,
   Explain diagnostics, destination handles, branch isolation, rollback, and
   external parity to executable tests.

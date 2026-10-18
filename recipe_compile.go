@@ -439,6 +439,7 @@ func joinRecipeCompilePhases() recipeCompilePhaseSet {
 			validateJoinRecipePass(),
 		},
 		adapters: []recipeCompilePass{
+			validateJobOutputFormatAdaptersPass(),
 			validateJobInputFormatAdaptersPass(),
 		},
 	}

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io"
 	"os"
 	"strings"
 	"testing"
@@ -443,5 +444,60 @@ func TestValueGrammarJoinOperationsAreNeverDropped(t *testing.T) {
 	_, err = offlineRuntime().Describe(goav.Mix(mixed.Resample(24_000, 1), goavtest.Audio(48_000, 1, []int16{3}).Audio()).To(sink))
 	if !errors.As(err, &buildErr) || buildErr.Code != "stream_invalid" {
 		t.Fatalf("nested join with a resample: err = %v, want stream_invalid", err)
+	}
+}
+
+// TestValueGrammarJoinRefusesAMissingMuxerAtBuild pins that a join's
+// destination is checked like any stream's: with no muxer for the container,
+// Build refuses before a source opens, and the fix names the containers this
+// runtime can write the stream into.
+func TestValueGrammarJoinRefusesAMissingMuxerAtBuild(t *testing.T) {
+	mixed := goav.Mix(goavtest.Audio(48_000, 1, []int16{1}).Audio(), goavtest.Audio(48_000, 1, []int16{2}).Audio())
+	_, err := offlineRuntime().Build(context.Background(), mixed.Encode(codec.Opus()).To(goav.Write("mix.ogg", io.Discard)))
+	var buildErr *goav.BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "destination_muxer_missing" {
+		t.Fatalf("err = %v, want destination_muxer_missing", err)
+	}
+	if !strings.Contains(err.Error(), "webm (opus") {
+		t.Fatalf("fix does not name a container for Opus:\n%v", err)
+	}
+}
+
+// TestValueGrammarMissingStreamKindNamesWhatTheInputHas pins the refusal for
+// asking a video-only file for audio: the fix names the selection the input
+// can satisfy instead of pointing at a stream of the wrong kind.
+func TestValueGrammarMissingStreamKindNamesWhatTheInputHas(t *testing.T) {
+	in := goav.FileInput("in.webm", bytes.NewReader(encodeTestWebM(t, 1)))
+	_, err := offlineRuntime().Build(context.Background(), in.Audio().To(goav.Write("out.webm", io.Discard)))
+	var buildErr *goav.BuildError
+	if !errors.As(err, &buildErr) {
+		t.Fatalf("err = %v, want a BuildError", err)
+	}
+	if !strings.Contains(err.Error(), "the input carries no audio stream; select one it has: input.Video()") ||
+		strings.Contains(err.Error(), ".Audio(goav.Stream") {
+		t.Fatalf("refusal points at the wrong stream kind:\n%v", err)
+	}
+}
+
+// TestRunReportsWhyItStopped pins Task.Run's result: nil when every source
+// ended, the context's error when the context stopped the task — even when
+// the sources themselves return nil on cancellation.
+func TestRunReportsWhyItStopped(t *testing.T) {
+	sink := goav.Sink(component.SinkFunc("out", func(context.Context, component.Message) error { return nil }))
+	if err := offlineRuntime().Run(context.Background(), goavtest.Audio(48_000, 1, []int16{1}).Audio().To(sink)); err != nil {
+		t.Fatalf("finite input: Run = %v, want nil", err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	task, err := offlineRuntime().Build(ctx, goavtest.LiveAudio("live", 48_000, 1).Audio().To(sink))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer task.Close()
+	done := make(chan error, 1)
+	go func() { done <- task.Run(ctx) }()
+	time.Sleep(20 * time.Millisecond)
+	cancel()
+	if err := <-done; !errors.Is(err, context.Canceled) {
+		t.Fatalf("canceled live input: Run = %v, want context.Canceled", err)
 	}
 }

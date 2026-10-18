@@ -1,5 +1,5 @@
 // The fake container: a deterministic muxer+demuxer pair over a trivial
-// length-prefixed framing, so goav.File destinations and goav.FileInput
+// length-prefixed framing, so goav.Write destinations and goav.FileInput
 // sources round-trip without a real container implementation.
 
 package goavtest

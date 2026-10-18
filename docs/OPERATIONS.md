@@ -1,26 +1,22 @@
 # Operations
 
-This is the checked reference for the front-door operation grammar. Use it when
-you know the operation you want and need to answer practical questions: what
-shape does it consume, what does it produce, what can the shape solver insert,
-which errors are expected, and whether the same spelling works in an Output
-attached to a running task with `task.Attach`.
-
-The invariant is the same one used by the planner:
+The checked reference for the front-door grammar. Use it when you know the
+operation you want and need to know what shape it consumes and produces, what
+the shape solver may insert, which errors to expect, and whether the same
+spelling works in an Output attached to a running task. It also owns the
+encoder settings model and the composition laws that keep all of this one
+grammar.
 
 ```text
 input.Video/Audio/Stream() -> operations -> taps -> forks (reused Streams) -> .To(destinations) -> rt.Run
 ```
 
-Operation records are cold-path declarations. They are not per-packet calls.
-`rt.Build`, `rt.Explain`, `rt.Describe`, planned forks, `task.Attach`, and
-`Attachment.Rebranch` all lower those records through the same shape validation
-and runtime registration checks before resources are opened or the live graph
-is mutated.
-
-If you are skimming, start with the scope table, then jump to the row for the
-operation you are using. The "Runtime attach" column is the quickest way to
-see whether a planned recipe spelling also works for a late attached Output.
+Operations are cold-path declarations, not per-packet calls. `rt.Describe`,
+`rt.Explain`, `rt.Build`, planned forks, `task.Attach`, and
+`Attachment.Rebranch` lower them through the same shape validation and
+registration checks before resources open or the live graph changes. Start
+with the scope table, then jump to your operation's row; the "Runtime attach"
+column says whether the spelling also works for a late attached Output.
 
 ## Scopes
 
@@ -52,6 +48,31 @@ refusals" lists the error families a caller should expect to handle.
 | Reuse (fork) | The reused Stream's point. Every Output built from it forks there; the work before the fork runs once. | No single output shape; each fork owns its operations and destinations. | Packet or frame depending on parent and fork operations. | Each fork has its own `.Auto(...)` policy and insertions. Fork-local buffer policy cannot corrupt siblings. | `branch_missing`, `input_count_unsupported`, `output_scope_mixed`, `branch_duplicate`, `branch_tap_missing`, `branch_destination_invalid`, `destination_mux_incompatible`, `decode_config_conflict`. | Planned forks are build-time only. Runtime equivalents attach Outputs from `task.Tap(name)` with the same operations. |
 | `.To(destinations...)` | Final stream shape. Mux/file/URI/writer destinations consume packets; sink destinations can consume frames, packets, or events depending on the sink. | An `Output`: terminal delivery. | Packet for muxed byte destinations; frame/packet/event for sinks. | None. Use `.Decode().To(goav.Sink(...))` for decoded frames, or `.To(goav.Sink(...))` without `.Decode()` for packet sinks. | `output_missing`, `destination_missing`, `destination_invalid`, `destination_duplicate`, `destination_format_unknown`, `destination_muxer_missing`, `destination_mux_incompatible`, `destination_shape_mismatch`, `operation_shape_mismatch`, `encode_missing`. | Runtime attach opens destinations before graph mutation. Outputs given the same destination value share one mux/sink output; same-name copies are rejected; attach failure rolls back opens and graph changes. |
 
+## Encoder settings
+
+`.Encode(spec)` takes a `codec.Spec` built by `codec.Opus`, `VP8`, `VP9`,
+`H264`, `AV1`, or `Codec(id, media, ...)`, each of type
+`func(...codec.Option) codec.Spec`. Options and constructors live in `codec`,
+not the root (there is no `goav.Bitrate`), and come in two tiers:
+
+- **Common typed settings.** `codec.Bitrate`, `FPS`, `KeyframeInterval`,
+  `Profile`, `Level`, and the audio output overrides `Channels`, `SampleRate`,
+  and `ClockRate` fill `codec.CodecSettings` (`Spec.Settings`);
+  `codec.Setting(key, value)` carries adapter-owned string knobs. The CLI and
+  control plane bind the tagged fields, so `goav ctl help attach` and
+  `goav ctl capabilities` are the generated option list; do not copy it into
+  docs.
+- **`codec.Control(func(native any) error)`.** The adapter calls it at open
+  with its concrete native encoder, decoder, or construction config; the
+  caller type-asserts and applies anything the backend exposes, and an error
+  fails the open. Each adapter documents the type it passes.
+
+Structure is shape, not settings: `shape.Spec` owns codec, resolution,
+pixel/sample format, rate, and channels. Constructors set structural defaults
+(`codec.Opus()` is 48 kHz stereo), and the audio overrides above are the only
+settings that change them. The adapter side of this contract is in
+[`ADAPTER_AUTHORING.md`](ADAPTER_AUTHORING.md).
+
 ## Fork And Attach Methods
 
 | Operation | Input shape | Output shape | Allowed domain | Inserted conversions | Primary refusals | Runtime attach |
@@ -65,7 +86,7 @@ refusals" lists the error families a caller should expect to handle.
 
 > **Governed pre-v1.** `Mix`, `Composite`, `Select`, and custom `Join` are
 > implemented, tested, and governed, but they are not part of the v1 front-door
-> promise. See [`V1_SCOPE.md`](V1_SCOPE.md). The same applies to runtime
+> promise. See [`COMPATIBILITY.md`](COMPATIBILITY.md#governed-pre-v1). The same applies to runtime
 > `Attach`/`Detach`/`Rebranch` referenced in the "Runtime attach" column — that
 > column documents behaviour available through `rt.Build` and its `LiveTask`,
 > which is advanced surface beyond the `rt.Run` front door.
@@ -123,3 +144,32 @@ with a stable family, detailed code, operation, node, reason, machine-readable
 details through `Detail(key)`, rendered detail/fix lines, and a sentinel cause
 when one exists. The checked catalog is
 [`docs/ERROR_CATALOG.md`](ERROR_CATALOG.md).
+
+## Composition laws
+
+These laws keep goav one grammar instead of several workflow APIs: a change
+that breaks one adds a workflow surface rather than extending the grammar.
+The tests are the executable evidence; this table is the reviewer's map.
+
+| Law | Evidence |
+|---|---|
+| A stream that never forks lowers exactly like a single `main` branch. | `TestNorthStarDirectChainEqualsExplicitMainBranch`, `TestNorthStarDirectChainEqualsExplicitMainBranchWithTransform` |
+| A reusable operation sequence owns ordered operations only; sources, destinations, runtime, lifecycle, and fork ownership stay outside it. | `TestStoredOperationListsMirrorFlowBranchAndDirectStreamWork`, `TestFlowBranchesStayOnJobAndBuildIntent`, `TestFlowReportsShapeContractAndTaps` |
+| Build-time forks and Outputs added with `task.Attach` use the same operations and lowering. | `TestValueAttachFromTap`, `TestTaskAttachRuntimeFlowCopyBranchFromPacketTap`, `TestTaskAttachRuntimeDecodeResampleEncodeMuxBranchFromPacketTap`, `TestTaskAttachRuntimeFlowCustomEncodeMuxBranch` |
+| `rt.Describe` is the graph shape that `rt.Build` installs. | `TestStreamRecipeDescribeMatchesBuiltGraph`, `TestBranchCompositionRecipeDescribeMatchesBuiltGraph`, `TestJoinDescribeEqualsBuildMix`, `TestJoinDescribeEqualsBuildNestedMix` |
+| A deterministic generated corpus holds the structural laws: Describe equals the built graph, an unforked stream equals a `main` branch, `Attach` installs the same subgraph as a build-time fork, and nested mixes match their flat form where no per-stage clamp occurs. | `TestCompositionLawsHoldForGeneratedRecipes` |
+| `Explain` reports solver insertions and soft preferences without opening resources. | `TestAutoInsertsFormatConvertThroughRegisteredAdapter`, `TestRequireSatisfiedByAutoConversion`, `TestPreferUnsatisfiableIgnoredWithDiagnostic` |
+| Destination identity is the handle: one value reused from several Outputs feeds one mux or sink; separately constructed same-name handles refuse. | `TestValueGrammarMuxesStreamsIntoOneFile`, `TestMuxGroupsBranches`, `TestSameHandleSharesOneMux`, `TestWithKeepsHandleIdentity`, `TestDistinctHandlesWithOneNameAreRefused`, `TestFromMultiInputPlanDedupesMuxDestination`, `TestTaskAttachRuntimeBranchGroupSharesOneSinkHandle`, `TestTaskAttachRuntimeBranchGroupSharesMuxDestination` |
+| Fork-local policy and mutation cannot corrupt siblings. | `TestCopyContractMutableFanoutBranchCannotCorruptSibling`, `TestFromMultiInputChainsKeepIndependentAutoPolicies`, `TestBranchBufferIsNormalBranchAPI` |
+| Runtime attach failures roll back atomically and close prepared components. | `TestTaskAttachRuntimeBranchGroupRollsBackOnLaterFailure`, `TestTaskAttachRollsBackRuntimeFilterWhenGraphConnectFails`, `TestTaskAttachRollsBackRuntimeTerminalStageWhenGraphConnectFails` |
+| External adapters and joins have no private power unavailable to built-ins. | `TestExternalAdaptersComposeThroughPublicGrammar`, `TestExternalJoinComposesThroughPublicGrammar`; every `examples/*` module builds and tests on each commit (ci.yml "Examples modules") |
+| A join arm `.Tap(name)` is an ordinary stream point: one decode feeds both the join and the tap. | `TestJoinArmTapComposes`, `TestMixChainArmTapDecodesOnceAndMixes`, `TestJoinDescribeEqualsBuildTapArm` |
+| A fork's frame transform from a packet-domain parent lowers like the equivalent unforked decoded stream. | `TestBranchAutoInsertMatchesDirectChain` |
+| Nested select routing is explicit: `control.SelectActive(...).AtTap(name)` targets a tap declared at the inner select output; untargeted nested select controls refuse as ambiguous. | `TestNestedSelectRoutingPinned` |
+| Taps owned by a detached branch disappear with it; later attaches use a surviving `task.Taps()` entry or reattach the publishing branch. | `TestAttachAfterSiblingDetachRefusalNamesFix` |
+| Join outputs are ordinary Streams and fan out by reuse into independent forks. | `TestJoinOutputBranches`, `TestMixBranchesFanOutMixedStream`, `TestMixBranchesEncodeAndMonitorIndependently` |
+
+Propose a front-door feature by adding its law here before adding a public
+symbol. If it cannot be stated as input shape, ordered operation, tap, fork,
+destination, task, or runtime attachment behavior, it belongs outside the
+public grammar.

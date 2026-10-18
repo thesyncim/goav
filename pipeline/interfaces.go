@@ -183,8 +183,8 @@ type Stage interface {
 	Close() error
 }
 
-// Sink is a graph terminal node: Handle consumes one delivered message.
-// Returning an error fails the task.
+// Sink is a graph terminal node: Handle consumes one delivered message. Like a
+// stage, a sink is called serially per node. Returning an error fails the task.
 type Sink interface {
 	Name() string
 	Handle(context.Context, *Message) error

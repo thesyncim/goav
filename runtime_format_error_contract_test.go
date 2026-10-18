@@ -79,15 +79,15 @@ func TestRuntimeFormatErrorContracts(t *testing.T) {
 		},
 		{
 			name:      "output muxer",
-			err:       outputMuxerMissingError(output, 1, av.FormatID("ogg"), cause),
+			err:       outputMuxerMissingError(output, 1, av.FormatID("ogg"), "webm (opus, vp8)", cause),
 			code:      outputMuxerMissingCode,
 			operation: "open output",
 			node:      "recording",
 			reason:    `format "ogg" was selected but no muxer is registered`,
 			details:   []string{"name=recording", "uri=file:///tmp/recording.ogg", "format=ogg"},
 			suggestionAny: []string{
-				"ogg muxer",
-				"output container",
+				`muxer for "ogg"`,
+				"webm (opus, vp8)",
 				"WithFormatAdapter",
 			},
 		},
@@ -107,15 +107,15 @@ func TestRuntimeFormatErrorContracts(t *testing.T) {
 		},
 		{
 			name:      "destination muxer",
-			err:       destinationMuxerMissingError("archive", output, av.FormatID("ogg"), cause),
+			err:       destinationMuxerMissingError("archive", output, av.FormatID("ogg"), "webm (opus, vp8)", cause),
 			code:      destinationMuxerMissingCode,
 			operation: "open destination",
 			node:      "archive",
 			reason:    `format "ogg" was selected for destination but no muxer is registered`,
 			details:   []string{"uri=file:///tmp/recording.ogg", "format=ogg"},
 			suggestionAny: []string{
-				"ogg muxer",
-				"destination container",
+				`muxer for "ogg"`,
+				"webm (opus, vp8)",
 				"WithFormatAdapter",
 			},
 		},
@@ -158,9 +158,9 @@ func TestRuntimeFormatErrorsPassThroughUnexpectedCauses(t *testing.T) {
 		{name: "input probe", err: inputFormatProbeError(input, cause)},
 		{name: "input demuxer", err: inputDemuxerMissingError(input, "ogg", cause)},
 		{name: "output probe", err: outputFormatProbeError(output, 0, cause)},
-		{name: "output muxer", err: outputMuxerMissingError(output, 0, "ogg", cause)},
+		{name: "output muxer", err: outputMuxerMissingError(output, 0, "ogg", "", cause)},
 		{name: "destination probe", err: destinationFormatProbeError("archive", output, cause)},
-		{name: "destination muxer", err: destinationMuxerMissingError("archive", output, "ogg", cause)},
+		{name: "destination muxer", err: destinationMuxerMissingError("archive", output, "ogg", "", cause)},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

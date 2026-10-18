@@ -239,21 +239,45 @@ func streamDiagnostic(stream av.Stream, fallbackIndex int) string {
 	return strings.Join(parts, " ")
 }
 
+// streamSelectionSuggestions offers selections that can work: streams of the
+// requested kind by id (or index), or — when the input has none of that kind —
+// the kinds it does carry.
 func streamSelectionSuggestions(selector av.StreamSelector, streams []av.Stream) []string {
 	call, recipeCall := streamOptionCall(selector)
-	suggestions := make([]string, 0, 3)
+	var matching []av.Stream
 	for i := range streams {
-		if streams[i].ID != "" {
-			if recipeCall {
-				suggestions = append(suggestions, call+"(goav.StreamID("+strconv.Quote(string(streams[i].ID))+"))")
-			} else {
-				suggestions = append(suggestions, "select stream id "+strconv.Quote(string(streams[i].ID)))
-			}
-			break
+		if selector.Type == "" || streams[i].Type == selector.Type {
+			matching = append(matching, streams[i])
 		}
 	}
-	if len(streams) != 0 {
-		index := streams[0].Index
+	if len(matching) == 0 && selector.Type != "" {
+		var have []string
+		seen := map[string]bool{}
+		for i := range streams {
+			if c, ok := streamOptionCall(av.StreamSelector{Type: streams[i].Type}); ok && !seen[c] {
+				seen[c] = true
+				have = append(have, "input"+c+"()")
+			}
+		}
+		if len(have) == 0 {
+			return []string{"the input carries no " + string(selector.Type) + " stream; check that it is the input you meant"}
+		}
+		return []string{"the input carries no " + string(selector.Type) + " stream; select one it has: " + strings.Join(have, " or ")}
+	}
+	suggestions := make([]string, 0, 2)
+	for i := range matching {
+		if matching[i].ID == "" {
+			continue
+		}
+		if recipeCall {
+			suggestions = append(suggestions, call+"(goav.StreamID("+strconv.Quote(string(matching[i].ID))+"))")
+		} else {
+			suggestions = append(suggestions, "select stream id "+strconv.Quote(string(matching[i].ID)))
+		}
+		break
+	}
+	if len(matching) != 0 {
+		index := matching[0].Index
 		if recipeCall {
 			suggestions = append(suggestions, call+"(goav.StreamIndex("+strconv.Itoa(index)+"))")
 		} else {

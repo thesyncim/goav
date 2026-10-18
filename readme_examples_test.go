@@ -48,7 +48,7 @@ func TestReadmeGoExamplesCompile(t *testing.T) {
 				"\t\"github.com/thesyncim/goav/bundle\"\n" +
 				"\t\"github.com/thesyncim/goav/codec\"\n" +
 				")\n\n" +
-				"func compileReadmeBlock(ctx context.Context, in io.Reader, out io.Writer) error {\n" +
+				"func compileReadmeBlock(ctx context.Context, src io.Reader, dst, hdFile, sdFile io.Writer) error {\n" +
 				body +
 				"\treturn err\n" +
 				"}\n\n" +

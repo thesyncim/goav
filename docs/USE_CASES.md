@@ -56,7 +56,7 @@ err := rt.Run(ctx, mic.Audio().
     Decode().
     Resample(16_000, codec.Mono).
     Encode(codec.Opus(codec.Bitrate(48_000))).
-    To(goav.Write("preview.ogg", preview)))
+    To(goav.Write("preview.webm", preview)))
 ```
 
 When a media type matches several streams, the build error lists candidates and
@@ -265,8 +265,8 @@ in := goav.Input(rtpav.Receive(audio, rtpav.WithName("audio"), rtpav.WithCodec(c
 decoded := in.Audio().Decode()
 
 err := rt.Run(ctx,
-    voice(decoded).As("voice").To(goav.Write("voice.ogg", voiceFile)),
-    archive(decoded).As("archive").To(goav.Write("archive.ogg", archiveFile)),
+    voice(decoded).As("voice").To(goav.Write("voice.webm", voiceFile)),
+    archive(decoded).As("archive").To(goav.Write("archive.webm", archiveFile)),
 )
 ```
 
@@ -294,7 +294,7 @@ Attach a late Output from a tap; encode from frame taps, copy (no `.Decode()`)
 or decode from packet taps:
 
 ```go
-recording := goav.Write("recording.ogg", file)
+recording := goav.Write("recording.webm", file)
 
 recordingHandle, err := task.Attach(ctx,
     task.Tap("audio.decoded").

@@ -36,7 +36,7 @@ func (b *builder) openDestinationOutput(ctx context.Context, destination destina
 		formatID = outputProbe.Format
 	}
 	if output.Writer != nil {
-		// goav.File close contract: a writer that also implements io.Closer is
+		// goav.Write close contract: a writer that also implements io.Closer is
 		// closed exactly once when the destination finalizes; a plain writer
 		// stays the caller's to close.
 		if closer, ok := output.Writer.(io.WriteCloser); ok {
@@ -76,11 +76,11 @@ func (b *builder) openMuxStage(ctx context.Context, output format.Output, index 
 	}
 	muxFactory, err := b.runtime.formats.MuxerFactory(formatID)
 	if err != nil {
-		return nil, outputMuxerMissingError(output, index, formatID, err)
+		return nil, outputMuxerMissingError(output, index, formatID, containerChoices(b.runtime.formats), err)
 	}
 	muxer, err := muxFactory.NewMuxer(ctx, formatID)
 	if err != nil {
-		return nil, outputMuxerMissingError(output, index, formatID, err)
+		return nil, outputMuxerMissingError(output, index, formatID, containerChoices(b.runtime.formats), err)
 	}
 	if err := muxer.Open(ctx, output, streams, format.OpenOptions{
 		Realtime: b.runtime.realtime || output.Realtime,

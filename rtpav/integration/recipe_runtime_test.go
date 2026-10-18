@@ -336,7 +336,7 @@ func TestRecordRecipeCopyToTransactionalWriterDestinationRuns(t *testing.T) {
 	}
 }
 
-// TestFileDestinationClosesCloserWriterOnce pins the goav.File close contract:
+// TestFileDestinationClosesCloserWriterOnce pins the goav.Write close contract:
 // a writer that also implements io.Closer is closed exactly once when the
 // destination finalizes, while plain writers stay the caller's to close.
 func TestFileDestinationClosesCloserWriterOnce(t *testing.T) {

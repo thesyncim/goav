@@ -748,6 +748,7 @@ func TestRecipeCompilePhaseSequencesArePinned(t *testing.T) {
 				"validate join recipe",
 				"validate stream rules",
 				"validate recipe attachments",
+				"validate job output format adapters",
 				"validate job input format adapters",
 				"emit graph plan spec",
 				"validate mux compatibility",

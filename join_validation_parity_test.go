@@ -19,7 +19,7 @@ func TestJoinOutputFormatValidationParity(t *testing.T) {
 		To(Write("out.unknown", io.Discard)).
 		UseRuntime(mustNew(WithEncoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &encodeTestEncoderFactory{encoder: &encodeTestEncoder{}}))).
 		Build(context.Background())
-	assertJoinParityBuildError(t, err, outputFormatUnknownCode)
+	assertJoinParityBuildError(t, err, destinationFormatUnknownCode)
 }
 
 func TestJoinDestinationShapeValidationParity(t *testing.T) {
