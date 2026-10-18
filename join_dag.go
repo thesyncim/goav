@@ -198,7 +198,7 @@ func lowerJoinNode(ctx context.Context, service *builder, graph pipeline.Graph, 
 		}
 		return p.joined, addComposeStage(graph, stage, buffer, node.inputs)
 	case composeJoinEncode:
-		_, encoded, err := compileEncodeStage(ctx, rt, graph, node.inputs[0], *p.encode, p.encodeConfig)
+		_, encoded, err := compileEncodeStage(ctx, service, graph, node.inputs[0], *p.encode, p.encodeConfig)
 		return encoded, err
 	case composeJoinDestination:
 		destination := p.destinations[node.output]

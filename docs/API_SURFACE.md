@@ -198,7 +198,10 @@ implement, with the executable evidence:
   `SelectActive`, ...) are core vocabulary, but the control value is opaque:
   payload-bearing constructors validate immediately, and callers target copies
   with `.AtTap(...)` or `.At(...)`. In-process stages still use
-  `Deliver(event).AtTap(name)` to receive arbitrary custom events. Untargeted
+  `Deliver(event).AtTap(name)` to receive arbitrary custom events. `SetBitrate(stream, bps)`
+  and `Keyframe(stream)` reach the encoder that emits `stream`, so a ladder rung
+  or simulcast layer is addressed by its branch name; a source stream id reaches
+  every encoder of that source. Untargeted
   controls only infer a destination when exactly one valid target exists;
   otherwise callers use `.AtTap(...)`, `.At(...)`, `source=...`, or `node=...`.
   Hosts that need CLI access import `ctlserver`, add explicit `CommandSpec` rows for

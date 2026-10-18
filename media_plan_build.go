@@ -84,6 +84,7 @@ func buildGraphPlanTask(ctx context.Context, gp graphPlan) (LiveTask, error) {
 		return nil, err
 	}
 	task := newTaskWithRootDestinations(graph, runtime, gp.work.Destinations, service.destinationTxs...)
+	task.encoders = service.encoders
 	task.timeline = timeline
 	runtime.qos.attach(task)
 	task.startQoSPolicy(runtime.qosPolicy)

@@ -13,16 +13,16 @@ import (
 	"github.com/thesyncim/goav/pipeline"
 )
 
-func compileEncodeStage(ctx context.Context, runtime *runtime, graph pipeline.Graph, upstream pipeline.NodeRef, request encodeRequest, config codec.EncodeConfig) (pipeline.NodeRef, av.Stream, error) {
-	return compileEncodeStageNamed(ctx, runtime, graph, "", upstream, request, config, runtime.buffer)
+func compileEncodeStage(ctx context.Context, service *builder, graph pipeline.Graph, upstream pipeline.NodeRef, request encodeRequest, config codec.EncodeConfig) (pipeline.NodeRef, av.Stream, error) {
+	return compileEncodeStageNamed(ctx, service, graph, "", upstream, request, config, service.runtime.buffer)
 }
 
 func (b *builder) compileEncodeStageNamed(ctx context.Context, graph pipeline.Graph, name string, upstream pipeline.NodeRef, request encodeRequest, config codec.EncodeConfig, buffer pipeline.BufferPolicy) (pipeline.NodeRef, av.Stream, error) {
-	return compileEncodeStageNamed(ctx, b.runtime, graph, name, upstream, request, config, buffer)
+	return compileEncodeStageNamed(ctx, b, graph, name, upstream, request, config, buffer)
 }
 
-func compileEncodeStageNamed(ctx context.Context, runtime *runtime, graph pipeline.Graph, name string, upstream pipeline.NodeRef, request encodeRequest, config codec.EncodeConfig, buffer pipeline.BufferPolicy) (pipeline.NodeRef, av.Stream, error) {
-	stage, stream, err := (&builder{runtime: runtime}).newEncodeStageNamed(ctx, name, request, config)
+func compileEncodeStageNamed(ctx context.Context, service *builder, graph pipeline.Graph, name string, upstream pipeline.NodeRef, request encodeRequest, config codec.EncodeConfig, buffer pipeline.BufferPolicy) (pipeline.NodeRef, av.Stream, error) {
+	stage, stream, err := service.newEncodeStageNamed(ctx, name, request, config)
 	if err != nil {
 		return "", av.Stream{}, err
 	}
@@ -77,6 +77,7 @@ func (b *builder) newEncodeStageNamed(ctx context.Context, name string, request 
 		}
 		return nil, av.Stream{}, err
 	}
+	b.encoders = append(b.encoders, stage)
 	return stage, reportedStream(config.Stream, encoder), nil
 }
 

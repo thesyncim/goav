@@ -129,11 +129,14 @@ func (r *runtime) newBuilder() *builder {
 type builder struct {
 	runtime        *runtime
 	destinationTxs []*destinationTransaction
-	requireRunOK   bool
-	sources        []pipeline.Source
-	stages         []pipeline.Stage
-	sinks          []pipeline.Sink
-	routes         []pipeline.Route
+	// encoders are the encode stages this build opened, so stream-addressed
+	// encoder controls reach the encoder producing the stream.
+	encoders     []*codec.EncoderStage
+	requireRunOK bool
+	sources      []pipeline.Source
+	stages       []pipeline.Stage
+	sinks        []pipeline.Sink
+	routes       []pipeline.Route
 }
 
 func (b *builder) newGraph(_ context.Context) (pipeline.Graph, error) {
@@ -353,9 +356,12 @@ type task struct {
 	// timeline is the task-wide clock service every paced source sleeps on;
 	// control.Rate scales it so all paced delivery re-anchors together. Nil
 	// only for tasks assembled outside the build paths (unit-test graphs).
-	timeline           *timeline
-	destinations       []*destinationTransaction
-	rootDestinations   []workDestination
+	timeline         *timeline
+	destinations     []*destinationTransaction
+	rootDestinations []workDestination
+	// encoders are the encode stages the build opened; stream-addressed
+	// encoder controls go to the one that produces the stream.
+	encoders           []*codec.EncoderStage
 	taps               []snapshot.Tap
 	explainReport      plan.Report
 	explainReportReady bool

@@ -150,7 +150,7 @@ func TestCompileEncodeStageNamedConnectsNamedStage(t *testing.T) {
 	}
 	config := pcmEncodeConfig()
 	config.Stream = av.Stream{ID: "encoded", Type: av.MediaAudio, Codec: av.CodecParameters{ID: av.CodecPCM, Type: av.MediaAudio}}
-	ref, _, err := compileEncodeStageNamed(context.Background(), rt, graph, "encode-contract", sourceRef, encodeRequest{selector: testSelectAudio(), config: config}, config, rt.buffer)
+	ref, _, err := compileEncodeStageNamed(context.Background(), &builder{runtime: rt}, graph, "encode-contract", sourceRef, encodeRequest{selector: testSelectAudio(), config: config}, config, rt.buffer)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -181,7 +181,7 @@ func TestCompileEncodeStageNamedClosesStageWhenGraphRefusesIt(t *testing.T) {
 	}
 	config := pcmEncodeConfig()
 	config.Stream = av.Stream{ID: "encoded", Type: av.MediaAudio, Codec: av.CodecParameters{ID: av.CodecPCM, Type: av.MediaAudio}}
-	_, _, err = compileEncodeStageNamed(context.Background(), rt, graph, "encode-buffered", sourceRef, encodeRequest{selector: testSelectAudio(), config: config}, config, rt.buffer)
+	_, _, err = compileEncodeStageNamed(context.Background(), &builder{runtime: rt}, graph, "encode-buffered", sourceRef, encodeRequest{selector: testSelectAudio(), config: config}, config, rt.buffer)
 	if !errors.Is(err, pipeline.ErrBufferedEdgesUnsupported) {
 		t.Fatalf("compileEncodeStageNamed() error = %v, want buffered-edge refusal", err)
 	}
