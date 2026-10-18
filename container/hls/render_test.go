@@ -53,3 +53,17 @@ func TestHintCrossesSegments(t *testing.T) {
 		t.Fatalf("hint at the target = %s, want the next segment's first part", got)
 	}
 }
+
+func TestRelativeURI(t *testing.T) {
+	for _, tc := range []struct{ dir, target, want string }{
+		{"", "hd/index.m3u8", "hd/index.m3u8"},
+		{"hd/", "sd/index.m3u8", "../sd/index.m3u8"},
+		{"hd/", "hd/other.m3u8", "other.m3u8"},
+		{"a/b/", "a/c/x.m3u8", "../c/x.m3u8"},
+		{"live/", "live.m3u8", "../live.m3u8"},
+	} {
+		if got := relativeURI(tc.dir, tc.target); got != tc.want {
+			t.Errorf("relativeURI(%q, %q) = %q, want %q", tc.dir, tc.target, got, tc.want)
+		}
+	}
+}

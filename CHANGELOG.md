@@ -11,6 +11,16 @@ methodology changes, and migration notes.
 
 ## Unreleased
 
+- `goav run --serve ADDR` packages a program's `hls` outputs into an HLS
+  server and serves it while the program runs, so one command is an LL-HLS
+  origin: `goav run --serve :8080 '... ! hls live.m3u8 parts=250ms window=6'`.
+  The `hls` element takes `parts=`; programs compiled with `launch.HLS(server)`
+  package into a server instead of their files. Packagers store a playlist's
+  files beside it and name them relative to it, so a ladder lays out as
+  `master.m3u8`, `hd/index.m3u8`, `sd/index.m3u8`; rendition reports and the
+  multivariant playlist use relative URIs, and `hls.Dir` creates the
+  directories.
+
 - Low-latency HLS. `hls.Parts(d)` publishes each segment in parts of at most
   d as well (`EXT-X-PART`, with `EXT-X-PART-INF`, `EXT-X-SERVER-CONTROL`,
   `EXT-X-PRELOAD-HINT`, and `EXT-X-PROGRAM-DATE-TIME`), so players run within a

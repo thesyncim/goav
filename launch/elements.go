@@ -10,6 +10,7 @@ import (
 
 	"github.com/thesyncim/goav"
 	"github.com/thesyncim/goav/codec"
+	"github.com/thesyncim/goav/container/hls"
 	"github.com/thesyncim/goav/pipeline"
 )
 
@@ -134,6 +135,7 @@ type Option func(*config)
 type config struct {
 	files    FileSystem
 	task     goav.LiveTask
+	hls      *hls.Server
 	elements map[string]*element
 	err      error
 }

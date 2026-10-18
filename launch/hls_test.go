@@ -75,11 +75,12 @@ testsrc audio duration=2s ! encode opus ! hls out/live.m3u8 segment=1s`, launch.
 
 func TestHLSElementRefusals(t *testing.T) {
 	for program, want := range map[string]string{
-		`testsrc video ! encode vp8 ! hls live.m3u8`:           "may not write files",
-		`testsrc video ! encode vp8 ! hls live.m3u8 window=-1`: "lists no segments",
+		`testsrc video ! encode vp8 ! hls live.m3u8`:             "may not write files",
+		`testsrc video ! encode vp8 ! hls live.m3u8 window=-1`:   "lists no segments",
+		`testsrc video ! encode vp8 ! hls live.m3u8 parts=200ms`: "needs a server",
 	} {
 		var options []launch.Option
-		if strings.Contains(program, "window") {
+		if strings.Contains(program, "window") || strings.Contains(program, "parts") {
 			options = append(options, launch.Files(newMemFS()))
 		}
 		if _, err := launch.Compile(program, options...); err == nil || !strings.Contains(err.Error(), want) {

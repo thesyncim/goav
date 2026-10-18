@@ -3,6 +3,7 @@ package hls
 import (
 	"fmt"
 	"math"
+	"path"
 	"strings"
 	"sync"
 
@@ -24,6 +25,9 @@ import (
 type Ladder struct {
 	name  string
 	store Store
+	// dir is the multivariant playlist's store directory, which its
+	// variants' URIs are relative to.
+	dir string
 
 	mu        sync.Mutex
 	variants  []*variant
@@ -47,7 +51,8 @@ type variant struct {
 // NewLadder returns a ladder writing the multivariant playlist name to
 // store, beside its variants' playlists.
 func NewLadder(name string, store Store) *Ladder {
-	return &Ladder{name: name, store: store}
+	dir, _ := path.Split(name)
+	return &Ladder{name: name, store: store, dir: dir}
 }
 
 // Variant returns the packager of one rendition, writing its playlist and
@@ -118,7 +123,7 @@ func (l *Ladder) render() string {
 		if v.width != 0 && v.height != 0 {
 			fmt.Fprintf(&b, ",RESOLUTION=%dx%d", v.width, v.height)
 		}
-		fmt.Fprintf(&b, "\n%s\n", v.playlist)
+		fmt.Fprintf(&b, "\n%s\n", relativeURI(l.dir, v.playlist))
 	}
 	return b.String()
 }
