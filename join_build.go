@@ -2,9 +2,7 @@ package goav
 
 import (
 	"github.com/thesyncim/goav/av"
-	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/errcode"
-	"github.com/thesyncim/goav/internal/recipeir"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/shape"
 )
@@ -31,147 +29,6 @@ func joinStagePreallocDepth(rt *Runtime) int {
 		return joinStagePreallocDepthLimit
 	}
 	return depth
-}
-
-// joinSpec is the one internal N→1 model behind Mix/Composite/Select: N arms
-// converge into one stage and continue like any other stream point — to one or
-// more destinations (optionally through an encoder), out to planned branches,
-// and past named taps on the joined stream.
-type joinSpec struct {
-	kind   joinKind
-	arms   []recipeArm
-	dests  []Destination
-	encode *codec.Spec // mix/composite only; nil delivers the raw join output
-	// operations are joined-stream annotations (Auto/Require/Prefer) that run
-	// before the terminal encode or planned branches.
-	operations []operationSpec
-	// taps name the joined stream as stable attach points, installed on the task
-	// exactly like chain taps (visible in task.Taps(), runtime-attachable).
-	taps []tapRef
-	// branches fan the joined stream out to planned branch chains, each carrying
-	// its own destinations; when set, dest/encode are unused.
-	branches []branchRecipe
-	// sync selects arm alignment for the convergence stage (Mix/Composite):
-	// arrival order by default, PTS alignment via .SyncByPTS(). Select needs no
-	// sync — it forwards exactly one live arm.
-	sync joinSyncMode
-	// custom carries a caller-supplied convergence stage (goav.Join); its
-	// joinProfile is derived from the stage's declared shape.Contract instead
-	// of the built-in table, and kind is the join's validated name.
-	custom *customJoinSpec
-}
-
-// recipeArm is one source arm of a join: an ordinary source chain such as
-// From(x).Audio(), another join whose joined output feeds the outer join —
-// LegacyMix(LegacyMix(a, b), c) sub-mixes two arms and mixes the result with a third, and
-// LegacySelect(LegacyMix(a, b), LegacyMix(c, d)) switches between two live mixes — or a tap reference
-// naming a tap an earlier arm declared, so one decoded stream converges
-// mid-graph without opening its source again. It is a sealed interface: only
-// goav builders implement it.
-type recipeArm interface {
-	// joinArm resolves the arm to its internal spec; unexported so the set of
-	// arm shapes stays closed (source chains, nested joins, and tap refs).
-	joinArm() joinArmSpec
-}
-
-// joinArmSpec is the resolved arm behind the sealed JoinArm interface:
-// exactly one of captured source-chain facts, join (a nested join), or tap
-// (a reference to a tap declared by an earlier arm) is set. region carries the
-// arm's composite placement, when declared.
-type joinArmSpec struct {
-	chainInput   InputSpec
-	chainInputOK bool
-	// chainSelector is the chain's selection; an arm whose streams are known
-	// only once it opens binds by it.
-	chainSelector   av.StreamSelector
-	chainErr        error
-	chainOperations []operationSpec
-	join            *joinSpec
-	tap             *tapRef
-	region          *compositeRegion
-}
-
-// joinTreeSnapshot is the planner-facing join tree captured at the recipe
-// boundary. It preserves the recursive arm shape and concrete resource handles
-// needed by the current lowerer while removing planner-time calls back into
-// fluent arm builders.
-type joinTreeSnapshot struct {
-	kind       joinKind
-	arms       []joinArmSnapshot
-	dests      []Destination
-	encode     *codec.Spec
-	operations []operationSpec
-	taps       []tapRef
-	branches   []joinBranchSnapshot
-	sync       joinSyncMode
-	custom     *customJoinSpec
-}
-
-// joinBranchSnapshot is the planner-facing capture of one join fanout branch:
-// the immutable recipe-IR facts (name, media, anchor, operations) plus the
-// concrete destination handles that stay outside the IR by design, and the
-// builder-construction error captured at snapshot time. The join planner reads
-// it instead of the mutable BranchSpec.
-type joinBranchSnapshot struct {
-	recipe       recipeir.JoinBranch
-	destinations []destinationRef
-	construction error
-}
-
-// joinBranchSnapshotsFromSpecs captures the join fanout branches at the
-// builder→IR boundary: each branch's recipe facts become immutable recipe IR,
-// its concrete destinations are cloned as the IR exception, and its
-// builder-construction error is validated here (the only place that reads the
-// mutable BranchSpec) so the planner never has to.
-func joinBranchSnapshotsFromSpecs(branches []branchRecipe, selected av.MediaType) []joinBranchSnapshot {
-	if len(branches) == 0 {
-		return nil
-	}
-	out := make([]joinBranchSnapshot, 0, len(branches))
-	for i := range branches {
-		out = append(out, joinBranchSnapshot{
-			recipe: recipeir.JoinBranch{
-				Name:       branches[i].name,
-				Media:      branches[i].media,
-				Source:     recipeir.TapRef{Name: branches[i].source.tap, Domain: branches[i].source.tapDomain},
-				Operations: recipeIROperationsFromSpecs(branches[i].operations),
-			},
-			destinations: append([]destinationRef(nil), branches[i].destinations...),
-			construction: validateBranchConstruction(i, selected, branches[i]),
-		})
-	}
-	return out
-}
-
-func cloneJoinBranchSnapshots(branches []joinBranchSnapshot) []joinBranchSnapshot {
-	if len(branches) == 0 {
-		return nil
-	}
-	out := make([]joinBranchSnapshot, len(branches))
-	for i := range branches {
-		out[i] = joinBranchSnapshot{
-			recipe: recipeir.JoinBranch{
-				Name:       branches[i].recipe.Name,
-				Media:      branches[i].recipe.Media,
-				Source:     branches[i].recipe.Source,
-				Operations: append([]recipeir.Operation(nil), branches[i].recipe.Operations...),
-			},
-			destinations: append([]destinationRef(nil), branches[i].destinations...),
-			construction: branches[i].construction,
-		}
-	}
-	return out
-}
-
-type joinArmSnapshot struct {
-	chainInput      InputSpec
-	chainInputOK    bool
-	chainSelector   av.StreamSelector
-	chainErr        error
-	chainOperations []operationSpec
-	join            *joinTreeSnapshot
-	tap             *tapRef
-	region          *compositeRegion
 }
 
 // joinProfile is the per-kind configuration consulted by the join planner.
@@ -263,116 +120,6 @@ func resolveJoinProfile(tree *joinTreeSnapshot) (joinProfile, error) {
 	return profile, nil
 }
 
-// newJoinJob lowers public convergence sugar into the one joinSpec carried by
-// Job, so .To/Build/Run are shared by every join kind.
-func newJoinJob(kind joinKind, spec joinSpec) *recipeJob {
-	name := string(kind)
-	job := newJob(name)
-	if len(spec.arms) < 2 {
-		job.setErr(joinInputsError(name, name))
-		return job
-	}
-	spec.kind = kind
-	job.join = &spec
-	return job
-}
-
-// newJoinBranchesJob lowers a join that fans out to planned branches instead of
-// a single destination. The branch specs are the same goav.Branch values an
-// ordinary stream chain accepts; each carries its own destinations, so the Job
-// needs no .To. A join-level encoder is terminal exactly like a stream encoder,
-// so .Encode(...).Branches(...) is rejected with the chain's error.
-func newJoinBranchesJob(kind joinKind, spec joinSpec, branches []branchRecipe) *recipeJob {
-	name := string(kind)
-	job := newJoinJob(kind, spec)
-	if job.err != nil {
-		return job
-	}
-	if len(branches) == 0 {
-		job.setErr(branchMissingError(name))
-		return job
-	}
-	if spec.encode != nil {
-		job.setErr(branchEncodeParentOperationError(name, *spec.encode))
-		return job
-	}
-	job.join.branches = branches
-	return job
-}
-
-// joinArmInputs captures the arm input attachments aligned with the intent's
-// inputs (stopping at the first malformed arm, which newJoinPlan rejects).
-func joinArmInputs(tree *joinTreeSnapshot) []InputSpec {
-	return joinLeafInputSpecs(tree)
-}
-
-// joinLeafInputSpecs returns every leaf arm's InputSpec in depth-first arm
-// order — the order the compile state's inputs, probes, and stream sets follow
-// and planJoinTree consumes. Tap arms open no input and are skipped. It stops
-// at the first malformed arm, which planJoinTree rejects with a precise error.
-func joinLeafInputSpecs(tree *joinTreeSnapshot) []InputSpec {
-	if tree == nil {
-		return nil
-	}
-	out := make([]InputSpec, 0, len(tree.arms))
-	var walk func(t *joinTreeSnapshot) bool
-	walk = func(t *joinTreeSnapshot) bool {
-		for _, resolved := range t.arms {
-			switch {
-			case resolved.join != nil:
-				if !walk(resolved.join) {
-					return false
-				}
-			case resolved.tap != nil:
-				// A tap arm attaches to an already-open stream.
-			case resolved.chainInputOK:
-				out = append(out, resolved.chainInput)
-			default:
-				return false
-			}
-		}
-		return true
-	}
-	walk(tree)
-	return out
-}
-
-// joinOutputAttachments captures the join's destination attachments for the
-// compile state (format resolution); newJoinPlan re-validates them.
-func joinOutputAttachments(spec *joinSpec) ([]destinationSpec, []string) {
-	if len(spec.branches) == 0 {
-		outputs := make([]destinationSpec, 0, len(spec.dests))
-		names := make([]string, 0, len(spec.dests))
-		for i := range spec.dests {
-			outputs = append(outputs, spec.dests[i].spec)
-			names = append(names, "")
-		}
-		return outputs, names
-	}
-	named, _ := joinBranchNamedDestinations(spec.branches)
-	outputs := make([]destinationSpec, 0, len(named))
-	names := make([]string, 0, len(named))
-	for i := range named {
-		outputs = append(outputs, named[i].output)
-		names = append(names, named[i].name)
-	}
-	return outputs, names
-}
-
-// joinBranchNamedDestinations collects the branch destinations through the same
-// dedupe the planned-branch path uses.
-func joinBranchNamedDestinations(branches []branchRecipe) ([]namedDestinationSpec, error) {
-	var destinations []namedDestinationSpec
-	for i := range branches {
-		updated, err := appendNamedBranchDestinations(destinations, branches[i].destinations...)
-		if err != nil {
-			return nil, err
-		}
-		destinations = updated
-	}
-	return destinations, nil
-}
-
 // joinErrorCode derives a join refusal code from the join kind and family:
 // joinErrorCode("mix", "arm") == errcode.Code("mix_arm"). Built-in and custom
 // profile codes share the same suffix families; nested joins of a repeated kind
@@ -380,4 +127,18 @@ func joinBranchNamedDestinations(branches []branchRecipe) ([]namedDestinationSpe
 // internal unknown-join-kind invariant.
 func joinErrorCode(kind string, family string) errcode.Code {
 	return errcode.Code(kind + "_" + family)
+}
+
+// joinTreeSnapshot is the join a planner reads: its kind, arm alignment, and
+// a custom join's stage.
+type joinTreeSnapshot struct {
+	kind   joinKind
+	sync   joinSyncMode
+	custom *customJoinSpec
+}
+
+// joinArmSnapshot is what a join's profile reads of one arm: its canvas
+// position.
+type joinArmSnapshot struct {
+	region *compositeRegion
 }

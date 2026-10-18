@@ -136,11 +136,6 @@ func (t *task) planAttachBranchSteps(ctx context.Context, input runtimeAttachBra
 	destinations := input.branch.destinations
 	branchName := firstNonEmpty(branch.Name, "branch")
 	currentShape := runtimeBranchAnchorShape(input.anchor)
-	if branch.Media != "" && currentShape.MediaKind != "" {
-		if err := validateChainMedia("attach runtime branch", branchName, currentShape.MediaKind, chainSpec{name: branch.Name, media: branch.Media}); err != nil {
-			return nil, err
-		}
-	}
 	if err := validateAttachBranchShapeContract(input, currentShape); err != nil {
 		return nil, err
 	}
@@ -214,7 +209,6 @@ func (t *task) planAttachBranchSteps(ctx context.Context, input runtimeAttachBra
 			currentShape = shape.Merge(currentShape, operation.Shape)
 			out = attachStepShape(currentShape, patchShape)
 		case plan.OpTransform:
-			transformSpec := rootTransformFromRecipeIR(operation.Transform)
 			if recipeIRTransformEmpty(operation.Transform) {
 				out = recipeIROperationOutputShape(patchShape, operation)
 				break
@@ -237,11 +231,11 @@ func (t *task) planAttachBranchSteps(ctx context.Context, input runtimeAttachBra
 				return fail(recipeTransformAdapterError("attach runtime branch", branchIntent, transformName, err))
 			}
 			if desc, err := t.runtime.filters.Descriptor(transformName); err == nil {
-				if err := validateTransformAdapterDescriptor("attach runtime branch", branchIntent, transformSpec, transformName, desc); err != nil {
+				if err := validateRecipeIRTransformAdapterDescriptor("attach runtime branch", branchIntent, operation.Transform, transformName, desc); err != nil {
 					return fail(err)
 				}
 			}
-			transform, err := runtimeBranchTransform(branch.Name, currentStream, transformSpec, transformIndex)
+			transform, err := runtimeBranchTransform(branch.Name, currentStream, operation.Transform, transformIndex)
 			if err != nil {
 				return fail(err)
 			}

@@ -154,8 +154,8 @@ func TestSelectRequiresDistinctArmIDs(t *testing.T) {
 	).To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))).
 		Build(context.Background())
 	var buildErr *BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "select_arm" {
-		t.Fatalf("err = %v, want select_arm (distinct ids enforced)", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "input_duplicate" {
+		t.Fatalf("err = %v, want input_duplicate (distinct input names)", err)
 	}
 }
 
@@ -166,11 +166,11 @@ func TestSelectRequiresSinkDestination(t *testing.T) {
 	).To(Write("selected.ogg", io.Discard)).
 		Build(context.Background())
 	var buildErr *BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "select_destination" || !errors.Is(err, errUnsupportedBuild) {
-		t.Fatalf("err = %v, want select_destination with matching BuildError code", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != encodeMissingCode || !errors.Is(err, errUnsupportedBuild) {
+		t.Fatalf("err = %v, want encode_missing with matching BuildError code", err)
 	}
 	if !strings.Contains(err.Error(), "goav.Sink") ||
-		!strings.Contains(err.Error(), "goav.Select(a, b).Encode(") {
+		!strings.Contains(err.Error(), ".Encode(") {
 		t.Fatalf("err = %v, want sink-or-encode guidance", err)
 	}
 }

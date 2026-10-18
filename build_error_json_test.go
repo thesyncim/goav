@@ -29,20 +29,19 @@ func commonBuildErrorCases() []commonBuildError {
 	sink := func() Destination {
 		return Sink(component.SinkFunc("sink", func(context.Context, component.Message) error { return nil }))
 	}
-	describe := func(j *recipeJob) func() error {
-		return func() error { _, err := j.Describe(); return err }
+	var rt *Runtime
+	describe := func(outs ...Output) func() error {
+		return func() error { _, err := rt.Describe(outs...); return err }
 	}
-	build := func(j *recipeJob) func() error {
-		return func() error { _, err := j.Build(context.Background()); return err }
+	build := func(outs ...Output) func() error {
+		return func() error { _, err := rt.Build(context.Background(), outs...); return err }
 	}
 	return []commonBuildError{
-		{"unconstructed-job", build(&recipeJob{})},
-		{"input-missing", describe(recipeFrom().Copy().To(Write("out.ivf", out())))},
-		{"encode-missing", describe(recipeFrom(FileInput("in.ivf", reader())).Video().Decode().To(Write("out.mp4", out())))},
-		{"copy-after-decode", describe(recipeFrom(FileInput("in.ivf", reader())).Video().Decode().Copy().To(Write("out.ivf", out())))},
-		{"resize-on-copy", describe(recipeFrom(FileInput("in.ivf", reader())).Video().Copy().Resize(1280, 720).To(sink()))},
-		{"packet-tap-at-frame", describe(recipeFrom(FileInput("in.ivf", reader())).Video().Decode().Tap(packetTapRef("frames")).To(sink()))},
-		{"runtime-missing", build(recipeFrom(FileInput("in.ogg", reader())).Audio().Decode().Encode(codec.Opus(codec.Bitrate(96_000))).To(Write("out.ogg", out())))},
+		{"zero-stream", build(Stream{}.To(sink()))},
+		{"input-missing", describe(InputSpec{}.Video().To(Write("out.ivf", out())))},
+		{"encode-missing", describe(FileInput("in.ivf", reader()).Video().Decode().To(Write("out.mp4", out())))},
+		{"resize-on-packets", describe(FileInput("in.ivf", reader()).Video().Resize(1280, 720).As("thumb").To(sink()))},
+		{"runtime-missing", build(FileInput("in.ogg", reader()).Audio().Decode().Encode(codec.Opus(codec.Bitrate(96_000))).To(Write("out.ogg", out())))},
 	}
 }
 

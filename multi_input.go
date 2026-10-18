@@ -27,11 +27,7 @@ type inputStreamSet struct {
 // (realtime) input codec intent. Inputs whose streams cannot be known yet (for
 // example a file destination before probing) stay known=false so selection
 // validation skips them instead of guessing.
-func jobInputStreamSets(inputs []inputIntent, attachments []InputSpec, probes []format.ProbeResult) []inputStreamSet {
-	return jobInputStreamSetsFromRecipeIR(inputs, recipeIRInputsFromSpecs(attachments), probes)
-}
-
-func jobInputStreamSetsFromRecipeIR(inputs []inputIntent, inputFacts []recipeir.Input, probes []format.ProbeResult) []inputStreamSet {
+func jobInputStreamSets(inputs []recipeir.Input, probes []format.ProbeResult) []inputStreamSet {
 	sets := make([]inputStreamSet, 0, len(inputs))
 	for i := range inputs {
 		set := inputStreamSet{
@@ -39,10 +35,10 @@ func jobInputStreamSetsFromRecipeIR(inputs []inputIntent, inputFacts []recipeir.
 			domain: shape.DomainPacket,
 		}
 		switch {
-		case i < len(inputFacts) && inputFacts[i].SourceShape.Domain != "":
-			spec, _ := recipeIRInputSourceShape(inputFacts[i])
+		case inputs[i].SourceShape.Domain != "":
+			spec, _ := recipeIRInputSourceShape(inputs[i])
 			set.domain = spec.Domain
-			set.streams = []av.Stream{recipeIRInputDeclaredStream(inputFacts[i], spec)}
+			set.streams = []av.Stream{recipeIRInputDeclaredStream(inputs[i], spec)}
 			set.known = true
 		case i < len(probes) && len(probes[i].Streams) != 0:
 			set.streams = append([]av.Stream(nil), probes[i].Streams...)
@@ -79,18 +75,7 @@ func recipeIRInputDeclaredStream(input recipeir.Input, spec shape.Spec) av.Strea
 	return stream
 }
 
-// inputSpecStreamSets derives the per-input stream sets straight from the input
-// specs (no probes), for callers outside the compile state such as the builder
-// and the branch-compose graph constructor.
-func inputSpecStreamSets(inputs []InputSpec) []inputStreamSet {
-	intents := make([]inputIntent, 0, len(inputs))
-	for i := range inputs {
-		intents = append(intents, inputs[i].intent())
-	}
-	return jobInputStreamSets(intents, inputs, nil)
-}
-
-func inputIntentName(input inputIntent, index int) string {
+func inputIntentName(input recipeir.Input, index int) string {
 	return firstNonEmpty(input.Name, input.URI, fmt.Sprintf("input-%d", index))
 }
 

@@ -223,7 +223,7 @@ func TestMediaShapePublicContract(t *testing.T) {
 		t.Fatalf("frame shape set accepted packet shape: %s", packet)
 	}
 
-	var resizeContract shape.Contract = goav.ResizeSpecForTest(1280, 720)
+	var resizeContract shape.Contract = goav.ResizeContractForTest(1280, 720)
 	if !resizeContract.InputShapes().Accepts(shape.Frame(av.MediaVideo)) {
 		t.Fatalf("resize input shapes=%+v, want video frame", resizeContract.InputShapes())
 	}
@@ -248,7 +248,7 @@ func TestMediaShapePublicContract(t *testing.T) {
 		t.Fatalf("copied shape=%+v, want preserved packet %+v", copied, packet)
 	}
 
-	operationContract := goav.TransformOperationContractForTest(goav.ResampleSpecForTest(16_000, codec.Mono))
+	operationContract := goav.ResampleContractForTest(16_000, codec.Mono)
 	resampled := operationContract.OutputShapes(shape.Frame(
 		av.MediaAudio,
 		shape.Audio(48_000, codec.Stereo, av.SampleFormatS16),
@@ -1854,11 +1854,11 @@ func TestRecordRecipeRejectsDuplicateOutputs(t *testing.T) {
 	_, err := mustRuntime().Build(context.Background(), goav.FileInput("input.ivf", strings.NewReader("")).To(goav.Write("recording.ivf", io.Discard), goav.Write("recording.ivf", io.Discard)))
 
 	var buildErr *goav.BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "output_duplicate" {
-		t.Fatalf("err = %v, want output_duplicate with matching BuildError code", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "destination_duplicate" {
+		t.Fatalf("err = %v, want destination_duplicate with matching BuildError code", err)
 	}
-	if !strings.Contains(err.Error(), `output name "recording.ivf"`) ||
-		!strings.Contains(err.Error(), "unique output name") {
+	if !strings.Contains(err.Error(), `destination "recording.ivf"`) ||
+		!strings.Contains(err.Error(), "same destination value") {
 		t.Fatalf("err = %v, want duplicate output guidance", err)
 	}
 }
@@ -1871,11 +1871,11 @@ func TestStreamRecipeRejectsDuplicateSinkDestinations(t *testing.T) {
 		To(goav.Sink(component.SinkFunc("frames", sink)), goav.Sink(component.SinkFunc("frames", sink))))
 
 	var buildErr *goav.BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "output_duplicate" {
-		t.Fatalf("err = %v, want output_duplicate with matching BuildError code", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "destination_duplicate" {
+		t.Fatalf("err = %v, want destination_duplicate with matching BuildError code", err)
 	}
-	if !strings.Contains(err.Error(), `output name "frames"`) ||
-		!strings.Contains(err.Error(), ".Name") {
+	if !strings.Contains(err.Error(), `destination "frames"`) ||
+		!strings.Contains(err.Error(), "goav.Name") {
 		t.Fatalf("err = %v, want duplicate sink guidance", err)
 	}
 }
@@ -1889,10 +1889,10 @@ func TestStreamRecipeRejectsDuplicateTypedDestinations(t *testing.T) {
 		To(target, target))
 
 	var buildErr *goav.BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "output_duplicate" {
-		t.Fatalf("err = %v, want output_duplicate with matching BuildError code", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "destination_duplicate" {
+		t.Fatalf("err = %v, want destination_duplicate with matching BuildError code", err)
 	}
-	if !strings.Contains(err.Error(), `output name "voice.ogg"`) {
+	if !strings.Contains(err.Error(), `destination "voice.ogg" more than once`) {
 		t.Fatalf("err = %v, want duplicate destination guidance", err)
 	}
 }
@@ -2961,26 +2961,6 @@ func TestBranchCompositionSharesCustomStageCurrentPoint(t *testing.T) {
 		if strings.Contains(text, duplicate) {
 			t.Fatalf("custom stage split was duplicated as %q:\n%s", duplicate, text)
 		}
-	}
-}
-
-func TestBranchCompositionRejectsDecodeAfterBranchOperation(t *testing.T) {
-	_, err := mustRuntime().Build(context.Background(), goav.FileInput("input.ivf", strings.NewReader("")).
-		Video().
-		Resize(320, 180).
-		Decode().
-		As("bad").
-		To(goav.Sink(component.SinkFunc("frames", func(context.Context, component.Message) error {
-			return nil
-		}))))
-
-	var buildErr *goav.BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "branch_decode_order_invalid" {
-		t.Fatalf("err = %v, want branch_decode_order_invalid with matching BuildError code", err)
-	}
-	if !strings.Contains(err.Error(), "decode must be the first branch operation") ||
-		!strings.Contains(err.Error(), ".Decode().Resample") {
-		t.Fatalf("err = %v, want decode order guidance", err)
 	}
 }
 

@@ -41,7 +41,7 @@ type workInput struct {
 type workStream struct {
 	Name         string
 	Select       plan.StreamSelect
-	Operations   operationFacts
+	Operations   []recipeir.Operation
 	Destinations []string
 }
 
@@ -105,92 +105,6 @@ type workEdge struct {
 	Branch string
 }
 
-type workPlanInput struct {
-	name        string
-	inputs      []workInput
-	streams     []workStream
-	branches    []planBranch
-	outputs     []planOutput
-	decisions   []planDecision
-	diagnostics []plan.Diagnostic
-}
-
-// buildWorkPlan builds the work plan once per compile: the branch planners
-// lower the intent into per-branch operation lists, and one flattening walk
-// emits the ordered operations, taps, branches, destinations, and edges.
-func buildWorkPlan(state *recipeCompileState, spec pipeline.Spec, lowerer graphPlanLowerer) workPlan {
-	if join, ok := lowerer.(*joinPlan); ok && join != nil {
-		// Joins plan multi-upstream convergence: the joinPlan renders its arms,
-		// the plan.OpJoin node, and the downstream chain into the same workPlan IR.
-		return join.buildJoinWorkPlan(joinWorkPlanInputFromCompileState(state), spec)
-	}
-	return buildNormalWorkPlan(workPlanInputFromCompileState(state), spec)
-}
-
-func workPlanInputFromCompileState(state *recipeCompileState) workPlanInput {
-	if state == nil {
-		return workPlanInput{}
-	}
-	recipe := state.recipe
-	outputs := planOutputsFromRecipeIR(recipe.Destinations, state.outputFormatMap())
-	// The work plan plans every branch straight from recipe streams:
-	// the snapshot populates each branch recipe stream with its
-	// full (shared-op-inherited) operation list, so the parallel
-	// branchComposePlan is only the Build-side lowerer input.
-	branches, decisions := planBranchesFromRecipeIR(state, recipe, outputs)
-	outputs = planOutputsWithBranches(outputs, branches)
-	return workPlanInput{
-		name:        firstNonEmpty(recipe.Name, state.operation, "job"),
-		inputs:      workInputsFromRecipeIR(recipe.Inputs),
-		streams:     workStreamsFromRecipeIR(recipe.Streams),
-		branches:    clonePlannerBranches(branches),
-		outputs:     clonePlannerOutputs(outputs),
-		decisions:   clonePlanDecisions(decisions),
-		diagnostics: clonePlanDiagnostics(state.shapeDiagnostics),
-	}
-}
-
-func buildNormalWorkPlan(input workPlanInput, spec pipeline.Spec) workPlan {
-	work := composeWorkPlan(
-		spec,
-		input.name,
-		cloneWorkInputs(input.inputs),
-		cloneWorkStreams(input.streams),
-		clonePlannerBranches(input.branches),
-		clonePlannerOutputs(input.outputs),
-		clonePlanDecisions(input.decisions),
-	)
-	work.Diagnostics = clonePlanDiagnostics(input.diagnostics)
-	return work
-}
-
-// composeWorkPlan flattens the planner's per-branch working set into the work
-// plan — the one place the build-side plan is assembled.
-func composeWorkPlan(
-	spec pipeline.Spec,
-	name string,
-	inputs []workInput,
-	streams []workStream,
-	branches []planBranch,
-	outputs []planOutput,
-	decisions []planDecision,
-) workPlan {
-	work := workPlan{
-		Name:         firstNonEmpty(spec.Name, name, "goav"),
-		Realtime:     spec.Realtime,
-		Inputs:       inputs,
-		Streams:      streams,
-		Taps:         planTaps(branches),
-		Destinations: workDestinationsFromPlan(outputs),
-		Decisions:    clonePlanDecisions(decisions),
-	}
-	ids := workDestinationIDsByName(work.Destinations)
-	work.Operations = workOperationsFromBranches(spec, branches, outputs, ids)
-	work.Branches = workBranchesFromPlan(branches, work.Operations, ids)
-	work.Edges = workEdgesFromSpec(spec, work.Operations)
-	return work
-}
-
 // workDestinationIDsByName maps destination display names to their stable IDs
 // while the planner intermediates still carry names.
 func workDestinationIDsByName(destinations []workDestination) map[string]string {
@@ -211,24 +125,6 @@ func workDestinationIDForName(ids map[string]string, name string) string {
 	return workDestinationID(name)
 }
 
-func workInputsFromIntent(inputs []inputIntent) []workInput {
-	if len(inputs) == 0 {
-		return nil
-	}
-	out := make([]workInput, 0, len(inputs))
-	for i := range inputs {
-		input := inputs[i]
-		out = append(out, workInput{
-			Name:      firstNonEmpty(input.Name, input.URI, fmt.Sprintf("input-%d", i)),
-			Protocol:  input.Protocol,
-			Realtime:  input.Realtime,
-			Codec:     input.Codec.ID,
-			CodecSpec: cloneCodecSpec(input.Codec),
-		})
-	}
-	return out
-}
-
 func workInputsFromRecipeIR(inputs []recipeir.Input) []workInput {
 	if len(inputs) == 0 {
 		return nil
@@ -242,23 +138,6 @@ func workInputsFromRecipeIR(inputs []recipeir.Input) []workInput {
 			Realtime:  input.Realtime,
 			Codec:     input.Codec.ID,
 			CodecSpec: cloneCodecSpec(input.Codec),
-		})
-	}
-	return out
-}
-
-func workStreamsFromRecipeIR(streams []recipeir.Stream) []workStream {
-	if len(streams) == 0 {
-		return nil
-	}
-	out := make([]workStream, 0, len(streams))
-	for i := range streams {
-		stream := streams[i]
-		out = append(out, workStream{
-			Name:         stream.Name,
-			Select:       stream.Selector,
-			Operations:   recipeIROperationFacts(stream.Operations),
-			Destinations: recipeIROutputRefsToStrings(stream.Outputs),
 		})
 	}
 	return out
@@ -310,9 +189,16 @@ func workOperationsFromBranches(spec pipeline.Spec, branches []planBranch, outpu
 		current := normalizeTapShape(branch.Shape)
 		for j := range branch.Operations {
 			operation := branch.Operations[j]
-			node := pipeline.NodeRef(planOperationNodeName(branch, operation, j))
+			node := operation.Node
+			if node == "" && operation.Kind != plan.OpShape {
+				node = pipeline.NodeRef(planOperationNodeName(branch, operation, j))
+			}
 			if operation.Kind == plan.OpShape {
 				node = ""
+			}
+			shapeIn := current
+			if !mediaShapeEmpty(operation.ShapeIn) {
+				shapeIn = operation.ShapeIn
 			}
 			shapeOut := operation.Shape
 			if mediaShapeEmpty(shapeOut) {
@@ -328,7 +214,7 @@ func workOperationsFromBranches(spec pipeline.Spec, branches []planBranch, outpu
 				Detail:    operation.Detail,
 				Codec:     cloneCodecSpec(operation.Codec),
 				Shared:    operation.Shared,
-				ShapeIn:   current,
+				ShapeIn:   shapeIn,
 				ShapeOut:  shapeOut,
 			})
 			index++
@@ -405,7 +291,7 @@ func planOutputsByName(outputs []planOutput) map[string]planOutput {
 	return out
 }
 
-func workBranchesFromPlan(branches []planBranch, operations []workOperation, ids map[string]string) []workBranch {
+func workBranchesFromPlanAt(branches []planBranch, operations []workOperation, ids map[string]string, base int) []workBranch {
 	if len(branches) == 0 {
 		return nil
 	}
@@ -421,7 +307,7 @@ func workBranchesFromPlan(branches []planBranch, operations []workOperation, ids
 			destinations = append(destinations, workDestinationIDForName(ids, name))
 		}
 		out = append(out, workBranch{
-			ID:           workBranchID(branch.Name, i),
+			ID:           workBranchID(branch.Name, base+i),
 			Name:         branch.Name,
 			Input:        branch.Input,
 			Stream:       branch.Stream,
@@ -570,7 +456,7 @@ func cloneWorkStreams(streams []workStream) []workStream {
 	out := make([]workStream, 0, len(streams))
 	for i := range streams {
 		stream := streams[i]
-		stream.Operations = stream.Operations.Clone()
+		stream.Operations = append([]recipeir.Operation(nil), stream.Operations...)
 		stream.Destinations = append([]string(nil), stream.Destinations...)
 		out = append(out, stream)
 	}

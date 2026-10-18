@@ -3,7 +3,6 @@ package goav_test
 import (
 	"bytes"
 	"context"
-	"errors"
 	"os"
 	"testing"
 	"time"
@@ -64,21 +63,22 @@ func matroskaTracks(t *testing.T, data []byte) int {
 	return len(demuxer.Tracks())
 }
 
-// TestPlainChainBesideJoinIsRefused pins that a stream beside a Mix fails the
-// build instead of vanishing: the join lowering builds only the joined
-// stream, so Describe and Run used to succeed without it.
-func TestPlainChainBesideJoinIsRefused(t *testing.T) {
-	sink := func(name string) goav.Destination {
-		return goav.Sink(component.SinkFunc(name, func(context.Context, component.Message) error { return nil }))
+// TestStreamBesideJoinRuns pins that a stream beside a Mix runs in the same
+// graph: each reaches its own sink.
+func TestStreamBesideJoinRuns(t *testing.T) {
+	mixed, video := goavtest.NewCollector(), goavtest.NewCollector()
+	err := bundle.Default().Run(context.Background(),
+		goav.Mix(
+			goavtest.Audio(48000, 1, []int16{1, 2}).Audio(),
+			goavtest.Audio(48000, 1, []int16{3, 4}).Audio(),
+		).To(mixed.Sink()),
+		goavtest.Video(64, 64, 3).Video().To(video.Sink()),
+	)
+	if err != nil {
+		t.Fatal(err)
 	}
-	mixed := goav.Mix(
-		goavtest.Audio(48000, 1, []int16{1, 2}).Audio(),
-		goavtest.Audio(48000, 1, []int16{3, 4}).Audio(),
-	).To(sink("mixed"))
-	_, err := bundle.Default().Describe(mixed, goavtest.Video(64, 64, 3).Video().To(sink("video")))
-	var buildErr *goav.BuildError
-	if !errors.As(err, &buildErr) || string(buildErr.Code) != "stream_beside_join" {
-		t.Fatalf("Describe = %v, want a stream_beside_join refusal", err)
+	if len(mixed.Frames()) == 0 || len(video.Frames()) == 0 {
+		t.Fatalf("mixed frames = %d, video frames = %d, want both", len(mixed.Frames()), len(video.Frames()))
 	}
 }
 

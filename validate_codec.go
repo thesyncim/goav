@@ -16,7 +16,7 @@ import (
 	"github.com/thesyncim/goav/internal/recipeir"
 )
 
-func validateRecipeIRDecodeAdapters(operation string, rt *Runtime, inputs []inputIntent, streams []recipeir.Stream) error {
+func validateRecipeIRDecodeAdapters(operation string, rt *Runtime, inputs []recipeir.Input, streams []recipeir.Stream) error {
 	if rt == nil {
 		return nil
 	}
@@ -25,7 +25,7 @@ func validateRecipeIRDecodeAdapters(operation string, rt *Runtime, inputs []inpu
 		if !recipeIRStreamNeedsDecode(stream) {
 			continue
 		}
-		streamIntent := streamIntentFromRecipeIR(stream)
+		streamIntent := stream
 		request, ok := liveDecodeAdapterRequest(inputs, streamIntent)
 		if !ok || request.Codec == "" {
 			continue
@@ -49,7 +49,7 @@ func validateKnownRecipeIRDecodeAdapters(operation string, rt *Runtime, probes [
 		if !recipeIRStreamNeedsDecode(stream) {
 			continue
 		}
-		streamIntent := streamIntentFromRecipeIR(stream)
+		streamIntent := stream
 		selected, ok := knownProbeDecodeStream(probes, streamIntent)
 		if !ok || selected.Codec.ID == "" {
 			continue
@@ -65,7 +65,7 @@ func validateKnownRecipeIRDecodeAdapters(operation string, rt *Runtime, probes [
 	return nil
 }
 
-func validateLiveRecipeStreamSelection(inputs []inputIntent, stream recipeir.Stream) error {
+func validateLiveRecipeStreamSelection(inputs []recipeir.Input, stream recipeir.Stream) error {
 	streams := liveIntentStreams(inputs)
 	if len(streams) == 0 {
 		return nil
@@ -74,7 +74,7 @@ func validateLiveRecipeStreamSelection(inputs []inputIntent, stream recipeir.Str
 	return err
 }
 
-func liveIntentStreams(inputs []inputIntent) []av.Stream {
+func liveIntentStreams(inputs []recipeir.Input) []av.Stream {
 	streams := make([]av.Stream, 0, len(inputs))
 	for i := range inputs {
 		stream, ok := liveIntentStream(inputs[i], i)
@@ -86,7 +86,7 @@ func liveIntentStreams(inputs []inputIntent) []av.Stream {
 	return streams
 }
 
-func liveIntentStream(input inputIntent, index int) (av.Stream, bool) {
+func liveIntentStream(input recipeir.Input, index int) (av.Stream, bool) {
 	if !input.Realtime || input.Codec.ID == "" {
 		return av.Stream{}, false
 	}
@@ -111,9 +111,9 @@ func liveIntentStream(input inputIntent, index int) (av.Stream, bool) {
 	return stream, true
 }
 
-func knownProbeDecodeStream(probes []format.ProbeResult, stream streamIntent) (av.Stream, bool) {
+func knownProbeDecodeStream(probes []format.ProbeResult, stream recipeir.Stream) (av.Stream, bool) {
 	candidates := make([]av.Stream, 0, len(probes))
-	selector := streamIntentSelector(stream)
+	selector := recipeIRStreamSelector(stream)
 	for i := range probes {
 		if len(probes[i].Streams) == 0 {
 			continue
@@ -130,7 +130,7 @@ func knownProbeDecodeStream(probes []format.ProbeResult, stream streamIntent) (a
 	return candidates[0], true
 }
 
-func liveDecodeAdapterRequest(inputs []inputIntent, stream streamIntent) (codecAdapterRequest, bool) {
+func liveDecodeAdapterRequest(inputs []recipeir.Input, stream recipeir.Stream) (codecAdapterRequest, bool) {
 	selected, ok := liveDecodeStream(inputs, stream)
 	if !ok {
 		return codecAdapterRequest{}, false
@@ -138,19 +138,19 @@ func liveDecodeAdapterRequest(inputs []inputIntent, stream streamIntent) (codecA
 	return decodeAdapterRequestFromStream(selected, stream), true
 }
 
-func liveDecodeStream(inputs []inputIntent, stream streamIntent) (av.Stream, bool) {
+func liveDecodeStream(inputs []recipeir.Input, stream recipeir.Stream) (av.Stream, bool) {
 	streams := liveIntentStreams(inputs)
 	if len(streams) == 0 {
 		return av.Stream{}, false
 	}
-	selected, err := selectDecodeStream(streams, streamIntentSelector(stream))
+	selected, err := selectDecodeStream(streams, recipeIRStreamSelector(stream))
 	if err != nil || selected.Codec.ID == "" {
 		return av.Stream{}, false
 	}
 	return selected, true
 }
 
-func recipeDecodeAdapterError(operation string, stream streamIntent, codecID av.CodecID, registry *codec.SimpleRegistry, cause error) error {
+func recipeDecodeAdapterError(operation string, stream recipeir.Stream, codecID av.CodecID, registry *codec.SimpleRegistry, cause error) error {
 	code := decodeAdapterMissingCode
 	reason := "no decoder adapter is registered for " + string(codecID)
 	if errors.Is(cause, codec.ErrUnavailable) {
@@ -176,7 +176,7 @@ func recipeDecodeAdapterError(operation string, stream streamIntent, codecID av.
 		Family:    errcode.FamilyForCode(code),
 		Code:      code,
 		Operation: operation,
-		Node:      jobStreamIntentName(stream),
+		Node:      recipeIRStreamName(stream),
 		Reason:    reason,
 		fields:    errDetailLines(details),
 		fixes: buildErrorFixes([]string{
@@ -188,7 +188,7 @@ func recipeDecodeAdapterError(operation string, stream streamIntent, codecID av.
 	}
 }
 
-func validateDecodeAdapterDescriptors(operation string, stream streamIntent, registry *codec.SimpleRegistry, request codecAdapterRequest) error {
+func validateDecodeAdapterDescriptors(operation string, stream recipeir.Stream, registry *codec.SimpleRegistry, request codecAdapterRequest) error {
 	if registry == nil || request.Codec == "" {
 		return nil
 	}
@@ -204,16 +204,16 @@ func validateDecodeAdapterDescriptors(operation string, stream streamIntent, reg
 	return decodeAdapterIncompatibleError(operation, stream, request, descriptors)
 }
 
-func decodeAdapterRequestFromStream(stream av.Stream, intent streamIntent) codecAdapterRequest {
+func decodeAdapterRequestFromStream(stream av.Stream, intent recipeir.Stream) codecAdapterRequest {
 	return codecAdapterRequest{
 		Codec:        stream.Codec.ID,
-		Media:        firstNonEmptyMedia(stream.Codec.Type, stream.Type, intent.Select.Type, codecMedia(stream.Codec.ID)),
+		Media:        firstNonEmptyMedia(stream.Codec.Type, stream.Type, intent.Selector.Type, codecMedia(stream.Codec.ID)),
 		SampleFormat: stream.Codec.SampleFormat,
 		PixelFormat:  stream.Codec.PixelFormat,
 	}
 }
 
-func decodeAdapterIncompatibleError(operation string, stream streamIntent, request codecAdapterRequest, descriptors []codec.Descriptor) error {
+func decodeAdapterIncompatibleError(operation string, stream recipeir.Stream, request codecAdapterRequest, descriptors []codec.Descriptor) error {
 	field, requested, supported := codecAdapterIncompatibilityField(request, descriptors)
 	label := strings.ReplaceAll(field, "_", " ")
 	details := []string{
@@ -239,7 +239,7 @@ func decodeAdapterIncompatibleError(operation string, stream streamIntent, reque
 		Family:    errcode.FamilyForCode(decodeAdapterIncompatibleCode),
 		Code:      decodeAdapterIncompatibleCode,
 		Operation: operation,
-		Node:      jobStreamIntentName(stream),
+		Node:      recipeIRStreamName(stream),
 		Reason:    string(request.Codec) + " decoder adapter does not support the requested " + label,
 		fields:    errDetailLines(details),
 		fixes: buildErrorFixes([]string{
@@ -261,7 +261,7 @@ func validateRecipeIREncodeAdapters(operation string, rt *Runtime, streams []rec
 		if codecID == "" {
 			continue
 		}
-		streamIntent := streamIntentFromRecipeIR(stream)
+		streamIntent := stream
 		if _, err := rt.codecs.EncoderFactory(codecID); err != nil {
 			return recipeEncodeAdapterError(operation, streamIntent, rt.codecs, err)
 		}
@@ -337,7 +337,7 @@ func recipeIRStreamPixelFormat(stream recipeir.Stream) string {
 	return ""
 }
 
-func validateEncodeAdapterDescriptors(operation string, stream streamIntent, registry *codec.SimpleRegistry, request codecAdapterRequest) error {
+func validateEncodeAdapterDescriptors(operation string, stream recipeir.Stream, registry *codec.SimpleRegistry, request codecAdapterRequest) error {
 	if registry == nil || request.Codec == "" {
 		return nil
 	}
@@ -369,8 +369,8 @@ func codecDescriptorSupports(desc codec.Descriptor, request codecAdapterRequest)
 	return true
 }
 
-func encodeAdapterIncompatibleError(operation string, stream streamIntent, request codecAdapterRequest, descriptors []codec.Descriptor) error {
-	return encodeAdapterIncompatibleErrorAt(operation, jobStreamIntentName(stream), request, descriptors)
+func encodeAdapterIncompatibleError(operation string, stream recipeir.Stream, request codecAdapterRequest, descriptors []codec.Descriptor) error {
+	return encodeAdapterIncompatibleErrorAt(operation, recipeIRStreamName(stream), request, descriptors)
 }
 
 // encodeAdapterIncompatibleErrorAt is the encoder-descriptor refusal for one
@@ -522,11 +522,11 @@ func mergeStringList(existing []string, next []string) []string {
 	return existing
 }
 
-func recipeEncodeAdapterError(operation string, stream streamIntent, registry *codec.SimpleRegistry, cause error) error {
-	return recipeEncodeAdapterCodecError(operation, stream, chainEncodeSpec(stream.Operations).ID, registry, cause)
+func recipeEncodeAdapterError(operation string, stream recipeir.Stream, registry *codec.SimpleRegistry, cause error) error {
+	return recipeEncodeAdapterCodecError(operation, stream, operationsEncodeSpec(stream.Operations).ID, registry, cause)
 }
 
-func recipeEncodeAdapterCodecError(operation string, stream streamIntent, codecID av.CodecID, registry *codec.SimpleRegistry, cause error) error {
+func recipeEncodeAdapterCodecError(operation string, stream recipeir.Stream, codecID av.CodecID, registry *codec.SimpleRegistry, cause error) error {
 	code := encodeAdapterMissingCode
 	reason := "no encoder adapter is registered for " + string(codecID)
 	if errors.Is(cause, codec.ErrUnavailable) {
@@ -545,7 +545,7 @@ func recipeEncodeAdapterCodecError(operation string, stream streamIntent, codecI
 		Family:    errcode.FamilyForCode(code),
 		Code:      code,
 		Operation: operation,
-		Node:      jobStreamIntentName(stream),
+		Node:      recipeIRStreamName(stream),
 		Reason:    reason,
 		fields:    errDetailLines(details),
 		fixes: buildErrorFixes([]string{
@@ -612,4 +612,12 @@ func joinInts(values []int) string {
 		parts[i] = strconv.Itoa(value)
 	}
 	return strings.Join(parts, ",")
+}
+
+// recipeIRStreamNeedsDecode reports a branch whose work needs its stream
+// decoded: a decode, a transform, or an encode.
+func recipeIRStreamNeedsDecode(stream recipeir.Stream) bool {
+	return recipeIRStreamHasDecode(stream) ||
+		len(recipeIRStreamTransforms(stream)) != 0 ||
+		recipeIRStreamEncodeSpec(stream).ID != ""
 }

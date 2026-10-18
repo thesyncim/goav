@@ -11,6 +11,7 @@ import (
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/control"
 	"github.com/thesyncim/goav/flow"
+	"github.com/thesyncim/goav/internal/recipeir"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/plan"
 	"github.com/thesyncim/goav/shape"
@@ -333,8 +334,8 @@ func TestPlayoutDiscontinuityResetsAnchor(t *testing.T) {
 // clone contract: cloning the operation spec makes a fresh gate instance, and
 // the clone shares the policy anchor so branches built from clones still align.
 func TestPlayoutOperationCloneUsesSeparateGateWithSharedAnchor(t *testing.T) {
-	operation := operationSpecForPlayout(flow.Playout("room"))
-	cloned := cloneOperationSpecs([]operationSpec{operation})
+	operation := opPlayout(flow.Playout("room"))
+	cloned := cloneOperations([]recipeir.Operation{operation})
 	if len(cloned) != 1 {
 		t.Fatalf("cloned operations = %d, want 1", len(cloned))
 	}
@@ -394,8 +395,8 @@ func TestPlayoutGateRequiresValidMediaTimebase(t *testing.T) {
 // mutation when the stream has no timebase facts, and the refusal names the
 // exact fixes.
 func TestPlayoutAttachRefusesStreamWithoutTimebase(t *testing.T) {
-	operations := []operationSpec{operationSpecForPlayout(flow.Playout("room"))}
-	err := validatePlayoutPolicyForStream("attach stream rule branch", "preview", av.Stream{ID: "cam"}, operations)
+	operations := []recipeir.Operation{opPlayout(flow.Playout("room"))}
+	err := validatePlayoutPolicyForRecipeIROperations("attach stream rule branch", "preview", av.Stream{ID: "cam"}, operations)
 	var buildErr *BuildError
 	if !errors.As(err, &buildErr) {
 		t.Fatalf("err = %T (%v), want *BuildError", err, err)
@@ -408,7 +409,7 @@ func TestPlayoutAttachRefusesStreamWithoutTimebase(t *testing.T) {
 	}
 
 	withTimebase := av.Stream{ID: "cam", TimeBase: av.TimeBase{Num: 1, Den: 90000}}
-	if err := validatePlayoutPolicyForStream("attach stream rule branch", "preview", withTimebase, operations); err != nil {
+	if err := validatePlayoutPolicyForRecipeIROperations("attach stream rule branch", "preview", withTimebase, operations); err != nil {
 		t.Fatalf("stream with timebase refused: %v", err)
 	}
 }

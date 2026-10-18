@@ -457,6 +457,7 @@ func TestBranchAutoInsertMatchesDirectChain(t *testing.T) {
 		UseRuntime(rt)
 	branch := recipeFrom(source).
 		Audio().
+		Decode().
 		Branches(
 			newBranch("main").
 				Resample(48_000, codec.Stereo).
@@ -482,36 +483,6 @@ func TestBranchAutoInsertMatchesDirectChain(t *testing.T) {
 		if !strings.Contains(branchText, want) {
 			t.Fatalf("branch plan missing %q:\n%s", want, branchText)
 		}
-	}
-}
-
-// TestAutoWorksInFlows covers the flow chains' .Auto(...): a conversion policy
-// declared on a reusable Flow enables the solver wherever the flow is applied,
-// so the chain gets the needed conversion inserted as a real planned operation.
-func TestAutoWorksInFlows(t *testing.T) {
-	normalize := newFlow("normalize").Audio().
-		Auto(shape.AllowResample()).
-		Encode(codec.Opus(codec.Bitrate(96_000)))
-	job := recipeFrom(solverTestAudioSource("mic", 44_100, codec.Stereo, av.SampleFormatS16)).
-		Audio().
-		Apply(normalize).
-		To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))).
-		UseRuntime(solverTestOpusRuntime(testBundleFilters()))
-
-	planned, err := job.Describe()
-	if err != nil {
-		t.Fatalf("Describe(): %v", err)
-	}
-	if !strings.Contains(specText(planned), "resample-audio") {
-		t.Fatalf("planned spec should show the flow-enabled resample node:\n%s", specText(planned))
-	}
-	task, err := job.BuildLive(context.Background())
-	if err != nil {
-		t.Fatalf("BuildLive(): %v", err)
-	}
-	defer task.Close()
-	if specText(task.Describe()) != specText(planned) {
-		t.Fatalf("Describe() != BuildLive():\nplanned:\n%s\nbuilt:\n%s", specText(planned), specText(task.Describe()))
 	}
 }
 

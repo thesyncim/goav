@@ -17,8 +17,6 @@ import (
 	"github.com/thesyncim/goav/filter"
 	"github.com/thesyncim/goav/flow"
 	"github.com/thesyncim/goav/format"
-	"github.com/thesyncim/goav/internal/recipeir"
-	"github.com/thesyncim/goav/lifecycle"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/plan"
 	"github.com/thesyncim/goav/shape"
@@ -432,74 +430,6 @@ func TestTaskAttachRuntimeBranchGroupCanUsePendingTap(t *testing.T) {
 	text := specText(builtTask.Describe())
 	if strings.Contains(text, "sampler/") || strings.Contains(text, "screenshots/") {
 		t.Fatalf("spec:\n%s", text)
-	}
-}
-
-func TestRuntimeAttachInputCapturesBranchRecipe(t *testing.T) {
-	spec := newBranch("watch").
-		From(packetTapRef("pkts")).
-		Copy().
-		To(Sink(SinkFunc("late", func(context.Context, Message) error { return nil })))
-
-	input, err := runtimeAttachInputFromBranchSpecs([]branchRecipe{spec})
-	if err != nil {
-		t.Fatal(err)
-	}
-	spec.name = "mutated"
-	spec.operations = nil
-	spec.destinations = nil
-	spec.source.tap = "other"
-
-	if input.name != "watch" ||
-		len(input.branches) != 1 ||
-		input.branches[0].recipe.branch.Name != "watch" ||
-		input.branches[0].recipe.branch.Source.Tap.Name != "pkts" ||
-		len(input.branches[0].recipe.branch.Operations) != 1 ||
-		len(input.branches[0].destinations) != 1 ||
-		input.branches[0].destinations[0].recipe.Name != "late" ||
-		input.branches[0].destinations[0].recipe.Kind != recipeir.DestinationKindSink {
-		t.Fatalf("runtime attach input = %+v, want captured branch recipe and destinations", input)
-	}
-}
-
-func TestRuntimeRebranchInputCapturesReplacementSpecsAndPolicy(t *testing.T) {
-	spec := newBranch("next").
-		From(packetTapRef("pkts")).
-		Copy().
-		To(Sink(SinkFunc("late", func(context.Context, Message) error { return nil })))
-
-	input, err := runtimeRebranchInputFromArgs(context.Background(), []lifecycle.RebranchArg{
-		spec,
-		lifecycle.SwitchAt(lifecycle.NextKeyframe()),
-		lifecycle.DrainOldBranch(),
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	spec.name = "mutated"
-	spec.operations = nil
-	spec.destinations = nil
-	spec.source.tap = "other"
-
-	if input.group == nil ||
-		input.group.boundary != switchNextKeyframe ||
-		input.disposition != oldBranchDrain ||
-		input.attach.name != "next" ||
-		len(input.attach.branches) != 1 ||
-		input.attach.branches[0].recipe.branch.Name != "next" ||
-		input.attach.branches[0].recipe.branch.Source.Tap.Name != "pkts" ||
-		len(input.attach.branches[0].destinations) != 1 {
-		t.Fatalf("runtime rebranch input = %+v, want captured switch-gated replacement", input)
-	}
-	operations := input.attach.branches[0].recipe.branch.Operations
-	if len(operations) != 2 ||
-		operations[0].Kind != plan.OpStage ||
-		operations[1].Kind != plan.OpCopy {
-		t.Fatalf("runtime rebranch operations = %+v, want switch gate then copy", operations)
-	}
-	gate, ok := operations[0].Stage.(*switchGate)
-	if !ok || gate.group != input.group {
-		t.Fatalf("runtime rebranch gate = %#v, %v; want switch gate tied to input group", operations[0].Stage, ok)
 	}
 }
 
@@ -2782,17 +2712,6 @@ func TestTaskDetachBufferedCustomStageTapSubtreeStopsFutureMessages(t *testing.T
 	}
 	if err := child.Close(ctx); err != nil {
 		t.Fatal(err)
-	}
-}
-
-func TestRuntimeBranchTapAnchorsUseStableNames(t *testing.T) {
-	audio := newBranch("levels").From(frameTapRef("audio.decoded")).To(Sink(&runtimeTestSink{name: "levels"}))
-	if audio.source.tap != "audio.decoded" || audio.source.from != "" {
-		t.Fatalf("audio anchor tap=%q from=%q, want tap only", audio.source.tap, audio.source.from)
-	}
-	expert := newBranch("expert").From(graphNode{name: "decode-audio"}).To(Sink(&runtimeTestSink{name: "expert"}))
-	if expert.source.from != "decode-audio" || expert.source.tap != "" {
-		t.Fatalf("expert anchor tap=%q from=%q, want node only", expert.source.tap, expert.source.from)
 	}
 }
 

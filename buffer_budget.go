@@ -7,6 +7,7 @@ import (
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/errcode"
+	"github.com/thesyncim/goav/internal/recipeir"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/plan"
 	"github.com/thesyncim/goav/shape"
@@ -26,7 +27,7 @@ func realtimeRecipeBufferPolicy(runtimeBuffer pipeline.BufferPolicy) pipeline.Bu
 
 func recipeGraphConfig(rt *Runtime, name string, work workPlan, bufferedWhenRealtime bool) (pipeline.GraphConfig, error) {
 	if rt == nil {
-		return pipeline.GraphConfig{}, recipeGraphUnsupportedError("configure graph", intent{})
+		return pipeline.GraphConfig{}, recipeGraphUnsupportedRecipeError("configure graph", recipeir.Recipe{})
 	}
 	buffer := rt.buffer
 	if bufferedWhenRealtime && rt.realtime && buffer.IsDirect() {

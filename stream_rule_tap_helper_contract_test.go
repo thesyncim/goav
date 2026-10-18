@@ -9,29 +9,13 @@ import (
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/inspect"
+	"github.com/thesyncim/goav/internal/recipeir"
 	"github.com/thesyncim/goav/lifecycle"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/plan"
 	"github.com/thesyncim/goav/shape"
 	sourcepkg "github.com/thesyncim/goav/source"
 )
-
-func TestTapIsPostEncodeAnchorContracts(t *testing.T) {
-	if tapIsPostEncodeAnchor(nil, "encoded") || tapIsPostEncodeAnchor(&jobStreamBuild{}, "") {
-		t.Fatal("empty post-encode tap lookup = true, want false")
-	}
-
-	stream := &jobStreamBuild{operations: []operationSpec{
-		operationSpecForTap(packetTapRef("encoded"), av.MediaAudio, plan.OpEncode),
-		operationSpecForTap(frameTapRef("frames"), av.MediaAudio, plan.OpDecode),
-	}}
-	if !tapIsPostEncodeAnchor(stream, "encoded") {
-		t.Fatal("encoded packet tap not recognized as post-encode anchor")
-	}
-	if tapIsPostEncodeAnchor(stream, "frames") || tapIsPostEncodeAnchor(stream, "missing") {
-		t.Fatal("non-terminal or missing tap recognized as post-encode anchor")
-	}
-}
 
 func TestStreamRuleAttachmentTrackingContracts(t *testing.T) {
 	task := &task{rules: &taskStreamRules{attached: make(map[av.StreamID][]streamRuleAttachment)}}
@@ -125,7 +109,7 @@ func TestHandleStreamAddedGuardContracts(t *testing.T) {
 		domain: shape.DomainPacket,
 		rules: []streamRule{{
 			match:    MatchMedia(av.MediaAudio),
-			branches: []branchRecipe{{origin: branchSpecOriginBranch, name: "late"}},
+			branches: []attachBranch{{name: "late"}},
 		}},
 		attached: map[av.StreamID][]streamRuleAttachment{
 			"from-event": {{rule: 0, attachment: &runtimeAttachment{id: "att-1", name: "late"}}},
@@ -197,11 +181,11 @@ func TestStreamRuleAttachInputCapturesTemplatedBranch(t *testing.T) {
 		domain: shape.DomainPacket,
 	}}
 	rule := streamRule{
-		branches: []branchRecipe{
-			newBranch("late").
-				Copy().
-				To(Sink(SinkFunc("late-sink", func(context.Context, Message) error { return nil }))),
-		},
+		branches: []attachBranch{{
+			name:       "late",
+			operations: []recipeir.Operation{opCopy()},
+			dests:      []destinationRef{newDirectDestinationRef("late-sink", Sink(SinkFunc("late-sink", func(context.Context, Message) error { return nil })).spec)},
+		}},
 	}
 	stream := av.Stream{
 		ID:   "audio",
@@ -218,7 +202,7 @@ func TestStreamRuleAttachInputCapturesTemplatedBranch(t *testing.T) {
 	}
 	rule.branches[0].name = "mutated"
 	rule.branches[0].operations = nil
-	rule.branches[0].destinations = nil
+	rule.branches[0].dests = nil
 
 	if input.branchNames != "late" ||
 		input.attach.name != "late-audio" ||
@@ -305,10 +289,7 @@ func TestHandleStreamRemovedDetachesTrackedBranchesWithDrain(t *testing.T) {
 }
 
 func TestStreamRuleBranchNamesContract(t *testing.T) {
-	rule := streamRule{branches: []branchRecipe{
-		{origin: branchSpecOriginBranch, name: "preview"},
-		{origin: branchSpecOriginBranch, name: "archive"},
-	}}
+	rule := streamRule{branches: []attachBranch{{name: "preview"}, {name: "archive"}}}
 	if got := streamRuleBranchNames(rule); got != "preview+archive" {
 		t.Fatalf("streamRuleBranchNames() = %q, want preview+archive", got)
 	}

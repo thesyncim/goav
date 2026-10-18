@@ -2,8 +2,6 @@ package goav
 
 import (
 	"errors"
-	"io"
-	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -14,40 +12,6 @@ import (
 	"github.com/thesyncim/goav/plan"
 	"github.com/thesyncim/goav/shape"
 )
-
-func TestJobAllOutputsContracts(t *testing.T) {
-	root := Write("root.webm", io.Discard).spec
-	stream := Write("stream.webm", io.Discard).spec
-	branch := Write("branch.webm", io.Discard).spec
-
-	job := &recipeJob{
-		outputs: []destinationSpec{root},
-		streams: []*jobStreamBuild{{
-			outputs:     []destinationSpec{stream},
-			outputNames: []string{"stream.webm"},
-		}},
-	}
-	outputs := job.allOutputs()
-	if len(outputs) != 2 || outputs[0].name != "root.webm" || outputs[1].name != "stream.webm" {
-		t.Fatalf("stream outputs = %v, want root then stream", destinationNamesForTest(outputs))
-	}
-
-	// A branching job's outputs are its branches' destinations, then those of
-	// the plain chains beside them.
-	job.outputs = nil
-	job.branchStreams = []streamBuild{{name: "branch", destinationNames: []string{"branch"}}}
-	job.branchDestinations = []namedDestinationSpec{{name: "branch", output: branch}}
-	outputs = job.allOutputs()
-	if len(outputs) != 2 || outputs[0].name != "branch.webm" || outputs[1].name != "stream.webm" {
-		t.Fatalf("branch outputs = %v, want branch then stream", destinationNamesForTest(outputs))
-	}
-
-	cloned := jobAllOutputs([]destinationSpec{root}, nil)
-	cloned[0].name = "mutated"
-	if root.name != "root.webm" {
-		t.Fatalf("jobAllOutputs did not clone root outputs, root name = %q", root.name)
-	}
-}
 
 func TestBufferBudgetHelperContracts(t *testing.T) {
 	base := pipeline.BufferPolicy{CopyPacketBytes: 16, CopyFrameBytes: 32}
@@ -284,13 +248,4 @@ func destinationNamesForTest(outputs []destinationSpec) []string {
 		names[i] = outputs[i].name
 	}
 	return names
-}
-
-func TestJobAllOutputsAppendKeepsOrder(t *testing.T) {
-	first := Write("first.webm", io.Discard).spec
-	second := Write("second.webm", io.Discard).spec
-	got := jobAllOutputs([]destinationSpec{first}, []destinationSpec{second})
-	if !reflect.DeepEqual(destinationNamesForTest(got), []string{"first.webm", "second.webm"}) {
-		t.Fatalf("all output names = %v", destinationNamesForTest(got))
-	}
 }

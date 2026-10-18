@@ -26,6 +26,9 @@ type recipeGraph struct {
 	// NodeInput for input.To) and its destination nodes in .To order.
 	outputs []graphOutput
 
+	// err is the first conflict between copies of one destination handle.
+	err error
+
 	byNode  map[*streamNode]recipeir.NodeID
 	byInput map[*inputIdentity]recipeir.NodeID
 	byDest  map[uint64]recipeir.NodeID
@@ -56,9 +59,6 @@ func compileGraph(outs []Output) (*recipeGraph, error) {
 		if out.remux != nil {
 			from = g.input(*out.remux)
 		} else {
-			if _, err := streamNodes(out.stream); err != nil {
-				return nil, err
-			}
 			id, err := g.stream(out.stream.node)
 			if err != nil {
 				return nil, err
@@ -72,6 +72,9 @@ func compileGraph(outs []Output) (*recipeGraph, error) {
 			output.dests = append(output.dests, node)
 		}
 		g.outputs = append(g.outputs, output)
+	}
+	if g.err != nil {
+		return nil, g.err
 	}
 	return g, nil
 }
@@ -105,6 +108,10 @@ func (g *recipeGraph) input(spec InputSpec) recipeir.NodeID {
 func (g *recipeGraph) destination(dest Destination) recipeir.NodeID {
 	key := dest.spec.id
 	if id, ok := g.byDest[key]; ok && key != 0 {
+		if first := g.dests[g.node(id).Output]; destinationConfigKey(first.spec) != destinationConfigKey(dest.spec) && g.err == nil {
+			// Copies of one handle (Destination.With) must agree: they are one output.
+			g.err = destinationNameClashError(first.spec.label("destination"))
+		}
 		return id
 	}
 	index := len(g.dests)
@@ -153,7 +160,7 @@ func (g *recipeGraph) stream(n *streamNode) (recipeir.NodeID, error) {
 func (g *recipeGraph) root(root *streamRoot) (recipeir.NodeID, error) {
 	switch {
 	case root.join != nil:
-		node := recipeir.Node{Kind: recipeir.NodeJoin, Join: recipeir.JoinNode{
+		node := recipeir.Node{Kind: recipeir.NodeJoin, Join: recipeir.Join{
 			Kind:  firstNonEmpty(string(root.join.kind), root.join.name),
 			Stage: root.join.stage,
 			Sync:  root.join.sync,
@@ -215,35 +222,35 @@ func splitStreamOp(op streamOp) []streamOp {
 func graphOperation(op streamOp) recipeir.Operation {
 	switch op.kind {
 	case streamOpDecode:
-		return recipeir.Operation{Kind: plan.OpDecode, Decode: codecSpecFromOptions(op.codecOptions...)}
+		return opDecode(codecSpecFromOptions(op.codecOptions...))
 	case streamOpEncode:
-		return recipeIROperationFromSpec(operationSpecForEncode(cloneCodecSpec(op.encode)))
+		return opEncode(op.encode)
 	case streamOpResize:
-		return recipeIROperationFromSpec(operationSpecForTransform(resizeSpec(op.width, op.height, op.resize...)))
+		return opTransform(resizeSpec(op.width, op.height, op.resize...))
 	case streamOpResample:
-		return recipeIROperationFromSpec(operationSpecForTransform(resampleSpec(op.rate, op.channels, op.audio...)))
+		return opTransform(resampleSpec(op.rate, op.channels, op.audio...))
 	case streamOpDo:
 		var stage pipeline.Stage
 		if len(op.stages) != 0 {
 			stage = op.stages[0]
 		}
-		return recipeIROperationFromSpec(operationSpecForStage(stage))
+		return opStage(stage)
 	case streamOpPlayout:
-		return recipeIROperationFromSpec(operationSpecForPlayout(op.playout))
+		return opPlayout(op.playout)
 	case streamOpSync:
-		return recipeIROperationFromSpec(operationSpecForSync(op.sync))
+		return opSync(op.sync)
 	case streamOpTap:
 		return recipeir.Operation{Kind: plan.OpTap, Component: op.name, Tap: recipeir.Tap{Name: op.name}}
 	case streamOpBuffer:
 		return recipeir.Operation{Kind: recipeir.OpBuffer, Buffer: op.buffer}
 	case streamOpAuto:
-		return recipeIROperationFromSpec(operationSpecForAutoPolicy(op.policies))
+		return opAuto(op.policies)
 	case streamOpRequire:
-		return recipeIROperationFromSpec(operationSpecForRequire(op.spec))
+		return opRequire(op.spec)
 	case streamOpPrefer:
-		return recipeIROperationFromSpec(operationSpecForPreference(op.spec))
+		return opPrefer(op.spec)
 	case streamOpShape:
-		return recipeIROperationFromSpec(operationSpecForShape(op.spec))
+		return opShape(op.spec)
 	case streamOpName:
 		return recipeir.Operation{Kind: recipeir.OpName, Name: op.name}
 	default:
@@ -282,4 +289,10 @@ func (g *recipeGraph) destinationsOf(nodes []recipeir.NodeID) []Destination {
 		out = append(out, g.dests[g.node(id).Output])
 	}
 	return out
+}
+
+// destinationConfigKey is what copies of one destination handle must agree on
+// to be one output: its name, address, container, and sink.
+func destinationConfigKey(spec destinationSpec) string {
+	return destinationIdentityFromFacts(branchDestinationFactsFromSpec(spec.label(""), spec))
 }

@@ -9,14 +9,8 @@ import (
 	"github.com/thesyncim/goav/flow"
 	"github.com/thesyncim/goav/internal/recipeir"
 	"github.com/thesyncim/goav/pipeline"
-	"github.com/thesyncim/goav/plan"
 	"github.com/thesyncim/goav/shape"
 )
-
-func operationSpecForPlayout(policy flow.PlayoutPolicy) operationSpec {
-	gate := newPlayoutGate(policy)
-	return operationSpec{Kind: plan.OpStage, Component: gate.Name(), Stage: gate}
-}
 
 func newPlayoutGate(policy flow.PlayoutPolicy) *playoutGate {
 	gate := &playoutGate{policy: policy.Normalize()}
@@ -153,13 +147,6 @@ func playoutTimebaseError(policy flow.PlayoutPolicy, msg *pipeline.Message) erro
 	})
 }
 
-func validatePlayoutPolicyForStream(operation string, branchName string, stream av.Stream, operations []operationSpec) error {
-	if !operationSpecsContainPlayout(operations) {
-		return nil
-	}
-	return validatePlayoutPolicyForBranch(operation, branchName, stream)
-}
-
 func validatePlayoutPolicyForRecipeIROperations(operation string, branchName string, stream av.Stream, operations []recipeir.Operation) error {
 	if !recipeIROperationsContainPlayout(operations) {
 		return nil
@@ -176,15 +163,6 @@ func validatePlayoutPolicyForBranch(operation string, branchName string, stream 
 		})
 }
 
-func operationSpecsContainPlayout(operations []operationSpec) bool {
-	for i := range operations {
-		if _, ok := operations[i].Stage.(*playoutGate); ok {
-			return true
-		}
-	}
-	return false
-}
-
 func recipeIROperationsContainPlayout(operations []recipeir.Operation) bool {
 	for i := range operations {
 		if _, ok := operations[i].Stage.(*playoutGate); ok {
@@ -194,21 +172,10 @@ func recipeIROperationsContainPlayout(operations []recipeir.Operation) bool {
 	return false
 }
 
-// playoutStageOperationName is the planned node name of a playout gate:
-// playout-<branch>-<policy>, exactly as the lowering and the work plan name
-// it, so Describe matches the built graph.
-func playoutStageOperationName(operation operationSpec, branchName string) string {
-	gate, ok := operation.Stage.(*playoutGate)
-	if !ok {
-		if operation.Stage != nil {
-			return operation.Stage.Name()
-		}
-		return operation.Component
-	}
-	return playoutStageName(firstNonEmpty(branchName, "branch") + "-" + gate.policy.Name())
-}
-
 var _ pipeline.Stage = (*playoutGate)(nil)
 var _ pipeline.NodeDescriber = (*playoutGate)(nil)
 var _ pipeline.DropReporter = (*playoutGate)(nil)
 var _ shape.Contract = (*playoutGate)(nil)
+
+// FrameOnlyInput reports that the gate paces packets as well as frames.
+func (g *playoutGate) FrameOnlyInput() bool { return false }

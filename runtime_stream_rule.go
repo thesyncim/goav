@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/thesyncim/goav/av"
+	"github.com/thesyncim/goav/internal/recipeir"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/plan"
 	"github.com/thesyncim/goav/shape"
@@ -288,26 +289,23 @@ func (t *task) streamRuleAttachBranches(rule streamRule, stream av.Stream) ([]ru
 	initial := shape.FromStream(stream, domain)
 	branches := make([]runtimeAttachBranchInput, 0, len(rule.branches))
 	for i := range rule.branches {
-		spec := branchSpecForDiscoveredStream(rule.branches[i], t.rules.source, domain, stream)
-		if err := validateRuntimeBranchSpecOrigin(spec); err != nil {
+		spec := branchForDiscoveredStream(rule.branches[i], t.rules.source, domain, stream)
+		if err := validateSyncPolicyForRecipeIROperations("attach stream rule branch", spec.name, stream, spec.operations); err != nil {
 			return nil, err
 		}
-		if err := validateSyncPolicyForStream("attach stream rule branch", spec.name, stream, spec.operations); err != nil {
+		if err := validatePlayoutPolicyForRecipeIROperations("attach stream rule branch", spec.name, stream, spec.operations); err != nil {
 			return nil, err
 		}
-		if err := validatePlayoutPolicyForStream("attach stream rule branch", spec.name, stream, spec.operations); err != nil {
-			return nil, err
-		}
-		intent := streamIntent{
+		intent := recipeir.Stream{
 			Name: spec.name,
-			Select: plan.StreamSelect{
+			Selector: plan.StreamSelect{
 				ID:    stream.ID,
 				Type:  stream.Type,
 				Codec: stream.Codec.ID,
 			},
 			Operations: spec.operations,
 		}
-		solved, _, err := solveOperationSpecShapes("attach runtime branch", t.runtime, intent, initial)
+		solved, _, err := solveRecipeIROperationShapes("attach runtime branch", t.runtime, intent, initial)
 		if err != nil {
 			return nil, err
 		}

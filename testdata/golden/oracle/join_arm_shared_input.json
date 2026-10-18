@@ -1,20 +1,306 @@
 {
-  "describe_error": {
-    "code": "stream_beside_join",
-    "family": "stream",
-    "operation": "build recipe",
-    "node": ""
+  "describe": {
+    "name": "goav",
+    "nodes": [
+      {
+        "name": "audio-1",
+        "kind": "source",
+        "detail": "custom source, domain=frame, media=audio"
+      },
+      {
+        "name": "select-audio@audio-1",
+        "kind": "stage",
+        "detail": "select, type=audio"
+      },
+      {
+        "name": "audio-2",
+        "kind": "source",
+        "detail": "custom source, domain=frame, media=audio"
+      },
+      {
+        "name": "mix",
+        "kind": "stage"
+      },
+      {
+        "name": "mixed",
+        "kind": "sink"
+      },
+      {
+        "name": "dry",
+        "kind": "sink"
+      }
+    ],
+    "edges": [
+      {
+        "from": "audio-1",
+        "to": "select-audio@audio-1",
+        "policy": "all"
+      },
+      {
+        "from": "select-audio@audio-1",
+        "to": "mix",
+        "policy": "all"
+      },
+      {
+        "from": "select-audio@audio-1",
+        "to": "dry",
+        "policy": "all"
+      },
+      {
+        "from": "audio-2",
+        "to": "mix",
+        "policy": "all"
+      },
+      {
+        "from": "mix",
+        "to": "mixed",
+        "policy": "all"
+      }
+    ]
   },
-  "explain_error": {
-    "code": "stream_beside_join",
-    "family": "stream",
-    "operation": "build recipe",
-    "node": ""
-  },
-  "build_error": {
-    "code": "stream_beside_join",
-    "family": "stream",
-    "operation": "build recipe",
-    "node": ""
+  "explain": {
+    "summary": "from 2 inputs through 1 stream branch(es) to 2 destinations",
+    "operation": "build job",
+    "inputs": [
+      {
+        "name": "audio-1",
+        "protocol": "custom",
+        "streams": [
+          {
+            "id": "audio-1",
+            "index": 0,
+            "type": "audio",
+            "codec": {
+              "type": "audio",
+              "clockRate": 48000,
+              "sampleRate": 48000,
+              "channels": 2,
+              "channelLayout": "stereo",
+              "sampleFormat": "s16"
+            },
+            "name": "audio-1"
+          }
+        ]
+      },
+      {
+        "name": "audio-2",
+        "protocol": "custom",
+        "streams": [
+          {
+            "id": "audio-2",
+            "index": 0,
+            "type": "audio",
+            "codec": {
+              "type": "audio",
+              "clockRate": 48000,
+              "sampleRate": 48000,
+              "channels": 2,
+              "channelLayout": "stereo",
+              "sampleFormat": "s16"
+            },
+            "name": "audio-2"
+          }
+        ]
+      }
+    ],
+    "streams": [
+      {
+        "name": "audio",
+        "select": {
+          "type": "audio",
+          "input": "audio-1"
+        },
+        "destinations": [
+          "dry"
+        ]
+      }
+    ],
+    "branches": [
+      {
+        "name": "audio-1",
+        "input": "audio-1",
+        "stream": {
+          "id": "audio-1",
+          "type": "audio",
+          "name": "audio-1"
+        },
+        "shape": {
+          "domain": "frame",
+          "mediaKind": "audio",
+          "streamID": "audio-1",
+          "sampleRate": 48000,
+          "channels": 2,
+          "sampleFormat": "s16"
+        }
+      },
+      {
+        "name": "audio-2",
+        "input": "audio-2",
+        "stream": {
+          "id": "audio-2",
+          "type": "audio",
+          "name": "audio-2"
+        },
+        "shape": {
+          "domain": "frame",
+          "mediaKind": "audio",
+          "streamID": "audio-2",
+          "sampleRate": 48000,
+          "channels": 2,
+          "sampleFormat": "s16"
+        }
+      },
+      {
+        "name": "mix",
+        "stream": {
+          "id": "mix",
+          "type": "audio"
+        },
+        "shape": {
+          "domain": "frame",
+          "mediaKind": "audio",
+          "streamID": "mix",
+          "sampleRate": 48000,
+          "channels": 2,
+          "sampleFormat": "s16"
+        },
+        "operations": [
+          {
+            "kind": "join",
+            "component": "mix",
+            "detail": "converge 2 arms",
+            "shape": {
+              "domain": "frame",
+              "mediaKind": "audio",
+              "streamID": "mix",
+              "sampleRate": 48000,
+              "channels": 2,
+              "sampleFormat": "s16"
+            }
+          }
+        ],
+        "destinations": [
+          "mixed"
+        ]
+      },
+      {
+        "name": "audio",
+        "input": "audio-1",
+        "stream": {
+          "id": "audio-1",
+          "type": "audio",
+          "name": "audio-1",
+          "input": "audio-1"
+        },
+        "shape": {
+          "domain": "frame",
+          "mediaKind": "audio",
+          "streamID": "audio-1",
+          "sampleRate": 48000,
+          "channels": 2,
+          "sampleFormat": "s16"
+        },
+        "operations": [
+          {
+            "kind": "select",
+            "component": "audio",
+            "detail": "select stream",
+            "shape": {
+              "domain": "frame",
+              "mediaKind": "audio",
+              "streamID": "audio-1",
+              "sampleRate": 48000,
+              "channels": 2,
+              "sampleFormat": "s16"
+            }
+          }
+        ],
+        "destinations": [
+          "dry"
+        ]
+      }
+    ],
+    "destinations": [
+      {
+        "name": "mixed",
+        "kind": "sink",
+        "branches": [
+          "mix"
+        ]
+      },
+      {
+        "name": "dry",
+        "kind": "sink",
+        "branches": [
+          "audio"
+        ]
+      }
+    ],
+    "decisions": [
+      {
+        "code": "frame_source",
+        "branch": "audio",
+        "message": "source already produces decoded frames"
+      }
+    ],
+    "graph": {
+      "name": "goav",
+      "nodes": [
+        {
+          "name": "audio-1",
+          "kind": "source",
+          "detail": "custom source, domain=frame, media=audio"
+        },
+        {
+          "name": "select-audio@audio-1",
+          "kind": "stage",
+          "detail": "select, type=audio"
+        },
+        {
+          "name": "audio-2",
+          "kind": "source",
+          "detail": "custom source, domain=frame, media=audio"
+        },
+        {
+          "name": "mix",
+          "kind": "stage"
+        },
+        {
+          "name": "mixed",
+          "kind": "sink"
+        },
+        {
+          "name": "dry",
+          "kind": "sink"
+        }
+      ],
+      "edges": [
+        {
+          "from": "audio-1",
+          "to": "select-audio@audio-1",
+          "policy": "all"
+        },
+        {
+          "from": "select-audio@audio-1",
+          "to": "mix",
+          "policy": "all"
+        },
+        {
+          "from": "select-audio@audio-1",
+          "to": "dry",
+          "policy": "all"
+        },
+        {
+          "from": "audio-2",
+          "to": "mix",
+          "policy": "all"
+        },
+        {
+          "from": "mix",
+          "to": "mixed",
+          "policy": "all"
+        }
+      ]
+    }
   }
 }

@@ -7,6 +7,7 @@ import (
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/filter"
+	"github.com/thesyncim/goav/internal/recipeir"
 	"github.com/thesyncim/goav/plan"
 	"github.com/thesyncim/goav/shape"
 )
@@ -60,10 +61,10 @@ func TestSynthesizeConversionTransformContracts(t *testing.T) {
 		shape.Frame(av.MediaAudio, shape.Audio(44_100, codec.Stereo, av.SampleFormatS16)),
 		shape.Frame(av.MediaAudio, shape.Audio(48_000, 0, av.SampleFormatF32)),
 	)
-	if !ok || audio.resample == nil ||
-		audio.resample.SampleRate != 48_000 ||
-		audio.resample.Channels != codec.Stereo ||
-		audio.resample.SampleFormat != av.SampleFormatF32 {
+	if !ok || audio.Kind != recipeir.TransformResample ||
+		audio.Resample.SampleRate != 48_000 ||
+		audio.Resample.Channels != codec.Stereo ||
+		audio.Resample.SampleFormat != av.SampleFormatF32 {
 		t.Fatalf("audio transform = %#v, %v", audio, ok)
 	}
 
@@ -71,7 +72,7 @@ func TestSynthesizeConversionTransformContracts(t *testing.T) {
 		av.MediaAudio,
 		shape.Frame(av.MediaAudio, shape.Audio(0, 0, "")),
 		shape.Frame(av.MediaAudio, shape.Audio(48_000, 0, "")),
-	); ok || !mediaShapeEmpty(mediaShapeFromTransform(got)) {
+	); ok || !mediaShapeEmpty(mediaShapeFromRecipeIRTransform(got)) {
 		t.Fatalf("incomplete audio transform = %#v, %v; want zero, false", got, ok)
 	}
 
@@ -80,11 +81,11 @@ func TestSynthesizeConversionTransformContracts(t *testing.T) {
 		shape.Frame(av.MediaVideo, shape.Video(1920, 1080, av.PixelFormatI420)),
 		shape.Frame(av.MediaVideo, shape.Video(640, 0, av.PixelFormatYUV420P)),
 	)
-	if !ok || video.resize == nil ||
-		video.resize.Width != 640 ||
-		video.resize.Height != 1080 ||
-		video.resize.PixelFormat != av.PixelFormatYUV420P ||
-		video.resize.Mode != filter.ResizeExact {
+	if !ok || video.Kind != recipeir.TransformResize ||
+		video.Resize.Width != 640 ||
+		video.Resize.Height != 1080 ||
+		video.Resize.PixelFormat != av.PixelFormatYUV420P ||
+		video.Resize.Mode != filter.ResizeExact {
 		t.Fatalf("video transform = %#v, %v", video, ok)
 	}
 
@@ -92,10 +93,10 @@ func TestSynthesizeConversionTransformContracts(t *testing.T) {
 		av.MediaVideo,
 		shape.Frame(av.MediaVideo, shape.Video(0, 0, "")),
 		shape.Frame(av.MediaVideo, shape.Video(640, 0, "")),
-	); ok || !mediaShapeEmpty(mediaShapeFromTransform(got)) {
+	); ok || !mediaShapeEmpty(mediaShapeFromRecipeIRTransform(got)) {
 		t.Fatalf("incomplete video transform = %#v, %v; want zero, false", got, ok)
 	}
-	if got, ok := synthesizeConversionTransform(av.MediaData, shape.Spec{}, shape.Spec{}); ok || got != (transformSpec{}) {
+	if got, ok := synthesizeConversionTransform(av.MediaData, shape.Spec{}, shape.Spec{}); ok || got != (recipeir.Transform{}) {
 		t.Fatalf("unknown media transform = %#v, %v; want zero, false", got, ok)
 	}
 }
@@ -103,38 +104,38 @@ func TestSynthesizeConversionTransformContracts(t *testing.T) {
 func TestShapeSolverDiagnosticHelperContracts(t *testing.T) {
 	labelTests := []struct {
 		name      string
-		operation operationSpec
+		operation recipeir.Operation
 		want      string
 	}{
-		{name: "encode id", operation: operationSpecForEncode(codec.Opus()), want: "encode-opus"},
-		{name: "encode component", operation: operationSpec{Kind: plan.OpEncode, Component: "custom-encoder"}, want: "encode-custom-encoder"},
-		{name: "encode fallback", operation: operationSpec{Kind: plan.OpEncode}, want: "encode-encoder"},
-		{name: "decode id", operation: operationSpecForDecode(codec.VP8(), "vp8-decoder"), want: "decode-vp8"},
-		{name: "decode component", operation: operationSpec{Kind: plan.OpDecode, Component: "custom-decoder"}, want: "decode-custom-decoder"},
-		{name: "stage component", operation: operationSpec{Kind: plan.OpStage, Component: "meter"}, want: "stage-meter"},
-		{name: "stage fallback", operation: operationSpec{Kind: plan.OpStage}, want: "stage-custom"},
-		{name: "transform", operation: operationSpecForTransform(resampleSpec(48_000, codec.Stereo)), want: "resample"},
-		{name: "default component", operation: operationSpec{Kind: plan.OpTap, Component: "tap"}, want: "tap"},
-		{name: "default kind", operation: operationSpec{Kind: plan.OpTap}, want: "tap"},
-		{name: "default fallback", operation: operationSpec{}, want: "operation"},
+		{name: "encode id", operation: opEncode(codec.Opus()), want: "encode-opus"},
+		{name: "encode component", operation: recipeir.Operation{Kind: plan.OpEncode, Component: "custom-encoder"}, want: "encode-custom-encoder"},
+		{name: "encode fallback", operation: recipeir.Operation{Kind: plan.OpEncode}, want: "encode-encoder"},
+		{name: "decode id", operation: recipeir.Operation{Kind: plan.OpDecode, Component: "vp8-decoder", Decode: codec.VP8()}, want: "decode-vp8"},
+		{name: "decode component", operation: recipeir.Operation{Kind: plan.OpDecode, Component: "custom-decoder"}, want: "decode-custom-decoder"},
+		{name: "stage component", operation: recipeir.Operation{Kind: plan.OpStage, Component: "meter"}, want: "stage-meter"},
+		{name: "stage fallback", operation: recipeir.Operation{Kind: plan.OpStage}, want: "stage-custom"},
+		{name: "transform", operation: opTransform(resampleSpec(48_000, codec.Stereo)), want: "resample"},
+		{name: "default component", operation: recipeir.Operation{Kind: plan.OpTap, Component: "tap"}, want: "tap"},
+		{name: "default kind", operation: recipeir.Operation{Kind: plan.OpTap}, want: "tap"},
+		{name: "default fallback", operation: recipeir.Operation{}, want: "operation"},
 	}
 	for _, tt := range labelTests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := operationSpecLabel(tt.operation); got != tt.want {
-				t.Fatalf("operationSpecLabel = %q, want %q", got, tt.want)
+			if got := recipeIROperationLabel(tt.operation); got != tt.want {
+				t.Fatalf("recipeIROperationLabel = %q, want %q", got, tt.want)
 			}
 		})
 	}
 
-	if got, want := explicitConversionSuggestion(resampleSpec(16_000, codec.Mono), operationSpecForEncode(codec.Opus())),
+	if got, want := recipeIRExplicitConversionSuggestion(resampleSpec(16_000, codec.Mono), opEncode(codec.Opus())),
 		[]string{"insert .Resample(16000, 1) explicitly before encode-opus"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("resample suggestion = %#v, want %#v", got, want)
 	}
-	if got, want := explicitConversionSuggestion(resizeSpec(640, 360), operationSpec{}),
+	if got, want := recipeIRExplicitConversionSuggestion(resizeSpec(640, 360), recipeir.Operation{}),
 		[]string{"insert .Resize(640, 360) explicitly"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("resize suggestion = %#v, want %#v", got, want)
 	}
-	if got := explicitConversionSuggestion(transformSpec{}, operationSpecForDecode(codec.Opus(), "opus")); got != nil {
+	if got := recipeIRExplicitConversionSuggestion(recipeir.Transform{}, opDecode(codec.Opus())); got != nil {
 		t.Fatalf("empty transform suggestion = %#v, want nil", got)
 	}
 }

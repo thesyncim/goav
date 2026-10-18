@@ -59,34 +59,12 @@ func (s *customJoinBuilderStage) Close() error { return nil }
 
 func TestCustomJoinBuilderTapBranchesAndJoinArmContracts(t *testing.T) {
 	ctx := context.Background()
-	var nilJoin *joinStreamBuilder
-	if arm := nilJoin.joinArm(); arm.join != nil {
-		t.Fatalf("nil custom join arm = %+v, want zero", arm)
-	}
 
 	stage := newCustomJoinBuilderStage("funnel", 2)
 	joined := legacyJoin("funnel", stage,
 		recipeFrom(mixTestAudioSource("a", 100)).Audio(),
 		recipeFrom(mixTestAudioSource("b", 50)).Audio(),
 	).Tap(frameTapRef("funnel.frames"))
-
-	spec := joined.spec()
-	if spec.kind != "funnel" ||
-		spec.custom == nil ||
-		spec.custom.name != "funnel" ||
-		spec.custom.stage != stage ||
-		len(spec.arms) != 2 ||
-		len(spec.taps) != 1 ||
-		spec.taps[0].name != "funnel.frames" {
-		t.Fatalf("custom join spec = %+v", spec)
-	}
-	arm := joined.joinArm()
-	if arm.join == nil ||
-		arm.join.kind != "funnel" ||
-		arm.join.custom == nil ||
-		len(arm.join.taps) != 1 {
-		t.Fatalf("custom join arm = %+v", arm.join)
-	}
 
 	var got [][]int16
 	collect := Sink(SinkFunc("monitor", func(_ context.Context, msg Message) error {

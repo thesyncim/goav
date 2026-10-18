@@ -1,20 +1,386 @@
 {
-  "describe_error": {
-    "code": "stream_beside_join",
-    "family": "stream",
-    "operation": "build recipe",
-    "node": ""
+  "describe": {
+    "name": "goav",
+    "nodes": [
+      {
+        "name": "audio-1",
+        "kind": "source",
+        "detail": "custom source, domain=frame, media=audio"
+      },
+      {
+        "name": "audio-2",
+        "kind": "source",
+        "detail": "custom source, domain=frame, media=audio"
+      },
+      {
+        "name": "mix",
+        "kind": "stage"
+      },
+      {
+        "name": "audio-3",
+        "kind": "source",
+        "detail": "custom source, domain=frame, media=audio"
+      },
+      {
+        "name": "audio-4",
+        "kind": "source",
+        "detail": "custom source, domain=frame, media=audio"
+      },
+      {
+        "name": "mix-2",
+        "kind": "stage"
+      },
+      {
+        "name": "m1",
+        "kind": "sink"
+      },
+      {
+        "name": "m2",
+        "kind": "sink"
+      }
+    ],
+    "edges": [
+      {
+        "from": "audio-1",
+        "to": "mix",
+        "policy": "all"
+      },
+      {
+        "from": "audio-2",
+        "to": "mix",
+        "policy": "all"
+      },
+      {
+        "from": "mix",
+        "to": "m1",
+        "policy": "all"
+      },
+      {
+        "from": "audio-3",
+        "to": "mix-2",
+        "policy": "all"
+      },
+      {
+        "from": "audio-4",
+        "to": "mix-2",
+        "policy": "all"
+      },
+      {
+        "from": "mix-2",
+        "to": "m2",
+        "policy": "all"
+      }
+    ]
   },
-  "explain_error": {
-    "code": "stream_beside_join",
-    "family": "stream",
-    "operation": "build recipe",
-    "node": ""
-  },
-  "build_error": {
-    "code": "stream_beside_join",
-    "family": "stream",
-    "operation": "build recipe",
-    "node": ""
+  "explain": {
+    "summary": "from 4 inputs to 2 destinations",
+    "operation": "build job",
+    "inputs": [
+      {
+        "name": "audio-1",
+        "protocol": "custom",
+        "streams": [
+          {
+            "id": "audio-1",
+            "index": 0,
+            "type": "audio",
+            "codec": {
+              "type": "audio",
+              "clockRate": 48000,
+              "sampleRate": 48000,
+              "channels": 2,
+              "channelLayout": "stereo",
+              "sampleFormat": "s16"
+            },
+            "name": "audio-1"
+          }
+        ]
+      },
+      {
+        "name": "audio-2",
+        "protocol": "custom",
+        "streams": [
+          {
+            "id": "audio-2",
+            "index": 0,
+            "type": "audio",
+            "codec": {
+              "type": "audio",
+              "clockRate": 48000,
+              "sampleRate": 48000,
+              "channels": 2,
+              "channelLayout": "stereo",
+              "sampleFormat": "s16"
+            },
+            "name": "audio-2"
+          }
+        ]
+      },
+      {
+        "name": "audio-3",
+        "protocol": "custom",
+        "streams": [
+          {
+            "id": "audio-3",
+            "index": 0,
+            "type": "audio",
+            "codec": {
+              "type": "audio",
+              "clockRate": 48000,
+              "sampleRate": 48000,
+              "channels": 2,
+              "channelLayout": "stereo",
+              "sampleFormat": "s16"
+            },
+            "name": "audio-3"
+          }
+        ]
+      },
+      {
+        "name": "audio-4",
+        "protocol": "custom",
+        "streams": [
+          {
+            "id": "audio-4",
+            "index": 0,
+            "type": "audio",
+            "codec": {
+              "type": "audio",
+              "clockRate": 48000,
+              "sampleRate": 48000,
+              "channels": 2,
+              "channelLayout": "stereo",
+              "sampleFormat": "s16"
+            },
+            "name": "audio-4"
+          }
+        ]
+      }
+    ],
+    "branches": [
+      {
+        "name": "audio-1",
+        "input": "audio-1",
+        "stream": {
+          "id": "audio-1",
+          "type": "audio",
+          "name": "audio-1"
+        },
+        "shape": {
+          "domain": "frame",
+          "mediaKind": "audio",
+          "streamID": "audio-1",
+          "sampleRate": 48000,
+          "channels": 2,
+          "sampleFormat": "s16"
+        }
+      },
+      {
+        "name": "audio-2",
+        "input": "audio-2",
+        "stream": {
+          "id": "audio-2",
+          "type": "audio",
+          "name": "audio-2"
+        },
+        "shape": {
+          "domain": "frame",
+          "mediaKind": "audio",
+          "streamID": "audio-2",
+          "sampleRate": 48000,
+          "channels": 2,
+          "sampleFormat": "s16"
+        }
+      },
+      {
+        "name": "mix",
+        "stream": {
+          "id": "mix",
+          "type": "audio"
+        },
+        "shape": {
+          "domain": "frame",
+          "mediaKind": "audio",
+          "streamID": "mix",
+          "sampleRate": 48000,
+          "channels": 2,
+          "sampleFormat": "s16"
+        },
+        "operations": [
+          {
+            "kind": "join",
+            "component": "mix",
+            "detail": "converge 2 arms",
+            "shape": {
+              "domain": "frame",
+              "mediaKind": "audio",
+              "streamID": "mix",
+              "sampleRate": 48000,
+              "channels": 2,
+              "sampleFormat": "s16"
+            }
+          }
+        ],
+        "destinations": [
+          "m1"
+        ]
+      },
+      {
+        "name": "audio-3",
+        "input": "audio-3",
+        "stream": {
+          "id": "audio-3",
+          "type": "audio",
+          "name": "audio-3"
+        },
+        "shape": {
+          "domain": "frame",
+          "mediaKind": "audio",
+          "streamID": "audio-3",
+          "sampleRate": 48000,
+          "channels": 2,
+          "sampleFormat": "s16"
+        }
+      },
+      {
+        "name": "audio-4",
+        "input": "audio-4",
+        "stream": {
+          "id": "audio-4",
+          "type": "audio",
+          "name": "audio-4"
+        },
+        "shape": {
+          "domain": "frame",
+          "mediaKind": "audio",
+          "streamID": "audio-4",
+          "sampleRate": 48000,
+          "channels": 2,
+          "sampleFormat": "s16"
+        }
+      },
+      {
+        "name": "mix-2",
+        "stream": {
+          "id": "mix-2",
+          "type": "audio"
+        },
+        "shape": {
+          "domain": "frame",
+          "mediaKind": "audio",
+          "streamID": "mix-2",
+          "sampleRate": 48000,
+          "channels": 2,
+          "sampleFormat": "s16"
+        },
+        "operations": [
+          {
+            "kind": "join",
+            "component": "mix-2",
+            "detail": "converge 2 arms",
+            "shape": {
+              "domain": "frame",
+              "mediaKind": "audio",
+              "streamID": "mix-2",
+              "sampleRate": 48000,
+              "channels": 2,
+              "sampleFormat": "s16"
+            }
+          }
+        ],
+        "destinations": [
+          "m2"
+        ]
+      }
+    ],
+    "destinations": [
+      {
+        "name": "m1",
+        "kind": "sink",
+        "branches": [
+          "mix"
+        ]
+      },
+      {
+        "name": "m2",
+        "kind": "sink",
+        "branches": [
+          "mix-2"
+        ]
+      }
+    ],
+    "graph": {
+      "name": "goav",
+      "nodes": [
+        {
+          "name": "audio-1",
+          "kind": "source",
+          "detail": "custom source, domain=frame, media=audio"
+        },
+        {
+          "name": "audio-2",
+          "kind": "source",
+          "detail": "custom source, domain=frame, media=audio"
+        },
+        {
+          "name": "mix",
+          "kind": "stage"
+        },
+        {
+          "name": "audio-3",
+          "kind": "source",
+          "detail": "custom source, domain=frame, media=audio"
+        },
+        {
+          "name": "audio-4",
+          "kind": "source",
+          "detail": "custom source, domain=frame, media=audio"
+        },
+        {
+          "name": "mix-2",
+          "kind": "stage"
+        },
+        {
+          "name": "m1",
+          "kind": "sink"
+        },
+        {
+          "name": "m2",
+          "kind": "sink"
+        }
+      ],
+      "edges": [
+        {
+          "from": "audio-1",
+          "to": "mix",
+          "policy": "all"
+        },
+        {
+          "from": "audio-2",
+          "to": "mix",
+          "policy": "all"
+        },
+        {
+          "from": "mix",
+          "to": "m1",
+          "policy": "all"
+        },
+        {
+          "from": "audio-3",
+          "to": "mix-2",
+          "policy": "all"
+        },
+        {
+          "from": "audio-4",
+          "to": "mix-2",
+          "policy": "all"
+        },
+        {
+          "from": "mix-2",
+          "to": "m2",
+          "policy": "all"
+        }
+      ]
+    }
   }
 }

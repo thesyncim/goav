@@ -20,19 +20,9 @@ func TestRecipeDiagnosticHelperContracts(t *testing.T) {
 		code errcode.Code
 	}{
 		{
-			name: "nil recipe",
-			err:  nilRecipeError("compile job", "nil job"),
-			code: errcode.JobInvalid,
-		},
-		{
 			name: "runtime missing",
 			err:  runtimeMissingError("compile job"),
 			code: errcode.RuntimeMissing,
-		},
-		{
-			name: "unconstructed job",
-			err:  unconstructedJobError(),
-			code: errcode.JobInvalid,
 		},
 	}
 	for _, tt := range tests {

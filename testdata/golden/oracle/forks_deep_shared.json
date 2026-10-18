@@ -18,7 +18,7 @@
         "detail": "frames -\u003e packets, codec=vp8"
       },
       {
-        "name": "resize-sd-vp8",
+        "name": "resize-video",
         "kind": "stage",
         "detail": "resize, 32x24, exact"
       },
@@ -26,11 +26,6 @@
         "name": "encode-sd-vp8",
         "kind": "stage",
         "detail": "frames -\u003e packets, codec=vp8"
-      },
-      {
-        "name": "resize-sd-vp9",
-        "kind": "stage",
-        "detail": "resize, 32x24, exact"
       },
       {
         "name": "encode-sd-vp9",
@@ -66,12 +61,7 @@
       },
       {
         "from": "select-video",
-        "to": "resize-sd-vp8",
-        "policy": "all"
-      },
-      {
-        "from": "select-video",
-        "to": "resize-sd-vp9",
+        "to": "resize-video",
         "policy": "all"
       },
       {
@@ -80,18 +70,18 @@
         "policy": "all"
       },
       {
-        "from": "resize-sd-vp8",
+        "from": "resize-video",
         "to": "encode-sd-vp8",
+        "policy": "all"
+      },
+      {
+        "from": "resize-video",
+        "to": "encode-sd-vp9",
         "policy": "all"
       },
       {
         "from": "encode-sd-vp8",
         "to": "sd-vp8.webm",
-        "policy": "all"
-      },
-      {
-        "from": "resize-sd-vp9",
-        "to": "encode-sd-vp9",
         "policy": "all"
       },
       {
@@ -177,7 +167,8 @@
             "config": {
               "height": "24",
               "width": "32"
-            }
+            },
+            "shared": true
           },
           {
             "kind": "encode",
@@ -224,7 +215,8 @@
             "config": {
               "height": "24",
               "width": "32"
-            }
+            },
+            "shared": true
           },
           {
             "kind": "encode",
@@ -350,7 +342,8 @@
               "height": "24",
               "pixelFormat": "i420",
               "width": "32"
-            }
+            },
+            "shared": true
           },
           {
             "kind": "encode",
@@ -419,7 +412,8 @@
               "height": "24",
               "pixelFormat": "i420",
               "width": "32"
-            }
+            },
+            "shared": true
           },
           {
             "kind": "encode",
@@ -673,7 +667,7 @@
           "detail": "frames -\u003e packets, codec=vp8"
         },
         {
-          "name": "resize-sd-vp8",
+          "name": "resize-video",
           "kind": "stage",
           "detail": "resize, 32x24, exact"
         },
@@ -681,11 +675,6 @@
           "name": "encode-sd-vp8",
           "kind": "stage",
           "detail": "frames -\u003e packets, codec=vp8"
-        },
-        {
-          "name": "resize-sd-vp9",
-          "kind": "stage",
-          "detail": "resize, 32x24, exact"
         },
         {
           "name": "encode-sd-vp9",
@@ -721,12 +710,7 @@
         },
         {
           "from": "select-video",
-          "to": "resize-sd-vp8",
-          "policy": "all"
-        },
-        {
-          "from": "select-video",
-          "to": "resize-sd-vp9",
+          "to": "resize-video",
           "policy": "all"
         },
         {
@@ -735,18 +719,18 @@
           "policy": "all"
         },
         {
-          "from": "resize-sd-vp8",
+          "from": "resize-video",
           "to": "encode-sd-vp8",
+          "policy": "all"
+        },
+        {
+          "from": "resize-video",
+          "to": "encode-sd-vp9",
           "policy": "all"
         },
         {
           "from": "encode-sd-vp8",
           "to": "sd-vp8.webm",
-          "policy": "all"
-        },
-        {
-          "from": "resize-sd-vp9",
-          "to": "encode-sd-vp9",
           "policy": "all"
         },
         {

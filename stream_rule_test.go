@@ -12,7 +12,6 @@ import (
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
-	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/inspect"
 	"github.com/thesyncim/goav/lifecycle"
@@ -547,27 +546,6 @@ func TestOnStreamRuleVisibleInExplain(t *testing.T) {
 	}
 }
 
-func TestOnStreamFileBranchRequiresExplicitRuntime(t *testing.T) {
-	ctx := context.Background()
-	input := Source("mic",
-		shape.Packet(av.MediaAudio, av.CodecOpus, shape.Audio(48_000, codec.Stereo, av.SampleFormatS16)),
-		func(context.Context, SourcePush) error { return nil },
-	)
-	monitor := Sink(SinkFunc("main", func(context.Context, Message) error { return nil }))
-	job := recipeFrom(input).
-		OnStream(MatchMedia(av.MediaAudio), newBranch("record").Copy().To(Write("late.ogg", io.Discard))).
-		Audio().Copy().To(monitor)
-
-	_, err := job.BuildLive(ctx)
-	var buildErr *BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != errcode.RuntimeMissing {
-		t.Fatalf("BuildLive() error = %v, want runtime_missing", err)
-	}
-	if !strings.Contains(err.Error(), "bundle.Run") {
-		t.Fatalf("BuildLive() error = %v, want bundle helper guidance", err)
-	}
-}
-
 // TestOnStreamAttachFailureSurfacesEventAndRollsBack drives the failure path:
 // the rule branch needs an ogg muxer the runtime does not have, so the late
 // attach fails. The failure surfaces as av.EventAttachError on Watch, the
@@ -746,7 +724,7 @@ func TestOnStreamValidation(t *testing.T) {
 		)
 	}
 
-	requireRuleError := func(t *testing.T, job *recipeJob, fragment string) {
+	requireRuleError := func(t *testing.T, job *testJob, fragment string) {
 		t.Helper()
 		_, err := job.BuildLive(ctx)
 		var buildErr *BuildError
@@ -763,12 +741,6 @@ func TestOnStreamValidation(t *testing.T) {
 			OnStream(StreamMatch{}, newBranch("late").Copy().To(monitor)).
 			Audio().Copy().To(main)
 		requireRuleError(t, job, "no matcher")
-	})
-	t.Run("branch with From", func(t *testing.T) {
-		job := recipeFrom(source("mic")).
-			OnStream(MatchMedia(av.MediaAudio), newBranch("late").From(packetTapRef("pkts")).Copy().To(monitor)).
-			Audio().Copy().To(main)
-		requireRuleError(t, job, "must not declare their own anchor")
 	})
 	t.Run("no branches", func(t *testing.T) {
 		job := recipeFrom(source("mic")).

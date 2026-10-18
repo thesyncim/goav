@@ -1,6 +1,9 @@
-// Package recipeir contains immutable data snapshots of the public recipe
-// grammar. It deliberately imports only leaf vocabulary packages, so root
-// builders can lower into this package before the planner starts.
+// Package recipeir is the recipe IR the value grammar compiles to and the
+// planner reads: a DAG of inputs, selected streams, operations, joins, and
+// destinations (Graph), and the branches derived from it (Streams). It
+// deliberately imports only leaf vocabulary packages, so the planner's input
+// is plain data; the concrete readers, writers, sinks, and providers stay in
+// the root package, indexed by the IR.
 package recipeir
 
 import (
@@ -13,28 +16,20 @@ import (
 	"github.com/thesyncim/goav/shape"
 )
 
-// Kind identifies the public grammar form captured by a Recipe.
-type Kind string
-
-const (
-	// KindJob is a normal From(...).Audio/Video/... recipe.
-	KindJob Kind = "job"
-	// KindJoin is a Mix/Composite/Select/custom join recipe.
-	KindJoin Kind = "join"
-)
-
-// Recipe is the immutable recipe data boundary between fluent grammar builders
-// and planner passes.
+// Recipe is one compiled value recipe.
 type Recipe struct {
-	Kind         Kind
-	Name         string
 	Inputs       []Input
-	Streams      []Stream
 	Destinations []Destination
-	Join         Join
-	StreamRules  []StreamRule
-	Policies     Policies
-	Copy         bool
+	// Graph is the recipe as its Outputs built it.
+	Graph Graph
+	// Streams are the branches the planner derives from Graph: one per
+	// distinct Stream the Outputs route, its operations from its root (an
+	// input's selected stream or a join's output) in order, each carrying the
+	// node it runs as. A node that serves several branches appears in each
+	// of them, Shared.
+	Streams     []Stream
+	StreamRules []StreamRule
+	Policies    Policies
 }
 
 // InputKind identifies the planner-visible behavior of an input without
@@ -63,20 +58,24 @@ type Input struct {
 	SourceShape shape.Spec
 }
 
-// Stream is one selected stream chain with ordered operations and output refs.
+// Stream is one branch: a root, its ordered operations, and the
+// destinations it feeds.
 type Stream struct {
 	Name string
-	// Named marks a stream whose Name is its identity (a fork, or a stream
-	// named with As): its encoder output takes Name as its stream id, as
-	// every stream of several does. A lone unnamed stream keeps its source
-	// stream's identity.
-	Named      bool
+	// Named marks a branch whose Name is its identity (a fork, or a stream
+	// named with As): its encoder output takes Name as its stream id. A lone
+	// unnamed stream keeps its source stream's identity.
+	Named bool
+	// Root is the branch's root node: a NodeSelect or a NodeJoin.
+	Root NodeID
+	// Input indexes Recipe.Inputs for a branch of an input's stream; -1 for
+	// a branch of a join's output.
+	Input      int
 	Selector   plan.StreamSelect
-	From       TapRef
 	Operations []Operation
 	Outputs    []OutputRef
-	// Buffer is a planned branch's declared queue (.Buffer(...)); zero for
-	// ordinary streams.
+	// Buffer is the branch's declared queue (.Buffer(...)); zero for
+	// branches that declare none.
 	Buffer flow.BranchBuffer
 }
 
@@ -110,10 +109,9 @@ type Destination struct {
 type StreamRule struct {
 	MatchDescription string
 	Branches         []StreamRuleBranch
-	// RequiresRuntime records, at the builder→IR boundary, whether any rule
-	// branch needs an explicit runtime (it decodes, encodes, transforms, or
-	// writes to an adapter-backed destination). The planner reads this fact
-	// instead of the mutable builder branch specs.
+	// RequiresRuntime records whether any rule branch needs an explicit
+	// runtime (it decodes, encodes, transforms, or writes to an
+	// adapter-backed destination).
 	RequiresRuntime bool
 }
 
@@ -159,36 +157,6 @@ type RuntimeDestination struct {
 	ShareKey string
 }
 
-// Join summarizes the planner-visible shape of a convergence recipe. It keeps
-// validation and diagnostics off the executable root joinSpec while the lowerer
-// continues to own concrete arms, stages, and destination handles.
-type Join struct {
-	Kind             string
-	ArmCount         int
-	InputCount       int
-	DestinationCount int
-	BranchCount      int
-	OperationCount   int
-	TapCount         int
-	HasEncode        bool
-	Custom           bool
-	// Branches carries the immutable fanout branches declared off the joined
-	// stream, so the join planner reads recipe facts instead of the mutable
-	// builder branch specs. Concrete destination handles stay outside the IR.
-	Branches []JoinBranch
-}
-
-// JoinBranch is one immutable fanout branch off a join's joined stream: its
-// name, media, the .From(...) anchor, and ordered operations. The concrete
-// destination handles travel beside the IR as the documented exception, so they
-// are not part of this DTO.
-type JoinBranch struct {
-	Name       string
-	Media      av.MediaType
-	Source     TapRef
-	Operations []Operation
-}
-
 // Policies are recipe-wide planning flags.
 type Policies struct {
 	Realtime bool
@@ -203,15 +171,14 @@ const (
 	TransformResample TransformKind = "resample"
 )
 
-// Transform is one planner-visible transform config without depending on the
-// root transformSpec wrapper.
+// Transform is one planner-visible transform config.
 type Transform struct {
 	Kind     TransformKind
 	Resize   filter.ResizeConfig
 	Resample filter.ResampleConfig
 }
 
-// Operation is one normalized stream operation.
+// Operation is one stream operation: the one record the planner reads.
 type Operation struct {
 	Kind      plan.OperationKind
 	Component string
@@ -226,10 +193,13 @@ type Operation struct {
 	Auto      *shape.Policy
 	Require   *shape.Spec
 	Prefer    *shape.Spec
-	Path      Path
-	// Name is an OpName operation's name; Buffer an OpBuffer operation's queue.
+	// Name is an OpName operation's name; Buffer an OpBuffer operation's
+	// queue.
 	Name   string
 	Buffer flow.BranchBuffer
+	// Node is the graph node the operation runs as. Operations the planner
+	// inserts (a packet copy, a shape conversion) get nodes of their own.
+	Node NodeID
 }
 
 // Tap is the typed anchor data carried by tap operations.
@@ -245,9 +215,6 @@ type TapRef struct {
 	Name   string
 	Domain shape.MediaDomain
 }
-
-// Path is a stable recipe location for future diagnostics.
-type Path string
 
 // Graph is a value recipe as a DAG: every Stream the recipe's Outputs reach
 // is one node, so a Stream used twice is one node with several children (a
@@ -294,7 +261,7 @@ type Node struct {
 	Rule    int
 	Anchor  Anchor
 	Op      Operation
-	Join    JoinNode
+	Join    Join
 	Output  int
 }
 
@@ -307,8 +274,8 @@ type Anchor struct {
 	Route *pipeline.Route
 }
 
-// JoinNode is a convergence node's kind and per-arm placement.
-type JoinNode struct {
+// Join is a convergence node's kind and per-arm placement.
+type Join struct {
 	// Kind is mix, composite, or select, or a custom join's name.
 	Kind string
 	// Stage is a custom join's convergence stage.

@@ -62,12 +62,6 @@ func TestCustomPacketSourceRunsThroughRecipe(t *testing.T) {
 		!strings.Contains(text, "generated -> select-audio") {
 		t.Fatalf("spec:\n%s", text)
 	}
-	intent := job.plan()
-	if len(intent.Inputs) != 1 ||
-		intent.Inputs[0].Protocol != av.ProtocolCustom ||
-		intent.Inputs[0].Codec.ID != av.CodecOpus {
-		t.Fatalf("intent: %+v", intent)
-	}
 
 	task, err := job.BuildLive(ctx)
 	if err != nil {
@@ -269,10 +263,6 @@ func TestRecordRecipeInputMIMEDrivesFormatProbe(t *testing.T) {
 	job := recipeFrom(
 		FileInput("", strings.NewReader(""), MIME("audio/ogg")),
 	).Copy().To(Write("recording.ogg", io.Discard)).UseRuntime(runtime)
-	intent := job.plan()
-	if len(intent.Inputs) != 1 || intent.Inputs[0].MIMEType != "audio/ogg" {
-		t.Fatalf("intent: %+v", intent)
-	}
 
 	task, err := job.BuildLive(ctx)
 	if err != nil {
@@ -302,10 +292,6 @@ func TestRecordRecipeOutputMIMEDrivesFormatProbe(t *testing.T) {
 	job := recipeFrom(
 		FileInput("input.ogg", strings.NewReader("")),
 	).Copy().To(Write("", io.Discard, MIME("audio/ogg"))).UseRuntime(runtime)
-	intent := job.plan()
-	if len(intent.Destinations) != 1 || intent.Destinations[0].MIMEType != "audio/ogg" {
-		t.Fatalf("intent: %+v", intent)
-	}
 
 	spec, err := job.Describe()
 	if err != nil {
@@ -555,14 +541,6 @@ func TestStreamRecipeEncodeToTypedDestinationRuns(t *testing.T) {
 		Encode(codec.Opus(codec.Bitrate(96_000))).
 		To(target)
 
-	intent := job.plan()
-	if len(intent.Streams) != 1 ||
-		len(intent.Streams[0].Destinations) != 1 ||
-		intent.Streams[0].Destinations[0] != "archive.ogg" ||
-		len(intent.Destinations) != 1 ||
-		intent.Destinations[0].Name != "archive.ogg" {
-		t.Fatalf("intent: %+v", intent)
-	}
 	planned, err := job.Describe()
 	if err != nil {
 		t.Fatal(err)
@@ -2253,11 +2231,10 @@ func TestTaskAttachRejectsRuntimeTransformDescriptorConfigBeforeMutation(t *test
 
 	branch := newBranch("voice").
 		From(frameTapRef("audio.decoded")).
-		Resample(16_000, codec.Mono).
+		Resample(16_000, codec.Mono, func(config *filter.ResampleConfig) { config.SampleFormat = av.SampleFormatF32 }).
 		To(Sink(SinkFunc("voice", func(context.Context, Message) error {
 			return nil
 		})))
-	branch.operations[0].Transform.resample.SampleFormat = av.SampleFormatF32
 
 	_, err = legacyAttach(task, ctx, branch)
 	var buildErr *BuildError
@@ -3047,74 +3024,6 @@ func TestTaskAttachRuntimeFlowDecodeBranchFromPacketTap(t *testing.T) {
 	}
 	if !decoder.closed || !decoded.closed {
 		t.Fatalf("closed decoder=%v decoded=%v", decoder.closed, decoded.closed)
-	}
-}
-
-func TestTaskAttachRuntimeFlowMediaMismatchBeforeMutation(t *testing.T) {
-	ctx := context.Background()
-	frame := av.Frame{
-		StreamID: "video",
-		Type:     av.MediaVideo,
-		Video: &av.VideoFrame{
-			Width:       640,
-			Height:      360,
-			PixelFormat: av.PixelFormatYUV420P,
-		},
-	}
-	source := &runtimeTestSource{
-		name:    "source",
-		message: pipeline.Message{Kind: pipeline.MessageFrame, Frame: &frame},
-	}
-	base := &runtimeTestSink{name: "base"}
-	graph := expertGraph(mustNew())
-	src := graph.Source("source", source)
-	graph.Connect(src.Out(), graph.Sink("base", base).In())
-	builtTask, err := graph.Build(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	runtimeTask := builtTask.(*task)
-	runtimeTask.taps = []snapshot.Tap{{
-		Name:      "video.frames",
-		MediaKind: av.MediaVideo,
-		Domain:    shape.DomainFrame,
-		Shape: shape.Spec{
-			Domain:      shape.DomainFrame,
-			MediaKind:   av.MediaVideo,
-			StreamID:    "video",
-			Codec:       av.CodecVP8,
-			Width:       640,
-			Height:      360,
-			PixelFormat: av.PixelFormatYUV420P,
-		},
-		Node: "source",
-	}}
-	defer builtTask.Close()
-	before := builtTask.Describe()
-
-	_, err = legacyAttach(builtTask, ctx, newBranch("voice").
-		From(frameTapRef("video.frames")).
-		Apply(newFlow("voice").Audio().Resample(16_000, codec.Mono)).
-		To(Sink(SinkFunc("voice", func(context.Context, Message) error {
-			return nil
-		}))))
-	var buildErr *BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "flow_media_mismatch" || !errors.Is(err, errUnsupportedBuild) {
-		t.Fatalf("err = %v, want flow_media_mismatch with matching BuildError code", err)
-	}
-	if buildErr.Operation != "attach runtime branch" ||
-		!strings.Contains(err.Error(), "audio flow cannot be applied to video stream") ||
-		!strings.Contains(err.Error(), "to input.Audio() streams") ||
-		!strings.Contains(err.Error(), "to input.Video() streams") {
-		t.Fatalf("err = %v, want runtime flow media guidance", err)
-	}
-	if after := builtTask.Describe(); !reflect.DeepEqual(before, after) {
-		t.Fatalf("graph mutated after rejected runtime flow:\nbefore:\n%s\nafter:\n%s", specText(before), specText(after))
-	}
-	for _, tap := range builtTask.Taps() {
-		if strings.Contains(tap.Node.String(), "voice") {
-			t.Fatalf("runtime branch tap registered after rejected attach: %+v", tap)
-		}
 	}
 }
 

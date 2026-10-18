@@ -5,6 +5,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/thesyncim/goav/internal/recipeir"
 	"github.com/thesyncim/goav/lifecycle"
 	"github.com/thesyncim/goav/pipeline"
 )
@@ -18,14 +19,10 @@ const (
 	switchMediaTime    switchBoundaryKind = "media-time"
 )
 
-// RebranchArg lets BranchSpec ride the lifecycle.RebranchArg list accepted by
-// Attachment.Rebranch as a replacement branch.
-func (s branchRecipe) RebranchArg() {}
-
 // rebranchPolicy is the collected Rebranch configuration: the replacement
 // branches, the switch boundary, and the old branch's destination disposition.
 type rebranchPolicy struct {
-	specs       []branchRecipe
+	specs       []attachBranch
 	boundary    switchBoundaryKind
 	mediaTime   time.Duration
 	invalid     string
@@ -57,7 +54,7 @@ func rebranchPolicyFromOptions(options []lifecycle.RebranchArg) rebranchPolicy {
 			continue
 		}
 		switch option := option.(type) {
-		case branchRecipe:
+		case attachBranch:
 			policy.specs = append(policy.specs, option)
 		case lifecycleRebranchPolicy:
 			if invalid := option.Invalid(); invalid != "" {
@@ -196,13 +193,13 @@ func switchBoundaryReachedAt(boundary switchBoundaryKind, mediaTime time.Duratio
 // gatedBranchSpecs clones the replacement specs with a switch gate from the
 // group prepended as each branch's head operation, so every replacement sheds
 // until its boundary while the rest of the chain stays exactly as written.
-func gatedBranchSpecs(specs []branchRecipe, group *switchGroup) []branchRecipe {
-	out := make([]branchRecipe, len(specs))
+func gatedBranchSpecs(specs []attachBranch, group *switchGroup) []attachBranch {
+	out := make([]attachBranch, len(specs))
 	for i := range specs {
 		out[i] = specs[i]
-		operations := make([]operationSpec, 0, len(specs[i].operations)+1)
-		operations = append(operations, operationSpecForStage(group.gate()))
-		operations = append(operations, cloneOperationSpecs(specs[i].operations)...)
+		operations := make([]recipeir.Operation, 0, len(specs[i].operations)+1)
+		operations = append(operations, opStage(group.gate()))
+		operations = append(operations, specs[i].operations...)
 		out[i].operations = operations
 	}
 	return out

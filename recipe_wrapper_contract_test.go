@@ -19,17 +19,3 @@ func TestRecipeResolvedUnsupportedContracts(t *testing.T) {
 		t.Fatalf("workIR() = %+v, want empty work plan", work)
 	}
 }
-
-func TestStateMuxCompatibilityIssuesRequireGraphPlanSpec(t *testing.T) {
-	for name, state := range map[string]*recipeCompileState{
-		"nil":          nil,
-		"not ready":    {},
-		"wrong origin": {specReady: true, specOrigin: "planned"},
-	} {
-		t.Run(name, func(t *testing.T) {
-			if issues := stateMuxCompatibilityIssues(state); len(issues) != 0 {
-				t.Fatalf("stateMuxCompatibilityIssues() = %+v, want none", issues)
-			}
-		})
-	}
-}

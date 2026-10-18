@@ -9,6 +9,7 @@ import (
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/errcode"
+	"github.com/thesyncim/goav/internal/recipeir"
 	"github.com/thesyncim/goav/plan"
 )
 
@@ -65,10 +66,10 @@ func TestExplainStreamsUseWorkStreamOperations(t *testing.T) {
 	streams := explainStreams([]workStream{{
 		Name:   "preview",
 		Select: plan.StreamSelect{Type: av.MediaVideo},
-		Operations: operationFactsFromSpecs([]operationSpec{
-			operationSpecForDecode(codec.VP8(), string(av.CodecVP8)),
-			operationSpecForEncode(codec.VP9()),
-		}),
+		Operations: []recipeir.Operation{
+			opDecode(codec.VP8()),
+			opEncode(codec.VP9()),
+		},
 		Destinations: []string{"webm"},
 	}})
 	if len(streams) != 1 {

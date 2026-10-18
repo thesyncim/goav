@@ -8,6 +8,7 @@ import (
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
+	"github.com/thesyncim/goav/internal/recipeir"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/plan"
 	"github.com/thesyncim/goav/shape"
@@ -17,22 +18,22 @@ func TestAttachOperationComponentContracts(t *testing.T) {
 	stage := &runtimeTestStage{name: "meter"}
 	tests := []struct {
 		name      string
-		operation operationSpec
+		operation recipeir.Operation
 		stage     pipeline.Stage
 		want      string
 	}{
-		{name: "decode codec", operation: operationSpec{Kind: plan.OpDecode, Decode: codec.Codec(av.CodecID("x_decode"), av.MediaAudio)}, want: "x_decode"},
-		{name: "transform factory", operation: operationSpec{Kind: plan.OpTransform, Transform: resizeSpec(320, 180)}, want: "resize"},
-		{name: "encode codec", operation: operationSpec{Kind: plan.OpEncode, Encode: codec.Codec(av.CodecID("x_encode"), av.MediaVideo)}, want: "x_encode"},
-		{name: "copy", operation: operationSpec{Kind: plan.OpCopy}, want: "packet-copy"},
-		{name: "explicit component", operation: operationSpec{Kind: plan.OpStage, Component: "custom-stage"}, stage: stage, want: "custom-stage"},
-		{name: "stage fallback", operation: operationSpec{Kind: plan.OpStage}, stage: stage, want: "meter"},
-		{name: "shape fallback", operation: operationSpec{Kind: plan.OpShape, Shape: shape.Frame(av.MediaAudio)}, want: "shape"},
-		{name: "empty", operation: operationSpec{Kind: plan.OpStage}, want: ""},
+		{name: "decode codec", operation: recipeir.Operation{Kind: plan.OpDecode, Decode: codec.Codec(av.CodecID("x_decode"), av.MediaAudio)}, want: "x_decode"},
+		{name: "transform factory", operation: recipeir.Operation{Kind: plan.OpTransform, Transform: resizeSpec(320, 180)}, want: "resize"},
+		{name: "encode codec", operation: recipeir.Operation{Kind: plan.OpEncode, Encode: codec.Codec(av.CodecID("x_encode"), av.MediaVideo)}, want: "x_encode"},
+		{name: "copy", operation: recipeir.Operation{Kind: plan.OpCopy}, want: "packet-copy"},
+		{name: "explicit component", operation: recipeir.Operation{Kind: plan.OpStage, Component: "custom-stage"}, stage: stage, want: "custom-stage"},
+		{name: "stage fallback", operation: recipeir.Operation{Kind: plan.OpStage}, stage: stage, want: "meter"},
+		{name: "shape fallback", operation: recipeir.Operation{Kind: plan.OpShape, Shape: shape.Frame(av.MediaAudio)}, want: "shape"},
+		{name: "empty", operation: recipeir.Operation{Kind: plan.OpStage}, want: ""},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := attachOperationComponent(recipeIROperationFromSpec(tt.operation), tt.stage); got != tt.want {
+			if got := attachOperationComponent(tt.operation, tt.stage); got != tt.want {
 				t.Fatalf("component = %q, want %q", got, tt.want)
 			}
 		})

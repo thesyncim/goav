@@ -188,7 +188,6 @@ func TestValueGrammarTapsAreListed(t *testing.T) {
 func TestValueGrammarRefusals(t *testing.T) {
 	sink := goav.Sink(component.SinkFunc("s", func(context.Context, component.Message) error { return nil }))
 	in := goavtest.Video(64, 48, 1)
-	mix := goav.Mix(goavtest.Audio(48_000, 1, []int16{1}).Audio(), goavtest.Audio(48_000, 1, []int16{2}).Audio())
 	for name, tc := range map[string]struct {
 		outs []goav.Output
 		code string
@@ -197,7 +196,6 @@ func TestValueGrammarRefusals(t *testing.T) {
 		"zero stream":            {outs: []goav.Output{goav.Stream{}.To(sink)}, code: "stream_invalid"},
 		"no destination":         {outs: []goav.Output{in.Video().To()}, code: "stream_invalid"},
 		"sync on a plain stream": {outs: []goav.Output{in.Video().SyncByPTS().To(sink)}, code: "stream_invalid"},
-		"join beside a stream":   {outs: []goav.Output{mix.To(sink), in.Video().To(sink)}, code: "stream_beside_join"},
 		"copy beside a stream":   {outs: []goav.Output{in.To(sink), in.Video().To(sink)}, code: "stream_invalid"},
 		"two forks named alike":  {outs: []goav.Output{in.Video().Encode(codec.VP8()).As("x").To(sink), in.Video().Encode(codec.VP9()).As("x").To(sink)}, code: "stream_invalid"},
 	} {
@@ -343,7 +341,8 @@ func TestValueGrammarSelectEncodesIntoAFile(t *testing.T) {
 }
 
 // TestValueGrammarCopiesInputsTogether pins input.To across inputs: two
-// inputs routed to one Destination value copy into it together.
+// inputs routed to one Destination value copy into it together, and inputs
+// routed apart copy apart.
 func TestValueGrammarCopiesInputsTogether(t *testing.T) {
 	var packets int
 	out := goav.Sink(component.SinkFunc("packets", func(_ context.Context, msg component.Message) error {
@@ -361,10 +360,16 @@ func TestValueGrammarCopiesInputsTogether(t *testing.T) {
 	if packets != 3 {
 		t.Fatalf("sink received %d packets, want every packet of both inputs", packets)
 	}
-	_, err := offlineRuntime().Describe(a.To(out), b.To(goav.Write("other.mkv", new(bytes.Buffer))))
-	var buildErr *goav.BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "stream_invalid" {
-		t.Fatalf("copies of two inputs to different files: err = %v, want stream_invalid", err)
+	spec, err := offlineRuntime().Describe(a.To(out), b.To(goav.Write("other.mkv", new(bytes.Buffer))))
+	if err != nil {
+		t.Fatalf("copies of two inputs to different destinations: %v", err)
+	}
+	into := map[string]int{}
+	for _, edge := range spec.Edges {
+		into[edge.To.String()]++
+	}
+	if into["packets"] != 1 || into["other.mkv"] != 1 {
+		t.Fatalf("each input copies to its own destination:\n%s", specText(spec))
 	}
 }
 
@@ -383,8 +388,8 @@ func TestValueGrammarNamesASingleStream(t *testing.T) {
 
 // TestValueGrammarJoinOperationsAreNeverDropped pins that every operation on a
 // join's output runs: what the join itself cannot take runs in a planned
-// branch, a tap the backend cannot publish is refused, and a nested join
-// refuses operations it cannot apply instead of dropping them.
+// branch, a tap after its encoder taps packets, and a nested join refuses
+// operations it cannot apply instead of dropping them.
 func TestValueGrammarJoinOperationsAreNeverDropped(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
@@ -436,10 +441,14 @@ func TestValueGrammarJoinOperationsAreNeverDropped(t *testing.T) {
 	if !tapped {
 		t.Fatalf("taps = %+v, want mixed as a frame tap", task.Taps())
 	}
-	var buildErr *goav.BuildError
-	if _, err := offlineRuntime().Describe(mixed.Encode(codec.Opus()).Tap("mixed.opus").To(sink)); !errors.As(err, &buildErr) || buildErr.Code != "stream_invalid" {
-		t.Fatalf("tap after a join's encoder: err = %v, want stream_invalid until join branches publish taps", err)
+	encoded, err := offlineRuntime().Explain(ctx, mixed.Encode(codec.Opus()).Tap("mixed.opus").To(sink))
+	if err != nil {
+		t.Fatalf("tap after a join's encoder: %v", err)
 	}
+	if len(encoded.Taps) != 1 || encoded.Taps[0].Domain != shape.DomainPacket {
+		t.Fatalf("taps = %+v, want mixed.opus as a packet tap", encoded.Taps)
+	}
+	var buildErr *goav.BuildError
 
 	_, err = offlineRuntime().Describe(goav.Mix(mixed.Resample(24_000, 1), goavtest.Audio(48_000, 1, []int16{3}).Audio()).To(sink))
 	if !errors.As(err, &buildErr) || buildErr.Code != "stream_invalid" {

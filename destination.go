@@ -12,6 +12,7 @@ import (
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/format"
+	"github.com/thesyncim/goav/internal/recipeir"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/provider"
 )
@@ -685,22 +686,6 @@ func (s destinationSpec) label(fallback string) string {
 	return firstNonEmpty(s.name, s.output.Name, s.output.URI, fallback)
 }
 
-func (s destinationSpec) intent() destinationIntent {
-	return destinationIntent{
-		Name:     s.label("output"),
-		URI:      s.output.URI,
-		Protocol: s.output.Protocol,
-		MIMEType: s.output.MIMEType,
-		Format:   s.format,
-	}
-}
-
-func (s destinationSpec) intentWithName(name string) destinationIntent {
-	intent := s.intent()
-	intent.Name = firstNonEmpty(name, intent.Name)
-	return intent
-}
-
 func validateDestinationSpecs(operation string, outputs []destinationSpec, destinationNames ...string) error {
 	seen := make(map[string]bool, len(outputs))
 	for i := range outputs {
@@ -809,4 +794,27 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+// recipeIRDestinationFromSpec is the planner-visible data of one destination.
+func recipeIRDestinationFromSpec(name string, destination destinationSpec) recipeir.Destination {
+	return recipeir.Destination{
+		Name:     name,
+		URI:      destination.output.URI,
+		Protocol: destination.output.Protocol,
+		MIMEType: destination.output.MIMEType,
+		Format:   destination.format,
+		Kind:     recipeIRDestinationKindFromSpec(destination),
+	}
+}
+
+func recipeIRDestinationKindFromSpec(destination destinationSpec) recipeir.DestinationKind {
+	switch {
+	case destination.sink != nil:
+		return recipeir.DestinationKindSink
+	case destinationSpecHasOutput(destination), destination.custom != nil:
+		return recipeir.DestinationKindByteStream
+	default:
+		return recipeir.DestinationKindUnknown
+	}
 }

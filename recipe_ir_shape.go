@@ -6,7 +6,6 @@ import (
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/errcode"
-	"github.com/thesyncim/goav/filter"
 	"github.com/thesyncim/goav/internal/recipeir"
 	"github.com/thesyncim/goav/plan"
 	"github.com/thesyncim/goav/shape"
@@ -156,25 +155,6 @@ func recipeIROperationComponent(operation recipeir.Operation) string {
 		return "packet-copy"
 	default:
 		return operation.Component
-	}
-}
-
-func recipeIROperationTapIsTerminalPacket(operation recipeir.Operation) bool {
-	if operation.Kind != plan.OpTap {
-		return false
-	}
-	return operation.Tap.Domain == shape.DomainPacket &&
-		(operation.Tap.After == plan.OpEncode || operation.Tap.After == plan.OpCopy)
-}
-
-func recipeIRTransformFactoryName(transform recipeir.Transform) string {
-	switch transform.Kind {
-	case recipeir.TransformResize:
-		return filter.FactoryResize
-	case recipeir.TransformResample:
-		return filter.FactoryResample
-	default:
-		return ""
 	}
 }
 

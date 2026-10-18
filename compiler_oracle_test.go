@@ -373,13 +373,7 @@ var oracleExpectedGraphs = map[string]struct {
 // oraclePending maps each expected shape the compiler does not plan yet to
 // the refusal code it raises today; an empty code means it plans, but not
 // the expected graph yet.
-var oraclePending = map[string]string{
-	"join_beside_stream":    "stream_beside_join",
-	"joins_two":             "stream_beside_join",
-	"join_tap_after_encode": "stream_invalid",
-	"join_arm_shared_input": "stream_beside_join",
-	"forks_deep_shared":     "",
-}
+var oraclePending = map[string]string{}
 
 func oracleGraph(spec pipeline.Spec) ([]string, []string) {
 	nodes := make([]string, 0, len(spec.Nodes))

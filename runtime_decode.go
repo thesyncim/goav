@@ -9,6 +9,7 @@ import (
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/errcode"
+	"github.com/thesyncim/goav/internal/recipeir"
 )
 
 const (
@@ -22,9 +23,9 @@ func (b *builder) newDecodeStage(ctx context.Context, request decodeRequest, str
 
 func (b *builder) newDecodeStageNamed(ctx context.Context, name string, request decodeRequest, stream av.Stream, realtime bool, dropInputEvents bool, bounds codec.DecodeBounds) (*codec.DecoderStage, error) {
 	name = firstNonEmpty(name, decodeNodeName(request.selector))
-	intent := streamIntent{
-		Name:   name,
-		Select: streamSelectFromAV(request.selector),
+	intent := recipeir.Stream{
+		Name:     name,
+		Selector: streamSelectFromAV(request.selector),
 	}
 	factory, err := b.runtime.codecs.DecoderFactory(stream.Codec.ID)
 	if err != nil {

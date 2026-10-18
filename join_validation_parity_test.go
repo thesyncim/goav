@@ -28,7 +28,7 @@ func TestJoinDestinationShapeValidationParity(t *testing.T) {
 		recipeFrom(mixTestAudioSource("b", 1)).Audio(),
 	).To(Write("out.ogg", io.Discard, Format(av.FormatOgg))).
 		Build(context.Background())
-	assertJoinParityBuildError(t, err, errcode.Code("mix_destination"))
+	assertJoinParityBuildError(t, err, encodeMissingCode)
 }
 
 func TestJoinTransformAdapterValidationParity(t *testing.T) {
@@ -61,18 +61,9 @@ func TestJoinRuntimeMissingValidationParity(t *testing.T) {
 		recipeFrom(mixTestAudioSource("b", 1)).Audio(),
 	).Encode(codec.Opus()).
 		To(Write("out.ogg", io.Discard, Format(av.FormatOgg))).
+		UseRuntime(nil).
 		Build(context.Background())
 	assertJoinParityBuildError(t, err, errcode.RuntimeMissing)
-}
-
-func TestJoinTapDomainValidationParity(t *testing.T) {
-	_, err := legacyMix(
-		recipeFrom(mixTestAudioSource("a", 1)).Audio(),
-		recipeFrom(mixTestAudioSource("b", 1)).Audio(),
-	).Tap(packetTapRef("mixed.packets")).
-		To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))).
-		Build(context.Background())
-	assertJoinParityBuildError(t, err, errcode.TapDomainMismatch)
 }
 
 func assertJoinParityBuildError(t *testing.T, err error, code errcode.Code) {

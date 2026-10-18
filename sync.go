@@ -9,14 +9,8 @@ import (
 	"github.com/thesyncim/goav/flow"
 	"github.com/thesyncim/goav/internal/recipeir"
 	"github.com/thesyncim/goav/pipeline"
-	"github.com/thesyncim/goav/plan"
 	"github.com/thesyncim/goav/shape"
 )
-
-func operationSpecForSync(policy flow.SyncPolicy) operationSpec {
-	gate := newSyncGate(policy)
-	return operationSpec{Kind: plan.OpStage, Component: gate.Name(), Stage: gate}
-}
 
 func newSyncGate(policy flow.SyncPolicy) *syncGate {
 	gate := &syncGate{policy: policy.Normalize()}
@@ -120,13 +114,6 @@ func syncTimebaseError(policy flow.SyncPolicy, msg *pipeline.Message) error {
 	})
 }
 
-func validateSyncPolicyForStream(operation string, branchName string, stream av.Stream, operations []operationSpec) error {
-	if !operationSpecsContainSync(operations) {
-		return nil
-	}
-	return validateSyncPolicyForBranch(operation, branchName, stream)
-}
-
 func validateSyncPolicyForRecipeIROperations(operation string, branchName string, stream av.Stream, operations []recipeir.Operation) error {
 	if !recipeIROperationsContainSync(operations) {
 		return nil
@@ -143,15 +130,6 @@ func validateSyncPolicyForBranch(operation string, branchName string, stream av.
 		})
 }
 
-func operationSpecsContainSync(operations []operationSpec) bool {
-	for i := range operations {
-		if _, ok := operations[i].Stage.(*syncGate); ok {
-			return true
-		}
-	}
-	return false
-}
-
 func recipeIROperationsContainSync(operations []recipeir.Operation) bool {
 	for i := range operations {
 		if _, ok := operations[i].Stage.(*syncGate); ok {
@@ -161,21 +139,10 @@ func recipeIROperationsContainSync(operations []recipeir.Operation) bool {
 	return false
 }
 
-// syncStageOperationName is the planned node name of a sync gate: the gate
-// scoped by its branch, sync-<branch>-<policy>, exactly as the lowering and
-// the work plan name it, so Describe matches the built graph.
-func syncStageOperationName(operation operationSpec, branchName string) string {
-	gate, ok := operation.Stage.(*syncGate)
-	if !ok {
-		if operation.Stage != nil {
-			return operation.Stage.Name()
-		}
-		return operation.Component
-	}
-	return syncStageName(firstNonEmpty(branchName, "branch") + "-" + gate.policy.Name())
-}
-
 var _ pipeline.Stage = (*syncGate)(nil)
 var _ pipeline.NodeDescriber = (*syncGate)(nil)
 var _ pipeline.DropReporter = (*syncGate)(nil)
 var _ shape.Contract = (*syncGate)(nil)
+
+// FrameOnlyInput reports that the gate aligns packets as well as frames.
+func (g *syncGate) FrameOnlyInput() bool { return false }

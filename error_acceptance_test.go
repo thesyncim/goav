@@ -227,8 +227,8 @@ func TestErrorAcceptanceBranchDecodeDuplicate(t *testing.T) {
 	)
 }
 
-// TestErrorAcceptanceBranchDecodeOrderInvalid is snippet 0q: a branch does
-// frame work before Decode. The fix is Decode first or start from a frame tap.
+// TestErrorAcceptanceBranchDecodeOrderInvalid is snippet 0q: a fork does
+// frame work before Decode. The fix is Decode first.
 func TestErrorAcceptanceBranchDecodeOrderInvalid(t *testing.T) {
 	_, err := mustRuntime().Describe(opusPacketInput().
 		Audio().
@@ -236,9 +236,8 @@ func TestErrorAcceptanceBranchDecodeOrderInvalid(t *testing.T) {
 		Decode().
 		As("bad").
 		To(goavtest.NewCollector().Sink()))
-	requireBuildError(t, err, errcode.Code("branch_decode_order_invalid"), "build branch", "bad",
-		"write in.Audio().Decode().Resample(...).To(target)",
-		"attach from a tap after .Decode()",
+	requireBuildError(t, err, errcode.Code("operation_shape_mismatch"), "build stream", "bad",
+		"write .Decode().Resample(...)",
 	)
 }
 
@@ -264,9 +263,9 @@ func TestErrorAcceptancePacketBranchEncodeUnsupported(t *testing.T) {
 		Encode(codec.Opus()).
 		As("bad").
 		To(goav.Write("bad.ogg", io.Discard)))
-	requireBuildError(t, err, errcode.Code("packet_branch_encode_unsupported"), "build branches", "bad",
-		"decode before encoding: s.Decode().Encode(",
-		"route s.To(destination) without .Decode()",
+	requireBuildError(t, err, errcode.Code("operation_shape_mismatch"), "build stream", "bad",
+		"call .Decode() before",
+		"keep a pure packet copy",
 	)
 }
 

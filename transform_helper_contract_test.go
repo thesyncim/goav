@@ -2,37 +2,26 @@ package goav
 
 import (
 	"errors"
-	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
-	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/filter"
+	"github.com/thesyncim/goav/internal/recipeir"
 	"github.com/thesyncim/goav/shape"
 )
-
-func TestTransformSpecIsOpaque(t *testing.T) {
-	typ := reflect.TypeFor[transformSpec]()
-	for field := range typ.Fields() {
-		if field.IsExported() {
-			t.Fatalf("transformSpec field %s is exported; use constructors instead", field.Name)
-		}
-	}
-}
 
 func TestTransformSpecConstructorsApplyOptions(t *testing.T) {
 	resize := resizeSpec(640, 360, nil, func(config *filter.ResizeConfig) {
 		config.PixelFormat = av.PixelFormatI420
 		config.Mode = filter.ResizeFit
 	})
-	if resize.resize == nil ||
-		resize.resize.Width != 640 ||
-		resize.resize.Height != 360 ||
-		resize.resize.PixelFormat != av.PixelFormatI420 ||
-		resize.resize.Mode != filter.ResizeFit ||
-		resize.resample != nil {
+	if resize.Kind != recipeir.TransformResize ||
+		resize.Resize.Width != 640 ||
+		resize.Resize.Height != 360 ||
+		resize.Resize.PixelFormat != av.PixelFormatI420 ||
+		resize.Resize.Mode != filter.ResizeFit {
 		t.Fatalf("Resize spec = %+v", resize)
 	}
 
@@ -40,12 +29,11 @@ func TestTransformSpecConstructorsApplyOptions(t *testing.T) {
 		config.ChannelLayout = "stereo"
 		config.SampleFormat = av.SampleFormatF32
 	})
-	if resample.resample == nil ||
-		resample.resample.SampleRate != 48_000 ||
-		resample.resample.Channels != codec.Stereo ||
-		resample.resample.ChannelLayout != "stereo" ||
-		resample.resample.SampleFormat != av.SampleFormatF32 ||
-		resample.resize != nil {
+	if resample.Kind != recipeir.TransformResample ||
+		resample.Resample.SampleRate != 48_000 ||
+		resample.Resample.Channels != codec.Stereo ||
+		resample.Resample.ChannelLayout != "stereo" ||
+		resample.Resample.SampleFormat != av.SampleFormatF32 {
 		t.Fatalf("Resample spec = %+v", resample)
 	}
 
@@ -57,59 +45,8 @@ func TestTransformSpecConstructorsApplyOptions(t *testing.T) {
 	}
 }
 
-func TestStreamTransformContracts(t *testing.T) {
-	resize, err := streamTransform("", av.StreamSelector{ID: "cam", Type: av.MediaVideo}, resizeSpec(320, 180), 1)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if resize.name != "resize-cam-2" ||
-		resize.factory != filter.FactoryResize ||
-		resize.video == nil ||
-		resize.video.Width != 320 ||
-		resize.video.Height != 180 {
-		t.Fatalf("resize transform = %+v", resize)
-	}
-
-	resample, err := streamTransform("voice", av.StreamSelector{Type: av.MediaAudio}, resampleSpec(16_000, codec.Mono), 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if resample.name != "resample-voice" ||
-		resample.factory != filter.FactoryResample ||
-		resample.audio == nil ||
-		resample.audio.SampleRate != 16_000 ||
-		resample.audio.Channels != codec.Mono {
-		t.Fatalf("resample transform = %+v", resample)
-	}
-
-	assertTransformBuildError := func(name string, spec transformSpec, selector av.StreamSelector, code errcode.Code, fragment string) {
-		t.Helper()
-		_, err := streamTransform(name, selector, spec, 0)
-		var buildErr *BuildError
-		if !errors.As(err, &buildErr) || buildErr.Code != code {
-			t.Fatalf("err = %v, want %s", err, code)
-		}
-		if fragment != "" && !strings.Contains(buildErr.Reason, fragment) {
-			t.Fatalf("reason = %q, want %q", buildErr.Reason, fragment)
-		}
-	}
-	assertTransformBuildError("", transformSpec{}, av.StreamSelector{Type: av.MediaAudio}, transformInvalidCode, "empty stream transform")
-	assertTransformBuildError("both", transformSpec{
-		resize:   &filter.ResizeConfig{Width: 320, Height: 180},
-		resample: &filter.ResampleConfig{SampleRate: 48_000, Channels: codec.Stereo},
-	}, av.StreamSelector{Type: av.MediaAudio}, transformInvalidCode, "cannot be both")
-	assertTransformBuildError("audio", resizeSpec(320, 180), av.StreamSelector{Type: av.MediaAudio}, transformMediaMismatchCode, "resize applies to video")
-	assertTransformBuildError("video", resampleSpec(48_000, codec.Stereo), av.StreamSelector{Type: av.MediaVideo}, transformMediaMismatchCode, "resample applies to audio")
-}
-
 func TestTransformHelperErrorContracts(t *testing.T) {
-	if err := validateTransformSpec("build stream", "both", transformSpec{
-		resize:   &filter.ResizeConfig{Width: 320, Height: 180},
-		resample: &filter.ResampleConfig{SampleRate: 48_000, Channels: codec.Stereo},
-	}); err == nil {
-		t.Fatal("combined transform validation succeeded, want transform_invalid")
-	}
-	err := validateTransformSpec("build stream", "empty", transformSpec{})
+	err := validateTransformSpec("build stream", "empty", recipeir.Transform{})
 	var buildErr *BuildError
 	if !errors.As(err, &buildErr) ||
 		buildErr.Code != transformInvalidCode ||
@@ -125,7 +62,7 @@ func TestTransformHelperErrorContracts(t *testing.T) {
 	}
 
 	cause := errors.New("registry unavailable")
-	stream := streamIntent{Name: "voice", Select: streamSelectFromAV(av.StreamSelector{Type: av.MediaAudio})}
+	stream := recipeir.Stream{Name: "voice", Selector: streamSelectFromAV(av.StreamSelector{Type: av.MediaAudio})}
 	if err := recipeTransformAdapterError("build stream", stream, filter.FactoryResample, cause); !errors.Is(err, cause) {
 		t.Fatalf("non-not-found error = %v, want original cause", err)
 	}
