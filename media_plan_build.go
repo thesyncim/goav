@@ -21,7 +21,7 @@ func (r recipeResolved) singleStreamIntent() (streamIntent, bool) {
 // built from: its frame-stream route (select, decode, filters, encoder) or
 // its selected packet-copy route.
 type streamRoutes struct {
-	runtime      *runtime
+	runtime      *Runtime
 	inputs       []InputSpec
 	outputs      []destinationAttachment
 	stream       streamIntent
@@ -104,14 +104,14 @@ func buildGraphPlanTask(ctx context.Context, gp graphPlan) (LiveTask, error) {
 	return task, nil
 }
 
-func runtimeForGraphExecution(rt *runtime) *runtime {
+func runtimeForGraphExecution(rt *Runtime) *Runtime {
 	if rt != nil {
 		return rt
 	}
 	return mustNew()
 }
 
-func runtimeRealtime(rt *runtime) bool {
+func runtimeRealtime(rt *Runtime) bool {
 	if rt == nil {
 		return true
 	}
@@ -120,7 +120,7 @@ func runtimeRealtime(rt *runtime) bool {
 
 // runtimeWithRealtime is a view of rt with realtime pacing set, sharing its
 // registries and pools.
-func runtimeWithRealtime(rt *runtime, realtime bool) *runtime {
+func runtimeWithRealtime(rt *Runtime, realtime bool) *Runtime {
 	if rt == nil {
 		return nil
 	}
@@ -129,7 +129,7 @@ func runtimeWithRealtime(rt *runtime, realtime bool) *runtime {
 	return &clone
 }
 
-func runtimeWithBuffer(rt *runtime, buffer pipeline.BufferPolicy) *runtime {
+func runtimeWithBuffer(rt *Runtime, buffer pipeline.BufferPolicy) *Runtime {
 	if rt == nil {
 		return nil
 	}
@@ -141,7 +141,7 @@ func runtimeWithBuffer(rt *runtime, buffer pipeline.BufferPolicy) *runtime {
 // runtimeWithClock clones the runtime with the task's timeline as its clock,
 // so every builder a lowering step creates hands paced sources the shared
 // timeline instead of the raw runtime clock.
-func runtimeWithClock(rt *runtime, clock av.Clock) *runtime {
+func runtimeWithClock(rt *Runtime, clock av.Clock) *Runtime {
 	if rt == nil {
 		return nil
 	}
@@ -150,7 +150,7 @@ func runtimeWithClock(rt *runtime, clock av.Clock) *runtime {
 	return &clone
 }
 
-func graphPlanWithRuntime(gp graphPlan, rt *runtime) graphPlan {
+func graphPlanWithRuntime(gp graphPlan, rt *Runtime) graphPlan {
 	gp.runtime = rt
 	switch lowerer := gp.lowerer.(type) {
 	case composeLowerer:
@@ -162,7 +162,7 @@ func graphPlanWithRuntime(gp graphPlan, rt *runtime) graphPlan {
 	return gp
 }
 
-func joinPlanWithRuntime(plan *joinPlan, rt *runtime) *joinPlan {
+func joinPlanWithRuntime(plan *joinPlan, rt *Runtime) *joinPlan {
 	if plan == nil {
 		return nil
 	}
@@ -487,7 +487,7 @@ func transformSpecFromMediaTransform(transform mediaTransform) transformSpec {
 
 func compileMediaPlanSources(
 	ctx context.Context,
-	runtime *runtime,
+	runtime *Runtime,
 	graph pipeline.Graph,
 	inputs []InputSpec,
 	operation string,

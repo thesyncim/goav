@@ -92,7 +92,7 @@ func testRecipeIRDestination(name string, kind recipeir.DestinationKind) recipei
 }
 
 type graphPlanTestLowerer struct {
-	runtime *runtime
+	runtime *Runtime
 	called  bool
 }
 
@@ -100,7 +100,7 @@ func (l *graphPlanTestLowerer) spec() (pipeline.Spec, error) {
 	return pipeline.Spec{Name: "goav"}, nil
 }
 
-func (l *graphPlanTestLowerer) runtimeRef() *runtime {
+func (l *graphPlanTestLowerer) runtimeRef() *Runtime {
 	return l.runtime
 }
 

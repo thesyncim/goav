@@ -12,7 +12,7 @@ import (
 // packet copy, several stream chains, or branches. Describe and the build plan
 // the same graph from the same routes, so the built graph is the described one.
 type composeLowerer struct {
-	runtime *runtime
+	runtime *Runtime
 	inputs  []InputSpec
 	// describe and build name the operation a source failure reports, and
 	// context the recipe it describes.
@@ -28,7 +28,7 @@ type composeLowerer struct {
 	unsupported bool
 }
 
-func (l composeLowerer) runtimeRef() *runtime {
+func (l composeLowerer) runtimeRef() *Runtime {
 	return l.runtime
 }
 

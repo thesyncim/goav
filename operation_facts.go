@@ -26,7 +26,7 @@ func recipeIROperationFacts(operations []recipeir.Operation) operationFacts {
 	return operationFactsFromSpecs(specs)
 }
 
-func solveOperationSpecShapes(operation string, rt *runtime, stream streamIntent, initial shape.Spec) ([]operationSpec, []plan.Diagnostic, error) {
+func solveOperationSpecShapes(operation string, rt *Runtime, stream streamIntent, initial shape.Spec) ([]operationSpec, []plan.Diagnostic, error) {
 	solved, diagnostics, err := solveRecipeIROperationShapes(operation, rt, recipeIRStreamFromIntent(stream), initial)
 	if err != nil || solved == nil {
 		return nil, diagnostics, err

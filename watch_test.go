@@ -145,7 +145,7 @@ func TestWatchSlowWatcherShedsForItselfOnly(t *testing.T) {
 	const capacity = 4
 	const total = 10
 	graph := newWatchTestGraph(1)
-	task := newTask(graph, &runtime{eventCapacity: capacity})
+	task := newTask(graph, &Runtime{eventCapacity: capacity})
 	fast := task.Watch().Events()
 	slow := task.Watch().Events()
 

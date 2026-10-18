@@ -51,18 +51,26 @@ func TestStreamRuleAttachmentTrackingContracts(t *testing.T) {
 
 func TestInstallAndRunStreamRulesContracts(t *testing.T) {
 	var nilTask *task
-	nilTask.installStreamRules("demux", shape.DomainPacket, []streamRule{{match: MatchMedia(av.MediaAudio)}})
+	announcer := &streamAnnouncer{}
+	nilTask.installStreamRules(announcer, "demux", shape.DomainPacket, []streamRule{{match: MatchMedia(av.MediaAudio)}})
+	if announcer.task.Load() != nil {
+		t.Fatal("nil task bound the announcer")
+	}
 
 	graph := newWatchTestGraph(4)
 	task := newTask(graph, nil)
 	defer task.Close()
 
-	task.installStreamRules("demux", shape.DomainPacket, nil)
+	task.installStreamRules(announcer, "demux", shape.DomainPacket, nil)
 	if task.rules != nil {
 		t.Fatal("empty rule set installed runtime stream rules")
 	}
+	task.installStreamRules(nil, "demux", shape.DomainPacket, []streamRule{{match: MatchMedia(av.MediaAudio)}})
+	if task.rules != nil {
+		t.Fatal("rules installed without an announcer to run them")
+	}
 
-	task.installStreamRules("demux", shape.DomainFrame, []streamRule{{match: MatchMedia(av.MediaAudio)}})
+	task.installStreamRules(announcer, "demux", shape.DomainFrame, []streamRule{{match: MatchMedia(av.MediaAudio)}})
 	if task.rules == nil ||
 		task.rules.source != "demux" ||
 		task.rules.domain != shape.DomainFrame ||
@@ -70,10 +78,41 @@ func TestInstallAndRunStreamRulesContracts(t *testing.T) {
 		len(task.rules.attached) != 0 {
 		t.Fatalf("installed rules = %+v", task.rules)
 	}
+	if announcer.task.Load() != task {
+		t.Fatal("announcer not bound to the task")
+	}
 
-	graph.events <- av.Event{Type: av.EventStats, StreamID: "ignored"}
-	graph.events <- av.Event{Type: av.EventStreamAdded}
-	graph.events <- av.Event{Type: av.EventStreamRemoved}
+	// The emitter forwards every message and reacts only to stream
+	// announces; payload-less announces are guarded no-ops.
+	var forwarded int
+	emitter := newAnnounceEmitter(announceTestEmitter(func(*pipeline.Message) { forwarded++ }), announcer)
+	ctx := context.Background()
+	for _, event := range []av.Event{
+		{Type: av.EventStats, StreamID: "ignored"},
+		{Type: av.EventStreamAdded},
+		{Type: av.EventStreamRemoved},
+	} {
+		msg := pipeline.Message{Kind: pipeline.MessageEvent, Event: &event}
+		if _, err := emitter.EmitDelivery(ctx, &msg); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := emitter.Emit(ctx, &pipeline.Message{Kind: pipeline.MessagePacket, Packet: &av.Packet{}}); err != nil {
+		t.Fatal(err)
+	}
+	if forwarded != 4 {
+		t.Fatalf("forwarded %d messages, want 4", forwarded)
+	}
+	if len(task.rules.attached) != 0 {
+		t.Fatalf("guarded announces attached: %+v", task.rules.attached)
+	}
+}
+
+type announceTestEmitter func(*pipeline.Message)
+
+func (f announceTestEmitter) Emit(_ context.Context, msg *pipeline.Message) error {
+	f(msg)
+	return nil
 }
 
 func TestHandleStreamAddedGuardContracts(t *testing.T) {
@@ -93,12 +132,12 @@ func TestHandleStreamAddedGuardContracts(t *testing.T) {
 		},
 	}
 
-	task.handleStreamAdded(av.Event{Type: av.EventStreamAdded})
-	task.handleStreamAdded(av.Event{
+	task.handleStreamAdded(context.Background(), av.Event{Type: av.EventStreamAdded})
+	task.handleStreamAdded(context.Background(), av.Event{
 		Type:   av.EventStreamAdded,
 		Stream: &av.Stream{ID: "video", Type: av.MediaVideo, Codec: av.CodecParameters{Type: av.MediaVideo}},
 	})
-	task.handleStreamAdded(av.Event{
+	task.handleStreamAdded(context.Background(), av.Event{
 		Type:     av.EventStreamAdded,
 		StreamID: "from-event",
 		Stream:   &av.Stream{Type: av.MediaAudio, Codec: av.CodecParameters{Type: av.MediaAudio}},
@@ -109,7 +148,7 @@ func TestHandleStreamAddedGuardContracts(t *testing.T) {
 	default:
 	}
 
-	task.handleStreamAdded(av.Event{
+	task.handleStreamAdded(context.Background(), av.Event{
 		Type:   av.EventStreamAdded,
 		Stream: &av.Stream{Type: av.MediaAudio, Codec: av.CodecParameters{Type: av.MediaAudio}},
 	})
@@ -244,12 +283,12 @@ func TestHandleStreamRemovedDetachesTrackedBranchesWithDrain(t *testing.T) {
 		},
 	}
 
-	task.handleStreamRemoved(av.Event{Type: av.EventStreamRemoved})
+	task.handleStreamRemoved(context.Background(), av.Event{Type: av.EventStreamRemoved})
 	if len(task.rules.attached) != 1 {
 		t.Fatalf("empty stream removal changed attachments: %+v", task.rules.attached)
 	}
 
-	task.handleStreamRemoved(av.Event{Type: av.EventStreamRemoved, StreamID: "audio"})
+	task.handleStreamRemoved(context.Background(), av.Event{Type: av.EventStreamRemoved, StreamID: "audio"})
 	if _, ok := task.rules.attached["audio"]; ok {
 		t.Fatalf("removed stream still tracked: %+v", task.rules.attached)
 	}

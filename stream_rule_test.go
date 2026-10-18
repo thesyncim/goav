@@ -783,3 +783,87 @@ func TestOnStreamValidation(t *testing.T) {
 		requireRuleError(t, job, "exactly one input")
 	})
 }
+
+// TestOnStreamBranchReceivesEveryPacketOfDiscoveredStream pins pad-added
+// semantics: the rule branch attaches on the source's emit path while the
+// announce is delivered, so a source that announces a stream and emits its
+// packets back to back loses none of them to the branch — the first packet
+// (for video, the first keyframe) included — on direct and buffered graphs.
+func TestOnStreamBranchReceivesEveryPacketOfDiscoveredStream(t *testing.T) {
+	const packets = 64
+	for _, mode := range []struct {
+		name   string
+		policy pipeline.BufferPolicy
+	}{
+		{name: "direct"},
+		{name: "buffered", policy: pipeline.BufferPolicy{Capacity: 8, Drop: pipeline.DropBlock}},
+	} {
+		t.Run(mode.name, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+
+			late := lateOpusStream("late-audio")
+			input := Source("mic",
+				shape.Packet(av.MediaAudio, av.CodecOpus, shape.Audio(48_000, codec.Stereo, av.SampleFormatS16)),
+				func(_ context.Context, push SourcePush) error {
+					announced := late
+					if _, err := push.Event(av.Event{Type: av.EventStreamAdded, Stream: &announced}); err != nil {
+						return err
+					}
+					for i := range packets {
+						packet := av.Packet{
+							StreamID: late.ID,
+							Type:     av.MediaAudio,
+							Keyframe: i == 0,
+							Payload:  av.Buffer{Bytes: []byte{byte(i)}, Ownership: av.BufferImmutable},
+						}
+						if _, err := push.Packet(&packet); err != nil {
+							return err
+						}
+					}
+					return push.EOS("mic", late.ID)
+				},
+			)
+
+			var mu sync.Mutex
+			var got []byte
+			var keyframeFirst bool
+			record := Sink(SinkFunc("record", func(_ context.Context, msg Message) error {
+				if msg.Kind != pipeline.MessagePacket || msg.Packet.StreamID != late.ID {
+					return nil
+				}
+				mu.Lock()
+				defer mu.Unlock()
+				if len(got) == 0 {
+					keyframeFirst = msg.Packet.Keyframe
+				}
+				got = append(got, msg.Packet.Payload.Bytes...)
+				return nil
+			}))
+
+			task, err := recipeFrom(input).
+				OnStream(MatchStreamID(late.ID), newBranch("record").Copy().To(record)).
+				Audio().Copy().To(Sink(SinkFunc("main", func(context.Context, Message) error { return nil }))).
+				UseRuntime(mustNew(WithBufferPolicy(mode.policy))).
+				BuildLive(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer task.Close()
+			if err := task.Run(ctx); err != nil {
+				t.Fatal(err)
+			}
+
+			mu.Lock()
+			defer mu.Unlock()
+			if len(got) != packets || !keyframeFirst {
+				t.Fatalf("branch received %d of %d packets (first is keyframe: %v), want all from the first", len(got), packets, keyframeFirst)
+			}
+			for i := range got {
+				if got[i] != byte(i) {
+					t.Fatalf("packet %d payload = %d, want %d (in order, none missed)", i, got[i], i)
+				}
+			}
+		})
+	}
+}

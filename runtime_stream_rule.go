@@ -3,27 +3,21 @@ package goav
 import (
 	"context"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/thesyncim/goav/av"
-	"github.com/thesyncim/goav/inspect"
+	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/plan"
 	"github.com/thesyncim/goav/shape"
 	sourcepkg "github.com/thesyncim/goav/source"
 )
 
-// streamRuleEventCapacity sizes the rule engine's internal watch buffer.
-// Stream announces are rare control-plane events, but the engine may be busy
-// attaching while more arrive, so it gets a deeper buffer than a default
-// watcher — a shed announce would be a silent non-attach.
-const streamRuleEventCapacity = 256
-
 // taskStreamRules is the runtime half of the OnStream grammar: the declared
 // rules bound to the built task's source node, plus the bookkeeping that maps
-// discovered streams to the attachments their rules created. Everything here
-// is cold control plane — the reaction loop consumes a Watch subscription and
-// the apply path goes through task.Attach (which takes the attach mutex); the
-// media hot path is never touched.
+// discovered streams to the attachments their rules created. Reactions run on
+// the source's emit path (streamAnnouncer) and apply through the same attach
+// and detach as task.Attach; the per-message path pays only a kind check.
 type taskStreamRules struct {
 	source string
 	domain shape.MediaDomain
@@ -54,12 +48,145 @@ type streamRuleRemoveAttachment struct {
 	branchName string
 }
 
+// streamAnnouncer runs a task's OnStream rules on the source's own emit path,
+// with GStreamer's pad-added semantics: when the source emits a stream_added
+// announce, the Emit call returns only after every matching rule's branch is
+// attached, so the stream's next message already routes into the branch and
+// the branch sees the stream from its first packet. stream_removed detaches
+// the same way, after the announce is delivered. The announce itself is
+// forwarded first, so Watch observers and the existing routes see it exactly
+// as without rules.
+//
+// The attach runs on the source's goroutine and is bounded by the source's
+// context. A rule destination's Open therefore runs on the source's path: it
+// should be fast, or hand slow work to its own goroutine.
+type streamAnnouncer struct {
+	task atomic.Pointer[task]
+	// mu serializes reactions for sources that emit from several goroutines,
+	// so one announce's check-then-attach never interleaves with another's.
+	mu sync.Mutex
+}
+
+// bind points the announcer at the built task; announces before bind (none
+// in practice: sources start at Run) are forwarded without a reaction.
+func (a *streamAnnouncer) bind(t *task) {
+	if a != nil {
+		a.task.Store(t)
+	}
+}
+
+// wrap is the input decoration that installs the announcer around the opened
+// source. Name and described detail delegate, so the node keeps its identity
+// and Describe() ≡ Build() holds; ControllableSource stays visible.
+func (a *streamAnnouncer) wrap(source pipeline.Source) pipeline.Source {
+	wrapped := announceSource{source: source, announcer: a}
+	if _, ok := source.(pipeline.ControllableSource); ok {
+		return &announceControllableSource{announceSource: wrapped}
+	}
+	return &wrapped
+}
+
+// react applies the rules to one announce the source just delivered.
+func (a *streamAnnouncer) react(ctx context.Context, event *av.Event) {
+	t := a.task.Load()
+	if t == nil || t.rules == nil {
+		return
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	switch event.Type {
+	case av.EventStreamAdded:
+		t.handleStreamAdded(ctx, *event)
+	case av.EventStreamRemoved:
+		t.handleStreamRemoved(ctx, *event)
+	}
+}
+
+type announceSource struct {
+	source    pipeline.Source
+	announcer *streamAnnouncer
+}
+
+func (s *announceSource) Name() string { return s.source.Name() }
+
+func (s *announceSource) Close() error { return s.source.Close() }
+
+func (s *announceSource) DescribeNode() pipeline.NodeSpec {
+	return describeNamedNode(s.source.Name(), pipeline.NodeSource, s.source)
+}
+
+func (s *announceSource) DroppedMessages() uint64 { return droppedMessagesFrom(s.source) }
+
+func (s *announceSource) Start(ctx context.Context, emitter pipeline.Emitter) error {
+	return s.source.Start(ctx, newAnnounceEmitter(emitter, s.announcer))
+}
+
+type announceControllableSource struct {
+	announceSource
+}
+
+func (s *announceControllableSource) Control(ctx context.Context, msg *pipeline.Message) error {
+	return s.source.(pipeline.ControllableSource).Control(ctx, msg)
+}
+
+// announceEmitter forwards every message unchanged and, after a stream
+// announce is delivered, runs the rule reaction before returning to the
+// source. It keeps the DeliveryEmitter capability of the graph's emitter.
+type announceEmitter struct {
+	next      pipeline.Emitter
+	delivery  pipeline.DeliveryEmitter
+	announcer *streamAnnouncer
+}
+
+func newAnnounceEmitter(next pipeline.Emitter, announcer *streamAnnouncer) *announceEmitter {
+	delivery, _ := next.(pipeline.DeliveryEmitter)
+	return &announceEmitter{next: next, delivery: delivery, announcer: announcer}
+}
+
+func (e *announceEmitter) Emit(ctx context.Context, msg *pipeline.Message) error {
+	announce, ok := streamAnnounceOf(msg)
+	if err := e.next.Emit(ctx, msg); err != nil || !ok {
+		return err
+	}
+	e.announcer.react(ctx, &announce)
+	return nil
+}
+
+func (e *announceEmitter) EmitDelivery(ctx context.Context, msg *pipeline.Message) (pipeline.Delivery, error) {
+	if e.delivery == nil {
+		return pipeline.Delivery{}, e.Emit(ctx, msg)
+	}
+	announce, ok := streamAnnounceOf(msg)
+	delivery, err := e.delivery.EmitDelivery(ctx, msg)
+	if err != nil || !ok {
+		return delivery, err
+	}
+	e.announcer.react(ctx, &announce)
+	return delivery, nil
+}
+
+// streamAnnounceOf copies a stream announce out of msg before it is
+// forwarded, so a downstream stage that rewrites the event in place cannot
+// change what the rules see.
+func streamAnnounceOf(msg *pipeline.Message) (av.Event, bool) {
+	if msg == nil || msg.Kind != pipeline.MessageEvent || msg.Event == nil {
+		return av.Event{}, false
+	}
+	if msg.Event.Type != av.EventStreamAdded && msg.Event.Type != av.EventStreamRemoved {
+		return av.Event{}, false
+	}
+	event := *msg.Event
+	if event.Stream != nil {
+		stream := *event.Stream
+		event.Stream = &stream
+	}
+	return event, true
+}
+
 // installStreamRules binds the job's declared rules to the built task and
-// starts the reaction loop: an internal Watch subscription filtered to stream
-// added/removed events. The loop ends when the task closes (the graph closes
-// its event stream, the distributor closes every watcher channel).
-func (t *task) installStreamRules(sourceNode string, domain shape.MediaDomain, rules []streamRule) {
-	if t == nil || len(rules) == 0 {
+// points the source's announcer at it.
+func (t *task) installStreamRules(announcer *streamAnnouncer, sourceNode string, domain shape.MediaDomain, rules []streamRule) {
+	if t == nil || announcer == nil || len(rules) == 0 {
 		return
 	}
 	started := time.Now()
@@ -74,23 +201,7 @@ func (t *task) installStreamRules(sourceNode string, domain shape.MediaDomain, r
 		matchers: matchers,
 		attached: make(map[av.StreamID][]streamRuleAttachment),
 	}
-	events := t.watch.subscribe(
-		t.graph.Events(),
-		streamRuleEventCapacity,
-		[]inspect.EventFilter{inspect.WatchTypes(av.EventStreamAdded, av.EventStreamRemoved)},
-	)
-	go t.runStreamRules(events.Events())
-}
-
-func (t *task) runStreamRules(events <-chan av.Event) {
-	for event := range events {
-		switch event.Type {
-		case av.EventStreamAdded:
-			t.handleStreamAdded(event)
-		case av.EventStreamRemoved:
-			t.handleStreamRemoved(event)
-		}
-	}
+	announcer.bind(t)
 }
 
 // handleStreamAdded reacts to one stream announce: every matching rule's
@@ -98,7 +209,7 @@ func (t *task) runStreamRules(events <-chan av.Event) {
 // the same plan, atomic apply, and rollback as a manual attach. Failures
 // surface as av.EventAttachError on task watches; a failed rule leaves the
 // task unchanged and a later re-announce retries.
-func (t *task) handleStreamAdded(event av.Event) {
+func (t *task) handleStreamAdded(ctx context.Context, event av.Event) {
 	if event.Stream == nil {
 		// No typed payload: nothing declarative to do — the event itself
 		// already surfaced to watchers.
@@ -116,7 +227,6 @@ func (t *task) handleStreamAdded(event av.Event) {
 	if announcedAt.IsZero() {
 		announcedAt = time.Now()
 	}
-	ctx := context.Background()
 	for index := range t.rules.rules {
 		rule := t.rules.rules[index]
 		if t.streamRuleAttached(stream.ID, index) {
@@ -223,7 +333,7 @@ func (t *task) streamRuleAttachBranches(rule streamRule, stream av.Stream) ([]ru
 // removed stream with drain semantics: destinations commit and the branch
 // snapshot reports lifecycle.DestinationCommitted — the same typed outcome as
 // Rebranch's DrainOldBranch.
-func (t *task) handleStreamRemoved(event av.Event) {
+func (t *task) handleStreamRemoved(ctx context.Context, event av.Event) {
 	input := t.streamRuleRemoveInput(event)
 	if input.streamID == "" {
 		return
@@ -233,7 +343,7 @@ func (t *task) handleStreamRemoved(event av.Event) {
 		if entry.detach.runtime == nil {
 			continue
 		}
-		if err := t.detachRuntimeAttachment(context.Background(), entry.detach); err != nil {
+		if err := t.detachRuntimeAttachment(ctx, entry.detach); err != nil {
 			t.publishStreamRuleError(input.streamID, entry.branchName, err)
 		}
 	}

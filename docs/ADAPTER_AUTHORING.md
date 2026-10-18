@@ -330,8 +330,10 @@ external source has custom framing that downstream validation should see.
 `av.Stream.Codec` parameters. The returned
 `pipeline.Source.Start(ctx, emitter)` runs on the task: emit
 `av.EventStreamAdded` announcements, then media, then `av.EventEndOfStream`;
-return cleanly on `ctx` cancellation or `pipeline.ErrClosed`, slow down on
-`pipeline.ErrBackpressure`. Implement `pipeline.ControllableSource` to accept
+with `OnStream` rules an announce's Emit returns only after the matching
+branches attach (pad-added), so a rule destination's `Open` runs on this
+goroutine; return cleanly on `ctx` cancellation or `pipeline.ErrClosed`, slow
+down on `pipeline.ErrBackpressure`. Implement `pipeline.ControllableSource` to accept
 seek/segment controls (record the request; apply it from the Start loop);
 playback rate is task-wide, never a source control. A single-stream push
 source needs no provider: `goav.Source(name, shape, fn)`.

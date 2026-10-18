@@ -17,7 +17,7 @@ const (
 
 type graphPlanLowerer interface {
 	spec() (pipeline.Spec, error)
-	runtimeRef() *runtime
+	runtimeRef() *Runtime
 	lower(context.Context, graphPlan, pipeline.Graph, *builder) error
 }
 
@@ -46,7 +46,7 @@ type mediaPlanDecodeStreamInput struct {
 // graphPlan binds the compiled work plan — the single executable truth built
 // once by the compile — to the pipeline spec and the lowerer that executes it.
 type graphPlan struct {
-	runtime  *runtime
+	runtime  *Runtime
 	name     string
 	realtime bool
 	nodes    []pipeline.NodeSpec
@@ -93,7 +93,7 @@ func (p graphPlan) workPlan() workPlan {
 	return cloneWorkPlan(p.work)
 }
 
-func newGraphPlan(runtime *runtime, spec pipeline.Spec, work workPlan, lowerer graphPlanLowerer) graphPlan {
+func newGraphPlan(runtime *Runtime, spec pipeline.Spec, work workPlan, lowerer graphPlanLowerer) graphPlan {
 	return graphPlan{
 		runtime:  runtime,
 		name:     work.Name,

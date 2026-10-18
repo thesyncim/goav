@@ -344,7 +344,7 @@ func TestNewDecodeStageNamedCustomDecoderErrorContracts(t *testing.T) {
 		},
 	}
 	request := decodeRequest{selector: testSelectAudio()}
-	newRuntime := func(factory codec.DecoderFactory) *runtime {
+	newRuntime := func(factory codec.DecoderFactory) *Runtime {
 		return mustNew(withTestCodecs(testCodecDecoder(codec.Descriptor{ID: av.CodecPCM, Type: av.MediaAudio}, factory)))
 	}
 

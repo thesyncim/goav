@@ -22,7 +22,7 @@ const (
 
 const joinStagePreallocDepthLimit = 64
 
-func joinStagePreallocDepth(rt *runtime) int {
+func joinStagePreallocDepth(rt *Runtime) int {
 	if rt == nil || rt.buffer.IsDirect() {
 		return 1
 	}
