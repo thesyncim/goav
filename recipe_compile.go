@@ -19,23 +19,19 @@ import (
 )
 
 type recipeResolved struct {
-	recipe                recipeir.Recipe
-	intent                intent
-	runtime               *Runtime
-	spec                  pipeline.Spec
-	specReady             bool
-	specOrigin            string
-	graphPlan             graphPlan
-	inputAttachments      []InputSpec
-	outputAttachments     []destinationSpec
-	inputProbes           []format.ProbeResult
-	branchInputAttachment InputSpec
-	branchInputProbe      format.ProbeResult
-	branchInputProbeReady bool
-	outputFormats         map[string]av.FormatID
-	plan                  branchComposePlan
-	streamRuleFacts       []recipeir.StreamRule
-	streamRules           []streamRule
+	recipe            recipeir.Recipe
+	intent            intent
+	runtime           *Runtime
+	spec              pipeline.Spec
+	specReady         bool
+	specOrigin        string
+	graphPlan         graphPlan
+	inputAttachments  []InputSpec
+	outputAttachments []destinationSpec
+	inputProbes       []format.ProbeResult
+	outputFormats     map[string]av.FormatID
+	streamRuleFacts   []recipeir.StreamRule
+	streamRules       []streamRule
 }
 
 type recipeCompileState struct {
@@ -46,9 +42,8 @@ type recipeCompileState struct {
 	runtimeExplicit bool
 	options         recipeCompileOptions
 
-	jobPresent               bool
-	branchCompositionPresent bool
-	recipeErr                error
+	jobPresent bool
+	recipeErr  error
 
 	inputFacts             []recipeir.Input
 	joinFacts              recipeir.Join
@@ -60,17 +55,8 @@ type recipeCompileState struct {
 	inputProbes            []format.ProbeResult
 	streamRules            []streamRule
 
-	branchInputAttachment        InputSpec
-	branchDestinationAttachments []namedDestinationSpec
-	branchInputProbe             format.ProbeResult
-	branchInputProbeReady        bool
-	branchCompositionSplit       bool
-
 	// joinTree is the captured Mix/Composite/Select arm tree consumed by join planning.
 	joinTree *joinTreeSnapshot
-
-	plan    branchComposePlan
-	planErr error
 
 	// shapeDiagnostics records the shape solver's automatic insertions; the
 	// work plan carries them so Explain reports every inserted conversion.
@@ -109,14 +95,6 @@ func (s *recipeCompileState) outputFormatMap() map[string]av.FormatID {
 			continue
 		}
 		formats[jobOutputDestinationName(s.outputAttachments, s.outputDestinationNames, i)] = formatID
-	}
-	for i := range s.branchDestinationAttachments {
-		formatID := destinationSpecFormat(s.branchDestinationAttachments[i].output)
-		if formatID == "" {
-			continue
-		}
-		label := firstNonEmpty(s.branchDestinationAttachments[i].name, s.branchDestinationAttachments[i].output.label(fmt.Sprintf("output-%d", i)))
-		formats[label] = formatID
 	}
 	if len(formats) == 0 {
 		return nil
@@ -217,9 +195,6 @@ func (state *recipeCompileState) streamRuleInputCount() int {
 	if state == nil {
 		return 0
 	}
-	if state.branchCompositionPresent {
-		return 1
-	}
 	if len(state.inputFacts) != 0 {
 		return len(state.inputFacts)
 	}
@@ -249,23 +224,19 @@ func (c recipeIntentCompiler) Compile(state recipeCompileState) (recipeResolved,
 		}
 	}
 	return recipeResolved{
-		recipe:                cloneRecipeIRRecipe(state.recipe),
-		intent:                state.intent,
-		runtime:               state.runtime,
-		spec:                  state.spec,
-		specReady:             state.specReady,
-		specOrigin:            state.specOrigin,
-		graphPlan:             state.graphPlan,
-		inputAttachments:      append([]InputSpec(nil), state.inputAttachments...),
-		outputAttachments:     append([]destinationSpec(nil), state.outputAttachments...),
-		inputProbes:           append([]format.ProbeResult(nil), state.inputProbes...),
-		branchInputAttachment: state.branchInputAttachment,
-		branchInputProbe:      state.branchInputProbe,
-		branchInputProbeReady: state.branchInputProbeReady,
-		outputFormats:         state.outputFormatMap(),
-		plan:                  state.plan,
-		streamRuleFacts:       cloneRecipeIRStreamRules(state.streamRuleFacts),
-		streamRules:           cloneStreamRules(state.streamRules),
+		recipe:            cloneRecipeIRRecipe(state.recipe),
+		intent:            state.intent,
+		runtime:           state.runtime,
+		spec:              state.spec,
+		specReady:         state.specReady,
+		specOrigin:        state.specOrigin,
+		graphPlan:         state.graphPlan,
+		inputAttachments:  append([]InputSpec(nil), state.inputAttachments...),
+		outputAttachments: append([]destinationSpec(nil), state.outputAttachments...),
+		inputProbes:       append([]format.ProbeResult(nil), state.inputProbes...),
+		outputFormats:     state.outputFormatMap(),
+		streamRuleFacts:   cloneRecipeIRStreamRules(state.streamRuleFacts),
+		streamRules:       cloneStreamRules(state.streamRules),
 	}, nil
 }
 
@@ -464,46 +435,6 @@ func (state *recipeCompileState) joinPresent() bool {
 	return state.joinFacts.Kind != "" || state.joinTree != nil
 }
 
-func compileJobBranchRecipeWithOptions(job *recipeJob, options recipeCompileOptions) (recipeResolved, error) {
-	if job == nil {
-		return compileRecipeSnapshotWithOptions(recipeCompileSnapshot{}, options)
-	}
-	return compileRecipeSnapshotWithOptions(newBranchJobRecipeSnapshot(job), options)
-}
-
-func branchCompositionRecipeCompilePhases() recipeCompilePhaseSet {
-	return recipeCompilePhaseSet{
-		recipe: []recipeCompilePass{
-			validateBranchCompositionRecipePass(),
-		},
-		intent: []recipeCompilePass{
-			validateBranchCompositionIntentShapePass(),
-		},
-		attachments: []recipeCompilePass{
-			validateBranchCompositionAttachmentsPass(),
-			validateBranchDestinationBindingsPass(),
-			validateBranchDestinationKindsPass(),
-		},
-		adapters: []recipeCompilePass{
-			validateBranchDestinationFormatAdaptersPass(),
-			validateBranchEncodeAdaptersPass(),
-			validateBranchTransformAdaptersPass(),
-			validateBranchInputFormatAdaptersPass(),
-		},
-		knownInputs: []recipeCompilePass{
-			validateKnownBranchInputStreamSelectionPass(),
-		},
-		shapes: []recipeCompilePass{
-			validateRecipeOperationShapesPass(),
-			validateRecipeDestinationShapesPass(),
-			validateKnownBranchInputDecodeAdaptersPass(),
-		},
-		plan: []recipeCompilePass{
-			planBranchCompositionIntentPass(),
-		},
-	}
-}
-
 // nilRecipeError marks a recipe compile invoked without its job/join
 // attachment — an internal invariant, not a user-fixable refusal.
 func nilRecipeError(operation string, reason string) error {
@@ -592,10 +523,10 @@ func (state *recipeCompileState) requiresExplicitRuntime() bool {
 	if !state.options.requireExplicitRuntime {
 		return false
 	}
-	if inputSpecsRequireRuntime(state.inputAttachments) || inputSpecRequiresRuntime(state.branchInputAttachment) {
+	if inputSpecsRequireRuntime(state.inputAttachments) {
 		return true
 	}
-	if destinationSpecsRequireRuntime(state.outputAttachments) || namedDestinationSpecsRequireRuntime(state.branchDestinationAttachments) {
+	if destinationSpecsRequireRuntime(state.outputAttachments) {
 		return true
 	}
 	if recipeStreamRulesRequireRuntime(state.recipe.StreamRules) {
@@ -622,15 +553,6 @@ func inputSpecRequiresRuntime(input InputSpec) bool {
 
 func destinationSpecsRequireRuntime(destinations []destinationSpec) bool {
 	return slices.ContainsFunc(destinations, destinationSpecRequiresRuntime)
-}
-
-func namedDestinationSpecsRequireRuntime(destinations []namedDestinationSpec) bool {
-	for i := range destinations {
-		if destinationSpecRequiresRuntime(destinations[i].output) {
-			return true
-		}
-	}
-	return false
 }
 
 func destinationSpecRequiresRuntime(destination destinationSpec) bool {
@@ -863,8 +785,10 @@ func recipeIRStreamSourceShape(recipe recipeir.Recipe, stream recipeir.Stream) (
 	return recipeIRInputSourceShape(recipe.Inputs[index])
 }
 
+// validateJobRecipeStreamTransformShape validates each transform's own
+// settings; whether it applies to the stream's media is the shape solver's
+// check, which every recipe form and runtime attach share.
 func validateJobRecipeStreamTransformShape(operation string, stream recipeir.Stream) error {
-	selector := recipeIRStreamSelector(stream)
 	node := recipeIRStreamName(stream)
 	transforms := recipeIRStreamTransforms(stream)
 	for i := range transforms {
@@ -872,16 +796,7 @@ func validateJobRecipeStreamTransformShape(operation string, stream recipeir.Str
 		if err := validateRecipeIRTransform(operation, node, transform); err != nil {
 			return err
 		}
-		switch {
-		case transform.Kind == recipeir.TransformResize:
-			if selector.Type == av.MediaAudio {
-				return transformMediaError(node, "resize", av.MediaVideo, selector.Type)
-			}
-		case transform.Kind == recipeir.TransformResample:
-			if selector.Type == av.MediaVideo {
-				return transformMediaError(node, "resample", av.MediaAudio, selector.Type)
-			}
-		default:
+		if transform.Kind != recipeir.TransformResize && transform.Kind != recipeir.TransformResample {
 			return emptyTransformSpecError(operation, node)
 		}
 	}
@@ -1172,138 +1087,6 @@ func recipeIRDestinationKindsContainMux(kinds []recipeir.DestinationKind) bool {
 	return false
 }
 
-func validateBranchCompositionRecipePass() recipeCompilePass {
-	return recipeCompilePassFunc{name: "validate transcode recipe", fn: func(state *recipeCompileState) error {
-		if !state.branchCompositionPresent {
-			return nilRecipeError(state.operation, "nil transcode job")
-		}
-		if state.recipeErr != nil {
-			return state.recipeErr
-		}
-		return nil
-	}}
-}
-
-func validateBranchCompositionIntentShapePass() recipeCompilePass {
-	return recipeCompilePassFunc{name: "validate transcode intent shape", fn: func(state *recipeCompileState) error {
-		return validateBranchCompositionRecipeShape(state.operation, state.recipe)
-	}}
-}
-
-func validateBranchCompositionAttachmentsPass() recipeCompilePass {
-	return recipeCompilePassFunc{name: "validate transcode attachments", fn: func(state *recipeCompileState) error {
-		return validateBranchCompositionAttachments(state.branchInputAttachment, state.branchDestinationAttachments, state.branchCompositionSplit)
-	}}
-}
-
-func validateBranchDestinationFormatAdaptersPass() recipeCompilePass {
-	return recipeCompilePassFunc{name: "validate branch destination format adapters", fn: func(state *recipeCompileState) error {
-		if !state.options.preflightOutputAdapters {
-			return nil
-		}
-		outputs := make([]destinationSpec, 0, len(state.branchDestinationAttachments))
-		destinationNames := make([]string, 0, len(state.branchDestinationAttachments))
-		for i := range state.branchDestinationAttachments {
-			output := state.branchDestinationAttachments[i].output.withName(firstNonEmpty(
-				state.branchDestinationAttachments[i].output.name,
-				state.branchDestinationAttachments[i].name,
-			))
-			outputs = append(outputs, output)
-			destinationNames = append(destinationNames, state.branchDestinationAttachments[i].name)
-		}
-		resolved, err := validateOutputFormatAdapters(state.options.Context(), state.adapterRuntime(), outputs, destinationNames...)
-		if err != nil {
-			return err
-		}
-		for i := range state.branchDestinationAttachments {
-			state.branchDestinationAttachments[i].output = resolved[i]
-		}
-		return nil
-	}}
-}
-
-func validateBranchInputFormatAdaptersPass() recipeCompilePass {
-	return recipeCompilePassFunc{name: "validate transcode input format adapters", fn: func(state *recipeCompileState) error {
-		if !state.options.preflightInputAdapters {
-			return nil
-		}
-		probes, err := validateInputFormatAdapters(state.options.Context(), state.adapterRuntime(), []InputSpec{state.branchInputAttachment})
-		if err != nil {
-			return err
-		}
-		if len(probes) != 0 {
-			state.branchInputProbe = probes[0]
-			state.branchInputProbeReady = true
-		}
-		return nil
-	}}
-}
-
-func validateBranchEncodeAdaptersPass() recipeCompilePass {
-	return recipeCompilePassFunc{name: "validate transcode encode adapters", fn: func(state *recipeCompileState) error {
-		if !state.options.preflightEncodeAdapters {
-			return nil
-		}
-		return validateRecipeIREncodeAdapters(state.operation, state.adapterRuntime(), state.recipe.Streams)
-	}}
-}
-
-func validateBranchTransformAdaptersPass() recipeCompilePass {
-	return recipeCompilePassFunc{name: "validate transcode transform adapters", fn: func(state *recipeCompileState) error {
-		if !state.options.preflightTransformAdapters {
-			return nil
-		}
-		return validateRecipeIRTransformAdapters(state.operation, state.adapterRuntime(), state.recipe.Streams)
-	}}
-}
-
-func validateBranchDestinationBindingsPass() recipeCompilePass {
-	return recipeCompilePassFunc{name: "validate branch destination bindings", fn: func(state *recipeCompileState) error {
-		return validateBranchRecipeDestinationBindings(state.recipe)
-	}}
-}
-
-func validateBranchDestinationKindsPass() recipeCompilePass {
-	return recipeCompilePassFunc{name: "validate branch destination kinds", fn: func(state *recipeCompileState) error {
-		return validateBranchRecipeDestinationKinds(state.recipe)
-	}}
-}
-
-func validateBranchRecipeDestinationBindings(recipe recipeir.Recipe) error {
-	destinations := recipeIRDestinationLabelSet(recipe.Destinations)
-	for i := range recipe.Streams {
-		stream := recipe.Streams[i]
-		for _, output := range stream.Outputs {
-			destinationName := string(output)
-			if _, ok := destinations[destinationName]; ok {
-				continue
-			}
-			return branchDestinationReferenceMissingError(streamIntentFromRecipeIR(stream), destinationName)
-		}
-	}
-	return nil
-}
-
-func validateBranchRecipeDestinationKinds(recipe recipeir.Recipe) error {
-	kindByName := recipeIRDestinationKindSet(recipe.Destinations)
-	for i := range recipe.Streams {
-		stream := recipe.Streams[i]
-		if branchRecipeStreamHasMuxDestination(stream, kindByName) && !codecIntentSet(recipeIRStreamEncodeSpec(stream)) {
-			return branchEncodeMissingError(streamIntentFromRecipeIR(stream))
-		}
-	}
-	return nil
-}
-
-func branchRecipeStreamHasMuxDestination(stream recipeir.Stream, kindByName map[string]recipeir.DestinationKind) bool {
-	for _, kind := range recipeIRDestinationKindsForStream(stream, kindByName) {
-		if kind != recipeir.DestinationKindSink {
-			return true
-		}
-	}
-	return false
-}
-
 func validateRecipeAttachmentConsistencyPass() recipeCompilePass {
 	return recipeCompilePassFunc{name: "validate recipe attachments", fn: func(state *recipeCompileState) error {
 		switch {
@@ -1315,15 +1098,6 @@ func validateRecipeAttachmentConsistencyPass() recipeCompilePass {
 			outputCount := len(state.recipe.Destinations)
 			if outputCount != len(state.outputAttachments) {
 				return recipeAttachmentMismatchError(state.operation, "destinations", outputCount, len(state.outputAttachments))
-			}
-		case state.branchCompositionPresent:
-			inputCount := len(state.recipe.Inputs)
-			if inputCount != 1 {
-				return recipeAttachmentMismatchError(state.operation, "inputs", inputCount, 1)
-			}
-			outputCount := len(state.recipe.Destinations)
-			if outputCount != len(state.branchDestinationAttachments) {
-				return recipeAttachmentMismatchError(state.operation, "destinations", outputCount, len(state.branchDestinationAttachments))
 			}
 		}
 		return nil
@@ -1477,7 +1251,7 @@ func jobStreamCustomSourceShapeForSelector(state *recipeCompileState, selector a
 	if state == nil {
 		return shape.Spec{}, false
 	}
-	if state.branchCompositionPresent || len(state.inputAttachments) <= 1 {
+	if len(state.inputAttachments) <= 1 {
 		return compileStateCustomSourceShape(state)
 	}
 	sets := jobInputStreamSetsFromRecipeIR(state.recipeInputIntents(), state.inputFacts, state.inputProbes)
@@ -1491,12 +1265,6 @@ func jobStreamCustomSourceShapeForSelector(state *recipeCompileState, selector a
 func (state *recipeCompileState) customSourceShapeForCompile() (shape.Spec, bool) {
 	if state == nil {
 		return shape.Spec{}, false
-	}
-	if state.branchCompositionPresent {
-		if spec, ok := state.inputSourceShape(0); ok {
-			return spec, true
-		}
-		return declaredSourceShape(state.branchInputAttachment)
 	}
 	if len(state.inputFacts) == 1 {
 		return state.inputSourceShape(0)
@@ -1520,42 +1288,6 @@ func (state *recipeCompileState) inputSourceShape(index int) (shape.Spec, bool) 
 		return declaredSourceShape(state.inputAttachments[index])
 	}
 	return shape.Spec{}, false
-}
-
-func validateKnownBranchInputStreamSelectionPass() recipeCompilePass {
-	return recipeCompilePassFunc{name: "validate transcode known input stream selection", fn: func(state *recipeCompileState) error {
-		if !state.branchInputProbeReady || len(state.branchInputProbe.Streams) == 0 {
-			return nil
-		}
-		streams := state.recipe.Streams
-		if spec, ok := state.inputSourceShape(0); ok && spec.Domain == shape.DomainFrame {
-			for i := range streams {
-				if _, err := selectStream(state.branchInputProbe.Streams, recipeIRStreamSelector(streams[i])); err != nil {
-					return err
-				}
-			}
-			return nil
-		}
-		for i := range streams {
-			if err := validateKnownProbeRecipeStreamSelection(state.branchInputProbe, streams[i]); err != nil {
-				return err
-			}
-		}
-		return nil
-	}}
-}
-
-func validateKnownBranchInputDecodeAdaptersPass() recipeCompilePass {
-	return recipeCompilePassFunc{name: "validate transcode known input decode adapters", fn: func(state *recipeCompileState) error {
-		if !state.options.preflightDecodeAdapters || !state.branchInputProbeReady || len(state.branchInputProbe.Streams) == 0 {
-			return nil
-		}
-		streams := recipeIRStreamsNeedingDecodeForState(state)
-		if len(streams) == 0 {
-			return nil
-		}
-		return validateKnownRecipeIRDecodeAdapters(state.operation, state.adapterRuntime(), []format.ProbeResult{state.branchInputProbe}, streams)
-	}}
 }
 
 func validateKnownRecipeInputStreamSelection(probes []format.ProbeResult, stream recipeir.Stream) error {
@@ -1596,7 +1328,6 @@ func validateRecipeOperationShapesPass() recipeCompilePass {
 			}
 			state.setSolvedStreamOperations(i, solved)
 			state.shapeDiagnostics = append(state.shapeDiagnostics, diagnostics...)
-			state.patchBranchComposeOperations(stream.Name, solved)
 		}
 		return nil
 	}}
@@ -1612,24 +1343,6 @@ func (s *recipeCompileState) setSolvedStreamOperations(index int, solved []recip
 	}
 	if index < len(s.recipe.Streams) {
 		s.recipe.Streams[index].Operations = append([]recipeir.Operation(nil), solved...)
-	}
-}
-
-// patchBranchComposeOperations re-points a pre-planned branch composition at
-// the solved operation list, so the Build-side lowerer executes exactly the
-// operations the solver planned (Describe ≡ Build).
-func (s *recipeCompileState) patchBranchComposeOperations(name string, solved []recipeir.Operation) {
-	if s == nil || !branchComposePlanReady(s.plan) {
-		return
-	}
-	for i := range s.plan.Branches {
-		if s.plan.Branches[i].Name != name {
-			continue
-		}
-		operations := recipeIROperationFacts(solved)
-		s.plan.Branches[i].SharedOperations = operations.SharedFacts()
-		s.plan.Branches[i].PrivateOperations = operations.PrivateFacts()
-		return
 	}
 }
 
@@ -1672,8 +1385,6 @@ func (s *recipeCompileState) recipeDestinationSet() map[string]destinationSpec {
 	for i := range s.recipe.Destinations {
 		label := recipeIRDestinationLabel(s.recipe.Destinations[i], i)
 		switch {
-		case s.branchCompositionPresent && i < len(s.branchDestinationAttachments):
-			outputs[label] = s.branchDestinationAttachments[i].output
 		case i < len(s.outputAttachments):
 			outputs[label] = s.outputAttachments[i]
 		default:
@@ -1826,30 +1537,6 @@ func shapeSetString(shapes shape.Set) string {
 		parts = append(parts, shapes[i].String())
 	}
 	return strings.Join(parts, " | ")
-}
-
-func planBranchCompositionIntentPass() recipeCompilePass {
-	return recipeCompilePassFunc{name: "plan branch composition intent", fn: func(state *recipeCompileState) error {
-		if state.planErr != nil {
-			return state.planErr
-		}
-		recipe := state.recipe
-		if branchComposePlanReady(state.plan) {
-			fresh, err := planBranchCompositionRecipe(recipe, state.branchInputAttachment, state.branchDestinationAttachments)
-			if err != nil {
-				return err
-			}
-			state.plan.Input = fresh.Input
-			state.plan.Destinations = fresh.Destinations
-			return nil
-		}
-		composePlan, err := planBranchCompositionRecipe(recipe, state.branchInputAttachment, state.branchDestinationAttachments)
-		if err != nil {
-			return err
-		}
-		state.plan = composePlan
-		return nil
-	}}
 }
 
 func recipeGraphUnsupportedError(operation string, intent intent) error {

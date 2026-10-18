@@ -1,0 +1,1272 @@
+{
+  "describe": {
+    "name": "goav",
+    "nodes": [
+      {
+        "name": "a.webm",
+        "kind": "source",
+        "detail": "demux, protocol=file"
+      },
+      {
+        "name": "b.webm",
+        "kind": "source",
+        "detail": "demux, protocol=file"
+      },
+      {
+        "name": "select-video@a.webm",
+        "kind": "stage",
+        "detail": "select, type=video"
+      },
+      {
+        "name": "decode-video@a.webm",
+        "kind": "stage",
+        "detail": "packets -\u003e frames, type=video"
+      },
+      {
+        "name": "resize-video@a.webm",
+        "kind": "stage",
+        "detail": "resize, 32x24, exact"
+      },
+      {
+        "name": "select-video@b.webm",
+        "kind": "stage",
+        "detail": "select, type=video"
+      },
+      {
+        "name": "decode-video@b.webm",
+        "kind": "stage",
+        "detail": "packets -\u003e frames, type=video"
+      },
+      {
+        "name": "resize-video@b.webm",
+        "kind": "stage",
+        "detail": "resize, 32x24, exact"
+      },
+      {
+        "name": "encode-a-vp8",
+        "kind": "stage",
+        "detail": "frames -\u003e packets, codec=vp8"
+      },
+      {
+        "name": "encode-a-vp9",
+        "kind": "stage",
+        "detail": "frames -\u003e packets, codec=vp9"
+      },
+      {
+        "name": "encode-b-vp8",
+        "kind": "stage",
+        "detail": "frames -\u003e packets, codec=vp8"
+      },
+      {
+        "name": "encode-b-vp9",
+        "kind": "stage",
+        "detail": "frames -\u003e packets, codec=vp9"
+      },
+      {
+        "name": "a-vp8.webm",
+        "kind": "stage",
+        "detail": "mux, protocol=file"
+      },
+      {
+        "name": "a-vp9.webm",
+        "kind": "stage",
+        "detail": "mux, protocol=file"
+      },
+      {
+        "name": "b-vp8.webm",
+        "kind": "stage",
+        "detail": "mux, protocol=file"
+      },
+      {
+        "name": "b-vp9.webm",
+        "kind": "stage",
+        "detail": "mux, protocol=file"
+      }
+    ],
+    "edges": [
+      {
+        "from": "a.webm",
+        "to": "select-video@a.webm",
+        "policy": "all"
+      },
+      {
+        "from": "b.webm",
+        "to": "select-video@b.webm",
+        "policy": "all"
+      },
+      {
+        "from": "select-video@a.webm",
+        "to": "decode-video@a.webm",
+        "policy": "all"
+      },
+      {
+        "from": "decode-video@a.webm",
+        "to": "resize-video@a.webm",
+        "policy": "all"
+      },
+      {
+        "from": "resize-video@a.webm",
+        "to": "encode-a-vp8",
+        "policy": "all"
+      },
+      {
+        "from": "resize-video@a.webm",
+        "to": "encode-a-vp9",
+        "policy": "all"
+      },
+      {
+        "from": "select-video@b.webm",
+        "to": "decode-video@b.webm",
+        "policy": "all"
+      },
+      {
+        "from": "decode-video@b.webm",
+        "to": "resize-video@b.webm",
+        "policy": "all"
+      },
+      {
+        "from": "resize-video@b.webm",
+        "to": "encode-b-vp8",
+        "policy": "all"
+      },
+      {
+        "from": "resize-video@b.webm",
+        "to": "encode-b-vp9",
+        "policy": "all"
+      },
+      {
+        "from": "encode-a-vp8",
+        "to": "a-vp8.webm",
+        "policy": "all"
+      },
+      {
+        "from": "encode-a-vp9",
+        "to": "a-vp9.webm",
+        "policy": "all"
+      },
+      {
+        "from": "encode-b-vp8",
+        "to": "b-vp8.webm",
+        "policy": "all"
+      },
+      {
+        "from": "encode-b-vp9",
+        "to": "b-vp9.webm",
+        "policy": "all"
+      }
+    ]
+  },
+  "explain": {
+    "summary": "from 2 inputs through 4 stream branch(es) to 4 destinations",
+    "operation": "build job",
+    "inputs": [
+      {
+        "name": "a.webm",
+        "protocol": "file",
+        "format": "webm"
+      },
+      {
+        "name": "b.webm",
+        "protocol": "file",
+        "format": "webm"
+      }
+    ],
+    "streams": [
+      {
+        "name": "a-vp8",
+        "select": {
+          "type": "video",
+          "input": "a.webm"
+        },
+        "decode": true,
+        "operations": [
+          {
+            "kind": "decode",
+            "detail": "packets to frames",
+            "shared": true
+          },
+          {
+            "kind": "transform",
+            "component": "resize",
+            "detail": "resize",
+            "shape": {
+              "domain": "frame",
+              "mediaKind": "video",
+              "width": 32,
+              "height": 24
+            },
+            "adapter": "resize",
+            "config": {
+              "height": "24",
+              "width": "32"
+            },
+            "shared": true
+          },
+          {
+            "kind": "encode",
+            "component": "vp8",
+            "detail": "frames to packets",
+            "shape": {
+              "domain": "packet",
+              "mediaKind": "video",
+              "codec": "vp8"
+            },
+            "adapter": "vp8"
+          }
+        ],
+        "encode": {
+          "id": "vp8",
+          "type": "video",
+          "parameters": {
+            "id": "vp8",
+            "type": "video",
+            "clockRate": 90000
+          }
+        },
+        "destinations": [
+          "a-vp8.webm"
+        ]
+      },
+      {
+        "name": "a-vp9",
+        "select": {
+          "type": "video",
+          "input": "a.webm"
+        },
+        "decode": true,
+        "operations": [
+          {
+            "kind": "decode",
+            "detail": "packets to frames",
+            "shared": true
+          },
+          {
+            "kind": "transform",
+            "component": "resize",
+            "detail": "resize",
+            "shape": {
+              "domain": "frame",
+              "mediaKind": "video",
+              "width": 32,
+              "height": 24
+            },
+            "adapter": "resize",
+            "config": {
+              "height": "24",
+              "width": "32"
+            },
+            "shared": true
+          },
+          {
+            "kind": "encode",
+            "component": "vp9",
+            "detail": "frames to packets",
+            "shape": {
+              "domain": "packet",
+              "mediaKind": "video",
+              "codec": "vp9"
+            },
+            "adapter": "vp9"
+          }
+        ],
+        "encode": {
+          "id": "vp9",
+          "type": "video",
+          "parameters": {
+            "id": "vp9",
+            "type": "video",
+            "clockRate": 90000
+          }
+        },
+        "destinations": [
+          "a-vp9.webm"
+        ]
+      },
+      {
+        "name": "b-vp8",
+        "select": {
+          "type": "video",
+          "input": "b.webm"
+        },
+        "decode": true,
+        "operations": [
+          {
+            "kind": "decode",
+            "detail": "packets to frames",
+            "shared": true
+          },
+          {
+            "kind": "transform",
+            "component": "resize",
+            "detail": "resize",
+            "shape": {
+              "domain": "frame",
+              "mediaKind": "video",
+              "width": 32,
+              "height": 24
+            },
+            "adapter": "resize",
+            "config": {
+              "height": "24",
+              "width": "32"
+            },
+            "shared": true
+          },
+          {
+            "kind": "encode",
+            "component": "vp8",
+            "detail": "frames to packets",
+            "shape": {
+              "domain": "packet",
+              "mediaKind": "video",
+              "codec": "vp8"
+            },
+            "adapter": "vp8"
+          }
+        ],
+        "encode": {
+          "id": "vp8",
+          "type": "video",
+          "parameters": {
+            "id": "vp8",
+            "type": "video",
+            "clockRate": 90000
+          }
+        },
+        "destinations": [
+          "b-vp8.webm"
+        ]
+      },
+      {
+        "name": "b-vp9",
+        "select": {
+          "type": "video",
+          "input": "b.webm"
+        },
+        "decode": true,
+        "operations": [
+          {
+            "kind": "decode",
+            "detail": "packets to frames",
+            "shared": true
+          },
+          {
+            "kind": "transform",
+            "component": "resize",
+            "detail": "resize",
+            "shape": {
+              "domain": "frame",
+              "mediaKind": "video",
+              "width": 32,
+              "height": 24
+            },
+            "adapter": "resize",
+            "config": {
+              "height": "24",
+              "width": "32"
+            },
+            "shared": true
+          },
+          {
+            "kind": "encode",
+            "component": "vp9",
+            "detail": "frames to packets",
+            "shape": {
+              "domain": "packet",
+              "mediaKind": "video",
+              "codec": "vp9"
+            },
+            "adapter": "vp9"
+          }
+        ],
+        "encode": {
+          "id": "vp9",
+          "type": "video",
+          "parameters": {
+            "id": "vp9",
+            "type": "video",
+            "clockRate": 90000
+          }
+        },
+        "destinations": [
+          "b-vp9.webm"
+        ]
+      }
+    ],
+    "branches": [
+      {
+        "name": "a-vp8",
+        "input": "a.webm",
+        "stream": {
+          "type": "video",
+          "input": "a.webm"
+        },
+        "shape": {
+          "domain": "packet",
+          "mediaKind": "video"
+        },
+        "operations": [
+          {
+            "kind": "demux",
+            "component": "container",
+            "detail": "read packets from input",
+            "shape": {
+              "domain": "packet",
+              "mediaKind": "video"
+            }
+          },
+          {
+            "kind": "select",
+            "component": "video",
+            "detail": "select stream",
+            "shape": {
+              "domain": "packet",
+              "mediaKind": "video"
+            }
+          },
+          {
+            "kind": "decode",
+            "detail": "packets to frames",
+            "shape": {
+              "domain": "frame",
+              "mediaKind": "video"
+            },
+            "shared": true
+          },
+          {
+            "kind": "transform",
+            "component": "resize",
+            "detail": "resize",
+            "shape": {
+              "domain": "frame",
+              "mediaKind": "video",
+              "width": 32,
+              "height": 24
+            },
+            "adapter": "resize",
+            "config": {
+              "height": "24",
+              "width": "32"
+            },
+            "shared": true
+          },
+          {
+            "kind": "encode",
+            "component": "vp8",
+            "detail": "frames to packets",
+            "shape": {
+              "domain": "packet",
+              "mediaKind": "video",
+              "streamID": "a-vp8",
+              "codec": "vp8",
+              "width": 32,
+              "height": 24
+            },
+            "adapter": "vp8"
+          }
+        ],
+        "destinations": [
+          "a-vp8.webm"
+        ]
+      },
+      {
+        "name": "a-vp9",
+        "input": "a.webm",
+        "stream": {
+          "type": "video",
+          "input": "a.webm"
+        },
+        "shape": {
+          "domain": "packet",
+          "mediaKind": "video"
+        },
+        "operations": [
+          {
+            "kind": "demux",
+            "component": "container",
+            "detail": "read packets from input",
+            "shape": {
+              "domain": "packet",
+              "mediaKind": "video"
+            }
+          },
+          {
+            "kind": "select",
+            "component": "video",
+            "detail": "select stream",
+            "shape": {
+              "domain": "packet",
+              "mediaKind": "video"
+            }
+          },
+          {
+            "kind": "decode",
+            "detail": "packets to frames",
+            "shape": {
+              "domain": "frame",
+              "mediaKind": "video"
+            },
+            "shared": true
+          },
+          {
+            "kind": "transform",
+            "component": "resize",
+            "detail": "resize",
+            "shape": {
+              "domain": "frame",
+              "mediaKind": "video",
+              "width": 32,
+              "height": 24
+            },
+            "adapter": "resize",
+            "config": {
+              "height": "24",
+              "width": "32"
+            },
+            "shared": true
+          },
+          {
+            "kind": "encode",
+            "component": "vp9",
+            "detail": "frames to packets",
+            "shape": {
+              "domain": "packet",
+              "mediaKind": "video",
+              "streamID": "a-vp9",
+              "codec": "vp9",
+              "width": 32,
+              "height": 24
+            },
+            "adapter": "vp9"
+          }
+        ],
+        "destinations": [
+          "a-vp9.webm"
+        ]
+      },
+      {
+        "name": "b-vp8",
+        "input": "b.webm",
+        "stream": {
+          "type": "video",
+          "input": "b.webm"
+        },
+        "shape": {
+          "domain": "packet",
+          "mediaKind": "video"
+        },
+        "operations": [
+          {
+            "kind": "demux",
+            "component": "container",
+            "detail": "read packets from input",
+            "shape": {
+              "domain": "packet",
+              "mediaKind": "video"
+            }
+          },
+          {
+            "kind": "select",
+            "component": "video",
+            "detail": "select stream",
+            "shape": {
+              "domain": "packet",
+              "mediaKind": "video"
+            }
+          },
+          {
+            "kind": "decode",
+            "detail": "packets to frames",
+            "shape": {
+              "domain": "frame",
+              "mediaKind": "video"
+            },
+            "shared": true
+          },
+          {
+            "kind": "transform",
+            "component": "resize",
+            "detail": "resize",
+            "shape": {
+              "domain": "frame",
+              "mediaKind": "video",
+              "width": 32,
+              "height": 24
+            },
+            "adapter": "resize",
+            "config": {
+              "height": "24",
+              "width": "32"
+            },
+            "shared": true
+          },
+          {
+            "kind": "encode",
+            "component": "vp8",
+            "detail": "frames to packets",
+            "shape": {
+              "domain": "packet",
+              "mediaKind": "video",
+              "streamID": "b-vp8",
+              "codec": "vp8",
+              "width": 32,
+              "height": 24
+            },
+            "adapter": "vp8"
+          }
+        ],
+        "destinations": [
+          "b-vp8.webm"
+        ]
+      },
+      {
+        "name": "b-vp9",
+        "input": "b.webm",
+        "stream": {
+          "type": "video",
+          "input": "b.webm"
+        },
+        "shape": {
+          "domain": "packet",
+          "mediaKind": "video"
+        },
+        "operations": [
+          {
+            "kind": "demux",
+            "component": "container",
+            "detail": "read packets from input",
+            "shape": {
+              "domain": "packet",
+              "mediaKind": "video"
+            }
+          },
+          {
+            "kind": "select",
+            "component": "video",
+            "detail": "select stream",
+            "shape": {
+              "domain": "packet",
+              "mediaKind": "video"
+            }
+          },
+          {
+            "kind": "decode",
+            "detail": "packets to frames",
+            "shape": {
+              "domain": "frame",
+              "mediaKind": "video"
+            },
+            "shared": true
+          },
+          {
+            "kind": "transform",
+            "component": "resize",
+            "detail": "resize",
+            "shape": {
+              "domain": "frame",
+              "mediaKind": "video",
+              "width": 32,
+              "height": 24
+            },
+            "adapter": "resize",
+            "config": {
+              "height": "24",
+              "width": "32"
+            },
+            "shared": true
+          },
+          {
+            "kind": "encode",
+            "component": "vp9",
+            "detail": "frames to packets",
+            "shape": {
+              "domain": "packet",
+              "mediaKind": "video",
+              "streamID": "b-vp9",
+              "codec": "vp9",
+              "width": 32,
+              "height": 24
+            },
+            "adapter": "vp9"
+          }
+        ],
+        "destinations": [
+          "b-vp9.webm"
+        ]
+      }
+    ],
+    "destinations": [
+      {
+        "name": "a-vp8.webm",
+        "protocol": "file",
+        "format": "webm",
+        "kind": "mux",
+        "branches": [
+          "a-vp8"
+        ]
+      },
+      {
+        "name": "a-vp9.webm",
+        "protocol": "file",
+        "format": "webm",
+        "kind": "mux",
+        "branches": [
+          "a-vp9"
+        ]
+      },
+      {
+        "name": "b-vp8.webm",
+        "protocol": "file",
+        "format": "webm",
+        "kind": "mux",
+        "branches": [
+          "b-vp8"
+        ]
+      },
+      {
+        "name": "b-vp9.webm",
+        "protocol": "file",
+        "format": "webm",
+        "kind": "mux",
+        "branches": [
+          "b-vp9"
+        ]
+      }
+    ],
+    "decisions": [
+      {
+        "code": "decode_required",
+        "branch": "a-vp8",
+        "message": "operation specs require decoded frames"
+      },
+      {
+        "code": "encode_required",
+        "branch": "a-vp8",
+        "message": "muxed stream output requires encoded packets"
+      },
+      {
+        "code": "decode_required",
+        "branch": "a-vp9",
+        "message": "operation specs require decoded frames"
+      },
+      {
+        "code": "encode_required",
+        "branch": "a-vp9",
+        "message": "muxed stream output requires encoded packets"
+      },
+      {
+        "code": "decode_required",
+        "branch": "b-vp8",
+        "message": "operation specs require decoded frames"
+      },
+      {
+        "code": "encode_required",
+        "branch": "b-vp8",
+        "message": "muxed stream output requires encoded packets"
+      },
+      {
+        "code": "decode_required",
+        "branch": "b-vp9",
+        "message": "operation specs require decoded frames"
+      },
+      {
+        "code": "encode_required",
+        "branch": "b-vp9",
+        "message": "muxed stream output requires encoded packets"
+      },
+      {
+        "code": "buffered_execution",
+        "message": "the graph runs buffered: every node gets its own worker and queue, so branches and join arms run in parallel"
+      }
+    ],
+    "requiredAdapters": [
+      {
+        "kind": "demuxer",
+        "name": "webm",
+        "format": "webm",
+        "media": [
+          "audio",
+          "video"
+        ],
+        "codecs": [
+          "opus",
+          "vorbis",
+          "vp8",
+          "vp9",
+          "av1"
+        ],
+        "minStreams": 1,
+        "metadata": {
+          "summary": "WebM supports Opus/Vorbis audio and VP8/VP9/AV1 video packets without codec conversion"
+        },
+        "requiredBy": "a.webm",
+        "status": "available"
+      },
+      {
+        "kind": "demuxer",
+        "name": "webm",
+        "format": "webm",
+        "media": [
+          "audio",
+          "video"
+        ],
+        "codecs": [
+          "opus",
+          "vorbis",
+          "vp8",
+          "vp9",
+          "av1"
+        ],
+        "minStreams": 1,
+        "metadata": {
+          "summary": "WebM supports Opus/Vorbis audio and VP8/VP9/AV1 video packets without codec conversion"
+        },
+        "requiredBy": "b.webm",
+        "status": "available"
+      },
+      {
+        "kind": "muxer",
+        "name": "webm",
+        "format": "webm",
+        "media": [
+          "audio",
+          "video"
+        ],
+        "codecs": [
+          "opus",
+          "vorbis",
+          "vp8",
+          "vp9",
+          "av1"
+        ],
+        "minStreams": 1,
+        "metadata": {
+          "summary": "WebM supports Opus/Vorbis audio and VP8/VP9/AV1 video packets without codec conversion"
+        },
+        "requiredBy": "a-vp8.webm",
+        "status": "available"
+      },
+      {
+        "kind": "muxer",
+        "name": "webm",
+        "format": "webm",
+        "media": [
+          "audio",
+          "video"
+        ],
+        "codecs": [
+          "opus",
+          "vorbis",
+          "vp8",
+          "vp9",
+          "av1"
+        ],
+        "minStreams": 1,
+        "metadata": {
+          "summary": "WebM supports Opus/Vorbis audio and VP8/VP9/AV1 video packets without codec conversion"
+        },
+        "requiredBy": "a-vp9.webm",
+        "status": "available"
+      },
+      {
+        "kind": "muxer",
+        "name": "webm",
+        "format": "webm",
+        "media": [
+          "audio",
+          "video"
+        ],
+        "codecs": [
+          "opus",
+          "vorbis",
+          "vp8",
+          "vp9",
+          "av1"
+        ],
+        "minStreams": 1,
+        "metadata": {
+          "summary": "WebM supports Opus/Vorbis audio and VP8/VP9/AV1 video packets without codec conversion"
+        },
+        "requiredBy": "b-vp8.webm",
+        "status": "available"
+      },
+      {
+        "kind": "muxer",
+        "name": "webm",
+        "format": "webm",
+        "media": [
+          "audio",
+          "video"
+        ],
+        "codecs": [
+          "opus",
+          "vorbis",
+          "vp8",
+          "vp9",
+          "av1"
+        ],
+        "minStreams": 1,
+        "metadata": {
+          "summary": "WebM supports Opus/Vorbis audio and VP8/VP9/AV1 video packets without codec conversion"
+        },
+        "requiredBy": "b-vp9.webm",
+        "status": "available"
+      },
+      {
+        "kind": "filter",
+        "name": "resize",
+        "transform": "resize",
+        "input": "video",
+        "output": "video",
+        "pixelFormats": [
+          "i420",
+          "yuv420p"
+        ],
+        "resizeModes": [
+          "exact",
+          "fit",
+          "fill",
+          "passthrough"
+        ],
+        "realtime": true,
+        "stateless": true,
+        "metadata": {
+          "backend": "resize",
+          "modes": "exact,fit,fill,passthrough",
+          "pixel_formats": "i420,yuv420p"
+        },
+        "requiredBy": "a-vp8",
+        "status": "available"
+      },
+      {
+        "kind": "encoder",
+        "name": "vp8",
+        "codec": "vp8",
+        "media": [
+          "video"
+        ],
+        "pixelFormats": [
+          "i420"
+        ],
+        "realtime": true,
+        "requiredBy": "a-vp8",
+        "status": "available"
+      },
+      {
+        "kind": "filter",
+        "name": "resize",
+        "transform": "resize",
+        "input": "video",
+        "output": "video",
+        "pixelFormats": [
+          "i420",
+          "yuv420p"
+        ],
+        "resizeModes": [
+          "exact",
+          "fit",
+          "fill",
+          "passthrough"
+        ],
+        "realtime": true,
+        "stateless": true,
+        "metadata": {
+          "backend": "resize",
+          "modes": "exact,fit,fill,passthrough",
+          "pixel_formats": "i420,yuv420p"
+        },
+        "requiredBy": "a-vp9",
+        "status": "available"
+      },
+      {
+        "kind": "encoder",
+        "name": "vp9",
+        "codec": "vp9",
+        "media": [
+          "video"
+        ],
+        "pixelFormats": [
+          "i420"
+        ],
+        "realtime": true,
+        "requiredBy": "a-vp9",
+        "status": "available"
+      },
+      {
+        "kind": "filter",
+        "name": "resize",
+        "transform": "resize",
+        "input": "video",
+        "output": "video",
+        "pixelFormats": [
+          "i420",
+          "yuv420p"
+        ],
+        "resizeModes": [
+          "exact",
+          "fit",
+          "fill",
+          "passthrough"
+        ],
+        "realtime": true,
+        "stateless": true,
+        "metadata": {
+          "backend": "resize",
+          "modes": "exact,fit,fill,passthrough",
+          "pixel_formats": "i420,yuv420p"
+        },
+        "requiredBy": "b-vp8",
+        "status": "available"
+      },
+      {
+        "kind": "encoder",
+        "name": "vp8",
+        "codec": "vp8",
+        "media": [
+          "video"
+        ],
+        "pixelFormats": [
+          "i420"
+        ],
+        "realtime": true,
+        "requiredBy": "b-vp8",
+        "status": "available"
+      },
+      {
+        "kind": "filter",
+        "name": "resize",
+        "transform": "resize",
+        "input": "video",
+        "output": "video",
+        "pixelFormats": [
+          "i420",
+          "yuv420p"
+        ],
+        "resizeModes": [
+          "exact",
+          "fit",
+          "fill",
+          "passthrough"
+        ],
+        "realtime": true,
+        "stateless": true,
+        "metadata": {
+          "backend": "resize",
+          "modes": "exact,fit,fill,passthrough",
+          "pixel_formats": "i420,yuv420p"
+        },
+        "requiredBy": "b-vp9",
+        "status": "available"
+      },
+      {
+        "kind": "encoder",
+        "name": "vp9",
+        "codec": "vp9",
+        "media": [
+          "video"
+        ],
+        "pixelFormats": [
+          "i420"
+        ],
+        "realtime": true,
+        "requiredBy": "b-vp9",
+        "status": "available"
+      }
+    ],
+    "warnings": [
+      {
+        "code": "decode_codec_deferred",
+        "node": "a-vp8",
+        "message": "decode codec will be resolved when the input opens",
+        "suggestions": [
+          "declare the provider codec intent when the receive codec is already known",
+          "use input metadata or a format adapter that reports streams during probing"
+        ]
+      },
+      {
+        "code": "decode_codec_deferred",
+        "node": "a-vp9",
+        "message": "decode codec will be resolved when the input opens",
+        "suggestions": [
+          "declare the provider codec intent when the receive codec is already known",
+          "use input metadata or a format adapter that reports streams during probing"
+        ]
+      },
+      {
+        "code": "decode_codec_deferred",
+        "node": "b-vp8",
+        "message": "decode codec will be resolved when the input opens",
+        "suggestions": [
+          "declare the provider codec intent when the receive codec is already known",
+          "use input metadata or a format adapter that reports streams during probing"
+        ]
+      },
+      {
+        "code": "decode_codec_deferred",
+        "node": "b-vp9",
+        "message": "decode codec will be resolved when the input opens",
+        "suggestions": [
+          "declare the provider codec intent when the receive codec is already known",
+          "use input metadata or a format adapter that reports streams during probing"
+        ]
+      }
+    ],
+    "graph": {
+      "name": "goav",
+      "nodes": [
+        {
+          "name": "a.webm",
+          "kind": "source",
+          "detail": "demux, protocol=file"
+        },
+        {
+          "name": "b.webm",
+          "kind": "source",
+          "detail": "demux, protocol=file"
+        },
+        {
+          "name": "select-video@a.webm",
+          "kind": "stage",
+          "detail": "select, type=video"
+        },
+        {
+          "name": "decode-video@a.webm",
+          "kind": "stage",
+          "detail": "packets -\u003e frames, type=video"
+        },
+        {
+          "name": "resize-video@a.webm",
+          "kind": "stage",
+          "detail": "resize, 32x24, exact"
+        },
+        {
+          "name": "select-video@b.webm",
+          "kind": "stage",
+          "detail": "select, type=video"
+        },
+        {
+          "name": "decode-video@b.webm",
+          "kind": "stage",
+          "detail": "packets -\u003e frames, type=video"
+        },
+        {
+          "name": "resize-video@b.webm",
+          "kind": "stage",
+          "detail": "resize, 32x24, exact"
+        },
+        {
+          "name": "encode-a-vp8",
+          "kind": "stage",
+          "detail": "frames -\u003e packets, codec=vp8"
+        },
+        {
+          "name": "encode-a-vp9",
+          "kind": "stage",
+          "detail": "frames -\u003e packets, codec=vp9"
+        },
+        {
+          "name": "encode-b-vp8",
+          "kind": "stage",
+          "detail": "frames -\u003e packets, codec=vp8"
+        },
+        {
+          "name": "encode-b-vp9",
+          "kind": "stage",
+          "detail": "frames -\u003e packets, codec=vp9"
+        },
+        {
+          "name": "a-vp8.webm",
+          "kind": "stage",
+          "detail": "mux, protocol=file"
+        },
+        {
+          "name": "a-vp9.webm",
+          "kind": "stage",
+          "detail": "mux, protocol=file"
+        },
+        {
+          "name": "b-vp8.webm",
+          "kind": "stage",
+          "detail": "mux, protocol=file"
+        },
+        {
+          "name": "b-vp9.webm",
+          "kind": "stage",
+          "detail": "mux, protocol=file"
+        }
+      ],
+      "edges": [
+        {
+          "from": "a.webm",
+          "to": "select-video@a.webm",
+          "policy": "all"
+        },
+        {
+          "from": "b.webm",
+          "to": "select-video@b.webm",
+          "policy": "all"
+        },
+        {
+          "from": "select-video@a.webm",
+          "to": "decode-video@a.webm",
+          "policy": "all"
+        },
+        {
+          "from": "decode-video@a.webm",
+          "to": "resize-video@a.webm",
+          "policy": "all"
+        },
+        {
+          "from": "resize-video@a.webm",
+          "to": "encode-a-vp8",
+          "policy": "all"
+        },
+        {
+          "from": "resize-video@a.webm",
+          "to": "encode-a-vp9",
+          "policy": "all"
+        },
+        {
+          "from": "select-video@b.webm",
+          "to": "decode-video@b.webm",
+          "policy": "all"
+        },
+        {
+          "from": "decode-video@b.webm",
+          "to": "resize-video@b.webm",
+          "policy": "all"
+        },
+        {
+          "from": "resize-video@b.webm",
+          "to": "encode-b-vp8",
+          "policy": "all"
+        },
+        {
+          "from": "resize-video@b.webm",
+          "to": "encode-b-vp9",
+          "policy": "all"
+        },
+        {
+          "from": "encode-a-vp8",
+          "to": "a-vp8.webm",
+          "policy": "all"
+        },
+        {
+          "from": "encode-a-vp9",
+          "to": "a-vp9.webm",
+          "policy": "all"
+        },
+        {
+          "from": "encode-b-vp8",
+          "to": "b-vp8.webm",
+          "policy": "all"
+        },
+        {
+          "from": "encode-b-vp9",
+          "to": "b-vp9.webm",
+          "policy": "all"
+        }
+      ]
+    }
+  }
+}

@@ -976,7 +976,7 @@ func (p *joinPlan) planJoinBranches() error {
 	if err != nil {
 		return err
 	}
-	recipe := recipeir.Recipe{Kind: recipeir.KindBranchComposition, Name: name}
+	recipe := recipeir.Recipe{Kind: recipeir.KindJob, Name: name}
 	for i := range p.tree.branches {
 		branch := p.tree.branches[i]
 		// The branch's builder-construction error was captured at the recipe
@@ -1017,7 +1017,7 @@ func (p *joinPlan) planJoinBranches() error {
 		}
 		recipe.Destinations = append(recipe.Destinations, recipeIRDestinationFromIntent(destinations[i].output.intentWithName(destinations[i].name)))
 	}
-	composePlan, err := planBranchCompositionRecipe(recipe, InputSpec{}, destinations)
+	composePlan, err := planBranchCompositionRecipe(recipe, destinations)
 	if err != nil {
 		return err
 	}

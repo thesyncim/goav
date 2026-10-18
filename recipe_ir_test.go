@@ -350,16 +350,16 @@ func TestBranchComposerGraphLowererConsumesHandoff(t *testing.T) {
 		Branches(newBranch("monitor").To(Sink(SinkFunc("frames", func(context.Context, Message) error { return nil }))))
 
 	state := recipeCompileStateFromSnapshot(newJobRecipeSnapshot(job), recipeCompileOptions{})
-	input, ok := mediaPlanBranchComposerInputFromCompileState(&state)
+	input, ok := mediaPlanMultiStreamJobInputFromCompileState(&state)
 	if !ok {
 		t.Fatal("branch-composer graph lowerer input was not selected")
 	}
 
 	state.runtime = nil
-	state.branchInputAttachment = InputSpec{}
-	state.plan = branchComposePlan{}
+	state.inputAttachments = nil
+	state.recipe = recipeir.Recipe{}
 
-	lowerer, ok, err := newMediaPlanBranchComposerLowerer(input)
+	lowerer, ok, err := newMediaPlanMultiStreamJobLowerer(input)
 	if err != nil {
 		t.Fatalf("lower branch composition from captured input: %v", err)
 	}

@@ -218,8 +218,11 @@ func newStreamSelectConfig(media av.MediaType, options ...StreamOption) streamSe
 }
 
 type streamBuild struct {
-	name             string
-	selector         av.StreamSelector
+	name     string
+	selector av.StreamSelector
+	// input is the job input the branched chain is narrowed to; empty selects
+	// across the inputs.
+	input            string
 	from             tapRef
 	decode           bool
 	decodeCodec      codec.Spec

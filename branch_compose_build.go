@@ -23,7 +23,6 @@ import (
 // routes the planner/compiler below consume.
 type branchComposePlan struct {
 	Name         string
-	Input        format.Input
 	Branches     []branchComposeBranch
 	Destinations []branchComposeTarget
 	Metadata     av.Metadata
@@ -59,49 +58,6 @@ type branchComposeTarget struct {
 	Branches       []string
 	Metadata       av.Metadata
 	resolvedFormat av.FormatID
-}
-
-func cloneBranchComposePlan(plan branchComposePlan) branchComposePlan {
-	clone := plan
-	clone.Input.Metadata = cloneMetadata(plan.Input.Metadata)
-	clone.Branches = cloneBranchComposeBranches(plan.Branches)
-	clone.Destinations = cloneBranchComposeTargets(plan.Destinations)
-	clone.Metadata = cloneMetadata(plan.Metadata)
-	return clone
-}
-
-func cloneBranchComposeBranches(branches []branchComposeBranch) []branchComposeBranch {
-	if len(branches) == 0 {
-		return nil
-	}
-	out := make([]branchComposeBranch, 0, len(branches))
-	for i := range branches {
-		branch := branches[i]
-		branch.SharedOperations = branch.SharedOperations.Clone()
-		branch.PrivateOperations = branch.PrivateOperations.Clone()
-		branch.DecodeConfig = cloneCodecSpec(branch.DecodeConfig)
-		branch.Encode = cloneEncodeConfig(branch.Encode)
-		branch.Labels = append([]string(nil), branch.Labels...)
-		branch.Metadata = cloneMetadata(branch.Metadata)
-		out = append(out, branch)
-	}
-	return out
-}
-
-func cloneBranchComposeTargets(targets []branchComposeTarget) []branchComposeTarget {
-	if len(targets) == 0 {
-		return nil
-	}
-	out := make([]branchComposeTarget, 0, len(targets))
-	for i := range targets {
-		target := targets[i]
-		target.Destination = cloneDestinationSpec(target.Destination)
-		target.Target.Metadata = cloneMetadata(target.Target.Metadata)
-		target.Branches = append([]string(nil), target.Branches...)
-		target.Metadata = cloneMetadata(target.Metadata)
-		out = append(out, target)
-	}
-	return out
 }
 
 func (t branchComposeTarget) OpenFormat() av.FormatID {
@@ -645,8 +601,11 @@ func branchChainStepError(name string, reason string) error {
 	}
 }
 
+// branchComposeSharedStepName is the scope a branch's shared steps are named in:
+// its selection, qualified by the input it is narrowed to, so the shared steps
+// of two inputs' forks stay distinct nodes.
 func branchComposeSharedStepName(branch branchComposeBranch) string {
-	return firstNonEmpty(string(branch.Selector.Type), string(branch.Selector.ID), branch.Selector.Name, "stream")
+	return branchComposeInputNodeName(firstNonEmpty(string(branch.Selector.Type), string(branch.Selector.ID), branch.Selector.Name, "stream"), branch.Input)
 }
 
 func branchComposeSharedStepGroups(indices []int, branches []branchComposeRoute) []branchComposeSharedStepGroup {

@@ -2,7 +2,6 @@ package goav
 
 import (
 	"errors"
-	"fmt"
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
@@ -820,23 +819,6 @@ func validateChainMedia(operation string, node string, selected av.MediaType, sp
 		fixes: buildErrorFixes([]string{
 			"apply audio steps such as .Resample(...) to input.Audio() streams",
 			"apply video steps such as .Resize(...) to input.Video() streams",
-		}),
-		cause: errUnsupportedBuild,
-	}
-}
-
-func branchInputCountError(node string, count int) error {
-	return &BuildError{
-		Phase:     phaseBuild,
-		Family:    errcode.FamilyForCode(inputCountUnsupportedCode),
-		Code:      inputCountUnsupportedCode,
-		Operation: "build branches",
-		Node:      node,
-		Reason:    "branches currently compose from one input",
-		fields:    errDetails(errDetail("inputs", fmt.Sprintf("%d", count))),
-		fixes: buildErrorFixes([]string{
-			"fork the streams of one input: v := input.Video().Decode()",
-			"use the expert graph API when combining several sources manually",
 		}),
 		cause: errUnsupportedBuild,
 	}

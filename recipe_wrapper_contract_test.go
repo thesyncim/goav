@@ -2,7 +2,6 @@ package goav
 
 import (
 	"context"
-	"errors"
 	"testing"
 
 	"github.com/thesyncim/goav/errcode"
@@ -18,15 +17,6 @@ func TestRecipeResolvedUnsupportedContracts(t *testing.T) {
 	}
 	if work := resolved.workIR(); work.Name != "" || len(work.Operations) != 0 || len(work.Branches) != 0 {
 		t.Fatalf("workIR() = %+v, want empty work plan", work)
-	}
-}
-
-func TestCompileJobBranchRecipeWithOptionsRequiresOneInput(t *testing.T) {
-	_, err := compileJobBranchRecipeWithOptions(&recipeJob{runtime: mustNew()}, recipeCompileOptions{})
-	var buildErr *BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != inputCountUnsupportedCode ||
-		buildErr.Operation != "build branches" || buildErr.Node != "branches" {
-		t.Fatalf("compileJobBranchRecipeWithOptions() error = %v, want branch input-count error", err)
 	}
 }
 

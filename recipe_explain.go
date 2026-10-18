@@ -106,12 +106,6 @@ func explainInputs(resolved recipeResolved) []plan.Input {
 }
 
 func (r recipeResolved) inputProbe(index int) (format.ProbeResult, bool) {
-	if r.branchInputProbeReady {
-		if index == 0 {
-			return r.branchInputProbe, true
-		}
-		return format.ProbeResult{}, false
-	}
 	if index < 0 || index >= len(r.inputProbes) {
 		return format.ProbeResult{}, false
 	}
@@ -507,7 +501,7 @@ func workOperationDecodeCodec(resolved recipeResolved, branch workBranch, operat
 	if operation.Codec.ID != "" {
 		return operation.Codec.ID, true
 	}
-	if codecID, _, _, ok := copyMuxStreamFacts(branch, inputs, resolved.inputProbes, resolved.branchInputProbe, resolved.branchInputProbeReady); ok {
+	if codecID, _, _, ok := copyMuxStreamFacts(branch, inputs, resolved.inputProbes); ok {
 		return codecID, true
 	}
 	codecID := av.CodecID(operation.Component)

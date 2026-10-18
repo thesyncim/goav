@@ -73,9 +73,9 @@ const (
 func FamilyForCode(code Code) Family {
 	switch code {
 	case Code("input_invalid"), Code("input_missing"), Code("input_duplicate"),
-		Code("input_unknown"), Code("input_count_unsupported"), Code("input_format_unknown"),
+		Code("input_unknown"), Code("input_format_unknown"),
 		Code("input_demuxer_missing"),
-		Code("unsupported_input"), Code("source_callback_missing"), Code("source_shape_invalid"),
+		Code("source_callback_missing"), Code("source_shape_invalid"),
 		Code("source_shape_unsupported"), Code("source_shape_mismatch"),
 		Code("explicit_graph_source_missing"):
 		return FamilyInput

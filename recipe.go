@@ -720,25 +720,11 @@ func (j *recipeJob) Run(ctx context.Context) error {
 }
 
 func (j *recipeJob) allOutputs() []destinationSpec {
-	if len(j.branchDestinations) != 0 {
-		outputs := make([]destinationSpec, 0, len(j.branchDestinations))
-		for i := range j.branchDestinations {
-			outputs = append(outputs, j.branchDestinations[i].output)
-		}
-		return outputs
-	}
 	streamOutputs, _ := j.streamOutputsAndNames()
 	return jobAllOutputs(j.outputs, streamOutputs)
 }
 
 func (j *recipeJob) allOutputNames() []string {
-	if len(j.branchDestinations) != 0 {
-		names := make([]string, 0, len(j.branchDestinations))
-		for i := range j.branchDestinations {
-			names = append(names, j.branchDestinations[i].name)
-		}
-		return names
-	}
 	_, streamOutputNames := j.streamOutputsAndNames()
 	return jobAllOutputNames(j.outputNames, streamOutputNames)
 }
@@ -747,6 +733,15 @@ func (j *recipeJob) allOutputNames() []string {
 // single chain (today's behavior) and deduplicated by destination label for
 // several chains so one shared Destination handle lowers to one mux group.
 func (j *recipeJob) streamOutputsAndNames() ([]destinationSpec, []string) {
+	if len(j.branchStreams) != 0 {
+		_, destinations, _ := j.branchJobStreams()
+		outputs := make([]destinationSpec, len(destinations))
+		names := make([]string, len(destinations))
+		for i := range destinations {
+			outputs[i], names[i] = destinations[i].output, destinations[i].name
+		}
+		return outputs, names
+	}
 	if len(j.streams) > 1 {
 		return dedupedJobStreamOutputs(j.streams)
 	}

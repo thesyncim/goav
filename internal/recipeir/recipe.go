@@ -21,8 +21,6 @@ const (
 	KindJob Kind = "job"
 	// KindJoin is a Mix/Composite/Select/custom join recipe.
 	KindJoin Kind = "join"
-	// KindBranchComposition is a planned-branch fanout recipe.
-	KindBranchComposition Kind = "branch-composition"
 )
 
 // Recipe is the immutable recipe data boundary between fluent grammar builders
@@ -67,7 +65,12 @@ type Input struct {
 
 // Stream is one selected stream chain with ordered operations and output refs.
 type Stream struct {
-	Name       string
+	Name string
+	// Named marks a stream whose Name is its identity (a fork, or a stream
+	// named with As): its encoder output takes Name as its stream id, as
+	// every stream of several does. A lone unnamed stream keeps its source
+	// stream's identity.
+	Named      bool
 	Selector   plan.StreamSelect
 	From       TapRef
 	Operations []Operation

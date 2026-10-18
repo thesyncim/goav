@@ -25,7 +25,6 @@ type mediaPlanMultiStreamJobInput struct {
 	runtime      *Runtime
 	recipe       recipeir.Recipe
 	inputs       []InputSpec
-	input        InputSpec
 	namedOutputs []namedDestinationSpec
 }
 
@@ -42,12 +41,6 @@ type mediaPlanDecodeStreamInput struct {
 	inputs  []InputSpec
 	outputs []destinationSpec
 	stream  streamIntent
-}
-
-type mediaPlanBranchComposerInput struct {
-	runtime *Runtime
-	input   InputSpec
-	plan    branchComposePlan
 }
 
 // graphPlan binds the compiled work plan — the single executable truth built
@@ -235,9 +228,6 @@ func graphPlanLowererForState(state *recipeCompileState) (graphPlanLowerer, bool
 	if graph, ok, err := mediaPlanMultiStreamJobLowererForState(state); err != nil || ok {
 		return graph, ok, err
 	}
-	if graph, ok, err := mediaPlanBranchComposerLowerer(state); err != nil || ok {
-		return graph, ok, err
-	}
 	return nil, false, nil
 }
 
@@ -278,15 +268,10 @@ func mediaPlanMultiStreamJobInputFromCompileState(state *recipeCompileState) (me
 			output: state.outputAttachments[i],
 		})
 	}
-	input := InputSpec{}
-	if len(state.inputAttachments) != 0 {
-		input = state.inputAttachments[0]
-	}
 	return mediaPlanMultiStreamJobInput{
 		runtime:      state.runtime,
 		recipe:       cloneRecipeIRRecipe(state.recipe),
 		inputs:       append([]InputSpec(nil), state.inputAttachments...),
-		input:        input,
 		namedOutputs: cloneNamedDestinationSpecs(namedOutputs),
 	}, true
 }
@@ -296,14 +281,14 @@ func newMediaPlanMultiStreamJobLowerer(input mediaPlanMultiStreamJobInput) (grap
 	if len(recipe.Streams) == 0 {
 		return nil, false, nil
 	}
-	gp, err := planBranchCompositionRecipe(recipe, input.input, input.namedOutputs)
+	gp, err := planBranchCompositionRecipe(recipe, input.namedOutputs)
 	if err != nil {
 		return nil, false, err
 	}
-	// A lone chain that lowers as one branch (a copy with steps, a stage after
-	// the encoder) keeps the identity of the stream it encodes, exactly as the
-	// single-stream route does.
-	gp.keepStreamIdentity = len(recipe.Streams) == 1
+	// A lone unnamed chain that lowers as one branch (a copy with steps, a
+	// stage after the encoder) keeps the identity of the stream it encodes,
+	// exactly as the single-stream route does; a named stream takes its name.
+	gp.keepStreamIdentity = len(recipe.Streams) == 1 && !recipe.Streams[0].Named
 	graph, ok, err := newMediaPlanBranchComposeGraph(input.runtime, input.inputs, gp)
 	if err != nil || !ok {
 		return nil, ok, err
@@ -383,7 +368,7 @@ func mediaPlanPacketCopyRecipeStream(jobPresent bool, recipe recipeir.Recipe) (s
 		return streamIntent{}, false, true
 	case 1:
 		stream := recipe.Streams[0]
-		if recipeIRStreamPacketCopyOnly(stream) {
+		if !stream.Named && recipeIRStreamPacketCopyOnly(stream) {
 			return streamIntentFromRecipeIR(stream), true, true
 		}
 	}
@@ -431,7 +416,7 @@ func mediaPlanDecodeStreamLowererForState(state *recipeCompileState) (graphPlanL
 }
 
 func mediaPlanDecodeStreamInputFromCompileState(state *recipeCompileState) (mediaPlanDecodeStreamInput, bool) {
-	if state == nil || !state.jobPresent || len(state.recipe.Streams) != 1 {
+	if state == nil || !state.jobPresent || len(state.recipe.Streams) != 1 || state.recipe.Streams[0].Named {
 		return mediaPlanDecodeStreamInput{}, false
 	}
 	stream := streamIntentFromRecipeIR(state.recipe.Streams[0])
@@ -474,33 +459,6 @@ func mediaPlanEncodeShape(stream streamIntent, outputs []destinationSpec, frameS
 		return false
 	}
 	return len(stream.Destinations) == len(outputs)
-}
-
-func mediaPlanBranchComposerLowerer(state *recipeCompileState) (graphPlanLowerer, bool, error) {
-	input, ok := mediaPlanBranchComposerInputFromCompileState(state)
-	if !ok {
-		return nil, false, nil
-	}
-	return newMediaPlanBranchComposerLowerer(input)
-}
-
-func mediaPlanBranchComposerInputFromCompileState(state *recipeCompileState) (mediaPlanBranchComposerInput, bool) {
-	if state == nil || !state.branchCompositionPresent {
-		return mediaPlanBranchComposerInput{}, false
-	}
-	return mediaPlanBranchComposerInput{
-		runtime: state.runtime,
-		input:   state.branchInputAttachment,
-		plan:    cloneBranchComposePlan(state.plan),
-	}, true
-}
-
-func newMediaPlanBranchComposerLowerer(input mediaPlanBranchComposerInput) (graphPlanLowerer, bool, error) {
-	gp, ok, err := newMediaPlanBranchComposeGraph(input.runtime, []InputSpec{input.input}, input.plan)
-	if err != nil || !ok {
-		return nil, ok, err
-	}
-	return gp, true, nil
 }
 
 func mediaPlanSourceSpecs(spec *pipeline.Spec, nodes map[string]plannedNode, inputs []InputSpec) ([]pipeline.NodeRef, bool, error) {

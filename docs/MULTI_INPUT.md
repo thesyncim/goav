@@ -36,6 +36,10 @@ err = rt.Run(ctx, a.Video().To(rec), b.Audio().To(rec))
   each stream reads only its own input. With several inputs a file's stream
   ids carry its name (`1@a.webm`), so track 1 of two files stays two tracks in
   one mux (`TestCopyFromTwoFilesIntoOneMux`).
+- **Forks per input.** Each input forks on its own: one camera's ladder beside
+  another input's audio muxed into every rendition, or two files each forked
+  into renditions, share each input's select, decode, and steps
+  (`TestForksAcrossSeveralInputs`, `TestForksOfTwoFiles`).
 - **Timing.** Joins combine in arrival order. `.SyncByPTS()` on a Mix or
   Composite aligns inputs by presentation time instead: the earliest input
   leads, inputs within half a frame join it, inputs ahead sit the step out,
@@ -76,7 +80,6 @@ err = rt.Run(ctx, a.Video().To(rec), b.Audio().To(rec))
 
 - A join's output runs alone in one run: other Outputs beside it are refused
   with `stream_beside_join`.
-- Forks across several inputs in one run are refused.
 - A tap after a join's other operations is refused; tap right after the join.
 
 ## Dynamic Membership Boundary

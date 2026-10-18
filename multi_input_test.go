@@ -203,18 +203,29 @@ func TestJoinArmsRejectMultiInputChains(t *testing.T) {
 	}
 }
 
-func TestBranchesRejectMultiInputJobs(t *testing.T) {
-	_, err := recipeFrom(
+// TestBranchesForkOneOfSeveralInputs pins forks on a job with several inputs:
+// the branched chain's select reads its own input alone.
+func TestBranchesForkOneOfSeveralInputs(t *testing.T) {
+	sink := func(name string) Destination {
+		return Sink(SinkFunc(name, func(context.Context, Message) error { return nil }))
+	}
+	spec, err := recipeFrom(
 		mixTestAudioSource("a", 1),
 		mixTestAudioSource("b", 1),
-	).
+	).UseRuntime(mustNew()).
 		Audio(selectInputName("a")).
-		Branches(newBranch("mon").To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil })))).
-		BuildLive(context.Background())
-
-	var buildErr *BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "input_count_unsupported" {
-		t.Fatalf("err = %v, want input_count_unsupported", err)
+		Branches(newBranch("mon").To(sink("out")), newBranch("rec").To(sink("rec"))).
+		Describe()
+	if err != nil {
+		t.Fatalf("describe: %v", err)
+	}
+	for _, edge := range spec.Edges {
+		if edge.To == "select-audio@a" && edge.From != "a" {
+			t.Fatalf("select-audio@a reads %s, want input a alone: %+v", edge.From, spec.Edges)
+		}
+	}
+	if !specHasNode(spec, "select-audio@a") {
+		t.Fatalf("nodes = %+v, want select-audio@a", spec.Nodes)
 	}
 }
 

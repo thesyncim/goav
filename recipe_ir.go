@@ -17,20 +17,13 @@ type recipeCompileSnapshot struct {
 	runtimeExplicit bool
 	recipeErr       error
 
-	jobPresent               bool
-	branchCompositionPresent bool
+	jobPresent bool
 
 	inputAttachments       []InputSpec
 	jobOutputCount         int
 	outputAttachments      []destinationSpec
 	outputDestinationNames []string
 	streamRules            []streamRule
-
-	branchInputAttachment        InputSpec
-	branchDestinationAttachments []namedDestinationSpec
-	branchCompositionSplit       bool
-	branchPlan                   branchComposePlan
-	branchPlanErr                error
 
 	joinTree *joinTreeSnapshot
 }
@@ -41,8 +34,6 @@ func newJobRecipeSnapshot(job *recipeJob) recipeCompileSnapshot {
 		return recipeCompileSnapshot{recipe: recipeir.Recipe{Kind: recipeir.KindJob}}
 	case job.join != nil:
 		return newJoinRecipeSnapshot(job)
-	case len(job.branchStreams) != 0:
-		return newBranchJobRecipeSnapshot(job)
 	default:
 		return newLinearJobRecipeSnapshot(job)
 	}
@@ -57,6 +48,9 @@ func newLinearJobRecipeSnapshot(job *recipeJob) recipeCompileSnapshot {
 	annotateRecipeIRDestinationsFromSpecs(&recipe, outputs)
 	recipe.StreamRules = recipeIRStreamRulesFromRoot(job.streamRules)
 	recipeErr := job.recipeErr()
+	if len(job.branchStreams) != 0 && recipeErr == nil {
+		_, _, recipeErr = job.branchJobStreams()
+	}
 	if job.origin != jobOriginConstructed && recipeErr == nil {
 		recipeErr = unconstructedJobError()
 	}
@@ -101,56 +95,8 @@ func newJoinRecipeSnapshot(job *recipeJob) recipeCompileSnapshot {
 	}
 }
 
-func newBranchJobRecipeSnapshot(job *recipeJob) recipeCompileSnapshot {
-	input := InputSpec{}
-	recipeErr := job.recipeErr()
-	if len(job.inputs) == 1 {
-		input = job.inputs[0]
-	} else if recipeErr == nil {
-		recipeErr = branchInputCountError("branches", len(job.inputs))
-	}
-	runtime := job.compileRuntime(job.inputs)
-	streams, destinations, err := job.branchJobStreams()
-	if err != nil && recipeErr == nil {
-		recipeErr = err
-	}
-	recipe := recipeir.Recipe{
-		Kind: recipeir.KindBranchComposition,
-		Name: firstNonEmpty(job.name, "branch-composition"),
-		Inputs: []recipeir.Input{
-			recipeIRInputFromSpec(input),
-		},
-	}
-	if runtime != nil {
-		recipe.Policies.Realtime = runtime.realtime
-	}
-	for i := range streams {
-		recipe.Streams = append(recipe.Streams, recipeIRStreamFromIntent(streams[i]))
-	}
-	for i := range destinations {
-		destination := recipeIRDestinationFromIntent(destinations[i].output.intentWithName(destinations[i].name))
-		destination.Kind = recipeIRDestinationKindFromSpec(destinations[i].output)
-		recipe.Destinations = append(recipe.Destinations, destination)
-	}
-	recipe.StreamRules = recipeIRStreamRulesFromRoot(job.streamRules)
-	branchPlan, branchPlanErr := planBranchCompositionRecipe(recipe, input, destinations)
-	return recipeCompileSnapshot{
-		recipe:                       recipe,
-		runtime:                      runtime,
-		runtimeExplicit:              job.runtimeSet,
-		recipeErr:                    recipeErr,
-		branchCompositionPresent:     true,
-		branchInputAttachment:        input,
-		branchDestinationAttachments: destinations,
-		branchCompositionSplit:       true,
-		branchPlan:                   branchPlan,
-		branchPlanErr:                branchPlanErr,
-		streamRules:                  cloneStreamRules(job.streamRules),
-	}
-}
-
-func planBranchCompositionRecipe(recipe recipeir.Recipe, input InputSpec, namedOutputs []namedDestinationSpec) (branchComposePlan, error) {
-	return planBranchCompositionSnapshot(recipe, input, branchDestinationAttachmentsFromSpecs(namedOutputs))
+func planBranchCompositionRecipe(recipe recipeir.Recipe, namedOutputs []namedDestinationSpec) (branchComposePlan, error) {
+	return planBranchCompositionSnapshot(recipe, branchDestinationAttachmentsFromSpecs(namedOutputs))
 }
 
 func recipeIRFromIntent(in intent, kind recipeir.Kind) recipeir.Recipe {
@@ -287,6 +233,7 @@ func inputIntentsFromRecipeIR(inputs []recipeir.Input) []inputIntent {
 func recipeIRStreamFromIntent(in streamIntent) recipeir.Stream {
 	out := recipeir.Stream{
 		Name:     in.Name,
+		Named:    in.Named,
 		Selector: in.Select,
 		From:     recipeIRTapRefFromRoot(in.From),
 		Buffer:   in.Buffer,
@@ -303,6 +250,7 @@ func recipeIRStreamFromIntent(in streamIntent) recipeir.Stream {
 func streamIntentFromRecipeIR(in recipeir.Stream) streamIntent {
 	out := streamIntent{
 		Name:   in.Name,
+		Named:  in.Named,
 		Select: in.Selector,
 		From:   rootTapRefFromRecipeIR(in.From),
 		Buffer: in.Buffer,
@@ -635,30 +583,23 @@ func joinIntentFromTree(job *recipeJob, tree *joinTreeSnapshot) intent {
 
 func recipeCompileStateFromSnapshot(snapshot recipeCompileSnapshot, options recipeCompileOptions) recipeCompileState {
 	return recipeCompileState{
-		operation:                    recipeCompileOperation(snapshot),
-		recipe:                       cloneRecipeIRRecipe(snapshot.recipe),
-		intent:                       intentFromRecipeIR(snapshot.recipe),
-		inputFacts:                   cloneRecipeIRInputs(snapshot.recipe.Inputs),
-		joinFacts:                    snapshot.recipe.Join,
-		streamRuleFacts:              cloneRecipeIRStreamRules(snapshot.recipe.StreamRules),
-		runtime:                      snapshot.runtime,
-		runtimeExplicit:              snapshot.runtimeExplicit,
-		options:                      options,
-		jobPresent:                   snapshot.jobPresent,
-		branchCompositionPresent:     snapshot.branchCompositionPresent,
-		recipeErr:                    snapshot.recipeErr,
-		inputAttachments:             append([]InputSpec(nil), snapshot.inputAttachments...),
-		jobOutputCount:               snapshot.jobOutputCount,
-		outputAttachments:            cloneDestinationSpecs(snapshot.outputAttachments),
-		outputDestinationNames:       append([]string(nil), snapshot.outputDestinationNames...),
-		streamRules:                  cloneStreamRules(snapshot.streamRules),
-		branchInputAttachment:        snapshot.branchInputAttachment,
-		branchDestinationAttachments: cloneNamedDestinationSpecs(snapshot.branchDestinationAttachments),
-		branchInputProbeReady:        false,
-		branchCompositionSplit:       snapshot.branchCompositionSplit,
-		joinTree:                     cloneJoinTreeSnapshot(snapshot.joinTree),
-		plan:                         snapshot.branchPlan,
-		planErr:                      snapshot.branchPlanErr,
+		operation:              recipeCompileOperation(snapshot),
+		recipe:                 cloneRecipeIRRecipe(snapshot.recipe),
+		intent:                 intentFromRecipeIR(snapshot.recipe),
+		inputFacts:             cloneRecipeIRInputs(snapshot.recipe.Inputs),
+		joinFacts:              snapshot.recipe.Join,
+		streamRuleFacts:        cloneRecipeIRStreamRules(snapshot.recipe.StreamRules),
+		runtime:                snapshot.runtime,
+		runtimeExplicit:        snapshot.runtimeExplicit,
+		options:                options,
+		jobPresent:             snapshot.jobPresent,
+		recipeErr:              snapshot.recipeErr,
+		inputAttachments:       append([]InputSpec(nil), snapshot.inputAttachments...),
+		jobOutputCount:         snapshot.jobOutputCount,
+		outputAttachments:      cloneDestinationSpecs(snapshot.outputAttachments),
+		outputDestinationNames: append([]string(nil), snapshot.outputDestinationNames...),
+		streamRules:            cloneStreamRules(snapshot.streamRules),
+		joinTree:               cloneJoinTreeSnapshot(snapshot.joinTree),
 	}
 }
 
@@ -738,8 +679,6 @@ func recipeCompileOperation(snapshot recipeCompileSnapshot) string {
 	switch snapshot.recipe.Kind {
 	case recipeir.KindJoin:
 		return "build " + snapshot.recipe.Name
-	case recipeir.KindBranchComposition:
-		return branchCompositionOperation
 	default:
 		return "build job"
 	}
@@ -749,8 +688,6 @@ func recipeCompilePhasesForSnapshot(snapshot recipeCompileSnapshot) recipeCompil
 	switch snapshot.recipe.Kind {
 	case recipeir.KindJoin:
 		return joinRecipeCompilePhases()
-	case recipeir.KindBranchComposition:
-		return branchCompositionRecipeCompilePhases()
 	default:
 		return jobRecipeCompilePhases()
 	}

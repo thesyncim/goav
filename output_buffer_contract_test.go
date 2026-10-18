@@ -32,10 +32,14 @@ func TestJobAllOutputsContracts(t *testing.T) {
 		t.Fatalf("stream outputs = %v, want root then stream", destinationNamesForTest(outputs))
 	}
 
+	// A branching job's outputs are its branches' destinations, then those of
+	// the plain chains beside them.
+	job.outputs = nil
+	job.branchStreams = []streamBuild{{name: "branch", destinationNames: []string{"branch"}}}
 	job.branchDestinations = []namedDestinationSpec{{name: "branch", output: branch}}
 	outputs = job.allOutputs()
-	if len(outputs) != 1 || outputs[0].name != "branch.webm" {
-		t.Fatalf("branch outputs = %v, want branch only", destinationNamesForTest(outputs))
+	if len(outputs) != 2 || outputs[0].name != "branch.webm" || outputs[1].name != "stream.webm" {
+		t.Fatalf("branch outputs = %v, want branch then stream", destinationNamesForTest(outputs))
 	}
 
 	cloned := jobAllOutputs([]destinationSpec{root}, nil)

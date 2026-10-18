@@ -646,10 +646,6 @@ func (b *streamChain) Branches(branches ...branchRecipe) *recipeJob {
 		job.setErr(branchMissingError(jobStreamName(stream)))
 		return job
 	}
-	if len(job.inputs) != 1 {
-		job.setErr(branchInputCountError(jobStreamName(stream), len(job.inputs)))
-		return job
-	}
 	if len(job.outputs) != 0 || len(stream.outputs) != 0 {
 		job.setErr(branchOutputScopeError(jobStreamName(stream)))
 		return job
@@ -672,6 +668,10 @@ func (b *streamChain) Branches(branches ...branchRecipe) *recipeJob {
 			job.setErr(err)
 			return job
 		}
+		if first := slices.IndexFunc(job.branchStreams, func(s streamBuild) bool { return s.name == branches[i].name }); first >= 0 {
+			job.setErr(branchIntentDuplicateError(branches[i].name, first, len(job.branchStreams)))
+			return job
+		}
 		if err := job.addBranchDestinations(branches[i].destinations...); err != nil {
 			job.setErr(err)
 			return job
@@ -691,6 +691,7 @@ func (b *streamChain) Branches(branches ...branchRecipe) *recipeJob {
 		job.branchStreams = append(job.branchStreams, streamBuild{
 			name:             branches[i].name,
 			selector:         stream.selector,
+			input:            stream.input,
 			from:             from,
 			decode:           decode,
 			decodeCodec:      mergeDecodeCodecSpec(chainDecodeCodec(stream.operations), chainDecodeCodec(branches[i].operations)),

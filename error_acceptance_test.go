@@ -427,7 +427,7 @@ func TestBuildAndAttachReturnSameErrorForSameInvalidBranch(t *testing.T) {
 		Resize(640, 360).
 		As("bad").
 		To(goavtest.NewCollector().Sink()))
-	planned := requireBuildError(t, err, errcode.Code("operation_shape_mismatch"), "build branch composition", "bad",
+	planned := requireBuildError(t, err, errcode.Code("operation_shape_mismatch"), "build job", "bad",
 		"use .Video().Resize(...)",
 	)
 
