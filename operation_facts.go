@@ -505,4 +505,3 @@ func operationsHaveStepAfterEncode(operations []operationSpec) bool {
 	}
 	return false
 }
-
