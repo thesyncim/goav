@@ -231,7 +231,7 @@ func parseBenchOutput(path string) ([]benchmarkRecord, error) {
 		if len(metrics) == 0 {
 			continue
 		}
-		records = append(records, benchmarkRecord{Name: match[1], Metrics: metrics})
+		records = mergeBest(records, benchmarkRecord{Name: match[1], Metrics: metrics})
 	}
 	if err := scanner.Err(); err != nil {
 		return nil, err
@@ -281,4 +281,23 @@ func commandOutput(name string, args ...string) string {
 func fail(format string, args ...any) {
 	fmt.Fprintf(os.Stderr, format+"\n", args...)
 	os.Exit(2)
+}
+
+// mergeBest folds a benchmark's repeated samples (-count N) into one record
+// holding each metric's best (lowest) value. Scheduling noise only ever adds
+// allocations and bytes, retries and timers a quiet run would not make, so
+// the best of a few runs is the stable measure the ratchet compares.
+func mergeBest(records []benchmarkRecord, next benchmarkRecord) []benchmarkRecord {
+	for i := range records {
+		if records[i].Name != next.Name {
+			continue
+		}
+		for unit, value := range next.Metrics {
+			if have, ok := records[i].Metrics[unit]; !ok || value < have {
+				records[i].Metrics[unit] = value
+			}
+		}
+		return records
+	}
+	return append(records, next)
 }

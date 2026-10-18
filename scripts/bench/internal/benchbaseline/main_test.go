@@ -86,3 +86,13 @@ func writeBenchOutput(t *testing.T, text string) string {
 	}
 	return path
 }
+
+func TestMergeBestKeepsEachMetricsLowest(t *testing.T) {
+	var records []benchmarkRecord
+	for _, sample := range []map[string]float64{{"allocs/op": 703, "B/op": 10}, {"allocs/op": 501, "B/op": 12}, {"allocs/op": 620, "B/op": 11}} {
+		records = mergeBest(records, benchmarkRecord{Name: "BenchmarkX", Metrics: sample})
+	}
+	if len(records) != 1 || records[0].Metrics["allocs/op"] != 501 || records[0].Metrics["B/op"] != 10 {
+		t.Fatalf("merged = %+v", records)
+	}
+}
