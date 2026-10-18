@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"io"
+	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -211,8 +212,17 @@ testsrc audio duration=3s ! encode opus ! hd, sd`, launch.Use(sink("hd", hd), si
 	if variants[0][2] != "vp09.00.10.08,Opus" || variants[0][3] != "128x96" || variants[1][3] != "64x48" {
 		t.Fatalf("variants = %q", variants)
 	}
-	if hdBW, sdBW := atoi(t, variants[0][1]), atoi(t, variants[1][1]); hdBW <= sdBW {
-		t.Fatalf("hd bandwidth %d is not above sd's %d", hdBW, sdBW)
+	// Each BANDWIDTH is its variant's peak segment bit rate, measured from the
+	// segments it published, rounded up to 10 kb/s.
+	for _, v := range variants {
+		peak := 0.0
+		for _, s := range extinf.FindAllStringSubmatch(string(store.files[v[4]]), -1) {
+			seconds, _ := strconv.ParseFloat(s[1], 64)
+			peak = max(peak, float64(len(store.files[s[2]]))*8/seconds)
+		}
+		if want := int(math.Ceil(peak/10_000) * 10_000); atoi(t, v[1]) != want || want == 0 {
+			t.Fatalf("%s BANDWIDTH=%s, want its peak segment rate %d", v[4], v[1], want)
+		}
 	}
 	for _, name := range []string{"hd.m3u8", "sd.m3u8", "hd-init.mp4", "sd-00002.m4s"} {
 		if _, ok := store.files[name]; !ok {
