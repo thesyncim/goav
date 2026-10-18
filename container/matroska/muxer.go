@@ -4,12 +4,14 @@ import (
 	"bytes"
 	"compress/zlib"
 	"encoding/binary"
+	"fmt"
 	"io"
 	"math"
 	"slices"
 	"sort"
 
 	"github.com/thesyncim/goav/container/ebml"
+	"github.com/thesyncim/goav/internal/av1"
 )
 
 type Muxer struct {
@@ -705,9 +707,9 @@ func (m *Muxer) prepareTrackForHeader(trackIndex int, frames [][]byte) (Track, e
 	track := m.tracks[trackIndex]
 	switch {
 	case track.Codec == CodecAV1 && len(track.CodecPrivate) == 0:
-		private, err := av1CodecConfigurationRecordFromFrames(frames)
+		private, err := av1.ConfigFromFrames(frames)
 		if err != nil {
-			return Track{}, err
+			return Track{}, fmt.Errorf("%w: %w", ErrInvalidData, err)
 		}
 		track.CodecPrivate = private
 	case track.Codec == CodecH264 && len(track.CodecPrivate) == 0:

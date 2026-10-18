@@ -5076,20 +5076,8 @@ func TestDemuxerRejectsInvalidAV1CodecPrivate(t *testing.T) {
 }
 
 func TestAV1CodecConfigurationRecordFromSequenceHeader(t *testing.T) {
-	private, err := av1CodecConfigurationRecordFromFrames([][]byte{av1SequenceHeaderOBU()})
-	if err != nil {
+	if _, err := parseAV1CodecConfigurationRecord(av1CodecConfig()); err != nil {
 		t.Fatal(err)
-	}
-	if !bytes.Equal(private, av1CodecConfig()) {
-		t.Fatalf("private = %v, want %v", private, av1CodecConfig())
-	}
-	if _, err := parseAV1CodecConfigurationRecord(private); err != nil {
-		t.Fatal(err)
-	}
-
-	_, err = av1CodecConfigurationRecordFromFrames([][]byte{av1TemporalDelimiterOBU()})
-	if !errors.Is(err, ErrInvalidData) {
-		t.Fatalf("err = %v, want ErrInvalidData", err)
 	}
 }
 

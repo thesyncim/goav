@@ -998,10 +998,10 @@ func TestOutputFormatAdapterPassesRejectMissingMuxers(t *testing.T) {
 				options:   recipeCompileOptions{preflightOutputAdapters: true},
 				runtime:   testBundleRuntime(),
 				outputAttachments: []destinationSpec{
-					fileDestination("recording.mp4", io.Discard),
+					fileDestination("recording.flv", io.Discard),
 				},
 			},
-			want: `format "mp4"`,
+			want: `format "flv"`,
 		},
 		{
 			name: "job explicit format",
@@ -1025,10 +1025,10 @@ func TestOutputFormatAdapterPassesRejectMissingMuxers(t *testing.T) {
 				runtime:   testBundleRuntime(),
 				branchDestinationAttachments: []namedDestinationSpec{{
 					name:   "web",
-					output: fileDestination("web.mp4", io.Discard),
+					output: fileDestination("web.flv", io.Discard),
 				}},
 			},
-			want: `format "mp4"`,
+			want: `format "flv"`,
 		},
 	}
 	for _, tt := range tests {

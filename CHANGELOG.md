@@ -11,6 +11,15 @@ methodology changes, and migration notes.
 
 ## Unreleased
 
+- MP4 output. `container/mp4` gains a muxer for H.264, AV1, VP8, VP9, AAC,
+  Opus, and FLAC, registered by `bundle`, so `.To(goav.Write("out.mp4", w))`
+  and `file out.mp4` work. A seekable output gets a progressive file (moov
+  after one mdat); a pipe or realtime output gets fragmented MP4, a moof per
+  video keyframe, that plays while it grows. Edit lists keep tracks in sync and
+  Opus pre-skip and B-frame delay out of presentation, as the demuxer reads
+  them back; FFmpeg decodes the files cleanly. The AV1 configuration, the H.264
+  Annex B helpers, and the bit reader now live once in `internal/av1`,
+  `internal/h264`, and `internal/bitio`, shared with Matroska.
 - Control plane v2. Breaking: `ctlserver` is rebuilt as JSON-RPC 2.0 over one
   connection (unix or TCP), with concurrent calls and watch events pushed as
   notifications, and is also an `http.Handler` (POST a request, GET

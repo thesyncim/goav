@@ -229,7 +229,7 @@
         ],
         "minStreams": 1,
         "metadata": {
-          "summary": "MP4 demux reads common ISO BMFF audio and video sample entries"
+          "summary": "MP4 reads and writes common ISO BMFF audio and video sample entries, progressive or fragmented"
         },
         "requiredBy": "in.mp4",
         "status": "available"

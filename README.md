@@ -139,8 +139,8 @@ DOT and Mermaid.
 | | Decode / demux | Encode / mux |
 | --- | --- | --- |
 | Video | VP8, VP9, AV1, H.264 (`goav_goh264` build tag) | VP8, VP9, AV1 |
-| Audio | Opus, AAC-LC | Opus (in WebM or Matroska) |
-| Containers | Matroska, WebM, IVF, MP4 | Matroska, WebM, IVF, Annex B (H.264) |
+| Audio | Opus, AAC-LC | Opus (in WebM, Matroska, or MP4) |
+| Containers | Matroska, WebM, IVF, MP4 | Matroska, WebM, MP4 (progressive or fragmented), IVF, Annex B (H.264) |
 
 Plus `Resize` and `Resample`. `bundle` registers all of these; `goav.New(...)` builds a
 runtime with only the adapters you choose, and there is no global registry.
