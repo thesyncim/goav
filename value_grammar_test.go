@@ -224,3 +224,28 @@ func TestValueGrammarOneEncodeFeedsTwoFiles(t *testing.T) {
 		t.Fatalf("encode nodes = %d in %v, want one encode feeding both files", got, specNodeNames(spec))
 	}
 }
+
+// TestValueGrammarLadderWithSharedAudio pins the headline recipe: a video
+// ladder decoded once and one audio encode muxed into every rendition file.
+func TestValueGrammarLadderWithSharedAudio(t *testing.T) {
+	data, err := os.ReadFile(mp4Fixture)
+	if err != nil {
+		t.Fatal(err)
+	}
+	in := goav.FileInput("in.mp4", bytes.NewReader(data))
+	v := in.Video().Decode()
+	hd := v.Resize(1280, 720).Encode(codec.VP9()).As("hd")
+	sd := v.Resize(640, 360).Encode(codec.VP9()).As("sd")
+	audio := in.Audio().Decode().Resample(48_000, 2).Encode(codec.Opus())
+	hdOut, sdOut := goav.Write("hd.webm", new(bytes.Buffer)), goav.Write("sd.webm", new(bytes.Buffer))
+	spec, err := offlineRuntime().Describe(hd.To(hdOut), sd.To(sdOut), audio.To(hdOut, sdOut))
+	if err != nil {
+		t.Fatalf("describe: %v", err)
+	}
+	names := specNodeNames(spec)
+	for prefix, want := range map[string]int{"decode-video": 1, "decode-audio": 1, "encode-hd": 1, "encode-sd": 1, "encode-audio": 1, "hd.webm": 1, "sd.webm": 1} {
+		if got := countNodesWithPrefix(spec, prefix); got != want {
+			t.Fatalf("%s nodes = %d in %v, want %d", prefix, got, names, want)
+		}
+	}
+}
