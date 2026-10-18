@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/internal/recipeir"
 	"github.com/thesyncim/goav/plan"
@@ -215,9 +214,6 @@ func shapeSetString(shapes shape.Set) string {
 	}
 	return strings.Join(parts, " | ")
 }
-
-var _ = plan.OpDecode
-var _ av.MediaType
 
 // validateExplicitEncodeShapes refuses an encoder on a joined stream whose
 // settings name a sample rate, channel count, or format the join does not

@@ -226,12 +226,12 @@ func (t *task) planAttachBranchSteps(ctx context.Context, input runtimeAttachBra
 				))
 			}
 			transformName := recipeIRTransformFactoryName(operation.Transform)
-			branchIntent := input.diagnosticStreamForStream(currentStream)
+			branchStream := input.diagnosticStreamForStream(currentStream)
 			if _, err := t.runtime.filters.Factory(transformName); err != nil {
-				return fail(recipeTransformAdapterError("attach runtime branch", branchIntent, transformName, err))
+				return fail(recipeTransformAdapterError("attach runtime branch", branchStream, transformName, err))
 			}
 			if desc, err := t.runtime.filters.Descriptor(transformName); err == nil {
-				if err := validateRecipeIRTransformAdapterDescriptor("attach runtime branch", branchIntent, operation.Transform, transformName, desc); err != nil {
+				if err := validateRecipeIRTransformAdapterDescriptor("attach runtime branch", branchStream, operation.Transform, transformName, desc); err != nil {
 					return fail(err)
 				}
 			}

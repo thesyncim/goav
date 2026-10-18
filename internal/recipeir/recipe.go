@@ -109,10 +109,6 @@ type Destination struct {
 type StreamRule struct {
 	MatchDescription string
 	Branches         []StreamRuleBranch
-	// RequiresRuntime records whether any rule branch needs an explicit
-	// runtime (it decodes, encodes, transforms, or writes to an
-	// adapter-backed destination).
-	RequiresRuntime bool
 }
 
 // StreamRuleBranch is one branch template visible to Explain/validation.

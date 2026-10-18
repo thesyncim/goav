@@ -296,7 +296,7 @@ func (t *task) streamRuleAttachBranches(rule streamRule, stream av.Stream) ([]ru
 		if err := validatePlayoutPolicyForRecipeIROperations("attach stream rule branch", spec.name, stream, spec.operations); err != nil {
 			return nil, err
 		}
-		intent := recipeir.Stream{
+		planned := recipeir.Stream{
 			Name: spec.name,
 			Selector: plan.StreamSelect{
 				ID:    stream.ID,
@@ -305,7 +305,7 @@ func (t *task) streamRuleAttachBranches(rule streamRule, stream av.Stream) ([]ru
 			},
 			Operations: spec.operations,
 		}
-		solved, _, err := solveRecipeIROperationShapes("attach runtime branch", t.runtime, intent, initial)
+		solved, _, err := solveRecipeIROperationShapes("attach runtime branch", t.runtime, planned, initial)
 		if err != nil {
 			return nil, err
 		}

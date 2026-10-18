@@ -1,4 +1,4 @@
-// Build-time validation that the runtime has decode and encode adapters for the planned intent.
+// Build-time validation that the runtime has decode and encode adapters for the planned recipe.
 
 package goav
 
@@ -25,15 +25,14 @@ func validateRecipeIRDecodeAdapters(operation string, rt *Runtime, inputs []reci
 		if !recipeIRStreamNeedsDecode(stream) {
 			continue
 		}
-		streamIntent := stream
-		request, ok := liveDecodeAdapterRequest(inputs, streamIntent)
+		request, ok := liveDecodeAdapterRequest(inputs, stream)
 		if !ok || request.Codec == "" {
 			continue
 		}
 		if _, err := rt.codecs.DecoderFactory(request.Codec); err != nil {
-			return recipeDecodeAdapterError(operation, streamIntent, request.Codec, rt.codecs, err)
+			return recipeDecodeAdapterError(operation, stream, request.Codec, rt.codecs, err)
 		}
-		if err := validateDecodeAdapterDescriptors(operation, streamIntent, rt.codecs, request); err != nil {
+		if err := validateDecodeAdapterDescriptors(operation, stream, rt.codecs, request); err != nil {
 			return err
 		}
 	}
@@ -49,16 +48,15 @@ func validateKnownRecipeIRDecodeAdapters(operation string, rt *Runtime, probes [
 		if !recipeIRStreamNeedsDecode(stream) {
 			continue
 		}
-		streamIntent := stream
-		selected, ok := knownProbeDecodeStream(probes, streamIntent)
+		selected, ok := knownProbeDecodeStream(probes, stream)
 		if !ok || selected.Codec.ID == "" {
 			continue
 		}
 		if _, err := rt.codecs.DecoderFactory(selected.Codec.ID); err != nil {
-			return recipeDecodeAdapterError(operation, streamIntent, selected.Codec.ID, rt.codecs, err)
+			return recipeDecodeAdapterError(operation, stream, selected.Codec.ID, rt.codecs, err)
 		}
-		request := decodeAdapterRequestFromStream(selected, streamIntent)
-		if err := validateDecodeAdapterDescriptors(operation, streamIntent, rt.codecs, request); err != nil {
+		request := decodeAdapterRequestFromStream(selected, stream)
+		if err := validateDecodeAdapterDescriptors(operation, stream, rt.codecs, request); err != nil {
 			return err
 		}
 	}
@@ -66,7 +64,7 @@ func validateKnownRecipeIRDecodeAdapters(operation string, rt *Runtime, probes [
 }
 
 func validateLiveRecipeStreamSelection(inputs []recipeir.Input, stream recipeir.Stream) error {
-	streams := liveIntentStreams(inputs)
+	streams := liveInputStreams(inputs)
 	if len(streams) == 0 {
 		return nil
 	}
@@ -74,10 +72,10 @@ func validateLiveRecipeStreamSelection(inputs []recipeir.Input, stream recipeir.
 	return err
 }
 
-func liveIntentStreams(inputs []recipeir.Input) []av.Stream {
+func liveInputStreams(inputs []recipeir.Input) []av.Stream {
 	streams := make([]av.Stream, 0, len(inputs))
 	for i := range inputs {
-		stream, ok := liveIntentStream(inputs[i], i)
+		stream, ok := liveInputStream(inputs[i], i)
 		if !ok {
 			continue
 		}
@@ -86,7 +84,7 @@ func liveIntentStreams(inputs []recipeir.Input) []av.Stream {
 	return streams
 }
 
-func liveIntentStream(input recipeir.Input, index int) (av.Stream, bool) {
+func liveInputStream(input recipeir.Input, index int) (av.Stream, bool) {
 	if !input.Realtime || input.Codec.ID == "" {
 		return av.Stream{}, false
 	}
@@ -139,7 +137,7 @@ func liveDecodeAdapterRequest(inputs []recipeir.Input, stream recipeir.Stream) (
 }
 
 func liveDecodeStream(inputs []recipeir.Input, stream recipeir.Stream) (av.Stream, bool) {
-	streams := liveIntentStreams(inputs)
+	streams := liveInputStreams(inputs)
 	if len(streams) == 0 {
 		return av.Stream{}, false
 	}
@@ -204,10 +202,10 @@ func validateDecodeAdapterDescriptors(operation string, stream recipeir.Stream, 
 	return decodeAdapterIncompatibleError(operation, stream, request, descriptors)
 }
 
-func decodeAdapterRequestFromStream(stream av.Stream, intent recipeir.Stream) codecAdapterRequest {
+func decodeAdapterRequestFromStream(stream av.Stream, planned recipeir.Stream) codecAdapterRequest {
 	return codecAdapterRequest{
 		Codec:        stream.Codec.ID,
-		Media:        firstNonEmptyMedia(stream.Codec.Type, stream.Type, intent.Selector.Type, codecMedia(stream.Codec.ID)),
+		Media:        firstNonEmptyMedia(stream.Codec.Type, stream.Type, planned.Selector.Type, codecMedia(stream.Codec.ID)),
 		SampleFormat: stream.Codec.SampleFormat,
 		PixelFormat:  stream.Codec.PixelFormat,
 	}
@@ -261,12 +259,11 @@ func validateRecipeIREncodeAdapters(operation string, rt *Runtime, streams []rec
 		if codecID == "" {
 			continue
 		}
-		streamIntent := stream
 		if _, err := rt.codecs.EncoderFactory(codecID); err != nil {
-			return recipeEncodeAdapterError(operation, streamIntent, rt.codecs, err)
+			return recipeEncodeAdapterError(operation, stream, rt.codecs, err)
 		}
 		request := encodeAdapterRequestFromRecipeIRStream(stream)
-		if err := validateEncodeAdapterDescriptors(operation, streamIntent, rt.codecs, request); err != nil {
+		if err := validateEncodeAdapterDescriptors(operation, stream, rt.codecs, request); err != nil {
 			return err
 		}
 	}

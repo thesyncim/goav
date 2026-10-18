@@ -112,7 +112,7 @@ func (s *recipeCompileState) planStreamBranch(l *recipeLowering, index int, outp
 	}
 	spec = normalizeRecipeIRPlanBranchShape(spec, plannedStream, input)
 	name := firstNonEmpty(plannedStream.Name, string(plannedStream.Selector.Type), fmt.Sprintf("branch-%d", index))
-	operations, decisions := planRecipeIROperationSpecs(input, plannedStream, name, spec, selectorComponent(stream.Selector))
+	operations, decisions := planRecipeIROperations(input, plannedStream, name, spec, selectorComponent(stream.Selector))
 	operations = planOperationsWithShape(name, spec, operations)
 	for i := range operations {
 		operations[i].Node = l.operationNode(stream, operations[i], name)
@@ -276,7 +276,7 @@ func (s *recipeCompileState) selectedStream(stream recipeir.Stream) (av.Stream, 
 			return selected, true
 		}
 	}
-	if streams := liveIntentStreams([]recipeir.Input{input}); len(streams) != 0 {
+	if streams := liveInputStreams([]recipeir.Input{input}); len(streams) != 0 {
 		if selected, err := selectDecodeStream(streams, selector); err == nil {
 			return selected, true
 		}

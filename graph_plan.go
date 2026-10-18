@@ -9,15 +9,6 @@ import (
 	"github.com/thesyncim/goav/plan"
 )
 
-// graphPlanLowerer builds a planned graph: the recipe lowering.
-type graphPlanLowerer interface {
-	spec() (pipeline.Spec, error)
-	runtimeRef() *Runtime
-	lower(context.Context, graphPlan, pipeline.Graph, *builder) error
-	graphConfig(graphPlan) (pipeline.GraphConfig, error)
-	withRuntime(*Runtime) graphPlanLowerer
-}
-
 // graphPlan binds the compiled work plan — the single executable truth built
 // once by the compile — to the pipeline spec and the lowerer that executes it.
 type graphPlan struct {
@@ -27,7 +18,7 @@ type graphPlan struct {
 	nodes    []pipeline.NodeSpec
 	edges    []pipeline.EdgeSpec
 	work     workPlan
-	lowerer  graphPlanLowerer
+	lowerer  *recipeLowerer
 }
 
 func (p graphPlan) ready() bool {
@@ -68,7 +59,7 @@ func (p graphPlan) workPlan() workPlan {
 	return cloneWorkPlan(p.work)
 }
 
-func newGraphPlan(runtime *Runtime, spec pipeline.Spec, work workPlan, lowerer graphPlanLowerer) graphPlan {
+func newGraphPlan(runtime *Runtime, spec pipeline.Spec, work workPlan, lowerer *recipeLowerer) graphPlan {
 	return graphPlan{
 		runtime:  runtime,
 		name:     work.Name,

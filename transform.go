@@ -51,7 +51,6 @@ func validateRecipeIRTransformAdapters(operation string, rt *Runtime, streams []
 	}
 	for i := range streams {
 		stream := streams[i]
-		streamIntent := stream
 		transforms := recipeIRStreamTransforms(stream)
 		for j := range transforms {
 			name := recipeIRTransformFactoryName(transforms[j])
@@ -59,11 +58,11 @@ func validateRecipeIRTransformAdapters(operation string, rt *Runtime, streams []
 				continue
 			}
 			if _, err := rt.filters.Factory(name); err != nil {
-				return recipeTransformAdapterError(operation, streamIntent, name, err)
+				return recipeTransformAdapterError(operation, stream, name, err)
 			}
 			desc, err := rt.filters.Descriptor(name)
 			if err == nil {
-				if err := validateRecipeIRTransformAdapterDescriptor(operation, streamIntent, transforms[j], name, desc); err != nil {
+				if err := validateRecipeIRTransformAdapterDescriptor(operation, stream, transforms[j], name, desc); err != nil {
 					return err
 				}
 			}

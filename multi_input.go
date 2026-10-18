@@ -31,7 +31,7 @@ func jobInputStreamSets(inputs []recipeir.Input, probes []format.ProbeResult) []
 	sets := make([]inputStreamSet, 0, len(inputs))
 	for i := range inputs {
 		set := inputStreamSet{
-			name:   inputIntentName(inputs[i], i),
+			name:   recipeIRInputName(inputs[i], i),
 			domain: shape.DomainPacket,
 		}
 		switch {
@@ -44,7 +44,7 @@ func jobInputStreamSets(inputs []recipeir.Input, probes []format.ProbeResult) []
 			set.streams = append([]av.Stream(nil), probes[i].Streams...)
 			set.known = true
 		case inputs[i].Realtime && inputs[i].Codec.ID != "":
-			if stream, ok := liveIntentStream(inputs[i], i); ok {
+			if stream, ok := liveInputStream(inputs[i], i); ok {
 				set.streams = []av.Stream{stream}
 				set.known = true
 			}
@@ -75,7 +75,7 @@ func recipeIRInputDeclaredStream(input recipeir.Input, spec shape.Spec) av.Strea
 	return stream
 }
 
-func inputIntentName(input recipeir.Input, index int) string {
+func recipeIRInputName(input recipeir.Input, index int) string {
 	return firstNonEmpty(input.Name, input.URI, fmt.Sprintf("input-%d", index))
 }
 

@@ -77,7 +77,7 @@ func explainInputs(resolved recipeResolved) []plan.Input {
 			report.Streams = append([]av.Stream(nil), probe.Streams...)
 		}
 		if len(report.Streams) == 0 && input.Realtime && input.Codec.ID != "" {
-			report.Streams = liveIntentStreams([]recipeir.Input{input})
+			report.Streams = liveInputStreams([]recipeir.Input{input})
 		}
 		reports = append(reports, report)
 	}
@@ -103,7 +103,7 @@ func explainStreams(streams []workStream) []plan.Stream {
 			Name:         stream.Name,
 			Select:       stream.Select,
 			Decode:       operationsHaveDecode(stream.Operations),
-			Operations:   explainOperationSpecs(stream.Operations),
+			Operations:   explainOperations(stream.Operations),
 			Encode:       cloneCodecSpec(operationsEncodeSpec(stream.Operations)),
 			Destinations: append([]string(nil), stream.Destinations...),
 		})
@@ -111,27 +111,27 @@ func explainStreams(streams []workStream) []plan.Stream {
 	return reports
 }
 
-func explainOperationSpecs(operations []recipeir.Operation) []plan.Operation {
+func explainOperations(operations []recipeir.Operation) []plan.Operation {
 	reports := make([]plan.Operation, 0, len(operations))
 	for i := range operations {
 		reports = append(reports, plan.Operation{
 			Kind:      operations[i].Kind,
 			Component: operations[i].Component,
-			Detail:    operationSpecDetail(operations[i]),
-			Shape:     operationSpecShape(operations[i]),
-			Adapter:   operationSpecAdapter(operations[i]),
-			Config:    operationSpecConfig(operations[i]),
+			Detail:    operationDetail(operations[i]),
+			Shape:     operationShape(operations[i]),
+			Adapter:   operationAdapter(operations[i]),
+			Config:    operationConfig(operations[i]),
 			Shared:    operations[i].Shared,
 		})
 	}
 	return reports
 }
 
-// operationSpecAdapter names the implementation an operation lowers to: the
+// operationAdapter names the implementation an operation lowers to: the
 // codec id for decode/encode, the filter factory for a transform, or the
 // component name for a custom stage. Empty when the operation lowers to no
 // adapter (shape annotations, taps).
-func operationSpecAdapter(operation recipeir.Operation) string {
+func operationAdapter(operation recipeir.Operation) string {
 	switch operation.Kind {
 	case plan.OpDecode:
 		return string(operation.Decode.ID)
@@ -146,13 +146,13 @@ func operationSpecAdapter(operation recipeir.Operation) string {
 	}
 }
 
-// operationSpecConfig reports an operation's small typed settings as stable
+// operationConfig reports an operation's small typed settings as stable
 // key/value strings: transform geometry/rate and encoder settings. Nil when the
 // operation carries no settings worth reporting.
-func operationSpecConfig(operation recipeir.Operation) map[string]string {
+func operationConfig(operation recipeir.Operation) map[string]string {
 	switch operation.Kind {
 	case plan.OpTransform:
-		return transformSpecConfig(operation.Transform)
+		return transformConfig(operation.Transform)
 	case plan.OpEncode:
 		return codecSpecConfig(operation.Encode)
 	default:
@@ -160,7 +160,7 @@ func operationSpecConfig(operation recipeir.Operation) map[string]string {
 	}
 }
 
-func transformSpecConfig(transform recipeir.Transform) map[string]string {
+func transformConfig(transform recipeir.Transform) map[string]string {
 	config := map[string]string{}
 	switch transform.Kind {
 	case recipeir.TransformResize:
@@ -204,7 +204,7 @@ func putConfigString(config map[string]string, key, value string) {
 	}
 }
 
-func operationSpecShape(operation recipeir.Operation) shape.Spec {
+func operationShape(operation recipeir.Operation) shape.Spec {
 	switch operation.Kind {
 	case plan.OpTransform:
 		return mediaShapeFromRecipeIRTransform(operation.Transform)
@@ -220,7 +220,7 @@ func operationSpecShape(operation recipeir.Operation) shape.Spec {
 	}
 }
 
-func operationSpecDetail(operation recipeir.Operation) string {
+func operationDetail(operation recipeir.Operation) string {
 	switch operation.Kind {
 	case plan.OpTransform:
 		return firstNonEmpty(recipeIRTransformFactoryName(operation.Transform), "transform frames")
@@ -310,7 +310,7 @@ func workOperationAdapter(operation workOperation) string {
 // workOperationConfig reports a planned branch operation's typed settings as
 // stable key/value strings — encoder settings for encode, and geometry/rate for
 // a transform (from its output shape, the only transform fact a work operation
-// carries). It mirrors the stream path's operationSpecConfig so transform and
+// carries). It mirrors the stream path's operationConfig so transform and
 // encode operations report config consistently whether they sit on a stream or
 // a branch. Nil when the operation carries no settings.
 func workOperationConfig(operation workOperation) map[string]string {
@@ -921,8 +921,8 @@ func appendPlanDiagnostics(diagnostics []plan.Diagnostic, next ...plan.Diagnosti
 	return diagnostics
 }
 
-func explainSummary(intentName string, report plan.Report) string {
-	name := firstNonEmpty(intentName, "job")
+func explainSummary(recipeName string, report plan.Report) string {
+	name := firstNonEmpty(recipeName, "job")
 	input := "input"
 	if len(report.Inputs) == 1 {
 		input = firstNonEmpty(report.Inputs[0].Name, report.Inputs[0].URI, input)
