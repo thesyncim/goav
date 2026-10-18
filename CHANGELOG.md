@@ -11,6 +11,18 @@ methodology changes, and migration notes.
 
 ## Unreleased
 
+- Low-latency HLS. `hls.Parts(d)` publishes each segment in parts of at most
+  d as well (`EXT-X-PART`, with `EXT-X-PART-INF`, `EXT-X-SERVER-CONTROL`,
+  `EXT-X-PRELOAD-HINT`, and `EXT-X-PROGRAM-DATE-TIME`), so players run within a
+  few parts of the live edge. `hls.NewServer()` is the store to package into:
+  it keeps the files in memory and, as an `http.Handler`, holds blocking
+  playlist reloads (`_HLS_msn`, `_HLS_part`) and requests for the hinted part,
+  503 after three target durations. Parts start at keyframes only where they
+  say `INDEPENDENT=YES`, and segments still begin at keyframes. Destinations
+  ask a fragmenting muxer for a fragment length with `provider.Contract.Fragment`
+  (carried on `format.Output.Fragment`); the MP4 muxer cuts before a fragment
+  would pass it.
+
 - Joins take file inputs: `goav.Mix(a.Audio().Decode(), b.Audio().Decode())`
   and `goav.Composite(...)` over files plan, describe, and run, instead of
   refusing with `mix_arm` ("joining file inputs is not supported yet"). A file

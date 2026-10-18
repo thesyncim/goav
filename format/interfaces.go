@@ -3,6 +3,7 @@ package format
 import (
 	"context"
 	"io"
+	"time"
 
 	"github.com/thesyncim/goav/av"
 )
@@ -22,7 +23,9 @@ type Input struct {
 }
 
 // Output describes where muxed bytes go: the writer plus the naming facts
-// output-format probing uses.
+// output-format probing uses. Fragment asks a muxer that writes fragments,
+// such as fragmented MP4, to keep each no longer than it, as a low-latency
+// packager's parts need; zero leaves the muxer's own cadence.
 type Output struct {
 	Name     string
 	URI      string
@@ -30,6 +33,7 @@ type Output struct {
 	MIMEType string
 	Writer   io.Writer
 	Realtime bool
+	Fragment time.Duration
 	Metadata av.Metadata
 }
 
