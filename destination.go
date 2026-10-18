@@ -327,6 +327,7 @@ func customDestination(name string, dest provider.Destination) destinationSpec {
 			URI:      name,
 			Protocol: contract.Protocol,
 			Realtime: contract.Realtime,
+			Fragment: contract.Fragment,
 		},
 		name: firstNonEmpty(name, dest.Name()),
 	}

@@ -287,3 +287,36 @@ func TestMuxAudioConfigurations(t *testing.T) {
 		}
 	}
 }
+
+// TestFragmentDuration: asked for fragments of at most 200ms, the muxer cuts
+// 25 fps video into five-frame fragments, and still at every keyframe.
+func TestFragmentDuration(t *testing.T) {
+	streams, packets := avPackets(t)
+	var out bytes.Buffer
+	m := &FormatMuxer{}
+	ctx := context.Background()
+	if err := m.Open(ctx, format.Output{Writer: &out, Fragment: 200 * time.Millisecond}, streams, format.OpenOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	ns := av.TimeBase{Num: 1, Den: 1_000_000_000}
+	for _, p := range packets {
+		packet := av.Packet{StreamID: p.stream, Keyframe: p.key, PTS: av.Timestamp{Value: int64(p.pts), Base: ns}, DTS: av.Timestamp{Value: int64(p.dts), Base: ns}, Payload: av.Buffer{Bytes: p.payload}}
+		if err := m.Write(ctx, &packet, nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := m.Close(); err != nil {
+		t.Fatal(err)
+	}
+	// 75 frames: 15 fragments of five, every second one a keyframe's.
+	data := out.Bytes()
+	fragments := 0
+	for at := 0; at+8 <= len(data); at += int(binary.BigEndian.Uint32(data[at:])) {
+		if string(data[at+4:at+8]) == "moof" {
+			fragments++
+		}
+	}
+	if fragments != 15 {
+		t.Fatalf("%d fragments, want 15 of 200ms", fragments)
+	}
+}

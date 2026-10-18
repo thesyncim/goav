@@ -21,6 +21,15 @@
 // and it writes the multivariant playlist that lists them with their
 // bandwidth, codecs (RFC 6381, read from each init segment), and
 // resolution.
+//
+// With Parts, a playlist is low-latency HLS: the muxer cuts fragments of at
+// most the part duration, each published as an EXT-X-PART with the next one
+// hinted (EXT-X-PRELOAD-HINT) and wall-clock times on the segments
+// (EXT-X-PROGRAM-DATE-TIME), delta updates for long playlists (EXT-X-SKIP
+// past six target durations), and, in a ladder, rendition reports of where
+// the other renditions stand. A Server holds what LL-HLS asks a server to
+// hold: blocking playlist reloads (_HLS_msn, _HLS_part) and requests for a
+// hinted part. Serve it over HTTPS, so players get HTTP/2.
 package hls
 
 import (
@@ -54,6 +63,7 @@ type Option func(*config)
 type config struct {
 	target time.Duration
 	window int
+	parts  time.Duration
 }
 
 // SegmentDuration sets the target segment length (default 4s). A segment
@@ -68,6 +78,15 @@ func SegmentDuration(d time.Duration) Option {
 // another n. Zero, the default, keeps every segment.
 func Window(n int) Option {
 	return func(c *config) { c.window = n }
+}
+
+// Parts makes the playlist low-latency (LL-HLS): segments are also published
+// in parts of at most d (200ms to 1s is typical), each a CMAF chunk listed
+// as an EXT-X-PART with the next one hinted, so a player plays within a few
+// parts of the live edge. LL-HLS needs a server that holds blocking playlist
+// reloads and hinted-part requests: package into an hls.Server and serve it.
+func Parts(d time.Duration) Option {
+	return func(c *config) { c.parts = d }
 }
 
 // New returns a packager writing the playlist (a name such as "live.m3u8")
@@ -95,7 +114,7 @@ type packager struct {
 func (p *packager) Name() string { return p.playlist }
 
 func (p *packager) Contract() provider.Contract {
-	return provider.Contract{ByteStream: true, Formats: []av.FormatID{av.FormatMP4}}
+	return provider.Contract{ByteStream: true, Formats: []av.FormatID{av.FormatMP4}, Fragment: p.parts}
 }
 
 func (p *packager) Open(ctx context.Context, info provider.Info) (provider.Writer, error) {
@@ -107,6 +126,16 @@ func (p *packager) Open(ctx context.Context, info provider.Info) (provider.Write
 	}
 	if p.target <= 0 || p.window < 0 {
 		return nil, fmt.Errorf("hls: segment duration %v and window %d must be positive", p.target, p.window)
+	}
+	if p.parts < 0 || p.parts > 0 && p.parts*2 > p.target {
+		return nil, fmt.Errorf("hls: parts of %v need segments of at least twice that, not %v", p.parts, p.target)
+	}
+	if _, blocks := p.store.(announcer); p.parts > 0 && !blocks {
+		return nil, errors.New("hls: LL-HLS needs a server that holds blocking playlist reloads; package into hls.NewServer() and serve it")
+	}
+	if a, ok := p.store.(announcer); ok {
+		// The playlist is coming: requests for it wait instead of failing.
+		a.announce(p.playlist, edge{msn: -1, part: -1, complete: -1, target: p.target})
 	}
 	base := strings.TrimSuffix(p.playlist, filepath.Ext(p.playlist))
 	return &writer{packager: p, base: base, timescales: map[uint32]uint32{}}, nil
@@ -127,29 +156,45 @@ type writer struct {
 	timescales map[uint32]uint32
 	anchor     uint32
 	// codecs, width, and height describe the variant for a ladder's
-	// multivariant playlist; segBytes counts the segment being written.
+	// multivariant playlist.
 	codecs        []string
 	width, height int
-	segBytes      int
 
-	// seg is the segment being written; segments are the finished ones still
+	// open is the segment being built, its bytes in seg and, with parts,
+	// the fragment being read in part; segments are the finished ones still
 	// on the store, oldest first; sequence is the number of the first one
 	// the playlist lists.
-	seg        io.WriteCloser
-	segName    string
-	segStart   float64
-	segEnd     float64
+	open       *segment
+	seg        []byte
+	part       []byte
+	partStart  float64
+	partEnd    float64
+	partKey    bool
 	next       int
 	segments   []segment
 	sequence   int
 	targetSecs int
+	// clock is the wall time media time zero stands for, for
+	// EXT-X-PROGRAM-DATE-TIME; it starts at the first fragment.
+	clock time.Time
 }
 
 type segment struct {
-	number   int
-	name     string
-	duration float64
+	number     int
+	name       string
+	start, end float64
+	parts      []part
+	// partsGone marks parts removed from the store: they left the live edge.
+	partsGone bool
 }
+
+type part struct {
+	name        string
+	duration    float64
+	independent bool
+}
+
+func (s segment) duration() float64 { return s.end - s.start }
 
 // Write takes the next bytes of the fragmented MP4 stream.
 func (w *writer) Write(p []byte) (int, error) {
@@ -198,54 +243,68 @@ func (w *writer) handle(box []byte) error {
 		w.readTracks(box)
 		return w.publishFile(w.base+"-init.mp4", w.init)
 	case "moof":
-		start, end, ok := w.fragmentTimes(box)
-		if w.seg != nil && ok && start-w.segStart >= w.target.Seconds()-0.001 {
+		start, end, independent, ok := w.fragmentTimes(box)
+		if !ok {
+			start, end = w.partEnd, w.partEnd
+		}
+		if w.clock.IsZero() {
+			w.clock = time.Now().Add(-time.Duration(start * float64(time.Second)))
+		}
+		// A segment ends at the first fragment at or past the target that
+		// a player can start from.
+		if w.open != nil && independent && start-w.open.start >= w.target.Seconds()-0.001 {
 			if err := w.finishSegment(); err != nil {
 				return err
 			}
 		}
-		if w.seg == nil {
-			if err := w.startSegment(start); err != nil {
-				return err
-			}
+		if w.open == nil {
+			w.open = &segment{number: w.next, name: fmt.Sprintf("%s-%05d.m4s", w.base, w.next), start: start, end: start}
+			w.next++
+			w.seg = w.seg[:0]
 		}
-		if ok {
-			w.segEnd = max(w.segEnd, end)
+		w.open.end = max(w.open.end, end)
+		w.part = append(w.part[:0], box...)
+		w.partStart, w.partEnd, w.partKey = start, end, independent
+	default: // mdat, which ends the fragment, and anything else of it
+		if w.open == nil {
+			return nil
 		}
-		return w.write(box)
-	default: // mdat and anything else of the fragment
-		if w.seg != nil {
-			return w.write(box)
+		w.part = append(w.part, box...)
+		if string(box[4:8]) != "mdat" {
+			return nil
+		}
+		w.seg = append(w.seg, w.part...)
+		if w.parts > 0 {
+			return w.publishPart()
 		}
 	}
 	return nil
 }
 
-func (w *writer) write(b []byte) error {
-	w.segBytes += len(b)
-	_, err := w.seg.Write(b)
-	return err
-}
-
-func (w *writer) startSegment(start float64) error {
-	w.segName = fmt.Sprintf("%s-%05d.m4s", w.base, w.next)
-	w.next++
-	seg, err := w.store.Create(w.segName)
-	if err != nil {
+// publishPart publishes the fragment just read as the open segment's next
+// part, then the playlist that lists it.
+func (w *writer) publishPart() error {
+	p := part{
+		name:        fmt.Sprintf("%s-%05d.%d.m4s", w.base, w.open.number, len(w.open.parts)),
+		duration:    w.partEnd - w.partStart,
+		independent: w.partKey,
+	}
+	if err := w.publishFile(p.name, w.part); err != nil {
 		return err
 	}
-	w.seg, w.segStart, w.segEnd, w.segBytes = seg, start, start, 0
-	return nil
+	w.open.parts = append(w.open.parts, p)
+	return w.publishPlaylist(false)
 }
 
 func (w *writer) finishSegment() error {
-	if err := w.seg.Close(); err != nil {
+	done := *w.open
+	w.open = nil
+	if err := w.publishFile(done.name, w.seg); err != nil {
 		return err
 	}
-	w.seg = nil
-	w.segments = append(w.segments, segment{number: w.next - 1, name: w.segName, duration: w.segEnd - w.segStart})
+	w.segments = append(w.segments, done)
 	if w.ladder != nil {
-		if err := w.ladder.segment(w.variant, w.codecs, w.width, w.height, w.segBytes, w.segEnd-w.segStart); err != nil {
+		if err := w.ladder.segment(w.variant, w.codecs, w.width, w.height, len(w.seg), done.duration()); err != nil {
 			return err
 		}
 	}
@@ -254,29 +313,111 @@ func (w *writer) finishSegment() error {
 		// A segment stays on the store for another window after it leaves
 		// the playlist (RFC 8216 6.2.2), for players still fetching it.
 		for len(w.segments) != 0 && w.segments[0].number < w.sequence-w.window {
-			if err := w.store.Remove(w.segments[0].name); err != nil {
+			if err := w.removeSegment(w.segments[0]); err != nil {
 				return err
 			}
 			w.segments = w.segments[1:]
 		}
 	}
+	// Parts stay a target duration past the three the playlist lists them
+	// for, then leave the store.
+	for i := range w.segments {
+		s := &w.segments[i]
+		if !s.partsGone && len(s.parts) != 0 && done.end-s.end > 4*w.target.Seconds() {
+			for _, p := range s.parts {
+				if err := w.store.Remove(p.name); err != nil {
+					return err
+				}
+			}
+			s.partsGone = true
+		}
+	}
 	return w.publishPlaylist(false)
 }
 
+func (w *writer) removeSegment(s segment) error {
+	if !s.partsGone {
+		for _, p := range s.parts {
+			if err := w.store.Remove(p.name); err != nil {
+				return err
+			}
+		}
+	}
+	return w.store.Remove(s.name)
+}
+
 func (w *writer) publishPlaylist(end bool) error {
+	listed := w.listed()
+	target := int(math.Round(w.target.Seconds()))
+	for _, s := range listed {
+		target = max(target, int(math.Round(s.duration())))
+	}
+	// The target duration must not change while players read the playlist.
+	w.targetSecs = max(w.targetSecs, target, 1)
+	if w.ladder != nil {
+		if msn, part, ok := w.position(); ok {
+			w.ladder.position(w.variant, msn, part)
+		}
+	}
+	full, _ := w.render(end, false)
+	if err := w.publishFile(w.playlist, []byte(full)); err != nil {
+		return err
+	}
+	if a, ok := w.store.(announcer); ok {
+		e := w.edgeState(end)
+		if delta, skipped := w.render(end, true); skipped {
+			e.delta = []byte(delta)
+		}
+		a.announce(w.playlist, e)
+	}
+	return nil
+}
+
+// listed are the finished segments the playlist lists.
+func (w *writer) listed() []segment {
 	listed := w.segments
 	for len(listed) != 0 && listed[0].number < w.sequence {
 		listed = listed[1:]
 	}
-	target := int(math.Round(w.target.Seconds()))
-	for _, s := range listed {
-		target = max(target, int(math.Round(s.duration)))
+	return listed
+}
+
+// skipBoundary is how far from the live edge a delta update may skip
+// segments: six target durations, the least RFC 8216bis allows.
+func (w *writer) skipBoundary() float64 { return 6 * float64(w.targetSecs) }
+
+// render writes the playlist. With skip it writes the delta update a player
+// asks for with _HLS_skip=YES: the segments past the skip boundary become
+// one EXT-X-SKIP, and it reports whether there were any.
+func (w *writer) render(end, skip bool) (string, bool) {
+	listed := w.listed()
+	low := w.parts > 0 && !end
+	edge := 0.0
+	if w.open != nil {
+		edge = w.open.end
+	} else if len(listed) != 0 {
+		edge = listed[len(listed)-1].end
 	}
-	// The target duration must not change while players read the playlist.
-	w.targetSecs = max(w.targetSecs, target, 1)
+	skipped := 0
+	if skip && low {
+		for skipped < len(listed) && edge-listed[skipped].end >= w.skipBoundary() {
+			skipped++
+		}
+		if skipped == 0 {
+			return "", false
+		}
+	}
 	var b strings.Builder
-	b.WriteString("#EXTM3U\n#EXT-X-VERSION:7\n")
+	version := 7
+	if skipped > 0 {
+		version = 9 // EXT-X-SKIP
+	}
+	fmt.Fprintf(&b, "#EXTM3U\n#EXT-X-VERSION:%d\n", version)
 	fmt.Fprintf(&b, "#EXT-X-TARGETDURATION:%d\n", w.targetSecs)
+	if low {
+		fmt.Fprintf(&b, "#EXT-X-SERVER-CONTROL:CAN-BLOCK-RELOAD=YES,CAN-SKIP-UNTIL=%.1f,PART-HOLD-BACK=%.3f\n", w.skipBoundary(), 3*w.parts.Seconds())
+		fmt.Fprintf(&b, "#EXT-X-PART-INF:PART-TARGET=%.3f\n", w.parts.Seconds())
+	}
 	if w.window == 0 {
 		if end {
 			b.WriteString("#EXT-X-PLAYLIST-TYPE:VOD\n")
@@ -287,13 +428,94 @@ func (w *writer) publishPlaylist(end bool) error {
 	fmt.Fprintf(&b, "#EXT-X-MEDIA-SEQUENCE:%d\n", w.sequence)
 	b.WriteString("#EXT-X-INDEPENDENT-SEGMENTS\n")
 	fmt.Fprintf(&b, "#EXT-X-MAP:URI=%q\n", w.base+"-init.mp4")
-	for _, s := range listed {
-		fmt.Fprintf(&b, "#EXTINF:%.3f,\n%s\n", s.duration, s.name)
+	if skipped > 0 {
+		fmt.Fprintf(&b, "#EXT-X-SKIP:SKIPPED-SEGMENTS=%d\n", skipped)
+	}
+	// Parts are listed for the segments within three target durations of
+	// the live edge.
+	writeParts := func(s segment) {
+		if !low || s.partsGone || edge-s.end > 3*w.target.Seconds() {
+			return
+		}
+		for _, p := range s.parts {
+			fmt.Fprintf(&b, "#EXT-X-PART:DURATION=%.3f,URI=%q", p.duration, p.name)
+			if p.independent {
+				b.WriteString(",INDEPENDENT=YES")
+			}
+			b.WriteString("\n")
+		}
+	}
+	for _, s := range listed[skipped:] {
+		if low || w.window > 0 {
+			w.writeDate(&b, s.start)
+		}
+		writeParts(s)
+		fmt.Fprintf(&b, "#EXTINF:%.3f,\n%s\n", s.duration(), s.name)
+	}
+	if low && w.open != nil {
+		w.writeDate(&b, w.open.start)
+		writeParts(*w.open)
+		fmt.Fprintf(&b, "#EXT-X-PRELOAD-HINT:TYPE=PART,URI=%q\n", w.hint())
+	}
+	if low && w.ladder != nil {
+		// Where the other renditions stand, so a player switches to one
+		// without first reloading its playlist.
+		for _, r := range w.ladder.reports(w.variant) {
+			fmt.Fprintf(&b, "#EXT-X-RENDITION-REPORT:URI=%q,LAST-MSN=%d", r.playlist, r.msn)
+			if r.part >= 0 {
+				fmt.Fprintf(&b, ",LAST-PART=%d", r.part)
+			}
+			b.WriteString("\n")
+		}
 	}
 	if end {
 		b.WriteString("#EXT-X-ENDLIST\n")
 	}
-	return w.publishFile(w.playlist, []byte(b.String()))
+	return b.String(), skipped > 0
+}
+
+// position is the newest segment the playlist lists and its newest part
+// (-1 when it lists none of its parts).
+func (w *writer) position() (msn, part int, ok bool) {
+	if w.open != nil && len(w.open.parts) != 0 {
+		return w.open.number, len(w.open.parts) - 1, true
+	}
+	if n := len(w.segments); n != 0 {
+		last := w.segments[n-1]
+		if w.parts > 0 && !last.partsGone {
+			return last.number, len(last.parts) - 1, true
+		}
+		return last.number, -1, true
+	}
+	return 0, 0, false
+}
+
+func (w *writer) writeDate(b *strings.Builder, start float64) {
+	at := w.clock.Add(time.Duration(start * float64(time.Second))).UTC()
+	fmt.Fprintf(b, "#EXT-X-PROGRAM-DATE-TIME:%s\n", at.Format("2006-01-02T15:04:05.000Z07:00"))
+}
+
+// hint names the part published next: the open segment's next one, or,
+// once the open segment is as long as the target, the first part of the next
+// segment, which the next keyframe starts. A wrong guess costs the players
+// waiting on it a 404 when the next part lands elsewhere.
+func (w *writer) hint() string {
+	if w.open.end-w.open.start >= w.target.Seconds()-0.001 {
+		return fmt.Sprintf("%s-%05d.0.m4s", w.base, w.next)
+	}
+	return fmt.Sprintf("%s-%05d.%d.m4s", w.base, w.open.number, len(w.open.parts))
+}
+
+// edgeState is what a blocking reload waits on: the newest segment and
+// part the playlist now lists.
+func (w *writer) edgeState(end bool) edge {
+	e := edge{msn: w.next - 1, part: -1, complete: w.next - 1, ended: end, target: w.target}
+	if w.open != nil {
+		e.complete = w.open.number - 1
+		e.part = len(w.open.parts) - 1
+		e.hint = w.hint()
+	}
+	return e
 }
 
 func (w *writer) publishFile(name string, data []byte) error {
@@ -313,7 +535,7 @@ func (w *writer) Close() error {
 	if w.err != nil {
 		return w.err
 	}
-	if w.seg != nil {
+	if w.open != nil {
 		if err := w.finishSegment(); err != nil {
 			return err
 		}
@@ -381,14 +603,14 @@ func fullBoxField(b []byte, v0, v1 int) uint32 {
 
 // fragmentTimes reads where a fragment starts and ends, in seconds, from
 // the anchor track's run, or the first run when the anchor has none.
-func (w *writer) fragmentTimes(moof []byte) (start, end float64, ok bool) {
+func (w *writer) fragmentTimes(moof []byte) (start, end float64, independent, ok bool) {
 	forBoxes(moof[8:], func(typ string, traf []byte) {
 		if typ != "traf" {
 			return
 		}
 		var id uint32
-		var base uint64
-		var duration uint64
+		var base, duration uint64
+		key := true
 		forBoxes(traf, func(typ string, b []byte) {
 			switch typ {
 			case "tfhd":
@@ -396,13 +618,15 @@ func (w *writer) fragmentTimes(moof []byte) (start, end float64, ok bool) {
 					id = binary.BigEndian.Uint32(b[4:])
 				}
 			case "tfdt":
-				if len(b) >= 8 && b[0] == 1 && len(b) >= 12 {
+				if len(b) >= 12 && b[0] == 1 {
 					base = binary.BigEndian.Uint64(b[4:])
 				} else if len(b) >= 8 {
 					base = uint64(binary.BigEndian.Uint32(b[4:]))
 				}
 			case "trun":
-				duration += runDuration(b)
+				d, sync := readRun(b)
+				duration += d
+				key = key && sync
 			}
 		})
 		timescale := w.timescales[id]
@@ -411,15 +635,16 @@ func (w *writer) fragmentTimes(moof []byte) (start, end float64, ok bool) {
 		}
 		start = float64(base) / float64(timescale)
 		end = float64(base+duration) / float64(timescale)
-		ok = true
+		independent, ok = key, true
 	})
-	return start, end, ok
+	return start, end, independent, ok
 }
 
-// runDuration sums a trun's sample durations.
-func runDuration(b []byte) uint64 {
+// readRun sums a trun's sample durations and reports whether its first
+// sample is a sync sample, which a player can start decoding at.
+func readRun(b []byte) (duration uint64, sync bool) {
 	if len(b) < 8 {
-		return 0
+		return 0, false
 	}
 	flags := binary.BigEndian.Uint32(b) & 0xffffff
 	count := int(binary.BigEndian.Uint32(b[4:]))
@@ -427,24 +652,34 @@ func runDuration(b []byte) uint64 {
 	if flags&0x1 != 0 {
 		at += 4
 	}
+	sync = true
+	const nonSync = 0x00010000
 	if flags&0x4 != 0 {
+		if at+4 <= len(b) {
+			sync = binary.BigEndian.Uint32(b[at:])&nonSync == 0
+		}
 		at += 4
 	}
-	if flags&0x100 == 0 {
-		return 0
-	}
-	stride := 4
-	for _, f := range []uint32{0x200, 0x400, 0x800} {
+	stride, flagsAt := 0, -1
+	for _, f := range []uint32{0x100, 0x200, 0x400, 0x800} {
 		if flags&f != 0 {
+			if f == 0x400 {
+				flagsAt = stride
+			}
 			stride += 4
 		}
 	}
-	var total uint64
+	if flags&0x4 == 0 && flagsAt >= 0 && at+flagsAt+4 <= len(b) {
+		sync = binary.BigEndian.Uint32(b[at+flagsAt:])&nonSync == 0
+	}
+	if flags&0x100 == 0 {
+		return 0, sync
+	}
 	for i := 0; i < count && at+4 <= len(b); i++ {
-		total += uint64(binary.BigEndian.Uint32(b[at:]))
+		duration += uint64(binary.BigEndian.Uint32(b[at:]))
 		at += stride
 	}
-	return total
+	return duration, sync
 }
 
 // forBoxes calls fn with each child box's type and payload.

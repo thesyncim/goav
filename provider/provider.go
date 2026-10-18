@@ -10,6 +10,7 @@ package provider
 import (
 	"context"
 	"io"
+	"time"
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/pipeline"
@@ -71,11 +72,14 @@ type TransactionalWriter interface {
 // Contract declares what a destination can accept before it opens: whether
 // it consumes muxed bytes (ByteStream) or media messages, and the formats,
 // MIME types, protocol, and realtime/seek capabilities the planner may rely
-// on when selecting the output format.
+// on when selecting the output format. Fragment, for a byte stream, is the
+// longest fragment the destination wants from a fragmenting muxer: an LL-HLS
+// packager asks for its part duration.
 type Contract struct {
 	ByteStream bool
 	Seekable   bool
 	Realtime   bool
+	Fragment   time.Duration
 	Protocol   av.ProtocolID
 	Formats    []av.FormatID
 	MIMETypes  []string

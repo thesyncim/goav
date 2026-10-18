@@ -38,6 +38,10 @@ type variant struct {
 	// average.
 	peak, bits, seconds float64
 	segments            int
+	// msn and part are where its playlist stands, for the rendition
+	// reports of the others; placed is set once it stands anywhere.
+	msn, part int
+	placed    bool
 }
 
 // NewLadder returns a ladder writing the multivariant playlist name to
@@ -117,4 +121,31 @@ func (l *Ladder) render() string {
 		fmt.Fprintf(&b, "\n%s\n", v.playlist)
 	}
 	return b.String()
+}
+
+// position records where a variant's playlist stands.
+func (l *Ladder) position(v *variant, msn, part int) {
+	l.mu.Lock()
+	v.msn, v.part, v.placed = msn, part, true
+	l.mu.Unlock()
+}
+
+// report is one EXT-X-RENDITION-REPORT: another variant's playlist and the
+// newest segment and part it lists.
+type report struct {
+	playlist  string
+	msn, part int
+}
+
+// reports are where the variants other than v stand.
+func (l *Ladder) reports(v *variant) []report {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	var out []report
+	for _, other := range l.variants {
+		if other != v && other.placed {
+			out = append(out, report{playlist: other.playlist, msn: other.msn, part: other.part})
+		}
+	}
+	return out
 }

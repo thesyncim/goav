@@ -62,6 +62,9 @@ type FormatMuxer struct {
 	sequence   uint32
 	anchor     *muxTrack
 	box        boxWriter
+	// fragment is the longest fragment the output asked for (0: cut at
+	// keyframes only).
+	fragment time.Duration
 }
 
 type muxTrack struct {
@@ -120,7 +123,7 @@ func (m *FormatMuxer) Open(ctx context.Context, output format.Output, streams []
 	if output.Writer == nil {
 		return fmt.Errorf("%w: no writer", ErrInvalidData)
 	}
-	*m = FormatMuxer{w: output.Writer, byStream: make(map[av.StreamID]*muxTrack, len(streams))}
+	*m = FormatMuxer{w: output.Writer, byStream: make(map[av.StreamID]*muxTrack, len(streams)), fragment: output.Fragment}
 	for i := range streams {
 		track, err := newMuxTrack(streams[i], uint32(i+1))
 		if err != nil {
@@ -132,7 +135,7 @@ func (m *FormatMuxer) Open(ctx context.Context, output format.Output, streams []
 			m.anchor = track
 		}
 	}
-	if seeker, ok := output.Writer.(io.Seeker); ok && !output.Realtime && !options.Realtime {
+	if seeker, ok := output.Writer.(io.Seeker); ok && !output.Realtime && !options.Realtime && output.Fragment == 0 {
 		if at, err := seeker.Seek(0, io.SeekCurrent); err == nil {
 			m.seeker, m.offset = seeker, at
 		}
@@ -219,7 +222,7 @@ func (m *FormatMuxer) Write(ctx context.Context, packet *av.Packet, _ *format.Wr
 	}
 	sync := packet.Keyframe || t.media != av.MediaVideo
 	t.closeLast(dts)
-	if m.seeker == nil && t == m.anchor && t.cuts(sync, dts) {
+	if m.seeker == nil && t == m.anchor && t.cuts(sync, dts, m.fragment) {
 		if err := m.flushFragment(false); err != nil {
 			return err
 		}
@@ -275,6 +278,9 @@ func (t *muxTrack) add(dts, pts, duration int64, sync bool) {
 			t.startDTS = dts
 		}
 		t.startPTS, t.endPTS = pts, pts
+	}
+	if len(t.samples) == 0 {
+		// The first sample since the last fragment flushed starts the next.
 		t.fragmentStart = dts
 	}
 	t.startPTS = min(t.startPTS, pts)
@@ -286,16 +292,22 @@ func (t *muxTrack) add(dts, pts, duration int64, sync bool) {
 	t.samples = append(t.samples, muxSample{dts: dts, cts: pts - dts, duration: duration, sync: sync})
 }
 
-// cuts reports whether a sample starts a new fragment: a video keyframe, or
-// an audio-only file's span, once the fragment holds something.
-func (t *muxTrack) cuts(sync bool, dts int64) bool {
-	if len(t.samples) == 0 {
+// cuts reports whether a sample starts a new fragment, once the fragment
+// holds something: a video keyframe, a sample that would carry the fragment
+// past the length the output asked for (estimating its duration as the
+// last one's), or an audio-only file's span.
+func (t *muxTrack) cuts(sync bool, dts int64, limit time.Duration) bool {
+	n := len(t.samples)
+	if n == 0 {
 		return false
 	}
-	if t.media == av.MediaVideo {
-		return sync
+	if t.media == av.MediaVideo && sync {
+		return true
 	}
-	return dts-t.fragmentStart >= int64(fragmentSpan.Seconds()*float64(t.timescale))
+	if limit > 0 {
+		return dts-t.fragmentStart+max(t.samples[n-1].duration, 0) > int64(limit.Seconds()*float64(t.timescale))
+	}
+	return t.media != av.MediaVideo && dts-t.fragmentStart >= int64(fragmentSpan.Seconds()*float64(t.timescale))
 }
 
 // finish fills a last sample's unknown duration with the one before it.
