@@ -11,6 +11,18 @@ methodology changes, and migration notes.
 
 ## Unreleased
 
+- The bundle, README, docs, examples, CLI, control server, and nested
+  modules use values. Breaking: `bundle.Run`, `bundle.Build`,
+  `bundle.Describe`, and `bundle.Explain` take Outputs and share one default
+  runtime (`bundle.Default()`); build other runtimes with `bundle.New` and
+  call `rt.Run`. `Attachment.Rebranch` takes Outputs like `task.Attach`.
+  Fixed: work shared before a fork of a frame-domain input (no decode) was
+  dropped; Select can now feed an encoder and a muxed file; packet stages run
+  after `.Copy()` in planned and attached branches; a `task.Track` of a
+  frame-domain input attaches as frames; `As` names a stream that does not
+  fork; two forks with one `As` name are refused; several inputs copy
+  together with `a.To(out), b.To(out)`.
+
 - Running tasks and dynamic streams take values too. `task.Tap(name)` and
   `task.Track(input, stream)` are Streams of a running task, and
   `task.Attach(ctx, outputs...)` adds Outputs built from them, atomically.

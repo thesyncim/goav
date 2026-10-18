@@ -10,42 +10,34 @@ import (
 	runconfig "github.com/thesyncim/goav/runconfig"
 )
 
-func TestNilJobReturnsErrNilJob(t *testing.T) {
-	if _, err := Describe(context.Background(), nil); !errors.Is(err, ErrNilJob) {
-		t.Fatalf("Describe(nil) error = %v, want ErrNilJob", err)
+func TestNoOutputsIsRefused(t *testing.T) {
+	var buildErr *goav.BuildError
+	if _, err := Describe(); !errors.As(err, &buildErr) || buildErr.Code != "stream_invalid" {
+		t.Fatalf("Describe() error = %v, want stream_invalid", err)
 	}
-	if _, err := Build(context.Background(), nil); !errors.Is(err, ErrNilJob) {
-		t.Fatalf("Build(nil) error = %v, want ErrNilJob", err)
-	}
-	if err := Run(context.Background(), nil); !errors.Is(err, ErrNilJob) {
-		t.Fatalf("Run(nil) error = %v, want ErrNilJob", err)
+	if err := Run(context.Background()); !errors.As(err, &buildErr) || buildErr.Code != "stream_invalid" {
+		t.Fatalf("Run() error = %v, want stream_invalid", err)
 	}
 }
 
-func TestBuildSignaturesSplitNarrowAndLiveTask(t *testing.T) {
-	var _ func(context.Context, *goav.Job, ...runconfig.Option) (goav.Task, error) = Build
+func TestBuildReturnsLiveTask(t *testing.T) {
+	var _ func(context.Context, ...goav.Output) (goav.LiveTask, error) = Build
+}
+
+func TestDefaultIsShared(t *testing.T) {
+	first, second := Default(), Default()
+	if first != second {
+		t.Fatal("Default() built a second runtime")
+	}
 }
 
 func TestDescribeUsesBundledRuntimeForStructuralPlan(t *testing.T) {
-	spec, err := Describe(context.Background(), goav.From(goavtest.Audio(48_000, 1, []int16{1, 2})).
-		Audio().
-		To(goavtest.NewCollector().Sink()))
+	spec, err := Describe(goavtest.Audio(48_000, 1, []int16{1, 2}).Audio().To(goavtest.NewCollector().Sink()))
 	if err != nil {
 		t.Fatalf("Describe() error = %v", err)
 	}
 	if spec.Name == "" || len(spec.Nodes) == 0 {
 		t.Fatalf("Describe() spec = %+v, want planned graph nodes", spec)
-	}
-}
-
-func TestDescribeHonorsCanceledContext(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-	_, err := Describe(ctx, goav.From(goavtest.Audio(48_000, 1, []int16{1})).
-		Audio().
-		To(goavtest.NewCollector().Sink()))
-	if !errors.Is(err, context.Canceled) {
-		t.Fatalf("Describe() error = %v, want context.Canceled", err)
 	}
 }
 

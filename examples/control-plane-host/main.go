@@ -122,11 +122,11 @@ func newDemoHost(ctx context.Context) (*demoHost, error) {
 	input := goav.WrapSource(source.Input(), func(source pipeline.Source) pipeline.Source {
 		return newStartReadySource(source, ready)
 	})
-	task, err := goav.From(input).
-		Video().Decode().Tap(goav.FrameTap("frames")).
-		To(goavtest.NewCollector().Sink()).
-		UseRuntime(goavtest.Runtime(runconfig.WithEncoder(factory.descriptor, factory))).
-		BuildLive(ctx)
+	task, err := goavtest.Runtime(runconfig.WithEncoder(factory.descriptor, factory)).Build(ctx, input.
+		Video().
+		Decode().
+		Tap("frames").
+		To(goavtest.NewCollector().Sink()))
 	if err != nil {
 		return nil, err
 	}

@@ -40,11 +40,9 @@ func TestCLIInvokesCustomControlCommand(t *testing.T) {
 			return ctlserver.ControlResponse{Operation: "control vendor.cli", Result: applied}, nil
 		},
 	)
-	task, err := goav.From(goavtest.Audio(48000, 1, []int16{1})).
+	task, err := goavtest.Runtime().Build(ctx, goavtest.Audio(48000, 1, []int16{1}).
 		Audio().
-		To(goavtest.NewCollector().Sink()).
-		UseRuntime(goavtest.Runtime()).
-		BuildLive(ctx)
+		To(goavtest.NewCollector().Sink()))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -73,11 +71,9 @@ func TestCLIInvokesCustomControlCommand(t *testing.T) {
 func TestCLIHelpListsCustomPipelineRegistry(t *testing.T) {
 	ctx := t.Context()
 
-	task, err := goav.From(goavtest.Audio(48000, 1, []int16{1})).
+	task, err := goavtest.Runtime().Build(ctx, goavtest.Audio(48000, 1, []int16{1}).
 		Audio().
-		To(goavtest.NewCollector().Sink()).
-		UseRuntime(goavtest.Runtime()).
-		BuildLive(ctx)
+		To(goavtest.NewCollector().Sink()))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -157,11 +153,9 @@ func TestCLIHelpListsCustomPipelineRegistry(t *testing.T) {
 func TestCLIPrintsGraphAsRawText(t *testing.T) {
 	ctx := t.Context()
 
-	task, err := goav.From(goavtest.Audio(48000, 1, []int16{1})).
+	task, err := goavtest.Runtime().Build(ctx, goavtest.Audio(48000, 1, []int16{1}).
 		Audio().
-		To(goavtest.NewCollector().Sink()).
-		UseRuntime(goavtest.Runtime()).
-		BuildLive(ctx)
+		To(goavtest.NewCollector().Sink()))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -190,11 +184,10 @@ func TestCLIAttachRebranchDetachAndDotGraph(t *testing.T) {
 	ctx := t.Context()
 
 	packet := av.Packet{Payload: av.Buffer{Bytes: []byte{1}, Ownership: av.BufferImmutable}}
-	task, err := goav.From(goavtest.Packets(av.CodecOpus, packet)).
-		Audio().Copy().Tap(goav.PacketTap("pkts")).
-		To(goavtest.NewCollector().Sink()).
-		UseRuntime(goavtest.Runtime()).
-		BuildLive(ctx)
+	task, err := goavtest.Runtime().Build(ctx, goavtest.Packets(av.CodecOpus, packet).
+		Audio().
+		Tap("pkts").
+		To(goavtest.NewCollector().Sink()))
 	if err != nil {
 		t.Fatal(err)
 	}

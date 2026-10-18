@@ -89,16 +89,14 @@ func (s *session) startVideoTrack(track *webrtc.TrackRemote) {
 	}
 	s.mu.Unlock()
 
-	task, err := goav.From(goav.Input(webrtcav.Track(track, rtpav.WithFeedback(peerFeedback{s.pc})))).
-		UseRuntime(s.runtime).
+	task, err := s.runtime.Build(s.ctx, goav.Input(webrtcav.Track(track, rtpav.WithFeedback(peerFeedback{s.pc}))).
 		Video().
 		Decode().
 		Shape(shape.Frame(av.MediaVideo, shape.Video(decodedVideoMaxWidth, decodedVideoMaxHeight, av.PixelFormatI420))).
 		Resize(videoTapWidth, videoTapHeight).
 		Shape(shape.Frame(av.MediaVideo, shape.Video(videoTapWidth, videoTapHeight, av.PixelFormatI420))).
-		Tap(goav.FrameTap(videoTapName)).
-		To(goav.Sink(s.video)).
-		BuildLive(s.ctx)
+		Tap(videoTapName).
+		To(goav.Sink(s.video)))
 	if err != nil {
 		s.setError(err.Error())
 		return
@@ -132,16 +130,14 @@ func (s *session) startAudioTrack(track *webrtc.TrackRemote) {
 	}
 	s.mu.Unlock()
 
-	task, err := goav.From(goav.Input(webrtcav.Track(track, rtpav.WithFeedback(peerFeedback{s.pc})))).
-		UseRuntime(s.runtime).
+	task, err := s.runtime.Build(s.ctx, goav.Input(webrtcav.Track(track, rtpav.WithFeedback(peerFeedback{s.pc}))).
 		Audio().
 		Decode().
 		Shape(shape.Frame(av.MediaAudio, shape.Audio(48_000, codec.Stereo, av.SampleFormatS16))).
 		Resample(48_000, codec.Stereo).
 		Shape(shape.Frame(av.MediaAudio, shape.Audio(48_000, codec.Stereo, av.SampleFormatS16))).
-		Tap(goav.FrameTap(audioTapName)).
-		To(goav.Sink(newAudioMonitorSink(s.audio, s.native))).
-		BuildLive(s.ctx)
+		Tap(audioTapName).
+		To(goav.Sink(newAudioMonitorSink(s.audio, s.native))))
 	if err != nil {
 		s.setError(err.Error())
 		return

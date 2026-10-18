@@ -511,7 +511,7 @@ func streamEncodeMissingError(operation string, stream streamIntent) error {
 		fixes: buildErrorFixes([]string{
 			"call " + encodeHint(stream.Select.Type) + " before .To(goav.Write(...))",
 			"send decoded frames to goav.Sink(...)",
-			"use .Copy().To(output) if you want to copy packets without decoding",
+			"leave out .Decode() to copy the packets: input.Video().To(output)",
 		}),
 		cause: errUnsupportedBuild,
 	}

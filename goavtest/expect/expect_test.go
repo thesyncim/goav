@@ -52,11 +52,9 @@ func TestValueAndGoldenHelpers(t *testing.T) {
 func TestS16ChecksCollectorOutput(t *testing.T) {
 	ctx := context.Background()
 	out := goavtest.NewCollector()
-	err := goav.From(goavtest.Audio(48000, 1, []int16{1, 2}, []int16{3})).
+	err := goavtest.Runtime().Run(ctx, goavtest.Audio(48000, 1, []int16{1, 2}, []int16{3}).
 		Audio().
-		To(out.Sink()).
-		UseRuntime(goavtest.Runtime()).
-		Run(ctx)
+		To(out.Sink()))
 	expect.NoError(t, err)
 	expect.S16(t, out, [][]int16{{1, 2}, {3}})
 }

@@ -67,7 +67,7 @@ to override the extension or target a custom container id.
 
 This is the smallest production shape:
 
-1. Build a normal task and name stable taps with `FrameTap` or `PacketTap`.
+1. Build a normal task with `rt.Build` and name stable taps with `.Tap(name)`.
 2. Declare host-owned capabilities with typed settings structs.
 3. Group commands, branch steps, sinks, and native encoder spellings in one
    `ctlserver.CapabilitySet`.
@@ -133,13 +133,11 @@ encoderFactory := &acmeEncoderFactory{
     },
 }
 
-task, err := goav.From(liveInput).
-    Audio().Decode().Tap(goav.FrameTap("frames")).
-    To(primaryDestination).
-    UseRuntime(bundle.MustNew(
-        runconfig.WithEncoder(encoderFactory.Descriptor, encoderFactory),
-    )).
-    BuildLive(ctx)
+rt := bundle.MustNew(runconfig.WithEncoder(encoderFactory.Descriptor, encoderFactory))
+task, err := rt.Build(ctx, liveInput.Audio().
+    Decode().
+    Tap("frames").
+    To(primaryDestination))
 if err != nil {
     return err
 }

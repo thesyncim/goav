@@ -98,3 +98,80 @@ func TestValueAttachFromTap(t *testing.T) {
 	cancel()
 	<-runErr
 }
+
+// TestValueAttachTrackOfFrameSource pins that a Track of a frame-domain input
+// attaches as frames: an Output without Decode implies a packet copy only for
+// packet inputs.
+func TestValueAttachTrackOfFrameSource(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	in := controlLiveVideoSource("cam")
+	main := Sink(SinkFunc("main", func(context.Context, Message) error { return nil }))
+	task, err := testBundleRuntime().Build(ctx, in.Video().To(main))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer task.Close()
+	runErr := make(chan error, 1)
+	go func() { runErr <- task.Run(ctx) }()
+
+	var frames atomic.Int32
+	monitor := Sink(SinkFunc("monitor", func(_ context.Context, msg Message) error {
+		if msg.Frame != nil {
+			frames.Add(1)
+		}
+		return nil
+	}))
+	track := task.Track(in, av.Stream{ID: "cam", Type: av.MediaVideo})
+	if _, err := task.Attach(ctx, track.As("monitor").To(monitor)); err != nil {
+		t.Fatalf("attach: %v", err)
+	}
+	waitForCondition(t, "monitor received frames", func() bool { return frames.Load() > 0 })
+	cancel()
+	<-runErr
+}
+
+// TestValueRebranchTakesOutputs pins Attachment.Rebranch in the value
+// grammar: a replacement Output from task.Tap takes over from the attached
+// one, which detaches.
+func TestValueRebranchTakesOutputs(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	in := controlLiveVideoSource("cam")
+	main := Sink(SinkFunc("main", func(context.Context, Message) error { return nil }))
+	task, err := testBundleRuntime().Build(ctx, in.Video().Tap("live").To(main))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer task.Close()
+	runErr := make(chan error, 1)
+	go func() { runErr <- task.Run(ctx) }()
+
+	counter := func(name string, n *atomic.Int32) Destination {
+		return Sink(SinkFunc(name, func(_ context.Context, msg Message) error {
+			if msg.Frame != nil {
+				n.Add(1)
+			}
+			return nil
+		}))
+	}
+	var before, after atomic.Int32
+	var attachment Attachment
+	waitForCondition(t, "first monitor attached", func() bool {
+		attachment, err = task.Attach(ctx, task.Tap("live").As("first").To(counter("first", &before)))
+		return err == nil
+	})
+	next, err := attachment.Rebranch(ctx, task.Tap("live").As("second").To(counter("second", &after)))
+	if err != nil {
+		t.Fatalf("rebranch: %v", err)
+	}
+	waitForCondition(t, "replacement received frames", func() bool { return after.Load() > 0 })
+	if taskHasBranch(task, "first") || !taskHasBranch(task, "second") {
+		t.Fatal("rebranch did not swap first for second")
+	}
+	if err := task.Detach(ctx, next); err != nil {
+		t.Fatalf("detach: %v", err)
+	}
+	cancel()
+	<-runErr
+}

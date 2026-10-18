@@ -79,26 +79,23 @@ func webRTCTestRuntime() *goav.Runtime {
 }
 
 func TestWebRTCTrackRecordRecipeUsesCodecIntent(t *testing.T) {
-	job := goav.From(
-		webRTCRemote(t, webrtcav.RemoteTrack{
-			Track: &webrtc.TrackRemote{},
-			Codec: webrtc.RTPCodecParameters{
-				RTPCodecCapability: webrtc.RTPCodecCapability{
-					MimeType:  webrtc.MimeTypeVP8,
-					ClockRate: 90000,
-				},
-				PayloadType: 96,
+	rt := webRTCTestRuntime()
+	job := webRTCRemote(t, webrtcav.RemoteTrack{
+		Track: &webrtc.TrackRemote{},
+		Codec: webrtc.RTPCodecParameters{
+			RTPCodecCapability: webrtc.RTPCodecCapability{
+				MimeType:  webrtc.MimeTypeVP8,
+				ClockRate: 90000,
 			},
-			Stream: av.Stream{
-				ID:   "video",
-				Type: av.MediaVideo,
-			},
-		}),
-	).UseRuntime(webRTCTestRuntime()).
-		Copy().
-		To(goav.Write("recording.ivf", io.Discard))
+			PayloadType: 96,
+		},
+		Stream: av.Stream{
+			ID:   "video",
+			Type: av.MediaVideo,
+		},
+	}).To(goav.Write("recording.ivf", io.Discard))
 
-	spec, err := job.Describe()
+	spec, err := rt.Describe(job)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -108,7 +105,7 @@ func TestWebRTCTrackRecordRecipeUsesCodecIntent(t *testing.T) {
 		strings.Contains(text, "depacketizers=") {
 		t.Fatalf("spec:\n%s", text)
 	}
-	report, err := job.Explain(context.Background())
+	report, err := rt.Explain(context.Background(), job)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -118,7 +115,7 @@ func TestWebRTCTrackRecordRecipeUsesCodecIntent(t *testing.T) {
 		t.Fatalf("inputs: %+v", report.Inputs)
 	}
 
-	task, err := job.BuildLive(context.Background())
+	task, err := rt.Build(context.Background(), job)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -146,11 +143,8 @@ func TestWebRTCTrackUnknownCodecMetadataYieldsNoCodecIntent(t *testing.T) {
 			Type: av.MediaAudio,
 		},
 	})
-	report, err := goav.From(input).
-		UseRuntime(webRTCTestRuntime()).
-		Copy().
-		To(goav.Write("recording.webm", io.Discard)).
-		Explain(context.Background())
+	report, err := webRTCTestRuntime().Explain(context.Background(), input.
+		To(goav.Write("recording.webm", io.Discard)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -166,7 +160,7 @@ func TestWebRTCTrackUnknownCodecMetadataYieldsNoCodecIntent(t *testing.T) {
 }
 
 func TestWebRTCTrackRecordMultiInputRecipeUsesCodecIntent(t *testing.T) {
-	job := goav.From(webRTCRemote(t, webrtcav.RemoteTrack{
+	audio := webRTCRemote(t, webrtcav.RemoteTrack{
 		Track: &webrtc.TrackRemote{},
 		Codec: webrtc.RTPCodecParameters{
 			RTPCodecCapability: webrtc.RTPCodecCapability{
@@ -180,24 +174,26 @@ func TestWebRTCTrackRecordMultiInputRecipeUsesCodecIntent(t *testing.T) {
 			ID:   "audio",
 			Type: av.MediaAudio,
 		},
-	})).UseRuntime(webRTCTestRuntime()).
-		And(webRTCRemote(t, webrtcav.RemoteTrack{
-			Track: &webrtc.TrackRemote{},
-			Codec: webrtc.RTPCodecParameters{
-				RTPCodecCapability: webrtc.RTPCodecCapability{
-					MimeType:  webrtc.MimeTypeVP8,
-					ClockRate: 90000,
-				},
-				PayloadType: 96,
+	})
+	video := webRTCRemote(t, webrtcav.RemoteTrack{
+		Track: &webrtc.TrackRemote{},
+		Codec: webrtc.RTPCodecParameters{
+			RTPCodecCapability: webrtc.RTPCodecCapability{
+				MimeType:  webrtc.MimeTypeVP8,
+				ClockRate: 90000,
 			},
-			Stream: av.Stream{
-				ID:   "video",
-				Type: av.MediaVideo,
-			},
-		})).
-		To(goav.Write("recording.webm", io.Discard))
+			PayloadType: 96,
+		},
+		Stream: av.Stream{
+			ID:   "video",
+			Type: av.MediaVideo,
+		},
+	})
+	recording := goav.Write("recording.webm", io.Discard)
+	rt := webRTCTestRuntime()
+	outs := []goav.Output{audio.To(recording), video.To(recording)}
 
-	spec, err := job.Describe()
+	spec, err := rt.Describe(outs...)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -209,7 +205,7 @@ func TestWebRTCTrackRecordMultiInputRecipeUsesCodecIntent(t *testing.T) {
 		strings.Contains(text, "depacketizers=") {
 		t.Fatalf("spec:\n%s", text)
 	}
-	report, err := job.Explain(context.Background())
+	report, err := rt.Explain(context.Background(), outs...)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -223,12 +219,8 @@ func TestWebRTCTrackRecordMultiInputRecipeUsesCodecIntent(t *testing.T) {
 func TestWebRTCTrackRecipeReportsNilTrack(t *testing.T) {
 	// Track adaptation errors are the provider's: they surface when the
 	// source opens at build time.
-	_, err := goav.From(
-		goav.Input(webrtcav.Track(nil)),
-	).UseRuntime(webRTCTestRuntime()).
-		Copy().
-		To(goav.Write("recording.ivf", io.Discard)).
-		Build(context.Background())
+	_, err := webRTCTestRuntime().Build(context.Background(), goav.Input(webrtcav.Track(nil)).
+		To(goav.Write("recording.ivf", io.Discard)))
 	if !errors.Is(err, webrtcav.ErrNilTrack) {
 		t.Fatalf("err = %v, want webrtcav.ErrNilTrack", err)
 	}

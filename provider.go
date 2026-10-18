@@ -27,8 +27,8 @@ type (
 // shape seeds the input's codec intent and realtime policy, so the recipe
 // planner can select streams and pick decoders before the source is opened:
 //
-//	goav.From(goav.Input(rtpav.Receive(reader, rtpav.WithCodec(codec.Opus())))).
-//		Copy().To(out)
+//	in := goav.Input(rtpav.Receive(reader, rtpav.WithCodec(codec.Opus())))
+//	err := rt.Run(ctx, in.Audio().To(out))
 func Input(src provider.Source, opts ...InputOption) InputSpec {
 	if src == nil {
 		return inputSpecHandle(InputSpec{err: errNilSource})

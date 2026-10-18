@@ -8,8 +8,8 @@
 
 </div>
 
-goav is a small, composable grammar for media work in Go: select streams, chain operations,
-fan out, and route to destinations. Codecs and containers are pure Go, so VP8, VP9, AV1,
+goav recipes are plain Go values: select a stream, apply operations, reuse a stream to fan
+out, and route it to destinations. Codecs and containers are pure Go, so VP8, VP9, AV1,
 Opus, AAC, and WebM/Matroska/MP4 support builds into one static binary with `CGO_ENABLED=0`.
 A recipe is plain data until it runs: print its exact graph first, and get every mistake
 back as a typed error that names the fix.
@@ -26,16 +26,32 @@ go run github.com/thesyncim/goav/cmd/goav@latest run 'testsrc video width=1920 h
 ```go
 // Decode a WebM, scale it to 720p, re-encode it as VP9, and mux a new WebM.
 // in is any io.Reader (an *os.File works); out is any io.Writer.
-err := bundle.Run(ctx, goav.From(goav.FileInput("in.webm", in)).
-    Video().
+video := goav.FileInput("in.webm", in).Video().
     Decode().
     Resize(1280, 720).
-    Encode(codec.VP9(codec.Bitrate(2_000_000))).
-    To(goav.Write("out.webm", out)))
+    Encode(codec.VP9(codec.Bitrate(2_000_000)))
+err := bundle.Run(ctx, video.To(goav.Write("out.webm", out)))
 ```
 
-`bundle.Run` plans, builds, and runs the recipe with the bundled adapters, and closes `out` if it
-is an `io.Closer`. The [CLI reference](docs/CLI.md) covers the test-source syntax.
+Every method returns a new `goav.Stream`, so a stream used twice fans out and the work before the
+fork runs once: one decode feeds two renditions, and one Opus encode is muxed into both files.
+
+```go
+src := goav.FileInput("in.webm", in)
+video := src.Video().Decode()
+audio := src.Audio().Decode().Encode(codec.Opus())
+hd, sd := goav.Write("hd.webm", out), goav.Write("sd.webm", io.Discard)
+err := bundle.Run(ctx,
+    video.Resize(1280, 720).Encode(codec.VP9()).As("hd").To(hd),
+    video.Resize(640, 360).Encode(codec.VP9()).As("sd").To(sd),
+    audio.To(hd, sd),
+)
+```
+
+`stream.To(...)` makes an `Output`; `bundle.Run` plans, builds, and runs Outputs together with the
+bundled adapters, and closes each writer that is an `io.Closer`. A runtime built with `goav.New`
+or `bundle.New` runs them the same way: `rt.Run(ctx, outputs...)`. The
+[CLI reference](docs/CLI.md) covers the test-source syntax.
 
 ## Plan first, with errors that name the fix
 
@@ -43,15 +59,15 @@ is an `io.Closer`. The [CLI reference](docs/CLI.md) covers the test-source synta
 flowchart LR
   subgraph recipe["Recipe: plain Go data"]
     direction LR
-    I["goav.From(inputs)"] --> S[".Video() / .Audio()"] --> O["Decode · Resize · Resample<br>Encode · Copy"] --> D[".To(destinations)<br>or .Branches(...)"]
+    S["input.Video() / .Audio()<br>goav.Mix(...)"] --> O["Decode · Resize · Resample<br>Encode · Do"] --> D[".To(destinations)<br>Outputs"]
   end
-  recipe -->|Describe / Explain| P["graph + typed plan<br>nothing opened yet"]
-  recipe -->|Build| T(["Task<br>Run / Close"])
+  recipe -->|rt.Describe / rt.Explain| P["graph + typed plan<br>nothing opened yet"]
+  recipe -->|rt.Build| T(["Task<br>Run / Attach / Close"])
   recipe -.->|refusal| E["*goav.BuildError<br>family · code · fix"]
 ```
 
-`bundle.Describe(ctx, job)` returns the exact graph `Build` would create and `job.Explain(ctx)` a
-typed, JSON-stable [`plan.Report`](plan), before anything opens. [`graphrender`](graphrender)
+`bundle.Describe(outputs...)` returns the exact graph a build would create and
+`bundle.Explain(ctx, outputs...)` a typed, JSON-stable [`plan.Report`](plan), before anything opens. [`graphrender`](graphrender)
 prints the graph as text, DOT, or Mermaid; `graphrender.RenderURI(spec, "goav:graph")` lists the
 quick-start recipe's nodes:
 
@@ -67,7 +83,7 @@ pipeline goav
 
 Every build refusal is a `*goav.BuildError` with a stable `Family` and `Code`, the failing node,
 typed details, and fixes spelled as real calls, returned before any resource opens. Leave out
-the encoder (`goav.From(input).Video().Decode().To(goav.Write("out.webm", out))`) and `Run` returns:
+the encoder (`input.Video().Decode().To(goav.Write("out.webm", out))`) and `Run` returns:
 
 ```text
 goav: cannot build job for video: decoded frames cannot be written to a muxed output without an encoder
@@ -77,7 +93,7 @@ Details:
 Suggestions:
   - call .Encode(codec.VP8(...)), .Encode(codec.VP9(...)), or .Encode(codec.AV1(...)) before .To(goav.Write(...))
   - send decoded frames to goav.Sink(...)
-  - use .Copy().To(output) if you want to copy packets without decoding
+  - leave out .Decode() to copy the packets: input.Video().To(output)
 ```
 
 Match with `errors.As` and switch on `Family` (`encode`), then `Code` (`encode_missing`). The
@@ -100,11 +116,13 @@ set); there is no global registry. Full matrix: [Adapters](docs/ADAPTERS.md).
 
 | Need | Shape |
 | --- | --- |
-| Remux without decoding (H.264 too, in any build) | `goav.From(input).Copy().To(goav.Write("out.mkv", w))` |
-| Audio and video into one file | `out := goav.Write("out.webm", w)`, then `.Video()…To(out).Audio()…To(out)`: one handle, one mux |
-| Decoded frames into your code | `.Video().Decode().To(goav.Sink(component.SinkFunc("frames", fn)))` |
-| Normalize audio | `.Audio().Decode().Resample(48000, 2).Encode(codec.Opus())` |
-| One decode, many renditions, encoded in parallel | `.Decode().Branches(goav.Branch("720p").Resize(1280, 720).Encode(...).To(...), ...)` |
+| Remux without decoding (H.264 too, in any build) | `input.To(goav.Write("out.mkv", w))` |
+| Audio and video into one file | `out := goav.Write("out.webm", w)`, then `rt.Run(ctx, in.Video()…To(out), in.Audio()…To(out))`: one handle, one mux |
+| Decoded frames into your code | `in.Video().Decode().To(goav.Sink(component.SinkFunc("frames", fn)))` |
+| Normalize audio | `in.Audio().Decode().Resample(48000, 2).Encode(codec.Opus())` |
+| One decode, many renditions, encoded in parallel | `v := in.Video().Decode()`, then `v.Resize(1280, 720).Encode(…).To(hd)` and `v.Resize(640, 360).Encode(…).To(sd)` |
+| Mix, composite, switch | `goav.Mix(a, b)`, `goav.Composite(cam, goav.At(screen, 960, 540))`, `goav.Select(a, b)`: each returns a Stream |
+| Change a running task | `task.Attach(ctx, task.Tap("live").Encode(codec.VP8()).To(preview))`, then `task.Detach` |
 | Ingest RTP or WebRTC | `goav.Input(rtpav.Receive(r, rtpav.WithCodec(codec.Opus())))`, `goav.Input(webrtcav.Track(t))` |
 | Your own source, sink, or codec | `goav.Source(...)`, `goav.Input(provider)`, `goav.Custom(...)`, `runconfig.WithEncoder(...)` |
 | Test a pipeline | [`goavtest`](goavtest): deterministic sources, a recording sink, a fake clock |
@@ -116,8 +134,8 @@ More in [Operations](docs/OPERATIONS.md), [Use cases](docs/USE_CASES.md), the
 ## Built for live services
 
 - **One clock per task.** Paced sources, sink playout (`flow.Playout`), `Pause`/`Resume`, seek,
-  rate, and QoS lateness reports share one timeline; branch buffers (`flow.Blocking`,
-  `flow.DropOldest`, ...) backpressure or shed per branch and count every drop. [Flow control](docs/FLOW_CONTROL.md)
+  rate, and QoS lateness reports share one timeline; stream buffers (`.Buffer(flow.Blocking(8))`,
+  `flow.DropOldest`, ...) backpressure or shed per fork and count every drop. [Flow control](docs/FLOW_CONTROL.md)
 - **Pinned allocations.** `testing.AllocsPerRun` guards hold graph, codec, format, and filter stages
   at zero allocations per message, `source.Push` at most one (`TestSourcePushDeliveryAllocs`).
 - **SIMD without assembly.** Go 1.27's `GOEXPERIMENT=simd` (the CI and release default) moves the

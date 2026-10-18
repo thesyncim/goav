@@ -36,22 +36,18 @@ func (d *memoryDestination) Close() error {
 func runCustomDestination(ctx context.Context) (*memoryDestination, provider.Info, error) {
 	dest := &memoryDestination{}
 	var opened provider.Info
-	err := goav.From(goavtest.Audio(48000, 1, []int16{11, 12, 13, 14})).
+	err := goavtest.Runtime().Run(ctx, goavtest.Audio(48000, 1, []int16{11, 12, 13, 14}).
 		Audio().
 		Encode(codec.Opus()).
-		To(memoryWriter("mem://voice.ogg", dest, &opened)).
-		UseRuntime(goavtest.Runtime()).
-		Run(ctx)
+		To(memoryWriter("mem://voice.ogg", dest, &opened)))
 	return dest, opened, err
 }
 
 func runBrokenDestination(ctx context.Context) error {
-	return goav.From(goavtest.Audio(48000, 1, []int16{11, 12})).
+	return goavtest.Runtime().Run(ctx, goavtest.Audio(48000, 1, []int16{11, 12}).
 		Audio().
 		Encode(codec.Opus()).
-		To(goav.Writer("mem://broken.ogg", nil, goav.Format(av.FormatOgg))).
-		UseRuntime(goavtest.Runtime()).
-		Run(ctx)
+		To(goav.Writer("mem://broken.ogg", nil, goav.Format(av.FormatOgg))))
 }
 
 func memoryWriter(name string, dest *memoryDestination, opened *provider.Info) goav.Destination {

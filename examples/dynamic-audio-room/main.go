@@ -29,7 +29,7 @@ const (
 )
 
 type branchMutator interface {
-	LegacyAttach(context.Context, ...goav.BranchSpec) (goav.Attachment, error)
+	Attach(context.Context, ...goav.Output) (goav.Attachment, error)
 	Detach(context.Context, goav.Attachment, ...lifecycle.DetachOption) error
 }
 
@@ -134,15 +134,12 @@ func runRoomScript(ctx context.Context, script func(context.Context, *RoomPipeli
 	mixer := NewOutputMixer()
 	main := goav.Sink(component.SinkFunc("room-anchor", func(context.Context, component.Message) error { return nil }))
 
-	task, err := goav.From(input).
-		Audio().
-		To(main).
-		// Watch sheds an event when a buffer is full, so the data plane never
-		// blocks on an observer. The demo reports every lifecycle event, and
-		// room teardown publishes them in a burst, so it sizes the event
-		// buffers above that burst.
-		UseRuntime(goavtest.Runtime(runconfig.WithEventCapacity(256))).
-		BuildLive(ctx)
+	// Watch sheds an event when a buffer is full, so the data plane never
+	// blocks on an observer. The demo reports every lifecycle event, and
+	// room teardown publishes them in a burst, so it sizes the event
+	// buffers above that burst.
+	rt := goavtest.Runtime(runconfig.WithEventCapacity(256))
+	task, err := rt.Build(ctx, input.Audio().To(main))
 	if err != nil {
 		return DemoResult{}, err
 	}
@@ -151,18 +148,10 @@ func runRoomScript(ctx context.Context, script func(context.Context, *RoomPipeli
 		task:        task,
 		attachments: make(map[string]goav.Attachment),
 		attach: func(ctx context.Context, participant string) (goav.Attachment, error) {
-			stream := *room.participantStream(participant)
-			anchor := input.Track(stream)
-			return task.LegacyAttach(ctx,
-				goav.Branch("track-"+participant).
-					From(anchor).
-					Sync(roomSync).
-					Do(meterStage).
-					To(tracks.Sink()),
-				goav.Branch("mix-"+participant).
-					From(anchor).
-					Sync(roomSync).
-					To(mixer.Sink()),
+			track := task.Track(input, *room.participantStream(participant)).Sync(roomSync)
+			return task.Attach(ctx,
+				track.Do(meterStage).As("track-"+participant).To(tracks.Sink()),
+				track.As("mix-"+participant).To(mixer.Sink()),
 			)
 		},
 	}

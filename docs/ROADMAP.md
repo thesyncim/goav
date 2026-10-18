@@ -20,30 +20,30 @@ goav has one user-facing model, and it must hold for initial builds, runtime
 attach, diagnostics, control, and examples:
 
 ```text
-From(inputs...) -> stream selection -> operations -> taps -> branches -> destinations -> task
+input.Video/Audio/Stream() -> operations -> taps -> forks -> .To(destinations) -> rt.Run / rt.Build
 ```
 
 Normal users should not need graph handles, string routing, or a separate
 workflow API for recording, transcoding, preview, diagnostics, or late
-attachment. Internally every recipe lowers the same way —
+attachment. Internally every recipe lowers the same way — Stream values ->
 `BranchSpec -> operationSpec list -> WorkPlan / WorkPatch -> executable task`
-— and each fluent operation appends exactly one internal operation record
-(`Decode` → OpDecode, `Copy` → OpCopy, `Shape`/`Auto`/`Require`/`Prefer` →
+— and each operation appends exactly one internal operation record
+(`Decode` → OpDecode, a stream left undecoded → OpCopy, `Shape`/`Auto`/`Require`/`Prefer` →
 shape, `Resize`/`Resample` → transform, `Do` → stage, `Encode` → encode,
 `Tap` → tap).
 
-- A direct stream is an implicit `Branch("main")`.
-- A branch is an ordered operation list plus destinations, source/tap anchor,
-  media kind, buffer policy, and detach policy.
-- A flow is reusable operations; it owns no source, destination, runtime state,
-  or lifecycle.
+- A stream that never forks lowers like a single fork (internally `main`).
+- A fork is an ordered operation list plus destinations, source/tap anchor,
+  media kind, buffer policy, and detach policy; reusing a Stream value makes one.
+- A reusable operation sequence is a `func(goav.Stream) goav.Stream`; it owns no
+  source, destination, runtime state, or lifecycle.
 - A destination handle is its identity: reusing one value from several
-  branches feeds one mux or sink; same-name copies are rejected.
-- Shape validation is central. Inputs, operations, taps, flows, branches, and
+  Outputs feeds one mux or sink; same-name copies are rejected.
+- Shape validation is central. Inputs, operations, taps, forks, and
   destinations all participate in the same compatibility check.
 - Build and Attach share the same lowering model: `WorkPlan` for a full task,
   `WorkPatch` for a runtime branch update.
-- Runtime observation is composition: `Branch + Do + Sink`, plus
+- Runtime observation is composition: `task.Tap(name).Do(...).To(goav.Sink(...))`, plus
   `Watch(...).Events()` subscriptions, `Snapshot`, `Stats`, `Explain`, and
   graph rendering.
 - Runtime controls lower into `task.Control`, `task.Attach`,
@@ -58,7 +58,7 @@ promise.
 The working rule: new functionality belongs in the grammar only when it can
 answer, without special cases — what operation record it appends; what shape
 facts it consumes and produces; how it appears in `Explain`, `Describe`, and
-`Snapshot`; how the same branch attaches at runtime; how it fails before
+`Snapshot`; how the same operations attach at runtime; how it fails before
 resources open; and how a test source or external adapter exercises it end to
 end. If those answers require a separate workflow path, keep the feature out
 of the front-door API until the shared planner can express it.
@@ -71,7 +71,7 @@ reviewing whether a new feature strengthens the grammar or bypasses it.
 
 | Area | Current evidence |
 | --- | --- |
-| Grammar | #1 README and docs guards keep the adoption vocabulary on Input, Stream, Branch, Destination, and Task; deeper docs own Tap and Flow. #2 direct chains lower like `Branch("main")`. #3 flows expose no destinations. #4 destination sharing is explicit: one reused handle feeds one mux; same-name copies are rejected. |
+| Grammar | #1 README and docs guards keep the adoption vocabulary on Input, Stream, Output, Destination, and Task; deeper docs own Tap and forks. #2 unforked streams lower like a single `main` branch. #3 reusable operation lists expose no destinations. #4 destination sharing is explicit: one reused handle feeds one mux; same-name copies are rejected. |
 | Planner | #5 Build and Attach share canonical operation lowering. #6 Attach emits `WorkPatch` downstream of taps. #7 Explain reads from `WorkPlan`. #8 Snapshot reflects plan plus patches. #9 legacy workflow packages are gone. #10 workflow-kind dispatch is gone from normal recipes. |
 | Shape | #11 Resize requires video frames. #12 Resample requires audio frames. #13 frames cannot go to byte destinations without Encode. #14 packet Copy to File succeeds. #15 decoded frames can end in Sink. #16 errors include operation, actual/expected shape, and fix. #17 conversions are inserted only under an explicit policy. |
 | Branches | #18 branches after Decode share one decoder. #19 dropping preview branches do not stall archive branches. #20 Blocking backpressures. #21 branch drop counters are visible. #22 mutable branch output cannot corrupt siblings. |
@@ -86,18 +86,18 @@ reviewing whether a new feature strengthens the grammar or bypasses it.
 The shortest version: recipes are the product surface; plans, graphs, and
 runtimes are implementation layers. The declarative grammar is the only normal
 composer:
-`input -> stream -> operations -> tap -> branch -> destination` lowers into
+`input -> stream -> operations -> tap -> fork -> .To(destination)` lowers into
 `WorkPlan -> pipeline.Graph -> Task`.
 
 Live mutation follows the same promise: runtime attachment is a patch of the
-same plan model. `task.Attach` compiles the same branch grammar into
+same plan model. `task.Attach` compiles the same stream operations into
 `WorkPatch`, validates before graph mutation, and rolls back fully on failure
 (`TestTaskAttachRuntimeBranchGroupRollsBackOnLaterFailure`).
 
 The destination model is also settled: `Target` collapsed into `Destination`,
 and `Write`, `URI`, `Writer`, `Sink`, and `Custom` return stable goav-owned
 destination handles. The handle is the output's identity: reusing one value
-from several chains or branches feeds one mux or sink, and separately
+from several Outputs feeds one mux or sink, and separately
 constructed same-name handles are refused, so sharing stays explicit
 (`TestSameHandleSharesOneMux`, `TestWithKeepsHandleIdentity`,
 `TestDistinctHandlesWithOneNameAreRefused`).
@@ -119,16 +119,16 @@ requires a doc comment on every public package, and the doc-citation pins
 (`docs_citation_contract_test.go`) keep the governance docs from citing
 enforcement that no longer exists. The inventory:
 
-- **Tier A inventory: the grammar and task capabilities.** `From`/stream
-  selection/operations
-  (`Decode`/`Copy`/`Resize`/`Resample`/`Do`/`Encode`)/`Shape`/`Auto`/
-  `Require`/`Prefer`/`Tap`/`Branches`/`To`/`OnStream`; `Mix`/`Composite`/
-  `Select`; `Flow`; `Task` lifecycle (`Run`/`Close`) plus structural
+- **Tier A inventory: the grammar and task capabilities.** Input stream
+  selection (`Video`/`Audio`/`Stream`/`OnStream`, `input.To`) and `Stream`
+  operations (`Decode`/`Resize`/`Resample`/`Do`/`Encode`/`Shape`/`Auto`/
+  `Require`/`Prefer`/`Tap`/`Buffer`/`As`/`To`); `Mix`/`Composite`/
+  `Select`/`At`; `Task` lifecycle (`Run`/`Close`) plus structural
   built-task `CloseContext(ctx)`; opt-in task capability interfaces for
   `Explain`, inspection (`Describe`/`Taps`/`Snapshot`/`Stats`), mutation
   (`Attach`/`Detach` with `DrainBranch`/`AbortBranch`, `Rebranch`), controls
   (`Control`), and observation (`Watch`; unfiltered `Watch()` observes every
-  task event); `New`/`UseRuntime` and the `bundle` runtime helpers; structured
+  task event); `New`, `Runtime.Run`/`Build`/`Describe`/`Explain`, and the `bundle` runtime helpers; structured
   `BuildError` with stable families, detailed codes, `Detail(key)`,
   `DetailLines()`, and `FixLines()`; the `plan`, `snapshot`, `lifecycle`,
   `shape`, `flow`, and `av` vocabulary packages. Runtime

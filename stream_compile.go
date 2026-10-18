@@ -8,6 +8,7 @@ import (
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/errcode"
+	"github.com/thesyncim/goav/lifecycle"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/plan"
 	"github.com/thesyncim/goav/shape"
@@ -101,19 +102,46 @@ func streamNodes(s Stream) ([]*streamNode, error) {
 	return nodes, nil
 }
 
+// compileRemuxOutputs copies every stream of each input.To Output. Several
+// inputs copy together when they share their destinations; one input may
+// route to several Outputs.
 func compileRemuxOutputs(remux []Output, paths []streamPath) (*Job, error) {
-	input := remux[0].remux
-	var dests []Destination
-	for i := range remux {
-		if remux[i].remux.id != input.id {
-			return nil, streamInvalidError("", "copy one input per run: input.To(destination) copies every stream of that input")
-		}
-		dests = append(dests, remux[i].dests...)
-	}
 	if len(paths) != 0 {
 		return nil, streamInvalidError("", "input.To(...) copies every stream; route single streams with input.Video().To(...) instead")
 	}
-	return From(*input).Copy().To(dests...), nil
+	var inputs []InputSpec
+	seen := map[*inputIdentity]bool{}
+	var dests []Destination
+	for i := range remux {
+		if !seen[remux[i].remux.id] {
+			seen[remux[i].remux.id] = true
+			inputs = append(inputs, *remux[i].remux)
+		}
+		if len(inputs) == 1 {
+			dests = append(dests, remux[i].dests...)
+		}
+	}
+	if len(inputs) > 1 {
+		dests = remux[0].dests
+		for i := range remux {
+			if !sameDestinations(remux[i].dests, dests) {
+				return nil, streamInvalidError("", "inputs copied in one run share their destinations: a.To(out), b.To(out); route single streams with input.Video().To(...) otherwise")
+			}
+		}
+	}
+	return From(inputs...).Copy().To(dests...), nil
+}
+
+func sameDestinations(a, b []Destination) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i].spec.id != b[i].spec.id {
+			return false
+		}
+	}
+	return true
 }
 
 // leafGroup is one distinct Stream routed by one or more Outputs.
@@ -176,7 +204,7 @@ func compileInputOutputs(paths []streamPath) (*Job, error) {
 		byRoot[root] = append(byRoot[root], path)
 	}
 	job := From(inputs...)
-	names := streamBranchNames{}
+	names := newStreamBranchNames()
 	for _, root := range roots {
 		if root.rule != nil {
 			job.OnStream(*root.rule, streamBranchSpecs(byRoot[root], inputStartsFrameDomain(root.input), names, nil)...)
@@ -197,7 +225,9 @@ func compileInputOutputs(paths []streamPath) (*Job, error) {
 		}
 		frames := inputStartsFrameDomain(root.input)
 		leaves := groupLeaves(byRoot[root])
-		if len(leaves) == 1 && !pathHasOp(leaves[0].nodes[1:], streamOpBuffer) {
+		// A named stream runs as a fork so its name reaches the nodes and the
+		// stream id controls address.
+		if len(leaves) == 1 && !pathHasOp(leaves[0].nodes[1:], streamOpBuffer) && !pathHasOp(leaves[0].nodes[1:], streamOpName) {
 			ops := leaves[0].nodes[1:]
 			if !frames && !pathHasOp(ops, streamOpDecode) {
 				chain.Copy()
@@ -234,7 +264,7 @@ func compileInputOutputs(paths []streamPath) (*Job, error) {
 		}
 		chain.Branches(branches...)
 	}
-	return job, nil
+	return job, names.err
 }
 
 func inputStartsFrameDomain(input InputSpec) bool {
@@ -332,16 +362,31 @@ func streamTapRef(name string, frames bool) tapRef {
 }
 
 // streamBranchNames names the forks of a recipe: a fork is named by its last
-// As(...), else by its first destination without the extension, kept
-// unique.
-type streamBranchNames map[string]int
+// As(...), else by its first destination without the extension. A derived
+// name is kept unique with a suffix; an As name is an address live controls
+// use, so naming two forks alike is refused.
+type streamBranchNames struct {
+	counts   map[string]int
+	explicit map[string]bool
+	err      error
+}
 
-func (n streamBranchNames) next(leaf leafGroup) string {
+func newStreamBranchNames() *streamBranchNames {
+	return &streamBranchNames{counts: map[string]int{}, explicit: map[string]bool{}}
+}
+
+func (n *streamBranchNames) next(leaf leafGroup) string {
 	name := ""
 	for i := len(leaf.nodes) - 1; i >= 0 && name == ""; i-- {
 		if leaf.nodes[i].op.kind == streamOpName {
 			name = leaf.nodes[i].op.name
 		}
+	}
+	if name != "" {
+		if n.explicit[name] && n.err == nil {
+			n.err = streamNameDuplicateError(name)
+		}
+		n.explicit[name] = true
 	}
 	if name == "" && len(leaf.dests) != 0 {
 		label := leaf.dests[0].spec.label("")
@@ -350,11 +395,27 @@ func (n streamBranchNames) next(leaf leafGroup) string {
 	if name == "" {
 		name = "branch"
 	}
-	n[name]++
-	if n[name] > 1 {
-		name = fmt.Sprintf("%s-%d", name, n[name])
+	n.counts[name]++
+	if n.counts[name] > 1 && !n.explicit[name] {
+		name = fmt.Sprintf("%s-%d", name, n.counts[name])
 	}
 	return name
+}
+
+func streamNameDuplicateError(name string) error {
+	return &BuildError{
+		Phase:     phaseBuild,
+		Family:    errcode.FamilyForCode(streamInvalidCode),
+		Code:      streamInvalidCode,
+		Operation: "build recipe",
+		Node:      name,
+		Reason:    fmt.Sprintf("two forks are named %q", name),
+		fixes: buildErrorFixes([]string{
+			"give each fork its own name: .As(\"hd\") and .As(\"sd\")",
+			"route one fork to several destinations with .To(a, b) instead of naming two forks alike",
+		}),
+		cause: errUnsupportedBuild,
+	}
 }
 
 func compileJoinOutputs(root *streamRoot, paths []streamPath) (*Job, error) {
@@ -368,20 +429,26 @@ func compileJoinOutputs(root *streamRoot, paths []streamPath) (*Job, error) {
 		shared = commonPrefix(leaves)
 	}
 	trunk := leaves[0].nodes[1:shared]
-	if len(leaves) == 1 && joinStreamTakes(trunk) {
+	// A Select forwards its active arm to a sink as-is; anything else it feeds
+	// runs in a planned branch.
+	selectIntoMux := root.join.kind == joinSelect && len(leaves) == 1 && !allSinks(leaves[0].dests)
+	if len(leaves) == 1 && joinStreamTakes(trunk) && !selectIntoMux {
 		applyJoinOps(join, trunk)
 		return join.To(leaves[0].dests...), nil
 	}
-	if !joinStreamTakes(trunk) {
+	if !joinStreamTakes(trunk) || selectIntoMux {
 		shared, trunk = 1, nil
 	}
 	applyJoinOps(join, trunk)
-	names := streamBranchNames{}
+	names := newStreamBranchNames()
 	branches := make([]BranchSpec, 0, len(leaves))
 	for _, leaf := range leaves {
 		branch := Branch(names.next(leaf))
 		applyBranchOps(branch, leaf.nodes[shared:], true)
 		branches = append(branches, branch.To(leaf.dests...))
+	}
+	if names.err != nil {
+		return nil, names.err
 	}
 	return join.Branches(branches...), nil
 }
@@ -617,7 +684,7 @@ func workLeaf(nodes []*streamNode) *streamNode {
 // streamBranchSpecs lowers the Outputs of a stream that starts at a branch
 // anchor (a discovered stream, a live tap) into one branch per distinct work
 // leaf. A packet branch that never decodes copies.
-func streamBranchSpecs(paths []streamPath, frames bool, names streamBranchNames, from branchSource) []BranchSpec {
+func streamBranchSpecs(paths []streamPath, frames bool, names *streamBranchNames, from branchSource) []BranchSpec {
 	leaves := groupLeaves(paths)
 	branches := make([]BranchSpec, 0, len(leaves))
 	for _, leaf := range leaves {
@@ -647,7 +714,25 @@ func (t *task) Track(input InputSpec, stream av.Stream) Stream {
 
 // Attach adds Outputs fed from the task's taps and tracks to the running task.
 func (t *task) Attach(ctx context.Context, outs ...Output) (Attachment, error) {
-	names := streamBranchNames{}
+	branches, err := t.outputBranchSpecs(outs)
+	if err != nil {
+		return nil, err
+	}
+	return t.LegacyAttach(ctx, branches...)
+}
+
+// outputBranchSpecs lowers Outputs rooted at the task's taps and tracks onto
+// runtime branches. A tap an earlier Output of the group declares is known by
+// the domain at its position.
+func (t *task) outputBranchSpecs(outs []Output) ([]BranchSpec, error) {
+	if len(outs) == 0 {
+		return nil, streamInvalidError("", "attach Outputs built from task.Tap(name) or task.Track(input, stream), each routed with .To(destination)")
+	}
+	taps := map[string]bool{}
+	for _, tap := range t.Taps() {
+		taps[tap.Name] = tap.Domain == shape.DomainFrame
+	}
+	names := newStreamBranchNames()
 	var branches []BranchSpec
 	for i := range outs {
 		if outs[i].remux != nil || len(outs[i].dests) == 0 {
@@ -659,20 +744,75 @@ func (t *task) Attach(ctx context.Context, outs ...Output) (Attachment, error) {
 		}
 		root := nodes[0].root
 		path := []streamPath{{nodes: nodes, dests: outs[i].dests}}
+		var frames bool
+		var from branchSource
 		switch {
 		case root.tap != "":
-			frames := false
-			for _, tap := range t.Taps() {
-				if tap.Name == root.tap {
-					frames = tap.Domain == shape.DomainFrame
-				}
-			}
-			branches = append(branches, streamBranchSpecs(path, frames, names, streamTapRef(root.tap, frames))...)
+			frames = taps[root.tap]
+			from = streamTapRef(root.tap, frames)
 		case root.track != nil:
-			branches = append(branches, streamBranchSpecs(path, false, names, root.input.Track(*root.track))...)
+			frames = inputStartsFrameDomain(root.input)
+			from = root.input.Track(*root.track)
 		default:
 			return nil, streamInvalidError("", "a running task attaches streams from its taps and tracks: task.Tap(name), task.Track(input, stream)")
 		}
+		recordStreamTaps(nodes[1:], frames, taps)
+		branches = append(branches, streamBranchSpecs(path, frames, names, from)...)
 	}
-	return t.LegacyAttach(ctx, branches...)
+	if names.err != nil {
+		return nil, names.err
+	}
+	return branches, nil
+}
+
+// recordStreamTaps records the domain of each tap nodes declare.
+func recordStreamTaps(nodes []*streamNode, frames bool, taps map[string]bool) {
+	for _, n := range nodes {
+		switch n.op.kind {
+		case streamOpDecode:
+			frames = true
+		case streamOpEncode:
+			frames = false
+		case streamOpTap:
+			taps[n.op.name] = frames
+		}
+	}
+}
+
+// rebranchArgs replaces each Output among args with the branches it attaches
+// as, so Rebranch takes the Outputs Attach does.
+func (t *task) rebranchArgs(args []lifecycle.RebranchArg) ([]lifecycle.RebranchArg, error) {
+	var outs []Output
+	mapped := make([]lifecycle.RebranchArg, 0, len(args))
+	for _, arg := range args {
+		if out, ok := arg.(Output); ok {
+			outs = append(outs, out)
+			continue
+		}
+		mapped = append(mapped, arg)
+	}
+	if len(outs) == 0 {
+		return args, nil
+	}
+	branches, err := t.outputBranchSpecs(outs)
+	if err != nil {
+		return nil, err
+	}
+	for _, branch := range branches {
+		mapped = append(mapped, branch)
+	}
+	return mapped, nil
+}
+
+// RebranchArg lets an Output ride the lifecycle.RebranchArg list
+// Attachment.Rebranch accepts, as a replacement.
+func (Output) RebranchArg() {}
+
+func allSinks(dests []Destination) bool {
+	for i := range dests {
+		if dests[i].spec.sink == nil {
+			return false
+		}
+	}
+	return true
 }

@@ -47,15 +47,15 @@ func TestRecipeRTPAV1DecodeSink(t *testing.T) {
 	}
 	sink := &runtimeTestSink{name: "frames"}
 
-	job := goav.From(goav.Input(rtpav.Receive(receiver,
+	rt := mustGoAVRuntime(runconfig.WithCodecAdapter(goav1adapter.Register))
+	job := goav.Input(rtpav.Receive(receiver,
 		rtpav.WithName("av1-rtp"),
 		rtpav.WithDepacketizers(rtpav.NewAV1Depacketizer(stream, rtpav.WithMaxVideoFrameSize(128))),
-	))).
-		UseRuntime(mustGoAVRuntime(runconfig.WithCodecAdapter(goav1adapter.Register))).
+	)).
 		Video().
 		Decode().
 		To(goav.Sink(sink))
-	planned, err := job.Describe()
+	planned, err := rt.Describe(job)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -64,7 +64,7 @@ func TestRecipeRTPAV1DecodeSink(t *testing.T) {
 		t.Fatalf("planned:\n%s", specText(planned))
 	}
 
-	task, err := job.BuildLive(ctx)
+	task, err := rt.Build(ctx, job)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -131,15 +131,13 @@ func testRecipeRTPAV1DecodeSink420(t *testing.T, pixelFormat string) {
 	}
 	sink := &runtimeAV1SinkDestination{name: "frames"}
 
-	task, err := goav.From(goav.Input(rtpav.Receive(receiver,
+	task, err := mustGoAVRuntime(runconfig.WithCodecAdapter(goav1adapter.Register)).Build(ctx, goav.Input(rtpav.Receive(receiver,
 		rtpav.WithName("av1-rtp"),
 		rtpav.WithDepacketizers(rtpav.NewAV1Depacketizer(stream, rtpav.WithMaxVideoFrameSize(128))),
-	))).
-		UseRuntime(mustGoAVRuntime(runconfig.WithCodecAdapter(goav1adapter.Register))).
+	)).
 		Video().
 		Decode().
-		To(goav.Sink(sink)).
-		BuildLive(ctx)
+		To(goav.Sink(sink)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -199,16 +197,14 @@ func TestRecipeRTPAV1CodecChangedDropsUntilSync(t *testing.T) {
 	})
 	sink := &runtimeTestSink{name: "frames"}
 
-	task, err := goav.From(goav.Input(rtpav.Receive(receiver,
+	task, err := mustGoAVRuntime(runconfig.WithCodecAdapter(goav1adapter.Register)).Build(ctx, goav.Input(rtpav.Receive(receiver,
 		rtpav.WithName("av1-rtp"),
 		rtpav.WithDepacketizers(rtpav.NewAV1Depacketizer(initial, rtpav.WithMaxVideoFrameSize(128))),
 		rtpav.WithBufferLimits(rtpav.BufferLimits{MaxPackets: 1, MaxEvents: 2}),
-	))).
-		UseRuntime(mustGoAVRuntime(runconfig.WithCodecAdapter(goav1adapter.Register))).
+	)).
 		Video().
 		Decode().
-		To(goav.Sink(sink)).
-		BuildLive(ctx)
+		To(goav.Sink(sink)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -289,16 +285,14 @@ func testRecipeRTPAV1CodecChangedReplacementStream(t *testing.T, oldIDTarget boo
 	})
 	sink := &runtimeTestSink{name: "frames"}
 
-	task, err := goav.From(goav.Input(rtpav.Receive(receiver,
+	task, err := mustGoAVRuntime(runconfig.WithCodecAdapter(goav1adapter.Register)).Build(ctx, goav.Input(rtpav.Receive(receiver,
 		rtpav.WithName("av1-rtp"),
 		rtpav.WithDepacketizers(rtpav.NewAV1Depacketizer(initial, rtpav.WithMaxVideoFrameSize(128))),
 		rtpav.WithBufferLimits(rtpav.BufferLimits{MaxPackets: 1, MaxEvents: 2}),
-	))).
-		UseRuntime(mustGoAVRuntime(runconfig.WithCodecAdapter(goav1adapter.Register))).
+	)).
 		Video().
 		Decode().
-		To(goav.Sink(sink)).
-		BuildLive(ctx)
+		To(goav.Sink(sink)))
 	if err != nil {
 		t.Fatal(err)
 	}

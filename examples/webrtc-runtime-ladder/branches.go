@@ -19,7 +19,7 @@ import (
 var branchSeq atomic.Uint64
 
 type branchMutator interface {
-	LegacyAttach(context.Context, ...goav.BranchSpec) (goav.Attachment, error)
+	Attach(context.Context, ...goav.Output) (goav.Attachment, error)
 	Detach(context.Context, goav.Attachment, ...lifecycle.DetachOption) error
 }
 
@@ -141,19 +141,17 @@ func (s *session) attachBranchLocked(ctx context.Context, r *branch) error {
 			s.recordLocked("debug", "branch", "video branch waiting for input track", "video", r.Spec.ID, branchMeta(r.Spec))
 			return nil
 		}
-		branch := goav.Branch(r.Spec.ID).
-			From(goav.FrameTap(videoTapName)).
-			Resize(r.Spec.Width, r.Spec.Height)
-		var spec goav.BranchSpec
+		scaled := s.videoTask.Tap(videoTapName).Resize(r.Spec.Width, r.Spec.Height)
+		var encoded goav.Stream
 		switch r.Spec.Codec {
 		case "vp8":
-			spec = branch.Encode(codec.VP8(codec.Bitrate(r.Spec.Bitrate))).To(goav.Sink(r.Sink))
+			encoded = scaled.Encode(codec.VP8(codec.Bitrate(r.Spec.Bitrate)))
 		case "vp9":
-			spec = branch.Encode(codec.VP9(codec.Bitrate(r.Spec.Bitrate))).To(goav.Sink(r.Sink))
+			encoded = scaled.Encode(codec.VP9(codec.Bitrate(r.Spec.Bitrate)))
 		default:
 			return fmt.Errorf("unsupported video encoder %q", r.Spec.Codec)
 		}
-		attachment, err := s.videoTask.LegacyAttach(ctx, spec)
+		attachment, err := s.videoTask.Attach(ctx, encoded.As(r.Spec.ID).To(goav.Sink(r.Sink)))
 		if err != nil {
 			return err
 		}
@@ -163,12 +161,12 @@ func (s *session) attachBranchLocked(ctx context.Context, r *branch) error {
 			s.recordLocked("debug", "branch", "audio branch waiting for input track", "audio", r.Spec.ID, branchMeta(r.Spec))
 			return nil
 		}
-		spec := goav.Branch(r.Spec.ID).
-			From(goav.FrameTap(audioTapName)).
+		out := s.audioTask.Tap(audioTapName).
 			Resample(48_000, codec.Stereo).
 			Encode(codec.Opus(codec.Bitrate(r.Spec.Bitrate), codec.Channels(codec.Stereo))).
+			As(r.Spec.ID).
 			To(goav.Sink(r.Sink))
-		attachment, err := s.audioTask.LegacyAttach(ctx, spec)
+		attachment, err := s.audioTask.Attach(ctx, out)
 		if err != nil {
 			return err
 		}

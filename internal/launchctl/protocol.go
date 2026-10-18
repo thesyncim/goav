@@ -119,7 +119,7 @@ func attachRequest(ctx context.Context, task goav.LiveTask, request Request, reg
 	if err != nil {
 		return ControlResponse{}, nil, err
 	}
-	attachment, err := task.LegacyAttach(ctx, spec)
+	attachment, err := task.Attach(ctx, spec)
 	if err != nil {
 		return ControlResponse{}, nil, structuredError("attach", err)
 	}
@@ -528,7 +528,7 @@ func unsupportedGraphMutation(operation string) error {
 			"",
 			"rebranch by name and branch-pipeline string parsing require a control server attachment table",
 			nil,
-			[]string{"use typed attachment.Rebranch(ctx, goav.Branch(...), lifecycle.SwitchAt(...))", "add a launch pipeline parser and attachment handle table before enabling `goav ctl rebranch`"},
+			[]string{"use typed attachment.Rebranch(ctx, task.Tap(name)...To(destination), lifecycle.SwitchAt(...))", "add a launch pipeline parser and attachment handle table before enabling `goav ctl rebranch`"},
 			nil,
 		)
 	default:

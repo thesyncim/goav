@@ -35,12 +35,10 @@ func runCustomCodec(ctx context.Context) ([][]int16, error) {
 	}
 
 	decoded := goavtest.NewCollector()
-	if err := goav.From(packetSource("encoded", packets)).
+	if err := rt.Run(ctx, packetSource("encoded", packets).
 		Audio().
 		Decode().
-		To(decoded.Sink()).
-		UseRuntime(rt).
-		Run(ctx); err != nil {
+		To(decoded.Sink())); err != nil {
 		return nil, err
 	}
 	return decoded.S16(), nil
@@ -48,12 +46,10 @@ func runCustomCodec(ctx context.Context) ([][]int16, error) {
 
 func encodeCustomPCM(ctx context.Context, rt *goav.Runtime) ([]*av.Packet, error) {
 	encoded := goavtest.NewCollector()
-	if err := goav.From(goavtest.Audio(8000, 1, []int16{5, 6})).
+	if err := rt.Run(ctx, goavtest.Audio(8000, 1, []int16{5, 6}).
 		Audio().
 		Encode(codec.Codec(examplePCM, av.MediaAudio, codec.SampleRate(8000), codec.Channels(codec.Mono))).
-		To(encoded.Sink()).
-		UseRuntime(rt).
-		Run(ctx); err != nil {
+		To(encoded.Sink())); err != nil {
 		return nil, err
 	}
 	return encoded.Packets(), nil

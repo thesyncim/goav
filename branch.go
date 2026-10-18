@@ -343,7 +343,9 @@ func (b *BranchBuilder) Do(stages ...pipeline.Stage) *BranchBuilder {
 		return b
 	}
 	for i := range stages {
-		if codecIntentSet(chainEncodeSpec(b.spec.operations)) {
+		// After .Encode or .Copy the branch carries packets: a packet stage
+		// runs there, a frame stage cannot.
+		if codecIntentSet(chainEncodeSpec(b.spec.operations)) && stageRequiresFrameInput(stages[i]) {
 			b.setErr(chainStepAfterEncodeError("build branch", firstNonEmpty(b.spec.name, "branch"), "custom stage", chainEncodeSpec(b.spec.operations)))
 			return b
 		}
@@ -841,7 +843,7 @@ func validatePacketDomainPlannedBranch(stream streamIntent, spec branchDomainFac
 	}
 	for _, step := range branchSpecChainSteps(spec) {
 		switch {
-		case step.stage != nil:
+		case step.stage != nil && stageRequiresFrameInput(step.stage):
 			return chainFrameInputRequiredError("build branches", branchIntentName(stream), "custom stage")
 		case step.tap != "" && step.tapDomain == shape.DomainFrame:
 			return chainFrameInputRequiredError("build branches", branchIntentName(stream), "tap")

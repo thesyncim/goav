@@ -29,26 +29,23 @@ type sourceStats struct {
 func runCustomSource(ctx context.Context) ([][]int16, sourceStats, error) {
 	stats := &sourceStats{}
 	out := goavtest.NewCollector()
-	err := goav.From(pcmSource("app-mic", 48000, 1, stats,
+	err := goavtest.Runtime().Run(ctx, pcmSource("app-mic", 48000, 1, stats,
 		[]int16{10, 20},
 		[]int16{30, 40},
-	)).
+	).
 		Audio().
-		To(out.Sink()).
-		UseRuntime(goavtest.Runtime()).
-		Run(ctx)
+		To(out.Sink()))
 	return out.S16(), *stats, err
 }
 
 func buildBrokenCustomSource(ctx context.Context) error {
 	out := goavtest.NewCollector()
-	_, err := goav.From(goav.Source("broken",
+	_, err := goavtest.Runtime().Build(ctx, goav.Source("broken",
 		shape.Frame(av.MediaAudio, shape.Audio(48000, 1, av.SampleFormatS16)),
 		nil,
-	)).
+	).
 		Audio().
-		To(out.Sink()).
-		Build(ctx)
+		To(out.Sink()))
 	return err
 }
 

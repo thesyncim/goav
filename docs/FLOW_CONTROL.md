@@ -22,10 +22,10 @@ What holds today (all `-race` clean, with tests):
   itself without stalling siblings or the source; per-branch drop counters and
   reasons (`DropOldest`, `DropOverflow`, latency shedding) are reported through
   stats and snapshots.
-- A branch buffer holds wherever the branch is declared: recipe
-  `Branches(...)` as well as runtime `Attach`
-  (`TestBuildTimeBranchBufferIsHonored`). On an offline job a declared buffer
-  promotes the graph to buffered, so the branch runs on its own worker instead
+- A `.Buffer(...)` holds wherever the fork declares it: a recipe fork as well
+  as an Output added with runtime `Attach`
+  (`TestBuildTimeBranchBufferIsHonored`). On an offline run a declared buffer
+  promotes the graph to buffered, so the fork runs on its own worker instead
   of inside its upstream's call (`TestBranchBufferPromotesOfflineGraph`).
 - Encode ladders run their rungs in parallel by default: when one source fans
   out to two or more encoding branches, with only built-in operations and
@@ -35,13 +35,13 @@ What holds today (all `-race` clean, with tests):
   a `.Do` stage, or a shared output keeps the fanout serial unless a branch
   declares `.Buffer`
   (`TestEncodeLadderRunsRungsConcurrently`, `TestParallelLadderMatchesSerialRungs`).
-- Branch-local `flow.SyncPolicy` gates can align live audio/video branches without
+- Stream-local `flow.SyncPolicy` gates can align live audio/video streams without
   changing unsynced delivery. When `flow.SyncDropLate()` sheds a message, stats use
   the existing drop accounting with `pipeline.DropSync`.
 - Sink playout is opt-in deliver-when-due: `.Playout(flow.Playout(name))` holds
-  a chain's or branch's packets/frames until their media time (plus a
+  a stream's packets/frames until their media time (plus a
   `WithOffset` latency budget) is due on the task timeline, so real-time
-  destinations render on time, branches sharing one policy value align by PTS
+  destinations render on time, streams sharing one policy value align by PTS
   on the shared anchor, and pausing the timeline freezes delivery coherently
   (`TestPlayoutSinkDeliversWhenDue`, `TestPlayoutAlignsBranchesSharingPolicy`,
   `TestPlayoutSinkFreezesOnPause`). Hold-late is the default;
@@ -113,7 +113,7 @@ leaving.
 - `task.Detach(ctx, attachment, lifecycle.AbortBranch())` marks the branch output as
   abandoned. Use this after failed admission or diagnostic captures that should
   not commit.
-- `OnStream(match, Branch(...))` drains rule-created branches when a
+- Outputs from `input.OnStream(match)` drain their rule-created branches when a
   dynamically discovered stream disappears.
 
 ```go

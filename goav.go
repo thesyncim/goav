@@ -1,22 +1,21 @@
-// Package goav is a pure-Go realtime media grammar: describe media work once,
-// then compile it with an explicit runtime.
+// Package goav is a pure-Go realtime media grammar: describe media work as
+// values, then run it with an explicit runtime.
 //
-// The grammar is small. From(input) selects streams (.Audio(), .Video());
-// operations are methods on the chain (.Decode(), .Copy(), .Resize(),
-// .Encode(codec.VP9(...))); .To(destination) ends a chain at a destination
-// built by Write, URI, Writer, Custom, or Sink. Branches fan one stream
-// point out, Mix, Composite,
-// and Select converge N arms into one, Tap names attach points, Flow reuses
-// operation lists, and Build(ctx) returns a Task with only Run and Close.
-// BuildLive(ctx) opts into events, snapshots, runtime Attach/Detach, and live
-// controls.
+// The grammar is small. An input's Video, Audio, or Stream method selects a
+// Stream; operations are methods that return a new Stream (.Decode(),
+// .Resize(), .Encode(codec.VP9(...))), so a Stream used twice fans out and the
+// work before the fork runs once. Mix, Composite, Select, and Join converge
+// Streams into one, Tap names attach points, and .To(destinations...) routes a
+// Stream to destinations built by Write, URI, Writer, Custom, or Sink, making
+// an Output. A runtime runs Outputs together: rt.Run(ctx, outputs...), or
+// rt.Build for a LiveTask with events, snapshots, runtime Attach/Detach, and
+// live controls.
 //
 // New(opts...) builds a bare runtime and returns option/configuration errors.
 // Import github.com/thesyncim/goav/bundle when the application wants the
 // bundled pure-Go adapters. Build errors are structured: every refusal is a
-// *BuildError
-// carrying an errcode.Family, detailed errcode.Code, the failing operation,
-// and concrete fixes.
+// *BuildError carrying an errcode.Family, detailed errcode.Code, the failing
+// operation, and concrete fixes.
 package goav
 
 import (
@@ -34,8 +33,8 @@ import (
 // Runtime is an intentionally opaque composition root for applications
 // embedding goav. Build it with New, or import
 // github.com/thesyncim/goav/bundle for the bundled adapter set. Applications
-// pass Runtime handles back to recipe builders; construction and adapter
-// registration stay behind the runtime and bundle packages.
+// run Outputs on it (rt.Run, rt.Build); construction and adapter registration
+// stay behind the runtime and bundle packages.
 type Runtime = runtime
 
 // Task is the minimal runnable media composition accepted by code that only
@@ -49,9 +48,9 @@ type Task interface {
 	Close() error
 }
 
-// LiveTask is the full task capability set produced by the built-in runtime.
-// BuildLive returns it for APIs that need inspection, runtime mutation,
-// controls, or event watches; otherwise accept Task and build with Build.
+// LiveTask is the full task capability set produced by the built-in runtime:
+// Runtime.Build returns it for inspection, runtime mutation, controls, and
+// event watches. Code that only runs and closes a task can accept Task.
 type LiveTask interface {
 	Task
 	// Explain reports the planned workflow before any resource opens: inputs,

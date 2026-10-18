@@ -48,7 +48,7 @@ func encodeTestWebM(t *testing.T, frames int) []byte {
 		},
 	)
 	var out bytes.Buffer
-	if err := bundle.Run(context.Background(), goav.From(src).Video().Encode(codec.VP8()).To(goav.Write("in.webm", &out))); err != nil {
+	if err := bundle.Run(context.Background(), src.Video().Encode(codec.VP8()).To(goav.Write("in.webm", &out))); err != nil {
 		t.Fatalf("encode fixture: %v", err)
 	}
 	return out.Bytes()
@@ -68,7 +68,7 @@ func TestReadmeHeadlineRecipeRunsWithDefaults(t *testing.T) {
 
 	var out bytes.Buffer
 	start := time.Now()
-	err := bundle.Run(ctx, goav.From(goav.FileInput("in.webm", bytes.NewReader(in))).
+	err := bundle.Run(ctx, goav.FileInput("in.webm", bytes.NewReader(in)).
 		Video().
 		Decode().
 		Resize(32, 24).
@@ -108,7 +108,7 @@ func TestResizeFitKeepsAspectRatio(t *testing.T) {
 	defer cancel()
 	in := encodeTestWebM(t, 3)
 	var out bytes.Buffer
-	if err := bundle.Run(ctx, goav.From(goav.FileInput("in.webm", bytes.NewReader(in))).
+	if err := bundle.Run(ctx, goav.FileInput("in.webm", bytes.NewReader(in)).
 		Video().
 		Decode().
 		Resize(32, 32, filter.Fit).
@@ -137,9 +137,8 @@ func TestOneOutputHandleMuxesAudioAndVideo(t *testing.T) {
 	}
 	var file bytes.Buffer
 	out := goav.Write("out.mkv", &file)
-	if err := bundle.Run(ctx, goav.From(goav.FileInput("in.mp4", bytes.NewReader(data))).
-		Video().Copy().To(out).
-		Audio().Copy().To(out)); err != nil {
+	in := goav.FileInput("in.mp4", bytes.NewReader(data))
+	if err := bundle.Run(ctx, in.Video().To(out), in.Audio().To(out)); err != nil {
 		t.Fatalf("remux: %v", err)
 	}
 	demuxer, err := matroska.NewDemuxer(bytes.NewReader(file.Bytes()), matroska.DemuxerOptions{})

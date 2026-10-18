@@ -110,12 +110,12 @@ func TestOnStreamRTPLateStreamAttachesBranch(t *testing.T) {
 		return nil
 	}))
 
-	task, err := goav.From(
-		goav.Input(rtpav.Receive(receiver, rtpav.WithName("audio"), rtpav.WithCodec(codec.Opus()))),
-	).
-		OnStream(source.MatchMedia(av.MediaVideo), goav.Branch("cam-watch").Copy().To(monitor)).
-		Audio().Copy().To(goav.Sink(component.SinkFunc("main", func(context.Context, component.Message) error { return nil }))).
-		BuildLive(ctx)
+	in := goav.Input(rtpav.Receive(receiver, rtpav.WithName("audio"), rtpav.WithCodec(codec.Opus())))
+	task, err := mustGoAVRuntime().Build(ctx, in.OnStream(source.MatchMedia(av.MediaVideo)).
+		As("cam-watch").
+		To(monitor), in.
+		Audio().
+		To(goav.Sink(component.SinkFunc("main", func(context.Context, component.Message) error { return nil }))))
 	if err != nil {
 		t.Fatal(err)
 	}

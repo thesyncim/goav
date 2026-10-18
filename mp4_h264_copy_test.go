@@ -26,8 +26,8 @@ func TestMP4H264CopyToAnnexBIsDecodable(t *testing.T) {
 		t.Fatal(err)
 	}
 	var out bytes.Buffer
-	if err := bundle.Run(ctx, goav.From(goav.FileInput("in.mp4", bytes.NewReader(data))).
-		Video().Copy().
+	if err := bundle.Run(ctx, goav.FileInput("in.mp4", bytes.NewReader(data)).
+		Video().
 		To(goav.Write("out.h264", &out))); err != nil {
 		t.Fatalf("copy to annex b: %v", err)
 	}
@@ -61,8 +61,8 @@ func TestMP4H264CopyToMatroskaRoundTrips(t *testing.T) {
 		t.Fatal(err)
 	}
 	var out bytes.Buffer
-	if err := bundle.Run(ctx, goav.From(goav.FileInput("in.mp4", bytes.NewReader(data))).
-		Video().Copy().
+	if err := bundle.Run(ctx, goav.FileInput("in.mp4", bytes.NewReader(data)).
+		Video().
 		To(goav.Write("out.mkv", &out))); err != nil {
 		t.Fatalf("copy to matroska: %v", err)
 	}

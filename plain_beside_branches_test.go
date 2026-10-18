@@ -80,7 +80,7 @@ func TestPlainChainBesideJoinIsRefused(t *testing.T) {
 		goav.From(goavtest.Audio(48000, 1, []int16{3, 4})).Audio(),
 	).To(sink("mixed"))
 	job.And(goavtest.Video(64, 64, 3)).Video().To(sink("video"))
-	_, err := bundle.Describe(context.Background(), job)
+	_, err := job.UseRuntime(bundle.Default()).Describe()
 	var buildErr *goav.BuildError
 	if !errors.As(err, &buildErr) || string(buildErr.Code) != "stream_beside_join" {
 		t.Fatalf("Describe = %v, want a stream_beside_join refusal", err)
@@ -123,7 +123,7 @@ func TestRegionOutsideCompositeIsRefused(t *testing.T) {
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
-			_, err := bundle.Describe(context.Background(), tc.job)
+			_, err := tc.job.UseRuntime(bundle.Default()).Describe()
 			var buildErr *goav.BuildError
 			if !errors.As(err, &buildErr) || string(buildErr.Code) != tc.code {
 				t.Fatalf("Describe = %v, want a %s refusal", err, tc.code)

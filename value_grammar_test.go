@@ -13,6 +13,7 @@ import (
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/component"
+	"github.com/thesyncim/goav/container/webm"
 	"github.com/thesyncim/goav/goavtest"
 	"github.com/thesyncim/goav/pipeline"
 )
@@ -195,6 +196,7 @@ func TestValueGrammarRefusals(t *testing.T) {
 		"no destination":         {outs: []goav.Output{in.Video().To()}, code: "stream_invalid"},
 		"sync on a plain stream": {outs: []goav.Output{in.Video().SyncByPTS().To(sink)}, code: "stream_invalid"},
 		"join beside a stream":   {outs: []goav.Output{mix.To(sink), in.Video().To(sink)}, code: "stream_beside_join"},
+		"two forks named alike":  {outs: []goav.Output{in.Video().Encode(codec.VP8()).As("x").To(sink), in.Video().Encode(codec.VP9()).As("x").To(sink)}, code: "stream_invalid"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			_, err := offlineRuntime().Describe(tc.outs...)
@@ -247,5 +249,131 @@ func TestValueGrammarLadderWithSharedAudio(t *testing.T) {
 		if got := countNodesWithPrefix(spec, prefix); got != want {
 			t.Fatalf("%s nodes = %d in %v, want %d", prefix, got, names, want)
 		}
+	}
+}
+
+// TestValueGrammarFrameInputSharesWorkBeforeFork pins fanout on a
+// frame-domain input, which needs no decode: the resize before the fork runs
+// once and both renditions carry its output.
+func TestValueGrammarFrameInputSharesWorkBeforeFork(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	var a, b bytes.Buffer
+	scaled := goavtest.Video(64, 48, 2).Video().Resize(32, 24)
+	outs := []goav.Output{
+		scaled.Encode(codec.VP8()).As("a").To(goav.Write("a.webm", &a)),
+		scaled.Encode(codec.VP8()).As("b").To(goav.Write("b.webm", &b)),
+	}
+	rt := offlineRuntime()
+	spec, err := rt.Describe(outs...)
+	if err != nil {
+		t.Fatalf("describe: %v", err)
+	}
+	if got := countNodesWithPrefix(spec, "resize"); got != 1 {
+		t.Fatalf("resize nodes = %d in %v, want one shared resize", got, specNodeNames(spec))
+	}
+	if err := rt.Run(ctx, outs...); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	for name, out := range map[string]*bytes.Buffer{"a": &a, "b": &b} {
+		demuxer, err := webm.NewDemuxer(bytes.NewReader(out.Bytes()), webm.DemuxerOptions{})
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if tracks := demuxer.Tracks(); len(tracks) != 1 || tracks[0].Video.Width != 32 || tracks[0].Video.Height != 24 {
+			t.Fatalf("%s tracks = %+v, want one 32x24 track", name, tracks)
+		}
+	}
+}
+
+// TestValueGrammarCopiesShareAPacketStep pins a packet stage before a fork of
+// copies: it runs once, and both copies receive its output.
+func TestValueGrammarCopiesShareAPacketStep(t *testing.T) {
+	var seen int
+	stage := component.PacketFunc("bsf", func(_ context.Context, p *av.Packet, emit component.Emit) error {
+		seen++
+		return emit.Packet(p)
+	})
+	collect := func(name string, n *int) goav.Destination {
+		return goav.Sink(component.SinkFunc(name, func(_ context.Context, msg component.Message) error {
+			if msg.Packet != nil {
+				*n++
+			}
+			return nil
+		}))
+	}
+	var left, right int
+	filtered := goavtest.Packets(av.CodecOpus, av.Packet{Payload: av.Buffer{Bytes: []byte{0xfc}}}, av.Packet{Payload: av.Buffer{Bytes: []byte{0xfc}}}).Audio().Do(stage)
+	outs := []goav.Output{filtered.As("left").To(collect("left", &left)), filtered.As("right").To(collect("right", &right))}
+	rt := offlineRuntime()
+	spec, err := rt.Describe(outs...)
+	if err != nil {
+		t.Fatalf("describe: %v", err)
+	}
+	if got := countNodesWithPrefix(spec, "bsf"); got != 1 {
+		t.Fatalf("bsf nodes = %d in %v, want one shared packet step", got, specNodeNames(spec))
+	}
+	if err := rt.Run(context.Background(), outs...); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if seen != 2 || left != 2 || right != 2 {
+		t.Fatalf("stage saw %d, left %d, right %d; want 2 each", seen, left, right)
+	}
+}
+
+// TestValueGrammarSelectEncodesIntoAFile pins Select feeding a muxed
+// destination: the active arm is encoded and written like any stream.
+func TestValueGrammarSelectEncodesIntoAFile(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	var out bytes.Buffer
+	selected := goav.Select(
+		goavtest.Audio(48_000, 1, make([]int16, 960), make([]int16, 960)).Audio(),
+		goavtest.Audio(48_000, 1, make([]int16, 960)).Audio(),
+	)
+	if err := offlineRuntime().Run(ctx, selected.Encode(codec.Opus()).To(goav.Write("live.webm", &out))); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if got := matroskaTracks(t, out.Bytes()); got != 1 {
+		t.Fatalf("live.webm has %d tracks, want 1", got)
+	}
+}
+
+// TestValueGrammarCopiesInputsTogether pins input.To across inputs: two
+// inputs routed to one Destination value copy into it together.
+func TestValueGrammarCopiesInputsTogether(t *testing.T) {
+	var packets int
+	out := goav.Sink(component.SinkFunc("packets", func(_ context.Context, msg component.Message) error {
+		if msg.Packet != nil {
+			packets++
+		}
+		return nil
+	}))
+	packet := av.Packet{Payload: av.Buffer{Bytes: []byte{0xfc}}}
+	a := goavtest.Packets(av.CodecOpus, packet, packet)
+	b := goavtest.Packets(av.CodecOpus, packet)
+	if err := offlineRuntime().Run(context.Background(), a.To(out), b.To(out)); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if packets != 3 {
+		t.Fatalf("sink received %d packets, want every packet of both inputs", packets)
+	}
+	_, err := offlineRuntime().Describe(a.To(out), b.To(goav.Write("other.mkv", new(bytes.Buffer))))
+	var buildErr *goav.BuildError
+	if !errors.As(err, &buildErr) || buildErr.Code != "stream_invalid" {
+		t.Fatalf("copies of two inputs to different files: err = %v, want stream_invalid", err)
+	}
+}
+
+// TestValueGrammarNamesASingleStream pins As on a stream that does not fork:
+// the name reaches its nodes and the encoded stream id controls address.
+func TestValueGrammarNamesASingleStream(t *testing.T) {
+	in := goavtest.Video(64, 48, 1)
+	spec, err := offlineRuntime().Describe(in.Video().Encode(codec.VP8()).As("hd").To(goav.Write("hd.webm", new(bytes.Buffer))))
+	if err != nil {
+		t.Fatalf("describe: %v", err)
+	}
+	if got := countNodesWithPrefix(spec, "encode-hd"); got != 1 {
+		t.Fatalf("nodes = %v, want encode-hd", specNodeNames(spec))
 	}
 }

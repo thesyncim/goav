@@ -49,12 +49,10 @@ func (u *memoryUpload) Abort(context.Context) error {
 func runSuccessfulUpload(ctx context.Context) (*memoryUpload, provider.Info, error) {
 	upload := &memoryUpload{}
 	var opened provider.Info
-	err := goav.From(goavtest.Audio(48000, 1, []int16{7, 8})).
+	err := goavtest.Runtime().Run(ctx, goavtest.Audio(48000, 1, []int16{7, 8}).
 		Audio().
 		Encode(codec.Opus()).
-		To(uploadDestination(upload, &opened)).
-		UseRuntime(goavtest.Runtime()).
-		Run(ctx)
+		To(uploadDestination(upload, &opened)))
 	return upload, opened, err
 }
 
@@ -64,13 +62,11 @@ func runFailedUpload(ctx context.Context) (*memoryUpload, error) {
 	fail := component.FrameFunc("fail-before-commit", func(context.Context, *av.Frame, component.Emit) error {
 		return errors.New("transactional-writer: induced failure")
 	})
-	err := goav.From(goavtest.Audio(48000, 1, []int16{7, 8})).
+	err := goavtest.Runtime().Run(ctx, goavtest.Audio(48000, 1, []int16{7, 8}).
 		Audio().
 		Do(fail).
 		Encode(codec.Opus()).
-		To(uploadDestination(upload, &opened)).
-		UseRuntime(goavtest.Runtime()).
-		Run(ctx)
+		To(uploadDestination(upload, &opened)))
 	return upload, err
 }
 

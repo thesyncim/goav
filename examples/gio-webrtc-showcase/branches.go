@@ -29,7 +29,7 @@ const videoBranchBufferDepth = 12
 var branchSeq atomic.Uint64
 
 type branchMutator interface {
-	LegacyAttach(context.Context, ...goav.BranchSpec) (goav.Attachment, error)
+	Attach(context.Context, ...goav.Output) (goav.Attachment, error)
 	Detach(context.Context, goav.Attachment, ...lifecycle.DetachOption) error
 }
 
@@ -239,7 +239,7 @@ func (s *session) rebranch(ctx context.Context, id string, spec branchSpec) (*br
 	r.Spec.Height = spec.Height
 	r.Spec.FPS = spec.FPS
 	r.Spec.Bitrate = spec.Bitrate
-	replacement, err := branchRuntimeSpec(r, s.syncPolicy)
+	replacement, err := branchOutput(s.taskForKindLocked(r.Spec.Kind), r, s.syncPolicy)
 	if err != nil {
 		r.Spec = oldSpec
 		return nil, err
@@ -309,41 +309,32 @@ func (s *session) attachBranchLocked(ctx context.Context, r *branch) error {
 	if r.Attachment != nil {
 		return nil
 	}
-	spec, err := branchRuntimeSpec(r, s.syncPolicy)
+	task := s.taskForKindLocked(r.Spec.Kind)
+	if task == nil {
+		if r.Spec.Kind != "video" && r.Spec.Kind != "audio" {
+			return fmt.Errorf("unsupported branch kind %q", r.Spec.Kind)
+		}
+		s.recordLocked("debug", "branch", r.Spec.Kind+" branch waiting for input track", r.Spec.Kind, r.Spec.ID, branchMeta(r.Spec))
+		return nil
+	}
+	out, err := branchOutput(task, r, s.syncPolicy)
 	if err != nil {
 		return err
 	}
-	switch r.Spec.Kind {
-	case "video":
-		if s.videoTask == nil {
-			s.recordLocked("debug", "branch", "video branch waiting for input track", "video", r.Spec.ID, branchMeta(r.Spec))
-			return nil
-		}
-		attachment, err := s.videoTask.LegacyAttach(ctx, spec)
-		if err != nil {
-			return err
-		}
-		r.Attachment = attachment
-	case "audio":
-		if s.audioTask == nil {
-			s.recordLocked("debug", "branch", "audio branch waiting for input track", "audio", r.Spec.ID, branchMeta(r.Spec))
-			return nil
-		}
-		attachment, err := s.audioTask.LegacyAttach(ctx, spec)
-		if err != nil {
-			return err
-		}
-		r.Attachment = attachment
-	default:
-		return fmt.Errorf("unsupported branch kind %q", r.Spec.Kind)
+	attachment, err := task.Attach(ctx, out)
+	if err != nil {
+		return err
 	}
+	r.Attachment = attachment
 	s.recordLocked("info", "branch", "runtime branch attached", r.Spec.Kind, r.Spec.ID, branchMeta(r.Spec))
 	return nil
 }
 
-func branchRuntimeSpec(r *branch, syncPolicy flow.SyncPolicy) (goav.BranchSpec, error) {
+// branchOutput is the Output a branch attaches to its kind's decode task: the
+// task's decoded tap, synced, scaled or resampled, and encoded for its track.
+func branchOutput(task goav.LiveTask, r *branch, syncPolicy flow.SyncPolicy) (goav.Output, error) {
 	if r == nil || r.Sink == nil {
-		return goav.BranchSpec{}, fmt.Errorf("branch has no output sink")
+		return goav.Output{}, fmt.Errorf("branch has no output sink")
 	}
 	switch r.Spec.Kind {
 	case "video":
@@ -353,31 +344,32 @@ func branchRuntimeSpec(r *branch, syncPolicy flow.SyncPolicy) (goav.BranchSpec, 
 		// FPS (and every sibling branch) down to the slowest encoder. A realtime
 		// drop-oldest buffer lets a slow encoder shed frames for itself while the
 		// decode path and faster branches keep full rate.
-		branch := goav.Branch(r.Spec.ID).
-			From(goav.FrameTap(videoTapName)).
+		scaled := task.Tap(videoTapName).
 			Buffer(flow.DropOldest(videoBranchBufferDepth)).
 			Sync(syncPolicy).
 			Resize(r.Spec.Width, r.Spec.Height)
+		var encoder codec.Spec
 		switch r.Spec.Codec {
 		case "vp8":
-			return branch.Encode(codec.VP8(codec.Bitrate(r.Spec.Bitrate), codec.FPS(r.Spec.FPS))).To(goav.Sink(r.Sink)), nil
+			encoder = codec.VP8(codec.Bitrate(r.Spec.Bitrate), codec.FPS(r.Spec.FPS))
 		case "vp9":
-			return branch.Encode(codec.VP9(codec.Bitrate(r.Spec.Bitrate), codec.FPS(r.Spec.FPS))).To(goav.Sink(r.Sink)), nil
+			encoder = codec.VP9(codec.Bitrate(r.Spec.Bitrate), codec.FPS(r.Spec.FPS))
 		default:
-			return goav.BranchSpec{}, fmt.Errorf("unsupported video encoder %q", r.Spec.Codec)
+			return goav.Output{}, fmt.Errorf("unsupported video encoder %q", r.Spec.Codec)
 		}
+		return scaled.Encode(encoder).As(r.Spec.ID).To(goav.Sink(r.Sink)), nil
 	case "audio":
 		if r.Spec.Codec != "opus" {
-			return goav.BranchSpec{}, fmt.Errorf("unsupported audio encoder %q", r.Spec.Codec)
+			return goav.Output{}, fmt.Errorf("unsupported audio encoder %q", r.Spec.Codec)
 		}
-		return goav.Branch(r.Spec.ID).
-			From(goav.FrameTap(audioTapName)).
+		return task.Tap(audioTapName).
 			Sync(syncPolicy).
 			Resample(48_000, codec.Stereo).
 			Encode(codec.Opus(codec.Bitrate(r.Spec.Bitrate), codec.Channels(codec.Stereo), codec.SampleRate(48_000))).
+			As(r.Spec.ID).
 			To(goav.Sink(r.Sink)), nil
 	default:
-		return goav.BranchSpec{}, fmt.Errorf("unsupported branch kind %q", r.Spec.Kind)
+		return goav.Output{}, fmt.Errorf("unsupported branch kind %q", r.Spec.Kind)
 	}
 }
 
