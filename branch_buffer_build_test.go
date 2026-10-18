@@ -35,10 +35,18 @@ func TestBuildTimeBranchBufferIsHonored(t *testing.T) {
 		}
 		return nil
 	}))
-	task, err := goav.From(liveS16Source("mic", frames)).Audio().Branches(
-		goav.Branch("record").To(record.Sink()),
-		goav.Branch("preview").Buffer(flow.DropNewest(1)).To(preview),
-	).UseRuntime(goavtest.Runtime()).BuildLive(ctx)
+	in := liveS16Source("mic", frames)
+	trunk := in.
+		Audio()
+	task, err := goavtest.Runtime().Build(ctx,
+		trunk.
+			As("record").
+			To(record.Sink()),
+		trunk.
+			Buffer(flow.DropNewest(1)).
+			As("preview").
+			To(preview),
+	)
 	if err != nil {
 		t.Fatalf("BuildLive: %v", err)
 	}

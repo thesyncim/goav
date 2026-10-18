@@ -11,6 +11,9 @@ methodology changes, and migration notes.
 
 ## Unreleased
 
+- The root package's tests and benchmarks build recipes as values; tests that
+  pin builder-only refusals keep the builder until it goes internal.
+
 - The bundle, README, docs, examples, CLI, control server, and nested
   modules use values. Breaking: `bundle.Run`, `bundle.Build`,
   `bundle.Describe`, and `bundle.Explain` take Outputs and share one default

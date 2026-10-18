@@ -83,10 +83,20 @@ func TestEncodeLadderRunsRungsConcurrently(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			encoders := &rendezvousEncoders{}
 			rt := goavtest.Runtime(runconfig.WithEncoder(codec.Descriptor{ID: av.CodecVP8, Type: av.MediaVideo}, encoders))
-			err := goav.From(goavtest.Video(64, 48, 4)).Video().Branches(
-				goav.Branch("high").Encode(codec.VP8()).To(tt.output("high")),
-				goav.Branch("low").Resize(32, 24).Encode(codec.VP8()).To(tt.output("low")),
-			).UseRuntime(rt).Run(context.Background())
+			in := goavtest.Video(64, 48, 4)
+			trunk := in.
+				Video()
+			err := rt.Run(context.Background(),
+				trunk.
+					Encode(codec.VP8()).
+					As("high").
+					To(tt.output("high")),
+				trunk.
+					Resize(32, 24).
+					Encode(codec.VP8()).
+					As("low").
+					To(tt.output("low")),
+			)
 			if err != nil {
 				t.Fatalf("Run: %v", err)
 			}

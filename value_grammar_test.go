@@ -196,6 +196,7 @@ func TestValueGrammarRefusals(t *testing.T) {
 		"no destination":         {outs: []goav.Output{in.Video().To()}, code: "stream_invalid"},
 		"sync on a plain stream": {outs: []goav.Output{in.Video().SyncByPTS().To(sink)}, code: "stream_invalid"},
 		"join beside a stream":   {outs: []goav.Output{mix.To(sink), in.Video().To(sink)}, code: "stream_beside_join"},
+		"copy beside a stream":   {outs: []goav.Output{in.To(sink), in.Video().To(sink)}, code: "stream_invalid"},
 		"two forks named alike":  {outs: []goav.Output{in.Video().Encode(codec.VP8()).As("x").To(sink), in.Video().Encode(codec.VP9()).As("x").To(sink)}, code: "stream_invalid"},
 	} {
 		t.Run(name, func(t *testing.T) {

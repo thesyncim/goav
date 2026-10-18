@@ -30,12 +30,11 @@ func benchRealCodecRuntime() *goav.Runtime {
 }
 
 func benchRealVideoEncode(b *testing.B, spec codec.Spec) {
-	job := goav.From(benchVideoFrames("real-video-in", b.N, benchVideoW, benchVideoH)).
+	job := benchVideoFrames("real-video-in", b.N, benchVideoW, benchVideoH).
 		Video().
 		Encode(spec).
-		To(benchSink("real-video-packets")).
-		UseRuntime(benchRealCodecRuntime())
-	task, err := job.BuildLive(context.Background())
+		To(benchSink("real-video-packets"))
+	task, err := benchRealCodecRuntime().Build(context.Background(), job)
 	if err != nil {
 		// The bundle ships some codecs decode-only (for example H.264). Skip with
 		// the honest reason instead of failing — there is no encoder to measure.
@@ -69,22 +68,20 @@ func BenchmarkRealAV1Encode(b *testing.B)  { benchRealVideoEncode(b, codec.AV1()
 // encoder, exercising the actual decoder rather than a fixture payload.
 func BenchmarkRealVP8Decode(b *testing.B) {
 	payload := realVP8Payload(b)
-	runBenchTask(b, goav.From(benchVideoPacketsPayload("real-vp8-packets", b.N, av.CodecVP8, payload)).
-		Video().
-		Decode().
-		To(benchSink("real-vp8-frames")).
-		UseRuntime(benchRealCodecRuntime()))
+	runBenchTask(b, benchRealCodecRuntime(),
+		benchVideoPacketsPayload("real-vp8-packets", b.N, av.CodecVP8, payload).
+			Video().
+			Decode().
+			To(benchSink("real-vp8-frames")))
 }
 
 func realVP8Payload(b *testing.B) []byte {
 	b.Helper()
 	out := goavtest.NewCollector()
-	err := goav.From(benchVideoFrames("real-vp8-seed", 1, benchVideoW, benchVideoH)).
+	err := benchRealCodecRuntime().Run(context.Background(), benchVideoFrames("real-vp8-seed", 1, benchVideoW, benchVideoH).
 		Video().
 		Encode(codec.VP8()).
-		To(out.Sink()).
-		UseRuntime(benchRealCodecRuntime()).
-		Run(context.Background())
+		To(out.Sink()))
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -128,11 +125,10 @@ func BenchmarkSoakRecordDrift(b *testing.B) {
 	var before runtime.MemStats
 	runtime.ReadMemStats(&before)
 
-	runBenchTask(b, goav.From(benchVideoPackets("soak-cam", b.N)).
-		Video().
-		Copy().
-		To(benchSink("soak-packets")).
-		UseRuntime(benchRuntime()))
+	runBenchTask(b, benchRuntime(),
+		benchVideoPackets("soak-cam", b.N).
+			Video().
+			To(benchSink("soak-packets")))
 
 	runtime.GC()
 	var after runtime.MemStats

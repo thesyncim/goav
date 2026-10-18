@@ -41,12 +41,10 @@ func TestMP4DemuxesAndDecodesVideoThroughGrammar(t *testing.T) {
 
 	rt := mustRuntime(bundle.Formats(), goavtest.Codec(av.CodecH264), runconfig.WithRealtime(false))
 	out := goavtest.NewCollector()
-	if err := goav.From(goav.FileInput("h264_aac.mp4", file)).
-		UseRuntime(rt).
+	if err := rt.Run(ctx, goav.FileInput("h264_aac.mp4", file).
 		Video().
 		Decode().
-		To(out.Sink()).
-		Run(ctx); err != nil {
+		To(out.Sink())); err != nil {
 		t.Fatalf("run: %v", err)
 	}
 
@@ -75,12 +73,10 @@ func TestMP4DemuxesAndDecodesAudioThroughGrammar(t *testing.T) {
 	defer file.Close()
 
 	out := goavtest.NewCollector()
-	err = goav.From(goav.FileInput("h264_aac.mp4", file)).
-		UseRuntime(offlineRuntime()).
+	err = offlineRuntime().Run(ctx, goav.FileInput("h264_aac.mp4", file).
 		Audio().
 		Decode().
-		To(out.Sink()).
-		Run(ctx)
+		To(out.Sink()))
 	if errors.Is(err, codec.ErrUnavailable) {
 		t.Skip("goaac backend unavailable on this target")
 	}
@@ -107,12 +103,10 @@ func TestMP4DemuxesFragmentedAudioThroughGrammar(t *testing.T) {
 	defer file.Close()
 
 	out := goavtest.NewCollector()
-	err = goav.From(goav.FileInput("fragmented.mp4", file)).
-		UseRuntime(offlineRuntime()).
+	err = offlineRuntime().Run(ctx, goav.FileInput("fragmented.mp4", file).
 		Audio().
 		Decode().
-		To(out.Sink()).
-		Run(ctx)
+		To(out.Sink()))
 	if errors.Is(err, codec.ErrUnavailable) {
 		t.Skip("goaac backend unavailable on this target")
 	}

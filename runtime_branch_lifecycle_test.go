@@ -22,7 +22,8 @@ import (
 const lifecycleTapName = "video.decoded"
 
 type branchMutator interface {
-	LegacyAttach(context.Context, ...goav.BranchSpec) (goav.Attachment, error)
+	Attach(context.Context, ...goav.Output) (goav.Attachment, error)
+	Tap(name string) goav.Stream
 	Detach(context.Context, goav.Attachment, ...lifecycle.DetachOption) error
 }
 
@@ -128,14 +129,12 @@ func liveMutableVideoPackets(name string, width, height int, tick time.Duration)
 
 func decodedVideoTapTask(t *testing.T, ctx context.Context, input goav.InputSpec, main pipeline.Sink) goav.LiveTask {
 	t.Helper()
-	task, err := goav.From(input).
-		UseRuntime(goavtest.Runtime()).
+	task, err := goavtest.Runtime().Build(ctx, input.
 		Video().
 		Decode().
 		Shape(shape.Frame(av.MediaVideo, shape.Video(64, 64, av.PixelFormatI420))).
-		Tap(goav.FrameTap(lifecycleTapName)).
-		To(goav.Sink(main)).
-		BuildLive(ctx)
+		Tap(lifecycleTapName).
+		To(goav.Sink(main)))
 	if err != nil {
 		t.Fatalf("BuildLive() error = %v", err)
 	}
@@ -144,11 +143,13 @@ func decodedVideoTapTask(t *testing.T, ctx context.Context, input goav.InputSpec
 
 func attachDropBranch(t *testing.T, ctx context.Context, task branchMutator, name string, sink pipeline.Sink) goav.Attachment {
 	t.Helper()
-	attachment, err := task.LegacyAttach(ctx, goav.Branch(name).
-		From(goav.FrameTap(lifecycleTapName)).
-		Buffer(flow.DropOldest(8)).
-		Resize(64, 64).
-		To(goav.Sink(sink)))
+	attachment, err := task.Attach(ctx,
+		task.Tap(lifecycleTapName).
+			Buffer(flow.DropOldest(8)).
+			Resize(64, 64).
+			As(name).
+			To(goav.Sink(sink)),
+	)
 	if err != nil {
 		t.Fatalf("Attach(%s) error = %v", name, err)
 	}
@@ -265,14 +266,12 @@ func TestRuntimeBranchEncodesVP9ThroughDropBuffer(t *testing.T) {
 	defer cancel()
 
 	main := &frameCountSink{name: "main"}
-	task, err := goav.From(liveMutableVideoPackets("camera", 64, 64, time.Millisecond)).
-		UseRuntime(bundle.MustNew(goavtest.Codec(av.CodecVP8))).
+	task, err := bundle.MustNew(goavtest.Codec(av.CodecVP8)).Build(ctx, liveMutableVideoPackets("camera", 64, 64, time.Millisecond).
 		Video().
 		Decode().
 		Shape(shape.Frame(av.MediaVideo, shape.Video(64, 64, av.PixelFormatI420))).
-		Tap(goav.FrameTap(lifecycleTapName)).
-		To(goav.Sink(main)).
-		BuildLive(ctx)
+		Tap(lifecycleTapName).
+		To(goav.Sink(main)))
 	if err != nil {
 		t.Fatalf("BuildLive() error = %v", err)
 	}
@@ -283,12 +282,14 @@ func TestRuntimeBranchEncodesVP9ThroughDropBuffer(t *testing.T) {
 	waitFrameCount(ctx, &main.count, 1)
 
 	vp9 := &packetCountSink{name: "vp9"}
-	attachment, err := task.LegacyAttach(ctx, goav.Branch("vp9").
-		From(goav.FrameTap(lifecycleTapName)).
-		Buffer(flow.DropOldest(8)).
-		Resize(64, 64).
-		Encode(codec.VP9(codec.Bitrate(320_000))).
-		To(goav.Sink(vp9)))
+	attachment, err := task.Attach(ctx,
+		task.Tap(lifecycleTapName).
+			Buffer(flow.DropOldest(8)).
+			Resize(64, 64).
+			Encode(codec.VP9(codec.Bitrate(320_000))).
+			As("vp9").
+			To(goav.Sink(vp9)),
+	)
 	if err != nil {
 		t.Fatalf("Attach(vp9) error = %v", err)
 	}

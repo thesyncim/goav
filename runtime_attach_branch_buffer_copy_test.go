@@ -29,25 +29,23 @@ func TestRuntimeBranchExplicitDropBufferInheritsCopyBounds(t *testing.T) {
 	defer cancel()
 
 	out := goavtest.NewCollector()
-	task, err := goav.From(mutableFrameVideoPackets("camera", 64, 64, 24)).
-		UseRuntime(goavtest.Runtime()).
+	task, err := goavtest.Runtime().Build(ctx, mutableFrameVideoPackets("camera", 64, 64, 24).
 		Video().
 		Decode().
 		Shape(shape.Frame(av.MediaVideo, shape.Video(64, 64, av.PixelFormatI420))).
-		Tap(goav.FrameTap("video.decoded")).
-		To(out.Sink()).
-		BuildLive(ctx)
+		Tap("video.decoded").
+		To(out.Sink()))
 	if err != nil {
 		t.Fatalf("BuildLive() error = %v", err)
 	}
 	t.Cleanup(func() { _ = task.Close() })
 
 	preview := goavtest.NewCollector()
-	if _, err := task.LegacyAttach(ctx,
-		goav.Branch("preview").
-			From(goav.FrameTap("video.decoded")).
+	if _, err := task.Attach(ctx,
+		task.Tap("video.decoded").
 			Buffer(flow.DropOldest(8)).
 			Resize(64, 64).
+			As("preview").
 			To(preview.Sink()),
 	); err != nil {
 		t.Fatalf("Attach() error = %v", err)

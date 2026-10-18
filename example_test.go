@@ -124,7 +124,7 @@ func ExampleFrom() {
 	// Decode to PCM, re-encode at 96 kbps, and count the packets at a sink:
 	// the frame's own packet, then the flush that drains the encoder lookahead.
 	encoded := 0
-	err := goav.From(mic).
+	err := bundle.MustNew().Run(ctx, mic.
 		Audio().
 		Decode().
 		Encode(codec.Opus(codec.Bitrate(96_000))).
@@ -133,9 +133,7 @@ func ExampleFrom() {
 				encoded++
 			}
 			return nil
-		}))).
-		UseRuntime(bundle.MustNew()).
-		Run(ctx)
+		}))))
 
 	fmt.Println(err, encoded)
 	// Output: <nil> 2
@@ -175,13 +173,11 @@ func ExampleFrom_multipleInputs() {
 func ExampleFrom_autoResample() {
 	mic := pcmSource("mic", 44_100, 2, make([]int16, 882*2))
 
-	report, err := goav.From(mic).
+	report, err := bundle.MustNew().Explain(context.Background(), mic.
 		Audio().
 		Auto(shape.AllowResample()).
 		Encode(codec.Opus(codec.Bitrate(96_000))).
-		To(goav.Write("voice.webm", io.Discard)).
-		UseRuntime(bundle.MustNew()).
-		Explain(context.Background())
+		To(goav.Write("voice.webm", io.Discard)))
 	if err != nil {
 		fmt.Println(err)
 		return
@@ -204,10 +200,11 @@ func ExampleLegacyMix() {
 		return nil
 	}))
 
-	err := goav.LegacyMix(
-		goav.From(pcmSource("mic-1", 48_000, 1, []int16{100, 200})).Audio(),
-		goav.From(pcmSource("mic-2", 48_000, 1, []int16{50, -50})).Audio(),
-	).To(speakers).Run(context.Background())
+	err := mustRuntime().Run(context.Background(), goav.Mix(
+		pcmSource("mic-1", 48_000, 1, []int16{100, 200}).Audio(),
+		pcmSource("mic-2", 48_000, 1, []int16{50, -50}).Audio(),
+	).
+		To(speakers))
 
 	fmt.Println(err, mixed)
 	// Output: <nil> [[150 150]]
@@ -228,10 +225,12 @@ func ExampleLegacyMix_syncByPTS() {
 		return nil
 	}))
 
-	err := goav.LegacyMix(
-		goav.From(pcmSourceAt("song-a", 48_000, 1, []int64{0, 20}, []int16{10, 10}, []int16{20, 20})).Audio(),
-		goav.From(pcmSourceAt("song-b", 48_000, 1, []int64{20, 40}, []int16{1, 1}, []int16{2, 2})).Audio(),
-	).SyncByPTS().To(out).Run(context.Background())
+	err := mustRuntime().Run(context.Background(), goav.Mix(
+		pcmSourceAt("song-a", 48_000, 1, []int64{0, 20}, []int16{10, 10}, []int16{20, 20}).Audio(),
+		pcmSourceAt("song-b", 48_000, 1, []int64{20, 40}, []int16{1, 1}, []int16{2, 2}).Audio(),
+	).
+		SyncByPTS().
+		To(out))
 
 	fmt.Println(err, mixed, pts)
 	// Output: <nil> [[10 10] [21 21] [2 2]] [0 20 40]
@@ -254,10 +253,11 @@ func ExampleLegacyComposite() {
 		return nil
 	}))
 
-	err := goav.LegacyComposite(
-		goav.From(i420Source("cam", 4, 4, 100)).Video().Region(0, 0),
-		goav.From(i420Source("screen", 4, 4, 200)).Video().Region(4, 0),
-	).To(preview).Run(context.Background())
+	err := mustRuntime().Run(context.Background(), goav.Composite(
+		goav.At(i420Source("cam", 4, 4, 100).Video(), 0, 0),
+		goav.At(i420Source("screen", 4, 4, 200).Video(), 4, 0),
+	).
+		To(preview))
 	if err != nil {
 		fmt.Println(err)
 		return
@@ -278,10 +278,11 @@ func ExampleLegacySelect() {
 		return nil
 	}))
 
-	task, err := goav.LegacySelect(
-		goav.From(i420Source("cam-1", 16, 16, 100)).Video(),
-		goav.From(i420Source("cam-2", 16, 16, 200)).Video(),
-	).To(preview).BuildLive(ctx)
+	task, err := mustRuntime().Build(ctx, goav.Select(
+		i420Source("cam-1", 16, 16, 100).Video(),
+		i420Source("cam-2", 16, 16, 200).Video(),
+	).
+		To(preview))
 	if err != nil {
 		fmt.Println(err)
 		return
@@ -311,20 +312,21 @@ func ExampleTask_attach() {
 		}))
 	}
 
-	task, err := goav.From(pcmSource("mic", 48_000, 1, []int16{1, 2})).
+	task, err := mustRuntime().Build(ctx, pcmSource("mic", 48_000, 1, []int16{1, 2}).
 		Audio().
-		Tap(goav.FrameTap("mic.frames")).
-		To(countInto(&mainFrames)).
-		BuildLive(ctx)
+		Tap("mic.frames").
+		To(countInto(&mainFrames)))
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
 	defer task.Close()
 
-	if _, err := task.LegacyAttach(ctx, goav.Branch("monitor").
-		From(goav.FrameTap("mic.frames")).
-		To(countInto(&monitorFrames))); err != nil {
+	if _, err := task.Attach(ctx,
+		task.Tap("mic.frames").
+			As("monitor").
+			To(countInto(&monitorFrames)),
+	); err != nil {
 		fmt.Println(err)
 		return
 	}
@@ -345,22 +347,21 @@ func ExampleAttachment_rebranch() {
 	ctx := context.Background()
 	var part1, part2 bytes.Buffer
 
-	task, err := goav.From(goav.FileInput("input.ivf", bytes.NewReader(tinyIVF()))).
+	task, err := mustRuntime().Build(ctx, goav.FileInput("input.ivf", bytes.NewReader(tinyIVF())).
 		Video().
-		Copy().
-		Tap(goav.PacketTap("video.encoded")).
-		To(goav.Write("live.ivf", io.Discard)).
-		BuildLive(ctx)
+		Tap("video.encoded").
+		To(goav.Write("live.ivf", io.Discard)))
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
 	defer task.Close()
 
-	rec, err := task.LegacyAttach(ctx, goav.Branch("rec").
-		From(goav.PacketTap("video.encoded")).
-		Copy().
-		To(goav.Write("part-001.ivf", &part1)))
+	rec, err := task.Attach(ctx,
+		task.Tap("video.encoded").
+			As("rec").
+			To(goav.Write("part-001.ivf", &part1)),
+	)
 	if err != nil {
 		fmt.Println(err)
 		return
@@ -385,12 +386,11 @@ func ExampleAttachment_rebranch() {
 func ExampleTask_control() {
 	ctx := context.Background()
 
-	task, err := goav.From(goav.FileInput("input.ivf", bytes.NewReader(tinyIVF()))).
+	task, err := mustRuntime().Build(ctx, goav.FileInput("input.ivf", bytes.NewReader(tinyIVF())).
 		Video().
 		Decode().
 		Encode(codec.VP8(codec.Bitrate(1_000_000))).
-		To(goav.Write("out.ivf", io.Discard)).
-		BuildLive(ctx)
+		To(goav.Write("out.ivf", io.Discard)))
 	if err != nil {
 		fmt.Println(err)
 		return
@@ -415,10 +415,9 @@ func ExampleTask_control() {
 // closes, and a slow watcher sheds events for itself only.
 func ExampleTask_watch() {
 	ctx := context.Background()
-	task, err := goav.From(pcmSource("mic", 48_000, 1, []int16{1, 2})).
+	task, err := mustRuntime().Build(ctx, pcmSource("mic", 48_000, 1, []int16{1, 2}).
 		Audio().
-		To(goav.Sink(component.SinkFunc("out", func(context.Context, component.Message) error { return nil }))).
-		BuildLive(ctx)
+		To(goav.Sink(component.SinkFunc("out", func(context.Context, component.Message) error { return nil }))))
 	if err != nil {
 		fmt.Println(err)
 		return
@@ -449,11 +448,10 @@ func ExampleTask_watch() {
 func ExampleBuildError() {
 	// Decoded frames cannot feed a muxed file without an encoder: the build
 	// refuses before any resource opens.
-	_, err := goav.From(goav.FileInput("input.ivf", bytes.NewReader(tinyIVF()))).
+	_, err := mustRuntime().Build(context.Background(), goav.FileInput("input.ivf", bytes.NewReader(tinyIVF())).
 		Video().
 		Decode().
-		To(goav.Write("frames.ivf", io.Discard)).
-		Build(context.Background())
+		To(goav.Write("frames.ivf", io.Discard)))
 
 	if buildErr, ok := errors.AsType[*goav.BuildError](err); ok {
 		fmt.Println("code:", buildErr.Code)

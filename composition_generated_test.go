@@ -125,10 +125,11 @@ func requireGeneratedCompositionRuntimeAttachMatchesBuildTimeBranch(t *testing.T
 	buildTimePlan := requireGeneratedCompositionDescribeMatchesBuild(t, buildTime)
 
 	baseInput := generatedNamedCompositionAudioInput("generated-audio", tc.sampleRate)
-	base := goav.From(baseInput).Audio().Tap(goav.FrameTap(tapName)).
-		To(generatedNoopCompositionSink("main")).
-		UseRuntime(goavtest.Runtime())
-	task, err := base.BuildLive(ctx)
+	base := baseInput.
+		Audio().
+		Tap(tapName).
+		To(generatedNoopCompositionSink("main"))
+	task, err := goavtest.Runtime().Build(ctx, base)
 	if err != nil {
 		t.Fatalf("BuildLive base for runtime attach: %v", err)
 	}

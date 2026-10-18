@@ -25,10 +25,11 @@ import (
 func TestMixRunsTwoAudioSourcesIntoSink(t *testing.T) {
 	ctx := context.Background()
 	out := goavtest.NewCollector()
-	task, err := goav.LegacyMix(
-		goav.From(goavtest.Audio(48000, 1, []int16{100, 200})).Audio(),
-		goav.From(goavtest.Audio(48000, 1, []int16{50, -50})).Audio(),
-	).To(out.Sink()).UseRuntime(goavtest.Runtime()).BuildLive(ctx)
+	task, err := goavtest.Runtime().Build(ctx, goav.Mix(
+		goavtest.Audio(48000, 1, []int16{100, 200}).Audio(),
+		goavtest.Audio(48000, 1, []int16{50, -50}).Audio(),
+	).
+		To(out.Sink()))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -49,10 +50,11 @@ func TestSelectSwitchesActiveArmMidRun(t *testing.T) {
 	defer cancel()
 
 	out := goavtest.NewCollector()
-	task, err := goav.LegacySelect(
-		goav.From(goavtest.LiveAudio("a", 48000, 1, []int16{100})).Audio(),
-		goav.From(goavtest.LiveAudio("b", 48000, 1, []int16{200})).Audio(),
-	).To(out.Sink()).UseRuntime(goavtest.Runtime()).BuildLive(ctx)
+	task, err := goavtest.Runtime().Build(ctx, goav.Select(
+		goavtest.LiveAudio("a", 48000, 1, []int16{100}).Audio(),
+		goavtest.LiveAudio("b", 48000, 1, []int16{200}).Audio(),
+	).
+		To(out.Sink()))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -129,12 +131,11 @@ func TestFakeDecodeFeedsRealResample(t *testing.T) {
 	ctx := context.Background()
 	out := goavtest.NewCollector()
 	input := goavtest.Packets(av.CodecOpus, av.Packet{Payload: av.Buffer{Bytes: []byte{1, 2, 3}, Ownership: av.BufferImmutable}})
-	err := goav.From(input).
-		Audio().Decode().
+	err := goavtest.Runtime().Run(ctx, input.
+		Audio().
+		Decode().
 		Resample(44_100, 1).
-		To(out.Sink()).
-		UseRuntime(goavtest.Runtime()).
-		Run(ctx)
+		To(out.Sink()))
 	if err != nil {
 		t.Fatal(err)
 	}

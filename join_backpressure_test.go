@@ -150,8 +150,8 @@ func TestLiveJoinKeepsBufferingFastArm(t *testing.T) {
 	fast := liveArmSource("fast", frames, nil, fastDone)
 	slow := liveArmSource("slow", frames, fastDone, nil)
 	out := goavtest.NewCollector()
-	task, err := goav.LegacyMix(goav.From(fast).Audio(), goav.From(slow).Audio()).
-		To(out.Sink()).UseRuntime(goavtest.Runtime()).BuildLive(ctx)
+	task, err := goavtest.Runtime().Build(ctx, goav.Mix(fast.Audio(), slow.Audio()).
+		To(out.Sink()))
 	if err != nil {
 		t.Fatalf("BuildLive: %v", err)
 	}

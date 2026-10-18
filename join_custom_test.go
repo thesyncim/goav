@@ -87,11 +87,14 @@ func buildErrorCode(t *testing.T, err error) errcode.Code {
 // non-snake-safe, and built-in-reserved names refuse with join_name_invalid.
 func TestJoinRejectsInvalidNames(t *testing.T) {
 	for _, name := range []string{"", "Cross Fade", "cross-fade", "9lives", "mix", "composite", "select"} {
-		job := goav.LegacyJoin(name, newFunnelStage(name, 2),
-			goav.From(goavtest.Audio(8000, 1, []int16{1})).Audio(),
-			goav.From(goavtest.Audio(8000, 1, []int16{2})).Audio(),
-		).To(goavtest.NewCollector().Sink()).UseRuntime(goavtest.Runtime())
-		_, err := job.Describe()
+		job := goav.Join(
+			name,
+			newFunnelStage(name, 2),
+			goavtest.Audio(8000, 1, []int16{1}).Audio(),
+			goavtest.Audio(8000, 1, []int16{2}).Audio(),
+		).
+			To(goavtest.NewCollector().Sink())
+		_, err := goavtest.Runtime().Describe(job)
 		if err == nil {
 			t.Fatalf("LegacyJoin(%q) built; want join_name_invalid", name)
 		}
@@ -106,11 +109,13 @@ func TestJoinRejectsInvalidNames(t *testing.T) {
 // join_stage_invalid — the stage IS the node, so the names must agree.
 func TestJoinRejectsStageMismatch(t *testing.T) {
 	describe := func(stage pipeline.Stage) error {
-		_, err := goav.LegacyJoin("funnel", stage,
-			goav.From(goavtest.Audio(8000, 1, []int16{1})).Audio(),
-			goav.From(goavtest.Audio(8000, 1, []int16{2})).Audio(),
+		_, err := goavtest.Runtime().Describe(goav.Join(
+			"funnel",
+			stage,
+			goavtest.Audio(8000, 1, []int16{1}).Audio(),
+			goavtest.Audio(8000, 1, []int16{2}).Audio(),
 		).
-			To(goavtest.NewCollector().Sink()).UseRuntime(goavtest.Runtime()).Describe()
+			To(goavtest.NewCollector().Sink()))
 		return err
 	}
 	err := describe(nil)
@@ -128,17 +133,21 @@ func TestJoinRejectsStageMismatch(t *testing.T) {
 // id), so two custom joins of one name in the same tree refuse instead of
 // silently suffixing.
 func TestJoinRejectsDuplicateNameInTree(t *testing.T) {
-	_, err := goav.LegacyMix(
-		goav.LegacyJoin("dup", newFunnelStage("dup", 2),
-			goav.From(goavtest.Audio(8000, 1, []int16{1})).Audio(),
-			goav.From(goavtest.Audio(8000, 1, []int16{2})).Audio(),
+	_, err := goavtest.Runtime().Describe(goav.Mix(
+		goav.Join(
+			"dup",
+			newFunnelStage("dup", 2),
+			goavtest.Audio(8000, 1, []int16{1}).Audio(),
+			goavtest.Audio(8000, 1, []int16{2}).Audio(),
 		),
-		goav.LegacyJoin("dup", newFunnelStage("dup", 2),
-			goav.From(goavtest.Audio(8000, 1, []int16{3})).Audio(),
-			goav.From(goavtest.Audio(8000, 1, []int16{4})).Audio(),
+		goav.Join(
+			"dup",
+			newFunnelStage("dup", 2),
+			goavtest.Audio(8000, 1, []int16{3}).Audio(),
+			goavtest.Audio(8000, 1, []int16{4}).Audio(),
 		),
 	).
-		To(goavtest.NewCollector().Sink()).UseRuntime(goavtest.Runtime()).Describe()
+		To(goavtest.NewCollector().Sink()))
 	if code := buildErrorCode(t, err); code != errcode.JoinNameInvalid {
 		t.Fatalf("duplicate custom name code = %s, want %s", code, errcode.JoinNameInvalid)
 	}
@@ -148,9 +157,12 @@ func TestJoinRejectsDuplicateNameInTree(t *testing.T) {
 // contract: a custom join named "funnel" raises funnel_inputs exactly like
 // Mix raises mix_inputs — the name is the error-code family.
 func TestJoinArmErrorsCarryTheJoinsCodeFamily(t *testing.T) {
-	_, err := goav.LegacyJoin("funnel", newFunnelStage("funnel", 1),
-		goav.From(goavtest.Audio(8000, 1, []int16{1})).Audio(),
-	).To(goavtest.NewCollector().Sink()).UseRuntime(goavtest.Runtime()).Describe()
+	_, err := goavtest.Runtime().Describe(goav.Join(
+		"funnel",
+		newFunnelStage("funnel", 1),
+		goavtest.Audio(8000, 1, []int16{1}).Audio(),
+	).
+		To(goavtest.NewCollector().Sink()))
 	if code := buildErrorCode(t, err); code != errcode.Code("funnel_inputs") {
 		t.Fatalf("one-arm join code = %s, want funnel_inputs", code)
 	}
@@ -163,12 +175,16 @@ func TestJoinArmErrorsCarryTheJoinsCodeFamily(t *testing.T) {
 func TestJoinSolverConvertsMismatchedArms(t *testing.T) {
 	ctx := context.Background()
 	out := goavtest.NewCollector()
-	job := goav.LegacyJoin("funnel", newFunnelStage("funnel", 2),
-		goav.From(goavtest.Audio(8000, 1, []int16{1})).Audio(),
-		goav.From(goavtest.Audio(16000, 1, []int16{2, 2})).Audio(),
-	).To(out.Sink()).UseRuntime(goavtest.Runtime())
+	rt := goavtest.Runtime()
+	job := goav.Join(
+		"funnel",
+		newFunnelStage("funnel", 2),
+		goavtest.Audio(8000, 1, []int16{1}).Audio(),
+		goavtest.Audio(16000, 1, []int16{2, 2}).Audio(),
+	).
+		To(out.Sink())
 
-	planned, err := job.Describe()
+	planned, err := rt.Describe(job)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -182,7 +198,7 @@ func TestJoinSolverConvertsMismatchedArms(t *testing.T) {
 		t.Fatalf("planned arm resamples = %d, want 1; nodes=%+v", resamples, planned.Nodes)
 	}
 	// Explain reports the inserted conversion exactly like a built-in join.
-	report, err := job.Explain(ctx)
+	report, err := rt.Explain(ctx, job)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -195,7 +211,7 @@ func TestJoinSolverConvertsMismatchedArms(t *testing.T) {
 	if !inserted {
 		t.Fatalf("Explain warnings = %+v, want the inserted arm conversion reported", report.Warnings)
 	}
-	if err := job.Run(ctx); err != nil {
+	if err := rt.Run(ctx, job); err != nil {
 		t.Fatal(err)
 	}
 	for _, frame := range out.Frames() {

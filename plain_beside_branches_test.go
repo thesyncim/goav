@@ -150,10 +150,10 @@ func TestCopiedPacketsPassAPlayoutGate(t *testing.T) {
 		}
 		return nil
 	}))
-	if err := goav.From(goav.FileInput("in.mp4", bytes.NewReader(data))).
-		Video().Copy().Playout(flow.Playout("screen")).To(sink).
-		UseRuntime(offlineRuntime()).
-		Run(ctx); err != nil {
+	if err := offlineRuntime().Run(ctx, goav.FileInput("in.mp4", bytes.NewReader(data)).
+		Video().
+		Playout(flow.Playout("screen")).
+		To(sink)); err != nil {
 		t.Fatalf("run: %v", err)
 	}
 	if packets == 0 {
@@ -178,10 +178,11 @@ func TestPacketStageRunsAfterEncode(t *testing.T) {
 		return emit.Packet(p)
 	})
 	var out bytes.Buffer
-	if err := goav.From(goavtest.Video(64, 48, 3)).
-		Video().Encode(codec.VP8()).Do(bsf).To(goav.Write("out.webm", &out)).
-		UseRuntime(offlineRuntime()).
-		Run(ctx); err != nil {
+	if err := offlineRuntime().Run(ctx, goavtest.Video(64, 48, 3).
+		Video().
+		Encode(codec.VP8()).
+		Do(bsf).
+		To(goav.Write("out.webm", &out))); err != nil {
 		t.Fatalf("run: %v", err)
 	}
 	if filtered != 3 {
