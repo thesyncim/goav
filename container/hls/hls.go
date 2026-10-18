@@ -16,6 +16,11 @@
 // packager removes older ones once players can no longer be fetching them;
 // without it, the playlist keeps every segment, an event that becomes an
 // on-demand playlist when the run ends.
+//
+// A Ladder is an adaptive-bitrate set: each of its variants is a packager,
+// and it writes the multivariant playlist that lists them with their
+// bandwidth, codecs (RFC 6381, read from each init segment), and
+// resolution.
 package hls
 
 import (
@@ -82,6 +87,9 @@ type packager struct {
 	playlist string
 	store    Store
 	config
+	// ladder, for a Ladder's variant, hears of each finished segment.
+	ladder  *Ladder
+	variant *variant
 }
 
 func (p *packager) Name() string { return p.playlist }
@@ -118,6 +126,11 @@ type writer struct {
 	// first track.
 	timescales map[uint32]uint32
 	anchor     uint32
+	// codecs, width, and height describe the variant for a ladder's
+	// multivariant playlist; segBytes counts the segment being written.
+	codecs        []string
+	width, height int
+	segBytes      int
 
 	// seg is the segment being written; segments are the finished ones still
 	// on the store, oldest first; sequence is the number of the first one
@@ -209,6 +222,7 @@ func (w *writer) handle(box []byte) error {
 }
 
 func (w *writer) write(b []byte) error {
+	w.segBytes += len(b)
 	_, err := w.seg.Write(b)
 	return err
 }
@@ -220,7 +234,7 @@ func (w *writer) startSegment(start float64) error {
 	if err != nil {
 		return err
 	}
-	w.seg, w.segStart, w.segEnd = seg, start, start
+	w.seg, w.segStart, w.segEnd, w.segBytes = seg, start, start, 0
 	return nil
 }
 
@@ -230,6 +244,11 @@ func (w *writer) finishSegment() error {
 	}
 	w.seg = nil
 	w.segments = append(w.segments, segment{number: w.next - 1, name: w.segName, duration: w.segEnd - w.segStart})
+	if w.ladder != nil {
+		if err := w.ladder.segment(w.variant, w.codecs, w.width, w.height, w.segBytes, w.segEnd-w.segStart); err != nil {
+			return err
+		}
+	}
 	if w.window > 0 {
 		w.sequence = max(w.sequence, w.next-w.window)
 		// A segment stays on the store for another window after it leaves
@@ -328,6 +347,8 @@ func (w *writer) readTracks(moov []byte) {
 						if len(b) >= 12 {
 							handler = string(b[8:12])
 						}
+					case "minf":
+						w.readSampleEntry(b)
 					}
 				})
 			}
@@ -481,4 +502,136 @@ func (p *publishing) Close() error {
 		return err
 	}
 	return os.Rename(p.File.Name(), p.final)
+}
+
+// readSampleEntry reads a track's codec, as an RFC 6381 codecs string, and
+// a video track's size from the first sample entry under minf/stbl/stsd.
+func (w *writer) readSampleEntry(minf []byte) {
+	forBoxes(minf, func(typ string, stbl []byte) {
+		if typ != "stbl" {
+			return
+		}
+		forBoxes(stbl, func(typ string, stsd []byte) {
+			if typ != "stsd" || len(stsd) < 8 {
+				return
+			}
+			first := true
+			forBoxes(stsd[8:], func(fourcc string, entry []byte) {
+				if !first {
+					return
+				}
+				first = false
+				if codec := codecString(fourcc, entry); codec != "" {
+					w.codecs = append(w.codecs, codec)
+				}
+				if visual[fourcc] && len(entry) >= 28 {
+					w.width = int(binary.BigEndian.Uint16(entry[24:]))
+					w.height = int(binary.BigEndian.Uint16(entry[26:]))
+				}
+			})
+		})
+	})
+}
+
+var visual = map[string]bool{"avc1": true, "avc3": true, "av01": true, "vp08": true, "vp09": true}
+
+// codecString spells a sample entry as HLS CODECS wants it (RFC 6381 and
+// the codecs' ISO BMFF bindings), from its configuration box.
+func codecString(fourcc string, entry []byte) string {
+	config := func(child string, at int) []byte {
+		var found []byte
+		forBoxes(entry[min(at, len(entry)):], func(typ string, b []byte) {
+			if typ == child && found == nil {
+				found = b
+			}
+		})
+		return found
+	}
+	const visualHeader, audioHeader = 78, 28
+	switch fourcc {
+	case "avc1", "avc3":
+		if c := config("avcC", visualHeader); len(c) >= 4 {
+			return fmt.Sprintf("%s.%02x%02x%02x", fourcc, c[1], c[2], c[3])
+		}
+	case "av01":
+		if c := config("av1C", visualHeader); len(c) >= 3 {
+			tier := "M"
+			if c[2]&0x80 != 0 {
+				tier = "H"
+			}
+			depth := 8
+			if c[2]&0x40 != 0 {
+				depth = 10
+				if c[2]&0x20 != 0 {
+					depth = 12
+				}
+			}
+			return fmt.Sprintf("av01.%d.%02d%s.%02d", c[1]>>5, c[1]&0x1f, tier, depth)
+		}
+	case "vp08", "vp09":
+		if c := config("vpcC", visualHeader); len(c) >= 7 {
+			return fmt.Sprintf("%s.%02d.%02d.%02d", fourcc, c[4], c[5], c[6]>>4)
+		}
+	case "mp4a":
+		if c := config("esds", audioHeader); len(c) > 0 {
+			if objectType, ok := aacObjectType(c); ok {
+				return fmt.Sprintf("mp4a.40.%d", objectType)
+			}
+		}
+		return "mp4a.40.2"
+	case "Opus":
+		return "Opus"
+	case "fLaC":
+		return "fLaC"
+	}
+	return ""
+}
+
+// aacObjectType reads the audio object type from an esds box: the first
+// five bits of the AudioSpecificConfig in its ES descriptor's decoder
+// configuration.
+func aacObjectType(esds []byte) (byte, bool) {
+	if len(esds) < 4 {
+		return 0, false
+	}
+	p := esds[4:]
+	descriptor := func(tag byte) bool {
+		if len(p) < 2 || p[0] != tag {
+			return false
+		}
+		p = p[1:]
+		for len(p) > 0 && p[0]&0x80 != 0 {
+			p = p[1:]
+		}
+		if len(p) == 0 {
+			return false
+		}
+		p = p[1:]
+		return true
+	}
+	skip := func(n int) bool {
+		if n > len(p) {
+			return false
+		}
+		p = p[n:]
+		return true
+	}
+	if !descriptor(0x03) || len(p) < 3 {
+		return 0, false
+	}
+	flags := p[2]
+	p = p[3:]
+	if flags&0x80 != 0 && !skip(2) {
+		return 0, false
+	}
+	if flags&0x40 != 0 && (len(p) == 0 || !skip(1+int(p[0]))) {
+		return 0, false
+	}
+	if flags&0x20 != 0 && !skip(2) {
+		return 0, false
+	}
+	if !descriptor(0x04) || !skip(13) || !descriptor(0x05) || len(p) == 0 {
+		return 0, false
+	}
+	return p[0] >> 3, true
 }
