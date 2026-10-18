@@ -13,41 +13,6 @@ import (
 	"github.com/thesyncim/goav/pipeline"
 )
 
-func compileEncodeDestinationPath(ctx context.Context, service *builder, graph pipeline.Graph, upstream pipeline.NodeRef, request encodeRequest, config codec.EncodeConfig, outputs []destinationSpec) error {
-	runtime := service.runtime
-	encodeRef, stream, err := compileEncodeStage(ctx, runtime, graph, upstream, request, config)
-	if err != nil {
-		return err
-	}
-
-	streams := []av.Stream{stream}
-	for i := range outputs {
-		if outputs[i].sink != nil {
-			sinkRef, err := graph.AddSink(outputs[i].sink, runtime.buffer)
-			if err != nil {
-				return err
-			}
-			if err := connectRefs(graph, encodeRef, sinkRef); err != nil {
-				return err
-			}
-			continue
-		}
-		muxStage, err := service.openMuxDestinationStage(ctx, outputs[i], i, streams, destinationOpenFormat(outputs[i]), destinationGraphFormat(outputs[i]))
-		if err != nil {
-			return err
-		}
-		muxRef, err := graph.AddStage(muxStage, runtime.buffer)
-		if err != nil {
-			muxStage.Close()
-			return err
-		}
-		if err := connectRefs(graph, encodeRef, muxRef); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 func compileEncodeStage(ctx context.Context, runtime *runtime, graph pipeline.Graph, upstream pipeline.NodeRef, request encodeRequest, config codec.EncodeConfig) (pipeline.NodeRef, av.Stream, error) {
 	return compileEncodeStageNamed(ctx, runtime, graph, "", upstream, request, config, runtime.buffer)
 }
