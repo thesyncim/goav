@@ -11,6 +11,17 @@ methodology changes, and migration notes.
 
 ## Unreleased
 
+- Branch compositions are described and built from one schedule
+  (`composeGraph`): the select, decode, and shared-step nodes per selector
+  group, each branch's private steps and encoder, then the outputs. `Describe`
+  emits it and the build adds the same nodes in the same order, connecting each
+  node's inputs as it is added, so the built graph is the described one by
+  construction rather than by three walks that had to agree: the old describe
+  walk, the build walk, and a third set of node names threaded in from the work
+  plan. Single streams, selected packet copies, multi-stream jobs, branches, and
+  join branches all lower through it; the `TestCompilerOracle` goldens are
+  unchanged. Net -840 lines.
+
 - `Describe` names a playout or sync gate as the built graph does,
   `playout-<branch>-<policy>` and `sync-<branch>-<policy>`; it reported
   `playout-<branch>`, so a described graph did not match the task it built.

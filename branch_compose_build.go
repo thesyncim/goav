@@ -134,7 +134,6 @@ type mediaTransform struct {
 }
 
 type branchComposeTargetRoute struct {
-	node    pipeline.NodeRef
 	output  branchComposeTarget
 	target  format.Output
 	sink    pipeline.Sink
@@ -159,6 +158,8 @@ type branchComposeSharedStepGroup struct {
 	branches   []int
 }
 
+// planBranchComposeRoutes appends a branch composition to a planned spec
+// whose sources are in place; the build lowers the same composeGraph.
 func planBranchComposeRoutes(
 	spec pipeline.Spec,
 	nodes map[string]plannedNode,
@@ -166,411 +167,37 @@ func planBranchComposeRoutes(
 	branches []branchComposeRoute,
 	outputs []branchComposeTargetRoute,
 ) (pipeline.Spec, error) {
-	groups := branchComposeSelectorGroups(branches)
-	branchInputs := make([]pipeline.NodeRef, len(branches))
-	groupNodeOrder := make([]pipeline.NodeRef, 0, len(groups))
-	selectNodeOrder := make([]pipeline.NodeRef, 0, len(groups))
-	sourceEdges := make([]pipeline.EdgeSpec, 0, len(groups)*len(sourceRefs))
-	groupEdges := make(map[pipeline.NodeRef][]pipeline.EdgeSpec, len(groups))
-	for i := range groups {
-		selectName := branchComposeInputNodeName(selectNodeName(groups[i].selector), groups[i].input)
-		selectRef := pipeline.NodeRef(selectName)
-		if err := addPlannedNode(nodes, &spec, selectName, pipeline.NodeStage, selectRef, selectNodeDetail(groups[i].selector)); err != nil {
-			return pipeline.Spec{}, err
-		}
-		groupNodeOrder = append(groupNodeOrder, selectRef)
-		selectNodeOrder = append(selectNodeOrder, selectRef)
-		decodedBranches := branchComposeDecodedBranchIndices(groups[i].branches, branches)
-		for _, branchIndex := range groups[i].branches {
-			if !branchComposeRouteNeedsDecode(branches[branchIndex]) {
-				branchInputs[branchIndex] = selectRef
-			}
-		}
-		if len(decodedBranches) == 0 {
-			continue
-		}
-		decodeConfig, err := branchComposeGroupDecodeConfig(decodedBranches, branches)
-		if err != nil {
-			return pipeline.Spec{}, err
-		}
-		decodeName := branchComposeInputNodeName(decodeNodeName(groups[i].selector), groups[i].input)
-		decodeRef := pipeline.NodeRef(decodeName)
-		decodeDetail := decodeRequestDetail(decodeRequest{selector: groups[i].selector, config: decodeConfig})
-		if err := addPlannedNode(nodes, &spec, decodeName, pipeline.NodeStage, decodeRef, decodeDetail); err != nil {
-			return pipeline.Spec{}, err
-		}
-		groupEdges[selectRef] = append(groupEdges[selectRef], pipeline.EdgeSpec{
-			From:   selectRef,
-			To:     decodeRef,
-			Policy: pipeline.RouteAll,
-		})
-		groupNodeOrder = append(groupNodeOrder, decodeRef)
-		for _, prefix := range branchComposeSharedStepGroups(decodedBranches, branches) {
-			if len(prefix.branches) == 0 {
-				continue
-			}
-			firstBranch := prefix.branches[0]
-			transforms, err := branchComposeRouteOperationTransformsForName(branchComposeSharedOperationName(branches[firstBranch]), prefix.operations)
-			if err != nil {
-				return pipeline.Spec{}, err
-			}
-			branchRef := decodeRef
-			for j := range transforms {
-				stepRef := pipeline.NodeRef(transforms[j].name)
-				if err := addPlannedNode(nodes, &spec, transforms[j].name, pipeline.NodeStage, stepRef, mediaTransformDetail(transforms[j])); err != nil {
-					return pipeline.Spec{}, err
-				}
-				outgoingEdge := pipeline.EdgeSpec{
-					From:   branchRef,
-					To:     stepRef,
-					Policy: pipeline.RouteAll,
-				}
-				groupEdges[branchRef] = append(groupEdges[branchRef], outgoingEdge)
-				branchRef = stepRef
-				groupNodeOrder = append(groupNodeOrder, stepRef)
-			}
-			for _, branchIndex := range prefix.branches {
-				branchInputs[branchIndex] = branchRef
-			}
-		}
+	g, err := planComposeGraph(sourceRefs, branches, outputs)
+	if err != nil {
+		return pipeline.Spec{}, err
 	}
-
-	branchOutputRefs := make([]pipeline.NodeRef, len(branches))
-	branchNodeOrder := make([]pipeline.NodeRef, 0, len(branches)+branchComposeOperationStageCount(branches))
-	outgoing := make(map[pipeline.NodeRef][]pipeline.EdgeSpec, len(branches)*2+branchComposeOperationStageCount(branches))
-	for i := range branches {
-		branchRef := branchInputs[i]
-		transforms, err := branchComposePrivateOperationTransforms(branches[i])
-		if err != nil {
-			return pipeline.Spec{}, err
-		}
-		for j := range transforms {
-			stepRef := pipeline.NodeRef(transforms[j].name)
-			if err := addPlannedNode(nodes, &spec, transforms[j].name, pipeline.NodeStage, stepRef, mediaTransformDetail(transforms[j])); err != nil {
-				return pipeline.Spec{}, err
-			}
-			outgoing[branchRef] = append(outgoing[branchRef], pipeline.EdgeSpec{
-				From:   branchRef,
-				To:     stepRef,
-				Policy: pipeline.RouteAll,
-			})
-			branchRef = stepRef
-			branchNodeOrder = append(branchNodeOrder, stepRef)
-		}
-
-		if branchComposeRouteNeedsEncode(branches[i]) {
-			encodeName := encodeNodeName(branches[i].request)
-			encodeRef := pipeline.NodeRef(encodeName)
-			if err := addPlannedNode(nodes, &spec, encodeName, pipeline.NodeStage, encodeRef, encodeNodeDetail(branches[i].request)); err != nil {
-				return pipeline.Spec{}, err
-			}
-			outgoing[branchRef] = append(outgoing[branchRef], pipeline.EdgeSpec{
-				From:   branchRef,
-				To:     encodeRef,
-				Policy: pipeline.RouteAll,
-			})
-			branchRef = encodeRef
-			branchNodeOrder = append(branchNodeOrder, encodeRef)
-		}
-		branchOutputRefs[i] = branchRef
-	}
-
-	for i := range outputs {
-		if outputs[i].sink != nil {
-			outputName := branchComposeTargetSinkNodeName(outputs[i], i)
-			outputRef := pipeline.NodeRef(outputName)
-			if err := addPlannedNode(nodes, &spec, outputName, pipeline.NodeSink, outputRef, describedNodeDetail(outputs[i].sink)); err != nil {
-				return pipeline.Spec{}, err
-			}
-			for _, branchIndex := range outputs[i].matches {
-				branchRef := branchOutputRefs[branchIndex]
-				outgoing[branchRef] = append(outgoing[branchRef], pipeline.EdgeSpec{
-					From:   branchRef,
-					To:     outputRef,
-					Policy: pipeline.RouteAll,
-				})
-			}
-			continue
-		}
-
-		outputName := muxNodeName(outputs[i].target, i)
-		outputRef := pipeline.NodeRef(outputName)
-		if err := addPlannedNode(nodes, &spec, outputName, pipeline.NodeStage, outputRef, outputNodeDetailWithFormat(outputs[i].target, outputs[i].output.Format)); err != nil {
-			return pipeline.Spec{}, err
-		}
-		for _, branchIndex := range outputs[i].matches {
-			branchRef := branchOutputRefs[branchIndex]
-			outgoing[branchRef] = append(outgoing[branchRef], pipeline.EdgeSpec{
-				From:   branchRef,
-				To:     outputRef,
-				Policy: pipeline.RouteAll,
-			})
-		}
-	}
-	// Source edges are emitted source-major (every source's fanout grouped
-	// together) because the built graph's Spec() lists edges per from-node in
-	// node insertion order — the planned and built specs must stay
-	// byte-identical for multi-input jobs too.
-	for _, sourceRef := range sourceRefs {
-		for _, selectRef := range selectNodeOrder {
-			sourceEdges = append(sourceEdges, pipeline.EdgeSpec{
-				From:   sourceRef,
-				To:     selectRef,
-				Policy: pipeline.RouteAll,
-			})
-		}
-	}
-	spec.Edges = append(spec.Edges, sourceEdges...)
-	for i := range groupNodeOrder {
-		spec.Edges = append(spec.Edges, groupEdges[groupNodeOrder[i]]...)
-		spec.Edges = append(spec.Edges, outgoing[groupNodeOrder[i]]...)
-	}
-	for i := range branchNodeOrder {
-		spec.Edges = append(spec.Edges, outgoing[branchNodeOrder[i]]...)
-	}
-	return spec, nil
+	return g.emit(spec, nodes)
 }
 
-func compileBranchComposeInputs(
+// lowerBranchCompose builds a branch composition fed by sourceRefs: groups
+// are the streams its branches resolved to, branchPlan the per-branch queues.
+func lowerBranchCompose(
 	ctx context.Context,
-	runtime *runtime,
+	service *builder,
 	graph pipeline.Graph,
 	sourceRefs []pipeline.NodeRef,
 	groups []branchComposeStreamGroup,
 	bounds []decodeBoundsProvider,
 	branches []branchComposeRoute,
-	inputPlan map[string]graphPlanBranchComposeInputOperation,
-	realtime bool,
-) ([]pipeline.NodeRef, []av.Stream, error) {
-	service := &builder{runtime: runtime}
-	branchInputs := make([]pipeline.NodeRef, len(branches))
-	branchStreams := make([]av.Stream, len(branches))
-	for i := range groups {
-		selector := groups[i].selector
-		selected := groups[i].stream
-		planned, ok := inputPlan[branchComposeSelectorGroupKey(selector, groups[i].input)]
-		if !ok {
-			planned = inputPlan[branchComposeSelectorKey(selector)]
-		}
-		selectName := firstNonEmpty(planned.selectNode.String(), branchComposeInputNodeName(selectNodeName(selector), groups[i].input))
-		selectStage := newStreamSelectStage(selectName, selected, selector, selectNodeDetail(selector))
-		selectRef, err := graph.AddStage(selectStage, runtime.buffer)
-		if err != nil {
-			selectStage.Close()
-			return nil, nil, err
-		}
-		for j := range sourceRefs {
-			if err := connectRefs(graph, sourceRefs[j], selectRef); err != nil {
-				return nil, nil, err
-			}
-		}
-		decodedBranches := branchComposeDecodedBranchIndices(groups[i].branches, branches)
-		for _, branchIndex := range groups[i].branches {
-			if !branchComposeRouteNeedsDecode(branches[branchIndex]) {
-				branchInputs[branchIndex] = selectRef
-				branchStreams[branchIndex] = selected
-			}
-		}
-		if len(decodedBranches) == 0 {
-			continue
-		}
-		decodeBounds := codec.DecodeBounds{}
-		if len(bounds) != 0 {
-			decodeBounds = providerDecodeBoundsForStream(selected, bounds)
-		}
-		decodeConfig, err := branchComposeGroupDecodeConfig(decodedBranches, branches)
-		if err != nil {
-			return nil, nil, err
-		}
-		dropDecodeEvents := branchComposeGroupDropDecodeEvents(decodedBranches, branches)
-		decodeName := firstNonEmpty(planned.decodeNode.String(), decodeNodeName(selector))
-		decodeStage, err := service.newDecodeStageNamed(ctx, decodeName, decodeRequest{selector: selector, config: decodeConfig}, selected, realtime, dropDecodeEvents, decodeBounds)
-		if err != nil {
-			return nil, nil, err
-		}
-		decodeRef, err := graph.AddStage(decodeStage, runtime.buffer)
-		if err != nil {
-			decodeStage.Close()
-			return nil, nil, err
-		}
-		if err := connectRefs(graph, selectRef, decodeRef); err != nil {
-			return nil, nil, err
-		}
-		decodedStream := selected
-		for _, branchIndex := range decodedBranches {
-			branchInputs[branchIndex] = decodeRef
-			branchStreams[branchIndex] = decodedStream
-		}
-	}
-	return branchInputs, branchStreams, nil
-}
-
-func compileBranchComposeRoutes(
-	ctx context.Context,
-	service *builder,
-	graph pipeline.Graph,
-	branches []branchComposeRoute,
 	outputs []branchComposeTargetRoute,
-	branchInputs []pipeline.NodeRef,
-	branchStreams []av.Stream,
-	sharedStepPlan map[string][]pipeline.NodeRef,
 	branchPlan map[string]graphPlanBranchComposeBranchOperation,
 	realtime bool,
 ) error {
-	runtime := service.runtime
-	branchRefs := append([]pipeline.NodeRef(nil), branchInputs...)
-	branchInputStreams := append([]av.Stream(nil), branchStreams...)
-	for _, prefix := range branchComposeRuntimeSharedStepGroups(branches, branchInputs, branchStreams) {
-		if len(prefix.branches) == 0 {
-			continue
-		}
-		firstBranch := prefix.branches[0]
-		branchRef := branchInputs[firstBranch]
-		branchStream := branchStreams[firstBranch]
-		stepRefs := branchComposeSharedStepPlanRefs(sharedStepPlan, branches, prefix.branches)
-		transforms, err := branchComposeRouteOperationTransformsForName(branchComposeSharedOperationName(branches[firstBranch]), prefix.operations)
-		if err != nil {
-			return err
-		}
-		for j := range transforms {
-			stageName := ""
-			if j < len(stepRefs) {
-				stageName = stepRefs[j].String()
-			}
-			stage, outputStream, err := service.newBranchComposeStepStageNamed(ctx, stageName, transforms[j], branchStream, realtime)
-			if err != nil {
-				return err
-			}
-			stageRef, err := graph.AddStage(stage, runtime.buffer)
-			if err != nil {
-				stage.Close()
-				return err
-			}
-			if err := connectRefs(graph, branchRef, stageRef); err != nil {
-				return err
-			}
-			branchRef = stageRef
-			branchStream = outputStream
-		}
-		for _, branchIndex := range prefix.branches {
-			branchRefs[branchIndex] = branchRef
-			branchInputStreams[branchIndex] = branchStream
-		}
+	g, err := planComposeGraph(sourceRefs, branches, outputs)
+	if err != nil {
+		return err
 	}
-
-	branchOutputRefs := make([]pipeline.NodeRef, len(branches))
-	branchOutputStreams := make([]av.Stream, len(branches))
-	for i := range branches {
-		branchRef := branchRefs[i]
-		branchStream := branchInputStreams[i]
-		planned := branchPlan[branches[i].name]
-		transforms, err := branchComposePrivateOperationTransforms(branches[i])
-		if err != nil {
-			return err
-		}
-		for j := range transforms {
-			stageName := ""
-			if j < len(planned.privateStageNodes) {
-				stageName = planned.privateStageNodes[j].String()
-			}
-			stage, outputStream, err := service.newBranchComposeStepStageNamed(ctx, stageName, transforms[j], branchStream, realtime)
-			if err != nil {
-				return err
-			}
-			stageRef, err := graph.AddStage(stage, planned.buffer)
-			if err != nil {
-				stage.Close()
-				return err
-			}
-			if err := connectRefs(graph, branchRef, stageRef); err != nil {
-				return err
-			}
-			branchRef = stageRef
-			branchStream = outputStream
-		}
-
-		if branchComposeRouteNeedsEncode(branches[i]) {
-			request := branches[i].request
-			config, _, err := prepareEncodeConfig(branchStream, request, realtime)
-			if err != nil {
-				return err
-			}
-			encodeRef, encodedStream, err := service.compileEncodeStageNamed(ctx, graph, planned.encodeNode.String(), branchRef, request, config, planned.buffer)
-			if err != nil {
-				return err
-			}
-			branchRef = encodeRef
-			branchStream = encodedStream
-		}
-		branchOutputRefs[i] = branchRef
-		branchOutputStreams[i] = branchStream
-	}
-
-	for i := range outputs {
-		buffer := branchComposeOutputBuffer(runtime.buffer, outputs[i].matches, branches, branchPlan)
-		if outputs[i].sink != nil {
-			sink := outputs[i].sink
-			if outputs[i].node != "" {
-				sink = namedSink{name: outputs[i].node.String(), sink: sink}
-			}
-			sinkRef, err := graph.AddSink(sink, buffer)
-			if err != nil {
-				return err
-			}
-			for _, branchIndex := range outputs[i].matches {
-				if err := connectRefs(graph, branchOutputRefs[branchIndex], sinkRef); err != nil {
-					return err
-				}
-			}
-			continue
-		}
-
-		streams := make([]av.Stream, 0, len(outputs[i].matches))
-		for _, branchIndex := range outputs[i].matches {
-			streams = append(streams, branchOutputStreams[branchIndex])
-		}
-		destination := outputs[i].output.Destination
-		if destinationSpecEmpty(destination) {
-			destination = destinationSpec{
-				output: outputs[i].target,
-				format: outputs[i].output.Format,
-			}
-		}
-		muxStage, err := service.openMuxDestinationStage(ctx, destination, i, streams, branchComposeTargetOpenFormat(outputs[i].output), outputs[i].output.Format)
-		if err != nil {
-			return err
-		}
-		stage := pipeline.Stage(muxStage)
-		if outputs[i].node != "" {
-			stage = namedStage{name: outputs[i].node.String(), stage: muxStage}
-		}
-		muxRef, err := graph.AddStage(stage, buffer)
-		if err != nil {
-			muxStage.Close()
-			return err
-		}
-		for _, branchIndex := range outputs[i].matches {
-			if err := connectRefs(graph, branchOutputRefs[branchIndex], muxRef); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
-}
-
-func branchComposeSharedStepPlanRefs(sharedStepPlan map[string][]pipeline.NodeRef, branches []branchComposeRoute, indices []int) []pipeline.NodeRef {
-	if len(sharedStepPlan) == 0 {
-		return nil
-	}
-	for _, index := range indices {
-		if index < 0 || index >= len(branches) {
-			continue
-		}
-		if refs := sharedStepPlan[branches[index].name]; len(refs) != 0 {
-			return refs
-		}
-	}
-	return nil
+	return g.lower(ctx, service, graph, composeLowering{
+		streams:      composeBranchStreams(groups, len(branches)),
+		bounds:       bounds,
+		branchBuffer: branchPlan,
+		realtime:     realtime,
+	})
 }
 
 func (b *builder) newBranchComposeStepStageNamed(ctx context.Context, name string, transform mediaTransform, stream av.Stream, realtime bool) (pipeline.Stage, av.Stream, error) {
@@ -1040,30 +667,6 @@ func branchComposeSharedStepGroups(indices []int, branches []branchComposeRoute)
 			})
 		}
 		groups[position].branches = append(groups[position].branches, index)
-	}
-	return groups
-}
-
-func branchComposeRuntimeSharedStepGroups(branches []branchComposeRoute, inputs []pipeline.NodeRef, streams []av.Stream) []branchComposeSharedStepGroup {
-	groups := make([]branchComposeSharedStepGroup, 0, len(branches))
-	positions := make(map[string]int, len(branches))
-	for i := range branches {
-		key := strings.Join([]string{
-			string(inputs[i]),
-			string(streams[i].ID),
-			string(streams[i].Type),
-			string(streams[i].Codec.ID),
-			branchComposeRouteOperationsKey(branches[i].sharedOperations),
-		}, "\x00")
-		position, ok := positions[key]
-		if !ok {
-			position = len(groups)
-			positions[key] = position
-			groups = append(groups, branchComposeSharedStepGroup{
-				operations: branches[i].sharedOperations.Clone(),
-			})
-		}
-		groups[position].branches = append(groups[position].branches, i)
 	}
 	return groups
 }

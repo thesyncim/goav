@@ -483,29 +483,15 @@ func (p mediaPlanBranchComposeGraph) lower(ctx context.Context, gp graphPlan, gr
 	if err != nil {
 		return err
 	}
-	branchInputs, branchStreams, err := compileBranchComposeInputs(ctx, p.runtime, graph, sources.refs, groups, sources.bounds, p.branches, lowering.inputs, sources.realtime)
-	if err != nil {
-		return err
-	}
-	return compileBranchComposeRoutes(ctx, service, graph, p.branches, lowering.destinations, branchInputs, branchStreams, lowering.sharedStageNodes, lowering.branches, sources.realtime)
+	return lowerBranchCompose(ctx, service, graph, sources.refs, groups, sources.bounds, p.branches, lowering.destinations, lowering.branches, sources.realtime)
 }
 
 type graphPlanBranchComposeLowering struct {
-	inputs           map[string]graphPlanBranchComposeInputOperation
-	sharedStageNodes map[string][]pipeline.NodeRef
-	branches         map[string]graphPlanBranchComposeBranchOperation
-	destinations     []branchComposeTargetRoute
-}
-
-type graphPlanBranchComposeInputOperation struct {
-	selectNode pipeline.NodeRef
-	decodeNode pipeline.NodeRef
+	branches     map[string]graphPlanBranchComposeBranchOperation
+	destinations []branchComposeTargetRoute
 }
 
 type graphPlanBranchComposeBranchOperation struct {
-	privateStageNodes []pipeline.NodeRef
-	encodeNode        pipeline.NodeRef
-	encodeShape       shape.Spec
 	// buffer is the branch's declared queue lowered to a node policy, its copy
 	// bounds sized from the branch's shapes; direct when none was declared.
 	buffer pipeline.BufferPolicy
@@ -525,14 +511,6 @@ func (p mediaPlanBranchComposeGraph) prepareBranchComposeOperationLowering(gp gr
 			return graphPlanBranchComposeLowering{}, err
 		}
 	}
-	inputs, err := p.prepareBranchComposeInputOperations(branchOperations)
-	if err != nil {
-		return graphPlanBranchComposeLowering{}, err
-	}
-	sharedStageNodes, err := p.prepareBranchComposeSharedStageOperations(branchOperations)
-	if err != nil {
-		return graphPlanBranchComposeLowering{}, err
-	}
 	branches, err := p.prepareBranchComposeBranchOperations(branchOperations)
 	if err != nil {
 		return graphPlanBranchComposeLowering{}, err
@@ -541,109 +519,7 @@ func (p mediaPlanBranchComposeGraph) prepareBranchComposeOperationLowering(gp gr
 	if err != nil {
 		return graphPlanBranchComposeLowering{}, err
 	}
-	return graphPlanBranchComposeLowering{inputs: inputs, sharedStageNodes: sharedStageNodes, branches: branches, destinations: destinations}, nil
-}
-
-func (p mediaPlanBranchComposeGraph) prepareBranchComposeInputOperations(branchOperations map[string][]workOperation) (map[string]graphPlanBranchComposeInputOperation, error) {
-	groups := branchComposeSelectorGroups(p.branches)
-	inputs := make(map[string]graphPlanBranchComposeInputOperation, len(groups))
-	for i := range groups {
-		var input graphPlanBranchComposeInputOperation
-		for _, branchIndex := range groups[i].branches {
-			if branchIndex < 0 || branchIndex >= len(p.branches) {
-				continue
-			}
-			branch := p.branches[branchIndex]
-			operations := branchOperations[branch.name]
-			selectOperation, ok := graphPlanBranchOperation(operations, plan.OpSelect)
-			if !ok {
-				return nil, graphPlanInvalidError("branch composition graph plan has no select operation for branch", []string{
-					"branch=" + branch.name,
-				})
-			}
-			if err := assignBranchComposeInputNode(&input.selectNode, selectOperation.Node, branch.name, "select"); err != nil {
-				return nil, err
-			}
-			if !branchComposeRouteNeedsDecode(branch) {
-				continue
-			}
-			decodeOperation, ok := graphPlanBranchOperation(operations, plan.OpDecode)
-			if !ok {
-				return nil, graphPlanInvalidError("branch composition graph plan has no decode operation for branch", []string{
-					"branch=" + branch.name,
-				})
-			}
-			if err := assignBranchComposeInputNode(&input.decodeNode, decodeOperation.Node, branch.name, "decode"); err != nil {
-				return nil, err
-			}
-		}
-		inputs[branchComposeSelectorGroupKey(groups[i].selector, groups[i].input)] = input
-	}
-	return inputs, nil
-}
-
-func assignBranchComposeInputNode(target *pipeline.NodeRef, node pipeline.NodeRef, branch string, kind string) error {
-	if node == "" {
-		return graphPlanInvalidError("branch composition graph plan input operation has no node", []string{
-			"branch=" + branch,
-			"kind=" + kind,
-		})
-	}
-	if target == nil {
-		return nil
-	}
-	if *target == "" {
-		*target = node
-		return nil
-	}
-	if *target != node {
-		return graphPlanInvalidError("branch composition graph plan input operation is not shared by selector group", []string{
-			"branch=" + branch,
-			"kind=" + kind,
-			"first=" + target.String(),
-			"next=" + node.String(),
-		})
-	}
-	return nil
-}
-
-func (p mediaPlanBranchComposeGraph) prepareBranchComposeSharedStageOperations(branchOperations map[string][]workOperation) (map[string][]pipeline.NodeRef, error) {
-	nodesByBranch := make(map[string][]pipeline.NodeRef, len(p.branches))
-	for i := range p.branches {
-		branch := p.branches[i]
-		refs, err := graphPlanBranchStepOperationNodes(branchOperations[branch.name], true, branch.name)
-		if err != nil {
-			return nil, err
-		}
-		nodesByBranch[branch.name] = refs
-	}
-	groups := branchComposeSelectorGroups(p.branches)
-	for i := range groups {
-		decodedBranches := branchComposeDecodedBranchIndices(groups[i].branches, p.branches)
-		for _, prefix := range branchComposeSharedStepGroups(decodedBranches, p.branches) {
-			var firstBranch string
-			var first []pipeline.NodeRef
-			for _, branchIndex := range prefix.branches {
-				if branchIndex < 0 || branchIndex >= len(p.branches) {
-					continue
-				}
-				branch := p.branches[branchIndex]
-				next := nodesByBranch[branch.name]
-				if firstBranch == "" {
-					firstBranch = branch.name
-					first = next
-					continue
-				}
-				if !pipelineNodeRefsEqual(first, next) {
-					return nil, graphPlanInvalidError("branch composition graph plan shared operations are not shared by selector group", []string{
-						"first=" + firstBranch,
-						"next=" + branch.name,
-					})
-				}
-			}
-		}
-	}
-	return nodesByBranch, nil
+	return graphPlanBranchComposeLowering{branches: branches, destinations: destinations}, nil
 }
 
 func (p mediaPlanBranchComposeGraph) prepareBranchComposeBranchOperations(branchOperations map[string][]workOperation) (map[string]graphPlanBranchComposeBranchOperation, error) {
@@ -651,37 +527,11 @@ func (p mediaPlanBranchComposeGraph) prepareBranchComposeBranchOperations(branch
 	for i := range p.branches {
 		branch := p.branches[i]
 		operations := branchOperations[branch.name]
-		privateStageNodes, err := graphPlanBranchStepOperationNodes(operations, false, branch.name)
-		if err != nil {
-			return nil, err
-		}
-		var encodeNode pipeline.NodeRef
-		var encodeShape shape.Spec
-		if branchComposeRouteNeedsEncode(branch) {
-			operation, ok := graphPlanBranchOperation(operations, plan.OpEncode)
-			if !ok {
-				return nil, graphPlanInvalidError("branch composition graph plan has no encode operation for branch", []string{
-					"branch=" + branch.name,
-				})
-			}
-			if operation.Node == "" {
-				return nil, graphPlanInvalidError("branch composition graph plan encode operation has no node", []string{
-					"branch=" + branch.name,
-				})
-			}
-			encodeNode = operation.Node
-			encodeShape = operation.ShapeOut
-		}
 		buffer, err := branchComposeBufferPolicy(branch.branch.Buffer, operations)
 		if err != nil {
 			return nil, err
 		}
-		out[branch.name] = graphPlanBranchComposeBranchOperation{
-			privateStageNodes: privateStageNodes,
-			encodeNode:        encodeNode,
-			encodeShape:       encodeShape,
-			buffer:            buffer,
-		}
+		out[branch.name] = graphPlanBranchComposeBranchOperation{buffer: buffer}
 	}
 	return out, nil
 }
@@ -723,15 +573,6 @@ func (p mediaPlanBranchComposeGraph) validateBranchComposeBranchOperations(branc
 		})
 	}
 	return nil
-}
-
-func graphPlanBranchOperation(operations []workOperation, kind plan.OperationKind) (workOperation, bool) {
-	for i := range operations {
-		if operations[i].Kind == kind {
-			return operations[i], true
-		}
-	}
-	return workOperation{}, false
 }
 
 func (p mediaPlanBranchComposeGraph) validateBranchComposeStepOperations(branch branchComposeRoute, operations []workOperation) error {
@@ -791,7 +632,6 @@ func (p mediaPlanBranchComposeGraph) prepareBranchComposeDestinations(gp graphPl
 				"destination=" + operation.Name,
 			})
 		}
-		target.node = operation.Node
 		target.matches = matches
 		destinations[i] = target
 	}
@@ -958,27 +798,6 @@ func graphPlanBranchStepOperationCount(operations []workOperation, shared bool) 
 	return count
 }
 
-func graphPlanBranchStepOperationNodes(operations []workOperation, shared bool, branch string) ([]pipeline.NodeRef, error) {
-	refs := make([]pipeline.NodeRef, 0)
-	for i := range operations {
-		operation := operations[i]
-		if operation.Shared != shared {
-			continue
-		}
-		if operation.Kind != plan.OpTransform && operation.Kind != plan.OpStage {
-			continue
-		}
-		if operation.Node == "" {
-			return nil, graphPlanInvalidError("branch composition graph plan step operation has no node", []string{
-				"branch=" + branch,
-				"kind=" + string(operation.Kind),
-			})
-		}
-		refs = append(refs, operation.Node)
-	}
-	return refs, nil
-}
-
 func pipelineNodeRefsEqual(first []pipeline.NodeRef, second []pipeline.NodeRef) bool {
 	if len(first) != len(second) {
 		return false
@@ -1047,22 +866,12 @@ func (p mediaPlanStreamGraph) compileSelectedPacketCopyBranchCompose(ctx context
 				"node=" + target.Node.String(),
 			})
 		}
-		outputs[target.OutputIndex].node = target.Node
 	}
 	groups, err := resolveBranchComposeStreamGroupsForInputs(sources, p.inputs, branches)
 	if err != nil {
 		return err
 	}
-	inputPlan := map[string]graphPlanBranchComposeInputOperation{
-		branchComposeSelectorGroupKey(streamIntentSelector(p.stream), p.stream.Select.Input): {
-			selectNode: selectOperation.Node,
-		},
-	}
-	branchInputs, branchStreams, err := compileBranchComposeInputs(ctx, p.runtime, graph, sources.refs, groups, sources.bounds, branches, inputPlan, sources.realtime)
-	if err != nil {
-		return err
-	}
-	return compileBranchComposeRoutes(ctx, service, graph, branches, outputs, branchInputs, branchStreams, nil, nil, sources.realtime)
+	return lowerBranchCompose(ctx, service, graph, sources.refs, groups, sources.bounds, branches, outputs, nil, sources.realtime)
 }
 
 func (p mediaPlanStreamGraph) preparePacketCopyOperationLowering(gp graphPlan) (workOperation, bool, []graphPlanDestinationOperation, error) {
@@ -1687,30 +1496,12 @@ func (p mediaPlanStreamGraph) compileFrameStreamBranchCompose(ctx context.Contex
 				"node=" + target.Node.String(),
 			})
 		}
-		outputs[target.OutputIndex].node = target.Node
 	}
 	groups, err := resolveBranchComposeStreamGroupsForInputs(sources, p.inputs, branches)
 	if err != nil {
 		return err
 	}
-	inputPlan := map[string]graphPlanBranchComposeInputOperation{
-		branchComposeSelectorGroupKey(p.decode.selector, p.stream.Select.Input): {
-			selectNode: lowering.selectNode,
-			decodeNode: lowering.decodeNode,
-		},
-	}
-	branchPlan := map[string]graphPlanBranchComposeBranchOperation{
-		branches[0].name: {
-			privateStageNodes: append([]pipeline.NodeRef(nil), lowering.filterNodes...),
-			encodeNode:        lowering.encodeNode,
-			encodeShape:       lowering.encodeShape,
-		},
-	}
-	branchInputs, branchStreams, err := compileBranchComposeInputs(ctx, p.runtime, graph, sources.refs, groups, sources.bounds, branches, inputPlan, sources.realtime)
-	if err != nil {
-		return err
-	}
-	return compileBranchComposeRoutes(ctx, service, graph, branches, outputs, branchInputs, branchStreams, nil, branchPlan, sources.realtime)
+	return lowerBranchCompose(ctx, service, graph, sources.refs, groups, sources.bounds, branches, outputs, nil, sources.realtime)
 }
 
 func compileMediaPlanSources(
