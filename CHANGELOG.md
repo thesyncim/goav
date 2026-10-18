@@ -19,7 +19,9 @@ methodology changes, and migration notes.
   lone copied stream with steps (`.Copy().Playout(...)`, `.Copy().Do(packetStage)`)
   lowers too: it was refused with `recipe_graph_unsupported` although the same
   chain built beside a second stream. Frame stages after `.Encode` or `.Copy`
-  are still refused.
+  are still refused. `.Encode(...).Playout(...)` and `.Encode(...).Sync(...)`
+  now gate the encoded packets as declared; a lone chain moved the gate ahead of
+  the encoder, pacing frames instead.
 
 - Joins are described and built from the same schedule as everything else:
   the join tree (arm inputs, their event-keeping decodes, conversion stages,

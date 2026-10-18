@@ -489,28 +489,20 @@ func branchComposePrivateTransformsAroundEncode(branch branchComposeRoute) ([]me
 	return pre, post, nil
 }
 
-// operationsHaveStepAfterEncode reports a custom stage declared after the
-// encoder (a bitstream filter on the encoded packets). The single-stream route
-// keeps only pre-encode filters, so such a chain lowers as a one-branch
-// composition, which keeps the declared order. Playout and sync gates keep
-// their sink-boundary placement on the single-stream route.
+// operationsHaveStepAfterEncode reports a stage declared after the encoder (a
+// bitstream filter, or a playout or sync gate pacing the encoded packets). The
+// single-stream route keeps only pre-encode filters, so such a chain lowers as
+// a one-branch composition, which keeps the declared order.
 func operationsHaveStepAfterEncode(operations []operationSpec) bool {
 	encoded := false
 	for i := range operations {
 		switch {
 		case operations[i].Kind == plan.OpEncode && !operations[i].Encode.Copy:
 			encoded = true
-		case encoded && operations[i].Kind == plan.OpStage && !operationIsTimingGate(operations[i]):
+		case encoded && operations[i].Kind == plan.OpStage:
 			return true
 		}
 	}
 	return false
 }
 
-func operationIsTimingGate(operation operationSpec) bool {
-	switch operation.Stage.(type) {
-	case *playoutGate, *syncGate:
-		return true
-	}
-	return false
-}

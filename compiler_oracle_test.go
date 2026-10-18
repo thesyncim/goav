@@ -133,6 +133,9 @@ func oracleCorpus(t *testing.T) map[string]func() *goav.Job {
 		"stream_sync": func() *goav.Job {
 			return goav.From(oracleAudio()).Audio().Sync(flow.Sync("lip")).To(oracleSink("speaker"))
 		},
+		"stream_encode_playout": func() *goav.Job {
+			return goav.From(oracleVideo()).Video().Encode(codec.VP8()).Playout(flow.Playout("rtp")).To(oracleSink("rtp"))
+		},
 		"stream_encode_packet_stage": func() *goav.Job {
 			return goav.From(oracleVideo()).Video().Encode(codec.VP8()).Do(oraclePacketStage).To(w("out.webm"))
 		},
