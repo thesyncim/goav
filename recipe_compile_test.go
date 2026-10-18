@@ -1148,7 +1148,7 @@ func TestResolvedJobOutputFormatsEnterMediaPlanBuild(t *testing.T) {
 			name:    "audio",
 			media:   av.MediaAudio,
 			codecID: av.CodecOpus,
-			streams: []Stream{{
+			streams: []av.Stream{{
 				ID:   "audio",
 				Type: av.MediaAudio,
 				Codec: av.CodecParameters{

@@ -120,7 +120,7 @@ streams; they do not mutate the arm set of an existing join.
 For live audio rooms where tracks join and leave continuously, the supported
 pattern today is source-owned track lifecycle: an application source owns the
 participant registry, attaches ordinary runtime branches from
-`input.Stream(participantStream)` before accepting media for that participant,
+`input.Track(participantStream)` before accepting media for that participant,
 and emits `EventStreamAdded` / `EventStreamRemoved` for observability. One
 branch can process the track independently while another branch feeds a shared
 output mixer sink. `OnStream` is still available for sources that truly

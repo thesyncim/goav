@@ -170,7 +170,7 @@ func validatePlayoutPolicyForRecipeIROperations(operation string, branchName str
 func validatePlayoutPolicyForBranch(operation string, branchName string, stream av.Stream) error {
 	return validateGatePolicyForBranch(operation, branchName, stream,
 		"playout branches need stream timebase facts before graph mutation", []string{
-			"set av.Stream.TimeBase on the input.Stream(...) anchor or discovered stream",
+			"set av.Stream.TimeBase on the input.Track(...) anchor or discovered stream",
 			"set Codec.ClockRate so RTP-style timestamps can derive a timebase",
 			"remove .Playout(...) from dynamic branches whose source has no media timeline",
 		})

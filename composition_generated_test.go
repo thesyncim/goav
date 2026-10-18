@@ -225,7 +225,7 @@ func requireGeneratedNestedMixMatchesFlatMix(t *testing.T, tc generatedCompositi
 func runGeneratedFlatCompositionMix(t *testing.T, a, b, c []int16) [][]int16 {
 	t.Helper()
 	out := goavtest.NewCollector()
-	job := goav.Mix(
+	job := goav.LegacyMix(
 		goav.From(goavtest.Audio(48_000, 1, a)).Audio(),
 		goav.From(goavtest.Audio(48_000, 1, b)).Audio(),
 		goav.From(goavtest.Audio(48_000, 1, c)).Audio(),
@@ -240,8 +240,8 @@ func runGeneratedFlatCompositionMix(t *testing.T, a, b, c []int16) [][]int16 {
 func runGeneratedNestedCompositionMix(t *testing.T, a, b, c []int16) [][]int16 {
 	t.Helper()
 	out := goavtest.NewCollector()
-	job := goav.Mix(
-		goav.Mix(
+	job := goav.LegacyMix(
+		goav.LegacyMix(
 			goav.From(goavtest.Audio(48_000, 1, a)).Audio(),
 			goav.From(goavtest.Audio(48_000, 1, b)).Audio(),
 		),

@@ -11,6 +11,22 @@ methodology changes, and migration notes.
 
 ## Unreleased
 
+- Recipes can be written as values. An input's `Video()`, `Audio()`, or
+  `Stream()` is a `goav.Stream`; operations (`Decode`, `Encode`, `Resize`,
+  `Resample`, `Do`, `Playout`, `Sync`, `Tap`, `Buffer`, `Auto`, `Require`,
+  `Prefer`, `Shape`, `As`) return new Streams and leave theirs unchanged, so a
+  Stream used twice fans out and the work before the fork runs once.
+  `stream.To(destinations...)` makes an `Output`, `input.To(...)` copies every
+  stream of an input, and the runtime runs Outputs together:
+  `rt.Run(ctx, hd.To(hdOut), sd.To(sdOut))`, with `rt.Build`, `rt.Explain`, and
+  `rt.Describe` beside it. Streams sent to one Destination value share its
+  container. `goav.Mix`, `goav.Composite` (Layers placed with `goav.At`),
+  `goav.Select`, and `goav.Join` take Streams and return one. Breaking: the
+  builder joins are `goav.LegacyMix`, `LegacyComposite`, `LegacySelect`, and
+  `LegacyJoin`, and `InputSpec.Stream(av.Stream)` (the attach anchor) is
+  `InputSpec.Track`; the builder grammar goes away once everything moves to
+  values. A join's output still runs alone in one run (`stream_beside_join`).
+
 - `control.SetBitrate(stream, bps)` and `control.Keyframe(stream)` reach the
   encoder that emits `stream`, so one ladder rung or simulcast layer can be
   retargeted by its branch name: `SetBitrate("hd", 1_200_000)` changes only the

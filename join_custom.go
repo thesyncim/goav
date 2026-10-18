@@ -23,7 +23,7 @@ import (
 // through the one recipe compile (Describe() ≡ Build(), plan.OpJoin in
 // Explain), its joined output is a normal stream point (.Tap, .Branches,
 // .To), and the result is itself a JoinArm, so custom joins nest inside and
-// around the built-ins (Mix(Join("pair", stage, a, b), c)).
+// around the built-ins (LegacyMix(LegacyJoin("pair", stage, a, b), c)).
 //
 // The stage contract (audioMixStage in audio_mix.go is the reference
 // implementation the built-ins follow):
@@ -68,7 +68,7 @@ import (
 // Without a contract the join is a media-agnostic passthrough (Select-shaped).
 // Custom joins carry no .Encode — deliver frames to sinks with .To, or fan
 // out with .Branches where branches encode for muxed destinations.
-func Join(name string, stage pipeline.Stage, arms ...JoinArm) *JoinStream {
+func LegacyJoin(name string, stage pipeline.Stage, arms ...JoinArm) *JoinStream {
 	return &JoinStream{name: name, stage: stage, arms: arms}
 }
 
@@ -219,7 +219,7 @@ func validateCustomJoinName(name string) error {
 			Node:      firstNonEmpty(name, "join"),
 			Reason:    "custom join name " + strconv.Quote(name) + " is not snake-safe ([a-z][a-z0-9_]*)",
 			fixes: buildErrorFixes([]string{
-				"name the join with lowercase letters, digits, and underscores: goav.Join(\"crossfade\", stage, arms...)",
+				"name the join with lowercase letters, digits, and underscores: goav.LegacyJoin(\"crossfade\", stage, arms...)",
 			}),
 			cause: errUnsupportedBuild,
 		}
@@ -272,7 +272,7 @@ func customJoinStageError(name string, reason string) error {
 		Node:      firstNonEmpty(name, "join"),
 		Reason:    reason,
 		fixes: buildErrorFixes([]string{
-			"pass a pipeline.Stage whose Name() equals the join name: goav.Join(\"crossfade\", stage, arms...)",
+			"pass a pipeline.Stage whose Name() equals the join name: goav.LegacyJoin(\"crossfade\", stage, arms...)",
 			"see the Join doc for the convergence-stage contract (audio mix is the reference implementation)",
 		}),
 		cause: errUnsupportedBuild,

@@ -137,7 +137,7 @@ func validateSyncPolicyForRecipeIROperations(operation string, branchName string
 func validateSyncPolicyForBranch(operation string, branchName string, stream av.Stream) error {
 	return validateGatePolicyForBranch(operation, branchName, stream,
 		"sync branches need stream timebase facts before graph mutation", []string{
-			"set av.Stream.TimeBase on the input.Stream(...) anchor or discovered stream",
+			"set av.Stream.TimeBase on the input.Track(...) anchor or discovered stream",
 			"set Codec.ClockRate so RTP-style timestamps can derive a timebase",
 			"remove .Sync(...) from dynamic branches whose source has no media timeline",
 		})

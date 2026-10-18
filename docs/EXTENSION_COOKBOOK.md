@@ -29,7 +29,7 @@ stage concern.
 | Need | Use | Copy from | Failure to test |
 |---|---|---|---|
 | Push media already owned by the app | `goav.Source(name, shape, fn)` | `examples/custom-source` | missing callback or wrong shape refuses before work starts |
-| Publish dynamic app-owned tracks and optionally mix an output | `goav.Source` plus `task.Attach(...From(input.Stream(track)))` | `examples/dynamic-audio-room` | inactive participant frames fail instead of silently corrupting the mix |
+| Publish dynamic app-owned tracks and optionally mix an output | `goav.Source` plus `task.Attach(...From(input.Track(track)))` | `examples/dynamic-audio-room` | inactive participant frames fail instead of silently corrupting the mix |
 | Open a transport or live provider | `provider.Source` via `goav.Input(provider)` | `examples/provider-source` | nil provider or missing codec/stream facts refuse before work starts |
 | Write bytes after format resolution | `goav.Writer(name, open, opts...)` | `examples/custom-destination` | nil opener or writer open error fails the task |
 | Commit or abort object-store uploads | `provider.TransactionalWriter` | `examples/transactional-writer` | induced pipeline error calls `Abort`, not `Commit` |
@@ -101,8 +101,8 @@ if err != nil {
 track := av.Stream{ID: "host", Type: av.MediaAudio, Codec: hostCodec}
 attachments := map[string]goav.Attachment{}
 attachment, err := task.Attach(ctx,
-    goav.Branch("track-host").From(input.Stream(track)).To(perTrack),
-    goav.Branch("mix-host").From(input.Stream(track)).To(sharedMixer),
+    goav.Branch("track-host").From(input.Track(track)).To(perTrack),
+    goav.Branch("mix-host").From(input.Track(track)).To(sharedMixer),
 )
 if err != nil {
     return err

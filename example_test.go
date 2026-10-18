@@ -195,7 +195,7 @@ func ExampleFrom_autoResample() {
 // ExampleMix converges two audio sources into one stream: the dual of
 // Branches. The summed output is a normal stream point that takes Encode, To,
 // Tap, and Branches like any chain.
-func ExampleMix() {
+func ExampleLegacyMix() {
 	var mixed [][]int16
 	speakers := goav.Sink(component.SinkFunc("speakers", func(_ context.Context, msg component.Message) error {
 		if msg.Frame != nil {
@@ -204,7 +204,7 @@ func ExampleMix() {
 		return nil
 	}))
 
-	err := goav.Mix(
+	err := goav.LegacyMix(
 		goav.From(pcmSource("mic-1", 48_000, 1, []int16{100, 200})).Audio(),
 		goav.From(pcmSource("mic-2", 48_000, 1, []int16{50, -50})).Audio(),
 	).To(speakers).Run(context.Background())
@@ -217,7 +217,7 @@ func ExampleMix() {
 // arm two starts one 20ms frame later, so the leading step plays arm one
 // alone, the PTS-matched frames sum, and the trailing step plays arm two
 // alone.
-func ExampleMix_syncByPTS() {
+func ExampleLegacyMix_syncByPTS() {
 	var mixed [][]int16
 	var pts []int64
 	out := goav.Sink(component.SinkFunc("out", func(_ context.Context, msg component.Message) error {
@@ -228,7 +228,7 @@ func ExampleMix_syncByPTS() {
 		return nil
 	}))
 
-	err := goav.Mix(
+	err := goav.LegacyMix(
 		goav.From(pcmSourceAt("song-a", 48_000, 1, []int64{0, 20}, []int16{10, 10}, []int16{20, 20})).Audio(),
 		goav.From(pcmSourceAt("song-b", 48_000, 1, []int64{20, 40}, []int16{1, 1}, []int16{2, 2})).Audio(),
 	).SyncByPTS().To(out).Run(context.Background())
@@ -240,7 +240,7 @@ func ExampleMix_syncByPTS() {
 // ExampleComposite paints two video arms onto one canvas at their Region
 // offsets: a 4x4 camera at the origin and a second 4x4 camera 4 pixels right
 // produce one 8x4 frame.
-func ExampleComposite() {
+func ExampleLegacyComposite() {
 	var canvasW, canvasH int
 	var leftLuma, rightLuma byte
 	preview := goav.Sink(component.SinkFunc("preview", func(_ context.Context, msg component.Message) error {
@@ -254,7 +254,7 @@ func ExampleComposite() {
 		return nil
 	}))
 
-	err := goav.Composite(
+	err := goav.LegacyComposite(
 		goav.From(i420Source("cam", 4, 4, 100)).Video().Region(0, 0),
 		goav.From(i420Source("screen", 4, 4, 200)).Video().Region(4, 0),
 	).To(preview).Run(context.Background())
@@ -272,13 +272,13 @@ func ExampleComposite() {
 
 // ExampleSelect forwards exactly one live arm and switches arms through the
 // control plane — no node names, no rebuild.
-func ExampleSelect() {
+func ExampleLegacySelect() {
 	ctx := context.Background()
 	preview := goav.Sink(component.SinkFunc("preview", func(context.Context, component.Message) error {
 		return nil
 	}))
 
-	task, err := goav.Select(
+	task, err := goav.LegacySelect(
 		goav.From(i420Source("cam-1", 16, 16, 100)).Video(),
 		goav.From(i420Source("cam-2", 16, 16, 200)).Video(),
 	).To(preview).BuildLive(ctx)

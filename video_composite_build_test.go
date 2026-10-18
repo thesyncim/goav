@@ -39,7 +39,7 @@ func TestCompositeRunsTwoVideoSourcesIntoSink(t *testing.T) {
 
 	// arm "a" at top-left, arm "b" offset 4px right: the canvas is 8x4 and each
 	// 4x4 input lands at its Region.
-	task, err := Composite(
+	task, err := LegacyComposite(
 		From(compositeTestVideoSource("a", 4, 4, 100, 10, 20)).Video().Region(0, 0),
 		From(compositeTestVideoSource("b", 4, 4, 200, 30, 40)).Video().Region(4, 0),
 	).To(sink).Build(ctx)
@@ -70,7 +70,7 @@ func TestCompositeRunsTwoVideoSourcesIntoSink(t *testing.T) {
 }
 
 func TestCompositeRequiresTwoArms(t *testing.T) {
-	_, err := Composite(From(compositeTestVideoSource("a", 4, 4, 100, 10, 20)).Video()).
+	_, err := LegacyComposite(From(compositeTestVideoSource("a", 4, 4, 100, 10, 20)).Video()).
 		To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))).
 		Build(context.Background())
 	var buildErr *BuildError
@@ -82,7 +82,7 @@ func TestCompositeRequiresTwoArms(t *testing.T) {
 func errorsAsComposite(err error, target **BuildError) bool { return errors.As(err, target) }
 
 func TestCompositeRejectsDuplicateStreamIDs(t *testing.T) {
-	_, err := Composite(
+	_, err := LegacyComposite(
 		From(compositeTestVideoSource("dup", 4, 4, 100, 10, 20)).Video().Region(0, 0),
 		From(compositeTestVideoSource("dup", 4, 4, 200, 30, 40)).Video().Region(4, 0),
 	).To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))).
@@ -94,7 +94,7 @@ func TestCompositeRejectsDuplicateStreamIDs(t *testing.T) {
 }
 
 func TestCompositeRawFramesRequireSinkDestination(t *testing.T) {
-	_, err := Composite(
+	_, err := LegacyComposite(
 		From(compositeTestVideoSource("a", 4, 4, 100, 10, 20)).Video().Region(0, 0),
 		From(compositeTestVideoSource("b", 4, 4, 200, 30, 40)).Video().Region(4, 0),
 	).To(Write("canvas.ivf", io.Discard)).
@@ -117,7 +117,7 @@ func TestCompositeBuilderOptionsCarryIntoJoinSpec(t *testing.T) {
 
 	require := shape.Frame(av.MediaVideo, shape.Video(8, 4, av.PixelFormatI420))
 	prefer := shape.Frame(av.MediaVideo, shape.Video(16, 8, av.PixelFormatI420))
-	composite := Composite(
+	composite := LegacyComposite(
 		From(compositeTestVideoSource("a", 4, 4, 100, 10, 20)).Video().Region(0, 0),
 		From(compositeTestVideoSource("b", 4, 4, 200, 30, 40)).Video().Region(4, 0),
 	).

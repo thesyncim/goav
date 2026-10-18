@@ -65,7 +65,7 @@ func TestCustomJoinBuilderTapBranchesAndJoinArmContracts(t *testing.T) {
 	}
 
 	stage := newCustomJoinBuilderStage("funnel", 2)
-	joined := Join("funnel", stage,
+	joined := LegacyJoin("funnel", stage,
 		From(mixTestAudioSource("a", 100)).Audio(),
 		From(mixTestAudioSource("b", 50)).Audio(),
 	).Tap(FrameTap("funnel.frames"))
@@ -128,7 +128,7 @@ func TestCustomJoinBuilderTapBranchesAndJoinArmContracts(t *testing.T) {
 }
 
 func TestCustomJoinBranchesRejectInvalidBuilder(t *testing.T) {
-	_, err := Join("bad-name", newCustomJoinBuilderStage("bad-name", 2),
+	_, err := LegacyJoin("bad-name", newCustomJoinBuilderStage("bad-name", 2),
 		From(mixTestAudioSource("a", 100)).Audio(),
 		From(mixTestAudioSource("b", 50)).Audio(),
 	).Branches(

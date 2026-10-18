@@ -106,6 +106,7 @@ const (
 	streamStepAfterEncodeCode        errcode.Code = "stream_step_after_encode"
 	streamStepAfterDestinationCode   errcode.Code = "stream_step_after_destination"
 	streamBesideJoinCode             errcode.Code = "stream_beside_join"
+	streamInvalidCode                errcode.Code = "stream_invalid"
 	streamRegionOutsideCompositeCode errcode.Code = "stream_region_outside_composite"
 	stageMissingCode                 errcode.Code = "stage_missing"
 

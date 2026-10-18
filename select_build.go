@@ -8,14 +8,14 @@ import (
 // Select switches one of N live arms through to a single destination — the
 // runtime is a passthrough one-of-N switch (active-speaker camera, simulcast
 // layer, failover). Each arm is a source chain or another join:
-// Select(Mix(a, b), Mix(c, d)) switches between two live mixes, where each
+// LegacySelect(LegacyMix(a, b), LegacyMix(c, d)) switches between two live mixes, where each
 // sub-mix contributes its joined output under its output id (mix, mix-2).
 // Unlike Mix/Composite it does NOT decode/encode/resample: the active arm's
 // frames or packets are forwarded as-is, only the StreamID rewritten to the
 // output. Arms must have distinct stream ids; the first arm is active by
 // default and SelectActive switches live through the control plane. This
 // reuses the existing Job, so .To/Build/Run are unchanged.
-func Select(arms ...JoinArm) *SelectStream {
+func LegacySelect(arms ...JoinArm) *SelectStream {
 	return &SelectStream{arms: arms}
 }
 

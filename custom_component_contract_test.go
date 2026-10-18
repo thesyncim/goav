@@ -262,7 +262,7 @@ func TestInputStreamAnchorCarriesRuntimeBranchShape(t *testing.T) {
 		},
 	}
 
-	anchor := input.Stream(stream)
+	anchor := input.Track(stream)
 	if anchor.Name() != "room" {
 		t.Fatalf("anchor name = %q, want room", anchor.Name())
 	}
@@ -293,7 +293,7 @@ func TestInputStreamAnchorRequiresStreamID(t *testing.T) {
 		func(context.Context, SourcePush) error { return nil },
 	)
 	spec := Branch("bad").
-		From(input.Stream(av.Stream{Type: av.MediaAudio, Codec: av.CodecParameters{Type: av.MediaAudio}})).
+		From(input.Track(av.Stream{Type: av.MediaAudio, Codec: av.CodecParameters{Type: av.MediaAudio}})).
 		To(Sink(SinkFunc("discard", func(context.Context, Message) error { return nil })))
 
 	err := validateAttachBranchSpec(spec, nil)

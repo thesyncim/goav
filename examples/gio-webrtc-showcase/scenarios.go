@@ -54,7 +54,7 @@ func scenarioOpusLadder(ctx context.Context) scenarioResult {
 
 func scenarioMixResample(ctx context.Context) scenarioResult {
 	out := goavtest.NewCollector()
-	report, err := goav.Mix(
+	report, err := goav.LegacyMix(
 		goav.From(goavtest.Audio(48_000, codec.Mono, toneFrame(140), toneFrame(180))).Audio(),
 		goav.From(goavtest.Audio(24_000, codec.Mono, toneFrame(90), toneFrame(120))).Audio(),
 	).

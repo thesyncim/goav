@@ -79,7 +79,7 @@ transcription, recording, and maybe one mixed output for playback or archive.
 Use `goav.Mix(arms...)` when the arms are known when the recipe is built. When
 membership changes at runtime, keep each participant as an application-owned
 stream. The application owns the registry, attaches ordinary branches from
-`input.Stream(participantStream)` before accepting media, emits
+`input.Track(participantStream)` before accepting media, emits
 `EventStreamAdded` / `EventStreamRemoved`, and feeds any mixed output after the
 per-track routes exist.
 
@@ -111,11 +111,11 @@ join := func(name string) error {
     track := room.ParticipantStream(name)
     attachment, err := task.Attach(ctx,
         goav.Branch("track-"+name).
-            From(input.Stream(track)).
+            From(input.Track(track)).
             Do(trackMeter).
             To(tracks.Sink()),
         goav.Branch("mix-"+name).
-            From(input.Stream(track)).
+            From(input.Track(track)).
             To(mix.Sink()),
     )
     if err != nil {
@@ -155,7 +155,7 @@ _ = leave("music")
 
 `OnStream` is still useful when a source discovers tracks itself and automatic
 branch attachments are enough. For app-owned room membership, explicit
-`input.Stream(track)` anchors make the first-frame boundary deterministic.
+`input.Track(track)` anchors make the first-frame boundary deterministic.
 
 The runnable module `examples/dynamic-audio-room` validates this pattern with
 `goavtest/expect`: it proves runtime participant add/remove events, S16

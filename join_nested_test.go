@@ -18,8 +18,8 @@ import (
 )
 
 // These tests pin nested joins: a join is a JoinArm, so it can stand as an arm
-// of another join — Mix(Mix(a, b), c) sub-mixes two arms and mixes the result
-// with a third, Select(Mix(a, b), Mix(c, d)) switches between two live mixes,
+// of another join — LegacyMix(LegacyMix(a, b), c) sub-mixes two arms and mixes the result
+// with a third, LegacySelect(LegacyMix(a, b), LegacyMix(c, d)) switches between two live mixes,
 // and composites nest as sub-canvases. A nested join contributes its JOINED
 // output stream under its output id (the planned node name: mix, mix-2, ...).
 
@@ -29,8 +29,8 @@ import (
 func TestMixOfMixSumsBothStages(t *testing.T) {
 	ctx := context.Background()
 	var got [][]int16
-	task, err := Mix(
-		Mix(
+	task, err := LegacyMix(
+		LegacyMix(
 			From(mixTestAudioSource("a", 100, 200)).Audio(),
 			From(mixTestAudioSource("b", 50, -50)).Audio(),
 		),
@@ -55,8 +55,8 @@ func TestMixOfMixSumsBothStages(t *testing.T) {
 func TestNestedMixClampsPerStage(t *testing.T) {
 	ctx := context.Background()
 	var got [][]int16
-	task, err := Mix(
-		Mix(
+	task, err := LegacyMix(
+		LegacyMix(
 			From(mixTestAudioSource("a", 30000)).Audio(),
 			From(mixTestAudioSource("b", 30000)).Audio(),
 		),
@@ -83,12 +83,12 @@ func TestSelectOfMixesSwitchesLive(t *testing.T) {
 	defer cancel()
 
 	sink := newSelectSwitchSink("out")
-	tk, err := Select(
-		Mix(
+	tk, err := LegacySelect(
+		LegacyMix(
 			From(selectTestLiveSource("a", 100)).Audio(),
 			From(selectTestLiveSource("b", 50)).Audio(),
 		),
-		Mix(
+		LegacyMix(
 			From(selectTestLiveSource("c", 10)).Audio(),
 			From(selectTestLiveSource("d", 20)).Audio(),
 		),
@@ -135,12 +135,12 @@ func TestNestedSelectRoutingPinned(t *testing.T) {
 	defer cancel()
 
 	sink := newSelectSwitchSink("out")
-	tk, err := Select(
-		Select(
+	tk, err := LegacySelect(
+		LegacySelect(
 			From(selectTestLiveSource("a", 100)).Audio(),
 			From(selectTestLiveSource("b", 200)).Audio(),
 		).Tap(FrameTap("left.select")),
-		Select(
+		LegacySelect(
 			From(selectTestLiveSource("c", 30)).Audio(),
 			From(selectTestLiveSource("d", 40)).Audio(),
 		).Tap(FrameTap("right.select")),
@@ -190,8 +190,8 @@ func joinNestedTestFrameSink(name string, into *[]*av.Frame) Destination {
 func TestCompositeOfCompositesPaintsNestedCanvas(t *testing.T) {
 	ctx := context.Background()
 	var got []*av.Frame
-	task, err := Composite(
-		Composite(
+	task, err := LegacyComposite(
+		LegacyComposite(
 			From(compositeTestVideoSource("a", 4, 4, 100, 10, 20)).Video().Region(0, 0),
 			From(compositeTestVideoSource("b", 4, 4, 200, 30, 40)).Video().Region(4, 0),
 		),
@@ -230,9 +230,9 @@ func TestCompositeOfCompositesPaintsNestedCanvas(t *testing.T) {
 func TestNestedCompositeRegionPlacesSubCanvas(t *testing.T) {
 	ctx := context.Background()
 	var got []*av.Frame
-	task, err := Composite(
+	task, err := LegacyComposite(
 		From(compositeTestVideoSource("c", 4, 4, 50, 10, 20)).Video().Region(0, 0),
-		Composite(
+		LegacyComposite(
 			From(compositeTestVideoSource("a", 4, 4, 100, 10, 20)).Video().Region(0, 0),
 			From(compositeTestVideoSource("b", 4, 4, 200, 30, 40)).Video().Region(4, 0),
 		).Region(0, 4),
@@ -282,9 +282,9 @@ func TestSelectRegionPlacesSwitchedArmOnComposite(t *testing.T) {
 		}
 		return nil
 	}))
-	task, err := Composite(
+	task, err := LegacyComposite(
 		From(compositeTestVideoSource("c", 4, 4, 50, 10, 20)).Video().Region(0, 0),
-		Select(
+		LegacySelect(
 			From(compositeTestVideoSource("a", 4, 4, 100, 10, 20)).Video(),
 			From(compositeTestVideoSource("b", 4, 4, 200, 30, 40)).Video(),
 		).Region(0, 4),
@@ -326,9 +326,9 @@ func TestMixResamplesNestedMixOutput(t *testing.T) {
 		return nil
 	}))
 
-	job := Mix(
+	job := LegacyMix(
 		From(mixTestAudioSourceRate("a", 48000)).Audio(),
-		Mix(
+		LegacyMix(
 			From(mixTestAudioSourceRate("b", 24000)).Audio(),
 			From(mixTestAudioSourceRate("c", 24000)).Audio(),
 		),
@@ -359,9 +359,9 @@ func TestMixResamplesNestedMixOutput(t *testing.T) {
 // guard: a sub-mix arm (with its own SyncByPTS) under an outer mix that
 // resamples the sub-mix output, planned and built from the one plan.
 func TestJoinDescribeEqualsBuildNestedMix(t *testing.T) {
-	job := Mix(
+	job := LegacyMix(
 		From(mixTestAudioSourceRate("a", 48000)).Audio(),
-		Mix(
+		LegacyMix(
 			From(mixTestAudioSourceRate("b", 24000)).Audio(),
 			From(mixTestAudioSourceRate("c", 24000)).Audio(),
 		).SyncByPTS(),
@@ -388,12 +388,12 @@ func TestJoinDescribeEqualsBuildNestedMix(t *testing.T) {
 // TestJoinDescribeEqualsBuildSelectOfMixes guards the planned shape of a
 // Select switching between two sub-mixes.
 func TestJoinDescribeEqualsBuildSelectOfMixes(t *testing.T) {
-	job := Select(
-		Mix(
+	job := LegacySelect(
+		LegacyMix(
 			From(mixTestAudioSource("a", 1)).Audio(),
 			From(mixTestAudioSource("b", 1)).Audio(),
 		),
-		Mix(
+		LegacyMix(
 			From(mixTestAudioSource("c", 1)).Audio(),
 			From(mixTestAudioSource("d", 1)).Audio(),
 		),
@@ -418,8 +418,8 @@ func TestJoinDescribeEqualsBuildSelectOfMixes(t *testing.T) {
 func TestNestedMixTapAnchorsOnSubJoinNode(t *testing.T) {
 	ctx := context.Background()
 	var main [][]int16
-	task, err := Mix(
-		Mix(
+	task, err := LegacyMix(
+		LegacyMix(
 			From(mixTestAudioSource("a", 100, 200)).Audio(),
 			From(mixTestAudioSource("b", 50, -50)).Audio(),
 		).Tap(FrameTap("submix")),
@@ -469,8 +469,8 @@ func TestNestedMixEncodesToFile(t *testing.T) {
 		WithEncoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &encodeTestEncoderFactory{encoder: &encodeTestEncoder{}}),
 	)
 
-	task, err := Mix(
-		Mix(
+	task, err := LegacyMix(
+		LegacyMix(
 			From(mixTestAudioSource("a", 100, 200)).Audio(),
 			From(mixTestAudioSource("b", 50, -50)).Audio(),
 		),
@@ -491,8 +491,8 @@ func TestNestedMixEncodesToFile(t *testing.T) {
 // TestNestedJoinArmRejectsEncode pins that a join used as an arm is not a
 // terminal: it cannot carry its own encoder.
 func TestNestedJoinArmRejectsEncode(t *testing.T) {
-	_, err := Mix(
-		Mix(
+	_, err := LegacyMix(
+		LegacyMix(
 			From(mixTestAudioSource("a", 1)).Audio(),
 			From(mixTestAudioSource("b", 1)).Audio(),
 		).Encode(codec.Opus()),
@@ -508,8 +508,8 @@ func TestNestedJoinArmRejectsEncode(t *testing.T) {
 // TestNestedJoinArmsRequireDistinctOutputIDs pins that a nested join's output
 // id participates in the sibling distinct-id check.
 func TestNestedJoinArmsRequireDistinctOutputIDs(t *testing.T) {
-	_, err := Mix(
-		Mix(
+	_, err := LegacyMix(
+		LegacyMix(
 			From(mixTestAudioSource("a", 1)).Audio(),
 			From(mixTestAudioSource("b", 1)).Audio(),
 		),
@@ -525,8 +525,8 @@ func TestNestedJoinArmsRequireDistinctOutputIDs(t *testing.T) {
 
 // TestNestedJoinRequiresTwoArms pins the arm-count rule on nested joins.
 func TestNestedJoinRequiresTwoArms(t *testing.T) {
-	_, err := Mix(
-		Mix(From(mixTestAudioSource("a", 1)).Audio()),
+	_, err := LegacyMix(
+		LegacyMix(From(mixTestAudioSource("a", 1)).Audio()),
 		From(mixTestAudioSource("c", 1)).Audio(),
 	).To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))).
 		BuildLive(context.Background())
@@ -539,8 +539,8 @@ func TestNestedJoinRequiresTwoArms(t *testing.T) {
 // TestMixRejectsNestedCompositeArm pins the media discipline: a Mix arm must
 // produce audio, so a nested composite (video) is rejected with the arm error.
 func TestMixRejectsNestedCompositeArm(t *testing.T) {
-	_, err := Mix(
-		Composite(
+	_, err := LegacyMix(
+		LegacyComposite(
 			From(compositeTestVideoSource("a", 4, 4, 100, 10, 20)).Video(),
 			From(compositeTestVideoSource("b", 4, 4, 200, 30, 40)).Video(),
 		),

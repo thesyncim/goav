@@ -160,7 +160,7 @@ func validateJoinArmOperations(join string, arm string, operations []operationSp
 			return joinArmError(join, firstNonEmpty(arm, join), fmt.Sprintf(
 				"%s arm chains support .Decode() and .Tap(...) only (%s is not lowered on an arm)",
 				join, string(operations[i].Kind)),
-				"transform or encode the JOINED stream after the join: goav.Mix(a, b).Encode(...) / .Branches(...)",
+				"transform or encode the JOINED stream after the join: goav.LegacyMix(a, b).Encode(...) / .Branches(...)",
 				"use a nested join arm when one arm needs its own convergence")
 		}
 	}

@@ -20,8 +20,8 @@ const (
 	// default.
 	joinSyncArrival joinSyncMode = iota
 	// joinSyncPTS aligns arm frames by presentation time on a common
-	// nanosecond clock — opt-in via Mix(...).SyncByPTS() and
-	// Composite(...).SyncByPTS().
+	// nanosecond clock — opt-in via LegacyMix(...).SyncByPTS() and
+	// LegacyComposite(...).SyncByPTS().
 	joinSyncPTS
 )
 

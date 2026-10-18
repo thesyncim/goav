@@ -11,11 +11,11 @@ import (
 // its destinations — the video dual of Mix (N→1) and the convergent dual of
 // Branches.
 // Each arm is a source chain such as From(frameSource).Video() or another
-// video-producing join — Composite(Composite(a, b), logo) paints a sub-canvas
+// video-producing join — LegacyComposite(LegacyComposite(a, b), logo) paints a sub-canvas
 // like any arm. Arms must have distinct stream ids and I420 video format, and
 // each may declare its canvas position with .Region(x, y). This reuses the
 // existing Job, so .To/Build/Run are unchanged (see docs/MULTI_INPUT.md).
-func Composite(arms ...JoinArm) *CompositeStream {
+func LegacyComposite(arms ...JoinArm) *CompositeStream {
 	return &CompositeStream{arms: arms}
 }
 
@@ -173,7 +173,7 @@ var compositeJoinProfile = joinProfile{
 	},
 	sinkOnlyReason: "composite to a non-Sink destination requires .Encode(...)",
 	sinkOnlySuggestions: []string{
-		"encode the composited video first: goav.Composite(a, b).Encode(codec.VP8(codec.Bitrate(1_000_000))).To(out)",
+		"encode the composited video first: goav.LegacyComposite(a, b).Encode(codec.VP8(codec.Bitrate(1_000_000))).To(out)",
 		"deliver raw composited frames with .To(goav.Sink(sink)) instead",
 	},
 }

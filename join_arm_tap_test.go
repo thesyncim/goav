@@ -87,7 +87,7 @@ func tapArmTestPacketSource(id av.StreamID, codecID av.CodecID, samples ...int16
 func TestJoinArmTapComposes(t *testing.T) {
 	ctx := context.Background()
 	var got [][]int16
-	task, err := Mix(
+	task, err := LegacyMix(
 		From(mixTestAudioSource("dry", 100, 200)).Audio().Tap(FrameTap("dry.frames")),
 		FrameTap("dry.frames"),
 	).To(joinTestCollectSink("out", &got)).BuildLive(ctx)
@@ -118,7 +118,7 @@ func TestMixChainArmTapDecodesOnceAndMixes(t *testing.T) {
 	))
 
 	var main [][]int16
-	task, err := Mix(
+	task, err := LegacyMix(
 		From(tapArmTestPacketSource("a", pcm, 100, 200)).Audio().Decode().Tap(FrameTap("music")),
 		From(mixTestAudioSource("live", 50, -50)).Audio(),
 	).To(joinTestCollectSink("out", &main)).UseRuntime(rt).BuildLive(ctx)
@@ -177,7 +177,7 @@ func TestMixChainArmTapDecodesOnceAndMixes(t *testing.T) {
 func TestMixTapArmConvergesTappedStreamAgain(t *testing.T) {
 	ctx := context.Background()
 	var got [][]int16
-	task, err := Mix(
+	task, err := LegacyMix(
 		From(mixTestAudioSource("a", 100, 200)).Audio().Tap(FrameTap("dry")),
 		FrameTap("dry"),
 		From(mixTestAudioSource("live", 50, -50)).Audio(),
@@ -199,8 +199,8 @@ func TestMixTapArmConvergesTappedStreamAgain(t *testing.T) {
 func TestMixTapArmAnchorsOnNestedJoinTap(t *testing.T) {
 	ctx := context.Background()
 	var got [][]int16
-	task, err := Mix(
-		Mix(
+	task, err := LegacyMix(
+		LegacyMix(
 			From(mixTestAudioSource("a", 100, 200)).Audio(),
 			From(mixTestAudioSource("b", 50, -50)).Audio(),
 		).Tap(FrameTap("sub")),
@@ -227,7 +227,7 @@ func TestMixTapArmAnchorsOnNestedJoinTap(t *testing.T) {
 // shape: the planned restamp node hangs off the tap's node and feeds the join
 // alongside the declaring arm.
 func TestJoinDescribeEqualsBuildTapArm(t *testing.T) {
-	job := Mix(
+	job := LegacyMix(
 		From(mixTestAudioSource("a", 100, 200)).Audio().Tap(FrameTap("dry")),
 		FrameTap("dry"),
 		From(mixTestAudioSource("live", 50, -50)).Audio(),
@@ -261,7 +261,7 @@ func TestMixTapArmSyncByPTS(t *testing.T) {
 		return nil
 	}))
 
-	task, err := Mix(
+	task, err := LegacyMix(
 		From(mixSyncTestSource("a", []int64{0, 20}, [][]int16{{10, 10}, {20, 20}})).Audio().Tap(FrameTap("dry")),
 		FrameTap("dry"),
 		From(mixSyncTestSource("b", []int64{20, 40}, [][]int16{{1, 1}, {2, 2}})).Audio(),
@@ -297,7 +297,7 @@ func TestCompositeTapArmPaintsTappedStreamTwice(t *testing.T) {
 		return nil
 	}))
 
-	task, err := Composite(
+	task, err := LegacyComposite(
 		From(compositeTestVideoSource("cam", 4, 4, 100, 10, 20)).Video().Tap(FrameTap("cam.frames")).Region(0, 0),
 		FrameTap("cam.frames").Region(4, 0),
 		From(compositeTestVideoSource("fresh", 4, 4, 200, 30, 40)).Video().Region(0, 4),
@@ -330,7 +330,7 @@ func TestCompositeTapArmPaintsTappedStreamTwice(t *testing.T) {
 // TestMixTapArmUnknownTapListsDeclaredTaps: an unresolvable tap ref is
 // refused before any source opens, listing the taps the join declares.
 func TestMixTapArmUnknownTapListsDeclaredTaps(t *testing.T) {
-	_, err := Mix(
+	_, err := LegacyMix(
 		From(mixTestAudioSource("a", 1)).Audio().Tap(FrameTap("dry")),
 		FrameTap("nope"),
 	).To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))).
@@ -347,7 +347,7 @@ func TestMixTapArmUnknownTapListsDeclaredTaps(t *testing.T) {
 }
 
 func TestCompositeTapArmUnknownTapListsDeclaredTaps(t *testing.T) {
-	_, err := Composite(
+	_, err := LegacyComposite(
 		From(compositeTestVideoSource("cam", 4, 4, 100, 10, 20)).Video().Tap(FrameTap("cam.frames")).Region(0, 0),
 		FrameTap("missing").Region(4, 0),
 	).To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))).
@@ -364,7 +364,7 @@ func TestCompositeTapArmUnknownTapListsDeclaredTaps(t *testing.T) {
 }
 
 func TestSelectTapArmUnknownTapListsDeclaredTaps(t *testing.T) {
-	_, err := Select(
+	_, err := LegacySelect(
 		From(selectTestOneShotSource("a", 1)).Audio().Tap(FrameTap("selected.frames")),
 		FrameTap("missing"),
 	).To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))).
@@ -384,7 +384,7 @@ func TestSelectTapArmUnknownTapListsDeclaredTaps(t *testing.T) {
 // EARLIER arm — referencing a tap declared later is refused with the same
 // candidates listing (and the ordering fix).
 func TestMixTapArmMustFollowDeclaringArm(t *testing.T) {
-	_, err := Mix(
+	_, err := LegacyMix(
 		FrameTap("dry"),
 		From(mixTestAudioSource("a", 1)).Audio().Tap(FrameTap("dry")),
 	).To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))).
@@ -403,7 +403,7 @@ func TestMixTapArmMustFollowDeclaringArm(t *testing.T) {
 // TestMixTapArmRejectsDomainMismatch: a typed PacketTap arm cannot attach to
 // a frame-domain tap.
 func TestMixTapArmRejectsDomainMismatch(t *testing.T) {
-	_, err := Mix(
+	_, err := LegacyMix(
 		From(mixTestAudioSource("a", 1)).Audio().Tap(FrameTap("dry")),
 		PacketTap("dry"),
 	).To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))).
@@ -419,7 +419,7 @@ func TestMixTapArmRejectsDomainMismatch(t *testing.T) {
 // and .Tap(...) — anything else used to be silently dropped and is now an
 // error naming the alternatives.
 func TestMixArmRejectsUnsupportedChainOperations(t *testing.T) {
-	_, err := Mix(
+	_, err := LegacyMix(
 		From(mixTestAudioSource("a", 1)).Audio().Resample(48000, 1),
 		From(mixTestAudioSource("b", 1)).Audio(),
 	).To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))).
@@ -437,7 +437,7 @@ func TestMixArmRejectsUnsupportedChainOperations(t *testing.T) {
 // TestMixArmChainErrorSurfaces: a builder error recorded on an arm chain (an
 // empty tap name here) fails the join compile instead of being dropped.
 func TestMixArmChainErrorSurfaces(t *testing.T) {
-	_, err := Mix(
+	_, err := LegacyMix(
 		From(mixTestAudioSource("a", 1)).Audio().Tap(FrameTap("")),
 		From(mixTestAudioSource("b", 1)).Audio(),
 	).To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))).
@@ -494,12 +494,12 @@ func TestJoinTapHelperCollectionContracts(t *testing.T) {
 		t.Fatalf("packet tap collection err = %v, want tap_domain_mismatch", err)
 	}
 
-	root := Mix(
+	root := LegacyMix(
 		nil,
 		&Chain{stream: &jobStreamBuild{operations: []operationSpec{{Kind: plan.OpTap, Tap: tapIntent{Name: ""}}}}},
 		From(mixTestAudioSource("a", 1)).Audio().Tap(FrameTap("dry")),
 		From(mixTestAudioSource("b", 1)).Audio().Tap(FrameTap("dry")),
-		Mix(
+		LegacyMix(
 			From(mixTestAudioSource("c", 1)).Audio(),
 			From(mixTestAudioSource("d", 1)).Audio(),
 		).Tap(FrameTap("sub")),
