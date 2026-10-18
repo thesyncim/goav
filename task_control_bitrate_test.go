@@ -271,3 +271,89 @@ func controlVideoSource(id av.StreamID, live bool) InputSpec {
 			}
 		})
 }
+
+// perStreamRecordingEncoderFactory opens one recording encoder per encoded
+// stream id, so a test can tell which rendition a control reached.
+type perStreamRecordingEncoderFactory struct {
+	mu       sync.Mutex
+	encoders map[av.StreamID]*controlRecordingEncoder
+}
+
+func (f *perStreamRecordingEncoderFactory) NewEncoder(_ context.Context, config codec.EncodeConfig) (codec.Encoder, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.encoders == nil {
+		f.encoders = map[av.StreamID]*controlRecordingEncoder{}
+	}
+	encoder := &controlRecordingEncoder{}
+	f.encoders[config.Stream.ID] = encoder
+	return encoder, nil
+}
+
+func (f *perStreamRecordingEncoderFactory) encoder(id av.StreamID) *controlRecordingEncoder {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.encoders[id]
+}
+
+func (e *controlRecordingEncoder) bitrates() []int {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	var out []int
+	for i := range e.events {
+		if rate, ok := codec.EventBitrate(&e.events[i]); ok && e.events[i].Type == av.EventBitrateChanged {
+			out = append(out, rate)
+		}
+	}
+	return out
+}
+
+// TestSetBitrateTargetsOneRendition pins per-rendition encoder control: a
+// bitrate control addressed to a ladder rung's stream reaches only that
+// rung's encoder, and one addressed to the source still reaches every rung.
+// Stream-addressed controls entered at the select, which drops ids other than
+// its source's, so no single rendition could be retargeted.
+func TestSetBitrateTargetsOneRendition(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	factory := &perStreamRecordingEncoderFactory{}
+	rt := mustNew(WithEncoder(codec.Descriptor{ID: av.CodecVP8, Type: av.MediaVideo}, factory))
+	sink := func(name string) Destination {
+		return Sink(SinkFunc(name, func(context.Context, Message) error { return nil }))
+	}
+	built, err := From(controlLiveVideoSource("cam")).
+		Video().
+		Branches(
+			Branch("hd").Encode(codec.VP8(codec.Bitrate(2_000_000))).To(sink("hd-out")),
+			Branch("sd").Encode(codec.VP8(codec.Bitrate(500_000))).To(sink("sd-out")),
+		).
+		UseRuntime(rt).
+		Build(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	task := built.(*task)
+	t.Cleanup(func() { _ = task.Close() })
+	runErr := make(chan error, 1)
+	go func() { runErr <- task.Run(ctx) }()
+
+	if err := controlUntilAccepted(ctx, task, control.Must(control.SetBitrate("hd", 1_200_000))); err != nil {
+		t.Fatalf("SetBitrate(hd): %v", err)
+	}
+	if _, err := factory.encoder("hd").waitForEvent(ctx, av.EventBitrateChanged); err != nil {
+		t.Fatalf("hd encoder never saw its bitrate control: %v", err)
+	}
+	if err := controlUntilAccepted(ctx, task, control.Must(control.SetBitrate("cam", 300_000))); err != nil {
+		t.Fatalf("SetBitrate(cam): %v", err)
+	}
+	if _, err := factory.encoder("sd").waitForEvent(ctx, av.EventBitrateChanged); err != nil {
+		t.Fatalf("sd encoder never saw the source-addressed control: %v", err)
+	}
+	if got := factory.encoder("sd").bitrates(); len(got) != 1 || got[0] != 300_000 {
+		t.Fatalf("sd encoder bitrates = %v, want only the source-addressed 300000", got)
+	}
+	cancel()
+	if err := <-runErr; err != nil && !errors.Is(err, context.Canceled) {
+		t.Fatalf("Run err = %v", err)
+	}
+}

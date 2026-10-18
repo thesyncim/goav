@@ -11,6 +11,15 @@ methodology changes, and migration notes.
 
 ## Unreleased
 
+- `control.SetBitrate(stream, bps)` and `control.Keyframe(stream)` reach the
+  encoder that emits `stream`, so one ladder rung or simulcast layer can be
+  retargeted by its branch name: `SetBitrate("hd", 1_200_000)` changes only the
+  hd encoder. Stream-addressed encoder controls entered at the graph's select
+  nodes, which drop ids other than their source's, so a rendition id never
+  arrived and a source id retargeted every rendition at once. A source id still
+  reaches every encoder of that source. `codec.EncoderStage.OutputStreamID`
+  reports the id a stage stamps.
+
 - Packet stages run after the encoder and after `.Copy()`. `.Do(...)` after
   `.Encode(...)` was refused for every stage, so bitstream filters, SEI
   injection, and packet encryption had no place in a chain; a stage that

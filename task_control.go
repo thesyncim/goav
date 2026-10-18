@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/thesyncim/goav/av"
+	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/control"
 	"github.com/thesyncim/goav/pipeline"
 )
@@ -177,6 +179,11 @@ func (t *task) controlTargets(ctrl control.Control) ([]pipeline.NodeRef, error) 
 		}
 		return nil, fmt.Errorf("goav: control targets unknown tap %q: %w", ctrl.Tap(), pipeline.ErrUnknownNode)
 	}
+	if ctrl.Type() == control.KeyframeType || ctrl.Type() == control.BitrateType {
+		if targets := t.encoderNodesProducing(ctrl.StreamID()); len(targets) != 0 {
+			return targets, nil
+		}
+	}
 	if ctrl.Type() == control.KeyframeType || ctrl.Type() == control.BitrateType || ctrl.Type() == control.SelectType {
 		targets := t.controlEntryNodes()
 		return implicitControlTargets("entry", targets)
@@ -234,5 +241,41 @@ func (t *task) controlEntryNodes() []pipeline.NodeRef {
 		seen[edge.To] = struct{}{}
 		targets = append(targets, edge.To)
 	}
+	return targets
+}
+
+// encoderNodesProducing finds the encoders that emit stream: an encoded
+// rendition (a ladder branch, a simulcast layer) is addressed by its own id
+// and reaches only its encoder. A control addressed to a source stream finds
+// none here and enters at the graph's entry nodes, reaching every encoder of
+// that source.
+func (t *task) encoderNodesProducing(stream av.StreamID) []pipeline.NodeRef {
+	if stream == "" {
+		return nil
+	}
+	live := make(map[pipeline.NodeRef]struct{})
+	for _, node := range t.Describe().Nodes {
+		live[pipeline.NodeRef(node.Name)] = struct{}{}
+	}
+	var targets []pipeline.NodeRef
+	add := func(stage pipeline.Stage) {
+		encoder, ok := stage.(*codec.EncoderStage)
+		if !ok || encoder.OutputStreamID() != stream {
+			return
+		}
+		if _, ok := live[pipeline.NodeRef(encoder.Name())]; ok {
+			targets = append(targets, pipeline.NodeRef(encoder.Name()))
+		}
+	}
+	for _, encoder := range t.encoders {
+		add(encoder)
+	}
+	t.attachMu.Lock()
+	for attachment := range t.attachments {
+		for _, stage := range attachment.stages {
+			add(stage)
+		}
+	}
+	t.attachMu.Unlock()
 	return targets
 }
