@@ -54,8 +54,12 @@ func TestEncodeOpusIntoCallerOwnedPacket(t *testing.T) {
 	if len(packet.Payload.Bytes) == 0 || packet.Payload.Ownership != av.BufferOwned {
 		t.Fatalf("payload = %+v", packet.Payload)
 	}
-	if packet.PTS != frame.PTS || packet.Duration != frame.Duration {
-		t.Fatalf("timing packet=%+v frame=%+v", packet, frame)
+	// The packet presents at its first decoded sample: the encoder's 312-sample
+	// lookahead (6.5 ms at 48 kHz) before the input it carries.
+	wantPTS := frame.PTS
+	wantPTS.Value -= 312
+	if packet.PTS != wantPTS || packet.Duration != frame.Duration {
+		t.Fatalf("timing pts=%+v duration=%+v, want pts=%+v duration=%+v", packet.PTS, packet.Duration, wantPTS, frame.Duration)
 	}
 }
 

@@ -13,9 +13,9 @@ import (
 	"github.com/thesyncim/goav/pipeline"
 )
 
-func compileEncodeDestinationPath(ctx context.Context, service *builder, graph pipeline.Graph, upstream pipeline.NodeRef, request encodeRequest, config codec.EncodeConfig, stream av.Stream, outputs []destinationSpec) error {
+func compileEncodeDestinationPath(ctx context.Context, service *builder, graph pipeline.Graph, upstream pipeline.NodeRef, request encodeRequest, config codec.EncodeConfig, outputs []destinationSpec) error {
 	runtime := service.runtime
-	encodeRef, err := compileEncodeStage(ctx, runtime, graph, upstream, request, config)
+	encodeRef, stream, err := compileEncodeStage(ctx, runtime, graph, upstream, request, config)
 	if err != nil {
 		return err
 	}
@@ -48,38 +48,40 @@ func compileEncodeDestinationPath(ctx context.Context, service *builder, graph p
 	return nil
 }
 
-func compileEncodeStage(ctx context.Context, runtime *runtime, graph pipeline.Graph, upstream pipeline.NodeRef, request encodeRequest, config codec.EncodeConfig) (pipeline.NodeRef, error) {
+func compileEncodeStage(ctx context.Context, runtime *runtime, graph pipeline.Graph, upstream pipeline.NodeRef, request encodeRequest, config codec.EncodeConfig) (pipeline.NodeRef, av.Stream, error) {
 	return compileEncodeStageNamed(ctx, runtime, graph, "", upstream, request, config, runtime.buffer)
 }
 
-func (b *builder) compileEncodeStageNamed(ctx context.Context, graph pipeline.Graph, name string, upstream pipeline.NodeRef, request encodeRequest, config codec.EncodeConfig, buffer pipeline.BufferPolicy) (pipeline.NodeRef, error) {
+func (b *builder) compileEncodeStageNamed(ctx context.Context, graph pipeline.Graph, name string, upstream pipeline.NodeRef, request encodeRequest, config codec.EncodeConfig, buffer pipeline.BufferPolicy) (pipeline.NodeRef, av.Stream, error) {
 	return compileEncodeStageNamed(ctx, b.runtime, graph, name, upstream, request, config, buffer)
 }
 
-func compileEncodeStageNamed(ctx context.Context, runtime *runtime, graph pipeline.Graph, name string, upstream pipeline.NodeRef, request encodeRequest, config codec.EncodeConfig, buffer pipeline.BufferPolicy) (pipeline.NodeRef, error) {
-	stage, err := (&builder{runtime: runtime}).newEncodeStageNamed(ctx, name, request, config)
+func compileEncodeStageNamed(ctx context.Context, runtime *runtime, graph pipeline.Graph, name string, upstream pipeline.NodeRef, request encodeRequest, config codec.EncodeConfig, buffer pipeline.BufferPolicy) (pipeline.NodeRef, av.Stream, error) {
+	stage, stream, err := (&builder{runtime: runtime}).newEncodeStageNamed(ctx, name, request, config)
 	if err != nil {
-		return "", err
+		return "", av.Stream{}, err
 	}
 	encodeRef, err := graph.AddStage(stage, buffer)
 	if err != nil {
 		stage.Close()
-		return "", err
+		return "", av.Stream{}, err
 	}
 	if err := connectRefs(graph, upstream, encodeRef); err != nil {
-		return "", err
+		return "", av.Stream{}, err
 	}
-	return encodeRef, nil
+	return encodeRef, stream, nil
 }
 
-func (b *builder) newEncodeStage(ctx context.Context, request encodeRequest, config codec.EncodeConfig) (*codec.EncoderStage, error) {
+func (b *builder) newEncodeStage(ctx context.Context, request encodeRequest, config codec.EncodeConfig) (*codec.EncoderStage, av.Stream, error) {
 	return b.newEncodeStageNamed(ctx, "", request, config)
 }
 
-func (b *builder) newEncodeStageNamed(ctx context.Context, name string, request encodeRequest, config codec.EncodeConfig) (*codec.EncoderStage, error) {
+// newEncodeStageNamed opens the encoder and returns its stage with the stream
+// it emits: config.Stream plus whatever the opened encoder reports.
+func (b *builder) newEncodeStageNamed(ctx context.Context, name string, request encodeRequest, config codec.EncodeConfig) (*codec.EncoderStage, av.Stream, error) {
 	factory, err := b.runtime.codecs.EncoderFactory(config.Parameters.ID)
 	if err != nil {
-		return nil, err
+		return nil, av.Stream{}, err
 	}
 	name = firstNonEmpty(name, encodeNodeName(request))
 	// File inputs reveal their rate and geometry only once opened, so the
@@ -89,11 +91,11 @@ func (b *builder) newEncodeStageNamed(ctx context.Context, name string, request 
 	if descriptors, findErr := b.runtime.codecs.Find(config.Parameters.ID, codec.ModeEncode); findErr == nil && !slices.ContainsFunc(descriptors, func(desc codec.Descriptor) bool {
 		return codecDescriptorSupports(desc, adapterRequest)
 	}) {
-		return nil, encodeAdapterIncompatibleErrorAt("configure encode", name, adapterRequest, descriptors)
+		return nil, av.Stream{}, encodeAdapterIncompatibleErrorAt("configure encode", name, adapterRequest, descriptors)
 	}
 	encoder, err := factory.NewEncoder(ctx, config)
 	if err != nil {
-		return nil, encodeOpenError(name, adapterRequest, err)
+		return nil, av.Stream{}, encodeOpenError(name, adapterRequest, err)
 	}
 	stage, err := codec.NewEncoderStage(codec.EncoderStageConfig{
 		Name:              name,
@@ -108,9 +110,9 @@ func (b *builder) newEncodeStageNamed(ctx context.Context, name string, request 
 		if encoder != nil {
 			encoder.Close()
 		}
-		return nil, err
+		return nil, av.Stream{}, err
 	}
-	return stage, nil
+	return stage, reportedStream(config.Stream, encoder), nil
 }
 
 func prepareEncodeConfig(input av.Stream, request encodeRequest, realtime bool) (codec.EncodeConfig, av.Stream, error) {
@@ -225,6 +227,15 @@ func mergeEncodeStream(base av.Stream, override av.Stream) av.Stream {
 		out.Metadata = override.Metadata
 	}
 	return out
+}
+
+// reportedStream folds the parameters an opened encoder reports
+// (codec.ParameterReporter) into the stream it emits.
+func reportedStream(stream av.Stream, encoder codec.Encoder) av.Stream {
+	if reporter, ok := encoder.(codec.ParameterReporter); ok {
+		stream.Codec = mergeCodecParameters(stream.Codec, reporter.EncodedParameters())
+	}
+	return stream
 }
 
 func applyCodecSettingsToParameters(parameters av.CodecParameters, settings codec.CodecSettings) av.CodecParameters {

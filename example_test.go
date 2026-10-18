@@ -121,7 +121,8 @@ func ExampleFrom() {
 			return push.EOS()
 		})
 
-	// Decode to PCM, re-encode at 96 kbps, and count the packets at a sink.
+	// Decode to PCM, re-encode at 96 kbps, and count the packets at a sink:
+	// the frame's own packet, then the flush that drains the encoder lookahead.
 	encoded := 0
 	err := goav.From(mic).
 		Audio().
@@ -137,7 +138,7 @@ func ExampleFrom() {
 		Run(ctx)
 
 	fmt.Println(err, encoded)
-	// Output: <nil> 1
+	// Output: <nil> 2
 }
 
 // ExampleFrom_multipleInputs feeds two live inputs into one job: each chain

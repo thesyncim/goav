@@ -277,6 +277,15 @@ type Encoder interface {
 	Close() error
 }
 
+// ParameterReporter is an optional Encoder capability for parameters known
+// only once the encoder is open. The runtime folds them into the encoded
+// stream before any muxer writes its header, so the container describes the
+// bitstream the encoder actually emits: the Opus encoder reports the
+// identification header whose pre-skip covers its lookahead.
+type ParameterReporter interface {
+	EncodedParameters() av.CodecParameters
+}
+
 // DecoderFactory opens decoders for a registered descriptor; registries hold
 // factories so nothing allocates until a chain actually decodes.
 type DecoderFactory interface {

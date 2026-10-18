@@ -215,18 +215,22 @@ func (d *Demuxer) seek(position time.Duration) {
 }
 
 // applyEdits moves every track onto the presentation timeline its edit list
-// declares, then lifts all tracks together so the earliest presentation time
-// is zero. An edit that starts presentation past AAC priming or B-frame
-// pre-roll leaves those samples before zero, and muxers refuse negative
-// presentation times; lifting every track by one amount keeps the relative
-// sync the edit lists encode. Decode times may stay negative (pre-roll).
+// declares, then lifts all tracks together so nothing presents before zero.
+// An edit that starts presentation past AAC priming or B-frame pre-roll leaves
+// those samples before zero, and muxers refuse negative presentation times;
+// lifting every track by one amount keeps the relative sync the edit lists
+// encode. Opus pre-skip is the exception that stays negative: its decoder
+// drops those samples and muxers re-add the codec delay, so a packet's PTS
+// stays the time of its first decoded sample. Decode times may stay negative
+// (pre-roll).
 func applyEdits(tracks []*track) {
 	minNS := int64(math.MaxInt64)
 	for _, tr := range tracks {
+		preSkipNS := opusPreSkipNS(tr.params)
 		for i := range tr.samples {
 			tr.samples[i].dts += tr.shift
 			tr.samples[i].cts += tr.shift
-			minNS = min(minNS, timescaleNS(tr.samples[i].cts, tr.timescale))
+			minNS = min(minNS, timescaleNS(tr.samples[i].cts, tr.timescale)+preSkipNS)
 		}
 	}
 	if minNS >= 0 {

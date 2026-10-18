@@ -1329,7 +1329,7 @@ func (p *joinPlan) lower(ctx context.Context, gp graphPlan, graph pipeline.Graph
 		// commit/abort) on service; buildGraphPlanTask carries it to the task so
 		// the file finalizes. Every destination receives the encoded packets —
 		// the same fanout a chain's multi-destination .To(...) lowers to.
-		return compileEncodeDestinationPath(ctx, service, graph, pipeline.NodeRef(upstream), *p.encode, p.encodeConfig, p.encodedStream, p.destinations)
+		return compileEncodeDestinationPath(ctx, service, graph, pipeline.NodeRef(upstream), *p.encode, p.encodeConfig, p.destinations)
 	default:
 		for i := range p.destinations {
 			sinkRef, err := graph.AddSink(p.destinations[i].sink, rt.buffer)

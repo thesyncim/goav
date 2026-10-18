@@ -100,7 +100,7 @@ func TestNewEncodeStageNamedPassesCustomEncoderSettings(t *testing.T) {
 	}
 	config.Settings = codec.CodecSettings{Bitrate: 96_000, Profile: "wideband"}
 
-	stage, err := (&builder{runtime: rt}).newEncodeStageNamed(context.Background(), "encode-custom", request, config)
+	stage, _, err := (&builder{runtime: rt}).newEncodeStageNamed(context.Background(), "encode-custom", request, config)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -120,18 +120,18 @@ func TestNewEncodeStageNamedPassesCustomEncoderSettings(t *testing.T) {
 func TestNewEncodeStageNamedSurfacesCustomEncoderFactoryErrors(t *testing.T) {
 	config := pcmEncodeConfig()
 	rt := mustNew()
-	if _, err := (&builder{runtime: rt}).newEncodeStageNamed(context.Background(), "encode-custom", encodeRequest{selector: testSelectAudio(), config: config}, config); err == nil {
+	if _, _, err := (&builder{runtime: rt}).newEncodeStageNamed(context.Background(), "encode-custom", encodeRequest{selector: testSelectAudio(), config: config}, config); err == nil {
 		t.Fatal("unregistered encoder error = nil, want lookup error")
 	}
 
 	factoryErr := errors.New("encoder factory failed")
 	rt = mustNew(withTestCodecs(testCodecEncoder(codec.Descriptor{ID: av.CodecPCM, Type: av.MediaAudio}, errorEncodeFactory{err: factoryErr})))
-	if _, err := (&builder{runtime: rt}).newEncodeStageNamed(context.Background(), "encode-custom", encodeRequest{selector: testSelectAudio(), config: config}, config); !errors.Is(err, factoryErr) {
+	if _, _, err := (&builder{runtime: rt}).newEncodeStageNamed(context.Background(), "encode-custom", encodeRequest{selector: testSelectAudio(), config: config}, config); !errors.Is(err, factoryErr) {
 		t.Fatalf("factory error = %v, want %v", err, factoryErr)
 	}
 
 	rt = mustNew(withTestCodecs(testCodecEncoder(codec.Descriptor{ID: av.CodecPCM, Type: av.MediaAudio}, nilEncodeFactory{})))
-	if _, err := (&builder{runtime: rt}).newEncodeStageNamed(context.Background(), "encode-custom", encodeRequest{selector: testSelectAudio(), config: config}, config); !errors.Is(err, codec.ErrNilEncoder) {
+	if _, _, err := (&builder{runtime: rt}).newEncodeStageNamed(context.Background(), "encode-custom", encodeRequest{selector: testSelectAudio(), config: config}, config); !errors.Is(err, codec.ErrNilEncoder) {
 		t.Fatalf("nil encoder error = %v, want codec.ErrNilEncoder", err)
 	}
 }
@@ -150,7 +150,7 @@ func TestCompileEncodeStageNamedConnectsNamedStage(t *testing.T) {
 	}
 	config := pcmEncodeConfig()
 	config.Stream = av.Stream{ID: "encoded", Type: av.MediaAudio, Codec: av.CodecParameters{ID: av.CodecPCM, Type: av.MediaAudio}}
-	ref, err := compileEncodeStageNamed(context.Background(), rt, graph, "encode-contract", sourceRef, encodeRequest{selector: testSelectAudio(), config: config}, config, rt.buffer)
+	ref, _, err := compileEncodeStageNamed(context.Background(), rt, graph, "encode-contract", sourceRef, encodeRequest{selector: testSelectAudio(), config: config}, config, rt.buffer)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -181,7 +181,7 @@ func TestCompileEncodeStageNamedClosesStageWhenGraphRefusesIt(t *testing.T) {
 	}
 	config := pcmEncodeConfig()
 	config.Stream = av.Stream{ID: "encoded", Type: av.MediaAudio, Codec: av.CodecParameters{ID: av.CodecPCM, Type: av.MediaAudio}}
-	_, err = compileEncodeStageNamed(context.Background(), rt, graph, "encode-buffered", sourceRef, encodeRequest{selector: testSelectAudio(), config: config}, config, rt.buffer)
+	_, _, err = compileEncodeStageNamed(context.Background(), rt, graph, "encode-buffered", sourceRef, encodeRequest{selector: testSelectAudio(), config: config}, config, rt.buffer)
 	if !errors.Is(err, pipeline.ErrBufferedEdgesUnsupported) {
 		t.Fatalf("compileEncodeStageNamed() error = %v, want buffered-edge refusal", err)
 	}

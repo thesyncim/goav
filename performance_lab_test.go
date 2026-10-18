@@ -115,9 +115,11 @@ func realOpusPayload(b *testing.B) []byte {
 	if err != nil {
 		b.Fatal(err)
 	}
+	// One frame encodes to its own packet plus the flush that drains the
+	// encoder lookahead; the first is the full-frame payload to decode.
 	packets := out.Packets()
-	if len(packets) != 1 {
-		b.Fatalf("seed encode produced %d packets, want 1", len(packets))
+	if len(packets) != 2 {
+		b.Fatalf("seed encode produced %d packets, want 2", len(packets))
 	}
 	return append([]byte(nil), packets[0].Payload.Bytes...)
 }

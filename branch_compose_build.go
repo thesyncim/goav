@@ -491,11 +491,11 @@ func compileBranchComposeRoutes(
 
 		if branchComposeRouteNeedsEncode(branches[i]) {
 			request := branches[i].request
-			config, encodedStream, err := prepareEncodeConfig(branchStream, request, realtime)
+			config, _, err := prepareEncodeConfig(branchStream, request, realtime)
 			if err != nil {
 				return err
 			}
-			encodeRef, err := service.compileEncodeStageNamed(ctx, graph, planned.encodeNode.String(), branchRef, request, config, planned.buffer)
+			encodeRef, encodedStream, err := service.compileEncodeStageNamed(ctx, graph, planned.encodeNode.String(), branchRef, request, config, planned.buffer)
 			if err != nil {
 				return err
 			}

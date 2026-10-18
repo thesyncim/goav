@@ -42,6 +42,15 @@ type Encoder struct {
 	frameSize  int
 	pending    []int16
 	pendingPTS av.Timestamp
+
+	// delay is the encoder lookahead in samples: input sample t decodes at
+	// t+delay, so a packet's first decoded sample presents delay before the
+	// input it carries. head is the identification header declaring that
+	// delay as pre-skip, for muxers (codec.ParameterReporter). end is the
+	// time just past the last input sample, where the flush stops.
+	delay int
+	head  []byte
+	end   av.Timestamp
 }
 
 // opusDefaultFrameMS is the re-framing duration when the input frame size is
@@ -82,6 +91,8 @@ func (e *Encoder) Open(ctx context.Context, config codec.EncodeConfig) error {
 	}
 	e.encoder = encoder
 	e.stream = stream
+	e.delay = encoder.Lookahead()
+	e.head = opusHead(channels, sampleRate, e.delay*opusHeadRate/sampleRate)
 	e.sampleRate = sampleRate
 	e.channels = channels
 	e.closed = false
@@ -90,6 +101,7 @@ func (e *Encoder) Open(ctx context.Context, config codec.EncodeConfig) error {
 	// so steady-state re-framing never grows the buffer.
 	e.pending = make([]int16, 0, sampleRate*(120+opusDefaultFrameMS)/1000*channels)
 	e.pendingPTS = av.Timestamp{Base: stream.TimeBase}
+	e.end = av.Timestamp{Base: stream.TimeBase}
 	return nil
 }
 
@@ -128,12 +140,16 @@ func (e *Encoder) EncodeInto(ctx context.Context, frame *av.Frame, out *codec.En
 		if duration.Value == 0 {
 			duration = av.SamplesDuration(samples, e.sampleRate)
 		}
+		e.end = e.timelinePTS(frame.PTS)
+		e.end.Value += int64(samples)
 		return e.encodePacket(pcm, frame.PTS, duration, frame.Metadata, out)
 	}
 	if len(e.pending) == 0 {
 		e.pendingPTS = e.timelinePTS(frame.PTS)
 	}
 	e.pending = append(e.pending, pcm...)
+	e.end = e.pendingPTS
+	e.end.Value += int64(len(e.pending) / e.channels)
 	return e.drain(frame.Metadata, out)
 }
 
@@ -158,7 +174,7 @@ func (e *Encoder) timelinePTS(pts av.Timestamp) av.Timestamp {
 	if rescaled, ok := pts.Rescale(e.stream.TimeBase); ok {
 		return rescaled
 	}
-	return av.Timestamp{Value: e.pendingPTS.Value, Base: e.stream.TimeBase}
+	return av.Timestamp{Value: e.end.Value, Base: e.stream.TimeBase}
 }
 
 // drain encodes every whole frame in pending while the result has room, so
@@ -206,15 +222,15 @@ func (e *Encoder) encodePacket(pcm []int16, pts av.Timestamp, duration av.Durati
 	packet.CodecEpoch = e.stream.Epoch
 	packet.Payload.Bytes = dst[:n]
 	packet.Payload.Ownership = av.BufferOwned
-	packet.PTS = pts
+	packet.PTS = e.presentation(pts)
 	packet.Duration = duration
 	packet.Metadata = metadata
 	return nil
 }
 
-// FlushInto encodes the final partial frame at end of stream, padded with
-// silence to a whole Opus frame; its packet duration is the real sample
-// count, so the stream ends where the input did.
+// FlushInto encodes what the input left at end of stream: the final partial
+// frame and the lookahead still inside the encoder, padded with silence to
+// whole Opus frames. The last packet's duration ends where the input did.
 func (e *Encoder) FlushInto(ctx context.Context, out *codec.EncodeResult) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -228,16 +244,46 @@ func (e *Encoder) FlushInto(ctx context.Context, out *codec.EncodeResult) error 
 	if err := e.drain(nil, out); err != nil {
 		return err
 	}
-	if len(e.pending) == 0 || len(out.Packets) == cap(out.Packets) {
+	if e.frameSize == 0 {
 		return nil
 	}
-	remaining := len(e.pending) / e.channels
-	for len(e.pending) < e.frameSize*e.channels {
-		e.pending = append(e.pending, 0)
+	if len(e.pending) == 0 {
+		e.pendingPTS = e.end
 	}
-	err := e.encodePacket(e.pending, e.pendingPTS, av.SamplesDuration(remaining, e.sampleRate), nil, out)
-	e.pending = e.pending[:0]
-	return err
+	for len(out.Packets) < cap(out.Packets) {
+		// The next packet presents delay before pendingPTS; valid counts its
+		// decoded samples that still carry input.
+		valid := e.end.Value - (e.pendingPTS.Value - int64(e.delay))
+		if valid <= 0 {
+			return nil
+		}
+		for len(e.pending) < e.frameSize*e.channels {
+			e.pending = append(e.pending, 0)
+		}
+		duration := av.SamplesDuration(int(min(valid, int64(e.frameSize))), e.sampleRate)
+		if err := e.encodePacket(e.pending, e.pendingPTS, duration, nil, out); err != nil {
+			return err
+		}
+		e.pending = e.pending[:0]
+		e.pendingPTS.Value += int64(e.frameSize)
+	}
+	return nil
+}
+
+// EncodedParameters reports the identification header, whose pre-skip tells
+// decoders to drop the lookahead samples the first packets start with.
+func (e *Encoder) EncodedParameters() av.CodecParameters {
+	return av.CodecParameters{ExtraData: av.Buffer{Bytes: e.head, Ownership: av.BufferImmutable}}
+}
+
+// presentation moves a packet stamp from the input time it carries to the
+// time of its first decoded sample, in the stamp's own time base. The first
+// packets present before zero; the pre-skip trims them back to zero.
+func (e *Encoder) presentation(pts av.Timestamp) av.Timestamp {
+	if shift, ok := av.RescaleValue(int64(e.delay), e.stream.TimeBase, pts.Base); ok {
+		pts.Value -= shift
+	}
+	return pts
 }
 
 func (e *Encoder) HandleEvent(ctx context.Context, event *av.Event) error {

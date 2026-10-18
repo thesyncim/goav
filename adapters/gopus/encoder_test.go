@@ -103,14 +103,16 @@ func TestOpusEncoderReframesArbitraryFrameSizes(t *testing.T) {
 		t.Fatalf("packets = %d, want %d", len(packets), want)
 	}
 	for i, packet := range packets {
-		if want := int64(i * 960); packet.PTS.Value != want || packet.PTS.Base.Den != 48000 {
+		if want := int64(i*960 - 312); packet.PTS.Value != want || packet.PTS.Base.Den != 48000 {
 			t.Fatalf("packet %d pts = %+v, want %d at 1/48000", i, packet.PTS, want)
 		}
 		if len(packet.Payload.Bytes) == 0 {
 			t.Fatalf("packet %d is empty", i)
 		}
 	}
-	if last := packets[len(packets)-1]; last.Duration != av.SamplesDuration(total%960, 48000) {
-		t.Fatalf("tail duration = %+v, want %d samples", last.Duration, total%960)
+	// The tail packet carries the last 640 input samples plus the 312-sample
+	// lookahead the flush drains, so its 952 decoded samples all carry input.
+	if last := packets[len(packets)-1]; last.Duration != av.SamplesDuration(total%960+312, 48000) {
+		t.Fatalf("tail duration = %+v, want %d samples", last.Duration, total%960+312)
 	}
 }

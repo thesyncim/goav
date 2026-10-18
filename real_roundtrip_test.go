@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"math"
 	"testing"
+	"time"
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
@@ -83,10 +84,14 @@ func TestRealOpusWebMRoundTripThroughGrammar(t *testing.T) {
 
 	var decodedFrames, decodedSamples int
 	var gotRate, gotChannels int
+	var firstPTS time.Duration
 	var energy int64
 	sink := Sink(SinkFunc("speakers", func(_ context.Context, m Message) error {
 		if m.Kind != pipeline.MessageFrame || m.Frame == nil || m.Frame.Audio == nil {
 			return nil
+		}
+		if decodedFrames == 0 {
+			firstPTS, _ = m.Frame.PTS.ToDuration()
 		}
 		decodedFrames++
 		decodedSamples += m.Frame.Audio.Samples
@@ -123,11 +128,14 @@ func TestRealOpusWebMRoundTripThroughGrammar(t *testing.T) {
 	if gotRate != rate || gotChannels != channels {
 		t.Fatalf("decoded format = %dHz %dch, want %dHz %dch", gotRate, gotChannels, rate, channels)
 	}
-	// Opus pads the stream edges (pre-skip), so the round trip is approximate:
-	// the decoded duration must be within half a frame of the input on either
-	// side and never wildly off.
+	// The pre-skip is trimmed, so audio starts where the input did.
+	if firstPTS != 0 {
+		t.Fatalf("first decoded frame at %v, want 0: the pre-skip must be trimmed", firstPTS)
+	}
+	// The flush drains the encoder lookahead, so no input is lost; the end is
+	// padded to a whole frame, so the decoded audio may run a little long.
 	want := frames * samples
-	if decodedSamples < want-samples || decodedSamples > want+2*samples {
+	if decodedSamples < want || decodedSamples > want+2*samples {
 		t.Fatalf("decoded %d samples, want about %d (input duration must survive the round trip)", decodedSamples, want)
 	}
 	// The tone must survive: average absolute amplitude well above silence.
