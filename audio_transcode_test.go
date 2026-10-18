@@ -28,14 +28,12 @@ func TestAACToOpusTranscodesEndToEnd(t *testing.T) {
 		t.Fatal(err)
 	}
 	var out bytes.Buffer
-	if err := goav.From(goav.FileInput("in.mp4", bytes.NewReader(data))).
-		UseRuntime(offlineRuntime()).
+	if err := offlineRuntime().Run(ctx, goav.FileInput("in.mp4", bytes.NewReader(data)).
 		Audio().
 		Decode().
 		Resample(48000, 1).
 		Encode(codec.Opus()).
-		To(goav.Write("out.webm", &out)).
-		Run(ctx); err != nil {
+		To(goav.Write("out.webm", &out))); err != nil {
 		if errors.Is(err, codec.ErrUnavailable) {
 			t.Skip("goaac backend unavailable on this target")
 		}
@@ -74,13 +72,11 @@ func TestOpusRefusesUnsupportedRateWithResampleFix(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	err = goav.From(goav.FileInput("in.mp4", bytes.NewReader(data))).
-		UseRuntime(offlineRuntime()).
+	err = offlineRuntime().Run(ctx, goav.FileInput("in.mp4", bytes.NewReader(data)).
 		Audio().
 		Decode().
 		Encode(codec.Opus()).
-		To(goav.Write("out.webm", &bytes.Buffer{})).
-		Run(ctx)
+		To(goav.Write("out.webm", &bytes.Buffer{})))
 	if errors.Is(err, codec.ErrUnavailable) {
 		t.Skip("goaac backend unavailable on this target")
 	}

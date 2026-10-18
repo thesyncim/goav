@@ -55,11 +55,9 @@ func ExampleSource_pushAccounting() {
 		})
 
 	out := goavtest.NewCollector()
-	err := goav.From(input).
+	err := goavtest.Runtime().Run(ctx, input.
 		Audio().
-		To(out.Sink()).
-		UseRuntime(goavtest.Runtime()).
-		Run(ctx)
+		To(out.Sink()))
 
 	fmt.Println("err:", err)
 	fmt.Println("pushes:", accepted, "accepted,", dropped, "dropped")
@@ -108,12 +106,10 @@ func ExampleWriter_transactionalUpload() {
 		goav.Metadata(av.Metadata{"kind": "call-recording"}),
 	)
 
-	err := goav.From(goavtest.Audio(48000, 1, []int16{7, 8})).
+	err := goavtest.Runtime().Run(ctx, goavtest.Audio(48000, 1, []int16{7, 8}).
 		Audio().
 		Encode(codec.Opus()).
-		To(target).
-		UseRuntime(goavtest.Runtime()).
-		Run(ctx)
+		To(target))
 
 	fmt.Println("err:", err)
 	fmt.Println("format:", opened.Format, "streams:", len(opened.Streams), "metadata:", opened.Metadata["kind"])
@@ -203,7 +199,7 @@ func ExampleWithEncoder_customSettings() {
 	factory := &exampleEncoderFactory{desc: exampleEncoderDescriptor()}
 	out := goavtest.NewCollector()
 
-	err := goav.From(goavtest.Audio(48000, 1, []int16{1, 2})).
+	err := goavtest.Runtime(runconfig.WithEncoder(factory.desc, factory)).Run(ctx, goavtest.Audio(48000, 1, []int16{1, 2}).
 		Audio().
 		Encode(codec.Codec(exampleCodecID, av.MediaAudio,
 			codec.Bitrate(64_000),
@@ -213,9 +209,7 @@ func ExampleWithEncoder_customSettings() {
 				return nil
 			}),
 		)).
-		To(out.Sink()).
-		UseRuntime(goavtest.Runtime(runconfig.WithEncoder(factory.desc, factory))).
-		Run(ctx)
+		To(out.Sink()))
 
 	fmt.Println("err:", err)
 	fmt.Println("bitrate:", factory.config.Settings.Bitrate)
@@ -236,12 +230,10 @@ func ExampleTask_flowchart() {
 	defer cancel()
 
 	main := goavtest.NewCollector()
-	task, err := goav.From(goavtest.LiveAudio("mic", 48000, 1, []int16{1})).
+	task, err := goavtest.Runtime().Build(ctx, goavtest.LiveAudio("mic", 48000, 1, []int16{1}).
 		Audio().
-		Tap(goav.FrameTap("frames")).
-		To(main.Sink()).
-		UseRuntime(goavtest.Runtime()).
-		BuildLive(ctx)
+		Tap("frames").
+		To(main.Sink()))
 	if err != nil {
 		fmt.Println(err)
 		return
@@ -255,7 +247,7 @@ func ExampleTask_flowchart() {
 		return
 	}
 	preview := goavtest.NewCollector()
-	if _, err := task.LegacyAttach(ctx, goav.Branch("preview").From(goav.FrameTap("frames")).To(preview.Sink())); err != nil {
+	if _, err := task.Attach(ctx, task.Tap("frames").As("preview").To(preview.Sink())); err != nil {
 		fmt.Println(err)
 		_ = task.Close()
 		return

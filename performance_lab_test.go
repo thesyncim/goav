@@ -55,11 +55,10 @@ func BenchmarkLatencyRecordPackets(b *testing.B) {
 			return push.EOS()
 		})
 
-	runBenchTask(b, goav.From(input).
-		Video().
-		Copy().
-		To(benchSink("latency-packets")).
-		UseRuntime(benchRuntime()))
+	runBenchTask(b, benchRuntime(),
+		input.
+			Video().
+			To(benchSink("latency-packets")))
 	reportLatencyQuantiles(b, latencies)
 }
 
@@ -69,11 +68,10 @@ func BenchmarkLatencyRecordPackets(b *testing.B) {
 // platforms that expose it.
 func BenchmarkSustainedRecordMemory(b *testing.B) {
 	runtime.GC()
-	runBenchTask(b, goav.From(benchVideoPackets("rss-cam", b.N)).
-		Video().
-		Copy().
-		To(benchSink("rss-packets")).
-		UseRuntime(benchRuntime()))
+	runBenchTask(b, benchRuntime(),
+		benchVideoPackets("rss-cam", b.N).
+			Video().
+			To(benchSink("rss-packets")))
 	runtime.GC()
 
 	var stats runtime.MemStats
@@ -85,33 +83,31 @@ func BenchmarkSustainedRecordMemory(b *testing.B) {
 // BenchmarkRealOpusEncode is the real-codec throughput path: deterministic S16
 // frames into the standard Opus encoder, then packet sink.
 func BenchmarkRealOpusEncode(b *testing.B) {
-	runBenchTask(b, goav.From(benchAudioFrames("real-opus-in", b.N, 48_000, 1, benchAudioSamples)).
-		Audio().
-		Encode(codec.Opus()).
-		To(benchSink("real-opus-packets")).
-		UseRuntime(bundle.MustNew(runconfig.WithRealtime(false))))
+	runBenchTask(b, bundle.MustNew(runconfig.WithRealtime(false)),
+		benchAudioFrames("real-opus-in", b.N, 48_000, 1, benchAudioSamples).
+			Audio().
+			Encode(codec.Opus()).
+			To(benchSink("real-opus-packets")))
 }
 
 // BenchmarkRealOpusDecode decodes one payload produced by the standard Opus
 // encoder, so the benchmark exercises the real decoder rather than a fixture.
 func BenchmarkRealOpusDecode(b *testing.B) {
 	payload := realOpusPayload(b)
-	runBenchTask(b, goav.From(benchAudioPackets("real-opus-packets", b.N, payload)).
-		Audio().
-		Decode().
-		To(benchSink("real-opus-frames")).
-		UseRuntime(bundle.MustNew(runconfig.WithRealtime(false))))
+	runBenchTask(b, bundle.MustNew(runconfig.WithRealtime(false)),
+		benchAudioPackets("real-opus-packets", b.N, payload).
+			Audio().
+			Decode().
+			To(benchSink("real-opus-frames")))
 }
 
 func realOpusPayload(b *testing.B) []byte {
 	b.Helper()
 	out := goavtest.NewCollector()
-	err := goav.From(benchAudioFrames("real-opus-seed", 1, 48_000, 1, benchAudioSamples)).
+	err := bundle.MustNew(runconfig.WithRealtime(false)).Run(context.Background(), benchAudioFrames("real-opus-seed", 1, 48_000, 1, benchAudioSamples).
 		Audio().
 		Encode(codec.Opus()).
-		To(out.Sink()).
-		UseRuntime(bundle.MustNew(runconfig.WithRealtime(false))).
-		Run(context.Background())
+		To(out.Sink()))
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -136,14 +132,16 @@ func BenchmarkLiveRoomSync(b *testing.B) {
 	policy := flow.Sync("live-room", flow.SyncTolerance(20*time.Millisecond), flow.SyncDropLate())
 
 	ctx := context.Background()
-	task, err := goav.From(
-		benchLiveRoomVideoPackets("live-video", perStream, latencies, &latencyIndex, &sourceDrops),
-		benchLiveRoomAudioPackets("live-audio", perStream, latencies, &latencyIndex, &sourceDrops),
-	).
-		Video(goav.InputName("live-video")).Sync(policy).Copy().To(goav.Sink(component.SinkFunc("live-room-video", sink.collect))).
-		Audio(goav.InputName("live-audio")).Sync(policy).Copy().To(goav.Sink(component.SinkFunc("live-room-audio", sink.collect))).
-		UseRuntime(benchRuntime()).
-		BuildLive(ctx)
+	task, err := benchRuntime().Build(ctx,
+		benchLiveRoomVideoPackets("live-video", perStream, latencies, &latencyIndex, &sourceDrops).
+			Video().
+			Sync(policy).
+			To(goav.Sink(component.SinkFunc("live-room-video", sink.collect))),
+		benchLiveRoomAudioPackets("live-audio", perStream, latencies, &latencyIndex, &sourceDrops).
+			Audio().
+			Sync(policy).
+			To(goav.Sink(component.SinkFunc("live-room-audio", sink.collect))),
+	)
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -182,27 +180,23 @@ func BenchmarkLiveRoomAttachDetachSoak(b *testing.B) {
 	sink := &liveRoomSyncSink{}
 	policy := flow.Sync("live-room-churn", flow.SyncTolerance(20*time.Millisecond), flow.SyncDropLate())
 
-	task, err := goav.From(
-		benchLiveRoomChurnVideoPackets("churn-video", videoTicks, latencies, &latencyIndex, &sourceDrops),
-		benchLiveRoomChurnAudioPackets("churn-audio", audioTicks, latencies, &latencyIndex, &sourceDrops),
-	).
-		Video(goav.InputName("churn-video")).
-		Sync(policy).
-		Copy().
-		Tap(goav.PacketTap("live.video.packets")).
-		To(goav.Sink(component.SinkFunc("live-room-churn-video", sink.collect))).
-		Audio(goav.InputName("churn-audio")).
-		Sync(policy).
-		Copy().
-		Tap(goav.PacketTap("live.audio.packets")).
-		To(goav.Sink(component.SinkFunc("live-room-churn-audio", sink.collect))).
-		UseRuntime(benchRuntime(runconfig.WithBufferPolicy(pipeline.BufferPolicy{
-			Capacity:        4,
-			Drop:            pipeline.DropOldest,
-			CopyPacketBytes: benchPacketBytes,
-			CopyFrameBytes:  1,
-		}))).
-		BuildLive(ctx)
+	task, err := benchRuntime(runconfig.WithBufferPolicy(pipeline.BufferPolicy{
+		Capacity:        4,
+		Drop:            pipeline.DropOldest,
+		CopyPacketBytes: benchPacketBytes,
+		CopyFrameBytes:  1,
+	})).Build(ctx,
+		benchLiveRoomChurnVideoPackets("churn-video", videoTicks, latencies, &latencyIndex, &sourceDrops).
+			Video().
+			Sync(policy).
+			Tap("live.video.packets").
+			To(goav.Sink(component.SinkFunc("live-room-churn-video", sink.collect))),
+		benchLiveRoomChurnAudioPackets("churn-audio", audioTicks, latencies, &latencyIndex, &sourceDrops).
+			Audio().
+			Sync(policy).
+			Tap("live.audio.packets").
+			To(goav.Sink(component.SinkFunc("live-room-churn-audio", sink.collect))),
+	)
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -215,13 +209,12 @@ func BenchmarkLiveRoomAttachDetachSoak(b *testing.B) {
 	mediaSeq := 0
 	for i := 0; i < b.N; i++ {
 		mediaSeq = benchLiveRoomEmitChurnTicks(ctx, b, videoTicks, audioTicks, mediaSeq, 2)
-		tap := goav.PacketTap("live.video.packets")
+		tap := "live.video.packets"
 		if i%2 != 0 {
-			tap = goav.PacketTap("live.audio.packets")
+			tap = "live.audio.packets"
 		}
-		attachment, err := task.LegacyAttach(ctx, goav.Branch("live-room-monitor-"+strconv.Itoa(i)).
-			From(tap).
-			Copy().
+		attachment, err := task.Attach(ctx, task.Tap(tap).
+			As("live-room-monitor-"+strconv.Itoa(i)).
 			To(benchSink("live-room-monitor-sink-"+strconv.Itoa(i))))
 		if err != nil {
 			b.Fatal(err)
@@ -292,12 +285,9 @@ func TestPerformanceLabRecordDriftSoak(t *testing.T) {
 			}
 		})
 
-	err := goav.From(input).
+	err := benchRuntime().Run(context.Background(), input.
 		Video().
-		Copy().
-		To(benchSink("record-drift-wall-soak-packets")).
-		UseRuntime(benchRuntime()).
-		Run(context.Background())
+		To(benchSink("record-drift-wall-soak-packets")))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -334,27 +324,23 @@ func TestPerformanceLabLiveRoomAttachDetachSoak(t *testing.T) {
 	sink := &liveRoomSyncSink{}
 	policy := flow.Sync("live-room-churn-wall", flow.SyncTolerance(20*time.Millisecond), flow.SyncDropLate())
 
-	task, err := goav.From(
-		benchLiveRoomChurnVideoPackets("churn-wall-video", videoTicks, latencies, &latencyIndex, &sourceDrops),
-		benchLiveRoomChurnAudioPackets("churn-wall-audio", audioTicks, latencies, &latencyIndex, &sourceDrops),
-	).
-		Video(goav.InputName("churn-wall-video")).
-		Sync(policy).
-		Copy().
-		Tap(goav.PacketTap("live.wall.video.packets")).
-		To(goav.Sink(component.SinkFunc("live-room-churn-wall-video", sink.collect))).
-		Audio(goav.InputName("churn-wall-audio")).
-		Sync(policy).
-		Copy().
-		Tap(goav.PacketTap("live.wall.audio.packets")).
-		To(goav.Sink(component.SinkFunc("live-room-churn-wall-audio", sink.collect))).
-		UseRuntime(benchRuntime(runconfig.WithBufferPolicy(pipeline.BufferPolicy{
-			Capacity:        4,
-			Drop:            pipeline.DropOldest,
-			CopyPacketBytes: benchPacketBytes,
-			CopyFrameBytes:  1,
-		}))).
-		BuildLive(ctx)
+	task, err := benchRuntime(runconfig.WithBufferPolicy(pipeline.BufferPolicy{
+		Capacity:        4,
+		Drop:            pipeline.DropOldest,
+		CopyPacketBytes: benchPacketBytes,
+		CopyFrameBytes:  1,
+	})).Build(ctx,
+		benchLiveRoomChurnVideoPackets("churn-wall-video", videoTicks, latencies, &latencyIndex, &sourceDrops).
+			Video().
+			Sync(policy).
+			Tap("live.wall.video.packets").
+			To(goav.Sink(component.SinkFunc("live-room-churn-wall-video", sink.collect))),
+		benchLiveRoomChurnAudioPackets("churn-wall-audio", audioTicks, latencies, &latencyIndex, &sourceDrops).
+			Audio().
+			Sync(policy).
+			Tap("live.wall.audio.packets").
+			To(goav.Sink(component.SinkFunc("live-room-churn-wall-audio", sink.collect))),
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -372,18 +358,15 @@ func TestPerformanceLabLiveRoomAttachDetachSoak(t *testing.T) {
 	operations := 0
 	for time.Now().Before(deadline) {
 		mediaSeq = testLiveRoomEmitChurnTicks(ctx, t, videoTicks, audioTicks, mediaSeq, 2)
-		tap := goav.PacketTap("live.wall.video.packets")
+		tap := "live.wall.video.packets"
 		branchName := videoBranchNames[operations%nameSlots]
 		sink := videoSinks[operations%nameSlots]
 		if operations%2 != 0 {
-			tap = goav.PacketTap("live.wall.audio.packets")
+			tap = "live.wall.audio.packets"
 			branchName = audioBranchNames[operations%nameSlots]
 			sink = audioSinks[operations%nameSlots]
 		}
-		attachment, err := task.LegacyAttach(ctx, goav.Branch(branchName).
-			From(tap).
-			Copy().
-			To(sink))
+		attachment, err := task.Attach(ctx, task.Tap(tap).As(branchName).To(sink))
 		if err != nil {
 			t.Fatal(err)
 		}

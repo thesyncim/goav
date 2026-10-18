@@ -61,11 +61,10 @@ func transactionalWriterDestination(writer *transactionalTestWriter) goav.Destin
 func TestTaskCloseIsIdempotentAfterRun(t *testing.T) {
 	ctx := context.Background()
 	writer := &countingWriteCloser{}
-	task, err := goav.From(goavtest.Audio(48000, 1, []int16{1})).
-		Audio().Encode(codec.Opus()).
-		To(goav.Write("out.ogg", writer)).
-		UseRuntime(goavtest.Runtime()).
-		BuildLive(ctx)
+	task, err := goavtest.Runtime().Build(ctx, goavtest.Audio(48000, 1, []int16{1}).
+		Audio().
+		Encode(codec.Opus()).
+		To(goav.Write("out.ogg", writer)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -88,11 +87,10 @@ func TestTaskCloseIsIdempotentAfterRun(t *testing.T) {
 // second Close stays nil.
 func TestTaskCloseIsIdempotentWithoutRun(t *testing.T) {
 	writer := &countingWriteCloser{}
-	task, err := goav.From(goavtest.Audio(48000, 1, []int16{1})).
-		Audio().Encode(codec.Opus()).
-		To(goav.Write("out.ogg", writer)).
-		UseRuntime(goavtest.Runtime()).
-		BuildLive(context.Background())
+	task, err := goavtest.Runtime().Build(context.Background(), goavtest.Audio(48000, 1, []int16{1}).
+		Audio().
+		Encode(codec.Opus()).
+		To(goav.Write("out.ogg", writer)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -108,10 +106,9 @@ func TestTaskCloseIsIdempotentWithoutRun(t *testing.T) {
 }
 
 func TestTaskCloseContextOptInHonorsCanceledContext(t *testing.T) {
-	task, err := goav.From(goavtest.Audio(48000, 1, []int16{1})).
+	task, err := mustRuntime().Build(context.Background(), goavtest.Audio(48000, 1, []int16{1}).
 		Audio().
-		To(goavtest.NewCollector().Sink()).
-		BuildLive(context.Background())
+		To(goavtest.NewCollector().Sink()))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -138,10 +135,9 @@ func TestTaskCloseDuringRunStopsTheTask(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	out := goavtest.NewCollector()
-	task, err := goav.From(goavtest.LiveAudio("live", 48000, 1)).
-		Audio().To(out.Sink()).
-		UseRuntime(goavtest.Runtime()).
-		BuildLive(ctx)
+	task, err := goavtest.Runtime().Build(ctx, goavtest.LiveAudio("live", 48000, 1).
+		Audio().
+		To(out.Sink()))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -173,11 +169,10 @@ func TestTaskCloseDuringRunStopsTheTask(t *testing.T) {
 func TestTaskSnapshotIsRaceSafeDuringAttachDetach(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	task, err := goav.From(goavtest.LiveAudio("live", 48000, 1)).
-		Audio().Tap(goav.FrameTap("audio.decoded")).
-		To(goavtest.NewCollector().Sink()).
-		UseRuntime(goavtest.Runtime()).
-		BuildLive(ctx)
+	task, err := goavtest.Runtime().Build(ctx, goavtest.LiveAudio("live", 48000, 1).
+		Audio().
+		Tap("audio.decoded").
+		To(goavtest.NewCollector().Sink()))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -193,8 +188,9 @@ func TestTaskSnapshotIsRaceSafeDuringAttachDetach(t *testing.T) {
 		defer wg.Done()
 		defer close(mutated)
 		for i := range iterations {
-			attachment, err := task.LegacyAttach(ctx,
-				goav.Branch("stress").From(goav.FrameTap("audio.decoded")).To(goavtest.NewCollector().Sink()))
+			attachment, err := task.Attach(ctx,
+				task.Tap("audio.decoded").As("stress").To(goavtest.NewCollector().Sink()),
+			)
 			if err != nil {
 				t.Errorf("Attach %d: %v", i, err)
 				return
@@ -250,11 +246,10 @@ func TestTransactionalCommitFailureSurfacesFromTaskClose(t *testing.T) {
 	ctx := context.Background()
 	commitErr := errors.New("upload commit failed")
 	writer := &transactionalTestWriter{commitErr: commitErr}
-	task, err := goav.From(goavtest.Audio(48000, 1, []int16{1})).
-		Audio().Encode(codec.Opus()).
-		To(transactionalWriterDestination(writer)).
-		UseRuntime(goavtest.Runtime()).
-		BuildLive(ctx)
+	task, err := goavtest.Runtime().Build(ctx, goavtest.Audio(48000, 1, []int16{1}).
+		Audio().
+		Encode(codec.Opus()).
+		To(transactionalWriterDestination(writer)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -280,11 +275,10 @@ func TestTransactionalCommitFailureSurfacesFromTaskClose(t *testing.T) {
 func TestRunOneShotSurfacesCommitFailure(t *testing.T) {
 	commitErr := errors.New("upload commit failed")
 	writer := &transactionalTestWriter{commitErr: commitErr}
-	err := goav.From(goavtest.Audio(48000, 1, []int16{1})).
-		Audio().Encode(codec.Opus()).
-		To(transactionalWriterDestination(writer)).
-		UseRuntime(goavtest.Runtime()).
-		Run(context.Background())
+	err := goavtest.Runtime().Run(context.Background(), goavtest.Audio(48000, 1, []int16{1}).
+		Audio().
+		Encode(codec.Opus()).
+		To(transactionalWriterDestination(writer)))
 	if !errors.Is(err, commitErr) {
 		t.Fatalf("Run = %v, want the commit failure %v", err, commitErr)
 	}
@@ -301,7 +295,7 @@ func TestRunOneShotPreservesRunAndCloseFailures(t *testing.T) {
 	runErr := errors.New("source failed")
 	abortErr := errors.New("upload abort failed")
 	writer := &transactionalTestWriter{abortErr: abortErr}
-	err := goav.From(goav.Source("broken-audio",
+	err := goavtest.Runtime().Run(context.Background(), goav.Source("broken-audio",
 		shape.Packet(av.MediaAudio, av.CodecOpus, shape.Audio(48_000, codec.Stereo, "")),
 		func(_ context.Context, push goav.SourcePush) error {
 			packet := av.Packet{
@@ -313,11 +307,9 @@ func TestRunOneShotPreservesRunAndCloseFailures(t *testing.T) {
 			}
 			return runErr
 		},
-	)).
-		Audio().Copy().
-		To(transactionalWriterDestination(writer)).
-		UseRuntime(goavtest.Runtime()).
-		Run(context.Background())
+	).
+		Audio().
+		To(transactionalWriterDestination(writer)))
 	if !errors.Is(err, runErr) {
 		t.Fatalf("Run = %v, want source failure %v", err, runErr)
 	}

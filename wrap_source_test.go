@@ -60,12 +60,13 @@ func TestWrapSourceDecoratesCustomInput(t *testing.T) {
 		})
 
 	out := goavtest.NewCollector()
-	job := goav.From(input).Audio().To(out.Sink()).UseRuntime(goavtest.Runtime())
-	planned, err := job.Describe()
+	rt := goavtest.Runtime()
+	job := input.Audio().To(out.Sink())
+	planned, err := rt.Describe(job)
 	if err != nil {
 		t.Fatal(err)
 	}
-	task, err := job.BuildLive(ctx)
+	task, err := rt.Build(ctx, job)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -99,10 +100,10 @@ func TestWrapSourceDecoratesFileInput(t *testing.T) {
 
 	// Mux two packets into an in-memory fake container.
 	var file bytes.Buffer
-	err := goav.From(goavtest.Packets(av.CodecOpus,
+	err := rt.Run(ctx, goavtest.Packets(av.CodecOpus,
 		av.Packet{Payload: av.Buffer{Bytes: []byte{1}, Ownership: av.BufferImmutable}, Keyframe: true},
 		av.Packet{Payload: av.Buffer{Bytes: []byte{2}, Ownership: av.BufferImmutable}},
-	)).Copy().To(goav.Write("in.webm", &file)).UseRuntime(rt).Run(ctx)
+	).To(goav.Write("in.webm", &file)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -113,7 +114,7 @@ func TestWrapSourceDecoratesFileInput(t *testing.T) {
 			return countingSource{inner: source, count: &count}
 		})
 	out := goavtest.NewCollector()
-	if err := goav.From(input).Copy().To(out.Sink()).UseRuntime(rt).Run(ctx); err != nil {
+	if err := rt.Run(ctx, input.To(out.Sink())); err != nil {
 		t.Fatal(err)
 	}
 	if got := len(out.Packets()); got != 2 {

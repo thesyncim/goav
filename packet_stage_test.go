@@ -30,22 +30,19 @@ func TestPacketCustomStageRunsOnPacketDomain(t *testing.T) {
 		return emit.Packet(p)
 	})
 
-	task, err := goav.From(packetStageInput()).
+	task, err := mustRuntime().Build(ctx, packetStageInput().
 		Audio().
-		Copy().
-		Tap(goav.PacketTap("audio.packets")).
-		To(passthroughPacketSink()).
-		BuildLive(ctx)
+		Tap("audio.packets").
+		To(passthroughPacketSink()))
 	if err != nil {
 		t.Fatalf("BuildLive: %v", err)
 	}
 	defer task.Close()
 
-	if _, err := task.LegacyAttach(ctx,
-		goav.Branch("meter").
-			From(goav.PacketTap("audio.packets")).
+	if _, err := task.Attach(ctx,
+		task.Tap("audio.packets").
 			Do(meter).
-			Copy().
+			As("meter").
 			To(passthroughPacketSink()),
 	); err != nil {
 		t.Fatalf("attach packet .Do().Copy() branch: %v", err)
@@ -59,11 +56,10 @@ func TestFrameCustomStageStillRequiresDecode(t *testing.T) {
 	frames := component.FrameFunc("frames", func(_ context.Context, f *av.Frame, emit component.Emit) error {
 		return emit.Frame(f)
 	})
-	_, err := goav.From(packetStageInput()).
+	_, err := mustRuntime().Describe(packetStageInput().
 		Audio().
 		Do(frames).
-		To(passthroughPacketSink()).
-		Describe()
+		To(passthroughPacketSink()))
 	var buildErr *goav.BuildError
 	if !errors.As(err, &buildErr) {
 		t.Fatalf("err = %v, want a *goav.BuildError requiring Decode", err)

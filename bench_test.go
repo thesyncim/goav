@@ -167,10 +167,10 @@ func benchVideoFrames(name string, n, width, height int) goav.InputSpec {
 
 // runBenchTask builds the job (untimed cold path) and times one Run that
 // drains the b.N messages the job's sources push.
-func runBenchTask(b *testing.B, job *goav.Job) {
+func runBenchTask(b *testing.B, rt *goav.Runtime, outs ...goav.Output) {
 	b.Helper()
 	ctx := context.Background()
-	task, err := job.BuildLive(ctx)
+	task, err := rt.Build(ctx, outs...)
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -192,12 +192,10 @@ func passthroughOpusPayload(b *testing.B) []byte {
 	b.Helper()
 	ctx := context.Background()
 	out := goavtest.NewCollector()
-	err := goav.From(benchAudioFrames("seed", 1, 48_000, 1, benchAudioSamples)).
+	err := benchRuntime().Run(ctx, benchAudioFrames("seed", 1, 48_000, 1, benchAudioSamples).
 		Audio().
 		Encode(codec.Opus()).
-		To(out.Sink()).
-		UseRuntime(benchRuntime()).
-		Run(ctx)
+		To(out.Sink()))
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -212,11 +210,10 @@ func passthroughOpusPayload(b *testing.B) []byte {
 // a packet-preserving Copy into a (fake-container) file. ns/op is the per-packet
 // record cost including mux framing.
 func BenchmarkRecordPackets(b *testing.B) {
-	runBenchTask(b, goav.From(benchVideoPackets("cam", b.N)).
-		Video().
-		Copy().
-		To(goav.Write("out.mp4", io.Discard)).
-		UseRuntime(benchRuntime()))
+	runBenchTask(b, benchRuntime(),
+		benchVideoPackets("cam", b.N).
+			Video().
+			To(goav.Write("out.mp4", io.Discard)))
 }
 
 // BenchmarkRemuxPackets is the file→file remux: demux a (fake-container) file
@@ -224,63 +221,59 @@ func BenchmarkRecordPackets(b *testing.B) {
 func BenchmarkRemuxPackets(b *testing.B) {
 	ctx := context.Background()
 	var input bytes.Buffer
-	err := goav.From(benchVideoPackets("cam", b.N)).
+	err := benchRuntime().Run(ctx, benchVideoPackets("cam", b.N).
 		Video().
-		Copy().
-		To(goav.Write("in.mp4", &input)).
-		UseRuntime(benchRuntime()).
-		Run(ctx)
+		To(goav.Write("in.mp4", &input)))
 	if err != nil {
 		b.Fatal(err)
 	}
-	runBenchTask(b, goav.From(goav.FileInput("in.mp4", bytes.NewReader(input.Bytes()))).
-		Video().
-		Copy().
-		To(goav.Write("out.mp4", io.Discard)).
-		UseRuntime(benchRuntime()))
+	runBenchTask(b, benchRuntime(),
+		goav.FileInput("in.mp4", bytes.NewReader(input.Bytes())).
+			Video().
+			To(goav.Write("out.mp4", io.Discard)))
 }
 
 // BenchmarkDecodeToFrameSink is the decode path: packets through the (fake)
 // decoder into a frame sink.
 func BenchmarkDecodeToFrameSink(b *testing.B) {
 	payload := passthroughOpusPayload(b)
-	runBenchTask(b, goav.From(benchAudioPackets("mic", b.N, payload)).
-		Audio().
-		Decode().
-		To(benchSink("frames")).
-		UseRuntime(benchRuntime()))
+	runBenchTask(b, benchRuntime(),
+		benchAudioPackets("mic", b.N, payload).
+			Audio().
+			Decode().
+			To(benchSink("frames")))
 }
 
 // BenchmarkDecodeEncode is the transcode shape: decode then re-encode (both
 // fake passthrough codecs), delivering encoded packets to a sink.
 func BenchmarkDecodeEncode(b *testing.B) {
 	payload := passthroughOpusPayload(b)
-	runBenchTask(b, goav.From(benchAudioPackets("mic", b.N, payload)).
-		Audio().
-		Decode().
-		Encode(codec.Opus()).
-		To(benchSink("packets")).
-		UseRuntime(benchRuntime()))
+	runBenchTask(b, benchRuntime(),
+		benchAudioPackets("mic", b.N, payload).
+			Audio().
+			Decode().
+			Encode(codec.Opus()).
+			To(benchSink("packets")))
 }
 
 // BenchmarkResample is the real bundled resample filter: 44.1kHz stereo S16 frames
 // converted to 48kHz mono.
 func BenchmarkResample(b *testing.B) {
-	runBenchTask(b, goav.From(benchAudioFrames("mic", b.N, 44_100, 2, 882)).
-		Audio().
-		Resample(48_000, 1).
-		To(benchSink("resampled")).
-		UseRuntime(benchRuntime()))
+	runBenchTask(b, benchRuntime(),
+		benchAudioFrames("mic", b.N, 44_100, 2, 882).
+			Audio().
+			Resample(48_000, 1).
+			To(benchSink("resampled")))
 }
 
 // BenchmarkResize is the real bundled resize filter: 320x180 I420 frames scaled to
 // 160x90.
 func BenchmarkResize(b *testing.B) {
-	runBenchTask(b, goav.From(benchVideoFrames("cam", b.N, 320, 180)).
-		Video().
-		Resize(160, 90).
-		To(benchSink("resized")).
-		UseRuntime(benchRuntime()))
+	runBenchTask(b, benchRuntime(),
+		benchVideoFrames("cam", b.N, 320, 180).
+			Video().
+			Resize(160, 90).
+			To(benchSink("resized")))
 }
 
 // BenchmarkBranchFanout decodes once and fans the frames out to N planned
@@ -290,16 +283,13 @@ func BenchmarkBranchFanout(b *testing.B) {
 	payload := passthroughOpusPayload(b)
 	for _, n := range []int{2, 8} {
 		b.Run("branches="+strconv.Itoa(n), func(b *testing.B) {
-			branches := make([]goav.BranchSpec, n)
-			for i := range branches {
+			decoded := benchAudioPackets("mic", b.N, payload).Audio().Decode()
+			outs := make([]goav.Output, n)
+			for i := range outs {
 				name := "branch-" + strconv.Itoa(i)
-				branches[i] = goav.Branch(name).To(benchSink(name))
+				outs[i] = decoded.As(name).To(benchSink(name))
 			}
-			runBenchTask(b, goav.From(benchAudioPackets("mic", b.N, payload)).
-				Audio().
-				Decode().
-				Branches(branches...).
-				UseRuntime(benchRuntime()))
+			runBenchTask(b, benchRuntime(), outs...)
 		})
 	}
 }
@@ -310,13 +300,15 @@ func BenchmarkBranchFanout(b *testing.B) {
 func BenchmarkSharedMuxGroup(b *testing.B) {
 	half := max(b.N/2, 1)
 	out := goav.Write("call.webm", io.Discard)
-	runBenchTask(b, goav.From(
-		benchVideoFrames("cam", half, 320, 180),
-		benchAudioFrames("mic", half, 48_000, 1, benchAudioSamples),
-	).
-		Video(goav.InputName("cam")).Encode(codec.VP8()).To(out).
-		Audio(goav.InputName("mic")).Encode(codec.Opus()).To(out).
-		UseRuntime(benchRuntime()))
+	runBenchTask(b, benchRuntime(),
+		benchVideoFrames("cam", half, 320, 180).
+			Video().
+			Encode(codec.VP8()).
+			To(out),
+		benchAudioFrames("mic", half, 48_000, 1, benchAudioSamples).
+			Audio().
+			Encode(codec.Opus()).
+			To(out))
 }
 
 // BenchmarkMix sums N synchronized audio arms into one stream. The graph runs
@@ -329,25 +321,25 @@ func BenchmarkMix(b *testing.B) {
 			per := max(b.N/n, 1)
 			switch n {
 			case 2:
-				runBenchTask(b, goav.LegacyMix(
-					goav.From(benchAudioFrames("arm-0", per, 48_000, 1, benchAudioSamples)).Audio(),
-					goav.From(benchAudioFrames("arm-1", per, 48_000, 1, benchAudioSamples)).Audio(),
-				).
-					To(benchSink("mixed")).
-					UseRuntime(benchRuntime(runconfig.WithBufferPolicy(flow.Blocking(64).PipelinePolicy()))))
+				runBenchTask(b, benchRuntime(runconfig.WithBufferPolicy(flow.Blocking(64).PipelinePolicy())),
+					goav.Mix(
+						benchAudioFrames("arm-0", per, 48_000, 1, benchAudioSamples).Audio(),
+						benchAudioFrames("arm-1", per, 48_000, 1, benchAudioSamples).Audio(),
+					).
+						To(benchSink("mixed")))
 			case 8:
-				runBenchTask(b, goav.LegacyMix(
-					goav.From(benchAudioFrames("arm-0", per, 48_000, 1, benchAudioSamples)).Audio(),
-					goav.From(benchAudioFrames("arm-1", per, 48_000, 1, benchAudioSamples)).Audio(),
-					goav.From(benchAudioFrames("arm-2", per, 48_000, 1, benchAudioSamples)).Audio(),
-					goav.From(benchAudioFrames("arm-3", per, 48_000, 1, benchAudioSamples)).Audio(),
-					goav.From(benchAudioFrames("arm-4", per, 48_000, 1, benchAudioSamples)).Audio(),
-					goav.From(benchAudioFrames("arm-5", per, 48_000, 1, benchAudioSamples)).Audio(),
-					goav.From(benchAudioFrames("arm-6", per, 48_000, 1, benchAudioSamples)).Audio(),
-					goav.From(benchAudioFrames("arm-7", per, 48_000, 1, benchAudioSamples)).Audio(),
-				).
-					To(benchSink("mixed")).
-					UseRuntime(benchRuntime(runconfig.WithBufferPolicy(flow.Blocking(64).PipelinePolicy()))))
+				runBenchTask(b, benchRuntime(runconfig.WithBufferPolicy(flow.Blocking(64).PipelinePolicy())),
+					goav.Mix(
+						benchAudioFrames("arm-0", per, 48_000, 1, benchAudioSamples).Audio(),
+						benchAudioFrames("arm-1", per, 48_000, 1, benchAudioSamples).Audio(),
+						benchAudioFrames("arm-2", per, 48_000, 1, benchAudioSamples).Audio(),
+						benchAudioFrames("arm-3", per, 48_000, 1, benchAudioSamples).Audio(),
+						benchAudioFrames("arm-4", per, 48_000, 1, benchAudioSamples).Audio(),
+						benchAudioFrames("arm-5", per, 48_000, 1, benchAudioSamples).Audio(),
+						benchAudioFrames("arm-6", per, 48_000, 1, benchAudioSamples).Audio(),
+						benchAudioFrames("arm-7", per, 48_000, 1, benchAudioSamples).Audio(),
+					).
+						To(benchSink("mixed")))
 			}
 		})
 	}
@@ -357,12 +349,12 @@ func BenchmarkMix(b *testing.B) {
 // per input frame; one composed canvas costs roughly twice that.
 func BenchmarkComposite(b *testing.B) {
 	per := max(b.N/2, 1)
-	runBenchTask(b, goav.LegacyComposite(
-		goav.From(benchVideoFrames("cam", per, 160, 90)).Video().Region(0, 0),
-		goav.From(benchVideoFrames("screen", per, 160, 90)).Video().Region(160, 0),
-	).
-		To(benchSink("canvas")).
-		UseRuntime(benchRuntime(runconfig.WithBufferPolicy(flow.Blocking(64).PipelinePolicy()))))
+	runBenchTask(b, benchRuntime(runconfig.WithBufferPolicy(flow.Blocking(64).PipelinePolicy())),
+		goav.Composite(
+			goav.At(benchVideoFrames("cam", per, 160, 90).Video(), 0, 0),
+			goav.At(benchVideoFrames("screen", per, 160, 90).Video(), 160, 0),
+		).
+			To(benchSink("canvas")))
 }
 
 // BenchmarkSelectPassthrough is the one-of-N live switch in its steady state:
@@ -370,12 +362,12 @@ func BenchmarkComposite(b *testing.B) {
 // the other at the gate. ns/op is per pushed frame across both arms.
 func BenchmarkSelectPassthrough(b *testing.B) {
 	per := max(b.N/2, 1)
-	runBenchTask(b, goav.LegacySelect(
-		goav.From(benchAudioFrames("live", per, 48_000, 1, benchAudioSamples)).Audio(),
-		goav.From(benchAudioFrames("standby", per, 48_000, 1, benchAudioSamples)).Audio(),
-	).
-		To(benchSink("selected")).
-		UseRuntime(benchRuntime()))
+	runBenchTask(b, benchRuntime(),
+		goav.Select(
+			benchAudioFrames("live", per, 48_000, 1, benchAudioSamples).Audio(),
+			benchAudioFrames("standby", per, 48_000, 1, benchAudioSamples).Audio(),
+		).
+			To(benchSink("selected")))
 }
 
 // BenchmarkAttachDetachUnderLoad measures the control plane against live
@@ -386,12 +378,10 @@ func BenchmarkAttachDetachUnderLoad(b *testing.B) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	task, err := goav.From(goavtest.LiveAudio("live", 48_000, 1, make([]int16, benchAudioSamples))).
+	task, err := benchRuntime(runconfig.WithBufferPolicy(flow.DropOldest(64).PipelinePolicy())).Build(ctx, goavtest.LiveAudio("live", 48_000, 1, make([]int16, benchAudioSamples)).
 		Audio().
-		Tap(goav.FrameTap("live.frames")).
-		To(benchSink("main")).
-		UseRuntime(benchRuntime(runconfig.WithBufferPolicy(flow.DropOldest(64).PipelinePolicy()))).
-		BuildLive(ctx)
+		Tap("live.frames").
+		To(benchSink("main")))
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -403,9 +393,11 @@ func BenchmarkAttachDetachUnderLoad(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		attachment, err := task.LegacyAttach(ctx, goav.Branch("monitor-"+strconv.Itoa(i)).
-			From(goav.FrameTap("live.frames")).
-			To(benchSink("monitor-sink-"+strconv.Itoa(i))))
+		attachment, err := task.Attach(ctx,
+			task.Tap("live.frames").
+				As("monitor-"+strconv.Itoa(i)).
+				To(benchSink("monitor-sink-"+strconv.Itoa(i))),
+		)
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -434,10 +426,10 @@ func BenchmarkSourcePush(b *testing.B) {
 		{"blocking", flow.Blocking(64)},
 	} {
 		b.Run(mode.name, func(b *testing.B) {
-			runBenchTask(b, goav.From(benchAudioFrames("mic", b.N, 48_000, 1, benchAudioSamples)).
-				Audio().
-				To(benchSink("out")).
-				UseRuntime(benchRuntime(runconfig.WithBufferPolicy(mode.buffer.PipelinePolicy()))))
+			runBenchTask(b, benchRuntime(runconfig.WithBufferPolicy(mode.buffer.PipelinePolicy())),
+				benchAudioFrames("mic", b.N, 48_000, 1, benchAudioSamples).
+					Audio().
+					To(benchSink("out")))
 		})
 	}
 }
