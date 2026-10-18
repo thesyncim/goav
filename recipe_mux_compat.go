@@ -45,18 +45,16 @@ func stateMuxCompatibilityIssues(state *recipeCompileState) []muxCompatibilityIs
 	if state == nil || !state.specReady || state.specOrigin != graphSpecOriginGraphPlan {
 		return nil
 	}
-	return muxCompatibilityIssues(state.graphPlan.work, state.inputProbes, state.branchInputProbe, state.branchInputProbeReady, state.runtime)
+	return muxCompatibilityIssues(state.graphPlan.work, state.inputProbes, state.runtime)
 }
 
 func resolvedMuxCompatibilityIssues(resolved recipeResolved) []muxCompatibilityIssue {
-	return muxCompatibilityIssues(resolved.workIR(), resolved.inputProbes, resolved.branchInputProbe, resolved.branchInputProbeReady, resolved.runtime)
+	return muxCompatibilityIssues(resolved.workIR(), resolved.inputProbes, resolved.runtime)
 }
 
 func muxCompatibilityIssues(
 	work workPlan,
 	inputProbes []format.ProbeResult,
-	transcodeProbe format.ProbeResult,
-	transcodeProbeReady bool,
 	rt *Runtime,
 ) []muxCompatibilityIssue {
 	var issues []muxCompatibilityIssue
@@ -67,7 +65,7 @@ func muxCompatibilityIssues(
 		if output.Operation != plan.OpMux || output.Format == "" {
 			continue
 		}
-		streams := muxOutputStreams(output, branches, operations, work.Inputs, inputProbes, transcodeProbe, transcodeProbeReady)
+		streams := muxOutputStreams(output, branches, operations, work.Inputs, inputProbes)
 		if issue, ok := checkKnownMuxCompatibility(output, streams, rt); ok {
 			issues = append(issues, issue)
 		}
@@ -81,8 +79,6 @@ func muxOutputStreams(
 	operations map[string]workOperation,
 	inputs []workInput,
 	inputProbes []format.ProbeResult,
-	transcodeProbe format.ProbeResult,
-	transcodeProbeReady bool,
 ) []plannedMuxStream {
 	streams := make([]plannedMuxStream, 0, len(output.Branches))
 	for i := range output.Branches {
@@ -91,7 +87,7 @@ func muxOutputStreams(
 		if !ok {
 			continue
 		}
-		streams = append(streams, muxStreamForBranch(branch, i, operations, inputs, inputProbes, transcodeProbe, transcodeProbeReady))
+		streams = append(streams, muxStreamForBranch(branch, i, operations, inputs, inputProbes))
 	}
 	return streams
 }
@@ -102,8 +98,6 @@ func muxStreamForBranch(
 	operations map[string]workOperation,
 	inputs []workInput,
 	inputProbes []format.ProbeResult,
-	transcodeProbe format.ProbeResult,
-	transcodeProbeReady bool,
 ) plannedMuxStream {
 	out := plannedMuxStream{Branch: firstNonEmpty(branch.Name, fmt.Sprintf("branch-%d", branchIndex))}
 	for _, id := range branch.Operations {
@@ -121,7 +115,7 @@ func muxStreamForBranch(
 		out.Media = codecMedia(out.Codec)
 		return out
 	}
-	if codecID, media, base, ok := copyMuxStreamFacts(branch, inputs, inputProbes, transcodeProbe, transcodeProbeReady); ok {
+	if codecID, media, base, ok := copyMuxStreamFacts(branch, inputs, inputProbes); ok {
 		out.Codec = codecID
 		out.Media = media
 		out.TimeBase = base
@@ -133,19 +127,12 @@ func copyMuxStreamFacts(
 	branch workBranch,
 	inputs []workInput,
 	inputProbes []format.ProbeResult,
-	transcodeProbe format.ProbeResult,
-	transcodeProbeReady bool,
 ) (av.CodecID, av.MediaType, av.TimeBase, bool) {
 	if branch.Stream.Codec != "" {
 		return branch.Stream.Codec, firstNonEmptyMedia(branch.Stream.Type, codecMedia(branch.Stream.Codec)), av.TimeBase{}, true
 	}
 	if codecID, media, base, ok := liveMuxInputFacts(inputs, branch); ok {
 		return codecID, media, base, true
-	}
-	if transcodeProbeReady {
-		if codecID, media, base, ok := probedMuxInputFacts([]format.ProbeResult{transcodeProbe}, branch); ok {
-			return codecID, media, base, true
-		}
 	}
 	return probedMuxInputFacts(inputProbes, branch)
 }

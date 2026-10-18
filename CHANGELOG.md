@@ -11,6 +11,17 @@ methodology changes, and migration notes.
 
 ## Unreleased
 
+- Forks work across several inputs in one run: an HLS ladder forks one camera
+  into renditions while a second input's audio muxes into each, two files fork
+  into their own renditions, and a lone stream named with `.As(...)` runs
+  beside other inputs, instead of refusing with "branches currently compose
+  from one input". Each input's forks share its own select, decode, and
+  steps, named per input (`resize-video@a.webm`). Forks now compile as the
+  same job every multi-stream run is: the separate branch-composition
+  compiler, its passes, and its lowerer are gone. Breaking: the
+  `input_count_unsupported` and `unsupported_input` codes are gone, and a
+  transform on the wrong media is the shape solver's `operation_shape_mismatch`
+  on every path, no longer `transform_media_mismatch` on single streams.
 - `goav run --serve ADDR` packages a program's `hls` outputs into an HLS
   server and serves it while the program runs, so one command is an LL-HLS
   origin: `goav run --serve :8080 '... ! hls live.m3u8 parts=250ms window=6'`.

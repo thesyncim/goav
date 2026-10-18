@@ -130,21 +130,6 @@ func TestRecipeIRStreamPacketCopyOnlyContracts(t *testing.T) {
 	}
 }
 
-func TestMediaPlanBranchComposerLowererRefusalContracts(t *testing.T) {
-	for name, state := range map[string]*recipeCompileState{
-		"nil":                    nil,
-		"not branch composition": {},
-		"no runtime input owner": {branchCompositionPresent: true, branchInputAttachment: InputSpec{}},
-	} {
-		t.Run(name, func(t *testing.T) {
-			lowerer, ok, err := mediaPlanBranchComposerLowerer(state)
-			if lowerer != nil || ok || err != nil {
-				t.Fatalf("mediaPlanBranchComposerLowerer() = %T, %v, %v; want nil, false, nil", lowerer, ok, err)
-			}
-		})
-	}
-}
-
 func buildErrorHasCodeOperation(err error, code errcode.Code, operation string) bool {
 	var buildErr *BuildError
 	return errors.As(err, &buildErr) && buildErr.Code == code && buildErr.Operation == operation

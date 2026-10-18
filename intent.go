@@ -46,7 +46,9 @@ type inputIntent struct {
 // one-directional — builders write the labels here, and the plan derives its
 // destination/<label> handle IDs from them (planBranchDestinations).
 type streamIntent struct {
-	Name         string
+	Name string
+	// Named mirrors recipeir.Stream.Named.
+	Named        bool
 	Select       plan.StreamSelect
 	From         tapRef
 	Operations   []operationSpec
@@ -268,9 +270,12 @@ func jobStreamIntent(stream *jobStreamBuild) streamIntent {
 }
 
 func branchStreamIntent(stream streamBuild) streamIntent {
+	selected := streamSelectFromAV(stream.selector)
+	selected.Input = stream.input
 	return streamIntent{
 		Name:         stream.name,
-		Select:       streamSelectFromAV(stream.selector),
+		Named:        true,
+		Select:       selected,
 		From:         stream.from,
 		Operations:   streamBuildOperationSpecs(stream),
 		Destinations: append([]string(nil), stream.destinationNames...),

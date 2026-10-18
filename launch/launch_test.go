@@ -161,6 +161,45 @@ func TestProgramsBuildTheGraphTheirGoBuilds(t *testing.T) {
 			},
 		},
 		{
+			name: "ladder from one input beside another's audio",
+			program: `
+				v := cam ! video
+				v ! encode vp9 bitrate=400k ! as hd ! file hd.webm
+				v ! resize 32x24 ! encode vp9 bitrate=80k ! as sd ! file sd.webm
+				mic ! audio ! encode opus ! file hd.webm, file sd.webm
+			`,
+			gofor: func() []goav.Output {
+				v := cam.Video()
+				hd, sd := goav.Write("hd.webm", w()), goav.Write("sd.webm", w())
+				return []goav.Output{
+					v.Encode(codec.VP9(codec.Bitrate(400_000))).As("hd").To(hd),
+					v.Resize(32, 24).Encode(codec.VP9(codec.Bitrate(80_000))).As("sd").To(sd),
+					mic.Audio().Encode(codec.Opus()).To(hd, sd),
+				}
+			},
+		},
+		{
+			name: "forks of two files",
+			program: `
+				a := file a.webm ! video ! decode ! resize 32x24
+				a ! encode vp8 ! as a-vp8 ! file a-vp8.webm
+				a ! encode vp9 ! as a-vp9 ! file a-vp9.webm
+				b := file b.webm ! video ! decode
+				b ! encode vp8 ! as b-vp8 ! file b-vp8.webm
+				b ! resize 16x12 ! encode vp9 ! as b-small ! file b-small.webm
+			`,
+			gofor: func() []goav.Output {
+				a := goav.FileInput("a.webm", r()).Video().Decode().Resize(32, 24)
+				b := goav.FileInput("b.webm", r()).Video().Decode()
+				return []goav.Output{
+					a.Encode(codec.VP8()).As("a-vp8").To(goav.Write("a-vp8.webm", w())),
+					a.Encode(codec.VP9()).As("a-vp9").To(goav.Write("a-vp9.webm", w())),
+					b.Encode(codec.VP8()).As("b-vp8").To(goav.Write("b-vp8.webm", w())),
+					b.Resize(16, 12).Encode(codec.VP9()).As("b-small").To(goav.Write("b-small.webm", w())),
+				}
+			},
+		},
+		{
 			name:    "mix",
 			program: `mix(mic ! audio, music ! audio) ! encode opus bitrate=96k ! file mix.webm`,
 			gofor: func() []goav.Output {

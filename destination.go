@@ -210,29 +210,6 @@ func destinationsShareExplicitGroup(first namedDestinationSpec, second namedDest
 	return destinationIdentity(first) != "" && destinationIdentity(first) == destinationIdentity(second)
 }
 
-func validateBranchCompositionAttachments(input InputSpec, namedOutputs []namedDestinationSpec, fromBranchSplit bool) error {
-	if err := input.validate(); err != nil {
-		return err
-	}
-	if input.provider != nil {
-		if !fromBranchSplit {
-			return transcodeUnsupportedLiveInputError()
-		}
-	}
-	seen := make(map[string]struct{}, len(namedOutputs))
-	for i := range namedOutputs {
-		if err := namedOutputs[i].output.validate(branchCompositionOperation, fmt.Sprintf("output-%d", i)); err != nil {
-			return err
-		}
-		name := namedOutputs[i].name
-		if _, ok := seen[name]; ok {
-			return branchDestinationDuplicateError(name)
-		}
-		seen[name] = struct{}{}
-	}
-	return nil
-}
-
 func destinationHandle(spec destinationSpec) Destination {
 	return Destination{origin: destinationOriginConstructed, spec: spec}
 }

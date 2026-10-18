@@ -3556,8 +3556,10 @@ func TestNilSinkFuncDoesNotBecomeSilentNilSink(t *testing.T) {
 	}
 }
 
+// TestStreamRecipeRejectsWrongMediaTransform pins the one media check every
+// recipe form and runtime attach share: the shape solver's.
 func TestStreamRecipeRejectsWrongMediaTransform(t *testing.T) {
-	_, err := mustRuntime().Build(context.Background(), goav.FileInput("input.ogg", strings.NewReader("")).
+	_, err := goavtest.Runtime().Build(context.Background(), goav.FileInput("input.ogg", strings.NewReader("")).
 		Audio().
 		Decode().
 		Resize(320, 180).
@@ -3565,8 +3567,8 @@ func TestStreamRecipeRejectsWrongMediaTransform(t *testing.T) {
 			return nil
 		}))))
 	var buildErr *goav.BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "transform_media_mismatch" {
-		t.Fatalf("err = %v, want transform_media_mismatch", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "operation_shape_mismatch" {
+		t.Fatalf("err = %v, want operation_shape_mismatch", err)
 	}
 }
 

@@ -14,7 +14,7 @@ import (
 
 const branchCompositionOperation = "build branch composition"
 
-func planBranchCompositionSnapshot(recipe recipeir.Recipe, input InputSpec, attachments []branchDestinationAttachment) (branchComposePlan, error) {
+func planBranchCompositionSnapshot(recipe recipeir.Recipe, attachments []branchDestinationAttachment) (branchComposePlan, error) {
 	streams := recipe.Streams
 	outputs, outputOrder := branchDestinationAttachmentSet(attachments)
 
@@ -71,92 +71,9 @@ func planBranchCompositionSnapshot(recipe recipeir.Recipe, input InputSpec, atta
 	}
 	return branchComposePlan{
 		Name:         "branch-composition",
-		Input:        input.input,
 		Branches:     branches,
 		Destinations: planDestinations,
 	}, nil
-}
-
-func branchComposePlanReady(composePlan branchComposePlan) bool {
-	return len(composePlan.Branches) != 0 || len(composePlan.Destinations) != 0
-}
-
-func validateBranchCompositionRecipeShape(operation string, recipe recipeir.Recipe) error {
-	if len(recipe.Inputs) == 0 {
-		return &BuildError{
-			Phase:     phaseBuild,
-			Family:    errcode.FamilyForCode(inputMissingCode),
-			Code:      inputMissingCode,
-			Operation: operation,
-			Reason:    "no input is configured",
-			fixes: buildErrorFixes([]string{
-				"start the recipe from an input: goav.FileInput(\"in.webm\", reader).Video()",
-			}),
-			cause: errUnsupportedBuild,
-		}
-	}
-	if len(recipe.Inputs) > 1 {
-		return &BuildError{
-			Phase:     phaseBuild,
-			Family:    errcode.FamilyForCode(inputCountUnsupportedCode),
-			Code:      inputCountUnsupportedCode,
-			Operation: operation,
-			Reason:    "transcode recipes currently take one input",
-			fields:    errDetails(errDetail("inputs", fmt.Sprintf("%d", len(recipe.Inputs)))),
-			fixes: buildErrorFixes([]string{
-				"run each input's Outputs in their own rt.Run call",
-				"use the expert graph API when multiple sources must be composed manually",
-			}),
-			cause: errUnsupportedBuild,
-		}
-	}
-	streams := recipe.Streams
-	if len(streams) == 0 {
-		return branchStreamMissingError()
-	}
-	branchNames := make(map[string]int, len(streams))
-	for i := range streams {
-		stream := streams[i]
-		if err := validateBranchRecipeStreamShape(stream, i); err != nil {
-			return err
-		}
-		if err := validateBranchRecipeTransforms(stream); err != nil {
-			return err
-		}
-		branchName := stream.Name
-		if firstIndex, ok := branchNames[branchName]; ok {
-			return branchIntentDuplicateError(branchName, firstIndex, i)
-		}
-		branchNames[branchName] = i
-	}
-	return nil
-}
-
-func validateBranchRecipeStreamShape(stream recipeir.Stream, index int) error {
-	streamIntent := streamIntentFromRecipeIR(stream)
-	selector := recipeIRStreamSelector(stream)
-	if stream.Name == "" {
-		return branchIntentNameMissingError(index, streamIntent)
-	}
-	if err := validateRecipeStreamSelector(branchCompositionOperation, branchRecipeStreamName(stream), selector); err != nil {
-		return err
-	}
-	encode := recipeIRStreamEncodeSpec(stream)
-	if codecIntentSet(encode) {
-		if encode.Copy && recipeIRStreamHasDecode(stream) {
-			return branchCopyUnsupportedError(streamIntent)
-		}
-		if encode.Copy && len(recipeIRStreamTransforms(stream)) != 0 {
-			return branchPacketTransformUnsupportedError(streamIntent)
-		}
-		if err := validateRecipeEncode(encode, branchCompositionOperation, stream.Name); err != nil {
-			return err
-		}
-	}
-	if len(stream.Outputs) == 0 {
-		return branchIntentDestinationMissingError(streamIntent)
-	}
-	return validateBranchRecipeDestinations(stream)
 }
 
 func branchRecipeStreamName(stream recipeir.Stream) string {
@@ -238,37 +155,6 @@ func branchIntentDestinationMissingError(stream streamIntent) error {
 	}
 }
 
-func branchDestinationReferenceMissingError(stream streamIntent, label string) error {
-	return &BuildError{
-		Phase:     phaseBuild,
-		Family:    errcode.FamilyForCode(destinationMissingCode),
-		Code:      destinationMissingCode,
-		Operation: branchCompositionOperation,
-		Node:      stream.Name,
-		Reason:    "destination " + label + " is referenced but not defined",
-		fixes: buildErrorFixes([]string{
-			"pass a named goav.Write(...), goav.URI(...), or goav.Sink(...) destination to the branch .To(...) call",
-			"construct the destination once and pass that value to every helper that writes it",
-		}),
-		cause: errUnsupportedBuild,
-	}
-}
-
-func transcodeUnsupportedLiveInputError() error {
-	return &BuildError{
-		Phase:     phaseBuild,
-		Family:    errcode.FamilyForCode(unsupportedInputCode),
-		Code:      unsupportedInputCode,
-		Operation: branchCompositionOperation,
-		Reason:    "live provider transcode recipes are not supported by the transcode recipe compiler yet",
-		fixes: buildErrorFixes([]string{
-			"use input.To(...) for packet recording",
-			"use input.Audio().Decode() or input.Video().Decode() for one selected receive path",
-		}),
-		cause: errUnsupportedBuild,
-	}
-}
-
 func branchDestinationNameEmptyError(stream streamIntent, index int) error {
 	return &BuildError{
 		Phase:     phaseBuild,
@@ -336,19 +222,6 @@ func branchIntentNameMissingError(index int, stream streamIntent) error {
 		}),
 		cause: errUnsupportedBuild,
 	}
-}
-
-func validateBranchRecipeDestinations(stream recipeir.Stream) error {
-	streamIntent := streamIntentFromRecipeIR(stream)
-	seen := make(map[string]int, len(stream.Outputs))
-	for i, output := range stream.Outputs {
-		target := string(output)
-		if firstIndex, ok := seen[target]; ok {
-			return duplicateBranchDestinationError(streamIntent, target, firstIndex, i)
-		}
-		seen[target] = i
-	}
-	return nil
 }
 
 func duplicateBranchDestinationError(stream streamIntent, target string, firstIndex int, secondIndex int) error {

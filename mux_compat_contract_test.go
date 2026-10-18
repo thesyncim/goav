@@ -131,8 +131,6 @@ func TestMuxOutputStreamsUseWorkOperationCodec(t *testing.T) {
 		map[string]workOperation{operation.ID: operation},
 		nil,
 		nil,
-		format.ProbeResult{},
-		false,
 	)
 	if len(streams) != 1 || streams[0].Codec != av.CodecVP9 || streams[0].Media != av.MediaVideo {
 		t.Fatalf("streams = %+v, want work operation VP9 video facts", streams)
@@ -157,8 +155,6 @@ func TestMuxOutputStreamsUseWorkInputCodecFacts(t *testing.T) {
 			CodecSpec: codec.Opus(codec.SampleRate(48_000)),
 		}},
 		nil,
-		format.ProbeResult{},
-		false,
 	)
 	if len(streams) != 1 ||
 		streams[0].Codec != av.CodecOpus ||

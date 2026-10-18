@@ -7,7 +7,6 @@ import (
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
-	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/internal/recipeir"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/plan"
@@ -205,9 +204,6 @@ func planSelectedStream(state *recipeCompileState, stream streamIntent) (av.Stre
 		return selected.stream, true
 	}
 	probes := state.inputProbes
-	if state.branchInputProbeReady {
-		probes = []format.ProbeResult{state.branchInputProbe}
-	}
 	sourceShape, sourceShapeOK := compileStateCustomSourceShape(state)
 	selector := streamIntentSelector(stream)
 	for i := range probes {
@@ -241,14 +237,7 @@ func planSelectedStream(state *recipeCompileState, stream streamIntent) (av.Stre
 			}
 		}
 	}
-	if state.branchCompositionPresent {
-		if declared := declaredSourceStreams(state.branchInputAttachment); len(declared) != 0 {
-			selected, err := selectStream(declared, selector)
-			if err == nil {
-				return selected, true
-			}
-		}
-	} else if len(state.inputFacts) == 0 {
+	if len(state.inputFacts) == 0 {
 		for i := range state.inputAttachments {
 			declared := declaredSourceStreams(state.inputAttachments[i])
 			if len(declared) == 0 {
@@ -277,9 +266,6 @@ func planSelectedRecipeIRStream(state *recipeCompileState, stream recipeir.Strea
 		return selected.stream, true
 	}
 	probes := state.inputProbes
-	if state.branchInputProbeReady {
-		probes = []format.ProbeResult{state.branchInputProbe}
-	}
 	sourceShape, sourceShapeOK := compileStateCustomSourceShape(state)
 	for i := range probes {
 		if len(probes[i].Streams) == 0 {
@@ -309,14 +295,7 @@ func planSelectedRecipeIRStream(state *recipeCompileState, stream recipeir.Strea
 			}
 		}
 	}
-	if state.branchCompositionPresent {
-		if declared := declaredSourceStreams(state.branchInputAttachment); len(declared) != 0 {
-			selected, err := selectStream(declared, selector)
-			if err == nil {
-				return selected, true
-			}
-		}
-	} else if len(state.inputFacts) == 0 {
+	if len(state.inputFacts) == 0 {
 		for i := range state.inputAttachments {
 			declared := declaredSourceStreams(state.inputAttachments[i])
 			if len(declared) == 0 {
@@ -997,11 +976,11 @@ func knownPlanCodec(component string) av.CodecID {
 func planOperationNodeName(branch planBranch, operation planOperation, index int) string {
 	switch operation.Kind {
 	case plan.OpDecode:
-		return "decode-" + planBranchOperationScopeName(branch)
+		return branchComposeInputNodeName("decode-"+planBranchOperationScopeName(branch), branch.Stream.Input)
 	case plan.OpTransform:
 		name := branchEncodeOwnerName(branch)
 		if operation.Shared {
-			name = planBranchOperationScopeName(branch)
+			name = branchComposeInputNodeName(planBranchOperationScopeName(branch), branch.Stream.Input)
 		}
 		return operation.Component + "-" + name
 	case plan.OpStage:
