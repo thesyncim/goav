@@ -19,6 +19,10 @@ const (
 	composeEncode
 	composeSink
 	composeMux
+	// composeRemuxSink and composeRemuxMux are whole-job packet copy outputs:
+	// every source feeds them with all its streams, and no branch selects one.
+	composeRemuxSink
+	composeRemuxMux
 )
 
 // composeNode is one planned node of a branch composition: its name and
@@ -54,6 +58,8 @@ type composeGraph struct {
 	nodes    []composeNode
 	// branchOut is the node each branch's outputs consume.
 	branchOut []pipeline.NodeRef
+	// remux holds the outputs of a whole-job packet copy.
+	remux []destinationAttachment
 }
 
 func planComposeGraph(sources []pipeline.NodeRef, branches []branchComposeRoute, outputs []branchComposeTargetRoute) (composeGraph, error) {
@@ -174,6 +180,33 @@ func planComposeGraph(sources []pipeline.NodeRef, branches []branchComposeRoute,
 	return g, nil
 }
 
+// planRemuxGraph plans a whole-job packet copy: each output, in order, fed
+// by every source.
+func planRemuxGraph(sources []pipeline.NodeRef, outputs []destinationAttachment) composeGraph {
+	g := composeGraph{sources: sources, remux: outputs}
+	for i := range outputs {
+		if outputs[i].details.sink {
+			g.add(composeNode{
+				kind:   composeRemuxSink,
+				name:   firstNonEmpty(outputs[i].details.sinkComponentName, outputs[i].details.label, "sink"),
+				detail: describedNodeDetail(destinationAttachmentSink(outputs[i])),
+				inputs: sources,
+				output: i,
+			})
+			continue
+		}
+		output := destinationAttachmentOutput(outputs[i])
+		g.add(composeNode{
+			kind:   composeRemuxMux,
+			name:   muxNodeName(output, i),
+			detail: outputNodeDetailWithFormat(output, destinationAttachmentGraphFormat(outputs[i])),
+			inputs: sources,
+			output: i,
+		})
+	}
+	return g
+}
+
 func (g *composeGraph) add(node composeNode) pipeline.NodeRef {
 	g.nodes = append(g.nodes, node)
 	return pipeline.NodeRef(node.name)
@@ -186,7 +219,7 @@ func (g *composeGraph) add(node composeNode) pipeline.NodeRef {
 func (g composeGraph) emit(spec pipeline.Spec, planned map[string]plannedNode) (pipeline.Spec, error) {
 	for _, node := range g.nodes {
 		kind := pipeline.NodeStage
-		if node.kind == composeSink {
+		if node.kind == composeSink || node.kind == composeRemuxSink {
 			kind = pipeline.NodeSink
 		}
 		if err := addPlannedNode(planned, &spec, node.name, kind, pipeline.NodeRef(node.name), node.detail); err != nil {
@@ -214,12 +247,14 @@ func (g composeGraph) emit(spec pipeline.Spec, planned map[string]plannedNode) (
 
 // composeLowering is what building a composition needs beyond its plan: the
 // stream each branch resolved to, the source bounds decoders size from, and
-// the per-branch queues the work plan sized.
+// the per-branch queues the work plan sized; a remux reads every stream each
+// source carries.
 type composeLowering struct {
-	streams      []av.Stream
-	bounds       []decodeBoundsProvider
-	branchBuffer map[string]graphPlanBranchComposeBranchOperation
-	realtime     bool
+	streams       []av.Stream
+	sourceStreams [][]av.Stream
+	bounds        []decodeBoundsProvider
+	branchBuffer  map[string]graphPlanBranchComposeBranchOperation
+	realtime      bool
 }
 
 // lower builds the composition into graph: each node in schedule order,
@@ -293,6 +328,35 @@ func (g composeGraph) lower(ctx context.Context, service *builder, graph pipelin
 				return err
 			}
 			if err := connectComposeInputs(graph, node.inputs, sinkRef); err != nil {
+				return err
+			}
+		case composeRemuxSink:
+			sink := destinationAttachmentSink(g.remux[node.output])
+			if node.name != sink.Name() {
+				sink = namedSink{name: node.name, sink: sink}
+			}
+			sinkRef, err := graph.AddSink(sink, runtime.buffer)
+			if err != nil {
+				return err
+			}
+			if err := connectComposeInputs(graph, node.inputs, sinkRef); err != nil {
+				return err
+			}
+		case composeRemuxMux:
+			output := g.remux[node.output]
+			var muxed []av.Stream
+			for i := range g.sources {
+				muxed = append(muxed, in.sourceStreams[i]...)
+			}
+			muxStage, err := service.openMuxDestinationStage(ctx, destinationAttachmentDestination(output), node.output, muxed, destinationAttachmentOpenFormat(output), destinationAttachmentGraphFormat(output))
+			if err != nil {
+				return err
+			}
+			stage := pipeline.Stage(muxStage)
+			if node.name != muxStage.Name() {
+				stage = namedStage{name: node.name, stage: muxStage}
+			}
+			if err := addComposeStage(graph, stage, runtime.buffer, node.inputs); err != nil {
 				return err
 			}
 		case composeMux:

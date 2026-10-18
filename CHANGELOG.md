@@ -11,6 +11,14 @@ methodology changes, and migration notes.
 
 ## Unreleased
 
+- Every recipe that is not a join lowers through one `composeLowerer`: a
+  single stream, a selected or whole-job packet copy, several stream chains, or
+  branches are all sources feeding one `composeGraph`, described and built from
+  the same routes. The build no longer re-reads node names and outputs from the
+  Explain work plan or cross-checks the two (about 1,400 lines), whole-job copy
+  joined the graph, and one rule decides buffered execution. Net -1,489 lines;
+  the `TestCompilerOracle` goldens are unchanged.
+
 - Branch compositions are described and built from one schedule
   (`composeGraph`): the select, decode, and shared-step nodes per selector
   group, each branch's private steps and encoder, then the outputs. `Describe`

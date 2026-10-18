@@ -419,24 +419,6 @@ func branchComposeRouteOperationTransform(branchName string, transformIndex int,
 	}
 }
 
-func branchComposeRouteStageOperationCount(operations operationFacts) int {
-	specs := operations.Operations()
-	count := 0
-	for i := range specs {
-		switch specs[i].Kind {
-		case plan.OpStage:
-			if specs[i].Stage != nil {
-				count++
-			}
-		case plan.OpTransform:
-			if specs[i].Transform.resize != nil || specs[i].Transform.resample != nil {
-				count++
-			}
-		}
-	}
-	return count
-}
-
 func branchComposeRouteStageOperations(operations operationFacts) operationFacts {
 	specs := operations.Operations()
 	out := make([]operationSpec, 0, len(specs))

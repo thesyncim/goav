@@ -1879,8 +1879,8 @@ func (p *joinPlan) joinFanoutWorkBranches(ids map[string]string, outputs []planO
 	return operations, branches
 }
 
-// joinFanoutTargetNodeName names a fanout destination node exactly as
-// planBranchComposeRoutes and compileBranchComposeRoutes do.
+// joinFanoutTargetNodeName names a fanout destination node exactly as the
+// composeGraph does (planComposeGraph).
 func joinFanoutTargetNodeName(target branchComposeTargetRoute, index int) string {
 	if target.sink != nil {
 		return branchComposeTargetSinkNodeName(target, index)
