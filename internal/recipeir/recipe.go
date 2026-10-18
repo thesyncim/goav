@@ -227,6 +227,9 @@ type Operation struct {
 	Require   *shape.Spec
 	Prefer    *shape.Spec
 	Path      Path
+	// Name is an OpName operation's name; Buffer an OpBuffer operation's queue.
+	Name   string
+	Buffer flow.BranchBuffer
 }
 
 // Tap is the typed anchor data carried by tap operations.
@@ -245,3 +248,87 @@ type TapRef struct {
 
 // Path is a stable recipe location for future diagnostics.
 type Path string
+
+// Graph is a value recipe as a DAG: every Stream the recipe's Outputs reach
+// is one node, so a Stream used twice is one node with several children (a
+// fork) and a join is one node with several parents. Nodes are ordered so
+// that every parent precedes its children; NodeID indexes Nodes.
+type Graph struct {
+	Nodes []Node
+	// Rules names the stream matches of NodeRule roots, by index.
+	Rules []string
+}
+
+// NodeID identifies one node of a Graph.
+type NodeID int
+
+// NodeKind is what a Graph node is.
+type NodeKind uint8
+
+const (
+	// NodeInput is one recipe input's source; Input indexes Recipe.Inputs.
+	NodeInput NodeKind = iota + 1
+	// NodeSelect selects one stream of its parent input.
+	NodeSelect
+	// NodeRule is each stream its parent input discovers while it runs
+	// (OnStream); Rule indexes Graph.Rules.
+	NodeRule
+	// NodeAnchor is a stream of a running task an attach recipe starts from.
+	NodeAnchor
+	// NodeOp is one operation on its parent's stream.
+	NodeOp
+	// NodeJoin converges its parents, in arm order, into one stream.
+	NodeJoin
+	// NodeOutput is a destination its parents feed; Output indexes
+	// Recipe.Destinations. A parent that is a NodeInput copies every stream
+	// of that input.
+	NodeOutput
+)
+
+// Node is one node of a Graph.
+type Node struct {
+	Kind    NodeKind
+	Parents []NodeID
+	Input   int
+	Select  plan.StreamSelect
+	Rule    int
+	Anchor  Anchor
+	Op      Operation
+	Join    JoinNode
+	Output  int
+}
+
+// Anchor is where an attach recipe's stream comes from: a tap, one stream of
+// an input (Track), or a graph route.
+type Anchor struct {
+	Tap   string
+	Track *av.Stream
+	Input int
+	Route *pipeline.Route
+}
+
+// JoinNode is a convergence node's kind and per-arm placement.
+type JoinNode struct {
+	// Kind is mix, composite, or select, or a custom join's name.
+	Kind string
+	// Stage is a custom join's convergence stage.
+	Stage pipeline.Stage
+	// Sync aligns the arms by presentation time.
+	Sync bool
+	// At places each arm (by parent index) on a Composite canvas.
+	At []Point
+}
+
+// Point is one arm's canvas position; Set is false for an arm placed at the
+// origin by default.
+type Point struct {
+	X, Y int
+	Set  bool
+}
+
+// Graph operation kinds that carry stream facts rather than work: a name
+// (As) and a fork queue (Buffer). They lower to no node.
+const (
+	OpName   plan.OperationKind = "name"
+	OpBuffer plan.OperationKind = "buffer"
+)
