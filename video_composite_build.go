@@ -152,6 +152,11 @@ var compositeJoinProfile = joinProfile{
 		p.layouts = append(p.layouts, layout)
 		return nil, nil
 	},
+	// The canvas takes each arm at its own size; an arm whose format is known
+	// only once it opens converts to I420 at run time.
+	conformTarget: func(*joinPlan, av.Stream) shape.Spec {
+		return shape.Frame(av.MediaVideo, shape.Video(0, 0, av.PixelFormatI420))
+	},
 	newStage: func(p *joinPlan, armIDs []av.StreamID) (pipeline.Stage, *pipeline.BufferPolicy) {
 		return newVideoCompositeStageWithPreallocAndPools(p.name, armIDs, av.StreamID(p.name), p.layouts, p.tree.sync, joinStagePreallocDepth(p.runtime), runtimeMediaPools(p.runtime)), nil
 	},
@@ -222,10 +227,10 @@ func compositeJoinedOutputShape(p *joinPlan) shape.Spec {
 }
 
 func compositeArmFrameShape(arm joinArmPlan) shape.Spec {
-	if arm.sub != nil {
+	if arm.sub != nil && !arm.late {
 		return shape.FromStream(arm.sub.joined, arm.sub.joinedDomain)
 	}
-	return shape.FromStream(arm.stream, shape.DomainFrame)
+	return shape.FromStream(arm.joinStream(), shape.DomainFrame)
 }
 
 func compositeArmLayout(p *joinPlan, index int) compositeLayout {

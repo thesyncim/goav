@@ -47,12 +47,35 @@ type joinArmPlan struct {
 	// arm's upstream is the resolved tap's planned node, and a restamp stage
 	// re-publishes the tapped stream under the tap name as the arm's id.
 	tapArm *joinTapArmPlan
+	// bind is set when the arm's streams are known only once its input opens
+	// (a file, or a provider that declares none): the arm selects its stream
+	// then and republishes it under its planned id.
+	bind *joinBindArmPlan
+	// conform converts the arm at run time to the join's format, for an arm
+	// whose format, or whose join's format, is known only once inputs open.
+	conform *joinConformPlan
+	// late reports that the arm's format is known only once its input opens;
+	// stream then carries the arm id and media kind alone.
+	late bool
 }
 
 // armTapAnchorNode names the planned node a chain arm's taps anchor on: the
-// arm's decode node when the arm decodes, otherwise its source node.
+// arm's decode node when the arm decodes, otherwise its bind or source node.
 func (a *joinArmPlan) armTapAnchorNode() string {
-	return firstNonEmpty(a.decodeNode, a.sourceNode)
+	bind := ""
+	if a.bind != nil {
+		bind = a.bind.node
+	}
+	return firstNonEmpty(a.decodeNode, bind, a.sourceNode)
+}
+
+// joinStream is the arm's stream where it meets the join: after its
+// conversion when it conforms.
+func (a *joinArmPlan) joinStream() av.Stream {
+	if a.conform != nil {
+		return conformedStream(a.stream, a.conform.target)
+	}
+	return a.stream
 }
 
 // joinPlan is the planned multi-upstream join: N arm sub-chains (input +
@@ -82,6 +105,13 @@ type joinPlan struct {
 	targetChannels int
 	// composite: per-arm canvas placement collected by its planArm hook.
 	layouts []compositeLayout
+	// late reports that the joined format is known only once arm inputs open:
+	// the build derives it from the streams its arms resolved. lateTarget
+	// marks a join whose target follows a late first arm, and target holds
+	// the facts the downstream encoder fixes for it.
+	late       bool
+	lateTarget bool
+	target     shape.Spec
 
 	// direct destination delivery (optionally through one encoder): each
 	// destination receives the joined stream, exactly like a chain's
@@ -160,6 +190,7 @@ func joinArmSnapshotFromArm(arm recipeArm) joinArmSnapshot {
 	out := joinArmSnapshot{
 		chainInput:      resolved.chainInput,
 		chainInputOK:    resolved.chainInputOK,
+		chainSelector:   resolved.chainSelector,
 		chainErr:        resolved.chainErr,
 		chainOperations: cloneOperationSpecs(resolved.chainOperations),
 	}
@@ -207,6 +238,7 @@ func cloneJoinArmSnapshot(arm joinArmSnapshot) joinArmSnapshot {
 	out := joinArmSnapshot{
 		chainInput:      arm.chainInput,
 		chainInputOK:    arm.chainInputOK,
+		chainSelector:   arm.chainSelector,
 		chainErr:        arm.chainErr,
 		chainOperations: cloneOperationSpecs(arm.chainOperations),
 		join:            cloneJoinTreeSnapshot(arm.join),
@@ -555,6 +587,11 @@ func planJoinTree(input joinPlanInput, tree *joinTreeSnapshot, cursor int, used 
 		return nil, 0, customJoinNameCollisionError(kind, name)
 	}
 	p := &joinPlan{runtime: input.runtime, tree: tree, profile: profile, name: name}
+	if tree.encode != nil {
+		// An encoder's explicit format is the target a join over files
+		// converts to; otherwise its first input's format is.
+		p.target = explicitEncodeSoftInputShape(operationSpecForEncode(*tree.encode))
+	}
 	if len(tree.arms) < 2 {
 		return nil, 0, joinInputsError(kind, name)
 	}
@@ -579,7 +616,7 @@ func planJoinTree(input joinPlanInput, tree *joinTreeSnapshot, cursor int, used 
 					fmt.Sprintf("%s arm %q produces %s, want %s", kind, sub.name, sub.joined.Type, profile.media),
 					"feed the "+kind+" arms that produce "+string(profile.media)+" media (mix joins audio, composite joins video)")
 			}
-			armPlan = joinArmPlan{sub: sub, inputName: sub.name, stream: sub.joined, domain: sub.joinedDomain}
+			armPlan = joinArmPlan{sub: sub, inputName: sub.name, stream: sub.joined, domain: sub.joinedDomain, late: sub.late}
 		case armSpec.tap != nil:
 			// A tap arm converges an already-flowing stream: it anchors on the
 			// tap's planned node — declared by an earlier arm of the tree — and
@@ -593,25 +630,27 @@ func planJoinTree(input joinPlanInput, tree *joinTreeSnapshot, cursor int, used 
 			if err := armSpec.chainErr; err != nil {
 				return nil, 0, err
 			}
-			if cursor >= len(input.sets) || !input.sets[cursor].known || len(input.sets[cursor].streams) == 0 {
-				arm := name
-				if cursor < len(input.sets) {
-					arm = firstNonEmpty(input.sets[cursor].name, name)
+			set := inputStreamSet{name: name, domain: shape.DomainPacket}
+			if cursor < len(input.sets) {
+				set = input.sets[cursor]
+			}
+			if joinArmBindsAtOpen(armSpec.chainInput, set) {
+				bound, err := planJoinBindArm(name, kind, profile, armSpec, set)
+				if err != nil {
+					return nil, 0, err
 				}
-				return nil, 0, joinArmError(name, arm,
-					"a "+kind+" plans its inputs' streams up front, and the streams of input "+strconv.Quote(arm)+" are known only once it opens",
-					"join inputs that declare their streams: live and provider inputs (goav.Input), or goav.Source",
-					"joining file inputs is not supported yet")
-			}
-			stream, err := selectStream(input.sets[cursor].streams, av.StreamSelector{Type: profile.media})
-			if err != nil {
-				return nil, 0, err
-			}
-			armPlan = joinArmPlan{
-				input:     armSpec.chainInput,
-				inputName: input.sets[cursor].name,
-				stream:    stream,
-				domain:    input.sets[cursor].domain,
+				armPlan = bound
+			} else {
+				stream, err := selectStream(set.streams, av.StreamSelector{Type: profile.media})
+				if err != nil {
+					return nil, 0, err
+				}
+				armPlan = joinArmPlan{
+					input:     armSpec.chainInput,
+					inputName: set.name,
+					stream:    stream,
+					domain:    set.domain,
+				}
 			}
 			armOps := cloneOperationSpecs(armSpec.chainOperations)
 			if err := validateJoinArmOperations(name, armPlan.inputName, armOps); err != nil {
@@ -654,7 +693,14 @@ func planJoinTree(input joinPlanInput, tree *joinTreeSnapshot, cursor int, used 
 			}
 			armPlan.stage = stagePlan
 		}
-		if armPlan.stage == nil && profile.armExpected != nil {
+		if len(p.arms) == 0 && armPlan.late && profile.conformFollowsFirstArm {
+			// The join's format follows its first arm, known only once it
+			// opens: every arm then converts at run time.
+			p.lateTarget = true
+		}
+		if profile.conformTarget != nil && (armPlan.late || p.lateTarget) {
+			armPlan.conform = p.planArmConform(armPlan)
+		} else if armPlan.stage == nil && profile.armExpected != nil {
 			// The solver converts a nested arm's OUTPUT like any arm: an outer
 			// mix resamples a sub-mix that produced another rate.
 			stagePlan, err := p.solveArmConversion(input.runtime, armPlan.stream, armPlan.inputName)
@@ -672,8 +718,12 @@ func planJoinTree(input joinPlanInput, tree *joinTreeSnapshot, cursor int, used 
 				arm:    len(p.arms) - 1,
 				domain: tap.ref.domain,
 				stream: armPlan.stream,
+				late:   armPlan.late,
 			})
 		}
+	}
+	for i := range p.arms {
+		p.late = p.late || p.arms[i].late
 	}
 	// The join's output is a normal stream point from here on: derive the joined
 	// stream once and let taps, branches, the optional encoder, and the sink all
@@ -690,7 +740,7 @@ func planJoinTree(input joinPlanInput, tree *joinTreeSnapshot, cursor int, used 
 	// registration is inert — no arm of the root is planned after this point,
 	// so a join can never feed itself).
 	for _, tap := range p.taps {
-		anchors.declare(tap.Name, joinTapAnchor{owner: p, arm: -1, domain: tap.Domain, stream: p.joined})
+		anchors.declare(tap.Name, joinTapAnchor{owner: p, arm: -1, domain: tap.Domain, stream: p.joined, late: p.late})
 	}
 	return p, cursor, nil
 }
@@ -764,11 +814,11 @@ func (p *joinPlan) firstArmSourceShape() shape.Spec {
 		return shape.Spec{}
 	}
 	arm := p.arms[0]
+	if arm.late || arm.tapArm != nil {
+		return shape.FromStream(arm.joinStream(), arm.domain)
+	}
 	if arm.sub != nil {
 		return shape.FromStream(arm.sub.joined, arm.sub.joinedDomain)
-	}
-	if arm.tapArm != nil {
-		return shape.FromStream(arm.stream, arm.domain)
 	}
 	spec, _ := declaredSourceShape(arm.input)
 	return spec
@@ -1254,6 +1304,19 @@ func (p *joinPlan) appendJoinArmWork(operations *[]workOperation, branches *[]wo
 				ShapeOut:  current,
 			})
 		}
+		if arm.bind != nil {
+			appendOperation(workOperation{
+				ID:        workOperationIDForKind(branchName, index, plan.OpSelect),
+				Name:      arm.bind.node,
+				Kind:      plan.OpSelect,
+				Branch:    branchName,
+				Node:      pipeline.NodeRef(arm.bind.node),
+				Component: selectorComponent(streamSelectFromAV(arm.bind.selector)),
+				Detail:    "select stream when the input opens",
+				ShapeIn:   current,
+				ShapeOut:  current,
+			})
+		}
 		if arm.decodeNode != "" {
 			out := current
 			out.Domain = shape.DomainFrame
@@ -1300,14 +1363,33 @@ func (p *joinPlan) appendJoinArmWork(operations *[]workOperation, branches *[]wo
 			})
 			current = out
 		}
+		if arm.conform != nil {
+			out := normalizeTapShape(shape.FromStream(conformedStream(arm.stream, arm.conform.target), shape.DomainFrame))
+			appendOperation(workOperation{
+				ID:        workOperationIDForKind(branchName, index, plan.OpTransform),
+				Name:      arm.conform.node,
+				Kind:      plan.OpTransform,
+				Branch:    branchName,
+				Node:      pipeline.NodeRef(arm.conform.node),
+				Component: arm.conform.adapter,
+				Detail:    "convert frames to the join format as they arrive",
+				ShapeIn:   current,
+				ShapeOut:  out,
+			})
+			current = out
+		}
 		if i == 0 {
 			armShape = current
+		}
+		selected := streamSelectFromStream(arm.stream)
+		if arm.bind != nil {
+			selected = streamSelectFromAV(arm.bind.selector)
 		}
 		*branches = append(*branches, workBranch{
 			ID:          workBranchID(branchName, len(*branches)),
 			Name:        branchName,
 			Input:       firstNonEmpty(arm.inputName, branchName),
-			Stream:      streamSelectFromStream(arm.stream),
+			Stream:      selected,
 			SourceShape: sourceShape,
 			Operations:  ops,
 		})

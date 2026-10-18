@@ -11,6 +11,16 @@ methodology changes, and migration notes.
 
 ## Unreleased
 
+- Joins take file inputs: `goav.Mix(a.Audio().Decode(), b.Audio().Decode())`
+  and `goav.Composite(...)` over files plan, describe, and run, instead of
+  refusing with `mix_arm` ("joining file inputs is not supported yet"). A file
+  arm binds its stream by kind when the file opens and republishes it under
+  its planned arm id (the input name); a planned conform stage converts each
+  arm as frames arrive to the join format: a Mix to the first input's rate and
+  channels in S16 (or the encoder's explicit ones when the first input is a
+  file), a Composite to I420 at the arm's own size, whose canvas and encoder
+  then size from the opened files. Describe shows every bind, decode, and
+  conform node without opening a file.
 - Several file and protocol inputs run in one task, beside providers and
   `goav.Source` inputs: `a.Video().To(out), b.Audio().To(out)` copies from two
   files into one mux, and `file a.webm ! ... ! file x.webm` beside

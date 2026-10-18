@@ -74,8 +74,8 @@ func shapeOf(t *testing.T, outs []goav.Output) specShape {
 func TestProgramsBuildTheGraphTheirGoBuilds(t *testing.T) {
 	r := func() io.Reader { return bytes.NewReader(nil) }
 	w := func() io.Writer { return new(bytes.Buffer) }
-	// Joins need inputs that declare their streams: hand the same values to
-	// the program as custom sources and to the Go form directly.
+	// Joins over application sources: hand the same values to the program as
+	// custom sources and to the Go form directly.
 	mic, music := goavtest.Audio(48_000, 1, []int16{1}), goavtest.Audio(48_000, 1, []int16{2})
 	cam, screen := goavtest.Video(64, 48, 1), goavtest.Video(16, 16, 1)
 	nullSink := goav.Sink(component.SinkFunc("null", func(context.Context, component.Message) error { return nil }))
@@ -173,6 +173,23 @@ func TestProgramsBuildTheGraphTheirGoBuilds(t *testing.T) {
 			program: `composite(cam ! video, screen ! video ! at 32 24) ! encode vp8 ! file pip.webm`,
 			gofor: func() []goav.Output {
 				pip := goav.Composite(cam.Video(), goav.At(screen.Video(), 32, 24))
+				return []goav.Output{pip.Encode(codec.VP8()).To(goav.Write("pip.webm", w()))}
+			},
+		},
+		{
+			name:    "mix files",
+			program: `mix(file a.webm ! audio ! decode, file b.webm ! audio ! decode) ! encode opus ! file m.webm`,
+			gofor: func() []goav.Output {
+				a, b := goav.FileInput("a.webm", r()), goav.FileInput("b.webm", r())
+				return []goav.Output{goav.Mix(a.Audio().Decode(), b.Audio().Decode()).Encode(codec.Opus()).To(goav.Write("m.webm", w()))}
+			},
+		},
+		{
+			name:    "composite files",
+			program: `composite(file a.webm ! video ! decode, file b.webm ! video ! decode ! at 40 30) ! encode vp8 ! file pip.webm`,
+			gofor: func() []goav.Output {
+				a, b := goav.FileInput("a.webm", r()), goav.FileInput("b.webm", r())
+				pip := goav.Composite(a.Video().Decode(), goav.At(b.Video().Decode(), 40, 30))
 				return []goav.Output{pip.Encode(codec.VP8()).To(goav.Write("pip.webm", w()))}
 			},
 		},

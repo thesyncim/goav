@@ -24,11 +24,14 @@ const (
 	// every source feeds them with all its streams, and no branch selects one.
 	composeRemuxSink
 	composeRemuxMux
-	// Join trees: an arm's input, its event-keeping decode, a planned
-	// transform, a tap arm's restamp, the convergence stage, and a join's
-	// encoder and destinations.
+	// Join trees: an arm's input, the bind of an arm whose streams are known
+	// once it opens, its event-keeping decode, its run-time conversion, a
+	// planned transform, a tap arm's restamp, the convergence stage, and a
+	// join's encoder and destinations.
 	composeArmSource
+	composeArmBind
 	composeArmDecode
+	composeArmConform
 	composeTransform
 	composeTapRestamp
 	composeJoin
@@ -58,6 +61,12 @@ type composeNode struct {
 	join   *joinPlan
 	arm    int
 	stream av.Stream
+	// resolved builds a join's downstream transform against the stream its
+	// input resolved while building (a join over files); target is the node
+	// whose stream a conversion targets when the join's format follows its
+	// first arm.
+	resolved bool
+	target   pipeline.NodeRef
 }
 
 // composeGraph is the one schedule a branch composition is described and
@@ -304,6 +313,14 @@ func (g composeGraph) lower(ctx context.Context, service *builder, graph pipelin
 		case composeSelect:
 			group := g.groups[node.group]
 			selected := in.streams[group.branches[0]]
+			// A select fed by a planned node (a join's output) takes the stream
+			// that node resolved while building: a join over files knows its
+			// format only once they open.
+			if len(node.inputs) == 1 {
+				if upstream, ok := streams[node.inputs[0]]; ok {
+					selected = upstream
+				}
+			}
 			stage := newStreamSelectStage(node.name, selected, group.selector, node.detail)
 			if err := addComposeStage(graph, stage, runtime.buffer, node.inputs); err != nil {
 				return err
@@ -366,7 +383,7 @@ func (g composeGraph) lower(ctx context.Context, service *builder, graph pipelin
 			if err := connectComposeInputs(graph, node.inputs, sinkRef); err != nil {
 				return err
 			}
-		case composeArmSource, composeArmDecode, composeTransform, composeTapRestamp, composeJoin, composeJoinEncode, composeJoinDestination:
+		case composeArmSource, composeArmBind, composeArmDecode, composeArmConform, composeTransform, composeTapRestamp, composeJoin, composeJoinEncode, composeJoinDestination:
 			stream, err := lowerJoinNode(ctx, service, graph, node, streams, in)
 			if err != nil {
 				return err

@@ -1,0 +1,549 @@
+{
+  "describe": {
+    "name": "goav-composite",
+    "nodes": [
+      {
+        "name": "a.webm",
+        "kind": "source",
+        "detail": "demux, protocol=file"
+      },
+      {
+        "name": "composite-select-a.webm",
+        "kind": "stage",
+        "detail": "bind on open, type=video"
+      },
+      {
+        "name": "composite-decode-a.webm",
+        "kind": "stage",
+        "detail": "packets -\u003e frames, type=video"
+      },
+      {
+        "name": "composite-conform-a.webm",
+        "kind": "stage",
+        "detail": "conform, format=i420"
+      },
+      {
+        "name": "b.webm",
+        "kind": "source",
+        "detail": "demux, protocol=file"
+      },
+      {
+        "name": "composite-select-b.webm",
+        "kind": "stage",
+        "detail": "bind on open, type=video"
+      },
+      {
+        "name": "composite-decode-b.webm",
+        "kind": "stage",
+        "detail": "packets -\u003e frames, type=video"
+      },
+      {
+        "name": "composite-conform-b.webm",
+        "kind": "stage",
+        "detail": "conform, format=i420"
+      },
+      {
+        "name": "composite",
+        "kind": "stage"
+      },
+      {
+        "name": "encode-composite-encode",
+        "kind": "stage",
+        "detail": "frames -\u003e packets, codec=vp8"
+      },
+      {
+        "name": "pip.webm",
+        "kind": "stage",
+        "detail": "mux, protocol=file"
+      }
+    ],
+    "edges": [
+      {
+        "from": "a.webm",
+        "to": "composite-select-a.webm",
+        "policy": "all"
+      },
+      {
+        "from": "composite-select-a.webm",
+        "to": "composite-decode-a.webm",
+        "policy": "all"
+      },
+      {
+        "from": "composite-decode-a.webm",
+        "to": "composite-conform-a.webm",
+        "policy": "all"
+      },
+      {
+        "from": "composite-conform-a.webm",
+        "to": "composite",
+        "policy": "all"
+      },
+      {
+        "from": "b.webm",
+        "to": "composite-select-b.webm",
+        "policy": "all"
+      },
+      {
+        "from": "composite-select-b.webm",
+        "to": "composite-decode-b.webm",
+        "policy": "all"
+      },
+      {
+        "from": "composite-decode-b.webm",
+        "to": "composite-conform-b.webm",
+        "policy": "all"
+      },
+      {
+        "from": "composite-conform-b.webm",
+        "to": "composite",
+        "policy": "all"
+      },
+      {
+        "from": "composite",
+        "to": "encode-composite-encode",
+        "policy": "all"
+      },
+      {
+        "from": "encode-composite-encode",
+        "to": "pip.webm",
+        "policy": "all"
+      }
+    ]
+  },
+  "explain": {
+    "summary": "composite 2 inputs to pip.webm",
+    "operation": "build job",
+    "inputs": [
+      {
+        "name": "a.webm",
+        "protocol": "file",
+        "format": "webm"
+      },
+      {
+        "name": "b.webm",
+        "protocol": "file",
+        "format": "webm"
+      }
+    ],
+    "branches": [
+      {
+        "name": "a.webm",
+        "input": "a.webm",
+        "stream": {
+          "type": "video"
+        },
+        "shape": {
+          "domain": "packet",
+          "mediaKind": "video",
+          "streamID": "a.webm"
+        },
+        "operations": [
+          {
+            "kind": "select",
+            "component": "video",
+            "detail": "select stream when the input opens",
+            "shape": {
+              "domain": "packet",
+              "mediaKind": "video",
+              "streamID": "a.webm"
+            }
+          },
+          {
+            "kind": "decode",
+            "component": "decoder",
+            "detail": "packets to frames",
+            "shape": {
+              "domain": "frame",
+              "mediaKind": "video",
+              "streamID": "a.webm"
+            },
+            "adapter": "decoder"
+          },
+          {
+            "kind": "transform",
+            "component": "resize",
+            "detail": "convert frames to the join format as they arrive",
+            "shape": {
+              "domain": "frame",
+              "mediaKind": "video",
+              "streamID": "a.webm",
+              "pixelFormat": "i420"
+            },
+            "adapter": "resize",
+            "config": {
+              "pixelFormat": "i420"
+            }
+          }
+        ]
+      },
+      {
+        "name": "b.webm",
+        "input": "b.webm",
+        "stream": {
+          "type": "video"
+        },
+        "shape": {
+          "domain": "packet",
+          "mediaKind": "video",
+          "streamID": "b.webm"
+        },
+        "operations": [
+          {
+            "kind": "select",
+            "component": "video",
+            "detail": "select stream when the input opens",
+            "shape": {
+              "domain": "packet",
+              "mediaKind": "video",
+              "streamID": "b.webm"
+            }
+          },
+          {
+            "kind": "decode",
+            "component": "decoder",
+            "detail": "packets to frames",
+            "shape": {
+              "domain": "frame",
+              "mediaKind": "video",
+              "streamID": "b.webm"
+            },
+            "adapter": "decoder"
+          },
+          {
+            "kind": "transform",
+            "component": "resize",
+            "detail": "convert frames to the join format as they arrive",
+            "shape": {
+              "domain": "frame",
+              "mediaKind": "video",
+              "streamID": "b.webm",
+              "pixelFormat": "i420"
+            },
+            "adapter": "resize",
+            "config": {
+              "pixelFormat": "i420"
+            }
+          }
+        ]
+      },
+      {
+        "name": "composite",
+        "stream": {
+          "id": "composite",
+          "type": "video"
+        },
+        "shape": {
+          "domain": "frame",
+          "mediaKind": "video",
+          "streamID": "composite",
+          "pixelFormat": "i420"
+        },
+        "operations": [
+          {
+            "kind": "join",
+            "component": "composite",
+            "detail": "converge 2 arms",
+            "shape": {
+              "domain": "frame",
+              "mediaKind": "video",
+              "streamID": "composite",
+              "pixelFormat": "i420"
+            }
+          },
+          {
+            "kind": "encode",
+            "component": "vp8",
+            "detail": "frames to packets",
+            "shape": {
+              "domain": "packet",
+              "mediaKind": "video",
+              "streamID": "composite",
+              "codec": "vp8",
+              "pixelFormat": "i420"
+            },
+            "adapter": "vp8"
+          }
+        ],
+        "destinations": [
+          "pip.webm"
+        ]
+      }
+    ],
+    "destinations": [
+      {
+        "name": "pip.webm",
+        "protocol": "file",
+        "format": "webm",
+        "kind": "mux",
+        "branches": [
+          "composite"
+        ]
+      }
+    ],
+    "requiredAdapters": [
+      {
+        "kind": "demuxer",
+        "name": "webm",
+        "format": "webm",
+        "media": [
+          "audio",
+          "video"
+        ],
+        "codecs": [
+          "opus",
+          "vorbis",
+          "vp8",
+          "vp9",
+          "av1"
+        ],
+        "minStreams": 1,
+        "metadata": {
+          "summary": "WebM supports Opus/Vorbis audio and VP8/VP9/AV1 video packets without codec conversion"
+        },
+        "requiredBy": "a.webm",
+        "status": "available"
+      },
+      {
+        "kind": "demuxer",
+        "name": "webm",
+        "format": "webm",
+        "media": [
+          "audio",
+          "video"
+        ],
+        "codecs": [
+          "opus",
+          "vorbis",
+          "vp8",
+          "vp9",
+          "av1"
+        ],
+        "minStreams": 1,
+        "metadata": {
+          "summary": "WebM supports Opus/Vorbis audio and VP8/VP9/AV1 video packets without codec conversion"
+        },
+        "requiredBy": "b.webm",
+        "status": "available"
+      },
+      {
+        "kind": "muxer",
+        "name": "webm",
+        "format": "webm",
+        "media": [
+          "audio",
+          "video"
+        ],
+        "codecs": [
+          "opus",
+          "vorbis",
+          "vp8",
+          "vp9",
+          "av1"
+        ],
+        "minStreams": 1,
+        "metadata": {
+          "summary": "WebM supports Opus/Vorbis audio and VP8/VP9/AV1 video packets without codec conversion"
+        },
+        "requiredBy": "pip.webm",
+        "status": "available"
+      },
+      {
+        "kind": "filter",
+        "name": "resize",
+        "transform": "resize",
+        "input": "video",
+        "output": "video",
+        "pixelFormats": [
+          "i420",
+          "yuv420p"
+        ],
+        "resizeModes": [
+          "exact",
+          "fit",
+          "fill",
+          "passthrough"
+        ],
+        "realtime": true,
+        "stateless": true,
+        "metadata": {
+          "backend": "resize",
+          "modes": "exact,fit,fill,passthrough",
+          "pixel_formats": "i420,yuv420p"
+        },
+        "requiredBy": "a.webm",
+        "status": "available"
+      },
+      {
+        "kind": "filter",
+        "name": "resize",
+        "transform": "resize",
+        "input": "video",
+        "output": "video",
+        "pixelFormats": [
+          "i420",
+          "yuv420p"
+        ],
+        "resizeModes": [
+          "exact",
+          "fit",
+          "fill",
+          "passthrough"
+        ],
+        "realtime": true,
+        "stateless": true,
+        "metadata": {
+          "backend": "resize",
+          "modes": "exact,fit,fill,passthrough",
+          "pixel_formats": "i420,yuv420p"
+        },
+        "requiredBy": "b.webm",
+        "status": "available"
+      },
+      {
+        "kind": "encoder",
+        "name": "vp8",
+        "codec": "vp8",
+        "media": [
+          "video"
+        ],
+        "pixelFormats": [
+          "i420"
+        ],
+        "realtime": true,
+        "requiredBy": "composite",
+        "status": "available"
+      }
+    ],
+    "warnings": [
+      {
+        "code": "decode_codec_deferred",
+        "node": "a.webm",
+        "message": "decode codec will be resolved when the input opens",
+        "suggestions": [
+          "declare the provider codec intent when the receive codec is already known",
+          "use input metadata or a format adapter that reports streams during probing"
+        ]
+      },
+      {
+        "code": "decode_codec_deferred",
+        "node": "b.webm",
+        "message": "decode codec will be resolved when the input opens",
+        "suggestions": [
+          "declare the provider codec intent when the receive codec is already known",
+          "use input metadata or a format adapter that reports streams during probing"
+        ]
+      }
+    ],
+    "graph": {
+      "name": "goav-composite",
+      "nodes": [
+        {
+          "name": "a.webm",
+          "kind": "source",
+          "detail": "demux, protocol=file"
+        },
+        {
+          "name": "composite-select-a.webm",
+          "kind": "stage",
+          "detail": "bind on open, type=video"
+        },
+        {
+          "name": "composite-decode-a.webm",
+          "kind": "stage",
+          "detail": "packets -\u003e frames, type=video"
+        },
+        {
+          "name": "composite-conform-a.webm",
+          "kind": "stage",
+          "detail": "conform, format=i420"
+        },
+        {
+          "name": "b.webm",
+          "kind": "source",
+          "detail": "demux, protocol=file"
+        },
+        {
+          "name": "composite-select-b.webm",
+          "kind": "stage",
+          "detail": "bind on open, type=video"
+        },
+        {
+          "name": "composite-decode-b.webm",
+          "kind": "stage",
+          "detail": "packets -\u003e frames, type=video"
+        },
+        {
+          "name": "composite-conform-b.webm",
+          "kind": "stage",
+          "detail": "conform, format=i420"
+        },
+        {
+          "name": "composite",
+          "kind": "stage"
+        },
+        {
+          "name": "encode-composite-encode",
+          "kind": "stage",
+          "detail": "frames -\u003e packets, codec=vp8"
+        },
+        {
+          "name": "pip.webm",
+          "kind": "stage",
+          "detail": "mux, protocol=file"
+        }
+      ],
+      "edges": [
+        {
+          "from": "a.webm",
+          "to": "composite-select-a.webm",
+          "policy": "all"
+        },
+        {
+          "from": "composite-select-a.webm",
+          "to": "composite-decode-a.webm",
+          "policy": "all"
+        },
+        {
+          "from": "composite-decode-a.webm",
+          "to": "composite-conform-a.webm",
+          "policy": "all"
+        },
+        {
+          "from": "composite-conform-a.webm",
+          "to": "composite",
+          "policy": "all"
+        },
+        {
+          "from": "b.webm",
+          "to": "composite-select-b.webm",
+          "policy": "all"
+        },
+        {
+          "from": "composite-select-b.webm",
+          "to": "composite-decode-b.webm",
+          "policy": "all"
+        },
+        {
+          "from": "composite-decode-b.webm",
+          "to": "composite-conform-b.webm",
+          "policy": "all"
+        },
+        {
+          "from": "composite-conform-b.webm",
+          "to": "composite",
+          "policy": "all"
+        },
+        {
+          "from": "composite",
+          "to": "encode-composite-encode",
+          "policy": "all"
+        },
+        {
+          "from": "encode-composite-encode",
+          "to": "pip.webm",
+          "policy": "all"
+        }
+      ]
+    }
+  }
+}

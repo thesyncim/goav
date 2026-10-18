@@ -256,6 +256,18 @@ func oracleCorpus(t *testing.T) map[string]func() *goav.Job {
 		"join_custom": func() *goav.Job {
 			return goav.LegacyJoin("ducker", component.FrameFunc("ducker", func(_ context.Context, f *av.Frame, emit component.Emit) error { return emit.Frame(f) }), goav.From(oracleAudio()).Audio(), goav.From(oracleAudio()).Audio()).To(oracleSink("ducked"))
 		},
+		"join_mix_files": func() *goav.Job {
+			a, b := files()
+			return outputs(goav.Mix(a.Audio().Decode(), b.Audio().Decode()).Encode(codec.Opus()).To(w("mix.webm")))
+		},
+		"join_composite_files": func() *goav.Job {
+			a, b := files()
+			return outputs(goav.Composite(a.Video().Decode(), goav.At(b.Video().Decode(), 40, 30)).Encode(codec.VP8()).To(w("pip.webm")))
+		},
+		"join_mix_source_then_file": func() *goav.Job {
+			a, _ := files()
+			return outputs(goav.Mix(oracleAudio44().Audio(), a.Audio().Decode()).To(oracleSink("mixed")))
+		},
 		// Refusals.
 		"error_frames_into_mux": func() *goav.Job {
 			return goav.From(oracleVP8()).Video().Decode().To(w("out.webm"))

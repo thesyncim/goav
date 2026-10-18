@@ -472,6 +472,21 @@ var mixJoinProfile = joinProfile{
 		return shape.Frame(av.MediaAudio, shape.Audio(p.targetRate, p.targetChannels, ""))
 	},
 	armPolicy: shape.AllowResample().Union(shape.AllowConvert()),
+	// An arm whose format is known only once it opens converts at run time to
+	// the first arm's rate and channels in S16, or to the encoder's explicit
+	// rate and channels when the first arm is such an arm too.
+	conformTarget: func(p *joinPlan, first av.Stream) shape.Spec {
+		rate, channels := first.Codec.SampleRate, first.Codec.Channels
+		if rate > 0 {
+			channels = maxInt(channels, 1)
+		}
+		if p.lateTarget {
+			rate = firstPositiveInt(p.target.SampleRate, rate)
+			channels = firstPositiveInt(p.target.Channels, channels)
+		}
+		return shape.Frame(av.MediaAudio, shape.Audio(rate, channels, av.SampleFormatS16))
+	},
+	conformFollowsFirstArm: true,
 	newStage: func(p *joinPlan, armIDs []av.StreamID) (pipeline.Stage, *pipeline.BufferPolicy) {
 		return newAudioMixStageWithPreallocAndPools(p.name, armIDs, av.StreamID(p.name), p.tree.sync, joinStagePreallocDepth(p.runtime), runtimeMediaPools(p.runtime)), nil
 	},

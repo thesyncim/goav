@@ -3,7 +3,9 @@ package goav_test
 import (
 	"bytes"
 	"context"
+	"io"
 	"math"
+	"slices"
 	"strconv"
 	"testing"
 	"time"
@@ -184,4 +186,113 @@ func TestFileAndCustomSourceInputsShareOneRun(t *testing.T) {
 	if samples, rate, _ := mfSamples(mfDecoded(t, o.Bytes(), av.MediaAudio)); samples == 0 || rate != 48_000 {
 		t.Fatalf("source audio = %d samples at %d Hz, want 48 kHz audio", samples, rate)
 	}
+}
+
+// TestMixFilesOfDifferentFormats mixes a 48 kHz stereo file with a 24 kHz
+// mono one: neither format is known until the files open, and each arm
+// converts as it arrives to the first arm's format.
+func TestMixFilesOfDifferentFormats(t *testing.T) {
+	stereo := mfWebM(t, 0, 0, 0, 48_000, 2, 10)
+	mono := mfWebM(t, 0, 0, 0, 24_000, 1, 10)
+	file := func(name string, data []byte) goav.Stream {
+		return goav.FileInput(name, bytes.NewReader(data)).Audio().Decode()
+	}
+	for _, tc := range []struct {
+		name           string
+		mixed          goav.Stream
+		encode         codec.Spec
+		rate, channels int
+	}{
+		{"first is stereo", goav.Mix(file("a.webm", stereo), file("b.webm", mono)), codec.Opus(), 48_000, 2},
+		{"first is mono", goav.Mix(file("b.webm", mono), file("a.webm", stereo)), codec.Opus(), 24_000, 1},
+		{"encoder fixes the format", goav.Mix(file("b.webm", mono), file("a.webm", stereo)), codec.Opus(codec.SampleRate(48_000), codec.Channels(codec.Stereo)), 48_000, 2},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var m bytes.Buffer
+			mfRun(t, tc.mixed.Encode(tc.encode).To(goav.Write("m.webm", &m)))
+			samples, rate, channels := mfSamples(mfDecoded(t, m.Bytes(), av.MediaAudio))
+			if rate != tc.rate || channels != tc.channels {
+				t.Fatalf("mix = %d Hz %d ch, want %d Hz %d ch", rate, channels, tc.rate, tc.channels)
+			}
+			// Ten 20 ms frames: about 200 ms of audio, less the codec delay.
+			if want := tc.rate / 5; samples < want*3/4 || samples > want*5/4 {
+				t.Fatalf("mix decodes to %d samples, want about %d", samples, want)
+			}
+		})
+	}
+}
+
+// TestCompositeFilesOfDifferentSizes composites a 64x48 file with a 32x24
+// one placed at (40, 30): the canvas is their bounding box, known only once
+// the files open.
+func TestCompositeFilesOfDifferentSizes(t *testing.T) {
+	big := goav.FileInput("a.webm", bytes.NewReader(mfWebM(t, 64, 48, 6, 0, 0, 0)))
+	small := goav.FileInput("b.webm", bytes.NewReader(mfWebM(t, 32, 24, 6, 0, 0, 0)))
+	pip := goav.Composite(big.Video().Decode(), goav.At(small.Video().Decode(), 40, 30))
+	var out bytes.Buffer
+	mfRun(t, pip.Encode(codec.VP8()).To(goav.Write("pip.webm", &out)))
+	mfAssertVideo(t, "pip.webm", mfDecoded(t, out.Bytes(), av.MediaVideo), 6, 72, 54)
+}
+
+// TestDescribeFileJoinOpensNothing pins that a join over files describes its
+// whole graph, each arm's bind, decode, and conversion, without reading them.
+func TestDescribeFileJoinOpensNothing(t *testing.T) {
+	a := goav.FileInput("a.webm", failingReader{t})
+	b := goav.FileInput("b.webm", failingReader{t})
+	spec, err := bundle.Describe(goav.Mix(a.Audio().Decode(), b.Audio().Decode()).Encode(codec.Opus()).To(goav.Write("m.webm", io.Discard)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var nodes []string
+	for _, node := range spec.Nodes {
+		nodes = append(nodes, node.Name)
+	}
+	want := []string{"a.webm", "mix-select-a.webm", "mix-decode-a.webm", "mix-conform-a.webm", "b.webm", "mix-select-b.webm", "mix-decode-b.webm", "mix-conform-b.webm", "mix", "encode-mix-encode", "m.webm"}
+	if !slices.Equal(nodes, want) {
+		t.Fatalf("nodes = %v, want %v", nodes, want)
+	}
+}
+
+type failingReader struct{ t *testing.T }
+
+func (r failingReader) Read([]byte) (int, error) {
+	r.t.Error("describing a join read its file")
+	return 0, io.EOF
+}
+
+// TestFileMixFeedsForksAndNests runs a mix over files through the rest of the
+// grammar: forks off it encode the format it resolved once the files opened,
+// it nests in an outer mix, and an application source first in the mix sets
+// the format the file converts to.
+func TestFileMixFeedsForksAndNests(t *testing.T) {
+	stereo := mfWebM(t, 0, 0, 0, 48_000, 2, 10)
+	mono := mfWebM(t, 0, 0, 0, 24_000, 1, 10)
+	file := func(name string, data []byte) goav.Stream {
+		return goav.FileInput(name, bytes.NewReader(data)).Audio().Decode()
+	}
+	check := func(label string, data []byte, rate, channels int) {
+		t.Helper()
+		samples, gotRate, gotChannels := mfSamples(mfDecoded(t, data, av.MediaAudio))
+		if samples == 0 || gotRate != rate || gotChannels != channels {
+			t.Fatalf("%s = %d samples at %d Hz %d ch, want %d Hz %d ch", label, samples, gotRate, gotChannels, rate, channels)
+		}
+	}
+
+	var low, full bytes.Buffer
+	mixed := goav.Mix(file("a.webm", stereo), file("b.webm", mono))
+	mfRun(t,
+		mixed.Resample(16_000, 1).Encode(codec.Opus()).To(goav.Write("low.webm", &low)),
+		mixed.Encode(codec.Opus()).To(goav.Write("full.webm", &full)),
+	)
+	check("resampled fork", low.Bytes(), 16_000, 1)
+	check("full fork", full.Bytes(), 48_000, 2)
+
+	var nested bytes.Buffer
+	inner := goav.Mix(file("b.webm", mono), file("a.webm", stereo))
+	mfRun(t, goav.Mix(inner, file("c.webm", stereo)).Encode(codec.Opus()).To(goav.Write("nested.webm", &nested)))
+	check("nested mix", nested.Bytes(), 24_000, 1)
+
+	var sourced bytes.Buffer
+	mfRun(t, goav.Mix(mfTone(16_000, 1, 10).Audio(), file("a.webm", stereo)).Encode(codec.Opus()).To(goav.Write("sourced.webm", &sourced)))
+	check("source-first mix", sourced.Bytes(), 16_000, 1)
 }

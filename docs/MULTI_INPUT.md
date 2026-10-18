@@ -57,6 +57,13 @@ err = rt.Run(ctx, a.Video().To(rec), b.Audio().To(rec))
   `Crossfade(streams...)` without core changes, proven from outside the core
   in `adapterproof/join_proof_test.go`. The stage contract is documented on
   `goav.Join`.
+- **Files as inputs.** A join input that is a file binds its stream by kind
+  when the file opens and converts as frames arrive: a Mix input to the first
+  input's rate and channels (the encoder's explicit ones win when the first
+  input is a file too), a Composite input to I420 at its own size. So a 24 kHz
+  mono file mixes with a 48 kHz stereo one, and Describe still shows each
+  input's bind, decode, and conform without opening anything
+  (`TestMixFilesOfDifferentFormats`).
 - **Joins nest.** A join's input can be another join: `goav.Mix(goav.Mix(a, b), c)`
   sub-mixes two inputs, `goav.Select(goav.Mix(a, b), goav.Mix(c, d))` switches
   between two live mixes (their ids are the sub-joins' names: `mix`, `mix-2`),
@@ -67,9 +74,6 @@ err = rt.Run(ctx, a.Video().To(rec), b.Audio().To(rec))
 
 ## Limits today
 
-- Joins plan their inputs' streams up front, so join inputs must declare them:
-  live and provider inputs (`goav.Input`) or `goav.Source`. Joining files is not
-  supported yet (`mix_arm`).
 - A join's output runs alone in one run: other Outputs beside it are refused
   with `stream_beside_join`.
 - Forks across several inputs in one run are refused.

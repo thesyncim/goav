@@ -292,6 +292,7 @@ func (b *streamChain) joinArm() joinArmSpec {
 		}
 	}
 	if b.stream != nil {
+		spec.chainSelector = b.stream.selector
 		spec.chainOperations = cloneOperationSpecs(b.stream.operations)
 	}
 	return spec

@@ -201,6 +201,7 @@ func customJoinProfile(custom *customJoinSpec) (joinProfile, error) {
 	}
 	if expected, ok := customJoinArmExpected(inputs); ok {
 		profile.armExpected = func(*joinPlan, av.Stream) shape.Spec { return expected }
+		profile.conformTarget = func(*joinPlan, av.Stream) shape.Spec { return expected }
 		profile.armPolicy = shape.AllowResample().Union(shape.AllowResize()).Union(shape.AllowConvert())
 	}
 	return profile, nil
@@ -382,7 +383,7 @@ func (p *joinPlan) customJoinBaseStream(decodeArms bool) (av.Stream, shape.Spec)
 		base := p.firstArmSourceShape()
 		return streamFromJoinShape(p.name, base), base
 	}
-	stream := p.arms[0].stream
+	stream := p.arms[0].joinStream()
 	stream.ID = av.StreamID(p.name)
 	return stream, shape.FromStream(stream, p.arms[0].domain)
 }

@@ -72,6 +72,9 @@ type joinTapAnchor struct {
 	arm    int
 	domain shape.MediaDomain
 	stream av.Stream
+	// late reports that the anchor's format is known only once its input
+	// opens.
+	late bool
 }
 
 // node names the planned node the tap anchors on. Arm source names are
@@ -140,6 +143,7 @@ func planJoinTapArm(name string, kind string, profile joinProfile, tap tapRef, a
 		inputName: tap.name,
 		stream:    stream,
 		domain:    anchor.domain,
+		late:      anchor.late,
 		tapArm: &joinTapArmPlan{
 			tap:    tapWithDomain(tap, anchor.domain),
 			anchor: anchor,
@@ -259,44 +263,53 @@ func joinTapArmMissingError(join string, tap tapRef, declared []string) error {
 }
 
 // tapArmNodeDetail renders the restamp node's planned/built graph detail; the
-// planner and tapArmStage.DescribeNode share it, keeping Describe() ≡ Build().
+// planner and the restamp stage share it, keeping Describe() ≡ Build().
 func tapArmNodeDetail(tap string) string {
 	return joinSpecDetail("tap arm", "tap="+tap)
 }
 
-// tapArmStage republishes a tapped stream under the tap name — the runtime
-// body of a tap arm. Join stages identify arms by stream id, and the tap's
-// own media keeps flowing down its declaring arm unchanged, so the converged
-// copy is re-stamped: a shallow per-message copy (payloads are shared exactly
-// like every other tap fanout; downstream joins clone what they buffer).
-type tapArmStage struct {
-	name string
-	out  av.StreamID
+// armRestampStage republishes an arm's stream under the arm's id — the
+// runtime body of a tap arm and of an arm bound when its input opens. Join
+// stages identify arms by stream id: a tap's own media keeps flowing down its
+// declaring arm unchanged, and two files carry the same track ids, so the
+// converged copy is re-stamped: a shallow per-message copy (payloads are
+// shared exactly like every other fanout; downstream joins clone what they
+// buffer). With in set, only that stream and stream-less events pass: a
+// file's source carries all its streams.
+type armRestampStage struct {
+	name   string
+	detail string
+	in     av.StreamID
+	out    av.StreamID
 }
 
-func newTapArmStage(name string, out av.StreamID) *tapArmStage {
-	return &tapArmStage{name: name, out: out}
+func newArmRestampStage(name string, detail string, in av.StreamID, out av.StreamID) *armRestampStage {
+	return &armRestampStage{name: name, detail: detail, in: in, out: out}
 }
 
-func (s *tapArmStage) Name() string { return s.name }
+func (s *armRestampStage) Name() string { return s.name }
 
 // DescribeNode reports the same detail the join planner records on the
 // planned restamp node, keeping Describe() ≡ Build().
-func (s *tapArmStage) DescribeNode() pipeline.NodeSpec {
-	return pipeline.NodeSpec{Name: s.name, Kind: pipeline.NodeStage, Detail: tapArmNodeDetail(string(s.out))}
+func (s *armRestampStage) DescribeNode() pipeline.NodeSpec {
+	return pipeline.NodeSpec{Name: s.name, Kind: pipeline.NodeStage, Detail: s.detail}
 }
 
-func (s *tapArmStage) Handle(ctx context.Context, msg *pipeline.Message, emitter pipeline.Emitter) error {
+func (s *armRestampStage) passes(id av.StreamID, event bool) bool {
+	return s.in == "" || id == s.in || (event && id == "")
+}
+
+func (s *armRestampStage) Handle(ctx context.Context, msg *pipeline.Message, emitter pipeline.Emitter) error {
 	switch msg.Kind {
 	case pipeline.MessageFrame:
-		if msg.Frame == nil {
+		if msg.Frame == nil || !s.passes(msg.Frame.StreamID, false) {
 			return nil
 		}
 		frame := *msg.Frame
 		frame.StreamID = s.out
 		return emitter.Emit(ctx, &pipeline.Message{Kind: pipeline.MessageFrame, Frame: &frame})
 	case pipeline.MessagePacket:
-		if msg.Packet == nil {
+		if msg.Packet == nil || !s.passes(msg.Packet.StreamID, false) {
 			return nil
 		}
 		packet := *msg.Packet
@@ -312,12 +325,20 @@ func (s *tapArmStage) Handle(ctx context.Context, msg *pipeline.Message, emitter
 			// Event.StreamID — re-stamping it would erase the target.
 			return emitter.Emit(ctx, msg)
 		}
+		if !s.passes(msg.Event.StreamID, true) {
+			return nil
+		}
 		event := *msg.Event
 		event.StreamID = s.out
+		if event.Stream != nil {
+			stream := *event.Stream
+			stream.ID = s.out
+			event.Stream = &stream
+		}
 		return emitter.Emit(ctx, &pipeline.Message{Kind: pipeline.MessageEvent, Event: &event})
 	default:
 		return emitter.Emit(ctx, msg)
 	}
 }
 
-func (s *tapArmStage) Close() error { return nil }
+func (s *armRestampStage) Close() error { return nil }
