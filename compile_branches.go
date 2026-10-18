@@ -323,16 +323,6 @@ func (g *recipeGraph) pathBuffer(nodes []recipeir.NodeID) (recipeir.Operation, b
 	return recipeir.Operation{}, false
 }
 
-func (g *recipeGraph) outputIndexes(nodes []recipeir.NodeID) []int {
-	out := make([]int, 0, len(nodes))
-	for _, node := range nodes {
-		out = append(out, int(node))
-	}
-	return out
-}
-
-func (g *recipeGraph) outputNode(id int) recipeir.NodeID { return recipeir.NodeID(id) }
-
 // groupLeaves merges Outputs that route the same work: paths ending at one
 // node, or differing only by As names after it, are one branch with several
 // destinations.

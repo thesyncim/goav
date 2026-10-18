@@ -8,31 +8,8 @@ import (
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
-	"github.com/thesyncim/goav/filter"
 	"github.com/thesyncim/goav/shape"
 )
-
-// northStarResampleRuntime is northStarTranscodeRuntime plus an audio resample
-// filter, for acceptance checks that include a transform.
-func northStarResampleRuntime() *Runtime {
-	streams := []av.Stream{audioOpusTestStream()}
-	return mustNew(
-		withTestFormats(
-			testFormatProber(remuxTestProber{streams: streams}),
-			testFormatDemuxer(av.FormatOgg, decodeTestDemuxerFactory{demuxer: &decodeTestDemuxer{streams: streams}}),
-			testFormatMuxer(av.FormatOgg, &remuxTestMuxerFactory{}),
-		),
-		withTestCodecs(
-			testCodecDecoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &decodeTestDecoderFactory{decoder: &decodeTestDecoder{}}),
-			testCodecEncoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &encodeTestEncoderFactory{encoder: &encodeTestEncoder{}}),
-		),
-		withTestFilters(testFilterFactory(filter.Descriptor{
-			Name:   filter.FactoryResample,
-			Input:  av.MediaAudio,
-			Output: av.MediaAudio,
-		}, &transcodeTestFilterFactory{})),
-	)
-}
 
 // northStarTranscodeRuntime builds a runtime that can demux/decode/encode/mux a
 // single Opus audio stream, for the acceptance-suite jobs.

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"strings"
 	"testing"
 
 	"github.com/thesyncim/goav/av"
@@ -71,5 +72,20 @@ func assertJoinParityBuildError(t *testing.T, err error, code errcode.Code) {
 	var buildErr *BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != code {
 		t.Fatalf("err = %v, want %s", err, code)
+	}
+}
+
+// TestJoinArmTapBeforeDecodeIsRefused pins that a join arm's taps sit at its
+// decoded point: a tap before a packet arm's .Decode() is refused instead of
+// being anchored on the decoder.
+func TestJoinArmTapBeforeDecodeIsRefused(t *testing.T) {
+	_, err := legacyMix(
+		recipeFrom(tapArmTestPacketSource("a", "x_pcm_mono", 1)).Audio().Tap(frameTapRef("raw")).Decode(),
+		recipeFrom(mixTestAudioSource("b", 1)).Audio(),
+	).To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))).
+		Describe()
+	assertJoinParityBuildError(t, err, errcode.TapDomainMismatch)
+	if !strings.Contains(err.Error(), "after decode") {
+		t.Fatalf("err = %v, want move-the-tap guidance", err)
 	}
 }

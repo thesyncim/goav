@@ -189,27 +189,6 @@ func encodeConfigFromSpec(spec codec.Spec) codec.EncodeConfig {
 	}
 }
 
-func codecSpecFromEncodeConfig(config codec.EncodeConfig) codec.Spec {
-	parameters := config.Parameters
-	if parameters.ID == "" {
-		parameters = config.Stream.Codec
-	}
-	id := firstNonEmptyCodec(parameters.ID, config.Stream.Codec.ID)
-	media := firstNonEmptyMedia(parameters.Type, config.Stream.Codec.Type, config.Stream.Type, codecMedia(id))
-	if parameters.ID == "" {
-		parameters.ID = id
-	}
-	if parameters.Type == "" {
-		parameters.Type = media
-	}
-	return cloneCodecSpec(codec.Spec{
-		ID:         id,
-		Type:       media,
-		Parameters: parameters,
-		Settings:   cloneCodecSettings(config.Settings),
-	})
-}
-
 func codecSpecFromStream(stream av.Stream) codec.Spec {
 	parameters := stream.Codec
 	id := parameters.ID
@@ -222,16 +201,6 @@ func codecSpecFromStream(stream av.Stream) codec.Spec {
 		Type:       media,
 		Parameters: parameters,
 	})
-}
-
-func cloneEncodeConfig(config codec.EncodeConfig) codec.EncodeConfig {
-	config.Stream.Codec.Attributes = cloneMetadata(config.Stream.Codec.Attributes)
-	config.Stream.Codec.ExtraData = cloneBuffer(config.Stream.Codec.ExtraData)
-	config.Stream.Metadata = cloneMetadata(config.Stream.Metadata)
-	config.Parameters.Attributes = cloneMetadata(config.Parameters.Attributes)
-	config.Parameters.ExtraData = cloneBuffer(config.Parameters.ExtraData)
-	config.Settings = cloneCodecSettings(config.Settings)
-	return config
 }
 
 func cloneBuffer(buffer av.Buffer) av.Buffer {

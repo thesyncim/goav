@@ -1667,24 +1667,6 @@ func TestWithLayersOptionsOntoConstructedValues(t *testing.T) {
 	}
 }
 
-func reportHasOperationDetail(report plan.Report, detail string) bool {
-	for i := range report.Streams {
-		for j := range report.Streams[i].Operations {
-			if report.Streams[i].Operations[j].Detail == detail {
-				return true
-			}
-		}
-	}
-	for i := range report.Branches {
-		for j := range report.Branches[i].Operations {
-			if report.Branches[i].Operations[j].Detail == detail {
-				return true
-			}
-		}
-	}
-	return false
-}
-
 func TestRecordRecipeRejectsEmptyInputSpec(t *testing.T) {
 	_, err := recordJob(
 		goav.InputSpec{},

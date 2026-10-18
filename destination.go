@@ -48,52 +48,6 @@ type branchDestinationFacts struct {
 	resolvedContainer  av.FormatID
 }
 
-type branchDestinationAttachment struct {
-	spec    destinationSpec
-	details branchDestinationFacts
-}
-
-type destinationAttachment = branchDestinationAttachment
-
-func destinationAttachmentsFromSpecs(destinations []destinationSpec) []destinationAttachment {
-	if len(destinations) == 0 {
-		return nil
-	}
-	out := make([]destinationAttachment, 0, len(destinations))
-	for i := range destinations {
-		out = append(out, destinationAttachmentFromSpec(destinations[i], "output"))
-	}
-	return out
-}
-
-func destinationAttachmentFromSpec(destination destinationSpec, fallback string) destinationAttachment {
-	name := destination.label(fallback)
-	spec := destination.withName(firstNonEmpty(destination.name, name))
-	return destinationAttachment{
-		spec:    spec,
-		details: branchDestinationFactsFromSpec(name, spec),
-	}
-}
-
-func branchDestinationAttachmentsFromSpecs(destinations []namedDestinationSpec) []branchDestinationAttachment {
-	if len(destinations) == 0 {
-		return nil
-	}
-	out := make([]branchDestinationAttachment, 0, len(destinations))
-	for i := range destinations {
-		out = append(out, branchDestinationAttachmentFromSpec(destinations[i]))
-	}
-	return out
-}
-
-func branchDestinationAttachmentFromSpec(destination namedDestinationSpec) branchDestinationAttachment {
-	spec := destination.output.withName(firstNonEmpty(destination.output.name, destination.name))
-	return branchDestinationAttachment{
-		spec:    spec,
-		details: branchDestinationFactsFromSpec(destination.name, spec),
-	}
-}
-
 func branchDestinationFactsFromSpec(name string, output destinationSpec) branchDestinationFacts {
 	return branchDestinationFacts{
 		routingName:        name,
@@ -110,55 +64,8 @@ func branchDestinationFactsFromSpec(name string, output destinationSpec) branchD
 	}
 }
 
-func branchDestinationAttachmentSet(attachments []branchDestinationAttachment) (map[string]branchDestinationAttachment, []string) {
-	outputs := make(map[string]branchDestinationAttachment, len(attachments))
-	outputOrder := make([]string, 0, len(attachments))
-	for i := range attachments {
-		name := attachments[i].details.routingName
-		outputOrder = append(outputOrder, name)
-		outputs[name] = attachments[i]
-	}
-	return outputs, outputOrder
-}
-
-func branchDestinationAttachmentDestination(attachment branchDestinationAttachment) destinationSpec {
-	return cloneDestinationSpec(attachment.spec)
-}
-
-func destinationAttachmentDestination(attachment destinationAttachment) destinationSpec {
-	return cloneDestinationSpec(attachment.spec)
-}
-
-func branchDestinationAttachmentOutput(attachment branchDestinationAttachment) format.Output {
-	return attachment.spec.output
-}
-
-func destinationAttachmentOutput(attachment destinationAttachment) format.Output {
-	return attachment.spec.output
-}
-
-func branchDestinationAttachmentSink(attachment branchDestinationAttachment) pipeline.Sink {
-	return attachment.spec.sink
-}
-
-func destinationAttachmentSink(attachment destinationAttachment) pipeline.Sink {
-	return attachment.spec.sink
-}
-
-func destinationSpecIsSink(destination destinationSpec) bool {
-	return destination.sink != nil
-}
-
 func destinationSpecOutput(destination destinationSpec) format.Output {
 	return destination.output
-}
-
-func destinationAttachmentGraphFormat(attachment destinationAttachment) av.FormatID {
-	return attachment.details.requestedContainer
-}
-
-func destinationAttachmentOpenFormat(attachment destinationAttachment) av.FormatID {
-	return destinationSpecFormat(attachment.spec)
 }
 
 func destinationGraphFormat(output destinationSpec) av.FormatID {
@@ -167,15 +74,6 @@ func destinationGraphFormat(output destinationSpec) av.FormatID {
 
 func destinationOpenFormat(output destinationSpec) av.FormatID {
 	return destinationSpecFormat(output)
-}
-
-func destinationAttachmentsContainMuxDestination(outputs []destinationAttachment) bool {
-	for i := range outputs {
-		if !outputs[i].details.sink {
-			return true
-		}
-	}
-	return false
 }
 
 func destinationIdentity(destination namedDestinationSpec) string {
@@ -770,14 +668,6 @@ func duplicateDestinationHandleError(operation string, name string) error {
 		}),
 		cause: errUnsupportedBuild,
 	}
-}
-
-func destinationNamesWithOverrides(outputs []destinationSpec, destinationNames []string) []string {
-	names := make([]string, 0, len(outputs))
-	for i := range outputs {
-		names = append(names, jobOutputDestinationName(outputs, destinationNames, i))
-	}
-	return names
 }
 
 func jobOutputDestinationName(outputs []destinationSpec, destinationNames []string, index int) string {

@@ -80,12 +80,6 @@ err = rt.Run(ctx, a.Video().To(rec), b.Audio().To(rec))
   mix), and its `.SyncByPTS()` scopes to its own inputs. It takes only taps and
   shape policies; other operations go on its inputs or after the outer join.
 
-## Limits today
-
-- A join's output runs alone in one run: other Outputs beside it are refused
-  with `stream_beside_join`.
-- A tap after a join's other operations is refused; tap right after the join.
-
 ## Dynamic Membership Boundary
 
 `Mix(streams...)`, `Composite(layers...)`, and `Select(streams...)` are

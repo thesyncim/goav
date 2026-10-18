@@ -10,51 +10,9 @@ import (
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
-	"github.com/thesyncim/goav/internal/recipeir"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/plan"
 )
-
-func testRecipeIRDestination(name string, kind recipeir.DestinationKind) recipeir.Destination {
-	return recipeir.Destination{Name: name, Kind: kind}
-}
-
-type graphPlanTestLowerer struct {
-	runtime *Runtime
-	called  bool
-}
-
-func (l *graphPlanTestLowerer) spec() (pipeline.Spec, error) {
-	return pipeline.Spec{Name: "goav"}, nil
-}
-
-func (l *graphPlanTestLowerer) runtimeRef() *Runtime {
-	return l.runtime
-}
-
-func (l *graphPlanTestLowerer) lower(context.Context, graphPlan, pipeline.Graph, *builder) error {
-	l.called = true
-	return nil
-}
-
-func workPlanOperationsForBranch(operations []workOperation, branch string) []workOperation {
-	out := make([]workOperation, 0)
-	for i := range operations {
-		if operations[i].Branch == branch {
-			out = append(out, operations[i])
-		}
-	}
-	return out
-}
-
-func workPlanOperationKindsForBranch(operations []workOperation, branch string) []plan.OperationKind {
-	operations = workPlanOperationsForBranch(operations, branch)
-	out := make([]plan.OperationKind, 0, len(operations))
-	for i := range operations {
-		out = append(out, operations[i].Kind)
-	}
-	return out
-}
 
 func TestResolvedJobOutputFormatsEnterMediaPlanBuild(t *testing.T) {
 	runtime := mustNew(append(

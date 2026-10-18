@@ -194,6 +194,9 @@ func (s *recipeCompileState) planJoinArm(p *joinPlan, armID recipeir.NodeID, at 
 		}
 		arm := joinArmPlan{sub: sub, inputName: sub.name, stream: sub.joined, domain: sub.joinedDomain, late: sub.late}
 		for _, operation := range armOps {
+			if operation.Kind == plan.OpTap && operation.Tap.Name == "" {
+				return joinArmPlan{}, nil, nil, tapNameEmptyError("build "+name, sub.name)
+			}
 			if operation.Kind == plan.OpTap {
 				// A tap on a nested join anchors on the nested join's node.
 				arm.taps = append(arm.taps, joinArmTap{ref: tapRef{name: operation.Tap.Name, domain: sub.joinedDomain}, after: plan.OpJoin})
@@ -233,7 +236,7 @@ func (s *recipeCompileState) planJoinArm(p *joinPlan, armID recipeir.NodeID, at 
 	if err := validateJoinArmOperations(name, armPlan.inputName, armOps); err != nil {
 		return joinArmPlan{}, nil, nil, err
 	}
-	taps, err := joinChainArmTaps(name, armPlan.inputName, armOps)
+	taps, err := joinChainArmTaps(name, armPlan.inputName, armPlan.domain, armOps)
 	if err != nil {
 		return joinArmPlan{}, nil, nil, err
 	}

@@ -241,11 +241,3 @@ func TestRecipeGraphConfigBufferContracts(t *testing.T) {
 		t.Fatalf("offline config = %+v, want explicit name, non-realtime, preserved copy bounds", config)
 	}
 }
-
-func destinationNamesForTest(outputs []destinationSpec) []string {
-	names := make([]string, len(outputs))
-	for i := range outputs {
-		names[i] = outputs[i].name
-	}
-	return names
-}

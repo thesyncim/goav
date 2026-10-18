@@ -206,7 +206,7 @@ type FrameFilter interface {
 type Factory interface { NewFilter(context.Context, Config) (FrameFilter, error) }
 ```
 
-Lifecycle (from `filter/stage.go` + `branch_compose_build.go`): the registry
+Lifecycle (from `filter/stage.go` + `media_transform.go`): the registry
 keys on `Descriptor.Name`; `filter.FactoryResize` and
 `filter.FactoryResample` are the names the grammar's
 `.Resize(...)`/`.Resample(...)` resolve, so registering under those names

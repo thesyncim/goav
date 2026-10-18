@@ -25,8 +25,6 @@ const (
 	FamilyInput Family = "input"
 	// FamilyStream groups stream selection and stream-chain ordering refusals.
 	FamilyStream Family = "stream"
-	// FamilyFlow groups reusable Flow fragment refusals.
-	FamilyFlow Family = "flow"
 	// FamilyTransform groups explicit transform and transform adapter refusals.
 	FamilyTransform Family = "transform"
 	// FamilyShape groups shape requirement and automatic-conversion refusals.
@@ -58,12 +56,9 @@ const (
 const familyDiagnostic Family = "diagnostic"
 
 const (
-	branchComposePlanEmpty   = Code("branch_compose_plan_empty")
-	compilerPassInvalid      = Code("compiler_pass_invalid")
-	compilerPassFailed       = Code("compiler_pass_failed")
-	recipeAttachmentMismatch = Code("recipe_attachment_mismatch")
-	graphPlanInvalid         = Code("graph_plan_invalid")
-	bufferBudgetMissing      = Code("buffer_budget_missing")
+	compilerPassFailed  = Code("compiler_pass_failed")
+	graphPlanInvalid    = Code("graph_plan_invalid")
+	bufferBudgetMissing = Code("buffer_budget_missing")
 )
 
 // FamilyForCode returns the stable family for a goav error code. It also
@@ -79,14 +74,11 @@ func FamilyForCode(code Code) Family {
 		Code("source_shape_unsupported"), Code("source_shape_mismatch"),
 		Code("explicit_graph_source_missing"):
 		return FamilyInput
-	case Code("stream_missing"), Code("stream_ambiguous"), Code("stream_duplicate"),
-		Code("stream_name_missing"), Code("stream_selector_invalid"), Code("stream_codec_missing"),
-		Code("stream_operation_missing"), Code("stream_step_after_encode"), Code("stream_step_after_destination"),
-		Code("stream_beside_join"), Code("stream_invalid"), Code("stream_region_outside_composite"), Code("stage_missing"):
+	case Code("stream_missing"), Code("stream_ambiguous"),
+		Code("stream_selector_invalid"), Code("stream_codec_missing"),
+		Code("stream_operation_missing"), Code("stream_step_after_encode"),
+		Code("stream_invalid"), Code("stage_missing"):
 		return FamilyStream
-	case Code("flow_invalid"), Code("flow_media_mismatch"), Code("flow_decode_duplicate"),
-		Code("flow_decode_order_invalid"), Code("flow_decode_domain_mismatch"), Code("flow_copy_domain_mismatch"):
-		return FamilyFlow
 	case Code("transform_invalid"), Code("transform_media_mismatch"), Code("transform_adapter_missing"),
 		Code("transform_adapter_incompatible"), Code("transcode_resize_invalid"),
 		Code("operation_shape_mismatch"):
@@ -100,23 +92,22 @@ func FamilyForCode(code Code) Family {
 		return FamilyCodec
 	case Code("encode_missing"), Code("encode_duplicate"), Code("encode_parameter_invalid"),
 		Code("encode_auto_unresolved"), Code("encode_stream_mismatch"),
-		Code("encode_destination_missing"), Code("encode_branch_source_invalid"):
+		Code("encode_destination_missing"):
 		return FamilyEncode
 	case Code("output_invalid"), Code("output_missing"), Code("output_duplicate"),
-		Code("output_scope_mixed"), Code("output_kind_mixed"), Code("output_writer_missing"),
+		Code("output_kind_mixed"), Code("output_writer_missing"),
 		Code("output_format_missing"), Code("output_format_unknown"), Code("output_muxer_missing"),
-		Code("output_destination_missing"), Code("destination_invalid"), Code("destination_missing"),
+		Code("output_destination_missing"), Code("destination_invalid"),
 		Code("destination_duplicate"), Code("destination_format_unknown"), Code("destination_muxer_missing"),
 		Code("destination_mux_incompatible"), Code("destination_shape_mismatch"):
 		return FamilyDestination
-	case Code("branch_invalid"), Code("branch_missing"), Code("branch_duplicate"),
-		Code("branch_source_invalid"), Code("branch_tap_missing"), Code("branch_decode_duplicate"),
-		Code("branch_decode_order_invalid"), Code("branch_decode_domain_mismatch"),
-		Code("branch_decode_copy_invalid"), Code("branch_transform_media_mismatch"),
-		Code("branch_destination_invalid"), Code("branch_destination_unmatched"),
-		Code("branch_operation_chain_unsupported"), branchComposePlanEmpty,
-		Code("copy_branch_source_invalid"), Code("copy_unsupported"),
-		Code("packet_branch_encode_unsupported"), Code("packet_branch_transform_unsupported"),
+	case
+		Code("branch_source_invalid"), Code("branch_decode_duplicate"),
+		Code("branch_decode_domain_mismatch"),
+		Code("branch_transform_media_mismatch"),
+
+		Code("branch_operation_chain_unsupported"),
+
 		Code("decode_config_conflict"):
 		return FamilyBranch
 	case Code("branch_buffer_invalid"), Code("branch_buffer_unsupported"),
@@ -136,8 +127,8 @@ func FamilyForCode(code Code) Family {
 		return FamilyRuntimeBranch
 	case StreamRuleInvalid:
 		return FamilyStreamRule
-	case JobInvalid, RuntimeMissing, compilerPassInvalid, compilerPassFailed,
-		RecipeGraphUnsupported, recipeAttachmentMismatch, graphPlanInvalid:
+	case RuntimeMissing, compilerPassFailed,
+		RecipeGraphUnsupported, graphPlanInvalid:
 		return FamilyCompiler
 	case Code("shape_conversion_inserted"), Code("shape_preference_applied"), Code("shape_preference_ignored"),
 		Code("decode_codec_deferred"), Code("explain_preflight_error"), Code("packet_copy"),
@@ -156,8 +147,7 @@ func isCustomJoinCode(code Code) bool {
 	name := string(code)
 	return hasSuffix(name, "_inputs") ||
 		hasSuffix(name, "_arm") ||
-		hasSuffix(name, "_destination") ||
-		hasSuffix(name, "_tap_arm")
+		hasSuffix(name, "_arm")
 }
 
 func hasSuffix(name string, suffix string) bool {
@@ -197,9 +187,6 @@ const (
 
 // Job and compiler errcode.
 const (
-	// JobInvalid fires when a nil, zero, or otherwise unconstructed job or
-	// join reaches the recipe compiler.
-	JobInvalid Code = "job_invalid"
 	// RuntimeMissing fires when a job reaches Build with no runtime
 	// configured.
 	RuntimeMissing Code = "runtime_missing"

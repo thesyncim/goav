@@ -112,23 +112,6 @@ func streamStepMethodName(step string) string {
 	}
 }
 
-func sinkDomainRequiredError(operation string, node string) error {
-	return &BuildError{
-		Phase:     phaseBuild,
-		Family:    errcode.FamilyForCode(operationShapeMismatchCode),
-		Code:      operationShapeMismatchCode,
-		Operation: operation,
-		Node:      firstNonEmpty(node, "stream"),
-		Reason:    "sink output from a packet stream needs an explicit domain",
-		fields:    errDetails(errDetail("destination", "sink"), errDetail("actual_shape", shape.New(shape.Domain(shape.DomainPacket)).String())),
-		fixes: buildErrorFixes([]string{
-			"decode frames before the sink: .Decode().To(goav.Sink(...))",
-			"preserve packets by leaving out .Decode(): input.Video().To(goav.Sink(...))",
-		}),
-		cause: errUnsupportedBuild,
-	}
-}
-
 func duplicateStreamEncodeError(operation string, node string, first codec.Spec, second codec.Spec) error {
 	return &BuildError{
 		Phase:     phaseBuild,

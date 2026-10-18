@@ -170,12 +170,6 @@ type decodeRequest struct {
 	config   codec.Spec
 }
 
-type filterRequest struct {
-	selector  av.StreamSelector
-	stage     pipeline.Stage
-	transform *mediaTransform
-}
-
 // taskClock returns the clock the build hands to paced sources — on recipe
 // builds the task's shared timeline, which the runtime clone carries as its
 // clock.

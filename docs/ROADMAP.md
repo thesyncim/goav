@@ -26,8 +26,8 @@ input.Video/Audio/Stream() -> operations -> taps -> forks -> .To(destinations) -
 Normal users should not need graph handles, string routing, or a separate
 workflow API for recording, transcoding, preview, diagnostics, or late
 attachment. Internally every recipe lowers the same way — Stream values ->
-`branchRecipe -> operationSpec list -> WorkPlan / WorkPatch -> executable task`
-— and each operation appends exactly one internal operation record
+`recipe DAG -> branches -> WorkPlan / WorkPatch -> executable task` — and
+each operation is exactly one DAG node with one operation record
 (`Decode` → OpDecode, a stream left undecoded → OpCopy, `Shape`/`Auto`/`Require`/`Prefer` →
 shape, `Resize`/`Resample` → transform, `Do` → stage, `Encode` → encode,
 `Tap` → tap).
@@ -226,10 +226,9 @@ this list:
   publish commit/abort/error events. Standalone `task.Detach` has explicit
   drain/abort outcomes, branch attach/detach events are watchable, and
   stream-rule removals drain rule-created branches.
-- **`streamIntent` normalization fold**: Explain stream rows and adapter
-  requirements, plus mux compatibility, now consume codec facts from `WorkPlan`
-  operations. Remaining validation/planning readers still consume the intent
-  layer; fold them as they are touched.
+- **One compiler**: Outputs compile into one recipe DAG that every pass and
+  the one lowering read; the builder grammar, the intent mirror, and the
+  per-shape lowerers are gone.
 
 ## Planned
 

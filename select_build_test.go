@@ -148,14 +148,15 @@ func TestSelectRequiresTwoArms(t *testing.T) {
 }
 
 func TestSelectRequiresDistinctArmIDs(t *testing.T) {
+	dup := selectTestOneShotSource("dup", 1)
 	_, err := legacySelect(
-		recipeFrom(selectTestOneShotSource("dup", 1)).Audio(),
-		recipeFrom(selectTestOneShotSource("dup", 2)).Audio(),
+		recipeFrom(dup).Audio(),
+		recipeFrom(dup).Audio(),
 	).To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))).
 		Build(context.Background())
 	var buildErr *BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "input_duplicate" {
-		t.Fatalf("err = %v, want input_duplicate (distinct input names)", err)
+	if !errors.As(err, &buildErr) || buildErr.Code != "select_arm" {
+		t.Fatalf("err = %v, want select_arm (distinct ids enforced)", err)
 	}
 }
 

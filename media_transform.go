@@ -126,14 +126,6 @@ func branchComposeDecodeConfigConflictError(first string, second string) error {
 	}
 }
 
-func mediaTransformEmpty(transform mediaTransform) bool {
-	return transform.name == "" &&
-		transform.factory == "" &&
-		transform.stage == nil &&
-		transform.video == nil &&
-		transform.audio == nil
-}
-
 func branchChainStepError(name string, reason string) error {
 	return &BuildError{
 		Phase:     phaseBuild,

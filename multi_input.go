@@ -79,39 +79,6 @@ func inputIntentName(input recipeir.Input, index int) string {
 	return firstNonEmpty(input.Name, input.URI, fmt.Sprintf("input-%d", index))
 }
 
-// resolveInputSetIndex resolves which input a selector binds to without
-// producing errors: the named input when narrowed, otherwise the single known
-// input whose streams match. ok=false when unknown or ambiguous.
-func resolveInputSetIndex(sets []inputStreamSet, selector av.StreamSelector, inputName string) (int, bool) {
-	if inputName != "" {
-		for i := range sets {
-			if sets[i].name == inputName {
-				return i, true
-			}
-		}
-		return 0, false
-	}
-	matched := -1
-	for i := range sets {
-		if !sets[i].known {
-			continue
-		}
-		for k := range sets[i].streams {
-			if !streamMatchesSelector(sets[i].streams[k], selector) {
-				continue
-			}
-			if matched >= 0 && matched != i {
-				return 0, false
-			}
-			matched = i
-		}
-	}
-	if matched < 0 {
-		return 0, false
-	}
-	return matched, true
-}
-
 // inputBoundStream is one selection candidate with its input attribution.
 type inputBoundStream struct {
 	inputIndex int
@@ -286,18 +253,4 @@ func unknownInputNameError(selector av.StreamSelector, inputName string, sets []
 		}),
 		cause: errUnsupportedBuild,
 	}
-}
-
-// jobInputName is the name a stream chain binds its input by
-// (goav.InputName, and the value grammar on several inputs).
-func jobInputName(input InputSpec, index int) string {
-	return input.inputName(fmt.Sprintf("input-%d", index))
-}
-
-func jobInputNames(inputs []InputSpec) []string {
-	names := make([]string, len(inputs))
-	for i := range inputs {
-		names[i] = jobInputName(inputs[i], i)
-	}
-	return names
 }

@@ -282,15 +282,6 @@ func (g *recipeGraph) rootOf(id recipeir.NodeID) *streamRoot { return g.roots[id
 // opOf is the value operation of an operation node.
 func (g *recipeGraph) opOf(id recipeir.NodeID) streamOp { return g.ops[id] }
 
-// destinationsOf are the Destination handles of output nodes.
-func (g *recipeGraph) destinationsOf(nodes []recipeir.NodeID) []Destination {
-	out := make([]Destination, 0, len(nodes))
-	for _, id := range nodes {
-		out = append(out, g.dests[g.node(id).Output])
-	}
-	return out
-}
-
 // destinationConfigKey is what copies of one destination handle must agree on
 // to be one output: its name, address, container, and sink.
 func destinationConfigKey(spec destinationSpec) string {

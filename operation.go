@@ -23,11 +23,6 @@ func opCopy() recipeir.Operation {
 }
 
 func opEncode(spec codec.Spec) recipeir.Operation {
-	if spec.Copy {
-		operation := opCopy()
-		operation.Encode = cloneCodecSpec(spec)
-		return operation
-	}
 	return recipeir.Operation{Kind: plan.OpEncode, Component: string(spec.ID), Encode: cloneCodecSpec(spec)}
 }
 
@@ -96,33 +91,8 @@ func operationsAutoPolicy(operations []recipeir.Operation) (shape.Policy, bool) 
 	return policy, active
 }
 
-// operationsPreference merges a stream's .Prefer(...) specs (later facts
-// win) and reports whether any is present.
-func operationsPreference(operations []recipeir.Operation) (shape.Spec, bool) {
-	var preference shape.Spec
-	active := false
-	for i := range operations {
-		if operations[i].Prefer == nil {
-			continue
-		}
-		active = true
-		preference = shape.Merge(preference, *operations[i].Prefer)
-	}
-	return preference, active
-}
-
 func operationsHaveDecode(operations []recipeir.Operation) bool {
 	return recipeIROperationsContainKind(operations, plan.OpDecode)
-}
-
-// operationsDecodeCodec is a stream's decode codec options.
-func operationsDecodeCodec(operations []recipeir.Operation) codec.Spec {
-	for i := range operations {
-		if operations[i].Kind == plan.OpDecode {
-			return operations[i].Decode
-		}
-	}
-	return codec.Spec{}
 }
 
 // operationsEncodeSpec is a stream's encoder (or packet copy).
@@ -133,31 +103,6 @@ func operationsEncodeSpec(operations []recipeir.Operation) codec.Spec {
 		}
 	}
 	return codec.Spec{}
-}
-
-// operationsHaveStage reports a custom stage among the operations.
-func operationsHaveStage(operations []recipeir.Operation) bool {
-	for i := range operations {
-		if operations[i].Kind == plan.OpStage {
-			switch operations[i].Stage.(type) {
-			case *syncGate, *playoutGate:
-				continue
-			}
-			return true
-		}
-	}
-	return false
-}
-
-// tapDomainForAfter infers a domain-less tap's media domain from the
-// operation it follows: packets after select/copy/encode, frames otherwise.
-func tapDomainForAfter(after plan.OperationKind) shape.MediaDomain {
-	switch after {
-	case plan.OpSelect, plan.OpCopy, plan.OpEncode:
-		return shape.DomainPacket
-	default:
-		return shape.DomainFrame
-	}
 }
 
 func recipeIROperationTapIsTerminalPacket(operation recipeir.Operation) bool {

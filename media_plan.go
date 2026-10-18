@@ -472,10 +472,6 @@ func normalizeTapShape(spec shape.Spec) shape.Spec {
 	return spec
 }
 
-func mediaShapeFromPlanStream(stream av.Stream, domain shape.MediaDomain) shape.Spec {
-	return shape.FromStream(stream, domain)
-}
-
 func mediaShapeFromInputIntent(input recipeir.Input, domain shape.MediaDomain) shape.Spec {
 	spec := shape.Spec{
 		Domain:    domain,
@@ -625,57 +621,6 @@ func planOutputNames(outputs []planOutput) []string {
 		names = append(names, outputs[i].Name)
 	}
 	return names
-}
-
-func planOutputsWithBranches(outputs []planOutput, branches []planBranch) []planOutput {
-	for i := range outputs {
-		for j := range branches {
-			if stringInSlice(outputs[i].Name, branches[j].Outputs) {
-				outputs[i].BranchRefs = append(outputs[i].BranchRefs, branches[j].Name)
-			}
-		}
-	}
-	return outputs
-}
-
-func clonePlannerBranches(branches []planBranch) []planBranch {
-	if len(branches) == 0 {
-		return nil
-	}
-	out := make([]planBranch, 0, len(branches))
-	for i := range branches {
-		branch := branches[i]
-		branch.Operations = clonePlannerOperations(branch.Operations)
-		branch.Outputs = append([]string(nil), branch.Outputs...)
-		out = append(out, branch)
-	}
-	return out
-}
-
-func clonePlannerOperations(operations []planOperation) []planOperation {
-	if len(operations) == 0 {
-		return nil
-	}
-	out := make([]planOperation, 0, len(operations))
-	for i := range operations {
-		operation := operations[i]
-		operation.Codec = cloneCodecSpec(operation.Codec)
-		out = append(out, operation)
-	}
-	return out
-}
-
-func clonePlannerOutputs(outputs []planOutput) []planOutput {
-	if len(outputs) == 0 {
-		return nil
-	}
-	out := make([]planOutput, 0, len(outputs))
-	for i := range outputs {
-		output := outputs[i]
-		output.BranchRefs = append([]string(nil), output.BranchRefs...)
-		out = append(out, output)
-	}
-	return out
 }
 
 func clonePlanDecisions(decisions []planDecision) []planDecision {

@@ -78,9 +78,9 @@ Stream routed to destinations), the `Layer` interface (a Stream, or
 (StreamID/StreamIndex), `InputOption`, `DestinationOption`, and `MediaOption`
 (Name/MIME/Metadata). They are exported so godoc can link them and callers can
 name variables and helpers; each is sealed — unexported fields or methods — so
-the constructors remain the only construction surface. The builder grammar
-Stream values compile onto (`recipeJob`, `streamChain`, `branchRecipe`, ...) is
-internal; the package's external tests reach it through `export_test.go`.
+the constructors remain the only construction surface. The recipe DAG Stream
+values compile into (`internal/recipeir`) is internal; the package's external
+tests reach the few internals they pin through `export_test.go`.
 
 Advanced governed vocabulary lives in the focused docs where it is needed:
 `control`, `ctlserver`, `inspect`, `plan`, `snapshot`, `lifecycle`, `flow`,
@@ -249,9 +249,9 @@ it, and v1 does not freeze its shape.
 
 ## D. Leakage
 
-No current root-package tier-D leakage is approved. The internal `intent` and
-`operationSpec` records are unexported; external callers use `Explain`/`plan.Report`
-for inspection, and tests reach normalization through test-only helpers.
+No current root-package tier-D leakage is approved. The recipe DAG and its
+operation records are internal; external callers use `Explain`/`plan.Report`
+for inspection.
 
 Not leakage, by decision: transform option funcs returning unexported types
 (the `Resize`/`Resample` options): the option values are the grammar; the

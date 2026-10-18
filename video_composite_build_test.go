@@ -81,14 +81,15 @@ func TestCompositeRequiresTwoArms(t *testing.T) {
 func errorsAsComposite(err error, target **BuildError) bool { return errors.As(err, target) }
 
 func TestCompositeRejectsDuplicateStreamIDs(t *testing.T) {
+	dup := compositeTestVideoSource("dup", 4, 4, 100, 10, 20)
 	_, err := legacyComposite(
-		recipeFrom(compositeTestVideoSource("dup", 4, 4, 100, 10, 20)).Video().Region(0, 0),
-		recipeFrom(compositeTestVideoSource("dup", 4, 4, 200, 30, 40)).Video().Region(4, 0),
+		recipeFrom(dup).Video().Region(0, 0),
+		recipeFrom(dup).Video().Region(4, 0),
 	).To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))).
 		Build(context.Background())
 	var buildErr *BuildError
-	if !errorsAsComposite(err, &buildErr) || buildErr.Code != "input_duplicate" {
-		t.Fatalf("err = %v, want input_duplicate (distinct input names)", err)
+	if !errorsAsComposite(err, &buildErr) || buildErr.Code != "composite_arm" {
+		t.Fatalf("err = %v, want composite_arm (distinct stream ids)", err)
 	}
 }
 

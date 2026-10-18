@@ -124,16 +124,6 @@ type branchSourceBinding struct {
 	streamDomain shape.MediaDomain
 }
 
-func branchExplicitSourceDomain(source branchSourceBinding) (shape.MediaDomain, bool) {
-	if source.tap != "" && source.tapDomain != "" {
-		return source.tapDomain, true
-	}
-	if source.stream != nil && source.streamDomain != "" {
-		return source.streamDomain, true
-	}
-	return "", false
-}
-
 // branchSource is the anchor a branch hangs from: a tap reference names a stable
 // tap, input.Track(...) names one stream from a recipe input, and an expert graph
 // handle (expert.GraphNode, expert.GraphOutlet) names a graph node through its
@@ -190,17 +180,6 @@ func branchDecodeDomainError(node string) error {
 	}
 }
 
-func cloneDestinationRefs(destinations []destinationRef) []destinationRef {
-	if len(destinations) == 0 {
-		return nil
-	}
-	out := make([]destinationRef, 0, len(destinations))
-	for i := range destinations {
-		out = append(out, cloneDestinationRef(destinations[i]))
-	}
-	return out
-}
-
 func cloneDestinationRef(ref destinationRef) destinationRef {
 	ref.dest = cloneDestinationSpec(ref.dest)
 	return ref
@@ -212,14 +191,6 @@ func cloneDestinationSpec(dest destinationSpec) destinationSpec {
 
 func branchDestinationInvalidError(name string, reason string) error {
 	return destinationInvalidError("build branch", firstNonEmpty(name, "branch"), reason)
-}
-
-func streamDestinationInvalidError(name string, reason string) error {
-	return destinationInvalidError("build stream", firstNonEmpty(name, "stream"), reason)
-}
-
-func jobDestinationInvalidError(name string, reason string) error {
-	return destinationInvalidError("build job", firstNonEmpty(name, "job"), reason)
 }
 
 func destinationInvalidError(operation string, node string, reason string) error {

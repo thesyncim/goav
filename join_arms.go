@@ -42,16 +42,23 @@ func validateJoinArmOperations(join string, arm string, operations []recipeir.Op
 
 // joinChainArmTaps validates and collects the taps a chain arm declared. Arm
 // taps live at the arm's decoded point (or directly on a frame-domain
-// source), so they are frame-domain by construction.
-func joinChainArmTaps(join string, arm string, operations []recipeir.Operation) ([]joinArmTap, error) {
+// source), so they are frame-domain: a tap before a packet arm's .Decode()
+// is refused.
+func joinChainArmTaps(join string, arm string, domain shape.MediaDomain, operations []recipeir.Operation) ([]joinArmTap, error) {
 	var taps []joinArmTap
 	for i := range operations {
+		if operations[i].Kind == plan.OpDecode {
+			domain = shape.DomainFrame
+		}
 		if operations[i].Kind != plan.OpTap {
 			continue
 		}
 		intent := operations[i].Tap
-		ref := tapWithDomain(tapRef{name: intent.Name, domain: intent.Domain}, shape.DomainFrame)
-		if err := validateTapDomain("build "+join, firstNonEmpty(arm, join), ref, shape.DomainFrame); err != nil {
+		if intent.Name == "" {
+			return nil, tapNameEmptyError("build "+join, firstNonEmpty(arm, join))
+		}
+		ref := tapRef{name: intent.Name, domain: shape.DomainFrame}
+		if err := validateTapDomain("build "+join, firstNonEmpty(arm, join), ref, domain); err != nil {
 			return nil, err
 		}
 		taps = append(taps, joinArmTap{ref: ref, after: intent.After})

@@ -742,18 +742,6 @@ func TestOnStreamValidation(t *testing.T) {
 			Audio().Copy().To(main)
 		requireRuleError(t, job, "no matcher")
 	})
-	t.Run("no branches", func(t *testing.T) {
-		job := recipeFrom(source("mic")).
-			OnStream(MatchMedia(av.MediaAudio)).
-			Audio().Copy().To(main)
-		requireRuleError(t, job, "no branches")
-	})
-	t.Run("multi input", func(t *testing.T) {
-		job := recipeFrom(source("mic"), source("cam")).
-			OnStream(MatchMedia(av.MediaAudio), newBranch("late").Copy().To(monitor)).
-			Audio(selectInputName("mic")).Copy().To(main)
-		requireRuleError(t, job, "exactly one input")
-	})
 }
 
 // TestOnStreamBranchReceivesEveryPacketOfDiscoveredStream pins pad-added

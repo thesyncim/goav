@@ -13,10 +13,6 @@ import (
 	"github.com/thesyncim/goav/pipeline"
 )
 
-func compileEncodeStage(ctx context.Context, service *builder, graph pipeline.Graph, upstream pipeline.NodeRef, request encodeRequest, config codec.EncodeConfig) (pipeline.NodeRef, av.Stream, error) {
-	return compileEncodeStageNamed(ctx, service, graph, "", upstream, request, config, service.runtime.buffer)
-}
-
 func (b *builder) compileEncodeStageNamed(ctx context.Context, graph pipeline.Graph, name string, upstream pipeline.NodeRef, request encodeRequest, config codec.EncodeConfig, buffer pipeline.BufferPolicy) (pipeline.NodeRef, av.Stream, error) {
 	return compileEncodeStageNamed(ctx, b, graph, name, upstream, request, config, buffer)
 }
