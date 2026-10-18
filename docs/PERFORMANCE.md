@@ -27,9 +27,10 @@ Hot paths must keep allocation explicit and bounded:
   mutating earlier messages
 
 Once running, lower-level stages reuse caller-owned result structs, frame
-planes, packet buffers, and scratch storage, and take no per-message mutex
-(per-node atomics plus atomically-swapped routing snapshots; mutexes on cold
-paths only). The intended shape is one cold-path executable `WorkPlan` and
+planes, packet buffers, and scratch storage, and take no graph-wide lock per
+message: routing reads an atomically swapped snapshot and counts in per-node
+atomics, and the only per-message locks serialize a node's own input (its handle
+or queue lock), uncontended unless several producers feed it. The intended shape is one cold-path executable `WorkPlan` and
 runtime `WorkPatch`; packet, frame, event, and mux/demux loops must not route
 through fluent recipe objects or workflow-specific compiler dispatch.
 

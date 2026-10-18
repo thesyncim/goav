@@ -15,9 +15,9 @@ What holds today (all `-race` clean, with tests):
   producer (ctx-cancel escapes a stuck consumer) instead of erroring or tearing
   the pipeline down. The bare buffered default stays error-on-full
   (`ErrBackpressure`).
-- The buffered producer path is lock-free: emit reads an atomically-swapped
-  routing snapshot and per-node state, so a blocking send holds no graph lock
-  and cannot deadlock topology changes or re-emitting stages.
+- A buffered emit takes no graph lock: it reads an atomically swapped routing
+  snapshot and takes only the consumer's queue lock, so a blocking send cannot
+  deadlock topology changes or re-emitting stages.
 - Fanout backpressure is independent: a full or slow branch sheds or paces
   itself without stalling siblings or the source; per-branch drop counters and
   reasons (`DropOldest`, `DropOverflow`, latency shedding) are reported through
