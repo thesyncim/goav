@@ -184,12 +184,13 @@ func (e *VP9Encoder) resetEncoder() error {
 // keyframe cadence come from CodecSettings.
 func vp9EncoderOptions(config codec.EncodeConfig, width, height int) govpxlib.VP9EncoderOptions {
 	options := govpxlib.VP9EncoderOptions{
-		Width:              width,
-		Height:             height,
-		FPS:                encodeFPS(config),
-		TargetBitrateKbps:  encodeBitrateKbps(config, width, height),
-		RateControlModeSet: true,
-		RateControlMode:    govpxlib.RateControlCBR,
+		Width:               width,
+		Height:              height,
+		FPS:                 encodeFPS(config),
+		TargetBitrateKbps:   encodeBitrateKbps(config, width, height),
+		RateControlModeSet:  true,
+		RateControlMode:     govpxlib.RateControlCBR,
+		MaxKeyframeInterval: config.Settings.KeyframeInterval,
 	}
 	if !config.Realtime {
 		return options

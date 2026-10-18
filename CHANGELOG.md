@@ -11,6 +11,11 @@ methodology changes, and migration notes.
 
 ## Unreleased
 
+- Fix: offline VP8 and VP9 encodes honor `codec.KeyframeInterval`
+  (`keyframe_interval=`). The govpx adapter passed it only in its realtime
+  preset, so a file encoded offline kept one keyframe; offline VP8 now keys at
+  least every 128 frames by default, like libvpx, so files seek and segment.
+
 - MP4 output. `container/mp4` gains a muxer for H.264, AV1, VP8, VP9, AAC,
   Opus, and FLAC, registered by `bundle`, so `.To(goav.Write("out.mp4", w))`
   and `file out.mp4` work. A seekable output gets a progressive file (moov

@@ -208,6 +208,9 @@ func vp8EncoderOptions(config codec.EncodeConfig, width, height int) govpxlib.En
 		Height:            height,
 		FPS:               encodeFPS(config),
 		TargetBitrateKbps: encodeBitrateKbps(config, width, height),
+		// libvpx's kf_max_dist default: without one govpx keys only the
+		// first frame, and the file cannot be seeked or segmented.
+		KeyFrameInterval: encodeKeyframeInterval(config, 128),
 	}
 	if !config.Realtime {
 		return options
