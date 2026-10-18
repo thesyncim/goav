@@ -163,7 +163,10 @@ func TestRecipeRTPDecodeRejectsDifferentCodecSwitch(t *testing.T) {
 	if err := task.Run(ctx); !errors.Is(err, codec.ErrUnsupportedCodecSwitch) {
 		t.Fatalf("err = %v, want ErrUnsupportedCodecSwitch", err)
 	}
-	if decoder.decodes != 1 || sink.frames != 1 || sink.lastFrame.StreamID != initial.ID {
+	// The decoder's error fails the task fast: a frame it decoded before the
+	// switch reaches the sink only if the sink's worker took it before the
+	// failure; afterwards queued messages are shed, not delivered.
+	if decoder.decodes != 1 || sink.frames > 1 || (sink.frames == 1 && sink.lastFrame.StreamID != initial.ID) {
 		t.Fatalf("decodes=%d frames=%d last=%+v", decoder.decodes, sink.frames, sink.lastFrame)
 	}
 	if err := task.Close(); err != nil {

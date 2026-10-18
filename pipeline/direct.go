@@ -152,6 +152,9 @@ type directRunner struct {
 	eventsClosed bool
 	cold         coldStats
 	closed       bool
+	// fail records the run's first error (run_failure.go): a node failure is
+	// what Run returns even when the source swallows the Emit error.
+	fail runFailure
 	// ready is the once-per-run av.EventTaskReady countdown (readiness.go).
 	ready readiness
 }
@@ -394,36 +397,34 @@ func (g *directRunner) Run(ctx context.Context) error {
 	case 0:
 		return nil
 	case 1:
+		// One source sees any node failure synchronously from Emit, so there
+		// is no sibling to cancel and the run needs no context of its own
+		// (keeping Run allocation-free); the record still makes the node's
+		// error the result when the source swallows it.
+		g.fail.reset(nil)
 		run := sources[0]
-		return run.source.Start(ctx, run.emitter)
+		g.fail.report(run.source.Start(ctx, run.emitter))
+		return g.fail.err()
 	}
 
 	// Run every source under a shared cancelable context so the first fatal
-	// error cancels its siblings instead of leaving them running until they end
-	// on their own. The triggering error is captured once and returned; siblings
-	// that observe the cancellation and return context.Canceled do not overwrite
-	// it. We still wait for every source goroutine before returning so no source
+	// error — a source's, or a node's Handle — cancels its siblings instead of
+	// leaving them running until they end on their own. Siblings that observe
+	// the cancellation and return context.Canceled do not overwrite it. We
+	// still wait for every source goroutine before returning so no source
 	// outlives Run.
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	var (
-		once     sync.Once
-		firstErr error
-		runs     sync.WaitGroup
-	)
+	g.fail.reset(cancel)
+	var runs sync.WaitGroup
 	for i := range sources {
 		run := sources[i]
 		runs.Go(func() {
-			if err := run.source.Start(runCtx, run.emitter); err != nil {
-				once.Do(func() {
-					firstErr = err
-					cancel()
-				})
-			}
+			g.fail.report(run.source.Start(runCtx, run.emitter))
 		})
 	}
 	runs.Wait()
-	return firstErr
+	return g.fail.err()
 }
 
 func (g *directRunner) Spec() Spec {
@@ -682,6 +683,11 @@ func (g *directRunner) emitDelivery(ctx context.Context, from int, msg *Message)
 	if err := ctx.Err(); err != nil {
 		return delivery, err
 	}
+	if g.fail.failed.Load() {
+		// The run already failed: refuse further media with its error, so a
+		// source that swallows or retries its first Emit error stops anyway.
+		return delivery, g.fail.firstErr()
+	}
 	// Lock-free hot path: read an immutable routing snapshot, deliver inline. No
 	// mutex, no per-node copy, and no per-message destination slice (so wide
 	// fanout stays allocation-free).
@@ -758,6 +764,7 @@ func (g *directRunner) deliverTopo(ctx context.Context, dst *directTopoNode, msg
 	switch dst.kind {
 	case nodeStage:
 		if err := dst.stage.Handle(ctx, msg, dst.emitter); err != nil {
+			g.fail.report(err)
 			return false, err
 		}
 		return true, nil
@@ -766,6 +773,7 @@ func (g *directRunner) deliverTopo(ctx context.Context, dst *directTopoNode, msg
 			g.noteSinkMedia(dst.sawMedia)
 		}
 		if err := dst.sink.Handle(ctx, msg); err != nil {
+			g.fail.report(err)
 			return false, err
 		}
 		return true, nil

@@ -956,13 +956,17 @@ func TestGraphBufferedDropNewest(t *testing.T) {
 	}
 }
 
+// TestGraphBufferedBackpressure pins the strict DropNever contract under fail
+// fast: the full queue's ErrBackpressure is the run's error, unwrapped, and it
+// cancels the run, so the sink's in-flight Handle is interrupted and the
+// backlog behind it is shed rather than delivered.
 func TestGraphBufferedBackpressure(t *testing.T) {
 	values, err := runBufferedBurst(BufferPolicy{Capacity: 1, Drop: DropNever})
-	if !errors.Is(err, ErrBackpressure) {
+	if err != ErrBackpressure {
 		t.Fatalf("err = %v, want ErrBackpressure", err)
 	}
-	if want := []byte{1, 2}; !equalBytes(values, want) {
-		t.Fatalf("values = %v, want %v", values, want)
+	if len(values) != 0 {
+		t.Fatalf("values = %v, want none delivered after the failure", values)
 	}
 }
 

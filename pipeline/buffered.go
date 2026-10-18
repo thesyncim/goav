@@ -51,6 +51,11 @@ type bufferedNode struct {
 	// qosLast rate-limits MaxLatency-shed QoS reports to one per node per
 	// qosReportWindow (0 = never reported). Touched only on the shed path.
 	qosLast atomic.Int64
+	// space wakes a DropBlock producer parked in enqueueBlocking: the worker
+	// signals it on every take and slot return, teardown on queue close.
+	// Capacity 1, made once in addNode, so it is never replaced under a
+	// running worker.
+	space chan struct{}
 }
 
 // bufferedTopo is an immutable producer-side routing snapshot read lock-free by
@@ -129,11 +134,11 @@ type bufferedRunner struct {
 	// direct runner). Hot-path emits take it only for the observer send.
 	eventsMu     sync.Mutex
 	eventsClosed bool
-	pending      sync.WaitGroup
+	pending      inflight // queued, not-yet-handled messages, for the drain
 	workers      sync.WaitGroup
 	cold         coldStats
 	runCtx       context.Context
-	runErrs      chan<- error
+	fail         runFailure // first error; cancels runCtx (run_failure.go)
 	running      bool
 	draining     bool
 	closed       bool
@@ -191,11 +196,13 @@ func newBufferedRunner(config GraphConfig) (*bufferedRunner, error) {
 	if eventCapacity < 1 {
 		eventCapacity = defaultEventCapacity
 	}
-	return &bufferedRunner{
+	g := &bufferedRunner{
 		config: config,
 		index:  make(map[string]int),
 		events: make(chan av.Event, eventCapacity),
-	}, nil
+	}
+	g.pending.idle = make(chan struct{}, 1)
+	return g, nil
 }
 
 func normalizeBufferedPolicy(policy BufferPolicy) BufferPolicy {
@@ -375,13 +382,18 @@ func (g *bufferedRunner) Run(ctx context.Context) error {
 		return err
 	}
 
-	errs := make(chan error, len(g.nodes)+len(g.sources)+16)
+	// The first error anywhere — a source, a node's Handle, teardown — cancels
+	// runCtx, so live sources stop at their next Emit and blocked producers
+	// wake, instead of the failure waiting for the sources to end on their own.
+	runCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	g.fail.reset(cancel)
 	g.openQueuesLocked()
 	g.armReadinessLocked()
 	g.running = true
 	g.draining = false
-	g.runCtx = ctx
-	g.runErrs = errs
+	g.runCtx = runCtx
+	g.pending.n.Store(0) // no worker runs yet; queues were just reopened
 	g.workers = sync.WaitGroup{}
 	for i := range g.nodes {
 		if !g.nodes[i].active || g.nodes[i].kind == nodeSource {
@@ -408,30 +420,26 @@ func (g *bufferedRunner) Run(ctx context.Context) error {
 		source := sourceRuns[i].source
 		emitter := sourceRuns[i].emitter
 		sources.Go(func() {
-			reportBufferedError(errs, source.Start(ctx, &emitter))
+			g.fail.report(source.Start(runCtx, &emitter))
 		})
 	}
 
 	sources.Wait()
-	g.pending.Wait()
+	// A clean end drains: queued messages (and whatever stages re-emit from
+	// them) are handled before the queues close. A failure or cancellation
+	// skips the wait; workers shed what is left once the queues close.
+	g.pending.wait(runCtx.Done())
 	g.mu.Lock()
 	g.draining = true
-	reportBufferedError(errs, g.closeQueuesLocked())
+	g.fail.report(g.closeQueuesLocked())
 	g.mu.Unlock()
 	g.workers.Wait()
 	g.mu.Lock()
 	g.running = false
 	g.draining = false
 	g.runCtx = nil
-	g.runErrs = nil
 	g.mu.Unlock()
-
-	select {
-	case err := <-errs:
-		return err
-	default:
-		return nil
-	}
+	return g.fail.err()
 }
 
 func (g *bufferedRunner) Spec() Spec {
@@ -660,6 +668,7 @@ func (g *bufferedRunner) closeNodeQueueContext(ctx context.Context, operation st
 	}
 	node.queueClosed = true
 	close(node.queue)
+	node.signalSpace()
 	return nil
 }
 
@@ -700,6 +709,7 @@ func forceCloseNodeQueue(node *bufferedNode) {
 	}
 	node.queueClosed = true
 	close(node.queue)
+	node.signalSpace()
 }
 
 func (g *bufferedRunner) addNode(node *bufferedNode) (int, error) {
@@ -716,6 +726,7 @@ func (g *bufferedRunner) addNode(node *bufferedNode) (int, error) {
 	if admit, ok := node.stage.(Admitter); ok {
 		node.admit = admit
 	}
+	node.space = make(chan struct{}, 1)
 	node.emitter = bufferedEmitter{graph: g, from: index}
 	node.counters = &nodeCounters{}
 	g.index[node.name] = index
@@ -759,21 +770,10 @@ func (g *bufferedRunner) startWorkerLocked(index int) {
 	done := make(chan struct{})
 	node.done = done
 	ctx := g.runCtx
-	errs := g.runErrs
 	g.workers.Go(func() {
 		defer close(done)
-		reportBufferedError(errs, g.runNode(ctx, node, queue))
+		g.runNode(ctx, node, queue)
 	})
-}
-
-func reportBufferedError(errs chan<- error, err error) {
-	if err == nil {
-		return
-	}
-	select {
-	case errs <- err:
-	default:
-	}
 }
 
 func (g *bufferedRunner) closeQueuesLocked() error {
@@ -932,10 +932,7 @@ func (g *bufferedRunner) enqueue(ctx context.Context, node *bufferedNode, msg *M
 		}
 		return true, nil
 	case bufferBlock:
-		if err := g.enqueueBlocking(ctx, node, msg, fanout); err != nil {
-			return false, err
-		}
-		return true, nil
+		return g.enqueueBlocking(ctx, node, msg, fanout)
 	case bufferDropIncoming:
 		observeDrop(node.counters, node.policy.Drop, &g.cold)
 		return false, nil
@@ -943,7 +940,7 @@ func (g *bufferedRunner) enqueue(ctx context.Context, node *bufferedNode, msg *M
 		select {
 		case dropped := <-node.queue:
 			node.releaseSlot(dropped)
-			g.pending.Done()
+			g.pending.done()
 			observeDrop(node.counters, node.policy.Drop, &g.cold)
 		default:
 		}
@@ -956,57 +953,70 @@ func (g *bufferedRunner) enqueue(ctx context.Context, node *bufferedNode, msg *M
 	}
 }
 
-// bufferedBackpressurePoll bounds how long a paced DropBlock producer waits
-// before it re-checks teardown while blocked on capacity. The primary wakeups
-// are the free-slot channel and the queue-send retry; this fallback only caps
-// how long a producer can stay parked after the queue is torn down, so Close
-// stays prompt instead of waiting on a blocked producer.
-const bufferedBackpressurePoll = 100 * time.Microsecond
-
 // enqueueBlocking implements true backpressure for DropBlock: it paces the
 // producer until the node has both queue space and a free slot, then admits the
-// message atomically. The slot is acquired only when the send is about to
-// happen — never held across a wait — so a paced producer cannot starve the
-// node's free pool for other producers (which would make their admit path
-// observe space yet no slot). The admit (slot bind + queue send) runs under
-// node.queueMutex; only the lock-free worker drains the queue, so a space
-// checked under the mutex cannot vanish before the send, and the send stays
-// serialized with close(node.queue). The wait between attempts releases the
-// mutex, so a concurrent Close/Remove (which needs the mutex to tear the queue
-// down) is never stuck behind a paced producer. The caller holds
-// node.queueMutex on entry and this returns with it held.
-func (g *bufferedRunner) enqueueBlocking(ctx context.Context, node *bufferedNode, msg *Message, fanout *bufferedFanoutBind) error {
+// message atomically, reporting false when the queue was torn down instead
+// (a shed). The slot is acquired only when the send is about to happen — never
+// held across a wait — so a paced producer cannot starve the node's free pool
+// for other producers (which would make their admit path observe space yet no
+// slot). The admit (slot bind + queue send) runs under node.queueMutex; only
+// the lock-free worker drains the queue, so a space checked under the mutex
+// cannot vanish before the send, and the send stays serialized with
+// close(node.queue). The wait between attempts releases the mutex, so a
+// concurrent Close/Remove (which needs the mutex to tear the queue down) is
+// never stuck behind a paced producer. The caller holds node.queueMutex on
+// entry and this returns with it held.
+//
+// The wait polls nothing and allocates nothing: it parks on node.space (see
+// bufferedNode) or ctx. A producer leaving the wait passes the signal on, so
+// several parked producers never lose a wakeup to the one-token channel.
+func (g *bufferedRunner) enqueueBlocking(ctx context.Context, node *bufferedNode, msg *Message, fanout *bufferedFanoutBind) (bool, error) {
 	for {
 		if node.queueClosed {
 			// Queue torn down (Remove/Close): shed.
-			return nil
+			node.signalSpace()
+			return false, nil
 		}
 		if len(node.queue) < cap(node.queue) {
 			select {
 			case slot := <-node.free:
 				if err := slot.bindFanout(msg, node.policy, node, fanout); err != nil {
 					node.releaseSlot(slot)
-					return err
+					return false, err
 				}
-				g.pending.Add(1)
+				g.pending.add()
 				node.accountQueuedBytes(slot, msg)
 				node.queue <- slot
-				return nil
+				if len(node.free) > 0 && len(node.queue) < cap(node.queue) {
+					node.signalSpace()
+				}
+				return true, nil
 			default:
 				// Free pool momentarily empty though the queue has space; wait.
 			}
 		}
 		if err := ctx.Err(); err != nil {
-			return err
+			node.signalSpace()
+			return false, err
 		}
 		node.queueMutex.Unlock()
 		select {
 		case <-ctx.Done():
 			node.queueMutex.Lock()
-			return ctx.Err()
-		case <-time.After(bufferedBackpressurePoll):
+			node.signalSpace()
+			return false, ctx.Err()
+		case <-node.space:
 			node.queueMutex.Lock()
 		}
+	}
+}
+
+// signalSpace wakes one producer parked in enqueueBlocking. It never blocks:
+// the one-token channel already holding a token means a wakeup is pending.
+func (n *bufferedNode) signalSpace() {
+	select {
+	case n.space <- struct{}{}:
+	default:
 	}
 }
 
@@ -1019,10 +1029,10 @@ func (g *bufferedRunner) enqueueBound(ctx context.Context, node *bufferedNode, m
 		node.releaseSlot(slot)
 		return err
 	}
-	g.pending.Add(1)
+	g.pending.add()
 	node.accountQueuedBytes(slot, msg)
 	if err := enqueueMessage(ctx, node.queue, slot); err != nil {
-		g.pending.Done()
+		g.pending.done()
 		node.releaseSlot(slot)
 		return err
 	}
@@ -1069,24 +1079,27 @@ func enqueueMessage(ctx context.Context, queue chan *bufferedMessage, msg *buffe
 	}
 }
 
-func (g *bufferedRunner) runNode(ctx context.Context, node *bufferedNode, queue <-chan *bufferedMessage) error {
-	var first error
+// runNode is a node's serial worker. A delivery error is reported the moment
+// it happens — which cancels the run — and from then on every worker sheds
+// what is still queued instead of delivering it, so a failed task stops
+// promptly rather than finishing its backlog.
+func (g *bufferedRunner) runNode(ctx context.Context, node *bufferedNode, queue <-chan *bufferedMessage) {
 	for msg := range queue {
+		// Taking a message frees queue space a parked DropBlock producer may be
+		// waiting on, even while this slot stays held through delivery.
+		node.signalSpace()
 		switch {
-		case first != nil:
-			// A prior delivery failed; drain without delivering.
+		case g.fail.failed.Load():
+			// The run failed; shed without delivering.
 		case g.staleByLatency(node, msg):
 			observeDrop(node.counters, DropStale, &g.cold)
 			g.reportStaleQoS(node, msg)
 		default:
-			if err := g.deliver(ctx, node, &msg.message); err != nil {
-				first = err
-			}
+			g.fail.report(g.deliver(ctx, node, &msg.message))
 		}
 		node.releaseSlot(msg)
-		g.pending.Done()
+		g.pending.done()
 	}
-	return first
 }
 
 // staleByLatency reports whether a queued message has waited longer than the
@@ -1269,11 +1282,13 @@ func (n *bufferedNode) releaseSlot(slot *bufferedMessage) {
 		}
 		slot.Reset()
 		n.free <- slot
+		n.signalSpace()
 		releaseSharedPacketRef(shared)
 		return
 	}
 	slot.Reset()
 	n.free <- slot
+	n.signalSpace()
 }
 
 // slotReserveBytes is the largest copy budget a slot reserves up front. Small
@@ -1477,6 +1492,7 @@ func releaseSharedPacketRef(shared *bufferedSharedPacket) {
 	}
 	slot.Reset()
 	owner.free <- slot
+	owner.signalSpace()
 }
 
 func canShareBorrowedPacket(buffer av.Buffer, policy BufferPolicy, owner *bufferedNode, fanout *bufferedFanoutBind) bool {
@@ -1589,4 +1605,38 @@ func closeBufferedNode(node *bufferedNode) error {
 	default:
 		return nil
 	}
+}
+
+// inflight counts queued, not-yet-handled messages. It replaces a WaitGroup
+// because an increment from zero may race the drain wait (Inject from another
+// goroutine, or a stage emitting from a goroutine of its own), which the
+// WaitGroup contract forbids. The drain wait polls nothing: the decrement that
+// reaches zero leaves a token in idle, and the waiter rechecks the count.
+type inflight struct {
+	n    atomic.Int64
+	idle chan struct{} // capacity 1
+}
+
+func (f *inflight) add() { f.n.Add(1) }
+
+func (f *inflight) done() {
+	if f.n.Add(-1) == 0 {
+		select {
+		case f.idle <- struct{}{}:
+		default:
+		}
+	}
+}
+
+// wait blocks until the count is zero or stop is closed, reporting whether
+// it drained.
+func (f *inflight) wait(stop <-chan struct{}) bool {
+	for f.n.Load() != 0 {
+		select {
+		case <-f.idle:
+		case <-stop:
+			return false
+		}
+	}
+	return true
 }
