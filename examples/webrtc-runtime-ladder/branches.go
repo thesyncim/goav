@@ -19,7 +19,7 @@ import (
 var branchSeq atomic.Uint64
 
 type branchMutator interface {
-	Attach(context.Context, ...goav.BranchSpec) (goav.Attachment, error)
+	LegacyAttach(context.Context, ...goav.BranchSpec) (goav.Attachment, error)
 	Detach(context.Context, goav.Attachment, ...lifecycle.DetachOption) error
 }
 
@@ -153,7 +153,7 @@ func (s *session) attachBranchLocked(ctx context.Context, r *branch) error {
 		default:
 			return fmt.Errorf("unsupported video encoder %q", r.Spec.Codec)
 		}
-		attachment, err := s.videoTask.Attach(ctx, spec)
+		attachment, err := s.videoTask.LegacyAttach(ctx, spec)
 		if err != nil {
 			return err
 		}
@@ -168,7 +168,7 @@ func (s *session) attachBranchLocked(ctx context.Context, r *branch) error {
 			Resample(48_000, codec.Stereo).
 			Encode(codec.Opus(codec.Bitrate(r.Spec.Bitrate), codec.Channels(codec.Stereo))).
 			To(goav.Sink(r.Sink))
-		attachment, err := s.audioTask.Attach(ctx, spec)
+		attachment, err := s.audioTask.LegacyAttach(ctx, spec)
 		if err != nil {
 			return err
 		}

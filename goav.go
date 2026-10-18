@@ -22,6 +22,7 @@ package goav
 import (
 	"context"
 
+	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/control"
 	"github.com/thesyncim/goav/inspect"
 	"github.com/thesyncim/goav/lifecycle"
@@ -66,10 +67,20 @@ type LiveTask interface {
 	// Stats returns per-node counters — packets, frames, drops by reason —
 	// readable while the task runs (lock-free atomic reads).
 	Stats() pipeline.GraphStats
-	// Attach adds late branches to the running graph from typed taps. One call
+	// Tap is the stream at one of the task's taps; Outputs built from it are
+	// added to the running task with Attach.
+	Tap(name string) Stream
+	// Track is a stream one of the task's inputs produces or will produce, for
+	// Outputs Attach adds before that stream's first media arrives.
+	Track(input InputSpec, stream av.Stream) Stream
+	// Attach adds Outputs to the running task, each fed from a task.Tap or
+	// task.Track stream. One call applies them atomically: a later Output may
+	// read a tap an earlier one declares, and a failure rolls the group back.
+	Attach(context.Context, ...Output) (Attachment, error)
+	// LegacyAttach adds late branches to the running graph from typed taps. One call
 	// applies all branches atomically: later branches may anchor on taps
 	// published by earlier ones, and a failure rolls the whole group back.
-	Attach(context.Context, ...BranchSpec) (Attachment, error)
+	LegacyAttach(context.Context, ...BranchSpec) (Attachment, error)
 	// Detach removes a runtime branch and any dependent branches anchored on
 	// its taps. By default destinations finalize as closed; DrainBranch or
 	// AbortBranch records a commit/abort outcome for the detached branch.

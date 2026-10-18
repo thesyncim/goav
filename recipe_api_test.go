@@ -1419,7 +1419,7 @@ func TestExpertGraphNodeNamesDoNotCreateTapAnchors(t *testing.T) {
 	if taps := task.Taps(); len(taps) != 0 {
 		t.Fatalf("Taps() = %+v, want no taps inferred from expert graph node names", taps)
 	}
-	_, err = task.Attach(context.Background(),
+	_, err = task.LegacyAttach(context.Background(),
 		goav.Branch("implicit-tap").
 			From(goav.FrameTap("audio.decoded")).
 			To(goav.Sink(component.SinkFunc("implicit-tap", func(context.Context, component.Message) error {
@@ -1430,7 +1430,7 @@ func TestExpertGraphNodeNamesDoNotCreateTapAnchors(t *testing.T) {
 	if !errors.As(err, &buildErr) || buildErr.Code != errcode.Code("runtime_branch_tap_missing") {
 		t.Fatalf("err = %v, want runtime_branch_tap_missing", err)
 	}
-	attachment, err := task.Attach(context.Background(),
+	attachment, err := task.LegacyAttach(context.Background(),
 		goav.Branch("levels").
 			From(decode).
 			To(goav.Sink(component.SinkFunc("levels", func(context.Context, component.Message) error {

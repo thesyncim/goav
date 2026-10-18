@@ -147,7 +147,7 @@ func TestTaskSnapshotReportsCommittedDestinationAfterRun(t *testing.T) {
 	}
 	defer task.Close()
 
-	attachment, err := task.Attach(ctx, Branch("rec").
+	attachment, err := task.LegacyAttach(ctx, Branch("rec").
 		From(PacketTap("audio.packets")).
 		Copy().
 		To(lifecycleTestSink("rec")))
@@ -209,7 +209,7 @@ func TestTaskAttachDetachPublishesBranchLifecycleEvents(t *testing.T) {
 	defer task.Close()
 
 	events := task.Watch(inspect.WatchTypes(av.EventBranchAttached, av.EventBranchDetached)).Events()
-	attachment, err := task.Attach(ctx, Branch("rec").
+	attachment, err := task.LegacyAttach(ctx, Branch("rec").
 		From(PacketTap("audio.packets")).
 		Copy().
 		To(lifecycleTestSink("rec")))
@@ -255,7 +255,7 @@ func TestTaskDetachPublishesDestinationLifecycleEvents(t *testing.T) {
 	defer task.Close()
 
 	events := task.Watch(inspect.WatchTypes(av.EventDestinationCommitted, av.EventDestinationAborted, av.EventDestinationCommitError)).Events()
-	attachment, err := task.Attach(ctx, Branch("rec").
+	attachment, err := task.LegacyAttach(ctx, Branch("rec").
 		From(PacketTap("audio.packets")).
 		Copy().
 		To(lifecycleTestSink("rec")))
@@ -316,7 +316,7 @@ func TestTaskDetachOptionsReportDestinationOutcome(t *testing.T) {
 		{name: "rec-abort", dest: "rec-abort", options: []lifecycle.DetachOption{lifecycle.AbortBranch()}, want: lifecycle.DestinationAborted},
 	}
 	for _, tt := range tests {
-		attachment, err := task.Attach(ctx, Branch(tt.name).
+		attachment, err := task.LegacyAttach(ctx, Branch(tt.name).
 			From(PacketTap("audio.packets")).
 			Copy().
 			To(lifecycleTestSink(tt.dest)))
@@ -351,7 +351,7 @@ func TestTaskSnapshotReportsFailedTaskAndAbortedDestination(t *testing.T) {
 	}
 	defer task.Close()
 
-	if _, err := task.Attach(ctx, Branch("rec").
+	if _, err := task.LegacyAttach(ctx, Branch("rec").
 		From(PacketTap("audio.packets")).
 		Copy().
 		To(lifecycleTestSink("rec"))); err != nil {

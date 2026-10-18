@@ -54,7 +54,7 @@ func TestMixTapDeliversMixedFramesToRuntimeBranch(t *testing.T) {
 	// Attaching a runtime branch from the join tap uses the same machinery as
 	// chain taps and receives the MIXED frames.
 	var tapped [][]int16
-	attachment, err := task.Attach(ctx, Branch("monitor").
+	attachment, err := task.LegacyAttach(ctx, Branch("monitor").
 		From(FrameTap("mixed")).
 		To(joinTestCollectSink("monitor", &tapped)))
 	if err != nil {

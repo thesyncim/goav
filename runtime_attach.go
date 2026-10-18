@@ -193,7 +193,7 @@ type Attachment interface {
 // into a workPatch — the plan — opens its destinations, and then applies the
 // patch atomically to the running graph: a failed attach rolls every applied
 // node back and leaves the task unchanged.
-func (t *task) Attach(ctx context.Context, specs ...BranchSpec) (Attachment, error) {
+func (t *task) LegacyAttach(ctx context.Context, specs ...BranchSpec) (Attachment, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}

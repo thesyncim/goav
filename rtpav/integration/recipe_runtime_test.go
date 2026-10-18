@@ -512,7 +512,7 @@ func TestTaskAttachCustomWriterDestinationRuns(t *testing.T) {
 		goav.Format(av.FormatOgg),
 		goav.MIME("audio/ogg"),
 	)
-	attachment, err := task.Attach(ctx,
+	attachment, err := task.LegacyAttach(ctx,
 		goav.Branch("late").
 			From(goav.PacketTap("audio.packets")).
 			Copy().
@@ -605,7 +605,7 @@ func TestTaskAttachCustomWriterDestinationAbortsOnPatchFailure(t *testing.T) {
 		goav.Format(av.FormatOgg),
 		goav.MIME("audio/ogg"),
 	)
-	_, err = task.Attach(ctx,
+	_, err = task.LegacyAttach(ctx,
 		goav.Branch("late").
 			From(goav.PacketTap("audio.packets")).
 			Do(component.PacketFunc("meter", func(_ context.Context, packet *av.Packet, emit component.Emit) error {
@@ -1000,7 +1000,7 @@ func TestStreamRecipeCopyTapCanAttachRuntimeMuxDestination(t *testing.T) {
 		t.Fatalf("copied tap = %+v, want packet Opus audio tap on select-audio", copiedTap)
 	}
 
-	recording, err := task.Attach(ctx, goav.Branch("record").
+	recording, err := task.LegacyAttach(ctx, goav.Branch("record").
 		From(goav.PacketTap("audio.copied")).
 		Copy().
 		To(goav.Write("recording.ogg", io.Discard)))

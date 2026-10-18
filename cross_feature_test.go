@@ -452,7 +452,7 @@ func TestSegmentAttachMidWindowCommitsAtEOS(t *testing.T) {
 		t.Fatal(ctx.Err())
 	}
 	var recorded atomic.Int32
-	if _, err := task.Attach(ctx, Branch("rec").
+	if _, err := task.LegacyAttach(ctx, Branch("rec").
 		From(PacketTap("audio.packets")).
 		Copy().
 		To(Sink(SinkFunc("rec", func(_ context.Context, msg Message) error {
@@ -590,7 +590,7 @@ func TestRebranchSwapsBranchOnJoinTap(t *testing.T) {
 	}
 	defer task.Close()
 
-	attachment, err := task.Attach(ctx, Branch("watch").
+	attachment, err := task.LegacyAttach(ctx, Branch("watch").
 		From(FrameTap("mixed")).
 		To(old.sink("old")))
 	if err != nil {
@@ -658,7 +658,7 @@ func TestPauseResumeBranchOnJoinTap(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer task.Close()
-	attachment, err := task.Attach(ctx, Branch("watch").
+	attachment, err := task.LegacyAttach(ctx, Branch("watch").
 		From(FrameTap("mixed")).
 		To(watched.sink("watch")))
 	if err != nil {
@@ -730,7 +730,7 @@ func TestDetachBranchOnTapArmAnchorKeepsJoin(t *testing.T) {
 	}
 	defer task.Close()
 
-	attachment, err := task.Attach(ctx, Branch("monitor").
+	attachment, err := task.LegacyAttach(ctx, Branch("monitor").
 		From(FrameTap("dry")).
 		To(joinTestCollectSink("monitor", &monitored)))
 	if err != nil {

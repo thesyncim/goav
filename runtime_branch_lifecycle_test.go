@@ -22,7 +22,7 @@ import (
 const lifecycleTapName = "video.decoded"
 
 type branchMutator interface {
-	Attach(context.Context, ...goav.BranchSpec) (goav.Attachment, error)
+	LegacyAttach(context.Context, ...goav.BranchSpec) (goav.Attachment, error)
 	Detach(context.Context, goav.Attachment, ...lifecycle.DetachOption) error
 }
 
@@ -144,7 +144,7 @@ func decodedVideoTapTask(t *testing.T, ctx context.Context, input goav.InputSpec
 
 func attachDropBranch(t *testing.T, ctx context.Context, task branchMutator, name string, sink pipeline.Sink) goav.Attachment {
 	t.Helper()
-	attachment, err := task.Attach(ctx, goav.Branch(name).
+	attachment, err := task.LegacyAttach(ctx, goav.Branch(name).
 		From(goav.FrameTap(lifecycleTapName)).
 		Buffer(flow.DropOldest(8)).
 		Resize(64, 64).
@@ -283,7 +283,7 @@ func TestRuntimeBranchEncodesVP9ThroughDropBuffer(t *testing.T) {
 	waitFrameCount(ctx, &main.count, 1)
 
 	vp9 := &packetCountSink{name: "vp9"}
-	attachment, err := task.Attach(ctx, goav.Branch("vp9").
+	attachment, err := task.LegacyAttach(ctx, goav.Branch("vp9").
 		From(goav.FrameTap(lifecycleTapName)).
 		Buffer(flow.DropOldest(8)).
 		Resize(64, 64).

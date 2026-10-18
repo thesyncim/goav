@@ -173,7 +173,7 @@ func TestStressAttachDetachUnderLoadWithSlowWatchers(t *testing.T) {
 		go func(g int) {
 			defer churn.Done()
 			for i := range cycles {
-				attachment, err := task.Attach(ctx, Branch(fmt.Sprintf("mon-%d-%d", g, i)).
+				attachment, err := task.LegacyAttach(ctx, Branch(fmt.Sprintf("mon-%d-%d", g, i)).
 					From(FrameTap("load.frames")).
 					To(Sink(SinkFunc("watch", func(context.Context, Message) error { return nil }))))
 				if err != nil {

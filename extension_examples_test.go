@@ -255,7 +255,7 @@ func ExampleTask_flowchart() {
 		return
 	}
 	preview := goavtest.NewCollector()
-	if _, err := task.Attach(ctx, goav.Branch("preview").From(goav.FrameTap("frames")).To(preview.Sink())); err != nil {
+	if _, err := task.LegacyAttach(ctx, goav.Branch("preview").From(goav.FrameTap("frames")).To(preview.Sink())); err != nil {
 		fmt.Println(err)
 		_ = task.Close()
 		return

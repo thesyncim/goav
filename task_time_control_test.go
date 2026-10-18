@@ -362,7 +362,7 @@ func TestTaskSegmentExportCommitsDestination(t *testing.T) {
 	}
 	defer task.Close()
 
-	if _, err := task.Attach(ctx, Branch("rec").
+	if _, err := task.LegacyAttach(ctx, Branch("rec").
 		From(PacketTap("audio.packets")).
 		Copy().
 		To(lifecycleTestSink("rec"))); err != nil {

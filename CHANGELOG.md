@@ -11,6 +11,14 @@ methodology changes, and migration notes.
 
 ## Unreleased
 
+- Running tasks and dynamic streams take values too. `task.Tap(name)` and
+  `task.Track(input, stream)` are Streams of a running task, and
+  `task.Attach(ctx, outputs...)` adds Outputs built from them, atomically.
+  `input.OnStream(match)` is each stream the input discovers that `match`
+  selects; Outputs built from it attach per stream beside the recipe's other
+  Outputs. Breaking: the branch form is `task.LegacyAttach(ctx, branches...)`
+  until the builder grammar goes away.
+
 - Recipes can be written as values. An input's `Video()`, `Audio()`, or
   `Stream()` is a `goav.Stream`; operations (`Decode`, `Encode`, `Resize`,
   `Resample`, `Do`, `Playout`, `Sync`, `Tap`, `Buffer`, `Auto`, `Require`,

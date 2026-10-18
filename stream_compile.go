@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/plan"
@@ -159,6 +160,9 @@ func compileInputOutputs(paths []streamPath) (*Job, error) {
 	byRoot := map[*streamRoot][]streamPath{}
 	for _, path := range paths {
 		root := path.root()
+		if root.tap != "" || root.track != nil {
+			return nil, streamInvalidError(root.tap, "a stream from task.Tap or task.Track attaches to that running task: task.Attach(ctx, outputs...)")
+		}
 		if root.input.id == nil {
 			return nil, streamInvalidError("", "the stream's input was not constructed: use goav.FileInput, goav.Input, or goav.Source")
 		}
@@ -174,6 +178,10 @@ func compileInputOutputs(paths []streamPath) (*Job, error) {
 	job := From(inputs...)
 	names := streamBranchNames{}
 	for _, root := range roots {
+		if root.rule != nil {
+			job.OnStream(*root.rule, streamBranchSpecs(byRoot[root], inputStartsFrameDomain(root.input), names, nil)...)
+			continue
+		}
 		options := append([]StreamOption(nil), root.options...)
 		if len(inputs) > 1 {
 			options = append(options, InputName(root.input.inputName(root.input.graphSourceNodeName())))
@@ -604,4 +612,67 @@ func workLeaf(nodes []*streamNode) *streamNode {
 		i--
 	}
 	return nodes[i]
+}
+
+// streamBranchSpecs lowers the Outputs of a stream that starts at a branch
+// anchor (a discovered stream, a live tap) into one branch per distinct work
+// leaf. A packet branch that never decodes copies.
+func streamBranchSpecs(paths []streamPath, frames bool, names streamBranchNames, from branchSource) []BranchSpec {
+	leaves := groupLeaves(paths)
+	branches := make([]BranchSpec, 0, len(leaves))
+	for _, leaf := range leaves {
+		ops := leaf.nodes[1:]
+		branch := Branch(names.next(leaf))
+		if from != nil {
+			branch.From(from)
+		}
+		if !frames && !pathHasOp(ops, streamOpDecode) {
+			branch.Copy()
+		}
+		applyBranchOps(branch, ops, frames)
+		branches = append(branches, branch.To(leaf.dests...))
+	}
+	return branches
+}
+
+// Tap is the stream at one of the task's taps.
+func (t *task) Tap(name string) Stream {
+	return Stream{node: &streamNode{root: &streamRoot{tap: name}}}
+}
+
+// Track is a stream one of the task's inputs produces.
+func (t *task) Track(input InputSpec, stream av.Stream) Stream {
+	return Stream{node: &streamNode{root: &streamRoot{input: input, track: &stream}}}
+}
+
+// Attach adds Outputs fed from the task's taps and tracks to the running task.
+func (t *task) Attach(ctx context.Context, outs ...Output) (Attachment, error) {
+	names := streamBranchNames{}
+	var branches []BranchSpec
+	for i := range outs {
+		if outs[i].remux != nil || len(outs[i].dests) == 0 {
+			return nil, streamInvalidError("", "attach Outputs built from task.Tap(name) or task.Track(input, stream), each routed with .To(destination)")
+		}
+		nodes, err := streamNodes(outs[i].stream)
+		if err != nil {
+			return nil, err
+		}
+		root := nodes[0].root
+		path := []streamPath{{nodes: nodes, dests: outs[i].dests}}
+		switch {
+		case root.tap != "":
+			frames := false
+			for _, tap := range t.Taps() {
+				if tap.Name == root.tap {
+					frames = tap.Domain == shape.DomainFrame
+				}
+			}
+			branches = append(branches, streamBranchSpecs(path, frames, names, streamTapRef(root.tap, frames))...)
+		case root.track != nil:
+			branches = append(branches, streamBranchSpecs(path, false, names, root.input.Track(*root.track))...)
+		default:
+			return nil, streamInvalidError("", "a running task attaches streams from its taps and tracks: task.Tap(name), task.Track(input, stream)")
+		}
+	}
+	return t.LegacyAttach(ctx, branches...)
 }

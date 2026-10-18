@@ -2724,9 +2724,17 @@ func (t *fakeTask) Explain(context.Context) (plan.Report, error) {
 	return plan.Report{Graph: t.spec}, nil
 }
 
-func (t *fakeTask) Attach(context.Context, ...goav.BranchSpec) (goav.Attachment, error) {
+func (t *fakeTask) LegacyAttach(context.Context, ...goav.BranchSpec) (goav.Attachment, error) {
 	return nil, errors.New("not implemented")
 }
+
+func (t *fakeTask) Attach(context.Context, ...goav.Output) (goav.Attachment, error) {
+	return nil, errors.New("not implemented")
+}
+
+func (t *fakeTask) Tap(string) goav.Stream { return goav.Stream{} }
+
+func (t *fakeTask) Track(goav.InputSpec, av.Stream) goav.Stream { return goav.Stream{} }
 
 func (t *fakeTask) Detach(context.Context, goav.Attachment, ...lifecycle.DetachOption) error {
 	return nil

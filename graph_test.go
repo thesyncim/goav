@@ -155,7 +155,7 @@ func TestTaskAttachBranchesAndStopsWhileDirectGraphRuns(t *testing.T) {
 	case <-ctx.Done():
 		t.Fatal(ctx.Err())
 	}
-	attachment, err := task.Attach(ctx, Branch("screenshots").From(src).Do(stage).To(Sink(late)))
+	attachment, err := task.LegacyAttach(ctx, Branch("screenshots").From(src).Do(stage).To(Sink(late)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -266,11 +266,11 @@ func TestTaskDetachClosesRuntimeBranches(t *testing.T) {
 	case <-ctx.Done():
 		t.Fatal(ctx.Err())
 	}
-	left, err := task.Attach(ctx, Branch("left").From(src).Do(leftStage).To(Sink(leftSink)))
+	left, err := task.LegacyAttach(ctx, Branch("left").From(src).Do(leftStage).To(Sink(leftSink)))
 	if err != nil {
 		t.Fatal(err)
 	}
-	right, err := task.Attach(ctx, Branch("right").From(src).Do(rightStage).To(Sink(rightSink)))
+	right, err := task.LegacyAttach(ctx, Branch("right").From(src).Do(rightStage).To(Sink(rightSink)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -327,7 +327,7 @@ func TestTaskAttachRuntimeBranchGroup(t *testing.T) {
 	}
 	defer builtTask.Close()
 
-	attachment, err := builtTask.Attach(ctx,
+	attachment, err := builtTask.LegacyAttach(ctx,
 		Branch("left").From(src).Do(leftStage).To(Sink(leftSink)),
 		Branch("right").From(src).Do(rightStage).To(Sink(rightSink)),
 	)
@@ -389,7 +389,7 @@ func TestTaskAttachRuntimeBranchGroupCanUsePendingTap(t *testing.T) {
 	}
 	defer builtTask.Close()
 
-	attachment, err := builtTask.Attach(ctx,
+	attachment, err := builtTask.LegacyAttach(ctx,
 		Branch("sampler").
 			From(src).
 			Do(parentStage).
@@ -521,7 +521,7 @@ func TestTaskAttachRuntimeBranchGroupRollsBackOnLaterFailure(t *testing.T) {
 	left := &runtimeTestSink{name: "left-sink"}
 	right := &runtimeTestSink{name: "right-sink"}
 
-	_, err := task.Attach(ctx,
+	_, err := task.LegacyAttach(ctx,
 		Branch("left").From(graphNode{name: "source"}).To(Sink(left)),
 		Branch("right").From(graphNode{name: "source"}).To(Sink(right)),
 	)
@@ -564,7 +564,7 @@ func TestTaskAttachRuntimeBranchGroupSharesOneSinkHandle(t *testing.T) {
 		return nil
 	}))
 
-	attachment, err := task.Attach(ctx,
+	attachment, err := task.LegacyAttach(ctx,
 		Branch("left").From(src).To(destination),
 		Branch("right").From(src).To(destination),
 	)
@@ -606,7 +606,7 @@ func TestTaskAttachRuntimeBranchGroupRejectsDuplicateSinkDestinationNames(t *tes
 		return nil
 	}))
 
-	_, err = task.Attach(ctx,
+	_, err = task.LegacyAttach(ctx,
 		Branch("left").From(src).To(left),
 		Branch("right").From(src).To(right),
 	)
@@ -636,7 +636,7 @@ func TestTaskAttachRuntimeBranchGroupRejectsDuplicateMuxDestinations(t *testing.
 	left := Write("shared.ogg", io.Discard, Format(av.FormatOgg))
 	right := Write("shared.ogg", io.Discard, Format(av.FormatOgg))
 
-	_, err = task.Attach(ctx,
+	_, err = task.LegacyAttach(ctx,
 		Branch("left").From(src).To(left),
 		Branch("right").From(src).To(right),
 	)
@@ -711,7 +711,7 @@ func TestTaskAttachRuntimeBranchGroupSharesMuxDestination(t *testing.T) {
 	defer builtTask.Close()
 	destination := Write("recording.ogg", io.Discard, Format(av.FormatOgg))
 
-	attachment, err := builtTask.Attach(ctx,
+	attachment, err := builtTask.LegacyAttach(ctx,
 		Branch("audio").From(PacketTap("audio.packets")).Copy().To(destination),
 		Branch("video").From(PacketTap("video.packets")).Copy().To(destination),
 	)
@@ -764,7 +764,7 @@ func TestTaskAttachRuntimeBranchGroupRequiresBranch(t *testing.T) {
 	}
 	defer task.Close()
 
-	_, err = task.Attach(ctx)
+	_, err = task.LegacyAttach(ctx)
 	var buildErr *BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "runtime_branch_invalid" || !errors.Is(err, errUnsupportedBuild) {
 		t.Fatalf("err = %v, want runtime_branch_invalid with matching BuildError code", err)
@@ -785,7 +785,7 @@ func TestTaskCloseStopsRuntimeAttachments(t *testing.T) {
 	}
 	stage := &runtimeTestStage{name: "stage"}
 	sink := &runtimeTestSink{name: "sink"}
-	attachment, err := task.Attach(context.Background(), Branch("close").From(source).Do(stage).To(Sink(sink)))
+	attachment, err := task.LegacyAttach(context.Background(), Branch("close").From(source).Do(stage).To(Sink(sink)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -821,7 +821,7 @@ func TestTaskAttachRuntimeBranchExposesNestedTap(t *testing.T) {
 	}
 	defer task.Close()
 
-	parent, err := task.Attach(ctx,
+	parent, err := task.LegacyAttach(ctx,
 		Branch("sampler").
 			From(src).
 			Do(parentStage).
@@ -836,7 +836,7 @@ func TestTaskAttachRuntimeBranchExposesNestedTap(t *testing.T) {
 		t.Fatalf("tap = %+v, ok=%v, want sampler/sample", tap, ok)
 	}
 
-	child, err := task.Attach(ctx, Branch("screenshots").From(PacketTap("video.sampled")).Copy().To(Sink(childSink)))
+	child, err := task.LegacyAttach(ctx, Branch("screenshots").From(PacketTap("video.sampled")).Copy().To(Sink(childSink)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -873,7 +873,7 @@ func TestTaskAttachRejectsDuplicateRuntimeTap(t *testing.T) {
 	}
 	defer task.Close()
 
-	first, err := task.Attach(ctx,
+	first, err := task.LegacyAttach(ctx,
 		Branch("first").
 			From(src).
 			Do(&runtimeTestStage{name: "stage"}).
@@ -885,7 +885,7 @@ func TestTaskAttachRejectsDuplicateRuntimeTap(t *testing.T) {
 	}
 	defer first.Close(ctx)
 
-	_, err = task.Attach(ctx,
+	_, err = task.LegacyAttach(ctx,
 		Branch("second").
 			From(src).
 			Do(&runtimeTestStage{name: "stage"}).
@@ -942,7 +942,7 @@ func TestTaskAttachRuntimeResizeBranchRunsFromFrameTap(t *testing.T) {
 	}}
 	defer mediaTask.Close()
 
-	attachment, err := mediaTask.Attach(ctx, Branch("small").
+	attachment, err := mediaTask.LegacyAttach(ctx, Branch("small").
 		From(FrameTap("video.frames")).
 		Resize(320, 180).
 		To(Sink(resized)))
@@ -1018,7 +1018,7 @@ func TestTaskAttachBufferedBranchAfterRuntimeResizeTapWhileRunning(t *testing.T)
 	case <-ctx.Done():
 		t.Fatal(ctx.Err())
 	}
-	parent, err := mediaTask.Attach(ctx, Branch("thumb").
+	parent, err := mediaTask.LegacyAttach(ctx, Branch("thumb").
 		From(FrameTap("video.frames")).
 		Resize(320, 180).
 		Tap(FrameTap("video.320.frames")).
@@ -1040,7 +1040,7 @@ func TestTaskAttachBufferedBranchAfterRuntimeResizeTapWhileRunning(t *testing.T)
 		resizedTap.Node != "thumb/resize-thumb" {
 		t.Fatalf("resized tap = %+v ok=%v, want frame video 320x180 tap on thumb/resize-thumb", resizedTap, ok)
 	}
-	child, err := mediaTask.Attach(ctx, Branch("inspect").
+	child, err := mediaTask.LegacyAttach(ctx, Branch("inspect").
 		From(FrameTap("video.320.frames")).
 		To(Sink(inspect)))
 	if err != nil {
@@ -1134,7 +1134,7 @@ func TestTaskDetachBufferedRuntimeResizeTapSubtreeStopsFutureMessages(t *testing
 		t.Fatal(ctx.Err())
 	}
 	waitDelivered(t, ctx, base)
-	parent, err := mediaTask.Attach(ctx, Branch("thumb").
+	parent, err := mediaTask.LegacyAttach(ctx, Branch("thumb").
 		From(FrameTap("video.frames")).
 		Buffer(flow.Blocking(2)).
 		Resize(320, 180).
@@ -1152,7 +1152,7 @@ func TestTaskDetachBufferedRuntimeResizeTapSubtreeStopsFutureMessages(t *testing
 		resizedTap.Node != "thumb/resize-thumb" {
 		t.Fatalf("resized tap = %+v ok=%v, want frame video 320x180 tap on thumb/resize-thumb", resizedTap, ok)
 	}
-	child, err := mediaTask.Attach(ctx, Branch("inspect").
+	child, err := mediaTask.LegacyAttach(ctx, Branch("inspect").
 		From(FrameTap("video.320.frames")).
 		Buffer(flow.Blocking(2)).
 		To(Sink(inspect)))
@@ -1272,7 +1272,7 @@ func TestTaskDetachBufferedRuntimeResampleTapSubtreeStopsFutureMessages(t *testi
 		t.Fatal(ctx.Err())
 	}
 	waitDelivered(t, ctx, base)
-	parent, err := mediaTask.Attach(ctx, Branch("voice").
+	parent, err := mediaTask.LegacyAttach(ctx, Branch("voice").
 		From(FrameTap("audio.frames")).
 		Buffer(flow.Blocking(2)).
 		Resample(16_000, codec.Mono).
@@ -1291,7 +1291,7 @@ func TestTaskDetachBufferedRuntimeResampleTapSubtreeStopsFutureMessages(t *testi
 		resampledTap.Node != "voice/resample-voice" {
 		t.Fatalf("resampled tap = %+v ok=%v, want frame audio 16k mono tap on voice/resample-voice", resampledTap, ok)
 	}
-	child, err := mediaTask.Attach(ctx, Branch("monitor").
+	child, err := mediaTask.LegacyAttach(ctx, Branch("monitor").
 		From(FrameTap("audio.16k")).
 		Buffer(flow.Blocking(2)).
 		To(Sink(monitor)))
@@ -1397,7 +1397,7 @@ func TestTaskAttachRejectsDuplicateTapAfterRuntimeFilterOpenAndClosesFilter(t *t
 	defer mediaTask.Close()
 	before := mediaTask.Describe()
 
-	_, err = mediaTask.Attach(ctx, Branch("voice").
+	_, err = mediaTask.LegacyAttach(ctx, Branch("voice").
 		From(FrameTap("audio.frames")).
 		Resample(16_000, codec.Mono).
 		Tap(FrameTap("audio.16k")).
@@ -1465,7 +1465,7 @@ func TestTaskAttachRollsBackRuntimeFilterWhenGraphConnectFails(t *testing.T) {
 	}
 	before := mediaTask.Describe()
 
-	_, err := mediaTask.Attach(ctx, Branch("voice").
+	_, err := mediaTask.LegacyAttach(ctx, Branch("voice").
 		From(FrameTap("audio.frames")).
 		Resample(16_000, codec.Mono).
 		Tap(FrameTap("audio.16k")).
@@ -1542,7 +1542,7 @@ func TestTaskAttachRollsBackRuntimeTerminalStageWhenGraphConnectFails(t *testing
 	}
 	before := mediaTask.Describe()
 
-	_, err := mediaTask.Attach(ctx, Branch("archive").
+	_, err := mediaTask.LegacyAttach(ctx, Branch("archive").
 		From(FrameTap("audio.frames")).
 		Resample(16_000, codec.Mono).
 		Encode(codec.Opus(codec.Bitrate(96_000))).
@@ -1624,7 +1624,7 @@ func TestTaskAttachRollsBackRuntimeSinkDestinationWhenGraphConnectFails(t *testi
 	}
 	before := mediaTask.Describe()
 
-	_, err := mediaTask.Attach(ctx, Branch("monitor").
+	_, err := mediaTask.LegacyAttach(ctx, Branch("monitor").
 		From(FrameTap("audio.frames")).
 		Resample(16_000, codec.Mono).
 		To(Sink(sink)))
@@ -1707,7 +1707,7 @@ func TestTaskAttachAfterCloseClosesPreparedRuntimeComponents(t *testing.T) {
 	}
 	before := builtTask.Describe()
 
-	_, err = builtTask.Attach(ctx, Branch("archive").
+	_, err = builtTask.LegacyAttach(ctx, Branch("archive").
 		From(FrameTap("audio.frames")).
 		Resample(16_000, codec.Mono).
 		Encode(codec.Opus(codec.Bitrate(96_000))).
@@ -1791,7 +1791,7 @@ func TestTaskAttachClosesPreparedComponentsWhenRuntimeNodeNameExists(t *testing.
 	}}
 	before := builtTask.Describe()
 
-	_, err = builtTask.Attach(ctx, Branch("archive").
+	_, err = builtTask.LegacyAttach(ctx, Branch("archive").
 		From(FrameTap("audio.frames")).
 		Resample(16_000, codec.Mono).
 		Encode(codec.Opus(codec.Bitrate(96_000))).
@@ -1841,7 +1841,7 @@ func TestTaskAttachRejectsUnknownAnchor(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = task.Attach(context.Background(), Branch("late").From(graphNode{name: "missing"}).To(Sink(&runtimeTestSink{name: "late"})))
+	_, err = task.LegacyAttach(context.Background(), Branch("late").From(graphNode{name: "missing"}).To(Sink(&runtimeTestSink{name: "late"})))
 	var buildErr *BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "runtime_branch_anchor_missing" || !errors.Is(err, pipeline.ErrUnknownNode) {
 		t.Fatalf("err = %v, want runtime_branch_anchor_missing wrapping ErrUnknownNode", err)
@@ -1876,7 +1876,7 @@ func TestTaskAttachBranchesWhileBufferedGraphRuns(t *testing.T) {
 	case <-ctx.Done():
 		t.Fatal(ctx.Err())
 	}
-	attachment, err := task.Attach(ctx, Branch("late").From(src).To(Sink(late)))
+	attachment, err := task.LegacyAttach(ctx, Branch("late").From(src).To(Sink(late)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1942,7 +1942,7 @@ func TestTaskDetachBufferedBranchStopsFutureMessagesAndKeepsStats(t *testing.T) 
 		t.Fatal(ctx.Err())
 	}
 	waitDelivered(t, ctx, base)
-	attachment, err := task.Attach(ctx,
+	attachment, err := task.LegacyAttach(ctx,
 		Branch("late").
 			From(src).
 			Buffer(flow.Blocking(2, flow.BufferCopyBounds(1, 0))).
@@ -2019,7 +2019,7 @@ func TestTaskAttachDetachBufferedBranchStress(t *testing.T) {
 	}()
 	for i := range 100 {
 		late := &runtimeStressSink{name: "late", received: make(chan struct{}, 1)}
-		attachment, err := task.Attach(ctx, Branch(fmt.Sprintf("late-%d", i)).
+		attachment, err := task.LegacyAttach(ctx, Branch(fmt.Sprintf("late-%d", i)).
 			From(src).
 			Buffer(flow.Blocking(2)).
 			To(Sink(late)))
@@ -2102,7 +2102,7 @@ func TestTaskAttachBufferedPacketCopyMuxBranchWhileRunning(t *testing.T) {
 	case <-ctx.Done():
 		t.Fatal(ctx.Err())
 	}
-	attachment, err := builtTask.Attach(ctx, Branch("record").
+	attachment, err := builtTask.LegacyAttach(ctx, Branch("record").
 		From(PacketTap("audio.packets")).
 		Copy().
 		To(Write("recording.ogg", io.Discard)))
@@ -2185,7 +2185,7 @@ func TestTaskAttachBufferedCopyBranchPublishesPacketTapWhileRunning(t *testing.T
 	case <-ctx.Done():
 		t.Fatal(ctx.Err())
 	}
-	parent, err := builtTask.Attach(ctx, Branch("copy").
+	parent, err := builtTask.LegacyAttach(ctx, Branch("copy").
 		From(PacketTap("audio.packets")).
 		Buffer(flow.Blocking(2, flow.BufferCopyBounds(1, 0))).
 		Copy().
@@ -2202,7 +2202,7 @@ func TestTaskAttachBufferedCopyBranchPublishesPacketTapWhileRunning(t *testing.T
 		copiedTap.Node != "source" {
 		t.Fatalf("copied tap = %+v ok=%v, want packet Opus tap on source", copiedTap, ok)
 	}
-	child, err := builtTask.Attach(ctx, Branch("record").
+	child, err := builtTask.LegacyAttach(ctx, Branch("record").
 		From(PacketTap("audio.copied")).
 		Buffer(flow.Blocking(2, flow.BufferCopyBounds(1, 0))).
 		Copy().
@@ -2290,7 +2290,7 @@ func TestTaskAttachBufferedEncodeMuxBranchWhileRunning(t *testing.T) {
 	case <-ctx.Done():
 		t.Fatal(ctx.Err())
 	}
-	attachment, err := builtTask.Attach(ctx, Branch("record").
+	attachment, err := builtTask.LegacyAttach(ctx, Branch("record").
 		From(FrameTap("audio.frames")).
 		Buffer(flow.Blocking(2, flow.BufferCopyBounds(1, 0))).
 		Encode(codec.Opus(codec.Bitrate(96_000))).
@@ -2391,7 +2391,7 @@ func TestTaskAttachBufferedFlowEncodeMuxBranchWhileRunning(t *testing.T) {
 	}
 	meter := &runtimeTestStage{name: "meter"}
 	archive := Flow("archive").Audio().Do(meter).Encode(codec.Opus(codec.Bitrate(128_000), codec.Channels(codec.Stereo)))
-	attachment, err := builtTask.Attach(ctx, Branch("archive").
+	attachment, err := builtTask.LegacyAttach(ctx, Branch("archive").
 		From(FrameTap("audio.frames")).
 		Buffer(flow.Blocking(2, flow.BufferCopyBounds(1, 0))).
 		Apply(archive).
@@ -2488,7 +2488,7 @@ func TestTaskAttachBufferedBranchPublishesPostEncodeTapWhileRunning(t *testing.T
 	case <-ctx.Done():
 		t.Fatal(ctx.Err())
 	}
-	parent, err := builtTask.Attach(ctx, Branch("archive").
+	parent, err := builtTask.LegacyAttach(ctx, Branch("archive").
 		From(FrameTap("audio.frames")).
 		Buffer(flow.Blocking(2, flow.BufferCopyBounds(1, 0))).
 		Encode(codec.Opus(codec.Bitrate(96_000))).
@@ -2505,7 +2505,7 @@ func TestTaskAttachBufferedBranchPublishesPostEncodeTapWhileRunning(t *testing.T
 		encodedTap.Node != "archive/encode-archive" {
 		t.Fatalf("encoded tap = %+v ok=%v, want packet Opus tap on archive/encode-archive", encodedTap, ok)
 	}
-	child, err := builtTask.Attach(ctx, Branch("record").
+	child, err := builtTask.LegacyAttach(ctx, Branch("record").
 		From(PacketTap("audio.encoded")).
 		Buffer(flow.Blocking(2, flow.BufferCopyBounds(1, 0))).
 		Copy().
@@ -2604,7 +2604,7 @@ func TestTaskDetachBufferedPostEncodeTapSubtreeStopsFutureMessages(t *testing.T)
 		t.Fatal(ctx.Err())
 	}
 	waitDelivered(t, ctx, base)
-	parent, err := builtTask.Attach(ctx, Branch("archive").
+	parent, err := builtTask.LegacyAttach(ctx, Branch("archive").
 		From(FrameTap("audio.frames")).
 		Buffer(flow.Blocking(2, flow.BufferCopyBounds(1, 0))).
 		Encode(codec.Opus(codec.Bitrate(96_000))).
@@ -2613,7 +2613,7 @@ func TestTaskDetachBufferedPostEncodeTapSubtreeStopsFutureMessages(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	child, err := builtTask.Attach(ctx, Branch("copy").
+	child, err := builtTask.LegacyAttach(ctx, Branch("copy").
 		From(PacketTap("audio.encoded")).
 		Buffer(flow.Blocking(2, flow.BufferCopyBounds(1, 0))).
 		Copy().
@@ -2727,7 +2727,7 @@ func TestTaskDetachBufferedCustomStageTapSubtreeStopsFutureMessages(t *testing.T
 		t.Fatal(ctx.Err())
 	}
 	waitDelivered(t, ctx, base)
-	parent, err := builtTask.Attach(ctx, Branch("analysis").
+	parent, err := builtTask.LegacyAttach(ctx, Branch("analysis").
 		From(FrameTap("audio.frames")).
 		Buffer(flow.Blocking(2)).
 		Do(meter).
@@ -2736,7 +2736,7 @@ func TestTaskDetachBufferedCustomStageTapSubtreeStopsFutureMessages(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	child, err := builtTask.Attach(ctx, Branch("dependent").
+	child, err := builtTask.LegacyAttach(ctx, Branch("dependent").
 		From(FrameTap("audio.metered")).
 		Buffer(flow.Blocking(2)).
 		To(Sink(dependent)))

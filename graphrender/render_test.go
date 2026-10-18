@@ -448,7 +448,7 @@ func TestRenderTaskFlowchartReadsLiveTaskSnapshot(t *testing.T) {
 	}
 	defer task.Close()
 
-	attachment, err := task.Attach(ctx, goav.Branch("preview").
+	attachment, err := task.LegacyAttach(ctx, goav.Branch("preview").
 		From(goav.PacketTap("pkts")).
 		Copy().
 		To(goavtest.NewCollector().Sink()))

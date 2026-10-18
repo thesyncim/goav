@@ -41,7 +41,7 @@ func TestPacketCustomStageRunsOnPacketDomain(t *testing.T) {
 	}
 	defer task.Close()
 
-	if _, err := task.Attach(ctx,
+	if _, err := task.LegacyAttach(ctx,
 		goav.Branch("meter").
 			From(goav.PacketTap("audio.packets")).
 			Do(meter).

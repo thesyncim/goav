@@ -403,7 +403,7 @@ func BenchmarkAttachDetachUnderLoad(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		attachment, err := task.Attach(ctx, goav.Branch("monitor-"+strconv.Itoa(i)).
+		attachment, err := task.LegacyAttach(ctx, goav.Branch("monitor-"+strconv.Itoa(i)).
 			From(goav.FrameTap("live.frames")).
 			To(benchSink("monitor-sink-"+strconv.Itoa(i))))
 		if err != nil {
