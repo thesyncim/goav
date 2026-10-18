@@ -11,6 +11,9 @@ methodology changes, and migration notes.
 
 ## Unreleased
 
+- Fix: the RTP AV1 depacketizer refuses an OBU element length near the int
+  limit instead of panicking (offset+length wrapped negative). Found by the
+  fuzz smoke.
 - The attach-under-load allocation ceiling is twice its baseline: the benchmark
   counts the concurrent load's allocations too, which vary with scheduling
   (Linux CI measured 681-703 where the attach path itself measures ~510).

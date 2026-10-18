@@ -257,3 +257,16 @@ func TestAV1DepacketizerAllocs(t *testing.T) {
 		t.Fatalf("allocs = %f, want 0", allocs)
 	}
 }
+
+// TestAV1DepacketizerRefusesOverflowingLength: an OBU element length near
+// the int limit must be refused, not wrap offset+length negative.
+func TestAV1DepacketizerRefusesOverflowingLength(t *testing.T) {
+	// Aggregation header with W=0, then a LEB128 of 2^63-1.
+	payload := []byte{0x00, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x7f, 0x01}
+	d := NewAV1Depacketizer(videoTestStream(av.CodecAV1))
+	pkt := &rtp.Packet{Header: rtp.Header{Marker: true}, Payload: payload}
+	out := DepacketizeResult{Packets: make([]av.Packet, 0, 4)}
+	if err := d.PushInto(context.Background(), pkt, PayloadCodec{ClockRate: 90000}, &out); err == nil {
+		t.Fatal("an element length past the payload was accepted")
+	}
+}
