@@ -82,6 +82,9 @@ return `ErrNilStageCallback` or `ErrNilSinkCallback` immediately. The shorter
 `PacketFunc`, `FrameFunc`, `EventFunc`, and `SinkFunc` helpers remain useful
 inside examples and tests, but invalid callbacks are reported later by graph or
 recipe validation.
+A packet stage runs wherever the chain carries packets, after `.Copy()` or as
+a bitstream filter after the encoder: `.Encode(codec.VP8()).Do(sei)`. A frame
+stage there is refused.
 
 RTP: stable. `rtpav.Source` (Pion RTP reader -> packets/events with payload
 maps, loss/timestamp tracking, depacketizers, EOS, feedback),

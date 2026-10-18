@@ -155,7 +155,7 @@ func (g *composeGraph) planBranches(sources []pipeline.NodeRef, branches []branc
 		}
 	}
 	for b := range branches {
-		transforms, err := branchComposePrivateOperationTransforms(branches[b])
+		transforms, encoded, err := branchComposePrivateTransformsAroundEncode(branches[b])
 		if err != nil {
 			return err
 		}
@@ -177,6 +177,16 @@ func (g *composeGraph) planBranches(sources []pipeline.NodeRef, branches []branc
 				detail: encodeNodeDetail(branches[b].request),
 				inputs: []pipeline.NodeRef{upstream},
 				branch: b,
+			})
+		}
+		for _, transform := range encoded {
+			upstream = g.add(composeNode{
+				kind:      composeStep,
+				name:      transform.name,
+				detail:    mediaTransformDetail(transform),
+				inputs:    []pipeline.NodeRef{upstream},
+				branch:    b,
+				transform: transform,
 			})
 		}
 		g.branchOut[b] = upstream

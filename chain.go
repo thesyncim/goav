@@ -543,7 +543,10 @@ func lastStreamTapRef(stream *jobStreamBuild) tapRef {
 func (b *Chain) Do(stages ...pipeline.Stage) *Chain {
 	stream := b.step()
 	for i := range stages {
-		if codecIntentSet(chainEncodeSpec(stream.operations)) {
+		// After .Encode or .Copy the stream is packets: a stage that consumes
+		// packets (a bitstream filter, SEI injection, encryption) runs there;
+		// a frame stage cannot.
+		if codecIntentSet(chainEncodeSpec(stream.operations)) && stageRequiresFrameInput(stages[i]) {
 			b.job.setErr(chainStepAfterEncodeError("build stream", jobStreamName(stream), "custom stage", chainEncodeSpec(stream.operations)))
 			return b
 		}

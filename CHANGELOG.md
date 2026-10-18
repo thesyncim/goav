@@ -11,6 +11,18 @@ methodology changes, and migration notes.
 
 ## Unreleased
 
+- Packet stages run after the encoder and after `.Copy()`. `.Do(...)` after
+  `.Encode(...)` was refused for every stage, so bitstream filters, SEI
+  injection, and packet encryption had no place in a chain; a stage that
+  consumes packets (`component.PacketFunc`) now runs on the encoded packets,
+  in the declared order, and the encoded stream keeps its source stream id. A
+  lone copied stream with steps (`.Copy().Playout(...)`, `.Copy().Do(packetStage)`)
+  lowers too: it was refused with `recipe_graph_unsupported` although the same
+  chain built beside a second stream. Frame stages after `.Encode` or `.Copy`
+  are still refused. `.Encode(...).Playout(...)` and `.Encode(...).Sync(...)`
+  now gate the encoded packets as declared; a lone chain moved the gate ahead of
+  the encoder, pacing frames instead.
+
 - Joins are described and built from the same schedule as everything else:
   the join tree (arm inputs, their event-keeping decodes, conversion stages,
   tap-arm restamps, nested joins, the convergence stage) and its downstream

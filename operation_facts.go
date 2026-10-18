@@ -452,3 +452,56 @@ func mediaTransformsKeyFromOperations(operations operationFacts) string {
 	}
 	return mediaTransformsKey(transforms)
 }
+
+// branchComposePrivateTransformsAroundEncode splits a branch's private steps
+// at its encoder: steps declared before .Encode run on frames, steps after it
+// on the encoded packets (a bitstream filter, SEI injection, encryption).
+func branchComposePrivateTransformsAroundEncode(branch branchComposeRoute) ([]mediaTransform, []mediaTransform, error) {
+	name := branch.name
+	if name == "main" {
+		name = branchComposeSharedStepName(branch.branch)
+	}
+	specs := branch.privateOperations.Operations()
+	var pre, post []mediaTransform
+	transformIndex := 0
+	encoded := false
+	for i := range specs {
+		if specs[i].Kind == plan.OpEncode && !specs[i].Encode.Copy {
+			encoded = true
+			continue
+		}
+		step, err := branchComposeRouteOperationTransform(name, transformIndex, branch.privateOperations, i)
+		if err != nil {
+			return nil, nil, err
+		}
+		if specs[i].Kind == plan.OpTransform && (specs[i].Transform.resize != nil || specs[i].Transform.resample != nil) {
+			transformIndex++
+		}
+		if mediaTransformEmpty(step) {
+			continue
+		}
+		if encoded {
+			post = append(post, step)
+		} else {
+			pre = append(pre, step)
+		}
+	}
+	return pre, post, nil
+}
+
+// operationsHaveStepAfterEncode reports a stage declared after the encoder (a
+// bitstream filter, or a playout or sync gate pacing the encoded packets). The
+// single-stream route keeps only pre-encode filters, so such a chain lowers as
+// a one-branch composition, which keeps the declared order.
+func operationsHaveStepAfterEncode(operations []operationSpec) bool {
+	encoded := false
+	for i := range operations {
+		switch {
+		case operations[i].Kind == plan.OpEncode && !operations[i].Encode.Copy:
+			encoded = true
+		case encoded && operations[i].Kind == plan.OpStage:
+			return true
+		}
+	}
+	return false
+}

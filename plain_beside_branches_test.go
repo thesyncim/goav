@@ -9,9 +9,12 @@ import (
 	"time"
 
 	"github.com/thesyncim/goav"
+	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/bundle"
+	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/component"
 	"github.com/thesyncim/goav/container/matroska"
+	"github.com/thesyncim/goav/flow"
 	"github.com/thesyncim/goav/goavtest"
 )
 
@@ -126,5 +129,70 @@ func TestRegionOutsideCompositeIsRefused(t *testing.T) {
 				t.Fatalf("Describe = %v, want a %s refusal", err, tc.code)
 			}
 		})
+	}
+}
+
+// TestCopiedPacketsPassAPlayoutGate pins that a single copied stream can be
+// paced: .Copy().Playout(...) lowers as one branch with the gate on the
+// selected packets. No lowerer claimed a lone copy chain with steps, so it was
+// refused although the same chain lowered fine beside a second stream.
+func TestCopiedPacketsPassAPlayoutGate(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	data, err := os.ReadFile(mp4Fixture)
+	if err != nil {
+		t.Fatal(err)
+	}
+	packets := 0
+	sink := goav.Sink(component.SinkFunc("screen", func(_ context.Context, msg component.Message) error {
+		if msg.Packet != nil {
+			packets++
+		}
+		return nil
+	}))
+	if err := goav.From(goav.FileInput("in.mp4", bytes.NewReader(data))).
+		Video().Copy().Playout(flow.Playout("screen")).To(sink).
+		UseRuntime(offlineRuntime()).
+		Run(ctx); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if packets == 0 {
+		t.Fatal("no copied packets passed the playout gate")
+	}
+}
+
+// TestPacketStageRunsAfterEncode pins bitstream-filter placement: a packet
+// stage declared after .Encode(...) sees the encoded packets, in order, under
+// the identity of the stream it encodes, and the muxer receives what it
+// emits. .Do after .Encode was refused, and a stage before it ran on frames.
+func TestPacketStageRunsAfterEncode(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	var filtered int
+	var ids []av.StreamID
+	bsf := component.PacketFunc("bsf", func(_ context.Context, p *av.Packet, emit component.Emit) error {
+		filtered++
+		if len(ids) == 0 {
+			ids = append(ids, p.StreamID)
+		}
+		return emit.Packet(p)
+	})
+	var out bytes.Buffer
+	if err := goav.From(goavtest.Video(64, 48, 3)).
+		Video().Encode(codec.VP8()).Do(bsf).To(goav.Write("out.webm", &out)).
+		UseRuntime(offlineRuntime()).
+		Run(ctx); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if filtered != 3 {
+		t.Fatalf("packet stage saw %d packets, want the 3 encoded frames", filtered)
+	}
+	// The chain lowers as one branch named "video"; the encoded stream keeps
+	// the source stream's id instead of taking the branch name.
+	if ids[0] == "video" {
+		t.Fatalf("packet stage saw stream %q, want the source stream id kept", ids[0])
+	}
+	if got := matroskaTracks(t, out.Bytes()); got != 1 {
+		t.Fatalf("out.webm has %d tracks, want the filtered video", got)
 	}
 }
