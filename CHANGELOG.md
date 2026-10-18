@@ -11,6 +11,21 @@ methodology changes, and migration notes.
 
 ## Unreleased
 
+- A job no longer drops a chain without a word. A plain chain routed before or
+  after a `.Branches(...)` chain on the same job was missing from the graph
+  while `Describe` and `Run` succeeded; it now lowers as a stream with one
+  branch, and shares the mux of any destination handle a branch also writes,
+  so `.Video().Copy().Branches(...).Audio()...To(a)` puts audio into `a`. Three
+  silent drops now fail the build: a chain declared on a `Mix`, `Composite`, or
+  `Select` job (`stream_beside_join`), `.Region(x, y)` on a chain that ends in
+  `To` or `Branches` or on a top-level `Composite` or `Select`
+  (`stream_region_outside_composite`), and `.Region` on a `Mix` or `Select`
+  arm (`mix_arm`, `select_arm`). Error fixes that named
+  removed APIs (`Inspectable.Taps()`, `Mutable.Attach`, `goav.FPS`) now name
+  `task.Taps()`, `task.Attach`, and `codec.FPS`, and
+  `TestStringLiteralAPIReferencesResolve` fails the build when a string names
+  an API that does not exist.
+
 - Opus audio starts on time. A packet's PTS is now the time of its first
   decoded sample, so an Opus stream's first packet presents one pre-skip
   (6.5 ms at 48 kHz) before zero, as in FFmpeg. The decoder drops the

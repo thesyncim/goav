@@ -213,7 +213,7 @@ func branchCopyUnsupportedError(stream streamIntent) error {
 		Node:      branchIntentName(stream),
 		Reason:    "copy branches require a packet-domain stream point",
 		fixes: buildErrorFixes([]string{
-			"use goav.From(input).Copy().Branches(...) for packet-preserving planned branches",
+			"use goav.From(input).Video().Copy().Branches(...) for packet-preserving planned branches",
 			"attach a runtime branch from a packet tap and call .Copy() when packet-domain fanout is needed",
 			"omit .Copy() when the branch should deliver decoded frames to goav.Sink(...)",
 		}),

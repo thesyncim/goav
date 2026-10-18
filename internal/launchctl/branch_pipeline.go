@@ -237,7 +237,7 @@ func parseBranchPipelineWithRegistry(task goav.LiveTask, tapName string, branchN
 				name,
 				fmt.Sprintf("unsupported branch pipeline step %q", name),
 				[]string{"supported_steps=" + strings.Join(pipelineStepNames(registry), ",")},
-				[]string{"use a supported branch-pipeline step or attach with typed Mutable.Attach in-process"},
+				[]string{"use a supported branch-pipeline step or attach with typed task.Attach in-process"},
 				nil,
 			)
 		}

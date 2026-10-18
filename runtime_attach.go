@@ -185,7 +185,7 @@ type Attachment interface {
 	// Without options the switch is immediate, exactly like Detach after Attach.
 	Rebranch(context.Context, ...lifecycle.RebranchArg) (Attachment, error)
 	// Close detaches this branch and any dependent branches anchored on its
-	// taps; equivalent to Mutable.Detach.
+	// taps; equivalent to task.Detach.
 	Close(context.Context) error
 }
 
@@ -519,7 +519,7 @@ func validateAttachBranchSpec(spec BranchSpec, destinations []attachDestination)
 		return runtimeBranchInvalidError("branch name is empty", "start with goav.Branch(\"name\")")
 	}
 	if spec.source.from == "" && spec.source.tap == "" {
-		return runtimeBranchInvalidError("branch source is empty", "call .From(input.Stream(stream)) for an input stream, .From(goav.FrameTap(name)) or .From(goav.PacketTap(name)) with a tap from Inspectable.Taps(), or .From(graphNode) with an expert graph handle")
+		return runtimeBranchInvalidError("branch source is empty", "call .From(input.Stream(stream)) for an input stream, .From(goav.FrameTap(name)) or .From(goav.PacketTap(name)) with a tap from task.Taps(), or .From(graphNode) with an expert graph handle")
 	}
 	if spec.source.stream != nil && spec.source.label == "" {
 		return runtimeBranchInvalidError("branch source stream id is empty", "set av.Stream.ID before passing the stream to input.Stream(stream)")
@@ -1937,7 +1937,7 @@ func runtimeBranchAnchorMissingError(node string) error {
 		Node:      node,
 		Reason:    "branch source node does not exist in the running task graph",
 		fixes: buildErrorFixes([]string{
-			"call Inspectable.Taps() and use .From(goav.FrameTap(name)) or .From(goav.PacketTap(name)) for stable media outlets",
+			"call task.Taps() and use .From(goav.FrameTap(name)) or .From(goav.PacketTap(name)) for stable media outlets",
 			"keep the GraphNode returned by expert.Graph(runtime).Source/Stage/Sink for expert graph attachments",
 			"attach from a stable decoded-frame tap when the branch needs raw frames",
 		}),
@@ -1960,8 +1960,8 @@ func runtimeBranchTapMissingError(name string, taps []snapshot.Tap) error {
 		fields:    errDetailLines(details),
 		fixes: buildErrorFixes([]string{
 			"add .Tap(goav.FrameTap(" + strconv.Quote(name) + ")) or .Tap(goav.PacketTap(" + strconv.Quote(name) + ")) at the point you want to attach",
-			"call Inspectable.Taps() before attaching runtime branches",
-			"if the tap came from a detached runtime branch, reattach that branch or choose a tap still listed by Inspectable.Taps()",
+			"call task.Taps() before attaching runtime branches",
+			"if the tap came from a detached runtime branch, reattach that branch or choose a tap still listed by task.Taps()",
 			"use .From(graphNode) only for expert graph-node attachments",
 		}),
 		cause: pipeline.ErrUnknownNode,
@@ -2012,7 +2012,7 @@ func runtimeBranchTapDuplicateError(name string) error {
 		Reason:    "branch tap name already exists in the task",
 		fixes: buildErrorFixes([]string{
 			"use a unique tap name for each runtime branch outlet",
-			"call Inspectable.Taps() before attaching to inspect the current tap names",
+			"call task.Taps() before attaching to inspect the current tap names",
 		}),
 		cause: errUnsupportedBuild,
 	}
@@ -2030,7 +2030,7 @@ func runtimeBranchTransformMediaError(branch string, transform string, expected 
 		fixes: buildErrorFixes([]string{
 			"use .Video().Decode().Tap(goav.FrameTap(name)) or a video transform tap before attaching .Resize(...)",
 			"use .Audio().Decode().Tap(goav.FrameTap(name)) or an audio transform tap before attaching .Resample(...)",
-			"call Inspectable.Taps() and choose a tap with matching media kind",
+			"call task.Taps() and choose a tap with matching media kind",
 		}),
 		cause: errUnsupportedBuild,
 	}
@@ -2085,7 +2085,7 @@ func runtimeBranchEncodeDomainError(branch string, shape shape.Spec) error {
 		fixes: buildErrorFixes([]string{
 			"attach from a tap declared after Decode, Resize, Resample, or a frame-stage .Do(...)",
 			"use .Copy() from a packet tap when no re-encode is intended",
-			"call Inspectable.Taps() and choose a tap with domain=frame",
+			"call task.Taps() and choose a tap with domain=frame",
 		}),
 		cause: errUnsupportedBuild,
 	}
@@ -2103,7 +2103,7 @@ func runtimeBranchDecodeDomainError(branch string, shape shape.Spec) error {
 		fixes: buildErrorFixes([]string{
 			"attach from a tap declared after Copy, packet receive, or Encode",
 			"omit .Decode() when attaching from a frame tap",
-			"call Inspectable.Taps() and choose a tap with domain=packet",
+			"call task.Taps() and choose a tap with domain=packet",
 		}),
 		cause: errUnsupportedBuild,
 	}
@@ -2121,7 +2121,7 @@ func runtimeBranchDecodeCodecMissingError(branch string, shape shape.Spec) error
 		fixes: buildErrorFixes([]string{
 			"attach from a recipe tap with codec shape",
 			"declare the input codec (provider codec intent or file metadata) before building the task",
-			"call Inspectable.Taps() and choose a packet tap that reports codec=...",
+			"call task.Taps() and choose a packet tap that reports codec=...",
 		}),
 		cause: errUnsupportedBuild,
 	}
@@ -2139,7 +2139,7 @@ func runtimeBranchCopyDomainError(branch string, shape shape.Spec) error {
 		fixes: buildErrorFixes([]string{
 			"attach from a tap declared after Copy or Encode",
 			"encode frame taps with " + encodeHint(shape.MediaKind) + " before writing a muxed destination",
-			"call Inspectable.Taps() and choose a tap with domain=packet",
+			"call task.Taps() and choose a tap with domain=packet",
 		}),
 		cause: errUnsupportedBuild,
 	}

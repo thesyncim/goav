@@ -182,6 +182,9 @@ type joinProfile struct {
 	// chain arms must declare .Decode() explicitly; packet tap/nested arms are
 	// rejected instead of gaining hidden decode work.
 	decodeArms bool
+	// placesArms marks joins that position arms on a canvas (Composite), so an
+	// arm may carry .Region(x, y); every other join refuses one.
+	placesArms bool
 	// graphBuffer, when non-nil, replaces a direct runtime buffer so the graph
 	// gets per-node serial workers for control-plane injection (Select) or for
 	// realtime join arms that must start concurrently (Mix/Composite).

@@ -46,8 +46,8 @@ shape, `Resize`/`Resample` → transform, `Do` → stage, `Encode` → encode,
 - Runtime observation is composition: `Branch + Do + Sink`, plus
   `Watch(...).Events()` subscriptions, `Snapshot`, `Stats`, `Explain`, and
   graph rendering.
-- Runtime controls lower into `task.Control`, `Mutable.Attach`,
-  `Attachment.Rebranch`, `Mutable.Detach`, `Watch`, `Snapshot`, `Stats`, or
+- Runtime controls lower into `task.Control`, `task.Attach`,
+  `Attachment.Rebranch`, `task.Detach`, `Watch`, `Snapshot`, `Stats`, or
   `Close`; the control-plane binder never calls arbitrary methods.
 
 This contract is broader than the v1 front door: where it names runtime
@@ -75,7 +75,7 @@ reviewing whether a new feature strengthens the grammar or bypasses it.
 | Planner | #5 Build and Attach share canonical operation lowering. #6 Attach emits `WorkPatch` downstream of taps. #7 Explain reads from `WorkPlan`. #8 Snapshot reflects plan plus patches. #9 legacy workflow packages are gone. #10 workflow-kind dispatch is gone from normal recipes. |
 | Shape | #11 Resize requires video frames. #12 Resample requires audio frames. #13 frames cannot go to byte destinations without Encode. #14 packet Copy to File succeeds. #15 decoded frames can end in Sink. #16 errors include operation, actual/expected shape, and fix. #17 conversions are inserted only under an explicit policy. |
 | Branches | #18 branches after Decode share one decoder. #19 dropping preview branches do not stall archive branches. #20 Blocking backpressures. #21 branch drop counters are visible. #22 mutable branch output cannot corrupt siblings. |
-| Runtime mutation | #23 Attach opens destinations before mutation. #24 attach failure rolls back. #25/#26 drain and abort are pinned for Rebranch and standalone `Mutable.Detach`. #27 Rebranch starts replacement before old detach. #28 failed Rebranch keeps the old branch. #29 Pause/Resume affects one branch. |
+| Runtime mutation | #23 Attach opens destinations before mutation. #24 attach failure rolls back. #25/#26 drain and abort are pinned for Rebranch and standalone `task.Detach`. #27 Rebranch starts replacement before old detach. #28 failed Rebranch keeps the old branch. #29 Pause/Resume affects one branch. |
 | Events and control | #30 Watch filters and stream/attach/backpressure events are pinned; `EventBranchAttached`/`EventBranchDetached` report runtime branch lifecycle, and destination commit/abort/error events report finalization. #31 Snapshot reports typed task, branch, destination, tap, and drop state. #32 Keyframe reaches adapters or fails clearly. #33 SetBitrate reaches encoders or fails clearly. |
 | Sources | #34 custom packet source Copy to File. #35 custom frame source Encode to File. #36 source.Push reports Accepted/Dropped. #37 source EOS commits destinations. |
 | Dynamic streams | #38 late streams attach branches. #39 ambiguous stream selection lists candidates and fixes. #40 removal drains rule-created branches. |
@@ -90,7 +90,7 @@ composer:
 `WorkPlan -> pipeline.Graph -> Task`.
 
 Live mutation follows the same promise: runtime attachment is a patch of the
-same plan model. `Mutable.Attach` compiles the same branch grammar into
+same plan model. `task.Attach` compiles the same branch grammar into
 `WorkPatch`, validates before graph mutation, and rolls back fully on failure
 (`TestTaskAttachRuntimeBranchGroupRollsBackOnLaterFailure`).
 
@@ -221,7 +221,7 @@ this list:
   internals can move behind enforced package boundaries
   (`docs/ARCHITECTURE.md` "Package layering").
 - **Destination lifecycle events**: task and runtime-branch destinations now
-  publish commit/abort/error events. Standalone `Mutable.Detach` has explicit
+  publish commit/abort/error events. Standalone `task.Detach` has explicit
   drain/abort outcomes, branch attach/detach events are watchable, and
   stream-rule removals drain rule-created branches.
 - **`streamIntent` normalization fold**: Explain stream rows and adapter

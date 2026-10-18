@@ -13,13 +13,13 @@ func (o detachOption) DetachDisposition() string {
 }
 
 // DrainBranch finalizes the detached branch as drained: its destinations are
-// committed when Mutable.Detach removes it.
+// committed when task.Detach removes it.
 func DrainBranch() DetachOption {
 	return detachOption("drain")
 }
 
 // AbortBranch finalizes the detached branch as abandoned: its destinations are
-// aborted when Mutable.Detach removes it.
+// aborted when task.Detach removes it.
 func AbortBranch() DetachOption {
 	return detachOption("abort")
 }

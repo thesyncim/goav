@@ -4638,7 +4638,7 @@ func TestBranchCompositionRejectsStreamEncodeBeforeBranches(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "stream encoders are terminal") ||
 		!strings.Contains(err.Error(), "encoder: vp9") ||
-		!strings.Contains(err.Error(), "Mutable.Attach") {
+		!strings.Contains(err.Error(), "task.Attach") {
 		t.Fatalf("err = %v, want planned parent encode guidance", err)
 	}
 }

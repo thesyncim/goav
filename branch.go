@@ -3,6 +3,7 @@ package goav
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"sync/atomic"
 
@@ -116,7 +117,7 @@ func destinationSpecEmpty(dest destinationSpec) bool {
 
 // BranchSpec is one finished branch declaration: the operations and
 // destinations a Branch(...) builder accumulated, ready for .Branches(...) on
-// a stream chain or Mutable.Attach at runtime. Values are immutable snapshots —
+// a stream chain or task.Attach at runtime. Values are immutable snapshots —
 // reusing a builder cannot mutate a spec already passed along. The zero value
 // is intentionally not a valid branch; construct branch specs with Branch(name).
 type BranchSpec struct {
@@ -635,6 +636,10 @@ func appendDestination(spec *BranchSpec, destination destinationSpec, index int)
 func (b *Chain) Branches(branches ...BranchSpec) *Job {
 	stream := b.current()
 	job := b.job
+	if b.region != nil {
+		job.setErr(regionOutsideCompositeError(jobStreamName(stream)))
+		return job
+	}
 	if len(branches) == 0 {
 		job.setErr(branchMissingError(jobStreamName(stream)))
 		return job
@@ -694,6 +699,9 @@ func (b *Chain) Branches(branches ...BranchSpec) *Job {
 			buffer:           branches[i].branchBuffer,
 		})
 	}
+	// The branched chain now lives in branchStreams; plain chains stay in
+	// streams and lower beside the branches.
+	job.streams = slices.DeleteFunc(job.streams, func(s *jobStreamBuild) bool { return s == stream })
 	return job
 }
 
@@ -1033,7 +1041,7 @@ func branchEncodeParentOperationError(node string, encode codec.Spec) error {
 		fixes: buildErrorFixes([]string{
 			"move .Branches(...) before the stream encoder",
 			"put " + encodeHint(encode.Type) + " on each goav.Branch(...) that writes a destination",
-			"attach post-encode packet-copy branches at runtime with Mutable.Attach(ctx, goav.Branch(name).From(goav.PacketTap(name)).Copy()...)",
+			"attach post-encode packet-copy branches at runtime with task.Attach(ctx, goav.Branch(name).From(goav.PacketTap(name)).Copy()...)",
 		}),
 		cause: errUnsupportedBuild,
 	}
@@ -1051,7 +1059,7 @@ func plannedBranchNodeSourceError(name string, source string) error {
 		fixes: buildErrorFixes([]string{
 			"use .From(goav.FrameTap(name)) or .From(goav.PacketTap(name)) to branch from a stable tap",
 			"omit .From(...) to branch from the current stream point",
-			"use Mutable.Attach(ctx, goav.Branch(name).From(graphNode)...) for expert runtime graph attachment",
+			"use task.Attach(ctx, goav.Branch(name).From(graphNode)...) for expert runtime graph attachment",
 		}),
 		cause: errUnsupportedBuild,
 	}

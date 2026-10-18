@@ -1,8 +1,10 @@
 package goav
 
 import (
+	"fmt"
 	"slices"
 
+	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/internal/recipeir"
 	"github.com/thesyncim/goav/plan"
 	"github.com/thesyncim/goav/shape"
@@ -74,6 +76,10 @@ func newLinearJobRecipeSnapshot(job *Job) recipeCompileSnapshot {
 
 func newJoinRecipeSnapshot(job *Job) recipeCompileSnapshot {
 	spec := cloneJoinSpec(job.join)
+	recipeErr := job.recipeErr()
+	if len(job.streams) != 0 && recipeErr == nil {
+		recipeErr = streamBesideJoinError(jobStreamName(job.streams[0]), job.join.kind)
+	}
 	outputs, names := joinOutputAttachments(spec)
 	tree := joinTreeSnapshotFromSpec(spec)
 	inputs := joinArmInputs(tree)
@@ -86,7 +92,7 @@ func newJoinRecipeSnapshot(job *Job) recipeCompileSnapshot {
 		recipe:                 recipe,
 		runtime:                job.compileRuntime(inputs),
 		runtimeExplicit:        job.runtimeSet,
-		recipeErr:              job.recipeErr(),
+		recipeErr:              recipeErr,
 		inputAttachments:       inputs,
 		outputAttachments:      outputs,
 		outputDestinationNames: names,
@@ -104,7 +110,10 @@ func newBranchJobRecipeSnapshot(job *Job) recipeCompileSnapshot {
 		recipeErr = branchInputCountError("branches", len(job.inputs))
 	}
 	runtime := job.compileRuntime(job.inputs)
-	destinations := cloneNamedDestinationSpecs(job.branchDestinations)
+	streams, destinations, err := job.branchJobStreams()
+	if err != nil && recipeErr == nil {
+		recipeErr = err
+	}
 	recipe := recipeir.Recipe{
 		Kind: recipeir.KindBranchComposition,
 		Name: firstNonEmpty(job.name, "branch-composition"),
@@ -115,8 +124,8 @@ func newBranchJobRecipeSnapshot(job *Job) recipeCompileSnapshot {
 	if runtime != nil {
 		recipe.Policies.Realtime = runtime.realtime
 	}
-	for i := range job.branchStreams {
-		recipe.Streams = append(recipe.Streams, recipeIRStreamFromIntent(branchStreamIntent(job.branchStreams[i])))
+	for i := range streams {
+		recipe.Streams = append(recipe.Streams, recipeIRStreamFromIntent(streams[i]))
 	}
 	for i := range destinations {
 		destination := recipeIRDestinationFromIntent(destinations[i].output.intentWithName(destinations[i].name))
@@ -767,4 +776,56 @@ func recipeIRHasFrameTap(recipe recipeir.Recipe) bool {
 		}
 	}
 	return false
+}
+
+// branchJobStreams is a branching job's streams and destinations: every
+// branch, then each plain chain as a stream with one branch, named apart
+// from the branches. A plain chain's destinations join the branch
+// destinations by name, so a handle both write is one mux group.
+func (j *Job) branchJobStreams() ([]streamIntent, []namedDestinationSpec, error) {
+	destinations := cloneNamedDestinationSpecs(j.branchDestinations)
+	taken := make(map[string]bool, len(j.branchStreams)+len(j.streams))
+	streams := make([]streamIntent, 0, len(j.branchStreams)+len(j.streams))
+	for i := range j.branchStreams {
+		taken[j.branchStreams[i].name] = true
+		streams = append(streams, branchStreamIntent(j.branchStreams[i]))
+	}
+	for _, stream := range j.streams {
+		intent := jobStreamIntent(stream)
+		name := firstNonEmpty(intent.Name, "stream")
+		for n := 2; taken[name]; n++ {
+			name = fmt.Sprintf("%s-%d", firstNonEmpty(intent.Name, "stream"), n)
+		}
+		taken[name] = true
+		intent.Name = name
+		streams = append(streams, intent)
+		refs := make([]destinationRef, 0, len(stream.outputs))
+		for k := range stream.outputs {
+			refs = append(refs, newDirectDestinationRef(intent.Destinations[k], stream.outputs[k]))
+		}
+		var err error
+		if destinations, err = appendNamedBranchDestinations(destinations, refs...); err != nil {
+			return nil, destinations, err
+		}
+	}
+	return streams, destinations, nil
+}
+
+// streamBesideJoinError refuses a plain chain declared on a Mix, Composite,
+// or Select job: the join lowering builds the joined stream alone, so the
+// chain would otherwise vanish from the graph without an error.
+func streamBesideJoinError(node string, kind joinKind) error {
+	return &BuildError{
+		Phase:     phaseBuild,
+		Family:    errcode.FamilyForCode(streamBesideJoinCode),
+		Code:      streamBesideJoinCode,
+		Operation: "build stream",
+		Node:      node,
+		Reason:    fmt.Sprintf("a %s job builds only its joined stream; this chain would be dropped", kind),
+		fixes: buildErrorFixes([]string{
+			"build the chain as its own job: goav.From(input).Video()...To(destination)",
+			"make the stream an arm of the join when it should be joined",
+		}),
+		cause: errUnsupportedBuild,
+	}
 }

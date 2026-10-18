@@ -628,6 +628,10 @@ func planJoinTree(input joinPlanInput, tree *joinTreeSnapshot, cursor int, used 
 				"give each arm a distinct stream id: name inputs/taps differently so no two arms publish the same id")
 		}
 		seen[armPlan.stream.ID] = struct{}{}
+		if armSpec.region != nil && !profile.placesArms {
+			return nil, 0, joinArmError(name, firstNonEmpty(armPlan.inputName, name), kind+" arms have no canvas; .Region(x, y) positions Composite arms only",
+				"remove .Region(...) from the arm, or pass it to goav.Composite(...) to place it")
+		}
 		armOps := cloneOperationSpecs(armSpec.chainOperations)
 		if err := validateJoinArmDomain(name, armPlan.inputName, profile, armPlan.domain, armOps); err != nil {
 			return nil, 0, err

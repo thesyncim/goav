@@ -45,8 +45,8 @@ func (s *SelectStream) joinArm() joinArmSpec {
 
 // Region places the switched stream at (x, y) when the Select stands as an
 // arm of an outer Composite — an active-speaker switch as one canvas tile,
-// mirroring .Region on source chains and nested composites. It has no effect
-// outside a Composite.
+// mirroring .Region on source chains and nested composites. A Select that is
+// not a Composite arm refuses it.
 func (s *SelectStream) Region(x, y int) *SelectStream {
 	s.region = &compositeRegion{x: x, y: y}
 	return s
@@ -65,7 +65,7 @@ func (s *SelectStream) Tap(tap tapRef) *SelectStream {
 // own destinations — the same goav.Branch specs an ordinary stream chain
 // accepts at this stream point.
 func (s *SelectStream) Branches(branches ...BranchSpec) *Job {
-	return newJoinBranchesJob(joinSelect, joinSpec{arms: s.arms, taps: s.taps}, branches)
+	return refuseTopLevelRegion(newJoinBranchesJob(joinSelect, joinSpec{arms: s.arms, taps: s.taps}, branches), s.region, "select")
 }
 
 // To delivers the switched stream to one or more sink destinations (a fanout
@@ -75,7 +75,7 @@ func (s *SelectStream) Branches(branches ...BranchSpec) *Job {
 // destinations need .Branches(...) with an encoding branch. It lowers to the
 // one joinSpec shared by every convergence builder.
 func (s *SelectStream) To(destinations ...Destination) *Job {
-	return newJoinJob(joinSelect, joinSpec{arms: s.arms, dests: destinations, taps: s.taps})
+	return refuseTopLevelRegion(newJoinJob(joinSelect, joinSpec{arms: s.arms, dests: destinations, taps: s.taps}), s.region, "select")
 }
 
 // selectJoinProfile is Select's entry in the join table: media-agnostic
