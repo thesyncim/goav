@@ -11,6 +11,11 @@ methodology changes, and migration notes.
 
 ## Unreleased
 
+- Tests: new fuzzers for the MP4 mux-then-demux round trip (progressive and
+  fragmented, checking bytes, keyframes and times), the rtpav VP8, VP9, AV1,
+  H.264 and Opus depacketizers, and the ctlserver JSON-RPC handler and
+  connection loop, all in the CI fuzz smoke. The 17k-line Matroska test file
+  is split by topic; no test changed.
 - Internal: the direct and buffered runners share one graph topology
   (`pipeline/topology.go`): nodes, routes, the lock-free routing snapshot,
   spec, stats, readiness, observer events, the run's error contract, and
