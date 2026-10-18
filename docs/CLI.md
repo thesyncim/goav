@@ -43,7 +43,7 @@ the one above.
 | Selection | `video`, `audio`, `stream` `[id= index=]` |
 | Operations | `decode`, `encode CODEC [bitrate= fps= keyframe_interval= ...]`, `resize WxH [mode=]`, `resample RATE CHANNELS`, `tap NAME`, `as NAME`, `buffer MODE [N]`, `sync NAME`, `playout`, `auto`, `syncbypts` |
 | Joins | `mix(a, b)`, `composite(a, b ! at X Y)`, `select(a, b)` |
-| Destinations | `file PATH [format=]`, `null` |
+| Destinations | `file PATH [format=]`, `hls PATH [segment= window=]`, `null` |
 
 `goav elements` lists every element with its settings. Native adapter settings
 pass through `encode` (`encode av1 tune=zerolatency`). A mistake is refused

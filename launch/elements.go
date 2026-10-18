@@ -4,6 +4,7 @@ import (
 	"errors"
 	"io"
 	"os"
+	"path/filepath"
 	"reflect"
 	"sort"
 
@@ -220,8 +221,17 @@ func OS() FileSystem { return osFiles{} }
 
 type osFiles struct{}
 
-func (osFiles) Open(name string) (io.Reader, error)   { return os.Open(name) }
-func (osFiles) Create(name string) (io.Writer, error) { return os.Create(name) }
+func (osFiles) Open(name string) (io.Reader, error) { return os.Open(name) }
+func (osFiles) Create(name string) (io.Writer, error) {
+	if dir := filepath.Dir(name); dir != "." {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return nil, err
+		}
+	}
+	return os.Create(name)
+}
+func (osFiles) Rename(oldname, newname string) error { return os.Rename(oldname, newname) }
+func (osFiles) Remove(name string) error             { return os.Remove(name) }
 
 // Dir is the files under root and nothing else: a path that escapes root,
 // through .. or a symlink, is refused. A control server hands attached
@@ -236,8 +246,17 @@ func Dir(root string) (FileSystem, error) {
 
 type rootFiles struct{ root *os.Root }
 
-func (f rootFiles) Open(name string) (io.Reader, error)   { return f.root.Open(name) }
-func (f rootFiles) Create(name string) (io.Writer, error) { return f.root.Create(name) }
+func (f rootFiles) Open(name string) (io.Reader, error) { return f.root.Open(name) }
+func (f rootFiles) Create(name string) (io.Writer, error) {
+	if dir := filepath.Dir(name); dir != "." {
+		if err := f.root.MkdirAll(dir, 0o755); err != nil {
+			return nil, err
+		}
+	}
+	return f.root.Create(name)
+}
+func (f rootFiles) Rename(oldname, newname string) error { return f.root.Rename(oldname, newname) }
+func (f rootFiles) Remove(name string) error             { return f.root.Remove(name) }
 
 // lazyReader opens its file on the first read, so compiling or describing a
 // program opens nothing.

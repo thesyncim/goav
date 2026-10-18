@@ -11,6 +11,19 @@ methodology changes, and migration notes.
 
 ## Unreleased
 
+- HLS packaging. `container/hls` packages output as HTTP Live Streaming: a
+  `provider.Destination` (`goav.Custom("live", hls.New("live.m3u8", store))`)
+  that splits the fragmented MP4 goav muxes into an init segment and media
+  segments of about `SegmentDuration` (4s), each starting at a keyframe, and
+  republishes the playlist after each. Without `Window` the playlist keeps
+  every segment and ends as on-demand; `Window(n)` makes it live, listing n
+  segments and removing old ones a window later. `hls.Dir` publishes files
+  whole (temporary name, then rename). In programs: `! hls out/live.m3u8
+  segment=2s window=6`, through the program's files. FFmpeg plays the
+  playlists. `goav run` now finalizes its task before printing the summary,
+  so it lists the files destinations write when they close; `launch.OS` and
+  `launch.Dir` create parent directories and can rename and remove.
+
 - Fix: offline VP8 and VP9 encodes honor `codec.KeyframeInterval`
   (`keyframe_interval=`). The govpx adapter passed it only in its realtime
   preset, so a file encoded offline kept one keyframe; offline VP8 now keys at
