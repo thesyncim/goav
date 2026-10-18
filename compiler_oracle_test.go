@@ -11,13 +11,11 @@ import (
 
 	"github.com/thesyncim/goav"
 	"github.com/thesyncim/goav/av"
-	"github.com/thesyncim/goav/bundle"
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/component"
 	"github.com/thesyncim/goav/flow"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/plan"
-	"github.com/thesyncim/goav/runconfig"
 	"github.com/thesyncim/goav/shape"
 	"github.com/thesyncim/goav/source"
 )
@@ -268,7 +266,7 @@ func TestCompilerOracle(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			var result oracleResult
 			oracleSeq = 0
-			if spec, err := bundle.Describe(ctx, build(), runconfig.WithRealtime(false)); err != nil {
+			if spec, err := build().UseRuntime(offlineRuntime()).Describe(); err != nil {
 				result.DescribeError = oracleErrorFrom(err)
 			} else {
 				result.Describe = &spec

@@ -110,20 +110,21 @@ func TestParallelLadderMatchesSerialRungs(t *testing.T) {
 	}
 	rungs := []rung{{"full", 0, 0}, {"half", 32, 24}, {"quarter", 16, 12}}
 	ladder := make([]bytes.Buffer, len(rungs))
-	branches := make([]goav.BranchSpec, len(rungs))
+	decoded := goav.FileInput("in.webm", bytes.NewReader(input)).Video().Decode()
+	outs := make([]goav.Output, len(rungs))
 	for i, r := range rungs {
-		branch := goav.Branch(r.name)
+		rendition := decoded
 		if r.width != 0 {
-			branch = branch.Resize(r.width, r.height)
+			rendition = rendition.Resize(r.width, r.height)
 		}
-		branches[i] = branch.Encode(codec.VP8(codec.Bitrate(200_000))).To(goav.Write(r.name+".webm", &ladder[i]))
+		outs[i] = rendition.Encode(codec.VP8(codec.Bitrate(200_000))).As(r.name).To(goav.Write(r.name+".webm", &ladder[i]))
 	}
-	if err := bundle.Run(context.Background(), goav.From(goav.FileInput("in.webm", bytes.NewReader(input))).Video().Decode().Branches(branches...)); err != nil {
+	if err := bundle.Run(context.Background(), outs...); err != nil {
 		t.Fatalf("ladder: %v", err)
 	}
 	for i, r := range rungs {
 		var serial bytes.Buffer
-		chain := goav.From(goav.FileInput("in.webm", bytes.NewReader(input))).Video().Decode()
+		chain := goav.FileInput("in.webm", bytes.NewReader(input)).Video().Decode()
 		if r.width != 0 {
 			chain = chain.Resize(r.width, r.height)
 		}
@@ -146,7 +147,7 @@ func TestParallelLadderMatchesSerialRungs(t *testing.T) {
 func encodedFrames(t *testing.T, webm []byte) [][]byte {
 	t.Helper()
 	out := goavtest.NewCollector()
-	if err := bundle.Run(context.Background(), goav.From(goav.FileInput("out.webm", bytes.NewReader(webm))).Video().Copy().To(out.Sink())); err != nil {
+	if err := bundle.Run(context.Background(), goav.FileInput("out.webm", bytes.NewReader(webm)).Video().To(out.Sink())); err != nil {
 		t.Fatalf("demux: %v", err)
 	}
 	frames := make([][]byte, 0, len(out.Packets()))

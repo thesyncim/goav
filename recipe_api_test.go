@@ -2969,7 +2969,7 @@ func TestDecodeRecipeRejectsMuxOutput(t *testing.T) {
 		t.Fatalf("err = %v, want encode_missing with matching BuildError code", err)
 	}
 	if !strings.Contains(err.Error(), "goav.Sink") ||
-		!strings.Contains(err.Error(), ".Copy().To(output)") {
+		!strings.Contains(err.Error(), "input.Video().To(output)") {
 		t.Fatalf("err = %v, want decode output guidance", err)
 	}
 }

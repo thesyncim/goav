@@ -7,7 +7,7 @@ package bundle
 
 import (
 	"context"
-	"errors"
+	"sync"
 
 	"github.com/thesyncim/goav"
 	annexbadapter "github.com/thesyncim/goav/adapters/annexb"
@@ -23,11 +23,9 @@ import (
 	mp4adapter "github.com/thesyncim/goav/container/mp4"
 	webmadapter "github.com/thesyncim/goav/container/webm"
 	"github.com/thesyncim/goav/pipeline"
+	"github.com/thesyncim/goav/plan"
 	runconfig "github.com/thesyncim/goav/runconfig"
 )
-
-// ErrNilJob reports a nil recipe passed to Build or Run.
-var ErrNilJob = errors.New("goav/bundle: nil job")
 
 // New builds a runtime with the bundled formats, codecs, and filters already
 // registered, then applies opts on top. Registration is last-wins, so opts can
@@ -48,52 +46,36 @@ func mustRuntime(runtime *goav.Runtime, err error) *goav.Runtime {
 	return runtime
 }
 
-// Build compiles job with a bundled runtime into the narrow runnable Task. It
-// is the batteries-included counterpart to
-// job.UseRuntime(bundle.MustNew(...)).Build(ctx), while preserving New option
-// errors as returned errors. For live control, build with
-// job.UseRuntime(bundle.MustNew(...)).BuildLive(ctx).
-func Build(ctx context.Context, job *goav.Job, opts ...runconfig.Option) (goav.Task, error) {
-	if job == nil {
-		return nil, ErrNilJob
-	}
-	runtime, err := New(opts...)
-	if err != nil {
-		return nil, err
-	}
-	return job.UseRuntime(runtime).BuildLive(ctx)
+// Default is the bundled runtime with default options, built once and shared:
+// a runtime holds no per-run state, so every Run, Build, Describe, and Explain
+// here uses it. Build a runtime with New for other options.
+func Default() *goav.Runtime {
+	return defaultRuntime()
 }
 
-// Describe compiles job's graph shape with a bundled runtime without opening
-// resources. It is the batteries-included counterpart to
-// job.UseRuntime(bundle.MustNew(...)).Describe().
-func Describe(ctx context.Context, job *goav.Job, opts ...runconfig.Option) (pipeline.Spec, error) {
-	if job == nil {
-		return pipeline.Spec{}, ErrNilJob
-	}
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	if err := ctx.Err(); err != nil {
-		return pipeline.Spec{}, err
-	}
-	runtime, err := New(opts...)
-	if err != nil {
-		return pipeline.Spec{}, err
-	}
-	return job.UseRuntime(runtime).Describe()
+var defaultRuntime = sync.OnceValue(func() *goav.Runtime { return MustNew() })
+
+// Run builds outs with the default bundled runtime and runs them to
+// completion: bundle.Run(ctx, in.Video().Encode(codec.VP9()).To(out)).
+func Run(ctx context.Context, outs ...goav.Output) error {
+	return Default().Run(ctx, outs...)
 }
 
-// Run compiles and runs job with a bundled runtime, then closes it.
-func Run(ctx context.Context, job *goav.Job, opts ...runconfig.Option) error {
-	if job == nil {
-		return ErrNilJob
-	}
-	runtime, err := New(opts...)
-	if err != nil {
-		return err
-	}
-	return job.UseRuntime(runtime).Run(ctx)
+// Build builds outs with the default bundled runtime without starting them.
+func Build(ctx context.Context, outs ...goav.Output) (goav.LiveTask, error) {
+	return Default().Build(ctx, outs...)
+}
+
+// Describe returns the graph outs build with the default bundled runtime,
+// without opening anything.
+func Describe(outs ...goav.Output) (pipeline.Spec, error) {
+	return Default().Describe(outs...)
+}
+
+// Explain reports the plan outs build with the default bundled runtime,
+// without opening anything.
+func Explain(ctx context.Context, outs ...goav.Output) (plan.Report, error) {
+	return Default().Explain(ctx, outs...)
 }
 
 // Options returns fresh runtime options for all bundled formats, codecs, and

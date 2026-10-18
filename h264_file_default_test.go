@@ -25,7 +25,7 @@ func TestH264FileDecodeNamesBuildTag(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	err = bundle.Run(context.Background(), goav.From(goav.FileInput("in.mp4", bytes.NewReader(data))).
+	err = bundle.Run(context.Background(), goav.FileInput("in.mp4", bytes.NewReader(data)).
 		Video().Decode().Encode(codec.VP8()).
 		To(goav.Write("out.webm", &bytes.Buffer{})))
 	var buildErr *goav.BuildError
