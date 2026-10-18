@@ -42,6 +42,8 @@ func TestCompositionLawsHoldForGeneratedRecipes(t *testing.T) {
 
 			requireGeneratedCompositionRuntimeAttachMatchesBuildTimeBranch(t, tc)
 			requireGeneratedNestedMixMatchesFlatMix(t, tc)
+			requireGeneratedForksShareTheirWork(t, tc)
+			requireGeneratedJoinsRunTogetherAsApart(t, tc)
 		})
 	}
 }
@@ -247,4 +249,57 @@ func generatedOffsetCompositionSamples(samples []int16, delta int16) []int16 {
 		out[i] = sample + delta
 	}
 	return out
+}
+
+// requireGeneratedForksShareTheirWork pins that work before a fork runs once:
+// two encodings forked after the case's conversion read one converted stream.
+func requireGeneratedForksShareTheirWork(t *testing.T, tc generatedCompositionCase) {
+	t.Helper()
+	shared := goavtest.Audio(tc.sampleRate, 1, tc.samples).Audio().Resample(48_000, codec.Stereo)
+	spec := requireGeneratedCompositionDescribeMatchesBuild(t,
+		shared.Encode(codec.Opus(codec.Bitrate(tc.bitrate))).As("high").To(generatedNoopCompositionSink("high")),
+		shared.Encode(codec.Opus(codec.Bitrate(32_000))).As("low").To(generatedNoopCompositionSink("low")),
+	)
+	resamples, readers := 0, 0
+	for _, node := range spec.Nodes {
+		if node.Detail != "" && len(node.Name) >= len("resample") && node.Name[:len("resample")] == "resample" {
+			resamples++
+		}
+	}
+	for _, edge := range spec.Edges {
+		if len(edge.From) >= len("resample") && string(edge.From)[:len("resample")] == "resample" {
+			readers++
+		}
+	}
+	if resamples != 1 || readers != 2 {
+		t.Fatalf("forks of one converted stream: %d resample nodes read by %d nodes, want 1 read by both encoders\n%s", resamples, readers, specText(spec))
+	}
+}
+
+// requireGeneratedJoinsRunTogetherAsApart pins that two joins in one recipe
+// run as each would alone: every sink receives what its join produces.
+func requireGeneratedJoinsRunTogetherAsApart(t *testing.T, tc generatedCompositionCase) {
+	t.Helper()
+	a := generatedOffsetCompositionSamples(tc.samples, -5)
+	b := generatedOffsetCompositionSamples(tc.samples, 9)
+	c := generatedOffsetCompositionSamples(tc.samples, 2)
+	mix := func(x, y []int16, out *goavtest.Collector) goav.Output {
+		return goav.Mix(goavtest.Audio(48_000, 1, x).Audio(), goavtest.Audio(48_000, 1, y).Audio()).To(out.Sink())
+	}
+	run := func(outs ...goav.Output) {
+		t.Helper()
+		requireGeneratedCompositionDescribeMatchesBuild(t, outs...)
+		if err := goavtest.Runtime().Run(context.Background(), outs...); err != nil {
+			t.Fatalf("Run generated joins: %v", err)
+		}
+	}
+	firstAlone, secondAlone := goavtest.NewCollector(), goavtest.NewCollector()
+	run(mix(a, b, firstAlone))
+	run(mix(b, c, secondAlone))
+	first, second := goavtest.NewCollector(), goavtest.NewCollector()
+	run(mix(a, b, first), mix(b, c, second))
+	if !reflect.DeepEqual(first.S16(), firstAlone.S16()) || !reflect.DeepEqual(second.S16(), secondAlone.S16()) {
+		t.Fatalf("joins run together != apart for generated case %s\ntogether: %v %v\napart:    %v %v",
+			tc.name, first.S16(), second.S16(), firstAlone.S16(), secondAlone.S16())
+	}
 }
