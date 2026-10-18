@@ -293,18 +293,21 @@ func TestExternalJoinComposesThroughPublicGrammar(t *testing.T) {
 	var ids []av.StreamID
 	var frames [][]int16
 
-	job := goav.LegacyJoin("interleave", newInterleaveStage("interleave", "left", "right"),
-		goav.From(toyPacketArm("left", []int16{10}, []int16{30})).Audio().Decode(),
-		goav.From(toyPacketArm("right", []int16{20}, []int16{40})).Audio().Decode(),
-	).Tap(goav.FrameTap("interleaved")).
-		To(s16CollectSink("out", &mu, &ids, &frames)).
-		UseRuntime(toyRuntime())
+	rt := toyRuntime()
+	job := goav.Join(
+		"interleave",
+		newInterleaveStage("interleave", "left", "right"),
+		toyPacketArm("left", []int16{10}, []int16{30}).Audio().Decode(),
+		toyPacketArm("right", []int16{20}, []int16{40}).Audio().Decode(),
+	).
+		Tap("interleaved").
+		To(s16CollectSink("out", &mu, &ids, &frames))
 
-	planned, err := job.Describe()
+	planned, err := rt.Describe(job)
 	if err != nil {
 		t.Fatal(err)
 	}
-	task, err := job.BuildLive(ctx)
+	task, err := rt.Build(ctx, job)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -358,8 +361,8 @@ func TestExternalJoinComposesThroughPublicGrammar(t *testing.T) {
 }
 
 // TestExternalJoinFansOutThroughBranches proves the joined stream of a custom
-// join is a normal stream point: .Branches fans it out to independent planned
-// branches with their own destinations, through the same branch-compose
+// join is a normal stream point: reuse fans it out to independent planned
+// forks with their own destinations, through the same branch-compose
 // lowering every chain uses.
 func TestExternalJoinFansOutThroughBranches(t *testing.T) {
 	ctx := context.Background()
@@ -367,13 +370,14 @@ func TestExternalJoinFansOutThroughBranches(t *testing.T) {
 	var xIDs, yIDs []av.StreamID
 	var xs, ys [][]int16
 
-	err := goav.LegacyJoin("zipper", newInterleaveStage("zipper", "one", "two"),
-		goav.From(s16FrameArm("one", []int16{1})).Audio(),
-		goav.From(s16FrameArm("two", []int16{2})).Audio(),
-	).Branches(
-		goav.Branch("x").To(s16CollectSink("x-sink", &mu, &xIDs, &xs)),
-		goav.Branch("y").To(s16CollectSink("y-sink", &mu, &yIDs, &ys)),
-	).UseRuntime(toyRuntime()).Run(ctx)
+	zipped := goav.Join("zipper", newInterleaveStage("zipper", "one", "two"),
+		s16FrameArm("one", []int16{1}).Audio(),
+		s16FrameArm("two", []int16{2}).Audio(),
+	)
+	err := toyRuntime().Run(ctx,
+		zipped.As("x").To(s16CollectSink("x-sink", &mu, &xIDs, &xs)),
+		zipped.As("y").To(s16CollectSink("y-sink", &mu, &yIDs, &ys)),
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -395,15 +399,16 @@ func TestExternalJoinNestsInsideBuiltinMix(t *testing.T) {
 	var ids []av.StreamID
 	var frames [][]int16
 
-	err := goav.LegacyMix(
-		goav.LegacyJoin("pair", newInterleaveStage("pair", "left", "right"),
-			goav.From(s16FrameArm("left", []int16{10}, []int16{30})).Audio(),
-			goav.From(s16FrameArm("right", []int16{20}, []int16{40})).Audio(),
+	err := toyRuntime().Run(ctx, goav.Mix(
+		goav.Join(
+			"pair",
+			newInterleaveStage("pair", "left", "right"),
+			s16FrameArm("left", []int16{10}, []int16{30}).Audio(),
+			s16FrameArm("right", []int16{20}, []int16{40}).Audio(),
 		),
-		goav.From(s16FrameArm("bed", []int16{1}, []int16{2}, []int16{3}, []int16{4})).Audio(),
-	).To(s16CollectSink("out", &mu, &ids, &frames)).
-		UseRuntime(toyRuntime()).
-		Run(ctx)
+		s16FrameArm("bed", []int16{1}, []int16{2}, []int16{3}, []int16{4}).Audio(),
+	).
+		To(s16CollectSink("out", &mu, &ids, &frames)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -437,12 +442,16 @@ func TestExternalJoinReproducesSelectPassthrough(t *testing.T) {
 		return nil
 	}))
 
-	job := goav.LegacyJoin("firstof", newFirstArmStage("firstof", "left", 2),
-		goav.From(toyPacketArm("left", []int16{100}, []int16{200})).Audio(),
-		goav.From(toyPacketArm("right", []int16{900})).Audio(),
-	).To(sink).UseRuntime(toyRuntime())
+	rt := toyRuntime()
+	job := goav.Join(
+		"firstof",
+		newFirstArmStage("firstof", "left", 2),
+		toyPacketArm("left", []int16{100}, []int16{200}).Audio(),
+		toyPacketArm("right", []int16{900}).Audio(),
+	).
+		To(sink)
 
-	planned, err := job.Describe()
+	planned, err := rt.Describe(job)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -451,7 +460,7 @@ func TestExternalJoinReproducesSelectPassthrough(t *testing.T) {
 			t.Fatalf("passthrough join planned a decode node %q; packets must forward as-is", node.Name)
 		}
 	}
-	if err := job.Run(ctx); err != nil {
+	if err := rt.Run(ctx, job); err != nil {
 		t.Fatal(err)
 	}
 	mu.Lock()

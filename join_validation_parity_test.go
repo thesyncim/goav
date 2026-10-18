@@ -12,9 +12,9 @@ import (
 )
 
 func TestJoinOutputFormatValidationParity(t *testing.T) {
-	_, err := LegacyMix(
-		From(mixTestAudioSource("a", 1)).Audio(),
-		From(mixTestAudioSource("b", 1)).Audio(),
+	_, err := legacyMix(
+		recipeFrom(mixTestAudioSource("a", 1)).Audio(),
+		recipeFrom(mixTestAudioSource("b", 1)).Audio(),
 	).Encode(codec.Opus()).
 		To(Write("out.unknown", io.Discard)).
 		UseRuntime(mustNew(WithEncoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &encodeTestEncoderFactory{encoder: &encodeTestEncoder{}}))).
@@ -23,18 +23,18 @@ func TestJoinOutputFormatValidationParity(t *testing.T) {
 }
 
 func TestJoinDestinationShapeValidationParity(t *testing.T) {
-	_, err := LegacyMix(
-		From(mixTestAudioSource("a", 1)).Audio(),
-		From(mixTestAudioSource("b", 1)).Audio(),
+	_, err := legacyMix(
+		recipeFrom(mixTestAudioSource("a", 1)).Audio(),
+		recipeFrom(mixTestAudioSource("b", 1)).Audio(),
 	).To(Write("out.ogg", io.Discard, Format(av.FormatOgg))).
 		Build(context.Background())
 	assertJoinParityBuildError(t, err, errcode.Code("mix_destination"))
 }
 
 func TestJoinTransformAdapterValidationParity(t *testing.T) {
-	_, err := LegacyMix(
-		From(mixTestAudioSource("a", 1)).Audio(),
-		From(mixTestAudioSourceRate("b", 44_100)).Audio(),
+	_, err := legacyMix(
+		recipeFrom(mixTestAudioSource("a", 1)).Audio(),
+		recipeFrom(mixTestAudioSourceRate("b", 44_100)).Audio(),
 	).To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))).
 		UseRuntime(mustNew()).
 		Build(context.Background())
@@ -42,9 +42,9 @@ func TestJoinTransformAdapterValidationParity(t *testing.T) {
 }
 
 func TestJoinMuxCompatibilityValidationParity(t *testing.T) {
-	_, err := LegacyMix(
-		From(mixTestAudioSource("a", 1)).Audio(),
-		From(mixTestAudioSource("b", 1)).Audio(),
+	_, err := legacyMix(
+		recipeFrom(mixTestAudioSource("a", 1)).Audio(),
+		recipeFrom(mixTestAudioSource("b", 1)).Audio(),
 	).Encode(codec.Opus()).
 		To(Write("out.ivf", io.Discard, Format(av.FormatIVF))).
 		UseRuntime(mustNew(
@@ -56,9 +56,9 @@ func TestJoinMuxCompatibilityValidationParity(t *testing.T) {
 }
 
 func TestJoinRuntimeMissingValidationParity(t *testing.T) {
-	_, err := LegacyMix(
-		From(mixTestAudioSource("a", 1)).Audio(),
-		From(mixTestAudioSource("b", 1)).Audio(),
+	_, err := legacyMix(
+		recipeFrom(mixTestAudioSource("a", 1)).Audio(),
+		recipeFrom(mixTestAudioSource("b", 1)).Audio(),
 	).Encode(codec.Opus()).
 		To(Write("out.ogg", io.Discard, Format(av.FormatOgg))).
 		Build(context.Background())
@@ -66,10 +66,10 @@ func TestJoinRuntimeMissingValidationParity(t *testing.T) {
 }
 
 func TestJoinTapDomainValidationParity(t *testing.T) {
-	_, err := LegacyMix(
-		From(mixTestAudioSource("a", 1)).Audio(),
-		From(mixTestAudioSource("b", 1)).Audio(),
-	).Tap(PacketTap("mixed.packets")).
+	_, err := legacyMix(
+		recipeFrom(mixTestAudioSource("a", 1)).Audio(),
+		recipeFrom(mixTestAudioSource("b", 1)).Audio(),
+	).Tap(packetTapRef("mixed.packets")).
 		To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))).
 		Build(context.Background())
 	assertJoinParityBuildError(t, err, errcode.TapDomainMismatch)

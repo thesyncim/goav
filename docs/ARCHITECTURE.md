@@ -64,8 +64,8 @@ stay equivalent across work-plan lowerers.
 The native planning layer is:
 
 ```text
-BranchSpec -> WorkPlan   // initial build
-BranchSpec -> WorkPatch  // runtime attach
+branchRecipe -> WorkPlan   // initial build
+branchRecipe -> WorkPatch  // runtime attach
 ```
 
 `shape.Spec` is the public compatibility contract for branch, flow, tap, sink,
@@ -195,10 +195,10 @@ those facts into stable recipe/plan data.
 The boundary is pinned by executable tests. `TestPlannerFilesDoNotReadBuilderInternals`
 AST-scans the pure planner/lowerer files (`recipe_compile`, `media_plan_*`,
 `work_*`, `shape_solver`, `branch_compose_*`) and fails if any reads a mutable
-builder struct (`BranchSpec`, `jobStreamBuild`); the stream-rule
+builder struct (`branchRecipe`, `jobStreamBuild`); the stream-rule
 requires-runtime check now carries its fact across the boundary on
 `recipeir.StreamRule.RequiresRuntime`, captured at the builder→IR edge, so the
-compiler no longer reads `BranchSpec`. `TestRecipeIRImportsOnlyLeafPackages`
+compiler no longer reads `branchRecipe`. `TestRecipeIRImportsOnlyLeafPackages`
 pins that `internal/recipeir` imports only leaf vocabulary packages, never the
 root or a builder.
 
@@ -209,11 +209,11 @@ pairs them with the concrete destination handles (the documented IR exception)
 and the branch's construction error. The join planner consumes that snapshot;
 branch domain validation is shared with the ordinary branch path through
 `validateBranchDomainFacts`, which takes captured facts rather than a
-`BranchSpec`. `join_build.go` owns the join grammar/capture side (which
-legitimately constructs and reads `BranchSpec`); `join_plan.go` owns the
+`branchRecipe`. `join_build.go` owns the join grammar/capture side (which
+legitimately constructs and reads `branchRecipe`); `join_plan.go` owns the
 planner/lowering side. `TestJoinPlannerReadsRecipeIRNotBuilderInternals`
 file-scans `join_plan.go` and fails if the planner file reaches into
-`BranchSpec`.
+`branchRecipe`.
 
 Why the planner internals still cannot move to `internal/` packages today:
 after the A1-A4 boundary slices, the package graph was re-measured on
@@ -240,8 +240,8 @@ remaining root-only facts are converted to stable recipe/plan data.
 What it would take to finish enforcing the layering: continue the data-transfer
 boundary so planner passes consume and return plain recipe/plan data instead
 of reading and mutating grammar object fields. Relocating the grammar records
-(`Branch`/`BranchSpec`, `Recipe`, `Runtime`, `Destination`, `InputSpec`,
-`operationSpec`, `joinSpec`) wholesale would still be public-API churn (type
+(`branchRecipe`, `Runtime`, `Destination`, `InputSpec`, `operationSpec`,
+`joinSpec`) wholesale would still be public-API churn for the exported ones (type
 identity and `reflect.Type.PkgPath` change even under aliases), so the intended
 cut remains the incremental DTO path.
 

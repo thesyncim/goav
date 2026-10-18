@@ -11,21 +11,21 @@ import (
 // its destinations — the video dual of Mix (N→1) and the convergent dual of
 // Branches.
 // Each arm is a source chain such as From(frameSource).Video() or another
-// video-producing join — LegacyComposite(LegacyComposite(a, b), logo) paints a sub-canvas
+// video-producing join — legacyComposite(legacyComposite(a, b), logo) paints a sub-canvas
 // like any arm. Arms must have distinct stream ids and I420 video format, and
 // each may declare its canvas position with .Region(x, y). This reuses the
 // existing Job, so .To/Build/Run are unchanged (see docs/MULTI_INPUT.md).
-func LegacyComposite(arms ...JoinArm) *CompositeStream {
-	return &CompositeStream{arms: arms}
+func legacyComposite(arms ...recipeArm) *compositeStream {
+	return &compositeStream{arms: arms}
 }
 
-// CompositeStream is the builder Composite returns: the join grammar surface
+// compositeStream is the builder Composite returns: the join grammar surface
 // (Region/SyncByPTS/Auto/Require/Prefer/Encode/Tap/Branches/To), plus the
 // unexported joinArm method so a composite nests as an arm of an outer join.
 // It is sealed — its fields are unexported, so the grammar methods are the
 // only mutation surface.
-type CompositeStream struct {
-	arms       []JoinArm
+type compositeStream struct {
+	arms       []recipeArm
 	encode     *codec.Spec
 	taps       []tapRef
 	operations []operationSpec
@@ -37,7 +37,7 @@ type CompositeStream struct {
 // consumes the COMPOSITED canvas under the sub-composite's output id, placed
 // at this composite's .Region(x, y) (top-left by default). A nested composite
 // may not carry .Encode(...) — encode belongs to the outer join or its chain.
-func (c *CompositeStream) joinArm() joinArmSpec {
+func (c *compositeStream) joinArm() joinArmSpec {
 	if c == nil {
 		return joinArmSpec{}
 	}
@@ -49,7 +49,7 @@ func (c *CompositeStream) joinArm() joinArmSpec {
 
 // Region places this composite's canvas at (x, y) when the composite is used
 // as an arm of an outer Composite; a top-level composite refuses it.
-func (c *CompositeStream) Region(x, y int) *CompositeStream {
+func (c *compositeStream) Region(x, y int) *compositeStream {
 	c.region = &compositeRegion{x: x, y: y}
 	return c
 }
@@ -64,7 +64,7 @@ func (c *CompositeStream) Region(x, y int) *CompositeStream {
 // re-syncs at its new position. Use it when arms are files starting at
 // different offsets, after a Seek on one arm, or under drift; the arrival
 // default pairs frames one-per-arm and is right for live same-clock sources.
-func (c *CompositeStream) SyncByPTS() *CompositeStream {
+func (c *compositeStream) SyncByPTS() *compositeStream {
 	c.sync = joinSyncPTS
 	return c
 }
@@ -72,20 +72,20 @@ func (c *CompositeStream) SyncByPTS() *CompositeStream {
 // Auto lets the planner insert format conversions on the composited output
 // before a terminal .Encode(...) or planned branches, using the same shape
 // solver as a normal stream chain.
-func (c *CompositeStream) Auto(policies ...shape.Policy) *CompositeStream {
+func (c *compositeStream) Auto(policies ...shape.Policy) *compositeStream {
 	c.operations = append(c.operations, operationSpecForAutoPolicy(policies))
 	return c
 }
 
 // Require asserts shape facts on the composited output before the terminal
 // encode or planned branches.
-func (c *CompositeStream) Require(spec shape.Spec) *CompositeStream {
+func (c *compositeStream) Require(spec shape.Spec) *compositeStream {
 	c.operations = append(c.operations, operationSpecForRequire(spec))
 	return c
 }
 
 // Prefer biases automatic conversion adapter selection on the composited output.
-func (c *CompositeStream) Prefer(spec shape.Spec) *CompositeStream {
+func (c *compositeStream) Prefer(spec shape.Spec) *compositeStream {
 	c.operations = append(c.operations, operationSpecForPreference(spec))
 	return c
 }
@@ -99,7 +99,7 @@ type compositeRegion struct {
 // Encode encodes the composited stream before the destination, so a Composite can
 // record to a File/mux (not only a frame Sink). Without it the composite delivers
 // frames.
-func (c *CompositeStream) Encode(spec codec.Spec) *CompositeStream {
+func (c *compositeStream) Encode(spec codec.Spec) *compositeStream {
 	c.encode = &spec
 	return c
 }
@@ -107,7 +107,7 @@ func (c *CompositeStream) Encode(spec codec.Spec) *CompositeStream {
 // Tap names the composited stream as a stable frame-domain attach point — the
 // same tap a normal chain declares: it appears in task.Taps() and runtime
 // branches can Attach from it later.
-func (c *CompositeStream) Tap(tap tapRef) *CompositeStream {
+func (c *compositeStream) Tap(tap tapRef) *compositeStream {
 	c.taps = append(c.taps, tap)
 	return c
 }
@@ -115,7 +115,7 @@ func (c *CompositeStream) Tap(tap tapRef) *CompositeStream {
 // Branches fans the composited stream out to planned branch chains, each with
 // its own destinations — the same goav.Branch specs an ordinary stream chain
 // accepts after decode.
-func (c *CompositeStream) Branches(branches ...BranchSpec) *Job {
+func (c *compositeStream) Branches(branches ...branchRecipe) *recipeJob {
 	return refuseTopLevelRegion(newJoinBranchesJob(joinComposite, joinSpec{arms: c.arms, encode: c.encode, operations: cloneOperationSpecs(c.operations), taps: c.taps, sync: c.sync}, branches), c.region, "composite")
 }
 
@@ -124,7 +124,7 @@ func (c *CompositeStream) Branches(branches ...BranchSpec) *Job {
 // exactly like a chain's multi-destination .To) and returns a Job, so the
 // composite runs through the same Build/Run as every other recipe. It lowers
 // to the one joinSpec shared by every convergence builder.
-func (c *CompositeStream) To(destinations ...Destination) *Job {
+func (c *compositeStream) To(destinations ...Destination) *recipeJob {
 	return refuseTopLevelRegion(newJoinJob(joinComposite, joinSpec{arms: c.arms, dests: destinations, encode: c.encode, operations: cloneOperationSpecs(c.operations), taps: c.taps, sync: c.sync}), c.region, "composite")
 }
 
@@ -173,7 +173,7 @@ var compositeJoinProfile = joinProfile{
 	},
 	sinkOnlyReason: "composite to a non-Sink destination requires .Encode(...)",
 	sinkOnlySuggestions: []string{
-		"encode the composited video first: goav.LegacyComposite(a, b).Encode(codec.VP8(codec.Bitrate(1_000_000))).To(out)",
+		"encode the composited video first: goav.Composite(a, b).Encode(codec.VP8(codec.Bitrate(1_000_000))).To(out)",
 		"deliver raw composited frames with .To(goav.Sink(sink)) instead",
 	},
 }

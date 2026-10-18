@@ -285,11 +285,11 @@ func TestBranchPacketTransformWithoutDecodeBuilds(t *testing.T) {
 		WithDecoder(codec.Descriptor{ID: pcm, Name: "PCM", Type: av.MediaAudio, Capabilities: codec.Capabilities{SampleFormats: []string{av.SampleFormatS16}}}, recipePCMDecoderFactory{decoder: &recipePCMDecoder{}}),
 	)
 
-	task, err := From(source).
+	task, err := recipeFrom(source).
 		UseRuntime(rt).
 		Audio().
 		Copy().
-		Branches(Branch("resampled").
+		Branches(newBranch("resampled").
 			Resample(16_000, codec.Mono).
 			To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil })))).
 		BuildLive(context.Background())
@@ -306,11 +306,11 @@ func TestBranchPacketTransformWithoutDecodeBuilds(t *testing.T) {
 }
 
 func TestStoredOperationListsMirrorFlowBranchAndDirectStreamWork(t *testing.T) {
-	voice := Flow("voice").Audio().
+	voice := newFlow("voice").Audio().
 		Resample(16_000, codec.Mono).
-		Tap(FrameTap("audio.voice.frames")).
+		Tap(frameTapRef("audio.voice.frames")).
 		Encode(codec.Opus(codec.Bitrate(32_000), codec.Channels(codec.Mono))).
-		Tap(PacketTap("audio.voice.packets"))
+		Tap(packetTapRef("audio.voice.packets"))
 
 	flowSpec, err := chainSpecFrom(voice)
 	if err != nil {
@@ -335,7 +335,7 @@ func TestStoredOperationListsMirrorFlowBranchAndDirectStreamWork(t *testing.T) {
 		t.Fatalf("flow taps = %+v, want frame then packet taps", flowTaps)
 	}
 
-	job := From(FileInput("input.ogg", strings.NewReader(""))).
+	job := recipeFrom(FileInput("input.ogg", strings.NewReader(""))).
 		Audio().
 		Decode().
 		Apply(voice).
@@ -350,7 +350,7 @@ func TestStoredOperationListsMirrorFlowBranchAndDirectStreamWork(t *testing.T) {
 		t.Fatalf("recipe chain stored operations = %+v, want %+v", got, want)
 	}
 
-	branch := Branch("archive").
+	branch := newBranch("archive").
 		Apply(voice).
 		To(Write("archive.ogg", io.Discard))
 	if branch.err != nil {
@@ -362,13 +362,13 @@ func TestStoredOperationListsMirrorFlowBranchAndDirectStreamWork(t *testing.T) {
 }
 
 func TestPlannedBranchSplitOperationsInsertImplicitDecode(t *testing.T) {
-	voice := Flow("voice").Audio().
+	voice := newFlow("voice").Audio().
 		Resample(16_000, codec.Mono).
 		Encode(codec.Opus(codec.Bitrate(32_000), codec.Channels(codec.Mono)))
 
-	implicitJob := From(FileInput("input.ogg", strings.NewReader(""))).
+	implicitJob := recipeFrom(FileInput("input.ogg", strings.NewReader(""))).
 		Audio().
-		Branches(Branch("voice").Apply(voice).To(Write("voice.ogg", io.Discard)))
+		Branches(newBranch("voice").Apply(voice).To(Write("voice.ogg", io.Discard)))
 	if implicitJob.err != nil {
 		t.Fatal(implicitJob.err)
 	}
@@ -380,13 +380,13 @@ func TestPlannedBranchSplitOperationsInsertImplicitDecode(t *testing.T) {
 		t.Fatalf("implicit private operations = %+v, want %+v", got, want)
 	}
 
-	explicit := Flow("voice").Audio().
+	explicit := newFlow("voice").Audio().
 		Decode().
 		Resample(16_000, codec.Mono).
 		Encode(codec.Opus(codec.Bitrate(32_000), codec.Channels(codec.Mono)))
-	job := From(FileInput("input.ogg", strings.NewReader(""))).
+	job := recipeFrom(FileInput("input.ogg", strings.NewReader(""))).
 		Audio().
-		Branches(Branch("voice").Apply(explicit).To(Write("voice.ogg", io.Discard)))
+		Branches(newBranch("voice").Apply(explicit).To(Write("voice.ogg", io.Discard)))
 	if job.err != nil {
 		t.Fatal(job.err)
 	}
@@ -409,9 +409,9 @@ func TestPlannedBranchSinkRequiresExplicitDomain(t *testing.T) {
 	monitor := Sink(SinkFunc("monitor", func(context.Context, Message) error {
 		return nil
 	}))
-	job := From(FileInput("input.ogg", strings.NewReader(""))).
+	job := recipeFrom(FileInput("input.ogg", strings.NewReader(""))).
 		Audio().
-		Branches(Branch("monitor").To(monitor))
+		Branches(newBranch("monitor").To(monitor))
 	if job.err == nil {
 		t.Fatal("branch sink error = nil, want explicit domain refusal")
 	}
@@ -422,7 +422,7 @@ func TestPlannedBranchSinkRequiresExplicitDomain(t *testing.T) {
 	for _, want := range []string{
 		"sink output from a packet stream needs an explicit domain",
 		"decode frames before the sink: .Decode().To(goav.Sink(...))",
-		"preserve packets before the sink: .Copy().To(goav.Sink(...))",
+		"preserve packets by leaving out .Decode(): input.Video().To(goav.Sink(...))",
 	} {
 		if !strings.Contains(job.err.Error(), want) {
 			t.Fatalf("branch sink error = %v, want %q", job.err, want)
@@ -431,15 +431,15 @@ func TestPlannedBranchSinkRequiresExplicitDomain(t *testing.T) {
 }
 
 func TestPlannedBranchSplitOperationsTreatParentCopyAsPacketAnchor(t *testing.T) {
-	decodeFlow := Flow("voice").Audio().
+	decodeFlow := newFlow("voice").Audio().
 		Decode().
 		Resample(16_000, codec.Mono).
 		Encode(codec.Opus(codec.Bitrate(64_000)))
 
-	decodeJob := From(FileInput("input.ogg", strings.NewReader(""))).
+	decodeJob := recipeFrom(FileInput("input.ogg", strings.NewReader(""))).
 		Audio().
 		Copy().
-		Branches(Branch("voice").Apply(decodeFlow).To(Write("voice.ogg", io.Discard)))
+		Branches(newBranch("voice").Apply(decodeFlow).To(Write("voice.ogg", io.Discard)))
 	if decodeJob.err != nil {
 		t.Fatal(decodeJob.err)
 	}
@@ -450,12 +450,12 @@ func TestPlannedBranchSplitOperationsTreatParentCopyAsPacketAnchor(t *testing.T)
 		t.Fatalf("decode branch operations = %+v, want %+v", got, want)
 	}
 
-	copyJob := From(FileInput("input.ogg", strings.NewReader(""))).
+	copyJob := recipeFrom(FileInput("input.ogg", strings.NewReader(""))).
 		Audio().
 		Copy().
-		Tap(PacketTap("audio.packets")).
-		Branches(Branch("packets").
-			Tap(PacketTap("packets.branch")).
+		Tap(packetTapRef("audio.packets")).
+		Branches(newBranch("packets").
+			Tap(packetTapRef("packets.branch")).
 			To(Sink(SinkFunc("packets", func(context.Context, Message) error {
 				return nil
 			}))))
@@ -494,19 +494,19 @@ func TestPlannedBranchSplitOperationsRespectEarlierTapAnchors(t *testing.T) {
 	}))
 	web := Write("web.ivf", io.Discard)
 
-	job := From(FileInput("input.ivf", strings.NewReader(""))).
+	job := recipeFrom(FileInput("input.ivf", strings.NewReader(""))).
 		Video().
 		Decode().
-		Tap(FrameTap("video.decoded")).
+		Tap(frameTapRef("video.decoded")).
 		Resize(1280, 720).
-		Tap(FrameTap("video.720p.frames")).
+		Tap(frameTapRef("video.720p.frames")).
 		Branches(
-			Branch("raw-preview").
-				From(FrameTap("video.decoded")).
+			newBranch("raw-preview").
+				From(frameTapRef("video.decoded")).
 				Resize(320, 180).
 				To(thumbnail),
-			Branch("web").
-				From(FrameTap("video.720p.frames")).
+			newBranch("web").
+				From(frameTapRef("video.720p.frames")).
 				Encode(codec.VP9(codec.Bitrate(2_000_000))).
 				To(web),
 		)
@@ -658,7 +658,7 @@ func workPlanOperationKindsForBranch(operations []workOperation, branch string) 
 func TestRecipeCompileStateDoesNotCarryRecipeBuilders(t *testing.T) {
 	stateType := reflect.TypeFor[recipeCompileState]()
 	forbidden := map[reflect.Type]string{
-		reflect.TypeFor[*Job]():            "*Job",
+		reflect.TypeFor[*recipeJob]():      "*Job",
 		reflect.TypeFor[*jobStreamBuild](): "*jobStreamBuild",
 		reflect.TypeFor[[]streamBuild]():   "[]streamBuild",
 		reflect.TypeFor[*builder]():        "*builder",
@@ -676,7 +676,7 @@ func TestRecipeCompileStateDoesNotCarryRecipeBuilders(t *testing.T) {
 }
 
 func TestJobConstructionErrorsAreJoined(t *testing.T) {
-	_, err := From(FileInput("input.ogg", strings.NewReader(""))).
+	_, err := recipeFrom(FileInput("input.ogg", strings.NewReader(""))).
 		Audio().
 		Decode().
 		Encode(codec.Opus()).
@@ -863,7 +863,7 @@ func TestRecipeAttachmentConsistencyRejectsMismatches(t *testing.T) {
 				!strings.Contains(err.Error(), "intent") ||
 				!strings.Contains(err.Error(), "attached") ||
 				!strings.Contains(err.Error(), "custom compiler passes") ||
-				!strings.Contains(err.Error(), "goav.From") {
+				!strings.Contains(err.Error(), "rt.Run(ctx, outputs...)") {
 				t.Fatalf("err = %v, want attachment mismatch guidance", err)
 			}
 			if !errors.As(err, &buildErr) || buildErr.Code != recipeAttachmentMismatchCode || !errors.Is(err, errUnsupportedBuild) {
@@ -977,7 +977,7 @@ func TestJobOutputBindingsPassRejectsUndefinedStreamRoutes(t *testing.T) {
 		t.Fatalf("err = %v, want output_missing with matching BuildError code", err)
 	}
 	if !strings.Contains(err.Error(), "stream route output missing is not attached") ||
-		!strings.Contains(err.Error(), "selected stream chain") {
+		!strings.Contains(err.Error(), "from the selected stream") {
 		t.Fatalf("err = %v, want stream output binding guidance", err)
 	}
 }
@@ -1143,7 +1143,7 @@ func TestResolvedJobOutputFormatsEnterMediaPlanBuild(t *testing.T) {
 			testFormatMuxer(av.FormatOgg, &remuxTestMuxerFactory{}),
 		),
 	)...)
-	job := From(
+	job := recipeFrom(
 		Input(&liveTestProvider{
 			name:    "audio",
 			media:   av.MediaAudio,
@@ -1189,10 +1189,10 @@ func TestResolvedTranscodeOutputFormatsEnterPlan(t *testing.T) {
 		testFormatProber(remuxTestProber{}),
 		testFormatMuxer(av.FormatOgg, &remuxTestMuxerFactory{}),
 	))
-	job := From(FileInput("input.ivf", strings.NewReader(""))).UseRuntime(runtime).
+	job := recipeFrom(FileInput("input.ivf", strings.NewReader(""))).UseRuntime(runtime).
 		Audio().
 		Decode().
-		Branches(Branch("archive").Encode(codec.Opus(codec.Bitrate(96_000))).To(destinationHandle(fileDestination("archive.ogg", io.Discard))))
+		Branches(newBranch("archive").Encode(codec.Opus(codec.Bitrate(96_000))).To(destinationHandle(fileDestination("archive.ogg", io.Discard))))
 	state := recipeCompileStateFromSnapshot(
 		newJobRecipeSnapshot(job),
 		recipeCompileOptions{preflightOutputAdapters: true},
@@ -1227,10 +1227,10 @@ func TestResolvedBranchRecipeOutputFormatsRefreshPreplannedDestinations(t *testi
 			testCodecEncoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &encodeTestEncoderFactory{encoder: &encodeTestEncoder{}}),
 		),
 	)
-	job := From(FileInput("input.ogg", strings.NewReader(""))).UseRuntime(runtime).
+	job := recipeFrom(FileInput("input.ogg", strings.NewReader(""))).UseRuntime(runtime).
 		Audio().
 		Decode().
-		Branches(Branch("main").Encode(codec.Opus(codec.Bitrate(96_000))).To(destinationHandle(fileDestination("archive.ogg", io.Discard))))
+		Branches(newBranch("main").Encode(codec.Opus(codec.Bitrate(96_000))).To(destinationHandle(fileDestination("archive.ogg", io.Discard))))
 
 	resolved, err := compileJobRecipeForBuildContext(context.Background(), job)
 	if err != nil {
@@ -1551,7 +1551,7 @@ func TestDecodeAdapterPassRejectsKnownLiveMissingDecoders(t *testing.T) {
 			},
 			code:  "decode_adapter_missing",
 			cause: codec.ErrNotFound,
-			want:  []string{"no decoder adapter", "codec=opus", "goav.From"},
+			want:  []string{"no decoder adapter", "codec=opus", "input.To(output)"},
 		},
 		{
 			name: "descriptor-only decoder",
@@ -1670,7 +1670,7 @@ func TestKnownInputDecodeAdapterPassesRejectMissingDecoders(t *testing.T) {
 			},
 			code:  "decode_adapter_missing",
 			cause: codec.ErrNotFound,
-			want:  []string{"no decoder adapter", "codec=opus", "goav.From"},
+			want:  []string{"no decoder adapter", "codec=opus", "input.To(output)"},
 		},
 		{
 			name: "job probed descriptor-only decoder",
@@ -1724,7 +1724,7 @@ func TestKnownInputDecodeAdapterPassesRejectMissingDecoders(t *testing.T) {
 			},
 			code:  "decode_adapter_missing",
 			cause: codec.ErrNotFound,
-			want:  []string{"no decoder adapter", "codec=vp9", "goav.From"},
+			want:  []string{"no decoder adapter", "codec=vp9", "input.To(output)"},
 		},
 	}
 	for _, tt := range tests {
@@ -2303,7 +2303,7 @@ func TestJobStreamOutputKindsPassRejectsInvalidOutputShapes(t *testing.T) {
 			},
 			outputs: []destinationSpec{frameSink, fileOutput},
 			code:    "output_kind_mixed",
-			want:    []string{"cannot mix sinks and muxed outputs", ".Branches(...)"},
+			want:    []string{"cannot mix sinks and muxed outputs", "fork the decoded Stream"},
 		},
 		{
 			name: "mux output without encoder",
@@ -2523,7 +2523,7 @@ func TestRecipeOperationShapePassRejectsInvalidOrderedOperations(t *testing.T) {
 				"operation_index=1",
 				"expected_shape=domain=packet",
 				"actual_shape=domain=frame media=audio",
-				"move .Copy() before decode",
+				"leave out .Decode() to copy",
 			},
 		},
 	}
@@ -2694,7 +2694,7 @@ func TestRequireGraphPlanSpecPassWrapsUnsupportedRecipeShape(t *testing.T) {
 	if !errors.As(err, &buildErr) || buildErr.Code != "recipe_graph_unsupported" || !errors.Is(err, errUnsupportedBuild) {
 		t.Fatalf("err = %v, want recipe_graph_unsupported with matching BuildError code", err)
 	}
-	for _, want := range []string{"recipe intent", "inputs: 1", "destinations: 0", "goav.From", ".Copy().To", ".Branches"} {
+	for _, want := range []string{"recipe intent", "inputs: 1", "destinations: 0", "input.To(output...)", "input.Audio().Decode()", ".As(name)"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Fatalf("err = %v, want %q", err, want)
 		}
@@ -3085,7 +3085,7 @@ func TestTranscodeKnownInputStreamSelectionPassRejectsProbedBranchAmbiguity(t *t
 }
 
 func TestCompileJobRecipeCarriesIntentAndGraphPlanBuild(t *testing.T) {
-	job := From(
+	job := recipeFrom(
 		FileInput("input.ivf", strings.NewReader("")),
 	).Copy().To(destinationHandle(fileDestination("recording.ivf", io.Discard)))
 
@@ -3123,12 +3123,12 @@ func TestCompileJobRecipeCarriesIntentAndGraphPlanBuild(t *testing.T) {
 
 func TestGraphPlanCarriesReportMetadata(t *testing.T) {
 	web := destinationHandle(fileDestination("web.ivf", io.Discard).withFormat(av.FormatIVF))
-	job := From(FileInput("input.ivf", strings.NewReader(""))).
+	job := recipeFrom(FileInput("input.ivf", strings.NewReader(""))).
 		Video().
 		Decode().
-		Tap(FrameTap("video.decoded")).
+		Tap(frameTapRef("video.decoded")).
 		Branches(
-			Branch("360p").
+			newBranch("360p").
 				Resize(640, 360).
 				Encode(codec.VP9(codec.Bitrate(600_000))).
 				To(web),
@@ -3175,7 +3175,7 @@ func TestGraphPlanCarriesReportMetadata(t *testing.T) {
 }
 
 func TestGraphPlanViewsAreImmutable(t *testing.T) {
-	job := From(
+	job := recipeFrom(
 		FileInput("input.ivf", strings.NewReader("")),
 	).Copy().To(destinationHandle(fileDestination("recording.ivf", io.Discard).withFormat(av.FormatIVF)))
 
@@ -3236,7 +3236,7 @@ func graphPlanOperationTargetPresent(operations []workOperation, target string) 
 }
 
 func TestGraphPlanSpecPassPlansFileCopy(t *testing.T) {
-	job := From(
+	job := recipeFrom(
 		FileInput("input.ivf", strings.NewReader("")),
 	).Copy().To(destinationHandle(fileDestination("recording.ivf", io.Discard).withFormat(av.FormatIVF)))
 
@@ -3270,7 +3270,7 @@ func TestGraphPlanSpecPassPlansFileCopy(t *testing.T) {
 }
 
 func TestGraphPlanSpecPassPlansRTPCopy(t *testing.T) {
-	job := From(
+	job := recipeFrom(
 		Input(liveVideoVP8Provider("video")),
 	).Copy().To(destinationHandle(fileDestination("recording.ivf", io.Discard).withFormat(av.FormatIVF)))
 
@@ -3305,12 +3305,12 @@ func TestGraphPlanSpecPassPlansRTPCopy(t *testing.T) {
 
 func TestCompileBranchCompositionRecipeCarriesIntentAndPlan(t *testing.T) {
 	web := destinationHandle(fileDestination("web.ivf", io.Discard))
-	job := From(FileInput("input.ivf", strings.NewReader(""))).
+	job := recipeFrom(FileInput("input.ivf", strings.NewReader(""))).
 		Video().
 		Decode().
-		Tap(FrameTap("video.decoded")).
+		Tap(frameTapRef("video.decoded")).
 		Branches(
-			Branch("360p").
+			newBranch("360p").
 				Resize(640, 360).
 				Encode(codec.VP9(codec.Bitrate(600_000))).
 				To(web),
@@ -3348,11 +3348,11 @@ func TestCompileBranchCompositionRecipeCarriesIntentAndPlan(t *testing.T) {
 func TestCompileLiveFlowBranchesRecipeUsesMediaPlanBranchComposer(t *testing.T) {
 	voice := destinationHandle(fileDestination("voice.ogg", io.Discard).withFormat(av.FormatOgg))
 	archive := destinationHandle(fileDestination("archive.ogg", io.Discard).withFormat(av.FormatOgg))
-	job := From(Input(liveAudioOpusProvider("audio"))).
+	job := recipeFrom(Input(liveAudioOpusProvider("audio"))).
 		Audio().
 		Branches(
-			Branch("voice").Apply(Flow("voice").Audio().Decode().Encode(codec.Opus(codec.Bitrate(32_000), codec.Channels(codec.Mono)))).To(voice),
-			Branch("archive").Apply(Flow("archive").Audio().Decode().Encode(codec.Opus(codec.Bitrate(128_000), codec.Channels(codec.Stereo)))).To(archive),
+			newBranch("voice").Apply(newFlow("voice").Audio().Decode().Encode(codec.Opus(codec.Bitrate(32_000), codec.Channels(codec.Mono)))).To(voice),
+			newBranch("archive").Apply(newFlow("archive").Audio().Decode().Encode(codec.Opus(codec.Bitrate(128_000), codec.Channels(codec.Stereo)))).To(archive),
 		)
 
 	resolved, err := compileJobRecipe(job)
@@ -3390,11 +3390,11 @@ func TestRecipeResolvedBuildUsesMediaPlanBranchComposer(t *testing.T) {
 			testCodecEncoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &encodeTestEncoderFactory{encoder: &encodeTestEncoder{}}),
 		),
 	)
-	job := From(FileInput("input.ogg", strings.NewReader(""))).UseRuntime(runtime).
+	job := recipeFrom(FileInput("input.ogg", strings.NewReader(""))).UseRuntime(runtime).
 		Audio().
 		Decode().
-		Tap(FrameTap("audio.decoded")).
-		Branches(Branch("main").Encode(codec.Opus(codec.Bitrate(96_000))).To(destinationHandle(fileDestination("archive.ogg", io.Discard))))
+		Tap(frameTapRef("audio.decoded")).
+		Branches(newBranch("main").Encode(codec.Opus(codec.Bitrate(96_000))).To(destinationHandle(fileDestination("archive.ogg", io.Discard))))
 
 	resolved, err := compileJobRecipeForBuildContext(ctx, job)
 	if err != nil {
@@ -3420,14 +3420,14 @@ func TestBranchComposeGraphPlanOperationsUseSharedNodeRefs(t *testing.T) {
 	thumbnail := Sink(SinkFunc("thumbnail", func(context.Context, Message) error {
 		return nil
 	}))
-	job := From(FileInput("input.ivf", strings.NewReader(""))).
+	job := recipeFrom(FileInput("input.ivf", strings.NewReader(""))).
 		Video().
 		Decode().
 		Resize(1280, 720).
-		Tap(FrameTap("video.720p.frames")).
+		Tap(frameTapRef("video.720p.frames")).
 		Branches(
-			Branch("web").Encode(codec.VP9(codec.Bitrate(2_000_000))).To(web),
-			Branch("thumb").Resize(320, 180).To(thumbnail),
+			newBranch("web").Encode(codec.VP9(codec.Bitrate(2_000_000))).To(web),
+			newBranch("thumb").Resize(320, 180).To(thumbnail),
 		)
 
 	resolved, err := compileJobRecipe(job)
@@ -3448,7 +3448,7 @@ func TestBranchComposeGraphPlanOperationsUseSharedNodeRefs(t *testing.T) {
 }
 
 func TestRecipeResolvedBuildUsesMediaPlanPacketCopy(t *testing.T) {
-	job := From(
+	job := recipeFrom(
 		Input(liveVideoVP8Provider("video")),
 	).Copy().To(destinationHandle(fileDestination("recording.ivf", io.Discard))).UseRuntime(testBundleRuntime())
 
@@ -3521,7 +3521,7 @@ func TestPacketCopyLowererPreservesAllStreamsForSingleSourceRemux(t *testing.T) 
 			testFormatMuxer(av.FormatOgg, muxers),
 		),
 	)
-	task, err := From(FileInput("input.ogg", strings.NewReader(""))).UseRuntime(runtime).
+	task, err := recipeFrom(FileInput("input.ogg", strings.NewReader(""))).UseRuntime(runtime).
 		Copy().
 		To(destinationHandle(fileDestination("recording.ogg", io.Discard))).
 		Build(ctx)
@@ -3546,7 +3546,7 @@ func TestRecipeResolvedBuildUsesMediaPlanFileSinkDestination(t *testing.T) {
 		),
 		withTestCodecs(testCodecDecoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &decodeTestDecoderFactory{decoder: &decodeTestDecoder{}})),
 	)
-	job := From(FileInput("input.ogg", strings.NewReader(""))).UseRuntime(runtime).
+	job := recipeFrom(FileInput("input.ogg", strings.NewReader(""))).UseRuntime(runtime).
 		Audio().
 		Decode().
 		To(Sink(&runtimeTestSink{name: "frames"}))
@@ -3581,7 +3581,7 @@ func TestRecipeResolvedMediaPlanSinkDestinationPreservesCustomStage(t *testing.T
 		),
 		withTestCodecs(testCodecDecoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &decodeTestDecoderFactory{decoder: &decodeTestDecoder{}})),
 	)
-	job := From(FileInput("input.ogg", strings.NewReader(""))).UseRuntime(runtime).
+	job := recipeFrom(FileInput("input.ogg", strings.NewReader(""))).UseRuntime(runtime).
 		Audio().
 		Decode().
 		Do(&runtimeTestStage{name: "meter"}).
@@ -3606,7 +3606,7 @@ func TestRecipeResolvedMediaPlanSinkDestinationPreservesCustomStage(t *testing.T
 func TestRecipeResolvedBuildUsesMediaPlanRTPSinkDestination(t *testing.T) {
 	ctx := context.Background()
 	runtime := mustNew(withTestCodecs(testCodecDecoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &decodeTestDecoderFactory{decoder: &decodeTestDecoder{}})))
-	job := From(Input(liveAudioOpusProvider("audio"))).UseRuntime(runtime).
+	job := recipeFrom(Input(liveAudioOpusProvider("audio"))).UseRuntime(runtime).
 		Audio().
 		Decode().
 		To(Sink(&runtimeTestSink{name: "frames"}))
@@ -3640,7 +3640,7 @@ func TestRecipeResolvedBuildUsesMediaPlanSelectedPacketSinkDestination(t *testin
 			testFormatDemuxer(av.FormatOgg, decodeTestDemuxerFactory{demuxer: demuxer}),
 		),
 	)
-	job := From(FileInput("input.ogg", strings.NewReader(""))).UseRuntime(runtime).
+	job := recipeFrom(FileInput("input.ogg", strings.NewReader(""))).UseRuntime(runtime).
 		Audio().
 		Copy().
 		To(Sink(&runtimeTestSink{name: "packets"}))
@@ -3679,7 +3679,7 @@ func TestRecipeResolvedBuildUsesMediaPlanFileEncodeOutput(t *testing.T) {
 			testCodecEncoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &encodeTestEncoderFactory{encoder: &encodeTestEncoder{}}),
 		),
 	)
-	job := From(FileInput("input.ogg", strings.NewReader(""))).UseRuntime(runtime).
+	job := recipeFrom(FileInput("input.ogg", strings.NewReader(""))).UseRuntime(runtime).
 		Audio().
 		Decode().
 		Do(&runtimeTestStage{name: "meter"}).
@@ -3723,10 +3723,10 @@ func TestMediaPlanDirectStreamUsesResolvedAttachments(t *testing.T) {
 			testCodecEncoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &encodeTestEncoderFactory{encoder: &encodeTestEncoder{}}),
 		),
 	)
-	job := From(FileInput("input.ogg", strings.NewReader(""))).UseRuntime(runtime).
+	job := recipeFrom(FileInput("input.ogg", strings.NewReader(""))).UseRuntime(runtime).
 		Audio().
 		Decode().
-		Tap(FrameTap("audio.decoded")).
+		Tap(frameTapRef("audio.decoded")).
 		Do(&runtimeTestStage{name: "meter"}).
 		Encode(codec.Opus(codec.Bitrate(96_000))).
 		To(destinationHandle(fileDestination("archive.ogg", io.Discard)))
@@ -3778,7 +3778,7 @@ func TestRecipeResolvedBuildUsesMediaPlanFileEncodeSinkDestination(t *testing.T)
 			testCodecEncoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &encodeTestEncoderFactory{encoder: &encodeTestEncoder{}}),
 		),
 	)
-	job := From(FileInput("input.ogg", strings.NewReader(""))).UseRuntime(runtime).
+	job := recipeFrom(FileInput("input.ogg", strings.NewReader(""))).UseRuntime(runtime).
 		Audio().
 		Decode().
 		Encode(codec.Opus(codec.Bitrate(96_000))).
@@ -3822,7 +3822,7 @@ func TestRecipeResolvedBuildUsesMediaPlanEncodeMuxAndSinkDestinations(t *testing
 			testCodecEncoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &encodeTestEncoderFactory{encoder: &encodeTestEncoder{}}),
 		),
 	)
-	job := From(FileInput("input.ogg", strings.NewReader(""))).UseRuntime(runtime).
+	job := recipeFrom(FileInput("input.ogg", strings.NewReader(""))).UseRuntime(runtime).
 		Audio().
 		Decode().
 		Encode(codec.Opus(codec.Bitrate(96_000))).
@@ -3866,7 +3866,7 @@ func TestRecipeResolvedBuildUsesMediaPlanRTPEncodeOutput(t *testing.T) {
 			testCodecEncoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &encodeTestEncoderFactory{encoder: &encodeTestEncoder{}}),
 		),
 	)
-	job := From(Input(liveAudioOpusProvider("audio"))).UseRuntime(runtime).
+	job := recipeFrom(Input(liveAudioOpusProvider("audio"))).UseRuntime(runtime).
 		Audio().
 		Decode().
 		Encode(codec.Opus(codec.Bitrate(96_000))).

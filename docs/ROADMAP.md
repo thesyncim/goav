@@ -26,7 +26,7 @@ input.Video/Audio/Stream() -> operations -> taps -> forks -> .To(destinations) -
 Normal users should not need graph handles, string routing, or a separate
 workflow API for recording, transcoding, preview, diagnostics, or late
 attachment. Internally every recipe lowers the same way — Stream values ->
-`BranchSpec -> operationSpec list -> WorkPlan / WorkPatch -> executable task`
+`branchRecipe -> operationSpec list -> WorkPlan / WorkPatch -> executable task`
 — and each operation appends exactly one internal operation record
 (`Decode` → OpDecode, a stream left undecoded → OpCopy, `Shape`/`Auto`/`Require`/`Prefer` →
 shape, `Resize`/`Resample` → transform, `Do` → stage, `Encode` → encode,

@@ -442,9 +442,9 @@ func (o destinationOption) applyDestination(spec *destinationSpec) {
 	}
 }
 
-// Name overrides the value's label. On an input it is the name selector
-// narrowing (InputName), errors, and Explain use; on a destination it is the
-// label outputs group and dedupe by.
+// Name overrides the value's label. On an input it is the name its source
+// node, errors, and Explain use; on a destination it is the label outputs
+// group and dedupe by.
 func Name(name string) MediaOption {
 	return mediaOption{
 		input: func(spec *InputSpec) {

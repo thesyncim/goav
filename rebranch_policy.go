@@ -20,12 +20,12 @@ const (
 
 // RebranchArg lets BranchSpec ride the lifecycle.RebranchArg list accepted by
 // Attachment.Rebranch as a replacement branch.
-func (s BranchSpec) RebranchArg() {}
+func (s branchRecipe) RebranchArg() {}
 
 // rebranchPolicy is the collected Rebranch configuration: the replacement
 // branches, the switch boundary, and the old branch's destination disposition.
 type rebranchPolicy struct {
-	specs       []BranchSpec
+	specs       []branchRecipe
 	boundary    switchBoundaryKind
 	mediaTime   time.Duration
 	invalid     string
@@ -57,7 +57,7 @@ func rebranchPolicyFromOptions(options []lifecycle.RebranchArg) rebranchPolicy {
 			continue
 		}
 		switch option := option.(type) {
-		case BranchSpec:
+		case branchRecipe:
 			policy.specs = append(policy.specs, option)
 		case lifecycleRebranchPolicy:
 			if invalid := option.Invalid(); invalid != "" {
@@ -196,8 +196,8 @@ func switchBoundaryReachedAt(boundary switchBoundaryKind, mediaTime time.Duratio
 // gatedBranchSpecs clones the replacement specs with a switch gate from the
 // group prepended as each branch's head operation, so every replacement sheds
 // until its boundary while the rest of the chain stays exactly as written.
-func gatedBranchSpecs(specs []BranchSpec, group *switchGroup) []BranchSpec {
-	out := make([]BranchSpec, len(specs))
+func gatedBranchSpecs(specs []branchRecipe, group *switchGroup) []branchRecipe {
+	out := make([]branchRecipe, len(specs))
 	for i := range specs {
 		out[i] = specs[i]
 		operations := make([]operationSpec, 0, len(specs[i].operations)+1)

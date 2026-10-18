@@ -58,15 +58,15 @@ func northStarTranscodeRuntime() *Runtime {
 func TestNorthStarDirectChainEqualsExplicitMainBranch(t *testing.T) {
 	dest := Write("archive.ogg", io.Discard)
 
-	direct, err := From(FileInput("input.ogg", strings.NewReader(""))).UseRuntime(northStarTranscodeRuntime()).
+	direct, err := recipeFrom(FileInput("input.ogg", strings.NewReader(""))).UseRuntime(northStarTranscodeRuntime()).
 		Audio().Decode().Encode(codec.Opus(codec.Bitrate(96_000))).To(dest).
 		Describe()
 	if err != nil {
 		t.Fatalf("direct chain Describe(): %v", err)
 	}
 
-	branched, err := From(FileInput("input.ogg", strings.NewReader(""))).UseRuntime(northStarTranscodeRuntime()).
-		Audio().Decode().Branches(Branch("main").Encode(codec.Opus(codec.Bitrate(96_000))).To(dest)).
+	branched, err := recipeFrom(FileInput("input.ogg", strings.NewReader(""))).UseRuntime(northStarTranscodeRuntime()).
+		Audio().Decode().Branches(newBranch("main").Encode(codec.Opus(codec.Bitrate(96_000))).To(dest)).
 		Describe()
 	if err != nil {
 		t.Fatalf("Branch(\"main\") Describe(): %v", err)
@@ -84,15 +84,15 @@ func TestNorthStarDirectChainEqualsExplicitMainBranch(t *testing.T) {
 func TestNorthStarDirectChainEqualsExplicitMainBranchWithTransform(t *testing.T) {
 	dest := Write("archive.ogg", io.Discard)
 
-	direct, err := From(FileInput("input.ogg", strings.NewReader(""))).UseRuntime(northStarResampleRuntime()).
+	direct, err := recipeFrom(FileInput("input.ogg", strings.NewReader(""))).UseRuntime(northStarResampleRuntime()).
 		Audio().Decode().Resample(16_000, codec.Mono).Encode(codec.Opus(codec.Bitrate(96_000))).To(dest).
 		Describe()
 	if err != nil {
 		t.Fatalf("direct chain Describe(): %v", err)
 	}
 
-	branched, err := From(FileInput("input.ogg", strings.NewReader(""))).UseRuntime(northStarResampleRuntime()).
-		Audio().Decode().Branches(Branch("main").Resample(16_000, codec.Mono).Encode(codec.Opus(codec.Bitrate(96_000))).To(dest)).
+	branched, err := recipeFrom(FileInput("input.ogg", strings.NewReader(""))).UseRuntime(northStarResampleRuntime()).
+		Audio().Decode().Branches(newBranch("main").Resample(16_000, codec.Mono).Encode(codec.Opus(codec.Bitrate(96_000))).To(dest)).
 		Describe()
 	if err != nil {
 		t.Fatalf("Branch(\"main\") Describe(): %v", err)
@@ -141,11 +141,11 @@ func TestNorthStarBranchesAfterDecodeShareOneDecoder(t *testing.T) {
 	)
 	sinkA := &runtimeTestSink{name: "a"}
 	sinkB := &runtimeTestSink{name: "b"}
-	job := From(FileInput("input.ogg", strings.NewReader(""))).UseRuntime(rt).
-		Audio().Decode().Tap(FrameTap("audio.decoded")).
+	job := recipeFrom(FileInput("input.ogg", strings.NewReader(""))).UseRuntime(rt).
+		Audio().Decode().Tap(frameTapRef("audio.decoded")).
 		Branches(
-			Branch("a").To(Sink(sinkA)),
-			Branch("b").To(Sink(sinkB)),
+			newBranch("a").To(Sink(sinkA)),
+			newBranch("b").To(Sink(sinkB)),
 		)
 
 	spec, err := job.Describe()
@@ -177,8 +177,8 @@ func TestNorthStarBranchesAfterDecodeShareOneDecoder(t *testing.T) {
 	}
 	defer task.Close()
 	sinkC := &runtimeTestSink{name: "c"}
-	if _, err := task.LegacyAttach(context.Background(),
-		Branch("c").From(FrameTap("audio.decoded")).To(Sink(sinkC))); err != nil {
+	if _, err := legacyAttach(task, context.Background(),
+		newBranch("c").From(frameTapRef("audio.decoded")).To(Sink(sinkC))); err != nil {
 		t.Fatalf("Attach() at the decode tap: %v", err)
 	}
 	if err := task.Run(context.Background()); err != nil {
@@ -201,8 +201,8 @@ func TestNorthStarBranchesAfterDecodeShareOneDecoder(t *testing.T) {
 func TestNorthStarFlowExposesNoDestinations(t *testing.T) {
 	forbidden := []string{"To", "Branches", "Output", "Outputs", "Destination", "Destinations", "Target", "Targets", "Path", "Paths"}
 	for label, chain := range map[string]chain{
-		"audio": Flow("guard").Audio(),
-		"video": Flow("guard").Video(),
+		"audio": newFlow("guard").Audio(),
+		"video": newFlow("guard").Video(),
 	} {
 		chainType := reflect.TypeOf(chain)
 		for _, name := range forbidden {
@@ -228,7 +228,7 @@ func TestNorthStarCustomPacketSourceCopiesToFile(t *testing.T) {
 			return push.EOS()
 		},
 	)
-	err := From(input).UseRuntime(rt).
+	err := recipeFrom(input).UseRuntime(rt).
 		Audio().Copy().To(Write("capture.ogg", io.Discard, Format(av.FormatOgg))).
 		Run(context.Background())
 	if err != nil {
@@ -266,7 +266,7 @@ func TestNorthStarCustomFrameSourceEncodesToFile(t *testing.T) {
 			return push.EOS()
 		},
 	)
-	err := From(input).UseRuntime(rt).
+	err := recipeFrom(input).UseRuntime(rt).
 		Audio().Encode(codec.Opus(codec.Bitrate(96_000))).To(Write("capture.ogg", io.Discard, Format(av.FormatOgg))).
 		Run(context.Background())
 	if err != nil {
@@ -286,7 +286,7 @@ func TestNorthStarShapeGuards(t *testing.T) {
 
 	// #13: a frame branch to File without Encode must fail (File needs packets).
 	t.Run("frame_to_file_without_encode_fails", func(t *testing.T) {
-		_, err := From(input()).UseRuntime(northStarTranscodeRuntime()).
+		_, err := recipeFrom(input()).UseRuntime(northStarTranscodeRuntime()).
 			Audio().Decode().To(Write("out.ogg", io.Discard)).
 			BuildLive(context.Background())
 		if err == nil {
@@ -296,7 +296,7 @@ func TestNorthStarShapeGuards(t *testing.T) {
 
 	// #15: decode to a frame Sink must succeed.
 	t.Run("decode_to_frame_sink_succeeds", func(t *testing.T) {
-		_, err := From(input()).UseRuntime(northStarTranscodeRuntime()).
+		_, err := recipeFrom(input()).UseRuntime(northStarTranscodeRuntime()).
 			Audio().Decode().To(Sink(SinkFunc("frames", func(context.Context, Message) error { return nil }))).
 			BuildLive(context.Background())
 		if err != nil {
@@ -306,7 +306,7 @@ func TestNorthStarShapeGuards(t *testing.T) {
 
 	// #14: packet branch to File with Copy must succeed.
 	t.Run("packet_copy_to_file_succeeds", func(t *testing.T) {
-		_, err := From(input()).UseRuntime(northStarTranscodeRuntime()).
+		_, err := recipeFrom(input()).UseRuntime(northStarTranscodeRuntime()).
 			Audio().Copy().To(Write("out.ogg", io.Discard)).
 			BuildLive(context.Background())
 		if err != nil {

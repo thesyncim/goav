@@ -22,8 +22,8 @@ func TestTapIsPostEncodeAnchorContracts(t *testing.T) {
 	}
 
 	stream := &jobStreamBuild{operations: []operationSpec{
-		operationSpecForTap(PacketTap("encoded"), av.MediaAudio, plan.OpEncode),
-		operationSpecForTap(FrameTap("frames"), av.MediaAudio, plan.OpDecode),
+		operationSpecForTap(packetTapRef("encoded"), av.MediaAudio, plan.OpEncode),
+		operationSpecForTap(frameTapRef("frames"), av.MediaAudio, plan.OpDecode),
 	}}
 	if !tapIsPostEncodeAnchor(stream, "encoded") {
 		t.Fatal("encoded packet tap not recognized as post-encode anchor")
@@ -86,7 +86,7 @@ func TestHandleStreamAddedGuardContracts(t *testing.T) {
 		domain: shape.DomainPacket,
 		rules: []streamRule{{
 			match:    MatchMedia(av.MediaAudio),
-			branches: []BranchSpec{{origin: branchSpecOriginBranch, name: "late"}},
+			branches: []branchRecipe{{origin: branchSpecOriginBranch, name: "late"}},
 		}},
 		attached: map[av.StreamID][]streamRuleAttachment{
 			"from-event": {{rule: 0, attachment: &runtimeAttachment{id: "att-1", name: "late"}}},
@@ -158,8 +158,8 @@ func TestStreamRuleAttachInputCapturesTemplatedBranch(t *testing.T) {
 		domain: shape.DomainPacket,
 	}}
 	rule := streamRule{
-		branches: []BranchSpec{
-			Branch("late").
+		branches: []branchRecipe{
+			newBranch("late").
 				Copy().
 				To(Sink(SinkFunc("late-sink", func(context.Context, Message) error { return nil }))),
 		},
@@ -266,7 +266,7 @@ func TestHandleStreamRemovedDetachesTrackedBranchesWithDrain(t *testing.T) {
 }
 
 func TestStreamRuleBranchNamesContract(t *testing.T) {
-	rule := streamRule{branches: []BranchSpec{
+	rule := streamRule{branches: []branchRecipe{
 		{origin: branchSpecOriginBranch, name: "preview"},
 		{origin: branchSpecOriginBranch, name: "archive"},
 	}}

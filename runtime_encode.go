@@ -160,7 +160,7 @@ func encodeTargetMissingError(request encodeRequest, stream av.Stream) error {
 		fixes: buildErrorFixes([]string{
 			"use " + encodeHint(stream.Type) + " in recipe encode paths",
 			"set codec.EncodeConfig.Parameters.ID in the expert builder",
-			"use codec.Copy() or .Copy().To(...) when no encode step is intended",
+			"leave out .Decode() and .Encode(...) to copy packets when no encode step is intended",
 		}),
 		cause: errUnsupportedBuild,
 	}

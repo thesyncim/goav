@@ -156,9 +156,9 @@ func mixTestAudioSource(id av.StreamID, samples ...int16) InputSpec {
 // now the consumer-side Mix acceptance test written against goavtest.
 
 func TestMixDescribeShowsConvergentJoin(t *testing.T) {
-	spec, err := LegacyMix(
-		From(mixTestAudioSource("a", 1)).Audio(),
-		From(mixTestAudioSource("b", 1)).Audio(),
+	spec, err := legacyMix(
+		recipeFrom(mixTestAudioSource("a", 1)).Audio(),
+		recipeFrom(mixTestAudioSource("b", 1)).Audio(),
 	).To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))).BuildLive(context.Background())
 	if err != nil {
 		t.Fatal(err)
@@ -183,7 +183,7 @@ func TestMixDescribeShowsConvergentJoin(t *testing.T) {
 }
 
 func TestMixRequiresTwoArms(t *testing.T) {
-	_, err := LegacyMix(From(mixTestAudioSource("a", 1)).Audio()).
+	_, err := legacyMix(recipeFrom(mixTestAudioSource("a", 1)).Audio()).
 		To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))).
 		Build(context.Background())
 	var buildErr *BuildError
@@ -193,9 +193,9 @@ func TestMixRequiresTwoArms(t *testing.T) {
 }
 
 func TestMixRawFramesRequireSinkDestination(t *testing.T) {
-	_, err := LegacyMix(
-		From(mixTestAudioSource("a", 1)).Audio(),
-		From(mixTestAudioSource("b", 2)).Audio(),
+	_, err := legacyMix(
+		recipeFrom(mixTestAudioSource("a", 1)).Audio(),
+		recipeFrom(mixTestAudioSource("b", 2)).Audio(),
 	).To(Write("mix.ogg", io.Discard)).
 		Build(context.Background())
 	var buildErr *BuildError
@@ -211,23 +211,23 @@ func TestMixRawFramesRequireSinkDestination(t *testing.T) {
 func errorsAsMix(err error, target **BuildError) bool { return errors.As(err, target) }
 
 func TestMixBuilderOptionsCarryIntoJoinSpec(t *testing.T) {
-	var nilMix *MixStream
+	var nilMix *mixStream
 	if arm := nilMix.joinArm(); arm.join != nil || arm.region != nil {
 		t.Fatalf("nil mix join arm = %+v, want zero", arm)
 	}
 
 	require := shape.Frame(av.MediaAudio, shape.Audio(48000, codec.Stereo, av.SampleFormatS16))
 	prefer := shape.Frame(av.MediaAudio, shape.Audio(0, 0, av.SampleFormatF32))
-	mix := LegacyMix(
-		From(mixTestAudioSource("a", 100, 200)).Audio(),
-		From(mixTestAudioSource("b", 50, -50)).Audio(),
+	mix := legacyMix(
+		recipeFrom(mixTestAudioSource("a", 100, 200)).Audio(),
+		recipeFrom(mixTestAudioSource("b", 50, -50)).Audio(),
 	).
 		SyncByPTS().
 		Auto(shape.AllowResample(), shape.AllowConvert()).
 		Require(require).
 		Prefer(prefer).
 		Encode(codec.Opus(codec.Bitrate(128_000), codec.Channels(codec.Stereo))).
-		Tap(FrameTap("mixed"))
+		Tap(frameTapRef("mixed"))
 
 	if mix.sync != joinSyncPTS {
 		t.Fatalf("sync = %v, want PTS", mix.sync)
@@ -282,9 +282,9 @@ func TestMixRequiresExplicitDecodeForPacketArms(t *testing.T) {
 		shape.Packet(av.MediaAudio, av.CodecOpus, shape.Audio(48000, codec.Stereo, av.SampleFormatS16), shape.Stream("a")),
 		func(context.Context, SourcePush) error { return nil })
 
-	_, err := LegacyMix(
-		From(packetArm).Audio(),
-		From(mixTestAudioSource("b", 1)).Audio(),
+	_, err := legacyMix(
+		recipeFrom(packetArm).Audio(),
+		recipeFrom(mixTestAudioSource("b", 1)).Audio(),
 	).To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))).Describe()
 	var buildErr *BuildError
 	if !errorsAsMix(err, &buildErr) || buildErr.Code != "mix_arm" ||
@@ -319,9 +319,9 @@ func TestMixUsesExplicitlyDecodedPacketArmsBeforeMixing(t *testing.T) {
 		return nil
 	}))
 
-	task, err := LegacyMix(
-		From(packetSrc("a")).Audio().Decode(),
-		From(packetSrc("b")).Audio().Decode(),
+	task, err := legacyMix(
+		recipeFrom(packetSrc("a")).Audio().Decode(),
+		recipeFrom(packetSrc("b")).Audio().Decode(),
 	).To(sink).UseRuntime(rt).BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -347,9 +347,9 @@ func TestMixEncodesMixedOutput(t *testing.T) {
 		return nil
 	}))
 
-	task, err := LegacyMix(
-		From(mixTestAudioSource("a", 100, 200)).Audio(),
-		From(mixTestAudioSource("b", 50, -50)).Audio(),
+	task, err := legacyMix(
+		recipeFrom(mixTestAudioSource("a", 100, 200)).Audio(),
+		recipeFrom(mixTestAudioSource("b", 50, -50)).Audio(),
 	).Encode(codec.Opus()).To(sink).UseRuntime(rt).BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -371,9 +371,9 @@ func TestMixEncodesToFile(t *testing.T) {
 		WithEncoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &encodeTestEncoderFactory{encoder: &encodeTestEncoder{}}),
 	)
 
-	task, err := LegacyMix(
-		From(mixTestAudioSource("a", 100, 200)).Audio(),
-		From(mixTestAudioSource("b", 50, -50)).Audio(),
+	task, err := legacyMix(
+		recipeFrom(mixTestAudioSource("a", 100, 200)).Audio(),
+		recipeFrom(mixTestAudioSource("b", 50, -50)).Audio(),
 	).Encode(codec.Opus()).To(Write("mix.ogg", io.Discard, Format(av.FormatOgg))).UseRuntime(rt).BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -427,9 +427,9 @@ func TestMixEncodesToMultipleFileDestinations(t *testing.T) {
 	)
 
 	var first, second bytes.Buffer
-	task, err := LegacyMix(
-		From(mixTestAudioSource("a", 100, 200)).Audio(),
-		From(mixTestAudioSource("b", 50, -50)).Audio(),
+	task, err := legacyMix(
+		recipeFrom(mixTestAudioSource("a", 100, 200)).Audio(),
+		recipeFrom(mixTestAudioSource("b", 50, -50)).Audio(),
 	).Encode(codec.Opus()).To(
 		Write("first.ogg", &first, Format(av.FormatOgg)),
 		Write("second.ogg", &second, Format(av.FormatOgg)),
@@ -456,9 +456,9 @@ func TestMixRejectsSameDestinationHandleTwice(t *testing.T) {
 	)
 	out := Write("mix.ogg", io.Discard, Format(av.FormatOgg))
 
-	_, err := LegacyMix(
-		From(mixTestAudioSource("a", 100)).Audio(),
-		From(mixTestAudioSource("b", 50)).Audio(),
+	_, err := legacyMix(
+		recipeFrom(mixTestAudioSource("a", 100)).Audio(),
+		recipeFrom(mixTestAudioSource("b", 50)).Audio(),
 	).Encode(codec.Opus()).To(out, out).UseRuntime(rt).BuildLive(context.Background())
 
 	// One handle listed twice is the same refusal a chain's .To(out, out)
@@ -513,9 +513,9 @@ func TestMixResamplesMismatchedArms(t *testing.T) {
 	}))
 
 	// arm "a" is 48kHz (the target); arm "b" is 24kHz and must auto-resample.
-	task, err := LegacyMix(
-		From(mixTestAudioSourceRate("a", 48000)).Audio(),
-		From(mixTestAudioSourceRate("b", 24000)).Audio(),
+	task, err := legacyMix(
+		recipeFrom(mixTestAudioSourceRate("a", 48000)).Audio(),
+		recipeFrom(mixTestAudioSourceRate("b", 24000)).Audio(),
 	).To(sink).UseRuntime(rt).BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)

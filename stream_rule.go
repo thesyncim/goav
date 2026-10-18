@@ -17,7 +17,7 @@ import (
 // matches, the templated branches are attached to it at runtime.
 type streamRule struct {
 	match    sourcepkg.StreamMatch
-	branches []BranchSpec
+	branches []branchRecipe
 }
 
 // OnStream declares a dynamic-stream rule on the job: when the running task's
@@ -36,7 +36,7 @@ type streamRule struct {
 // Rules require a single-input job today. Because the task watches its own
 // events, each task watch remains independent instead of exposing the shared
 // graph channel.
-func (j *Job) OnStream(match sourcepkg.StreamMatch, branches ...BranchSpec) *Job {
+func (j *recipeJob) OnStream(match sourcepkg.StreamMatch, branches ...branchRecipe) *recipeJob {
 	if j == nil {
 		return j
 	}
@@ -57,7 +57,7 @@ func (r streamRule) validate() error {
 	}
 	if len(r.branches) == 0 {
 		return streamRuleInvalidError("", "stream rule has no branches",
-			"pass one or more goav.Branch(name)...To(destination) values")
+			"route the rule with input.OnStream(match).As(name).To(destination)")
 	}
 	for i := range r.branches {
 		branch := r.branches[i]
@@ -65,16 +65,16 @@ func (r streamRule) validate() error {
 			return branch.err
 		}
 		if branch.origin != branchSpecOriginBranch {
-			return streamRuleInvalidError("", fmt.Sprintf("stream rule branch %d was not constructed with goav.Branch(name)", i+1),
-				"pass one or more goav.Branch(name)...To(destination) values")
+			return streamRuleInvalidError("", fmt.Sprintf("stream rule branch %d was not built from an Output", i+1),
+				"route the rule with input.OnStream(match).As(name).To(destination)")
 		}
 		if branch.name == "" {
 			return streamRuleInvalidError("", fmt.Sprintf("stream rule branch %d has no name", i+1),
-				"start each rule branch with goav.Branch(\"name\")")
+				"name each rule Output with .As(\"name\")")
 		}
 		if branch.source.from != "" || branch.source.tap != "" {
-			return streamRuleInvalidError(branch.name, "stream rule branches must not declare .From(...)",
-				"omit .From(...): rule branches anchor on the source node of the discovered stream")
+			return streamRuleInvalidError(branch.name, "stream rule branches must not declare their own anchor",
+				"start rule Outputs from input.OnStream(match): rule branches anchor on the source node of the discovered stream")
 		}
 		if len(branch.destinations) == 0 {
 			return streamRuleInvalidError(branch.name, "stream rule branch has no destination",
@@ -84,11 +84,11 @@ func (r streamRule) validate() error {
 	return nil
 }
 
-func cloneBranchSpecs(specs []BranchSpec) []BranchSpec {
+func cloneBranchSpecs(specs []branchRecipe) []branchRecipe {
 	if len(specs) == 0 {
 		return nil
 	}
-	out := make([]BranchSpec, 0, len(specs))
+	out := make([]branchRecipe, 0, len(specs))
 	for i := range specs {
 		spec := specs[i]
 		spec.operations = cloneOperationSpecs(spec.operations)
@@ -116,7 +116,7 @@ func cloneStreamRules(rules []streamRule) []streamRule {
 // stream: the branch name is suffixed with the stream id for uniqueness and
 // the source binding pins the source+stream anchor (RouteByStream from the
 // source node, anchor shape from the announced av.Stream).
-func branchSpecForDiscoveredStream(spec BranchSpec, sourceNode string, domain shape.MediaDomain, stream av.Stream) BranchSpec {
+func branchSpecForDiscoveredStream(spec branchRecipe, sourceNode string, domain shape.MediaDomain, stream av.Stream) branchRecipe {
 	out := spec
 	out.name = spec.name + "-" + string(stream.ID)
 	out.operations = cloneOperationSpecs(spec.operations)
@@ -141,12 +141,12 @@ func validateStreamRulesForCompile(state streamRuleValidationState) error {
 	}
 	if state.streamRuleJoinPresent() {
 		return streamRuleInvalidError("", "stream rules are not supported on Mix/Composite/Select jobs",
-			"declare OnStream rules on single-input goav.From(input) jobs")
+			"run OnStream Outputs with Outputs of that one input only: input.OnStream(match).To(dst), input.Audio().To(out)")
 	}
 	inputs := state.streamRuleInputCount()
 	if inputs != 1 {
 		return streamRuleInvalidError("", fmt.Sprintf("stream rules require exactly one input, got %d", inputs),
-			"declare OnStream rules on single-input goav.From(input) jobs")
+			"run OnStream Outputs with Outputs of that one input only: input.OnStream(match).To(dst), input.Audio().To(out)")
 	}
 	return nil
 }

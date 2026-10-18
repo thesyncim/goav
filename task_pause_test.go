@@ -27,7 +27,7 @@ func TestTaskPauseFreezesPacedFlow(t *testing.T) {
 	log := newPlayoutArrivalLog(clock)
 	release := make(chan struct{})
 
-	live, err := From(playoutFrameSource("cam", av.MediaVideo, release, 0, 20*time.Millisecond, 40*time.Millisecond)).
+	live, err := recipeFrom(playoutFrameSource("cam", av.MediaVideo, release, 0, 20*time.Millisecond, 40*time.Millisecond)).
 		UseRuntime(mustNew(WithClock(clock))).
 		Video().Playout(flow.Playout("preview")).To(log.sink("preview")).
 		BuildLive(ctx)
@@ -86,7 +86,7 @@ func TestTaskPauseSnapshotAndCloseContract(t *testing.T) {
 	clock := &recordingTestClock{}
 	log := newPlayoutArrivalLog(clock)
 
-	live, err := From(playoutFrameSource("cam", av.MediaVideo, nil, 0)).
+	live, err := recipeFrom(playoutFrameSource("cam", av.MediaVideo, nil, 0)).
 		UseRuntime(mustNew(WithClock(clock))).
 		Video().Playout(flow.Playout("preview")).To(log.sink("preview")).
 		BuildLive(ctx)
@@ -265,7 +265,7 @@ func TestTaskSeekWhilePausedAppliesAtNextReadBoundary(t *testing.T) {
 	data := muxSeekFileMKV(t)
 	step := newPauseStepSink()
 	clock := &paceFileClock{}
-	task, err := From(FileInput("seek.mkv", bytes.NewReader(data))).
+	task, err := recipeFrom(FileInput("seek.mkv", bytes.NewReader(data))).
 		UseRuntime(mustNew(WithRealtime(true), WithFormatAdapter(matroskaadapter.Register), WithClock(clock))).
 		Audio().Copy().
 		To(Sink(SinkFunc("rec", step.record))).
@@ -356,7 +356,7 @@ func TestTaskReadinessEventFires(t *testing.T) {
 	video := &countingPacketSink{}
 	audio := &countingPacketSink{}
 
-	task, err := From(Input(&timelinePacedProvider{source: cam}), Input(&timelinePacedProvider{source: mic})).
+	task, err := recipeFrom(Input(&timelinePacedProvider{source: cam}), Input(&timelinePacedProvider{source: mic})).
 		UseRuntime(mustNew(WithClock(clock))).
 		Video().Copy().To(Sink(SinkFunc("video", video.record))).
 		Audio().Copy().To(Sink(SinkFunc("audio", audio.record))).

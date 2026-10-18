@@ -19,7 +19,7 @@ func TestRealtimeEncodeRecipeRefusesUnsupportedBufferBudgetFact(t *testing.T) {
 		func(context.Context, SourcePush) error { return nil },
 	)
 
-	_, err := From(source).
+	_, err := recipeFrom(source).
 		Video().
 		Encode(codec.VP8(codec.Bitrate(600_000))).
 		To(Sink(SinkFunc("packets", func(context.Context, Message) error { return nil }))).
@@ -58,7 +58,7 @@ func TestRealtimeDecodeRecipeBuildsWithUnknownBufferBudgetFact(t *testing.T) {
 		func(context.Context, SourcePush) error { return nil },
 	)
 
-	task, err := From(source).
+	task, err := recipeFrom(source).
 		Audio().Decode().
 		To(Sink(SinkFunc("frames", func(context.Context, Message) error { return nil }))).
 		UseRuntime(rt).

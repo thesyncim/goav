@@ -23,10 +23,11 @@ import (
 func TestReadmeMixExample(t *testing.T) {
 	ctx := context.Background()
 	out := goavtest.NewCollector()
-	task, err := goav.LegacyMix(
-		goav.From(goavtest.Audio(48000, 1, []int16{100}, []int16{200})).Audio(),
-		goav.From(goavtest.Audio(48000, 1, []int16{50}, []int16{-50})).Audio(),
-	).To(out.Sink()).UseRuntime(goavtest.Runtime()).Build(ctx)
+	task, err := goavtest.Runtime().Build(ctx, goav.Mix(
+		goavtest.Audio(48000, 1, []int16{100}, []int16{200}).Audio(),
+		goavtest.Audio(48000, 1, []int16{50}, []int16{-50}).Audio(),
+	).
+		To(out.Sink()))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -42,11 +43,9 @@ func TestReadmeMixExample(t *testing.T) {
 func TestAudioStampsCoherentPTS(t *testing.T) {
 	ctx := context.Background()
 	out := goavtest.NewCollector()
-	err := goav.From(goavtest.Audio(48000, 2, []int16{1, 2, 3, 4}, []int16{5, 6})).
+	err := goavtest.Runtime().Run(ctx, goavtest.Audio(48000, 2, []int16{1, 2, 3, 4}, []int16{5, 6}).
 		Audio().
-		To(out.Sink()).
-		UseRuntime(goavtest.Runtime()).
-		Run(ctx)
+		To(out.Sink()))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -70,11 +69,9 @@ func TestAudioStampsCoherentPTS(t *testing.T) {
 func TestVideoFramesIdentifiableFromPixels(t *testing.T) {
 	ctx := context.Background()
 	out := goavtest.NewCollector()
-	err := goav.From(goavtest.Video(4, 4, 3)).
+	err := goavtest.Runtime().Run(ctx, goavtest.Video(4, 4, 3).
 		Video().
-		To(out.Sink()).
-		UseRuntime(goavtest.Runtime()).
-		Run(ctx)
+		To(out.Sink()))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -100,14 +97,12 @@ func TestPacketsHonorKeyframeFlagsAndPTS(t *testing.T) {
 	ctx := context.Background()
 	base := av.TimeBase{Num: 1, Den: 90000}
 	out := goavtest.NewCollector()
-	err := goav.From(goavtest.Packets(av.CodecVP8,
+	err := goavtest.Runtime().Run(ctx, goavtest.Packets(av.CodecVP8,
 		av.Packet{Keyframe: true, PTS: av.Timestamp{Value: 0, Base: base}, Payload: av.Buffer{Bytes: []byte{1}, Ownership: av.BufferImmutable}},
 		av.Packet{Keyframe: false, PTS: av.Timestamp{Value: 3000, Base: base}, Payload: av.Buffer{Bytes: []byte{2}, Ownership: av.BufferImmutable}},
-	)).
-		Video().Copy().
-		To(out.Sink()).
-		UseRuntime(goavtest.Runtime()).
-		Run(ctx)
+	).
+		Video().
+		To(out.Sink()))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -135,12 +130,10 @@ func TestPacketsHonorKeyframeFlagsAndPTS(t *testing.T) {
 func TestCodecRoundTripIsByteFaithful(t *testing.T) {
 	ctx := context.Background()
 	encoded := goavtest.NewCollector()
-	err := goav.From(goavtest.Audio(48000, 1, []int16{100, -200}, []int16{300})).
+	err := goavtest.Runtime().Run(ctx, goavtest.Audio(48000, 1, []int16{100, -200}, []int16{300}).
 		Audio().
 		Encode(codec.Opus()).
-		To(encoded.Sink()).
-		UseRuntime(goavtest.Runtime()).
-		Run(ctx)
+		To(encoded.Sink()))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -157,11 +150,10 @@ func TestCodecRoundTripIsByteFaithful(t *testing.T) {
 		packets = append(packets, *packet)
 	}
 	decoded := goavtest.NewCollector()
-	err = goav.From(goavtest.Packets(av.CodecOpus, packets...)).
-		Audio().Decode().
-		To(decoded.Sink()).
-		UseRuntime(goavtest.Runtime()).
-		Run(ctx)
+	err = goavtest.Runtime().Run(ctx, goavtest.Packets(av.CodecOpus, packets...).
+		Audio().
+		Decode().
+		To(decoded.Sink()))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -176,12 +168,10 @@ func TestCodecRoundTripIsByteFaithful(t *testing.T) {
 func TestFormatRoundTripThroughFile(t *testing.T) {
 	ctx := context.Background()
 	var file bytes.Buffer
-	err := goav.From(goavtest.Audio(48000, 1, []int16{1, 2, 3}, []int16{4, 5, 6})).
+	err := goavtest.Runtime().Run(ctx, goavtest.Audio(48000, 1, []int16{1, 2, 3}, []int16{4, 5, 6}).
 		Audio().
 		Encode(codec.Opus()).
-		To(goav.Write("roundtrip.ogg", &file)).
-		UseRuntime(goavtest.Runtime()).
-		Run(ctx)
+		To(goav.Write("roundtrip.ogg", &file)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -190,11 +180,10 @@ func TestFormatRoundTripThroughFile(t *testing.T) {
 	}
 
 	out := goavtest.NewCollector()
-	err = goav.From(goav.FileInput("roundtrip.ogg", bytes.NewReader(file.Bytes()))).
-		Audio().Decode().
-		To(out.Sink()).
-		UseRuntime(goavtest.Runtime(runconfig.WithRealtime(false))).
-		Run(ctx)
+	err = goavtest.Runtime(runconfig.WithRealtime(false)).Run(ctx, goav.FileInput("roundtrip.ogg", bytes.NewReader(file.Bytes())).
+		Audio().
+		Decode().
+		To(out.Sink()))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -215,7 +204,7 @@ func TestCollectorWaitEventsObservesEventSource(t *testing.T) {
 			return push.EOS()
 		},
 	)
-	if err := goav.From(input).To(out.Sink()).UseRuntime(goavtest.Runtime()).Run(ctx); err != nil {
+	if err := goavtest.Runtime().Run(ctx, input.To(out.Sink())); err != nil {
 		t.Fatal(err)
 	}
 	events, err := out.WaitEvents(ctx, 2)
@@ -257,23 +246,19 @@ func TestRuntimePacesFileInputOnFakeClock(t *testing.T) {
 	ctx := context.Background()
 	var file bytes.Buffer
 	// Two 960-sample frames at 48kHz: media times 0 and 20ms.
-	err := goav.From(goavtest.Audio(48000, 1, make([]int16, 960), make([]int16, 960))).
+	err := goavtest.Runtime().Run(ctx, goavtest.Audio(48000, 1, make([]int16, 960), make([]int16, 960)).
 		Audio().
 		Encode(codec.Opus()).
-		To(goav.Write("paced.ogg", &file)).
-		UseRuntime(goavtest.Runtime()).
-		Run(ctx)
+		To(goav.Write("paced.ogg", &file)))
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	clock := goavtest.NewClock()
 	out := goavtest.NewCollector()
-	err = goav.From(goav.FileInput("paced.ogg", bytes.NewReader(file.Bytes()))).
-		Audio().Copy().
-		To(out.Sink()).
-		UseRuntime(goavtest.Runtime(runconfig.WithRealtime(true), runconfig.WithClock(clock))).
-		Run(ctx)
+	err = goavtest.Runtime(runconfig.WithRealtime(true), runconfig.WithClock(clock)).Run(ctx, goav.FileInput("paced.ogg", bytes.NewReader(file.Bytes())).
+		Audio().
+		To(out.Sink()))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -294,11 +279,9 @@ func TestCollectorWaitObservesLivePipeline(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	out := goavtest.NewCollector()
-	task, err := goav.From(goavtest.LiveAudio("live", 48000, 1, []int16{7})).
+	task, err := goavtest.Runtime().Build(ctx, goavtest.LiveAudio("live", 48000, 1, []int16{7}).
 		Audio().
-		To(out.Sink()).
-		UseRuntime(goavtest.Runtime()).
-		Build(ctx)
+		To(out.Sink()))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -330,12 +313,10 @@ func TestRuntimeOptionsAreLastWins(t *testing.T) {
 	ctx := context.Background()
 	custom := &countingEncoderFactory{}
 	out := goavtest.NewCollector()
-	err := goav.From(goavtest.Audio(48000, 1, []int16{1})).
+	err := goavtest.Runtime(runconfig.WithEncoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, custom)).Run(ctx, goavtest.Audio(48000, 1, []int16{1}).
 		Audio().
 		Encode(codec.Opus()).
-		To(out.Sink()).
-		UseRuntime(goavtest.Runtime(runconfig.WithEncoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, custom))).
-		Run(ctx)
+		To(out.Sink()))
 	if err != nil {
 		t.Fatal(err)
 	}

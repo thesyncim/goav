@@ -115,12 +115,12 @@ func destinationSpecEmpty(dest destinationSpec) bool {
 		dest.err == nil
 }
 
-// BranchSpec is one finished branch declaration: the operations and
+// branchRecipe is one finished branch declaration: the operations and
 // destinations a Branch(...) builder accumulated, ready for .Branches(...) on
 // a stream chain or task.Attach at runtime. Values are immutable snapshots —
 // reusing a builder cannot mutate a spec already passed along. The zero value
 // is intentionally not a valid branch; construct branch specs with Branch(name).
-type BranchSpec struct {
+type branchRecipe struct {
 	origin       branchSpecOrigin
 	name         string
 	media        av.MediaType
@@ -141,13 +141,13 @@ const (
 	branchSpecOriginBranch
 )
 
-// BranchBuilder accumulates one branch's grammar; construct it with Branch.
+// branchBuilder accumulates one branch's grammar; construct it with Branch.
 // Operations chain onto it exactly like a stream chain, .From(tap) anchors it
 // at an earlier point, and .To finishes it into a BranchSpec. It is sealed —
 // its fields are unexported, so the grammar methods are the only mutation
 // surface.
-type BranchBuilder struct {
-	spec BranchSpec
+type branchBuilder struct {
+	spec branchRecipe
 }
 
 type branchSourceBinding struct {
@@ -197,15 +197,15 @@ type tapAnchor interface {
 	branchSource() branchSourceBinding
 }
 
-// Branch starts a named downstream branch: operations chain onto it exactly
+// newBranch starts a named downstream branch: operations chain onto it exactly
 // like a stream chain (.Decode, .Resize, .Encode, .Do, ...), .From(tap)
 // anchors it at an earlier point, and .To(destinations...) finishes it into a
 // BranchSpec. Names must be unique within one Branches or Attach call.
-func Branch(name string) *BranchBuilder {
-	return &BranchBuilder{spec: BranchSpec{origin: branchSpecOriginBranch, name: name}}
+func newBranch(name string) *branchBuilder {
+	return &branchBuilder{spec: branchRecipe{origin: branchSpecOriginBranch, name: name}}
 }
 
-func (b *BranchBuilder) From(source branchSource) *BranchBuilder {
+func (b *branchBuilder) From(source branchSource) *branchBuilder {
 	if b == nil {
 		return b
 	}
@@ -225,7 +225,7 @@ func (b *BranchBuilder) From(source branchSource) *BranchBuilder {
 	return b
 }
 
-func (b *BranchBuilder) Stream(stream av.StreamID) *BranchBuilder {
+func (b *branchBuilder) Stream(stream av.StreamID) *branchBuilder {
 	if b == nil {
 		return b
 	}
@@ -234,7 +234,7 @@ func (b *BranchBuilder) Stream(stream av.StreamID) *BranchBuilder {
 	return b
 }
 
-func (b *BranchBuilder) Event(event av.EventType) *BranchBuilder {
+func (b *branchBuilder) Event(event av.EventType) *branchBuilder {
 	if b == nil {
 		return b
 	}
@@ -243,7 +243,7 @@ func (b *BranchBuilder) Event(event av.EventType) *BranchBuilder {
 	return b
 }
 
-func (b *BranchBuilder) Buffer(buffer flow.BranchBuffer) *BranchBuilder {
+func (b *branchBuilder) Buffer(buffer flow.BranchBuffer) *branchBuilder {
 	if b == nil {
 		return b
 	}
@@ -255,7 +255,7 @@ func (b *BranchBuilder) Buffer(buffer flow.BranchBuffer) *BranchBuilder {
 	return b
 }
 
-func (b *BranchBuilder) Decode(options ...codec.Option) *BranchBuilder {
+func (b *branchBuilder) Decode(options ...codec.Option) *branchBuilder {
 	if b == nil {
 		return b
 	}
@@ -280,7 +280,7 @@ func (b *BranchBuilder) Decode(options ...codec.Option) *BranchBuilder {
 	return b
 }
 
-func (b *BranchBuilder) Apply(flow chain) *BranchBuilder {
+func (b *branchBuilder) Apply(flow chain) *branchBuilder {
 	if b == nil {
 		return b
 	}
@@ -338,7 +338,7 @@ func (b *BranchBuilder) Apply(flow chain) *BranchBuilder {
 	return b
 }
 
-func (b *BranchBuilder) Do(stages ...pipeline.Stage) *BranchBuilder {
+func (b *branchBuilder) Do(stages ...pipeline.Stage) *branchBuilder {
 	if b == nil {
 		return b
 	}
@@ -363,7 +363,7 @@ func (b *BranchBuilder) Do(stages ...pipeline.Stage) *BranchBuilder {
 
 // Sync places this branch on a shared media timeline. Reuse one flow.SyncPolicy
 // value across live-room branches when recording or preview paths should align.
-func (b *BranchBuilder) Sync(policy flow.SyncPolicy) *BranchBuilder {
+func (b *branchBuilder) Sync(policy flow.SyncPolicy) *branchBuilder {
 	if b == nil {
 		return b
 	}
@@ -375,7 +375,7 @@ func (b *BranchBuilder) Sync(policy flow.SyncPolicy) *BranchBuilder {
 // message's media time is due on the task timeline — the branch-side twin of
 // the stream chain's .Playout(...). Reuse one flow.PlayoutPolicy value across
 // audio/video branches to align their delivery on the shared anchor.
-func (b *BranchBuilder) Playout(policy flow.PlayoutPolicy) *BranchBuilder {
+func (b *branchBuilder) Playout(policy flow.PlayoutPolicy) *branchBuilder {
 	if b == nil {
 		return b
 	}
@@ -387,7 +387,7 @@ func (b *BranchBuilder) Playout(policy flow.PlayoutPolicy) *BranchBuilder {
 // the branch-side twin of the stream chain's .Auto(...): needed conversions an
 // active policy allows are inserted from the runtime's filter registry as real
 // planned operations; everything else is refused with the exact policy to add.
-func (b *BranchBuilder) Auto(policies ...shape.Policy) *BranchBuilder {
+func (b *branchBuilder) Auto(policies ...shape.Policy) *branchBuilder {
 	if b == nil {
 		return b
 	}
@@ -399,7 +399,7 @@ func (b *BranchBuilder) Auto(policies ...shape.Policy) *BranchBuilder {
 // branch-side twin of the stream chain's .Require(...): the stream MUST
 // satisfy the given spec here, or the build fails with the actual and required
 // shapes and the exact fix. It lowers to no runtime node.
-func (b *BranchBuilder) Require(spec shape.Spec) *BranchBuilder {
+func (b *branchBuilder) Require(spec shape.Spec) *branchBuilder {
 	if b == nil {
 		return b
 	}
@@ -411,7 +411,7 @@ func (b *BranchBuilder) Require(spec shape.Spec) *BranchBuilder {
 // branch-side twin of the stream chain's .Prefer(...). Soft by definition: a
 // preference that cannot be honored is dropped with an Explain diagnostic,
 // never an error. It lowers to no runtime node.
-func (b *BranchBuilder) Prefer(spec shape.Spec) *BranchBuilder {
+func (b *branchBuilder) Prefer(spec shape.Spec) *branchBuilder {
 	if b == nil {
 		return b
 	}
@@ -419,7 +419,7 @@ func (b *BranchBuilder) Prefer(spec shape.Spec) *BranchBuilder {
 	return b
 }
 
-func (b *BranchBuilder) Shape(shape shape.Spec) *BranchBuilder {
+func (b *branchBuilder) Shape(shape shape.Spec) *branchBuilder {
 	if b == nil {
 		return b
 	}
@@ -431,7 +431,7 @@ func (b *BranchBuilder) Shape(shape shape.Spec) *BranchBuilder {
 	return b
 }
 
-func (b *BranchBuilder) Resize(width int, height int, options ...resizeOption) *BranchBuilder {
+func (b *branchBuilder) Resize(width int, height int, options ...resizeOption) *branchBuilder {
 	if b == nil {
 		return b
 	}
@@ -447,7 +447,7 @@ func (b *BranchBuilder) Resize(width int, height int, options ...resizeOption) *
 	return b
 }
 
-func (b *BranchBuilder) Resample(sampleRate int, channels int, options ...audioOption) *BranchBuilder {
+func (b *branchBuilder) Resample(sampleRate int, channels int, options ...audioOption) *branchBuilder {
 	if b == nil {
 		return b
 	}
@@ -463,7 +463,7 @@ func (b *BranchBuilder) Resample(sampleRate int, channels int, options ...audioO
 	return b
 }
 
-func (b *BranchBuilder) Tap(tap tapRef) *BranchBuilder {
+func (b *branchBuilder) Tap(tap tapRef) *branchBuilder {
 	if b == nil {
 		return b
 	}
@@ -476,7 +476,7 @@ func (b *BranchBuilder) Tap(tap tapRef) *BranchBuilder {
 			Node:      firstNonEmpty(b.spec.name, "branch"),
 			Reason:    "tap name is empty",
 			fixes: buildErrorFixes([]string{
-				"call .Tap(goav.FrameTap(\"video.720p.frames\")) or another stable tap ref",
+				"call .Tap(\"video.720p.frames\") or another stable, non-empty tap name",
 				"omit .Tap(...) when no runtime branch should attach at that point",
 			}),
 			cause: errUnsupportedBuild,
@@ -502,7 +502,7 @@ func (b *BranchBuilder) Tap(tap tapRef) *BranchBuilder {
 	return b
 }
 
-func (b *BranchBuilder) Encode(codec codec.Spec) *BranchBuilder {
+func (b *branchBuilder) Encode(codec codec.Spec) *branchBuilder {
 	if b == nil {
 		return b
 	}
@@ -520,7 +520,7 @@ func (b *BranchBuilder) Encode(codec codec.Spec) *BranchBuilder {
 	return b
 }
 
-func (b *BranchBuilder) Copy() *BranchBuilder {
+func (b *branchBuilder) Copy() *branchBuilder {
 	if b == nil {
 		return b
 	}
@@ -544,9 +544,9 @@ func (b *BranchBuilder) Copy() *BranchBuilder {
 	return b
 }
 
-func (b *BranchBuilder) To(destinations ...Destination) BranchSpec {
+func (b *branchBuilder) To(destinations ...Destination) branchRecipe {
 	if b == nil {
-		return BranchSpec{err: nilBranchError()}
+		return branchRecipe{err: nilBranchError()}
 	}
 	spec := b.snapshot()
 	if len(destinations) == 0 {
@@ -572,7 +572,7 @@ func (b *BranchBuilder) To(destinations ...Destination) BranchSpec {
 	return spec
 }
 
-func (b *BranchBuilder) snapshot() BranchSpec {
+func (b *branchBuilder) snapshot() branchRecipe {
 	spec := b.spec
 	spec.operations = cloneOperationSpecs(spec.operations)
 	spec.destinations = cloneDestinationRefs(spec.destinations)
@@ -580,16 +580,16 @@ func (b *BranchBuilder) snapshot() BranchSpec {
 	return spec
 }
 
-func (b *BranchBuilder) setErr(err error) {
+func (b *branchBuilder) setErr(err error) {
 	b.spec.setErr(err)
 }
 
-func (b *BranchBuilder) sourceStartsFrameDomain() bool {
+func (b *branchBuilder) sourceStartsFrameDomain() bool {
 	domain, ok := branchExplicitSourceDomain(b.spec.source)
 	return ok && domain == shape.DomainFrame
 }
 
-func (b *BranchBuilder) requireFrameInput(step string) bool {
+func (b *branchBuilder) requireFrameInput(step string) bool {
 	if chainHasDecode(b.spec.operations) {
 		return true
 	}
@@ -604,14 +604,14 @@ func (b *BranchBuilder) requireFrameInput(step string) bool {
 	return true
 }
 
-func (b *BranchBuilder) validateFrameTapDomain(tap tapRef) error {
+func (b *branchBuilder) validateFrameTapDomain(tap tapRef) error {
 	if !chainHasDecode(b.spec.operations) && !b.sourceStartsFrameDomain() {
 		return nil
 	}
 	return validateTapDomain("build branch", firstNonEmpty(b.spec.name, "branch"), tap, shape.DomainFrame)
 }
 
-func (s *BranchSpec) setErr(err error) {
+func (s *branchRecipe) setErr(err error) {
 	if err == nil {
 		return
 	}
@@ -621,7 +621,7 @@ func (s *BranchSpec) setErr(err error) {
 	s.errs = append(s.errs, err)
 }
 
-func (s BranchSpec) recipeErr() error {
+func (s branchRecipe) recipeErr() error {
 	if len(s.errs) == 0 {
 		return s.err
 	}
@@ -630,12 +630,12 @@ func (s BranchSpec) recipeErr() error {
 
 // appendDestination resolves the destination's routing name — its declared
 // name, URI, or a branch-indexed fallback, never empty — and appends the ref.
-func appendDestination(spec *BranchSpec, destination destinationSpec, index int) {
+func appendDestination(spec *branchRecipe, destination destinationSpec, index int) {
 	destinationName := destination.label(fmt.Sprintf("%s-%d", firstNonEmpty(spec.name, "branch"), index+1))
 	spec.destinations = append(spec.destinations, newDirectDestinationRef(destinationName, destination))
 }
 
-func (b *Chain) Branches(branches ...BranchSpec) *Job {
+func (b *streamChain) Branches(branches ...branchRecipe) *recipeJob {
 	stream := b.current()
 	job := b.job
 	if b.region != nil {
@@ -718,7 +718,7 @@ type branchDomainFacts struct {
 	destinations []destinationRef
 }
 
-func validateBranchSpec(selected av.MediaType, parentPacket bool, parentFrame bool, index int, spec BranchSpec) error {
+func validateBranchSpec(selected av.MediaType, parentPacket bool, parentFrame bool, index int, spec branchRecipe) error {
 	if err := validateBranchConstruction(index, selected, spec); err != nil {
 		return err
 	}
@@ -731,7 +731,7 @@ func validateBranchSpec(selected av.MediaType, parentPacket bool, parentFrame bo
 // it runs at the builder→IR boundary (the normal branch path and the join
 // capture), never in the planner; the planner validates the captured facts
 // through validateBranchDomainFacts.
-func validateBranchConstruction(index int, selected av.MediaType, spec BranchSpec) error {
+func validateBranchConstruction(index int, selected av.MediaType, spec branchRecipe) error {
 	if err := spec.recipeErr(); err != nil {
 		return err
 	}
@@ -943,7 +943,7 @@ func operationSpecTapIsTerminalPacket(operation operationSpec) bool {
 		(operation.Tap.After == plan.OpEncode || operation.Tap.After == plan.OpCopy)
 }
 
-func plannedBranchAnchor(stream *jobStreamBuild, spec BranchSpec, parentPacket bool) ([]chainStep, tapRef, error) {
+func plannedBranchAnchor(stream *jobStreamBuild, spec branchRecipe, parentPacket bool) ([]chainStep, tapRef, error) {
 	streamSteps := jobStreamChainSteps(stream)
 	if spec.source.tap == "" {
 		if parentPacket {
@@ -1023,9 +1023,9 @@ func branchCopyParentOperationError(node string) error {
 		Node:      node,
 		Reason:    "packet-copy branches must start from a packet-domain stream point",
 		fixes: buildErrorFixes([]string{
-			"call .Copy().Branches(...) before frame operations when the branches should preserve packets",
-			"use .Decode().Branches(...) when branches need resize, resample, custom frame stages, or encode",
-			"attach runtime packet-copy branches from a packet Tap when the branch should start later",
+			"fork the stream before frame operations when the forks should copy its packets",
+			"fork after .Decode() when the forks need resize, resample, custom frame stages, or encode",
+			"attach a runtime packet copy from a tap before .Decode() when it should start later",
 		}),
 		cause: errUnsupportedBuild,
 	}
@@ -1041,9 +1041,9 @@ func branchEncodeParentOperationError(node string, encode codec.Spec) error {
 		Reason:    "stream encoders are terminal for planned branches",
 		fields:    errDetails(errNote("encoder: " + codecIntentName(encode))),
 		fixes: buildErrorFixes([]string{
-			"move .Branches(...) before the stream encoder",
-			"put " + encodeHint(encode.Type) + " on each goav.Branch(...) that writes a destination",
-			"attach post-encode packet-copy branches at runtime with task.Attach(ctx, goav.Branch(name).From(goav.PacketTap(name)).Copy()...)",
+			"fork the stream before its .Encode(...)",
+			"put " + encodeHint(encode.Type) + " on each fork that writes a destination",
+			"route one encoded stream to several destinations with .To(a, b), or attach a copy from a tap after .Encode(...): task.Attach(ctx, task.Tap(name).To(dst))",
 		}),
 		cause: errUnsupportedBuild,
 	}
@@ -1059,9 +1059,9 @@ func plannedBranchNodeSourceError(name string, source string) error {
 		Reason:    "planned branches do not anchor from graph handles",
 		fields:    errDetails(errNote("source: " + source)),
 		fixes: buildErrorFixes([]string{
-			"use .From(goav.FrameTap(name)) or .From(goav.PacketTap(name)) to branch from a stable tap",
-			"omit .From(...) to branch from the current stream point",
-			"use task.Attach(ctx, goav.Branch(name).From(graphNode)...) for expert runtime graph attachment",
+			"reuse a Stream value to fork the recipe at that point: v := in.Video().Decode()",
+			"attach from a running task's tap with task.Attach(ctx, task.Tap(name).To(dst))",
+			"use task.Attach(ctx, task.Route(node.Out().Route()).To(dst)) for expert runtime graph attachment",
 		}),
 		cause: errUnsupportedBuild,
 	}
@@ -1077,9 +1077,9 @@ func plannedBranchTapMissingError(stream string, branch string, tap string) erro
 		Reason:    "branch tap is not declared on the parent stream",
 		fields:    errDetails(errNote("stream: "+firstNonEmpty(stream, "stream")), errNote("tap: "+tap)),
 		fixes: buildErrorFixes([]string{
-			"add .Tap(goav.FrameTap(\"" + tap + "\")) before .Branches(...) on the selected stream",
-			"use .From(goav.FrameTap(\"audio.decoded\")) or .From(goav.FrameTap(\"video.decoded\")) after .Decode() when branching from decoded frames",
-			"omit .From(...) to branch from the current stream point",
+			"add .Tap(\"" + tap + "\") on the selected stream before it forks",
+			"declare the tap after .Decode() when forking from decoded frames: .Decode().Tap(\"video.decoded\")",
+			"reuse the Stream value to fork from its current point",
 		}),
 		cause: errUnsupportedBuild,
 	}
@@ -1110,8 +1110,8 @@ func branchDecodeOrderError(node string) error {
 		Node:      node,
 		Reason:    "decode must be the first branch operation",
 		fixes: buildErrorFixes([]string{
-			"write goav.Branch(name).Decode().Resample(...).To(target)",
-			"start from a frame tap when the branch should skip decode",
+			"write in.Audio().Decode().Resample(...).To(target)",
+			"attach from a tap after .Decode() when the fork should skip decode",
 		}),
 		cause: errUnsupportedBuild,
 	}
@@ -1126,8 +1126,8 @@ func branchDecodeDomainError(node string) error {
 		Node:      node,
 		Reason:    "branch decoding requires a packet-domain stream point",
 		fixes: buildErrorFixes([]string{
-			"omit .Decode() when the branch already starts after stream decode",
-			"use .Copy().Branches(goav.Branch(name).Decode()...) when a packet-preserving split later needs frames",
+			"omit .Decode() when the fork already starts after the stream's .Decode()",
+			"fork before .Decode() when a packet copy and a decoding fork share the stream: s := in.Video()",
 			"attach runtime decode branches from packet taps",
 		}),
 		cause: errUnsupportedBuild,
@@ -1143,7 +1143,7 @@ func branchDecodeCopyError(node string) error {
 		Node:      node,
 		Reason:    "a branch cannot decode packets and then copy the original packet payload",
 		fixes: buildErrorFixes([]string{
-			"use .Copy() for packet-preserving branches",
+			"leave out .Decode() to copy the packets",
 			"use .Decode().To(goav.Sink(...)) for decoded frames",
 			"use .Decode().Encode(codec).To(destination) for re-encoded packets",
 		}),
@@ -1161,8 +1161,8 @@ func branchPacketEncodeUnsupportedError(stream streamIntent, encode codec.Spec) 
 		Reason:    "packet-domain planned branches cannot encode without decoding first",
 		fields:    errDetails(errNote("encoder: " + codecIntentName(encode))),
 		fixes: buildErrorFixes([]string{
-			"use .Decode().Branches(goav.Branch(name).Encode(codec.Opus(...)).To(destination)) for encoded variants",
-			"use .Copy().Branches(goav.Branch(name).To(destination)) for packet-preserving variants",
+			"decode before encoding: s.Decode().Encode(codec.Opus(...)).To(destination) for encoded variants",
+			"route s.To(destination) without .Decode() for packet-preserving variants",
 			"attach a runtime branch from a frame Tap when late encoding is needed",
 		}),
 		cause: errUnsupportedBuild,
@@ -1178,8 +1178,8 @@ func branchPacketTransformUnsupportedError(stream streamIntent) error {
 		Node:      branchIntentName(stream),
 		Reason:    "packet-domain planned branches cannot resize or resample without decoding first",
 		fixes: buildErrorFixes([]string{
-			"use .Decode().Branches(...) when branch variants need frame transforms",
-			"use .Copy().Branches(...) only for packet-preserving branches",
+			"fork after .Decode() when variants need frame transforms: v := in.Video().Decode()",
+			"fork without .Decode() only for packet copies",
 			"attach a runtime branch from a frame Tap when late transforms are needed",
 		}),
 		cause: errUnsupportedBuild,
@@ -1234,10 +1234,10 @@ func branchMissingError(node string) error {
 		Code:      branchMissingCode,
 		Operation: "build branches",
 		Node:      node,
-		Reason:    "Branches requires at least one encoded branch",
+		Reason:    "a fan-out requires at least one encoded fork",
 		fixes: buildErrorFixes([]string{
-			"pass branches with goav.Branch(name).Encode(codec.VP9(...)).To(goav.Write(name, writer))",
-			"pass the same destination value to every branch that should share one mux",
+			"route each fork with v.Encode(codec.VP9(...)).To(goav.Write(name, writer))",
+			"pass the same destination value to every fork that should share one mux",
 		}),
 		cause: errUnsupportedBuild,
 	}
@@ -1251,7 +1251,7 @@ func nilBranchError() error {
 		Operation: "build branch",
 		Reason:    "branch is nil",
 		fixes: buildErrorFixes([]string{
-			"build branches with goav.Branch(name)",
+			"fork by reusing a Stream value: v := in.Video().Decode()",
 		}),
 		cause: errUnsupportedBuild,
 	}
@@ -1264,10 +1264,10 @@ func branchSpecOriginError(index int, selected av.MediaType) error {
 		Code:      branchInvalidCode,
 		Operation: "build branches",
 		Node:      fmt.Sprintf("branch-%d", index),
-		Reason:    "branch spec was not constructed with goav.Branch(name)",
+		Reason:    "branch spec was not built from a Stream",
 		fields:    errDetails(errDetail("media", string(selected))),
 		fixes: buildErrorFixes([]string{
-			"construct branches with goav.Branch(name).To(destination)",
+			"build each fork from a Stream routed with .To(destination)",
 		}),
 		cause: errUnsupportedBuild,
 	}

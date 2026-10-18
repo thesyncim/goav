@@ -16,11 +16,9 @@ import (
 func ExampleAudio() {
 	ctx := context.Background()
 	out := goavtest.NewCollector()
-	err := goav.From(goavtest.Audio(48000, 1, []int16{1, 2}, []int16{3})).
+	err := goavtest.Runtime().Run(ctx, goavtest.Audio(48000, 1, []int16{1, 2}, []int16{3}).
 		Audio().
-		To(out.Sink()).
-		UseRuntime(goavtest.Runtime()).
-		Run(ctx)
+		To(out.Sink()))
 	if err != nil {
 		fmt.Println(err)
 		return
@@ -34,10 +32,11 @@ func ExampleAudio() {
 func ExampleCollector() {
 	ctx := context.Background()
 	out := goavtest.NewCollector()
-	task, err := goav.LegacyMix(
-		goav.From(goavtest.Audio(48000, 1, []int16{100}, []int16{200})).Audio(),
-		goav.From(goavtest.Audio(48000, 1, []int16{50}, []int16{-50})).Audio(),
-	).To(out.Sink()).UseRuntime(goavtest.Runtime()).Build(ctx)
+	task, err := goavtest.Runtime().Build(ctx, goav.Mix(
+		goavtest.Audio(48000, 1, []int16{100}, []int16{200}).Audio(),
+		goavtest.Audio(48000, 1, []int16{50}, []int16{-50}).Audio(),
+	).
+		To(out.Sink()))
 	if err != nil {
 		fmt.Println(err)
 		return
@@ -56,11 +55,9 @@ func ExampleCollector() {
 func ExampleCollector_WaitFrames() {
 	ctx := context.Background()
 	out := goavtest.NewCollector()
-	err := goav.From(goavtest.Audio(48000, 1, []int16{1}, []int16{2})).
+	err := goavtest.Runtime().Run(ctx, goavtest.Audio(48000, 1, []int16{1}, []int16{2}).
 		Audio().
-		To(out.Sink()).
-		UseRuntime(goavtest.Runtime()).
-		Run(ctx)
+		To(out.Sink()))
 	if err != nil {
 		fmt.Println(err)
 		return

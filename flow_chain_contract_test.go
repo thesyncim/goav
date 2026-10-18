@@ -14,7 +14,7 @@ import (
 )
 
 func TestFlowChainAccessorsAndNilSafety(t *testing.T) {
-	var root *FlowBuilder
+	var root *flowBuilder
 	if got := root.Audio().Name(); got != "" {
 		t.Fatalf("nil root Audio().Name() = %q, want empty", got)
 	}
@@ -22,8 +22,8 @@ func TestFlowChainAccessorsAndNilSafety(t *testing.T) {
 		t.Fatalf("nil root Video().Name() = %q, want empty", got)
 	}
 
-	audio := Flow("voice").Audio()
-	video := Flow("preview").Video()
+	audio := newFlow("voice").Audio()
+	video := newFlow("preview").Video()
 	if got := audio.Name(); got != "voice" {
 		t.Fatalf("audio Name() = %q, want voice", got)
 	}
@@ -56,7 +56,7 @@ func TestFlowChainAccessorsAndNilSafety(t *testing.T) {
 		nilAudio.Require(shape.Frame(av.MediaAudio)) != nil ||
 		nilAudio.Prefer(shape.Frame(av.MediaAudio)) != nil ||
 		nilAudio.Apply(audio) != nil ||
-		nilAudio.Tap(FrameTap("voice.frames")) != nil ||
+		nilAudio.Tap(frameTapRef("voice.frames")) != nil ||
 		nilAudio.Encode(codec.Opus()) != nil ||
 		nilAudio.Copy() != nil {
 		t.Fatal("nil audio chain method returned non-nil")
@@ -84,7 +84,7 @@ func TestFlowChainAccessorsAndNilSafety(t *testing.T) {
 		nilVideo.Require(shape.Frame(av.MediaVideo)) != nil ||
 		nilVideo.Prefer(shape.Frame(av.MediaVideo)) != nil ||
 		nilVideo.Apply(video) != nil ||
-		nilVideo.Tap(FrameTap("preview.frames")) != nil ||
+		nilVideo.Tap(frameTapRef("preview.frames")) != nil ||
 		nilVideo.Encode(codec.VP8()) != nil ||
 		nilVideo.Copy() != nil {
 		t.Fatal("nil video chain method returned non-nil")
@@ -112,7 +112,7 @@ func TestFlowChainAccessorsAndNilSafety(t *testing.T) {
 	builder.require(shape.Frame(av.MediaVideo))
 	builder.prefer(shape.Frame(av.MediaVideo))
 	builder.apply(audio)
-	builder.tap(FrameTap("preview.frames"))
+	builder.tap(frameTapRef("preview.frames"))
 	builder.encode(codec.VP8())
 	assertBuildErrorCode(t, builder.snapshot().err, flowInvalidCode)
 }
@@ -121,7 +121,7 @@ func TestVideoFlowOperationsExposeContractsAndCloneSnapshots(t *testing.T) {
 	meter := FrameFunc("meter", func(_ context.Context, frame *av.Frame, emit Emit) error {
 		return emit.Frame(frame)
 	})
-	flow := Flow("preview").Video().
+	flow := newFlow("preview").Video().
 		Decode().
 		Resize(320, 180).
 		Do(meter).
@@ -129,7 +129,7 @@ func TestVideoFlowOperationsExposeContractsAndCloneSnapshots(t *testing.T) {
 		Auto(shape.AllowResize(), shape.AllowConvert()).
 		Require(shape.Frame(av.MediaVideo, shape.Video(320, 180, ""))).
 		Prefer(shape.Frame(av.MediaVideo, shape.Video(0, 0, av.PixelFormatI420))).
-		Tap(FrameTap("preview.frames")).
+		Tap(frameTapRef("preview.frames")).
 		Encode(codec.VP8(codec.Bitrate(250_000)))
 
 	if got := flow.InputShapes(); len(got) != 1 || got[0].Domain != shape.DomainPacket || got[0].MediaKind != av.MediaVideo {
@@ -139,7 +139,7 @@ func TestVideoFlowOperationsExposeContractsAndCloneSnapshots(t *testing.T) {
 	if len(outputs) != 1 || outputs[0].Domain != shape.DomainPacket || outputs[0].Codec != av.CodecVP8 {
 		t.Fatalf("OutputShapes() = %#v, want VP8 packets", outputs)
 	}
-	if got := flow.Taps(); !reflect.DeepEqual(got, []tapRef{FrameTap("preview.frames")}) {
+	if got := flow.Taps(); !reflect.DeepEqual(got, []tapRef{frameTapRef("preview.frames")}) {
 		t.Fatalf("Taps() = %#v, want preview frame tap", got)
 	}
 
@@ -182,7 +182,7 @@ func TestVideoFlowOperationsExposeContractsAndCloneSnapshots(t *testing.T) {
 		t.Fatalf("chainSpecFrom reused resize config, got width %d want 320", got)
 	}
 
-	copyFlow := Flow("copy").Video().Copy()
+	copyFlow := newFlow("copy").Video().Copy()
 	if got := copyFlow.InputShapes(); len(got) != 1 || got[0].Domain != shape.DomainPacket || got[0].MediaKind != av.MediaVideo {
 		t.Fatalf("copy InputShapes() = %#v, want video packets", got)
 	}
@@ -191,7 +191,7 @@ func TestVideoFlowOperationsExposeContractsAndCloneSnapshots(t *testing.T) {
 		t.Fatalf("copy OutputShapes() = %#v, want video packets", copyOutputs)
 	}
 
-	applied := Flow("outer").Video().Apply(Flow("inner").Video().Resize(64, 36))
+	applied := newFlow("outer").Video().Apply(newFlow("inner").Video().Resize(64, 36))
 	appliedSpec, err := chainSpecFrom(applied)
 	if err != nil {
 		t.Fatal(err)
@@ -205,10 +205,10 @@ func TestVideoFlowOperationsExposeContractsAndCloneSnapshots(t *testing.T) {
 }
 
 func TestAudioFlowShapePreferenceCopyAndTapContracts(t *testing.T) {
-	flow := Flow("voice").Audio().
+	flow := newFlow("voice").Audio().
 		Shape(shape.Frame(av.MediaAudio, shape.Audio(48_000, 1, av.SampleFormatS16))).
 		Prefer(shape.Frame(av.MediaAudio, shape.Audio(0, 0, av.SampleFormatF32))).
-		Tap(FrameTap("voice.auto")).
+		Tap(frameTapRef("voice.auto")).
 		Encode(codec.Opus(codec.Bitrate(96_000)))
 	spec, err := chainSpecFrom(flow)
 	if err != nil {
@@ -226,9 +226,9 @@ func TestAudioFlowShapePreferenceCopyAndTapContracts(t *testing.T) {
 		t.Fatalf("domain-less tap before encode inferred %q, want frame", spec.operations[2].Tap.Domain)
 	}
 
-	encodedTap := Flow("encoded").Audio().
+	encodedTap := newFlow("encoded").Audio().
 		Encode(codec.Opus()).
-		Tap(PacketTap("voice.packets"))
+		Tap(packetTapRef("voice.packets"))
 	encodedSpec, err := chainSpecFrom(encodedTap)
 	if err != nil {
 		t.Fatal(err)
@@ -240,7 +240,7 @@ func TestAudioFlowShapePreferenceCopyAndTapContracts(t *testing.T) {
 		t.Fatalf("packet tap after encode = %#v, want packet after encode", encodedSpec.operations[1].Tap)
 	}
 
-	badStage := Flow("bad").Audio().Do(nil)
+	badStage := newFlow("bad").Audio().Do(nil)
 	_, err = chainSpecFrom(badStage)
 	assertBuildErrorCode(t, err, stageMissingCode)
 
@@ -256,7 +256,7 @@ func TestAudioFlowShapePreferenceCopyAndTapContracts(t *testing.T) {
 }
 
 func TestFlowBuilderDefaultShapeContracts(t *testing.T) {
-	audio := Flow("voice").Audio()
+	audio := newFlow("voice").Audio()
 	if got := audio.InputShapes(); len(got) != 1 || got[0].Domain != shape.DomainFrame || got[0].MediaKind != av.MediaAudio {
 		t.Fatalf("audio InputShapes() = %#v, want audio frames", got)
 	}
@@ -264,7 +264,7 @@ func TestFlowBuilderDefaultShapeContracts(t *testing.T) {
 		t.Fatalf("audio OutputShapes(empty) = %#v, want audio frames", got)
 	}
 
-	video := Flow("preview").Video()
+	video := newFlow("preview").Video()
 	if got := video.InputShapes(); len(got) != 1 || got[0].Domain != shape.DomainFrame || got[0].MediaKind != av.MediaVideo {
 		t.Fatalf("video InputShapes() = %#v, want video frames", got)
 	}
@@ -285,75 +285,75 @@ func TestFlowBuilderRejectsInvalidCompositionContracts(t *testing.T) {
 	}{
 		{
 			name: "shape after encode",
-			flow: Flow("encoded").Audio().
+			flow: newFlow("encoded").Audio().
 				Encode(codec.Opus()).
 				Shape(shape.Frame(av.MediaAudio)),
 			code: streamStepAfterEncodeCode,
 		},
 		{
 			name: "decode after encode",
-			flow: Flow("encoded").Video().
+			flow: newFlow("encoded").Video().
 				Encode(codec.VP8()).
 				Decode(),
 			code: streamStepAfterEncodeCode,
 		},
 		{
 			name: "shape after copy",
-			flow: Flow("copied").Audio().
+			flow: newFlow("copied").Audio().
 				Copy().
 				Shape(shape.Frame(av.MediaAudio)),
 			code: operationShapeMismatchCode,
 		},
 		{
 			name: "flow after encode",
-			flow: Flow("encoded").Audio().
+			flow: newFlow("encoded").Audio().
 				Encode(codec.Opus()).
-				Apply(Flow("meter").Audio().Do(meter)),
+				Apply(newFlow("meter").Audio().Do(meter)),
 			code: streamStepAfterEncodeCode,
 		},
 		{
 			name: "decode flow after frame step",
-			flow: Flow("bad").Audio().
+			flow: newFlow("bad").Audio().
 				Do(meter).
-				Apply(Flow("decode").Audio().Decode()),
+				Apply(newFlow("decode").Audio().Decode()),
 			code: flowDecodeOrderInvalidCode,
 		},
 		{
 			name: "duplicate decode through apply",
-			flow: Flow("bad").Audio().
+			flow: newFlow("bad").Audio().
 				Decode().
-				Apply(Flow("decode").Audio().Decode()),
+				Apply(newFlow("decode").Audio().Decode()),
 			code: flowDecodeDuplicateCode,
 		},
 		{
 			name: "copy flow after decode",
-			flow: Flow("bad").Audio().
+			flow: newFlow("bad").Audio().
 				Decode().
-				Apply(Flow("copy").Audio().Copy()),
+				Apply(newFlow("copy").Audio().Copy()),
 			code: flowCopyDomainMismatchCode,
 		},
 		{
 			name: "typed packet tap before encode",
-			flow: Flow("bad").Audio().
-				Tap(PacketTap("voice.packets")),
+			flow: newFlow("bad").Audio().
+				Tap(packetTapRef("voice.packets")),
 			code: errcode.TapDomainMismatch,
 		},
 		{
 			name: "typed frame tap after encode",
-			flow: Flow("bad").Audio().
+			flow: newFlow("bad").Audio().
 				Encode(codec.Opus()).
-				Tap(FrameTap("voice.frames")),
+				Tap(frameTapRef("voice.frames")),
 			code: errcode.TapDomainMismatch,
 		},
 		{
 			name: "empty tap",
-			flow: Flow("bad").Audio().
-				Tap(FrameTap("")),
+			flow: newFlow("bad").Audio().
+				Tap(frameTapRef("")),
 			code: errcode.TapInvalid,
 		},
 		{
 			name: "non snapshot chain",
-			flow: Flow("bad").Audio().
+			flow: newFlow("bad").Audio().
 				Apply(nonSnapshotFlow{}),
 			code: flowInvalidCode,
 		},
@@ -368,20 +368,20 @@ func TestFlowBuilderRejectsInvalidCompositionContracts(t *testing.T) {
 }
 
 func TestFlowDuplicateEncodeAndDecodeErrors(t *testing.T) {
-	dupEncode := Flow("voice").Audio().Encode(codec.Opus()).Encode(codec.Opus())
+	dupEncode := newFlow("voice").Audio().Encode(codec.Opus()).Encode(codec.Opus())
 	_, err := chainSpecFrom(dupEncode)
 	assertBuildErrorCode(t, err, encodeDuplicateCode)
 
-	dupDecode := Flow("preview").Video().Decode().Decode()
+	dupDecode := newFlow("preview").Video().Decode().Decode()
 	_, err = chainSpecFrom(dupDecode)
 	assertBuildErrorCode(t, err, flowDecodeDuplicateCode)
 }
 
 func TestFlowConstructionErrorsAreJoined(t *testing.T) {
-	flow := Flow("bad").Audio().
+	flow := newFlow("bad").Audio().
 		Encode(codec.Opus()).
 		Encode(codec.Opus()).
-		Tap(FrameTap("voice.frames"))
+		Tap(frameTapRef("voice.frames"))
 	spec := flow.chainSpec()
 	assertBuildErrorCode(t, spec.err, encodeDuplicateCode)
 

@@ -191,7 +191,7 @@ func graphPlanInvalidError(reason string, details []string) error {
 		Reason:    reason,
 		fields:    errDetailLines(append([]string(nil), details...)),
 		fixes: buildErrorFixes([]string{
-			"compile recipes through goav.From(...), chains, branches, and destinations",
+			"compile recipes through Streams, joins, and Outputs: rt.Run(ctx, outputs...)",
 			"keep graph-plan nodes, edges, operations, and destinations in sync",
 		}),
 		cause: errUnsupportedBuild,

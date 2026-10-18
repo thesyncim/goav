@@ -90,7 +90,7 @@ func validateBranchCompositionRecipeShape(operation string, recipe recipeir.Reci
 			Operation: operation,
 			Reason:    "no input is configured",
 			fixes: buildErrorFixes([]string{
-				"start the recipe from an input: goav.From(goav.FileInput(\"in.webm\", reader))",
+				"start the recipe from an input: goav.FileInput(\"in.webm\", reader).Video()",
 			}),
 			cause: errUnsupportedBuild,
 		}
@@ -104,7 +104,7 @@ func validateBranchCompositionRecipeShape(operation string, recipe recipeir.Reci
 			Reason:    "transcode recipes currently take one input",
 			fields:    errDetails(errDetail("inputs", fmt.Sprintf("%d", len(recipe.Inputs)))),
 			fixes: buildErrorFixes([]string{
-				"use one goav.From(input) source per composed job",
+				"run each input's Outputs in their own rt.Run call",
 				"use the expert graph API when multiple sources must be composed manually",
 			}),
 			cause: errUnsupportedBuild,
@@ -213,9 +213,9 @@ func branchCopyUnsupportedError(stream streamIntent) error {
 		Node:      branchIntentName(stream),
 		Reason:    "copy branches require a packet-domain stream point",
 		fixes: buildErrorFixes([]string{
-			"use goav.From(input).Video().Copy().Branches(...) for packet-preserving planned branches",
-			"attach a runtime branch from a packet tap and call .Copy() when packet-domain fanout is needed",
-			"omit .Copy() when the branch should deliver decoded frames to goav.Sink(...)",
+			"fork in.Video() before .Decode() for packet-preserving planned forks",
+			"attach a runtime copy from a packet tap when packet-domain fanout is needed: task.Attach(ctx, task.Tap(name).To(dst))",
+			"fork after .Decode() when the fork should deliver decoded frames to goav.Sink(...)",
 		}),
 		cause: errUnsupportedBuild,
 	}
@@ -262,8 +262,8 @@ func transcodeUnsupportedLiveInputError() error {
 		Operation: branchCompositionOperation,
 		Reason:    "live provider transcode recipes are not supported by the transcode recipe compiler yet",
 		fixes: buildErrorFixes([]string{
-			"use From(...).Copy().To(...) for packet recording",
-			"use From(...).Audio().Decode() or From(...).Video().Decode() for one selected receive path",
+			"use input.To(...) for packet recording",
+			"use input.Audio().Decode() or input.Video().Decode() for one selected receive path",
 		}),
 		cause: errUnsupportedBuild,
 	}

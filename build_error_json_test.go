@@ -29,20 +29,20 @@ func commonBuildErrorCases() []commonBuildError {
 	sink := func() Destination {
 		return Sink(component.SinkFunc("sink", func(context.Context, component.Message) error { return nil }))
 	}
-	describe := func(j *Job) func() error {
+	describe := func(j *recipeJob) func() error {
 		return func() error { _, err := j.Describe(); return err }
 	}
-	build := func(j *Job) func() error {
+	build := func(j *recipeJob) func() error {
 		return func() error { _, err := j.Build(context.Background()); return err }
 	}
 	return []commonBuildError{
-		{"unconstructed-job", build(&Job{})},
-		{"input-missing", describe(From().Copy().To(Write("out.ivf", out())))},
-		{"encode-missing", describe(From(FileInput("in.ivf", reader())).Video().Decode().To(Write("out.mp4", out())))},
-		{"copy-after-decode", describe(From(FileInput("in.ivf", reader())).Video().Decode().Copy().To(Write("out.ivf", out())))},
-		{"resize-on-copy", describe(From(FileInput("in.ivf", reader())).Video().Copy().Resize(1280, 720).To(sink()))},
-		{"packet-tap-at-frame", describe(From(FileInput("in.ivf", reader())).Video().Decode().Tap(PacketTap("frames")).To(sink()))},
-		{"runtime-missing", build(From(FileInput("in.ogg", reader())).Audio().Decode().Encode(codec.Opus(codec.Bitrate(96_000))).To(Write("out.ogg", out())))},
+		{"unconstructed-job", build(&recipeJob{})},
+		{"input-missing", describe(recipeFrom().Copy().To(Write("out.ivf", out())))},
+		{"encode-missing", describe(recipeFrom(FileInput("in.ivf", reader())).Video().Decode().To(Write("out.mp4", out())))},
+		{"copy-after-decode", describe(recipeFrom(FileInput("in.ivf", reader())).Video().Decode().Copy().To(Write("out.ivf", out())))},
+		{"resize-on-copy", describe(recipeFrom(FileInput("in.ivf", reader())).Video().Copy().Resize(1280, 720).To(sink()))},
+		{"packet-tap-at-frame", describe(recipeFrom(FileInput("in.ivf", reader())).Video().Decode().Tap(packetTapRef("frames")).To(sink()))},
+		{"runtime-missing", build(recipeFrom(FileInput("in.ogg", reader())).Audio().Decode().Encode(codec.Opus(codec.Bitrate(96_000))).To(Write("out.ogg", out())))},
 	}
 }
 

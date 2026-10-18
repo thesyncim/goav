@@ -53,9 +53,9 @@ func requireColdPathBuildError(t *testing.T, err error, code errcode.Code) *Buil
 // parent: .Decode().Copy().Branches(...) asks branches to preserve packets
 // from a frame-domain point and is refused at the Branches call.
 func TestBranchesRefuseCopyParentAfterDecode(t *testing.T) {
-	_, err := From(coldPathPacketSource("mic", []byte{1})).
+	_, err := recipeFrom(coldPathPacketSource("mic", []byte{1})).
 		Audio().Decode().Copy().
-		Branches(Branch("rec").To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil })))).
+		Branches(newBranch("rec").To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil })))).
 		Describe()
 	requireColdPathBuildError(t, err, copyBranchSourceInvalidCode)
 }
@@ -63,9 +63,9 @@ func TestBranchesRefuseCopyParentAfterDecode(t *testing.T) {
 // TestBranchRefusesSecondDecode pins the duplicate-decode refusal on the
 // branch builder itself.
 func TestBranchRefusesSecondDecode(t *testing.T) {
-	spec := Branch("voice").Decode().Decode().
+	spec := newBranch("voice").Decode().Decode().
 		To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil })))
-	_, err := From(coldPathPacketSource("mic", []byte{1})).
+	_, err := recipeFrom(coldPathPacketSource("mic", []byte{1})).
 		Audio().Copy().
 		Branches(spec).
 		Describe()
@@ -75,9 +75,9 @@ func TestBranchRefusesSecondDecode(t *testing.T) {
 // TestBranchesRefusePacketBranchEncode pins the packet-domain encode rule:
 // a planned branch on a .Copy() parent cannot encode without decoding first.
 func TestBranchesRefusePacketBranchEncode(t *testing.T) {
-	_, err := From(coldPathPacketSource("mic", []byte{1})).
+	_, err := recipeFrom(coldPathPacketSource("mic", []byte{1})).
 		Audio().Copy().
-		Branches(Branch("web").Encode(codec.Opus(codec.Bitrate(96_000))).
+		Branches(newBranch("web").Encode(codec.Opus(codec.Bitrate(96_000))).
 			To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil })))).
 		Describe()
 	requireColdPathBuildError(t, err, packetBranchEncodeUnsupportedCode)
@@ -87,9 +87,9 @@ func TestBranchesRefusePacketBranchEncode(t *testing.T) {
 // *BranchBuilder (a zeroed variable of the inferred builder type) still
 // finishes into a spec that fails the build instead of panicking.
 func TestNilBranchBuilderToIsRefused(t *testing.T) {
-	var builder *BranchBuilder // what `b := Branch("late"); b = nil` leaves behind
+	var builder *branchBuilder // what `b := Branch("late"); b = nil` leaves behind
 	spec := builder.To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil })))
-	_, err := From(coldPathPacketSource("mic", []byte{1})).
+	_, err := recipeFrom(coldPathPacketSource("mic", []byte{1})).
 		Audio().Copy().
 		Branches(spec).
 		Describe()
@@ -99,8 +99,8 @@ func TestNilBranchBuilderToIsRefused(t *testing.T) {
 // TestBranchToRefusesEmptyDestination pins the empty-handle refusal on the
 // branch: .To(goav.Destination{}) names the invalid destination.
 func TestBranchToRefusesEmptyDestination(t *testing.T) {
-	spec := Branch("rec").To(Destination{})
-	_, err := From(coldPathPacketSource("mic", []byte{1})).
+	spec := newBranch("rec").To(Destination{})
+	_, err := recipeFrom(coldPathPacketSource("mic", []byte{1})).
 		Audio().Copy().
 		Branches(spec).
 		Describe()
@@ -113,7 +113,7 @@ func TestBranchToRefusesEmptyDestination(t *testing.T) {
 // TestStreamToRefusesEmptyDestination pins the same refusal on the stream
 // chain: .To(goav.Destination{}) is refused naming the stream.
 func TestStreamToRefusesEmptyDestination(t *testing.T) {
-	_, err := From(coldPathPacketSource("mic", []byte{1})).
+	_, err := recipeFrom(coldPathPacketSource("mic", []byte{1})).
 		Audio().Copy().
 		To(Destination{}).
 		Describe()
@@ -130,10 +130,10 @@ func TestStreamToRefusesEmptyDestination(t *testing.T) {
 func TestBranchesAnchorOnDeclaredAndDefaultPacketTaps(t *testing.T) {
 	ctx := context.Background()
 	var declared, fallback int
-	task, err := From(coldPathPacketSource("mic", []byte{1}, []byte{2})).
-		Audio().Copy().Tap(PacketTap("recorded")).
+	task, err := recipeFrom(coldPathPacketSource("mic", []byte{1}, []byte{2})).
+		Audio().Copy().Tap(packetTapRef("recorded")).
 		Branches(
-			Branch("a").From(PacketTap("recorded")).
+			newBranch("a").From(packetTapRef("recorded")).
 				Copy().
 				To(Sink(SinkFunc("a", func(_ context.Context, msg Message) error {
 					if msg.Kind == pipeline.MessagePacket {
@@ -141,7 +141,7 @@ func TestBranchesAnchorOnDeclaredAndDefaultPacketTaps(t *testing.T) {
 					}
 					return nil
 				}))),
-			Branch("b").From(PacketTap("audio.packets")).
+			newBranch("b").From(packetTapRef("audio.packets")).
 				Copy().
 				To(Sink(SinkFunc("b", func(_ context.Context, msg Message) error {
 					if msg.Kind == pipeline.MessagePacket {
@@ -258,9 +258,9 @@ func TestAttachedBranchStreamAndEventNarrowRoutes(t *testing.T) {
 
 	onlyA := newColdPathCountSink("only-a")
 	stats := newColdPathCountSink("stats")
-	if _, err := task.LegacyAttach(ctx,
-		Branch("only-a").From(src).Stream("a").To(Sink(onlyA)),
-		Branch("stats").From(src).Event(av.EventStats).To(Sink(stats)),
+	if _, err := legacyAttach(task, ctx,
+		newBranch("only-a").From(src).Stream("a").To(Sink(onlyA)),
+		newBranch("stats").From(src).Event(av.EventStats).To(Sink(stats)),
 	); err != nil {
 		t.Fatal(err)
 	}

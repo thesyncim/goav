@@ -29,7 +29,7 @@ func TestTapNameAndDomainHelperContracts(t *testing.T) {
 	if inferred.Name() != "mid" || inferred.Domain() != shape.DomainFrame {
 		t.Fatalf("internal tap default = %s/%s", inferred.Name(), inferred.Domain())
 	}
-	explicit := tapWithDomain(PacketTap("encoded"), shape.DomainFrame)
+	explicit := tapWithDomain(packetTapRef("encoded"), shape.DomainFrame)
 	if explicit.Name() != "encoded" || explicit.Domain() != shape.DomainPacket {
 		t.Fatalf("explicit tap = %s/%s, want packet domain preserved", explicit.Name(), explicit.Domain())
 	}

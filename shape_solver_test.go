@@ -105,7 +105,7 @@ func TestAutoInsertsResampleBeforeEncode(t *testing.T) {
 		return nil
 	}))
 
-	job := From(solverTestAudioSource("mic", 44_100, codec.Stereo, av.SampleFormatS16)).
+	job := recipeFrom(solverTestAudioSource("mic", 44_100, codec.Stereo, av.SampleFormatS16)).
 		Audio().
 		Auto(shape.AllowResample()).
 		Encode(codec.Opus(codec.Bitrate(96_000))).
@@ -158,7 +158,7 @@ func TestAutoInsertsResampleBeforeEncode(t *testing.T) {
 // no policies activates solving but allows nothing, so a needed conversion
 // fails with the source shape, the expected shape, and the exact policy to add.
 func TestAutoEmptyPolicyRefusesConversion(t *testing.T) {
-	_, err := From(solverTestAudioSource("mic", 44_100, codec.Stereo, av.SampleFormatS16)).
+	_, err := recipeFrom(solverTestAudioSource("mic", 44_100, codec.Stereo, av.SampleFormatS16)).
 		Audio().
 		Auto().
 		Encode(codec.Opus(codec.Bitrate(96_000))).
@@ -191,7 +191,7 @@ func TestAutoInsufficientPolicyRefusesStageConversion(t *testing.T) {
 		name:   "voice",
 		inputs: shape.Set{shape.Frame(av.MediaAudio, shape.Audio(48_000, codec.Stereo, ""))},
 	}
-	_, err := From(solverTestAudioSource("mic", 44_100, codec.Stereo, av.SampleFormatS16)).
+	_, err := recipeFrom(solverTestAudioSource("mic", 44_100, codec.Stereo, av.SampleFormatS16)).
 		Audio().
 		Auto(shape.AllowResize()).
 		Do(stage).
@@ -220,7 +220,7 @@ func TestShapeMismatchSuggestsExactAutoFix(t *testing.T) {
 		name:   "voice",
 		inputs: shape.Set{shape.Frame(av.MediaAudio, shape.Audio(48_000, codec.Stereo, ""))},
 	}
-	_, err := From(solverTestAudioSource("mic", 44_100, codec.Stereo, av.SampleFormatS16)).
+	_, err := recipeFrom(solverTestAudioSource("mic", 44_100, codec.Stereo, av.SampleFormatS16)).
 		Audio().
 		Do(stage).
 		To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))).
@@ -253,7 +253,7 @@ func TestAutoInsertsResizeBeforeEncode(t *testing.T) {
 		WithEncoder(codec.Descriptor{ID: av.CodecVP9, Type: av.MediaVideo}, &encodeTestEncoderFactory{encoder: &encodeTestEncoder{}}),
 	)
 
-	job := From(compositeTestVideoSource("cam", 8, 8, 100, 10, 20)).
+	job := recipeFrom(compositeTestVideoSource("cam", 8, 8, 100, 10, 20)).
 		Video().
 		Auto(shape.AllowResize()).
 		Encode(target).
@@ -305,7 +305,7 @@ func TestAutoInsertsFormatConvertThroughRegisteredAdapter(t *testing.T) {
 		Stateless:     true,
 	}, factory))
 
-	job := From(solverTestAudioSource("mic", 48_000, codec.Mono, "f32")).
+	job := recipeFrom(solverTestAudioSource("mic", 48_000, codec.Mono, "f32")).
 		Audio().
 		Auto(shape.AllowConvert()).
 		Do(stage).
@@ -332,7 +332,7 @@ func TestAutoInsertsFormatConvertThroughRegisteredAdapter(t *testing.T) {
 // TestAutoFailsWithoutRegisteredAdapter pins the no-candidate error: the
 // policy allows the conversion but no registered filter can perform it.
 func TestAutoFailsWithoutRegisteredAdapter(t *testing.T) {
-	_, err := From(solverTestAudioSource("mic", 44_100, codec.Stereo, av.SampleFormatS16)).
+	_, err := recipeFrom(solverTestAudioSource("mic", 44_100, codec.Stereo, av.SampleFormatS16)).
 		Audio().
 		Auto(shape.AllowResample()).
 		Encode(codec.Opus(codec.Bitrate(96_000))).
@@ -368,7 +368,7 @@ func TestAutoFailsOnAmbiguousAdapters(t *testing.T) {
 		WithFilter(second, &shapeSolverTestFilterFactory{}),
 	)
 
-	_, err := From(solverTestAudioSource("mic", 44_100, codec.Stereo, av.SampleFormatS16)).
+	_, err := recipeFrom(solverTestAudioSource("mic", 44_100, codec.Stereo, av.SampleFormatS16)).
 		Audio().
 		Auto(shape.AllowResample()).
 		Encode(codec.Opus(codec.Bitrate(96_000))).
@@ -401,11 +401,11 @@ func TestAutoSolvesBranchChains(t *testing.T) {
 		testBundleFilters(),
 		WithDecoder(codec.Descriptor{ID: pcm, Name: "PCM", Type: av.MediaAudio, Capabilities: codec.Capabilities{SampleFormats: []string{av.SampleFormatS16}}}, recipePCMDecoderFactory{decoder: &recipePCMDecoder{}}),
 	)
-	job := From(source).
+	job := recipeFrom(source).
 		Audio().
 		Decode().
 		Branches(
-			Branch("voice").
+			newBranch("voice").
 				Auto(shape.AllowResample()).
 				Encode(codec.Opus(codec.Bitrate(96_000))).
 				To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))),
@@ -448,17 +448,17 @@ func TestBranchAutoInsertMatchesDirectChain(t *testing.T) {
 		WithDecoder(codec.Descriptor{ID: pcm, Name: "PCM", Type: av.MediaAudio, Capabilities: codec.Capabilities{SampleFormats: []string{av.SampleFormatS16}}}, recipePCMDecoderFactory{decoder: &recipePCMDecoder{}}),
 	)
 
-	direct := From(source).
+	direct := recipeFrom(source).
 		Audio().
 		Decode().
 		Resample(48_000, codec.Stereo).
 		Encode(codec.Opus(codec.Bitrate(96_000))).
 		To(Sink(SinkFunc("direct", func(context.Context, Message) error { return nil }))).
 		UseRuntime(rt)
-	branch := From(source).
+	branch := recipeFrom(source).
 		Audio().
 		Branches(
-			Branch("main").
+			newBranch("main").
 				Resample(48_000, codec.Stereo).
 				Encode(codec.Opus(codec.Bitrate(96_000))).
 				To(Sink(SinkFunc("branch", func(context.Context, Message) error { return nil }))),
@@ -489,10 +489,10 @@ func TestBranchAutoInsertMatchesDirectChain(t *testing.T) {
 // declared on a reusable Flow enables the solver wherever the flow is applied,
 // so the chain gets the needed conversion inserted as a real planned operation.
 func TestAutoWorksInFlows(t *testing.T) {
-	normalize := Flow("normalize").Audio().
+	normalize := newFlow("normalize").Audio().
 		Auto(shape.AllowResample()).
 		Encode(codec.Opus(codec.Bitrate(96_000)))
-	job := From(solverTestAudioSource("mic", 44_100, codec.Stereo, av.SampleFormatS16)).
+	job := recipeFrom(solverTestAudioSource("mic", 44_100, codec.Stereo, av.SampleFormatS16)).
 		Audio().
 		Apply(normalize).
 		To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))).
@@ -520,7 +520,7 @@ func TestAutoWorksInFlows(t *testing.T) {
 // plan and the planned spec equals the built graph.
 func TestReadmeAutoResampleExampleBuilds(t *testing.T) {
 	mic := solverTestAudioSource("mic", 44_100, codec.Stereo, av.SampleFormatS16)
-	job := From(mic).
+	job := recipeFrom(mic).
 		Audio().
 		Auto(shape.AllowResample()).
 		Encode(codec.Opus(codec.Bitrate(96_000))).
@@ -547,9 +547,9 @@ func TestReadmeAutoResampleExampleBuilds(t *testing.T) {
 // arms keep auto-solving with zero opt-in (the implicit arm policy) and the
 // insertion is reported through Explain like every other conversion.
 func TestMixArmSolvingReportsDiagnostic(t *testing.T) {
-	job := LegacyMix(
-		From(mixTestAudioSourceRate("a", 48_000)).Audio(),
-		From(mixTestAudioSourceRate("b", 24_000)).Audio(),
+	job := legacyMix(
+		recipeFrom(mixTestAudioSourceRate("a", 48_000)).Audio(),
+		recipeFrom(mixTestAudioSourceRate("b", 24_000)).Audio(),
 	).To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))).
 		UseRuntime(mustNew(testBundleFilters()))
 

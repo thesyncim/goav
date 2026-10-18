@@ -38,7 +38,7 @@ func inputDemuxerMissingError(input format.Input, id av.FormatID, cause error) e
 	suggestions := []string{
 		"register a format adapter that provides a " + string(id) + " demuxer",
 		"choose an input container supported by the runtime",
-		"call .UseRuntime(runtime) with a goav.New(runconfig.WithFormatAdapter(...)) runtime when using a custom adapter bundle",
+		"run the Outputs on a goav.New(runconfig.WithFormatAdapter(...)) runtime when using a custom adapter bundle",
 	}
 	return &BuildError{
 		Phase:     phaseOpen,
@@ -82,7 +82,7 @@ func outputMuxerMissingError(output format.Output, index int, id av.FormatID, ca
 	suggestions := []string{
 		"register a " + string(id) + " muxer with goav.New(runconfig.WithMuxer(...)) or a format adapter that provides one",
 		"choose an output container supported by the runtime, such as .ivf for VP8/VP9/AV1 packet recording or .h264 for H264 packet recording",
-		"call .UseRuntime(runtime) with a goav.New(runconfig.WithFormatAdapter(...)) runtime when using a custom adapter bundle",
+		"run the Outputs on a goav.New(runconfig.WithFormatAdapter(...)) runtime when using a custom adapter bundle",
 	}
 	return &BuildError{
 		Phase:     phaseOpen,
@@ -126,7 +126,7 @@ func destinationMuxerMissingError(node string, output format.Output, id av.Forma
 	suggestions := []string{
 		"register a " + string(id) + " muxer with goav.New(runconfig.WithMuxer(...)) or a format adapter that provides one",
 		"choose a destination container supported by the runtime, such as .ivf for VP8/VP9/AV1 packet recording or .h264 for H264 packet recording",
-		"call .UseRuntime(runtime) with a goav.New(runconfig.WithFormatAdapter(...)) runtime when using a custom adapter bundle",
+		"run the Outputs on a goav.New(runconfig.WithFormatAdapter(...)) runtime when using a custom adapter bundle",
 	}
 	return &BuildError{
 		Phase:     phaseOpen,

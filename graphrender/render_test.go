@@ -8,7 +8,6 @@ import (
 	"testing"
 	"time"
 
-	goav "github.com/thesyncim/goav"
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/goavtest"
 	"github.com/thesyncim/goav/lifecycle"
@@ -438,20 +437,20 @@ func TestRenderTaskFlowchartReadsLiveTaskSnapshot(t *testing.T) {
 	defer cancel()
 
 	packet := av.Packet{Payload: av.Buffer{Bytes: []byte{1}, Ownership: av.BufferImmutable}}
-	task, err := goav.From(goavtest.Packets(av.CodecOpus, packet)).
-		Audio().Copy().Tap(goav.PacketTap("pkts")).
-		To(goavtest.NewCollector().Sink()).
-		UseRuntime(goavtest.Runtime()).
-		BuildLive(ctx)
+	task, err := goavtest.Runtime().Build(ctx, goavtest.Packets(av.CodecOpus, packet).
+		Audio().
+		Tap("pkts").
+		To(goavtest.NewCollector().Sink()))
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer task.Close()
 
-	attachment, err := task.LegacyAttach(ctx, goav.Branch("preview").
-		From(goav.PacketTap("pkts")).
-		Copy().
-		To(goavtest.NewCollector().Sink()))
+	attachment, err := task.Attach(ctx,
+		task.Tap("pkts").
+			As("preview").
+			To(goavtest.NewCollector().Sink()),
+	)
 	if err != nil {
 		t.Fatal(err)
 	}

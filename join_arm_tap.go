@@ -30,7 +30,7 @@ func (t tapRef) joinArm() joinArmSpec {
 // Region places this tap arm's frames at (x, y) on the composite canvas —
 // the tap-arm form of the chain arm's .Region(x, y). A Mix or Select refuses
 // a positioned arm.
-func (t tapRef) Region(x, y int) JoinArm {
+func (t tapRef) Region(x, y int) recipeArm {
 	return tapArmRef{tap: t, region: compositeRegion{x: x, y: y}}
 }
 
@@ -120,7 +120,7 @@ func (a *joinTapAnchors) resolve(name string) (joinTapAnchor, bool) {
 func planJoinTapArm(name string, kind string, profile joinProfile, tap tapRef, anchors *joinTapAnchors) (joinArmPlan, error) {
 	if tap.name == "" {
 		return joinArmPlan{}, joinArmError(name, name, "tap arm has no name",
-			"use a named typed tap ref: goav.FrameTap(\"voice.decoded\") or goav.PacketTap(\"cam.packets\")")
+			"name the tap the arm reads: .Tap(\"voice.decoded\") or .Tap(\"cam.packets\")")
 	}
 	anchor, ok := anchors.resolve(tap.name)
 	if !ok {
@@ -160,7 +160,7 @@ func validateJoinArmOperations(join string, arm string, operations []operationSp
 			return joinArmError(join, firstNonEmpty(arm, join), fmt.Sprintf(
 				"%s arm chains support .Decode() and .Tap(...) only (%s is not lowered on an arm)",
 				join, string(operations[i].Kind)),
-				"transform or encode the JOINED stream after the join: goav.LegacyMix(a, b).Encode(...) / .Branches(...)",
+				"transform or encode the JOINED stream after the join: goav.Mix(a, b).Resample(...).Encode(...)",
 				"use a nested join arm when one arm needs its own convergence")
 		}
 	}
@@ -251,7 +251,7 @@ func joinTapArmMissingError(join string, tap tapRef, declared []string) error {
 		Reason:    "tap arm references a tap that no earlier arm declares",
 		fields:    errDetailLines(details),
 		fixes: buildErrorFixes([]string{
-			"declare the tap on an arm chain: goav.From(input).Audio().Decode().Tap(goav.FrameTap(" + strconv.Quote(tap.name) + "))",
+			"declare the tap on an arm: input.Audio().Decode().Tap(" + strconv.Quote(tap.name) + ")",
 			"order arms so the tap-declaring chain comes before the tap arm",
 		}),
 		cause: errUnsupportedBuild,

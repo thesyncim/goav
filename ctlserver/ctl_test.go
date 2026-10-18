@@ -506,12 +506,10 @@ func TestPublicExecuteAndServeUnixWrappers(t *testing.T) {
 
 func newExternalTask(t *testing.T, runtime *goav.Runtime) goav.LiveTask {
 	t.Helper()
-	task, err := goav.From(goavtest.Audio(48000, 2, []int16{1, 2, 3, 4})).
+	task, err := runtime.Build(context.Background(), goavtest.Audio(48000, 2, []int16{1, 2, 3, 4}).
 		Audio().
-		Tap(goav.FrameTap("frames")).
-		To(goavtest.NewCollector().Sink()).
-		UseRuntime(runtime).
-		BuildLive(context.Background())
+		Tap("frames").
+		To(goavtest.NewCollector().Sink()))
 	if err != nil {
 		t.Fatal(err)
 	}

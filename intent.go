@@ -324,7 +324,7 @@ func streamBuildSplitOperationSpecs(stream streamBuild) []operationSpec {
 	return operations
 }
 
-func plannedBranchSharedOperationSpecs(stream *jobStreamBuild, spec BranchSpec, parentPacket bool) []operationSpec {
+func plannedBranchSharedOperationSpecs(stream *jobStreamBuild, spec branchRecipe, parentPacket bool) []operationSpec {
 	if stream == nil || parentPacket {
 		return nil
 	}
@@ -347,7 +347,7 @@ func plannedBranchSharedOperationSpecs(stream *jobStreamBuild, spec BranchSpec, 
 	return nil
 }
 
-func plannedBranchPrivateOperationSpecs(stream *jobStreamBuild, spec BranchSpec, parentPacket bool, parentFrame bool) []operationSpec {
+func plannedBranchPrivateOperationSpecs(stream *jobStreamBuild, spec branchRecipe, parentPacket bool, parentFrame bool) []operationSpec {
 	if !parentFrame && !chainHasDecode(spec.operations) && branchOperationsNeedImplicitDecode(spec.operations) {
 		decodeCodec := codec.Spec{}
 		component := ""
@@ -493,7 +493,7 @@ func mixedStreamOutputError(operation string, stream streamIntent) error {
 		fixes: buildErrorFixes([]string{
 			"use .Decode().To(goav.Sink(...)) for decoded frames",
 			"call " + encodeHint(stream.Select.Type) + " before .To(goav.Write(...)) for encoded output",
-			"use .Branches(...) when one stream needs separate decoded and encoded branches",
+			"fork the decoded Stream for separate outputs: v.To(goav.Sink(...)), v.Encode(...).To(goav.Write(...))",
 		}),
 		cause: errUnsupportedBuild,
 	}
@@ -538,8 +538,8 @@ func duplicateJobStreamError(existing *jobStreamBuild, next *jobStreamBuild) err
 		Reason:    "ordinary stream recipes select one audio or video stream",
 		fields:    errDetails(errNote("first stream: "+jobStreamName(existing)), errNote("second stream: "+jobStreamName(next))),
 		fixes: buildErrorFixes([]string{
-			"keep one .Audio(...) or .Video(...) chain on goav.From(...)",
-			"use goav.From(input).Video().Decode().Branches(...) for multiple branches from one stream",
+			"route each selected stream with .To(destination): in.Video().To(out), in.Audio().To(out)",
+			"fork one selected stream by reusing its value: v := in.Video().Decode()",
 			"use the expert graph API for custom multi-stream routing",
 		}),
 		cause: errUnsupportedBuild,

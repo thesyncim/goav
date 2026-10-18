@@ -39,9 +39,9 @@ func TestCompositeRunsTwoVideoSourcesIntoSink(t *testing.T) {
 
 	// arm "a" at top-left, arm "b" offset 4px right: the canvas is 8x4 and each
 	// 4x4 input lands at its Region.
-	task, err := LegacyComposite(
-		From(compositeTestVideoSource("a", 4, 4, 100, 10, 20)).Video().Region(0, 0),
-		From(compositeTestVideoSource("b", 4, 4, 200, 30, 40)).Video().Region(4, 0),
+	task, err := legacyComposite(
+		recipeFrom(compositeTestVideoSource("a", 4, 4, 100, 10, 20)).Video().Region(0, 0),
+		recipeFrom(compositeTestVideoSource("b", 4, 4, 200, 30, 40)).Video().Region(4, 0),
 	).To(sink).Build(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -70,7 +70,7 @@ func TestCompositeRunsTwoVideoSourcesIntoSink(t *testing.T) {
 }
 
 func TestCompositeRequiresTwoArms(t *testing.T) {
-	_, err := LegacyComposite(From(compositeTestVideoSource("a", 4, 4, 100, 10, 20)).Video()).
+	_, err := legacyComposite(recipeFrom(compositeTestVideoSource("a", 4, 4, 100, 10, 20)).Video()).
 		To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))).
 		Build(context.Background())
 	var buildErr *BuildError
@@ -82,9 +82,9 @@ func TestCompositeRequiresTwoArms(t *testing.T) {
 func errorsAsComposite(err error, target **BuildError) bool { return errors.As(err, target) }
 
 func TestCompositeRejectsDuplicateStreamIDs(t *testing.T) {
-	_, err := LegacyComposite(
-		From(compositeTestVideoSource("dup", 4, 4, 100, 10, 20)).Video().Region(0, 0),
-		From(compositeTestVideoSource("dup", 4, 4, 200, 30, 40)).Video().Region(4, 0),
+	_, err := legacyComposite(
+		recipeFrom(compositeTestVideoSource("dup", 4, 4, 100, 10, 20)).Video().Region(0, 0),
+		recipeFrom(compositeTestVideoSource("dup", 4, 4, 200, 30, 40)).Video().Region(4, 0),
 	).To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))).
 		Build(context.Background())
 	var buildErr *BuildError
@@ -94,9 +94,9 @@ func TestCompositeRejectsDuplicateStreamIDs(t *testing.T) {
 }
 
 func TestCompositeRawFramesRequireSinkDestination(t *testing.T) {
-	_, err := LegacyComposite(
-		From(compositeTestVideoSource("a", 4, 4, 100, 10, 20)).Video().Region(0, 0),
-		From(compositeTestVideoSource("b", 4, 4, 200, 30, 40)).Video().Region(4, 0),
+	_, err := legacyComposite(
+		recipeFrom(compositeTestVideoSource("a", 4, 4, 100, 10, 20)).Video().Region(0, 0),
+		recipeFrom(compositeTestVideoSource("b", 4, 4, 200, 30, 40)).Video().Region(4, 0),
 	).To(Write("canvas.ivf", io.Discard)).
 		Build(context.Background())
 	var buildErr *BuildError
@@ -110,23 +110,23 @@ func TestCompositeRawFramesRequireSinkDestination(t *testing.T) {
 }
 
 func TestCompositeBuilderOptionsCarryIntoJoinSpec(t *testing.T) {
-	var nilComposite *CompositeStream
+	var nilComposite *compositeStream
 	if arm := nilComposite.joinArm(); arm.join != nil || arm.region != nil {
 		t.Fatalf("nil composite join arm = %+v, want zero", arm)
 	}
 
 	require := shape.Frame(av.MediaVideo, shape.Video(8, 4, av.PixelFormatI420))
 	prefer := shape.Frame(av.MediaVideo, shape.Video(16, 8, av.PixelFormatI420))
-	composite := LegacyComposite(
-		From(compositeTestVideoSource("a", 4, 4, 100, 10, 20)).Video().Region(0, 0),
-		From(compositeTestVideoSource("b", 4, 4, 200, 30, 40)).Video().Region(4, 0),
+	composite := legacyComposite(
+		recipeFrom(compositeTestVideoSource("a", 4, 4, 100, 10, 20)).Video().Region(0, 0),
+		recipeFrom(compositeTestVideoSource("b", 4, 4, 200, 30, 40)).Video().Region(4, 0),
 	).
 		SyncByPTS().
 		Auto(shape.AllowResize(), shape.AllowConvert()).
 		Require(require).
 		Prefer(prefer).
 		Encode(codec.VP8(codec.Bitrate(750_000))).
-		Tap(FrameTap("canvas")).
+		Tap(frameTapRef("canvas")).
 		Region(2, 3)
 
 	if composite.sync != joinSyncPTS {

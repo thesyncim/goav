@@ -41,27 +41,27 @@ type chainSnapshotter interface {
 	chainSpec() chainSpec
 }
 
-// FlowBuilder is the root of a reusable operation sequence; construct it with
+// flowBuilder is the root of a reusable operation sequence; construct it with
 // Flow, then pick a media domain with .Audio() or .Video() and chain
 // operations onto the result. It is sealed — its fields are unexported, so
 // the grammar methods are the only mutation surface.
-type FlowBuilder struct {
+type flowBuilder struct {
 	name string
 }
 
-// Flow starts a reusable operation sequence.
-func Flow(name string) *FlowBuilder {
-	return &FlowBuilder{name: name}
+// newFlow starts a reusable operation sequence.
+func newFlow(name string) *flowBuilder {
+	return &flowBuilder{name: name}
 }
 
-func (b *FlowBuilder) Audio() *audioChain {
+func (b *flowBuilder) Audio() *audioChain {
 	if b == nil {
 		return newAudioChain("")
 	}
 	return newAudioChain(b.name)
 }
 
-func (b *FlowBuilder) Video() *videoChain {
+func (b *flowBuilder) Video() *videoChain {
 	if b == nil {
 		return newVideoChain("")
 	}
@@ -573,7 +573,7 @@ func (b *chainBuilder) tap(tap tapRef) {
 			Node:      firstNonEmpty(b.spec.name, "flow"),
 			Reason:    "tap name is empty",
 			fixes: buildErrorFixes([]string{
-				"call .Tap(goav.FrameTap(\"audio.voice.frames\")) or another stable tap ref",
+				"call .Tap(\"audio.voice.frames\") or another stable, non-empty tap name",
 				"omit .Tap(...) when no runtime branch should attach at that point",
 			}),
 			cause: errUnsupportedBuild,
@@ -751,8 +751,8 @@ func flowDecodeOrderError(node string) error {
 		Node:      node,
 		Reason:    "decode must be the first flow operation",
 		fixes: buildErrorFixes([]string{
-			"write goav.Flow(name).Audio().Decode().Resample(...)",
-			"omit .Decode() when the flow is only applied after stream decode",
+			"decode first in the reusable function: func(s goav.Stream) goav.Stream { return s.Decode().Resample(...) }",
+			"omit .Decode() when the function is only applied after the stream's .Decode()",
 		}),
 		cause: errUnsupportedBuild,
 	}
@@ -767,9 +767,9 @@ func flowDecodeDomainError(operation string, node string) error {
 		Node:      firstNonEmpty(node, "flow"),
 		Reason:    "flow decoding requires a packet-domain stream point",
 		fixes: buildErrorFixes([]string{
-			"omit .Decode() when applying the flow after stream decode",
-			"use the flow from a packet branch or packet tap when it should own decode",
-			"split packet-preserving streams with .Copy().Branches(...) before applying the flow",
+			"omit .Decode() when applying the reusable function after the stream's .Decode()",
+			"apply it to a packet stream (before .Decode(), or a packet tap) when it should own decode",
+			"fork the packet stream before applying the function when a copy shares it: s.To(copy), f(s).To(out)",
 		}),
 		cause: errUnsupportedBuild,
 	}
@@ -784,8 +784,8 @@ func flowCopyDomainError(operation string, node string) error {
 		Node:      firstNonEmpty(node, "flow"),
 		Reason:    "flow copying requires a packet-domain stream point",
 		fixes: buildErrorFixes([]string{
-			"start packet-preserving reusable work with goav.Flow(name).Audio().Copy() or goav.Flow(name).Video().Copy()",
-			"declare packet taps after copy with .Copy().Tap(goav.PacketTap(name))",
+			"keep packet-preserving reusable work free of .Decode() and frame stages so its stream copies",
+			"declare packet taps before .Decode() or after .Encode(...) with .Tap(name)",
 			"use .Decode().Resample(...).Encode(codec.Opus(...)) when the flow should transform frames",
 		}),
 		cause: errUnsupportedBuild,
@@ -800,7 +800,7 @@ func nilFlowError() error {
 		Operation: "build flow",
 		Reason:    "flow is nil",
 		fixes: buildErrorFixes([]string{
-			"build flows with goav.Flow(name).Audio() or goav.Flow(name).Video()",
+			"write reusable work as a Go function: func(s goav.Stream) goav.Stream { return s.Resize(...).Encode(...) }",
 		}),
 		cause: errUnsupportedBuild,
 	}
@@ -818,8 +818,8 @@ func validateChainMedia(operation string, node string, selected av.MediaType, sp
 		Node:      firstNonEmpty(spec.name, node, "flow"),
 		Reason:    string(spec.media) + " flow cannot be applied to " + string(selected) + " stream",
 		fixes: buildErrorFixes([]string{
-			"use goav.Flow(name).Audio() with .Audio()",
-			"use goav.Flow(name).Video() with .Video()",
+			"apply audio steps such as .Resample(...) to input.Audio() streams",
+			"apply video steps such as .Resize(...) to input.Video() streams",
 		}),
 		cause: errUnsupportedBuild,
 	}
@@ -835,7 +835,7 @@ func branchInputCountError(node string, count int) error {
 		Reason:    "branches currently compose from one input",
 		fields:    errDetails(errDetail("inputs", fmt.Sprintf("%d", count))),
 		fixes: buildErrorFixes([]string{
-			"start branches from goav.From(input).Audio() or goav.From(input).Video() with one input",
+			"fork the streams of one input: v := input.Video().Decode()",
 			"use the expert graph API when combining several sources manually",
 		}),
 		cause: errUnsupportedBuild,
@@ -849,9 +849,9 @@ func branchOutputScopeError(node string) error {
 		Code:      outputScopeMixedCode,
 		Operation: "build branches",
 		Node:      node,
-		Reason:    "branch destinations are declared inside Branch(...).To(...)",
+		Reason:    "a fork's destinations are declared on its own .To(...)",
 		fixes: buildErrorFixes([]string{
-			"route branches with .Branches(goav.Branch(name).To(goav.Write(name, writer)))",
+			"route each fork with its own .To(goav.Write(name, writer))",
 			"use stream .To(goav.Write(...)) or .To(goav.Sink(...)) only for one ordinary stream destination",
 		}),
 		cause: errUnsupportedBuild,

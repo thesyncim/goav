@@ -49,10 +49,10 @@ func chainEndedError(node string) error {
 		Code:      streamStepAfterDestinationCode,
 		Operation: "build stream",
 		Node:      node,
-		Reason:    "this chain already ended at .To(...); operations cannot follow its destinations",
+		Reason:    "this stream already ended at .To(...); operations cannot follow its destinations",
 		fixes: buildErrorFixes([]string{
-			"fan one stream out with .Branches(goav.Branch(name)...To(dst), ...) instead of reusing a chain value",
-			"start another stream from the job with .Audio() or .Video() for separate work",
+			"fan one stream out by reusing its Stream value: v.Resize(...).To(a), v.To(b)",
+			"start another stream from the input with input.Audio() or input.Video() for separate work",
 		}),
 		cause: errUnsupportedBuild,
 	}
@@ -89,12 +89,12 @@ func chainStepOnPacketCopyError(operation string, node string, step string) erro
 		Code:      operationShapeMismatchCode,
 		Operation: operation,
 		Node:      node,
-		Reason:    step + " needs decoded frames, but .Copy() keeps the stream packet-encoded",
+		Reason:    step + " needs decoded frames, but a stream without .Decode() copies its packets",
 		fields:    errDetails(errNote("step: "+step), errDetail("actual_shape", shape.New(shape.Domain(shape.DomainPacket)).String()), errDetail("expected_shape", shape.New(shape.Domain(shape.DomainFrame)).String())),
 		fixes: buildErrorFixes([]string{
 			"call .Decode() before .Resize(...), .Resample(...), or .Do(...) — transforms run on decoded frames",
 			"remove the processing step to keep a pure packet copy",
-			"use .Branches(...) when one input needs both a packet copy and a processed branch",
+			"reuse the Stream to fork a packet copy and a processed stream: s.To(copy), s.Decode()...To(out)",
 		}),
 		cause: errUnsupportedBuild,
 	}
@@ -111,7 +111,7 @@ func chainFrameInputRequiredError(operation string, node string, step string) er
 		fields:    errDetails(errDetail("step", step), errDetail("actual_shape", shape.New(shape.Domain(shape.DomainPacket)).String()), errDetail("expected_shape", shape.New(shape.Domain(shape.DomainFrame)).String())),
 		fixes: buildErrorFixes([]string{
 			"write .Decode()." + streamStepMethodName(step) + "(...) for decoded-frame processing",
-			"keep the stream packet-domain by using .Copy() and removing frame-domain processing",
+			"keep a packet copy by leaving out .Decode() and the frame-domain processing",
 		}),
 		cause: errUnsupportedBuild,
 	}
@@ -144,7 +144,7 @@ func sinkDomainRequiredError(operation string, node string) error {
 		fields:    errDetails(errDetail("destination", "sink"), errDetail("actual_shape", shape.New(shape.Domain(shape.DomainPacket)).String())),
 		fixes: buildErrorFixes([]string{
 			"decode frames before the sink: .Decode().To(goav.Sink(...))",
-			"preserve packets before the sink: .Copy().To(goav.Sink(...))",
+			"preserve packets by leaving out .Decode(): input.Video().To(goav.Sink(...))",
 		}),
 		cause: errUnsupportedBuild,
 	}
@@ -161,7 +161,7 @@ func duplicateStreamEncodeError(operation string, node string, first codec.Spec,
 		fields:    errDetails(errNote("first encoder: "+codecIntentName(first)), errNote("second encoder: "+codecIntentName(second))),
 		fixes: buildErrorFixes([]string{
 			"choose one output codec for the stream chain",
-			"use .Branches(...) when one input needs multiple encoded branches",
+			"fork the decoded Stream when one input needs several encodings: v.Encode(...).To(a), v.Encode(...).To(b)",
 		}),
 		cause: errUnsupportedBuild,
 	}
@@ -174,9 +174,9 @@ func copyEncodeSpellingError(operation string, node string) error {
 		Code:      encodeParameterInvalidCode,
 		Operation: operation,
 		Node:      firstNonEmpty(node, "stream"),
-		Reason:    "codec.Copy() is the internal packet-copy codec; recipe chains use .Copy()",
+		Reason:    "codec.Copy() is the internal packet-copy codec; a recipe stream copies its packets when it does not decode",
 		fixes: buildErrorFixes([]string{
-			"replace .Encode(codec.Copy()) with .Copy()",
+			"drop .Decode() and .Encode(codec.Copy()): a stream routed without .Decode() copies its packets",
 			"use " + encodeHint("") + " for real encoders",
 		}),
 		cause: errUnsupportedBuild,
@@ -196,9 +196,9 @@ func codecIntentName(spec codec.Spec) string {
 	}
 }
 
-// StreamOption narrows the stream selection made by the chain selectors
-// (.Audio, .Video, ...); construct values with StreamID, StreamIndex, or
-// InputName. It is sealed: the config it acts on is unexported, so those
+// StreamOption narrows the stream selection made by the input selectors
+// (input.Audio, input.Video, input.Stream); construct values with StreamID or
+// StreamIndex. It is sealed: the config it acts on is unexported, so those
 // constructors are the only way to build one.
 type StreamOption func(*streamSelectConfig)
 
@@ -247,31 +247,31 @@ func StreamIndex(index int) StreamOption {
 	}
 }
 
-// InputName narrows a stream selection to the named input of a multi-input
-// job: goav.From(camera, mic).Video(goav.InputName("camera")). Names come from
+// selectInputName narrows a stream selection to the named input of a multi-input
+// job: goav.From(camera, mic).Video(goav.selectInputName("camera")). Names come from
 // the input constructors (goav.Source(name, ...), goav.FileInput(name, ...))
 // or the goav.Name(...) option.
-func InputName(name string) StreamOption {
+func selectInputName(name string) StreamOption {
 	return func(config *streamSelectConfig) {
 		config.input = name
 	}
 }
 
-// Chain is one stream's operation list under construction: Audio() or Video()
+// streamChain is one stream's operation list under construction: Audio() or Video()
 // on a job starts it, operations extend it in order, and To(...) or
-// Branches(...) ends it. Helpers can take and return *Chain to package reusable
+// Branches(...) ends it. Helpers can take and return *streamChain to package reusable
 // steps. Methods extend the chain in place and return it for chaining; a chain
 // that already ended at To(...) refuses further operations, so fork one
 // stream with Branches(...) rather than by reusing a chain value.
-type Chain struct {
-	job    *Job
+type streamChain struct {
+	job    *recipeJob
 	stream *jobStreamBuild
 	region *compositeRegion
 }
 
 // Region places this arm's frame at (x, y) on the composite canvas. It is
 // composite-only: a chain that ends in To or Branches, or a Mix arm, refuses it.
-func (b *Chain) Region(x, y int) *Chain {
+func (b *streamChain) Region(x, y int) *streamChain {
 	b.region = &compositeRegion{x: x, y: y}
 	return b
 }
@@ -279,7 +279,7 @@ func (b *Chain) Region(x, y int) *Chain {
 // joinArm lets a source chain stand as one arm of a join (Mix, Composite,
 // Select) — the original arm shape, kept compiling unchanged behind the
 // sealed JoinArm interface.
-func (b *Chain) joinArm() joinArmSpec {
+func (b *streamChain) joinArm() joinArmSpec {
 	if b == nil {
 		return joinArmSpec{}
 	}
@@ -297,12 +297,12 @@ func (b *Chain) joinArm() joinArmSpec {
 	return spec
 }
 
-func (b *Chain) sourceStartsFrameDomain() bool {
+func (b *streamChain) sourceStartsFrameDomain() bool {
 	spec, ok := b.sourceFrameShape()
 	return ok && spec.Domain == shape.DomainFrame
 }
 
-func (b *Chain) sourceFrameShape() (shape.Spec, bool) {
+func (b *streamChain) sourceFrameShape() (shape.Spec, bool) {
 	if b == nil || b.job == nil || len(b.job.inputs) == 0 {
 		return shape.Spec{}, false
 	}
@@ -343,7 +343,7 @@ func stageRequiresFrameInput(stage pipeline.Stage) bool {
 	return true
 }
 
-func (b *Chain) requireFrameInput(stream *jobStreamBuild, step string) bool {
+func (b *streamChain) requireFrameInput(stream *jobStreamBuild, step string) bool {
 	if b.sourceStartsFrameDomain() {
 		return true
 	}
@@ -354,7 +354,7 @@ func (b *Chain) requireFrameInput(stream *jobStreamBuild, step string) bool {
 	return false
 }
 
-func (b *Chain) requireFrameTapInput(stream *jobStreamBuild) bool {
+func (b *streamChain) requireFrameTapInput(stream *jobStreamBuild) bool {
 	if b.sourceStartsFrameDomain() || chainHasDecode(stream.operations) {
 		return true
 	}
@@ -396,7 +396,7 @@ func frameSourceCopyError(operation string, node string) error {
 	}
 }
 
-func (b *Chain) Apply(flow chain) *Chain {
+func (b *streamChain) Apply(flow chain) *streamChain {
 	spec, err := chainSpecFrom(flow)
 	if err != nil {
 		b.job.setErr(err)
@@ -447,7 +447,7 @@ func (b *Chain) Apply(flow chain) *Chain {
 	return b
 }
 
-func (b *Chain) Decode(options ...codec.Option) *Chain {
+func (b *streamChain) Decode(options ...codec.Option) *streamChain {
 	stream := b.step()
 	if b.sourceStartsFrameDomain() {
 		b.job.setErr(frameSourceDecodeError("build stream", jobStreamName(stream)))
@@ -458,7 +458,7 @@ func (b *Chain) Decode(options ...codec.Option) *Chain {
 	return b
 }
 
-func (b *Chain) Copy() *Chain {
+func (b *streamChain) Copy() *streamChain {
 	stream := b.step()
 	if b.sourceStartsFrameDomain() {
 		b.job.setErr(frameSourceCopyError("build stream", jobStreamName(stream)))
@@ -468,7 +468,7 @@ func (b *Chain) Copy() *Chain {
 	return b
 }
 
-func (b *Chain) Tap(tap tapRef) *Chain {
+func (b *streamChain) Tap(tap tapRef) *streamChain {
 	stream := b.step()
 	if tap.name == "" {
 		b.job.setErr(&BuildError{
@@ -479,7 +479,7 @@ func (b *Chain) Tap(tap tapRef) *Chain {
 			Node:      jobStreamName(stream),
 			Reason:    "tap name is empty",
 			fixes: buildErrorFixes([]string{
-				"call .Tap(goav.FrameTap(\"video.decoded\")) or another stable tap ref",
+				"call .Tap(\"video.decoded\") or another stable, non-empty tap name",
 				"omit .Tap(...) when no runtime branch should attach at that point",
 			}),
 			cause: errUnsupportedBuild,
@@ -522,12 +522,12 @@ func lastStreamTapRef(stream *jobStreamBuild) tapRef {
 	}
 	for _, v := range slices.Backward(stream.operations) {
 		if operationSpecTapIsTerminalPacket(v) {
-			return PacketTap(v.Tap.Name)
+			return packetTapRef(v.Tap.Name)
 		}
 	}
 	steps := jobStreamChainSteps(stream)
 	if chainEncodeSpec(stream.operations).Copy && len(steps) == 0 && stream.selector.Type != "" {
-		return PacketTap(defaultPacketTapName(stream.selector.Type, 0))
+		return packetTapRef(defaultPacketTapName(stream.selector.Type, 0))
 	}
 	for _, step := range slices.Backward(steps) {
 		if step.tap != "" {
@@ -535,12 +535,12 @@ func lastStreamTapRef(stream *jobStreamBuild) tapRef {
 		}
 	}
 	if len(steps) == 0 && stream.selector.Type != "" && chainHasDecode(stream.operations) {
-		return FrameTap(defaultDecodedTapName(stream.selector.Type))
+		return frameTapRef(defaultDecodedTapName(stream.selector.Type))
 	}
 	return tapRef{}
 }
 
-func (b *Chain) Do(stages ...pipeline.Stage) *Chain {
+func (b *streamChain) Do(stages ...pipeline.Stage) *streamChain {
 	stream := b.step()
 	for i := range stages {
 		// After .Encode or .Copy the stream is packets: a stage that consumes
@@ -564,7 +564,7 @@ func (b *Chain) Do(stages ...pipeline.Stage) *Chain {
 
 // Sync places this stream chain on a shared media timeline. Reuse one
 // flow.SyncPolicy value across audio/video chains or branches to align them.
-func (b *Chain) Sync(policy flow.SyncPolicy) *Chain {
+func (b *streamChain) Sync(policy flow.SyncPolicy) *streamChain {
 	stream := b.step()
 	stream.operations = append(stream.operations, operationSpecForSync(policy))
 	return b
@@ -574,7 +574,7 @@ func (b *Chain) Sync(policy flow.SyncPolicy) *Chain {
 // message's media time is due on the task timeline, so real-time destinations
 // render on time. Reuse one flow.PlayoutPolicy value across audio/video chains
 // or branches to align their delivery on the shared anchor.
-func (b *Chain) Playout(policy flow.PlayoutPolicy) *Chain {
+func (b *streamChain) Playout(policy flow.PlayoutPolicy) *streamChain {
 	stream := b.step()
 	stream.operations = append(stream.operations, operationSpecForPlayout(policy))
 	return b
@@ -587,7 +587,7 @@ func (b *Chain) Playout(policy flow.PlayoutPolicy) *Chain {
 // planned operation — visible in Describe and reported as an Explain
 // diagnostic. The policy applies to the whole chain; zero policies allow
 // nothing, so every needed conversion is refused with the exact policy to add.
-func (b *Chain) Auto(policies ...shape.Policy) *Chain {
+func (b *streamChain) Auto(policies ...shape.Policy) *streamChain {
 	stream := b.step()
 	stream.operations = append(stream.operations, operationSpecForAutoPolicy(policies))
 	return b
@@ -599,7 +599,7 @@ func (b *Chain) Auto(policies ...shape.Policy) *Chain {
 // including the .Auto(...) policy to add when a conversion could satisfy it
 // (an active policy that covers the conversion inserts it, and the
 // requirement holds by construction). The assertion lowers to no runtime node.
-func (b *Chain) Require(spec shape.Spec) *Chain {
+func (b *streamChain) Require(spec shape.Spec) *streamChain {
 	stream := b.step()
 	stream.operations = append(stream.operations, operationSpecForRequire(spec))
 	return b
@@ -611,13 +611,13 @@ func (b *Chain) Require(spec shape.Spec) *Chain {
 // adapters whose declared capabilities cover the preference. A preference is
 // soft by definition — it never fails the build; one that cannot be honored is
 // dropped and surfaced as an Explain diagnostic. It lowers to no runtime node.
-func (b *Chain) Prefer(spec shape.Spec) *Chain {
+func (b *streamChain) Prefer(spec shape.Spec) *streamChain {
 	stream := b.step()
 	stream.operations = append(stream.operations, operationSpecForPreference(spec))
 	return b
 }
 
-func (b *Chain) Shape(shape shape.Spec) *Chain {
+func (b *streamChain) Shape(shape shape.Spec) *streamChain {
 	stream := b.step()
 	if codecIntentSet(chainEncodeSpec(stream.operations)) {
 		b.job.setErr(chainStepAfterEncodeError("build stream", jobStreamName(stream), "shape", chainEncodeSpec(stream.operations)))
@@ -627,7 +627,7 @@ func (b *Chain) Shape(shape shape.Spec) *Chain {
 	return b
 }
 
-func (b *Chain) Resize(width int, height int, options ...resizeOption) *Chain {
+func (b *streamChain) Resize(width int, height int, options ...resizeOption) *streamChain {
 	stream := b.step()
 	if codecIntentSet(chainEncodeSpec(stream.operations)) {
 		b.job.setErr(chainStepAfterEncodeError("build stream", jobStreamName(stream), "resize", chainEncodeSpec(stream.operations)))
@@ -641,7 +641,7 @@ func (b *Chain) Resize(width int, height int, options ...resizeOption) *Chain {
 	return b
 }
 
-func (b *Chain) Resample(sampleRate int, channels int, options ...audioOption) *Chain {
+func (b *streamChain) Resample(sampleRate int, channels int, options ...audioOption) *streamChain {
 	stream := b.step()
 	if codecIntentSet(chainEncodeSpec(stream.operations)) {
 		b.job.setErr(chainStepAfterEncodeError("build stream", jobStreamName(stream), "resample", chainEncodeSpec(stream.operations)))
@@ -655,7 +655,7 @@ func (b *Chain) Resample(sampleRate int, channels int, options ...audioOption) *
 	return b
 }
 
-func (b *Chain) Encode(codec codec.Spec) *Chain {
+func (b *streamChain) Encode(codec codec.Spec) *streamChain {
 	stream := b.step()
 	if codecIntentSet(chainEncodeSpec(stream.operations)) {
 		b.job.setErr(duplicateStreamEncodeError("build stream", jobStreamName(stream), chainEncodeSpec(stream.operations), codec))
@@ -671,7 +671,7 @@ func (b *Chain) Encode(codec codec.Spec) *Chain {
 	return b
 }
 
-func (b *Chain) To(destinations ...Destination) *Job {
+func (b *streamChain) To(destinations ...Destination) *recipeJob {
 	stream := b.current()
 	if b.region != nil {
 		b.job.setErr(regionOutsideCompositeError(jobStreamName(stream)))
@@ -704,7 +704,7 @@ func (b *Chain) To(destinations ...Destination) *Job {
 // step returns the stream an operation extends. A chain that already ended at
 // .To(...) cannot grow: the operation is refused, and it lands on a detached
 // scratch stream so the job's real stream stays intact.
-func (b *Chain) step() *jobStreamBuild {
+func (b *streamChain) step() *jobStreamBuild {
 	stream := b.current()
 	if len(stream.outputs) == 0 {
 		return stream
@@ -713,7 +713,7 @@ func (b *Chain) step() *jobStreamBuild {
 	return &jobStreamBuild{selector: stream.selector, name: stream.name}
 }
 
-func (b *Chain) current() *jobStreamBuild {
+func (b *streamChain) current() *jobStreamBuild {
 	if b.stream != nil {
 		return b.stream
 	}
@@ -733,10 +733,10 @@ func regionOutsideCompositeError(node string) error {
 		Code:      streamRegionOutsideCompositeCode,
 		Operation: "build stream",
 		Node:      node,
-		Reason:    ".Region(x, y) positions a Composite arm; this stream is not one",
+		Reason:    "goav.At(stream, x, y) positions a Composite layer; this stream is not one",
 		fixes: buildErrorFixes([]string{
-			"pass the chain to goav.LegacyComposite(base, chain.Region(x, y)) to place it on a canvas",
-			"remove .Region(...) from a chain that is not a Composite arm",
+			"pass the stream to goav.Composite(base, goav.At(stream, x, y)) to place it on a canvas",
+			"remove goav.At(...) from a stream that is not a Composite layer",
 		}),
 		cause: errUnsupportedBuild,
 	}
@@ -744,7 +744,7 @@ func regionOutsideCompositeError(node string) error {
 
 // refuseTopLevelRegion fails a join job whose own Region no outer Composite
 // reads: only a join standing as a Composite arm has a canvas position.
-func refuseTopLevelRegion(job *Job, region *compositeRegion, node string) *Job {
+func refuseTopLevelRegion(job *recipeJob, region *compositeRegion, node string) *recipeJob {
 	if region != nil {
 		job.setErr(regionOutsideCompositeError(node))
 	}

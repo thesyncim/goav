@@ -79,7 +79,7 @@
       {
         "code": "packet_copy",
         "branch": "in.mp4",
-        "message": ".Copy requested; packets are copied to outputs"
+        "message": "packet copy requested; packets are copied to outputs"
       }
     ],
     "requiredAdapters": [

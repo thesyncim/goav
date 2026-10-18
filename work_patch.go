@@ -228,7 +228,7 @@ func (t *task) planAttachBranchSteps(ctx context.Context, input runtimeAttachBra
 			if currentShape.Domain != shape.DomainFrame {
 				return fail(runtimeBranchInvalidError(
 					"runtime branch transforms require a frame tap",
-					"attach transform branches with .From(goav.FrameTap(name)) where name is declared after Decode, Resize, Resample, or a frame-stage Tap",
+					"attach transform branches from task.Tap(name) where name is declared after Decode, Resize, Resample, or a frame stage",
 				))
 			}
 			transformName := recipeIRTransformFactoryName(operation.Transform)

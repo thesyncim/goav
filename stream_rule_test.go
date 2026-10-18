@@ -266,8 +266,8 @@ func TestOnStreamAttachesLateBranchAndDetachesOnRemoval(t *testing.T) {
 		return nil
 	}))
 
-	task, err := From(input).
-		OnStream(MatchMedia(av.MediaAudio), Branch("record").Copy().To(record)).
+	task, err := recipeFrom(input).
+		OnStream(MatchMedia(av.MediaAudio), newBranch("record").Copy().To(record)).
 		Audio().Copy().To(mainSink).
 		UseRuntime(rt).
 		BuildLive(ctx)
@@ -393,8 +393,8 @@ func TestOnStreamLateBranchReceivesFramesFromFrameSource(t *testing.T) {
 		return nil
 	}))
 
-	task, err := From(input).
-		OnStream(MatchStreamID(late.ID), Branch("watch").To(monitor)).
+	task, err := recipeFrom(input).
+		OnStream(MatchStreamID(late.ID), newBranch("watch").To(monitor)).
 		Audio().To(Sink(SinkFunc("main", func(context.Context, Message) error { return nil }))).
 		BuildLive(ctx)
 	if err != nil {
@@ -478,8 +478,8 @@ func TestOnStreamLateBranchAutoInsertsConversion(t *testing.T) {
 		return nil
 	}))
 
-	task, err := From(input).
-		OnStream(MatchStreamID(late.ID), Branch("enc").
+	task, err := recipeFrom(input).
+		OnStream(MatchStreamID(late.ID), newBranch("enc").
 			Auto(shape.AllowResample()).
 			Encode(codec.Opus(codec.Bitrate(96_000))).
 			To(encodedSink)).
@@ -524,8 +524,8 @@ func TestOnStreamRuleVisibleInExplain(t *testing.T) {
 		func(context.Context, SourcePush) error { return nil },
 	)
 	monitor := Sink(SinkFunc("monitor", func(context.Context, Message) error { return nil }))
-	job := From(input).
-		OnStream(MatchMedia(av.MediaAudio), Branch("record").Copy().To(monitor)).
+	job := recipeFrom(input).
+		OnStream(MatchMedia(av.MediaAudio), newBranch("record").Copy().To(monitor)).
 		Audio().Copy().To(Sink(SinkFunc("main", func(context.Context, Message) error { return nil })))
 
 	report, err := job.Explain(ctx)
@@ -554,8 +554,8 @@ func TestOnStreamFileBranchRequiresExplicitRuntime(t *testing.T) {
 		func(context.Context, SourcePush) error { return nil },
 	)
 	monitor := Sink(SinkFunc("main", func(context.Context, Message) error { return nil }))
-	job := From(input).
-		OnStream(MatchMedia(av.MediaAudio), Branch("record").Copy().To(Write("late.ogg", io.Discard))).
+	job := recipeFrom(input).
+		OnStream(MatchMedia(av.MediaAudio), newBranch("record").Copy().To(Write("late.ogg", io.Discard))).
 		Audio().Copy().To(monitor)
 
 	_, err := job.BuildLive(ctx)
@@ -587,8 +587,8 @@ func TestOnStreamAttachFailureSurfacesEventAndRollsBack(t *testing.T) {
 	state := &syncObjectState{}
 	bad := Writer("late.ogg", state.open, Format(av.FormatOgg))
 
-	task, err := From(input).
-		OnStream(MatchMedia(av.MediaAudio), Branch("bad").Copy().To(bad)).
+	task, err := recipeFrom(input).
+		OnStream(MatchMedia(av.MediaAudio), newBranch("bad").Copy().To(bad)).
 		Audio().Copy().To(Sink(SinkFunc("main", func(context.Context, Message) error { return nil }))).
 		UseRuntime(rt).
 		BuildLive(ctx)
@@ -653,9 +653,9 @@ func TestOnStreamMultipleRulesAllApply(t *testing.T) {
 		}))
 	}
 
-	task, err := From(input).
-		OnStream(MatchMedia(av.MediaAudio), Branch("media").Copy().To(count("media-sink", &byMedia))).
-		OnStream(MatchCodec(av.CodecOpus), Branch("codec").Copy().To(count("codec-sink", &byCodec))).
+	task, err := recipeFrom(input).
+		OnStream(MatchMedia(av.MediaAudio), newBranch("media").Copy().To(count("media-sink", &byMedia))).
+		OnStream(MatchCodec(av.CodecOpus), newBranch("codec").Copy().To(count("codec-sink", &byCodec))).
 		Audio().Copy().To(Sink(SinkFunc("main", func(context.Context, Message) error { return nil }))).
 		BuildLive(ctx)
 	if err != nil {
@@ -705,8 +705,8 @@ func TestOnStreamMatchFirstLimitsRuntimeAttachments(t *testing.T) {
 		return nil
 	}))
 
-	task, err := From(input).
-		OnStream(MatchMedia(av.MediaAudio).First(1), Branch("limited").Copy().To(limitedSink)).
+	task, err := recipeFrom(input).
+		OnStream(MatchMedia(av.MediaAudio).First(1), newBranch("limited").Copy().To(limitedSink)).
 		Audio().Copy().To(Sink(SinkFunc("main", func(context.Context, Message) error { return nil }))).
 		BuildLive(ctx)
 	if err != nil {
@@ -746,7 +746,7 @@ func TestOnStreamValidation(t *testing.T) {
 		)
 	}
 
-	requireRuleError := func(t *testing.T, job *Job, fragment string) {
+	requireRuleError := func(t *testing.T, job *recipeJob, fragment string) {
 		t.Helper()
 		_, err := job.BuildLive(ctx)
 		var buildErr *BuildError
@@ -759,27 +759,27 @@ func TestOnStreamValidation(t *testing.T) {
 	}
 
 	t.Run("empty matcher", func(t *testing.T) {
-		job := From(source("mic")).
-			OnStream(StreamMatch{}, Branch("late").Copy().To(monitor)).
+		job := recipeFrom(source("mic")).
+			OnStream(StreamMatch{}, newBranch("late").Copy().To(monitor)).
 			Audio().Copy().To(main)
 		requireRuleError(t, job, "no matcher")
 	})
 	t.Run("branch with From", func(t *testing.T) {
-		job := From(source("mic")).
-			OnStream(MatchMedia(av.MediaAudio), Branch("late").From(PacketTap("pkts")).Copy().To(monitor)).
+		job := recipeFrom(source("mic")).
+			OnStream(MatchMedia(av.MediaAudio), newBranch("late").From(packetTapRef("pkts")).Copy().To(monitor)).
 			Audio().Copy().To(main)
-		requireRuleError(t, job, "must not declare .From")
+		requireRuleError(t, job, "must not declare their own anchor")
 	})
 	t.Run("no branches", func(t *testing.T) {
-		job := From(source("mic")).
+		job := recipeFrom(source("mic")).
 			OnStream(MatchMedia(av.MediaAudio)).
 			Audio().Copy().To(main)
 		requireRuleError(t, job, "no branches")
 	})
 	t.Run("multi input", func(t *testing.T) {
-		job := From(source("mic"), source("cam")).
-			OnStream(MatchMedia(av.MediaAudio), Branch("late").Copy().To(monitor)).
-			Audio(InputName("mic")).Copy().To(main)
+		job := recipeFrom(source("mic"), source("cam")).
+			OnStream(MatchMedia(av.MediaAudio), newBranch("late").Copy().To(monitor)).
+			Audio(selectInputName("mic")).Copy().To(main)
 		requireRuleError(t, job, "exactly one input")
 	})
 }

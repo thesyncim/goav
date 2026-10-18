@@ -25,7 +25,7 @@ func TestFromMultiInputChainsShareOneMuxDestination(t *testing.T) {
 	)
 
 	out := Write("call.ogg", io.Discard, Format(av.FormatOgg))
-	task, err := From(
+	task, err := recipeFrom(
 		compositeTestVideoSource("camera", 4, 4, 100, 10, 20),
 		mixTestAudioSource("mic", 100, 200),
 	).UseRuntime(rt).
@@ -104,7 +104,7 @@ func TestFromMultiInputHeadlineDecodeShape(t *testing.T) {
 	)
 
 	out := Write("call.webm", io.Discard, Format(av.FormatWebM))
-	err := From(
+	err := recipeFrom(
 		packetSource("camera", av.MediaVideo, cameraCodec, shape.Video(4, 4, av.PixelFormatI420)),
 		packetSource("mic", av.MediaAudio, micCodec, shape.Audio(48000, codec.Mono, av.SampleFormatS16)),
 	).UseRuntime(rt).
@@ -124,11 +124,11 @@ func TestFromMultiInputHeadlineDecodeShape(t *testing.T) {
 // acceptance test written against goavtest.
 
 func TestFromMultiInputUnknownInputNameListsInputs(t *testing.T) {
-	_, err := From(
+	_, err := recipeFrom(
 		mixTestAudioSource("mic-a", 1),
 		mixTestAudioSource("mic-b", 1),
 	).
-		Audio(InputName("microphone")).
+		Audio(selectInputName("microphone")).
 		Decode().
 		To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))).
 		BuildLive(context.Background())
@@ -145,12 +145,12 @@ func TestFromMultiInputUnknownInputNameListsInputs(t *testing.T) {
 func TestFromMultiInputInputNameNarrowsChains(t *testing.T) {
 	ctx := context.Background()
 	var gotA, gotB [][]int16
-	task, err := From(
+	task, err := recipeFrom(
 		mixTestAudioSource("mic-a", 11, 22),
 		mixTestAudioSource("mic-b", 33, 44),
 	).
-		Audio(InputName("mic-a")).To(joinTestCollectSink("sink-a", &gotA)).
-		Audio(InputName("mic-b")).To(joinTestCollectSink("sink-b", &gotB)).
+		Audio(selectInputName("mic-a")).To(joinTestCollectSink("sink-a", &gotA)).
+		Audio(selectInputName("mic-b")).To(joinTestCollectSink("sink-b", &gotB)).
 		BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -172,7 +172,7 @@ func TestFromMultiInputInputNameNarrowsChains(t *testing.T) {
 func TestFromMultiInputUnambiguousChainJustWorks(t *testing.T) {
 	ctx := context.Background()
 	var got [][]int16
-	task, err := From(
+	task, err := recipeFrom(
 		compositeTestVideoSource("camera", 4, 4, 100, 10, 20),
 		mixTestAudioSource("mic", 5, 6),
 	).
@@ -191,9 +191,9 @@ func TestFromMultiInputUnambiguousChainJustWorks(t *testing.T) {
 }
 
 func TestJoinArmsRejectMultiInputChains(t *testing.T) {
-	_, err := LegacyMix(
-		From(mixTestAudioSource("a", 1), mixTestAudioSource("b", 1)).Audio(),
-		From(mixTestAudioSource("c", 1)).Audio(),
+	_, err := legacyMix(
+		recipeFrom(mixTestAudioSource("a", 1), mixTestAudioSource("b", 1)).Audio(),
+		recipeFrom(mixTestAudioSource("c", 1)).Audio(),
 	).To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))).
 		BuildLive(context.Background())
 
@@ -204,12 +204,12 @@ func TestJoinArmsRejectMultiInputChains(t *testing.T) {
 }
 
 func TestBranchesRejectMultiInputJobs(t *testing.T) {
-	_, err := From(
+	_, err := recipeFrom(
 		mixTestAudioSource("a", 1),
 		mixTestAudioSource("b", 1),
 	).
-		Audio(InputName("a")).
-		Branches(Branch("mon").To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil })))).
+		Audio(selectInputName("a")).
+		Branches(newBranch("mon").To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil })))).
 		BuildLive(context.Background())
 
 	var buildErr *BuildError
@@ -223,7 +223,7 @@ func TestBranchesRejectMultiInputJobs(t *testing.T) {
 func TestFromMultiInputRejectsConflictingDestinationHandles(t *testing.T) {
 	first := Write("call.ogg", io.Discard, Format(av.FormatOgg))
 	second := Write("call.ogg", io.Discard, Format(av.FormatOgg))
-	_, err := From(
+	_, err := recipeFrom(
 		compositeTestVideoSource("camera", 4, 4, 100, 10, 20),
 		mixTestAudioSource("mic", 1),
 	).
@@ -241,7 +241,7 @@ func TestFromMultiInputRejectsConflictingDestinationHandles(t *testing.T) {
 // explicit Mux destination to one entry.
 func TestFromMultiInputPlanDedupesMuxDestination(t *testing.T) {
 	out := Write("call.ogg", io.Discard, Format(av.FormatOgg))
-	job := From(
+	job := recipeFrom(
 		compositeTestVideoSource("camera", 4, 4, 100, 10, 20),
 		mixTestAudioSource("mic", 1),
 	).
@@ -284,7 +284,7 @@ func TestWithKeepsHandleIdentity(t *testing.T) {
 	out := Write("call.ogg", io.Discard)
 	videoOut := out.With(Format(av.FormatOgg))
 	audioOut := out.With(Format(av.FormatOgg))
-	job := From(
+	job := recipeFrom(
 		compositeTestVideoSource("camera", 4, 4, 100, 10, 20),
 		mixTestAudioSource("mic", 1),
 	).
@@ -321,7 +321,7 @@ func TestOneHandleWithConflictingConfigFailsClearly(t *testing.T) {
 	out := Write("call.ogg", io.Discard)
 	videoOut := out.With(Format(av.FormatOgg))
 	audioOut := out.With(Format(av.FormatWebM))
-	_, err := From(
+	_, err := recipeFrom(
 		compositeTestVideoSource("camera", 4, 4, 100, 10, 20),
 		mixTestAudioSource("mic", 1),
 	).
@@ -343,7 +343,7 @@ func TestOneHandleWithConflictingConfigFailsClearly(t *testing.T) {
 // "one output file" recipe needs no grouping call.
 func TestSameHandleSharesOneMux(t *testing.T) {
 	out := Write("call.ogg", io.Discard, Format(av.FormatOgg))
-	spec, err := From(
+	spec, err := recipeFrom(
 		compositeTestVideoSource("camera", 4, 4, 100, 10, 20),
 		mixTestAudioSource("mic", 1),
 	).
@@ -373,7 +373,7 @@ func TestSameHandleSharesOneMux(t *testing.T) {
 // separately constructed destinations that happen to share a name are a
 // mistake, not a mux.
 func TestDistinctHandlesWithOneNameAreRefused(t *testing.T) {
-	_, err := From(
+	_, err := recipeFrom(
 		compositeTestVideoSource("camera", 4, 4, 100, 10, 20),
 		mixTestAudioSource("mic", 1),
 	).

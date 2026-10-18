@@ -22,7 +22,7 @@ func TestRecipeResolvedUnsupportedContracts(t *testing.T) {
 }
 
 func TestCompileJobBranchRecipeWithOptionsRequiresOneInput(t *testing.T) {
-	_, err := compileJobBranchRecipeWithOptions(&Job{runtime: mustNew()}, recipeCompileOptions{})
+	_, err := compileJobBranchRecipeWithOptions(&recipeJob{runtime: mustNew()}, recipeCompileOptions{})
 	var buildErr *BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != inputCountUnsupportedCode ||
 		buildErr.Operation != "build branches" || buildErr.Node != "branches" {

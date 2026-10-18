@@ -294,12 +294,12 @@ func detailsToLines(details []buildErrorDetail) []string {
 	return out
 }
 
-// Job is a recipe under construction: the inputs, stream chains, branches,
+// recipeJob is a recipe under construction: the inputs, stream chains, branches,
 // joins, and destinations declared so far. Construct one with From; the zero
-// value is intentionally not a valid recipe. A Job is inert until Describe,
+// value is intentionally not a valid recipe. A recipeJob is inert until Describe,
 // Explain, Build, or Run compiles it; construction errors are deferred and
 // surface on those calls as structured BuildErrors.
-type Job struct {
+type recipeJob struct {
 	origin             jobOrigin
 	name               string
 	runtime            *Runtime
@@ -342,10 +342,10 @@ type chainStep struct {
 	tapDomain shape.MediaDomain
 }
 
-// From starts a recipe from one or more inputs. With several inputs each
+// recipeFrom starts a recipe from one or more inputs. With several inputs each
 // stream chain selects across all of them: an unambiguous .Audio()/.Video()
 // match just works, and goav.InputName(...) narrows a chain to one input.
-func From(inputs ...InputSpec) *Job {
+func recipeFrom(inputs ...InputSpec) *recipeJob {
 	job := newJob("from")
 	job.inputs = append(job.inputs, inputs...)
 	return job
@@ -354,7 +354,7 @@ func From(inputs ...InputSpec) *Job {
 // Copy declares packet-preserving passthrough for a whole-job shortcut such
 // as From(input).Copy().To(out): packets flow to the destinations without
 // decode. On a selected stream, use the stream chain's Copy instead.
-func (j *Job) Copy() *Job {
+func (j *recipeJob) Copy() *recipeJob {
 	if j != nil {
 		j.copy = true
 	}
@@ -364,7 +364,7 @@ func (j *Job) Copy() *Job {
 // Sync places the job's subsequent stream chains on the given media timeline.
 // If a chain is currently under construction, the sync gate is appended there;
 // otherwise the policy is applied to stream chains started after this call.
-func (j *Job) Sync(policy flow.SyncPolicy) *Job {
+func (j *recipeJob) Sync(policy flow.SyncPolicy) *recipeJob {
 	if j == nil {
 		return j
 	}
@@ -377,13 +377,13 @@ func (j *Job) Sync(policy flow.SyncPolicy) *Job {
 	return j
 }
 
-func newJob(name string) *Job {
-	return &Job{origin: jobOriginConstructed, name: name}
+func newJob(name string) *recipeJob {
+	return &recipeJob{origin: jobOriginConstructed, name: name}
 }
 
 // UseRuntime compiles the job against the given runtime: the seam for custom
 // registries, bundled adapter sets, offline pacing, or injected clocks.
-func (j *Job) UseRuntime(runtime *Runtime) *Job {
+func (j *recipeJob) UseRuntime(runtime *Runtime) *recipeJob {
 	if j != nil {
 		j.runtime = runtime
 		j.runtimeSet = true
@@ -391,7 +391,7 @@ func (j *Job) UseRuntime(runtime *Runtime) *Job {
 	return j
 }
 
-func (j *Job) runtimeOrNil() *Runtime {
+func (j *recipeJob) runtimeOrNil() *Runtime {
 	if j == nil {
 		return nil
 	}
@@ -407,7 +407,7 @@ func (j *Job) runtimeOrNil() *Runtime {
 // Realtime) compiles against a realtime view of its runtime, so its graph
 // buffers between stages and encoders pick low-latency presets, while
 // file-to-file jobs keep the offline runtime and run at full speed.
-func (j *Job) compileRuntime(inputs []InputSpec) *Runtime {
+func (j *recipeJob) compileRuntime(inputs []InputSpec) *Runtime {
 	rt := j.runtimeOrNil()
 	if rt == nil || rt.realtime || !inputsAreLive(inputs) {
 		return rt
@@ -425,7 +425,7 @@ func inputsAreLive(inputs []InputSpec) bool {
 	return false
 }
 
-func (j *Job) setErr(err error) {
+func (j *recipeJob) setErr(err error) {
 	if err == nil {
 		return
 	}
@@ -435,7 +435,7 @@ func (j *Job) setErr(err error) {
 	j.errs = append(j.errs, err)
 }
 
-func (j *Job) recipeErr() error {
+func (j *recipeJob) recipeErr() error {
 	if j == nil {
 		return nil
 	}
@@ -448,7 +448,7 @@ func (j *Job) recipeErr() error {
 // To routes the whole job to one or more destinations (a fanout when several
 // are given). It applies to direct whole-job chains; once Branches are
 // declared, destinations belong to the branches.
-func (j *Job) To(destinations ...Destination) *Job {
+func (j *recipeJob) To(destinations ...Destination) *recipeJob {
 	if len(j.branchStreams) != 0 || (j.join != nil && len(j.join.branches) != 0) {
 		j.setErr(branchOutputScopeError("branches"))
 		return j
@@ -465,7 +465,7 @@ func (j *Job) To(destinations ...Destination) *Job {
 	return j
 }
 
-func (j *Job) addBranchDestinations(destinations ...destinationRef) error {
+func (j *recipeJob) addBranchDestinations(destinations ...destinationRef) error {
 	updated, err := appendNamedBranchDestinations(j.branchDestinations, destinations...)
 	if err != nil {
 		return err
@@ -497,7 +497,7 @@ func appendNamedBranchDestinations(existing []namedDestinationSpec, destinations
 }
 
 // And appends more inputs to the job, equivalent to listing them in From.
-func (j *Job) And(inputs ...InputSpec) *Job {
+func (j *recipeJob) And(inputs ...InputSpec) *recipeJob {
 	j.inputs = append(j.inputs, inputs...)
 	return j
 }
@@ -505,25 +505,25 @@ func (j *Job) And(inputs ...InputSpec) *Job {
 // Audio starts a chain on the job's audio stream. With several candidates the
 // selector options (InputName, StreamID, StreamIndex) narrow the
 // match; an ambiguous selection fails the build listing the candidates.
-func (j *Job) Audio(options ...StreamOption) *Chain {
+func (j *recipeJob) Audio(options ...StreamOption) *streamChain {
 	return j.streamBuilder("audio", av.MediaAudio, options...)
 }
 
 // Video starts a chain on the job's video stream. With several candidates the
 // selector options (InputName, StreamID, StreamIndex) narrow the
 // match; an ambiguous selection fails the build listing the candidates.
-func (j *Job) Video(options ...StreamOption) *Chain {
+func (j *recipeJob) Video(options ...StreamOption) *streamChain {
 	return j.streamBuilder("video", av.MediaVideo, options...)
 }
 
 // Stream starts a chain on any media type — useful when the input carries one
 // stream whose kind the recipe does not care about. Selector options narrow
 // the match exactly as for Audio and Video.
-func (j *Job) Stream(options ...StreamOption) *Chain {
+func (j *recipeJob) Stream(options ...StreamOption) *streamChain {
 	return j.streamBuilder("stream", "", options...)
 }
 
-func (j *Job) streamBuilder(name string, media av.MediaType, options ...StreamOption) *Chain {
+func (j *recipeJob) streamBuilder(name string, media av.MediaType, options ...StreamOption) *streamChain {
 	config := newStreamSelectConfig(media, options...)
 	stream := &jobStreamBuild{
 		name:     name,
@@ -538,14 +538,14 @@ func (j *Job) streamBuilder(name string, media av.MediaType, options ...StreamOp
 			// A new chain may only start once the previous one is routed; an
 			// unfinished chain followed by another selection is still an error.
 			j.setErr(duplicateJobStreamError(last, stream))
-			return &Chain{job: j, stream: stream}
+			return &streamChain{job: j, stream: stream}
 		}
 	}
 	j.streams = append(j.streams, stream)
-	return &Chain{job: j, stream: stream}
+	return &streamChain{job: j, stream: stream}
 }
 
-func (j *Job) currentStream() *jobStreamBuild {
+func (j *recipeJob) currentStream() *jobStreamBuild {
 	if j == nil || len(j.streams) == 0 {
 		return nil
 	}
@@ -555,7 +555,7 @@ func (j *Job) currentStream() *jobStreamBuild {
 // checkSharedStreamDestination lets several chains share ONE Destination handle
 // (one mux group) while rejecting two different handles that would collide on
 // the same destination label.
-func (j *Job) checkSharedStreamDestination(current *jobStreamBuild, output destinationSpec, name string) error {
+func (j *recipeJob) checkSharedStreamDestination(current *jobStreamBuild, output destinationSpec, name string) error {
 	label := firstNonEmpty(name, output.label(""))
 	if label == "" {
 		return nil
@@ -580,7 +580,7 @@ func (j *Job) checkSharedStreamDestination(current *jobStreamBuild, output desti
 	return nil
 }
 
-func (j *Job) plan() intent {
+func (j *recipeJob) plan() intent {
 	intent := intent{Name: j.name, Copy: j.copy}
 	if j.runtime != nil {
 		intent.Policies.Realtime = j.runtime.realtime || inputsAreLive(j.inputs)
@@ -648,7 +648,7 @@ func (j *Job) plan() intent {
 // Describe compiles the job and returns the planned graph spec — node for
 // node what Build will create — without opening any resource. Rendering
 // lives outside core (see graphrender).
-func (j *Job) Describe() (pipeline.Spec, error) {
+func (j *recipeJob) Describe() (pipeline.Spec, error) {
 	resolved, err := compileJobRecipe(j)
 	if err != nil {
 		return pipeline.Spec{}, err
@@ -660,14 +660,14 @@ func (j *Job) Describe() (pipeline.Spec, error) {
 // lifecycle: sources resolve, the graph is wired, and OnStream rules install.
 // The task does not flow until Run. Use BuildLive when the application needs
 // inspection, events, live control, or late attachment.
-func (j *Job) Build(ctx context.Context) (Task, error) {
+func (j *recipeJob) Build(ctx context.Context) (Task, error) {
 	return j.BuildLive(ctx)
 }
 
 // BuildLive compiles and materializes the job into the full live task
 // capability surface for inspection, events, live control, or late attachment.
 // Prefer Build when the caller only needs Run and Close.
-func (j *Job) BuildLive(ctx context.Context) (LiveTask, error) {
+func (j *recipeJob) BuildLive(ctx context.Context) (LiveTask, error) {
 	resolved, err := compileJobRecipeForBuildContext(ctx, j)
 	if err != nil {
 		return nil, err
@@ -683,7 +683,7 @@ func (j *Job) BuildLive(ctx context.Context) (LiveTask, error) {
 // installStreamRules binds the job's OnStream rules to the built task: the
 // rules anchor on the job's single source node (the compile validated the
 // input count) and react from the task's event stream.
-func (j *Job) installStreamRules(built Task) {
+func (j *recipeJob) installStreamRules(built Task) {
 	if len(j.streamRules) == 0 || len(j.inputs) != 1 {
 		return
 	}
@@ -704,7 +704,7 @@ func (j *Job) installStreamRules(built Task) {
 // success and abort on failure. Finalize failures surface here too: if both
 // the run and close/finalization fail, Run returns errors.Join(runErr,
 // closeErr) so callers can match either cause.
-func (j *Job) Run(ctx context.Context) error {
+func (j *recipeJob) Run(ctx context.Context) error {
 	task, err := j.Build(ctx)
 	if err != nil {
 		return err
@@ -714,7 +714,7 @@ func (j *Job) Run(ctx context.Context) error {
 	return errors.Join(runErr, closeErr)
 }
 
-func (j *Job) allOutputs() []destinationSpec {
+func (j *recipeJob) allOutputs() []destinationSpec {
 	if len(j.branchDestinations) != 0 {
 		outputs := make([]destinationSpec, 0, len(j.branchDestinations))
 		for i := range j.branchDestinations {
@@ -726,7 +726,7 @@ func (j *Job) allOutputs() []destinationSpec {
 	return jobAllOutputs(j.outputs, streamOutputs)
 }
 
-func (j *Job) allOutputNames() []string {
+func (j *recipeJob) allOutputNames() []string {
 	if len(j.branchDestinations) != 0 {
 		names := make([]string, 0, len(j.branchDestinations))
 		for i := range j.branchDestinations {
@@ -741,7 +741,7 @@ func (j *Job) allOutputNames() []string {
 // streamOutputsAndNames collects the stream-chain destinations: verbatim for a
 // single chain (today's behavior) and deduplicated by destination label for
 // several chains so one shared Destination handle lowers to one mux group.
-func (j *Job) streamOutputsAndNames() ([]destinationSpec, []string) {
+func (j *recipeJob) streamOutputsAndNames() ([]destinationSpec, []string) {
 	if len(j.streams) > 1 {
 		return dedupedJobStreamOutputs(j.streams)
 	}

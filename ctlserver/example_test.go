@@ -34,11 +34,11 @@ func Example_bootstrapControlPlaneHost() {
 		shape.Packet(av.MediaAudio, av.CodecOpus, shape.Audio(48000, 1, av.SampleFormatS16)),
 		goavtest.TestSourceLive(),
 	)
-	task, err := goav.From(source.Input()).
-		Audio().Decode().Tap(goav.FrameTap("frames")).
-		To(goavtest.NewCollector().Sink()).
-		UseRuntime(goavtest.Runtime(runconfig.WithEncoder(encoderFactory.descriptor, encoderFactory))).
-		BuildLive(ctx)
+	task, err := goavtest.Runtime(runconfig.WithEncoder(encoderFactory.descriptor, encoderFactory)).Build(ctx, source.Input().
+		Audio().
+		Decode().
+		Tap("frames").
+		To(goavtest.NewCollector().Sink()))
 	if err != nil {
 		fmt.Println(err)
 		return

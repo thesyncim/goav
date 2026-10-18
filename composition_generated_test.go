@@ -134,7 +134,7 @@ func requireGeneratedCompositionRuntimeAttachMatchesBuildTimeBranch(t *testing.T
 		t.Fatalf("BuildLive base for runtime attach: %v", err)
 	}
 	defer task.Close()
-	if _, err := task.LegacyAttach(ctx, generatedMonitorCompositionBranch(tapName, generatedNoopCompositionSink("monitor"), tc)); err != nil {
+	if _, err := goav.LegacyAttach(task, ctx, generatedMonitorCompositionBranch(tapName, generatedNoopCompositionSink("monitor"), tc)); err != nil {
 		t.Fatalf("Attach generated branch: %v", err)
 	}
 

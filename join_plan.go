@@ -152,7 +152,7 @@ func joinTreeSnapshotFromSpec(spec *joinSpec) *joinTreeSnapshot {
 	return tree
 }
 
-func joinArmSnapshotFromArm(arm JoinArm) joinArmSnapshot {
+func joinArmSnapshotFromArm(arm recipeArm) joinArmSnapshot {
 	if arm == nil {
 		return joinArmSnapshot{}
 	}
@@ -261,8 +261,8 @@ func validateJoinArmDomain(name string, arm string, profile joinProfile, domain 
 	}
 	return joinArmError(name, firstNonEmpty(arm, name),
 		name+" arm is packet-domain; frame-consuming joins require explicit .Decode() on each packet arm",
-		"write the arm as goav.From(input).Audio().Decode() or goav.From(input).Video().Decode() before passing it to the join",
-		"for an already decoded source, declare a frame-domain source shape or pass a goav.FrameTap(...) arm")
+		"write the arm as input.Audio().Decode() or input.Video().Decode() before passing it to the join",
+		"for an already decoded source, declare a frame-domain source shape: goav.Source(name, shape.Frame(...), fn)")
 }
 
 // joinInputsError is the too-few-arms refusal, raised by the public sugar and
@@ -277,7 +277,7 @@ func joinInputsError(kind string, node string) error {
 		Reason:    kind + " requires at least two source arms",
 		fixes: buildErrorFixes([]string{
 			"pass at least two arms: " + joinTwoArmExample(kind),
-			"route the single chain directly when nothing converges",
+			"route the single stream directly when nothing converges",
 		}),
 		cause: errUnsupportedBuild,
 	}
@@ -288,13 +288,13 @@ func joinInputsError(kind string, node string) error {
 func joinTwoArmExample(kind string) string {
 	switch joinKind(kind) {
 	case joinMix:
-		return "goav.LegacyMix(goav.From(a).Audio(), goav.From(b).Audio())"
+		return "goav.Mix(a.Audio(), b.Audio())"
 	case joinComposite:
-		return "goav.LegacyComposite(goav.From(a).Video(), goav.From(b).Video())"
+		return "goav.Composite(a.Video(), b.Video())"
 	case joinSelect:
-		return "goav.LegacySelect(goav.From(a).Video(), goav.From(b).Video())"
+		return "goav.Select(a.Video(), b.Video())"
 	default:
-		return "goav.LegacyJoin(" + strconv.Quote(kind) + ", stage, goav.From(a).Audio(), goav.From(b).Audio())"
+		return "goav.Join(" + strconv.Quote(kind) + ", stage, a.Audio(), b.Audio())"
 	}
 }
 
@@ -520,7 +520,7 @@ func resolveJoinDestinations(name string, tree *joinTreeSnapshot) ([]destination
 			Reason:    "no output is configured",
 			fixes: buildErrorFixes([]string{
 				"route the join to one or more destinations: .To(goav.Sink(sink))",
-				"fan the joined stream out with .Branches(...) when branches need their own chains",
+				"fan the joined stream out by reusing it when forks need their own operations: j := goav.Mix(a, b)",
 			}),
 			cause: errUnsupportedBuild,
 		}
@@ -618,8 +618,8 @@ func planJoinTree(input joinPlanInput, tree *joinTreeSnapshot, cursor int, used 
 			cursor++
 		default:
 			return nil, 0, joinArmError(name, name,
-				"each "+kind+" arm must be a single-input source chain, a tap declared by an earlier arm, or a nested join",
-				"pass goav.From(input).Audio()/.Video() chains, goav.FrameTap/PacketTap refs, or nested goav.Mix/Composite/Select joins as arms")
+				"each "+kind+" arm must be one input's stream or a nested join",
+				"pass input.Audio()/.Video() streams or nested goav.Mix/Composite/Select/Join streams as arms")
 		}
 		if _, dup := seen[armPlan.stream.ID]; dup {
 			return nil, 0, joinArmError(name, string(armPlan.stream.ID), kind+" arms must have distinct stream ids",
@@ -627,8 +627,8 @@ func planJoinTree(input joinPlanInput, tree *joinTreeSnapshot, cursor int, used 
 		}
 		seen[armPlan.stream.ID] = struct{}{}
 		if armSpec.region != nil && !profile.placesArms {
-			return nil, 0, joinArmError(name, firstNonEmpty(armPlan.inputName, name), kind+" arms have no canvas; .Region(x, y) positions Composite arms only",
-				"remove .Region(...) from the arm, or pass it to goav.LegacyComposite(...) to place it")
+			return nil, 0, joinArmError(name, firstNonEmpty(armPlan.inputName, name), kind+" arms have no canvas; goav.At(stream, x, y) positions Composite layers only",
+				"remove goav.At(...) from the arm, or pass it to goav.Composite(base, goav.At(stream, x, y)) to place it")
 		}
 		armOps := cloneOperationSpecs(armSpec.chainOperations)
 		if err := validateJoinArmDomain(name, armPlan.inputName, profile, armPlan.domain, armOps); err != nil {
@@ -1041,7 +1041,7 @@ func joinPlanTaps(joinTaps []tapRef, name string, joined av.Stream, domain shape
 				Node:      name,
 				Reason:    "tap name is empty",
 				fixes: buildErrorFixes([]string{
-					"call .Tap(goav.FrameTap(\"" + name + ".out\")) or another stable tap ref",
+					"call .Tap(\"" + name + ".out\") or another stable, non-empty tap name",
 					"omit .Tap(...) when no runtime branch should attach at that point",
 				}),
 				cause: errUnsupportedBuild,

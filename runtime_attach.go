@@ -158,8 +158,9 @@ func (p runtimeGraphPatch) attachment(owner *task, name string) *runtimeAttachme
 
 // Attachment is a live runtime branch attached to a task.
 type Attachment interface {
-	// ID is the task-unique attachment identifier; Name is the branch name
-	// the BranchSpec declared (a name may be reused across attachments).
+	// ID is the task-unique attachment identifier; Name is the branch name,
+	// taken from each Output's .As or else its first destination (a name may
+	// be reused across attachments).
 	ID() string
 	Name() string
 	// Spec returns the branch's private graph patch as a structured spec.
@@ -194,7 +195,7 @@ type Attachment interface {
 // into a workPatch — the plan — opens its destinations, and then applies the
 // patch atomically to the running graph: a failed attach rolls every applied
 // node back and leaves the task unchanged.
-func (t *task) LegacyAttach(ctx context.Context, specs ...BranchSpec) (Attachment, error) {
+func (t *task) attachBranches(ctx context.Context, specs ...branchRecipe) (Attachment, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -205,10 +206,10 @@ func (t *task) LegacyAttach(ctx context.Context, specs ...BranchSpec) (Attachmen
 	return t.attachRuntimeBranches(ctx, input)
 }
 
-func runtimeAttachInputFromBranchSpecs(specs []BranchSpec) (runtimeAttachInput, error) {
+func runtimeAttachInputFromBranchSpecs(specs []branchRecipe) (runtimeAttachInput, error) {
 	specs = cloneBranchSpecs(specs)
 	if len(specs) == 0 {
-		return runtimeAttachInput{}, runtimeBranchInvalidError("no runtime branches to attach", "pass one or more goav.Branch(name)...To(destination) values")
+		return runtimeAttachInput{}, runtimeBranchInvalidError("no runtime branches to attach", "pass one or more Outputs: task.Attach(ctx, task.Tap(name).To(destination))")
 	}
 	branches := make([]runtimeAttachBranchInput, 0, len(specs))
 	for i := range specs {
@@ -242,7 +243,7 @@ func runtimeAttachInputFromBranchInputs(branches []runtimeAttachBranchInput, nam
 	}, nil
 }
 
-func runtimeBranchRecipeFromBranchSpec(spec BranchSpec) runtimeBranchRecipe {
+func runtimeBranchRecipeFromBranchSpec(spec branchRecipe) runtimeBranchRecipe {
 	return runtimeBranchRecipe{
 		branch: recipeir.RuntimeBranch{
 			Name:       spec.name,
@@ -254,14 +255,14 @@ func runtimeBranchRecipeFromBranchSpec(spec BranchSpec) runtimeBranchRecipe {
 	}
 }
 
-func validateRuntimeBranchSpecOrigin(spec BranchSpec) error {
+func validateRuntimeBranchSpecOrigin(spec branchRecipe) error {
 	if spec.err != nil {
 		return nil
 	}
 	if spec.origin != branchSpecOriginBranch {
 		return runtimeBranchInvalidError(
-			"branch spec was not constructed with goav.Branch(name)",
-			"attach a named branch built with goav.Branch(name).From(...).To(destination)",
+			"branch spec was not built from an Output",
+			"attach Outputs built from task.Tap, task.Track, or task.Route: task.Attach(ctx, task.Tap(name).To(destination))",
 		)
 	}
 	return nil
@@ -482,7 +483,7 @@ func attachmentStages(ap *attachPlan, group *runtimeAttachGroup, nodes []pipelin
 
 // attachBranchDestinations validates and clones the branch's destinations,
 // carrying the share keys that group explicit Mux destination groups.
-func attachBranchDestinations(spec BranchSpec) ([]attachDestination, error) {
+func attachBranchDestinations(spec branchRecipe) ([]attachDestination, error) {
 	if spec.err != nil {
 		return nil, spec.err
 	}
@@ -515,15 +516,15 @@ func runtimeDestinationFromSpec(name string, destination destinationSpec, shareK
 	}
 }
 
-func validateAttachBranchSpec(spec BranchSpec, destinations []attachDestination) error {
+func validateAttachBranchSpec(spec branchRecipe, destinations []attachDestination) error {
 	if spec.name == "" {
-		return runtimeBranchInvalidError("branch name is empty", "start with goav.Branch(\"name\")")
+		return runtimeBranchInvalidError("branch name is empty", "name the Output with .As(\"name\")")
 	}
 	if spec.source.from == "" && spec.source.tap == "" {
-		return runtimeBranchInvalidError("branch source is empty", "call .From(input.Track(stream)) for an input stream, .From(goav.FrameTap(name)) or .From(goav.PacketTap(name)) with a tap from task.Taps(), or .From(graphNode) with an expert graph handle")
+		return runtimeBranchInvalidError("branch source is empty", "start the Output from task.Track(input, stream) for an input stream, task.Tap(name) with a tap from task.Taps(), or task.Route(node.Out().Route()) with an expert graph handle")
 	}
 	if spec.source.stream != nil && spec.source.label == "" {
-		return runtimeBranchInvalidError("branch source stream id is empty", "set av.Stream.ID before passing the stream to input.Track(stream)")
+		return runtimeBranchInvalidError("branch source stream id is empty", "set av.Stream.ID before passing the stream to task.Track(input, stream)")
 	}
 	seen := make(map[string]int, len(destinations))
 	for i := range destinations {
@@ -876,7 +877,7 @@ func runtimeMuxCompatibilityIssue(destinationName string, formatID av.FormatID, 
 	return checkKnownMuxCompatibility(output, plannedStreams, rt)
 }
 
-func runtimeAttachmentName(specs []BranchSpec) string {
+func runtimeAttachmentName(specs []branchRecipe) string {
 	if len(specs) == 1 {
 		return specs[0].name
 	}
@@ -1942,7 +1943,7 @@ func runtimeBranchAnchorMissingError(node string) error {
 		Node:      node,
 		Reason:    "branch source node does not exist in the running task graph",
 		fixes: buildErrorFixes([]string{
-			"call task.Taps() and use .From(goav.FrameTap(name)) or .From(goav.PacketTap(name)) for stable media outlets",
+			"call task.Taps() and attach from task.Tap(name) for stable media outlets",
 			"keep the GraphNode returned by expert.Graph(runtime).Source/Stage/Sink for expert graph attachments",
 			"attach from a stable decoded-frame tap when the branch needs raw frames",
 		}),
@@ -1964,10 +1965,10 @@ func runtimeBranchTapMissingError(name string, taps []snapshot.Tap) error {
 		Reason:    "branch source tap does not exist in the running task",
 		fields:    errDetailLines(details),
 		fixes: buildErrorFixes([]string{
-			"add .Tap(goav.FrameTap(" + strconv.Quote(name) + ")) or .Tap(goav.PacketTap(" + strconv.Quote(name) + ")) at the point you want to attach",
+			"add .Tap(" + strconv.Quote(name) + ") at the point you want to attach",
 			"call task.Taps() before attaching runtime branches",
 			"if the tap came from a detached runtime branch, reattach that branch or choose a tap still listed by task.Taps()",
-			"use .From(graphNode) only for expert graph-node attachments",
+			"use task.Route(node.Out().Route()) only for expert graph-node attachments",
 		}),
 		cause: pipeline.ErrUnknownNode,
 	}
@@ -1982,7 +1983,7 @@ func runtimeBranchNodeDuplicateError(node string) error {
 		Node:      node,
 		Reason:    "branch node name already exists in the task graph",
 		fixes: buildErrorFixes([]string{
-			"use a unique goav.Branch(name)",
+			"give each attached Output a unique name with .As(name)",
 			"use distinct stage and sink names inside repeated runtime branches",
 		}),
 		cause: pipeline.ErrNodeExists,
@@ -2033,8 +2034,8 @@ func runtimeBranchTransformMediaError(branch string, transform string, expected 
 		Reason:    transform + " applies to " + string(expected) + " frame taps",
 		fields:    errDetails(errDetail("expected_shape", shape.Frame(expected).String()), errDetail("actual_shape", shape.Frame(actual).String())),
 		fixes: buildErrorFixes([]string{
-			"use .Video().Decode().Tap(goav.FrameTap(name)) or a video transform tap before attaching .Resize(...)",
-			"use .Audio().Decode().Tap(goav.FrameTap(name)) or an audio transform tap before attaching .Resample(...)",
+			"use in.Video().Decode().Tap(name) or a video transform tap before attaching .Resize(...)",
+			"use in.Audio().Decode().Tap(name) or an audio transform tap before attaching .Resample(...)",
 			"call task.Taps() and choose a tap with matching media kind",
 		}),
 		cause: errUnsupportedBuild,
@@ -2070,7 +2071,7 @@ func runtimeBranchEncodeMissingError(branch string) error {
 		Node:      firstNonEmpty(branch, "branch"),
 		Reason:    "muxed runtime branches need packet copy or an encoder",
 		fixes: buildErrorFixes([]string{
-			"call .Copy() when attaching from a packet tap",
+			"attach from a packet tap without .Decode() to copy its packets",
 			"call " + encodeHint("") + " when attaching from a frame tap",
 			"use .To(goav.Sink(...)) when the runtime branch should receive raw frames",
 		}),
@@ -2089,7 +2090,7 @@ func runtimeBranchEncodeDomainError(branch string, shape shape.Spec) error {
 		fields:    errDetailLines(runtimeBranchShapeDetails(shape)),
 		fixes: buildErrorFixes([]string{
 			"attach from a tap declared after Decode, Resize, Resample, or a frame-stage .Do(...)",
-			"use .Copy() from a packet tap when no re-encode is intended",
+			"route a packet tap without .Encode(...) when no re-encode is intended: task.Tap(name).To(dst)",
 			"call task.Taps() and choose a tap with domain=frame",
 		}),
 		cause: errUnsupportedBuild,
@@ -2106,7 +2107,7 @@ func runtimeBranchDecodeDomainError(branch string, shape shape.Spec) error {
 		Reason:    "runtime branch decoding requires a packet tap",
 		fields:    errDetailLines(runtimeBranchShapeDetails(shape)),
 		fixes: buildErrorFixes([]string{
-			"attach from a tap declared after Copy, packet receive, or Encode",
+			"attach from a tap declared before Decode (on received packets) or after Encode",
 			"omit .Decode() when attaching from a frame tap",
 			"call task.Taps() and choose a tap with domain=packet",
 		}),
@@ -2142,7 +2143,7 @@ func runtimeBranchCopyDomainError(branch string, shape shape.Spec) error {
 		Reason:    "runtime branch packet copy requires a packet tap",
 		fields:    errDetailLines(runtimeBranchShapeDetails(shape)),
 		fixes: buildErrorFixes([]string{
-			"attach from a tap declared after Copy or Encode",
+			"attach from a tap declared before Decode or after Encode",
 			"encode frame taps with " + encodeHint(shape.MediaKind) + " before writing a muxed destination",
 			"call task.Taps() and choose a tap with domain=packet",
 		}),
@@ -2191,7 +2192,7 @@ func runtimeBranchGraphError(operation string, node string, cause error) error {
 		// file tasks run direct.
 		fixes = []string{
 			"drop the branch's .Buffer(...) policy: this task runs a direct (offline) graph",
-			"or build the task buffered: declare the branch in the recipe's Branches(...), or build the runtime with runconfig.WithBufferPolicy(...)",
+			"or build the task buffered: declare the buffered fork in the recipe itself (v.Buffer(...).To(dst)), or build the runtime with runconfig.WithBufferPolicy(...)",
 		}
 	}
 	return &BuildError{

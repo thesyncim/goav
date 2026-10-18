@@ -21,7 +21,7 @@ import (
 // branches, destinations, taps, stream and operation shapes, adapter
 // requirements, decisions, and warnings. On a refusal it returns both the
 // structured BuildError and a partial report naming what is missing.
-func (j *Job) Explain(ctx context.Context) (plan.Report, error) {
+func (j *recipeJob) Explain(ctx context.Context) (plan.Report, error) {
 	resolved, err := compileJobRecipeForBuildContext(ctx, j)
 	if err == nil {
 		return newPlanReport("build job", resolved)

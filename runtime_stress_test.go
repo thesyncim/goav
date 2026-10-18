@@ -89,7 +89,7 @@ func TestStressConcurrentSourcePushMutableBuffers(t *testing.T) {
 		})
 
 	rt := mustNew(WithBufferPolicy(pipeline.BufferPolicy{Capacity: 8, Drop: pipeline.DropOldest}))
-	task, err := From(src).Audio().To(sink).UseRuntime(rt).Build(ctx)
+	task, err := recipeFrom(src).Audio().To(sink).UseRuntime(rt).Build(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -146,7 +146,7 @@ func TestStressAttachDetachUnderLoadWithSlowWatchers(t *testing.T) {
 
 	main := Sink(SinkFunc("main", func(context.Context, Message) error { return nil }))
 	rt := mustNew(WithBufferPolicy(pipeline.BufferPolicy{Capacity: 4, Drop: pipeline.DropOldest}))
-	task, err := From(src).Audio().Tap(FrameTap("load.frames")).To(main).UseRuntime(rt).BuildLive(ctx)
+	task, err := recipeFrom(src).Audio().Tap(frameTapRef("load.frames")).To(main).UseRuntime(rt).BuildLive(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -173,8 +173,8 @@ func TestStressAttachDetachUnderLoadWithSlowWatchers(t *testing.T) {
 		go func(g int) {
 			defer churn.Done()
 			for i := range cycles {
-				attachment, err := task.LegacyAttach(ctx, Branch(fmt.Sprintf("mon-%d-%d", g, i)).
-					From(FrameTap("load.frames")).
+				attachment, err := legacyAttach(task, ctx, newBranch(fmt.Sprintf("mon-%d-%d", g, i)).
+					From(frameTapRef("load.frames")).
 					To(Sink(SinkFunc("watch", func(context.Context, Message) error { return nil }))))
 				if err != nil {
 					if errors.Is(err, ErrClosed) || errors.Is(err, context.Canceled) {

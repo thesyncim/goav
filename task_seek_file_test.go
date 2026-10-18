@@ -169,7 +169,7 @@ func repeatSleeps(d time.Duration, count int) []time.Duration {
 
 func seekFileTask(t *testing.T, reader io.Reader, sink *seekFileSink, options ...Option) LiveTask {
 	t.Helper()
-	task, err := From(FileInput("seek.mkv", reader)).
+	task, err := recipeFrom(FileInput("seek.mkv", reader)).
 		UseRuntime(mustNew(append([]Option{WithFormatAdapter(matroskaadapter.Register)}, options...)...)).
 		Audio().Copy().
 		To(Sink(SinkFunc("rec", sink.record))).
@@ -223,10 +223,10 @@ func TestTaskSegmentExportsRealMatroskaWindow(t *testing.T) {
 	ctx := context.Background()
 	data := muxSeekFileMKV(t)
 	sink := &seekFileSink{}
-	task, err := From(FileInput("seek.mkv", bytes.NewReader(data))).
+	task, err := recipeFrom(FileInput("seek.mkv", bytes.NewReader(data))).
 		UseRuntime(mustNew(WithFormatAdapter(matroskaadapter.Register), WithClock(&paceFileClock{}))).
 		Audio().Copy().
-		Tap(PacketTap("audio.packets")).
+		Tap(packetTapRef("audio.packets")).
 		To(Sink(SinkFunc("base", sink.record))).
 		BuildLive(ctx)
 	if err != nil {
@@ -236,8 +236,8 @@ func TestTaskSegmentExportsRealMatroskaWindow(t *testing.T) {
 
 	// A recording branch attached at runtime gets its own transactional
 	// destination — the seam destination snapshots report on.
-	if _, err := task.LegacyAttach(ctx, Branch("rec").
-		From(PacketTap("audio.packets")).
+	if _, err := legacyAttach(task, ctx, newBranch("rec").
+		From(packetTapRef("audio.packets")).
 		Copy().
 		To(lifecycleTestSink("rec"))); err != nil {
 		t.Fatal(err)

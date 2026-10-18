@@ -39,7 +39,7 @@ func joinStagePreallocDepth(rt *runtime) int {
 // and past named taps on the joined stream.
 type joinSpec struct {
 	kind   joinKind
-	arms   []JoinArm
+	arms   []recipeArm
 	dests  []Destination
 	encode *codec.Spec // mix/composite only; nil delivers the raw join output
 	// operations are joined-stream annotations (Auto/Require/Prefer) that run
@@ -50,7 +50,7 @@ type joinSpec struct {
 	taps []tapRef
 	// branches fan the joined stream out to planned branch chains, each carrying
 	// its own destinations; when set, dest/encode are unused.
-	branches []BranchSpec
+	branches []branchRecipe
 	// sync selects arm alignment for the convergence stage (Mix/Composite):
 	// arrival order by default, PTS alignment via .SyncByPTS(). Select needs no
 	// sync — it forwards exactly one live arm.
@@ -61,14 +61,14 @@ type joinSpec struct {
 	custom *customJoinSpec
 }
 
-// JoinArm is one source arm of a join: an ordinary source chain such as
+// recipeArm is one source arm of a join: an ordinary source chain such as
 // From(x).Audio(), another join whose joined output feeds the outer join —
 // LegacyMix(LegacyMix(a, b), c) sub-mixes two arms and mixes the result with a third, and
 // LegacySelect(LegacyMix(a, b), LegacyMix(c, d)) switches between two live mixes — or a tap reference
 // naming a tap an earlier arm declared, so one decoded stream converges
 // mid-graph without opening its source again. It is a sealed interface: only
 // goav builders implement it.
-type JoinArm interface {
+type recipeArm interface {
 	// joinArm resolves the arm to its internal spec; unexported so the set of
 	// arm shapes stays closed (source chains, nested joins, and tap refs).
 	joinArm() joinArmSpec
@@ -120,7 +120,7 @@ type joinBranchSnapshot struct {
 // its concrete destinations are cloned as the IR exception, and its
 // builder-construction error is validated here (the only place that reads the
 // mutable BranchSpec) so the planner never has to.
-func joinBranchSnapshotsFromSpecs(branches []BranchSpec, selected av.MediaType) []joinBranchSnapshot {
+func joinBranchSnapshotsFromSpecs(branches []branchRecipe, selected av.MediaType) []joinBranchSnapshot {
 	if len(branches) == 0 {
 		return nil
 	}
@@ -243,7 +243,7 @@ func resolveJoinProfile(tree *joinTreeSnapshot) (joinProfile, error) {
 			fields:    errDetails(errNote("declared join kinds: mix, composite, select; custom kinds go through goav.Join")),
 			fixes: buildErrorFixes([]string{
 				"use Mix, Composite, or Select for the built-in convergence profiles",
-				"use goav.LegacyJoin(name, stage, arms...) for a custom convergence stage",
+				"use goav.Join(name, stage, streams...) for a custom convergence stage",
 			}),
 			cause: errUnsupportedBuild,
 		}
@@ -253,7 +253,7 @@ func resolveJoinProfile(tree *joinTreeSnapshot) (joinProfile, error) {
 
 // newJoinJob lowers public convergence sugar into the one joinSpec carried by
 // Job, so .To/Build/Run are shared by every join kind.
-func newJoinJob(kind joinKind, spec joinSpec) *Job {
+func newJoinJob(kind joinKind, spec joinSpec) *recipeJob {
 	name := string(kind)
 	job := newJob(name)
 	if len(spec.arms) < 2 {
@@ -270,7 +270,7 @@ func newJoinJob(kind joinKind, spec joinSpec) *Job {
 // ordinary stream chain accepts; each carries its own destinations, so the Job
 // needs no .To. A join-level encoder is terminal exactly like a stream encoder,
 // so .Encode(...).Branches(...) is rejected with the chain's error.
-func newJoinBranchesJob(kind joinKind, spec joinSpec, branches []BranchSpec) *Job {
+func newJoinBranchesJob(kind joinKind, spec joinSpec, branches []branchRecipe) *recipeJob {
 	name := string(kind)
 	job := newJoinJob(kind, spec)
 	if job.err != nil {
@@ -349,7 +349,7 @@ func joinOutputAttachments(spec *joinSpec) ([]destinationSpec, []string) {
 
 // joinBranchNamedDestinations collects the branch destinations through the same
 // dedupe the planned-branch path uses.
-func joinBranchNamedDestinations(branches []BranchSpec) ([]namedDestinationSpec, error) {
+func joinBranchNamedDestinations(branches []branchRecipe) ([]namedDestinationSpec, error) {
 	var destinations []namedDestinationSpec
 	for i := range branches {
 		updated, err := appendNamedBranchDestinations(destinations, branches[i].destinations...)

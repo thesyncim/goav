@@ -468,9 +468,9 @@ func TestTaskControlAtTapTargetsByTapName(t *testing.T) {
 		return nil
 	}))
 
-	built, err := From(controlLiveAudioSource("live")).
+	built, err := recipeFrom(controlLiveAudioSource("live")).
 		Audio().
-		Tap(FrameTap("obs")).
+		Tap(frameTapRef("obs")).
 		To(sink).
 		UseRuntime(rt).
 		Build(ctx)

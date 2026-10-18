@@ -3,8 +3,8 @@ package lifecycle
 import "time"
 
 // RebranchArg is one typed argument to Attachment.Rebranch: either a
-// replacement branch spec supplied by goav.Branch(...) or a lifecycle policy
-// returned by SwitchAt, DrainOldBranch, or AbortOldBranch.
+// replacement goav.Output built from task.Tap or task.Track, or a lifecycle
+// policy returned by SwitchAt, DrainOldBranch, or AbortOldBranch.
 type RebranchArg interface {
 	RebranchArg()
 }

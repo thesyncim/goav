@@ -78,9 +78,9 @@ Stream routed to destinations), the `Layer` interface (a Stream, or
 (StreamID/StreamIndex), `InputOption`, `DestinationOption`, and `MediaOption`
 (Name/MIME/Metadata). They are exported so godoc can link them and callers can
 name variables and helpers; each is sealed — unexported fields or methods — so
-the constructors remain the only construction surface. The previous builder
-handles (`Chain`, `BranchBuilder`, `FlowBuilder`, `JoinArm`, ...) stay exported
-only until callers migrate; they are not front door.
+the constructors remain the only construction surface. The builder grammar
+Stream values compile onto (`recipeJob`, `streamChain`, `branchRecipe`, ...) is
+internal; the package's external tests reach it through `export_test.go`.
 
 Advanced governed vocabulary lives in the focused docs where it is needed:
 `control`, `ctlserver`, `inspect`, `plan`, `snapshot`, `lifecycle`, `flow`,

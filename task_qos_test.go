@@ -41,7 +41,7 @@ func TestQoSReportsLateness(t *testing.T) {
 	log := newPlayoutArrivalLog(clock)
 	release := make(chan struct{})
 
-	live, err := From(playoutFrameSource("cam", av.MediaVideo, release, 0, 20*time.Millisecond, 30*time.Millisecond)).
+	live, err := recipeFrom(playoutFrameSource("cam", av.MediaVideo, release, 0, 20*time.Millisecond, 30*time.Millisecond)).
 		UseRuntime(mustNew(WithClock(clock))).
 		Video().Playout(flow.Playout("preview").WithDropLate(10 * time.Millisecond)).To(log.sink("preview")).
 		BuildLive(ctx)
@@ -144,7 +144,7 @@ func TestQoSPolicyDrivesBitrateControl(t *testing.T) {
 			return []control.Control{control.Must(control.SetBitrate(event.StreamID, 250_000))}
 		}),
 	)
-	live, err := From(qosEncodeVideoSource("cam", release, 0, 20*time.Millisecond, 40*time.Millisecond)).
+	live, err := recipeFrom(qosEncodeVideoSource("cam", release, 0, 20*time.Millisecond, 40*time.Millisecond)).
 		UseRuntime(rt).
 		Video().
 		Encode(codec.VP8(codec.Bitrate(600_000))).
@@ -204,7 +204,7 @@ func TestQoSPolicyRefusalSurfacesThroughWatch(t *testing.T) {
 	log := newPlayoutArrivalLog(clock)
 	release := make(chan struct{})
 
-	live, err := From(playoutFrameSource("cam", av.MediaVideo, release, 0, 20*time.Millisecond, 40*time.Millisecond)).
+	live, err := recipeFrom(playoutFrameSource("cam", av.MediaVideo, release, 0, 20*time.Millisecond, 40*time.Millisecond)).
 		UseRuntime(mustNew(
 			WithClock(clock),
 			WithQoSPolicy(func(av.Event) []control.Control {

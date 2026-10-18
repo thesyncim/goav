@@ -367,15 +367,15 @@ func tapInfosFromPlan(taps []workTap) []snapshot.Tap {
 	return out
 }
 
-func compileJobRecipe(job *Job) (recipeResolved, error) {
+func compileJobRecipe(job *recipeJob) (recipeResolved, error) {
 	return compileJobRecipeWithOptions(job, recipeCompileOptions{})
 }
 
-func compileJobRecipeForBuild(job *Job) (recipeResolved, error) {
+func compileJobRecipeForBuild(job *recipeJob) (recipeResolved, error) {
 	return compileJobRecipeForBuildContext(context.Background(), job)
 }
 
-func compileJobRecipeForBuildContext(ctx context.Context, job *Job) (recipeResolved, error) {
+func compileJobRecipeForBuildContext(ctx context.Context, job *recipeJob) (recipeResolved, error) {
 	return compileJobRecipeWithOptions(job, recipeCompileOptions{
 		ctx:                        ctx,
 		requireExplicitRuntime:     true,
@@ -389,7 +389,7 @@ func compileJobRecipeForBuildContext(ctx context.Context, job *Job) (recipeResol
 	})
 }
 
-func compileJobRecipeWithOptions(job *Job, options recipeCompileOptions) (recipeResolved, error) {
+func compileJobRecipeWithOptions(job *recipeJob, options recipeCompileOptions) (recipeResolved, error) {
 	return compileRecipeSnapshotWithOptions(newJobRecipeSnapshot(job), options)
 }
 
@@ -463,7 +463,7 @@ func (state *recipeCompileState) joinPresent() bool {
 	return state.joinFacts.Kind != "" || state.joinTree != nil
 }
 
-func compileJobBranchRecipeWithOptions(job *Job, options recipeCompileOptions) (recipeResolved, error) {
+func compileJobBranchRecipeWithOptions(job *recipeJob, options recipeCompileOptions) (recipeResolved, error) {
 	if job == nil {
 		return compileRecipeSnapshotWithOptions(recipeCompileSnapshot{}, options)
 	}
@@ -512,7 +512,7 @@ func nilRecipeError(operation string, reason string) error {
 		Code:      errcode.JobInvalid,
 		Operation: operation,
 		Reason:    reason,
-		fields:    errDetails(errNote("internal invariant: the compiler was invoked without its recipe attachment (recipes are constructed with goav.From(...))")),
+		fields:    errDetails(errNote("internal invariant: the compiler was invoked without its recipe attachment (recipes are constructed from Streams and Outputs)")),
 		cause:     errUnsupportedBuild,
 	}
 }
@@ -525,9 +525,9 @@ func unconstructedJobError() error {
 		Operation: "build job",
 		Reason:    "empty job",
 		fixes: buildErrorFixes([]string{
-			"start the recipe with goav.From(input)",
-			"use goav.From(goav.FileInput(\"in.webm\", reader)) for reader-backed input",
-			"use goav.From(goav.Source(name, shape, fn)) for application-pushed input",
+			"start the recipe from an input: input.Video() or input.Audio()",
+			"use goav.FileInput(\"in.webm\", reader) for reader-backed input",
+			"use goav.Source(name, shape, fn) for application-pushed input",
 		}),
 		cause: errUnsupportedBuild,
 	}
@@ -542,9 +542,9 @@ func runtimeMissingError(operation string) error {
 		Operation: operation,
 		Reason:    "no runtime is configured",
 		fixes: buildErrorFixes([]string{
-			"pass a non-nil runtime with .UseRuntime(runtime)",
+			"run the Outputs on a runtime: rt.Run(ctx, outputs...)",
 			"build a bare runtime with goav.New(...)",
-			"import github.com/thesyncim/goav/bundle and build with bundle.MustNew(...), bundle.Build(ctx, job), or bundle.Run(ctx, job)",
+			"import github.com/thesyncim/goav/bundle and build with bundle.MustNew(...), bundle.Build(ctx, outputs...), or bundle.Run(ctx, outputs...)",
 		}),
 		cause: errUnsupportedBuild,
 	}
@@ -700,7 +700,7 @@ func validateJobRecipeIntentShape(operation string, recipe recipeir.Recipe, jobO
 			Operation: operation,
 			Reason:    "no input is configured",
 			fixes: buildErrorFixes([]string{
-				"start the recipe from an input: goav.From(goav.FileInput(\"in.webm\", reader))",
+				"start the recipe from an input: goav.FileInput(\"in.webm\", reader).Video()",
 			}),
 			cause: errUnsupportedBuild,
 		}
@@ -794,9 +794,9 @@ func jobOutputScopeMixedError(operation string, stream recipeir.Stream) error {
 		Node:      recipeIRStreamName(stream),
 		Reason:    "stream recipes use stream-local outputs",
 		fixes: buildErrorFixes([]string{
-			"attach outputs to the selected stream chain with .Audio()...To(...) or .Video()...To(...)",
-			"use goav.From(input).Copy().To(output...) for packet-preserving record/remux",
-			"use goav.From(input).Video().Decode().Branches(goav.Branch(name).Encode(codec.VP9(...)).To(output)) for named branches",
+			"route outputs from the selected stream with input.Audio()...To(...) or input.Video()...To(...)",
+			"use input.To(output...) for packet-preserving record/remux",
+			"use v := input.Video().Decode(), then v.Encode(codec.VP9(...)).As(name).To(output) for named forks",
 		}),
 		cause: errUnsupportedBuild,
 	}
@@ -811,9 +811,9 @@ func jobDestinationReferenceMissingError(operation string, stream recipeir.Strea
 		Node:      recipeIRStreamName(stream),
 		Reason:    "stream route output " + label + " is not attached",
 		fixes: buildErrorFixes([]string{
-			"attach outputs to the selected stream chain with .Audio()...To(...) or .Video()...To(...)",
-			"use goav.From(input).Copy().To(output...) for packet-preserving record/remux",
-			"finish each branch with a typed destination such as .To(output)",
+			"route outputs from the selected stream with input.Audio()...To(...) or input.Video()...To(...)",
+			"use input.To(output...) for packet-preserving record/remux",
+			"finish each fork with a typed destination such as .To(output)",
 		}),
 		cause: errUnsupportedBuild,
 	}
@@ -996,7 +996,7 @@ func operationSpecMissingError(operation string, node string) error {
 		fixes: buildErrorFixes([]string{
 			"call .Decode().To(goav.Sink(...)) to receive decoded frames",
 			"call .Decode() then " + encodeHint("") + " before writing to a file output",
-			"use .Copy().To(output) for packet-preserving record or remux",
+			"use input.To(output) for packet-preserving record or remux",
 		}),
 		cause: errUnsupportedBuild,
 	}
@@ -1338,7 +1338,7 @@ func recipeAttachmentMismatchError(operation string, kind string, intentCount in
 		Reason:    kind + " intent and concrete attachments disagree",
 		fields:    errDetails(errNote(fmt.Sprintf("intent %s: %d", kind, intentCount)), errNote(fmt.Sprintf("attached %s: %d", kind, attachmentCount))),
 		fixes: buildErrorFixes([]string{
-			"build recipes through goav.From(input)",
+			"build recipes from input Streams routed to Outputs: rt.Run(ctx, outputs...)",
 			"keep custom compiler passes aligned with the public intent and captured attachments",
 		}),
 		cause: errUnsupportedBuild,
@@ -1773,7 +1773,7 @@ func destinationShapeMismatchError(operation string, node string, destinationNam
 		fields:    errDetails(errDetail("destination", label), errDetail("expected_shape", shape.New(shape.Domain(shape.DomainPacket), shape.Media(spec.MediaKind)).String()), errDetail("actual_shape", spec.String())),
 		fixes: buildErrorFixes([]string{
 			"call " + encodeHint(spec.MediaKind) + " before writing to file, URI, or writer destinations",
-			"use .Copy() from a packet-domain stream point for packet-preserving output",
+			"leave out .Decode() for packet-preserving output: input.Video().To(output)",
 			"send frame-domain media to goav.Sink(...) instead of a byte destination",
 		}),
 		cause: errUnsupportedBuild,
@@ -1810,7 +1810,7 @@ func shapeAnnotationDomainMismatchError(operation string, node string, index int
 		fixes: buildErrorFixes([]string{
 			"keep .Shape(...) annotations in the current packet/frame domain",
 			"use .Decode() to move packets to decoded frames",
-			"use .Copy() or .Encode(codec...) to move frames back to packets",
+			"use .Encode(codec...) to move frames back to packets",
 		}),
 		cause: errUnsupportedBuild,
 	}
@@ -1870,9 +1870,9 @@ func recipeGraphUnsupportedRecipeError(operation string, recipe recipeir.Recipe)
 		Reason:    "recipe intent did not match a supported graph plan",
 		fields:    errDetailLines(details),
 		fixes: buildErrorFixes([]string{
-			"use goav.From(input).Copy().To(output...) for packet-preserving record or remux",
-			"use goav.From(input).Audio().Decode().To(goav.Sink(...)) or .Video().Decode().To(...) for decoded frames",
-			"use goav.From(input).Video().Decode().Branches(goav.Branch(name).Encode(codec.VP9(...)).To(output)) for named branches",
+			"use input.To(output...) for packet-preserving record or remux",
+			"use input.Audio().Decode().To(goav.Sink(...)) or input.Video().Decode().To(...) for decoded frames",
+			"use v := input.Video().Decode(), then v.Encode(codec.VP9(...)).As(name).To(output) for named forks",
 		}),
 		cause: errUnsupportedBuild,
 	}

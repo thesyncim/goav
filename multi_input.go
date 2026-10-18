@@ -258,7 +258,7 @@ func multiInputSelectionSuggestions(selector av.StreamSelector, candidates []inp
 		}
 		seen[name] = struct{}{}
 		if recipeCall {
-			suggestions = append(suggestions, call+"(goav.InputName("+strconv.Quote(name)+"))")
+			suggestions = append(suggestions, "select from the input named "+strconv.Quote(name)+" directly: input"+call+"()")
 		} else {
 			suggestions = append(suggestions, "narrow the selection to input "+strconv.Quote(name))
 		}
@@ -296,7 +296,7 @@ func unknownInputNameError(selector av.StreamSelector, inputName string, sets []
 		Reason:    "no job input is named " + strconv.Quote(inputName),
 		fields:    errDetailLines(details),
 		fixes: buildErrorFixes([]string{
-			"use one of the listed input names with goav.InputName(...)",
+			"select from one of the listed inputs directly: input.Audio() or input.Video()",
 			"name inputs with goav.Source(name, ...), goav.FileInput(name, ...), or the goav.Name(...) option",
 		}),
 		cause: errUnsupportedBuild,

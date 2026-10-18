@@ -40,10 +40,12 @@ type streamRoot struct {
 	options []StreamOption
 	join    *streamJoin
 	// rule roots a stream the input discovers while it runs (OnStream); tap
-	// and track root a stream of a running task (task.Tap, task.Track).
+	// and track root a stream of a running task (task.Tap, task.Track), route
+	// one of a graph route (task.Route).
 	rule  *sourcepkg.StreamMatch
 	tap   string
 	track *av.Stream
+	route *pipeline.Route
 }
 
 type streamJoin struct {

@@ -20,7 +20,7 @@ import (
 // equals the built graph (the assertion lowers to no runtime node).
 func TestRequireMetIsNoOp(t *testing.T) {
 	ctx := context.Background()
-	job := From(solverTestAudioSource("mic", 48_000, codec.Stereo, av.SampleFormatS16)).
+	job := recipeFrom(solverTestAudioSource("mic", 48_000, codec.Stereo, av.SampleFormatS16)).
 		Audio().
 		Require(shape.Frame(av.MediaAudio, shape.Audio(48_000, codec.Stereo, ""))).
 		Encode(codec.Opus(codec.Bitrate(96_000))).
@@ -62,7 +62,7 @@ func TestRequireMetIsNoOp(t *testing.T) {
 // conversion could satisfy the requirement — the exact .Auto(...) policy and
 // the explicit operation to write instead.
 func TestRequireViolatedFailsWithFix(t *testing.T) {
-	_, err := From(solverTestAudioSource("mic", 44_100, codec.Stereo, av.SampleFormatS16)).
+	_, err := recipeFrom(solverTestAudioSource("mic", 44_100, codec.Stereo, av.SampleFormatS16)).
 		Audio().
 		Require(shape.Frame(av.MediaAudio, shape.Audio(48_000, codec.Stereo, ""))).
 		Encode(codec.Opus(codec.Bitrate(96_000))).
@@ -95,7 +95,7 @@ func TestRequireViolatedFailsWithFix(t *testing.T) {
 // insertion is reported like any other solver conversion.
 func TestRequireSatisfiedByAutoConversion(t *testing.T) {
 	ctx := context.Background()
-	job := From(solverTestAudioSource("mic", 44_100, codec.Stereo, av.SampleFormatS16)).
+	job := recipeFrom(solverTestAudioSource("mic", 44_100, codec.Stereo, av.SampleFormatS16)).
 		Audio().
 		Auto(shape.AllowResample()).
 		Require(shape.Frame(av.MediaAudio, shape.Audio(48_000, codec.Stereo, ""))).
@@ -149,11 +149,11 @@ func TestRequireWorksInBranches(t *testing.T) {
 		testBundleFilters(),
 		WithDecoder(codec.Descriptor{ID: pcm, Name: "PCM", Type: av.MediaAudio, Capabilities: codec.Capabilities{SampleFormats: []string{av.SampleFormatS16}}}, recipePCMDecoderFactory{decoder: &recipePCMDecoder{}}),
 	)
-	_, err := From(source).
+	_, err := recipeFrom(source).
 		Audio().
 		Decode().
 		Branches(
-			Branch("voice").
+			newBranch("voice").
 				Require(shape.Frame(av.MediaAudio, shape.Audio(48_000, codec.Stereo, ""))).
 				Encode(codec.Opus(codec.Bitrate(96_000))).
 				To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))),
@@ -172,9 +172,9 @@ func TestRequireWorksInBranches(t *testing.T) {
 // TestRequireWorksInFlows pins the flow surface: a requirement declared on a
 // reusable Flow is enforced wherever the flow is applied.
 func TestRequireWorksInFlows(t *testing.T) {
-	normalize := Flow("normalize").Audio().
+	normalize := newFlow("normalize").Audio().
 		Require(shape.Frame(av.MediaAudio, shape.Audio(48_000, codec.Stereo, "")))
-	_, err := From(solverTestAudioSource("mic", 44_100, codec.Stereo, av.SampleFormatS16)).
+	_, err := recipeFrom(solverTestAudioSource("mic", 44_100, codec.Stereo, av.SampleFormatS16)).
 		Audio().
 		Apply(normalize).
 		Encode(codec.Opus(codec.Bitrate(96_000))).
@@ -205,8 +205,8 @@ func TestPreferResolvesAdapterAmbiguity(t *testing.T) {
 		WithFilter(rtCapable, &shapeSolverTestFilterFactory{}),
 		WithFilter(offline, &shapeSolverTestFilterFactory{}),
 	)
-	chain := func() *Chain {
-		return From(solverTestAudioSource("mic", 44_100, codec.Stereo, av.SampleFormatS16)).
+	chain := func() *streamChain {
+		return recipeFrom(solverTestAudioSource("mic", 44_100, codec.Stereo, av.SampleFormatS16)).
 			Audio().
 			Auto(shape.AllowResample())
 	}
@@ -273,7 +273,7 @@ func TestPreferBiasesOpenConversionTarget(t *testing.T) {
 		Stateless:     true,
 	}, factory))
 
-	job := From(solverTestAudioSource("mic", 44_100, codec.Stereo, av.SampleFormatS16)).
+	job := recipeFrom(solverTestAudioSource("mic", 44_100, codec.Stereo, av.SampleFormatS16)).
 		Audio().
 		Auto(shape.AllowResample(), shape.AllowConvert()).
 		Prefer(shape.New(shape.Audio(0, 0, "f32"))).
@@ -321,7 +321,7 @@ func TestPreferUnsatisfiableIgnoredWithDiagnostic(t *testing.T) {
 		Stateless:     true,
 	}, factory))
 
-	job := From(solverTestAudioSource("mic", 44_100, codec.Stereo, av.SampleFormatS16)).
+	job := recipeFrom(solverTestAudioSource("mic", 44_100, codec.Stereo, av.SampleFormatS16)).
 		Audio().
 		Auto(shape.AllowResample()). // no AllowConvert: the f32 preference is not honorable
 		Prefer(shape.New(shape.Audio(0, 0, "f32"))).
@@ -381,8 +381,8 @@ func TestPreferWorksInBranches(t *testing.T) {
 		WithFilter(offline, &shapeSolverTestFilterFactory{}),
 		WithDecoder(codec.Descriptor{ID: pcm, Name: "PCM", Type: av.MediaAudio, Capabilities: codec.Capabilities{SampleFormats: []string{av.SampleFormatS16}}}, recipePCMDecoderFactory{decoder: &recipePCMDecoder{}}),
 	)
-	branch := func(prefer bool) BranchSpec {
-		b := Branch("voice").Auto(shape.AllowResample())
+	branch := func(prefer bool) branchRecipe {
+		b := newBranch("voice").Auto(shape.AllowResample())
 		if prefer {
 			b = b.Prefer(shape.New(shape.Realtime(true)))
 		}
@@ -391,7 +391,7 @@ func TestPreferWorksInBranches(t *testing.T) {
 	}
 
 	// Without the preference the adapter choice is ambiguous and refused.
-	_, err := From(source()).Audio().Decode().
+	_, err := recipeFrom(source()).Audio().Decode().
 		Branches(branch(false)).
 		UseRuntime(rt).
 		BuildLive(context.Background())
@@ -401,7 +401,7 @@ func TestPreferWorksInBranches(t *testing.T) {
 	}
 
 	// The branch's .Prefer(realtime) resolves it to conv-rt.
-	job := From(source()).Audio().Decode().
+	job := recipeFrom(source()).Audio().Decode().
 		Branches(branch(true)).
 		UseRuntime(rt)
 	planned, err := job.Describe()
@@ -439,7 +439,7 @@ func TestPreferWorksInBranches(t *testing.T) {
 // runtime with the conversion inserted before the assertion.
 func TestReadmeRequireExampleBuilds(t *testing.T) {
 	mic := solverTestAudioSource("mic", 44_100, codec.Stereo, av.SampleFormatS16)
-	job := From(mic).
+	job := recipeFrom(mic).
 		Audio().
 		Auto(shape.AllowResample()).
 		Require(shape.Frame(av.MediaAudio, shape.Audio(48_000, 2, ""))).
