@@ -11,6 +11,10 @@ methodology changes, and migration notes.
 
 ## Unreleased
 
+- Docs say what the data plane is: lock-free routing snapshots and per-node
+  atomics, with each node serialized by its own handle or queue lock, not
+  "no per-message mutex".
+
 - Fix: several file inputs in one offline run write the same bytes on every
   run. A direct, non-realtime graph interleaves its file sources by time, the
   way ffmpeg picks its next input: the file whose next packet is earliest
