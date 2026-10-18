@@ -631,7 +631,7 @@ func (t *muxTrack) editPlan(originNS int64, fragmented bool) trackEditPlan {
 		mediaTime: t.startPTS + nsTicks(t.prerollNS, t.timescale) - t.startDTS,
 	}
 	if !fragmented {
-		plan.duration = nsTicks(ticksNS(t.endPTS, t.timescale)-presentNS, movieTimescale)
+		plan.duration = max(nsTicks(ticksNS(t.endPTS, t.timescale)-presentNS, movieTimescale), 0)
 		plan.total = plan.delay + plan.duration
 	}
 	return plan

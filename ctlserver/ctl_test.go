@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -534,5 +535,26 @@ func TestRefusalKeepsTheBuildError(t *testing.T) {
 	}
 	if json.Unmarshal(e.Data, &detail) != nil || detail.Kind != "program" || detail.Build.Code != "element_refused" {
 		t.Fatalf("refusal data = %s", e.Data)
+	}
+}
+
+// TestParseErrorArrives: a client that sends malformed JSON followed by more
+// bytes still reads the parse error; the server drains before it closes.
+func TestParseErrorArrives(t *testing.T) {
+	h := serve(t, liveProgram)
+	conn, err := net.Dial("unix", strings.TrimPrefix(h.address, "unix://"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	if _, err := conn.Write(append([]byte(`{"jsonrpc": nope`), bytes.Repeat([]byte("x"), 64<<10)...)); err != nil {
+		t.Fatal(err)
+	}
+	var reply struct {
+		Error *ctlserver.Error `json:"error"`
+	}
+	conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+	if err := json.NewDecoder(conn).Decode(&reply); err != nil || reply.Error == nil || reply.Error.Code != ctlserver.CodeParse {
+		t.Fatalf("reply = %+v, %v; want the parse error", reply.Error, err)
 	}
 }

@@ -11,6 +11,11 @@ methodology changes, and migration notes.
 
 ## Unreleased
 
+- Fix: the control server answers malformed JSON before it hangs up (it
+  half-closes and drains, so the client is not reset before the error lands),
+  and an MP4 Opus track of a single packet keeps its pre-skip on read. Both
+  were found by the new fuzzers.
+
 - Tests: new fuzzers for the MP4 mux-then-demux round trip (progressive and
   fragmented, checking bytes, keyframes and times), the rtpav VP8, VP9, AV1,
   H.264 and Opus depacketizers, and the ctlserver JSON-RPC handler and
