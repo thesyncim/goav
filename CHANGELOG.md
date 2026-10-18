@@ -11,6 +11,14 @@ methodology changes, and migration notes.
 
 ## Unreleased
 
+- Joins are described and built from the same schedule as everything else:
+  the join tree (arm inputs, their event-keeping decodes, conversion stages,
+  tap-arm restamps, nested joins, the convergence stage) and its downstream
+  (planned branches, or the downstream conversions, encoder, and destinations)
+  are nodes of one `composeGraph`. The join planner's separate describe walk,
+  build walk, and the edge regrouping that kept them in step are gone; the
+  `TestCompilerOracle` goldens for every join kind are unchanged.
+
 - Every recipe that is not a join lowers through one `composeLowerer`: a
   single stream, a selected or whole-job packet copy, several stream chains, or
   branches are all sources feeding one `composeGraph`, described and built from

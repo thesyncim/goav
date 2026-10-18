@@ -23,6 +23,16 @@ const (
 	// every source feeds them with all its streams, and no branch selects one.
 	composeRemuxSink
 	composeRemuxMux
+	// Join trees: an arm's input, its event-keeping decode, a planned
+	// transform, a tap arm's restamp, the convergence stage, and a join's
+	// encoder and destinations.
+	composeArmSource
+	composeArmDecode
+	composeTransform
+	composeTapRestamp
+	composeJoin
+	composeJoinEncode
+	composeJoinDestination
 )
 
 // composeNode is one planned node of a branch composition: its name and
@@ -42,6 +52,11 @@ type composeNode struct {
 	// transform is a step's operation; output indexes a sink or mux.
 	transform mediaTransform
 	output    int
+	// join is the join a join-tree node belongs to, arm the arm it serves,
+	// and stream the planned stream a transform is built against.
+	join   *joinPlan
+	arm    int
+	stream av.Stream
 }
 
 // composeGraph is the one schedule a branch composition is described and
@@ -60,16 +75,28 @@ type composeGraph struct {
 	branchOut []pipeline.NodeRef
 	// remux holds the outputs of a whole-job packet copy.
 	remux []destinationAttachment
+	// external are producers planned before the graph (input sources already
+	// in the spec); their edges come first.
+	external []pipeline.NodeRef
 }
 
 func planComposeGraph(sources []pipeline.NodeRef, branches []branchComposeRoute, outputs []branchComposeTargetRoute) (composeGraph, error) {
-	g := composeGraph{
-		sources:   sources,
-		groups:    branchComposeSelectorGroups(branches),
-		branches:  branches,
-		outputs:   outputs,
-		branchOut: make([]pipeline.NodeRef, len(branches)),
+	g := composeGraph{external: sources}
+	if err := g.planBranches(sources, branches, outputs); err != nil {
+		return composeGraph{}, err
 	}
+	return g, nil
+}
+
+// planBranches appends a branch composition fed by sources: per selector
+// group a select, its decode, and shared steps; then each branch's private
+// steps and encoder; then the outputs. A graph holds one composition.
+func (g *composeGraph) planBranches(sources []pipeline.NodeRef, branches []branchComposeRoute, outputs []branchComposeTargetRoute) error {
+	g.sources = sources
+	g.groups = branchComposeSelectorGroups(branches)
+	g.branches = branches
+	g.outputs = outputs
+	g.branchOut = make([]pipeline.NodeRef, len(branches))
 	for i := range g.groups {
 		group := g.groups[i]
 		selectRef := g.add(composeNode{
@@ -90,7 +117,7 @@ func planComposeGraph(sources []pipeline.NodeRef, branches []branchComposeRoute,
 		}
 		config, err := branchComposeGroupDecodeConfig(decoded, branches)
 		if err != nil {
-			return composeGraph{}, err
+			return err
 		}
 		decodeRef := g.add(composeNode{
 			kind:     composeDecode,
@@ -109,7 +136,7 @@ func planComposeGraph(sources []pipeline.NodeRef, branches []branchComposeRoute,
 			}
 			transforms, err := branchComposeRouteOperationTransformsForName(branchComposeSharedOperationName(branches[prefix.branches[0]]), prefix.operations)
 			if err != nil {
-				return composeGraph{}, err
+				return err
 			}
 			upstream := decodeRef
 			for _, transform := range transforms {
@@ -130,7 +157,7 @@ func planComposeGraph(sources []pipeline.NodeRef, branches []branchComposeRoute,
 	for b := range branches {
 		transforms, err := branchComposePrivateOperationTransforms(branches[b])
 		if err != nil {
-			return composeGraph{}, err
+			return err
 		}
 		upstream := g.branchOut[b]
 		for _, transform := range transforms {
@@ -177,13 +204,13 @@ func planComposeGraph(sources []pipeline.NodeRef, branches []branchComposeRoute,
 			output: i,
 		})
 	}
-	return g, nil
+	return nil
 }
 
 // planRemuxGraph plans a whole-job packet copy: each output, in order, fed
 // by every source.
 func planRemuxGraph(sources []pipeline.NodeRef, outputs []destinationAttachment) composeGraph {
-	g := composeGraph{sources: sources, remux: outputs}
+	g := composeGraph{sources: sources, external: sources, remux: outputs}
 	for i := range outputs {
 		if outputs[i].details.sink {
 			g.add(composeNode{
@@ -219,21 +246,26 @@ func (g *composeGraph) add(node composeNode) pipeline.NodeRef {
 func (g composeGraph) emit(spec pipeline.Spec, planned map[string]plannedNode) (pipeline.Spec, error) {
 	for _, node := range g.nodes {
 		kind := pipeline.NodeStage
-		if node.kind == composeSink || node.kind == composeRemuxSink {
+		switch {
+		case node.kind == composeSink || node.kind == composeRemuxSink:
+			kind = pipeline.NodeSink
+		case node.kind == composeArmSource:
+			kind = pipeline.NodeSource
+		case node.kind == composeJoinDestination && node.join.destinations[node.output].sink != nil:
 			kind = pipeline.NodeSink
 		}
 		if err := addPlannedNode(planned, &spec, node.name, kind, pipeline.NodeRef(node.name), node.detail); err != nil {
 			return pipeline.Spec{}, err
 		}
 	}
-	consumers := make(map[pipeline.NodeRef][]pipeline.NodeRef, len(g.nodes)+len(g.sources))
+	consumers := make(map[pipeline.NodeRef][]pipeline.NodeRef, len(g.nodes)+len(g.external))
 	for _, node := range g.nodes {
 		for _, input := range node.inputs {
 			consumers[input] = append(consumers[input], pipeline.NodeRef(node.name))
 		}
 	}
-	producers := make([]pipeline.NodeRef, 0, len(g.sources)+len(g.nodes))
-	producers = append(producers, g.sources...)
+	producers := make([]pipeline.NodeRef, 0, len(g.external)+len(g.nodes))
+	producers = append(producers, g.external...)
 	for _, node := range g.nodes {
 		producers = append(producers, pipeline.NodeRef(node.name))
 	}
@@ -255,6 +287,10 @@ type composeLowering struct {
 	bounds        []decodeBoundsProvider
 	branchBuffer  map[string]graphPlanBranchComposeBranchOperation
 	realtime      bool
+	// admission enables per-arm backpressure on join stages; work sizes a
+	// pinned join queue.
+	admission bool
+	work      workPlan
 }
 
 // lower builds the composition into graph: each node in schedule order,
@@ -330,6 +366,12 @@ func (g composeGraph) lower(ctx context.Context, service *builder, graph pipelin
 			if err := connectComposeInputs(graph, node.inputs, sinkRef); err != nil {
 				return err
 			}
+		case composeArmSource, composeArmDecode, composeTransform, composeTapRestamp, composeJoin, composeJoinEncode, composeJoinDestination:
+			stream, err := lowerJoinNode(ctx, service, graph, node, streams, in)
+			if err != nil {
+				return err
+			}
+			streams[ref] = stream
 		case composeRemuxSink:
 			sink := destinationAttachmentSink(g.remux[node.output])
 			if node.name != sink.Name() {
