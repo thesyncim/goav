@@ -296,6 +296,14 @@ func (s *Server) serveConn(ctx context.Context, conn net.Conn) {
 		if err := dec.Decode(&raw); err != nil {
 			if !errors.Is(err, io.EOF) && !errors.Is(err, os.ErrDeadlineExceeded) && ctx.Err() == nil {
 				sess.send(response{JSONRPC: "2.0", ID: nullID, Error: &Error{Code: CodeParse, Message: "malformed JSON"}})
+				// Half-close and drain what the client already sent: closing
+				// with unread input resets the connection, and the client
+				// would lose the error.
+				if hc, ok := conn.(interface{ CloseWrite() error }); ok {
+					_ = hc.CloseWrite()
+				}
+				_ = conn.SetReadDeadline(time.Now().Add(time.Second))
+				_, _ = io.Copy(io.Discard, io.LimitReader(conn, 1<<20))
 			}
 			return
 		}

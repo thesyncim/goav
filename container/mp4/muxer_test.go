@@ -320,3 +320,16 @@ func TestFragmentDuration(t *testing.T) {
 		t.Fatalf("%d fragments, want 15 of 200ms", fragments)
 	}
 }
+
+// TestSingleOpusSampleKeepsPreSkip: an Opus track of one packet, without a
+// duration, still reads back with its pre-skip before zero.
+func TestSingleOpusSampleKeepsPreSkip(t *testing.T) {
+	streams := []av.Stream{{ID: "a", Type: av.MediaAudio, Codec: av.CodecParameters{ID: av.CodecOpus, Type: av.MediaAudio, SampleRate: 48000, Channels: 2, ExtraData: av.Buffer{Bytes: opusHead(312)}}}}
+	packets := []muxPacket{{stream: "a", pts: -6500 * time.Microsecond, dts: -6500 * time.Microsecond, key: true, payload: []byte{0xfc, 1, 2}}}
+	out := &sliceWriteSeeker{}
+	writeMP4(t, out, streams, packets, false)
+	_, got := readMP4(t, out.data)
+	if len(got) != 1 || got[0].pts != -6500*time.Microsecond {
+		t.Fatalf("samples = %+v, want one at -6.5ms", got)
+	}
+}
