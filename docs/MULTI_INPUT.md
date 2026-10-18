@@ -35,7 +35,11 @@ err = rt.Run(ctx, a.Video().To(rec), b.Audio().To(rec))
 - **Several files.** Files, providers, and `goav.Source` inputs share one run;
   each stream reads only its own input. With several inputs a file's stream
   ids carry its name (`1@a.webm`), so track 1 of two files stays two tracks in
-  one mux (`TestCopyFromTwoFilesIntoOneMux`).
+  one mux (`TestCopyFromTwoFilesIntoOneMux`). Offline, files interleave by
+  time the way ffmpeg picks its next input: the file whose next packet is
+  earliest goes next, so a shared mux writes the same bytes every run
+  (`TestSeveralFileInputsInterleaveDeterministically`). Live inputs, custom
+  sources, and joins (which pace their own arms) run concurrently.
 - **Forks per input.** Each input forks on its own: one camera's ladder beside
   another input's audio muxed into every rendition, or two files each forked
   into renditions, share each input's select, decode, and steps
