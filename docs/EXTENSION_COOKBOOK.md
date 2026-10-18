@@ -38,7 +38,7 @@ stage concern.
 | Replace a frame transform | `filter.Factory` + `runconfig.WithFilter` | `examples/custom-filter` | unsupported target returns `filter.ErrUnsupportedFormat` |
 | Add a codec | `codec.EncoderFactory` / `DecoderFactory` + `runconfig.WithEncoder` / `WithDecoder` | `examples/custom-codec` | descriptor-only registration reports adapter unavailable |
 | Converge several arms | `goav.Join(name, pipeline.Stage, streams...)` | `examples/custom-join` | incompatible arm media refuses at build time |
-| Expose app-specific control | `ctlserver.CommandSpec`, branch steps, encoder specs | `examples/control-plane-host` | invalid settings fail before branch attach |
+| Expose app-specific control | `ctlserver.Method[T]`, `ctlserver.Elements` with `launch.Stage`/`Sink`/`Encoder` | `examples/control-plane-host` | an invalid element setting refuses the attach, pointing at the element |
 
 ## Custom Source
 
@@ -313,29 +313,32 @@ and emit one joined EOS.
 ## Control-Plane Host
 
 Use `ctlserver` when your application owns a running task and wants to expose
-app-specific verbs, branch steps, or encoder names through `goav ctl`.
+it to `goav ctl` and other clients, with methods and elements of its own.
 
 ```go
-command := ctlserver.NewCommand[setPosition](
-    "vendor.seek",
-    "demo reposition control",
-    func(ctx context.Context, task goav.LiveTask, cmd setPosition) (ctlserver.ControlResponse, error) {
-        ctrl := control.Seek(cmd.Position)
-        if err := task.Control(ctx, ctrl.At(pipeline.NodeRef(cmd.Source))); err != nil {
-            return ctlserver.ControlResponse{}, err
-        }
-        return ctlserver.ControlResponse{Operation: "control vendor.seek"}, nil
-    },
-)
-
-err := ctlserver.ServeUnixWithOptions(ctx, task, "unix:///tmp/goav.sock",
-    ctlserver.WithCapabilities(ctlserver.CapabilitySet{Commands: []ctlserver.CommandSpec{command}}),
-)
+type seekParams struct {
+    Position time.Duration `json:"position" ctl:"required" help:"media position: 2s"`
+}
+reposition := ctlserver.Method("reposition", "seek the player",
+    func(ctx context.Context, task goav.LiveTask, p seekParams) (any, error) {
+        return struct{}{}, task.Control(ctx, control.Seek(p.Position).At(pipeline.NodeRef("player")))
+    })
+meter := launch.Stage("meter", "measure each frame", func(struct{}) (pipeline.Stage, error) {
+    return component.FrameFunc("meter", func(ctx context.Context, f *av.Frame, emit component.Emit) error {
+        record(f)
+        return emit.Frame(f)
+    }), nil
+})
+server, err := ctlserver.New(task, reposition, ctlserver.Elements(meter))
+if err != nil {
+    return err
+}
+return server.ListenAndServe(ctx, "unix:///tmp/goav.sock")
 ```
 
-`examples/control-plane-host` is the runnable playground. It registers a custom
-command, branch steps, and a custom encoder alias, then serves them behind a
-Unix socket.
+A client calls `reposition position=2s` and attaches
+`tap live ! meter ! encode vp8 ! as metered ! null`. `examples/control-plane-host`
+is the runnable host; [`CONTROL_PLANE.md`](CONTROL_PLANE.md) has the protocol.
 
 ## Components Below The Grammar
 

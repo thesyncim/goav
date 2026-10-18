@@ -86,10 +86,10 @@ func TestOutputFormatProbeErrorContract(t *testing.T) {
 	if !reflect.DeepEqual(buildErr.DetailLines(), wantDetails) {
 		t.Fatalf("details = %#v, want %#v", buildErr.DetailLines(), wantDetails)
 	}
-	if got, ok := buildErr.Detail("protocol"); !ok || got != av.ProtocolFile {
+	if got, ok := buildErr.Detail[av.ProtocolID]("protocol"); !ok || got != av.ProtocolFile {
 		t.Fatalf("protocol detail = %#v, %v; want %q, true", got, ok, av.ProtocolFile)
 	}
-	if got, ok := buildErr.Detail("mime"); !ok || got != "video/custom" {
+	if got, ok := buildErr.Detail[string]("mime"); !ok || got != "video/custom" {
 		t.Fatalf("mime detail = %#v, %v; want video/custom, true", got, ok)
 	}
 	if len(buildErr.fields) != len(wantDetails) {

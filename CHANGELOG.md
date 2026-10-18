@@ -11,6 +11,35 @@ methodology changes, and migration notes.
 
 ## Unreleased
 
+- Control plane v2. Breaking: `ctlserver` is rebuilt as JSON-RPC 2.0 over one
+  connection (unix or TCP), with concurrent calls and watch events pushed as
+  notifications, and is also an `http.Handler` (POST a request, GET
+  `.../events` for server-sent events). One method per task capability:
+  describe, explain, snapshot, stats, taps, watch, bitrate, keyframe, select,
+  seek, rate, segment, pause, resume, attach, rebranch, detach, stop, and
+  capabilities. Attach and rebranch take programs in the pipeline language
+  (`tap live ! encode vp8 ! as preview ! file p.webm`); hosts add typed
+  methods with `ctlserver.Method[T]` and elements with `ctlserver.Elements`,
+  and grant file access with `ctlserver.Files` (none by default). The Go
+  client is `ctlserver.Dial` with `client.Call[T]` and `client.Watch`, and
+  `goav ctl <method> key=value...` uses it. Serving costs the data plane
+  nothing (`TestServingCostsTheDataPlaneNothing`). The old request shape,
+  branch-pipeline parser, command and step registries, and the argument
+  helper packages are deleted; one parser (`launch`) remains.
+- Breaking: every JSON view speaks camelCase. `snapshot`, `pipeline.GraphStats`
+  and `NodeStats`, `codec.Spec` and `CodecSettings`, and the `av` stream,
+  codec-parameter, and time types gain json tags (`mediaKind`, `sampleRate`,
+  `inPackets`), matching `plan` and `pipeline.Spec`; `av.Buffer` marshals as
+  base64 bytes, and a stats snapshot's last event stays out of the JSON.
+
+- Go 1.27 generic methods where they remove assertions. Breaking:
+  `BuildError.Detail[T](key) (T, bool)` returns the detail typed
+  (`buildErr.Detail[av.CodecID]("codec")`), and `codec.Control[T](func(T)
+  error)` hands the callback the adapter's native value typed
+  (`codec.Control(func(e *gopus.Encoder) error {...})`; a mismatch fails the
+  open naming both types). The README builds, runs, and installs with
+  `GOEXPERIMENT=simd` throughout, pinned by a test.
+
 - `launch` is goav's pipeline language: recipes as text for command lines,
   config files, and control sockets. `launch.Compile(program, options...)`
   returns ordinary Outputs, the same graph the Go recipe builds (pinned node

@@ -266,36 +266,37 @@ type Graph interface {
 
 // GraphStats is a point-in-time counter snapshot for the whole graph, with
 // per-node detail under Nodes. Dropped counts deliberate sheds, keyed by
-// reason in DropReasons.
+// reason in DropReasons. The last event stays out of the JSON: watch the
+// task for its events.
 type GraphStats struct {
-	Messages         uint64
-	Packets          uint64
-	Frames           uint64
-	Events           uint64
-	EventsByType     map[av.EventType]uint64
-	Dropped          uint64
-	DropReasons      map[DropPolicy]uint64
-	Delivered        uint64
-	LastEvent        av.Event
-	LastEventPresent bool
-	Nodes            map[string]NodeStats
+	Messages         uint64                  `json:"messages"`
+	Packets          uint64                  `json:"packets"`
+	Frames           uint64                  `json:"frames"`
+	Events           uint64                  `json:"events"`
+	EventsByType     map[av.EventType]uint64 `json:"eventsByType,omitempty"`
+	Dropped          uint64                  `json:"dropped"`
+	DropReasons      map[DropPolicy]uint64   `json:"dropReasons,omitempty"`
+	Delivered        uint64                  `json:"delivered"`
+	LastEvent        av.Event                `json:"-"`
+	LastEventPresent bool                    `json:"-"`
+	Nodes            map[string]NodeStats    `json:"nodes,omitempty"`
 }
 
 // NodeStats is one node's counter snapshot: messages in and out by kind,
 // drops by reason, and the last event seen.
 type NodeStats struct {
-	InMessages       uint64
-	InPackets        uint64
-	InFrames         uint64
-	InEvents         uint64
-	OutMessages      uint64
-	OutPackets       uint64
-	OutFrames        uint64
-	OutEvents        uint64
-	Dropped          uint64
-	DropReasons      map[DropPolicy]uint64
-	LastEvent        av.Event
-	LastEventPresent bool
+	InMessages       uint64                `json:"inMessages"`
+	InPackets        uint64                `json:"inPackets"`
+	InFrames         uint64                `json:"inFrames"`
+	InEvents         uint64                `json:"inEvents"`
+	OutMessages      uint64                `json:"outMessages"`
+	OutPackets       uint64                `json:"outPackets"`
+	OutFrames        uint64                `json:"outFrames"`
+	OutEvents        uint64                `json:"outEvents"`
+	Dropped          uint64                `json:"dropped"`
+	DropReasons      map[DropPolicy]uint64 `json:"dropReasons,omitempty"`
+	LastEvent        av.Event              `json:"-"`
+	LastEventPresent bool                  `json:"-"`
 }
 
 // GraphConfig configures a new graph: its name, realtime pacing, the default

@@ -152,10 +152,10 @@ func TestBuildErrorTypedDetailsAndFixes(t *testing.T) {
 		},
 		cause: errUnsupportedBuild,
 	}
-	if got, ok := buildErr.Detail("codec"); !ok || got != av.CodecOpus {
+	if got, ok := buildErr.Detail[av.CodecID]("codec"); !ok || got != av.CodecOpus {
 		t.Fatalf("codec detail = %#v, %v; want %q, true", got, ok, av.CodecOpus)
 	}
-	if got, ok := buildErr.Detail("attempts"); !ok || got != 2 {
+	if got, ok := buildErr.Detail[int]("attempts"); !ok || got != 2 {
 		t.Fatalf("attempts detail = %#v, %v; want 2, true", got, ok)
 	}
 	rendered := buildErr.Error()
@@ -165,7 +165,7 @@ func TestBuildErrorTypedDetailsAndFixes(t *testing.T) {
 		t.Fatalf("rendered typed BuildError = %q", rendered)
 	}
 
-	if got, ok := (&BuildError{}).Detail("format"); ok || got != nil {
+	if got, ok := (&BuildError{}).Detail[av.FormatID]("format"); ok || got != "" {
 		t.Fatalf("empty detail = %#v, %v; want nil, false", got, ok)
 	}
 }

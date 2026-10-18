@@ -7,6 +7,7 @@ import (
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
+	gopuslib "github.com/thesyncim/gopus"
 )
 
 func TestOpusEncoderBitrateChangedRetargetsLive(t *testing.T) {
@@ -114,5 +115,34 @@ func TestOpusEncoderReframesArbitraryFrameSizes(t *testing.T) {
 	// lookahead the flush drains, so its 952 decoded samples all carry input.
 	if last := packets[len(packets)-1]; last.Duration != av.SamplesDuration(total%960+312, 48000) {
 		t.Fatalf("tail duration = %+v, want %d samples", last.Duration, total%960+312)
+	}
+}
+
+// TestOpusEncoderControlIsTyped pins codec.Control's typed form: the adapter
+// hands the callback its *gopus.Encoder, and a callback for another type
+// fails the open naming both types.
+func TestOpusEncoderControlIsTyped(t *testing.T) {
+	ctx := context.Background()
+	config := opusEncodeConfig()
+	var got int
+	codec.Control(func(e *gopuslib.Encoder) error {
+		if err := e.SetComplexity(3); err != nil {
+			return err
+		}
+		got = e.Complexity()
+		return nil
+	})(&config.Settings)
+	if err := (&Encoder{}).Open(ctx, config); err != nil {
+		t.Fatal(err)
+	}
+	if got != 3 {
+		t.Fatalf("complexity = %d after Control, want 3", got)
+	}
+
+	config = opusEncodeConfig()
+	codec.Control(func(*strings.Builder) error { return nil })(&config.Settings)
+	err := (&Encoder{}).Open(ctx, config)
+	if err == nil || !strings.Contains(err.Error(), "Control wants *strings.Builder") {
+		t.Fatalf("open with a mistyped Control: err = %v, want the type mismatch", err)
 	}
 }

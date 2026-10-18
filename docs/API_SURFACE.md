@@ -50,7 +50,7 @@ in.To(dst)                                copy every stream of the input
 rt.Run(ctx, outputs...); rt.Build/Describe/Explain; bundle.Run/Build/Describe/Explain (default bundle)
 Task: Run, Close
 goav.New(runconfig.Option...) -> (*Runtime, error); bundle.MustNew(...) -> bundled Runtime
-errors: *goav.BuildError matched with errors.As; branch on Family first; Detail(key) for typed facts; DetailLines/FixLines for rendered diagnostics
+errors: *goav.BuildError matched with errors.As; branch on Family first; Detail[T](key) for typed facts; DetailLines/FixLines for rendered diagnostics
 ```
 
 The checked operation reference is
@@ -141,16 +141,16 @@ use [`docs/ADAPTERS.md`](ADAPTERS.md) and the
   results, `codec.ParameterReporter` for encoder-reported parameters, `runconfig.WithDecoder`/`WithEncoder`/`WithCodecAdapter`/
   `WithCodecDescriptor`.
 - **Control hosts** (governed pre-v1, see [`COMPATIBILITY.md`](COMPATIBILITY.md#governed-pre-v1)):
-  `ctlserver` is the supported package for applications that run a task and
-  expose it to `goav ctl --control unix://...`. It reuses the same allowlisted
-  command framework as the bundled command: external hosts pass `CommandSpec`
-  for app-specific control verbs, `PipelineRegistry` for custom
-  branch-pipeline steps and encoder names, `ValidateCapabilities` to preflight
-  host-owned names/aliases/settings metadata, and `ServeUnixWithOptions` to
-  put those hooks behind a socket. Generic branch pipelines can also encode
-  runtime-registered custom codecs with `encode codec=<id> media=<kind> ...`.
-  The same socket renders live graph diagnostics through `goav ctl graph`
-  (`format=mermaid|dot|text`).
+  `ctlserver` serves a running task over JSON-RPC 2.0 to `goav ctl` and other
+  clients. Server side: `New(task, options...)` with `Files` (the
+  `launch.FileSystem` attached programs may touch), `Elements` (host
+  `launch.Element`s), and `Method[T]` (a typed host method), served by
+  `Server.ListenAndServe`/`Serve` or mounted as an `http.Handler`. Client
+  side: `Dial`, `Client.Call[T]`, `Watch`, and `Close`. Wire values:
+  `Attached`, `Capabilities`/`MethodInfo`/`Param`, `Event`/`Track`, and
+  `Error` with the `Code*` constants. Attached programs encode
+  runtime-registered codecs with `encode <id> media=<kind> ...`, and
+  `describe format=text|dot|mermaid` renders the live graph.
 - **Containers**: `format` Prober/Demuxer/Muxer/factories, Seeker for
   seekable inputs, `runconfig.WithDemuxer`/`WithMuxer`/`WithFormatAdapter`/
   `WithProber`.
@@ -208,9 +208,9 @@ implement, with the executable evidence:
   every encoder of that source. Untargeted
   controls only infer a destination when exactly one valid target exists;
   otherwise callers use `.AtTap(...)`, `.At(...)`, `source=...`, or `node=...`.
-  Hosts that need CLI access import `ctlserver`, add explicit `CommandSpec` rows for
-  new verbs, and add `PipelineRegistry` rows for custom runtime branch
-  components. There is no global registry and no arbitrary method invocation.
+  Hosts that need remote access import `ctlserver`, add new verbs with
+  `Method[T]`, and add custom runtime branch components with `Elements`.
+  There is no global registry and no arbitrary method invocation.
 
 ## C. Expert tier
 

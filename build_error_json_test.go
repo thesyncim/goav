@@ -98,7 +98,7 @@ func TestErrorDetailsAreMachineReadable(t *testing.T) {
 			if d.Key == "" {
 				continue
 			}
-			if _, ok := buildErr.Detail(d.Key); !ok {
+			if _, ok := buildErr.Detail[any](d.Key); !ok {
 				t.Fatalf("detail key %q for %s is in JSON but not readable via Detail()", d.Key, buildErr.Code)
 			}
 		}

@@ -80,7 +80,7 @@ retain, not as an automatic v1 promise.
 | --- | --- | --- |
 | Expert graph | [`expert`](API_SURFACE.md) (tier C), `graphrender` | Handle-based graph escape hatch off the grammar; not needed for the normal path. |
 | Runtime Attach / Detach / Rebranch, raw controls, advanced observation | [`OPERATIONS.md`](OPERATIONS.md), `LiveTask` | Live graph mutation and control; they depend on the `LiveTask` from `rt.Build`, outside the `rt.Run` front door. |
-| Control-plane socket host | [`CONTROL_PLANE.md`](CONTROL_PLANE.md), `ctlserver` | Out-of-band live control over a socket; an application-hosting concern. |
+| Control-plane socket host | [`CONTROL_PLANE.md`](CONTROL_PLANE.md), `ctlserver` | Out-of-band live control over a socket or HTTP; an application-hosting concern. |
 | Broad `OnStream` dynamic rules | [`USE_CASES.md`](USE_CASES.md) | Only identity stream-rule cases are v1; broader dynamic breadth stays governed. |
 | `Mix` / `Composite` / `Select` / custom `Join` | [`MULTI_INPUT.md`](MULTI_INPUT.md), [`OPERATIONS.md`](OPERATIONS.md) | N-to-1 convergence; powerful but not a beginner workflow. |
 | Live provider transcode | [`USE_CASES.md`](USE_CASES.md) | Held until compiler support for live transcode is real, not just wired. |
@@ -116,7 +116,7 @@ baseline.
   land before v1 when they are recorded in `CHANGELOG.md`.
 - Structured errors: switch on `BuildError.Family` first. `BuildError.Code` is
   a detailed diagnostic leaf that may grow within a family before v1. Read
-  machine facts with `Detail(key)` and render diagnostics with
+  machine facts with `Detail[T](key)` and render diagnostics with
   `DetailLines()` / `FixLines()`; the backing detail/fix records are
   intentionally not public DTOs.
 - Extension seams stay documented and tested but may grow as new adapters need
@@ -202,7 +202,7 @@ Migration notes:
 - Replace `Mux(name, destination)` with the destination value itself, passed
   to every Output that shares it.
 - Switch structured-error callers from legacy details/suggestions fields to
-  `Detail(key)`, `DetailLines()`, and `FixLines()`.
+  `Detail[T](key)`, `DetailLines()`, and `FixLines()`.
 - Add explicit `.Decode()` before frame transforms, real encoders, frame taps,
   or decoded-frame sinks; leave `.Decode()` out for packet-preserving flows.
 
@@ -211,7 +211,7 @@ Evidence:
 - Local patched-toolchain tests: `GOTOOLCHAIN=go1.27.2 go test -p 1 ./...`.
 - Local pure-Go tests: `CGO_ENABLED=0 go test -p 1 ./...`.
 - Local race subset:
-  `CGO_ENABLED=1 go test -race -count=1 . ./pipeline ./goavtest ./format ./cmd/goav ./ctlserver ./internal/launchctl ./graphrender`.
+  `CGO_ENABLED=1 go test -race -count=1 . ./pipeline ./goavtest ./format ./cmd/goav ./ctlserver ./launch ./graphrender`.
 - Local static checks: `go vet ./...` and
   `go run honnef.co/go/tools/cmd/staticcheck@latest ./...`.
 - Local formatting check: `test -z "$(gofmt -l .)"`.

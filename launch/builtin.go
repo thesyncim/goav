@@ -15,8 +15,6 @@ import (
 	"github.com/thesyncim/goav/component"
 	"github.com/thesyncim/goav/filter"
 	"github.com/thesyncim/goav/flow"
-	"github.com/thesyncim/goav/internal/cliargs"
-	"github.com/thesyncim/goav/internal/codecargs"
 	"github.com/thesyncim/goav/shape"
 )
 
@@ -386,11 +384,11 @@ func encodeElement() *element {
 			opts = append(opts, codec.Bitrate(a.Bitrate))
 		}
 		if a.FPS != "" {
-			fps, err := cliargs.ParseFPS(a.FPS)
-			if err != nil {
+			fps, ok := parseRate(a.FPS)
+			if !ok {
 				return value{}, &Error{Pos: -1, Msg: "fps " + quote(a.FPS) + " is not a frame rate", Hint: "write fps=30 or fps=30000/1001"}
 			}
-			opts = append(opts, codec.FPS(fps.Num, fps.Den))
+			opts = append(opts, codec.FPS(fps.num, fps.den))
 		}
 		if a.KeyframeInterval > 0 {
 			opts = append(opts, codec.KeyframeInterval(a.KeyframeInterval))
@@ -423,7 +421,7 @@ func encodeElement() *element {
 		if media == "" && !knownCodec(id) {
 			return value{}, &Error{Pos: -1, Msg: "goav does not know which media " + a.Codec + " encodes", Hint: "write encode " + a.Codec + " media=video (or media=audio)"}
 		}
-		return value{kind: kindStream, stream: in.stream.Encode(codecargs.BuildSpec(id, media, opts...))}, nil
+		return value{kind: kindStream, stream: in.stream.Encode(codecSpec(id, media, opts...))}, nil
 	}
 	return el
 }
@@ -434,4 +432,22 @@ func knownCodec(id av.CodecID) bool {
 		return true
 	}
 	return false
+}
+
+// codecSpec is the codec package's constructor for a known codec, so a
+// program's encoder is the value Go code would build.
+func codecSpec(id av.CodecID, media av.MediaType, opts ...codec.Option) codec.Spec {
+	switch id {
+	case av.CodecVP8:
+		return codec.VP8(opts...)
+	case av.CodecVP9:
+		return codec.VP9(opts...)
+	case av.CodecAV1:
+		return codec.AV1(opts...)
+	case av.CodecH264:
+		return codec.H264(opts...)
+	case av.CodecOpus:
+		return codec.Opus(opts...)
+	}
+	return codec.Codec(id, media, opts...)
 }

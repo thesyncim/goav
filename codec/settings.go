@@ -1,6 +1,11 @@
 package codec
 
-import "github.com/thesyncim/goav/av"
+import (
+	"fmt"
+	"reflect"
+
+	"github.com/thesyncim/goav/av"
+)
 
 // Audio channel-count shorthands.
 const (
@@ -96,15 +101,26 @@ func ClockRate(clockRate uint32) Option {
 	return func(s *CodecSettings) { s.ClockRate = clockRate }
 }
 
-// Control is the raw escape hatch: at encoder/decoder open the adapter invokes fn
-// with its concrete native encoder/decoder, so you can type-assert to the real
-// type and apply anything the underlying library exposes. A non-nil error fails
-// the open. This single callback covers every codec-specific knob the common
-// typed settings do not.
-func Control(fn func(any) error) Option {
+// Control is the raw escape hatch: when the codec opens, the adapter calls fn
+// with its concrete native encoder or decoder (or the construction config it
+// documents), so host code applies anything the backend exposes. T is that
+// native type, inferred from fn:
+//
+//	codec.Opus(codec.Control(func(e *gopus.Encoder) error { return e.SetComplexity(10) }))
+//
+// A native value that is not a T fails the open, naming both types, as does
+// an error from fn.
+func Control[T any](fn func(T) error) Option {
 	return func(s *CodecSettings) {
-		if fn != nil {
-			s.Control = fn
+		if fn == nil {
+			return
+		}
+		s.Control = func(native any) error {
+			v, ok := native.(T)
+			if !ok {
+				return fmt.Errorf("codec: Control wants %s, the adapter offers %T", reflect.TypeFor[T](), native)
+			}
+			return fn(v)
 		}
 	}
 }

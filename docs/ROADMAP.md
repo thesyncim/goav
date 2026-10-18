@@ -129,7 +129,7 @@ enforcement that no longer exists. The inventory:
   (`Attach`/`Detach` with `DrainBranch`/`AbortBranch`, `Rebranch`), controls
   (`Control`), and observation (`Watch`; unfiltered `Watch()` observes every
   task event); `New`, `Runtime.Run`/`Build`/`Describe`/`Explain`, and the `bundle` runtime helpers; structured
-  `BuildError` with stable families, detailed codes, `Detail(key)`,
+  `BuildError` with stable families, detailed codes, `Detail[T](key)`,
   `DetailLines()`, and `FixLines()`; the `plan`, `snapshot`, `lifecycle`,
   `shape`, `flow`, and `av` vocabulary packages. Runtime
   mutation/control/advanced observation and joined-stream breadth are governed

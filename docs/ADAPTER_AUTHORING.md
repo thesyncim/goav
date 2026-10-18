@@ -35,8 +35,9 @@ The copyable, separate-module examples are:
   `goav.Join(...)`.
 - **`examples/transactional-writer`**: opens a destination with `goav.Writer`
   and demonstrates `provider.TransactionalWriter` commit/abort semantics.
-- **`examples/control-plane-host`**: exposes app-owned controls, branch steps,
-  sinks, and encoder spellings through a validated `ctlserver.CapabilitySet`.
+- **`examples/control-plane-host`**: serves a live task with typed host methods
+  (`ctlserver.Method`) and its own pipeline elements (`launch.Stage`, `Sink`,
+  `Encoder`) for the programs clients attach.
 
 When writing your adapter, start from the smallest shipped implementation that
 matches the kind of boundary you own:
@@ -67,7 +68,7 @@ message path simple.
   worker, so per-message state needs no locking. Factories may serve several
   builds; keep them stateless or guard shared state.
 - **Errors**: build-time refusals reach users as `*goav.BuildError` with a
-  stable family, detailed code, `Detail(key)`, and rendered detail/fix lines;
+  stable family, detailed code, `Detail[T](key)`, and rendered detail/fix lines;
   preflight checks descriptors and registries before anything opens
   (`FamilyCodec`, `FamilyTransform`, `FamilyInput`, `FamilyDestination`, ...).
   Return typed sentinels for unsupported config at open
@@ -128,10 +129,11 @@ exhausted -> `codec.ErrResultFull`; preallocated plane/payload too small ->
 `codec.ErrOutputBufferTooSmall`. Honor `DecodeConfig.Bounds` when sizing
 internal arenas. Read `CodecSettings` at open: typed fields such as bitrate,
 cadence, profile, audio shape overrides, and `Custom` adapter-owned keys all
-arrive through the same settings value. The string launcher and control plane
-reflect exported `CodecSettings` fields tagged with `goavctl`, `usage`, and
-`help`; adding a tagged field makes it bindable and visible in generated
-`goav ctl help attach` / `goav ctl capabilities` output. Invoke the raw
+arrive through the same settings value. The pipeline language's `encode`
+binds the common settings and passes any other `key=value` through as
+`codec.Setting`, so a native knob needs no registration
+(`encode av1 tune=zerolatency`); `goav elements` and the control plane's
+`capabilities` list the common ones. Invoke the raw
 `Control func(any) error` escape hatch with your concrete native handle when a
 setting truly belongs to the native library; a non-nil error fails the open.
 
@@ -279,8 +281,9 @@ var rt = bundle.MustNew(
 `FilterInto` and `FlushInto` may append both `out.Events` and `out.Frames`;
 `filter.Stage` emits result events before result frames, forwards input events
 after `HandleEvent`, and flushes before forwarding `av.EventEndOfStream`.
-External hosts that want a new CLI-visible branch primitive should wrap the
-filter in an allowlisted `PipelineRegistry` step; see `docs/CONTROL_PLANE.md`.
+To make a filter a word in the pipeline language, for `goav run` or for
+programs attached through the control plane, return its stage from a
+`launch.Stage` element; see `docs/CONTROL_PLANE.md`.
 
 ## Custom solver deltas
 

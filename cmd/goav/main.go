@@ -2,12 +2,14 @@
 package main
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
-	"net"
 	"os"
+	"os/signal"
 	"strings"
 
 	"github.com/thesyncim/goav/ctlserver"
@@ -48,39 +50,112 @@ func run(argv []string, stdout io.Writer, stderr io.Writer) int {
 	}
 }
 
+const ctlUsage = `usage: goav ctl --control unix://PATH <method> [key=value...]
+
+  goav ctl ... capabilities                    the server's methods and elements
+  goav ctl ... describe format=text            the graph (json, text, dot, mermaid)
+  goav ctl ... stats | snapshot | taps | explain
+  goav ctl ... watch [types=a,b] [stream=id]   events as JSON lines, until Ctrl-C
+  goav ctl ... attach '<program>'              e.g. 'tap live ! encode vp8 ! as preview ! file p.webm'
+  goav ctl ... rebranch NAME '<program>' [switch=next-keyframe]
+  goav ctl ... detach NAME [outcome=drain]
+  goav ctl ... bitrate stream=hd bitrate=1M | keyframe stream=hd | seek position=2s
+  goav ctl ... rate value=0.5 | pause | resume | stop
+
+--control also takes tcp://host:port. Values are JSON-free: 1M, 2s, a,b.
+`
+
+// positional names the params a method takes without key=: attach's
+// program, detach's attachment.
+var positional = map[string][]string{
+	"attach":   {"program"},
+	"detach":   {"attachment"},
+	"rebranch": {"attachment", "program"},
+	"unwatch":  {"subscription"},
+}
+
 func runCtlCommand(argv []string, stdout io.Writer, stderr io.Writer) int {
 	control, args, err := parseCtlArgs(argv)
 	if err != nil {
 		printErr(stderr, err)
 		return 2
 	}
-	if len(args) == 0 || (args[0] == "help" && control == "") {
-		topic := args
-		if len(topic) != 0 {
-			topic = topic[1:]
-		}
-		text, err := ctlserver.Help(topic)
-		if err != nil {
-			printErr(stderr, err)
-			return 2
-		}
-		fmt.Fprint(stdout, text)
+	if len(args) == 0 || args[0] == "help" || args[0] == "-h" || args[0] == "--help" {
+		fmt.Fprint(stdout, ctlUsage)
 		return 0
 	}
-	request, err := ctlserver.RequestFromCLI(args)
+	if control == "" {
+		printErr(stderr, errors.New("goav ctl: missing --control unix://PATH"))
+		return 2
+	}
+	method := args[0]
+	params, err := ctlParams(method, args[1:])
 	if err != nil {
 		printErr(stderr, err)
 		return 2
 	}
-	if control == "" {
-		printErr(stderr, fmt.Errorf("missing --control unix://PATH"))
-		return 2
-	}
-	if err := sendWithOutput(control, request, stdout); err != nil {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+	client, err := ctlserver.Dial(ctx, control)
+	if err != nil {
 		printErr(stderr, err)
 		return 1
 	}
+	defer client.Close()
+	if method == "watch" {
+		events, err := client.Watch(ctx, params)
+		if err != nil {
+			printErr(stderr, err)
+			return 1
+		}
+		enc := json.NewEncoder(stdout)
+		for e := range events {
+			if err := enc.Encode(e); err != nil {
+				return 1
+			}
+		}
+		return 0
+	}
+	result, err := client.Call[json.RawMessage](ctx, method, params)
+	if err != nil {
+		printErr(stderr, err)
+		return 1
+	}
+	var text string
+	if json.Unmarshal(result, &text) == nil {
+		fmt.Fprint(stdout, text)
+		if !strings.HasSuffix(text, "\n") {
+			fmt.Fprintln(stdout)
+		}
+		return 0
+	}
+	var pretty bytes.Buffer
+	if json.Indent(&pretty, result, "", "  ") != nil {
+		pretty.Reset()
+		pretty.Write(result)
+	}
+	fmt.Fprintln(stdout, pretty.String())
 	return 0
+}
+
+// ctlParams turns key=value arguments, and a method's positional ones, into
+// params; the server parses each value for its param's type.
+func ctlParams(method string, args []string) (map[string]string, error) {
+	params := map[string]string{}
+	names := positional[method]
+	for _, arg := range args {
+		key, value, ok := strings.Cut(arg, "=")
+		if ok && !strings.ContainsAny(key, " !'\"") {
+			params[key] = value
+			continue
+		}
+		if len(names) == 0 {
+			return nil, fmt.Errorf("goav ctl %s: %q is not key=value", method, arg)
+		}
+		params[names[0]] = arg
+		names = names[1:]
+	}
+	return params, nil
 }
 
 func parseCtlArgs(argv []string) (string, []string, error) {
@@ -91,7 +166,7 @@ func parseCtlArgs(argv []string) (string, []string, error) {
 		switch {
 		case arg == "--control":
 			if i+1 >= len(argv) {
-				return "", nil, fmt.Errorf("--control needs unix://PATH")
+				return "", nil, errors.New("goav ctl: --control needs unix://PATH or tcp://host:port")
 			}
 			control = argv[i+1]
 			i++
@@ -102,84 +177,6 @@ func parseCtlArgs(argv []string) (string, []string, error) {
 		}
 	}
 	return control, args, nil
-}
-
-func send(address string, request ctlserver.Request) error {
-	return sendWithOutput(address, request, os.Stdout)
-}
-
-func sendWithOutput(address string, request ctlserver.Request, stdout io.Writer) error {
-	path, ok := strings.CutPrefix(address, "unix://")
-	if !ok || path == "" {
-		return fmt.Errorf("unsupported control address %q: expected unix://PATH", address)
-	}
-	conn, err := net.Dial("unix", path)
-	if err != nil {
-		return err
-	}
-	defer conn.Close()
-	encoder := json.NewEncoder(conn)
-	if err := encoder.Encode(request); err != nil {
-		return err
-	}
-	var response ctlserver.Response
-	if follows(request) {
-		decoder := json.NewDecoder(conn)
-		for {
-			err := decoder.Decode(&response)
-			if errors.Is(err, io.EOF) {
-				return nil
-			}
-			if err != nil {
-				return err
-			}
-			if !response.OK {
-				if response.Error != nil {
-					return response.Error
-				}
-				return fmt.Errorf("control request failed")
-			}
-			if err := json.NewEncoder(stdout).Encode(response.Result); err != nil {
-				return err
-			}
-		}
-	}
-	if err := json.NewDecoder(conn).Decode(&response); err != nil {
-		return err
-	}
-	if !response.OK {
-		if response.Error != nil {
-			return response.Error
-		}
-		return fmt.Errorf("control request failed")
-	}
-	if rawText(request) {
-		text, ok := response.Result.(string)
-		if !ok {
-			return fmt.Errorf("control request returned %T, want text", response.Result)
-		}
-		fmt.Fprint(stdout, text)
-		return nil
-	}
-	return json.NewEncoder(stdout).Encode(response.Result)
-}
-
-func follows(request ctlserver.Request) bool {
-	switch request.Op {
-	case "events", "watch":
-		return request.Args["follow"] == "true"
-	default:
-		return false
-	}
-}
-
-func rawText(request ctlserver.Request) bool {
-	switch request.Op {
-	case "help", "graph", "flowchart":
-		return true
-	default:
-		return false
-	}
 }
 
 func printErr(stderr io.Writer, err error) {

@@ -315,10 +315,10 @@ func TestCopyContractCopyNeverIsSafeOnly(t *testing.T) {
 		if buildErr.Phase != phaseRun {
 			t.Fatalf("run err phase = %q, want %q", buildErr.Phase, phaseRun)
 		}
-		if got, ok := buildErr.Detail("cause"); !ok || got != "pipeline.ErrBufferedMessageUnsafe" {
+		if got, ok := buildErr.Detail[string]("cause"); !ok || got != "pipeline.ErrBufferedMessageUnsafe" {
 			t.Fatalf("cause detail = %#v, %v; want pipeline.ErrBufferedMessageUnsafe, true", got, ok)
 		}
-		if got, ok := buildErr.Detail("copy_never_branches"); !ok || got != "readonly" {
+		if got, ok := buildErr.Detail[string]("copy_never_branches"); !ok || got != "readonly" {
 			t.Fatalf("copy_never_branches detail = %#v, %v; want readonly, true", got, ok)
 		}
 		for _, want := range []string{
@@ -405,7 +405,7 @@ func TestCopyContractTooSmallBoundsAreStructured(t *testing.T) {
 	if buildErr.Phase != phaseRun {
 		t.Fatalf("run err phase = %q, want %q", buildErr.Phase, phaseRun)
 	}
-	if got, ok := buildErr.Detail("cause"); !ok || got != "pipeline.ErrMessageTooLarge" {
+	if got, ok := buildErr.Detail[string]("cause"); !ok || got != "pipeline.ErrMessageTooLarge" {
 		t.Fatalf("cause detail = %#v, %v; want pipeline.ErrMessageTooLarge, true", got, ok)
 	}
 	for _, want := range []string{

@@ -21,7 +21,7 @@ Match a refusal with `errors.As`, then switch on its fields:
 - **Reason**: one line saying why, including actual vs expected where it
   applies (`mix arm "b" cannot be converted to the join format (audio 44.1kHz
   1ch s16 -> audio 48kHz 2ch s16)`).
-- **Details**: typed facts for applications, read with `Detail(key)` and
+- **Details**: typed facts for applications, read with `Detail[T](key)` and
   rendered with `DetailLines()` for humans (`codec=opus`, `format=webm`,
   `actual_shape=...`). Internal invariants that are not user-fixable carry a
   detail explaining what happened instead of a fix.
@@ -62,10 +62,8 @@ if err != nil {
         case errcode.Code("shape_conversion_refused"):
             // widen the .Auto(...) policy
         }
-        if codecValue, ok := buildErr.Detail("codec"); ok {
-            if codecID, ok := codecValue.(av.CodecID); ok {
-                _ = codecID // choose a runtime or fallback by codec
-            }
+        if codecID, ok := buildErr.Detail[av.CodecID]("codec"); ok {
+            _ = codecID // choose a runtime or fallback by codec
         }
     }
 }

@@ -69,50 +69,7 @@
           }
         ],
         "encode": {
-          "ID": "",
-          "Type": "",
-          "Parameters": {
-            "ID": "",
-            "Type": "",
-            "Profile": "",
-            "Level": "",
-            "ClockRate": 0,
-            "SampleRate": 0,
-            "Channels": 0,
-            "ChannelLayout": "",
-            "Width": 0,
-            "Height": 0,
-            "PixelFormat": "",
-            "SampleFormat": "",
-            "ExtraData": {
-              "Bytes": null,
-              "Ownership": "",
-              "Owner": null
-            },
-            "Attributes": null
-          },
-          "Settings": {
-            "Bitrate": 0,
-            "Framerate": {
-              "Value": 0,
-              "Base": {
-                "Num": 0,
-                "Den": 0
-              }
-            },
-            "KeyframeInterval": 0,
-            "Profile": "",
-            "Level": "",
-            "Channels": 0,
-            "SampleRate": 0,
-            "ClockRate": 0,
-            "ChannelLayout": "",
-            "ChannelsSet": false,
-            "SampleRateSet": false,
-            "Custom": null
-          },
-          "Copy": true,
-          "Auto": false
+          "copy": true
         },
         "destinations": [
           "out.mkv"

@@ -13,53 +13,53 @@ import (
 
 // Tap describes one named media outlet a task exposes for runtime branches.
 type Tap struct {
-	Name      string
-	MediaKind av.MediaType
-	Domain    shape.MediaDomain
-	After     plan.OperationKind
-	Shape     shape.Spec
-	Node      pipeline.NodeRef
+	Name      string             `json:"name"`
+	MediaKind av.MediaType       `json:"mediaKind,omitempty"`
+	Domain    shape.MediaDomain  `json:"domain,omitempty"`
+	After     plan.OperationKind `json:"after,omitempty"`
+	Shape     shape.Spec         `json:"shape,omitzero"`
+	Node      pipeline.NodeRef   `json:"node,omitempty"`
 }
 
 // Task is an immutable point-in-time view of a task's graph, taps, active
 // runtime branches, and counters.
 type Task struct {
-	State lifecycle.TaskState
+	State lifecycle.TaskState `json:"state"`
 	// Paused reports whether the task timeline is frozen by Task.Pause. It is
 	// orthogonal to State: a paused task still reports its run progress.
-	Paused       bool
-	Spec         pipeline.Spec
-	Stats        pipeline.GraphStats
-	Taps         []Tap
-	Branches     []Branch
-	Destinations []Destination
+	Paused       bool                `json:"paused,omitempty"`
+	Spec         pipeline.Spec       `json:"spec"`
+	Stats        pipeline.GraphStats `json:"stats"`
+	Taps         []Tap               `json:"taps,omitempty"`
+	Branches     []Branch            `json:"branches,omitempty"`
+	Destinations []Destination       `json:"destinations,omitempty"`
 }
 
 // Branch is an immutable point-in-time view of one runtime branch attached
 // to a running task.
 type Branch struct {
-	ID           string
-	Name         string
-	State        lifecycle.BranchState
-	AnchorTaps   []string
-	AnchorNodes  []string
-	Nodes        []pipeline.NodeRef
-	Taps         []Tap
-	Destinations []Destination
-	Spec         pipeline.Spec
-	Stats        pipeline.GraphStats
+	ID           string                `json:"id"`
+	Name         string                `json:"name"`
+	State        lifecycle.BranchState `json:"state"`
+	AnchorTaps   []string              `json:"anchorTaps,omitempty"`
+	AnchorNodes  []string              `json:"anchorNodes,omitempty"`
+	Nodes        []pipeline.NodeRef    `json:"nodes,omitempty"`
+	Taps         []Tap                 `json:"taps,omitempty"`
+	Destinations []Destination         `json:"destinations,omitempty"`
+	Spec         pipeline.Spec         `json:"spec"`
+	Stats        pipeline.GraphStats   `json:"stats"`
 }
 
 // Destination is an immutable point-in-time view of a planned task or branch
 // destination.
 type Destination struct {
-	Name      string
-	Operation plan.OperationKind
-	Component string
-	Format    av.FormatID
-	Branches  []string
-	State     lifecycle.DestinationState
+	Name      string                     `json:"name"`
+	Operation plan.OperationKind         `json:"operation,omitempty"`
+	Component string                     `json:"component,omitempty"`
+	Format    av.FormatID                `json:"format,omitempty"`
+	Branches  []string                   `json:"branches,omitempty"`
+	State     lifecycle.DestinationState `json:"state"`
 	// Open is derived from State and kept for compatibility: it mirrors
 	// State == lifecycle.DestinationOpen.
-	Open bool
+	Open bool `json:"open"`
 }

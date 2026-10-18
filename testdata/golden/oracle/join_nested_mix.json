@@ -67,37 +67,18 @@
         "protocol": "custom",
         "streams": [
           {
-            "ID": "audio-1",
-            "Index": 0,
-            "Type": "audio",
-            "Codec": {
-              "ID": "",
-              "Type": "audio",
-              "Profile": "",
-              "Level": "",
-              "ClockRate": 48000,
-              "SampleRate": 48000,
-              "Channels": 2,
-              "ChannelLayout": "stereo",
-              "Width": 0,
-              "Height": 0,
-              "PixelFormat": "",
-              "SampleFormat": "s16",
-              "ExtraData": {
-                "Bytes": null,
-                "Ownership": "",
-                "Owner": null
-              },
-              "Attributes": null
+            "id": "audio-1",
+            "index": 0,
+            "type": "audio",
+            "codec": {
+              "type": "audio",
+              "clockRate": 48000,
+              "sampleRate": 48000,
+              "channels": 2,
+              "channelLayout": "stereo",
+              "sampleFormat": "s16"
             },
-            "TimeBase": {
-              "Num": 0,
-              "Den": 0
-            },
-            "Language": "",
-            "Name": "audio-1",
-            "Epoch": 0,
-            "Metadata": null
+            "name": "audio-1"
           }
         ]
       },
@@ -106,37 +87,18 @@
         "protocol": "custom",
         "streams": [
           {
-            "ID": "audio-2",
-            "Index": 0,
-            "Type": "audio",
-            "Codec": {
-              "ID": "",
-              "Type": "audio",
-              "Profile": "",
-              "Level": "",
-              "ClockRate": 48000,
-              "SampleRate": 48000,
-              "Channels": 2,
-              "ChannelLayout": "stereo",
-              "Width": 0,
-              "Height": 0,
-              "PixelFormat": "",
-              "SampleFormat": "s16",
-              "ExtraData": {
-                "Bytes": null,
-                "Ownership": "",
-                "Owner": null
-              },
-              "Attributes": null
+            "id": "audio-2",
+            "index": 0,
+            "type": "audio",
+            "codec": {
+              "type": "audio",
+              "clockRate": 48000,
+              "sampleRate": 48000,
+              "channels": 2,
+              "channelLayout": "stereo",
+              "sampleFormat": "s16"
             },
-            "TimeBase": {
-              "Num": 0,
-              "Den": 0
-            },
-            "Language": "",
-            "Name": "audio-2",
-            "Epoch": 0,
-            "Metadata": null
+            "name": "audio-2"
           }
         ]
       },
@@ -145,37 +107,18 @@
         "protocol": "custom",
         "streams": [
           {
-            "ID": "audio-3",
-            "Index": 0,
-            "Type": "audio",
-            "Codec": {
-              "ID": "",
-              "Type": "audio",
-              "Profile": "",
-              "Level": "",
-              "ClockRate": 48000,
-              "SampleRate": 48000,
-              "Channels": 2,
-              "ChannelLayout": "stereo",
-              "Width": 0,
-              "Height": 0,
-              "PixelFormat": "",
-              "SampleFormat": "s16",
-              "ExtraData": {
-                "Bytes": null,
-                "Ownership": "",
-                "Owner": null
-              },
-              "Attributes": null
+            "id": "audio-3",
+            "index": 0,
+            "type": "audio",
+            "codec": {
+              "type": "audio",
+              "clockRate": 48000,
+              "sampleRate": 48000,
+              "channels": 2,
+              "channelLayout": "stereo",
+              "sampleFormat": "s16"
             },
-            "TimeBase": {
-              "Num": 0,
-              "Den": 0
-            },
-            "Language": "",
-            "Name": "audio-3",
-            "Epoch": 0,
-            "Metadata": null
+            "name": "audio-3"
           }
         ]
       }

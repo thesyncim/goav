@@ -20,7 +20,7 @@ func TestCLIDocumentationPinsTheLanguage(t *testing.T) {
 		"goav run      [--runtime default|demo|test] [--control unix://PATH] [-f FILE] '<program>'",
 		"goav describe [--runtime ...] [--format text|dot|mermaid|json] [-f FILE] '<program>'",
 		"goav elements",
-		"ctlserver.CapabilitySet",
+		"goav ctl      --control unix://PATH <method> [key=value...]",
 		"Hot-path media logic belongs in\nthe Go library.",
 	} {
 		if !strings.Contains(text, fragment) {
