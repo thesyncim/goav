@@ -101,9 +101,10 @@ The tables below mirror `bundle.Options()` and the descriptors registered by the
 
 Every "zero-alloc" adapter claim is test-enforced, not aspirational: each
 adapter carries a `testing.AllocsPerRun` guard (`TestMuxerWriteAllocs`,
-`TestDemuxerReadIntoAllocs`, `TestFilterAllocs`, decoder/encoder `*Allocs`
-tests) that fails the suite if the hot path starts allocating. The repo-wide
-proven/not-proven map is `docs/PERFORMANCE.md`.
+`TestDemuxerReadIntoAllocs`, `TestFilterAllocs`,
+`TestDecodePacketLossConcealmentAllocs`, decoder/encoder `*Allocs` tests) that
+fails the suite if the hot path starts allocating. The repo-wide
+proven/not-proven map is [`PERFORMANCE.md`](PERFORMANCE.md).
 
 All adapters are intentionally narrow; richer features (SVC controls, color
 metadata, high bit depth, floating-point PCM, higher-quality scalers, H264
@@ -119,3 +120,66 @@ output buffers and allocation tests. `goh264` remains decode-only in the
 default bundle for recipe encode: applications that need H.264 encoding must
 register a vetted encoder explicitly with `runconfig.WithEncoder` or a codec
 adapter.
+
+## Matroska and WebM notes
+
+`container/ebml`, `container/matroska`, and `container/webm` are the pure-Go
+Matroska/WebM layer. Like every container package they may use the generic
+`goav` media and format vocabulary, never codec implementations or runtime
+internals.
+
+- `container/ebml`: element IDs, VINTs, read/write helpers, bounded readers,
+  unknown-size masters, Void, CRC-32, seekable size patching.
+- `container/matroska`: tracks, packets, mux/demux, timestamps, seeking,
+  metadata, codec mapping, format registry adapters.
+- `container/webm`: a WebM profile wrapper with stricter codec, document type,
+  metadata, timestamp, and content-encoding validation.
+
+```go
+muxer, err := matroska.NewMuxer(w, matroska.MuxerOptions{})
+trackID, err := muxer.AddTrack(matroska.Track{
+    Type:  matroska.TrackVideo,
+    Codec: matroska.CodecVP8,
+    Video: matroska.VideoConfig{Width: 1280, Height: 720},
+})
+err = muxer.WritePacket(matroska.Packet{TrackID: trackID, TimeNS: 0, Keyframe: true, Data: frame})
+err = muxer.Close()
+
+demuxer, err := matroska.NewDemuxer(r, matroska.DemuxerOptions{})
+tracks := demuxer.Tracks()
+packet := matroska.Packet{Data: make([]byte, 0, maxPacket)}
+err = demuxer.ReadPacket(&packet)
+```
+
+`container/webm` has the same shape but rejects tracks and metadata outside
+the WebM profile.
+
+**Supported today**, for recording, remuxing, and WebRTC-shaped packet
+workflows: EBML/VINT handling; Segment, Info, Tracks, Cluster, SimpleBlock,
+BlockGroup (duration, references, discard padding, codec state, block
+additions); streaming output with unknown-size masters; seekable output with
+patched sizes, SeekHead, and Cues; cue-assisted seeking with packet-index
+fallback; Xiph/fixed/EBML lacing; track timestamp scale/offset conversion;
+attachments, chapters, tags, CRC-32; block-scope AES-CTR content encryption;
+caller-owned packet buffers on demux.
+
+**Codecs.** The packages map more than the bundle registers in the table
+above. Matroska carries Opus, Vorbis, FLAC, AAC, PCMU/PCMA, VP8, VP9, AV1,
+H.264, H.265, and S_TEXT/UTF8; WebM carries Opus, Vorbis, VP8, VP9, and AV1,
+which covers the WebRTC codec set. An omitted Opus `OpusHead` is generated;
+AV1, H.264, and H.265 configuration records are validated and can be generated
+from the first packet; Vorbis, FLAC, and AAC need caller-provided private data.
+
+**Validation.** Tests cover EBML, mux/demux round trips, WebRTC-shaped codecs,
+lacing, BlockGroup and cue paths, codec-private validation and generation,
+profile validation, malformed metadata and encrypted blocks, and steady-state
+write/read allocation guards. External checks run when `ffmpeg`, `mkvmerge`,
+or `mkvalidator` is installed; field-corpus tests and benchmarks run under
+`GOAV_MATROSKA_FIELD_CORPUS` and `GOAV_WEBM_FIELD_CORPUS`.
+
+**Not yet claimed.** This is not a stable v1 container API. It still needs a
+larger real-file corpus, differential tests against mature tools, a hardened
+corrupt corpus, an API review (names, ownership, seek semantics, possible
+extraction), and committed benchmark numbers before any performance-parity
+claim. Protocol-layer repair, retransmission, FEC, jitter buffering, and
+depacketization stay outside these packages.

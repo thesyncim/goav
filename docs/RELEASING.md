@@ -3,7 +3,8 @@
 Releases are tag-driven. CI can validate a tag and create the GitHub release,
 but the maintainer owns the compatibility decision and signed tag. Treat this
 as a release-day checklist: it tells you what evidence to refresh before a tag
-exists, and what automation is expected after the tag is pushed.
+exists, what automation is expected after the tag is pushed, and what the
+repository page should say meanwhile.
 
 ## Before Tagging
 
@@ -118,3 +119,35 @@ vet in the matching nested module before release creation.
 
 Manual dispatch defaults to a draft release. Tag pushes create ready releases;
 use manual draft mode when rehearsing release notes before announcing.
+
+## Repository trust
+
+No release is published until the maintainer cuts a signed v0.x or v1 tag. An
+empty release list is expected while the README says pre-v1 and
+[`ROADMAP.md`](ROADMAP.md) keeps the release decision open; the evidence a
+release needs is the checklist and gate matrix above.
+
+```sh
+gh release list --repo thesyncim/goav --limit 10
+```
+
+Expected GitHub metadata:
+
+- Description: `Pure-Go media workflow runtime for validated, inspectable, in-process audio/video pipelines`
+- Homepage: `https://pkg.go.dev/github.com/thesyncim/goav`
+- Topics: `audio`, `codecs`, `go`, `media`, `pure-go`, `realtime`, `rtp`,
+  `streaming`, `video`, `webrtc`
+
+```sh
+gh repo view thesyncim/goav \
+  --json description,homepageUrl,repositoryTopics,latestRelease \
+  --jq '{description, homepageUrl, topics: [.repositoryTopics[].name], latestRelease}'
+```
+
+The local trust files are part of the adoption surface and should agree with
+this page: [`README.md`](../README.md) (status, badges, doc links),
+`CHANGELOG.md` (release notes), [`CONTRIBUTING.md`](../CONTRIBUTING.md)
+(workflow and changelog rules), [`SECURITY.md`](../SECURITY.md) (private
+vulnerability reporting), `SUPPORT.md` (pre-v1 support expectations),
+`.github/PULL_REQUEST_TEMPLATE.md` (reviewer evidence checklist), and
+[`COMPATIBILITY.md`](COMPATIBILITY.md) (the compatibility note).

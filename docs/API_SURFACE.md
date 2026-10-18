@@ -21,7 +21,7 @@ The tiers are a reader map:
 - **D. Leakage**: public things that should not be public. This section should
   stay empty.
 
-The tiers also map onto the v1 freeze in [`V1_SCOPE.md`](V1_SCOPE.md): the tier-A
+The tiers also map onto the v1 freeze in [`COMPATIBILITY.md`](COMPATIBILITY.md#v1-scope): the tier-A
 front-door grammar plus the custom source/sink/codec/format extension points are
 v1-supported; the expert tier (C), the control-plane socket host, runtime
 `Attach`/`Detach`/`Rebranch`, and `Mix`/`Composite`/`Select`/custom `Join` are
@@ -95,7 +95,8 @@ option, then keep using the normal recipe grammar.
 
 For recipes and copyable examples, start with
 [`docs/EXTENSION_COOKBOOK.md`](EXTENSION_COOKBOOK.md). For reference detail,
-use [`docs/ADAPTERS.md`](ADAPTERS.md) and [`docs/COMPONENTS.md`](COMPONENTS.md).
+use [`docs/ADAPTERS.md`](ADAPTERS.md) and the
+[component catalog](EXTENSION_COOKBOOK.md#components-below-the-grammar).
 
 - **Sources**: use these when your application or transport owns incoming
   media. `provider.Source` (`OpenSource`), `goav.Source(fn)` with
@@ -113,7 +114,7 @@ use [`docs/ADAPTERS.md`](ADAPTERS.md) and [`docs/COMPONENTS.md`](COMPONENTS.md).
   caller-held value (io.Writer for `Write`, `provider.Destination` for
   `Custom`/`Writer`, `pipeline.Sink` for `Sink`) that callers wrap before
   passing.
-- **Joins** (governed pre-v1, see [`V1_SCOPE.md`](V1_SCOPE.md)): use these when
+- **Joins** (governed pre-v1, see [`COMPATIBILITY.md`](COMPATIBILITY.md#governed-pre-v1)): use these when
   several streams become one. `goav.Join(name, stage, streams...)` is N->1
   convergence with a caller-supplied `pipeline.Stage` as the convergence node.
   Mix, Composite, and Select are profiles over this same machinery; the
@@ -139,7 +140,7 @@ use [`docs/ADAPTERS.md`](ADAPTERS.md) and [`docs/COMPONENTS.md`](COMPONENTS.md).
 - **Codecs**: `codec` Descriptor/Decoder/Encoder/factories, caller-owned
   results, `codec.ParameterReporter` for encoder-reported parameters, `runconfig.WithDecoder`/`WithEncoder`/`WithCodecAdapter`/
   `WithCodecDescriptor`.
-- **Control hosts** (governed pre-v1, see [`V1_SCOPE.md`](V1_SCOPE.md)):
+- **Control hosts** (governed pre-v1, see [`COMPATIBILITY.md`](COMPATIBILITY.md#governed-pre-v1)):
   `ctlserver` is the supported package for applications that run a task and
   expose it to `goav ctl --control unix://...`. It reuses the same allowlisted
   command framework as the bundled command: external hosts pass `CommandSpec`
@@ -214,7 +215,7 @@ implement, with the executable evidence:
 ## C. Expert tier
 
 Handle-based graph work, deliberately off the grammar. This whole tier is
-**governed pre-v1** (see [`V1_SCOPE.md`](V1_SCOPE.md)): normal recipes never need
+**governed pre-v1** (see [`COMPATIBILITY.md`](COMPATIBILITY.md#governed-pre-v1)): normal recipes never need
 it, and v1 does not freeze its shape.
 
 - `expert.Graph(runtime)` -> `expert.GraphBuilder`/`GraphNode`/`GraphInlet`/
@@ -275,7 +276,7 @@ against the constructors in `input.go`/`provider.go`/`source.go`,
   `func(goav.Stream) goav.Stream` and owns no destination; reusing a Stream
   value forks it, and each fork's `.To(...)` owns its destinations.
 - **Attach vs Detach vs Rebranch** (governed pre-v1, see
-  [`V1_SCOPE.md`](V1_SCOPE.md)): `task.Attach` adds ordinary Outputs (from
+  [`COMPATIBILITY.md`](COMPATIBILITY.md#governed-pre-v1)): `task.Attach` adds ordinary Outputs (from
   `task.Tap`/`task.Track`) to a running task; `task.Detach(ctx, h)` removes that attached branch, with
   `lifecycle.DrainBranch()` and `lifecycle.AbortBranch()` selecting whether branch destinations
   commit or abort; `Attachment.Rebranch(ctx, outputs..., options...)` takes the same
@@ -343,8 +344,10 @@ executable:
   as an external consumer (`TestReadmeGoExamplesCompile`).
 - Error contract behavior: `error_acceptance_test.go` pins that refusals
   carry catalog codes and name their fixes.
-- Composability laws: `docs/COMPOSABILITY_LAWS.md` maps the front-door
-  invariants to executable tests.
+- Composition laws: the [table in `OPERATIONS.md`](OPERATIONS.md#composition-laws)
+  maps the front-door invariants to executable tests.
+- `docs_links_test.go`: every relative link in the README, contributor docs,
+  and living docs resolves (`TestDocsRelativeLinksResolve`).
 
 `adapters/*` and `container/*` are implementations behind the `codec`/`format`
 extension points (registered by `bundle.MustNew`), outside the core import
@@ -360,7 +363,7 @@ example modules. The module boundary is the dependency boundary:
   seams. Importing this package does not import bundled adapter packages.
 - **root module**: contains the root package, `goav/bundle`, bundled adapter
   packages, and pure-Go implementations. `goav/bundle` is a package, not a
-  nested module — a deliberate v1 decision (see [`V1_SCOPE.md`](V1_SCOPE.md)):
+  nested module — a deliberate v1 decision (see [`COMPATIBILITY.md`](COMPATIBILITY.md#module-and-dependency-decision)):
   package-level purity is enough because `TestRootImportDoesNotPullBundledAdapters`
   proves importing the root package pulls no bundled adapter, and
   `TestRootModuleDependencyPurity` pins that module requirements stay inside

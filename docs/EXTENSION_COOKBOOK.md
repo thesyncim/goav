@@ -2,11 +2,12 @@
 
 This is the copy-and-adapt guide for code outside the root module. Start here
 when you already know the thing you want to plug in: a source, destination,
-filter, codec, join, or control host.
+stage, filter, codec, join, or control host. It ends with the reusable
+components below the grammar, for code that wires graphs directly.
 
-Use `docs/ADAPTER_AUTHORING.md` for lifecycle details and hot-path rules; use
-this file when you want the smallest public seam that solves one extension
-problem.
+Use [`ADAPTER_AUTHORING.md`](ADAPTER_AUTHORING.md) for lifecycle details and
+hot-path rules; use this file when you want the smallest public seam that
+solves one extension problem.
 
 Every recipe here stays on the front-door grammar:
 
@@ -33,6 +34,7 @@ stage concern.
 | Open a transport or live provider | `provider.Source` via `goav.Input(provider)` | `examples/provider-source` | nil provider or missing codec/stream facts refuse before work starts |
 | Write bytes after format resolution | `goav.Writer(name, open, opts...)` | `examples/custom-destination` | nil opener or writer open error fails the task |
 | Commit or abort object-store uploads | `provider.TransactionalWriter` | `examples/transactional-writer` | induced pipeline error calls `Abort`, not `Commit` |
+| Run app code on each packet, frame, or event | `.Do(component.NewFrameStage(...))` or a `pipeline.Stage` | `components_test.go` | nil callback returns `component.ErrNilStageCallback` |
 | Replace a frame transform | `filter.Factory` + `runconfig.WithFilter` | `examples/custom-filter` | unsupported target returns `filter.ErrUnsupportedFormat` |
 | Add a codec | `codec.EncoderFactory` / `DecoderFactory` + `runconfig.WithEncoder` / `WithDecoder` | `examples/custom-codec` | descriptor-only registration reports adapter unavailable |
 | Converge several arms | `goav.Join(name, pipeline.Stage, streams...)` | `examples/custom-join` | incompatible arm media refuses at build time |
@@ -190,6 +192,43 @@ The runnable module `examples/transactional-writer` verifies both paths: the
 successful recipe commits once, and an induced frame-stage error aborts without
 committing.
 
+## Custom Stage
+
+Use `.Do(stage)` for per-message application code: meters, loggers, packet
+rewriters, or a frame transform that needs no shape solving. The `component`
+constructors wrap a callback as a `pipeline.Stage`:
+
+```go
+meter, err := component.NewFrameStage("meter", func(ctx context.Context, frame *av.Frame, emit component.Emit) error {
+    observe(frame)
+    return emit.Frame(frame)
+})
+if err != nil {
+    return err
+}
+err = rt.Run(ctx, input.Audio().Decode().Do(meter).To(out))
+```
+
+`NewPacketStage`, `NewFrameStage`, `NewEventStage`, and `NewSink` return
+`component.ErrNilStageCallback` or `ErrNilSinkCallback` for a nil callback
+immediately. The shorter `PacketFunc`, `FrameFunc`, `EventFunc`, and
+`SinkFunc` suit examples and tests; they report a nil callback later, during
+validation. A packet stage runs wherever the stream carries packets, on an
+undecoded stream or after the encoder as a bitstream filter
+(`.Encode(codec.VP8()).Do(sei)`); a frame stage there is refused.
+
+Implement `pipeline.Stage` directly when the stage needs explicit lifecycle,
+scratch reuse, or backpressure-specific behavior. A reusable stage should:
+
+- allocate scratch at construction or open, never in `Handle`;
+- forward events it does not consume, and flush before forwarding EOS when it
+  buffers (`TestComponentCustomStageForwardsEvents`,
+  `TestComponentCodecStageFlushesOnEOS`);
+- return deterministic errors for unsupported media or missing scratch;
+- document its accepted and emitted message shapes, borrowed-buffer lifetime,
+  executor safety, and EOS, flush, discontinuity, loss, codec-change, and
+  backpressure behavior, so a caller can wire it without reading the source.
+
 ## Custom Filter
 
 Use a filter when a frame-domain operation should participate in normal recipe
@@ -297,6 +336,42 @@ err := ctlserver.ServeUnixWithOptions(ctx, task, "unix:///tmp/goav.sock",
 `examples/control-plane-host` is the runnable playground. It registers a custom
 command, branch steps, and a custom encoder alias, then serves them behind a
 Unix socket.
+
+## Components Below The Grammar
+
+Recipes express intent, components do the media work, and expert graphs
+compose components directly. There is no separate components layer: each
+reusable piece lives in the domain package that owns its contract. (A reusable
+`func(goav.Stream) goav.Stream` is an ordered intent fragment, not a
+component.) **Stable** contracts should hold through normal iteration;
+**experimental** ones may change before a tag; **descriptor-only** adapters
+are visible for discovery while the factory waits behind a build tag. Each
+package pins its hot paths with allocation guards next to the contract;
+[`PERFORMANCE.md`](PERFORMANCE.md) is the proven/not-proven map.
+
+| Package | Stable | Experimental |
+|---|---|---|
+| `av` | `Packet`, `Frame`, `Event`, `Buffer`/`Plane` (ownership flags define retain/copy/reuse), and reset helpers so hot paths reuse structs | - |
+| `pipeline` | `Message`, `Source`, `Stage`, `Sink`, `Emitter`, `Route` (stream/event scoping), one-to-many fanout | dynamic graph mutation (closed graphs return `pipeline.ErrClosed`), buffer policy, graph stats; on a task, `task.Stats()`, `task.Snapshot()`, `task.Taps()`, and the `plan.Report` from `Explain` |
+| `component` | `NewPacketStage`, `NewFrameStage`, `NewEventStage`, `NewSink`, and the `*Func` helpers | - |
+| `codec` | `Registry`, `Descriptor` (identity + capability preflight), `DecoderFactory`/`EncoderFactory`, `DecoderStage` (packets -> frames; preserves realtime events, drives loss/PLC, flushes before EOS), `EncoderStage` (frames -> packets; observes control events, flushes delayed packets), caller-owned `DecodeResult`/`EncodeResult` | decode state factories for adapter scratch |
+| `format` | `Registry`, `Prober`, `Demuxer`/`Muxer`, `DemuxSource` (stream-added events, packets, EOS), `MuxStage` (writes packets, emits write-result events), caller-owned `ReadResult`/`WriteResult` | `Descriptor` capability metadata |
+| `filter` | `Registry`, `FrameFilter`, `SimpleRegistry` (descriptor metadata for `Explain`), `Stage` (frame transforms preserving events, flushing before EOS), caller-owned `Result` | - |
+| `rtpav` | `Source` (Pion RTP reader -> packets/events with payload maps, loss/timestamp tracking, depacketizers, EOS, feedback), `StaticPayloadMap`, `SequenceDetector` (allocation-free loss detection), `Depacketizer` and the Opus/VP8/VP9/H264/AV1 depacketizers, `FeedbackWriter` | `JitterBuffer` |
+| `webrtcav` | `TrackReader` (Pion `TrackRemote` as a packet reader) | `TrackSet` (track acceptance, same-stream replacement, codec updates) |
+| `playoutav` | - | `Input`: scheduled packets, frames, and events through `provider.Source`, in a nested module so playout does not widen the root dependency graph |
+| adapters | `adapters/gopus`, `goaac`, `ivf`, `annexb` | `adapters/govpx`, `goav1`, `goh264` (descriptor-only by default), `resample`, `resize`; see [`ADAPTERS.md`](ADAPTERS.md) |
+
+These are the shapes recipes compile toward and that `expert.Graph(runtime)`
+wires by hand. Component tests capture `pipeline.Spec` before execution and
+compare it after `Run`, so the graph you inspect is the graph that ran.
+
+| Pattern | Shape | Use it for |
+|---|---|---|
+| RTP Opus decode | `rtpav.Source -> rtpav.OpusDepacketizer -> codec.DecoderStage -> FrameFunc meter or pipeline.Sink` | Realtime analyzers, bots, and receive pipelines that own loss, codec-change, EOS, and feedback (`TestComponentRTPOpusDecodeGraph`). |
+| File remux fanout | `format.DemuxSource -> format.MuxStage archive`, `-> format.MuxStage preview` | Packet-preserving fanout when formats already match (`TestComponentFileRemuxFanout`). |
+| Analysis hook | `source -> PacketFunc or FrameFunc meter -> EventFunc logger -> sink` | Small reusable hooks; see [Custom Stage](#custom-stage) for when to implement `pipeline.Stage` (`TestComponentMuxStageEmitsWriteEvents`). |
+| WebRTC receive | `webrtcav.TrackReader or TrackSet -> rtpav.Source -> depacketizer -> mux, decode, relay, or analysis` | Keeping Pion types at the WebRTC/RTP boundary (`TestComponentWebRTCTrackSetFeedsRTPSource`). |
 
 ## Compiled Bootstraps
 

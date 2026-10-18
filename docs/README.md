@@ -1,44 +1,44 @@
-# Documentation Index
+# Documentation
 
-Read this when you need to choose the right goav document without archaeology.
+The [project README](../README.md) is the front door. These docs form a
+learning path: read the first section in order, then jump to the section that
+matches your work. Each topic has one owning doc.
 
-## Start Here
+## Start
 
-- [`ROADMAP.md`](ROADMAP.md): design contract, evidence scoreboard, reliability tiers, release gates, planned work, and non-goals.
-- [`V1_SCOPE.md`](V1_SCOPE.md): what the v1 front door promises, and what remains governed pre-v1.
-- [`API_SURFACE.md`](API_SURFACE.md): governed exported surface and extension boundaries.
-- [`ARCHITECTURE.md`](ARCHITECTURE.md): internal layering, recipe IR, planner, runtime, and graph model.
+- [`USE_CASES.md`](USE_CASES.md): first, to find the recipe shape closest to what you are building.
+- [`OPERATIONS.md`](OPERATIONS.md): when you need what an operation consumes, produces, inserts, or refuses; also encoder settings and the composition laws.
+- [`MULTI_INPUT.md`](MULTI_INPUT.md): when several streams must become one (mix, composite, select, custom join).
 
-## Usage
+## Running live
 
-- [`CLI.md`](CLI.md): `goav run` schema, `goav ctl`, and when to use CLI vs library.
-- [`OPERATIONS.md`](OPERATIONS.md): recipe operations, branches, joins, and runtime mutation.
-- [`COMPOSABILITY_LAWS.md`](COMPOSABILITY_LAWS.md): laws and tests for composing grammar features.
-- [`CONTROL_PLANE.md`](CONTROL_PLANE.md): `ctlserver` hosts and `goav ctl` control sockets.
-- [`USE_CASES.md`](USE_CASES.md): workflow-shaped examples mapped to the grammar.
+- [`FLOW_CONTROL.md`](FLOW_CONTROL.md): when a live branch cannot keep up and you must choose what blocks, drops, or buffers.
+- [`CONTROL_PLANE.md`](CONTROL_PLANE.md): when a running task must be inspected or steered from outside the process (`ctlserver`, `goav ctl`).
+- [`RTP_WEBRTC.md`](RTP_WEBRTC.md): when media arrives over RTP or WebRTC through Pion.
+- [`CLI.md`](CLI.md): when you want a smoke test without code (`goav run`) or a control client (`goav ctl`), and to choose CLI or library.
 
-## Extension And Runtime
+## Extending
 
-- [`ADAPTERS.md`](ADAPTERS.md): standard adapters and adapter boundaries.
-- [`ADAPTER_AUTHORING.md`](ADAPTER_AUTHORING.md): how to write codecs, formats, filters, sources, destinations, and joins.
-- [`EXTENSION_COOKBOOK.md`](EXTENSION_COOKBOOK.md): copyable extension patterns.
-- [`COMPONENTS.md`](COMPONENTS.md): custom components and in-process hooks.
-- [`FLOW_CONTROL.md`](FLOW_CONTROL.md): branch buffering, drops, and backpressure.
-- [`PERFORMANCE.md`](PERFORMANCE.md): allocation pins, benchmarks, and performance posture.
-- [`RTP_WEBRTC.md`](RTP_WEBRTC.md): RTP/WebRTC transport module guidance.
+- [`EXTENSION_COOKBOOK.md`](EXTENSION_COOKBOOK.md): when you know what to plug in (source, destination, stage, filter, codec, join, control host) and want the smallest seam to copy.
+- [`ADAPTER_AUTHORING.md`](ADAPTER_AUTHORING.md): when writing a codec, container, filter, or provider adapter, for its lifecycle, ownership rules, and required tests.
+- [`ADAPTERS.md`](ADAPTERS.md): to see which adapters and containers ship, what each supports, and where each stops.
 
 ## Reference
 
-- [`ERRORS.md`](ERRORS.md): structured error behavior and fix guidance.
-- [`ERROR_CATALOG.md`](ERROR_CATALOG.md): current error-code catalog.
-- [`ENCODER_CONFIG.md`](ENCODER_CONFIG.md): encoder settings vocabulary.
-- [`COMPATIBILITY.md`](COMPATIBILITY.md): compatibility posture and exceptions.
-- [`RELEASING.md`](RELEASING.md): release workflow and checks.
-- [`REPOSITORY_TRUST.md`](REPOSITORY_TRUST.md): repository metadata and trust posture.
-- [`GSTREAMER_ALTERNATIVE.md`](GSTREAMER_ALTERNATIVE.md): comparison with GStreamer.
-- [`matroska.md`](matroska.md): Matroska/WebM container notes.
+- [`ERRORS.md`](ERRORS.md): when your code handles a `*goav.BuildError`.
+- [`ERROR_CATALOG.md`](ERROR_CATALOG.md): to look up one error code, its fix, and the test that pins it.
+- [`API_SURFACE.md`](API_SURFACE.md): before adding an export, or to find the tier a symbol belongs to.
+- [`COMPATIBILITY.md`](COMPATIBILITY.md): to learn what v1 promises, what stays governed pre-v1, and what each tag must state.
+- [`PERFORMANCE.md`](PERFORMANCE.md): before trusting or making a performance claim; it separates proven, measured, and not proven.
+
+## Project
+
+- [`ARCHITECTURE.md`](ARCHITECTURE.md): when changing internals, for the layering from recipe IR through the planner to the runtime graph.
+- [`ROADMAP.md`](ROADMAP.md): to see what is stable, experimental, planned, or a non-goal, and the gates before v1.
+- [`RELEASING.md`](RELEASING.md): when cutting a tag, for the checklist, gate matrix, automation, and repository trust posture.
+- [`GSTREAMER_ALTERNATIVE.md`](GSTREAMER_ALTERNATIVE.md): when choosing between goav and GStreamer.
 
 ## History
 
-Finished campaign artifacts live in [`history/`](history/). They are retained
-for context, but forward-looking work should update the living docs above.
+Finished campaign artifacts live in [`history/`](history/). They are kept for
+context; forward-looking work updates the living docs above.

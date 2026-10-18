@@ -4,7 +4,7 @@
 
 **Media pipelines in pure Go.** Decode, transform, encode, and mux inside your service:<br>no cgo, no FFmpeg, no system libraries.
 
-[![CI](https://github.com/thesyncim/goav/actions/workflows/ci.yml/badge.svg)](https://github.com/thesyncim/goav/actions/workflows/ci.yml) [![Go Reference](https://pkg.go.dev/badge/github.com/thesyncim/goav.svg)](https://pkg.go.dev/github.com/thesyncim/goav) [![Go 1.27+](https://img.shields.io/badge/go-1.27%2B-00ADD8)](go.mod) [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE) [![Status: pre-v1](https://img.shields.io/badge/status-pre--v1-orange)](docs/V1_SCOPE.md)
+[![CI](https://github.com/thesyncim/goav/actions/workflows/ci.yml/badge.svg)](https://github.com/thesyncim/goav/actions/workflows/ci.yml) [![Go Reference](https://pkg.go.dev/badge/github.com/thesyncim/goav.svg)](https://pkg.go.dev/github.com/thesyncim/goav) [![Go 1.27+](https://img.shields.io/badge/go-1.27%2B-00ADD8)](go.mod) [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE) [![Status: pre-v1](https://img.shields.io/badge/status-pre--v1-orange)](docs/COMPATIBILITY.md)
 
 </div>
 
@@ -140,7 +140,7 @@ The core module never pulls in Pion.
 
 ## Status
 
-Pre-v1: breaking changes can land until the first tag. See [V1 scope](docs/V1_SCOPE.md) and
+Pre-v1: breaking changes can land until the first tag. See [V1 scope](docs/COMPATIBILITY.md#v1-scope) and
 the [roadmap](docs/ROADMAP.md).
 
 ---
