@@ -99,7 +99,7 @@ func (g *bufferedRunner) flushNodeQueue(node *bufferedNode) {
 				continue
 			}
 			node.releaseSlot(slot)
-			g.pending.Done()
+			g.pending.done()
 			observeDrop(node.counters, DropFlush, &g.cold)
 		default:
 			done = true

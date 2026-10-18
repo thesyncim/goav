@@ -11,6 +11,22 @@ methodology changes, and migration notes.
 
 ## Unreleased
 
+- Fix: a failing node stops the task. Buffered graphs (every realtime recipe
+  that decodes or encodes, and promoted ladders) held a node error, such as a
+  mux write failure, until every source ended, which a live source never
+  does. Now the first error from a source or a node's `Handle` cancels the
+  sources and stops the run in both runners, and `Run` returns that error, not
+  the `context.Canceled` it caused; a direct graph returns it even when the
+  source swallows its `Emit` error. Behavior change: after a failure, queued
+  messages are shed, not delivered. Sheds by drop policy are still not
+  failures. Later errors are counted on the first (`(and N more errors)`, still
+  `errors.Is` the first) instead of dropped when the error channel filled.
+- Fix: a producer blocked on a full `DropBlock` queue waits for a slot signal
+  instead of polling every 100µs with a fresh timer, and paced sleeps on the
+  real clock wait on a pooled timer instead of spawning a goroutine. Both are
+  now allocation-free and pinned, and a blocked producer uses no CPU.
+- Fix: `Inject` racing the end-of-run drain no longer misuses a
+  `sync.WaitGroup` (a race-detector report and a possible panic).
 - Forks work across several inputs in one run: an HLS ladder forks one camera
   into renditions while a second input's audio muxes into each, two files fork
   into their own renditions, and a lone stream named with `.As(...)` runs

@@ -3,9 +3,12 @@ package goav
 import (
 	"context"
 	"errors"
+	goruntime "runtime"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/thesyncim/goav/av"
 )
 
 // recordingTestClock is a deterministic inner av.Clock for timeline tests:
@@ -307,4 +310,71 @@ func TestTimelineConcurrentNowUnderEpochChanges(t *testing.T) {
 	}
 	close(stop)
 	wg.Wait()
+}
+
+// TestTimelineRealClockSleepAllocs pins the real-clock paced sleep at zero
+// allocations: on av.MonotonicClock the timeline waits on a pooled timer, the
+// change broadcast and ctx directly, with no goroutine, child context or
+// channel per sleep (one per paced packet on the realtime path).
+func TestTimelineRealClockSleepAllocs(t *testing.T) {
+	for _, timeline := range []*timeline{newTimeline(nil), newTimeline(av.MonotonicClock())} {
+		if !timeline.monotonic {
+			t.Fatal("timeline on av.MonotonicClock does not take the direct timer path")
+		}
+		ctx := context.Background()
+		if allocs := testing.AllocsPerRun(200, func() {
+			if err := timeline.Sleep(ctx, 20*time.Microsecond); err != nil {
+				t.Fatal(err)
+			}
+		}); allocs != 0 {
+			t.Fatalf("real-clock timeline Sleep allocs = %v, want 0", allocs)
+		}
+	}
+	if newTimeline(newBlockingTestClock()).monotonic {
+		t.Fatal("a fake clock took the real-clock path; its Sleep would be bypassed")
+	}
+}
+
+// TestTimelineRealClockSleepWakes pins the real-clock wait's three exits: a
+// sleeper parks on its own goroutine only (none spawned per sleep), a rate
+// change re-derives the remaining wait mid-sleep, and ctx interrupts it.
+func TestTimelineRealClockSleepWakes(t *testing.T) {
+	timeline := newTimeline(nil)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	before := goruntime.NumGoroutine()
+	slept := make(chan error, 1)
+	go func() { slept <- timeline.Sleep(ctx, time.Hour) }()
+	time.Sleep(20 * time.Millisecond)
+	if during := goruntime.NumGoroutine(); during > before+1 {
+		t.Fatalf("goroutines during one paced sleep = %d, want at most %d (the sleeper)", during, before+1)
+	}
+	// At a rate of 1e9 the remaining hour of timeline time is 3.6ms of wall.
+	if err := timeline.SetRate(1e9); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-slept:
+		if err != nil {
+			t.Fatalf("Sleep = %v, want nil after the rate change shortened it", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("rate change did not wake the real-clock sleeper")
+	}
+
+	if err := timeline.SetRate(1); err != nil {
+		t.Fatal(err)
+	}
+	go func() { slept <- timeline.Sleep(ctx, time.Hour) }()
+	time.Sleep(10 * time.Millisecond)
+	cancel()
+	select {
+	case err := <-slept:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("Sleep = %v, want context.Canceled", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("cancel did not wake the real-clock sleeper")
+	}
 }

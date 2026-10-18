@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"reflect"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -24,6 +25,9 @@ import (
 // Sleeps recompute their remaining wall wait under the new epoch.
 type timeline struct {
 	inner av.Clock
+	// monotonic is set when inner is av's real monotonic clock, whose Sleep is
+	// a plain timer wait: sleepInner then waits on a timer directly.
+	monotonic bool
 
 	// epoch is the immutable rate/pause anchor Now computes from.
 	epoch atomic.Pointer[timelineEpoch]
@@ -50,6 +54,10 @@ type timelineEpoch struct {
 
 var _ av.Clock = (*timeline)(nil)
 
+// monotonicClockType identifies av.MonotonicClock instances (the type is
+// unexported), read once per timeline at construction.
+var monotonicClockType = reflect.TypeOf(av.MonotonicClock())
+
 // newTimeline anchors a timeline at zero on the inner clock's current reading,
 // running at 1x. A nil inner clock falls back to av.MonotonicClock, matching
 // the pacing default.
@@ -57,7 +65,7 @@ func newTimeline(inner av.Clock) *timeline {
 	if inner == nil {
 		inner = av.MonotonicClock()
 	}
-	t := &timeline{inner: inner}
+	t := &timeline{inner: inner, monotonic: reflect.TypeOf(inner) == monotonicClockType}
 	t.epoch.Store(&timelineEpoch{wallAnchor: inner.Now(), rate: 1})
 	change := make(chan struct{})
 	t.change.Store(&change)
@@ -219,10 +227,15 @@ func (t *timeline) Sleep(ctx context.Context, d time.Duration) error {
 }
 
 // sleepInner waits wall time on the inner clock, waking early when the epoch
-// changes or ctx ends. The inner Sleep runs in a goroutine with its own
-// cancelable context so an abandoned wait releases fake-clock waiters instead
-// of leaking them.
+// changes or ctx ends. On the real monotonic clock it selects on a pooled
+// timer, the change broadcast and ctx directly — no goroutine, no allocation
+// per paced sleep. Any other clock (a test fake) runs its Sleep in a goroutine
+// with its own cancelable context, so an abandoned wait releases fake-clock
+// waiters instead of leaking them.
 func (t *timeline) sleepInner(ctx context.Context, change <-chan struct{}, wall time.Duration) error {
+	if t.monotonic {
+		return sleepWall(ctx, change, wall)
+	}
 	waitCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	done := make(chan error, 1)
@@ -242,4 +255,38 @@ func (t *timeline) sleepInner(ctx context.Context, change <-chan struct{}, wall 
 		}
 		return err
 	}
+}
+
+// wallTimers pools the stopped timers sleepWall waits on, so a paced sleep
+// reuses one instead of allocating; concurrent sleepers each take their own.
+var wallTimers sync.Pool
+
+// sleepWall is the real-clock wait: wall time on a pooled timer, cut short by
+// an epoch change (nil, the caller recomputes) or ctx.
+func sleepWall(ctx context.Context, change <-chan struct{}, wall time.Duration) error {
+	timer, _ := wallTimers.Get().(*time.Timer)
+	if timer == nil {
+		timer = time.NewTimer(wall)
+	} else {
+		timer.Reset(wall)
+	}
+	var err error
+	select {
+	case <-ctx.Done():
+		err = ctx.Err()
+	case <-change:
+	case <-timer.C:
+		wallTimers.Put(timer)
+		return nil
+	}
+	if !timer.Stop() {
+		// Fired while we left: drain so the pooled timer holds no stale tick
+		// (a no-op under Go 1.23+ timer semantics, kept for GODEBUG overrides).
+		select {
+		case <-timer.C:
+		default:
+		}
+	}
+	wallTimers.Put(timer)
+	return err
 }

@@ -258,6 +258,11 @@ type Graph interface {
 	Disconnect(Route) error
 	Remove(NodeRef) error
 	Spec() Spec
+	// Run drives the graph until every source ends, ctx is done, or something
+	// fails. The first error from a source or a node's Handle cancels the
+	// sibling sources and stops the run promptly in both runners; Run returns
+	// that error, never the context.Canceled it caused. A shed (drop policy,
+	// paused or removed branch, isolated fanout backpressure) is not a failure.
 	Run(context.Context) error
 	Events() <-chan av.Event
 	Stats() GraphStats
