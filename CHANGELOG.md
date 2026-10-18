@@ -11,6 +11,14 @@ methodology changes, and migration notes.
 
 ## Unreleased
 
+- HLS ladders. `hls.NewLadder("master.m3u8", store)` hands out a packager per
+  rendition (`ladder.Variant("hd.m3u8", ...)`) and writes the multivariant
+  playlist over them: each variant's peak and average bandwidth, measured from
+  its segments, its codecs as RFC 6381 strings read from its init segment
+  (`vp09.00.10.08,Opus`, `avc1.64001f`, `av01.0.08M.08`, `mp4a.40.2`), and
+  its resolution. It publishes once every variant has a segment, and again
+  when a peak rises. FFmpeg plays the ladder.
+
 - HLS packaging. `container/hls` packages output as HTTP Live Streaming: a
   `provider.Destination` (`goav.Custom("live", hls.New("live.m3u8", store))`)
   that splits the fragmented MP4 goav muxes into an init segment and media

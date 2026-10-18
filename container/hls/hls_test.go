@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -178,4 +179,64 @@ func ffmpegPlays(t *testing.T, store *memStore) {
 	if err != nil || len(bytes.TrimSpace(out)) != 0 {
 		t.Fatalf("ffmpeg could not play the playlist: %v\n%s", err, out)
 	}
+}
+
+// TestLadder packages two renditions of one source, sharing its audio: the
+// multivariant playlist lists both with their codecs, resolution, and
+// bandwidth, the larger one higher.
+func TestLadder(t *testing.T) {
+	store := &memStore{files: map[string][]byte{}}
+	ladder := hls.NewLadder("master.m3u8", store)
+	hd := goav.Custom("hd", ladder.Variant("hd.m3u8", hls.SegmentDuration(time.Second)))
+	sd := goav.Custom("sd", ladder.Variant("sd.m3u8", hls.SegmentDuration(time.Second)))
+	sink := func(name string, d goav.Destination) launch.Element {
+		return launch.Sink(name, "a variant", func(struct{}) (goav.Destination, error) { return d, nil })
+	}
+	// One source per rendition: a fork across several inputs is not yet
+	// planned (docs/MULTI_INPUT.md).
+	outs, err := launch.Compile(`testsrc video size=128x96 fps=25 frames=75 ! encode vp9 bitrate=400k keyframe_interval=25 ! hd
+testsrc video size=64x48 fps=25 frames=75 ! encode vp9 bitrate=80k keyframe_interval=25 ! sd
+testsrc audio duration=3s ! encode opus ! hd, sd`, launch.Use(sink("hd", hd), sink("sd", sd)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := bundle.Run(context.Background(), outs...); err != nil {
+		t.Fatal(err)
+	}
+	master := string(store.files["master.m3u8"])
+	variants := regexp.MustCompile(`#EXT-X-STREAM-INF:BANDWIDTH=(\d+),AVERAGE-BANDWIDTH=\d+,CODECS="([^"]+)",RESOLUTION=(\d+x\d+)\n(\S+)`).FindAllStringSubmatch(master, -1)
+	if len(variants) != 2 || variants[0][4] != "hd.m3u8" || variants[1][4] != "sd.m3u8" {
+		t.Fatalf("master playlist:\n%s", master)
+	}
+	if variants[0][2] != "vp09.00.10.08,Opus" || variants[0][3] != "128x96" || variants[1][3] != "64x48" {
+		t.Fatalf("variants = %q", variants)
+	}
+	if hdBW, sdBW := atoi(t, variants[0][1]), atoi(t, variants[1][1]); hdBW <= sdBW {
+		t.Fatalf("hd bandwidth %d is not above sd's %d", hdBW, sdBW)
+	}
+	for _, name := range []string{"hd.m3u8", "sd.m3u8", "hd-init.mp4", "sd-00002.m4s"} {
+		if _, ok := store.files[name]; !ok {
+			t.Fatalf("no %s", name)
+		}
+	}
+	if ffmpeg, err := exec.LookPath("ffmpeg"); err == nil {
+		dir := t.TempDir()
+		for name, data := range store.files {
+			if err := os.WriteFile(filepath.Join(dir, name), data, 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if out, err := exec.Command(ffmpeg, "-v", "error", "-i", filepath.Join(dir, "master.m3u8"), "-map", "0", "-f", "null", "-").CombinedOutput(); err != nil || len(bytes.TrimSpace(out)) != 0 {
+			t.Fatalf("ffmpeg could not play the ladder: %v\n%s", err, out)
+		}
+	}
+}
+
+func atoi(t *testing.T, s string) int {
+	t.Helper()
+	n, err := strconv.Atoi(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return n
 }
