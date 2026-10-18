@@ -245,6 +245,14 @@ func oracleCorpus(t *testing.T) map[string]func() []goav.Output {
 				sd.Encode(codec.VP9()).As("sd-vp9").To(w("sd-vp9.webm")),
 			)
 		},
+		"joins_share_decoded_arm": func() []goav.Output {
+			d := oracleVP8().Video().Decode()
+			return outs(goav.Composite(d, oracleVideo().Video()).To(oracleSink("c1")), goav.Composite(d, oracleVideoSized(64, 48).Video()).To(oracleSink("c2")))
+		},
+		"fork_tap_after_shared_encode": func() []goav.Output {
+			e := oracleAudio().Audio().Encode(codec.Opus())
+			return outs(e.As("a").To(oracleSink("a")), e.Tap("enc").As("b").To(oracleSink("b")))
+		},
 		"named_stream_two_files": func() []goav.Output {
 			a, b := files()
 			out := w("o.webm")

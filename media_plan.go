@@ -3,7 +3,6 @@ package goav
 import (
 	"fmt"
 	"slices"
-	"strings"
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
@@ -97,7 +96,7 @@ func planCopyBranches(state *recipeCompileState, inputs []recipeir.Input, copyRe
 	for i := range inputs {
 		input := inputs[i]
 		name := firstNonEmpty(input.Name, input.URI, fmt.Sprintf("input-%d", i))
-		spec := mediaShapeFromInputIntent(input, shape.DomainPacket)
+		spec := mediaShapeFromInput(input, shape.DomainPacket)
 		if sourceShape, ok := recipeIRInputSourceShape(input); ok {
 			spec = shape.Merge(spec, sourceShape)
 		}
@@ -145,7 +144,7 @@ func planCopyBranches(state *recipeCompileState, inputs []recipeir.Input, copyRe
 	return branches, decisions
 }
 
-func planRecipeIROperationSpecs(input recipeir.Input, stream recipeir.Stream, branchName string, initial shape.Spec, selectComponent string) ([]planOperation, []planDecision) {
+func planRecipeIROperations(input recipeir.Input, stream recipeir.Stream, branchName string, initial shape.Spec, selectComponent string) ([]planOperation, []planDecision) {
 	operations := planInputOperationsForShape(input, initial)
 	if initial.Domain == shape.DomainEvent && stream.Selector == (plan.StreamSelect{}) && len(stream.Operations) == 0 {
 		operations = append(operations, planOperation{
@@ -166,8 +165,8 @@ func planRecipeIROperationSpecs(input recipeir.Input, stream recipeir.Stream, br
 		Detail:    "select stream",
 	})
 	if len(stream.Operations) != 0 {
-		operationSpecs, decisions := planRecipeIRStreamOperations(stream, branchName)
-		operations = append(operations, operationSpecs...)
+		streamOperations, decisions := planRecipeIRStreamOperations(stream, branchName)
+		operations = append(operations, streamOperations...)
 		return operations, decisions
 	}
 	var decisions []planDecision
@@ -320,14 +319,14 @@ func planInputOperationsForShape(input recipeir.Input, spec shape.Spec) []planOp
 			Kind:      plan.OpDepacketize,
 			Component: component,
 			Detail:    "receive live packets",
-			Shape:     mediaShapeFromInputIntent(input, firstNonEmptyDomain(spec.Domain, shape.DomainPacket)),
+			Shape:     mediaShapeFromInput(input, firstNonEmptyDomain(spec.Domain, shape.DomainPacket)),
 		}}
 	default:
 		return []planOperation{{
 			Kind:      plan.OpDemux,
 			Component: "container",
 			Detail:    "read packets from input",
-			Shape:     mediaShapeFromInputIntent(input, firstNonEmptyDomain(spec.Domain, shape.DomainPacket)),
+			Shape:     mediaShapeFromInput(input, firstNonEmptyDomain(spec.Domain, shape.DomainPacket)),
 		}}
 	}
 }
@@ -379,7 +378,10 @@ func planTaps(branches []planBranch) []workTap {
 			}
 			if operation.Kind != plan.OpTap {
 				currentShape = planShapeForOperation(currentShape, branch, operation)
-				currentNode = planOperationNodeName(branch, operation, j)
+				// The tap anchors on the node the lowering planned for the work before it.
+				if operation.Node != "" {
+					currentNode = string(operation.Node)
+				}
 				continue
 			}
 			name := operation.Component
@@ -455,7 +457,11 @@ func planShapeAfterOperation(spec shape.Spec, branch planBranch, operation planO
 		spec.Domain = shape.DomainPacket
 	case plan.OpEncode:
 		spec.Domain = shape.DomainPacket
-		spec.StreamID = av.StreamID(firstNonEmpty(branch.Name, string(spec.StreamID)))
+		if !operation.Shared {
+			// A branch's own encoder publishes under its name; one shared by
+			// several branches keeps the stream's id.
+			spec.StreamID = av.StreamID(firstNonEmpty(branch.Name, string(spec.StreamID)))
+		}
 		spec.Codec = firstNonEmptyCodec(operation.Codec.ID, av.CodecID(operation.Component))
 		if media := codecMedia(spec.Codec); media != "" {
 			spec.MediaKind = media
@@ -472,7 +478,7 @@ func normalizeTapShape(spec shape.Spec) shape.Spec {
 	return spec
 }
 
-func mediaShapeFromInputIntent(input recipeir.Input, domain shape.MediaDomain) shape.Spec {
+func mediaShapeFromInput(input recipeir.Input, domain shape.MediaDomain) shape.Spec {
 	spec := shape.Spec{
 		Domain:    domain,
 		MediaKind: input.Codec.Type,
@@ -549,63 +555,6 @@ func knownPlanCodec(component string) av.CodecID {
 		return ""
 	}
 	return codecID
-}
-
-func planOperationNodeName(branch planBranch, operation planOperation, index int) string {
-	switch operation.Kind {
-	case plan.OpDecode:
-		return branchComposeInputNodeName("decode-"+planBranchOperationScopeName(branch), branch.Stream.Input)
-	case plan.OpTransform:
-		name := branchEncodeOwnerName(branch)
-		if operation.Shared {
-			name = branchComposeInputNodeName(planBranchOperationScopeName(branch), branch.Stream.Input)
-		}
-		return operation.Component + "-" + name
-	case plan.OpStage:
-		if after, ok := strings.CutPrefix(operation.Component, "sync-"); ok {
-			return syncStageName(planBranchOperationScopeName(branch) + "-" + after)
-		}
-		if after, ok := strings.CutPrefix(operation.Component, "playout-"); ok {
-			return playoutStageName(planBranchOperationScopeName(branch) + "-" + after)
-		}
-		return operation.Component
-	case plan.OpEncode:
-		return "encode-" + branchEncodeOwnerName(branch)
-	case plan.OpSelect:
-		// Qualified exactly like the planned-spec select node: the declared
-		// selector scope plus any goav.InputName narrowing.
-		return branchComposeInputNodeName("select-"+firstNonEmpty(operation.Component, planBranchOperationScopeName(branch)), branch.Stream.Input)
-	case plan.OpDepacketize, plan.OpDemux:
-		return branch.Name
-	default:
-		if operation.Component != "" {
-			return operation.Component
-		}
-		return fmt.Sprintf("%s-op-%d", branch.Name, index)
-	}
-}
-
-func planBranchOperationScopeName(branch planBranch) string {
-	return firstNonEmpty(
-		string(branch.Stream.Type),
-		string(branch.Stream.ID),
-		branch.Stream.Name,
-		string(branch.Stream.Codec),
-		branch.Name,
-		"stream",
-	)
-}
-
-// branchEncodeOwnerName names the owner of a branch's encode node. The implicit
-// branch name "main" maps to the stream scope so a single Branch("main")
-// composition lowers identically to a direct chain — a direct chain is an
-// implicit Branch("main") (NORTH_STAR #2). Explicitly named branches keep their
-// name so multiple encode variants of one stream stay disambiguated.
-func branchEncodeOwnerName(branch planBranch) string {
-	if branch.Name == "main" {
-		return planBranchOperationScopeName(branch)
-	}
-	return branch.Name
 }
 
 func planBranchDestinations(targetRefs []string, outputs []planOutput) []string {

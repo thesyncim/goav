@@ -35,7 +35,10 @@ type joinArmPlan struct {
 	// decodeNode is the planned decode node name; empty means the arm feeds the
 	// join directly (frame arms, passthrough kinds).
 	decodeNode string
-	stage      *joinArmStagePlan
+	// decodeGraph is the arm's decode node in the recipe graph.
+	decodeGraph    recipeir.NodeID
+	hasDecodeGraph bool
+	stage          *joinArmStagePlan
 	// taps are the frame-domain taps the arm chain declared (.Tap after the
 	// arm's decode point), installed on the task and resolvable by tap arms.
 	taps []joinArmTap
@@ -383,8 +386,6 @@ func (p *joinPlan) deriveJoinedDomain() shape.MediaDomain {
 	}
 	return shape.DomainFrame
 }
-
-// --- graphPlanLowerer ---
 
 // treeGraphBuffer returns the first profile-pinned graph buffer in the join
 // tree that applies at this realtime setting: a nested Select still needs the

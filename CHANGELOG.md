@@ -23,9 +23,11 @@ methodology changes, and migration notes.
   code each — distinct handles sharing a name are `destination_duplicate`,
   frames into a mux without an encoder are `encode_missing` (joins
   included), and frame work on a fork that never decodes is
-  `operation_shape_mismatch`. Removed codes nothing raises any more, among
-  them `job_invalid` and the `flow` family, and the `*_destination` and
-  `*_tap_arm` join codes.
+  `operation_shape_mismatch`. An encoder several forks share keeps the id of
+  the stream it encodes (`.As` names a fork's own work), and two names after
+  the same work make two branches over the same nodes.
+  Removed codes nothing raises any more, among them `job_invalid` and the
+  `flow` family, and the `*_destination` and `*_tap_arm` join codes.
 - New: package `metrics` bridges a running task to monitoring.
   `metrics.Handler(task)` serves Stats and Snapshot as Prometheus text
   (`goav_` per-node messages, packets, frames, drops by reason, branch and

@@ -21,6 +21,8 @@ import (
 // planJoins plans every join of the recipe, nested ones first.
 func (s *recipeCompileState) planJoins() error {
 	s.joins = map[recipeir.NodeID]*joinPlan{}
+	s.armDecodes = map[recipeir.NodeID]string{}
+	s.armTaps = map[recipeir.NodeID]bool{}
 	sets := s.inputStreamSets()
 	for _, id := range s.joinOrder {
 		if _, err := s.planJoin(id, sets); err != nil {
@@ -75,10 +77,6 @@ func (s *recipeCompileState) planJoin(id recipeir.NodeID, sets []inputStreamSet)
 				"give each arm a distinct stream id: name inputs/taps differently so no two arms publish the same id")
 		}
 		seen[armPlan.stream.ID] = struct{}{}
-		if region != nil && !profile.placesArms {
-			return nil, joinArmError(name, firstNonEmpty(armPlan.inputName, name), kind+" arms have no canvas; goav.At(stream, x, y) positions Composite layers only",
-				"remove goav.At(...) from the arm, or pass it to goav.Composite(base, goav.At(stream, x, y)) to place it")
-		}
 		if err := validateJoinArmDomain(name, armPlan.inputName, profile, armPlan.domain, armOps); err != nil {
 			return nil, err
 		}
@@ -87,6 +85,13 @@ func (s *recipeCompileState) planJoin(id recipeir.NodeID, sets []inputStreamSet)
 		// joins without .Decode() forward packets as-is.
 		if armPlan.domain == shape.DomainPacket && recipeIROperationsContainKind(armOps, plan.OpDecode) {
 			armPlan.decodeNode = name + "-decode-" + string(armPlan.stream.ID)
+			// An arm path other joins' arms read decodes once: the later arms
+			// read the decoder the first planned.
+			if first, ok := s.armDecodes[armPlan.decodeGraph]; ok && armPlan.hasDecodeGraph {
+				armPlan.decodeNode, armPlan.bind = first, nil
+			} else if armPlan.hasDecodeGraph {
+				s.armDecodes[armPlan.decodeGraph] = armPlan.decodeNode
+			}
 		}
 		if profile.planArm != nil {
 			stagePlan, err := profile.planArm(p, joinArmSnapshot{region: region}, armPlan.stream)
@@ -225,7 +230,11 @@ func (s *recipeCompileState) planJoinArm(p *joinPlan, armID recipeir.NodeID, at 
 		}
 		armPlan = bound
 	default:
-		stream, err := selectStream(set.streams, av.StreamSelector{Type: profile.media})
+		selector := recipeIRSelector(rootNode.Select)
+		if selector.Type == "" {
+			selector.Type = profile.media
+		}
+		stream, err := selectStream(set.streams, selector)
 		if err != nil {
 			return joinArmPlan{}, nil, nil, err
 		}
@@ -236,7 +245,23 @@ func (s *recipeCompileState) planJoinArm(p *joinPlan, armID recipeir.NodeID, at 
 	if err := validateJoinArmOperations(name, armPlan.inputName, armOps); err != nil {
 		return joinArmPlan{}, nil, nil, err
 	}
-	taps, err := joinChainArmTaps(name, armPlan.inputName, armPlan.domain, armOps)
+	for _, operation := range armOps {
+		if operation.Kind == plan.OpDecode {
+			armPlan.decodeGraph, armPlan.hasDecodeGraph = operation.Node, true
+		}
+	}
+	// A tap on a path another join's arm also reads installs once.
+	var ownOps []recipeir.Operation
+	for _, operation := range armOps {
+		if operation.Kind == plan.OpTap && s.armTaps[operation.Node] {
+			continue
+		}
+		if operation.Kind == plan.OpTap {
+			s.armTaps[operation.Node] = true
+		}
+		ownOps = append(ownOps, operation)
+	}
+	taps, err := joinChainArmTaps(name, armPlan.inputName, armPlan.domain, ownOps)
 	if err != nil {
 		return joinArmPlan{}, nil, nil, err
 	}
@@ -311,6 +336,7 @@ func (l *recipeLowering) join(id recipeir.NodeID) (pipeline.NodeRef, error) {
 	for i := range p.arms {
 		arm := &p.arms[i]
 		var upstream pipeline.NodeRef
+		shared := false
 		switch {
 		case arm.sub != nil:
 			ref, err := l.join(arm.sub.node)
@@ -325,13 +351,18 @@ func (l *recipeLowering) join(id recipeir.NodeID) (pipeline.NodeRef, error) {
 			}
 			upstream = ref
 		default:
+			if ref, ok := l.refs[arm.decodeGraph]; ok && arm.hasDecodeGraph {
+				// Another join's arm planned this path's decoder: read it.
+				upstream, shared = ref, true
+				break
+			}
 			upstream = l.source(arm.input)
 		}
 		arm.sourceNode = string(upstream)
-		if arm.bind != nil {
+		if arm.bind != nil && !shared {
 			upstream = l.add(composeNode{kind: composeArmBind, name: arm.bind.node, detail: bindArmNodeDetail(arm.bind.selector), inputs: []pipeline.NodeRef{upstream}, join: p, arm: i})
 		}
-		if arm.decodeNode != "" {
+		if arm.decodeNode != "" && !shared {
 			upstream = l.add(composeNode{
 				kind:   composeArmDecode,
 				name:   arm.decodeNode,
@@ -340,6 +371,9 @@ func (l *recipeLowering) join(id recipeir.NodeID) (pipeline.NodeRef, error) {
 				join:   p,
 				arm:    i,
 			})
+			if arm.hasDecodeGraph {
+				l.refs[arm.decodeGraph] = upstream
+			}
 		}
 		if arm.stage != nil {
 			upstream = l.add(composeNode{

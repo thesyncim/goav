@@ -485,7 +485,7 @@ func (l *recipeLowering) operation(index int, operation recipeir.Operation) (pip
 		}
 		node = composeNode{kind: composeStep, name: transform.name, detail: mediaTransformDetail(transform), transform: transform}
 	case plan.OpEncode:
-		request := s.encodeRequest(index, operation)
+		request := s.encodeRequest(index, operation, owner < 0)
 		if owner < 0 {
 			request.name = name
 		}
@@ -537,12 +537,14 @@ func (l *recipeLowering) transform(name string, operation recipeir.Operation) (m
 	}
 }
 
-// encodeRequest is a branch encoder's request: a lone unnamed branch keeps
-// the identity of the stream it encodes, any other encodes under its name.
-func (s *recipeCompileState) encodeRequest(index int, operation recipeir.Operation) encodeRequest {
+// encodeRequest is a branch encoder's request. An encoder one branch owns
+// encodes under the branch's name, unless the branch is the recipe's only
+// one and names no fork; an encoder several branches share keeps the
+// identity of the stream it encodes, as As names only a branch's own work.
+func (s *recipeCompileState) encodeRequest(index int, operation recipeir.Operation, shared bool) encodeRequest {
 	stream := s.recipe.Streams[index]
 	config := encodeConfigFromSpec(operation.Encode)
-	if len(s.recipe.Streams) != 1 || stream.Named {
+	if !shared && (len(s.recipe.Streams) != 1 || stream.Named) {
 		if config.Stream.ID == "" {
 			config.Stream.ID = av.StreamID(stream.Name)
 		}
@@ -652,13 +654,7 @@ type recipeLowerer struct {
 	lowering *recipeLowering
 }
 
-func (r *recipeLowerer) runtimeRef() *Runtime { return r.state.runtime }
-
-func (r *recipeLowerer) spec() (pipeline.Spec, error) {
-	return r.graph.emit(pipeline.Spec{Name: r.graph.name, Realtime: runtimeRealtime(r.state.runtime)})
-}
-
-func (r *recipeLowerer) withRuntime(rt *Runtime) graphPlanLowerer {
+func (r *recipeLowerer) withRuntime(rt *Runtime) *recipeLowerer {
 	state := *r.state
 	state.runtime = rt
 	joins := make(map[recipeir.NodeID]*joinPlan, len(state.joins))
@@ -985,5 +981,3 @@ func (s *recipeCompileState) streamOfNode(node composeNode) int {
 func (s *recipeCompileState) String() string {
 	return fmt.Sprintf("recipe(%d streams)", len(s.recipe.Streams))
 }
-
-var _ = shape.DomainFrame

@@ -190,9 +190,6 @@ func workOperationsFromBranches(spec pipeline.Spec, branches []planBranch, outpu
 		for j := range branch.Operations {
 			operation := branch.Operations[j]
 			node := operation.Node
-			if node == "" && operation.Kind != plan.OpShape {
-				node = pipeline.NodeRef(planOperationNodeName(branch, operation, j))
-			}
 			if operation.Kind == plan.OpShape {
 				node = ""
 			}

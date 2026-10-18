@@ -230,3 +230,53 @@ func (e *tapArmStageTestEmitter) Emit(_ context.Context, msg *pipeline.Message) 
 	}
 	return nil
 }
+
+// TestStreamSharedByTwoJoinsDecodesOnce pins the once-per-Stream law for join
+// arms: one decoded Stream feeding two joins plans one decoder, and both
+// joins read it.
+func TestStreamSharedByTwoJoinsDecodesOnce(t *testing.T) {
+	pcm := av.CodecID("x_pcm_mono")
+	decoder := &tapArmTestDecoder{}
+	rt := mustNew(WithDecoder(
+		codec.Descriptor{ID: pcm, Name: "PCM mono", Type: av.MediaAudio, Capabilities: codec.Capabilities{SampleFormats: []string{av.SampleFormatS16}}},
+		tapArmTestDecoderFactory{decoder: decoder},
+	))
+	music := tapArmTestPacketSource("music", pcm, 100, 200).Audio().Decode().Tap("music.frames")
+	var first, second [][]int16
+	outs := []Output{
+		Mix(music, mixTestAudioSource("a", 1, 1).Audio()).To(joinTestCollectSink("first", &first)),
+		Mix(music, mixTestAudioSource("b", 2, 2).Audio()).To(joinTestCollectSink("second", &second)),
+	}
+	task, err := rt.Build(context.Background(), outs...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer task.Close()
+	decodes := 0
+	for _, node := range task.Describe().Nodes {
+		if strings.Contains(node.Name, "decode") {
+			decodes++
+		}
+	}
+	if decodes != 1 {
+		t.Fatalf("decode nodes = %d, want 1:\n%s", decodes, specText(task.Describe()))
+	}
+	taps := 0
+	for _, tap := range task.Taps() {
+		if tap.Name == "music.frames" {
+			taps++
+		}
+	}
+	if taps != 1 {
+		t.Fatalf("taps = %+v, want music.frames once", task.Taps())
+	}
+	if err := task.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if decoder.decodes != 1 {
+		t.Fatalf("decoder ran %d times, want once", decoder.decodes)
+	}
+	if !reflect.DeepEqual(first, [][]int16{{101, 201}}) || !reflect.DeepEqual(second, [][]int16{{102, 202}}) {
+		t.Fatalf("mixed first=%v second=%v, want the decoded music in both", first, second)
+	}
+}

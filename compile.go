@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"slices"
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
@@ -130,6 +129,11 @@ type recipeCompileState struct {
 	joinOrder []recipeir.NodeID
 	// joinNames are the joins' claimed node names, by graph node.
 	joinNames map[recipeir.NodeID]string
+	// armDecodes are the decoders join arms planned, by decode node, and
+	// armTaps the arm taps installed, so a path several joins' arms read
+	// decodes and taps once.
+	armDecodes map[recipeir.NodeID]string
+	armTaps    map[recipeir.NodeID]bool
 
 	// inserted are the nodes the planner inserted (packet copies and shape
 	// conversions), keyed so a node shared by several branches gets one.
@@ -742,71 +746,13 @@ func (s *recipeCompileState) validateKnownInputDecodeAdapters() error {
 
 // --- runtime ---
 
-// validateRuntime refuses a build without a runtime when the recipe needs
-// adapters: it reads a file or URI, decodes, encodes, transforms, or writes
-// a container.
+// validateRuntime refuses a build without a runtime: a recipe builds on one,
+// which owns its adapters, buffers, and clock.
 func (s *recipeCompileState) validateRuntime() error {
-	if !s.options.preflight || s.runtime != nil {
-		return nil
-	}
-	if s.requiresRuntime() || s.graph != nil {
+	if s.options.preflight && s.runtime == nil {
 		return runtimeMissingError(s.operation)
 	}
 	return nil
-}
-
-func (s *recipeCompileState) requiresRuntime() bool {
-	if slices.ContainsFunc(s.inputAttachments, inputSpecRequiresRuntime) {
-		return true
-	}
-	if slices.ContainsFunc(s.outputAttachments, destinationSpecRequiresRuntime) {
-		return true
-	}
-	for i := range s.recipe.StreamRules {
-		if s.recipe.StreamRules[i].RequiresRuntime {
-			return true
-		}
-	}
-	for i := range s.recipe.Streams {
-		if recipeIROperationsRequireRuntime(s.recipe.Streams[i].Operations) {
-			return true
-		}
-	}
-	return false
-}
-
-func inputSpecRequiresRuntime(input InputSpec) bool {
-	if input.err != nil || input.provider != nil || input.source != nil {
-		return false
-	}
-	return input.input.Name != "" ||
-		input.input.URI != "" ||
-		input.input.Protocol != "" ||
-		input.input.MIMEType != "" ||
-		input.input.Reader != nil ||
-		input.input.ReaderAt != nil
-}
-
-func destinationSpecRequiresRuntime(destination destinationSpec) bool {
-	if destination.err != nil || destination.sink != nil || destination.custom != nil {
-		return false
-	}
-	return destination.output.Name != "" ||
-		destination.output.URI != "" ||
-		destination.output.Protocol != "" ||
-		destination.output.MIMEType != "" ||
-		destination.output.Writer != nil ||
-		destination.format != ""
-}
-
-func recipeIROperationsRequireRuntime(operations []recipeir.Operation) bool {
-	for i := range operations {
-		switch operations[i].Kind {
-		case plan.OpDecode, plan.OpEncode, plan.OpTransform:
-			return true
-		}
-	}
-	return false
 }
 
 // runtimeMissingError is the no-runtime refusal.

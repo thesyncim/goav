@@ -212,7 +212,6 @@ func (s *recipeCompileState) deriveRule(root recipeir.NodeID, paths []streamPath
 	rule := streamRule{match: match, branches: branches}
 	facts := recipeir.StreamRule{MatchDescription: match.Description()}
 	for i := range branches {
-		facts.RequiresRuntime = facts.RequiresRuntime || recipeIROperationsRequireRuntime(branches[i].operations) || destinationRefsRequireRuntime(branches[i].dests)
 		facts.Branches = append(facts.Branches, recipeir.StreamRuleBranch{
 			Name:         branches[i].name,
 			Media:        branches[i].media,
@@ -224,15 +223,6 @@ func (s *recipeCompileState) deriveRule(root recipeir.NodeID, paths []streamPath
 	s.streamRules = append(s.streamRules, rule)
 	s.recipe.StreamRules = append(s.recipe.StreamRules, facts)
 	return nil
-}
-
-func destinationRefsRequireRuntime(destinations []destinationRef) bool {
-	for i := range destinations {
-		if destinationSpecRequiresRuntime(destinations[i].dest) {
-			return true
-		}
-	}
-	return false
 }
 
 // validateStreamRulesForCompile checks the structural prerequisites of

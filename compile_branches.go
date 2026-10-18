@@ -328,17 +328,39 @@ func (g *recipeGraph) pathBuffer(nodes []recipeir.NodeID) (recipeir.Operation, b
 // destinations.
 func (g *recipeGraph) groupLeaves(paths []streamPath) []leafGroup {
 	var groups []leafGroup
-	index := map[recipeir.NodeID]int{}
+	byLeaf := map[recipeir.NodeID][]int{}
 	for _, path := range paths {
-		leaf := g.workLeaf(path.nodes)
-		if i, ok := index[leaf]; ok {
+		// Paths through the same work are one branch unless their names after
+		// it differ: a different name makes another branch over the same
+		// nodes, and an unnamed path joins the first branch over its work.
+		leaf, name := g.workLeaf(path.nodes), g.trailingName(path.nodes)
+		placed := false
+		for _, i := range byLeaf[leaf] {
+			groupName := g.trailingName(groups[i].nodes)
+			if name != "" && groupName != "" && name != groupName {
+				continue
+			}
+			if groupName == "" {
+				groups[i].nodes = path.nodes
+			}
 			groups[i].dests = append(groups[i].dests, path.dests...)
-			continue
+			placed = true
+			break
 		}
-		index[leaf] = len(groups)
-		groups = append(groups, leafGroup{nodes: path.nodes, dests: append([]recipeir.NodeID(nil), path.dests...)})
+		if !placed {
+			byLeaf[leaf] = append(byLeaf[leaf], len(groups))
+			groups = append(groups, leafGroup{nodes: path.nodes, dests: append([]recipeir.NodeID(nil), path.dests...)})
+		}
 	}
 	return groups
+}
+
+// trailingName is the name a path's last As after its work gives it.
+func (g *recipeGraph) trailingName(nodes []recipeir.NodeID) string {
+	if last := len(nodes) - 1; last > 0 && g.opOf(nodes[last]).kind == streamOpName {
+		return g.opOf(nodes[last]).name
+	}
+	return ""
 }
 
 // workLeaf is the last node of a path that does work: trailing As names only

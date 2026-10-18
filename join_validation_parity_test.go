@@ -85,7 +85,7 @@ func TestJoinArmTapBeforeDecodeIsRefused(t *testing.T) {
 	).To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))).
 		Describe()
 	assertJoinParityBuildError(t, err, errcode.TapDomainMismatch)
-	if !strings.Contains(err.Error(), "after decode") {
+	if !strings.Contains(err.Error(), "tap the arm after its decode") {
 		t.Fatalf("err = %v, want move-the-tap guidance", err)
 	}
 }

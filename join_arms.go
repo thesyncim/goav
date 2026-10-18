@@ -8,6 +8,7 @@ import (
 	"fmt"
 
 	"github.com/thesyncim/goav/av"
+	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/internal/recipeir"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/plan"
@@ -53,15 +54,15 @@ func joinChainArmTaps(join string, arm string, domain shape.MediaDomain, operati
 		if operations[i].Kind != plan.OpTap {
 			continue
 		}
-		intent := operations[i].Tap
-		if intent.Name == "" {
+		tap := operations[i].Tap
+		if tap.Name == "" {
 			return nil, tapNameEmptyError("build "+join, firstNonEmpty(arm, join))
 		}
-		ref := tapRef{name: intent.Name, domain: shape.DomainFrame}
-		if err := validateTapDomain("build "+join, firstNonEmpty(arm, join), ref, domain); err != nil {
-			return nil, err
+		ref := tapRef{name: tap.Name, domain: shape.DomainFrame}
+		if domain != shape.DomainFrame {
+			return nil, joinArmPacketTapError(join, firstNonEmpty(arm, join), tap.Name)
 		}
-		taps = append(taps, joinArmTap{ref: ref, after: intent.After})
+		taps = append(taps, joinArmTap{ref: ref, after: tap.After})
 	}
 	return taps, nil
 }
@@ -140,3 +141,22 @@ func (s *armRestampStage) Handle(ctx context.Context, msg *pipeline.Message, emi
 }
 
 func (s *armRestampStage) Close() error { return nil }
+
+// joinArmPacketTapError refuses a tap on a join arm's packets: arm taps sit
+// where the arm carries frames.
+func joinArmPacketTapError(join string, arm string, tap string) error {
+	return &BuildError{
+		Phase:     phaseBuild,
+		Family:    errcode.FamilyForCode(errcode.TapDomainMismatch),
+		Code:      errcode.TapDomainMismatch,
+		Operation: "build " + join,
+		Node:      arm,
+		Reason:    "a join arm's taps carry frames, but this tap sits before the arm's .Decode()",
+		fields:    errDetails(errDetail("tap", tap), errDetail("wanted", string(shape.DomainFrame)), errDetail("actual", string(shape.DomainPacket))),
+		fixes: buildErrorFixes([]string{
+			"tap the arm after its decode: a.Audio().Decode().Tap(name)",
+			"tap the packets on a stream that does not feed the join: s.Tap(name).To(destination)",
+		}),
+		cause: errUnsupportedBuild,
+	}
+}
