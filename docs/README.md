@@ -15,7 +15,7 @@ matches your work. Each topic has one owning doc.
 - [`FLOW_CONTROL.md`](FLOW_CONTROL.md): when a live branch cannot keep up and you must choose what blocks, drops, or buffers.
 - [`CONTROL_PLANE.md`](CONTROL_PLANE.md): when a running task must be inspected or steered from outside the process (`ctlserver`, `goav ctl`).
 - [`RTP_WEBRTC.md`](RTP_WEBRTC.md): when media arrives over RTP or WebRTC through Pion.
-- [`CLI.md`](CLI.md): when you want a smoke test without code (`goav run`) or a control client (`goav ctl`), and to choose CLI or library.
+- [`CLI.md`](CLI.md): the pipeline language and `goav run`, `describe`, `explain`, and `ctl`: recipes as text, for the command line, config files, and control sockets.
 
 ## Extending
 

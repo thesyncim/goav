@@ -1,66 +1,92 @@
 # CLI
 
-Use the Go library for application code and reusable pipelines. Use `goav run`
-for a self-contained generated-source smoke test or control-plane playground,
-and use `goav ctl` to inspect or steer a task that an application has exposed
-through `ctlserver`.
-
-`goav run` is intentionally narrow. It does not parse arbitrary goav recipes:
-it builds one generated video source, zero or more video operations, and one
-file sink.
-
-## `goav run`
+`goav` runs, describes, and explains programs in goav's pipeline language, and
+`goav ctl` steers a task an application serves over a control socket. A
+program is the same recipe the Go library builds, written as text: the CLI and
+the library produce the same graph.
 
 ```text
-goav run [--runtime demo|default|test] [--control unix://PATH] '<pipeline>'
+goav run      [--runtime default|demo|test] [--control unix://PATH] [-f FILE] '<program>'
+goav describe [--runtime ...] [--format text|dot|mermaid|json] [-f FILE] '<program>'
+goav explain  [--runtime ...] [-f FILE] '<program>'
+goav elements
+goav ctl      [--control unix://PATH] <command> [args...]
 ```
 
-Pipeline steps are separated by `!`. Values may be quoted with single or
-double quotes; backslash escapes the next byte inside a quoted value.
+## The language
+
+A program is pipelines, one per line or separated by `;`, with `#` comments.
+A pipeline starts with an input, joins operations with `!`, and ends at one or
+more destinations separated by commas. `name := ...` binds a stream to reuse;
+using it twice forks it, and the work before the fork runs once.
 
 ```text
-testsrc video [name=<id>] width=<px> height=<px> fps=<n[/d]|decimal> frames=<n>|duration=<d> realtime=<bool> [format=i420|yuv420p] [pattern=bars|gradient|solid]
-tap name=<tap-name>
-resize width=<px> height=<px>
-encode codec=<id> media=<video|audio> [bitrate=<rate>] [fps=<n[/d]|decimal>] [keyframe_interval=<n>] [profile=<name>] [level=<name>] [sample_rate=<hz>] [channels=<n>] [native_key=value...]
-filesink location=<path> [format=<id>]
+in := file in.webm
+v  := in ! video ! decode
+v ! resize 1280x720 ! encode vp9 bitrate=2M ! as hd ! file hd.webm
+v ! resize 640x360  ! encode vp9 bitrate=800k ! as sd ! file sd.webm
+in ! audio ! decode ! encode opus ! file hd.webm, file sd.webm
 ```
 
-Rules:
+`file PATH` is an input at a pipeline's start and a destination at its end;
+every use of one path is one input, or one mux. Settings are positional values,
+then `key=value`: numbers take `k`, `M`, and `G` (`bitrate=2M`), durations are Go
+durations (`duration=2s`), sizes are `WxH`. A line starting with `!` continues
+the one above.
 
-- The first step must be `testsrc video`; aliases such as `videosrc`, `w`,
-  `h`, `size`, `framerate`, `live`, and `pix_fmt` are refused with a canonical
-  spelling.
-- The last step must be `filesink`.
-- A generated frame source must pass through `encode` before `filesink`.
-- `tap` publishes a frame tap for later `goav ctl attach`.
-- `resize` is video-only and requires explicit `width` and `height`.
-- `encode` requires `codec` and `media`; duplicate aliases such as `id`,
-  `type`, `rate`, `framerate`, `keyint`, `gop`, `samplerate`, `ch`,
-  `clockrate`, and `bitrate_bps` are refused.
-- Known file extensions infer common formats; use `format=<id>` to override or
-  target a custom muxer.
+| Kind | Elements |
+| --- | --- |
+| Sources | `file PATH`, `testsrc video\|audio [size= fps= pattern= rate= channels= tone= frames= duration=] [live]` |
+| Selection | `video`, `audio`, `stream` `[id= index=]` |
+| Operations | `decode`, `encode CODEC [bitrate= fps= keyframe_interval= ...]`, `resize WxH [mode=]`, `resample RATE CHANNELS`, `tap NAME`, `as NAME`, `buffer MODE [N]`, `sync NAME`, `playout`, `auto`, `syncbypts` |
+| Joins | `mix(a, b)`, `composite(a, b ! at X Y)`, `select(a, b)` |
+| Destinations | `file PATH [format=]`, `null` |
 
-Runtime choices:
-
-- `demo`: bundled adapters with a deterministic clock.
-- `default` or `bundle`: bundled adapters with normal runtime timing.
-- `test`: deterministic `goavtest` runtime for fake/private codecs.
-
-With `--control unix://PATH`, `goav run` serves the live task through
-`ctlserver` while the task runs. The command returns JSON after the task stops.
-
-## `goav ctl`
+`goav elements` lists every element with its settings. Native adapter settings
+pass through `encode` (`encode av1 tune=zerolatency`). A mistake is refused
+with its line and column, the offending text underlined, and the fix:
 
 ```text
-goav ctl [--control unix://PATH] <command> [args...]
+launch: 1:26: unknown element "decod"
+    file clip.webm ! video ! decod ! file x.webm
+                             ^^^^^
+    did you mean "decode"?
 ```
 
-`goav ctl help` prints the built-in command set. Against a live socket,
-`help attach`, `help rebranch`, and `capabilities` include the host's
-`ctlserver.CapabilitySet`, custom branch steps, custom encoder spellings, and
-runtime-discovered encoders/muxers.
+Applications compile programs with [`launch.Compile`](../launch), add their
+own elements with `launch.Use`, and choose which files a program may touch with
+`launch.Files`.
 
-Use `goav ctl` for cold-path operations: graph inspection, stats/events,
+## Running
+
+`goav run` builds the program and runs it until its inputs end (Ctrl-C stops a
+live program), then prints a JSON summary of the files it wrote:
+
+```text
+goav run 'testsrc video size=1280x720 duration=2s ! encode vp9 ! file clip.webm
+          testsrc audio duration=2s ! encode opus ! file clip.webm'
+{"runtime":"default","wrote":["clip.webm"]}
+```
+
+Runtimes: `default` is the bundled adapters; `demo` adds a deterministic clock,
+so `live` test sources run as fast as the graph allows; `test` is the
+`goavtest` runtime with fake codecs. `goav describe` prints the graph a program
+builds and `goav explain` its plan, without opening or creating any file.
+
+## Control
+
+With `--control unix://PATH`, `goav run` serves the running task through
+`ctlserver` until it stops:
+
+```text
+goav run --control unix:///tmp/goav.sock 'testsrc video live ! tap frames ! encode vp8 ! file live.webm'
+goav ctl --control unix:///tmp/goav.sock taps
+goav ctl --control unix:///tmp/goav.sock control seek position=2s source=video
+goav ctl --control unix:///tmp/goav.sock stop
+```
+
+`goav ctl help` prints the built-in command set; against a live socket,
+`help attach` and `capabilities` include the host's `ctlserver.CapabilitySet`.
+Use `goav ctl` for cold-path operations: graph inspection, stats and events,
 controls, attach, rebranch, detach, and stop. Hot-path media logic belongs in
 the Go library.

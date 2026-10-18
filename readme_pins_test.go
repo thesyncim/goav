@@ -16,6 +16,7 @@ import (
 	"github.com/thesyncim/goav/container/matroska"
 	"github.com/thesyncim/goav/goavtest"
 	"github.com/thesyncim/goav/graphrender"
+	"github.com/thesyncim/goav/launch"
 )
 
 var readmeTextBlockPattern = regexp.MustCompile("(?s)```text\n(.*?)```")
@@ -118,6 +119,30 @@ func TestReadmeFanoutRuns(t *testing.T) {
 		}
 		if len(perTrack) != 2 {
 			t.Fatalf("%s.webm packets per track = %v, want both tracks to carry media", name, perTrack)
+		}
+	}
+}
+
+var readmeProgramPattern = regexp.MustCompile(`(?s)goav(?:@latest)? run (?:\\\n\s*)?'([^']*)'`)
+
+// TestReadmeProgramsCompile pins every goav run program in the README to the
+// pipeline language, and the text recipe to the Go fanout it mirrors.
+func TestReadmeProgramsCompile(t *testing.T) {
+	readme, err := os.ReadFile("README.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	programs := readmeProgramPattern.FindAllStringSubmatch(string(readme), -1)
+	if len(programs) < 2 {
+		t.Fatalf("README has %d goav run programs, want the test clip and the text recipe", len(programs))
+	}
+	for _, m := range programs {
+		outs, err := launch.Compile(m[1], launch.Files(launch.OS()))
+		if err != nil {
+			t.Fatalf("README program does not compile:\n%s\n%v", m[1], err)
+		}
+		if _, err := bundle.Describe(outs...); err != nil {
+			t.Fatalf("README program does not describe:\n%s\n%v", m[1], err)
 		}
 	}
 }

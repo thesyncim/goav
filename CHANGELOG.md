@@ -11,6 +11,19 @@ methodology changes, and migration notes.
 
 ## Unreleased
 
+- `launch` is goav's pipeline language: recipes as text for command lines,
+  config files, and control sockets. `launch.Compile(program, options...)`
+  returns ordinary Outputs, the same graph the Go recipe builds (pinned node
+  for node). Programs bind streams with `:=` and fork by reuse, join with
+  `mix(...)`, `composite(...)`, and `select(...)`, and write one file per path
+  however many pipelines end there; files open only at run time, through
+  `launch.Files`. Hosts add typed elements with `launch.Use`. Refusals carry
+  the line, column, an underline, and a fix. Breaking: `goav run` speaks the
+  language (the old one-source pipeline strings are gone) and gains
+  `goav describe`, `goav explain`, and `goav elements`; `testsrc audio` joins
+  `testsrc video`. Matroska decides seekability by asking the writer, so a
+  pipe never looks seekable.
+
 - Opus in WebM/Matroska trims its end the standard way: a final packet
   shorter than its frame carries the rest as DiscardPadding, so players
   (ffmpeg, browsers) stop where the input did, and the demuxer reads it back.

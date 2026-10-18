@@ -594,7 +594,14 @@ func planJoinTree(input joinPlanInput, tree *joinTreeSnapshot, cursor int, used 
 				return nil, 0, err
 			}
 			if cursor >= len(input.sets) || !input.sets[cursor].known || len(input.sets[cursor].streams) == 0 {
-				return nil, 0, recipeGraphUnsupportedError(input.operation, input.intent)
+				arm := name
+				if cursor < len(input.sets) {
+					arm = firstNonEmpty(input.sets[cursor].name, name)
+				}
+				return nil, 0, joinArmError(name, arm,
+					"a "+kind+" plans its inputs' streams up front, and the streams of input "+strconv.Quote(arm)+" are known only once it opens",
+					"join inputs that declare their streams: live and provider inputs (goav.Input), or goav.Source",
+					"joining file inputs is not supported yet")
 			}
 			stream, err := selectStream(input.sets[cursor].streams, av.StreamSelector{Type: profile.media})
 			if err != nil {

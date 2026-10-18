@@ -1,33 +1,37 @@
 package main
 
 import (
+	"bytes"
 	"os"
 	"strings"
 	"testing"
 )
 
-func TestCLIDocumentationPinsRunSchema(t *testing.T) {
+// TestCLIDocumentationPinsTheLanguage keeps docs/CLI.md in step with the
+// commands: the synopsis, the refusal it shows, and the run summary are what
+// the CLI prints.
+func TestCLIDocumentationPinsTheLanguage(t *testing.T) {
 	doc, err := os.ReadFile("../../docs/CLI.md")
 	if err != nil {
 		t.Fatal(err)
 	}
 	text := string(doc)
 	for _, fragment := range []string{
-		"goav run [--runtime demo|default|test] [--control unix://PATH] '<pipeline>'",
-		"testsrc video [name=<id>] width=<px> height=<px>",
-		"tap name=<tap-name>",
-		"resize width=<px> height=<px>",
-		"encode codec=<id> media=<video|audio>",
-		"filesink location=<path> [format=<id>]",
+		"goav run      [--runtime default|demo|test] [--control unix://PATH] [-f FILE] '<program>'",
+		"goav describe [--runtime ...] [--format text|dot|mermaid|json] [-f FILE] '<program>'",
+		"goav elements",
 		"ctlserver.CapabilitySet",
-		"Hot-path media logic belongs",
-		"the Go library.",
+		"Hot-path media logic belongs in\nthe Go library.",
 	} {
 		if !strings.Contains(text, fragment) {
 			t.Fatalf("docs/CLI.md missing %q", fragment)
 		}
 	}
-	if !strings.Contains(runPipelineHelp(), "schema: docs/CLI.md") {
-		t.Fatal("goav run help should point to docs/CLI.md")
+	var stdout, stderr bytes.Buffer
+	run([]string{"run", "file clip.webm ! video ! decod ! file x.webm"}, &stdout, &stderr)
+	for _, line := range strings.Split(strings.TrimSpace(stderr.String()), "\n") {
+		if !strings.Contains(text, line) {
+			t.Fatalf("docs/CLI.md refusal sample lacks %q, which goav prints", line)
+		}
 	}
 }

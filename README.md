@@ -58,7 +58,9 @@ the writer when the run ends.
 <summary>No WebM handy? Make a test clip with the CLI.</summary>
 
 ```sh
-go run github.com/thesyncim/goav/cmd/goav@latest run 'testsrc video width=1920 height=1080 fps=30 frames=60 realtime=false ! encode codec=vp9 media=video ! filesink location=in.webm'
+go run github.com/thesyncim/goav/cmd/goav@latest run \
+  'testsrc video size=1920x1080 duration=2s ! encode vp9 ! file in.webm
+   testsrc audio duration=2s ! encode opus ! file in.webm'
 ```
 
 </details>
@@ -84,6 +86,16 @@ err := bundle.Run(ctx,
 
 `stream.To(...)` makes an `Output`. `bundle.Run` runs Outputs together with the bundled
 codecs and containers; a runtime of your own runs them the same way: `rt.Run(ctx, outputs...)`.
+
+The same recipe as text, for a command line, a config file, or a control socket. It builds the
+identical graph ([`launch`](launch), [CLI](docs/CLI.md)):
+
+```sh
+goav run 'v := file in.webm ! video ! decode
+          v ! resize 1280x720 ! encode vp9 ! as hd ! file hd.webm
+          v ! resize 640x360 ! encode vp9 ! as sd ! file sd.webm
+          file in.webm ! audio ! decode ! encode opus ! file hd.webm, file sd.webm'
+```
 
 ## See the plan first
 
