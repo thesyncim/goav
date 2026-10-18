@@ -12,24 +12,30 @@ import (
 
 const bufferedMaxFramePlanes = 8
 
+// bufferedRunner is the queued delivery strategy over the shared topology:
+// an emit binds the message into a slot of each target's bounded queue, and
+// one serial worker per node drains it into Handle.
+type bufferedRunner struct {
+	topology[*bufferedNode]
+	pending inflight // queued, not-yet-handled messages, for the drain
+	workers sync.WaitGroup
+	runCtx  context.Context
+	running bool
+	// draining is set once the sources ended and the queues are closing; the
+	// topology refuses changes until Run returns.
+	draining bool
+}
+
 type bufferedNode struct {
-	name       string
-	kind       nodeKind
-	active     bool
-	source     Source
-	stage      Stage
-	admit      Admitter
-	sink       Sink
+	nodeBase
 	policy     BufferPolicy
 	drop       dropController
 	queue      chan *bufferedMessage
 	free       chan *bufferedMessage
 	slots      []bufferedMessage
-	routes     []directRoute
 	emitter    bufferedEmitter
 	queueMutex sync.Mutex
 	done       chan struct{}
-	counters   *nodeCounters
 	// queuedBytes tracks the total payload bytes of in-flight queued messages,
 	// maintained only when policy.MaxBytes > 0: the producer adds before queuing
 	// (under queueMutex), the lock-free worker subtracts in releaseSlot.
@@ -42,38 +48,17 @@ type bufferedNode struct {
 	// set under queueMutex before the queue is closed, so enqueue (which holds
 	// queueMutex but no g.mu) never sends on a closed channel.
 	queueClosed bool
-	// paused, when set, makes the lock-free producer skip this node so a single
-	// branch can be paused without touching the source or its siblings.
-	paused atomic.Bool
-	// sawMedia is set (once) when a sink node receives its first packet or
-	// frame; the readiness signal counts sinks out through it. The worker's
-	// delivery path pays one atomic load per media message, nothing more.
-	sawMedia atomic.Bool
 	// qosLast rate-limits MaxLatency-shed QoS reports to one per node per
 	// qosReportWindow (0 = never reported). Touched only on the shed path.
 	qosLast atomic.Int64
 	// space wakes a DropBlock producer parked in enqueueBlocking: the worker
 	// signals it on every take and slot return, teardown on queue close.
-	// Capacity 1, made once in addNode, so it is never replaced under a
+	// Capacity 1, made once in attachLocked, so it is never replaced under a
 	// running worker.
 	space chan struct{}
 }
 
-// bufferedTopo is an immutable producer-side routing snapshot read lock-free by
-// emit via bufferedRunner.topo (atomic.Pointer), rebuilt under g.mu on every
-// topology/queue change. It holds stable *bufferedNode pointers (their
-// queue/free/policy/counters are set under g.mu before the rebuild that
-// publishes them) plus a deep copy of each node's active flag and routes, so a
-// published snapshot is never mutated.
-type bufferedTopo struct {
-	nodes []bufferedTopoNode
-}
-
-type bufferedTopoNode struct {
-	node   *bufferedNode
-	active bool
-	routes []directRoute
-}
+func (n *bufferedNode) base() *nodeBase { return &n.nodeBase }
 
 type bufferedEmitter struct {
 	graph *bufferedRunner
@@ -123,87 +108,60 @@ type bufferedFanoutBind struct {
 	packet *bufferedSharedPacket
 }
 
-type bufferedRunner struct {
-	config  GraphConfig
-	mu      sync.RWMutex
-	index   map[string]int
-	nodes   []*bufferedNode
-	sources []int
-	events  chan av.Event
-	// eventsMu guards the event channel close against the lock-free publishEvent
-	// path, so a concurrent emit cannot send on a closed channel (matches the
-	// direct runner). Hot-path emits take it only for the observer send.
-	eventsMu     sync.Mutex
-	eventsClosed bool
-	pending      inflight // queued, not-yet-handled messages, for the drain
-	workers      sync.WaitGroup
-	cold         coldStats
-	runCtx       context.Context
-	fail         runFailure // first error; cancels runCtx (run_failure.go)
-	running      bool
-	draining     bool
-	closed       bool
-	// closing is the lock-free mirror of closed, set under g.mu at Close so the
-	// lock-free worker path sheds messages once the graph is closing.
-	closing atomic.Bool
-	// topo is the immutable producer-side routing snapshot; emit reads it without
-	// g.mu. nil means closed.
-	topo atomic.Pointer[bufferedTopo]
-	// ready is the once-per-run av.EventTaskReady countdown (readiness.go).
-	ready readiness
-}
-
-// rebuildTopoLocked publishes a fresh producer-side routing snapshot. Caller must
-// hold g.mu (write). Routes are deep-copied so in-place edits by Disconnect/Remove
-// never touch an already-published snapshot.
-func (g *bufferedRunner) rebuildTopoLocked() {
-	if g.closed {
-		g.topo.Store(nil)
-		return
-	}
-	topo := &bufferedTopo{nodes: make([]bufferedTopoNode, len(g.nodes))}
-	for i := range g.nodes {
-		n := g.nodes[i]
-		tn := &topo.nodes[i]
-		tn.node = n
-		tn.active = n.active
-		if len(n.routes) == 0 {
-			continue
-		}
-		tn.routes = make([]directRoute, len(n.routes))
-		for j := range n.routes {
-			tn.routes[j] = n.routes[j]
-			if len(n.routes[j].to) > 0 {
-				to := make([]int, len(n.routes[j].to))
-				copy(to, n.routes[j].to)
-				tn.routes[j].to = to
-			}
-		}
-	}
-	g.topo.Store(topo)
-}
-
-type bufferedSourceRun struct {
-	source  Source
-	emitter bufferedEmitter
-}
-
 func newBufferedRunner(config GraphConfig) (*bufferedRunner, error) {
 	if config.Buffer.IsDirect() {
 		return nil, ErrBufferedEdgesUnsupported
 	}
 	config.Buffer = normalizeBufferedPolicy(config.Buffer)
-	eventCapacity := config.EventCapacity
-	if eventCapacity < 1 {
-		eventCapacity = defaultEventCapacity
-	}
-	g := &bufferedRunner{
-		config: config,
-		index:  make(map[string]int),
-		events: make(chan av.Event, eventCapacity),
-	}
+	g := &bufferedRunner{}
+	g.init(config, g)
 	g.pending.idle = make(chan struct{}, 1)
 	return g, nil
+}
+
+func (g *bufferedRunner) newNode(policy BufferPolicy) (*bufferedNode, error) {
+	return &bufferedNode{policy: g.nodePolicy(policy)}, nil
+}
+
+// mutable refuses a new source once Run started (sources start only there),
+// and every change while the run drains.
+func (g *bufferedRunner) mutable(source bool) error {
+	if g.running && (source || g.draining) {
+		return ErrDynamicGraphUnsupported
+	}
+	return nil
+}
+
+// attachLocked gives a new node its delivery state; a stage or sink added to
+// a running graph gets its queue and worker at once.
+func (g *bufferedRunner) attachLocked(n *bufferedNode, index int) {
+	n.drop = newDropController(n.policy)
+	n.space = make(chan struct{}, 1)
+	n.emitter = bufferedEmitter{graph: g, from: index}
+	if g.running && n.kind != nodeSource {
+		g.openQueue(n)
+		g.startWorkerLocked(n)
+	}
+}
+
+// stopLocked closes a running node's queue; its worker sheds what is left
+// (the routing snapshot is nil) and exits.
+func (g *bufferedRunner) stopLocked(ctx context.Context, n *bufferedNode) (bool, error) {
+	if !g.running || n.kind == nodeSource {
+		return false, nil
+	}
+	if n.queue != nil {
+		if err := g.closeNodeQueueContext(ctx, "close", n); err != nil {
+			go forceCloseNodeQueue(n)
+			return false, err
+		}
+	}
+	return true, nil
+}
+
+// awaitStopped waits for the node's worker to exit.
+func (g *bufferedRunner) awaitStopped(ctx context.Context, n *bufferedNode) error {
+	return waitCloseDoneContext(ctx, "close", n.name, n.done, g.config.CloseWaitTimeout)
 }
 
 func normalizeBufferedPolicy(policy BufferPolicy) BufferPolicy {
@@ -214,162 +172,6 @@ func normalizeBufferedPolicy(policy BufferPolicy) BufferPolicy {
 		policy.Capacity = 1
 	}
 	return policy
-}
-
-func (g *bufferedRunner) AddSource(source Source, policy BufferPolicy) (NodeRef, error) {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-	if g.closed {
-		return "", ErrClosed
-	}
-	if g.running {
-		return "", ErrDynamicGraphUnsupported
-	}
-	index, err := g.addNode(&bufferedNode{name: source.Name(), kind: nodeSource, source: source, policy: g.nodePolicy(policy)})
-	if err != nil {
-		return "", err
-	}
-	g.sources = append(g.sources, index)
-	g.rebuildTopoLocked()
-	return NodeRef(g.nodes[index].name), nil
-}
-
-func (g *bufferedRunner) AddStage(stage Stage, policy BufferPolicy) (NodeRef, error) {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-	if g.closed {
-		return "", ErrClosed
-	}
-	if g.running && g.draining {
-		return "", ErrDynamicGraphUnsupported
-	}
-	index, err := g.addNode(&bufferedNode{name: stage.Name(), kind: nodeStage, stage: stage, policy: g.nodePolicy(policy)})
-	if err != nil {
-		return "", err
-	}
-	if g.running {
-		g.openQueue(g.nodes[index])
-		g.startWorkerLocked(index)
-	}
-	g.rebuildTopoLocked()
-	return NodeRef(g.nodes[index].name), nil
-}
-
-func (g *bufferedRunner) AddSink(sink Sink, policy BufferPolicy) (NodeRef, error) {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-	if g.closed {
-		return "", ErrClosed
-	}
-	if g.running && g.draining {
-		return "", ErrDynamicGraphUnsupported
-	}
-	index, err := g.addNode(&bufferedNode{name: sink.Name(), kind: nodeSink, sink: sink, policy: g.nodePolicy(policy)})
-	if err != nil {
-		return "", err
-	}
-	if g.running {
-		g.openQueue(g.nodes[index])
-		g.startWorkerLocked(index)
-	}
-	g.rebuildTopoLocked()
-	return NodeRef(g.nodes[index].name), nil
-}
-
-func (g *bufferedRunner) Connect(route Route) error {
-	if len(route.To) == 0 {
-		return ErrInvalidLink
-	}
-	policy, err := normalizeRoutePolicy(route.Policy)
-	if err != nil {
-		return err
-	}
-	g.mu.Lock()
-	defer g.mu.Unlock()
-	if g.running && g.draining {
-		return ErrDynamicGraphUnsupported
-	}
-	from, ok := g.index[route.From]
-	if !ok || !g.nodes[from].active {
-		return ErrUnknownNode
-	}
-	if g.nodes[from].kind == nodeSink {
-		return ErrInvalidLink
-	}
-
-	destinations := make([]int, 0, len(route.To))
-	for i := range route.To {
-		to, ok := g.index[route.To[i]]
-		if !ok || !g.nodes[to].active {
-			return ErrUnknownNode
-		}
-		if g.nodes[to].kind == nodeSource {
-			return ErrInvalidLink
-		}
-		destinations = append(destinations, to)
-	}
-	g.nodes[from].routes = append(g.nodes[from].routes, directRoute{
-		to:     destinations,
-		policy: policy,
-		label:  route.Label,
-	})
-	g.rebuildTopoLocked()
-	return nil
-}
-
-func (g *bufferedRunner) Disconnect(route Route) error {
-	if len(route.To) == 0 {
-		return ErrInvalidLink
-	}
-	policy, err := normalizeRoutePolicy(route.Policy)
-	if err != nil {
-		return err
-	}
-	g.mu.Lock()
-	defer g.mu.Unlock()
-	if g.running && g.draining {
-		return ErrDynamicGraphUnsupported
-	}
-	from, ok := g.index[route.From]
-	if !ok || !g.nodes[from].active {
-		return ErrUnknownNode
-	}
-	destinations := make(map[int]struct{}, len(route.To))
-	for i := range route.To {
-		to, ok := g.index[route.To[i]]
-		if !ok {
-			return ErrUnknownNode
-		}
-		destinations[to] = struct{}{}
-	}
-	removed := false
-	routes := g.nodes[from].routes[:0]
-	for i := range g.nodes[from].routes {
-		existing := g.nodes[from].routes[i]
-		if existing.policy != policy || existing.label != route.Label {
-			routes = append(routes, existing)
-			continue
-		}
-		to := existing.to[:0]
-		for j := range existing.to {
-			if _, ok := destinations[existing.to[j]]; ok {
-				removed = true
-				continue
-			}
-			to = append(to, existing.to[j])
-		}
-		if len(to) == 0 {
-			continue
-		}
-		existing.to = to
-		routes = append(routes, existing)
-	}
-	g.nodes[from].routes = routes
-	if !removed {
-		return ErrInvalidLink
-	}
-	g.rebuildTopoLocked()
-	return nil
 }
 
 func (g *bufferedRunner) Run(ctx context.Context) error {
@@ -396,36 +198,29 @@ func (g *bufferedRunner) Run(ctx context.Context) error {
 	g.runCtx = runCtx
 	g.pending.n.Store(0) // no worker runs yet; queues were just reopened
 	g.workers = sync.WaitGroup{}
-	for i := range g.nodes {
-		if !g.nodes[i].active || g.nodes[i].kind == nodeSource {
+	for _, node := range g.nodes {
+		if !node.active || node.kind == nodeSource {
 			continue
 		}
-		g.startWorkerLocked(i)
+		g.startWorkerLocked(node)
 	}
-	sourceRuns := make([]bufferedSourceRun, 0, len(g.sources))
-	for i := range g.sources {
-		index := g.sources[i]
-		if !g.nodes[index].active {
-			continue
+	sources := make([]*bufferedNode, 0, len(g.sources))
+	for _, index := range g.sources {
+		if node := g.nodes[index]; node.active {
+			sources = append(sources, node)
 		}
-		sourceRuns = append(sourceRuns, bufferedSourceRun{
-			source:  g.nodes[index].source,
-			emitter: g.nodes[index].emitter,
-		})
 	}
-	g.rebuildTopoLocked() // publish the snapshot with queues now open
+	g.rebuildLocked() // publish the snapshot with queues now open
 	g.mu.Unlock()
 
-	var sources sync.WaitGroup
-	for i := range sourceRuns {
-		source := sourceRuns[i].source
-		emitter := sourceRuns[i].emitter
-		sources.Go(func() {
-			g.fail.report(source.Start(runCtx, &emitter))
+	var runs sync.WaitGroup
+	for _, node := range sources {
+		runs.Go(func() {
+			g.fail.report(node.source.Start(runCtx, &node.emitter))
 		})
 	}
 
-	sources.Wait()
+	runs.Wait()
 	// A clean end drains: queued messages (and whatever stages re-emit from
 	// them) are handled before the queues close. A failure or cancellation
 	// skips the wait; workers shed what is left once the queues close.
@@ -443,174 +238,22 @@ func (g *bufferedRunner) Run(ctx context.Context) error {
 	return g.fail.err()
 }
 
-func (g *bufferedRunner) Spec() Spec {
-	g.mu.RLock()
-	defer g.mu.RUnlock()
-	spec := Spec{
-		Name:     g.config.Name,
-		Realtime: g.config.Realtime,
-	}
-	for i := range g.nodes {
-		node := g.nodes[i]
-		if !node.active {
-			continue
-		}
-		spec.Nodes = append(spec.Nodes, bufferedNodeSpec(node))
-		for j := range node.routes {
-			route := &node.routes[j]
-			for k := range route.to {
-				to := g.nodes[route.to[k]]
-				if !to.active {
-					continue
-				}
-				spec.Edges = append(spec.Edges, EdgeSpec{
-					From:   NodeRef(node.name),
-					To:     NodeRef(to.name),
-					Policy: route.policy,
-					Label:  route.label,
-				})
-			}
-		}
-	}
-	return spec
-}
-
-func (g *bufferedRunner) Events() <-chan av.Event {
-	return g.events
-}
-
-// SetNodePaused pauses or resumes delivery to a single node. While paused the
-// lock-free producer skips it, so the source and sibling branches are unaffected.
-func (g *bufferedRunner) SetNodePaused(ref NodeRef, paused bool) error {
-	g.mu.RLock()
-	defer g.mu.RUnlock()
-	index, ok := g.index[ref.String()]
-	if !ok || index < 0 || index >= len(g.nodes) || !g.nodes[index].active {
-		return ErrUnknownNode
-	}
-	g.nodes[index].paused.Store(paused)
-	return nil
-}
-
-func (g *bufferedRunner) Stats() GraphStats {
-	g.mu.RLock()
-	defer g.mu.RUnlock()
-	names := make([]string, len(g.nodes))
-	nodes := make([]*nodeCounters, len(g.nodes))
-	reported := make([]uint64, len(g.nodes))
-	for i := range g.nodes {
-		names[i] = g.nodes[i].name
-		nodes[i] = g.nodes[i].counters
-		reported[i] = reportedDrops(g.nodes[i].source, g.nodes[i].stage, g.nodes[i].sink)
-	}
-	return snapshotStats(&g.cold, names, nodes, reported)
-}
-
-func (g *bufferedRunner) Close() error {
-	return g.CloseContext(context.Background())
-}
-
-func (g *bufferedRunner) CloseContext(ctx context.Context) error {
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-	g.mu.Lock()
-	if g.closed {
-		g.mu.Unlock()
-		return nil
-	}
-	g.closed = true
-	g.closing.Store(true)
-	running := g.running
-	var first error
-	stuck := make(map[*bufferedNode]struct{})
-	nodes := make([]*bufferedNode, 0, len(g.nodes))
-	for i := range g.nodes {
-		node := g.nodes[i]
-		if !node.active {
-			continue
-		}
-		if running && node.kind != nodeSource && node.queue != nil {
-			if err := g.closeNodeQueueContext(ctx, "close", node); err != nil {
-				if first == nil {
-					first = err
-				}
-				stuck[node] = struct{}{}
-				go forceCloseNodeQueue(node)
-			}
-		}
-		node.active = false
-		nodes = append(nodes, node)
-	}
-	g.rebuildTopoLocked() // g.closed is set, so this publishes nil
-	g.mu.Unlock()
-
-	for i := range nodes {
-		node := nodes[i]
-		if _, ok := stuck[node]; ok {
-			continue
-		}
-		if running && node.kind != nodeSource {
-			if err := waitCloseDoneContext(ctx, "close", node.name, node.done, g.config.CloseWaitTimeout); err != nil {
-				if first == nil {
-					first = err
-				}
-				stuck[node] = struct{}{}
-			}
-		}
-	}
-	for i := range nodes {
-		if _, ok := stuck[nodes[i]]; ok {
-			continue
-		}
-		err := closeBufferedNode(nodes[i])
-		if first == nil && err != nil {
-			first = err
-		}
-	}
-	// Close events under eventsMu so a concurrent lock-free emit cannot send on
-	// the channel after it is closed.
-	g.eventsMu.Lock()
-	g.eventsClosed = true
-	close(g.events)
-	g.eventsMu.Unlock()
-	return first
-}
-
 func (g *bufferedRunner) Remove(ref NodeRef) error {
 	g.mu.Lock()
-	if g.closed {
-		g.mu.Unlock()
-		return ErrClosed
-	}
 	running := g.running
-	if running && g.draining {
+	node, err := g.detachLocked(ref)
+	if err != nil {
 		g.mu.Unlock()
-		return ErrDynamicGraphUnsupported
+		return err
 	}
-	index, ok := g.index[ref.String()]
-	if !ok || !g.nodes[index].active {
-		g.mu.Unlock()
-		return ErrUnknownNode
-	}
-	if g.nodes[index].kind == nodeSource {
-		g.mu.Unlock()
-		return ErrInvalidLink
-	}
-	node := g.nodes[index]
 	if node.kind == nodeSink && running {
 		// A sink leaving before its first media message stops gating readiness.
 		g.noteSinkMedia(&node.sawMedia)
 	}
-	delete(g.index, ref.String())
-	g.unrouteLocked(index)
 	if !running || node.queue == nil {
 		g.retireLocked(node)
 		g.mu.Unlock()
-		return closeBufferedNode(node)
+		return node.close()
 	}
 	// Nothing new reaches the node now; what it already queued is delivered
 	// before it closes. Its own routes stay up while it drains, so a stage
@@ -623,9 +266,9 @@ func (g *bufferedRunner) Remove(ref NodeRef) error {
 		return err
 	}
 	done := node.done
-	g.rebuildTopoLocked()
+	g.rebuildLocked()
 	g.mu.Unlock()
-	err := waitCloseDone("remove", node.name, done, g.config.CloseWaitTimeout)
+	err = waitCloseDone("remove", node.name, done, g.config.CloseWaitTimeout)
 	g.mu.Lock()
 	if !node.active {
 		// Close took the graph down mid-drain and closed the node itself.
@@ -637,35 +280,7 @@ func (g *bufferedRunner) Remove(ref NodeRef) error {
 	if err != nil {
 		return err
 	}
-	return closeBufferedNode(node)
-}
-
-// unrouteLocked drops every route into the node at index. Caller holds g.mu.
-func (g *bufferedRunner) unrouteLocked(index int) {
-	for i := range g.nodes {
-		if !g.nodes[i].active {
-			continue
-		}
-		for j := range g.nodes[i].routes {
-			route := &g.nodes[i].routes[j]
-			to := route.to[:0]
-			for k := range route.to {
-				if route.to[k] == index {
-					continue
-				}
-				to = append(to, route.to[k])
-			}
-			route.to = to
-		}
-		routes := g.nodes[i].routes[:0]
-		for j := range g.nodes[i].routes {
-			if len(g.nodes[i].routes[j].to) == 0 {
-				continue
-			}
-			routes = append(routes, g.nodes[i].routes[j])
-		}
-		g.nodes[i].routes = routes
-	}
+	return node.close()
 }
 
 // retireLocked takes a removed node out of the graph: inactive, routeless,
@@ -674,7 +289,7 @@ func (g *bufferedRunner) retireLocked(node *bufferedNode) {
 	node.active = false
 	node.removed.Store(true)
 	node.routes = nil
-	g.rebuildTopoLocked()
+	g.rebuildLocked()
 }
 
 // closeNodeQueue closes a node's queue exactly once, serialized with the
@@ -737,28 +352,6 @@ func forceCloseNodeQueue(node *bufferedNode) {
 	node.signalSpace()
 }
 
-func (g *bufferedRunner) addNode(node *bufferedNode) (int, error) {
-	if node.name == "" {
-		return 0, ErrUnknownNode
-	}
-	if _, ok := g.index[node.name]; ok {
-		return 0, ErrNodeExists
-	}
-	index := len(g.nodes)
-	node.active = true
-	node.policy = normalizeBufferedPolicy(node.policy)
-	node.drop = newDropController(node.policy)
-	if admit, ok := node.stage.(Admitter); ok {
-		node.admit = admit
-	}
-	node.space = make(chan struct{}, 1)
-	node.emitter = bufferedEmitter{graph: g, from: index}
-	node.counters = &nodeCounters{}
-	g.index[node.name] = index
-	g.nodes = append(g.nodes, node)
-	return index, nil
-}
-
 func (g *bufferedRunner) nodePolicy(policy BufferPolicy) BufferPolicy {
 	if policy.IsDirect() {
 		return g.config.Buffer
@@ -789,8 +382,7 @@ func (g *bufferedRunner) openQueue(node *bufferedNode) {
 	node.queueClosed = false
 }
 
-func (g *bufferedRunner) startWorkerLocked(index int) {
-	node := g.nodes[index]
+func (g *bufferedRunner) startWorkerLocked(node *bufferedNode) {
 	queue := node.queue
 	done := make(chan struct{})
 	node.done = done
@@ -834,14 +426,14 @@ func (g *bufferedRunner) emitDelivery(ctx context.Context, from int, msg *Messag
 	// Lock-free producer: read the routing snapshot and enqueue without g.mu, so a
 	// (possibly blocking) send holds no topology lock and cannot deadlock a
 	// concurrent mutation or a re-emitting stage.
-	topo := g.topo.Load()
-	if topo == nil {
+	snap := g.snap.Load()
+	if snap == nil {
 		return delivery, ErrClosed
 	}
-	if from < 0 || from >= len(topo.nodes) {
+	if from < 0 || from >= len(snap.nodes) {
 		return delivery, ErrUnknownNode
 	}
-	fromNode := &topo.nodes[from]
+	fromNode := &snap.nodes[from]
 	if !fromNode.active {
 		return delivery, nil
 	}
@@ -851,7 +443,7 @@ func (g *bufferedRunner) emitDelivery(ctx context.Context, from int, msg *Messag
 	// A real fanout (more than one matching target) isolates a failing target so
 	// it cannot abort siblings or the source; a simple one-target chain keeps the
 	// strict behavior (e.g. DropNever propagates ErrBackpressure to tear down).
-	fanout := countTargets(topo, fromNode, msg) > 1
+	fanout := countTargets(snap, fromNode, msg) > 1
 	var fanoutBind bufferedFanoutBind
 	var fanoutBindPtr *bufferedFanoutBind
 	if fanout {
@@ -866,10 +458,10 @@ func (g *bufferedRunner) emitDelivery(ctx context.Context, from int, msg *Messag
 		}
 		for j := range route.to {
 			to := route.to[j]
-			if to < 0 || to >= len(topo.nodes) || !topo.nodes[to].active {
+			if to < 0 || to >= len(snap.nodes) || !snap.nodes[to].active {
 				continue
 			}
-			target := topo.nodes[to].node
+			target := snap.nodes[to].node
 			delivered, err := g.enqueue(ctx, target, msg, fanoutBindPtr)
 			if err != nil {
 				// Independent fanout backpressure: a full target on a real fanout
@@ -895,7 +487,7 @@ func (g *bufferedRunner) emitDelivery(ctx context.Context, from int, msg *Messag
 
 // countTargets counts the matching, active delivery targets for a message; it
 // stops at two since only "one vs many" matters (simple chain vs fanout).
-func countTargets(topo *bufferedTopo, fromNode *bufferedTopoNode, msg *Message) int {
+func countTargets(snap *snapshot[*bufferedNode], fromNode *snapshotNode[*bufferedNode], msg *Message) int {
 	count := 0
 	for i := range fromNode.routes {
 		route := &fromNode.routes[i]
@@ -904,7 +496,7 @@ func countTargets(topo *bufferedTopo, fromNode *bufferedTopoNode, msg *Message) 
 		}
 		for j := range route.to {
 			to := route.to[j]
-			if to >= 0 && to < len(topo.nodes) && topo.nodes[to].active {
+			if to >= 0 && to < len(snap.nodes) && snap.nodes[to].active {
 				count++
 				if count > 1 {
 					return count
@@ -1138,10 +730,10 @@ func (g *bufferedRunner) staleByLatency(node *bufferedNode, msg *bufferedMessage
 // deliver runs lock-free: the worker owns a stable *bufferedNode whose
 // kind/stage/sink/emitter/counters/free are immutable after the queue opens, so
 // no g.mu is taken per delivered message. Teardown is observed via two atomics:
-// g.closing (graph Close) sheds with ErrClosed; node.removed (a node Remove
+// the routing snapshot going nil (graph Close) sheds with ErrClosed; node.removed (a node Remove
 // retired before its queue drained) sheds silently.
 func (g *bufferedRunner) deliver(ctx context.Context, node *bufferedNode, msg *Message) error {
-	if g.closing.Load() {
+	if g.snap.Load() == nil {
 		return ErrClosed
 	}
 	if node.removed.Load() {
@@ -1158,51 +750,6 @@ func (g *bufferedRunner) deliver(ctx context.Context, node *bufferedNode, msg *M
 		return node.sink.Handle(ctx, msg)
 	default:
 		return ErrInvalidLink
-	}
-}
-
-// armReadinessLocked snapshots the readiness set at Run start: the active
-// sinks that have not yet seen media. Caller must hold g.mu.
-func (g *bufferedRunner) armReadinessLocked() {
-	var sinks, unfed int64
-	for i := range g.nodes {
-		node := g.nodes[i]
-		if !node.active || node.kind != nodeSink {
-			continue
-		}
-		sinks++
-		if !node.sawMedia.Load() {
-			unfed++
-		}
-	}
-	if g.ready.arm(sinks, unfed) {
-		g.publishReady()
-	}
-}
-
-// noteSinkMedia counts a sink out of the readiness set (first media delivery,
-// or removal before any media); the last count publishes readiness.
-func (g *bufferedRunner) noteSinkMedia(sawMedia *atomic.Bool) {
-	if g.ready.note(sawMedia) {
-		g.publishReady()
-	}
-}
-
-// publishReady reports av.EventTaskReady on the graph's observer stream, at
-// most once. Cold path: it runs once per graph, never per message.
-func (g *bufferedRunner) publishReady() {
-	if !g.ready.claim() {
-		return
-	}
-	g.eventsMu.Lock()
-	defer g.eventsMu.Unlock()
-	if g.eventsClosed {
-		return
-	}
-	select {
-	case g.events <- taskReadyEvent():
-	default:
-		observeDrop(nil, DropObserver, &g.cold)
 	}
 }
 
@@ -1239,16 +786,7 @@ func (g *bufferedRunner) reportStaleQoS(node *bufferedNode, msg *bufferedMessage
 		Reason:   node.name,
 		Metadata: av.QoSMetadata(time.Since(msg.enqueuedAt)-node.policy.MaxLatency, true),
 	}
-	g.eventsMu.Lock()
-	defer g.eventsMu.Unlock()
-	if g.eventsClosed {
-		return
-	}
-	select {
-	case g.events <- event:
-	default:
-		observeDrop(node.counters, DropObserver, &g.cold)
-	}
+	g.observe(event, node.counters)
 }
 
 func qosStreamID(msg *Message) av.StreamID {
@@ -1263,22 +801,6 @@ func qosStreamID(msg *Message) av.StreamID {
 		return msg.Event.StreamID
 	default:
 		return ""
-	}
-}
-
-func (g *bufferedRunner) publishEvent(msg *Message, counters *nodeCounters) {
-	if msg.Kind != MessageEvent || msg.Event == nil {
-		return
-	}
-	g.eventsMu.Lock()
-	defer g.eventsMu.Unlock()
-	if g.eventsClosed {
-		return
-	}
-	select {
-	case g.events <- *msg.Event:
-	default:
-		observeDrop(counters, DropObserver, &g.cold)
 	}
 }
 
@@ -1588,48 +1110,6 @@ func validateBufferedMessage(msg *Message, policy BufferPolicy) error {
 		}
 	}
 	return nil
-}
-
-func bufferedNodeSpec(node *bufferedNode) NodeSpec {
-	spec := NodeSpec{Name: node.name, Kind: directSpecKind(node.kind)}
-	describer := bufferedNodeDescriber(node)
-	if describer == nil {
-		return spec
-	}
-	described := describer.DescribeNode()
-	spec.Detail = described.Detail
-	return spec
-}
-
-func bufferedNodeDescriber(node *bufferedNode) NodeDescriber {
-	switch node.kind {
-	case nodeSource:
-		if describer, ok := node.source.(NodeDescriber); ok {
-			return describer
-		}
-	case nodeStage:
-		if describer, ok := node.stage.(NodeDescriber); ok {
-			return describer
-		}
-	case nodeSink:
-		if describer, ok := node.sink.(NodeDescriber); ok {
-			return describer
-		}
-	}
-	return nil
-}
-
-func closeBufferedNode(node *bufferedNode) error {
-	switch node.kind {
-	case nodeSource:
-		return node.source.Close()
-	case nodeStage:
-		return node.stage.Close()
-	case nodeSink:
-		return node.sink.Close()
-	default:
-		return nil
-	}
 }
 
 // inflight counts queued, not-yet-handled messages. It replaces a WaitGroup

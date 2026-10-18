@@ -11,6 +11,12 @@ methodology changes, and migration notes.
 
 ## Unreleased
 
+- Internal: the direct and buffered runners share one graph topology
+  (`pipeline/topology.go`): nodes, routes, the lock-free routing snapshot,
+  spec, stats, readiness, observer events, the run's error contract, and
+  shutdown. Each runner keeps only its delivery strategy (inline calls, or
+  per-node queues and workers). About 500 duplicated lines are gone. No API
+  or behavior change; the allocation pins and fanout benchmarks hold.
 - Docs say what the data plane is: lock-free routing snapshots and per-node
   atomics, with each node serialized by its own handle or queue lock, not
   "no per-message mutex".

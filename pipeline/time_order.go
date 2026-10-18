@@ -47,12 +47,12 @@ const (
 // by arrival, which is right), fewer than two qualifying sources, or a graph
 // with a converging stage that holds one upstream back (Admitter) — waiting
 // for a sibling while holding the turn would never end.
-func timeOrderedSources(realtime bool, topo *directTopo, sources []directSourceRun) []bool {
+func timeOrderedSources(realtime bool, topo *snapshot[*directNode], sources []directSourceRun) []bool {
 	if realtime || topo == nil {
 		return nil
 	}
 	for i := range topo.nodes {
-		if topo.nodes[i].active && topo.nodes[i].admit != nil {
+		if topo.nodes[i].active && topo.nodes[i].node.admit != nil {
 			return nil
 		}
 	}

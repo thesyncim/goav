@@ -294,12 +294,16 @@ backing for mutable payloads under explicit byte bounds. A bound is a limit,
 not an allocation: bounds up to 64 KiB are reserved when the queue opens, and
 larger (video) ones grow to fit the payloads each slot carries, then copy
 without allocating (`TestBufferedSlotBackingGrowsToFit`). Borrowed media
-without a copy bound fails early. Routing is lock-free: a message finds its
-consumers through an atomically swapped snapshot and counts itself in per-node
-atomics, so no graph-wide lock sits on the media path. Each node is serialized,
-handling one message at a time: the direct runner takes the node's handle lock
-and the buffered producer its queue lock, uncontended unless several producers
-feed one node. Every other lock is on a cold path.
+without a copy bound fails early.
+Both executors are delivery strategies over one shared topology
+(`pipeline/topology.go`: nodes, routes, the routing snapshot, spec, stats,
+readiness, observer events, the run's error contract, and shutdown).
+Routing is lock-free: a message finds its consumers through an atomically
+swapped snapshot and counts itself in per-node atomics, so no graph-wide lock
+sits on the media path. Each node is serialized, handling one message at a
+time: the direct runner takes the node's handle lock and the buffered producer
+its queue lock, uncontended unless several producers feed one node. Every other
+lock is on a cold path.
 Runtime-owned scratch pools are likewise per-runtime and opt-in through
 `runconfig.WithMediaPools(true)`, so attach/detach churn can reuse internal
 metadata maps and join plane slices without creating a process-global recycler.
