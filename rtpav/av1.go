@@ -150,13 +150,13 @@ func (d *AV1Depacketizer) appendPayload(payload []byte, z bool, y bool, count in
 			}
 			length = value
 			offset += read
-			if count == 0 && offset+length == len(payload) {
+			if count == 0 && length == len(payload)-offset {
 				isLast = true
 			}
 		} else {
 			length = len(payload) - offset
 		}
-		if length < 0 || offset+length > len(payload) {
+		if length < 0 || length > len(payload)-offset { // no offset+length: it overflows
 			return ErrInvalidPayload
 		}
 		element := payload[offset : offset+length]
