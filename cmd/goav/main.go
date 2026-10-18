@@ -13,22 +13,37 @@ import (
 	"github.com/thesyncim/goav/ctlserver"
 )
 
+const usage = `usage: goav <command> ...
+
+  run       run a program
+  describe  print the graph a program builds
+  explain   print the plan a program builds, as JSON
+  elements  list the elements a program can use
+  ctl       inspect and steer a running task
+`
+
 func main() {
 	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
 }
 
 func run(argv []string, stdout io.Writer, stderr io.Writer) int {
 	if len(argv) < 1 {
-		fmt.Fprintln(stderr, "usage: goav <ctl|run> ...")
+		fmt.Fprint(stderr, usage)
 		return 2
 	}
 	switch argv[0] {
+	case "run":
+		return runCommand(argv[1:], stdout, stderr)
+	case "describe":
+		return describeCommand(argv[1:], stdout, stderr)
+	case "explain":
+		return explainCommand(argv[1:], stdout, stderr)
+	case "elements":
+		return elementsCommand(stdout)
 	case "ctl":
 		return runCtlCommand(argv[1:], stdout, stderr)
-	case "run":
-		return runPipelineCommand(argv[1:], stdout, stderr)
 	default:
-		fmt.Fprintln(stderr, "usage: goav <ctl|run> ...")
+		fmt.Fprint(stderr, usage)
 		return 2
 	}
 }

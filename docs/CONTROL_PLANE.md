@@ -32,7 +32,7 @@ pipeline:
 
 ```sh
 goav run --control unix:///tmp/goav-live.sock \
-  'testsrc video name=fixture width=1280 height=720 fps=30 duration=30s realtime=true pattern=bars ! tap name=frames ! encode codec=av1 media=video bitrate=1200k fps=30 keyframe_interval=60 min_qindex=20 max_qindex=180 tune=zerolatency ! filesink location=/tmp/goav-av1.mkv format=matroska'
+  'testsrc video name=fixture size=1280x720 duration=30s live pattern=bars ! tap frames ! encode av1 bitrate=1200k fps=30 keyframe_interval=60 min_qindex=20 max_qindex=180 tune=zerolatency ! file /tmp/goav-av1.mkv'
 ```
 
 Then drive the running graph from another shell:
@@ -51,17 +51,9 @@ goav ctl --control unix:///tmp/goav-live.sock detach preview
 goav ctl --control unix:///tmp/goav-live.sock stop
 ```
 
-That flow needs no application code. The same string launcher can create a short
-decoder-readable AV1 IVF file:
-
-```sh
-goav run \
-  'testsrc video width=1280 height=720 fps=30 duration=3s realtime=true pattern=bars ! encode codec=av1 media=video bitrate=1200k fps=30 keyframe_interval=60 min_qindex=20 max_qindex=180 tune=zerolatency ! filesink location=/tmp/goav-av1.ivf'
-```
-
-Known file extensions infer the destination format for `.ivf`, `.mkv`,
-`.webm`, and Annex B elementary-stream paths; keep `format=<id>` when you need
-to override the extension or target a custom container id.
+That flow needs no application code. `goav run` speaks the whole pipeline
+language ([CLI](CLI.md)); file extensions pick the container, and
+`format=<id>` overrides one.
 
 ## Bootstrap Host
 
@@ -409,10 +401,7 @@ canonical names from generated help.
 
 File sinks follow the same rule: use `filesink location=<path> [format=<id>]`.
 Transform steps use one spelling as well: `resize width=<px> height=<px>` and
-`resample sample_rate=<hz> channels=<n>`. Generated `goav run` sources use
-`testsrc video` with `width=<px> height=<px> fps=<n>` and either `frames=<n>`
-or `duration=<d>`; duplicate aliases such as `w`, `h`, `size`, `framerate`,
-`live`, `pix_fmt`, and `pixel_format` are rejected with suggestions.
+`resample sample_rate=<hz> channels=<n>`.
 
 The destination container must accept the selected codec. Standard codecs can
 often use the bundled containers registered by `bundle.MustNew`; a private codec

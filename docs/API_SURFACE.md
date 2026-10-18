@@ -237,6 +237,12 @@ it, and v1 does not freeze its shape.
   nodes annotated by branch name/state; `RenderTaskURI` keeps the same URI
   format selection for live tasks. A leaf outside the core import graph,
   surface-pinned like the vocabulary packages.
+- `launch`: the pipeline language. `Compile(program, options...)` returns
+  ordinary `goav.Output` values (the same graph the Go recipe builds);
+  `Files`, `Task`, and `Use` grant file access, a running task's taps, and a
+  host's own elements (`Source`, `Stage`, `Encoder`, `Sink`, `Join`, typed by
+  `launch:"..."` struct tags); `Elements` lists the vocabulary; refusals are
+  positioned `*launch.Error` values.
 
 ## D. Leakage
 

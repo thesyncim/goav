@@ -290,40 +290,10 @@ func TestRunPrintsLocalHelp(t *testing.T) {
 	}
 }
 
-func TestRunPipelineHelpBootstrapsGeneratedControlFlow(t *testing.T) {
-	var stdout bytes.Buffer
-	var stderr bytes.Buffer
-	code := run([]string{"run", "--help"}, &stdout, &stderr)
-	if code != 0 {
-		t.Fatalf("code = %d stderr=%q", code, stderr.String())
-	}
-	text := stdout.String()
-	for _, want := range []string{
-		"examples:",
-		"/tmp/goav-av1.ivf'",
-		"min_qindex=20 max_qindex=180 tune=zerolatency",
-		"tap name=<tap-name>",
-		"fps=<n[/d]|decimal>",
-		"format=i420|yuv420p",
-		"known file extensions infer the format",
-		"goav ctl --control unix:///tmp/goav-live.sock taps",
-		"control seek position=2s source=fixture",
-		"attach frames as preview",
-		"/tmp/goav-preview.ivf'",
-	} {
-		if !strings.Contains(text, want) {
-			t.Fatalf("help missing %q:\n%s", want, text)
-		}
-	}
-	if stderr.Len() != 0 {
-		t.Fatalf("stderr=%q", stderr.String())
-	}
-}
-
 func TestRunGeneratedVideoAV1RealtimeString(t *testing.T) {
 	out := filepath.Join(t.TempDir(), "generated av1.mkv")
 	pipeline := fmt.Sprintf(
-		`testsrc video name=fixture width=32 height=18 fps=30 frames=2 realtime=true pattern=bars ! resize width=16 height=16 ! encode codec=av1 media=video bitrate=400k fps=30 keyframe_interval=1 min_qindex=20 max_qindex=180 tune=zerolatency ! filesink location=%q format=matroska`,
+		`testsrc video name=fixture size=32x18 fps=30 frames=2 live pattern=bars ! resize 16x16 ! encode av1 bitrate=400k fps=30 keyframe_interval=1 min_qindex=20 max_qindex=180 tune=zerolatency ! file %q format=matroska`,
 		out,
 	)
 	var stdout bytes.Buffer
@@ -332,11 +302,8 @@ func TestRunGeneratedVideoAV1RealtimeString(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("code=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
 	}
-	var result runPipelineResult
-	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
-		t.Fatalf("result JSON: %v\n%s", err, stdout.String())
-	}
-	if result.Runtime != "demo" || result.Codec != "av1" || result.Frames != 2 || !result.Realtime || result.Output != out || result.Format != string(av.FormatMatroska) {
+	result := decodeRunSummary(t, stdout.Bytes())
+	if result.Runtime != "default" || len(result.Wrote) != 1 || result.Wrote[0] != out {
 		t.Fatalf("result = %+v", result)
 	}
 	data, err := os.ReadFile(out)
@@ -349,7 +316,7 @@ func TestRunGeneratedVideoAV1RealtimeString(t *testing.T) {
 func TestRunGeneratedVideoAV1IVFString(t *testing.T) {
 	out := filepath.Join(t.TempDir(), "generated av1.ivf")
 	pipeline := fmt.Sprintf(
-		`testsrc video name=fixture width=32 height=18 fps=30 frames=2 realtime=true pattern=bars ! resize width=16 height=16 ! encode codec=av1 media=video bitrate=400k fps=30 keyframe_interval=1 min_qindex=20 max_qindex=180 tune=zerolatency ! filesink location=%q format=ivf`,
+		`testsrc video name=fixture size=32x18 fps=30 frames=2 live pattern=bars ! resize 16x16 ! encode av1 bitrate=400k fps=30 keyframe_interval=1 min_qindex=20 max_qindex=180 tune=zerolatency ! file %q format=ivf`,
 		out,
 	)
 	var stdout bytes.Buffer
@@ -358,11 +325,8 @@ func TestRunGeneratedVideoAV1IVFString(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("code=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
 	}
-	var result runPipelineResult
-	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
-		t.Fatalf("result JSON: %v\n%s", err, stdout.String())
-	}
-	if result.Runtime != "demo" || result.Codec != "av1" || result.Frames != 2 || !result.Realtime || result.Output != out {
+	result := decodeRunSummary(t, stdout.Bytes())
+	if result.Runtime != "default" || len(result.Wrote) != 1 || result.Wrote[0] != out {
 		t.Fatalf("result = %+v", result)
 	}
 	header, err := os.ReadFile(out)
@@ -384,7 +348,7 @@ func TestRunGeneratedVideoAV1IVFString(t *testing.T) {
 func TestRunGeneratedVideoAV1IVFExtensionInfersFormat(t *testing.T) {
 	out := filepath.Join(t.TempDir(), "generated av1 inferred.ivf")
 	pipeline := fmt.Sprintf(
-		`testsrc video name=fixture width=32 height=18 fps=30 frames=2 realtime=false pattern=bars ! resize width=16 height=16 ! encode codec=av1 media=video bitrate=400k fps=30 keyframe_interval=1 min_qindex=20 max_qindex=180 tune=zerolatency ! filesink location=%q`,
+		`testsrc video name=fixture size=32x18 fps=30 frames=2 pattern=bars ! resize 16x16 ! encode av1 bitrate=400k fps=30 keyframe_interval=1 min_qindex=20 max_qindex=180 tune=zerolatency ! file %q`,
 		out,
 	)
 	var stdout bytes.Buffer
@@ -393,12 +357,8 @@ func TestRunGeneratedVideoAV1IVFExtensionInfersFormat(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("code=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
 	}
-	var result runPipelineResult
-	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
-		t.Fatalf("result JSON: %v\n%s", err, stdout.String())
-	}
-	if result.Output != out || result.Format != string(av.FormatIVF) || result.Codec != string(av.CodecAV1) {
-		t.Fatalf("result = %+v, want inferred IVF AV1 output", result)
+	if result := decodeRunSummary(t, stdout.Bytes()); len(result.Wrote) != 1 || result.Wrote[0] != out {
+		t.Fatalf("result = %+v, want the inferred IVF output", result)
 	}
 	data, err := os.ReadFile(out)
 	if err != nil {
@@ -418,7 +378,7 @@ func TestRunGeneratedVideoWithControlSocket(t *testing.T) {
 	t.Cleanup(func() { _ = os.Remove(socket) })
 	out := filepath.Join(t.TempDir(), "controlled.ivf")
 	pipeline := fmt.Sprintf(
-		`testsrc video name=fixture width=32 height=18 fps=30 frames=900 realtime=true pattern=bars ! tap name=frames ! encode codec=av1 media=video bitrate=200k fps=30 keyframe_interval=1 ! filesink location=%q format=ivf`,
+		`testsrc video name=fixture size=32x18 fps=30 frames=900 live pattern=bars ! tap frames ! encode av1 bitrate=200k fps=30 keyframe_interval=1 ! file %q format=ivf`,
 		out,
 	)
 
@@ -467,11 +427,7 @@ func TestRunGeneratedVideoWithControlSocket(t *testing.T) {
 	case <-time.After(3 * time.Second):
 		t.Fatalf("goav run did not stop; stdout=%q stderr=%q", stdout.String(), stderr.String())
 	}
-	var result runPipelineResult
-	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
-		t.Fatalf("run result JSON: %v\nstdout=%s\nstderr=%s", err, stdout.String(), stderr.String())
-	}
-	if result.Control != "unix://"+socket || result.Runtime != "bundle" || result.Codec != "av1" {
+	if result := decodeRunSummary(t, stdout.Bytes()); result.Control != "unix://"+socket || result.Runtime != "default" {
 		t.Fatalf("run result = %+v", result)
 	}
 }
@@ -631,210 +587,6 @@ func decodeAV1TestPacket(t *testing.T, decoder codec.Decoder, packet av.Packet) 
 		t.Fatalf("decode AV1 packet: %v", err)
 	}
 	return len(decoded.Frames)
-}
-
-func TestRunPipelineParserCoversGeneratedTestSourceForms(t *testing.T) {
-	plan, err := parseRunPipeline(`testsrc video name=fixture width=1920 height=1080 fps=30000/1001 duration=100ms realtime=false format=yuv420p pattern=solid ! tap name=frames ! resize width=640 height=360 ! encode codec=av1 media=video bitrate=2M fps=29.97 keyframe_interval=30 profile=main level=5.1 tune=zerolatency ! filesink location="/tmp/generated test.ivf" format=ivf`)
-	if err != nil {
-		t.Fatal(err)
-	}
-	source := plan.source
-	if source.name != "fixture" ||
-		source.width != 1920 ||
-		source.height != 1080 ||
-		source.fps != (fpsValue{num: 30000, den: 1001}) ||
-		source.frames != 3 ||
-		source.realtime ||
-		source.pixelFormat != av.PixelFormatI420 ||
-		source.pattern != "solid" {
-		t.Fatalf("source = %+v", source)
-	}
-	if plan.destination.location != "/tmp/generated test.ivf" || plan.destination.format != av.FormatIVF {
-		t.Fatalf("destination = %+v", plan.destination)
-	}
-	if len(plan.ops) != 3 {
-		t.Fatalf("ops = %+v", plan.ops)
-	}
-	if plan.ops[0].kind != "tap" || plan.ops[0].name != "frames" {
-		t.Fatalf("tap op = %+v", plan.ops[0])
-	}
-	if plan.ops[1].kind != "resize" || plan.ops[1].width != 640 || plan.ops[1].height != 360 {
-		t.Fatalf("resize op = %+v", plan.ops[1])
-	}
-	encoded := plan.ops[2].codec
-	if encoded.ID != av.CodecAV1 ||
-		encoded.Type != av.MediaVideo ||
-		encoded.Settings.Bitrate != 2_000_000 ||
-		encoded.Settings.KeyframeInterval != 30 ||
-		encoded.Settings.Profile != "main" ||
-		encoded.Settings.Level != "5.1" ||
-		encoded.Settings.Framerate.Value != 100 ||
-		encoded.Settings.Framerate.Base.Den != 2997 ||
-		encoded.Settings.Custom["tune"] != "zerolatency" {
-		t.Fatalf("encoded = %+v", encoded)
-	}
-}
-
-func TestRunPipelineParserRejectsDuplicateStepForms(t *testing.T) {
-	for _, tc := range []struct {
-		name string
-		text string
-		want string
-	}{
-		{name: "tap positional", text: `testsrc video width=16 height=16 frames=1 ! tap frames ! encode codec=av1 media=video ! filesink location=/tmp/out.ivf format=ivf`, want: "name=<tap-name>"},
-		{name: "tap id", text: `testsrc video width=16 height=16 frames=1 ! tap id=frames ! encode codec=av1 media=video ! filesink location=/tmp/out.ivf format=ivf`, want: "id duplicates tap name"},
-		{name: "scale", text: `testsrc video width=16 height=16 frames=1 ! scale width=8 height=8 ! encode codec=av1 media=video ! filesink location=/tmp/out.ivf format=ivf`, want: "scale duplicates resize"},
-		{name: "enc", text: `testsrc video width=16 height=16 frames=1 ! enc codec=av1 media=video ! filesink location=/tmp/out.ivf format=ivf`, want: "enc duplicates encode"},
-		{name: "codec encoder", text: `testsrc video width=16 height=16 frames=1 ! av1enc bitrate=1M ! filesink location=/tmp/out.ivf format=ivf`, want: "av1enc duplicates encode"},
-		{name: "positional codec", text: `testsrc video width=16 height=16 frames=1 ! encode av1 media=video ! filesink location=/tmp/out.ivf format=ivf`, want: "unsupported encode argument"},
-		{name: "id option", text: `testsrc video width=16 height=16 frames=1 ! encode id=av1 media=video ! filesink location=/tmp/out.ivf format=ivf`, want: "id duplicates codec"},
-		{name: "type option", text: `testsrc video width=16 height=16 frames=1 ! encode codec=av1 type=video ! filesink location=/tmp/out.ivf format=ivf`, want: "type duplicates media"},
-		{name: "duplicate codec", text: `testsrc video width=16 height=16 frames=1 ! encode codec=av1 codec=vp8 media=video ! filesink location=/tmp/out.ivf format=ivf`, want: "duplicate encode option codec"},
-		{name: "duplicate tap name", text: `testsrc video width=16 height=16 frames=1 ! tap name=left name=right ! encode codec=av1 media=video ! filesink location=/tmp/out.ivf format=ivf`, want: "duplicate tap option name"},
-		{name: "duplicate codec setting", text: `testsrc video width=16 height=16 frames=1 ! encode codec=av1 media=video bitrate=1k bitrate=2k ! filesink location=/tmp/out.ivf format=ivf`, want: "bitrate"},
-		{name: "duplicate custom setting", text: `testsrc video width=16 height=16 frames=1 ! encode codec=av1 media=video lookahead=deep lookahead=shallow ! filesink location=/tmp/out.ivf format=ivf`, want: "lookahead"},
-		{name: "missing media", text: `testsrc video width=16 height=16 frames=1 ! encode codec=av1 ! filesink location=/tmp/out.ivf format=ivf`, want: "media"},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			_, err := parseRunPipeline(tc.text)
-			if err == nil || !strings.Contains(err.Error(), tc.want) {
-				t.Fatalf("err = %v, want %q", err, tc.want)
-			}
-		})
-	}
-}
-
-func TestRunPipelineParserRejectsDuplicateSourceForms(t *testing.T) {
-	for _, tc := range []struct {
-		name string
-		text string
-		want string
-	}{
-		{name: "source alias", text: `videosrc video width=16 height=16 frames=1 ! encode codec=av1 media=video ! filesink location=/tmp/out.ivf format=ivf`, want: "videosrc"},
-		{name: "missing media kind", text: `testsrc width=16 height=16 frames=1 ! encode codec=av1 media=video ! filesink location=/tmp/out.ivf format=ivf`, want: "testsrc"},
-		{name: "size", text: `testsrc video size=16x16 frames=1 ! encode codec=av1 media=video ! filesink location=/tmp/out.ivf format=ivf`, want: "size"},
-		{name: "w", text: `testsrc video w=16 height=16 frames=1 ! encode codec=av1 media=video ! filesink location=/tmp/out.ivf format=ivf`, want: "w"},
-		{name: "framerate", text: `testsrc video width=16 height=16 framerate=30 frames=1 ! encode codec=av1 media=video ! filesink location=/tmp/out.ivf format=ivf`, want: "framerate"},
-		{name: "live", text: `testsrc video width=16 height=16 live=true frames=1 ! encode codec=av1 media=video ! filesink location=/tmp/out.ivf format=ivf`, want: "live"},
-		{name: "pix fmt", text: `testsrc video width=16 height=16 pix_fmt=i420 frames=1 ! encode codec=av1 media=video ! filesink location=/tmp/out.ivf format=ivf`, want: "pix_fmt"},
-		{name: "invalid format", text: `testsrc video width=16 height=16 format=rgba frames=1 ! encode codec=av1 media=video ! filesink location=/tmp/out.ivf format=ivf`, want: "i420/yuv420p"},
-		{name: "duration zero", text: `testsrc video width=16 height=16 duration=0s ! encode codec=av1 media=video ! filesink location=/tmp/out.ivf format=ivf`, want: "duration"},
-		{name: "frames and duration", text: `testsrc video width=16 height=16 frames=1 duration=1s ! encode codec=av1 media=video ! filesink location=/tmp/out.ivf format=ivf`, want: "duration"},
-		{name: "empty step", text: `testsrc video frames=1 ! ! encode codec=av1 media=video ! filesink location=/tmp/out.ivf`, want: "empty pipeline step"},
-		{name: "unterminated quote", text: `testsrc video frames=1 ! encode codec=av1 media=video tune="dangling\ ! filesink location=/tmp/out.ivf`, want: "unterminated quoted value"},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			_, err := parseRunPipeline(tc.text)
-			if err == nil || !strings.Contains(err.Error(), tc.want) {
-				t.Fatalf("err = %v, want %q", err, tc.want)
-			}
-		})
-	}
-}
-
-func TestRunPipelineParserCarriesCustomEncoderSettings(t *testing.T) {
-	plan, err := parseRunPipeline(`testsrc video width=16 height=16 frames=1 ! encode codec=x_acme media=video bitrate=1.5M lookahead=deep aq-mode=cyclic ! filesink location=/tmp/acme.bin format=ivf`)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(plan.ops) != 1 || plan.ops[0].kind != "encode" {
-		t.Fatalf("ops = %+v", plan.ops)
-	}
-	spec := plan.ops[0].codec
-	if spec.ID != "x_acme" || spec.Type != av.MediaVideo || spec.Settings.Bitrate != 1_500_000 {
-		t.Fatalf("codec spec = %+v", spec)
-	}
-	if spec.Settings.Custom["lookahead"] != "deep" || spec.Settings.Custom["aq-mode"] != "cyclic" {
-		t.Fatalf("custom settings = %+v", spec.Settings.Custom)
-	}
-}
-
-func TestRunPipelineParserRejectsDuplicateEncoderAliases(t *testing.T) {
-	for _, tc := range []struct {
-		name   string
-		option string
-		field  string
-	}{
-		{name: "rate", option: "rate=900k", field: "rate"},
-		{name: "bitrate_bps", option: "bitrate_bps=900000", field: "bitrate_bps"},
-		{name: "framerate", option: "framerate=30", field: "framerate"},
-		{name: "samplerate", option: "samplerate=48000", field: "samplerate"},
-		{name: "ch", option: "ch=2", field: "ch"},
-		{name: "clockrate", option: "clockrate=90000", field: "clockrate"},
-		{name: "keyint", option: "keyint=60", field: "keyint"},
-		{name: "gop", option: "gop=60", field: "gop"},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			_, err := parseRunPipeline(fmt.Sprintf(
-				`testsrc video width=16 height=16 frames=1 ! encode codec=av1 media=video %s ! filesink location=/tmp/out.ivf`,
-				tc.option,
-			))
-			if err == nil || !strings.Contains(err.Error(), tc.field) {
-				t.Fatalf("err = %v, want duplicate encoder option %q", err, tc.field)
-			}
-		})
-	}
-}
-
-func TestRunPipelineParserKeepsExplicitDestinationFormatOnly(t *testing.T) {
-	plan, err := parseRunPipeline(`testsrc video width=16 height=16 frames=1 ! encode codec=av1 media=video bitrate=200k ! filesink location=/tmp/out.ivf format=ivf`)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if plan.destination.format != av.FormatIVF {
-		t.Fatalf("explicit format = %q, want %q", plan.destination.format, av.FormatIVF)
-	}
-
-	plan, err = parseRunPipeline(`testsrc video width=16 height=16 frames=1 ! encode codec=av1 media=video bitrate=200k ! filesink location=/tmp/out.ivf`)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if plan.destination.format != "" {
-		t.Fatalf("parsed format = %q, want runtime inference", plan.destination.format)
-	}
-}
-
-func TestRunPipelineParserRejectsDuplicateFileSinkForms(t *testing.T) {
-	for _, tc := range []struct {
-		name string
-		step string
-		want string
-	}{
-		{name: "positional", step: `filesink /tmp/out.ivf`, want: "location"},
-		{name: "path", step: `filesink path=/tmp/out.ivf`, want: "path"},
-		{name: "file", step: `filesink file=/tmp/out.ivf`, want: "file"},
-		{name: "container", step: `filesink location=/tmp/out.ivf container=ivf`, want: "container"},
-		{name: "unknown", step: `filesink location=/tmp/out.ivf mode=fast`, want: "mode"},
-		{name: "step alias", step: `file location=/tmp/out.ivf`, want: "unsupported destination"},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			_, err := parseRunPipeline(`testsrc video width=16 height=16 frames=1 ! encode codec=av1 media=video bitrate=200k ! ` + tc.step)
-			if err == nil || !strings.Contains(err.Error(), tc.want) {
-				t.Fatalf("err = %v, want %q", err, tc.want)
-			}
-		})
-	}
-}
-
-func TestRunPipelineParserRejectsDuplicateResizeForms(t *testing.T) {
-	for _, tc := range []struct {
-		name   string
-		resize string
-		want   string
-	}{
-		{name: "positional", resize: `resize 640x360`, want: "resize"},
-		{name: "size", resize: `resize size=640x360`, want: "size"},
-		{name: "w", resize: `resize w=640 height=360`, want: "w"},
-		{name: "h", resize: `resize width=640 h=360`, want: "h"},
-		{name: "unknown", resize: `resize width=640 height=360 mode=fast`, want: "mode"},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			_, err := parseRunPipeline(`testsrc video width=16 height=16 frames=1 ! ` + tc.resize + ` ! encode codec=av1 media=video bitrate=200k ! filesink location=/tmp/out.ivf`)
-			if err == nil || !strings.Contains(err.Error(), tc.want) {
-				t.Fatalf("err = %v, want %q", err, tc.want)
-			}
-		})
-	}
 }
 
 func TestRunReportsUsageErrors(t *testing.T) {
@@ -1072,5 +824,80 @@ func waitForCLISocket(t *testing.T, socket string, errC <-chan error) {
 			t.Fatalf("socket %s was not ready", socket)
 		}
 		time.Sleep(time.Millisecond)
+	}
+}
+
+type runSummary struct {
+	Runtime string   `json:"runtime"`
+	Wrote   []string `json:"wrote"`
+	Control string   `json:"control"`
+	Stopped bool     `json:"stopped"`
+}
+
+func decodeRunSummary(t *testing.T, data []byte) runSummary {
+	t.Helper()
+	var s runSummary
+	if err := json.Unmarshal(data, &s); err != nil {
+		t.Fatalf("run summary JSON: %v\n%s", err, data)
+	}
+	return s
+}
+
+// TestProgramCommands pins describe, explain, elements, help, -f, and the
+// refusal path of the program commands.
+func TestProgramCommands(t *testing.T) {
+	invoke := func(argv ...string) (int, string, string) {
+		var stdout, stderr bytes.Buffer
+		code := run(argv, &stdout, &stderr)
+		return code, stdout.String(), stderr.String()
+	}
+	program := `v := file in.webm ! video ! decode
+v ! resize 160x90 ! encode vp8 ! as small ! file small.webm
+v ! encode vp8 ! as full ! file full.webm`
+	code, out, errText := invoke("describe", program)
+	if code != 0 || !strings.Contains(out, "stage resize-small [resize, 160x90, exact]") || !strings.Contains(out, "decode-video -> encode-full") {
+		t.Fatalf("describe code=%d out=%s err=%s", code, out, errText)
+	}
+	if code, out, _ := invoke("describe", "--format", "mermaid", program); code != 0 || !strings.Contains(out, "flowchart") {
+		t.Fatalf("describe mermaid code=%d out=%s", code, out)
+	}
+	file := filepath.Join(t.TempDir(), "ladder.goav")
+	if err := os.WriteFile(file, []byte(program), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if code, out, errText := invoke("explain", "-f", file); code != 0 || !strings.Contains(out, `"destinations"`) {
+		t.Fatalf("explain -f code=%d out=%s err=%s", code, out, errText)
+	}
+	if code, out, _ := invoke("elements"); code != 0 || !strings.Contains(out, "testsrc <video|audio>") || !strings.Contains(out, "joins\n  composite") {
+		t.Fatalf("elements code=%d out=%s", code, out)
+	}
+	if code, out, _ := invoke("run", "--help"); code != 0 || !strings.Contains(out, "goav run [flags] '<program>'") || !strings.Contains(out, "--control unix://PATH") {
+		t.Fatalf("run help code=%d out=%s", code, out)
+	}
+	code, out, errText = invoke("run", "file in.webm ! video ! decod ! file x.webm")
+	if code != 2 || out != "" || !strings.Contains(errText, `unknown element "decod"`) || !strings.Contains(errText, `did you mean "decode"?`) {
+		t.Fatalf("refusal code=%d out=%q err=%q", code, out, errText)
+	}
+}
+
+// TestRunWritesAudioAndVideoIntoOneFile pins the README clip: generated
+// audio and video ending at one path mux into one file.
+func TestRunWritesAudioAndVideoIntoOneFile(t *testing.T) {
+	out := filepath.Join(t.TempDir(), "clip.webm")
+	var stdout, stderr bytes.Buffer
+	program := fmt.Sprintf("testsrc video size=64x48 frames=3 ! encode vp8 ! file %[1]q\ntestsrc audio frames=3 ! encode opus ! file %[1]q", out)
+	if code := run([]string{"run", program}, &stdout, &stderr); code != 0 {
+		t.Fatalf("code=%d stderr=%s", code, stderr.String())
+	}
+	data, err := os.ReadFile(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	demuxer, err := matroskaadapter.NewDemuxer(bytes.NewReader(data), matroskaadapter.DemuxerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := len(demuxer.Tracks()); got != 2 {
+		t.Fatalf("clip has %d tracks, want video and audio", got)
 	}
 }

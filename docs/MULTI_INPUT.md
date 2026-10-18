@@ -60,6 +60,9 @@ err = rt.Run(ctx, mic.Audio().Decode().Encode(codec.Opus()).To(rec), cam.Video()
 
 ## Limits today
 
+- Joins plan their inputs' streams up front, so join inputs must declare them:
+  live and provider inputs (`goav.Input`) or `goav.Source`. Joining files is not
+  supported yet (`mix_arm`).
 - A join's output runs alone in one run: other Outputs beside it are refused
   with `stream_beside_join`.
 - Forks across several inputs in one run are refused.

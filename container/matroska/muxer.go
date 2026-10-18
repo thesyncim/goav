@@ -142,7 +142,14 @@ func (m *Muxer) init(w io.Writer, opts MuxerOptions) {
 	m.cues = m.cues[:0]
 	m.headerWritten = false
 	m.clusterOpen = false
-	_, m.seekable = w.(io.Seeker)
+	// A writer is seekable when it can report its position: an *os.File on a
+	// pipe has a Seek method that fails.
+	m.seekable = false
+	if seeker, ok := w.(io.Seeker); ok {
+		if _, err := seeker.Seek(0, io.SeekCurrent); err == nil {
+			m.seekable = true
+		}
+	}
 	m.segmentData = 0
 	m.seekHeadOffset = 0
 	m.seekHeadReserve = 0
