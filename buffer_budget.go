@@ -24,7 +24,7 @@ func realtimeRecipeBufferPolicy(runtimeBuffer pipeline.BufferPolicy) pipeline.Bu
 	}
 }
 
-func recipeGraphConfig(rt *runtime, name string, work workPlan, bufferedWhenRealtime bool) (pipeline.GraphConfig, error) {
+func recipeGraphConfig(rt *Runtime, name string, work workPlan, bufferedWhenRealtime bool) (pipeline.GraphConfig, error) {
 	if rt == nil {
 		return pipeline.GraphConfig{}, recipeGraphUnsupportedError("configure graph", intent{})
 	}

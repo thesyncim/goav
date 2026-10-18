@@ -713,7 +713,7 @@ func streamBesideJoinRecipeError(reason string) error {
 }
 
 // Run builds the Outputs into one task and runs it to completion.
-func (r *runtime) Run(ctx context.Context, outs ...Output) error {
+func (r *Runtime) Run(ctx context.Context, outs ...Output) error {
 	job, err := compileOutputs(outs)
 	if err != nil {
 		return err
@@ -722,7 +722,7 @@ func (r *runtime) Run(ctx context.Context, outs ...Output) error {
 }
 
 // Build builds the Outputs into one task without starting it.
-func (r *runtime) Build(ctx context.Context, outs ...Output) (LiveTask, error) {
+func (r *Runtime) Build(ctx context.Context, outs ...Output) (LiveTask, error) {
 	job, err := compileOutputs(outs)
 	if err != nil {
 		return nil, err
@@ -731,7 +731,7 @@ func (r *runtime) Build(ctx context.Context, outs ...Output) (LiveTask, error) {
 }
 
 // Explain reports the typed plan the Outputs build, without opening them.
-func (r *runtime) Explain(ctx context.Context, outs ...Output) (plan.Report, error) {
+func (r *Runtime) Explain(ctx context.Context, outs ...Output) (plan.Report, error) {
 	job, err := compileOutputs(outs)
 	if err != nil {
 		return plan.Report{}, err
@@ -740,7 +740,7 @@ func (r *runtime) Explain(ctx context.Context, outs ...Output) (plan.Report, err
 }
 
 // Describe returns the graph the Outputs build, without opening them.
-func (r *runtime) Describe(outs ...Output) (pipeline.Spec, error) {
+func (r *Runtime) Describe(outs ...Output) (pipeline.Spec, error) {
 	job, err := compileOutputs(outs)
 	if err != nil {
 		return pipeline.Spec{}, err

@@ -11,6 +11,16 @@ methodology changes, and migration notes.
 
 ## Unreleased
 
+- `OnStream` branches see a discovered stream from its first packet. The
+  attach now runs on the source's emit path, as GStreamer's pad-added does:
+  the source's Emit of `stream_added` returns once the matching branches
+  exist, so the stream's first keyframe is no longer lost while a watcher
+  goroutine caught up. Watch observers still see the event. A rule
+  destination's `Open` now runs on the source's goroutine, bounded by the
+  task's context.
+- `goav.Runtime` is a concrete type rather than an alias of an unexported
+  one, so godoc and pkg.go.dev list `New`, `Run`, `Build`, `Describe`,
+  `Explain`, and `Probe` under it.
 - Fix: a failing node stops the task. Buffered graphs (every realtime recipe
   that decodes or encodes, and promoted ladders) held a node error, such as a
   mux write failure, until every source ended, which a live source never

@@ -33,9 +33,10 @@ type streamRule struct {
 // av.EventAttachError on task watches — never silently. A discovered stream
 // matching no rule just surfaces its event, exactly as without rules.
 //
-// Rules require a single-input job today. Because the task watches its own
-// events, each task watch remains independent instead of exposing the shared
-// graph channel.
+// Reactions run on the source's emit path (see InputSpec.OnStream): the
+// announce is delivered first, so watchers and existing routes see it as
+// without rules, then the matching branches attach before Emit returns.
+// Rules require a single-input job today.
 func (j *recipeJob) OnStream(match sourcepkg.StreamMatch, branches ...branchRecipe) *recipeJob {
 	if j == nil {
 		return j

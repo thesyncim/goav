@@ -86,7 +86,7 @@ func (a *joinArmPlan) joinStream() av.Stream {
 // buildJoinWorkPlan renders the same plan into the workPlan IR — so Describe()
 // and Build() come from the one plan.
 type joinPlan struct {
-	runtime *runtime
+	runtime *Runtime
 	tree    *joinTreeSnapshot
 	profile joinProfile
 	name    string
@@ -133,7 +133,7 @@ type joinDownstreamStagePlan struct {
 }
 
 type joinPlanInput struct {
-	runtime   *runtime
+	runtime   *Runtime
 	operation string
 	intent    intent
 	tree      *joinTreeSnapshot
@@ -865,7 +865,7 @@ func (p *joinPlan) allDiagnostics() []plan.Diagnostic {
 // armExpected derives the target format, the implicit armPolicy stands in for
 // a user .Auto(...), and an allowed delta plans a real per-arm transform stage
 // (named <join>-<adapter>-<stream>, e.g. mix-resample-b) plus a diagnostic.
-func (p *joinPlan) solveArmConversion(rt *runtime, stream av.Stream, armName string) (*joinArmStagePlan, error) {
+func (p *joinPlan) solveArmConversion(rt *Runtime, stream av.Stream, armName string) (*joinArmStagePlan, error) {
 	expected := p.profile.armExpected(p, stream)
 	if mediaShapeEmpty(expected) {
 		return nil, nil
@@ -1122,7 +1122,7 @@ func joinPlanTaps(joinTaps []tapRef, name string, joined av.Stream, domain shape
 
 // --- graphPlanLowerer ---
 
-func (p *joinPlan) runtimeRef() *runtime {
+func (p *joinPlan) runtimeRef() *Runtime {
 	return p.runtime
 }
 
@@ -1189,7 +1189,7 @@ func (p *joinPlan) joinNodeBufferPolicy(policy pipeline.BufferPolicy, work workP
 }
 
 // insertJoinArmStage appends a per-arm stage after upstream and returns its ref.
-func insertJoinArmStage(graph pipeline.Graph, rt *runtime, stage pipeline.Stage, upstream string) (string, error) {
+func insertJoinArmStage(graph pipeline.Graph, rt *Runtime, stage pipeline.Stage, upstream string) (string, error) {
 	bindGateDeps(stage, rt.clock, rt.qosReportFunc())
 	ref, err := graph.AddStage(stage, rt.buffer)
 	if err != nil {

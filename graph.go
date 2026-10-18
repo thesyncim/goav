@@ -1,6 +1,6 @@
 // The internal handle-based graph layer behind the expert package: a fluent
 // builder over caller-provided pipeline nodes plus the string-based bridge
-// methods the expert package reaches through (*runtime).ExpertGraph.
+// methods the expert package reaches through (*Runtime).ExpertGraph.
 
 package goav
 
@@ -74,9 +74,9 @@ func (o graphOutlet) Name() string {
 }
 
 // newExpertGraph returns the fluent handle builder over a goav runtime; the
-// expert package reaches it through the (*runtime).ExpertGraph bridge, which
+// expert package reaches it through the (*Runtime).ExpertGraph bridge, which
 // guarantees the concrete runtime type.
-func newExpertGraph(r *runtime) *graphBuilder {
+func newExpertGraph(r *Runtime) *graphBuilder {
 	return &graphBuilder{builder: r.newBuilder()}
 }
 
@@ -84,7 +84,7 @@ func newExpertGraph(r *runtime) *graphBuilder {
 // graph core the expert package asserts against its own leaf-typed interface,
 // keeping expert types out of the root package. The any return is what makes
 // the assertion possible without an import in either direction.
-func (r *runtime) ExpertGraph() any {
+func (r *Runtime) ExpertGraph() any {
 	return newExpertGraph(r)
 }
 

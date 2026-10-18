@@ -742,7 +742,7 @@ func (g *runtimeAttachGroup) addSharedMuxRoute(key string, route pipeline.Route)
 	return nil
 }
 
-func (g *runtimeAttachGroup) prepareSharedMuxStages(ctx context.Context, rt *runtime) error {
+func (g *runtimeAttachGroup) prepareSharedMuxStages(ctx context.Context, rt *Runtime) error {
 	if g == nil || len(g.muxOrder) == 0 {
 		return nil
 	}
@@ -835,7 +835,7 @@ func (g *runtimeAttachGroup) failSharedMuxStages() {
 	}
 }
 
-func runtimeMuxDestinationFormat(ctx context.Context, rt *runtime, dest destinationSpec, index int) (av.FormatID, error) {
+func runtimeMuxDestinationFormat(ctx context.Context, rt *Runtime, dest destinationSpec, index int) (av.FormatID, error) {
 	formatID := destinationOpenFormat(dest)
 	if formatID != "" {
 		return formatID, nil

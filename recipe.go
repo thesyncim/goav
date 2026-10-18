@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/thesyncim/goav/av"
@@ -673,7 +674,8 @@ func (j *recipeJob) Build(ctx context.Context) (Task, error) {
 // capability surface for inspection, events, live control, or late attachment.
 // Prefer Build when the caller only needs Run and Close.
 func (j *recipeJob) BuildLive(ctx context.Context) (LiveTask, error) {
-	resolved, err := compileJobRecipeForBuildContext(ctx, j)
+	job, announcer := j.withStreamAnnouncer()
+	resolved, err := compileJobRecipeForBuildContext(ctx, job)
 	if err != nil {
 		return nil, err
 	}
@@ -681,15 +683,31 @@ func (j *recipeJob) BuildLive(ctx context.Context) (LiveTask, error) {
 	if err != nil {
 		return nil, err
 	}
-	j.installStreamRules(built)
+	j.installStreamRules(built, announcer)
 	return built, nil
+}
+
+// withStreamAnnouncer returns the job one Build compiles. A job with OnStream
+// rules compiles as a copy whose single input carries a fresh streamAnnouncer
+// as its outermost source decoration, so rule reactions run on the source's
+// emit path; the job itself stays untouched for later builds.
+func (j *recipeJob) withStreamAnnouncer() (*recipeJob, *streamAnnouncer) {
+	if len(j.streamRules) == 0 || len(j.inputs) != 1 {
+		return j, nil
+	}
+	announcer := &streamAnnouncer{}
+	job := *j
+	input := j.inputs[0]
+	input.wraps = append(slices.Clip(input.wraps), announcer.wrap)
+	job.inputs = []InputSpec{input}
+	return &job, announcer
 }
 
 // installStreamRules binds the job's OnStream rules to the built task: the
 // rules anchor on the job's single source node (the compile validated the
-// input count) and react from the task's event stream.
-func (j *recipeJob) installStreamRules(built Task) {
-	if len(j.streamRules) == 0 || len(j.inputs) != 1 {
+// input count) and react on that source's emit path.
+func (j *recipeJob) installStreamRules(built Task, announcer *streamAnnouncer) {
+	if announcer == nil {
 		return
 	}
 	runtimeTask, ok := built.(*task)
@@ -698,6 +716,7 @@ func (j *recipeJob) installStreamRules(built Task) {
 	}
 	input := j.inputs[0]
 	runtimeTask.installStreamRules(
+		announcer,
 		graphSourceNodeNames(j.inputs)[0],
 		input.sourceEventDomain(),
 		cloneStreamRules(j.streamRules),

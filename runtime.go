@@ -73,7 +73,7 @@ func New(options ...runconfig.Option) (*Runtime, error) {
 	if config.MediaPools {
 		pools = newMediaPools()
 	}
-	return &runtime{
+	return &Runtime{
 		codecs:           config.Codecs,
 		filters:          config.Filters,
 		formats:          config.Formats,
@@ -96,7 +96,15 @@ func mustNew(options ...runconfig.Option) *Runtime {
 	return runtime
 }
 
-type runtime struct {
+// Runtime is the composition root for applications embedding goav: it holds
+// the codec, format, and filter registries, the buffer and pool settings, and
+// the clock that tasks run with. Build it with New, or import
+// github.com/thesyncim/goav/bundle for the bundled adapter set. Applications
+// run Outputs on it with Run (one shot) or Build (a LiveTask), and inspect
+// them without opening anything with Describe and Explain. Its fields are
+// unexported: construction and adapter registration go through runconfig
+// options.
+type Runtime struct {
 	codecs           *codec.SimpleRegistry
 	filters          *filter.SimpleRegistry
 	formats          *format.SimpleRegistry
@@ -115,19 +123,21 @@ type runtime struct {
 	qos *qosReporter
 }
 
-func (r *runtime) Probe(ctx context.Context, request format.ProbeRequest) (format.ProbeResult, error) {
+// Probe asks the runtime's registered probers which container format a
+// request names, the same lookup inputs and destinations resolve through.
+func (r *Runtime) Probe(ctx context.Context, request format.ProbeRequest) (format.ProbeResult, error) {
 	return r.formats.Probe(ctx, request)
 }
 
 // New returns the explicit-graph builder behind expert.Graph(runtime). The
 // recipe compiler lowers high-level jobs straight onto pipeline graphs; the
 // builder only assembles caller-provided Source/Stage/Sink nodes and routes.
-func (r *runtime) newBuilder() *builder {
+func (r *Runtime) newBuilder() *builder {
 	return &builder{runtime: r}
 }
 
 type builder struct {
-	runtime        *runtime
+	runtime        *Runtime
 	destinationTxs []*destinationTransaction
 	// encoders are the encode stages this build opened, so stream-addressed
 	// encoder controls reach the encoder producing the stream.
@@ -352,7 +362,7 @@ func connectRefs(graph pipeline.Graph, from pipeline.NodeRef, to pipeline.NodeRe
 
 type task struct {
 	graph   pipeline.Graph
-	runtime *runtime
+	runtime *Runtime
 	// timeline is the task-wide clock service every paced source sleeps on;
 	// control.Rate scales it so all paced delivery re-anchors together. Nil
 	// only for tasks assembled outside the build paths (unit-test graphs).
@@ -385,11 +395,11 @@ type task struct {
 	closed      bool
 }
 
-func newTask(graph pipeline.Graph, runtime *runtime, destinations ...*destinationTransaction) *task {
+func newTask(graph pipeline.Graph, runtime *Runtime, destinations ...*destinationTransaction) *task {
 	return newTaskWithRootDestinations(graph, runtime, nil, destinations...)
 }
 
-func newTaskWithRootDestinations(graph pipeline.Graph, runtime *runtime, rootDestinations []workDestination, destinations ...*destinationTransaction) *task {
+func newTaskWithRootDestinations(graph pipeline.Graph, runtime *Runtime, rootDestinations []workDestination, destinations ...*destinationTransaction) *task {
 	return &task{
 		graph:            graph,
 		runtime:          runtime,

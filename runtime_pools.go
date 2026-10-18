@@ -20,7 +20,7 @@ func newMediaPools() *mediaPools {
 	return &mediaPools{}
 }
 
-func runtimeMediaPools(rt *runtime) *mediaPools {
+func runtimeMediaPools(rt *Runtime) *mediaPools {
 	if rt == nil {
 		return nil
 	}

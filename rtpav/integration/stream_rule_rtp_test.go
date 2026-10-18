@@ -17,6 +17,10 @@ import (
 	"github.com/thesyncim/goav/source"
 )
 
+// lateBurst is how many late packets the receiver sends right after the
+// announce, before pacing starts.
+const lateBurst = 8
+
 // onStreamRTPReceiver feeds an opus stream, then announces a late VP8 stream
 // on its event channel and pumps that stream's RTP packets until stopped.
 type onStreamRTPReceiver struct {
@@ -48,18 +52,22 @@ func (r *onStreamRTPReceiver) ReadRTP(ctx context.Context) (*rtp.Packet, error) 
 			Payload: []byte{1, 2, 3},
 		}, nil
 	}
-	select {
-	case <-r.stop:
-		return nil, io.EOF
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	case <-time.After(time.Millisecond):
-		r.sent++
-		return &rtp.Packet{
-			PayloadType: 96, Marker: true, Timestamp: uint32(90 * r.sent), SequenceNumber: uint16(r.sent),
-			Payload: []byte{0x10, 0x00, 0x11, 0x22},
-		}, nil
+	// The first late packets follow the announce back to back, as a real
+	// track's first keyframe does; the rest are paced.
+	if r.sent >= lateBurst {
+		select {
+		case <-r.stop:
+			return nil, io.EOF
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(time.Millisecond):
+		}
 	}
+	r.sent++
+	return &rtp.Packet{
+		PayloadType: 96, Marker: true, Timestamp: uint32(90 * r.sent), SequenceNumber: uint16(r.sent),
+		Payload: []byte{0x10, 0x00, 0x11, 0x22},
+	}, nil
 }
 
 func (r *onStreamRTPReceiver) Events() <-chan av.Event {
@@ -131,5 +139,11 @@ func TestOnStreamRTPLateStreamAttachesBranch(t *testing.T) {
 	close(stop)
 	if err := <-runErr; err != nil {
 		t.Fatal(err)
+	}
+	// Pad-added semantics: the branch attaches while the source delivers the
+	// announce, so it receives every packet of the late stream, the first
+	// included.
+	if got := lateVideo.Load(); int(got) != receiver.sent {
+		t.Fatalf("rule branch received %d of %d late video packets, want all", got, receiver.sent)
 	}
 }

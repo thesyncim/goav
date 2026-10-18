@@ -18,7 +18,7 @@ import (
 // declared policy — Explain never measures. Contributions the root cannot see
 // (a transport provider's internal jitter buffer, e.g. rtpav's) are absent by
 // construction: no provider seam declares latency today.
-func planPathLatencyDecision(rt *runtime, branchName string, operations []recipeir.Operation) (planDecision, bool) {
+func planPathLatencyDecision(rt *Runtime, branchName string, operations []recipeir.Operation) (planDecision, bool) {
 	var syncTolerance, playoutOffset time.Duration
 	gated := false
 	for i := range operations {

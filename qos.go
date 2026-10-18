@@ -76,7 +76,7 @@ func (r *qosReporter) publish(event av.Event) {
 
 // qosReportFunc is the reporter as a bindable func, nil when the runtime
 // carries no reporter (explicit-graph builders lower no gates).
-func (r *runtime) qosReportFunc() func(av.Event) {
+func (r *Runtime) qosReportFunc() func(av.Event) {
 	if r == nil || r.qos == nil {
 		return nil
 	}

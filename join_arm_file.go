@@ -90,7 +90,7 @@ func (p *joinPlan) planArmConform(arm joinArmPlan) *joinConformPlan {
 // conformAdapter names the adapter the solver picks to convert frames to
 // target: adapter choice turns on the media and the formats, not on rates or
 // sizes.
-func conformAdapter(rt *runtime, target shape.Spec) string {
+func conformAdapter(rt *Runtime, target shape.Spec) string {
 	if rt == nil {
 		return ""
 	}

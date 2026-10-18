@@ -159,6 +159,9 @@ use [`docs/ADAPTERS.md`](ADAPTERS.md) and the
 - **Runtime config**: `goav.New`, `bundle.MustNew`, `runconfig.WithClock`,
   `WithRealtime`, `WithBufferPolicy`, `WithEventCapacity`,
   `WithCloseWaitTimeout`, `WithMediaPools`, `WithShapeDelta`.
+  `goav.Runtime` is a concrete type with unexported fields; its methods are
+  `Run`, `Build`, `Describe`, `Explain`, `Probe` (format lookup), and the
+  tier-C `ExpertGraph` bridge.
 - **Media vocabulary**: `av` frames/packets/buffers (`Buffer`,
   `BufferOwnership`, `Plane`), timing (`TimeBase`, `Timestamp`, `Duration`,
   rescaling), `Clock`.

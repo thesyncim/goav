@@ -30,13 +30,6 @@ import (
 	"github.com/thesyncim/goav/snapshot"
 )
 
-// Runtime is an intentionally opaque composition root for applications
-// embedding goav. Build it with New, or import
-// github.com/thesyncim/goav/bundle for the bundled adapter set. Applications
-// run Outputs on it (rt.Run, rt.Build); construction and adapter registration
-// stay behind the runtime and bundle packages.
-type Runtime = runtime
-
 // Task is the minimal runnable media composition accepted by code that only
 // needs lifecycle control.
 type Task interface {

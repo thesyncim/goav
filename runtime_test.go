@@ -119,7 +119,7 @@ func (s *runtimeTestSink) Close() error {
 	return nil
 }
 
-func runtimeValue(t *testing.T, rt *Runtime) *runtime {
+func runtimeValue(t *testing.T, rt *Runtime) *Runtime {
 	t.Helper()
 	if rt == nil {
 		t.Fatal("runtime is nil")

@@ -108,7 +108,12 @@ func (s InputSpec) Audio(options ...StreamOption) Stream {
 
 // OnStream is each stream the input discovers while it runs that match
 // selects: Outputs built from it attach for every such stream, named per
-// stream, and detach when the stream ends.
+// stream, and detach when the stream ends. The attach happens on the source's
+// emit path, as GStreamer's pad-added does: the source's Emit of the
+// av.EventStreamAdded announce returns once the branch exists, so the branch
+// receives the stream from its first packet. A rule destination's Open
+// therefore runs on the source's goroutine, bounded by the task's context;
+// keep it fast or hand slow setup to a goroutine of its own.
 func (s InputSpec) OnStream(match sourcepkg.StreamMatch) Stream {
 	return Stream{node: &streamNode{root: &streamRoot{input: s, rule: &match}}}
 }
