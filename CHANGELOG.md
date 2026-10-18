@@ -11,6 +11,14 @@ methodology changes, and migration notes.
 
 ## Unreleased
 
+- The WebM format adapter is the Matroska one driving WebM's profile-checked
+  muxer and demuxer, instead of a 300-line copy of it, so the two cannot drift
+  (the Opus `CodecDelay` fix had to land twice). `matroska.NewFormatMuxer` and
+  `matroska.NewFormatDemuxer` take the packet muxer or demuxer to drive
+  (`matroska.TrackMuxer`, `matroska.TrackDemuxer`). Breaking: a zero
+  `webm.FormatMuxer` or `webm.FormatDemuxer` is no longer usable; call
+  `webm.NewFormatMuxer()` or `webm.NewFormatDemuxer()`.
+
 - A job no longer drops a chain without a word. A plain chain routed before or
   after a `.Branches(...)` chain on the same job was missing from the graph
   while `Describe` and `Run` succeeded; it now lowers as a stream with one

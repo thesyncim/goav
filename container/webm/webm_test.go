@@ -2534,7 +2534,7 @@ func TestFormatMuxerDemuxerRoundTrip(t *testing.T) {
 		},
 	}
 	var buffer bytes.Buffer
-	muxer := &FormatMuxer{}
+	muxer := NewFormatMuxer()
 	if err := muxer.Open(ctx, format.Output{Writer: &buffer}, []av.Stream{stream}, format.OpenOptions{}); err != nil {
 		t.Fatal(err)
 	}
@@ -2551,7 +2551,7 @@ func TestFormatMuxerDemuxerRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	demuxer := &FormatDemuxer{}
+	demuxer := NewFormatDemuxer()
 	if err := demuxer.Open(ctx, format.Input{Reader: bytes.NewReader(buffer.Bytes())}, format.OpenOptions{}); err != nil {
 		t.Fatal(err)
 	}
@@ -2590,7 +2590,7 @@ func TestFormatMuxerDemuxerSupportsVorbis(t *testing.T) {
 		},
 	}
 	var buffer bytes.Buffer
-	muxer := &FormatMuxer{}
+	muxer := NewFormatMuxer()
 	if err := muxer.Open(ctx, format.Output{Writer: &buffer}, []av.Stream{stream}, format.OpenOptions{}); err != nil {
 		t.Fatal(err)
 	}
@@ -2607,7 +2607,7 @@ func TestFormatMuxerDemuxerSupportsVorbis(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	demuxer := &FormatDemuxer{}
+	demuxer := NewFormatDemuxer()
 	if err := demuxer.Open(ctx, format.Input{Reader: bytes.NewReader(buffer.Bytes())}, format.OpenOptions{}); err != nil {
 		t.Fatal(err)
 	}
@@ -2648,7 +2648,7 @@ func TestFormatDemuxerStreamsReturnsExtraDataCopies(t *testing.T) {
 		},
 	}
 	var buffer bytes.Buffer
-	muxer := &FormatMuxer{}
+	muxer := NewFormatMuxer()
 	if err := muxer.Open(ctx, format.Output{Writer: &buffer}, []av.Stream{stream}, format.OpenOptions{}); err != nil {
 		t.Fatal(err)
 	}
@@ -2664,7 +2664,7 @@ func TestFormatDemuxerStreamsReturnsExtraDataCopies(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	demuxer := &FormatDemuxer{}
+	demuxer := NewFormatDemuxer()
 	if err := demuxer.Open(ctx, format.Input{Reader: bytes.NewReader(buffer.Bytes())}, format.OpenOptions{}); err != nil {
 		t.Fatal(err)
 	}
@@ -2715,7 +2715,7 @@ func TestFormatDemuxerPrefersLanguageBCP47(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	demuxer := &FormatDemuxer{}
+	demuxer := NewFormatDemuxer()
 	if err := demuxer.Open(context.Background(), format.Input{Reader: bytes.NewReader(buffer.Bytes())}, format.OpenOptions{}); err != nil {
 		t.Fatal(err)
 	}
@@ -2743,7 +2743,7 @@ func TestFormatMuxerRejectsNegativeDuration(t *testing.T) {
 		},
 	}
 	var buffer bytes.Buffer
-	muxer := &FormatMuxer{}
+	muxer := NewFormatMuxer()
 	if err := muxer.Open(ctx, format.Output{Writer: &buffer}, []av.Stream{stream}, format.OpenOptions{}); err != nil {
 		t.Fatal(err)
 	}

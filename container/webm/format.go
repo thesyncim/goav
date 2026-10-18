@@ -3,14 +3,9 @@ package webm
 import (
 	"bytes"
 	"context"
-	"encoding/binary"
-	"errors"
-	"fmt"
 	"io"
 	"path/filepath"
-	"strconv"
 	"strings"
-	"time"
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/container/matroska"
@@ -23,28 +18,16 @@ type DemuxerFactory struct{}
 
 type MuxerFactory struct{}
 
+// FormatMuxer adapts the WebM muxer to format.Muxer: the Matroska adapter
+// writing through WebM's profile-checked Muxer.
 type FormatMuxer struct {
-	muxer  *Muxer
-	tracks []formatTrack
-	closed bool
+	*matroska.FormatMuxer
 }
 
+// FormatDemuxer adapts the WebM demuxer to format.Demuxer: the Matroska
+// adapter reading through WebM's profile-checked Demuxer.
 type FormatDemuxer struct {
-	demuxer *Demuxer
-	streams []av.Stream
-	tracks  []formatTrack
-	closed  bool
-}
-
-// formatTrack maps a goav stream to its WebM track. codecDelayNS is the
-// track's CodecDelay, which block timestamps run ahead of presentation by:
-// the demuxer subtracts it and the muxer adds it back, so a packet's PTS is
-// the time of its first decoded sample (an Opus pre-skip presents before zero).
-type formatTrack struct {
-	streamID     av.StreamID
-	trackID      uint32
-	media        av.MediaType
-	codecDelayNS int64
+	*matroska.FormatDemuxer
 }
 
 func Register(registry *format.SimpleRegistry) {
@@ -98,7 +81,7 @@ func (DemuxerFactory) NewDemuxer(ctx context.Context, result format.ProbeResult)
 	if result.Format != "" && result.Format != av.FormatWebM {
 		return nil, format.ErrNotFound
 	}
-	return &FormatDemuxer{}, nil
+	return NewFormatDemuxer(), nil
 }
 
 func (MuxerFactory) NewMuxer(ctx context.Context, id av.FormatID) (format.Muxer, error) {
@@ -108,301 +91,29 @@ func (MuxerFactory) NewMuxer(ctx context.Context, id av.FormatID) (format.Muxer,
 	if id != "" && id != av.FormatWebM {
 		return nil, format.ErrNotFound
 	}
-	return &FormatMuxer{}, nil
+	return NewFormatMuxer(), nil
 }
 
-func (m *FormatMuxer) Format() av.FormatID {
-	return av.FormatWebM
-}
-
-func (m *FormatMuxer) Open(ctx context.Context, output format.Output, streams []av.Stream, _ format.OpenOptions) error {
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-	if output.Writer == nil {
-		return matroska.ErrNilWriter
-	}
-	muxer, err := NewMuxer(output.Writer, MuxerOptions{})
-	if err != nil {
-		return err
-	}
-	m.muxer = muxer
-	m.tracks = m.tracks[:0]
-	for i := range streams {
-		track, err := trackFromAVStream(streams[i], uint32(i+1))
+// NewFormatMuxer returns the WebM format.Muxer.
+func NewFormatMuxer() *FormatMuxer {
+	return &FormatMuxer{matroska.NewFormatMuxer(av.FormatWebM, func(w io.Writer) (matroska.TrackMuxer, error) {
+		muxer, err := NewMuxer(w, MuxerOptions{})
 		if err != nil {
-			return err
+			return nil, err
 		}
-		trackID, err := muxer.AddTrack(track)
+		return muxer, nil
+	})}
+}
+
+// NewFormatDemuxer returns the WebM format.Demuxer.
+func NewFormatDemuxer() *FormatDemuxer {
+	return &FormatDemuxer{matroska.NewFormatDemuxer(av.FormatWebM, func(r io.Reader) (matroska.TrackDemuxer, error) {
+		demuxer, err := NewDemuxer(r, DemuxerOptions{})
 		if err != nil {
-			return err
+			return nil, err
 		}
-		m.tracks = append(m.tracks, formatTrack{streamID: streams[i].ID, trackID: trackID, codecDelayNS: track.CodecDelayNS})
-	}
-	m.closed = false
-	return nil
-}
-
-func (m *FormatMuxer) Write(ctx context.Context, packet *av.Packet, _ *format.WriteResult) error {
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-	if packet == nil {
-		return format.ErrNilPacket
-	}
-	if m.closed {
-		return io.ErrClosedPipe
-	}
-	if m.muxer == nil {
-		return matroska.ErrNilWriter
-	}
-	track, ok := m.track(packet.StreamID)
-	if !ok {
-		return nil
-	}
-	timeValue, ok := packet.PTS.ToDuration()
-	if !ok {
-		return matroska.ErrInvalidData
-	}
-	var durationNS int64
-	if packet.Duration.Base.Valid() {
-		durationValue, ok := packet.Duration.ToDuration()
-		if !ok {
-			return matroska.ErrInvalidData
-		}
-		durationNS = int64(durationValue)
-	}
-	return m.muxer.WritePacket(Packet{
-		TrackID:    track.trackID,
-		TimeNS:     int64(timeValue) + track.codecDelayNS,
-		DurationNS: durationNS,
-		Keyframe:   packet.Keyframe,
-		Data:       packet.Payload.Bytes,
-	})
-}
-
-func (m *FormatMuxer) Close() error {
-	if m == nil || m.closed {
-		return nil
-	}
-	m.closed = true
-	if m.muxer == nil {
-		return nil
-	}
-	return m.muxer.Close()
-}
-
-func (m *FormatMuxer) track(streamID av.StreamID) (formatTrack, bool) {
-	for i := range m.tracks {
-		if m.tracks[i].streamID == streamID {
-			return m.tracks[i], true
-		}
-	}
-	return formatTrack{}, false
-}
-
-func (d *FormatDemuxer) Format() av.FormatID {
-	return av.FormatWebM
-}
-
-func (d *FormatDemuxer) Open(ctx context.Context, input format.Input, _ format.OpenOptions) error {
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-	if input.Reader == nil {
-		return matroska.ErrNilReader
-	}
-	demuxer, err := NewDemuxer(input.Reader, DemuxerOptions{})
-	if err != nil {
-		return err
-	}
-	d.demuxer = demuxer
-	d.streams = d.streams[:0]
-	d.tracks = d.tracks[:0]
-	tracks := demuxer.Tracks()
-	for i := range tracks {
-		stream := streamFromTrack(tracks[i], i)
-		d.streams = append(d.streams, stream)
-		d.tracks = append(d.tracks, formatTrack{streamID: stream.ID, trackID: tracks[i].ID, media: stream.Type, codecDelayNS: tracks[i].CodecDelayNS})
-	}
-	d.closed = false
-	return nil
-}
-
-func (d *FormatDemuxer) Streams() []av.Stream {
-	if len(d.streams) == 0 {
-		return nil
-	}
-	streams := make([]av.Stream, len(d.streams))
-	for i := range d.streams {
-		streams[i] = cloneAVStream(d.streams[i])
-	}
-	return streams
-}
-
-func cloneAVStream(stream av.Stream) av.Stream {
-	if len(stream.Codec.ExtraData.Bytes) != 0 {
-		stream.Codec.ExtraData.Bytes = append([]byte(nil), stream.Codec.ExtraData.Bytes...)
-	}
-	return stream
-}
-
-func (d *FormatDemuxer) ReadInto(ctx context.Context, out *format.ReadResult) error {
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-	if out == nil || out.Packet == nil {
-		return format.ErrNilPacket
-	}
-	if d.closed {
-		return io.EOF
-	}
-	if d.demuxer == nil {
-		return matroska.ErrNilReader
-	}
-	packet := Packet{Data: out.Packet.Payload.Bytes[:0]}
-	if err := d.demuxer.ReadPacket(&packet); err != nil {
-		return err
-	}
-	track, ok := d.track(packet.TrackID)
-	if !ok {
-		return matroska.ErrUnknownTrack
-	}
-	out.Packet.Reset()
-	out.Packet.StreamID = track.streamID
-	out.Packet.Type = track.media
-	out.Packet.Payload.Bytes = packet.Data
-	out.Packet.Payload.Ownership = av.BufferOwned
-	out.Packet.PTS = av.Timestamp{Value: packet.TimeNS - track.codecDelayNS, Base: av.TimeBase{Num: 1, Den: 1000000000}}
-	if packet.DurationNS > 0 {
-		out.Packet.Duration = av.Duration{Value: packet.DurationNS, Base: av.TimeBase{Num: 1, Den: 1000000000}}
-	}
-	out.Packet.Keyframe = packet.Keyframe
-	out.PacketReady = true
-	return nil
-}
-
-var _ format.Seeker = (*FormatDemuxer)(nil)
-
-// Seek implements format.Seeker: it repositions the demuxer to the nearest
-// cue at or before position (falling back to the cluster index when the file
-// carries no Cues), so the next ReadInto resumes at a keyframe-aligned point
-// at or before position. The demuxer's monotonic-timecode validation restarts
-// at the new position. Input opened from a reader that cannot seek reports an
-// error wrapping format.ErrNotSeekable.
-func (d *FormatDemuxer) Seek(ctx context.Context, position time.Duration) error {
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-	if d.closed {
-		return matroska.ErrClosed
-	}
-	if d.demuxer == nil {
-		return matroska.ErrNilReader
-	}
-	if position < 0 {
-		return matroska.ErrInvalidData
-	}
-	if err := d.demuxer.SeekToTime(int64(position)); err != nil {
-		if errors.Is(err, matroska.ErrNonSeekableReader) {
-			return fmt.Errorf("%w: %w", format.ErrNotSeekable, err)
-		}
-		return err
-	}
-	return nil
-}
-
-func (d *FormatDemuxer) Close() error {
-	if d == nil {
-		return nil
-	}
-	d.closed = true
-	d.demuxer = nil
-	return nil
-}
-
-func (d *FormatDemuxer) track(trackID uint32) (formatTrack, bool) {
-	for i := range d.tracks {
-		if d.tracks[i].trackID == trackID {
-			return d.tracks[i], true
-		}
-	}
-	return formatTrack{}, false
-}
-
-func trackFromAVStream(stream av.Stream, fallbackID uint32) (Track, error) {
-	codec := codecFromAV(stream.Codec.ID)
-	if codec == 0 {
-		return Track{}, ErrUnsupportedWebMCodec
-	}
-	track := Track{
-		ID:            fallbackID,
-		Name:          stream.Name,
-		Language:      stream.Language,
-		LanguageBCP47: stream.Language,
-		TimebaseNum:   stream.TimeBase.Num,
-		TimebaseDen:   stream.TimeBase.Den,
-		Codec:         codec,
-		CodecPrivate:  stream.Codec.ExtraData.Bytes,
-	}
-	if track.Language == "" {
-		track.Language = "und"
-	}
-	switch stream.Type {
-	case av.MediaAudio:
-		track.Type = TrackAudio
-	case av.MediaVideo:
-		track.Type = TrackVideo
-	default:
-		return Track{}, ErrUnsupportedWebMCodec
-	}
-	if track.Codec == matroska.CodecOpus {
-		track.CodecDelayNS = opusCodecDelayNS(track.CodecPrivate)
-	}
-	track.Audio = AudioConfig{SampleRate: stream.Codec.SampleRate, Channels: stream.Codec.Channels}
-	track.Video = VideoConfig{Width: stream.Codec.Width, Height: stream.Codec.Height}
-	if err := validateTrack(track); err != nil {
-		return Track{}, err
-	}
-	return track, nil
-}
-
-func streamFromTrack(track Track, index int) av.Stream {
-	streamType := av.MediaUnknown
-	switch track.Type {
-	case TrackAudio:
-		streamType = av.MediaAudio
-	case TrackVideo:
-		streamType = av.MediaVideo
-	}
-	stream := av.Stream{
-		ID:       av.StreamID(strconv.FormatUint(uint64(track.ID), 10)),
-		Index:    index,
-		Type:     streamType,
-		TimeBase: av.TimeBase{Num: 1, Den: 1000000000},
-		Language: trackLanguage(track),
-		Name:     track.Name,
-		Codec: av.CodecParameters{
-			ID:         codecToAV(track.Codec),
-			Type:       streamType,
-			SampleRate: track.Audio.SampleRate,
-			Channels:   track.Audio.Channels,
-			Width:      track.Video.Width,
-			Height:     track.Video.Height,
-			ExtraData:  av.Buffer{Bytes: track.CodecPrivate, Ownership: av.BufferImmutable},
-		},
-	}
-	if stream.Codec.SampleRate > 0 {
-		stream.Codec.ClockRate = uint32(stream.Codec.SampleRate)
-	}
-	return stream
-}
-
-func trackLanguage(track Track) string {
-	if track.LanguageBCP47 != "" {
-		return track.LanguageBCP47
-	}
-	return track.Language
+		return demuxer, nil
+	})}
 }
 
 func matchWebMMIME(value string) bool {
@@ -411,13 +122,4 @@ func matchWebMMIME(value string) bool {
 
 func hasWebMExtension(name string) bool {
 	return strings.EqualFold(filepath.Ext(name), ".webm")
-}
-
-// opusCodecDelayNS is the CodecDelay an OpusHead's pre-skip declares (48 kHz
-// samples), so the muxer writes it and the adapter shifts blocks by it.
-func opusCodecDelayNS(head []byte) int64 {
-	if len(head) < 19 || string(head[:8]) != "OpusHead" {
-		return 0
-	}
-	return int64(binary.LittleEndian.Uint16(head[10:])) * 1_000_000_000 / 48000
 }
