@@ -154,6 +154,7 @@ See [Adapters](docs/ADAPTERS.md).
 | Audio and video in one file | pass `in.Video()…To(out)` and `in.Audio()…To(out)` to one `Run` |
 | Frames into your code | `in.Video().Decode().To(goav.Sink(component.SinkFunc("frames", fn)))` |
 | Mix, composite, switch | `goav.Mix(a, b)`, `goav.Composite(cam, goav.At(screen, 960, 540))`, `goav.Select(a, b)` |
+| Package for HLS | `goav.Custom("live", hls.New("live.m3u8", hls.Dir(dir), hls.Window(6)))`, or `! hls out/live.m3u8` in a program |
 | Change a running task | `task.Attach(ctx, task.Tap("live").Encode(codec.VP8()).To(preview))` |
 | Test a pipeline | [`goavtest`](goavtest): deterministic sources, a recording sink, a fake clock |
 

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -9,6 +10,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -129,6 +131,30 @@ func (f *cliFiles) Create(name string) (io.Writer, error) {
 	return file, err
 }
 
+// Rename publishes a file written under a temporary name, as HLS does with
+// its playlist; the summary lists the final name.
+func (f *cliFiles) Rename(oldname, newname string) error {
+	if err := os.Rename(oldname, newname); err != nil {
+		return err
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.written = slices.DeleteFunc(f.written, func(n string) bool { return n == oldname || n == newname })
+	f.written = append(f.written, newname)
+	return nil
+}
+
+// Remove deletes a file, as a live HLS playlist does with old segments.
+func (f *cliFiles) Remove(name string) error {
+	if err := os.Remove(name); err != nil {
+		return err
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.written = slices.DeleteFunc(f.written, func(n string) bool { return n == name })
+	return nil
+}
+
 const programUsage = `goav %[1]s [flags] '<program>'
 goav %[1]s [flags] -f program.goav
 
@@ -182,6 +208,11 @@ func runCommand(argv []string, stdout, stderr io.Writer) int {
 		err = runServed(ctx, task, args.control, files)
 	} else {
 		err = task.Run(ctx)
+	}
+	// Close finalizes the destinations: a muxer writes its index, HLS its
+	// last segment and playlist. The summary reports the finished files.
+	if closeErr := task.Close(); err == nil || errors.Is(err, context.Canceled) {
+		err = cmp.Or(closeErr, err)
 	}
 	if err != nil && !errors.Is(err, context.Canceled) {
 		printErr(stderr, err)

@@ -47,6 +47,7 @@ func init() {
 	builtin(file)
 
 	builtin(testsrcElement())
+	builtin(hlsElement())
 
 	// tap: at the start, a running task's tap; mid-pipeline, a named outlet.
 	tap := define[nameArgs]("tap", "name an attach point; start from one on a running task", "operation")
