@@ -77,6 +77,7 @@ The tables below mirror `bundle.Options()` and the descriptors registered by the
 | `annexb` | mux | video | h264 | 1 | Annex B destinations support one H264 video stream |
 | `ivf` | mux | video | av1, vp8, vp9 | 1 | IVF destinations support one VP8, VP9, or AV1 video stream |
 | `matroska` | mux | audio, subtitle, video | aac, av1, flac, h264, opus, pcm, text_utf8, vorbis, vp8, vp9 | 1+ | Matroska supports multi-track audio, video, and subtitle packets without codec conversion |
+| `mp4` | mux | audio, video | aac, av1, flac, h264, opus, vp8, vp9 | 1+ | MP4 mux writes a progressive file to a seekable output and fragmented MP4 (a moof per video keyframe) to a pipe or realtime output, with edit lists for start delays, B-frame delay, and Opus pre-skip |
 | `webm` | mux | audio, video | av1, opus, vorbis, vp8, vp9 | 1+ | WebM supports Opus/Vorbis audio and VP8/VP9/AV1 video packets without codec conversion |
 
 ### Codecs

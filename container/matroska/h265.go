@@ -3,6 +3,8 @@ package matroska
 import (
 	"encoding/binary"
 	"io"
+
+	"github.com/thesyncim/goav/internal/bitio"
 )
 
 const (
@@ -281,42 +283,42 @@ func h265ParseSPSHeader(nalu []byte) (h265SPSHeader, error) {
 	if err != nil {
 		return h265SPSHeader{}, err
 	}
-	br := av1BitReader{data: rbsp}
-	if _, err := br.readBits(4); err != nil {
+	br := bitio.Reader{Data: rbsp, Err: ErrInvalidData}
+	if _, err := br.Bits(4); err != nil {
 		return h265SPSHeader{}, err
 	}
-	maxSubLayersMinusOne, err := br.readBits(3)
+	maxSubLayersMinusOne, err := br.Bits(3)
 	if err != nil {
 		return h265SPSHeader{}, err
 	}
 	if maxSubLayersMinusOne > 6 {
 		return h265SPSHeader{}, ErrInvalidData
 	}
-	temporalIDNested, err := br.readBool()
+	temporalIDNested, err := br.Bool()
 	if err != nil {
 		return h265SPSHeader{}, err
 	}
-	profileSpace, err := br.readBits(2)
+	profileSpace, err := br.Bits(2)
 	if err != nil {
 		return h265SPSHeader{}, err
 	}
-	tier, err := br.readBool()
+	tier, err := br.Bool()
 	if err != nil {
 		return h265SPSHeader{}, err
 	}
-	profileIDC, err := br.readBits(5)
+	profileIDC, err := br.Bits(5)
 	if err != nil {
 		return h265SPSHeader{}, err
 	}
-	compatibility, err := br.readBits(32)
+	compatibility, err := br.Bits(32)
 	if err != nil {
 		return h265SPSHeader{}, err
 	}
-	constraints, err := br.readBits(48)
+	constraints, err := br.Bits(48)
 	if err != nil {
 		return h265SPSHeader{}, err
 	}
-	level, err := br.readBits(8)
+	level, err := br.Bits(8)
 	if err != nil {
 		return h265SPSHeader{}, err
 	}

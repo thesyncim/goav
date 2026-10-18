@@ -109,6 +109,12 @@ func parseAudioSampleEntry(payload []byte) (channels, sampleRate int, extradata 
 			if pl, err := readPayload(reader, h); err == nil {
 				extradata = opusHeadFromDOps(pl)
 			}
+		case "dfLa":
+			// A FullBox of FLAC metadata blocks: the stream header without
+			// its "fLaC" magic, which the extradata keeps.
+			if pl, err := readPayload(reader, h); err == nil && len(pl) > 4 && pl[0] == 0 {
+				extradata = append([]byte("fLaC"), pl[4:]...)
+			}
 		}
 		return nil
 	})
@@ -128,7 +134,7 @@ const (
 func audioSpecificConfigFromESDS(payload []byte) []byte {
 	p := newParser(payload)
 	p.fullBox() // version + flags
-	tag, ok := descriptor(p)
+	tag, _, ok := descriptor(p)
 	if !ok || tag != esTag {
 		return nil
 	}
@@ -145,17 +151,17 @@ func audioSpecificConfigFromESDS(payload []byte) []byte {
 	if flags&0x20 != 0 {
 		p.skip(2) // OCR_ES_Id
 	}
-	tag, ok = descriptor(p)
+	tag, _, ok = descriptor(p)
 	if !ok || tag != decConfTag {
 		return nil
 	}
 	// DecoderConfigDescriptor: objectType(1)+streamType(1)+bufferSize(3)+max(4)+avg(4).
 	p.skip(13)
-	tag, ok = descriptor(p)
+	tag, size, ok := descriptor(p)
 	if !ok || tag != decSpecTag {
 		return nil
 	}
-	asc := p.take(p.remaining())
+	asc := p.take(min(size, p.remaining()))
 	if p.err() != nil || len(asc) == 0 {
 		return nil
 	}
@@ -165,15 +171,16 @@ func audioSpecificConfigFromESDS(payload []byte) []byte {
 // descriptor reads a tag byte and its expandable length, leaving the cursor at
 // the descriptor body. The length itself is consumed but not returned because
 // the descriptors above are read by their fixed field layout.
-func descriptor(p *parser) (tag uint8, ok bool) {
+func descriptor(p *parser) (tag uint8, size int, ok bool) {
 	tag = p.u8()
 	for range 4 {
 		b := p.u8()
+		size = size<<7 | int(b&0x7f)
 		if b&0x80 == 0 {
 			break
 		}
 	}
-	return tag, p.err() == nil
+	return tag, size, p.err() == nil
 }
 
 // opusHeadFromDOps rebuilds the OpusHead an Opus sample entry's dOps box

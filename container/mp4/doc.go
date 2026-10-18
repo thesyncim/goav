@@ -1,6 +1,13 @@
 // Package mp4 is a pure-Go ISO Base Media File Format (ISO/IEC 14496-12)
-// demuxer for MP4/MOV/M4A/M4V inputs. It registers behind the goav format
-// extension point as the av.FormatMP4 demuxer.
+// demuxer and muxer for MP4/MOV/M4A/M4V. It registers behind the goav format
+// extension point as the av.FormatMP4 demuxer and muxer.
+//
+// The muxer writes H.264, AV1, VP8, VP9, AAC, Opus, and FLAC tracks. To a
+// seekable output it writes a progressive file, moov after the samples; to a
+// pipe or a realtime output it writes fragmented MP4, a moof and mdat per
+// fragment cut at video keyframes, which plays while it grows. Edit lists
+// keep the tracks in sync and Opus pre-skip and B-frame delay out of
+// presentation, exactly as the demuxer reads them back.
 //
 // The demuxer is random-access: it walks the top-level boxes to locate moov
 // (which may follow mdat in non-faststart files), parses each track's sample
