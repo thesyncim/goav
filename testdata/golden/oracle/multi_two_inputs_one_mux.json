@@ -13,12 +13,12 @@
         "detail": "custom source, domain=frame, media=audio"
       },
       {
-        "name": "select-video",
+        "name": "select-video@video-1",
         "kind": "stage",
         "detail": "select, type=video"
       },
       {
-        "name": "select-audio",
+        "name": "select-audio@audio-2",
         "kind": "stage",
         "detail": "select, type=audio"
       },
@@ -41,31 +41,21 @@
     "edges": [
       {
         "from": "video-1",
-        "to": "select-video",
-        "policy": "all"
-      },
-      {
-        "from": "video-1",
-        "to": "select-audio",
+        "to": "select-video@video-1",
         "policy": "all"
       },
       {
         "from": "audio-2",
-        "to": "select-video",
+        "to": "select-audio@audio-2",
         "policy": "all"
       },
       {
-        "from": "audio-2",
-        "to": "select-audio",
-        "policy": "all"
-      },
-      {
-        "from": "select-video",
+        "from": "select-video@video-1",
         "to": "encode-video",
         "policy": "all"
       },
       {
-        "from": "select-audio",
+        "from": "select-audio@audio-2",
         "to": "encode-audio",
         "policy": "all"
       },
@@ -129,7 +119,8 @@
       {
         "name": "video",
         "select": {
-          "type": "video"
+          "type": "video",
+          "input": "video-1"
         },
         "operations": [
           {
@@ -160,7 +151,8 @@
       {
         "name": "audio",
         "select": {
-          "type": "audio"
+          "type": "audio",
+          "input": "audio-2"
         },
         "operations": [
           {
@@ -201,7 +193,8 @@
         "stream": {
           "id": "video-1",
           "type": "video",
-          "name": "video-1"
+          "name": "video-1",
+          "input": "video-1"
         },
         "shape": {
           "domain": "frame",
@@ -251,7 +244,8 @@
         "stream": {
           "id": "audio-2",
           "type": "audio",
-          "name": "audio-2"
+          "name": "audio-2",
+          "input": "audio-2"
         },
         "shape": {
           "domain": "frame",
@@ -386,12 +380,12 @@
           "detail": "custom source, domain=frame, media=audio"
         },
         {
-          "name": "select-video",
+          "name": "select-video@video-1",
           "kind": "stage",
           "detail": "select, type=video"
         },
         {
-          "name": "select-audio",
+          "name": "select-audio@audio-2",
           "kind": "stage",
           "detail": "select, type=audio"
         },
@@ -414,31 +408,21 @@
       "edges": [
         {
           "from": "video-1",
-          "to": "select-video",
-          "policy": "all"
-        },
-        {
-          "from": "video-1",
-          "to": "select-audio",
+          "to": "select-video@video-1",
           "policy": "all"
         },
         {
           "from": "audio-2",
-          "to": "select-video",
+          "to": "select-audio@audio-2",
           "policy": "all"
         },
         {
-          "from": "audio-2",
-          "to": "select-audio",
-          "policy": "all"
-        },
-        {
-          "from": "select-video",
+          "from": "select-video@video-1",
           "to": "encode-video",
           "policy": "all"
         },
         {
-          "from": "select-audio",
+          "from": "select-audio@audio-2",
           "to": "encode-audio",
           "policy": "all"
         },

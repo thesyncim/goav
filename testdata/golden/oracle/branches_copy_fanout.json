@@ -42,7 +42,7 @@
     ]
   },
   "explain": {
-    "summary": "from in.mp4 through 2 stream branch(es) to 2 destinations",
+    "summary": "from in.mp4 through 1 stream branch(es) to 2 destinations",
     "operation": "build job",
     "inputs": [
       {
@@ -53,7 +53,7 @@
     ],
     "streams": [
       {
-        "name": "a",
+        "name": "video",
         "select": {
           "type": "video"
         },
@@ -67,31 +67,14 @@
           "copy": true
         },
         "destinations": [
-          "a.mkv"
-        ]
-      },
-      {
-        "name": "b",
-        "select": {
-          "type": "video"
-        },
-        "operations": [
-          {
-            "kind": "copy",
-            "component": "packet-copy"
-          }
-        ],
-        "encode": {
-          "copy": true
-        },
-        "destinations": [
+          "a.mkv",
           "b.mkv"
         ]
       }
     ],
     "branches": [
       {
-        "name": "a",
+        "name": "video",
         "input": "in.mp4",
         "stream": {
           "type": "video"
@@ -130,49 +113,7 @@
           }
         ],
         "destinations": [
-          "a.mkv"
-        ]
-      },
-      {
-        "name": "b",
-        "input": "in.mp4",
-        "stream": {
-          "type": "video"
-        },
-        "shape": {
-          "domain": "packet",
-          "mediaKind": "video"
-        },
-        "operations": [
-          {
-            "kind": "demux",
-            "component": "container",
-            "detail": "read packets from input",
-            "shape": {
-              "domain": "packet",
-              "mediaKind": "video"
-            }
-          },
-          {
-            "kind": "select",
-            "component": "video",
-            "detail": "select stream",
-            "shape": {
-              "domain": "packet",
-              "mediaKind": "video"
-            }
-          },
-          {
-            "kind": "copy",
-            "component": "packet-copy",
-            "detail": "explicit packet copy",
-            "shape": {
-              "domain": "packet",
-              "mediaKind": "video"
-            }
-          }
-        ],
-        "destinations": [
+          "a.mkv",
           "b.mkv"
         ]
       }
@@ -184,7 +125,7 @@
         "format": "matroska",
         "kind": "mux",
         "branches": [
-          "a"
+          "video"
         ]
       },
       {
@@ -193,19 +134,14 @@
         "format": "matroska",
         "kind": "mux",
         "branches": [
-          "b"
+          "video"
         ]
       }
     ],
     "decisions": [
       {
         "code": "packet_copy",
-        "branch": "a",
-        "message": "stream can remain packet encoded"
-      },
-      {
-        "code": "packet_copy",
-        "branch": "b",
+        "branch": "video",
         "message": "stream can remain packet encoded"
       }
     ],

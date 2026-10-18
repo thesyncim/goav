@@ -2,19 +2,19 @@
   "describe_error": {
     "code": "stream_beside_join",
     "family": "stream",
-    "operation": "build stream",
-    "node": "video"
+    "operation": "build recipe",
+    "node": ""
   },
   "explain_error": {
     "code": "stream_beside_join",
     "family": "stream",
-    "operation": "build stream",
-    "node": "video"
+    "operation": "build recipe",
+    "node": ""
   },
   "build_error": {
     "code": "stream_beside_join",
     "family": "stream",
-    "operation": "build stream",
-    "node": "video"
+    "operation": "build recipe",
+    "node": ""
   }
 }
