@@ -18,22 +18,19 @@ import (
 	"github.com/thesyncim/goav/goavtest"
 )
 
-// TestPlainChainBesideBranchesIsBuilt pins that a job keeps every chain it
-// declares: a plain chain routed before or after a branched one lowers as a
-// stream with one branch, sharing the mux group of any handle a branch also
-// writes. Both orders used to drop the plain chain silently: Describe and Run
-// succeeded with no node for it.
+// TestPlainChainBesideBranchesIsBuilt pins that a recipe keeps every stream it
+// routes: a plain stream routed before or after a forked one is built, sharing
+// the mux of any handle a fork also writes. Both orders used to drop the plain
+// stream silently: Describe and Run succeeded with no node for it.
 func TestPlainChainBesideBranchesIsBuilt(t *testing.T) {
-	for name, build := range map[string]func(in goav.InputSpec, a, b goav.Destination) *goav.Job{
-		"plain after branches": func(in goav.InputSpec, a, b goav.Destination) *goav.Job {
-			return goav.From(in).
-				Video().Copy().Branches(goav.Branch("a").To(a), goav.Branch("b").To(b)).
-				Audio().Copy().To(a)
+	for name, build := range map[string]func(in goav.InputSpec, a, b goav.Destination) []goav.Output{
+		"plain after forks": func(in goav.InputSpec, a, b goav.Destination) []goav.Output {
+			v := in.Video()
+			return []goav.Output{v.As("a").To(a), v.As("b").To(b), in.Audio().To(a)}
 		},
-		"plain before branches": func(in goav.InputSpec, a, b goav.Destination) *goav.Job {
-			return goav.From(in).
-				Audio().Copy().To(a).
-				Video().Copy().Branches(goav.Branch("a").To(a), goav.Branch("b").To(b))
+		"plain before forks": func(in goav.InputSpec, a, b goav.Destination) []goav.Output {
+			v := in.Video()
+			return []goav.Output{in.Audio().To(a), v.As("a").To(a), v.As("b").To(b)}
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -44,9 +41,8 @@ func TestPlainChainBesideBranchesIsBuilt(t *testing.T) {
 				t.Fatal(err)
 			}
 			var a, b bytes.Buffer
-			job := build(goav.FileInput("in.mp4", bytes.NewReader(data)), goav.Write("a.mkv", &a), goav.Write("b.mkv", &b)).
-				UseRuntime(offlineRuntime())
-			if err := job.Run(ctx); err != nil {
+			outs := build(goav.FileInput("in.mp4", bytes.NewReader(data)), goav.Write("a.mkv", &a), goav.Write("b.mkv", &b))
+			if err := offlineRuntime().Run(ctx, outs...); err != nil {
 				t.Fatalf("run: %v", err)
 			}
 			if got := matroskaTracks(t, a.Bytes()); got != 2 {
@@ -68,67 +64,21 @@ func matroskaTracks(t *testing.T, data []byte) int {
 	return len(demuxer.Tracks())
 }
 
-// TestPlainChainBesideJoinIsRefused pins that a chain declared on a Mix job
-// fails the build instead of vanishing: the join lowering builds only the
-// joined stream, so Describe and Run used to succeed without it.
+// TestPlainChainBesideJoinIsRefused pins that a stream beside a Mix fails the
+// build instead of vanishing: the join lowering builds only the joined
+// stream, so Describe and Run used to succeed without it.
 func TestPlainChainBesideJoinIsRefused(t *testing.T) {
 	sink := func(name string) goav.Destination {
 		return goav.Sink(component.SinkFunc(name, func(context.Context, component.Message) error { return nil }))
 	}
-	job := goav.LegacyMix(
-		goav.From(goavtest.Audio(48000, 1, []int16{1, 2})).Audio(),
-		goav.From(goavtest.Audio(48000, 1, []int16{3, 4})).Audio(),
+	mixed := goav.Mix(
+		goavtest.Audio(48000, 1, []int16{1, 2}).Audio(),
+		goavtest.Audio(48000, 1, []int16{3, 4}).Audio(),
 	).To(sink("mixed"))
-	job.And(goavtest.Video(64, 64, 3)).Video().To(sink("video"))
-	_, err := job.UseRuntime(bundle.Default()).Describe()
+	_, err := bundle.Default().Describe(mixed, goavtest.Video(64, 64, 3).Video().To(sink("video")))
 	var buildErr *goav.BuildError
 	if !errors.As(err, &buildErr) || string(buildErr.Code) != "stream_beside_join" {
 		t.Fatalf("Describe = %v, want a stream_beside_join refusal", err)
-	}
-}
-
-// TestRegionOutsideCompositeIsRefused pins that a canvas position no Composite
-// reads fails the build instead of being dropped: on a chain that ends in To,
-// and on a Mix arm.
-func TestRegionOutsideCompositeIsRefused(t *testing.T) {
-	sink := goav.Sink(component.SinkFunc("s", func(context.Context, component.Message) error { return nil }))
-	for name, tc := range map[string]struct {
-		job  *goav.Job
-		code string
-	}{
-		"plain chain": {
-			job:  goav.From(goavtest.Video(64, 64, 3)).Video().Region(10, 10).To(sink),
-			code: "stream_region_outside_composite",
-		},
-		"mix arm": {
-			job: goav.LegacyMix(
-				goav.From(goavtest.Audio(48000, 1, []int16{1, 2})).Audio().Region(4, 4),
-				goav.From(goavtest.Audio(48000, 1, []int16{3, 4})).Audio(),
-			).To(sink),
-			code: "mix_arm",
-		},
-		"top-level composite": {
-			job: goav.LegacyComposite(
-				goav.From(goavtest.Video(64, 64, 3)).Video(),
-				goav.From(goavtest.Video(32, 32, 3)).Video().Region(4, 4),
-			).Region(8, 8).To(sink),
-			code: "stream_region_outside_composite",
-		},
-		"select arm": {
-			job: goav.LegacySelect(
-				goav.From(goavtest.Audio(48000, 1, []int16{1, 2})).Audio().Region(4, 4),
-				goav.From(goavtest.Audio(48000, 1, []int16{3, 4})).Audio(),
-			).To(sink),
-			code: "select_arm",
-		},
-	} {
-		t.Run(name, func(t *testing.T) {
-			_, err := tc.job.UseRuntime(bundle.Default()).Describe()
-			var buildErr *goav.BuildError
-			if !errors.As(err, &buildErr) || string(buildErr.Code) != tc.code {
-				t.Fatalf("Describe = %v, want a %s refusal", err, tc.code)
-			}
-		})
 	}
 }
 

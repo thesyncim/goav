@@ -31,15 +31,13 @@ func TestCompositionLawsHoldForGeneratedRecipes(t *testing.T) {
 	for _, tc := range generatedCompositionCorpus() {
 		t.Run(tc.name, func(t *testing.T) {
 			input := goavtest.Audio(tc.sampleRate, 1, tc.samples)
-			dest := goav.Write("archive.ogg", io.Discard)
-			direct := generatedDirectCompositionJob(input, dest, tc)
-			branched := generatedMainBranchCompositionJob(input, dest, tc)
-
-			directPlan := requireGeneratedCompositionDescribeMatchesBuild(t, direct)
-			branchPlan := requireGeneratedCompositionDescribeMatchesBuild(t, branched)
-			if !reflect.DeepEqual(directPlan, branchPlan) {
-				t.Fatalf("direct chain != Branch(\"main\") for generated case %s\ndirect:\n%s\nbranch:\n%s",
-					tc.name, specText(directPlan), specText(branchPlan))
+			archive, monitor := goav.Write("archive.ogg", io.Discard), goav.Write("monitor.ogg", io.Discard)
+			stream := generatedCompositionStream(input, tc)
+			split := requireGeneratedCompositionDescribeMatchesBuild(t, stream.To(archive), stream.To(monitor))
+			merged := requireGeneratedCompositionDescribeMatchesBuild(t, stream.To(archive, monitor))
+			if !reflect.DeepEqual(split, merged) {
+				t.Fatalf("s.To(a), s.To(b) != s.To(a, b) for generated case %s\nsplit:\n%s\nmerged:\n%s",
+					tc.name, specText(split), specText(merged))
 			}
 
 			requireGeneratedCompositionRuntimeAttachMatchesBuildTimeBranch(t, tc)
@@ -76,31 +74,24 @@ func generatedCompositionCorpus() []generatedCompositionCase {
 	return cases
 }
 
-func generatedDirectCompositionJob(input goav.InputSpec, dest goav.Destination, tc generatedCompositionCase) *goav.Job {
-	chain := goav.From(input).Audio()
+// generatedCompositionStream is the generated case's encoded stream: one
+// Stream value, so every Output that routes it shares its work.
+func generatedCompositionStream(input goav.InputSpec, tc generatedCompositionCase) goav.Stream {
+	stream := input.Audio()
 	if tc.resample {
-		chain = chain.Resample(48_000, codec.Mono)
+		stream = stream.Resample(48_000, codec.Mono)
 	}
-	return chain.Encode(codec.Opus(codec.Bitrate(tc.bitrate))).To(dest).UseRuntime(goavtest.Runtime())
+	return stream.Encode(codec.Opus(codec.Bitrate(tc.bitrate)))
 }
 
-func generatedMainBranchCompositionJob(input goav.InputSpec, dest goav.Destination, tc generatedCompositionCase) *goav.Job {
-	branch := goav.Branch("main")
-	if tc.resample {
-		branch = branch.Resample(48_000, codec.Mono)
-	}
-	spec := branch.Encode(codec.Opus(codec.Bitrate(tc.bitrate))).To(dest)
-	return goav.From(input).Audio().Branches(spec).UseRuntime(goavtest.Runtime())
-}
-
-func requireGeneratedCompositionDescribeMatchesBuild(t *testing.T, job *goav.Job) pipeline.Spec {
+func requireGeneratedCompositionDescribeMatchesBuild(t *testing.T, outs ...goav.Output) pipeline.Spec {
 	t.Helper()
 	ctx := context.Background()
-	planned, err := job.Describe()
+	planned, err := goavtest.Runtime().Describe(outs...)
 	if err != nil {
 		t.Fatalf("Describe(): %v", err)
 	}
-	task, err := job.BuildLive(ctx)
+	task, err := goavtest.Runtime().Build(ctx, outs...)
 	if err != nil {
 		t.Fatalf("BuildLive(): %v", err)
 	}
@@ -118,11 +109,7 @@ func requireGeneratedCompositionRuntimeAttachMatchesBuildTimeBranch(t *testing.T
 	const tapName = "generated.frames"
 	input := generatedNamedCompositionAudioInput("generated-audio", tc.sampleRate)
 	branchSink := generatedNoopCompositionSink("monitor")
-	buildTime := goav.From(input).Audio().Tap(goav.FrameTap(tapName)).
-		Branches(generatedMonitorCompositionBranch(tapName, branchSink, tc)).
-		UseRuntime(goavtest.Runtime())
-
-	buildTimePlan := requireGeneratedCompositionDescribeMatchesBuild(t, buildTime)
+	buildTimePlan := requireGeneratedCompositionDescribeMatchesBuild(t, generatedMonitorComposition(input.Audio().Tap(tapName), branchSink, tc))
 
 	baseInput := generatedNamedCompositionAudioInput("generated-audio", tc.sampleRate)
 	base := baseInput.
@@ -134,7 +121,7 @@ func requireGeneratedCompositionRuntimeAttachMatchesBuildTimeBranch(t *testing.T
 		t.Fatalf("BuildLive base for runtime attach: %v", err)
 	}
 	defer task.Close()
-	if _, err := goav.LegacyAttach(task, ctx, generatedMonitorCompositionBranch(tapName, generatedNoopCompositionSink("monitor"), tc)); err != nil {
+	if _, err := task.Attach(ctx, generatedMonitorComposition(task.Tap(tapName), generatedNoopCompositionSink("monitor"), tc)); err != nil {
 		t.Fatalf("Attach generated branch: %v", err)
 	}
 
@@ -154,12 +141,11 @@ func generatedNamedCompositionAudioInput(name string, sampleRate int) goav.Input
 	).Input()
 }
 
-func generatedMonitorCompositionBranch(tapName string, sink goav.Destination, tc generatedCompositionCase) goav.BranchSpec {
-	branch := goav.Branch("monitor").From(goav.FrameTap(tapName))
+func generatedMonitorComposition(from goav.Stream, sink goav.Destination, tc generatedCompositionCase) goav.Output {
 	if tc.resample {
-		branch = branch.Resample(48_000, codec.Mono)
+		from = from.Resample(48_000, codec.Mono)
 	}
-	return branch.Encode(codec.Opus(codec.Bitrate(tc.bitrate))).To(sink)
+	return from.Encode(codec.Opus(codec.Bitrate(tc.bitrate))).As("monitor").To(sink)
 }
 
 func generatedNoopCompositionSink(name string) goav.Destination {
@@ -226,13 +212,13 @@ func requireGeneratedNestedMixMatchesFlatMix(t *testing.T, tc generatedCompositi
 func runGeneratedFlatCompositionMix(t *testing.T, a, b, c []int16) [][]int16 {
 	t.Helper()
 	out := goavtest.NewCollector()
-	job := goav.LegacyMix(
-		goav.From(goavtest.Audio(48_000, 1, a)).Audio(),
-		goav.From(goavtest.Audio(48_000, 1, b)).Audio(),
-		goav.From(goavtest.Audio(48_000, 1, c)).Audio(),
-	).To(out.Sink()).UseRuntime(goavtest.Runtime())
+	job := goav.Mix(
+		goavtest.Audio(48_000, 1, a).Audio(),
+		goavtest.Audio(48_000, 1, b).Audio(),
+		goavtest.Audio(48_000, 1, c).Audio(),
+	).To(out.Sink())
 	requireGeneratedCompositionDescribeMatchesBuild(t, job)
-	if err := job.Run(context.Background()); err != nil {
+	if err := goavtest.Runtime().Run(context.Background(), job); err != nil {
 		t.Fatalf("Run generated flat mix: %v", err)
 	}
 	return out.S16()
@@ -241,15 +227,15 @@ func runGeneratedFlatCompositionMix(t *testing.T, a, b, c []int16) [][]int16 {
 func runGeneratedNestedCompositionMix(t *testing.T, a, b, c []int16) [][]int16 {
 	t.Helper()
 	out := goavtest.NewCollector()
-	job := goav.LegacyMix(
-		goav.LegacyMix(
-			goav.From(goavtest.Audio(48_000, 1, a)).Audio(),
-			goav.From(goavtest.Audio(48_000, 1, b)).Audio(),
+	job := goav.Mix(
+		goav.Mix(
+			goavtest.Audio(48_000, 1, a).Audio(),
+			goavtest.Audio(48_000, 1, b).Audio(),
 		),
-		goav.From(goavtest.Audio(48_000, 1, c)).Audio(),
-	).To(out.Sink()).UseRuntime(goavtest.Runtime())
+		goavtest.Audio(48_000, 1, c).Audio(),
+	).To(out.Sink())
 	requireGeneratedCompositionDescribeMatchesBuild(t, job)
-	if err := job.Run(context.Background()); err != nil {
+	if err := goavtest.Runtime().Run(context.Background(), job); err != nil {
 		t.Fatalf("Run generated nested mix: %v", err)
 	}
 	return out.S16()

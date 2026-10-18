@@ -28,7 +28,7 @@ func TestJoinBackpressuresFastArm(t *testing.T) {
 			fast := gatedArmSource(kind, "fast", frames, nil, fastDone)
 			slow := gatedArmSource(kind, "slow", frames, release, nil)
 			out := goavtest.NewCollector()
-			task, err := joinOf(kind, fast, slow).To(out.Sink()).UseRuntime(goavtest.Runtime()).BuildLive(ctx)
+			task, err := goavtest.Runtime().Build(ctx, joinOf(kind, fast, slow).To(out.Sink()))
 			if err != nil {
 				t.Fatalf("BuildLive: %v", err)
 			}
@@ -59,7 +59,7 @@ func TestJoinBackpressureReleasesOnCancel(t *testing.T) {
 	never := make(chan struct{})
 	fast := gatedArmSource("mix", "fast", 5000, nil, nil)
 	slow := gatedArmSource("mix", "slow", 1, never, nil)
-	task, err := joinOf("mix", fast, slow).To(goavtest.NewCollector().Sink()).UseRuntime(goavtest.Runtime()).BuildLive(ctx)
+	task, err := goavtest.Runtime().Build(ctx, joinOf("mix", fast, slow).To(goavtest.NewCollector().Sink()))
 	if err != nil {
 		t.Fatalf("BuildLive: %v", err)
 	}
@@ -75,13 +75,11 @@ func TestJoinBackpressureReleasesOnCancel(t *testing.T) {
 	}
 }
 
-func joinOf(kind string, a, b goav.InputSpec) interface {
-	To(...goav.Destination) *goav.Job
-} {
+func joinOf(kind string, a, b goav.InputSpec) goav.Stream {
 	if kind == "composite" {
-		return goav.LegacyComposite(goav.From(a).Video(), goav.From(b).Video())
+		return goav.Composite(a.Video(), b.Video())
 	}
-	return goav.LegacyMix(goav.From(a).Audio(), goav.From(b).Audio())
+	return goav.Mix(a.Audio(), b.Audio())
 }
 
 // gatedArmSource pushes frames tiny frames of the join kind's media, first

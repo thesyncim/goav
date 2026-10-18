@@ -177,21 +177,15 @@ func TestExplainReportsBufferedExecution(t *testing.T) {
 	}
 	for _, tt := range []struct {
 		name string
-		job  *goav.Job
+		outs []goav.Output
 		want bool
 	}{
-		{"encode ladder", goav.From(goavtest.Video(64, 48, 1)).Video().Branches(
-			goav.Branch("high").Encode(codec.VP8()).To(goav.Write("high.webm", io.Discard)),
-			goav.Branch("low").Resize(32, 24).Encode(codec.VP8()).To(goav.Write("low.webm", io.Discard)),
-		), true},
-		{"single chain", goav.From(goavtest.Video(64, 48, 1)).Video().Encode(codec.VP8()).To(goav.Write("one.webm", io.Discard)), false},
-		{"sink fanout", goav.From(goavtest.Video(64, 48, 1)).Video().Branches(
-			goav.Branch("a").To(sink("a")),
-			goav.Branch("b").Resize(32, 24).To(sink("b")),
-		), false},
+		{"encode ladder", ladderOutputs(), true},
+		{"single chain", []goav.Output{goavtest.Video(64, 48, 1).Video().Encode(codec.VP8()).To(goav.Write("one.webm", io.Discard))}, false},
+		{"sink fanout", sinkFanoutOutputs(sink), false},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			report, err := tt.job.UseRuntime(goavtest.Runtime()).Explain(context.Background())
+			report, err := goavtest.Runtime().Explain(context.Background(), tt.outs...)
 			if err != nil {
 				t.Fatalf("Explain: %v", err)
 			}
@@ -204,4 +198,17 @@ func TestExplainReportsBufferedExecution(t *testing.T) {
 			}
 		})
 	}
+}
+
+func ladderOutputs() []goav.Output {
+	v := goavtest.Video(64, 48, 1).Video()
+	return []goav.Output{
+		v.Encode(codec.VP8()).As("high").To(goav.Write("high.webm", io.Discard)),
+		v.Resize(32, 24).Encode(codec.VP8()).As("low").To(goav.Write("low.webm", io.Discard)),
+	}
+}
+
+func sinkFanoutOutputs(sink func(string) goav.Destination) []goav.Output {
+	v := goavtest.Video(64, 48, 1).Video()
+	return []goav.Output{v.As("a").To(sink("a")), v.Resize(32, 24).As("b").To(sink("b"))}
 }

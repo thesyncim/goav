@@ -10,7 +10,7 @@ Every current catalog row names coverage. If a future row is marked `catalog-onl
 
 | Code | Test | Bad recipe | Rendered error | Fix coverage | Public check |
 |---|---|---|---|---|---|
-| `tap_domain_mismatch` | `TestErrorAcceptanceTypedTapAtWrongDomain` | a typed frame tap declared after .Encode(codec.Opus()) | domain details and typed-tap suggestions are asserted by the test | name the point with .Tap(name), whose domain follows its position | `BuildError.Code` |
+| `tap_domain_mismatch` | `TestStreamChainRejectsInvalidPostEncodeAndTapContracts` | a typed frame tap declared after .Encode(codec.Opus()) | domain details and typed-tap suggestions are asserted by the test | name the point with .Tap(name), whose domain follows its position | `BuildError.Code` |
 | `tap_invalid` | `TestStreamChainRejectsInvalidPostEncodeAndTapContracts` | .Tap("") | empty tap name refusal is asserted by the test | use a non-empty tap name such as .Tap("audio.frames") | `BuildError.Code` |
 | `join_name_invalid` | `TestJoinRejectsInvalidNames` | goav.Join("Cross Fade", stage, streams...) | invalid custom join name variants are asserted by the test | use a snake-safe non-reserved custom join name | `BuildError.Code` |
 | `join_stage_invalid` | `TestJoinRejectsStageMismatch` | goav.Join("funnel", nil, streams...) or stage.Name() mismatch | nil/mismatched join stage refusal is asserted by the test | pass a non-nil stage whose Name() equals the join name | `BuildError.Code` |
@@ -27,7 +27,7 @@ Every current catalog row names coverage. If a future row is marked `catalog-onl
 | `select_destination` | `TestSelectRequiresSinkDestination` | goav.Select(a, b).To(goav.Write("selected.webm", writer)) | Select sink-only destination refusal is asserted by the test | deliver the selected stream to goav.Sink(...) | `BuildError.Code` |
 | `select_tap_arm` | `TestSelectTapArmUnknownTapListsDeclaredTaps` | a Select arm reads a tap no earlier arm declares | unknown Select tap arm and declared taps are asserted by the test | declare the tap on an earlier Select arm or reorder the arms | `BuildError.Code` |
 | `stream_rule_invalid` | `TestOnStreamValidation` | input.OnStream(source.StreamMatch{}) or a malformed discovered stream | invalid OnStream rule variants are asserted by the test | pass source.MatchMedia(...), source.MatchCodec(...), source.MatchStreamID(...), or source.MatchStream(fn) | `BuildError.Code` |
-| `job_invalid` | `TestZeroJobRejectsPublicConstruction` | a zero or unconstructed recipe or join reaches the compiler | zero-job constructor guidance is asserted by the test | start each stream from an input or a join: input.Video(), input.Audio(), goav.Mix(a, b) | `BuildError.Code` |
+| `job_invalid` | `TestRecipeDiagnosticHelperContracts` | a zero or unconstructed recipe or join reaches the compiler | zero-job constructor guidance is asserted by the test | start each stream from an input or a join: input.Video(), input.Audio(), goav.Mix(a, b) | `BuildError.Code` |
 | `runtime_missing` | `TestRecipeReportsOmittedRuntime` | a recipe built with no runtime configured | adapter-backed omitted runtime guidance is asserted by the test | build on a runtime: rt.Run(ctx, outputs...), or bundle.Build/bundle.Run for the bundled runtime | `BuildError.Code` |
 | `recipe_graph_unsupported` | `TestRecipeResolvedUnsupportedContracts` | describe/build a recipe shape that has no graph plan | unsupported recipe graph helper is asserted by the test | use a supported front-door recipe shape | `BuildError.Code` |
 
@@ -36,7 +36,7 @@ Every current catalog row names coverage. If a future row is marked `catalog-onl
 | Section | Constant | Code | Kind | When it fires | Example coverage |
 |---|---|---|---|---|---|
 | Tap errcode. | `errcode.TapInvalid` | `tap_invalid` | refusal | TapInvalid fires when a tap name is empty. | TestStreamChainRejectsInvalidPostEncodeAndTapContracts |
-| Tap errcode. | `errcode.TapDomainMismatch` | `tap_domain_mismatch` | refusal | TapDomainMismatch fires when a typed tap's domain (frame/packet) does not match the chain point it is declared on. | TestErrorAcceptanceTypedTapAtWrongDomain |
+| Tap errcode. | `errcode.TapDomainMismatch` | `tap_domain_mismatch` | refusal | TapDomainMismatch fires when a typed tap's domain (frame/packet) does not match the chain point it is declared on. | TestStreamChainRejectsInvalidPostEncodeAndTapContracts |
 | Join codes. | `errcode.JoinNameInvalid` | `join_name_invalid` | refusal | JoinNameInvalid fires when a custom join (goav.Join) declares an unusable name: empty, not snake-safe ([a-z][a-z0-9_]*), reserved by a built-in kind (mix, composite, select), or colliding with another join node in the same join tree. | TestJoinRejectsInvalidNames |
 | Join codes. | `errcode.JoinStageInvalid` | `join_stage_invalid` | refusal | JoinStageInvalid fires when a custom join's convergence stage is nil or reports a Name() different from the join's name. | TestJoinRejectsStageMismatch |
 | Derived join codes (built-in Mix, Composite, Select profiles). | `joinErrorCode("mix", "inputs")` | `mix_inputs` | refusal | Mix is given fewer than two arms. | TestMixRequiresTwoArms |
@@ -52,6 +52,6 @@ Every current catalog row names coverage. If a future row is marked `catalog-onl
 | Derived join codes (built-in Mix, Composite, Select profiles). | `joinErrorCode("select", "destination")` | `select_destination` | refusal | Select's output cannot reach the declared destination kind. | TestSelectRequiresSinkDestination |
 | Derived join codes (built-in Mix, Composite, Select profiles). | `joinErrorCode("select", "tap_arm")` | `select_tap_arm` | refusal | A Select tap arm references a tap no earlier arm declares. | TestSelectTapArmUnknownTapListsDeclaredTaps |
 | Stream rule codes (OnStream grammar). | `errcode.StreamRuleInvalid` | `stream_rule_invalid` | refusal | StreamRuleInvalid fires when an OnStream rule is malformed (no matcher, no branch, or an unusable discovered stream). | TestOnStreamValidation |
-| Job and compiler errcode. | `errcode.JobInvalid` | `job_invalid` | refusal | JobInvalid fires when a nil, zero, or otherwise unconstructed job or join reaches the recipe compiler. | TestZeroJobRejectsPublicConstruction |
+| Job and compiler errcode. | `errcode.JobInvalid` | `job_invalid` | refusal | JobInvalid fires when a nil, zero, or otherwise unconstructed job or join reaches the recipe compiler. | TestRecipeDiagnosticHelperContracts |
 | Job and compiler errcode. | `errcode.RuntimeMissing` | `runtime_missing` | refusal | RuntimeMissing fires when a job reaches Build with no runtime configured. | TestRecipeReportsOmittedRuntime |
 | Job and compiler errcode. | `errcode.RecipeGraphUnsupported` | `recipe_graph_unsupported` | refusal | RecipeGraphUnsupported fires when the recipe intent matches no supported graph plan. | TestRecipeResolvedUnsupportedContracts |
