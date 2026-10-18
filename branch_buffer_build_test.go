@@ -135,14 +135,11 @@ func TestBranchBufferPromotesOfflineGraph(t *testing.T) {
 				}
 				return nil
 			}))
-			chain := goav.From(input()).Audio()
+			stream := input().Audio()
 			if name == "decoded packets" {
-				chain = chain.Decode()
+				stream = stream.Decode()
 			}
-			err := chain.Branches(
-				goav.Branch("a").Buffer(flow.Blocking(4)).To(a),
-				goav.Branch("b").To(b),
-			).UseRuntime(goavtest.Runtime()).Run(ctx)
+			err := goavtest.Runtime().Run(ctx, stream.Buffer(flow.Blocking(4)).As("a").To(a), stream.As("b").To(b))
 			if err != nil {
 				t.Fatalf("Run: %v", err)
 			}

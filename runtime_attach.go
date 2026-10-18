@@ -195,7 +195,7 @@ type Attachment interface {
 // into a workPatch — the plan — opens its destinations, and then applies the
 // patch atomically to the running graph: a failed attach rolls every applied
 // node back and leaves the task unchanged.
-func (t *task) attachBranches(ctx context.Context, specs ...branchRecipe) (Attachment, error) {
+func (t *task) attach(ctx context.Context, specs ...attachBranch) (Attachment, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -206,16 +206,12 @@ func (t *task) attachBranches(ctx context.Context, specs ...branchRecipe) (Attac
 	return t.attachRuntimeBranches(ctx, input)
 }
 
-func runtimeAttachInputFromBranchSpecs(specs []branchRecipe) (runtimeAttachInput, error) {
-	specs = cloneBranchSpecs(specs)
+func runtimeAttachInputFromBranchSpecs(specs []attachBranch) (runtimeAttachInput, error) {
 	if len(specs) == 0 {
 		return runtimeAttachInput{}, runtimeBranchInvalidError("no runtime branches to attach", "pass one or more Outputs: task.Attach(ctx, task.Tap(name).To(destination))")
 	}
 	branches := make([]runtimeAttachBranchInput, 0, len(specs))
 	for i := range specs {
-		if err := validateRuntimeBranchSpecOrigin(specs[i]); err != nil {
-			return runtimeAttachInput{}, err
-		}
 		branchDestinations, err := attachBranchDestinations(specs[i])
 		if err != nil {
 			return runtimeAttachInput{}, err
@@ -243,29 +239,32 @@ func runtimeAttachInputFromBranchInputs(branches []runtimeAttachBranchInput, nam
 	}, nil
 }
 
-func runtimeBranchRecipeFromBranchSpec(spec branchRecipe) runtimeBranchRecipe {
+func runtimeBranchRecipeFromBranchSpec(spec attachBranch) runtimeBranchRecipe {
 	return runtimeBranchRecipe{
 		branch: recipeir.RuntimeBranch{
 			Name:       spec.name,
 			Media:      spec.media,
-			Source:     recipeIRRuntimeBranchSourceFromRoot(spec.source),
-			Operations: recipeIROperationsFromSpecs(spec.operations),
-			Buffer:     spec.branchBuffer,
+			Source:     runtimeBranchSourceOf(spec.source),
+			Operations: append([]recipeir.Operation(nil), spec.operations...),
+			Buffer:     spec.buffer,
 		},
 	}
 }
 
-func validateRuntimeBranchSpecOrigin(spec branchRecipe) error {
-	if spec.err != nil {
-		return nil
+// runtimeBranchSourceOf is the IR of an attach branch's anchor.
+func runtimeBranchSourceOf(in branchSourceBinding) recipeir.RuntimeBranchSource {
+	out := recipeir.RuntimeBranchSource{
+		From:         in.from,
+		Tap:          recipeir.TapRef{Name: in.tap, Domain: in.tapDomain},
+		Policy:       in.policy,
+		Label:        in.label,
+		StreamDomain: in.streamDomain,
 	}
-	if spec.origin != branchSpecOriginBranch {
-		return runtimeBranchInvalidError(
-			"branch spec was not built from an Output",
-			"attach Outputs built from task.Tap, task.Track, or task.Route: task.Attach(ctx, task.Tap(name).To(destination))",
-		)
+	if in.stream != nil {
+		out.Stream = *in.stream
+		out.StreamPresent = true
 	}
-	return nil
+	return out
 }
 
 func runtimeRebranchInputFromArgs(ctx context.Context, args []lifecycle.RebranchArg) (runtimeRebranchInput, error) {
@@ -389,7 +388,6 @@ func runtimeAttachBranchRecipeStream(branch runtimeAttachBranchInput, anchor sna
 			Type:  firstNonEmptyMedia(recipe.branch.Media, anchor.MediaKind),
 			Codec: anchor.Shape.Codec,
 		},
-		From: recipe.branch.Source.Tap,
 	}
 	for _, destination := range attachDestinationNames(branch.destinations) {
 		stream.Outputs = append(stream.Outputs, recipeir.OutputRef(destination))
@@ -404,8 +402,8 @@ func (input runtimeAttachBranchPlanInput) recipeStreamForStream(stream av.Stream
 	return recipeStream
 }
 
-func (input runtimeAttachBranchPlanInput) diagnosticStreamForStream(stream av.Stream) streamIntent {
-	return streamIntentFromRecipeIR(input.recipeStreamForStream(stream))
+func (input runtimeAttachBranchPlanInput) diagnosticStreamForStream(stream av.Stream) recipeir.Stream {
+	return input.recipeStreamForStream(stream)
 }
 
 func (t *task) configureAttachBranchBuffer(branch *attachPlanBranch, input runtimeAttachBranchPlanInput, steps []attachStep) error {
@@ -483,16 +481,13 @@ func attachmentStages(ap *attachPlan, group *runtimeAttachGroup, nodes []pipelin
 
 // attachBranchDestinations validates and clones the branch's destinations,
 // carrying the share keys that group explicit Mux destination groups.
-func attachBranchDestinations(spec branchRecipe) ([]attachDestination, error) {
-	if spec.err != nil {
-		return nil, spec.err
-	}
-	if len(spec.destinations) == 0 {
+func attachBranchDestinations(spec attachBranch) ([]attachDestination, error) {
+	if len(spec.dests) == 0 {
 		return nil, runtimeBranchInvalidError("branch destination is missing", "finish the branch with .To(goav.Sink(sink)) or .To(goav.Write(name, writer))")
 	}
-	destinations := make([]attachDestination, 0, len(spec.destinations))
-	for i := range spec.destinations {
-		ref := cloneDestinationRef(spec.destinations[i])
+	destinations := make([]attachDestination, 0, len(spec.dests))
+	for i := range spec.dests {
+		ref := cloneDestinationRef(spec.dests[i])
 		destination := cloneDestinationSpec(ref.dest)
 		name := firstNonEmpty(ref.name, spec.name, "branch")
 		if err := destination.validate("attach runtime branch", name); err != nil {
@@ -516,7 +511,7 @@ func runtimeDestinationFromSpec(name string, destination destinationSpec, shareK
 	}
 }
 
-func validateAttachBranchSpec(spec branchRecipe, destinations []attachDestination) error {
+func validateAttachBranchSpec(spec attachBranch, destinations []attachDestination) error {
 	if spec.name == "" {
 		return runtimeBranchInvalidError("branch name is empty", "name the Output with .As(\"name\")")
 	}
@@ -877,7 +872,7 @@ func runtimeMuxCompatibilityIssue(destinationName string, formatID av.FormatID, 
 	return checkKnownMuxCompatibility(output, plannedStreams, rt)
 }
 
-func runtimeAttachmentName(specs []branchRecipe) string {
+func runtimeAttachmentName(specs []attachBranch) string {
 	if len(specs) == 1 {
 		return specs[0].name
 	}
@@ -937,7 +932,7 @@ func (t *task) resolveRuntimeBranchAnchor(recipe runtimeBranchRecipe, graphSpec 
 		taps = append(taps, pending...)
 		for _, tap := range taps {
 			if tap.Name == source.Tap.Name {
-				if err := validateTapDomain("attach runtime branch", firstNonEmpty(branch.Name, "branch"), rootTapRefFromRecipeIR(source.Tap), tap.Domain); err != nil {
+				if err := validateTapDomain("attach runtime branch", firstNonEmpty(branch.Name, "branch"), tapRef{name: source.Tap.Name, domain: source.Tap.Domain}, tap.Domain); err != nil {
 					return "", snapshot.Tap{}, err
 				}
 				return tap.Node.String(), tap, nil
@@ -1733,7 +1728,7 @@ func (t *task) prepareRuntimeBranchDecode(ctx context.Context, input runtimeAtta
 	if _, err := t.runtime.codecs.DecoderFactory(currentStream.Codec.ID); err != nil {
 		return nil, recipeDecodeAdapterError("attach runtime branch", stream, currentStream.Codec.ID, t.runtime.codecs, err)
 	}
-	stream.Select = streamSelectFromAV(request.selector)
+	stream.Selector = streamSelectFromAV(request.selector)
 	if err := validateDecodeAdapterDescriptors("attach runtime branch", stream, t.runtime.codecs, decodeAdapterRequestFromStream(currentStream, stream)); err != nil {
 		return nil, err
 	}
@@ -1744,7 +1739,7 @@ func (t *task) prepareRuntimeBranchDecode(ctx context.Context, input runtimeAtta
 	return stage, nil
 }
 
-func runtimeBranchTransform(branchName string, stream av.Stream, spec transformSpec, index int) (mediaTransform, error) {
+func runtimeBranchTransform(branchName string, stream av.Stream, spec recipeir.Transform, index int) (mediaTransform, error) {
 	base := firstNonEmpty(branchName, "branch")
 	if err := validateTransformSpec("attach runtime branch", base, spec); err != nil {
 		return mediaTransform{}, err
@@ -1754,24 +1749,24 @@ func runtimeBranchTransform(branchName string, stream av.Stream, spec transformS
 		suffix = "-" + strconv.Itoa(index+1)
 	}
 	switch {
-	case spec.resize != nil:
+	case spec.Kind == recipeir.TransformResize:
 		if stream.Type != av.MediaVideo && stream.Codec.Type != av.MediaVideo {
 			return mediaTransform{}, runtimeBranchTransformMediaError(base, "resize", av.MediaVideo, runtimeBranchStreamMedia(stream))
 		}
-		resize := *spec.resize
+		resize := spec.Resize
 		return mediaTransform{
 			name:    "resize-" + base + suffix,
-			factory: transformFactoryName(spec),
+			factory: recipeIRTransformFactoryName(spec),
 			video:   &resize,
 		}, nil
-	case spec.resample != nil:
+	case spec.Kind == recipeir.TransformResample:
 		if stream.Type != av.MediaAudio && stream.Codec.Type != av.MediaAudio {
 			return mediaTransform{}, runtimeBranchTransformMediaError(base, "resample", av.MediaAudio, runtimeBranchStreamMedia(stream))
 		}
-		resample := *spec.resample
+		resample := spec.Resample
 		return mediaTransform{
 			name:    "resample-" + base + suffix,
-			factory: transformFactoryName(spec),
+			factory: recipeIRTransformFactoryName(spec),
 			audio:   &resample,
 		}, nil
 	default:

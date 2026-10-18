@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/thesyncim/goav/av"
@@ -200,27 +201,20 @@ func TestMixBranchAnchorsFromJoinTap(t *testing.T) {
 	}
 }
 
-func TestMixBranchesRequireAtLeastOneBranch(t *testing.T) {
-	_, err := legacyMix(
-		recipeFrom(mixTestAudioSource("a", 1)).Audio(),
-		recipeFrom(mixTestAudioSource("b", 1)).Audio(),
-	).Branches().BuildLive(context.Background())
-	var buildErr *BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "branch_missing" {
-		t.Fatalf("err = %v, want branch_missing", err)
-	}
-}
-
-func TestMixEncodeIsTerminalForBranches(t *testing.T) {
-	_, err := legacyMix(
+// TestMixForksAfterItsEncoder pins that a joined stream forks after its
+// encoder like any stream: the fork reads the encoded packets.
+func TestMixForksAfterItsEncoder(t *testing.T) {
+	spec, err := legacyMix(
 		recipeFrom(mixTestAudioSource("a", 1)).Audio(),
 		recipeFrom(mixTestAudioSource("b", 1)).Audio(),
 	).Encode(codec.Opus()).Branches(
 		newBranch("x").To(Sink(SinkFunc("x", func(context.Context, Message) error { return nil }))),
-	).BuildLive(context.Background())
-	var buildErr *BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "encode_branch_source_invalid" {
-		t.Fatalf("err = %v, want encode_branch_source_invalid (same as the chain rule)", err)
+	).Describe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if text := specText(spec); !strings.Contains(text, "mix -> encode-x") || !strings.Contains(text, "encode-x -> x") {
+		t.Fatalf("spec:\n%s", text)
 	}
 }
 
@@ -234,19 +228,6 @@ func TestMixBranchesPreserveArmCountError(t *testing.T) {
 	}
 }
 
-func TestMixBranchFromUnknownTapRejected(t *testing.T) {
-	_, err := legacyMix(
-		recipeFrom(mixTestAudioSource("a", 1)).Audio(),
-		recipeFrom(mixTestAudioSource("b", 1)).Audio(),
-	).Branches(
-		newBranch("x").From(frameTapRef("nope")).To(Sink(SinkFunc("x", func(context.Context, Message) error { return nil }))),
-	).BuildLive(context.Background())
-	var buildErr *BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "branch_tap_missing" {
-		t.Fatalf("err = %v, want branch_tap_missing", err)
-	}
-}
-
 func TestMixBranchMuxDestinationRequiresEncode(t *testing.T) {
 	_, err := legacyMix(
 		recipeFrom(mixTestAudioSource("a", 1)).Audio(),
@@ -257,33 +238,6 @@ func TestMixBranchMuxDestinationRequiresEncode(t *testing.T) {
 	var buildErr *BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != "encode_missing" {
 		t.Fatalf("err = %v, want encode_missing (same as the chain rule)", err)
-	}
-}
-
-func TestMixBranchesThenToRejected(t *testing.T) {
-	_, err := legacyMix(
-		recipeFrom(mixTestAudioSource("a", 1)).Audio(),
-		recipeFrom(mixTestAudioSource("b", 1)).Audio(),
-	).Branches(
-		newBranch("x").To(Sink(SinkFunc("x", func(context.Context, Message) error { return nil }))),
-	).To(Sink(SinkFunc("late", func(context.Context, Message) error { return nil }))).
-		Build(context.Background())
-	var buildErr *BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "output_scope_mixed" {
-		t.Fatalf("err = %v, want output_scope_mixed (same as the chain rule)", err)
-	}
-}
-
-func TestMixTapRejectsPacketDomain(t *testing.T) {
-	_, err := legacyMix(
-		recipeFrom(mixTestAudioSource("a", 1)).Audio(),
-		recipeFrom(mixTestAudioSource("b", 1)).Audio(),
-	).Tap(packetTapRef("mixed")).
-		To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))).
-		Build(context.Background())
-	var buildErr *BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "tap_domain_mismatch" {
-		t.Fatalf("err = %v, want tap_domain_mismatch (the mix output is frames)", err)
 	}
 }
 

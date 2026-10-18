@@ -10,6 +10,7 @@
 package goav_test
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
@@ -21,7 +22,6 @@ import (
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/bundle"
 	"github.com/thesyncim/goav/codec"
-	"github.com/thesyncim/goav/component"
 	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/goavtest"
 	"github.com/thesyncim/goav/shape"
@@ -134,15 +134,12 @@ func TestErrorAcceptanceNilWriter(t *testing.T) {
 	)
 }
 
-// TestErrorAcceptanceMissingInput is snippet 0b: a recipe with destinations
-// but no input. The fix is to start from a real input constructor.
+// TestErrorAcceptanceMissingInput is snippet 0b: a stream of an input that
+// was never constructed. The fix is to start from a real input constructor.
 func TestErrorAcceptanceMissingInput(t *testing.T) {
-	_, err := goav.From().
-		Copy().
-		To(goav.Write("out.ogg", io.Discard)).
-		Describe()
-	requireBuildError(t, err, errcode.Code("input_missing"), "build job", "",
-		`goav.FileInput("in.webm", reader).Video()`,
+	_, err := mustRuntime().Describe(goav.InputSpec{}.Audio().To(goav.Write("out.ogg", io.Discard)))
+	requireBuildError(t, err, errcode.Code("stream_invalid"), "build recipe", "",
+		"start each stream from an input or a join: input.Video(), input.Audio(), goav.Mix(a, b)",
 	)
 }
 
@@ -215,132 +212,6 @@ func TestErrorAcceptanceFrameSourceDecodeMismatch(t *testing.T) {
 	}
 }
 
-// TestErrorAcceptanceNilFlow is snippet 0g: applying a nil flow. The refusal
-// keeps Flow(name).Audio/Video as the only creation path.
-func TestErrorAcceptanceNilFlow(t *testing.T) {
-	_, err := goav.From(opusPacketInput()).
-		Audio().
-		Apply(nil).
-		To(goavtest.NewCollector().Sink()).
-		Describe()
-	requireBuildError(t, err, errcode.Code("flow_invalid"), "build flow", "",
-		"write reusable work as a Go function: func(s goav.Stream) goav.Stream",
-	)
-}
-
-// TestErrorAcceptanceFlowMediaMismatch is snippet 0h: a video flow applied to
-// an audio chain. The fix is to make the flow media match the selected stream.
-func TestErrorAcceptanceFlowMediaMismatch(t *testing.T) {
-	_, err := goav.From(opusPacketInput()).
-		Audio().
-		Apply(goav.Flow("thumbs").Video().Resize(320, 180)).
-		To(goavtest.NewCollector().Sink()).
-		Describe()
-	requireBuildError(t, err, errcode.Code("flow_media_mismatch"), "build stream", "thumbs",
-		"apply audio steps such as .Resample(...) to input.Audio() streams",
-		"apply video steps such as .Resize(...) to input.Video() streams",
-	)
-}
-
-// TestErrorAcceptanceFlowDecodeDuplicate is snippet 0i: a flow that decodes
-// twice. The refusal points at keeping decode as a single initial operation.
-func TestErrorAcceptanceFlowDecodeDuplicate(t *testing.T) {
-	_, err := goav.From(opusPacketInput()).
-		Audio().
-		Apply(goav.Flow("voice").Audio().Decode().Decode()).
-		To(goavtest.NewCollector().Sink()).
-		Describe()
-	requireBuildError(t, err, errcode.Code("flow_decode_duplicate"), "build flow", "voice",
-		"call .Decode() once at the start of the flow",
-		"remove the second .Decode() call",
-	)
-}
-
-// TestErrorAcceptanceFlowDecodeOrderInvalid is snippet 0j: a flow declares a
-// frame operation before Decode. The fix is to put Decode first.
-func TestErrorAcceptanceFlowDecodeOrderInvalid(t *testing.T) {
-	_, err := goav.From(opusPacketInput()).
-		Audio().
-		Apply(goav.Flow("voice").Audio().Resample(16_000, codec.Mono).Decode()).
-		To(goavtest.NewCollector().Sink()).
-		Describe()
-	requireBuildError(t, err, errcode.Code("flow_decode_order_invalid"), "build flow", "voice",
-		"decode first in the reusable function",
-		"omit .Decode() when the function is only applied after the stream's .Decode()",
-	)
-}
-
-// TestErrorAcceptanceFlowDecodeDomainMismatch is snippet 0k: a flow tries to
-// decode after the parent chain already produced frames.
-func TestErrorAcceptanceFlowDecodeDomainMismatch(t *testing.T) {
-	_, err := goav.From(opusPacketInput()).
-		Audio().Decode().
-		Apply(goav.Flow("voice").Audio().Decode()).
-		To(goavtest.NewCollector().Sink()).
-		Describe()
-	requireBuildError(t, err, errcode.Code("flow_decode_domain_mismatch"), "build stream", "voice",
-		"omit .Decode() when applying the reusable function after the stream's .Decode()",
-		"apply it to a packet stream (before .Decode(), or a packet tap)",
-	)
-}
-
-// TestErrorAcceptanceFlowCopyDomainMismatch is snippet 0l: a flow asks for
-// packet Copy after frame-domain work. The fix is to either copy from packets
-// or make the flow an encode path.
-func TestErrorAcceptanceFlowCopyDomainMismatch(t *testing.T) {
-	_, err := goav.From(opusPacketInput()).
-		Audio().
-		Apply(goav.Flow("packets").Audio().Resample(16_000, codec.Mono).Copy()).
-		To(goav.Write("copy.ogg", io.Discard)).
-		Describe()
-	requireBuildError(t, err, errcode.Code("flow_copy_domain_mismatch"), "build flow", "packets",
-		"keep packet-preserving reusable work free of .Decode()",
-		"use .Decode().Resample(...).Encode(codec.Opus(...))",
-	)
-}
-
-// TestErrorAcceptanceBranchMissing is snippet 0m: Branches() with no branch
-// specs. The fix is to pass at least one named branch with a destination.
-func TestErrorAcceptanceBranchMissing(t *testing.T) {
-	_, err := goav.From(opusPacketInput()).
-		Audio().
-		Branches().
-		Describe()
-	requireBuildError(t, err, errcode.Code("branch_missing"), "build branches", "audio",
-		"route each fork with v.Encode(",
-		"same destination value",
-	)
-}
-
-// TestErrorAcceptanceBranchSpecUnconstructed is snippet 0n: a zero BranchSpec
-// reaches Branches(...). The refusal says real branches come from Branch(name).
-func TestErrorAcceptanceBranchSpecUnconstructed(t *testing.T) {
-	_, err := goav.From(opusPacketInput()).
-		Audio().
-		Branches(goav.BranchSpec{}).
-		Describe()
-	requireBuildError(t, err, errcode.Code("branch_invalid"), "build branches", "branch-0",
-		"build each fork from a Stream routed with .To(destination)",
-	)
-}
-
-// TestErrorAcceptanceBranchTapMissing is snippet 0o: a planned branch anchors
-// from a tap that the parent stream never declared.
-func TestErrorAcceptanceBranchTapMissing(t *testing.T) {
-	_, err := goav.From(opusPacketInput()).
-		Audio().Decode().
-		Branches(
-			goav.Branch("levels").
-				From(goav.FrameTap("audio.missing")).
-				To(goavtest.NewCollector().Sink()),
-		).
-		Describe()
-	requireBuildError(t, err, errcode.Code("branch_tap_missing"), "build branches", "levels",
-		`add .Tap("audio.missing") on the selected stream`,
-		"reuse the Stream value to fork from its current point",
-	)
-}
-
 // TestErrorAcceptanceBranchDecodeDuplicate is snippet 0p: a branch decodes
 // twice. The refusal keeps branch decode as a single initial operation.
 func TestErrorAcceptanceBranchDecodeDuplicate(t *testing.T) {
@@ -356,8 +227,8 @@ func TestErrorAcceptanceBranchDecodeDuplicate(t *testing.T) {
 	)
 }
 
-// TestErrorAcceptanceBranchDecodeOrderInvalid is snippet 0q: a branch does
-// frame work before Decode. The fix is Decode first or start from a frame tap.
+// TestErrorAcceptanceBranchDecodeOrderInvalid is snippet 0q: a fork does
+// frame work before Decode. The fix is Decode first.
 func TestErrorAcceptanceBranchDecodeOrderInvalid(t *testing.T) {
 	_, err := mustRuntime().Describe(opusPacketInput().
 		Audio().
@@ -365,44 +236,22 @@ func TestErrorAcceptanceBranchDecodeOrderInvalid(t *testing.T) {
 		Decode().
 		As("bad").
 		To(goavtest.NewCollector().Sink()))
-	requireBuildError(t, err, errcode.Code("branch_decode_order_invalid"), "build branch", "bad",
-		"write in.Audio().Decode().Resample(...).To(target)",
-		"attach from a tap after .Decode()",
+	requireBuildError(t, err, errcode.Code("operation_shape_mismatch"), "build stream", "bad",
+		"write .Decode().Resample(...)",
 	)
 }
 
-// TestErrorAcceptanceBranchDecodeDomainMismatch is snippet 0r: a branch tries
-// to Decode when the parent stream already starts in frame domain.
+// TestErrorAcceptanceBranchDecodeDomainMismatch is snippet 0r: a fork tries
+// to Decode a stream that is already decoded.
 func TestErrorAcceptanceBranchDecodeDomainMismatch(t *testing.T) {
-	_, err := goav.From(opusPacketInput()).
-		Audio().Decode().
-		Branches(
-			goav.Branch("bad").
-				Decode().
-				To(goavtest.NewCollector().Sink()),
-		).
-		Describe()
+	decoded := opusPacketInput().Audio().Decode()
+	_, err := mustRuntime().Describe(
+		decoded.Decode().As("bad").To(goavtest.NewCollector().Sink()),
+		decoded.As("good").To(goavtest.NewCollector().Sink()),
+	)
 	requireBuildError(t, err, errcode.Code("branch_decode_domain_mismatch"), "build branches", "bad",
 		"omit .Decode() when the fork already starts after the stream's .Decode()",
 		"fork before .Decode() when a packet copy and a decoding fork share the stream",
-	)
-}
-
-// TestErrorAcceptanceBranchDecodeCopyInvalid is snippet 0s: a branch decodes
-// packets and then asks to Copy the original packets.
-func TestErrorAcceptanceBranchDecodeCopyInvalid(t *testing.T) {
-	_, err := goav.From(opusPacketInput()).
-		Audio().Copy().
-		Branches(
-			goav.Branch("bad").
-				Decode().
-				Copy().
-				To(goavtest.NewCollector().Sink()),
-		).
-		Describe()
-	requireBuildError(t, err, errcode.Code("branch_decode_copy_invalid"), "build branch", "bad",
-		"leave out .Decode() to copy the packets",
-		"use .Decode().Encode(codec).To(destination)",
 	)
 }
 
@@ -414,9 +263,9 @@ func TestErrorAcceptancePacketBranchEncodeUnsupported(t *testing.T) {
 		Encode(codec.Opus()).
 		As("bad").
 		To(goav.Write("bad.ogg", io.Discard)))
-	requireBuildError(t, err, errcode.Code("packet_branch_encode_unsupported"), "build branches", "bad",
-		"decode before encoding: s.Decode().Encode(",
-		"route s.To(destination) without .Decode()",
+	requireBuildError(t, err, errcode.Code("operation_shape_mismatch"), "build stream", "bad",
+		"call .Decode() before",
+		"keep a pure packet copy",
 	)
 }
 
@@ -454,25 +303,6 @@ func TestBuildAndAttachReturnSameErrorForSameInvalidBranch(t *testing.T) {
 			!detailsContain(buildErr.DetailLines(), "actual_shape=domain=frame media=audio") {
 			t.Fatalf("%s details = %v, want expected/actual audio-video frame shapes", buildErr.Operation, buildErr.DetailLines())
 		}
-	}
-}
-
-// TestErrorAcceptanceCopyAfterDecode is snippet 1: .Decode().Copy() asks for
-// packet copy in the frame domain. The refusal states the domain rule and the
-// two real fixes — copy before decode, or re-encode the frames.
-func TestErrorAcceptanceCopyAfterDecode(t *testing.T) {
-	_, err := goav.From(opusPacketInput()).
-		Audio().Decode().Copy().
-		To(goav.Write("out.ogg", io.Discard)).
-		UseRuntime(goavtest.Runtime()).
-		BuildLive(context.Background())
-	buildErr := requireBuildError(t, err, errcode.Code("operation_shape_mismatch"), "build job", "audio",
-		"copy only consumes packet-domain media",
-		"leave out .Decode() to copy",
-		"use .Encode(codec...) to turn decoded frames back into packets",
-	)
-	if !detailsContain(buildErr.DetailLines(), "actual_shape=domain=frame") {
-		t.Fatalf("details should carry the frame-domain shape, err = %v", err)
 	}
 }
 
@@ -550,28 +380,18 @@ func TestErrorAcceptanceDestinationMuxerMissing(t *testing.T) {
 }
 
 // TestErrorAcceptanceAmbiguousStreamSelectionListsCandidates is snippet 5:
-// two inputs both match an unnarrowed .Audio() chain. The refusal lists every
-// candidate with its input and suggests the exact narrowing options.
+// an input carries two audio streams and an unnarrowed .Audio() matches both.
+// The refusal lists every candidate and suggests the exact narrowing options.
 func TestErrorAcceptanceAmbiguousStreamSelectionListsCandidates(t *testing.T) {
-	_, err := goav.From(
-		goavtest.Audio(48000, 1, []int16{1}).With(goav.Name("mic-a")),
-		goavtest.Audio(48000, 1, []int16{1}).With(goav.Name("mic-b")),
-	).
-		Audio().
-		Decode().
-		To(goavtest.NewCollector().Sink()).
-		BuildLive(context.Background())
+	two := goav.FileInput("two.webm", bytes.NewReader(oracleTwoAudioWebM(t)))
+	_, err := offlineRuntime().Build(context.Background(), two.Audio().Decode().To(goavtest.NewCollector().Sink()))
 
 	var buildErr *goav.BuildError
 	if !errors.As(err, &buildErr) || buildErr.Code != errcode.Code("stream_ambiguous") {
 		t.Fatalf("err = %v, want stream_ambiguous with matching BuildError code", err)
 	}
-	msg := err.Error()
-	if !strings.Contains(msg, "input=mic-a") || !strings.Contains(msg, "input=mic-b") {
-		t.Fatalf("err = %v, want candidates listed with their inputs", err)
-	}
-	if !suggestionsContain(buildErr.FixLines(), `select from the input named "mic-a" directly: input.Audio()`) {
-		t.Fatalf("err = %v, want per-input selection suggestion", err)
+	if got := len(buildErr.DetailLines()); got < 2 {
+		t.Fatalf("err = %v, want both candidates listed", err)
 	}
 	if !suggestionsContain(buildErr.FixLines(), "goav.StreamID(") {
 		t.Fatalf("err = %v, want StreamID narrowing suggestion", err)
@@ -600,24 +420,6 @@ func TestErrorAcceptanceAttachUnknownTapListsDeclaredTaps(t *testing.T) {
 	)
 	if !detailsContain(buildErr.DetailLines(), "audio.decoded") {
 		t.Fatalf("details should list the declared taps, err = %v", err)
-	}
-}
-
-// TestErrorAcceptanceTypedTapAtWrongDomain is snippet 7: a FrameTap declared
-// at a packet-domain point (after the encoder). The refusal carries the
-// typed-tap fix for each domain.
-func TestErrorAcceptanceTypedTapAtWrongDomain(t *testing.T) {
-	_, err := goav.From(goavtest.Audio(48000, 1, []int16{1})).
-		Audio().Encode(codec.Opus()).Tap(goav.FrameTap("post-encode")).
-		To(goav.Write("out.ogg", io.Discard)).
-		UseRuntime(goavtest.Runtime()).
-		BuildLive(context.Background())
-	buildErr := requireBuildError(t, err, errcode.TapDomainMismatch, "build stream", "audio",
-		"move .Tap(name) before .Decode() or after an encoder to tap packets",
-		"move .Tap(name) after decode",
-	)
-	if !detailsContain(buildErr.DetailLines(), "tap=post-encode") {
-		t.Fatalf("details should name the tap, err = %v", err)
 	}
 }
 
@@ -654,19 +456,33 @@ func TestErrorAcceptanceShapeConversionRefused(t *testing.T) {
 	)
 }
 
-// TestErrorAcceptanceChainReusedAfterTo: reusing one chain value as a fork —
-// a second operation on a chain that already ended at .To(...) — used to
-// surface as "recipe intent did not match a supported graph plan". It now
-// names the slip and the two real forks.
-func TestErrorAcceptanceChainReusedAfterTo(t *testing.T) {
-	base := goav.From(opusPacketInput()).Audio().Decode()
-	base.Resample(16_000, codec.Mono).To(goav.Sink(component.SinkFunc("narrow", func(context.Context, component.Message) error { return nil })))
-	_, err := base.Resample(8_000, codec.Mono).
-		To(goav.Sink(component.SinkFunc("phone", func(context.Context, component.Message) error { return nil }))).
-		UseRuntime(goavtest.Runtime()).
-		BuildLive(context.Background())
-	requireBuildError(t, err, errcode.Code("stream_step_after_destination"), "build stream", "audio",
-		"by reusing its Stream value",
-		"input.Audio() or input.Video()",
+// TestErrorAcceptanceStreamMissing: a stream the input does not carry is
+// refused by name, with the streams it does carry.
+func TestErrorAcceptanceStreamMissing(t *testing.T) {
+	_, err := goavtest.Runtime().Build(context.Background(),
+		goavtest.Audio(48_000, 1, []int16{1}).Video().To(goavtest.NewCollector().Sink()))
+	requireBuildError(t, err, errcode.Code("stream_missing"), "select stream", "type=video",
+		"select one it has: input.Audio()",
+	)
+}
+
+// TestErrorAcceptanceInputFormatUnknown: an input no prober recognizes is
+// refused before anything opens.
+func TestErrorAcceptanceInputFormatUnknown(t *testing.T) {
+	_, err := mustRuntime().Build(context.Background(),
+		goav.FileInput("in.unknown", strings.NewReader("")).Video().Decode().To(goavtest.NewCollector().Sink()))
+	requireBuildError(t, err, errcode.Code("input_format_unknown"), "open input", "in.unknown",
+		"a name, URI, or MIME type a registered prober can recognize",
+	)
+}
+
+// TestErrorAcceptanceFramesIntoFileNeedAnEncoder: a frame source written to a
+// file needs an encoder, the same refusal decoded frames get.
+func TestErrorAcceptanceFramesIntoFileNeedAnEncoder(t *testing.T) {
+	_, err := goavtest.Runtime().Describe(
+		goavtest.Audio(48_000, 1, []int16{1}).Audio().To(goav.Write("out.ogg", io.Discard)))
+	requireBuildError(t, err, errcode.Code("encode_missing"), "build job", "audio",
+		"call .Encode(codec.Opus(...)) before .To(goav.Write(...))",
+		"send decoded frames to goav.Sink(...)",
 	)
 }

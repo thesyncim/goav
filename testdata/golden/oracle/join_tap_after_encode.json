@@ -1,0 +1,314 @@
+{
+  "describe": {
+    "name": "goav-mix",
+    "nodes": [
+      {
+        "name": "audio-1",
+        "kind": "source",
+        "detail": "custom source, domain=frame, media=audio"
+      },
+      {
+        "name": "audio-2",
+        "kind": "source",
+        "detail": "custom source, domain=frame, media=audio"
+      },
+      {
+        "name": "mix",
+        "kind": "stage"
+      },
+      {
+        "name": "encode-mix",
+        "kind": "stage",
+        "detail": "frames -\u003e packets, codec=opus"
+      },
+      {
+        "name": "mix.webm",
+        "kind": "stage",
+        "detail": "mux, protocol=file"
+      }
+    ],
+    "edges": [
+      {
+        "from": "audio-1",
+        "to": "mix",
+        "policy": "all"
+      },
+      {
+        "from": "audio-2",
+        "to": "mix",
+        "policy": "all"
+      },
+      {
+        "from": "mix",
+        "to": "encode-mix",
+        "policy": "all"
+      },
+      {
+        "from": "encode-mix",
+        "to": "mix.webm",
+        "policy": "all"
+      }
+    ]
+  },
+  "explain": {
+    "summary": "mix 2 inputs to mix.webm",
+    "operation": "build job",
+    "inputs": [
+      {
+        "name": "audio-1",
+        "protocol": "custom",
+        "streams": [
+          {
+            "id": "audio-1",
+            "index": 0,
+            "type": "audio",
+            "codec": {
+              "type": "audio",
+              "clockRate": 48000,
+              "sampleRate": 48000,
+              "channels": 2,
+              "channelLayout": "stereo",
+              "sampleFormat": "s16"
+            },
+            "name": "audio-1"
+          }
+        ]
+      },
+      {
+        "name": "audio-2",
+        "protocol": "custom",
+        "streams": [
+          {
+            "id": "audio-2",
+            "index": 0,
+            "type": "audio",
+            "codec": {
+              "type": "audio",
+              "clockRate": 48000,
+              "sampleRate": 48000,
+              "channels": 2,
+              "channelLayout": "stereo",
+              "sampleFormat": "s16"
+            },
+            "name": "audio-2"
+          }
+        ]
+      }
+    ],
+    "taps": [
+      {
+        "name": "mixed",
+        "mediaKind": "audio",
+        "domain": "packet",
+        "shape": {
+          "domain": "packet",
+          "mediaKind": "audio",
+          "streamID": "mix",
+          "codec": "opus",
+          "sampleRate": 48000,
+          "channels": 2,
+          "sampleFormat": "s16"
+        },
+        "node": "encode-mix"
+      }
+    ],
+    "branches": [
+      {
+        "name": "audio-1",
+        "input": "audio-1",
+        "stream": {
+          "id": "audio-1",
+          "type": "audio",
+          "name": "audio-1"
+        },
+        "shape": {
+          "domain": "frame",
+          "mediaKind": "audio",
+          "streamID": "audio-1",
+          "sampleRate": 48000,
+          "channels": 2,
+          "sampleFormat": "s16"
+        }
+      },
+      {
+        "name": "audio-2",
+        "input": "audio-2",
+        "stream": {
+          "id": "audio-2",
+          "type": "audio",
+          "name": "audio-2"
+        },
+        "shape": {
+          "domain": "frame",
+          "mediaKind": "audio",
+          "streamID": "audio-2",
+          "sampleRate": 48000,
+          "channels": 2,
+          "sampleFormat": "s16"
+        }
+      },
+      {
+        "name": "mix",
+        "stream": {
+          "id": "mix",
+          "type": "audio"
+        },
+        "shape": {
+          "domain": "frame",
+          "mediaKind": "audio",
+          "streamID": "mix",
+          "sampleRate": 48000,
+          "channels": 2,
+          "sampleFormat": "s16"
+        },
+        "operations": [
+          {
+            "kind": "join",
+            "component": "mix",
+            "detail": "converge 2 arms",
+            "shape": {
+              "domain": "frame",
+              "mediaKind": "audio",
+              "streamID": "mix",
+              "sampleRate": 48000,
+              "channels": 2,
+              "sampleFormat": "s16"
+            }
+          },
+          {
+            "kind": "encode",
+            "component": "opus",
+            "detail": "frames to packets",
+            "shape": {
+              "domain": "packet",
+              "mediaKind": "audio",
+              "streamID": "mix",
+              "codec": "opus",
+              "sampleRate": 48000,
+              "channels": 2,
+              "sampleFormat": "s16"
+            },
+            "adapter": "opus"
+          },
+          {
+            "kind": "tap",
+            "component": "mixed",
+            "detail": "named media outlet",
+            "shape": {
+              "domain": "packet",
+              "mediaKind": "audio",
+              "streamID": "mix",
+              "codec": "opus",
+              "sampleRate": 48000,
+              "channels": 2,
+              "sampleFormat": "s16"
+            }
+          }
+        ],
+        "destinations": [
+          "mix.webm"
+        ]
+      }
+    ],
+    "destinations": [
+      {
+        "name": "mix.webm",
+        "protocol": "file",
+        "format": "webm",
+        "kind": "mux",
+        "branches": [
+          "mix"
+        ]
+      }
+    ],
+    "requiredAdapters": [
+      {
+        "kind": "muxer",
+        "name": "webm",
+        "format": "webm",
+        "media": [
+          "audio",
+          "video"
+        ],
+        "codecs": [
+          "opus",
+          "vorbis",
+          "vp8",
+          "vp9",
+          "av1"
+        ],
+        "minStreams": 1,
+        "metadata": {
+          "summary": "WebM supports Opus/Vorbis audio and VP8/VP9/AV1 video packets without codec conversion"
+        },
+        "requiredBy": "mix.webm",
+        "status": "available"
+      },
+      {
+        "kind": "encoder",
+        "name": "opus",
+        "codec": "opus",
+        "media": [
+          "audio"
+        ],
+        "sampleFormats": [
+          "s16"
+        ],
+        "realtime": true,
+        "requiredBy": "mix",
+        "status": "available"
+      }
+    ],
+    "graph": {
+      "name": "goav-mix",
+      "nodes": [
+        {
+          "name": "audio-1",
+          "kind": "source",
+          "detail": "custom source, domain=frame, media=audio"
+        },
+        {
+          "name": "audio-2",
+          "kind": "source",
+          "detail": "custom source, domain=frame, media=audio"
+        },
+        {
+          "name": "mix",
+          "kind": "stage"
+        },
+        {
+          "name": "encode-mix",
+          "kind": "stage",
+          "detail": "frames -\u003e packets, codec=opus"
+        },
+        {
+          "name": "mix.webm",
+          "kind": "stage",
+          "detail": "mux, protocol=file"
+        }
+      ],
+      "edges": [
+        {
+          "from": "audio-1",
+          "to": "mix",
+          "policy": "all"
+        },
+        {
+          "from": "audio-2",
+          "to": "mix",
+          "policy": "all"
+        },
+        {
+          "from": "mix",
+          "to": "encode-mix",
+          "policy": "all"
+        },
+        {
+          "from": "encode-mix",
+          "to": "mix.webm",
+          "policy": "all"
+        }
+      ]
+    }
+  }
+}

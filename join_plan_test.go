@@ -17,7 +17,7 @@ import (
 // equal the built graph node-for-node and edge-for-edge. No hand-assembled
 // join graph exists to drift from the plan.
 
-func joinPlanGuard(t *testing.T, job *recipeJob) pipeline.Spec {
+func joinPlanGuard(t *testing.T, job *testJob) pipeline.Spec {
 	t.Helper()
 	planned, err := job.Describe()
 	if err != nil {
@@ -67,10 +67,10 @@ func TestJoinDescribeEqualsBuildMix(t *testing.T) {
 	planned := joinPlanGuard(t, job)
 	text := specText(planned)
 	for _, want := range []string{
-		"mix-decode-a",                 // packet arm explicit decode
-		"mix-resample-b",               // mismatched frame arm auto-resample
-		"-> mix",                       // convergence into the join node
-		"encode-mix-encode -> mix.ogg", // joined chain: encode then mux
+		"mix-decode-a",          // packet arm explicit decode
+		"mix-resample-b",        // mismatched frame arm auto-resample
+		"-> mix",                // convergence into the join node
+		"encode-mix -> mix.ogg", // joined chain: encode then mux
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("planned mix spec missing %q:\n%s", want, text)
@@ -102,8 +102,8 @@ func TestJoinDescribeEqualsBuildMixMultiDestination(t *testing.T) {
 	planned := joinPlanGuard(t, job)
 	text := specText(planned)
 	for _, want := range []string{
-		"encode-mix-encode -> first.ogg",
-		"encode-mix-encode -> second.ogg",
+		"encode-mix -> first.ogg",
+		"encode-mix -> second.ogg",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("planned mix spec missing %q:\n%s", want, text)

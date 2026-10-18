@@ -146,14 +146,6 @@ func declaredSourceShape(input InputSpec) (shape.Spec, bool) {
 	return normalizeCustomSourceShape(input.inputName("source"), input.provider.SourceShape()), true
 }
 
-func declaredSourceStreams(input InputSpec) []av.Stream {
-	spec, ok := declaredSourceShape(input)
-	if !ok {
-		return nil
-	}
-	return []av.Stream{declaredSourceStream(input, spec)}
-}
-
 type compileSourceShapeState interface {
 	customSourceShapeForCompile() (shape.Spec, bool)
 }
@@ -341,17 +333,6 @@ func (s InputSpec) applySourceWraps(source pipeline.Source) pipeline.Source {
 		}
 	}
 	return resolvedProviderSource(wrapped, name, detail)
-}
-
-// openGraphSource keeps the streams/domain 4-tuple shape used by the Mix and
-// Composite arms; it delegates to openGraphSourceBuild so all opening goes through
-// one seam.
-func (s InputSpec) openGraphSource(ctx context.Context, service *builder, name string) (pipeline.Source, []av.Stream, shape.MediaDomain, error) {
-	build, err := s.openGraphSourceBuild(ctx, service, name, false)
-	if err != nil {
-		return nil, nil, "", err
-	}
-	return build.source, build.streams, build.domain, nil
 }
 
 // graphSourceNodeName returns the base planner node name for this input. Callers

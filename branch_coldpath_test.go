@@ -49,17 +49,6 @@ func requireColdPathBuildError(t *testing.T, err error, code errcode.Code) *Buil
 	return buildErr
 }
 
-// TestBranchesRefuseCopyParentAfterDecode pins the packet-domain rule on the
-// parent: .Decode().Copy().Branches(...) asks branches to preserve packets
-// from a frame-domain point and is refused at the Branches call.
-func TestBranchesRefuseCopyParentAfterDecode(t *testing.T) {
-	_, err := recipeFrom(coldPathPacketSource("mic", []byte{1})).
-		Audio().Decode().Copy().
-		Branches(newBranch("rec").To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil })))).
-		Describe()
-	requireColdPathBuildError(t, err, copyBranchSourceInvalidCode)
-}
-
 // TestBranchRefusesSecondDecode pins the duplicate-decode refusal on the
 // branch builder itself.
 func TestBranchRefusesSecondDecode(t *testing.T) {
@@ -80,34 +69,7 @@ func TestBranchesRefusePacketBranchEncode(t *testing.T) {
 		Branches(newBranch("web").Encode(codec.Opus(codec.Bitrate(96_000))).
 			To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil })))).
 		Describe()
-	requireColdPathBuildError(t, err, packetBranchEncodeUnsupportedCode)
-}
-
-// TestNilBranchBuilderToIsRefused pins the nil-builder refusal: a nil
-// *BranchBuilder (a zeroed variable of the inferred builder type) still
-// finishes into a spec that fails the build instead of panicking.
-func TestNilBranchBuilderToIsRefused(t *testing.T) {
-	var builder *branchBuilder // what `b := Branch("late"); b = nil` leaves behind
-	spec := builder.To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil })))
-	_, err := recipeFrom(coldPathPacketSource("mic", []byte{1})).
-		Audio().Copy().
-		Branches(spec).
-		Describe()
-	requireColdPathBuildError(t, err, branchInvalidCode)
-}
-
-// TestBranchToRefusesEmptyDestination pins the empty-handle refusal on the
-// branch: .To(goav.Destination{}) names the invalid destination.
-func TestBranchToRefusesEmptyDestination(t *testing.T) {
-	spec := newBranch("rec").To(Destination{})
-	_, err := recipeFrom(coldPathPacketSource("mic", []byte{1})).
-		Audio().Copy().
-		Branches(spec).
-		Describe()
-	buildErr := requireColdPathBuildError(t, err, destinationInvalidCode)
-	if buildErr.Operation != "build branch" {
-		t.Fatalf("operation = %q, want build branch", buildErr.Operation)
-	}
+	requireColdPathBuildError(t, err, operationShapeMismatchCode)
 }
 
 // TestStreamToRefusesEmptyDestination pins the same refusal on the stream

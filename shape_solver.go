@@ -27,7 +27,7 @@ import (
 // classes it needed, and the human delta for errors and diagnostics.
 type shapeConversionPlan struct {
 	operation recipeir.Operation
-	transform transformSpec
+	transform recipeir.Transform
 	factory   string
 	needed    shape.Policy
 	detail    string
@@ -263,7 +263,7 @@ func planShapeConversionFor(rt *Runtime, actual shape.Spec, expected shape.Spec,
 	operation := recipeir.Operation{
 		Kind:      plan.OpTransform,
 		Component: descriptor.Name,
-		Transform: recipeIRTransformFromRoot(transform),
+		Transform: transform,
 	}
 	return shapeConversionPlan{
 		operation: operation,
@@ -417,7 +417,7 @@ func preferenceDropReason(err error) string {
 // synthesizeConversionTransform builds the explicit transform config from the
 // expected shape, falling back to the actual shape for facts the expectation
 // leaves open. Targets that cannot be fully resolved are not completable.
-func synthesizeConversionTransform(media av.MediaType, actual shape.Spec, expected shape.Spec) (transformSpec, bool) {
+func synthesizeConversionTransform(media av.MediaType, actual shape.Spec, expected shape.Spec) (recipeir.Transform, bool) {
 	switch media {
 	case av.MediaAudio:
 		config := filter.ResampleConfig{
@@ -426,9 +426,9 @@ func synthesizeConversionTransform(media av.MediaType, actual shape.Spec, expect
 			SampleFormat: firstNonEmpty(expected.SampleFormat, actual.SampleFormat),
 		}
 		if config.SampleRate <= 0 || config.Channels <= 0 {
-			return transformSpec{}, false
+			return recipeir.Transform{}, false
 		}
-		return transformSpec{resample: &config}, true
+		return recipeir.Transform{Kind: recipeir.TransformResample, Resample: config}, true
 	case av.MediaVideo:
 		config := filter.ResizeConfig{
 			Width:       firstPositiveInt(expected.Width, actual.Width),
@@ -437,11 +437,11 @@ func synthesizeConversionTransform(media av.MediaType, actual shape.Spec, expect
 			Mode:        filter.ResizeExact,
 		}
 		if config.Width <= 0 || config.Height <= 0 {
-			return transformSpec{}, false
+			return recipeir.Transform{}, false
 		}
-		return transformSpec{resize: &config}, true
+		return recipeir.Transform{Kind: recipeir.TransformResize, Resize: config}, true
 	default:
-		return transformSpec{}, false
+		return recipeir.Transform{}, false
 	}
 }
 
@@ -467,7 +467,7 @@ func (e *shapeAdapterSelectionError) Unwrap() error { return e.cause }
 // candidates remain, a non-zero pref narrows them to the adapters whose
 // declared capabilities cover the preference; resolved reports whether that
 // tie-break decided the choice. Exactly one candidate must remain.
-func selectShapeConversionAdapter(rt *Runtime, media av.MediaType, transform transformSpec, realtime bool, pref shape.Spec) (filter.Descriptor, []string, bool, error) {
+func selectShapeConversionAdapter(rt *Runtime, media av.MediaType, transform recipeir.Transform, realtime bool, pref shape.Spec) (filter.Descriptor, []string, bool, error) {
 	descriptors := rt.filters.Descriptors()
 	matched := make([]filter.Descriptor, 0, len(descriptors))
 	for i := range descriptors {
@@ -478,16 +478,16 @@ func selectShapeConversionAdapter(rt *Runtime, media av.MediaType, transform tra
 		if realtime && !descriptor.Realtime {
 			continue
 		}
-		if transform.resample != nil && transform.resample.SampleFormat != "" &&
-			len(descriptor.SampleFormats) != 0 && !stringAllowed(descriptor.SampleFormats, transform.resample.SampleFormat) {
+		if transform.Kind == recipeir.TransformResample && transform.Resample.SampleFormat != "" &&
+			len(descriptor.SampleFormats) != 0 && !stringAllowed(descriptor.SampleFormats, transform.Resample.SampleFormat) {
 			continue
 		}
-		if transform.resize != nil {
+		if transform.Kind == recipeir.TransformResize {
 			if len(descriptor.ResizeModes) != 0 && !resizeModeAllowed(descriptor.ResizeModes, filter.ResizeExact) {
 				continue
 			}
-			if transform.resize.PixelFormat != "" && len(descriptor.PixelFormats) != 0 &&
-				!stringAllowed(descriptor.PixelFormats, transform.resize.PixelFormat) {
+			if transform.Resize.PixelFormat != "" && len(descriptor.PixelFormats) != 0 &&
+				!stringAllowed(descriptor.PixelFormats, transform.Resize.PixelFormat) {
 				continue
 			}
 		}
@@ -637,16 +637,16 @@ func appendRecipeIRAutoFixSuggestions(err error, actual shape.Spec, expected sha
 	return buildErr
 }
 
-func recipeIRExplicitConversionSuggestion(transform transformSpec, step recipeir.Operation) []string {
+func recipeIRExplicitConversionSuggestion(transform recipeir.Transform, step recipeir.Operation) []string {
 	target := ""
 	if step.Kind != "" {
 		target = " before " + recipeIROperationLabel(step)
 	}
 	switch {
-	case transform.resample != nil:
-		return []string{fmt.Sprintf("insert .Resample(%d, %d) explicitly%s", transform.resample.SampleRate, transform.resample.Channels, target)}
-	case transform.resize != nil:
-		return []string{fmt.Sprintf("insert .Resize(%d, %d) explicitly%s", transform.resize.Width, transform.resize.Height, target)}
+	case transform.Kind == recipeir.TransformResample:
+		return []string{fmt.Sprintf("insert .Resample(%d, %d) explicitly%s", transform.Resample.SampleRate, transform.Resample.Channels, target)}
+	case transform.Kind == recipeir.TransformResize:
+		return []string{fmt.Sprintf("insert .Resize(%d, %d) explicitly%s", transform.Resize.Width, transform.Resize.Height, target)}
 	default:
 		return nil
 	}
@@ -733,11 +733,11 @@ func recipeIROperationLabel(operation recipeir.Operation) string {
 
 // shapeConversionDetailText renders the conversion delta for humans:
 // "resample 44.1kHz→48kHz", "resize 1280x720→640x360", "resample s16→f32".
-func shapeConversionDetailText(factory string, actual shape.Spec, transform transformSpec) string {
+func shapeConversionDetailText(factory string, actual shape.Spec, transform recipeir.Transform) string {
 	parts := []string{factory}
 	switch {
-	case transform.resample != nil:
-		config := transform.resample
+	case transform.Kind == recipeir.TransformResample:
+		config := transform.Resample
 		if config.SampleRate != 0 && config.SampleRate != actual.SampleRate {
 			parts = append(parts, formatSampleRate(actual.SampleRate)+"→"+formatSampleRate(config.SampleRate))
 		}
@@ -747,8 +747,8 @@ func shapeConversionDetailText(factory string, actual shape.Spec, transform tran
 		if config.SampleFormat != "" && config.SampleFormat != actual.SampleFormat {
 			parts = append(parts, formatMediaFormat(actual.SampleFormat)+"→"+config.SampleFormat)
 		}
-	case transform.resize != nil:
-		config := transform.resize
+	case transform.Kind == recipeir.TransformResize:
+		config := transform.Resize
 		if (config.Width != 0 && config.Width != actual.Width) || (config.Height != 0 && config.Height != actual.Height) {
 			parts = append(parts, formatFrameSize(actual.Width, actual.Height)+"→"+formatFrameSize(config.Width, config.Height))
 		}

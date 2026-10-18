@@ -199,8 +199,8 @@ func TestMixRawFramesRequireSinkDestination(t *testing.T) {
 	).To(Write("mix.ogg", io.Discard)).
 		Build(context.Background())
 	var buildErr *BuildError
-	if !errorsAsMix(err, &buildErr) || buildErr.Code != "mix_destination" || !errors.Is(err, errUnsupportedBuild) {
-		t.Fatalf("err = %v, want mix_destination with matching BuildError code", err)
+	if !errorsAsMix(err, &buildErr) || buildErr.Code != encodeMissingCode || !errors.Is(err, errUnsupportedBuild) {
+		t.Fatalf("err = %v, want encode_missing with matching BuildError code", err)
 	}
 	if !strings.Contains(err.Error(), ".Encode(codec.Opus") ||
 		!strings.Contains(err.Error(), "goav.Sink") {
@@ -209,73 +209,6 @@ func TestMixRawFramesRequireSinkDestination(t *testing.T) {
 }
 
 func errorsAsMix(err error, target **BuildError) bool { return errors.As(err, target) }
-
-func TestMixBuilderOptionsCarryIntoJoinSpec(t *testing.T) {
-	var nilMix *mixStream
-	if arm := nilMix.joinArm(); arm.join != nil || arm.region != nil {
-		t.Fatalf("nil mix join arm = %+v, want zero", arm)
-	}
-
-	require := shape.Frame(av.MediaAudio, shape.Audio(48000, codec.Stereo, av.SampleFormatS16))
-	prefer := shape.Frame(av.MediaAudio, shape.Audio(0, 0, av.SampleFormatF32))
-	mix := legacyMix(
-		recipeFrom(mixTestAudioSource("a", 100, 200)).Audio(),
-		recipeFrom(mixTestAudioSource("b", 50, -50)).Audio(),
-	).
-		SyncByPTS().
-		Auto(shape.AllowResample(), shape.AllowConvert()).
-		Require(require).
-		Prefer(prefer).
-		Encode(codec.Opus(codec.Bitrate(128_000), codec.Channels(codec.Stereo))).
-		Tap(frameTapRef("mixed"))
-
-	if mix.sync != joinSyncPTS {
-		t.Fatalf("sync = %v, want PTS", mix.sync)
-	}
-	if mix.encode == nil ||
-		mix.encode.ID != av.CodecOpus ||
-		mix.encode.Settings.Bitrate != 128_000 ||
-		mix.encode.Settings.Channels != codec.Stereo {
-		t.Fatalf("encode = %+v", mix.encode)
-	}
-	if len(mix.taps) != 1 || mix.taps[0].name != "mixed" {
-		t.Fatalf("taps = %+v", mix.taps)
-	}
-	if len(mix.operations) != 3 {
-		t.Fatalf("operations = %+v, want auto/require/prefer", mix.operations)
-	}
-	if mix.operations[0].Auto == nil ||
-		!mix.operations[0].Auto.AllowsResample() ||
-		!mix.operations[0].Auto.AllowsConvert() ||
-		mix.operations[0].Auto.AllowsResize() {
-		t.Fatalf("auto operation = %+v", mix.operations[0])
-	}
-	if mix.operations[1].Require == nil || *mix.operations[1].Require != require {
-		t.Fatalf("require operation = %+v", mix.operations[1])
-	}
-	if mix.operations[2].Prefer == nil || *mix.operations[2].Prefer != prefer {
-		t.Fatalf("prefer operation = %+v", mix.operations[2])
-	}
-
-	arm := mix.joinArm()
-	if arm.region != nil {
-		t.Fatalf("mix join arm region = %+v, want nil", arm.region)
-	}
-	if arm.join == nil ||
-		arm.join.kind != joinMix ||
-		arm.join.sync != joinSyncPTS ||
-		arm.join.encode == nil ||
-		arm.join.encode.ID != av.CodecOpus ||
-		len(arm.join.taps) != 1 ||
-		len(arm.join.operations) != 3 {
-		t.Fatalf("join arm = %+v", arm.join)
-	}
-
-	mix.operations[0] = operationSpec{}
-	if arm.join.operations[0].Auto == nil || !arm.join.operations[0].Auto.AllowsResample() {
-		t.Fatalf("join arm operations were not cloned: %+v", arm.join.operations)
-	}
-}
 
 func TestMixRequiresExplicitDecodeForPacketArms(t *testing.T) {
 	packetArm := Source("a",
@@ -464,8 +397,8 @@ func TestMixRejectsSameDestinationHandleTwice(t *testing.T) {
 	// One handle listed twice is the same refusal a chain's .To(out, out)
 	// raises: the joined stream reaches each destination once.
 	var buildErr *BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != outputDuplicateCode {
-		t.Fatalf("err = %v, want %s", err, outputDuplicateCode)
+	if !errors.As(err, &buildErr) || buildErr.Code != destinationDuplicateCode {
+		t.Fatalf("err = %v, want %s", err, destinationDuplicateCode)
 	}
 }
 

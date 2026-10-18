@@ -57,28 +57,34 @@ One media work planner owns the cold path. It:
 
 `WorkPlan` is the executable cold-path boundary: the one planner/report IR
 owning planned nodes, edges, ordered operations, report inputs, streams, taps,
-branches, destinations, decisions, diagnostics, plus the work-plan lowerers
-used to build the runtime graph. Described graphs and execution graphs must
-stay equivalent across work-plan lowerers.
+branches, destinations, decisions, and diagnostics. Described graphs and built
+graphs are the same graph: both come from the one lowering.
 
-The native planning layer is:
+The compiler is one pipeline:
 
 ```text
-branchRecipe -> WorkPlan   // initial build
-branchRecipe -> WorkPatch  // runtime attach
+Outputs -> recipe DAG -> branches -> one lowering -> WorkPlan + pipeline.Spec  // build
+Outputs -> recipe DAG -> attach branches -> WorkPatch                          // task.Attach
 ```
 
-`shape.Spec` is the public compatibility contract for branch, flow, tap, sink,
+Every Stream value is one node of the recipe DAG (`internal/recipeir.Graph`):
+a Stream used twice is one node with several children, so the work before a
+fork is planned once, and a join is one node with several parents. A branch is
+the path from a root (an input's select or a join) to the Outputs it ends in.
+One validator walks each branch's operations, joins plan as ordinary nodes,
+the shape solver keys each conversion by the node it feeds, and the lowering
+emits each node once. Any number of joins and streams plan in one recipe, and
+a join arm may read a stream other work reads.
+
+`shape.Spec` is the public compatibility contract for branch, tap, sink,
 byte destination, shared destination, and custom source shapes. `WorkPlan`
 owns ordered operations, shape transitions, taps, destinations, branch buffer
 policy, detach policy, and lifecycle expectations. `WorkPatch` uses the same
 branch plan as initial build, anchored downstream of existing typed taps.
 
-That is the important constraint: runtime attach is not a separate graph
-language. The `runtimeBranch` and `mediaPlan` parallel IRs are deleted and
-collapsed onto the work-plan model, along with the per-workflow builder
-compilers. The remaining internal debt (the `streamIntent` normalization
-layer) is tracked in `docs/ROADMAP.md`.
+Runtime attach is not a separate graph language: `task.Attach` compiles its
+Outputs through the same DAG and validator, anchored on the task's taps,
+tracks, or graph routes.
 
 Inputs and destinations open through one extension point per side: every input
 kind (file, URI, RTP, WebRTC, custom source) resolves through one source
@@ -172,78 +178,26 @@ Root reaches back only through structural interfaces
 (`ExpertGraph() any`, the branch-anchor `Route` capability), never an import.
 
 What is convention only: inside the root package, the grammar -> plan -> build
-boundaries (recipe/branch grammar, `media_plan_*.go`/`WorkPlan` planning,
-graph/attach lowering) are file-naming conventions, not import-checked — the
-`mediaPlan` aggregate type itself is gone, only the file prefix survives. The
+boundaries (the value grammar, the `compile*.go` passes and `WorkPlan`,
+graph/attach lowering) are file-naming conventions, not import-checked. The
 root package is deliberately one compilation unit.
 
-The pre-v1 simplification work has started the data boundary without claiming
-the package split is complete: fluent builders snapshot into
-`internal/recipeir` before the recipe compiler runs, and the main job compile
-entrypoint consumes that snapshot rather than reading `Job` fields directly.
-Branch-composition snapshots are built directly from captured branch facts, and
-branch-composition planning consumes captured recipe IR, not the original
-`streamBuild` records. Normal work-plan rendering no longer falls back to the
-legacy intent mirror. Join branch fanout planning also builds branch recipe
-streams directly instead of synthesizing builder records, and join chain-arm
-inputs plus arm operations, taps, and regions are captured before join tree
-planning. Root-only attachments
-(`InputSpec`, `destinationSpec`, `joinSpec`, stream rules, runtime pointers,
-and graph lowering details) still travel beside the IR until later slices move
-those facts into stable recipe/plan data.
+The data boundary is the recipe DAG: the value grammar (`stream.go`,
+`source.go`, `stream_rule.go`) builds Stream values, `recipe_graph.go`
+compiles Outputs into the DAG, and the compiler passes read the DAG plus the
+concrete input and destination handles it indexes.
+`TestGrammarFilesDoNotReadPlannerState` pins that the grammar never reads
+compiler state, and `TestRecipeIRImportsOnlyLeafPackages` that
+`internal/recipeir` imports only leaf vocabulary packages, never the root.
 
-The boundary is pinned by executable tests. `TestPlannerFilesDoNotReadBuilderInternals`
-AST-scans the pure planner/lowerer files (`recipe_compile`, `media_plan_*`,
-`work_*`, `shape_solver`, `branch_compose_*`) and fails if any reads a mutable
-builder struct (`branchRecipe`, `jobStreamBuild`); the stream-rule
-requires-runtime check now carries its fact across the boundary on
-`recipeir.StreamRule.RequiresRuntime`, captured at the builder→IR edge, so the
-compiler no longer reads `branchRecipe`. `TestRecipeIRImportsOnlyLeafPackages`
-pins that `internal/recipeir` imports only leaf vocabulary packages, never the
-root or a builder.
-
-The join planner reads the captured recipe IR too. `recipeir.Join` carries the
-fanout branches as immutable `recipeir.JoinBranch` facts (name, media, anchor,
-operations), captured at the builder→IR edge into a `joinBranchSnapshot` that
-pairs them with the concrete destination handles (the documented IR exception)
-and the branch's construction error. The join planner consumes that snapshot;
-branch domain validation is shared with the ordinary branch path through
-`validateBranchDomainFacts`, which takes captured facts rather than a
-`branchRecipe`. `join_build.go` owns the join grammar/capture side (which
-legitimately constructs and reads `branchRecipe`); `join_plan.go` owns the
-planner/lowering side. `TestJoinPlannerReadsRecipeIRNotBuilderInternals`
-file-scans `join_plan.go` and fails if the planner file reaches into
-`branchRecipe`.
-
-Why the planner internals still cannot move to `internal/` packages today:
-after the A1-A4 boundary slices, the package graph was re-measured on
-2026-07-02 with a type-checked cross-file reference graph. The 22-file
-planner/lowerer seed (`recipe_compile`, `media_plan*`, `work_*`,
-`shape_solver`/`shape_glue`, `branch_compose_*`, `join_plan`, runtime
-lowerers, `mux_destination`, `multi_input`) is 15,955 non-test LOC. Its
-closed set is 63 of the root package's 64 non-test files, or 31,921 LOC
-of 32,071 total (99.5%). The only root file outside the closure is
-`task_control.go`, so moving the closure would effectively move the root
-package rather than create a useful planner package.
-
-The largest non-seed pull-ins show what remains: grammar/API files such as
-`recipe.go`, `branch.go`, `destination.go`, `source.go`, `stream_rule.go`,
-runtime state in `runtime.go`, shared intent/IR helpers in `intent.go`,
-`recipe_ir.go`, `operation_facts.go`, and join grammar/capture in
-`join_build.go`. The original reverse coupling has been narrowed: grammar
-compile-state reads are pinned behind query interfaces by
-`TestGrammarFilesDoNotReadPlannerState`, and join grammar/planner code is
-physically split with a file-scoped join planner pin. Those pins deliver the
-reasoning benefit, but the package boundary is still an honest NO-GO until the
-remaining root-only facts are converted to stable recipe/plan data.
-
-What it would take to finish enforcing the layering: continue the data-transfer
-boundary so planner passes consume and return plain recipe/plan data instead
-of reading and mutating grammar object fields. Relocating the grammar records
-(`branchRecipe`, `Runtime`, `Destination`, `InputSpec`, `operationSpec`,
-`joinSpec`) wholesale would still be public-API churn for the exported ones (type
-identity and `reflect.Type.PkgPath` change even under aliases), so the intended
-cut remains the incremental DTO path.
+Why the compiler still cannot move to `internal/` packages: a type-checked
+cross-file reference graph (measured 2026-07-02) closed the planner seed over
+99.5% of the root package's non-test code, so moving it would move the root
+package. The DAG narrows the waist — passes read plain DAG data — but the
+lowering still builds stages from root runtime types (`Runtime`, `InputSpec`,
+`Destination`), and relocating exported types is public-API churn (type
+identity and `reflect.Type.PkgPath` change even under aliases). The split
+stays an honest NO-GO.
 
 ## Core media model
 

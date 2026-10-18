@@ -14,6 +14,7 @@ import (
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/filter"
+	"github.com/thesyncim/goav/internal/recipeir"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/shape"
 )
@@ -48,8 +49,7 @@ func joinArmBindsAtOpen(input InputSpec, set inputStreamSet) bool {
 // planJoinBindArm plans an arm bound when its input opens: by the chain's
 // selection (its media kind defaults to the join's), under the input's name
 // as its arm id, with its format left to the build.
-func planJoinBindArm(name string, kind string, profile joinProfile, arm joinArmSnapshot, set inputStreamSet) (joinArmPlan, error) {
-	selector := arm.chainSelector
+func planJoinBindArm(name string, kind string, profile joinProfile, selector av.StreamSelector, set inputStreamSet) (joinArmPlan, error) {
 	if selector.Type == "" {
 		selector.Type = profile.media
 	}
@@ -60,7 +60,6 @@ func planJoinBindArm(name string, kind string, profile joinProfile, arm joinArmS
 	}
 	id := av.StreamID(set.name)
 	return joinArmPlan{
-		input:     arm.chainInput,
 		inputName: set.name,
 		stream:    av.Stream{ID: id, Type: selector.Type, Codec: av.CodecParameters{Type: selector.Type}},
 		domain:    set.domain,
@@ -94,12 +93,12 @@ func conformAdapter(rt *Runtime, target shape.Spec) string {
 	if rt == nil {
 		return ""
 	}
-	var transform transformSpec
+	var transform recipeir.Transform
 	switch target.MediaKind {
 	case av.MediaAudio:
-		transform.resample = &filter.ResampleConfig{SampleFormat: target.SampleFormat}
+		transform.Kind, transform.Resample = recipeir.TransformResample, filter.ResampleConfig{SampleFormat: target.SampleFormat}
 	case av.MediaVideo:
-		transform.resize = &filter.ResizeConfig{PixelFormat: target.PixelFormat, Mode: filter.ResizeExact}
+		transform.Kind, transform.Resize = recipeir.TransformResize, filter.ResizeConfig{PixelFormat: target.PixelFormat, Mode: filter.ResizeExact}
 	default:
 		return ""
 	}
@@ -222,7 +221,7 @@ func (s *joinConformStage) bind(ctx context.Context, format shape.Spec, id av.St
 		return joinArmError(s.name, string(id), fmt.Sprintf("arm %q cannot be converted to the join format (%s -> %s): %v", id, humanizeShape(format), humanizeShape(expected), err),
 			"register a resample or resize adapter that converts "+humanizeShape(format)+" (bundle.Filters())")
 	}
-	transform := mediaTransform{name: s.name, factory: conversion.factory, video: conversion.transform.resize, audio: conversion.transform.resample}
+	transform := mediaTransform{name: s.name, factory: conversion.factory, video: transformResize(conversion.transform), audio: transformResample(conversion.transform)}
 	stage, _, err := s.service.newMediaTransformStageNamed(ctx, s.name, transform, streamFromFrameFormat(id, format), s.realtime)
 	if err != nil {
 		return err

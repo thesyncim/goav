@@ -17,11 +17,6 @@
         "kind": "stage"
       },
       {
-        "name": "select-audio",
-        "kind": "stage",
-        "detail": "select, type=audio"
-      },
-      {
         "name": "encode-room",
         "kind": "stage",
         "detail": "frames -\u003e packets, codec=opus"
@@ -49,16 +44,11 @@
       },
       {
         "from": "mix",
-        "to": "select-audio",
-        "policy": "all"
-      },
-      {
-        "from": "select-audio",
         "to": "encode-room",
         "policy": "all"
       },
       {
-        "from": "select-audio",
+        "from": "mix",
         "to": "monitor",
         "policy": "all"
       },
@@ -196,26 +186,13 @@
         },
         "operations": [
           {
-            "kind": "select",
-            "component": "mix",
-            "detail": "select stream",
-            "shape": {
-              "domain": "frame",
-              "mediaKind": "audio",
-              "streamID": "mix",
-              "sampleRate": 48000,
-              "channels": 2,
-              "sampleFormat": "s16"
-            }
-          },
-          {
             "kind": "encode",
             "component": "opus",
             "detail": "frames to packets",
             "shape": {
               "domain": "packet",
               "mediaKind": "audio",
-              "streamID": "mix",
+              "streamID": "room",
               "codec": "opus",
               "sampleRate": 48000,
               "channels": 2,
@@ -243,21 +220,6 @@
           "channels": 2,
           "sampleFormat": "s16"
         },
-        "operations": [
-          {
-            "kind": "select",
-            "component": "mix",
-            "detail": "select stream",
-            "shape": {
-              "domain": "frame",
-              "mediaKind": "audio",
-              "streamID": "mix",
-              "sampleRate": 48000,
-              "channels": 2,
-              "sampleFormat": "s16"
-            }
-          }
-        ],
         "destinations": [
           "monitor"
         ]
@@ -337,11 +299,6 @@
           "kind": "stage"
         },
         {
-          "name": "select-audio",
-          "kind": "stage",
-          "detail": "select, type=audio"
-        },
-        {
           "name": "encode-room",
           "kind": "stage",
           "detail": "frames -\u003e packets, codec=opus"
@@ -369,16 +326,11 @@
         },
         {
           "from": "mix",
-          "to": "select-audio",
-          "policy": "all"
-        },
-        {
-          "from": "select-audio",
           "to": "encode-room",
           "policy": "all"
         },
         {
-          "from": "select-audio",
+          "from": "mix",
           "to": "monitor",
           "policy": "all"
         },

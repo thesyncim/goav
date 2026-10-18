@@ -159,7 +159,7 @@ func TestRuntimeBranchRebranchSwapsLiveBranch(t *testing.T) {
 	waitForCount(t, "phase1 a", 1, aCount.Load)
 
 	// Rebranch A -> B (different sink) on the live task.
-	if _, err := attA.Rebranch(ctx, newBranch("b").From(packetTapRef("pkts")).Copy().To(count(&bCount))); err != nil {
+	if _, err := attA.Rebranch(ctx, newBranch("b").From(packetTapRef("pkts")).Copy().To(count(&bCount)).on(task)); err != nil {
 		t.Fatal(err)
 	}
 
@@ -282,7 +282,7 @@ func TestRebranchSwitchAtNextKeyframeOnPacketStream(t *testing.T) {
 	waitForCount(t, "phase1 a", 1, aCount.Load)
 
 	attB, err := attA.Rebranch(ctx,
-		newBranch("b").From(packetTapRef("pkts")).Copy().To(bSink),
+		newBranch("b").From(packetTapRef("pkts")).Copy().To(bSink).on(task),
 		lifecycle.SwitchAt(lifecycle.NextKeyframe()),
 	)
 	if err != nil {
@@ -406,7 +406,7 @@ func TestRebranchSwitchAtNextFrameOnFrameStream(t *testing.T) {
 	waitForCount(t, "frame1 a", 1, aCount.Load)
 
 	if _, err := attA.Rebranch(ctx,
-		newBranch("b").From(frameTapRef("frames")).To(bSink),
+		newBranch("b").From(frameTapRef("frames")).To(bSink).on(task),
 		lifecycle.SwitchAt(lifecycle.NextFrame()),
 	); err != nil {
 		t.Fatal(err)
@@ -471,7 +471,7 @@ func TestRebranchFailureKeepsOldBranchAttached(t *testing.T) {
 	waitForCount(t, "phase1 a", 1, aCount.Load)
 
 	next, err := attA.Rebranch(ctx,
-		newBranch("bad").From(packetTapRef("missing")).Copy().To(Sink(SinkFunc("bad-sink", func(context.Context, Message) error { return nil }))),
+		newBranch("bad").From(packetTapRef("missing")).Copy().To(Sink(SinkFunc("bad-sink", func(context.Context, Message) error { return nil }))).on(task),
 		lifecycle.SwitchAt(lifecycle.NextKeyframe()),
 	)
 	if err == nil {
@@ -535,7 +535,7 @@ func TestRebranchOldBranchDispositionReportsDestinationStates(t *testing.T) {
 
 	// Drain: the replaced branch's destination commits.
 	attB, err := attA.Rebranch(ctx,
-		newBranch("b").From(packetTapRef("pkts")).Copy().To(sink("b-sink")),
+		newBranch("b").From(packetTapRef("pkts")).Copy().To(sink("b-sink")).on(task),
 		lifecycle.DrainOldBranch(),
 	)
 	if err != nil {
@@ -547,7 +547,7 @@ func TestRebranchOldBranchDispositionReportsDestinationStates(t *testing.T) {
 
 	// Abort: the replaced branch's destination aborts.
 	attC, err := attB.Rebranch(ctx,
-		newBranch("c").From(packetTapRef("pkts")).Copy().To(sink("c-sink")),
+		newBranch("c").From(packetTapRef("pkts")).Copy().To(sink("c-sink")).on(task),
 		lifecycle.AbortOldBranch(),
 	)
 	if err != nil {

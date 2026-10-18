@@ -2,130 +2,14 @@ package goav
 
 import (
 	"github.com/thesyncim/goav/av"
-	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/shape"
 )
-
-// Composite overlays N synchronized video arms into one stream delivered to
-// its destinations — the video dual of Mix (N→1) and the convergent dual of
-// Branches.
-// Each arm is a source chain such as From(frameSource).Video() or another
-// video-producing join — legacyComposite(legacyComposite(a, b), logo) paints a sub-canvas
-// like any arm. Arms must have distinct stream ids and I420 video format, and
-// each may declare its canvas position with .Region(x, y). This reuses the
-// existing Job, so .To/Build/Run are unchanged (see docs/MULTI_INPUT.md).
-func legacyComposite(arms ...recipeArm) *compositeStream {
-	return &compositeStream{arms: arms}
-}
-
-// compositeStream is the builder Composite returns: the join grammar surface
-// (Region/SyncByPTS/Auto/Require/Prefer/Encode/Tap/Branches/To), plus the
-// unexported joinArm method so a composite nests as an arm of an outer join.
-// It is sealed — its fields are unexported, so the grammar methods are the
-// only mutation surface.
-type compositeStream struct {
-	arms       []recipeArm
-	encode     *codec.Spec
-	taps       []tapRef
-	operations []operationSpec
-	sync       joinSyncMode
-	region     *compositeRegion
-}
-
-// joinArm lets a Composite stand as an arm of an outer join: the outer join
-// consumes the COMPOSITED canvas under the sub-composite's output id, placed
-// at this composite's .Region(x, y) (top-left by default). A nested composite
-// may not carry .Encode(...) — encode belongs to the outer join or its chain.
-func (c *compositeStream) joinArm() joinArmSpec {
-	if c == nil {
-		return joinArmSpec{}
-	}
-	return joinArmSpec{
-		join:   &joinSpec{kind: joinComposite, arms: c.arms, encode: c.encode, operations: cloneOperationSpecs(c.operations), taps: c.taps, sync: c.sync},
-		region: c.region,
-	}
-}
-
-// Region places this composite's canvas at (x, y) when the composite is used
-// as an arm of an outer Composite; a top-level composite refuses it.
-func (c *compositeStream) Region(x, y int) *compositeStream {
-	c.region = &compositeRegion{x: x, y: y}
-	return c
-}
-
-// SyncByPTS aligns the arms by presentation timestamp instead of arrival
-// order. Per step the earliest head frame across the arms (on a common
-// nanosecond clock) sets the step time; arms within tolerance (half a frame
-// duration) are painted, an arm whose head is newer is left out of the step
-// (the canvas keeps covering its last-known extent so geometry stays stable),
-// and frames left behind the already-composited timeline are dropped to catch
-// up. A discontinuity on one arm (Seek/Segment) flushes that arm's buffer and
-// re-syncs at its new position. Use it when arms are files starting at
-// different offsets, after a Seek on one arm, or under drift; the arrival
-// default pairs frames one-per-arm and is right for live same-clock sources.
-func (c *compositeStream) SyncByPTS() *compositeStream {
-	c.sync = joinSyncPTS
-	return c
-}
-
-// Auto lets the planner insert format conversions on the composited output
-// before a terminal .Encode(...) or planned branches, using the same shape
-// solver as a normal stream chain.
-func (c *compositeStream) Auto(policies ...shape.Policy) *compositeStream {
-	c.operations = append(c.operations, operationSpecForAutoPolicy(policies))
-	return c
-}
-
-// Require asserts shape facts on the composited output before the terminal
-// encode or planned branches.
-func (c *compositeStream) Require(spec shape.Spec) *compositeStream {
-	c.operations = append(c.operations, operationSpecForRequire(spec))
-	return c
-}
-
-// Prefer biases automatic conversion adapter selection on the composited output.
-func (c *compositeStream) Prefer(spec shape.Spec) *compositeStream {
-	c.operations = append(c.operations, operationSpecForPreference(spec))
-	return c
-}
 
 // compositeRegion is an arm's top-left placement on the composite canvas. It is
 // composite-only — it has no meaning outside a Composite arm.
 type compositeRegion struct {
 	x, y int
-}
-
-// Encode encodes the composited stream before the destination, so a Composite can
-// record to a File/mux (not only a frame Sink). Without it the composite delivers
-// frames.
-func (c *compositeStream) Encode(spec codec.Spec) *compositeStream {
-	c.encode = &spec
-	return c
-}
-
-// Tap names the composited stream as a stable frame-domain attach point — the
-// same tap a normal chain declares: it appears in task.Taps() and runtime
-// branches can Attach from it later.
-func (c *compositeStream) Tap(tap tapRef) *compositeStream {
-	c.taps = append(c.taps, tap)
-	return c
-}
-
-// Branches fans the composited stream out to planned branch chains, each with
-// its own destinations — the same goav.Branch specs an ordinary stream chain
-// accepts after decode.
-func (c *compositeStream) Branches(branches ...branchRecipe) *recipeJob {
-	return refuseTopLevelRegion(newJoinBranchesJob(joinComposite, joinSpec{arms: c.arms, encode: c.encode, operations: cloneOperationSpecs(c.operations), taps: c.taps, sync: c.sync}, branches), c.region, "composite")
-}
-
-// To delivers the composited stream to one or more destinations (a fanout
-// when several are given — each destination receives the joined stream,
-// exactly like a chain's multi-destination .To) and returns a Job, so the
-// composite runs through the same Build/Run as every other recipe. It lowers
-// to the one joinSpec shared by every convergence builder.
-func (c *compositeStream) To(destinations ...Destination) *recipeJob {
-	return refuseTopLevelRegion(newJoinJob(joinComposite, joinSpec{arms: c.arms, dests: destinations, encode: c.encode, operations: cloneOperationSpecs(c.operations), taps: c.taps, sync: c.sync}), c.region, "composite")
 }
 
 // compositeJoinProfile is Composite's entry in the join table: video arms,

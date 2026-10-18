@@ -11,27 +11,27 @@ import (
 	"github.com/thesyncim/goav/shape"
 )
 
-type customJoinBuilderStage struct {
+type customJoinTestStage struct {
 	name string
 	arms int
 	seen map[av.StreamID]struct{}
 }
 
-func newCustomJoinBuilderStage(name string, arms int) *customJoinBuilderStage {
-	return &customJoinBuilderStage{name: name, arms: arms, seen: make(map[av.StreamID]struct{}, arms)}
+func newCustomJoinTestStage(name string, arms int) *customJoinTestStage {
+	return &customJoinTestStage{name: name, arms: arms, seen: make(map[av.StreamID]struct{}, arms)}
 }
 
-func (s *customJoinBuilderStage) Name() string { return s.name }
+func (s *customJoinTestStage) Name() string { return s.name }
 
-func (s *customJoinBuilderStage) InputShapes() shape.Set {
+func (s *customJoinTestStage) InputShapes() shape.Set {
 	return shape.Set{shape.Frame(av.MediaAudio, shape.Audio(48_000, codec.Mono, av.SampleFormatS16))}
 }
 
-func (s *customJoinBuilderStage) OutputShapes(shape.Spec) shape.Set {
+func (s *customJoinTestStage) OutputShapes(shape.Spec) shape.Set {
 	return shape.Set{shape.Frame(av.MediaAudio, shape.Audio(48_000, codec.Mono, av.SampleFormatS16))}
 }
 
-func (s *customJoinBuilderStage) Handle(ctx context.Context, msg *pipeline.Message, emit pipeline.Emitter) error {
+func (s *customJoinTestStage) Handle(ctx context.Context, msg *pipeline.Message, emit pipeline.Emitter) error {
 	switch msg.Kind {
 	case pipeline.MessageFrame:
 		if msg.Frame == nil {
@@ -55,38 +55,16 @@ func (s *customJoinBuilderStage) Handle(ctx context.Context, msg *pipeline.Messa
 	}
 }
 
-func (s *customJoinBuilderStage) Close() error { return nil }
+func (s *customJoinTestStage) Close() error { return nil }
 
-func TestCustomJoinBuilderTapBranchesAndJoinArmContracts(t *testing.T) {
+func TestCustomJoinTapsAndForks(t *testing.T) {
 	ctx := context.Background()
-	var nilJoin *joinStreamBuilder
-	if arm := nilJoin.joinArm(); arm.join != nil {
-		t.Fatalf("nil custom join arm = %+v, want zero", arm)
-	}
 
-	stage := newCustomJoinBuilderStage("funnel", 2)
+	stage := newCustomJoinTestStage("funnel", 2)
 	joined := legacyJoin("funnel", stage,
 		recipeFrom(mixTestAudioSource("a", 100)).Audio(),
 		recipeFrom(mixTestAudioSource("b", 50)).Audio(),
 	).Tap(frameTapRef("funnel.frames"))
-
-	spec := joined.spec()
-	if spec.kind != "funnel" ||
-		spec.custom == nil ||
-		spec.custom.name != "funnel" ||
-		spec.custom.stage != stage ||
-		len(spec.arms) != 2 ||
-		len(spec.taps) != 1 ||
-		spec.taps[0].name != "funnel.frames" {
-		t.Fatalf("custom join spec = %+v", spec)
-	}
-	arm := joined.joinArm()
-	if arm.join == nil ||
-		arm.join.kind != "funnel" ||
-		arm.join.custom == nil ||
-		len(arm.join.taps) != 1 {
-		t.Fatalf("custom join arm = %+v", arm.join)
-	}
 
 	var got [][]int16
 	collect := Sink(SinkFunc("monitor", func(_ context.Context, msg Message) error {
@@ -127,8 +105,8 @@ func TestCustomJoinBuilderTapBranchesAndJoinArmContracts(t *testing.T) {
 	}
 }
 
-func TestCustomJoinBranchesRejectInvalidBuilder(t *testing.T) {
-	_, err := legacyJoin("bad-name", newCustomJoinBuilderStage("bad-name", 2),
+func TestCustomJoinForksRejectAnInvalidName(t *testing.T) {
+	_, err := legacyJoin("bad-name", newCustomJoinTestStage("bad-name", 2),
 		recipeFrom(mixTestAudioSource("a", 100)).Audio(),
 		recipeFrom(mixTestAudioSource("b", 50)).Audio(),
 	).Branches(

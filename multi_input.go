@@ -27,28 +27,24 @@ type inputStreamSet struct {
 // (realtime) input codec intent. Inputs whose streams cannot be known yet (for
 // example a file destination before probing) stay known=false so selection
 // validation skips them instead of guessing.
-func jobInputStreamSets(inputs []inputIntent, attachments []InputSpec, probes []format.ProbeResult) []inputStreamSet {
-	return jobInputStreamSetsFromRecipeIR(inputs, recipeIRInputsFromSpecs(attachments), probes)
-}
-
-func jobInputStreamSetsFromRecipeIR(inputs []inputIntent, inputFacts []recipeir.Input, probes []format.ProbeResult) []inputStreamSet {
+func jobInputStreamSets(inputs []recipeir.Input, probes []format.ProbeResult) []inputStreamSet {
 	sets := make([]inputStreamSet, 0, len(inputs))
 	for i := range inputs {
 		set := inputStreamSet{
-			name:   inputIntentName(inputs[i], i),
+			name:   recipeIRInputName(inputs[i], i),
 			domain: shape.DomainPacket,
 		}
 		switch {
-		case i < len(inputFacts) && inputFacts[i].SourceShape.Domain != "":
-			spec, _ := recipeIRInputSourceShape(inputFacts[i])
+		case inputs[i].SourceShape.Domain != "":
+			spec, _ := recipeIRInputSourceShape(inputs[i])
 			set.domain = spec.Domain
-			set.streams = []av.Stream{recipeIRInputDeclaredStream(inputFacts[i], spec)}
+			set.streams = []av.Stream{recipeIRInputDeclaredStream(inputs[i], spec)}
 			set.known = true
 		case i < len(probes) && len(probes[i].Streams) != 0:
 			set.streams = append([]av.Stream(nil), probes[i].Streams...)
 			set.known = true
 		case inputs[i].Realtime && inputs[i].Codec.ID != "":
-			if stream, ok := liveIntentStream(inputs[i], i); ok {
+			if stream, ok := liveInputStream(inputs[i], i); ok {
 				set.streams = []av.Stream{stream}
 				set.known = true
 			}
@@ -79,52 +75,8 @@ func recipeIRInputDeclaredStream(input recipeir.Input, spec shape.Spec) av.Strea
 	return stream
 }
 
-// inputSpecStreamSets derives the per-input stream sets straight from the input
-// specs (no probes), for callers outside the compile state such as the builder
-// and the branch-compose graph constructor.
-func inputSpecStreamSets(inputs []InputSpec) []inputStreamSet {
-	intents := make([]inputIntent, 0, len(inputs))
-	for i := range inputs {
-		intents = append(intents, inputs[i].intent())
-	}
-	return jobInputStreamSets(intents, inputs, nil)
-}
-
-func inputIntentName(input inputIntent, index int) string {
+func recipeIRInputName(input recipeir.Input, index int) string {
 	return firstNonEmpty(input.Name, input.URI, fmt.Sprintf("input-%d", index))
-}
-
-// resolveInputSetIndex resolves which input a selector binds to without
-// producing errors: the named input when narrowed, otherwise the single known
-// input whose streams match. ok=false when unknown or ambiguous.
-func resolveInputSetIndex(sets []inputStreamSet, selector av.StreamSelector, inputName string) (int, bool) {
-	if inputName != "" {
-		for i := range sets {
-			if sets[i].name == inputName {
-				return i, true
-			}
-		}
-		return 0, false
-	}
-	matched := -1
-	for i := range sets {
-		if !sets[i].known {
-			continue
-		}
-		for k := range sets[i].streams {
-			if !streamMatchesSelector(sets[i].streams[k], selector) {
-				continue
-			}
-			if matched >= 0 && matched != i {
-				return 0, false
-			}
-			matched = i
-		}
-	}
-	if matched < 0 {
-		return 0, false
-	}
-	return matched, true
 }
 
 // inputBoundStream is one selection candidate with its input attribution.
@@ -301,18 +253,4 @@ func unknownInputNameError(selector av.StreamSelector, inputName string, sets []
 		}),
 		cause: errUnsupportedBuild,
 	}
-}
-
-// jobInputName is the name a stream chain binds its input by
-// (goav.InputName, and the value grammar on several inputs).
-func jobInputName(input InputSpec, index int) string {
-	return input.inputName(fmt.Sprintf("input-%d", index))
-}
-
-func jobInputNames(inputs []InputSpec) []string {
-	names := make([]string, len(inputs))
-	for i := range inputs {
-		names[i] = jobInputName(inputs[i], i)
-	}
-	return names
 }

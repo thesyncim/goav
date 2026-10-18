@@ -1,0 +1,420 @@
+{
+  "describe": {
+    "name": "goav",
+    "nodes": [
+      {
+        "name": "vp8-1",
+        "kind": "source",
+        "detail": "custom source, domain=packet, media=video, codec=vp8"
+      },
+      {
+        "name": "composite-decode-vp8-1",
+        "kind": "stage",
+        "detail": "packets -\u003e frames, type=video"
+      },
+      {
+        "name": "video-2",
+        "kind": "source",
+        "detail": "custom source, domain=frame, media=video"
+      },
+      {
+        "name": "composite",
+        "kind": "stage"
+      },
+      {
+        "name": "video-3",
+        "kind": "source",
+        "detail": "custom source, domain=frame, media=video"
+      },
+      {
+        "name": "composite-2",
+        "kind": "stage"
+      },
+      {
+        "name": "c1",
+        "kind": "sink"
+      },
+      {
+        "name": "c2",
+        "kind": "sink"
+      }
+    ],
+    "edges": [
+      {
+        "from": "vp8-1",
+        "to": "composite-decode-vp8-1",
+        "policy": "all"
+      },
+      {
+        "from": "composite-decode-vp8-1",
+        "to": "composite",
+        "policy": "all"
+      },
+      {
+        "from": "composite-decode-vp8-1",
+        "to": "composite-2",
+        "policy": "all"
+      },
+      {
+        "from": "video-2",
+        "to": "composite",
+        "policy": "all"
+      },
+      {
+        "from": "composite",
+        "to": "c1",
+        "policy": "all"
+      },
+      {
+        "from": "video-3",
+        "to": "composite-2",
+        "policy": "all"
+      },
+      {
+        "from": "composite-2",
+        "to": "c2",
+        "policy": "all"
+      }
+    ]
+  },
+  "explain": {
+    "summary": "from 3 inputs to 2 destinations",
+    "operation": "build job",
+    "inputs": [
+      {
+        "name": "vp8-1",
+        "protocol": "custom",
+        "codec": "vp8",
+        "streams": [
+          {
+            "id": "vp8-1",
+            "index": 0,
+            "type": "video",
+            "codec": {
+              "id": "vp8",
+              "type": "video",
+              "clockRate": 90000,
+              "width": 64,
+              "height": 48
+            },
+            "name": "vp8-1"
+          }
+        ]
+      },
+      {
+        "name": "video-2",
+        "protocol": "custom",
+        "streams": [
+          {
+            "id": "video-2",
+            "index": 0,
+            "type": "video",
+            "codec": {
+              "type": "video",
+              "clockRate": 90000,
+              "width": 64,
+              "height": 48,
+              "pixelFormat": "i420"
+            },
+            "name": "video-2"
+          }
+        ]
+      },
+      {
+        "name": "video-3",
+        "protocol": "custom",
+        "streams": [
+          {
+            "id": "video-3",
+            "index": 0,
+            "type": "video",
+            "codec": {
+              "type": "video",
+              "clockRate": 90000,
+              "width": 64,
+              "height": 48,
+              "pixelFormat": "i420"
+            },
+            "name": "video-3"
+          }
+        ]
+      }
+    ],
+    "branches": [
+      {
+        "name": "vp8-1",
+        "input": "vp8-1",
+        "stream": {
+          "id": "vp8-1",
+          "type": "video",
+          "codec": "vp8",
+          "name": "vp8-1"
+        },
+        "shape": {
+          "domain": "packet",
+          "mediaKind": "video",
+          "streamID": "vp8-1",
+          "codec": "vp8",
+          "width": 64,
+          "height": 48
+        },
+        "operations": [
+          {
+            "kind": "decode",
+            "component": "vp8",
+            "detail": "packets to frames",
+            "shape": {
+              "domain": "frame",
+              "mediaKind": "video",
+              "streamID": "vp8-1",
+              "codec": "vp8",
+              "width": 64,
+              "height": 48
+            },
+            "adapter": "vp8"
+          }
+        ]
+      },
+      {
+        "name": "video-2",
+        "input": "video-2",
+        "stream": {
+          "id": "video-2",
+          "type": "video",
+          "name": "video-2"
+        },
+        "shape": {
+          "domain": "frame",
+          "mediaKind": "video",
+          "streamID": "video-2",
+          "width": 64,
+          "height": 48,
+          "pixelFormat": "i420"
+        }
+      },
+      {
+        "name": "composite",
+        "stream": {
+          "id": "composite",
+          "type": "video"
+        },
+        "shape": {
+          "domain": "frame",
+          "mediaKind": "video",
+          "streamID": "composite",
+          "width": 64,
+          "height": 48
+        },
+        "operations": [
+          {
+            "kind": "join",
+            "component": "composite",
+            "detail": "converge 2 arms",
+            "shape": {
+              "domain": "frame",
+              "mediaKind": "video",
+              "streamID": "composite",
+              "width": 64,
+              "height": 48
+            }
+          }
+        ],
+        "destinations": [
+          "c1"
+        ]
+      },
+      {
+        "name": "vp8-1",
+        "input": "vp8-1",
+        "stream": {
+          "id": "vp8-1",
+          "type": "video",
+          "codec": "vp8",
+          "name": "vp8-1"
+        },
+        "shape": {
+          "domain": "packet",
+          "mediaKind": "video",
+          "streamID": "vp8-1",
+          "codec": "vp8",
+          "width": 64,
+          "height": 48
+        },
+        "operations": [
+          {
+            "kind": "decode",
+            "component": "vp8",
+            "detail": "packets to frames",
+            "shape": {
+              "domain": "frame",
+              "mediaKind": "video",
+              "streamID": "vp8-1",
+              "codec": "vp8",
+              "width": 64,
+              "height": 48
+            },
+            "adapter": "vp8"
+          }
+        ]
+      },
+      {
+        "name": "video-3",
+        "input": "video-3",
+        "stream": {
+          "id": "video-3",
+          "type": "video",
+          "name": "video-3"
+        },
+        "shape": {
+          "domain": "frame",
+          "mediaKind": "video",
+          "streamID": "video-3",
+          "width": 64,
+          "height": 48,
+          "pixelFormat": "i420"
+        }
+      },
+      {
+        "name": "composite-2",
+        "stream": {
+          "id": "composite-2",
+          "type": "video"
+        },
+        "shape": {
+          "domain": "frame",
+          "mediaKind": "video",
+          "streamID": "composite-2",
+          "width": 64,
+          "height": 48
+        },
+        "operations": [
+          {
+            "kind": "join",
+            "component": "composite-2",
+            "detail": "converge 2 arms",
+            "shape": {
+              "domain": "frame",
+              "mediaKind": "video",
+              "streamID": "composite-2",
+              "width": 64,
+              "height": 48
+            }
+          }
+        ],
+        "destinations": [
+          "c2"
+        ]
+      }
+    ],
+    "destinations": [
+      {
+        "name": "c1",
+        "kind": "sink",
+        "branches": [
+          "composite"
+        ]
+      },
+      {
+        "name": "c2",
+        "kind": "sink",
+        "branches": [
+          "composite-2"
+        ]
+      }
+    ],
+    "requiredAdapters": [
+      {
+        "kind": "decoder",
+        "name": "vp8",
+        "codec": "vp8",
+        "media": [
+          "video"
+        ],
+        "pixelFormats": [
+          "i420"
+        ],
+        "realtime": true,
+        "requiredBy": "vp8-1",
+        "status": "available"
+      }
+    ],
+    "graph": {
+      "name": "goav",
+      "nodes": [
+        {
+          "name": "vp8-1",
+          "kind": "source",
+          "detail": "custom source, domain=packet, media=video, codec=vp8"
+        },
+        {
+          "name": "composite-decode-vp8-1",
+          "kind": "stage",
+          "detail": "packets -\u003e frames, type=video"
+        },
+        {
+          "name": "video-2",
+          "kind": "source",
+          "detail": "custom source, domain=frame, media=video"
+        },
+        {
+          "name": "composite",
+          "kind": "stage"
+        },
+        {
+          "name": "video-3",
+          "kind": "source",
+          "detail": "custom source, domain=frame, media=video"
+        },
+        {
+          "name": "composite-2",
+          "kind": "stage"
+        },
+        {
+          "name": "c1",
+          "kind": "sink"
+        },
+        {
+          "name": "c2",
+          "kind": "sink"
+        }
+      ],
+      "edges": [
+        {
+          "from": "vp8-1",
+          "to": "composite-decode-vp8-1",
+          "policy": "all"
+        },
+        {
+          "from": "composite-decode-vp8-1",
+          "to": "composite",
+          "policy": "all"
+        },
+        {
+          "from": "composite-decode-vp8-1",
+          "to": "composite-2",
+          "policy": "all"
+        },
+        {
+          "from": "video-2",
+          "to": "composite",
+          "policy": "all"
+        },
+        {
+          "from": "composite",
+          "to": "c1",
+          "policy": "all"
+        },
+        {
+          "from": "video-3",
+          "to": "composite-2",
+          "policy": "all"
+        },
+        {
+          "from": "composite-2",
+          "to": "c2",
+          "policy": "all"
+        }
+      ]
+    }
+  }
+}

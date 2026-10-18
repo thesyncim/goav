@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"slices"
 	"testing"
 
 	"github.com/thesyncim/goav"
@@ -105,228 +106,293 @@ var oracleFrameStage = component.FrameFunc("grade", func(_ context.Context, f *a
 	return emit.Frame(f)
 })
 
-// oracleCorpus is ordered by lowering path; each entry builds a fresh job.
-func oracleCorpus(t *testing.T) map[string]func() *goav.Job {
+// oracleCorpus is ordered by lowering path; each entry builds fresh Outputs.
+func oracleCorpus(t *testing.T) map[string]func() []goav.Output {
 	w := func(name string) goav.Destination { return goav.Write(name, io.Discard) }
-	// Value-grammar entries compile through the same front door Run takes.
-	outputs := func(outs ...goav.Output) *goav.Job {
-		job, err := goav.CompileOutputs(outs)
-		if err != nil {
-			t.Fatalf("compile outputs: %v", err)
-		}
-		return job
-	}
+	outs := func(outs ...goav.Output) []goav.Output { return outs }
 	webmA, webmB := mfWebM(t, 64, 48, 3, 48_000, 2, 3), mfWebM(t, 32, 24, 3, 24_000, 1, 3)
 	files := func() (goav.InputSpec, goav.InputSpec) {
 		return goav.FileInput("a.webm", bytes.NewReader(webmA)), goav.FileInput("b.webm", bytes.NewReader(webmB))
 	}
-	return map[string]func() *goav.Job{
+	twoAudio := oracleTwoAudioWebM(t)
+	return map[string]func() []goav.Output{
 		// Single stream.
-		"stream_video_transcode": func() *goav.Job {
-			return goav.From(oracleVideo()).Video().Resize(32, 24).Encode(codec.VP8()).To(w("out.webm"))
+		"stream_video_transcode": func() []goav.Output {
+			return outs(oracleVideo().Video().Resize(32, 24).Encode(codec.VP8()).To(w("out.webm")))
 		},
-		"stream_audio_resample_encode": func() *goav.Job {
-			return goav.From(oracleAudio44()).Audio().Resample(48_000, 2).Encode(codec.Opus()).To(oracleSink("packets"))
+		"stream_audio_resample_encode": func() []goav.Output {
+			return outs(oracleAudio44().Audio().Resample(48_000, 2).Encode(codec.Opus()).To(oracleSink("packets")))
 		},
-		"stream_audio_auto_resample": func() *goav.Job {
-			return goav.From(oracleAudio44()).Audio().Auto(shape.AllowResample()).Encode(codec.Opus()).To(oracleSink("packets"))
+		"stream_audio_auto_resample": func() []goav.Output {
+			return outs(oracleAudio44().Audio().Auto(shape.AllowResample()).Encode(codec.Opus()).To(oracleSink("packets")))
 		},
-		"stream_decode_to_sink": func() *goav.Job {
-			return goav.From(oracleVP8()).Video().Decode().To(oracleSink("frames"))
+		"stream_decode_to_sink": func() []goav.Output {
+			return outs(oracleVP8().Video().Decode().To(oracleSink("frames")))
 		},
-		"stream_custom_stage_tap": func() *goav.Job {
-			return goav.From(oracleVideo()).Video().Do(oracleFrameStage).Tap(goav.FrameTap("graded")).Encode(codec.VP8()).To(w("out.webm"))
+		"stream_custom_stage_tap": func() []goav.Output {
+			return outs(oracleVideo().Video().Do(oracleFrameStage).Tap("graded").Encode(codec.VP8()).To(w("out.webm")))
 		},
-		"stream_playout": func() *goav.Job {
-			return goav.From(oracleVideo()).Video().Playout(flow.Playout("screen")).To(oracleSink("screen"))
+		"stream_playout": func() []goav.Output {
+			return outs(oracleVideo().Video().Playout(flow.Playout("screen")).To(oracleSink("screen")))
 		},
-		"stream_sync": func() *goav.Job {
-			return goav.From(oracleAudio()).Audio().Sync(flow.Sync("lip")).To(oracleSink("speaker"))
+		"stream_sync": func() []goav.Output {
+			return outs(oracleAudio().Audio().Sync(flow.Sync("lip")).To(oracleSink("speaker")))
 		},
-		"stream_encode_playout": func() *goav.Job {
-			return goav.From(oracleVideo()).Video().Encode(codec.VP8()).Playout(flow.Playout("rtp")).To(oracleSink("rtp"))
+		"stream_encode_playout": func() []goav.Output {
+			return outs(oracleVideo().Video().Encode(codec.VP8()).Playout(flow.Playout("rtp")).To(oracleSink("rtp")))
 		},
-		"stream_encode_packet_stage": func() *goav.Job {
-			return goav.From(oracleVideo()).Video().Encode(codec.VP8()).Do(oraclePacketStage).To(w("out.webm"))
+		"stream_encode_packet_stage": func() []goav.Output {
+			return outs(oracleVideo().Video().Encode(codec.VP8()).Do(oraclePacketStage).To(w("out.webm")))
 		},
 		// Packet copy.
-		"copy_packet_stage": func() *goav.Job {
-			return goav.From(oracleMP4(t)).Video().Copy().Do(oraclePacketStage).To(w("out.mkv"))
+		"copy_packet_stage": func() []goav.Output {
+			return outs(oracleMP4(t).Video().Do(oraclePacketStage).To(w("out.mkv")))
 		},
-		"copy_remux_all": func() *goav.Job {
-			return goav.From(oracleMP4(t)).Copy().To(w("out.mkv"))
+		"copy_remux_all": func() []goav.Output {
+			return outs(oracleMP4(t).To(w("out.mkv")))
 		},
-		"copy_selected_stream": func() *goav.Job {
-			return goav.From(oracleMP4(t)).Video().Copy().To(w("out.mkv"))
+		"copy_selected_stream": func() []goav.Output {
+			return outs(oracleMP4(t).Video().To(w("out.mkv")))
 		},
-		// Multi-stream jobs.
-		"multi_av_one_file": func() *goav.Job {
-			out := w("out.mkv")
-			return goav.From(oracleMP4(t)).Video().Copy().To(out).Audio().Copy().To(out)
+		"branches_copy_fanout": func() []goav.Output {
+			return outs(oracleMP4(t).Video().To(w("a.mkv"), w("b.mkv")))
 		},
-		"multi_two_inputs_one_mux": func() *goav.Job {
+		"stream_copy_playout": func() []goav.Output {
+			return outs(oracleMP4(t).Video().Playout(flow.Playout("p")).To(oracleSink("p")))
+		},
+		// Several streams.
+		"multi_av_one_file": func() []goav.Output {
+			in, out := oracleMP4(t), w("out.mkv")
+			return outs(in.Video().To(out), in.Audio().To(out))
+		},
+		"multi_two_inputs_one_mux": func() []goav.Output {
 			out := w("call.webm")
-			return goav.From(oracleVideo(), oracleAudio()).
-				Video().Encode(codec.VP8()).To(out).
-				Audio().Encode(codec.Opus()).To(out)
+			return outs(oracleVideo().Video().Encode(codec.VP8()).To(out), oracleAudio().Audio().Encode(codec.Opus()).To(out))
 		},
-		"multi_files_transcode": func() *goav.Job {
+		"branches_plain_beside": func() []goav.Output {
+			in, a := oracleMP4(t), w("a.mkv")
+			return outs(in.Video().To(a, w("b.mkv")), in.Audio().To(a))
+		},
+		"multi_files_transcode": func() []goav.Output {
 			a, b := files()
-			return outputs(
+			return outs(
 				a.Video().Decode().Encode(codec.VP9()).To(w("x.webm")),
 				b.Video().Decode().Encode(codec.VP9()).To(w("y.webm")),
 			)
 		},
-		"multi_files_copy_one_mux": func() *goav.Job {
+		"multi_files_copy_one_mux": func() []goav.Output {
 			a, b := files()
 			out := w("m.webm")
-			return outputs(a.Video().To(out), b.Video().To(out), b.Audio().To(out))
+			return outs(a.Video().To(out), b.Video().To(out), b.Audio().To(out))
 		},
-		"multi_files_remux": func() *goav.Job {
+		"multi_files_remux": func() []goav.Output {
 			a, b := files()
 			out := w("r.webm")
-			return outputs(a.To(out), b.To(out))
+			return outs(a.To(out), b.To(out))
 		},
-		"multi_file_and_source": func() *goav.Job {
+		"multi_file_and_source": func() []goav.Output {
 			a, _ := files()
 			out := w("o.webm")
-			return outputs(a.Video().To(out), oracleAudio().Audio().Encode(codec.Opus()).To(out))
+			return outs(a.Video().To(out), oracleAudio().Audio().Encode(codec.Opus()).To(out))
 		},
-		// Branches.
-		"branches_ladder": func() *goav.Job {
-			return goav.From(oracleVideo()).Video().Branches(
-				goav.Branch("hd").Resize(64, 48).Encode(codec.VP8()).To(w("hd.webm")),
-				goav.Branch("sd").Resize(32, 24).Encode(codec.VP8()).To(w("sd.webm")),
+		// Forks.
+		"branches_ladder": func() []goav.Output {
+			v := oracleVideo().Video()
+			return outs(
+				v.Resize(64, 48).Encode(codec.VP8()).As("hd").To(w("hd.webm")),
+				v.Resize(32, 24).Encode(codec.VP8()).As("sd").To(w("sd.webm")),
 			)
 		},
-		"branches_copy_fanout": func() *goav.Job {
-			return goav.From(oracleMP4(t)).Video().Copy().Branches(
-				goav.Branch("a").To(w("a.mkv")),
-				goav.Branch("b").To(w("b.mkv")),
+		"branches_buffered": func() []goav.Output {
+			v := oracleVideo().Video()
+			return outs(
+				v.Buffer(flow.DropOldest(4)).Encode(codec.VP8()).As("live").To(w("live.webm")),
+				v.Buffer(flow.Blocking(8)).Encode(codec.VP8()).As("archive").To(w("archive.webm")),
 			)
 		},
-		"branches_buffered": func() *goav.Job {
-			return goav.From(oracleVideo()).Video().Branches(
-				goav.Branch("live").Buffer(flow.DropOldest(4)).Encode(codec.VP8()).To(w("live.webm")),
-				goav.Branch("archive").Buffer(flow.Blocking(8)).Encode(codec.VP8()).To(w("archive.webm")),
-			)
-		},
-		"branches_plain_beside": func() *goav.Job {
-			a := w("a.mkv")
-			return goav.From(oracleMP4(t)).
-				Video().Copy().Branches(goav.Branch("a").To(a), goav.Branch("b").To(w("b.mkv"))).
-				Audio().Copy().To(a)
-		},
-		"branches_on_rule": func() *goav.Job {
-			return goav.From(oracleMP4(t)).Video().Copy().To(w("video.mkv")).OnStream(source.MatchMedia(av.MediaAudio),
-				goav.Branch("rec").Copy().To(w("rec.mkv")))
+		"branches_on_rule": func() []goav.Output {
+			in := oracleMP4(t)
+			return outs(in.Video().To(w("video.mkv")), in.OnStream(source.MatchMedia(av.MediaAudio)).As("rec").To(w("rec.mkv")))
 		},
 		// Forks across several inputs: each input's forks share its own select,
 		// decode, and steps.
-		"forks_two_inputs": func() *goav.Job {
+		"forks_two_inputs": func() []goav.Output {
 			v := oracleVideo().Video()
 			hd, sd := w("hd.webm"), w("sd.webm")
-			return outputs(
+			return outs(
 				v.Encode(codec.VP8()).As("hd").To(hd),
 				v.Resize(32, 24).Encode(codec.VP8()).As("sd").To(sd),
 				oracleAudio().Audio().Encode(codec.Opus()).To(hd, sd),
 			)
 		},
-		"forks_two_files": func() *goav.Job {
+		"forks_two_files": func() []goav.Output {
 			a, b := files()
 			av, bv := a.Video().Decode().Resize(32, 24), b.Video().Decode().Resize(32, 24)
-			return outputs(
+			return outs(
 				av.Encode(codec.VP8()).As("a-vp8").To(w("a-vp8.webm")),
 				av.Encode(codec.VP9()).As("a-vp9").To(w("a-vp9.webm")),
 				bv.Encode(codec.VP8()).As("b-vp8").To(w("b-vp8.webm")),
 				bv.Encode(codec.VP9()).As("b-vp9").To(w("b-vp9.webm")),
 			)
 		},
-		"named_stream_two_files": func() *goav.Job {
-			a, b := files()
-			out := w("o.webm")
-			return outputs(a.Video().Decode().Encode(codec.VP8()).As("cam").To(out), b.Audio().To(out))
-		},
-		// Joins.
-		"join_mix_sink": func() *goav.Job {
-			return goav.LegacyMix(goav.From(oracleAudio()).Audio(), goav.From(oracleAudio44()).Audio()).To(oracleSink("mixed"))
-		},
-		"join_mix_encode": func() *goav.Job {
-			return goav.LegacyMix(goav.From(oracleAudio()).Audio(), goav.From(oracleAudio()).Audio()).Encode(codec.Opus()).To(w("mix.webm"))
-		},
-		"join_composite_regions": func() *goav.Job {
-			return goav.LegacyComposite(
-				goav.From(oracleVideo()).Video(),
-				goav.From(oracleVideoSized(16, 16)).Video().Region(8, 8),
-			).Encode(codec.VP8()).To(w("pip.webm"))
-		},
-		"join_select": func() *goav.Job {
-			return goav.LegacySelect(goav.From(oracleAudio()).Audio(), goav.From(oracleAudio()).Audio()).To(oracleSink("active"))
-		},
-		"join_nested_mix": func() *goav.Job {
-			inner := goav.LegacyMix(goav.From(oracleAudio()).Audio(), goav.From(oracleAudio()).Audio())
-			return goav.LegacyMix(inner, goav.From(oracleAudio()).Audio()).To(oracleSink("mixed"))
-		},
-		"join_tap_arm": func() *goav.Job {
-			return goav.LegacyMix(
-				goav.From(oracleAudio()).Audio().Tap(goav.FrameTap("dry")),
-				goav.FrameTap("dry"),
-			).To(oracleSink("mixed"))
-		},
-		"join_branches": func() *goav.Job {
-			return goav.LegacyMix(goav.From(oracleAudio()).Audio(), goav.From(oracleAudio()).Audio()).Branches(
-				goav.Branch("room").Encode(codec.Opus()).To(w("room.webm")),
-				goav.Branch("monitor").To(oracleSink("monitor")),
+		// Work shared below the first fork runs once.
+		"forks_deep_shared": func() []goav.Output {
+			v := oracleVideo().Video()
+			sd := v.Resize(32, 24)
+			return outs(
+				v.Encode(codec.VP8()).As("hd").To(w("hd.webm")),
+				sd.Encode(codec.VP8()).As("sd-vp8").To(w("sd-vp8.webm")),
+				sd.Encode(codec.VP9()).As("sd-vp9").To(w("sd-vp9.webm")),
 			)
 		},
-		"join_custom": func() *goav.Job {
-			return goav.LegacyJoin("ducker", component.FrameFunc("ducker", func(_ context.Context, f *av.Frame, emit component.Emit) error { return emit.Frame(f) }), goav.From(oracleAudio()).Audio(), goav.From(oracleAudio()).Audio()).To(oracleSink("ducked"))
+		"joins_share_decoded_arm": func() []goav.Output {
+			d := oracleVP8().Video().Decode()
+			return outs(goav.Composite(d, oracleVideo().Video()).To(oracleSink("c1")), goav.Composite(d, oracleVideoSized(64, 48).Video()).To(oracleSink("c2")))
 		},
-		"join_mix_files": func() *goav.Job {
+		"fork_tap_after_shared_encode": func() []goav.Output {
+			e := oracleAudio().Audio().Encode(codec.Opus())
+			return outs(e.As("a").To(oracleSink("a")), e.Tap("enc").As("b").To(oracleSink("b")))
+		},
+		"named_stream_two_files": func() []goav.Output {
 			a, b := files()
-			return outputs(goav.Mix(a.Audio().Decode(), b.Audio().Decode()).Encode(codec.Opus()).To(w("mix.webm")))
+			out := w("o.webm")
+			return outs(a.Video().Decode().Encode(codec.VP8()).As("cam").To(out), b.Audio().To(out))
 		},
-		"join_composite_files": func() *goav.Job {
+		// Joins.
+		"join_mix_sink": func() []goav.Output {
+			return outs(goav.Mix(oracleAudio().Audio(), oracleAudio44().Audio()).To(oracleSink("mixed")))
+		},
+		"join_mix_encode": func() []goav.Output {
+			return outs(goav.Mix(oracleAudio().Audio(), oracleAudio().Audio()).Encode(codec.Opus()).To(w("mix.webm")))
+		},
+		"join_composite_regions": func() []goav.Output {
+			return outs(goav.Composite(oracleVideo().Video(), goav.At(oracleVideoSized(16, 16).Video(), 8, 8)).Encode(codec.VP8()).To(w("pip.webm")))
+		},
+		"join_select": func() []goav.Output {
+			return outs(goav.Select(oracleAudio().Audio(), oracleAudio().Audio()).To(oracleSink("active")))
+		},
+		"join_nested_mix": func() []goav.Output {
+			inner := goav.Mix(oracleAudio().Audio(), oracleAudio().Audio())
+			return outs(goav.Mix(inner, oracleAudio().Audio()).To(oracleSink("mixed")))
+		},
+		"join_branches": func() []goav.Output {
+			m := goav.Mix(oracleAudio().Audio(), oracleAudio().Audio())
+			return outs(m.Encode(codec.Opus()).As("room").To(w("room.webm")), m.As("monitor").To(oracleSink("monitor")))
+		},
+		"join_custom": func() []goav.Output {
+			stage := component.FrameFunc("ducker", func(_ context.Context, f *av.Frame, emit component.Emit) error { return emit.Frame(f) })
+			return outs(goav.Join("ducker", stage, oracleAudio().Audio(), oracleAudio().Audio()).To(oracleSink("ducked")))
+		},
+		"join_mix_files": func() []goav.Output {
 			a, b := files()
-			return outputs(goav.Composite(a.Video().Decode(), goav.At(b.Video().Decode(), 40, 30)).Encode(codec.VP8()).To(w("pip.webm")))
+			return outs(goav.Mix(a.Audio().Decode(), b.Audio().Decode()).Encode(codec.Opus()).To(w("mix.webm")))
 		},
-		"join_mix_source_then_file": func() *goav.Job {
+		"join_composite_files": func() []goav.Output {
+			a, b := files()
+			return outs(goav.Composite(a.Video().Decode(), goav.At(b.Video().Decode(), 40, 30)).Encode(codec.VP8()).To(w("pip.webm")))
+		},
+		"join_mix_source_then_file": func() []goav.Output {
 			a, _ := files()
-			return outputs(goav.Mix(oracleAudio44().Audio(), a.Audio().Decode()).To(oracleSink("mixed")))
+			return outs(goav.Mix(oracleAudio44().Audio(), a.Audio().Decode()).To(oracleSink("mixed")))
+		},
+		// A join is a stream like any other: beside other streams, twice in
+		// one run, tapped anywhere, and fed by a stream other work reads too.
+		"join_beside_stream": func() []goav.Output {
+			return outs(goav.Mix(oracleAudio().Audio(), oracleAudio().Audio()).To(oracleSink("mixed")), oracleVideo().Video().To(oracleSink("video")))
+		},
+		"joins_two": func() []goav.Output {
+			return outs(
+				goav.Mix(oracleAudio().Audio(), oracleAudio().Audio()).To(oracleSink("m1")),
+				goav.Mix(oracleAudio().Audio(), oracleAudio().Audio()).To(oracleSink("m2")),
+			)
+		},
+		"join_tap_after_encode": func() []goav.Output {
+			return outs(goav.Mix(oracleAudio().Audio(), oracleAudio().Audio()).Encode(codec.Opus()).Tap("mixed").To(w("mix.webm")))
+		},
+		"join_arm_shared_input": func() []goav.Output {
+			dry := oracleAudio().Audio()
+			return outs(goav.Mix(dry, oracleAudio().Audio()).To(oracleSink("mixed")), dry.To(oracleSink("dry")))
 		},
 		// Refusals.
-		"error_frames_into_mux": func() *goav.Job {
-			return goav.From(oracleVP8()).Video().Decode().To(w("out.webm"))
+		"error_frames_into_mux": func() []goav.Output {
+			return outs(oracleVP8().Video().Decode().To(w("out.webm")))
 		},
-		"error_resize_after_copy": func() *goav.Job {
-			return goav.From(oracleMP4(t)).Video().Copy().Resize(32, 24).To(w("out.mkv"))
+		"error_resize_after_copy": func() []goav.Output {
+			return outs(oracleMP4(t).Video().Resize(32, 24).To(w("out.mkv")))
 		},
-		"error_write_without_format": func() *goav.Job {
-			return goav.From(oracleVideo()).Video().Encode(codec.VP8()).To(goav.Write("out", io.Discard))
+		"error_write_without_format": func() []goav.Output {
+			return outs(oracleVideo().Video().Encode(codec.VP8()).To(goav.Write("out", io.Discard)))
 		},
-		"error_ambiguous_audio": func() *goav.Job {
-			return goav.From(oracleAudio(), oracleAudio()).Audio().Decode().To(oracleSink("frames"))
+		"error_ambiguous_audio": func() []goav.Output {
+			return outs(goav.FileInput("two.webm", bytes.NewReader(twoAudio)).Audio().Decode().To(oracleSink("frames")))
 		},
-		"error_unknown_tap_arm": func() *goav.Job {
-			return goav.LegacyMix(goav.From(oracleAudio()).Audio(), goav.FrameTap("nope")).To(oracleSink("mixed"))
+		"error_mix_one_arm": func() []goav.Output {
+			return outs(goav.Mix(oracleAudio().Audio()).To(oracleSink("mixed")))
 		},
-		"error_mix_one_arm": func() *goav.Job {
-			return goav.LegacyMix(goav.From(oracleAudio()).Audio()).To(oracleSink("mixed"))
-		},
-		"stream_copy_playout": func() *goav.Job {
-			return goav.From(oracleMP4(t)).Video().Copy().Playout(flow.Playout("p")).To(oracleSink("p"))
-		},
-		"error_stage_after_encode": func() *goav.Job {
-			return goav.From(oracleVideo()).Video().Encode(codec.VP8()).Do(oracleFrameStage).To(oracleSink("s"))
-		},
-		"error_stream_beside_join": func() *goav.Job {
-			job := goav.LegacyMix(goav.From(oracleAudio()).Audio(), goav.From(oracleAudio()).Audio()).To(oracleSink("mixed"))
-			return job.And(oracleVideo()).Video().To(oracleSink("video"))
-		},
-		"error_region_outside_composite": func() *goav.Job {
-			return goav.From(oracleVideo()).Video().Region(4, 4).To(oracleSink("s"))
+		"error_stage_after_encode": func() []goav.Output {
+			return outs(oracleVideo().Video().Encode(codec.VP8()).Do(oracleFrameStage).To(oracleSink("s")))
 		},
 	}
+}
+
+// oracleTwoAudioWebM is a WebM carrying two audio tracks, so an unnarrowed
+// .Audio() is ambiguous.
+func oracleTwoAudioWebM(t *testing.T) []byte {
+	t.Helper()
+	var out bytes.Buffer
+	file := goav.Write("two.webm", &out)
+	mfRun(t,
+		mfTone(48_000, 2, 3).With(goav.Name("en")).Audio().Encode(codec.Opus()).As("en").To(file),
+		mfTone(48_000, 2, 3).With(goav.Name("es")).Audio().Encode(codec.Opus()).As("es").To(file),
+	)
+	return out.Bytes()
+}
+
+// oracleExpectedGraphs are the graphs the shapes the one compiler opens are
+// expected to plan, written by hand before it landed: node names in schedule
+// order and edges grouped by producer. oraclePending lists the ones the
+// compiler still refuses, with the refusal code they carry.
+var oracleExpectedGraphs = map[string]struct {
+	nodes []string
+	edges []string
+}{
+	"join_beside_stream": {
+		nodes: []string{"video-3", "audio-1", "audio-2", "mix", "select-video@video-3", "mixed", "video"},
+		edges: []string{"video-3>select-video@video-3", "audio-1>mix", "audio-2>mix", "mix>mixed", "select-video@video-3>video"},
+	},
+	"joins_two": {
+		nodes: []string{"audio-1", "audio-2", "mix", "audio-3", "audio-4", "mix-2", "m1", "m2"},
+		edges: []string{"audio-1>mix", "audio-2>mix", "mix>m1", "audio-3>mix-2", "audio-4>mix-2", "mix-2>m2"},
+	},
+	"join_tap_after_encode": {
+		nodes: []string{"audio-1", "audio-2", "mix", "encode-mix", "mix.webm"},
+		edges: []string{"audio-1>mix", "audio-2>mix", "mix>encode-mix", "encode-mix>mix.webm"},
+	},
+	"join_arm_shared_input": {
+		nodes: []string{"audio-1", "select-audio@audio-1", "audio-2", "mix", "mixed", "dry"},
+		edges: []string{"audio-1>select-audio@audio-1", "select-audio@audio-1>mix", "select-audio@audio-1>dry", "audio-2>mix", "mix>mixed"},
+	},
+	"forks_deep_shared": {
+		nodes: []string{"video-1", "select-video", "encode-hd", "resize-video", "encode-sd-vp8", "encode-sd-vp9", "hd.webm", "sd-vp8.webm", "sd-vp9.webm"},
+		edges: []string{"video-1>select-video", "select-video>encode-hd", "select-video>resize-video", "encode-hd>hd.webm", "resize-video>encode-sd-vp8", "resize-video>encode-sd-vp9", "encode-sd-vp8>sd-vp8.webm", "encode-sd-vp9>sd-vp9.webm"},
+	},
+}
+
+// oraclePending maps each expected shape the compiler does not plan yet to
+// the refusal code it raises today; an empty code means it plans, but not
+// the expected graph yet.
+var oraclePending = map[string]string{}
+
+func oracleGraph(spec pipeline.Spec) ([]string, []string) {
+	nodes := make([]string, 0, len(spec.Nodes))
+	for _, node := range spec.Nodes {
+		nodes = append(nodes, node.Name)
+	}
+	edges := make([]string, 0, len(spec.Edges))
+	for _, edge := range spec.Edges {
+		edges = append(edges, edge.From.String()+">"+edge.To.String())
+	}
+	return nodes, edges
 }
 
 func TestCompilerOracle(t *testing.T) {
@@ -335,13 +401,13 @@ func TestCompilerOracle(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			var result oracleResult
 			oracleSeq = 0
-			if spec, err := build().UseRuntime(offlineRuntime()).Describe(); err != nil {
+			if spec, err := offlineRuntime().Describe(build()...); err != nil {
 				result.DescribeError = oracleErrorFrom(err)
 			} else {
 				result.Describe = &spec
 			}
 			oracleSeq = 0
-			if task, err := build().UseRuntime(offlineRuntime()).BuildLive(ctx); err != nil {
+			if task, err := offlineRuntime().Build(ctx, build()...); err != nil {
 				result.BuildError = oracleErrorFrom(err)
 			} else {
 				// Describe is the graph Build makes: the same nodes and edges.
@@ -353,10 +419,26 @@ func TestCompilerOracle(t *testing.T) {
 				task.Close()
 			}
 			oracleSeq = 0
-			if report, err := build().UseRuntime(offlineRuntime()).Explain(ctx); err != nil {
+			if report, err := offlineRuntime().Explain(ctx, build()...); err != nil {
 				result.ExplainError = oracleErrorFrom(err)
 			} else {
 				result.Explain = &report
+			}
+			if expected, ok := oracleExpectedGraphs[name]; ok {
+				code, pending := oraclePending[name]
+				switch {
+				case pending && code != "":
+					if result.DescribeError == nil || result.DescribeError.Code != code {
+						t.Errorf("pending shape %s: Describe = %+v, want refusal %s", name, result.DescribeError, code)
+					}
+				case result.Describe == nil:
+					t.Errorf("shape %s refused: %+v", name, result.DescribeError)
+				default:
+					nodes, edges := oracleGraph(*result.Describe)
+					if !pending && (!slices.Equal(nodes, expected.nodes) || !slices.Equal(edges, expected.edges)) {
+						t.Errorf("shape %s graph:\n nodes %q\n edges %q\nwant\n nodes %q\n edges %q", name, nodes, edges, expected.nodes, expected.edges)
+					}
+				}
 			}
 			assertGolden(t, "oracle/"+name+".json", marshalGolden(t, result))
 		})

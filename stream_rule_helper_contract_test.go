@@ -8,7 +8,6 @@ import (
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
-	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/shape"
 )
 
@@ -167,28 +166,5 @@ func TestSourceEventDomainContracts(t *testing.T) {
 				t.Fatalf("sourceEventDomain() = %s, want %s", got, tt.want)
 			}
 		})
-	}
-}
-
-func TestBranchSpecForDiscoveredStreamClonesAndAnchors(t *testing.T) {
-	dest := Sink(SinkFunc("monitor", func(context.Context, Message) error { return nil }))
-	spec := newBranch("watch").Copy().To(dest)
-	stream := av.Stream{ID: "late", Type: av.MediaVideo, Codec: av.CodecParameters{ID: av.CodecVP8, Type: av.MediaVideo}}
-
-	got := branchSpecForDiscoveredStream(spec, "source", shape.DomainFrame, stream)
-	if got.name != "watch-late" ||
-		got.source.from != "source" ||
-		got.source.policy != pipeline.RouteByStream ||
-		got.source.label != "late" ||
-		got.source.streamDomain != shape.DomainFrame ||
-		got.source.stream == nil ||
-		got.source.stream.ID != stream.ID {
-		t.Fatalf("anchored branch = %+v", got)
-	}
-
-	stream.ID = "mutated"
-	spec.destinations[0].dest.name = "mutated"
-	if got.source.stream.ID != "late" || got.destinations[0].dest.name == "mutated" {
-		t.Fatalf("branch was not cloned defensively: stream=%+v destinations=%+v", got.source.stream, got.destinations)
 	}
 }

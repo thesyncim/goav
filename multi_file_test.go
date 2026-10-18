@@ -247,7 +247,7 @@ func TestDescribeFileJoinOpensNothing(t *testing.T) {
 	for _, node := range spec.Nodes {
 		nodes = append(nodes, node.Name)
 	}
-	want := []string{"a.webm", "mix-select-a.webm", "mix-decode-a.webm", "mix-conform-a.webm", "b.webm", "mix-select-b.webm", "mix-decode-b.webm", "mix-conform-b.webm", "mix", "encode-mix-encode", "m.webm"}
+	want := []string{"a.webm", "mix-select-a.webm", "mix-decode-a.webm", "mix-conform-a.webm", "b.webm", "mix-select-b.webm", "mix-decode-b.webm", "mix-conform-b.webm", "mix", "encode-mix", "m.webm"}
 	if !slices.Equal(nodes, want) {
 		t.Fatalf("nodes = %v, want %v", nodes, want)
 	}

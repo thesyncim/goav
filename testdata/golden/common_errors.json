@@ -1,16 +1,15 @@
 [
   {
-    "name": "unconstructed-job",
+    "name": "zero-stream",
     "error": {
       "phase": "build",
-      "family": "compiler",
-      "code": "job_invalid",
-      "operation": "build job",
-      "reason": "empty job",
+      "family": "stream",
+      "code": "stream_invalid",
+      "operation": "build recipe",
+      "reason": "the stream is the zero Stream: start from an input (input.Video(), input.Audio()) or a join (goav.Mix(...))",
       "fixes": [
-        "start the recipe from an input: input.Video() or input.Audio()",
-        "use goav.FileInput(\"in.webm\", reader) for reader-backed input",
-        "use goav.Source(name, shape, fn) for application-pushed input"
+        "start each stream from an input or a join: input.Video(), input.Audio(), goav.Mix(a, b)",
+        "route every stream with .To(destination) and pass the Outputs to rt.Run(ctx, outputs...)"
       ]
     }
   },
@@ -18,12 +17,13 @@
     "name": "input-missing",
     "error": {
       "phase": "build",
-      "family": "input",
-      "code": "input_missing",
-      "operation": "build job",
-      "reason": "no input is configured",
+      "family": "stream",
+      "code": "stream_invalid",
+      "operation": "build recipe",
+      "reason": "the stream's input was not constructed: use goav.FileInput, goav.Input, or goav.Source",
       "fixes": [
-        "start the recipe from an input: goav.FileInput(\"in.webm\", reader).Video()"
+        "start each stream from an input or a join: input.Video(), input.Audio(), goav.Mix(a, b)",
+        "route every stream with .To(destination) and pass the Outputs to rt.Run(ctx, outputs...)"
       ]
     }
   },
@@ -54,48 +54,13 @@
     }
   },
   {
-    "name": "copy-after-decode",
-    "error": {
-      "phase": "build",
-      "family": "transform",
-      "code": "operation_shape_mismatch",
-      "operation": "build job",
-      "node": "video",
-      "reason": "packet-copy cannot consume the current media shape",
-      "details": [
-        {
-          "key": "operation_index",
-          "value": "1"
-        },
-        {
-          "key": "operation",
-          "value": "copy"
-        },
-        {
-          "key": "expected_shape",
-          "value": "domain=packet"
-        },
-        {
-          "key": "actual_shape",
-          "value": "domain=frame media=video"
-        }
-      ],
-      "fixes": [
-        "copy only consumes packet-domain media",
-        "leave out .Decode() to copy, or attach from a packet tap (before .Decode())",
-        "use .Encode(codec...) to turn decoded frames back into packets",
-        "use a sink destination when the branch should remain decoded"
-      ]
-    }
-  },
-  {
-    "name": "resize-on-copy",
+    "name": "resize-on-packets",
     "error": {
       "phase": "build",
       "family": "transform",
       "code": "operation_shape_mismatch",
       "operation": "build stream",
-      "node": "video",
+      "node": "thumb",
       "reason": "resize needs decoded frames, but a stream without .Decode() copies its packets",
       "details": [
         {
@@ -114,35 +79,6 @@
         "call .Decode() before .Resize(...), .Resample(...), or .Do(...) — transforms run on decoded frames",
         "remove the processing step to keep a pure packet copy",
         "reuse the Stream to fork a packet copy and a processed stream: s.To(copy), s.Decode()...To(out)"
-      ]
-    }
-  },
-  {
-    "name": "packet-tap-at-frame",
-    "error": {
-      "phase": "build",
-      "family": "tap",
-      "code": "tap_domain_mismatch",
-      "operation": "build stream",
-      "node": "video",
-      "reason": "tap domain does not match this stream point",
-      "details": [
-        {
-          "key": "tap",
-          "value": "frames"
-        },
-        {
-          "key": "wanted",
-          "value": "packet"
-        },
-        {
-          "key": "actual",
-          "value": "frame"
-        }
-      ],
-      "fixes": [
-        "move .Tap(name) after decode, resize, resample, or custom frame stages to tap frames",
-        "move .Tap(name) before .Decode() or after an encoder to tap packets"
       ]
     }
   },

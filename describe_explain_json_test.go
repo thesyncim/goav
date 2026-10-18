@@ -15,6 +15,7 @@ import (
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/component"
 	"github.com/thesyncim/goav/plan"
+	runconfig "github.com/thesyncim/goav/runconfig"
 	"github.com/thesyncim/goav/shape"
 	"github.com/thesyncim/goav/source"
 )
@@ -25,8 +26,8 @@ import (
 // fallback, not the machine surface. Regenerate the goldens with
 // GOAV_UPDATE_GOLDEN=1 go test -run 'GoldenJSON'.
 
-func describeJSONRecipe() *goav.Job {
-	return goav.From(goav.FileInput("input.webm", strings.NewReader(""))).
+func describeJSONRecipe() goav.Output {
+	return goav.FileInput("input.webm", strings.NewReader("")).
 		Video().
 		Decode().
 		Resize(1280, 720).
@@ -34,15 +35,14 @@ func describeJSONRecipe() *goav.Job {
 		To(goav.Write("preview.webm", new(bytes.Buffer)))
 }
 
-func explainJSONRecipe() *goav.Job {
+func explainJSONRecipe() goav.Output {
 	sink := goav.Sink(component.SinkFunc("packets", func(context.Context, component.Message) error {
 		return nil
 	}))
 	input := goav.Source("audio-1", shape.Frame(av.MediaAudio, shape.Audio(44_100, 1, av.SampleFormatS16)), func(context.Context, source.Push) error {
 		return nil
 	})
-	return goav.From(input).
-		UseRuntime(bundle.MustNew()).
+	return input.
 		Audio().
 		Resample(48_000, 2).
 		Encode(codec.Opus(codec.Bitrate(96_000))).
@@ -50,7 +50,7 @@ func explainJSONRecipe() *goav.Job {
 }
 
 func TestDescribeGoldenJSON(t *testing.T) {
-	spec, err := describeJSONRecipe().Describe()
+	spec, err := mustRuntime(runconfig.WithRealtime(true)).Describe(describeJSONRecipe())
 	if err != nil {
 		t.Fatalf("Describe: %v", err)
 	}
@@ -69,7 +69,7 @@ func TestDescribeGoldenJSON(t *testing.T) {
 }
 
 func TestExplainGoldenJSON(t *testing.T) {
-	report, err := explainJSONRecipe().Explain(context.Background())
+	report, err := bundle.MustNew().Explain(context.Background(), explainJSONRecipe())
 	if err != nil {
 		t.Fatalf("Explain: %v", err)
 	}
@@ -125,14 +125,14 @@ func assertOperationConfig(t *testing.T, operations []plan.Operation, where stri
 // TestDescribeExplainJSONIsStable proves the encodings are deterministic, so a
 // machine consumer (or a golden) can rely on byte-stable output.
 func TestDescribeExplainJSONIsStable(t *testing.T) {
-	spec, err := describeJSONRecipe().Describe()
+	spec, err := mustRuntime(runconfig.WithRealtime(true)).Describe(describeJSONRecipe())
 	if err != nil {
 		t.Fatalf("Describe: %v", err)
 	}
 	if a, b := marshalGolden(t, spec), marshalGolden(t, spec); !bytes.Equal(a, b) {
 		t.Fatalf("Describe JSON is not stable across marshals")
 	}
-	report, err := explainJSONRecipe().Explain(context.Background())
+	report, err := bundle.MustNew().Explain(context.Background(), explainJSONRecipe())
 	if err != nil {
 		t.Fatalf("Explain: %v", err)
 	}

@@ -1,0 +1,402 @@
+{
+  "describe": {
+    "name": "goav",
+    "nodes": [
+      {
+        "name": "audio-1",
+        "kind": "source",
+        "detail": "custom source, domain=frame, media=audio"
+      },
+      {
+        "name": "select-audio",
+        "kind": "stage",
+        "detail": "select, type=audio"
+      },
+      {
+        "name": "encode-audio",
+        "kind": "stage",
+        "detail": "frames -\u003e packets, codec=opus"
+      },
+      {
+        "name": "a",
+        "kind": "sink"
+      },
+      {
+        "name": "b",
+        "kind": "sink"
+      }
+    ],
+    "edges": [
+      {
+        "from": "audio-1",
+        "to": "select-audio",
+        "policy": "all"
+      },
+      {
+        "from": "select-audio",
+        "to": "encode-audio",
+        "policy": "all"
+      },
+      {
+        "from": "encode-audio",
+        "to": "a",
+        "policy": "all"
+      },
+      {
+        "from": "encode-audio",
+        "to": "b",
+        "policy": "all"
+      }
+    ]
+  },
+  "explain": {
+    "summary": "from audio-1 through 2 stream branch(es) to 2 destinations",
+    "operation": "build job",
+    "inputs": [
+      {
+        "name": "audio-1",
+        "protocol": "custom",
+        "streams": [
+          {
+            "id": "audio-1",
+            "index": 0,
+            "type": "audio",
+            "codec": {
+              "type": "audio",
+              "clockRate": 48000,
+              "sampleRate": 48000,
+              "channels": 2,
+              "channelLayout": "stereo",
+              "sampleFormat": "s16"
+            },
+            "name": "audio-1"
+          }
+        ]
+      }
+    ],
+    "streams": [
+      {
+        "name": "a",
+        "select": {
+          "type": "audio"
+        },
+        "operations": [
+          {
+            "kind": "encode",
+            "component": "opus",
+            "detail": "frames to packets",
+            "shape": {
+              "domain": "packet",
+              "mediaKind": "audio",
+              "codec": "opus",
+              "sampleRate": 48000,
+              "channels": 2
+            },
+            "adapter": "opus",
+            "shared": true
+          }
+        ],
+        "encode": {
+          "id": "opus",
+          "type": "audio",
+          "parameters": {
+            "id": "opus",
+            "type": "audio",
+            "clockRate": 48000,
+            "sampleRate": 48000,
+            "channels": 2,
+            "channelLayout": "stereo"
+          }
+        },
+        "destinations": [
+          "a"
+        ]
+      },
+      {
+        "name": "b",
+        "select": {
+          "type": "audio"
+        },
+        "operations": [
+          {
+            "kind": "encode",
+            "component": "opus",
+            "detail": "frames to packets",
+            "shape": {
+              "domain": "packet",
+              "mediaKind": "audio",
+              "codec": "opus",
+              "sampleRate": 48000,
+              "channels": 2
+            },
+            "adapter": "opus",
+            "shared": true
+          },
+          {
+            "kind": "tap",
+            "component": "enc",
+            "detail": "named media outlet"
+          }
+        ],
+        "encode": {
+          "id": "opus",
+          "type": "audio",
+          "parameters": {
+            "id": "opus",
+            "type": "audio",
+            "clockRate": 48000,
+            "sampleRate": 48000,
+            "channels": 2,
+            "channelLayout": "stereo"
+          }
+        },
+        "destinations": [
+          "b"
+        ]
+      }
+    ],
+    "taps": [
+      {
+        "name": "enc",
+        "mediaKind": "audio",
+        "domain": "packet",
+        "shape": {
+          "domain": "packet",
+          "mediaKind": "audio",
+          "streamID": "audio-1",
+          "codec": "opus",
+          "sampleRate": 48000,
+          "channels": 2,
+          "sampleFormat": "s16"
+        },
+        "node": "encode-audio"
+      }
+    ],
+    "branches": [
+      {
+        "name": "a",
+        "input": "audio-1",
+        "stream": {
+          "id": "audio-1",
+          "type": "audio",
+          "name": "audio-1"
+        },
+        "shape": {
+          "domain": "frame",
+          "mediaKind": "audio",
+          "streamID": "audio-1",
+          "sampleRate": 48000,
+          "channels": 2,
+          "sampleFormat": "s16"
+        },
+        "operations": [
+          {
+            "kind": "select",
+            "component": "audio",
+            "detail": "select stream",
+            "shape": {
+              "domain": "frame",
+              "mediaKind": "audio",
+              "streamID": "audio-1",
+              "sampleRate": 48000,
+              "channels": 2,
+              "sampleFormat": "s16"
+            }
+          },
+          {
+            "kind": "encode",
+            "component": "opus",
+            "detail": "frames to packets",
+            "shape": {
+              "domain": "packet",
+              "mediaKind": "audio",
+              "streamID": "audio-1",
+              "codec": "opus",
+              "sampleRate": 48000,
+              "channels": 2,
+              "sampleFormat": "s16"
+            },
+            "adapter": "opus",
+            "shared": true
+          }
+        ],
+        "destinations": [
+          "a"
+        ]
+      },
+      {
+        "name": "b",
+        "input": "audio-1",
+        "stream": {
+          "id": "audio-1",
+          "type": "audio",
+          "name": "audio-1"
+        },
+        "shape": {
+          "domain": "frame",
+          "mediaKind": "audio",
+          "streamID": "audio-1",
+          "sampleRate": 48000,
+          "channels": 2,
+          "sampleFormat": "s16"
+        },
+        "operations": [
+          {
+            "kind": "select",
+            "component": "audio",
+            "detail": "select stream",
+            "shape": {
+              "domain": "frame",
+              "mediaKind": "audio",
+              "streamID": "audio-1",
+              "sampleRate": 48000,
+              "channels": 2,
+              "sampleFormat": "s16"
+            }
+          },
+          {
+            "kind": "encode",
+            "component": "opus",
+            "detail": "frames to packets",
+            "shape": {
+              "domain": "packet",
+              "mediaKind": "audio",
+              "streamID": "audio-1",
+              "codec": "opus",
+              "sampleRate": 48000,
+              "channels": 2,
+              "sampleFormat": "s16"
+            },
+            "adapter": "opus",
+            "shared": true
+          },
+          {
+            "kind": "tap",
+            "component": "enc",
+            "detail": "named media outlet",
+            "shape": {
+              "domain": "packet",
+              "mediaKind": "audio",
+              "streamID": "audio-1",
+              "codec": "opus",
+              "sampleRate": 48000,
+              "channels": 2,
+              "sampleFormat": "s16"
+            }
+          }
+        ],
+        "destinations": [
+          "b"
+        ]
+      }
+    ],
+    "destinations": [
+      {
+        "name": "a",
+        "kind": "sink",
+        "branches": [
+          "a"
+        ]
+      },
+      {
+        "name": "b",
+        "kind": "sink",
+        "branches": [
+          "b"
+        ]
+      }
+    ],
+    "decisions": [
+      {
+        "code": "encode_required",
+        "branch": "a",
+        "message": "muxed stream output requires encoded packets"
+      },
+      {
+        "code": "encode_required",
+        "branch": "b",
+        "message": "muxed stream output requires encoded packets"
+      }
+    ],
+    "requiredAdapters": [
+      {
+        "kind": "encoder",
+        "name": "opus",
+        "codec": "opus",
+        "media": [
+          "audio"
+        ],
+        "sampleFormats": [
+          "s16"
+        ],
+        "realtime": true,
+        "requiredBy": "a",
+        "status": "available"
+      },
+      {
+        "kind": "encoder",
+        "name": "opus",
+        "codec": "opus",
+        "media": [
+          "audio"
+        ],
+        "sampleFormats": [
+          "s16"
+        ],
+        "realtime": true,
+        "requiredBy": "b",
+        "status": "available"
+      }
+    ],
+    "graph": {
+      "name": "goav",
+      "nodes": [
+        {
+          "name": "audio-1",
+          "kind": "source",
+          "detail": "custom source, domain=frame, media=audio"
+        },
+        {
+          "name": "select-audio",
+          "kind": "stage",
+          "detail": "select, type=audio"
+        },
+        {
+          "name": "encode-audio",
+          "kind": "stage",
+          "detail": "frames -\u003e packets, codec=opus"
+        },
+        {
+          "name": "a",
+          "kind": "sink"
+        },
+        {
+          "name": "b",
+          "kind": "sink"
+        }
+      ],
+      "edges": [
+        {
+          "from": "audio-1",
+          "to": "select-audio",
+          "policy": "all"
+        },
+        {
+          "from": "select-audio",
+          "to": "encode-audio",
+          "policy": "all"
+        },
+        {
+          "from": "encode-audio",
+          "to": "a",
+          "policy": "all"
+        },
+        {
+          "from": "encode-audio",
+          "to": "b",
+          "policy": "all"
+        }
+      ]
+    }
+  }
+}

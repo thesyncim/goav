@@ -9,6 +9,7 @@ import (
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/flow"
+	"github.com/thesyncim/goav/internal/recipeir"
 	"github.com/thesyncim/goav/pipeline"
 )
 
@@ -220,8 +221,8 @@ func TestSyncGateSteadyStateAllocs(t *testing.T) {
 }
 
 func TestSyncOperationCloneUsesSeparateGateWithSharedScheduler(t *testing.T) {
-	operation := operationSpecForSync(flow.Sync("room"))
-	cloned := cloneOperationSpecs([]operationSpec{operation})
+	operation := opSync(flow.Sync("room"))
+	cloned := cloneOperations([]recipeir.Operation{operation})
 	if len(cloned) != 1 {
 		t.Fatalf("cloned operations = %d, want 1", len(cloned))
 	}

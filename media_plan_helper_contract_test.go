@@ -61,34 +61,3 @@ func TestPlanBranchDestinationsContracts(t *testing.T) {
 		t.Fatalf("planBranchDestinations reused target ref backing array: %#v", refs)
 	}
 }
-
-func TestFirstInputContracts(t *testing.T) {
-	if got := firstInput(nil); !reflect.DeepEqual(got, inputIntent{}) {
-		t.Fatalf("firstInput(nil) = %#v, want zero input", got)
-	}
-	inputs := []inputIntent{
-		{Name: "camera", URI: "file:///camera.webm", Protocol: av.ProtocolFile},
-		{Name: "mic", Protocol: av.ProtocolRTP, Realtime: true},
-	}
-	if got := firstInput(inputs); !reflect.DeepEqual(got, inputs[0]) {
-		t.Fatalf("firstInput = %#v, want %#v", got, inputs[0])
-	}
-
-	nameTests := []struct {
-		name   string
-		inputs []inputIntent
-		want   string
-	}{
-		{name: "nil", want: "input"},
-		{name: "explicit name", inputs: []inputIntent{{Name: "camera", URI: "file:///camera.webm"}}, want: "camera"},
-		{name: "uri fallback", inputs: []inputIntent{{URI: "file:///camera.webm"}}, want: "file:///camera.webm"},
-		{name: "default fallback", inputs: []inputIntent{{}}, want: "input"},
-	}
-	for _, tt := range nameTests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := firstInputName(tt.inputs); got != tt.want {
-				t.Fatalf("firstInputName = %q, want %q", got, tt.want)
-			}
-		})
-	}
-}

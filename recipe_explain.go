@@ -1,7 +1,6 @@
 package goav
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"maps"
@@ -13,30 +12,10 @@ import (
 	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/filter"
 	"github.com/thesyncim/goav/format"
+	"github.com/thesyncim/goav/internal/recipeir"
 	"github.com/thesyncim/goav/plan"
 	"github.com/thesyncim/goav/shape"
 )
-
-// Explain reports the planned workflow before any resource opens: inputs,
-// branches, destinations, taps, stream and operation shapes, adapter
-// requirements, decisions, and warnings. On a refusal it returns both the
-// structured BuildError and a partial report naming what is missing.
-func (j *recipeJob) Explain(ctx context.Context) (plan.Report, error) {
-	resolved, err := compileJobRecipeForBuildContext(ctx, j)
-	if err == nil {
-		return newPlanReport("build job", resolved)
-	}
-	fallback, fallbackErr := compileJobRecipe(j)
-	if fallbackErr != nil {
-		return plan.Report{}, err
-	}
-	report, reportErr := newPlanReport("build job", fallback)
-	if reportErr != nil {
-		return plan.Report{}, err
-	}
-	annotatePlanReportError(&report, err)
-	return report, err
-}
 
 func newPlanReport(operation string, resolved recipeResolved) (plan.Report, error) {
 	graph, err := resolved.Describe()
@@ -52,16 +31,16 @@ func newPlanReport(operation string, resolved recipeResolved) (plan.Report, erro
 	report.Streams = explainStreams(work.Streams)
 	report.Taps = explainTaps(work.Taps)
 	report.Branches = explainBranches(work)
-	report.Destinations = explainDestinations(resolved.intent.Destinations, resolved.outputFormats, work.Destinations)
+	report.Destinations = explainDestinations(resolved.recipe.Destinations, resolved.outputFormats, work.Destinations)
 	report.Decisions = explainDecisions(work.Decisions)
-	report.Decisions = append(report.Decisions, explainStreamRuleFacts(resolved.streamRuleFacts)...)
+	report.Decisions = append(report.Decisions, explainStreamRuleFacts(resolved.recipe.StreamRules)...)
 	if decision, ok := explainExecutionDecision(resolved); ok {
 		report.Decisions = append(report.Decisions, decision)
 	}
 	report.RequiredAdapters, report.Warnings = explainRequirements(resolved, work, report)
 	report.Warnings = appendPlanDiagnostics(report.Warnings, work.Diagnostics...)
 	report.Warnings = appendPlanDiagnostics(report.Warnings, muxCompatibilityDiagnostics(resolvedMuxCompatibilityIssues(resolved))...)
-	report.Summary = explainSummary(resolved.intent.Name, report)
+	report.Summary = explainSummary(resolved.name, report)
 	return report, nil
 }
 
@@ -80,7 +59,7 @@ func explainTaps(taps []workTap) []plan.Tap {
 }
 
 func explainInputs(resolved recipeResolved) []plan.Input {
-	inputs := resolved.intent.Inputs
+	inputs := resolved.recipe.Inputs
 	reports := make([]plan.Input, 0, len(inputs))
 	for i := range inputs {
 		input := inputs[i]
@@ -98,7 +77,7 @@ func explainInputs(resolved recipeResolved) []plan.Input {
 			report.Streams = append([]av.Stream(nil), probe.Streams...)
 		}
 		if len(report.Streams) == 0 && input.Realtime && input.Codec.ID != "" {
-			report.Streams = liveIntentStreams([]inputIntent{input})
+			report.Streams = liveInputStreams([]recipeir.Input{input})
 		}
 		reports = append(reports, report)
 	}
@@ -123,43 +102,43 @@ func explainStreams(streams []workStream) []plan.Stream {
 		reports = append(reports, plan.Stream{
 			Name:         stream.Name,
 			Select:       stream.Select,
-			Decode:       stream.Operations.HasKind(plan.OpDecode),
-			Operations:   explainOperationSpecs(stream.Operations.Operations()),
-			Encode:       stream.Operations.Encode(),
+			Decode:       operationsHaveDecode(stream.Operations),
+			Operations:   explainOperations(stream.Operations),
+			Encode:       cloneCodecSpec(operationsEncodeSpec(stream.Operations)),
 			Destinations: append([]string(nil), stream.Destinations...),
 		})
 	}
 	return reports
 }
 
-func explainOperationSpecs(operations []operationSpec) []plan.Operation {
+func explainOperations(operations []recipeir.Operation) []plan.Operation {
 	reports := make([]plan.Operation, 0, len(operations))
 	for i := range operations {
 		reports = append(reports, plan.Operation{
 			Kind:      operations[i].Kind,
 			Component: operations[i].Component,
-			Detail:    operationSpecDetail(operations[i]),
-			Shape:     operationSpecShape(operations[i]),
-			Adapter:   operationSpecAdapter(operations[i]),
-			Config:    operationSpecConfig(operations[i]),
+			Detail:    operationDetail(operations[i]),
+			Shape:     operationShape(operations[i]),
+			Adapter:   operationAdapter(operations[i]),
+			Config:    operationConfig(operations[i]),
 			Shared:    operations[i].Shared,
 		})
 	}
 	return reports
 }
 
-// operationSpecAdapter names the implementation an operation lowers to: the
+// operationAdapter names the implementation an operation lowers to: the
 // codec id for decode/encode, the filter factory for a transform, or the
 // component name for a custom stage. Empty when the operation lowers to no
 // adapter (shape annotations, taps).
-func operationSpecAdapter(operation operationSpec) string {
+func operationAdapter(operation recipeir.Operation) string {
 	switch operation.Kind {
 	case plan.OpDecode:
 		return string(operation.Decode.ID)
 	case plan.OpEncode:
 		return string(operation.Encode.ID)
 	case plan.OpTransform:
-		return transformFactoryName(operation.Transform)
+		return firstNonEmpty(operation.Component, recipeIRTransformFactoryName(operation.Transform))
 	case plan.OpStage:
 		return operation.Component
 	default:
@@ -167,13 +146,13 @@ func operationSpecAdapter(operation operationSpec) string {
 	}
 }
 
-// operationSpecConfig reports an operation's small typed settings as stable
+// operationConfig reports an operation's small typed settings as stable
 // key/value strings: transform geometry/rate and encoder settings. Nil when the
 // operation carries no settings worth reporting.
-func operationSpecConfig(operation operationSpec) map[string]string {
+func operationConfig(operation recipeir.Operation) map[string]string {
 	switch operation.Kind {
 	case plan.OpTransform:
-		return transformSpecConfig(operation.Transform)
+		return transformConfig(operation.Transform)
 	case plan.OpEncode:
 		return codecSpecConfig(operation.Encode)
 	default:
@@ -181,17 +160,17 @@ func operationSpecConfig(operation operationSpec) map[string]string {
 	}
 }
 
-func transformSpecConfig(transform transformSpec) map[string]string {
+func transformConfig(transform recipeir.Transform) map[string]string {
 	config := map[string]string{}
-	if transform.resize != nil {
-		putConfigInt(config, "width", transform.resize.Width)
-		putConfigInt(config, "height", transform.resize.Height)
-		putConfigString(config, "pixelFormat", transform.resize.PixelFormat)
-	}
-	if transform.resample != nil {
-		putConfigInt(config, "sampleRate", transform.resample.SampleRate)
-		putConfigInt(config, "channels", transform.resample.Channels)
-		putConfigString(config, "sampleFormat", transform.resample.SampleFormat)
+	switch transform.Kind {
+	case recipeir.TransformResize:
+		putConfigInt(config, "width", transform.Resize.Width)
+		putConfigInt(config, "height", transform.Resize.Height)
+		putConfigString(config, "pixelFormat", transform.Resize.PixelFormat)
+	case recipeir.TransformResample:
+		putConfigInt(config, "sampleRate", transform.Resample.SampleRate)
+		putConfigInt(config, "channels", transform.Resample.Channels)
+		putConfigString(config, "sampleFormat", transform.Resample.SampleFormat)
 	}
 	if len(config) == 0 {
 		return nil
@@ -225,10 +204,10 @@ func putConfigString(config map[string]string, key, value string) {
 	}
 }
 
-func operationSpecShape(operation operationSpec) shape.Spec {
+func operationShape(operation recipeir.Operation) shape.Spec {
 	switch operation.Kind {
 	case plan.OpTransform:
-		return mediaShapeFromTransform(operation.Transform)
+		return mediaShapeFromRecipeIRTransform(operation.Transform)
 	case plan.OpShape:
 		if operation.Require != nil {
 			return *operation.Require
@@ -241,10 +220,10 @@ func operationSpecShape(operation operationSpec) shape.Spec {
 	}
 }
 
-func operationSpecDetail(operation operationSpec) string {
+func operationDetail(operation recipeir.Operation) string {
 	switch operation.Kind {
 	case plan.OpTransform:
-		return firstNonEmpty(transformFactoryName(operation.Transform), "transform frames")
+		return firstNonEmpty(recipeIRTransformFactoryName(operation.Transform), "transform frames")
 	case plan.OpShape:
 		switch {
 		case operation.Auto != nil:
@@ -331,7 +310,7 @@ func workOperationAdapter(operation workOperation) string {
 // workOperationConfig reports a planned branch operation's typed settings as
 // stable key/value strings — encoder settings for encode, and geometry/rate for
 // a transform (from its output shape, the only transform fact a work operation
-// carries). It mirrors the stream path's operationSpecConfig so transform and
+// carries). It mirrors the stream path's operationConfig so transform and
 // encode operations report config consistently whether they sit on a stream or
 // a branch. Nil when the operation carries no settings.
 func workOperationConfig(operation workOperation) map[string]string {
@@ -373,7 +352,7 @@ func explainDecisions(decisions []planDecision) []plan.Decision {
 	return reports
 }
 
-func explainDestinations(destinations []destinationIntent, outputFormats map[string]av.FormatID, workDestinations []workDestination) []plan.Destination {
+func explainDestinations(destinations []recipeir.Destination, outputFormats map[string]av.FormatID, workDestinations []workDestination) []plan.Destination {
 	reports := make([]plan.Destination, 0, len(destinations))
 	branchesByDestination := workDestinationBranches(workDestinations)
 	for i := range destinations {
@@ -942,8 +921,8 @@ func appendPlanDiagnostics(diagnostics []plan.Diagnostic, next ...plan.Diagnosti
 	return diagnostics
 }
 
-func explainSummary(intentName string, report plan.Report) string {
-	name := firstNonEmpty(intentName, "job")
+func explainSummary(recipeName string, report plan.Report) string {
+	name := firstNonEmpty(recipeName, "job")
 	input := "input"
 	if len(report.Inputs) == 1 {
 		input = firstNonEmpty(report.Inputs[0].Name, report.Inputs[0].URI, input)
@@ -962,37 +941,6 @@ func explainSummary(intentName string, report plan.Report) string {
 	return fmt.Sprintf("%s %s through %d stream branch(es) to %s", name, input, len(report.Streams), target)
 }
 
-func cloneOperationSpecs(operations []operationSpec) []operationSpec {
-	if len(operations) == 0 {
-		return nil
-	}
-	out := make([]operationSpec, 0, len(operations))
-	for i := range operations {
-		operation := operations[i]
-		operation.Transform = cloneTransformSpec(operation.Transform)
-		if gate, ok := operation.Stage.(*syncGate); ok {
-			operation.Stage = newSyncGate(gate.policy)
-		}
-		if gate, ok := operation.Stage.(*playoutGate); ok {
-			operation.Stage = newPlayoutGate(gate.policy)
-		}
-		if operation.Auto != nil {
-			policy := *operation.Auto
-			operation.Auto = &policy
-		}
-		if operation.Require != nil {
-			required := *operation.Require
-			operation.Require = &required
-		}
-		if operation.Prefer != nil {
-			preferred := *operation.Prefer
-			operation.Prefer = &preferred
-		}
-		out = append(out, operation)
-	}
-	return out
-}
-
 // explainExecutionDecision reports when the planner runs the graph buffered
 // although the runtime's own policy is direct: live inputs, a join that needs
 // concurrent arms, a declared branch queue, or a fanout of goav-owned encode
@@ -1001,11 +949,10 @@ func cloneOperationSpecs(operations []operationSpec) []operationSpec {
 // either way, so Explain says which one the build will run.
 func explainExecutionDecision(resolved recipeResolved) (plan.Decision, bool) {
 	gp := resolved.graphPlan
-	configurer, ok := gp.lowerer.(graphPlanGraphConfigurer)
-	if !ok || gp.runtime == nil || !gp.runtime.buffer.IsDirect() {
+	if gp.lowerer == nil || gp.runtime == nil || !gp.runtime.buffer.IsDirect() {
 		return plan.Decision{}, false
 	}
-	config, err := configurer.graphConfig(gp)
+	config, err := gp.lowerer.graphConfig(gp)
 	if err != nil || config.Buffer.IsDirect() {
 		return plan.Decision{}, false
 	}

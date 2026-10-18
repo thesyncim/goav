@@ -6,25 +6,23 @@ import (
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
-	"github.com/thesyncim/goav/plan"
 	"github.com/thesyncim/goav/shape"
 )
 
 func TestExplicitEncodeSoftInputShapeContracts(t *testing.T) {
 	zeroCases := []struct {
-		name      string
-		operation operationSpec
+		name   string
+		encode codec.Spec
 	}{
-		{name: "not encode", operation: operationSpec{Kind: plan.OpTransform}},
-		{name: "copy encode", operation: operationSpecForEncode(codec.Copy())},
-		{name: "missing codec id", operation: operationSpecForEncode(codec.Codec("", av.MediaAudio))},
-		{name: "audio defaults are not explicit", operation: operationSpecForEncode(codec.Opus())},
-		{name: "video without explicit format facts", operation: operationSpecForEncode(codec.VP8())},
-		{name: "unknown media", operation: operationSpecForEncode(codec.Codec("x-data", "data"))},
+		{name: "copy encode", encode: codec.Copy()},
+		{name: "missing codec id", encode: codec.Codec("", av.MediaAudio)},
+		{name: "audio defaults are not explicit", encode: codec.Opus()},
+		{name: "video without explicit format facts", encode: codec.VP8()},
+		{name: "unknown media", encode: codec.Codec("x-data", "data")},
 	}
 	for _, tt := range zeroCases {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := explicitEncodeSoftInputShape(tt.operation); got != (shape.Spec{}) {
+			if got := explicitEncodeSoftInputShape(tt.encode); got != (shape.Spec{}) {
 				t.Fatalf("explicitEncodeSoftInputShape() = %+v, want zero", got)
 			}
 		})
@@ -39,7 +37,7 @@ func TestExplicitEncodeSoftInputShapeContracts(t *testing.T) {
 		Channels:     codec.Mono,
 		SampleFormat: av.SampleFormatF32,
 	}
-	if got := explicitEncodeSoftInputShape(operationSpecForEncode(audio)); !reflect.DeepEqual(got, wantAudio) {
+	if got := explicitEncodeSoftInputShape(audio); !reflect.DeepEqual(got, wantAudio) {
 		t.Fatalf("audio soft input shape = %+v, want %+v", got, wantAudio)
 	}
 
@@ -49,7 +47,7 @@ func TestExplicitEncodeSoftInputShapeContracts(t *testing.T) {
 		MediaKind:  av.MediaAudio,
 		SampleRate: 32_000,
 	}
-	if got := explicitEncodeSoftInputShape(operationSpecForEncode(customAudio)); !reflect.DeepEqual(got, wantCustomAudio) {
+	if got := explicitEncodeSoftInputShape(customAudio); !reflect.DeepEqual(got, wantCustomAudio) {
 		t.Fatalf("custom audio soft input shape = %+v, want %+v", got, wantCustomAudio)
 	}
 
@@ -64,7 +62,7 @@ func TestExplicitEncodeSoftInputShapeContracts(t *testing.T) {
 		Height:      720,
 		PixelFormat: av.PixelFormatI420,
 	}
-	if got := explicitEncodeSoftInputShape(operationSpecForEncode(video)); !reflect.DeepEqual(got, wantVideo) {
+	if got := explicitEncodeSoftInputShape(video); !reflect.DeepEqual(got, wantVideo) {
 		t.Fatalf("video soft input shape = %+v, want %+v", got, wantVideo)
 	}
 
@@ -75,7 +73,7 @@ func TestExplicitEncodeSoftInputShapeContracts(t *testing.T) {
 		MediaKind:   av.MediaVideo,
 		PixelFormat: av.PixelFormatGray8,
 	}
-	if got := explicitEncodeSoftInputShape(operationSpecForEncode(customVideo)); !reflect.DeepEqual(got, wantCustomVideo) {
+	if got := explicitEncodeSoftInputShape(customVideo); !reflect.DeepEqual(got, wantCustomVideo) {
 		t.Fatalf("custom video soft input shape = %+v, want %+v", got, wantCustomVideo)
 	}
 }

@@ -9,6 +9,7 @@ import (
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/errcode"
+	"github.com/thesyncim/goav/internal/recipeir"
 )
 
 const (
@@ -22,18 +23,18 @@ func (b *builder) newDecodeStage(ctx context.Context, request decodeRequest, str
 
 func (b *builder) newDecodeStageNamed(ctx context.Context, name string, request decodeRequest, stream av.Stream, realtime bool, dropInputEvents bool, bounds codec.DecodeBounds) (*codec.DecoderStage, error) {
 	name = firstNonEmpty(name, decodeNodeName(request.selector))
-	intent := streamIntent{
-		Name:   name,
-		Select: streamSelectFromAV(request.selector),
+	planned := recipeir.Stream{
+		Name:     name,
+		Selector: streamSelectFromAV(request.selector),
 	}
 	factory, err := b.runtime.codecs.DecoderFactory(stream.Codec.ID)
 	if err != nil {
 		// A file's codec is known only once it opens, so this is where a
 		// descriptor-only decoder (H.264 without -tags goav_goh264) surfaces:
 		// typed, naming the build tag, instead of a bare codec sentinel.
-		return nil, recipeDecodeAdapterError("build decode stage", intent, stream.Codec.ID, b.runtime.codecs, err)
+		return nil, recipeDecodeAdapterError("build decode stage", planned, stream.Codec.ID, b.runtime.codecs, err)
 	}
-	if err := validateDecodeAdapterDescriptors("build decode stage", intent, b.runtime.codecs, decodeAdapterRequestFromStream(stream, intent)); err != nil {
+	if err := validateDecodeAdapterDescriptors("build decode stage", planned, b.runtime.codecs, decodeAdapterRequestFromStream(stream, planned)); err != nil {
 		return nil, err
 	}
 	stream = decodeStreamWithSpec(stream, request.config)

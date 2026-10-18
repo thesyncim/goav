@@ -28,24 +28,17 @@ type plannedMuxStream struct {
 	TimeBase av.TimeBase
 }
 
-func validateMuxCompatibilityPass() recipeCompilePass {
-	return recipeCompilePassFunc{name: "validate mux compatibility", fn: func(state *recipeCompileState) error {
-		if !state.options.preflightMuxCompatibility {
-			return nil
-		}
-		issues := stateMuxCompatibilityIssues(state)
-		if len(issues) == 0 {
-			return nil
-		}
-		return muxCompatibilityBuildError(state.operation, issues[0])
-	}}
-}
-
-func stateMuxCompatibilityIssues(state *recipeCompileState) []muxCompatibilityIssue {
-	if state == nil || !state.specReady || state.specOrigin != graphSpecOriginGraphPlan {
+// validateMuxCompatibility refuses, before a build opens anything, a
+// destination whose format cannot carry the streams planned into it.
+func validateMuxCompatibility(state *recipeCompileState) error {
+	if !state.options.preflight {
 		return nil
 	}
-	return muxCompatibilityIssues(state.graphPlan.work, state.inputProbes, state.runtime)
+	issues := muxCompatibilityIssues(state.graphPlan.work, state.inputProbes, state.runtime)
+	if len(issues) == 0 {
+		return nil
+	}
+	return muxCompatibilityBuildError(state.operation, issues[0])
 }
 
 func resolvedMuxCompatibilityIssues(resolved recipeResolved) []muxCompatibilityIssue {

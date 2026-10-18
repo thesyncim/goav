@@ -12,6 +12,7 @@ import (
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/format"
+	"github.com/thesyncim/goav/internal/recipeir"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/provider"
 )
@@ -47,52 +48,6 @@ type branchDestinationFacts struct {
 	resolvedContainer  av.FormatID
 }
 
-type branchDestinationAttachment struct {
-	spec    destinationSpec
-	details branchDestinationFacts
-}
-
-type destinationAttachment = branchDestinationAttachment
-
-func destinationAttachmentsFromSpecs(destinations []destinationSpec) []destinationAttachment {
-	if len(destinations) == 0 {
-		return nil
-	}
-	out := make([]destinationAttachment, 0, len(destinations))
-	for i := range destinations {
-		out = append(out, destinationAttachmentFromSpec(destinations[i], "output"))
-	}
-	return out
-}
-
-func destinationAttachmentFromSpec(destination destinationSpec, fallback string) destinationAttachment {
-	name := destination.label(fallback)
-	spec := destination.withName(firstNonEmpty(destination.name, name))
-	return destinationAttachment{
-		spec:    spec,
-		details: branchDestinationFactsFromSpec(name, spec),
-	}
-}
-
-func branchDestinationAttachmentsFromSpecs(destinations []namedDestinationSpec) []branchDestinationAttachment {
-	if len(destinations) == 0 {
-		return nil
-	}
-	out := make([]branchDestinationAttachment, 0, len(destinations))
-	for i := range destinations {
-		out = append(out, branchDestinationAttachmentFromSpec(destinations[i]))
-	}
-	return out
-}
-
-func branchDestinationAttachmentFromSpec(destination namedDestinationSpec) branchDestinationAttachment {
-	spec := destination.output.withName(firstNonEmpty(destination.output.name, destination.name))
-	return branchDestinationAttachment{
-		spec:    spec,
-		details: branchDestinationFactsFromSpec(destination.name, spec),
-	}
-}
-
 func branchDestinationFactsFromSpec(name string, output destinationSpec) branchDestinationFacts {
 	return branchDestinationFacts{
 		routingName:        name,
@@ -109,55 +64,8 @@ func branchDestinationFactsFromSpec(name string, output destinationSpec) branchD
 	}
 }
 
-func branchDestinationAttachmentSet(attachments []branchDestinationAttachment) (map[string]branchDestinationAttachment, []string) {
-	outputs := make(map[string]branchDestinationAttachment, len(attachments))
-	outputOrder := make([]string, 0, len(attachments))
-	for i := range attachments {
-		name := attachments[i].details.routingName
-		outputOrder = append(outputOrder, name)
-		outputs[name] = attachments[i]
-	}
-	return outputs, outputOrder
-}
-
-func branchDestinationAttachmentDestination(attachment branchDestinationAttachment) destinationSpec {
-	return cloneDestinationSpec(attachment.spec)
-}
-
-func destinationAttachmentDestination(attachment destinationAttachment) destinationSpec {
-	return cloneDestinationSpec(attachment.spec)
-}
-
-func branchDestinationAttachmentOutput(attachment branchDestinationAttachment) format.Output {
-	return attachment.spec.output
-}
-
-func destinationAttachmentOutput(attachment destinationAttachment) format.Output {
-	return attachment.spec.output
-}
-
-func branchDestinationAttachmentSink(attachment branchDestinationAttachment) pipeline.Sink {
-	return attachment.spec.sink
-}
-
-func destinationAttachmentSink(attachment destinationAttachment) pipeline.Sink {
-	return attachment.spec.sink
-}
-
-func destinationSpecIsSink(destination destinationSpec) bool {
-	return destination.sink != nil
-}
-
 func destinationSpecOutput(destination destinationSpec) format.Output {
 	return destination.output
-}
-
-func destinationAttachmentGraphFormat(attachment destinationAttachment) av.FormatID {
-	return attachment.details.requestedContainer
-}
-
-func destinationAttachmentOpenFormat(attachment destinationAttachment) av.FormatID {
-	return destinationSpecFormat(attachment.spec)
 }
 
 func destinationGraphFormat(output destinationSpec) av.FormatID {
@@ -166,15 +74,6 @@ func destinationGraphFormat(output destinationSpec) av.FormatID {
 
 func destinationOpenFormat(output destinationSpec) av.FormatID {
 	return destinationSpecFormat(output)
-}
-
-func destinationAttachmentsContainMuxDestination(outputs []destinationAttachment) bool {
-	for i := range outputs {
-		if !outputs[i].details.sink {
-			return true
-		}
-	}
-	return false
 }
 
 func destinationIdentity(destination namedDestinationSpec) string {
@@ -685,22 +584,6 @@ func (s destinationSpec) label(fallback string) string {
 	return firstNonEmpty(s.name, s.output.Name, s.output.URI, fallback)
 }
 
-func (s destinationSpec) intent() destinationIntent {
-	return destinationIntent{
-		Name:     s.label("output"),
-		URI:      s.output.URI,
-		Protocol: s.output.Protocol,
-		MIMEType: s.output.MIMEType,
-		Format:   s.format,
-	}
-}
-
-func (s destinationSpec) intentWithName(name string) destinationIntent {
-	intent := s.intent()
-	intent.Name = firstNonEmpty(name, intent.Name)
-	return intent
-}
-
 func validateDestinationSpecs(operation string, outputs []destinationSpec, destinationNames ...string) error {
 	seen := make(map[string]bool, len(outputs))
 	for i := range outputs {
@@ -787,14 +670,6 @@ func duplicateDestinationHandleError(operation string, name string) error {
 	}
 }
 
-func destinationNamesWithOverrides(outputs []destinationSpec, destinationNames []string) []string {
-	names := make([]string, 0, len(outputs))
-	for i := range outputs {
-		names = append(names, jobOutputDestinationName(outputs, destinationNames, i))
-	}
-	return names
-}
-
 func jobOutputDestinationName(outputs []destinationSpec, destinationNames []string, index int) string {
 	if index >= 0 && index < len(destinationNames) && destinationNames[index] != "" {
 		return destinationNames[index]
@@ -809,4 +684,27 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+// recipeIRDestinationFromSpec is the planner-visible data of one destination.
+func recipeIRDestinationFromSpec(name string, destination destinationSpec) recipeir.Destination {
+	return recipeir.Destination{
+		Name:     name,
+		URI:      destination.output.URI,
+		Protocol: destination.output.Protocol,
+		MIMEType: destination.output.MIMEType,
+		Format:   destination.format,
+		Kind:     recipeIRDestinationKindFromSpec(destination),
+	}
+}
+
+func recipeIRDestinationKindFromSpec(destination destinationSpec) recipeir.DestinationKind {
+	switch {
+	case destination.sink != nil:
+		return recipeir.DestinationKindSink
+	case destinationSpecHasOutput(destination), destination.custom != nil:
+		return recipeir.DestinationKindByteStream
+	default:
+		return recipeir.DestinationKindUnknown
+	}
 }

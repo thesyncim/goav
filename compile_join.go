@@ -1,0 +1,456 @@
+package goav
+
+import (
+	"fmt"
+
+	"github.com/thesyncim/goav/av"
+	"github.com/thesyncim/goav/codec"
+	"github.com/thesyncim/goav/internal/recipeir"
+	"github.com/thesyncim/goav/pipeline"
+	"github.com/thesyncim/goav/plan"
+	"github.com/thesyncim/goav/shape"
+)
+
+// A join is a node of the recipe DAG with one parent per arm. Planning it
+// resolves each arm — an input's stream, a nested join, or a stream other
+// work reads too (a fed arm) — and its arm-side work (the bind of an arm
+// known only once its input opens, its decode, its conversion to the join's
+// format), then derives the joined stream its branches read like any other
+// stream. Every arm reads the run's one source of its input.
+
+// planJoins plans every join of the recipe, nested ones first.
+func (s *recipeCompileState) planJoins() error {
+	s.joins = map[recipeir.NodeID]*joinPlan{}
+	s.armDecodes = map[recipeir.NodeID]string{}
+	s.armTaps = map[recipeir.NodeID]bool{}
+	sets := s.inputStreamSets()
+	for _, id := range s.joinOrder {
+		if _, err := s.planJoin(id, sets); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *recipeCompileState) planJoin(id recipeir.NodeID, sets []inputStreamSet) (*joinPlan, error) {
+	if p, ok := s.joins[id]; ok {
+		return p, nil
+	}
+	g := s.graph
+	node := g.node(id)
+	kind := node.Join.Kind
+	tree := &joinTreeSnapshot{kind: joinKind(kind)}
+	if node.Join.Sync {
+		tree.sync = joinSyncPTS
+	}
+	if _, builtin := joinProfiles[joinKind(kind)]; !builtin || node.Join.Stage != nil {
+		tree.custom = &customJoinSpec{name: kind, stage: node.Join.Stage}
+	}
+	if node.Join.Sync && (joinKind(kind) == joinSelect || tree.custom != nil) {
+		return nil, streamSyncByPTSError()
+	}
+	profile, err := resolveJoinProfile(tree)
+	if err != nil {
+		return nil, err
+	}
+	name := s.joinNames[id]
+	if tree.custom != nil && name != kind {
+		return nil, customJoinNameCollisionError(kind, name)
+	}
+	p := &joinPlan{runtime: s.runtime, tree: tree, profile: profile, name: name, node: id}
+	if encode, ok := s.joinEncode(id); ok {
+		// An encoder's explicit format is the target a join over files
+		// converts to; otherwise its first input's format is.
+		p.target = explicitEncodeSoftInputShape(encode)
+	}
+	if len(node.Parents) < 2 {
+		return nil, joinInputsError(kind, name)
+	}
+	seen := make(map[av.StreamID]struct{}, len(node.Parents))
+	for i, armID := range node.Parents {
+		armPlan, region, armOps, err := s.planJoinArm(p, armID, node.Join.At[i], sets)
+		if err != nil {
+			return nil, err
+		}
+		if _, dup := seen[armPlan.stream.ID]; dup {
+			return nil, joinArmError(name, string(armPlan.stream.ID), kind+" arms must have distinct stream ids",
+				"give each arm a distinct stream id: name inputs/taps differently so no two arms publish the same id")
+		}
+		seen[armPlan.stream.ID] = struct{}{}
+		if err := validateJoinArmDomain(name, armPlan.inputName, profile, armPlan.domain, armOps); err != nil {
+			return nil, err
+		}
+		// Explicit .Decode() on a packet arm becomes the arm decode node.
+		// Frame arms feed frame-consuming joins directly, and passthrough
+		// joins without .Decode() forward packets as-is.
+		if armPlan.domain == shape.DomainPacket && recipeIROperationsContainKind(armOps, plan.OpDecode) {
+			armPlan.decodeNode = name + "-decode-" + string(armPlan.stream.ID)
+			// An arm path other joins' arms read decodes once: the later arms
+			// read the decoder the first planned.
+			if first, ok := s.armDecodes[armPlan.decodeGraph]; ok && armPlan.hasDecodeGraph {
+				armPlan.decodeNode, armPlan.bind = first, nil
+			} else if armPlan.hasDecodeGraph {
+				s.armDecodes[armPlan.decodeGraph] = armPlan.decodeNode
+			}
+		}
+		if profile.planArm != nil {
+			stagePlan, err := profile.planArm(p, joinArmSnapshot{region: region}, armPlan.stream)
+			if err != nil {
+				return nil, err
+			}
+			armPlan.stage = stagePlan
+		}
+		if len(p.arms) == 0 && armPlan.late && profile.conformFollowsFirstArm {
+			// The join's format follows its first arm, known only once it
+			// opens: every arm then converts at run time.
+			p.lateTarget = true
+		}
+		if profile.conformTarget != nil && (armPlan.late || p.lateTarget) {
+			armPlan.conform = p.planArmConform(armPlan)
+		} else if armPlan.stage == nil && profile.armExpected != nil {
+			// The solver converts a nested arm's output like any arm: an
+			// outer mix resamples a sub-mix that produced another rate.
+			stagePlan, err := p.solveArmConversion(s.runtime, armPlan.stream, armPlan.inputName)
+			if err != nil {
+				return nil, err
+			}
+			armPlan.stage = stagePlan
+		}
+		p.arms = append(p.arms, armPlan)
+	}
+	for i := range p.arms {
+		p.late = p.late || p.arms[i].late
+	}
+	p.joined = profile.joinedStream(p)
+	p.joinedDomain = p.deriveJoinedDomain()
+	s.joins[id] = p
+	return p, nil
+}
+
+// joinEncode is the first encoder a branch of the join's output declares.
+func (s *recipeCompileState) joinEncode(id recipeir.NodeID) (codec.Spec, bool) {
+	for i := range s.recipe.Streams {
+		if s.recipe.Streams[i].Root != id {
+			continue
+		}
+		for _, operation := range s.recipe.Streams[i].Operations {
+			if operation.Kind == plan.OpEncode {
+				return operation.Encode, true
+			}
+		}
+	}
+	return codec.Spec{}, false
+}
+
+// planJoinArm resolves one arm: its plan, its canvas position, and the arm's
+// own operations after what streams already lower.
+func (s *recipeCompileState) planJoinArm(p *joinPlan, armID recipeir.NodeID, at recipeir.Point, sets []inputStreamSet) (joinArmPlan, *compositeRegion, []recipeir.Operation, error) {
+	g := s.graph
+	name, kind, profile := p.name, string(p.tree.kind), p.profile
+	var region *compositeRegion
+	if at.Set {
+		region = &compositeRegion{x: at.X, y: at.Y}
+	}
+	path := g.path(armID)
+	root := path[0]
+	rootNode := g.node(root)
+	feed, fed := s.armFeed(path)
+	start := 1
+	if fed {
+		for i := range path {
+			if path[i] == feed {
+				start = i + 1
+			}
+		}
+	}
+	var armOps []recipeir.Operation
+	for _, id := range path[start:] {
+		operation := g.node(id).Op
+		operation.Node = id
+		if operation.Kind == recipeir.OpName {
+			continue
+		}
+		armOps = append(armOps, operation)
+	}
+	switch rootNode.Kind {
+	case recipeir.NodeJoin:
+		if fed {
+			break
+		}
+		sub, err := s.planJoin(root, sets)
+		if err != nil {
+			return joinArmPlan{}, nil, nil, err
+		}
+		for _, operation := range armOps {
+			switch {
+			case operation.Kind == plan.OpEncode:
+				return joinArmPlan{}, nil, nil, joinArmError(name, sub.name,
+					"a nested "+string(sub.tree.kind)+" arm cannot carry .Encode(...); encode the outer join instead",
+					"move .Encode(...) to the outer "+name+": encode once after the final convergence")
+			case recipeIROperationIsAnnotation(operation), operation.Kind == plan.OpTap:
+			default:
+				return joinArmPlan{}, nil, nil, streamInvalidError("", "a join used as another join's input takes only .Tap(...), and for Mix and Composite .Auto, .Require, .Prefer, and .Encode; apply other operations to its inputs or after the outer join")
+			}
+		}
+		if profile.media != "" && sub.joined.Type != profile.media {
+			return joinArmPlan{}, nil, nil, joinArmError(name, sub.name,
+				fmt.Sprintf("%s arm %q produces %s, want %s", kind, sub.name, sub.joined.Type, profile.media),
+				"feed the "+kind+" arms that produce "+string(profile.media)+" media (mix joins audio, composite joins video)")
+		}
+		arm := joinArmPlan{sub: sub, inputName: sub.name, stream: sub.joined, domain: sub.joinedDomain, late: sub.late}
+		for _, operation := range armOps {
+			if operation.Kind == plan.OpTap && operation.Tap.Name == "" {
+				return joinArmPlan{}, nil, nil, tapNameEmptyError("build "+name, sub.name)
+			}
+			if operation.Kind == plan.OpTap {
+				// A tap on a nested join anchors on the nested join's node.
+				arm.taps = append(arm.taps, joinArmTap{ref: tapRef{name: operation.Tap.Name, domain: sub.joinedDomain}, after: plan.OpJoin})
+			}
+		}
+		return arm, region, nil, nil
+	case recipeir.NodeSelect:
+	default:
+		return joinArmPlan{}, nil, nil, joinArmError(name, name,
+			"each "+kind+" arm must be one input's stream or a nested join",
+			"pass input.Audio()/.Video() streams or nested goav.Mix/Composite/Select/Join streams as arms")
+	}
+	input := rootNode.Input
+	set := inputStreamSet{name: name, domain: shape.DomainPacket}
+	if input < len(sets) {
+		set = sets[input]
+	}
+	var armPlan joinArmPlan
+	switch {
+	case fed:
+		armPlan = s.fedArm(p, feed, input, set, rootNode.Select)
+	case joinArmBindsAtOpen(s.inputAttachments[input], set):
+		bound, err := planJoinBindArm(name, kind, profile, recipeIRSelector(rootNode.Select), set)
+		if err != nil {
+			return joinArmPlan{}, nil, nil, err
+		}
+		armPlan = bound
+	default:
+		selector := recipeIRSelector(rootNode.Select)
+		if selector.Type == "" {
+			selector.Type = profile.media
+		}
+		stream, err := selectStream(set.streams, selector)
+		if err != nil {
+			return joinArmPlan{}, nil, nil, err
+		}
+		armPlan = joinArmPlan{inputName: set.name, stream: stream, domain: set.domain}
+	}
+	armPlan.input = input
+	armPlan.spec = s.inputAttachments[input]
+	if err := validateJoinArmOperations(name, armPlan.inputName, armOps); err != nil {
+		return joinArmPlan{}, nil, nil, err
+	}
+	for _, operation := range armOps {
+		if operation.Kind == plan.OpDecode {
+			armPlan.decodeGraph, armPlan.hasDecodeGraph = operation.Node, true
+		}
+	}
+	// A tap on a path another join's arm also reads installs once.
+	var ownOps []recipeir.Operation
+	for _, operation := range armOps {
+		if operation.Kind == plan.OpTap && s.armTaps[operation.Node] {
+			continue
+		}
+		if operation.Kind == plan.OpTap {
+			s.armTaps[operation.Node] = true
+		}
+		ownOps = append(ownOps, operation)
+	}
+	taps, err := joinChainArmTaps(name, armPlan.inputName, armPlan.domain, ownOps)
+	if err != nil {
+		return joinArmPlan{}, nil, nil, err
+	}
+	armPlan.taps = taps
+	return armPlan, region, armOps, nil
+}
+
+// armFeed is the deepest node of an arm's path that a branch of the recipe
+// lowers too: the arm reads it instead of opening its own path.
+func (s *recipeCompileState) armFeed(path []recipeir.NodeID) (recipeir.NodeID, bool) {
+	for i := len(path) - 1; i >= 0; i-- {
+		id := path[i]
+		for j := range s.recipe.Streams {
+			stream := s.recipe.Streams[j]
+			if stream.Root == id {
+				return id, true
+			}
+			for _, operation := range stream.Operations {
+				if operation.Node == id {
+					return id, true
+				}
+			}
+		}
+	}
+	return 0, false
+}
+
+// fedArm plans an arm that reads a node a branch lowers: its stream is what
+// that node carries, known statically when the input's streams are.
+func (s *recipeCompileState) fedArm(p *joinPlan, feed recipeir.NodeID, input int, set inputStreamSet, selector plan.StreamSelect) joinArmPlan {
+	domain := set.domain
+	for _, id := range s.graph.path(feed)[1:] {
+		switch s.graph.node(id).Op.Kind {
+		case plan.OpDecode:
+			domain = shape.DomainFrame
+		case plan.OpEncode:
+			domain = shape.DomainPacket
+		}
+	}
+	arm := joinArmPlan{inputName: set.name, domain: domain, feed: feed, fed: true}
+	if set.known && len(set.streams) != 0 {
+		if stream, err := selectStream(set.streams, recipeIRSelector(selector)); err == nil {
+			arm.stream = stream
+			return arm
+		}
+	}
+	media := firstNonEmptyMedia(selector.Type, p.profile.media)
+	arm.stream = av.Stream{ID: av.StreamID(set.name), Type: media, Codec: av.CodecParameters{Type: media}}
+	arm.late = true
+	return arm
+}
+
+func recipeIROperationsContainKind(operations []recipeir.Operation, kind plan.OperationKind) bool {
+	for i := range operations {
+		if operations[i].Kind == kind {
+			return true
+		}
+	}
+	return false
+}
+
+// join plans a join's tree depth first: each arm's chain (the input's source,
+// a nested join, or the node a fed arm reads), its bind, decode, and
+// conversion, then the join node, whose convergence edges come after every
+// arm's chain.
+func (l *recipeLowering) join(id recipeir.NodeID) (pipeline.NodeRef, error) {
+	if ref, ok := l.refs[id]; ok {
+		return ref, nil
+	}
+	p := l.s.joins[id]
+	armRefs := make([]pipeline.NodeRef, 0, len(p.arms))
+	for i := range p.arms {
+		arm := &p.arms[i]
+		var upstream pipeline.NodeRef
+		shared := false
+		switch {
+		case arm.sub != nil:
+			ref, err := l.join(arm.sub.node)
+			if err != nil {
+				return "", err
+			}
+			upstream = ref
+		case arm.fed:
+			ref, err := l.ensure(arm.feed)
+			if err != nil {
+				return "", err
+			}
+			upstream = ref
+		default:
+			if ref, ok := l.refs[arm.decodeGraph]; ok && arm.hasDecodeGraph {
+				// Another join's arm planned this path's decoder: read it.
+				upstream, shared = ref, true
+				break
+			}
+			upstream = l.source(arm.input)
+		}
+		arm.sourceNode = string(upstream)
+		if arm.bind != nil && !shared {
+			upstream = l.add(composeNode{kind: composeArmBind, name: arm.bind.node, detail: bindArmNodeDetail(arm.bind.selector), inputs: []pipeline.NodeRef{upstream}, join: p, arm: i})
+		}
+		if arm.decodeNode != "" && !shared {
+			upstream = l.add(composeNode{
+				kind:   composeArmDecode,
+				name:   arm.decodeNode,
+				detail: decodeRequestDetail(decodeRequest{selector: av.StreamSelector{Type: arm.stream.Type}}),
+				inputs: []pipeline.NodeRef{upstream},
+				join:   p,
+				arm:    i,
+			})
+			if arm.hasDecodeGraph {
+				l.refs[arm.decodeGraph] = upstream
+			}
+		}
+		if arm.stage != nil {
+			upstream = l.add(composeNode{
+				kind:      composeTransform,
+				name:      arm.stage.transform.name,
+				detail:    mediaTransformDetail(arm.stage.transform),
+				inputs:    []pipeline.NodeRef{upstream},
+				transform: arm.stage.transform,
+				stream:    arm.stage.stream,
+				join:      p,
+			})
+		}
+		if arm.conform != nil {
+			node := composeNode{
+				kind:   composeArmConform,
+				name:   arm.conform.node,
+				detail: conformNodeDetail(arm.conform.target),
+				inputs: []pipeline.NodeRef{upstream},
+				join:   p,
+				arm:    i,
+			}
+			if i > 0 && p.profile.conformFollowsFirstArm {
+				node.target = armRefs[0]
+			}
+			upstream = l.add(node)
+		}
+		armRefs = append(armRefs, upstream)
+	}
+	ref := l.add(composeNode{kind: composeJoin, name: p.name, detail: p.joinNodeDetail(), inputs: armRefs, join: p})
+	l.refs[id] = ref
+	l.nodeNames[id] = p.name
+	return ref, nil
+}
+
+// ensure plans the node a fed arm reads before the join that reads it: a
+// select root, or a branch's operation and the work before it.
+func (l *recipeLowering) ensure(id recipeir.NodeID) (pipeline.NodeRef, error) {
+	if ref, ok := l.refs[id]; ok {
+		return ref, nil
+	}
+	s := l.s
+	for i := range s.recipe.Streams {
+		stream := s.recipe.Streams[i]
+		if stream.Root == id {
+			if err := l.root(id, i); err != nil {
+				return "", err
+			}
+			return l.refs[id], nil
+		}
+		for _, operation := range stream.Operations {
+			if operation.Node != id {
+				continue
+			}
+			if _, ok := l.refs[stream.Root]; !ok {
+				if err := l.root(stream.Root, i); err != nil {
+					return "", err
+				}
+			}
+			for _, before := range stream.Operations {
+				if _, err := l.operation(i, before); err != nil {
+					return "", err
+				}
+				if before.Node == id {
+					break
+				}
+			}
+			return l.parentRefThrough(i, id), nil
+		}
+	}
+	return "", graphPlanInvalidError("join arm reads a node no branch plans", nil)
+}
+
+// parentRefThrough is the planned node a branch carries at node: node's own
+// when it plans one, else the nearest before it.
+func (l *recipeLowering) parentRefThrough(index int, node recipeir.NodeID) pipeline.NodeRef {
+	if ref, ok := l.refs[node]; ok && ref != "" {
+		return ref
+	}
+	return l.parentRef(index, node)
+}

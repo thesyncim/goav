@@ -123,25 +123,6 @@ func TestFromMultiInputHeadlineDecodeShape(t *testing.T) {
 // goavtest_dogfood_test.go: it is now the consumer-side multi-input ambiguity
 // acceptance test written against goavtest.
 
-func TestFromMultiInputUnknownInputNameListsInputs(t *testing.T) {
-	_, err := recipeFrom(
-		mixTestAudioSource("mic-a", 1),
-		mixTestAudioSource("mic-b", 1),
-	).
-		Audio(selectInputName("microphone")).
-		Decode().
-		To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))).
-		BuildLive(context.Background())
-
-	var buildErr *BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "input_unknown" || !errors.Is(err, errUnsupportedBuild) {
-		t.Fatalf("err = %v, want input_unknown with matching BuildError code", err)
-	}
-	if !strings.Contains(err.Error(), "input=mic-a") || !strings.Contains(err.Error(), "input=mic-b") {
-		t.Fatalf("err = %v, want available input names listed", err)
-	}
-}
-
 func TestFromMultiInputInputNameNarrowsChains(t *testing.T) {
 	ctx := context.Background()
 	var gotA, gotB [][]int16
@@ -190,19 +171,6 @@ func TestFromMultiInputUnambiguousChainJustWorks(t *testing.T) {
 	}
 }
 
-func TestJoinArmsRejectMultiInputChains(t *testing.T) {
-	_, err := legacyMix(
-		recipeFrom(mixTestAudioSource("a", 1), mixTestAudioSource("b", 1)).Audio(),
-		recipeFrom(mixTestAudioSource("c", 1)).Audio(),
-	).To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))).
-		BuildLive(context.Background())
-
-	var buildErr *BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "mix_arm" || !errors.Is(err, errUnsupportedBuild) {
-		t.Fatalf("err = %v, want mix_arm with matching BuildError code", err)
-	}
-}
-
 // TestBranchesForkOneOfSeveralInputs pins forks on a job with several inputs:
 // the branched chain's select reads its own input alone.
 func TestBranchesForkOneOfSeveralInputs(t *testing.T) {
@@ -215,6 +183,7 @@ func TestBranchesForkOneOfSeveralInputs(t *testing.T) {
 	).UseRuntime(mustNew()).
 		Audio(selectInputName("a")).
 		Branches(newBranch("mon").To(sink("out")), newBranch("rec").To(sink("rec"))).
+		Audio(selectInputName("b")).To(sink("other")).
 		Describe()
 	if err != nil {
 		t.Fatalf("describe: %v", err)
@@ -248,8 +217,7 @@ func TestFromMultiInputRejectsConflictingDestinationHandles(t *testing.T) {
 	}
 }
 
-// The Plan intent for a multi-chain job lists every chain and dedupes the
-// explicit Mux destination to one entry.
+// A multi-chain job routing one explicit destination dedupes it to one mux.
 func TestFromMultiInputPlanDedupesMuxDestination(t *testing.T) {
 	out := Write("call.ogg", io.Discard, Format(av.FormatOgg))
 	job := recipeFrom(
@@ -258,22 +226,6 @@ func TestFromMultiInputPlanDedupesMuxDestination(t *testing.T) {
 	).
 		Video().Encode(codec.VP9()).To(out).
 		Audio().Encode(codec.Opus()).To(out)
-	intent := job.plan()
-	if len(intent.Inputs) != 2 || len(intent.Streams) != 2 {
-		t.Fatalf("inputs=%d streams=%d, want 2 and 2", len(intent.Inputs), len(intent.Streams))
-	}
-	if len(intent.Destinations) != 1 || intent.Destinations[0].Name != "call.ogg" {
-		t.Fatalf("destinations = %+v, want one shared call.ogg", intent.Destinations)
-	}
-	if intent.Streams[0].Name != "video" || intent.Streams[1].Name != "audio" {
-		t.Fatalf("stream names = %q, %q", intent.Streams[0].Name, intent.Streams[1].Name)
-	}
-	for i := range intent.Streams {
-		if len(intent.Streams[i].Destinations) != 1 || intent.Streams[i].Destinations[0] != "call.ogg" {
-			t.Fatalf("stream %d destinations = %v", i, intent.Streams[i].Destinations)
-		}
-	}
-
 	spec, err := job.Describe()
 	if err != nil {
 		t.Fatal(err)
@@ -302,15 +254,6 @@ func TestWithKeepsHandleIdentity(t *testing.T) {
 		Video().Encode(codec.VP9()).To(videoOut).
 		Audio().Encode(codec.Opus()).To(audioOut)
 
-	intent := job.plan()
-	if len(intent.Destinations) != 1 || intent.Destinations[0].Name != "call.ogg" {
-		t.Fatalf("destinations = %+v, want one grouped call.ogg", intent.Destinations)
-	}
-	for i := range intent.Streams {
-		if len(intent.Streams[i].Destinations) != 1 || intent.Streams[i].Destinations[0] != "call.ogg" {
-			t.Fatalf("stream %d destinations = %v", i, intent.Streams[i].Destinations)
-		}
-	}
 	spec, err := job.Describe()
 	if err != nil {
 		t.Fatal(err)

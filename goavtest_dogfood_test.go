@@ -12,7 +12,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/thesyncim/goav/component"
 	"github.com/thesyncim/goav/control"
 
 	"github.com/thesyncim/goav"
@@ -151,37 +150,6 @@ func TestFakeDecodeFeedsRealResample(t *testing.T) {
 	// resampler converts the duration, not the count: ~441 samples at 44.1kHz.
 	if audio.Samples < 400 || audio.Samples > 480 {
 		t.Fatalf("resampled samples = %d, want ≈441 (10ms at 44.1kHz)", audio.Samples)
-	}
-}
-
-// TestFlowInFlowRunsEndToEnd is the flow-composition acceptance test,
-// consumer side: a flow applies another flow, the composed flow applies to an
-// ordinary chain, and the spliced stage really runs.
-func TestFlowInFlowRunsEndToEnd(t *testing.T) {
-	ctx := context.Background()
-	var metered int
-	meter := component.FrameFunc("meter", func(ctx context.Context, frame *av.Frame, emit component.Emit) error {
-		metered++
-		return emit.Frame(frame)
-	})
-	inner := goav.Flow("inner").Audio().Do(meter)
-	outer := goav.Flow("outer").Audio().Apply(inner)
-
-	out := goavtest.NewCollector()
-	err := goav.From(goavtest.Audio(48000, 1, []int16{100, 200})).
-		Audio().
-		Apply(outer).
-		To(out.Sink()).
-		UseRuntime(goavtest.Runtime()).
-		Run(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if metered != 1 {
-		t.Fatalf("metered frames = %d, want 1 (nested flow stage ran)", metered)
-	}
-	if got, want := out.S16(), [][]int16{{100, 200}}; !reflect.DeepEqual(got, want) {
-		t.Fatalf("collected = %v, want %v", got, want)
 	}
 }
 

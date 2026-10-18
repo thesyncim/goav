@@ -17,7 +17,7 @@
         "kind": "stage"
       },
       {
-        "name": "encode-composite-encode",
+        "name": "encode-composite",
         "kind": "stage",
         "detail": "frames -\u003e packets, codec=vp8"
       },
@@ -40,11 +40,11 @@
       },
       {
         "from": "composite",
-        "to": "encode-composite-encode",
+        "to": "encode-composite",
         "policy": "all"
       },
       {
-        "from": "encode-composite-encode",
+        "from": "encode-composite",
         "to": "pip.webm",
         "policy": "all"
       }
@@ -244,7 +244,7 @@
           "kind": "stage"
         },
         {
-          "name": "encode-composite-encode",
+          "name": "encode-composite",
           "kind": "stage",
           "detail": "frames -\u003e packets, codec=vp8"
         },
@@ -267,11 +267,11 @@
         },
         {
           "from": "composite",
-          "to": "encode-composite-encode",
+          "to": "encode-composite",
           "policy": "all"
         },
         {
-          "from": "encode-composite-encode",
+          "from": "encode-composite",
           "to": "pip.webm",
           "policy": "all"
         }

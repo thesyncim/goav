@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"github.com/thesyncim/goav/av"
-	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/shape"
 )
@@ -342,107 +341,6 @@ func (s *audioMixStage) releaseMixFrame(frame *av.Frame) {
 		s.pools.putPlanes(frame.Planes)
 		frame.Planes = nil
 	}
-}
-
-// Mix sums N synchronized audio arms into one stream delivered to its
-// destinations — the convergent dual of Branches (N→1). Each arm is a source chain such as
-// From(frameSource).Audio() or another audio-producing join — legacyMix(legacyMix(a, b), c)
-// sub-mixes two arms and mixes the result with a third. Arms must have
-// distinct stream ids; mismatched formats resample to the first arm's format
-// through the implicit arm policy. This reuses the existing Job, so
-// .To/Build/Run are unchanged (see docs/MULTI_INPUT.md).
-func legacyMix(arms ...recipeArm) *mixStream {
-	return &mixStream{arms: arms}
-}
-
-// mixStream is the builder Mix returns: the join grammar surface
-// (SyncByPTS/Auto/Require/Prefer/Encode/Tap/Branches/To), plus the unexported
-// joinArm method so a mix nests as an arm of an outer join. It is sealed —
-// its fields are unexported, so the grammar methods are the only mutation
-// surface.
-type mixStream struct {
-	arms       []recipeArm
-	encode     *codec.Spec
-	taps       []tapRef
-	operations []operationSpec
-	sync       joinSyncMode
-}
-
-// joinArm lets a Mix stand as an arm of an outer join: the outer join consumes
-// the MIXED output stream under the sub-mix's output id. A nested mix may not
-// carry .Encode(...) — encode belongs to the outer join or its chain.
-func (m *mixStream) joinArm() joinArmSpec {
-	if m == nil {
-		return joinArmSpec{}
-	}
-	return joinArmSpec{join: &joinSpec{kind: joinMix, arms: m.arms, encode: m.encode, operations: cloneOperationSpecs(m.operations), taps: m.taps, sync: m.sync}}
-}
-
-// SyncByPTS aligns the arms by presentation timestamp instead of arrival
-// order. Per step the earliest head frame across the arms (on a common
-// nanosecond clock) sets the step time; arms within tolerance (half a frame
-// duration) join it, arms whose head is newer contribute silence for the step,
-// and frames left behind the already-mixed timeline are dropped to catch up. A
-// discontinuity on one arm (Seek/Segment) flushes that arm's buffer and
-// re-syncs at its new position. Use it when arms are files starting at
-// different offsets, after a Seek on one arm, or under drift; the arrival
-// default pairs frames one-per-arm and is right for live same-clock sources.
-func (m *mixStream) SyncByPTS() *mixStream {
-	m.sync = joinSyncPTS
-	return m
-}
-
-// Auto lets the planner insert format conversions on the mixed output before a
-// terminal .Encode(...) or planned branches, using the same shape solver as a
-// normal stream chain.
-func (m *mixStream) Auto(policies ...shape.Policy) *mixStream {
-	m.operations = append(m.operations, operationSpecForAutoPolicy(policies))
-	return m
-}
-
-// Require asserts shape facts on the mixed output before the terminal encode or
-// planned branches.
-func (m *mixStream) Require(spec shape.Spec) *mixStream {
-	m.operations = append(m.operations, operationSpecForRequire(spec))
-	return m
-}
-
-// Prefer biases automatic conversion adapter selection on the mixed output.
-func (m *mixStream) Prefer(spec shape.Spec) *mixStream {
-	m.operations = append(m.operations, operationSpecForPreference(spec))
-	return m
-}
-
-// Encode encodes the mixed stream before the destination, so a Mix can record to
-// a File/mux (not only a frame Sink). Without it the mix delivers frames.
-func (m *mixStream) Encode(spec codec.Spec) *mixStream {
-	m.encode = &spec
-	return m
-}
-
-// Tap names the mixed stream as a stable frame-domain attach point — the same
-// tap a normal chain declares: it appears in task.Taps() and runtime branches
-// can Attach from it later.
-func (m *mixStream) Tap(tap tapRef) *mixStream {
-	m.taps = append(m.taps, tap)
-	return m
-}
-
-// Branches fans the mixed stream out to planned branch chains, each with its
-// own destinations — the same goav.Branch specs an ordinary stream chain
-// accepts after decode. The mix output is a normal stream point: branches may
-// transform, encode, tap, and deliver independently.
-func (m *mixStream) Branches(branches ...branchRecipe) *recipeJob {
-	return newJoinBranchesJob(joinMix, joinSpec{arms: m.arms, encode: m.encode, operations: cloneOperationSpecs(m.operations), taps: m.taps, sync: m.sync}, branches)
-}
-
-// To delivers the mixed stream to one or more destinations (a fanout when
-// several are given — each destination receives the joined stream, exactly
-// like a chain's multi-destination .To) and returns a Job, so the mix runs
-// through the same Build/Run as every other recipe. It lowers to the one
-// joinSpec shared by every convergence builder.
-func (m *mixStream) To(destinations ...Destination) *recipeJob {
-	return newJoinJob(joinMix, joinSpec{arms: m.arms, dests: destinations, encode: m.encode, operations: cloneOperationSpecs(m.operations), taps: m.taps, sync: m.sync})
 }
 
 // mixJoinProfile is Mix's entry in the join table: audio arms, explicit

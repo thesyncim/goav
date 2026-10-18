@@ -12,6 +12,7 @@ import (
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/format"
+	"github.com/thesyncim/goav/internal/recipeir"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/provider"
 	"github.com/thesyncim/goav/shape"
@@ -282,8 +283,9 @@ func (s InputSpec) providerName() string {
 	return ""
 }
 
-func (s InputSpec) intent() inputIntent {
-	return inputIntent{
+// recipeIRInputFromSpec is the planner-visible data of one input.
+func recipeIRInputFromSpec(s InputSpec) recipeir.Input {
+	out := recipeir.Input{
 		Name:     firstNonEmpty(s.name, s.input.Name, s.providerName()),
 		URI:      s.input.URI,
 		Protocol: s.input.Protocol,
@@ -291,6 +293,32 @@ func (s InputSpec) intent() inputIntent {
 		Codec:    cloneCodecSpec(s.codec),
 		Realtime: s.input.Realtime || (s.source != nil && s.source.shape.Realtime),
 	}
+	switch {
+	case s.source != nil:
+		out.Kind = recipeir.InputKindCustomSource
+	case s.provider != nil:
+		out.Kind = recipeir.InputKindProvider
+	case s.input.Name != "" || s.input.URI != "" || s.input.Protocol != "" || s.input.MIMEType != "" || s.input.Reader != nil || s.input.ReaderAt != nil:
+		out.Kind = recipeir.InputKindByteStream
+	}
+	if sourceShape, ok := declaredSourceShape(s); ok {
+		out.SourceShape = sourceShape
+	}
+	return out
+}
+
+// recipeIRInputSourceShape is the stream shape a provider or custom source
+// declares, normalized.
+func recipeIRInputSourceShape(input recipeir.Input) (shape.Spec, bool) {
+	switch input.Kind {
+	case recipeir.InputKindCustomSource, recipeir.InputKindProvider:
+	default:
+		return shape.Spec{}, false
+	}
+	if input.SourceShape.Domain == "" {
+		return shape.Spec{}, false
+	}
+	return normalizeCustomSourceShape(input.Name, input.SourceShape), true
 }
 
 func (s InputSpec) inputName(fallback string) string {

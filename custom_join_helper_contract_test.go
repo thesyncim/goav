@@ -129,7 +129,7 @@ func TestCustomJoinBaseStreamContracts(t *testing.T) {
 	)
 	framePlan := &joinPlan{
 		name: "funnel",
-		arms: []joinArmPlan{{input: frameInput}},
+		arms: []joinArmPlan{{spec: frameInput}},
 	}
 	stream, base := framePlan.customJoinBaseStream(true)
 	if stream.ID != "funnel" ||
@@ -181,7 +181,7 @@ func TestCustomJoinedStreamAndDomainContracts(t *testing.T) {
 	plan := &joinPlan{
 		name: "funnel",
 		arms: []joinArmPlan{{
-			input: Source("voice",
+			spec: Source("voice",
 				shape.Frame(av.MediaAudio, shape.Audio(48_000, codec.Stereo, av.SampleFormatS16)),
 				func(context.Context, SourcePush) error { return nil },
 			),

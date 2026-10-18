@@ -314,26 +314,6 @@ func TestMixDecodedArmEOSStopsGatingEndToEnd(t *testing.T) {
 
 // --- OnStream against joins ---
 
-// TestOnStreamRefusedOnJoinJobs pins the validateStreamRulesPass join branch:
-// a Mix job is not a single-input anchor, so declaring an OnStream rule on it
-// is a typed refusal, not a silent no-op.
-func TestOnStreamRefusedOnJoinJobs(t *testing.T) {
-	monitor := Sink(SinkFunc("monitor", func(context.Context, Message) error { return nil }))
-	_, err := legacyMix(
-		recipeFrom(mixTestAudioSource("a", 100)).Audio(),
-		recipeFrom(mixTestAudioSource("b", 50)).Audio(),
-	).To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))).
-		OnStream(MatchMedia(av.MediaAudio), newBranch("late").Copy().To(monitor)).
-		Build(context.Background())
-	var buildErr *BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "stream_rule_invalid" {
-		t.Fatalf("err = %v, want stream_rule_invalid", err)
-	}
-	if !strings.Contains(buildErr.Reason, "Mix/Composite/Select") {
-		t.Fatalf("reason = %q, want it to name the join limitation", buildErr.Reason)
-	}
-}
-
 // --- Segment + runtime Attach mid-window ---
 
 // crossSegmentGatedSource plays one requested [start, end) packet window like
@@ -617,9 +597,7 @@ func TestRebranchSwapsBranchOnJoinTap(t *testing.T) {
 	waitFor("step1 old branch", 1, old.count)
 
 	// Swap the branch on the join tap, then step 2 reaches the replacement.
-	if _, err := attachment.Rebranch(ctx, newBranch("watch2").
-		From(frameTapRef("mixed")).
-		To(replacement.sink("new"))); err != nil {
+	if _, err := attachment.Rebranch(ctx, task.Tap("mixed").As("watch2").To(replacement.sink("new"))); err != nil {
 		t.Fatalf("Rebranch err = %v", err)
 	}
 	releaseA <- struct{}{}
@@ -710,52 +688,6 @@ func TestPauseResumeBranchOnJoinTap(t *testing.T) {
 }
 
 // --- Detach of a branch sharing a tap-arm join's anchor ---
-
-// TestDetachBranchOnTapArmAnchorKeepsJoin attaches and detaches a runtime
-// branch on the SAME tap a tap-reference join arm converges from, before any media
-// flows: the planned tap-arm edge survives the detach and the mix still sums
-// the tapped stream twice.
-func TestDetachBranchOnTapArmAnchorKeepsJoin(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	release := make(chan struct{}, 1)
-	var got, monitored [][]int16
-	task, err := legacyMix(
-		recipeFrom(crossGatedFrameSource("a", release, []int16{100, 200})).Audio().Tap(frameTapRef("dry")),
-		frameTapRef("dry"),
-		recipeFrom(mixTestAudioSource("live", 50, -50)).Audio(),
-	).To(joinTestCollectSink("out", &got)).BuildLive(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer task.Close()
-
-	attachment, err := legacyAttach(task, ctx, newBranch("monitor").
-		From(frameTapRef("dry")).
-		To(joinTestCollectSink("monitor", &monitored)))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := task.Detach(ctx, attachment); err != nil {
-		t.Fatalf("Detach err = %v", err)
-	}
-	if state := attachment.Snapshot().State; state != lifecycle.BranchDetached {
-		t.Fatalf("attachment state = %v, want %v", state, lifecycle.BranchDetached)
-	}
-
-	runErr := make(chan error, 1)
-	go func() { runErr <- task.Run(ctx) }()
-	release <- struct{}{}
-	if err := <-runErr; err != nil {
-		t.Fatal(err)
-	}
-	if want := [][]int16{{250, 350}}; !reflect.DeepEqual(got, want) {
-		t.Fatalf("mixed = %v, want %v (tap arm survives the detach of its tap sibling)", got, want)
-	}
-	if len(monitored) != 0 {
-		t.Fatalf("detached branch received %d frames, want 0", len(monitored))
-	}
-}
 
 // --- EOS during a SelectActive switch targeting the ending arm ---
 
@@ -902,7 +834,7 @@ func TestMixBranchesAutoSolvesJoinedOutput(t *testing.T) {
 	}
 	text := specText(planned)
 	if !strings.Contains(text, "stage resample-enc [resample") ||
-		!strings.Contains(text, "select-audio -> resample-enc") ||
+		!strings.Contains(text, "mix -> resample-enc") ||
 		!strings.Contains(text, "resample-enc -> encode-enc") {
 		t.Fatalf("joined branch output was not solved before encode:\n%s", text)
 	}

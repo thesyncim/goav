@@ -47,7 +47,7 @@
         "kind": "stage"
       },
       {
-        "name": "encode-mix-encode",
+        "name": "encode-mix",
         "kind": "stage",
         "detail": "frames -\u003e packets, codec=opus"
       },
@@ -100,11 +100,11 @@
       },
       {
         "from": "mix",
-        "to": "encode-mix-encode",
+        "to": "encode-mix",
         "policy": "all"
       },
       {
-        "from": "encode-mix-encode",
+        "from": "encode-mix",
         "to": "mix.webm",
         "policy": "all"
       }
@@ -259,6 +259,8 @@
               "mediaKind": "audio",
               "streamID": "mix",
               "codec": "opus",
+              "sampleRate": 48000,
+              "channels": 2,
               "sampleFormat": "s16"
             },
             "adapter": "opus"
@@ -464,7 +466,7 @@
           "kind": "stage"
         },
         {
-          "name": "encode-mix-encode",
+          "name": "encode-mix",
           "kind": "stage",
           "detail": "frames -\u003e packets, codec=opus"
         },
@@ -517,11 +519,11 @@
         },
         {
           "from": "mix",
-          "to": "encode-mix-encode",
+          "to": "encode-mix",
           "policy": "all"
         },
         {
-          "from": "encode-mix-encode",
+          "from": "encode-mix",
           "to": "mix.webm",
           "policy": "all"
         }

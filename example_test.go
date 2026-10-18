@@ -105,9 +105,9 @@ func opusTestPacket() []byte {
 	return data
 }
 
-// ExampleFrom is the direct chain: a custom source feeding decode, encode, and
-// a typed destination — the front door of the recipe grammar.
-func ExampleFrom() {
+// ExampleRuntime_Run is the direct stream: a custom source feeding decode, encode,
+// and a typed destination — the front door of the recipe grammar.
+func ExampleRuntime_Run() {
 	ctx := context.Background()
 
 	// A custom source pushes encoded packets the application already owns.
@@ -139,19 +139,18 @@ func ExampleFrom() {
 	// Output: <nil> 2
 }
 
-// ExampleFrom_multipleInputs feeds two live inputs into one job: each chain
-// narrows to its input with InputName, and Mux groups both encoded streams
-// into one shared container.
-func ExampleFrom_multipleInputs() {
+// ExampleRuntime_Run_multipleInputs feeds two live inputs into one run: each
+// stream comes from its own input, and one destination value muxes both
+// encoded streams into one container.
+func ExampleRuntime_Run_multipleInputs() {
 	camera := i420Source("camera", 16, 16, 100)
 	mic := pcmSource("mic", 48_000, 1, make([]int16, 960))
 	out := goav.Write("call.webm", io.Discard)
 
-	job := goav.From(camera, mic).
-		Video(goav.InputName("camera")).Encode(codec.VP8(codec.Bitrate(1_000_000))).To(out).
-		Audio(goav.InputName("mic")).Encode(codec.Opus(codec.Bitrate(96_000))).To(out)
-
-	spec, err := job.Describe()
+	spec, err := mustRuntime().Describe(
+		camera.Video().Encode(codec.VP8(codec.Bitrate(1_000_000))).To(out),
+		mic.Audio().Encode(codec.Opus(codec.Bitrate(96_000))).To(out),
+	)
 	if err != nil {
 		fmt.Println(err)
 		return
@@ -166,11 +165,11 @@ func ExampleFrom_multipleInputs() {
 	// Output: 2 encoded streams mux into call.webm
 }
 
-// ExampleFrom_autoResample opts the chain into the shape solver: the mic is
+// ExampleStream_Auto opts the stream into the shape solver: the mic is
 // 44.1kHz but Opus pins 48kHz, so under the explicit AllowResample policy the
 // planner inserts the conversion as a real planned operation and Explain
 // reports it.
-func ExampleFrom_autoResample() {
+func ExampleStream_Auto() {
 	mic := pcmSource("mic", 44_100, 2, make([]int16, 882*2))
 
 	report, err := bundle.MustNew().Explain(context.Background(), mic.
@@ -188,10 +187,10 @@ func ExampleFrom_autoResample() {
 	// Output: shape_conversion_inserted inserted resample 44.1kHz→48kHz before encode-opus (AllowResample)
 }
 
-// ExampleMix converges two audio sources into one stream: the dual of
-// Branches. The summed output is a normal stream point that takes Encode, To,
-// Tap, and Branches like any chain.
-func ExampleLegacyMix() {
+// ExampleMix converges two audio sources into one stream: the dual of a fork.
+// The summed output is a normal Stream that takes Encode, Tap, To, and forks
+// like any other.
+func ExampleMix() {
 	var mixed [][]int16
 	speakers := goav.Sink(component.SinkFunc("speakers", func(_ context.Context, msg component.Message) error {
 		if msg.Frame != nil {
@@ -214,7 +213,7 @@ func ExampleLegacyMix() {
 // arm two starts one 20ms frame later, so the leading step plays arm one
 // alone, the PTS-matched frames sum, and the trailing step plays arm two
 // alone.
-func ExampleLegacyMix_syncByPTS() {
+func ExampleMix_syncByPTS() {
 	var mixed [][]int16
 	var pts []int64
 	out := goav.Sink(component.SinkFunc("out", func(_ context.Context, msg component.Message) error {
@@ -236,10 +235,10 @@ func ExampleLegacyMix_syncByPTS() {
 	// Output: <nil> [[10 10] [21 21] [2 2]] [0 20 40]
 }
 
-// ExampleComposite paints two video arms onto one canvas at their Region
-// offsets: a 4x4 camera at the origin and a second 4x4 camera 4 pixels right
+// ExampleComposite paints two video arms onto one canvas at their At
+// positions: a 4x4 camera at the origin and a second 4x4 camera 4 pixels right
 // produce one 8x4 frame.
-func ExampleLegacyComposite() {
+func ExampleComposite() {
 	var canvasW, canvasH int
 	var leftLuma, rightLuma byte
 	preview := goav.Sink(component.SinkFunc("preview", func(_ context.Context, msg component.Message) error {
@@ -272,7 +271,7 @@ func ExampleLegacyComposite() {
 
 // ExampleSelect forwards exactly one live arm and switches arms through the
 // control plane — no node names, no rebuild.
-func ExampleLegacySelect() {
+func ExampleSelect() {
 	ctx := context.Background()
 	preview := goav.Sink(component.SinkFunc("preview", func(context.Context, component.Message) error {
 		return nil
@@ -372,7 +371,7 @@ func ExampleAttachment_rebranch() {
 	// Rotate to the next file at a clean decode point; the replaced branch
 	// drains so part-001 commits complete.
 	if _, err := rec.Rebranch(ctx,
-		goav.Branch("rec").From(goav.PacketTap("video.encoded")).Copy().To(goav.Write("part-002.ivf", &part2)),
+		task.Tap("video.encoded").As("rec").To(goav.Write("part-002.ivf", &part2)),
 		lifecycle.SwitchAt(lifecycle.NextKeyframe()),
 		lifecycle.DrainOldBranch(),
 	); err != nil {

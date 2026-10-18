@@ -4,16 +4,7 @@ import (
 	"strconv"
 
 	"github.com/thesyncim/goav/av"
-	"github.com/thesyncim/goav/plan"
-	"github.com/thesyncim/goav/shape"
 )
-
-type tapIntent struct {
-	Name      string
-	MediaKind av.MediaType
-	Domain    shape.MediaDomain
-	After     plan.OperationKind
-}
 
 func defaultDecodedTapName(media av.MediaType) string {
 	if media == "" {

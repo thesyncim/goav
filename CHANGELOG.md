@@ -11,6 +11,23 @@ methodology changes, and migration notes.
 
 ## Unreleased
 
+- One compiler: Outputs compile into one recipe DAG, and Describe, Explain,
+  Build, and `task.Attach` all read it. A Stream used twice is one node, so
+  work before a fork runs once at any depth. Lifted restrictions: a join runs
+  beside other streams and other joins in one recipe (`stream_beside_join` is
+  gone), a tap may follow a join's encoder, a join arm may read a stream
+  other work reads, and `input.To` copies of several inputs may route to
+  different destinations. Behavior changes: a joined stream's encoder is
+  named after its join or fork (`encode-mix`, not `encode-mix-encode`), and
+  its forks read the join directly, with no select node; refusals keep one
+  code each — distinct handles sharing a name are `destination_duplicate`,
+  frames into a mux without an encoder are `encode_missing` (joins
+  included), and frame work on a fork that never decodes is
+  `operation_shape_mismatch`. An encoder several forks share keeps the id of
+  the stream it encodes (`.As` names a fork's own work), and two names after
+  the same work make two branches over the same nodes.
+  Removed codes nothing raises any more, among them `job_invalid` and the
+  `flow` family, and the `*_destination` and `*_tap_arm` join codes.
 - New: package `metrics` bridges a running task to monitoring.
   `metrics.Handler(task)` serves Stats and Snapshot as Prometheus text
   (`goav_` per-node messages, packets, frames, drops by reason, branch and

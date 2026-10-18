@@ -19,38 +19,30 @@ type resizeOption func(*filter.ResizeConfig)
 
 type audioOption func(*filter.ResampleConfig)
 
-// transformSpec is one declared frame transform. Chains create these through
-// the Resize/Resample methods; the spec exists as an opaque value so flows can
-// describe transforms without exposing partially valid pointer-union state.
-type transformSpec struct {
-	resize   *filter.ResizeConfig
-	resample *filter.ResampleConfig
-}
-
 // resizeSpec declares a video geometry conversion to width x height (exact mode
 // unless an option changes it), performed by the runtime's registered resize
 // filter. Chains reach it through .Resize(...).
-func resizeSpec(width int, height int, options ...resizeOption) transformSpec {
+func resizeSpec(width int, height int, options ...resizeOption) recipeir.Transform {
 	config := filter.ResizeConfig{Width: width, Height: height, Mode: filter.ResizeExact}
 	for i := range options {
 		if options[i] != nil {
 			options[i](&config)
 		}
 	}
-	return transformSpec{resize: &config}
+	return recipeir.Transform{Kind: recipeir.TransformResize, Resize: config}
 }
 
 // resampleSpec declares an audio conversion to the given sample rate and
 // channel count, performed by the runtime's registered resample filter.
 // Chains reach it through .Resample(...).
-func resampleSpec(sampleRate int, channels int, options ...audioOption) transformSpec {
+func resampleSpec(sampleRate int, channels int, options ...audioOption) recipeir.Transform {
 	config := filter.ResampleConfig{SampleRate: sampleRate, Channels: channels}
 	for i := range options {
 		if options[i] != nil {
 			options[i](&config)
 		}
 	}
-	return transformSpec{resample: &config}
+	return recipeir.Transform{Kind: recipeir.TransformResample, Resample: config}
 }
 
 func validateRecipeIRTransformAdapters(operation string, rt *Runtime, streams []recipeir.Stream) error {
@@ -59,7 +51,6 @@ func validateRecipeIRTransformAdapters(operation string, rt *Runtime, streams []
 	}
 	for i := range streams {
 		stream := streams[i]
-		streamIntent := streamIntentFromRecipeIR(stream)
 		transforms := recipeIRStreamTransforms(stream)
 		for j := range transforms {
 			name := recipeIRTransformFactoryName(transforms[j])
@@ -67,11 +58,11 @@ func validateRecipeIRTransformAdapters(operation string, rt *Runtime, streams []
 				continue
 			}
 			if _, err := rt.filters.Factory(name); err != nil {
-				return recipeTransformAdapterError(operation, streamIntent, name, err)
+				return recipeTransformAdapterError(operation, stream, name, err)
 			}
 			desc, err := rt.filters.Descriptor(name)
 			if err == nil {
-				if err := validateRecipeIRTransformAdapterDescriptor(operation, streamIntent, transforms[j], name, desc); err != nil {
+				if err := validateRecipeIRTransformAdapterDescriptor(operation, stream, transforms[j], name, desc); err != nil {
 					return err
 				}
 			}
@@ -80,42 +71,7 @@ func validateRecipeIRTransformAdapters(operation string, rt *Runtime, streams []
 	return nil
 }
 
-func transformFactoryName(spec transformSpec) string {
-	switch {
-	case spec.resize != nil:
-		return filter.FactoryResize
-	case spec.resample != nil:
-		return filter.FactoryResample
-	default:
-		return ""
-	}
-}
-
-func validateTransformAdapterDescriptor(operation string, stream streamIntent, spec transformSpec, name string, desc filter.Descriptor) error {
-	expectedInput, expectedOutput := transformAdapterExpectedMedia(name)
-	if expectedInput != "" && desc.Input != "" && desc.Input != expectedInput {
-		return transformAdapterIncompatibleError(operation, stream, name, desc, expectedInput, expectedOutput)
-	}
-	if expectedOutput != "" && desc.Output != "" && desc.Output != expectedOutput {
-		return transformAdapterIncompatibleError(operation, stream, name, desc, expectedInput, expectedOutput)
-	}
-	if spec.resize != nil {
-		if mode := resizeModeWithDefault(spec.resize.Mode); mode != "" && len(desc.ResizeModes) != 0 && !resizeModeAllowed(desc.ResizeModes, mode) {
-			return transformAdapterCapabilityError(operation, stream, name, "resize_mode", string(mode), resizeModesToStrings(desc.ResizeModes))
-		}
-		if format := spec.resize.PixelFormat; format != "" && len(desc.PixelFormats) != 0 && !stringAllowed(desc.PixelFormats, format) {
-			return transformAdapterCapabilityError(operation, stream, name, "pixel_format", format, desc.PixelFormats)
-		}
-	}
-	if spec.resample != nil {
-		if format := spec.resample.SampleFormat; format != "" && len(desc.SampleFormats) != 0 && !stringAllowed(desc.SampleFormats, format) {
-			return transformAdapterCapabilityError(operation, stream, name, "sample_format", format, desc.SampleFormats)
-		}
-	}
-	return nil
-}
-
-func validateRecipeIRTransformAdapterDescriptor(operation string, stream streamIntent, spec recipeir.Transform, name string, desc filter.Descriptor) error {
+func validateRecipeIRTransformAdapterDescriptor(operation string, stream recipeir.Stream, spec recipeir.Transform, name string, desc filter.Descriptor) error {
 	expectedInput, expectedOutput := transformAdapterExpectedMedia(name)
 	if expectedInput != "" && desc.Input != "" && desc.Input != expectedInput {
 		return transformAdapterIncompatibleError(operation, stream, name, desc, expectedInput, expectedOutput)
@@ -175,13 +131,13 @@ func transformAdapterExpectedMedia(name string) (av.MediaType, av.MediaType) {
 	}
 }
 
-func transformAdapterIncompatibleError(operation string, stream streamIntent, name string, desc filter.Descriptor, expectedInput av.MediaType, expectedOutput av.MediaType) error {
+func transformAdapterIncompatibleError(operation string, stream recipeir.Stream, name string, desc filter.Descriptor, expectedInput av.MediaType, expectedOutput av.MediaType) error {
 	return &BuildError{
 		Phase:     phaseBuild,
 		Family:    errcode.FamilyForCode(transformAdapterIncompatibleCode),
 		Code:      transformAdapterIncompatibleCode,
 		Operation: operation,
-		Node:      jobStreamIntentName(stream),
+		Node:      recipeIRStreamName(stream),
 		Reason:    name + " filter adapter declares incompatible media",
 		fields:    errDetails(errDetail("transform", name), errDetail("expected_input", string(expectedInput)), errDetail("expected_output", string(expectedOutput)), errDetail("actual_input", string(desc.Input)), errDetail("actual_output", string(desc.Output))),
 		fixes: buildErrorFixes([]string{
@@ -193,13 +149,13 @@ func transformAdapterIncompatibleError(operation string, stream streamIntent, na
 	}
 }
 
-func transformAdapterCapabilityError(operation string, stream streamIntent, name string, field string, requested string, supported []string) error {
+func transformAdapterCapabilityError(operation string, stream recipeir.Stream, name string, field string, requested string, supported []string) error {
 	return &BuildError{
 		Phase:     phaseBuild,
 		Family:    errcode.FamilyForCode(transformAdapterIncompatibleCode),
 		Code:      transformAdapterIncompatibleCode,
 		Operation: operation,
-		Node:      jobStreamIntentName(stream),
+		Node:      recipeIRStreamName(stream),
 		Reason:    name + " filter adapter does not support the requested " + strings.ReplaceAll(field, "_", " "),
 		fields:    errDetails(errDetail("transform", name), errDetail("field", field), errDetail("requested", requested), errDetail("supported", strings.Join(supported, ","))),
 		fixes: buildErrorFixes([]string{
@@ -211,7 +167,7 @@ func transformAdapterCapabilityError(operation string, stream streamIntent, name
 	}
 }
 
-func recipeTransformAdapterError(operation string, stream streamIntent, name string, cause error) error {
+func recipeTransformAdapterError(operation string, stream recipeir.Stream, name string, cause error) error {
 	if !errors.Is(cause, filter.ErrNotFound) {
 		return cause
 	}
@@ -220,7 +176,7 @@ func recipeTransformAdapterError(operation string, stream streamIntent, name str
 		Family:    errcode.FamilyForCode(transformAdapterMissingCode),
 		Code:      transformAdapterMissingCode,
 		Operation: operation,
-		Node:      jobStreamIntentName(stream),
+		Node:      recipeIRStreamName(stream),
 		Reason:    "no " + name + " filter adapter is registered",
 		fields:    errDetails(errDetail("transform", name)),
 		fixes: buildErrorFixes([]string{
@@ -243,47 +199,10 @@ func transformMethodName(name string) string {
 	}
 }
 
-func streamTransform(streamName string, selector av.StreamSelector, spec transformSpec, index int) (mediaTransform, error) {
-	base := firstNonEmpty(streamName, string(selector.ID), string(selector.Type), "stream")
-	suffix := ""
-	if index > 0 {
-		suffix = "-" + fmt.Sprint(index+1)
-	}
-	if err := validateTransformSpec("build stream", base, spec); err != nil {
-		return mediaTransform{}, err
-	}
+func validateTransformSpec(operation string, node string, spec recipeir.Transform) error {
 	switch {
-	case spec.resize != nil:
-		if selector.Type == av.MediaAudio {
-			return mediaTransform{}, transformMediaError(base, "resize", av.MediaVideo, selector.Type)
-		}
-		resize := *spec.resize
-		return mediaTransform{
-			name:    "resize-" + base + suffix,
-			factory: filter.FactoryResize,
-			video:   &resize,
-		}, nil
-	case spec.resample != nil:
-		if selector.Type == av.MediaVideo {
-			return mediaTransform{}, transformMediaError(base, "resample", av.MediaAudio, selector.Type)
-		}
-		resample := *spec.resample
-		return mediaTransform{
-			name:    "resample-" + base + suffix,
-			factory: filter.FactoryResample,
-			audio:   &resample,
-		}, nil
-	default:
-		return mediaTransform{}, emptyTransformSpecError("build stream", base)
-	}
-}
-
-func validateTransformSpec(operation string, node string, spec transformSpec) error {
-	switch {
-	case spec.resize != nil && spec.resample != nil:
-		return combinedTransformSpecError(operation, node)
-	case spec.resize != nil:
-		if spec.resize.Width > 0 && spec.resize.Height > 0 {
+	case spec.Kind == recipeir.TransformResize:
+		if spec.Resize.Width > 0 && spec.Resize.Height > 0 {
 			return nil
 		}
 		return &BuildError{
@@ -293,15 +212,15 @@ func validateTransformSpec(operation string, node string, spec transformSpec) er
 			Operation: operation,
 			Node:      node,
 			Reason:    "resize requires positive width and height",
-			fields:    errDetails(errDetail("width", fmt.Sprintf("%d", spec.resize.Width)), errDetail("height", fmt.Sprintf("%d", spec.resize.Height))),
+			fields:    errDetails(errDetail("width", fmt.Sprintf("%d", spec.Resize.Width)), errDetail("height", fmt.Sprintf("%d", spec.Resize.Height))),
 			fixes: buildErrorFixes([]string{
 				"call .Resize(width, height) with positive dimensions",
 				"remove .Resize(...) when no video scaling is needed",
 			}),
 			cause: errUnsupportedBuild,
 		}
-	case spec.resample != nil:
-		if spec.resample.SampleRate > 0 && spec.resample.Channels > 0 {
+	case spec.Kind == recipeir.TransformResample:
+		if spec.Resample.SampleRate > 0 && spec.Resample.Channels > 0 {
 			return nil
 		}
 		return &BuildError{
@@ -311,7 +230,7 @@ func validateTransformSpec(operation string, node string, spec transformSpec) er
 			Operation: operation,
 			Node:      node,
 			Reason:    "resample requires positive sample rate and channels",
-			fields:    errDetails(errDetail("sample_rate", fmt.Sprintf("%d", spec.resample.SampleRate)), errDetail("channels", fmt.Sprintf("%d", spec.resample.Channels))),
+			fields:    errDetails(errDetail("sample_rate", fmt.Sprintf("%d", spec.Resample.SampleRate)), errDetail("channels", fmt.Sprintf("%d", spec.Resample.Channels))),
 			fixes: buildErrorFixes([]string{
 				"call .Resample(sampleRate, channels) with positive values",
 				"remove .Resample(...) when no audio conversion is needed",
@@ -320,19 +239,6 @@ func validateTransformSpec(operation string, node string, spec transformSpec) er
 		}
 	default:
 		return emptyTransformSpecError(operation, node)
-	}
-}
-
-func combinedTransformSpecError(operation string, node string) error {
-	return &BuildError{
-		Phase:     phaseBuild,
-		Family:    errcode.FamilyForCode(transformInvalidCode),
-		Code:      transformInvalidCode,
-		Operation: operation,
-		Node:      node,
-		Reason:    "one transform cannot be both resize and resample",
-		fixes:     buildErrorFixes([]string{"declare two separate steps instead: .Resize(width, height).Resample(rate, channels)"}),
-		cause:     errUnsupportedBuild,
 	}
 }
 
@@ -367,4 +273,24 @@ func transformMediaError(stream string, transform string, expected av.MediaType,
 		}),
 		cause: errUnsupportedBuild,
 	}
+}
+
+// transformResize is a resize transform's config for the lowering, nil for
+// any other transform.
+func transformResize(transform recipeir.Transform) *filter.ResizeConfig {
+	if transform.Kind != recipeir.TransformResize {
+		return nil
+	}
+	config := transform.Resize
+	return &config
+}
+
+// transformResample is a resample transform's config for the lowering, nil
+// for any other transform.
+func transformResample(transform recipeir.Transform) *filter.ResampleConfig {
+	if transform.Kind != recipeir.TransformResample {
+		return nil
+	}
+	config := transform.Resample
+	return &config
 }

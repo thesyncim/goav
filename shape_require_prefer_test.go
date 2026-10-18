@@ -169,24 +169,6 @@ func TestRequireWorksInBranches(t *testing.T) {
 	}
 }
 
-// TestRequireWorksInFlows pins the flow surface: a requirement declared on a
-// reusable Flow is enforced wherever the flow is applied.
-func TestRequireWorksInFlows(t *testing.T) {
-	normalize := newFlow("normalize").Audio().
-		Require(shape.Frame(av.MediaAudio, shape.Audio(48_000, codec.Stereo, "")))
-	_, err := recipeFrom(solverTestAudioSource("mic", 44_100, codec.Stereo, av.SampleFormatS16)).
-		Audio().
-		Apply(normalize).
-		Encode(codec.Opus(codec.Bitrate(96_000))).
-		To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))).
-		UseRuntime(solverTestOpusRuntime(testBundleFilters())).
-		BuildLive(context.Background())
-	var buildErr *BuildError
-	if !errors.As(err, &buildErr) || buildErr.Code != "shape_requirement_unmet" {
-		t.Fatalf("err = %v, want shape_requirement_unmet", err)
-	}
-}
-
 // --- .Prefer(...): soft solver preferences ---
 
 // TestPreferResolvesAdapterAmbiguity pins the headline preference win: on an
@@ -205,7 +187,7 @@ func TestPreferResolvesAdapterAmbiguity(t *testing.T) {
 		WithFilter(rtCapable, &shapeSolverTestFilterFactory{}),
 		WithFilter(offline, &shapeSolverTestFilterFactory{}),
 	)
-	chain := func() *streamChain {
+	chain := func() *testChain {
 		return recipeFrom(solverTestAudioSource("mic", 44_100, codec.Stereo, av.SampleFormatS16)).
 			Audio().
 			Auto(shape.AllowResample())
@@ -381,7 +363,7 @@ func TestPreferWorksInBranches(t *testing.T) {
 		WithFilter(offline, &shapeSolverTestFilterFactory{}),
 		WithDecoder(codec.Descriptor{ID: pcm, Name: "PCM", Type: av.MediaAudio, Capabilities: codec.Capabilities{SampleFormats: []string{av.SampleFormatS16}}}, recipePCMDecoderFactory{decoder: &recipePCMDecoder{}}),
 	)
-	branch := func(prefer bool) branchRecipe {
+	branch := func(prefer bool) *testBranch {
 		b := newBranch("voice").Auto(shape.AllowResample())
 		if prefer {
 			b = b.Prefer(shape.New(shape.Realtime(true)))

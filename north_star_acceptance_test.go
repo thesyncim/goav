@@ -3,37 +3,13 @@ package goav
 import (
 	"context"
 	"io"
-	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
-	"github.com/thesyncim/goav/filter"
 	"github.com/thesyncim/goav/shape"
 )
-
-// northStarResampleRuntime is northStarTranscodeRuntime plus an audio resample
-// filter, for acceptance checks that include a transform.
-func northStarResampleRuntime() *Runtime {
-	streams := []av.Stream{audioOpusTestStream()}
-	return mustNew(
-		withTestFormats(
-			testFormatProber(remuxTestProber{streams: streams}),
-			testFormatDemuxer(av.FormatOgg, decodeTestDemuxerFactory{demuxer: &decodeTestDemuxer{streams: streams}}),
-			testFormatMuxer(av.FormatOgg, &remuxTestMuxerFactory{}),
-		),
-		withTestCodecs(
-			testCodecDecoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &decodeTestDecoderFactory{decoder: &decodeTestDecoder{}}),
-			testCodecEncoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &encodeTestEncoderFactory{encoder: &encodeTestEncoder{}}),
-		),
-		withTestFilters(testFilterFactory(filter.Descriptor{
-			Name:   filter.FactoryResample,
-			Input:  av.MediaAudio,
-			Output: av.MediaAudio,
-		}, &transcodeTestFilterFactory{})),
-	)
-}
 
 // northStarTranscodeRuntime builds a runtime that can demux/decode/encode/mux a
 // single Opus audio stream, for the acceptance-suite jobs.
@@ -50,57 +26,6 @@ func northStarTranscodeRuntime() *Runtime {
 			testCodecEncoder(codec.Descriptor{ID: av.CodecOpus, Type: av.MediaAudio}, &encodeTestEncoderFactory{encoder: &encodeTestEncoder{}}),
 		),
 	)
-}
-
-// TestNorthStarDirectChainEqualsExplicitMainBranch is acceptance #2: a direct
-// chain must lower to the same graph as the explicit Branch("main") form — the
-// core "a direct chain is just an implicit Branch(\"main\")" rule.
-func TestNorthStarDirectChainEqualsExplicitMainBranch(t *testing.T) {
-	dest := Write("archive.ogg", io.Discard)
-
-	direct, err := recipeFrom(FileInput("input.ogg", strings.NewReader(""))).UseRuntime(northStarTranscodeRuntime()).
-		Audio().Decode().Encode(codec.Opus(codec.Bitrate(96_000))).To(dest).
-		Describe()
-	if err != nil {
-		t.Fatalf("direct chain Describe(): %v", err)
-	}
-
-	branched, err := recipeFrom(FileInput("input.ogg", strings.NewReader(""))).UseRuntime(northStarTranscodeRuntime()).
-		Audio().Decode().Branches(newBranch("main").Encode(codec.Opus(codec.Bitrate(96_000))).To(dest)).
-		Describe()
-	if err != nil {
-		t.Fatalf("Branch(\"main\") Describe(): %v", err)
-	}
-
-	if !reflect.DeepEqual(direct, branched) {
-		t.Fatalf("NORTH_STAR #2: a direct chain must lower to the same graph as Branch(\"main\").\ndirect:\n%s\nbranched:\n%s", specText(direct), specText(branched))
-	}
-}
-
-// TestNorthStarDirectChainEqualsExplicitMainBranchWithTransform extends #2 to a
-// chain that includes a transform: a direct chain with a resample must lower to
-// the same graph as Branch("main") with the same resample — so the implicit
-// branch names its private transform node by selector scope too, not "main".
-func TestNorthStarDirectChainEqualsExplicitMainBranchWithTransform(t *testing.T) {
-	dest := Write("archive.ogg", io.Discard)
-
-	direct, err := recipeFrom(FileInput("input.ogg", strings.NewReader(""))).UseRuntime(northStarResampleRuntime()).
-		Audio().Decode().Resample(16_000, codec.Mono).Encode(codec.Opus(codec.Bitrate(96_000))).To(dest).
-		Describe()
-	if err != nil {
-		t.Fatalf("direct chain Describe(): %v", err)
-	}
-
-	branched, err := recipeFrom(FileInput("input.ogg", strings.NewReader(""))).UseRuntime(northStarResampleRuntime()).
-		Audio().Decode().Branches(newBranch("main").Resample(16_000, codec.Mono).Encode(codec.Opus(codec.Bitrate(96_000))).To(dest)).
-		Describe()
-	if err != nil {
-		t.Fatalf("Branch(\"main\") Describe(): %v", err)
-	}
-
-	if !reflect.DeepEqual(direct, branched) {
-		t.Fatalf("NORTH_STAR #2 (with transform): direct chain must equal Branch(\"main\").\ndirect:\n%s\nbranched:\n%s", specText(direct), specText(branched))
-	}
 }
 
 // countingDecoderFactory counts decoder instantiations so the shared-decoder
@@ -192,24 +117,6 @@ func TestNorthStarBranchesAfterDecodeShareOneDecoder(t *testing.T) {
 	}
 	if sinkA.frames != 2 || sinkB.frames != 2 || sinkC.frames != 2 {
 		t.Fatalf("NORTH_STAR #18: frames a=%d b=%d c=%d, want every branch to receive both decoded frames", sinkA.frames, sinkB.frames, sinkC.frames)
-	}
-}
-
-// TestNorthStarFlowExposesNoDestinations is acceptance #3: a Flow is a
-// reusable operation list ONLY — branches own destinations. Neither flow
-// chain type may grow To or any other destination-carrying verb.
-func TestNorthStarFlowExposesNoDestinations(t *testing.T) {
-	forbidden := []string{"To", "Branches", "Output", "Outputs", "Destination", "Destinations", "Target", "Targets", "Path", "Paths"}
-	for label, chain := range map[string]chain{
-		"audio": newFlow("guard").Audio(),
-		"video": newFlow("guard").Video(),
-	} {
-		chainType := reflect.TypeOf(chain)
-		for _, name := range forbidden {
-			if _, ok := chainType.MethodByName(name); ok {
-				t.Errorf("NORTH_STAR #3: %s flow chain exposes %s; flows carry operations only, destinations belong to branches", label, name)
-			}
-		}
 	}
 }
 
