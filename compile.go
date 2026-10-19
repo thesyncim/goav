@@ -115,9 +115,9 @@ func compileRecipe(g *recipeGraph, rt *Runtime, options recipeCompileOptions) (r
 	handles := g.handles(rt)
 	req := g.compileRequest(handles)
 	req.Env, req.Preflight, req.Ctx = rt.compileEnv(), options.preflight, options.ctx
-	result, err := compile.Compile(req)
+	result, err := refuse(compile.Compile(req))
 	if err != nil {
-		return recipeResolved{}, publicError(err)
+		return recipeResolved{}, err
 	}
 	resolved := recipeResolved{
 		recipe:            result.Recipe,
