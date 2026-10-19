@@ -26,6 +26,7 @@ import (
 	"github.com/thesyncim/goav/graphrender"
 	"github.com/thesyncim/goav/launch"
 	"github.com/thesyncim/goav/pipeline"
+	"github.com/thesyncim/goav/rtmpav"
 	"github.com/thesyncim/goav/runconfig"
 	"github.com/thesyncim/goav/webrtcav"
 )
@@ -410,14 +411,16 @@ func encodeJSON(stdout, stderr io.Writer, v any) int {
 
 // cliURIs lets programs open the network URLs the CLI's runtime resolves,
 // beside the files Files grants: uri "https://cdn/in.mp4" ! ..., a whep://
-// stream, or a whip:// (whips://) destination.
-var cliURIs = launch.URIs("http", "https", "whep", "whep+http", "whip", "whips", "whip+http")
+// stream, a whip:// (whips://) destination, or an rtmp:// (rtmps://) play
+// or publish.
+var cliURIs = launch.URIs("http", "https", "whep", "whep+http", "whip", "whips", "whip+http", "rtmp", "rtmps")
 
-// withCLISchemes adds the WHEP and WHIP clients to the bundle's file and
-// http(s) schemes, one of each under all its names.
+// withCLISchemes adds the WHEP, WHIP, and RTMP clients to the bundle's file
+// and http(s) schemes, one of each under all its names.
 func withCLISchemes(options ...runconfig.Option) []runconfig.Option {
-	whep, whip := webrtcav.WHEP(), webrtcav.WHIP()
+	whep, whip, rtmp := webrtcav.WHEP(), webrtcav.WHIP(), rtmpav.RTMP()
 	return append(options,
 		runconfig.Scheme("whep", whep), runconfig.Scheme("whep+http", whep),
-		runconfig.Scheme("whip", whip), runconfig.Scheme("whips", whip), runconfig.Scheme("whip+http", whip))
+		runconfig.Scheme("whip", whip), runconfig.Scheme("whips", whip), runconfig.Scheme("whip+http", whip),
+		runconfig.Scheme("rtmp", rtmp), runconfig.Scheme("rtmps", rtmp))
 }

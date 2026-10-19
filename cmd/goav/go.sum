@@ -58,10 +58,12 @@ github.com/stretchr/testify v1.12.1 h1:EuwCh5fleGS7H32xRwO3wRGT7DxrDhLAT6FF8MpWD
 github.com/stretchr/testify v1.12.1/go.mod h1:MDEgiDPPsNp5cuIrHPPCyornHKgEVbtFUmoNlxoYthg=
 github.com/thesyncim/goaac v0.0.0-20260616210027-501df73f9728 h1:AK/gB43Mnz4qBh1lJC/2cX9udRlYB1QiyQynGo3vu1E=
 github.com/thesyncim/goaac v0.0.0-20260616210027-501df73f9728/go.mod h1:nh7cIGP2UakcsSBz0OAkppX5LBaZpnN9cJA0T8v+fvs=
-github.com/thesyncim/goav v0.0.0-20261019200009-0b6c0c41379a h1:VnCzRQPd/Da4lAfuBNdgmG3wVScc0yPfZ5nK5wwjNhc=
-github.com/thesyncim/goav v0.0.0-20261019200009-0b6c0c41379a/go.mod h1:tDVK9mbWPk/K2ValwjTG+RaALFPqw0uURxim54wCVOM=
+github.com/thesyncim/goav v0.0.0-20261019215030-bdb2c9144214 h1:9uri7bkea3I019c1AjEvLR7ZLf72zRqvAPlZJSmpVos=
+github.com/thesyncim/goav v0.0.0-20261019215030-bdb2c9144214/go.mod h1:tDVK9mbWPk/K2ValwjTG+RaALFPqw0uURxim54wCVOM=
 github.com/thesyncim/goav/player v0.0.0-20261019200009-0b6c0c41379a h1:NfhcuU68zd+2HVsTqzNyZznFGvzP0TUTCLYvH9pJ8N4=
 github.com/thesyncim/goav/player v0.0.0-20261019200009-0b6c0c41379a/go.mod h1:pFf4emZtCnqBpWfQQ7QCPxvuGQqsHlpzFk7w7rGDtOA=
+github.com/thesyncim/goav/rtmpav v0.0.0-20261019215030-bdb2c9144214 h1:rXLsnxgZ8KFUaFw6qJ9oKOpEEvdVVBcV9RQzkDQbddc=
+github.com/thesyncim/goav/rtmpav v0.0.0-20261019215030-bdb2c9144214/go.mod h1:VxFx9FLPu7Y7tYsVkju8LQ8OuItLT2WR8KKCI8BsAeg=
 github.com/thesyncim/goav/rtpav v0.0.0-20261019200009-0b6c0c41379a h1:Cbky9v3Gyi2o9UGy6Tcb5aHtWSTIcLFcJxmImcBFp60=
 github.com/thesyncim/goav/rtpav v0.0.0-20261019200009-0b6c0c41379a/go.mod h1:ZCnFFmVoZhTE19LM4XcIlrX3RkPKgHQ0osSrwVeqWYg=
 github.com/thesyncim/goav/webrtcav v0.0.0-20261019200009-0b6c0c41379a h1:gGZKAyo2QdYx4swhq1rSsQ3BEGevqFczYGxg39QTwM0=

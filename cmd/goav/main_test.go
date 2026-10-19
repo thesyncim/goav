@@ -585,3 +585,25 @@ func TestRunGrantsWHIP(t *testing.T) {
 		t.Fatalf("describe =\n%s", text)
 	}
 }
+
+// TestRunGrantsRTMP pins that the CLI grants and registers the RTMP client:
+// a program publishes VP9 to an rtmp URL as an Enhanced RTMP sink, test
+// video without an H.264 encoder is refused with the encode RTMP needs,
+// and the stream key stays out of the graph and the refusal alike.
+func TestRunGrantsRTMP(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	if code := run([]string{"describe", `testsrc video size=64x64 ! encode vp9 ! uri "rtmp://a.rtmp.youtube.com/live2/SECRETKEY?a=SIG"`}, &stdout, &stderr); code != 0 {
+		t.Fatalf("code=%d stderr=%s", code, stderr.String())
+	}
+	text := stdout.String()
+	if !strings.Contains(text, "sink rtmp [rtmp publish]") || strings.Contains(text, "SECRETKEY") || strings.Contains(text, "SIG") {
+		t.Fatalf("describe =\n%s", text)
+	}
+	stdout.Reset()
+	if code := run([]string{"describe", `testsrc video size=64x64 ! uri "rtmps://a.rtmp.youtube.com/live2/SECRETKEY"`}, &stdout, &stderr); code == 0 {
+		t.Fatalf("frames to rtmp without an H.264 encoder described:\n%s", stdout.String())
+	}
+	if text := stderr.String(); !strings.Contains(text, ".Encode(codec.H264())") || strings.Contains(text, "SECRETKEY") {
+		t.Fatalf("refusal =\n%s", text)
+	}
+}
