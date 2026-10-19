@@ -483,34 +483,6 @@ func TestDeviceClockSleep(t *testing.T) {
 	}
 }
 
-// A seek drops the old position's in-flight media until its discontinuity
-// lands; a refused seek stops dropping at once.
-func TestBeginSeekDropsStaleMediaUntilTheDiscontinuity(t *testing.T) {
-	d := newFakeDevice(t, 50*time.Millisecond)
-	sink := Sink{Engine: d.e}
-	d.pushAudio(0, 200*time.Millisecond)
-	d.e.BeginSeek()
-	d.pushAudio(200*time.Millisecond, 400*time.Millisecond) // stale, in flight
-	d.pushVideo(200*time.Millisecond, 300*time.Millisecond, 33*time.Millisecond)
-	if d.e.queuedLocked() != 0 || len(d.e.video) != 0 {
-		t.Fatal("stale media queued during a seek")
-	}
-	disc := &pipeline.Message{Kind: pipeline.MessageEvent, Event: &av.Event{Type: av.EventDiscontinuity}}
-	if err := sink.Handle(context.Background(), disc); err != nil {
-		t.Fatal(err)
-	}
-	d.pushAudio(5*time.Second, 5100*time.Millisecond)
-	if d.e.queuedLocked() == 0 {
-		t.Fatal("media after the discontinuity dropped")
-	}
-	d.e.BeginSeek()
-	d.e.EndSeek()
-	d.pushAudio(6*time.Second, 6100*time.Millisecond)
-	if d.e.queuedLocked() == 0 {
-		t.Fatal("media dropped after a refused seek")
-	}
-}
-
 // Through a device queue, frames are still shown when their audio is heard,
 // not when it is handed to the device.
 func TestVideoWaitsForAudioThroughTheDeviceQueue(t *testing.T) {
@@ -541,67 +513,6 @@ func discontinuity(t *testing.T, e *Engine) {
 	}
 }
 
-// Both branches of a seek deliver a discontinuity; the seek flushes once, so
-// the second leaves the first branch's fresh media alone.
-func TestOneSeekFlushesOnce(t *testing.T) {
-	d := newFakeDevice(t, 50*time.Millisecond)
-	d.pushAudio(0, 500*time.Millisecond)
-	d.step(100 * time.Millisecond) // the epoch has been heard
-	discontinuity(t, d.e)          // the video branch's: flushes
-	if d.e.queuedLocked() != 0 {
-		t.Fatal("first discontinuity of a seek did not flush")
-	}
-	d.pushVideo(3*time.Second, 3100*time.Millisecond, 40*time.Millisecond)
-	discontinuity(t, d.e) // the audio branch's, for the same seek
-	if len(d.e.video) != 3 {
-		t.Fatalf("second discontinuity of one seek flushed fresh video: %d queued", len(d.e.video))
-	}
-	// A later seek, once the new position has been heard, flushes again.
-	d.pushAudio(3*time.Second, 3500*time.Millisecond)
-	d.step(100 * time.Millisecond)
-	discontinuity(t, d.e)
-	if len(d.e.video) != 0 || d.e.queuedLocked() != 0 {
-		t.Fatal("a new seek did not flush")
-	}
-}
-
-// A seek made while paused waits for its discontinuity however long the
-// pause lasts, then previews its first picture; the wait for a missing
-// discontinuity is charged only while playing.
-func TestPausedSeekWaitsAndPreviews(t *testing.T) {
-	d := newFakeDevice(t, 50*time.Millisecond)
-	d.pushAudio(0, 500*time.Millisecond)
-	d.step(100 * time.Millisecond)
-	d.e.SetPaused(true)
-	d.e.BeginSeek()
-	d.step(3 * time.Second)
-	d.pushVideo(200*time.Millisecond, 300*time.Millisecond, 40*time.Millisecond) // stale
-	if len(d.e.video) != 0 {
-		t.Fatal("stale media accepted after a long paused seek")
-	}
-	discontinuity(t, d.e)
-	d.pushVideo(5*time.Second, 5100*time.Millisecond, 40*time.Millisecond)
-	if !d.e.WaitPicture(context.Background(), time.Second) {
-		t.Fatal("no picture queued after the paused seek")
-	}
-	f := d.e.NextVideo(d.e.Clock().Now())
-	if f == nil {
-		t.Fatal("paused seek previewed nothing")
-	}
-	if pts, _ := f.PTS.ToDuration(); pts != 5*time.Second {
-		t.Fatalf("previewed %v, want the target 5s", pts)
-	}
-	f.Release()
-
-	d.e.SetPaused(false)
-	d.e.BeginSeek()
-	d.step(seekWait + 10*time.Millisecond)
-	d.pushVideo(7*time.Second, 7040*time.Millisecond, 40*time.Millisecond)
-	if len(d.e.video) == 0 {
-		t.Fatal("a seek with no discontinuity kept dropping past its wait")
-	}
-}
-
 // The source's end of stream ends playback at the sink: the queue drains
 // without counting its final dry pull as an underrun.
 func TestEndOfStreamIsNotAnUnderrun(t *testing.T) {
@@ -617,5 +528,102 @@ func TestEndOfStreamIsNotAnUnderrun(t *testing.T) {
 	}
 	if !d.e.Drained() {
 		t.Fatal("not drained after the end of stream played out")
+	}
+}
+
+// A seek cuts the old position's in-flight media per kind — however far a
+// run of it reaches — and keeps the new position's from its first frame; a
+// refused seek stops cutting at once.
+func TestSeekCutsTheOldTimelinePerKind(t *testing.T) {
+	d := newFakeDevice(t, 50*time.Millisecond)
+	d.pushAudio(0, 200*time.Millisecond)
+	d.pushVideo(0, 200*time.Millisecond, 40*time.Millisecond)
+	d.e.BeginSeek()
+	d.pushAudio(200*time.Millisecond, 600*time.Millisecond)                      // in flight
+	d.pushVideo(200*time.Millisecond, 600*time.Millisecond, 40*time.Millisecond) // in flight
+	if d.e.queuedLocked() != 0 || len(d.e.video) != 0 {
+		t.Fatal("the old position's in-flight media was queued after the seek")
+	}
+	discontinuity(t, d.e) // one branch's; the cut decides, not the event
+	d.pushVideo(5*time.Second, 5120*time.Millisecond, 40*time.Millisecond)
+	d.pushAudio(620*time.Millisecond, 700*time.Millisecond) // the audio branch is still behind
+	if len(d.e.video) != 3 || d.e.queuedLocked() != 0 {
+		t.Fatalf("after the video branch landed: %d pictures, %v audio queued", len(d.e.video), d.e.queuedLocked())
+	}
+	discontinuity(t, d.e) // the other branch's, for the same seek: no flush
+	d.pushAudio(5*time.Second, 5100*time.Millisecond)
+	if len(d.e.video) != 3 || d.e.queuedLocked() == 0 {
+		t.Fatal("the second branch's discontinuity flushed, or its fresh audio was cut")
+	}
+	if d.e.seeking {
+		t.Fatal("the cut outlived both kinds landing")
+	}
+
+	d.e.BeginSeek()
+	d.e.EndSeek()
+	d.pushAudio(5100*time.Millisecond, 5200*time.Millisecond)
+	if d.e.queuedLocked() == 0 {
+		t.Fatal("media dropped after a refused seek")
+	}
+}
+
+// A seek made elsewhere (no BeginSeek) flushes on its first discontinuity
+// and cuts like one; a break before anything new was heard is the same seek.
+func TestOneSeekFlushesOnce(t *testing.T) {
+	d := newFakeDevice(t, 50*time.Millisecond)
+	d.pushAudio(0, 500*time.Millisecond)
+	d.step(100 * time.Millisecond) // the epoch has been heard
+	discontinuity(t, d.e)
+	if d.e.queuedLocked() != 0 {
+		t.Fatal("first discontinuity of an external seek did not flush")
+	}
+	d.pushVideo(3*time.Second, 3100*time.Millisecond, 40*time.Millisecond)
+	discontinuity(t, d.e)
+	if len(d.e.video) != 3 {
+		t.Fatalf("second discontinuity of one seek flushed fresh video: %d queued", len(d.e.video))
+	}
+	d.pushAudio(3*time.Second, 3500*time.Millisecond)
+	d.step(100 * time.Millisecond)
+	discontinuity(t, d.e) // a new seek, once the position was heard
+	if len(d.e.video) != 0 || d.e.queuedLocked() != 0 {
+		t.Fatal("a new seek did not flush")
+	}
+}
+
+// A seek made while paused cuts however long the pause lasts, then previews
+// its first picture; the cut is charged only while playing.
+func TestPausedSeekWaitsAndPreviews(t *testing.T) {
+	d := newFakeDevice(t, 50*time.Millisecond)
+	d.pushAudio(0, 500*time.Millisecond)
+	d.pushVideo(0, 300*time.Millisecond, 40*time.Millisecond)
+	d.step(100 * time.Millisecond)
+	d.e.SetPaused(true)
+	d.e.BeginSeek()
+	d.step(3 * time.Second)
+	d.pushVideo(320*time.Millisecond, 400*time.Millisecond, 40*time.Millisecond) // in flight
+	if len(d.e.video) != 0 {
+		t.Fatal("in-flight media accepted after a long paused seek")
+	}
+	d.pushVideo(5*time.Second, 5100*time.Millisecond, 40*time.Millisecond)
+	if !d.e.WaitPicture(context.Background(), time.Second) {
+		t.Fatal("no picture queued after the paused seek")
+	}
+	f := d.e.NextVideo(d.e.Clock().Now())
+	if f == nil {
+		t.Fatal("paused seek previewed nothing")
+	}
+	if pts, _ := f.PTS.ToDuration(); pts != 5*time.Second {
+		t.Fatalf("previewed %v, want the target 5s", pts)
+	}
+	f.Release()
+
+	// A seek landing inside the old span is cut only for seekWait of play.
+	d.e.SetPaused(false)
+	d.pushVideo(5100*time.Millisecond, 5200*time.Millisecond, 40*time.Millisecond)
+	d.e.BeginSeek()
+	d.step(seekWait + 10*time.Millisecond)
+	d.pushVideo(5200*time.Millisecond, 5240*time.Millisecond, 40*time.Millisecond)
+	if len(d.e.video) == 0 {
+		t.Fatal("the cut held past its wait")
 	}
 }

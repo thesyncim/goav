@@ -94,11 +94,17 @@ type Engine struct {
 	ended    bool
 	closed   bool
 	sawAudio bool
-	// seeking is set while a seek's stale media is dropped (BeginSeek);
-	// seekBudget is the unpaused device time left to wait, as of seekAt.
+	// seeking is set while a seek cuts the old position's media (BeginSeek):
+	// per kind, cutting marks a kind still on the old timeline and cutAt the
+	// newest PTS it had queued; seekBudget is the unpaused device time left,
+	// as of seekAt. newest and have track the current epoch's queued media.
 	seeking    bool
 	seekBudget time.Duration
 	seekAt     time.Duration
+	cutAt      [kinds]time.Duration
+	cutting    [kinds]bool
+	newest     [kinds]time.Duration
+	have       [kinds]bool
 	// played records that the current epoch has been heard or shown, and
 	// pictured that it has queued a picture.
 	played, pictured bool
@@ -452,7 +458,7 @@ func (e *Engine) PushAudio(ctx context.Context, f *av.Frame) error {
 	for {
 		now := e.clock.Now()
 		e.mu.Lock()
-		if e.closed || e.epoch != epoch || e.seekingLocked(now) {
+		if e.closed || e.epoch != epoch || e.staleLocked(kindAudio, chunk.pts, now) {
 			e.mu.Unlock()
 			return nil
 		}
@@ -461,6 +467,7 @@ func (e *Engine) PushAudio(ctx context.Context, f *av.Frame) error {
 				e.waitSet, e.waitStart = true, e.written.Load()
 			}
 			e.chunks = append(e.chunks, chunk)
+			e.newest[kindAudio], e.have[kindAudio] = max(e.newest[kindAudio], chunk.pts), true
 			e.queued += chunk.duration()
 			e.mu.Unlock()
 			return nil
@@ -497,7 +504,7 @@ func (e *Engine) PushVideo(ctx context.Context, f *av.Frame) error {
 	for {
 		now := e.clock.Now()
 		e.mu.Lock()
-		if e.closed || e.epoch != epoch || e.seekingLocked(now) {
+		if e.closed || e.epoch != epoch || e.staleLocked(kindVideo, pts, now) {
 			e.mu.Unlock()
 			ref.Release()
 			return nil
@@ -515,6 +522,7 @@ func (e *Engine) PushVideo(ctx context.Context, f *av.Frame) error {
 		if len(e.video) < videoHardCap && (ahead < e.latency+readAhead || audioNeedsData) {
 			e.video, e.vpts = append(e.video, ref), append(e.vpts, pts)
 			e.queuedPictureLocked()
+			e.newest[kindVideo], e.have[kindVideo] = max(e.newest[kindVideo], pts), true
 			e.mu.Unlock()
 			return nil
 		}
@@ -523,6 +531,7 @@ func (e *Engine) PushVideo(ctx context.Context, f *av.Frame) error {
 			e.dropped++
 			e.video, e.vpts = append(e.video, ref), append(e.vpts, pts)
 			e.queuedPictureLocked()
+			e.newest[kindVideo], e.have[kindVideo] = max(e.newest[kindVideo], pts), true
 			e.mu.Unlock()
 			return nil
 		}
@@ -546,35 +555,57 @@ func (e *Engine) Flush() {
 	e.flushLocked()
 }
 
-// seekWait bounds how long BeginSeek drops media waiting for the seek's
-// discontinuity, counted in unpaused device time: a source that accepted a
-// seek owes one, so this only guards against one that never comes.
-const seekWait = time.Second
+// A seek has to drop the old position's media still in flight, without
+// dropping the new position's. Each branch delivers its own discontinuity, and
+// the sink cannot tell the branches' apart (the events carry no stream), so
+// the cut is made per media type on the timeline instead: in-flight media of
+// a type continues where that type left off — each within staleBehind..
+// staleAhead of the newest old PTS seen — while the new position starts
+// elsewhere (a seek lands more than staleAhead away). The first media of a type off that span is the new position, and
+// everything of that type after it is kept.
+const (
+	staleBehind = 50 * time.Millisecond
+	staleAhead  = 250 * time.Millisecond
+	// seekWait bounds the cut, counted in unpaused device time, for a seek
+	// that lands inside the old span.
+	seekWait = time.Second
+)
 
-// BeginSeek flushes for a seek the caller is about to issue and drops the
-// media still in flight from the old position until the seek's first
-// discontinuity arrives, so no stale picture flashes up after the jump. Call
-// EndSeek if the seek is refused.
+// Media kinds the seek cut tracks.
+const (
+	kindAudio = iota
+	kindVideo
+	kinds
+)
+
+// BeginSeek flushes for a seek the caller is about to issue and cuts the
+// old position's in-flight media, so no stale picture or sound slips in
+// after the jump. Call EndSeek if the seek is refused.
 func (e *Engine) BeginSeek() {
 	now := e.clock.Now()
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	e.flushLocked()
-	e.seeking, e.seekBudget, e.seekAt = true, seekWait, now
+	e.beginSeekLocked(now)
 }
 
-// EndSeek stops dropping media after a refused seek.
+func (e *Engine) beginSeekLocked(now time.Duration) {
+	newest, have := e.newest, e.have
+	e.flushLocked()
+	e.seeking, e.seekBudget, e.seekAt = true, seekWait, now
+	e.cutAt, e.cutting = newest, have
+}
+
+// EndSeek stops cutting after a refused seek.
 func (e *Engine) EndSeek() {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	e.seeking = false
 }
 
-// seekingLocked reports whether arriving media is stale: a seek was issued
-// and its discontinuity has not arrived. The wait is charged only while
-// playing, so a seek made while paused waits for its media however long the
-// pause lasts.
-func (e *Engine) seekingLocked(now time.Duration) bool {
+// staleLocked reports whether media of kind at pts is the old position's,
+// arriving after a seek. The cut's wait is charged only while playing, so a
+// seek made while paused holds however long the pause lasts.
+func (e *Engine) staleLocked(kind int, pts, now time.Duration) bool {
 	if !e.seeking {
 		return false
 	}
@@ -584,24 +615,35 @@ func (e *Engine) seekingLocked(now time.Duration) bool {
 	e.seekAt = now
 	if e.seekBudget <= 0 {
 		e.seeking = false
+		return false
 	}
-	return e.seeking
+	if !e.cutting[kind] {
+		return false
+	}
+	if pts >= e.cutAt[kind]-staleBehind && pts <= e.cutAt[kind]+staleAhead {
+		// Still the old timeline: follow it, so a run of in-flight media
+		// stays recognized however far it reaches.
+		e.cutAt[kind] = max(e.cutAt[kind], pts)
+		return true
+	}
+	e.cutting[kind] = false
+	if e.cutting == [kinds]bool{} {
+		e.seeking = false
+	}
+	return false
 }
 
 // Discontinuity handles a timeline break arriving at the sink. Every branch
-// of a seek delivers one, so one seek must flush once: the first ends a seek
-// BeginSeek already flushed for; otherwise a break flushes only if something
-// of the current epoch has been heard or shown — a later branch's break for
-// the same seek finds the epoch still prerolling and leaves its fresh media
-// alone.
+// of a seek delivers one, and one seek flushes once: a break while a seek is
+// cutting belongs to it, and so does one before anything of the current
+// epoch was heard or shown. Any other break is a seek made elsewhere (a
+// control socket): it flushes and cuts like BeginSeek.
 func (e *Engine) Discontinuity() {
+	now := e.clock.Now()
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	switch {
-	case e.seeking:
-		e.seeking = false
-	case e.played:
-		e.flushLocked()
+	if !e.seeking && e.played {
+		e.beginSeekLocked(now)
 	}
 }
 
@@ -621,7 +663,7 @@ func (e *Engine) WaitPicture(ctx context.Context, timeout time.Duration) bool {
 	defer timer.Stop()
 	for {
 		e.mu.Lock()
-		ready := e.pictured && !e.seeking
+		ready := e.pictured
 		wake := e.wake
 		e.mu.Unlock()
 		if ready {
@@ -639,6 +681,7 @@ func (e *Engine) WaitPicture(ctx context.Context, timeout time.Duration) bool {
 
 func (e *Engine) flushLocked() {
 	e.seeking, e.played, e.pictured = false, false, false
+	e.newest, e.have = [kinds]time.Duration{}, [kinds]bool{}
 	e.epoch++
 	for _, f := range e.video {
 		f.Release()
