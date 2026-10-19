@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"cmp"
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 
@@ -25,6 +26,7 @@ type videoDecoder struct {
 	video    *av.VideoFrame
 	request  bool
 	dropping bool
+	healing  bool // a damaged unit asked for the keyframe that heals it
 	closed   bool
 	emitFn   func(*Picture) error
 	// held are decoded pictures a Reorder session returned early, sorted
@@ -138,7 +140,21 @@ func (d *videoDecoder) DecodeInto(ctx context.Context, packet *av.Packet, out *c
 		}
 	}
 	d.out = out
-	return d.session.Decode(&Packet{Data: data, PTS: pts, DTS: timeIn(packet.DTS, base), Keyframe: keyframe}, d.emitFn)
+	err = d.session.Decode(&Packet{Data: data, PTS: pts, DTS: timeIn(packet.DTS, base), Keyframe: keyframe}, d.emitFn)
+	switch {
+	case errors.Is(err, ErrDamaged):
+		// The library dropped the unit and decodes on. The units that
+		// reference it may be dropped too, until a keyframe heals the
+		// stream: ask for one once.
+		if d.healing {
+			return nil
+		}
+		d.healing = true
+		return d.requestKeyframe(out, "damaged unit")
+	case err == nil && keyframe:
+		d.healing = false
+	}
+	return err
 }
 
 func sameUnits(a, b [][]byte) bool {

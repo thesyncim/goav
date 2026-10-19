@@ -24,4 +24,10 @@ func TestReader(t *testing.T) {
 	if err := uvlc.SkipUVLC(); err != nil || uvlc.bit != 5 {
 		t.Fatalf("SkipUVLC: %v at bit %d", err, uvlc.bit)
 	}
+	for code, want := range map[byte]uint64{0b1000_0000: 0, 0b0100_0000: 1, 0b0110_0000: 2, 0b0010_1000: 4} {
+		r := Reader{Data: []byte{code}, Err: short}
+		if v, err := r.UVLC(); err != nil || v != want {
+			t.Errorf("UVLC(%08b) = %d, %v; want %d", code, v, err, want)
+		}
+	}
 }

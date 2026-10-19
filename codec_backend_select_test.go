@@ -170,3 +170,64 @@ func TestMisspelledKnobScopeIsRefused(t *testing.T) {
 		t.Fatalf("err = %v, want the scope refused with govpx suggested", err)
 	}
 }
+
+// TestMisspelledKnobNamesEachBackendsReason pins that a setting no backend
+// takes, on a request naming none, is refused with each backend and why,
+// and the nearest setting, not as an unsupported codec.
+func TestMisspelledKnobNamesEachBackendsReason(t *testing.T) {
+	strict := runconfig.WithCodecAdapter(func(registry *codec.SimpleRegistry) {
+		passthrough, _ := runconfig.NewConfig(goavtest.Codec(av.CodecH264))
+		choice, _ := passthrough.Codecs.Select(codec.Need{ID: av.CodecH264, Mode: codec.ModeEncode})
+		for _, backend := range []codec.BackendInfo{{Name: "fakehw", Kind: codec.KindHardware}, {Name: "fakelib", Kind: codec.KindLib}} {
+			registry.RegisterEncoder(codec.Descriptor{ID: av.CodecH264, Type: av.MediaVideo, Backend: backend, Knobs: []codec.Knob{codec.KnobBitrate}}, choice.Encoder)
+		}
+	})
+	rt, err := goav.New(strict)
+	if err != nil {
+		t.Fatal(err)
+	}
+	task, err := rt.Build(context.Background(), goavtest.Video(64, 48, 2).Video().Encode(codec.H264(codec.Setting("bitrat", "1000"))).To(goavtest.NewCollector().Sink()))
+	if err == nil {
+		task.Close()
+	}
+	for _, want := range []string{"no h264 encoder backend takes the request", "fakehw takes no setting bitrat", "fakelib takes no setting bitrat", "did you mean bitrate?"} {
+		if err == nil || !strings.Contains(err.Error(), want) {
+			t.Fatalf("err = %v, want %q", err, want)
+		}
+	}
+	if !errors.Is(err, codec.ErrInvalidSetting) {
+		t.Fatalf("err = %v, want codec.ErrInvalidSetting", err)
+	}
+}
+
+// TestBackendNoticeAndUnavailabilityReachTheUser pins what a backend
+// registers beside its status: the notice its license asks for, which
+// Explain prints, and why it cannot serve, which a request naming it reads.
+func TestBackendNoticeAndUnavailabilityReachTheUser(t *testing.T) {
+	missing := errors.New("libx is not installed; fix: install libx")
+	backends := runconfig.WithCodecAdapter(func(registry *codec.SimpleRegistry) {
+		passthrough, _ := runconfig.NewConfig(goavtest.Codec(av.CodecH264))
+		choice, _ := passthrough.Codecs.Select(codec.Need{ID: av.CodecH264, Mode: codec.ModeEncode})
+		registry.RegisterEncoder(codec.Descriptor{ID: av.CodecH264, Type: av.MediaVideo, Backend: codec.BackendInfo{Name: "credited", Kind: codec.KindLib, Notice: "Credited Codec by Example"}}, choice.Encoder)
+		registry.RegisterDescriptor(codec.Descriptor{ID: av.CodecH264, Type: av.MediaVideo, Modes: []codec.Mode{codec.ModeEncode}, Backend: codec.BackendInfo{Name: "x", Kind: codec.KindLib, Status: "not-installed", Unavailable: missing}})
+	})
+	rt, err := goav.New(backends)
+	if err != nil {
+		t.Fatal(err)
+	}
+	report, err := rt.Explain(context.Background(), goavtest.Video(64, 48, 2).Video().Encode(codec.H264()).To(goavtest.NewCollector().Sink()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	i := slices.IndexFunc(report.RequiredAdapters, func(r plan.AdapterRequirement) bool { return r.Kind == "encoder" })
+	if i < 0 || report.RequiredAdapters[i].Notice != "Credited Codec by Example" {
+		t.Fatalf("Explain = %+v", report.RequiredAdapters)
+	}
+	task, err := rt.Build(context.Background(), goavtest.Video(64, 48, 2).Video().Encode(codec.H264(codec.Backend("x"))).To(goavtest.NewCollector().Sink()))
+	if err == nil {
+		task.Close()
+	}
+	if err == nil || !strings.Contains(err.Error(), "fix: install libx") {
+		t.Fatalf("err = %v, want the backend's own reason and fix", err)
+	}
+}

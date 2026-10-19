@@ -17,9 +17,9 @@ import (
 // Name is the backend's identity: aac/audiotoolbox.
 const Name = "audiotoolbox"
 
-// Path is the framework's install name; macOS serves it from the dyld
+// path is the framework's install name; macOS serves it from the dyld
 // shared cache.
-const Path = "/System/Library/Frameworks/AudioToolbox.framework/AudioToolbox"
+const path = "/System/Library/Frameworks/AudioToolbox.framework/AudioToolbox"
 
 type symbols struct {
 	newConverter func(src, dst *streamDescription, out *uintptr) int32                                                         `sym:"AudioConverterNew"`
@@ -121,7 +121,7 @@ func input(_ uintptr, packets *uint32, data *bufferList, desc **packetDesc, user
 var sampleRates = []int{8000, 11025, 12000, 16000, 22050, 24000, 32000, 44100, 48000}
 
 // Codec declares the backend.
-func Codec(path string) kit.Codec {
+func Codec() kit.Codec {
 	l := &symbols{}
 	rc := codec.KnobRateControl
 	rc.Values = []string{"cbr", "abr", "vbr", "cq"}
@@ -139,17 +139,15 @@ func Codec(path string) kit.Codec {
 		Media:     av.MediaAudio,
 		Backend:   Name,
 		Kind:      codec.KindLib,
-		Module:    "github.com/thesyncim/goav/libcodec",
-		Package:   "github.com/thesyncim/goav/libcodec/internal/audiotoolbox",
 		Platforms: []string{"darwin"},
 		Profiles:  []string{"aac_lc"},
 		Capabilities: codec.Capabilities{
 			SampleRates: sampleRates,
 		},
-		Realtime:     true,
-		Knobs:        []codec.Knob{bitrate, rc, quality, speed},
-		DecoderKnobs: []codec.Knob{},
-		Libraries:    []kit.Library{{Name: "AudioToolbox.framework", Path: path, Fix: "AudioToolbox ships with macOS", Symbols: l}},
+		Realtime:  true,
+		Knobs:     []codec.Knob{bitrate, rc, quality, speed},
+		Libraries: []kit.Library{{Name: "AudioToolbox.framework", Path: path, Fix: "AudioToolbox ships with macOS", Symbols: l}},
+		License:   kit.License{Class: kit.LicenseSystem},
 		NewAudioEncoder: func(config kit.AudioConfig) (kit.AudioEncoder, error) {
 			return newEncoder(l, config)
 		},

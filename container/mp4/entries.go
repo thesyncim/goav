@@ -8,11 +8,13 @@ import (
 	"github.com/thesyncim/goav/internal/av1"
 	"github.com/thesyncim/goav/internal/bitio"
 	"github.com/thesyncim/goav/internal/h264"
+	"github.com/thesyncim/goav/internal/hevc"
 )
 
 // muxCodecs are the sample entries the muxer writes.
 var muxCodecs = map[av.CodecID]string{
 	av.CodecH264: "avc1",
+	av.CodecHEVC: "hvc1",
 	av.CodecAV1:  "av01",
 	av.CodecVP8:  "vp08",
 	av.CodecVP9:  "vp09",
@@ -38,6 +40,8 @@ func (t *muxTrack) configure() error {
 				t.config = record
 			}
 		}
+	case av.CodecHEVC:
+		t.config = hvc1Config(extra)
 	case av.CodecAV1:
 		switch {
 		case len(extra) >= 4 && extra[0] == 0x81:
@@ -92,6 +96,16 @@ func (t *muxTrack) sampleData(payload []byte, keyframe bool) ([]byte, error) {
 		var err error
 		t.scratch, err = h264.AppendAVC(t.scratch[:0], payload)
 		return t.scratch, err
+	case av.CodecHEVC:
+		if !h264.HasStartCode(payload) {
+			return payload, nil
+		}
+		if t.config == nil {
+			t.config, _ = hevc.ConfigFromAnnexB(payload)
+		}
+		var err error
+		t.scratch, err = appendHVC1(t.scratch[:0], payload)
+		return t.scratch, err
 	case av.CodecAV1:
 		if t.config == nil {
 			if record, err := av1.ConfigFromFrames([][]byte{payload}); err == nil {
@@ -120,6 +134,10 @@ func (t *muxTrack) sampleData(payload []byte, keyframe bool) ([]byte, error) {
 // ready reports whether the track can write its sample entry.
 func (t *muxTrack) ready() error {
 	switch t.codec {
+	case av.CodecHEVC:
+		if t.config == nil {
+			return fmt.Errorf("%w: stream %q (hevc) declared no hvcC and no keyframe carried its VPS, SPS, and PPS", ErrInvalidData, t.stream.ID)
+		}
 	case av.CodecH264, av.CodecAV1, av.CodecAAC:
 		if t.config == nil {
 			return fmt.Errorf("%w: stream %q (%s) declared no codec configuration and no sample carried one", ErrInvalidData, t.stream.ID, t.codec)
@@ -147,6 +165,8 @@ func (t *muxTrack) writeSampleEntry(w *boxWriter) {
 		switch t.codec {
 		case av.CodecH264:
 			w.box("avcC", t.config)
+		case av.CodecHEVC:
+			w.box("hvcC", t.config)
 		case av.CodecAV1:
 			w.box("av1C", t.config)
 		default:

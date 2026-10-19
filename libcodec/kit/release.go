@@ -1,17 +1,15 @@
 package kit
 
 import (
-	"slices"
-
-	"github.com/thesyncim/goav/runconfig"
+	"strconv"
+	"strings"
 )
 
 // Release is one published build of a backend's library: its version and,
 // per platform, where it is fetched from and the SHA-256 it must have. A
-// backend lists the releases it can bind in Codec.Releases, inside the ABI
-// window its Version check accepts; installers and lockfiles read them
-// through Releases, so a backend from any module is installed like the ones
-// goav ships.
+// backend lists in Codec.Releases the releases inside its ABI window that it
+// can bind; installers and lockfiles read them from the declaration, so a
+// backend from any module installs like the ones goav ships.
 type Release struct {
 	Version string
 	Files   []ReleaseFile
@@ -27,26 +25,52 @@ type ReleaseFile struct {
 	Name     string
 }
 
-// declared remembers every backend Register saw, by codec and backend, for
-// Releases.
-var declared = map[string]*Codec{}
+// Window is a range of library versions, From inclusive and Before
+// exclusive, compared number by number (2.9 < 2.10): the releases whose
+// structure layouts a backend mirrors. An empty bound is open.
+type Window struct {
+	From   string
+	Before string
+}
 
-// Releases returns the releases of every kit backend the options register,
-// by backend identity (h264/openh264).
-func Releases(options ...runconfig.Option) (map[string][]Release, error) {
-	config, err := runconfig.NewConfig(options...)
-	if err != nil {
-		return nil, err
+// Contains reports whether version falls in the window.
+func (w Window) Contains(version string) bool {
+	return (w.From == "" || compareVersions(version, w.From) >= 0) &&
+		(w.Before == "" || compareVersions(version, w.Before) < 0)
+}
+
+func (w Window) String() string {
+	switch {
+	case w.From == "" && w.Before == "":
+		return "any version"
+	case w.Before == "":
+		return w.From + " or later"
+	case w.From == "":
+		return "before " + w.Before
 	}
-	out := map[string][]Release{}
-	for _, desc := range config.Codecs.Descriptors() {
-		key := string(desc.ID) + "/" + desc.Backend.Name
-		declaredMu.Lock()
-		c := declared[key]
-		declaredMu.Unlock()
-		if c != nil && len(c.Releases) != 0 {
-			out[key] = slices.Clone(c.Releases)
+	return w.From + " or later, before " + w.Before
+}
+
+// compareVersions orders dotted versions by their numbers; a missing number
+// is zero, so 3 equals 3.0.0.
+func compareVersions(a, b string) int {
+	as, bs := strings.Split(a, "."), strings.Split(b, ".")
+	for i := range max(len(as), len(bs)) {
+		x, y := versionPart(as, i), versionPart(bs, i)
+		if x != y {
+			if x < y {
+				return -1
+			}
+			return 1
 		}
 	}
-	return out, nil
+	return 0
+}
+
+func versionPart(parts []string, i int) uint64 {
+	if i >= len(parts) {
+		return 0
+	}
+	n, _ := strconv.ParseUint(parts[i], 10, 64)
+	return n
 }

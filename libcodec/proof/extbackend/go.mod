@@ -5,8 +5,8 @@ go 1.27.0
 toolchain go1.27.2
 
 require (
-	github.com/thesyncim/goav v0.0.0-20261019200009-0b6c0c41379a
-	github.com/thesyncim/goav/libcodec v0.0.0-20261019200009-0b6c0c41379a
+	github.com/thesyncim/goav v0.0.0-20261019210501-b557798df7c4
+	github.com/thesyncim/goav/libcodec v0.0.0-20261019210546-fc7ff1e1679e
 )
 
 require (

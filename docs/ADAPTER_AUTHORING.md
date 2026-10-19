@@ -147,41 +147,10 @@ checks its settings and Explain lists them.
 
 ## Add a codec (`libcodec/kit`)
 
-A codec in a shared library, from any module, is a declaration plus a session,
-written against public packages only. `libcodec/proof/extbackend` is a complete
-one in 104 lines: a lossless video codec over the system zlib. The kit binds its
-symbols (no cgo) when the runtime is built and owns everything between goav and
-the session: I420/NV12 and Annex B/AVCC conversion, parameter sets, timestamps,
-pooled payloads, knobs, live controls, and Close.
-
-```go
-type symbols struct {
-	compress   func(dst *byte, dstLen *uint64, src *byte, srcLen uint64, level int32) int32 `sym:"compress2"`
-	uncompress func(dst *byte, dstLen *uint64, src *byte, srcLen uint64) int32              `sym:"uncompress"`
-	bound      func(srcLen uint64) uint64                                                   `sym:"compressBound"`
-}
-
-sym := &symbols{}
-option := kit.Register(kit.Codec{
-	ID: "zlib", Media: av.MediaVideo, Backend: "zlib", Kind: codec.KindLib,
-	Knobs:     []codec.Knob{{Name: "level", Type: codec.KnobInt, Min: 0, Max: 9, Default: "6"}},
-	Libraries: []kit.Library{{Name: "libz", Path: kit.Find("/usr/lib/libz.1.dylib", "/usr/lib/x86_64-linux-gnu/libz.so.1"), Fix: "install zlib", Symbols: sym}},
-	NewVideoEncoder: newEncoder, // Encode(*kit.Picture, emit), Flush, Close; calls sym
-	NewVideoDecoder: newDecoder, // Decode(*kit.Packet, emit), Flush, Close
-})
-```
-
-`bundle.New(option)` then serves `encode zlib media=video backend=zlib level=9`,
-Explain reports `zlib (lib)` with its knobs, and `codectest.Run(t, option)` is
-the whole conformance suite: round trips through every decoder of the codec
-(PSNR, SNR), reference bitstreams, timestamps, keyframes, MP4 mux, knobs, live
-bitrate, Close and leaks, and a matrix across the codec's other backends. Read
-knobs with the sized accessors (`Int32`, `Uint32`, `Uint16`) for C fields.
-`Version` refuses an ABI the declaration does not mirror, `Releases` lists the
-library's published builds (URL and SHA-256 per platform) for installers,
-`kit.Params[T]` exposes a C parameter struct as raw parameters, `Picture.Owner`
-lends decoded memory without a copy, and `Reorder` puts decode-order output in
-presentation order.
+A shared-library codec, from any module, is a `kit.Codec` declaration plus a
+session per mode on public packages; the kit binds it without cgo and owns the
+rest. [`extbackend`](../libcodec/proof/extbackend/extbackend.go) is a whole one
+(108 lines), `codectest.Run(t, option)` its conformance suite; see the [kit docs](https://pkg.go.dev/github.com/thesyncim/goav/libcodec/kit).
 
 ## Container (`format` package)
 

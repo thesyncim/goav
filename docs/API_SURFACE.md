@@ -157,9 +157,7 @@ use [`docs/ADAPTERS.md`](ADAPTERS.md) and the
   (Source/Stage/Sink, Emitter, Message, Scratch, capability interfaces).
 - **Codecs**: `codec` Descriptor/Decoder/Encoder/factories, caller-owned
   results, `codec.ParameterReporter` for encoder-reported parameters, `runconfig.WithDecoder`/`WithEncoder`/`WithCodecAdapter`/
-  `WithCodecDescriptor`. Many backends per codec: `SimpleRegistry.Select`/`Prefer`,
-  `codec.Backend(name)`, `runconfig.WithCodecPreference`; a backend's settings
-  are `codec.Knob` declarations (`ResolveKnobs`, the common `Knob*` vocabulary).
+  `WithCodecDescriptor`. Many backends per codec (`Select`, `Prefer`, `codec.Backend`, `WithCodecPreference`), settings as `codec.Knob`s.
 - **Control hosts** (governed pre-v1, see [`COMPATIBILITY.md`](COMPATIBILITY.md#governed-pre-v1)):
   `ctlserver` serves a running task over JSON-RPC 2.0 to `goav ctl` and other
   clients. Server side: `New(task, options...)` with `Files` (the
@@ -411,10 +409,8 @@ example modules. The module boundary is the dependency boundary:
 - **`player`, `cmd/goav`**: the playback window (Ebitengine and oto) and the CLI
   that registers it as `play`, nested so the root carries no windowing or audio
   dependency. `cmd/goav` has no `replace`, so `go install ...@version` works.
-- **`libcodec`**: codecs in shared libraries and OS frameworks, bound through
-  purego (`libcodec.VideoToolbox`, `AudioToolbox`, `OpenH264`), plus `libcodec/kit`
-  and `libcodec/codectest`, all public, for adding more from any module
-  (`libcodec/proof/extbackend` proves it); nested so the root loads nothing.
+- **`libcodec`**: purego-bound library and OS-framework codecs (`VideoToolbox`, `AudioToolbox`,
+  `OpenH264`, `Declarations`), and the public `kit` and `codectest` to add more from any module.
 - **runnable examples**: `examples/webrtc-runtime-ladder`,
   `examples/custom-source`, `examples/provider-source`,
   `examples/custom-destination`, `examples/custom-filter`,

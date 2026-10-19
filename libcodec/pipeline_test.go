@@ -143,7 +143,7 @@ func TestMissingLibraryIsATypedRefusalWithTheFix(t *testing.T) {
 	if !errors.As(err, &failure) || !errors.Is(err, kit.ErrUnavailable) || !errors.Is(err, codec.ErrUnavailable) {
 		t.Fatalf("Probe = %v, want a *kit.Error that is ErrUnavailable", err)
 	}
-	if !strings.Contains(err.Error(), "libopenh264 did not load") || !strings.Contains(err.Error(), "brew install openh264") {
+	if !strings.Contains(err.Error(), "libopenh264 did not load") || !strings.Contains(err.Error(), "fix: goav codecs install openh264, or brew install openh264") {
 		t.Fatalf("Probe = %q, want the library and the fix", err)
 	}
 	rt := bundle.MustNew(missing)
@@ -189,5 +189,30 @@ func TestLaunchProgramEncodesH264WithEachLibraryBackend(t *testing.T) {
 				t.Fatalf("demuxed %d packets, want 30", len(video))
 			}
 		})
+	}
+}
+
+// TestOpenH264CarriesCiscosTerms pins the two terms of Cisco's patent
+// license a program can act on through goav: Explain shows the notice
+// wherever OpenH264 serves, and the end user can turn it off.
+func TestOpenH264CarriesCiscosTerms(t *testing.T) {
+	if err := kit.Probe(libcodec.OpenH264()); err != nil {
+		t.Skip(err)
+	}
+	out := goavtest.Video(64, 48, 2).Video().Encode(codec.H264(codec.Backend("openh264"))).To(goavtest.NewCollector().Sink())
+	report, err := bundle.MustNew(libcodec.OpenH264()).Explain(context.Background(), out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	i := slices.IndexFunc(report.RequiredAdapters, func(r plan.AdapterRequirement) bool { return r.Kind == "encoder" })
+	if i < 0 || report.RequiredAdapters[i].Notice != "OpenH264 Video Codec provided by Cisco Systems, Inc." {
+		t.Fatalf("Explain = %+v, want Cisco's notice", report.RequiredAdapters)
+	}
+	t.Setenv("GOAV_LIBCODEC_DISABLE", "openh264")
+	if err := kit.Probe(libcodec.OpenH264()); err == nil || !strings.Contains(err.Error(), "is turned off by GOAV_LIBCODEC_DISABLE") {
+		t.Fatalf("Probe with OpenH264 turned off = %v", err)
+	}
+	if _, err := bundle.MustNew(libcodec.OpenH264()).Explain(context.Background(), out); err == nil {
+		t.Fatal("a turned-off OpenH264 served")
 	}
 }

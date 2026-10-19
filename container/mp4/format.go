@@ -11,6 +11,7 @@ import (
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/internal/h264"
+	"github.com/thesyncim/goav/internal/hevc"
 )
 
 // DemuxerFactory opens MP4 demuxers behind the goav format extension point.
@@ -33,6 +34,7 @@ func Descriptor() format.Descriptor {
 		Media:  []av.MediaType{av.MediaAudio, av.MediaVideo},
 		Codecs: []av.CodecID{
 			av.CodecH264,
+			av.CodecHEVC,
 			av.CodecAV1,
 			av.CodecVP8,
 			av.CodecVP9,
@@ -65,7 +67,7 @@ type FormatDemuxer struct {
 	streams []av.Stream
 	closed  bool
 	// avccLength is the NAL length-prefix width per stream index for H.264
-	// tracks (0 for every other codec): goav carries H.264 as Annex B, so
+	// and HEVC tracks (0 for every other codec): goav carries both as Annex B, so
 	// those samples are converted on read through scratch, like the Matroska
 	// demuxer does.
 	avccLength []int
@@ -93,8 +95,13 @@ func (d *FormatDemuxer) Open(ctx context.Context, input format.Input, _ format.O
 		stream := streamFromTrack(tr, i)
 		d.streams = append(d.streams, stream)
 		length := 0
-		if stream.Codec.ID == av.CodecH264 {
+		switch stream.Codec.ID {
+		case av.CodecH264:
 			if config, err := h264.ParseConfig(stream.Codec.ExtraData.Bytes); err == nil {
+				length = config.LengthSize
+			}
+		case av.CodecHEVC:
+			if config, err := hevc.ParseConfig(stream.Codec.ExtraData.Bytes); err == nil {
 				length = config.LengthSize
 			}
 		}
