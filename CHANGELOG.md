@@ -15,10 +15,10 @@ methodology changes, and migration notes.
   goavtest/expect) now requires the main commit with URL schemes, so `go get`
   of any of them resolves a root that has `provider.Scheme`.
 - URLs are inputs and destinations: `goav.URIInput` and `goav.URI` resolve through
-  `runconfig.Scheme`; `bundle` registers `file` and `http(s)` (package `scheme`), and
-  `webrtcav.WHEP` plays WHEP. Reports redact URLs; live inputs take `goav.Reconnect`;
-  launch reads `uri "..."` under `launch.URIs`. Migration: `goav.URI` needs a registered
-  scheme, and `goav.Input` takes a `provider.Input` (every `provider.Source` is one).
+  `runconfig.Scheme` (`provider.InputScheme`/`DestinationScheme`); `bundle` registers `file`
+  and `http(s)`, `webrtcav.WHEP` plays WHEP, and `goav run` and launch (`launch.URIs`) read
+  `uri "..."`. Reports redact URLs; `goav.Live`/`Reconnect` serve live inputs. Migration:
+  `goav.URI` needs a registered scheme; `goav.Input` takes a `provider.Input`.
 
 - The goav CLI module now requires the main commit with the player sync
   fixes, so `go install github.com/thesyncim/goav/cmd/goav@latest` plays in
