@@ -80,9 +80,6 @@ func (e *audioEncoder) Open(ctx context.Context, config codec.EncodeConfig) erro
 	if err != nil {
 		return err
 	}
-	if err := e.c.load(); err != nil {
-		return err
-	}
 	e.config = AudioConfig{SampleRate: rate, Channels: channels, Realtime: config.LowLatency || config.Realtime, Knobs: knobs}
 	params.ID, params.Type = e.c.ID, av.MediaAudio
 	params.SampleRate, params.ClockRate, params.Channels = rate, uint32(rate), channels
@@ -199,18 +196,27 @@ func (e *audioEncoder) HandleEvent(ctx context.Context, event *av.Event) error {
 	if e.closed {
 		return codec.ErrClosed
 	}
-	if event.Type != av.EventBitrateChanged {
-		return nil
+	switch event.Type {
+	case av.EventBitrateChanged:
+		bps, ok := codec.EventBitrate(event)
+		if !ok {
+			return fmt.Errorf("%w: %s %s: bitrate event needs a positive %s in bits per second", codec.ErrInvalidSetting, e.c.ID, e.c.Backend, av.MetadataBitrate)
+		}
+		return e.set("bitrate", strconv.Itoa(bps))
+	case EventSetting:
+		return applySettings(event, e.set)
 	}
-	bps, ok := codec.EventBitrate(event)
+	return nil
+}
+
+// set applies one knob while running: live when the backend declares it so
+// and can, otherwise by restarting the session, carrying what it drains.
+func (e *audioEncoder) set(name, value string) error {
+	knob, ok := e.desc.Knob(name)
 	if !ok {
-		return fmt.Errorf("%w: %s %s: bitrate event needs a positive %s in bits per second", codec.ErrInvalidSetting, e.c.ID, e.c.Backend, av.MetadataBitrate)
+		return fmt.Errorf("%w: %s %s takes no %s control", codec.ErrInvalidSetting, e.c.ID, e.c.Backend, name)
 	}
-	knob, ok := e.desc.Knob("bitrate")
-	if !ok {
-		return fmt.Errorf("%w: %s %s takes no bitrate control", codec.ErrInvalidSetting, e.c.ID, e.c.Backend)
-	}
-	parsed, err := knob.Parse(strconv.Itoa(bps))
+	parsed, err := knob.Parse(value)
 	if err != nil {
 		return fmt.Errorf("%s %s: %w", e.c.ID, e.c.Backend, err)
 	}
@@ -272,9 +278,6 @@ func (d *audioDecoder) Open(ctx context.Context, config codec.DecodeConfig) erro
 	}
 	knobs, err := d.desc.ResolveKnobs(config.Settings, config.LowLatency || config.Realtime)
 	if err != nil {
-		return err
-	}
-	if err := d.c.load(); err != nil {
 		return err
 	}
 	stream := config.Stream

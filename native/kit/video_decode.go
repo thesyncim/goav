@@ -43,9 +43,6 @@ func (d *videoDecoder) Open(ctx context.Context, config codec.DecodeConfig) erro
 	if err != nil {
 		return err
 	}
-	if err := d.c.load(); err != nil {
-		return err
-	}
 	stream := config.Stream
 	if !stream.TimeBase.Valid() {
 		stream.TimeBase = av.TimeBase{Num: 1, Den: 90000}
@@ -60,6 +57,10 @@ func (d *videoDecoder) Open(ctx context.Context, config codec.DecodeConfig) erro
 		Knobs:    knobs,
 	}
 	d.emitFn = d.emitPicture
+	if !nalFramed(d.c.ID, d.c.Bitstream) {
+		d.config.ExtraData = slices.Clone(stream.Codec.ExtraData.Bytes)
+		return d.start()
+	}
 	sets, err := configParameterSets(d.c.ID, stream.Codec.ExtraData.Bytes)
 	if err != nil {
 		return fmt.Errorf("%w: %s %s: extradata: %v", codec.ErrUnsupportedFormat, d.c.ID, d.c.Backend, err)
@@ -115,55 +116,15 @@ func (d *videoDecoder) DecodeInto(ctx context.Context, packet *av.Packet, out *c
 			return err
 		}
 	}
-	units, err := accessUnit(packet.Payload.Bytes)
-	if err != nil {
-		return fmt.Errorf("%w: %s %s: %v", codec.ErrUnsupportedFormat, d.c.ID, d.c.Backend, err)
-	}
-	keyframe := packet.Keyframe || slices.ContainsFunc(units, func(u []byte) bool { return randomAccess(d.c.ID, u) })
-	if d.dropping && !keyframe {
-		return nil
-	}
-	d.dropping = false
-	if sets := parameterSetsOf(d.c.ID, units); len(sets) != 0 && !sameUnits(sets, d.sets) {
-		if d.c.Bitstream == AVCC {
-			// New parameter sets need a session built for them.
-			if err := d.stop(out); err != nil {
-				return err
-			}
-		}
-		d.sets = cloneUnits(sets)
-		d.fedSets = true
-	}
-	if d.session == nil {
-		if len(d.sets) == 0 {
-			return d.requestKeyframe(out, "no parameter sets yet")
-		}
-		if err := d.start(); err != nil {
-			return err
-		}
-	}
-	d.unit = d.unit[:0]
-	if d.c.Bitstream == AVCC {
-		for _, unit := range units {
-			if !parameterSet(d.c.ID, unit) {
-				d.unit = appendAVCC(d.unit, unit)
-			}
-		}
-	} else {
-		if !d.fedSets && len(parameterSetsOf(d.c.ID, units)) == 0 {
-			d.unit = appendAnnexB(d.unit, d.sets...)
-		}
-		d.fedSets = true
-		d.unit = appendAnnexB(d.unit, units...)
-	}
-	if len(d.unit) == 0 {
-		return nil
+	data, keyframe, err := d.accessUnit(packet, out)
+	if err != nil || data == nil {
+		return err
 	}
 	base := d.stream.TimeBase
 	pts := timeIn(packet.PTS, base)
 	d.pending.push(timing{pts: pts, duration: durationIn(packet.Duration, base), metadata: packet.Metadata})
 	d.out = out
-	return d.session.Decode(&Packet{Data: d.unit, PTS: pts, DTS: timeIn(packet.DTS, base), Keyframe: keyframe}, d.emitFn)
+	return d.session.Decode(&Packet{Data: data, PTS: pts, DTS: timeIn(packet.DTS, base), Keyframe: keyframe}, d.emitFn)
 }
 
 func sameUnits(a, b [][]byte) bool {
@@ -192,12 +153,14 @@ func (d *videoDecoder) emitPicture(pic *Picture) error {
 	}
 	frame := &d.out.Frames[n]
 	frame.Reset()
-	if err := fillFrame(frame, pic); err != nil {
+	format, err := fillFrame(frame, pic)
+	if err != nil {
 		d.out.Frames = d.out.Frames[:n]
 		return err
 	}
-	if d.video == nil || d.video.Width != pic.Width || d.video.Height != pic.Height {
-		d.video = &av.VideoFrame{Width: pic.Width, Height: pic.Height, PixelFormat: av.PixelFormatI420}
+	if d.video == nil || d.video.Width != pic.Width || d.video.Height != pic.Height || d.video.PixelFormat != format {
+		// A new header per geometry: frames already published keep theirs.
+		d.video = &av.VideoFrame{Width: pic.Width, Height: pic.Height, PixelFormat: format}
 	}
 	base := d.stream.TimeBase
 	frame.StreamID = d.stream.ID
@@ -286,4 +249,63 @@ func takeCarriedFrames(out []av.Frame, carry *codec.DecodeResult) []av.Frame {
 	clear(carry.Frames)
 	carry.Frames = carry.Frames[:0]
 	return out
+}
+
+// accessUnit prepares a packet for the session: as it is for a raw
+// bitstream; for H.264 and HEVC, in the session's framing with the parameter
+// sets where it wants them, reopening an AVCC session when they change. It
+// returns nil data for a packet dropped while waiting for a keyframe.
+func (d *videoDecoder) accessUnit(packet *av.Packet, out *codec.DecodeResult) ([]byte, bool, error) {
+	if !nalFramed(d.c.ID, d.c.Bitstream) {
+		if d.dropping && !packet.Keyframe {
+			return nil, false, nil
+		}
+		d.dropping = false
+		return packet.Payload.Bytes, packet.Keyframe, nil
+	}
+	units, err := accessUnit(packet.Payload.Bytes)
+	if err != nil {
+		return nil, false, fmt.Errorf("%w: %s %s: %v", codec.ErrUnsupportedFormat, d.c.ID, d.c.Backend, err)
+	}
+	keyframe := packet.Keyframe || slices.ContainsFunc(units, func(u []byte) bool { return randomAccess(d.c.ID, u) })
+	if d.dropping && !keyframe {
+		return nil, false, nil
+	}
+	d.dropping = false
+	if sets := parameterSetsOf(d.c.ID, units); len(sets) != 0 && !sameUnits(sets, d.sets) {
+		if d.c.Bitstream == AVCC {
+			// New parameter sets need a session built for them.
+			if err := d.stop(out); err != nil {
+				return nil, false, err
+			}
+		}
+		d.sets = cloneUnits(sets)
+		d.fedSets = true
+	}
+	if d.session == nil {
+		if len(d.sets) == 0 {
+			return nil, false, d.requestKeyframe(out, "no parameter sets yet")
+		}
+		if err := d.start(); err != nil {
+			return nil, false, err
+		}
+	}
+	d.unit = d.unit[:0]
+	if d.c.Bitstream == AVCC {
+		for _, unit := range units {
+			if !parameterSet(d.c.ID, unit) {
+				d.unit = appendAVCC(d.unit, unit)
+			}
+		}
+	} else {
+		if !d.fedSets && len(parameterSetsOf(d.c.ID, units)) == 0 {
+			d.unit = appendAnnexB(d.unit, d.sets...)
+		}
+		d.fedSets = true
+		d.unit = appendAnnexB(d.unit, units...)
+	}
+	if len(d.unit) == 0 {
+		return nil, false, nil
+	}
+	return d.unit, keyframe, nil
 }

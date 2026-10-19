@@ -3,8 +3,8 @@ package kit
 import (
 	"errors"
 	"fmt"
+	"path/filepath"
 	"reflect"
-	"runtime"
 	"strings"
 	"sync"
 	"unsafe"
@@ -12,41 +12,45 @@ import (
 	"github.com/ebitengine/purego"
 )
 
-// Library is a shared library or OS framework a backend binds at run time:
-// the name errors give it, the paths to try in order, and the fix to show
-// when none opens. Nothing loads until Bind runs.
-type Library struct {
-	Name  string
-	Paths []string
-	Fix   string
-}
-
-// Bind opens the library and resolves the symbols syms declares. syms points
-// to a struct whose fields carry a sym tag naming the symbol:
+// Library is one shared library or OS framework a backend binds: the name
+// errors give it, the absolute Path to load (resolving which file is the
+// caller's job, never a search of the working directory), the fix to show
+// when it cannot load, and Symbols, a pointer to the struct its entry points
+// bind into. The struct's fields carry a sym tag naming the symbol:
 //
 //	type symbols struct {
-//		create  func(**uintptr) int32 `sym:"WelsCreateSVCEncoder"`
-//		version func(*version)        `sym:"WelsGetCodecVersionEx,optional"`
-//		keyCB   uintptr               `sym:"kCFTypeDictionaryKeyCallBacks"`
-//		realtime uintptr              `sym:"kVTCompressionPropertyKey_RealTime,value"`
+//		create   func(**uintptr) int32 `sym:"WelsCreateSVCEncoder"`
+//		version  func(*version)        `sym:"WelsGetCodecVersionEx,optional"`
+//		keyCB    uintptr               `sym:"kCFTypeDictionaryKeyCallBacks"`
+//		realtime uintptr               `sym:"kVTCompressionPropertyKey_RealTime,value"`
 //	}
 //
 // A func field is bound to the function; a uintptr field receives the
 // symbol's address, or with ",value" the pointer stored there (a CFStringRef
-// constant). A missing ",optional" symbol leaves the field zero; any other
-// missing symbol, or a library that does not open, is an *Error carrying the
-// library's fix.
-func (l Library) Bind(backend string, syms any) error {
-	v := reflect.ValueOf(syms)
+// constant). A missing ",optional" symbol leaves the field zero.
+type Library struct {
+	Name    string
+	Path    string
+	Fix     string
+	Symbols any
+}
+
+// Bind loads the library and resolves its symbols. A library that does not
+// load, or a missing symbol, is an *Error carrying the fix.
+func (l Library) Bind(backend string) error {
+	v := reflect.ValueOf(l.Symbols)
 	if v.Kind() != reflect.Pointer || v.Elem().Kind() != reflect.Struct {
-		return fmt.Errorf("kit: Bind wants a pointer to a struct, got %T", syms)
+		return fmt.Errorf("kit: %s symbols must be a pointer to a struct, got %T", l.Name, l.Symbols)
 	}
-	if len(l.Paths) == 0 {
-		return unavailable(backend, "platform", l.Name, "is not available on "+runtime.GOOS+"/"+runtime.GOARCH, l.Fix, nil)
+	if l.Path == "" {
+		return unavailable(backend, "load", l.Name, "is not installed", l.Fix, nil)
 	}
-	handle, path, err := openFirst(l.Paths)
+	if !filepath.IsAbs(l.Path) {
+		return unavailable(backend, "load", l.Name, "path "+l.Path+" is not absolute", l.Fix, nil)
+	}
+	handle, err := openOnce(l.Path)
 	if err != nil {
-		return unavailable(backend, "load", l.Name, "not found (tried "+strings.Join(l.Paths, ", ")+")", l.Fix, err)
+		return unavailable(backend, "load", l.Name, "did not load from "+l.Path, l.Fix, err)
 	}
 	s := v.Elem()
 	t := s.Type()
@@ -62,7 +66,7 @@ func (l Library) Bind(backend string, syms any) error {
 			if strings.Contains(options, "optional") {
 				continue
 			}
-			return unavailable(backend, "symbol", l.Name, "("+path+") has no symbol "+name, l.Fix, err)
+			return unavailable(backend, "symbol", l.Name, "("+l.Path+") has no symbol "+name, l.Fix, err)
 		}
 		target := reflect.NewAt(field.Type, unsafe.Pointer(s.Field(i).UnsafeAddr()))
 		switch {
@@ -104,21 +108,16 @@ func BindVTable(vtable uintptr, table any) error {
 
 var opened sync.Map // path -> uintptr: a library opens once per process
 
-func openFirst(paths []string) (uintptr, string, error) {
-	var errs []error
-	for _, path := range paths {
-		if handle, ok := opened.Load(path); ok {
-			return handle.(uintptr), path, nil
-		}
-		handle, err := open(path)
-		if err != nil {
-			errs = append(errs, err)
-			continue
-		}
-		actual, _ := opened.LoadOrStore(path, handle)
-		return actual.(uintptr), path, nil
+func openOnce(path string) (uintptr, error) {
+	if handle, ok := opened.Load(path); ok {
+		return handle.(uintptr), nil
 	}
-	return 0, "", errors.Join(errs...)
+	handle, err := open(path)
+	if err != nil {
+		return 0, err
+	}
+	actual, _ := opened.LoadOrStore(path, handle)
+	return actual.(uintptr), nil
 }
 
 // pointer turns a C address into an unsafe.Pointer. The memory is the C

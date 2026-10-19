@@ -1,13 +1,10 @@
 package openh264
 
 import (
-	"strconv"
 	"unsafe"
 
 	"github.com/thesyncim/goav/native/kit"
 )
-
-func kitItoa(n int64) string { return strconv.FormatInt(n, 10) }
 
 // decoder is one ISVCDecoder session. Each access unit carries its PTS in
 // uiInBsTimeStamp, which OpenH264 hands back on the picture it decodes.
@@ -82,7 +79,7 @@ func (d *decoder) output(emit func(*kit.Picture) error) error {
 	pic := kit.Picture{
 		Width:   w,
 		Height:  h,
-		Format:  kit.I420,
+		Format:  "i420",
 		Planes:  [3][]byte{unsafe.Slice(d.dst[0], ys*h), unsafe.Slice(d.dst[1], cs*ch), unsafe.Slice(d.dst[2], cs*ch)},
 		Strides: [3]int{ys, cs, cs},
 		PTS:     int64(d.info.OutTimeStamp),

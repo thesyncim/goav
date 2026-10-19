@@ -7,17 +7,24 @@ import (
 	"github.com/thesyncim/goav/av"
 )
 
-// Bitstream is how a video backend frames NAL units: goav carries H.264 and
-// HEVC as Annex B, and the kit converts for a backend that wants
-// length-prefixed AVCC, moving the parameter sets between the stream and the
-// codec configuration record.
+// Bitstream is how a video backend frames its payloads. Raw passes them
+// through untouched: AV1 and VP9 OBUs and frames, or anything not split into
+// NAL units. For H.264 and HEVC, which goav carries as Annex B, AnnexB keeps
+// start codes and AVCC converts to length prefixes, moving the parameter
+// sets between the stream and the codec configuration record.
 type Bitstream int
 
 // The bitstream framings.
 const (
-	AnnexB Bitstream = iota
+	Raw Bitstream = iota
+	AnnexB
 	AVCC
 )
+
+// nalFramed reports a codec and framing the kit handles as NAL units.
+func nalFramed(id av.CodecID, framing Bitstream) bool {
+	return framing != Raw && (id == av.CodecH264 || id == CodecHEVC)
+}
 
 // CodecHEVC is H.265/HEVC, which the goav vocabulary does not name yet.
 const CodecHEVC av.CodecID = "hevc"
@@ -176,14 +183,15 @@ func avcCParameterSets(record []byte) ([][]byte, error) {
 		}
 		return nil
 	}
-	if err := read(int(data[0] & 0x1f)); err != nil {
+	count := int(data[0] & 0x1f)
+	data = data[1:]
+	if err := read(count); err != nil {
 		return nil, err
 	}
-	data = data[1:]
 	if len(data) == 0 {
 		return sets, nil
 	}
-	count := int(data[0])
+	count = int(data[0])
 	data = data[1:]
 	return sets, read(count)
 }

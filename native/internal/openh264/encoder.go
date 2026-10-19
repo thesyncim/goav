@@ -2,6 +2,7 @@ package openh264
 
 import (
 	"runtime"
+	"strconv"
 	"unsafe"
 
 	"github.com/thesyncim/goav/codec"
@@ -73,10 +74,10 @@ func (e *encoder) initialize(config kit.VideoConfig) error {
 	if config.FrameDuration > 0 && config.TimeBase.Num > 0 {
 		fps = float32(float64(config.TimeBase.Den) / float64(config.TimeBase.Num*config.FrameDuration))
 	}
-	// OpenH264 is a real-time encoder: CAMERA_VIDEO_REAL_TIME or
+	// OpenH264 is a real-time encoder: CAMERA_VIDEO_REAL_TIME and
 	// SCREEN_CONTENT_REAL_TIME are the usages it accepts.
 	p.UsageType = 0
-	if knobs.String("content") == "screen" {
+	if knobs.String("tune") == "screen" {
 		p.UsageType = 1
 	}
 	p.PicWidth, p.PicHeight = int32(config.Width), int32(config.Height)
@@ -86,9 +87,9 @@ func (e *encoder) initialize(config kit.VideoConfig) error {
 	p.TargetBitrate = bitrate
 	rc := knobs.String("rc")
 	if rc == "" {
-		rc = "quality"
+		rc = "cqp"
 		if bitrate > 0 {
-			rc = "bitrate"
+			rc = "vbr"
 		}
 	}
 	p.RCMode = rcModes[rc]
@@ -98,7 +99,7 @@ func (e *encoder) initialize(config kit.VideoConfig) error {
 	p.PrefixNalAddingCtrl = false
 	p.EnableFrameSkip = knobs.Bool("frame_skip")
 	p.MultipleThreadIdc = uint16(knobs.Int("threads"))
-	p.ComplexityMode = map[string]int32{"low": 0, "medium": 1, "high": 2}[knobs.String("complexity")]
+	p.ComplexityMode = complexity(knobs.Int("speed"))
 	profile := knobs.String("profile")
 	p.EntropyCodingMode = 0
 	if entropy := knobs.String("entropy"); entropy == "cabac" || (entropy == "" && profile != "baseline") {
@@ -127,6 +128,7 @@ func (e *encoder) initialize(config kit.VideoConfig) error {
 	layer.FrameRate = fps
 	layer.SpatialBitrate = bitrate
 	layer.MaxSpatialBitrate = p.MaxBitrate
+	layer.DLayerQp = int32(knobs.Int("qp"))
 	layer.ProfileIdc = profiles[profile]
 	if level := knobs.String("level"); level != "" {
 		layer.LevelIdc = levelIdc(level)
@@ -135,15 +137,13 @@ func (e *encoder) initialize(config kit.VideoConfig) error {
 	if n := knobs.Int("slices"); n > 1 {
 		layer.Slices.SliceMode, layer.Slices.SliceNum = sliceFixedNum, uint32(n)
 	}
-	for _, kv := range knobs.Raw() {
-		if err := applyRaw(p, kv[0], kv[1]); err != nil {
-			return err
-		}
+	if err := rawParams.Apply(p, knobs.Raw()); err != nil {
+		return err
 	}
 	trace := logLevels[knobs.String("log")]
 	e.vt.SetOption(e.handle, optionTraceLevel, unsafe.Pointer(&trace))
 	if status := e.vt.InitializeExt(e.handle, p); status != 0 {
-		return &kit.Error{Backend: Name, Op: "open", Name: "InitializeExt", Reason: "refused the parameters (status " + itoa(status) + ")", Fix: "check the knobs and raw parameters against OpenH264's limits for this geometry"}
+		return &kit.Error{Backend: Name, Op: "open", Name: "InitializeExt", Reason: "refused the parameters (status " + strconv.Itoa(int(status)) + ")", Fix: "check the knobs and raw parameters against OpenH264's limits for this geometry; log=debug shows its reason"}
 	}
 	format := int32(videoFormatI420)
 	if status := e.vt.SetOption(e.handle, optionDataFormat, unsafe.Pointer(&format)); status != 0 {
@@ -254,8 +254,4 @@ func (e *encoder) Close() error {
 	e.lib.destroyEncoder(e.handle)
 	e.handle = 0
 	return nil
-}
-
-func itoa(n int32) string {
-	return kitItoa(int64(n))
 }

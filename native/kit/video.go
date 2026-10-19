@@ -25,6 +25,9 @@ type VideoConfig struct {
 	Realtime      bool
 	Knobs         codec.KnobValues
 	ParameterSets [][]byte
+	// ExtraData is a raw-bitstream decoder's codec configuration, as the
+	// stream carries it (an av1C, say).
+	ExtraData []byte
 }
 
 // VideoEncoder is a backend's encoder session. Encode takes one picture and
@@ -140,9 +143,6 @@ func (e *videoEncoder) Open(ctx context.Context, config codec.EncodeConfig) erro
 	if err != nil {
 		return err
 	}
-	if err := e.c.load(); err != nil {
-		return err
-	}
 	e.settings = config.Settings
 	e.config = VideoConfig{
 		Width:         width,
@@ -179,9 +179,17 @@ func (e *videoEncoder) start() error {
 	}
 	e.session = session
 	if configured, ok := session.(Configured); ok {
-		e.learnConfig(configured.Config())
+		e.takeConfig(configured.Config())
 	}
 	return nil
+}
+
+func (e *videoEncoder) takeConfig(config []byte) {
+	if nalFramed(e.c.ID, e.c.Bitstream) {
+		e.learnConfig(config)
+	} else {
+		e.learnRaw(config)
+	}
 }
 
 // learnConfig keeps the parameter sets of a codec configuration for in-band
@@ -197,6 +205,14 @@ func (e *videoEncoder) learnConfig(config []byte) {
 		extra = avcC(sets)
 	}
 	e.stream.Codec.ExtraData = av.Buffer{Bytes: slices.Clone(extra)}
+}
+
+// learnRaw keeps a non-NAL codec's configuration (an av1C, say) as the
+// stream's extradata.
+func (e *videoEncoder) learnRaw(config []byte) {
+	if len(config) != 0 {
+		e.stream.Codec.ExtraData = av.Buffer{Bytes: slices.Clone(config)}
+	}
 }
 
 func cloneUnits(units [][]byte) [][]byte {
@@ -232,8 +248,11 @@ func (e *videoEncoder) EncodeInto(ctx context.Context, frame *av.Frame, out *cod
 	}
 	pic.Keyframe, e.forceKey = e.forceKey, false
 	e.pending.push(timing{pts: pic.PTS, duration: pic.Duration, metadata: frame.Metadata})
-	if e.c.Pixels == NV12 {
+	switch {
+	case e.c.Pixels == NV12 && (pic.Format == av.PixelFormatI420 || pic.Format == av.PixelFormatYUV420P):
 		pic, e.scratch = toNV12(pic, e.scratch)
+	case e.c.Pixels != "" && e.c.Pixels != NV12 && !samePlanar(e.c.Pixels, pic.Format):
+		return fmt.Errorf("%w: %s %s encodes %s, not %s", codec.ErrUnsupportedFormat, e.c.ID, e.c.Backend, e.c.Pixels, pic.Format)
 	}
 	e.out = out
 	return e.session.Encode(&pic, e.emitFn)
@@ -272,36 +291,12 @@ func (e *videoEncoder) restart(out *codec.EncodeResult, change func()) error {
 
 func (e *videoEncoder) emit(p *Packet) error {
 	if p.Config != nil {
-		e.learnConfig(p.Config)
+		e.takeConfig(p.Config)
 	}
-	var units [][]byte
-	var err error
-	if e.c.Bitstream == AVCC {
-		units, err = lengthPrefixed(p.Data)
-	} else {
-		units = nalUnits(p.Data)
-	}
+	payload, keyframe, err := e.payload(p)
 	if err != nil {
-		return fmt.Errorf("%s %s: encoder output: %w", e.c.ID, e.c.Backend, err)
+		return err
 	}
-	keyframe := p.Keyframe || slices.ContainsFunc(units, func(u []byte) bool { return randomAccess(e.c.ID, u) })
-	size := 0
-	inband := len(parameterSetsOf(e.c.ID, units)) != 0
-	if keyframe && !inband {
-		for _, set := range e.sets {
-			size += 4 + len(set)
-		}
-	}
-	for _, unit := range units {
-		size += 4 + len(unit)
-	}
-	payload := av.NewBuffer(size)
-	data := payload.Bytes[:0]
-	if keyframe && !inband {
-		data = appendAnnexB(data, e.sets...)
-	}
-	data = appendAnnexB(data, units...)
-	payload.Bytes = data
 	entry, _ := e.pending.take(p.PTS)
 	duration := p.Duration
 	if duration == 0 {
@@ -320,6 +315,45 @@ func (e *videoEncoder) emit(p *Packet) error {
 		Metadata:   entry.metadata,
 	})
 	return nil
+}
+
+// payload copies a backend's packet into one pooled buffer: as it is for a
+// raw bitstream, or as Annex B with the parameter sets ahead of every
+// keyframe for H.264 and HEVC.
+func (e *videoEncoder) payload(p *Packet) (av.Buffer, bool, error) {
+	if !nalFramed(e.c.ID, e.c.Bitstream) {
+		payload := av.NewBuffer(len(p.Data))
+		copy(payload.Bytes, p.Data)
+		return payload, p.Keyframe, nil
+	}
+	var units [][]byte
+	var err error
+	if e.c.Bitstream == AVCC {
+		units, err = lengthPrefixed(p.Data)
+	} else {
+		units = nalUnits(p.Data)
+	}
+	if err != nil {
+		return av.Buffer{}, false, fmt.Errorf("%s %s: encoder output: %w", e.c.ID, e.c.Backend, err)
+	}
+	keyframe := p.Keyframe || slices.ContainsFunc(units, func(u []byte) bool { return randomAccess(e.c.ID, u) })
+	inband := len(parameterSetsOf(e.c.ID, units)) != 0
+	size := 0
+	if keyframe && !inband {
+		for _, set := range e.sets {
+			size += 4 + len(set)
+		}
+	}
+	for _, unit := range units {
+		size += 4 + len(unit)
+	}
+	payload := av.NewBuffer(size)
+	data := payload.Bytes[:0]
+	if keyframe && !inband {
+		data = appendAnnexB(data, e.sets...)
+	}
+	payload.Bytes = appendAnnexB(data, units...)
+	return payload, keyframe, nil
 }
 
 func (e *videoEncoder) FlushInto(ctx context.Context, out *codec.EncodeResult) error {
@@ -346,8 +380,38 @@ func (e *videoEncoder) HandleEvent(ctx context.Context, event *av.Event) error {
 			return fmt.Errorf("%w: %s %s: bitrate event needs a positive %s in bits per second", codec.ErrInvalidSetting, e.c.ID, e.c.Backend, av.MetadataBitrate)
 		}
 		return e.set("bitrate", strconv.Itoa(bps))
+	case EventSetting:
+		return applySettings(event, e.set)
 	}
 	return nil
+}
+
+// applySettings applies an EventSetting's knobs in name order.
+func applySettings(event *av.Event, set func(name, value string) error) error {
+	names := make([]string, 0, len(event.Metadata))
+	for name := range event.Metadata {
+		names = append(names, name)
+	}
+	slices.Sort(names)
+	for _, name := range names {
+		if err := set(name, event.Metadata[name]); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// samePlanar reports two names of one planar layout (i420 and yuv420p).
+func samePlanar(a, b string) bool {
+	if a == "" {
+		a = av.PixelFormatI420
+	}
+	if b == "" {
+		b = av.PixelFormatI420
+	}
+	la, okA := layouts[a]
+	lb, okB := layouts[b]
+	return a == b || (okA && okB && la == lb)
 }
 
 // set applies one knob while running: live when the backend declares it so
