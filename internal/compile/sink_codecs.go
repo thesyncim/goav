@@ -143,6 +143,8 @@ func encodeSpecFor(id av.CodecID, media av.MediaType) codec.Spec {
 		return codec.VP9()
 	case av.CodecH264:
 		return codec.H264()
+	case av.CodecHEVC:
+		return codec.HEVC()
 	case av.CodecAV1:
 		return codec.AV1()
 	default:
@@ -161,6 +163,8 @@ func encodeConstructor(id av.CodecID, media av.MediaType) string {
 		return "codec.VP9()"
 	case av.CodecH264:
 		return "codec.H264()"
+	case av.CodecHEVC:
+		return "codec.HEVC()"
 	case av.CodecAV1:
 		return "codec.AV1()"
 	default:

@@ -7,12 +7,12 @@ import (
 	"strings"
 )
 
-// Find returns the first of paths a library can load from: an absolute path
+// find returns the first of paths a library can load from: an absolute path
 // to a file that exists, or on macOS a system library or framework, which
 // lives in the dyld shared cache rather than on disk. It returns "" when none
 // does, which Library reports as not installed. Relative paths are skipped,
 // so loading never searches the working directory.
-func Find(paths ...string) string {
+func find(paths ...string) string {
 	for _, path := range paths {
 		if !filepath.IsAbs(path) {
 			continue

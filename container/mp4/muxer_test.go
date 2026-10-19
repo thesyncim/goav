@@ -333,3 +333,22 @@ func TestSingleOpusSampleKeepsPreSkip(t *testing.T) {
 		t.Fatalf("samples = %+v, want one at -6.5ms", got)
 	}
 }
+
+// TestMuxRefusesHEVCWithoutAnHVCC: an hvc1 entry needs the record; the
+// refusal says so.
+func TestMuxRefusesHEVCWithoutAnHVCC(t *testing.T) {
+	streams := []av.Stream{{ID: "h", Type: av.MediaVideo, Codec: av.CodecParameters{ID: av.CodecHEVC, Type: av.MediaVideo, Width: 64, Height: 48}}}
+	m := &FormatMuxer{}
+	if err := m.Open(context.Background(), format.Output{Writer: &sliceWriteSeeker{}}, streams, format.OpenOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	ns := av.TimeBase{Num: 1, Den: 1_000_000_000}
+	packet := av.Packet{StreamID: "h", Keyframe: true, PTS: av.Timestamp{Base: ns}, DTS: av.Timestamp{Base: ns}, Payload: av.Buffer{Bytes: []byte{0, 0, 0, 1, 0x26, 0x01}}}
+	err := m.Write(context.Background(), &packet, nil)
+	if err == nil {
+		err = m.Close()
+	}
+	if err == nil || !strings.Contains(err.Error(), "no keyframe carried its VPS, SPS, and PPS") {
+		t.Fatalf("err = %v", err)
+	}
+}

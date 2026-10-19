@@ -124,10 +124,12 @@ func (d *decoder) Decode(unit *kit.Packet, emit func(*kit.Picture) error) error 
 	}
 	defer f.cf.release(sample)
 	var info uint32
-	if s := f.vt.decodeFrame(d.session, sample, 0, uintptr(unit.PTS), &info); s != 0 {
-		return kit.Fail(Name, "decode", "VTDecompressionSessionDecodeFrame", int64(s))
+	s := f.vt.decodeFrame(d.session, sample, 0, uintptr(unit.PTS), &info)
+	err := d.drain(emit)
+	if s != 0 && err == nil {
+		err = decodeFailure("VTDecompressionSessionDecodeFrame", s)
 	}
-	return d.drain(emit)
+	return err
 }
 
 func (d *decoder) Flush(emit func(*kit.Picture) error) error {
@@ -136,45 +138,54 @@ func (d *decoder) Flush(emit func(*kit.Picture) error) error {
 	return d.drain(emit)
 }
 
+// drain lends the queued pictures in decode order and releases each queued
+// image exactly once, through its owner when lent or here when not. A
+// picture VideoToolbox dropped is skipped; one it could not decode (bad
+// data) is dropped too, and reported once the rest are lent, so the kit
+// asks for a keyframe and decoding goes on. Any other failure ends the
+// session's run with the library's status.
 func (d *decoder) drain(emit func(*kit.Picture) error) error {
 	d.mu.Lock()
 	queue := d.queue
 	d.queue = nil
 	d.mu.Unlock()
-	f := d.f
+	var failure error
 	for i, p := range queue {
-		if p.status != 0 || p.image == 0 {
-			for _, rest := range queue[i:] {
-				if rest.image != 0 {
-					f.cf.release(rest.image)
-				}
+		switch {
+		case p.status != 0:
+			if p.image != 0 {
+				d.f.cf.release(p.image)
 			}
-			if p.status != 0 {
-				return kit.Fail(Name, "decode", "the decompression output callback", int64(p.status))
+			if failure == nil {
+				failure = decodeFailure("the decompression output callback", p.status)
 			}
-			if err := d.drainRest(queue[i+1:], emit); err != nil {
+		case p.image == 0:
+		default:
+			if err := d.lend(p, emit); err != nil {
+				d.releaseImages(queue[i+1:])
 				return err
 			}
-			return nil
-		}
-		if err := d.lend(p, emit); err != nil {
-			for _, rest := range queue[i+1:] {
-				if rest.image != 0 {
-					f.cf.release(rest.image)
-				}
-			}
-			return err
 		}
 	}
-	return nil
+	return failure
 }
 
-// drainRest lends the pictures after a dropped one.
-func (d *decoder) drainRest(rest []picture, emit func(*kit.Picture) error) error {
-	d.mu.Lock()
-	d.queue = append(rest, d.queue...)
-	d.mu.Unlock()
-	return d.drain(emit)
+func (d *decoder) releaseImages(queue []picture) {
+	for _, p := range queue {
+		if p.image != 0 {
+			d.f.cf.release(p.image)
+		}
+	}
+}
+
+// decodeFailure is the error for a decode status: bad data drops the unit,
+// anything else fails the decode.
+func decodeFailure(call string, s int32) error {
+	switch s {
+	case -12909, -8969: // kVTVideoDecoderBadDataErr, codecBadDataErr
+		return kit.Damaged(Name, call, int64(s))
+	}
+	return kit.Fail(Name, "decode", call, int64(s))
 }
 
 // lend publishes one decoded picture in place, its CVPixelBuffer locked and
@@ -224,11 +235,7 @@ func (d *decoder) Close() error {
 	queue := d.queue
 	d.queue = nil
 	d.mu.Unlock()
-	for _, p := range queue {
-		if p.image != 0 {
-			f.cf.release(p.image)
-		}
-	}
+	d.releaseImages(queue)
 	if d.format != 0 {
 		f.cf.release(d.format)
 		d.format = 0

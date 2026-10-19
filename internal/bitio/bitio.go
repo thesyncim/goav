@@ -29,28 +29,9 @@ func (r *Reader) Bool() (bool, error) {
 	return value != 0, err
 }
 
-// SkipUVLC skips an unsigned variable-length code.
-func (r *Reader) SkipUVLC() error {
-	zeros := 0
-	for {
-		bit, err := r.Bits(1)
-		if err != nil {
-			return err
-		}
-		if bit == 1 {
-			break
-		}
-		if zeros++; zeros >= 32 {
-			return nil
-		}
-	}
-	_, err := r.Bits(zeros)
-	return err
-}
-
-// UE reads an unsigned Exp-Golomb code, the ue(v) of H.264 and HEVC
-// parameter sets.
-func (r *Reader) UE() (uint64, error) {
+// UVLC reads an unsigned variable-length code: AV1's uvlc(), which is
+// H.264 and HEVC's ue(v) Exp-Golomb code. 32 leading zeros read as 2^32-1.
+func (r *Reader) UVLC() (uint64, error) {
 	zeros := 0
 	for {
 		bit, err := r.Bits(1)
@@ -60,10 +41,16 @@ func (r *Reader) UE() (uint64, error) {
 		if bit == 1 {
 			break
 		}
-		if zeros++; zeros > 31 {
-			return 0, r.Err
+		if zeros++; zeros >= 32 {
+			return 1<<32 - 1, nil
 		}
 	}
 	value, err := r.Bits(zeros)
-	return 1<<zeros - 1 + value, err
+	return value + 1<<zeros - 1, err
+}
+
+// SkipUVLC skips an unsigned variable-length code.
+func (r *Reader) SkipUVLC() error {
+	_, err := r.UVLC()
+	return err
 }
