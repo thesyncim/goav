@@ -8,6 +8,7 @@ import (
 	"github.com/thesyncim/goav/internal/av1"
 	"github.com/thesyncim/goav/internal/bitio"
 	"github.com/thesyncim/goav/internal/h264"
+	"github.com/thesyncim/goav/internal/hevc"
 )
 
 // muxCodecs are the sample entries the muxer writes.
@@ -41,9 +42,6 @@ func (t *muxTrack) configure() error {
 		}
 	case av.CodecHEVC:
 		t.config = hvc1Config(extra)
-		if t.config == nil && h264.HasStartCode(extra) {
-			t.config, _ = hvcCFromAnnexB(extra)
-		}
 	case av.CodecAV1:
 		switch {
 		case len(extra) >= 4 && extra[0] == 0x81:
@@ -103,7 +101,7 @@ func (t *muxTrack) sampleData(payload []byte, keyframe bool) ([]byte, error) {
 			return payload, nil
 		}
 		if t.config == nil {
-			t.config, _ = hvcCFromAnnexB(payload)
+			t.config, _ = hevc.ConfigFromAnnexB(payload)
 		}
 		var err error
 		t.scratch, err = appendHVC1(t.scratch[:0], payload)

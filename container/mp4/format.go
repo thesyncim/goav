@@ -11,6 +11,7 @@ import (
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/internal/h264"
+	"github.com/thesyncim/goav/internal/hevc"
 )
 
 // DemuxerFactory opens MP4 demuxers behind the goav format extension point.
@@ -100,7 +101,9 @@ func (d *FormatDemuxer) Open(ctx context.Context, input format.Input, _ format.O
 				length = config.LengthSize
 			}
 		case av.CodecHEVC:
-			length = hvcCLengthSize(stream.Codec.ExtraData.Bytes)
+			if config, err := hevc.ParseConfig(stream.Codec.ExtraData.Bytes); err == nil {
+				length = config.LengthSize
+			}
 		}
 		d.avccLength = append(d.avccLength, length)
 	}

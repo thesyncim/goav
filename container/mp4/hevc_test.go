@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/thesyncim/goav/av"
+	"github.com/thesyncim/goav/internal/hevc"
 )
 
 // Parameter sets VideoToolbox wrote for a 64x48 HEVC Main stream.
@@ -32,53 +33,38 @@ func annexBUnits(nals ...[]byte) []byte {
 	return out
 }
 
-func TestParseHEVCSPS(t *testing.T) {
-	sps, err := parseHEVCSPS(testSPS)
-	if err != nil {
-		t.Fatal(err)
-	}
-	ptl := unhex("0160000000b00000000000" + "1e")
-	if !bytes.Equal(sps.profileTierLevel[:], ptl) || sps.chromaFormat != 1 || sps.lumaDepth != 8 || sps.chromaDepth != 8 || sps.temporalLayers != 1 || sps.temporalIDNested != 1 {
-		t.Fatalf("SPS %+v", sps)
-	}
-	for n := range len(testSPS) - 1 {
-		if _, err := parseHEVCSPS(testSPS[:n]); err == nil && n < 16 {
-			t.Errorf("an SPS cut to %d bytes parsed", n)
-		}
+// TestMuxHEVCAsHVC1: the hvcC, the stream's (rewritten to 4-byte lengths and
+// complete arrays) or one built from the first keyframe's parameter sets,
+// rides in an hvc1 entry; the samples drop their parameter sets; the
+// demuxer hands back Annex B.
+func TestMuxHEVCAsHVC1(t *testing.T) {
+	complete, _ := hevc.ConfigFromAnnexB(annexBUnits(testVPS, testSPS, testPPS))
+	short := bytes.Clone(complete)
+	short[21] = short[21]&^3 | 1 // 2-byte lengths
+	short[23] &^= 0x80           // the VPS array incomplete
+	for name, extra := range map[string][]byte{"derived": nil, "declared": short} {
+		t.Run(name, func(t *testing.T) { muxHEVC(t, extra, complete) })
 	}
 }
 
-// TestMuxHEVCDerivesItsHVCC: a stream that declares no hvcC gets one built
-// from its first keyframe's parameter sets, which then leave the samples.
-func TestMuxHEVCDerivesItsHVCC(t *testing.T) {
+func muxHEVC(t *testing.T, extra, want []byte) {
 	idr, trail := []byte{0x26, 0x01, 0xaf}, []byte{0x02, 0x01, 0xd0}
 	streams := []av.Stream{{ID: "h", Type: av.MediaVideo, TimeBase: av.TimeBase{Num: 1, Den: 90000},
-		Codec: av.CodecParameters{ID: av.CodecHEVC, Type: av.MediaVideo, Width: 64, Height: 48}}}
+		Codec: av.CodecParameters{ID: av.CodecHEVC, Type: av.MediaVideo, Width: 64, Height: 48, ExtraData: av.Buffer{Bytes: extra}}}}
 	packets := []muxPacket{
 		{stream: "h", key: true, payload: annexBUnits(testVPS, testSPS, testPPS, idr)},
 		{stream: "h", pts: 40 * time.Millisecond, dts: 40 * time.Millisecond, payload: annexBUnits(trail)},
 	}
 	out := &sliceWriteSeeker{}
 	writeMP4(t, out, streams, packets, false)
-	read, got := readMP4(t, out.data)
-	config := read[0].Codec.ExtraData.Bytes
-	if want, _ := hvcCFromAnnexB(annexBUnits(testVPS, testSPS, testPPS)); !bytes.Equal(config, want) {
-		t.Fatalf("hvcC % x, want % x", config, want)
+	if !bytes.Contains(out.data, []byte("hvc1")) || !bytes.Contains(out.data, []byte("hvcC")) {
+		t.Fatal("the file lacks its hvc1 entry or hvcC")
 	}
-	if config[1] != 0x01 || config[12] != 0x1e || config[16] != 0xfd || config[17] != 0xf8 || config[21] != 0x0f || config[22] != 3 {
-		t.Fatalf("hvcC header % x", config[:23])
+	read, got := readMP4(t, out.data)
+	if read[0].Codec.ID != av.CodecHEVC || !bytes.Equal(read[0].Codec.ExtraData.Bytes, want) {
+		t.Fatalf("stream %s, hvcC % x, want % x", read[0].Codec.ID, read[0].Codec.ExtraData.Bytes, want)
 	}
 	if len(got) != 2 || !bytes.Equal(got[0].payload, annexBUnits(idr)) || !bytes.Equal(got[1].payload, annexBUnits(trail)) {
 		t.Fatalf("samples %v", got)
 	}
-}
-
-func FuzzHVCCFromAnnexB(f *testing.F) {
-	f.Add(annexBUnits(testVPS, testSPS, testPPS))
-	f.Fuzz(func(t *testing.T, data []byte) {
-		if record, err := hvcCFromAnnexB(data); err == nil && hvc1Config(record) == nil {
-			t.Fatalf("built a record hvc1Config cannot read: % x", record)
-		}
-		hvc1Config(data)
-	})
 }
