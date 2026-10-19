@@ -24,6 +24,7 @@ const JoinSyncPTS
 const RealtimeRecipeBufferCapacity
 const SelectBufferCapacity
 func AddPlannedNode
+func BackendDetail
 func CheckKnownMuxCompatibility
 func CloneBuffer
 func CloneCodecSettings
@@ -50,6 +51,8 @@ func DestinationShapeMismatchError
 func EmptyTransformSpecError
 func EncodeAdapterIncompatibleErrorAt
 func EncodeAdapterRequestFromPreparedStream
+func EncodeAdapterRequestFromRecipeIR
+func EncodeBackendDetail
 func EncodeNodeDetail
 func EncodeNodeName
 func FirstNonEmptyCodec
@@ -91,6 +94,7 @@ func RecipeIROperationOutputShapes
 func RecipeIRTransformEmpty
 func RecipeIRTransformFactoryName
 func RecipeTransformAdapterError
+func SelectCodecBackend
 func SelectDecodeStream
 func SelectStream
 func SolveRecipeIROperationShapes

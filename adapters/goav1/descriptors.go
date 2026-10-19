@@ -25,8 +25,9 @@ func Descriptor() codec.Descriptor {
 			},
 			RTPPayloads: []string{av.MIMEAV1},
 		},
-		Backend: codec.Backend{
+		Backend: codec.BackendInfo{
 			Name:    "goav1",
+			Kind:    codec.KindGo,
 			Module:  "github.com/thesyncim/goav1",
 			Package: "github.com/thesyncim/goav/adapters/goav1",
 			Status:  "active",
@@ -49,8 +50,9 @@ func EncoderDescriptor() codec.Descriptor {
 			},
 			RTPPayloads: []string{av.MIMEAV1},
 		},
-		Backend: codec.Backend{
-			Name:    "goav1-encoder",
+		Backend: codec.BackendInfo{
+			Name:    "goav1",
+			Kind:    codec.KindGo,
 			Module:  "github.com/thesyncim/goav1",
 			Package: "github.com/thesyncim/goav/adapters/goav1",
 			Status:  "active",

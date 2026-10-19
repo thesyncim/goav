@@ -49,7 +49,7 @@
       {
         "name": "encode-composite",
         "kind": "stage",
-        "detail": "frames -\u003e packets, codec=vp8"
+        "detail": "frames -\u003e packets, codec=vp8, backend=govpx (go)"
       },
       {
         "name": "pip.webm",
@@ -411,7 +411,9 @@
         ],
         "realtime": true,
         "requiredBy": "composite",
-        "status": "available"
+        "status": "available",
+        "backend": "govpx (go)",
+        "backendReason": "the only vp8 encoder registered"
       }
     ],
     "warnings": [
@@ -484,7 +486,7 @@
         {
           "name": "encode-composite",
           "kind": "stage",
-          "detail": "frames -\u003e packets, codec=vp8"
+          "detail": "frames -\u003e packets, codec=vp8, backend=govpx (go)"
         },
         {
           "name": "pip.webm",

@@ -25,7 +25,7 @@
       {
         "name": "encode-audio",
         "kind": "stage",
-        "detail": "frames -\u003e packets, codec=opus"
+        "detail": "frames -\u003e packets, codec=opus, backend=gopus (go)"
       },
       {
         "name": "o.webm",
@@ -327,7 +327,9 @@
         ],
         "realtime": true,
         "requiredBy": "audio",
-        "status": "available"
+        "status": "available",
+        "backend": "gopus (go)",
+        "backendReason": "the only opus encoder registered"
       }
     ],
     "graph": {
@@ -356,7 +358,7 @@
         {
           "name": "encode-audio",
           "kind": "stage",
-          "detail": "frames -\u003e packets, codec=opus"
+          "detail": "frames -\u003e packets, codec=opus, backend=gopus (go)"
         },
         {
           "name": "o.webm",

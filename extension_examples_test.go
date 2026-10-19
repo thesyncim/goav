@@ -185,7 +185,7 @@ func exampleEncoderDescriptor() codec.Descriptor {
 		Capabilities: codec.Capabilities{
 			SampleFormats: []string{av.SampleFormatS16},
 		},
-		Backend: codec.Backend{
+		Backend: codec.BackendInfo{
 			Name:    "example",
 			Module:  "example.test/media",
 			Package: "exampleenc",

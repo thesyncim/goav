@@ -43,8 +43,9 @@ func Descriptor() codec.Descriptor {
 		Capabilities: codec.Capabilities{
 			SampleFormats: []string{av.SampleFormatS16},
 		},
-		Backend: codec.Backend{
+		Backend: codec.BackendInfo{
 			Name:    backendName,
+			Kind:    codec.KindGo,
 			Module:  "github.com/thesyncim/goaac",
 			Package: "github.com/thesyncim/goav/adapters/goaac",
 			Status:  status,

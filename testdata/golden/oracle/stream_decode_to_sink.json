@@ -162,7 +162,9 @@
         ],
         "realtime": true,
         "requiredBy": "video",
-        "status": "available"
+        "status": "available",
+        "backend": "govpx (go)",
+        "backendReason": "the only vp8 decoder registered"
       }
     ],
     "graph": {

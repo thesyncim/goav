@@ -29,8 +29,9 @@ func Descriptor() codec.Descriptor {
 			SampleRates:   []int{8000, 12000, 16000, 24000, 48000},
 			RTPPayloads:   []string{av.MIMEOpus},
 		},
-		Backend: codec.Backend{
+		Backend: codec.BackendInfo{
 			Name:    backendName,
+			Kind:    codec.KindGo,
 			Module:  "github.com/thesyncim/gopus",
 			Package: "github.com/thesyncim/goav/adapters/gopus",
 			Status:  "active",

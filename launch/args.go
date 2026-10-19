@@ -141,7 +141,11 @@ func (s argSchema) bind(element string, args []argNode) (reflect.Value, *Error) 
 			}
 			f, ok := s.positionalAt(positional)
 			if !ok {
-				return reflect.Value{}, &Error{Pos: a.pos, End: a.end, Msg: fmt.Sprintf("%s: unexpected value %q", element, a.value), Hint: s.usageHint(element)}
+				hint := s.usageHint(element)
+				if positional == 0 {
+					hint += "; join steps with ! and separate a join's inputs with ,"
+				}
+				return reflect.Value{}, &Error{Pos: a.pos, End: a.end, Msg: fmt.Sprintf("%s: unexpected value %q", element, a.value), Hint: hint}
 			}
 			positional++
 			if err := setArg(v.Field(f.index), f, a); err != nil {

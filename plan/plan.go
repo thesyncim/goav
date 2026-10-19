@@ -140,6 +140,13 @@ type AdapterRequirement struct {
 	Metadata      av.Metadata         `json:"metadata,omitempty"`
 	RequiredBy    string              `json:"requiredBy,omitempty"`
 	Status        string              `json:"status,omitempty"`
+	// Backend names the backend chosen to serve a codec requirement, with its
+	// kind ("videotoolbox (hardware)"); BackendReason says why it was chosen,
+	// and Alternatives lists the other backends that would serve it, in
+	// preference order.
+	Backend       string   `json:"backend,omitempty"`
+	BackendReason string   `json:"backendReason,omitempty"`
+	Alternatives  []string `json:"alternatives,omitempty"`
 }
 
 // Diagnostic is one structured warning attached to a plan.

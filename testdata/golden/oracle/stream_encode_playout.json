@@ -15,7 +15,7 @@
       {
         "name": "encode-video",
         "kind": "stage",
-        "detail": "frames -\u003e packets, codec=vp8"
+        "detail": "frames -\u003e packets, codec=vp8, backend=govpx (go)"
       },
       {
         "name": "playout-video-rtp",
@@ -214,7 +214,9 @@
         ],
         "realtime": true,
         "requiredBy": "video",
-        "status": "available"
+        "status": "available",
+        "backend": "govpx (go)",
+        "backendReason": "the only vp8 encoder registered"
       }
     ],
     "graph": {
@@ -233,7 +235,7 @@
         {
           "name": "encode-video",
           "kind": "stage",
-          "detail": "frames -\u003e packets, codec=vp8"
+          "detail": "frames -\u003e packets, codec=vp8, backend=govpx (go)"
         },
         {
           "name": "playout-video-rtp",

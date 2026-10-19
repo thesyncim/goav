@@ -114,7 +114,7 @@ pipeline goav
   stage select-video [select, type=video]
   stage decode-video [packets -> frames, type=video]
   stage resize-video [resize, 1280x720, exact]
-  stage encode-video [frames -> packets, codec=vp9]
+  stage encode-video [frames -> packets, codec=vp9, backend=govpx (go)]
   stage out.webm [mux, protocol=file]
 ```
 

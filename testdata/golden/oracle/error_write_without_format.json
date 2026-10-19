@@ -15,7 +15,7 @@
       {
         "name": "encode-video",
         "kind": "stage",
-        "detail": "frames -\u003e packets, codec=vp8"
+        "detail": "frames -\u003e packets, codec=vp8, backend=govpx (go)"
       },
       {
         "name": "out",

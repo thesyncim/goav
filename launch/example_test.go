@@ -32,8 +32,8 @@ func ExampleCompile() {
 	//   source video [generated test video]
 	//   stage select-video [select, type=video]
 	//   stage resize-small [resize, 320x180, exact]
-	//   stage encode-small [frames -> packets, codec=vp8]
-	//   stage encode-full [frames -> packets, codec=vp8]
+	//   stage encode-small [frames -> packets, codec=vp8, backend=govpx (go)]
+	//   stage encode-full [frames -> packets, codec=vp8, backend=govpx (go)]
 	//   sink null
 	//   video -> select-video
 	//   select-video -> resize-small

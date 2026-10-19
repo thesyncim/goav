@@ -19,7 +19,8 @@ const (
 // Descriptor identifies a codec implementation and what it can do: identity,
 // media type, supported modes, and concrete capabilities. Registries key on
 // it, and the planner's compatibility checks read it before anything is
-// allocated or opened.
+// allocated or opened. Realtime declares low-latency support: realtime work
+// selects only backends that declare it.
 type Descriptor struct {
 	ID           av.CodecID
 	Name         string
@@ -29,12 +30,13 @@ type Descriptor struct {
 	Realtime     bool
 	Experimental bool
 	Capabilities Capabilities
-	Backend      Backend
+	Backend      BackendInfo
 }
 
 // Capabilities carries concrete media compatibility details. Codec identity,
 // media type, supported modes, realtime status, and experimental status live on
-// Descriptor so each fact has one owner.
+// Descriptor so each fact has one owner. Backend selection filters on these
+// fields; an empty list or a zero bound accepts anything.
 type Capabilities struct {
 	SampleFormats []string
 	PixelFormats  []string
@@ -42,18 +44,43 @@ type Capabilities struct {
 	// Planning refuses other rates with the .Resample(...) fix instead of
 	// letting the encoder fail at open.
 	SampleRates []int
+	// BitDepths lists the sample bit depths the backend codes; empty means 8.
+	BitDepths []int
+	// MaxWidth and MaxHeight bound the video geometry the backend accepts.
+	MaxWidth    int
+	MaxHeight   int
 	RTPPayloads []string
 	BuildTags   []string
 }
 
-// Backend names the implementation behind an adapter (the Go module and
-// package), reported in Explain so requirements are traceable.
-type Backend struct {
+// BackendInfo identifies the implementation behind a descriptor. Name is its
+// identity within the codec (h264/videotoolbox, av1/goav1): a registry holds
+// many backends per codec, one per name, and registering a name again
+// replaces it. Kind ranks the backend for automatic selection; Module and
+// Package make it traceable in Explain.
+type BackendInfo struct {
 	Name    string
+	Kind    BackendKind
 	Module  string
 	Package string
 	Status  string
 }
+
+// BackendKind is what a backend runs on, which ranks it when a request names
+// no backend: hardware first, then native libraries, then pure Go. A backend
+// without a kind (an application's own factory) ranks ahead of all three.
+type BackendKind string
+
+// The backend kinds.
+const (
+	// KindHardware is a hardware codec reached through the OS, such as
+	// VideoToolbox.
+	KindHardware BackendKind = "hardware"
+	// KindNative is a software codec in a native library, such as OpenH264.
+	KindNative BackendKind = "native"
+	// KindGo is a pure-Go codec.
+	KindGo BackendKind = "go"
+)
 
 // ResiliencePolicy says how a decoder treats damaged or lossy input: whether
 // loss is tolerated, audio concealed, damaged video dropped, keyframes
@@ -135,6 +162,12 @@ type CodecSettings struct {
 	// or preserve the selected input level when copying compatible stream
 	// metadata.
 	Level string `json:"level,omitempty"`
+	// Backend names the backend that must serve this codec (videotoolbox,
+	// openh264, goav1). Empty selects by the runtime's preference order among
+	// the backends whose capabilities fit.
+	Backend string `json:"backend,omitempty"`
+	// BitDepth requests the coded sample bit depth. Zero means 8.
+	BitDepth int `json:"bitDepth,omitempty"`
 	// Channels, SampleRate, ClockRate, ChannelLayout set the encoder output audio
 	// format (zero = derive from the input stream). ChannelsSet/SampleRateSet
 	// record that the value was requested explicitly, so a requested zero is

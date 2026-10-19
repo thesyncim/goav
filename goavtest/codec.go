@@ -36,7 +36,7 @@ func codecDescriptor(id av.CodecID) codec.Descriptor {
 	return codec.Descriptor{
 		ID:   id,
 		Name: "goavtest passthrough " + string(id),
-		Backend: codec.Backend{
+		Backend: codec.BackendInfo{
 			Name:    "goavtest",
 			Module:  "github.com/thesyncim/goav",
 			Package: "goavtest",
