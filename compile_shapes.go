@@ -24,7 +24,7 @@ func (s *recipeCompileState) solveOperationShapes() error {
 				return err
 			}
 		}
-		solved, diagnostics, err := solveRecipeIROperationShapes(s.operation, s.runtime, stream, initial)
+		solved, diagnostics, err := solveRecipeIROperationShapes(s.operation, s.env, stream, initial)
 		if err != nil {
 			return err
 		}

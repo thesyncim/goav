@@ -883,3 +883,19 @@ func (t *destinationTransaction) Failed() bool {
 	defer t.mu.Unlock()
 	return t.failed
 }
+
+// compileEnv is the view of the runtime the compiler reads.
+func (r *Runtime) compileEnv() compileEnv {
+	if r == nil {
+		return compileEnv{}
+	}
+	return compileEnv{
+		Present:     true,
+		Codecs:      r.codecs,
+		Filters:     r.filters,
+		Formats:     r.formats,
+		Buffer:      r.buffer,
+		Realtime:    r.realtime,
+		ShapeDeltas: r.shapeDeltas,
+	}
+}

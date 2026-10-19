@@ -56,7 +56,7 @@ func (s *recipeCompileState) planJoin(id recipeir.NodeID, sets []inputStreamSet)
 	if tree.custom != nil && name != kind {
 		return nil, customJoinNameCollisionError(kind, name)
 	}
-	p := &joinPlan{runtime: s.runtime, tree: tree, profile: profile, name: name, node: id}
+	p := &joinPlan{env: s.env, tree: tree, profile: profile, name: name, node: id}
 	if encode, ok := s.joinEncode(id); ok {
 		// An encoder's explicit format is the target a join over files
 		// converts to; otherwise its first input's format is.
@@ -109,7 +109,7 @@ func (s *recipeCompileState) planJoin(id recipeir.NodeID, sets []inputStreamSet)
 		} else if armPlan.stage == nil && profile.armExpected != nil {
 			// The solver converts a nested arm's output like any arm: an
 			// outer mix resamples a sub-mix that produced another rate.
-			stagePlan, err := p.solveArmConversion(s.runtime, armPlan.stream, armPlan.inputName)
+			stagePlan, err := p.solveArmConversion(s.env, armPlan.stream, armPlan.inputName)
 			if err != nil {
 				return nil, err
 			}

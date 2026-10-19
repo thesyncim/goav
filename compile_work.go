@@ -117,7 +117,7 @@ func (s *recipeCompileState) planStreamBranch(l *recipeLowering, index int, outp
 	for i := range operations {
 		operations[i].Node = l.operationNode(stream, operations[i], name)
 	}
-	if latency, ok := planPathLatencyDecision(s.runtime, name, plannedStream.Operations); ok {
+	if latency, ok := planPathLatencyDecision(s.env, name, plannedStream.Operations); ok {
 		decisions = append(decisions, latency)
 	}
 	return planBranch{

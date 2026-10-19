@@ -18,17 +18,15 @@ import (
 // declared policy — Explain never measures. Contributions the root cannot see
 // (a transport provider's internal jitter buffer, e.g. rtpav's) are absent by
 // construction: no provider seam declares latency today.
-func planPathLatencyDecision(rt *Runtime, branchName string, operations []recipeir.Operation) (planDecision, bool) {
+func planPathLatencyDecision(env compileEnv, branchName string, operations []recipeir.Operation) (planDecision, bool) {
 	var syncTolerance, playoutOffset time.Duration
 	gated := false
 	for i := range operations {
-		switch gate := operations[i].Stage.(type) {
-		case *syncGate:
+		if gate, ok := operations[i].Stage.(gateStage); ok {
 			gated = true
-			syncTolerance += gate.policy.Tolerance()
-		case *playoutGate:
-			gated = true
-			playoutOffset += gate.policy.Offset()
+			sync, playout := gate.DeclaredLatency()
+			syncTolerance += sync
+			playoutOffset += playout
 		}
 	}
 	if !gated {
@@ -43,13 +41,13 @@ func planPathLatencyDecision(rt *Runtime, branchName string, operations []recipe
 		terms = append(terms, "playout offset "+playoutOffset.String())
 	}
 	var facts []string
-	if rt != nil && !rt.buffer.IsDirect() {
-		if rt.buffer.MaxLatency > 0 {
-			total += rt.buffer.MaxLatency
-			terms = append(terms, "queue max latency "+rt.buffer.MaxLatency.String())
+	if env.Present && !env.Buffer.IsDirect() {
+		if env.Buffer.MaxLatency > 0 {
+			total += env.Buffer.MaxLatency
+			terms = append(terms, "queue max latency "+env.Buffer.MaxLatency.String())
 		}
-		if rt.buffer.Capacity > 0 {
-			facts = append(facts, "queue capacity "+strconv.Itoa(rt.buffer.Capacity)+" messages per node (a count, not a duration)")
+		if env.Buffer.Capacity > 0 {
+			facts = append(facts, "queue capacity "+strconv.Itoa(env.Buffer.Capacity)+" messages per node (a count, not a duration)")
 		}
 	}
 	message := "declared latency budget " + total.String()
@@ -64,4 +62,12 @@ func planPathLatencyDecision(rt *Runtime, branchName string, operations []recipe
 		Branch:  branchName,
 		Message: message,
 	}, true
+}
+
+// gateStage is a sync or playout gate a recipe declares (.Sync, .Playout):
+// GateName names its node on a branch, and DeclaredLatency is the latency
+// its policy declares: a sync tolerance and a playout offset.
+type gateStage interface {
+	GateName(branch string) string
+	DeclaredLatency() (sync, playout time.Duration)
 }

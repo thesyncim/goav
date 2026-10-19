@@ -41,9 +41,6 @@ var compositeJoinProfile = joinProfile{
 	conformTarget: func(*joinPlan, av.Stream) shape.Spec {
 		return shape.Frame(av.MediaVideo, shape.Video(0, 0, av.PixelFormatI420))
 	},
-	newStage: func(p *joinPlan, armIDs []av.StreamID) (pipeline.Stage, *pipeline.BufferPolicy) {
-		return newVideoCompositeStageWithPreallocAndPools(p.name, armIDs, av.StreamID(p.name), p.layouts, p.tree.sync, joinStagePreallocDepth(p.runtime), runtimeMediaPools(p.runtime)), nil
-	},
 	// The output id is the join's planned node name (composite, or composite-2
 	// when nested); the geometry facts are the full Region bounding box over
 	// all arms, not the first arm's tile.

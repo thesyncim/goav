@@ -82,14 +82,14 @@ func (p *joinPlan) planArmConform(arm joinArmPlan) *joinConformPlan {
 		first = p.arms[0].joinStream()
 	}
 	target := p.profile.conformTarget(p, first)
-	return &joinConformPlan{node: p.name + "-conform-" + string(arm.stream.ID), target: target, adapter: conformAdapter(p.runtime, target)}
+	return &joinConformPlan{node: p.name + "-conform-" + string(arm.stream.ID), target: target, adapter: conformAdapter(p.env, target)}
 }
 
 // conformAdapter names the adapter the solver picks to convert frames to
 // target: adapter choice turns on the media and the formats, not on rates or
 // sizes.
-func conformAdapter(rt *Runtime, target shape.Spec) string {
-	if rt == nil {
+func conformAdapter(env compileEnv, target shape.Spec) string {
+	if !env.Present {
 		return ""
 	}
 	var transform recipeir.Transform
@@ -101,7 +101,7 @@ func conformAdapter(rt *Runtime, target shape.Spec) string {
 	default:
 		return ""
 	}
-	descriptor, _, _, err := selectShapeConversionAdapter(rt, target.MediaKind, transform, rt.realtime, shape.Spec{})
+	descriptor, _, _, err := selectShapeConversionAdapter(env, target.MediaKind, transform, env.Realtime, shape.Spec{})
 	if err != nil {
 		return ""
 	}
@@ -212,7 +212,7 @@ func (s *joinConformStage) bind(ctx context.Context, format shape.Spec, id av.St
 	if shape.Conversions(format, expected).Empty() {
 		return nil
 	}
-	conversion, planned, err := planShapeConversion(s.service.runtime, format, expected, s.realtime)
+	conversion, planned, err := planShapeConversion(s.service.runtime.compileEnv(), format, expected, s.realtime)
 	if err == nil && !planned {
 		err = fmt.Errorf("no conversion from %s", humanizeShape(format))
 	}

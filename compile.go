@@ -8,10 +8,12 @@ import (
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/errcode"
+	"github.com/thesyncim/goav/filter"
 	"github.com/thesyncim/goav/format"
 	"github.com/thesyncim/goav/internal/recipeir"
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/plan"
+	runconfig "github.com/thesyncim/goav/runconfig"
 	"github.com/thesyncim/goav/shape"
 	"github.com/thesyncim/goav/snapshot"
 	sourcepkg "github.com/thesyncim/goav/source"
@@ -111,13 +113,6 @@ func buildCompileOptions(ctx context.Context) recipeCompileOptions {
 	return recipeCompileOptions{ctx: ctx, preflight: true}
 }
 
-func (o recipeCompileOptions) Context() context.Context {
-	if o.ctx != nil {
-		return o.ctx
-	}
-	return context.Background()
-}
-
 // compileRequest is everything one compile reads: the recipe DAG, its
 // Outputs, the facts of the input and destination handles the DAG indexes,
 // the stream matches its rules name, and the host that checks the handles.
@@ -128,6 +123,31 @@ type compileRequest struct {
 	Dests   []compileDestination
 	Matches []sourcepkg.StreamMatch
 	Host    compileHost
+	Env     compileEnv
+	// Preflight runs the checks a build needs before it opens anything
+	// (adapters, formats, probes); Describe compiles without them. Ctx
+	// bounds the host's probes.
+	Preflight bool
+	Ctx       context.Context
+}
+
+func (r *compileRequest) context() context.Context {
+	if r.Ctx != nil {
+		return r.Ctx
+	}
+	return context.Background()
+}
+
+// compileEnv is the runtime settings the passes read: every field is a
+// leaf type. Present is false when no runtime is configured.
+type compileEnv struct {
+	Present     bool
+	Codecs      *codec.SimpleRegistry
+	Filters     *filter.SimpleRegistry
+	Formats     *format.SimpleRegistry
+	Buffer      pipeline.BufferPolicy
+	Realtime    bool
+	ShapeDeltas []runconfig.ShapeDeltaContributor
 }
 
 // compileOutput is one Output: the node it routes (a NodeInput for
@@ -219,8 +239,7 @@ type recipeCompileState struct {
 	operation string
 	req       *compileRequest
 	recipe    recipeir.Recipe
-	runtime   *Runtime
-	options   recipeCompileOptions
+	env       compileEnv
 
 	// facts are the lowering facts of each branch, aligned with
 	// recipe.Streams.
@@ -305,7 +324,9 @@ type recipeCompilePass struct {
 func compileRecipe(g *recipeGraph, rt *Runtime, options recipeCompileOptions) (recipeResolved, error) {
 	rt = g.compileRuntime(rt)
 	handles := g.handles(rt)
-	result, err := runCompile(g.compileRequest(handles), rt, options)
+	req := g.compileRequest(handles)
+	req.Env, req.Preflight, req.Ctx = rt.compileEnv(), options.preflight, options.ctx
+	result, err := runCompile(req)
 	if err != nil {
 		return recipeResolved{}, err
 	}
@@ -359,12 +380,11 @@ type compileResult struct {
 // validate its branches, check its inputs and destinations, preflight the
 // adapters, plan its joins, solve its shapes, and lower it to the one graph
 // plan Describe, Explain, and Build read.
-func runCompile(req *compileRequest, rt *Runtime, options recipeCompileOptions) (compileResult, error) {
+func runCompile(req *compileRequest) (compileResult, error) {
 	state := recipeCompileState{
 		operation: "build job",
 		req:       req,
-		runtime:   rt,
-		options:   options,
+		env:       req.Env,
 		inserted:  map[string]recipeir.NodeID{},
 	}
 	passes := []recipeCompilePass{
@@ -757,7 +777,7 @@ func (s *recipeCompileState) streamEndsFrames(index int) bool {
 }
 
 func (s *recipeCompileState) validateLiveStreamSelection() error {
-	if !s.options.preflight {
+	if !s.req.Preflight {
 		return nil
 	}
 	for i := range s.recipe.Streams {
@@ -853,15 +873,11 @@ func (s *recipeCompileState) streamsNeedingDecode() []recipeir.Stream {
 
 // --- adapters ---
 
-func (s *recipeCompileState) adapterRuntime() *Runtime {
-	return s.runtime
-}
-
 func (s *recipeCompileState) validateOutputFormatAdapters() error {
-	if !s.options.preflight {
+	if !s.req.Preflight {
 		return nil
 	}
-	formats, err := s.req.Host.ResolveOutputs(s.options.Context(), s.outputSlots, s.outputDestinationNames)
+	formats, err := s.req.Host.ResolveOutputs(s.req.context(), s.outputSlots, s.outputDestinationNames)
 	if err != nil {
 		return err
 	}
@@ -872,10 +888,10 @@ func (s *recipeCompileState) validateOutputFormatAdapters() error {
 }
 
 func (s *recipeCompileState) validateInputFormatAdapters() error {
-	if !s.options.preflight {
+	if !s.req.Preflight {
 		return nil
 	}
-	probes, err := s.req.Host.ProbeInputs(s.options.Context())
+	probes, err := s.req.Host.ProbeInputs(s.req.context())
 	if err != nil {
 		return err
 	}
@@ -884,39 +900,39 @@ func (s *recipeCompileState) validateInputFormatAdapters() error {
 }
 
 func (s *recipeCompileState) validateDecodeAdapters() error {
-	if !s.options.preflight {
+	if !s.req.Preflight {
 		return nil
 	}
 	streams := s.streamsNeedingDecode()
 	if len(streams) == 0 {
 		return nil
 	}
-	return validateRecipeIRDecodeAdapters(s.operation, s.adapterRuntime(), s.recipe.Inputs, streams)
+	return validateRecipeIRDecodeAdapters(s.operation, s.env, s.recipe.Inputs, streams)
 }
 
 func (s *recipeCompileState) validateEncodeAdapters() error {
-	if !s.options.preflight {
+	if !s.req.Preflight {
 		return nil
 	}
-	return validateRecipeIREncodeAdapters(s.operation, s.adapterRuntime(), s.recipe.Streams)
+	return validateRecipeIREncodeAdapters(s.operation, s.env, s.recipe.Streams)
 }
 
 func (s *recipeCompileState) validateTransformAdapters() error {
-	if !s.options.preflight {
+	if !s.req.Preflight {
 		return nil
 	}
-	return validateRecipeIRTransformAdapters(s.operation, s.adapterRuntime(), s.recipe.Streams)
+	return validateRecipeIRTransformAdapters(s.operation, s.env, s.recipe.Streams)
 }
 
 func (s *recipeCompileState) validateKnownInputDecodeAdapters() error {
-	if !s.options.preflight {
+	if !s.req.Preflight {
 		return nil
 	}
 	streams := s.streamsNeedingDecode()
 	if len(streams) == 0 {
 		return nil
 	}
-	return validateKnownRecipeIRDecodeAdapters(s.operation, s.adapterRuntime(), s.inputProbes, streams)
+	return validateKnownRecipeIRDecodeAdapters(s.operation, s.env, s.inputProbes, streams)
 }
 
 // --- runtime ---
@@ -924,7 +940,7 @@ func (s *recipeCompileState) validateKnownInputDecodeAdapters() error {
 // validateRuntime refuses a build without a runtime: a recipe builds on one,
 // which owns its adapters, buffers, and clock.
 func (s *recipeCompileState) validateRuntime() error {
-	if s.options.preflight && s.runtime == nil {
+	if s.req.Preflight && !s.env.Present {
 		return runtimeMissingError(s.operation)
 	}
 	return nil

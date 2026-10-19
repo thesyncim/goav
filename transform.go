@@ -45,8 +45,8 @@ func resampleSpec(sampleRate int, channels int, options ...audioOption) recipeir
 	return recipeir.Transform{Kind: recipeir.TransformResample, Resample: config}
 }
 
-func validateRecipeIRTransformAdapters(operation string, rt *Runtime, streams []recipeir.Stream) error {
-	if rt == nil {
+func validateRecipeIRTransformAdapters(operation string, env compileEnv, streams []recipeir.Stream) error {
+	if !env.Present {
 		return nil
 	}
 	for i := range streams {
@@ -57,10 +57,10 @@ func validateRecipeIRTransformAdapters(operation string, rt *Runtime, streams []
 			if name == "" {
 				continue
 			}
-			if _, err := rt.filters.Factory(name); err != nil {
+			if _, err := env.Filters.Factory(name); err != nil {
 				return recipeTransformAdapterError(operation, stream, name, err)
 			}
-			desc, err := rt.filters.Descriptor(name)
+			desc, err := env.Filters.Descriptor(name)
 			if err == nil {
 				if err := validateRecipeIRTransformAdapterDescriptor(operation, stream, transforms[j], name, desc); err != nil {
 					return err

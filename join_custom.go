@@ -52,9 +52,6 @@ func customJoinProfile(custom *customJoinSpec) (joinProfile, error) {
 	profile := joinProfile{
 		media:      customJoinMedia(inputs),
 		decodeArms: decodeArms,
-		newStage: func(*joinPlan, []av.StreamID) (pipeline.Stage, *pipeline.BufferPolicy) {
-			return custom.stage, nil
-		},
 		joinedStream: func(p *joinPlan) av.Stream {
 			return customJoinedStream(p, contract, decodeArms)
 		},

@@ -36,8 +36,8 @@ type shapeConversionPlan struct {
 // solveRecipeIROperationShapes walks one stream chain's operations with the shape
 // solver. It returns the solved operation list (nil when nothing was inserted)
 // and one diagnostic per insertion.
-func solveRecipeIROperationShapes(operation string, rt *Runtime, stream recipeir.Stream, initial shape.Spec) ([]recipeir.Operation, []plan.Diagnostic, error) {
-	if rt == nil {
+func solveRecipeIROperationShapes(operation string, env compileEnv, stream recipeir.Stream, initial shape.Spec) ([]recipeir.Operation, []plan.Diagnostic, error) {
+	if !env.Present {
 		// No bundled runtime (expert or test states): keep the validate-only walk.
 		return nil, nil, validateRecipeIROperationShapes(operation, stream, stream.Operations, initial)
 	}
@@ -83,7 +83,7 @@ func solveRecipeIROperationShapes(operation string, rt *Runtime, stream recipeir
 				mismatch := recipeIROperationShapeFailureError(operation, node, i, next, expected, current)
 				return nil, nil, appendRecipeIRAutoFixSuggestions(mismatch, current, target, next)
 			}
-			conversion, planned, prefDiags, err := planShapeConversionPreferred(rt, current, target, rt.realtime, policy, preference, preferenceActive, node)
+			conversion, planned, prefDiags, err := planShapeConversionPreferred(env, current, target, env.Realtime, policy, preference, preferenceActive, node)
 			if err != nil {
 				return nil, nil, recipeIRShapeSolverAdapterError(operation, node, i, next, current, target, err)
 			}
@@ -109,7 +109,7 @@ func solveRecipeIROperationShapes(operation string, rt *Runtime, stream recipeir
 		if policyActive {
 			desired := recipeIROperationSoftInputShape(next)
 			if !mediaShapeEmpty(desired) && !shape.Conversions(current, desired).Empty() {
-				conversion, planned, prefDiags, err := planShapeConversionPreferred(rt, current, desired, rt.realtime, policy, preference, preferenceActive, node)
+				conversion, planned, prefDiags, err := planShapeConversionPreferred(env, current, desired, env.Realtime, policy, preference, preferenceActive, node)
 				if err != nil {
 					return nil, nil, recipeIRShapeSolverAdapterError(operation, node, i, next, current, desired, err)
 				}
@@ -240,8 +240,8 @@ func shapeConversionTargetFromSet(current shape.Spec, expected shape.Set) (shape
 // completable format conversion (the caller falls back to the plain shape
 // mismatch error); adapter selection failures (none or several candidates)
 // return an error.
-func planShapeConversion(rt *Runtime, actual shape.Spec, expected shape.Spec, realtime bool) (shapeConversionPlan, bool, error) {
-	conversion, planned, _, err := planShapeConversionFor(rt, actual, expected, realtime, shape.Spec{})
+func planShapeConversion(env compileEnv, actual shape.Spec, expected shape.Spec, realtime bool) (shapeConversionPlan, bool, error) {
+	conversion, planned, _, err := planShapeConversionFor(env, actual, expected, realtime, shape.Spec{})
 	return conversion, planned, err
 }
 
@@ -249,7 +249,7 @@ func planShapeConversion(rt *Runtime, actual shape.Spec, expected shape.Spec, re
 // the pref spec tie-breaks otherwise-ambiguous adapter selection. resolved
 // reports whether the preference decided the choice. A zero pref is exactly
 // the plain plan.
-func planShapeConversionFor(rt *Runtime, actual shape.Spec, expected shape.Spec, realtime bool, pref shape.Spec) (shapeConversionPlan, bool, bool, error) {
+func planShapeConversionFor(env compileEnv, actual shape.Spec, expected shape.Spec, realtime bool, pref shape.Spec) (shapeConversionPlan, bool, bool, error) {
 	needed := shape.Conversions(actual, expected)
 	if needed.Empty() {
 		return shapeConversionPlan{}, false, false, nil
@@ -259,7 +259,7 @@ func planShapeConversionFor(rt *Runtime, actual shape.Spec, expected shape.Spec,
 	if !ok {
 		return shapeConversionPlan{}, false, false, nil
 	}
-	descriptor, candidates, resolved, err := selectShapeConversionAdapter(rt, media, transform, realtime, pref)
+	descriptor, candidates, resolved, err := selectShapeConversionAdapter(env, media, transform, realtime, pref)
 	if err != nil {
 		return shapeConversionPlan{}, false, false, &shapeAdapterSelectionError{media: media, needed: needed, candidates: candidates, cause: err}
 	}
@@ -284,9 +284,9 @@ func planShapeConversionFor(rt *Runtime, actual shape.Spec, expected shape.Spec,
 // adapter can perform, or that has no open choice to influence is dropped (a
 // diagnostic records the drop when the plain plan proceeds). Without an
 // active preference the call is exactly planShapeConversion.
-func planShapeConversionPreferred(rt *Runtime, actual shape.Spec, expected shape.Spec, realtime bool, policy shape.Policy, pref shape.Spec, prefActive bool, node string) (shapeConversionPlan, bool, []plan.Diagnostic, error) {
+func planShapeConversionPreferred(env compileEnv, actual shape.Spec, expected shape.Spec, realtime bool, policy shape.Policy, pref shape.Spec, prefActive bool, node string) (shapeConversionPlan, bool, []plan.Diagnostic, error) {
 	media := firstNonEmptyMedia(expected.MediaKind, actual.MediaKind)
-	custom, customPlanned, err := planCustomShapeConversion(rt, actual, expected, realtime, pref)
+	custom, customPlanned, err := planCustomShapeConversion(env, actual, expected, realtime, pref)
 	if err != nil {
 		return shapeConversionPlan{}, false, nil, err
 	}
@@ -295,13 +295,13 @@ func planShapeConversionPreferred(rt *Runtime, actual shape.Spec, expected shape
 		return custom, true, nil, nil
 	}
 	if !prefActive || mediaShapeEmpty(pref) || (pref.MediaKind != "" && pref.MediaKind != media) {
-		conversion, planned, err := planShapeConversion(rt, actual, expected, realtime)
+		conversion, planned, err := planShapeConversion(env, actual, expected, realtime)
 		return conversion, planned, nil, err
 	}
-	basePlan, basePlanned, baseErr := planShapeConversion(rt, actual, expected, realtime)
+	basePlan, basePlanned, baseErr := planShapeConversion(env, actual, expected, realtime)
 	effective := preferredConversionTarget(media, expected, pref)
 	targetBias := effective != expected
-	conversion, planned, resolved, err := planShapeConversionFor(rt, actual, effective, realtime, pref)
+	conversion, planned, resolved, err := planShapeConversionFor(env, actual, effective, realtime, pref)
 	reason := ""
 	switch {
 	case err != nil:
@@ -325,8 +325,8 @@ func planShapeConversionPreferred(rt *Runtime, actual shape.Spec, expected shape
 	return basePlan, basePlanned, []plan.Diagnostic{shapePreferenceIgnoredDiagnostic(node, pref, reason)}, nil
 }
 
-func planCustomShapeConversion(rt *Runtime, actual shape.Spec, expected shape.Spec, realtime bool, pref shape.Spec) (shapeConversionPlan, bool, error) {
-	if rt == nil || len(rt.shapeDeltas) == 0 {
+func planCustomShapeConversion(env compileEnv, actual shape.Spec, expected shape.Spec, realtime bool, pref shape.Spec) (shapeConversionPlan, bool, error) {
+	if !env.Present || len(env.ShapeDeltas) == 0 {
 		return shapeConversionPlan{}, false, nil
 	}
 	request := runconfig.ShapeDeltaRequest{
@@ -335,8 +335,8 @@ func planCustomShapeConversion(rt *Runtime, actual shape.Spec, expected shape.Sp
 		Preference: pref,
 		Realtime:   realtime,
 	}
-	for i := range rt.shapeDeltas {
-		planned, ok, err := rt.shapeDeltas[i].ShapeDelta(request)
+	for i := range env.ShapeDeltas {
+		planned, ok, err := env.ShapeDeltas[i].ShapeDelta(request)
 		if err != nil {
 			return shapeConversionPlan{}, false, fmt.Errorf("goav: shape delta contributor %d rejected conversion: %w", i, err)
 		}
@@ -470,8 +470,8 @@ func (e *shapeAdapterSelectionError) Unwrap() error { return e.cause }
 // candidates remain, a non-zero pref narrows them to the adapters whose
 // declared capabilities cover the preference; resolved reports whether that
 // tie-break decided the choice. Exactly one candidate must remain.
-func selectShapeConversionAdapter(rt *Runtime, media av.MediaType, transform recipeir.Transform, realtime bool, pref shape.Spec) (filter.Descriptor, []string, bool, error) {
-	descriptors := rt.filters.Descriptors()
+func selectShapeConversionAdapter(env compileEnv, media av.MediaType, transform recipeir.Transform, realtime bool, pref shape.Spec) (filter.Descriptor, []string, bool, error) {
+	descriptors := env.Filters.Descriptors()
 	matched := make([]filter.Descriptor, 0, len(descriptors))
 	for i := range descriptors {
 		descriptor := descriptors[i]

@@ -349,7 +349,7 @@ func runtimeMuxCompatibilityIssue(destinationName string, formatID av.FormatID, 
 			TimeBase: muxStreamTimeBase(stream),
 		})
 	}
-	return checkKnownMuxCompatibility(output, plannedStreams, rt)
+	return checkKnownMuxCompatibility(output, plannedStreams, rt.compileEnv())
 }
 
 func runtimeAttachmentName(specs []attachBranch) string {

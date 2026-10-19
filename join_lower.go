@@ -13,7 +13,7 @@ import (
 // input's stream unless it re-publishes one.
 func lowerJoinNode(ctx context.Context, service *builder, graph pipeline.Graph, node composeNode, streams map[pipeline.NodeRef]av.Stream, in composeLowering) (av.Stream, error) {
 	p := node.join
-	rt := p.runtime
+	rt := service.runtime
 	switch node.kind {
 	case composeArmBind:
 		// The selected stream republishes under the arm id: two files carry
@@ -72,7 +72,7 @@ func lowerJoinNode(ctx context.Context, service *builder, graph pipeline.Graph, 
 			seen[id] = struct{}{}
 			armIDs = append(armIDs, id)
 		}
-		stage, pinned := p.profile.newStage(p, armIDs)
+		stage, pinned := newJoinStage(p, armIDs, rt)
 		if admitting, ok := stage.(interface{ enableAdmission() }); ok && in.admission {
 			admitting.enableAdmission()
 		}
@@ -87,4 +87,26 @@ func lowerJoinNode(ctx context.Context, service *builder, graph pipeline.Graph, 
 		return joined, addComposeStage(graph, stage, buffer, node.inputs)
 	}
 	return av.Stream{}, nil
+}
+
+// newJoinStage builds a join's convergence stage. A non-nil buffer pins the
+// stage's input queue.
+func newJoinStage(p *joinPlan, armIDs []av.StreamID, rt *Runtime) (pipeline.Stage, *pipeline.BufferPolicy) {
+	if p.tree.custom != nil {
+		return p.tree.custom.stage, nil
+	}
+	switch p.tree.kind {
+	case joinMix:
+		return newAudioMixStageWithPreallocAndPools(p.name, armIDs, av.StreamID(p.name), p.tree.sync, joinStagePreallocDepth(rt), runtimeMediaPools(rt)), nil
+	case joinComposite:
+		return newVideoCompositeStageWithPreallocAndPools(p.name, armIDs, av.StreamID(p.name), p.layouts, p.tree.sync, joinStagePreallocDepth(rt), runtimeMediaPools(rt)), nil
+	default:
+		// The selector is the control target: an injected SelectActive shares
+		// its input queue with the flooding arms, so a lossy queue could evict
+		// the control before the worker applies it. The pinned non-lossy
+		// DropBlock queue backpressures instead, so the switch is always
+		// delivered (the DropBlock control-plane lesson).
+		return newSelectorStage(p.name, armIDs, av.StreamID(p.name)),
+			&pipeline.BufferPolicy{Capacity: selectBufferCapacity, Drop: pipeline.DropBlock}
+	}
 }

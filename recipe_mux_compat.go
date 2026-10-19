@@ -31,10 +31,10 @@ type plannedMuxStream struct {
 // validateMuxCompatibility refuses, before a build opens anything, a
 // destination whose format cannot carry the streams planned into it.
 func validateMuxCompatibility(state *recipeCompileState) error {
-	if !state.options.preflight {
+	if !state.req.Preflight {
 		return nil
 	}
-	issues := muxCompatibilityIssues(state.work, state.inputProbes, state.runtime)
+	issues := muxCompatibilityIssues(state.work, state.inputProbes, state.env)
 	if len(issues) == 0 {
 		return nil
 	}
@@ -42,13 +42,13 @@ func validateMuxCompatibility(state *recipeCompileState) error {
 }
 
 func resolvedMuxCompatibilityIssues(resolved recipeResolved) []muxCompatibilityIssue {
-	return muxCompatibilityIssues(resolved.workIR(), resolved.inputProbes, resolved.runtime)
+	return muxCompatibilityIssues(resolved.workIR(), resolved.inputProbes, resolved.runtime.compileEnv())
 }
 
 func muxCompatibilityIssues(
 	work workPlan,
 	inputProbes []format.ProbeResult,
-	rt *Runtime,
+	env compileEnv,
 ) []muxCompatibilityIssue {
 	var issues []muxCompatibilityIssue
 	branches := workBranchesByName(work.Branches)
@@ -59,7 +59,7 @@ func muxCompatibilityIssues(
 			continue
 		}
 		streams := muxOutputStreams(output, branches, operations, work.Inputs, inputProbes)
-		if issue, ok := checkKnownMuxCompatibility(output, streams, rt); ok {
+		if issue, ok := checkKnownMuxCompatibility(output, streams, env); ok {
 			issues = append(issues, issue)
 		}
 	}
@@ -198,11 +198,11 @@ func muxStreamTimeBase(stream av.Stream) av.TimeBase {
 	return av.TimeBase{}
 }
 
-func checkKnownMuxCompatibility(output workDestination, streams []plannedMuxStream, rt *Runtime) (muxCompatibilityIssue, bool) {
+func checkKnownMuxCompatibility(output workDestination, streams []plannedMuxStream, env compileEnv) (muxCompatibilityIssue, bool) {
 	if issue, ok := checkMuxTimebaseCompatibility(output, streams); ok {
 		return issue, true
 	}
-	if desc, ok := muxerDescriptorForRuntime(rt, output.Format); ok {
+	if desc, ok := muxerDescriptorForRuntime(env, output.Format); ok {
 		if issue, checked := checkDescriptorMuxCompatibility(output, streams, desc); checked {
 			return issue, true
 		}
@@ -223,11 +223,11 @@ func checkKnownMuxCompatibility(output workDestination, streams []plannedMuxStre
 	}
 }
 
-func muxerDescriptorForRuntime(rt *Runtime, formatID av.FormatID) (format.Descriptor, bool) {
-	if rt == nil {
+func muxerDescriptorForRuntime(env compileEnv, formatID av.FormatID) (format.Descriptor, bool) {
+	if !env.Present {
 		return format.Descriptor{}, false
 	}
-	desc, err := rt.formats.MuxerDescriptor(formatID)
+	desc, err := env.Formats.MuxerDescriptor(formatID)
 	if err != nil {
 		return format.Descriptor{}, false
 	}

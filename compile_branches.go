@@ -123,8 +123,8 @@ func (s *recipeCompileState) deriveBranches() error {
 		}
 	}
 	s.recipe.Graph = g.Graph
-	if s.runtime != nil {
-		s.recipe.Policies.Realtime = s.runtime.realtime || inputsLive(g.Inputs)
+	if s.env.Present {
+		s.recipe.Policies.Realtime = s.env.Realtime || inputsLive(g.Inputs)
 	}
 	for _, root := range rules {
 		if err := s.deriveRule(root, byRoot[root], names); err != nil {

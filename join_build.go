@@ -70,10 +70,6 @@ type joinProfile struct {
 	// conformFollowsFirstArm marks a join whose format is its first arm's
 	// (Mix): when that arm is late, every arm converts at run time.
 	conformFollowsFirstArm bool
-	// newStage builds the convergence stage at lowering time. A non-nil buffer
-	// pins the stage's input queue (Select: non-lossy DropBlock so injected
-	// controls survive).
-	newStage func(p *joinPlan, armIDs []av.StreamID) (pipeline.Stage, *pipeline.BufferPolicy)
 	// joinedStream derives the join's output stream — the normal stream point
 	// that taps, branches, and the optional encoder all compose against.
 	joinedStream func(p *joinPlan) av.Stream

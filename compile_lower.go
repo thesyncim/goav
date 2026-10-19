@@ -212,14 +212,14 @@ func newRecipeLowering(s *recipeCompileState) *recipeLowering {
 }
 
 func (s *recipeCompileState) lower() error {
-	if s.runtime == nil && s.options.preflight {
+	if !s.env.Present && s.req.Preflight {
 		return nil
 	}
 	l := newRecipeLowering(s)
 	if err := l.plan(); err != nil {
 		return err
 	}
-	spec := pipeline.Spec{Name: s.graphName(), Realtime: runtimeRealtime(s.runtime)}
+	spec := pipeline.Spec{Name: s.graphName(), Realtime: !s.env.Present || s.env.Realtime}
 	spec, err := l.g.emit(spec)
 	if err != nil {
 		return err
@@ -594,11 +594,8 @@ func (l *recipeLowering) transform(name string, owner int, operation recipeir.Op
 		if operation.Stage == nil {
 			return mediaTransform{}, branchChainStepError(name, "branch stage operation has no stage")
 		}
-		switch gate := operation.Stage.(type) {
-		case *syncGate:
-			return mediaTransform{name: l.unique(l.named(owner, syncStageName(name+"-"+gate.policy.Name()))), stage: operation.Stage}, nil
-		case *playoutGate:
-			return mediaTransform{name: l.unique(l.named(owner, playoutStageName(name+"-"+gate.policy.Name()))), stage: operation.Stage}, nil
+		if gate, ok := operation.Stage.(gateStage); ok {
+			return mediaTransform{name: l.unique(l.named(owner, gate.GateName(name))), stage: operation.Stage}, nil
 		}
 		return mediaTransform{name: l.named(owner, operation.Stage.Name()), stage: operation.Stage}, nil
 	}
@@ -770,19 +767,6 @@ type recipeLowerer struct {
 func (r *recipeLowerer) withRuntime(rt *Runtime) *recipeLowerer {
 	out := *r
 	out.runtime = rt
-	joins := make(map[recipeir.NodeID]*joinPlan, len(r.joins))
-	for id, join := range r.joins {
-		joins[id] = joinPlanWithRuntime(join, rt)
-	}
-	out.joins = joins
-	graph := r.graph
-	graph.nodes = append([]composeNode(nil), r.graph.nodes...)
-	for i := range graph.nodes {
-		if graph.nodes[i].join != nil {
-			graph.nodes[i].join = joins[graph.nodes[i].join.node]
-		}
-	}
-	out.graph = graph
 	return &out
 }
 

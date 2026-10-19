@@ -305,7 +305,7 @@ func (t *task) streamRuleAttachBranches(rule streamRule, stream av.Stream) ([]ru
 			},
 			Operations: spec.operations,
 		}
-		solved, _, err := solveRecipeIROperationShapes("attach runtime branch", t.runtime, planned, initial)
+		solved, _, err := solveRecipeIROperationShapes("attach runtime branch", t.runtime.compileEnv(), planned, initial)
 		if err != nil {
 			return nil, err
 		}

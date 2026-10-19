@@ -371,9 +371,6 @@ var mixJoinProfile = joinProfile{
 		return shape.Frame(av.MediaAudio, shape.Audio(rate, channels, av.SampleFormatS16))
 	},
 	conformFollowsFirstArm: true,
-	newStage: func(p *joinPlan, armIDs []av.StreamID) (pipeline.Stage, *pipeline.BufferPolicy) {
-		return newAudioMixStageWithPreallocAndPools(p.name, armIDs, av.StreamID(p.name), p.tree.sync, joinStagePreallocDepth(p.runtime), runtimeMediaPools(p.runtime)), nil
-	},
 	// The output id is the join's planned node name (mix, or mix-2 when
 	// nested under another mix); the format facts come from the first arm —
 	// a leaf's declared source shape or a sub-join's joined stream.

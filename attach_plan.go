@@ -124,7 +124,7 @@ func (p *attachPlan) lower(input runtimeAttachInput) error {
 	t := p.task
 	graphSpec := t.graph.Spec()
 	live := t.tapsLocked()
-	s := &recipeCompileState{operation: "attach runtime branch", req: &compileRequest{}, runtime: t.runtime, inserted: map[string]recipeir.NodeID{}}
+	s := &recipeCompileState{operation: "attach runtime branch", req: &compileRequest{Env: t.runtime.compileEnv()}, env: t.runtime.compileEnv(), inserted: map[string]recipeir.NodeID{}}
 	attach := &attachLowering{
 		name:    p.name,
 		anchors: map[recipeir.NodeID]pipeline.NodeRef{},

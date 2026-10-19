@@ -55,13 +55,6 @@ func runtimeForGraphExecution(rt *Runtime) *Runtime {
 	return mustNew()
 }
 
-func runtimeRealtime(rt *Runtime) bool {
-	if rt == nil {
-		return true
-	}
-	return rt.realtime
-}
-
 // runtimeWithRealtime is a view of rt with realtime pacing set, sharing its
 // registries and pools.
 func runtimeWithRealtime(rt *Runtime, realtime bool) *Runtime {
@@ -91,21 +84,6 @@ func runtimeWithClock(rt *Runtime, clock av.Clock) *Runtime {
 	}
 	clone := *rt
 	clone.clock = clock
-	return &clone
-}
-
-func joinPlanWithRuntime(plan *joinPlan, rt *Runtime) *joinPlan {
-	if plan == nil {
-		return nil
-	}
-	clone := *plan
-	clone.runtime = rt
-	if len(plan.arms) != 0 {
-		clone.arms = append([]joinArmPlan(nil), plan.arms...)
-		for i := range clone.arms {
-			clone.arms[i].sub = joinPlanWithRuntime(plan.arms[i].sub, rt)
-		}
-	}
 	return &clone
 }
 

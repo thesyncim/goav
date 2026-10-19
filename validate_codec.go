@@ -16,8 +16,8 @@ import (
 	"github.com/thesyncim/goav/internal/recipeir"
 )
 
-func validateRecipeIRDecodeAdapters(operation string, rt *Runtime, inputs []recipeir.Input, streams []recipeir.Stream) error {
-	if rt == nil {
+func validateRecipeIRDecodeAdapters(operation string, env compileEnv, inputs []recipeir.Input, streams []recipeir.Stream) error {
+	if !env.Present {
 		return nil
 	}
 	for i := range streams {
@@ -29,18 +29,18 @@ func validateRecipeIRDecodeAdapters(operation string, rt *Runtime, inputs []reci
 		if !ok || request.Codec == "" {
 			continue
 		}
-		if _, err := rt.codecs.DecoderFactory(request.Codec); err != nil {
-			return recipeDecodeAdapterError(operation, stream, request.Codec, rt.codecs, err)
+		if _, err := env.Codecs.DecoderFactory(request.Codec); err != nil {
+			return recipeDecodeAdapterError(operation, stream, request.Codec, env.Codecs, err)
 		}
-		if err := validateDecodeAdapterDescriptors(operation, stream, rt.codecs, request); err != nil {
+		if err := validateDecodeAdapterDescriptors(operation, stream, env.Codecs, request); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func validateKnownRecipeIRDecodeAdapters(operation string, rt *Runtime, probes []format.ProbeResult, streams []recipeir.Stream) error {
-	if rt == nil {
+func validateKnownRecipeIRDecodeAdapters(operation string, env compileEnv, probes []format.ProbeResult, streams []recipeir.Stream) error {
+	if !env.Present {
 		return nil
 	}
 	for i := range streams {
@@ -52,11 +52,11 @@ func validateKnownRecipeIRDecodeAdapters(operation string, rt *Runtime, probes [
 		if !ok || selected.Codec.ID == "" {
 			continue
 		}
-		if _, err := rt.codecs.DecoderFactory(selected.Codec.ID); err != nil {
-			return recipeDecodeAdapterError(operation, stream, selected.Codec.ID, rt.codecs, err)
+		if _, err := env.Codecs.DecoderFactory(selected.Codec.ID); err != nil {
+			return recipeDecodeAdapterError(operation, stream, selected.Codec.ID, env.Codecs, err)
 		}
 		request := decodeAdapterRequestFromStream(selected, stream)
-		if err := validateDecodeAdapterDescriptors(operation, stream, rt.codecs, request); err != nil {
+		if err := validateDecodeAdapterDescriptors(operation, stream, env.Codecs, request); err != nil {
 			return err
 		}
 	}
@@ -249,8 +249,8 @@ func decodeAdapterIncompatibleError(operation string, stream recipeir.Stream, re
 	}
 }
 
-func validateRecipeIREncodeAdapters(operation string, rt *Runtime, streams []recipeir.Stream) error {
-	if rt == nil {
+func validateRecipeIREncodeAdapters(operation string, env compileEnv, streams []recipeir.Stream) error {
+	if !env.Present {
 		return nil
 	}
 	for i := range streams {
@@ -259,11 +259,11 @@ func validateRecipeIREncodeAdapters(operation string, rt *Runtime, streams []rec
 		if codecID == "" {
 			continue
 		}
-		if _, err := rt.codecs.EncoderFactory(codecID); err != nil {
-			return recipeEncodeAdapterError(operation, stream, rt.codecs, err)
+		if _, err := env.Codecs.EncoderFactory(codecID); err != nil {
+			return recipeEncodeAdapterError(operation, stream, env.Codecs, err)
 		}
 		request := encodeAdapterRequestFromRecipeIRStream(stream)
-		if err := validateEncodeAdapterDescriptors(operation, stream, rt.codecs, request); err != nil {
+		if err := validateEncodeAdapterDescriptors(operation, stream, env.Codecs, request); err != nil {
 			return err
 		}
 	}

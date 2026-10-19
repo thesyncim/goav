@@ -87,7 +87,7 @@ func (a *joinArmPlan) joinStream() av.Stream {
 // converging into one join node whose output — the joined stream — the
 // join's branches read like any stream.
 type joinPlan struct {
-	runtime *Runtime
+	env     compileEnv
 	tree    *joinTreeSnapshot
 	profile joinProfile
 	name    string
@@ -289,7 +289,7 @@ func (p *joinPlan) allDiagnostics() []plan.Diagnostic {
 // armExpected derives the target format, the implicit armPolicy stands in for
 // a user .Auto(...), and an allowed delta plans a real per-arm transform stage
 // (named <join>-<adapter>-<stream>, e.g. mix-resample-b) plus a diagnostic.
-func (p *joinPlan) solveArmConversion(rt *Runtime, stream av.Stream, armName string) (*joinArmStagePlan, error) {
+func (p *joinPlan) solveArmConversion(env compileEnv, stream av.Stream, armName string) (*joinArmStagePlan, error) {
 	expected := p.profile.armExpected(p, stream)
 	if mediaShapeEmpty(expected) {
 		return nil, nil
@@ -301,7 +301,7 @@ func (p *joinPlan) solveArmConversion(rt *Runtime, stream av.Stream, armName str
 	if shape.Conversions(actual, expected).Empty() {
 		return nil, nil
 	}
-	conversion, planned, err := planShapeConversion(rt, actual, expected, rt.realtime)
+	conversion, planned, err := planShapeConversion(env, actual, expected, env.Realtime)
 	if err != nil {
 		step := recipeir.Operation{Kind: plan.OpTransform, Component: p.name}
 		return nil, recipeIRShapeSolverAdapterError("build "+p.name, firstNonEmpty(armName, string(stream.ID)), 0, step, actual, expected, err)
