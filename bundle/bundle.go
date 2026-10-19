@@ -11,7 +11,6 @@ import (
 
 	"github.com/thesyncim/goav"
 	annexbadapter "github.com/thesyncim/goav/adapters/annexb"
-	goaacadapter "github.com/thesyncim/goav/adapters/goaac"
 	goav1adapter "github.com/thesyncim/goav/adapters/goav1"
 	goh264adapter "github.com/thesyncim/goav/adapters/goh264"
 	gopusadapter "github.com/thesyncim/goav/adapters/gopus"
@@ -98,7 +97,10 @@ func Options() []runconfig.Option {
 // Formats registers the container adapters: IVF, Annex B, Matroska, WebM, MP4.
 func Formats() runconfig.Option { return group(formatOptions) }
 
-// Codecs registers the pure-Go codec adapters: Opus, AAC, VP8/VP9, AV1, H.264.
+// Codecs registers the pure-Go codec adapters: Opus, VP8/VP9, AV1, and H.264
+// (descriptor-only unless built with -tags goav_goh264). AAC decode is not
+// bundled: its pure-Go backend is GPL, so it is the explicit opt-in
+// gplcodec.AAC(), and libcodec.AudioToolbox() decodes it on macOS.
 func Codecs() runconfig.Option { return group(codecOptions) }
 
 // Filters registers the frame filters: resample and resize.
@@ -130,7 +132,6 @@ var formatOptions = []runconfig.Option{
 
 var codecOptions = []runconfig.Option{
 	runconfig.WithCodecAdapter(gopusadapter.Register),
-	runconfig.WithCodecAdapter(goaacadapter.Register),
 	runconfig.WithCodecAdapter(govpxadapter.Register),
 	runconfig.WithCodecAdapter(goav1adapter.Register),
 	runconfig.WithCodecAdapter(goh264adapter.Register),

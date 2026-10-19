@@ -308,11 +308,14 @@ func TestRuntimeWithCodecAdapter(t *testing.T) {
 	}
 }
 
-func TestRuntimeWithBundleCodecsIncludesAACDecode(t *testing.T) {
+// TestRuntimeWithBundleCodecsLeavesOutAAC pins the license line: the only
+// pure-Go AAC backend is GPL, so the bundled codecs carry no AAC at all and
+// AAC is the gplcodec module's explicit opt-in.
+func TestRuntimeWithBundleCodecsLeavesOutAAC(t *testing.T) {
 	rt := runtimeValue(t, mustNew(testBundleCodecs()))
 
-	if _, err := rt.codecs.DecoderFactory(av.CodecAAC); err != nil {
-		t.Fatalf("AAC decoder factory: %v", err)
+	if _, err := rt.codecs.DecoderFactory(av.CodecAAC); !errors.Is(err, codec.ErrNotFound) {
+		t.Fatalf("AAC decoder factory err = %v, want codec.ErrNotFound", err)
 	}
 	if _, err := rt.codecs.EncoderFactory(av.CodecAAC); !errors.Is(err, codec.ErrNotFound) {
 		t.Fatalf("AAC encoder factory err = %v, want codec.ErrNotFound", err)

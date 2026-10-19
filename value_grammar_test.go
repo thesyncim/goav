@@ -59,12 +59,8 @@ func TestValueGrammarTranscodes(t *testing.T) {
 func TestValueGrammarReuseFansOut(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	data, err := os.ReadFile(mp4Fixture)
-	if err != nil {
-		t.Fatal(err)
-	}
 	var hd, sd bytes.Buffer
-	in := goav.FileInput("in.mp4", bytes.NewReader(data))
+	in := goav.FileInput("in.webm", bytes.NewReader(opusWebM(t)))
 	audio := in.Audio().Decode()
 	outs := []goav.Output{
 		audio.Resample(48_000, 2).Encode(codec.Opus()).As("hd").To(goav.Write("hd.webm", &hd)),
@@ -83,9 +79,7 @@ func TestValueGrammarReuseFansOut(t *testing.T) {
 			t.Fatalf("nodes = %v, want %s: As names the rendition", specNodeNames(spec), name)
 		}
 	}
-	if err := rt.Run(ctx, outs...); errors.Is(err, codec.ErrUnavailable) {
-		t.Skip("goaac backend unavailable on this target")
-	} else if err != nil {
+	if err := rt.Run(ctx, outs...); err != nil {
 		t.Fatalf("run: %v", err)
 	}
 	for name, out := range map[string]*bytes.Buffer{"hd": &hd, "sd": &sd} {
@@ -523,4 +517,23 @@ func TestValueGrammarRefusesNilCompositeLayer(t *testing.T) {
 	if _, err := goavtest.Runtime().Build(context.Background(), out); !errors.As(err, &buildErr) {
 		t.Fatalf("Build(Composite(nil)) err = %v, want a BuildError", err)
 	}
+}
+
+// opusWebM is a short stereo 48 kHz Opus WebM encoded from generated
+// samples: a packet-domain audio input every build decodes.
+func opusWebM(t *testing.T) []byte {
+	t.Helper()
+	frames := make([][]int16, 25)
+	for i := range frames {
+		frames[i] = make([]int16, 960*2)
+		for j := range frames[i] {
+			frames[i][j] = int16((i*960 + j) % 2000)
+		}
+	}
+	var out bytes.Buffer
+	if err := offlineRuntime().Run(context.Background(), goavtest.Audio(48000, 2, frames...).
+		Audio().Encode(codec.Opus()).To(goav.Write("in.webm", &out))); err != nil {
+		t.Fatalf("encode opus fixture: %v", err)
+	}
+	return out.Bytes()
 }

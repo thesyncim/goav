@@ -114,7 +114,7 @@ jobs:
         if: matrix.full
         run: |
           CGO_ENABLED=0 go test -count=1 -tags goavdebug ./...
-          for m in rtpav webrtcav playoutav player libcodec; do (cd "$m" && CGO_ENABLED=0 go test -count=1 -tags goavdebug ./...) || exit 1; done
+          for m in rtpav webrtcav playoutav player libcodec gplcodec; do (cd "$m" && CGO_ENABLED=0 go test -count=1 -tags goavdebug ./...) || exit 1; done
 
       # One iteration per benchmark: catches bench bit-rot (compile/run errors)
       # without asserting timing, which would flake on shared runners.
@@ -286,6 +286,19 @@ jobs:
           staticcheck ./...
           govulncheck ./...
 
+      # The opt-in GPL codecs (gplcodec.AAC): nested so neither the root nor
+      # bundle links them (TestRootModuleDependencyPurity).
+      - name: gplcodec module
+        if: matrix.full
+        working-directory: gplcodec
+        run: |
+          CGO_ENABLED=0 go build ./...
+          CGO_ENABLED=0 go test -count=1 ./...
+          CGO_ENABLED=1 go test -race -count=1 ./...
+          CGO_ENABLED=0 go vet ./...
+          staticcheck ./...
+          govulncheck ./...
+
       # A backend from outside goav: public packages only, over the system zlib.
       - name: libcodec out-of-tree backend proof
         if: matrix.full
@@ -401,7 +414,7 @@ jobs:
           SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           set -eu
-          for mod in rtpav webrtcav playoutav player libcodec goavtest/expect; do
+          for mod in rtpav webrtcav playoutav player libcodec gplcodec goavtest/expect; do
             dir="$(mktemp -d)"
             cd "$dir"
             go mod init x
