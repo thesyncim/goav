@@ -1,6 +1,9 @@
 package launch
 
 import (
+	"errors"
+	"net/url"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -61,7 +64,7 @@ type valueKind uint8
 const (
 	kindInput valueKind = iota + 1
 	kindStream
-	kindFile // a file path: an input at a pipeline's head, a destination at its tail
+	kindFile // a file path or URL: an input at a pipeline's head, a destination at its tail
 	kindDest
 	kindLayer
 )
@@ -90,9 +93,21 @@ type value struct {
 	file   fileRef
 }
 
+// fileRef is a file or URL value. A file (path) reads and writes through
+// the program's FileSystem; any other URL (uri, with its scheme) resolves
+// through the runtime's schemes, when URIs grants the scheme.
 type fileRef struct {
 	path   string
+	uri    string
+	scheme string
 	format av.FormatID
+}
+
+func (r fileRef) key() string {
+	if r.uri != "" {
+		return r.uri
+	}
+	return r.path
 }
 
 type compiler struct {
@@ -309,38 +324,56 @@ func (c *compiler) destination(t *termNode) (goav.Destination, error) {
 	return v.dest, nil
 }
 
-// fileInput is the one input a program reads a path through.
+// fileInput is the one input a program reads a path or URL through.
 func (c *compiler) fileInput(ref fileRef, t *termNode) (value, error) {
-	if in, ok := c.inputs[ref.path]; ok {
+	if in, ok := c.inputs[ref.key()]; ok {
 		return value{kind: kindInput, input: in}, nil
 	}
-	if c.cfg.files == nil {
-		return value{}, &Error{Pos: t.pos, End: t.end, Msg: "this program may not read files", Hint: "compile with launch.Files(...) to allow it"}
+	if err := c.allowed(ref, t, "read"); err != nil {
+		return value{}, err
 	}
 	if ref.format != "" {
 		return value{}, &Error{Pos: t.pos, End: t.end, Msg: "an input's format is detected from its contents", Hint: "format= applies where a file is written; drop it here"}
 	}
-	in := goav.FileInput(ref.path, &lazyReader{fs: c.cfg.files, name: ref.path})
-	c.inputs[ref.path] = in
+	in := goav.URIInput(ref.uri)
+	if ref.uri == "" {
+		in = goav.FileInput(ref.path, &lazyReader{fs: c.cfg.files, name: ref.path})
+	}
+	c.inputs[ref.key()] = in
 	return value{kind: kindInput, input: in}, nil
 }
 
 // fileDestination is the one destination — one mux — a program writes a
-// path through, however many pipelines end there.
+// path or URL through, however many pipelines end there.
 func (c *compiler) fileDestination(ref fileRef, t *termNode) (goav.Destination, error) {
-	if d, ok := c.dests[ref.path]; ok {
+	if d, ok := c.dests[ref.key()]; ok {
 		return d, nil
 	}
-	if c.cfg.files == nil {
-		return goav.Destination{}, &Error{Pos: t.pos, End: t.end, Msg: "this program may not write files", Hint: "compile with launch.Files(...) to allow it"}
+	if err := c.allowed(ref, t, "write"); err != nil {
+		return goav.Destination{}, err
 	}
 	var opts []goav.DestinationOption
 	if ref.format != "" {
 		opts = append(opts, goav.Format(ref.format))
 	}
-	d := goav.Write(ref.path, &lazyWriter{fs: c.cfg.files, name: ref.path}, opts...)
-	c.dests[ref.path] = d
+	d := goav.URI(ref.uri, opts...)
+	if ref.uri == "" {
+		d = goav.Write(ref.path, &lazyWriter{fs: c.cfg.files, name: ref.path}, opts...)
+	}
+	c.dests[ref.key()] = d
 	return d, nil
+}
+
+// allowed refuses a file the program may not touch (no Files) or a URL whose
+// scheme URIs does not grant.
+func (c *compiler) allowed(ref fileRef, t *termNode, verb string) error {
+	switch {
+	case ref.uri == "" && c.cfg.files == nil:
+		return &Error{Pos: t.pos, End: t.end, Msg: "this program may not " + verb + " files", Hint: "compile with launch.Files(...) to allow it"}
+	case ref.uri != "" && !c.cfg.grants(ref.scheme):
+		return &Error{Pos: t.pos, End: t.end, Msg: "this program may not open " + ref.scheme + " URLs", Hint: "compile with launch.URIs(" + quote(ref.scheme) + ") to allow it"}
+	}
+	return nil
 }
 
 func (c *compiler) unknown(t *termNode) error {
@@ -370,3 +403,31 @@ func termError(t *termNode, err error) error {
 }
 
 func quote(s string) string { return "\"" + s + "\"" }
+
+// parseURIRef reads a uri step's URL: a file URL or bare path is a file,
+// anything else a URL its scheme resolves.
+func parseURIRef(raw string) (fileRef, error) {
+	u, err := url.Parse(raw)
+	if err != nil {
+		var urlErr *url.Error
+		if errors.As(err, &urlErr) {
+			err = urlErr.Err // a *url.Error quotes the URL, credentials and all
+		}
+		return fileRef{}, &Error{Pos: -1, Msg: "not a URL: " + err.Error(), Hint: `write uri "https://host/path", or file PATH`}
+	}
+	switch scheme := strings.ToLower(u.Scheme); {
+	case len(scheme) <= 1:
+		return fileRef{path: raw}, nil
+	case scheme == "file":
+		path := u.Path
+		if u.Opaque != "" {
+			path = u.Opaque
+		}
+		if u.Host != "" && u.Host != "localhost" || path == "" {
+			return fileRef{}, &Error{Pos: -1, Msg: "a file URL names a local path", Hint: "write file:///path, or file PATH"}
+		}
+		return fileRef{path: filepath.FromSlash(path)}, nil
+	default:
+		return fileRef{uri: raw, scheme: scheme}, nil
+	}
+}

@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"sort"
+	"strings"
 
 	"github.com/thesyncim/goav"
 	"github.com/thesyncim/goav/codec"
@@ -133,7 +134,9 @@ func Join[T any](name, summary string, build func(T) (pipeline.Stage, error)) El
 type Option func(*config)
 
 type config struct {
-	files    FileSystem
+	files FileSystem
+	// uris is the schemes URIs grants; nil grants none and "" grants all.
+	uris     map[string]bool
 	task     goav.LiveTask
 	hls      *hls.Server
 	elements map[string]*element
@@ -158,6 +161,30 @@ func newConfig(options []Option) *config {
 // output then. Without Files a program touches no files.
 func Files(fs FileSystem) Option {
 	return func(c *config) { c.files = fs }
+}
+
+// URIs lets a program read and write URLs of the named schemes, resolved
+// through the schemes of the runtime it runs on: uri "https://cdn/in.mp4",
+// or the URL bare. With no names it grants every scheme the runtime
+// registers. A file URL is a file whatever URIs grants: it opens through the
+// FileSystem given to Files, so a program compiled with Dir stays in its
+// directory. Without URIs a program opens no URLs.
+func URIs(schemes ...string) Option {
+	return func(c *config) {
+		if c.uris == nil {
+			c.uris = map[string]bool{}
+		}
+		for _, scheme := range schemes {
+			c.uris[strings.ToLower(scheme)] = true
+		}
+		if len(schemes) == 0 {
+			c.uris[""] = true
+		}
+	}
+}
+
+func (c *config) grants(scheme string) bool {
+	return c.uris != nil && (c.uris[""] || c.uris[scheme])
 }
 
 // Task compiles a program against a running task, for task.Attach: a

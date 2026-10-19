@@ -32,10 +32,16 @@
 // that end at file call.webm write one file. Files are opened and created
 // only when the recipe runs, and only through the FileSystem given to Files.
 //
+// uri names a URL the same way, and a quoted URL alone is one:
+// "https://cdn.example/in.mp4" ! video ! .... The runtime's schemes resolve it
+// (goav.URIInput), and only for the schemes URIs grants; a file URL is a
+// file, opened through Files.
+//
 // # Elements
 //
-// Sources: file PATH, testsrc video|audio [size= fps= pattern= rate= channels=
-// tone= frames= duration=] [live], and tap NAME (on a running task, see Task).
+// Sources: file PATH, uri URL, testsrc video|audio [size= fps= pattern=
+// rate= channels= tone= frames= duration=] [live], and tap NAME (on a
+// running task, see Task).
 //
 // Operations: video, audio, and stream [id= index=] select an input's
 // stream; decode; encode CODEC [bitrate= fps= keyframe_interval= profile=
@@ -50,7 +56,7 @@
 // Each input is a pipeline yielding a stream. Mix and composite take
 // sync=arrival|pts (sync=pts is goav.ByPTS()): mix(a, b, sync=pts).
 //
-// Destinations: file PATH [format=], null.
+// Destinations: file PATH [format=], uri URL [format=], null.
 //
 // Use adds a host's own sources, stages, encoders, sinks, and joins, with
 // typed settings; Elements lists the vocabulary for help and discovery.

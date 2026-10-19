@@ -12,6 +12,7 @@ import (
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/errcode"
 	"github.com/thesyncim/goav/format"
+	"github.com/thesyncim/goav/internal/redact"
 	"github.com/thesyncim/goav/provider"
 )
 
@@ -65,8 +66,6 @@ type uriRef struct {
 	err  error
 }
 
-const redacted = "REDACTED"
-
 // parseURIRef parses uri, or returns nil for an empty one (left to the
 // empty-input and empty-destination refusals).
 func parseURIRef(uri string) *uriRef {
@@ -87,53 +86,8 @@ func parseURIRef(uri string) *uriRef {
 		return &uriRef{raw: &url.URL{Scheme: "file", Path: uri}, scheme: "file", name: uri, full: uri}
 	}
 	ref := &uriRef{raw: u, scheme: strings.ToLower(u.Scheme)}
-	ref.name, ref.full = redactURL(u)
+	ref.name, ref.full = redact.URL(u)
 	return ref
-}
-
-// redactURL renders u for reports: name drops userinfo, query, and
-// fragment; full keeps the query with secret values replaced.
-func redactURL(u *url.URL) (name, full string) {
-	shown := *u
-	shown.User = nil
-	shown.RawQuery, shown.ForceQuery = "", false
-	shown.Fragment, shown.RawFragment = "", ""
-	name = shown.String()
-	if u.User != nil {
-		shown.User = url.User(redacted)
-	}
-	shown.RawQuery = redactQuery(u.RawQuery)
-	return name, shown.String()
-}
-
-func redactQuery(query string) string {
-	if query == "" {
-		return ""
-	}
-	parts := strings.Split(query, "&")
-	for i, part := range parts {
-		key, _, hasValue := strings.Cut(part, "=")
-		name, err := url.QueryUnescape(key)
-		if err != nil {
-			name = key
-		}
-		if hasValue && secretQueryParam(name) {
-			parts[i] = key + "=" + redacted
-		}
-	}
-	return strings.Join(parts, "&")
-}
-
-// secretQueryParam reports a query parameter that may carry a credential.
-// Over-matching is safe: a redacted harmless value costs nothing.
-func secretQueryParam(name string) bool {
-	name = strings.ToLower(name)
-	for _, marker := range []string{"token", "key", "secret", "pass", "pwd", "sig", "credential", "auth", "jwt"} {
-		if strings.Contains(name, marker) {
-			return true
-		}
-	}
-	return false
 }
 
 // bindSchemes resolves the graph's URI inputs and destinations through rt's
