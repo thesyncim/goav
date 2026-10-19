@@ -254,22 +254,37 @@ producer's bytes and none is copied per edge (`TestFanoutSharesOnePayload`).
 Codec, filter, and demux stages publish their adapters' output once into
 pooled buffers (`internal/payload`), so a sink may keep a frame with `Ref`
 (`TestRetainedFramesStayStableAcrossPushes`). A removed node gives up its
-queue and its index (`TestRemovedNodesAreReclaimed`).
+index, and its queue goes with it once the index is reused
+(`TestRemovedNodesAreReclaimed`).
 Both executors are delivery strategies over one shared topology
 (`pipeline/topology.go`: nodes, routes, the routing snapshot, spec, stats,
 readiness, observer events, the run's error contract, and shutdown).
-Routing is lock-free: a message finds its consumers through an atomically
-swapped snapshot and counts itself in per-node atomics, so no graph-wide lock
-sits on the media path. Each node is serialized, handling one message at a
-time: the direct runner takes the node's handle lock and the buffered producer
-its queue lock, uncontended unless several producers feed one node. Every other
-lock is on a cold path.
+No lock per message: a packet or frame takes none, delivered or shed. A
+message finds its consumers through an atomically swapped routing snapshot
+and counts itself in per-node atomics.
+Each node still handles one message at a time, serialized without a mutex: a
+direct node by ownership of its gate (the producer whose CAS takes it from 0
+to 1 runs Handle, so a lone producer pays two CASes; one arriving while it is
+owned takes it if its lone owner finishes at once, else queues on a lock-free
+waiter list and parks, and the owner hands it the node or runs its message
+for it), a buffered node by its queue, a bounded
+lock-free ring of preallocated slots (Vyukov's sequence-numbered cells)
+drained by one worker. Blocked `DropBlock` producers wait first come, first
+served, each on its own wake channel, and a released slot goes straight to
+the oldest (`TestParkLinesServeInJoinOrder`). Sheds count in atomics.
+`TestDataPlaneTakesNoMutex` walks the message path's call graph for any lock
+and `TestDataPlaneNoContendedMutex` runs it contended under the mutex profile.
+The one lock an emit can reach is control plane: an event message records its
+last-event copy in the graph's stats. Every other lock is on a cold path.
 Runtime-owned scratch pools are likewise per-runtime and opt-in through
 `runconfig.WithMediaPools(true)`, so attach/detach churn can reuse internal
 metadata maps and join plane slices without creating a process-global recycler.
 The allocation side of that contract is test-enforced
 (`TestGraphDirectRunAllocs`, `TestGraphBufferedSteadyEmitAllocs`,
-`TestBufferedFanoutRefcountAllocs`) and measured by the fanout benchmarks; see
+`TestBufferedFanoutRefcountAllocs`, and under contention
+`TestGraphDirectContendedEmitAllocs` and
+`TestGraphBufferedParkedProducersAllocs`) and measured by the fanout
+benchmarks; see
 `docs/PERFORMANCE.md` for what is proven versus not proven.
 
 Builders and graphs produce a `pipeline.Spec`: structured nodes and edges with

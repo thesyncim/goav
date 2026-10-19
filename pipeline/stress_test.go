@@ -41,7 +41,7 @@ func (s *signalBlockSink) Close() error { return nil }
 
 // waitForStalledEmits waits until the producer's completed-emit counter stops
 // advancing across consecutive observations — on a full DropBlock queue that
-// means the next Emit has parked in enqueueBlocking. It fails the test if the
+// means the next Emit has parked (bufferedNode.await). It fails the test if the
 // counter never stalls before the deadline.
 func waitForStalledEmits(t *testing.T, emits *atomic.Int64, timeout time.Duration) {
 	t.Helper()
@@ -169,8 +169,8 @@ func TestStressDirectMultiSourceErrorCancellation(t *testing.T) {
 }
 
 // TestStressBufferedDropBlockCloseWhileProducerBlocked proves Close completes
-// promptly when a DropBlock producer is blocked on capacity: the producer must
-// not hold node.queueMutex while parked, or the close path would wedge.
+// promptly when a DropBlock producer is blocked on capacity: a parked producer
+// holds nothing the close path needs, so Close never waits on it.
 func TestStressBufferedDropBlockCloseWhileProducerBlocked(t *testing.T) {
 	for range 25 {
 		ctx, cancel := context.WithCancel(context.Background())
@@ -205,7 +205,7 @@ func TestStressBufferedDropBlockCloseWhileProducerBlocked(t *testing.T) {
 		// Wait for the observable precondition instead of a timed guess: the
 		// sink holds the first message, the producer has completed exactly one
 		// more Emit (filling the capacity-1 queue), and its emit counter has
-		// stalled — the next Emit is parked in enqueueBlocking.
+		// stalled — the next Emit is parked (bufferedNode.await).
 		select {
 		case <-sink.entered:
 		case <-time.After(5 * time.Second):
@@ -218,7 +218,7 @@ func TestStressBufferedDropBlockCloseWhileProducerBlocked(t *testing.T) {
 		select {
 		case <-closed:
 			// Close returned promptly: the parked producer did not wedge the
-			// queue mutex. (It may carry a CloseWaitError for the sink still in
+			// close path. (It may carry a CloseWaitError for the sink still in
 			// Handle; what matters is that it did not hang on the producer.)
 		case <-time.After(5 * time.Second):
 			t.Fatal("Close hung: a blocked DropBlock producer wedged the close path")

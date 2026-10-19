@@ -1,6 +1,10 @@
 package pipeline
 
-import "github.com/thesyncim/goav/av"
+import (
+	"sync/atomic"
+
+	"github.com/thesyncim/goav/av"
+)
 
 type bufferAction uint8
 
@@ -12,28 +16,41 @@ const (
 	bufferBlock
 )
 
+// dropController is a node's drop policy. Producers call decide
+// concurrently, without a lock: the policy is fixed when the queue opens, and
+// the one piece of state (DropUntilSync waiting for a sync point) is atomic.
 type dropController struct {
 	policy            BufferPolicy
-	droppingUntilSync bool
+	droppingUntilSync atomic.Bool
 }
 
-func newDropController(policy BufferPolicy) dropController {
+func newDropController(policy BufferPolicy) *dropController {
+	c := &dropController{}
+	c.reset(policy)
+	return c
+}
+
+// reset arms the controller for policy. Cold: no producer runs.
+func (c *dropController) reset(policy BufferPolicy) {
 	if policy.Drop == "" {
 		policy.Drop = DropNever
 	}
-	return dropController{policy: policy}
+	c.policy = policy
+	c.droppingUntilSync.Store(false)
 }
 
-func (c *dropController) decide(used int, msg *Message) bufferAction {
+// decide picks what an enqueue does with msg given whether the queue is
+// full.
+func (c *dropController) decide(full bool, msg *Message) bufferAction {
 	capacity := c.policy.Capacity
 	if capacity <= 0 {
 		return bufferAdmit
 	}
 
-	if c.droppingUntilSync {
+	if c.droppingUntilSync.Load() {
 		if messageIsSync(msg) {
-			c.droppingUntilSync = false
-			if used >= capacity {
+			c.droppingUntilSync.Store(false)
+			if full {
 				return bufferDropOldest
 			}
 			return bufferAdmit
@@ -41,7 +58,7 @@ func (c *dropController) decide(used int, msg *Message) bufferAction {
 		return bufferDropIncoming
 	}
 
-	if used < capacity {
+	if !full {
 		return bufferAdmit
 	}
 
@@ -58,7 +75,7 @@ func (c *dropController) decide(used int, msg *Message) bufferAction {
 		if messageIsSync(msg) {
 			return bufferDropOldest
 		}
-		c.droppingUntilSync = true
+		c.droppingUntilSync.Store(true)
 		return bufferDropIncoming
 	case DropNonKeyVideo:
 		if messageIsNonKeyVideo(msg) {

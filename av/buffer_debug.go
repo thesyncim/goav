@@ -4,7 +4,7 @@ package av
 
 import (
 	"math"
-	"sync"
+	"sync/atomic"
 )
 
 // The goavdebug build makes use after release loud. A released block is
@@ -21,10 +21,12 @@ const (
 	quarantineSize = 16
 )
 
+// quarantine is a lock-free ring: each release takes the next slot by an atomic
+// add and swaps its block in, so the debug build keeps the data plane's
+// no-lock guarantee.
 var quarantine struct {
-	mu     sync.Mutex
-	blocks [quarantineSize]*block
-	next   int
+	blocks [quarantineSize]atomic.Pointer[block]
+	next   atomic.Uint64
 }
 
 func recycle(b *block) {
@@ -32,11 +34,7 @@ func recycle(b *block) {
 		b.data[i] = poisonByte
 	}
 	b.refs.Store(releasedRefs)
-	quarantine.mu.Lock()
-	evicted := quarantine.blocks[quarantine.next]
-	quarantine.blocks[quarantine.next] = b
-	quarantine.next = (quarantine.next + 1) % quarantineSize
-	quarantine.mu.Unlock()
+	evicted := quarantine.blocks[(quarantine.next.Add(1)-1)%quarantineSize].Swap(b)
 	if evicted != nil {
 		evicted.refs.Store(0)
 		putBlock(evicted)

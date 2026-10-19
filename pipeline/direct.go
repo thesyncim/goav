@@ -10,7 +10,7 @@ import (
 
 // directRunner is the inline delivery strategy over the shared topology: an
 // emit runs every target's Handle on the producer's goroutine, serialized per
-// node by its handle lock.
+// node by ownership of its gate (handoff.go), with no lock.
 type directRunner struct {
 	topology[*directNode]
 }
@@ -18,16 +18,18 @@ type directRunner struct {
 type directNode struct {
 	nodeBase
 	emitter directEmitter
-	// The pad keeps what every delivery writes (handleMu, gate) off the cache
-	// lines of the fields it only reads, so producers on several cores do not
-	// bounce those lines between them.
-	_        [128]byte
-	handleMu sync.Mutex
-	// gate counts in-flight deliveries to this node and carries the closing
-	// tombstone bit, so a live Remove can wait out deliveries that loaded an
-	// older routing snapshot before it closes the node. One atomic add/sub per
-	// delivery — the same budget class as the per-node counters.
+	// The pad keeps what every delivery writes (the gate) off the cache lines
+	// of the fields it only reads, so producers on several cores do not bounce
+	// those lines between them.
+	_ [cacheLine]byte
+	// gate counts the deliveries registered on this node (its owner and the
+	// waiters queued behind it) and carries the closing tombstone bit, so a
+	// live Remove can wait out deliveries that loaded an older routing
+	// snapshot before it closes the node. The increment that takes it from 0
+	// to 1 makes its producer the owner (handoff.go).
 	gate atomic.Int64
+	// waiters queues the deliveries that arrived while the node was owned.
+	waiters waiterQueue
 }
 
 func (n *directNode) base() *nodeBase { return &n.nodeBase }
@@ -43,6 +45,9 @@ type directEmitter struct {
 	// self is the emitting node; once its index is reused, the snapshot holds
 	// another node there and this emitter sheds.
 	self *directNode
+	// waiter is this emitter's record for queuing on an owned node, made
+	// once so a contended delivery allocates nothing.
+	waiter *directWaiter
 }
 
 type directSourceRun struct {
@@ -51,14 +56,14 @@ type directSourceRun struct {
 }
 
 func (e *directEmitter) Emit(ctx context.Context, msg *Message) error {
-	_, err := e.graph.emitDelivery(ctx, e.from, e.self, msg)
+	_, err := e.graph.emitDelivery(ctx, e, msg)
 	return err
 }
 
 // EmitDelivery implements the optional DeliveryEmitter capability: Emit plus a
 // per-message report of delivered vs deliberately-shed targets.
 func (e *directEmitter) EmitDelivery(ctx context.Context, msg *Message) (Delivery, error) {
-	return e.graph.emitDelivery(ctx, e.from, e.self, msg)
+	return e.graph.emitDelivery(ctx, e, msg)
 }
 
 func newDirectRunner(config GraphConfig) (*directRunner, error) {
@@ -74,7 +79,9 @@ func (g *directRunner) newNode(policy BufferPolicy) (*directNode, error) {
 	if !policy.IsDirect() {
 		return nil, ErrBufferedEdgesUnsupported
 	}
-	return &directNode{}, nil
+	n := &directNode{}
+	n.waiters.init()
+	return n, nil
 }
 
 // mutable accepts every change: the direct runner applies a mutation by
@@ -82,7 +89,7 @@ func (g *directRunner) newNode(policy BufferPolicy) (*directNode, error) {
 func (g *directRunner) mutable(bool) error { return nil }
 
 func (g *directRunner) attachLocked(n *directNode, index int) {
-	n.emitter = directEmitter{graph: g, from: index, self: n}
+	n.emitter = directEmitter{graph: g, from: index, self: n, waiter: newDirectWaiter()}
 }
 
 func (g *directRunner) stopLocked(context.Context, *directNode) (bool, error) {
@@ -135,6 +142,9 @@ func (g *directRunner) Run(ctx context.Context) error {
 	// outlives Run.
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
+	// Make the done channel now: a context makes it on the first Done, under
+	// its own mutex, and that first call must not be on the message path.
+	_ = runCtx.Done()
 	g.fail.reset(cancel)
 	// Offline file sources interleave by time instead of racing (time_order.go);
 	// the rest run freely, as every source of a realtime graph does.
@@ -244,7 +254,7 @@ func waitNodeGateDrainedContext(ctx context.Context, operation string, node stri
 	return nil
 }
 
-func (g *directRunner) emitDelivery(ctx context.Context, from int, self *directNode, msg *Message) (Delivery, error) {
+func (g *directRunner) emitDelivery(ctx context.Context, e *directEmitter, msg *Message) (Delivery, error) {
 	var delivery Delivery
 	if msg == nil {
 		return delivery, ErrNilMessage
@@ -264,11 +274,12 @@ func (g *directRunner) emitDelivery(ctx context.Context, from int, self *directN
 	if snap == nil {
 		return delivery, ErrClosed
 	}
+	from := e.from
 	if from < 0 || from >= len(snap.nodes) {
 		return delivery, ErrUnknownNode
 	}
 	fromNode := &snap.nodes[from]
-	if !fromNode.active || fromNode.node != self {
+	if !fromNode.active || fromNode.node != e.self {
 		return delivery, nil
 	}
 	observeOut(fromNode.node.counters, msg, &g.cold)
@@ -287,7 +298,7 @@ func (g *directRunner) emitDelivery(ctx context.Context, from int, self *directN
 			if !dst.active {
 				continue
 			}
-			delivered, err := g.deliver(ctx, dst.node, msg)
+			delivered, err := g.deliver(ctx, e, dst.node, msg)
 			if err != nil {
 				return delivery, err
 			}
@@ -299,50 +310,4 @@ func (g *directRunner) emitDelivery(ctx context.Context, from int, self *directN
 		}
 	}
 	return delivery, nil
-}
-
-func (g *directRunner) deliver(ctx context.Context, dst *directNode, msg *Message) (bool, error) {
-	if dst.paused.Load() {
-		// Branch paused: skip this node; the source and siblings keep flowing.
-		return false, nil
-	}
-	if dst.admit != nil {
-		// Admission runs on the producer's goroutine before the delivery
-		// registers or takes the node's handle lock, so a converging stage can
-		// hold one upstream back without holding anything its siblings need.
-		if err := dst.admit.Admit(ctx, msg); err != nil {
-			return false, err
-		}
-	}
-	// Register this delivery before checking the tombstone: Remove sets the
-	// closing bit and then waits for the gate to drain, so a delivery that
-	// registered first is waited out and one that arrives after the bit sheds
-	// itself — Close never runs under an in-flight Handle.
-	if dst.gate.Add(1)&nodeClosingBit != 0 {
-		dst.gate.Add(-1)
-		return false, nil
-	}
-	defer dst.gate.Add(-1)
-	dst.handleMu.Lock()
-	defer dst.handleMu.Unlock()
-	observeIn(dst.counters, msg, &g.cold)
-	switch dst.kind {
-	case nodeStage:
-		if err := dst.stage.Handle(ctx, msg, &dst.emitter); err != nil {
-			g.fail.report(err)
-			return false, err
-		}
-		return true, nil
-	case nodeSink:
-		if (msg.Kind == MessagePacket || msg.Kind == MessageFrame) && !dst.sawMedia.Load() {
-			g.noteSinkMedia(&dst.sawMedia)
-		}
-		if err := dst.sink.Handle(ctx, msg); err != nil {
-			g.fail.report(err)
-			return false, err
-		}
-		return true, nil
-	default:
-		return false, ErrInvalidLink
-	}
 }

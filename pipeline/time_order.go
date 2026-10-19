@@ -2,7 +2,7 @@ package pipeline
 
 import (
 	"context"
-	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/thesyncim/goav/internal/interleave"
@@ -20,20 +20,25 @@ import (
 // Its pump is parked there, so the read scratch the packet lives in cannot be
 // overwritten while it waits: the pending emit is the peek, and no second
 // buffer is needed. Sources keep their own goroutines; the turn is a token
-// passed between them, one mutex round per packet and a channel handoff only
-// when the turn changes hands.
+// passed between them with no lock. Only the source holding the turn passes
+// it, so the choice of the next source is never made twice at once; each
+// turn's state is an atomic, and the one race left (a waiting source
+// leaving just as the turn is handed to it) is settled by a CAS: if the
+// leave loses, the leaver holds the turn and passes it on. A channel handoff
+// happens only when the turn changes hands.
 type timeOrder struct {
-	mu    sync.Mutex
 	turns []timeTurn
 }
 
 type timeTurn struct {
-	state timeTurnState
-	at    time.Duration
+	state atomic.Uint32 // a timeTurnState
+	// at is the parked packet's time, stored before state goes waiting and
+	// read by the passer after it sees waiting.
+	at    atomic.Int64
 	grant chan struct{} // capacity 1: the turn, handed to a parked source
 }
 
-type timeTurnState uint8
+type timeTurnState = uint32
 
 const (
 	timeTurnUnstarted timeTurnState = iota // waiting to run its Start
@@ -84,42 +89,51 @@ func newTimeOrder(ordered []bool) *timeOrder {
 	for i := range o.turns {
 		o.turns[i].grant = make(chan struct{}, 1)
 		if !ordered[i] {
-			o.turns[i].state = timeTurnDone
+			o.turns[i].state.Store(timeTurnDone)
 		}
 	}
-	o.mu.Lock()
-	o.passLocked(-1)
-	o.mu.Unlock()
+	o.pass(-1)
 	return o
 }
 
-// passLocked hands the turn on: to the first source not yet started, else to
-// the parked source with the earliest packet. It reports whether self got it,
-// in which case no handoff is sent.
-func (o *timeOrder) passLocked(self int) bool {
-	next := -1
-	for i := range o.turns {
-		if o.turns[i].state == timeTurnUnstarted {
-			next = i
-			break
-		}
-	}
-	if next < 0 {
+// pass hands the turn on: to the first source not yet started, else to the
+// parked source with the earliest packet. Only the turn's holder calls it
+// (self, or -1 when the holder is leaving), so passes never overlap. It
+// reports whether self got the turn back, in which case no handoff is sent.
+func (o *timeOrder) pass(self int) bool {
+	for {
+		next := -1
 		for i := range o.turns {
-			if o.turns[i].state == timeTurnWaiting && (next < 0 || o.turns[i].at < o.turns[next].at) {
+			if o.turns[i].state.Load() == timeTurnUnstarted {
 				next = i
+				break
 			}
 		}
-	}
-	if next < 0 {
+		if next < 0 {
+			var earliest int64
+			for i := range o.turns {
+				if o.turns[i].state.Load() != timeTurnWaiting {
+					continue
+				}
+				if at := o.turns[i].at.Load(); next < 0 || at < earliest {
+					next, earliest = i, at
+				}
+			}
+		}
+		if next < 0 {
+			return false
+		}
+		turn := &o.turns[next]
+		from := turn.state.Load()
+		if (from != timeTurnUnstarted && from != timeTurnWaiting) || !turn.state.CompareAndSwap(from, timeTurnRunning) {
+			continue // it left meanwhile: choose again
+		}
+		if next == self {
+			return true
+		}
+		turn.grant <- struct{}{}
 		return false
 	}
-	o.turns[next].state = timeTurnRunning
-	if next == self {
-		return true
-	}
-	o.turns[next].grant <- struct{}{}
-	return false
 }
 
 // enter parks source i until its first turn.
@@ -134,17 +148,13 @@ func (o *timeOrder) enter(ctx context.Context, i int) {
 // yield parks source i, which holds the turn, on a packet at `at` until that
 // packet is the earliest. A source that is not in the order passes through.
 func (o *timeOrder) yield(ctx context.Context, i int, at time.Duration) error {
-	o.mu.Lock()
 	turn := &o.turns[i]
-	if turn.state != timeTurnRunning {
-		o.mu.Unlock()
+	if turn.state.Load() != timeTurnRunning {
 		return nil
 	}
-	turn.state = timeTurnWaiting
-	turn.at = at
-	mine := o.passLocked(i)
-	o.mu.Unlock()
-	if mine {
+	turn.at.Store(int64(at))
+	turn.state.Store(timeTurnWaiting)
+	if o.pass(i) {
 		return nil
 	}
 	select {
@@ -157,23 +167,24 @@ func (o *timeOrder) yield(ctx context.Context, i int, at time.Duration) error {
 }
 
 // leave takes source i out of the order (it ended, or stopped waiting) and,
-// when it held the turn, passes it on.
+// when it holds the turn, passes it on. A waiting source that loses the race
+// to a passer handing it the turn finds itself running, and passes it too;
+// the grant that passer sends lands in a channel nobody reads again.
 func (o *timeOrder) leave(i int) {
-	o.mu.Lock()
-	defer o.mu.Unlock()
 	turn := &o.turns[i]
-	if turn.state == timeTurnDone {
-		return
-	}
-	held := turn.state == timeTurnRunning
-	turn.state = timeTurnDone
-	select {
-	case <-turn.grant: // a handoff that raced the leave: the turn was ours
-		held = true
-	default:
-	}
-	if held {
-		o.passLocked(-1)
+	for {
+		switch s := turn.state.Load(); s {
+		case timeTurnDone:
+			return
+		case timeTurnRunning:
+			turn.state.Store(timeTurnDone)
+			o.pass(-1)
+			return
+		default:
+			if turn.state.CompareAndSwap(s, timeTurnDone) {
+				return
+			}
+		}
 	}
 }
 

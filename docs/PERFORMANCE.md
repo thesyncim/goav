@@ -28,9 +28,11 @@ Hot paths must keep allocation explicit and bounded:
 
 Once running, lower-level stages reuse caller-owned result structs, frame
 planes, packet buffers, and scratch storage, and take no graph-wide lock per
-message: routing reads an atomically swapped snapshot and counts in per-node
-atomics, and the only per-message locks serialize a node's own input (its handle
-or queue lock), uncontended unless several producers feed it. The intended shape is one cold-path executable `WorkPlan` and
+message, and no lock at all: routing reads an atomically swapped snapshot and
+counts in per-node atomics, and a node serializes its input by ownership
+handoff (direct) or a lock-free ring (buffered), pinned by
+`TestDataPlaneTakesNoMutex` and `TestDataPlaneNoContendedMutex`. The intended
+shape is one cold-path executable `WorkPlan` and
 runtime `WorkPatch`; packet, frame, event, and mux/demux loops must not route
 through fluent recipe objects or workflow-specific compiler dispatch.
 
@@ -64,6 +66,8 @@ silently growing.
 | Direct graph pass-through (source->stage->sink) | `pipeline.TestGraphDirectRunAllocs` | 0 |
 | Buffered fanout steady path (emit -> slot bind -> worker deliver -> slot release, ordinary payload, 1->2 fanout) | `pipeline.TestGraphBufferedSteadyEmitAllocs` | 0 |
 | Buffered pooled-payload fanout steady path (1/8/64/512 targets, each slot takes a reference, nothing copied) | `pipeline.TestBufferedFanoutRefcountAllocs` | 0 |
+| Direct emits contended (4 producers on one node, queued and served) | `pipeline.TestGraphDirectContendedEmitAllocs` | 0 |
+| Blocked producers (4 `DropBlock` producers parked on a full queue) | `pipeline.TestGraphBufferedParkedProducersAllocs` | 0 |
 | Drop-policy decision | `pipeline.TestDropControllerDecideAllocs` | 0 |
 | Message/scratch resets | `pipeline.TestMessageAndScratchResetAllocs`, `av.TestCoreResetAllocs`, `av.TestTimeBaseHelpersAllocs` | 0 |
 | `source.Push.Packet` / `source.Push.Frame` delivery | `goav.TestSourcePushDeliveryAllocs` | <=1 |
