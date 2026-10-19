@@ -55,3 +55,11 @@
   without `--control-remote`, and confines attached programs to
   `--control-dir` (default `.`). Program output files are created when their
   destination opens, so a refused path fails the build or attach.
+- Picture-in-picture works: a Composite (or Mix) arm may `.Resize` (or
+  `.Resample`) itself after `.Decode()`, so
+  `goav.Composite(cam, goav.At(screen.Video().Decode().Resize(480, 270), 1420, 790))`
+  insets the screen on a camera-sized canvas, from frame sources and from
+  files whose size is known only when they open (`composite(a, b ! resize
+  480x270 ! at 1420 790)` in the CLI). Arm transforms are planned, checked
+  against the registered filters, and shown in Describe; work an arm cannot
+  lower is refused with the fix.

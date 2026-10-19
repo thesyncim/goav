@@ -44,7 +44,7 @@ the one above.
 | Sources | `file PATH`, `uri URL` (or a quoted URL: http, https, whep), `testsrc video\|audio [size= fps= pattern= rate= channels= tone= frames= duration=] [live]` |
 | Selection | `video`, `audio`, `stream` `[id= index=]` |
 | Operations | `decode`, `encode CODEC [bitrate= fps= keyframe_interval= ...]`, `resize WxH [mode=]`, `resample RATE CHANNELS`, `tap NAME`, `as NAME`, `buffer MODE [N]`, `sync NAME`, `playout`, `auto` |
-| Joins | `mix(a, b [, sync=pts])`, `composite(a, b ! at X Y [, sync=pts])`, `select(a, b)` |
+| Joins | `mix(a, b [, sync=pts])`, `composite(a, b ! resize WxH ! at X Y [, sync=pts])`, `select(a, b)` |
 | Destinations | `file PATH [format=]`, `uri URL` (whip, whips), `hls PATH [segment= window= parts=]`, `play [title= size=]`, `null` |
 
 `goav elements` lists every element with its settings. Native adapter settings

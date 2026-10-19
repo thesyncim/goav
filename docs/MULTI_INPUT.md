@@ -8,8 +8,8 @@ so its output encodes, taps, and forks like any other.
 mixed := goav.Mix(micA.Audio().Decode(), micB.Audio().Decode())
 err := rt.Run(ctx, mixed.Encode(codec.Opus()).To(goav.Write("room.webm", w)))
 
-// Picture in picture: the screen over the camera, at (960, 540).
-pip := goav.Composite(cam.Video().Decode(), goav.At(screen.Video().Decode(), 960, 540))
+// Picture in picture: the screen, shrunk on its arm, inset over the camera.
+pip := goav.Composite(cam.Video().Decode(), goav.At(screen.Video().Decode().Resize(480, 270), 1420, 790))
 
 // Switch between two live cameras; the first is active until switched.
 live := goav.Select(camA.Video(), camB.Video())
@@ -26,7 +26,7 @@ err = rt.Run(ctx, a.Video().To(rec), b.Audio().To(rec))
 | Join | Inputs | Output |
 | --- | --- | --- |
 | `goav.Mix(streams...)` | audio frames (`.Decode()` packet inputs) | one mixed S16 audio stream; later inputs resample to the first's format, samples clamp |
-| `goav.Composite(layers...)` | video frames, placed with `goav.At(s, x, y)` | one canvas the size of all layers' bounding box |
+| `goav.Composite(layers...)` | video frames, placed with `goav.At(s, x, y)`, each resizable on its own arm | one canvas the size of all layers' bounding box |
 | `goav.Select(streams...)` | frames or packets with compatible facts | the active input as-is; `control.SelectActive(id)` switches it live |
 | `goav.Join(name, stage, streams...)` | what `stage` declares | what `stage` declares: your own convergence stage |
 

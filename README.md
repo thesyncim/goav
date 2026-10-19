@@ -155,7 +155,7 @@ its tag; see [licenses](docs/ADAPTERS.md#licenses).
 | Remux without decoding | `in.To(goav.Write("out.mkv", w))` |
 | Audio and video in one file | pass `in.Video()…To(out)` and `in.Audio()…To(out)` to one `Run` |
 | Frames into your code | `in.Video().Decode().To(goav.Sink(component.SinkFunc("frames", fn)))` |
-| Mix, composite, switch | `goav.Mix(a, b)`, `goav.Composite(cam, goav.At(screen, 960, 540))`, `goav.Select(a, b)` |
+| Mix, composite, switch | `goav.Mix(a, b)`, `goav.Composite(cam, goav.At(screen.Resize(480, 270), 1420, 790))`, `goav.Select(a, b)` |
 | Package for HLS | `goav.Custom("live", hls.New("live.m3u8", hls.Dir(dir), hls.Window(6)))`; `hls.NewLadder` for renditions, `hls.Parts` with an `hls.Server` for LL-HLS, or `goav run --serve :8080 '... ! hls live.m3u8 parts=250ms'` |
 | Change a running task | `task.Attach(ctx, task.Tap("live").Encode(codec.VP8()).To(preview))` |
 | Test a pipeline | [`goavtest`](goavtest): deterministic sources, a recording sink, a fake clock |

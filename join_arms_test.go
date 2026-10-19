@@ -88,12 +88,12 @@ func TestMixChainArmTapDecodesOnceAndMixes(t *testing.T) {
 // TestMixTapArmConvergesTappedStreamAgain: a tap-reference arm feeds the SAME tapped
 // point into the join a second time, re-stamped under the tap name — no
 
-// TestMixArmRejectsUnsupportedChainOperations: arm chains support .Decode()
-// and .Tap(...) — anything else used to be silently dropped and is now an
-// error naming the alternatives.
+// TestMixArmRejectsUnsupportedChainOperations: arm chains support .Decode(),
+// .Tap(...), and their own .Resize/.Resample — anything else used to be
+// silently dropped and is now an error naming the alternatives.
 func TestMixArmRejectsUnsupportedChainOperations(t *testing.T) {
 	_, err := mustNew().Build(context.Background(), Mix(
-		mixTestAudioSource("a", 1).Audio().Resample(48000, 1),
+		mixTestAudioSource("a", 1).Audio().Encode(codec.Opus()),
 		mixTestAudioSource("b", 1).Audio(),
 	).To(Sink(SinkFunc("out", func(context.Context, Message) error { return nil }))))
 
@@ -101,7 +101,7 @@ func TestMixArmRejectsUnsupportedChainOperations(t *testing.T) {
 	if !errors.As(err, &buildErr) || buildErr.Code != "mix_arm" {
 		t.Fatalf("err = %v, want mix_arm", err)
 	}
-	if !strings.Contains(err.Error(), ".Decode() and .Tap(...)") {
+	if !strings.Contains(err.Error(), ".Decode(), .Tap(...), .Resize(...), and .Resample(...)") {
 		t.Fatalf("err = %v, want the supported arm operations named", err)
 	}
 }
