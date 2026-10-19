@@ -64,10 +64,14 @@ type bufferedNode struct {
 	sleeping atomic.Bool
 	// slotLine holds the DropBlock producers waiting for a slot, spaceLine
 	// the ones holding a slot and waiting for a queue position (or any
-	// producer waiting out a flush); both first come, first served. The
-	// worker and slot releases read each one's count, one load per message.
+	// producer waiting out a flush); both first come, first served.
 	slotLine  parkLine
 	spaceLine parkLine
+	// waiting counts the producers announced for the slot line (high 32
+	// bits) and the space line (low 32 bits) in one word, so a producer, a
+	// release, or a take that finds nobody waiting pays one load and the
+	// first come, first served machinery costs nothing.
+	waiting atomic.Int64
 	// queuedBytes is the payload bytes of queued messages, maintained only
 	// when policy.MaxBytes > 0: a producer reserves before queuing (one CAS
 	// that also checks the budget), releaseSlot subtracts.
@@ -638,8 +642,9 @@ func (g *bufferedRunner) enqueueBlocking(ctx context.Context, node *bufferedNode
 			}
 			continue
 		}
+		waiting := node.waiting.Load() // the one load a pass with nobody waiting pays
 		if slot == nil {
-			if waited || !node.slotLine.occupied() {
+			if waited || slotWaiters(waiting) == 0 {
 				slot = node.free.popWait()
 			}
 			if slot == nil {
@@ -654,13 +659,14 @@ func (g *bufferedRunner) enqueueBlocking(ctx context.Context, node *bufferedNode
 					continue // closed: the next pass sheds
 				}
 				slot = s
+				waiting = node.waiting.Load()
 			}
 			if err := slot.bind(msg, node.policy); err != nil {
 				g.abandon(node, slot, held)
 				return false, err
 			}
 		}
-		if !lined && node.spaceLine.occupied() {
+		if !lined && spaceWaiters(waiting) > 0 {
 			// Producers holding slots wait for a position: queue behind them
 			// rather than take the next one ahead of them.
 			lined = true
@@ -762,7 +768,7 @@ func (n *bufferedNode) waitSlot(ctx context.Context, cached *parkedProducer) (*b
 		return nil, err
 	}
 	p := takeParked(cached)
-	n.slotLine.waiting.Add(1)
+	n.waiting.Add(slotWaiter)
 	n.slotLine.join(p)
 	n.pumpSlots()
 	if n.queue.closed() {
@@ -771,7 +777,7 @@ func (n *bufferedNode) waitSlot(ctx context.Context, cached *parkedProducer) (*b
 	select {
 	case <-p.wake:
 	case <-ctx.Done():
-		n.slotLine.waiting.Add(-1)
+		n.waiting.Add(-slotWaiter)
 		if n.slotLine.cancel(p) {
 			return nil, ctx.Err() // p stays in line until skipped: not reused
 		}
@@ -781,7 +787,7 @@ func (n *bufferedNode) waitSlot(ctx context.Context, cached *parkedProducer) (*b
 		putParked(cached, p)
 		return nil, ctx.Err()
 	}
-	n.slotLine.waiting.Add(-1)
+	n.waiting.Add(-slotWaiter)
 	s := p.handed()
 	putParked(cached, p)
 	return s, nil
@@ -794,7 +800,7 @@ func (n *bufferedNode) waitSlot(ctx context.Context, cached *parkedProducer) (*b
 // a producer may have joined (and pumped, finding no slot) meanwhile; the
 // put-back and the join are each published before the other side's look.
 func (n *bufferedNode) pumpSlots() {
-	for n.slotLine.occupied() {
+	for slotWaiters(n.waiting.Load()) > 0 {
 		s := n.free.pop()
 		if s == nil {
 			return
@@ -820,12 +826,12 @@ func (n *bufferedNode) waitSpace(ctx context.Context, cached *parkedProducer, co
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if n.spaceLine.waiting.Add(1) == 1 && cond != awaitTurn && n.ready(cond) {
+	if spaceWaiters(n.waiting.Add(spaceWaiter)) == 1 && cond != awaitTurn && n.ready(cond) {
 		// Alone in the line and the change already came: no need to wait.
-		n.spaceLine.waiting.Add(-1)
+		n.waiting.Add(-spaceWaiter)
 		return nil
 	}
-	defer n.spaceLine.waiting.Add(-1)
+	defer n.waiting.Add(-spaceWaiter)
 	p := takeParked(cached)
 	n.spaceLine.join(p)
 	if n.ready(cond) {
@@ -916,7 +922,7 @@ func (g *bufferedRunner) runNode(ctx context.Context, node *bufferedNode) {
 		}
 		// Taking a message frees a queue position a DropBlock producer holding
 		// a slot may be waiting on.
-		if node.spaceLine.occupied() {
+		if spaceWaiters(node.waiting.Load()) > 0 {
 			node.spaceLine.wakeOne()
 		}
 		switch {
@@ -1033,7 +1039,10 @@ func (n *bufferedNode) releaseSlot(slot *bufferedMessage) {
 	}
 	slot.release()
 	n.free.pushWait(slot)
-	if n.slotLine.occupied() {
+	// One load: published after the push, it pairs with a waiter's count
+	// published before its join, so a producer that joined meanwhile is not
+	// missed.
+	if slotWaiters(n.waiting.Load()) > 0 {
 		n.pumpSlots()
 	}
 }

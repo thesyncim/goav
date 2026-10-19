@@ -643,7 +643,7 @@ func TestGraphBufferedParkedProducersAllocs(t *testing.T) {
 		emitters[i] = source.emitter
 	}
 	node := runner.nodes[runner.index["sink"]]
-	sink.probe = func() bool { return node.slotLine.occupied() || node.spaceLine.occupied() }
+	sink.probe = func() bool { return node.waiting.Load() != 0 }
 	pool := newProducerPool(emitters, perRound)
 	mallocs := mallocsOver(t, pool, rounds, func() { sink.saw.Store(false); sink.hold.Store(true) })
 	t.Logf("%d allocations over %d messages", mallocs, producers*perRound*rounds)
@@ -734,13 +734,13 @@ func TestParkLinesServeInJoinOrder(t *testing.T) {
 	in := make([]*parkedProducer, 5)
 	for i := range in {
 		in[i] = newParkedProducer()
-		node.slotLine.waiting.Add(1)
+		node.waiting.Add(slotWaiter)
 		node.slotLine.join(in[i])
 	}
 	if !node.slotLine.cancel(in[2]) {
 		t.Fatal("cancel of a producer still in line reported a handoff")
 	}
-	node.slotLine.waiting.Add(-1)
+	node.waiting.Add(-slotWaiter)
 	served := []int{}
 	for i := range slots {
 		node.free.pushWait(&slots[i])
@@ -751,7 +751,7 @@ func TestParkLinesServeInJoinOrder(t *testing.T) {
 				if p.handed() != &slots[i] {
 					t.Fatalf("producer %d woke without slot %d", j, i)
 				}
-				node.slotLine.waiting.Add(-1)
+				node.waiting.Add(-slotWaiter)
 				served = append(served, j)
 			}
 		}
@@ -872,9 +872,9 @@ func TestParkedProducersAllProgress(t *testing.T) {
 	}
 	// The sink holds its first message: wait until every producer waits in
 	// a line, then start measuring and let the sink go.
-	for deadline := time.Now().Add(10 * time.Second); node.slotLine.waiting.Load()+node.spaceLine.waiting.Load() < producers; {
+	for deadline := time.Now().Add(10 * time.Second); slotWaiters(node.waiting.Load())+spaceWaiters(node.waiting.Load()) < producers; {
 		if time.Now().After(deadline) {
-			t.Fatalf("only %d of %d producers ever waited", node.slotLine.waiting.Load()+node.spaceLine.waiting.Load(), producers)
+			t.Fatalf("only %d of %d producers ever waited", slotWaiters(node.waiting.Load())+spaceWaiters(node.waiting.Load()), producers)
 		}
 		runtime.Gosched()
 	}

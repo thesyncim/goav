@@ -77,9 +77,6 @@ const parkLineSize = 256
 // wakers skip it.
 type parkLine struct {
 	line atomic.Pointer[ring[parkedProducer]]
-	// waiting counts the producers that announced themselves for this
-	// line, so wakers pay one load when nobody waits.
-	waiting atomic.Int32
 }
 
 func (l *parkLine) ring() *ring[parkedProducer] {
@@ -93,8 +90,6 @@ func (l *parkLine) ring() *ring[parkedProducer] {
 	}
 	return l.line.Load()
 }
-
-func (l *parkLine) occupied() bool { return l.waiting.Load() > 0 }
 
 // ready reports whether a record, waiting or cancelled, is at the front.
 func (l *parkLine) ready() bool {
@@ -152,3 +147,12 @@ func (l *parkLine) cancel(p *parkedProducer) (abandoned bool) {
 	<-p.wake
 	return false
 }
+
+// The two halves of bufferedNode.waiting.
+const (
+	slotWaiter  = int64(1) << 32
+	spaceWaiter = int64(1)
+)
+
+func slotWaiters(v int64) int64  { return v >> 32 }
+func spaceWaiters(v int64) int64 { return v & (slotWaiter - 1) }
