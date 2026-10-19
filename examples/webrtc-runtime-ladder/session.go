@@ -188,9 +188,9 @@ func (s *session) stateLocked() stateResponse {
 	}
 	for _, r := range s.sortedBranchesLocked("") {
 		view := branchView{branchSpec: r.Spec, Bound: r.Attachment != nil}
-		if r.Sink != nil {
-			view.Packets = r.Sink.packets.Load()
-			view.Bytes = r.Sink.bytes.Load()
+		if r.Stats != nil {
+			view.Packets = r.Stats.packets.Load()
+			view.Bytes = r.Stats.bytes.Load()
 		}
 		out.Branches = append(out.Branches, view)
 	}
@@ -233,9 +233,9 @@ func (s *session) taskDebugLocked(kind, codec string, running bool, graph graphV
 		} else {
 			task.Waiting = append(task.Waiting, r.Spec.ID)
 		}
-		if r.Sink != nil {
-			task.Packets += r.Sink.packets.Load()
-			task.Bytes += r.Sink.bytes.Load()
+		if r.Stats != nil {
+			task.Packets += r.Stats.packets.Load()
+			task.Bytes += r.Stats.bytes.Load()
 		}
 	}
 	return task
