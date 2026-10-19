@@ -2,6 +2,7 @@ package kit
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"fmt"
 	"slices"
@@ -26,6 +27,10 @@ type videoDecoder struct {
 	dropping bool
 	closed   bool
 	emitFn   func(*Picture) error
+	// held are decoded pictures a Reorder session returned early, sorted
+	// by PTS; decoded is the decode time of the last unit sent.
+	held    []av.Frame
+	decoded int64
 	// carry holds pictures a codec change drained until the next call.
 	carry codec.DecodeResult
 }
@@ -89,6 +94,7 @@ func (d *videoDecoder) stop(out *codec.DecodeResult) error {
 	}
 	d.out = out
 	err := d.session.Flush(d.emitFn)
+	d.release(true)
 	if closeErr := d.session.Close(); err == nil {
 		err = closeErr
 	}
@@ -123,6 +129,14 @@ func (d *videoDecoder) DecodeInto(ctx context.Context, packet *av.Packet, out *c
 	base := d.stream.TimeBase
 	pts := timeIn(packet.PTS, base)
 	d.pending.push(timing{pts: pts, duration: durationIn(packet.Duration, base), metadata: packet.Metadata})
+	if d.c.Reorder {
+		// No later unit presents before this one's decode time: DTS only
+		// grows and a unit never presents before it decodes.
+		d.decoded = pts
+		if packet.DTS.Base.Valid() {
+			d.decoded = timeIn(packet.DTS, base)
+		}
+	}
 	d.out = out
 	return d.session.Decode(&Packet{Data: data, PTS: pts, DTS: timeIn(packet.DTS, base), Keyframe: keyframe}, d.emitFn)
 }
@@ -145,17 +159,9 @@ func (d *videoDecoder) emitPicture(pic *Picture) error {
 	if duration == 0 {
 		duration = entry.duration
 	}
-	n := len(d.out.Frames)
-	if n < cap(d.out.Frames) {
-		d.out.Frames = d.out.Frames[:n+1]
-	} else {
-		d.out.Frames = append(d.out.Frames, av.Frame{})
-	}
-	frame := &d.out.Frames[n]
-	frame.Reset()
-	format, err := fillFrame(frame, pic)
+	var frame av.Frame
+	format, err := fillFrame(&frame, pic)
 	if err != nil {
-		d.out.Frames = d.out.Frames[:n]
 		return err
 	}
 	if d.video == nil || d.video.Width != pic.Width || d.video.Height != pic.Height || d.video.PixelFormat != format {
@@ -165,11 +171,35 @@ func (d *videoDecoder) emitPicture(pic *Picture) error {
 	base := d.stream.TimeBase
 	frame.StreamID = d.stream.ID
 	frame.CodecEpoch = d.stream.Epoch
+	frame.Type = av.MediaVideo
 	frame.Video = d.video
 	frame.PTS = av.Timestamp{Value: pic.PTS, Base: base}
 	frame.Duration = av.Duration{Value: duration, Base: base}
 	frame.Metadata = entry.metadata
+	if !d.c.Reorder {
+		d.out.Frames = append(d.out.Frames, frame)
+		return nil
+	}
+	i, _ := slices.BinarySearchFunc(d.held, pic.PTS, func(f av.Frame, pts int64) int { return cmp.Compare(f.PTS.Value, pts) })
+	d.held = slices.Insert(d.held, i, frame)
+	d.release(false)
 	return nil
+}
+
+// maxHeld bounds the reorder buffer at the deepest H.264/HEVC picture
+// buffer, so a unit that decodes to nothing cannot stall output.
+const maxHeld = 16
+
+// release hands held pictures on in presentation order: each once no unit
+// still to come can present before it, all of them when forced (at flush).
+func (d *videoDecoder) release(force bool) {
+	for len(d.held) > 0 {
+		if !force && len(d.held) <= maxHeld && d.held[0].PTS.Value > d.decoded {
+			return
+		}
+		d.out.Frames = append(d.out.Frames, d.held[0])
+		d.held = slices.Delete(d.held, 0, 1)
+	}
 }
 
 func (d *videoDecoder) FlushInto(ctx context.Context, out *codec.DecodeResult) error {
@@ -187,7 +217,9 @@ func (d *videoDecoder) FlushInto(ctx context.Context, out *codec.DecodeResult) e
 		return nil
 	}
 	d.out = out
-	return d.session.Flush(d.emitFn)
+	err := d.session.Flush(d.emitFn)
+	d.release(true)
+	return err
 }
 
 func (d *videoDecoder) HandleEvent(ctx context.Context, event *av.Event) error {
@@ -229,6 +261,8 @@ func (d *videoDecoder) Close() error {
 		return nil
 	}
 	d.closed = true
+	releaseFrames(d.held)
+	d.held = nil
 	releaseFrames(d.carry.Frames)
 	d.carry.Frames = nil
 	if d.session == nil {

@@ -50,6 +50,9 @@ type Codec struct {
 	// pixel format its encoder reads (default i420; nv12 is converted).
 	Bitstream Bitstream
 	Pixels    string
+	// Reorder says the decoder returns pictures in decode order; the kit
+	// holds them and hands them on in presentation order.
+	Reorder bool
 
 	// Libraries are bound, once per process, when Register runs (at
 	// goav.New, never in init). Version then reports the bound library's
@@ -147,7 +150,7 @@ func (c *Codec) bind() (string, error) {
 			return
 		}
 		for _, lib := range c.Libraries {
-			if err := lib.Bind(c.Backend); err != nil {
+			if err := lib.bindOnce(c.Backend); err != nil {
 				b.err = err
 				return
 			}

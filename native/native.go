@@ -8,6 +8,7 @@ import (
 
 	"github.com/thesyncim/goav/native/internal/audiotoolbox"
 	"github.com/thesyncim/goav/native/internal/openh264"
+	"github.com/thesyncim/goav/native/internal/videotoolbox"
 	"github.com/thesyncim/goav/native/kit"
 	"github.com/thesyncim/goav/runconfig"
 )
@@ -70,4 +71,13 @@ func OpenH264(opts ...Option) runconfig.Option {
 // unsupported-platform and selection passes it over.
 func AudioToolbox(opts ...Option) runconfig.Option {
 	return kit.Register(audiotoolbox.Codec(resolve(apply(opts).library, []string{audiotoolbox.Path})))
+}
+
+// VideoToolbox registers the hardware H.264 and HEVC encoders and decoders
+// of macOS (h264/videotoolbox and hevc/videotoolbox, hardware). Each checks
+// for its hardware when the runtime is built; a Mac without it, or another
+// OS, registers it unavailable and selection passes it over. HEVC is codec
+// id kit.CodecHEVC ("hevc").
+func VideoToolbox(opts ...Option) runconfig.Option {
+	return kit.Register(videotoolbox.Codecs()...)
 }

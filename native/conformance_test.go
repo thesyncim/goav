@@ -14,6 +14,8 @@ func TestOpenH264(t *testing.T) { codectest.Run(t, native.OpenH264()) }
 
 func TestAudioToolbox(t *testing.T) { codectest.Run(t, native.AudioToolbox()) }
 
+func TestVideoToolbox(t *testing.T) { codectest.Run(t, native.VideoToolbox()) }
+
 // TestBundle runs the same suite on the pure-Go codecs, which register
 // through the same registry.
 func TestBundle(t *testing.T) { codectest.Run(t, bundle.Codecs()) }

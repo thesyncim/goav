@@ -125,3 +125,41 @@ func openOnce(path string) (uintptr, error) {
 func pointer(addr uintptr) unsafe.Pointer {
 	return *(*unsafe.Pointer)(unsafe.Pointer(&addr))
 }
+
+// Symbol looks up one symbol by a name known only at run time (a constant
+// a setting names), in a library Bind has loaded. A ",value" symbol's
+// pointer is the caller's to read.
+func (l Library) Symbol(name string) (uintptr, error) {
+	handle, ok := opened.Load(l.Path)
+	if !ok {
+		return 0, fmt.Errorf("kit: %s is not loaded", l.Name)
+	}
+	return lookup(handle.(uintptr), name)
+}
+
+// Value reads the pointer-sized value stored at a data symbol: the
+// CFStringRef behind a kVT... constant, say. It reports false when the
+// library has no such symbol.
+func (l Library) Value(name string) (uintptr, bool) {
+	addr, err := l.Symbol(name)
+	if err != nil || addr == 0 {
+		return 0, false
+	}
+	return *(*uintptr)(pointer(addr)), true
+}
+
+// symbolBindings dedupe Bind by symbols struct: declarations that share one
+// (a backend's encoder and decoder) bind it once, never concurrently.
+var symbolBindings sync.Map // Symbols pointer -> *symbolBinding
+
+type symbolBinding struct {
+	once sync.Once
+	err  error
+}
+
+func (l Library) bindOnce(backend string) error {
+	value, _ := symbolBindings.LoadOrStore(l.Symbols, &symbolBinding{})
+	b := value.(*symbolBinding)
+	b.once.Do(func() { b.err = l.Bind(backend) })
+	return b.err
+}
