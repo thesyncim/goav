@@ -117,7 +117,6 @@ type videoToolbox struct {
 	keyProfileLevel        uintptr `sym:"kVTCompressionPropertyKey_ProfileLevel,value"`
 	keyEntropyMode         uintptr `sym:"kVTCompressionPropertyKey_H264EntropyMode,value"`
 	keySpeedOverQuality    uintptr `sym:"kVTCompressionPropertyKey_PrioritizeEncodingSpeedOverQuality,value,optional"`
-	keyMaxFrameDelay       uintptr `sym:"kVTCompressionPropertyKey_MaxFrameDelayCount,value"`
 	entropyCAVLC           uintptr `sym:"kVTH264EntropyMode_CAVLC,value"`
 	entropyCABAC           uintptr `sym:"kVTH264EntropyMode_CABAC,value"`
 	forceKeyFrame          uintptr `sym:"kVTEncodeFrameOptionKey_ForceKeyFrame,value"`

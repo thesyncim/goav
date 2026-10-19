@@ -156,22 +156,6 @@ func (r *SimpleRegistry) EncoderFactory(id av.CodecID) (EncoderFactory, error) {
 	return choice.Encoder, nil
 }
 
-func (r *SimpleRegistry) hasDescriptor(id av.CodecID, mode Mode) bool {
-	if id == "" {
-		return false
-	}
-	for i := range r.descriptors {
-		desc := r.descriptors[i]
-		if desc.ID != id {
-			continue
-		}
-		if desc.Supports(mode) {
-			return true
-		}
-	}
-	return false
-}
-
 // Supports reports whether the descriptor lists the given mode.
 func (d Descriptor) Supports(mode Mode) bool {
 	return slices.Contains(d.Modes, mode)

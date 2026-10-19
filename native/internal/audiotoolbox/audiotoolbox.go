@@ -27,7 +27,6 @@ type symbols struct {
 	setProperty  func(converter uintptr, id uint32, size uint32, data unsafe.Pointer) int32                                    `sym:"AudioConverterSetProperty"`
 	getProperty  func(converter uintptr, id uint32, size *uint32, data unsafe.Pointer) int32                                   `sym:"AudioConverterGetProperty"`
 	fill         func(converter uintptr, proc uintptr, user uintptr, packets *uint32, out *bufferList, desc *packetDesc) int32 `sym:"AudioConverterFillComplexBuffer"`
-	reset        func(converter uintptr) int32                                                                                 `sym:"AudioConverterReset"`
 }
 
 // streamDescription is AudioStreamBasicDescription.
