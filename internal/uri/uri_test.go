@@ -33,3 +33,31 @@ func TestScheme(t *testing.T) {
 		}
 	}
 }
+
+// An RTMP URL's stream key, its last path segment, never shows.
+func TestRTMPStreamKeyRedacted(t *testing.T) {
+	for raw, want := range map[string][2]string{
+		"rtmp://a.rtmp.youtube.com/live2/abcd-efgh-ijkl":    {"rtmp://a.rtmp.youtube.com/live2/REDACTED", "rtmp://a.rtmp.youtube.com/live2/REDACTED"},
+		"rtmps://u:p@live.twitch.tv:443/app/live_1?token=t": {"rtmps://live.twitch.tv:443/app/REDACTED", "rtmps://REDACTED@live.twitch.tv:443/app/REDACTED?token=REDACTED"},
+		"RTMP://host/app/inst/key%2Fwith%2Fslashes":         {"rtmp://host/app/inst/REDACTED", "rtmp://host/app/inst/REDACTED"},
+		"rtmp://host/live":           {"rtmp://host/live", "rtmp://host/live"},
+		"https://host/app/not-a-key": {"https://host/app/not-a-key", "https://host/app/not-a-key"},
+	} {
+		u, err := url.Parse(raw)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if name, full := Redact(u); name != want[0] || full != want[1] {
+			t.Errorf("Redact(%q) = %q, %q; want %q, %q", raw, name, full, want[0], want[1])
+		}
+	}
+	for in, want := range map[string]string{
+		`file a.flv ! uri "rtmp://a.rtmp.youtube.com/live2/abcd-efgh"`: `file a.flv ! uri "rtmp://a.rtmp.youtube.com/live2/*********"`,
+		`uri "rtmps://h/app/key?x=1" ! x`:                              `uri "rtmps://h/app/***?x=1" ! x`,
+		`"rtmp://h/live"`:                                              `"rtmp://h/live"`,
+	} {
+		if got := Mask(in); got != want {
+			t.Errorf("Mask(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

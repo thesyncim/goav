@@ -73,8 +73,8 @@ func (s *recipeState) planSinkEncodes() error {
 }
 
 // sinkEncode is the encode a frame stream from node from needs to reach the
-// destination node dest: the first packet codec of its media dest accepts
-// whose encoder the runtime has.
+// destination node dest: the first packet codec of its media dest encodes
+// to (Encodes, else Accepts) whose encoder the runtime has.
 func (s *recipeState) sinkEncode(dest recipeir.Node, from recipeir.NodeID) (codec.Spec, bool) {
 	accepts := s.req.Dests[dest.Output].Accepts
 	if dest.Kind != recipeir.NodeOutput || !s.req.Dests[dest.Output].Sink || len(accepts) == 0 || acceptsDomain(accepts, shape.DomainFrame) {
@@ -84,7 +84,7 @@ func (s *recipeState) sinkEncode(dest recipeir.Node, from recipeir.NodeID) (code
 	if media == "" {
 		return codec.Spec{}, false
 	}
-	for _, accepted := range accepts {
+	for _, accepted := range encodeTargets(s.req.Dests[dest.Output]) {
 		if accepted.Codec == "" || accepted.MediaKind != "" && accepted.MediaKind != media {
 			continue
 		}
@@ -93,6 +93,15 @@ func (s *recipeState) sinkEncode(dest recipeir.Node, from recipeir.NodeID) (code
 		}
 	}
 	return codec.Spec{}, false
+}
+
+// encodeTargets is what a media sink encodes frames to: its Encodes, or
+// what it accepts.
+func encodeTargets(destination Destination) shape.Set {
+	if len(destination.Encodes) != 0 {
+		return destination.Encodes
+	}
+	return destination.Accepts
 }
 
 // pathMedia is the media kind a stream carries at node id, or "" when the
@@ -199,14 +208,18 @@ func ValidateSinkShape(operation string, node string, destinationName string, de
 		return nil
 	}
 	media := actual.MediaKind
+	targets := destination.Accepts
+	if actual.Domain == shape.DomainFrame {
+		targets = encodeTargets(destination)
+	}
 	var first av.CodecID
-	for _, spec := range destination.Accepts {
+	for _, spec := range targets {
 		if spec.Codec != "" && (media == "" || spec.MediaKind == "" || spec.MediaKind == media) {
 			first = spec.Codec
 			break
 		}
 	}
-	accepted := acceptedCodecs(destination.Accepts, media)
+	accepted := acceptedCodecs(targets, media)
 	var fixes []string
 	switch {
 	case first == "":

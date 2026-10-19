@@ -13,9 +13,17 @@ const Marker = "REDACTED"
 
 // Redact renders u for reports: name is scheme://host/path with no userinfo,
 // query, or fragment; full keeps the query with secret values replaced and
-// userinfo as Marker.
+// userinfo as Marker. An RTMP URL's last path segment, its stream key, is
+// Marker in both.
 func Redact(u *url.URL) (name, full string) {
 	shown := *u
+	if StreamKeyed(u.Scheme) {
+		escaped := u.EscapedPath()
+		if i := strings.LastIndexByte(escaped, '/'); i > 0 && i < len(escaped)-1 {
+			prefix, _ := url.PathUnescape(escaped[:i+1])
+			shown.Path, shown.RawPath = prefix+Marker, escaped[:i+1]+Marker
+		}
+	}
 	shown.User = nil
 	shown.RawQuery, shown.ForceQuery = "", false
 	shown.Fragment, shown.RawFragment = "", ""
@@ -41,6 +49,13 @@ func query(raw string) string {
 	return strings.Join(parts, "&")
 }
 
+// StreamKeyed reports a scheme whose URLs end in a credential: RTMP's
+// (rtmp, rtmps, and their variants) name the stream key as the last path
+// segment after the application, rtmp://host/app/key.
+func StreamKeyed(scheme string) bool {
+	return len(scheme) >= 4 && strings.EqualFold(scheme[:4], "rtmp")
+}
+
 // Secret reports a query parameter that may carry a credential. Matching
 // errs wide: a redacted harmless value costs nothing.
 func Secret(name string) bool {
@@ -56,8 +71,9 @@ func Secret(name string) bool {
 	return false
 }
 
-// Mask overwrites, byte for byte, the userinfo and secret query values of
-// every URL in text, so a source excerpt keeps its columns.
+// Mask overwrites, byte for byte, the userinfo, secret query values, and
+// RTMP stream keys of every URL in text, so a source excerpt keeps its
+// columns.
 func Mask(text string) string {
 	out := []byte(text)
 	for from := 0; ; {
@@ -70,14 +86,23 @@ func Mask(text string) string {
 		for end < len(text) && !strings.ContainsRune(" \t\n\"'", rune(text[end])) {
 			end++
 		}
-		maskURL(out[start:end])
+		maskURL(out[start:end], StreamKeyed(schemeBefore(text, from+i)))
 		from = end
 	}
 }
 
+// schemeBefore is the scheme whose "://" starts at text[colon:].
+func schemeBefore(text string, colon int) string {
+	start := colon
+	for start > 0 && strings.ContainsRune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789+-.", rune(text[start-1])) {
+		start--
+	}
+	return text[start:colon]
+}
+
 // maskURL masks the authority's userinfo and the query's secret values of
-// one URL after its "://".
-func maskURL(u []byte) {
+// one URL after its "://", and with keyed its path's last segment.
+func maskURL(u []byte, keyed bool) {
 	authority := len(u)
 	for i, c := range u {
 		if c == '/' || c == '?' || c == '#' {
@@ -87,6 +112,15 @@ func maskURL(u []byte) {
 	}
 	if at := strings.LastIndexByte(string(u[:authority]), '@'); at >= 0 {
 		fill(u[:at])
+	}
+	if keyed {
+		path := u[authority:]
+		if end := strings.IndexAny(string(path), "?#"); end >= 0 {
+			path = path[:end]
+		}
+		if i := strings.LastIndexByte(string(path), '/'); i > 0 {
+			fill(path[i+1:])
+		}
 	}
 	q := strings.IndexByte(string(u), '?')
 	if q < 0 {

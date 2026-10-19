@@ -36,6 +36,22 @@ type shapeAccepter interface {
 	InputShapes() shape.Set
 }
 
+// encodeShaper is a media destination that encodes frames to fewer codecs
+// than it takes as packets: an RTMP publisher takes HEVC packets but
+// encodes frames to H.264, which every server reads.
+type encodeShaper interface {
+	EncodeShapes() shape.Set
+}
+
+// sinkEncodes is the shapes a sink destination encodes frames to, or nil
+// for what it accepts.
+func sinkEncodes(sink pipeline.Sink) shape.Set {
+	if shaper, ok := sink.(encodeShaper); ok {
+		return shaper.EncodeShapes().Clone()
+	}
+	return nil
+}
+
 // sinkAccepts is the shapes a sink destination declares, or nil.
 func sinkAccepts(sink pipeline.Sink) shape.Set {
 	if accepter, ok := sink.(shapeAccepter); ok {

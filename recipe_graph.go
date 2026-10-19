@@ -348,6 +348,7 @@ func compileDestinationFromSpec(spec destinationSpec) compile.Destination {
 		facts.SinkName = spec.sink.Name()
 		facts.SinkDetail = compile.DescribedNodeDetail(spec.sink)
 		facts.Accepts = sinkAccepts(spec.sink)
+		facts.Encodes = sinkEncodes(spec.sink)
 	}
 	return facts
 }

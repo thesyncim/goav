@@ -101,6 +101,10 @@ type Destination struct {
 	// Accepts is what a media sink declares it takes (InputShapes), in
 	// preference order; nil takes anything.
 	Accepts shape.Set
+	// Encodes narrows Accepts to the shapes the planner encodes frames to
+	// (EncodeShapes), when a sink takes packets it would not encode to;
+	// nil means Accepts.
+	Encodes shape.Set
 	// HasOutput reports a byte destination; Output is its address.
 	HasOutput bool
 	Output    format.Output

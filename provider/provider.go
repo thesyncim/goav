@@ -105,6 +105,9 @@ type DestinationScheme interface {
 //   - InputShapes() shape.Set — what it takes, in preference order: the
 //     planner encodes frames to the first codec it can encode, and refuses
 //     other packets with the fix.
+//   - EncodeShapes() shape.Set — the part of InputShapes frames are
+//     encoded to, when it takes packets it should not get encodes of: an
+//     RTMP publisher takes HEVC packets but encodes frames to H.264.
 //   - Live() bool — true for a sink that consumes in real time (RTP out,
 //     WHIP): its recipe plans realtime, so a file routed to it plays at its
 //     media time instead of in one burst.

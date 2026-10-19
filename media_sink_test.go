@@ -290,3 +290,29 @@ func TestMediaSinkLearnsTheConfiguredBitrate(t *testing.T) {
 		t.Fatalf("streams = %+v, want the configured bitrate on the encoded stream", sink.streams)
 	}
 }
+
+// encodeShapedSink takes more codecs as packets than it encodes frames to.
+type encodeShapedSink struct {
+	*mediaSink
+	encodes shape.Set
+}
+
+func (s encodeShapedSink) EncodeShapes() shape.Set { return s.encodes }
+
+// TestMediaSinkEncodesOnlyToItsEncodeShapes pins EncodeShapes: a sink that
+// takes VP8 packets but encodes frames only to H264 (an RTMP publisher's
+// classic codec) passes VP8 packets through, and refuses frames with the
+// H264 encode when no H264 encoder is registered, instead of encoding VP8.
+func TestMediaSinkEncodesOnlyToItsEncodeShapes(t *testing.T) {
+	rt := bundle.MustNew()
+	h264 := shape.Packet(av.MediaVideo, av.CodecH264)
+	sink := func() goav.Destination {
+		return goav.Sink(encodeShapedSink{newMediaSink(h264, shape.Packet(av.MediaVideo, av.CodecVP8)), shape.Set{h264}})
+	}
+	_, err := rt.Describe(goavtest.Video(64, 64, 1).Video().To(sink()))
+	assertSinkRefusal(t, err, "encode to a codec the destination takes: .Encode(codec.H264())")
+	vp8 := goavtest.Packets(av.CodecVP8, av.Packet{Keyframe: true, Payload: av.Buffer{Bytes: []byte{1}}})
+	if _, err := rt.Describe(vp8.Video().To(sink())); err != nil {
+		t.Fatalf("VP8 packets refused: %v", err)
+	}
+}
