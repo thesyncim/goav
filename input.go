@@ -19,17 +19,22 @@ import (
 	"github.com/thesyncim/goav/shape"
 )
 
-// InputSpec is one declared recipe input: a file-like reader, custom source, or
-// source provider, plus the optional name and MIME facts the planner uses
-// before opening it. Construct one with FileInput, Source, or
-// Input; configure it with options (Name, MIME, Metadata) and decorate the
-// opened source with WrapSource. Packet/frame codec facts come from a custom
-// Source or provider SourceShape declaration. The zero value is intentionally
-// not a valid input; construct input specs with FileInput, Source, or Input.
+// InputSpec is one declared recipe input: a file-like reader, a URL, a custom
+// source, or a provider input, plus the optional name and MIME facts the
+// planner uses before opening it. Construct one with FileInput, URIInput,
+// Source, or Input; configure it with options (Name, MIME, Metadata,
+// Reconnect) and decorate the opened source with WrapSource. Packet/frame
+// codec facts come from a custom Source or provider SourceShape declaration.
+// The zero value is intentionally not a valid input; construct input specs
+// with FileInput, URIInput, Source, or Input.
 type InputSpec struct {
 	origin   inputSpecOrigin
 	input    format.Input
 	provider provider.Source
+	// bytes is a provider of container bytes, demuxed like a file input.
+	bytes provider.ByteSource
+	// uri is a URIInput, which the runtime binds to provider or bytes.
+	uri      *uriRef
 	source   *sourceInputSpec
 	codec    codec.Spec
 	name     string
@@ -144,6 +149,10 @@ func (s InputSpec) formatInput() format.Input {
 }
 
 func (s InputSpec) validate() error {
+	var refusal *BuildError
+	if errors.As(s.err, &refusal) {
+		return refusal
+	}
 	if s.err != nil {
 		fixes := []string{
 			"check the input constructor arguments",
@@ -247,7 +256,7 @@ func (s InputSpec) validateCustomSource() error {
 }
 
 func (s InputSpec) validatePlainInput() error {
-	if s.provider != nil {
+	if s.provider != nil || s.bytes != nil {
 		return nil
 	}
 	if s.source != nil {
@@ -299,7 +308,7 @@ func recipeIRInputFromSpec(s InputSpec) recipeir.Input {
 		out.Kind = recipeir.InputKindCustomSource
 	case s.provider != nil:
 		out.Kind = recipeir.InputKindProvider
-	case s.input.Name != "" || s.input.URI != "" || s.input.Protocol != "" || s.input.MIMEType != "" || s.input.Reader != nil || s.input.ReaderAt != nil:
+	case s.bytes != nil, s.input.Name != "" || s.input.URI != "" || s.input.Protocol != "" || s.input.MIMEType != "" || s.input.Reader != nil || s.input.ReaderAt != nil:
 		out.Kind = recipeir.InputKindByteStream
 	}
 	if sourceShape, ok := declaredSourceShape(s); ok {
@@ -370,7 +379,7 @@ func validateInputFormatAdapters(ctx context.Context, rt *Runtime, inputs []Inpu
 			continue
 		}
 		input := inputs[i].input
-		result, err := rt.formats.Probe(ctx, inputProbeRequest(input))
+		result, err := rt.probeInput(ctx, input, inputs[i].pinnedFormat())
 		if err != nil {
 			return nil, inputFormatProbeError(input, err)
 		}
@@ -390,4 +399,22 @@ func (s InputSpec) sourceEventDomain() shape.MediaDomain {
 		return spec.Domain
 	}
 	return shape.DomainPacket
+}
+
+// pinnedFormat is the container a byte provider declares
+// (SourceShape().Format), which replaces probing.
+func (s InputSpec) pinnedFormat() av.FormatID {
+	if s.bytes == nil {
+		return ""
+	}
+	return s.bytes.SourceShape().Format
+}
+
+// probeInput resolves an input's container: the pinned format when the input
+// declares one, else the runtime's probers over its name, URI, and MIME type.
+func (r *Runtime) probeInput(ctx context.Context, input format.Input, pinned av.FormatID) (format.ProbeResult, error) {
+	if pinned != "" {
+		return format.ProbeResult{Format: pinned, Score: 100, Reason: "declared by the input"}, nil
+	}
+	return r.formats.Probe(ctx, inputProbeRequest(input))
 }

@@ -186,6 +186,12 @@ func matchExtension(candidates []string, name string) bool {
 	if name == "" {
 		return false
 	}
+	if strings.Contains(name, "://") {
+		// A URL's extension is its path's: drop the query and fragment.
+		if i := strings.IndexAny(name, "?#"); i >= 0 {
+			name = name[:i]
+		}
+	}
 	ext := strings.ToLower(filepath.Ext(name))
 	for i := range candidates {
 		if strings.EqualFold(candidates[i], ext) {

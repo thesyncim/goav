@@ -20,10 +20,12 @@ import (
 
 // destinationSpec describes a concrete file, URI, writer, or sink destination.
 type destinationSpec struct {
-	id             uint64
-	output         format.Output
-	sink           pipeline.Sink
-	custom         provider.Destination
+	id     uint64
+	output format.Output
+	sink   pipeline.Sink
+	custom provider.Destination
+	// uri is a URI destination, which the runtime binds to custom.
+	uri            *uriRef
 	format         av.FormatID
 	resolvedFormat av.FormatID
 	name           string
@@ -130,22 +132,6 @@ func fileDestination(name string, writer io.Writer) destinationSpec {
 		spec.err = errNilWriter
 	}
 	return spec
-}
-
-// URI creates a URI destination opened by a registered format adapter.
-func URI(uri string, opts ...DestinationOption) Destination {
-	return destinationHandle(applyDestinationOptions(uriDestination(uri), opts))
-}
-
-func uriDestination(uri string) destinationSpec {
-	return destinationSpec{
-		id: destinationSpecSeq.Add(1),
-		output: format.Output{
-			Name: uri,
-			URI:  uri,
-		},
-		name: uri,
-	}
 }
 
 // Sink creates a media-message destination for decoded frames or packets.
@@ -434,11 +420,21 @@ func (s destinationSpec) Open(ctx context.Context, info provider.Info) (provider
 		}
 		return nopDestinationWriter{Writer: s.output.Writer}, nil
 	}
-	return nil, publicError(compile.DestinationInvalidError("open destination", firstNonEmpty(info.Name, s.name, "destination"), "destination does not provide a writer"))
+	return nil, destinationWriterMissing(firstNonEmpty(info.Name, s.name, "destination"))
+}
+
+// destinationWriterMissing refuses to open a destination with no writer: no
+// muxer is ever handed a nil one.
+func destinationWriterMissing(name string) error {
+	return publicError(compile.DestinationInvalidError("open destination", name, "destination does not provide a writer"))
 }
 
 func (s destinationSpec) validate(operation string, fallback string) error {
 	node := s.label(fallback)
+	var refusal *BuildError
+	if errors.As(s.err, &refusal) {
+		return refusal
+	}
 	if s.err != nil {
 		if errors.Is(s.err, errNilWriter) && s.output.Protocol == av.ProtocolFile {
 			return &BuildError{

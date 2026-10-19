@@ -68,7 +68,7 @@ func FamilyForCode(code Code) Family {
 	switch code {
 	case Code("input_invalid"), Code("input_duplicate"),
 		Code("input_unknown"), Code("input_format_unknown"),
-		Code("input_demuxer_missing"),
+		Code("input_demuxer_missing"), Code("input_scheme_unsupported"),
 		Code("source_callback_missing"), Code("source_shape_invalid"),
 		Code("source_shape_unsupported"), Code("source_shape_mismatch"),
 		Code("explicit_graph_source_missing"):
@@ -96,7 +96,7 @@ func FamilyForCode(code Code) Family {
 	case Code("output_invalid"), Code("output_duplicate"),
 		Code("output_kind_mixed"), Code("output_writer_missing"),
 		Code("output_format_missing"), Code("output_format_unknown"), Code("output_muxer_missing"),
-		Code("output_destination_missing"), Code("destination_invalid"),
+		Code("output_destination_missing"), Code("output_scheme_unsupported"), Code("destination_invalid"),
 		Code("destination_duplicate"), Code("destination_format_unknown"), Code("destination_muxer_missing"),
 		Code("destination_mux_incompatible"), Code("destination_shape_mismatch"):
 		return FamilyDestination

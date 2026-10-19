@@ -42,3 +42,13 @@ func customSourceDetail(input InputSpec) string {
 	}
 	return compile.JoinSpecDetail(parts...)
 }
+
+// providerDetail is a provider input's node detail: the provider's own, plus
+// the scheme a URIInput resolved through.
+func (s InputSpec) providerDetail() string {
+	detail := providerNodeDetail(s.provider)
+	if s.uri == nil {
+		return detail
+	}
+	return compile.JoinSpecDetail(detail, "protocol="+s.uri.scheme)
+}

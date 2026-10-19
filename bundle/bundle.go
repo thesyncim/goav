@@ -25,11 +25,12 @@ import (
 	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/plan"
 	runconfig "github.com/thesyncim/goav/runconfig"
+	"github.com/thesyncim/goav/scheme"
 )
 
-// New builds a runtime with the bundled formats, codecs, and filters already
-// registered, then applies opts on top. Registration is last-wins, so opts can
-// add or override bundled implementations.
+// New builds a runtime with the bundled formats, codecs, filters, and URL
+// schemes already registered, then applies opts on top. Registration is
+// last-wins, so opts can add or override bundled implementations.
 func New(opts ...runconfig.Option) (*goav.Runtime, error) {
 	return goav.New(appendOptions(Options(), opts...)...)
 }
@@ -81,15 +82,16 @@ func Explain(ctx context.Context, outs ...goav.Output) (plan.Report, error) {
 	return Default().Explain(ctx, outs...)
 }
 
-// Options returns fresh runtime options for all bundled formats, codecs, and
-// filters. The returned slice is safe for callers to append to.
+// Options returns fresh runtime options for all bundled formats, codecs,
+// filters, and URL schemes. The returned slice is safe for callers to append
+// to.
 func Options() []runconfig.Option {
-	return []runconfig.Option{Formats(), Codecs(), Filters()}
+	return []runconfig.Option{Formats(), Codecs(), Filters(), Schemes()}
 }
 
-// Formats, Codecs, and Filters are each one runtime option registering one
-// bundled family, for runtimes that pair part of the bundle with their own
-// adapters:
+// Formats, Codecs, Filters, and Schemes are each one runtime option
+// registering one bundled family, for runtimes that pair part of the bundle
+// with their own adapters:
 //
 //	rt, err := goav.New(bundle.Filters(), myCodecOption)
 //
@@ -101,6 +103,11 @@ func Codecs() runconfig.Option { return group(codecOptions) }
 
 // Filters registers the frame filters: resample and resize.
 func Filters() runconfig.Option { return group(filterOptions) }
+
+// Schemes registers the URL schemes goav.URIInput and goav.URI resolve
+// through: file, http, and https (package scheme). Add others, or replace
+// these, with runconfig.Scheme.
+func Schemes() runconfig.Option { return group(schemeOptions) }
 
 func group(options []runconfig.Option) runconfig.Option {
 	return func(config *runconfig.Config) error {
@@ -139,4 +146,8 @@ func appendOptions(base []runconfig.Option, extra ...runconfig.Option) []runconf
 	options = append(options, base...)
 	options = append(options, extra...)
 	return options
+}
+
+var schemeOptions = []runconfig.Option{
+	runconfig.Scheme("file", scheme.File()),
 }

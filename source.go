@@ -2,6 +2,7 @@ package goav
 
 import (
 	"context"
+	"io"
 	"sync/atomic"
 
 	"github.com/thesyncim/goav/av"
@@ -227,14 +228,21 @@ func (s InputSpec) openGraphSourceBuildKind(ctx context.Context, service *builde
 			realtime: shapeSpec.Realtime,
 		}, nil
 	case s.provider != nil:
-		return openProviderSource(ctx, s.provider, name, service.taskClock())
+		return openProviderSource(ctx, s.provider, name, s.providerDetail(), service.taskClock())
 	default:
 		input := s.formatInput()
 		qualifier := ""
 		if qualify {
 			qualifier = "@" + name
 		}
-		build, err := service.openDemuxSource(ctx, input, qualifier)
+		var reader io.ReadCloser
+		if s.bytes != nil {
+			var err error
+			if input, reader, err = openByteInput(ctx, s.bytes, input); err != nil {
+				return graphSourceBuild{}, err
+			}
+		}
+		build, err := service.openDemuxSource(ctx, input, qualifier, s.pinnedFormat(), reader)
 		if err != nil {
 			return graphSourceBuild{}, err
 		}
@@ -299,7 +307,7 @@ func (s InputSpec) graphSourceNodeDetail() string {
 	case s.source != nil:
 		return customSourceDetail(s)
 	case s.provider != nil:
-		return providerNodeDetail(s.provider)
+		return s.providerDetail()
 	default:
 		return inputNodeDetail(s.formatInput())
 	}

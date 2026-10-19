@@ -55,6 +55,7 @@ func (t *task) attachBranches(outs []Output) ([]attachBranch, error) {
 	if err != nil {
 		return nil, err
 	}
+	g.bindSchemes(t.runtime)
 	taps := map[string]shape.MediaDomain{}
 	for _, tap := range t.Taps() {
 		taps[tap.Name] = tap.Domain
