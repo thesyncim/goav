@@ -231,8 +231,9 @@ methodology changes, and migration notes.
   runs Handle, and a producer finding it busy queues on a lock-free list and
   parks; the owner hands the node on or runs that message for it. A buffered
   node's queue is a bounded lock-free ring of its preallocated slots instead
-  of a mutex and two channels, and a blocked `Blocking` producer parks on its
-  own channel. Sheds count in atomics. Pinned by a call-graph walk and a
+  of a mutex and two channels. Blocked `Blocking` producers wait first come,
+  first served on their own channels, and a released slot goes straight to
+  the one that waited longest. Sheds count in atomics. Pinned by a call-graph walk and a
   contended mutex-profile run; zero allocations are pinned under contention
   too. Interleaved benchstat, n=8, 16-core M4 Max: DirectFanout -39 to -53%,
   DirectFanoutParallel N=1/8 -25/-18% and N=64/512 +6%, BufferedFanout N=8

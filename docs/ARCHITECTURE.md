@@ -268,8 +268,9 @@ to 1 runs Handle, so a lone producer pays two CASes; one arriving while it is
 owned queues on a lock-free waiter list and parks, and the owner hands it the
 node or runs its message for it), a buffered node by its queue, a bounded
 lock-free ring of preallocated slots (Vyukov's sequence-numbered cells)
-drained by one worker. A blocked `DropBlock` producer parks on its own wake
-channel. Sheds count in atomics.
+drained by one worker. Blocked `DropBlock` producers wait first come, first
+served, each on its own wake channel, and a released slot goes straight to
+the oldest (`TestParkLinesServeInJoinOrder`). Sheds count in atomics.
 `TestDataPlaneTakesNoMutex` walks the message path's call graph for any lock
 and `TestDataPlaneNoContendedMutex` runs it contended under the mutex profile.
 The one lock an emit can reach is control plane: an event message records its
