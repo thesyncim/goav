@@ -231,3 +231,47 @@ func TestWaiterQueueConcurrentExactlyOnce(t *testing.T) {
 		}
 	}
 }
+
+// TestRingNeverReportsSpuriousFull pins that a pop between claiming its
+// position and handing the cell back never makes the ring look full: with
+// one consumer popping a one-cell ring, a pusher that pushes only once the
+// ring is drained must always find room.
+func TestRingNeverReportsSpuriousFull(t *testing.T) {
+	const pushes = 200_000
+	var r ring[int]
+	r.reset(1)
+	values := make([]int, pushes)
+	var done atomic.Bool
+	var popped atomic.Int64
+	var wg sync.WaitGroup
+	wg.Go(func() {
+		for !done.Load() || !r.drained() {
+			if r.pop() != nil {
+				popped.Add(1)
+			}
+		}
+	})
+	spurious := 0
+	for i := range values {
+		for !r.drained() {
+			runtime.Gosched()
+		}
+		if r.fullAt(r.tail.Load()) {
+			spurious++
+		}
+		if r.push(&values[i], false) != ringOK {
+			spurious++
+			for r.push(&values[i], false) != ringOK {
+				runtime.Gosched()
+			}
+		}
+	}
+	done.Store(true)
+	wg.Wait()
+	if spurious != 0 {
+		t.Fatalf("%d spurious full reports in %d pushes into a drained ring", spurious, pushes)
+	}
+	if got := popped.Load(); got != pushes {
+		t.Fatalf("popped %d of %d", got, pushes)
+	}
+}

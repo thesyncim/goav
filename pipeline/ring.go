@@ -117,9 +117,14 @@ func (r *ring[T]) push(v *T, owner bool) ringStatus {
 				return ringOK
 			}
 		case int64(seq-2*pos) < 0:
-			if r.tail.Load() == t {
+			if r.tail.Load() != t {
+				break // tail moved: reload
+			}
+			if r.occupied(pos) {
 				return ringFull
 			}
+			// A pop claimed the oldest value and is handing its cell back.
+			runtime.Gosched()
 		}
 		// Another push claimed pos first, or a flag changed: reload.
 	}
@@ -175,13 +180,33 @@ func (r *ring[T]) pushWait(v *T) {
 	}
 }
 
-// fullAt reports whether a push at tail word t would find the ring full.
+// fullAt reports whether a push at tail word t would find the ring full: the
+// cell it needs still holds the value pushed a lap ago, and that value has
+// not been popped. A pop that claimed it (moved the head past it) but has not
+// handed the cell back yet is waited out, not reported: calling that full
+// would shed (DropNewest) or fail (DropNever) a message the queue has room
+// for.
 func (r *ring[T]) fullAt(t uint64) bool {
 	if r.size == 0 {
 		return true
 	}
 	pos := t & ringPos
-	return int64(r.cell(pos).seq.Load()-2*pos) < 0
+	c := r.cell(pos)
+	for int64(c.seq.Load()-2*pos) < 0 {
+		if r.occupied(pos) {
+			return true
+		}
+		runtime.Gosched()
+	}
+	return false
+}
+
+// occupied reports whether every one of the ring's positions up to pos is
+// still claimed and unpopped, so a push at pos has no room. It is false while
+// the pop of the value a lap behind pos has claimed it and is handing its
+// cell back.
+func (r *ring[T]) occupied(pos uint64) bool {
+	return int64(pos-r.head.Load()) >= int64(r.size)
 }
 
 // ready reports whether a pop would find a published value.
