@@ -182,8 +182,12 @@ func (d *containerDemuxer) ReadInto(_ context.Context, out *format.ReadResult) e
 	packet.DTS.Value, packet.DTS.Base = parseContainerTime(&r)
 	duration, durationBase := parseContainerTime(&r)
 	packet.Duration = av.Duration{Value: duration, Base: durationBase}
-	packet.Payload.Bytes = append(packet.Payload.Bytes[:0], r.blob()...)
+	// A pooled payload passes to the source without a second copy.
+	blob := r.blob()
+	packet.Payload = av.NewBuffer(len(blob))
+	copy(packet.Payload.Bytes, blob)
 	if !r.ok {
+		packet.Payload.Release()
 		return errors.New("goavtest: corrupt container packet record")
 	}
 	out.PacketReady = true

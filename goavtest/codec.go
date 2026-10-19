@@ -89,6 +89,8 @@ func (e *passthroughEncoder) EncodeInto(_ context.Context, frame *av.Frame, out 
 	packet.DTS = frame.PTS
 	packet.Duration = frame.Duration
 	packet.Keyframe = true
+	// Serialize straight into pooled memory, which the stage hands on as is.
+	packet.Payload = av.NewBuffer(framePayloadSize(frame))
 	packet.Payload.Bytes = appendFramePayload(packet.Payload.Bytes[:0], frame)
 	return nil
 }
@@ -162,6 +164,24 @@ const (
 	frameKindAudio byte = 1
 	frameKindVideo byte = 2
 )
+
+// framePayloadSize is the exact length appendFramePayload writes for frame.
+func framePayloadSize(frame *av.Frame) int {
+	n := len(framePayloadMagic) + 1
+	switch {
+	case frame.Audio != nil:
+		n += 4 + 4 + 4 + len(frame.Audio.ChannelLayout) + 4 + len(frame.Audio.SampleFormat) + 4
+	case frame.Video != nil:
+		n += 4 + 4 + 4 + len(frame.Video.PixelFormat)
+	default:
+		n += 4 + 4 + 4
+	}
+	n += 4
+	for i := range frame.Planes {
+		n += 4 + 4 + 4 + len(frame.Planes[i].Buffer.Bytes)
+	}
+	return n
+}
 
 // appendFramePayload serializes one frame — header plus every plane — into
 // the packet payload.

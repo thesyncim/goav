@@ -59,6 +59,30 @@
       }
     },
     {
+      "name": "BenchmarkBranchFanout/i420/branches=2",
+      "metrics": {
+        "B/op": 92657,
+        "allocs/op": 2,
+        "ns/op": 29204
+      },
+      "ceilings": {
+        "B/op": 200000,
+        "allocs/op": 4
+      }
+    },
+    {
+      "name": "BenchmarkBranchFanout/i420/branches=8",
+      "metrics": {
+        "B/op": 156593,
+        "allocs/op": 3,
+        "ns/op": 34245
+      },
+      "ceilings": {
+        "B/op": 300000,
+        "allocs/op": 5
+      }
+    },
+    {
       "name": "BenchmarkComposite",
       "metrics": {
         "B/op": 87604,
@@ -215,12 +239,12 @@
     {
       "name": "BenchmarkSharedMuxGroup",
       "metrics": {
-        "B/op": 1884,
+        "B/op": 3307,
         "allocs/op": 1,
         "ns/op": 4060
       },
       "ceilings": {
-        "B/op": 2908,
+        "B/op": 4331,
         "allocs/op": 1
       }
     },

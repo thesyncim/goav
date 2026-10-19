@@ -261,17 +261,19 @@ func (d *Decoder) fillDecodedFrame(pkt *av.Packet, src *goh264lib.Frame, frame *
 		return err
 	}
 
+	// goh264 hands back a fresh copy of each picture that it never touches
+	// again, so the planes are published as they are, without a pool copy.
 	frame.Planes = frame.Planes[:3]
 	frame.Planes[0] = av.Plane{
-		Buffer: av.Buffer{Bytes: src.Y},
+		Buffer: av.Buffer{Bytes: src.Y, Owner: pictureOwner{}},
 		Stride: src.YStride,
 	}
 	frame.Planes[1] = av.Plane{
-		Buffer: av.Buffer{Bytes: src.Cb},
+		Buffer: av.Buffer{Bytes: src.Cb, Owner: pictureOwner{}},
 		Stride: src.CStride,
 	}
 	frame.Planes[2] = av.Plane{
-		Buffer: av.Buffer{Bytes: src.Cr},
+		Buffer: av.Buffer{Bytes: src.Cr, Owner: pictureOwner{}},
 		Stride: src.CStride,
 	}
 
@@ -310,3 +312,14 @@ func (d *Decoder) appendKeyframeRequest(out *codec.DecodeResult, reason string) 
 	})
 	return nil
 }
+
+// pictureOwner is the av.BufferOwner of a decoded picture's planes. goh264
+// allocates each output picture for the caller alone and never writes it
+// again, so the garbage collector is the only owner the planes need: Retain
+// and Release do nothing, and Refs reports the planes shared, so a holder
+// that wants to write them copies first (av.Buffer.MakeWritable).
+type pictureOwner struct{}
+
+func (pictureOwner) Retain()   {}
+func (pictureOwner) Release()  {}
+func (pictureOwner) Refs() int { return 2 }

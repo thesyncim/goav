@@ -29,7 +29,7 @@ func TestRegisterWithBuildTagProvidesFactory(t *testing.T) {
 	}
 }
 
-func TestDecodeAnnexBIntoBorrowedVideoFrame(t *testing.T) {
+func TestDecodeAnnexBIntoPictureVideoFrame(t *testing.T) {
 	ctx := context.Background()
 	decoder, err := NewDecoderFactory().NewDecoder(ctx, codec.DecodeConfig{
 		Stream: h264TestStream(),
@@ -71,8 +71,9 @@ func TestDecodeAnnexBIntoBorrowedVideoFrame(t *testing.T) {
 		t.Fatalf("planes = %d, want 3", len(frame.Planes))
 	}
 	for i := range frame.Planes {
-		if frame.Planes[i].Buffer.Owner != nil || len(frame.Planes[i].Buffer.Bytes) == 0 {
-			t.Fatalf("plane[%d] = %+v", i, frame.Planes[i])
+		// The picture is goh264's fresh copy, published without a pool copy.
+		if _, ok := frame.Planes[i].Buffer.Owner.(pictureOwner); !ok || len(frame.Planes[i].Buffer.Bytes) == 0 {
+			t.Fatalf("plane[%d] owner = %T len = %d, want the picture's own planes", i, frame.Planes[i].Buffer.Owner, len(frame.Planes[i].Buffer.Bytes))
 		}
 	}
 
