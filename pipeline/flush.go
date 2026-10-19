@@ -75,7 +75,7 @@ func (g *bufferedRunner) FlushDownstream(ref NodeRef) error {
 }
 
 // flushNodeQueue drains one node's queue atomically with respect to
-// producers: it locks the ring's tail, so a push waits (parked on space) or
+// producers: it locks the ring's tail, so a push waits (parked) or
 // claims its position before the lock and lands before the drain finishes;
 // the drain then pops everything and requeues the preserved slots in order,
 // so no new message can slip in between. The node's worker keeps consuming
@@ -125,5 +125,5 @@ func (g *bufferedRunner) flushNodeQueue(node *bufferedNode) {
 	}
 	q.unlock()
 	node.wakeWorker()
-	node.wakeAllWaiters()
+	node.wakeParked()
 }

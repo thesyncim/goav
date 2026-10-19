@@ -301,7 +301,7 @@ func TestNodesHoldNoMutex(t *testing.T) {
 	lockFree := map[string]bool{
 		"nodeBase": true, "directNode": true, "bufferedNode": true, "directEmitter": true,
 		"bufferedEmitter": true, "ring": true, "ringCell": true, "waiterQueue": true,
-		"directWaiter": true, "parkingLot": true, "parkedProducer": true, "dropController": true,
+		"directWaiter": true, "parkQueue": true, "mpscQueue": true, "parkedProducer": true, "dropController": true,
 		"nodeCounters": true, "dropCounts": true, "timeOrder": true, "timeTurn": true,
 		"bufferedMessage": true, "inflight": true,
 	}

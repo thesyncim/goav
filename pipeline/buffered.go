@@ -50,11 +50,9 @@ type bufferedNode struct {
 	// qosReportWindow (0 = never reported). Touched only on the shed path.
 	qosLast atomic.Int64
 	// wake parks the worker on an empty queue; a producer that queues while
-	// it sleeps sends the token. space is the parking lot's overflow channel
-	// for producers. Both have capacity 1 and are made once in attachLocked,
-	// so they are never replaced under a running worker.
-	wake  chan struct{}
-	space chan struct{}
+	// it sleeps sends the token. Capacity 1, made once in attachLocked, so it
+	// is never replaced under a running worker.
+	wake chan struct{}
 	// queue holds the slots waiting for the worker; free holds the slots
 	// not in use. Both are reset when the queue opens. A retired node keeps
 	// them, closed and empty, until its index is reused and it is collected:
@@ -67,8 +65,8 @@ type bufferedNode struct {
 	// waiters counts parked producers, so the worker and slot releases pay
 	// one load per message and signal only when it is nonzero.
 	waiters atomic.Int32
-	// lot holds the parked producers' own wake channels.
-	lot parkingLot
+	// parked holds the parked producers, first come, first woken.
+	parked parkQueue
 	// queuedBytes is the payload bytes of queued messages, maintained only
 	// when policy.MaxBytes > 0: a producer reserves before queuing (one CAS
 	// that also checks the budget), releaseSlot subtracts.
@@ -134,6 +132,7 @@ func (g *bufferedRunner) newNode(policy BufferPolicy) (*bufferedNode, error) {
 	// Closed until the queue opens: an emit before Run sheds.
 	n.queue.reset(0)
 	n.free.reset(0)
+	n.parked.init()
 	return n, nil
 }
 
@@ -151,7 +150,6 @@ func (g *bufferedRunner) mutable(source bool) error {
 func (g *bufferedRunner) attachLocked(n *bufferedNode, index int) {
 	n.drop.reset(n.policy)
 	n.wake = make(chan struct{}, 1)
-	n.space = make(chan struct{}, 1)
 	n.emitter = bufferedEmitter{graph: g, from: index, self: n, park: newParkedProducer()}
 	if g.running && n.kind != nodeSource {
 		g.openQueue(n)
@@ -381,6 +379,7 @@ func (g *bufferedRunner) openQueue(node *bufferedNode) {
 	}
 	node.drop.reset(node.policy)
 	node.queuedBytes.Store(0)
+	node.parked.credits.Store(0) // a close left a wake for everyone
 	node.sleeping.Store(false)
 	node.queue.reset(node.policy.Capacity)
 	node.opened = true
@@ -560,6 +559,20 @@ func (g *bufferedRunner) enqueue(ctx context.Context, node *bufferedNode, msg *M
 		}
 		switch node.drop.decide(q.fullAt(t), msg) {
 		case bufferAdmit:
+			if !parked && node.policy.Drop == DropBlock && node.waiters.Load() > 0 {
+				// Producers are parked here: queue behind them rather than take
+				// the room one of them is woken for, so a producer that keeps
+				// running cannot starve the parked ones. Wake one for this room
+				// first, then park until a wakeup reaches this producer.
+				slot = node.giveBack(slot)
+				parked = true
+				held = node.unhold(held)
+				if err := node.await(ctx, awaitTurn, park); err != nil {
+					g.abandon(node, nil, held, parked)
+					return false, err
+				}
+				continue
+			}
 			if slot == nil {
 				if slot = node.free.popWait(); slot == nil {
 					// Every slot is queued, in delivery, or bound by another
@@ -681,17 +694,18 @@ const (
 	awaitSpace  awaitCond = iota // a queue position (full DropBlock queue)
 	awaitSlot                    // a free slot
 	awaitUnlock                  // the end of a flush
+	awaitTurn                    // a wakeup of its own (queued behind parked producers)
 )
 
 // await parks a producer until cond may hold, ctx ends, or the queue closes.
 // It polls nothing and allocates nothing: the producer announces itself in
-// waiters, registers its own wake channel in the node's parking lot (or,
-// with every slot taken, falls back to the shared space channel), checks
-// cond once more, and sleeps. Whatever can satisfy cond (the worker taking a
-// message, a slot returning, a flush ending, the queue closing) changes the
-// queue state first and then reads waiters, so either the producer's check
-// sees the change or the signaler sees the producer, finds it registered,
-// and wakes it (both sides are sequentially consistent atomics). The caller
+// waiters, joins the node's park queue on its own wake channel, and sleeps.
+// Whatever can satisfy cond (the worker taking a message, a slot returning,
+// a flush ending, the queue closing) changes the queue state first and then
+// reads waiters, so either the producer's check (made after announcing)
+// sees the change and asks for a wakeup itself, or the signaler sees the
+// producer and asks for one; the queue delivers it to the oldest parked
+// producer (both sides are sequentially consistent atomics). The caller
 // re-runs its policy decision after every wakeup, so a spurious one only
 // costs a recheck. cached is the producer's own record, nil for Inject.
 func (n *bufferedNode) await(ctx context.Context, cond awaitCond, cached *parkedProducer) error {
@@ -699,23 +713,20 @@ func (n *bufferedNode) await(ctx context.Context, cond awaitCond, cached *parked
 		return err
 	}
 	p := takeParked(cached)
-	defer putParked(cached, p)
 	n.waiters.Add(1)
-	defer n.waiters.Add(-1)
-	slot := n.lot.register(p)
-	if n.ready(cond) {
-		n.lot.leave(slot, p)
-		return nil
-	}
-	wake := n.space
-	if slot >= 0 {
-		wake = p.wake
-	}
+	// A producer queuing behind others (awaitTurn) saw room; a wakeup for it
+	// goes to whoever parked first.
+	n.parked.park(p, cond == awaitTurn || n.ready(cond))
 	select {
-	case <-wake:
+	case <-p.wake:
+		n.waiters.Add(-1)
+		putParked(cached, p)
 		return nil
 	case <-ctx.Done():
-		n.lot.leave(slot, p)
+		n.waiters.Add(-1)
+		if !n.parked.cancel(p) {
+			putParked(cached, p)
+		}
 		return ctx.Err()
 	}
 }
@@ -730,28 +741,23 @@ func (n *bufferedNode) ready(cond awaitCond) bool {
 		return t&ringLocked != 0 || !n.queue.fullAt(t)
 	case awaitSlot:
 		return n.free.ready()
+	case awaitTurn:
+		return false
 	default:
 		return t&ringLocked == 0
 	}
 }
 
-// notifyWaiters wakes a parked producer when one can proceed: the queue has
-// a free position and the pool a free slot (an admit needs both), or the
-// queue closed or locked. Called on every queue take and slot return, it
-// costs one load when nobody waits. Whichever of the take and the return
+// notifyWaiters wakes the oldest parked producer when one can proceed: the
+// queue has a free position and the pool a free slot (an admit needs both),
+// or the queue closed or locked. Called on every queue take and slot return,
+// it costs one load when nobody waits. Whichever of the take and the return
 // completes the pair sees the other's change (each publishes its own and
-// then reads the other's), so the last one signals.
+// then reads the other's), so the last one wakes.
 func (n *bufferedNode) notifyWaiters() {
-	if n.waiters.Load() > 0 && n.hasRoom() && !n.lot.wakeOne() {
-		n.signalSpace()
+	if n.waiters.Load() > 0 && n.hasRoom() {
+		n.parked.wake(1)
 	}
-}
-
-// wakeAllWaiters wakes every parked producer: the queue closed or a flush
-// ended, so each must look again.
-func (n *bufferedNode) wakeAllWaiters() {
-	n.lot.wakeAll()
-	n.signalSpace()
 }
 
 func (n *bufferedNode) hasRoom() bool {
@@ -759,14 +765,16 @@ func (n *bufferedNode) hasRoom() bool {
 	return t&(ringClosed|ringLocked) != 0 || (!n.queue.fullAt(t) && n.free.ready())
 }
 
-// signalSpace leaves the wakeup token for a producer parked on the shared
-// space channel (the parking lot's overflow). It never blocks: a token
-// already there means a wakeup is pending.
-func (n *bufferedNode) signalSpace() {
-	select {
-	case n.space <- struct{}{}:
-	default:
-	}
+// wakeAllWaiters wakes every parked producer, and every one that parks
+// later, because the queue closed: each sheds.
+func (n *bufferedNode) wakeAllWaiters() {
+	n.parked.wake(1 << 40)
+}
+
+// wakeParked wakes the producers parked now, because a flush ended and each
+// must look again.
+func (n *bufferedNode) wakeParked() {
+	n.parked.wake(int64(n.waiters.Load()) + 1)
 }
 
 // wakeWorker hands the token to a worker parked on an empty queue. The

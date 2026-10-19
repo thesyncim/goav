@@ -720,3 +720,83 @@ func TestBufferedBlockingDiamondCompletes(t *testing.T) {
 		_ = graph.Close()
 	}
 }
+
+// TestParkedProducersAllProgress pins fair, bounded waiting for parked
+// producers: 24 DropBlock producers outpace a slow sink on a one-slot queue,
+// so most of them are parked at any time. Parked producers are woken first
+// come, first served, and a producer that has not parked yet queues behind
+// them instead of taking the room, so no producer waits out the others: by
+// the time the first producer finishes, every one has made real progress.
+func TestParkedProducersAllProgress(t *testing.T) {
+	const producers, perProducer = 24, 300
+	graph, err := NewGraph(GraphConfig{Name: "fair-park", Buffer: BufferPolicy{Capacity: 1, Drop: DropBlock}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sink := &contendedSink{name: "sink", spin: 3000}
+	if _, err := graph.AddSink(sink, BufferPolicy{}); err != nil {
+		t.Fatal(err)
+	}
+	sources := make([]*holdSource, producers)
+	for i := range sources {
+		sources[i] = &holdSource{name: "producer-" + strconv.Itoa(i), ready: make(chan struct{}), release: make(chan struct{})}
+		if _, err := graph.AddSource(sources[i], BufferPolicy{}); err != nil {
+			t.Fatal(err)
+		}
+		if err := graph.Connect(route(sources[i].name, "sink")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	runDone := make(chan error, 1)
+	go func() { runDone <- graph.Run(context.Background()) }()
+	for _, source := range sources {
+		<-source.ready
+	}
+
+	progress := make([]atomic.Int64, producers)
+	first := make(chan []int64, 1)
+	var wg sync.WaitGroup
+	start := make(chan struct{})
+	for i, source := range sources {
+		wg.Go(func() {
+			packet := av.Packet{StreamID: "fair", Payload: av.Buffer{Bytes: make([]byte, 64)}}
+			msg := Message{Kind: MessagePacket, Packet: &packet}
+			<-start
+			for range perProducer {
+				if err := source.emitter.Emit(context.Background(), &msg); err != nil {
+					t.Error(err)
+					return
+				}
+				progress[i].Add(1)
+			}
+			snapshot := make([]int64, producers)
+			for j := range progress {
+				snapshot[j] = progress[j].Load()
+			}
+			select {
+			case first <- snapshot:
+			default:
+			}
+		})
+	}
+	close(start)
+	wg.Wait()
+	for _, source := range sources {
+		close(source.release)
+	}
+	if err := <-runDone; err != nil {
+		t.Fatal(err)
+	}
+	if err := graph.Close(); err != nil {
+		t.Fatal(err)
+	}
+	snapshot := <-first
+	slowest := snapshot[0]
+	for _, n := range snapshot {
+		slowest = min(slowest, n)
+	}
+	t.Logf("slowest producer at %d of %d when the first finished", slowest, perProducer)
+	if slowest < perProducer/2 {
+		t.Fatalf("when the first producer finished %d messages, the slowest had %d: some producers starve (%v)", perProducer, slowest, snapshot)
+	}
+}

@@ -115,55 +115,11 @@ func (w *directWaiter) complete(state uint32) {
 	}
 }
 
-// waiterQueue is a node's queue of waiters: Vyukov's intrusive MPSC queue.
-// Producers push with one atomic swap; only the node's current owner pops,
-// and ownership passes through the gate's atomics, which order its plain
-// head field from one owner to the next. It allocates nothing: the records
-// are the links.
-type waiterQueue struct {
-	tail atomic.Pointer[directWaiter]
-	head *directWaiter
-	stub directWaiter
-}
+func (w *directWaiter) link() *atomic.Pointer[directWaiter] { return &w.next }
 
-func (q *waiterQueue) init() {
-	q.head = &q.stub
-	q.tail.Store(&q.stub)
-}
-
-func (q *waiterQueue) push(w *directWaiter) {
-	w.next.Store(nil)
-	prev := q.tail.Swap(w)
-	prev.next.Store(w)
-}
-
-// pop returns the oldest waiter, or nil when there is none or the oldest is
-// between its swap and its link.
-func (q *waiterQueue) pop() *directWaiter {
-	head := q.head
-	next := head.next.Load()
-	if head == &q.stub {
-		if next == nil {
-			return nil
-		}
-		q.head = next
-		head = next
-		next = next.next.Load()
-	}
-	if next != nil {
-		q.head = next
-		return head
-	}
-	if head != q.tail.Load() {
-		return nil
-	}
-	q.push(&q.stub)
-	if next = head.next.Load(); next != nil {
-		q.head = next
-		return head
-	}
-	return nil
-}
+// waiterQueue is a node's queue of waiters. Only the node's current owner
+// pops, and ownership passes through the gate's atomics.
+type waiterQueue = mpscQueue[directWaiter, *directWaiter]
 
 // deliver hands msg to dst once and reports whether Handle ran. The lone
 // producer path is one CAS, Handle, and one CAS.
