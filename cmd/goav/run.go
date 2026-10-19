@@ -26,7 +26,6 @@ import (
 	"github.com/thesyncim/goav/graphrender"
 	"github.com/thesyncim/goav/launch"
 	"github.com/thesyncim/goav/pipeline"
-	"github.com/thesyncim/goav/player"
 	"github.com/thesyncim/goav/runconfig"
 )
 
@@ -196,7 +195,7 @@ func runCommand(argv []string, stdout, stderr io.Writer) int {
 		return 0
 	}
 	files := &cliFiles{}
-	win := player.New()
+	win := newWindow()
 	options := []launch.Option{launch.Files(files), launch.Use(win.Element())}
 	var served *http.Server
 	if args.serve != "" {
@@ -264,7 +263,7 @@ func runCommand(argv []string, stdout, stderr io.Writer) int {
 		Stopped bool       `json:"stopped,omitempty"`
 	}{Runtime: args.runtime, Wrote: files.written, Control: args.control, Stopped: errors.Is(err, context.Canceled)}
 	if win.Used() {
-		summary.Played = playStatsOf(win)
+		summary.Played = win.summary()
 	}
 	if err := json.NewEncoder(stdout).Encode(summary); err != nil {
 		printErr(stderr, err)
@@ -370,7 +369,7 @@ func explainCommand(argv []string, stdout, stderr io.Writer) int {
 // compileFor compiles a program for describe or explain: files are named
 // but never opened or created.
 func compileFor(args programArgs, stderr io.Writer) ([]goav.Output, *goav.Runtime, int) {
-	outs, err := launch.Compile(args.program, launch.Files(&cliFiles{}), launch.Use(player.New().Element()))
+	outs, err := launch.Compile(args.program, launch.Files(&cliFiles{}), launch.Use(newWindow().Element()))
 	if err != nil {
 		printErr(stderr, err)
 		return nil, nil, 2
@@ -385,7 +384,7 @@ func compileFor(args programArgs, stderr io.Writer) ([]goav.Output, *goav.Runtim
 
 func elementsCommand(stdout io.Writer) int {
 	kind := ""
-	for _, el := range launch.Elements(launch.Use(player.New().Element())) {
+	for _, el := range launch.Elements(launch.Use(newWindow().Element())) {
 		if el.Kind != kind {
 			if kind != "" {
 				fmt.Fprintln(stdout)

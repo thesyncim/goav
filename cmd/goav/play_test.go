@@ -1,3 +1,5 @@
+//go:build !goav_noplay
+
 package main
 
 import (

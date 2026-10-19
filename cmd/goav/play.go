@@ -11,9 +11,9 @@ import (
 	"sync"
 
 	"github.com/thesyncim/goav"
+	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/bundle"
 	"github.com/thesyncim/goav/launch"
-	"github.com/thesyncim/goav/player"
 	"github.com/thesyncim/goav/runconfig"
 )
 
@@ -34,7 +34,7 @@ examples:
 // playRuntime is the runtime a program that plays runs on: the bundled
 // adapters, realtime, on the window's speaker clock, so the task timeline —
 // pacing, Pause, Rate, Seek — runs in the time the audio is heard.
-func playRuntime(name string, win *player.Window) (*goav.Runtime, error) {
+func playRuntime(name string, win window) (*goav.Runtime, error) {
 	if name != "default" && name != "bundle" {
 		return nil, fmt.Errorf("play runs on the speaker's clock; --runtime %s has its own clock: drop --runtime, or route to file or null instead of play", name)
 	}
@@ -51,15 +51,14 @@ type playStats struct {
 	MaxAVOffsetMS float64 `json:"max_av_offset_ms"`
 }
 
-func playStatsOf(win *player.Window) *playStats {
-	s := win.Stats()
-	return &playStats{
-		PositionMS:    ms(s.Position.Seconds()),
-		Presented:     s.Presented,
-		Dropped:       s.Dropped,
-		Underruns:     s.Underruns,
-		MaxAVOffsetMS: ms(s.MaxAVOffset.Seconds()),
-	}
+// window is the play destination the CLI registers: the player module's
+// window, or a stub in a goav_noplay build.
+type window interface {
+	Element() launch.Element
+	Used() bool
+	Clock() av.Clock
+	Run(context.Context, goav.LiveTask) error
+	summary() *playStats
 }
 
 func ms(seconds float64) float64 { return float64(int64(seconds*10000+0.5)) / 10 }
@@ -110,7 +109,7 @@ func fileProgram(path string) (string, error) {
 func buildsOn(program string) error {
 	files := &probeFiles{}
 	defer files.close()
-	outs, err := launch.Compile(program, launch.Files(files), launch.Use(player.New().Element()))
+	outs, err := launch.Compile(program, launch.Files(files), launch.Use(newWindow().Element()))
 	if err != nil {
 		return err
 	}
