@@ -81,7 +81,7 @@ func levelIdc(level string) int32 {
 		return 9
 	}
 	major, minor, _ := strings.Cut(level, ".")
-	a, _ := strconv.Atoi(major)
-	b, _ := strconv.Atoi(minor)
-	return int32(a*10 + b)
+	a, _ := strconv.ParseInt(major, 10, 8)
+	b, _ := strconv.ParseInt(minor, 10, 8)
+	return int32(a)*10 + int32(b)
 }
