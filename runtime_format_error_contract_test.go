@@ -44,7 +44,7 @@ func TestRuntimeFormatErrorContracts(t *testing.T) {
 			reason:    "input format could not be detected",
 			details:   []string{"name=camera", "uri=file:///tmp/camera.weird", "protocol=file", "mime=application/x-weird"},
 			suggestionAny: []string{
-				"registered prober",
+				"its first bytes",
 				"register a format adapter",
 				"goav.Input(provider)",
 			},

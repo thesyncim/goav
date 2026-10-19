@@ -16,7 +16,7 @@ func inputFormatProbeError(input format.Input, cause error) error {
 		return cause
 	}
 	suggestions := []string{
-		"give file or URI inputs a name, URI, or MIME type a registered prober can recognize",
+		"check the input holds a container a registered format reads: its first bytes and its name, URI, and MIME type matched none",
 		"register a format adapter with goav.New(runconfig.WithFormatAdapter(...))",
 		"use goav.Input(provider) for realtime packet receive",
 	}

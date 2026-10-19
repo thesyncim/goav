@@ -479,13 +479,13 @@ func TestErrorAcceptanceStreamMissing(t *testing.T) {
 	)
 }
 
-// TestErrorAcceptanceInputFormatUnknown: an input no prober recognizes is
-// refused before anything opens.
+// TestErrorAcceptanceInputFormatUnknown: an input no prober recognizes, by
+// its bytes or its name, is refused when it opens.
 func TestErrorAcceptanceInputFormatUnknown(t *testing.T) {
 	_, err := mustRuntime().Build(context.Background(),
 		goav.FileInput("in.unknown", strings.NewReader("")).Video().Decode().To(goavtest.NewCollector().Sink()))
 	requireBuildError(t, err, errcode.Code("input_format_unknown"), "open input", "in.unknown",
-		"a name, URI, or MIME type a registered prober can recognize",
+		"its first bytes and its name, URI, and MIME type matched none",
 	)
 }
 

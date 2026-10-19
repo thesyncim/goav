@@ -66,6 +66,15 @@ const (
 	ProtocolCustom  ProtocolID = "custom"
 )
 
+// Elementary audio formats goav recognizes from their first bytes, so a
+// refusal can name what an input is even when no registered demuxer reads it.
+const (
+	FormatADTS FormatID = "adts"
+	FormatMP3  FormatID = "mp3"
+	FormatFLAC FormatID = "flac"
+	FormatWAV  FormatID = "wav"
+)
+
 // StreamID identifies one media stream within a task; packets, frames, and
 // events carry it so routing never inspects payloads.
 type StreamID string

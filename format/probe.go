@@ -39,7 +39,9 @@ func NewStaticProber(rules ...ProbeRule) StaticProber {
 }
 
 // DefaultProbeRules returns the built-in detection table: Ogg, IVF, FLV,
-// Annex B, Matroska/WebM, and the other well-known formats.
+// Matroska/WebM, MP4, Annex B, ADTS, MP3, FLAC, and WAV. A byte signature
+// scores above a MIME type, which scores above an extension, so content
+// decides and the name is a hint.
 func DefaultProbeRules() []ProbeRule {
 	return []ProbeRule{
 		{
@@ -89,6 +91,38 @@ func DefaultProbeRules() []ProbeRule {
 			Magic:      []Magic{{Bytes: []byte{0x00, 0x00, 0x01}}, {Bytes: []byte{0x00, 0x00, 0x00, 0x01}}},
 			Score:      90,
 			Reason:     "h264 annex b start code or extension",
+		},
+		{
+			Format:     av.FormatADTS,
+			Extensions: []string{".aac", ".adts"},
+			MIMETypes:  []string{"audio/aac", "audio/x-aac"},
+			Magic:      []Magic{{Bytes: []byte{0xff, 0xf1}}, {Bytes: []byte{0xff, 0xf9}}, {Bytes: []byte{0xff, 0xf0}}, {Bytes: []byte{0xff, 0xf8}}},
+			Score:      100,
+			Reason:     "adts sync word or extension",
+		},
+		{
+			Format:     av.FormatMP3,
+			Extensions: []string{".mp3"},
+			MIMETypes:  []string{"audio/mpeg", "audio/mp3"},
+			Magic:      []Magic{{Bytes: []byte("ID3")}, {Bytes: []byte{0xff, 0xfb}}, {Bytes: []byte{0xff, 0xfa}}, {Bytes: []byte{0xff, 0xf3}}, {Bytes: []byte{0xff, 0xf2}}, {Bytes: []byte{0xff, 0xe3}}},
+			Score:      100,
+			Reason:     "id3 tag, mpeg audio frame sync, or extension",
+		},
+		{
+			Format:     av.FormatFLAC,
+			Extensions: []string{".flac"},
+			MIMETypes:  []string{"audio/flac", "audio/x-flac"},
+			Magic:      []Magic{{Bytes: []byte("fLaC")}},
+			Score:      100,
+			Reason:     "flac marker or extension",
+		},
+		{
+			Format:     av.FormatWAV,
+			Extensions: []string{".wav"},
+			MIMETypes:  []string{"audio/wav", "audio/x-wav", "audio/wave"},
+			Magic:      []Magic{{Offset: 8, Bytes: []byte("WAVE")}},
+			Score:      100,
+			Reason:     "riff wave header or extension",
 		},
 		{
 			Format:   av.FormatRTP,

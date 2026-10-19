@@ -30,3 +30,9 @@
   unseekable). CLI `file` inputs open when the run starts and keep the file's
   capabilities, so `goav ctl seek` works on them; a `provider.ByteSource` may
   also implement `Protocol() av.ProtocolID`.
+- Input formats are detected from content: an input's first bytes are probed
+  when it opens (MP4, WebM/Matroska, IVF, Annex B, Ogg, FLV, and ADTS, MP3,
+  FLAC, WAV, which are named in the refusal when no demuxer reads them), and
+  the name, URI, and MIME type are hints, so a misnamed or extensionless file
+  works. Probing keeps the reader's capabilities (a file still seeks); an HTTP
+  input re-reads its first 4 KiB without a second request.

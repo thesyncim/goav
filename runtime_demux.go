@@ -2,6 +2,7 @@ package goav
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"time"
 
@@ -29,7 +30,13 @@ func (b *builder) openDemuxSource(ctx context.Context, input format.Input, quali
 			}
 		}()
 	}
-	inputProbe, err := b.runtime.probeInput(ctx, input, pinned)
+	var header []byte
+	if pinned == "" {
+		if input, header, err = sniffInput(input); err != nil {
+			return demuxBuild{}, fmt.Errorf("goav: input %s: read its first bytes: %w", demuxNodeName(input), err)
+		}
+	}
+	inputProbe, err := b.runtime.probeInput(ctx, input, pinned, header)
 	if err != nil {
 		return demuxBuild{}, inputFormatProbeError(input, err)
 	}

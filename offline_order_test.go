@@ -319,8 +319,9 @@ func TestOfflineOrderHoldsAnInputFarAhead(t *testing.T) {
 			if got < 0 || ahead.read.Load() != int64(len(tc.ahead)) {
 				t.Fatalf("early file reached EOF: %v; later file read %d of %d bytes", got >= 0, ahead.read.Load(), len(tc.ahead))
 			}
-			if got > int64(len(tc.ahead))/10 {
-				t.Fatalf("the later file was %d of %d bytes in when the earlier one ended, want at most a tenth", got, len(tc.ahead))
+			// Opening reads a fixed prefix to detect the format (512 bytes).
+			if got > int64(len(tc.ahead))/10+512 {
+				t.Fatalf("the later file was %d of %d bytes in when the earlier one ended, want at most a tenth past its sniffed prefix", got, len(tc.ahead))
 			}
 		})
 	}
