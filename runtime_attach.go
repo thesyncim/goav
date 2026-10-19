@@ -1475,10 +1475,16 @@ func validateAttachBranchShapeContract(stream recipeir.Stream, operations []reci
 		final = compile.RecipeIROperationOutputShape(final, operation)
 	}
 	for i, destination := range destinations {
+		destinationName := firstNonEmpty(destination.recipe.Name, destination.dest.label(fmt.Sprintf("destination%d", i+1)))
+		if destination.recipe.Kind == recipeir.DestinationKindSink {
+			if err := publicError(compile.ValidateSinkShape("attach runtime branch", stream.Name, destinationName, compileDestinationFromSpec(destination.dest), final)); err != nil {
+				return err
+			}
+			continue
+		}
 		if destination.recipe.Kind != recipeir.DestinationKindByteStream || final.Domain == shape.DomainPacket {
 			continue
 		}
-		destinationName := firstNonEmpty(destination.recipe.Name, destination.dest.label(fmt.Sprintf("destination%d", i+1)))
 		return publicError(compile.DestinationShapeMismatchError("attach runtime branch", stream.Name, destinationName, compileDestinationFromSpec(destination.dest), final))
 	}
 	return nil

@@ -18,6 +18,7 @@ func buildGraphPlanTask(ctx context.Context, gp graphPlan) (LiveTask, error) {
 	// and sync gates next to the timeline, and the finished task attaches
 	// itself below so gate reports reach its Watch surface.
 	runtime.qos = newQoSReporter()
+	runtime.controls = &taskControls{}
 	gp = graphPlanWithRuntime(gp, runtime)
 	if err := validateGraphPlanLowering(gp); err != nil {
 		return nil, err
@@ -42,6 +43,7 @@ func buildGraphPlanTask(ctx context.Context, gp graphPlan) (LiveTask, error) {
 	task.encoders = service.encoders
 	task.timeline = timeline
 	runtime.qos.attach(task)
+	runtime.controls.attach(task)
 	task.startQoSPolicy(runtime.qosPolicy)
 	return task, nil
 }

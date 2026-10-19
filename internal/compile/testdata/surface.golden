@@ -109,6 +109,7 @@ func ValidateRecipeEncode
 func ValidateRecipeIROperationShapes
 func ValidateRecipeIRTransformAdapterDescriptor
 func ValidateShapeAnnotationDomain
+func ValidateSinkShape
 func ValidateStageComponent
 func WorkDestinationID
 func WorkDestinationNameByID

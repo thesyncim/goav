@@ -98,6 +98,9 @@ type Destination struct {
 	Sink       bool
 	SinkName   string
 	SinkDetail string
+	// Accepts is what a media sink declares it takes (InputShapes), in
+	// preference order; nil takes anything.
+	Accepts shape.Set
 	// HasOutput reports a byte destination; Output is its address.
 	HasOutput bool
 	Output    format.Output
@@ -243,6 +246,7 @@ func Compile(req *Request) (Result, error) {
 		inserted:  map[string]recipeir.NodeID{},
 	}
 	passes := []recipeCompilePass{
+		{"plan sink encodes", (*recipeState).planSinkEncodes},
 		{"derive branches", (*recipeState).deriveBranches},
 		{"validate stream rules", validateStreamRulesForCompile},
 		{"validate recipe shape", (*recipeState).validateRecipeShape},

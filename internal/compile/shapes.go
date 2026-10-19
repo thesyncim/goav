@@ -121,8 +121,11 @@ func (s *recipeState) finalStreamShape(index int) shape.Spec {
 }
 
 // validateDestinationShapes refuses frames routed to a byte or mux
-// destination.
+// destination, and media a media sink does not take.
 func (s *recipeState) validateDestinationShapes() error {
+	if err := s.validateRemuxSinkShapes(); err != nil {
+		return err
+	}
 	for i := range s.recipe.Streams {
 		stream := s.recipe.Streams[i]
 		final := s.finalStreamShape(i)
@@ -140,7 +143,7 @@ func (s *recipeState) validateDestinationShapes() error {
 
 func validateRecipeDestinationShape(operation string, node string, destinationName string, kind recipeir.DestinationKind, destination Destination, spec shape.Spec) error {
 	if kind == recipeir.DestinationKindSink {
-		return nil
+		return ValidateSinkShape(operation, node, destinationName, destination, spec)
 	}
 	if kind == recipeir.DestinationKindUnknown && !destination.HasOutput {
 		return nil
