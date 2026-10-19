@@ -21,3 +21,4 @@ bench-results/*
 /examples/provider-source/provider-source
 /examples/dynamic-audio-room/dynamic-audio-room
 /examples/gio-webrtc-showcase/gio-webrtc-showcase
+/cmd/goav/goav
