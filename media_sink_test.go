@@ -180,3 +180,23 @@ func TestMediaSinkRefusesARemuxItCannotTake(t *testing.T) {
 	_, err := rt.Build(context.Background(), aac.To(goav.Sink(newMediaSink(shape.Packet(av.MediaAudio, av.CodecOpus)))))
 	assertSinkRefusal(t, err, "route the input's streams one by one, decoding the aac one: input.Audio().Decode().To(destination)")
 }
+
+// TestMediaSinkAttachRefusesFramesWithTheEncode pins the attach-time
+// refusal: frames from a running task's tap need the encode a media sink
+// takes, which the fix names.
+func TestMediaSinkAttachRefusesFramesWithTheEncode(t *testing.T) {
+	rt := bundle.MustNew()
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	task, err := rt.Build(ctx, goavtest.LiveVideo("cam", 64, 64).Video().Tap("raw").To(goav.Sink(newMediaSink())))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer task.Close()
+	done := make(chan error, 1)
+	go func() { done <- task.Run(ctx) }()
+	_, err = task.Attach(ctx, task.Tap("raw").To(goav.Sink(newMediaSink(shape.Packet(av.MediaVideo, av.CodecVP8)))))
+	assertSinkRefusal(t, err, "encode to a codec the destination takes: .Encode(codec.VP8())")
+	cancel()
+	<-done
+}
