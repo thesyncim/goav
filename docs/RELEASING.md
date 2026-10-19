@@ -34,7 +34,7 @@ repository page should say meanwhile.
 3. Run nested modules and examples:
 
    ```sh
-   for mod in goavtest/expect rtpav webrtcav playoutav player libcodec; do
+   for mod in goavtest/expect rtpav webrtcav playoutav player libcodec gplcodec; do
      (cd "$mod" && CGO_ENABLED=0 go test ./... && CGO_ENABLED=1 go test -race ./... && CGO_ENABLED=0 go vet ./...)
    done
    for mod in examples/*/go.mod; do
@@ -68,9 +68,9 @@ say why.
 
 ## Nested-module root pin
 
-`rtpav`, `webrtcav`, `playoutav`, and `goavtest/expect` require the root at a
-pseudo-version of a commit on `main` (and `webrtcav` requires `rtpav` the same
-way), with a `replace` for local development. Consumers ignore `replace`, so
+`rtpav`, `webrtcav`, `playoutav`, `player`, `libcodec`, `gplcodec`, and
+`goavtest/expect` require the root at a pseudo-version of a commit on `main`
+(and `webrtcav` requires `rtpav` the same way), with a `replace` for local development. Consumers ignore `replace`, so
 the pin must resolve. The CI job `consumer-install` fetches every nested module
 at the PR head into an empty directory with `GOWORK=off` and builds it.
 
@@ -83,14 +83,17 @@ go list -m -json github.com/thesyncim/goav/rtpav@<sha> # pin for webrtcav
 ```
 
 Edit the `require` lines (keep the `replace`), then run the module's tests.
-`cmd/goav` pins the root and `player` the same way but has no `replace` (so
+`cmd/goav` pins the root, `player`, and `webrtcav` (so `rtpav`) the same way but has no `replace` (so
 `go install ...@version` works); gate it in a workspace over the checkout.
 It can pin only commits on `main`, so bump it to the new `main` pseudo-version
 right after any merge that changes `player` or root API the CLI uses.
 
 ## Tags
 
-Use signed tags when cutting an actual release:
+Use signed, annotated tags. CI verifies a tag through GitHub, which checks the
+signature against the keys on the tagger's account, so register your GPG or SSH
+signing key there first (Settings, SSH and GPG keys); a lightweight or
+unverified tag is refused:
 
 ```sh
 git tag -s v0.1.0 -m "goav v0.1.0"
@@ -105,24 +108,19 @@ git tag -s webrtcav/v0.1.0 -m "webrtcav v0.1.0"
 git tag -s playoutav/v0.1.0 -m "playoutav v0.1.0"
 ```
 
-Tag order follows dependencies: root first, then `rtpav`, `webrtcav`,
-`playoutav`, `player`, and `libcodec`, then `cmd/goav` (it pins `player`).
+Tag order follows dependencies: root first, then `goavtest/expect`, `rtpav`,
+`webrtcav`, `playoutav`, `player`, `libcodec`, and `gplcodec`, then `cmd/goav`
+(it pins `player` and `webrtcav`).
 
-Nested-module tags need the standard multi-module dance, because consumers
-ignore `replace` directives: in-repo the nested `go.mod` files require the
-placeholder `github.com/thesyncim/goav v0.0.0` plus `replace ... => ../` for
-day-to-day development, and a tag cut in that state would be unresolvable for
-everyone else. Before tagging a nested module: tag the root first, update the
-nested `go.mod` to require the real root tag, drop the `replace` line, run the
-module's tests against the published root, commit, then tag. The release
-workflow refuses nested-module tags whose `go.mod` still carries a `replace`
-or the `v0.0.0` placeholder. After tagging, the `replace` can return on main
-for development convenience.
+Before tagging a nested module, pin each goav module it requires to a tag
+(not a `main` pseudo-version), drop its `replace`, run its tests, commit, then
+tag; the release workflow refuses a nested tag whose `go.mod` still has either.
+The `replace` can return on `main` afterwards.
 
 ## Automation
 
 `.github/workflows/release.yml` runs on release tags and on manual dispatch for
-an existing tag. It validates the tag shape, verifies the signed tag, checks out
+an existing tag. It validates the tag shape, has GitHub verify its signature, checks out
 that tag, runs tests and vet in the tagged module directory, then creates a
 GitHub release with generated notes.
 
@@ -141,6 +139,10 @@ vet in the matching nested module before release creation.
 
 Manual dispatch defaults to a draft release. Tag pushes create ready releases;
 use manual draft mode when rehearsing release notes before announcing.
+Rehearse the whole pipeline without a tag or a release:
+`gh workflow run release.yml --ref BRANCH -f dry_run=true` checks the commit's
+signature (warning only), tests, builds the CLI archives, and uploads them as
+the run's `release-dry-run` artifact.
 
 ## Repository trust
 

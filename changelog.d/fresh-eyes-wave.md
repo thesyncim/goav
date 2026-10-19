@@ -11,3 +11,9 @@
   `TestReadmeCodecTableMatchesBundle` against the bundle's active backends,
   and `docs/ADAPTERS.md#licenses` states every backend's license and what
   linking it means (LGPL goh264's relinking duty, GPL gplcodec).
+- The release workflow can pass: tags are verified through GitHub's signature
+  check (`scripts/verify-release-signature.sh`, shared by `ci.yml` and
+  `release.yml`) instead of `git verify-tag` against an empty runner keyring;
+  `workflow_dispatch` with `dry_run` rehearses every step on any branch without
+  a tag or release; a nested tag pinning a goav module at a pseudo-version is
+  refused; `gplcodec` and `goavtest/expect` tags are recognized.

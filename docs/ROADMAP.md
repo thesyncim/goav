@@ -332,8 +332,8 @@ The checklist below gates the tag. Each item names its current evidence.
   `playoutav/vX.Y.Z`), so a root v1 does not freeze the transport modules and
   vice versa; webrtcav requires rtpav requires the root, so tag the root first,
   then rtpav, then webrtcav/playoutav/player, then cmd/goav, as needed.
-- [x] **Release automation**: `.github/workflows/release.yml` validates
-  existing signed tags, runs checks in the tagged module directory, builds root
+- [x] **Release automation**: `.github/workflows/release.yml` verifies signed
+  tags through GitHub, rehearses with `dry_run`, runs checks in the tagged module directory, builds root
   CLI archives, and creates GitHub release notes; root CLI releases include
   checksums, Go module SBOM, per-binary buildinfo, and provenance metadata.
   `docs/RELEASING.md` documents signed-tag ownership and tag order.
