@@ -99,8 +99,11 @@ func (s *videoCompositeStage) Admit(ctx context.Context, msg *pipeline.Message) 
 	return s.sync.admit(ctx, msg)
 }
 
-// Admits implements interleave.Gate: whether Admit would pass msg now.
-func (s *videoCompositeStage) Admits(_ interleave.Token, msg any) bool { return s.sync.admits(msg) }
+// Arm and Admits implement interleave.Gate: an ordered run bounds the arms
+// at the turn instead of blocking in Admit.
+func (s *videoCompositeStage) Arm(_ interleave.Token, msg any) (int, bool) { return s.sync.arm(msg) }
+
+func (s *videoCompositeStage) Admits(_ interleave.Token, arm int) bool { return s.sync.admits(arm) }
 
 func (s *videoCompositeStage) Handle(ctx context.Context, msg *pipeline.Message, emitter pipeline.Emitter) error {
 	if s.closed {

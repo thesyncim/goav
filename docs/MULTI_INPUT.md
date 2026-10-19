@@ -38,17 +38,15 @@ err = rt.Run(ctx, a.Video().To(rec), b.Audio().To(rec))
   one mux (`TestCopyFromTwoFilesIntoOneMux`). Offline, files interleave by
   time the way ffmpeg picks its next input: the file whose next packet is
   earliest goes next, so a shared mux writes the same bytes every run
-  (`TestSeveralFileInputsInterleaveDeterministically`). Joins over files and
-  files meeting in a buffered mux (a declared `.Buffer`) keep the order: a
-  join holding an arm back hands the turn on, and the buffered graph finishes
+  (`TestSeveralFileInputsInterleaveDeterministically`). Joins over files,
+  nested or with a `Select` arm, and files meeting in a buffered mux keep the
+  order: a join holding an arm back passes its file over, and the graph finishes
   each packet's work before the next enters, so output is the same at any
   `GOMAXPROCS`; a promoted ladder, whose outputs each read one chain, already
   was and stays pipelined (`TestOfflineJoinsAndLaddersWriteTheSameBytes`). A
   file whose packets all come later waits at its first one instead of filling
-  queues
-  (`TestOfflineOrderHoldsAnInputFarAhead`). Live inputs, custom sources,
-  nested joins, and joins on a buffered graph (a `Select` arm, a declared
-  buffer) run concurrently.
+  queues (`TestOfflineOrderHoldsAnInputFarAhead`). A graph with a live input,
+  a custom source, or a custom `pipeline.Admitter` runs its sources free.
 - **Forks per input.** Each input forks on its own: one camera's ladder beside
   another input's audio muxed into every rendition, or two files each forked
   into renditions, share each input's select, decode, and steps

@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"fmt"
 	"io"
+	"math"
 	"math/rand/v2"
 	"runtime"
 	"sync"
@@ -16,6 +18,7 @@ import (
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/bundle"
 	"github.com/thesyncim/goav/codec"
+	"github.com/thesyncim/goav/container/webm"
 	"github.com/thesyncim/goav/flow"
 	"github.com/thesyncim/goav/pipeline"
 )
@@ -80,11 +83,48 @@ func (shiftFrames) Name() string { return "shift" }
 func (shiftFrames) Close() error { return nil }
 func (s shiftFrames) Handle(ctx context.Context, msg *pipeline.Message, emitter pipeline.Emitter) error {
 	if msg.Kind == pipeline.MessageFrame && msg.Frame != nil {
-		if ts := &msg.Frame.PTS; ts.Base.Num > 0 {
-			ts.Value += int64(s.by) * ts.Base.Den / (int64(time.Second) * ts.Base.Num)
+		// Rescale the shift into the frame's base, checked: decoded frames
+		// count in nanoseconds, where by * Den overflows int64 from 9.2 s.
+		ts := &msg.Frame.PTS
+		delta, ok := av.RescaleValue(int64(s.by), av.TimeBase{Num: 1, Den: int64(time.Second)}, ts.Base)
+		if !ok || (delta > 0 && ts.Value > math.MaxInt64-delta) {
+			return fmt.Errorf("shift %v does not fit PTS %d in base %v", s.by, ts.Value, ts.Base)
 		}
+		ts.Value += delta
 	}
 	return emitter.Emit(ctx, msg)
+}
+
+// TestShiftedFixturesStartWhereAsked pins the shift helper the order tests
+// build their late files with: a 10 s or 30 s shift once overflowed the
+// nanosecond PTS of decoded frames and wrapped negative, which the muxer
+// rightly refused as invalid data.
+func TestShiftedFixturesStartWhereAsked(t *testing.T) {
+	f := offlineOrderFixtures(t)
+	for _, tc := range []struct {
+		label string
+		data  []byte
+		by    time.Duration
+	}{
+		{"video ahead", f.videoAhead, 5 * time.Second},
+		{"audio ahead", f.audioAhead, 5 * time.Second},
+		{"audio 10s", shiftedWebM(t, mfWebM(t, 0, 0, 0, 48_000, 2, 5), av.MediaAudio, 10*time.Second), 10 * time.Second},
+		{"audio 30s", shiftedWebM(t, mfWebM(t, 0, 0, 0, 48_000, 2, 5), av.MediaAudio, 30*time.Second), 30 * time.Second},
+		{"video 30s", shiftedWebM(t, mfWebM(t, 32, 24, 3, 0, 0, 0), av.MediaVideo, 30*time.Second), 30 * time.Second},
+	} {
+		demuxer, err := webm.NewDemuxer(bytes.NewReader(tc.data), webm.DemuxerOptions{})
+		if err != nil {
+			t.Fatalf("%s: %v", tc.label, err)
+		}
+		packet := webm.Packet{Data: make([]byte, 0, 1<<16)}
+		if err := demuxer.ReadPacket(&packet); err != nil {
+			t.Fatalf("%s: first packet: %v", tc.label, err)
+		}
+		// Opus starts its first packet a pre-skip early.
+		if got := time.Duration(packet.TimeNS); got < tc.by-20*time.Millisecond || got > tc.by+20*time.Millisecond {
+			t.Fatalf("%s starts at %v, want about %v", tc.label, got, tc.by)
+		}
+	}
 }
 
 // offlineOrderFirst holds each case's first output digest across every -cpu
@@ -133,6 +173,37 @@ func TestOfflineJoinsAndLaddersWriteTheSameBytes(t *testing.T) {
 			return []goav.Output{
 				goav.Composite(in("a.webm", f.videoA).Video().Decode(), goav.At(in("b.webm", f.videoAhead).Video().Decode(), 8, 8), goav.ByPTS()).Encode(codec.VP8()).To(o),
 				in("c.webm", f.audioA).Audio().To(o),
+			}
+		}},
+		{"nested mix beside a file's video", false, func(out func(string) goav.Destination) []goav.Output {
+			o := out("o.webm")
+			inner := goav.Mix(in("a.webm", f.audioA).Audio().Decode(), in("b.webm", f.audioB).Audio().Decode())
+			return []goav.Output{
+				goav.Mix(inner, in("d.webm", f.audioA).Audio().Decode()).Encode(codec.Opus()).To(o),
+				in("c.webm", f.videoA).Video().To(o),
+			}
+		}},
+		{"nested ByPTS mix with an inner arm 5s ahead", false, func(out func(string) goav.Destination) []goav.Output {
+			o := out("o.webm")
+			inner := goav.Mix(in("a.webm", f.audioA).Audio().Decode(), in("b.webm", f.audioAhead).Audio().Decode(), goav.ByPTS())
+			return []goav.Output{
+				goav.Mix(inner, in("d.webm", f.audioB).Audio().Decode(), goav.ByPTS()).Encode(codec.Opus()).To(o),
+				in("c.webm", f.videoA).Video().To(o),
+			}
+		}},
+		{"mix with a select arm beside a file's video", true, func(out func(string) goav.Destination) []goav.Output {
+			o := out("o.webm")
+			selected := goav.Select(in("a.webm", f.audioA).Audio().Decode(), in("b.webm", f.audioB).Audio().Decode())
+			return []goav.Output{
+				goav.Mix(selected, in("d.webm", f.audioA).Audio().Decode()).Encode(codec.Opus()).To(o),
+				in("c.webm", f.videoA).Video().To(o),
+			}
+		}},
+		{"select beside a file's video", true, func(out func(string) goav.Destination) []goav.Output {
+			o := out("o.webm")
+			return []goav.Output{
+				goav.Select(in("a.webm", f.audioA).Audio().Decode(), in("b.webm", f.audioB).Audio().Decode()).Encode(codec.Opus()).To(o),
+				in("c.webm", f.videoA).Video().To(o),
 			}
 		}},
 		{"promoted ladder from two files", true, func(out func(string) goav.Destination) []goav.Output {

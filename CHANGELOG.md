@@ -11,6 +11,11 @@ methodology changes, and migration notes.
 
 ## Unreleased
 
+- Fix: the offline order now also covers nested joins and joins with a
+  Select arm, on either runner: a join bounds its arms at the turn, passing
+  over a file whose arm it holds back, instead of blocking a delivery in
+  Admit, so no file waits on nodes another one owns. Graphs with a live
+  input or a custom `pipeline.Admitter` still run free. No new API.
 - The nested modules now require the main commit with the URI follow-ups
   (#216), so installing the CLI or webrtcav picks up split schemes and WHEP
   ice-servers.
@@ -23,8 +28,7 @@ methodology changes, and migration notes.
   next enters (so that shape no longer pipelines across packets). A promoted
   ladder, already byte-stable since each rung reads one chain, is pinned and
   unchanged, as is a single input. A file whose packets all come later
-  waits at its first packet instead of being read into queues. Nested joins
-  and joins on a buffered graph (a Select arm) still run free. No new API.
+  waits at its first packet instead of being read into queues. No new API.
 - Every nested module (cmd/goav, player, playoutav, rtpav, webrtcav,
   goavtest/expect) now requires the main commit with URL schemes, so `go get`
   of any of them resolves a root that has `provider.Scheme`.

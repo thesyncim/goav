@@ -14,7 +14,7 @@ import (
 type directRunner struct {
 	topology[*directNode]
 	// order is the running time order (time_order.go), set for an ordered
-	// run so a delivery into a converging stage can park its source.
+	// run so a delivery into a join charges its source.
 	order atomic.Pointer[timeOrder]
 }
 
@@ -170,11 +170,10 @@ func (g *directRunner) Run(ctx context.Context) error {
 			continue
 		}
 		emitter := &timeOrderedEmitter{emitter: run.emitter, order: order, index: i}
-		turnCtx := order.context(runCtx, i)
 		runs.Go(func() {
 			defer order.leave(i)
-			order.enter(turnCtx, i)
-			g.fail.report(run.source.Start(turnCtx, emitter))
+			order.enter(runCtx, i)
+			g.fail.report(run.source.Start(runCtx, emitter))
 		})
 	}
 	runs.Wait()
