@@ -12,9 +12,9 @@ import (
 	"github.com/pion/interceptor"
 	"github.com/pion/interceptor/pkg/cc"
 	"github.com/pion/interceptor/pkg/gcc"
+	"github.com/pion/rtcp"
 	"github.com/pion/webrtc/v4"
 	"github.com/thesyncim/goav/av"
-	"github.com/thesyncim/goav/control"
 	"github.com/thesyncim/goav/provider"
 	"github.com/thesyncim/goav/rtpav"
 )
@@ -33,7 +33,7 @@ var (
 // https, whip+http://host/path over plain http. Register it under each name
 // used:
 //
-//	runconfig.Scheme("whip", webrtcav.WHIP(webrtcav.Token(token)))
+//	runconfig.Scheme("whip", webrtcav.WHIP(webrtcav.WithToken(token)))
 //
 // The destination takes Opus, VP8, H264, VP9, and AV1 packets, so the
 // planner encodes frames to the first of their media it can encode. When
@@ -67,7 +67,7 @@ func (s whipScheme) Destination(u *url.URL) (provider.Output, error) {
 	e := &egress{name: "whip", detail: "whip publish", accepts: egressCodecs.Clone()}
 	e.open = func(ctx context.Context, streams []av.Stream) (*trackWriter, []rtpav.SendOption, error) {
 		session, err := negotiate(ctx, s.servers, endpoint.Host, s.config.session.Configuration, func(ctx context.Context, config webrtc.Configuration) (*whipSession, error) {
-			return s.offer(ctx, endpoint, config, streams, e)
+			return s.offer(ctx, endpoint, config, streams)
 		})
 		if err != nil {
 			return nil, nil, err
@@ -100,7 +100,7 @@ type whipSession struct {
 
 // offer opens a peer connection under config with one send-only track per
 // stream, in the stream's codec, and negotiates it.
-func (s whipScheme) offer(ctx context.Context, endpoint *url.URL, config webrtc.Configuration, streams []av.Stream, e *egress) (*whipSession, error) {
+func (s whipScheme) offer(ctx context.Context, endpoint *url.URL, config webrtc.Configuration, streams []av.Stream) (*whipSession, error) {
 	if len(streams) == 0 {
 		return nil, errors.New("whip: no stream to publish")
 	}
@@ -139,6 +139,7 @@ func (s whipScheme) offer(ctx context.Context, endpoint *url.URL, config webrtc.
 		}
 	})
 	mids := make([]*webrtc.RTPTransceiver, len(streams))
+	var ssrcs []uint32
 	for i, stream := range streams {
 		codec, ok := streamCapability(stream)
 		if !ok {
@@ -157,6 +158,7 @@ func (s whipScheme) offer(ctx context.Context, endpoint *url.URL, config webrtc.
 			return nil, fmt.Errorf("whip: stream %s: %w", stream.ID, err)
 		}
 		ssrc := senderSSRC(mids[i].Sender())
+		ssrcs = append(ssrcs, ssrc)
 		session.writer.add(ssrc, track, mids[i].Sender())
 		session.options = append(session.options, rtpav.WithSSRC(stream.ID, ssrc))
 	}
@@ -166,7 +168,7 @@ func (s whipScheme) offer(ctx context.Context, endpoint *url.URL, config webrtc.
 		return nil, err
 	}
 	if estimating {
-		go session.followEstimate(sessionCtx, targets, streams, e)
+		go session.followEstimate(sessionCtx, targets, streams, ssrcs)
 	}
 	return session, nil
 }
@@ -190,16 +192,17 @@ func (s *whipSession) awaitConnected(ctx context.Context) error {
 	}
 }
 
-// followEstimate turns the send-side bandwidth estimate (TWCC feedback) into
-// bitrate controls on the video streams' encoders, splitting what audio
-// leaves evenly and moving a target only when it changes by a tenth.
-func (s *whipSession) followEstimate(ctx context.Context, targets <-chan int, streams []av.Stream, e *egress) {
+// followEstimate hands the send-side bandwidth estimate (TWCC feedback) to
+// the sender as the REMB a receiver would send for the video streams: what
+// the audio leaves, which the sender splits, bounds by the configured
+// bitrates, and turns into bitrate controls, as it does a receiver's REMB.
+func (s *whipSession) followEstimate(ctx context.Context, targets <-chan int, streams []av.Stream, ssrcs []uint32) {
 	const audioShare = 64_000
-	var video []av.StreamID
+	var video []uint32
 	audio := 0
-	for _, stream := range streams {
+	for i, stream := range streams {
 		if stream.Type == av.MediaVideo || stream.Codec.Type == av.MediaVideo {
-			video = append(video, stream.ID)
+			video = append(video, ssrcs[i])
 		} else {
 			audio++
 		}
@@ -207,21 +210,16 @@ func (s *whipSession) followEstimate(ctx context.Context, targets <-chan int, st
 	if len(video) == 0 {
 		return
 	}
-	last := 0
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case bitrate := <-targets:
-			share := max(bitrate-audio*audioShare, audioShare) / len(video)
-			if e.control == nil || last != 0 && abs(share-last)*10 < last {
-				continue
-			}
-			last = share
-			for _, id := range video {
-				if ctrl, err := control.SetBitrate(id, share); err == nil {
-					_ = e.control(ctx, ctrl.WithReason("twcc estimate"))
-				}
+			remb := &rtcp.ReceiverEstimatedMaximumBitrate{Bitrate: float32(max(bitrate-audio*audioShare, audioShare)), SSRCs: video}
+			select {
+			case s.writer.feedback <- []rtcp.Packet{remb}:
+			case <-ctx.Done():
+				return
 			}
 		}
 	}
@@ -305,13 +303,6 @@ func egressAPI(settings *webrtc.SettingEngine, targets chan int) (*webrtc.API, e
 		options = append(options, webrtc.WithSettingEngine(*settings))
 	}
 	return webrtc.NewAPI(options...), nil
-}
-
-func abs(v int) int {
-	if v < 0 {
-		return -v
-	}
-	return v
 }
 
 // latest puts v in the one-slot channel c, replacing what it holds.

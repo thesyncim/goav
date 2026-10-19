@@ -2,6 +2,7 @@ package webrtcav
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -42,24 +43,49 @@ func newSignalConfig(options []Option) signalConfig {
 	if config.client == nil {
 		config.client = &http.Client{Timeout: 15 * time.Second}
 	}
+	config.client = keepMethodOnRedirect(config.client)
 	return config
 }
 
-// Token sends token as the Bearer credential on every request (POST, PATCH,
-// DELETE), so the URL carries none.
-func Token(token string) Option {
+// keepMethodOnRedirect returns a copy of client that follows only the
+// redirects that keep the method and body, 307 and 308 (RFC 9725 section 4.5): Go turns a POST
+// redirected by 301, 302, or 303 into a GET, which no WHIP or WHEP endpoint
+// answers with a session, so those return as they are, refused. A redirect
+// policy the caller set still applies to the rest.
+func keepMethodOnRedirect(client *http.Client) *http.Client {
+	clone := *client
+	check := client.CheckRedirect
+	clone.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		if req.Response != nil && req.Response.StatusCode != http.StatusTemporaryRedirect && req.Response.StatusCode != http.StatusPermanentRedirect {
+			return http.ErrUseLastResponse
+		}
+		if check != nil {
+			return check(req, via)
+		}
+		if len(via) >= 10 {
+			return errors.New("stopped after 10 redirects")
+		}
+		return nil
+	}
+	return &clone
+}
+
+// WithToken sends token as the Bearer credential on every request (POST,
+// PATCH, DELETE), so the URL carries none.
+func WithToken(token string) Option {
 	return func(c *signalConfig) { c.token = token }
 }
 
-// HTTPClient sends the requests through client; the default bounds each
+// WithHTTPClient sends the requests through client; the default bounds each
 // request to 15s.
-func HTTPClient(client *http.Client) Option {
+func WithHTTPClient(client *http.Client) Option {
 	return func(c *signalConfig) { c.client = client }
 }
 
-// PeerConfig configures the Pion peer connection: its API (media engine,
-// interceptors, setting engine) and Configuration (ICE servers).
-func PeerConfig(config SessionConfig) Option {
+// WithSession configures the Pion peer connection the way a receive Session
+// is: its API (media engine, interceptors, setting engine) and Configuration
+// (ICE servers).
+func WithSession(config SessionConfig) Option {
 	return func(c *signalConfig) { c.session = config }
 }
 
@@ -111,7 +137,7 @@ type negotiated interface {
 // (Link rel="ice-server", RFC 9725 section 4.6) only help candidates
 // gathered after them, so a session that learns new ones is replaced, once,
 // by one configured with them before its offer; later sessions to the host
-// start with them. Servers the caller configured (PeerConfig) take
+// start with them. Servers the caller configured (WithSession) take
 // precedence.
 func negotiate[S negotiated](ctx context.Context, servers *iceServers, host string, own webrtc.Configuration, open func(context.Context, webrtc.Configuration) (S, error)) (S, error) {
 	config := own
@@ -332,10 +358,11 @@ func (s *signaling) patch(candidates []webrtc.ICECandidateInit, end bool) {
 	}
 	ctx, cancel := context.WithTimeout(s.ctx, 5*time.Second)
 	defer cancel()
-	header := http.Header{}
-	if etag != "" {
-		header.Set("If-Match", etag)
-	}
+	// A trickle PATCH names its ICE session by the entity-tag the 201 gave
+	// (RFC 9725 sections 4.3.1, 4.3.2; If-Match: * is how an ICE restart
+	// asks, 4.3.3). With none, * satisfies a server that requires a
+	// precondition (428) without naming a session.
+	header := http.Header{"If-Match": {cmp.Or(etag, "*")}}
 	resp, err := s.request(ctx, http.MethodPatch, resource, "application/trickle-ice-sdpfrag", frag, header)
 	if err != nil {
 		return

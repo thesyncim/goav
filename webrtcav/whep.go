@@ -32,7 +32,7 @@ var ErrWHEPDisconnected = errors.New("webrtcav: whep session disconnected")
 // goav.URIInput: whep://host/path plays over https, whep+http://host/path
 // over plain http. Register it under each name used:
 //
-//	runconfig.Scheme("whep", webrtcav.WHEP(webrtcav.Token(token)))
+//	runconfig.Scheme("whep", webrtcav.WHEP(webrtcav.WithToken(token)))
 //
 // Opening the input POSTs an SDP offer with receive-only audio and video,
 // applies the answer, and starts once the first negotiated track flows; a

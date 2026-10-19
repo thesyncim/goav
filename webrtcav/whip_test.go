@@ -1,6 +1,7 @@
 package webrtcav
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -9,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	neturl "net/url"
+	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -36,6 +38,9 @@ type whipServer struct {
 	api    *webrtc.API
 	tracks chan *webrtc.TrackRemote
 	status int
+	// etag is the ETag the 201 carries; ifMatch records the PATCHes' If-Match.
+	etag    string
+	ifMatch []string
 
 	mu       sync.Mutex
 	pc       *webrtc.PeerConnection
@@ -65,6 +70,7 @@ func (s *whipServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
 		s.mu.Lock()
 		s.patches++
+		s.ifMatch = append(s.ifMatch, r.Header.Get("If-Match"))
 		pc := s.pc
 		s.mu.Unlock()
 		for _, line := range strings.Split(string(body), "\r\n") {
@@ -114,6 +120,9 @@ func (s *whipServer) post(w http.ResponseWriter, r *http.Request) {
 	s.posts++
 	s.pc = pc
 	s.mu.Unlock()
+	if s.etag != "" {
+		w.Header().Set("ETag", s.etag)
+	}
 	w.Header().Set("Location", "../session/1")
 	w.Header().Set("Content-Type", "application/sdp")
 	w.Header().Set("Accept-Patch", "application/trickle-ice-sdpfrag")
@@ -191,8 +200,11 @@ func keyframes(c *goavtest.Collector) int {
 func TestWHIPPublishesToAServer(t *testing.T) {
 	for _, trickle := range []bool{false, true} {
 		server := newWHIPServer(t)
+		if trickle {
+			server.etag = `"xyzzy"`
+		}
 		srv := httptest.NewServer(server)
-		scheme := WHIP(Token("tok"), PeerConfig(SessionConfig{API: loopbackAPI()})).(whipScheme)
+		scheme := WHIP(WithToken("tok"), WithSession(SessionConfig{API: loopbackAPI()})).(whipScheme)
 		if trickle {
 			scheme.config.gather = 0
 		}
@@ -253,15 +265,22 @@ func TestWHIPPublishesToAServer(t *testing.T) {
 		if trickle && (server.patches == 0 || server.trickled == 0) {
 			t.Fatalf("patches=%d trickled=%d, want candidates trickled", server.patches, server.trickled)
 		}
+		// A trickle PATCH names the ICE session by its entity-tag (RFC 9725
+		// sections 4.3.1 and 4.3.2), or * when the server gave none.
+		for _, ifMatch := range server.ifMatch {
+			if ifMatch != server.etag && (server.etag != "" || ifMatch != "*") {
+				t.Fatalf("PATCH If-Match = %q, want the session's entity-tag", ifMatch)
+			}
+		}
 		server.mu.Unlock()
 	}
 }
 
-// TestWHIPEncodesFramesAndFollowsTheEstimate pins the planner's side of
+// TestWHIPEncodesFramesAndBoundsTheEstimate pins the planner's side of
 // WHIP: frames routed to it get a VP8 encode, Describe shows it, and with
 // the API WHIP builds itself, the send-side bandwidth estimate (TWCC)
-// retargets the encoder.
-func TestWHIPEncodesFramesAndFollowsTheEstimate(t *testing.T) {
+// retargets the encoder, never above the bitrate the recipe configured.
+func TestWHIPEncodesFramesAndBoundsTheEstimate(t *testing.T) {
 	server := newWHIPServer(t)
 	srv := httptest.NewServer(server)
 	defer srv.Close()
@@ -285,7 +304,8 @@ func TestWHIPEncodesFramesAndFollowsTheEstimate(t *testing.T) {
 	tap := controlTap{egress: bound.(*egress), got: make(chan tapped, 16)}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	task, err := rt.Build(ctx, pacedVideo("cam").Video().To(goav.Sink(tap)))
+	configured := 150_000
+	task, err := rt.Build(ctx, pacedVideo("cam").Video().Encode(codec.VP8(codec.Bitrate(configured))).To(goav.Sink(tap)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -304,7 +324,7 @@ func TestWHIPEncodesFramesAndFollowsTheEstimate(t *testing.T) {
 			if got.ctrl.Type() != control.BitrateType {
 				continue
 			}
-			if got.err != nil || got.ctrl.Bitrate() <= 0 {
+			if got.err != nil || got.ctrl.Bitrate() < 64_000 || got.ctrl.Bitrate() > configured {
 				t.Fatalf("bitrate control for %q at %d: %v", got.ctrl.StreamID(), got.ctrl.Bitrate(), got.err)
 			}
 			cancel()
@@ -351,7 +371,7 @@ func TestWHIPRefusals(t *testing.T) {
 	server.status = http.StatusUnauthorized
 	srv := httptest.NewServer(server)
 	defer srv.Close()
-	rt = bundle.MustNew(runconfig.Scheme("whip+http", WHIP(PeerConfig(SessionConfig{API: loopbackAPI()}))))
+	rt = bundle.MustNew(runconfig.Scheme("whip+http", WHIP(WithSession(SessionConfig{API: loopbackAPI()}))))
 	host := strings.TrimPrefix(srv.URL, "http://")
 	_, err := rt.Build(context.Background(), pacedVideo("cam").Video().To(goav.URI("whip+http://"+host+"/whip/live?token=SECRET")))
 	var status *StatusError
@@ -388,7 +408,7 @@ func TestWHEPToWHIPRelay(t *testing.T) {
 	whip := newWHIPServer(t)
 	whipSrv := httptest.NewServer(whip)
 	defer whipSrv.Close()
-	session := PeerConfig(SessionConfig{API: loopbackAPI()})
+	session := WithSession(SessionConfig{API: loopbackAPI()})
 	rt := bundle.MustNew(runconfig.Scheme("whep+http", WHEP(session)), runconfig.Scheme("whip+http", WHIP(session)))
 	in := goav.URIInput("whep+http://" + strings.TrimPrefix(whepSrv.URL, "http://") + "/whep/cam")
 	out := goav.URI("whip+http://" + strings.TrimPrefix(whipSrv.URL, "http://") + "/whip/live")
@@ -507,7 +527,8 @@ func TestLocalTrackSendsAndHearsKeyframeRequests(t *testing.T) {
 	case <-ctx.Done():
 		t.Fatal("no remote track")
 	}
-	if packet, _, err := got.ReadRTP(); err != nil || len(packet.Payload) == 0 {
+	first, _, err := got.ReadRTP()
+	if err != nil || len(first.Payload) == 0 {
 		t.Fatalf("remote read: %v", err)
 	}
 	if err := answerer.WriteRTCP([]rtcp.Packet{&rtcp.PictureLossIndication{MediaSSRC: uint32(got.SSRC())}}); err != nil {
@@ -524,6 +545,39 @@ func TestLocalTrackSendsAndHearsKeyframeRequests(t *testing.T) {
 	cancel()
 	if err := <-sending; err != nil {
 		t.Fatal(err)
+	}
+
+	// Detached and reattached, the track continues: the next packet follows
+	// the last one's sequence number, later on its timeline.
+	lastSeq, lastTS := first.SequenceNumber, first.Timestamp
+	for {
+		got.SetReadDeadline(time.Now().Add(100 * time.Millisecond))
+		packet, _, err := got.ReadRTP()
+		if err != nil {
+			break
+		}
+		lastSeq, lastTS = packet.SequenceNumber, packet.Timestamp
+	}
+	got.SetReadDeadline(time.Time{})
+	if err := sink.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := sink.(interface {
+		OpenStreams(context.Context, []av.Stream) error
+	}).OpenStreams(context.Background(), []av.Stream{{ID: "v", Type: av.MediaVideo, Codec: av.CodecParameters{ID: av.CodecVP8, ClockRate: 90000}}}); err != nil {
+		t.Fatalf("reopen: %v", err)
+	}
+	packet := &av.Packet{StreamID: "v", Keyframe: true, Payload: av.Buffer{Bytes: []byte{0x10, 0x00, 0x9d, 0x01}}, PTS: av.Timestamp{Value: 1, Base: av.RTPTimeBase(90000)}}
+	if err := sink.Handle(context.Background(), &pipeline.Message{Kind: pipeline.MessagePacket, Packet: packet}); err != nil {
+		t.Fatal(err)
+	}
+	got.SetReadDeadline(time.Now().Add(5 * time.Second))
+	next, _, err := got.ReadRTP()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if next.SequenceNumber != lastSeq+1 || int32(next.Timestamp-lastTS) <= 0 {
+		t.Fatalf("after reattach seq=%d ts=%d, want seq %d and a later timestamp than %d", next.SequenceNumber, next.Timestamp, lastSeq+1, lastTS)
 	}
 }
 
@@ -567,4 +621,91 @@ func fmtJSON(t *testing.T, v any) string {
 		t.Fatal(err)
 	}
 	return string(data)
+}
+
+// TestWHIPPacesAFile publishes an MP4's H264, copied, from an offline
+// runtime: WHIP is live, so the file plays at its media time, and the server
+// receives it spread over that time instead of in one burst.
+func TestWHIPPacesAFile(t *testing.T) {
+	data, err := os.ReadFile("../container/mp4/testdata/h264_aac.mp4")
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := newWHIPServer(t)
+	srv := httptest.NewServer(server)
+	defer srv.Close()
+	rt := bundle.MustNew(runconfig.WithRealtime(false), runconfig.Scheme("whip+http", WHIP(WithSession(SessionConfig{API: loopbackAPI()}))))
+	out := goav.FileInput("in.mp4", bytes.NewReader(data)).Video().To(goav.URI("whip+http://" + strings.TrimPrefix(srv.URL, "http://") + "/whip/live"))
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	task, err := rt.Build(ctx, out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The run ends with the file; closing the task DELETEs the session,
+	// which ends the server's track.
+	done := make(chan error, 1)
+	go func() {
+		err := task.Run(ctx)
+		task.Close()
+		done <- err
+	}()
+	track := <-server.tracks
+	if track.Codec().MimeType != webrtc.MimeTypeH264 {
+		t.Fatalf("track codec = %s", track.Codec().MimeType)
+	}
+	var first, last time.Time
+	var firstTS, lastTS uint32
+	for {
+		packet, _, err := track.ReadRTP()
+		if err != nil {
+			break
+		}
+		if first.IsZero() {
+			first, firstTS = time.Now(), packet.Timestamp
+		}
+		last, lastTS = time.Now(), packet.Timestamp
+	}
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	media := time.Duration(lastTS-firstTS) * time.Second / 90000
+	if wall := last.Sub(first); media < 200*time.Millisecond || wall < media*7/10 {
+		t.Fatalf("%s of media arrived in %s, want it at its media time", media, wall)
+	}
+}
+
+// TestWHIPRedirects pins RFC 9725 section 4.5: a 307 redirect is followed
+// with the offer intact and the session resource resolved at the new
+// endpoint, while a 302, which would turn the POST into a GET, is refused
+// as it stands.
+func TestWHIPRedirects(t *testing.T) {
+	server := newWHIPServer(t)
+	mux := http.NewServeMux()
+	mux.Handle("/", server)
+	mux.Handle("/temporary", http.RedirectHandler("/whip/live", http.StatusTemporaryRedirect))
+	mux.Handle("/found", http.RedirectHandler("/whip/live", http.StatusFound))
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+	rt := bundle.MustNew(runconfig.Scheme("whip+http", WHIP(WithSession(SessionConfig{API: loopbackAPI()}))))
+	host := strings.TrimPrefix(srv.URL, "http://")
+
+	_, err := rt.Build(context.Background(), pacedVideo("cam").Video().To(goav.URI("whip+http://"+host+"/found")))
+	var status *StatusError
+	if !errors.As(err, &status) || status.StatusCode != http.StatusFound {
+		t.Fatalf("302: err = %v, want the redirect refused as a StatusError", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	task, err := rt.Build(ctx, pacedVideo("cam").Video().To(goav.URI("whip+http://"+host+"/temporary")))
+	if err != nil {
+		t.Fatalf("307: %v", err)
+	}
+	task.Close()
+	server.mu.Lock()
+	defer server.mu.Unlock()
+	if server.posts != 1 || server.deletes != 1 {
+		t.Fatalf("posts=%d deletes=%d, want the redirected session made and deleted", server.posts, server.deletes)
+	}
 }
