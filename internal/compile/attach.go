@@ -7,6 +7,7 @@ import (
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/flow"
 	"github.com/thesyncim/goav/internal/recipeir"
+	"github.com/thesyncim/goav/pipeline"
 	"github.com/thesyncim/goav/plan"
 	"github.com/thesyncim/goav/shape"
 	sourcepkg "github.com/thesyncim/goav/source"
@@ -190,4 +191,72 @@ func (s *State) ruleSourceDomain() shape.MediaDomain {
 		return ""
 	}
 	return s.Req.Inputs[0].EventDomain
+}
+
+// AttachGroup is one attach group a running task lowers: its branches are
+// the streams of one recipe whose roots are anchors on the task.
+type AttachGroup struct {
+	Name string
+	Env  Env
+	// Streams are the group's branches; Frames reports a branch whose
+	// anchor carries frames, and Dests indexes each branch's destinations.
+	Streams []recipeir.Stream
+	Frames  []bool
+	Dests   [][]int
+	// Destinations are the group's destinations, and Names their names.
+	Destinations []Destination
+	Names        []string
+	// Anchors are the live nodes anchor roots read, and Routes the routes
+	// they read them by; Pending are the tap operations that anchor roots
+	// on a tap the group itself declares read.
+	Anchors map[recipeir.NodeID]pipeline.NodeRef
+	Routes  map[recipeir.NodeID]AnchorRoute
+	Pending map[recipeir.NodeID]recipeir.NodeID
+}
+
+// AttachPlan is a lowered attach group: the nodes it adds to the running
+// graph, in schedule order, named under its branches.
+type AttachPlan struct {
+	Nodes    []ComposeNode
+	lowering *Lowering
+}
+
+// LowerAttach lowers an attach group through the build's lowering: work its
+// branches share is one node, a destination several branches route to is
+// one node, and every node a branch alone reads is named under the branch.
+func LowerAttach(group AttachGroup) (*AttachPlan, error) {
+	s := &State{
+		Operation:              "attach runtime branch",
+		Req:                    &Request{Env: group.Env},
+		Env:                    group.Env,
+		Inserted:               map[string]recipeir.NodeID{},
+		Outputs:                group.Destinations,
+		OutputDestinationNames: group.Names,
+	}
+	s.Recipe.Streams = group.Streams
+	for i := range group.Streams {
+		s.Facts = append(s.Facts, BranchFacts{Frames: group.Frames[i], Dests: group.Dests[i]})
+	}
+	l := NewRecipeLowering(s)
+	l.Attach = &AttachLowering{Name: group.Name, Anchors: group.Anchors, Routes: group.Routes, Pending: group.Pending}
+	if err := l.Plan(); err != nil {
+		return nil, err
+	}
+	return &AttachPlan{Nodes: l.G.Nodes, lowering: l}, nil
+}
+
+// Ref is the planned node of the group's DAG node id.
+func (p *AttachPlan) Ref(id recipeir.NodeID) (pipeline.NodeRef, bool) {
+	ref, ok := p.lowering.Refs[id]
+	return ref, ok
+}
+
+// ParentRef is the planned node that feeds DAG node id on branch.
+func (p *AttachPlan) ParentRef(branch int, id recipeir.NodeID) pipeline.NodeRef {
+	return p.lowering.ParentRef(branch, id)
+}
+
+// Spec is the graph the group adds, as spec describes the running one.
+func (p *AttachPlan) Spec(spec pipeline.Spec) (pipeline.Spec, error) {
+	return p.lowering.G.Emit(spec)
 }

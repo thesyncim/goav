@@ -8,21 +8,6 @@ import (
 	"github.com/thesyncim/goav/internal/compile"
 )
 
-func TestBytesEqualPreservesNilDistinction(t *testing.T) {
-	if !compile.BytesEqual(nil, nil) {
-		t.Fatal("nil byte slices should compare equal")
-	}
-	if compile.BytesEqual(nil, []byte{}) {
-		t.Fatal("nil and empty byte slices should remain distinct")
-	}
-	if !compile.BytesEqual([]byte{1, 2, 3}, []byte{1, 2, 3}) {
-		t.Fatal("equal byte slices did not compare equal")
-	}
-	if compile.BytesEqual([]byte{1, 2, 3}, []byte{1, 2, 4}) {
-		t.Fatal("different byte slices compared equal")
-	}
-}
-
 func TestMergeDecodeCodecSpecContracts(t *testing.T) {
 	base := codec.Codec(av.CodecID("x-base-audio"), av.MediaAudio,
 		codec.Bitrate(32_000),

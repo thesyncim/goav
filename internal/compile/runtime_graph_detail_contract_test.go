@@ -1,4 +1,4 @@
-package goav
+package compile
 
 import (
 	"context"
@@ -7,63 +7,62 @@ import (
 	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/filter"
-	"github.com/thesyncim/goav/internal/compile"
 	"github.com/thesyncim/goav/pipeline"
 )
 
 func TestEncodeTargetCodecContracts(t *testing.T) {
-	request := compile.EncodeRequest{Config: codec.EncodeConfig{
+	request := EncodeRequest{Config: codec.EncodeConfig{
 		Stream:     av.Stream{Codec: av.CodecParameters{ID: av.CodecVP8}},
 		Parameters: av.CodecParameters{ID: av.CodecVP9},
 	}}
-	if got := compile.EncodeTargetCodec(request); got != av.CodecVP9 {
+	if got := EncodeTargetCodec(request); got != av.CodecVP9 {
 		t.Fatalf("encodeTargetCodec with parameters = %q, want vp9", got)
 	}
 
 	request.Config.Parameters.ID = ""
-	if got := compile.EncodeTargetCodec(request); got != av.CodecVP8 {
+	if got := EncodeTargetCodec(request); got != av.CodecVP8 {
 		t.Fatalf("encodeTargetCodec with stream fallback = %q, want vp8", got)
 	}
 
 	request.Config.Stream.Codec.ID = ""
-	if got := compile.EncodeTargetCodec(request); got != "" {
+	if got := EncodeTargetCodec(request); got != "" {
 		t.Fatalf("encodeTargetCodec empty = %q, want empty", got)
 	}
 }
 
 func TestMediaTransformDetailContracts(t *testing.T) {
 	stage := graphDetailStage{detail: "custom detail"}
-	if got := compile.MediaTransformDetail(compile.MediaTransform{Stage: stage}); got != "custom detail" {
+	if got := MediaTransformDetail(MediaTransform{Stage: stage}); got != "custom detail" {
 		t.Fatalf("stage detail = %q, want custom detail", got)
 	}
 
-	video := compile.MediaTransform{Video: &filter.ResizeConfig{
+	video := MediaTransform{Video: &filter.ResizeConfig{
 		Width:       320,
 		Height:      180,
 		Mode:        filter.ResizeExact,
 		PixelFormat: av.PixelFormatI420,
 	}}
-	if got := compile.MediaTransformDetail(video); got != "resize, 320x180, exact, pixfmt=i420" {
+	if got := MediaTransformDetail(video); got != "resize, 320x180, exact, pixfmt=i420" {
 		t.Fatalf("video detail = %q", got)
 	}
-	if got := compile.MediaTransformDetail(compile.MediaTransform{Video: &filter.ResizeConfig{}}); got != "resize, exact" {
+	if got := MediaTransformDetail(MediaTransform{Video: &filter.ResizeConfig{}}); got != "resize, exact" {
 		t.Fatalf("default video detail = %q, want resize, exact", got)
 	}
 
-	audio := compile.MediaTransform{Audio: &filter.ResampleConfig{
+	audio := MediaTransform{Audio: &filter.ResampleConfig{
 		SampleRate:    48_000,
 		Channels:      codec.Stereo,
 		ChannelLayout: "stereo",
 		SampleFormat:  av.SampleFormatS16,
 	}}
-	if got := compile.MediaTransformDetail(audio); got != "resample, 48000 Hz, 2 ch, layout=stereo, samplefmt=s16" {
+	if got := MediaTransformDetail(audio); got != "resample, 48000 Hz, 2 ch, layout=stereo, samplefmt=s16" {
 		t.Fatalf("audio detail = %q", got)
 	}
 
-	if got := compile.MediaTransformDetail(compile.MediaTransform{Factory: "custom-filter"}); got != "custom-filter" {
+	if got := MediaTransformDetail(MediaTransform{Factory: "custom-filter"}); got != "custom-filter" {
 		t.Fatalf("factory detail = %q, want custom-filter", got)
 	}
-	if got := compile.MediaTransformDetail(compile.MediaTransform{}); got != "filter" {
+	if got := MediaTransformDetail(MediaTransform{}); got != "filter" {
 		t.Fatalf("fallback detail = %q, want filter", got)
 	}
 }
