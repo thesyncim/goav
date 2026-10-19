@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"math/rand/v2"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -27,14 +28,19 @@ const (
 	// keyframeRequestGap rate-limits keyframe controls per stream: a burst
 	// of PLI/FIR from one loss event asks once.
 	keyframeRequestGap = 250 * time.Millisecond
-	// nackQueue bounds the NACKs waiting for the data path to retransmit;
-	// more are shed, and the receiver asks again.
-	nackQueue = 16
+	// minEstimateBitrate is the floor a bandwidth estimate retargets a video
+	// encoder to.
+	minEstimateBitrate = 64_000
+	// defaultMaxEstimateBitrate caps the estimates for a stream whose encoder
+	// has no configured bitrate: libwebrtc's default maximum.
+	defaultMaxEstimateBitrate = 2_500_000
 )
 
 // PacketWriter is the transport seam Send writes through: RTP out, RTCP
 // both ways. ReadRTCP blocks until feedback arrives and fails once the
-// writer closes. DialUDP returns one over UDP; webrtcav adapts Pion tracks.
+// writer closes. WriteRTP is called from the data path and, to retransmit,
+// from the feedback loop, so it must be safe for concurrent use. DialUDP
+// returns one over UDP; webrtcav adapts Pion tracks.
 type PacketWriter interface {
 	FeedbackWriter
 	WriteRTP(context.Context, *rtp.Packet) error
@@ -84,13 +90,16 @@ var defaultPayloads = []PayloadCodec{
 // Send is the RTP output: a media destination for goav.Sink (or a
 // provider.DestinationScheme) that packetizes the packets routed to it and
 // writes them through writer, one SSRC per stream. It declares the codecs it
-// accepts, so the planner encodes frames to one of them; learns its streams,
-// with their extradata, before the first packet; sends RTCP sender reports;
-// answers NACK from a bounded history; and turns PLI and FIR into a keyframe
-// control and REMB into a bitrate control on the encoder that feeds the
-// stream. Closing it sends BYE and closes writer.
+// accepts, so the planner encodes frames to one of them, and that it is
+// live, so the planner paces what it is fed in real time; learns its
+// streams, with their extradata, before the first packet; sends RTCP sender
+// reports; answers NACK from a bounded history as it arrives; and turns PLI
+// and FIR into a keyframe control and REMB into a bitrate control on the
+// encoder that feeds the stream, between 64 kb/s and the bitrate the recipe
+// configured (2.5 Mb/s when it set none). Closing it sends BYE and closes
+// writer.
 func Send(writer PacketWriter, options ...SendOption) pipeline.Sink {
-	return &sender{writer: writer, config: newSendConfig(options), nacks: make(chan *rtcp.TransportLayerNack, nackQueue)}
+	return &sender{writer: writer, config: newSendConfig(options)}
 }
 
 type sender struct {
@@ -102,7 +111,6 @@ type sender struct {
 	// feedback loop; after that only Handle touches their send state.
 	streams []*sendStream
 	result  PacketizeResult
-	nacks   chan *rtcp.TransportLayerNack
 
 	cancel    context.CancelFunc
 	done      chan struct{}
@@ -126,16 +134,34 @@ type sendStream struct {
 	// feedback loop reads it.
 	lastKeyframe time.Time
 	bitrate      int
+	// maxBitrate is the most an estimate retargets the encoder to: the
+	// recipe's configured bitrate (av.MetadataBitrate on the stream).
+	maxBitrate int
 }
 
 // sentPacket is one history slot: the packet as sent, its payload copied.
+// The data path writes it and the feedback loop resends it, handing it over
+// through state, so neither takes a lock: a slot being resent when its turn
+// to be overwritten comes keeps the older packet.
 type sentPacket struct {
+	state  atomic.Uint32
 	packet rtp.Packet
 	buf    []byte
-	valid  bool
 }
 
+// History slot states.
+const (
+	slotEmpty uint32 = iota
+	slotWriting
+	slotReady
+	slotReading
+)
+
 func (s *sender) Name() string { return "rtp-out" }
+
+// Live reports that Send consumes in real time: the planner paces a file
+// routed to it.
+func (s *sender) Live() bool { return true }
 
 // DescribeNode details the node in Describe output.
 func (s *sender) DescribeNode() pipeline.NodeSpec {
@@ -198,6 +224,7 @@ func (s *sender) OpenStreams(ctx context.Context, streams []av.Stream) error {
 			seq:        uint16(rand.N(1 << 16)),
 			offset:     rand.Uint32(),
 			history:    newHistory(s.config.history, s.config.mtu),
+			maxBitrate: configuredBitrate(stream),
 		})
 	}
 	if s.streams == nil {
@@ -209,8 +236,7 @@ func (s *sender) OpenStreams(ctx context.Context, streams []av.Stream) error {
 	return nil
 }
 
-// Handle sends one packet: retransmissions first, then the packet's RTP,
-// then a sender report when one is due.
+// Handle sends one packet's RTP, then a sender report when one is due.
 func (s *sender) Handle(ctx context.Context, msg *pipeline.Message) error {
 	if msg == nil || msg.Kind != pipeline.MessagePacket || msg.Packet == nil {
 		return nil
@@ -218,7 +244,6 @@ func (s *sender) Handle(ctx context.Context, msg *pipeline.Message) error {
 	if s.streams == nil {
 		return errors.New("rtpav: Send received a packet before OpenStreams")
 	}
-	s.retransmit(ctx)
 	stream := s.streamFor(msg.Packet.StreamID)
 	if stream == nil {
 		return fmt.Errorf("rtpav: send: %w: %s", ErrUnknownStream, msg.Packet.StreamID)
@@ -318,10 +343,13 @@ func (s *sendStream) remember(packet *rtp.Packet) {
 		return
 	}
 	slot := &s.history[int(packet.SequenceNumber)%len(s.history)]
+	if !slot.state.CompareAndSwap(slotReady, slotWriting) && !slot.state.CompareAndSwap(slotEmpty, slotWriting) {
+		return
+	}
 	slot.buf = append(slot.buf[:0], packet.Payload...)
 	slot.packet = rtp.Packet{Header: packet.Header, Payload: slot.buf}
 	slot.packet.Extensions = nil
-	slot.valid = true
+	slot.state.Store(slotReady)
 }
 
 // report sends a sender report for the stream when one is due, mapping the
@@ -345,26 +373,18 @@ func (s *sender) report(ctx context.Context, stream *sendStream, timestamp uint3
 	_ = s.writer.WriteRTCP(ctx, []rtcp.Packet{sr})
 }
 
-// retransmit resends the packets queued NACKs name that the history still
-// holds, on the data path that owns the history.
-func (s *sender) retransmit(ctx context.Context) {
-	for {
-		var nack *rtcp.TransportLayerNack
-		select {
-		case nack = <-s.nacks:
-		default:
-			return
-		}
-		stream := s.streamBySSRC(nack.MediaSSRC)
-		if stream == nil || len(stream.history) == 0 {
-			continue
-		}
-		for _, pair := range nack.Nacks {
-			stream.resend(ctx, s.writer, pair.PacketID)
-			for bit := range uint16(16) {
-				if pair.LostPackets&(1<<bit) != 0 {
-					stream.resend(ctx, s.writer, pair.PacketID+bit+1)
-				}
+// retransmit resends, as soon as the NACK arrives, the packets it names
+// that the history still holds.
+func (s *sender) retransmit(ctx context.Context, nack *rtcp.TransportLayerNack) {
+	stream := s.streamBySSRC(nack.MediaSSRC)
+	if stream == nil || len(stream.history) == 0 {
+		return
+	}
+	for _, pair := range nack.Nacks {
+		stream.resend(ctx, s.writer, pair.PacketID)
+		for bit := range uint16(16) {
+			if pair.LostPackets&(1<<bit) != 0 {
+				stream.resend(ctx, s.writer, pair.PacketID+bit+1)
 			}
 		}
 	}
@@ -372,9 +392,13 @@ func (s *sender) retransmit(ctx context.Context) {
 
 func (s *sendStream) resend(ctx context.Context, writer PacketWriter, seq uint16) {
 	slot := &s.history[int(seq)%len(s.history)]
-	if slot.valid && slot.packet.SequenceNumber == seq {
+	if !slot.state.CompareAndSwap(slotReady, slotReading) {
+		return
+	}
+	if slot.packet.SequenceNumber == seq {
 		_ = writer.WriteRTP(ctx, &slot.packet)
 	}
+	slot.state.Store(slotReady)
 }
 
 func (s *sender) streamBySSRC(ssrc uint32) *sendStream {
@@ -386,9 +410,9 @@ func (s *sender) streamBySSRC(ssrc uint32) *sendStream {
 	return nil
 }
 
-// feedback reads RTCP until the writer closes: NACKs queue for the data
-// path, PLI and FIR ask the stream's encoder for a keyframe, and REMB
-// retargets the encoders of the streams it names.
+// feedback reads RTCP until the writer closes: a NACK resends what the
+// history holds, PLI and FIR ask the stream's encoder for a keyframe, and
+// REMB retargets the encoders of the streams it names.
 func (s *sender) feedback(ctx context.Context) {
 	defer close(s.done)
 	for {
@@ -406,10 +430,7 @@ func (s *sender) feedback(ctx context.Context) {
 		for _, packet := range packets {
 			switch p := packet.(type) {
 			case *rtcp.TransportLayerNack:
-				select {
-				case s.nacks <- p:
-				default:
-				}
+				s.retransmit(ctx, p)
 			case *rtcp.PictureLossIndication:
 				s.keyframe(ctx, p.MediaSSRC)
 			case *rtcp.FullIntraRequest:
@@ -425,7 +446,7 @@ func (s *sender) feedback(ctx context.Context) {
 
 func (s *sender) keyframe(ctx context.Context, ssrc uint32) {
 	stream := s.streamBySSRC(ssrc)
-	if stream == nil || stream.stream.Type == av.MediaAudio {
+	if stream == nil || !isVideo(stream.stream) {
 		return
 	}
 	if now := time.Now(); now.Sub(stream.lastKeyframe) >= keyframeRequestGap {
@@ -435,11 +456,12 @@ func (s *sender) keyframe(ctx context.Context, ssrc uint32) {
 }
 
 // remb splits a receiver's bitrate estimate across the video streams it
-// names and retargets each encoder when its share moves by a tenth.
+// names and retargets each encoder to its share, held between a floor and
+// the stream's configured bitrate, when that target moves by a tenth.
 func (s *sender) remb(ctx context.Context, remb *rtcp.ReceiverEstimatedMaximumBitrate) {
 	var named []*sendStream
 	for _, ssrc := range remb.SSRCs {
-		if stream := s.streamBySSRC(ssrc); stream != nil && stream.stream.Type == av.MediaVideo {
+		if stream := s.streamBySSRC(ssrc); stream != nil && isVideo(stream.stream) {
 			named = append(named, stream)
 		}
 	}
@@ -448,11 +470,12 @@ func (s *sender) remb(ctx context.Context, remb *rtcp.ReceiverEstimatedMaximumBi
 	}
 	share := int(remb.Bitrate) / len(named)
 	for _, stream := range named {
-		if stream.bitrate != 0 && abs(share-stream.bitrate)*10 < stream.bitrate {
+		target := min(max(share, minEstimateBitrate), stream.maxBitrate)
+		if stream.bitrate != 0 && abs(target-stream.bitrate)*10 < stream.bitrate {
 			continue
 		}
-		stream.bitrate = share
-		if ctrl, err := control.SetBitrate(stream.stream.ID, share); err == nil {
+		stream.bitrate = target
+		if ctrl, err := control.SetBitrate(stream.stream.ID, target); err == nil {
 			s.send(ctx, ctrl.WithReason("rtcp remb"))
 		}
 	}
@@ -462,6 +485,19 @@ func (s *sender) send(ctx context.Context, ctrl control.Control) {
 	if fn := s.control.Load(); fn != nil {
 		_ = (*fn)(ctx, ctrl)
 	}
+}
+
+// configuredBitrate is the bitrate the recipe configured the stream's
+// encoder with, or the default ceiling.
+func configuredBitrate(stream av.Stream) int {
+	if bitrate, err := strconv.Atoi(stream.Metadata[av.MetadataBitrate]); err == nil && bitrate > 0 {
+		return bitrate
+	}
+	return defaultMaxEstimateBitrate
+}
+
+func isVideo(stream av.Stream) bool {
+	return stream.Type == av.MediaVideo || stream.Codec.Type == av.MediaVideo || stream.Type == "" && codecMedia(stream.Codec.ID) == av.MediaVideo
 }
 
 func abs(v int) int {

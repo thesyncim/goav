@@ -8,11 +8,12 @@ import (
 	"time"
 
 	"github.com/pion/webrtc/v4"
-	"github.com/pion/webrtc/v4/pkg/media"
 	"github.com/thesyncim/goav"
+	"github.com/thesyncim/goav/av"
 	"github.com/thesyncim/goav/codec"
 	"github.com/thesyncim/goav/component"
 	"github.com/thesyncim/goav/pipeline"
+	"github.com/thesyncim/goav/webrtcav"
 )
 
 var branchSeq atomic.Uint64
@@ -23,12 +24,15 @@ type branchMutator interface {
 }
 
 type branch struct {
-	Spec       branchSpec                     `json:"spec"`
-	Track      *webrtc.TrackLocalStaticSample `json:"-"`
-	Sender     *webrtc.RTPSender              `json:"-"`
-	Attachment goav.Attachment                `json:"-"`
-	Sink       *trackSampleSink               `json:"-"`
-	Created    time.Time                      `json:"created"`
+	Spec       branchSpec                  `json:"spec"`
+	Track      *webrtc.TrackLocalStaticRTP `json:"-"`
+	Sender     *webrtc.RTPSender           `json:"-"`
+	Attachment goav.Attachment             `json:"-"`
+	// Sink sends the branch on its track, across reattachments; Stats counts
+	// what it sends.
+	Sink    pipeline.Sink `json:"-"`
+	Stats   *trackStats   `json:"-"`
+	Created time.Time     `json:"created"`
 }
 
 type branchSpec struct {
@@ -40,12 +44,19 @@ type branchSpec struct {
 	Bitrate int    `json:"bitrate"`
 }
 
-type trackSampleSink struct {
-	name     string
-	track    *webrtc.TrackLocalStaticSample
-	fallback time.Duration
-	packets  atomic.Uint64
-	bytes    atomic.Uint64
+// trackStats counts the packets and bytes a branch sends.
+type trackStats struct {
+	packets atomic.Uint64
+	bytes   atomic.Uint64
+}
+
+// stage counts each encoded packet on its way to the track.
+func (s *trackStats) stage(name string) pipeline.Stage {
+	return component.PacketFunc("count-"+name, func(_ context.Context, packet *av.Packet, emit component.Emit) error {
+		s.packets.Add(1)
+		s.bytes.Add(uint64(len(packet.Payload.Bytes)))
+		return emit.Packet(packet)
+	})
 }
 
 func defaultBranches() []branchSpec {
@@ -64,7 +75,7 @@ func (s *session) addBranch(ctx context.Context, spec branchSpec) (*branch, erro
 	if _, exists := s.branches[spec.ID]; exists {
 		return nil, fmt.Errorf("branch %q already exists", spec.ID)
 	}
-	track, err := webrtc.NewTrackLocalStaticSample(codecCapability(spec), spec.ID, "goav-"+s.id)
+	track, err := webrtc.NewTrackLocalStaticRTP(codecCapability(spec), spec.ID, "goav-"+s.id)
 	if err != nil {
 		return nil, err
 	}
@@ -72,12 +83,12 @@ func (s *session) addBranch(ctx context.Context, spec branchSpec) (*branch, erro
 	if err != nil {
 		return nil, err
 	}
-	go drainRTCP(sender)
 	r := &branch{
 		Spec:    spec,
 		Track:   track,
 		Sender:  sender,
-		Sink:    newTrackSampleSink(spec, track),
+		Sink:    webrtcav.LocalTrack(track, sender),
+		Stats:   &trackStats{},
 		Created: time.Now(),
 	}
 	s.branches[spec.ID] = r
@@ -150,7 +161,7 @@ func (s *session) attachBranchLocked(ctx context.Context, r *branch) error {
 		default:
 			return fmt.Errorf("unsupported video encoder %q", r.Spec.Codec)
 		}
-		attachment, err := s.videoTask.Attach(ctx, encoded.As(r.Spec.ID).To(goav.Sink(r.Sink)))
+		attachment, err := s.videoTask.Attach(ctx, encoded.Do(r.Stats.stage(r.Spec.ID)).As(r.Spec.ID).To(goav.Sink(r.Sink)))
 		if err != nil {
 			return err
 		}
@@ -163,6 +174,7 @@ func (s *session) attachBranchLocked(ctx context.Context, r *branch) error {
 		out := s.audioTask.Tap(audioTapName).
 			Resample(48_000, codec.Stereo).
 			Encode(codec.Opus(codec.Bitrate(r.Spec.Bitrate), codec.Channels(codec.Stereo))).
+			Do(r.Stats.stage(r.Spec.ID)).
 			As(r.Spec.ID).
 			To(goav.Sink(r.Sink))
 		attachment, err := s.audioTask.Attach(ctx, out)
@@ -195,41 +207,6 @@ func (s *session) detachLocked(ctx context.Context, r *branch) error {
 	r.Attachment = nil
 	s.recordLocked("info", "branch", "runtime branch detached", r.Spec.Kind, r.Spec.ID, branchMeta(r.Spec))
 	return err
-}
-
-func newTrackSampleSink(spec branchSpec, track *webrtc.TrackLocalStaticSample) *trackSampleSink {
-	fallback := 33 * time.Millisecond
-	if spec.Kind == "audio" {
-		fallback = 20 * time.Millisecond
-	}
-	return &trackSampleSink{name: "browser-" + spec.ID, track: track, fallback: fallback}
-}
-
-func (s *trackSampleSink) Name() string {
-	return s.name
-}
-
-func (s *trackSampleSink) Handle(_ context.Context, msg *pipeline.Message) error {
-	if msg.Kind != "packet" || msg.Packet == nil {
-		return nil
-	}
-	duration := s.fallback
-	if d, ok := msg.Packet.Duration.ToDuration(); ok && d > 0 {
-		duration = d
-	}
-	if err := s.track.WriteSample(media.Sample{
-		Data:     msg.Packet.Payload.Bytes,
-		Duration: duration,
-	}); err != nil {
-		return err
-	}
-	s.packets.Add(1)
-	s.bytes.Add(uint64(len(msg.Packet.Payload.Bytes)))
-	return nil
-}
-
-func (s *trackSampleSink) Close() error {
-	return nil
 }
 
 func discardSink(name string) pipeline.Sink {
@@ -292,14 +269,6 @@ func codecCapability(spec branchSpec) webrtc.RTPCodecCapability {
 		return webrtc.RTPCodecCapability{
 			MimeType:  webrtc.MimeTypeVP8,
 			ClockRate: 90_000,
-		}
-	}
-}
-
-func drainRTCP(sender *webrtc.RTPSender) {
-	for {
-		if _, _, err := sender.ReadRTCP(); err != nil {
-			return
 		}
 	}
 }

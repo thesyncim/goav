@@ -26,6 +26,7 @@ const mp4Fixture = "../../container/mp4/testdata/h264_aac.mp4"
 type captureWriter struct {
 	mu      sync.Mutex
 	packets []rtp.Packet
+	at      []time.Time
 	closed  chan struct{}
 }
 
@@ -35,6 +36,7 @@ func (w *captureWriter) WriteRTP(_ context.Context, packet *rtp.Packet) error {
 	clone := *packet
 	clone.Payload = append([]byte(nil), packet.Payload...)
 	w.packets = append(w.packets, clone)
+	w.at = append(w.at, time.Now())
 	return nil
 }
 
@@ -55,10 +57,10 @@ func (w *captureWriter) Close() error {
 }
 
 // TestSendCopiesMP4VideoWithParameterSets sends an MP4's H264 video, copied,
-// through rtpav.Send: the depacketized stream opens with SPS and PPS ahead
-// of its IDR (from the avcC, since the samples carry none in band), every
-// packet keeps one SSRC and consecutive sequence numbers, and every access
-// unit comes back.
+// through rtpav.Send on an offline runtime: the file plays at its media
+// time, since Send is live; the depacketized stream opens with SPS and PPS
+// ahead of its IDR (from the avcC, since the samples carry none in band);
+// and every packet keeps one SSRC and consecutive sequence numbers.
 func TestSendCopiesMP4VideoWithParameterSets(t *testing.T) {
 	data, err := os.ReadFile(mp4Fixture)
 	if err != nil {
@@ -75,6 +77,10 @@ func TestSendCopiesMP4VideoWithParameterSets(t *testing.T) {
 	defer writer.mu.Unlock()
 	if len(writer.packets) == 0 {
 		t.Fatal("no packets")
+	}
+	media := time.Duration(writer.packets[len(writer.packets)-1].Timestamp-writer.packets[0].Timestamp) * time.Second / 90000
+	if wall := writer.at[len(writer.at)-1].Sub(writer.at[0]); media < 200*time.Millisecond || wall < media*8/10 {
+		t.Fatalf("%s of media sent in %s, want it paced at its media time", media, wall)
 	}
 	depacketizer := rtpav.NewH264Depacketizer(av.Stream{ID: "v", Type: av.MediaVideo})
 	var units [][]byte

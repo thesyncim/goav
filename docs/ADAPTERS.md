@@ -191,11 +191,11 @@ live inputs. RTMP, SRT, and HLS inputs are future schemes on the same seam.
 | --- | --- | --- |
 | `file`, bare paths | `scheme.File()`, in `bundle.Schemes` | in and out, random access |
 | `http`, `https` | `scheme.HTTP(scheme.Client(c), scheme.Header(k, v))`, in `bundle.Schemes` | in: ranged If-Range reads (`scheme.ErrChanged`), progressive fallback; no length and no ranges, or `icy-`, is live |
-| `whep`, `whep+http` | `webrtcav.WHEP(webrtcav.Token(t))` | live in: WHEP draft over WHIP's HTTP (RFC 9725): trickle PATCH, Link ice-server, DELETE on close |
-| `whip`, `whips`, `whip+http` | `webrtcav.WHIP(webrtcav.Token(t))` | media out (RFC 9725): one track per stream in its codec, a refused codec is `ErrWHIPCodecRefused`; trickle PATCH, Link ice-server, DELETE on close |
+| `whep`, `whep+http` | `webrtcav.WHEP(webrtcav.WithToken(t))` | live in: WHEP draft over WHIP's HTTP (RFC 9725): trickle PATCH, Link ice-server, DELETE on close |
+| `whip`, `whips`, `whip+http` | `webrtcav.WHIP(webrtcav.WithToken(t))` | media out (RFC 9725): one track per stream in its codec, a refused codec is `ErrWHIPCodecRefused`; trickle PATCH, Link ice-server, DELETE on close |
 
-WHEP and WHIP share `Token`, `HTTPClient`, and `PeerConfig`; a refused request is a
-`*webrtcav.StatusError`, which names no URL.
+WHEP and WHIP share `WithToken`, `WithHTTPClient`, and `WithSession`; a refused request is a
+`*webrtcav.StatusError`, which names no URL, and only 307/308 redirects are followed.
 
 ## RTP and WebRTC egress
 
@@ -203,16 +203,17 @@ WHEP and WHIP share `Token`, `HTTPClient`, and `PeerConfig`; a refused request i
 SPS/PPS before every IDR), VP8, VP9 (non-flexible), AV1 (OBU aggregation), and Opus, into a
 reused `PacketizeResult` with no allocation per packet. `rtpav.Send(w)` is a media destination
 for `goav.Sink` over a `PacketWriter` (`rtpav.DialUDP`): one SSRC per stream, sender reports,
-NACK from a bounded history, PLI/FIR as `control.Keyframe` and REMB as `control.SetBitrate` on
-the encoder feeding the stream. `webrtcav.LocalTrack(track, sender)` sends one stream on a Pion
-track, and WHIP builds on the same sender (TWCC through Pion's send-side estimator).
+NACK answered from a bounded history, PLI/FIR as `control.Keyframe` and REMB as
+`control.SetBitrate` (64 kb/s up to the recipe's configured bitrate) on the encoder feeding the
+stream. `webrtcav.LocalTrack(track, sender)` sends one stream on a Pion track, reattaching onto
+the same RTP sequence, and WHIP builds on the same sender (TWCC through Pion's estimator).
 
-A media sink declares what it takes (`InputShapes`), learns its streams with their extradata
-(`OpenStreams`), and gets the task's control path (`UseControl`), all optional
-(`provider.Output`). Frames reaching one are encoded to its first codec the runtime can encode,
-as Describe and Explain show; other codecs are refused with the fix (`.Decode()`, or an explicit
-`.Encode`). Egress is paced by its source: a file publishes in real time with `playout` on each
-stream it selects (`file in.mp4 ! video ! playout ! uri "whips://host/live"`).
+A media sink declares what it takes (`InputShapes`), that it is live (`Live`), learns its
+streams with their extradata (`OpenStreams`), and gets the task's control path (`UseControl`),
+all optional (`provider.Output`). Frames reaching one are encoded to its first codec the runtime
+can encode, as Describe and Explain show; other codecs are refused with the fix (`.Decode()`,
+or an explicit `.Encode`). A live sink plans its recipe realtime: a file routed to it, copied
+whole or by stream, plays at its media time; a push source paces itself, or takes `.Playout`.
 
 ## Descriptor-only boundaries
 
