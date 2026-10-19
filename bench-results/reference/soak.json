@@ -1,8 +1,8 @@
 {
   "schema": 1,
   "kind": "soak",
-  "generated_at": "2026-07-13T22:57:43Z",
-  "go_version": "go version go1.26.4 darwin/arm64",
+  "generated_at": "2026-10-18T21:11:39Z",
+  "go_version": "go version go1.27.2 darwin/arm64",
   "goos": "darwin",
   "goarch": "arm64",
   "package": ".",
@@ -25,31 +25,31 @@
     {
       "name": "BenchmarkAttachDetachUnderLoad",
       "metrics": {
-        "B/op": 1052984,
-        "allocs/op": 447,
-        "ns/op": 74601
+        "B/op": 942718,
+        "allocs/op": 242,
+        "ns/op": 77376
       },
       "ceilings": {
-        "B/op": 1316230,
-        "allocs/op": 894
+        "B/op": 1178398,
+        "allocs/op": 363
       }
     },
     {
       "name": "BenchmarkLiveRoomSync",
       "metrics": {
-        "B/op": 98,
+        "B/op": 78,
         "allocs/op": 1,
-        "delivered": 54,
-        "max_drift_ns": 600000000,
-        "ns/op": 1526,
-        "p50_ns": 333,
-        "p95_ns": 791,
-        "p99_ns": 90583,
+        "delivered": 52,
+        "max_drift_ns": 20000000,
+        "ns/op": 430.8,
+        "p50_ns": 375,
+        "p95_ns": 667,
+        "p99_ns": 6750,
         "source_drops": 0,
-        "sync_drops": 46
+        "sync_drops": 48
       },
       "ceilings": {
-        "B/op": 1122,
+        "B/op": 1102,
         "allocs/op": 1
       }
     },
@@ -59,9 +59,9 @@
         "B/op": 57,
         "allocs/op": 1,
         "gc_cycles": 1,
-        "gc_pause_total_ns": 88166,
-        "heap_drift_B": 2584,
-        "ns/op": 157.9
+        "gc_pause_total_ns": 40042,
+        "heap_drift_B": 2552,
+        "ns/op": 155.4
       },
       "ceilings": {
         "B/op": 1081,

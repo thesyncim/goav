@@ -22,6 +22,7 @@ import (
 	"io"
 	"strconv"
 	"testing"
+	"time"
 
 	"github.com/thesyncim/goav"
 	"github.com/thesyncim/goav/av"
@@ -29,6 +30,7 @@ import (
 	"github.com/thesyncim/goav/component"
 	"github.com/thesyncim/goav/flow"
 	"github.com/thesyncim/goav/goavtest"
+	"github.com/thesyncim/goav/pipeline"
 	runconfig "github.com/thesyncim/goav/runconfig"
 	"github.com/thesyncim/goav/shape"
 	"github.com/thesyncim/goav/source"
@@ -370,18 +372,22 @@ func BenchmarkSelectPassthrough(b *testing.B) {
 			To(benchSink("selected")))
 }
 
-// BenchmarkAttachDetachUnderLoad measures the control plane against live
-// traffic: a never-ending source streams through a tapped chain on a buffered
-// graph while each benchmark op attaches a runtime branch at the tap and
-// detaches it again.
+// BenchmarkAttachDetachUnderLoad measures the control plane on a live graph:
+// a running source streams through a tapped chain on a buffered graph while
+// each benchmark op attaches a runtime branch at the tap and detaches it
+// again. The traffic flows with the timer stopped, before the attach and
+// through the attached branch before the detach, and has been delivered
+// before each timed call, so allocs/op count the attach and the detach alone,
+// not the load's share, which varies with scheduling.
 func BenchmarkAttachDetachUnderLoad(b *testing.B) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	task, err := benchRuntime(runconfig.WithBufferPolicy(flow.DropOldest(64).PipelinePolicy())).Build(ctx, goavtest.LiveAudio("live", 48_000, 1, make([]int16, benchAudioSamples)).
+	load := newBenchAttachLoad(48_000, benchAudioSamples)
+	task, err := benchRuntime(runconfig.WithBufferPolicy(flow.Blocking(64).PipelinePolicy())).Build(ctx, load.input().
 		Audio().
 		Tap("live.frames").
-		To(benchSink("main")))
+		To(load.sink("main")))
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -390,17 +396,24 @@ func BenchmarkAttachDetachUnderLoad(b *testing.B) {
 	runErr := make(chan error, 1)
 	go func() { runErr <- task.Run(ctx) }()
 
+	const burst = 8
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
+		b.StopTimer()
+		load.flow(ctx, b, burst, burst)
+		b.StartTimer()
 		attachment, err := task.Attach(ctx,
 			task.Tap("live.frames").
 				As("monitor-"+strconv.Itoa(i)).
-				To(benchSink("monitor-sink-"+strconv.Itoa(i))),
+				To(load.sink("monitor-sink-"+strconv.Itoa(i))),
 		)
 		if err != nil {
 			b.Fatal(err)
 		}
+		b.StopTimer()
+		load.flow(ctx, b, burst, 2*burst)
+		b.StartTimer()
 		if err := task.Detach(ctx, attachment); err != nil {
 			b.Fatal(err)
 		}
@@ -410,6 +423,89 @@ func BenchmarkAttachDetachUnderLoad(b *testing.B) {
 	cancel()
 	if err := <-runErr; err != nil && !errors.Is(err, context.Canceled) {
 		b.Fatal(err)
+	}
+}
+
+// benchAttachLoad is a live audio source the benchmark drives: each flow
+// pushes a burst of frames and waits until the sinks have them all.
+type benchAttachLoad struct {
+	sampleRate, samples int
+	ticks               chan int
+	delivered           chan struct{}
+}
+
+func newBenchAttachLoad(sampleRate, samples int) *benchAttachLoad {
+	return &benchAttachLoad{
+		sampleRate: sampleRate,
+		samples:    samples,
+		ticks:      make(chan int),
+		delivered:  make(chan struct{}, 1024),
+	}
+}
+
+func (l *benchAttachLoad) input() goav.InputSpec {
+	payload := make([]byte, l.samples*2)
+	return goav.Source("live",
+		shape.Frame(av.MediaAudio, shape.Audio(l.sampleRate, 1, av.SampleFormatS16), shape.Realtime(true)),
+		func(ctx context.Context, push source.Push) error {
+			base := av.TimeBase{Num: 1, Den: int64(l.sampleRate)}
+			frame := av.Frame{
+				Type:   av.MediaAudio,
+				Audio:  &av.AudioFrame{SampleRate: l.sampleRate, Channels: 1, SampleFormat: av.SampleFormatS16, Samples: l.samples},
+				Planes: []av.Plane{{Buffer: av.Buffer{Bytes: payload, Ownership: av.BufferImmutable}}},
+			}
+			var pts int64
+			for {
+				var n int
+				select {
+				case <-ctx.Done():
+					return nil
+				case n = <-l.ticks:
+				}
+				for range n {
+					frame.PTS = av.Timestamp{Value: pts, Base: base}
+					frame.Duration = av.Duration{Value: int64(l.samples), Base: base}
+					pts += int64(l.samples)
+					for {
+						_, err := push.Frame(&frame)
+						if err == nil {
+							break
+						}
+						if !errors.Is(err, goav.ErrBackpressure) {
+							return nil
+						}
+					}
+				}
+			}
+		})
+}
+
+// sink counts the frames it receives.
+func (l *benchAttachLoad) sink(name string) goav.Destination {
+	return goav.Sink(component.SinkFunc(name, func(_ context.Context, msg component.Message) error {
+		if msg.Kind == pipeline.MessageFrame {
+			l.delivered <- struct{}{}
+		}
+		return nil
+	}))
+}
+
+// flow pushes frames and waits for deliveries.
+func (l *benchAttachLoad) flow(ctx context.Context, b *testing.B, frames int, deliveries int) {
+	b.Helper()
+	select {
+	case l.ticks <- frames:
+	case <-ctx.Done():
+		b.Fatal(ctx.Err())
+	}
+	timeout := time.NewTimer(10 * time.Second)
+	defer timeout.Stop()
+	for range deliveries {
+		select {
+		case <-l.delivered:
+		case <-timeout.C:
+			b.Fatal("load frames were not delivered")
+		}
 	}
 }
 

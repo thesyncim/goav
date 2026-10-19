@@ -2,10 +2,10 @@
 version=1
 package=.
 bench_regex=Benchmark(RecordPackets|RemuxPackets|DecodeToFrameSink|DecodeEncode|Resample|Resize|BranchFanout|SharedMuxGroup|Mix|Composite|SelectPassthrough)
-benchtime=1s
+benchtime=100x
 count=1
-bench_test_sha256=6d48a14f3735b419c19978c90cc5f220dec02d836dd860c5475533c128fb7b59
+bench_test_sha256=f1484ca6aa61cb98b51ff643efcc3b21637d43a812a6c65265f66865fd9509ba
 pgo_script_sha256=9d50801538f3c06e2a737c3760d341ea40b84dc5e268eabf6ddebba8b939e83e
-generated_at=2026-10-18T12:00:19Z
+generated_at=2026-10-19T06:46:10Z
 go_version=go version go1.27.2 darwin/arm64
 goexperiment=simd

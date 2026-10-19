@@ -15,9 +15,11 @@ methodology changes, and migration notes.
 - Fix: the RTP AV1 depacketizer refuses an OBU element length near the int
   limit instead of panicking (offset+length wrapped negative). Found by the
   fuzz smoke.
-- The attach-under-load allocation ceiling is twice its baseline: the benchmark
-  counts the concurrent load's allocations too, which vary with scheduling
-  (Linux CI measured 681-703 where the attach path itself measures ~510).
+- `BenchmarkAttachDetachUnderLoad` measures attach and detach alone: its
+  traffic flows through the attached branch with the timer stopped, so the
+  load no longer adds scheduling-dependent allocations (about 440-700 per op
+  before, a steady 244 now), and its ratchet ceiling is back to the standard
+  cold slack.
 
 - One compiler: Outputs compile into one recipe DAG, and Describe, Explain,
   Build, and `task.Attach` all read it. A Stream used twice is one node, so
